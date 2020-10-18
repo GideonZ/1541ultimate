@@ -112,59 +112,6 @@ void FileManager :: get_display_string(Path *p, const char *filename, char *buff
 	n->get_display_string(buffer, width);
 }
 
-/*
-bool FileManager :: reworkPath(Path *path, const char *pathstr, const char *filename, reworked_t& rwp)
-{
-	int filename_length = strlen(filename);
-	if (!filename_length)
-		return false;
-	if (path && pathstr) // use either path, or path str, not both
-		return false;
-
-	// Copy the filename + path into a temporary buffer
-	char *copy = new char[filename_length + 1];
-	rwp.copy = copy;
-	strcpy(copy, filename);
-
-	// find the last separator
-	int separator_pos = -1;
-	for(int i=filename_length-1; i >= 1; i--) {
-		if ((copy[i] == '/') || (copy[i] == '\\')) {
-			separator_pos = i;
-			break;
-		}
-	}
-
-	// separate path and filename in two different strings
-	char *purename = copy;
-	char *pathname = NULL;
-	if (separator_pos >= 0) {
-		copy[separator_pos] = 0;
-		pathname = copy;
-		purename = &copy[separator_pos + 1];
-	}
-
-	// create a path that is either relative to root, or relative to current
-	Path *temppath = this->get_new_path("FM temp");
-	if ((filename[0] != '/') && (filename[0] != '\\')) {
-		if(path) {
-			temppath->cd(path->get_path());
-		} else if(pathstr) {
-			temppath->cd(pathstr);
-		} else {
-			temppath->cd("/SD"); // TODO: Make this configurable
-		}
-	}
-	if (pathname) {
-		temppath->cd(pathname);
-	}
-	rwp.copy = copy;
-	rwp.purename = purename;
-	rwp.path = temppath;
-	return true;
-}
-*/
-
 FRESULT FileManager :: get_directory(Path *p, IndexedList<FileInfo *> &target, const char *matchPattern)
 {
 	lock();
@@ -345,7 +292,6 @@ FRESULT FileManager :: find_pathentry(PathInfo &pathInfo, bool open_mount)
 FRESULT FileManager :: fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file)
 {
 	FRESULT fres = find_pathentry(pathInfo, false);
-//	pathInfo.dumpState("result for fopen");
 
 	if (fres == FR_NO_PATH)
 		return fres;
@@ -371,20 +317,10 @@ FRESULT FileManager :: fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file
 	mstring workpath;
 
 	if (create) {
-		//fres = fs->dir_open(pathInfo.getDirectoryFromLastFS(workpath), &dir, pathInfo.getLastInfo()->cluster);
-		//if (fres == FR_OK) {
-        const char *pathstring = pathInfo.getFullPath(workpath, -1);
-        sendEventToObservers(eRefreshDirectory, pathstring, "");
         relativeDir = pathInfo.getLastInfo();
-		//}
 	} else {
-		// fres = fs->dir_open(pathInfo.getDirectoryFromLastFS(workpath), &dir, pathInfo.getParentInfo()->cluster);
 	    relativeDir = pathInfo.getParentInfo();
 	}
-/*
-	if (fres != FR_OK)
-		return fres;
-*/
 
 	mstring workPathFromFSRoot;
 	char *filename = (char *)pathInfo.getFileName();
@@ -392,11 +328,14 @@ FRESULT FileManager :: fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file
 		fix_filename(filename);
 	}
 
-	// removed: pathInfo.getPathFromLastFS(workPathFromFSRoot)
 	fres = fs->file_open(filename, flags, file, relativeDir);
 	if (fres == FR_OK) {
 	    open_file_list.append(*file);
 	    pathInfo.workPath.getTail(0, (*file)->get_path_reference());
+	    if (create) {
+            const char *pathstring = pathInfo.getFullPath(workpath, -1);
+            sendEventToObservers(eRefreshDirectory, pathstring, "");
+	    }
 	}
 	return fres;
 }
