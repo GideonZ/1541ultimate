@@ -167,7 +167,7 @@ bool FileSystemCBM::get_next_free_sector(int &track, int &sector)
 
     if (allocate_sector_on_track(track, sector)) {
         return true;
-}
+    }
 
     for (int i = root_track - 1; i >= 1; i--) {
         if (allocate_sector_on_track(i, sector)) {
