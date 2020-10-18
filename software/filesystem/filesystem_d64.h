@@ -36,6 +36,31 @@ public:
     friend class FileSystemCBM;
 };
 
+class CachedBlock
+{
+public:
+    uint8_t *data;
+    bool dirty;
+    const int size;
+    const uint8_t track;
+    const uint8_t sector;
+
+    CachedBlock(int sz, uint8_t track, uint8_t sector) : track(track), sector(sector), size(sz)
+    {
+        data = new uint8_t[sz];
+        memset(data, 0, sz);
+        dirty = false;
+    }
+
+    ~CachedBlock() {
+        delete[] data;
+    }
+};
+
+
+class SideSectors;
+class SideSectorCluster;
+
 class FileInCBM
 {
 	friend class FileSystemCBM;
@@ -56,6 +81,7 @@ class FileInCBM
     uint8_t *visited;  // this should probably be a bit vector
 
     FileSystemCBM *fs;
+    SideSectors *side;
 
     FRESULT visit(void);
     FRESULT followChain(int track, int sector, int& noSectors, int& bytesLastSector);
@@ -149,6 +175,8 @@ public:
     friend class FileSystemD71;
     friend class FileSystemD81;
     friend class FileSystemDNP;
+    friend class SideSectors;
+    friend class SideSectorCluster;
 };
 
 static const int layout_d64[] = { 17, 21, 7, 19, 6, 18, -1, 17 };
