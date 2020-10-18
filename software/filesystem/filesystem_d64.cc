@@ -349,7 +349,7 @@ FRESULT FileSystemCBM::dir_create(const char *path)
         memset(blk, 0, 254);
         fres = ff->write(blk, 254, &tr);
     }
-    delete blk;
+    delete[] blk;
 
     fres = ff->close();
     delete ff;
