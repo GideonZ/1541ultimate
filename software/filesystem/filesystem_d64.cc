@@ -295,7 +295,7 @@ FRESULT FileSystemCBM::dir_create(const char *path)
     const char *nameToCreate = pi.getFileName();
     FileInfo *parent = pi.getLastInfo();
 
-    printf("I should create a directory of name '%s' into the subdirectory '%s' on cluster %d\n", nameToCreate, parent->lfname, parent->cluster);
+    //printf("I should create a directory of name '%s' into the subdirectory '%s' on cluster %d\n", nameToCreate, parent->lfname, parent->cluster);
 
     FRESULT fres;
     DirInCBM cbmdir(this, parent);
@@ -377,7 +377,7 @@ FRESULT FileSystemCBM::find_file(const char *filename, DirInCBM *dir, FileInfo *
             continue;
         }
         if (info->match_to_pattern(cbm)) {
-            printf("Found '%s' -> '%s'!\n", filename, info->lfname);
+            //printf("Found '%s' -> '%s'!\n", filename, info->lfname);
             break;
         }
     } while (1);
