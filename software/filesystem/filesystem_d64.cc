@@ -259,10 +259,8 @@ FRESULT FileSystemCBM::dir_open(const char *path, Directory **dir, FileInfo *rel
     DirInCBM *dd;
 
     if (relativeDir) {
-        printf("DIR OPEN: '%s' (Relative: '%s')\n", path, relativeDir->lfname);
         dd = new DirInCBM(this, relativeDir);
     } else {
-        printf("DIR OPEN: '%s' (Root)\n", path);
         PathInfo pi(this);
         pi.init(path);
         PathStatus_t pres = walk_path(pi);
@@ -299,7 +297,6 @@ FRESULT FileSystemCBM::dir_create(const char *path)
 
     printf("I should create a directory of name '%s' into the subdirectory '%s' on cluster %d\n", nameToCreate, parent->lfname, parent->cluster);
 
-    FileInfo info(24);
     FRESULT fres;
     DirInCBM cbmdir(this, parent);
 
@@ -315,8 +312,10 @@ FRESULT FileSystemCBM::dir_create(const char *path)
     int dir_t = cbmdir.curr_t;
     int dir_s = cbmdir.curr_s;
     int dir_idx = cbmdir.idx % 8;
+    FileInfo info(24);
+    info.fs = this;
     uint32_t tr;
-    fres = ff->open(NULL, FA_CREATE_NEW, dir_t, dir_s, dir_idx);
+    fres = ff->open(&info, FA_CREATE_NEW, dir_t, dir_s, dir_idx);
     if (fres != FR_OK) {
         delete ff;
         return fres;
@@ -389,54 +388,113 @@ FRESULT FileSystemCBM::find_file(const char *filename, DirInCBM *dir, FileInfo *
 
 // functions for reading and writing files
 // Opens file (creates file object)
+/*
+        switch(pres) {
+            case e_EntryNotFound:
+                if ((flags & FA_CREATE_NEW) || (flags & FA_CREATE_ALWAYS) || (flags & FA_OPEN_ALWAYS)) {
+                    create = true;
+                }
+                break;
+            case e_EntryFound:
+                if (flags & FA_CREATE_NEW) {
+                    return FR_EXIST;
+                }
+                if (flags & FA_CREATE_ALWAYS) {
+                    clear = true;
+                }
+                break;
+            default:
+                //case e_DirNotFound:
+                //case e_TerminatedOnFile:
+                return FR_NO_PATH;
+        }
+
+ */
 FRESULT FileSystemCBM::file_open(const char *filename, uint8_t flags, File **file, FileInfo *relativeDir)
 {
     FileInfo info(24);
+    DirInCBM *dd;
+    mstring fn;
+    bool create = false;
+    bool clear = false;
+    *file = NULL;
 
-    DirInCBM dd(this, relativeDir);
-    dd.open();
+    if (!relativeDir) {
+        PathInfo pi(this);
+        pi.init(filename);
+        pi.workPath.up(&fn); // just look for the parent dir
 
-    if (flags & FA_CREATE_NEW) {
+        PathStatus_t pres = walk_path(pi);
+        if (pres != e_EntryFound) {
+            return FR_NO_PATH;
+        }
+        dd = new DirInCBM(this, pi.getLastInfo());
+    } else {
+        dd = new DirInCBM(this, relativeDir);
+        fn = filename;
+    }
+
+    FRESULT fres = find_file(filename, dd, &info);
+    if (fres == FR_NO_FILE) {
+        create = (flags & (FA_CREATE_NEW | FA_CREATE_ALWAYS | FA_OPEN_ALWAYS));
+    } else if (fres == FR_OK) {
+        clear = (flags & FA_CREATE_ALWAYS);
+    } else {
+        return fres;
+    }
+
+    if (create) {
         info.fs = this;
-
-        FRESULT fres = dd.create(filename, false);
+        info.cluster = 0;
+        FRESULT fres = dd->create(fn.c_str(), false);
         if (fres != FR_OK) {
+            delete dd;
             return fres;
         }
     }
-    else {
-        // Seek requested file for reading
-        do {
-            FRESULT fres = dd.get_entry(info);
-            if (fres != FR_OK) {
-                return FR_NO_FILE;
-            }
-            if (info.attrib & AM_VOL)
-                continue;
-            if (pattern_match(filename, info.lfname)) {
-                break;
-            }
-        } while (1);
+
+    int dir_t = dd->curr_t;
+    int dir_s = dd->curr_s;
+    int dir_idx = dd->idx % 8;
+
+    if (clear) {
+        uint8_t *p = dd->get_pointer();
+        // Saving information, since moving the window makes *p invalid!
+        int file_track = p[3];
+        int file_sector = p[4];
+        int side_track = p[21];
+        int side_sector = p[22];
+        p[3] = 0;
+        p[4] = 0;
+        p[21] = 0;
+        p[22] = 0;
+        deallocate_chain(file_track, file_sector, dd->visited); // file chain
+        deallocate_chain(side_track, side_sector, dd->visited); // side sector chain
+        sync();
+        info.cluster = 0;
     }
 
-    int dir_t = dd.curr_t;
-    int dir_s = dd.curr_s;
-    int dir_idx = dd.idx % 8;
+    delete dd;
+
+    // Okay, finally done. We have a dir entry, either of a new file or of an existing file.
+    // If the create_always flag was set, the file content has been deleted, and the pointer
+    // was reset, just like when a new entry was created. We can now attach a file object
+    // that points to this dir-entry.
 
     FileInCBM *ff = new FileInCBM(this);
     *file = new File(this, ff);
 
     FRESULT res;
 
-    if (!strcasecmp(info.extension, "CVT")) {
+    if (!strcasecmp(info.extension, "CVT")) { // This is not the way to do it
         res = ff->openCVT(&info, flags, dir_t, dir_s, dir_idx);
-        //res = ff->open(&info, flags);
     }
     else {
         res = ff->open(&info, flags, dir_t, dir_s, dir_idx);
     }
-    if (res == FR_OK)
+    if (res == FR_OK) {
         return res;
+    }
 
     delete ff;
     delete *file;
@@ -527,9 +585,20 @@ FRESULT FileSystemCBM::deallocate_chain(uint8_t track, uint8_t sector, uint8_t *
 
 FRESULT FileSystemCBM::file_delete(const char *path)
 {
+    PathInfo pi(this);
+    pi.init(path);
+    PathStatus_t pres = walk_path(pi);
+    if (pres == e_DirNotFound) {
+        return FR_NO_PATH;
+    }
+    if (pres != e_EntryFound) {
+        return FR_NO_FILE;
+    }
+    const char *filename = pi.getFileName();
+
+    DirInCBM *dd = new DirInCBM(this, pi.getParentInfo());
     FileInfo info(20);
-    DirInCBM *dd = new DirInCBM(this);
-    FRESULT res = find_file(path, dd, &info);
+    FRESULT res = find_file(filename, dd, &info);
 
     if (res == FR_OK) {
         uint8_t *p = dd->get_pointer();
@@ -1410,6 +1479,7 @@ FileInCBM::FileInCBM(FileSystemCBM *f)
     current_sector = 0;
     offset_in_sector = 0;
     num_blocks = 0;
+    file_size = 0;
     dir_sect = -1;
     dir_entry_offset = 0;
     dir_entry_modified = 0;
@@ -1421,22 +1491,25 @@ FileInCBM::FileInCBM(FileSystemCBM *f)
 
 FRESULT FileInCBM::open(FileInfo *info, uint8_t flags, int dirtrack, int dirsector, int dirindex)
 {
-    if (flags & FA_CREATE_NEW) {
+    if (!info)
+        return FR_INVALID_OBJECT;
+    if (info->fs != fs)
+        return FR_INVALID_OBJECT;
+
+    if (!info->cluster) {
         start_cluster = -1; // to be allocated
         num_blocks = 0;
+        file_size = 0;
         current_track = 0;
+        current_sector = 0;
     }
     else { // open existing file
-        if (!info)
-            return FR_INVALID_OBJECT;
-        if (info->fs != fs)
-            return FR_INVALID_OBJECT;
-
         start_cluster = info->cluster;
         if (!(fs->get_track_sector(info->cluster, current_track, current_sector)))
             return FR_INT_ERR;
 
         offset_in_sector = 2;
+        file_size = info->size;
         num_blocks = (info->size + 253) / 254;
     }
 
@@ -1464,12 +1537,11 @@ FRESULT FileInCBM::openCVT(FileInfo *info, uint8_t flags, int t, int s, int i)
 
     offset_in_sector = 2;
 
+    file_size = info->size;
     num_blocks = (info->size + 253) / 254;
 
     visited = new uint8_t[fs->num_sectors];
-    for (int i = 0; i < fs->num_sectors; i++) {
-        visited[i] = 0;
-    }
+    memset(visited, 0, fs->num_sectors);
     
     visit();
     return FR_OK;
@@ -1757,8 +1829,10 @@ FRESULT FileInCBM::write(const void *buffer, uint32_t len, uint32_t *transferred
         *transferred += tr;
 
         if (fs->sect_buffer[0] == 0) { // last sector (still)
-            if ((offset_in_sector - 1) > fs->sect_buffer[1]) // we extended the file
+            if ((offset_in_sector - 1) > fs->sect_buffer[1]) {// we extended the file
                 fs->sect_buffer[1] = (uint8_t) (offset_in_sector - 1);
+                file_size = (num_blocks - 1) * 254 + (offset_in_sector - 2);
+            }
         }
     }
     fs->sync();
@@ -1772,6 +1846,8 @@ FRESULT FileInCBM::seek(uint32_t pos)
 {
     fs->sync();
     fs->get_track_sector(start_cluster, current_track, current_sector);
+    memset(visited, 0, fs->num_sectors);
+    uint32_t absPos = 0;
 
     while (pos >= 254) {
         FRESULT res = visit();
@@ -1782,9 +1858,16 @@ FRESULT FileInCBM::seek(uint32_t pos)
         if (res != FR_OK)
             return res;
 
-        current_track = fs->sect_buffer[0];
-        current_sector = fs->sect_buffer[1];
-        pos -= 254;
+        if (fs->sect_buffer[0]) {
+            current_track = fs->sect_buffer[0];
+            current_sector = fs->sect_buffer[1];
+            pos -= 254;
+            absPos += 254;
+        } else {
+            pos = fs->sect_buffer[1] - 1;
+            file_size = (absPos + pos);
+            break;
+        }
     }
     offset_in_sector = pos + 2;
     return FR_OK;
