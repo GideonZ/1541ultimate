@@ -45,6 +45,7 @@ class FileInCBM
     int current_sector;
     int offset_in_sector;
     int num_blocks;
+    int file_size;
     int dir_sect;
     int dir_entry_offset;
     int dir_entry_modified;
@@ -134,7 +135,7 @@ public:
 
     uint32_t get_file_size(File *f) {
         FileInCBM *handle = (FileInCBM *)f->handle;
-        return (uint32_t)(254 * handle->num_blocks);
+        return handle->file_size;
     }
 
     uint32_t get_inode(File *f) {
