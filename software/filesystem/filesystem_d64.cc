@@ -12,6 +12,7 @@
 #include "pattern.h"
 #include "cbmname.h"
 #include "path.h"
+#include "rtc.h"
 #include <ctype.h>
 
 /*********************************************************************/
@@ -297,8 +298,6 @@ FRESULT FileSystemCBM::dir_create(const char *path)
     }
     const char *nameToCreate = pi.getFileName();
     FileInfo *parent = pi.getLastInfo();
-
-    //printf("I should create a directory of name '%s' into the subdirectory '%s' on cluster %d\n", nameToCreate, parent->lfname, parent->cluster);
 
     FRESULT fres;
     DirInCBM cbmdir(this, parent);
@@ -1297,12 +1296,23 @@ FRESULT DirInCBM::create(const char *filename, bool dir)
         idx++;
     } while (idx < 256);
 
-    memset(&(p->aux_track), 0x00, 11);
+    memset(&(p->aux_track), 0x00, 11); // set everything to zero
+
     p->std_fileType = cbm.getType();
     memset(p->name, 0xA0, 16);
     memcpy(p->name, cbm.getName(), cbm.getLength());
     p->data_track = 0;
     p->data_sector = 0;
+
+#ifndef RUNS_ON_PC
+    int y,m,d,wd,h,mn,s;
+    rtc.get_time(y, m, d, wd, h, mn, s);
+    p->year = (uint8_t)(y - 1900);
+    p->month = (uint8_t)m;
+    p->day = (uint8_t)d;
+    p->hour = (uint8_t)h;
+    p->minute = (uint8_t)mn;
+#endif
 
     fs->dirty = 1;
     fs->sync();
