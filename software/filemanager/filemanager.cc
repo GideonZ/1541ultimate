@@ -340,7 +340,7 @@ FRESULT FileManager :: fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file
 	return fres;
 }
 
-FRESULT FileManager :: get_free(Path *path, uint32_t& free)
+FRESULT FileManager :: get_filesystem(Path *path, FileSystem **filesys)
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(path);
@@ -352,7 +352,8 @@ FRESULT FileManager :: get_free(Path *path, uint32_t& free)
     if (!inf || !(inf->fs)) {
         return FR_NO_FILESYSTEM;
     }
-    return inf->fs->get_free(&free);
+    *filesys = inf->fs;
+    return FR_OK;
 }
 
 FRESULT FileManager :: fstat(Path *path, const char *filename, FileInfo &info)

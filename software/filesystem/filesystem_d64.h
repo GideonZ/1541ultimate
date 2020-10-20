@@ -174,6 +174,7 @@ public:
     static  bool check(Partition *p); // check if file system is present on this partition
     virtual bool init(void);               // Initialize
     bool    is_writable();
+    bool    supports_direct_sector_access(void) { return true; }
 
     // Create initial structures of empty disk
     virtual FRESULT format(const char *name) { return FR_NO_FILESYSTEM; }
@@ -205,6 +206,9 @@ public:
         FileInCBM *handle = (FileInCBM *)f->handle;
         return (uint32_t)(handle->start_cluster);
     }
+
+    FRESULT read_sector(uint8_t *buffer, int track, int sector);
+    FRESULT write_sector(uint8_t *buffer, int track, int sector);
 
     friend class DirInCBM;
     friend class FileInCBM;

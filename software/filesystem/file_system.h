@@ -43,6 +43,8 @@ public:
 	virtual bool    init();              // Initialize file system
     virtual bool    is_writable() { return false; } // by default a file system is not writable, unless we implement it
 	virtual FRESULT format(const char *name);    // create initial structures of empty disk
+	virtual bool    supports_direct_sector_access(void) { return false; }
+
     virtual FRESULT get_free (uint32_t *e) { *e = 0; return FR_OK; } // Get number of free sectors on the file system
     virtual FRESULT sync(void) { return FR_OK; } // by default we can't write, and syncing is thus always successful
     
@@ -66,6 +68,8 @@ public:
     virtual uint32_t get_file_size(File *f) { return 0; }
     virtual uint32_t get_inode(File *f) { return 0; }
     virtual bool     needs_sorting() { return false; }
+    virtual FRESULT  read_sector(uint8_t *buffer, int track, int sector) { return FR_DENIED; }
+    virtual FRESULT  write_sector(uint8_t *buffer, int track, int sector) { return FR_DENIED; }
 };
 
 #include "factory.h"

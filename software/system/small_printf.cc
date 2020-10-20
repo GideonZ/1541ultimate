@@ -285,7 +285,10 @@ extern "C" int _vscanf(const char *buf, const char *fmt, va_list ap)
 	int len = strlen(fmt);
 	int i;
 	for (i=0;i<len;i++) {
-		if (fmt[i] == '%') {
+	    if (!buf[pos]) {
+	        break;
+	    }
+	    if (fmt[i] == '%') {
 			do_conv = 1;
 			continue;
 		}

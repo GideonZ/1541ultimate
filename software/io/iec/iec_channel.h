@@ -10,7 +10,7 @@
 #include "mystring.h"
 
 typedef enum _t_channel_state {
-    e_idle, e_filename, e_file, e_dir, e_record, e_complete, e_error, e_status
+    e_idle, e_filename, e_file, e_dir, e_record, e_buffer, e_complete, e_error, e_status
     
 } t_channel_state;
 
@@ -39,6 +39,7 @@ typedef struct _name_t {
     int drive;
     char *name;
     bool directory;
+    bool buffer;
     bool explicitExt;
     const char *extension;
     access_mode_t mode;
@@ -62,6 +63,7 @@ class IecPartition
     Path *path;
     FileManager *fm;
     IecFileSystem *vfs;
+    FileSystem *fs;
     int partitionNumber;
 
 public:
@@ -76,6 +78,8 @@ public:
         iecNames = new IndexedList<char *>(8, NULL);
 
         SetInitialPath(); // constructs root path string
+        fs = NULL;
+        fm->get_filesystem(path, &fs);
     }
 
     int GetPartitionNumber(void)
@@ -85,6 +89,19 @@ public:
 
     void SetInitialPath(void);
     bool IsValid(); // implemented in iec_channel.cc, to resolve an illegal forward reference
+
+    FRESULT get_free(uint32_t &free)
+    {
+        if (fs) {
+            return fs->get_free(&free);
+        }
+        return FR_NO_FILESYSTEM;
+    }
+
+    FileSystem *GetFileSystem(void)
+    {
+        return fs;
+    }
 
     char *CreateIecName(FileInfo *inf)
     {
@@ -217,6 +234,7 @@ public:
             }
             FRESULT res = ReadDirectory(); // just try!
             if (res == FR_OK) {
+                fm->get_filesystem(path, &fs);
                 return true;
             }
             return false;
@@ -236,6 +254,7 @@ public:
         }
         FRESULT res = ReadDirectory(); // just try!
         if (res == FR_OK) {
+            fm->get_filesystem(path, &fs);
             return true;
         }
         path->cd(previous_path.c_str()); // revert
@@ -352,6 +371,7 @@ private:
     bool parse_filename(char *buffer, name_t *name, int default_drive, bool doFlags);
     int  setup_directory_read(name_t& name);
     int  setup_file_access(name_t &name);
+    int  setup_buffer_access(void);
     int  init_iec_transfer(void);
 
     int open_file(void);  // name should be in buffer
@@ -390,6 +410,7 @@ class IecCommandChannel : public IecChannel
 
     void mem_read(void);
     void mem_write(void);
+    void block_command(command_t& command);
     void renam(command_t& command);
     void copy(command_t& command);
     void exec_command(command_t &command);

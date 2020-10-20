@@ -117,6 +117,10 @@ int IecChannel :: pop_data(void)
                 }
             }
             break;
+        case e_buffer:
+            // do nothing, stay inside of the buffer
+            break;
+
         default:
             return IEC_NO_FILE;
     }
@@ -339,6 +343,12 @@ int IecChannel :: push_data(uint8_t b)
             }
             break;
 
+        case e_buffer:
+            if (pointer < 256) {
+                buffer[pointer++] = b;
+            }
+            break;
+
         default:
             return IEC_BYTE_LOST;
     }
@@ -443,7 +453,8 @@ bool IecChannel :: parse_filename(char *buffer, name_t *name, int default_drive,
     name->drive = default_drive;
     name->extension = 0;
     name->explicitExt = false;
-    name->mode = (channel == 0) ? e_read : ((channel == 1) ? e_write : e_undefined);
+    name->buffer = false;
+    name->mode = (channel == 0) ? e_read : ((channel == 1) ? e_write : e_read);
     name->name = buffer;
     name->directory = false;
     name->recordSize = 0;
@@ -456,6 +467,9 @@ bool IecChannel :: parse_filename(char *buffer, name_t *name, int default_drive,
     // Handle the case of the $ before the :
     if (*s == '$') {
         name->directory = true;
+        s++;
+    } else if(*s == '#') {
+        name->buffer = true;
         s++;
     } else {
         // Handle the case of the @ before the :
@@ -500,15 +514,18 @@ bool IecChannel :: parse_filename(char *buffer, name_t *name, int default_drive,
             }
             switch (toupper(parts[i][0])) {
             case 'P':
-                name->extension = ".prg";
+                if (!name->explicitExt)
+                    name->extension = ".prg";
                 name->explicitExt = true;
                 break;
             case 'S':
-                name->extension = ".seq";
+                if (!name->explicitExt)
+                    name->extension = ".seq";
                 name->explicitExt = true;
                 break;
             case 'U':
-                name->extension = ".usr";
+                if (!name->explicitExt)
+                    name->extension = ".usr";
                 name->explicitExt = true;
                 break;
             case 'L':
@@ -570,7 +587,7 @@ int IecChannel :: setup_directory_read(name_t& name)
         return -1;
     }
 
-    fm->get_free(dirPartition->GetPath(), dir_free);
+    dirPartition->get_free(dir_free);
     interface->get_command_channel()->set_error(ERR_OK, 0, 0);
     dir_last = dirPartition->GetDirItemCount();
     state = e_dir;
@@ -699,6 +716,17 @@ int IecChannel :: init_iec_transfer(void)
     return 0;
 }
 
+int IecChannel :: setup_buffer_access(void)
+{
+    last_byte = 255;
+    pointer = 0;
+    prefetch = 0;
+    prefetch_max = 256;
+    state = e_buffer;
+
+    return 0;
+}
+
 int IecChannel :: open_file(void)  // name should be in buffer
 {
     buffer[pointer] = 0; // string terminator
@@ -714,6 +742,8 @@ int IecChannel :: open_file(void)  // name should be in buffer
 
     if(name.directory) {
         return setup_directory_read(name);
+    } else if(name.buffer) {
+        return setup_buffer_access();
     }
 
     interface->get_command_channel()->set_error(ERR_OK, 0, 0);
@@ -1004,6 +1034,10 @@ void IecCommandChannel :: exec_command(command_t &command)
         }
         ch = interface->get_data_channel(command.cmd[1] & 0x0F);
         ch->seek_record((uint8_t *)command.cmd);
+    } else if (strncmp(command.cmd, "B-", 2) == 0) { // Block comand
+        block_command(command);
+    } else if (strcmp(command.cmd, "U") == 0) { // Block Read or Block write
+        block_command(command);
     } else if (strcmp(command.cmd, "CD") == 0) {
         p = interface->vfs->GetPartition(command.digits);
         if (isEmptyString(command.remaining)) {
@@ -1066,6 +1100,85 @@ void IecCommandChannel :: exec_command(command_t &command)
         set_error(ERR_DOS);
     } else { // unknown command
         set_error(ERR_SYNTAX_ERROR_CMD);
+    }
+}
+
+void IecCommandChannel :: block_command(command_t& cmd)
+{
+    IecChannel *channel;
+    IecPartition *partition;
+    FRESULT fres;
+    int operation = 0;
+
+    int ch, dr, tr, sc;
+    if (cmd.cmd[0] == 'U') {
+        if ((cmd.digits < 1) || (cmd.digits > 2)) {
+            set_error(ERR_SYNTAX_ERROR_CMD);
+            return;
+        }
+        operation = cmd.digits;
+    } else { // must be B-
+        int n = sscanf(cmd.remaining, "%d%d%d%d", &ch, &dr, &tr, &sc);
+        switch (cmd.cmd[2]) {
+        case 'R':
+            operation = 3;
+            break;
+        case 'W':
+            operation = 4;
+            break;
+        case 'P':
+            if ((n != 2) || (ch < 0) || (ch > 14)) { // illegal
+                set_error(ERR_SYNTAX_ERROR_CMD);
+                return;
+            }
+            if ((dr < 0) || (dr > 255)) {
+                set_error(ERR_SYNTAX_ERROR_CMD);
+                return;
+            }
+            channel = interface->get_data_channel(ch);
+            channel->pointer = dr;
+            channel->reset_prefetch();
+            set_error(ERR_OK);
+            return;
+        default:
+            set_error(ERR_SYNTAX_ERROR_CMD);
+            return;
+        }
+    }
+
+    // when we get here, it's either U1, U2, B-R or B-W, which all take 4 params
+
+    int n = sscanf(cmd.remaining, "%d%d%d%d", &ch, &dr, &tr, &sc);
+    if ((n != 4) || (ch < 0) || (ch > 14)) { // illegal
+        set_error(ERR_SYNTAX_ERROR_CMD);
+        return;
+    }
+    if (dr >= MAX_PARTITIONS) {
+        set_error(ERR_SYNTAX_ERROR_CMD);
+        return;
+    }
+    channel = interface->get_data_channel(ch);
+    partition = interface->vfs->GetPartition(dr);
+    FileSystem *fs = partition->GetFileSystem();
+    if (!fs || !(fs->supports_direct_sector_access())) {
+        set_error(ERR_DRIVE_NOT_READY);
+        return;
+    }
+    switch(operation) {
+    case 1:
+    case 3:
+        printf("Read Track %d Sector %d of Drive %d into buffer of channel %d.\n", tr, sc, dr, ch);
+        fres = fs->read_sector(channel->buffer, tr, sc);
+        interface->set_error_fres(fres);
+        state = e_idle;
+        break;
+    case 2:
+    case 4:
+        printf("Write Track %d Sector %d of Drive %d from buffer of channel %d.\n", tr, sc, dr, ch);
+        fres = fs->write_sector(channel->buffer, tr, sc);
+        interface->set_error_fres(fres);
+        state = e_idle;
+        break;
     }
 }
 
