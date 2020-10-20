@@ -1,4 +1,9 @@
 #include "filesystem_d64.h"
+#include "dump_hex.h"
+
+#ifndef SS_DEBUG
+#define SS_DEBUG 0
+#endif
 
 class SideSectorCluster
 {
@@ -8,12 +13,14 @@ class SideSectorCluster
     FileSystemCBM *fs;
     uint8_t start_track;
     uint8_t start_sector;
+    bool faulty;
 public:
     SideSectorCluster(FileSystemCBM *fs, uint8_t recordSize) {
         start_track = 0;
         start_sector = 0;
         datablocks = 0;
         record_size = recordSize;
+        faulty = false;
         this->fs = fs;
         for(int i=0; i<6; i++) {
             blocks[i] = 0;
@@ -26,6 +33,7 @@ public:
             }
         }
     }
+
     bool addDataBlock(uint8_t track, uint8_t sector)
     {
         int t=0,s=0;
@@ -67,6 +75,11 @@ public:
         }
     }
 
+    int get_number_of_data_blocks(void)
+    {
+        return datablocks;
+    }
+
     CachedBlock *validate(void)
     {
         uint8_t local_references[12];
@@ -78,17 +91,53 @@ public:
             }
         }
         CachedBlock *last = NULL;
+        int remaining = datablocks;
         for(int i=0;i<6;i++) {
             if (blocks[i]) {
                 last = blocks[i];
                 memcpy(blocks[i]->data + 4, local_references, 12);
+                blocks[i]->data[2] = (uint8_t)i;
+                blocks[i]->data[3] = record_size;
+                blocks[i]->data[1] = (uint8_t)((remaining * 2) + 15);
             }
             if ((i != 5) && (blocks[i+1])) {
                 blocks[i]->data[0] = blocks[i+1]->track;
                 blocks[i]->data[1] = blocks[i+1]->sector;
             }
+            remaining -= 120;
         }
         return last;
+    }
+
+    FRESULT load(uint8_t& track, uint8_t& sector)
+    {
+        for(int i=0; i<6; i++) {
+            if (!track) {
+                return FR_OK;
+            }
+            if (!blocks[i]) {
+                blocks[i] = new CachedBlock(256, track, sector);
+            }
+            DRESULT dres = fs->prt->read(blocks[i]->data, fs->get_abs_sector(track, sector), 1);
+            if (dres != RES_OK) {
+                return FR_DISK_ERR;
+            }
+            // follow chain
+            track = blocks[i]->data[0];
+            sector = blocks[i]->data[1];
+            if (blocks[i]->data[2] != (uint8_t)i) {
+                faulty = true;
+            }
+            record_size = blocks[i]->data[3];
+
+            // full block?
+            if (track) {
+                datablocks += 120;
+            } else if(sector > 16) {
+                datablocks += (sector >> 1) - 7;
+            }
+        }
+        return FR_OK;
     }
 
     FRESULT write(void)
@@ -105,6 +154,18 @@ public:
         return FR_OK;
     }
 
+#if SS_DEBUG
+    void dump(void)
+    {
+        printf("*** Side Sector CLUSTER with %d Data Block References ***\n", datablocks);
+        for (int i=0;i<6;i++) {
+            if(blocks[i]) {
+                printf("  ** Sector %d On T:%d/S:%d **\n", i, blocks[i]->track, blocks[i]->sector);
+                dump_hex_relative(blocks[i]->data, 64);
+            }
+        }
+    }
+#endif
 };
 
 class SideSectors
@@ -158,7 +219,11 @@ public:
             clusters.append(cluster);
         }
 
-        return cluster->addDataBlock(track, sector);
+        if (cluster->addDataBlock(track, sector)) {
+            datablocks++;
+            return true;
+        }
+        return false;
     }
 
     void get_track_sector(int& track, int& sector)
@@ -204,8 +269,18 @@ public:
         }
     }
 
+    int get_number_of_blocks(void)
+    {
+        int num_blocks = (super) ? 1 : 0;
+        num_blocks += (datablocks + 119) / 120;
+        return num_blocks;
+    }
+
     FRESULT write(void)
     {
+#if SS_DEBUG
+        dump();
+#endif
         DRESULT dres;
         if(super) {
             dres = fs->prt->write(super->data, fs->get_abs_sector(super->track, super->sector), 1);
@@ -225,9 +300,47 @@ public:
         return fres;
     }
 
-    void test(void)
+    FRESULT load(uint8_t track, uint8_t sector)
     {
-        for(int i=0;i<400;i++) {
+        FRESULT fres = fs->move_window(fs->get_abs_sector(track, sector));
+        if (fres != FR_OK) {
+            return fres;
+        }
+        if (fs->sect_buffer[2] == 0xFE) { // SSS!
+            super = new CachedBlock(256, track, sector);
+            memcpy(super->data, fs->sect_buffer, 256);
+            do_super = true;
+            track = fs->sect_buffer[0];
+            sector = fs->sect_buffer[1];
+        }
+        datablocks = 0;
+        while(track) {
+            SideSectorCluster *cluster = new SideSectorCluster(fs, 0);
+            clusters.append(cluster);
+            fres = cluster->load(track, sector);
+            if (fres != FR_OK)
+                return fres;
+            datablocks += cluster->get_number_of_data_blocks();
+        }
+        return fres;
+    }
+
+#if SS_DEBUG
+    void dump(void)
+    {
+        printf("\nThis is a dump of the side sector structure, holding %d data block references.\n", datablocks);
+        if (super) {
+            printf("*** Super Side Sector (T:%d/S:%d):\n", super->track, super->sector);
+            dump_hex_relative(super->data, 32);
+        }
+        for (int i=0;i<clusters.get_elements();i++) {
+            clusters[i]->dump();
+        }
+    }
+
+    void test(int num_blocks)
+    {
+        for(int i=0;i<num_blocks;i++) {
             int t,s;
             fs->get_track_sector(i, t, s);
             bool ok = addDataBlock(t, s);
@@ -239,5 +352,5 @@ public:
         a = fs->get_abs_sector(t, s);
         printf("Side sectors start at %06x\n", 256*a);
     }
-
+#endif
 };

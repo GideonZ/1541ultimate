@@ -11,31 +11,6 @@
 #include "file_system.h"
 #include "partition.h"
 
-class FileSystemCBM;
-
-class DirInCBM : public Directory
-{
-    int idx;
-    int curr_t, curr_s;
-    int next_t, next_s;
-    int header_track, header_sector;
-    int start_track, start_sector;
-
-    uint8_t *visited;  // this should probably be a bit vector
-    uint8_t *get_pointer(void);
-    FileSystemCBM *fs;
-
-    FRESULT open(void);
-    FRESULT close(void);
-    FRESULT create(const char *filename, bool dir);
-public:
-    DirInCBM(FileSystemCBM *fs, FileInfo *info = NULL);
-    ~DirInCBM();
-
-    FRESULT get_entry(FileInfo &out);
-    friend class FileSystemCBM;
-};
-
 class CachedBlock
 {
 public:
@@ -57,6 +32,53 @@ public:
     }
 };
 
+struct DirEntryCBM
+{
+    uint8_t dummy[2];
+    uint8_t std_fileType;
+    uint8_t data_track;
+    uint8_t data_sector;
+    uint8_t name[16];
+    uint8_t aux_track;
+    uint8_t aux_sector;
+    union {
+        uint8_t record_size;
+        uint8_t geos_structure;
+    };
+    uint8_t geos_filetype;
+    uint8_t year;
+    uint8_t month;
+    uint8_t day;
+    uint8_t hour;
+    uint8_t minute;
+    uint8_t size_low;
+    uint8_t size_high;
+};
+
+class FileSystemCBM;
+
+class DirInCBM : public Directory
+{
+    int idx;
+    int curr_t, curr_s;
+    int next_t, next_s;
+    int header_track, header_sector;
+    int start_track, start_sector;
+
+    uint8_t *visited;  // this should probably be a bit vector
+    DirEntryCBM *get_pointer(void);
+    FileSystemCBM *fs;
+
+    FRESULT open(void);
+    FRESULT close(void);
+    FRESULT create(const char *filename, bool dir);
+public:
+    DirInCBM(FileSystemCBM *fs, FileInfo *info = NULL);
+    ~DirInCBM();
+
+    FRESULT get_entry(FileInfo &out);
+    friend class FileSystemCBM;
+};
 
 class SideSectors;
 class SideSectorCluster;
@@ -64,7 +86,7 @@ class SideSectorCluster;
 class FileInCBM
 {
 	friend class FileSystemCBM;
-
+	DirEntryCBM dir_entry;
 	int start_cluster;
 	int current_track;
     int current_sector;
@@ -74,10 +96,7 @@ class FileInCBM
     int dir_sect;
     int dir_entry_offset;
     int dir_entry_modified;
-    int section;
-    uint8_t vlir[256];
-    uint8_t tmpBuffer[256];
-    bool isVlir;
+    bool isRel;
     uint8_t *visited;  // this should probably be a bit vector
 
     FileSystemCBM *fs;
@@ -86,17 +105,19 @@ class FileInCBM
     FRESULT visit(void);
     FRESULT followChain(int track, int sector, int& noSectors, int& bytesLastSector);
 public:
-    FileInCBM(FileSystemCBM *);
-    ~FileInCBM() { }
+    FileInCBM(FileSystemCBM *, DirEntryCBM *, int dir_t, int dir_s, int dir_idx);
+    ~FileInCBM();
 
-    FRESULT open(FileInfo *info, uint8_t flags,int,int,int);
-    FRESULT openCVT(FileInfo *info, uint8_t flags,int,int,int);
+    FRESULT open(uint8_t flags);
     FRESULT close(void);
     FRESULT read(void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT write(const void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT seek(uint32_t pos);
-};
 
+#if SS_DEBUG
+    void dumpSideSectors();
+#endif
+};
 
 class FileSystemCBM : public FileSystem
 {
@@ -300,5 +321,13 @@ public:
     FRESULT get_free (uint32_t*);
     FRESULT sync(void);
 };
+
+#if 0
+int section;
+uint8_t vlir[256];
+uint8_t tmpBuffer[256];
+bool isVlir;
+FRESULT openCVT(FileInfo *info, uint8_t flags,int,int,int);
+#endif
 
 #endif /* FILESYSTEM_D64_FILESYSTEM_H_ */
