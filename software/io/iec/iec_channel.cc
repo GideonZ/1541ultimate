@@ -774,7 +774,9 @@ int IecChannel :: open_file(void)  // name should be in buffer
                     printf("WARNING: Illegal record size in .rel file...Is it a REL file at all? (%d)\n", wrd);
                 }
                 interface->set_error_fres(fres);
+#if IECDEBUG
                 printf("Opened existing relative file. Record size is: %d.\n", recordSize);
+#endif
             }
         }
         return init_iec_transfer();
@@ -1167,14 +1169,18 @@ void IecCommandChannel :: block_command(command_t& cmd)
     switch(operation) {
     case 1:
     case 3:
+#if IECDEBUG
         printf("Read Track %d Sector %d of Drive %d into buffer of channel %d.\n", tr, sc, dr, ch);
+#endif
         fres = fs->read_sector(channel->buffer, tr, sc);
         interface->set_error_fres(fres);
         state = e_idle;
         break;
     case 2:
     case 4:
+#if IECDEBUG
         printf("Write Track %d Sector %d of Drive %d from buffer of channel %d.\n", tr, sc, dr, ch);
+#endif
         fres = fs->write_sector(channel->buffer, tr, sc);
         interface->set_error_fres(fres);
         state = e_idle;
