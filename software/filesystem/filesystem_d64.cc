@@ -1850,10 +1850,22 @@ FRESULT FileInCBM::seek(uint32_t pos)
     fs->sync();
     fs->get_track_sector(start_cluster, current_track, current_sector);
     memset(visited, 0, fs->num_sectors);
-    uint32_t absPos = 0;
+    FRESULT res = fs->move_window(fs->get_abs_sector(current_track, current_sector));
+    if (res != FR_OK)
+        return res;
 
+    if (pos < header.size) {
+        state = ST_HEADER;
+        header.pos = pos;
+        pos = 0;
+    } else {
+        state = ST_LINEAR;
+        pos -= header.size;
+    }
+
+    uint32_t absPos = 0;
     while (pos >= 254) {
-        FRESULT res = visit();
+        res = visit();
         if (res != FR_OK)
             return res;
 

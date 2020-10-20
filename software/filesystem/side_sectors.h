@@ -282,9 +282,6 @@ public:
 
     FRESULT write(void)
     {
-#if SS_DEBUG
-        dump();
-#endif
         DRESULT dres;
         if(super) {
             dres = fs->prt->write(super->data, fs->get_abs_sector(super->track, super->sector), 1);
