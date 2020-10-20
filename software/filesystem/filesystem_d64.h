@@ -169,7 +169,7 @@ class FileSystemCBM : public FileSystem
 
 public:
     FileSystemCBM(Partition *p, bool writable, const int *lay);
-    ~FileSystemCBM();
+    virtual ~FileSystemCBM();
 
     static  bool check(Partition *p); // check if file system is present on this partition
     virtual bool init(void);               // Initialize

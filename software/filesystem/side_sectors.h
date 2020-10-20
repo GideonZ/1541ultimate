@@ -113,6 +113,20 @@ public:
         return last;
     }
 
+    FRESULT seek(uint32_t sect, int &track, int &sector)
+    {
+        int block = sect / 120;
+        if ((block > 5) || (!blocks[block])) {
+            return FR_INVALID_PARAMETER;
+        }
+        sect -= block * 120;
+        sect <<= 1;
+        sect += 16;
+        track = blocks[block]->data[sect];
+        sector = blocks[block]->data[sect+1];
+        return FR_OK;
+    }
+
     FRESULT load(uint8_t& track, uint8_t& sector)
     {
         for(int i=0; i<6; i++) {
@@ -324,6 +338,19 @@ public:
             datablocks += cluster->get_number_of_data_blocks();
         }
         return fres;
+    }
+
+    FRESULT seek(uint32_t pos, int& offset_in_sector, int& track, int& sector)
+    {
+        int sect = pos / 254;
+        offset_in_sector = 2 + (pos - (sect * 254));
+
+        int clust = sect / 720;
+        if (clust >= clusters.get_elements()) {
+            return FR_INVALID_PARAMETER;
+        }
+        sect -= clust * 720;
+        return clusters[clust]->seek(sect, track, sector);
     }
 
 #if SS_DEBUG
