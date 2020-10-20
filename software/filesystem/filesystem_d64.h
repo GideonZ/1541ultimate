@@ -85,7 +85,19 @@ class SideSectorCluster;
 
 class FileInCBM
 {
-	friend class FileSystemCBM;
+    enum {
+        ST_HEADER,
+        ST_LINEAR,
+        ST_CVT,
+    } state;
+
+    struct {
+        int pos;
+        int size;
+        uint8_t *data;
+    } header;
+
+    friend class FileSystemCBM;
 	DirEntryCBM dir_entry;
 	int start_cluster;
 	int current_track;
@@ -102,6 +114,10 @@ class FileInCBM
     FileSystemCBM *fs;
     SideSectors *side;
 
+    FRESULT read_header(uint8_t *dst, int len, uint32_t& transferred);
+    FRESULT read_linear(uint8_t *dst, int len, uint32_t& transferred);
+    FRESULT write_header(uint8_t *src, int len, uint32_t& transferred);
+    FRESULT write_linear(uint8_t *src, int len, uint32_t& transferred);
     FRESULT visit(void);
     FRESULT followChain(int track, int sector, int& noSectors, int& bytesLastSector);
 public:

@@ -80,8 +80,12 @@ public:
         return datablocks;
     }
 
-    CachedBlock *validate(void)
+    CachedBlock *validate(uint8_t rec_size)
     {
+        if(rec_size) {
+            record_size = rec_size;
+        }
+
         uint8_t local_references[12];
         memset(local_references, 0, 12);
         for(int i=0;i<6;i++) {
@@ -239,7 +243,7 @@ public:
         }
     }
 
-    void validate(void)
+    void validate(uint8_t rec_size)
     {
         if(super) {
             int t,s;
@@ -260,11 +264,11 @@ public:
                     last->data[0] = (uint8_t)t;
                     last->data[1] = (uint8_t)s;
                 }
-                last = clusters[i]->validate();
+                last = clusters[i]->validate(rec_size);
             }
         } else {
             if(clusters[0]) {
-                clusters[0]->validate();
+                clusters[0]->validate(rec_size);
             }
         }
     }
@@ -345,7 +349,7 @@ public:
             fs->get_track_sector(i, t, s);
             bool ok = addDataBlock(t, s);
         }
-        validate();
+        validate(0);
         write();
         int t,s,a;
         get_track_sector(t, s);
