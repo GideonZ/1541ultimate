@@ -416,10 +416,12 @@ FRESULT FileSystemCBM::file_open(const char *filename, uint8_t flags, File **fil
         create = (flags & (FA_CREATE_NEW | FA_CREATE_ALWAYS | FA_OPEN_ALWAYS));
     } else if (fres == FR_OK) {
         if (flags & FA_CREATE_NEW) {
+            delete dd;
             return FR_EXIST;
         }
         clear = (flags & FA_CREATE_ALWAYS);
     } else {
+        delete dd;
         return fres;
     }
 
@@ -1475,6 +1477,7 @@ FileInCBM::FileInCBM(FileSystemCBM *f, DirEntryCBM *de, int dirtrack, int dirsec
 
     state = ST_LINEAR;
     header.size = 0;
+    header.data = NULL;
 }
 
 FileInCBM::~FileInCBM()
