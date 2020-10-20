@@ -1866,6 +1866,11 @@ FRESULT FileInCBM::seek(uint32_t pos)
         pos -= header.size;
     }
 
+    if (side) { // do side sectors exist? Then we can find the destination faster
+        res = side->seek(pos, offset_in_sector, current_track, current_sector);
+        return res;
+    }
+
     uint32_t absPos = 0;
     while (pos >= 254) {
         res = visit();
