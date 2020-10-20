@@ -592,6 +592,33 @@ FRESULT FileSystemCBM::file_delete(const char *path)
     return res;
 }
 
+FRESULT FileSystemCBM::read_sector(uint8_t *buffer, int track, int sector)
+{
+    int abs_sect = get_abs_sector(track, sector);
+    if (abs_sect < 0) {
+        return FR_INVALID_PARAMETER;
+    }
+    DRESULT res = prt->read(buffer, abs_sect, 1);
+    if (res != RES_OK) {
+        return FR_DISK_ERR;
+    }
+    return FR_OK;
+}
+
+FRESULT FileSystemCBM::write_sector(uint8_t *buffer, int track, int sector)
+{
+    int abs_sect = get_abs_sector(track, sector);
+    if (abs_sect < 0) {
+        return FR_INVALID_PARAMETER;
+    }
+    DRESULT res = prt->write(buffer, abs_sect, 1);
+    if (res != RES_OK) {
+        return FR_DISK_ERR;
+    }
+    return FR_OK;
+}
+
+
 /**************************************************************************************
  * Disk Type Specifics
  **************************************************************************************/
