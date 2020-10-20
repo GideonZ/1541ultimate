@@ -1462,12 +1462,18 @@ FileInCBM::FileInCBM(FileSystemCBM *f, DirEntryCBM *de, int dirtrack, int dirsec
     fs = f;
     isRel = false;
     side = NULL;
+
+    state = ST_LINEAR;
+    header.size = 0;
 }
 
 FileInCBM::~FileInCBM()
 {
     if (side) {
         delete side;
+    }
+    if (header.data) {
+        delete[] header.data;
     }
 }
 
@@ -1500,6 +1506,12 @@ FRESULT FileInCBM::open(uint8_t flags)
         if (dir_entry.aux_track) {
             side->load(dir_entry.aux_track, dir_entry.aux_sector);
         }
+        state = ST_HEADER;
+        header.size = 2;
+        header.data = new uint8_t[2];
+        header.pos = 0;
+        header.data[0] = dir_entry.record_size;
+        header.data[1] = 0;
     }
 
     return FR_OK;
@@ -1535,8 +1547,8 @@ FRESULT FileInCBM::close(void)
             side->get_track_sector(tr, sec);
             p->aux_track = (uint8_t) tr;
             p->aux_sector = (uint8_t) sec;
-            //p->record_size = (uint8_t) record_size; FIXME
-            side->validate();
+            p->record_size = header.data[0];
+            side->validate(p->record_size);
             side->write(); // this doesn't use move window, so it's OK.
         }
 
@@ -1567,10 +1579,7 @@ FRESULT FileInCBM::read(void *buffer, uint32_t len, uint32_t *transferred)
     FRESULT res;
 
     uint8_t *dst = (uint8_t *) buffer;
-    uint8_t *src;
-
-    int bytes_left;
-    int tr;
+    uint32_t tr;
 
     *transferred = 0;
     
@@ -1578,53 +1587,112 @@ FRESULT FileInCBM::read(void *buffer, uint32_t len, uint32_t *transferred)
         return FR_OK;
 
     while (len) {
-        // make sure the current sector is within view
-        res = fs->move_window(fs->get_abs_sector(current_track, current_sector));
+        switch (state) {
+            case ST_HEADER:
+                res = read_header(dst, len, tr);
+                break;
+            case ST_LINEAR:
+                res = read_linear(dst, len, tr);
+                break;
+            case ST_CVT:
+                res = FR_DENIED;
+                break;
+            default:
+                res = FR_DENIED;
+        }
         if (res != FR_OK)
             return res;
 
-        src = &(fs->sect_buffer[offset_in_sector]);
-
-        // determine the number of bytes left in sector
-        if (fs->sect_buffer[0] == 0)  { // last sector
-            bytes_left = (1 + (int)fs->sect_buffer[1]) - offset_in_sector;
-        }
-        else {
-            bytes_left = 256 - offset_in_sector;
-        }
-
-        if (!bytes_left) {
+        if (!tr) {
             break;
         }
-
-        // determine number of bytes to transfer now
-        if (bytes_left > len)
-            tr = len;
-        else
-            tr = bytes_left;
-
-        // do the actual copy
-        for (int i = 0; i < tr; i++) {
-            *(dst++) = *(src++);
-        }
-        len -= tr;
-        offset_in_sector += tr;
         *transferred += tr;
+        dst += tr;
+        len -= tr;
+    }
+    return FR_OK;
+}
 
-        // continue
-        if (offset_in_sector == 256) {
-            if (fs->sect_buffer[0] == 0) {
-                return FR_OK;
-            }
-            current_track = fs->sect_buffer[0];
-            current_sector = fs->sect_buffer[1];
-            offset_in_sector = 2;
+FRESULT FileInCBM::read_linear(uint8_t *dst, int len, uint32_t& tr)
+{
+    FRESULT res;
+    uint8_t *src;
+    int bytes_left;
 
-            res = visit();  // mark and check for cyclic link
-            if (res != FR_OK) {
-                return res;
-            }
+    // make sure the current sector is within view
+    res = fs->move_window(fs->get_abs_sector(current_track, current_sector));
+    if (res != FR_OK)
+        return res;
+
+    src = &(fs->sect_buffer[offset_in_sector]);
+
+    // determine the number of bytes left in sector
+    if (fs->sect_buffer[0] == 0)  { // last sector
+        bytes_left = (1 + (int)fs->sect_buffer[1]) - offset_in_sector;
+    }
+    else {
+        bytes_left = 256 - offset_in_sector;
+    }
+
+    // determine number of bytes to transfer now
+    if (bytes_left > len)
+        tr = len;
+    else
+        tr = bytes_left;
+
+    if (!tr) {
+        return FR_OK;
+    }
+
+    // do the actual copy
+    memcpy(dst, src, tr);
+    offset_in_sector += tr;
+
+    // continue
+    if (offset_in_sector == 256) {
+        if (fs->sect_buffer[0] == 0) {
+            return FR_OK;
         }
+        current_track = fs->sect_buffer[0];
+        current_sector = fs->sect_buffer[1];
+        offset_in_sector = 2;
+
+        res = visit();  // mark and check for cyclic link
+        if (res != FR_OK) {
+            return res;
+        }
+    }
+    return FR_OK;
+}
+
+FRESULT FileInCBM::read_header(uint8_t *dst, int len, uint32_t& tr)
+{
+    tr = header.size - header.pos;
+    if (tr > len) {
+        tr = len;
+    }
+    uint8_t *src = header.data + header.pos;
+    memcpy(dst, src, tr);
+    header.pos += tr;
+
+    if (header.pos == header.size) {
+        state = ST_LINEAR;
+    }
+    return FR_OK;
+}
+
+FRESULT FileInCBM::write_header(uint8_t *src, int len, uint32_t& tr)
+{
+    tr = header.size - header.pos;
+    if (tr > len) {
+        tr = len;
+    }
+    uint8_t *dst = header.data + header.pos;
+    memcpy(dst, src, tr);
+    header.pos += tr;
+
+    if (header.pos == header.size) {
+        state = ST_LINEAR;
     }
     return FR_OK;
 }
@@ -1634,15 +1702,40 @@ FRESULT FileInCBM::write(const void *buffer, uint32_t len, uint32_t *transferred
     FRESULT res;
 
     uint8_t *src = (uint8_t *) buffer;
-    uint8_t *dst;
-
-    int bytes_left;
-    int tr;
+    uint32_t tr;
 
     *transferred = 0;
 
-    if (!len)
-        return FR_OK;
+    while (len) {
+        switch (state) {
+            case ST_HEADER:
+                res = write_header(src, len, tr);
+                break;
+            case ST_LINEAR:
+                res = write_linear(src, len, tr);
+                break;
+            case ST_CVT:
+                res = FR_DENIED;
+                break;
+            default:
+                res = FR_DENIED;
+        }
+        if (res != FR_OK)
+            return res;
+
+        if (!tr) {
+            break;
+        }
+        *transferred += tr;
+        src += tr;
+        len -= tr;
+    }
+    return FR_OK;
+}
+
+FRESULT FileInCBM::write_linear(uint8_t *src, int len, uint32_t& tr)
+{
+    FRESULT res;
 
     if (current_track == 0) { // need to allocate the first block
         fs->sync(); // make sure we can use the buffer to play around
@@ -1674,6 +1767,7 @@ FRESULT FileInCBM::write(const void *buffer, uint32_t len, uint32_t *transferred
             return res;
     }
 
+    tr = 0;
     while (len) {
         // check if we are at the end of our current sector
         if (offset_in_sector == 256) {
@@ -1699,6 +1793,7 @@ FRESULT FileInCBM::write(const void *buffer, uint32_t len, uint32_t *transferred
                 if (res != FR_OK)
                     return res;
                 fs->sect_buffer[0] = 0; // unlink
+                fs->sect_buffer[1] = 1; // 0 bytes in this sector
                 offset_in_sector = 2;
             }
             else {
@@ -1711,23 +1806,20 @@ FRESULT FileInCBM::write(const void *buffer, uint32_t len, uint32_t *transferred
             }
         }
 
-        bytes_left = 256 - offset_in_sector; // we can use the whole sector
+        int bytes = 256 - offset_in_sector; // we can use the whole sector
 
         // determine number of bytes to transfer now
-        if (bytes_left > len)
-            tr = len;
-        else
-            tr = bytes_left;
+        if (bytes > len)
+            bytes = len;
 
         // do the actual copy
         fs->dirty = 1;
-        dst = &(fs->sect_buffer[offset_in_sector]);
-        for (int i = 0; i < tr; i++) {
-            *(dst++) = *(src++);
-        }
-        len -= tr;
-        offset_in_sector += tr;
-        *transferred += tr;
+        uint8_t *dst = &(fs->sect_buffer[offset_in_sector]);
+        memcpy(dst, src, bytes);
+        src += bytes;
+        len -= bytes;
+        offset_in_sector += bytes;
+        tr += bytes;
 
         if (fs->sect_buffer[0] == 0) { // last sector (still)
             if ((offset_in_sector - 1) > fs->sect_buffer[1]) {// we extended the file
