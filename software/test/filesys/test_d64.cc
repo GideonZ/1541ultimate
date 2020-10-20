@@ -386,11 +386,11 @@ bool test_format_d81()
 bool test_format_dnp()
 {
     create_file("format.dnp", 683);
-    BlockDevice *blk = new BlockDevice_Emulated("format.dnp", 256);
-    Partition *prt = new Partition(blk, 0, 683, 0);
-    FileSystemDNP *fs = new FileSystemDNP(prt, true);
-    fs->format("GIDEON,46");
-    return test_fs(fs);
+    BlockDevice_Emulated blk("format.dnp", 256);
+    Partition prt(&blk, 0, 683, 0);
+    FileSystemDNP fs(&prt, true);
+    fs.format("GIDEON,46");
+    return test_fs(&fs);
 }
 
 
@@ -446,10 +446,11 @@ int main()
     //    read_d81();
 
     //read_dnp();
-    ok = test_format_d64();
-//    test_format_d71();
-//    test_format_d81();
-//    test_format_dnp();
+    ok &= test_format_d64();
+    ok &= test_format_d71();
+    ok &= test_format_d81();
+    ok &= test_format_dnp();
+
     if (!ok) {
         printf("\nTest FAILED.\n");
     } else {
