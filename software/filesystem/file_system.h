@@ -58,15 +58,10 @@ public:
     virtual FRESULT file_open(const char *filename, uint8_t flags, File **, FileInfo *relativeDir = 0);  // Opens file (creates file object)
     virtual FRESULT file_rename(const char *old_name, const char *new_name);  // Renames a file
 	virtual FRESULT file_delete(const char *path); // deletes a file
-	virtual void    file_close(File *f);
-    virtual FRESULT file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred);
-    virtual FRESULT file_write(File *f, const void *buffer, uint32_t len, uint32_t *transferred);
-    virtual FRESULT file_seek(File *f, uint32_t pos);
-    virtual FRESULT file_sync(File *f);             // Clean-up cached data
-    virtual void    file_print_info(File *f) { } // debug
 
-    virtual uint32_t get_file_size(File *f) { return 0; }
-    virtual uint32_t get_inode(File *f) { return 0; }
+
+	virtual void    file_print_info(File *f) { } // debug
+
     virtual bool     needs_sorting() { return false; }
     virtual FRESULT  read_sector(uint8_t *buffer, int track, int sector) { return FR_DENIED; }
     virtual FRESULT  write_sector(uint8_t *buffer, int track, int sector) { return FR_DENIED; }

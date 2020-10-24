@@ -353,7 +353,6 @@ FRESULT FileSystemCBM::dir_create(const char *path)
     delete[] blk;
 
     fres = ff->close();
-    delete ff;
     return fres;
 }
 
@@ -463,7 +462,7 @@ FRESULT FileSystemCBM::file_open(const char *filename, uint8_t flags, File **fil
 
     delete dd; // after this dir_entry is no longer valid
 
-    *file = new File(this, ff);
+    *file = ff;
     FRESULT res = ff->open(flags);
 
     if (res == FR_OK) {
@@ -474,33 +473,6 @@ FRESULT FileSystemCBM::file_open(const char *filename, uint8_t flags, File **fil
     delete *file;
     *file = NULL;
     return res;
-}
-
-// Closes file (and destructs file object)
-void FileSystemCBM::file_close(File *f)
-{
-    FileInCBM *ff = (FileInCBM *) f->handle;
-    ff->close();
-    delete ff;
-    delete f;
-}
-
-FRESULT FileSystemCBM::file_read(File *f, void *buffer, uint32_t len, uint32_t *bytes_read)
-{
-    FileInCBM *ff = (FileInCBM *) f->handle;
-    return ff->read(buffer, len, bytes_read);
-}
-
-FRESULT FileSystemCBM::file_write(File *f, const void *buffer, uint32_t len, uint32_t *bytes_written)
-{
-    FileInCBM *ff = (FileInCBM *) f->handle;
-    return ff->write(buffer, len, bytes_written);
-}
-
-FRESULT FileSystemCBM::file_seek(File *f, uint32_t pos)
-{
-    FileInCBM *ff = (FileInCBM *) f->handle;
-    return ff->seek(pos);
 }
 
 FRESULT FileSystemCBM::file_rename(const char *old_name, const char *new_name)
@@ -1485,7 +1457,7 @@ FRESULT DirInCBM::get_entry(FileInfo &f)
     return FR_INT_ERR;
 }
 
-FileInCBM::FileInCBM(FileSystemCBM *f, DirEntryCBM *de, int dirtrack, int dirsector, int dirindex)
+FileInCBM::FileInCBM(FileSystemCBM *f, DirEntryCBM *de, int dirtrack, int dirsector, int dirindex) : File(f)
 {
     dir_sect = f->get_abs_sector(dirtrack, dirsector);
     dir_entry_offset = dirindex * 32;
@@ -1514,6 +1486,9 @@ FileInCBM::~FileInCBM()
     }
     if (header.data) {
         delete[] header.data;
+    }
+    if (visited) {
+        delete[] visited;
     }
 }
 
@@ -1596,8 +1571,7 @@ FRESULT FileInCBM::close(void)
         fs->sync();
     }
 
-    delete[] visited;
-
+    delete this;
     return FR_OK;
 }
 

@@ -33,7 +33,7 @@ FRESULT copy_from(FileSystem *fs, const char *from, const char *to)
             fwrite(buffer, 1, tr, fo);
         } while(tr);
         fclose(fo);
-        fs->file_close(fi);
+        fi->close();
     }
     return fres;
 }
@@ -58,7 +58,7 @@ FRESULT verify_file(FileSystem *fs, const char *from, const uint8_t *to, int siz
             to += tr;
             size -= tr;
         } while(tr && (size > 0));
-        fs->file_close(fi);
+        fi->close();
     }
     if (size != 0) {
         return FR_INT_ERR;
@@ -117,7 +117,7 @@ bool test_fs(FileSystem *fs)
     if (fres == FR_OK) {
         fres = f->write(buffer, 65536, &tr);
         printf("Write (%u) result: %s\n", tr, FileSystem::get_error_string(fres));
-        fs->file_close(f);
+        f->close();
     }
     ok = ok && (fres == FR_OK); // we expect the result to be OK.
     ok = ok && (tr == 65536);
@@ -149,7 +149,7 @@ bool test_fs(FileSystem *fs)
         printf("Write (%u) result: %s\n", tr, FileSystem::get_error_string(fres));
         fres = f->write(buffer, 65536, &tr);
         printf("Write (%u) result: %s\n", tr, FileSystem::get_error_string(fres));
-        fs->file_close(f);
+        f->close();
     }
     print_directory(fs, "");
     uint32_t fre;
@@ -165,7 +165,7 @@ bool test_fs(FileSystem *fs)
     fres = fs->file_open("test.seq", FA_WRITE | FA_CREATE_NEW, &f );
     ok = ok && (fres == FR_EXIST); // since we demand CREATE_NEW, this should fail as the file already exists.
     printf("SEQ File open result second time: %s (%p)\n", FileSystem::get_error_string(fres), f);
-    if (f) fs->file_close(f);
+    if (f) f->close();
     print_directory(fs, "");
 
     fres = fs->file_open("test.seq", FA_WRITE | FA_CREATE_ALWAYS, &f );
@@ -174,7 +174,7 @@ bool test_fs(FileSystem *fs)
     if (f) {
         fres = f->write(buffer, 10000, &tr);
         printf("Write (%u) result: %s\n", tr, FileSystem::get_error_string(fres));
-        fs->file_close(f);
+        f->close();
     }
     print_directory(fs, "");
 
@@ -216,7 +216,7 @@ bool test_fs(FileSystem *fs)
         printf("Write (%u) result: %s\n", tr, FileSystem::get_error_string(fres));
         printf("Reported size: %d\n", f->get_size());
 
-        fs->file_close(f);
+        f->close();
     }
     print_directory(fs, "");
 
@@ -267,7 +267,7 @@ bool test_fs(FileSystem *fs)
         uint32_t tr = 0;
         fres = f->write(buffer, 63500, &tr); // should be exactly 250 data blocks
         printf("Write (%u) result: %s\n", tr, FileSystem::get_error_string(fres));
-        fs->file_close(f);
+        f->close();
     }
     print_directory(fs, "");
 
@@ -282,7 +282,7 @@ bool test_fs(FileSystem *fs)
 
     fs->file_open("BLAHDIR/SECOND/sub.rel", FA_READ, &f);
     if(f) {
-        FileInCBM *cbmfile = (FileInCBM *)f->handle;
+        FileInCBM *cbmfile = (FileInCBM *)f;
         cbmfile->dumpSideSectors();
         printf("\nTesting seek within REL file.\n");
         const uint8_t expected_data[] = { 0x55, 0, 0x47, 0x49, 0x44, 0x45, 0x4F, 0x4E, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8 };
@@ -321,7 +321,7 @@ bool test_fs(FileSystem *fs)
         ok = ok && (fres == FR_OK);
         ok = ok && (memcmp(buffer, "MIDDLE", 6) == 0);
 
-        fs->file_close(f);
+        f->close();
     }
 
     delete[] buffer;
@@ -407,9 +407,9 @@ void read_dnp()
     File *f;
     fs->file_open("userlog2.rel", FA_READ, &f);
     if(f) {
-        FileInCBM *cbmfile = (FileInCBM *)f->handle;
+        FileInCBM *cbmfile = (FileInCBM *)f;
         cbmfile->dumpSideSectors();
-        fs->file_close(f);
+        f->close();
     }
     copy_from(fs, "userlog2.rel", "userlog2.rel");
     /*
@@ -433,9 +433,9 @@ void read_d81()
     File *f;
     fs->file_open("relfile4.rel", FA_READ, &f);
     if(f) {
-        FileInCBM *cbmfile = (FileInCBM *)f->handle;
+        FileInCBM *cbmfile = (FileInCBM *)f;
         cbmfile->dumpSideSectors();
-        fs->file_close(f);
+        f->close();
     }
 }
 

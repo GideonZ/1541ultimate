@@ -83,7 +83,7 @@ public:
 class SideSectors;
 class SideSectorCluster;
 
-class FileInCBM
+class FileInCBM : public File
 {
     enum {
         ST_HEADER,
@@ -129,6 +129,15 @@ public:
     FRESULT read(void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT write(const void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT seek(uint32_t pos);
+
+    uint32_t get_size(void) {
+        return file_size;
+    }
+
+    uint32_t get_inode(void) {
+        return (uint32_t)start_cluster;
+    }
+
 
 #if SS_DEBUG
     void dumpSideSectors();
@@ -189,23 +198,9 @@ public:
 
     // functions for reading and writing files
     FRESULT file_open(const char *filename, uint8_t flags, File **, FileInfo *relativeDir = 0);  // Opens file (creates file object)
-    void    file_close(File *f);                // Closes file (and destructs file object)
-    FRESULT file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred);
-    FRESULT file_write(File *f, const void *buffer, uint32_t len, uint32_t *transferred);
-    FRESULT file_seek(File *f, uint32_t pos);
 
     FRESULT file_rename(const char *old_name, const char *new_name);  // Renames a file
     FRESULT file_delete(const char *path); // deletes a file
-
-    uint32_t get_file_size(File *f) {
-        FileInCBM *handle = (FileInCBM *)f->handle;
-        return handle->file_size;
-    }
-
-    uint32_t get_inode(File *f) {
-        FileInCBM *handle = (FileInCBM *)f->handle;
-        return (uint32_t)(handle->start_cluster);
-    }
 
     FRESULT read_sector(uint8_t *buffer, int track, int sector);
     FRESULT write_sector(uint8_t *buffer, int track, int sector);

@@ -402,9 +402,11 @@ void FileManager :: fclose(File *f)
 		printf("ERR: Closing invalidated file.\n");
 	}
 //	printf("CLOSE '%s'\n", f->get_path());
+/*
 	if (f->was_written_to()) {
 	    sendEventToObservers(eNodeUpdated, f->get_path(), "*");
 	}
+*/
 	open_file_list.remove(f);
 	f->close();
 	unlock();
@@ -430,7 +432,7 @@ void FileManager :: remove_root_entry(CachedTreeNode *obj)
 
 MountPoint *FileManager :: add_mount_point(File *file, FileSystemInFile *emb)
 {
-	// printf("FileManager :: add_mount_point: '%s' (%p)\n", file->get_path(), emb);
+	// printf("FileManager :: add_mount_point: (FS=%p, CL=%d)\n", file->get_file_system(), file->get_inode());
 	MountPoint *mp = new MountPoint(file, emb);
 	mount_points.append(mp);
 	return mp;
@@ -438,7 +440,7 @@ MountPoint *FileManager :: add_mount_point(File *file, FileSystemInFile *emb)
 
 MountPoint *FileManager :: find_mount_point(FileInfo *info, FileInfo *parent)
 {
-	// printf("FileManager :: find_mount_point: '%s' (parent: %s)\n", info->lfname, parent->lfname);
+	// printf("FileManager :: find_mount_point: '%s' (FS=%p, CL=%d)\n", info->lfname, info->fs, info->cluster);
 	lock();
 	for(int i=0;i<mount_points.get_elements();i++) {
 		if(mount_points[i]->match(info->fs, info->cluster)) {

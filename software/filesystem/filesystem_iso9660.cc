@@ -77,6 +77,10 @@ bool    FileSystem_ISO9660 :: init(void)              // Initialize file system
     initialized = false;
     joliet = false;
     
+    if (!sector_buffer) {
+        return false;
+    }
+
     uint32_t first_sector = 32768 / sector_size;
     DRESULT status = prt->read(sector_buffer, first_sector, 1);
     last_read_sector = first_sector;
@@ -130,7 +134,11 @@ bool    FileSystem_ISO9660 :: init(void)              // Initialize file system
 // functions for reading directories
 FRESULT FileSystem_ISO9660 :: dir_open(const char *path, Directory **dir, FileInfo *relativeDir) // Opens directory (creates dir object)
 {
-	Directory_ISO9660 *dd = new Directory_ISO9660(this);
+    if (!initialized) {
+        return FR_NOT_ENABLED;
+    }
+
+    Directory_ISO9660 *dd = new Directory_ISO9660(this);
 	t_iso_handle *handle = dd->getHandle();
 	*dir = dd;
 
@@ -248,6 +256,8 @@ try_next:
 // functions for reading files
 FRESULT FileSystem_ISO9660 :: file_open(const char *filename, uint8_t flags, File **f, FileInfo *relativeDir)  // Opens file (creates file object)
 {
+    *f = NULL;
+
     Directory *dir;
     FRESULT fres = dir_open("", &dir, relativeDir);
     if (fres != FR_OK)
@@ -269,74 +279,78 @@ FRESULT FileSystem_ISO9660 :: file_open(const char *filename, uint8_t flags, Fil
 
 	delete dir;
 
-    t_iso_handle *handle = new t_iso_handle;
-    handle->sector    = info.cluster;
-    handle->remaining = info.size;
-    handle->start     = handle->sector;
-    handle->offset    = 0;
 
-    *f = new File(this, handle);
+    *f = new File_ISO9660(this, info);
+
     return FR_OK;
 }
 
-void    FileSystem_ISO9660 :: file_close(File *f)                // Closes file (and destructs file object)
+DRESULT FileSystem_ISO9660 :: move_window(uint32_t sector)
 {
-    t_iso_handle *handle = (t_iso_handle *)f->handle;
-    delete handle;
-    delete f;
+    if(last_read_sector == sector) {
+        return RES_OK;
+    }
+//    printf("ISO9660: Read sector to buffer: %d.\n", sect);
+    DRESULT dres = prt->read(sector_buffer, sector, 1);
+    if (dres == RES_OK) {
+        last_read_sector = sector;
+    }
+    return dres;
 }
 
-FRESULT FileSystem_ISO9660 :: file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred)
+File_ISO9660 :: File_ISO9660(FileSystem_ISO9660 *fs, FileInfo &info) : File(fs)
 {
-    t_iso_handle *handle = (t_iso_handle *)f->handle;
-    
-    uint32_t file_remain = handle->remaining - handle->offset;
+    this->fs = fs;
+    handle.sector    = info.cluster;
+    handle.remaining = info.size;
+    handle.start     = info.cluster;
+    handle.offset    = 0;
+}
+
+FRESULT File_ISO9660 :: read(void *buffer, uint32_t len, uint32_t *transferred)
+{
+    uint32_t file_remain = handle.remaining - handle.offset;
     if (len > file_remain)
         len = file_remain;
 
     uint8_t *dest = (uint8_t *)buffer;
 
     // calculate which sector to start reading
-    uint32_t sect        = (handle->offset / sector_size);
-    uint32_t sect_offset = handle->offset - (sector_size * sect);
-    sect += handle->start;
+    uint32_t sect        = (handle.offset / fs->sector_size);
+    uint32_t sect_offset = handle.offset - (fs->sector_size * sect);
+    sect += handle.start;
 
-//    printf("File read: Offset = %d, Len = %d. Sect = %d. Sect_offset = %d.\n", handle->offset, len, sect, sect_offset);
+//    printf("File read: Offset = %d, Len = %d. Sect = %d. Sect_offset = %d.\n", handle.offset, len, sect, sect_offset);
     // perform reads
     *transferred = 0;
     DSTATUS res; 
     while(len) {
-        if((sect_offset == 0) && (len >= sector_size)) { // optimized read, directly to buffer
-            res = prt->read(dest, sect, 1);
-//            printf("ISO9660: Read sector direct: %d.\n", sect);
+        if((sect_offset == 0) && (len >= fs->sector_size)) { // optimized read, directly to buffer
+            res = fs->prt->read(dest, sect, 1);
             if(!res) { // ok
                 sect ++;
-                dest += sector_size;
-                len -= sector_size;
-                handle->offset += sector_size;
-                *transferred += sector_size;
+                dest += fs->sector_size;
+                len -= fs->sector_size;
+                handle.offset += fs->sector_size;
+                *transferred += fs->sector_size;
             } else {
                 return FR_DISK_ERR;
             }
         } else { // unaligned read
             // make sure the right sector is in our buffer
-            if(last_read_sector != sect) {
-                res = prt->read(sector_buffer, sect, 1);
-//                printf("ISO9660: Read sector to buffer: %d.\n", sect);
-                if(!res)
-                    last_read_sector = sect;
-                else
-                    return FR_DISK_ERR;
-            }
-            uint32_t sect_remain = sector_size - sect_offset;
+            res = fs->move_window(sect);
+            if(res)
+                return FR_DISK_ERR;
+
+            uint32_t sect_remain = fs->sector_size - sect_offset;
             uint32_t take_now = sect_remain;
             if(sect_remain > len)
                 take_now = len;
 //            printf("ISO9660: Taking now %d bytes from buffer offset %d.\n", take_now, sect_offset);
-            memcpy(dest, &sector_buffer[sect_offset], take_now);
+            memcpy(dest, &fs->sector_buffer[sect_offset], take_now);
             dest += take_now;
             len -= take_now;
-            handle->offset += take_now;
+            handle.offset += take_now;
             *transferred += take_now;
             // are we at the end of the sector now?
             if(sect_remain == take_now) {
@@ -350,16 +364,19 @@ FRESULT FileSystem_ISO9660 :: file_read(File *f, void *buffer, uint32_t len, uin
     return FR_OK;
 }
 
-FRESULT FileSystem_ISO9660 :: file_seek(File *f, uint32_t pos)
+FRESULT File_ISO9660 :: seek(uint32_t pos)
 {
-    t_iso_handle *handle = (t_iso_handle *)f->handle;
-
-    if(pos >= handle->remaining)
-        handle->offset = handle->remaining;
+    if(pos >= handle.remaining)
+        handle.offset = handle.remaining;
     else
-        handle->offset = pos;
+        handle.offset = pos;
 
     return FR_OK;        
+}
+
+FRESULT File_ISO9660 :: close(void)
+{
+    delete this;
 }
 
 //FileSystemRegistrator iso_tester(FileSystem_ISO9660 :: test);
