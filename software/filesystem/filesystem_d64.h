@@ -83,6 +83,18 @@ public:
 class SideSectors;
 class SideSectorCluster;
 
+typedef struct {
+    uint8_t record_block[256];
+    int records;
+    struct {
+        int start;
+        int blocks;
+        int bytes_in_last;
+    } sections[128];
+    int current_section;
+} cvt_t;
+
+
 class FileInCBM : public File
 {
     enum {
@@ -96,6 +108,8 @@ class FileInCBM : public File
         int size;
         uint8_t *data;
     } header;
+
+    cvt_t *cvt;
 
     friend class FileSystemCBM;
 	DirEntryCBM dir_entry;
@@ -113,6 +127,8 @@ class FileInCBM : public File
 
     FileSystemCBM *fs;
     SideSectors *side;
+
+    int create_cvt_header(void);
 
     FRESULT read_header(uint8_t *dst, int len, uint32_t& transferred);
     FRESULT read_linear(uint8_t *dst, int len, uint32_t& transferred);

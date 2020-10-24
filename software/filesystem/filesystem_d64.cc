@@ -1476,7 +1476,7 @@ FileInCBM::FileInCBM(FileSystemCBM *f, DirEntryCBM *de, int dirtrack, int dirsec
     fs = f;
     isRel = false;
     side = NULL;
-
+    cvt = NULL;
     state = ST_LINEAR;
     header.size = 0;
     header.data = NULL;
@@ -1486,6 +1486,9 @@ FileInCBM::~FileInCBM()
 {
     if (side) {
         delete side;
+    }
+    if (cvt) {
+        delete cvt;
     }
     if (header.data) {
         delete[] header.data;
@@ -1518,7 +1521,8 @@ FRESULT FileInCBM::open(uint8_t flags)
 
     visit(); // mark initial sector
 
-    if ((dir_entry.std_fileType & 0x07) == 4) {
+    uint8_t tp = dir_entry.std_fileType & 0x07;
+    if (tp == 4) {
         isRel = true;
         side = new SideSectors(fs, dir_entry.record_size);
         if (dir_entry.aux_track) {
@@ -1530,9 +1534,107 @@ FRESULT FileInCBM::open(uint8_t flags)
         header.pos = 0;
         header.data[0] = dir_entry.record_size;
         header.data[1] = 0;
+    } else if (tp >= 1 && tp <= 3 && (dir_entry.geos_structure == 0 || dir_entry.geos_structure == 1) && dir_entry.aux_track) {
+        // CVT
+        state = ST_HEADER;
+        header.data = new uint8_t[4*254];
+        memset(header.data, 0, 4*254);
+        header.size = create_cvt_header();
+        header.pos = 0;
     }
 
     return FR_OK;
+}
+
+static const char cvtSignature[]     = "PRG formatted GEOS file V1.0";
+static const char cvtSignatureLong[] = "PRG GeoConvert98-format V2.0";
+
+int FileInCBM::create_cvt_header(void)
+{
+    // allocate CVT structure
+    cvt = new cvt_t;
+    cvt->records = 0;
+    cvt->current_section = 0;
+
+    // Sector 1
+    memcpy(header.data, &(dir_entry.std_fileType), 30); // copy Dir entry as is
+    // signature depends on later actions.
+
+    // Sector 2 -> info block
+    FRESULT fres = fs->move_window(fs->get_abs_sector(dir_entry.aux_track, dir_entry.aux_sector));
+    if (fres != FR_OK) {
+        return 30; // just the dir entry
+    }
+    memcpy(&header.data[254], &fs->sect_buffer[2], 254);
+
+    // Sector 3 -> record block for VLIR, or terminate on single record if it is a linear file
+    if (!dir_entry.geos_structure) { // linear file
+        followChain(dir_entry.data_track, dir_entry.data_sector, cvt->sections[0].blocks, cvt->sections[0].bytes_in_last);
+        cvt->sections[0].start  = fs->get_abs_sector(dir_entry.data_track, dir_entry.data_sector);
+        cvt->records = 1;
+        current_track = dir_entry.data_track;
+        current_sector = dir_entry.data_sector;
+        return 2*254; // 2 blocks header only
+    }
+
+    // VLIR
+    // Read the Record block
+    DRESULT dres = fs->prt->read(cvt->record_block, fs->get_abs_sector(dir_entry.data_track, dir_entry.data_sector), 1);
+    if (dres != RES_OK) {
+        return 30; // just the dir entry
+    }
+
+    // Now we know the first track/sector of the data segment
+    current_track = cvt->record_block[2];
+    current_sector = cvt->record_block[3];
+
+    uint8_t *vlir = cvt->record_block + 2;
+    memcpy(&header.data[2*254], vlir, 254);
+
+    bool long_files = false;
+    cvt->records = 127;
+    for (int i = 0; i < 127; i++) {
+        if ((!vlir[2*i]) && (!vlir[1+2*i])) { // both bytes are 0
+            cvt->records = i;
+            break;
+        }
+        cvt->sections[i].start = fs->get_abs_sector(vlir[2*i], vlir[1+2*i]);
+        if (cvt->sections[i].start >= 0) { // valid?
+            followChain(vlir[2*i], vlir[1 + 2*i], cvt->sections[i].blocks, cvt->sections[i].bytes_in_last);
+            if (cvt->sections[i].blocks > 255) {
+                long_files = true;
+            }
+        } else {
+            cvt->sections[i].blocks = 0;
+            cvt->sections[i].bytes_in_last = vlir[1+2*i]; // just copy last byte code, may be FF
+        }
+        //printf("Section #%d. Start: %d, Blocks: %d, Last: %d\n", i, cvt->sections[i].start, cvt->sections[i].blocks, cvt->sections[i].bytes_in_last);
+    }
+
+    // Place the correct header
+    if (long_files) {
+        memcpy(&header.data[3*254], vlir, 254); // prepare sector 4
+        strcpy((char *)&header.data[30], cvtSignatureLong);
+    } else {
+        strcpy((char *)&header.data[30], cvtSignature);
+    }
+
+    // Header could be SEQ or PRG, depending on actual type
+    if ((dir_entry.std_fileType & 7) != 2) {
+        memcpy(header.data+30, "SEQ", 3);
+    }
+
+    uint8_t *hdrLo = header.data + 2*254;
+    uint8_t *hdrHi = header.data + 3*254;
+
+    for(int i=0; i < cvt->records; i++) {
+        hdrLo[2*i + 0] = (uint8_t)cvt->sections[i].blocks;
+        hdrLo[2*i + 1] = (uint8_t)cvt->sections[i].bytes_in_last;
+        hdrHi[2*i + 0] = (uint8_t)(cvt->sections[i].blocks >> 8);
+        hdrHi[2*i + 1] = (uint8_t)cvt->sections[i].bytes_in_last;
+    }
+
+    return (long_files) ? 4*254 : 3*254;
 }
 
 FRESULT FileInCBM::close(void)
@@ -1612,7 +1714,7 @@ FRESULT FileInCBM::read(void *buffer, uint32_t len, uint32_t *transferred)
                 res = read_linear(dst, len, tr);
                 break;
             case ST_CVT:
-                res = FR_DENIED;
+                res = read_linear(dst, len, tr);
                 break;
             default:
                 res = FR_DENIED;
@@ -1644,11 +1746,12 @@ FRESULT FileInCBM::read_linear(uint8_t *dst, int len, uint32_t& tr)
     src = &(fs->sect_buffer[offset_in_sector]);
 
     // determine the number of bytes left in sector
-    if (fs->sect_buffer[0] == 0)  { // last sector
-        bytes_left = (1 + (int)fs->sect_buffer[1]) - offset_in_sector;
+    bool merge_cvt_sector = cvt && (cvt->current_section != cvt->records - 1);
+    if ((merge_cvt_sector) || (fs->sect_buffer[0] != 0)) {
+        bytes_left = 256 - offset_in_sector;
     }
     else {
-        bytes_left = 256 - offset_in_sector;
+        bytes_left = (1 + (int)fs->sect_buffer[1]) - offset_in_sector;
     }
 
     // determine number of bytes to transfer now
@@ -1666,20 +1769,29 @@ FRESULT FileInCBM::read_linear(uint8_t *dst, int len, uint32_t& tr)
     offset_in_sector += tr;
 
     // continue
-    if (offset_in_sector == 256) {
+    if (offset_in_sector == 256) { // end of sector
         if (fs->sect_buffer[0] == 0) {
-            return FR_OK;
+            if (merge_cvt_sector) { // joining vlir records together
+                do {
+                    cvt->current_section ++;
+                    current_track = cvt->record_block[2 + 2*cvt->current_section];
+                    current_sector = cvt->record_block[3 + 2*cvt->current_section];
+                } while(!current_track && (cvt->current_section < cvt->records));
+                offset_in_sector = 2;
+                if (!current_track) {
+                    return FR_OK; // no more valid records
+                }
+            } else {
+                return FR_OK; // end of linear file, or end of last vlir record
+            }
+        } else { // simply follow chain
+            current_track = fs->sect_buffer[0];
+            current_sector = fs->sect_buffer[1];
+            offset_in_sector = 2;
         }
-        current_track = fs->sect_buffer[0];
-        current_sector = fs->sect_buffer[1];
-        offset_in_sector = 2;
-
         res = visit();  // mark and check for cyclic link
-        if (res != FR_OK) {
-            return res;
-        }
     }
-    return FR_OK;
+    return res;
 }
 
 FRESULT FileInCBM::read_header(uint8_t *dst, int len, uint32_t& tr)
@@ -1931,162 +2043,10 @@ void FileInCBM :: dumpSideSectors(void)
 }
 #endif
 
-
-#if 0
-if (!strcasecmp(info.extension, "CVT")) { // This is not the way to do it, especially now that info is no longer
-    // filled with any name.
-
-    res = ff->openCVT(&info, flags, dir_t, dir_s, dir_idx);
-}
-
-FRESULT FileInCBM::openCVT(FileInfo *info, uint8_t flags, int t, int s, int i)
-{
-    if (info->fs != fs)
-        return FR_INVALID_OBJECT;
-
-    section = -3;
-    sector_index = 0;
-    start_cluster = -1;
-    current_track = t;
-    current_sector = s;
-    dir_entry_offset = i * 32;
-
-    offset_in_sector = 2;
-
-    file_size = info->size;
-    num_blocks = (info->size + 253) / 254;
-
-    visited = new uint8_t[fs->num_sectors];
-    memset(visited, 0, fs->num_sectors);
-
-    visit();
-    return FR_OK;
-}
-
-static char cvtSignature[] = "PRG formatted GEOS file V1.0";
-FRESULT FileInCBM::read(void *buffer, uint32_t len, uint32_t *transferred)
-{
-    bool isCVT = start_cluster == -1;
-    bool lastSection = false;
-
-
-    if (section == -4) { // rel header! ;)
-        if (offset_in_sector == 2) {
-            *(dst++) = 0x55; // FIXME record_size;
-            offset_in_sector ++;
-            len --;
-            continue;
-        } else if(offset_in_sector == 3) {
-            *(dst++) = 0;
-            offset_in_sector ++;
-            len--;
-            continue;
-        } else {
-            section = 0;
-            offset_in_sector  = 2;
-        }
-    }
-
-    if (section == -3) {
-        memset(vlir, 0, 256);
-        vlir[0] = 0;
-        vlir[1] = 255;
-        memcpy(vlir + 2, fs->sect_buffer + dir_entry_offset + 2, 30);
-        memcpy(vlir + 32, cvtSignature, strlen(cvtSignature));
-        memcpy(tmpBuffer, vlir, 256);
-        tmpBuffer[0x15] = 1;
-        tmpBuffer[0x16] = 255;
-        isVlir = vlir[0x17];
-        if (isVlir) {
-            tmpBuffer[3] = 1;
-            tmpBuffer[4] = 255;
-        }
-        else {
-            int t1, t2;
-            followChain(vlir[3], vlir[4], t1, t2);
-            tmpBuffer[3] = t1;
-            tmpBuffer[4] = t2;
-        }
-        src = tmpBuffer + offset_in_sector;
-    }
-    if (section == -1 && !vlir[1]) {
-        memcpy(vlir, fs->sect_buffer, 256);
-        memset(tmpBuffer, 0, 256);
-        tmpBuffer[1] = 255;
-        for (int i = 0; i < 127; i++) {
-            if (!vlir[2 + 2 * i]) {
-                tmpBuffer[3 + 2 * i] = vlir[3 + 2 * i];
-            }
-            else {
-                int t1, t2;
-                followChain(vlir[2 + 2 * i], vlir[3 + 2 * i], t1, t2);
-                tmpBuffer[2 + 2 * i] = t1;
-                tmpBuffer[3 + 2 * i] = t2;
-            }
-        }
-        // memcpy(tmpBuffer, fs->sect_buffer, 256);
-        src = tmpBuffer + offset_in_sector;
-    }
-
-    if (isCVT && isVlir && section >= 0) {
-        int nextSection = section;
-        if (nextSection < 127)
-            nextSection++;
-
-        while (nextSection < 127 && !vlir[2 + 2 * nextSection]
-                && (vlir[3 + 2 * nextSection] == 0 || vlir[3 + 2 * nextSection] == 255))
-            nextSection++;
-
-        lastSection = nextSection >= 127;
-    }
-
-    // determine the number of bytes left in sector
-    if (section >= 0 && fs->sect_buffer[0] == 0 && (!isVlir || lastSection)) { // last sector
-        bytes_left = (1 + fs->sect_buffer[1]) - offset_in_sector;
-    }
-    else {
-        bytes_left = 256 - offset_in_sector;
-    }
-
-    if (offset_in_sector == 256
-            || (section >= 0 && fs->sect_buffer[0] == 0 && offset_in_sector > fs->sect_buffer[1]
-                    && (!isVlir || lastSection))) { // proceed to the next sector
-        if (section == -3) {
-            current_track = vlir[0x15];
-            current_sector = vlir[0x16];
-            offset_in_sector = 2;
-            section = -2;
-        }
-        else if (section == -2) {
-            current_track = vlir[3];
-            current_sector = vlir[4];
-            offset_in_sector = 2;
-            section = isVlir ? -1 : 0;
-            vlir[0] = vlir[1] = 0;
-        }
-        else if (isCVT && isVlir && !fs->sect_buffer[0]) {
-            if (section < 127)
-                section++;
-
-            while (section < 127 && !vlir[2 + 2 * section]
-                    && (vlir[3 + 2 * section] == 0 || vlir[3 + 2 * section] == 255))
-                section++;
-
-            if (section < 127) {
-                current_track = vlir[2 + 2 * section];
-                current_sector = vlir[3 + 2 * section];
-                offset_in_sector = 2;
-            }
-            else
-                return FR_OK;
-        }
-        else {
-            if ((fs->sect_buffer[0] == 0) && !isVlir && section >= 0)
-                return FR_OK;
-            current_track = fs->sect_buffer[0];
-            current_sector = fs->sect_buffer[1];
-            offset_in_sector = 2;
-            sector_index += 1;
-        }
-
-#endif
+/*
+- CVT Header sector, with directory entry, signature, etc..  (used to be section -3 in your code), doesn't exist in the CBM image, aside from the dir entry.
+- Geos Info Block  (used to be section -2 in your code)  (actual sector can be found by de-referencing the REL file side sector pointer, which I now called 'aux_track / aux_sector' at offset 0x15/0x16.
+- VLIR Record block, skipped when not VLIR (section -1 in your code)   Actual sector can be found by de-referencing standard file pointer, which I now called 'data_track / data_sector' at offset 0x03/0x04
+- VLIR Extended Record block (only when G98 format), also not applicable for sequential / non VLIR.
+- Records, (padded except for the last record) - section 0 and higher in your code.
+*/
