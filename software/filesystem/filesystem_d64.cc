@@ -413,6 +413,9 @@ FRESULT FileSystemCBM::file_open(const char *filename, uint8_t flags, File **fil
     FRESULT fres = find_file(filename, dd, &info);
     if (fres == FR_NO_FILE) {
         create = (flags & (FA_CREATE_NEW | FA_CREATE_ALWAYS | FA_OPEN_ALWAYS));
+        if (!create) {
+            return FR_NO_FILE;
+        }
     } else if (fres == FR_OK) {
         if (flags & FA_CREATE_NEW) {
             delete dd;
