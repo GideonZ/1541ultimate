@@ -160,32 +160,6 @@ FRESULT FileSystem :: file_open(const char *filename, uint8_t flags, File **, Fi
     return FR_NO_FILESYSTEM;
 }
 
-void    FileSystem :: file_close(File *f)
-{
-}
-
-FRESULT FileSystem :: file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred)
-{
-    *transferred = 0;
-    return FR_NO_FILESYSTEM;
-}
-
-FRESULT FileSystem :: file_write(File *f, const void *buffer, uint32_t len, uint32_t *transferred)
-{
-    *transferred = 0;
-    return FR_NO_FILESYSTEM;
-}
-
-FRESULT FileSystem :: file_seek(File *f, uint32_t pos)
-{
-    return FR_NO_FILESYSTEM;
-}
-
-FRESULT FileSystem :: file_sync(File *f)
-{
-    return FR_NO_FILESYSTEM;
-}
-
 FRESULT FileSystem :: file_rename(const char *old_name, const char *new_name)
 {
     return FR_NO_FILESYSTEM;

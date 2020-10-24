@@ -71,16 +71,6 @@ FRESULT FileSystemFAT :: dir_open(const TCHAR *path, Directory **dirout, FileInf
 	return res;
 }
 
-void FileSystemFAT :: dir_close(Directory *d)
-{
-	delete d;
-}
-
-FRESULT FileSystemFAT :: dir_read(Directory *d, FileInfo *f)
-{
-	return d->get_entry(*f);
-}
-
 FRESULT FileSystemFAT :: dir_create(const TCHAR *path)
 {
     fatfs.cdir = 0;
@@ -96,34 +86,23 @@ FRESULT FileSystemFAT :: format(const char *name)
 
 FRESULT FileSystemFAT :: file_open(const char *filename, uint8_t flags, File **file, FileInfo *relativeDir)
 {
+	*file = 0;
 	if (relativeDir) {
 	    fatfs.cdir = relativeDir->cluster;
 	} else {
 	    fatfs.cdir = 0;
 	}
 
-	FIL *fil = new FIL;
-    FRESULT res = fs_open(&fatfs, filename, flags, fil);
+	FileFAT *fatfile = new FileFAT(this);
+	FIL *fil = fatfile->getFIL();
 
+	FRESULT res = fs_open(&fatfs, filename, flags, fil);
 	if (res == FR_OK) {
-		*file = new File(this, fil);
-		return res;
+	    *file = fatfile;
+	    return res;
 	}
-	delete fil;
-	*file = 0;
+	delete fatfile;
 	return res;
-}
-
-uint32_t FileSystemFAT :: get_file_size(File *f)
-{
-	FIL *fil = (FIL *)f->handle;
-	return fil->fsize;
-}
-
-uint32_t FileSystemFAT :: get_inode(File *f)
-{
-	FIL *fil = (FIL *)f->handle;
-	return fil->sclust;
 }
 
 FRESULT FileSystemFAT :: file_rename(const TCHAR *path, const char *new_name)
@@ -138,34 +117,53 @@ FRESULT FileSystemFAT :: file_delete(const TCHAR *path)
     return fs_unlink(&fatfs, path);
 }
 
-void    FileSystemFAT :: file_close(File *f)
+FRESULT FileFAT :: read(void *buffer, uint32_t len, uint32_t *transferred)
 {
-	FIL *fil = (FIL *)f->handle;
-	f_close(fil);
+    if (!get_file_system()) {
+        return FR_NOT_READY;
+    }
+    return f_read(getFIL(), buffer, len, transferred);
 }
 
-FRESULT FileSystemFAT :: file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred)
+FRESULT FileFAT :: write(const void *buffer, uint32_t len, uint32_t *transferred)
 {
-	FIL *fil = (FIL *)f->handle;
-	return f_read(fil, buffer, len, transferred);
+    if (!get_file_system()) {
+        return FR_NOT_READY;
+    }
+    return f_write(getFIL(), buffer, len, transferred);
 }
 
-FRESULT FileSystemFAT :: file_write(File *f, const void *buffer, uint32_t len, uint32_t *transferred)
+FRESULT FileFAT :: seek(uint32_t pos)
 {
-	FIL *fil = (FIL *)f->handle;
-	return f_write(fil, buffer, len, transferred);
+    if (!get_file_system()) {
+        return FR_NOT_READY;
+    }
+    return f_lseek(getFIL(), pos);
 }
 
-FRESULT FileSystemFAT :: file_seek(File *f, uint32_t pos)
+FRESULT FileFAT :: sync(void)
 {
-	FIL *fil = (FIL *)f->handle;
-	return f_lseek(fil, pos);
+    if (!get_file_system()) {
+        return FR_NOT_READY;
+    }
+    return f_sync(getFIL());
 }
 
-FRESULT FileSystemFAT :: file_sync(File *f)
+FRESULT FileFAT :: close(void)
 {
-	FIL *fil = (FIL *)f->handle;
-	return f_sync(fil);
+    FRESULT res = f_close(getFIL());
+    delete this;
+    return res;
+}
+
+uint32_t FileFAT :: get_size(void)
+{
+    return getFIL()->fsize;
+}
+
+uint32_t FileFAT :: get_inode(void)
+{
+    return getFIL()->sclust;
 }
 
 /*-----------------------------------------------------------------------*/

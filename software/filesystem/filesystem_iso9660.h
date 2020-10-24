@@ -88,8 +88,8 @@
 
 */
 #pragma pack(1)
-#ifdef LITTLE_ENDIAN
-    struct t_directory_record
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+struct t_directory_record
     {
         uint8_t  record_length;                // 0x00
         uint8_t  sectors_in_extended_attr;     // 0x01
@@ -137,7 +137,7 @@
         
     } __attribute__((packed));
 
-#else // big endian
+#elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 
     struct t_directory_record
     {
@@ -186,6 +186,8 @@
         struct t_directory_record root_dir_rec; // 0x9C
         
     } __attribute__((packed));
+#else
+    #error "__BYTE_ORDER__ not set or illegal value."
 #endif
 
 struct t_aligned_directory_record {
@@ -217,6 +219,30 @@ public:
 	FRESULT get_entry(FileInfo &inf);
 };
 
+class File_ISO9660 : public File
+{
+    t_iso_handle handle;
+    FileSystem_ISO9660 *fs;
+
+public:
+    File_ISO9660(FileSystem_ISO9660 *fs, FileInfo &info);
+    ~File_ISO9660() { }
+
+    uint32_t get_size() {
+        return (uint32_t)(handle.remaining);
+    }
+
+    uint32_t get_inode() {
+        return (uint32_t)(handle.start);
+    }
+
+    FRESULT close(void);
+    FRESULT sync(void) { return FR_OK; }
+    FRESULT read(void *buffer, uint32_t len, uint32_t *transferred);
+    FRESULT write(const void *buffer, uint32_t len, uint32_t *transferred) { return FR_DENIED; }
+    FRESULT seek(uint32_t pos);
+};
+
 class FileSystem_ISO9660 : public FileSystem 
 {
 protected:
@@ -232,6 +258,7 @@ protected:
     
     void get_dir_record(void *);
     FRESULT get_dir_entry(t_iso_handle &handle, FileInfo &f);
+    DRESULT move_window(uint32_t sector);
 public:
     FileSystem_ISO9660(Partition *p);
     ~FileSystem_ISO9660();
@@ -244,30 +271,9 @@ public:
     
     // functions for reading and writing files
     FRESULT file_open(const char *filename, uint8_t flags, File **, FileInfo *relativeDir = 0);  // Opens file (creates file object)
-    void    file_close(File *f);                // Closes file (and destructs file object)
-    FRESULT file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred);
-    FRESULT file_seek(File *f, uint32_t pos);
-
-    FRESULT file_write(File *f, const void *buffer, uint32_t len, uint32_t *transferred) {
-        *transferred = 0;
-        return FR_WRITE_PROTECTED;
-    }
-    
-    FRESULT file_sync(File *f) {              // Clean-up cached data
-        return FR_OK;
-    }
-
-    uint32_t get_file_size(File *f) {
-        t_iso_handle *handle = (t_iso_handle *)f->handle;
-        return (uint32_t)(handle->remaining);
-    }
-
-    uint32_t get_inode(File *f) {
-        t_iso_handle *handle = (t_iso_handle *)f->handle;
-        return (uint32_t)(handle->start);
-    }
 
     bool     needs_sorting() { return false; } // aren't files already sorted in an ISO?
 
     friend class Directory_ISO9660;
+    friend class File_ISO9660;
 };

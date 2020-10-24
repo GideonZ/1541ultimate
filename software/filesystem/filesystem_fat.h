@@ -62,6 +62,23 @@ public:
     }
 };
 
+class FileFAT : public File
+{
+    FIL fatfile;
+public:
+    FileFAT(FileSystem *fs) : File(fs) { }
+    ~FileFAT() { }
+    FIL *getFIL(void)  { return &fatfile; }
+
+    FRESULT close(void);
+    FRESULT sync(void);
+    FRESULT read(void *buffer, uint32_t len, uint32_t *transferred);
+    FRESULT write(const void *buffer, uint32_t len, uint32_t *transferred);
+    FRESULT seek(uint32_t pos);
+    uint32_t get_size(void);
+    uint32_t get_inode(void);
+};
+
 class FileSystemFAT : public FileSystem
 {
 	FATFS fatfs;
@@ -80,8 +97,6 @@ public:
 
     // functions for reading directories
     FRESULT dir_open(const char *path, Directory **, FileInfo *relativeDir = 0); // Opens directory (creates dir object)
-    void    dir_close(Directory *d);    // Closes (and destructs dir object)
-    FRESULT dir_read(Directory *d, FileInfo *f); // reads next entry from dir
     FRESULT dir_create(const char *path);  // Creates a directory
 
     // functions for reading and writing files
@@ -89,14 +104,6 @@ public:
     FRESULT file_rename(const char *old_name, const char *new_name);  // Renames a file
     FRESULT file_delete(const char *path); // deletes a file
 
-	void    file_close(File *f);                // Closes file (and destructs file object)
-    FRESULT file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred);
-    FRESULT file_write(File *f, const void *buffer, uint32_t len, uint32_t *transferred);
-    FRESULT file_seek(File *f, uint32_t pos);
-    FRESULT file_sync(File *f);             // Clean-up cached data
-
-    uint32_t get_file_size(File *f);
-    uint32_t get_inode(File *f);
     bool     needs_sorting() { return true; }
 };
 

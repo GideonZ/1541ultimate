@@ -30,10 +30,6 @@ public:
 
     // functions for reading and writing files
     FRESULT file_open(const char *filename, uint8_t flags, File **, FileInfo *relativeDir = 0);  // Opens file (creates file object)
-    void    file_close(File *f);                // Closes file (and destructs file object)
-    FRESULT file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred);
-    FRESULT file_write(File *f, const void *buffer, uint32_t len, uint32_t *transferred);
-    FRESULT file_seek(File *f, uint32_t pos);
     FRESULT sync();
 
     friend class FileInT64;
@@ -51,28 +47,37 @@ public:
 		this->fs = fs;
 		t64_file = fs->getFile();
 		idx = 0;
+		max = 0;
+		used = 0;
+		strt = 0;
+		stop = 0;
 	}
 	~DirectoryT64() { }
 
     FRESULT get_entry(FileInfo &out);
 };
 
-class FileInT64
+class FileInT64 : public File
 {
     FileSystemT64 *fs;
     int file_offset;
     int offset;
     int length;
     uint16_t start_addr;
+    FRESULT open(FileInfo *info, uint8_t flags);
+
 public:
     FileInT64(FileSystemT64 *);
-    ~FileInT64() { }
+    ~FileInT64();
 
-    FRESULT open(FileInfo *info, uint8_t flags);
     FRESULT close(void);
     FRESULT read(void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT write(const void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT seek(uint32_t pos);
+    uint32_t get_size(void);
+    uint32_t get_inode(void);
+
+    friend class FileSystemT64;
 };
 
 

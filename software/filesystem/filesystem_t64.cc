@@ -186,54 +186,31 @@ FRESULT FileSystemT64 :: file_open(const char *filename, uint8_t flags, File **f
 	delete dir;
 
 	FileInT64 *ff = new FileInT64(this);
-	*file = new File(this, ff);
+	*file = ff;
 
 	FRESULT res = ff->open(&info, flags);
 	if(res == FR_OK) {
 		return res;
 	}
 	delete ff;
-	delete *file;
+	*file = NULL;
 	return res;
-}
-
-// Closes file (and destructs file object)
-void FileSystemT64::file_close(File *f)
-{
-    FileInT64 *ff = (FileInT64 *)f->handle;
-    ff->close();
-    delete ff;
-    delete f;
-}
-
-FRESULT FileSystemT64::file_read(File *f, void *buffer, uint32_t len, uint32_t *bytes_read)
-{
-    FileInT64 *ff = (FileInT64 *)f->handle;
-    return ff->read(buffer, len, bytes_read);
-}
-
-FRESULT FileSystemT64::file_write(File *f, const void *buffer, uint32_t len, uint32_t *bytes_written)
-{
-    FileInT64 *ff = (FileInT64 *)f->handle;
-    return ff->write(buffer, len, bytes_written);
-}
-
-FRESULT FileSystemT64::file_seek(File *f, uint32_t pos)
-{
-    FileInT64 *ff = (FileInT64 *)f->handle;
-    return ff->seek(pos);
 }
 
 /*************************************************************/
 /* T64 File System implementation                            */
 /*************************************************************/
-FileInT64 :: FileInT64(FileSystemT64 *f)
+FileInT64 :: FileInT64(FileSystemT64 *f) : File(f)
 {
-	file_offset = 0;
+    file_offset = 0;
 	offset = 0;
 	length = 0;
-
+	start_addr = 0;
     fs = f;
+}
+
+FileInT64 :: ~FileInT64()
+{
 }
 
 FRESULT FileInT64 :: open(FileInfo *info, uint8_t flags)
@@ -251,8 +228,9 @@ FRESULT FileInT64 :: open(FileInfo *info, uint8_t flags)
 
 FRESULT FileInT64 :: close(void)
 {
-	return fs->sync();
-	//flag = 0;
+    FRESULT fres = fs->sync();
+    delete this;
+    return fres;
 }
 
 FRESULT FileInT64 :: read(void *buffer, uint32_t len, uint32_t *transferred)
@@ -297,10 +275,20 @@ FRESULT FileInT64 :: read(void *buffer, uint32_t len, uint32_t *transferred)
 
 FRESULT  FileInT64 :: write(const void *buffer, uint32_t len, uint32_t *transferred)
 {
-	return FR_DENIED;
+	return FR_WRITE_PROTECTED;
 }
 
 FRESULT FileInT64 :: seek(uint32_t pos)
 {
 	return FR_DENIED;
+}
+
+uint32_t FileInT64 :: get_size()
+{
+    return length;
+}
+
+uint32_t FileInT64 :: get_inode()
+{
+    return offset;
 }
