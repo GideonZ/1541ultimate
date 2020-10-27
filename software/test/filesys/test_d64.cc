@@ -22,6 +22,7 @@
 
 FRESULT copy_from(FileSystem *fs, const char *from, const char *to)
 {
+    printf("Copying %s to %s.\n", from, to);
     File *fi;
     FRESULT fres = fs->file_open(from, FA_READ, &fi);
     uint8_t buffer[1024];
@@ -34,6 +35,8 @@ FRESULT copy_from(FileSystem *fs, const char *from, const char *to)
         } while(tr);
         fclose(fo);
         fi->close();
+    } else {
+        printf("File '%s' not found.\n", from);
     }
     return fres;
 }
@@ -59,6 +62,8 @@ FRESULT verify_file(FileSystem *fs, const char *from, const uint8_t *to, int siz
             size -= tr;
         } while(tr && (size > 0));
         fi->close();
+    } else {
+        printf("File '%s' not found.\n", from);
     }
     if (size != 0) {
         return FR_INT_ERR;
@@ -79,7 +84,7 @@ FRESULT print_directory(FileSystem *fs, const char *path, FileInfo *reldir = NUL
             if (fres != FR_OK)
                 break;
             info.generate_fat_name(fatname, 48);
-            printf("%s%-5d%-32s %s\n", &spaces[40-indent], info.size / 254, fatname, (info.attrib &AM_DIR)?"DIR ":"FILE");
+            printf("%s%-5d%-32s %s @ %u\n", &spaces[40-indent], info.size / 254, fatname, (info.attrib &AM_DIR)?"DIR ":"FILE", info.cluster);
             //printf("%s%-32s (%s) %10d\n", &spaces[40-indent], info.lfname, (info.attrib &AM_DIR)?"DIR ":"FILE", info.size);
 
             if (info.attrib & AM_DIR) {
@@ -92,6 +97,28 @@ FRESULT print_directory(FileSystem *fs, const char *path, FileInfo *reldir = NUL
         uint32_t fre;
         fres = fs->get_free(&fre);
         printf("%u BLOCKS FREE.\n", fre);
+    }
+    return fres;
+}
+
+FRESULT copy_all(FileSystem *fs)
+{
+    Directory *dir;
+    FileInfo info(INFO_SIZE);
+    char fatname[48];
+    FRESULT fres = fs->dir_open("", &dir, NULL);
+    if (fres == FR_OK) {
+        while(1) {
+            fres = dir->get_entry(info);
+            if (fres != FR_OK)
+                break;
+            if (info.attrib & (AM_DIR | AM_VOL)) {
+                continue;
+            }
+            info.generate_fat_name(fatname, 48);
+            fres = copy_from(fs, fatname, fatname);
+        }
+        delete dir; // close directory
     }
     return fres;
 }
@@ -412,12 +439,10 @@ void read_dnp()
         f->close();
     }
     copy_from(fs, "userlog2.rel", "userlog2.rel");
-    /*
-    PathInfo pi(fs);
-    pi.init("scpu demos/supercpukicks/scpu kicks ! dma.prg");
-    PathStatus_t st = fs->walk_path(pi);
-    printf("Path status = %d\n", st);
-*/
+
+    delete fs;
+    delete prt;
+    delete blk;
 }
 
 void read_d81()
@@ -437,6 +462,34 @@ void read_d81()
         cbmfile->dumpSideSectors();
         f->close();
     }
+
+    delete fs;
+    delete prt;
+    delete blk;
+}
+
+void read_cvt()
+{
+    BlockDevice_Emulated blk("megapatch/mp33r6-en.d81", 256);
+    Partition prt(&blk, 0, 0, 0);
+    FileSystemD81 fs(&prt, false);
+
+    print_directory(&fs, "");
+    copy_from(&fs, "s{65747570}mp64.1.cvt", "setup2.cvt");
+    copy_all(&fs);
+}
+
+// To be moved to its own target, to test FAT specific things
+void test_fat()
+{
+    BlockDevice_Emulated blk("fat/exfat.fat", 512);
+    Partition prt(&blk, 0, 0, 0);
+    FileSystemFAT fs(&prt);
+    if (!fs.init()) {
+        printf("Initialization of FAT file system failed.\n");
+        return;
+    }
+    print_directory(&fs, "");
 }
 
 int main()
@@ -444,6 +497,10 @@ int main()
     bool ok = true;
     //printf("Size of Dir entry: %d\n", sizeof(struct DirEntryCBM));
     //    read_d81();
+
+    //read_cvt();
+    test_fat();
+    return 0;
 
     //read_dnp();
     ok &= test_format_d64();

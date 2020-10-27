@@ -6,6 +6,9 @@ include ../common/environment.mk
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/microblaze
 VPATH +=	$(PATH_SW)/test/filesys
 
+VPATH +=	$(PATH_SW)/chan_fat/ff14/source
+
+
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
 PATH_INC =  $(addprefix -I, $(VPATH))
@@ -21,10 +24,9 @@ SIZE	  = $(CROSS)size
 .SUFFIXES:
 
 
-SRCS_C   =	ff2.c \
-            ccsbcs.c \
-            ffsyscall.c \
-            dump_hex.c
+SRCS_C   =	dump_hex.c \
+            ff.c \
+            ffunicode.c
 
 SRCS_CC	 =  mystring.cc \
 			file_device.cc \
