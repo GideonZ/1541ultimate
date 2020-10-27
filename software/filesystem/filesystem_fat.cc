@@ -5,33 +5,38 @@
  *      Author: Gideon
  */
 
-#include "filesystem_fat.h"
+#include "filesystem_efat.h"
 #include "filemanager.h"
+#include "chanfat_manager.h"
 #include <stdio.h>
 #include <string.h>
 
 FileSystemFAT :: FileSystemFAT(Partition *p) : FileSystem(p)
 {
-	memset(&fatfs, 0, sizeof(FATFS));
-	fatfs.drv = p;
+    uint8_t drv = ChanFATManager :: getManager() -> addDrive(p);
+    memset(&fatfs, 0, sizeof(FATFS));
+    if (drv != 0xFF) {
+        driveIndex = drv;
+        sprintf(prefix, "%d:", drv);
+    }
 }
 
 FileSystemFAT :: ~FileSystemFAT()
 {
-
+    f_unmount(prefix);
+    ChanFATManager :: getManager() -> removeDrive(driveIndex);
 }
 
 bool    FileSystemFAT :: init(void)
 {
-	fs_init_volume(&fatfs, 0);
-	if (fatfs.fs_type)
-		return true;
-	return false;
+    FRESULT fres = f_mount(&fatfs, prefix, 1);
+    return (fres == FR_OK);
 }
 
 FRESULT FileSystemFAT :: get_free (uint32_t *e)
 {
-	return fs_getfree(&fatfs, e);
+    FATFS *fs;
+    return f_getfree(prefix, e, &fs);
 }
 
 bool    FileSystemFAT :: is_writable()
@@ -42,7 +47,8 @@ bool    FileSystemFAT :: is_writable()
 
 FRESULT FileSystemFAT :: sync(void)
 {
-	fs_sync(&fatfs);
+	return FR_OK;
+    // f_sync();
 }
 
 // functions for reading directories
@@ -56,12 +62,15 @@ FRESULT FileSystemFAT :: dir_open(const TCHAR *path, Directory **dirout, FileInf
 	    path = "";
 	}
 
-	if ((relativeDir) && (relativeDir->cluster)) {
+    mstring prefixedPath(prefix);
+    prefixedPath += path;
+
+    if ((relativeDir) && (relativeDir->cluster)) {
         fatfs.cdir = relativeDir->cluster;
     } else {
         fatfs.cdir = 0;
     }
-    res = fs_opendir(&fatfs, dir->getDIR(), path);
+    res = f_opendir(dir->getDIR(), prefixedPath.c_str());
 
 	if (res == FR_OK) {
 		*dirout = dir;
@@ -74,7 +83,9 @@ FRESULT FileSystemFAT :: dir_open(const TCHAR *path, Directory **dirout, FileInf
 FRESULT FileSystemFAT :: dir_create(const TCHAR *path)
 {
     fatfs.cdir = 0;
-    return fs_mkdir(&fatfs, path);
+    mstring prefixedPath(prefix);
+    prefixedPath += path;
+    return f_mkdir(prefixedPath.c_str());
 }
 
 
@@ -93,10 +104,13 @@ FRESULT FileSystemFAT :: file_open(const char *filename, uint8_t flags, File **f
 	    fatfs.cdir = 0;
 	}
 
-	FileFAT *fatfile = new FileFAT(this);
+    mstring prefixedFilename(prefix);
+    prefixedFilename += filename;
+
+    FileFAT *fatfile = new FileFAT(this);
 	FIL *fil = fatfile->getFIL();
 
-	FRESULT res = fs_open(&fatfs, filename, flags, fil);
+	FRESULT res = f_open(fil, prefixedFilename.c_str(), flags);
 	if (res == FR_OK) {
 	    *file = fatfile;
 	    return res;
@@ -108,13 +122,17 @@ FRESULT FileSystemFAT :: file_open(const char *filename, uint8_t flags, File **f
 FRESULT FileSystemFAT :: file_rename(const TCHAR *path, const char *new_name)
 {
     fatfs.cdir = 0;
-	return fs_rename(&fatfs, path, new_name);
+    mstring prefixedPath(prefix);
+    prefixedPath += path;
+    return f_rename(prefixedPath.c_str(), new_name);
 }
 
 FRESULT FileSystemFAT :: file_delete(const TCHAR *path)
 {
     fatfs.cdir = 0;
-    return fs_unlink(&fatfs, path);
+    mstring prefixedPath(prefix);
+    prefixedPath += path;
+    return f_unlink(prefixedPath.c_str());
 }
 
 FRESULT FileFAT :: read(void *buffer, uint32_t len, uint32_t *transferred)
@@ -158,12 +176,12 @@ FRESULT FileFAT :: close(void)
 
 uint32_t FileFAT :: get_size(void)
 {
-    return getFIL()->fsize;
+    return getFIL()->obj.objsize;
 }
 
 uint32_t FileFAT :: get_inode(void)
 {
-    return getFIL()->sclust;
+    return getFIL()->obj.sclust;
 }
 
 /*-----------------------------------------------------------------------*/
@@ -189,26 +207,13 @@ FileSystem *FileSystemFAT::test (Partition *prt)
         return new FileSystemFAT(prt);
     }
 
-    buf = new uint8_t[secsize];
-
-    DRESULT dr = prt->read(buf, 0, 1);
-    if (dr != RES_OK) {	/* Load boot record */
-    	printf("FileSystemFAT::test failed, because reading sector failed: %d\n", dr);
-		delete buf;
-    	return NULL;
+    // Just try; use the f_mount function to see if it succeeds
+    FileSystemFAT *fs = new FileSystemFAT(prt);
+    if (fs->init()) {
+        return fs;
     }
-
-	if (LD_WORD(&buf[BS_55AA]) != 0xAA55) {	/* Check record signature (always placed at offset 510 even if the sector size is >512) */
-		delete buf;
-		return NULL;
-	}
-	if ((LD_DWORD(&buf[BS_FilSysType]) & 0xFFFFFF) == 0x544146)	/* Check "FAT" string */
-		return new FileSystemFAT(prt);
-	if ((LD_DWORD(&buf[BS_FilSysType32]) & 0xFFFFFF) == 0x544146)
-		return new FileSystemFAT(prt);
-
-	delete buf;
-	return NULL;
+    delete fs;
+    return NULL;
 }
 
 FactoryRegistrator<Partition *, FileSystem *> fat_tester(FileSystem :: getFileSystemFactory(), FileSystemFAT :: test);

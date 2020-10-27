@@ -9,7 +9,7 @@
 #define FILESYSTEM_FAT_FILESYSTEM_H_
 
 #include "file_system.h"
-#include "ff2.h"
+#include "ff.h"
 
 class DirectoryFAT : public Directory
 {
@@ -24,16 +24,12 @@ class DirectoryFAT : public Directory
 		inf->date = fi->fdate;
 		inf->time = fi->ftime;
 
-	#if _USE_LFN
 		get_extension(fi->fname, inf->extension);
 		inf->cluster = fi->fclust;
 
-		if(!(*inf->lfname)) {
+		if(inf->lfname) {
 			strncpy(inf->lfname, fi->fname, inf->lfsize);
 		}
-	#else
-		strncpy(inf->lfname, fi->fname, inf->lfsize);
-	#endif
 	}
 
 public:
@@ -64,7 +60,7 @@ public:
 
 class FileFAT : public File
 {
-    FIL fatfile;
+FIL fatfile;
 public:
     FileFAT(FileSystem *fs) : File(fs) { }
     ~FileFAT() { }
@@ -81,8 +77,11 @@ public:
 
 class FileSystemFAT : public FileSystem
 {
-	FATFS fatfs;
-	void copy_info(FILINFO *fi, FileInfo *inf);
+    FATFS fatfs;
+    uint8_t driveIndex;
+    char prefix[3];
+
+    void copy_info(FILINFO *fi, FileInfo *inf);
 public:
     FileSystemFAT(Partition *p);
     virtual ~FileSystemFAT();
