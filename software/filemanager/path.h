@@ -19,6 +19,7 @@ private:
     void regenerateFullPath();
 public:
     Path();
+    Path(Path *); // make a copy
     ~Path();
     const char *owner;
 
@@ -30,8 +31,10 @@ public:
     const char *getTail(int index, mstring &work);
     const char *getSub(int start, int stop, mstring &work);
     const char *getHead(mstring &work);
-
     const char *getElement(int);
+    const char *getLastElement();
+
+    bool match(Path *search);
 };
 
 #endif
