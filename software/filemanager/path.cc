@@ -21,6 +21,17 @@ Path :: ~Path()
 	cleanupElements();
 }
 
+Path :: Path(Path *p) : full_path("/"), elements(10, NULL)
+{
+    owner = "Unknown";
+    depth = 0;
+
+    for(int i=0; i < p->getDepth(); i++) {
+        update(i, p->getElement(i));
+    }
+    regenerateFullPath();
+}
+
 void Path :: update(const char *p)
 {
 	if (full_path == p)
@@ -174,6 +185,11 @@ const char *Path :: getElement(int a)
 	return (elements[a])->c_str();
 }
 
+const char *Path :: getLastElement()
+{
+    return (elements[depth-1])->c_str();
+}
+
 /*
 void Path :: removeFirst()
 {
@@ -229,23 +245,18 @@ void Path :: regenerateFullPath()
 	}
 }
 
-// =======================
-//   COMPARE PATH OBJECTS 
-// =======================
-
-int path_object_compare(IndexedList<CachedTreeNode *> *list, int a, int b)
+// Return true when the search path is at least as long as
+// the 'this' path.
+bool Path :: match(Path *search)
 {
-//	printf("Compare %d and %d: ", a, b);
-	CachedTreeNode *obj_a = (*list)[a];
-	CachedTreeNode *obj_b = (*list)[b];
-	
-	if(!obj_b)
-		return 1;
-	if(!obj_a)
-		return -1;
-
-//	printf("%p %p ", obj_a, obj_b);
-//	printf("%s %s\n", obj_a->get_name(), obj_b->get_name());
-	return obj_a->compare(obj_b);
-//	return stricmp(obj_a->get_name(), obj_b->get_name());
+    if (search->getDepth() < depth) {
+        return false;
+    }
+    for(int i=0; i<depth; i++) {
+        if (!pattern_match(search->getElement(i), getElement(i), false)) {
+            return false;
+        }
+    }
+    return true;
 }
+
