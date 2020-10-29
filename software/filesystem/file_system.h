@@ -51,11 +51,11 @@ public:
     // functions for reading directories
     // In the following functions 'dirCluster' is a suggestive start cluster.
     // If other than 0 (which means root), it is assumed the path/filenames are relative to that cluster
-    virtual FRESULT dir_open(const char *path, Directory **, FileInfo *relativeDir = 0); // Opens directory (creates dir object)
+    virtual FRESULT dir_open(const char *path, Directory **); // Opens directory (creates dir object)
     virtual FRESULT dir_create(const char *path);  // Creates a directory
     
     // functions for reading and writing files
-    virtual FRESULT file_open(const char *filename, uint8_t flags, File **, FileInfo *relativeDir = 0);  // Opens file (creates file object)
+    virtual FRESULT file_open(const char *filename, uint8_t flags, File **);  // Opens file (creates file object)
     virtual FRESULT file_rename(const char *old_name, const char *new_name);  // Renames a file
 	virtual FRESULT file_delete(const char *path); // deletes a file
 

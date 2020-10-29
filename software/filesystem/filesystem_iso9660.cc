@@ -132,18 +132,31 @@ bool    FileSystem_ISO9660 :: init(void)              // Initialize file system
 }
 
 // functions for reading directories
-FRESULT FileSystem_ISO9660 :: dir_open(const char *path, Directory **dir, FileInfo *relativeDir) // Opens directory (creates dir object)
+FRESULT FileSystem_ISO9660 :: dir_open(const char *path, Directory **dir) // Opens directory (creates dir object)
 {
     if (!initialized) {
         return FR_NOT_ENABLED;
+    }
+
+    FileInfo *relativeDir = NULL;
+    PathInfo pi(this);
+    pi.init(path);
+    PathStatus_t pres = walk_path(pi);
+    if (pres == e_EntryFound) {
+        relativeDir = pi.getLastInfo();
+    } else {
+        return FR_NO_PATH;
+    }
+    if (!(relativeDir->attrib & AM_DIR)) {
+        return FR_NO_PATH; // it's a file!
     }
 
     Directory_ISO9660 *dd = new Directory_ISO9660(this);
 	t_iso_handle *handle = dd->getHandle();
 	*dir = dd;
 
-	if ((relativeDir) && (relativeDir->cluster)) {
-        handle->sector = relativeDir->cluster;
+	if (relativeDir && (relativeDir->cluster)) {
+	    handle->sector = relativeDir->cluster;
         handle->remaining = relativeDir->size;
     }
     else {
@@ -254,33 +267,26 @@ try_next:
 }
 
 // functions for reading files
-FRESULT FileSystem_ISO9660 :: file_open(const char *filename, uint8_t flags, File **f, FileInfo *relativeDir)  // Opens file (creates file object)
+FRESULT FileSystem_ISO9660 :: file_open(const char *filename, uint8_t flags, File **f)  // Opens file (creates file object)
 {
     *f = NULL;
 
-    Directory *dir;
-    FRESULT fres = dir_open("", &dir, relativeDir);
-    if (fres != FR_OK)
-        return fres;
+    FileInfo *info = NULL;
+    PathInfo pi(this);
+    pi.init(filename);
+    PathStatus_t pres = walk_path(pi);
+    if (pres == e_EntryFound) {
+        info = pi.getLastInfo();
+    } else if (pres == e_DirNotFound) {
+        return FR_NO_PATH;
+    } else {
+        return FR_NO_FILE;
+    }
+    if (info->attrib & AM_VOL) {
+        return FR_NO_FILE;
+    }
 
-    FileInfo info(128);
-	do {
-		fres = dir->get_entry(info);
-		if (fres != FR_OK) {
-			delete dir;
-			return FR_NO_FILE;
-		}
-		if (info.attrib & AM_VOL)
-			continue;
-		if (pattern_match(filename, info.lfname)) {
-			break;
-		}
-	} while(1);
-
-	delete dir;
-
-
-    *f = new File_ISO9660(this, info);
+    *f = new File_ISO9660(this, *info);
 
     return FR_OK;
 }

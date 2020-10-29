@@ -20,7 +20,7 @@ public:
 	PathStatus_t walk_path(PathInfo& pathInfo);
 
     // functions for reading directories
-    FRESULT dir_open(const char *path, Directory **, FileInfo *relativeDir = 0); // Opens directory (creates dir object)
+    FRESULT dir_open(const char *path, Directory **); // Opens directory (creates dir object)
 };
 
 class DirectoryInRoot : public Directory

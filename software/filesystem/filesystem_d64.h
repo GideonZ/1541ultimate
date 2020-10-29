@@ -73,7 +73,7 @@ class DirInCBM : public Directory
     FRESULT close(void);
     FRESULT create(const char *filename, bool dir);
 public:
-    DirInCBM(FileSystemCBM *fs, FileInfo *info = NULL);
+    DirInCBM(FileSystemCBM *fs, uint32_t cluster = 0);
     ~DirInCBM();
 
     FRESULT get_entry(FileInfo &out);
@@ -209,11 +209,11 @@ public:
     virtual FRESULT sync(void);
 
     // functions for reading directories
-    FRESULT dir_open(const char *path, Directory **, FileInfo *relativeDir = 0); // Opens directory (creates dir object)
+    FRESULT dir_open(const char *path, Directory **); // Opens directory (creates dir object)
     FRESULT dir_create(const char *path);
 
     // functions for reading and writing files
-    FRESULT file_open(const char *filename, uint8_t flags, File **, FileInfo *relativeDir = 0);  // Opens file (creates file object)
+    FRESULT file_open(const char *filename, uint8_t flags, File **);  // Opens file (creates file object)
 
     FRESULT file_rename(const char *old_name, const char *new_name);  // Renames a file
     FRESULT file_delete(const char *path); // deletes a file

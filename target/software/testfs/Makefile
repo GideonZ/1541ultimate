@@ -43,6 +43,7 @@ SRCS_CC	 =  mystring.cc \
 			diskio.cc \
 			directory.cc \
 			file.cc \
+			filesystem_root.cc \
 			filesystem_fat.cc \
 			filesystem_d64.cc \
 			filesystem_t64.cc \

@@ -126,7 +126,7 @@ FRESULT FileManager :: get_directory(Path *p, IndexedList<FileInfo *> &target, c
 	Directory *dir;
 	mstring pathFromFSRoot;
 	FileSystem *fs = pathInfo.getLastInfo()->fs;
-	res = fs->dir_open(pathInfo.getPathFromLastFS(pathFromFSRoot), &dir, pathInfo.getLastInfo());
+	res = fs->dir_open(pathInfo.getPathFromLastFS(pathFromFSRoot), &dir);
 	FileInfo info(INFO_SIZE);
 	if (res == FR_OK) {
 		while(1) {
@@ -166,8 +166,7 @@ FRESULT FileManager :: print_directory(const char *path)
 		FileInfo info(INFO_SIZE);
 		mstring pathFromFSRoot;
 		fs = pathInfo.getLastInfo()->fs;
-		//fres = fs->dir_open(pathInfo.getPathFromLastFS(pathFromFSRoot), &dir, pathInfo.getLastInfo());
-        fres = fs->dir_open(NULL, &dir, pathInfo.getLastInfo());
+        fres = fs->dir_open(pathInfo.getPathFromLastFS(pathFromFSRoot), &dir);
 		if (fres == FR_OK) {
 			while(1) {
 				fres = dir->get_entry(info);
