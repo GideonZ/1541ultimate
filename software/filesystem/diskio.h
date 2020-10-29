@@ -13,7 +13,6 @@ extern "C" {
 #define _USE_IOCTL	1	/* 1: Enable disk_ioctl fucntion */
 
 #include <stdint.h> //"ff_integer.h"
-#include "ff.h"
 
 /* Status of Disk Functions */
 typedef uint8_t	DSTATUS;

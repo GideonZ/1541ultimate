@@ -26,10 +26,10 @@ public:
     FRESULT get_free (uint32_t*);        // Get number of free sectors on the file system
 
     // functions for reading directories
-    FRESULT dir_open(const char *path, Directory **, FileInfo *relativeDir = 0); // Opens directory (creates dir object)
+    FRESULT dir_open(const char *path, Directory **); // Opens directory (creates dir object)
 
     // functions for reading and writing files
-    FRESULT file_open(const char *filename, uint8_t flags, File **, FileInfo *relativeDir = 0);  // Opens file (creates file object)
+    FRESULT file_open(const char *filename, uint8_t flags, File **);  // Opens file (creates file object)
     FRESULT sync();
 
     friend class FileInT64;

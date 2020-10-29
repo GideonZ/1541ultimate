@@ -8,7 +8,6 @@
 #ifndef FILESYSTEM_FS_ERRORS_FLAGS_H_
 #define FILESYSTEM_FS_ERRORS_FLAGS_H_
 
-
 /* File function return code (FRESULT) */
 typedef enum {
 	FR_OK = 0,				/* (0) Succeeded */
@@ -31,6 +30,7 @@ typedef enum {
 	FR_NO_MEMORY,	   		/* (17) LFN working buffer could not be allocated */
 	FR_TOO_MANY_OPEN_FILES,	/* (18) Number of open files > _FS_SHARE */
 	FR_INVALID_PARAMETER,	/* (19) Given parameter is invalid */
+// The following entries do not exist in ChanFAT
 	FR_DISK_FULL,			/* (20) OLD FATFS: no more free clusters */
 	FR_DIR_NOT_EMPTY,		/* (21) Directory not empty */
 	FR_LOOP_DETECTED,       /* (22) From CBM filesystems */
@@ -46,11 +46,11 @@ typedef enum {
 #define FA_CREATE_ALWAYS    0x08 // file may be overwritten, even if it exists. File contents are cleared
 #define FA_ANY_WRITE_FLAG   0x0E // the three above orred
 #define FA_OPEN_ALWAYS      0x10
+/*
 #define FA__WRITTEN         0x20
 #define FA__DIRTY           0x40
 #define FA__ERROR           0x80
-
-
+*/
 
 
 #endif /* FILESYSTEM_FS_ERRORS_FLAGS_H_ */

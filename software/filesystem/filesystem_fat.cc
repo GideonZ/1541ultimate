@@ -5,7 +5,7 @@
  *      Author: Gideon
  */
 
-#include "filesystem_efat.h"
+#include "filesystem_fat.h"
 #include "filemanager.h"
 #include "chanfat_manager.h"
 #include <stdio.h>
@@ -52,7 +52,7 @@ FRESULT FileSystemFAT :: sync(void)
 }
 
 // functions for reading directories
-FRESULT FileSystemFAT :: dir_open(const TCHAR *path, Directory **dirout, FileInfo *relativeDir)
+FRESULT FileSystemFAT :: dir_open(const TCHAR *path, Directory **dirout)
 {
 	*dirout = 0;
 
@@ -65,11 +65,6 @@ FRESULT FileSystemFAT :: dir_open(const TCHAR *path, Directory **dirout, FileInf
     mstring prefixedPath(prefix);
     prefixedPath += path;
 
-    if ((relativeDir) && (relativeDir->cluster)) {
-        fatfs.cdir = relativeDir->cluster;
-    } else {
-        fatfs.cdir = 0;
-    }
     res = f_opendir(dir->getDIR(), prefixedPath.c_str());
 
 	if (res == FR_OK) {
@@ -82,7 +77,6 @@ FRESULT FileSystemFAT :: dir_open(const TCHAR *path, Directory **dirout, FileInf
 
 FRESULT FileSystemFAT :: dir_create(const TCHAR *path)
 {
-    fatfs.cdir = 0;
     mstring prefixedPath(prefix);
     prefixedPath += path;
     return f_mkdir(prefixedPath.c_str());
@@ -95,14 +89,9 @@ FRESULT FileSystemFAT :: format(const char *name)
     return FR_NOT_ENABLED;
 }
 
-FRESULT FileSystemFAT :: file_open(const char *filename, uint8_t flags, File **file, FileInfo *relativeDir)
+FRESULT FileSystemFAT :: file_open(const char *filename, uint8_t flags, File **file)
 {
 	*file = 0;
-	if (relativeDir) {
-	    fatfs.cdir = relativeDir->cluster;
-	} else {
-	    fatfs.cdir = 0;
-	}
 
     mstring prefixedFilename(prefix);
     prefixedFilename += filename;
@@ -121,7 +110,6 @@ FRESULT FileSystemFAT :: file_open(const char *filename, uint8_t flags, File **f
 
 FRESULT FileSystemFAT :: file_rename(const TCHAR *path, const char *new_name)
 {
-    fatfs.cdir = 0;
     mstring prefixedPath(prefix);
     prefixedPath += path;
     return f_rename(prefixedPath.c_str(), new_name);
@@ -129,7 +117,6 @@ FRESULT FileSystemFAT :: file_rename(const TCHAR *path, const char *new_name)
 
 FRESULT FileSystemFAT :: file_delete(const TCHAR *path)
 {
-    fatfs.cdir = 0;
     mstring prefixedPath(prefix);
     prefixedPath += path;
     return f_unlink(prefixedPath.c_str());
@@ -217,3 +204,19 @@ FileSystem *FileSystemFAT::test (Partition *prt)
 }
 
 FactoryRegistrator<Partition *, FileSystem *> fat_tester(FileSystem :: getFileSystemFactory(), FileSystemFAT :: test);
+
+uint32_t get_fattime (void) __attribute__((weak));
+uint32_t get_fattime (void)     /* 31-25: Year(0-127 org.1980), 24-21: Month(1-12), 20-16: Day(1-31) */
+                                                    /* 15-11: Hour(0-23), 10-5: Minute(0-59), 4-0: Second(0-29 *2) */
+{
+/*
+    35 << 25 = 0x46000000
+     9 << 21 = 0x01200000
+     1 << 16 = 0x00010000
+     9 << 11 = 0x00004800
+    36 <<  5 = 0x00000480
+    23 <<  0 = 0x00000017
+*/
+    return 0x47244C97;
+}
+

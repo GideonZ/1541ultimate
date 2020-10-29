@@ -9,11 +9,12 @@
 #include "blockdev_emul.h"
 #include "file_device.h"
 #include "dump_hex.h"
-#include "fs_errors_flags.h"
 #include "directory.h"
 #define SS_DEBUG 1
 
+#include "filesystem_fat.h"
 #include "filesystem_d64.h"
+
 #include "side_sectors.h"
 
 #include <stdlib.h>
@@ -71,13 +72,13 @@ FRESULT verify_file(FileSystem *fs, const char *from, const uint8_t *to, int siz
     return fres;
 }
 
-FRESULT print_directory(FileSystem *fs, const char *path, FileInfo *reldir = NULL, int indent = 0)
+FRESULT print_directory(FileSystem *fs, const char *path, int indent = 0)
 {
     Directory *dir;
     FileInfo info(INFO_SIZE);
     char fatname[48];
     const char *spaces = "                                        ";
-    FRESULT fres = fs->dir_open(path, &dir, reldir);
+    FRESULT fres = fs->dir_open(path, &dir);
     if (fres == FR_OK) {
         while(1) {
             fres = dir->get_entry(info);
@@ -88,7 +89,11 @@ FRESULT print_directory(FileSystem *fs, const char *path, FileInfo *reldir = NUL
             //printf("%s%-32s (%s) %10d\n", &spaces[40-indent], info.lfname, (info.attrib &AM_DIR)?"DIR ":"FILE", info.size);
 
             if (info.attrib & AM_DIR) {
-                print_directory(fs, NULL, &info, indent + 2);
+                mstring deeperPath;
+                deeperPath = path;
+                deeperPath += "/";
+                deeperPath += info.lfname;
+                print_directory(fs, deeperPath.c_str(), indent + 2);
             }
         }
         delete dir; // close directory
@@ -106,7 +111,7 @@ FRESULT copy_all(FileSystem *fs)
     Directory *dir;
     FileInfo info(INFO_SIZE);
     char fatname[48];
-    FRESULT fres = fs->dir_open("", &dir, NULL);
+    FRESULT fres = fs->dir_open("", &dir);
     if (fres == FR_OK) {
         while(1) {
             fres = dir->get_entry(info);
@@ -423,7 +428,7 @@ bool test_format_dnp()
 
 void read_dnp()
 {
-    BlockDevice *blk = new BlockDevice_Emulated("storage1.dnp", 256);
+    BlockDevice *blk = new BlockDevice_Emulated("main.dnp", 256);
     Partition *prt = new Partition(blk, 0, 0, 0);
     uint32_t sectors = 0, free = 0;
     prt->ioctl(GET_SECTOR_COUNT, &sectors);
@@ -499,7 +504,8 @@ int main()
     //    read_d81();
 
     //read_cvt();
-    test_fat();
+    read_dnp();
+    //test_fat();
     return 0;
 
     //read_dnp();

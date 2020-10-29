@@ -35,14 +35,8 @@ FRESULT FileSystemT64 :: sync(void)
     return t64_file->sync();
 }
 
-FRESULT FileSystemT64 :: dir_open(const char *path, Directory **dir, FileInfo *inf) // Opens directory (creates dir object, NULL = root)
+FRESULT FileSystemT64 :: dir_open(const char *path, Directory **dir) // Opens directory (creates dir object, NULL = root)
 {
-	// Block anything invalid
-	if (inf) {
-		if (inf->cluster != 0) {
-			return FR_NO_PATH;
-		}
-	}
 	// no info.. The only directory that we can open here by name is '/'
     if (strlen(path) > 1) {
         return FR_NO_PATH;
@@ -161,34 +155,27 @@ FRESULT DirectoryT64 :: get_entry(FileInfo &f)
 
 // functions for reading and writing files
 // Opens file (creates file object)
-FRESULT FileSystemT64 :: file_open(const char *filename, uint8_t flags, File **file, FileInfo *relativeDir)  // Opens file (creates file object)
+FRESULT FileSystemT64 :: file_open(const char *filename, uint8_t flags, File **file)  // Opens file (creates file object)
 {
-    Directory *dir;
-    FRESULT fres = dir_open("", &dir, relativeDir);
-    if (fres != FR_OK) {
-    	return fres;
+    FileInfo *info = NULL;
+    PathInfo pi(this);
+    pi.init(filename);
+    PathStatus_t pres = walk_path(pi);
+    if (pres == e_EntryFound) {
+        info = pi.getLastInfo();
+    } else if (pres == e_DirNotFound) {
+        return FR_NO_PATH;
+    } else {
+        return FR_NO_FILE;
     }
-
-    FileInfo info(24);
-	do {
-		fres = dir->get_entry(info);
-		if (fres != FR_OK) {
-			delete dir;
-			return FR_NO_FILE;
-		}
-		if (info.attrib & AM_VOL)
-			continue;
-		if (pattern_match(filename, info.lfname)) {
-			break;
-		}
-	} while(1);
-
-	delete dir;
+    if (info->attrib & AM_VOL) {
+        return FR_NO_FILE;
+    }
 
 	FileInT64 *ff = new FileInT64(this);
 	*file = ff;
 
-	FRESULT res = ff->open(&info, flags);
+	FRESULT res = ff->open(info, flags);
 	if(res == FR_OK) {
 		return res;
 	}

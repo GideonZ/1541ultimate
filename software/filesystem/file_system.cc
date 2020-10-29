@@ -93,7 +93,7 @@ PathStatus_t FileSystem :: walk_path(PathInfo& pathInfo)
     CbmFileName cbm; // in case we need to compare against a CBM name, we reserve some storage for it
 
 	while(pathInfo.hasMore()) {
-		fres = dir_open(pathInfo.getPathFromLastFS(workdir), &dir, pathInfo.getLastInfo());
+		fres = dir_open(pathInfo.getPathFromLastFS(workdir), &dir);
 		if (fres == FR_OK) {
 	        cbm.reset();
             while(1) {
@@ -145,7 +145,7 @@ FRESULT FileSystem :: format(const char *name)
     return FR_NO_FILESYSTEM;
 }
 
-FRESULT FileSystem :: dir_open(const char *path, Directory **, FileInfo *relativeDir)
+FRESULT FileSystem :: dir_open(const char *path, Directory **)
 {
     return FR_NO_FILESYSTEM;
 }
@@ -155,7 +155,7 @@ FRESULT FileSystem :: dir_create(const char *path)
     return FR_NO_FILESYSTEM;
 }
     
-FRESULT FileSystem :: file_open(const char *filename, uint8_t flags, File **, FileInfo *relativeDir)  // Opens file (creates file object)
+FRESULT FileSystem :: file_open(const char *filename, uint8_t flags, File **)  // Opens file (creates file object)
 {
     return FR_NO_FILESYSTEM;
 }

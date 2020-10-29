@@ -8,8 +8,8 @@
 #ifndef FILESYSTEM_FAT_FILESYSTEM_H_
 #define FILESYSTEM_FAT_FILESYSTEM_H_
 
-#include "file_system.h"
 #include "ff.h"
+#include "file_system.h"
 
 class DirectoryFAT : public Directory
 {
@@ -23,9 +23,8 @@ class DirectoryFAT : public Directory
 		inf->size = fi->fsize;
 		inf->date = fi->fdate;
 		inf->time = fi->ftime;
-
+		inf->cluster = 0; // unknown for this filesystem
 		get_extension(fi->fname, inf->extension);
-		inf->cluster = fi->fclust;
 
 		if(inf->lfname) {
 			strncpy(inf->lfname, fi->fname, inf->lfsize);
@@ -95,11 +94,11 @@ public:
     FRESULT sync(void); 			 // by default we can't write, and syncing is thus always successful
 
     // functions for reading directories
-    FRESULT dir_open(const char *path, Directory **, FileInfo *relativeDir = 0); // Opens directory (creates dir object)
+    FRESULT dir_open(const char *path, Directory **); // Opens directory (creates dir object)
     FRESULT dir_create(const char *path);  // Creates a directory
 
     // functions for reading and writing files
-    FRESULT file_open(const char *filename, uint8_t flags, File **, FileInfo *relativeDir = 0);  // Opens file (creates file object)
+    FRESULT file_open(const char *filename, uint8_t flags, File **);  // Opens file (creates file object)
     FRESULT file_rename(const char *old_name, const char *new_name);  // Renames a file
     FRESULT file_delete(const char *path); // deletes a file
 

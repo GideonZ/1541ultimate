@@ -258,21 +258,18 @@ void FileSystemCBM::get_volume_name(uint8_t *sector, char *buffer, int buf_len)
 }
 
 // Opens directory (creates dir object, NULL = root)
-FRESULT FileSystemCBM::dir_open(const char *path, Directory **dir, FileInfo *relativeDir) // Opens directory
+FRESULT FileSystemCBM::dir_open(const char *path, Directory **dir) // Opens directory
 {
     DirInCBM *dd;
 
-    if (relativeDir) {
-        dd = new DirInCBM(this, relativeDir);
+    PathInfo pi(this);
+    pi.init(path);
+    PathStatus_t pres = walk_path(pi);
+    if (pres == e_EntryFound) {
+        FileInfo *info = pi.getLastInfo();
+        dd = new DirInCBM(this, info->cluster);
     } else {
-        PathInfo pi(this);
-        pi.init(path);
-        PathStatus_t pres = walk_path(pi);
-        if (pres == e_EntryFound) {
-            dd = new DirInCBM(this, pi.getLastInfo());
-        } else {
-            return FR_NO_PATH;
-        }
+        return FR_NO_PATH;
     }
 
     FRESULT res = dd->open();
@@ -300,7 +297,7 @@ FRESULT FileSystemCBM::dir_create(const char *path)
     FileInfo *parent = pi.getLastInfo();
 
     FRESULT fres;
-    DirInCBM cbmdir(this, parent);
+    DirInCBM cbmdir(this, parent->cluster);
 
     // Create a directory entry in the parent
     fres = cbmdir.create(nameToCreate, true);
@@ -386,7 +383,7 @@ FRESULT FileSystemCBM::find_file(const char *filename, DirInCBM *dir, FileInfo *
     return res;
 }
 
-FRESULT FileSystemCBM::file_open(const char *filename, uint8_t flags, File **file, FileInfo *relativeDir)
+FRESULT FileSystemCBM::file_open(const char *filename, uint8_t flags, File **file)
 {
     FileInfo info(24);
     DirInCBM *dd;
@@ -395,20 +392,15 @@ FRESULT FileSystemCBM::file_open(const char *filename, uint8_t flags, File **fil
     bool clear = false;
     *file = NULL;
 
-    if (!relativeDir) {
-        PathInfo pi(this);
-        pi.init(filename);
-        pi.workPath.up(&fn); // just look for the parent dir
+    PathInfo pi(this);
+    pi.init(filename);
+    pi.workPath.up(&fn); // just look for the parent dir
 
-        PathStatus_t pres = walk_path(pi);
-        if (pres != e_EntryFound) {
-            return FR_NO_PATH;
-        }
-        dd = new DirInCBM(this, pi.getLastInfo());
-    } else {
-        dd = new DirInCBM(this, relativeDir);
-        fn = filename;
+    PathStatus_t pres = walk_path(pi);
+    if (pres != e_EntryFound) {
+        return FR_NO_PATH;
     }
+    dd = new DirInCBM(this, pi.getLastInfo()->cluster);
 
     FRESULT fres = find_file(filename, dd, &info);
     if (fres == FR_NO_FILE) {
@@ -546,7 +538,7 @@ FRESULT FileSystemCBM::file_delete(const char *path)
     }
     const char *filename = pi.getFileName();
 
-    DirInCBM *dd = new DirInCBM(this, pi.getParentInfo());
+    DirInCBM *dd = new DirInCBM(this, pi.getParentInfo()->cluster);
     FileInfo info(20);
     FRESULT res = find_file(filename, dd, &info);
 
@@ -1153,7 +1145,7 @@ FRESULT FileSystemDNP :: sync(void)
 /*********************************************************************/
 /* D64/D71/D81 File System implementation                            */
 /*********************************************************************/
-DirInCBM::DirInCBM(FileSystemCBM *f, FileInfo *subdir)
+DirInCBM::DirInCBM(FileSystemCBM *f, uint32_t cluster)
 {
     fs = f;
     visited = 0;
@@ -1161,14 +1153,14 @@ DirInCBM::DirInCBM(FileSystemCBM *f, FileInfo *subdir)
     next_t = curr_t = 0;
     next_s = curr_s = 0;
 
-    if ((!subdir) || (subdir->cluster == 0)) {
+    if (!cluster) {
         // by default the root directory is stored here as initial reference
         header_track = f->root_track;
         header_sector = f->root_sector;
         start_track = f->dir_track;
         start_sector = f->dir_sector;
     } else { // Subdir given
-        fs->get_track_sector(subdir->cluster, header_track, header_sector);
+        fs->get_track_sector(cluster, header_track, header_sector);
         start_track = -1;  // it needs to be read from the header
         start_sector = -1;
     }

@@ -764,7 +764,6 @@ void IecInterface :: save_copied_disk()
     File *f = 0;
     int res;
     BinImage *bin;
-    CachedTreeNode *po;
     
     static_bin_image.num_tracks = 35; // standard!
 

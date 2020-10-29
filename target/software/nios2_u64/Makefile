@@ -22,8 +22,7 @@ SRCS_C   =	itu.c \
             timers.c \
             port.c \
             heap_3.c \
-            ff2.c \
-            ccsbcs.c \
+            ff.c \
             ffsyscall.c \
             time.c \
             mdio.c \
