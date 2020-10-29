@@ -312,17 +312,22 @@ void add_extension(char *buffer, const char *ext, int buf_size)
     } buffer[name_len] = 0;
 }
 
-void fix_filename(char *buffer)
+int fix_filename(char *buffer)
 {
     const char illegal[] = "\"*:/<>\\?|,\x7F";
     int illegal_count = strlen(illegal);
     int len = strlen(buffer);
 
-    for(int i=0;i<len;i++)
-        for(int j=0;j<illegal_count;j++)
-            if(buffer[i] == illegal[j])
+    int replacements = 0;
+    for(int i=0;i<len;i++) {
+        for(int j=0;j<illegal_count;j++) {
+            if(buffer[i] == illegal[j]) {
                 buffer[i] = '_';
-
+                replacements ++;
+            }
+        }
+    }
+    return replacements;
 }
 
 int get_extension(const char *name, char *ext)
