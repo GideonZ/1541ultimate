@@ -9,7 +9,7 @@ bool isEmptyString(const char *c);
 void set_extension(char *buffer, const char *ext, int buf_size);
 void add_extension(char *buffer, const char *ext, int buf_size);
 int  get_extension(const char *name, char *ext);
-void fix_filename(char *buffer);
+int  fix_filename(char *buffer);
 void petscii_to_fat(const char *pet, char *fat, int maxlen);
 void fat_to_petscii(const char *fat, bool cutExt, char *pet, int len, bool term);
 
