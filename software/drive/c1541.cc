@@ -721,6 +721,7 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 
 
 	SubsysCommand *c64_command;
+	char drv[2] = { 0,0 };
 
 	switch(cmd->functionID) {
 	case D64FILE_RUN:
@@ -758,8 +759,9 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 				unlink();
 			}
 			if(cmd->functionID == D64FILE_RUN) {
-				c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64,
-						C64_DRIVE_LOAD, RUNCODE_MOUNT_LOAD_RUN, "", "*");
+			    drv[0] = 0x40 + this->get_current_iec_address();
+			    c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64,
+						C64_DRIVE_LOAD, RUNCODE_MOUNT_LOAD_RUN, drv, "*");
 				c64_command->execute();
 			}
 		} else {
@@ -790,8 +792,9 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
             	unlink();
             }
             if(cmd->functionID == G64FILE_RUN) {
+                drv[0] = 0x40 + this->get_current_iec_address();
                 c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64,
-                		C64_DRIVE_LOAD, RUNCODE_MOUNT_LOAD_RUN, "", "*");
+                		C64_DRIVE_LOAD, RUNCODE_MOUNT_LOAD_RUN, drv, "*");
                 c64_command->execute();
             }
 		} else {

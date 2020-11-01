@@ -33,7 +33,7 @@ class C64_Subsys : public SubSystem, ObjectWithMenu
 
     /* Others */
     int  dma_load(File *f, const uint8_t *buffer, const int bufferSize,
-    		const char *name, uint8_t run_mode, uint16_t reloc=0);
+    		const char *name, uint8_t run_mode, uint8_t drv, uint16_t reloc=0);
     int  dma_load_buffer(uint8_t prg_buffer, uint8_t run_mode, uint16_t reloc=0);
     int  dma_load_raw(File *f);
     int  dma_load_raw_buffer(uint16_t offset, const uint8_t *buffer, int length);
