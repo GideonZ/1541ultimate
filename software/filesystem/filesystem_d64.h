@@ -59,6 +59,7 @@ class FileSystemCBM;
 
 class DirInCBM : public Directory
 {
+    bool root;
     int idx;
     int curr_t, curr_s;
     int next_t, next_s;
@@ -182,7 +183,7 @@ class FileSystemCBM : public FileSystem
     FRESULT move_window(int);
     FRESULT find_file(const char *filename, DirInCBM *dirent, FileInfo *info);
 
-    void    get_volume_name(uint8_t *sector, char *buffer, int buf_len);
+    void    get_volume_name(uint8_t *sector, char *buffer, int buf_len, bool);
     int     get_abs_sector(int track, int sector);
     bool    get_track_sector(int abs, int &track, int &sector);
     FRESULT deallocate_chain(uint8_t track, uint8_t sector, uint8_t *visited);
