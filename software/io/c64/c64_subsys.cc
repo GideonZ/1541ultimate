@@ -11,6 +11,7 @@
 #include "init_function.h"
 #include "userinterface.h"
 #include "u64.h"
+#include "c1541.h"
 
 #define C64_BOOTCRT_DOSYNC    0x014F
 #define C64_BOOTCRT_RUNCODE   0x0172
@@ -420,10 +421,18 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
     case C64_DMA_LOAD:
     	res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
         if(res == FR_OK) {
-        	dma_load(f, NULL, 0, cmd->filename.c_str(), cmd->mode);
+        	dma_load(f, NULL, 0, cmd->filename.c_str(), cmd->mode, c64->cfg->get_value(CFG_C64_DMA_ID));
         	fm->fclose(f);
         }
     	break;
+
+    case C64_DMA_LOAD_MNT:
+        res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
+        if(res == FR_OK) {
+            dma_load(f, NULL, 0, cmd->filename.c_str(), cmd->mode, c1541_A->get_current_iec_address());
+            fm->fclose(f);
+        }
+        break;
 
     case C64_DMA_LOAD_RAW:
     	res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
@@ -433,10 +442,10 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
         }
     	break;
     case C64_DRIVE_LOAD:
-    	dma_load(0, NULL, 0, cmd->filename.c_str(), cmd->mode);
+    	dma_load(0, NULL, 0, cmd->filename.c_str(), cmd->mode, cmd->path.c_str()[0] & 0x1F);
     	break;
     case C64_DMA_BUFFER:
-    	dma_load(0, (const uint8_t *)cmd->buffer, cmd->bufferSize, cmd->filename.c_str(), cmd->mode);
+    	dma_load(0, (const uint8_t *)cmd->buffer, cmd->bufferSize, cmd->filename.c_str(), cmd->mode, c64->cfg->get_value(CFG_C64_DMA_ID));
     	break;
     case C64_DMA_RAW:
     	dma_load_raw_buffer((uint16_t)cmd->mode, (const uint8_t *)cmd->buffer, cmd->bufferSize);
@@ -560,7 +569,7 @@ int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, const uint8_t *buffer, in
 }
 
 int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
-		const char *name, uint8_t run_code, uint16_t reloc)
+		const char *name, uint8_t run_code, uint8_t drv, uint16_t reloc)
 {
 	// prepare DMA load
     if(c64->client) { // we are locked by a client, likely: user interface
@@ -593,7 +602,7 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
 
 	// handshake with boot cart
     c64->stop(false);
-	C64_POKE(C64_BOOTCRT_DRIVENUM, c64->cfg->get_value(CFG_C64_DMA_ID));    // drive number for printout
+	C64_POKE(C64_BOOTCRT_DRIVENUM, drv);    // drive number for printout
 
 	C64_POKE(C64_BOOTCRT_HANDSHAKE, 0x40);  // signal cart ready for DMA load
 
