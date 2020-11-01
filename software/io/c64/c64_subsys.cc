@@ -575,14 +575,14 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
 
     C64_POKE(C64_BOOTCRT_DOSYNC, (c64->cfg->get_value(CFG_C64_DO_SYNC) == 1) ? 1 : 0);
 
-	int len = strlen(name);
-	if (len > 30)
-		len = 30;
-
-	for (int i=0; i < len; i++) {
-        C64_POKE(C64_BOOTCRT_NAME+i, toupper(name[i]));
+    CbmFileName cbm;
+    cbm.init(name);
+    const char *p = cbm.getName();
+    for(int i=0; i<16; i++) {
+        C64_POKE(C64_BOOTCRT_NAME+i, p[i]);
     }
-    C64_POKE(C64_BOOTCRT_NAMELEN, len);
+    C64_POKE(C64_BOOTCRT_NAMELEN, strlen(p));
+
     C64_POKE(C64_BOOTCRT_HANDSHAKE, 0x80); // initial boot cart handshake
 
     boot_cart.custom_addr = (void *)&_bootcrt_65_start;

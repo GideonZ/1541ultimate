@@ -456,6 +456,9 @@ void C1541 :: mount_d64(bool protect, File *file)
 	mount_file = file;
 	remove_disk();
 
+	if (!file) {
+	    return;
+	}
 	printf("Loading...");
 	bin_image->load(file);
 	printf("Converting...");
@@ -474,6 +477,9 @@ void C1541 :: mount_g64(bool protect, File *file)
 	mount_file = file;
 	remove_disk();
 
+    if (!file) {
+        return;
+    }
 	printf("Loading...");
 	gcr_image->load(file);
 	printf("Inserting...");
