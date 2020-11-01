@@ -23,7 +23,7 @@ FileSystem_ISO9660 :: FileSystem_ISO9660(Partition *p) : FileSystem(p)
 FileSystem_ISO9660 :: ~FileSystem_ISO9660()
 {
     if(sector_buffer)
-        delete sector_buffer;
+        delete[] sector_buffer;
 }
 
 void FileSystem_ISO9660 :: get_dir_record(void *p)
@@ -68,7 +68,7 @@ FileSystem* FileSystem_ISO9660 :: test(Partition *p)        // check if file sys
         return NULL;
     }
     printf("Correct volume key!");
-    delete buf;
+    delete[] buf;
     return new FileSystem_ISO9660(p);
 }
 

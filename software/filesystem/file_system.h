@@ -83,13 +83,14 @@ class PathInfo {
 public:
 	int index;
 	Path workPath;
-	int indexFromStartOfFileSystem;
+	SubPath subPath;
 	FileInfo *last;
 	FileInfo *previous;
 
-	PathInfo(FileSystem *fs) : fileInfo1(128), fileInfo2(128) {
+	PathInfo(FileSystem *fs) : fileInfo1(128), fileInfo2(128), subPath(&workPath) {
 		index = 0;
-		indexFromStartOfFileSystem = 0;
+		subPath.start = 0;
+		subPath.stop = -1;
 		last = 0;
 		previous = 0;
 		fileInfo1.fs = fs; // just in case nothing happens, the last info should at least point to something valid
@@ -129,7 +130,7 @@ public:
 	}
 
 	void enterFileSystem(FileSystem *fs) {
-		indexFromStartOfFileSystem = index;
+		subPath.start = index;
 		FileInfo *info = this->getNewInfoPointer();
 		info->fs = fs;
 		info->cluster = 0;
@@ -170,13 +171,19 @@ public:
 		return previous;
 	}
 
-
-	const char *getPathFromLastFS(mstring &work) {
-		return workPath.getSub(indexFromStartOfFileSystem, index, work);
+	const char *getPathFromLastFS(void) {
+	    subPath.stop = index;
+	    return subPath.get_path();
 	}
 
-	const char *getDirectoryFromLastFS(mstring &work) {
-		return workPath.getSub(indexFromStartOfFileSystem, index-1, work);
+	const char *getDirectoryFromLastFS(void) {
+        subPath.stop = index-1;
+        return subPath.get_path();
+	}
+
+	SubPath *getSubPath(void) {
+	    subPath.stop = index;
+	    return &subPath;
 	}
 
 	const char *getFullPath(mstring &work, int part) {
@@ -198,10 +205,9 @@ public:
 	void dumpState(const char *head) {
 		printf("%s state of PathInfo structure:\n", head);
 		printf("Working path: %s\n", workPath.get_path());
-		printf("Index: %d. IndexOfLastFS: %d\n", index, indexFromStartOfFileSystem);
 		printf("hasMore: %s\n", hasMore()?"yes":"no");
+		printf("Path from FS: %s\n", getPathFromLastFS());
 		mstring work;
-		printf("Path from FS: %s\n", getPathFromLastFS(work));
 		printf("Head: %s\n", workPath.getHead(work));
 		printf("Filename: %s\n", getFileName());
 		printf("LastInfo:\n");

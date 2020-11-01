@@ -5,23 +5,17 @@
 #include "file_device.h"
 #include <cctype>
 
-void FileManager :: invalidate(CachedTreeNode *o, int includeSelf)
+void FileManager :: invalidate(CachedTreeNode *o)
 {
-	CachedTreeNode *par;
-    BlockDevice *blk;
     MountPoint *m;
     File *f;
-    FileDevice *fd;
-    Path *path;
     mstring pathString;
     const char *pathStringC;
     int len;
 
-	par = o->parent;
-
-	printf("Invalidate event.. Param = %d. Checking %d files.\n", includeSelf, open_file_list.get_elements());
 	pathStringC = o->get_full_path(pathString);
 	len = strlen(pathStringC);
+	printf("Invalidate event on %s.. Checking %d mountpoints.\n", o->get_file_info()->lfname, mount_points.get_elements());
 
 	for (int i=0;i<mount_points.get_elements();i++) {
 		m = mount_points[i];
@@ -30,16 +24,17 @@ void FileManager :: invalidate(CachedTreeNode *o, int includeSelf)
 			continue;
 		}
 		f = m->get_file();
-		printf("%2d. \n", i); //, m->get_path());
+		printf("%2d. %s\n", i, f->get_path());
 		if (strncmp(f->get_path(), pathStringC, len) == 0) {
 			printf("Match!\n");
-			fclose(f);
+			f->close();
+			delete m;
+	        mount_points.mark_for_removal(i);
 		}
-		delete m;
-		mount_points.mark_for_removal(i);
 	}
 	mount_points.purge_list();
 
+    printf("Invalidate event on %s.. Checking %d files.\n", o->get_file_info()->lfname, open_file_list.get_elements());
 	for(int i=0;i<open_file_list.get_elements();i++) {
 		f = open_file_list[i];
 		if(!f) {// should never occur
@@ -48,30 +43,26 @@ void FileManager :: invalidate(CachedTreeNode *o, int includeSelf)
 		} else if(!(f->isValid())) { // already invalidated.
 			continue;
 		}
-		printf("%2d. %p:%s\n", i, f, f->get_path());
+		printf("%2d. %s\n", i, f->get_path());
 		if (strncmp(f->get_path(), pathStringC, len) == 0) {
 			printf("Match!\n");
 			f->invalidate();
 		}
 	}
 
-/*
-	for(int i=0;i<used_paths.get_elements();i++) {
-		path = used_paths[i];
-		// path->invalidate(); // clear the validated state  (comment: not yet implemented)
-	}
-*/
-
-	if(includeSelf == 0) { // 0: the object still exists, just clean up the children
-		o->cleanup_children();
-	} else { // 1: the node itself disappears
-		// if the node is in root, the remove_root_node shall be called.
-		if(par && (par != root)) {
-			printf("Removing %s from %s\n", o->get_name(), par->get_name());
-			par->children.remove(o);
-		}
-	}
+    // if the node is in root, the remove_root_node shall be called.
+	o->cleanup_children();
 	printf("Invalidation complete.\n");
+}
+
+void FileManager :: remove_from_parent(CachedTreeNode *o)
+{
+    CachedTreeNode *par;
+    par = o->parent;
+    if(par && (par != root)) {
+        printf("Removing %s from %s\n", o->get_name(), par->get_name());
+        par->children.remove(o);
+    }
 }
 
 bool FileManager :: is_path_writable(Path *p)
@@ -124,9 +115,8 @@ FRESULT FileManager :: get_directory(Path *p, IndexedList<FileInfo *> &target, c
 		return res;
 	}
 	Directory *dir;
-	mstring pathFromFSRoot;
 	FileSystem *fs = pathInfo.getLastInfo()->fs;
-	res = fs->dir_open(pathInfo.getPathFromLastFS(pathFromFSRoot), &dir);
+	res = fs->dir_open(pathInfo.getPathFromLastFS(), &dir);
 	FileInfo info(INFO_SIZE);
 	if (res == FR_OK) {
 		while(1) {
@@ -164,9 +154,8 @@ FRESULT FileManager :: print_directory(const char *path)
 	} else {
 		Directory *dir;
 		FileInfo info(INFO_SIZE);
-		mstring pathFromFSRoot;
 		fs = pathInfo.getLastInfo()->fs;
-        fres = fs->dir_open(pathInfo.getPathFromLastFS(pathFromFSRoot), &dir);
+        fres = fs->dir_open(pathInfo.getPathFromLastFS(), &dir);
 		if (fres == FR_OK) {
 			while(1) {
 				fres = dir->get_entry(info);
@@ -256,7 +245,7 @@ FRESULT FileManager :: find_pathentry(PathInfo &pathInfo, bool open_mount)
 			fres = FR_OK;
 			// we end on a file, and we're requested to force open it
 			if (open_mount && !(pathInfo.last->attrib & AM_DIR)) {
-				mp = find_mount_point(pathInfo.last, pathInfo.previous);
+	            mp = find_mount_point(pathInfo.getSubPath(), pathInfo.last);
 				if(mp) {
 					fs = mp->get_embedded()->getFileSystem();
 					pathInfo.enterFileSystem(fs);
@@ -266,7 +255,7 @@ FRESULT FileManager :: find_pathentry(PathInfo &pathInfo, bool open_mount)
 			}
 			break;
 		case e_TerminatedOnFile:
-			mp = find_mount_point(pathInfo.last, pathInfo.previous);
+		    mp = find_mount_point(pathInfo.getSubPath(), pathInfo.last);
 			if(mp) {
 				fs = mp->get_embedded()->getFileSystem();
 				pathInfo.enterFileSystem(fs);
@@ -299,35 +288,29 @@ FRESULT FileManager :: fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file
 		return FR_EXIST;
 	}
 
-	// printf("Path %s was accessed with result: %s\n", path->get_path(), FileSystem :: get_error_string(fres));
 	bool create = (flags & FA_CREATE_NEW) && (fres == FR_NO_FILE);
 	create |= (flags & FA_CREATE_ALWAYS) && (fres == FR_OK);
 	create |= (flags & FA_CREATE_ALWAYS) && (fres == FR_NO_FILE);
     create |= (flags & FA_OPEN_ALWAYS) && (fres == FR_NO_FILE);
 
-	if ((fres != FR_OK) && (!create))
+	// If the file should not be created, it should exist
+    if ((fres != FR_OK) && (!create))
 		return fres;
 
-	// info.print_info();
-	// printf("The path from the root of this filesystem: %s\n", rem.c_str());
+/*
+    char *filename = (char *)pathInfo.getFileName();
+    if (create) {
+        if (fix_filename(filename)) { // illegal chars should not appear in the filename
+            return FR_INVALID_NAME;
+        }
+    }
+*/
 
 	FileSystem *fs = pathInfo.getLastInfo()->fs;
 	FileInfo *relativeDir = 0;
 	mstring workpath;
 
-	if (create) {
-        relativeDir = pathInfo.getLastInfo();
-	} else {
-	    relativeDir = pathInfo.getParentInfo();
-	}
-
-	mstring workPathFromFSRoot;
-	char *filename = (char *)pathInfo.getFileName();
-	if (create) {
-		fix_filename(filename);
-	}
-
-	fres = fs->file_open(filename, flags, file, relativeDir);
+	fres = fs->file_open(pathInfo.getPathFromLastFS(), flags, file);
 	if (fres == FR_OK) {
 	    open_file_list.append(*file);
 	    pathInfo.workPath.getTail(0, (*file)->get_path_reference());
@@ -423,27 +406,28 @@ void FileManager :: add_root_entry(CachedTreeNode *obj)
 void FileManager :: remove_root_entry(CachedTreeNode *obj)
 {
 	lock();
-	invalidate(obj, 1); // cleanup!
+	invalidate(obj); // cleanup all file references that are dependent on this node
+	remove_from_parent(obj);
 	sendEventToObservers(eNodeRemoved, "/", obj->get_name());
 	root->children.remove(obj);
 	unlock();
 }
 
-MountPoint *FileManager :: add_mount_point(File *file, FileSystemInFile *emb)
+MountPoint *FileManager :: add_mount_point(SubPath *path, File *file, FileSystemInFile *emb)
 {
-	// printf("FileManager :: add_mount_point: (FS=%p, CL=%d)\n", file->get_file_system(), file->get_inode());
-	MountPoint *mp = new MountPoint(file, emb);
+	printf("FileManager :: add_mount_point: (FS=%p, path='%s')\n", file->get_file_system(), path->get_path());
+	MountPoint *mp = new MountPoint(path, file, emb);
 	mount_points.append(mp);
 	return mp;
 }
 
-MountPoint *FileManager :: find_mount_point(FileInfo *info, FileInfo *parent)
+MountPoint *FileManager :: find_mount_point(SubPath *path, FileInfo *info)
 {
-	// printf("FileManager :: find_mount_point: '%s' (FS=%p, CL=%d)\n", info->lfname, info->fs, info->cluster);
+	//printf("FileManager :: find_mount_point: '%s' (FS=%p, Path='%s')\n", info->lfname, info->fs, path->get_path());
 	lock();
 	for(int i=0;i<mount_points.get_elements();i++) {
-		if(mount_points[i]->match(info->fs, info->cluster)) {
-			// printf("Found!\n");
+		if(mount_points[i]->match(info->fs, path)) {
+			//printf("Found!\n");
 			unlock();
 			return mount_points[i];
 		}
@@ -455,13 +439,16 @@ MountPoint *FileManager :: find_mount_point(FileInfo *info, FileInfo *parent)
 
 	uint8_t flags = (info->attrib & AM_RDO) ? FA_READ : FA_READ | FA_WRITE;
 
-	FRESULT fr = info->fs->file_open(info->lfname, flags, &file, parent);
+	FRESULT fr = info->fs->file_open(path->get_path(), flags, &file);
 	if (fr == FR_OK) {
-		emb = FileSystemInFile :: getEmbeddedFileSystemFactory() -> create(info);
+	    path->get_root_path(file->get_path_reference());
+	    emb = FileSystemInFile :: getEmbeddedFileSystemFactory() -> create(info);
 		if (emb) {
 			emb->init(file);
 			if (emb->getFileSystem()) {
-				mp = add_mount_point(file, emb);
+				mp = add_mount_point(path, file, emb);
+			} else {
+			    delete emb;
 			}
 		}
 	}
@@ -479,9 +466,9 @@ FRESULT FileManager :: delete_file(const char *pathname)
 		return fres;
 	}
 	FileSystem *fs = pathInfo.getLastInfo()->fs;
-	mstring work;
-	fres = fs->file_delete(pathInfo.getPathFromLastFS(work));
+	fres = fs->file_delete(pathInfo.getPathFromLastFS());
 	if (fres == FR_OK) {
+        mstring work;
 		pathInfo.workPath.getHead(work);
 		sendEventToObservers(eNodeRemoved, pathInfo.workPath.getSub(0, pathInfo.index-1, work), pathInfo.getFileName());
 	}
@@ -498,9 +485,9 @@ FRESULT FileManager :: delete_file(Path *path, const char *name)
 		return fres;
 	}
 	FileSystem *fs = pathInfo.getLastInfo()->fs;
-	mstring work;
-	fres = fs->file_delete(pathInfo.getPathFromLastFS(work));
+	fres = fs->file_delete(pathInfo.getPathFromLastFS());
 	if (fres == FR_OK) {
+	    mstring work;
 		pathInfo.workPath.getHead(work);
 		sendEventToObservers(eNodeRemoved, pathInfo.workPath.getSub(0, pathInfo.index-1, work), pathInfo.getFileName());
 	}
@@ -551,12 +538,12 @@ FRESULT FileManager :: rename_impl(PathInfo &from, PathInfo &to)
 			printf("Trying to move a file from one file system to another.\n");
 			return FR_INVALID_DRIVE;
 		}
-		mstring work1, work2;
 		fres = from.getLastInfo()->fs->file_rename(
-					from.getPathFromLastFS(work1),
-					to.getPathFromLastFS(work2));
+					from.getPathFromLastFS(),
+					to.getPathFromLastFS());
 		if (fres == FR_OK) {
-			const char *from_path = from.getFullPath(work1, -1);
+		    mstring work1, work2;
+		    const char *from_path = from.getFullPath(work1, -1);
 			const char *to_path = to.getFullPath(work2, -1);
 			sendEventToObservers(eRefreshDirectory, from_path, "");
 			if (strcmp(from_path, to_path) != 0) {
@@ -583,11 +570,10 @@ FRESULT FileManager :: create_dir(const char *pathname)
 		return FR_EXIST;
 	if (fres == FR_NO_FILE) {
 		FileSystem *fs = pathInfo.getLastInfo()->fs;
-		mstring work;
-		pathInfo.getPathFromLastFS(work);
-		fres = fs->dir_create(work.c_str());
+		fres = fs->dir_create(pathInfo.getPathFromLastFS());
 		if (fres == FR_OK) {
-			sendEventToObservers(eNodeAdded, pathInfo.getFullPath(work, -1), pathInfo.getFileName());
+		    mstring work;
+		    sendEventToObservers(eNodeAdded, pathInfo.getFullPath(work, -1), pathInfo.getFileName());
 		}
 		return fres;
 	}
@@ -607,9 +593,7 @@ FRESULT FileManager :: create_dir(Path *path, const char *name)
 		return FR_EXIST;
 	if (fres == FR_NO_FILE) {
 		FileSystem *fs = pathInfo.getLastInfo()->fs;
-		mstring work;
-		pathInfo.getPathFromLastFS(work);
-		fres = fs->dir_create(work.c_str());
+		fres = fs->dir_create(pathInfo.getPathFromLastFS());
 		if (fres == FR_OK) {
 			sendEventToObservers(eNodeAdded, path->get_path(), name);
 		}

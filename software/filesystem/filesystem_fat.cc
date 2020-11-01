@@ -15,6 +15,7 @@ FileSystemFAT :: FileSystemFAT(Partition *p) : FileSystem(p)
 {
     uint8_t drv = ChanFATManager :: getManager() -> addDrive(p);
     memset(&fatfs, 0, sizeof(FATFS));
+
     if (drv != 0xFF) {
         driveIndex = drv;
         sprintf(prefix, "%d:", drv);
@@ -127,7 +128,7 @@ FRESULT FileFAT :: read(void *buffer, uint32_t len, uint32_t *transferred)
     if (!get_file_system()) {
         return FR_NOT_READY;
     }
-    return f_read(getFIL(), buffer, len, transferred);
+    return f_read(getFIL(), buffer, len, (UINT*)transferred);
 }
 
 FRESULT FileFAT :: write(const void *buffer, uint32_t len, uint32_t *transferred)
@@ -135,7 +136,7 @@ FRESULT FileFAT :: write(const void *buffer, uint32_t len, uint32_t *transferred
     if (!get_file_system()) {
         return FR_NOT_READY;
     }
-    return f_write(getFIL(), buffer, len, transferred);
+    return f_write(getFIL(), buffer, len, (UINT*)transferred);
 }
 
 FRESULT FileFAT :: seek(uint32_t pos)

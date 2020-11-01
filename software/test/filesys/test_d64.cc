@@ -97,6 +97,8 @@ FRESULT print_directory(FileSystem *fs, const char *path, int indent = 0)
             }
         }
         delete dir; // close directory
+    } else {
+        printf("Directory '%s' cannot be opened: %s\n", path, FileSystem::get_error_string(fres));
     }
     if (!indent) {
         uint32_t fre;
@@ -495,6 +497,9 @@ void test_fat()
         return;
     }
     print_directory(&fs, "");
+
+    print_directory(&fs, "/main.dnp/utilities");
+    print_directory(&fs, "/megapatch/mp33r6-en.d81/blah");
 }
 
 int main()
@@ -508,7 +513,6 @@ int main()
     //test_fat();
     return 0;
 
-    //read_dnp();
     ok &= test_format_d64();
     ok &= test_format_d71();
     ok &= test_format_d81();
