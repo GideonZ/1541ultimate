@@ -478,10 +478,17 @@ FRESULT FileSystemCBM::file_rename(const char *old_name, const char *new_name)
 
     if (new_name[0] == '/')
         new_name++;
-    CbmFileName cbm(new_name);
+
+    CbmFileName cbm;
 
     if (res == FR_OK) {
         DirEntryCBM *p = dd->get_pointer();
+        if ((p->std_fileType & 0x07) == 0x06) {
+            cbm.init_dir(new_name);
+        } else {
+            cbm.init(new_name);
+        }
+
         p->std_fileType = (p->std_fileType & 0xF8) | cbm.getType(); // save upper bits
         memset(p->name, 0xA0, 16);
         memcpy(p->name, cbm.getName(), cbm.getLength());
