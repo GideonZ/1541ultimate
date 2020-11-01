@@ -246,12 +246,13 @@ FRESULT FileSystemCBM::sync(void)
     return FR_OK;
 }
 
-void FileSystemCBM::get_volume_name(uint8_t *sector, char *buffer, int buf_len)
+void FileSystemCBM::get_volume_name(uint8_t *sector, char *buffer, int buf_len, bool isRoot)
 {
+    int offset = isRoot ? volume_name_offset : 4; // FIXME, hard coded now
     /* Volume name extraction */
     for (int i = 0; i < 24; i++) {
         if (i < buf_len) {
-            char c = char(sector[volume_name_offset + i]);
+            char c = char(sector[offset + i]);
             buffer[i] = c;
         }
     }
@@ -324,8 +325,9 @@ FRESULT FileSystemCBM::dir_create(const char *path)
     // Create directory header block
 
     blk[0] = 0x48;
-    get_volume_name(root_buffer, (char *)(blk+2), 27); // get stuff like dos & disk ID
-    fat_to_petscii(nameToCreate, false, (char *)(blk + 2), 27, false); // overwrite with dir name
+    get_volume_name(root_buffer, (char *)(blk+2), 27, true); // get stuff like dos & disk ID
+    memset(blk + 2, 0xA0, 16); // clear name part
+    fat_to_petscii(nameToCreate, false, (char *)(blk + 2), 16, false); // overwrite with dir name
     fres = ff->write(blk, 30, &tr);
 
     if (fres == FR_OK) {
@@ -549,6 +551,10 @@ FRESULT FileSystemCBM::file_delete(const char *path)
     FileInfo info(20);
     FRESULT res = find_file(filename, dd, &info);
 
+    // Deleting directories is not yet implemented, we should check here if the dir is empty.
+    if (info.attrib & AM_DIR) {
+        return FR_DENIED;
+    }
     if (res == FR_OK) {
         DirEntryCBM *p = dd->get_pointer();
         p->std_fileType = 0x00;
@@ -1166,10 +1172,12 @@ DirInCBM::DirInCBM(FileSystemCBM *f, uint32_t cluster)
         header_sector = f->root_sector;
         start_track = f->dir_track;
         start_sector = f->dir_sector;
+        root = true;
     } else { // Subdir given
         fs->get_track_sector(cluster, header_track, header_sector);
         start_track = -1;  // it needs to be read from the header
         start_sector = -1;
+        root = false;
     }
 }
 
@@ -1358,7 +1366,7 @@ FRESULT DirInCBM::get_entry(FileInfo &f)
         f.size = 0;
         f.name_format = NAME_FORMAT_CBM;
 
-        fs->get_volume_name(fs->sect_buffer, f.lfname, f.lfsize);
+        fs->get_volume_name(fs->sect_buffer, f.lfname, f.lfsize, root);
         if (f.lfsize > 24) {
             f.lfname[24] = 0;
         }
