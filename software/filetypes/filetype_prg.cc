@@ -76,17 +76,13 @@ int FileTypePRG :: fetch_context_items(IndexedList<Action *> &list)
 
 	BrowsableDirEntry *parentEntry = (BrowsableDirEntry *)(node->getParent());
 	FileInfo *parentInfo = parentEntry->getInfo();
-	if (strcasecmp("D64", parentInfo->extension) == 0) {
-	    // if this file is inside of a D64, then there should be a mount point already of this D64,
-	    // if not, we cannot mount the disk.
 
-	    MountPoint *mp = FileManager :: getFileManager() -> find_mount_point(parentInfo, 0);
-        if(mp) {
-            list.append(new Action("Mount & Run", FileTypePRG :: execute_st, PRGFILE_MOUNT_RUN, mode));
-            count++;
-            list.append(new Action("Real Run", FileTypePRG :: execute_st, PRGFILE_MOUNT_REAL_RUN, mode));
-            count++;
-        }
+	if (strcasecmp("D64", parentInfo->extension) == 0) {
+	    // if this file is inside of a D64.
+        list.append(new Action("Mount & Run", FileTypePRG :: execute_st, PRGFILE_MOUNT_RUN, mode));
+        count++;
+        list.append(new Action("Real Run", FileTypePRG :: execute_st, PRGFILE_MOUNT_REAL_RUN, mode));
+        count++;
 	}
     return count;
 }
@@ -162,17 +158,9 @@ int FileTypePRG :: execute_st(SubsysCommand *cmd)
             	fres = fm->fstat(cmd->path.c_str(), info);
             	printf("%s\n", FileSystem :: get_error_string(fres));
 
-            	if (fres == FR_OK) {
-                	MountPoint *mp = fm -> find_mount_point(&info, 0);
-                	if (mp) {
-    					printf("Mounting %s to drive A\n", cmd->path.c_str());
-
-    					drive_command = new SubsysCommand(cmd->user_interface, SUBSYSID_DRIVE_A, MENU_1541_MOUNT, 0, 0, cmd->path.c_str());
-    					drive_command->execute();
-                	} else {
-                		printf("INTERR: Can't find mount point anymore?\n");
-                	}
-            	}
+            	printf("Mounting %s to drive A\n", cmd->path.c_str());
+                drive_command = new SubsysCommand(cmd->user_interface, SUBSYSID_DRIVE_A, MENU_1541_MOUNT, 0, 0, cmd->path.c_str());
+                drive_command->execute();
             }
             if (run_code) {
             	c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DMA_LOAD, run_code, cmd->path.c_str(), cmd->filename.c_str());
