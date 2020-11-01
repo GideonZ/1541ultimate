@@ -19,12 +19,19 @@ typedef void * SemaphoreHandle_t;
 
 class MountPoint
 {
-	File *file;
+    Path *path;
+    File *file;
 	FileSystemInFile *emb;
 public:
-	MountPoint(File *f, FileSystemInFile *e) {
-		file = f;
+	MountPoint(SubPath *p, File *f, FileSystemInFile *e) {
+		path = p->get_new_path();
+	    file = f;
 		emb = e;
+	}
+
+	~MountPoint() {
+	    delete path;
+	    delete emb;
 	}
 
 	File *get_file() {
@@ -35,8 +42,12 @@ public:
 		return emb;
 	}
 
-	bool match(FileSystem *fs, uint32_t inode) {
-		return (file->get_file_system() == fs) && (file->get_inode() == inode);
+	const char *get_path() {
+	    return path->get_path();
+	}
+
+	bool match(FileSystem *fs, SubPath *sp) {
+		return (file->get_file_system() == fs) && (sp->match(path));
 	}
 };
 
@@ -86,7 +97,12 @@ class FileManager
 #ifdef OS
     	vSemaphoreDelete(serializer);
 #endif
-    	for(int i=0;i<open_file_list.get_elements();i++) {
+        for(int i=0;i<mount_points.get_elements();i++) {
+            fclose(mount_points[i]->get_file());
+            delete mount_points[i];
+        }
+
+        for(int i=0;i<open_file_list.get_elements();i++) {
         	delete open_file_list[i];
         }
 /*
@@ -94,9 +110,6 @@ class FileManager
         	delete used_paths[i];
         }
 */
-        for(int i=0;i<mount_points.get_elements();i++) {
-        	delete mount_points[i];
-        }
         delete rootfs;
         delete root;
     }
@@ -135,32 +148,28 @@ public:
 		printf("** This is a dump of the state of the file manager **\n");
 		root->dump(0);
 
-    	printf("\nOpen files:\n");
+    	printf("\nOpen files %d:\n", open_file_list.get_elements());
+
     	for(int i=0;i<open_file_list.get_elements();i++) {
     		File *f = open_file_list[i];
-    		printf("'%s' (%d)\n", f->get_path(), f->get_size());
+    		printf("'%s' (%d), FS=%p\n", f->get_path(), f->get_size(), f->get_file_system());
     	}
-/*
-    	printf("\nUsed paths:\n");
-    	for(int i=0;i<used_paths.get_elements();i++) {
-    		Path *p = used_paths[i];
-    		printf("'%s'\n", p->get_path());
-    	}
-*/
+
     	printf("\nMount Points:\n");
     	for(int i=0;i<mount_points.get_elements();i++) {
     		MountPoint *f = mount_points[i];
-    		printf("%p:\n", mount_points[i]->get_embedded()); // , mount_points[i]->get_path()
+    		printf("%p: %s\n", f->get_embedded(), f->get_path());
     	}
 		unlock();
 	}
 
-	void invalidate(CachedTreeNode *obj, int includeSelf);
+	void invalidate(CachedTreeNode *obj);
+	void remove_from_parent(CachedTreeNode *o);
     void add_root_entry(CachedTreeNode *obj);
     void remove_root_entry(CachedTreeNode *obj);
 
-    MountPoint *add_mount_point(File *, FileSystemInFile *);
-    MountPoint *find_mount_point(FileInfo *info, FileInfo *parent);
+    MountPoint *add_mount_point(SubPath *path, File *, FileSystemInFile *);
+    MountPoint *find_mount_point(SubPath *path, FileInfo *info);
 
     // Functions to use / handle path objects:
     Path *get_new_path(const char *owner) {

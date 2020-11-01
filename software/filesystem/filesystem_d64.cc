@@ -383,7 +383,7 @@ FRESULT FileSystemCBM::find_file(const char *filename, DirInCBM *dir, FileInfo *
     return res;
 }
 
-FRESULT FileSystemCBM::file_open(const char *filename, uint8_t flags, File **file)
+FRESULT FileSystemCBM::file_open(const char *pathname, uint8_t flags, File **file)
 {
     FileInfo info(24);
     DirInCBM *dd;
@@ -393,7 +393,7 @@ FRESULT FileSystemCBM::file_open(const char *filename, uint8_t flags, File **fil
     *file = NULL;
 
     PathInfo pi(this);
-    pi.init(filename);
+    pi.init(pathname);
     pi.workPath.up(&fn); // just look for the parent dir
 
     PathStatus_t pres = walk_path(pi);
@@ -402,7 +402,7 @@ FRESULT FileSystemCBM::file_open(const char *filename, uint8_t flags, File **fil
     }
     dd = new DirInCBM(this, pi.getLastInfo()->cluster);
 
-    FRESULT fres = find_file(filename, dd, &info);
+    FRESULT fres = find_file(fn.c_str(), dd, &info);
     if (fres == FR_NO_FILE) {
         create = (flags & (FA_CREATE_NEW | FA_CREATE_ALWAYS | FA_OPEN_ALWAYS));
         if (!create) {

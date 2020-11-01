@@ -87,13 +87,13 @@ PathStatus_t FileSystem :: walk_path(PathInfo& pathInfo)
 	pathInfo.enterFileSystem(this);
 
 	FileInfo info(128);
+	char fatbuf[128];
 	Directory *dir;
 	FileInfo *ninf;
-	mstring workdir;
     CbmFileName cbm; // in case we need to compare against a CBM name, we reserve some storage for it
 
 	while(pathInfo.hasMore()) {
-		fres = dir_open(pathInfo.getPathFromLastFS(workdir), &dir);
+		fres = dir_open(pathInfo.getPathFromLastFS(), &dir);
 		if (fres == FR_OK) {
 	        cbm.reset();
             while(1) {
@@ -104,8 +104,13 @@ PathStatus_t FileSystem :: walk_path(PathInfo& pathInfo)
 						continue;
 					if (info.match_to_pattern(pathInfo.workPath.getElement(pathInfo.index), cbm)) {
 					    delete dir; // close directory
-						pathInfo.replace(info.lfname);
-						pathInfo.index++;
+					    if (info.name_format & NAME_FORMAT_CBM) {
+					        info.generate_fat_name(fatbuf, 128);
+					        pathInfo.replace(fatbuf);
+					    } else {
+					        pathInfo.replace(info.lfname);
+					    }
+                        pathInfo.index++;
 						ninf = pathInfo.getNewInfoPointer();
 						ninf->copyfrom(&info);
 						if (info.attrib & AM_DIR) {
@@ -122,13 +127,15 @@ PathStatus_t FileSystem :: walk_path(PathInfo& pathInfo)
 					}
 				} else { // not found, nothing else to compare to
 				    delete dir; // close directory
-					pathInfo.index ++; // we will still return something, even if it doesn't exist (for file create)
-					if (pathInfo.hasMore())
+					pathInfo.index++;
+				    if (pathInfo.hasMore())
 						return e_DirNotFound;
 					else
 						return e_EntryNotFound;
 				}
 			}
+		} else {
+		    return e_DirNotFound;
 		}
 	}
 	return e_EntryFound;

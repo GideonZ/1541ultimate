@@ -12,13 +12,14 @@ Disk::Disk(BlockDevice *b, int sec = 512)
     sector_size = sec;
     buf = new uint8_t[sec];
     partition_list = NULL;
+    p_count = 0;
 }
 
 Disk::~Disk()
 {
     Partition *prt, *next;
     if(buf)
-        delete buf;
+        delete[] buf;
 
     prt = partition_list;
     while(prt) {

@@ -24,10 +24,24 @@ Path :: ~Path()
 Path :: Path(Path *p) : full_path("/"), elements(10, NULL)
 {
     owner = "Unknown";
-    depth = 0;
+    depth = p->getDepth();
 
     for(int i=0; i < p->getDepth(); i++) {
         update(i, p->getElement(i));
+    }
+    regenerateFullPath();
+}
+
+Path :: Path(Path *p, int start, int stop) : full_path("/"), elements(stop-start, NULL)
+{
+    owner = "Unknown";
+    if (stop < 0) {
+        stop = p->getDepth();
+    }
+    depth = stop-start;
+
+    for(int i=0; i < depth; i++) {
+        update(i, p->getElement(i+start));
     }
     regenerateFullPath();
 }
@@ -260,3 +274,20 @@ bool Path :: match(Path *search)
     return true;
 }
 
+// Return true when the search path is at least as long as
+// the 'this' path.
+bool SubPath :: match(Path *search)
+{
+    int realStop = (stop < 0) ? reference_path->getDepth() : stop;
+    int depth = realStop - start;
+
+    if (search->getDepth() < depth) {
+        return false;
+    }
+    for(int i=0; i<depth; i++) {
+        if (!pattern_match(search->getElement(i), reference_path->getElement(start+i), false)) {
+            return false;
+        }
+    }
+    return true;
+}

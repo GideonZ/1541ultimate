@@ -20,6 +20,7 @@ private:
 public:
     Path();
     Path(Path *); // make a copy
+    Path(Path *, int start, int stop);
     ~Path();
     const char *owner;
 
@@ -35,6 +36,46 @@ public:
     const char *getLastElement();
 
     bool match(Path *search);
+};
+
+class SubPath
+{
+    Path *reference_path;
+    int start;
+    int stop;
+    mstring *full_path;
+public:
+    SubPath(Path *p) {
+        full_path = NULL;
+        start = 0;
+        stop = -1;
+        reference_path = p;
+    }
+
+    ~SubPath() {
+        if (full_path) {
+            delete full_path;
+        }
+    }
+
+    const char *get_path() {
+        if (!full_path) {
+            full_path = new mstring();
+        }
+        return reference_path->getSub(start, stop, *full_path);
+    }
+
+    const char *get_root_path(mstring &work) {
+        return reference_path->getSub(0, stop, work);
+    }
+
+    Path *get_new_path() {
+        return new Path(reference_path, start, stop);
+    }
+
+    bool match(Path *search);
+
+    friend class PathInfo;
 };
 
 #endif
