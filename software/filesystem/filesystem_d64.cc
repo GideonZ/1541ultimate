@@ -1974,6 +1974,14 @@ FRESULT FileInCBM::write_linear(uint8_t *src, int len, uint32_t& tr)
 FRESULT FileInCBM::seek(uint32_t pos)
 {
     fs->sync();
+
+
+    if (start_cluster < 0) { // file doesn't yet exist
+        if (!pos) {
+            return FR_OK; // allow if seek to position 0
+        }
+    }
+
     fs->get_track_sector(start_cluster, current_track, current_sector);
     memset(visited, 0, fs->num_sectors);
     FRESULT res = fs->move_window(fs->get_abs_sector(current_track, current_sector));
