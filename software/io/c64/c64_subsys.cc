@@ -426,6 +426,7 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
         }
     	break;
 
+#ifndef RECOVERYAPP
     case C64_DMA_LOAD_MNT:
         res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
         if(res == FR_OK) {
@@ -433,7 +434,7 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
             fm->fclose(f);
         }
         break;
-
+#endif
     case C64_DMA_LOAD_RAW:
     	res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
         if(res == FR_OK) {

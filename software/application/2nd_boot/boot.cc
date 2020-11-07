@@ -2,10 +2,11 @@
 #include "flash.h"
 #include "sd_card.h"
 #include "disk.h"
-#include "ff2.h"
+#include "ff.h"
 //#include "usb_scsi.h"
 #include "versions.h"
 #include "dump_hex.h"
+#include "chanfat_manager.h"
 
 extern "C" {
 	#include "itu.h"
@@ -20,7 +21,6 @@ extern "C" {
 BlockDevice  *blk;
 Disk         *dsk;
 Partition    *prt;
-
 FATFS		 fs;
 
 //UsbDevice	 *usbdev;
@@ -98,8 +98,12 @@ int init_fat(void)
         //delete blk;
         return -2;
     }
-    fs.drv = prt;
-    fs_init_volume(&fs, 0);
+    ChanFATManager :: getManager() -> addDrive(prt);
+    FRESULT fres = f_mount(&fs, "0:", 1);
+    printf("MountFS returned: %d\n", fres);
+    if (fres != FR_OK) {
+        return -3;
+    }
     return 0;
 }
 
@@ -113,14 +117,14 @@ FRESULT try_loading(const char *filename, uint32_t run_address)
 {
     uint16_t dummy;
     FIL file;
-    FRESULT res = fs_open(&fs, filename, FA_READ, &file);
+    FRESULT res = f_open(&file, filename, FA_READ);
 
     printf("File %s open result = %d.\n", filename, res);
     if(res != FR_OK) {
         return res;
     }
     uint32_t bytes_read = 0;
-    res = f_read(&file, (void *)run_address, APPLICATION_MAX_LENGTH, &bytes_read);
+    res = f_read(&file, (void *)run_address, APPLICATION_MAX_LENGTH, (UINT*)&bytes_read);
     printf("Bytes read: %d (0x%6x)\n", bytes_read, bytes_read);
     
     f_close(&file);
