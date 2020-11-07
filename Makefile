@@ -216,3 +216,13 @@ u64dev:
 	@$(MAKE) -C target/software/nios2_update_u64dev
 	@cp target/software/nios2_update_u64dev/result/update.app ./update_dev.u64
 	
+u64_clean:
+	@$(MAKE) -C target/software/nios2_update_u64 clean
+	@$(MAKE) -C target/software/nios2_u64_boot clean
+	@$(MAKE) -C target/software/nios2_u64_dev clean
+	@$(MAKE) -C target/software/nios2_u64_loader clean
+	@$(MAKE) -C target/software/nios2_update_u64a4 clean
+	@$(MAKE) -C target/software/nios2_update_u64dev clean
+	@$(MAKE) -C target/software/nios2_u64 clean
+
+

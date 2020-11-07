@@ -10,7 +10,7 @@ SRCS_C   =	mbstart_app.c \
 			itu.c \
 			xmodem.c \
 			dump_hex.c \
-			ff2.c \
+			ff.c \
 			diskio.c \
 			small_printf.c
 

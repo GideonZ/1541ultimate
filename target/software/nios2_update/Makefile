@@ -20,9 +20,6 @@ SRCS_C   =	itu.c \
             timers.c \
             port.c \
             heap_3.c \
-            ff2.c \
-            ccsbcs.c \
-            ffsyscall.c \
             time.c \
             mdio.c \
             nios_main.c \

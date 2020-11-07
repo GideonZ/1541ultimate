@@ -42,6 +42,8 @@
 #define _inbyte uart_get_byte
 #define _outbyte outbyte
 
+int uart_get_byte(int delay);
+void outbyte(int c);
 
 static int check(int crc, const unsigned char *buf, int sz)
 {
