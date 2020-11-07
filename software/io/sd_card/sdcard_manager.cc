@@ -84,7 +84,7 @@ void SdCardManager :: poll()
 				fm->sendEventToObservers(eNodeMediaRemoved, "/", sd_dev->get_name());
 				sd_dev->detach_disk();
 				sd_card->set_state(e_device_no_media);
-				fm->invalidate(sd_dev, 0);
+				fm->invalidate(sd_dev);
 			}
 			break;
 
@@ -93,7 +93,7 @@ void SdCardManager :: poll()
 				fm->sendEventToObservers(eNodeMediaRemoved, "/", sd_dev->get_name());
 				sd_dev->detach_disk();
 				sd_card->set_state(e_device_no_media);
-				fm->invalidate(sd_dev, 0);
+				fm->invalidate(sd_dev);
 			}
 			break;
 			
