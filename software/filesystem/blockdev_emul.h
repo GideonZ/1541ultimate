@@ -10,6 +10,7 @@ class BlockDevice_Emulated : public BlockDevice
     FILE *f;
     long file_size;
     int sector_size;
+    int test;
 public:
     BlockDevice_Emulated(const char *name, int sec_size);
     virtual ~BlockDevice_Emulated();
