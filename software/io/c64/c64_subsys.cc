@@ -505,7 +505,15 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
                     printf("Opened file successfully.\n");
                     uint32_t bytes_written;
 
-                    f->write(srcAddr, expSize, &bytes_written);
+                    if (ftype == 1571)
+                    {
+                       f->write(srcAddr, expSize/2, &bytes_written);
+                       uint32_t tmp;
+                       f->write(srcAddr+700*256, expSize/2, &tmp);
+                       bytes_written += tmp;
+                    }
+                    else
+                       f->write(srcAddr, expSize, &bytes_written);
 
                     printf("written: %d...", bytes_written);
                     sprintf(buffer, "bytes saved: %d ($%8x)", bytes_written, bytes_written);
