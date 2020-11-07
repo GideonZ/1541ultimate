@@ -6,6 +6,7 @@
 
 BlockDevice_Emulated::BlockDevice_Emulated(const char *name, int sec_size)
 {
+    test = 12345;
     sector_size = sec_size;
     struct stat file_status;
     if(!stat(name, &file_status)) {
