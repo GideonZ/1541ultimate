@@ -19,9 +19,9 @@ SRCS_C   =	mbstart_rtos.c \
             timers.c \
             port.c \
             heap_3.c \
-            ff2.c \
-            ccsbcs.c \
-            ffsyscall.c \
+            ff.c \
+            ffsystem.c \
+            ffunicode.c \
             time.c \
             sid_coeff.c
 
