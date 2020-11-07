@@ -479,52 +479,59 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
     case MENU_C64_SAVE_MP3_DRV_C:
     case MENU_C64_SAVE_MP3_DRV_D:
         {
-           int devNo = cmd->functionID - MENU_C64_SAVE_MP3_DRV_A;
-           int ftype = C64 :: isMP3RamDrive(devNo);
-           uint8_t* reu = (uint8_t *)(REU_MEMORY_BASE);
-           int expSize = 1;
-           char* extension = 0;
-           if (ftype == 1541) { expSize = 174848; extension = ".D64"; }
-           if (ftype == 1571) { expSize = 2*174848; extension = ".D71"; }
-           if (ftype == 1581) { expSize = 819200; extension = ".D81"; }
-           if (ftype == DRVTYPE_MP3_DNP)
-           {
-               expSize = C64 :: getSizeOfMP3NativeRamdrive(devNo);
-               extension = ".DNP"; 
-           }
+            int devNo = cmd->functionID - MENU_C64_SAVE_MP3_DRV_A;
+            int ftype = C64::isMP3RamDrive(devNo);
+            uint8_t* reu = (uint8_t *) (REU_MEMORY_BASE);
+            int expSize = 1;
+            char* extension = 0;
 
-           uint8_t ramBase = reu[0x7dc7 + devNo] ;
-           uint8_t* srcAddr = reu+(((uint32_t) ramBase) << 16);
+            if (ftype == 1541) {
+                expSize = 174848;
+                extension = ".D64";
+            }
+            if (ftype == 1571) {
+                expSize = 2 * 174848;
+                extension = ".D71";
+            }
+            if (ftype == 1581) {
+                expSize = 819200;
+                extension = ".D81";
+            }
+            if (ftype == DRVTYPE_MP3_DNP) {
+                expSize = C64::getSizeOfMP3NativeRamdrive(devNo);
+                extension = ".DNP";
+            }
 
-           if(cmd->user_interface->string_box("Save RAMDISK as..", buffer, 22) > 0) {
-              fix_filename(buffer);
-              set_extension(buffer, extension, 32);
-              
-              res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), buffer, &f);
-              if(res == FR_OK) {
+            uint8_t ramBase = reu[0x7dc7 + devNo];
+            uint8_t* srcAddr = reu + (((uint32_t) ramBase) << 16);
+
+            if (cmd->user_interface->string_box("Save RAMDISK as..", buffer, 22) > 0) {
+                fix_filename(buffer);
+                set_extension(buffer, extension, 32);
+
+                res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), buffer, &f);
+                if (res == FR_OK) {
                     printf("Opened file successfully.\n");
                     uint32_t bytes_written;
 
-                    if (ftype == 1571)
-                    {
-                       f->write(srcAddr, expSize/2, &bytes_written);
-                       uint32_t tmp;
-                       f->write(srcAddr+700*256, expSize/2, &tmp);
-                       bytes_written += tmp;
+                    if (ftype == 1571) {
+                        f->write(srcAddr, expSize / 2, &bytes_written);
+                        uint32_t tmp;
+                        f->write(srcAddr + 700 * 256, expSize / 2, &tmp);
+                        bytes_written += tmp;
+                    } else {
+                        f->write(srcAddr, expSize, &bytes_written);
                     }
-                    else
-                       f->write(srcAddr, expSize, &bytes_written);
-
                     printf("written: %d...", bytes_written);
                     sprintf(buffer, "bytes saved: %d ($%8x)", bytes_written, bytes_written);
                     cmd->user_interface->popup(buffer, BUTTON_OK);
 
                     fm->fclose(f);
-              } else {
-                  printf("Couldn't open file..\n");
-                  cmd->user_interface->popup(FileSystem :: get_error_string(res), BUTTON_OK);
-              }
-           }
+                } else {
+                    printf("Couldn't open file..\n");
+                    cmd->user_interface->popup(FileSystem::get_error_string(res), BUTTON_OK);
+                }
+            }
         }
         break;
 
