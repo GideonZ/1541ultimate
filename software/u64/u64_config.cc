@@ -1659,13 +1659,6 @@ void U64Config :: DetectSidImpl(uint8_t *buffer)
 
 #pragma GCC pop_options
 
-#define ONCHIP 0x30000020
-
-extern uint32_t __start_detect_sid;
-extern uint32_t __stop_detect_sid;
-
-typedef void (*func)(uint8_t *);
-
 void U64Config :: S_SetupDetectionAddresses()
 {
     // Configure Socket 1 to be at $D400 and Socket 2 to be at $D500
@@ -1701,28 +1694,10 @@ void U64Config :: S_RestoreDetectionAddresses()
 
 int U64Config :: S_SidDetector(int &sid1, int &sid2)
 {
-    uint32_t *begin = &__start_detect_sid;
-    uint32_t *end = &__stop_detect_sid;
-
-/*
-    // This check forces a reference to U64Config::DetectSid, so it will not be left out by the linker
-    // Note: we never jump to this function, we only take its pointer and jump to the copied version!
-    if ((void *)&U64Config::DetectSidImpl != begin) {
-        printf("Routine location error.\n");
-        return -1;
-    }
-*/
     S_SetupDetectionAddresses();
 
-    // Prepare the function in fast ram
-    uint32_t *dest = (uint32_t *)ONCHIP;
-    for (uint32_t *pul = begin; pul < end; pul++) {
-        *(dest++) = *pul;
-    }
 
     C64 :: hard_stop();
-
-    func detection = (func)ONCHIP;
 
     uint8_t buffer[64];
 
@@ -1731,34 +1706,33 @@ int U64Config :: S_SidDetector(int &sid1, int &sid2)
     for (int attempt = 0; attempt < 3; attempt++) {
         // Prepare the machine to execute the detection code
 
-
         alt_irq_context context = alt_irq_disable_all();
-        detection(buffer);  // <-- jumps to fast ram!
+        DetectSidImpl(buffer);
         alt_irq_enable_all(context);
 
         // Now analyze the data
-        if ((buffer[16] == 2) && (buffer[0] == 0))  {
+        if ((buffer[17] == 2) && (buffer[1] == 0))  {
             sid1 = 2;
-        } else if ((buffer[16] == 2) && (buffer[0] == 1)) {
+        } else if ((buffer[17] == 2) && (buffer[1] == 1)) {
             sid1 = 1;
         }
 
-        if ((buffer[48] == 2) && (buffer[32] == 0))  {
+        if ((buffer[49] == 2) && (buffer[33] == 0))  {
             sid2 = 2;
-        } else if ((buffer[48] == 2) && (buffer[32] == 1)) {
+        } else if ((buffer[49] == 2) && (buffer[33] == 1)) {
             sid2 = 1;
         }
 
         // check consistency. If not consistent, invalidate. If consistent, break
         bool consistent = true;
-        for(int i=1;i<16;i++) {
+        for(int i=2;i<16;i++) {
             if (sid1) {
-                if (buffer[i]    != buffer[0])  { consistent = false; sid1 = 0; break; }
-                if (buffer[i+16] != buffer[16]) { consistent = false; sid1 = 0; break; }
+                if (buffer[i]    != buffer[1])  { consistent = false; sid1 = 0; break; }
+                if (buffer[i+16] != buffer[17]) { consistent = false; sid1 = 0; break; }
             }
             if (sid2) {
-                if (buffer[i+32] != buffer[32]) { consistent = false; sid2 = 0; break; }
-                if (buffer[i+48] != buffer[48]) { consistent = false; sid2 = 0; break; }
+                if (buffer[i+32] != buffer[33]) { consistent = false; sid2 = 0; break; }
+                if (buffer[i+48] != buffer[49]) { consistent = false; sid2 = 0; break; }
             }
         }
 
