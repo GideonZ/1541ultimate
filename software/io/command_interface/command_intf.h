@@ -49,6 +49,9 @@
 #define HANDSHAKE_VALIDATE_LAST   0x10
 #define HANDSHAKE_VALIDATE_MORE   0x30
 
+#define CMD_HS_DMA_ACTIVE         0x80
+#define CMD_HS_TRIGGER_ACTIVE     0x40
+
 #define CMD_TARGET_NONE 0xFF
 
 typedef struct _message
@@ -91,6 +94,7 @@ public:
     void dump_registers(void);
     int  fetch_task_items(Path *path, IndexedList<Action*> &item_list);
     const char *identify(void) { return "Command Interface"; }
+    bool is_dma_active(void);
 };
 
 extern CommandInterface cmd_if;

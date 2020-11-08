@@ -23,6 +23,7 @@ port (
     -- register interface
     slot_req        : in  t_slot_req;
     slot_resp       : out t_slot_resp;
+    write_ff00      : in  std_logic;
     
     -- system interface
     phi2_tick       : in  std_logic := '0';
@@ -30,7 +31,7 @@ port (
     size_ctrl       : in  std_logic_vector(2 downto 0) := "001";
     enable          : in  std_logic;
     inhibit         : in  std_logic; -- to pause a transfer, because Ultimate menu is active
-
+    
     -- memory interface
     mem_req         : out t_mem_req;
     mem_resp        : in  t_mem_resp;
@@ -79,7 +80,6 @@ architecture gideon of reu is
     signal reu_rack   : std_logic;
     signal reu_dack   : std_logic;
     signal glob_rwn   : std_logic;
-    signal write_ff00 : std_logic;
      
     signal masked_reu_addr : unsigned(23 downto 0);
     
@@ -123,8 +123,6 @@ architecture gideon of reu is
     signal start_delay  : unsigned(7 downto 0) := (others => '0');
     signal ext_count    : unsigned(7 downto 0) := (others => '0');
 begin
-    write_ff00 <= '1' when slot_req.late_write='1' and slot_req.io_address=X"FF00" else '0';
-    
     with size_ctrl select mask <=
         "00000001" when "000",
         "00000011" when "001",

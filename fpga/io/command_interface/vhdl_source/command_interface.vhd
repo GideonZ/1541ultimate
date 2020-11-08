@@ -15,6 +15,7 @@ port (
     slot_req        : in  t_slot_req;
     slot_resp       : out t_slot_resp;
     freeze          : out std_logic;
+    write_ff00      : in  std_logic := '0';
         
     -- io interface for local cpu
     io_req          : in  t_io_req; -- we get an 8K range
@@ -107,7 +108,8 @@ begin
         slot_req    => slot_req,
         slot_resp   => slot_resp,
         freeze      => freeze,
-            
+        write_ff00  => write_ff00,
+
         -- memory
         address     => b_address,
         rdata       => b_rdata,

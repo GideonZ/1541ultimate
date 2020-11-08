@@ -21,6 +21,7 @@ port (
     slot_req        : in  t_slot_req;
     slot_resp       : out t_slot_resp;
     freeze          : out std_logic;
+    write_ff00      : in  std_logic := '0';
     
     -- block memory
     address         : out unsigned(10 downto 0);
@@ -64,7 +65,9 @@ architecture gideon of command_protocol is
     signal enabled          : std_logic;
     signal slot_base        : unsigned(6 downto 0);
     signal do_write         : std_logic;
-    
+    signal trigger          : std_logic;
+    signal freeze_i         : std_logic;
+
     signal irq_mask         : std_logic_vector(2 downto 0);
     signal command_pointer  : unsigned(10 downto 0);
     signal response_pointer : unsigned(10 downto 0);
@@ -143,7 +146,8 @@ begin
                             error_busy <= '0';
                         end if;
                         if slot_req.data(0)='1' then
-                            freeze <= slot_req.data(7);
+                            freeze_i <= slot_req.data(7);
+                            trigger <= slot_req.data(6);
                             if state = "00" then                            
                                 state <= "01";
                                 handshake_in(0) <= '1';
@@ -177,6 +181,11 @@ begin
                 end if;
             end if;
    
+            if write_ff00 = '1' and trigger = '1' then
+                freeze_i <= '1';
+                trigger <= '0';
+            end if;                
+
             io_resp <= c_io_resp_init;
             if io_req.write='1' then
                 io_resp.ack <= '1';
@@ -197,13 +206,15 @@ begin
                         handshake_in(2) <= '0';
                     end if;
                     if io_req.data(4)='1' then -- validate data
-                        freeze   <= '0';
+                        trigger  <= '0';
+                        freeze_i <= '0';
                         state(1) <= '1';
                         state(0) <= io_req.data(5); -- more bit
                         reset_response;
                     end if;                        
                     if io_req.data(7)='1' then
-                        freeze   <= '0';
+                        freeze_i <= '0';
+                        trigger  <= '0';
                         reset_response;
                         state <= "00";
                     end if;                        
@@ -232,6 +243,8 @@ begin
                 when c_cif_io_slot_enable    =>
                     io_resp.data(0) <= enabled;
                 when c_cif_io_handshake_out  =>
+                    io_resp.data(7) <= freeze_i;
+                    io_resp.data(6) <= trigger;
                     io_resp.data(5 downto 4) <= state;
                 when c_cif_io_handshake_in   =>
                     io_resp.data <= slot_status;
@@ -275,10 +288,13 @@ begin
                 enabled          <= '0';
                 error_busy       <= '0';
                 slot_base        <= (others => '0');
-                freeze           <= '0';
+                freeze_i         <= '0';
+                trigger          <= '0';
             end if;
         end if;
     end process;
     
     io_irq <= '1' when (handshake_in and not irq_mask) /= "000" else '0';
+    freeze <= freeze_i;
+    
 end architecture;
