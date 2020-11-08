@@ -76,8 +76,8 @@
 #define C64_VIDEOFORMAT  (*(volatile uint8_t *)(C64_IO_BASE + 0x01))
 #define C64_TURBOREGS_EN (*(volatile uint8_t *)(C64_IO_BASE + 0x02))
 #define C64_DMA_MEMONLY  (*(volatile uint8_t *)(C64_IO_BASE + 0x03))
-#define C64_LUMA_DELAY   (*(volatile uint8_t *)(C64_IO_BASE + 0x04))
-#define C64_CHROMA_DELAY (*(volatile uint8_t *)(C64_IO_BASE + 0x05))
+#define C64_COLOR_DELAY  (*(volatile uint8_t *)(C64_IO_BASE + 0x04))
+#define C64_PHASE_INCR   (*(volatile uint8_t *)(C64_IO_BASE + 0x05))
 #define C64_BURST_PHASE  (*(volatile uint8_t *)(C64_IO_BASE + 0x06))
 #define C64_VIC_TEST     (*(volatile uint8_t *)(C64_IO_BASE + 0x07))
 #define C64_SID1_BASE    (*(volatile uint8_t *)(C64_IO_BASE + 0x08))
@@ -134,6 +134,7 @@
 #define VIDEO_FMT_CYCLES_63     0x00
 #define VIDEO_FMT_CYCLES_64     0x10
 #define VIDEO_FMT_CYCLES_65     0x20
+#define VIDEO_FMT_RESET_BURST   0x40
 
 typedef struct {
     uint8_t VID_HSYNCPOL;
@@ -153,5 +154,15 @@ typedef struct {
     uint8_t VID_REPCN;
     uint8_t VID_IRCYQ;
 } t_video_timing_regs;
+
+typedef enum {
+    e_PAL_50 = 0,
+    e_NTSC_60,
+    e_PAL_60,
+    e_NTSC_50,
+    e_PAL_60_lock,
+    e_NTSC_50_lock,
+    e_NOT_SET,
+} t_video_mode;
 
 #endif /* U64_H_ */

@@ -14,10 +14,11 @@
 #include "sid_config.h"
 #include "menu.h"
 #include "sid_device.h"
+#include "u64.h"
 
 class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
 {
-    int systemMode;
+    t_video_mode systemMode;
     FileManager *fm;
 	bool skipReset;
     TaskHandle_t resetTaskHandle;
@@ -95,7 +96,7 @@ public:
     static int setLedSelector(ConfigItem *it);
     static int setCpuSpeed(ConfigItem *it);
 
-    static void SetResampleFilter(int mode);
+    static void SetResampleFilter(t_video_mode mode);
     static void auto_mirror(uint8_t *base, uint8_t *mask, uint8_t *split, int count);
     static void get_sid_addresses(ConfigStore *cfg, uint8_t *base, uint8_t *mask, uint8_t *split);
     static void fix_splits(uint8_t *base, uint8_t *mask, uint8_t *split);
