@@ -112,6 +112,7 @@ void SoftIECTarget :: cmd_load_su(Message *command, Message **reply, Message **s
     // 4,5 : load address
     // 6,7 : end address (for save)
     // 8- : name
+//    *reply  = &data_message;
     *reply  = &c_message_empty;
     *status = &status_message;
 
@@ -120,9 +121,14 @@ void SoftIECTarget :: cmd_load_su(Message *command, Message **reply, Message **s
     command->message[command->length] = 0; // make it a null-terminated string
     channel = iec_if.get_data_channel(0); // corresponds to ATN byte $60
 
+    data_message.length = 0;
     int result = channel->ext_open_file((const char *)&command->message[8]);
     if (result) {
         startaddr = get_start_addr(channel);
+        data_message.length = 2;
+        data_message.message[0] = (uint8_t)(startaddr & 0xFF);
+        data_message.message[1] = (uint8_t)(startaddr >> 8);
+
         if (!command->message[2]) {
             startaddr = (((uint16_t)(command->message[5])) << 8) | command->message[4];
         }
@@ -324,9 +330,12 @@ bool SoftIECTarget :: do_verify(IecChannel *chan, uint16_t startaddr)
 {
     volatile uint8_t *dest = (volatile uint8_t *)C64_MEMORY_BASE;
     dest += startaddr;
+    uint16_t addr = startaddr;
 
     C64 *c64 = C64 :: getMachine();
-    c64->stop(false);
+    if (!cmd_if.is_dma_active()) {
+        c64->stop(false);
+    }
 
     uint8_t data;
     int res1, res2;
@@ -342,9 +351,15 @@ bool SoftIECTarget :: do_verify(IecChannel *chan, uint16_t startaddr)
             error = 1;
             break;
         }
+        addr ++;
+        if (!addr) {
+            break; // wrap!
+        }
     } while(res2 != IEC_NO_FILE);
 
-    c64->resume();
+    if (!cmd_if.is_dma_active()) {
+        c64->resume();
+    }
     return (error == 0);
 }
 
@@ -354,7 +369,9 @@ uint16_t SoftIECTarget :: do_load(IecChannel *chan, uint16_t addr)
     dest += addr;
 
     C64 *c64 = C64 :: getMachine();
-    c64->stop(false);
+    if (!cmd_if.is_dma_active()) {
+        c64->stop(false);
+    }
 
 #if SIEC_TARGET_DEBUG
     printf("Loading %04x-", addr);
@@ -371,9 +388,14 @@ uint16_t SoftIECTarget :: do_load(IecChannel *chan, uint16_t addr)
         }
         *(dest++) = data;
         addr ++;
+        if (!addr) {
+            break; // wrap!
+        }
     } while(res2 != IEC_NO_FILE);
 
-    c64->resume();
+    if (!cmd_if.is_dma_active()) {
+        c64->resume();
+    }
 #if SIEC_TARGET_DEBUG
     printf("%04x\n", addr);
 #endif
@@ -389,8 +411,9 @@ bool SoftIECTarget :: do_save(IecChannel *chan, uint16_t start, uint16_t end)
     chan->push_data(start >> 8);
 
     C64 *c64 = C64 :: getMachine();
-    c64->stop(false);
-
+    if (!cmd_if.is_dma_active()) {
+        c64->stop(false);
+    }
     bool success = true;
     for(uint16_t i=start; i != end; i++) {
         int res = chan->push_data(*(dest++));
@@ -399,7 +422,9 @@ bool SoftIECTarget :: do_save(IecChannel *chan, uint16_t start, uint16_t end)
         }
     }
 
-    c64->resume();
+    if (!cmd_if.is_dma_active()) {
+        c64->resume();
+    }
     return success;
 }
 

@@ -207,7 +207,12 @@ int  CommandInterface :: fetch_task_items(Path *path, IndexedList<Action*> &item
     return 0;
 #endif
 }
-    
+
+bool CommandInterface :: is_dma_active(void)
+{
+    return ((CMD_IF_HANDSHAKE_OUT & CMD_HS_DMA_ACTIVE) != 0);
+}
+
 void CommandInterface :: dump_registers(void)
 {
     printf("CMD_IF_SLOT_BASE       %b\n", CMD_IF_SLOT_BASE     );
