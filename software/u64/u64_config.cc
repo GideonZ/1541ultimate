@@ -15,7 +15,6 @@ extern "C" {
 #include <string.h>
 #include "flash.h"
 #include "userinterface.h"
-#include "u64.h"
 #include "u64_config.h"
 #include "audio_select.h"
 #include "fpll.h"
@@ -184,7 +183,8 @@ static const char *digi_levels[] = { "Off", "Low", "Medium", "High" };
 static const char *yes_no[] = { "No", "Yes" };
 static const char *dvi_hdmi[] = { "Auto", "HDMI", "DVI" };
 static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
-static const char *color_sel[] = { "PAL", "NTSC" };
+static const char *color_sel[] = { "PAL", "NTSC", "PAL-60", "NTSC-50", "PAL-60/L", "NTSC-50/L" };
+
 static const char *sid_types[] = { "None", "6581", "8580", "FPGASID", "SwinSID Ultimate", "ARMSID", "ARM2SID", "SidFx", "FPGASID Dukestah" };
 static const char *sid_shunt[] = { "Off", "On" };
 static const char *sid_caps[] = { "470 pF", "22 nF" };
@@ -238,7 +238,7 @@ dc 0c 11 00 00 9e 01 1d  00 72 51 d0 1e 20 6e 28
 */
 
 struct t_cfg_definition u64_cfg[] = {
-    { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  1, 0 },
+    { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  5, 0 },
     { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  1, 0 },
 //    { CFG_CART_PREFERENCE,      CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,    0,  2, 0 }, // moved to C64 for user consistency
     { CFG_COLOR_CLOCK_ADJ,      CFG_TYPE_VALUE, "Adjust Color Clock",      "%d ppm", NULL,      -100,100, 0 },
@@ -687,7 +687,7 @@ void U64Config :: U64SidAddressing :: effectuate_settings()
 
 U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 {
-    systemMode = -1;
+    systemMode = e_NOT_SET;
     U64_ETHSTREAM_ENA = 0;
 
 /*
@@ -800,11 +800,11 @@ void U64Config :: effectuate_settings()
     U64_PARCABLE_EN  =  cfg->get_value(CFG_PARCABLE_ENABLE);
     int chromaDelay  =  cfg->get_value(CFG_CHROMA_DELAY);
     if (chromaDelay < 0) {
-        C64_LUMA_DELAY   = -chromaDelay;
-        C64_CHROMA_DELAY = 0;
+        uint8_t luma = (uint8_t)(-chromaDelay);
+        C64_COLOR_DELAY  = luma;
     } else {
-        C64_LUMA_DELAY   = 0;
-        C64_CHROMA_DELAY = chromaDelay;
+        uint8_t chroma = (uint8_t)(chromaDelay);
+        C64_COLOR_DELAY  = (chroma << 2);
     }
 
     uint8_t format = 0;
@@ -814,18 +814,16 @@ void U64Config :: effectuate_settings()
     }
 
     bool doPll = false;
-    if (cfg->get_value(CFG_SYSTEM_MODE) != systemMode) {
-        systemMode = cfg->get_value(CFG_SYSTEM_MODE);
+    if (cfg->get_value(CFG_SYSTEM_MODE) != (int)systemMode) {
+        systemMode = (t_video_mode)cfg->get_value(CFG_SYSTEM_MODE);
         doPll = true;
     }
 
-    if (systemMode) {
-        format |= VIDEO_FMT_CYCLES_65 | VIDEO_FMT_NTSC_ENCODING | VIDEO_FMT_NTSC_FREQ | VIDEO_FMT_60_HZ;
-        C64_BURST_PHASE = 32;
-    } else {
-        format |= VIDEO_FMT_CYCLES_63;
-        C64_BURST_PHASE = 24;
-    }
+    const t_video_color_timing *ct = color_timings[(int)systemMode];
+    C64_BURST_PHASE = ct->burst_phase;
+    C64_PHASE_INCR  = ct->phase_inc;
+    C64_VIDEOFORMAT = ct->mode_bits;
+
     if (doPll) {
         SetVideoPll(systemMode);
         SetHdmiPll(systemMode);
@@ -834,16 +832,10 @@ void U64Config :: effectuate_settings()
         SetResampleFilter(systemMode);
         overlay->initRegs();
     }
-    C64_VIDEOFORMAT = format;
 
 #if DEVELOPER
     C64_VIC_TEST = cfg->get_value(CFG_VIC_TEST);
 #endif
-    /*
-    C64_LINE_PHASE   = 9;
-    C64_PHASE_INCR   = 9;
-    C64_BURST_PHASE  = 24;
-*/
     setPllOffset(cfg->find_item(CFG_COLOR_CLOCK_ADJ));
     setScanMode(cfg->find_item(CFG_SCAN_MODE_TEST));
     setLedSelector(cfg->find_item(CFG_LED_SELECT_0)); // does both anyway
@@ -1579,8 +1571,11 @@ const uint32_t c_filter2_coef_ntsc[] = {
     -1, -1, -1, 0, 0, 0, 0, 0 };
 
 
-void U64Config :: SetResampleFilter(int mode)
+void U64Config :: SetResampleFilter(t_video_mode m)
 {
+    const t_video_color_timing *ct = color_timings[(int)m];
+    int mode = (ct->audio_div == 77) ? 0 : 1;
+
     const uint32_t *pulFilter = (mode == 0) ? c_filter2_coef_pal_alt : c_filter2_coef_ntsc;
     int size = (mode == 0) ? 675 : 512;
 

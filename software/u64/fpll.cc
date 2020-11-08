@@ -19,21 +19,38 @@
 #define FPLL_MIN_VCO_FREQ       600
 #define FPLL_MAX_VCO_FREQ       1300
 #define FPLL_MFRAC_BITS         32
-//#define MFRAC_BASE				0x9C76584C
-#define M_PAL                   18
-#define M_NTSC                  19
-#define MFRAC_BASE_PAL          0xEAB16BF3
-#define MFRAC_BASE_NTSC         0xA2E89059
-#define MFRAC_PPM_PAL           81247
-#define MFRAC_PPM_NTSC          84338
-#define AUDIO_DIV_PAL           77
-#define AUDIO_DIV_NTSC          80
 
-// Normal setting OLD  = 0C.9C76584C = 54164609100 / 1000000 = 54164,6091
-// Normal setting PAL  = 12.EAB16BF3 = 81246907379 / 1000000 = 81246,9074 ==> PPM = 81247
-// Normal setting NTSC = 13.A2E89059 = 84337528921 / 1000000 = 84337,5289 ==> PPM = 84338
+#define TABLE_504 0x00
+#define TABLE_520 0x80
 
-#define REFERENCE_CLOCK			630559111 // 50000000
+const t_video_color_timing c_pal_50_283_5   = { 0xEAB1A83C, 18, 77, 0x37 | TABLE_504, 24, VIDEO_FMT_CYCLES_63, 81247 };
+const t_video_color_timing c_ntsc_60_227_5  = { 0xA2E8BA2E, 19, 80, 0x07 | TABLE_520, 32, VIDEO_FMT_CYCLES_65 | VIDEO_FMT_NTSC_ENCODING | VIDEO_FMT_NTSC_FREQ | VIDEO_FMT_60_HZ, 84338 };
+const t_video_color_timing c_pal_60_free    = { 0xA4F3912B, 19, 80, 0x22 | TABLE_504, 24, VIDEO_FMT_CYCLES_65 |                           VIDEO_FMT_NTSC_FREQ | VIDEO_FMT_60_HZ, 84372 };
+const t_video_color_timing c_pal_60_281_5   = { 0xA7EDCCD2, 19, 80, 0x33 | TABLE_520, 24, VIDEO_FMT_CYCLES_65 |                           VIDEO_FMT_NTSC_FREQ | VIDEO_FMT_60_HZ, 84422 };
+const t_video_color_timing c_ntsc_50_free   = { 0xEDDAEBE2, 18, 77, 0x18 | TABLE_520, 32, VIDEO_FMT_CYCLES_63 | VIDEO_FMT_NTSC_ENCODING, 81300 };
+const t_video_color_timing c_ntsc_50_228_5  = { 0xF2E98AC5, 18, 77, 0x09 | TABLE_504, 32, VIDEO_FMT_CYCLES_63 | VIDEO_FMT_NTSC_ENCODING, 81385 };
+
+//const t_video_color_timing c_pal_60_282_5   = { 0x961DE490, 19, 80, 0x35 | TABLE_520, 24, VIDEO_FMT_CYCLES_65 |                           VIDEO_FMT_NTSC_FREQ | VIDEO_FMT_60_HZ, 84338 };
+//const t_video_color_timing c_pal_60_283_5   = { 0x846E277B, 19, 80, 0x37 | TABLE_520, 24, VIDEO_FMT_CYCLES_65 |                           VIDEO_FMT_NTSC_FREQ | VIDEO_FMT_60_HZ, 84338 };
+//const t_video_color_timing c_ntsc_50_229_0  = { 0xE8521D78, 18, 77, 0x0A | TABLE_504, 32, VIDEO_FMT_CYCLES_63 | VIDEO_FMT_NTSC_ENCODING, 81429 };
+//const t_video_color_timing c_ntsc_50_227_5  = { 0x083C26AB, 19, 77, 0x07 | TABLE_504, 32, VIDEO_FMT_CYCLES_63 | VIDEO_FMT_NTSC_ENCODING, 81429 };
+//const t_video_color_timing c_ntsc_50_228_5r = { 0xF2E98AC5, 18, 77, 0x09 | TABLE_504, 32, VIDEO_FMT_CYCLES_63 | VIDEO_FMT_NTSC_ENCODING | VIDEO_FMT_RESET_BURST, 81429 };
+//const t_video_color_timing c_ntsc_50_227_5r = { 0x083C26AB, 19, 77, 0x07 | TABLE_504, 32, VIDEO_FMT_CYCLES_63 | VIDEO_FMT_NTSC_ENCODING | VIDEO_FMT_RESET_BURST, 81429 };
+
+const t_video_color_timing *color_timings[] = {
+        &c_pal_50_283_5,
+        &c_ntsc_60_227_5,
+        &c_pal_60_free,
+        &c_ntsc_50_free,
+        &c_pal_60_281_5,  // best timing match to original C64
+        &c_ntsc_50_228_5, //  best timing match to original C64
+};
+
+// Normal setting PAL  = 12.EAB16BF3 = 81246907379 / 1000000 = 81246,907379 ==> PPM = 81247  (31.5279555556 MHz Analog clock)  (72/512)
+// Normal setting NTSC = 13.A2E89059 = 84337528921 / 1000000 = 84337,528921 ==> PPM = 84338  (32.7272727272 MHz Analog clock)  (56/512)
+// Alternative setting PAL60  = (32.8987362319 MHz Analog clock) 69/512 = 13.BD3EF255 = 84779397717 / 1000000 = 84779.397717 ==> PPM = 84779
+// Alternative setting NTSC50 = (31.5987460745 MHz Analog clock) 58/512 = 12.F5914100 = 81429348609 / 1000000 = 81429.348609 ==> PPM = 81429
+
 
 #ifndef RECONFIG_LITE
 #define FPLL_RECONFIG_REGS      ((volatile uint32_t*)0x92000000)
@@ -397,41 +414,30 @@ void Fpll :: execute(void)
     printf("RB: %04x%04x\n", a, b);
 }
 
-extern "C" void SetVideoPll(int mode)
+extern "C" void SetVideoPll(t_video_mode mode)
 {
     if (!videoPll) {
         videoPll = new Fpll(0x92000000, videoPll_def, 6);
     }
 
-    if (mode == 0) { // PAL
-        videoPll->setM(M_PAL);
-        videoPll->setC(4, AUDIO_DIV_PAL);
-        videoPll->setK(MFRAC_BASE_PAL);
-        videoPll->mFracBase = MFRAC_BASE_PAL;
-        videoPll->mFracPPM = MFRAC_PPM_PAL;
-    } else { // NTSC
-        videoPll->setM(M_NTSC);
-        videoPll->setC(4, AUDIO_DIV_NTSC);
-        videoPll->setK(MFRAC_BASE_NTSC);
-        videoPll->mFracBase = MFRAC_BASE_NTSC;
-        videoPll->mFracPPM = MFRAC_PPM_NTSC;
-    }
+    const t_video_color_timing *ct = color_timings[(int)mode];
+    videoPll->setM(ct->m);
+    videoPll->setK(ct->frac);
+    videoPll->setC(4, ct->audio_div);
+    videoPll->mFracBase = ct->frac;
+    videoPll->mFracPPM = ct->ppm;
     videoPll->execute();
 }
 
-extern "C" void SetHdmiPll(int mode)
+extern "C" void SetHdmiPll(t_video_mode mode)
 {
     if (!hdmiPll) {
         hdmiPll = new Fpll(0x93000000, hdmiPll_def, 4);
     }
 
-    if (mode == 0) { // PAL
-        hdmiPll->setM(24);
-        hdmiPll->setN(7);
-    } else { // NTSC
-        hdmiPll->setM(33);
-        hdmiPll->setN(10);
-    }
+    const t_video_color_timing *ct = color_timings[(int)mode];
+    hdmiPll->setM((ct->audio_div == 77) ? 24 : 33);
+    hdmiPll->setN((ct->audio_div == 77) ?  7 : 10);
     hdmiPll->execute();
 }
 
@@ -468,16 +474,18 @@ extern "C" void SetScanModeRegisters(volatile t_video_timing_regs *regs, const T
     regs->VID_Y            = mode->color_mode;
 }
 
-extern "C" void SetVideoMode(int mode)
+extern "C" void SetVideoMode(t_video_mode mode)
 {
     volatile t_video_timing_regs *regs = (volatile t_video_timing_regs *)VID_IO_BASE;
 
     const TVideoMode pal  =  { 17, 27023962,  720, 12,  64,  68, 0,   576,  4, 5, 39, 0, 1, 0 };  // VIC 17/18 720x576 @ 50.12Hz (624 lines) (!) // detuned + one line less
     const TVideoMode ntsc =  { 03, 27000000,  720, 16,  62,  60, 0,   480,  9, 6, 31, 0, 1, 0 };  // VIC 2/3 720x480 @ 60Hz
 
-    if (mode == 0) { // PAL
+
+    const t_video_color_timing *ct = color_timings[(int)mode];
+    if (ct->audio_div == 77) {
         SetScanModeRegisters(regs, &pal);
-    } else { // NTSC
+    } else {
         SetScanModeRegisters(regs, &ntsc);
     }
 }
