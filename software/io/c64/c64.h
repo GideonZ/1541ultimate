@@ -338,7 +338,8 @@ public:
     void cartridge_test(void);
     void reset(void);
     void start(void);
-        
+    void set_kernal_device_id(uint8_t bus_id);
+
     static int isMP3RamDrive(int dev);
     static int getSizeOfMP3NativeRamdrive(int dev);
 

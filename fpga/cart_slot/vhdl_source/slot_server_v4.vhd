@@ -259,7 +259,7 @@ begin
         
     i_bridge: entity work.io_to_dma_bridge
     generic map (
-        g_ignore_stop => g_direct_dma )
+        g_ignore_stop => true )
     port map (
         clock       => clock,
         reset       => reset,
