@@ -274,10 +274,10 @@ void IecInterface :: effectuate_settings(void)
 //            data = (0x08 << 20) + (bit << 24) + (inv << 29) + (addr << 8) + (value << 0)
     int bus_id = cfg->get_value(CFG_IEC_BUS_ID);
 
-#if U64
-    unsigned char *kernal = (unsigned char *)U64_KERNAL_BASE; // this should be a function
-    kernal[0x1F80] = (uint8_t)bus_id;
-#endif
+    extern C64 *c64;
+    if (c64) {
+        c64->set_kernal_device_id(bus_id);
+    }
 
     if(bus_id != last_addr) {
         printf("Setting IEC bus ID to %d.\n", bus_id);

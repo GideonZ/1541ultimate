@@ -947,10 +947,24 @@ void C64::init_system_roms(void)
         uint8_t *temp = new uint8_t[8192];
         flash->read_image(FLASH_ID_KERNAL_ROM, temp, 8192);
         enable_kernal(temp, cfg->get_value(CFG_C64_FASTRESET));
+        iec_if.effectuate_settings();
         delete[] temp;
     } else {
         disable_kernal();
     }
+#endif
+}
+
+void C64::set_kernal_device_id(uint8_t bus_id)
+{
+#if U64
+    uint8_t *kernal = (uint8_t *)U64_KERNAL_BASE; // this should be a function
+    if (cfg->get_value(CFG_C64_ALT_KERN) > 1) {
+        kernal[0x1F80] = (uint8_t)bus_id;
+    }
+#else
+    uint8_t *kernal = (uint8_t *) (C64_KERNAL_BASE + 1);
+    kernal[2*0x1F80 + 1] = (uint8_t)bus_id;
 #endif
 }
 
