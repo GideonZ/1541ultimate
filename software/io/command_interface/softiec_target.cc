@@ -7,7 +7,7 @@
 // crate and register ourselves!
 SoftIECTarget softIecTarget(5);
 
-static Message c_message_identification     = { 24, true, (uint8_t *)"SOFTWARE IEC TARGET V0.1" };
+static Message c_message_identification     = { 24, true, (uint8_t *)"SOFTWARE IEC TARGET V1.0" };
 static Message c_status_all_ok              = {  1, true, (uint8_t *)"\x00" };
 static Message c_status_file_not_found      = {  1, true, (uint8_t *)"\x01" };
 static Message c_status_save_error          = {  1, true, (uint8_t *)"\x02" };
