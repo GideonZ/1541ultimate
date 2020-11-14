@@ -206,8 +206,9 @@
 
 #define CFG_BUS_MODE          0x4D
 #define CFG_BUS_SHARING_ROM   0x4E
-#define CFG_BUS_SHARING_IO    0x4F
+#define CFG_BUS_SHARING_IO1   0x4F
 #define CFG_BUS_SHARING_IRQ   0x50
+#define CFG_BUS_SHARING_IO2   0x51
 
 #define ID_MODPLAYER 0xAA
 #define ID_SIDCART   0xBB

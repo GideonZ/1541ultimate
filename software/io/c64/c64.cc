@@ -145,17 +145,18 @@ static const char *timing3[] = { "15ns", "30ns", "45ns", "60ns", "75ns", "90ns",
 static const char *ultimatedos[] = { "Disabled", "Enabled", "Enabled (v1.1)", "Enabled (v1.0)" };
 static const char *fc3mode[] = { "Unchanged", "Desktop", "BASIC" };
 static const char *cartmodes[] = { "Auto", "Internal", "External", "Manual" };
-static const char *bus_modes[] = { "Quiet", "Writes", "CPU", "CPU/VIC", "VIC" };
-static const uint8_t bus_mode_values[] = { 0x00, 0x01, 0x03, 0x07, 0x04 };
+static const char *bus_modes[] = { "Quiet", "Writes", "CPU", "CPU/VIC", "VIC" };  // CPU, CPU/VIC and VIC are all obsolete
+static const uint8_t bus_mode_values[] = { 0x10, 0x11, 0x13, 0x07, 0x04 };
 static const char *bus_sharing[] = { "Internal", "External", "Both" };
 
 struct t_cfg_definition c64_config[] = {
 #if U64
     { CFG_C64_CART,        CFG_TYPE_ENUM, "Cartridge",                    "%s", cart_mode,  0, 20, 0 },
     { CFG_C64_CART_PREF,   CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,  0,  3, 0 },
-    { CFG_BUS_MODE,        CFG_TYPE_ENUM, "Bus Operation Mode",           "%s", bus_modes,    0,  4, 0 },
+    { CFG_BUS_MODE,        CFG_TYPE_ENUM, "Bus Operation Mode",           "%s", bus_modes,    0,  1, 0 },
     { CFG_BUS_SHARING_ROM, CFG_TYPE_ENUM, "Bus Sharing - ROMs",           "%s", bus_sharing,  0,  2, 2 },
-    { CFG_BUS_SHARING_IO,  CFG_TYPE_ENUM, "Bus Sharing - I/O",            "%s", bus_sharing,  0,  2, 2 },
+    { CFG_BUS_SHARING_IO1, CFG_TYPE_ENUM, "Bus Sharing - I/O1",           "%s", bus_sharing,  0,  2, 2 },
+    { CFG_BUS_SHARING_IO2, CFG_TYPE_ENUM, "Bus Sharing - I/O2",           "%s", bus_sharing,  0,  2, 2 },
     { CFG_BUS_SHARING_IRQ, CFG_TYPE_ENUM, "Bus Sharing - Interrupts",     "%s", bus_sharing,  0,  2, 2 },
 #else
     { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 22, 4 },
@@ -246,11 +247,13 @@ int C64 :: setCartPref(ConfigItem *item)
     // This is only a UI thing
     if (item->getValue() == 3) { // If manual, enable the other settings
         item->store->enable(CFG_BUS_SHARING_ROM);
-        item->store->enable(CFG_BUS_SHARING_IO);
+        item->store->enable(CFG_BUS_SHARING_IO1);
+        item->store->enable(CFG_BUS_SHARING_IO2);
         item->store->enable(CFG_BUS_SHARING_IRQ);
     } else {
         item->store->disable(CFG_BUS_SHARING_ROM);
-        item->store->disable(CFG_BUS_SHARING_IO);
+        item->store->disable(CFG_BUS_SHARING_IO1);
+        item->store->disable(CFG_BUS_SHARING_IO2);
         item->store->disable(CFG_BUS_SHARING_IRQ);
     }
     return 1;
@@ -1313,20 +1316,20 @@ bool C64 :: ConfigureU64SystemBus(void)
     case 0: // Automatic: If external cartridge is present, switch entire bus to external
         if (ext_cart) {
             internal = 0;
-            external = 7;
+            external = 15;
         } else {
-            internal = 7;
+            internal = 15;
             external = 0;
         }
         break;
     case 1: // Internal: Force all internal resources
-        internal = 7;
+        internal = 15;
         external = 0;
         ext_cart = false;
         break;
     case 2: // External: Force all external resources
         internal = 0;
-        external = 7;
+        external = 15;
         break;
 
     case 3: // Manual: Take settings from other config items
@@ -1334,31 +1337,31 @@ bool C64 :: ConfigureU64SystemBus(void)
 
         switch (cfg->get_value(CFG_BUS_SHARING_ROM)) {
         case 0: // Internal
-            internal |= 0x02;
+            internal |= 0x04;
             break;
         case 1: // External
-            external |= 0x02;
+            external |= 0x04;
             break;
         case 2: // Both
-            internal |= 0x02;
-            external |= 0x02;
+            internal |= 0x04;
+            external |= 0x04;
             break;
         }
 
         switch (cfg->get_value(CFG_BUS_SHARING_IRQ)) {
         case 0: // Internal
-            internal |= 0x04;
+            internal |= 0x08;
             break;
         case 1: // External
-            external |= 0x04;
+            external |= 0x08;
             break;
         case 2: // Both
-            internal |= 0x04;
-            external |= 0x04;
+            internal |= 0x08;
+            external |= 0x08;
             break;
         }
 
-        switch (cfg->get_value(CFG_BUS_SHARING_IO)) {
+        switch (cfg->get_value(CFG_BUS_SHARING_IO1)) {
         case 0: // Internal
             internal |= 0x01;
             break;
@@ -1371,6 +1374,18 @@ bool C64 :: ConfigureU64SystemBus(void)
             break;
         }
 
+        switch (cfg->get_value(CFG_BUS_SHARING_IO2)) {
+        case 0: // Internal
+            internal |= 0x02;
+            break;
+        case 1: // External
+            external |= 0x02;
+            break;
+        case 2: // Both
+            internal |= 0x02;
+            external |= 0x02;
+            break;
+        }
     }
 
     C64_BUS_INTERNAL = internal;
