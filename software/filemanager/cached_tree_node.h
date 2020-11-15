@@ -153,6 +153,23 @@ public:
 
 	FileInfo *get_file_info(void) { return &info; }
 
+	// =======================
+	//   COMPARE PATH OBJECTS
+	// =======================
+
+	static int path_object_compare(IndexedList<CachedTreeNode *> *list, int a, int b)
+	{
+	    CachedTreeNode *obj_a = (*list)[a];
+	    CachedTreeNode *obj_b = (*list)[b];
+
+	    if(!obj_b)
+	        return 1;
+	    if(!obj_a)
+	        return -1;
+
+	    return obj_a->compare(obj_b);
+	}
+
 };
 
 #endif /* FILEMANAGER_CACHED_TREE_NODE_H_ */
