@@ -7,7 +7,7 @@ VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/microblaze
 VPATH +=	$(PATH_SW)/test/filesys
 
 VPATH +=	$(PATH_SW)/chan_fat/ff14/source
-
+VPATH :=    $(PATH_SW)/chan_fat/pc $(VPATH)
 
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
@@ -26,7 +26,8 @@ SIZE	  = $(CROSS)size
 
 SRCS_C   =	dump_hex.c \
             ff.c \
-            ffunicode.c
+            ffunicode.c \
+            ffsystem.c
 
 SRCS_CC	 =  mystring.cc \
 			file_device.cc \
@@ -43,7 +44,6 @@ SRCS_CC	 =  mystring.cc \
 			diskio.cc \
 			directory.cc \
 			file.cc \
-			filesystem_root.cc \
 			filesystem_fat.cc \
 			filesystem_d64.cc \
 			filesystem_t64.cc \

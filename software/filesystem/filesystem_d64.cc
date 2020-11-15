@@ -883,7 +883,7 @@ bool FileSystemDNP::set_sector_allocation(int track, int sector, bool alloc)
 {
     int offset = track * 32;
     uint8_t *m = &bam_buffer[offset]; // since track starts with 1, this bumps the header exactly
-    bool success = modify_allocation_bit(NULL, m, sector, alloc);
+    bool success = modify_allocation_bit(NULL, m, sector ^ 7, alloc); // the exor with 7 reverses the bits
     if (success) {
         bam_dirty |= (1 << (offset >> 8));
     }
@@ -1036,7 +1036,7 @@ bool FileSystemDNP::get_next_free_sector(int &track, int &sector)
         if (!bb)
             continue;
 
-        uint8_t bm = 1;
+        uint8_t bm = 128;
         for(int j=0; j < 8; j++) {
             if (bb & bm) {
                 int abs_sect = 8*i + j;
@@ -1045,7 +1045,7 @@ bool FileSystemDNP::get_next_free_sector(int &track, int &sector)
                 bam_dirty |= (1 << ((i + 32) >> 8)); // set dirty bit of the sector 'bb' is located in
                 return true;
             }
-            bm <<= 1;
+            bm >>= 1;
         }
     }
     return false;
