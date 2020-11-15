@@ -93,7 +93,7 @@ FRESULT print_directory(FileSystem *fs, const char *path, int indent = 0)
                 deeperPath = path;
                 deeperPath += "/";
                 deeperPath += info.lfname;
-                print_directory(fs, deeperPath.c_str(), indent + 2);
+                //print_directory(fs, deeperPath.c_str(), indent + 2);
             }
         }
         delete dir; // close directory
@@ -430,7 +430,7 @@ bool test_format_dnp()
 
 void read_dnp()
 {
-    BlockDevice *blk = new BlockDevice_Emulated("main.dnp", 256);
+    BlockDevice *blk = new BlockDevice_Emulated("FOSIE_MAIN.dnp", 256);
     Partition *prt = new Partition(blk, 0, 0, 0);
     uint32_t sectors = 0, free = 0;
     prt->ioctl(GET_SECTOR_COUNT, &sectors);
@@ -438,7 +438,9 @@ void read_dnp()
     FileSystemCBM *fs = new FileSystemDNP(prt, true);
     print_directory(fs, "");
 
+#if 1
     File *f;
+/*
     fs->file_open("userlog2.rel", FA_READ, &f);
     if(f) {
         FileInCBM *cbmfile = (FileInCBM *)f;
@@ -446,6 +448,34 @@ void read_dnp()
         f->close();
     }
     copy_from(fs, "userlog2.rel", "userlog2.rel");
+*/
+
+
+    uint8_t *buffer = new uint8_t[65536];
+    for(int i=0;i<65536;i++) {
+        buffer[i] = (uint8_t)(i >> 1);
+    }
+    fs->file_open("blah.rel", FA_CREATE_NEW, &f);
+    if (f) {
+        uint32_t tr;
+        FRESULT fres;
+        uint16_t temp = 200;
+        fres = f->write(&temp, 2, &tr);
+        printf("%s\n", FileSystem::get_error_string(fres));
+        fres = f->write(buffer, 65536, &tr);
+        printf("%s\n", FileSystem::get_error_string(fres));
+        fres = f->write(buffer, 65536, &tr);
+        printf("%s\n", FileSystem::get_error_string(fres));
+        fres = f->write(buffer, 65536, &tr);
+        printf("%s\n", FileSystem::get_error_string(fres));
+        fres = f->write(buffer, 65536, &tr);
+        printf("%s\n", FileSystem::get_error_string(fres));
+        f->close();
+    }
+    delete[] buffer;
+    print_directory(fs, "");
+
+#endif
 
     delete fs;
     delete prt;
