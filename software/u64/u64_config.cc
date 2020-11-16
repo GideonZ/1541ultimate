@@ -101,6 +101,8 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_AUTO_MIRRORING    0x4A
 // #define CFG_CART_PREFERENCE   0x4B // moved to C64 for user experience consistency
 #define CFG_SPEED_REGS        0x4C
+#define CFG_IEC_BURST_EN      0x4D
+
 #define CFG_SPEED_PREF        0x52
 #define CFG_BADLINES_EN       0x53
 #define CFG_SUPERCPU_DET      0x54
@@ -180,6 +182,7 @@ const char *sid_split[] = { "Off", "1/2 (A5)", "1/2 (A6)", "1/2 (A7)", "1/2 (A8)
 static const char *joyswaps[] = { "Normal", "Swapped" };
 static const char *en_dis5[] = { "Disabled", "Enabled", "Transp. Border" };
 static const char *digi_levels[] = { "Off", "Low", "Medium", "High" };
+static const char *burst_modes[] = { "Off", "CIA1", "CIA2" };
 static const char *yes_no[] = { "No", "Yes" };
 static const char *dvi_hdmi[] = { "Auto", "HDMI", "DVI" };
 static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
@@ -247,6 +250,7 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_HDMI_ENABLE,          CFG_TYPE_ENUM, "Digital Video Mode",           "%s", dvi_hdmi,     0,  2, 0 },
     { CFG_SCANLINES,            CFG_TYPE_ENUM, "HDMI Scan lines",              "%s", en_dis,       0,  1, 0 },
     { CFG_PARCABLE_ENABLE,      CFG_TYPE_ENUM, "SpeedDOS Parallel Cable",      "%s", en_dis,       0,  1, 0 },
+    { CFG_IEC_BURST_EN,         CFG_TYPE_ENUM, "Burst Mode Patch",             "%s", burst_modes,  0,  2, 0 },
     { CFG_LED_SELECT_0,         CFG_TYPE_ENUM, "LED Select Top",               "%s", ledselects,   0, 15, 0 },
     { CFG_LED_SELECT_1,         CFG_TYPE_ENUM, "LED Select Bot",               "%s", ledselects,   0, 15, 4 },
     { CFG_SPEAKER_VOL,          CFG_TYPE_ENUM, "Speaker Volume (SpkDat)",      "%s", speaker_vol,  0, 10, 5 },
@@ -797,7 +801,7 @@ void U64Config :: effectuate_settings()
         U64_HDMI_ENABLE = (hdmiSetting == 1) ? 1 : 0; // 1 = HDMI, 2 = DVI
     }
 
-    U64_PARCABLE_EN  =  cfg->get_value(CFG_PARCABLE_ENABLE);
+    U64_INT_CONNECTORS = cfg->get_value(CFG_PARCABLE_ENABLE) | (cfg->get_value(CFG_IEC_BURST_EN) << 1);
     int chromaDelay  =  cfg->get_value(CFG_CHROMA_DELAY);
     if (chromaDelay < 0) {
         uint8_t luma = (uint8_t)(-chromaDelay);
