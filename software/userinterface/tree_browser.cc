@@ -23,7 +23,7 @@ static const char *helptext=
 		"CRSR RIGHT: Go one level down\n"
 		"            enter directory or disk\n"
 		"RETURN:     Selection context menu\n"
-		"RUN/STOP:   Leave menu / Back\n"
+        "RUN/STOP:   Leave menu / Back\n"
 		"\n"
 		"F1:         Selection Page up\n"
 		"F7:         Selection Page down\n"
@@ -44,7 +44,8 @@ static const char *helptext=
 		"            the name to search for.\n"
 		"            You can use ? as a\n"
 		"            wildcard.\n"
-		"\n"
+        "+/-:        Change value in config.\n"
+        "\n"
 //		"F6:         Show debug log\n"
 		"\nRUN/STOP to close this window.";
 

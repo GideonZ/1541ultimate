@@ -185,6 +185,7 @@ int ContextMenu :: handle_key(int c)
             break;
 
         case KEY_BACK: // backspace
+            ret = -1;
 /*
             if(quick_seek_length) {
                 quick_seek_length--;
