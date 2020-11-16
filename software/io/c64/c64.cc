@@ -145,15 +145,15 @@ static const char *timing3[] = { "15ns", "30ns", "45ns", "60ns", "75ns", "90ns",
 static const char *ultimatedos[] = { "Disabled", "Enabled", "Enabled (v1.1)", "Enabled (v1.0)" };
 static const char *fc3mode[] = { "Unchanged", "Desktop", "BASIC" };
 static const char *cartmodes[] = { "Auto", "Internal", "External", "Manual" };
-static const char *bus_modes[] = { "Quiet", "Writes", "CPU", "CPU/VIC", "VIC" };  // CPU, CPU/VIC and VIC are all obsolete
-static const uint8_t bus_mode_values[] = { 0x10, 0x11, 0x13, 0x07, 0x04 };
+static const char *bus_modes[] = { "Quiet", "Writes", "Dynamic", "Dyn. & Writes" };
+static const uint8_t bus_mode_values[] = { 0x00, 0x01, 0x02, 0x03, 0x04 };
 static const char *bus_sharing[] = { "Internal", "External", "Both" };
 
 struct t_cfg_definition c64_config[] = {
 #if U64
     { CFG_C64_CART,        CFG_TYPE_ENUM, "Cartridge",                    "%s", cart_mode,  0, 20, 0 },
     { CFG_C64_CART_PREF,   CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,  0,  3, 0 },
-    { CFG_BUS_MODE,        CFG_TYPE_ENUM, "Bus Operation Mode",           "%s", bus_modes,    0,  1, 0 },
+    { CFG_BUS_MODE,        CFG_TYPE_ENUM, "Bus Operation Mode",           "%s", bus_modes,    0,  3, 0 },
     { CFG_BUS_SHARING_ROM, CFG_TYPE_ENUM, "Bus Sharing - ROMs",           "%s", bus_sharing,  0,  2, 2 },
     { CFG_BUS_SHARING_IO1, CFG_TYPE_ENUM, "Bus Sharing - I/O1",           "%s", bus_sharing,  0,  2, 2 },
     { CFG_BUS_SHARING_IO2, CFG_TYPE_ENUM, "Bus Sharing - I/O2",           "%s", bus_sharing,  0,  2, 2 },
