@@ -228,7 +228,7 @@ FTPDaemonThread::FTPDaemonThread(int socket, uint32_t addr, uint16_t port) :
     connection = 0;
     renamefrom = 0;
     func = 0;
-    d64asdir = 0;
+    container_mode = e_vfs_files_only;
     uint32_t fattime = rtc.get_fat_time();
     current_year = 1980 + (fattime >> 25);
 }
@@ -311,7 +311,11 @@ void FTPDaemonThread::send_msg(const char *msg, ...)
 
 void FTPDaemonThread::cmd_user(const char *arg)
 {
-    d64asdir = !strcasecmp(arg, "d64") ? 1 : !strcasecmp(arg, "d642") ? 0 : 2;
+    if (strcasecmp(arg, "into")) {
+        container_mode = e_vfs_dirs_only;
+    } else if(strcasecmp(arg, "both")) {
+        container_mode = e_vfs_double_listed;
+    }
     send_msg(msg331);
     state = FTPD_PASS;
 }
@@ -393,7 +397,7 @@ void FTPDaemonThread::cmd_list_common(const char *arg, int listType)
         }
     }
 
-    vfs_dir = vfs_opendir(vfs, arg);
+    vfs_dir = vfs_opendir(vfs, arg, container_mode);
 
     if (!vfs_dir) {
         send_msg(msg451);
@@ -943,18 +947,8 @@ void FTPDataConnection::directory(int listType, vfs_dir_t *dir)
                 len = sprintf(buffer, "%s\r\n", st.name);
                 break;
             case 2:
-                if (parent->d64asdir == 2 && (EndsWith(st.name, ".d64") || EndsWith(st.name, ".D64")))
-                    len = sprintf(buffer, "type=dir;modify=%04d%02d%02d%02d%02d%02d; %s\r\n"
-                            "type=file;size=%d;modify=%04d%02d%02d%02d%02d%02d; %s\r\n", st.year, st.month, st.day, st.hr,
-                            st.min, st.sec, st.name, st.st_size, st.year, st.month, st.day, st.hr, st.min, st.sec,
-                            st.name);
-                else if ( VFS_ISDIR(st.st_mode)
-                        || (parent->d64asdir && (EndsWith(st.name, ".d64") || EndsWith(st.name, ".D64"))))
-                    len = sprintf(buffer, "type=dir;modify=%04d%02d%02d%02d%02d%02d; %s\r\n", st.year, st.month, st.day, st.hr,
-                            st.min, st.sec, st.name);
-                else
-                    len = sprintf(buffer, "type=file;size=%d;modify=%04d%02d%02d%02d%02d%02d; %s\r\n", st.st_size, st.year,
-                            st.month, st.day, st.hr, st.min, st.sec, st.name);
+                len = sprintf(buffer, "type=%s;modify=%04d%02d%02d%02d%02d%02d; %s\r\n", VFS_ISDIR(st.st_mode) ? "dir" : "file",
+                        st.year, st.month, st.day, st.hr, st.min, st.sec, st.name);
                 break;
             default:
                 len = sprintf(buffer, "Internal Error\r\n");

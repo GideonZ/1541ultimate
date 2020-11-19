@@ -20,6 +20,12 @@ struct vfs_file;
 struct vfs_dir;
 struct vfs_dirent;
 
+typedef enum {
+    e_vfs_files_only = 0,
+    e_vfs_dirs_only,
+    e_vfs_double_listed,
+} into_mode_t;
+
 struct vfs {
     void *path; // owned by file manager
     struct vfs_file *open_file; // reference only
@@ -38,6 +44,8 @@ struct vfs_dirent {
 struct vfs_dir {
     void *entries;   // owned only
     int index;
+    bool do_alternative;
+    into_mode_t into_mode;
     struct vfs_dirent *entry; // owned
     struct vfs *parent_fs;    // reference only
 };
@@ -69,7 +77,7 @@ EXTERNC int  vfs_read(void *buffer, int chunks, int chunk_len, vfs_file_t *file)
 EXTERNC int  vfs_write(const void *buffer, int chunks, int chunk_len, vfs_file_t *file);
 EXTERNC int  vfs_eof(vfs_file_t *file);
 
-EXTERNC vfs_dir_t *vfs_opendir(vfs_t *fs, const char *name);
+EXTERNC vfs_dir_t *vfs_opendir(vfs_t *fs, const char *name, into_mode_t into_mode);
 EXTERNC void vfs_closedir(vfs_dir_t *dir);
 EXTERNC vfs_dirent_t *vfs_readdir(vfs_dir_t *dir);
 
