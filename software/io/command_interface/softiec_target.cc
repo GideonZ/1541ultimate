@@ -113,7 +113,7 @@ void SoftIECTarget :: cmd_load_su(Message *command, Message **reply, Message **s
     // 6,7 : end address (for save)
     // 8- : name
 //    *reply  = &data_message;
-    *reply  = &c_message_empty;
+    *reply  = &data_message;
     *status = &status_message;
 
     IecChannel *channel;
