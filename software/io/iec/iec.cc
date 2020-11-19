@@ -18,6 +18,7 @@ extern "C" {
 #define MENU_IEC_TRACE_OFF   0xCA12
 #define MENU_IEC_WARP_8      0xCA13
 #define MENU_IEC_WARP_9      0xCA14
+#define MENU_IEC_SET_DIR     0xCA15
 #define MENU_IEC_MASTER_1    0xCA16
 #define MENU_IEC_MASTER_2    0xCA17
 #define MENU_IEC_MASTER_3    0xCA18
@@ -235,7 +236,7 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
 
     ulticopyBusy = xSemaphoreCreateBinary();
     ulticopyMutex = xSemaphoreCreateMutex();
-    queueGuiToIec = xQueueCreate(2, sizeof(int));
+    queueGuiToIec = xQueueCreate(2, sizeof(char *));
 
     xTaskCreate( IecInterface :: iec_task, "IEC Server", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 2, &taskHandle );
 }
@@ -334,11 +335,13 @@ const char *IecInterface :: get_root_path(void)
 // called from GUI task
 int IecInterface :: fetch_task_items(Path *path, IndexedList<Action *> &list)
 {
-    int count = 3;
+    int count = 4;
 	list.append(new Action("Flush Printer/Eject Page", SUBSYSID_IEC, MENU_IEC_FLUSH));
 	list.append(new Action("Reset IEC and Printer",    SUBSYSID_IEC, MENU_IEC_RESET));
 	list.append(new Action("UltiCopy 8",     SUBSYSID_IEC, MENU_IEC_WARP_8));
 	list.append(new Action("UltiCopy 9",     SUBSYSID_IEC, MENU_IEC_WARP_9));
+	list.append(new Action("Set IEC directory here..", SUBSYSID_IEC, MENU_IEC_SET_DIR));
+
 	// list.append(new Action("IEC Test 1",     SUBSYSID_IEC, MENU_IEC_MASTER_1));
 	// list.append(new Action("IEC Test 2",     SUBSYSID_IEC, MENU_IEC_MASTER_2));
 	// list.append(new Action("IEC Test 3",     SUBSYSID_IEC, MENU_IEC_MASTER_3));
@@ -367,7 +370,7 @@ int IecInterface :: fetch_task_items(Path *path, IndexedList<Action *> &list)
 void IecInterface :: poll()
 {
     uint8_t data;
-    int command;
+    char *pathstring;
     BaseType_t gotSomething;
 
     while(1) {
@@ -377,9 +380,15 @@ void IecInterface :: poll()
 			}
 		    continue;
 		}
-    	gotSomething = xQueueReceive(queueGuiToIec, &command, 2); // here is the vTaskDelay(2) that used to be here
+    	gotSomething = xQueueReceive(queueGuiToIec, &pathstring, 2); // here is the vTaskDelay(2) that used to be here
     	if (gotSomething == pdTRUE) {
-    		start_warp_iec();
+    	    if (!pathstring) {
+    	        start_warp_iec();
+    	    } else {
+    	        IecPartition *p = vfs->GetPartition(0);
+    	        p->cd(pathstring);
+    	        delete[] pathstring;
+    	    }
     	}
 		uint8_t a;
 		while (!((a = HW_IEC_RX_FIFO_STATUS) & IEC_FIFO_EMPTY)) {
@@ -525,6 +534,9 @@ int IecInterface :: executeCommand(SubsysCommand *cmd)
 		case MENU_IEC_WARP_9:
 			start_warp(9);
 			break;
+		case MENU_IEC_SET_DIR:
+		    set_iec_dir(cmd->path.c_str());
+		    break;
 		case MENU_IEC_MASTER_1:
 			test_master(1);
 			break;
@@ -594,6 +606,14 @@ extern C1541 *c1541_A;
 extern C1541 *c1541_B;
 
 // called from GUI task
+void IecInterface :: set_iec_dir(const char *path)
+{
+    char *pathcopy = new char[strlen(path) + 1];
+    strcpy(pathcopy, path);
+    xQueueSend(queueGuiToIec, &pathcopy, 0); // write into command queue
+}
+
+// called from GUI task
 void IecInterface :: start_warp(int drive)
 {
 	// First try to obtain a lock on this function
@@ -620,8 +640,8 @@ void IecInterface :: start_warp(int drive)
     ui_window->window->output("Loading...");
 
     warp_drive = drive;
-    int command = 1;
-    xQueueSend(queueGuiToIec, &command, 0); // ulticopy shall now take over
+    const char *dummy = NULL;
+    xQueueSend(queueGuiToIec, &dummy, 0); // ulticopy shall now take over
 
     if (xSemaphoreTake(ulticopyBusy, 10) == pdFALSE) {
     	printf("Synchronization error!  UltiCopy did not start.\n");
