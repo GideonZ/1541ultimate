@@ -100,10 +100,10 @@ int  vfs_eof(vfs_file_t *file)
     return file->eof;
 }
 
-vfs_dir_t *vfs_opendir(vfs_t *fs, const char *name)
+vfs_dir_t *vfs_opendir(vfs_t *fs, const char *name, into_mode_t into_mode)
 {
     Path *path = (Path *)fs->path;
-    dbg_printf("OpenDIR: fs = %p, name arg = '%s'\n", fs, name);
+    dbg_printf("OpenDIR: fs = %p, name arg = '%s' Into = %d\n", fs, name, into_mode);
 
     mstring matchPattern;
     FileManager *fm = FileManager :: getFileManager();
@@ -130,6 +130,8 @@ vfs_dir_t *vfs_opendir(vfs_t *fs, const char *name)
     dir->index = 0;
     dir->entry = ent;
     dir->parent_fs = fs;
+    dir->into_mode = into_mode;
+    dir->do_alternative = false;
 
     fm->get_directory(temp, *listOfEntries, matchPattern.c_str());
 
@@ -155,6 +157,32 @@ void vfs_closedir(vfs_dir_t *dir)
     }
 }
 
+static bool vfs_has_into_extension(const char *ext)
+{
+    if (strncasecmp(ext, "D64", 3) == 0) {
+        return true;
+    }
+    if (strncasecmp(ext, "D71", 3) == 0) {
+        return true;
+    }
+    if (strncasecmp(ext, "D81", 3) == 0) {
+        return true;
+    }
+    if (strncasecmp(ext, "DNP", 3) == 0) {
+        return true;
+    }
+    if (strncasecmp(ext, "FAT", 3) == 0) {
+        return true;
+    }
+    if (strncasecmp(ext, "ISO", 3) == 0) {
+        return true;
+    }
+    if (strncasecmp(ext, "T64", 3) == 0) {
+        return true;
+    }
+    return false;
+}
+
 vfs_dirent_t *vfs_readdir(vfs_dir_t *dir)
 {
     dbg_printf("READDIR: %p %d\n", dir, dir->index);
@@ -164,6 +192,28 @@ vfs_dirent_t *vfs_readdir(vfs_dir_t *dir)
         FileInfo *inf = (*listOfEntries)[dir->index];
         dir->entry->file_info = inf;
         dbg_printf("Read: %s\n", inf->lfname);
+        switch (dir->into_mode) {
+        case e_vfs_files_only:
+            break;
+        case e_vfs_dirs_only:
+            if (vfs_has_into_extension(inf->extension)) {
+                inf->attrib |= AM_DIR;
+            }
+            break;
+        case e_vfs_double_listed:
+            if (vfs_has_into_extension(inf->extension)) {
+                if (dir->do_alternative) {
+                    dir->do_alternative = false;
+                    inf->attrib |= AM_DIR;
+                    set_extension(inf->lfname, "", (int)inf->lfsize);
+                } else {
+                    dir->do_alternative = true;
+                    dir->index --; // list normally now, list alternative next time
+                    // compensate for the ++ later on
+                }
+            }
+            break;
+        }
         dir->index++;
         return dir->entry;
     }
