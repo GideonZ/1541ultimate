@@ -1434,6 +1434,13 @@ FRESULT DirInCBM::get_entry(FileInfo &f)
                 f.size = (int) p->size_low + 256 * (int) p->size_high;
                 f.size *= 254;
                 f.name_format = NAME_FORMAT_CBM;
+
+                f.date  = ((uint16_t)(p->year - 80)) << 9;
+                f.date |= (((uint16_t)(p->month)) << 5);
+                f.date |= p->day;
+                f.time  = ((uint16_t)(p->hour)) << 11;
+                f.time |= (((uint16_t)(p->minute)) << 5);
+
                 if (tp >= 1 && tp <= 3 && (p->geos_structure == 0 || p->geos_structure == 1) && p->aux_track) {
                     strncpy(f.extension, "CVT", 4);
                 }
