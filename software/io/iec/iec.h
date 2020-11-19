@@ -103,6 +103,7 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
     bool master_send_cmd(int device, uint8_t *cmd, int length);
     void master_read_status(int device);
     bool run_drive_code(int device, uint16_t addr, uint8_t *code, int length);
+    void set_iec_dir(const char *path);
     UltiCopy *ui_window;
     uint8_t last_track;
     static void iec_task(void *a);
