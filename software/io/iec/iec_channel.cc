@@ -754,7 +754,7 @@ int IecChannel :: open_file(void)  // name should be in buffer
         return 0;
     }
 
-    FRESULT fres = fm->fopen(partition->GetPath(), fs_filename, flags, &f);
+    FRESULT fres = fm->fopen(partition->GetPath(), fs_filename, flags | FA_OPEN_FROM_CBM, &f);
     if(f) {
         printf("Successfully opened file %s in %s\n", fs_filename, partition->GetFullPath());
 
