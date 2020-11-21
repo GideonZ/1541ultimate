@@ -46,8 +46,10 @@
         SAVEADDR   = $C1
         SAVEEND    = $AE
 
-        MY_OUTLEN       = $0276 ; Last byte of secondary address table
-        UCI_PENDING_CMD = $026C ; Last byte of device number table
+        MY_OUTLEN       = $02BF ; Last byte of free area, before sprite 11
+        UCI_PENDING_CMD = $02BE
+        UCI_LAST_CMD    = $02BD
+        UCI_LAST_SA     = $02BC
 
 
 ulti_restor
@@ -348,10 +350,20 @@ ultichkin   cmp OUR_DEVICE
 _jx320      jmp jx320
 
 _my_chkin   sta dfltn
+            ; check if last command was also CHKIN
             ldx #UCI_CMD_CHKIN
-            jsr uci_setup_cmd
+            cpx UCI_LAST_CMD
+            bne _chkin_su ; No? Just start the command
+
+            ; last command was CHKIN; it may still be pending
+            ; Same secondary address?
+            lda SECADDR
+            cmp UCI_LAST_SA
+            beq _chkin_cont ; Yes? Just do nothing
+
+_chkin_su   jsr uci_setup_cmd
             jsr uci_execute
-            clc
+_chkin_cont clc
             rts
 
 ; $FFC9   
@@ -369,11 +381,25 @@ ultichkout  cmp OUR_DEVICE
 _ck30       jmp ck30
 
 _my_chkout  sta dflto
+            bit UCI_PENDING_CMD
+            bpl do_chkout   ; No command pending, so setup is always required
+
+            ; check if last command was also CHKOUT
+            ldx #UCI_CMD_CHKOUT
+            cpx UCI_LAST_CMD
+            bne do_chkout   ; Last command not CHKOUT? Setup is required
+
+            ; there is a pending CKOUT command, same SA?
+            lda SECADDR
+            cmp UCI_LAST_SA
+            beq _ckout_cont ; Yes!  Do nothing, just append
+
 do_chkout   lda #0
             sta MY_OUTLEN
             ldx #UCI_CMD_CHKOUT
-            clc
-            jmp uci_setup_cmd       ; do not execute command, because we are waiting for data now
+            jsr uci_setup_cmd ; do not execute command, because we are waiting for data now
+_ckout_cont clc
+            rts
 
 ; $FFCC   
 ; CLRCHN. Close default input/output files (for serial bus, send UNTALK and/or UNLISTEN); restore default input/output to keyboard/screen.
@@ -387,12 +413,14 @@ ulticlrchn_lsn
             cmp OUR_DEVICE
             beq _my_clrchn
             jmp unlsn ; if it was not us, it is serial
-_my_clrchn  jmp uci_abort
+_my_clrchn  clc
+            rts
+;jmp uci_abort
 
 ulticlrchn_tlk
             lda dfltn
             cmp OUR_DEVICE
-            beq uci_abort; _my_clrchn
+            beq _my_clrchn
             jmp untlk ; if it was not us, it is serial
 
 ;; UCI
@@ -407,8 +435,10 @@ uci_setup_cmd
             lda #UCI_TARGET
             sta CMD_IF_COMMAND
             stx CMD_IF_COMMAND
+            stx UCI_LAST_CMD
             lda SECADDR
             sta CMD_IF_COMMAND
+            sta UCI_LAST_SA
             lda VERIFYFLAG
             sta CMD_IF_COMMAND
             rts
@@ -437,7 +467,8 @@ _fn2        jmp uci_execute
 
 uci_execute lda #CMD_PUSH_CMD
             sta CMD_IF_CONTROL
-            sta UCI_PENDING_CMD ; bit 7 is now cleared; since CMD_PUSH_CMD is 01
+            lda #0
+            sta UCI_PENDING_CMD ; bit 7 is now cleared
             ; intentional fall through
 uci_wait_busy
 _wb1        lda CMD_IF_CONTROL
