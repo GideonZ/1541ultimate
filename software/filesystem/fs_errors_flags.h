@@ -46,6 +46,7 @@ typedef enum {
 #define FA_CREATE_ALWAYS    0x08 // file may be overwritten, even if it exists. File contents are cleared
 #define FA_ANY_WRITE_FLAG   0x0E // the three above orred
 #define FA_OPEN_ALWAYS      0x10
+#define FA_OPEN_FROM_CBM    0x20
 /*
 #define FA__WRITTEN         0x20
 #define FA__DIRTY           0x40

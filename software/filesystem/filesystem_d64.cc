@@ -1549,12 +1549,14 @@ FRESULT FileInCBM::open(uint8_t flags)
         header.data[0] = dir_entry.record_size;
         header.data[1] = 0;
     } else if (tp >= 1 && tp <= 3 && (dir_entry.geos_structure == 0 || dir_entry.geos_structure == 1) && dir_entry.aux_track) {
-        // CVT
-        state = ST_HEADER;
-        header.data = new uint8_t[4*254];
-        memset(header.data, 0, 4*254);
-        header.size = create_cvt_header();
-        header.pos = 0;
+        if (!(flags & FA_OPEN_FROM_CBM)) { // do not do this when opened from IEC
+            // CVT
+            state = ST_HEADER;
+            header.data = new uint8_t[4*254];
+            memset(header.data, 0, 4*254);
+            header.size = create_cvt_header();
+            header.pos = 0;
+        }
     }
 
     return FR_OK;
