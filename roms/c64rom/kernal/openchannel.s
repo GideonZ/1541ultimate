@@ -21,6 +21,7 @@ nchkin	jsr lookup      ;see if file known
 ;
 jx310	jsr jz100       ;extract file info
 ;
+nchkin_known_fasa
 	lda fa
 	beq jx320       ;is keyboard...done.
 ;
@@ -90,6 +91,7 @@ nckout	jsr lookup      ;is file in table?
 ;
 ck5	jsr jz100       ;extract table info
 ;
+nchkout_known_fasa
 	lda fa          ;is it keyboard?
 	bne ck10        ;no...something else.
 ;
@@ -134,4 +136,3 @@ ck60	txa
 	bpl ck30        ;yes...finish up
 ;
 	jmp error5      ;no...device not present
-

@@ -143,3 +143,5 @@ chknum	clc
 chkstr	sec
 chkval	bit valtyp
 
+.global frmnum
+
