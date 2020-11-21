@@ -140,3 +140,5 @@ lukall	jsr fndlnc
 	lda lowtr
 	sbc #1
 
+.global newstt
+

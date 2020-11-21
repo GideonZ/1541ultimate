@@ -161,3 +161,4 @@ asc	jsr len1
 gofuc	jmp fcerr
 gtbytc	jsr chrget
 
+.global frefac

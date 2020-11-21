@@ -100,7 +100,10 @@ initms	lda txttab
 	jsr strout
 	jmp scrtch
 
-bvtrs	.word nerror,nmain,ncrnch,nqplop,ngone,neval
+.import wedged_execute
+.global ngone
+
+bvtrs	.word nerror,nmain,ncrnch,nqplop,wedged_execute,neval ; was ngone
 ;
 initv	ldx #initv-bvtrs-1 ;init vectors
 initv1	lda bvtrs,x
