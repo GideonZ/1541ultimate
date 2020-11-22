@@ -311,9 +311,11 @@ void FTPDaemonThread::send_msg(const char *msg, ...)
 
 void FTPDaemonThread::cmd_user(const char *arg)
 {
-    if (strcasecmp(arg, "into")) {
+    if (strcasecmp(arg, "dirs") == 0) {
         container_mode = e_vfs_dirs_only;
-    } else if(strcasecmp(arg, "both")) {
+    } else if (strcasecmp(arg, "into") == 0) {
+        container_mode = e_vfs_dirs_only;
+    } else if(strcasecmp(arg, "both") == 0) {
         container_mode = e_vfs_double_listed;
     }
     send_msg(msg331);
@@ -947,8 +949,8 @@ void FTPDataConnection::directory(int listType, vfs_dir_t *dir)
                 len = sprintf(buffer, "%s\r\n", st.name);
                 break;
             case 2:
-                len = sprintf(buffer, "type=%s;modify=%04d%02d%02d%02d%02d%02d; %s\r\n", VFS_ISDIR(st.st_mode) ? "dir" : "file",
-                        st.year, st.month, st.day, st.hr, st.min, st.sec, st.name);
+                len = sprintf(buffer, "type=%s;size=%d;modify=%04d%02d%02d%02d%02d%02d; %s\r\n", VFS_ISDIR(st.st_mode) ? "dir" : "file",
+                        st.st_size, st.year, st.month, st.day, st.hr, st.min, st.sec, st.name);
                 break;
             default:
                 len = sprintf(buffer, "Internal Error\r\n");
