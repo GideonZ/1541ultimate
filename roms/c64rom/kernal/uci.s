@@ -617,6 +617,7 @@ wedged_execute
             beq at_command
             cmp #STRING_TOKEN
             beq dir_command
+            cmp #0
             jmp ngone+3 ;$a7e7
 
 get_dev_num jsr getadr
