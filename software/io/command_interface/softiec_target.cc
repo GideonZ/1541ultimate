@@ -294,6 +294,10 @@ void SoftIECTarget :: cmd_chkout(Message *command, Message **reply, Message **st
     *reply  = &c_message_empty;
     *status = &c_status_ok;
 
+    if(input_length) {
+        abort(input_length);
+    }
+
     input_channel = NULL;
 
     IecChannel *channel = iec_if.get_data_channel((int)command->message[2]); // also works for command channel ;-)
