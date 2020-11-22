@@ -658,7 +658,6 @@ _dev_ok     cmp #31
             jsr secnd
             bit status
             bmi _not_pres
-            stx $0400
             stx dflto
             rts
 _uci_listen jmp ultichkout_c
