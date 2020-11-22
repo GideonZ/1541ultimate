@@ -1318,7 +1318,7 @@ FRESULT DirInCBM::create(const char *filename, bool dir)
 #ifndef RUNS_ON_PC
     int y,m,d,wd,h,mn,s;
     rtc.get_time(y, m, d, wd, h, mn, s);
-    p->year = (uint8_t)(y - 1900);
+    p->year = (uint8_t)(y + 80);
     p->month = (uint8_t)m;
     p->day = (uint8_t)d;
     p->hour = (uint8_t)h;
