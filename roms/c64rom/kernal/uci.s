@@ -504,23 +504,25 @@ uci_abort_c
 
 uci_abort   ; may be in command state
             bit UCI_PENDING_CMD
-            bpl _abrt2 ; Bit 7 is not set, so there is no pending command
+            bpl _abrt1 ; Bit 7 is not set, so there is no pending command
             jsr uci_execute
-_abrt2      lda CMD_IF_CONTROL
-            and #CMD_STATE_DATA
-            beq _abrt1 ; NOT in Data state
+
+_abrt1      lda #$00
+            sta UCI_LAST_CMD
+            lda CMD_IF_CONTROL
+            and #CMD_STATE_BITS
+            beq _abrt2 ; UCI is already in idle state; we're done
+
+            cmp #CMD_STATE_MORE_DATA  ; only if it is 'more data', we use abort, otherwise data is just acked.
+            bne uci_ack ; NOT in More Data state, just ack
+
             ; Perform Abort of current command
             lda #CMD_ABORT
             sta CMD_IF_CONTROL
-            ; jmp uci_wait_abort ; fall through
-
-uci_wait_abort
 _wa1        lda CMD_IF_CONTROL
             and #CMD_ABORT
             bne _wa1
-_abrt1      lda #$00
-            sta UCI_LAST_CMD
-            rts
+_abrt2      rts
 
 uci_clear_error
             lda #CMD_ERROR
@@ -529,6 +531,7 @@ uci_clear_error
 
 ;------------------------------- Basic Extension -----------------------------------
             AT_TOKEN = $40
+            STRING_TOKEN = $24
             CHRGET = $0073
             CHRGOT = $0079
             LINNUM = $14
@@ -540,14 +543,9 @@ uci_clear_error
 .import valtyp
 .import frefac
 .import newstt
+.import linprt
 
 .global wedged_execute
-
-wedged_execute
-            jsr CHRGET
-            cmp #AT_TOKEN
-            beq at_command
-            jmp ngone+3 ;$a7e7
 
 at_command
             lda #0
@@ -560,43 +558,28 @@ at_command
             bit valtyp ; String?
             bmi _copy_string_to_dev
 
-            jsr getadr
-
-            lda LINNUM+1
-            bne _illegal
-            lda LINNUM
-            sta DEVNUM
-            beq _illegal
+            jsr get_dev_num
 
             jsr CHRGOT
-            beq _read_status
-            cmp #$2c   ; comma
-            bne _syntax
+            beq _read_status    ; No second parameter
+            cmp #$2c            ; comma
+            bne _syntax         ;  has to be present
 
             jsr CHRGET
-            jsr frmevl ; Evaluate Expression
-            bit valtyp
-            bpl _syntax
+            jsr frmevl          ; Evaluate Expression
+            bit valtyp          ; second param is a string?
+            bpl _syntax         ; no? then it's a syntax error
 
 _copy_string_to_dev
+            ldx #$6F
             jsr listen_or_error
-
-            jsr frefac ; Fetch string parameters
-            tax
-            ldy #$00
-            inx
-_nxtchr
-            dex
-            beq _str_done
-            lda ($22),y
-_wrcmdbyte  jsr bsout
-            iny
-            jmp _nxtchr
-
-_str_done   jsr nclrch
-            jsr uci_abort_c   ; avoid leaving a command open
+            jsr frefac          ; Fetch string parameters
+            jsr send_string
+            jsr nclrch
+            jsr uci_abort_c     ; avoid leaving a command open
 
 _read_status
+            ldx #$6F
             jsr listen_or_error
             jsr nclrch
             jsr nchkin_known_fasa
@@ -620,22 +603,138 @@ _complete   jmp newstt
 _syntax     ldx #$0b
             .byte $2c
 _illegal    ldx #$09
+            .byte $2c
+_not_pres
+            ldx #$05
             jmp ($0300)
 _kernal_error
             tax
             jmp ($0300)
 
+wedged_execute
+            jsr CHRGET
+            cmp #AT_TOKEN
+            beq at_command
+            cmp #STRING_TOKEN
+            beq dir_command
+            jmp ngone+3 ;$a7e7
+
+get_dev_num jsr getadr
+            lda LINNUM+1
+            bne _illegal
+            lda LINNUM
+            sta DEVNUM
+            beq _illegal
+            rts
+
+send_string
+            tax
+            ldy #$00
+            inx
+_nxtchr     dex
+            beq _str_done
+            lda ($22),y
+_wrcmdbyte  jsr bsout
+            iny
+            jmp _nxtchr
+_str_done   rts
+
 listen_or_error
+            stx SECADDR
             lda DEVNUM
-            beq _default
-            cmp #31
+            bne _dev_ok
+            lda OUR_DEVICE
+            sta DEVNUM
+_dev_ok     cmp #31
             bcs _illegal
-            sta DEVNUM
-            lda #$6F
+
+            cmp OUR_DEVICE
+            beq _uci_listen
+            ; Do it the raw way
+            tax
+            jsr listn
+            lda SECADDR
+            jsr secnd
+            bit status
+            bmi _not_pres
+            stx $0400
+            stx dflto
+            rts
+_uci_listen jmp ultichkout_c
+
+dir_command
+            lda #0
+            sta STATUS
+            pha          ; Pre-store length = 0 on stack
+
+            jsr CHRGET
+            beq _do_dir  ; no params, default drive, no pattern
+
+            jsr frmevl   ; Evaluate Expression
+            bit valtyp   ; String?
+            bmi _dir_str ; It's a string, process it
+
+_dir_drv    jsr get_dev_num
+            jsr CHRGOT
+            beq _do_dir
+            cmp #$2c   ; comma
+            bne _dir_syntax
+
+            jsr CHRGET
+            jsr frmevl   ; Evaluate Expression
+            bit valtyp
+            bmi _dir_str ; If it's a string, it's OK
+_dir_syntax jmp _syntax
+
+_dir_str    pla          ; Ditch 0 on stack
+            jsr frefac   ; Fetch string parameters
+            pha          ; Replace length with one from string
+_do_dir
+            jsr nclrch
+            ldx #$F0     ; open channel 0
+            jsr listen_or_error
+
+            lda #$24
+            jsr bsout
+            pla          ; Fetch string length from stack
+            jsr send_string
+            jsr nclrch ; unlisten
+            jsr print_dir
+            jsr nclrch
+            jsr uci_abort_c
+            jmp _next_statement
+
+print_dir
+            lda #$60
             sta SECADDR
-            jsr nchkout_known_fasa
-            bcs _kernal_error
-            rts
-_default    lda OUR_DEVICE
-            sta DEVNUM
-            rts
+            jsr nchkin_known_fasa
+            jsr basin
+            jsr basin
+
+_dir_line   jsr basin
+            jsr basin
+            jsr basin
+            tax
+            jsr basin
+            ldy STATUS
+            bne _dir_end
+
+            jsr linprt      ; line number
+            lda #' '        ; space
+            jsr prt
+
+_dir_char   jsr basin
+            beq _dir_cr
+            jsr prt
+            bne _dir_char
+
+_dir_cr     lda #$0d
+            jsr prt         ; newline
+            jsr kbget
+            cmp  #3 ; STOP
+            bne _dir_line
+
+_dir_end    jsr nclrch
+            ldx #$E0
+            jmp listen_or_error
+

@@ -297,10 +297,21 @@ void SoftIECTarget :: cmd_chkout(Message *command, Message **reply, Message **st
     input_channel = NULL;
 
     IecChannel *channel = iec_if.get_data_channel((int)command->message[2]); // also works for command channel ;-)
-    for(int i=4; i<command->length; i++) {
-        channel->push_data(command->message[i]);
+    switch(command->message[2] & 0xF0) {
+    case 0xF0: // open
+        command->message[command->length] = 0; // make it a null-terminated string
+        channel->ext_open_file((const char *)&command->message[4]);
+        input_channel = NULL;
+        break;
+    case 0xE0: // close
+        channel->ext_close_file();
+        break;
+    default:
+        for(int i=4; i<command->length; i++) {
+            channel->push_data(command->message[i]);
+        }
+        channel->push_command(0); // end
     }
-    channel->push_command(0); // end
 }
 
 void SoftIECTarget :: cmd_close(Message *command, Message **reply, Message **status)
