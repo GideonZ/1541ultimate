@@ -500,8 +500,10 @@ void TreeBrowser :: copy_selection(void)
 		}
 	}
 	if (clipboard.getNumberOfFiles() == 0) {
-		Browsable *t = state->under_cursor;
-		clipboard.addFile(t->getName());
+	    Browsable *t = state->under_cursor;
+	    if (t) {
+	        clipboard.addFile(t->getName());
+	    }
 	}
 	char buffer[40];
 	sprintf(buffer, "%d files placed on clipboard", clipboard.getNumberOfFiles());
