@@ -19,6 +19,8 @@
 #include "vfs.h"
 #include "rtc.h"
 
+static int num_threads = 0;
+
 #ifdef FTPD_DEBUG
 int dbg_printf(const char *fmt, ...);
 #else
@@ -208,16 +210,20 @@ static uint16_t bind_port = 51000;
 FTPDaemonThread::FTPDaemonThread(int socket, uint32_t addr, uint16_t port) :
         data_connections(4, NULL)
 {
+    num_threads++;
     this->socket = socket;
 
-    your_ip[0] = addr >> 24;
-    your_ip[1] = (addr >> 16) & 0xFF;
-    your_ip[2] = (addr >> 8) & 0xFF;
-    your_ip[3] = addr & 0xFF;
+    {
+        uint8_t *ip = (uint8_t *)&addr;
+        your_ip[0] = ip[0]; //addr >> 24;
+        your_ip[1] = ip[1]; //(addr >> 16) & 0xFF;
+        your_ip[2] = ip[2]; //(addr >> 8) & 0xFF;
+        your_ip[3] = ip[3]; //addr & 0xFF;
+    }
 
     your_port = port;
 
-    printf("FTPDaemonThread: connection from %d.%d.%d.%d:%d\n", your_ip[0], your_ip[1], your_ip[2], your_ip[3], port);
+    printf("FTPDaemonThread(%d): connection from %d.%d.%d.%d:%d\n", num_threads, your_ip[0], your_ip[1], your_ip[2], your_ip[3], port);
 
     /* Initialize the structure. */
     state = FTPD_IDLE;
@@ -237,7 +243,9 @@ void FTPDaemonThread::run(void *a)
 {
     FTPDaemonThread *thread = (FTPDaemonThread *) a;
     thread->handle_connection();
+    lwip_close(thread->socket);
     delete thread;
+    num_threads--;
     vTaskDelete(NULL);
 }
 
@@ -830,7 +838,9 @@ int FTPDataConnection::setup_connection()
             vTaskDelete(acceptTaskHandle);
             return 0;
         } else {
-            printf("FTPD: Taking semaphore timed out.\n");
+            printf("FTPD: Taking semaphore timed out.\n"
+                   "Number of active connections in this thread: %d\n"
+                   "Number of threads: %d\n", parent->data_connections.get_elements(), num_threads);
             return -1;
         }
     }
