@@ -810,7 +810,7 @@ FRESULT FileSystemDNP::format(const char *name)
     bam_buffer[7] = (uint8_t )((num_sectors + 255) / 256); // num tracks
 
     int bam_bytes = num_sectors / 8;
-    bam_buffer[36] = 0xF8; // in total 32+3 blocks in use after format
+    bam_buffer[36] = 0x1F; // in total 32+3 blocks in use after format
     for(int i=5; i < bam_bytes; i++) {
         bam_buffer[32 + i] = 0xFF;
     }
