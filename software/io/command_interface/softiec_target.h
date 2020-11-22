@@ -1,7 +1,7 @@
 #ifndef CONTROL_TARGET_H
 #define CONTROL_TARGET_H
 
-#include "integer.h"
+#include <stdint.h>
 #include "command_intf.h"
 #include "iec.h"
 #include "iec_channel.h"
