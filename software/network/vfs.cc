@@ -188,10 +188,14 @@ vfs_dirent_t *vfs_readdir(vfs_dir_t *dir)
     dbg_printf("READDIR: %p %d\n", dir, dir->index);
 	IndexedList<FileInfo *> *listOfEntries = (IndexedList<FileInfo *> *)(dir->entries);
 
-    if(dir->index < listOfEntries->get_elements()) {
+    while(dir->index < listOfEntries->get_elements()) {
         FileInfo *inf = (*listOfEntries)[dir->index];
         dir->entry->file_info = inf;
         dbg_printf("Read: %s\n", inf->lfname);
+        if (inf->attrib & AM_VOL) {
+            dir->index++;
+            continue;
+        }
         switch (dir->into_mode) {
         case e_vfs_files_only:
             break;
@@ -205,7 +209,6 @@ vfs_dirent_t *vfs_readdir(vfs_dir_t *dir)
                 if (dir->do_alternative) {
                     dir->do_alternative = false;
                     inf->attrib |= AM_DIR;
-                    set_extension(inf->lfname, "", (int)inf->lfsize);
                 } else {
                     dir->do_alternative = true;
                     dir->index --; // list normally now, list alternative next time
