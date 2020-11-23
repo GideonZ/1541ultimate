@@ -13,9 +13,7 @@ IecChannel :: IecChannel(IecInterface *intf, int ch)
     state = e_idle;
     dir_index = 0;
     dir_last = 0;
-    bytes = 0;
     last_byte = 0;
-    size = 0;
     prefetch = 0;
     prefetch_max = 0;
     dirPartition = NULL;
@@ -29,6 +27,8 @@ IecChannel :: IecChannel(IecInterface *intf, int ch)
     recordOffset = 0;
     recordDirty = false;
     dir_free = 0;
+    pingpong = true;
+    swap_buffers();
 }
 
 IecChannel :: ~IecChannel()
@@ -40,12 +40,12 @@ void IecChannel :: reset(void)
 {
     close_file();
 
+    pingpong = true;
+    swap_buffers();
     pointer = 0;
     dir_index = 0;
     dir_last = 0;
-    bytes = 0;
     last_byte = 0;
-    size = 0;
     prefetch = 0;
     prefetch_max = 0;
     dirPartition = NULL;
@@ -66,7 +66,7 @@ int IecChannel :: prefetch_data(uint8_t& data)
     if (state == e_error) {
         return IEC_NO_FILE;
     }
-    if ((last_byte > 0) && (prefetch >= last_byte)) {
+    if ((last_byte >= 0) && (prefetch >= last_byte)) {
         data = buffer[prefetch];
         prefetch++;
         return IEC_LAST;
@@ -89,7 +89,7 @@ int IecChannel :: pop_data(void)
             if(pointer == last_byte) {
                 state = e_complete;
                 return IEC_NO_FILE; // no more data?
-            } else if(pointer == 255) {
+            } else if(pointer == 511) {
                 if(read_block())  // also resets pointer.
                     return IEC_READ_ERROR;
                 else
@@ -200,30 +200,40 @@ int IecChannel :: read_dir_entry(void)
     return 0;
 }
 
+void IecChannel :: swap_buffers(void)
+{
+    pingpong = !pingpong;
+    curblk = (pingpong) ? &bufblk[1] : &bufblk[0];
+    nxtblk = (pingpong) ? &bufblk[0] : &bufblk[1];
+    buffer = curblk->bufdata;
+}
+
 int IecChannel :: read_block(void)
 {
     FRESULT res = FR_DENIED;
-    uint32_t bytes;
+
     if(f) {
-        res = f->read(buffer, 256, &bytes);
-//        printf("\nSize was %d. Read %d bytes. ", size, bytes);
+        swap_buffers(); // bring the data in view that was already available
+        res = f->read(nxtblk->bufdata, 512, &nxtblk->valid_bytes);
+#if IECDEBUG > 2
+        printf("Read %d bytes.\n", nxtblk->valid_bytes);
+#endif
     }
     if(res != FR_OK) {
         state = e_error;
         return IEC_READ_ERROR;
     }
-    if(bytes == 0)
+    if(curblk->valid_bytes == 0)
         state = e_complete; // end should have triggered already
 
-    if(bytes != 256) {
-        last_byte = int(bytes)-1;
-    } else if(size == 256) {
-        last_byte = 255;
+    if(curblk->valid_bytes != 512) {
+        last_byte = int(curblk->valid_bytes)-1;
+    } else if(nxtblk->valid_bytes == 0) {
+        last_byte = 511;
     }
-    size -= 256;
     pointer = 0;
     prefetch = 0;
-    prefetch_max = 256;
+    prefetch_max = 512;
     return 0;
 }
 
@@ -328,10 +338,10 @@ int IecChannel :: push_data(uint8_t b)
 
         case e_file:
             buffer[pointer++] = b;
-            if(pointer == 256) {
+            if(pointer == 512) {
                 FRESULT res = FR_DENIED;
                 if(f) {
-                    res = f->write(buffer, 256, &bytes);
+                    res = f->write(buffer, 512, &bytes);
                 }
                 if(res != FR_OK) {
                     fm->fclose(f);
@@ -368,7 +378,8 @@ int IecChannel :: push_command(uint8_t b)
             if ((name.mode == e_write) || (name.mode == e_append) || (name.mode == e_replace)) {
                 if (f) {
                     if (pointer > 0) {
-                        FRESULT res = f->write(buffer, pointer, &bytes);
+                        uint32_t dummy;
+                        FRESULT res = f->write(buffer, pointer, &dummy);
                         if (res != FR_OK) {
                             state = e_error;
                             return IEC_WRITE_ERROR;
@@ -595,7 +606,6 @@ int IecChannel :: setup_directory_read(name_t& name)
     prefetch = 0;
     prefetch_max = 32;
     last_byte = -1;
-    size = 32;
     memcpy(buffer, c_header, 32);
     buffer[4] = (uint8_t)dirPartition->GetPartitionNumber();
 
@@ -693,8 +703,6 @@ int IecChannel :: setup_file_access(name_t& name)
 
 int IecChannel :: init_iec_transfer(void)
 {
-    size = 0;
-
     if (name.mode == e_append) {
         FRESULT fres = f->seek(f->get_size());
         if (fres != FR_OK) {
@@ -706,11 +714,19 @@ int IecChannel :: init_iec_transfer(void)
     last_byte = -1;
     pointer = 0;
     prefetch = 0;
-    prefetch_max = 256;
+    prefetch_max = 512;
     state = e_file;
 
     if(name.mode == e_read) {
-        size = f->get_size();
+        if(f) {
+            curblk->valid_bytes = 0;
+            // queue up one next block
+            f->read(nxtblk->bufdata, 512, &nxtblk->valid_bytes);
+#if IECDEBUG > 2
+            printf("Initial read %d bytes.\n", nxtblk->valid_bytes);
+#endif
+        }
+        // read block will swap the buffers, so the read above will appear in current block
         return read_block();
     }
     return 0;
