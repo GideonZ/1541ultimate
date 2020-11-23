@@ -682,8 +682,10 @@ FRESULT FileSystemD64::format(const char *name)
     set_volume_name(name, root_buffer + 144, "2A");
     root_dirty = true;
 
+    const int standard_num_sectors = 683;
+
     // free all sectors
-    for(int i=0; i < num_sectors; i++) {
+    for(int i=0; i < standard_num_sectors; i++) {
         int t, s;
         get_track_sector(i, t, s);
         set_sector_allocation(t, s, false);
@@ -715,8 +717,10 @@ FRESULT FileSystemD71::format(const char *name)
 
     set_volume_name(name, root_buffer + 144, "2A");
 
+    const int standard_num_sectors = 683*2;
+
     // free all sectors
-    for(int i=0; i < num_sectors; i++) {
+    for(int i=0; i < standard_num_sectors; i++) {
         int t, s;
         get_track_sector(i, t, s);
         set_sector_allocation(t, s, false);
@@ -752,8 +756,10 @@ FRESULT FileSystemD81::format(const char *name)
     set_volume_name(name, root_buffer + 4, "3D");
     root_dirty = true;
 
+    const int standard_num_sectors = 3200;
+
     // free all sectors
-    for(int i=0; i < num_sectors; i++) {
+    for(int i=0; i < standard_num_sectors; i++) {
         int t, s;
         get_track_sector(i, t, s);
         set_sector_allocation(t, s, false);
