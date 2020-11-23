@@ -336,6 +336,10 @@ public:
     }
 };
 
+typedef struct {
+    uint8_t bufdata[512];
+    uint32_t valid_bytes;
+} bufblk_t;
 
 class IecChannel
 {
@@ -343,8 +347,12 @@ class IecChannel
     FileManager *fm;
 
 	int  channel;
-    uint8_t buffer[256];
-    int  size;
+    bufblk_t bufblk[2];
+    bool pingpong;
+    bufblk_t *curblk;
+    bufblk_t *nxtblk;
+    uint8_t *buffer; // for legacy (to be refactored)
+
     int  pointer;
     int  prefetch;
     int  prefetch_max;
@@ -361,7 +369,7 @@ class IecChannel
     bool recordDirty;
 
     // temporaries
-    uint32_t bytes;
+    //uint32_t bytes;
     name_t name;
     uint8_t flags;
     IecPartition *partition;
@@ -377,6 +385,7 @@ private:
     int open_file(void);  // name should be in buffer
     int close_file(void); // file should be open
     int read_dir_entry(void);
+    void swap_buffers(void);
     int read_block(void);
     int read_record(int offset);
     int write_record(void);
