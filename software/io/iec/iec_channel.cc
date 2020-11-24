@@ -82,6 +82,83 @@ int IecChannel :: prefetch_data(uint8_t& data)
     return IEC_BUFFER_END; // prefetch == prefetch_max, buffer needs refresh
 }
 
+int IecChannel :: prefetch_more(int max_fetch, uint8_t*& datapointer, int &fetched)
+{
+    if (state == e_error) {
+        fetched = 0;
+        return IEC_NO_FILE;
+    }
+    bool last = false;
+    if (last_byte >= 0) { // there is a last byte in this block
+        if (prefetch + max_fetch > last_byte) {  // example: prefetch = 0, last_byte = 1 => there are 2 bytes. if max_fetch = 2, it will be set to 2.
+            max_fetch = last_byte - prefetch + 1;
+            last = true;
+        }
+    } else {
+        if (prefetch + max_fetch > prefetch_max) {
+            max_fetch = prefetch_max - prefetch;
+        }
+    }
+    datapointer = &buffer[prefetch];
+    fetched = max_fetch;
+    prefetch += max_fetch;
+    if (last) {
+        return IEC_LAST;
+    }
+    return IEC_OK;
+}
+
+int IecChannel :: pop_more(int pop_size)
+{
+    switch(state) {
+        case e_file:
+            if(pointer == last_byte) {
+                state = e_complete;
+                return IEC_NO_FILE; // no more data?
+            }
+            pointer += pop_size;
+            if (pointer == 512) {
+                if(read_block())  // also resets pointer.
+                    return IEC_READ_ERROR;
+                else
+                    return IEC_OK;
+            }
+            break;
+        case e_dir:
+            if(pointer == last_byte) {
+                state = e_complete;
+                return IEC_NO_FILE; // no more data?
+            }
+            pointer += pop_size;
+            if(pointer == 32) {
+                while(read_dir_entry())
+                    ;
+                return IEC_OK;
+            }
+            break;
+        case e_record:
+            pointer += pop_size;
+            if(pointer > last_byte) {
+                recordOffset += recordSize;
+                if (!read_record(0)) {
+                    return IEC_OK;
+                } else {
+                    state = e_complete;
+                    return IEC_NO_FILE;
+                }
+            }
+            break;
+        case e_buffer:
+            pointer += pop_size;
+            break;
+
+        default:
+            return IEC_NO_FILE;
+    }
+    return IEC_OK;
+}
+
+
 int IecChannel :: pop_data(void)
 {
     switch(state) {
@@ -964,6 +1041,18 @@ int IecCommandChannel :: pop_data(void)
         return IEC_OK;
     }
     return IEC_NO_FILE;
+}
+
+int IecCommandChannel :: pop_more(int pop_size)
+{
+    if (state != e_status) {
+        return IEC_NO_FILE;
+    }
+    pointer += pop_size;
+    if(pointer > last_byte) {
+        state = e_idle;
+    }
+    return IEC_OK;
 }
 
 int IecCommandChannel :: push_data(uint8_t b)

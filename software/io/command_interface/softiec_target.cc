@@ -1,6 +1,7 @@
 #include "softiec_target.h"
 #include "dump_hex.h"
 #include "c64.h"
+#include <string.h>
 
 #define SIEC_TARGET_DEBUG 0
 
@@ -22,6 +23,7 @@ SoftIECTarget :: SoftIECTarget(int id)
     input_channel = NULL;
     input_length = 0;
     startaddr = 0;
+    total_prepared = 0;
 }
    
 
@@ -218,16 +220,19 @@ void SoftIECTarget :: cmd_chkin(Message *command, Message **reply, Message **sta
     // 0, 1: TARGET, COMMAND
     // 2: unused
     // 3: secondary address
-    *reply  = &data_message;
     *status = &c_message_empty;
 
     input_channel = iec_if.get_data_channel((int)command->message[2]); // also works for command channel ;-)
     input_channel->talk();
+    total_prepared = 0;
     prepare_data(32); // we don't know yet how serious the client is about reading, so let's give him a little
+    *reply  = &direct_message;
 }
 
 void SoftIECTarget :: prepare_data(int count)
 {
+
+/*
     data_message.last_part = false;
 
     uint8_t data;
@@ -247,22 +252,33 @@ void SoftIECTarget :: prepare_data(int count)
         }
     }
     data_message.length = len;
+*/
+    int res = input_channel->prefetch_more(count, direct_message.message, direct_message.length);
+    direct_message.last_part = (res != IEC_OK);
     // the number of bytes that we prepared for reading is stored here, such that these bytes can be popped
     // whenever get_more_data is called.
-    input_length = len;
+    input_length = direct_message.length;
 #if SIEC_TARGET_DEBUG > 1
-    dump_hex(data_message.message, len);
+//    dump_hex(data_message.message, len);
+    total_prepared += input_length;
+    printf("Prepared %d/%d bytes. Last = %d (Total: %d)\n", input_length, count, direct_message.last_part, total_prepared);
 #endif
 }
 
 void SoftIECTarget :: get_more_data(Message **reply, Message **status)
 {
     if (input_channel) {
+#if SIEC_TARGET_DEBUG > 1
+        printf("Popping %d bytes.\n", input_length);
+#endif
+/*
         for(int i=0; i<input_length; i++) {
             input_channel->pop_data(); // how about passing the number of bytes, that would be way more efficient.
         }
+*/
+        input_channel->pop_more(input_length);
         prepare_data(256);
-        *reply = &data_message;
+        *reply = &direct_message;
         *status = &c_status_all_ok;
     } else {
         *reply = &c_message_empty;
@@ -391,20 +407,27 @@ uint16_t SoftIECTarget :: do_load(IecChannel *chan, uint16_t addr)
 #if SIEC_TARGET_DEBUG
     printf("Loading %04x-", addr);
 #endif
-    uint8_t data;
+    uint8_t *src;
     int res1, res2;
-    int error = 0;
+    int error = 0, len = 0;
+    int maxbytes = 0x10000 - addr;
     do {
-        res1 = chan->prefetch_data(data);
-        res2 = chan->pop_data();
+        int bytes_now = (maxbytes > 512) ? 512 : maxbytes;
+        res1 = chan->prefetch_more(bytes_now, src, len);
+        //printf("Prefetched: %d bytes (%p->%p)\n", len, src, dest);
+        if (!len) {
+            break;
+        }
+
+        memcpy((void *)dest, src, len);
+        dest += len;
+        addr += len;
+        maxbytes -= len;
+
+        res2 = chan->pop_more(len);
         if (res2 == IEC_READ_ERROR) {
             error = 1;
             break;
-        }
-        *(dest++) = data;
-        addr ++;
-        if (!addr) {
-            break; // wrap!
         }
     } while(res2 != IEC_NO_FILE);
 
