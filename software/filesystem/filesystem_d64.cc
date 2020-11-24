@@ -682,8 +682,10 @@ FRESULT FileSystemD64::format(const char *name)
     set_volume_name(name, root_buffer + 144, "2A");
     root_dirty = true;
 
+    const int standard_num_sectors = 683;
+
     // free all sectors
-    for(int i=0; i < num_sectors; i++) {
+    for(int i=0; i < standard_num_sectors; i++) {
         int t, s;
         get_track_sector(i, t, s);
         set_sector_allocation(t, s, false);
@@ -715,8 +717,10 @@ FRESULT FileSystemD71::format(const char *name)
 
     set_volume_name(name, root_buffer + 144, "2A");
 
+    const int standard_num_sectors = 683*2;
+
     // free all sectors
-    for(int i=0; i < num_sectors; i++) {
+    for(int i=0; i < standard_num_sectors; i++) {
         int t, s;
         get_track_sector(i, t, s);
         set_sector_allocation(t, s, false);
@@ -752,8 +756,10 @@ FRESULT FileSystemD81::format(const char *name)
     set_volume_name(name, root_buffer + 4, "3D");
     root_dirty = true;
 
+    const int standard_num_sectors = 3200;
+
     // free all sectors
-    for(int i=0; i < num_sectors; i++) {
+    for(int i=0; i < standard_num_sectors; i++) {
         int t, s;
         get_track_sector(i, t, s);
         set_sector_allocation(t, s, false);
@@ -810,7 +816,7 @@ FRESULT FileSystemDNP::format(const char *name)
     bam_buffer[7] = (uint8_t )((num_sectors + 255) / 256); // num tracks
 
     int bam_bytes = num_sectors / 8;
-    bam_buffer[36] = 0xF8; // in total 32+3 blocks in use after format
+    bam_buffer[36] = 0x1F; // in total 32+3 blocks in use after format
     for(int i=5; i < bam_bytes; i++) {
         bam_buffer[32 + i] = 0xFF;
     }
@@ -1318,7 +1324,7 @@ FRESULT DirInCBM::create(const char *filename, bool dir)
 #ifndef RUNS_ON_PC
     int y,m,d,wd,h,mn,s;
     rtc.get_time(y, m, d, wd, h, mn, s);
-    p->year = (uint8_t)(y - 1900);
+    p->year = (uint8_t)(y + 80);
     p->month = (uint8_t)m;
     p->day = (uint8_t)d;
     p->hour = (uint8_t)h;
@@ -1434,6 +1440,13 @@ FRESULT DirInCBM::get_entry(FileInfo &f)
                 f.size = (int) p->size_low + 256 * (int) p->size_high;
                 f.size *= 254;
                 f.name_format = NAME_FORMAT_CBM;
+
+                f.date  = ((uint16_t)(p->year - 80)) << 9;
+                f.date |= (((uint16_t)(p->month)) << 5);
+                f.date |= p->day;
+                f.time  = ((uint16_t)(p->hour)) << 11;
+                f.time |= (((uint16_t)(p->minute)) << 5);
+
                 if (tp >= 1 && tp <= 3 && (p->geos_structure == 0 || p->geos_structure == 1) && p->aux_track) {
                     strncpy(f.extension, "CVT", 4);
                 }
@@ -1542,12 +1555,14 @@ FRESULT FileInCBM::open(uint8_t flags)
         header.data[0] = dir_entry.record_size;
         header.data[1] = 0;
     } else if (tp >= 1 && tp <= 3 && (dir_entry.geos_structure == 0 || dir_entry.geos_structure == 1) && dir_entry.aux_track) {
-        // CVT
-        state = ST_HEADER;
-        header.data = new uint8_t[4*254];
-        memset(header.data, 0, 4*254);
-        header.size = create_cvt_header();
-        header.pos = 0;
+        if (!(flags & FA_OPEN_FROM_CBM)) { // do not do this when opened from IEC
+            // CVT
+            state = ST_HEADER;
+            header.data = new uint8_t[4*254];
+            memset(header.data, 0, 4*254);
+            header.size = create_cvt_header();
+            header.pos = 0;
+        }
     }
 
     return FR_OK;

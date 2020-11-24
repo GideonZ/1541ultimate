@@ -21,6 +21,7 @@ verck	.res 1
 count	.res 1
 dimflg	.res 1
 valtyp	.res 1
+.global valtyp
 intflg	.res 1
 garbfl
 dores	.res 1

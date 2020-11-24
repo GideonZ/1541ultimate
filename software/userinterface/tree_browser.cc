@@ -228,7 +228,7 @@ void TreeBrowser :: checkFileManagerEvent(void)
 {
     FileManagerEvent *event = (FileManagerEvent *)observerQueue->waitForEvent(0);
     if (event) {
-    	printf("Event %s on %s\n", FileManager :: eventStrings[(int)event->eventType], event->pathName.c_str() );
+    	// printf("Event %s on %s\n", FileManager :: eventStrings[(int)event->eventType], event->pathName.c_str() );
 
     	// example: browser path = /SD/Hallo  Event = media removed /SD/
 
@@ -266,7 +266,7 @@ void TreeBrowser :: checkFileManagerEvent(void)
 			}
 		}
 
-		printf("DIR %sMATCHED, ENTRY %sMATCHED, st = %s\n", match_dir?"":"NOT ", match_entry?"":"NOT ", st->node->getName());
+		// printf("DIR %sMATCHED, ENTRY %sMATCHED, st = %s\n", match_dir?"":"NOT ", match_entry?"":"NOT ", st->node->getName());
 		Browsable *b;
 
     	switch (event->eventType) {
@@ -500,8 +500,10 @@ void TreeBrowser :: copy_selection(void)
 		}
 	}
 	if (clipboard.getNumberOfFiles() == 0) {
-		Browsable *t = state->under_cursor;
-		clipboard.addFile(t->getName());
+	    Browsable *t = state->under_cursor;
+	    if (t) {
+	        clipboard.addFile(t->getName());
+	    }
 	}
 	char buffer[40];
 	sprintf(buffer, "%d files placed on clipboard", clipboard.getNumberOfFiles());

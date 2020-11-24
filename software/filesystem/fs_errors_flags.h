@@ -36,6 +36,8 @@ typedef enum {
 	FR_LOOP_DETECTED,       /* (22) From CBM filesystems */
 } FRESULT;
 
+#define FR_NOT_ENOUGH_CORE FR_NO_MEMORY
+
 /*--------------------------------------------------------------*/
 /* File access control and file status flags (FIL.flag)         */
 
@@ -46,6 +48,8 @@ typedef enum {
 #define FA_CREATE_ALWAYS    0x08 // file may be overwritten, even if it exists. File contents are cleared
 #define FA_ANY_WRITE_FLAG   0x0E // the three above orred
 #define FA_OPEN_ALWAYS      0x10
+// APPEND is defined now in FatFS as 0x30 (thus 0x20 set)
+#define FA_OPEN_FROM_CBM    0x80
 /*
 #define FA__WRITTEN         0x20
 #define FA__DIRTY           0x40

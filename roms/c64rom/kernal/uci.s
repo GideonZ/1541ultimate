@@ -46,8 +46,10 @@
         SAVEADDR   = $C1
         SAVEEND    = $AE
 
-        MY_OUTLEN       = $0276 ; Last byte of secondary address table
-        UCI_PENDING_CMD = $026C ; Last byte of device number table
+        MY_OUTLEN       = $02BF ; Last byte of free area, before sprite 11
+        UCI_PENDING_CMD = $02BE
+        UCI_LAST_CMD    = $02BD
+        UCI_LAST_SA     = $02BC
 
 
 ulti_restor
@@ -339,19 +341,33 @@ _breakup_out
 ; Used registers: A, X.
 ; Real address: ($031E), $F20E.
 ; 
+ultichkin_c
+            ldx CMD_IF_COMMAND
+            cpx #UCI_IDENTIFIER
+            bne _jx11
 
 ultichkin   cmp OUR_DEVICE
             beq _my_chkin
-            cmp #3
+_jx11       cmp #3
             beq _jx320       ;is screen...done.
             jmp jx314
 _jx320      jmp jx320
 
 _my_chkin   sta dfltn
+            ; check if last command was also CHKIN
             ldx #UCI_CMD_CHKIN
-            jsr uci_setup_cmd
+            cpx UCI_LAST_CMD
+            bne _chkin_su ; No? Just start the command
+
+            ; last command was CHKIN; it may still be pending
+            ; Same secondary address?
+            lda SECADDR
+            cmp UCI_LAST_SA
+            beq _chkin_cont ; Yes? Just do nothing
+
+_chkin_su   jsr uci_setup_cmd
             jsr uci_execute
-            clc
+_chkin_cont clc
             rts
 
 ; $FFC9   
@@ -361,19 +377,38 @@ _my_chkin   sta dfltn
 ; Used registers: A, X.
 ; Real address: ($0320), $F250.
 ; 
+ultichkout_c
+            ldx CMD_IF_COMMAND
+            cpx #UCI_IDENTIFIER
+            bne _ck11
+
 ultichkout  cmp OUR_DEVICE
             beq _my_chkout
-            cmp #3
+_ck11       cmp #3
             beq _ck30       ;is screen...done.
             jmp ck14
 _ck30       jmp ck30
 
 _my_chkout  sta dflto
+            bit UCI_PENDING_CMD
+            bpl do_chkout   ; No command pending, so setup is always required
+
+            ; check if last command was also CHKOUT
+            ldx #UCI_CMD_CHKOUT
+            cpx UCI_LAST_CMD
+            bne do_chkout   ; Last command not CHKOUT? Setup is required
+
+            ; there is a pending CKOUT command, same SA?
+            lda SECADDR
+            cmp UCI_LAST_SA
+            beq _ckout_cont ; Yes!  Do nothing, just append
+
 do_chkout   lda #0
             sta MY_OUTLEN
             ldx #UCI_CMD_CHKOUT
-            clc
-            jmp uci_setup_cmd       ; do not execute command, because we are waiting for data now
+            jsr uci_setup_cmd ; do not execute command, because we are waiting for data now
+_ckout_cont clc
+            rts
 
 ; $FFCC   
 ; CLRCHN. Close default input/output files (for serial bus, send UNTALK and/or UNLISTEN); restore default input/output to keyboard/screen.
@@ -387,12 +422,14 @@ ulticlrchn_lsn
             cmp OUR_DEVICE
             beq _my_clrchn
             jmp unlsn ; if it was not us, it is serial
-_my_clrchn  jmp uci_abort
+_my_clrchn  clc
+            rts
+;jmp uci_abort
 
 ulticlrchn_tlk
             lda dfltn
             cmp OUR_DEVICE
-            beq uci_abort; _my_clrchn
+            beq _my_clrchn
             jmp untlk ; if it was not us, it is serial
 
 ;; UCI
@@ -407,8 +444,10 @@ uci_setup_cmd
             lda #UCI_TARGET
             sta CMD_IF_COMMAND
             stx CMD_IF_COMMAND
+            stx UCI_LAST_CMD
             lda SECADDR
             sta CMD_IF_COMMAND
+            sta UCI_LAST_SA
             lda VERIFYFLAG
             sta CMD_IF_COMMAND
             rts
@@ -437,7 +476,8 @@ _fn2        jmp uci_execute
 
 uci_execute lda #CMD_PUSH_CMD
             sta CMD_IF_CONTROL
-            sta UCI_PENDING_CMD ; bit 7 is now cleared; since CMD_PUSH_CMD is 01
+            lda #0
+            sta UCI_PENDING_CMD ; bit 7 is now cleared
             ; intentional fall through
 uci_wait_busy
 _wb1        lda CMD_IF_CONTROL
@@ -456,25 +496,245 @@ _ack1       lda CMD_IF_CONTROL
             pla
             rts
 
+uci_abort_c
+            lda CMD_IF_COMMAND
+            cmp #UCI_IDENTIFIER
+            beq uci_abort
+            rts
+
 uci_abort   ; may be in command state
             bit UCI_PENDING_CMD
-            bpl _abrt2 ; Bit 7 is not set, so there is no pending command
+            bpl _abrt1 ; Bit 7 is not set, so there is no pending command
             jsr uci_execute
-_abrt2      lda CMD_IF_CONTROL
-            and #CMD_STATE_DATA
-            beq _abrt1 ; NOT in Data state
+
+_abrt1      lda #$00
+            sta UCI_LAST_CMD
+            lda CMD_IF_CONTROL
+            and #CMD_STATE_BITS
+            beq _abrt2 ; UCI is already in idle state; we're done
+
+            cmp #CMD_STATE_MORE_DATA  ; only if it is 'more data', we use abort, otherwise data is just acked.
+            bne uci_ack ; NOT in More Data state, just ack
+
             ; Perform Abort of current command
             lda #CMD_ABORT
             sta CMD_IF_CONTROL
-            ; jmp uci_wait_abort ; fall through
-
-uci_wait_abort
 _wa1        lda CMD_IF_CONTROL
             and #CMD_ABORT
             bne _wa1
-_abrt1      rts
+_abrt2      rts
 
 uci_clear_error
             lda #CMD_ERROR
             sta CMD_IF_CONTROL
             rts
+
+;------------------------------- Basic Extension -----------------------------------
+            AT_TOKEN = $40
+            STRING_TOKEN = $24
+            CHRGET = $0073
+            CHRGOT = $0079
+            LINNUM = $14
+
+.import ngone
+.import frmevl
+.import frmnum
+.import getadr
+.import valtyp
+.import frefac
+.import newstt
+.import linprt
+
+.global wedged_execute
+
+at_command
+            lda #0
+            sta STATUS
+
+            jsr CHRGET
+            beq _read_status
+            jsr frmevl ; Evaluate Expression
+
+            bit valtyp ; String?
+            bmi _copy_string_to_dev
+
+            jsr get_dev_num
+
+            jsr CHRGOT
+            beq _read_status    ; No second parameter
+            cmp #$2c            ; comma
+            bne _syntax         ;  has to be present
+
+            jsr CHRGET
+            jsr frmevl          ; Evaluate Expression
+            bit valtyp          ; second param is a string?
+            bpl _syntax         ; no? then it's a syntax error
+
+_copy_string_to_dev
+            ldx #$6F
+            jsr listen_or_error
+            jsr frefac          ; Fetch string parameters
+            jsr send_string
+            jsr nclrch
+            jsr uci_abort_c     ; avoid leaving a command open
+
+_read_status
+            ldx #$6F
+            jsr listen_or_error
+            jsr nclrch
+            jsr nchkin_known_fasa
+
+_nxt_st     jsr basin
+            ;bcs _status_done
+            jsr prt
+            cmp #$0D
+            bne _nxt_st
+_status_done
+            jsr nclrch
+            jsr uci_abort_c   ; avoid leaving a command open
+
+_next_statement
+            jsr CHRGOT
+            beq _complete
+            cmp #$3a
+            bne _syntax
+_complete   jmp newstt
+
+_syntax     ldx #$0b
+            .byte $2c
+_illegal    ldx #$09
+            .byte $2c
+_not_pres
+            ldx #$05
+            jmp ($0300)
+_kernal_error
+            tax
+            jmp ($0300)
+
+wedged_execute
+            jsr CHRGET
+            cmp #AT_TOKEN
+            beq at_command
+            cmp #STRING_TOKEN
+            beq dir_command
+            cmp #0
+            jmp ngone+3 ;$a7e7
+
+get_dev_num jsr getadr
+            lda LINNUM+1
+            bne _illegal
+            lda LINNUM
+            sta DEVNUM
+            beq _illegal
+            rts
+
+send_string
+            tax
+            ldy #$00
+            inx
+_nxtchr     dex
+            beq _str_done
+            lda ($22),y
+_wrcmdbyte  jsr bsout
+            iny
+            jmp _nxtchr
+_str_done   rts
+
+listen_or_error
+            stx SECADDR
+            lda DEVNUM
+            bne _dev_ok
+            lda OUR_DEVICE
+            sta DEVNUM
+_dev_ok     cmp #31
+            bcs _illegal
+
+            cmp OUR_DEVICE
+            beq _uci_listen
+            ; Do it the raw way
+            tax
+            jsr listn
+            lda SECADDR
+            jsr secnd
+            bit status
+            bmi _not_pres
+            stx dflto
+            rts
+_uci_listen jmp ultichkout_c
+
+dir_command
+            lda #0
+            sta STATUS
+            pha          ; Pre-store length = 0 on stack
+
+            jsr CHRGET
+            beq _do_dir  ; no params, default drive, no pattern
+
+            jsr frmevl   ; Evaluate Expression
+            bit valtyp   ; String?
+            bmi _dir_str ; It's a string, process it
+
+_dir_drv    jsr get_dev_num
+            jsr CHRGOT
+            beq _do_dir
+            cmp #$2c   ; comma
+            bne _dir_syntax
+
+            jsr CHRGET
+            jsr frmevl   ; Evaluate Expression
+            bit valtyp
+            bmi _dir_str ; If it's a string, it's OK
+_dir_syntax jmp _syntax
+
+_dir_str    pla          ; Ditch 0 on stack
+            jsr frefac   ; Fetch string parameters
+            pha          ; Replace length with one from string
+_do_dir
+            jsr nclrch
+            ldx #$F0     ; open channel 0
+            jsr listen_or_error
+
+            lda #$24
+            jsr bsout
+            pla          ; Fetch string length from stack
+            jsr send_string
+            jsr nclrch ; unlisten
+            jsr print_dir
+            jsr nclrch
+            jsr uci_abort_c
+            jmp _next_statement
+
+print_dir
+            lda #$60
+            sta SECADDR
+            jsr nchkin_known_fasa
+            jsr basin
+            jsr basin
+
+_dir_line   jsr basin
+            jsr basin
+            jsr basin
+            tax
+            jsr basin
+            ldy STATUS
+            bne _dir_end
+
+            jsr linprt      ; line number
+            lda #' '        ; space
+            jsr prt
+
+_dir_char   jsr basin
+            beq _dir_cr
+            jsr prt
+            bne _dir_char
+
+_dir_cr     lda #$0d
+            jsr prt         ; newline
+            jsr kbget
+            cmp  #3 ; STOP
+            bne _dir_line
+
+_dir_end    jsr nclrch
+            ldx #$E0
+            jmp listen_or_error
+

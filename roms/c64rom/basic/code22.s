@@ -147,3 +147,4 @@ fout12	lda #'+'
 	sbc tenexp
 	tax
 
+.global linprt

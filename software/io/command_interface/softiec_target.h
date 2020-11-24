@@ -1,7 +1,7 @@
 #ifndef CONTROL_TARGET_H
 #define CONTROL_TARGET_H
 
-#include "integer.h"
+#include <stdint.h>
 #include "command_intf.h"
 #include "iec.h"
 #include "iec_channel.h"
@@ -17,11 +17,13 @@
 
 class SoftIECTarget : CommandTarget
 {
+    Message direct_message;
     Message data_message;
     Message status_message;
     uint16_t startaddr;
     IecChannel *input_channel;
     int input_length;
+    int total_prepared;
 
     void cmd_load_su(Message *command, Message **reply, Message **status);
     void cmd_load_ex(Message *command, Message **reply, Message **status);

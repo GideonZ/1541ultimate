@@ -158,3 +158,5 @@ norm3	ldx facho
 	stx facho
 	ldx facmoh+1
 
+.global getadr
+

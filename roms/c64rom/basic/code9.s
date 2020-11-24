@@ -198,3 +198,4 @@ gonprc	pla
 	pla
 	jmp negprc
 
+.global frmevl

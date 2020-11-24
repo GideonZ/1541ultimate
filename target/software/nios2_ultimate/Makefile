@@ -142,6 +142,7 @@ SRCS_CC	 =  u2p_init.cc \
 			acia.cc \
 			modem.cc \
 			listener_socket.cc \
+			ramdisk.cc \
 			$(PRJ).cc
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios

@@ -427,6 +427,19 @@ bool test_format_dnp()
     return test_fs(&fs);
 }
 
+bool test_format_fat()
+{
+    create_file("format.fat", 4*2*1024); // 2 MB
+    BlockDevice_Emulated blk("format.fat", 512);
+    Partition prt(&blk, 0, 0, 0);
+    FileSystemFAT fs(&prt);
+    fs.format("GIDEON");
+    if (!fs.init()) {
+        printf("Initialization of FAT file system failed.\n");
+        return false;
+    }
+    return test_fs(&fs);
+}
 
 void read_dnp()
 {

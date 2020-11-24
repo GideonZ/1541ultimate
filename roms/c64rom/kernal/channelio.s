@@ -12,6 +12,7 @@
 ngetin	lda dfltn       ;check device
 	bne gn10        ;not keyboard
 ;
+kbget
 	lda ndx         ;queue index
 	beq gn20        ;nobody there...exit
 ;
