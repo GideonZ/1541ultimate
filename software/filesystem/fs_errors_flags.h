@@ -36,6 +36,8 @@ typedef enum {
 	FR_LOOP_DETECTED,       /* (22) From CBM filesystems */
 } FRESULT;
 
+#define FR_NOT_ENOUGH_CORE FR_NO_MEMORY
+
 /*--------------------------------------------------------------*/
 /* File access control and file status flags (FIL.flag)         */
 

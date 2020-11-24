@@ -155,6 +155,7 @@ SRCS_CC	 =  u2p_init.cc \
 			acia.cc \
 			modem.cc \
 			listener_socket.cc \
+			ramdisk.cc \
 			$(PRJ).cc
 
 #			usb_em1010.cc \

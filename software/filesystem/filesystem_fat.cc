@@ -86,8 +86,20 @@ FRESULT FileSystemFAT :: dir_create(const TCHAR *path)
 
 FRESULT FileSystemFAT :: format(const char *name)
 {
-    // call f_mkfs and f_setlabel
+#if FF_USE_MKFS
+    MKFS_PARM param;
+    param.fmt = FM_SFD | FM_ANY;
+    param.n_fat = 1;
+    param.n_root = 0;
+    param.au_size = 0; //0x1000;
+    param.align = 0; // for 4K use 8
+
+    uint8_t *buffer = new uint8_t[4096];
+    FRESULT fres = f_mkfs(prefix, &param, buffer, 4096);
+    return fres;
+#else
     return FR_NOT_ENABLED;
+#endif
 }
 
 FRESULT FileSystemFAT :: file_open(const char *filename, uint8_t flags, File **file)
