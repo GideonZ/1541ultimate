@@ -231,28 +231,6 @@ void SoftIECTarget :: cmd_chkin(Message *command, Message **reply, Message **sta
 
 void SoftIECTarget :: prepare_data(int count)
 {
-
-/*
-    data_message.last_part = false;
-
-    uint8_t data;
-    int len = 0;
-    for(int i=0; i < count; i++) {
-        int res = input_channel->prefetch_data(data);
-        if ((res == IEC_OK) || (res == IEC_LAST)) {
-            data_message.message[i] = data;
-            len++;
-        }
-        if ((res == IEC_LAST) || (res == IEC_NO_FILE)) { // the latter is actually an error
-            data_message.last_part = true;
-            break;
-        }
-        if (res == IEC_BUFFER_END) {
-            break; // simply break and wait for pop (when get more data is called)
-        }
-    }
-    data_message.length = len;
-*/
     int res = input_channel->prefetch_more(count, direct_message.message, direct_message.length);
     direct_message.last_part = (res != IEC_OK);
     // the number of bytes that we prepared for reading is stored here, such that these bytes can be popped
@@ -271,11 +249,6 @@ void SoftIECTarget :: get_more_data(Message **reply, Message **status)
 #if SIEC_TARGET_DEBUG > 1
         printf("Popping %d bytes.\n", input_length);
 #endif
-/*
-        for(int i=0; i<input_length; i++) {
-            input_channel->pop_data(); // how about passing the number of bytes, that would be way more efficient.
-        }
-*/
         input_channel->pop_more(input_length);
         prepare_data(256);
         *reply = &direct_message;
@@ -414,7 +387,6 @@ uint16_t SoftIECTarget :: do_load(IecChannel *chan, uint16_t addr)
     do {
         int bytes_now = (maxbytes > 512) ? 512 : maxbytes;
         res1 = chan->prefetch_more(bytes_now, src, len);
-        //printf("Prefetched: %d bytes (%p->%p)\n", len, src, dest);
         if (!len) {
             break;
         }
