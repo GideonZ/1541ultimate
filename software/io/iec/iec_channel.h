@@ -289,6 +289,8 @@ public:
                         f++;
                         dirlist->remove(inf);
                         iecNames->remove(iecName);
+                        delete inf;
+                        delete iecName;
                         fl--;
                     }
                 }

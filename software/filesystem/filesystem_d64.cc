@@ -1324,7 +1324,7 @@ FRESULT DirInCBM::create(const char *filename, bool dir)
 #ifndef RUNS_ON_PC
     int y,m,d,wd,h,mn,s;
     rtc.get_time(y, m, d, wd, h, mn, s);
-    p->year = (uint8_t)(y + 80);
+    p->year = (y >= 20) ? (uint8_t)(y - 20) : (uint8_t)(y + 80);
     p->month = (uint8_t)m;
     p->day = (uint8_t)d;
     p->hour = (uint8_t)h;
@@ -1441,7 +1441,8 @@ FRESULT DirInCBM::get_entry(FileInfo &f)
                 f.size *= 254;
                 f.name_format = NAME_FORMAT_CBM;
 
-                f.date  = ((uint16_t)(p->year - 80)) << 9;
+                uint16_t yr = (p->year < 80) ? (p->year + 20) : (p->year - 80);
+                f.date  = yr << 9;
                 f.date |= (((uint16_t)(p->month)) << 5);
                 f.date |= p->day;
                 f.time  = ((uint16_t)(p->hour)) << 11;
