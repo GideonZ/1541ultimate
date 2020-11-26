@@ -17,7 +17,7 @@
     typedef void* QueueHandle_t;
 #endif
 
-    class ObserverQueue {
+class ObserverQueue {
 	QueueHandle_t queue;
 	const char *name;
 	int polls;

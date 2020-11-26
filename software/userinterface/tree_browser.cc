@@ -326,6 +326,8 @@ void TreeBrowser :: checkFileManagerEvent(void)
     	default:
     		break;
     	}
+
+    	delete event;
     }
 }
 

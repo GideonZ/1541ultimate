@@ -220,11 +220,16 @@ public:
     	observers.remove(q);
     }
     void sendEventToObservers(eFileManagerEventType e, const char *p, const char *n="") {
-    	printf("Sending FM event to %d observers: %d %s %s\n", observers.get_elements(), e, p, n);
+        // printf("Sending FM event to %d observers: %d %s %s\n", observers.get_elements(), e, p, n);
     	for(int i=0;i<observers.get_elements();i++) {
     		FileManagerEvent *ev = new FileManagerEvent(e, p, n);
-    		if (!(observers[i]->putEvent(ev))) {
-                printf("Failed to post message to queue #%d - %s.\n", i, observers[i]->getName());
+    		ObserverQueue *q = observers[i];
+    		if (!q) {
+    		    continue;
+    		}
+    		if (!(q->putEvent(ev))) {
+                printf("Failed to post message to queue #%d - %s.\n", i, q->getName());
+                delete ev;
     		}
     	}
     }

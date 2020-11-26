@@ -451,7 +451,7 @@ int IecChannel :: push_command(uint8_t b)
             pointer = 0;
             break;
         case 0xE0: // close
-            printf("close %d %d\n", pointer, name.mode);
+            //printf("close %d %d\n", pointer, name.mode);
             if ((name.mode == e_write) || (name.mode == e_append) || (name.mode == e_replace)) {
                 if (f) {
                     if (pointer > 0) {
