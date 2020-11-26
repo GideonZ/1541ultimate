@@ -63,11 +63,12 @@ typedef enum  {
 class FileManagerEvent
 {
 public:
-	eFileManagerEventType eventType;
+    eFileManagerEventType eventType;
 	mstring pathName;
 	mstring newName;
 
-	FileManagerEvent(eFileManagerEventType e, const char *p, const char *n = "") : eventType(e), pathName(p), newName(n) { }
+	FileManagerEvent(eFileManagerEventType e, const char *p, const char *n = "") : eventType(e), pathName(p), newName(n) {  }
+	~FileManagerEvent() { }
 };
 
 
@@ -222,14 +223,17 @@ public:
     void sendEventToObservers(eFileManagerEventType e, const char *p, const char *n="") {
         // printf("Sending FM event to %d observers: %d %s %s\n", observers.get_elements(), e, p, n);
     	for(int i=0;i<observers.get_elements();i++) {
-    		FileManagerEvent *ev = new FileManagerEvent(e, p, n);
     		ObserverQueue *q = observers[i];
     		if (!q) {
     		    continue;
     		}
+    		FileManagerEvent *ev = new FileManagerEvent(e, p, n);
+    		// printf("[%d]", FileManagerEvent :: numFME);
     		if (!(q->putEvent(ev))) {
-                printf("Failed to post message to queue #%d - %s.\n", i, q->getName());
+                // printf("Failed to post message to queue #%d - %s.\n", i, q->getName());
                 delete ev;
+    		} else {
+    		    // printf("Sent FM event at %p to %s. (%s)\n", ev, q->getName(), p);
     		}
     	}
     }
