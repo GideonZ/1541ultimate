@@ -16,18 +16,22 @@ extern "C" {
 #define MENU_IEC_RESET       0xCA10
 #define MENU_IEC_TRACE_ON    0xCA11
 #define MENU_IEC_TRACE_OFF   0xCA12
+
 #define MENU_IEC_WARP_8      0xCA13
 #define MENU_IEC_WARP_9      0xCA14
-#define MENU_IEC_SET_DIR     0xCA15
-#define MENU_IEC_MASTER_1    0xCA16
-#define MENU_IEC_MASTER_2    0xCA17
-#define MENU_IEC_MASTER_3    0xCA18
-#define MENU_IEC_MASTER_4    0xCA19
-#define MENU_IEC_LOADDIR     0xCA1A
-#define MENU_IEC_LOADFIRST   0xCA1B
-#define MENU_READ_STATUS     0xCA1C
-#define MENU_SEND_COMMAND    0xCA1D
-#define MENU_IEC_FLUSH       0xCA1E
+#define MENU_IEC_WARP_10     0xCA15
+#define MENU_IEC_WARP_11     0xCA16
+
+#define MENU_IEC_SET_DIR     0xCA17
+#define MENU_IEC_MASTER_1    0xCA18
+#define MENU_IEC_MASTER_2    0xCA19
+#define MENU_IEC_MASTER_3    0xCA1A
+#define MENU_IEC_MASTER_4    0xCA1B
+#define MENU_IEC_LOADDIR     0xCA1C
+#define MENU_IEC_LOADFIRST   0xCA1D
+#define MENU_READ_STATUS     0xCA1E
+#define MENU_SEND_COMMAND    0xCA1F
+#define MENU_IEC_FLUSH       0xCA20
    
 cart_def warp_cart  = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM };
 
@@ -332,39 +336,43 @@ const char *IecInterface :: get_root_path(void)
     return rootPath;
 }
 
-// called from GUI task
-int IecInterface :: fetch_task_items(Path *path, IndexedList<Action *> &list)
+void IecInterface :: create_task_items(void)
 {
-    int count = 4;
-	list.append(new Action("Flush Printer/Eject Page", SUBSYSID_IEC, MENU_IEC_FLUSH));
-	list.append(new Action("Reset IEC and Printer",    SUBSYSID_IEC, MENU_IEC_RESET));
-	list.append(new Action("UltiCopy 8",     SUBSYSID_IEC, MENU_IEC_WARP_8));
-	list.append(new Action("UltiCopy 9",     SUBSYSID_IEC, MENU_IEC_WARP_9));
-	list.append(new Action("Set IEC directory here..", SUBSYSID_IEC, MENU_IEC_SET_DIR));
+    TaskCategory *iec = TasksCollection :: getCategory("Software IEC", SORT_ORDER_SOFTIEC);
+    myActions.reset      = new Action("Reset",          SUBSYSID_IEC, MENU_IEC_RESET);
+    myActions.set_dir    = new Action("Set dir. here",  SUBSYSID_IEC, MENU_IEC_SET_DIR);
+    myActions.ulticopy8  = new Action("UltiCopy 8",     SUBSYSID_IEC, MENU_IEC_WARP_8);
+    myActions.ulticopy9  = new Action("UltiCopy 9",     SUBSYSID_IEC, MENU_IEC_WARP_9);
+    myActions.ulticopy10 = new Action("UltiCopy 10",    SUBSYSID_IEC, MENU_IEC_WARP_10);
+    myActions.ulticopy11 = new Action("UltiCopy 11",    SUBSYSID_IEC, MENU_IEC_WARP_11);
+    myActions.eject      = new Action("Flush/Eject",    SUBSYSID_IEC, MENU_IEC_FLUSH);
 
-	// list.append(new Action("IEC Test 1",     SUBSYSID_IEC, MENU_IEC_MASTER_1));
-	// list.append(new Action("IEC Test 2",     SUBSYSID_IEC, MENU_IEC_MASTER_2));
-	// list.append(new Action("IEC Test 3",     SUBSYSID_IEC, MENU_IEC_MASTER_3));
-	// list.append(new Action("IEC Test 4",     SUBSYSID_IEC, MENU_IEC_MASTER_4));
-    // list.append(new Action("Load $",         SUBSYSID_IEC, MENU_IEC_LOADDIR));
-    // list.append(new Action("Load *",         SUBSYSID_IEC, MENU_IEC_LOADFIRST));
-    // list.append(new Action("Read status",    SUBSYSID_IEC, MENU_READ_STATUS));
-    // list.append(new Action("Send command",   SUBSYSID_IEC, MENU_SEND_COMMAND));
+    iec->append(myActions.reset);
+    iec->append(myActions.set_dir);
+    iec->append(myActions.ulticopy8);
+    iec->append(myActions.ulticopy9);
+    iec->append(myActions.ulticopy10);
+    iec->append(myActions.ulticopy11);
 
-
-#if DEVELOPER
-	if(!(getFpgaCapabilities() & CAPAB_ANALYZER))
-        return count;
-
-	list.append(new Action("Trace IEC",      SUBSYSID_IEC, MENU_IEC_TRACE_ON));
-    list.append(new Action("Dump IEC Trace", SUBSYSID_IEC, MENU_IEC_TRACE_OFF));
-    count += 2;
-#endif
-
-	return count;
+    TaskCategory *prt = TasksCollection :: getCategory("Printer", SORT_ORDER_PRINTER);
+    prt->append(myActions.eject);
 }
 
-//BYTE dummy_prg[] = { 0x01, 0x08, 0x0C, 0x08, 0xDC, 0x07, 0x99, 0x22, 0x48, 0x4F, 0x49, 0x22, 0x00, 0x00, 0x00 };
+// called from GUI task
+void IecInterface :: update_task_items(bool writablePath, Path *path)
+{
+    if (writablePath) {
+        myActions.ulticopy8->enable();
+        myActions.ulticopy9->enable();
+        myActions.ulticopy10->enable();
+        myActions.ulticopy11->enable();
+    } else {
+        myActions.ulticopy8->disable();
+        myActions.ulticopy9->disable();
+        myActions.ulticopy10->disable();
+        myActions.ulticopy11->disable();
+    }
+}
 
 // this is actually the task
 void IecInterface :: poll()
@@ -534,6 +542,12 @@ int IecInterface :: executeCommand(SubsysCommand *cmd)
 		case MENU_IEC_WARP_9:
 			start_warp(9);
 			break;
+        case MENU_IEC_WARP_10:
+            start_warp(10);
+            break;
+        case MENU_IEC_WARP_11:
+            start_warp(11);
+            break;
 		case MENU_IEC_SET_DIR:
 		    set_iec_dir(cmd->path.c_str());
 		    break;

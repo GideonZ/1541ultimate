@@ -334,7 +334,11 @@ C64 *C64 :: getMachine(void)
 {
     static C64 *c64 = NULL;
     if (!c64) {
+#if U64
+        c64 = new U64Machine();
+#else
         c64 = new C64();
+#endif
     }
     return c64;
 }

@@ -64,8 +64,8 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root)
 	screen = NULL;
 	window = NULL;
     keyb = NULL;
-    contextMenu = NULL;
     configBrowser = NULL;
+    contextMenu = NULL;
     quick_seek_length = 0;
     quick_seek_string[0] = '\0';
     this->root = root;
@@ -197,10 +197,20 @@ int TreeBrowser :: poll(int sub_returned)
             // create a return value of a GUI object, and call execute
             // with that immediately.
             state->draw();
-            contextMenu->executeAction();
+
+            Action *act = contextMenu->getSelectedAction();
+            if (act) {
+                printf("Action set was: %s\n", act->getName());
+                Browsable *b = contextMenu->getContextable();
+                const char *p = state->browser->getPath();
+                const char *filename = (b)?(b->getName()):"";
+                SubsysCommand *cmd = new SubsysCommand(user_interface, act, p, filename);
+                cmd->execute();
+            } else {
+                printf("Action was not set in context menu!\n");
+            }
             delete contextMenu;
             contextMenu = NULL;
-            state->draw();
         }
         return ret;
     }

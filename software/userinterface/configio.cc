@@ -20,17 +20,37 @@ ConfigIO::~ConfigIO()
     // TODO Auto-generated destructor stub
 }
 
-int  ConfigIO :: fetch_task_items(Path *path, IndexedList<Action*> &item_list)
+void ConfigIO :: create_task_items(void)
 {
-    item_list.append(new Action("Save Configuration to Flash", ConfigIO :: S_save, 0, 0));
-    item_list.append(new Action("Save Configuration to File", ConfigIO :: S_save_to_file, 0, 0));
-    item_list.append(new Action("Reset Config from Flash", ConfigIO :: S_restore, 0, 0));
-    item_list.append(new Action("Reset to Factory Defaults", ConfigIO :: S_reset, 0, 0));
+    myActions.savecfg   = new Action("Save to Flash", ConfigIO :: S_save, 0, 0);
+    myActions.savefile  = new Action("Save to File", ConfigIO :: S_save_to_file, 0, 0);
+    myActions.loadcfg   = new Action("Reset from Flash", ConfigIO :: S_restore, 0, 0);
+    myActions.factory   = new Action("Reset to Defaults", ConfigIO :: S_reset, 0, 0);
+    myActions.clear_dbg = new Action("Clear Debug Log", ConfigIO :: S_reset_log, 0, 0);
+    myActions.save_dbg  = new Action("Save Debug Log", ConfigIO :: S_save_log, 0, 0);
 
-    item_list.append(new Action("Clear Debug Log", ConfigIO :: S_reset_log, 0, 0));
-    item_list.append(new Action("Save Debug Log", ConfigIO :: S_save_log, 0, 0));
+    TaskCategory *cfg = TasksCollection :: getCategory("Configuration", SORT_ORDER_CONFIG);
+    cfg->append(myActions.savecfg);
+    cfg->append(myActions.savefile);
+    cfg->append(myActions.loadcfg);
+    cfg->append(myActions.factory);
 
-    return 6;
+    TaskCategory *dev = TasksCollection :: getCategory("Developer", SORT_ORDER_DEVELOPER);
+    dev->append(myActions.clear_dbg);
+    dev->append(myActions.save_dbg);
+}
+
+void ConfigIO :: update_task_items(bool writablePath, Path *path)
+{
+    if (writablePath) {
+        myActions.savecfg  ->enable();
+        myActions.savefile ->enable();
+        myActions.save_dbg ->enable();
+    } else {
+        myActions.savecfg  ->disable();
+        myActions.savefile ->disable();
+        myActions.save_dbg ->disable();
+    }
 }
 
 int ConfigIO :: S_reset_log(SubsysCommand *cmd)

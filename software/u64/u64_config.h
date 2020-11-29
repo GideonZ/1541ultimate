@@ -18,6 +18,15 @@
 
 class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
 {
+    struct {
+        Action *poke;
+        Action *saveedid;
+        Action *siddetect;
+        Action *wifioff;
+        Action *wifion;
+        Action *wifiboot;
+    } myActions;
+
     t_video_mode systemMode;
     FileManager *fm;
 	bool skipReset;
@@ -84,7 +93,8 @@ public:
     ~U64Config() {}
 
     void ResetHandler();
-    int fetch_task_items(Path *p, IndexedList<Action*> &item_list);
+    void create_task_items(void);
+    void update_task_items(bool writablePath, Path *p);
     int executeCommand(SubsysCommand *cmd);
     void effectuate_settings();
 

@@ -26,7 +26,7 @@ SocketTest::~SocketTest() {
 
 }
 
-int  SocketTest::fetch_task_items(Path *path, IndexedList<Action*> &item_list)
+int  SocketTest::obsolete_fetch_task_items(Path *path, IndexedList<Action*> &item_list)
 {
 //	item_list.append(new Action("Socket Test Server", SocketTest :: doTest1, 0, 0));
 //	item_list.append(new Action("Socket Test Client", SocketTest :: doTest2, 1, 0));

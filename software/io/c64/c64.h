@@ -265,6 +265,7 @@ class C64 : public GenericHost, ConfigurableObject
     static void hard_stop(void);
     void resume(void);
     void freeze(void);
+    virtual void get_all_memory(uint8_t *) { /* NOT YET IMPLEMENTED */ };
     
     static uint8_t get_exrom_game(void) {
         return (C64_CLOCK_DETECT & 0x0C) >> 2;
@@ -290,7 +291,7 @@ class C64 : public GenericHost, ConfigurableObject
     C64();
 public:
     void init(void);
-    ~C64();
+    virtual ~C64();
 
     /* Get static object */
     static C64 *getMachine(void);
@@ -349,6 +350,7 @@ public:
     friend class REUPreloader; // preloader needs to access config
     friend class FileTypeREU; // REU file needs to access config
     friend class FileTypeCRT; // CRT file may need to enable Write mirroring on U64
+    friend class U64Machine;  // U64Machine is a derived class that may use internals of C64
     friend class U64Config; // U64 config needs to stop / resume for SID detection
     friend class SoftIECTarget; // UCI target that performs DMA load
 };

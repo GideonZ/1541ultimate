@@ -23,7 +23,7 @@ public:
 	SocketTest();
 	virtual ~SocketTest();
 
-    int  fetch_task_items(Path *path, IndexedList<Action*> &item_list);
+    int  update_task_items(Path *path, IndexedList<Action*> &item_list);
 };
 
 #endif /* NETWORK_SOCKET_TEST_H_ */

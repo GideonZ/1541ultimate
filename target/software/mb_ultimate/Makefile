@@ -74,7 +74,6 @@ SRCS_CC	 =  small_printf.cc \
 			editor.cc \
 			tree_browser.cc \
 			tree_browser_state.cc \
-			stream_menu.cc \
 			config_menu.cc \
 			context_menu.cc \
 			task_menu.cc \
