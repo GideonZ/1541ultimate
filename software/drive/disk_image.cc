@@ -1023,6 +1023,9 @@ int ImageCreator :: S_createD71(SubsysCommand *cmd)
         FileSystemD71 fs(&prt, true);
         fs.format(name_buffer);
     }
+    if (fres != FR_OK) {
+        cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
+    }
     if (f) {
         fm->fclose(f);
     }
@@ -1048,6 +1051,9 @@ int ImageCreator :: S_createD81(SubsysCommand *cmd)
         Partition prt(&blk, 0, 0, 0);
         FileSystemD81 fs(&prt, true);
         fs.format(name_buffer);
+    }
+    if (fres != FR_OK) {
+        cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
     }
     if (f) {
         fm->fclose(f);
@@ -1091,6 +1097,9 @@ int ImageCreator :: S_createDNP(SubsysCommand *cmd)
         Partition prt(&blk, 0, 0, 0);
         FileSystemDNP fs(&prt, true);
         fs.format(name_buffer);
+    }
+    if (fres != FR_OK) {
+        cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
     }
     if (f) {
         fm->fclose(f);
