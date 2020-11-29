@@ -211,6 +211,7 @@ int TreeBrowser :: poll(int sub_returned)
             }
             delete contextMenu;
             contextMenu = NULL;
+            state->draw();
         }
         return ret;
     }
