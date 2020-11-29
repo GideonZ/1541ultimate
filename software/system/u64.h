@@ -9,6 +9,7 @@
 #define U64_H_
 
 #include <stdint.h>
+#include "c64.h"
 
 #ifndef U64_IO_BASE
 #define U64_IO_BASE     0xA0000400
@@ -164,5 +165,15 @@ typedef enum {
     e_NTSC_50_lock,
     e_NOT_SET,
 } t_video_mode;
+
+class U64Machine : public C64
+{
+    U64Machine() { }
+    ~U64Machine() { }
+    void get_all_memory(uint8_t *pb);
+public:
+
+    friend class C64;
+};
 
 #endif /* U64_H_ */

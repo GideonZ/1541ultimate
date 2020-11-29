@@ -107,6 +107,16 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
     UltiCopy *ui_window;
     uint8_t last_track;
     static void iec_task(void *a);
+
+    struct {
+        Action *reset;
+        Action *set_dir;
+        Action *ulticopy8;
+        Action *ulticopy9;
+        Action *ulticopy10;
+        Action *ulticopy11;
+        Action *eject;
+    } myActions;
 public:
     uint8_t iec_enable;
 
@@ -116,7 +126,8 @@ public:
     int executeCommand(SubsysCommand *cmd); // from SubSystem
     const char *identify(void) { return "IEC"; }
 
-    int fetch_task_items(Path *path, IndexedList<Action *> &list);
+    void create_task_items();
+    void update_task_items(bool writablePath, Path *path);
     void effectuate_settings(void); // from ConfigurableObject
 
     void set_error(int err, int track, int sector);

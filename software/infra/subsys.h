@@ -31,6 +31,16 @@ class UserInterface;
 #define SUBSYSID_CMD_IF			 7
 #define SUBSYSID_U64			 8
 
+
+#define SORT_ORDER_CREATE  10
+#define SORT_ORDER_C64     20
+#define SORT_ORDER_DRIVES  30
+#define SORT_ORDER_SOFTIEC 40
+#define SORT_ORDER_TAPE    50
+#define SORT_ORDER_PRINTER 60
+#define SORT_ORDER_CONFIG  70
+#define SORT_ORDER_DEVELOPER 999
+
 class SubSystem  // implements function "executeCommand"
 {
 	int myID;
@@ -80,6 +90,7 @@ struct SubsysResult
 class SubsysCommand
 {
 public:
+    // Only used in Stream Menu - an obsolete ASC-II menu that was once available on UART. It directly connects to an action
 	SubsysCommand(UserInterface *ui, Action *act, const char *p, const char *fn) :
 		user_interface(ui),
 		subsysID(act->subsys),
@@ -91,6 +102,7 @@ public:
 		bufferSize = 0;
 	}
 
+	// The most common form of Subsys command; one that is called just about anywhere; with a reference to a path and file
 	SubsysCommand(UserInterface *ui, int subID, int funcID, int mode, const char *p, const char *fn) :
 		user_interface(ui),
 		subsysID(subID),
@@ -102,6 +114,7 @@ public:
 		bufferSize = 0;
 	}
 
+	// A variant of the one above, but then using a pointer to a buffer. This should be obsoleted.
 	SubsysCommand(UserInterface *ui, int subID, int funcID, int mode, void *buffer, int bufferSize) :
 		user_interface(ui),
 		subsysID(subID),

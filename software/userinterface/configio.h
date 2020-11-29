@@ -22,11 +22,20 @@ class ConfigIO : public ObjectWithMenu
     static int S_reset_log(SubsysCommand *cmd);
     static int S_save_log(SubsysCommand *cmd);
 
+    struct {
+        Action *savecfg;
+        Action *savefile;
+        Action *loadcfg;
+        Action *factory;
+        Action *clear_dbg;
+        Action *save_dbg;
+    } myActions;
 public:
     ConfigIO();
     virtual ~ConfigIO();
 
-    int  fetch_task_items(Path *path, IndexedList<Action*> &item_list);
+    void create_task_items(void);
+    void update_task_items(bool writablePath, Path *path);
     static int S_save_to_file(SubsysCommand *cmd);
     static int S_save(SubsysCommand *cmd);
     static int S_restore(SubsysCommand *cmd);

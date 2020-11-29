@@ -32,12 +32,20 @@ class DataStreamer : public ObjectWithMenu
 {
     ConfigStore *cfg;
 
+    struct {
+        Action *startVic;
+        Action *stopVic;
+        Action *startAud;
+        Action *stopAud;
+        Action *startDbg;
+        Action *stopDbg;
+    } myActions;
+
     uint8_t  my_mac[6];
     uint32_t my_ip;
 
     stream_config_t streams[4];
     TimerHandle_t timers[4];
-
 
     static void S_timer(TimerHandle_t a);
     int startStream(SubsysCommand *cmd);
@@ -53,7 +61,8 @@ public:
     static int  S_stopStream(SubsysCommand *cmd);
 
     // from ObjectWithMenu
-    int fetch_task_items(Path *path, IndexedList<Action*> &item_list);
+    void create_task_items(void);
+    void update_task_items(bool writablePath, Path *path);
 
 };
 
