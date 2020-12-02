@@ -63,7 +63,6 @@ class IecPartition
     Path *path;
     FileManager *fm;
     IecFileSystem *vfs;
-    FileSystem *fs;
     int partitionNumber;
 
 public:
@@ -78,8 +77,6 @@ public:
         iecNames = new IndexedList<char *>(8, NULL);
 
         SetInitialPath(); // constructs root path string
-        fs = NULL;
-        fm->get_filesystem(path, &fs);
     }
 
     int GetPartitionNumber(void)
@@ -92,15 +89,8 @@ public:
 
     FRESULT get_free(uint32_t &free)
     {
-        if (fs) {
-            return fs->get_free(&free);
-        }
-        return FR_NO_FILESYSTEM;
-    }
-
-    FileSystem *GetFileSystem(void)
-    {
-        return fs;
+        FRESULT fres = fm->get_free(path, free);
+        return fres;
     }
 
     char *CreateIecName(FileInfo *inf)
@@ -234,7 +224,6 @@ public:
             }
             FRESULT res = ReadDirectory(); // just try!
             if (res == FR_OK) {
-                fm->get_filesystem(path, &fs);
                 return true;
             }
             return false;
@@ -254,7 +243,6 @@ public:
         }
         FRESULT res = ReadDirectory(); // just try!
         if (res == FR_OK) {
-            fm->get_filesystem(path, &fs);
             return true;
         }
         path->cd(previous_path.c_str()); // revert

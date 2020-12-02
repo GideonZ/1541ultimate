@@ -87,7 +87,8 @@ int  vfs_write(const void *buffer, int chunks, int chunk_len, vfs_file_t *file)
     File *f = (File *)file->file;
     uint32_t trans = 0;
     uint32_t len = chunks*chunk_len;
-    if(f->write(buffer, len, &trans) != FR_OK)
+    FRESULT fres = f->write(buffer, len, &trans);
+    if(fres != FR_OK)
         return -1;
     
     return trans;

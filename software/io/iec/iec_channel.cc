@@ -1266,18 +1266,20 @@ void IecCommandChannel :: block_command(command_t& cmd)
     }
     channel = interface->get_data_channel(ch);
     partition = interface->vfs->GetPartition(dr);
+/*
     FileSystem *fs = partition->GetFileSystem();
     if (!fs || !(fs->supports_direct_sector_access())) {
         set_error(ERR_DRIVE_NOT_READY);
         return;
     }
+*/
     switch(operation) {
     case 1:
     case 3:
 #if IECDEBUG
         printf("Read Track %d Sector %d of Drive %d into buffer of channel %d.\n", tr, sc, dr, ch);
 #endif
-        fres = fs->read_sector(channel->buffer, tr, sc);
+        fres = fm->fs_read_sector(partition->GetPath(), channel->buffer, tr, sc);
         interface->set_error_fres(fres);
         state = e_idle;
         break;
@@ -1286,7 +1288,7 @@ void IecCommandChannel :: block_command(command_t& cmd)
 #if IECDEBUG
         printf("Write Track %d Sector %d of Drive %d from buffer of channel %d.\n", tr, sc, dr, ch);
 #endif
-        fres = fs->write_sector(channel->buffer, tr, sc);
+        fres = fm->fs_write_sector(partition->GetPath(), channel->buffer, tr, sc);
         interface->set_error_fres(fres);
         state = e_idle;
         break;

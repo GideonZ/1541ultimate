@@ -157,6 +157,13 @@ bool test_fs(FileSystem *fs)
     ok = ok && (tr == 65536);
     print_directory(fs, "");
 
+    fres = fs->file_open("hello.prg", FA_READ, &f);
+    ok = ok && (fres == FR_OK); // we expect the result to be OK.
+    uint32_t sz = f->get_size();
+    printf("Size of hello: %d\n", sz);
+    ok = ok & (sz == 65536);
+    f->close();
+
     fres = fs->file_rename("hello.prg", "myfile.txt");
     ok = ok && (fres == FR_OK); // we expect the rename to succeed;
     printf("Rename result: %s\n", FileSystem::get_error_string(fres));
@@ -318,6 +325,9 @@ bool test_fs(FileSystem *fs)
     if(f) {
         FileInCBM *cbmfile = (FileInCBM *)f;
         cbmfile->dumpSideSectors();
+        uint32_t sz = f->get_size();
+        ok = ok && (sz == 63502);
+        printf("\nTesting size of REL: %d\n", sz);
         printf("\nTesting seek within REL file.\n");
         const uint8_t expected_data[] = { 0x55, 0, 0x47, 0x49, 0x44, 0x45, 0x4F, 0x4E, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8 };
 
