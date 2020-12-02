@@ -80,6 +80,24 @@ public:
         return datablocks;
     }
 
+    uint32_t get_file_size(void)
+    {
+        if (datablocks == 720) { // full cluster
+            return 720*254;
+        }
+        uint32_t size = 254 * (datablocks - 1);
+        uint8_t *b = new uint8_t[256]; // temporary buffer
+        int t, s;
+        seek(datablocks-1, t, s);
+        DRESULT dres = fs->prt->read(b, fs->get_abs_sector(t, s), 1);
+        if (dres == RES_OK) {
+            size += b[1];
+            size -= 1;
+        }
+        delete b;
+        return size;
+    }
+
     CachedBlock *validate(uint8_t rec_size)
     {
         if(rec_size) {
@@ -115,15 +133,21 @@ public:
 
     FRESULT seek(uint32_t sect, int &track, int &sector)
     {
+        if (sect >= datablocks) {
+            return FR_INVALID_PARAMETER;
+        }
         int block = sect / 120;
         if ((block > 5) || (!blocks[block])) {
-            return FR_INVALID_PARAMETER;
+            return FR_INT_ERR;
         }
         sect -= block * 120;
         sect <<= 1;
         sect += 16;
         track = blocks[block]->data[sect];
         sector = blocks[block]->data[sect+1];
+        if (!track) { // and another internal error
+            return FR_INT_ERR;
+        }
         return FR_OK;
     }
 
@@ -292,6 +316,15 @@ public:
         int num_blocks = (super) ? 1 : 0;
         num_blocks += (datablocks + 119) / 120;
         return num_blocks;
+    }
+
+    uint32_t get_file_size(void)
+    {
+        uint32_t size = 0;
+        for (int i=0;i<clusters.get_elements();i++) {
+            size += clusters[i]->get_file_size();
+        }
+        return size;
     }
 
     FRESULT write(void)

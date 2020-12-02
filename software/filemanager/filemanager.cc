@@ -318,7 +318,7 @@ FRESULT FileManager::fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file)
     return fres;
 }
 
-FRESULT FileManager::get_filesystem(Path *path, FileSystem **filesys)
+FRESULT FileManager::get_free(Path *path, uint32_t &free)
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(path);
@@ -330,8 +330,40 @@ FRESULT FileManager::get_filesystem(Path *path, FileSystem **filesys)
     if (!inf || !(inf->fs)) {
         return FR_NO_FILESYSTEM;
     }
-    *filesys = inf->fs;
-    return FR_OK;
+    fres = inf->fs->get_free(&free);
+    return fres;
+}
+
+FRESULT FileManager::fs_read_sector(Path *path, uint8_t *buffer, int track, int sector)
+{
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(path);
+    FRESULT fres = find_pathentry(pathInfo, true);
+    if (fres != FR_OK) {
+        return fres;
+    }
+    FileInfo *inf = pathInfo.getLastInfo();
+    if (!inf || !(inf->fs)) {
+        return FR_NO_FILESYSTEM;
+    }
+    fres = inf->fs->read_sector(buffer, track, sector);
+    return fres;
+}
+
+FRESULT FileManager::fs_write_sector(Path *path, uint8_t *buffer, int track, int sector)
+{
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(path);
+    FRESULT fres = find_pathentry(pathInfo, true);
+    if (fres != FR_OK) {
+        return fres;
+    }
+    FileInfo *inf = pathInfo.getLastInfo();
+    if (!inf || !(inf->fs)) {
+        return FR_NO_FILESYSTEM;
+    }
+    fres = inf->fs->write_sector(buffer, track, sector);
+    return fres;
 }
 
 FRESULT FileManager::fstat(Path *path, const char *filename, FileInfo &info)

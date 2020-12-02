@@ -146,10 +146,7 @@ public:
     FRESULT read(void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT write(const void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT seek(uint32_t pos);
-
-    uint32_t get_size(void) {
-        return file_size;
-    }
+    uint32_t get_size(void);
 
     uint32_t get_inode(void) {
         return (uint32_t)start_cluster;

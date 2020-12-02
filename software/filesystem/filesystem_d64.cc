@@ -1987,6 +1987,43 @@ FRESULT FileInCBM::write_linear(uint8_t *src, int len, uint32_t& tr)
     return FR_OK;
 }
 
+uint32_t FileInCBM::get_size()
+{
+    uint32_t size = header.size;
+    if (side) {
+        size += side->get_file_size();
+        file_size = size;
+        return size;
+    }
+
+    // no side sectors, so we check how big the file currently is
+    int ct, cs, abs;
+    abs = start_cluster;
+    memset(visited, 0, fs->num_sectors);
+    fs->get_track_sector(abs, ct, cs);
+    do {
+        abs = fs->get_abs_sector(ct, cs);
+        if (visited[abs]) {
+            break;
+        }
+        visited[abs] = 1;
+        FRESULT res = fs->move_window(abs);
+        if (res != FR_OK)
+            break;
+        if (fs->sect_buffer[0]) {
+            ct = fs->sect_buffer[0];
+            cs = fs->sect_buffer[1];
+            size += 254;
+        } else {
+            size += fs->sect_buffer[1] - 1;
+            break;
+        }
+    } while(1);
+    memset(visited, 0, fs->num_sectors);
+    file_size = size;
+    return size;
+}
+
 FRESULT FileInCBM::seek(uint32_t pos)
 {
     fs->sync();
