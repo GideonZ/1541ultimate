@@ -152,6 +152,7 @@ int ContextMenu :: handle_key(int c)
 {
     int ret = 0;
     int newpos;
+    Action *a;
     
     switch(c) {
         case KEY_LEFT: // left
@@ -163,7 +164,7 @@ int ContextMenu :: handle_key(int c)
             ret = -1;
             break;
         case KEY_DOWN: // down
-        	//reset_quick_seek();
+        	reset_quick_seek();
             for (int i=item_index+1; i < actions.get_elements(); i++) {
                 if (actions[i]->isEnabled()) {
                     item_index = i;
@@ -173,7 +174,7 @@ int ContextMenu :: handle_key(int c)
             }
         	break;
         case KEY_UP: // up
-        	// reset_quick_seek();
+        	reset_quick_seek();
             for (int i=item_index-1; i >= 0; i--) {
                 if (actions[i]->isEnabled()) {
                     item_index = i;
@@ -220,6 +221,14 @@ int ContextMenu :: handle_key(int c)
             ret = select();
             break;
             
+        case KEY_RIGHT: // cursor
+            a = actions[item_index];
+            // only select if it has a submenu, otherwise require enter / space
+            if (a && a->getObject()) {
+                select();
+            }
+            break;
+
         default:
             if((c >= '!')&&(c < 0x80)) {
                 if(quick_seek_length < (MAX_SEARCH_LEN-2)) {
