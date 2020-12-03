@@ -225,7 +225,6 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
     printer = false;
 
     channel_printer = new IecPrinter();
-    start_address = 0x1000000;
 
     effectuate_settings();
 
@@ -531,7 +530,6 @@ int IecInterface :: executeCommand(SubsysCommand *cmd)
 	switch(cmd->functionID) {
 		case MENU_IEC_RESET:
             reset();
-			HW_IEC_RESET_ENABLE = iec_enable;
 			break;
 		case MENU_IEC_FLUSH:
 			channel_printer->flush();
@@ -579,27 +577,6 @@ int IecInterface :: executeCommand(SubsysCommand *cmd)
 				master_send_cmd(8, (uint8_t*)buffer, strlen(buffer));
 			}
 			break;
-		case MENU_IEC_TRACE_ON :
-			LOGGER_COMMAND = LOGGER_CMD_START;
-			start_address = (LOGGER_ADDRESS & 0xFFFFFFFCL);
-			printf("Logic Analyzer started. Address = %p. Length=%b\n", start_address, LOGGER_LENGTH);
-			break;
-		case MENU_IEC_TRACE_OFF:
-			LOGGER_COMMAND = LOGGER_CMD_STOP;
-			end_address = LOGGER_ADDRESS;
-			printf("Logic Analyzer stopped. Address = %p\n", end_address);
-			if(start_address == end_address)
-				break;
-			fres = fm->fopen(cmd->path.c_str(), "iectrace.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
-			if(f) {
-				printf("Opened file successfully.\n");
-				f->write((void *)start_address, end_address - start_address, &transferred);
-				printf("written: %d...", transferred);
-				fm->fclose(f);
-			} else {
-				printf("Couldn't open file.. %s\n", FileSystem :: get_error_string(fres));
-			}
-			break;
 		default:
 			break;
     }
@@ -608,10 +585,12 @@ int IecInterface :: executeCommand(SubsysCommand *cmd)
 
 void IecInterface :: reset(void)
 {
+    HW_IEC_RESET_ENABLE = 0;
     channel_printer->reset();
     for(int i=0; i < 16; i++) {
         channels[i]->reset();
     }
+    HW_IEC_RESET_ENABLE = iec_enable;
 }
 
 

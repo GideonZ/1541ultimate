@@ -83,8 +83,6 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
     bool atn;
     bool talking;
     bool printer;
-    uint32_t start_address;
-    uint32_t end_address;
     IecChannel *channels[16];
     IecPrinter *channel_printer;
     int current_channel;
