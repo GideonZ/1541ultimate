@@ -56,8 +56,7 @@ typedef struct _command_t {
 
 class IecFileSystem;
 
-class IecPartition
-{
+class IecPartition {
     IndexedList<FileInfo *> *dirlist;
     IndexedList<char *> *iecNames;
     Path *path;
@@ -66,8 +65,9 @@ class IecPartition
     int partitionNumber;
 
 public:
-    IecPartition(IecFileSystem *vfs, int nr) {
-        fm = FileManager :: getFileManager();
+    IecPartition(IecFileSystem *vfs, int nr)
+    {
+        fm = FileManager::getFileManager();
         this->vfs = vfs;
         partitionNumber = nr;
         path = fm->get_new_path("IEC Partition");
@@ -95,7 +95,7 @@ public:
 
     char *CreateIecName(FileInfo *inf)
     {
-        bool dir  = inf->attrib & AM_DIR;
+        bool dir = inf->attrib & AM_DIR;
         char *ext = inf->extension;
         char *out = new char[24];
         memset(out, 0, 24);
@@ -107,7 +107,7 @@ public:
             } else {
                 memcpy(out, ext, 3);
             }
-            strncpy(out+3, inf->lfname, 16);
+            strncpy(out + 3, inf->lfname, 16);
         } else {
             bool cutExtension = false;
             if (dir) {
@@ -127,7 +127,7 @@ public:
             } else {
                 memcpy(out, "SEQ", 3);
             }
-            fat_to_petscii(inf->lfname, cutExtension, out+3, 16, true);
+            fat_to_petscii(inf->lfname, cutExtension, out + 3, 16, true);
         }
         return out;
     }
@@ -135,15 +135,15 @@ public:
     int FindIecName(const char *name, const char *ext, bool allowDir)
     {
         char temp[32];
-        if (ext[0]=='.')
+        if (ext[0] == '.')
             ext++;
         temp[0] = toupper(ext[0]);
         temp[1] = toupper(ext[1]);
         temp[2] = toupper(ext[2]);
 
-        strncpy(temp+3, name, 28);
+        strncpy(temp + 3, name, 28);
 
-        for(int i=0;i<iecNames->get_elements();i++) {
+        for (int i = 0; i < iecNames->get_elements(); i++) {
             if (pattern_match(temp, (*iecNames)[i], false)) {
                 if (allowDir || !((*dirlist)[i]->attrib & AM_DIR)) {
                     return i;
@@ -153,10 +153,11 @@ public:
         return -1;
     }
 
-    void CleanupDir() {
+    void CleanupDir()
+    {
         if (!dirlist)
             return;
-        for(int i=0;i < dirlist->get_elements();i++) {
+        for (int i = 0; i < dirlist->get_elements(); i++) {
             delete (*dirlist)[i];
             delete (*iecNames)[i];
 
@@ -169,7 +170,7 @@ public:
     {
         CleanupDir();
         FRESULT res = fm->get_directory(path, *dirlist, NULL);
-        for(int i=0;i<dirlist->get_elements();i++) {
+        for (int i = 0; i < dirlist->get_elements(); i++) {
             FileInfo *inf = (*dirlist)[i];
             iecNames->append(CreateIecName(inf));
         }
@@ -250,7 +251,8 @@ public:
         return false;
     }
 
-    int Remove(command_t& command, bool dir) {
+    int Remove(command_t& command, bool dir)
+    {
         if (!command.remaining) {
             return -1;
         }
@@ -258,18 +260,18 @@ public:
         char *filenames[5] = { 0, 0, 0, 0, 0 };
         split_string(',', command.remaining, filenames, 5);
         ReadDirectory();
-        for(int i=0;i<5;i++) {
+        for (int i = 0; i < 5; i++) {
             if (!filenames[i]) {
                 break;
             }
             //name_t name;
             //parse_filename(filenames[i], &name, false);
             int idx = -1;
-            for (int fl=0; fl < iecNames->get_elements(); fl++) {
+            for (int fl = 0; fl < iecNames->get_elements(); fl++) {
                 char *iecName = (*iecNames)[fl];
                 if (pattern_match(filenames[i], &iecName[3], false)) {
                     FileInfo *inf = (*dirlist)[fl];
-                    if ( ((inf->attrib & AM_DIR) && !dir) || (!(inf->attrib & AM_DIR) && dir) ) {
+                    if (((inf->attrib & AM_DIR) && !dir) || (!(inf->attrib & AM_DIR) && dir)) {
                         continue; // skip entries that are not of the right type
                     }
                     FRESULT res = RemoveFile(inf->lfname);
@@ -289,8 +291,7 @@ public:
     }
 };
 
-class IecFileSystem
-{
+class IecFileSystem {
     FileManager *fm;
     int currentPartition;
     IecPartition *partitions[MAX_PARTITIONS];
@@ -299,19 +300,21 @@ public:
     IecFileSystem(IecInterface *intf)
     {
         interface = intf;
-        fm = FileManager :: getFileManager();
-        for (int i=0; i<MAX_PARTITIONS; i++) {
+        fm = FileManager::getFileManager();
+        for (int i = 0; i < MAX_PARTITIONS; i++) {
             partitions[i] = 0;
         }
         currentPartition = 0;
         partitions[0] = new IecPartition(this, 0);
     }
 
-    const char *GetRootPath() {
+    const char *GetRootPath()
+    {
         return interface->get_root_path();
     }
 
-    IecPartition *GetPartition(int index) {
+    IecPartition *GetPartition(int index)
+    {
         if (index < 0) {
             index = currentPartition;
         }
@@ -321,7 +324,8 @@ public:
         return partitions[index];
     }
 
-    void SetCurrentPartition(int pn) {
+    void SetCurrentPartition(int pn)
+    {
         currentPartition = pn;
     }
 };
@@ -331,29 +335,28 @@ typedef struct {
     uint32_t valid_bytes;
 } bufblk_t;
 
-class IecChannel
-{
+class IecChannel {
     IecInterface *interface;
     FileManager *fm;
 
-	int  channel;
+    int channel;
     bufblk_t bufblk[2];
     bool pingpong;
     bufblk_t *curblk;
     bufblk_t *nxtblk;
     uint8_t *buffer; // for legacy (to be refactored)
 
-    int  pointer;
-    int  prefetch;
-    int  prefetch_max;
+    int pointer;
+    int prefetch;
+    int prefetch_max;
     File *f;
-    int  dir_index;
-    int  dir_last;
+    int dir_index;
+    int dir_last;
     uint32_t dir_free;
     IecPartition *dirPartition;
     t_channel_state state;
     mstring dirpattern;
-    int  last_byte;
+    int last_byte;
     uint32_t recordOffset;
     uint8_t recordSize;
     bool recordDirty;
@@ -367,10 +370,10 @@ class IecChannel
 
 private:
     bool parse_filename(char *buffer, name_t *name, int default_drive, bool doFlags);
-    int  setup_directory_read(name_t& name);
-    int  setup_file_access(name_t &name);
-    int  setup_buffer_access(void);
-    int  init_iec_transfer(void);
+    int setup_directory_read(name_t& name);
+    int setup_file_access(name_t &name);
+    int setup_buffer_access(void);
+    int init_iec_transfer(void);
 
     int open_file(void);  // name should be in buffer
     int close_file(void); // file should be open
@@ -387,7 +390,9 @@ public:
     IecChannel(IecInterface *intf, int ch);
     virtual ~IecChannel();
     virtual void reset(void);
-    virtual void talk(void) { }
+    virtual void talk(void)
+    {
+    }
 
     void reset_prefetch(void);
     int prefetch_data(uint8_t& data);
@@ -398,7 +403,6 @@ public:
     virtual int push_data(uint8_t b);
     virtual int push_command(uint8_t b);
 
-
     virtual int ext_open_file(const char *name);
     virtual int ext_close_file(void);
 
@@ -406,10 +410,9 @@ public:
     friend class IecCommandChannel;
 };
 
-class IecCommandChannel : public IecChannel
-{
+class IecCommandChannel: public IecChannel {
     uint8_t wr_buffer[64];
-    int  wr_pointer;
+    int wr_pointer;
 
     void mem_read(void);
     void mem_write(void);
