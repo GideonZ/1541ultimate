@@ -22,7 +22,7 @@
 
 static const char *interfaces[] = { "ACIA / SwiftLink" };
 static const char *acia_mode[] = { "Off", "DE00/IRQ", "DE00/NMI", "DF00/IRQ", "DF00/NMI", "DF80/IRQ", "DF80/NMI" };
-static const char *dcd_dsr[] = { "Active (Low)", "Active when connected", "Inactive when connected", "Inactive (High)" };
+static const char *dcd_dsr[] = { "Active (Low)", "Active when connected", "Inactive when connected", "Inactive (High)", "Act. when connecting", "Inact. when connecting" };
 static const int acia_base[] = { 0, 0xDE00, 0xDE01, 0xDF00, 0xDF01, 0xDF80, 0xDF81 };
 
 /*
@@ -41,9 +41,9 @@ struct t_cfg_definition modem_cfg[] = {
     { CFG_MODEM_LISTEN_PORT,   CFG_TYPE_STRING, "Listening Port",                "%s", NULL,         2,  8, (int)"3000" },
     { CFG_MODEM_LISTEN_RING,   CFG_TYPE_ENUM,   "Do RING sequence (incoming)",   "%s", en_dis,       0,  1, 1 },
     { CFG_MODEM_DTRDROP,       CFG_TYPE_ENUM,   "Drop connection on DTR low",    "%s", en_dis,       0,  1, 1 },
-    { CFG_MODEM_CTS,           CFG_TYPE_ENUM,   "CTS Behavior",                  "%s", dcd_dsr,      0,  3, 0 },
-    { CFG_MODEM_DCD,           CFG_TYPE_ENUM,   "DCD Behavior",                  "%s", dcd_dsr,      0,  3, 1 },
-    { CFG_MODEM_DSR,           CFG_TYPE_ENUM,   "DSR Behavior",                  "%s", dcd_dsr,      0,  3, 1 },
+    { CFG_MODEM_CTS,           CFG_TYPE_ENUM,   "CTS Behavior",                  "%s", dcd_dsr,      0,  5, 0 },
+    { CFG_MODEM_DCD,           CFG_TYPE_ENUM,   "DCD Behavior",                  "%s", dcd_dsr,      0,  5, 1 },
+    { CFG_MODEM_DSR,           CFG_TYPE_ENUM,   "DSR Behavior",                  "%s", dcd_dsr,      0,  5, 1 },
     { CFG_MODEM_OFFLINEFILE,   CFG_TYPE_STRING, "Modem Offline Text",            "%s", NULL,         0, 30, (int)"/Usb0/offline.txt" },
     { CFG_MODEM_CONNFILE,      CFG_TYPE_STRING, "Modem Connect Text",            "%s", NULL,         0, 30, (int)"/Usb0/welcome.txt" },
     { CFG_MODEM_BUSYFILE,      CFG_TYPE_STRING, "Modem Busy Text",               "%s", NULL,         0, 30, (int)"/Usb0/busy.txt" },
@@ -119,7 +119,7 @@ void Modem :: RunRelay(int socket)
 
     printf("Modem: Running Relay to socket %d.\n", socket);
     int ret;
-    SetHandshakes(true);
+    SetHandshakes(true, false);
     commandMode = false;
     uint8_t escape = registerValues[MODEM_REG_ESCAPE];
     int escapeTime = 4 * (int)registerValues[MODEM_REG_ESCAPETIME]; // Ultimate Timer is 200 Hz, hence *4, register specifies fiftieths of seconds
@@ -181,7 +181,7 @@ void Modem :: RunRelay(int socket)
         }
     }
     commandMode = true;
-    SetHandshakes(false);
+    SetHandshakes(false, false);
 }
 
 void Modem :: IncomingConnection(int socket)
@@ -198,6 +198,7 @@ void Modem :: IncomingConnection(int socket)
         RelayFileToSocket(cfg->get_string(CFG_MODEM_CONNFILE), socket, "Welcome to the Modem Emulation Layer of the Ultimate!\n");
     }
 
+    SetHandshakes(false, true);
     int connChange;
     if (cfg->get_value(CFG_MODEM_LISTEN_RING)) {
         ModemCommand_t modemCommand;
@@ -250,7 +251,7 @@ void Modem :: IncomingConnection(int socket)
     commandMode = true;
 }
 
-void Modem :: SetHandshakes(bool connected)
+void Modem :: SetHandshakes(bool connected, bool connecting)
 {
     uint8_t handshakes = 0;
 
@@ -263,6 +264,12 @@ void Modem :: SetHandshakes(bool connected)
         break;
     case 2: // inactive when connected
         handshakes |= (connected) ? 0 : ACIA_HANDSH_CTS;
+        break;
+    case 4: // active when connecting OR connected
+        handshakes |= (connected || connecting) ? ACIA_HANDSH_CTS : 0;
+        break;
+    case 5: // inactive when connecting OR connected
+        handshakes |= (connected || connecting) ? 0 : ACIA_HANDSH_CTS;
         break;
     default:
         break;
@@ -278,6 +285,12 @@ void Modem :: SetHandshakes(bool connected)
     case 2: // inactive when connected
         handshakes |= (connected) ? 0 : ACIA_HANDSH_DCD;
         break;
+    case 4: // active when connecting OR connected
+        handshakes |= (connected || connecting) ? ACIA_HANDSH_DCD : 0;
+        break;
+    case 5: // inactive when connecting OR connected
+        handshakes |= (connected || connecting) ? 0 : ACIA_HANDSH_DCD;
+        break;
     default:
         break;
     }
@@ -291,6 +304,12 @@ void Modem :: SetHandshakes(bool connected)
         break;
     case 2: // inactive when connected
         handshakes |= (connected) ? 0 : ACIA_HANDSH_DSR;
+        break;
+    case 4: // active when connecting OR connected
+        handshakes |= (connected || connecting) ? ACIA_HANDSH_DSR : 0;
+        break;
+    case 5: // inactive when connecting OR connected
+        handshakes |= (connected || connecting) ? 0 : ACIA_HANDSH_DSR;
         break;
     default:
         break;

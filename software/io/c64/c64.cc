@@ -1030,7 +1030,7 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
 
     if ((def != 0) || startLater) { // special cart
         // C64_BUS_BRIDGE   = 0; // Quiet mode  (to hear the SID difference, let's not set this register now)
-        C64_BUS_INTERNAL = 7; // All ON
+        C64_BUS_INTERNAL = 15; // All ON
         C64_BUS_EXTERNAL = 0; // All OFF
         // these registers will be set back to the correct value upon a reset interrupt, that calls u64_configurator.effectuate_settings()
     }
