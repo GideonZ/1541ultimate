@@ -1070,24 +1070,24 @@ int ImageCreator :: S_createDNP(SubsysCommand *cmd)
     char size_buffer[16];
     name_buffer[0] = 0;
     size_buffer[0] = 0;
-    int blocks = 0;
+    int tracks = 0;
     FRESULT fres = create_user_file(cmd->user_interface, "Give name for disk image..", ".dnp", cmd->path.c_str(), &f, name_buffer);
     if (fres == FR_OK) {
-        if (cmd->user_interface->string_box("Give size in blocks..", size_buffer, 16) <= 0) {
+        if (cmd->user_interface->string_box("Give size in tracks..", size_buffer, 16) <= 0) {
             return -1;
         }
-        sscanf(size_buffer, "%d", &blocks);
-        if (blocks < 256) {
-            cmd->user_interface->popup("Size should be >= 256 blocks", BUTTON_OK);
+        sscanf(size_buffer, "%d", &tracks);
+        if (tracks < 1) {
+            cmd->user_interface->popup("Should be at least 1 track", BUTTON_OK);
             return -1;
         }
-        if (blocks >= 65536) {
-            cmd->user_interface->popup("Size should be < 65536 blocks", BUTTON_OK);
+        if (tracks >= 256) {
+            cmd->user_interface->popup("Should be less than 256 tracks", BUTTON_OK);
             return -1;
         }
     }
     if (fres == FR_OK) {
-        fres = write_zeros(f, 256*blocks, written);
+        fres = write_zeros(f, 65536*tracks, written);
     }
     if (fres == FR_OK) {
         fres = f->seek(0);
