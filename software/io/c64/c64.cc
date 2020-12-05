@@ -1192,29 +1192,32 @@ void C64::enable_kernal(uint8_t *rom, bool fastreset)
     if (fastreset && !memcmp((void *) (rom+0x1d6c), (void *) fastresetOrg, sizeof(fastresetOrg)))
         memcpy((void *) (rom+0x1d6c), (void *) fastresetPatch, 22);
 
-    if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
-        memcpy((void *)U64_KERNAL_BASE, rom, 8192); // as simple as that
-    } else { // the good old way
-        C64_KERNAL_ENABLE = 1;
-        uint8_t *src = rom;
-        uint8_t *dst = (uint8_t *) (C64_KERNAL_BASE + 1);
-        for (int i = 0; i < 8192; i++) {
-            *(dst) = *(src++);
-            dst += 2;
-        }
+#if U64
+
+    memcpy((void *)U64_KERNAL_BASE, rom, 8192); // as simple as that
+
+#else  // the good old way
+
+    C64_KERNAL_ENABLE = 1;
+    uint8_t *src = rom;
+    uint8_t *dst = (uint8_t *) (C64_KERNAL_BASE + 1);
+    for (int i = 0; i < 8192; i++) {
+        *(dst) = *(src++);
+        dst += 2;
     }
+#endif
 }
 
 void C64::disable_kernal()
 {
     C64_KERNAL_ENABLE = 0;
 
-    if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
-    	uint8_t* kernal = (uint8_t *)U64_KERNAL_BASE;
-        flash->read_image(FLASH_ID_ORIG_KERNAL, (uint8_t *)U64_KERNAL_BASE, 8192);
-        if (cfg->get_value(CFG_C64_FASTRESET) && !memcmp((void *) (kernal+0x1d6c), (void *) fastresetOrg, sizeof(fastresetOrg)))
-            memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, 22);
-    }
+#if U64
+    uint8_t* kernal = (uint8_t *)U64_KERNAL_BASE;
+    flash->read_image(FLASH_ID_ORIG_KERNAL, (uint8_t *)U64_KERNAL_BASE, 8192);
+    if (cfg->get_value(CFG_C64_FASTRESET) && !memcmp((void *) (kernal+0x1d6c), (void *) fastresetOrg, sizeof(fastresetOrg)))
+        memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, 22);
+#endif
 }
 
 void C64::init_cartridge()

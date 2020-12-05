@@ -6,18 +6,21 @@
 #include "filesystem_fat.h"
 #include "blockdev_ram.h"
 
-uint8_t *ramdisk_mem;
+// uint8_t *ramdisk_mem;
 BlockDevice *ramdisk_blk;
 FileDevice *ramdisk_node;
 
+extern uint8_t __ram_disk_start;
+extern uint8_t __ram_disk_limit;
 
 void init_ram_disk(void *obj, void *param)
 {
+    const int size = (int)&__ram_disk_limit - (int)&__ram_disk_start; // 3 * 1024 * 1024;
     const int sz = 512;
-    const int size = 3 * 1024 * 1024;
     const int sectors = size / sz;
-    ramdisk_mem = new uint8_t[size];
-    ramdisk_blk = new BlockDevice_Ram(ramdisk_mem, sz, sectors);
+    // ramdisk_mem = new uint8_t[size];
+    // ramdisk_blk = new BlockDevice_Ram(ramdisk_mem, sz, sectors);
+    ramdisk_blk = new BlockDevice_Ram(&__ram_disk_start, sz, sectors);
 
     {
         FileSystem *ramdisk_fs;
