@@ -46,7 +46,7 @@ static const char *helptext=
 		"            wildcard.\n"
         "+/-:        Change value in config.\n"
         "\n"
-//		"F6:         Show debug log\n"
+		"F6:         Show debug log\n"
 		"\nRUN/STOP to close this window.";
 
 #include "stream_textlog.h"
