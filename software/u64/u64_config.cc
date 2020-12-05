@@ -1045,12 +1045,14 @@ void U64Config :: create_task_items(void)
     myActions.wifion    = new Action("Enable WiFi",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE);
     myActions.wifiboot  = new Action("Enable WiFi Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT);
 
-    dev->append(myActions.poke     );
     dev->append(myActions.saveedid );
+#if DEVELOPER > 0
+    dev->append(myActions.poke     );
     dev->append(myActions.siddetect);
     dev->append(myActions.wifioff  );
     dev->append(myActions.wifion   );
     dev->append(myActions.wifiboot );
+#endif
 }
 
 void U64Config :: update_task_items(bool writablePath, Path *p)
