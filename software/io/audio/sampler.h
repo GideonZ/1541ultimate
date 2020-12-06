@@ -26,15 +26,11 @@
 #define VOICE_CTRL_16BIT    0x10
 
 
-class Sampler //: public ObjectWithMenu
+class Sampler
 {
 public:
     Sampler() {}
     ~Sampler() {}
-
-	int  fetch_task_items(IndexedList<Action*> &item_list) {
-	    return 0;
-	}
 
 	static void reset(void) {
         for(int i=0; i < 8; i++) {

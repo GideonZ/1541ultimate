@@ -2,7 +2,6 @@
 #define COMMAND_INTF_H
 
 #include "integer.h"
-#include "menu.h"
 #include "config.h"
 #include "iomap.h"
 #include "subsys.h"
@@ -49,6 +48,9 @@
 #define HANDSHAKE_VALIDATE_LAST   0x10
 #define HANDSHAKE_VALIDATE_MORE   0x30
 
+#define CMD_HS_DMA_ACTIVE         0x80
+#define CMD_HS_TRIGGER_ACTIVE     0x40
+
 #define CMD_TARGET_NONE 0xFF
 
 typedef struct _message
@@ -59,13 +61,13 @@ typedef struct _message
 } Message;
 
 class SubSystem;
-class ObjectWithMenu;
 
-class CommandInterface : public SubSystem, ObjectWithMenu
+class CommandInterface : public SubSystem
 {
 	TaskHandle_t taskHandle;
 	TaskHandle_t resetTaskHandle;
 
+	int response_offset;
 	uint8_t *command_buffer;
     uint8_t *response_buffer;
     uint8_t *status_buffer;
@@ -80,7 +82,6 @@ class CommandInterface : public SubSystem, ObjectWithMenu
     void run_task(void);
     void run_reset_task(void);
 
-    int executeCommand(SubsysCommand *cmd);
 public:
 	QueueHandle_t queue; // needed from IRQ
 
@@ -88,8 +89,8 @@ public:
     ~CommandInterface();
     
     void dump_registers(void);
-    int  fetch_task_items(Path *path, IndexedList<Action*> &item_list);
     const char *identify(void) { return "Command Interface"; }
+    bool is_dma_active(void);
 };
 
 extern CommandInterface cmd_if;
@@ -128,7 +129,7 @@ public:
         *status = &c_status_ok; 
     }
     
-    virtual void abort(void) { }
+    virtual void abort(int a) { }
 };
 
 extern CommandTarget *command_targets[];

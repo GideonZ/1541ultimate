@@ -14,7 +14,6 @@
 
 #define MENU_C64_RESET      0x6401
 #define MENU_C64_REBOOT     0x6402
-//#define MENU_C64_TRACE    0x6581
 #define MENU_C64_SAVEREU    0x6403
 #define MENU_C64_SAVEFLASH  0x6404
 #define MENU_C64_SAVEMODULE 0x6405
@@ -34,6 +33,7 @@
 #define C64_DMA_LOAD_RAW	0x6466
 #define C64_DMA_BUFFER	    0x6467
 #define C64_DMA_RAW         0x6468
+#define C64_DMA_LOAD_MNT    0x6469
 #define C64_PUSH_BUTTON     0x6476
 #define C64_EVENT_MAX_REU   0x6477
 #define C64_EVENT_AUDIO_ON  0x6478
@@ -42,9 +42,6 @@
 #define C64_STOP_COMMAND	0x647B
 #define C64_SET_KERNAL		0x647C
 #define C64_READ_FLASH      0x647D
-
-//#define SID_TRACE_END           *((volatile uint32_t *)(C64_TRACE_BASE + 0x80))
-//#define SID_REGS(x)             *((volatile uint8_t *)(C64_TRACE_BASE + x))
 
 #define C64_MODE                *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x0))
 #define C64_STOP                *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x1))
@@ -209,8 +206,9 @@
 
 #define CFG_BUS_MODE          0x4D
 #define CFG_BUS_SHARING_ROM   0x4E
-#define CFG_BUS_SHARING_IO    0x4F
+#define CFG_BUS_SHARING_IO1   0x4F
 #define CFG_BUS_SHARING_IRQ   0x50
+#define CFG_BUS_SHARING_IO2   0x51
 
 #define ID_MODPLAYER 0xAA
 #define ID_SIDCART   0xBB
@@ -238,7 +236,6 @@ class C64 : public GenericHost, ConfigurableObject
     uint32_t screen_backup[COLOR_SIZE/4]; // only used now for vic state write
     uint32_t color_backup[COLOR_SIZE/4];
     uint8_t cia_backup[8];
-    
     uint8_t stop_mode;
     uint8_t raster;
     uint8_t raster_hi;
@@ -247,6 +244,7 @@ class C64 : public GenericHost, ConfigurableObject
     uint8_t vic_d011;
     uint8_t vic_d012;
     uint8_t force_cart;
+    bool backupIsValid;
 
     uint8_t lastCartridgeId;
     volatile bool buttonPushSeen;
@@ -267,6 +265,7 @@ class C64 : public GenericHost, ConfigurableObject
     static void hard_stop(void);
     void resume(void);
     void freeze(void);
+    virtual void get_all_memory(uint8_t *) { /* NOT YET IMPLEMENTED */ };
     
     static uint8_t get_exrom_game(void) {
         return (C64_CLOCK_DETECT & 0x0C) >> 2;
@@ -292,7 +291,7 @@ class C64 : public GenericHost, ConfigurableObject
     C64();
 public:
     void init(void);
-    ~C64();
+    virtual ~C64();
 
     /* Get static object */
     static C64 *getMachine(void);
@@ -341,7 +340,8 @@ public:
     void cartridge_test(void);
     void reset(void);
     void start(void);
-        
+    void set_kernal_device_id(uint8_t bus_id);
+
     static int isMP3RamDrive(int dev);
     static int getSizeOfMP3NativeRamdrive(int dev);
 
@@ -350,7 +350,9 @@ public:
     friend class REUPreloader; // preloader needs to access config
     friend class FileTypeREU; // REU file needs to access config
     friend class FileTypeCRT; // CRT file may need to enable Write mirroring on U64
+    friend class U64Machine;  // U64Machine is a derived class that may use internals of C64
     friend class U64Config; // U64 config needs to stop / resume for SID detection
+    friend class SoftIECTarget; // UCI target that performs DMA load
 };
 
 // extern C64 *c64;

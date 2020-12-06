@@ -35,49 +35,33 @@ FRESULT FileSystemT64 :: sync(void)
     return t64_file->sync();
 }
 
-FRESULT FileSystemT64 :: dir_open(const char *path, Directory **dir, FileInfo *inf) // Opens directory (creates dir object, NULL = root)
+FRESULT FileSystemT64 :: dir_open(const char *path, Directory **dir) // Opens directory (creates dir object, NULL = root)
 {
-	// Block anything invalid
-	if (inf) {
-		if (inf->cluster != 0) {
-			return FR_NO_PATH;
-		}
-	} else { // no info
-		if (strlen(path) > 0) {
-			if ((path[0] != '/') && (path[0] != '\\')) {
-				return FR_NO_PATH;
-			} else {
-				if (strlen(path) > 1) {
-					return FR_NO_PATH;
-				}
-			}
-		}
-	}
+	// no info.. The only directory that we can open here by name is '/'
+    if (strlen(path) > 1) {
+        return FR_NO_PATH;
+    }
+    if ((path[0] != '/') && (path[0] != '\\')) {
+        return FR_NO_PATH;
+    }
 
-	*dir = new Directory(this, 0); // use handle as index in dir. reset to 0
-    return FR_OK;
-}
-
-// Closes (and destructs dir object)
-void FileSystemT64 :: dir_close(Directory *d)
-{
-    delete d;
+	*dir = new DirectoryT64(this); // create a dir object with index 0
+	return FR_OK;
 }
 
 // reads next entry from dir
-FRESULT FileSystemT64 :: dir_read(Directory *d, FileInfo *f)
+FRESULT DirectoryT64 :: get_entry(FileInfo &f)
 {
-    uint32_t idx = (uint32_t)d->handle;
 	uint8_t read_buf[32], c;
 	uint8_t *p;
 	FRESULT fres;
 	uint32_t bytes_read;
 
 	// Fields that are always the same, or needs initialization.
-    f->fs      = this;
-	f->date    = 0;
-	f->time    = 0;
-    f->extension[0] = '\0';
+    f.fs      = fs;
+	f.date    = 0;
+	f.time    = 0;
+    f.extension[0] = '\0';
 
 	if(idx == 0) {
 	    fres = t64_file->seek(0); // rewind
@@ -99,19 +83,19 @@ FRESULT FileSystemT64 :: dir_read(Directory *d, FileInfo *f)
 			return fres;
 
 		read_buf[31] = 0;
-		f->lfname[24] = 0;
+		f.lfname[24] = 0;
 	    for(int b=0;b<24;b++) {
 	    	char c = char(read_buf[b+8]);
-	    	f->lfname[b] = c; //(c == '/') ? '!' : c;
+	    	f.lfname[b] = c; //(c == '/') ? '!' : c;
 	    }
 
 	    max  = LD_WORD(&read_buf[2]);
 	    used = LD_WORD(&read_buf[4]);
 		if(!used)
 			used = 1; // fix
-	    f->size = 0L;
-	    f->cluster = 0L;
-	    f->attrib  = AM_VOL;
+	    f.size = 0L;
+	    f.cluster = 0L;
+	    f.attrib  = AM_VOL;
 	} else {
 		//printf("Idx = %d, Used = %d\n", idx, used);
 		if(idx <= used) {
@@ -122,7 +106,7 @@ FRESULT FileSystemT64 :: dir_read(Directory *d, FileInfo *f)
 			int v=0;
 			//dump_hex(read_buf, 32);
 	        if(read_buf[0]) {
-	            memset(f->lfname, 0, f->lfsize);
+	            memset(f.lfname, 0, f.lfsize);
 	            for(int s=0;s<16;s++) {
 	                c = read_buf[16+s];
 	                if (c == '/') {
@@ -130,13 +114,13 @@ FRESULT FileSystemT64 :: dir_read(Directory *d, FileInfo *f)
 	                } else if (c & 0x80) {
 	                	c = ' ';
 	                }
-					f->lfname[s] = c;
+					f.lfname[s] = c;
 					v++;
 	            }
 
 				// eui: no trailing spaces please
 				for(int s=v-1; s>=0; s--) {
-					p = (uint8_t *)&f->lfname[s];
+					p = (uint8_t *)&f.lfname[s];
 	                if((*p == ' ') || (*p == 0xA0) || (*p == 0xE0)) {
 						*p = 0;
 	                }
@@ -149,16 +133,16 @@ FRESULT FileSystemT64 :: dir_read(Directory *d, FileInfo *f)
 	            if (v) {
 	                strt = LD_WORD(&read_buf[2]);
 	                stop = LD_WORD(&read_buf[4]);
-	                f->time = strt;  // patch to store start address ###
-	                f->cluster = LD_DWORD(&read_buf[8]); // file offset :)
-	                f->attrib = 0;
-	                strncpy(f->extension, "PRG", 4);
-	                f->size = (stop != 0)?(stop - strt):(65536 - strt);
-                    f->size += 2; // the file is actually two longer than the start-stop
-	                printf("%s: %04x-%04x (Size: %d)\n", f->lfname, strt, stop, f->size);
+	                f.time = strt;  // patch to store start address ###
+	                f.cluster = LD_DWORD(&read_buf[8]); // file offset :)
+	                f.attrib = 0;
+	                strncpy(f.extension, "PRG", 4);
+	                f.size = (stop != 0)?(stop - strt):(65536 - strt);
+                    f.size += 2; // the file is actually two longer than the start-stop
+	                printf("%s: %04x-%04x (Size: %d)\n", f.lfname, strt, stop, f.size);
 	            } else {
-	            	strcpy(f->lfname, "- Invalid name -");
-	                f->cluster = 0;
+	            	strcpy(f.lfname, "- Invalid name -");
+	                f.cluster = 0;
 	            }
 	        }
 		} else { // no more
@@ -166,79 +150,54 @@ FRESULT FileSystemT64 :: dir_read(Directory *d, FileInfo *f)
 		}
 	}
     idx++;
-    d->handle = (void*)idx;
 	return FR_OK;
 }
 
 // functions for reading and writing files
 // Opens file (creates file object)
-FRESULT FileSystemT64 :: file_open(const char *path, Directory *dir, const char *filename, uint8_t flags, File **file)  // Opens file (creates file object)
+FRESULT FileSystemT64 :: file_open(const char *filename, uint8_t flags, File **file)  // Opens file (creates file object)
 {
-	FileInfo info(24);
-	do {
-		FRESULT fres = dir_read(dir, &info);
-		if (fres != FR_OK) {
-			dir_close(dir);
-			return FR_NO_FILE;
-		}
-		if (info.attrib & AM_VOL)
-			continue;
-		if (pattern_match(filename, info.lfname)) {
-			break;
-		}
-	} while(1);
-
-	dir_close(dir);
+    FileInfo *info = NULL;
+    PathInfo pi(this);
+    pi.init(filename);
+    PathStatus_t pres = walk_path(pi);
+    if (pres == e_EntryFound) {
+        info = pi.getLastInfo();
+    } else if (pres == e_DirNotFound) {
+        return FR_NO_PATH;
+    } else {
+        return FR_NO_FILE;
+    }
+    if (info->attrib & AM_VOL) {
+        return FR_NO_FILE;
+    }
 
 	FileInT64 *ff = new FileInT64(this);
-	*file = new File(this, ff);
+	*file = ff;
 
-	FRESULT res = ff->open(&info, flags);
+	FRESULT res = ff->open(info, flags);
 	if(res == FR_OK) {
 		return res;
 	}
 	delete ff;
-	delete *file;
+	*file = NULL;
 	return res;
-}
-
-// Closes file (and destructs file object)
-void FileSystemT64::file_close(File *f)
-{
-    FileInT64 *ff = (FileInT64 *)f->handle;
-    ff->close();
-    delete ff;
-    delete f;
-}
-
-FRESULT FileSystemT64::file_read(File *f, void *buffer, uint32_t len, uint32_t *bytes_read)
-{
-    FileInT64 *ff = (FileInT64 *)f->handle;
-    return ff->read(buffer, len, bytes_read);
-}
-
-FRESULT FileSystemT64::file_write(File *f, const void *buffer, uint32_t len, uint32_t *bytes_written)
-{
-    FileInT64 *ff = (FileInT64 *)f->handle;
-    return ff->write(buffer, len, bytes_written);
-}
-
-FRESULT FileSystemT64::file_seek(File *f, uint32_t pos)
-{
-    FileInT64 *ff = (FileInT64 *)f->handle;
-    return ff->seek(pos);
 }
 
 /*************************************************************/
 /* T64 File System implementation                            */
 /*************************************************************/
-FileInT64 :: FileInT64(FileSystemT64 *f)
+FileInT64 :: FileInT64(FileSystemT64 *f) : File(f)
 {
-	file_offset = 0;
+    file_offset = 0;
 	offset = 0;
 	length = 0;
-
+	start_addr = 0;
     fs = f;
+}
+
+FileInT64 :: ~FileInT64()
+{
 }
 
 FRESULT FileInT64 :: open(FileInfo *info, uint8_t flags)
@@ -256,8 +215,9 @@ FRESULT FileInT64 :: open(FileInfo *info, uint8_t flags)
 
 FRESULT FileInT64 :: close(void)
 {
-	return fs->sync();
-	//flag = 0;
+    FRESULT fres = fs->sync();
+    delete this;
+    return fres;
 }
 
 FRESULT FileInT64 :: read(void *buffer, uint32_t len, uint32_t *transferred)
@@ -302,10 +262,20 @@ FRESULT FileInT64 :: read(void *buffer, uint32_t len, uint32_t *transferred)
 
 FRESULT  FileInT64 :: write(const void *buffer, uint32_t len, uint32_t *transferred)
 {
-	return FR_DENIED;
+	return FR_WRITE_PROTECTED;
 }
 
 FRESULT FileInT64 :: seek(uint32_t pos)
 {
 	return FR_DENIED;
+}
+
+uint32_t FileInT64 :: get_size()
+{
+    return length;
+}
+
+uint32_t FileInT64 :: get_inode()
+{
+    return offset;
 }

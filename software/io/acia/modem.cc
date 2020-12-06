@@ -22,7 +22,7 @@
 
 static const char *interfaces[] = { "ACIA / SwiftLink" };
 static const char *acia_mode[] = { "Off", "DE00/IRQ", "DE00/NMI", "DF00/IRQ", "DF00/NMI", "DF80/IRQ", "DF80/NMI" };
-static const char *dcd_dsr[] = { "Active (Low)", "Active when connected", "Inactive when connected", "Inactive (High)" };
+static const char *dcd_dsr[] = { "Active (Low)", "Active when connected", "Inactive when connected", "Inactive (High)", "Act. when connecting", "Inact. when connecting" };
 static const int acia_base[] = { 0, 0xDE00, 0xDE01, 0xDF00, 0xDF01, 0xDF80, 0xDF81 };
 
 /*
@@ -41,9 +41,9 @@ struct t_cfg_definition modem_cfg[] = {
     { CFG_MODEM_LISTEN_PORT,   CFG_TYPE_STRING, "Listening Port",                "%s", NULL,         2,  8, (int)"3000" },
     { CFG_MODEM_LISTEN_RING,   CFG_TYPE_ENUM,   "Do RING sequence (incoming)",   "%s", en_dis,       0,  1, 1 },
     { CFG_MODEM_DTRDROP,       CFG_TYPE_ENUM,   "Drop connection on DTR low",    "%s", en_dis,       0,  1, 1 },
-    { CFG_MODEM_CTS,           CFG_TYPE_ENUM,   "CTS Behavior",                  "%s", dcd_dsr,      0,  3, 0 },
-    { CFG_MODEM_DCD,           CFG_TYPE_ENUM,   "DCD Behavior",                  "%s", dcd_dsr,      0,  3, 1 },
-    { CFG_MODEM_DSR,           CFG_TYPE_ENUM,   "DSR Behavior",                  "%s", dcd_dsr,      0,  3, 1 },
+    { CFG_MODEM_CTS,           CFG_TYPE_ENUM,   "CTS Behavior",                  "%s", dcd_dsr,      0,  5, 0 },
+    { CFG_MODEM_DCD,           CFG_TYPE_ENUM,   "DCD Behavior",                  "%s", dcd_dsr,      0,  5, 1 },
+    { CFG_MODEM_DSR,           CFG_TYPE_ENUM,   "DSR Behavior",                  "%s", dcd_dsr,      0,  5, 1 },
     { CFG_MODEM_OFFLINEFILE,   CFG_TYPE_STRING, "Modem Offline Text",            "%s", NULL,         0, 30, (int)"/Usb0/offline.txt" },
     { CFG_MODEM_CONNFILE,      CFG_TYPE_STRING, "Modem Connect Text",            "%s", NULL,         0, 30, (int)"/Usb0/welcome.txt" },
     { CFG_MODEM_BUSYFILE,      CFG_TYPE_STRING, "Modem Busy Text",               "%s", NULL,         0, 30, (int)"/Usb0/busy.txt" },
@@ -68,6 +68,7 @@ Modem :: Modem()
     xTaskCreate( Modem :: callerTask, "Outgoing Caller", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
     listenerSocket = new ListenerSocket("Modem Listener", Modem :: listenerTask, "Modem External Connection");
     keepConnection = false;
+    busyMode = false;
     commandMode = true;
     baudRate = 0;
     dropOnDTR = true;
@@ -118,7 +119,7 @@ void Modem :: RunRelay(int socket)
 
     printf("Modem: Running Relay to socket %d.\n", socket);
     int ret;
-    SetHandshakes(true);
+    SetHandshakes(true, false);
     commandMode = false;
     uint8_t escape = registerValues[MODEM_REG_ESCAPE];
     int escapeTime = 4 * (int)registerValues[MODEM_REG_ESCAPETIME]; // Ultimate Timer is 200 Hz, hence *4, register specifies fiftieths of seconds
@@ -180,13 +181,13 @@ void Modem :: RunRelay(int socket)
         }
     }
     commandMode = true;
-    SetHandshakes(false);
+    SetHandshakes(false, false);
 }
 
 void Modem :: IncomingConnection(int socket)
 {
     char buffer[64];
-    if (xSemaphoreTake(connectionLock, 0) != pdTRUE) {
+    if (busyMode || xSemaphoreTake(connectionLock, 0) != pdTRUE) {
         RelayFileToSocket(cfg->get_string(CFG_MODEM_BUSYFILE), socket, "The modem you are connecting to is currently busy.\n");
         return;
     } else if(!(lastHandshake & ACIA_HANDSH_DTR)) {
@@ -197,6 +198,8 @@ void Modem :: IncomingConnection(int socket)
         RelayFileToSocket(cfg->get_string(CFG_MODEM_CONNFILE), socket, "Welcome to the Modem Emulation Layer of the Ultimate!\n");
     }
 
+    SetHandshakes(false, true);
+    int connChange;
     if (cfg->get_value(CFG_MODEM_LISTEN_RING)) {
         ModemCommand_t modemCommand;
         registerValues[MODEM_REG_RINGCOUNTER] = 0;
@@ -215,7 +218,11 @@ void Modem :: IncomingConnection(int socket)
             }
             BaseType_t cmdAvailable = xQueueReceive(commandQueue, &modemCommand, 600); // wait max 3 seconds for a command
             if (cmdAvailable) {
-                if (ExecuteCommand(&modemCommand)) {
+                connChange = ExecuteCommand(&modemCommand);
+                if (connChange) {
+                    if (connChange == 3) { // ATH1
+                        RelayFileToSocket(cfg->get_string(CFG_MODEM_BUSYFILE), socket, "The modem you are connecting to is currently busy.\n");
+                    }
                     break;
                 }
             }
@@ -244,7 +251,7 @@ void Modem :: IncomingConnection(int socket)
     commandMode = true;
 }
 
-void Modem :: SetHandshakes(bool connected)
+void Modem :: SetHandshakes(bool connected, bool connecting)
 {
     uint8_t handshakes = 0;
 
@@ -257,6 +264,12 @@ void Modem :: SetHandshakes(bool connected)
         break;
     case 2: // inactive when connected
         handshakes |= (connected) ? 0 : ACIA_HANDSH_CTS;
+        break;
+    case 4: // active when connecting OR connected
+        handshakes |= (connected || connecting) ? ACIA_HANDSH_CTS : 0;
+        break;
+    case 5: // inactive when connecting OR connected
+        handshakes |= (connected || connecting) ? 0 : ACIA_HANDSH_CTS;
         break;
     default:
         break;
@@ -272,6 +285,12 @@ void Modem :: SetHandshakes(bool connected)
     case 2: // inactive when connected
         handshakes |= (connected) ? 0 : ACIA_HANDSH_DCD;
         break;
+    case 4: // active when connecting OR connected
+        handshakes |= (connected || connecting) ? ACIA_HANDSH_DCD : 0;
+        break;
+    case 5: // inactive when connecting OR connected
+        handshakes |= (connected || connecting) ? 0 : ACIA_HANDSH_DCD;
+        break;
     default:
         break;
     }
@@ -285,6 +304,12 @@ void Modem :: SetHandshakes(bool connected)
         break;
     case 2: // inactive when connected
         handshakes |= (connected) ? 0 : ACIA_HANDSH_DSR;
+        break;
+    case 4: // active when connecting OR connected
+        handshakes |= (connected || connecting) ? ACIA_HANDSH_DSR : 0;
+        break;
+    case 5: // inactive when connecting OR connected
+        handshakes |= (connected || connecting) ? 0 : ACIA_HANDSH_DSR;
         break;
     default:
         break;
@@ -401,9 +426,9 @@ void Modem :: CollectCommand(ModemCommand_t *cmd, char *buf, int len)
     }
 }
 
-bool Modem :: ExecuteCommand(ModemCommand_t *cmd)
+int Modem :: ExecuteCommand(ModemCommand_t *cmd)
 {
-    bool connectionStateChange = false;
+    int connectionStateChange = 0;
     char *c;
     const char *response = "OK\r";
     char responseBuffer[16];
@@ -413,6 +438,7 @@ bool Modem :: ExecuteCommand(ModemCommand_t *cmd)
 
     // Parse Command string
     for(int i=0; i < cmd->length; i++) {
+        temp = 0;
         switch(cmd->command[i]) {
         case 'D': // Dial
             c = cmd->command; // overwrite current command
@@ -431,29 +457,22 @@ bool Modem :: ExecuteCommand(ModemCommand_t *cmd)
         case 'Z': // reset
             ResetRegisters();
             keepConnection = false;
-            connectionStateChange = true;
+            connectionStateChange = 1;
             break;
         case 'H': // hang up
             sscanf(cmd->command + i + 1, "%d", &temp);
             while(i < cmd->length && (isdigit(cmd->command[i+1])))
                 i++;
-            if (temp == 0) {
-                keepConnection = false;
-            } else {
-                if (keepConnection) {
-                    response = "";
-                } else {
-                    response = "NO DIALTONE\r";
-                }
-            }
-            connectionStateChange = true;
+            busyMode = (temp > 0);
+            keepConnection = false;
+            connectionStateChange = 1 + (busyMode) ? 2 : 0; // if busy mode is selected, return 3
             break;
         case 'A': // answer
             if (keepConnection) {
                 commandMode = false;
             }
             keepConnection = true;
-            connectionStateChange = true;
+            connectionStateChange = 2;
             break;
         case 'O': // Return Online
             if (keepConnection) {
@@ -526,6 +545,7 @@ void Modem :: ModemTask()
     char outbuf[32];
     uint8_t txbuf[32];
     int len;
+    int newRate = 0;
 
     ModemCommand_t modemCommand;
     modemCommand.length = 0;
@@ -541,10 +561,12 @@ void Modem :: ModemTask()
         //printf("Message type: %d. Value: %b. DataLen: %d Buffer: %d\n", message.messageType, message.smallValue, message.dataLength, aciaTxBuffer->AvailableData());
         switch(message.messageType) {
         case ACIA_MSG_CONTROL:
-            printf("BAUD=%d\n", baudRates[message.smallValue & 0x0F]);
-            acia.SetRxRate(rateValues[message.smallValue & 0x0F]);
-            baudRate = baudRates[message.smallValue & 0x0F];
-            //acia.SendToRx((uint8_t *)outbuf, strlen(outbuf));
+            newRate = baudRates[message.smallValue & 0x0F];
+            if (newRate != baudRate) {
+                printf("BAUD=%d\n", newRate);
+                acia.SetRxRate(rateValues[message.smallValue & 0x0F]);
+                baudRate = newRate;
+            }
             break;
 /*
         case ACIA_MSG_DCD:

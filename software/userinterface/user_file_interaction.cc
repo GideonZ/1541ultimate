@@ -12,6 +12,7 @@
 #include "c64.h"
 
 #include "home_directory.h"
+#include "subsys.h"
 
 // member
 int UserFileInteraction::fetch_context_items(BrowsableDirEntry *br, IndexedList<Action *> &list)
@@ -62,14 +63,20 @@ int UserFileInteraction::fetch_context_items(BrowsableDirEntry *br, IndexedList<
     return count;
 }
 
-int UserFileInteraction::fetch_task_items(Path *path, IndexedList<Action*> &list)
+void UserFileInteraction :: create_task_items(void)
 {
+    TaskCategory *cat = TasksCollection :: getCategory("Create", SORT_ORDER_CREATE);
+    mkdir = new Action("Directory", UserFileInteraction::S_createDir, 0);
+    cat->append(mkdir);
+}
 
-    if (FileManager::getFileManager()->is_path_writable(path)) {
-        list.append(new Action("Create Directory", UserFileInteraction::S_createDir, 0));
-        return 1;
+void UserFileInteraction::update_task_items(bool writablePath, Path *path)
+{
+    if (writablePath) {
+        mkdir->enable();
+    } else {
+        mkdir->disable();
     }
-    return 0;
 }
 
 int UserFileInteraction::S_enter(SubsysCommand *cmd)
@@ -136,7 +143,7 @@ int UserFileInteraction::S_view(SubsysCommand *cmd)
         FRESULT fres = f->read(text_buf, size, &transferred);
         printf("Res = %d. Read text buffer: %d bytes\n", fres, transferred);
         text_buf[transferred] = 0;
-        cmd->user_interface->run_editor(text_buf);
+        cmd->user_interface->run_editor(text_buf, transferred);
         delete text_buf;
     }
     return 0;
@@ -251,3 +258,49 @@ int UserFileInteraction::S_runApp(SubsysCommand *cmd)
 #endif
     return 0;
 }
+
+// TODO: Use these functions in other user-interface based subsystem calls
+FRESULT create_file_ask_if_exists(FileManager *fm, UserInterface *ui, const char *path, const char *filename, File **f)
+{
+    FRESULT res = fm->fopen(path, filename, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, f);
+    if (res == FR_EXIST) {
+        if (ui->popup("File already exists. Overwrite?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+            res = fm->fopen(path, filename, FA_WRITE | FA_CREATE_ALWAYS, f);
+        }
+    }
+    return res;
+}
+
+FRESULT create_user_file(UserInterface *ui, const char *message, const char *ext, const char *path, File **f, char *buffer)
+{
+    char filename[32];
+    FileManager *fm = FileManager :: getFileManager();
+    if(ui->string_box(message, buffer, 22) > 0) {
+        strcpy(filename, buffer);
+        fix_filename(filename);
+        set_extension(filename, ext, 32);
+        FRESULT res = create_file_ask_if_exists(fm, ui, path, filename, f);
+        return res;
+    }
+    return FR_DENIED;
+}
+
+FRESULT write_zeros(File *f, int size, uint32_t &written)
+{
+    uint8_t *buffer = new uint8_t[16384];
+    written = 0;
+    uint32_t wr;
+    bzero(buffer, 16384);
+    FRESULT fres = FR_OK;
+    while(size > 0) {
+        int now = (size > 16384) ? 16384 : size;
+        fres = f->write(buffer, now, &wr);
+        written += wr;
+        size -= wr;
+        if (fres != FR_OK) {
+            break;
+        }
+    }
+    return fres;
+}
+

@@ -9,6 +9,7 @@
 #define U64_H_
 
 #include <stdint.h>
+#include "c64.h"
 
 #ifndef U64_IO_BASE
 #define U64_IO_BASE     0xA0000400
@@ -46,7 +47,7 @@
 #define U64_EXT_I2C_SCL    (*(volatile uint8_t *)(U64_IO_BASE + 0x06))
 #define U64_EXT_I2C_SDA    (*(volatile uint8_t *)(U64_IO_BASE + 0x07))
 #define U64_HDMI_ENABLE    (*(volatile uint8_t *)(U64_IO_BASE + 0x08))
-#define U64_PARCABLE_EN    (*(volatile uint8_t *)(U64_IO_BASE + 0x09))
+#define U64_INT_CONNECTORS (*(volatile uint8_t *)(U64_IO_BASE + 0x09))
 #define U64_CART_DETECT    (*(volatile uint8_t *)(U64_IO_BASE + 0x0A)) // Inputs Game (bit 0) and Exrom (bit 1) lines
 #define U64_MB_RESET       (*(volatile uint8_t *)(U64_IO_BASE + 0x0B)) // Write a 0 to start the microblaze, if available
 #define U64_LEDSTRIP_EN    (*(volatile uint8_t *)(U64_IO_BASE + 0x0C)) // Write a 1 to make CIA_PWM pins become LED strip control pins
@@ -76,8 +77,8 @@
 #define C64_VIDEOFORMAT  (*(volatile uint8_t *)(C64_IO_BASE + 0x01))
 #define C64_TURBOREGS_EN (*(volatile uint8_t *)(C64_IO_BASE + 0x02))
 #define C64_DMA_MEMONLY  (*(volatile uint8_t *)(C64_IO_BASE + 0x03))
-#define C64_LUMA_DELAY   (*(volatile uint8_t *)(C64_IO_BASE + 0x04))
-#define C64_CHROMA_DELAY (*(volatile uint8_t *)(C64_IO_BASE + 0x05))
+#define C64_COLOR_DELAY  (*(volatile uint8_t *)(C64_IO_BASE + 0x04))
+#define C64_PHASE_INCR   (*(volatile uint8_t *)(C64_IO_BASE + 0x05))
 #define C64_BURST_PHASE  (*(volatile uint8_t *)(C64_IO_BASE + 0x06))
 #define C64_VIC_TEST     (*(volatile uint8_t *)(C64_IO_BASE + 0x07))
 #define C64_SID1_BASE    (*(volatile uint8_t *)(C64_IO_BASE + 0x08))
@@ -134,6 +135,7 @@
 #define VIDEO_FMT_CYCLES_63     0x00
 #define VIDEO_FMT_CYCLES_64     0x10
 #define VIDEO_FMT_CYCLES_65     0x20
+#define VIDEO_FMT_RESET_BURST   0x40
 
 typedef struct {
     uint8_t VID_HSYNCPOL;
@@ -153,5 +155,25 @@ typedef struct {
     uint8_t VID_REPCN;
     uint8_t VID_IRCYQ;
 } t_video_timing_regs;
+
+typedef enum {
+    e_PAL_50 = 0,
+    e_NTSC_60,
+    e_PAL_60,
+    e_NTSC_50,
+    e_PAL_60_lock,
+    e_NTSC_50_lock,
+    e_NOT_SET,
+} t_video_mode;
+
+class U64Machine : public C64
+{
+    U64Machine() { }
+    ~U64Machine() { }
+    void get_all_memory(uint8_t *pb);
+public:
+
+    friend class C64;
+};
 
 #endif /* U64_H_ */

@@ -20,9 +20,9 @@ SRCS_C   =	itu.c \
             timers.c \
             port.c \
             heap_3.c \
-            ff2.c \
-            ccsbcs.c \
-            ffsyscall.c \
+            ff.c \
+            ffsystem.c \
+            ffunicode.c \
             time.c \
             mdio.c \
             sid_coeff.c \
@@ -58,7 +58,6 @@ SRCS_CC	 =  u2p_init.cc \
 			keyboard_c64.cc \
 			disk_image.cc \
 			c1541.cc \
-			bam_header.cc \
 			mystring.cc \
 			path.cc \
 			pattern.cc \
@@ -83,7 +82,6 @@ SRCS_CC	 =  u2p_init.cc \
 			editor.cc \
 			tree_browser.cc \
 			tree_browser_state.cc \
-			stream_menu.cc \
 			config_menu.cc \
 			context_menu.cc \
 			task_menu.cc \
@@ -119,6 +117,7 @@ SRCS_CC	 =  u2p_init.cc \
 			dos.cc \
 			network_target.cc \
 			control_target.cc \
+			softiec_target.cc \
 			iec.cc \
 			iec_channel.cc \
 			iec_printer.cc \
@@ -134,7 +133,6 @@ SRCS_CC	 =  u2p_init.cc \
 			socket_stream.cc \
 			socket_gui.cc \
 			socket_dma.cc \
-			socket_test.cc \
 			rmii_interface.cc \
 			home_directory.cc \
 			reu_preloader.cc \
@@ -142,6 +140,7 @@ SRCS_CC	 =  u2p_init.cc \
 			acia.cc \
 			modem.cc \
 			listener_socket.cc \
+			ramdisk.cc \
 			$(PRJ).cc
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios

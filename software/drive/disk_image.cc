@@ -16,6 +16,8 @@ extern "C" {
 	#include "dump_hex.h"
 }
 #include "userinterface.h" // for showing status information only
+#include "user_file_interaction.h"
+#include "blockdev_file.h"
 
 __inline uint32_t le_to_cpu_32(uint32_t a)
 {
@@ -31,8 +33,6 @@ __inline uint32_t le_to_cpu_32(uint32_t a)
 
 #define cpu_to_le_32 le_to_cpu_32
 
-
-extern uint8_t bam_header[];
 
 #define HARDWARE_ENCODING 1
 
@@ -783,7 +783,7 @@ BinImage :: BinImage(const char *name)
     // actually, we could have made a ram-mapped partition as well directly, TODO
     blk = new BlockDevice_Ram(bin_data, 256, 768);
     prt = new Partition(blk, 0, 768, 0);
-    fs  = new FileSystemD64(prt);
+    fs  = new FileSystemD64(prt, true);
 }
 
 BinImage :: ~BinImage()
@@ -942,34 +942,8 @@ int BinImage :: save(File *file, UserInterface *user_interface)
 
 int BinImage :: format(const char *name)
 {
-	uint8_t *track_18 = &bin_data[17*21*256];
-	uint8_t *bam_name = track_18 + 144;
-
-	memset(bin_data, 0, C1541_MAX_D64_LEN);
-	memcpy(track_18, bam_header, 144);
-
-    // part that comes after bam header
-    for(int t=0;t<27;t++) {
-        bam_name[t] = 0xA0;
-    }
-    bam_name[21] = '2';
-    bam_name[22] = 'A';
-
-    char c;
-    int b;
-    for(int t=0,b=0;t<27;t++) {
-        c = name[b++];
-        if(!c)
-            break;
-        c = toupper(c);
-        if(c == ',') {
-        	t = 17;
-        	continue;
-        }
-		bam_name[t] = (uint8_t)c;
-    }
-    track_18[257] = 0xFF; // second byte of second sector 00 FF .. .. ..
-
+    memset(bin_data, 0, C1541_MAX_D64_LEN);
+    fs->format(name);
     num_tracks = 35;
     return 0;
 }
@@ -999,7 +973,10 @@ void BinImage :: get_sensible_name(char *buffer)
 {
     buffer[0] = 0;
     Directory *r;
-    fs->dir_open(NULL, &r);
+    if (fs->dir_open(NULL, &r) != FR_OK) {
+        strcpy(buffer, "Unreadable.");
+        return;
+    }
     char *n;
     FileInfo fi(32);    
     r->get_entry(fi); // title
@@ -1021,10 +998,114 @@ void BinImage :: get_sensible_name(char *buffer)
         if((buffer[i]>='A')&&(buffer[i]<='Z'))
             buffer[i] |= 0x20;
     }
-    fs->dir_close(r);    
+    delete r;
 }
 
 BinImage static_bin_image("Static Binary Image"); // for general use
+
+int ImageCreator :: S_createD71(SubsysCommand *cmd)
+{
+    FileManager *fm = FileManager :: getFileManager();
+    File *f;
+    uint32_t written;
+    char name_buffer[32];
+    name_buffer[0] = 0;
+    FRESULT fres = create_user_file(cmd->user_interface, "Give name for new disk..", ".d71", cmd->path.c_str(), &f, name_buffer);
+    if (fres == FR_OK) {
+        fres = write_zeros(f, 256*683*2, written);
+    }
+    if (fres == FR_OK) {
+        fres = f->seek(0);
+    }
+    if (fres == FR_OK) {
+        BlockDevice_File blk(f, 256);
+        Partition prt(&blk, 0, 0, 0);
+        FileSystemD71 fs(&prt, true);
+        fs.format(name_buffer);
+    }
+    if (fres != FR_OK) {
+        cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
+    }
+    if (f) {
+        fm->fclose(f);
+    }
+    return fres;
+}
+
+int ImageCreator :: S_createD81(SubsysCommand *cmd)
+{
+    FileManager *fm = FileManager :: getFileManager();
+    File *f;
+    uint32_t written;
+    char name_buffer[32];
+    name_buffer[0] = 0;
+    FRESULT fres = create_user_file(cmd->user_interface, "Give name for new disk..", ".d81", cmd->path.c_str(), &f, name_buffer);
+    if (fres == FR_OK) {
+        fres = write_zeros(f, 256*3200, written);
+    }
+    if (fres == FR_OK) {
+        fres = f->seek(0);
+    }
+    if (fres == FR_OK) {
+        BlockDevice_File blk(f, 256);
+        Partition prt(&blk, 0, 0, 0);
+        FileSystemD81 fs(&prt, true);
+        fs.format(name_buffer);
+    }
+    if (fres != FR_OK) {
+        cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
+    }
+    if (f) {
+        fm->fclose(f);
+    }
+    return fres;
+}
+
+int ImageCreator :: S_createDNP(SubsysCommand *cmd)
+{
+    FileManager *fm = FileManager :: getFileManager();
+    File *f;
+    uint32_t written;
+    char name_buffer[32];
+    char size_buffer[16];
+    name_buffer[0] = 0;
+    size_buffer[0] = 0;
+    int tracks = 0;
+    FRESULT fres = create_user_file(cmd->user_interface, "Give name for disk image..", ".dnp", cmd->path.c_str(), &f, name_buffer);
+    if (fres == FR_OK) {
+        if (cmd->user_interface->string_box("Give size in tracks..", size_buffer, 16) <= 0) {
+            return -1;
+        }
+        sscanf(size_buffer, "%d", &tracks);
+        if (tracks < 1) {
+            cmd->user_interface->popup("Should be at least 1 track", BUTTON_OK);
+            return -1;
+        }
+        if (tracks >= 256) {
+            cmd->user_interface->popup("Should be less than 256 tracks", BUTTON_OK);
+            return -1;
+        }
+    }
+    if (fres == FR_OK) {
+        fres = write_zeros(f, 65536*tracks, written);
+    }
+    if (fres == FR_OK) {
+        fres = f->seek(0);
+    }
+    if (fres == FR_OK) {
+        BlockDevice_File blk(f, 256);
+        Partition prt(&blk, 0, 0, 0);
+        FileSystemDNP fs(&prt, true);
+        fs.format(name_buffer);
+    }
+    if (fres != FR_OK) {
+        cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
+    }
+    if (f) {
+        fm->fclose(f);
+    }
+    return fres;
+}
 
 int ImageCreator :: S_createD64(SubsysCommand *cmd)
 {
@@ -1040,10 +1121,10 @@ int ImageCreator :: S_createD64(SubsysCommand *cmd)
 
 	res = cmd->user_interface->string_box("Give name for new disk..", buffer, 22);
 	if(res > 0) {
-		fix_filename(buffer);
 	    bin = &static_bin_image; //new BinImage;
 		if(bin) {
     		bin->format(buffer);
+            fix_filename(buffer);
 			set_extension(buffer, (doG64)?(char *)".g64":(char *)".d64", 32);
             File *f = 0;
             FRESULT fres = fm -> fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_NEW, &f);
@@ -1057,6 +1138,7 @@ int ImageCreator :: S_createD64(SubsysCommand *cmd)
                         cmd->user_interface->update_progress("Saving...", 0);
                         save_result = gcr->save(f, false, cmd->user_interface); // create image, without alignment, we are aligned already
                         cmd->user_interface->hide_progress();
+                        delete gcr;
                     } else {
                         printf("No memory to create gcr image.\n");
                         return -3;

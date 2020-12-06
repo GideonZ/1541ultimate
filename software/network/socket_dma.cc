@@ -42,7 +42,6 @@
 // Undocumented, shall only be used by developers.
 #define SOCKET_CMD_LOADSIDCRT   0xFF71
 #define SOCKET_CMD_LOADBOOTCRT  0xFF72
-#define SOCKET_CMD_READMEM      0xFF74
 #define SOCKET_CMD_READFLASH    0xFF75
 #define SOCKET_CMD_DEBUG_REG    0xFF76
 
@@ -135,10 +134,6 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
             memcpy(boot_cart.custom_addr, buf, size);
             boot_cart.length = size;
         }
-        break;
-    case SOCKET_CMD_READMEM:
-        printf("Sending data...");
-        writeSocket(socket, (void *)0x2000000, 0x800000);
         break;
     case SOCKET_CMD_MOUNT_IMG:
     case SOCKET_CMD_RUN_IMG:

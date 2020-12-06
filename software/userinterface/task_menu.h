@@ -10,7 +10,8 @@ class TreeBrowserState;
 
 class TaskMenu : public ContextMenu
 {
-	TreeBrowserState *state;
+    static bool actionsCreated;
+    TreeBrowserState *state;
 	Browsable *browsable;
 	Path *path;
 public:    
@@ -18,6 +19,16 @@ public:
     ~TaskMenu(void);
     
     void init(Window *pwin, Keyboard *keyb);
+    int select(void);
+};
+
+class TaskSubMenu : public ContextMenu
+{
+    TaskCategory *category;
+public:
+    TaskSubMenu(UserInterface *ui, TreeBrowserState *state, TaskCategory *cat, int item);
+    ~TaskSubMenu() { }
+    int get_items(void);
 };
 
 #endif

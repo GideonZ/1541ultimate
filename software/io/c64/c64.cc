@@ -34,6 +34,7 @@
 #include "flash.h"
 #include "keyboard_c64.h"
 #include "config.h"
+#include "iec.h"
 
 #ifndef CMD_IF_SLOT_BASE
 #define CMD_IF_SLOT_BASE       *((volatile uint8_t *)(CMD_IF_BASE + 0x0))
@@ -144,17 +145,18 @@ static const char *timing3[] = { "15ns", "30ns", "45ns", "60ns", "75ns", "90ns",
 static const char *ultimatedos[] = { "Disabled", "Enabled", "Enabled (v1.1)", "Enabled (v1.0)" };
 static const char *fc3mode[] = { "Unchanged", "Desktop", "BASIC" };
 static const char *cartmodes[] = { "Auto", "Internal", "External", "Manual" };
-static const char *bus_modes[] = { "Quiet", "Writes", "CPU", "CPU/VIC", "VIC" };
-static const uint8_t bus_mode_values[] = { 0x00, 0x01, 0x03, 0x07, 0x04 };
+static const char *bus_modes[] = { "Quiet", "Writes", "Dynamic", "Dyn. & Writes" };
+static const uint8_t bus_mode_values[] = { 0x00, 0x01, 0x02, 0x03, 0x04 };
 static const char *bus_sharing[] = { "Internal", "External", "Both" };
 
 struct t_cfg_definition c64_config[] = {
 #if U64
     { CFG_C64_CART,        CFG_TYPE_ENUM, "Cartridge",                    "%s", cart_mode,  0, 20, 0 },
     { CFG_C64_CART_PREF,   CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,  0,  3, 0 },
-    { CFG_BUS_MODE,        CFG_TYPE_ENUM, "Bus Operation Mode",           "%s", bus_modes,    0,  4, 0 },
+    { CFG_BUS_MODE,        CFG_TYPE_ENUM, "Bus Operation Mode",           "%s", bus_modes,    0,  3, 0 },
     { CFG_BUS_SHARING_ROM, CFG_TYPE_ENUM, "Bus Sharing - ROMs",           "%s", bus_sharing,  0,  2, 2 },
-    { CFG_BUS_SHARING_IO,  CFG_TYPE_ENUM, "Bus Sharing - I/O",            "%s", bus_sharing,  0,  2, 2 },
+    { CFG_BUS_SHARING_IO1, CFG_TYPE_ENUM, "Bus Sharing - I/O1",           "%s", bus_sharing,  0,  2, 2 },
+    { CFG_BUS_SHARING_IO2, CFG_TYPE_ENUM, "Bus Sharing - I/O2",           "%s", bus_sharing,  0,  2, 2 },
     { CFG_BUS_SHARING_IRQ, CFG_TYPE_ENUM, "Bus Sharing - Interrupts",     "%s", bus_sharing,  0,  2, 2 },
 #else
     { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 22, 4 },
@@ -217,9 +219,8 @@ C64::C64()
 
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_MODE = MODE_NORMAL;
-//    C64_STOP = 0;
     isFrozen = false;
-//    C64_MODE = C64_MODE_RESET;
+    backupIsValid = false;
     buttonPushSeen = false;
     client = 0;
     available = false;
@@ -246,11 +247,13 @@ int C64 :: setCartPref(ConfigItem *item)
     // This is only a UI thing
     if (item->getValue() == 3) { // If manual, enable the other settings
         item->store->enable(CFG_BUS_SHARING_ROM);
-        item->store->enable(CFG_BUS_SHARING_IO);
+        item->store->enable(CFG_BUS_SHARING_IO1);
+        item->store->enable(CFG_BUS_SHARING_IO2);
         item->store->enable(CFG_BUS_SHARING_IRQ);
     } else {
         item->store->disable(CFG_BUS_SHARING_ROM);
-        item->store->disable(CFG_BUS_SHARING_IO);
+        item->store->disable(CFG_BUS_SHARING_IO1);
+        item->store->disable(CFG_BUS_SHARING_IO2);
         item->store->disable(CFG_BUS_SHARING_IRQ);
     }
     return 1;
@@ -331,7 +334,11 @@ C64 *C64 :: getMachine(void)
 {
     static C64 *c64 = NULL;
     if (!c64) {
+#if U64
+        c64 = new U64Machine();
+#else
         c64 = new C64();
+#endif
     }
     return c64;
 }
@@ -701,6 +708,9 @@ void C64::reset(void)
  */
 void C64::backup_io(void)
 {
+#ifdef OS
+    configASSERT( !backupIsValid );
+#endif
     int i;
     // enter ultimax mode, as this might not have taken place already!
     goUltimax();
@@ -755,6 +765,7 @@ void C64::backup_io(void)
     cia_backup[6] = CIA1_CRA;
     cia_backup[7] = CIA1_CRB;
 
+    backupIsValid = true;
 }
 
 void C64::init_io(void)
@@ -826,6 +837,10 @@ void C64::freeze(void)
 
 void C64::restore_io(void)
 {
+#ifdef OS
+    configASSERT( backupIsValid );
+#endif
+
     int i;
 
     // disable screen
@@ -868,6 +883,8 @@ void C64::restore_io(void)
     SID_DUMMY = 0;   // clear internal charge on databus!
     SID2_DUMMY = 0;   // clear internal charge on databus!
     SID3_DUMMY = 0;   // clear internal charge on databus!
+
+    backupIsValid = false;
 }
 
 void C64::init_system_roms(void)
@@ -894,6 +911,7 @@ void C64::init_system_roms(void)
                 memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, 22);
             }
         }
+        iec_if.effectuate_settings();
         delete[] temp;
     }
 
@@ -936,10 +954,28 @@ void C64::init_system_roms(void)
         uint8_t *temp = new uint8_t[8192];
         flash->read_image(FLASH_ID_KERNAL_ROM, temp, 8192);
         enable_kernal(temp, cfg->get_value(CFG_C64_FASTRESET));
+#ifndef RECOVERYAPP
+#ifndef NO_FILE_ACCESS
+        iec_if.effectuate_settings();
+#endif
+#endif
         delete[] temp;
     } else {
         disable_kernal();
     }
+#endif
+}
+
+void C64::set_kernal_device_id(uint8_t bus_id)
+{
+#if U64
+    uint8_t *kernal = (uint8_t *)U64_KERNAL_BASE; // this should be a function
+    if (cfg->get_value(CFG_C64_ALT_KERN) > 1) {
+        kernal[0x1F80] = (uint8_t)bus_id;
+    }
+#else
+    uint8_t *kernal = (uint8_t *) C64_KERNAL_BASE;
+    kernal[2*0x1F80 + 1] = (uint8_t)bus_id;
 #endif
 }
 
@@ -948,6 +984,8 @@ void C64::init_system_roms(void)
  */
 void C64::unfreeze()
 {
+    if (!isFrozen)
+        return;
 
     if (!phi2_present())
         return;
@@ -992,7 +1030,7 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
 
     if ((def != 0) || startLater) { // special cart
         // C64_BUS_BRIDGE   = 0; // Quiet mode  (to hear the SID difference, let's not set this register now)
-        C64_BUS_INTERNAL = 7; // All ON
+        C64_BUS_INTERNAL = 15; // All ON
         C64_BUS_EXTERNAL = 0; // All OFF
         // these registers will be set back to the correct value upon a reset interrupt, that calls u64_configurator.effectuate_settings()
     }
@@ -1031,15 +1069,12 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
     }
 
     isFrozen = false;
+    backupIsValid = false;
 }
 
 Screen *C64::getScreen(void)
 {
-    /*
-     if (!screen)
-     screen = new Screen_MemMappedCharMatrix(C64_SCREEN, C64_COLORRAM, 40, 25);
-     */
-    screen->clear();
+    //screen->clear();
     return screen;
 }
 
@@ -1157,29 +1192,32 @@ void C64::enable_kernal(uint8_t *rom, bool fastreset)
     if (fastreset && !memcmp((void *) (rom+0x1d6c), (void *) fastresetOrg, sizeof(fastresetOrg)))
         memcpy((void *) (rom+0x1d6c), (void *) fastresetPatch, 22);
 
-    if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
-        memcpy((void *)U64_KERNAL_BASE, rom, 8192); // as simple as that
-    } else { // the good old way
-        C64_KERNAL_ENABLE = 1;
-        uint8_t *src = rom;
-        uint8_t *dst = (uint8_t *) (C64_KERNAL_BASE + 1);
-        for (int i = 0; i < 8192; i++) {
-            *(dst) = *(src++);
-            dst += 2;
-        }
+#if U64
+
+    memcpy((void *)U64_KERNAL_BASE, rom, 8192); // as simple as that
+
+#else  // the good old way
+
+    C64_KERNAL_ENABLE = 1;
+    uint8_t *src = rom;
+    uint8_t *dst = (uint8_t *) (C64_KERNAL_BASE + 1);
+    for (int i = 0; i < 8192; i++) {
+        *(dst) = *(src++);
+        dst += 2;
     }
+#endif
 }
 
 void C64::disable_kernal()
 {
     C64_KERNAL_ENABLE = 0;
 
-    if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
-    	uint8_t* kernal = (uint8_t *)U64_KERNAL_BASE;
-        flash->read_image(FLASH_ID_ORIG_KERNAL, (uint8_t *)U64_KERNAL_BASE, 8192);
-        if (cfg->get_value(CFG_C64_FASTRESET) && !memcmp((void *) (kernal+0x1d6c), (void *) fastresetOrg, sizeof(fastresetOrg)))
-            memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, 22);
-    }
+#if U64
+    uint8_t* kernal = (uint8_t *)U64_KERNAL_BASE;
+    flash->read_image(FLASH_ID_ORIG_KERNAL, (uint8_t *)U64_KERNAL_BASE, 8192);
+    if (cfg->get_value(CFG_C64_FASTRESET) && !memcmp((void *) (kernal+0x1d6c), (void *) fastresetOrg, sizeof(fastresetOrg)))
+        memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, 22);
+#endif
 }
 
 void C64::init_cartridge()
@@ -1285,20 +1323,20 @@ bool C64 :: ConfigureU64SystemBus(void)
     case 0: // Automatic: If external cartridge is present, switch entire bus to external
         if (ext_cart) {
             internal = 0;
-            external = 7;
+            external = 15;
         } else {
-            internal = 7;
+            internal = 15;
             external = 0;
         }
         break;
     case 1: // Internal: Force all internal resources
-        internal = 7;
+        internal = 15;
         external = 0;
         ext_cart = false;
         break;
     case 2: // External: Force all external resources
         internal = 0;
-        external = 7;
+        external = 15;
         break;
 
     case 3: // Manual: Take settings from other config items
@@ -1306,31 +1344,31 @@ bool C64 :: ConfigureU64SystemBus(void)
 
         switch (cfg->get_value(CFG_BUS_SHARING_ROM)) {
         case 0: // Internal
-            internal |= 0x02;
+            internal |= 0x04;
             break;
         case 1: // External
-            external |= 0x02;
+            external |= 0x04;
             break;
         case 2: // Both
-            internal |= 0x02;
-            external |= 0x02;
+            internal |= 0x04;
+            external |= 0x04;
             break;
         }
 
         switch (cfg->get_value(CFG_BUS_SHARING_IRQ)) {
         case 0: // Internal
-            internal |= 0x04;
+            internal |= 0x08;
             break;
         case 1: // External
-            external |= 0x04;
+            external |= 0x08;
             break;
         case 2: // Both
-            internal |= 0x04;
-            external |= 0x04;
+            internal |= 0x08;
+            external |= 0x08;
             break;
         }
 
-        switch (cfg->get_value(CFG_BUS_SHARING_IO)) {
+        switch (cfg->get_value(CFG_BUS_SHARING_IO1)) {
         case 0: // Internal
             internal |= 0x01;
             break;
@@ -1343,6 +1381,18 @@ bool C64 :: ConfigureU64SystemBus(void)
             break;
         }
 
+        switch (cfg->get_value(CFG_BUS_SHARING_IO2)) {
+        case 0: // Internal
+            internal |= 0x02;
+            break;
+        case 1: // External
+            external |= 0x02;
+            break;
+        case 2: // Both
+            internal |= 0x02;
+            external |= 0x02;
+            break;
+        }
     }
 
     C64_BUS_INTERNAL = internal;

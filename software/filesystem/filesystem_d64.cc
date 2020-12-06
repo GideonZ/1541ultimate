@@ -5,238 +5,182 @@
  *      Author: Gideon
  */
 
+#define SS_DEBUG 1
+
 #include "filesystem_d64.h"
+#include "side_sectors.h"
 #include "pattern.h"
-#include "filemanager.h"
+#include "cbmname.h"
+#include "path.h"
+#include "rtc.h"
 #include <ctype.h>
 
 /*********************************************************************/
 /* D64/D71/D81 File System implementation                            */
 /*********************************************************************/
 
-FileSystemD64 :: FileSystemD64(Partition *p) : FileSystem(p)
+FileSystemCBM::FileSystemCBM(Partition *p, bool writable, const int *lay) :
+        FileSystem(p)
 {
     uint32_t sectors;
-    image_mode = 0;
     current_sector = -1;
     dirty = 0;
+    this->writable = writable;
 
-    if(p->ioctl(GET_SECTOR_COUNT, &sectors) == RES_OK) {
-        if(sectors >= 1366) // D71
-            ++image_mode;
-        if(sectors >= 3200) // D81
-            ++image_mode;
-    }
+    p->ioctl(GET_SECTOR_COUNT, &num_sectors);
+    root_dirty = false;
+    root_valid = false;
+    layout = lay;
 
-    num_sectors = sectors;
-
-    bam_dirty = false;
-    bam_valid = false;
-    if(p->read(bam_buffer, get_root_sector(), 1) == RES_OK) {
-        bam_valid = true;
-    }
-
+    init();
 }
 
-FileSystemD64 :: ~FileSystemD64()
+FileSystemCBM::~FileSystemCBM()
 {
 }
 
-int FileSystemD64 :: get_abs_sector(int track, int sector)
+bool FileSystemCBM::is_writable()
 {
-    int result = 0;
+    return writable;
+}
 
-    if(track <= 0) {
+void FileSystemCBM::set_volume_name(const char *name, uint8_t *bam_name, const char *dos)
+{
+    for (int t = 0; t < 27; t++) {
+        bam_name[t] = 0xA0;
+    }
+    bam_name[21] = dos[0];
+    bam_name[22] = dos[1];
+
+    char c;
+    int b;
+    for (int t = 0, b = 0; t < 27; t++) {
+        c = name[b++];
+        if (!c)
+            break;
+        c = toupper(c);
+        if (c == ',') {
+            t = 17;
+            continue;
+        }
+        bam_name[t] = (uint8_t) c;
+    }
+}
+
+
+int FileSystemCBM::get_abs_sector(int track, int sector)
+{
+    int result = sector;
+    //printf("T/S %d/%d => ", track, sector);
+
+    if (track <= 0) {
         return -1;
     }
 
     --track;
 
-    if (image_mode > 1) {
-    	// printf("T/S:%d:%d => ", track, sector);
-    	if(sector >= 40) {
-            result = -1;
-        } else {
-			result = (track * 40) + sector;
+    const int *m = layout;
+    do {
+        if (m[0] < 1) {
+            result += (track * m[1]);
+            break;
         }
-		if (result >= num_sectors) {
-            result = -1;
+        if (track >= m[0]) { // spans entire region
+            result += (m[0] * m[1]);
+            track -= m[0];
         }
-        // printf("%d\n", result);
-        return result;
-    }
+        else {
+            result += (track * m[1]);
+            break;
+        }
+        m += 2;
+    } while (1);
 
-    if (image_mode == 1) {
-        if(track >= 35) {
-            result = 683;
-            track -= 35;
-        }
-    }
-
-    if(track >= 17) {
-        result += 17 * 21;
-        track -= 17;
-    } else {
-        if (sector >= 21) {
-            return -1;
-        }
-        return result + (track * 21) + sector;
-    }
-    if(track >= 7) {
-        result += 7 * 19;
-        track -= 7;
-    } else {
-        if (sector >= 19) {
-            return -1;
-        }
-        return result + (track * 19) + sector;
-    }
-    if(track >= 6) {
-        result += 6 * 18;
-        track -= 6;
-    } else {
-        if (sector >= 18) {
-            return -1;
-        }
-        return result + (track * 18) + sector;
-    }
-
-    if (sector >= 17) {
+    if (sector >= m[1]) {
         return -1;
     }
-
-    result += (track * 17) + sector;
     if (result >= num_sectors) {
         return -1;
     }
+    //printf("%d :", result);
     return result;
 }
 
-bool FileSystemD64 :: get_track_sector(int abs, int &track, int &sector)
+bool FileSystemCBM::get_track_sector(int abs, int &track, int &sector)
 {
-	if(abs < 0 || abs >= num_sectors)
-		return false;
-
-
-	if (image_mode > 1) {
-        track = (abs / 40);
-        sector = abs - (track * 40);
-        track ++;
-        return true;
-    }
+    if (abs < 0 || abs >= num_sectors)
+        return false;
 
     track = 1;
+    int t;
+    const int *m = layout;
 
-    if (image_mode == 1) {
-        if (abs >= 683) {
-            track = 36;
-            abs -= 683;
-        } else {
-            track = 1;
+    do {
+        t = abs / m[1]; // how many could we span?
+        if (m[0] < 1) { // last section, special case; all remaining sectors go there
+            track += t;
+            abs -= t * m[1];
+            break;
         }
-    }
+        if (abs >= (m[0] * m[1])) { // spans entire region
+            track += m[0]; // maximize the number of tracks for this region
+            abs -= m[0] * m[1];
+            m += 2; // next region
+        } else {
+            track += t;
+            abs -= t * m[1];
+            break;
+        }
+    } while (1);
 
-    if(abs >= (17*21)) {
-        track += 17;
-        abs -= (17*21);
-    } else {
-        int t = (abs / 21);
-        sector = (abs - t*21);
-        track += t;
-        return true;
-    }
-
-    if(abs >= (7*19)) {
-        track += 7;
-        abs -= (7*19);
-    } else {
-        int t = (abs / 19);
-        sector = (abs - t*19);
-        track += t;
-        return true;
-    }
-
-    if(abs >= (6*18)) {
-        track += 6;
-        abs -= (6*18);
-    } else {
-        int t = (abs / 18);
-        sector = (abs - t*18);
-        track += t;
-        return true;
-    }
-
-    int t = (abs / 17);
-    sector = (abs - t*17);
-    track += t;
+    sector = abs;
     return true;
 }
 
-int FileSystemD64 :: get_root_sector(void)
+bool FileSystemCBM::modify_allocation_bit(uint8_t *fr, uint8_t *bits, int sector, bool alloc)
 {
-    if(image_mode > 1)
-        return get_abs_sector(40, 0);
+    int n = (sector >> 3);
+    int b = (sector & 7);
 
-    return get_abs_sector(18, 0);
-}
-
-/*
-bool FileSystemD64 :: is_free(int abs)
-{
-    if(image_mode > 1)
-        return true; // we don't understand D71/D81 bit allocation maps yet
-
-
-
-}
-*/
-
-bool FileSystemD64 :: allocate_sector_on_track(int track, int &sector)
-{
-    uint8_t k,b,*m;
-
-    if(bam_buffer[4*track]) {
-        m = &bam_buffer[4*track];
-        for(int i=0;i<21;i++) {
-            k = (i >> 3);
-            b = i & 7;
-            if ((m[k+1] >> b) & 1) {
-                m[k+1] &= ~(1 << b);
-                --(*m);
-                sector = i;
-                bam_dirty = true;
-                return true;
-            }
+    if (!alloc) { // do free
+        if (bits[n] & (1 << b)) { // already free?!
+            return false;
         }
-        //dump_hex(bam_buffer, 4*36);
-
-        // error!! bam indicated free sector, but there is none.
-        bam_buffer[4*track] = 0;
-        bam_dirty = true;
+        bits[n] |= (1 << b); // set bit
+        if (fr)
+            (*fr)++; // add one free block
+    } else { // do alloc
+        if (!(bits[n] & (1 << b))) { // already allocated?!
+            return false;
+        }
+        bits[n] &= ~(1 << b); // set bit
+        if ((fr) && (*fr))
+            (*fr)--; // subtract one free block
     }
-    return false;
+    return true;
 }
 
-bool FileSystemD64 :: get_next_free_sector(int &track, int &sector)
+bool FileSystemCBM::get_next_free_sector(int &track, int &sector)
 {
-    if(image_mode > 1)
-        return false; // we don't understand D71/D81 bit allocation maps yet
+    int mt, ms;
+    get_track_sector(num_sectors - 1, mt, ms);
 
     if (track == 0) {
-        track = 17;
+        track = root_track - 1;
     }
 
-    if(allocate_sector_on_track(track, sector))
+    if (allocate_sector_on_track(track, sector)) {
         return true;
+    }
 
-    for(int i=17;i>=1;i--) {
-        if(allocate_sector_on_track(i, sector)) {
+    for (int i = root_track - 1; i >= 1; i--) {
+        if (allocate_sector_on_track(i, sector)) {
             track = i;
             return true;
         }
     }
-    for(int i=19;i<=35;i++) {
-        if(allocate_sector_on_track(i, sector)) {
+    for (int i = root_track + 1; i <= mt; i++) {
+        if (allocate_sector_on_track(i, sector)) {
             track = i;
             return true;
         }
@@ -244,510 +188,1479 @@ bool FileSystemD64 :: get_next_free_sector(int &track, int &sector)
     return false;
 }
 
-FRESULT FileSystemD64 :: move_window(int abs)
+FRESULT FileSystemCBM::move_window(int abs)
 {
-	DRESULT res;
+    DRESULT res;
     if (abs < 0) {
         // usually because of a bad link passed to get_abs_sector().
         return FR_INT_ERR;
     }
 
-    if(current_sector != abs) {
-    	if(dirty) {
-    		res = prt->write(sect_buffer, current_sector, 1);
-			if(res != RES_OK)
-				return FR_DISK_ERR;
-    	}
-    	res = prt->read(sect_buffer, abs, 1);
-        if(res == RES_OK) {
+    if (current_sector != abs) {
+        if (dirty) {
+            res = prt->write(sect_buffer, current_sector, 1);
+            if (res != RES_OK)
+                return FR_DISK_ERR;
+        }
+        res = prt->read(sect_buffer, abs, 1);
+        if (res == RES_OK) {
             current_sector = abs;
-        } else {
-        	return FR_DISK_ERR;
+            dirty = 0;
+        }
+        else {
+            return FR_DISK_ERR;
         }
     }
     return FR_OK;
 }
 
-
-
 // check if file system is present on this partition
-bool FileSystemD64 :: check(Partition *p)
+bool FileSystemCBM::check(Partition *p)
 {
     return false;
 }
 
 // Initialize file system
-bool FileSystemD64 :: init(void)
+bool FileSystemCBM::init(void)
 {
     return true;
 }
 
-// Get number of free sectors on the file system
-FRESULT FileSystemD64 :: get_free (uint32_t*)
-{
-    return FR_DENIED; // not yet implemented
-}
-
 // Clean-up cached data
-FRESULT FileSystemD64 :: sync(void)
+FRESULT FileSystemCBM::sync(void)
 {
-    if(dirty) {
+    if (dirty) {
         DRESULT res = prt->write(sect_buffer, current_sector, 1);
-        if(res != RES_OK) {
+        if (res != RES_OK) {
             return FR_DISK_ERR;
         }
         dirty = 0;
     }
-    if (bam_dirty) {
-        DRESULT res = prt->write(bam_buffer, get_root_sector(), 1);
-        if(res != RES_OK) {
+    if (root_dirty) {
+        DRESULT res = prt->write(root_buffer, get_abs_sector(root_track, root_sector), 1);
+        if (res != RES_OK) {
             return FR_DISK_ERR;
         }
-        bam_dirty = false;
+        root_dirty = false;
     }
     return FR_OK;
 }
 
-// Opens directory (creates dir object, NULL = root)
-FRESULT FileSystemD64 :: dir_open(const char *path, Directory **dir, FileInfo *info)
+void FileSystemCBM::get_volume_name(uint8_t *sector, char *buffer, int buf_len, bool isRoot)
 {
-//    if(info) { // can only get root directory, D64 does not allow sub directories
-//        return NULL;
-//    }
+    int offset = isRoot ? volume_name_offset : 4; // FIXME, hard coded now
+    /* Volume name extraction */
+    for (int i = 0; i < 24; i++) {
+        if (i < buf_len) {
+            char c = char(sector[offset + i]);
+            buffer[i] = c;
+        }
+    }
+}
 
-	DirInD64 *dd = new DirInD64(this);
-    *dir = new Directory(this, dd);
-	FRESULT res = dd->open(info);
-	if(res == FR_OK) {
-		return FR_OK;
-	}
+// Opens directory (creates dir object, NULL = root)
+FRESULT FileSystemCBM::dir_open(const char *path, Directory **dir) // Opens directory
+{
+    DirInCBM *dd;
+
+    PathInfo pi(this);
+    pi.init(path);
+    PathStatus_t pres = walk_path(pi);
+    if (pres == e_EntryFound) {
+        FileInfo *info = pi.getLastInfo();
+        dd = new DirInCBM(this, info->cluster);
+    } else {
+        return FR_NO_PATH;
+    }
+
+    FRESULT res = dd->open();
+    if (res == FR_OK) {
+        *dir = dd;
+        return FR_OK;
+    }
     delete dd;
-    delete *dir;
     return res;
 }
 
-// Closes (and destructs dir object)
-void FileSystemD64 :: dir_close(Directory *d)
+// Creates subdirectory
+FRESULT FileSystemCBM::dir_create(const char *path)
 {
-    DirInD64 *dd = (DirInD64 *)d->handle;
-    dd->close();
-    delete dd;
-    delete d;
-}
+    PathInfo pi(this);
+    pi.init(path);
+    PathStatus_t ps = walk_path(pi);
+    if (ps == e_DirNotFound) {
+        return FR_NO_PATH;
+    }
+    if (ps == e_EntryFound) {
+        return FR_EXIST;
+    }
+    const char *nameToCreate = pi.getFileName();
+    FileInfo *parent = pi.getLastInfo();
 
-// reads next entry from dir
-FRESULT FileSystemD64 :: dir_read(Directory *d, FileInfo *f)
-{
-    DirInD64 *dd = (DirInD64 *)d->handle;
-    return dd->read(f);
-}
+    FRESULT fres;
+    DirInCBM cbmdir(this, parent->cluster);
 
-FRESULT FileSystemD64 :: dir_create_file(Directory *d, FileInfo *info)
-{
-    DirInD64 *dd = (DirInD64 *)d->handle;
-    return dd->create(info);
-}
-
-// functions for reading and writing files
-// Opens file (creates file object)
-FRESULT FileSystemD64 :: file_open(const char *path, Directory *dir, const char *filename, uint8_t flags, File **file)
-{
-    FileInfo info(24);
-
-    if (flags & FA_CREATE_NEW) {
-        info.fs = this;
-        strncpy(info.lfname, filename, info.lfsize);
-        get_extension(filename, info.extension);
-        set_extension(info.lfname, "", info.lfsize);
-
-        FRESULT fres = dir_create_file(dir, &info);
-        if (fres != FR_OK) {
-            dir_close(dir);
-            return fres;
-        }
-    } else {
-        // Seek requested file for reading
-        do {
-            FRESULT fres = dir_read(dir, &info);
-            if (fres != FR_OK) {
-                dir_close(dir);
-                return FR_NO_FILE;
-            }
-            if (info.attrib & AM_VOL)
-                continue;
-            if (pattern_match(filename, info.lfname)) {
-                break;
-            }
-        } while(1);
+    // Create a directory entry in the parent
+    fres = cbmdir.create(nameToCreate, true);
+    if (fres != FR_OK) {
+        return fres;
     }
 
-	int dir_t = ((DirInD64 *)dir->handle)->curr_t;
-	int dir_s = ((DirInD64 *)dir->handle)->curr_s;
-	int dir_idx = (((DirInD64 *)dir->handle)->idx) % 8; // GZW removed -1 here, as indices are 0 based
-	dir_close(dir);
+    // Now create the directory itself, which is basically a file
 
+    int dir_t = cbmdir.curr_t;
+    int dir_s = cbmdir.curr_s;
+    int dir_idx = cbmdir.idx % 8;
+    FileInCBM *ff = new FileInCBM(this, cbmdir.get_pointer(), dir_t, dir_s, dir_idx);
 
-	FileInD64 *ff = new FileInD64(this);
-	*file = new File(this, ff);
-	
-	FRESULT res;
-	
-	if (!strcasecmp (info.extension, "CVT")) {
-	    res = ff->openCVT(&info, flags, dir_t, dir_s, dir_idx);
-            //res = ff->open(&info, flags);
-	} else {
-	    res = ff->open(&info, flags, dir_t, dir_s, dir_idx);
-	}
-	if(res == FR_OK)
-	    return res;
+    uint32_t tr;
+    fres = ff->open(FA_CREATE_NEW);
+    if (fres != FR_OK) {
+        delete ff;
+        return fres;
+    }
+    uint8_t *blk = new uint8_t[254];
+    memset(blk, 0, 32);
 
-	delete ff;
-	delete *file;
-	return res;
+    // Create directory header block
+
+    blk[0] = 0x48;
+    get_volume_name(root_buffer, (char *)(blk+2), 27, true); // get stuff like dos & disk ID
+    memset(blk + 2, 0xA0, 16); // clear name part
+    fat_to_petscii(nameToCreate, false, (char *)(blk + 2), 16, false); // overwrite with dir name
+    fres = ff->write(blk, 30, &tr);
+
+    if (fres == FR_OK) {
+        memset(blk, 0, 224);
+        // now that we have written the first bytes, the allocated sector is known, we need this for a reference to ourselves
+        blk[0] = (uint8_t) ff->current_track;
+        blk[1] = (uint8_t) ff->current_sector;
+        blk[2] = (uint8_t) cbmdir.header_track;
+        blk[3] = (uint8_t) cbmdir.header_sector;
+        blk[4] = (uint8_t) dir_t;
+        blk[5] = (uint8_t) dir_s;
+        blk[6] = (uint8_t) dir_idx;
+        // Write out remainder of directory Header block
+        fres = ff->write(blk, 254 - 30, &tr);
+    }
+
+    if (fres == FR_OK) {
+        // Write out empty directory (bunch of zeros)
+        memset(blk, 0, 254);
+        fres = ff->write(blk, 254, &tr);
+    }
+    delete[] blk;
+
+    fres = ff->close();
+    return fres;
 }
 
-// Closes file (and destructs file object)
-void FileSystemD64::file_close(File *f)
+FRESULT FileSystemCBM::find_file(const char *filename, DirInCBM *dir, FileInfo *info)
 {
-    FileInD64 *ff = (FileInD64 *)f->handle;
-    ff->close();
+    // Easy peasy, for single directories. When we need subdirectories,
+    // we simply parse the path using the Path object and search the each element.
+
+    if (filename[0] == '/') {
+        filename++;
+    }
+    CbmFileName cbm(filename);
+
+    dir->open(); // Just root
+    FRESULT res = FR_NOT_READY;
+    do {
+        res = dir->get_entry(*info);
+        if (res != FR_OK) {
+            break;
+        }
+        if(info->attrib & AM_VOL) {
+            continue;
+        }
+        if (info->match_to_pattern(cbm)) {
+            //printf("Found '%s' -> '%s'!\n", filename, info->lfname);
+            break;
+        }
+    } while (1);
+
+    dir->close();
+    return res;
+}
+
+FRESULT FileSystemCBM::file_open(const char *pathname, uint8_t flags, File **file)
+{
+    FileInfo info(24);
+    DirInCBM *dd;
+    mstring fn;
+    bool create = false;
+    bool clear = false;
+    *file = NULL;
+
+    PathInfo pi(this);
+    pi.init(pathname);
+    pi.workPath.up(&fn); // just look for the parent dir
+
+    PathStatus_t pres = walk_path(pi);
+    if (pres != e_EntryFound) {
+        return FR_NO_PATH;
+    }
+    dd = new DirInCBM(this, pi.getLastInfo()->cluster);
+
+    FRESULT fres = find_file(fn.c_str(), dd, &info);
+    if (fres == FR_NO_FILE) {
+        create = (flags & (FA_CREATE_NEW | FA_CREATE_ALWAYS | FA_OPEN_ALWAYS));
+        if (!create) {
+            return FR_NO_FILE;
+        }
+    } else if (fres == FR_OK) {
+        if (flags & FA_CREATE_NEW) {
+            delete dd;
+            return FR_EXIST;
+        }
+        clear = (flags & FA_CREATE_ALWAYS);
+    } else {
+        delete dd;
+        return fres;
+    }
+
+    if (create) {
+        FRESULT fres = dd->create(fn.c_str(), false);
+        if (fres != FR_OK) {
+            delete dd;
+            return fres;
+        }
+    }
+
+    int dir_t = dd->curr_t;
+    int dir_s = dd->curr_s;
+    int dir_idx = dd->idx % 8;
+    DirEntryCBM *dir_entry = dd->get_pointer();
+
+    if (clear) {
+        DirEntryCBM de_copy = *dir_entry; // make copy
+        dir_entry->data_sector = 0;
+        dir_entry->data_track = 0;
+        dir_entry->aux_sector = 0;
+        dir_entry->aux_track = 0;
+        dir_entry->record_size = 0;
+        dirty = true;
+
+        deallocate_chain(de_copy.data_track, de_copy.data_sector, dd->visited); // file chain
+        deallocate_chain(de_copy.aux_track, de_copy.aux_sector, dd->visited); // side sector chain
+        sync();
+
+        move_window(get_abs_sector(dir_t, dir_s)); // make *dir entry valid again
+    }
+
+    // Okay, finally done. We have a dir entry, either of a new file or of an existing file.
+    // If the create_always flag was set, the file content has been deleted, and the pointer
+    // was reset, just like when a new entry was created. We can now attach a file object
+    // that points to this dir-entry.
+
+    FileInCBM *ff = new FileInCBM(this, dir_entry, dir_t, dir_s, dir_idx);
+
+    delete dd; // after this dir_entry is no longer valid
+
+    *file = ff;
+    FRESULT res = ff->open(flags);
+
+    if (res == FR_OK) {
+        return res;
+    }
+
     delete ff;
-    delete f;
+    delete *file;
+    *file = NULL;
+    return res;
 }
 
-FRESULT FileSystemD64::file_read(File *f, void *buffer, uint32_t len, uint32_t *bytes_read)
+FRESULT FileSystemCBM::file_rename(const char *old_name, const char *new_name)
 {
-	FileInD64 *ff = (FileInD64 *)f->handle;
-    return ff->read(buffer, len, bytes_read);
+    FileInfo info(20);
+    DirInCBM *dd = new DirInCBM(this);
+    FRESULT res = find_file(old_name, dd, &info);
+
+    if (new_name[0] == '/')
+        new_name++;
+
+    CbmFileName cbm;
+
+    if (res == FR_OK) {
+        DirEntryCBM *p = dd->get_pointer();
+        if ((p->std_fileType & 0x07) == 0x06) {
+            cbm.init_dir(new_name);
+        } else {
+            cbm.init(new_name);
+        }
+
+        p->std_fileType = (p->std_fileType & 0xF8) | cbm.getType(); // save upper bits
+        memset(p->name, 0xA0, 16);
+        memcpy(p->name, cbm.getName(), cbm.getLength());
+        dirty = 1;
+        sync();
+    }
+
+    delete dd;
+    return res;
 }
 
-FRESULT FileSystemD64::file_write(File *f, const void *buffer, uint32_t len, uint32_t *bytes_written)
+FRESULT FileSystemCBM::deallocate_chain(uint8_t track, uint8_t sector, uint8_t *visited)
 {
-    FileInD64 *ff = (FileInD64 *)f->handle;
-    return ff->write(buffer, len, bytes_written);
+    FRESULT res = FR_OK;
+    while (track) {
+        int absolute = get_abs_sector(track, sector);
+        if (absolute > num_sectors) {
+            res = FR_DISK_ERR;
+            break;
+        }
+        if (absolute < 0) {
+            res = FR_INT_ERR;
+            break;
+        }
+        if (visited[absolute]) {
+            res = FR_LOOP_DETECTED;
+            break;
+        }
+        visited[absolute] = 1;
+
+        res = move_window(absolute);
+        if (res == FR_OK) {
+            bool ok = set_sector_allocation(track, sector, false);
+            track = sect_buffer[0];
+            sector = sect_buffer[1];
+        }
+        else {
+            break;
+        }
+    }
+    return res;
 }
 
-FRESULT FileSystemD64::file_seek(File *f, uint32_t pos)
+FRESULT FileSystemCBM::file_delete(const char *path)
 {
-    FileInD64 *ff = (FileInD64 *)f->handle;
-    return ff->seek(pos);
+    PathInfo pi(this);
+    pi.init(path);
+    PathStatus_t pres = walk_path(pi);
+    if (pres == e_DirNotFound) {
+        return FR_NO_PATH;
+    }
+    if (pres != e_EntryFound) {
+        return FR_NO_FILE;
+    }
+    const char *filename = pi.getFileName();
+
+    DirInCBM *dd = new DirInCBM(this, pi.getParentInfo()->cluster);
+    FileInfo info(20);
+    FRESULT res = find_file(filename, dd, &info);
+
+    // Deleting directories is not yet implemented, we should check here if the dir is empty.
+    if (info.attrib & AM_DIR) {
+        return FR_DENIED;
+    }
+    if (res == FR_OK) {
+        DirEntryCBM *p = dd->get_pointer();
+        p->std_fileType = 0x00;
+        dirty = 1;
+        // Saving information, since moving the window makes *p invalid!
+        int file_track = p->data_track;
+        int file_sector = p->data_sector;
+        int side_track = p->aux_track;
+        int side_sector = p->aux_sector;
+        deallocate_chain(file_track, file_sector, dd->visited); // file chain
+        deallocate_chain(side_track, side_sector, dd->visited); // side sector chain
+        sync();
+    }
+    delete dd;
+    return res;
 }
 
-/*
-void FileSystemD64 :: collect_file_info(File *f, FileInfo *inf)
+FRESULT FileSystemCBM::read_sector(uint8_t *buffer, int track, int sector)
 {
-    FileInD64 *ff = (FileInD64 *)f->handle;
-    ff->collect_info(inf);
+    int abs_sect = get_abs_sector(track, sector);
+    if (abs_sect < 0) {
+        return FR_INVALID_PARAMETER;
+    }
+    DRESULT res = prt->read(buffer, abs_sect, 1);
+    if (res != RES_OK) {
+        return FR_DISK_ERR;
+    }
+    return FR_OK;
 }
-*/
+
+FRESULT FileSystemCBM::write_sector(uint8_t *buffer, int track, int sector)
+{
+    int abs_sect = get_abs_sector(track, sector);
+    if (abs_sect < 0) {
+        return FR_INVALID_PARAMETER;
+    }
+    DRESULT res = prt->write(buffer, abs_sect, 1);
+    if (res != RES_OK) {
+        return FR_DISK_ERR;
+    }
+    return FR_OK;
+}
+
+
+/**************************************************************************************
+ * Disk Type Specifics
+ **************************************************************************************/
+bool FileSystemD64::init(void)
+{
+    root_track = 18;
+    root_sector = 0;
+    dir_track = 18;
+    dir_sector = 1;
+    volume_name_offset = 144;
+
+    if (prt->read(root_buffer, get_abs_sector(root_track, root_sector), 1) == RES_OK) {
+        root_valid = true;
+    }
+    return root_valid;
+}
+
+bool FileSystemD71::init(void)
+{
+    root_track = 18;
+    root_sector = 0;
+    dir_track = 18;
+    dir_sector = 1;
+    volume_name_offset = 144;
+
+    if (prt->read(root_buffer, get_abs_sector(root_track, root_sector), 1) == RES_OK) {
+        root_valid = true;
+    }
+    return root_valid;
+}
+
+bool FileSystemD81::init(void)
+{
+    root_track = 40;
+    root_sector = 0;
+    dir_track = 40;
+    dir_sector = 3;
+    volume_name_offset = 4;
+
+    if (prt->read(root_buffer, get_abs_sector(root_track, root_sector), 1) == RES_OK) {
+        root_valid = true;
+    }
+
+    bam_dirty = false;
+    if (prt->read(bam_buffer, get_abs_sector(40, 1), 2) == RES_OK) {
+        bam_valid = true;
+    }
+    return root_valid && bam_valid;
+}
+
+bool FileSystemDNP::init(void)
+{
+    root_track = 1;
+    root_sector = 1;
+    dir_track = -1;
+    dir_sector = -1;
+
+    volume_name_offset = 4;
+
+    if (prt->read(root_buffer, get_abs_sector(root_track, root_sector), 1) == RES_OK) {
+        root_valid = true;
+    }
+
+    bam_dirty = 0;
+    if (prt->read(bam_buffer, get_abs_sector(1, 2), 32) == RES_OK) {
+        bam_valid = true;
+    }
+
+    return root_valid && bam_valid;
+}
+
+FRESULT FileSystemD64::format(const char *name)
+{
+    memset(root_buffer, 0, 256);
+
+    root_buffer[0] = dir_track;
+    root_buffer[1] = dir_sector;
+    root_buffer[2] = 0x41; // Dos version
+    root_buffer[3] = 0x20; // single sided
+
+    set_volume_name(name, root_buffer + 144, "2A");
+    root_dirty = true;
+
+    const int standard_num_sectors = 683;
+
+    // free all sectors
+    for(int i=0; i < standard_num_sectors; i++) {
+        int t, s;
+        get_track_sector(i, t, s);
+        set_sector_allocation(t, s, false);
+    }
+
+    // allocate the sectors for bam and first directory block
+    set_sector_allocation(root_track, root_sector, true);
+    set_sector_allocation(dir_track, dir_sector, true);
+
+    // create empty directory block
+    current_sector = get_abs_sector(dir_track, dir_sector);
+    memset(sect_buffer, 0, 256);
+    sect_buffer[1] = 0xFF;
+    dirty = 1;
+
+    return sync(); // write bam and first dir sector
+}
+
+
+FRESULT FileSystemD71::format(const char *name)
+{
+    memset(root_buffer, 0, 256);
+    memset(bam2_buffer, 0, 256);
+
+    root_buffer[0] = dir_track;
+    root_buffer[1] = dir_sector;
+    root_buffer[2] = 0x41; // Dos version
+    root_buffer[3] = 0x80; // double sided
+
+    set_volume_name(name, root_buffer + 144, "2A");
+
+    const int standard_num_sectors = 683*2;
+
+    // free all sectors
+    for(int i=0; i < standard_num_sectors; i++) {
+        int t, s;
+        get_track_sector(i, t, s);
+        set_sector_allocation(t, s, false);
+    }
+
+    // allocate the two sectors for bam and first directory block
+    set_sector_allocation(root_track, root_sector, true);
+    set_sector_allocation(root_track, root_sector+1, true);
+    set_sector_allocation(dir_track, dir_sector, true);
+
+    // mark sectors as modified
+    root_dirty = true;
+    bam2_dirty = true;
+
+    // create empty directory block
+    current_sector = get_abs_sector(dir_track, dir_sector);
+    memset(sect_buffer, 0, 256);
+    sect_buffer[1] = 0xFF;
+    dirty = 1;
+
+    return sync(); // write bam and first dir sector
+}
+
+FRESULT FileSystemD81::format(const char *name)
+{
+    memset(root_buffer, 0, 256);
+    memset(bam_buffer, 0, 512);
+
+    root_buffer[0] = dir_track;
+    root_buffer[1] = dir_sector;
+    root_buffer[2] = 0x44; // Dos version
+
+    set_volume_name(name, root_buffer + 4, "3D");
+    root_dirty = true;
+
+    const int standard_num_sectors = 3200;
+
+    // free all sectors
+    for(int i=0; i < standard_num_sectors; i++) {
+        int t, s;
+        get_track_sector(i, t, s);
+        set_sector_allocation(t, s, false);
+    }
+    // allocate the three sectors for bam and first directory block
+    set_sector_allocation(root_track, root_sector, true);
+    set_sector_allocation(root_track, root_sector+1, true);
+    set_sector_allocation(root_track, root_sector+2, true);
+    set_sector_allocation(dir_track, dir_sector, true);
+
+    // set bam header
+    bam_buffer[0] = root_track;
+    bam_buffer[1] = root_sector + 2;
+    bam_buffer[2] = 0x44; // dos
+    bam_buffer[3] = 0xBB;
+    bam_buffer[4] = root_buffer[22];
+    bam_buffer[5] = root_buffer[23];
+    bam_buffer[6] = 0xC0; // verify on
+    memcpy(bam_buffer + 256, bam_buffer, 6);
+    bam_buffer[256] = 0x00; // end of chain
+    bam_buffer[257] = 0xFF; // end of chain
+
+    // mark sectors as modified
+    bam_dirty = 1;
+
+    // create empty directory block
+    current_sector = get_abs_sector(dir_track, dir_sector);
+    memset(sect_buffer, 0, 256);
+    sect_buffer[1] = 0xFF;
+    dirty = 1;
+
+    return sync(); // write bam and first dir sector
+}
+
+FRESULT FileSystemDNP::format(const char *name)
+{
+    memset(root_buffer, 0, 256);
+    memset(bam_buffer, 0, 8192);
+
+    root_buffer[0] = 0x01; // Track to root directory
+    root_buffer[1] = 0x22; // Track to root directory
+    root_buffer[2] = 0x48; // Dos version 'H'
+    set_volume_name(name, root_buffer + 4, "1H");
+    root_buffer[32] = root_track; // reference to this dir header block
+    root_buffer[33] = root_sector; // reference to this dir header block
+    root_dirty = true;
+
+    // set bam header
+    bam_buffer[2] = 0x48; // dos
+    bam_buffer[3] = 0xB7;
+    bam_buffer[4] = root_buffer[22];
+    bam_buffer[5] = root_buffer[23];
+    bam_buffer[6] = 0xC0; // verify on
+    bam_buffer[7] = (uint8_t )((num_sectors + 255) / 256); // num tracks
+
+    int bam_bytes = num_sectors / 8;
+    bam_buffer[36] = 0x1F; // in total 32+3 blocks in use after format
+    for(int i=5; i < bam_bytes; i++) {
+        bam_buffer[32 + i] = 0xFF;
+    }
+    // In case it's not a multiple of 8
+    if (num_sectors & 7) {
+        uint8_t bb = (1 << (num_sectors & 7));
+        bam_buffer[32 + bam_bytes] = bb - 1;
+    }
+    // mark sectors as modified
+    bam_dirty = 0xFFFFFFFF;
+
+    // create empty directory block
+    current_sector = get_abs_sector(1, 34); // fixed location for root dir
+    memset(sect_buffer, 0, 256);
+    sect_buffer[1] = 0xFF;
+    dirty = 1;
+
+    return sync(); // write bam and first dir sector, and the root block
+}
+
+bool FileSystemD64::set_sector_allocation(int track, int sector, bool alloc)
+{
+    uint8_t *m = &root_buffer[4 * track];
+    bool success = modify_allocation_bit(m, m+1, sector, alloc);
+    root_dirty = success;
+    return success;
+}
+
+bool FileSystemD71::set_sector_allocation(int track, int sector, bool alloc)
+{
+    uint8_t *m, *fr;
+
+    if (track > 35) {
+        fr = &root_buffer[0xDD + (track - 36)];
+        m = &bam2_buffer[3 * (track - 36)];
+    }
+    else {
+        fr = &root_buffer[4 * track];
+        m = fr + 1;
+    }
+
+    bool success = modify_allocation_bit(fr, m, sector, alloc);
+    if (success) {
+        root_dirty = true;
+        if (track > 35) {
+            bam2_dirty = true;
+        }
+    }
+    return success;
+}
+
+bool FileSystemD81::set_sector_allocation(int track, int sector, bool alloc)
+{
+    uint8_t *m, *fr;
+
+    if (track > 40) {
+        fr = &bam_buffer[0x110 + 6 * (track - 41)];
+    }
+    else {
+        fr = &bam_buffer[0x10 + 6 * (track - 1)];
+    }
+    m = fr + 1;
+
+    bool success = modify_allocation_bit(fr, m, sector, alloc);
+    bam_dirty = success;
+    return success;
+}
+
+bool FileSystemDNP::set_sector_allocation(int track, int sector, bool alloc)
+{
+    int offset = track * 32;
+    uint8_t *m = &bam_buffer[offset]; // since track starts with 1, this bumps the header exactly
+    bool success = modify_allocation_bit(NULL, m, sector ^ 7, alloc); // the exor with 7 reverses the bits
+    if (success) {
+        bam_dirty |= (1 << (offset >> 8));
+    }
+    return success;
+}
+
+bool FileSystemD64::allocate_sector_on_track(int track, int &sector)
+{
+    uint8_t k, b, *m;
+
+    if (root_buffer[4 * track]) {
+        m = &root_buffer[4 * track];
+        for (int i = 0; i < 21; i++) {
+            k = (i >> 3);
+            b = i & 7;
+            if ((m[k + 1] >> b) & 1) {
+                m[k + 1] &= ~(1 << b);
+                --(*m);
+                sector = i;
+                root_dirty = true;
+                return true;
+            }
+        }
+
+        // error!! bam indicated free sector, but there is none.
+        root_buffer[4 * track] = 0;
+        root_dirty = true;
+    }
+    return false;
+}
+
+bool FileSystemD71::allocate_sector_on_track(int track, int &sector)
+{
+    uint8_t k, b, *m, *fr;
+
+    if (track > 35) {
+        fr = &root_buffer[0xDD + (track - 36)];
+        m = &bam2_buffer[3 * (track - 36)];
+    }
+    else {
+        fr = &root_buffer[4 * track];
+        m = fr + 1;
+    }
+
+    if (*fr) {
+        for (int i = 0; i < 21; i++) {
+            k = (i >> 3);
+            b = i & 7;
+            if ((m[k] >> b) & 1) {
+                m[k] &= ~(1 << b);
+                --(*fr);
+                sector = i;
+                root_dirty = true;
+                if (track > 35) {
+                    bam2_dirty = true;
+                }
+                return true;
+            }
+        }
+
+        // error!! bam indicated free sector, but there is none.
+        *fr = 0;
+        root_dirty = true;
+        if (track > 35) {
+            bam2_dirty = true;
+        }
+    }
+    return false;
+}
+
+bool FileSystemD81::allocate_sector_on_track(int track, int &sector)
+{
+    uint8_t k, b, *m, *fr;
+
+    if (track > 40) {
+        fr = &bam_buffer[0x110 + 6 * (track - 41)];
+    }
+    else {
+        fr = &bam_buffer[0x10 + 6 * (track - 1)];
+    }
+    m = fr + 1;
+
+    if (*fr) {
+        for (int i = 0; i < 40; i++) {
+            k = (i >> 3);
+            b = i & 7;
+            if ((m[k] >> b) & 1) {
+                m[k] &= ~(1 << b);
+                --(*fr);
+                sector = i;
+                bam_dirty = true;
+                return true;
+            }
+        }
+
+        // error!! bam indicated free sector, but there is none.
+        *fr = 0;
+        bam_dirty = true;
+    }
+    return false;
+}
+
+bool FileSystemD71::get_next_free_sector(int &track, int &sector)
+{
+    if (track == 0) {
+        track = root_track - 1;
+    }
+
+    if (allocate_sector_on_track(track, sector)) {
+        return true;
+    }
+
+    // First try Side 0, from directory downwards
+    for (int i = root_track - 1; i >= 1; i--) {
+        if (allocate_sector_on_track(i, sector)) {
+            track = i;
+            return true;
+        }
+    }
+
+    // then, try Side 1, from outer track to inner track
+    for (int i = 36; i <= 70; i++) {
+        if (i == 53)
+            i++;
+        if (allocate_sector_on_track(i, sector)) {
+            track = i;
+            return true;
+        }
+    }
+
+    // Then last try Side 0 again, from outer track back to directory
+    for (int i = 35; i > root_track; i++) {
+        if (allocate_sector_on_track(i, sector)) {
+            track = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool FileSystemDNP::get_next_free_sector(int &track, int &sector)
+{
+    int bam_bytes = num_sectors / 8;
+    if (!bam_valid) {
+        return false;
+    }
+
+    for(int i=0; i < bam_bytes; i++) {
+        uint8_t bb = bam_buffer[32 + i];
+        if (!bb)
+            continue;
+
+        uint8_t bm = 128;
+        for(int j=0; j < 8; j++) {
+            if (bb & bm) {
+                int abs_sect = 8*i + j;
+                get_track_sector(abs_sect, track, sector);
+                bam_buffer[32 + i] = bb & ~bm;
+                bam_dirty |= (1 << ((i + 32) >> 8)); // set dirty bit of the sector 'bb' is located in
+                return true;
+            }
+            bm >>= 1;
+        }
+    }
+    return false;
+}
+
+
+// Get number of free sectors on the file system
+FRESULT FileSystemD64::get_free(uint32_t *a)
+{
+    if (!root_valid) {
+        return FR_NO_FILESYSTEM;
+    }
+    uint32_t f = 0;
+    for (int i = 1; i <= 35; i++) {
+        if (i != 18) {
+            f += root_buffer[4 * i];
+        }
+    }
+    *a = f;
+    return FR_OK;
+}
+
+// Get number of free sectors on the file system
+FRESULT FileSystemD71::get_free(uint32_t *a)
+{
+    if (!root_valid) {
+        return FR_NO_FILESYSTEM;
+    }
+    uint32_t f = 0;
+    for (int i = 1; i <= 35; i++) {
+        if (i != 18) {
+            f += root_buffer[4 * i];
+        }
+    }
+    for (int i = 36; i <= 70; i++) {
+        if (i != 53) {
+            f += root_buffer[0xDD + (i - 36)];
+        }
+    }
+    *a = f;
+    return FR_OK;
+}
+
+// Get number of free sectors on the file system
+FRESULT FileSystemD81::get_free(uint32_t *a)
+{
+    if (!bam_valid) {
+        return FR_NO_FILESYSTEM;
+    }
+    uint32_t f = 0;
+    for (int i = 1; i <= 40; i++) {
+        if (i != 40) {
+            f += bam_buffer[0x10 + 6 * (i - 1)];
+        }
+    }
+    for (int i = 41; i <= 80; i++) {
+        f += bam_buffer[0x110 + 6 * (i - 41)];
+    }
+    *a = f;
+    return FR_OK;
+}
+
+FRESULT FileSystemDNP::get_free(uint32_t *a)
+{
+    if (!bam_valid) {
+        return FR_NO_FILESYSTEM;
+    }
+    uint32_t f = 0;
+    int bam_bytes = (num_sectors / 8);
+    for(int i=0; i < bam_bytes; i++) {
+        uint8_t bb = bam_buffer[32+i];
+        if (!bb) // no blocks
+            continue;
+        if (bb == 0xFF) { // all blocks
+            f += 8;
+            continue;
+        }
+        for (int j=0;j<8;j++) { // something else
+            if (bb & 1) f++;
+            bb >>= 1;
+        }
+    }
+    *a = f;
+    return FR_OK;
+}
+
+FRESULT FileSystemDNP :: sync(void)
+{
+    FRESULT fres = FileSystemCBM :: sync();
+
+    int sector = 2;
+    uint32_t dirty = bam_dirty;
+    uint8_t *bam = bam_buffer;
+
+    while(dirty) {
+        if (dirty & 3) {
+            DRESULT res = prt->write(bam, sector, 2);
+            if(res != RES_OK) {
+                return FR_DISK_ERR;
+            }
+        }
+        dirty >>= 2;
+        sector += 2;
+        bam += 512;
+    }
+    bam_dirty = 0;
+    return fres;
+}
 
 /*********************************************************************/
 /* D64/D71/D81 File System implementation                            */
 /*********************************************************************/
-DirInD64 :: DirInD64(FileSystemD64 *f)
+DirInCBM::DirInCBM(FileSystemCBM *f, uint32_t cluster)
 {
     fs = f;
     visited = 0;
-    idx = -1;
-    curr_t = 0;
-    curr_s = 0;
+    idx = -2;
+    next_t = curr_t = 0;
+    next_s = curr_s = 0;
+
+    if (!cluster) {
+        // by default the root directory is stored here as initial reference
+        header_track = f->root_track;
+        header_sector = f->root_sector;
+        start_track = f->dir_track;
+        start_sector = f->dir_sector;
+        root = true;
+    } else { // Subdir given
+        fs->get_track_sector(cluster, header_track, header_sector);
+        start_track = -1;  // it needs to be read from the header
+        start_sector = -1;
+        root = false;
+    }
 }
 
-FRESULT DirInD64 :: open(FileInfo *info)
+DirInCBM::~DirInCBM()
 {
-    idx = -1;
+    if (visited) {
+        delete[] visited;
+    }
+}
 
-    visited = new uint8_t[fs->num_sectors];
-    for (int i=0; i<fs->num_sectors; i++) {
-        visited[i] = 0;
+
+FRESULT DirInCBM::open(void)
+{
+    idx = -2;
+
+    if (!visited) {
+        visited = new uint8_t[fs->num_sectors];
+    }
+    memset(visited, 0, fs->num_sectors);
+    return FR_OK;
+}
+
+FRESULT DirInCBM::close(void)
+{
+    return FR_OK;
+}
+
+DirEntryCBM *DirInCBM::get_pointer(void)
+{
+    return (DirEntryCBM*)&fs->sect_buffer[(idx & 7) << 5]; // 32x from start of sector
+}
+
+FRESULT DirInCBM::create(const char *filename, bool dir)
+{
+    open();
+    idx = 0;
+    DirEntryCBM *p;
+
+    CbmFileName cbm;
+    if (dir) {
+        cbm.init_dir(filename);
+    } else {
+        cbm.init(filename);
     }
 
-    return FR_OK;
-}
+    /* Bring the first sector of the directory into the buffer */
 
-FRESULT DirInD64 :: close(void)
-{
-	if (visited)
-		delete [] visited;
+    int abs_sect = fs->get_abs_sector(header_track, header_sector);
+    if (abs_sect < 0) { // bad chain link
+        return FR_NO_FILE;
+    }
+    visited[abs_sect] = 1;
 
-    return FR_OK;
-}
-
-FRESULT DirInD64 :: create(FileInfo *info)
-{
-    int next_t, next_s;
-    idx = 0;
-    uint8_t *p;
+    if (start_track < 0) {
+        if (fs->move_window(abs_sect) != FR_OK) {
+            return FR_DISK_ERR;
+        }
+        next_t = fs->sect_buffer[0];
+        next_s = fs->sect_buffer[1];
+        start_track = next_t;
+        start_sector = next_s;
+    } else {
+        next_t = start_track;
+        next_s = start_sector;
+    }
 
     do {
-        if((idx & 7)==0) {
-            if(idx == 0) {
-                next_t = (fs->image_mode==2)?40:18;
-                next_s = (fs->image_mode==2)?3:1;
-            } else {
-                next_t = (int)fs->sect_buffer[0];
-                next_s = (int)fs->sect_buffer[1];
-            }
+        bool link = false;
+        bool append = false;
 
-            if(!next_t) { // end of list
-                // we need to extend the directory list, so we allocate a block on track 18
-                next_t = (fs->image_mode==2)?40:18;
-                if (!(fs->allocate_sector_on_track(next_t, next_s))) {
-                    return FR_DISK_FULL;
+        if ((idx & 7) == 0) {
+            link = true;
+
+            if (!next_t) { // end of list
+                // do all directory entries have to be on this track?
+                if (start_track == fs->dir_track) {
+                    next_t = fs->dir_track;
+                    next_s = fs->dir_sector;
+                    if (!(fs->allocate_sector_on_track(next_t, next_s))) {
+                        return FR_DISK_FULL;
+                    }
+                } else {
+                    if (!(fs->get_next_free_sector(next_t, next_s))) {
+                        return FR_DISK_FULL;
+                    }
                 }
+                append = true;
+
                 // success, now link new sector
-                fs->sect_buffer[0] = (uint8_t)next_t;
-                fs->sect_buffer[1] = (uint8_t)next_s;
-                fs->dirty = 1;
-
-                int abs_sect = fs->get_abs_sector(next_t, next_s);
-                if (abs_sect < 0) {
-                    return FR_DISK_ERR;
-                }
-                if(fs->move_window(abs_sect) != FR_OK) {
-                    return FR_DISK_ERR;
-                }
-                memset(fs->sect_buffer, 0, 256); // clear new sector out
+                fs->sect_buffer[0] = (uint8_t) next_t;
+                fs->sect_buffer[1] = (uint8_t) next_s;
                 fs->dirty = 1;
             }
-
             curr_t = next_t;
             curr_s = next_s;
+        }
 
-            int abs_sect = fs->get_abs_sector(next_t, next_s);
-            if (abs_sect < 0) { // bad chain link
-                return FR_NO_FILE;
-            }
+        int abs_sect = fs->get_abs_sector(curr_t, curr_s);
+        if (abs_sect < 0) {
+            return FR_DISK_ERR;
+        }
+        if (fs->move_window(abs_sect) != FR_OK) {
+            return FR_DISK_ERR;
+        }
+        if (append) {
+            memset(fs->sect_buffer, 0, 256); // clear new sector out
+            fs->sect_buffer[1] = 0xFF;
+            fs->dirty = 1;
+        }
+
+        if (link) {
+            next_t = fs->sect_buffer[0];
+            next_s = fs->sect_buffer[1];
+
+
             if (visited[abs_sect]) { // cycle detected
                 return FR_NO_FILE;
             }
             visited[abs_sect] = 1;
-
-            if (!fs->dirty) { // new sector
-                if(fs->move_window(abs_sect) != FR_OK) {
-                    return FR_DISK_ERR;
-                }
-            }
         }
+
         // We always have a sector now in which we may write the new filename IF we find an empty space
-        p = &fs->sect_buffer[(idx & 7) << 5]; // 32x from start of sector
-        if (!p[2]) { // file type is zero, so it is an unused entry
+        p = (DirEntryCBM *)&fs->sect_buffer[(idx & 7) << 5]; // 32x from start of sector
+        if (!p->std_fileType) { // file type is zero, so it is an unused entry
             break;
         }
-        idx ++;
-    } while(idx < 256);
+        idx++;
+    } while (idx < 256);
 
-    if (strcasecmp(info->extension, "PRG") == 0) {
-        p[2] = 0x02; // PRG, opened file
-    } else {
-        p[2] = 0x01; // SEQ, opened file
-    }
-    memset(p+5, 0xA0, 16);
-    memset(p+21, 0x00, 11);
-    int len = strlen(info->lfname);
-    len = (len > 16) ? 16 : len;
-    for (int i=0; i < len; i++) {
-        p[5+i] = toupper(info->lfname[i]);
-    }
-//    memcpy(p+5, info->lfname, (len > 16)?16:len);
+    memset(&(p->aux_track), 0x00, 11); // set everything to zero
+
+    p->std_fileType = cbm.getType();
+    memset(p->name, 0xA0, 16);
+    memcpy(p->name, cbm.getName(), cbm.getLength());
+    p->data_track = 0;
+    p->data_sector = 0;
+
+#ifndef RUNS_ON_PC
+    int y,m,d,wd,h,mn,s;
+    rtc.get_time(y, m, d, wd, h, mn, s);
+    p->year = (y >= 20) ? (uint8_t)(y - 20) : (uint8_t)(y + 80);
+    p->month = (uint8_t)m;
+    p->day = (uint8_t)d;
+    p->hour = (uint8_t)h;
+    p->minute = (uint8_t)mn;
+#endif
+
     fs->dirty = 1;
     fs->sync();
-/*
-    // Now open a FileInD64, and initialize it to an empty - non existing file
-    FileInD64 *d64_file = new FileInD64(fs);
-    d64_file->
-*/
     return FR_OK;
 }
 
-FRESULT DirInD64 :: read(FileInfo *f)
+FRESULT DirInCBM::get_entry(FileInfo &f)
 {
-    int next_t, next_s;
+    if (!fs->root_valid) {
+        return FR_NO_FILE;
+    }
 
     // Fields that are always the same.
-    f->fs      = fs;
-	f->date    = 0;
-	f->time    = 0;
+    f.fs = fs;
+    f.date = 0;
+    f.time = 0;
 
-	if(idx == -1) {
-		f->attrib  = AM_VOL;
-        f->cluster = fs->get_root_sector();
-        f->extension[0] = '\0';
+    idx++;
+
+    if (idx == -1) {
         curr_t = -1;
         curr_s = -1;
 
-        /* Volume name extraction */
-		if(fs->move_window(fs->get_root_sector()) == FR_OK) {
-			int offset = (fs->image_mode==2)?4:144;
-			for(int i=0;i<24;i++) {
-                if(i < f->lfsize) {
-                	char c = char(fs->sect_buffer[offset+i] & 0x7F);
-                    f->lfname[i] = c; //(c == '/')? '!' : c;
-                }
-            }
-            if(f->lfsize > 24)
-                f->lfname[24] = 0;
-        	f->size    = 0;
-        	idx        = 0;
-        	return FR_OK;
-        } else {
+        int abs_sect = fs->get_abs_sector(header_track, header_sector);
+        if (abs_sect < 0) { // bad chain link
+            return FR_NO_FILE;
+        }
+        if (visited[abs_sect]) { // cycle detected
+            return FR_NO_FILE;
+        }
+        visited[abs_sect] = 1;
+
+        if (fs->move_window(abs_sect) != FR_OK) {
             return FR_DISK_ERR;
         }
-		//printf("D64/71/81 title now read.");
-    } else {
+
+        f.cluster = abs_sect;
+        f.attrib = AM_VOL;
+        f.extension[0] = '\0';
+        f.size = 0;
+        f.name_format = NAME_FORMAT_CBM;
+
+        fs->get_volume_name(fs->sect_buffer, f.lfname, f.lfsize, root);
+        if (f.lfsize > 24) {
+            f.lfname[24] = 0;
+        }
+        else {
+            f.lfname[f.lfsize - 1] = 0;
+        }
+        if (start_track < 0) {
+            next_t = fs->sect_buffer[0];
+            next_s = fs->sect_buffer[1];
+        } else {
+            next_t = start_track;
+            next_s = start_sector;
+        }
+        return FR_OK;
+    }
+    else {
         do {
-            if((idx & 7)==0) {
-                if(idx == 0) {
-            	    next_t = (fs->image_mode==2)?40:18;
-            	    next_s = (fs->image_mode==2)?3:1;
-                } else {
-                    next_t = (int)fs->sect_buffer[0];
-                    next_s = (int)fs->sect_buffer[1];
-                }
+            bool link = false;
+            if ((idx & 7) == 0) {
+                link = true;
                 curr_t = next_t;
                 curr_s = next_s;
-                // printf("- Reading %d %d - \n", next_t, next_s);
-                if(!next_t) { // end of list
+                if (!next_t) { // end of list
                     return FR_NO_FILE;
                 }
-                int abs_sect = fs->get_abs_sector(next_t, next_s);
-                if (abs_sect < 0) { // bad chain link
-                    return FR_NO_FILE;
-                }
+            }
+            int abs_sect = fs->get_abs_sector(curr_t, curr_s);
+            if (abs_sect < 0) { // bad chain link
+                return FR_NO_FILE;
+            }
+            if (fs->move_window(abs_sect) != FR_OK) {
+                return FR_DISK_ERR;
+            }
+
+            if (link) {
+                next_t = fs->sect_buffer[0];
+                next_s = fs->sect_buffer[1];
+
                 if (visited[abs_sect]) { // cycle detected
                     return FR_NO_FILE;
                 }
                 visited[abs_sect] = 1;
-
-        		if(fs->move_window(abs_sect) != FR_OK) {
-                    return FR_DISK_ERR;
-                }
             }
-            uint8_t *p = &fs->sect_buffer[(idx & 7) << 5]; // 32x from start of sector
-            //dump_hex(p, 32);
-            uint8_t tp = (p[2] & 0x0f);
-            if ((tp == 0x01) || (tp == 0x02) || (tp == 0x03)) { // PRG
-                int j = 0;
-                for(int i=5;i<21;i++) {
-                	if ((p[i] == 0xA0) || (p[i] < 0x20))
-                		break;
-                	if(j < f->lfsize) {
-                    	char c = char(p[i] & 0x7F);
-                        f->lfname[j++] = (c == '/')? '!' : c;
-                	}
-                }
-                if(j < f->lfsize)
-                    f->lfname[j] = 0;
 
-                fix_filename(f->lfname);
-                f->attrib = (p[2] & 0x40)?AM_RDO:0;
-                f->cluster = fs->get_abs_sector((int)p[3], (int)p[4]);
-                f->size = (int)p[30] + 256*(int)p[31];
-                f->size *= 254;
-                if (tp >= 1 && tp <= 3 && (p[0x17] == 0 || p[0x17] == 1) && p[0x15] >= 1 && p[0x15] <= 35 && p[0x16] <= 21) {
-                	strncpy(f->extension, "CVT", 4);
-                } else if (tp == 1) {
-                	strncpy(f->extension, "SEQ", 4);
-                } else if (tp == 2) {
-                	strncpy(f->extension, "PRG", 4);
-                } else if (tp == 3) {
-                	strncpy(f->extension, "USR", 4);
+            DirEntryCBM *p = (DirEntryCBM *)&fs->sect_buffer[(idx & 7) << 5]; // 32x from start of sector
+            if (!p->std_fileType) { // deleted file
+                idx++;
+                continue;
+            }
+            uint8_t tp = (p->std_fileType & 0x0f);
+            if ((tp >= 1) && (tp <= 6)) {
+                int j = 0;
+                for (int i = 0; i < 16; i++) {
+                    if ((p->name[i] == 0xA0) || (p->name[i] < 0x20))
+                        break;
+                    if (j < f.lfsize) {
+                        f.lfname[j++] = p->name[i];
+                    }
                 }
-                // GZW: This is wrong!
-                //strcat(f->lfname, ".");
-                //strcat(f->lfname, f->extension);
-                idx ++;
+                if (j < f.lfsize)
+                    f.lfname[j] = 0;
+
+                f.attrib = (p->std_fileType & 0x40) ? AM_RDO : 0;
+                f.cluster = fs->get_abs_sector(p->data_track, p->data_sector);
+                f.size = (int) p->size_low + 256 * (int) p->size_high;
+                f.size *= 254;
+                f.name_format = NAME_FORMAT_CBM;
+
+                uint16_t yr = (p->year < 80) ? (p->year + 20) : (p->year - 80);
+                f.date  = yr << 9;
+                f.date |= (((uint16_t)(p->month)) << 5);
+                f.date |= p->day;
+                f.time  = ((uint16_t)(p->hour)) << 11;
+                f.time |= (((uint16_t)(p->minute)) << 5);
+
+                if (tp >= 1 && tp <= 3 && (p->geos_structure == 0 || p->geos_structure == 1) && p->aux_track) {
+                    strncpy(f.extension, "CVT", 4);
+                }
+                else if (tp == 1) {
+                    strncpy(f.extension, "SEQ", 4);
+                }
+                else if (tp == 2) {
+                    strncpy(f.extension, "PRG", 4);
+                }
+                else if (tp == 3) {
+                    strncpy(f.extension, "USR", 4);
+                }
+                else if (tp == 4) {
+                    strncpy(f.extension, "REL", 4);
+                }
+                else if (tp == 5) {
+                    strncpy(f.extension, "CBM", 4);
+                }
+                else if (tp == 6) {
+                    //strncpy(f.extension, "DIR", 4);
+                    f.attrib |= AM_DIR;
+                    f.extension[0] = 0;
+                }
+                //printf("%5d/%3d: ", abs_sect, idx);
                 return FR_OK;
             }
             idx++;
-        } while(idx < 256);
+        } while (idx < 256);
         return FR_NO_FILE;
     }
     return FR_INT_ERR;
 }
 
-
-
-FileInD64 :: FileInD64(FileSystemD64 *f)
+FileInCBM::FileInCBM(FileSystemCBM *f, DirEntryCBM *de, int dirtrack, int dirsector, int dirindex) : File(f)
 {
-	start_cluster = 0;
-	current_track = 0;
+    dir_sect = f->get_abs_sector(dirtrack, dirsector);
+    dir_entry_offset = dirindex * 32;
+    dir_entry = *de; // make a copy!
+    start_cluster = 0;
+    current_track = 0;
     current_sector = 0;
     offset_in_sector = 0;
     num_blocks = 0;
-    dir_sect = -1;
-    dir_entry_offset = 0;
+    file_size = 0;
     dir_entry_modified = 0;
     visited = 0;
-    section = -3;
     fs = f;
-    isVlir = false;
+    isRel = false;
+    side = NULL;
+    cvt = NULL;
+    state = ST_LINEAR;
+    header.size = 0;
+    header.data = NULL;
 }
 
-FRESULT FileInD64 :: open(FileInfo *info, uint8_t flags, int dirtrack, int dirsector, int dirindex)
+FileInCBM::~FileInCBM()
 {
-	if(info->fs != fs)
-		return FR_INVALID_OBJECT;
+    if (side) {
+        delete side;
+    }
+    if (cvt) {
+        delete cvt;
+    }
+    if (header.data) {
+        delete[] header.data;
+    }
+    if (visited) {
+        delete[] visited;
+    }
+}
 
-	if (flags & FA_CREATE_NEW) {
-	    start_cluster = -1; // to be allocated
+FRESULT FileInCBM::open(uint8_t flags)
+{
+    if (!dir_entry.data_track) {
+        start_cluster = -1; // to be allocated
         num_blocks = 0;
+        file_size = 0;
         current_track = 0;
-        /* to be moved elsewhere
-	    int track, sector;
-	    if (!fs->get_next_free_sector(track, sector)) {
-	        return FR_DISK_FULL;
-	    }
-	    start_cluster = fs->get_abs_sector(track, sector);
-*/
-	} else { // open existing file
-        start_cluster = info->cluster;
-        if(!(fs->get_track_sector(info->cluster, current_track, current_sector)))
-            return FR_INT_ERR;
-
+        current_sector = 0;
+    }
+    else { // open existing file
+        start_cluster = fs->get_abs_sector(dir_entry.data_track, dir_entry.data_sector);
+        current_track = dir_entry.data_track;
+        current_sector = dir_entry.data_sector;
+        num_blocks = ((uint32_t)(dir_entry.size_high) << 8) | dir_entry.size_low;
         offset_in_sector = 2;
-        num_blocks = (info->size + 253) / 254;
-	}
-
-	dir_sect = fs->get_abs_sector(dirtrack, dirsector);
-	dir_entry_offset = dirindex*32;
+        file_size = 254 * num_blocks;
+    }
 
     visited = new uint8_t[fs->num_sectors];
-    for (int i=0; i<fs->num_sectors; i++) {
-        visited[i] = 0;
-    }
+    memset(visited, 0, fs->num_sectors);
 
     visit(); // mark initial sector
-    section = 0;
 
-	return FR_OK;
-}
-
-FRESULT FileInD64 :: openCVT(FileInfo *info, uint8_t flags, int t, int s, int i)
-{
-	if(info->fs != fs)
-		return FR_INVALID_OBJECT;
-		
-
-	start_cluster = -1;
-	current_track = t;
-	current_sector = s;
-	dir_entry_offset = i*32;
-
-	offset_in_sector = 2;
-
-    num_blocks = (info->size + 253) / 254;
-
-    visited = new uint8_t[fs->num_sectors];
-    for (int i=0; i<fs->num_sectors; i++) {
-        visited[i] = 0;
+    uint8_t tp = dir_entry.std_fileType & 0x07;
+    if (tp == 4) {
+        isRel = true;
+        side = new SideSectors(fs, dir_entry.record_size);
+        if (dir_entry.aux_track) {
+            side->load(dir_entry.aux_track, dir_entry.aux_sector);
+        }
+        state = ST_HEADER;
+        header.size = 2;
+        header.data = new uint8_t[2];
+        header.pos = 0;
+        header.data[0] = dir_entry.record_size;
+        header.data[1] = 0;
+    } else if (tp >= 1 && tp <= 3 && (dir_entry.geos_structure == 0 || dir_entry.geos_structure == 1) && dir_entry.aux_track) {
+        if (!(flags & FA_OPEN_FROM_CBM)) { // do not do this when opened from IEC
+            // CVT
+            state = ST_HEADER;
+            header.data = new uint8_t[4*254];
+            memset(header.data, 0, 4*254);
+            header.size = create_cvt_header();
+            header.pos = 0;
+        }
     }
-    
-    visit();
+
     return FR_OK;
 }
 
-FRESULT FileInD64 :: close(void)
+static const char cvtSignature[]     = "PRG formatted GEOS file V1.0";
+static const char cvtSignatureLong[] = "PRG GeoConvert98-format V2.0";
+
+int FileInCBM::create_cvt_header(void)
+{
+    // allocate CVT structure
+    cvt = new cvt_t;
+    cvt->records = 0;
+    cvt->current_section = 0;
+
+    // Sector 1
+    memcpy(header.data, &(dir_entry.std_fileType), 30); // copy Dir entry as is
+    // signature depends on later actions.
+
+    // Sector 2 -> info block
+    FRESULT fres = fs->move_window(fs->get_abs_sector(dir_entry.aux_track, dir_entry.aux_sector));
+    if (fres != FR_OK) {
+        return 30; // just the dir entry
+    }
+    memcpy(&header.data[254], &fs->sect_buffer[2], 254);
+
+    // Sector 3 -> record block for VLIR, or terminate on single record if it is a linear file
+    if (!dir_entry.geos_structure) { // linear file
+        followChain(dir_entry.data_track, dir_entry.data_sector, cvt->sections[0].blocks, cvt->sections[0].bytes_in_last);
+        cvt->sections[0].start  = fs->get_abs_sector(dir_entry.data_track, dir_entry.data_sector);
+        cvt->records = 1;
+        current_track = dir_entry.data_track;
+        current_sector = dir_entry.data_sector;
+        return 2*254; // 2 blocks header only
+    }
+
+    // VLIR
+    // Read the Record block
+    DRESULT dres = fs->prt->read(cvt->record_block, fs->get_abs_sector(dir_entry.data_track, dir_entry.data_sector), 1);
+    if (dres != RES_OK) {
+        return 30; // just the dir entry
+    }
+
+    // Now we know the first track/sector of the data segment
+    current_track = cvt->record_block[2];
+    current_sector = cvt->record_block[3];
+
+    uint8_t *vlir = cvt->record_block + 2;
+    memcpy(&header.data[2*254], vlir, 254);
+
+    bool long_files = false;
+    cvt->records = 127;
+    for (int i = 0; i < 127; i++) {
+        if ((!vlir[2*i]) && (!vlir[1+2*i])) { // both bytes are 0
+            cvt->records = i;
+            break;
+        }
+        cvt->sections[i].start = fs->get_abs_sector(vlir[2*i], vlir[1+2*i]);
+        if (cvt->sections[i].start >= 0) { // valid?
+            followChain(vlir[2*i], vlir[1 + 2*i], cvt->sections[i].blocks, cvt->sections[i].bytes_in_last);
+            if (cvt->sections[i].blocks > 255) {
+                long_files = true;
+            }
+        } else {
+            cvt->sections[i].blocks = 0;
+            cvt->sections[i].bytes_in_last = vlir[1+2*i]; // just copy last byte code, may be FF
+        }
+        //printf("Section #%d. Start: %d, Blocks: %d, Last: %d\n", i, cvt->sections[i].start, cvt->sections[i].blocks, cvt->sections[i].bytes_in_last);
+    }
+
+    // Place the correct header
+    if (long_files) {
+        memcpy(&header.data[3*254], vlir, 254); // prepare sector 4
+        strcpy((char *)&header.data[30], cvtSignatureLong);
+    } else {
+        strcpy((char *)&header.data[30], cvtSignature);
+    }
+
+    // Header could be SEQ or PRG, depending on actual type
+    if ((dir_entry.std_fileType & 7) != 2) {
+        memcpy(header.data+30, "SEQ", 3);
+    }
+
+    uint8_t *hdrLo = header.data + 2*254;
+    uint8_t *hdrHi = header.data + 3*254;
+
+    for(int i=0; i < cvt->records; i++) {
+        hdrLo[2*i + 0] = (uint8_t)cvt->sections[i].blocks;
+        hdrLo[2*i + 1] = (uint8_t)cvt->sections[i].bytes_in_last;
+        hdrHi[2*i + 0] = (uint8_t)(cvt->sections[i].blocks >> 8);
+        hdrHi[2*i + 1] = (uint8_t)cvt->sections[i].bytes_in_last;
+    }
+
+    return (long_files) ? 4*254 : 3*254;
+}
+
+FRESULT FileInCBM::close(void)
 {
     fs->sync();
 
@@ -758,27 +1671,39 @@ FRESULT FileInD64 :: close(void)
         if (res != FR_OK) {
             return res;
         }
-        uint8_t *p = & fs->sect_buffer[dir_entry_offset];
+        DirEntryCBM *p = (DirEntryCBM *)&fs->sect_buffer[dir_entry_offset];
 
-        p[2] |= 0x80; // close file
+        p->std_fileType |= 0x80; // close file
 
         int tr, sec;
         fs->get_track_sector(start_cluster, tr, sec);
-        p[3] = (uint8_t)tr;
-        p[4] = (uint8_t)sec;
+        p->data_track = (uint8_t) tr;
+        p->data_sector = (uint8_t) sec;
 
-        p[0x1E] = num_blocks & 0xFF;
-        p[0x1F] = num_blocks >> 8;
+        if (side) {
+            num_blocks += side->get_number_of_blocks();
+        }
+        p->size_low = num_blocks & 0xFF;
+        p->size_high = num_blocks >> 8;
+
+        if(side) {
+            side->get_track_sector(tr, sec);
+            p->aux_track = (uint8_t) tr;
+            p->aux_sector = (uint8_t) sec;
+            p->record_size = header.data[0];
+            side->validate(p->record_size);
+            side->write(); // this doesn't use move window, so it's OK.
+        }
+
         fs->dirty = 1;
         fs->sync();
     }
 
-    delete [] visited;
-
+    delete this;
     return FR_OK;
 }
 
-FRESULT FileInD64 :: visit(void)
+FRESULT FileInCBM::visit(void)
 {
     int abs_sect = fs->get_abs_sector(current_track, current_sector);
     if (abs_sect < 0) { // bad chain link
@@ -791,187 +1716,192 @@ FRESULT FileInD64 :: visit(void)
     return FR_OK;
 }
 
-static unsigned char cvtSignature[] = { 0x50, 0x52, 0x47, 0x20, 0x66, 0x6f, 0x72, 0x6d, 0x61, 0x74, 0x74, 0x65, 0x64, 0x20, 0x47, 0x45, 0x4f, 0x53, 0x20, 0x66, 0x69, 0x6c, 0x65, 0x20, 0x56, 0x31, 0x2e, 0x30};
-
-FRESULT FileInD64 :: read(void *buffer, uint32_t len, uint32_t *transferred)
+FRESULT FileInCBM::read(void *buffer, uint32_t len, uint32_t *transferred)
 {
-    bool isCVT = start_cluster == -1;
-    bool lastSection = false;
     FRESULT res;
 
-    uint8_t *dst = (uint8_t *)buffer;
-    uint8_t *src;
-
-    int bytes_left;
-    int tr;
+    uint8_t *dst = (uint8_t *) buffer;
+    uint32_t tr;
 
     *transferred = 0;
     
-    if(!len)
+    if (!len)
         return FR_OK;
 
-    while(len) {
-        // make sure the current sector is within view
-        res = fs->move_window(fs->get_abs_sector(current_track, current_sector));
-        if(res != FR_OK)
+    while (len) {
+        switch (state) {
+            case ST_HEADER:
+                res = read_header(dst, len, tr);
+                break;
+            case ST_LINEAR:
+                res = read_linear(dst, len, tr);
+                break;
+            case ST_CVT:
+                res = read_linear(dst, len, tr);
+                break;
+            default:
+                res = FR_DENIED;
+        }
+        if (res != FR_OK)
             return res;
 
-        src = &(fs->sect_buffer[offset_in_sector]);
-
-        if (section == -3)
-        {
-           memset(vlir, 0, 256);
-           vlir[0] = 0;
-           vlir[1] = 255;
-           memcpy(vlir+2, fs->sect_buffer+dir_entry_offset+2, 30);
-           memcpy(vlir+32, cvtSignature, sizeof(cvtSignature));
-           memcpy(tmpBuffer, vlir, 256);
-           tmpBuffer[0x15] = 1;
-           tmpBuffer[0x16] = 255;
-           isVlir = vlir[0x17];
-           if (isVlir)
-           {
-               tmpBuffer[3] = 1;
-               tmpBuffer[4] = 255;
-           }
-           else
-           {
-               int t1, t2;
-               followChain( vlir[3], vlir[4], t1, t2 );
-               tmpBuffer[3] = t1;
-               tmpBuffer[4] = t2;
-           }
-           src = tmpBuffer+offset_in_sector;
+        if (!tr) {
+            break;
         }
-        if (section == -1 && !vlir[1])
-        {
-           memcpy(vlir, fs->sect_buffer, 256);
-           memset(tmpBuffer, 0, 256);
-           tmpBuffer[1] = 255;
-           for (int i=0; i<127; i++)
-           {
-               if (! vlir[2+2*i] )
-               {
-                   tmpBuffer[3+2*i] = vlir[3+2*i];
-               }
-               else
-               {
-               	   int t1, t2;
-               	   followChain( vlir[2+2*i], vlir[3+2*i], t1, t2 );
-                   tmpBuffer[2+2*i] = t1;
-                   tmpBuffer[3+2*i] = t2;
-               }
-           }
-           // memcpy(tmpBuffer, fs->sect_buffer, 256);
-           src = tmpBuffer + offset_in_sector;
-        }
-        
-        if (isCVT && isVlir && section >= 0)
-        {
-            int nextSection = section;
-            if (nextSection < 127)
-                nextSection++;
-               
-            while ( nextSection < 127 && !vlir[2+2*nextSection] && ( vlir[3+2*nextSection] == 0 || vlir[3+2*nextSection] == 255))
-                nextSection++;
-                
-            lastSection = nextSection >= 127;
-        }
-
-        // determine the number of bytes left in sector
-        if(section >= 0 && fs->sect_buffer[0] == 0 && (!isVlir || lastSection)) { // last sector
-            bytes_left = (1 + fs->sect_buffer[1]) - offset_in_sector;
-        } else {
-            bytes_left = 256 - offset_in_sector;
-        }
-
-        // determine number of bytes to transfer now
-        if(bytes_left > len)
-            tr = len;
-        else
-            tr = bytes_left;
-
-        // do the actual copy
-        for(int i=0;i<tr;i++) {
-            *(dst++) = *(src++);
-        }
-        len -= tr;
-        offset_in_sector += tr;
         *transferred += tr;
-
-        // continue
-        if (offset_in_sector == 256 || (section >= 0 && fs->sect_buffer[0] == 0 && offset_in_sector > fs->sect_buffer[1] && (!isVlir || lastSection))) { // proceed to the next sector
-            if (section == -3)
-            {
-               current_track = vlir[0x15];
-               current_sector = vlir[0x16];
-               offset_in_sector = 2;
-               section = -2;
-            }
-            else if (section == -2)
-            {
-               current_track = vlir[3];
-               current_sector = vlir[4];
-               offset_in_sector = 2;
-               section = isVlir ? -1 : 0;
-               vlir[0] = vlir[1] = 0;
-            }
-            else if (isCVT && isVlir && !fs->sect_buffer[0])
-            {
-               if (section < 127)
-                   section++;
-               
-               while ( section < 127 && !vlir[2+2*section] && ( vlir[3+2*section] == 0 || vlir[3+2*section] == 255))
-                   section++;
-
-               if (section < 127)
-               {
-               	   current_track = vlir[2+2*section];
-               	   current_sector = vlir[3+2*section];
-               	   offset_in_sector = 2;
-               }
-               else
-                  return FR_OK;
-            }
-            else
-            {
-              if((fs->sect_buffer[0] == 0) && !isVlir && section >= 0)
-                  return FR_OK;
-               current_track = fs->sect_buffer[0];
-               current_sector = fs->sect_buffer[1];
-               offset_in_sector =  2;
-            }
-            res = visit();  // mark and check for cyclic link
-            if(res != FR_OK) {
-                return res;
-            }
-        }
+        dst += tr;
+        len -= tr;
     }
     return FR_OK;
 }
 
-FRESULT  FileInD64 :: write(const void *buffer, uint32_t len, uint32_t *transferred)
+FRESULT FileInCBM::read_linear(uint8_t *dst, int len, uint32_t& tr)
+{
+    FRESULT res;
+    uint8_t *src;
+    int bytes_left;
+
+    // make sure the current sector is within view
+    res = fs->move_window(fs->get_abs_sector(current_track, current_sector));
+    if (res != FR_OK)
+        return res;
+
+    src = &(fs->sect_buffer[offset_in_sector]);
+
+    // determine the number of bytes left in sector
+    bool merge_cvt_sector = cvt && (cvt->current_section != cvt->records - 1);
+    if ((merge_cvt_sector) || (fs->sect_buffer[0] != 0)) {
+        bytes_left = 256 - offset_in_sector;
+    }
+    else {
+        bytes_left = (1 + (int)fs->sect_buffer[1]) - offset_in_sector;
+    }
+
+    // determine number of bytes to transfer now
+    if (bytes_left > len)
+        tr = len;
+    else
+        tr = bytes_left;
+
+    if (!tr) {
+        return FR_OK;
+    }
+
+    // do the actual copy
+    memcpy(dst, src, tr);
+    offset_in_sector += tr;
+
+    // continue
+    if (offset_in_sector == 256) { // end of sector
+        if (fs->sect_buffer[0] == 0) {
+            if (merge_cvt_sector) { // joining vlir records together
+                do {
+                    cvt->current_section ++;
+                    current_track = cvt->record_block[2 + 2*cvt->current_section];
+                    current_sector = cvt->record_block[3 + 2*cvt->current_section];
+                } while(!current_track && (cvt->current_section < cvt->records));
+                offset_in_sector = 2;
+                if (!current_track) {
+                    return FR_OK; // no more valid records
+                }
+            } else {
+                return FR_OK; // end of linear file, or end of last vlir record
+            }
+        } else { // simply follow chain
+            current_track = fs->sect_buffer[0];
+            current_sector = fs->sect_buffer[1];
+            offset_in_sector = 2;
+        }
+        res = visit();  // mark and check for cyclic link
+    }
+    return res;
+}
+
+FRESULT FileInCBM::read_header(uint8_t *dst, int len, uint32_t& tr)
+{
+    tr = header.size - header.pos;
+    if (tr > len) {
+        tr = len;
+    }
+    uint8_t *src = header.data + header.pos;
+    memcpy(dst, src, tr);
+    header.pos += tr;
+
+    if (header.pos == header.size) {
+        state = ST_LINEAR;
+    }
+    return FR_OK;
+}
+
+FRESULT FileInCBM::write_header(uint8_t *src, int len, uint32_t& tr)
+{
+    tr = header.size - header.pos;
+    if (tr > len) {
+        tr = len;
+    }
+    uint8_t *dst = header.data + header.pos;
+    memcpy(dst, src, tr);
+    header.pos += tr;
+
+    if (header.pos == header.size) {
+        state = ST_LINEAR;
+    }
+    return FR_OK;
+}
+
+FRESULT FileInCBM::write(const void *buffer, uint32_t len, uint32_t *transferred)
 {
     FRESULT res;
 
-    uint8_t *src = (uint8_t *)buffer;
-    uint8_t *dst;
-
-    int bytes_left;
-    int tr;
+    uint8_t *src = (uint8_t *) buffer;
+    uint32_t tr;
 
     *transferred = 0;
 
-    if(!len)
-        return FR_OK;
+    while (len) {
+        switch (state) {
+            case ST_HEADER:
+                res = write_header(src, len, tr);
+                break;
+            case ST_LINEAR:
+                res = write_linear(src, len, tr);
+                break;
+            case ST_CVT:
+                res = FR_DENIED;
+                break;
+            default:
+                res = FR_DENIED;
+        }
+        if (res != FR_OK)
+            return res;
 
-    if(current_track == 0) { // need to allocate the first block
+        if (!tr) {
+            break;
+        }
+        *transferred += tr;
+        src += tr;
+        len -= tr;
+    }
+    return FR_OK;
+}
+
+FRESULT FileInCBM::write_linear(uint8_t *src, int len, uint32_t& tr)
+{
+    FRESULT res;
+
+    if (current_track == 0) { // need to allocate the first block
         fs->sync(); // make sure we can use the buffer to play around
 
-        if(!fs->get_next_free_sector(current_track, current_sector))
+        if (!fs->get_next_free_sector(current_track, current_sector))
             return FR_DISK_FULL;
         num_blocks = 1;
         start_cluster = fs->get_abs_sector(current_track, current_sector);
+
+        if (side) {
+            if (!side->addDataBlock(current_track, current_sector)) {
+                return FR_DISK_FULL;
+            }
+        }
 
         res = fs->move_window(start_cluster);
         if (res != FR_OK) {
@@ -981,19 +1911,28 @@ FRESULT  FileInD64 :: write(const void *buffer, uint32_t len, uint32_t *transfer
         offset_in_sector = 2;
         fs->sect_buffer[0] = 0; // unlink
         fs->sect_buffer[1] = 1; // 0 bytes in this sector
-    } else {
+    }
+    else {
         // make sure the current sector is within view
         res = fs->move_window(fs->get_abs_sector(current_track, current_sector));
-        if(res != FR_OK)
+        if (res != FR_OK)
             return res;
     }
 
-    while(len) {
+    tr = 0;
+    while (len) {
         // check if we are at the end of our current sector
-        if(offset_in_sector == 256) {
-            if(fs->sect_buffer[0] == 0) { // we don't have any more bytes.. so extend the file
-                if(!fs->get_next_free_sector(current_track, current_sector))
+        if (offset_in_sector == 256) {
+            if (fs->sect_buffer[0] == 0) { // we don't have any more bytes.. so extend the file
+                if (!fs->get_next_free_sector(current_track, current_sector))
                     return FR_DISK_FULL;
+
+                if (side) {
+                    if (!side->addDataBlock(current_track, current_sector)) {
+                        return FR_DISK_FULL;
+                    }
+                }
+
                 num_blocks += 1;
                 fs->sect_buffer[0] = current_track;
                 fs->sect_buffer[1] = current_sector;
@@ -1003,41 +1942,42 @@ FRESULT  FileInD64 :: write(const void *buffer, uint32_t len, uint32_t *transfer
 
                 // Load the new sector
                 res = fs->move_window(fs->get_abs_sector(current_track, current_sector));
-                if(res != FR_OK)
+                if (res != FR_OK)
                     return res;
                 fs->sect_buffer[0] = 0; // unlink
+                fs->sect_buffer[1] = 1; // 0 bytes in this sector
                 offset_in_sector = 2;
-            } else {
+            }
+            else {
                 current_track = fs->sect_buffer[0];
                 current_sector = fs->sect_buffer[1];
                 res = fs->move_window(fs->get_abs_sector(current_track, current_sector));
-                if(res != FR_OK)
+                if (res != FR_OK)
                     return res;
                 offset_in_sector = 2;
             }
         }
 
-        bytes_left = 256 - offset_in_sector; // we can use the whole sector
+        int bytes = 256 - offset_in_sector; // we can use the whole sector
 
         // determine number of bytes to transfer now
-        if(bytes_left > len)
-            tr = len;
-        else
-            tr = bytes_left;
+        if (bytes > len)
+            bytes = len;
 
         // do the actual copy
         fs->dirty = 1;
-        dst = &(fs->sect_buffer[offset_in_sector]);
-        for(int i=0;i<tr;i++) {
-            *(dst++) = *(src++);
-        }
-        len -= tr;
-        offset_in_sector += tr;
-        *transferred += tr;
+        uint8_t *dst = &(fs->sect_buffer[offset_in_sector]);
+        memcpy(dst, src, bytes);
+        src += bytes;
+        len -= bytes;
+        offset_in_sector += bytes;
+        tr += bytes;
 
-        if(fs->sect_buffer[0] == 0) { // last sector (still)
-            if((offset_in_sector-1) > fs->sect_buffer[1]) // we extended the file
-                fs->sect_buffer[1] = (uint8_t)(offset_in_sector - 1);
+        if (fs->sect_buffer[0] == 0) { // last sector (still)
+            if ((offset_in_sector - 1) > fs->sect_buffer[1]) {// we extended the file
+                fs->sect_buffer[1] = (uint8_t) (offset_in_sector - 1);
+                file_size = (num_blocks - 1) * 254 + (offset_in_sector - 2);
+            }
         }
     }
     fs->sync();
@@ -1047,56 +1987,134 @@ FRESULT  FileInD64 :: write(const void *buffer, uint32_t len, uint32_t *transfer
     return FR_OK;
 }
 
-FRESULT FileInD64 :: seek(uint32_t pos)
+uint32_t FileInCBM::get_size()
 {
-	fs->sync();
-	fs->get_track_sector(start_cluster, current_track, current_sector);
+    uint32_t size = header.size;
+    if (side) {
+        size += side->get_file_size();
+        file_size = size;
+        return size;
+    }
 
-	while (pos >= 254) {
-		FRESULT res = visit();
-		if (res != FR_OK)
-			return res;
+    // no side sectors, so we check how big the file currently is
+    int ct, cs, abs;
+    abs = start_cluster;
+    memset(visited, 0, fs->num_sectors);
+    fs->get_track_sector(abs, ct, cs);
+    do {
+        abs = fs->get_abs_sector(ct, cs);
+        if (visited[abs]) {
+            break;
+        }
+        visited[abs] = 1;
+        FRESULT res = fs->move_window(abs);
+        if (res != FR_OK)
+            break;
+        if (fs->sect_buffer[0]) {
+            ct = fs->sect_buffer[0];
+            cs = fs->sect_buffer[1];
+            size += 254;
+        } else {
+            size += fs->sect_buffer[1] - 1;
+            break;
+        }
+    } while(1);
+    memset(visited, 0, fs->num_sectors);
+    file_size = size;
+    return size;
+}
 
-		res = fs->move_window(fs->get_abs_sector(current_track, current_sector));
-        if(res != FR_OK)
+FRESULT FileInCBM::seek(uint32_t pos)
+{
+    fs->sync();
+
+
+    if (start_cluster < 0) { // file doesn't yet exist
+        if (!pos) {
+            return FR_OK; // allow if seek to position 0
+        }
+    }
+
+    fs->get_track_sector(start_cluster, current_track, current_sector);
+    memset(visited, 0, fs->num_sectors);
+    FRESULT res = fs->move_window(fs->get_abs_sector(current_track, current_sector));
+    if (res != FR_OK)
+        return res;
+
+    if (pos < header.size) {
+        state = ST_HEADER;
+        header.pos = pos;
+        pos = 0;
+    } else {
+        state = ST_LINEAR;
+        pos -= header.size;
+    }
+
+    if (side) { // do side sectors exist? Then we can find the destination faster
+        res = side->seek(pos, offset_in_sector, current_track, current_sector);
+        return res;
+    }
+
+    uint32_t absPos = 0;
+    while (pos >= 254) {
+        res = visit();
+        if (res != FR_OK)
             return res;
 
-        current_track = fs->sect_buffer[0];
-        current_sector = fs->sect_buffer[1];
-        pos -= 254;
-	}
-	offset_in_sector = pos + 2;
-	return FR_OK;
-}
+        res = fs->move_window(fs->get_abs_sector(current_track, current_sector));
+        if (res != FR_OK)
+            return res;
 
-FRESULT FileInD64 :: followChain(int track, int sector, int& noSectors, int& bytesLastSector)
-{
-        noSectors = 0;
-        FRESULT res = fs->move_window(fs->get_abs_sector(track, sector));
-            if(res != FR_OK)
-                return res;
-        
-        while ( fs->sect_buffer[0] )
-        {
-            FRESULT res = fs->move_window(fs->get_abs_sector(track, sector));
-            if(res != FR_OK)
-                return res;
-            track = fs->sect_buffer[0];
-            sector = fs->sect_buffer[1];
-            noSectors++;
+        if (fs->sect_buffer[0]) {
+            current_track = fs->sect_buffer[0];
+            current_sector = fs->sect_buffer[1];
+            pos -= 254;
+            absPos += 254;
+        } else {
+            pos = fs->sect_buffer[1] - 1;
+            file_size = (absPos + pos);
+            break;
         }
-        bytesLastSector = fs->sect_buffer[1];
-
-	return FR_OK;
+    }
+    offset_in_sector = pos + 2;
+    return FR_OK;
 }
+
+FRESULT FileInCBM::followChain(int track, int sector, int& noSectors, int& bytesLastSector)
+{
+    noSectors = 0;
+    FRESULT res = fs->move_window(fs->get_abs_sector(track, sector));
+    if (res != FR_OK)
+        return res;
+
+    while (fs->sect_buffer[0]) {
+        FRESULT res = fs->move_window(fs->get_abs_sector(track, sector));
+        if (res != FR_OK)
+            return res;
+        track = fs->sect_buffer[0];
+        sector = fs->sect_buffer[1];
+        noSectors++;
+    }
+    bytesLastSector = fs->sect_buffer[1];
+
+    return FR_OK;
+}
+
+#if SS_DEBUG
+void FileInCBM :: dumpSideSectors(void)
+{
+    if (!side) {
+        printf("No Side Sectors defined.\n");
+        return;
+    }
+    side->dump();
+}
+#endif
 
 /*
-void FileInD64 :: collect_info(FileInfo *inf)
-{
-	inf->cluster = start_cluster;
-	inf->date = 0;
-	inf->time = 0;
-	inf->fs = this->fs;
-	inf->size = 254 * this->num_blocks;
-}
+- CVT Header sector, with directory entry, signature, etc..  (used to be section -3 in your code), doesn't exist in the CBM image, aside from the dir entry.
+- Geos Info Block  (used to be section -2 in your code)  (actual sector can be found by de-referencing the REL file side sector pointer, which I now called 'aux_track / aux_sector' at offset 0x15/0x16.
+- VLIR Record block, skipped when not VLIR (section -1 in your code)   Actual sector can be found by de-referencing standard file pointer, which I now called 'data_track / data_sector' at offset 0x03/0x04
+- VLIR Extended Record block (only when G98 format), also not applicable for sequential / non VLIR.
+- Records, (padded except for the last record) - section 0 and higher in your code.
 */

@@ -21,6 +21,31 @@ Path :: ~Path()
 	cleanupElements();
 }
 
+Path :: Path(Path *p) : full_path("/"), elements(10, NULL)
+{
+    owner = "Unknown";
+    depth = p->getDepth();
+
+    for(int i=0; i < p->getDepth(); i++) {
+        update(i, p->getElement(i));
+    }
+    regenerateFullPath();
+}
+
+Path :: Path(Path *p, int start, int stop) : full_path("/"), elements(stop-start, NULL)
+{
+    owner = "Unknown";
+    if (stop < 0) {
+        stop = p->getDepth();
+    }
+    depth = stop-start;
+
+    for(int i=0; i < depth; i++) {
+        update(i, p->getElement(i+start));
+    }
+    regenerateFullPath();
+}
+
 void Path :: update(const char *p)
 {
 	if (full_path == p)
@@ -174,6 +199,11 @@ const char *Path :: getElement(int a)
 	return (elements[a])->c_str();
 }
 
+const char *Path :: getLastElement()
+{
+    return (elements[depth-1])->c_str();
+}
+
 /*
 void Path :: removeFirst()
 {
@@ -229,39 +259,35 @@ void Path :: regenerateFullPath()
 	}
 }
 
-
-FRESULT Path :: get_directory(IndexedList<FileInfo *> &target, const char *matchPattern)
+// Return true when the search path is at least as long as
+// the 'this' path.
+bool Path :: match(Path *search)
 {
-	return FileManager :: getFileManager() -> get_directory(this, target, matchPattern);
+    if (search->getDepth() < depth) {
+        return false;
+    }
+    for(int i=0; i<depth; i++) {
+        if (!pattern_match(search->getElement(i), getElement(i), false)) {
+            return false;
+        }
+    }
+    return true;
 }
 
-bool Path :: isValid()
+// Return true when the search path is at least as long as
+// the 'this' path.
+bool SubPath :: match(Path *search)
 {
-	return FileManager :: getFileManager() -> is_path_valid(this);
-}
+    int realStop = (stop < 0) ? reference_path->getDepth() : stop;
+    int depth = realStop - start;
 
-void Path :: get_display_string(const char *filename, char *buffer, int width)
-{
-	FileManager :: getFileManager() -> get_display_string(this, filename, buffer, width);
-}
-
-// =======================
-//   COMPARE PATH OBJECTS 
-// =======================
-
-int path_object_compare(IndexedList<CachedTreeNode *> *list, int a, int b)
-{
-//	printf("Compare %d and %d: ", a, b);
-	CachedTreeNode *obj_a = (*list)[a];
-	CachedTreeNode *obj_b = (*list)[b];
-	
-	if(!obj_b)
-		return 1;
-	if(!obj_a)
-		return -1;
-
-//	printf("%p %p ", obj_a, obj_b);
-//	printf("%s %s\n", obj_a->get_name(), obj_b->get_name());
-	return obj_a->compare(obj_b);
-//	return stricmp(obj_a->get_name(), obj_b->get_name());
+    if (search->getDepth() < depth) {
+        return false;
+    }
+    for(int i=0; i<depth; i++) {
+        if (!pattern_match(search->getElement(i), reference_path->getElement(start+i), false)) {
+            return false;
+        }
+    }
+    return true;
 }

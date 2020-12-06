@@ -55,7 +55,6 @@ FileTypeD64 :: ~FileTypeD64()
 
 }
 
-
 int FileTypeD64 :: fetch_context_items(IndexedList<Action *> &list)
 {
     int count = 0;
@@ -146,28 +145,35 @@ int FileTypeD64 :: loadMP3_st(SubsysCommand *cmd)
         }
     }
 
-    FileManager *fm = FileManager :: getFileManager();
+    FileManager *fm = FileManager::getFileManager();
     FileInfo info(32);
     fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
-    
-    File *file = 0;
-	FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
-	if(file) {
-		total_bytes_read = 0;
-		file->read(dstAddr, expSize, &bytes_read);
-		total_bytes_read += bytes_read;
 
-		printf("\nClosing file. ");
-		fm->fclose(file);
-		file = NULL;
-		printf("done.\n");
-                  static char buffer[48];
-			sprintf(buffer, "Bytes loaded: %d ($%8x)", total_bytes_read, total_bytes_read);
-			cmd->user_interface->popup(buffer, BUTTON_OK);
-	} else {
-		printf("Error opening file.\n");
-        cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
-		return -2;
-	}
+    File *file = 0;
+    FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
+    if (file) {
+        total_bytes_read = 0;
+
+        if (ftype == 1571) {
+            file->read(dstAddr, expSize / 2, &bytes_read);
+            total_bytes_read += bytes_read;
+            file->read(dstAddr + 700 * 256, expSize / 2, &bytes_read);
+        } else {
+            file->read(dstAddr, expSize, &bytes_read);
+        }
+        total_bytes_read += bytes_read;
+
+        printf("\nClosing file. ");
+        fm->fclose(file);
+        file = NULL;
+        printf("done.\n");
+        static char buffer[48];
+        sprintf(buffer, "Bytes loaded: %d ($%8x)", total_bytes_read, total_bytes_read);
+        cmd->user_interface->popup(buffer, BUTTON_OK);
+    } else {
+        printf("Error opening file.\n");
+        cmd->user_interface->popup(FileSystem::get_error_string(fres), BUTTON_OK);
+        return -2;
+    }
 
 }

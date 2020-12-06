@@ -6,24 +6,32 @@
 #include "filesystem_root.h"
 #include "cached_tree_node.h"
 #include "observer.h"
-#include "FreeRTOS.h"
-#include "semphr.h"
 #include "embedded_fs.h"
 
-void set_extension(char *buffer, const char *ext, int buf_size);
-void get_extension(const char *name, char *ext);
-void fix_filename(char *buffer);
+#ifdef OS
+#include "FreeRTOS.h"
+#include "semphr.h"
+#else
+typedef void * SemaphoreHandle_t;
+#endif
 
 #define INFO_SIZE 128
 
 class MountPoint
 {
-	File *file;
+    Path *path;
+    File *file;
 	FileSystemInFile *emb;
 public:
-	MountPoint(File *f, FileSystemInFile *e) {
-		file = f;
+	MountPoint(SubPath *p, File *f, FileSystemInFile *e) {
+		path = p->get_new_path();
+	    file = f;
 		emb = e;
+	}
+
+	~MountPoint() {
+	    delete path;
+	    delete emb;
 	}
 
 	File *get_file() {
@@ -34,8 +42,12 @@ public:
 		return emb;
 	}
 
-	bool match(FileSystem *fs, uint32_t inode) {
-		return (file->get_file_system() == fs) && (file->get_inode() == inode);
+	const char *get_path() {
+	    return path->get_path();
+	}
+
+	bool match(FileSystem *fs, SubPath *sp) {
+		return (file->get_file_system() == fs) && (sp->match(path));
 	}
 };
 
@@ -51,11 +63,12 @@ typedef enum  {
 class FileManagerEvent
 {
 public:
-	eFileManagerEventType eventType;
+    eFileManagerEventType eventType;
 	mstring pathName;
 	mstring newName;
 
-	FileManagerEvent(eFileManagerEventType e, const char *p, const char *n = "") : eventType(e), pathName(p), newName(n) { }
+	FileManagerEvent(eFileManagerEventType e, const char *p, const char *n = "") : eventType(e), pathName(p), newName(n) {  }
+	~FileManagerEvent() { }
 };
 
 
@@ -65,12 +78,12 @@ class FileManager
 
 	IndexedList<MountPoint *>mount_points;
     IndexedList<File *>open_file_list;
-	IndexedList<Path *>used_paths;
+	//IndexedList<Path *>used_paths;
 	IndexedList<ObserverQueue *>observers;
 	CachedTreeNode *root;
 	FileSystem *rootfs;
 
-    FileManager() : mount_points(8, NULL), open_file_list(16, NULL), used_paths(8, NULL), observers(4, NULL) {
+    FileManager() : mount_points(8, NULL), open_file_list(16, NULL), /*used_paths(8, NULL), */observers(4, NULL) {
         root = new CachedTreeNode(NULL, "RootNode");
         root->get_file_info()->attrib = AM_DIR;
         rootfs = new FileSystem_Root(root);
@@ -85,15 +98,19 @@ class FileManager
 #ifdef OS
     	vSemaphoreDelete(serializer);
 #endif
-    	for(int i=0;i<open_file_list.get_elements();i++) {
+        for(int i=0;i<mount_points.get_elements();i++) {
+            fclose(mount_points[i]->get_file());
+            delete mount_points[i];
+        }
+
+        for(int i=0;i<open_file_list.get_elements();i++) {
         	delete open_file_list[i];
         }
+/*
         for(int i=0;i<used_paths.get_elements();i++) {
         	delete used_paths[i];
         }
-        for(int i=0;i<mount_points.get_elements();i++) {
-        	delete mount_points[i];
-        }
+*/
         delete rootfs;
         delete root;
     }
@@ -132,40 +149,38 @@ public:
 		printf("** This is a dump of the state of the file manager **\n");
 		root->dump(0);
 
-    	printf("\nOpen files:\n");
+    	printf("\nOpen files %d:\n", open_file_list.get_elements());
+
     	for(int i=0;i<open_file_list.get_elements();i++) {
     		File *f = open_file_list[i];
-    		printf("'%s' (%d)\n", f->get_path(), f->get_size());
+    		printf("'%s' (%d), FS=%p\n", f->get_path(), f->get_size(), f->get_file_system());
     	}
-    	printf("\nUsed paths:\n");
-    	for(int i=0;i<used_paths.get_elements();i++) {
-    		Path *p = used_paths[i];
-    		printf("'%s'\n", p->get_path());
-    	}
+
     	printf("\nMount Points:\n");
     	for(int i=0;i<mount_points.get_elements();i++) {
     		MountPoint *f = mount_points[i];
-    		printf("%p:\n", mount_points[i]->get_embedded()); // , mount_points[i]->get_path()
+    		printf("%p: %s\n", f->get_embedded(), f->get_path());
     	}
 		unlock();
 	}
 
-	void invalidate(CachedTreeNode *obj, int includeSelf);
+	void invalidate(CachedTreeNode *obj);
+	void remove_from_parent(CachedTreeNode *o);
     void add_root_entry(CachedTreeNode *obj);
     void remove_root_entry(CachedTreeNode *obj);
 
-    MountPoint *add_mount_point(File *, FileSystemInFile *);
-    MountPoint *find_mount_point(FileInfo *info, FileInfo *parent, const char *dirpath, const char *filepath);
+    MountPoint *add_mount_point(SubPath *path, File *, FileSystemInFile *);
+    MountPoint *find_mount_point(SubPath *path, FileInfo *info);
 
     // Functions to use / handle path objects:
     Path *get_new_path(const char *owner) {
     	Path *p = new Path();
     	p->owner = owner;
-    	used_paths.append(p);
+    	//used_paths.append(p);
     	return p;
     }
     void  release_path(Path *p) {
-    	used_paths.remove(p);
+    	//used_paths.remove(p);
     	delete p;
     }
 
@@ -173,6 +188,10 @@ public:
     bool  is_path_writable(Path *p);
 
     void  get_display_string(Path *p, const char *filename, char *buffer, int width);
+
+    FRESULT get_free(Path *path, uint32_t &free);
+    FRESULT fs_read_sector(Path *path, uint8_t *buffer, int track, int sector);
+    FRESULT fs_write_sector(Path *path, uint8_t *buffer, int track, int sector);
 
     FRESULT fstat(Path *path, const char *filename, FileInfo &info);
     FRESULT fstat(const char *path, const char *name, FileInfo &info);
@@ -205,11 +224,19 @@ public:
     	observers.remove(q);
     }
     void sendEventToObservers(eFileManagerEventType e, const char *p, const char *n="") {
-    	printf("Sending FM event to %d observers: %d %s %s\n", observers.get_elements(), e, p, n);
+        // printf("Sending FM event to %d observers: %d %s %s\n", observers.get_elements(), e, p, n);
     	for(int i=0;i<observers.get_elements();i++) {
+    		ObserverQueue *q = observers[i];
+    		if (!q) {
+    		    continue;
+    		}
     		FileManagerEvent *ev = new FileManagerEvent(e, p, n);
-    		if (!(observers[i]->putEvent(ev))) {
-                printf("Failed to post message to queue #%d - %s.\n", i, observers[i]->getName());
+    		// printf("[%d]", FileManagerEvent :: numFME);
+    		if (!(q->putEvent(ev))) {
+                // printf("Failed to post message to queue #%d - %s.\n", i, q->getName());
+                delete ev;
+    		} else {
+    		    // printf("Sent FM event at %p to %s. (%s)\n", ev, q->getName(), p);
     		}
     	}
     }

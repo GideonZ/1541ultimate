@@ -108,21 +108,36 @@ int TapeRecorder :: executeCommand(SubsysCommand *cmd)
 	return 0;
 }
 
-int  TapeRecorder :: fetch_task_items(Path *path, IndexedList<Action*> &item_list)
+void TapeRecorder :: create_task_items(void)
 {
-	int items = 0;
-	if(recording) {
-		item_list.append(new Action("Finish Rec. to TAP", SUBSYSID_TAPE_RECORDER, MENU_REC_FINISH));
-		items = 1;
-	}
-    else {
-    	if (fm->is_path_writable(path)) {
-			item_list.append(new Action("Sample tape to TAP", SUBSYSID_TAPE_RECORDER, MENU_REC_SAMPLE_TAPE));
-			item_list.append(new Action("Capture save to TAP", SUBSYSID_TAPE_RECORDER, MENU_REC_RECORD_TO_TAP));
-			items = 2;
-    	}
-	}
-	return items;
+    TaskCategory *cat = TasksCollection :: getCategory("Tape", SORT_ORDER_TAPE);
+    myActions.sample  = new Action("Sample tape to TAP", SUBSYSID_TAPE_RECORDER, MENU_REC_SAMPLE_TAPE);
+    myActions.capture = new Action("Capture save to TAP", SUBSYSID_TAPE_RECORDER, MENU_REC_RECORD_TO_TAP);
+    myActions.finish  = new Action("Finish Rec. to TAP", SUBSYSID_TAPE_RECORDER, MENU_REC_FINISH);
+
+    cat->append(myActions.sample);
+    cat->append(myActions.capture);
+    cat->append(myActions.finish);
+}
+
+void TapeRecorder :: update_task_items(bool writablePath, Path *path)
+{
+    if (recording) {
+        myActions.finish->show();
+        myActions.sample->hide();
+        myActions.capture->hide();
+    } else {
+        myActions.finish->hide();
+        myActions.sample->show();
+        myActions.capture->show();
+    }
+    if (writablePath) {
+        myActions.sample->enable();
+        myActions.capture->enable();
+    } else {
+        myActions.sample->disable();
+        myActions.capture->disable();
+    }
 }
 
 void TapeRecorder :: stop(int error)

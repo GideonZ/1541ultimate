@@ -40,31 +40,31 @@ public:
 
 	virtual PathStatus_t walk_path(PathInfo& pathInfo);
 
-	virtual bool    init(void);              // Initialize file system
+	virtual bool    init();              // Initialize file system
+    virtual bool    is_writable() { return false; } // by default a file system is not writable, unless we implement it
+	virtual FRESULT format(const char *name);    // create initial structures of empty disk
+	virtual bool    supports_direct_sector_access(void) { return false; }
+
     virtual FRESULT get_free (uint32_t *e) { *e = 0; return FR_OK; } // Get number of free sectors on the file system
-    virtual bool is_writable() { return false; } // by default a file system is not writable, unless we implement it
     virtual FRESULT sync(void) { return FR_OK; } // by default we can't write, and syncing is thus always successful
     
     // functions for reading directories
-    virtual FRESULT dir_open(const char *path, Directory **, FileInfo *inf = 0); // Opens directory (creates dir object, NULL = root)
-    virtual void    dir_close(Directory *d);    // Closes (and destructs dir object)
-    virtual FRESULT dir_read(Directory *d, FileInfo *f); // reads next entry from dir
+    // In the following functions 'dirCluster' is a suggestive start cluster.
+    // If other than 0 (which means root), it is assumed the path/filenames are relative to that cluster
+    virtual FRESULT dir_open(const char *path, Directory **); // Opens directory (creates dir object)
     virtual FRESULT dir_create(const char *path);  // Creates a directory
     
     // functions for reading and writing files
-    virtual FRESULT file_open(const char *path, Directory *, const char *filename, uint8_t flags, File **);  // Opens file (creates file object)
-    virtual FRESULT file_rename(const char *old_name, const char *new_name); // Renames a file
+    virtual FRESULT file_open(const char *filename, uint8_t flags, File **);  // Opens file (creates file object)
+    virtual FRESULT file_rename(const char *old_name, const char *new_name);  // Renames a file
 	virtual FRESULT file_delete(const char *path); // deletes a file
-    virtual void    file_close(File *f);
-    virtual FRESULT file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred);
-    virtual FRESULT file_write(File *f, const void *buffer, uint32_t len, uint32_t *transferred);
-    virtual FRESULT file_seek(File *f, uint32_t pos);
-    virtual FRESULT file_sync(File *f);             // Clean-up cached data
-    virtual void    file_print_info(File *f) { } // debug
 
-    virtual uint32_t get_file_size(File *f) { return 0; }
-    virtual uint32_t get_inode(File *f) { return 0; }
+
+	virtual void    file_print_info(File *f) { } // debug
+
     virtual bool     needs_sorting() { return false; }
+    virtual FRESULT  read_sector(uint8_t *buffer, int track, int sector) { return FR_DENIED; }
+    virtual FRESULT  write_sector(uint8_t *buffer, int track, int sector) { return FR_DENIED; }
 };
 
 #include "factory.h"
@@ -83,13 +83,14 @@ class PathInfo {
 public:
 	int index;
 	Path workPath;
-	int indexFromStartOfFileSystem;
+	SubPath subPath;
 	FileInfo *last;
 	FileInfo *previous;
 
-	PathInfo(FileSystem *fs) : fileInfo1(128), fileInfo2(128) {
+	PathInfo(FileSystem *fs) : fileInfo1(128), fileInfo2(128), subPath(&workPath) {
 		index = 0;
-		indexFromStartOfFileSystem = 0;
+		subPath.start = 0;
+		subPath.stop = -1;
 		last = 0;
 		previous = 0;
 		fileInfo1.fs = fs; // just in case nothing happens, the last info should at least point to something valid
@@ -100,30 +101,27 @@ public:
 			return;
 		if (!strlen(path))
 			return;
-		if ((path[0] != '/') && (path[0] == '\\'))
-			workPath.cd("/SD"); // configurable?
 		workPath.cd(path);
 	}
+
 	void init(Path *path) {
 		if (!path)
 			return;
 		workPath.cd(path->get_path());
 	}
+
 	void init(const char *path, const char *filename) {
 		if (path)
 			workPath.cd(path);
-		else
-			workPath.cd("/SD"); // configurable?
 		if (filename)
 			workPath.cd(filename);
 	}
+
 	void init(Path *path, const char *filename) {
 		if (path)
 			workPath.cd(path->get_path());
 		if (!filename)
 			return;
-		if ((filename[0] != '/') && (filename[0] == '\\'))
-			workPath.cd("/SD"); // configurable?
 		workPath.cd(filename);
 	}
 
@@ -132,7 +130,7 @@ public:
 	}
 
 	void enterFileSystem(FileSystem *fs) {
-		indexFromStartOfFileSystem = index;
+		subPath.start = index;
 		FileInfo *info = this->getNewInfoPointer();
 		info->fs = fs;
 		info->cluster = 0;
@@ -173,13 +171,19 @@ public:
 		return previous;
 	}
 
-
-	const char *getPathFromLastFS(mstring &work) {
-		return workPath.getSub(indexFromStartOfFileSystem, index, work);
+	const char *getPathFromLastFS(void) {
+	    subPath.stop = index;
+	    return subPath.get_path();
 	}
 
-	const char *getDirectoryFromLastFS(mstring &work) {
-		return workPath.getSub(indexFromStartOfFileSystem, index-1, work);
+	const char *getDirectoryFromLastFS(void) {
+        subPath.stop = index-1;
+        return subPath.get_path();
+	}
+
+	SubPath *getSubPath(void) {
+	    subPath.stop = index;
+	    return &subPath;
 	}
 
 	const char *getFullPath(mstring &work, int part) {
@@ -201,10 +205,9 @@ public:
 	void dumpState(const char *head) {
 		printf("%s state of PathInfo structure:\n", head);
 		printf("Working path: %s\n", workPath.get_path());
-		printf("Index: %d. IndexOfLastFS: %d\n", index, indexFromStartOfFileSystem);
 		printf("hasMore: %s\n", hasMore()?"yes":"no");
+		printf("Path from FS: %s\n", getPathFromLastFS());
 		mstring work;
-		printf("Path from FS: %s\n", getPathFromLastFS(work));
 		printf("Head: %s\n", workPath.getHead(work));
 		printf("Filename: %s\n", getFileName());
 		printf("LastInfo:\n");

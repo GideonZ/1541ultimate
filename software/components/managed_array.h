@@ -22,7 +22,7 @@ private:
 			new_array[i] = element_array[i];
 		}
 		if(element_array)
-			delete element_array;
+			delete[] element_array;
 		element_array = new_array;
 		size = newsize;
 		LEAVE_SAFE_SECTION
@@ -42,7 +42,7 @@ public:
     
     ~ManagedArray() {
 		if(element_array)
-			delete element_array;
+			delete[] element_array;
     }
     
 	void set(int i, T el) {

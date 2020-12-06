@@ -65,11 +65,18 @@ class TapeRecorder : public SubSystem, ObjectWithMenu
     uint32_t *cache_blocks[REC_NUM_CACHE_BLOCKS];
     static void poll_tape_rec(void *a);
 	void poll(void);
+
+	struct {
+	    Action *sample;
+	    Action *capture;
+	    Action *finish;
+	} myActions;
 public:
 	TapeRecorder();
 	virtual ~TapeRecorder();
 
-	int  fetch_task_items(Path *path, IndexedList<Action*> &item_list);
+    void create_task_items(void);
+    void update_task_items(bool writablePath, Path *path);
 	int executeCommand(SubsysCommand *cmd);
     const char *identify(void) { return "Tape Recorder"; }
 	

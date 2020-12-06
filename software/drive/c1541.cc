@@ -116,6 +116,8 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
     
     sprintf(buffer, "1541 Drive %c Settings", letter);    
     register_store((uint32_t)regs, buffer, local_config_definitions);
+    sprintf(buffer, "1541 Drive %c", drive_letter);
+    taskItemCategory = TasksCollection :: getCategory(buffer, SORT_ORDER_DRIVES + drive_letter - 'A');
 
     disk_state = e_no_disk;
     iec_address = 8 + int(letter - 'A');
@@ -200,40 +202,59 @@ void C1541 :: init(void)
     effectuate_settings();
 }
 
-int  C1541 :: fetch_task_items(Path *path, IndexedList<Action*> &item_list)
+
+void C1541 :: create_task_items(void)
 {
-	int items = 1;
-    char buffer[32];
+    myActions.reset   = new Action("Reset",        getID(), MENU_1541_RESET, 0);
+    myActions.remove  = new Action("Remove Disk",  getID(), MENU_1541_REMOVE, 0);
+    myActions.saved64 = new Action("Save as D64",  getID(), MENU_1541_SAVED64, 0);
+    myActions.saveg64 = new Action("Save as G64",  getID(), MENU_1541_SAVEG64, 0);
+    myActions.blank   = new Action("Insert Blank", getID(), MENU_1541_BLANK, 0);
+    myActions.turnon  = new Action("Turn On",      getID(), MENU_1541_TURNON, 0);
+    myActions.turnoff = new Action("Turn Off",     getID(), MENU_1541_TURNOFF, 0);
+
+    taskItemCategory->append(myActions.turnon);
+    taskItemCategory->append(myActions.turnoff);
+    taskItemCategory->append(myActions.reset);
+    taskItemCategory->append(myActions.remove);
+    taskItemCategory->append(myActions.saved64);
+    taskItemCategory->append(myActions.saveg64);
+    taskItemCategory->append(myActions.blank);
+}
+
+void C1541 :: update_task_items(bool writablePath, Path *p)
+{
+    myActions.remove->hide();
+    myActions.saved64->hide();
+    myActions.saveg64->hide();
+    myActions.blank->hide();
+    myActions.reset->hide();
+    myActions.turnon->hide();
 
     // don't show items for disabled drives
-    if (cfg->get_value(CFG_C1541_POWERED) == 0) {
-        return 0;
+    if ((registers[C1541_POWER] & 1) == 0) {
+        myActions.turnon->show();
+        myActions.turnoff->hide();
+        return;
     }
 
-    sprintf(buffer, "Reset 1541 drive %c", drive_letter);
-	item_list.append(new Action(buffer, getID(), MENU_1541_RESET, 0));
+    myActions.turnoff->show();
+    myActions.reset->show();
 
-	if(disk_state != e_no_disk) {
-        sprintf(buffer, "Remove disk from drive %c", drive_letter);
-		item_list.append(new Action(buffer, getID(), MENU_1541_REMOVE, 0));
-		items++;
-
-		if (fm->is_path_writable(path))
-        {
-            sprintf(buffer, "Save disk in drive %c as D64", drive_letter);
-    		item_list.append(new Action(buffer, getID(), MENU_1541_SAVED64, 0));
-    		items++;
-    
-            sprintf(buffer, "Save disk in drive %c as G64", drive_letter);
-    		item_list.append(new Action(buffer, getID(), MENU_1541_SAVEG64, 0));
-    		items++;
-    	}
-	} else {
-        sprintf(buffer, "Insert blank disk in drive %c", drive_letter);
-		item_list.append(new Action(buffer, getID(), MENU_1541_BLANK, 0));
-		items++;
-    }	    
-	return items;
+    if(disk_state == e_no_disk) {
+        myActions.blank->show();
+    } else { // there is a disk in the drive
+        myActions.remove->show();
+        myActions.saved64->show();
+        myActions.saveg64->show();
+    }
+    if(writablePath) {
+        myActions.saved64->enable();
+        myActions.saveg64->enable();
+    } else {
+        myActions.saved64->disable();
+        myActions.saveg64->disable();
+    }
 }
 
 void C1541 :: drive_power(bool on)
@@ -456,6 +477,9 @@ void C1541 :: mount_d64(bool protect, File *file)
 	mount_file = file;
 	remove_disk();
 
+	if (!file) {
+	    return;
+	}
 	printf("Loading...");
 	bin_image->load(file);
 	printf("Converting...");
@@ -474,6 +498,9 @@ void C1541 :: mount_g64(bool protect, File *file)
 	mount_file = file;
 	remove_disk();
 
+    if (!file) {
+        return;
+    }
 	printf("Loading...");
 	gcr_image->load(file);
 	printf("Inserting...");
@@ -715,6 +742,7 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 
 
 	SubsysCommand *c64_command;
+	char drv[2] = { 0,0 };
 
 	switch(cmd->functionID) {
 	case D64FILE_RUN:
@@ -752,8 +780,9 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 				unlink();
 			}
 			if(cmd->functionID == D64FILE_RUN) {
-				c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64,
-						C64_DRIVE_LOAD, RUNCODE_MOUNT_LOAD_RUN, "", "*");
+			    drv[0] = 0x40 + this->get_current_iec_address();
+			    c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64,
+						C64_DRIVE_LOAD, RUNCODE_MOUNT_LOAD_RUN, drv, "*");
 				c64_command->execute();
 			}
 		} else {
@@ -784,8 +813,9 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
             	unlink();
             }
             if(cmd->functionID == G64FILE_RUN) {
+                drv[0] = 0x40 + this->get_current_iec_address();
                 c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64,
-                		C64_DRIVE_LOAD, RUNCODE_MOUNT_LOAD_RUN, "", "*");
+                		C64_DRIVE_LOAD, RUNCODE_MOUNT_LOAD_RUN, drv, "*");
                 c64_command->execute();
             }
 		} else {
@@ -807,6 +837,12 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 	    set_hw_address(cfg->get_value(CFG_C1541_BUS_ID));
 	    drive_power(cfg->get_value(CFG_C1541_POWERED) != 0);
 		break;
+	case MENU_1541_TURNON:
+	    drive_power(1);
+	    break;
+	case MENU_1541_TURNOFF:
+        drive_power(0);
+	    break;
 	case MENU_1541_REMOVE:
         if (!save_if_needed(cmd)) {
             if(cmd->user_interface) {

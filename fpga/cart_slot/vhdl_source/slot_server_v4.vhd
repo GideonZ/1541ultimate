@@ -207,6 +207,7 @@ architecture structural of slot_server_v4 is
     signal dma_req          : t_dma_req;
     signal dma_resp         : t_dma_resp := c_dma_resp_init;
 
+    signal write_ff00       : std_logic;
     signal slot_req         : t_slot_req;
     signal slot_resp        : t_slot_resp := c_slot_resp_init;
     signal slot_resp_reu    : t_slot_resp := c_slot_resp_init;
@@ -258,7 +259,7 @@ begin
         
     i_bridge: entity work.io_to_dma_bridge
     generic map (
-        g_ignore_stop => g_direct_dma )
+        g_ignore_stop => true )
     port map (
         clock       => clock,
         reset       => reset,
@@ -578,6 +579,7 @@ begin
             slot_req        => slot_req,
             slot_resp       => slot_resp_cmd,
             freeze          => cmd_if_freeze,
+            write_ff00      => write_ff00,
             
             -- io interface for local cpu
             io_req          => io_req_cmd, -- we get an 8K range
@@ -585,6 +587,8 @@ begin
             io_irq          => io_irq_cmd );
 
     end generate;
+
+    write_ff00 <= '1' when slot_req.late_write='1' and slot_req.io_address=X"FF00" else '0';
 
     g_reu: if g_ram_expansion generate
     begin
@@ -600,7 +604,8 @@ begin
             -- register interface
             slot_req        => slot_req,
             slot_resp       => slot_resp_reu,
-            
+            write_ff00      => write_ff00,
+
             -- system interface
             phi2_tick       => do_io_event,
             reu_dma_n       => reu_dma_n,

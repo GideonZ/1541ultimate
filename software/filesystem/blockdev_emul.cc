@@ -2,9 +2,11 @@
 #include <stdio.h>
 #include <sys/stat.h>
 #include "blockdev_emul.h"
+#include "dump_hex.h"
 
 BlockDevice_Emulated::BlockDevice_Emulated(const char *name, int sec_size)
 {
+    test = 12345;
     sector_size = sec_size;
     struct stat file_status;
     if(!stat(name, &file_status)) {
@@ -41,14 +43,15 @@ DSTATUS BlockDevice_Emulated::status(void)
     
 DRESULT BlockDevice_Emulated::read(uint8_t *buffer, uint32_t sector, int count)
 {
-//    printf("Device read sector %d.\n", sector);
+    //printf("Device read sector %d.\n", sector);
 
     if(fseek(f, sector * sector_size, SEEK_SET))
         return RES_PARERR;
         
     int read = fread(buffer, sector_size, (int)count, f);
-    if(read != (int)count)
+    if(read != (int)count) {
         return RES_ERROR;
+    }
     
     return RES_OK;
 }

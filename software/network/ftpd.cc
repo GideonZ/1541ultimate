@@ -19,6 +19,8 @@
 #include "vfs.h"
 #include "rtc.h"
 
+static int num_threads = 0;
+
 #ifdef FTPD_DEBUG
 int dbg_printf(const char *fmt, ...);
 #else
@@ -208,16 +210,20 @@ static uint16_t bind_port = 51000;
 FTPDaemonThread::FTPDaemonThread(int socket, uint32_t addr, uint16_t port) :
         data_connections(4, NULL)
 {
+    num_threads++;
     this->socket = socket;
 
-    your_ip[0] = addr >> 24;
-    your_ip[1] = (addr >> 16) & 0xFF;
-    your_ip[2] = (addr >> 8) & 0xFF;
-    your_ip[3] = addr & 0xFF;
+    {
+        uint8_t *ip = (uint8_t *)&addr;
+        your_ip[0] = ip[0]; //addr >> 24;
+        your_ip[1] = ip[1]; //(addr >> 16) & 0xFF;
+        your_ip[2] = ip[2]; //(addr >> 8) & 0xFF;
+        your_ip[3] = ip[3]; //addr & 0xFF;
+    }
 
     your_port = port;
 
-    printf("FTPDaemonThread: connection from %d.%d.%d.%d:%d\n", your_ip[0], your_ip[1], your_ip[2], your_ip[3], port);
+    printf("FTPDaemonThread(%d): connection from %d.%d.%d.%d:%d\n", num_threads, your_ip[0], your_ip[1], your_ip[2], your_ip[3], port);
 
     /* Initialize the structure. */
     state = FTPD_IDLE;
@@ -228,7 +234,7 @@ FTPDaemonThread::FTPDaemonThread(int socket, uint32_t addr, uint16_t port) :
     connection = 0;
     renamefrom = 0;
     func = 0;
-    d64asdir = 0;
+    container_mode = e_vfs_files_only;
     uint32_t fattime = rtc.get_fat_time();
     current_year = 1980 + (fattime >> 25);
 }
@@ -237,7 +243,9 @@ void FTPDaemonThread::run(void *a)
 {
     FTPDaemonThread *thread = (FTPDaemonThread *) a;
     thread->handle_connection();
+    lwip_close(thread->socket);
     delete thread;
+    num_threads--;
     vTaskDelete(NULL);
 }
 
@@ -311,7 +319,13 @@ void FTPDaemonThread::send_msg(const char *msg, ...)
 
 void FTPDaemonThread::cmd_user(const char *arg)
 {
-    d64asdir = !strcasecmp(arg, "d64") ? 1 : !strcasecmp(arg, "d642") ? 0 : 2;
+    if (strcasecmp(arg, "dirs") == 0) {
+        container_mode = e_vfs_dirs_only;
+    } else if (strcasecmp(arg, "into") == 0) {
+        container_mode = e_vfs_dirs_only;
+    } else if(strcasecmp(arg, "both") == 0) {
+        container_mode = e_vfs_double_listed;
+    }
     send_msg(msg331);
     state = FTPD_PASS;
 }
@@ -393,7 +407,7 @@ void FTPDaemonThread::cmd_list_common(const char *arg, int listType)
         }
     }
 
-    vfs_dir = vfs_opendir(vfs, arg);
+    vfs_dir = vfs_opendir(vfs, arg, container_mode);
 
     if (!vfs_dir) {
         send_msg(msg451);
@@ -824,7 +838,9 @@ int FTPDataConnection::setup_connection()
             vTaskDelete(acceptTaskHandle);
             return 0;
         } else {
-            printf("FTPD: Taking semaphore timed out.\n");
+            printf("FTPD: Taking semaphore timed out.\n"
+                   "Number of active connections in this thread: %d\n"
+                   "Number of threads: %d\n", parent->data_connections.get_elements(), num_threads);
             return -1;
         }
     }
@@ -923,49 +939,38 @@ void FTPDataConnection::directory(int listType, vfs_dir_t *dir)
     if (setup_connection() == ERR_OK) {
         int len;
         vfs_stat_t st;
+        vfs_dirent = vfs_readdir(dir);
 
-        do {
-            vfs_dirent = vfs_readdir(dir);
+        while(vfs_dirent) {
+            vfs_stat_dirent(vfs_dirent, &st);
 
-            if (vfs_dirent) {
-                switch (listType) {
-                case 0:
-                    vfs_stat(dir->parent_fs, vfs_dirent->name, &st);
-
-                    if (st.year == parent->current_year)
-                        len = sprintf(buffer, "-rw-rw-rw-   1 user     ftp  %11d %s %02d %02d:%02d %s\r\n", st.st_size,
-                                month_table[st.month], st.day, st.hr, st.min, vfs_dirent->name);
-                    else
-                        len = sprintf(buffer, "-rw-rw-rw-   1 user     ftp  %11d %s %02d %5d %s\r\n", st.st_size,
-                                month_table[st.month], st.day, st.year, vfs_dirent->name);
-                    if (VFS_ISDIR(st.st_mode))
-                        buffer[0] = 'd';
-                    break;
-                case 1:
-                    len = sprintf(buffer, "%s\r\n", vfs_dirent->name);
-                    break;
-                case 2:
-                    vfs_stat(dir->parent_fs, vfs_dirent->name, &st);
-                    if (parent->d64asdir == 2 && (EndsWith(vfs_dirent->name, ".d64") || EndsWith(vfs_dirent->name, ".D64")))
-                        len = sprintf(buffer, "type=dir;modify=%04d%02d%02d%02d%02d%02d; %s\r\n"
-                                "type=file;size=%d;modify=%04d%02d%02d%02d%02d%02d; %s\r\n", st.year, st.month, st.day, st.hr,
-                                st.min, st.sec, vfs_dirent->name, st.st_size, st.year, st.month, st.day, st.hr, st.min, st.sec,
-                                vfs_dirent->name);
-                    else if ( VFS_ISDIR(st.st_mode)
-                            || (parent->d64asdir && (EndsWith(vfs_dirent->name, ".d64") || EndsWith(vfs_dirent->name, ".D64"))))
-                        len = sprintf(buffer, "type=dir;modify=%04d%02d%02d%02d%02d%02d; %s\r\n", st.year, st.month, st.day, st.hr,
-                                st.min, st.sec, vfs_dirent->name);
-                    else
-                        len = sprintf(buffer, "type=file;size=%d;modify=%04d%02d%02d%02d%02d%02d; %s\r\n", st.st_size, st.year,
-                                st.month, st.day, st.hr, st.min, st.sec, vfs_dirent->name);
-                    break;
-                default:
-                    len = sprintf(buffer, "Internal Error\r\n");
-                }
-                buffer[len] = 0;
-                lwip_send(actual_socket, buffer, len, 0);
+            switch (listType) {
+            case 0:
+                if (st.year == parent->current_year)
+                    len = sprintf(buffer, "-rw-rw-rw-   1 user     ftp  %11d %s %02d %02d:%02d %s\r\n", st.st_size,
+                            month_table[st.month], st.day, st.hr, st.min, st.name);
+                else
+                    len = sprintf(buffer, "-rw-rw-rw-   1 user     ftp  %11d %s %02d %5d %s\r\n", st.st_size,
+                            month_table[st.month], st.day, st.year, st.name);
+                if (VFS_ISDIR(st.st_mode))
+                    buffer[0] = 'd';
+                break;
+            case 1:
+                len = sprintf(buffer, "%s\r\n", st.name);
+                break;
+            case 2:
+                len = sprintf(buffer, "type=%s;size=%d;modify=%04d%02d%02d%02d%02d%02d; %s\r\n", VFS_ISDIR(st.st_mode) ? "dir" : "file",
+                        st.st_size, st.year, st.month, st.day, st.hr, st.min, st.sec, st.name);
+                break;
+            default:
+                len = sprintf(buffer, "Internal Error\r\n");
             }
-        } while (vfs_dirent);
+            buffer[len] = 0;
+            lwip_send(actual_socket, buffer, len, 0);
+
+            // for the next iteration
+            vfs_dirent = vfs_readdir(dir);
+        }
     }
     vfs_closedir(dir);
 }

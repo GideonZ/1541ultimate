@@ -9,8 +9,13 @@
 #define INFRA_OBSERVER_H_
 
 #include <stdio.h>
+
+#ifdef OS
 #include "FreeRTOS.h"
 #include "queue.h"
+#else
+    typedef void* QueueHandle_t;
+#endif
 
 class ObserverQueue {
 	QueueHandle_t queue;
@@ -18,11 +23,17 @@ class ObserverQueue {
 	int polls;
 public:
 	ObserverQueue(const char *n) : name(n) {
+#ifdef OS
 		queue = xQueueCreate(8, sizeof(void *));
+#else
+		queue = 0;
+#endif
 		polls = 0;
 	}
 	virtual ~ObserverQueue() {
+#ifdef OS
 		vQueueDelete(queue);
+#endif
 	}
 	bool putEvent(void *el) {
 #ifdef OS
@@ -32,7 +43,9 @@ public:
 	void *waitForEvent(uint32_t ticks) {
 		polls++;
 		void *result = 0;
+#ifdef OS
 		xQueueReceive(queue, &result, (TickType_t)ticks);
+#endif
 		return result;
 	}
 

@@ -12,7 +12,7 @@ extern "C" {
 #define _USE_WRITE	1	/* 1: Enable disk_write function */
 #define _USE_IOCTL	1	/* 1: Enable disk_ioctl fucntion */
 
-#include "ff_integer.h"
+#include <stdint.h> //"ff_integer.h"
 
 /* Status of Disk Functions */
 typedef uint8_t	DSTATUS;
@@ -31,11 +31,11 @@ typedef enum {
 /* Prototypes for disk control functions */
 
 
-DSTATUS disk_initialize (void* pdrv);
-DSTATUS disk_status (void* pdrv);
-DRESULT disk_read (void* pdrv, uint8_t* buff, uint32_t sector, uint32_t count);
-DRESULT disk_write (void* pdrv, const uint8_t* buff, uint32_t sector, uint32_t count);
-DRESULT disk_ioctl (void* pdrv, uint8_t cmd, void* buff);
+DSTATUS disk_initialize (uint8_t pdrv);
+DSTATUS disk_status (uint8_t pdrv);
+DRESULT disk_read (uint8_t pdrv, uint8_t* buff, uint32_t sector, uint32_t count);
+DRESULT disk_write (uint8_t pdrv, const uint8_t* buff, uint32_t sector, uint32_t count);
+DRESULT disk_ioctl (uint8_t pdrv, uint8_t cmd, void* buff);
 
 
 /* Disk Status Bits (DSTATUS) */

@@ -15,7 +15,6 @@ extern "C" {
 #include <string.h>
 #include "flash.h"
 #include "userinterface.h"
-#include "u64.h"
 #include "u64_config.h"
 #include "audio_select.h"
 #include "fpll.h"
@@ -102,6 +101,8 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_AUTO_MIRRORING    0x4A
 // #define CFG_CART_PREFERENCE   0x4B // moved to C64 for user experience consistency
 #define CFG_SPEED_REGS        0x4C
+#define CFG_IEC_BURST_EN      0x4D
+
 #define CFG_SPEED_PREF        0x52
 #define CFG_BADLINES_EN       0x53
 #define CFG_SUPERCPU_DET      0x54
@@ -181,10 +182,12 @@ const char *sid_split[] = { "Off", "1/2 (A5)", "1/2 (A6)", "1/2 (A7)", "1/2 (A8)
 static const char *joyswaps[] = { "Normal", "Swapped" };
 static const char *en_dis5[] = { "Disabled", "Enabled", "Transp. Border" };
 static const char *digi_levels[] = { "Off", "Low", "Medium", "High" };
+static const char *burst_modes[] = { "Off", "CIA1", "CIA2" };
 static const char *yes_no[] = { "No", "Yes" };
 static const char *dvi_hdmi[] = { "Auto", "HDMI", "DVI" };
 static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
-static const char *color_sel[] = { "PAL", "NTSC" };
+static const char *color_sel[] = { "PAL", "NTSC", "PAL-60", "NTSC-50", "PAL-60/L", "NTSC-50/L" };
+
 static const char *sid_types[] = { "None", "6581", "8580", "FPGASID", "SwinSID Ultimate", "ARMSID", "ARM2SID", "SidFx", "FPGASID Dukestah" };
 static const char *sid_shunt[] = { "Off", "On" };
 static const char *sid_caps[] = { "470 pF", "22 nF" };
@@ -238,7 +241,7 @@ dc 0c 11 00 00 9e 01 1d  00 72 51 d0 1e 20 6e 28
 */
 
 struct t_cfg_definition u64_cfg[] = {
-    { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  1, 0 },
+    { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  5, 0 },
     { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  1, 0 },
 //    { CFG_CART_PREFERENCE,      CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,    0,  2, 0 }, // moved to C64 for user consistency
     { CFG_COLOR_CLOCK_ADJ,      CFG_TYPE_VALUE, "Adjust Color Clock",      "%d ppm", NULL,      -100,100, 0 },
@@ -247,6 +250,7 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_HDMI_ENABLE,          CFG_TYPE_ENUM, "Digital Video Mode",           "%s", dvi_hdmi,     0,  2, 0 },
     { CFG_SCANLINES,            CFG_TYPE_ENUM, "HDMI Scan lines",              "%s", en_dis,       0,  1, 0 },
     { CFG_PARCABLE_ENABLE,      CFG_TYPE_ENUM, "SpeedDOS Parallel Cable",      "%s", en_dis,       0,  1, 0 },
+    { CFG_IEC_BURST_EN,         CFG_TYPE_ENUM, "Burst Mode Patch",             "%s", burst_modes,  0,  2, 0 },
     { CFG_LED_SELECT_0,         CFG_TYPE_ENUM, "LED Select Top",               "%s", ledselects,   0, 15, 0 },
     { CFG_LED_SELECT_1,         CFG_TYPE_ENUM, "LED Select Bot",               "%s", ledselects,   0, 15, 4 },
     { CFG_SPEAKER_VOL,          CFG_TYPE_ENUM, "Speaker Volume (SpkDat)",      "%s", speaker_vol,  0, 10, 5 },
@@ -687,7 +691,7 @@ void U64Config :: U64SidAddressing :: effectuate_settings()
 
 U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 {
-    systemMode = -1;
+    systemMode = e_NOT_SET;
     U64_ETHSTREAM_ENA = 0;
 
 /*
@@ -797,14 +801,14 @@ void U64Config :: effectuate_settings()
         U64_HDMI_ENABLE = (hdmiSetting == 1) ? 1 : 0; // 1 = HDMI, 2 = DVI
     }
 
-    U64_PARCABLE_EN  =  cfg->get_value(CFG_PARCABLE_ENABLE);
+    U64_INT_CONNECTORS = cfg->get_value(CFG_PARCABLE_ENABLE) | (cfg->get_value(CFG_IEC_BURST_EN) << 1);
     int chromaDelay  =  cfg->get_value(CFG_CHROMA_DELAY);
     if (chromaDelay < 0) {
-        C64_LUMA_DELAY   = -chromaDelay;
-        C64_CHROMA_DELAY = 0;
+        uint8_t luma = (uint8_t)(-chromaDelay);
+        C64_COLOR_DELAY  = luma;
     } else {
-        C64_LUMA_DELAY   = 0;
-        C64_CHROMA_DELAY = chromaDelay;
+        uint8_t chroma = (uint8_t)(chromaDelay);
+        C64_COLOR_DELAY  = (chroma << 2);
     }
 
     uint8_t format = 0;
@@ -814,18 +818,16 @@ void U64Config :: effectuate_settings()
     }
 
     bool doPll = false;
-    if (cfg->get_value(CFG_SYSTEM_MODE) != systemMode) {
-        systemMode = cfg->get_value(CFG_SYSTEM_MODE);
+    if (cfg->get_value(CFG_SYSTEM_MODE) != (int)systemMode) {
+        systemMode = (t_video_mode)cfg->get_value(CFG_SYSTEM_MODE);
         doPll = true;
     }
 
-    if (systemMode) {
-        format |= VIDEO_FMT_CYCLES_65 | VIDEO_FMT_NTSC_ENCODING | VIDEO_FMT_NTSC_FREQ | VIDEO_FMT_60_HZ;
-        C64_BURST_PHASE = 32;
-    } else {
-        format |= VIDEO_FMT_CYCLES_63;
-        C64_BURST_PHASE = 24;
-    }
+    const t_video_color_timing *ct = color_timings[(int)systemMode];
+    C64_BURST_PHASE = ct->burst_phase;
+    C64_PHASE_INCR  = ct->phase_inc;
+    C64_VIDEOFORMAT = ct->mode_bits | format;
+
     if (doPll) {
         SetVideoPll(systemMode);
         SetHdmiPll(systemMode);
@@ -834,16 +836,10 @@ void U64Config :: effectuate_settings()
         SetResampleFilter(systemMode);
         overlay->initRegs();
     }
-    C64_VIDEOFORMAT = format;
 
 #if DEVELOPER
     C64_VIC_TEST = cfg->get_value(CFG_VIC_TEST);
 #endif
-    /*
-    C64_LINE_PHASE   = 9;
-    C64_PHASE_INCR   = 9;
-    C64_BURST_PHASE  = 24;
-*/
     setPllOffset(cfg->find_item(CFG_COLOR_CLOCK_ADJ));
     setScanMode(cfg->find_item(CFG_SCAN_MODE_TEST));
     setLedSelector(cfg->find_item(CFG_LED_SELECT_0)); // does both anyway
@@ -1039,26 +1035,29 @@ int U64Config :: setSidEmuParams(ConfigItem *it)
 #define MENU_U64_DETECT_SIDS 6
 #define MENU_U64_POKE 7
 
-int U64Config :: fetch_task_items(Path *p, IndexedList<Action*> &item_list)
+void U64Config :: create_task_items(void)
 {
-	int count = 0;
-	if(fm->is_path_writable(p)) {
-    	item_list.append(new Action("Save EDID to file", SUBSYSID_U64, MENU_U64_SAVEEDID));
-    	count ++;
-#if DEVELOPER > 1
-        item_list.append(new Action("Save I2C ROM to file", SUBSYSID_U64, MENU_U64_SAVEEEPROM));
-        count ++;
-#endif
-    }
-#if DEVELOPER
-    item_list.append(new Action("Detect SIDs", SUBSYSID_U64, MENU_U64_DETECT_SIDS));  count ++;
-	item_list.append(new Action("Disable WiFi", SUBSYSID_U64, MENU_U64_WIFI_DISABLE));  count++;
-	item_list.append(new Action("Enable WiFi",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE));  count++;
-    item_list.append(new Action("Enable WiFi Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT));  count++;
-    item_list.append(new Action("Poke", SUBSYSID_U64, MENU_U64_POKE));  count++;
-#endif
-	return count;
+    TaskCategory *dev = TasksCollection :: getCategory("Developer", SORT_ORDER_DEVELOPER);
+    myActions.poke      = new Action("Poke", SUBSYSID_U64, MENU_U64_POKE);
+    myActions.saveedid  = new Action("Save EDID to file", SUBSYSID_U64, MENU_U64_SAVEEDID);
+    myActions.siddetect = new Action("Detect SIDs", SUBSYSID_U64, MENU_U64_DETECT_SIDS);
+    myActions.wifioff   = new Action("Disable WiFi", SUBSYSID_U64, MENU_U64_WIFI_DISABLE);
+    myActions.wifion    = new Action("Enable WiFi",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE);
+    myActions.wifiboot  = new Action("Enable WiFi Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT);
 
+    dev->append(myActions.saveedid );
+#if DEVELOPER > 0
+    dev->append(myActions.poke     );
+    dev->append(myActions.siddetect);
+    dev->append(myActions.wifioff  );
+    dev->append(myActions.wifion   );
+    dev->append(myActions.wifiboot );
+#endif
+}
+
+void U64Config :: update_task_items(bool writablePath, Path *p)
+{
+    myActions.saveedid->setDisabled(!writablePath);
 }
 
 int U64Config :: executeCommand(SubsysCommand *cmd)
@@ -1579,8 +1578,11 @@ const uint32_t c_filter2_coef_ntsc[] = {
     -1, -1, -1, 0, 0, 0, 0, 0 };
 
 
-void U64Config :: SetResampleFilter(int mode)
+void U64Config :: SetResampleFilter(t_video_mode m)
 {
+    const t_video_color_timing *ct = color_timings[(int)m];
+    int mode = (ct->audio_div == 77) ? 0 : 1;
+
     const uint32_t *pulFilter = (mode == 0) ? c_filter2_coef_pal_alt : c_filter2_coef_ntsc;
     int size = (mode == 0) ? 675 : 512;
 
@@ -1664,13 +1666,6 @@ void U64Config :: DetectSidImpl(uint8_t *buffer)
 
 #pragma GCC pop_options
 
-#define ONCHIP 0x30000020
-
-extern uint32_t __start_detect_sid;
-extern uint32_t __stop_detect_sid;
-
-typedef void (*func)(uint8_t *);
-
 void U64Config :: S_SetupDetectionAddresses()
 {
     // Configure Socket 1 to be at $D400 and Socket 2 to be at $D500
@@ -1706,28 +1701,10 @@ void U64Config :: S_RestoreDetectionAddresses()
 
 int U64Config :: S_SidDetector(int &sid1, int &sid2)
 {
-    uint32_t *begin = &__start_detect_sid;
-    uint32_t *end = &__stop_detect_sid;
-
-/*
-    // This check forces a reference to U64Config::DetectSid, so it will not be left out by the linker
-    // Note: we never jump to this function, we only take its pointer and jump to the copied version!
-    if ((void *)&U64Config::DetectSidImpl != begin) {
-        printf("Routine location error.\n");
-        return -1;
-    }
-*/
     S_SetupDetectionAddresses();
 
-    // Prepare the function in fast ram
-    uint32_t *dest = (uint32_t *)ONCHIP;
-    for (uint32_t *pul = begin; pul < end; pul++) {
-        *(dest++) = *pul;
-    }
 
     C64 :: hard_stop();
-
-    func detection = (func)ONCHIP;
 
     uint8_t buffer[64];
 
@@ -1736,34 +1713,33 @@ int U64Config :: S_SidDetector(int &sid1, int &sid2)
     for (int attempt = 0; attempt < 3; attempt++) {
         // Prepare the machine to execute the detection code
 
-
         alt_irq_context context = alt_irq_disable_all();
-        detection(buffer);  // <-- jumps to fast ram!
+        DetectSidImpl(buffer);
         alt_irq_enable_all(context);
 
         // Now analyze the data
-        if ((buffer[16] == 2) && (buffer[0] == 0))  {
+        if ((buffer[17] == 2) && (buffer[1] == 0))  {
             sid1 = 2;
-        } else if ((buffer[16] == 2) && (buffer[0] == 1)) {
+        } else if ((buffer[17] == 2) && (buffer[1] == 1)) {
             sid1 = 1;
         }
 
-        if ((buffer[48] == 2) && (buffer[32] == 0))  {
+        if ((buffer[49] == 2) && (buffer[33] == 0))  {
             sid2 = 2;
-        } else if ((buffer[48] == 2) && (buffer[32] == 1)) {
+        } else if ((buffer[49] == 2) && (buffer[33] == 1)) {
             sid2 = 1;
         }
 
         // check consistency. If not consistent, invalidate. If consistent, break
         bool consistent = true;
-        for(int i=1;i<16;i++) {
+        for(int i=2;i<16;i++) {
             if (sid1) {
-                if (buffer[i]    != buffer[0])  { consistent = false; sid1 = 0; break; }
-                if (buffer[i+16] != buffer[16]) { consistent = false; sid1 = 0; break; }
+                if (buffer[i]    != buffer[1])  { consistent = false; sid1 = 0; break; }
+                if (buffer[i+16] != buffer[17]) { consistent = false; sid1 = 0; break; }
             }
             if (sid2) {
-                if (buffer[i+32] != buffer[32]) { consistent = false; sid2 = 0; break; }
-                if (buffer[i+48] != buffer[48]) { consistent = false; sid2 = 0; break; }
+                if (buffer[i+32] != buffer[33]) { consistent = false; sid2 = 0; break; }
+                if (buffer[i+48] != buffer[49]) { consistent = false; sid2 = 0; break; }
             }
         }
 
