@@ -826,7 +826,7 @@ void U64Config :: effectuate_settings()
     const t_video_color_timing *ct = color_timings[(int)systemMode];
     C64_BURST_PHASE = ct->burst_phase;
     C64_PHASE_INCR  = ct->phase_inc;
-    C64_VIDEOFORMAT = ct->mode_bits;
+    C64_VIDEOFORMAT = ct->mode_bits | format;
 
     if (doPll) {
         SetVideoPll(systemMode);
