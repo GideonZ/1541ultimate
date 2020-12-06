@@ -1287,6 +1287,8 @@ void IecCommandChannel::block_command(command_t& cmd)
 #endif
         fres = fm->fs_read_sector(partition->GetPath(), channel->buffer, tr, sc);
         interface->set_error_fres(fres);
+        channel->pointer = 0;
+        channel->reset_prefetch();
         state = e_idle;
         break;
     case 2:
