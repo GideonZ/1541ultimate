@@ -170,9 +170,18 @@ public:
     {
         CleanupDir();
         FRESULT res = fm->get_directory(path, *dirlist, NULL);
+        char buffer[128];
         for (int i = 0; i < dirlist->get_elements(); i++) {
             FileInfo *inf = (*dirlist)[i];
             iecNames->append(CreateIecName(inf));
+            // now the dirty trick; if the info file is in CBM format, we convert it to FAT filename here, because
+            // the interface to the file system is in FAT file naming.. This whole mechanism needs to change.
+            // We don't actually need a directory cache.
+            if ((inf->name_format & NAME_FORMAT_CBM) && !(inf->attrib & AM_VOL)) {
+                inf->generate_fat_name(buffer, 128);
+                strncpy(inf->lfname, buffer, (unsigned int)inf->lfsize);
+                inf->name_format = 0;
+            }
         }
         return res;
     }
