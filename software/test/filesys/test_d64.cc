@@ -461,7 +461,7 @@ void read_dnp()
     FileSystemCBM *fs = new FileSystemDNP(prt, true);
     print_directory(fs, "");
 
-#if 1
+#if 0
     File *f;
 /*
     fs->file_open("userlog2.rel", FA_READ, &f);
@@ -562,14 +562,15 @@ int main()
     //    read_d81();
 
     //read_cvt();
-    read_dnp();
+    // read_dnp();
     //test_fat();
-    return 0;
+    // return 0;
 
     ok &= test_format_d64();
-    ok &= test_format_d71();
-    ok &= test_format_d81();
-    ok &= test_format_dnp();
+    //ok &= test_format_d71();
+    //ok &= test_format_d81();
+    //ok &= test_format_dnp();
+    //ok &= test_format_fat();
 
     if (!ok) {
         printf("\nTest FAILED.\n");
