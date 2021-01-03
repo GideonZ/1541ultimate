@@ -109,6 +109,23 @@ void FastUART::EnableRxIRQ(bool enable)
     }
 }
 
+void FastUART::ClearRxBuffer(void)
+{
+    stdRx.rxHead = 0;
+    stdRx.rxTail = 0;
+    slipRx.rxHead = 0;
+    slipRx.rxTail = 0;
+}
+
+void FastUART::SetBaudRate(int bps)
+{
+	int twice = (CLOCK_FREQ * 2) / bps;
+	uint16_t rate = ((twice + 1) >> 1) - 1;
+	printf("SetBaudRate to %d bps => %d\n", bps, rate);
+	uart->rate_h = rate >> 8;
+	uart->rate_l = rate & 0xFF;
+}
+
 void FastUART::FastUartRxInterrupt(void *context)
 {
     FastUART *u = (FastUART *) context;

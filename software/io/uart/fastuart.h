@@ -9,6 +9,7 @@
 #define FASTUART_H_
 
 #include <stdint.h>
+#include <stdio.h>
 #include "FreeRTOS.h"
 #include "queue.h"
 
@@ -18,6 +19,9 @@ typedef struct _fastuart_t
     uint8_t get;
     uint8_t flags;
     uint8_t ictrl;
+    uint8_t rate_l;
+    uint8_t rate_h;
+    uint8_t flowctrl;
 } fastuart_t;
 
 typedef struct
@@ -68,9 +72,15 @@ public:
         slipError = false;
         slipQueue = xQueueCreate(8, sizeof(slipElement_t));
         slipEnabled = false;
+
+        uint16_t rate = (((uint16_t)uart->rate_h) << 8) | uart->rate_l;
+
+        printf("FastUART initialized. Start rate: %d bps\n", CLOCK_FREQ / (rate + 1));
     }
 
     void EnableRxIRQ(bool);
+    void ClearRxBuffer(void);
+    void SetBaudRate(int bps);
     static void FastUartRxInterrupt(void *context);
 
     // possibly blocking

@@ -10,6 +10,7 @@
 #include "u64.h"
 #include "dump_hex.h"
 #include <stdarg.h>
+#include "userinterface.h"
 
 extern "C" {
 int alt_irq_register(int, int, void (*)(void*));
@@ -17,7 +18,7 @@ int alt_irq_register(int, int, void (*)(void*));
 
 typedef enum
 {
-    WIFI_OFF = 0, WIFI_QUIT, WIFI_BOOTMODE, WIFI_DOWNLOAD, WIFI_START,
+    WIFI_OFF = 0, WIFI_QUIT, WIFI_BOOTMODE, WIFI_DOWNLOAD, WIFI_START, WIFI_DOWNLOAD_START, WIFI_DOWNLOAD_MSG
 } wifiCommand_e;
 
 typedef struct
@@ -62,6 +63,7 @@ WiFi :: WiFi()
     commandQueue = xQueueCreate(8, sizeof(wifiCommand_t));
     xTaskCreate( WiFi :: TaskStart, "WiFi Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
     doClose = false;
+    programError = false;
 }
 
 
@@ -74,13 +76,17 @@ void WiFi :: Enable()
 {
     U64_WIFI_CONTROL = 0;
     vTaskDelay(50);
-    U64_WIFI_CONTROL = 1;
+    uart->ClearRxBuffer();
+    uart->SetBaudRate(115200);
+    U64_WIFI_CONTROL = 5;
 }
 
 void WiFi :: Boot()
 {
     U64_WIFI_CONTROL = 2;
     vTaskDelay(150);
+    uart->ClearRxBuffer();
+    uart->SetBaudRate(115200);
     U64_WIFI_CONTROL = 3;
 }
 
@@ -159,9 +165,27 @@ int WiFi :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
 
     bool synced = false;
 
+    vTaskDelay(100); // wait for the boot message to appear
+    bzero(receiveBuffer, 512);
     if (uart->Read(receiveBuffer, 512) > 0) {
         printf("Boot message:\n%s\n", receiveBuffer);
+    } else {
+    	printf("No boot message.\n");
+    	return -7; // no response at all from ESP32
     }
+    bool downloadStringFound = false;
+    for (int i=0;i<100;i++) {
+    	if (strncmp((char *)(receiveBuffer + i), "DOWNLOAD_BOOT", 13) == 0) {
+    		downloadStringFound = true;
+    		break;
+    	}
+    }
+    if (!downloadStringFound) {
+    	printf("Download string not found.\n");
+    	return -8;
+    }
+
+    uart->SetBaudRate(115200*2);
 
     for (int i = 0; i < 10; i++) {
         uart->SendSlipPacket(syncFrame, 44);
@@ -207,8 +231,10 @@ int WiFi :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
 
     // Now start Flashing
     PackParams(parambuf, 4, total_length, blocks, block_size, address);
-    if (!Command(ESP_FLASH_BEGIN, 16, 0, parambuf, receiveBuffer, 15 * 200))
-        return -4;
+    if (!Command(ESP_FLASH_BEGIN, 16, 0, parambuf, receiveBuffer, 15 * 200)) {
+    	printf("Command Error ESP_FLASH_BEGIN.\n");
+    	return -4;
+    }
 
     // Flash Blocks
     const uint8_t *pb = binary;
@@ -228,15 +254,19 @@ int WiFi :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
             chk ^= flashBlock[m];
         }
         PackParams(flashBlock, 4, block_size, i, 0, 0);
-        if (!Command(ESP_FLASH_DATA, 16 + block_size, chk, flashBlock, receiveBuffer, 5 * 200))
+        if (!Command(ESP_FLASH_DATA, 16 + block_size, chk, flashBlock, receiveBuffer, 5 * 200)) {
+        	printf("Command Error ESP_FLASH_DATA.\n");
             return -5;
+        }
         remain -= now;
         pb += now;
     }
 
     PackParams(parambuf, 1, 1); // Stay in the Loader
-    if (!Command(ESP_FLASH_END, 4, 0, parambuf, receiveBuffer, 200))
+    if (!Command(ESP_FLASH_END, 4, 0, parambuf, receiveBuffer, 200)) {
+    	printf("Command Error ESP_FLASH_END.\n");
         return -6;
+    }
 
     printf("Programming ESP32 was a success!\n");
     return 0;
@@ -273,6 +303,7 @@ void WiFi::Thread()
 
     wifiCommand_t command;
     bool run = true;
+    int a;
 
     while (run) {
         xQueueReceive(commandQueue, &command, portMAX_DELAY);
@@ -296,9 +327,22 @@ void WiFi::Thread()
         case WIFI_DOWNLOAD:
             uart->EnableSlip(true);
             Boot();
-            Download((const uint8_t *)command.data, command.address, command.length);
+            a = Download((const uint8_t *)command.data, command.address, command.length);
+            if (a) {
+                programError = true;
+            }
             if (command.doFree) {
-                free((void *)command.data);
+                delete[] ((uint8_t *)command.data);
+            }
+            break;
+        case WIFI_DOWNLOAD_START:
+            programError = false;
+            break;
+        case WIFI_DOWNLOAD_MSG:
+            if (!programError) {
+                UserInterface :: postMessage("ESP32 Program Complete.");
+            } else {
+                UserInterface :: postMessage("ESP32 Program Failed.");
             }
             break;
         default:
@@ -447,6 +491,13 @@ BaseType_t WiFi::doStart()
 {
     wifiCommand_t command;
     command.commandCode = WIFI_START;
+    return xQueueSend(commandQueue, &command, 200);
+}
+
+BaseType_t WiFi::doDownloadWrap(bool start)
+{
+    wifiCommand_t command;
+    command.commandCode = (start) ? WIFI_DOWNLOAD_START : WIFI_DOWNLOAD_MSG;
     return xQueueSend(commandQueue, &command, 200);
 }
 

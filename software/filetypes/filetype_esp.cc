@@ -102,7 +102,9 @@ int FileTypeESP::execute(SubsysCommand *cmd)
 
     if (file) {
         total_bytes_read = 0;
+        cmd->user_interface->popup("ESP Programming now starts.", BUTTON_OK);
 
+        wifi.doDownloadWrap(true);
         while (remain) {
             file->read(&header, 12, &bytes_read);
             remain -= bytes_read;
@@ -115,7 +117,7 @@ int FileTypeESP::execute(SubsysCommand *cmd)
                 cmd->user_interface->popup("Incorrect signature in file.", BUTTON_OK);
                 break;
             }
-            dest = (uint8_t *)malloc(header.length);
+            dest = new uint8_t[header.length];
             if (!dest) {
                 cmd->user_interface->popup("Couldn't alloc mem to load segment.", BUTTON_OK);
                 break;
@@ -123,8 +125,9 @@ int FileTypeESP::execute(SubsysCommand *cmd)
             file->read(dest, header.length, &bytes_read);
             remain -= bytes_read;
             total_bytes_read += bytes_read;
-            wifi.doDownload(dest, header.address, header.length, 1);
+            wifi.doDownload(dest, header.address, header.length, true);
         }
+        wifi.doDownloadWrap(false);
         fm->fclose(file);
     } else {
         printf("Error opening file.\n");

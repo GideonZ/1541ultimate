@@ -26,6 +26,7 @@ class WiFi
     QueueHandle_t commandQueue;
 
     bool doClose;
+    bool programError;
 
     void Enable();
     void Disable();
@@ -46,6 +47,7 @@ public:
     BaseType_t doBootMode();
     BaseType_t doStart();
     BaseType_t doDownload(uint8_t *binary, uint32_t address, uint32_t length, bool doFree);
+    BaseType_t doDownloadWrap(bool start);
 };
 
 
