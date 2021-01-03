@@ -52,10 +52,12 @@ architecture gideon of uart_peripheral_io is
     constant c_uart_get     : unsigned(1 downto 0) := "01";
     constant c_uart_flags   : unsigned(1 downto 0) := "10";
     constant c_uart_imask   : unsigned(1 downto 0) := "11";
+    constant c_divisor  : std_logic_vector(9 downto 0) := std_logic_vector(to_unsigned(g_divisor - 1, 10));
 begin
     my_tx: entity work.tx 
-    generic map (g_divisor)
     port map (
+        divisor => c_divisor,
+
         clk     => clock,
         reset   => reset,
         tick    => tick,
@@ -69,8 +71,9 @@ begin
 
     r_rx: if g_impl_rx generate
         my_rx: entity work.rx 
-        generic map (g_divisor)
         port map (
+            divisor => c_divisor,
+
             clk     => clock,
             reset   => reset,
             tick    => tick,

@@ -23,6 +23,7 @@ port (
 end uart_peripheral_fast;
 
 architecture gideon of uart_peripheral_fast is
+    signal divisor      : std_logic_vector(9 downto 0);
 	signal dotx			: std_logic;
 	signal done			: std_logic;
 	signal rxchar		: std_logic_vector(7 downto 0);
@@ -45,11 +46,16 @@ architecture gideon of uart_peripheral_fast is
     signal txfifo_dav   : std_logic;
     signal dotx_d       : std_logic;
 	signal txchar		: std_logic_vector(7 downto 0);
+    signal cts_c        : std_logic;
+    signal cts_enable   : std_logic;
     
-    constant c_uart_data    : unsigned(1 downto 0) := "00";
-    constant c_uart_get     : unsigned(1 downto 0) := "01";
-    constant c_uart_flags   : unsigned(1 downto 0) := "10";
-    constant c_uart_imask   : unsigned(1 downto 0) := "11";
+    constant c_uart_data        : unsigned(2 downto 0) := "000";
+    constant c_uart_get         : unsigned(2 downto 0) := "001";
+    constant c_uart_flags       : unsigned(2 downto 0) := "010";
+    constant c_uart_imask       : unsigned(2 downto 0) := "011";
+    constant c_uart_divisor_l   : unsigned(2 downto 0) := "100";
+    constant c_uart_divisor_h   : unsigned(2 downto 0) := "101";
+    constant c_uart_flowctrl    : unsigned(2 downto 0) := "110";
 begin
     i_tx_fifo: entity work.sync_fifo
     generic map (
@@ -73,22 +79,24 @@ begin
     );
 
     my_tx: entity work.tx 
-    generic map (g_divisor)
     port map (
+        divisor => divisor,
+
         clk     => clock,
         reset   => reset,
         tick    => '1',
     
         dotx    => dotx,
         txchar  => txchar,
-        cts     => cts,
+        cts     => cts_c,
     
         txd     => txd,
         done    => done );
 
     my_rx: entity work.rx 
-    generic map (g_divisor)
     port map (
+        divisor => divisor,
+
         clk     => clock,
         reset   => reset,
         tick    => '1',
@@ -127,6 +135,7 @@ begin
 			dotx_d     <= dotx;
 			txfifo_get <= dotx_d;
             io_resp    <= c_io_resp_init;
+			cts_c      <= cts or not cts_enable;
 			
 			if rxfifo_full='1' and rx_ack='1' then
 				overflow <= '1';
@@ -137,7 +146,7 @@ begin
             
 			if io_req.write='1' then
                 io_resp.ack <= '1';
-				case io_req.address(1 downto 0) is
+				case io_req.address(2 downto 0) is
 				when c_uart_data => -- dout
                     -- outside of process
 
@@ -149,6 +158,15 @@ begin
 
 				when c_uart_imask => -- interrupt control
 					imask <= io_req.data(1 downto 0);
+
+                when c_uart_divisor_l =>
+                    divisor(7 downto 0) <= io_req.data;
+                    
+                when c_uart_divisor_h =>
+                    divisor(9 downto 8) <= io_req.data(1 downto 0);
+
+                when c_uart_flowctrl =>
+                    cts_enable <= io_req.data(0);
 
 				when others =>
 					null;
@@ -162,6 +180,7 @@ begin
 			if reset='1' then
 				overflow <= '0';
 				imask    <= (others => '0');
+				divisor  <= std_logic_vector(to_unsigned(g_divisor-1, divisor'length));
 			end if;
 		end if;
 	end process;
@@ -169,7 +188,7 @@ begin
     irq <= (flags(3) and imask(1)) or (flags(7) and imask(0));
 
 	flags(0) <= overflow;
-	flags(1) <= '0';
+	flags(1) <= cts_c;
 	flags(2) <= txfifo_empty;
 	flags(3) <= not txfifo_afull;
 	flags(4) <= txfifo_full;
@@ -179,10 +198,13 @@ begin
 	
     rts <= not rxfifo_full;
     
-	with io_req.address(1 downto 0) select rdata_mux <=
+	with io_req.address(2 downto 0) select rdata_mux <=
 		rxfifo_dout      when c_uart_data,
 		flags            when c_uart_flags,
 		"000000" & imask when c_uart_imask,
+		divisor(7 downto 0) when c_uart_divisor_l,
+		"000000" & divisor(9 downto 8) when c_uart_divisor_h,
+        "0000000" & cts_enable when c_uart_flowctrl,
 		X"00"            when others;
 
 end gideon;

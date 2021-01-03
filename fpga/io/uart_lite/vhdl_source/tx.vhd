@@ -12,10 +12,13 @@
 -------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
 entity tx is
-generic (clks_per_bit : integer := 434); -- 115k2 @ 50 MHz
+--generic (clks_per_bit : integer := 434); -- 115k2 @ 50 MHz
 port (
+    divisor : in  std_logic_vector(9 downto 0);
+
     clk     : in  std_logic;
     reset   : in  std_logic;
     tick    : in  std_logic;
@@ -30,7 +33,7 @@ end tx;
 architecture gideon of tx is
     signal bitcnt : integer range 0 to 9;
     signal bitvec : std_logic_vector(8 downto 0);
-    signal timer  : integer range 0 to clks_per_bit;
+    signal timer  : integer range 0 to 1023;
     type state_t is (Idle, Waiting, Transmitting);
     signal state  : state_t;
     signal cts_c  : std_logic := '1';
@@ -49,7 +52,7 @@ begin
                     end if;
                     bitcnt <= 9;
                     bitvec <= not(txchar) & '1';
-                    timer  <= clks_per_bit - 1;
+                    timer  <= to_integer(unsigned(divisor)); --clks_per_bit - 1;
                 end if;
             when Waiting =>
                 if cts_c='1' then
@@ -58,7 +61,7 @@ begin
             when Transmitting =>
                 if tick = '1' then
                     if timer=0 then
-                        timer <= clks_per_bit - 1;
+                        timer  <= to_integer(unsigned(divisor)); --clks_per_bit - 1;
                         if bitcnt = 0 then
                             state <= Idle;
                         else
