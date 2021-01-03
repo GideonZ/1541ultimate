@@ -144,7 +144,7 @@ VPATH += $(PATH_SW)/6502/sidcrt/target
 
 SRCS_ASM =  mb_crt0.s portasm.s
 
-SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas
+SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas eapi.tas
 
 SRCS_BIN =  basic.bin chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin sidcrt.bin muscrt.bin musplayer.bin
 
