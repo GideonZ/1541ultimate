@@ -17,7 +17,6 @@
 #include "itu.h"
 #include "profiler.h"
 #include "usb_nano.h"
-#include "u64.h"
 
 void ResetInterruptHandlerCmdIf(void) __attribute__ ((weak));
 void ResetInterruptHandlerU64(void) __attribute__ ((weak));
@@ -112,19 +111,6 @@ static void test_i2c_mdio(void) {
 
 	codec_init();
 
-/*
-    uint16_t *base = (uint16_t *)NANO_BASE;
-    if (*base) {
-    	printf("Detected debug session. Dumping current USB state.\n");
-    	for (int j=0; j < 64; j++) {
-    		printf("%b0: ", j);
-    		for(int i=16*j; i < (16*j+16); i+=2) {
-    			printf("%04X ", base[i]);
-    		} printf("\n");
-    	}
-    }
-*/
-
 	NANO_START = 0;
 	U2PIO_ULPI_RESET = 1;
 	uint16_t *dst = (uint16_t *) NANO_BASE;
@@ -173,6 +159,7 @@ int main(int argc, char *argv[]) {
 	ioWrite8(ITU_IRQ_TIMER_LO, (uint8_t)(freq & 0xFF));
 	ioWrite8(ITU_IRQ_TIMER_EN, 1);
 	ioWrite8(ITU_IRQ_ENABLE, 0x01); // timer only : other modules shall enable their own interrupt
+	ioWrite8(ITU_IRQ_GLOBAL, 0x01); // Enable interrupts globally
 	ioWrite8(UART_DATA, 0x35);
 
 	// Finally start the scheduler.

@@ -10,7 +10,7 @@ use work.io_bus_pkg.all;
 entity ultimate_mb_700a is
 generic (
     g_dual_drive    : boolean := false;
-    g_version       : unsigned(7 downto 0) := X"16" );
+    g_version       : unsigned(7 downto 0) := X"17" );
 port (
     CLOCK       : in    std_logic;
     
@@ -21,7 +21,7 @@ port (
 
     BUFFER_ENn  : out   std_logic;
 
-    SLOT_ADDR   : inout std_logic_vector(15 downto 0);
+    SLOT_ADDR   : inout unsigned(15 downto 0);
     SLOT_DATA   : inout std_logic_vector(7 downto 0);
     RWn         : inout std_logic;
     BA          : in    std_logic;
@@ -128,7 +128,7 @@ architecture structural of ultimate_mb_700a is
     signal ulpi_reset_i     : std_logic;
 
     -- Slot
-    signal slot_addr_o  : std_logic_vector(15 downto 0);
+    signal slot_addr_o  : unsigned(15 downto 0);
     signal slot_addr_tl : std_logic;
     signal slot_addr_th : std_logic;
     signal slot_data_o  : std_logic_vector(7 downto 0);
@@ -220,9 +220,7 @@ begin
         g_vic_copper    => false,
         g_video_overlay => false,
         g_sampler       => not g_dual_drive,
-        g_acia          => g_dual_drive,
-        g_analyzer      => false,
-        g_profiler      => false )
+        g_acia          => g_dual_drive )
     port map (
         -- globals
         sys_clock   => sys_clock,

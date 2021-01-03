@@ -2,7 +2,6 @@
 #define ITU_H
 
 #include "integer.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -74,12 +73,13 @@ extern "C" {
 
 #define FPGA_TYPE_SHIFT     28
 
-#if RUNS_ON_PC
+#ifdef OS
+# include "portmacro.h"
+# define ENTER_SAFE_SECTION portDISABLE_INTERRUPTS(); // ioWrite8(ITU_IRQ_GLOBAL,0);
+# define LEAVE_SAFE_SECTION portENABLE_INTERRUPTS();  // ioWrite8(ITU_IRQ_GLOBAL,1);
+#else
 # define ENTER_SAFE_SECTION
 # define LEAVE_SAFE_SECTION
-#else
-# define ENTER_SAFE_SECTION ioWrite8(ITU_IRQ_GLOBAL,0);
-# define LEAVE_SAFE_SECTION ioWrite8(ITU_IRQ_GLOBAL,1);
 #endif
 
 #define ITU_BUTTON0 0x20
@@ -89,8 +89,10 @@ extern "C" {
 
 // Timer functions
 void wait_ms(int);
+void wait_10us(uint8_t mult); // max=126
 void outbyte(int c);
 uint8_t getButtons(void);
+void itu_clear_irqs(void);
 
 #define UART_DATA  (ITU_BASE + 0x10)
 #define UART_GET   (ITU_BASE + 0x11)

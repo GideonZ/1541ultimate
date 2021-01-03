@@ -19,29 +19,18 @@
 
 class File
 {
-	FileSystem *filesystem;
-	mstring pathString;
+    FileSystem *filesystem;
+    mstring pathString;
 
 	// the following function shall only be called by the file manager
 	friend class FileManager;
-	virtual void    close(void);
 public:
-    void *handle;   // could be a pointer to an object used in the derived class
+    File(FileSystem *fs) { filesystem = fs; }
+    virtual ~File() { }
 
-    File(FileSystem *fs, void *h) {
-    	filesystem = fs;
-    	handle = h;
-    }
-
-    virtual ~File() {
-    }
-
-    // functions for reading and writing files
-    void invalidate(void) {
-    	filesystem = NULL;
-    }
-
+    FileSystem *get_file_system() { return filesystem; }
     bool isValid(void) { return (filesystem != NULL); }
+    void invalidate(void) { filesystem = NULL; }
 
     const char *get_path() {
     	return pathString.c_str();
@@ -50,19 +39,14 @@ public:
     	return pathString;
     }
 
-    virtual FRESULT sync(void);
-    virtual FRESULT read(void *buffer, uint32_t len, uint32_t *transferred);
-    virtual FRESULT write(const void *buffer, uint32_t len, uint32_t *transferred);
-    virtual FRESULT seek(uint32_t pos);
-//    virtual void print_info() { filesystem->file_print_info(this); }
-    virtual uint32_t get_size(void)
-    {
-    	if(!filesystem)
-            return 0;
-    	return filesystem->get_file_size(this);
-    }
-    FileSystem *get_file_system() { return filesystem; }
-    uint32_t 	get_inode() { return filesystem->get_inode(this); }
+    // functions for reading and writing files
+    virtual FRESULT close(void) { delete this; return FR_NO_FILESYSTEM; }
+    virtual FRESULT sync(void) { return FR_NO_FILESYSTEM; }
+    virtual FRESULT read(void *buffer, uint32_t len, uint32_t *transferred) { return FR_NO_FILESYSTEM; }
+    virtual FRESULT write(const void *buffer, uint32_t len, uint32_t *transferred) { return FR_NO_FILESYSTEM; }
+    virtual FRESULT seek(uint32_t pos) { return FR_NO_FILESYSTEM; }
+    virtual uint32_t get_inode() { return 0; }
+    virtual uint32_t get_size(void) { return 0; }
 };
 
 #endif

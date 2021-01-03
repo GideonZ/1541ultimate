@@ -10,7 +10,9 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
+#include "fs_errors_flags.h"
 
+#define IECDEBUG 0
 
 #define HW_IEC_REGS      IEC_BASE
 #define HW_IEC_CODE      (IEC_BASE + 0x800)
@@ -57,6 +59,7 @@ class IecCommandChannel;
 class IecPrinter;
 class UltiCopy;
 class IecFileSystem;
+class FileManager;
 
 class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
 {
@@ -69,6 +72,10 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
     FileManager *fm;
     IecFileSystem *vfs;
 
+    int last_error_code;
+    int last_error_track;
+    int last_error_sector;
+
     const char *rootPath;
     int last_addr;
     int last_printer_addr;
@@ -76,15 +83,13 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
     bool atn;
     bool talking;
     bool printer;
-    uint32_t start_address;
-    uint32_t end_address;
     IecChannel *channels[16];
     IecPrinter *channel_printer;
     int current_channel;
     int warp_drive;
     uint8_t warp_return_code;
-    uint8_t *emulatedRam;
 
+    void reset(void);
     void poll(void);
     void test_master(int);
     void start_warp(int);
@@ -96,12 +101,21 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
     bool master_send_cmd(int device, uint8_t *cmd, int length);
     void master_read_status(int device);
     bool run_drive_code(int device, uint16_t addr, uint8_t *code, int length);
+    void set_iec_dir(const char *path);
     UltiCopy *ui_window;
     uint8_t last_track;
     static void iec_task(void *a);
-    uint8_t *getRam() { return emulatedRam; }
+
+    struct {
+        Action *reset;
+        Action *set_dir;
+        Action *ulticopy8;
+        Action *ulticopy9;
+        Action *ulticopy10;
+        Action *ulticopy11;
+        Action *eject;
+    } myActions;
 public:
-    int last_error;
     uint8_t iec_enable;
 
     IecInterface();
@@ -110,10 +124,16 @@ public:
     int executeCommand(SubsysCommand *cmd); // from SubSystem
     const char *identify(void) { return "IEC"; }
 
-    int fetch_task_items(Path *path, IndexedList<Action *> &list);
+    void create_task_items();
+    void update_task_items(bool writablePath, Path *path);
     void effectuate_settings(void); // from ConfigurableObject
-    int get_last_error(char *, int track = 0, int sector = 0); // writes string into buffer
+
+    void set_error(int err, int track, int sector);
+    void set_error_fres(FRESULT fres);
+
+    int get_error_string(char *); // writes string into buffer
     IecCommandChannel *get_command_channel();
+    IecCommandChannel *get_data_channel(int chan);
     const char *get_root_path();
 
     friend class IecChannel;
@@ -121,7 +141,7 @@ public:
     friend class IecPrinter;
 };
 
-extern IecInterface HW_IEC;
+extern IecInterface iec_if;
  
 class UltiCopy : public UIObject
 {

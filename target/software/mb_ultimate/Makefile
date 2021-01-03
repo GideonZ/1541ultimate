@@ -19,9 +19,9 @@ SRCS_C   =	mbstart_rtos.c \
             timers.c \
             port.c \
             heap_3.c \
-            ff2.c \
-            ccsbcs.c \
-            ffsyscall.c \
+            ff.c \
+            ffsystem.c \
+            ffunicode.c \
             time.c \
             sid_coeff.c
 
@@ -48,7 +48,6 @@ SRCS_CC	 =  small_printf.cc \
 			keyboard_c64.cc \
 			disk_image.cc \
 			c1541.cc \
-			bam_header.cc \
 			mystring.cc \
 			path.cc \
 			pattern.cc \
@@ -75,7 +74,6 @@ SRCS_CC	 =  small_printf.cc \
 			editor.cc \
 			tree_browser.cc \
 			tree_browser_state.cc \
-			stream_menu.cc \
 			config_menu.cc \
 			context_menu.cc \
 			task_menu.cc \
@@ -110,6 +108,7 @@ SRCS_CC	 =  small_printf.cc \
 			dos.cc \
 			network_target.cc \
 			control_target.cc \
+			softiec_target.cc \
 			iec.cc \
 			iec_channel.cc \
 			iec_printer.cc \

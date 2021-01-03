@@ -1,0 +1,697 @@
+            AT_TOKEN = $40
+            ARROW_UP = $AE
+            ARROW_LEFT = $5F
+
+            IERROR = $0300 ; warm start (error exit)
+            IMAIN  = $0302 ; main loop (direct mode)
+            ICRNCH = $0304 ; convert readable text to token
+            IQPLOP = $0306 ; convert token into readable text
+            IEXEC  = $0308 ; execute token (< 0x80 => variable => LET)
+            IEVAL  = $030A ; evaluate single term arith expression
+            
+            OPEN_VECTOR   = $031A
+            CLOSE_VECTOR  = $031C
+            CHKIN_VECTOR  = $031E
+            CHKOUT_VECTOR = $0320
+            CLRCHN_VECTOR = $0322
+            CHRIN_VECTOR  = $0324
+            CHROUT_VECTOR = $0326
+            STOP_VECTOR   = $0328
+            GETIN_VECTOR  = $032A
+            LOAD_VECTOR   = $0330
+            SAVE_VECTOR   = $0332
+            
+            OPEN_ORIG     = $fd36
+            CLOSE_ORIG    = $fd38
+            CHKIN_ORIG    = $fd3a
+            CHKOUT_ORIG   = $fd3c
+            CLRCHN_ORIG   = $fd3e
+            CHRIN_ORIG    = $fd40
+            CHROUT_ORIG   = $fd42
+            STOP_ORIG     = $fd44
+            GETIN_ORIG    = $fd46
+            LOAD_ORIG     = $fd4c
+            SAVE_ORIG     = $fd4e
+
+            CMD_IF_CONTROL = $DF1C
+            CMD_IF_COMMAND = $DF1D
+            CMD_IF_RESULT  = $DF1E
+            CMD_IF_STATUS  = $DF1F
+
+            CMD_PUSH_CMD   = $01
+            CMD_NEXT_DATA  = $02
+            CMD_ABORT      = $04
+            CMD_ERROR      = $08
+
+            CMD_STATE_BITS      = $30
+            CMD_STATE_DATA      = $20
+            CMD_STATE_IDLE      = $00
+            CMD_STATE_BUSY      = $10
+            CMD_STATE_LAST_DATA = $20
+            CMD_STATE_MORE_DATA = $30
+
+.macro fc3exit addr
+                pha
+                lda #<(addr-1)
+                pha
+                lda #>(addr-1)
+                pha
+                jmp fc3_return_from_rom
+.endmacro
+
+rom_start
+                .logical $8000
+                
+                .word coldstart
+                .word warmstart
+                .byte $c3               ;c
+                .byte $c2               ;b
+                .byte $cd               ;m
+                .byte $38               ;8
+                .byte $30               ;0
+
+warmstart       jmp $fe5e
+coldstart       sei       
+                jmp basic_start  ; DE04!
+
+my_vectors      .word ulti_open, ulti_close, ulti_chkin, ulti_chkout, ulti_clrchn
+                .word ulti_chrin, ulti_chrout, 0, ulti_getin, 0, 0, ulti_load, ulti_save
+
+
+                ; Initialize Basic Vectors
+rom_init        lda #<execute
+                ldy #>execute
+                sta IEXEC
+                sty IEXEC+1
+                lda #<basic_warmstart
+                ldy #>basic_warmstart
+                sta IERROR
+                sty IERROR+1
+
+.comment
+                ; Initialize Kernal Vectors
+                ldx #25
+-               lda my_vectors,x
+                beq +
+                sta OPEN_VECTOR,x
+                lda my_vectors-1,x
+                sta OPEN_VECTOR-1,x
++               dex
+                dex
+                bpl -
+.endc
+                rts
+
+send_command
+                ; start forwarding string expression
+                jsr $0073
+                jsr $ad9e ; Evaluate Expression
+                bit $0d   ; String?
+                bmi +
+                jsr $bddd ; Process numeric parameter
+                jsr $b487
++               jsr $b6a6 ; Fetch string parameters
+                tax
+                ldy #$00
+                inx
+-               dex
+                beq _str_done
+                lda ($22),y
+_wrcmdbyte      jsr $ffd2 ;sta CMD_IF_COMMAND
+                iny
+                jmp -
+
+_str_done
+                lda #$0d
+                jsr $ffd2
+                jmp _next_statement
+                
+
+_next_statement
+                jsr $0079
+                beq +
+                cmp #$3a
+                bne _syntax
++               jmp basic_parse
+                
+_syntax         ldx #$0b
+                jmp ($0300)
+
+; ----------------------------------------------
+            UCI_IDENTIFIER = $C9
+            UCI_TARGET     = $05
+            UCI_CMD_LOADSU = $10
+            UCI_CMD_LOADEX = $11
+            UCI_CMD_SAVE   = $12
+            UCI_CMD_OPEN   = $13
+            UCI_CMD_CLOSE  = $14
+            UCI_CMD_CHKIN  = $15
+            UCI_CMD_CHKOUT = $16
+
+            OUR_DEVICE = $96
+
+            STATUS     = $90
+            VERIFYFLAG = $93
+            DEVFROM    = $99
+            DEVTO      = $9A
+            LOADPNTR   = $AE
+            SECADDR    = $B9
+            DEVNUM     = $BA
+            NAMEPTR    = $BB
+            NAMELEN    = $B7
+            LOADADDR   = $C3
+            SAVEADDR   = $C1
+            SAVEEND    = $AE
+            MY_OUTLEN  = $0276 ; Last byte of logical file table 
+            
+            FILE_LOOKUP_A           = $F314
+            FILE_LOOKUP_X           = $F30F ; Might be different for JD!
+            FILE_NOT_OPEN_ERROR     = $F701 ; Might be different for JD!
+            GET_FILE_PARAMS         = $F31F ; Might be different for JD!
+            CHKIN_CONTINUED         = $F219 ; Might be different for JD!
+            CHKOUT_CONTINUED        = $F25B ; Might be different for JD!
+            CLRCHN_CONTINUED        = $F343 ; Might be different for JD! Call with X = $03
+            CHROUT_SCREEN           = $E716
+            FILE_NOT_FOUND_ERROR    = $F704
+            MISSING_FILENAME_ERROR  = $F710
+            SHOW_SEARCHING          = $F5AF
+            SHOW_LOADING            = $F5D2
+            SHOW_SAVING             = $F68F
+
+myload_rom  sta VERIFYFLAG
+            lda #$00
+            sta STATUS
+            ldy NAMELEN
+            bne ld2
+ld0         fc3exit MISSING_FILENAME_ERROR 
+
+ld2         lda CMD_IF_COMMAND
+            cmp #UCI_IDENTIFIER
+            beq ld1
+            fc3exit load_orig
+            
+ld1         ldx SECADDR
+            jsr SHOW_SEARCHING
+            ldx #UCI_CMD_LOADSU
+            jsr uci_setup_cmd
+            ldy #LOADADDR
+            jsr uci_setup_range
+            jsr uci_filename ; also executes
+            lda CMD_IF_STATUS
+            jsr uci_ack ; restores A
+            beq ld3 ; all OK when zero
+            fc3exit FILE_NOT_FOUND_ERROR
+
+ld3         jsr SHOW_LOADING
+
+            ldx #UCI_CMD_LOADEX
+            jsr uci_setup_cmd
+            jsr uci_execute
+            lda CMD_IF_STATUS
+            bmi _verify_err
+
+            lda CMD_IF_STATUS
+            sta LOADPNTR
+            lda CMD_IF_STATUS
+            sta LOADPNTR+1
+            ;jsr show_end_addr
+
+            jsr uci_ack ; restores A
+            ldx LOADPNTR
+            ldy LOADPNTR+1
+            clc
+            rts                        
+
+_verify_err jsr uci_ack ; restores A
+            lda #$10
+            ora STATUS
+            sta STATUS
+            clc
+            rts
+
+; $FFD8   
+; SAVE. Save file. (Must call SETLFS and SETNAM beforehand.)
+; Input: A = Address of zero page register holding start address of memory area to save; X/Y = End address of memory area plus 1.
+; Output: Carry: 0 = No errors, 1 = Error; A = KERNAL error code (if Carry = 1).
+; Used registers: A, X, Y.
+; Real address: $F5DD.
+; Vector through $0332, after storing start address in $C1 and $C2 and end address in $AE and $AF
+
+ulti_save
+            lda DEVNUM
+            cmp OUR_DEVICE
+            beq mysave
+sv1         jmp (SAVE_ORIG)
+
+mysave
+            lda #$00
+            sta STATUS
+            ldy NAMELEN
+            bne sv2
+            jmp MISSING_FILENAME_ERROR
+
+sv2         lda CMD_IF_COMMAND
+            cmp #UCI_IDENTIFIER
+            bne sv1
+
+            jsr SHOW_SAVING
+
+            ldx #UCI_CMD_SAVE
+            jsr uci_setup_cmd
+            ldy #SAVEADDR
+            jsr uci_setup_range
+            jsr uci_filename
+            lda CMD_IF_STATUS
+            beq sv3 ; all OK when zero
+
+            jsr uci_ack
+            sec
+            rts
+
+sv3         jsr uci_ack
+            clc
+            rts
+
+; $FFC0   
+; OPEN. Open file. (Must call SETLFS and SETNAM beforehand.)
+; Input: –
+; Output: –
+; Used registers: A, X, Y.
+; Real address: ($031A), $F34A.
+; 
+
+ulti_open   lda DEVNUM
+            cmp OUR_DEVICE
+            beq myopen
+op1         jmp (OPEN_ORIG)
+
+myopen      lda CMD_IF_COMMAND
+            cmp #UCI_IDENTIFIER
+            bne op1
+
+            ; The following is a copy of the kernal code at F34A, because
+            ; it is common code, which should always be executed, but it
+            ; cannot be vectored. Not needed in modified kernal, as the check
+            ; for the device number can be placed AFTER this code.
+
+            lookup = $F30F
+            error1 = $F6FB
+            error2 = $F6FE
+            error6 = $F70A
+            ldtnd  = $98
+            la     = $B8
+            sa     = $B9
+            fa     = $BA
+            lat    = $0259 ; to $0262
+            fat    = $0263 ; to $026C
+            sat    = $026D ; to $0276
+                        
+nopen       ldx la          ;check file #
+            bne op98        ;is not the keyboard
+            jmp error6      ;not input file...
+op98        jsr lookup      ;see if in table
+            bne op100       ;not found...o.k.
+            jmp error2      ;file open
+op100       ldx ldtnd       ;logical device table end
+            cpx #10         ;maximum # of open files
+            bcc op110       ;less than 10...o.k.
+            jmp error1      ;too many files
+op110       inc ldtnd       ;new file
+            lda la
+            sta lat,x       ;store logical file #
+            lda sa
+            ora #$60        ;make sa an serial command
+            sta sa
+            sta sat,x       ;store command #
+            lda fa
+            sta fat,x       ;store device #
+
+            ldx #UCI_CMD_OPEN
+            jsr uci_setup_cmd
+            jsr uci_filename ; also executes                  
+            jsr uci_ack
+            
+            clc
+            rts
+
+; $FFC3   
+; CLOSE. Close file.
+; Input: A = Logical number.
+; Output: –
+; Used registers: A, X, Y.
+; Real address: ($031C), $F291.
+;
+
+ulti_close  pha
+            jsr FILE_LOOKUP_A
+            beq cl1
+            pla
+            clc
+            rts
+
+            ; x is now set to index and stack has original a
+cl1         jsr GET_FILE_PARAMS
+            
+            lda DEVNUM
+            cmp OUR_DEVICE
+            beq myclose
+cl2         pla ; restore stack for exit
+            jmp (CLOSE_ORIG)   ; And do the lookup again. ;)            
+        
+myclose     lda CMD_IF_COMMAND
+            cmp #UCI_IDENTIFIER
+            bne cl2
+            pla ; restore stack, but we don't need a
+
+            ldx #UCI_CMD_CLOSE
+            jsr uci_setup_cmd
+            jsr uci_execute
+            jsr uci_ack
+            clc
+            rts
+
+; $FFE4   
+; GETIN. Read byte from default input. (If not keyboard, must call OPEN and CHKIN beforehand.)
+; Input: –
+; Output: A = Byte read.
+; Used registers: A, X, Y.
+; Real address: ($032A), $F13E.
+
+
+ulti_getin  lda DEVFROM
+            cmp OUR_DEVICE
+            beq my_chrin
+            jmp (GETIN_ORIG)
+
+
+; $FFCF   
+; CHRIN. Read byte from default input (for keyboard, read a line from the screen). (If not keyboard, must call OPEN and CHKIN beforehand.)
+; Input: –
+; Output: A = Byte read.
+; Used registers: A, Y.
+; Real address: ($0324), $F157.
+ 
+
+ulti_chrin  lda DEVFROM
+            cmp OUR_DEVICE
+            beq my_chrin
+            jmp (CHRIN_ORIG)
+
+my_chrin    ; is there any data available in the current buffer?
+            lda CMD_IF_CONTROL
+            bpl _no_data_avail
+
+            ; read available data and store it on the stack
+            lda CMD_IF_RESULT
+            pha
+
+            ; a byte was succesfully read. However, was this the last byte?
+            lda CMD_IF_CONTROL
+            bmi _ok   ; there is more in the current buffer
+
+            ; end of current buffer. Is this the last buffer?
+            and #CMD_STATE_BITS
+            cmp #CMD_STATE_MORE_DATA
+            beq _ok   ; there is a next buffer. So we are fine
+
+            ; No next buffer available, so set EOI
+            lda #$40
+            ora STATUS
+            sta STATUS
+
+            ; pick up the byte we read and leave
+_ok         pla
+            clc
+            rts ; done!!
+
+
+_no_data_avail
+            ; Current buffer is empty. Are we in the MORE data state?
+            and #CMD_STATE_BITS
+            cmp #CMD_STATE_MORE_DATA
+            bne _read_error
+
+            ; Get next block of data
+            jsr uci_ack
+            jsr uci_wait_busy
+            jmp my_chrin
+
+_read_error
+            ; No data could be read. We return $0D, and set EOF + Read Error
+            lda #$42
+            ora STATUS
+            sta STATUS
+            lda #$0D
+            clc
+            rts
+
+
+; $FFD2   
+; CHROUT. Write byte to default output. (If not screen, must call OPEN and CHKOUT beforehand.)
+; Input: A = Byte to write.
+; Output: –
+; Used registers: –
+; Real address: ($0326), $F1CA.
+; 
+ulti_chrout pha
+            lda DEVTO
+            cmp OUR_DEVICE
+            beq _my_chrout
+            pla
+            jmp (CHROUT_ORIG)
+
+_my_chrout  inc MY_OUTLEN
+            lda MY_OUTLEN
+            beq _breakup_out
+
+_co1        pla
+            sta CMD_IF_COMMAND ; Append the byte to write to the current command
+            clc
+            rts
+_breakup_out
+            txa
+            pha
+            jsr uci_execute    ; Execute the complete command, e.g. write the block of data
+            jsr uci_ack
+            jsr do_chkout      ; Send a new command to start transmission of the next block
+            pla
+            tax
+            jmp _co1
+
+
+; $FFC6   
+; CHKIN. Define file as default input. (Must call OPEN beforehand.)
+; Input: X = Logical number.
+; Output: –
+; Used registers: A, X.
+; Real address: ($031E), $F20E.
+; 
+ulti_chkin  jsr FILE_LOOKUP_X       ; as copied from stock kernal
+            beq _cki1               ; as copied from stock kernal
+            jmp FILE_NOT_OPEN_ERROR ; as copied from stock kernal
+_cki1       jsr GET_FILE_PARAMS     ; as copied from stock kernal
+            lda DEVNUM
+            cmp OUR_DEVICE
+            beq _my_chkin
+            jmp CHKIN_CONTINUED    ; continue at stock kernal location
+
+_my_chkin   sta DEVFROM
+do_chkin    ldx #UCI_CMD_CHKIN
+            jsr uci_setup_cmd
+            jsr uci_execute
+            clc
+            rts
+
+; $FFC9   
+; CHKOUT. Define file as default output. (Must call OPEN beforehand.)
+; Input: X = Logical number.
+; Output: –
+; Used registers: A, X.
+; Real address: ($0320), $F250.
+; 
+ulti_chkout jsr FILE_LOOKUP_X       ; as copied from stock kernal
+            beq _cko1               ; as copied from stock kernal
+            jmp FILE_NOT_OPEN_ERROR ; as copied from stock kernal
+_cko1       jsr GET_FILE_PARAMS     ; as copied from stock kernal
+            lda DEVNUM
+            cmp OUR_DEVICE
+            beq _my_chkout
+            jmp CHKOUT_CONTINUED    ; continue at stock kernal location
+
+_my_chkout  sta DEVTO
+do_chkout   lda #0
+            sta MY_OUTLEN
+            ldx #UCI_CMD_CHKOUT
+            clc
+            jmp uci_setup_cmd       ; do not execute command, because we are waiting for data now
+
+; $FFCC   
+; CLRCHN. Close default input/output files (for serial bus, send UNTALK and/or UNLISTEN); restore default input/output to keyboard/screen.
+; Input: –
+; Output: –
+; Used registers: A, X.
+; Real address: ($0322), $F333.
+; 
+ulti_clrchn lda DEVNUM
+            cmp OUR_DEVICE
+            beq _my_clrchn
+            jmp (CLRCHN_ORIG)
+
+_my_clrchn  jsr uci_abort
+            ldx #3
+            jmp CLRCHN_CONTINUED
+
+;; UCI
+
+uci_setup_cmd
+            lda #UCI_TARGET
+            sta CMD_IF_COMMAND
+            stx CMD_IF_COMMAND
+            lda SECADDR
+            sta CMD_IF_COMMAND
+            lda VERIFYFLAG
+            sta CMD_IF_COMMAND
+            rts
+
+uci_setup_range
+            lda $00,y
+            sta CMD_IF_COMMAND
+            lda $01,y
+            sta CMD_IF_COMMAND
+            lda SAVEEND
+            sta CMD_IF_COMMAND
+            lda SAVEEND+1
+            sta CMD_IF_COMMAND
+            rts
+            
+uci_filename
+            lda NAMELEN
+            beq _fn2
+            ldy #$00
+_fn1        lda (NAMEPTR),y
+            sta CMD_IF_COMMAND
+            iny
+            cpy NAMELEN
+            bne _fn1
+_fn2        jmp uci_execute
+
+uci_execute lda #CMD_PUSH_CMD
+            sta CMD_IF_CONTROL
+
+uci_wait_busy
+_wb1        lda CMD_IF_CONTROL
+            and #CMD_STATE_BITS
+            cmp #CMD_STATE_BUSY
+            beq _wb1
+            ; we should now be in the data state, where we can also read the status
+            rts
+
+uci_ack     pha
+            lda #CMD_NEXT_DATA
+            sta CMD_IF_CONTROL
+_ack1       lda CMD_IF_CONTROL
+            and #CMD_NEXT_DATA    
+            bne _ack1
+            pla
+            rts
+
+uci_abort   lda CMD_IF_CONTROL
+            and #CMD_STATE_DATA
+            bne _abrt1
+            ; Not in data state, but may be in command state
+            ; So send command, even if it may be an empty command
+            lda #CMD_PUSH_CMD
+            sta CMD_IF_CONTROL
+            jsr uci_wait_busy
+            jmp uci_ack
+_abrt1      lda #CMD_ABORT
+            sta CMD_IF_CONTROL
+            jmp uci_wait_abort
+
+uci_wait_abort
+_wa1        lda CMD_IF_CONTROL
+            and #CMD_ABORT
+            bne _wa1
+            rts
+
+uci_clear_error
+            lda #CMD_ERROR
+            sta CMD_IF_CONTROL
+            rts
+
+; ----------------------------------------------
+
+                .here
+                ; the .here makes current offset 0x50 higher than the offset from beginning of the rom
+                ; due to the header. maybe it's better to split the CRT header and the actual ROM
+                ; from each other.. Anyway.. 
+jumpers
+                .fill (rom_start + $1e04 - jumpers),$ff
+                .logical $de04
+basic_start
+                ; turn off the ROM, so that we get 38911 bytes free
+                jsr rom_off
+
+                ; do the usual initialization stuff
+                jsr $ff84       ; init I/O devices / CIA timers
+                jsr $ff87       ; init RAM, tape buffer, screen 
+                jsr $ff8a       ; restore default IO vectors
+
+                jsr $ff81       ;(init screen and VIC-Chip the normal way)
+                jsr $e453       ; copy BASIC vectors to RAM
+                jsr $e3bf       ; initialize basic
+                jsr $e422       ; print BASIC start up messages
+
+                jsr rom_8k
+                jsr rom_init
+                jsr rom_off
+
+                ; jump to basic
+                cli
+                ldx #$80
+                jmp ($0300)
+
+rom_8k          lda #$60
+                sta $dfff
+                lda #$04
+                sta $d020
+                rts
+rom_off         lda #$70
+                sta $dfff
+                lda #$0e
+                sta $d020
+                rts
+execute
+                jsr $0073
+                ;cmp #AT_TOKEN
+                ;beq _arrow_up_cmd
+                cmp #ARROW_UP
+                beq _arrow_up_cmd
+                sec
+                jmp $a7e7
+_arrow_up_cmd   jsr rom_8k
+                jmp send_command
+
+basic_parse
+                jsr rom_off
+                jmp $a7ae
+basic_warmstart
+                jsr rom_off
+                jmp $e38b  ; default ($0300)
+
+
+ulti_load
+            ldx DEVNUM
+            cpx OUR_DEVICE
+            beq myload
+ld1         jmp (LOAD_ORIG)
+myload      jsr rom_8k
+            jmp myload_rom
+
+
+
+
+                .here
+                
+main_file_end
+                .fill (rom_start + $4000 - main_file_end),$ff

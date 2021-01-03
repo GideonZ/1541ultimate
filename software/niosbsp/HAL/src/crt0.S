@@ -223,6 +223,7 @@ _exit:
     .globl _start
     .type _start, @function
 _start:
+    wrctl   status, zero
 
 #if (NIOS2_NUM_OF_SHADOW_REG_SETS > 0)    
     /*

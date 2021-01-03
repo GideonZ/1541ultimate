@@ -35,12 +35,10 @@ package cart_slot_pkg is
         kernal_16k     : std_logic;
         reu_enable     : std_logic;
         reu_size       : std_logic_vector(2 downto 0);
-        eth_enable     : std_logic;
         sampler_enable : std_logic;
         swap_buttons   : std_logic;
         timing_addr_valid   : unsigned(2 downto 0);
         phi2_edge_recover   : std_logic;
-        tick_ntsc           : std_logic;
         serve_while_stopped : std_logic;
     end record;
     
@@ -67,12 +65,10 @@ package cart_slot_pkg is
         kernal_16k     => '0',
         reu_enable     => '0',
         reu_size       => "111",
-        eth_enable     => '0',
         sampler_enable => '0',
         timing_addr_valid => "100",
         phi2_edge_recover => '1',
         swap_buttons   => '1',
-        tick_ntsc      => '0',
         serve_while_stopped => '0' );
 
 

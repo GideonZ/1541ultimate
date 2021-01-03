@@ -11,6 +11,7 @@
 #include "action.h"
 #include "indexed_list.h"
 #include "path.h"
+#include "tasks_collection.h"
 
 class ObjectWithMenu
 {
@@ -27,7 +28,8 @@ public:
 		ObjectWithMenu :: getObjectsWithMenu() -> remove(this);
 	}
 
-    virtual int fetch_task_items(Path *p, IndexedList<Action*> &item_list) { return 0; }
+	virtual void create_task_items(void) { }
+	virtual void update_task_items(bool writablePath,  Path *) {  }
 };
 
 #endif /* MENU_H_ */

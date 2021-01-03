@@ -297,7 +297,7 @@ void W25Q_Flash :: read_serial(void *buffer)
 
 int  W25Q_Flash :: get_config_page_size(void)
 {
-	return get_page_size();
+	return get_page_size() * 2; // allow a bit bigger pages
 }
 	
 int  W25Q_Flash :: get_number_of_config_pages(void)
@@ -318,7 +318,9 @@ void W25Q_Flash :: write_config_page(int page, void *buffer)
     page += sector_count - get_number_of_config_pages();
     page *= sector_size;
     erase_sector(page / sector_size); // silly.. divide and later multiply.. oh well!
-	write_page(page, buffer);
+    uint8_t *buf = (uint8_t *)buffer;
+    write_page(page, buf);
+	write_page(page+1, buf + get_page_size());
 }
 
 void W25Q_Flash :: clear_config_page(int page)

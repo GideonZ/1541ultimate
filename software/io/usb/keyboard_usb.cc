@@ -69,7 +69,7 @@ const uint8_t keymap_usb2matrix[] = {
     0x01, 0xFF, 0x00, 0xFF, 0x3C, 0x2B, 0x35, 0xAD,
     0xB2, 0x30, 0x0F, 0x32, 0x98, 0x39, 0x2F, 0x2C,
     0x37, 0xFF, 0x04, 0x84, 0x05, 0x85, 0x06, 0x86,
-    0x03, 0x83, 0x81, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    0x03, 0x83, 0x3F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
     0x3F, 0x80, 0x33, 0xFF, 0xFF, 0xFF, 0xFF, 0x02,
     0x82, 0x07, 0x87, 0xFF, 0x37, 0x31, 0x2B, 0x28,
     0x01, 0x38, 0x3B, 0x08, 0x0B, 0x10, 0x13, 0x18,
@@ -84,8 +84,8 @@ const uint8_t keymap_usb2matrix_shift[] = {
     0x81, 0xFF, 0x80, 0xFF, 0xBC, 0x2B, 0x28, 0xA8,
     0xAB, 0x36, 0x0F, 0x2D, 0xBB, 0xB9, 0xAF, 0xAC,
     0xB7, 0xFF, 0x04, 0x84, 0x05, 0x85, 0x06, 0x86,
-    0x03, 0x83, 0x81, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-    0x3F, 0x80, 0x33, 0xFF, 0xFF, 0xFF, 0xFF, 0x02,
+    0x03, 0x83, 0xBF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    0xBF, 0x80, 0xB3, 0xFF, 0xFF, 0xFF, 0xFF, 0x02,
     0x82, 0x07, 0x87, 0xFF, 0x37, 0x31, 0x2B, 0x28,
     0x81, 0x38, 0x3B, 0x08, 0x0B, 0x10, 0x13, 0x18,
     0x1B, 0x20, 0x23, 0x2C, 0x0F, };
@@ -97,6 +97,11 @@ Keyboard_USB :: Keyboard_USB()
 	matrixEnabled = false;
 	key_head = 0;
 	key_tail = 0;
+
+    repeat_speed = 4;
+    first_delay = 16;
+    delay_count = first_delay;
+    num_keys = 0;
 
 	memset(key_buffer, 0, KEY_BUFFER_SIZE);
 	memset(last_data, 0, USB_DATA_SIZE);
@@ -168,6 +173,7 @@ void Keyboard_USB :: usb2matrix(uint8_t *kd)
 	}
 	// Handle the other keys
 	uint8_t restore = 0;
+    uint8_t freeze = 0;
 	uint8_t something_else_pressed = 0;
 	for(int i=2; i<USB_DATA_SIZE; i++) {
 		if (!kd[i]) {
@@ -176,9 +182,12 @@ void Keyboard_USB :: usb2matrix(uint8_t *kd)
 		if (keymap_normal[kd[i]] == KEY_F12) {
 			restore = 1;
 		}
+		if (keymap_normal[kd[i]] == KEY_F11) {
+		    freeze = 1;
+		}
 		uint8_t n = (kd[0] & 0x22) ? keymap_usb2matrix_shift[kd[i]] :
 		                            keymap_usb2matrix[kd[i]];
-		printf("[%b]", n);
+		//printf("[%b]", n);
 		if (n != 0xFF) {
 		    something_else_pressed = 1;
 		    out[(n & 0x38) >> 3] |= (1 << (n & 0x07));
@@ -189,6 +198,7 @@ void Keyboard_USB :: usb2matrix(uint8_t *kd)
 	}
 
 	matrix[9] = restore;
+	matrix[10] = freeze;
 
 	if (!something_else_pressed) {
 	    if (modi & 0x02) { // left shift
@@ -198,14 +208,6 @@ void Keyboard_USB :: usb2matrix(uint8_t *kd)
             out[6] |= 0x10;
         }
 	}
-
-	/*
-	for(int i=0; i<8; i++) {
-		printf("%b ", out[i]);
-	} printf("\n");
-
-	return;
-*/
 
 	// copy temporary to hardware
 	for(int i=0; i<8; i++) {
@@ -220,9 +222,11 @@ void Keyboard_USB :: process_data(uint8_t *kbdata)
 		usb2matrix(kbdata);
 	}
 
+	num_keys = USB_DATA_SIZE - 2;
 	for(int i=2; i<USB_DATA_SIZE; i++) {
 		if (!kbdata[i]) {
-			break;
+		    num_keys = i-2;
+		    break;
 		}
 		if (!PresentInLastData(kbdata[i])) {
 			if (kbdata[0] & 0x11) { // control
@@ -236,12 +240,28 @@ void Keyboard_USB :: process_data(uint8_t *kbdata)
 	}
 
 	memcpy(last_data, kbdata, USB_DATA_SIZE);
+    delay_count = first_delay;
 }
 
 // called from the user interface thread
 int  Keyboard_USB :: getch(void)
 {
-	if (key_head != key_tail) {
+    if (num_keys == 1) { // implement repeat for one key pressed (other than the modifiers)
+        if (delay_count == 0) {
+            delay_count = repeat_speed;
+
+            if (last_data[0] & 0x11) { // control
+                putch(keymap_control[last_data[2]]);
+            } else if (last_data[0] & 0x22) { // shift
+                putch(keymap_shifted[last_data[2]]);
+            } else {
+                putch(keymap_normal[last_data[2]]);
+            }
+        } else {
+            delay_count --;
+        }
+    }
+    if (key_head != key_tail) {
 		uint8_t key = key_buffer[key_tail];
 		key_tail ++;
 		if (key_tail == KEY_BUFFER_SIZE) {

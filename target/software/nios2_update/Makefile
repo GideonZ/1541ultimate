@@ -20,9 +20,6 @@ SRCS_C   =	itu.c \
             timers.c \
             port.c \
             heap_3.c \
-            ff2.c \
-            ccsbcs.c \
-            ffsyscall.c \
             time.c \
             mdio.c \
             nios_main.c \
@@ -82,7 +79,7 @@ SRCS_IEC =
 SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -O0 -DOS -DNIOS=1 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx -DRECOVERYAPP=1
+OPTIONS  = -g -ffunction-sections -Os -DOS -DNIOS=1 -DSAFEMODE=1 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx -DRECOVERYAPP=1
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 BSP      = $(PATH_SW)/nios_appl_bsp

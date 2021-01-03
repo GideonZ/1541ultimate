@@ -17,6 +17,8 @@ generic (
     g_ram_base_reu  : unsigned(27 downto 0) := X"1000000"; -- should be on 16M boundary, or should be limited in size
     g_ram_base_cart : unsigned(27 downto 0) := X"0F70000"; -- should be on a 64K boundary
     g_rom_base_cart : unsigned(27 downto 0) := X"0F80000"; -- should be on a 512K boundary
+    g_direct_dma    : boolean := false;
+    g_ext_freeze_act: boolean := false;
     g_cartreset_init: std_logic := '0';
     g_boot_stop     : boolean := false;
     g_big_endian    : boolean;
@@ -50,8 +52,8 @@ port (
     rstn_i          : in    std_logic := '1';
     rstn_o          : out   std_logic := '1';
 
-    slot_addr_o     : out   std_logic_vector(15 downto 0);
-    slot_addr_i     : in    std_logic_vector(15 downto 0) := (others => '1');
+    slot_addr_o     : out   unsigned(15 downto 0);
+    slot_addr_i     : in    unsigned(15 downto 0) := (others => '1');
     slot_addr_tl    : out   std_logic;
     slot_addr_th    : out   std_logic;
                     
@@ -75,7 +77,6 @@ port (
     -- other hardware pins
     BUFFER_ENn      : out   std_logic;
     sense           : in    std_logic;
-    
 
     buttons         : in    std_logic_vector(2 downto 0);
     cart_led_n      : out   std_logic;
@@ -83,7 +84,8 @@ port (
     trigger_1       : out   std_logic;
     trigger_2       : out   std_logic;
 
-    -- debug
+    -- debug / freezer
+    freeze_activate : in    std_logic := '0';
     freezer_state   : out   std_logic_vector(1 downto 0);
     sync            : out   std_logic;
     sw_trigger      : out   std_logic;
@@ -103,6 +105,9 @@ port (
     mem_req         : out   t_mem_req_32;
     mem_resp        : in    t_mem_resp_32;
 
+    direct_dma_req  : out   t_dma_req := c_dma_req_init;
+    direct_dma_resp : in    t_dma_resp := c_dma_resp_init;
+
     -- slave on io bus
     io_req          : in    t_io_req;
     io_resp         : out   t_io_resp;
@@ -114,6 +119,7 @@ end slot_server_v4;
 architecture structural of slot_server_v4 is
 
     signal phi2_tick_i     : std_logic;
+    signal phi2_fall       : std_logic;
     signal phi2_recovered  : std_logic;
     signal vic_cycle       : std_logic;
     signal do_sample_addr  : std_logic;
@@ -135,7 +141,7 @@ architecture structural of slot_server_v4 is
     signal rwn_out         : std_logic;
 
     signal control         : t_cart_control;
-    signal status          : t_cart_status;
+    signal status          : t_cart_status := (others => '0');
 
     signal allow_serve     : std_logic;
 
@@ -160,7 +166,6 @@ architecture structural of slot_server_v4 is
     signal reu_dma_n       : std_logic := '1'; -- direct from REC
     signal cmd_if_freeze    : std_logic := '0'; -- same function as reu_dma_n, but then from CI
 
-    signal mask_buttons     : std_logic := '0';
     signal reset_button     : std_logic;
     signal freeze_button    : std_logic;
 
@@ -174,7 +179,7 @@ architecture structural of slot_server_v4 is
 
     signal unfreeze         : std_logic;
     signal freeze_trig      : std_logic;
-    signal freeze_act       : std_logic;
+    signal freeze_active    : std_logic;
 
     signal io_req_dma       : t_io_req;
     signal io_resp_dma      : t_io_resp := c_io_resp_init;
@@ -202,6 +207,7 @@ architecture structural of slot_server_v4 is
     signal dma_req          : t_dma_req;
     signal dma_resp         : t_dma_resp := c_dma_resp_init;
 
+    signal write_ff00       : std_logic;
     signal slot_req         : t_slot_req;
     signal slot_resp        : t_slot_resp := c_slot_resp_init;
     signal slot_resp_reu    : t_slot_resp := c_slot_resp_init;
@@ -230,8 +236,6 @@ architecture structural of slot_server_v4 is
     signal mem_dack_slot    : std_logic;
 
     signal phi2_tick_avail  : std_logic;
-    signal stand_alone_tick : std_logic;
-    signal tick_div         : integer range 0 to 63;
 begin
     reset_button  <= buttons(0) when control.swap_buttons='0' else buttons(2);
     freeze_button <= buttons(2) when control.swap_buttons='0' else buttons(0);
@@ -254,6 +258,8 @@ begin
         resps(1) => io_resp_dma );
         
     i_bridge: entity work.io_to_dma_bridge
+    generic map (
+        g_ignore_stop => true )
     port map (
         clock       => clock,
         reset       => reset,
@@ -331,6 +337,7 @@ begin
         edge_recover    => control.phi2_edge_recover,
     
         phi2_tick       => phi2_tick_i,
+        phi2_fall       => phi2_fall,
         phi2_recovered  => phi2_recovered,
         clock_det       => status.clock_detect,
         vic_cycle       => vic_cycle,    
@@ -411,49 +418,72 @@ begin
         -- interface with hardware
         BUFFER_ENn      => BUFFER_ENn );
 
-    i_master: entity work.slot_master_v4
-    generic map (
-        g_start_in_stopped_state => g_boot_stop )
-    
-    port map (
-        clock           => clock,
-        reset           => reset,
+    r_master: if not g_direct_dma generate
+        i_master: entity work.slot_master_v4
+        generic map (
+            g_start_in_stopped_state => g_boot_stop )
         
-        -- Cartridge pins
-        DMAn            => dma_n,
-        BA              => ba_i,
-        RWn_in          => rwn_i,
-        RWn_out         => rwn_o,
-        RWn_tri         => open,
+        port map (
+            clock           => clock,
+            reset           => reset,
+            
+            -- Cartridge pins
+            DMAn            => dma_n,
+            BA              => ba_i,
+            RWn_in          => rwn_i,
+            RWn_out         => rwn_o,
+            RWn_tri         => open,
+            
+            ADDRESS_out     => address_out,
+            ADDRESS_tri_h   => address_tri_h,
+            ADDRESS_tri_l   => address_tri_l,
+            
+            DATA_in         => slot_data_i,
+            DATA_out        => master_dout,
+            DATA_tri        => master_dtri,
         
-        ADDRESS_out     => address_out,
-        ADDRESS_tri_h   => address_tri_h,
-        ADDRESS_tri_l   => address_tri_l,
+            -- timing inputs
+            vic_cycle       => vic_cycle,    
+            phi2_recovered  => phi2_recovered,
+            phi2_tick       => phi2_tick_i,
+            do_sample_addr  => do_sample_addr,
+            do_io_event     => do_io_event,
+            reu_dma_n       => reu_dma_n,
+            cmd_if_freeze   => cmd_if_freeze,
+            
+            -- request from the cpu to do a cycle on the cart bus
+            dma_req         => dma_req,
+            dma_resp        => dma_resp,
         
-        DATA_in         => slot_data_i,
-        DATA_out        => master_dout,
-        DATA_tri        => master_dtri,
-    
-        -- timing inputs
-        vic_cycle       => vic_cycle,    
-        phi2_recovered  => phi2_recovered,
-        phi2_tick       => phi2_tick_i,
-        do_sample_addr  => do_sample_addr,
-        do_io_event     => do_io_event,
-        reu_dma_n       => reu_dma_n,
-        cmd_if_freeze   => cmd_if_freeze,
+            -- system control
+            stop_cond       => control.c64_stop_mode,
+            c64_stop        => control.c64_stop,
+            c64_stopped     => status.c64_stopped );
+    end generate;    
+
+    r_no_master: if g_direct_dma generate
+        process(clock)
+        begin
+            if rising_edge(clock) then
+                if phi2_fall = '1' then
+                    status.c64_stopped <= control.c64_stop;
+                end if;
+            end if;
+        end process;
+
+        dma_n              <= not (status.c64_stopped or not reu_dma_n or cmd_if_freeze);
+        RWN_out            <= '1';
+        ADDRESS_out        <= (others => '1');
+        ADDRESS_tri_h      <= '0';
+        ADDRESS_tri_l      <= '0';
         
-        -- request from the cpu to do a cycle on the cart bus
-        dma_req         => dma_req,
-        dma_resp        => dma_resp,
-    
-        -- system control
-        stop_cond       => control.c64_stop_mode,
-        c64_stop        => control.c64_stop,
-        c64_stopped     => status.c64_stopped );
-    
+        direct_dma_req <= dma_req;
+        dma_resp       <= direct_dma_resp;        
+    end generate;
 
     i_freeze: entity work.freezer
+    generic map (
+        g_ext_activate  => g_ext_freeze_act )
     port map (
         clock           => clock,
         reset           => reset,
@@ -463,12 +493,13 @@ begin
     
         cpu_cycle_done  => do_io_event,
         cpu_write       => cpu_write,
+        activate        => freeze_activate, 
 
         freezer_state   => freezer_state,
 
         unfreeze        => unfreeze,
         freeze_trig     => freeze_trig,
-        freeze_act      => freeze_act );
+        freeze_act      => freeze_active );
 
 
     i_cart_logic: entity work.all_carts_v4
@@ -481,9 +512,8 @@ begin
         RST_in          => reset_button,
         c64_reset       => control.c64_reset,
 
-        ethernet_enable => control.eth_enable,
         freeze_trig     => freeze_trig,
-        freeze_act      => freeze_act, 
+        freeze_act      => freeze_active, 
         unfreeze        => unfreeze,
         cart_active     => status.cart_active,
         
@@ -518,26 +548,6 @@ begin
 
     r_sid: if g_implement_sid generate
     begin
---    i_trce: entity work.sid_trace
---    generic map (
---        g_mem_tag   => X"CE" )
---    port map (
---        clock       => clock,
---        reset       => actual_c64_reset,
---        
---        addr        => unsigned(slot_addr(6 downto 0)),
---        wren        => sid_write,
---        wdata       => io_wdata,
---    
---        phi2_tick   => phi2_tick_i,
---        
---        io_req      => io_req_trace,
---        io_resp     => io_resp_trace,
---    
---        mem_req     => mem_req_trace,
---        mem_resp    => mem_resp_trace );
-
-
         i_sid: entity work.sid_peripheral
         generic map (
             g_8voices     => g_8voices,
@@ -569,6 +579,7 @@ begin
             slot_req        => slot_req,
             slot_resp       => slot_resp_cmd,
             freeze          => cmd_if_freeze,
+            write_ff00      => write_ff00,
             
             -- io interface for local cpu
             io_req          => io_req_cmd, -- we get an 8K range
@@ -576,6 +587,8 @@ begin
             io_irq          => io_irq_cmd );
 
     end generate;
+
+    write_ff00 <= '1' when slot_req.late_write='1' and slot_req.io_address=X"FF00" else '0';
 
     g_reu: if g_ram_expansion generate
     begin
@@ -591,10 +604,12 @@ begin
             -- register interface
             slot_req        => slot_req,
             slot_resp       => slot_resp_reu,
-            
+            write_ff00      => write_ff00,
+
             -- system interface
             phi2_tick       => do_io_event,
             reu_dma_n       => reu_dma_n,
+            inhibit         => status.c64_stopped,
             size_ctrl       => control.reu_size,
             enable          => control.reu_enable,
             
@@ -732,7 +747,7 @@ begin
 
     process(address_out, kernal_addr_out, kernal_probe, address_tri_l, address_tri_h)
     begin
-        slot_addr_o <= address_out;
+        slot_addr_o <= unsigned(address_out);
         slot_addr_tl <= address_tri_l;
         slot_addr_th <= address_tri_h;
         if kernal_addr_out='1' and kernal_probe='1' then
@@ -749,7 +764,7 @@ begin
     -- open drain outputs
     irqn_o  <= '0' when irq_n='0' or slot_resp.irq='1' else '1';
     nmin_o  <= '0' when (control.c64_nmi='1') or (nmi_n='0') or (slot_resp.nmi='1') else '1';
-    rstn_o  <= '0' when (reset_button='1' and status.c64_stopped='0' and mask_buttons='0') or
+    rstn_o  <= '0' when (reset_button='1' and status.c64_stopped='0') or
                         (control.c64_reset='1') else '1';
     dman_o  <= '0' when (dma_n='0' or kernal_probe='1') else '1';
     
@@ -848,26 +863,7 @@ begin
         end if;
     end process;
 
---    -- Stand alone tick output
---    process(clock)
---    begin
---        if rising_edge(clock) then
---            stand_alone_tick <= '0';
---            if tick_div = 0 then
---                stand_alone_tick <= '1';
---                if control.tick_ntsc = '1' then
---                    tick_div <= 48; -- 49 => 1.0204 MHz (-0.15%)
---                else
---                    tick_div <= 50; -- 51 => 0.9804 MHz (-0.49%)
---                end if;
---            else
---                tick_div <= tick_div - 1;
---            end if;
---        end if;
---    end process;
---    phi2_tick_avail <= stand_alone_tick when status.clock_detect = '0' else phi2_tick_i;
     phi2_tick_avail <= phi2_tick_i;
-
     phi2_tick   <= phi2_tick_avail;
     
     c64_stopped <= status.c64_stopped;

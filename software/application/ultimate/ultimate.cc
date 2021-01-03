@@ -60,7 +60,7 @@ C64 *c64;
 C64_Subsys *c64_subsys;
 HomeDirectory *home_directory;
 REUPreloader *reu_preloader;
-StreamTextLog textLog(65536);
+StreamTextLog textLog(96*1024);
 
 extern "C" void (*custom_outbyte)(int c);
 
@@ -87,6 +87,7 @@ extern "C" void ultimate_main(void *a)
 	if (capabilities & CAPAB_CARTRIDGE) {
 		c64 = C64 :: getMachine();
 		c64_subsys = new C64_Subsys(c64);
+		c64->init();
 		c64->start();
 	} else {
 		c64 = NULL;
@@ -191,6 +192,8 @@ extern "C" void ultimate_main(void *a)
 #endif
 */
 
+    custom_outbyte = outbyte_log;
+
     while(c64) {
         int doIt = 0;
         c64->checkButton();
@@ -223,7 +226,9 @@ extern "C" void ultimate_main(void *a)
             }
             break;
         case 1:
+            system_usb_keyboard.enableMatrix(false);
             ui->run_once();
+            system_usb_keyboard.enableMatrix(true);
             break;
         case 2:
             ui->swapDisk();

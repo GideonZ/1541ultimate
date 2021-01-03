@@ -11,6 +11,7 @@
 #include "init_function.h"
 #include "userinterface.h"
 #include "u64.h"
+#include "c1541.h"
 
 #define C64_BOOTCRT_DOSYNC    0x014F
 #define C64_BOOTCRT_RUNCODE   0x0172
@@ -92,7 +93,7 @@ C64_Subsys::C64_Subsys(C64 *machine)  : SubSystem(SUBSYSID_C64) {
 	fm = FileManager :: getFileManager();
 	taskHandle = 0;
 
-	// xTaskCreate( C64_Subsys :: poll, "C64 Server", configMINIMAL_STACK_SIZE, machine, tskIDLE_PRIORITY + 1, &taskHandle );
+	taskCategory = TasksCollection :: getCategory("C64 Machine", SORT_ORDER_C64);
 }
 
 C64_Subsys::~C64_Subsys() {
@@ -102,40 +103,78 @@ C64_Subsys::~C64_Subsys() {
 
 }
 
-int  C64_Subsys :: fetch_task_items(Path *path, IndexedList<Action *> &item_list)
+void C64_Subsys :: create_task_items(void)
 {
-	int count = 2;
-	item_list.append(new Action("Reset C64", SUBSYSID_C64, MENU_C64_RESET));
-	item_list.append(new Action("Reboot C64", SUBSYSID_C64, MENU_C64_REBOOT));
+    myActions.reset    = new Action("Reset C64", SUBSYSID_C64, MENU_C64_RESET);
+    myActions.reboot   = new Action("Reboot C64", SUBSYSID_C64, MENU_C64_REBOOT);
+    myActions.off      = new Action("Power OFF", SUBSYSID_C64, MENU_C64_POWEROFF);
+    myActions.pause    = new Action("Pause",  SUBSYSID_C64, MENU_C64_PAUSE);
+    myActions.resume   = new Action("Resume", SUBSYSID_C64, MENU_C64_RESUME);
+    myActions.savereu  = new Action("Save REU Memory", SUBSYSID_C64, MENU_C64_SAVEREU);
+    myActions.savemem  = new Action("Save C64 Memory", SUBSYSID_C64, MENU_U64_SAVERAM);
+    myActions.savemod  = new Action("Save Module Memory", SUBSYSID_C64, MENU_C64_SAVEMODULE);
+    myActions.save_ef  = new Action("Save Easyflash", SUBSYSID_C64, MENU_C64_SAVEEASYFLASH);
+    myActions.savemp3a = new Action("Save MP3 Drv A", SUBSYSID_C64, MENU_C64_SAVE_MP3_DRV_A);
+    myActions.savemp3b = new Action("Save MP3 Drv B", SUBSYSID_C64, MENU_C64_SAVE_MP3_DRV_B);
+    myActions.savemp3c = new Action("Save MP3 Drv C", SUBSYSID_C64, MENU_C64_SAVE_MP3_DRV_C);
+    myActions.savemp3d = new Action("Save MP3 Drv D", SUBSYSID_C64, MENU_C64_SAVE_MP3_DRV_D);
+
+    taskCategory->append(myActions.reset);
+    taskCategory->append(myActions.reboot);
 #if U64
-	item_list.append(new Action("Power OFF", SUBSYSID_C64, MENU_C64_POWEROFF));
-	count++;
+    taskCategory->append(myActions.off);
 #endif
 #if DEVELOPER > 0
-    item_list.append(new Action("Pause",  SUBSYSID_C64, MENU_C64_PAUSE));
-    item_list.append(new Action("Resume", SUBSYSID_C64, MENU_C64_RESUME));
-    count+=2;
+    taskCategory->append(myActions.pause);
+    taskCategory->append(myActions.resume);
 #endif
-	//item_list.append(new Action("Hard System Reboot", SUBSYSID_C64, MENU_C64_HARD_BOOT));
-    //item_list.append(new Action("Boot Alternate FPGA", SUBSYSID_C64, MENU_C64_BOOTFPGA));
-    //item_list.append(new Action("Save SID Trace", SUBSYSID_C64, MENU_C64_TRACE));
+#if U64
+    taskCategory->append(myActions.savemem);
+#endif
+    taskCategory->append(myActions.savereu);
+//    taskCategory->append(myActions.savemod);
+    taskCategory->append(myActions.save_ef);
+    taskCategory->append(myActions.savemp3a);
+    taskCategory->append(myActions.savemp3b);
+    taskCategory->append(myActions.savemp3c);
+    taskCategory->append(myActions.savemp3d);
+}
 
-    if(fm->is_path_writable(path)) {
-    	item_list.append(new Action("Save REU Memory", SUBSYSID_C64, MENU_C64_SAVEREU));
-    	count ++;
-        // item_list.append(new Action("Save Flash", SUBSYSID_C64, MENU_C64_SAVEFLASH));
+void C64_Subsys :: update_task_items(bool writablePath, Path *p)
+{
+    if (C64 :: isMP3RamDrive(0) > 0) myActions.savemp3a->show(); else myActions.savemp3a->hide();
+    if (C64 :: isMP3RamDrive(1) > 0) myActions.savemp3b->show(); else myActions.savemp3b->hide();
+    if (C64 :: isMP3RamDrive(2) > 0) myActions.savemp3c->show(); else myActions.savemp3c->hide();
+    if (C64 :: isMP3RamDrive(3) > 0) myActions.savemp3d->show(); else myActions.savemp3d->hide();
+    if (C64_CARTRIDGE_TYPE == CART_TYPE_EASY_FLASH) {
+        myActions.save_ef->show();
+    } else {
+        myActions.save_ef->hide();
     }
-#if 0
-    if(fm->is_path_writable(path)) {
-    	item_list.append(new Action("Save Module Memory", SUBSYSID_C64, MENU_C64_SAVEMODULE));
-    	count ++;
-    }
+
+    if (writablePath) {
+#if U64
+        myActions.savemem  ->enable();
 #endif
-    if(fm->is_path_writable(path) && C64_CARTRIDGE_TYPE == CART_TYPE_EASY_FLASH) {
-    	item_list.append(new Action("Save Easyflash", SUBSYSID_C64, MENU_C64_SAVEEASYFLASH));
-    	count ++;
+        myActions.savereu  ->enable();
+        myActions.savemod  ->enable();
+        myActions.save_ef  ->enable();
+        myActions.savemp3a ->enable();
+        myActions.savemp3b ->enable();
+        myActions.savemp3c ->enable();
+        myActions.savemp3d ->enable();
+    } else {
+#if U64
+        myActions.savemem  ->disable();
+#endif
+        myActions.savereu  ->disable();
+        myActions.savemod  ->disable();
+        myActions.save_ef  ->disable();
+        myActions.savemp3a ->disable();
+        myActions.savemp3b ->disable();
+        myActions.savemp3c ->disable();
+        myActions.savemp3d ->disable();
     }
-	return count;
 }
 
 /*
@@ -178,6 +217,7 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
 	uint32_t transferred;
     int ram_size;
     char buffer[64] = "memory";
+    uint8_t *pb;
 
     switch(cmd->functionID) {
     case C64_PUSH_BUTTON:
@@ -238,7 +278,7 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
             fix_filename(buffer);
             set_extension(buffer, ".reu", 32);
 
-            res = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+            res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), buffer, &f);
             if(res == FR_OK) {
                 printf("Opened file successfully.\n");
                 
@@ -255,7 +295,7 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
                 transferred = 0;
                 
                 cmd->user_interface->show_progress("Saving REU file..", 32);
-                src = (BYTE *)REU_MEMORY_BASE;
+                src = (uint8_t *)REU_MEMORY_BASE;
                 
                 while(remain != 0) {
                     f->write(src, bytes_per_step, &bytes_written);
@@ -280,9 +320,10 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
 
         case MENU_C64_SAVEMODULE:
             ram_size = 1024 * 1024;
-            res = fm->fopen(cmd->path.c_str(), "module.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
-            if(res == FR_OK){
-                uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
+
+            res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), "module.bin", &f);
+            if(res == FR_OK) {
+                uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16;
                 printf("Opened file successfully.\n");
                 f->write((void *)mem_addr, ram_size, &transferred);
                 printf("written: %d...", transferred);
@@ -291,10 +332,39 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
                 printf("Couldn't open file..\n");
             }       
             break;
+        case MENU_U64_SAVERAM:
+            ram_size = 64 * 1024;
+            if(cmd->user_interface->string_box("Save RAM as..", buffer, 22) > 0) {
+                fix_filename(buffer);
+                set_extension(buffer, ".bin", 32);
+
+                res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), buffer, &f);
+                if(res == FR_OK) {
+                    printf("Opened file successfully.\n");
+
+                    pb = new uint8_t[ram_size];
+                    c64->get_all_memory(pb);
+
+                    uint32_t bytes_written;
+                    f->write(pb, ram_size, &bytes_written);
+
+                    printf("written: %d...", bytes_written);
+                    sprintf(buffer, "bytes saved: %d ($%8x)", bytes_written, bytes_written);
+                    cmd->user_interface->popup(buffer, BUTTON_OK);
+
+                    fm->fclose(f);
+                    delete[] pb;
+                } else {
+                    printf("Couldn't open file..\n");
+                    cmd->user_interface->popup(FileSystem :: get_error_string(res), BUTTON_OK);
+                }
+            }
+            break;
+
         case MENU_C64_SAVEEASYFLASH:
-            res = fm->fopen(cmd->path.c_str(), "module.crt", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+            res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), "module.crt", &f);
             if(res == FR_OK) {
-                uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
+                uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16;
                 printf("Opened file successfully.\n");
                 uint8_t header[64] = { 0x43, 0x36, 0x34, 0x20, 0x43, 0x41, 0x52, 0x54, 0x52, 0x49, 0x44, 0x47, 0x45, 0x20, 0x20, 0x20,                    0x00, 0x00, 0x00, 0x40, 0x01, 0x00, 0x00, 0x20, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x45, 0x61,
                              0x73, 0x79, 0x46, 0x6c, 0x61, 0x73, 0x68, 0x20, 0x43, 0x61, 0x72, 0x74, 0x72, 0x69, 0x64, 0x67, 0x65, 0x00,
@@ -319,11 +389,13 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
                     printf("written: %d...", transferred);
                     char* eapi = (char*)(mem_addr + 512*1024 + 0x1800);
                     if (i == 0 && eapi[0] == 0x65 && eapi[1] == 0x61 && eapi[2] == 0x70 && eapi[3] == 0x69) {
-                        size = 0x1800; f->write((void *)(mem_addr+512*1024), size, &transferred); printf("written: %d...", transferred);
-                        size = 0x300; f->write(eapiOrg, size, &transferred); printf("written: %d...", transferred);
-                        size = 0x500;f->write((void *)(mem_addr+512*1024+6144+768), size, &transferred);printf("written: %d...", transferred);
+                        size = 0x1800;
+                        f->write((void *)(mem_addr+512*1024), size, &transferred); printf("written: %d...", transferred);
+                        size = 0x300;
+                        f->write(eapiOrg, size, &transferred); printf("written: %d...", transferred);
+                        size = 0x500;                        f->write((void *)(mem_addr+512*1024+6144+768), size, &transferred);                        printf("written: %d...", transferred);
                     } else {
-                        size = 8192; f->write((void *)(mem_addr+512*1024+8192*i), size, &transferred);printf("written: %d...", transferred);
+                        size = 8192; f->write((void *)(mem_addr+512*1024+8192*i), size, &transferred);                        printf("written: %d...", transferred);
                     }
                 }
                 fm->fclose(f);
@@ -333,7 +405,8 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
             break;
 
     case MENU_C64_SAVEFLASH: // doesn't belong here, but i need it fast
-        res = fm->fopen(cmd->path.c_str(), "flash_dump.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+        res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), "flash_dump.bin", &f);
+
         if(res == FR_OK) {
             int pages = c64->flash->get_number_of_pages();
             int page_size = c64->flash->get_page_size();
@@ -352,11 +425,20 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
     case C64_DMA_LOAD:
     	res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
         if(res == FR_OK) {
-        	dma_load(f, NULL, 0, cmd->filename.c_str(), cmd->mode);
+        	dma_load(f, NULL, 0, cmd->filename.c_str(), cmd->mode, c64->cfg->get_value(CFG_C64_DMA_ID));
         	fm->fclose(f);
         }
     	break;
 
+#ifndef RECOVERYAPP
+    case C64_DMA_LOAD_MNT:
+        res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
+        if(res == FR_OK) {
+            dma_load(f, NULL, 0, cmd->filename.c_str(), cmd->mode, c1541_A->get_current_iec_address());
+            fm->fclose(f);
+        }
+        break;
+#endif
     case C64_DMA_LOAD_RAW:
     	res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
         if(res == FR_OK) {
@@ -365,10 +447,10 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
         }
     	break;
     case C64_DRIVE_LOAD:
-    	dma_load(0, NULL, 0, cmd->filename.c_str(), cmd->mode);
+    	dma_load(0, NULL, 0, cmd->filename.c_str(), cmd->mode, cmd->path.c_str()[0] & 0x1F);
     	break;
     case C64_DMA_BUFFER:
-    	dma_load(0, (const uint8_t *)cmd->buffer, cmd->bufferSize, cmd->filename.c_str(), cmd->mode);
+    	dma_load(0, (const uint8_t *)cmd->buffer, cmd->bufferSize, cmd->filename.c_str(), cmd->mode, c64->cfg->get_value(CFG_C64_DMA_ID));
     	break;
     case C64_DMA_RAW:
     	dma_load_raw_buffer((uint16_t)cmd->mode, (const uint8_t *)cmd->buffer, cmd->bufferSize);
@@ -396,6 +478,66 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
                 c64->enable_kernal( (uint8_t*) cmd->buffer );
                 // c64->reset();
     	        break;
+    case MENU_C64_SAVE_MP3_DRV_A:
+    case MENU_C64_SAVE_MP3_DRV_B:
+    case MENU_C64_SAVE_MP3_DRV_C:
+    case MENU_C64_SAVE_MP3_DRV_D:
+        {
+            int devNo = cmd->functionID - MENU_C64_SAVE_MP3_DRV_A;
+            int ftype = C64::isMP3RamDrive(devNo);
+            uint8_t* reu = (uint8_t *) (REU_MEMORY_BASE);
+            int expSize = 1;
+            char* extension = 0;
+
+            if (ftype == 1541) {
+                expSize = 174848;
+                extension = ".D64";
+            }
+            if (ftype == 1571) {
+                expSize = 2 * 174848;
+                extension = ".D71";
+            }
+            if (ftype == 1581) {
+                expSize = 819200;
+                extension = ".D81";
+            }
+            if (ftype == DRVTYPE_MP3_DNP) {
+                expSize = C64::getSizeOfMP3NativeRamdrive(devNo);
+                extension = ".DNP";
+            }
+
+            uint8_t ramBase = reu[0x7dc7 + devNo];
+            uint8_t* srcAddr = reu + (((uint32_t) ramBase) << 16);
+
+            if (cmd->user_interface->string_box("Save RAMDISK as..", buffer, 22) > 0) {
+                fix_filename(buffer);
+                set_extension(buffer, extension, 32);
+
+                res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), buffer, &f);
+                if (res == FR_OK) {
+                    printf("Opened file successfully.\n");
+                    uint32_t bytes_written;
+
+                    if (ftype == 1571) {
+                        f->write(srcAddr, expSize / 2, &bytes_written);
+                        uint32_t tmp;
+                        f->write(srcAddr + 700 * 256, expSize / 2, &tmp);
+                        bytes_written += tmp;
+                    } else {
+                        f->write(srcAddr, expSize, &bytes_written);
+                    }
+                    printf("written: %d...", bytes_written);
+                    sprintf(buffer, "bytes saved: %d ($%8x)", bytes_written, bytes_written);
+                    cmd->user_interface->popup(buffer, BUTTON_OK);
+
+                    fm->fclose(f);
+                } else {
+                    printf("Couldn't open file..\n");
+                    cmd->user_interface->popup(FileSystem::get_error_string(res), BUTTON_OK);
+                }
+            }
+        }
+        break;
 
     default:
 		break;
@@ -447,7 +589,7 @@ int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, const uint8_t *buffer, in
 }
 
 int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
-		const char *name, uint8_t run_code, uint16_t reloc)
+		const char *name, uint8_t run_code, uint8_t drv, uint16_t reloc)
 {
 	// prepare DMA load
     if(c64->client) { // we are locked by a client, likely: user interface
@@ -462,14 +604,14 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
 
     C64_POKE(C64_BOOTCRT_DOSYNC, (c64->cfg->get_value(CFG_C64_DO_SYNC) == 1) ? 1 : 0);
 
-	int len = strlen(name);
-	if (len > 30)
-		len = 30;
-
-	for (int i=0; i < len; i++) {
-        C64_POKE(C64_BOOTCRT_NAME+i, toupper(name[i]));
+    CbmFileName cbm;
+    cbm.init(name);
+    const char *p = cbm.getName();
+    for(int i=0; i<16; i++) {
+        C64_POKE(C64_BOOTCRT_NAME+i, p[i]);
     }
-    C64_POKE(C64_BOOTCRT_NAMELEN, len);
+    C64_POKE(C64_BOOTCRT_NAMELEN, strlen(p));
+
     C64_POKE(C64_BOOTCRT_HANDSHAKE, 0x80); // initial boot cart handshake
 
     boot_cart.custom_addr = (void *)&_bootcrt_65_start;
@@ -480,7 +622,7 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
 
 	// handshake with boot cart
     c64->stop(false);
-	C64_POKE(C64_BOOTCRT_DRIVENUM, c64->cfg->get_value(CFG_C64_DMA_ID));    // drive number for printout
+	C64_POKE(C64_BOOTCRT_DRIVENUM, drv);    // drive number for printout
 
 	C64_POKE(C64_BOOTCRT_HANDSHAKE, 0x40);  // signal cart ready for DMA load
 

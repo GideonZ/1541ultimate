@@ -1,19 +1,13 @@
 #ifndef PATH_H
 #define PATH_H
 
-//#include "cached_tree_node.h"
-#include "file_info.h"
 #include "managed_array.h"
 #include "mystring.h"
-#include "fs_errors_flags.h"
 #include "indexed_list.h"
-
-class FileManager;
 
 class Path
 {
 private:
-    friend class FileManager;
     friend class PathInfo;
     mstring full_path;
     ManagedArray<mstring *>elements;
@@ -23,11 +17,14 @@ private:
     void update(const char *p);
     void update(int i, const char *p);
     void regenerateFullPath();
-    Path();
-    ~Path();
 public:
+    Path();
+    Path(Path *); // make a copy
+    Path(Path *, int start, int stop);
+    ~Path();
     const char *owner;
 
+    int up(mstring *stripped);
     int cd(const char *p);
     const char *get_path(void);
 
@@ -35,18 +32,50 @@ public:
     const char *getTail(int index, mstring &work);
     const char *getSub(int start, int stop, mstring &work);
     const char *getHead(mstring &work);
-
     const char *getElement(int);
+    const char *getLastElement();
 
-    void get_display_string(const char *filename, char *buffer, int width);
-    FRESULT get_directory(IndexedList<FileInfo *> &target);
-    bool isValid();
-    void dump() {
-    	printf("** PATH OBJECT ** Owner = %s ** FullPathString = %s\n", owner, full_path.c_str());
-    	for(int i=0;i<depth;i++) {
-    		printf(" %2d: %s\n", i, getElement(i));
-    	}
+    bool match(Path *search);
+};
+
+class SubPath
+{
+    Path *reference_path;
+    int start;
+    int stop;
+    mstring *full_path;
+public:
+    SubPath(Path *p) {
+        full_path = NULL;
+        start = 0;
+        stop = -1;
+        reference_path = p;
     }
+
+    ~SubPath() {
+        if (full_path) {
+            delete full_path;
+        }
+    }
+
+    const char *get_path() {
+        if (!full_path) {
+            full_path = new mstring();
+        }
+        return reference_path->getSub(start, stop, *full_path);
+    }
+
+    const char *get_root_path(mstring &work) {
+        return reference_path->getSub(0, stop, work);
+    }
+
+    Path *get_new_path() {
+        return new Path(reference_path, start, stop);
+    }
+
+    bool match(Path *search);
+
+    friend class PathInfo;
 };
 
 #endif

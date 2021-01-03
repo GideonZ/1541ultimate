@@ -7,52 +7,37 @@
 
 #include "filesystem_fat.h"
 #include "filemanager.h"
+#include "chanfat_manager.h"
 #include <stdio.h>
 #include <string.h>
 
 FileSystemFAT :: FileSystemFAT(Partition *p) : FileSystem(p)
 {
-	memset(&fatfs, 0, sizeof(FATFS));
-	fatfs.drv = p;
+    uint8_t drv = ChanFATManager :: getManager() -> addDrive(p);
+    memset(&fatfs, 0, sizeof(FATFS));
+
+    if (drv != 0xFF) {
+        driveIndex = drv;
+        sprintf(prefix, "%d:", drv);
+    }
 }
 
 FileSystemFAT :: ~FileSystemFAT()
 {
-
-}
-
-//private
-void FileSystemFAT :: copy_info(FILINFO *fi, FileInfo *inf)
-{
-	inf->fs = this;
-	inf->attrib = fi->fattrib;
-	inf->size = fi->fsize;
-	inf->date = fi->fdate;
-	inf->time = fi->ftime;
-
-#if _USE_LFN
-	get_extension(fi->fname, inf->extension);
-	inf->cluster = fi->fclust;
-
-	if(!(*inf->lfname)) {
-		strncpy(inf->lfname, fi->fname, inf->lfsize);
-	}
-#else
-	strncpy(inf->lfname, fi->fname, inf->lfsize);
-#endif
+    f_unmount(prefix);
+    ChanFATManager :: getManager() -> removeDrive(driveIndex);
 }
 
 bool    FileSystemFAT :: init(void)
 {
-	fs_init_volume(&fatfs, 0);
-	if (fatfs.fs_type)
-		return true;
-	return false;
+    FRESULT fres = f_mount(&fatfs, prefix, 1);
+    return (fres == FR_OK);
 }
 
 FRESULT FileSystemFAT :: get_free (uint32_t *e)
 {
-	return fs_getfree(&fatfs, e);
+    FATFS *fs;
+    return f_getfree(prefix, e, &fs);
 }
 
 bool    FileSystemFAT :: is_writable()
@@ -63,150 +48,140 @@ bool    FileSystemFAT :: is_writable()
 
 FRESULT FileSystemFAT :: sync(void)
 {
-	fs_sync(&fatfs);
+	return FR_OK;
+    // f_sync();
 }
 
 // functions for reading directories
-FRESULT FileSystemFAT :: dir_open(const TCHAR *path, Directory **dirout, FileInfo *inf)
+FRESULT FileSystemFAT :: dir_open(const TCHAR *path, Directory **dirout)
 {
 	*dirout = 0;
 
-//	printf("FAT Open DIR: %s\n", path);
-
-	DIR *dp = new DIR;
+	DirectoryFAT *dir = new DirectoryFAT(this);
 	FRESULT res;
-	if (inf) {
-		dp->fs = &fatfs;
-		dp->id = fatfs.id;
-		if (!inf) {
-			dp->sclust = 0; // root directory
-		} else {
-			dp->sclust = inf->cluster;
-		}
-		res = dir_sdi(dp, 0);			/* Rewind directory */
-
-/*
-#if _FS_LOCK
-		if (res == FR_OK) {
-			if (dp->sclust) {
-				dp->lockid = inc_lock(dp, 0);	// Lock the sub directory
-				if (!dp->lockid)
-					res = FR_TOO_MANY_OPEN_FILES;
-			} else {
-				dp->lockid = 0;	// Root directory need not to be locked
-			}
-		}
-#endif
-*/
-
-	} else if(path) {
-		res = fs_opendir(&fatfs, dp, path);
-	} else {
-		res = FR_INVALID_PARAMETER;
+	if (!path) {
+	    path = "";
 	}
+
+    mstring prefixedPath(prefix);
+    prefixedPath += path;
+
+    res = f_opendir(dir->getDIR(), prefixedPath.c_str());
+
 	if (res == FR_OK) {
-		*dirout = new Directory(this, dp);
+		*dirout = dir;
 	} else {
-		delete dp;
+		delete dir;
 	}
-	return res;
-}
-
-void FileSystemFAT :: dir_close(Directory *d)
-{
-	DIR *dir = (DIR *)d->handle;
-	f_closedir(dir);
-	delete dir;
-	delete d;
-}
-
-FRESULT FileSystemFAT :: dir_read(Directory *d, FileInfo *f)
-{
-	DIR *dir = (DIR *)d->handle;
-	FILINFO inf;
-#if _USE_LFN
-	inf.lfname = f->lfname;
-	inf.lfsize = f->lfsize;
-#endif
-	FRESULT res = f_readdir(dir, &inf);
-	if (dir->sect == 0)
-		return FR_NO_FILE;
-	copy_info(&inf, f);
 	return res;
 }
 
 FRESULT FileSystemFAT :: dir_create(const TCHAR *path)
 {
-	return fs_mkdir(&fatfs, path);
+    mstring prefixedPath(prefix);
+    prefixedPath += path;
+    return f_mkdir(prefixedPath.c_str());
 }
 
 
-FRESULT FileSystemFAT :: file_open(const char *path, Directory *dir, const char *filename, uint8_t flags, File **file)
+FRESULT FileSystemFAT :: format(const char *name)
 {
-//	printf("FAT Open file: %s (%s)\n", path, filename);
+#if FF_USE_MKFS
+    MKFS_PARM param;
+    param.fmt = FM_SFD | FM_ANY;
+    param.n_fat = 1;
+    param.n_root = 0;
+    param.au_size = 0; //0x1000;
+    param.align = 0; // for 4K use 8
 
-	FIL *fil = new FIL;
-	FRESULT res = fs_open(&fatfs, path, flags, fil);
+    uint8_t *buffer = new uint8_t[4096];
+    FRESULT fres = f_mkfs(prefix, &param, buffer, 4096);
+    return fres;
+#else
+    return FR_NOT_ENABLED;
+#endif
+}
 
-	if (res == FR_OK) {
-		*file = new File(this, fil);
-		return res;
-	}
-	delete fil;
+FRESULT FileSystemFAT :: file_open(const char *filename, uint8_t flags, File **file)
+{
 	*file = 0;
+
+    mstring prefixedFilename(prefix);
+    prefixedFilename += filename;
+
+    FileFAT *fatfile = new FileFAT(this);
+	FIL *fil = fatfile->getFIL();
+
+	FRESULT res = f_open(fil, prefixedFilename.c_str(), flags);
+	if (res == FR_OK) {
+	    *file = fatfile;
+	    return res;
+	}
+	delete fatfile;
 	return res;
-}
-
-uint32_t FileSystemFAT :: get_file_size(File *f)
-{
-	FIL *fil = (FIL *)f->handle;
-	return fil->fsize;
-}
-
-uint32_t FileSystemFAT :: get_inode(File *f)
-{
-	FIL *fil = (FIL *)f->handle;
-	return fil->sclust;
 }
 
 FRESULT FileSystemFAT :: file_rename(const TCHAR *path, const char *new_name)
 {
-	return fs_rename(&fatfs, path, new_name);
+    mstring prefixedPath(prefix);
+    prefixedPath += path;
+    return f_rename(prefixedPath.c_str(), new_name);
 }
 
 FRESULT FileSystemFAT :: file_delete(const TCHAR *path)
 {
-	return fs_unlink(&fatfs, path);
+    mstring prefixedPath(prefix);
+    prefixedPath += path;
+    return f_unlink(prefixedPath.c_str());
 }
 
-void    FileSystemFAT :: file_close(File *f)
+FRESULT FileFAT :: read(void *buffer, uint32_t len, uint32_t *transferred)
 {
-	FIL *fil = (FIL *)f->handle;
-	f_close(fil);
+    if (!get_file_system()) {
+        return FR_NOT_READY;
+    }
+    return f_read(getFIL(), buffer, len, (UINT*)transferred);
 }
 
-FRESULT FileSystemFAT :: file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred)
+FRESULT FileFAT :: write(const void *buffer, uint32_t len, uint32_t *transferred)
 {
-	FIL *fil = (FIL *)f->handle;
-	return f_read(fil, buffer, len, transferred);
+    if (!get_file_system()) {
+        return FR_NOT_READY;
+    }
+    return f_write(getFIL(), buffer, len, (UINT*)transferred);
 }
 
-FRESULT FileSystemFAT :: file_write(File *f, const void *buffer, uint32_t len, uint32_t *transferred)
+FRESULT FileFAT :: seek(uint32_t pos)
 {
-	FIL *fil = (FIL *)f->handle;
-	return f_write(fil, buffer, len, transferred);
+    if (!get_file_system()) {
+        return FR_NOT_READY;
+    }
+    return f_lseek(getFIL(), pos);
 }
 
-FRESULT FileSystemFAT :: file_seek(File *f, uint32_t pos)
+FRESULT FileFAT :: sync(void)
 {
-	FIL *fil = (FIL *)f->handle;
-	return f_lseek(fil, pos);
+    if (!get_file_system()) {
+        return FR_NOT_READY;
+    }
+    return f_sync(getFIL());
 }
 
-FRESULT FileSystemFAT :: file_sync(File *f)
+FRESULT FileFAT :: close(void)
 {
-	FIL *fil = (FIL *)f->handle;
-	return f_sync(fil);
+    FRESULT res = f_close(getFIL());
+    delete this;
+    return res;
+}
+
+uint32_t FileFAT :: get_size(void)
+{
+    return getFIL()->obj.objsize;
+}
+
+uint32_t FileFAT :: get_inode(void)
+{
+    return getFIL()->obj.sclust;
 }
 
 /*-----------------------------------------------------------------------*/
@@ -232,26 +207,29 @@ FileSystem *FileSystemFAT::test (Partition *prt)
         return new FileSystemFAT(prt);
     }
 
-    buf = new uint8_t[secsize];
-
-    DRESULT dr = prt->read(buf, 0, 1);
-    if (dr != RES_OK) {	/* Load boot record */
-    	printf("FileSystemFAT::test failed, because reading sector failed: %d\n", dr);
-		delete buf;
-    	return NULL;
+    // Just try; use the f_mount function to see if it succeeds
+    FileSystemFAT *fs = new FileSystemFAT(prt);
+    if (fs->init()) {
+        return fs;
     }
-
-	if (LD_WORD(&buf[BS_55AA]) != 0xAA55) {	/* Check record signature (always placed at offset 510 even if the sector size is >512) */
-		delete buf;
-		return NULL;
-	}
-	if ((LD_DWORD(&buf[BS_FilSysType]) & 0xFFFFFF) == 0x544146)	/* Check "FAT" string */
-		return new FileSystemFAT(prt);
-	if ((LD_DWORD(&buf[BS_FilSysType32]) & 0xFFFFFF) == 0x544146)
-		return new FileSystemFAT(prt);
-
-	delete buf;
-	return NULL;
+    delete fs;
+    return NULL;
 }
 
 FactoryRegistrator<Partition *, FileSystem *> fat_tester(FileSystem :: getFileSystemFactory(), FileSystemFAT :: test);
+
+uint32_t get_fattime (void) __attribute__((weak));
+uint32_t get_fattime (void)     /* 31-25: Year(0-127 org.1980), 24-21: Month(1-12), 20-16: Day(1-31) */
+                                                    /* 15-11: Hour(0-23), 10-5: Minute(0-59), 4-0: Second(0-29 *2) */
+{
+/*
+    35 << 25 = 0x46000000
+     9 << 21 = 0x01200000
+     1 << 16 = 0x00010000
+     9 << 11 = 0x00004800
+    36 <<  5 = 0x00000480
+    23 <<  0 = 0x00000017
+*/
+    return 0x47244C97;
+}
+

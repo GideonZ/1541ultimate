@@ -11,6 +11,7 @@ FINAL    =  $(RESULT)/$(PRJ).hex $(RESULT)/$(PRJ).elf $(DEST)
 HEXLAST  =  0x07FF
 HEXBASE  =  0x30000000
 HEXEND   =  0x300007FF
+BSP      = $(PATH_SW)/nios_solo_bsp
 
 SRCS_C   =	u64_boot.c ddr2_calibrator_u64.c small_printf.c
                         
@@ -31,11 +32,15 @@ SRCS_IEC =
 
 SRCS_NANO = 
 
+VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
+VPATH +=	$(BSP)
+VPATH +=	$(BSP)/HAL/inc
+VPATH +=	$(BSP)/drivers/inc
+
 PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -g -ffunction-sections -Os -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
-BSP      = $(PATH_SW)/nios_solo_bsp
 LINK 	 = ./linker.x
 LIBS2    = $(BSP)/libhal_bsp.a
 LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o

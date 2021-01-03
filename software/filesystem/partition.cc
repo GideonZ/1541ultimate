@@ -15,6 +15,9 @@ Partition::Partition(BlockDevice *blk, uint32_t offset, uint32_t size, uint8_t t
     length = size;
     type   = t;
 
+    if (!size) {
+        blk->ioctl(GET_SECTOR_COUNT, &length);
+    }
     //printf("Created partition at offset %d, size = %d, type = %d.\n", offset, size, t);
 }
     
@@ -52,7 +55,9 @@ DRESULT Partition::read(uint8_t *buffer, uint32_t sector, uint8_t count)
 {
 	if(!dev)
         return RES_NOTRDY;
-    return dev->read(buffer,start + sector,count);
+	if (sector >= length)
+	    return RES_PARERR;
+	return dev->read(buffer,start + sector,count);
 }
 
 #if	_READONLY == 0
@@ -60,7 +65,8 @@ DRESULT Partition::write(const uint8_t *buffer, uint32_t sector, uint8_t count)
 {
     if(!dev)
         return RES_NOTRDY;
-//    printf("Write sector %d (%d)\n", sector,count);
+    if (sector >= length)
+        return RES_PARERR;
     return dev->write(buffer,start + sector,count);
 }
 #endif

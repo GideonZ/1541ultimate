@@ -7,7 +7,7 @@ use work.slot_bus_pkg.all;
 
 entity all_carts_v4 is
 generic (
-    g_kernal_base   : std_logic_vector(27 downto 0) := X"0ECC000"; -- multiple of 16K
+    g_kernal_base   : std_logic_vector(27 downto 0) := X"0EC8000"; -- multiple of 32K
     g_rom_base      : std_logic_vector(27 downto 0) := X"0F00000"; -- multiple of 1M
     g_georam_base   : std_logic_vector(27 downto 0) := X"1000000"; -- Shared with reu
     g_ram_base      : std_logic_vector(27 downto 0) := X"0EF0000" ); -- multiple of 64K
@@ -19,7 +19,6 @@ port (
     RST_in          : in  std_logic;
     c64_reset       : in  std_logic;
     
-    ethernet_enable : in  std_logic := '1';
     kernal_enable   : in  std_logic;
     kernal_16k      : in  std_logic;
     kernal_area     : in  std_logic;
@@ -64,7 +63,6 @@ architecture gideon of all_carts_v4 is
     signal mode_bits    : std_logic_vector(2 downto 0);
     signal ef_write     : std_logic_vector(2 downto 0);
     signal ef_write_addr : std_logic_vector(21 downto 0);
-    signal ram_select   : std_logic;
     signal georam_bank  : std_logic_vector(15 downto 0);
     
 --    signal rom_enable   : std_logic;
@@ -76,7 +74,6 @@ architecture gideon of all_carts_v4 is
     signal do_io2       : std_logic;
     signal allow_bank   : std_logic;
     signal hold_nmi     : std_logic;
-    signal eth_addr     : boolean;
     signal cart_logic_d : std_logic_vector(cart_logic'range) := (others => '0');
     signal mem_addr_i   : std_logic_vector(27 downto 0);
         
@@ -106,12 +103,14 @@ architecture gideon of all_carts_v4 is
     constant c_fc3plus      : std_logic_vector(4 downto 0) := "11001";
     constant c_comal80pakma : std_logic_vector(4 downto 0) := "11010";
     constant c_supergames   : std_logic_vector(4 downto 0) := "11011";
+    constant c_nordic       : std_logic_vector(4 downto 0) := "11100";
     
     constant c_serve_rom_rr : std_logic_vector(0 to 7) := "11011111";
     constant c_serve_io_rr  : std_logic_vector(0 to 7) := "10101111";
     
     -- alias
     signal slot_addr        : std_logic_vector(15 downto 0);
+    signal slot_rwn         : std_logic;
     signal io_read          : std_logic;
     signal io_write         : std_logic;
     signal io_addr          : std_logic_vector(8 downto 0);
@@ -134,6 +133,7 @@ begin
     cart_active  <= cart_en;
 
     slot_addr <= std_logic_vector(slot_req.bus_address);
+    slot_rwn  <= slot_req.bus_rwn;
     io_write  <= slot_req.io_write;
     io_read   <= slot_req.io_read;
     io_addr   <= std_logic_vector(slot_req.io_address(8 downto 0));
@@ -156,7 +156,6 @@ begin
                 ef_write     <= (others => '0');
                 ef_write_addr <= (others => '0');
                 allow_bank   <= '0';
-                ram_select   <= '0';
                 do_io2       <= '1';
                 cart_en      <= '1';
 --                unfreeze     <= '0';
@@ -165,7 +164,6 @@ begin
                 bank_bits  <= (others => '0');
                 mode_bits  <= (others => '0');
                 --allow_bank <= '0';
-                ram_select <= '0';
                 cart_en    <= '1';
 --                unfreeze   <= '0';
                 hold_nmi   <= '1';
@@ -230,7 +228,30 @@ begin
                 irq_n     <= '1';
                 nmi_n     <= not(freeze_trig or freeze_act or hold_nmi);
                                     
-            when c_retro | c_action =>
+            when c_action =>
+                if io_write='1' and io_addr(8) = '0' and cart_en='1' then
+                    bank_bits <= io_wdata(7) & io_wdata(4 downto 3);
+                    mode_bits <= io_wdata(5) & io_wdata(1 downto 0);
+                    unfreeze  <= io_wdata(6);
+                    cart_en   <= not io_wdata(2);
+                end if;
+                if freeze_act='1' then
+                    game_n    <= '0';
+                    exrom_n   <= '1';
+                    serve_rom <= '1';
+                    serve_io1 <= '0';
+                    serve_io2 <= '0';
+                else
+                    game_n    <= not mode_bits(0);
+                    exrom_n   <= mode_bits(1);
+                    serve_io1 <= c_serve_io_rr(to_integer(unsigned(mode_bits)));
+                    serve_io2 <= c_serve_io_rr(to_integer(unsigned(mode_bits))) and do_io2;
+                    serve_rom <= c_serve_rom_rr(to_integer(unsigned(mode_bits)));
+                end if;
+                irq_n     <= not(freeze_trig or freeze_act);
+                nmi_n     <= not(freeze_trig or freeze_act);
+
+            when c_retro =>
                 if io_write='1' and io_addr(8 downto 1) = X"00" and cart_en='1' then -- DE00/DE01
                     if io_addr(0)='0' then
                         bank_bits <= io_wdata(7) & io_wdata(4 downto 3);
@@ -255,6 +276,35 @@ begin
                 else
                     game_n    <= not mode_bits(0);
                     exrom_n   <= mode_bits(1);
+                    serve_io1 <= c_serve_io_rr(to_integer(unsigned(mode_bits)));
+                    serve_io2 <= c_serve_io_rr(to_integer(unsigned(mode_bits))) and do_io2;
+                    serve_rom <= c_serve_rom_rr(to_integer(unsigned(mode_bits)));
+                end if;
+                irq_n     <= not(freeze_trig or freeze_act);
+                nmi_n     <= not(freeze_trig or freeze_act);
+
+            when c_nordic =>
+                if io_write='1' and io_addr(8) = '0' and cart_en='1' then
+                    bank_bits <= io_wdata(7) & io_wdata(4 downto 3);
+                    mode_bits <= io_wdata(5) & io_wdata(1 downto 0);
+                    unfreeze  <= io_wdata(6);
+                    cart_en   <= not io_wdata(2);
+                end if;
+                if freeze_act='1' then
+                    game_n    <= '0';
+                    exrom_n   <= '1';
+                    serve_rom <= '1';
+                    serve_io1 <= '0';
+                    serve_io2 <= '0';
+                else
+                    if mode_bits(2 downto 0)="110" then
+                       game_n    <= '0';
+                       -- Switch to Ultimax mode for writes to address A000-BFFF (disable C64 RAM write)
+                       exrom_n   <= slot_addr(15) and not slot_addr(14) and slot_addr(13) and not slot_rwn;
+                    else 
+                       game_n    <= not mode_bits(0);
+                       exrom_n   <= mode_bits(1);
+                    end if;
                     serve_io1 <= c_serve_io_rr(to_integer(unsigned(mode_bits)));
                     serve_io2 <= c_serve_io_rr(to_integer(unsigned(mode_bits))) and do_io2;
                     serve_rom <= c_serve_rom_rr(to_integer(unsigned(mode_bits)));
@@ -465,12 +515,15 @@ begin
                 nmi_n     <= '1';
 
             when c_supergames =>
-                if io_write='1' and io_addr(8)='1' then -- DF00-DFFF
+                if io_write='1' and io_addr(8)='1' and mode_bits(1) = '0' then -- DF00-DFFF
                     bank_bits <= io_wdata(1 downto 0) & '0';
                     mode_bits(1 downto 0) <= io_wdata(3 downto 2);                
                 end if;
+                if mode_bits(1 downto 0) = "11" then -- Mostly to visualize
+                    cart_en <= '0';
+                end if;
                 game_n    <= mode_bits(0);
-                exrom_n   <= mode_bits(1);
+                exrom_n   <= mode_bits(0);
                 serve_rom <= '1';
                 serve_io1 <= '0';
                 serve_io2 <= '0';
@@ -688,12 +741,9 @@ begin
 
     CART_LEDn <= not cart_en;
 
-    -- decode address DE02-DE0F
-    eth_addr <= slot_addr(15 downto 4) = X"DE0" and slot_addr(3 downto 1) /= "000" and ethernet_enable='1';
-
     -- determine address
---  process(cart_logic_d, cart_base_d, slot_addr, mode_bits, bank_bits, do_io2, allow_bank, eth_addr)
-    process(cart_logic_d, slot_addr, mode_bits, bank_bits, ext_bank, do_io2, allow_bank, eth_addr, kernal_area, georam_bank, sense)
+    process(cart_logic_d, slot_addr, mode_bits, bank_bits, ext_bank, do_io2, allow_bank, 
+            kernal_area, kernal_16k, georam_bank, sense, ef_write, ef_write_addr)
     begin
         mem_addr_i <= g_rom_base;
 
@@ -724,22 +774,43 @@ begin
             end if;
         
         when c_action =>
-            -- 32K RAM
+            -- 8K RAM
             if mode_bits(2)='1' then
                 if slot_addr(13)='0' then
-                    mem_addr_i <= g_ram_base(27 downto 15) & bank_bits(14 downto 13) & slot_addr(12 downto 0);
-                    if allow_bank='0' and slot_addr(15 downto 13)="110" then -- io range exceptions
-                        mem_addr_i <= g_ram_base(27 downto 15) & "00" & slot_addr(12 downto 0);
-                    end if;
+                    mem_addr_i <= g_ram_base(27 downto 15) & "00" & slot_addr(12 downto 0);
                 end if;
                 if slot_addr(15 downto 13)="100" then -- and mode_bits(1 downto 0)="11" then
                     allow_write <= '1';
                 end if;
-                if slot_addr(15 downto 8)=X"DE" and slot_addr(7 downto 1)/="0000000" then
+                if slot_addr(15 downto 8)=X"DF" and do_io2='1' then
+                    allow_write <= '1';
+                end if;
+            end if;
+
+        when c_nordic =>
+            -- 8K RAM
+            if mode_bits(2)='1' then
+                if slot_addr(13)='0' then
+                    mem_addr_i <= g_ram_base(27 downto 15) & "00" & slot_addr(12 downto 0);
+                end if;
+                if slot_addr(15 downto 13)="100" then -- and mode_bits(1 downto 0)="11" then
                     allow_write <= '1';
                 end if;
                 if slot_addr(15 downto 8)=X"DF" and do_io2='1' then
                     allow_write <= '1';
+                end if;
+            end if;
+            if mode_bits(2 downto 0) ="110" then
+                if slot_addr(15 downto 13)="100" then
+                    mem_addr_i <= g_rom_base(27 downto 15) & bank_bits(14 downto 13) & slot_addr(12 downto 0);
+                    allow_write <= '0';
+                end if;
+                if slot_addr(15 downto 13)="101" then
+                    mem_addr_i <= g_ram_base(27 downto 15) & "00" & slot_addr(12 downto 0);
+                    allow_write <= '1';
+                end if;
+                if slot_addr(15 downto 8)=X"DF" and do_io2='1' then
+                    mem_addr_i <= g_ram_base(27 downto 15) & "00" & slot_addr(12 downto 0);
                 end if;
             end if;
 
@@ -843,20 +914,12 @@ begin
 
         if kernal_area='1' then
             if kernal_16k='0' then
-               mem_addr_i <= g_kernal_base(27 downto 14) & slot_addr(12 downto 0) & '0';
-           else
-               mem_addr_i <= g_rom_base(27 downto 15) & (not sense) & slot_addr(12 downto 0) & '0';
-           end if;
+                mem_addr_i <= g_kernal_base(27 downto 14) & slot_addr(12 downto 0) & '0';
+            else
+                mem_addr_i <= g_rom_base(27 downto 15) & (not sense) & slot_addr(12 downto 0) & '0';
+            end if;
         end if;
 
---        if eth_addr then
---            mem_addr_i(25 downto 21) <= eth_base(25 downto 21);
---            mem_addr_i(20)           <= '1'; -- indicate it is a slot access
---            allow_write            <= '1'; -- we should also be able to write to the ethernet chip
---            -- invert bit 3
---            mem_addr_i(3)            <= not slot_addr(3);
---            -- leave other bits in tact
---        end if;
     end process;
 
     mem_addr <= unsigned(mem_addr_i(mem_addr'range));

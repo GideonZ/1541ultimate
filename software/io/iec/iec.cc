@@ -7,6 +7,7 @@ extern "C" {
 #include "iec_channel.h"
 #include "iec_printer.h"
 #include "c64.h"
+#include "u64.h"
 #include "filemanager.h"
 #include "userinterface.h"
 #include "disk_image.h"
@@ -15,17 +16,22 @@ extern "C" {
 #define MENU_IEC_RESET       0xCA10
 #define MENU_IEC_TRACE_ON    0xCA11
 #define MENU_IEC_TRACE_OFF   0xCA12
+
 #define MENU_IEC_WARP_8      0xCA13
 #define MENU_IEC_WARP_9      0xCA14
-#define MENU_IEC_MASTER_1    0xCA16
-#define MENU_IEC_MASTER_2    0xCA17
-#define MENU_IEC_MASTER_3    0xCA18
-#define MENU_IEC_MASTER_4    0xCA19
-#define MENU_IEC_LOADDIR     0xCA1A
-#define MENU_IEC_LOADFIRST   0xCA1B
-#define MENU_READ_STATUS     0xCA1C
-#define MENU_SEND_COMMAND    0xCA1D
-#define MENU_IEC_FLUSH       0xCA1E
+#define MENU_IEC_WARP_10     0xCA15
+#define MENU_IEC_WARP_11     0xCA16
+
+#define MENU_IEC_SET_DIR     0xCA17
+#define MENU_IEC_MASTER_1    0xCA18
+#define MENU_IEC_MASTER_2    0xCA19
+#define MENU_IEC_MASTER_3    0xCA1A
+#define MENU_IEC_MASTER_4    0xCA1B
+#define MENU_IEC_LOADDIR     0xCA1C
+#define MENU_IEC_LOADFIRST   0xCA1D
+#define MENU_READ_STATUS     0xCA1E
+#define MENU_SEND_COMMAND    0xCA1F
+#define MENU_IEC_FLUSH       0xCA20
    
 cart_def warp_cart  = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM };
 
@@ -125,7 +131,7 @@ const char msg69[] = "FILESYSTEM ERROR";        //69
 const char msg70[] = "NO CHANNEL";	            //70
 const char msg71[] = "DIRECTORY ERROR";			//71
 const char msg72[] = "DISK FULL";				//72
-const char msg73[] = "ULTIMATE IEC DOS V0.9";	//73 DOS MISMATCH(Returns DOS Version)
+const char msg73[] = "U64IEC ULTIMATE DOS V1.1";//73 DOS MISMATCH(Returns DOS Version)
 const char msg74[] = "DRIVE NOT READY";			//74
 const char msg77[] = "SELECTED PARTITION ILLEGAL"; //77
 const char msg_c1[] = "BAD COMMAND";			//custom
@@ -207,7 +213,10 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
     cmd_path = fm->get_new_path("IEC Gui Path");
     cmd_ui = 0;
 
-    last_error = ERR_DOS;
+    last_error_code = ERR_DOS;
+    last_error_track = 0;
+    last_error_sector = 0;
+
     current_channel = 0;
     talking = false;
     last_addr = 10;
@@ -216,7 +225,6 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
     printer = false;
 
     channel_printer = new IecPrinter();
-    start_address = 0x1000000;
 
     effectuate_settings();
 
@@ -231,10 +239,7 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
 
     ulticopyBusy = xSemaphoreCreateBinary();
     ulticopyMutex = xSemaphoreCreateMutex();
-    queueGuiToIec = xQueueCreate(2, sizeof(int));
-
-    emulatedRam = new uint8_t[65536];
-    memset(emulatedRam, 0x44, 65536);
+    queueGuiToIec = xQueueCreate(2, sizeof(char *));
 
     xTaskCreate( IecInterface :: iec_task, "IEC Server", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 2, &taskHandle );
 }
@@ -259,6 +264,11 @@ IecCommandChannel *IecInterface :: get_command_channel(void)
     return (IecCommandChannel *)channels[15];
 }
 
+IecCommandChannel *IecInterface :: get_data_channel(int chan)
+{
+    return (IecCommandChannel *)channels[chan & 15];
+}
+
 void IecInterface :: effectuate_settings(void)
 {
     uint32_t was_talk   = 0x18800040 + last_addr; // compare instruction
@@ -267,6 +277,12 @@ void IecInterface :: effectuate_settings(void)
     
 //            data = (0x08 << 20) + (bit << 24) + (inv << 29) + (addr << 8) + (value << 0)
     int bus_id = cfg->get_value(CFG_IEC_BUS_ID);
+
+    extern C64 *c64;
+    if (c64) {
+        c64->set_kernal_device_id(bus_id);
+    }
+
     if(bus_id != last_addr) {
         printf("Setting IEC bus ID to %d.\n", bus_id);
         int replaced = 0;
@@ -319,43 +335,49 @@ const char *IecInterface :: get_root_path(void)
     return rootPath;
 }
 
-// called from GUI task
-int IecInterface :: fetch_task_items(Path *path, IndexedList<Action *> &list)
+void IecInterface :: create_task_items(void)
 {
-    int count = 3;
-	list.append(new Action("Flush Printer/Eject Page", SUBSYSID_IEC, MENU_IEC_FLUSH));
-	list.append(new Action("Reset IEC and Printer",    SUBSYSID_IEC, MENU_IEC_RESET));
-	list.append(new Action("UltiCopy 8",     SUBSYSID_IEC, MENU_IEC_WARP_8));
-	list.append(new Action("UltiCopy 9",     SUBSYSID_IEC, MENU_IEC_WARP_9));
-	// list.append(new Action("IEC Test 1",     SUBSYSID_IEC, MENU_IEC_MASTER_1));
-	// list.append(new Action("IEC Test 2",     SUBSYSID_IEC, MENU_IEC_MASTER_2));
-	// list.append(new Action("IEC Test 3",     SUBSYSID_IEC, MENU_IEC_MASTER_3));
-	// list.append(new Action("IEC Test 4",     SUBSYSID_IEC, MENU_IEC_MASTER_4));
-    // list.append(new Action("Load $",         SUBSYSID_IEC, MENU_IEC_LOADDIR));
-    // list.append(new Action("Load *",         SUBSYSID_IEC, MENU_IEC_LOADFIRST));
-    // list.append(new Action("Read status",    SUBSYSID_IEC, MENU_READ_STATUS));
-    // list.append(new Action("Send command",   SUBSYSID_IEC, MENU_SEND_COMMAND));
+    TaskCategory *iec = TasksCollection :: getCategory("Software IEC", SORT_ORDER_SOFTIEC);
+    myActions.reset      = new Action("Reset",          SUBSYSID_IEC, MENU_IEC_RESET);
+    myActions.set_dir    = new Action("Set dir. here",  SUBSYSID_IEC, MENU_IEC_SET_DIR);
+    myActions.ulticopy8  = new Action("UltiCopy 8",     SUBSYSID_IEC, MENU_IEC_WARP_8);
+    myActions.ulticopy9  = new Action("UltiCopy 9",     SUBSYSID_IEC, MENU_IEC_WARP_9);
+    myActions.ulticopy10 = new Action("UltiCopy 10",    SUBSYSID_IEC, MENU_IEC_WARP_10);
+    myActions.ulticopy11 = new Action("UltiCopy 11",    SUBSYSID_IEC, MENU_IEC_WARP_11);
+    myActions.eject      = new Action("Flush/Eject",    SUBSYSID_IEC, MENU_IEC_FLUSH);
 
+    iec->append(myActions.reset);
+    iec->append(myActions.set_dir);
+    iec->append(myActions.ulticopy8);
+    iec->append(myActions.ulticopy9);
+    iec->append(myActions.ulticopy10);
+    iec->append(myActions.ulticopy11);
 
-#if DEVELOPER
-	if(!(getFpgaCapabilities() & CAPAB_ANALYZER))
-        return count;
-
-	list.append(new Action("Trace IEC",      SUBSYSID_IEC, MENU_IEC_TRACE_ON));
-    list.append(new Action("Dump IEC Trace", SUBSYSID_IEC, MENU_IEC_TRACE_OFF));
-    count += 2;
-#endif
-
-	return count;
+    TaskCategory *prt = TasksCollection :: getCategory("Printer", SORT_ORDER_PRINTER);
+    prt->append(myActions.eject);
 }
 
-//BYTE dummy_prg[] = { 0x01, 0x08, 0x0C, 0x08, 0xDC, 0x07, 0x99, 0x22, 0x48, 0x4F, 0x49, 0x22, 0x00, 0x00, 0x00 };
+// called from GUI task
+void IecInterface :: update_task_items(bool writablePath, Path *path)
+{
+    if (writablePath) {
+        myActions.ulticopy8->enable();
+        myActions.ulticopy9->enable();
+        myActions.ulticopy10->enable();
+        myActions.ulticopy11->enable();
+    } else {
+        myActions.ulticopy8->disable();
+        myActions.ulticopy9->disable();
+        myActions.ulticopy10->disable();
+        myActions.ulticopy11->disable();
+    }
+}
 
 // this is actually the task
 void IecInterface :: poll()
 {
     uint8_t data;
-    int command;
+    char *pathstring;
     BaseType_t gotSomething;
 
     while(1) {
@@ -365,16 +387,24 @@ void IecInterface :: poll()
 			}
 		    continue;
 		}
-    	gotSomething = xQueueReceive(queueGuiToIec, &command, 2); // here is the vTaskDelay(2) that used to be here
+    	gotSomething = xQueueReceive(queueGuiToIec, &pathstring, 2); // here is the vTaskDelay(2) that used to be here
     	if (gotSomething == pdTRUE) {
-    		start_warp_iec();
+    	    if (!pathstring) {
+    	        start_warp_iec();
+    	    } else {
+    	        IecPartition *p = vfs->GetPartition(0);
+    	        p->cd(pathstring);
+    	        delete[] pathstring;
+    	    }
     	}
 		uint8_t a;
 		while (!((a = HW_IEC_RX_FIFO_STATUS) & IEC_FIFO_EMPTY)) {
 			data = HW_IEC_RX_DATA;
 			if(a & IEC_FIFO_CTRL) {
-#if IECDEBUG
-				printf("<%b>", data);
+
+#if IECDEBUG > 2
+			    if (data == 0x41) printf("\n");
+			    printf("<%b>", data);
 #endif
 				switch(data) {
 					case 0xDA:
@@ -391,8 +421,8 @@ void IecInterface :: poll()
 						printf("{warp mode}");
 						break;
 					case 0x43:
-						// printf("{tlk} ");
-						HW_IEC_TX_FIFO_RELEASE = 1;
+					    channels[current_channel]->talk();
+					    HW_IEC_TX_FIFO_RELEASE = 1;
 						talking = true;
 						break;
 					case 0x45:
@@ -406,15 +436,10 @@ void IecInterface :: poll()
 						break;
 					case 0x41:
 						atn = true;
-						if (talking) {
-							channels[current_channel]->reset_prefetch();
-							talking = false;
-						}
-						//printf("<1>", data);
+                        talking = false;
 						break;
 					case 0x42:
 						atn = false;
-						//printf("<0> ", data);
 						break;
 					case 0x47:
 						if (!printer) {
@@ -431,7 +456,7 @@ void IecInterface :: poll()
 				}
 			} else {
 				if(atn) {
-#if IECDEBUG
+#if IECDEBUG > 2
 					printf("[/%b] ", data);
 #endif
 					if(data >= 0x60) {  // workaround for passing of wrong atn codes talk/untalk
@@ -446,7 +471,7 @@ void IecInterface :: poll()
 					if (printer) {
 						channel_printer->push_data(data);
 					} else {
-#if IECDEBUG
+#if IECDEBUG > 2
 						printf("[%b] ", data);
 #endif
 						channels[current_channel]->push_data(data);
@@ -460,12 +485,18 @@ void IecInterface :: poll()
 
 		int st;
 		if(talking) {
-			while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)) {
+		    while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)) {
 				st = channels[current_channel]->prefetch_data(data);
 				if(st == IEC_OK) {
 					HW_IEC_TX_DATA = data;
+#if IECDEBUG > 2
+					outbyte(data < 0x20?'.':data);
+#endif
 				} else if(st == IEC_LAST) {
 					HW_IEC_TX_LAST = data;
+#if IECDEBUG > 2
+                    outbyte(data < 0x20?'.':data);
+#endif
 					talking = false;
 					break;
 				} else if(st == IEC_BUFFER_END) {
@@ -477,6 +508,9 @@ void IecInterface :: poll()
 					break;
 				}
 			}
+#if IECDEBUG > 2
+            outbyte('\'');
+#endif
 		}
     }
 }
@@ -495,9 +529,7 @@ int IecInterface :: executeCommand(SubsysCommand *cmd)
 
 	switch(cmd->functionID) {
 		case MENU_IEC_RESET:
-			channel_printer->reset();
-			HW_IEC_RESET_ENABLE = iec_enable;
-			last_error = ERR_DOS;
+            reset();
 			break;
 		case MENU_IEC_FLUSH:
 			channel_printer->flush();
@@ -508,6 +540,15 @@ int IecInterface :: executeCommand(SubsysCommand *cmd)
 		case MENU_IEC_WARP_9:
 			start_warp(9);
 			break;
+        case MENU_IEC_WARP_10:
+            start_warp(10);
+            break;
+        case MENU_IEC_WARP_11:
+            start_warp(11);
+            break;
+		case MENU_IEC_SET_DIR:
+		    set_iec_dir(cmd->path.c_str());
+		    break;
 		case MENU_IEC_MASTER_1:
 			test_master(1);
 			break;
@@ -536,36 +577,34 @@ int IecInterface :: executeCommand(SubsysCommand *cmd)
 				master_send_cmd(8, (uint8_t*)buffer, strlen(buffer));
 			}
 			break;
-		case MENU_IEC_TRACE_ON :
-			LOGGER_COMMAND = LOGGER_CMD_START;
-			start_address = (LOGGER_ADDRESS & 0xFFFFFFFCL);
-			printf("Logic Analyzer started. Address = %p. Length=%b\n", start_address, LOGGER_LENGTH);
-			break;
-		case MENU_IEC_TRACE_OFF:
-			LOGGER_COMMAND = LOGGER_CMD_STOP;
-			end_address = LOGGER_ADDRESS;
-			printf("Logic Analyzer stopped. Address = %p\n", end_address);
-			if(start_address == end_address)
-				break;
-			fres = fm->fopen(cmd->path.c_str(), "iectrace.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
-			if(f) {
-				printf("Opened file successfully.\n");
-				f->write((void *)start_address, end_address - start_address, &transferred);
-				printf("written: %d...", transferred);
-				fm->fclose(f);
-			} else {
-				printf("Couldn't open file.. %s\n", FileSystem :: get_error_string(fres));
-			}
-			break;
 		default:
 			break;
     }
     return 0;
 }
 
+void IecInterface :: reset(void)
+{
+    HW_IEC_RESET_ENABLE = 0;
+    channel_printer->reset();
+    for(int i=0; i < 16; i++) {
+        channels[i]->reset();
+    }
+    HW_IEC_RESET_ENABLE = iec_enable;
+}
+
+
 #include "c1541.h"
 extern C1541 *c1541_A;
 extern C1541 *c1541_B;
+
+// called from GUI task
+void IecInterface :: set_iec_dir(const char *path)
+{
+    char *pathcopy = new char[strlen(path) + 1];
+    strcpy(pathcopy, path);
+    xQueueSend(queueGuiToIec, &pathcopy, 0); // write into command queue
+}
 
 // called from GUI task
 void IecInterface :: start_warp(int drive)
@@ -594,8 +633,8 @@ void IecInterface :: start_warp(int drive)
     ui_window->window->output("Loading...");
 
     warp_drive = drive;
-    int command = 1;
-    xQueueSend(queueGuiToIec, &command, 0); // ulticopy shall now take over
+    const char *dummy = NULL;
+    xQueueSend(queueGuiToIec, &dummy, 0); // ulticopy shall now take over
 
     if (xSemaphoreTake(ulticopyBusy, 10) == pdFALSE) {
     	printf("Synchronization error!  UltiCopy did not start.\n");
@@ -738,7 +777,6 @@ void IecInterface :: save_copied_disk()
     File *f = 0;
     int res;
     BinImage *bin;
-    CachedTreeNode *po;
     
     static_bin_image.num_tracks = 35; // standard!
 
@@ -765,12 +803,77 @@ void IecInterface :: save_copied_disk()
 	}
 }
                 
-int IecInterface :: get_last_error(char *buffer, int track, int sector)
+void IecInterface :: set_error(int code, int track, int sector)
+{
+    last_error_code = code;
+    last_error_track = track;
+    last_error_sector = sector;
+}
+
+void IecInterface :: set_error_fres(FRESULT fres)
+{
+    int tr=0, sec=0, err = 0;
+
+    switch (fres) {
+    case FR_OK:                  err = ERR_OK;                /* (0) Succeeded */
+        break;
+    case FR_DISK_ERR:            err = ERR_DRIVE_NOT_READY;   /* (1) A hard error occurred in the low level disk I/O layer */
+        break;
+    case FR_INT_ERR:             err = ERR_FRESULT_CODE;      /* (2) Assertion failed */
+        break;
+    case FR_NOT_READY:           err = ERR_DRIVE_NOT_READY;   /* (3) The physical drive cannot work */
+        break;
+    case FR_NO_FILE:             err = ERR_FILE_NOT_FOUND;    /* (4) Could not find the file */
+        break;
+    case FR_NO_PATH:             err = ERR_FILE_NOT_FOUND;    /* (5) Could not find the path */
+        break;
+    case FR_INVALID_NAME:        err = ERR_SYNTAX_ERROR_NAME; /* (6) The path name format is invalid */
+        break;
+    case FR_DENIED:              err = ERR_DIRECTORY_ERROR;   /* (7) Access denied due to prohibited access or directory full */
+        break;
+    case FR_EXIST:               err = ERR_FILE_EXISTS;       /* (8) Access denied due to prohibited access */
+        break;
+    case FR_INVALID_OBJECT:      err = ERR_FRESULT_CODE;      /* (9) The file/directory object is invalid */
+        break;
+    case FR_WRITE_PROTECTED:     err = ERR_WRITE_PROTECT_ON;  /* (10) The physical drive is write protected */
+        break;
+    case FR_INVALID_DRIVE:       err = ERR_DRIVE_NOT_READY;   /* (11) The logical drive number is invalid */
+        break;
+    case FR_NOT_ENABLED:         err = ERR_DRIVE_NOT_READY;   /* (12) The volume has no work area */
+        break;
+    case FR_NO_FILESYSTEM:       err = ERR_DRIVE_NOT_READY;   /* (13) There is no valid FAT volume */
+        break;
+    case FR_MKFS_ABORTED:        err = ERR_FRESULT_CODE;      /* (14) The f_mkfs() aborted due to any parameter error */
+        break;
+    case FR_TIMEOUT:             err = ERR_DRIVE_NOT_READY;   /* (15) Could not get a grant to access the volume within defined period */
+        break;
+    case FR_LOCKED:              err = ERR_WRITE_FILE_OPEN;   /* (16) The operation is rejected according to the file sharing policy */
+        break;
+    case FR_NO_MEMORY:           err = ERR_FRESULT_CODE;      /* (17) LFN working buffer could not be allocated */
+        break;
+    case FR_TOO_MANY_OPEN_FILES: err = ERR_FRESULT_CODE;      /* (18) Number of open files > _FS_SHARE */
+        break;
+    case FR_INVALID_PARAMETER:   err = ERR_FRESULT_CODE;      /* (19) Given parameter is invalid */
+        break;
+    case FR_DISK_FULL:           err = ERR_DISK_FULL;         /* (20) OLD FATFS: no more free clusters */
+        break;
+    case FR_DIR_NOT_EMPTY:       err = ERR_FILE_EXISTS;       /* (21) Directory not empty */
+        break;
+    default:                     err = ERR_FRESULT_CODE;
+    }
+    if (err == ERR_FRESULT_CODE) {
+        tr = fres;
+    }
+    set_error(err, tr, sec);
+}
+
+
+int IecInterface :: get_error_string(char *buffer)
 {
 	int len;
 	for(int i = 0; i < NR_OF_EL(last_error_msgs); i++) {
-		if(last_error == last_error_msgs[i].nr) {
-			return sprintf(buffer,"%02d,%s,%02d,%02d\015", last_error,last_error_msgs[i].msg, track, sector);
+		if(last_error_code == last_error_msgs[i].nr) {
+			return sprintf(buffer,"%02d,%s,%02d,%02d\015", last_error_code, last_error_msgs[i].msg, last_error_track, last_error_sector);
 		}
 	}
     return sprintf(buffer,"99,UNKNOWN,00,00\015");

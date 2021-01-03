@@ -7,6 +7,15 @@
 #define CAPABILITIES_2    *((volatile uint8_t*)(ITU_BASE + 0x0E))
 #define CAPABILITIES_3    *((volatile uint8_t*)(ITU_BASE + 0x0F))
 
+void itu_clear_irqs(void)
+{
+    ioWrite8(ITU_IRQ_GLOBAL, 0);
+    ioWrite8(ITU_IRQ_DISABLE, 0xFF);
+    ioWrite8(ITU_IRQ_CLEAR, 0xFF);
+    ioWrite8(ITU_IRQ_HIGH_EN, 0x00);
+}
+
+
 uint32_t getFpgaCapabilities()
 {
 	uint32_t res = 0;
@@ -50,6 +59,13 @@ void wait_ms(int time)
         while(ioRead8(ITU_TIMER))
             ;
     }
+}
+
+void wait_10us(uint8_t mult)
+{
+    ioWrite8(ITU_TIMER, (mult<<1)+1);
+    while(ioRead8(ITU_TIMER))
+        ;
 }
 
 uint16_t getMsTimer()

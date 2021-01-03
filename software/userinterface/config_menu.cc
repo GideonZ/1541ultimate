@@ -181,6 +181,7 @@ int ConfigBrowser :: handle_key(int c)
                 ConfigStore *st = ((BrowsableConfigStore *) state->previous->under_cursor)->getStore();
                 st->at_close_config();
             }
+            if(state->level!=0)
             // check if we need to save to flash
             on_exit();
             ret = -2;
@@ -201,31 +202,29 @@ int ConfigBrowser :: handle_key(int c)
             break;
         case KEY_SPACE: // space = select
         case KEY_RETURN: // CR = select
+        case KEY_RIGHT: // right
             if(state->level==0)
                 state->into();
             else
                 state->change();
             break;
-        case KEY_RIGHT: // right
-            if(state->level==0)
-                state->into();
-            else
+        case '+':
+            if(state->level!=0)
                 state->increase();
             break;
         case KEY_LEFT: // left
-            if(state->level==0) {
-                on_exit();
-                ret = -2; // leave
-            } else
-                state->decrease();
-            break;
 		case KEY_BACK: // del
             if(state->level==0) {
                 on_exit();
                 ret = -2; // leave
-            } else
-            	state->level_up();
-			break;
+            } else {
+                state->level_up();
+            }
+            break;
+        case '-':
+            if(state->level!=0)
+                state->decrease();
+            break;
         default:
             printf("Unhandled key: %b\n", c);
     }    

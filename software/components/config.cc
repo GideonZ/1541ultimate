@@ -24,6 +24,7 @@ extern "C" {
 }
 #include "config.h"
 #include <string.h>
+#include "u64.h"
 
 /*** CONFIGURATION MANAGER ***/
 ConfigManager :: ConfigManager() : stores(16, NULL), pages(16, NULL)
@@ -36,7 +37,15 @@ ConfigManager :: ConfigManager() : stores(16, NULL), pages(16, NULL)
     	num_pages = flash->get_number_of_config_pages();
     	printf("ConfigManager opened flash: %p\n", flash);
     }
-//    root.add_child(this); // make ourselves visible in the browser
+	safeMode = false;
+#if U64
+	if (U64_RESTORE_REG == 1) {
+	    safeMode = true;
+	}
+#elif SAFEMODE
+    safeMode = true;
+#endif
+	//    root.add_child(this); // make ourselves visible in the browser
 }
 
 ConfigManager :: ~ConfigManager()
@@ -81,7 +90,7 @@ ConfigStore *ConfigManager :: register_store(uint32_t page_id, const char *name,
         }
     }
 
-    int page_size = flash->get_page_size();
+    int page_size = flash->get_config_page_size();
 
     // Try to obtain page object that already represents the page in Flash
     ConfigPage *page = NULL;
@@ -101,7 +110,6 @@ ConfigStore *ConfigManager :: register_store(uint32_t page_id, const char *name,
             flash->read_config_page(i, 4, &id);
             if (page_id == id) {
                 page = new ConfigPage(flash, id, i, page_size);
-                page->read();
                 pages.append(page);
                 break;
             }
@@ -135,7 +143,7 @@ ConfigStore *ConfigManager :: register_store(uint32_t page_id, const char *name,
     if (write) {
         page->write();
     }
-    s->read();
+    s->read(safeMode);
     return s;
 }
 
@@ -307,19 +315,19 @@ void ConfigStore :: unpack(uint8_t *mem_block, int block_size)
     }
 }
 
-void ConfigPage :: read()
+void ConfigPage :: read(bool ignoreData)
 {
-    if(flash) {
+    if(flash && !ignoreData) {
         flash->read_config_page(flash_page, block_size, mem_block);
     } else {
         memset(mem_block, 0xFF, block_size);
     }
 }
 
-void ConfigStore :: read()
+void ConfigStore :: read(bool ignore)
 {
 	if(page) {
-	    page->read();
+	    page->read(ignore);
 	    page->unpack(this);
 	}
 	staleEffect = true;
@@ -697,7 +705,7 @@ int ConfigItem :: previous(int a)
 
 int ConfigItem :: setChanged()
 {
-    store->set_need_flash_write();
+    store->set_need_flash_write(true);
     int ret = 0;
     if(hook) {
         ret = hook(this);

@@ -7,8 +7,8 @@
 #define DDR2_TESTLOC1  (*(volatile uint32_t *)(0x0004))
 
 #define MR     0x0232
-#define EMR    0x4440 // 01 0 0 0 1 (no DQSn) 000 (no OCD) 1 (150ohm) 000 (no AL) 0 (150 ohm) 0 (full drive) 0 (dll used)
-#define EMROCD 0x47C0 // 01 0 0 0 1 (no DQSn) 111 (do OCD) 1 (150ohm) 000 (no AL) 0 (150 ohm) 0 (full drive) 0 (dll used)
+#define EMROCD 0x4780 // 01 0 0 0 1 (no DQSn) 111 (do OCD) 1 (150ohm) 000 (no AL) 0 (150 ohm) 0 (half drive) 0 (dll used)
+#define EMR    0x4442 // 01 0 0 0 1 (no DQSn) 000 (no OCD) 1 (150ohm) 000 (no AL) 0 (150 ohm) 0 (half drive) 0 (dll used)
 #define EMR2   0x8000 // no extended refresh
 #define EMR3   0xC000 // all bits reserved
 #define DLLRST 0x0100 // MR DLL RESET
@@ -47,8 +47,8 @@ void ddr2_calibrate()
     DDR2_ADDR_HIGH = (EMR3 >> 8);
     DDR2_COMMAND   = 0; // write MR
 
-    DDR2_ADDR_LOW  = (EMR & 0xFF);
-    DDR2_ADDR_HIGH = (EMR >> 8);
+    DDR2_ADDR_LOW  = (EMROCD & 0xFF);
+    DDR2_ADDR_HIGH = (EMROCD >> 8);
     DDR2_COMMAND   = 0; // write MR
 
     DDR2_ADDR_LOW  = (DLLRST & 0xFF);
@@ -66,10 +66,6 @@ void ddr2_calibrate()
 
     DDR2_ADDR_LOW  = (MR & 0xFF);
     DDR2_ADDR_HIGH = (MR >> 8);
-    DDR2_COMMAND   = 0; // write MR
-
-    DDR2_ADDR_LOW  = (EMROCD & 0xFF);
-    DDR2_ADDR_HIGH = (EMROCD >> 8);
     DDR2_COMMAND   = 0; // write MR
 
     DDR2_ADDR_LOW  = (EMR & 0xFF);

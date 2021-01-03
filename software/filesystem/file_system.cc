@@ -66,6 +66,8 @@ const char *FileSystem :: get_error_string(FRESULT res)
 			return "DISK IS FULL";
 		case FR_DIR_NOT_EMPTY:
 			return "DIRECTORY NOT EMPTY";
+		case FR_LOOP_DETECTED:
+		    return "LOOP DETECTED";
 		default:
 			return "UNKNOWN ERROR";
 	}
@@ -85,23 +87,30 @@ PathStatus_t FileSystem :: walk_path(PathInfo& pathInfo)
 	pathInfo.enterFileSystem(this);
 
 	FileInfo info(128);
+	char fatbuf[128];
 	Directory *dir;
 	FileInfo *ninf;
-	mstring workdir;
+    CbmFileName cbm; // in case we need to compare against a CBM name, we reserve some storage for it
 
 	while(pathInfo.hasMore()) {
-		fres = dir_open(pathInfo.getPathFromLastFS(workdir), &dir, pathInfo.getLastInfo());
+		fres = dir_open(pathInfo.getPathFromLastFS(), &dir);
 		if (fres == FR_OK) {
-			while(1) {
-				fres = dir_read(dir, &info);
+	        cbm.reset();
+            while(1) {
+				fres = dir->get_entry(info);
 				if (fres == FR_OK) {
-					// printf("%9d: %-32s (%d)\n", info.size, info.lfname, info.cluster);
+				    // printf("%9d: %-32s (%d)\n", info.size, info.lfname, info.cluster);
 					if (info.attrib & AM_VOL)
 						continue;
-					if (pattern_match(pathInfo.workPath.getElement(pathInfo.index), info.lfname)) {
-						dir_close(dir);
-						pathInfo.replace(info.lfname);
-						pathInfo.index++;
+					if (info.match_to_pattern(pathInfo.workPath.getElement(pathInfo.index), cbm)) {
+					    delete dir; // close directory
+					    if (info.name_format & NAME_FORMAT_CBM) {
+					        info.generate_fat_name(fatbuf, 128);
+					        pathInfo.replace(fatbuf);
+					    } else {
+					        pathInfo.replace(info.lfname);
+					    }
+                        pathInfo.index++;
 						ninf = pathInfo.getNewInfoPointer();
 						ninf->copyfrom(&info);
 						if (info.attrib & AM_DIR) {
@@ -113,15 +122,20 @@ PathStatus_t FileSystem :: walk_path(PathInfo& pathInfo)
 								return e_EntryFound;
 							}
 						}
+					} else { // no match, continue looking
+					    continue;
 					}
-				} else { // not found
-					pathInfo.index ++; // we will still return something, even if it doesn't exist (for file create)
-					if (pathInfo.hasMore())
+				} else { // not found, nothing else to compare to
+				    delete dir; // close directory
+					pathInfo.index++;
+				    if (pathInfo.hasMore())
 						return e_DirNotFound;
 					else
 						return e_EntryNotFound;
 				}
 			}
+		} else {
+		    return e_DirNotFound;
 		}
 	}
 	return e_EntryFound;
@@ -133,18 +147,12 @@ bool FileSystem :: init(void)
 	return false;
 }
     
-FRESULT FileSystem :: dir_open(const char *path, Directory **, FileInfo *inf)
+FRESULT FileSystem :: format(const char *name)
 {
     return FR_NO_FILESYSTEM;
 }
 
-void FileSystem :: dir_close(Directory *d)
-{
-	if (d)
-		delete d;
-}
-
-FRESULT FileSystem :: dir_read(Directory *d, FileInfo *f)
+FRESULT FileSystem :: dir_open(const char *path, Directory **)
 {
     return FR_NO_FILESYSTEM;
 }
@@ -154,33 +162,7 @@ FRESULT FileSystem :: dir_create(const char *path)
     return FR_NO_FILESYSTEM;
 }
     
-FRESULT FileSystem :: file_open(const char *path, Directory *, const char *filename, uint8_t flags, File **)
-{
-    return FR_NO_FILESYSTEM;
-}
-
-void    FileSystem :: file_close(File *f)
-{
-}
-
-FRESULT FileSystem :: file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred)
-{
-    *transferred = 0;
-    return FR_NO_FILESYSTEM;
-}
-
-FRESULT FileSystem :: file_write(File *f, const void *buffer, uint32_t len, uint32_t *transferred)
-{
-    *transferred = 0;
-    return FR_NO_FILESYSTEM;
-}
-
-FRESULT FileSystem :: file_seek(File *f, uint32_t pos)
-{
-    return FR_NO_FILESYSTEM;
-}
-
-FRESULT FileSystem :: file_sync(File *f)
+FRESULT FileSystem :: file_open(const char *filename, uint8_t flags, File **)  // Opens file (creates file object)
 {
     return FR_NO_FILESYSTEM;
 }

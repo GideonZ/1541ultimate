@@ -19,12 +19,6 @@ CommandTarget *command_targets[CMD_IF_MAX_TARGET+1];
 // Semaphore set by interrupt
 static SemaphoreHandle_t resetSemaphore;
 
-// cart definition
-extern uint8_t _cmd_test_rom_65_start;
-cart_def cmd_cart  = { ID_CMDTEST, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM };
-
-#define MENU_CMD_RUNCMDCART 0xC180
-
 extern "C" {
 void ResetInterruptHandlerCmdIf()
 {
@@ -39,8 +33,6 @@ CommandInterface :: CommandInterface() : SubSystem(SUBSYSID_CMD_IF)
 {
     for(int i=0;i<=CMD_IF_MAX_TARGET;i++)
         command_targets[i] = &cmd_if_empty_target;
-    
-    cmd_cart.custom_addr = (void *)&_cmd_test_rom_65_start;
 
     if(getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
         CMD_IF_SLOT_BASE = 0x47; // $DF1C
@@ -48,7 +40,8 @@ CommandInterface :: CommandInterface() : SubSystem(SUBSYSID_CMD_IF)
     
         // dump_registers();
     
-        response_buffer = (uint8_t *)(CMD_IF_RAM_BASE + (8*CMD_IF_RESPONSE_START));
+        response_offset = (8*CMD_IF_RESPONSE_START);
+        response_buffer = (uint8_t *)(CMD_IF_RAM_BASE + response_offset);
         status_buffer   = (uint8_t *)(CMD_IF_RAM_BASE + (8*CMD_IF_STATUS_START));
         command_buffer  = (uint8_t *)(CMD_IF_RAM_BASE + (8*CMD_IF_COMMAND_START));
     
@@ -77,14 +70,6 @@ CommandInterface :: ~CommandInterface()
     ioWrite8(ITU_IRQ_DISABLE, ITU_INTERRUPT_CMDIF);
 }
     
-int CommandInterface :: executeCommand(SubsysCommand *cmd)
-{
-    CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;
-    CMD_IF_IRQMASK_CLEAR = 7;
-	SubsysCommand *c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_START_CART, (int)&cmd_cart, "", "");
-	return c64_command->execute();
-}
-
 void CommandInterface :: start_task(void *a)
 {
 	CommandInterface *uci = (CommandInterface *)a;
@@ -127,20 +112,27 @@ void CommandInterface :: run_task(void)
 		xQueueReceive(queue, &status_byte, portMAX_DELAY);
 
 		if(status_byte & CMD_ABORT_DATA) {
-			printf("Abort received.\n");
+			//printf("Abort received.\n");
 			if (target != CMD_TARGET_NONE) {
-				command_targets[target]->abort();
+			    int offset = (((int)CMD_IF_RESPONSE_LEN_H) << 8) | CMD_IF_RESPONSE_LEN_L;
+				command_targets[target]->abort(offset - response_offset);
 			}
 			CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;
 			CMD_IF_IRQMASK_CLEAR = CMD_ABORT_DATA;
 		}
 		if(status_byte & CMD_DATA_ACCEPTED) {
-			if (target != CMD_TARGET_NONE) {
-				command_targets[target]->get_more_data(&data, &status);
-				copy_result(data, status);
+		    uint8_t state = CMD_IF_HANDSHAKE_OUT;
+
+            if (state & CMD_STATE_DATA_MORE) {
+                if (target != CMD_TARGET_NONE) {
+                    command_targets[target]->get_more_data(&data, &status);
+                    copy_result(data, status);
+                } else {
+                    printf("CMDIF: Requested for more data, but target is not set!\n");
+                }
 			}
-			CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_NEXTDATA;
-			CMD_IF_IRQMASK_CLEAR = CMD_DATA_ACCEPTED;
+            CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_NEXTDATA;
+            CMD_IF_IRQMASK_CLEAR = CMD_DATA_ACCEPTED;
 		}
 
 		if(status_byte & CMD_NEW_COMMAND) {
@@ -154,8 +146,8 @@ void CommandInterface :: run_task(void)
 				target = incoming_command.message[0] & CMD_IF_MAX_TARGET;
 				bool no_reply = ((incoming_command.message[0] & CMD_IF_NO_REPLY) != 0);
 				command_targets[target]->parse_command(&incoming_command, &data, &status);
-				CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND;
 				copy_result(data, status);
+                CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND;
 				if (no_reply) {
 				    CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;
 				}
@@ -185,22 +177,16 @@ void CommandInterface :: copy_result(Message *data, Message *status)
     CMD_IF_STATUS_LENGTH = status->length;
     if(data->last_part) {
         CMD_IF_HANDSHAKE_OUT = HANDSHAKE_VALIDATE_LAST;
-        target = CMD_TARGET_NONE;
     } else {
         CMD_IF_HANDSHAKE_OUT = HANDSHAKE_VALIDATE_MORE;
     }    
 }
 
-int  CommandInterface :: fetch_task_items(Path *path, IndexedList<Action*> &item_list)
+bool CommandInterface :: is_dma_active(void)
 {
-#if DEVELOPER
-	item_list.append(new Action("Run Command Cart", getID(), MENU_CMD_RUNCMDCART, 0));
-    return 1;
-#else
-    return 0;
-#endif
+    return ((CMD_IF_HANDSHAKE_OUT & CMD_HS_DMA_ACTIVE) != 0);
 }
-    
+
 void CommandInterface :: dump_registers(void)
 {
     printf("CMD_IF_SLOT_BASE       %b\n", CMD_IF_SLOT_BASE     );

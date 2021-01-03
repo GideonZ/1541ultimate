@@ -74,6 +74,7 @@ void HomeDirectory::poll(void)
                     break;
                 }
             }
+            delete event;
         }
         vTaskDelay(delay);
         timeout -= delay;

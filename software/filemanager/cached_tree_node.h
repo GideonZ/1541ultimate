@@ -31,7 +31,6 @@ public:
 	IndexedList<CachedTreeNode*> children;
 	CachedTreeNode *parent;
 
-//    CachedTreeNode(CachedTreeNode *par) : parent(par), children(0, NULL), info(32) { }
     CachedTreeNode(CachedTreeNode *par, FileInfo &inf) : parent(par), children(0, NULL), info(inf) { }
     CachedTreeNode(CachedTreeNode *par, const char *name) : parent(par), children(0, NULL), info(name) { }
 
@@ -153,6 +152,23 @@ public:
 	}
 
 	FileInfo *get_file_info(void) { return &info; }
+
+	// =======================
+	//   COMPARE PATH OBJECTS
+	// =======================
+
+	static int path_object_compare(IndexedList<CachedTreeNode *> *list, int a, int b)
+	{
+	    CachedTreeNode *obj_a = (*list)[a];
+	    CachedTreeNode *obj_b = (*list)[b];
+
+	    if(!obj_b)
+	        return 1;
+	    if(!obj_a)
+	        return -1;
+
+	    return obj_a->compare(obj_b);
+	}
 
 };
 

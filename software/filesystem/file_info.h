@@ -12,6 +12,8 @@
 #include <stdio.h>
 #include <string.h>
 #include "indexed_list.h"
+#include "pattern.h"
+#include "cbmname.h"
 
 /* File attribute bits for directory entry */
 
@@ -24,6 +26,9 @@
 #define AM_ARC   0x20    /* Archive */
 #define AM_MASK  0x3F    /* Mask of defined bits */
 #define AM_HASCHILDREN 0x40 /* Is the kind of file that might have a directory listing */
+
+#define NAME_FORMAT_DIRECT 0x01
+#define NAME_FORMAT_CBM    0x02
 
 class FileSystem;
 
@@ -47,15 +52,14 @@ class FileInfo
 
 public:
 	FileSystem *fs;  /* Reference to file system, to uniquely identify file */
-    uint32_t  cluster; /* Start cluster, easy for open! */
+    uint32_t  cluster; /* To compare if a file is the same even after rename */
     uint32_t  size;	 /* File size */
 	uint16_t  date;	 /* Last modified date */
 	uint16_t  time;	 /* Last modified time */
     uint16_t  lfsize;
-    void   *object;
+    uint8_t   attrib;  /* Attribute */
+    uint8_t   name_format;
     char   *lfname;
-	uint8_t	attrib;	 /* Attribute */
-	uint8_t special_display;
 	char    extension[4];
 
     void init()
@@ -100,8 +104,7 @@ public:
         strcpy(lfname, new_name);
         attrib = i->attrib;
         extension[0] = 0;
-        object = i->object;
-        special_display = i->special_display;
+        name_format = i->name_format;
     }
 
 	~FileInfo()
@@ -120,8 +123,7 @@ public:
         strncpy(extension, i->extension, 4);
         attrib = i->attrib;
         extension[3] = 0;
-        object = i->object;
-        special_display = i->special_display;
+        name_format = i->name_format;
 	}
 
 	bool is_directory(void) {
@@ -140,6 +142,35 @@ public:
 		printf("LFname     : %s\n", lfname);
 		printf("Attrib:    : %b\n", attrib);
 		printf("Extension  : %s\n", extension);
+	}
+
+	void generate_fat_name(char *buffer, int maxlen)
+	{
+	    if (name_format & NAME_FORMAT_CBM) {
+	        petscii_to_fat(lfname, buffer, maxlen);
+	        add_extension(buffer, extension, maxlen);
+	    } else {
+	        buffer[maxlen-1] = 0;
+	        strncpy(buffer, lfname, maxlen-1);
+	    }
+	}
+
+	bool match_to_pattern(CbmFileName &cbm)
+	{
+        bool match_name = pattern_match_escaped(cbm.getName(), lfname);
+        bool match_ext  = !cbm.hadExtension() || pattern_match(cbm.getExtension(), extension);
+        return match_name && match_ext;
+	}
+
+	bool match_to_pattern(const char *pattern, CbmFileName &cbm)
+	{
+	    if (name_format & NAME_FORMAT_CBM) {
+	        if (!cbm.isInitialized()) { // optimization, such that init is only done once for a whole bunch of files
+	            cbm.init(pattern);
+	        }
+	        return match_to_pattern(cbm);
+	    }
+	    return pattern_match(pattern, lfname, false); // no escaping! Be aware!
 	}
 
 	static int compare(IndexedList<FileInfo *> *list, int a, int b)

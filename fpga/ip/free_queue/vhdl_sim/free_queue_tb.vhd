@@ -26,7 +26,7 @@ architecture test of free_queue_tb is
     signal reset           : std_logic;
     signal alloc_req       : std_logic := '0';
     signal alloc_resp      : t_alloc_resp;
-    signal used_req        : t_used_req;
+    signal used_req        : t_used_req := c_used_req_init;
     signal used_resp       : std_logic;
     signal io_req          : t_io_req;
     signal io_resp         : t_io_resp;
@@ -58,7 +58,7 @@ begin
     
     process
         variable io : p_io_bus_bfm_object;
-        variable v_id : unsigned(7 downto 0);
+        variable v_id : integer;
         variable data : std_logic_vector(7 downto 0);
         variable data16 : std_logic_vector(15 downto 0);
         
@@ -84,31 +84,53 @@ begin
             io_read(io, to_unsigned(addr+1, 20), data(15 downto 8));
         end procedure;
 
+        procedure alloc is
+        begin
+            wait until clock = '1';
+            alloc_req <= '1';
+            wait until clock = '1';
+            while alloc_resp.done = '0' loop
+                wait until clock = '1';
+            end loop;
+            alloc_req <= '0';
+        end procedure;
+
+        procedure free(id : natural) is
+        begin
+            io_write(io, 4, std_logic_vector(to_unsigned(id, 8)));
+        end procedure;
+
+        procedure reset_queue is
+        begin
+            io_write(io, 14, X"01");
+        end procedure;
+
+        procedure used(id : natural; size: unsigned(11 downto 0)) is
+        begin
+            wait until clock = '1';
+            used_req.request <= '1';
+            used_req.id <= to_unsigned(id, 8);
+            used_req.bytes <= size;
+            wait until clock = '1';
+            while used_resp = '0' loop
+                wait until clock = '1';
+            end loop;
+            used_req.request <= '0';
+        end procedure;
     begin
         wait until reset = '0';
         bind_io_bus_bfm("io", io);
         io_write_long(io, 0, X"12345678");
-        io_write(io, 4, X"11"); -- insert ID 11
+        
+        free(17);
 
-        wait until clock = '1';
-        alloc_req <= '1';
-        wait until alloc_resp.done = '1';
-        v_id := alloc_resp.id;
-        assert(to_integer(alloc_resp.address) = (16#2345600# + 17 * 1536)) report "Unexpected address";
-        wait until clock = '1';
-        alloc_req <= '0';
-        wait until clock = '1';
+        alloc;
+        v_id := to_integer(alloc_resp.id);
+        assert(v_id = 17) report "Unexpected ID";
+        assert(to_integer(alloc_resp.address) = (16#2345600# + v_id * 1536)) report "Unexpected address";
 
-        wait until clock = '1';
-        used_req.request <= '1';
-        used_req.id <= v_id;
-        used_req.bytes <= X"ABC";
-        wait until used_resp = '1';
-        wait until clock = '1';
-        used_req.request <= '0';
-        wait until clock = '1';
-        wait until clock = '1';
-        wait until clock = '1';
+        used(v_id, X"ABC");
+        wait until io_irq = '1';
 
         io_read(io, 15, data);
         assert data(0) = '1' report "Expected an allocated block to be available";
@@ -121,25 +143,48 @@ begin
         assert data(0) = '0' report "Expected no more allocated blocks to be available";
 
 
-        io_write(io, 4, X"00"); -- add free block 00
+        free(0); --add free block 00
 
-        wait until clock = '1';
-        alloc_req <= '1';
-        wait until alloc_resp.done = '1';
-        v_id := alloc_resp.id;
-        assert(to_integer(alloc_resp.address) = (16#2345600# + 0 * 1536)) report "Unexpected address";
-        wait until clock = '1';
-        alloc_req <= '0';
-        wait until clock = '1';
+        alloc;
+        v_id := to_integer(alloc_resp.id);
+        assert(v_id = 0) report "Unexpected ID";
+        assert(to_integer(alloc_resp.address) = (16#2345600# + v_id * 1536)) report "Unexpected address";
 
-        wait until clock = '1';
-        alloc_req <= '1';
-        wait until alloc_resp.done = '1';
-        v_id := alloc_resp.id;
+        alloc;
         assert(alloc_resp.error = '1') report "Allocation should now fail";
-        wait until clock = '1';
-        alloc_req <= '0';
-        wait until clock = '1';
+
+        -- check reset
+        free(55); --add free block
+        reset_queue;
+        alloc;
+        assert(alloc_resp.error = '1') report "Allocation should now fail";
+        
+        --for i in 0 to 130 loop -- deliberately overwrite as depth = 128
+        for i in 0 to 126 loop
+            free(i);
+        end loop;
+
+        alloc; -- 0
+        alloc; -- 1
+        alloc; -- 2
+        alloc; -- 3
+        alloc; -- 4
+
+        v_id := to_integer(alloc_resp.id);
+        assert(v_id = 4) report "Unexpected ID";
+        
+        for i in 0 to 4 loop
+            free(i);
+        end loop;
+
+        alloc; -- 5
+        alloc; -- 6
+        alloc; -- 7
+        alloc; -- 8
+        alloc; -- 9
+
+        v_id := to_integer(alloc_resp.id);
+        assert(v_id = 9) report "Unexpected ID";
 
         wait;
     end process;

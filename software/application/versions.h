@@ -18,14 +18,18 @@
 // F = rounded corner upper left
 // 10 = alpha
 // 11 = beta
+// 12 = test grid
+// 13 = diamond
+
+// 18-1F commodore specifics (<-, ^, pound, and their reverse counterparts)
 
 // alpha = \020
 // beta  = \021
 
-#define APPL_VERSION "3.7"
+#define APPL_VERSION "3.9"
 #define BOOT_VERSION "V3.1"
 #define FPGA_VERSION "FPGA U2 V116"
-#define MINIMUM_FPGA_REV 0x13
+#define MINIMUM_FPGA_REV 0x18
 
 #endif
 

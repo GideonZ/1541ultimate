@@ -8,7 +8,6 @@
 #ifndef FILESYSTEM_FS_ERRORS_FLAGS_H_
 #define FILESYSTEM_FS_ERRORS_FLAGS_H_
 
-
 /* File function return code (FRESULT) */
 typedef enum {
 	FR_OK = 0,				/* (0) Succeeded */
@@ -31,25 +30,31 @@ typedef enum {
 	FR_NO_MEMORY,	   		/* (17) LFN working buffer could not be allocated */
 	FR_TOO_MANY_OPEN_FILES,	/* (18) Number of open files > _FS_SHARE */
 	FR_INVALID_PARAMETER,	/* (19) Given parameter is invalid */
+// The following entries do not exist in ChanFAT
 	FR_DISK_FULL,			/* (20) OLD FATFS: no more free clusters */
-	FR_DIR_NOT_EMPTY		/* (21) Directory not empty */
+	FR_DIR_NOT_EMPTY,		/* (21) Directory not empty */
+	FR_LOOP_DETECTED,       /* (22) From CBM filesystems */
 } FRESULT;
+
+#define FR_NOT_ENOUGH_CORE FR_NO_MEMORY
 
 /*--------------------------------------------------------------*/
 /* File access control and file status flags (FIL.flag)         */
 
 #define FA_READ             0x01
 #define FA_OPEN_EXISTING    0x00
-#define FA_WRITE            0x02
-#define FA_CREATE_NEW       0x04
-#define FA_CREATE_ALWAYS    0x08
+#define FA_WRITE            0x02 // if none of the following is set: file should exist.
+#define FA_CREATE_NEW       0x04 // file should not exist yet.
+#define FA_CREATE_ALWAYS    0x08 // file may be overwritten, even if it exists. File contents are cleared
 #define FA_ANY_WRITE_FLAG   0x0E // the three above orred
 #define FA_OPEN_ALWAYS      0x10
+// APPEND is defined now in FatFS as 0x30 (thus 0x20 set)
+#define FA_OPEN_FROM_CBM    0x80
+/*
 #define FA__WRITTEN         0x20
 #define FA__DIRTY           0x40
 #define FA__ERROR           0x80
-
-
+*/
 
 
 #endif /* FILESYSTEM_FS_ERRORS_FLAGS_H_ */

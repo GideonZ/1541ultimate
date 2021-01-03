@@ -1,15 +1,11 @@
 #include <stdio.h>
 #include <string.h> // C library
 #include "mystring.h" // my class definition
-extern "C" {
-    #include "small_printf.h"
-}
 
 mstring :: mstring()
 {
 //    printf("empty mstring creation.\n");
     alloc = 0;
-    temporary = 0;
     cp = NULL;
 }
 
@@ -17,7 +13,6 @@ mstring :: mstring(const char *k)
 {
 //    printf("Create mstring from char*. Source = %s\n", k);
     alloc = 1+strlen(k);
-    temporary = 0;
     cp = new char[alloc];
     strcpy(cp, k);
 }
@@ -26,7 +21,6 @@ mstring :: mstring(mstring &ref)
 {
 //    printf("Creating mstring from reference. (source: %s)\n", ref.cp);
     alloc = ref.alloc;
-    temporary = 0;
     cp = new char[alloc];
     strcpy(cp, ref.cp);
 }
@@ -45,14 +39,14 @@ const char *mstring :: c_str(void)
     return "";
 }
 
-int mstring :: length(void)
+const int mstring :: length(void) const
 {
     if(cp)
         return strlen(cp);
     return 0;
 }
 
-int mstring :: allocated_space(void)
+const int mstring :: allocated_space(void) const
 {
     return alloc;
 }
@@ -72,7 +66,7 @@ mstring& mstring :: operator=(const char *rhs)
     return *this;
 }
 
-mstring& mstring :: operator=(mstring &rhs)
+mstring& mstring :: operator=(const mstring &rhs)
 {
 //    printf("Assignment operator. Left = %s(%p), Right = %s(%p)\n", c_str(), this, rhs.c_str(), &rhs);
     if(this != &rhs) {
@@ -84,8 +78,6 @@ mstring& mstring :: operator=(mstring &rhs)
             alloc = rhs.alloc;
         }
         strcpy(cp, rhs.cp);
-        if(rhs.temporary)
-            delete &rhs;
     }
     return *this;
 }
@@ -136,7 +128,7 @@ mstring& mstring :: operator+=(const char *rhs)
     return *this;
 }
 
-mstring& mstring :: operator+=(mstring &rhs)
+mstring& mstring :: operator+=(const mstring &rhs)
 {
     int n = length() + rhs.length() + 1;
     if(n > alloc) { // doesnt fit
@@ -156,7 +148,7 @@ mstring& mstring :: operator+=(mstring &rhs)
     return *this;
 }
 
-bool mstring :: operator==(mstring &rhs)
+bool mstring :: operator==(const mstring &rhs)
 {
     if(!cp && !rhs.cp)
         return true;
@@ -178,31 +170,18 @@ bool mstring :: operator==(const char *rhs)
     return (strcmp(cp, rhs) == 0);
 }
 
-mstring& operator+(mstring &left, mstring &right)
+mstring mstring::operator+(const mstring &right)
 {
-//    printf("+ operator. Left = (%s)%p, Right = (%s)%p\n", left.cp, &left, right.cp, &right);
-    mstring *result = new mstring(left);
-    result->temporary = 1;
-    (*result)+=right;
-    return *result;
+    mstring result(*this);
+    result += right;
+    return result;
 }
 
-mstring& operator+(mstring &left, const char *right)
+mstring mstring::operator+(const char *right)
 {
-//    printf("+ operator. Left = (%s)%p, Right = %s\n", left.cp, &left, right);
-    mstring *result = new mstring(left);
-    result->temporary = 1;
-    (*result)+=right;
-    return *result;
-}
-
-mstring& operator+(const char *left, mstring &right)
-{
-//    printf("+ operator. Left = %s, Right = (%s)%p\n", left, right.cp, &right);
-    mstring *result = new mstring(left);
-    result->temporary = 1;
-    (*result)+=right;
-    return *result;
+    mstring result(*this);
+    result += right;
+    return result;
 }
 
 int strcmp(mstring &a, mstring &b)
@@ -232,20 +211,19 @@ mstring& int_to_mstring(int i)
     char temp[16];
     sprintf(temp, "%d", i);
     mstring *result = new mstring(temp);
-    result->temporary = 1;
     return *result;
 }
 
 
 #ifdef TESTSTR
 #include <stdio.h>
-    mstring s1;
-    mstring s2("Hello");
-    mstring s3(s2);
+
+mstring s1;
+mstring s2("Hello");
+mstring s3(s2);
 
 int main()
 {
-
     printf("s1 = %p, s2 = %p, s3 = %p\n", &s1, &s2, &s3);
 
     printf("S1 = %s\n", s1.c_str());
@@ -292,6 +270,12 @@ int main()
     printf("S2 = %s (%d)\n", s2.c_str(), s2.allocated_space());
     printf("S3 = %s (%d)\n", s3.c_str(), s3.allocated_space());
 
+    mstring hoi("Hoi");
+    mstring s4;
+    s4 = hoi + s2;
+
+    printf("S2 = %s (%d)\n", s2.c_str(), s2.allocated_space());
+    printf("S4 = %s (%d)\n", s4.c_str(), s4.allocated_space());
 }
 
 #endif

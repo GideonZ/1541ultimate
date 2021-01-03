@@ -51,12 +51,7 @@ int main()
             length -= 4;
         }
     	SPI_FLASH_CTRL = 0; // reset SPI chip select to idle
-    	if (U64_RESTORE_REG == 0) {  // restore button not pressed
-            puts("Running U64.");
-    		jump_run(run_address);
-    	} else {
-    		puts("Lock");
-    	}
+        jump_run(run_address);
         while(1);
     }
 

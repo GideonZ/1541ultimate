@@ -124,7 +124,7 @@ public:
 
 // Interface functions
     virtual void reset(void);
-    virtual void read(void);
+    virtual void read(bool ignore);
     virtual void write(void);
     virtual void at_open_config(void) { }
 
@@ -159,7 +159,7 @@ public:
     bool is_flash_stale(void) { return staleFlash; }
     bool need_effectuate(void) { return staleEffect; }
     void set_effectuated(void) { staleEffect = false; }
-    const void set_need_flash_write(void) { staleFlash = true; }
+    const void set_need_flash_write(bool b) { staleFlash = b; }
     const void set_need_effectuate(void) { staleEffect = true; }
     ConfigPage *get_page(void) { return page; }
 
@@ -198,7 +198,7 @@ public:
         return id;
     }
 
-    void read();
+    void read(bool ignore);
     void write();
     void unpack(ConfigStore *s);
 };
@@ -209,6 +209,7 @@ class ConfigManager
 	IndexedList<ConfigPage*> pages;
     Flash *flash;
     int num_pages;
+    bool safeMode;
 
     ConfigManager();
     ~ConfigManager();

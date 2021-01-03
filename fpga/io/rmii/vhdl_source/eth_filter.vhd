@@ -59,6 +59,9 @@ architecture gideon of eth_filter is
     type t_mac_16 is array(0 to 2) of std_logic_vector(15 downto 0);
     signal my_mac_16 : t_mac_16 := (others => (others => '0'));
 
+    signal eth_rx_enable : std_logic;
+
+    signal clear        : std_logic;
     signal rx_enable    : std_logic;
     signal promiscuous  : std_logic;
     signal rd_next      : std_logic;
@@ -109,12 +112,14 @@ begin
         wr_full      => eth_wr_full,
 
         rd_clock     => clock,
-        rd_reset     => reset,
+        rd_reset     => clear,
         rd_next      => rd_next,
         rd_dout      => rd_dout,
         rd_valid     => rd_valid
     );
 
+    clear <= reset or not rx_enable;
+    
     process(eth_clock)
     begin
         if rising_edge(eth_clock) then
@@ -182,13 +187,20 @@ begin
 
             end case;
 
-            if eth_reset = '1' then
+            if eth_reset = '1' or eth_rx_enable = '0' then
                 receive_state <= idle;
                 crc_ok <= '0';
             end if;                
         end if;
     end process;
 
+    i_sync_enable: entity work.level_synchronizer
+    port map (
+        clock       => eth_clock,
+        reset       => eth_reset,
+        input       => rx_enable,
+        input_c     => eth_rx_enable
+    );
 
     process(clock)
         alias local_addr : unsigned(3 downto 0) is io_req.address(3 downto 0);
@@ -223,6 +235,7 @@ begin
 
             if reset = '1' then
                 promiscuous <= '0';
+                rx_enable <= '0';
             end if;
         end if;
     end process;
@@ -275,12 +288,15 @@ begin
                 end if;
             
             when drop =>
-                if rd_valid = '1' and rd_dout(17 downto 16) /= "00" then
+                if (rd_valid = '1' and rd_dout(17 downto 16) /= "00") or (rx_enable = '0') then
                     state <= idle;
                 end if;
 
             when copy =>
-                if rd_valid = '1' then
+                if rx_enable = '0' then
+                    state <= idle;
+                    
+                elsif rd_valid = '1' then
                     if mac_idx /= 3 then
                         if rd_dout(15 downto 0) /= X"FFFF" and rd_dout(15 downto 0) /= my_mac_16(mac_idx) then
                             for_me <= '0';

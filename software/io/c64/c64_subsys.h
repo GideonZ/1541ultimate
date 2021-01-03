@@ -16,12 +16,28 @@
 #include "task.h"
 #include "semphr.h"
 
-
 class C64_Subsys : public SubSystem, ObjectWithMenu
 {
     TaskHandle_t taskHandle;
     FileManager *fm;
     C64 *c64;
+    TaskCategory *taskCategory;
+    struct {
+        Action *reset;
+        Action *reboot;
+        Action *off;
+        Action *pause;
+        Action *resume;
+        Action *savereu;
+        Action *savemem;
+        Action *savemod;
+        Action *save_ef;
+        Action *savemp3a;
+        Action *savemp3b;
+        Action *savemp3c;
+        Action *savemp3d;
+    } myActions;
+
     static void poll(void *a);
 
     /* Subsystem */
@@ -29,11 +45,12 @@ class C64_Subsys : public SubSystem, ObjectWithMenu
 	int executeCommand(SubsysCommand *cmd);
 
     /* Object With Menu */
-    int  fetch_task_items(Path *p, IndexedList<Action *> &item_list);
+    void create_task_items(void);
+    void update_task_items(bool writablePath, Path *p);
 
     /* Others */
     int  dma_load(File *f, const uint8_t *buffer, const int bufferSize,
-    		const char *name, uint8_t run_mode, uint16_t reloc=0);
+    		const char *name, uint8_t run_mode, uint8_t drv, uint16_t reloc=0);
     int  dma_load_buffer(uint8_t prg_buffer, uint8_t run_mode, uint16_t reloc=0);
     int  dma_load_raw(File *f);
     int  dma_load_raw_buffer(uint16_t offset, const uint8_t *buffer, int length);

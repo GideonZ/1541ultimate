@@ -1,5 +1,5 @@
 #include "diskio.h"
-#include "partition.h"
+#include "chanfat_manager.h"
 
 /*-----------------------------------------------------------------------*/
 /* Get Drive Status                                                      */
@@ -7,10 +7,14 @@
 
 extern "C"
 DSTATUS disk_status (
-		DRVREF pdrv		/* Physical drive nmuber to identify the drive */
+        uint8_t pdrv		/* Physical drive nmuber to identify the drive */
 )
 {
-	return ((Partition *)pdrv)->status();
+    Partition *p = ChanFATManager::getPartition(pdrv);
+    if (p) {
+        return p->status();
+    }
+    return RES_NOTRDY;
 }
 
 
@@ -21,10 +25,14 @@ DSTATUS disk_status (
 
 extern "C"
 DSTATUS disk_initialize (
-		DRVREF pdrv				/* Physical drive nmuber to identify the drive */
+        uint8_t pdrv				/* Physical drive nmuber to identify the drive */
 )
 {
-	return ((Partition *)pdrv)->status();
+    Partition *p = ChanFATManager::getPartition(pdrv);
+    if (p) {
+        return p->status();
+    }
+    return RES_NOTRDY;
 }
 
 
@@ -35,13 +43,17 @@ DSTATUS disk_initialize (
 
 extern "C"
 DRESULT disk_read (
-	DRVREF pdrv,	/* Physical drive nmuber to identify the drive */
-	BYTE *buff,		/* Data buffer to store read data */
-	DWORD sector,	/* Sector address in LBA */
-	UINT count		/* Number of sectors to read */
+        uint8_t pdrv,	/* Physical drive nmuber to identify the drive */
+        uint8_t *buff,		/* Data buffer to store read data */
+        uint32_t sector,	/* Sector address in LBA */
+        uint32_t count		/* Number of sectors to read */
 )
 {
-	return ((Partition *)pdrv)->read(buff, sector, count);
+    Partition *p = ChanFATManager::getPartition(pdrv);
+    if (p) {
+        return p->read(buff, sector, count);
+    }
+    return RES_NOTRDY;
 }
 
 
@@ -52,13 +64,17 @@ DRESULT disk_read (
 #if _USE_WRITE
 extern "C"
 DRESULT disk_write (
-	DRVREF pdrv,		/* Physical drive nmuber to identify the drive */
-	const BYTE *buff,	/* Data to be written */
-	DWORD sector,		/* Sector address in LBA */
-	UINT count			/* Number of sectors to write */
+        uint8_t pdrv,		/* Physical drive nmuber to identify the drive */
+        const uint8_t *buff,	/* Data to be written */
+        uint32_t sector,		/* Sector address in LBA */
+        uint32_t count			/* Number of sectors to write */
 )
 {
-	return ((Partition *)pdrv)->write(buff, sector, count);
+    Partition *p = ChanFATManager::getPartition(pdrv);
+    if (p) {
+        return p->write(buff, sector, count);
+    }
+    return RES_NOTRDY;
 }
 #endif
 
@@ -70,11 +86,15 @@ DRESULT disk_write (
 #if _USE_IOCTL
 extern "C"
 DRESULT disk_ioctl (
-	DRVREF pdrv,	/* Physical drive nmuber (0..) */
-	BYTE cmd,		/* Control code */
-	void *buff		/* Buffer to send/receive control data */
+        uint8_t pdrv,	/* Physical drive nmuber (0..) */
+        uint8_t cmd,		/* Control code */
+        void *buff		/* Buffer to send/receive control data */
 )
 {
-	return ((Partition *)pdrv)->ioctl(cmd, buff);
+    Partition *p = ChanFATManager::getPartition(pdrv);
+    if (p) {
+        return p->ioctl(cmd, buff);
+    }
+    return RES_NOTRDY;
 }
 #endif

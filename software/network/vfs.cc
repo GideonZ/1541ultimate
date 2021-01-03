@@ -8,7 +8,7 @@
 #include "filemanager.h"
 
 #define dbg_printf(...)
-// #define dbg_printf(...)  printf(__VA_ARGS__)
+//#define dbg_printf(...)  printf(__VA_ARGS__)
 
 void  vfs_load_plugin()
 {
@@ -18,8 +18,6 @@ vfs_t *vfs_openfs()
 {
     vfs_t *vfs = new vfs_t;
     vfs->path = FileManager :: getFileManager() -> get_new_path("vfs");
-    vfs->last_direntry = NULL;
-    vfs->last_dir = NULL;
     vfs->open_file = NULL;
     return vfs;
 }
@@ -41,7 +39,7 @@ vfs_file_t *vfs_open(vfs_t *fs, const char *name, const char *flags)
     Path *path = (Path *)fs->path;
     uint8_t bfl = FA_READ;
     if(flags[0] == 'w')
-        bfl = FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS;
+        bfl = FA_WRITE | FA_CREATE_ALWAYS;
         
     File *file = 0;
     FRESULT fres = FileManager :: getFileManager() -> fopen(path, (char *)name, bfl, &file);
@@ -89,7 +87,8 @@ int  vfs_write(const void *buffer, int chunks, int chunk_len, vfs_file_t *file)
     File *f = (File *)file->file;
     uint32_t trans = 0;
     uint32_t len = chunks*chunk_len;
-    if(f->write(buffer, len, &trans) != FR_OK)
+    FRESULT fres = f->write(buffer, len, &trans);
+    if(fres != FR_OK)
         return -1;
     
     return trans;
@@ -102,10 +101,25 @@ int  vfs_eof(vfs_file_t *file)
     return file->eof;
 }
 
-vfs_dir_t *vfs_opendir(vfs_t *fs, const char *name)
+vfs_dir_t *vfs_opendir(vfs_t *fs, const char *name, into_mode_t into_mode)
 {
     Path *path = (Path *)fs->path;
-    dbg_printf("OpenDIR: fs = %p, name arg = '%s'\n", fs, name);
+    dbg_printf("OpenDIR: fs = %p, name arg = '%s' Into = %d\n", fs, name, into_mode);
+
+    mstring matchPattern;
+    FileManager *fm = FileManager :: getFileManager();
+    Path *temp = fm->get_new_path("FTP Temp");
+    temp->cd(path->get_path());
+    temp->cd(name);
+    if (!fm->is_path_valid(temp)) { // Is it not a directory?
+        // Maybe it's a file, so we 'cd' one step up and store the last part of the path as a pattern
+        temp->up(&matchPattern);
+        dbg_printf("Stripped = '%s'\n", matchPattern.c_str());
+        if (! fm->is_path_valid(temp)) { // Is the parent not a directory? then we don't know.
+            fm->release_path(temp);
+            return NULL;
+        }
+    }
 
     // create objects
     vfs_dir_t *dir = (vfs_dir_t *)new vfs_dir_t;
@@ -117,11 +131,13 @@ vfs_dir_t *vfs_opendir(vfs_t *fs, const char *name)
     dir->index = 0;
     dir->entry = ent;
     dir->parent_fs = fs;
-    fs->last_direntry = NULL;
-    fs->last_dir = dir;
+    dir->into_mode = into_mode;
+    dir->do_alternative = false;
 
-    path->get_directory(*listOfEntries);
-    
+    fm->get_directory(temp, *listOfEntries, matchPattern.c_str());
+
+    fm->release_path(temp);
+
     // clear wrapper for file info
     ent->file_info = NULL;
     return dir;
@@ -131,8 +147,6 @@ void vfs_closedir(vfs_dir_t *dir)
 {
     dbg_printf("CloseDIR (%p)\n", dir);
     if(dir) {
-        dir->parent_fs->last_direntry = NULL;
-        dir->parent_fs->last_dir = NULL;
         if (dir->entries) {
         	IndexedList<FileInfo *> *listOfEntries = (IndexedList<FileInfo *> *)(dir->entries);
         	for(int i=0;i<listOfEntries->get_elements();i++) {
@@ -144,42 +158,74 @@ void vfs_closedir(vfs_dir_t *dir)
     }
 }
 
+static bool vfs_has_into_extension(const char *ext)
+{
+    if (strncasecmp(ext, "D64", 3) == 0) {
+        return true;
+    }
+    if (strncasecmp(ext, "D71", 3) == 0) {
+        return true;
+    }
+    if (strncasecmp(ext, "D81", 3) == 0) {
+        return true;
+    }
+    if (strncasecmp(ext, "DNP", 3) == 0) {
+        return true;
+    }
+    if (strncasecmp(ext, "FAT", 3) == 0) {
+        return true;
+    }
+    if (strncasecmp(ext, "ISO", 3) == 0) {
+        return true;
+    }
+    if (strncasecmp(ext, "T64", 3) == 0) {
+        return true;
+    }
+    return false;
+}
+
 vfs_dirent_t *vfs_readdir(vfs_dir_t *dir)
 {
     dbg_printf("READDIR: %p %d\n", dir, dir->index);
 	IndexedList<FileInfo *> *listOfEntries = (IndexedList<FileInfo *> *)(dir->entries);
 
-    if(dir->index < listOfEntries->get_elements()) {
+    while(dir->index < listOfEntries->get_elements()) {
         FileInfo *inf = (*listOfEntries)[dir->index];
         dir->entry->file_info = inf;
-        dir->entry->name = inf->lfname;
-        dir->parent_fs->last_direntry = dir->entry;
-        dbg_printf("Read: %s\n", dir->entry->name);
+        dbg_printf("Read: %s\n", inf->lfname);
+        if (inf->attrib & AM_VOL) {
+            dir->index++;
+            continue;
+        }
+        switch (dir->into_mode) {
+        case e_vfs_files_only:
+            break;
+        case e_vfs_dirs_only:
+            if (vfs_has_into_extension(inf->extension)) {
+                inf->attrib |= AM_DIR;
+            }
+            break;
+        case e_vfs_double_listed:
+            if (vfs_has_into_extension(inf->extension)) {
+                if (dir->do_alternative) {
+                    dir->do_alternative = false;
+                    inf->attrib |= AM_DIR;
+                } else {
+                    dir->do_alternative = true;
+                    dir->index --; // list normally now, list alternative next time
+                    // compensate for the ++ later on
+                }
+            }
+            break;
+        }
         dir->index++;
         return dir->entry;
     }
     return NULL;
 }
 
-int  vfs_stat(vfs_t *fs, const char *name, vfs_stat_t *st)
+static int vfs_stat_impl(FileInfo *inf, vfs_stat_t *st)
 {
-    dbg_printf("STAT: VFS=%p. %s -> %p\n", fs, name, st);
-    FileInfo *inf = NULL;
-    if(fs->last_direntry) {
-        inf = (FileInfo *)fs->last_direntry->file_info;
-        dbg_printf("Last inf: %s\n", inf->lfname);
-        if(strcmp(inf->lfname, name) != 0) {
-            inf = NULL;
-        }
-    }
-    FileInfo localInfo(32);
-    if(!inf) {
-    	if((FileManager :: getFileManager() -> fstat((Path *)fs->path, name, localInfo)) == FR_OK)
-    		inf = &localInfo;
-    }
-    if(!inf)
-        return -1;        
-    
     st->year  = (inf->date >> 9) + 1980;
     st->month = (inf->date >> 5) & 0x0F;
     st->day   = (inf->date) & 0x1F;
@@ -191,29 +237,59 @@ int  vfs_stat(vfs_t *fs, const char *name, vfs_stat_t *st)
 
     // make sure that the date makes sense, otherwise the FTP client will get confused
     if (st->month > 12)
-    	st->month = 12;
+        st->month = 12;
     if (st->month < 1)
-    	st->month = 1;
+        st->month = 1;
     if (st->day < 1)
-    	st->day = 1;
+        st->day = 1;
     if (st->min > 59)
-    	st->min = 59;
+        st->min = 59;
     if (st->hr > 23)
-    	st->hr = 23;
+        st->hr = 23;
 
-    strncpy(st->name, inf->lfname, 64);
-    st->name[63] = 0;
+    inf->generate_fat_name(st->name, 64);
 
     // > 31 is not possible
     return 0;
 }
 
+int  vfs_stat_dirent(vfs_dirent_t *ent, vfs_stat_t *st)
+{
+    FileInfo *inf = (FileInfo *)ent->file_info;
+    return vfs_stat_impl(inf, st);
+}
+
+int  vfs_stat(vfs_t *fs, const char *name, vfs_stat_t *st)
+{
+    dbg_printf("STAT: VFS=%p. %s -> %p\n", fs, name, st);
+    FileInfo localInfo(32);
+    if ((FileManager :: getFileManager() -> fstat((Path *)fs->path, name, localInfo)) == FR_OK) {
+        return vfs_stat_impl(&localInfo, st);
+    }
+    return -1;
+}
+
 int  vfs_chdir(vfs_t *fs, const char *name)
 {
+//    dbg_printf("CD: %s\n", name);
+
+    FileManager *fm = FileManager :: getFileManager();
+    Path *temp = fm->get_new_path("Temp FTP");
     Path *p = (Path *)fs->path;
-    dbg_printf("CD: VFS=%p -> %s\n", fs, name);
-    if(! p->cd((char*)name))
+
+    temp->cd(p->get_path());
+
+    if (!temp->cd((char*)name)) { // Construction of Path is illegal
+        fm->release_path(temp);
         return -1;
+    }
+
+    if (!fm->is_path_valid(temp)) { // Resulting path doesn't exist on the file system
+        fm->release_path(temp);
+        return -2;
+    }
+    p->cd((char *)name); // This was a valid action for temp, so the same can be done on p
+    fm->release_path(temp);
     return 0;
 }
 
@@ -224,7 +300,11 @@ char *vfs_getcwd(vfs_t *fs, void *args, int dummy)
     // now copy the string to output
     char *retval = (char *)malloc(strlen(full_path)+1);
     strcpy(retval, full_path);
-    dbg_printf("CWD: %s\n", retval);
+    int n = strlen(retval);
+    // snoop off the last slash
+    if ((n > 1) && (retval[n-1] == '/'))
+        retval[n-1] = 0;
+    //dbg_printf("CWD: %s\n", retval);
     return retval;
 }
 

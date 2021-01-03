@@ -30,9 +30,9 @@ private:
 			new_removal[i] = removal[i];
 		}
 		if(element_array)
-			delete element_array;
+			delete[] element_array;
 		if(removal)
-			delete removal;
+			delete[] removal;
 		element_array = new_array;
 		removal = new_removal;
 	}
@@ -52,9 +52,9 @@ public:
     
     ~IndexedList() {
 		if(element_array)
-			delete element_array;
+			delete[] element_array;
 		if(removal)
-			delete removal;
+			delete[] removal;
     }
     
 	bool is_empty(void) {

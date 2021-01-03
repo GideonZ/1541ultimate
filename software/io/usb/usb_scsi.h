@@ -24,6 +24,7 @@ struct t_cbw
 #define CBW_OUT 0x00
 
 class UsbScsi;
+class FileManager;
 
 #ifndef BOOTLOADER
 class UsbScsiDriver : public UsbDriver

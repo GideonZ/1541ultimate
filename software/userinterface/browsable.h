@@ -64,7 +64,6 @@ public:
 	bool isSelectable() { return selectable; }
 
 	virtual void fetch_context_items(IndexedList<Action *>&items) { }
-	virtual int fetch_task_items(IndexedList<Action *> &list) { return 0; }
 	virtual IndexedList<Browsable *> *getSubItems(int &error) { error = 0; return &children; }
 	virtual Browsable *getParent() { return 0; }
 	virtual const char *getName() { return "Browsable"; }

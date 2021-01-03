@@ -73,8 +73,8 @@ static void find_format(struct data_entry *entries, int num_entries, struct form
     int repeat = 0;
     for(int i=0; i < 400; i++) {
         if (!(entries[i].flags & 0x80)) { // VIC cycle
-            if (((entries[i].addr & 0xFF00) == 0xFF00)) {
-                if (entries[i+8].addr == ((entries[i].addr - 4) | 0xFF00)) {
+            if (((entries[i].addr & 0x3F00) == 0x3F00)) {
+                if ((entries[i+8].addr | 0xF000) == ((entries[i].addr - 4) | 0xFF00)) {
                     if (refreshOffset == -1) {
                         refreshOffset = i;
                     } else {
@@ -180,7 +180,8 @@ void dump_trace(struct data_entry *entries, int size, int lines, int text_mode, 
     //
     // vector_in <= phi2 & dman & exromn & ba & irqn & rom & nmin & rwn & data & addr;
     // const char *labels[8] = { "RWn","NMIn","ROMn", "IRQn","BA","EXROMn","SYNC","PHI2" };
-    const char *labels[8] = { "RWn","NMIn","ROMn", "IRQn","BA","DMAn","FSYNC","PHI2" };
+    //const char *labels[8] = { "RWn","NMIn","IRQn","BA","ROMn", "EXROMn","GAMEn","PHI2" };
+    const char *labels[8] = { "RWn","NMIn","IRQn","BA","CLOCK", "DATA","ATN","PHI2" };
     const char *drive_labels[8] = { "1541_RWn", "1541_IRQn", "1541_BYTEREADY", "1541_SYNC", "1541_CLOCK", "1541_DATA", "1541_ATN", "nul" };
     const char *vic_regs[47] = { "M0X", "M0Y", "M1X", "M1Y", "M2X", "M2Y", "M3X", "M3Y",
             "M4X", "M4Y", "M5X", "M5Y", "M6X", "M6Y", "M7X", "M7Y",
@@ -200,6 +201,7 @@ void dump_trace(struct data_entry *entries, int size, int lines, int text_mode, 
             if(*labels[b])
                 printf("$var wire 1 %c %s $end\n", 48+b, labels[b]);
         }
+        printf("$var wire 1 & BRK $end\n");
         if (drive_mode) {
             printf("$var wire 16 ( 1541_addr $end\n");
             printf("$var wire 8 ) 1541_data $end\n");
@@ -225,6 +227,9 @@ void dump_trace(struct data_entry *entries, int size, int lines, int text_mode, 
     char buffer[32];
     int cycle;
     int enable = 1;
+    int break_trigger = 0;
+    int break_writes = 0;
+    int brk = 0, brk_d = 1;
 
     cycle = -1;
     size -= fmt.offset;
@@ -235,18 +240,6 @@ void dump_trace(struct data_entry *entries, int size, int lines, int text_mode, 
     }
 
     for(i=0;i<size;i++) {
-        d->flags |= 0x40;
-/*
-        if ((d->flags & 0x80) == 0) {
-            if (d->flags & 0x40) {
-                enable = 1;
-                cycle = 16028;
-            } else {
-                cycle ++;
-            }
-            cycle = cycle % 19656;
-        }
-*/
 
         if ((d->flags & 0x80) == 0) {
             cycle ++;
@@ -286,6 +279,52 @@ void dump_trace(struct data_entry *entries, int size, int lines, int text_mode, 
             time ++;
         }
 
+        brk = 0;
+
+        if ((d->flags & 0x91) == 0x91) { // cpu read cycle
+            if (d->addr == 0x967E) {
+                fprintf(stderr, "Read 967E at %d\n", time);
+            }
+        }
+        if ((d->flags & 0x81) == 0x80) { // cpu write cycle
+            if (d->addr == 0x02B1) {
+                fprintf(stderr, "Write 02B1 at %d\n", time);
+            }
+        }
+
+        if (break_trigger > 0) {
+            if ((d->flags & 0x90) == 0x90) { // CPU cycle
+                break_trigger--;
+                if (!(d->flags & 1)) { // write
+                    break_writes++;
+                    if (break_writes == 3) {
+                        brk = 1;
+                        fprintf(stderr, "BREAK detected at %d\n", time);
+                    }
+                }
+            }
+        } else if ((d->flags & 0x91) == 0x91) { // cpu read cycle
+            if (d->data == 0x00) { // CPU reads 00, is it a break?
+                break_trigger = 5;
+                break_writes = 0;
+            }
+        }
+
+/*
+        if (break_trigger) {
+            fprintf(stderr, "%d,%d,\"%04X\",\"%02X\",", break_trigger, break_writes, d->addr, d->data);
+            for(fla=d->flags,b=0;b<8;b++) {
+                fprintf(stderr, "%d,", fla & 1);
+                fla >>= 1;
+            }
+            if (d->flags & 0x80) {
+                fprintf(stderr, "%d,%d\n", cycle / fmt.lineLength, 1+(cycle % fmt.lineLength));
+            }
+            if (brk) {
+                return;
+            }
+        }
+*/
         if (text_mode) {
             printf("\"%04X\",\"%02X\",", d->addr, d->data);
             for(fla=d->flags,b=0;b<8;b++) {
@@ -298,6 +337,10 @@ void dump_trace(struct data_entry *entries, int size, int lines, int text_mode, 
             d++;
         } else {
             printf("#%u\n", time);
+            if (brk_d != brk) {
+                printf("%d&\n", brk);
+                brk_d = brk;
+            }
             if (((d->flags & 0x80) == 0) && (!drive_mode)) {
                 if ((cycle % 63) == 0) {
                     printf("b%s $\n", bin(cycle / 63, 9, buffer));
@@ -356,7 +399,7 @@ int main(int argc, char **argv)
     }
     int i = 1;
     int text_mode = 0;
-    int length = 63*2*312*85;
+    int length = 63*2*312*500;
     int trigger = -1;
     int file_size = 0;
     int skip_frames = 0;

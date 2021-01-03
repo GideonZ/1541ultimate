@@ -15,48 +15,69 @@
 class FileSystemT64 : public FileSystem
 {
 	File *t64_file;
-	int max, used;
-	uint16_t strt, stop;
 
 	void    openT64File();
 public:
     FileSystemT64(File *file);
     ~FileSystemT64();
 
+    File *getFile() { return t64_file; }
+
     FRESULT get_free (uint32_t*);        // Get number of free sectors on the file system
 
     // functions for reading directories
-    FRESULT dir_open(const char *path, Directory **, FileInfo *inf = 0); // Opens directory (creates dir object, NULL = root)
-    void    dir_close(Directory *d);    // Closes (and destructs dir object)
-    FRESULT dir_read(Directory *d, FileInfo *f); // reads next entry from dir
+    FRESULT dir_open(const char *path, Directory **); // Opens directory (creates dir object)
 
     // functions for reading and writing files
-    FRESULT file_open(const char *path, Directory *dir, const char *filename, uint8_t flags, File **file);  // Opens file (creates file object)
-    void    file_close(File *f);                // Closes file (and destructs file object)
-    FRESULT file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred);
-    FRESULT file_write(File *f, const void *buffer, uint32_t len, uint32_t *transferred);
-    FRESULT file_seek(File *f, uint32_t pos);
+    FRESULT file_open(const char *filename, uint8_t flags, File **);  // Opens file (creates file object)
     FRESULT sync();
 
     friend class FileInT64;
 };
 
-class FileInT64
+class DirectoryT64 : public Directory
+{
+	FileSystemT64 *fs;
+	uint32_t idx;
+	File *t64_file;
+	int max, used;
+	uint16_t strt, stop;
+public:
+	DirectoryT64(FileSystemT64 *fs) {
+		this->fs = fs;
+		t64_file = fs->getFile();
+		idx = 0;
+		max = 0;
+		used = 0;
+		strt = 0;
+		stop = 0;
+	}
+	~DirectoryT64() { }
+
+    FRESULT get_entry(FileInfo &out);
+};
+
+class FileInT64 : public File
 {
     FileSystemT64 *fs;
     int file_offset;
     int offset;
     int length;
     uint16_t start_addr;
+    FRESULT open(FileInfo *info, uint8_t flags);
+
 public:
     FileInT64(FileSystemT64 *);
-    ~FileInT64() { }
+    ~FileInT64();
 
-    FRESULT open(FileInfo *info, uint8_t flags);
     FRESULT close(void);
     FRESULT read(void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT write(const void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT seek(uint32_t pos);
+    uint32_t get_size(void);
+    uint32_t get_inode(void);
+
+    friend class FileSystemT64;
 };
 
 

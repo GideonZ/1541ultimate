@@ -80,7 +80,7 @@ public:
     int  activate_uiobject(UIObject *obj);
     int  getPreferredType(void);
 
-    void run_editor(const char *);
+    void run_editor(const char *, int);
     void swapDisk(void);
 
     UIObject *get_root_object(void) { return ui_objects[0]; }

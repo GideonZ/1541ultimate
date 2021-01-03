@@ -20,14 +20,70 @@ ConfigIO::~ConfigIO()
     // TODO Auto-generated destructor stub
 }
 
-int  ConfigIO :: fetch_task_items(Path *path, IndexedList<Action*> &item_list)
+void ConfigIO :: create_task_items(void)
 {
-    item_list.append(new Action("Save Configuration to Flash", ConfigIO :: S_save, 0, 0));
-    item_list.append(new Action("Save Configuration to File", ConfigIO :: S_save_to_file, 0, 0));
-    item_list.append(new Action("Reset Config from Flash", ConfigIO :: S_restore, 0, 0));
-    item_list.append(new Action("Reset to Factory Defaults", ConfigIO :: S_reset, 0, 0));
+    myActions.savecfg   = new Action("Save to Flash", ConfigIO :: S_save, 0, 0);
+    myActions.savefile  = new Action("Save to File", ConfigIO :: S_save_to_file, 0, 0);
+    myActions.loadcfg   = new Action("Reset from Flash", ConfigIO :: S_restore, 0, 0);
+    myActions.factory   = new Action("Reset to Defaults", ConfigIO :: S_reset, 0, 0);
+    myActions.clear_dbg = new Action("Clear Debug Log", ConfigIO :: S_reset_log, 0, 0);
+    myActions.save_dbg  = new Action("Save Debug Log", ConfigIO :: S_save_log, 0, 0);
 
-    return 4;
+    TaskCategory *cfg = TasksCollection :: getCategory("Configuration", SORT_ORDER_CONFIG);
+    cfg->append(myActions.savecfg);
+    cfg->append(myActions.savefile);
+    cfg->append(myActions.loadcfg);
+    cfg->append(myActions.factory);
+
+    TaskCategory *dev = TasksCollection :: getCategory("Developer", SORT_ORDER_DEVELOPER);
+    dev->append(myActions.clear_dbg);
+    dev->append(myActions.save_dbg);
+}
+
+void ConfigIO :: update_task_items(bool writablePath, Path *path)
+{
+    if (writablePath) {
+        myActions.savecfg  ->enable();
+        myActions.savefile ->enable();
+        myActions.save_dbg ->enable();
+    } else {
+        myActions.savecfg  ->disable();
+        myActions.savefile ->disable();
+        myActions.save_dbg ->disable();
+    }
+}
+
+int ConfigIO :: S_reset_log(SubsysCommand *cmd)
+{
+    extern StreamTextLog textLog; // the global log
+    textLog.Reset();
+    return 0;
+}
+
+int ConfigIO :: S_save_log(SubsysCommand *cmd)
+{
+    extern StreamTextLog textLog; // the global log
+    int len = textLog.getLength();
+
+    FileManager *fm = FileManager::getFileManager();
+    File *f;
+
+    char buffer[64];
+    buffer[0] = 0;
+    int res = cmd->user_interface->string_box("Give filename..", buffer, 22);
+    set_extension(buffer, ".log", 32);
+    if (res > 0) {
+        FRESULT fres = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_ALWAYS, &f);
+        if (fres == FR_OK) {
+            uint32_t transferred = 0;
+            f->write(textLog.getText(), len, &transferred);
+            fm->fclose(f);
+        } else {
+            sprintf(buffer, "Error: %s", FileSystem::get_error_string(fres));
+            cmd->user_interface->popup(buffer, BUTTON_OK);
+        }
+    }
+    return 0;
 }
 
 int ConfigIO :: S_save_to_file(SubsysCommand *cmd)
@@ -102,7 +158,7 @@ int ConfigIO :: S_restore(SubsysCommand *cmd)
     ConfigStore *s;
     for(int n = 0; n < cm->stores.get_elements();n++) {
         s = cm->stores[n];
-        s->read();
+        s->read(false);
         s->effectuate();
     }
     return 0;

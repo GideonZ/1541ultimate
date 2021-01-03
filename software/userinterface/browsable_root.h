@@ -53,7 +53,7 @@ class BrowsableDirEntry : public Browsable
 	Browsable *parent;
 	FileInfo *info;
 	FileType *type;
-
+	char *fatname;
 	Path *path;
 	Path *parent_path;
 
@@ -72,6 +72,7 @@ public:
 		this->path = 0;
 		this->parent = parent;
 		this->parent_path = pp;
+		this->fatname = NULL;
 	}
 
 	virtual ~BrowsableDirEntry() {
@@ -79,6 +80,8 @@ public:
 			delete type;
 		if (info)
 			delete info;
+		if (fatname)
+		    delete fatname;
 		if (path)
 			FileManager :: getFileManager() -> release_path(path);
 	}
@@ -110,7 +113,7 @@ public:
 
 		setPath();
 		IndexedList<FileInfo *> *infos = new IndexedList<FileInfo *>(8, NULL);
-		if (path->get_directory(*infos) != FR_OK) {
+		if (FileManager :: getFileManager()->get_directory(path, *infos, NULL) != FR_OK) {
 			delete infos;
 			error = -1;
 		} else {
@@ -125,13 +128,24 @@ public:
 	}
 
 	virtual const char *getName() {
-		return info->lfname;
+		if (fatname) {
+		    return fatname;
+		}
+	    if (!info) {
+		    return "No info!";
+		}
+		if (info->name_format & NAME_FORMAT_CBM) {
+		    fatname = new char[48];
+		    info->generate_fat_name(fatname, 48);
+		    return fatname;
+		}
+	    return info->lfname;
 	}
 
 	virtual void getDisplayString(char *buffer, int width) {
 		static char sizebuf[8];
-		if (info->special_display) {
-			parent_path->get_display_string(info->lfname, buffer, width);
+		if (info->name_format & NAME_FORMAT_DIRECT) {
+			FileManager :: getFileManager() -> get_display_string(parent_path, info->lfname, buffer, width);
 		} else {
 			char sel = getSelection() ? '\x13': ' ';
 			if (info->attrib & AM_VOL) {
@@ -175,7 +189,7 @@ public:
 	virtual IndexedList<Browsable *> *getSubItems(int &error) {
 		if (children.get_elements() == 0) {
 			IndexedList<FileInfo *> *infos = new IndexedList<FileInfo *>(8, NULL);
-			fm -> get_directory(root, *infos);
+			fm -> get_directory(root, *infos, NULL);
 			// printf("Root get sub items: get_directory of %s returned %d elements.\n", root->get_path(), infos->get_elements());
 			for(int i=0;i<infos->get_elements();i++) {
 				FileInfo *inf = (*infos)[i];
