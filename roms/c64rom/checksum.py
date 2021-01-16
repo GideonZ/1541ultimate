@@ -14,7 +14,7 @@ def calc_checksum(data, old):
 	return a
 
 def usage():
-	print "Usage: python checksum.py {--old|--new} <file.bin> [<checksum> <offset>]"
+	print ("Usage: python checksum.py {--old|--new} <file.bin> [<checksum> <offset>]")
 	exit(1)
 
 # main
@@ -36,7 +36,7 @@ data = bytearray(open(filename, 'rb').read())
 checksum = calc_checksum(data, old)
 
 if len(sys.argv) != 5:
-	print filename + ": " + hex(checksum)
+	print (filename + ": " + hex(checksum))
 	exit(0)
 
 desired_checksum = int(sys.argv[3], 16)
