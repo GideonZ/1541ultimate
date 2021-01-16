@@ -19,6 +19,9 @@ CommandTarget *command_targets[CMD_IF_MAX_TARGET+1];
 // Semaphore set by interrupt
 static SemaphoreHandle_t resetSemaphore;
 
+#define CMD_IF_DEBUG 0
+
+
 extern "C" {
 void ResetInterruptHandlerCmdIf()
 {
@@ -110,7 +113,9 @@ void CommandInterface :: run_task(void)
 
     while(1) {
 		xQueueReceive(queue, &status_byte, portMAX_DELAY);
-
+#if CMD_IF_DEBUG
+		printf("{%b}", status_byte);
+#endif
 		if(status_byte & CMD_ABORT_DATA) {
 			//printf("Abort received.\n");
 			if (target != CMD_TARGET_NONE) {
@@ -121,15 +126,11 @@ void CommandInterface :: run_task(void)
 			CMD_IF_IRQMASK_CLEAR = CMD_ABORT_DATA;
 		}
 		if(status_byte & CMD_DATA_ACCEPTED) {
-		    uint8_t state = CMD_IF_HANDSHAKE_OUT;
-
-            if (state & CMD_STATE_DATA_MORE) {
-                if (target != CMD_TARGET_NONE) {
-                    command_targets[target]->get_more_data(&data, &status);
-                    copy_result(data, status);
-                } else {
-                    printf("CMDIF: Requested for more data, but target is not set!\n");
-                }
+			if (target != CMD_TARGET_NONE) {
+				command_targets[target]->get_more_data(&data, &status);
+				copy_result(data, status);
+			} else {
+				printf("CMDIF: Requested for more data, but target is not set!\n");
 			}
             CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_NEXTDATA;
             CMD_IF_IRQMASK_CLEAR = CMD_DATA_ACCEPTED;
@@ -139,9 +140,10 @@ void CommandInterface :: run_task(void)
 			length = int(CMD_IF_COMMAND_LEN_L) + (int(CMD_IF_COMMAND_LEN_H) << 8);
 
 			if (length) {
-				// printf("Command received:\n");
-				// dump_hex_relative((void *)command_buffer, length);
-
+#if CMD_IF_DEBUG
+				printf("Command received:\n");
+				dump_hex_relative((void *)command_buffer, length);
+#endif
 				incoming_command.length = length;
 				target = incoming_command.message[0] & CMD_IF_MAX_TARGET;
 				bool no_reply = ((incoming_command.message[0] & CMD_IF_NO_REPLY) != 0);
@@ -166,10 +168,12 @@ void CommandInterface :: run_task(void)
 
 void CommandInterface :: copy_result(Message *data, Message *status)
 {
-    //printf("data:\n");
-    //dump_hex_relative((void *)data->message, data->length);
-    //printf("status:\n");
-    //dump_hex_relative((void *)status->message, status->length);
+#if CMD_IF_DEBUG
+    printf("data:\n");
+    dump_hex_relative((void *)data->message, data->length);
+    printf("status:\n");
+    dump_hex_relative((void *)status->message, status->length);
+#endif
     memcpy(response_buffer, data->message, data->length);
     memcpy(status_buffer, status->message, status->length);
     CMD_IF_RESPONSE_LEN_H = uint8_t(data->length >> 8);
