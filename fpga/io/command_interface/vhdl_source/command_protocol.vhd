@@ -156,7 +156,7 @@ begin
                             end if;
                         end if;
                         if slot_req.data(1)='1' and state(1) = '1' then -- data accept
-                            handshake_in(1) <= '1'; -- data accepted, only ultimate can clear it
+                            handshake_in(1) <= state(0); -- data accepted, only ultimate can clear it, only data more
                             state(1) <= '0'; -- either goes to idle, or back to wait for software
                         end if;
                         if slot_req.data(2)='1' then
