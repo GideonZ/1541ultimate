@@ -540,7 +540,7 @@ uci_clear_error
 .import frmevl
 .import frmnum
 .import getadr
-.import valtyp
+.importzp valtyp
 .import frefac
 .import newstt
 .import linprt
@@ -548,6 +548,7 @@ uci_clear_error
 .global wedged_execute
 
 at_command
+            plp
             lda #0
             sta STATUS
 
@@ -613,11 +614,12 @@ _kernal_error
 
 wedged_execute
             jsr CHRGET
+            php
             cmp #AT_TOKEN
             beq at_command
             cmp #STRING_TOKEN
             beq dir_command
-            cmp #0
+			plp
             jmp ngone+3 ;$a7e7
 
 get_dev_num jsr getadr
@@ -663,6 +665,7 @@ _dev_ok     cmp #31
 _uci_listen jmp ultichkout_c
 
 dir_command
+            plp
             lda #0
             sta STATUS
             pha          ; Pre-store length = 0 on stack
