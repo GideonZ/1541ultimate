@@ -500,7 +500,7 @@ int Modem :: ExecuteCommand(ModemCommand_t *cmd)
     char responseBuffer[16];
     int registerValue, temp;
 
-    response = (verbose==TRUE ? responseText[0] : responseCode[0]);
+    response = (verbose==TRUE ? responseText[RESP_OK] : responseCode[RESP_OK]);
 
     printf("MODEM COMMAND: '%s'\n", cmd->command);
 
