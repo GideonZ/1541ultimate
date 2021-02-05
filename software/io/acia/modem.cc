@@ -569,6 +569,10 @@ int Modem :: ExecuteCommand(ModemCommand_t *cmd)
             	response = (verbose==TRUE ? responseText[RESP_OK] : responseCode[RESP_OK]);
             }
             break;
+        case 'E':
+        case 'M':
+        	response = (verbose==TRUE ? responseText[RESP_OK] : responseCode[RESP_OK]);
+        	break;
         case 'S': // register select
             registerSelect = 0;
             sscanf(cmd->command + i + 1, "%d", &registerSelect);
