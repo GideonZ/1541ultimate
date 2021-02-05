@@ -571,7 +571,18 @@ int Modem :: ExecuteCommand(ModemCommand_t *cmd)
             break;
         case 'E':
         case 'M':
-        	response = (verbose==TRUE ? responseText[RESP_OK] : responseCode[RESP_OK]);
+            sscanf(cmd->command + i + 1, "%d", &temp);
+            while(i < cmd->length && (isdigit(cmd->command[i+1])))
+                i++;
+
+            if(temp>1)
+            {
+            	response = (verbose==TRUE ? responseText[RESP_ERROR] : responseCode[RESP_ERROR]);
+            }
+            else
+            {
+            	response = (verbose==TRUE ? responseText[RESP_OK] : responseCode[RESP_OK]);
+            }
         	break;
         case 'S': // register select
             registerSelect = 0;
