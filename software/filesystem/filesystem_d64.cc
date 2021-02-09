@@ -2077,6 +2077,9 @@ FRESULT FileInCBM::seek(uint32_t pos)
             absPos += 254;
         } else {
             pos = fs->sect_buffer[1] - 1;
+            if (pos < 0) {
+            	pos = 0;
+            }
             file_size = (absPos + pos);
             break;
         }
