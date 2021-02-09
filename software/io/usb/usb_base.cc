@@ -170,6 +170,7 @@ static void poll_usb2(void *a)
 	usb2.init();
 	while(1) {
 		usb2.poll();
+		vTaskDelay(2);
 	}
 }
 

@@ -37,7 +37,7 @@ int testFlashSwitch(void)
 	if ((id0[0] == id1[0]) && (id0[1] == id1[1])) {
 		return 1;
 	}
-	if (strcmp(type0, "W25Q80") != 0) {
+	if ((strcmp(type0, "W25Q80") != 0) && (strcmp(type0, "W25Q32") != 0)) {
 		return 2;
 	}
 	if (strcmp(type1, "W25Q32") != 0) {

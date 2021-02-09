@@ -383,6 +383,7 @@ FRESULT File_ISO9660 :: seek(uint32_t pos)
 FRESULT File_ISO9660 :: close(void)
 {
     delete this;
+    return FR_OK;
 }
 
 //FileSystemRegistrator iso_tester(FileSystem_ISO9660 :: test);

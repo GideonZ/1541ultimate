@@ -97,6 +97,7 @@ extern "C" {
 			portDISABLE_INTERRUPTS();
 			ioWrite8(ITU_IRQ_GLOBAL, 0);
 			ioWrite8(ITU_IRQ_DISABLE, 0xFF);
+			ioWrite8(ITU_IRQ_CLEAR, 0xFF);
 			printf("Interrupts are now disabled.\n");
 
 			uint32_t runaddr = 0;

@@ -47,10 +47,6 @@
 		.spi_SCLK                (<connected-to-spi_SCLK>),                //          .SCLK
 		.spi_SS_n                (<connected-to-spi_SS_n>),                //          .SS_n
 		.sys_clock_clk           (<connected-to-sys_clock_clk>),           // sys_clock.clk
-		.sys_reset_reset_n       (<connected-to-sys_reset_reset_n>),       // sys_reset.reset_n
-		.uart_rxd                (<connected-to-uart_rxd>),                //      uart.rxd
-		.uart_txd                (<connected-to-uart_txd>),                //          .txd
-		.uart_cts_n              (<connected-to-uart_cts_n>),              //          .cts_n
-		.uart_rts_n              (<connected-to-uart_rts_n>)               //          .rts_n
+		.sys_reset_reset_n       (<connected-to-sys_reset_reset_n>)        // sys_reset.reset_n
 	);
 

@@ -1,4 +1,4 @@
-//Legal Notice: (C)2019 Altera Corporation. All rights reserved.  Your
+//Legal Notice: (C)2021 Altera Corporation. All rights reserved.  Your
 //use of Altera Corporation's design tools, logic functions and other
 //software and tools, and its AMPP partner logic functions, and any
 //output files any of the foregoing (including device programming or
@@ -88,16 +88,17 @@ module nios_tester_nios2_gen2_0_cpu_debug_slave_tck (
   input            vs_sdr;
   input            vs_uir;
 
-  reg     [  2: 0] DRsize /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
-  wire             debugack_sync;
-  reg     [  1: 0] ir_out;
-  wire             jrst_n;
-  wire             monitor_ready_sync;
-  reg     [ 37: 0] sr /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
-  wire             st_ready_test_idle;
-  wire             tdo;
-  wire             unxcomplemented_resetxx1;
-  wire             unxcomplemented_resetxx2;
+
+reg     [  2: 0] DRsize /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
+wire             debugack_sync;
+reg     [  1: 0] ir_out;
+wire             jrst_n;
+wire             monitor_ready_sync;
+reg     [ 37: 0] sr /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
+wire             st_ready_test_idle;
+wire             tdo;
+wire             unxcomplemented_resetxx1;
+wire             unxcomplemented_resetxx2;
   always @(posedge tck)
     begin
       if (vs_cdr)

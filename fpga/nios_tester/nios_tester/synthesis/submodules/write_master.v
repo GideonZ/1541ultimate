@@ -1,13 +1,13 @@
-// (C) 2001-2015 Altera Corporation. All rights reserved.
-// Your use of Altera Corporation's design tools, logic functions and other 
+// (C) 2001-2018 Intel Corporation. All rights reserved.
+// Your use of Intel Corporation's design tools, logic functions and other 
 // software and tools, and its AMPP partner logic functions, and any output 
-// files any of the foregoing (including device programming or simulation 
+// files from any of the foregoing (including device programming or simulation 
 // files), and any associated documentation or information are expressly subject 
-// to the terms and conditions of the Altera Program License Subscription 
-// Agreement, Altera MegaCore Function License Agreement, or other applicable 
+// to the terms and conditions of the Intel Program License Subscription 
+// Agreement, Intel FPGA IP License Agreement, or other applicable 
 // license agreement, including, without limitation, that your use is for the 
-// sole purpose of programming logic devices manufactured by Altera and sold by 
-// Altera or its authorized distributors.  Please refer to the applicable 
+// sole purpose of programming logic devices manufactured by Intel and sold by 
+// Intel or its authorized distributors.  Please refer to the applicable 
 // agreement for further details.
 
 
@@ -236,6 +236,7 @@ module write_master (
   reg [BYTE_ENABLE_WIDTH_LOG2:0] packet_bytes_buffered_d1;  // represents the number of bytes buffered in the ST to MM adapter (only applicable for unaligned accesses)
   reg eop_seen;  // when the beat containing EOP has been popped from the fifo this bit will be set, it will be reset when done is asserted.  It is used to determine if an extra write must occur (unaligned accesses only)
 
+  wire last_access;  // JCJB: new signal to flag that the final access is occuring, will be used to supress the burst counter from reloading incorrectly at the end of the transfer
 
 /********************************************* REGISTERS ****************************************************************************************/
   // registering the stride control bit
@@ -275,7 +276,7 @@ module write_master (
     end
     else if (go == 1)
     begin
-      programmable_burst_count_d1 <= ((descriptor_programmable_burst_count == 0) | (descriptor_programmable_burst_count > 128)) ? MAX_BURST_COUNT : descriptor_programmable_burst_count;
+      programmable_burst_count_d1 <= ((descriptor_programmable_burst_count == 0) | (descriptor_programmable_burst_count > MAX_BURST_COUNT)) ? MAX_BURST_COUNT : descriptor_programmable_burst_count;
     end
   end
 
@@ -460,7 +461,7 @@ module write_master (
       begin
         snk_command_ready <= 0;
       end
-      else if (((done == 1) & (src_response_valid == 0)) | (reset_taken == 1))  // need to make sure the response is popped before accepting more commands
+      else if (((src_response_ready == 1) & (src_response_valid == 1)) | (reset_taken == 1))  // need to make sure the response is popped before accepting more commands
       begin
         snk_command_ready <= 1;
       end
@@ -653,6 +654,7 @@ module write_master (
     .short_first_access_enable (short_first_access_enable),
     .short_last_access_enable (short_last_access_enable),
     .short_first_and_last_access_enable (short_first_and_last_access_enable),
+    .last_access (last_access),   // JCJB;  feeding done signal into burst module so that we can suppress the burst logic from sending an extra burst if data if still buffered in FIFO
     .address_out (master_address),
     .write_out (master_write),  // filtered version of 'write'
     .burst_count (master_burstcount),
@@ -698,6 +700,9 @@ module write_master (
   assign short_first_access_size = BYTE_ENABLE_WIDTH - start_byte_address;
   assign short_last_access_size = (eop_enable == 1)? (packet_beat_size + packet_bytes_buffered_d1) : (length_counter & LSB_MASK);
   assign short_first_and_last_access_size = (eop_enable == 1)? (BYTE_ENABLE_WIDTH - buffered_empty) : (length_counter & LSB_MASK);
+
+  // JCJB:  new signal that is high any time there is a word or less to trasnfer, will be used to suppress reloading of the burst counter if data for the next descriptor is buffered
+  assign last_access = (length_counter <= (DATA_WIDTH/8));
 
   /* special case transfer enables and counter increment values (address_counter, length_counter, and actual_bytes_transferred)
      short_first_access_enable is for transfers that start aligned but reach the next word boundary
@@ -888,7 +893,7 @@ module write_master (
   assign first_word_boundary_not_reached = (descriptor_length < BYTE_ENABLE_WIDTH) &  // length is less than the word size
                                            (((descriptor_length & LSB_MASK) + (descriptor_address & LSB_MASK)) < BYTE_ENABLE_WIDTH);  // start address + length doesn't reach the next word boundary (not used for packet transfers)
   
-  assign write = ((fifo_empty == 0) | (extra_write == 1)) & (done == 0) & (stopped == 0);
+  assign write = ((fifo_empty == 0) | (extra_write == 1)) & (done == 0) & (stopped == 0) & (early_termination_d1 == 0);
   assign st_to_mm_adapter_enable = (done == 0) & (extra_write == 0);
 
   assign write_complete = (write == 1) & (master_waitrequest == 0) & (write_stall_from_byte_enable_generator == 0) & (write_stall_from_write_burst_control == 0);  // writing still occuring and no reasons to prevent the write cycle from completing
@@ -896,14 +901,16 @@ module write_master (
   assign go = (snk_command_valid == 1) & (snk_command_ready == 1);  // go with be one cycle since done will be set to 0 on the next cycle (length will be non-zero)
 
   assign snk_ready = (fifo_full == 0) & // need to make sure more streaming data doesn't come in when the FIFO is full
-                     (((PACKET_ENABLE == 1) & (snk_sop == 1) & (fifo_empty == 0)) != 1);  // need to make sure that only one packet is buffered at any given time (sop will continue to be asserted until the buffer is written out)
+                     (((PACKET_ENABLE == 1) & (snk_sop == 1) & ((eop_enable == 1) | (snk_command_ready == 1)) & (fifo_empty == 0)) != 1);  // need to make sure that only one packet is buffered at any given time (sop will continue to be asserted until the buffer is written out)
 
   assign length_sync_reset = (((reset_taken == 1) | (early_termination_d1 == 1)) & (done == 0)) | (done_strobe == 1); // abrupt stop cases or packet transfer just completed (otherwise the length register will reach 0 by itself)
 
 
   assign fifo_write = (snk_ready == 1) & (snk_valid == 1);
 
-  assign early_termination = (eop_enable == 1) & (write_complete == 1) & (length_counter < bytes_to_transfer);  // packet transfer and the length counter is about to roll over so stop transfering
+  assign early_termination = (eop_enable == 1) & 
+                             (   ((write_complete == 1) & (length_counter < bytes_to_transfer)) |  // packet transfer and the length counter is about to roll over so stop transfering
+                                 ((length_counter == 0) & (eop_seen == 0) & (go == 0))   );        // length counter hit zero and eop beat still hasn't been written to memory   
   
   assign stop_state = stopped;
   assign reset_delayed = (reset_taken == 0) & (sw_reset_in == 1);

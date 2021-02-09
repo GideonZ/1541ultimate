@@ -24,7 +24,6 @@ const uint8_t hexchars[] = "0123456789ABCDEF";
 #define MOVE_READ_CLOCK 0x35
 #define MOVE_MEASURE_CLOCK 0x36
 
-
 int try_mode(int mode);
 
 void ddr2_calibrate()
@@ -94,7 +93,7 @@ void ddr2_calibrate()
             return;
         }
     } while(0);
-    puts("Failed to calibrate.");
+//    puts("Failed to calibrate.");
     while(1);
 }
 
@@ -169,7 +168,6 @@ int try_mode(int mode)
     }
     printf("\n\r");
 */
-
 
     uint16_t *mem16 = (uint16_t *)0;
     for(int i=0;i<65536;i++) {

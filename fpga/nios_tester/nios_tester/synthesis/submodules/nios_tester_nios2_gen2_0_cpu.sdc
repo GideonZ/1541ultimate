@@ -1,4 +1,4 @@
-# Legal Notice: (C)2019 Altera Corporation. All rights reserved.  Your
+# Legal Notice: (C)2021 Altera Corporation. All rights reserved.  Your
 # use of Altera Corporation's design tools, logic functions and other
 # software and tools, and its AMPP partner logic functions, and any
 # output files any of the foregoing (including device programming or

@@ -4,26 +4,25 @@ editor if you plan to continue editing the block that represents it in
 the Block Editor! File corruption is VERY likely to occur.
 */
 /*
-Copyright (C) 1991-2015 Altera Corporation. All rights reserved.
-Your use of Altera Corporation's design tools, logic functions 
+Copyright (C) 2018  Intel Corporation. All rights reserved.
+Your use of Intel Corporation's design tools, logic functions 
 and other software and tools, and its AMPP partner logic 
 functions, and any output files from any of the foregoing 
 (including device programming or simulation files), and any 
 associated documentation or information are expressly subject 
-to the terms and conditions of the Altera Program License 
-Subscription Agreement, the Altera Quartus Prime License Agreement,
-the Altera MegaCore Function License Agreement, or other 
-applicable license agreement, including, without limitation, 
-that your use is for the sole purpose of programming logic 
-devices manufactured by Altera and sold by Altera or its 
-authorized distributors.  Please refer to the applicable 
-agreement for further details.
+to the terms and conditions of the Intel Program License 
+Subscription Agreement, the Intel Quartus Prime License Agreement,
+the Intel FPGA IP License Agreement, or other applicable license
+agreement, including, without limitation, that your use is for
+the sole purpose of programming logic devices manufactured by
+Intel and sold by Intel or its authorized distributors.  Please
+refer to the applicable agreement for further details.
 */
 (header "symbol" (version "1.1"))
 (symbol
-	(rect 0 0 496 1176)
+	(rect 0 0 496 1088)
 	(text "nios_tester" (rect 216 -1 259 11)(font "Arial" (font_size 10)))
-	(text "inst" (rect 8 1160 20 1172)(font "Arial" ))
+	(text "inst" (rect 8 1072 20 1084)(font "Arial" ))
 	(port
 		(pt 0 72)
 		(input)
@@ -170,20 +169,6 @@ agreement for further details.
 		(text "sys_reset_reset_n" (rect 0 0 77 12)(font "Arial" (font_size 8)))
 		(text "sys_reset_reset_n" (rect 4 1045 106 1056)(font "Arial" (font_size 8)))
 		(line (pt 0 1056)(pt 176 1056)(line_width 1))
-	)
-	(port
-		(pt 0 1096)
-		(input)
-		(text "uart_rxd" (rect 0 0 34 12)(font "Arial" (font_size 8)))
-		(text "uart_rxd" (rect 4 1085 52 1096)(font "Arial" (font_size 8)))
-		(line (pt 0 1096)(pt 176 1096)(line_width 1))
-	)
-	(port
-		(pt 0 1128)
-		(input)
-		(text "uart_cts_n" (rect 0 0 43 12)(font "Arial" (font_size 8)))
-		(text "uart_cts_n" (rect 4 1117 64 1128)(font "Arial" (font_size 8)))
-		(line (pt 0 1128)(pt 176 1128)(line_width 1))
 	)
 	(port
 		(pt 0 104)
@@ -381,20 +366,6 @@ agreement for further details.
 		(text "spi_SS_n" (rect 4 965 52 976)(font "Arial" (font_size 8)))
 		(line (pt 0 976)(pt 176 976)(line_width 1))
 	)
-	(port
-		(pt 0 1112)
-		(output)
-		(text "uart_txd" (rect 0 0 33 12)(font "Arial" (font_size 8)))
-		(text "uart_txd" (rect 4 1101 52 1112)(font "Arial" (font_size 8)))
-		(line (pt 0 1112)(pt 176 1112)(line_width 1))
-	)
-	(port
-		(pt 0 1144)
-		(output)
-		(text "uart_rts_n" (rect 0 0 42 12)(font "Arial" (font_size 8)))
-		(text "uart_rts_n" (rect 4 1133 64 1144)(font "Arial" (font_size 8)))
-		(line (pt 0 1144)(pt 176 1144)(line_width 1))
-	)
 	(drawing
 		(text "audio_in" (rect 128 43 304 99)(font "Arial" (color 128 0 0)(font_size 9)))
 		(text "data" (rect 181 67 386 144)(font "Arial" (color 0 0 0)))
@@ -458,16 +429,11 @@ agreement for further details.
 		(text "clk" (rect 181 1011 380 2032)(font "Arial" (color 0 0 0)))
 		(text "sys_reset" (rect 119 1027 292 2067)(font "Arial" (color 128 0 0)(font_size 9)))
 		(text "reset_n" (rect 181 1051 404 2112)(font "Arial" (color 0 0 0)))
-		(text "uart" (rect 154 1067 332 2147)(font "Arial" (color 128 0 0)(font_size 9)))
-		(text "rxd" (rect 181 1091 380 2192)(font "Arial" (color 0 0 0)))
-		(text "txd" (rect 181 1107 380 2224)(font "Arial" (color 0 0 0)))
-		(text "cts_n" (rect 181 1123 392 2256)(font "Arial" (color 0 0 0)))
-		(text "rts_n" (rect 181 1139 392 2288)(font "Arial" (color 0 0 0)))
-		(text " nios_tester " (rect 445 1160 968 2330)(font "Arial" ))
+		(text " nios_tester " (rect 445 1072 968 2154)(font "Arial" ))
 		(line (pt 176 32)(pt 320 32)(line_width 1))
-		(line (pt 320 32)(pt 320 1160)(line_width 1))
-		(line (pt 176 1160)(pt 320 1160)(line_width 1))
-		(line (pt 176 32)(pt 176 1160)(line_width 1))
+		(line (pt 320 32)(pt 320 1072)(line_width 1))
+		(line (pt 176 1072)(pt 320 1072)(line_width 1))
+		(line (pt 176 32)(pt 176 1072)(line_width 1))
 		(line (pt 177 52)(pt 177 108)(line_width 1))
 		(line (pt 178 52)(pt 178 108)(line_width 1))
 		(line (pt 319 52)(pt 319 108)(line_width 1))
@@ -494,11 +460,9 @@ agreement for further details.
 		(line (pt 178 996)(pt 178 1020)(line_width 1))
 		(line (pt 177 1036)(pt 177 1060)(line_width 1))
 		(line (pt 178 1036)(pt 178 1060)(line_width 1))
-		(line (pt 177 1076)(pt 177 1148)(line_width 1))
-		(line (pt 178 1076)(pt 178 1148)(line_width 1))
 		(line (pt 0 0)(pt 496 0)(line_width 1))
-		(line (pt 496 0)(pt 496 1176)(line_width 1))
-		(line (pt 0 1176)(pt 496 1176)(line_width 1))
-		(line (pt 0 0)(pt 0 1176)(line_width 1))
+		(line (pt 496 0)(pt 496 1088)(line_width 1))
+		(line (pt 0 1088)(pt 496 1088)(line_width 1))
+		(line (pt 0 0)(pt 0 1088)(line_width 1))
 	)
 )

@@ -48,11 +48,7 @@ module nios_tester (
 	spi_SCLK,
 	spi_SS_n,
 	sys_clock_clk,
-	sys_reset_reset_n,
-	uart_rxd,
-	uart_txd,
-	uart_cts_n,
-	uart_rts_n);	
+	sys_reset_reset_n);	
 
 	input	[31:0]	audio_in_data;
 	input		audio_in_valid;
@@ -103,8 +99,4 @@ module nios_tester (
 	output		spi_SS_n;
 	input		sys_clock_clk;
 	input		sys_reset_reset_n;
-	input		uart_rxd;
-	output		uart_txd;
-	input		uart_cts_n;
-	output		uart_rts_n;
 endmodule

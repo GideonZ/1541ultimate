@@ -48,11 +48,7 @@
 			spi_SCLK                : out std_logic;                                        -- SCLK
 			spi_SS_n                : out std_logic;                                        -- SS_n
 			sys_clock_clk           : in  std_logic                     := 'X';             -- clk
-			sys_reset_reset_n       : in  std_logic                     := 'X';             -- reset_n
-			uart_rxd                : in  std_logic                     := 'X';             -- rxd
-			uart_txd                : out std_logic;                                        -- txd
-			uart_cts_n              : in  std_logic                     := 'X';             -- cts_n
-			uart_rts_n              : out std_logic                                         -- rts_n
+			sys_reset_reset_n       : in  std_logic                     := 'X'              -- reset_n
 		);
 	end component nios_tester;
 
@@ -106,10 +102,6 @@
 			spi_SCLK                => CONNECTED_TO_spi_SCLK,                --          .SCLK
 			spi_SS_n                => CONNECTED_TO_spi_SS_n,                --          .SS_n
 			sys_clock_clk           => CONNECTED_TO_sys_clock_clk,           -- sys_clock.clk
-			sys_reset_reset_n       => CONNECTED_TO_sys_reset_reset_n,       -- sys_reset.reset_n
-			uart_rxd                => CONNECTED_TO_uart_rxd,                --      uart.rxd
-			uart_txd                => CONNECTED_TO_uart_txd,                --          .txd
-			uart_cts_n              => CONNECTED_TO_uart_cts_n,              --          .cts_n
-			uart_rts_n              => CONNECTED_TO_uart_rts_n               --          .rts_n
+			sys_reset_reset_n       => CONNECTED_TO_sys_reset_reset_n        -- sys_reset.reset_n
 		);
 
