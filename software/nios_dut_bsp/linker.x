@@ -213,6 +213,7 @@ SECTIONS
         KEEP (*(.eh_frame))
         *(.gcc_except_table .gcc_except_table.*)
         *(.dynamic)
+        . = ALIGN(4);
         PROVIDE (__CTOR_LIST__ = ABSOLUTE(.));
         KEEP (*(.ctors))
         KEEP (*(SORT(.ctors.*)))

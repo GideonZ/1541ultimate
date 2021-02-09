@@ -11,13 +11,7 @@
 #define SPI_FORCE_SS 0x01
 #define SPI_LEVEL_SS 0x02
 
-void jump_run(uint32_t a)
-{
-	void (*function)();
-	uint32_t *dp = (uint32_t *)&function;
-    *dp = a;
-    function();
-}
+extern const uint8_t hexchars[];
 
 void outbyte(int c)
 {
@@ -25,6 +19,34 @@ void outbyte(int c)
 	while (ioRead8(UART_FLAGS) & UART_TxFifoFull);
 	ioWrite8(UART_DATA, c);
 }
+
+void hex_byte(uint8_t b)
+{
+	outbyte(hexchars[b >> 4]);
+	outbyte(hexchars[b & 15]);
+}
+
+void hex_word(uint32_t b)
+{
+	hex_byte(b >> 24);
+	hex_byte(b >> 16);
+	hex_byte(b >> 8);
+	hex_byte(b);
+	outbyte('\r');
+	outbyte('\n');
+}
+
+void jump_run(uint32_t a)
+{
+	void (*function)();
+	uint32_t *dp = (uint32_t *)&function;
+    *dp = a;
+
+    hex_word(a);
+
+    function();
+}
+
 
 void ddr2_calibrate();
 int main()
@@ -43,10 +65,19 @@ int main()
     SPI_FLASH_DATA = (uint8_t)(flash_addr >> 8);
     SPI_FLASH_DATA = (uint8_t)(flash_addr);
 
-    uint32_t *dest   = (uint32_t *)SPI_FLASH_DATA_32;
-    int      length  = (int)SPI_FLASH_DATA_32;
-    uint32_t run_address = SPI_FLASH_DATA_32;
+    uint32_t *dest = 0;
+    int length;
+    uint32_t run_address;
+
+    for (int i = 0; i < 50000; i++) {
+    	*(dest++) = 0x77777777;
+    }
+
+    dest = (uint32_t *)SPI_FLASH_DATA_32;
+    length  = (int)SPI_FLASH_DATA_32;
+    run_address = SPI_FLASH_DATA_32;
 //    uint32_t version = SPI_FLASH_DATA_32;
+
 
     if(length != -1) {
         while(length > 0) {
@@ -54,7 +85,7 @@ int main()
             length -= 4;
         }
     	SPI_FLASH_CTRL = 0; // reset SPI chip select to idle
-        puts("Running Tester.");
+        //puts("Running Tester.");
     	uint8_t buttons = ioRead8(ITU_BUTTON_REG) & ITU_BUTTONS;
     	if ((buttons & ITU_BUTTON2) == 0) {  // right button not pressed
     		jump_run(run_address);

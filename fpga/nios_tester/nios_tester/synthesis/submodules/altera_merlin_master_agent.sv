@@ -1,20 +1,20 @@
-// (C) 2001-2015 Altera Corporation. All rights reserved.
-// Your use of Altera Corporation's design tools, logic functions and other 
+// (C) 2001-2018 Intel Corporation. All rights reserved.
+// Your use of Intel Corporation's design tools, logic functions and other 
 // software and tools, and its AMPP partner logic functions, and any output 
-// files any of the foregoing (including device programming or simulation 
+// files from any of the foregoing (including device programming or simulation 
 // files), and any associated documentation or information are expressly subject 
-// to the terms and conditions of the Altera Program License Subscription 
-// Agreement, Altera MegaCore Function License Agreement, or other applicable 
+// to the terms and conditions of the Intel Program License Subscription 
+// Agreement, Intel FPGA IP License Agreement, or other applicable 
 // license agreement, including, without limitation, that your use is for the 
-// sole purpose of programming logic devices manufactured by Altera and sold by 
-// Altera or its authorized distributors.  Please refer to the applicable 
+// sole purpose of programming logic devices manufactured by Intel and sold by 
+// Intel or its authorized distributors.  Please refer to the applicable 
 // agreement for further details.
 
 
-// $Id: //acds/rel/15.1/ip/merlin/altera_merlin_master_agent/altera_merlin_master_agent.sv#1 $
+// $Id: //acds/rel/18.1std/ip/merlin/altera_merlin_master_agent/altera_merlin_master_agent.sv#1 $
 // $Revision: #1 $
-// $Date: 2015/08/09 $
-// $Author: swbranch $
+// $Date: 2018/07/18 $
+// $Author: psgswbuild $
 
 // --------------------------------------
 // Merlin Master Agent
@@ -236,10 +236,19 @@ module altera_merlin_master_agent
    // --------------------------------------
    // Command Control
    // --------------------------------------
+   reg hold_waitrequest;
+
+   always @ (posedge clk, posedge reset) begin
+      if (reset)
+         hold_waitrequest <= 1'b1;
+      else
+         hold_waitrequest <= 1'b0;
+   end  
+   
    always_comb begin
       cp_valid = 0;
 
-      if (av_write || av_read)
+      if ((av_write || av_read) && ~hold_waitrequest)
          cp_valid = 1;
    end
 
@@ -274,15 +283,6 @@ module altera_merlin_master_agent
    // --------------------------------------
    // Backpressure & Readdatavalid
    // --------------------------------------
-   reg hold_waitrequest;
-
-   always @ (posedge clk, posedge reset) begin
-      if (reset)
-         hold_waitrequest <= 1'b1;
-      else
-         hold_waitrequest <= 1'b0;
-   end  
-
    always_comb begin
       rp_ready              = 1;
       av_readdatavalid      = 0;

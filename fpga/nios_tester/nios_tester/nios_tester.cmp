@@ -48,11 +48,7 @@
 			spi_SCLK                : out std_logic;                                        -- SCLK
 			spi_SS_n                : out std_logic;                                        -- SS_n
 			sys_clock_clk           : in  std_logic                     := 'X';             -- clk
-			sys_reset_reset_n       : in  std_logic                     := 'X';             -- reset_n
-			uart_rxd                : in  std_logic                     := 'X';             -- rxd
-			uart_txd                : out std_logic;                                        -- txd
-			uart_cts_n              : in  std_logic                     := 'X';             -- cts_n
-			uart_rts_n              : out std_logic                                         -- rts_n
+			sys_reset_reset_n       : in  std_logic                     := 'X'              -- reset_n
 		);
 	end component nios_tester;
 

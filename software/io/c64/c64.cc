@@ -35,6 +35,9 @@
 #include "keyboard_c64.h"
 #include "config.h"
 #include "iec.h"
+#if U64
+#include "u64_machine.h"
+#endif
 
 #ifndef CMD_IF_SLOT_BASE
 #define CMD_IF_SLOT_BASE       *((volatile uint8_t *)(CMD_IF_BASE + 0x0))

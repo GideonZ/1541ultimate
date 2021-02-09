@@ -36,9 +36,9 @@ SRCS_C   =	start_rtos.c \
             audio_test.c \
             digital_io.c \
             jtag.c \
-            ff2.c \
-            ffsyscall.c \
-            ccsbcs.c
+            ff.c \
+            ffsystem.c \
+            ffunicode.c
                         
 SRCS_CC	 =  small_printf.cc \
             i2c_drv.cc \
@@ -74,7 +74,6 @@ SRCS_CC	 =  small_printf.cc \
 			memory.cc \
 			tester_main.cc
 			
-			
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
 VPATH +=	$(PATH_SW)/application/tester
@@ -84,8 +83,10 @@ VPATH +=	$(PATH_SW)/nios_tester_bsp/HAL/inc
 VPATH +=	$(PATH_SW)/nios_tester_bsp/drivers/inc
 VPATH +=    $(PATH_DUTFPGA)/output_files
 VPATH +=    ../nios2_dut/result
+VPATH +=    $(PATH_SW)/../target/fpga/testexec/output_files
+VPATH +=    $(PATH_SW)/../target/software/nios2_testloader/result
 
-SRCS_ASM = tester_binaries.s
+SRCS_ASM = tester_binaries.s flash_binaries.s
 
 SRCS_ASMS = port_asm.S
 
@@ -98,7 +99,7 @@ SRCS_IEC =
 SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -O0 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx -DOS=1 -DNIOS=1 -DDISABLE_USB_DEBUG=1
+OPTIONS  = -g -ffunction-sections -O0 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx -DOS=1 -DNIOS=1 -DDISABLE_USB_DEBUG=0
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 BSP      = $(PATH_SW)/nios_tester_bsp
@@ -116,3 +117,5 @@ $(PATH_DUTFPGA)/output_files/dut.fpga: $(PATH_DUTFPGA)/output_files/testdut.svf
 	@mv dump.bin $@
 
 tester_binaries.o: $(PATH_SW)/application/tester/waves_8_12.bin ../nios2_dut/result/dut.app $(PATH_DUTFPGA)/output_files/dut.fpga
+
+flash_binaries.o: testexec.swp ../nios2_testloader/result/test_loader.app

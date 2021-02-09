@@ -1,13 +1,13 @@
-// (C) 2001-2015 Altera Corporation. All rights reserved.
-// Your use of Altera Corporation's design tools, logic functions and other 
+// (C) 2001-2018 Intel Corporation. All rights reserved.
+// Your use of Intel Corporation's design tools, logic functions and other 
 // software and tools, and its AMPP partner logic functions, and any output 
-// files any of the foregoing (including device programming or simulation 
+// files from any of the foregoing (including device programming or simulation 
 // files), and any associated documentation or information are expressly subject 
-// to the terms and conditions of the Altera Program License Subscription 
-// Agreement, Altera MegaCore Function License Agreement, or other applicable 
+// to the terms and conditions of the Intel Program License Subscription 
+// Agreement, Intel FPGA IP License Agreement, or other applicable 
 // license agreement, including, without limitation, that your use is for the 
-// sole purpose of programming logic devices manufactured by Altera and sold by 
-// Altera or its authorized distributors.  Please refer to the applicable 
+// sole purpose of programming logic devices manufactured by Intel and sold by 
+// Intel or its authorized distributors.  Please refer to the applicable 
 // agreement for further details.
 
 
@@ -73,6 +73,7 @@ module write_burst_control (
   short_first_access_enable,
   short_last_access_enable,
   short_first_and_last_access_enable,
+  last_access,  // JCJB:  new signal to let the burst counter reload logic know not to reload if the final word is being written to memory and data if buffered in FIFO
 
   address_out,
   write_out,
@@ -111,6 +112,8 @@ module write_burst_control (
   input short_first_access_enable;
   input short_last_access_enable;
   input short_first_and_last_access_enable;
+  // JCJB:  Added done input so that we can suppress the burst counter from incorrectly reloading at the end of a transfer
+  input last_access;
 
   output wire [ADDRESS_WIDTH-1:0] address_out;
   output wire write_out;
@@ -217,8 +220,8 @@ module write_burst_control (
                                ((BURST_WRAPPING_SUPPORT == 1) & (idle_state == 1) & (burst_offset != 0)) |  // need to make sure bursts start on burst boundaries
                                ((BURST_WRAPPING_SUPPORT == 1) & (idle_state == 0) & (burst_offset != (max_burst_count - 1)));  // need to make sure bursts start on burst boundaries
   assign short_length_burst_enable = ((length >> WORD_SIZE_LOG2) < max_burst_count) & (eop_enabled == 0) & (burst_of_one_enable == 0);
-  assign short_early_termination_burst_enable = ((length >> WORD_SIZE_LOG2) < max_burst_count) & (eop_enabled == 1) & (burst_of_one_enable == 0);  // trim back the burst count regardless if there is enough data buffered for a full burst
-  assign short_packet_burst_enable = (short_early_termination_burst_enable == 0) & (eop_enabled == 1) & (packet_complete == 1) & (write_fifo_used < max_burst_count) & (burst_of_one_enable == 0);
+  assign short_early_termination_burst_enable = (short_packet_burst_enable == 0) & ((length >> WORD_SIZE_LOG2) < max_burst_count) & (eop_enabled == 1) & (burst_of_one_enable == 0);  // trim back the burst count regardless if there is enough data buffered for a full burst
+  assign short_packet_burst_enable = (eop_enabled == 1) & (packet_complete == 1) & (write_fifo_used < max_burst_count) & (burst_of_one_enable == 0);
 
   // various burst amounts that are not the max burst count or 1 that feed the internal_burst_count mux.  short_length_burst is used when short_length_burst_enable or short_early_termination_burst_enable is asserted.
 generate
@@ -249,7 +252,12 @@ endgenerate
 
   // burst begin signals used to start up the burst counter state machine
   assign burst_begin_from_idle_state = (write_in == 1) & (idle_state == 1) & (ready_during_idle_state == 1);   // start the state machine up again
-  assign burst_begin_quickly = (write_in == 1) & (burst_counter == 1) & (waitrequest == 0) & (ready_for_quick_burst == 1); // enough data is buffered to start another burst immediately after the current burst
+  /* JCJB:  added qualifier (last_access == 0) to make sure when the last beat of the last burst completes we don't reload the burst
+            counter if there is ample data already buffered for the next descriptor.  The burst counter being non-zero is what
+            drives write_out high.  This qualifier is not needed for burst_begin_from_idle_state since there is already an idle cycle between
+            writes so that write_in will already be low in time and buffered data won't reload the burst counter.
+  */
+  assign burst_begin_quickly = (last_access == 0) & (write_in == 1) & (burst_counter == 1) & (waitrequest == 0) & (ready_for_quick_burst == 1); // enough data is buffered to start another burst immediately after the current burst
   assign burst_begin = (burst_begin_quickly == 1) | (burst_begin_from_idle_state == 1);
 
   assign mux_select = {short_packet_burst_enable, short_early_termination_burst_enable, short_length_burst_enable, burst_of_one_enable};

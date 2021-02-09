@@ -114,10 +114,12 @@ int main(int argc, char *argv[])
 	ioWrite8(ITU_IRQ_TIMER_EN, 1);
 	ioWrite8(ITU_IRQ_ENABLE, 0x01); // timer only : other modules shall enable their own interrupt
     ioWrite8(UART_DATA, 0x33);
+	ioWrite8(ITU_IRQ_GLOBAL, 1);
 
     // Finally start the scheduler.
     vTaskStartScheduler();
 
     // Should not get here as the processor is now under control of the
     // scheduler!
+    ioWrite8(UART_DATA, 'X');
 }

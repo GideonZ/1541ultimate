@@ -247,7 +247,7 @@ void UsbHubDriver :: interrupt_handler()
     //printf("This = %p. HUB (ADDR=%d) IRQ data (%d bytes), at %p: ", this, device->current_address, data_length, irq_data_in);
 	configASSERT(data_length <= 4);
 
-	host->resume_input_pipe(irq_transaction);
+	// host->resume_input_pipe(irq_transaction);
 }
 
 void UsbHubDriver :: handle_irqdata(void)

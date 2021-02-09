@@ -4,7 +4,7 @@
  * Machine generated for CPU 'nios2_gen2_0' in SOPC Builder design 'nios_tester'
  * SOPC Builder design path: ../../fpga/nios_tester/nios_tester.sopcinfo
  *
- * Generated: Sun Nov 20 21:04:24 CET 2016
+ * Generated: Thu Feb 04 21:38:44 CET 2021
  */
 
 /*
@@ -60,7 +60,6 @@
 
 #include "altera_nios2_gen2_irq.h"
 #include "altera_avalon_spi.h"
-#include "altera_avalon_uart.h"
 #include "altera_msgdma.h"
 
 /*
@@ -69,7 +68,6 @@
 
 ALTERA_NIOS2_GEN2_IRQ_INSTANCE ( NIOS2_GEN2_0, nios2_gen2_0);
 ALTERA_AVALON_SPI_INSTANCE ( SPI_0, spi_0);
-ALTERA_AVALON_UART_INSTANCE ( UART_0, uart_0);
 ALTERA_MSGDMA_CSR_DESCRIPTOR_SLAVE_INSTANCE ( AUDIO_IN_DMA, AUDIO_IN_DMA_CSR, AUDIO_IN_DMA_DESCRIPTOR_SLAVE, audio_in_dma);
 ALTERA_MSGDMA_CSR_DESCRIPTOR_SLAVE_INSTANCE ( AUDIO_OUT_DMA, AUDIO_OUT_DMA_CSR, AUDIO_OUT_DMA_DESCRIPTOR_SLAVE, audio_out_dma);
 ALTERA_MSGDMA_CSR_DESCRIPTOR_SLAVE_INSTANCE ( JTAGDEBUG, JTAGDEBUG_CSR, JTAGDEBUG_DESCRIPTOR_SLAVE, jtagdebug);
@@ -96,7 +94,6 @@ void alt_irq_init ( const void* base )
 void alt_sys_init( void )
 {
     ALTERA_AVALON_SPI_INIT ( SPI_0, spi_0);
-    ALTERA_AVALON_UART_INIT ( UART_0, uart_0);
     ALTERA_MSGDMA_INIT ( AUDIO_IN_DMA, audio_in_dma);
     ALTERA_MSGDMA_INIT ( AUDIO_OUT_DMA, audio_out_dma);
     ALTERA_MSGDMA_INIT ( JTAGDEBUG, jtagdebug);
