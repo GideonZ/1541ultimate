@@ -66,10 +66,10 @@ void HomeDirectory::poll(void)
 
     while (!available && (timeout > 0)) {
         if ((event = (FileManagerEvent *)observerQueue->waitForEvent(0))) {
-            // printf("event->eventType = %d. PathName = %s\n", event->eventType, event->pathName.c_str());
+            // printf("HOME DIRECTORY: event->eventType = %d. PathName = %s\n", event->eventType, event->pathName.c_str());
             if (((event->eventType == eNodeUpdated) || (event->eventType == eNodeAdded)) && event->pathName == "/") {
                 if (strcasecmp(path->getElement(0), event->newName.c_str()) == 0) {
-                    printf("HOME DIRECTORY: filesystem %s mounted\n", event->newName.c_str());
+                    // printf("HOME DIRECTORY: filesystem %s mounted\n", event->newName.c_str());
                     available = true;
                     break;
                 }
