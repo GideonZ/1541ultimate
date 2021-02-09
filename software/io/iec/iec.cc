@@ -375,16 +375,16 @@ void IecInterface :: update_task_items(bool writablePath, Path *path)
 		myActions.turn_off->hide();
 	}
 	if (writablePath) {
-        myActions.ulticopy8->enable();
-        myActions.ulticopy9->enable();
-        myActions.ulticopy10->enable();
-        myActions.ulticopy11->enable();
-    } else {
-        myActions.ulticopy8->disable();
-        myActions.ulticopy9->disable();
-        myActions.ulticopy10->disable();
-        myActions.ulticopy11->disable();
-    }
+		myActions.ulticopy8->enable();
+		myActions.ulticopy9->enable();
+		myActions.ulticopy10->enable();
+		myActions.ulticopy11->enable();
+	} else {
+		myActions.ulticopy8->disable();
+		myActions.ulticopy9->disable();
+		myActions.ulticopy10->disable();
+		myActions.ulticopy11->disable();
+	}
 }
 
 // this is actually the task
