@@ -1766,6 +1766,10 @@ FRESULT FileInCBM::read_linear(uint8_t *dst, int len, uint32_t& tr)
     if (res != FR_OK)
         return res;
 
+    if (!len) {
+        return FR_OK;
+    }
+
     src = &(fs->sect_buffer[offset_in_sector]);
 
     // determine the number of bytes left in sector
@@ -1777,15 +1781,16 @@ FRESULT FileInCBM::read_linear(uint8_t *dst, int len, uint32_t& tr)
         bytes_left = (1 + (int)fs->sect_buffer[1]) - offset_in_sector;
     }
 
+    if (bytes_left < 1) {
+    	dump_hex_relative(fs->sect_buffer, 32);
+    	return FR_DISK_ERR;
+    }
+
     // determine number of bytes to transfer now
     if (bytes_left > len)
         tr = len;
     else
         tr = bytes_left;
-
-    if (!tr) {
-        return FR_OK;
-    }
 
     // do the actual copy
     memcpy(dst, src, tr);
