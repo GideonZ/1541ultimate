@@ -107,7 +107,9 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
     static void iec_task(void *a);
 
     struct {
-        Action *reset;
+        Action *turn_on;
+        Action *turn_off;
+    	Action *reset;
         Action *set_dir;
         Action *ulticopy8;
         Action *ulticopy9;
