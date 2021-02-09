@@ -52,6 +52,7 @@ extern "C" void ultimate_main(void *a)
     
     c64 = C64 :: getMachine();
     c64_subsys = new C64_Subsys(c64);
+	c64->init();
     c64->start();
 
     if(c64 && c64->exists()) {
