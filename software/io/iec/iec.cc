@@ -13,6 +13,9 @@ extern "C" {
 #include "disk_image.h"
 #include "pattern.h"
 
+#define MENU_IEC_ON          0xCA0E
+#define MENU_IEC_OFF         0xCA0F
+
 #define MENU_IEC_RESET       0xCA10
 #define MENU_IEC_TRACE_ON    0xCA11
 #define MENU_IEC_TRACE_OFF   0xCA12
@@ -338,14 +341,18 @@ const char *IecInterface :: get_root_path(void)
 void IecInterface :: create_task_items(void)
 {
     TaskCategory *iec = TasksCollection :: getCategory("Software IEC", SORT_ORDER_SOFTIEC);
+    myActions.turn_on	 = new Action("Turn On",        SUBSYSID_IEC, MENU_IEC_ON);
     myActions.reset      = new Action("Reset",          SUBSYSID_IEC, MENU_IEC_RESET);
     myActions.set_dir    = new Action("Set dir. here",  SUBSYSID_IEC, MENU_IEC_SET_DIR);
+    myActions.turn_off	 = new Action("Turn Off",       SUBSYSID_IEC, MENU_IEC_OFF);
     myActions.ulticopy8  = new Action("UltiCopy 8",     SUBSYSID_IEC, MENU_IEC_WARP_8);
     myActions.ulticopy9  = new Action("UltiCopy 9",     SUBSYSID_IEC, MENU_IEC_WARP_9);
     myActions.ulticopy10 = new Action("UltiCopy 10",    SUBSYSID_IEC, MENU_IEC_WARP_10);
     myActions.ulticopy11 = new Action("UltiCopy 11",    SUBSYSID_IEC, MENU_IEC_WARP_11);
     myActions.eject      = new Action("Flush/Eject",    SUBSYSID_IEC, MENU_IEC_FLUSH);
 
+    iec->append(myActions.turn_on);
+    iec->append(myActions.turn_off);
     iec->append(myActions.reset);
     iec->append(myActions.set_dir);
     iec->append(myActions.ulticopy8);
@@ -360,7 +367,14 @@ void IecInterface :: create_task_items(void)
 // called from GUI task
 void IecInterface :: update_task_items(bool writablePath, Path *path)
 {
-    if (writablePath) {
+	if (iec_enable) {
+		myActions.turn_off->show();
+		myActions.turn_on->hide();
+	} else {
+		myActions.turn_on->show();
+		myActions.turn_off->hide();
+	}
+	if (writablePath) {
         myActions.ulticopy8->enable();
         myActions.ulticopy9->enable();
         myActions.ulticopy10->enable();
@@ -528,6 +542,14 @@ int IecInterface :: executeCommand(SubsysCommand *cmd)
     cmd_ui = cmd->user_interface;
 
 	switch(cmd->functionID) {
+		case MENU_IEC_ON:
+			iec_enable = 1;
+			HW_IEC_RESET_ENABLE = 1;
+			break;
+		case MENU_IEC_OFF:
+			iec_enable = 0;
+			HW_IEC_RESET_ENABLE = 0;
+			break;
 		case MENU_IEC_RESET:
             reset();
 			break;
