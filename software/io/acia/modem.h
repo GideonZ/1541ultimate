@@ -45,6 +45,9 @@ class Modem : public ConfigurableObject
     ListenerSocket *listenerSocket;
     uint8_t ctsMode, dsrMode, dcdMode;
     uint8_t lastHandshake;
+    char *responseString;
+    uint8_t responseLen;
+    bool verbose;
     bool keepConnection;
     bool commandMode;
     bool busyMode;
