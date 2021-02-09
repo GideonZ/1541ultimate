@@ -1,5 +1,6 @@
 import sys
 import logging
+import struct
 
 console = logging.StreamHandler()
 logger = logging.getLogger()
@@ -372,14 +373,9 @@ def dump_bram_init():
          
 def dump_iec_file(filename):
     f = open(filename, "wb")
-    b = bytearray(4)
     for i in range(len(program)):
         inst = int(program[i], 16)
-        b[0] = inst & 0xFF
-        b[1] = (inst >> 8) & 0xFF
-        b[2] = (inst >> 16) & 0xFF
-        b[3] = (inst >> 24) & 0xFF
-        f.write(b)
+        f.write(struct.pack(">L", inst))
     
     f.close()
         
