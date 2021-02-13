@@ -1,7 +1,15 @@
 	.segment "KPATCH"
 
 	; unused patch area
-	.res 28, $aa
+	.res 20, $aa
+
+; devpatch - default device patch for ultimate 64
+;
+devpatch
+    jsr ramtas
+    ldx #8
+    stx fa
+    rts  
 
 ; prtyp - rs232 parity patch...added 901227-03
 ;
