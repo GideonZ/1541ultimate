@@ -102,6 +102,7 @@ class FileInCBM : public File
         ST_HEADER,
         ST_LINEAR,
         ST_CVT,
+        ST_END,
     } state;
 
     struct {
