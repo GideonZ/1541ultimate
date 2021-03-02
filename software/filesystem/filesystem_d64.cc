@@ -1739,6 +1739,10 @@ FRESULT FileInCBM::read(void *buffer, uint32_t len, uint32_t *transferred)
             case ST_CVT:
                 res = read_linear(dst, len, tr);
                 break;
+            case ST_END:
+                res = FR_OK;
+                tr = 0;
+                break;
             default:
                 res = FR_DENIED;
         }
@@ -1778,12 +1782,11 @@ FRESULT FileInCBM::read_linear(uint8_t *dst, int len, uint32_t& tr)
         bytes_left = 256 - offset_in_sector;
     }
     else {
+        if (fs->sect_buffer[1] < 2) {
+            dump_hex_relative(fs->sect_buffer, 32);
+            return FR_DISK_ERR;
+        }
         bytes_left = (1 + (int)fs->sect_buffer[1]) - offset_in_sector;
-    }
-
-    if (bytes_left < 1) {
-    	dump_hex_relative(fs->sect_buffer, 32);
-    	return FR_DISK_ERR;
     }
 
     // determine number of bytes to transfer now
@@ -1802,14 +1805,19 @@ FRESULT FileInCBM::read_linear(uint8_t *dst, int len, uint32_t& tr)
             if (merge_cvt_sector) { // joining vlir records together
                 do {
                     cvt->current_section ++;
+                    if  (cvt->current_section >= cvt->records) {
+                        break;
+                    }
                     current_track = cvt->record_block[2 + 2*cvt->current_section];
                     current_sector = cvt->record_block[3 + 2*cvt->current_section];
-                } while(!current_track && (cvt->current_section < cvt->records));
+                } while(!current_track);
                 offset_in_sector = 2;
                 if (!current_track) {
+                    state = ST_END;
                     return FR_OK; // no more valid records
                 }
             } else {
+                state = ST_END;
                 return FR_OK; // end of linear file, or end of last vlir record
             }
         } else { // simply follow chain
@@ -1869,6 +1877,7 @@ FRESULT FileInCBM::write(const void *buffer, uint32_t len, uint32_t *transferred
                 res = write_header(src, len, tr);
                 break;
             case ST_LINEAR:
+            case ST_END:
                 res = write_linear(src, len, tr);
                 break;
             case ST_CVT:
