@@ -2172,7 +2172,7 @@ static void get_xfileinfo (
 	fno->fname[di] = 0;						/* Terminate the name */
 	fno->altname[0] = 0;					/* exFAT does not support SFN */
 
-	fno->fattrib = dirb[XDIR_Attr];			/* Attribute */
+	fno->fattrib = dirb[XDIR_Attr] & ~AM_VOL; /* Attribute */
 	fno->fsize = (fno->fattrib & AM_DIR) ? 0 : ld_qword(dirb + XDIR_FileSize);	/* Size */
 	fno->ftime = ld_word(dirb + XDIR_ModTime + 0);	/* Time */
 	fno->fdate = ld_word(dirb + XDIR_ModTime + 2);	/* Date */
