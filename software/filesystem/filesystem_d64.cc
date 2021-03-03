@@ -1616,7 +1616,8 @@ int FileInCBM::create_cvt_header(void)
 
     bool long_files = false;
     cvt->records = 127;
-    for (int i = 0; i < 127; i++) {
+
+    for (int i = 0; i < cvt->records; i++) {
         if ((!vlir[2*i]) && (!vlir[1+2*i])) { // both bytes are 0
             cvt->records = i;
             break;
@@ -1632,6 +1633,14 @@ int FileInCBM::create_cvt_header(void)
             cvt->sections[i].bytes_in_last = vlir[1+2*i]; // just copy last byte code, may be FF
         }
         //printf("Section #%d. Start: %d, Blocks: %d, Last: %d\n", i, cvt->sections[i].start, cvt->sections[i].blocks, cvt->sections[i].bytes_in_last);
+    }
+
+    // Strip off any skips from the end
+    for (int i = cvt->records-1; i >= 0; i--) {
+        if (vlir[2*i]) {
+            cvt->records = i+1;
+            break;
+        }
     }
 
     // Place the correct header
