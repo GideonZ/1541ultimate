@@ -1607,10 +1607,6 @@ int FileInCBM::create_cvt_header(void)
         return 30; // just the dir entry
     }
 
-    // Now we know the first track/sector of the data segment
-    current_track = cvt->record_block[2];
-    current_sector = cvt->record_block[3];
-
     uint8_t *vlir = cvt->record_block + 2;
     memcpy(&header.data[2*254], vlir, 254);
 
@@ -1639,6 +1635,17 @@ int FileInCBM::create_cvt_header(void)
     for (int i = cvt->records-1; i >= 0; i--) {
         if (vlir[2*i]) {
             cvt->records = i+1;
+            break;
+        }
+    }
+
+    // Find first sector
+    for (int i=0; i < cvt->records; i++) {
+        if (vlir[2*i]) {
+            // Now we know the first track/sector of the data segment
+            current_track = vlir[2*i];
+            current_sector = vlir[2*i+1];
+            cvt->current_section = i;
             break;
         }
     }
@@ -1776,6 +1783,13 @@ FRESULT FileInCBM::read_linear(uint8_t *dst, int len, uint32_t& tr)
 
     // make sure the current sector is within view
     res = fs->move_window(fs->get_abs_sector(current_track, current_sector));
+
+/*
+    printf("Reading track %d sector %d results in %d:\n", current_track, current_sector, res);
+    dump_hex_relative(fs->sect_buffer, 256);
+    printf("--> We are now at %02x offset. Wanting to read %d bytes.\n", offset_in_sector, len);
+*/
+
     if (res != FR_OK)
         return res;
 
@@ -2113,14 +2127,15 @@ FRESULT FileInCBM::followChain(int track, int sector, int& noSectors, int& bytes
     if (res != FR_OK)
         return res;
 
-    while (fs->sect_buffer[0]) {
+    do {
+        noSectors++;
         FRESULT res = fs->move_window(fs->get_abs_sector(track, sector));
         if (res != FR_OK)
             return res;
         track = fs->sect_buffer[0];
         sector = fs->sect_buffer[1];
-        noSectors++;
-    }
+    } while (fs->sect_buffer[0]);
+
     bytesLastSector = fs->sect_buffer[1];
 
     return FR_OK;
