@@ -1581,7 +1581,16 @@ int FileInCBM::create_cvt_header(void)
 
     // Sector 1
     memcpy(header.data, &(dir_entry.std_fileType), 30); // copy Dir entry as is
-    // signature depends on later actions.
+
+    // Let's clear out the track/header info, as it is no longer valid in the cvt file
+
+    header.data[1] = 0;
+    header.data[2] = 0;
+    header.data[19] = 0;
+    header.data[20] = 0;
+
+    // signature depends on later actions, but we start with the standard one
+    strcpy((char *)&header.data[30], cvtSignature);
 
     // Sector 2 -> info block
     FRESULT fres = fs->move_window(fs->get_abs_sector(dir_entry.aux_track, dir_entry.aux_sector));
@@ -1654,14 +1663,14 @@ int FileInCBM::create_cvt_header(void)
     if (long_files) {
         memcpy(&header.data[3*254], vlir, 254); // prepare sector 4
         strcpy((char *)&header.data[30], cvtSignatureLong);
-    } else {
-        strcpy((char *)&header.data[30], cvtSignature);
     }
 
     // Header could be SEQ or PRG, depending on actual type
+/*
     if ((dir_entry.std_fileType & 7) != 2) {
         memcpy(header.data+30, "SEQ", 3);
     }
+*/
 
     uint8_t *hdrLo = header.data + 2*254;
     uint8_t *hdrHi = header.data + 3*254;
@@ -1670,7 +1679,7 @@ int FileInCBM::create_cvt_header(void)
         hdrLo[2*i + 0] = (uint8_t)cvt->sections[i].blocks;
         hdrLo[2*i + 1] = (uint8_t)cvt->sections[i].bytes_in_last;
         hdrHi[2*i + 0] = (uint8_t)(cvt->sections[i].blocks >> 8);
-        hdrHi[2*i + 1] = (uint8_t)cvt->sections[i].bytes_in_last;
+        // hdrHi[2*i + 1] = (uint8_t)cvt->sections[i].bytes_in_last;
     }
 
     return (long_files) ? 4*254 : 3*254;
