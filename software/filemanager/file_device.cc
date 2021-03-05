@@ -103,18 +103,6 @@ int FileDevice :: probe(void) {
     return i;
 }
 
-/*
-int FileDevice :: fetch_children(void)
-{
-	int count = FileDirEntry :: fetch_children();  // we are in this case just a normal directory, so..
-		sort_children();
-		return count;
-    }
-
-    return p_count;
-}
-*/
-
 void FileDevice :: get_display_string(char *buffer, int width)
 {
 	const char *c_state_string[] = { "Unknown", "No media", "Not ready", "Ready", "Error!" };
