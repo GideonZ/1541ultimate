@@ -162,7 +162,7 @@ plsv
 ;
 ;default device #
 ;
-	ldx #1          ;device #1
+	ldx $ba         ;current device
 	ldy #0          ;command 0
 	jsr $ffba
 ;
@@ -208,7 +208,7 @@ paoc	lda #0
 	jsr getbyt      ;get la
 	stx andmsk
 	txa
-	ldx #1          ;default device
+	ldx $ba         ;current device
 	ldy #0          ;default command
 	jsr $ffba       ;store it
 	jsr paoc20      ;skip junk
