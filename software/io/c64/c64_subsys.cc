@@ -622,7 +622,8 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
 
 	// handshake with boot cart
     c64->stop(false);
-	C64_POKE(C64_BOOTCRT_DRIVENUM, drv);    // drive number for printout
+
+    C64_POKE(C64_BOOTCRT_DRIVENUM, drv);    // drive number for printout
 
 	C64_POKE(C64_BOOTCRT_HANDSHAKE, 0x40);  // signal cart ready for DMA load
 
@@ -654,7 +655,7 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
 
         C64_POKE(C64_BOOTCRT_HANDSHAKE, 0); // signal DMA load done
         C64_POKE(C64_BOOTCRT_RUNCODE, run_code);
-        C64_POKE(0x00BA, c64->cfg->get_value(CFG_C64_DMA_ID));    // fix drive number
+        C64_POKE(0x00BA, drv);    // fix drive number
 	}
 
 	printf("Resuming..\n");
