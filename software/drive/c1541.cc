@@ -310,9 +310,10 @@ void C1541 :: set_sw_address(int addr)
 
 int  C1541 :: get_current_iec_address(void)
 {
+/*
 	if(registers[C1541_POWER]) // if powered, read actual address from its ram
 		return int(memory_map[0x78] & 0x1F);
-
+*/
 	return iec_address;
 }
 
