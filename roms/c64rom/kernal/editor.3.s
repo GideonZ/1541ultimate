@@ -136,7 +136,7 @@ tvic
 	.byt $9b,55,0,0,0,$08,0,$14,$0f,0,0,0,0,0,0 ;data (17-31)
 	.byt 14,6,1,2,3,4,0,1,2,3,4,5,6,7 ;32-46
 ;
-runtb	.byt "LOAD",$d,"RUN",$d
+runtb	.byt "L",$6F,$22,$2a,$22,$d,"R",$75,$d  ;load and run first file
 ;
 linz0	= vicscn
 linz1	= linz0+llen
