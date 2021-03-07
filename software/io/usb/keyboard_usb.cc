@@ -148,7 +148,7 @@ void Keyboard_USB :: usb2matrix(uint8_t *kd)
 	// 1 = left shift   | 5 = right shift
 	// 2 = left alt     | 6 = right alt (altGr)
 	// 3 = left windows | 7 = right windows
-	uint8_t modi = kd[0];
+	const uint8_t modi = kd[0];
     // const uint8_t modifier_locations[] = { 0x72, 0x17, 0x00, 0x75, 0x72, 0x64, 0x00, 0x75 };
 	// without shift
 	const uint8_t modifier_locations[] = { 0x72, 0x00, 0x00, 0x75, 0x72, 0x00, 0x00, 0x75 };
@@ -162,8 +162,8 @@ void Keyboard_USB :: usb2matrix(uint8_t *kd)
 	}
 
 	// Handle the modifiers
-	for(int i=0;i<8;i++, modi >>= 1) {
-		if (modi & 1) {
+	for(int i=0;i<8;i++) {
+		if (modi & (1 << i)) {
 			uint8_t bit = modifier_locations[i];
 			if (bit) {
 				// printf("M%i ", i);
