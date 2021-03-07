@@ -53,7 +53,8 @@ bool FileDevice :: is_ready(void)
     return (state == e_device_ready);
 }
 
-int FileDevice :: probe(void) {
+int FileDevice :: probe(void)
+{
 	if (initialized)
 		return children.get_elements();
 
