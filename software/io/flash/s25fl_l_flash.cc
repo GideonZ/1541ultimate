@@ -130,7 +130,7 @@ bool S25FLxxxL_Flash :: read_page(int page, void *buffer)
     return true;
 }
 
-bool S25FLxxxL_Flash :: write_page(int page, void *buffer)
+bool S25FLxxxL_Flash :: write_page(int page, const void *buffer)
 {
     int device_addr = (page << S25FLL_PageShift);
     int len = 1 << (S25FLL_PageShift - 2);

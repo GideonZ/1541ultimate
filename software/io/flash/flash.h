@@ -36,6 +36,7 @@
 
 #define FLASH_ID_ALL_ROMS   0x5F
 
+#define FLASH_ID_FLASHDRIVE 0xFD
 #define FLASH_ID_CONFIG     0xFE
 #define FLASH_ID_LIST_END	0xFF
 
@@ -79,7 +80,7 @@ public:
     virtual bool erase_sector(int sector) { return false; }
 	virtual int  page_to_sector(int page) { return -1; }
     virtual bool read_page(int page, void *buffer) { return false; }
-	virtual bool write_page(int page, void *buffer) { return false; }
+	virtual bool write_page(int page, const void *buffer) { return false; }
 	virtual bool need_erase(void) { return false; }
 	int  write_image(int id, uint8_t *buffer, int length);
 
