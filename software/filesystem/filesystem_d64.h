@@ -187,6 +187,8 @@ class FileSystemCBM : public FileSystem
     int     get_abs_sector(int track, int sector);
     bool    get_track_sector(int abs, int &track, int &sector);
     FRESULT deallocate_chain(uint8_t track, uint8_t sector, uint8_t *visited);
+    FRESULT deallocate_vlir_records(uint8_t track, uint8_t sector, uint8_t *visited);
+    bool    is_vlir_entry(DirEntryCBM *p);
 
     //  base class functions, to be filled with dummies
     virtual bool allocate_sector_on_track(int track, int &sector) { return false; }

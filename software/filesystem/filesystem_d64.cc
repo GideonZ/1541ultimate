@@ -504,6 +504,28 @@ FRESULT FileSystemCBM::file_rename(const char *old_name, const char *new_name)
     return res;
 }
 
+FRESULT FileSystemCBM::deallocate_vlir_records(uint8_t track, uint8_t sector, uint8_t *visited)
+{
+	uint8_t *rblk = new uint8_t[256];
+    FRESULT res = read_sector(rblk, track, sector);
+    if (res == FR_OK) {
+    	if ((rblk[0] == 0) && (rblk[1] == 0xFF)) { // valid single block, assuming record block
+    		for (int i=0;i<127;i++) {
+    			if (rblk[2*i+2]) { // valid entry
+    				res = deallocate_chain(rblk[2*i+2], rblk[2*i+3], visited);
+    				if (res != FR_OK) {
+    					break;
+    				}
+    			} else if (!rblk[2*i+3]) {
+    				break; // 00 00 ends the list
+    			}
+    		}
+    	}
+    }
+    delete[] rblk;
+    return res;
+}
+
 FRESULT FileSystemCBM::deallocate_chain(uint8_t track, uint8_t sector, uint8_t *visited)
 {
     FRESULT res = FR_OK;
@@ -559,6 +581,7 @@ FRESULT FileSystemCBM::file_delete(const char *path)
     }
     if (res == FR_OK) {
         DirEntryCBM *p = dd->get_pointer();
+        bool vlir = is_vlir_entry(p);
         p->std_fileType = 0x00;
         dirty = 1;
         // Saving information, since moving the window makes *p invalid!
@@ -566,6 +589,9 @@ FRESULT FileSystemCBM::file_delete(const char *path)
         int file_sector = p->data_sector;
         int side_track = p->aux_track;
         int side_sector = p->aux_sector;
+        if (vlir) {
+        	deallocate_vlir_records(file_track, file_sector, dd->visited);
+        }
         deallocate_chain(file_track, file_sector, dd->visited); // file chain
         deallocate_chain(side_track, side_sector, dd->visited); // side sector chain
         sync();
@@ -1743,6 +1769,21 @@ FRESULT FileInCBM::fixup_cbm_file(void)
     }
     fs->dirty = 1;
     return fs->sync();
+}
+
+bool FileSystemCBM::is_vlir_entry(DirEntryCBM *p)
+{
+	uint8_t ty = p->std_fileType & 0x07;
+	if ((ty < 1) || (ty > 3)) {
+		return false;
+	}
+	if (! p->geos_filetype) { // not a GEOS file
+		return false;
+	}
+	if (p->geos_structure != 1) { // not a VLIR file
+		return false;
+	}
+	return true;
 }
 
 FRESULT FileInCBM::fixup_cvt(void)
