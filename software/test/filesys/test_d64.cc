@@ -645,6 +645,47 @@ bool test3(int argc, char **argv)
     return true;
 }
 
+bool test4(int argc, char **argv)
+{
+	if (argc < 1) {
+		printf("Test 4 requires at least one argument.\n");
+		return false;
+	}
+
+	BlockDevice *blk = new BlockDevice_Emulated(argv[0], 256);
+    Partition *prt = new Partition(blk, 0, 0, 0);
+    uint32_t sectors = 0, free = 0;
+    prt->ioctl(GET_SECTOR_COUNT, &sectors);
+    printf("Partition number of sectors: %u\n", sectors);
+    FileSystemCBM *fs = new FileSystemD81(prt, true);
+    print_directory(fs, "");
+
+    {
+        Directory *dir;
+        FileInfo info(INFO_SIZE);
+        char fatname[48];
+        FRESULT fres = fs->dir_open(NULL, &dir);
+        if (fres == FR_OK) {
+            while(1) {
+                fres = dir->get_entry(info);
+                if (fres != FR_OK)
+                    break;
+                info.generate_fat_name(fatname, 48);
+
+                fres = fs->file_delete(fatname);
+                printf("Deleting '%s' => %s\n", fatname, FileSystem::get_error_string(fres));
+            }
+            delete dir; // close directory
+        }
+    }
+
+    print_directory(fs, "");
+    delete fs;
+    delete prt;
+    delete blk;
+    return true;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -655,6 +696,8 @@ int main(int argc, char **argv)
     	printf("            If file not given, it extracts all into current directory.\n");
     	printf("Testcase 3: CVT Writeback test. <base name> [files]\n");
     	printf("            Creates a D81 file, and copies all specified files into it.\n");
+    	printf("Testcase 4: Delete all files from disk image and show resulting");
+		printf("            free blocks.\n");
     	exit(0);
     }
 
@@ -673,6 +716,9 @@ int main(int argc, char **argv)
     	break;
     case 3:
     	ok = test3(argc, argv);
+    	break;
+    case 4:
+    	ok = test4(argc, argv);
     	break;
     default:
     	printf("Undefined test.\n");
