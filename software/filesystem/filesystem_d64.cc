@@ -491,7 +491,9 @@ FRESULT FileSystemCBM::file_rename(const char *old_name, const char *new_name)
             cbm.init(new_name);
         }
 
-        p->std_fileType = (p->std_fileType & 0xF8) | cbm.getType(); // save upper bits
+        if (cbm.getType() != 7) {
+        	p->std_fileType = (p->std_fileType & 0xF8) | cbm.getType(); // save upper bits
+        }
         memset(p->name, 0xA0, 16);
         memcpy(p->name, cbm.getName(), cbm.getLength());
         dirty = 1;
