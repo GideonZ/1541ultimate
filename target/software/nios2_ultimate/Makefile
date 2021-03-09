@@ -64,6 +64,7 @@ SRCS_CC	 =  u2p_init.cc \
 			blockdev.cc \
 			blockdev_file.cc \
 			blockdev_ram.cc \
+			blockdev_flash.cc \
 			disk.cc \
 			partition.cc \
 			file_system.cc \
