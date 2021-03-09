@@ -353,7 +353,7 @@ bool W25Q_Flash :: read_page(int page, void *buffer)
     return true;
 }
 
-bool W25Q_Flash :: write_page(int page, void *buffer)
+bool W25Q_Flash :: write_page(int page, const void *buffer)
 {
     int device_addr = (page << W25Q_PageShift);
     int len = 1 << (W25Q_PageShift - 2);

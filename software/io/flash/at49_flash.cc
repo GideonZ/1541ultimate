@@ -211,7 +211,7 @@ void AT49_Flash :: write_config_page(int page, void *buffer)
 	    
 }
 
-bool AT49_Flash :: write_page(int page, void *buffer)
+bool AT49_Flash :: write_page(int page, const void *buffer)
 {
     // pre-condition: page is erased, status register mode = 01
 

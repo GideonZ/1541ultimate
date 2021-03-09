@@ -85,8 +85,12 @@ int FileDevice :: probe(void)
 		// printf("FileSystem = %p\n", info.fs);
 		info.cluster = 0; // indicate root dir
 		info.attrib = AM_DIR; // ;-)  (not read only of course, removed!!)
-		if(!info.fs)
+		if(!info.fs) {
+			initialized = false;
+			delete p;
+			disk->partition_list = NULL;
 			return -1;
+		}
 	    return 1;
     }
 
