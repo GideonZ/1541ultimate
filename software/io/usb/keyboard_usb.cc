@@ -55,7 +55,7 @@ const uint8_t keymap_control[] = {
     ']', '\\', 0x00, ';', '\'', '`', ',', '.',
     '/', KEY_CAPS, KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5, KEY_F6,
     KEY_F7, KEY_F8, KEY_F9, KEY_F10, KEY_F11, KEY_F12, KEY_PRSCR, KEY_SCRLOCK,
-    KEY_BREAK, KEY_HOME, KEY_PAGEUP, KEY_DELETE, KEY_END, KEY_PAGEDOWN, KEY_RIGHT,
+    KEY_BREAK, KEY_INSERT, KEY_CTRL_HOME, KEY_PAGEUP, KEY_DELETE, KEY_END, KEY_PAGEDOWN, KEY_RIGHT,
     KEY_LEFT, KEY_DOWN, KEY_UP, KEY_NUMLOCK, '/', '*', '-', '+',
     KEY_RETURN, '1', '2', '3', '4', '5', '6', '7',
     '8', '9', '0', '.', 0x00 };
