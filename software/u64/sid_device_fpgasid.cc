@@ -66,7 +66,7 @@ static struct t_cfg_definition fpga_sid_config[] = {
     { CFG_FPGASID_SID1_READBACK,   CFG_TYPE_ENUM, "SID1: Register Read Back",     "%s", readbacks,  0,  3, 0 },
     { CFG_FPGASID_SID1_EXTIN,      CFG_TYPE_ENUM, "SID1: EXT IN Source",          "%s", extins,     0,  3, 0 },
     { CFG_FPGASID_SID1_DIGIFIX,    CFG_TYPE_VALUE,"SID1: DigiFix Value (8580)",   "%d", NULL,     -128,127,0 },
-    { CFG_FPGASID_SID1_FILTERBIAS, CFG_TYPE_VALUE,"SID1: 6581 Filter Bias",       "%d", NULL,       0, 15, 6 },
+    { CFG_FPGASID_SID1_FILTERBIAS, CFG_TYPE_VALUE,"SID1: 6581 Filter Bias",       "%d", NULL,      -8,  7, 0 },
     { CFG_FPGASID_SID1_VOICEMUTE,  CFG_TYPE_ENUM, "SID1: Enabled Voices",         "%s", voices,     0,  7, 0 },
     { CFG_FPGASID_SEPARATOR,       CFG_TYPE_SEP,  "",                             "",   NULL,       0,  0, 0 },
     { CFG_FPGASID_SID2_QUICK,      CFG_TYPE_ENUM, "SID2: Quick type select",      "%s", chips,      0,  1, 0 },
@@ -77,7 +77,7 @@ static struct t_cfg_definition fpga_sid_config[] = {
     { CFG_FPGASID_SID2_READBACK,   CFG_TYPE_ENUM, "SID2: Register Read Back",     "%s", readbacks,  0,  3, 0 },
     { CFG_FPGASID_SID2_EXTIN,      CFG_TYPE_ENUM, "SID2: EXT IN Source",          "%s", extins,     0,  3, 0 },
     { CFG_FPGASID_SID2_DIGIFIX,    CFG_TYPE_VALUE,"SID2: DigiFix Value (8580)",   "%d", NULL,     -128,127,0 },
-    { CFG_FPGASID_SID2_FILTERBIAS, CFG_TYPE_VALUE,"SID2: 6581 Filter Bias",       "%d", NULL,       0, 15, 6 },
+    { CFG_FPGASID_SID2_FILTERBIAS, CFG_TYPE_VALUE,"SID2: 6581 Filter Bias",       "%d", NULL,      -8,  7, 0 },
     { CFG_FPGASID_SID2_VOICEMUTE,  CFG_TYPE_ENUM, "SID2: Enabled Voices",         "%s", voices,     0,  7, 0 },
 
     { CFG_TYPE_END,                CFG_TYPE_END,  "",                             "",   NULL,       0,  0, 0 } };
@@ -246,7 +246,7 @@ void SidDeviceFpgaSid :: FpgaSidConfig :: S_effectuate(volatile uint8_t *base, C
 
     base[30] = getByte30Sid1(cfg);
     base[31] = getByte31Sid1(cfg);
-    base[28] = (uint8_t)cfg->get_value(CFG_FPGASID_SID1_FILTERBIAS);
+    base[28] = (uint8_t)((int8_t)cfg->get_value(CFG_FPGASID_SID1_FILTERBIAS));
     base[29] = (uint8_t)((int8_t)cfg->get_value(CFG_FPGASID_SID1_DIGIFIX));
 
     // Now do the same for SID2
@@ -256,7 +256,7 @@ void SidDeviceFpgaSid :: FpgaSidConfig :: S_effectuate(volatile uint8_t *base, C
 
     base[30] = getByte30Sid2(cfg);
     base[31] = getByte31Sid2(cfg);
-    base[28] = (uint8_t)cfg->get_value(CFG_FPGASID_SID2_FILTERBIAS);
+    base[28] = (uint8_t)((int8_t)cfg->get_value(CFG_FPGASID_SID2_FILTERBIAS));
     base[29] = (uint8_t)((int8_t)cfg->get_value(CFG_FPGASID_SID2_DIGIFIX));
 
     // Leave Config mode
