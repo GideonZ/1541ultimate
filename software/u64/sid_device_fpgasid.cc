@@ -246,7 +246,7 @@ void SidDeviceFpgaSid :: FpgaSidConfig :: S_effectuate(volatile uint8_t *base, C
 
     base[30] = getByte30Sid1(cfg);
     base[31] = getByte31Sid1(cfg);
-    base[28] = (uint8_t)((int8_t)cfg->get_value(CFG_FPGASID_SID1_FILTERBIAS));
+    base[28] = (uint8_t)((int8_t)cfg->get_value(CFG_FPGASID_SID1_FILTERBIAS) & 0x0F);
     base[29] = (uint8_t)((int8_t)cfg->get_value(CFG_FPGASID_SID1_DIGIFIX));
 
     // Now do the same for SID2
@@ -256,7 +256,7 @@ void SidDeviceFpgaSid :: FpgaSidConfig :: S_effectuate(volatile uint8_t *base, C
 
     base[30] = getByte30Sid2(cfg);
     base[31] = getByte31Sid2(cfg);
-    base[28] = (uint8_t)((int8_t)cfg->get_value(CFG_FPGASID_SID2_FILTERBIAS));
+    base[28] = (uint8_t)((int8_t)cfg->get_value(CFG_FPGASID_SID2_FILTERBIAS) & 0x0F);
     base[29] = (uint8_t)((int8_t)cfg->get_value(CFG_FPGASID_SID2_DIGIFIX));
 
     // Leave Config mode
@@ -344,7 +344,7 @@ int SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid1_digifix(ConfigItem* it)
 int SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid1_filterbias(ConfigItem* it)
 {
     volatile uint8_t *base = pre(it, 0);  // get access to socket and put SID1 in config mode
-    base[28] = (uint8_t)((int8_t)it->getValue());
+    base[28] = (uint8_t)((int8_t)it->getValue() & 0x0F);
     post(it); // restore
     return 0;
 }
@@ -394,7 +394,7 @@ int SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid2_digifix(ConfigItem* it)
 int SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid2_filterbias(ConfigItem* it)
 {
     volatile uint8_t *base = pre(it, 1);  // get access to socket and put SID2 in config mode
-    base[28] = (uint8_t)((int8_t)it->getValue());
+    base[28] = (uint8_t)((int8_t)it->getValue() & 0x0F);
     post(it); // restore
     return 0;
 }
