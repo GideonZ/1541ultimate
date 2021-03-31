@@ -207,19 +207,19 @@ op2         pla ; throw away return address and exit
 ulticlose   cmp OUR_DEVICE
             beq myclose
 cl1         cmp #3
-            beq op2       ;is screen...done
+            beq closeexit ;is screen...done
             rts           ; return to caller with original flags due to cmp #3
 
 myclose     ldx CMD_IF_COMMAND
             cpx #UCI_IDENTIFIER
             bne cl1
 
-            pla         ; kill return address
-            pla         ; kill return address
             ldx #UCI_CMD_CLOSE
             jsr uci_setup_cmd
             jsr uci_execute
             jsr uci_ack
+closeexit   pla         ; kill return address
+            pla         ; kill return address			
             jmp jx150
 
 ; $FFE4   
