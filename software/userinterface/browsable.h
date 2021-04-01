@@ -68,6 +68,7 @@ public:
 	virtual Browsable *getParent() { return 0; }
 	virtual const char *getName() { return "Browsable"; }
 	virtual void getDisplayString(char *buffer, int width) { strncpy(buffer, getName(), width-1); }
+	virtual void getDisplayString(char *buffer, int width, int squeeze_option) { getDisplayString(buffer, width); }
 };
 
 

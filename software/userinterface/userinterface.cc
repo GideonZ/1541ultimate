@@ -19,6 +19,7 @@
 static const char *colors[] = { "Black", "White", "Red", "Cyan", "Purple", "Green", "Blue", "Yellow",
                          "Orange", "Brown", "Pink", "Dark Grey", "Mid Grey", "Light Green", "Light Blue", "Light Grey" };
                           
+static const char *filename_overflow_squeeze[] = { "None", "Beginning", "Middle", "End" };
 static const char *itype[]      = { "Freeze", "Overlay on HDMI" };
 static const char *cfg_save[]   = { "No", "Ask", "Yes" };
 
@@ -38,6 +39,7 @@ struct t_cfg_definition user_if_config[] = {
     { CFG_USERIF_START_HOME, CFG_TYPE_ENUM,   "Enter Home on Startup", "%s", en_dis, 0,  1, 0 },
     { CFG_USERIF_CFG_SAVE,   CFG_TYPE_ENUM,   "Auto Save Config",      "%s", cfg_save, 0, 2, 1 },
     { CFG_USERIF_ULTICOPY_NAME, CFG_TYPE_ENUM, "Ulticopy Uses disk name", "%s", en_dis, 0, 1, 1 },
+    { CFG_USERIF_FILENAME_OVERFLOW_SQUEEZE, CFG_TYPE_ENUM, "Filename overflow squeeze", "%s", filename_overflow_squeeze, 0, 3, 0 },
     { CFG_TYPE_END,           CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
 };
 
@@ -52,6 +54,7 @@ UserInterface :: UserInterface(const char *title) : title(title)
     doBreak = false;
     available = false;
     color_sel_bg = 0;
+    filename_overflow_squeeze = 0;
     register_store(0x47454E2E, "User Interface Settings", user_if_config);
     effectuate_settings();
 }
@@ -79,6 +82,7 @@ void UserInterface :: effectuate_settings(void)
     color_sel_bg = cfg->get_value(CFG_USERIF_SELECTED_BG);
 #endif
     config_save  = cfg->get_value(CFG_USERIF_CFG_SAVE);
+    filename_overflow_squeeze = cfg->get_value(CFG_USERIF_FILENAME_OVERFLOW_SQUEEZE);
 
     if(host && host->is_accessible())
         host->set_colors(color_bg, color_border);
