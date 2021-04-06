@@ -72,6 +72,7 @@ port (
                     
     irqn_i          : in    std_logic := '1';
     irqn_o          : out   std_logic;
+    nmin_i          : in    std_logic := '1';
     nmin_o          : out   std_logic;
 
     -- other hardware pins
@@ -89,7 +90,10 @@ port (
     freezer_state   : out   std_logic_vector(1 downto 0);
     sync            : out   std_logic;
     sw_trigger      : out   std_logic;
-    
+    debug_data      : out   std_logic_vector(31 downto 0);
+    debug_valid     : out   std_logic;
+    debug_select    : in    std_logic_vector(2 downto 0) := "000";
+
     -- audio output
     sid_left         : out signed(17 downto 0);
     sid_right        : out signed(17 downto 0);
@@ -873,4 +877,62 @@ begin
     sw_trigger  <= '1' when slot_req.io_write = '1' and slot_req.io_address(8 downto 0) = "111111110" and slot_req.data = X"54" else '0';
     -- write 0x0D to $DFFF to generate a sync
     sync        <= '1' when slot_req.io_write = '1' and slot_req.io_address(8 downto 0) = "111111111" and slot_req.data = X"0D" else '0';
+    
+    b_debug: block
+        signal phi_c        : std_logic := '0';
+        signal phi_d1       : std_logic := '0';
+        signal phi_d2       : std_logic := '0';
+        signal vector_c     : std_logic_vector(31 downto 0) := (others => '0');
+        signal vector_d1    : std_logic_vector(31 downto 0) := (others => '0');
+        signal vector_d2    : std_logic_vector(31 downto 0) := (others => '0');
+        signal ba_history   : std_logic_vector(2 downto 0) := (others => '0');
+        alias cpu_cycle_enable  : std_logic is debug_select(0);
+        alias vic_cycle_enable  : std_logic is debug_select(1);
+        alias drv_enable        : std_logic is debug_select(2);
+    begin 
+        -- Debug Stream
+        process(clock)
+            variable vector_in      : std_logic_vector(31 downto 0);
+        begin
+            if rising_edge(clock) then
+                vector_in := phi2_i & gamen_i & exromn_i & not (romhn_i and romln_i) &
+                             ba_i & irqn_i & nmin_i & rwn_i &
+                             slot_data_i & std_logic_vector(slot_addr_i);
+    
+                phi_c  <= phi2_i;
+                phi_d1 <= phi_c;
+                phi_d2 <= phi_d1;
+                         
+                vector_c  <= vector_in;
+                vector_d1 <= vector_c;
+                vector_d2 <= vector_d1;
+    
+                -- BA  1 1 1 0 0 0 0 0 0 0 1 1 1
+                -- BA0 1 1 1 1 0 0 0 0 0 0 0 1 1
+                -- BA1 1 1 1 1 1 0 0 0 0 0 0 0 1
+                -- BA2 1 1 1 1 1 1 0 0 0 0 0 0 0
+                -- CPU 1 1 1 1 1 1 0 0 0 0 1 1 1 
+                -- 
+                debug_valid <= '0';
+                debug_data  <= vector_d2;    
+
+                if phi_d2 /= phi_d1 then
+                    if phi_d2 = '1' then
+                        ba_history <= ba_history(1 downto 0) & vector_d2(27); -- BA position!
+                    end if;
+                    
+                    if phi_d2 = '1' then
+                        if (vector_d2(27) = '1' or ba_history /= "000" or drv_enable = '1') and cpu_cycle_enable = '1' then
+                            debug_valid <= '1';
+                        elsif vic_cycle_enable = '1' then
+                            debug_valid <= '1';
+                        end if;
+                    elsif vic_cycle_enable = '1' then
+                        debug_valid <= '1';
+                    end if;
+                end if;
+            end if;
+        end process;
+    end block;
+        
 end structural;

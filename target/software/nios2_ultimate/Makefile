@@ -110,6 +110,7 @@ SRCS_CC	 =  u2p_init.cc \
 			keyboard_usb.cc \
 			network_interface.cc \
 			network_lwip.cc \
+			debug_streamer_u2p.cc \
 			vfs.cc \
 			ftpd.cc \
 			tape_controller.cc \

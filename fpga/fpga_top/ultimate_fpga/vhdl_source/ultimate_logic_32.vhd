@@ -166,7 +166,10 @@ port (
     -- Debug port
     drv_debug_data      : out std_logic_vector(31 downto 0);
     drv_debug_valid     : out std_logic;
-
+    c64_debug_data      : out std_logic_vector(31 downto 0);
+    c64_debug_valid     : out std_logic;
+    c64_debug_select    : in  std_logic_vector(2 downto 0) := "000";
+    
 	-- Debug UART
 	UART_TXD	: out   std_logic;
 	UART_RXD	: in    std_logic := '1';
@@ -288,7 +291,7 @@ architecture logic of ultimate_logic_32 is
         cap(19) := to_std(g_vic_copper);
         cap(20) := to_std(g_video_overlay);
         cap(21) := to_std(g_sampler);
-        cap(22) := '0';
+        cap(22) := '0'; 
         cap(23) := to_std(g_usb_host2);
         cap(24) := to_std(g_rmii);
         cap(25) := to_std(g_ultimate2plus);
@@ -807,6 +810,9 @@ begin
             sw_trigger      => sw_trigger,
             trigger_1       => trigger_1,
             trigger_2       => trigger_2,
+            debug_data      => c64_debug_data,
+            debug_valid     => c64_debug_valid,
+            debug_select    => c64_debug_select,
             
             -- timing output
 			c64_stopped		=> c64_stopped,
