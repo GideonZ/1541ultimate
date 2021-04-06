@@ -1,10 +1,10 @@
-#include "data_streamer.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 
+#include "debug_streamer_u2p.h"
 #include "profiler.h"
-#include "u64.h"
+#include "u2p.h"
 #include "network_interface.h"
 #include "socket.h"
 #include "netdb.h"
@@ -25,25 +25,25 @@ static const char *modes[] = { "6510 Only", "VIC Only", "6510 & VIC", "1541 Only
 static const uint8_t modeBytes[] = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x09, 0x0B, 0x00 };
 
 struct t_cfg_definition stream_cfg[] = {
-    { CFG_STREAM_DEST0,         CFG_TYPE_STRING, "Stream VIC to",     "%s", NULL,  0, 36, (int)"239.0.1.64:11000" },
-    { CFG_STREAM_DEST1,         CFG_TYPE_STRING, "Stream Audio to",   "%s", NULL,  0, 36, (int)"239.0.1.65:11001" },
     { CFG_STREAM_DEST2,         CFG_TYPE_STRING, "Stream Debug to",   "%s", NULL,  0, 36, (int)"239.0.1.66:11002" },
     { CFG_STREAM_BUSMODE,       CFG_TYPE_ENUM,   "Debug Stream Mode", "%s", modes, 0, 6,  0 },
-    //    { CFG_STREAM_DEST3,         CFG_TYPE_STRING, "Stream IEC to",     "%s", NULL,  0, 36, (int)"239.0.1.67:11003" },
-
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,  0,  0, 0 } };
 
 
 DataStreamer :: DataStreamer()
 {
-    my_ip = 0;
-    memset(streams, 0, 4*sizeof(stream_config_t));
+    volatile uint8_t *hardware = (uint8_t *)U2P_DEBUG_ETH;
+    (*hardware) = 0;
+    if (*hardware) {
+		my_ip = 0;
+		memset(streams, 0, 4*sizeof(stream_config_t));
 
-    cfg = ConfigManager :: getConfigManager()->register_store(0x44617461, "Data Streams", stream_cfg, NULL);
+		cfg = ConfigManager :: getConfigManager()->register_store(0x44617461, "Data Streams", stream_cfg, NULL);
 
-    for (int i=0; i < 4; i++) {
-        timers[i] = xTimerCreate("StreamTimer", 100, pdFALSE, (void *)i, DataStreamer :: S_timer);
-    }
+		for (int i=0; i < 4; i++) {
+			timers[i] = xTimerCreate("StreamTimer", 100, pdFALSE, (void *)i, DataStreamer :: S_timer);
+		}
+	}
 }
 
 // This should never be called
@@ -125,6 +125,8 @@ int DataStreamer :: startStream(SubsysCommand *cmd)
         const char *default_host = cfg->get_string(CFG_STREAM_DEST0 + streamID);
         if (default_host) {
             strncpy(dest_host, default_host, 36);
+        } else {
+        	return -10;
         }
         if (cmd->user_interface) {
             if (cmd->user_interface->string_box("Send to...", dest_host, 36) < 0) {
@@ -242,32 +244,25 @@ int DataStreamer :: stopStream(SubsysCommand *cmd)
 
 void DataStreamer :: create_task_items()
 {
-    TaskCategory *cat = TasksCollection :: getCategory("Streams", 80);
-    TaskCategory *dev = TasksCollection :: getCategory("Developer", 999);
+    volatile uint8_t *hardware = (uint8_t *)U2P_DEBUG_ETH;
+	if (*hardware) {
+		TaskCategory *dev = TasksCollection :: getCategory("Developer", 999);
 
-    myActions.startVic = new Action("  VIC Stream", DataStreamer :: S_startStream, (int)this, 0);
-    myActions.stopVic  = new Action("\023 VIC Stream", DataStreamer :: S_stopStream, (int)this, 0);
-    myActions.startAud = new Action("  Audio Stream", DataStreamer :: S_startStream, (int)this, 1);
-    myActions.stopAud  = new Action("\023 Audio Stream", DataStreamer :: S_stopStream, (int)this, 1);
-    myActions.startDbg = new Action("  Debug Stream", DataStreamer :: S_startStream, (int)this, 2);
-    myActions.stopDbg  = new Action("\023 Debug Stream", DataStreamer :: S_stopStream, (int)this, 2);
+		myActions.startDbg = new Action("  Debug Stream", DataStreamer :: S_startStream, (int)this, 2);
+		myActions.stopDbg  = new Action("\023 Debug Stream", DataStreamer :: S_stopStream, (int)this, 2);
 
-    cat->append(myActions.startVic);
-    cat->append(myActions.stopVic);
-    cat->append(myActions.startAud);
-    cat->append(myActions.stopAud);
-    dev->append(myActions.startDbg);
-    dev->append(myActions.stopDbg);
+		dev->append(myActions.startDbg);
+		dev->append(myActions.stopDbg);
+	}
 }
 
 void DataStreamer :: update_task_items(bool writablePath, Path *path)
 {
-    myActions.startVic->setHidden(streams[0].enable != 0);
-    myActions.stopVic->setHidden(streams[0].enable == 0);
-    myActions.startAud->setHidden(streams[1].enable != 0);
-    myActions.stopAud->setHidden(streams[1].enable == 0);
-    myActions.startDbg->setHidden(streams[2].enable != 0);
-    myActions.stopDbg->setHidden(streams[2].enable == 0);
+    volatile uint8_t *hardware = (uint8_t *)U2P_DEBUG_ETH;
+	if (*hardware) {
+		myActions.startDbg->setHidden(streams[2].enable != 0);
+		myActions.stopDbg->setHidden(streams[2].enable == 0);
+	}
 }
 
 void DataStreamer :: send_udp_packet(uint32_t ip, uint16_t port)
@@ -317,18 +312,20 @@ void DataStreamer :: calculate_udp_headers(int id)
                            0x00, 0x08, // 38, Length of UDP = 8 + payload length
                            0x00, 0x00 }; // 40, unused checksum
 
-    if ((id < 0) || (id >> 3)) {
-        return;
+    // The only supported stream is stream #2
+    if (id != 2) {
+    	return;
     }
     stream_config_t *stream = &streams[id];
 
+    volatile uint8_t *hardware = (uint8_t *)U2P_DEBUG_ETH;
+    hardware += 64 * id;
+
     if ((my_ip == 0) || (stream->enable == 0)) {
-        U64_ETHSTREAM_ENA &= ~(1 << id); // disable
+        hardware[63] = 0;
         return;
     }
 
-    uint8_t *hardware = (uint8_t *)U64_UDP_BASE;
-    hardware += 64 * id;
 
     printf("__Calculate UDP Headers__\nID = %d, IP = %08x, Dest = %08x:%d, Enable = %d\n", id, my_ip, stream->dest_ip, stream->dest_port, stream->enable);
 
@@ -385,6 +382,7 @@ void DataStreamer :: calculate_udp_headers(int id)
     while(sum & 0xFFFF0000) {
     	sum = (sum >> 16) + (sum & 0xFFFF);
     }
+
     // write back
     header[24] = 0xFF ^ (uint8_t)(sum >> 8);
     header[25] = 0xFF ^ (uint8_t)sum;
@@ -396,11 +394,6 @@ void DataStreamer :: calculate_udp_headers(int id)
 
     dump_hex_relative(header, 42);
 
-    if (id == 2) { // debug stream
-        uint8_t mode = cfg->get_value(CFG_STREAM_BUSMODE);
-        U64_ETHSTREAM_ENA &= 0x0F;
-        U64_ETHSTREAM_ENA |= (modeBytes[mode & 7] << 4);
-    }
-    // enable
-    U64_ETHSTREAM_ENA |= (1 << id);
+	uint8_t mode = modeBytes[cfg->get_value(CFG_STREAM_BUSMODE)];
+    hardware[63] = (mode << 4) | (1 << 2); // enable
 }

@@ -242,12 +242,19 @@ architecture rtl of u2p_nios_solo is
     signal io_u2p_resp  : t_io_resp;
     signal io_u2p_req_small : t_io_req;
     signal io_u2p_resp_small: t_io_resp;
+    signal io_u2p_req_big   : t_io_req;
+    signal io_u2p_resp_big  : t_io_resp;
     signal io_req_new_io    : t_io_req;
     signal io_resp_new_io   : t_io_resp;
     signal io_req_remote    : t_io_req;
     signal io_resp_remote   : t_io_resp;
     signal io_req_ddr2      : t_io_req;
     signal io_resp_ddr2     : t_io_resp;
+
+    signal io_req_mixer     : t_io_req;
+    signal io_resp_mixer    : t_io_resp;
+    signal io_req_debug     : t_io_req;
+    signal io_resp_debug    : t_io_resp;
 
     -- Parallel cable connection
     signal drv_track_is_0       : std_logic;
@@ -260,9 +267,6 @@ architecture rtl of u2p_nios_solo is
     signal drv_via1_cb1_o       : std_logic;
     signal drv_via1_cb1_i       : std_logic;
     signal drv_via1_cb1_t       : std_logic;
-
-    signal io_req_mixer     : t_io_req;
-    signal io_resp_mixer    : t_io_resp;
     
     -- audio
     signal audio_speaker    : signed(12 downto 0);
@@ -277,10 +281,21 @@ architecture rtl of u2p_nios_solo is
     signal ult_sid_1        : signed(17 downto 0);
     signal ult_sid_2        : signed(17 downto 0);
 
+    signal c64_debug_select : std_logic_vector(2 downto 0);
+    signal c64_debug_data   : std_logic_vector(31 downto 0);
+    signal c64_debug_valid  : std_logic;
+    signal drv_debug_data   : std_logic_vector(31 downto 0);
+    signal drv_debug_valid  : std_logic;
+    
     signal eth_tx_data   : std_logic_vector(7 downto 0);
     signal eth_tx_last   : std_logic;
     signal eth_tx_valid  : std_logic;
     signal eth_tx_ready  : std_logic := '1';
+
+    signal eth_u2p_data  : std_logic_vector(7 downto 0);
+    signal eth_u2p_last  : std_logic;
+    signal eth_u2p_valid : std_logic;
+    signal eth_u2p_ready : std_logic := '1';
 
     signal eth_rx_data   : std_logic_vector(7 downto 0);
     signal eth_rx_sof    : std_logic;
@@ -371,9 +386,9 @@ begin
         req        => io_u2p_req,
         resp       => io_u2p_resp,
         reqs(0)    => io_u2p_req_small,
-        reqs(1)    => io_req_mixer,
+        reqs(1)    => io_u2p_req_big,
         resps(0)   => io_u2p_resp_small,
-        resps(1)   => io_resp_mixer
+        resps(1)   => io_u2p_resp_big
     );
 
     i_split: entity work.io_bus_splitter
@@ -392,6 +407,22 @@ begin
         resps(0)   => io_resp_new_io,
         resps(1)   => io_resp_ddr2,
         resps(2)   => io_resp_remote
+    );
+
+    i_split2: entity work.io_bus_splitter
+    generic map (
+        g_range_lo => 12,
+        g_range_hi => 12,
+        g_ports    => 2
+    )
+    port map (
+        clock      => sys_clock,
+        req        => io_u2p_req_big,
+        resp       => io_u2p_resp_big,
+        reqs(0)    => io_req_mixer,
+        reqs(1)    => io_req_debug,
+        resps(0)   => io_resp_mixer,
+        resps(1)   => io_resp_debug
     );
 
     i_memphy: entity work.ddr2_ctrl
@@ -471,7 +502,7 @@ begin
 
     i_logic: entity work.ultimate_logic_32
     generic map (
-        g_version       => X"19",
+        g_version       => X"1A",
         g_simulation    => false,
         g_ultimate2plus => true,
         g_clock_freq    => 62_500_000,
@@ -606,6 +637,13 @@ begin
         UART_TXD    => uart_txd_from_logic,
         UART_RXD    => UART_RXD,
         
+        -- Debug buses
+        drv_debug_data   => drv_debug_data,
+        drv_debug_valid  => drv_debug_valid,
+        c64_debug_data   => c64_debug_data,
+        c64_debug_valid  => c64_debug_valid,
+        c64_debug_select => c64_debug_select,                    
+        
         -- SD Card Interface
         SD_SSn      => open,
         SD_CLK      => open,
@@ -651,10 +689,10 @@ begin
         eth_rx_sof   => eth_rx_sof,
         eth_rx_eof   => eth_rx_eof,
         eth_rx_valid => eth_rx_valid,
-        eth_tx_data  => eth_tx_data,
-        eth_tx_eof   => eth_tx_last,
-        eth_tx_valid => eth_tx_valid,
-        eth_tx_ready => eth_tx_ready,
+        eth_tx_data  => eth_u2p_data,
+        eth_tx_eof   => eth_u2p_last,
+        eth_tx_valid => eth_u2p_valid,
+        eth_tx_ready => eth_u2p_ready,
 
         -- Buttons
         sw_trigger  => sw_trigger,
@@ -817,6 +855,37 @@ begin
     end block;
     
     SLOT_BUFFER_ENn <= not buffer_en;
+
+    i_debug_eth: entity work.eth_debug_stream
+    port map (
+        eth_clock     => RMII_REFCLK,
+        eth_reset     => eth_reset,
+
+        eth_u2p_data  => eth_u2p_data,
+        eth_u2p_last  => eth_u2p_last,
+        eth_u2p_valid => eth_u2p_valid,
+        eth_u2p_ready => eth_u2p_ready,
+
+        eth_tx_data   => eth_tx_data,
+        eth_tx_last   => eth_tx_last,
+        eth_tx_valid  => eth_tx_valid,
+        eth_tx_ready  => eth_tx_ready,
+
+        sys_clock     => sys_clock,
+        sys_reset     => sys_reset,
+        io_req        => io_req_debug,
+        io_resp       => io_resp_debug,
+
+        c64_debug_select    => c64_debug_select,
+        c64_debug_data      => c64_debug_data,
+        c64_debug_valid     => c64_debug_valid,
+        drv_debug_data      => drv_debug_data,
+        drv_debug_valid     => drv_debug_valid,
+    
+        IEC_ATN             => IEC_ATN,
+        IEC_CLOCK           => IEC_CLOCK,
+        IEC_DATA            => IEC_DATA
+    );
 
     -- Transceiver
     i_rmii: entity work.rmii_transceiver
