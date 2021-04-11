@@ -513,8 +513,8 @@ _abrt1      lda #$00
             and #CMD_STATE_BITS
             beq _abrt2 ; UCI is already in idle state; we're done
 
-            cmp #CMD_STATE_MORE_DATA  ; only if it is 'more data', we use abort, otherwise data is just acked.
-            bne uci_ack ; NOT in More Data state, just ack
+;            cmp #CMD_STATE_MORE_DATA  ; only if it is 'more data', we use abort, otherwise data is just acked.
+;            bne uci_ack ; NOT in More Data state, just ack
 
             ; Perform Abort of current command
             lda #CMD_ABORT
