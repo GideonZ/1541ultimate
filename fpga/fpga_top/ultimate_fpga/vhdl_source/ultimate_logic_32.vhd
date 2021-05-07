@@ -169,7 +169,10 @@ port (
     c64_debug_data      : out std_logic_vector(31 downto 0);
     c64_debug_valid     : out std_logic;
     c64_debug_select    : in  std_logic_vector(2 downto 0) := "000";
-    
+    usb_debug_data      : out std_logic_vector(31 downto 0);
+    usb_debug_valid     : out std_logic;
+    usb_error_pulse     : out std_logic;
+
 	-- Debug UART
 	UART_TXD	: out   std_logic;
 	UART_RXD	: in    std_logic := '1';
@@ -953,6 +956,9 @@ begin
             ulpi_dir     => ulpi_dir,
             ulpi_stp     => ulpi_stp,
             ulpi_data    => ulpi_data,
+            debug_data   => usb_debug_data,
+            debug_valid  => usb_debug_valid,
+            error_pulse  => usb_error_pulse,
             sys_clock    => sys_clock,
             sys_reset    => sys_reset,
             sys_mem_req  => mem_req_32_usb,

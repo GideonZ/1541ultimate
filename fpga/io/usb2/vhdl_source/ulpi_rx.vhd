@@ -46,6 +46,7 @@ architecture gideon of ulpi_rx is
     signal data_start   : std_logic;
     signal data_out     : std_logic_vector(7 downto 0);
     signal error        : std_logic;
+    signal error_code   : std_logic_vector(3 downto 0);
     signal rx_data_d1   : std_logic_vector(7 downto 0);
     signal rx_data_d2   : std_logic_vector(7 downto 0);
     signal rx_valid_d1  : std_logic;
@@ -65,12 +66,14 @@ begin
     usb_rx.data_start   <= data_start;
     usb_rx.data         <= data_out;
     usb_rx.error        <= error;
+    usb_rx.error_code   <= error_code(2 downto 0);
     usb_rx.receiving    <= rx_store or recv_d(1) or recv_d(2) or recv_d(3) or status(4);
     
     process(clock)
     begin
         if rising_edge(clock) then
             error        <= '0';
+            error_code   <= X"0";
             data_start   <= '0';
             valid_token  <= '0';
             valid_split  <= '0';
@@ -119,12 +122,14 @@ begin
                                 state <= token1;
                             else
                                 error <= '1';
+                                error_code   <= X"1"; -- unsupported token
                             end if;
                         elsif is_split(rx_data(3 downto 0)) then
                             if g_support_split then
                                 state <= token0;
                             else
                                 error <= '1';
+                                error_code   <= X"1"; -- unsupported token
                             end if;
                         else
                             data_start <= '1';
@@ -132,12 +137,14 @@ begin
                         end if;
                     else -- error in PID
                         error <= '1';
+                        error_code <= X"2"; -- error in PID
                     end if;
                 end if; 
 
             when handshake =>
                 if rx_store='1' then -- more data? error
                     error <= '1';
+                    error_code   <= X"3"; -- handshake expected, data received
                     state <= resync;
                 elsif rx_last = '1' then
                     valid_handsh <= '1';
@@ -151,6 +158,7 @@ begin
                 end if;
                 if rx_last='1' then -- should not occur here
                     error <= '1';
+                    error_code   <= X"4"; -- truncated token
                     state <= resync;
                 end if;                
 
@@ -161,6 +169,7 @@ begin
                 end if;
                 if rx_last='1' then -- should not occur here
                     error <= '1';
+                    error_code   <= X"4"; -- truncated token
                     state <= resync;
                 end if;                
 
@@ -181,6 +190,7 @@ begin
                     valid_packet <= '1';
                 else
                     error <= '1';
+                    error_code <= X"5"; -- data CRC error
                 end if;
                 state <= idle;
 
@@ -193,6 +203,7 @@ begin
                     end if;
                 else
                     error <= '1';
+                    error_code <= X"6"; -- token CRC error
                 end if; 
 
                 if rx_last='1' then
@@ -217,7 +228,6 @@ begin
             if reset = '1' then
                 state <= idle;
                 pid   <= X"0";
---                tx_holdoff <= '0';
             end if;
         end if;
     end process;
