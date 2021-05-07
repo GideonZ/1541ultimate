@@ -274,7 +274,7 @@ bool TreeBrowserState :: into2(void)
     if(error < 0) {
     	delete deeper;
     	deeper = NULL;
-    	return(true);
+    	return true;
     }
 	browser->path->cd(under_cursor->getName());
     printf("%d children fetched.\n", deeper->children->get_elements());
@@ -282,7 +282,7 @@ bool TreeBrowserState :: into2(void)
     // user_interface->set_path(under_cursor);
     browser->state = deeper;
     deeper->previous = this;
-	return(false);
+	return false;
 }
 
 // step into browsable by name, used by TreeBrowser::cd(char* path)

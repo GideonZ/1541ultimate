@@ -66,11 +66,10 @@ UsbDriver *UsbHubDriver :: test_driver(UsbInterface *intf)
 
 	//printf("** Test UsbHubDriver **\n");
 	if(dev->device_descr.device_class != 0x09) {
-		printf("Device is not a hub..\n");
 		return 0;
 	}
 	if((dev->device_descr.protocol != 0x01)&&(dev->device_descr.protocol != 0x02)) {
-		printf("Device protocol: no TT's. [%b]\n", dev->device_descr.protocol);
+		// printf("Device protocol: no TT's. [%b]\n", dev->device_descr.protocol);
 		return 0;
 	}
 //	if(dev->interface_descr.sub_class != 0x00) {

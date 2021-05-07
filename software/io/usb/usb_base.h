@@ -26,6 +26,7 @@ struct t_pipe {
 	uint16_t needPing;
 	uint16_t highSpeed;
 	void *buffer;
+	bool debugMode;
 };
 
 typedef enum {

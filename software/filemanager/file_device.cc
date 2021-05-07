@@ -110,7 +110,7 @@ int FileDevice :: probe(void)
 
 void FileDevice :: get_display_string(char *buffer, int width)
 {
-	const char *c_state_string[] = { "Unknown", "No media", "Not ready", "Ready", "Error!" };
+	const char *c_state_string[] = { "Unknown", "No media", "Not ready", "Ready", "Error!", "\e2FAILED" };
 
 	t_device_state state = blk->get_state();
 /*
