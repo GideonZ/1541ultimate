@@ -41,6 +41,7 @@ UsbDriver * UsbHidDriver :: test_driver(UsbInterface *intf)
 	if (intf->getInterfaceDescriptor()->interface_class != 3) {
 		return NULL;
 	}
+	printf("** USB HID Device found!\n");
 	return new UsbHidDriver(intf);
 }
 
@@ -93,7 +94,7 @@ void UsbHidDriver :: install(UsbInterface *intf)
 			// Note: Polling is not started!
 		}
     } else {
-            host->resume_input_pipe(irq_transaction); // start polling
+            // host->resume_input_pipe(irq_transaction); // start polling
 			// Another HID device which we cannot decode just yet
 			// Note: Polling is not started!
 	}

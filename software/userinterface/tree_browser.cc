@@ -454,7 +454,8 @@ int TreeBrowser :: handle_key(int c)
             break;
         case KEY_RIGHT: // right
             reset_quick_seek();
-			if (state->into2()) context(0);
+			//if (state->into2()) context(0);
+            state->into2();
             break;
         case KEY_LEFT: // left
         	state->level_up();

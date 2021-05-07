@@ -720,6 +720,11 @@ _wait_mem2
     OUTP  MEM_BUFFER_INDEX
     LOAD  CurrentLength
     BEQ   _no_mem_write
+	LOADI Descriptor,Offset_Command_Length
+	CMP   CurrentLength
+	BMI   _in_len_limited    ; CurrentLength > Command_Length
+	LOAD  CurrentLength
+_in_len_limited
     ADD   #3
     OUTP  MEM_TRANSFER_WRITE     
 
@@ -844,6 +849,7 @@ _wait_mem1
     INP  MEM_CTRL_READY
     BPL  _wait_mem1
 
+_do_out_cmd
     LOADI Descriptor,Offset_Command
     OUTP  CMD_REQUEST ; Do it!!
 
@@ -861,7 +867,14 @@ _wait_out_cmd
     CMP  #CMD_RES_NAK
     BEQ  _out_enable_ping_nak
     CMP  #CMD_RES_ERROR
-    BRA  _out_done
+    BNE  _out_done ; don't know how to handle
+
+_check_out_error
+    LOAD  AllowedErrors
+    BEQ   _out_done ; no more!
+    SUB   #1
+    STORE AllowedErrors
+    BRA   _do_out_cmd
 
 _out_enable_ping_nyet
     LOADI Descriptor,Offset_Command

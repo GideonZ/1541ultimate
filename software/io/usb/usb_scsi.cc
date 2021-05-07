@@ -68,11 +68,11 @@ UsbDriver *UsbScsiDriver :: test_driver(UsbInterface *intf)
 	}
 
 	if(intf->getInterfaceDescriptor()->interface_class != 0x08) {
-		printf("Interface class is not mass storage. [%b]\n", intf->getInterfaceDescriptor()->interface_class);
+		// printf("Interface class is not mass storage. [%b]\n", intf->getInterfaceDescriptor()->interface_class);
 		return 0;
 	}
 	if(intf->getInterfaceDescriptor()->protocol != 0x50) {
-		printf("Protocol is not bulk only. [%b]\n", intf->getInterfaceDescriptor()->protocol);
+		printf("USB Mass Storage Protocol is not bulk only. [%b]\n", intf->getInterfaceDescriptor()->protocol);
 		return 0;
 	}
 //	if(dev->interface_descr.sub_class != 0x06) {
@@ -181,12 +181,17 @@ void UsbScsiDriver :: poll(void)
 
     	poll_interval[current_lun] = now;
 		blk = scsi_blk_dev[current_lun];
-		blk->test_unit_ready();
-		old_state = state_copy[current_lun];
+		if (blk->get_state() != e_device_failed) {
+			blk->test_unit_ready();
+		}
 		new_state = blk->get_state();
+		old_state = state_copy[current_lun];
 		state_copy[current_lun] = new_state;
 
-		if(media_seen[current_lun] && (new_state==e_device_no_media)) { // removal!
+		if (
+				((new_state == e_device_failed) && (old_state != e_device_failed)) ||
+				(media_seen[current_lun] && (new_state==e_device_no_media))
+				) { // removal!
 			//printf("Media seen[%d]=%d and new_state=%d. old_state=%d.\n", current_lun, media_seen[current_lun], new_state, old_state);
 			media_seen[current_lun] = false;
 			file_manager->invalidate(path_dev[current_lun]);
@@ -263,20 +268,15 @@ void UsbScsi :: reset(void)
 //	printf("Reset Done..\n");
 }
 
-int UsbScsiDriver :: status_transport(bool do_bulk_in=true)
+int UsbScsiDriver :: status_transport(void)
 {
 	uint32_t *signature = (uint32_t *)stat_resp;
 	*signature = 0;
 	int len = 0;
-	uint8_t buf[8];
-	bool do_reset = false;
 
-	if(do_bulk_in) {
-		len = host->bulk_in(&bulk_in, stat_resp, 13);
-	}	else {
-		len = 13; // has already been received in error
-	}
+	len = host->bulk_in(&bulk_in, stat_resp, 13);
 
+/*
 	if (len == -4) { // Pipe stalled
 		printf("Stall detected on status read. Clearing stall condition.\n");
 		len = device->unstall_pipe((uint8_t)(bulk_in.DevEP & 0xFF));
@@ -288,25 +288,19 @@ int UsbScsiDriver :: status_transport(bool do_bulk_in=true)
 		len = host->bulk_in(&bulk_in, stat_resp, 13);
 		printf("Retry: %d\n", len);
  	}
+*/
 
-	int i;
 	if((len != 13)||(stat_resp[0] != 0x55)||(stat_resp[1] != 0x53)||(stat_resp[2] != 0x42)||(stat_resp[3] != 0x53)) {
-		printf("Invalid status (len = %d, signature = %8x)... performing reset..\n", len, *signature);
-		do_reset = true;
-	} else if(stat_resp[12] == 2) {
+		printf("Invalid status (len = %d, signature = %8x)..\n", len, *signature);
+		return -1;
+	}
+/*
+	else if(stat_resp[12] == 2) {
 		printf("Phase error.. performing reset.\n");
 		do_reset = true;
 	}
-
-	if (!do_reset)
-		return (int)stat_resp[12]; // OK, or other error
-
-	i = mass_storage_reset();
-
-	if(i != 0)
-		return -2; // reset failed
-
-	return 0; // OK
+*/
+	return (int)stat_resp[12]; // OK, or other error
 }
 
 int UsbScsiDriver :: mass_storage_reset()
@@ -349,6 +343,7 @@ int UsbScsiDriver :: request_sense(int lun, bool debug, bool handle)
     int outResult = host->bulk_out(&bulk_out, &cbw, 31);
     if (outResult != 31) {
         printf("Request sense command could not be sent.\n");
+    	xSemaphoreGive(mutex);
         return -11;
     }
     int len = host->bulk_in(&bulk_in, sense_data, 18);
@@ -361,7 +356,8 @@ int UsbScsiDriver :: request_sense(int lun, bool debug, bool handle)
     }
 	if(debug)
 		print_sense_error(sense_data);
-	int retval = status_transport(true);
+
+	int retval = status_transport();
 
 	if (len == 18) {
         scsi_blk_dev[lun]->handle_sense_error(sense_data);
@@ -420,15 +416,9 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
     int len = 0;
     int retval = 0;
     int st = host->bulk_out(&bulk_out, &cbw, 31);
-    if(st < 0) { // out failed.. let's see if we can get back in sync..
-    	printf("Out failed.. let's see if we can get back in sync..\n");
-    	if(status_transport(true) == 0) {
-            st = host->bulk_out(&bulk_out, &cbw, 31);
-            if(st < 0)
-                retval = -2;
-        } else {
-        	retval = -6;
-        }
+    if(st != 31) { // out failed.. terminate.
+    	printf("USB SCSI: Out failed... Terminate.\n");
+		retval = -6;
     }
 
     if (retval) {
@@ -440,41 +430,20 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
         vTaskDelay(100);
     }
 
-    bool read_status = true;
     /* DATA PHASE */
     if((data)&&(datalen)) {
     	if(out) {
 			len = host->bulk_out(&bulk_out, data, datalen, 24000); // 3 seconds
-			if(debug) {
-				printf("%d data bytes sent.\n", len);
-			}
     	} else { // in
 			len = host->bulk_in(&bulk_in, data, datalen, 24000); // 3 seconds
-			if(debug) {
-				printf("%d data bytes received:\n", len);
-				dump_hex(data, len);
-			}
-			if (len == -4) {
-				printf("In Pipe stalled. Unstalling pipe, and reading status.\n");
-			    device->unstall_pipe((uint8_t)(bulk_in.DevEP & 0xFF));
-			    bulk_in.Command = 0; // reset toggle
-			} else if (len < 0) {
-				xSemaphoreGive(mutex);
-				return -1;
-			} else if(len != datalen) {
-				printf("expected %d bytes, got %d...", datalen, len);
-				if(len == 13) { // could be a status!
-					memcpy(stat_resp, data, 16); // 16 is likely to be faster than 13
-					read_status = false;
-				}
-			}
 		}
 	}
 
     retval = len;
 
     /* STATUS PHASE */
-    st = status_transport(read_status);
+    st = status_transport();
+
     if (st == -4) {
     	printf("Stalled. Unstalling Endpoint\n");
     	device->unstall_pipe((uint8_t)(bulk_in.DevEP & 0xFF));
@@ -483,7 +452,7 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
 
 	xSemaphoreGive(mutex);
 	if(st == 1) {
-		request_sense(lun, debug, true);
+		request_sense(lun, true, true);
 		retval = -7;
 	}
 	if(st < 0) {
@@ -562,7 +531,7 @@ bool UsbScsi :: test_unit_ready(void)
 	}
 	printf("ERROR Testing Unit.. %d\n", res);
 	no_more = true;
-
+	set_state(e_device_failed);
 	return false;
 }
 
@@ -870,20 +839,16 @@ DRESULT UsbScsi :: read(uint8_t *buf, uint32_t sector, int num_sectors)
     int len, stat_len;
 
     ioWrite8(ITU_USB_BUSY, 1);
-//    for(int s=0;s<num_sectors;s++) {
-        ST_DWORD_BE(&read_10_command[2], sector);
+
+    ST_DWORD_BE(&read_10_command[2], sector);
         
-        for(int retry=0;retry<10;retry++) {
-            if(driver->exec_command(lun, 10, false, read_10_command, block_size*num_sectors, buf, false) != block_size*num_sectors) {
-            	ioWrite8(ITU_USB_BUSY, 0);
-                return RES_ERROR;
-            } else
-                break;
-        }
-        
-//        buf += block_size;
-//        sector ++;
-//    }
+	int result = driver->exec_command(lun, 10, false, read_10_command, block_size*num_sectors, buf, false);
+	if (result != block_size*num_sectors) {
+		ioWrite8(ITU_USB_BUSY, 0);
+		printf("USB READ ERROR: Sector %d. Return: %d\n", sector, result);
+		set_state(e_device_failed);
+		return RES_ERROR;
+	}
 
 	ioWrite8(ITU_USB_BUSY, 0);
     return RES_OK;
@@ -906,22 +871,15 @@ DRESULT UsbScsi :: write(const uint8_t *buf, uint32_t sector, int num_sectors)
     ioWrite8(ITU_USB_BUSY, 1);
 
     //printf("USB: Writing %d sectors from %d.\n", num_sectors, sector);
-//    for(int s=0;s<num_sectors;s++) {
-        ST_DWORD_BE(&write_10_command[2], sector);
+	ST_DWORD_BE(&write_10_command[2], sector);
 
-        for(int retry=0;retry<10;retry++) {
-        	len = driver->exec_command(lun, 10, true, write_10_command, block_size*num_sectors, (uint8_t *)buf, false);
-        	if(len != block_size*num_sectors) {
-        		printf("Error %d.\n", len);
-        		ioWrite8(ITU_USB_BUSY, 0);
-                return RES_ERROR;
-        	} else
-                break;
-        }
-        
-//        buf += block_size;
-//        sector ++;
-//    }
+	len = driver->exec_command(lun, 10, true, write_10_command, block_size*num_sectors, (uint8_t *)buf, false);
+	if(len != block_size*num_sectors) {
+		printf("Error %d.\n", len);
+		ioWrite8(ITU_USB_BUSY, 0);
+		set_state(e_device_failed);
+		return RES_ERROR;
+	}
 	ioWrite8(ITU_USB_BUSY, 0);
     return RES_OK;
 }
