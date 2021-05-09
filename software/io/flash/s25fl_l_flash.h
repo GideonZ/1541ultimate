@@ -69,7 +69,7 @@ public:
 	// Low level read/write/erase
 	virtual bool erase_sector(int sector);
 	virtual bool read_page(int page, void *buffer);
-	virtual bool write_page(int page, void *buffer);
+	virtual bool write_page(int page, const void *buffer);
 	virtual int  get_number_of_config_pages(void) {
 	    return S25FLXXXL_NUM_CONFIG_PAGES;
 	}

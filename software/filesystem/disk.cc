@@ -103,7 +103,8 @@ int Disk::Init(bool isFloppy)
         if(tbl[4]) {
             start = LD_DWORD(&tbl[8]);
             size  = LD_DWORD(&tbl[12]);
-            if(tbl[4] == 0x0F) {
+            printf("MBR Start: %d Size: %d Type: %d\n", start, size, tbl[4]);
+            if ((tbl[4] == 0x0F) || (tbl[4] == 0x05)) {
                 printf("Result of EBR read: %d.\n", read_ebr(&prt_list, start));
             } else {
                 prt = new Partition(dev, lba + start, size, tbl[4]);
@@ -125,24 +126,25 @@ int Disk :: read_ebr(Partition ***prt_list, uint32_t lba)
     uint8_t *tbl;
 
     if(dev->read(local_buf, lba, 1) != RES_OK) {
-        delete local_buf;
+        delete[] local_buf;
         return -2; // partition unreadable
     }
     
     if(LD_WORD(local_buf + BS_Signature) != 0xAA55) {
-        delete local_buf;
+        delete[] local_buf;
         return -3; // partition unformatted 
     }
             
     tbl = &local_buf[MBR_PTable];
-//    dump_hex(tbl, 66);
+    dump_hex_relative(tbl, 66);
 
     for(int p=0;p<4;p++) {
         if(tbl[4]) {
             start = LD_DWORD(&tbl[8]);
             size  = LD_DWORD(&tbl[12]);
-            if(tbl[4] == 0x0F) {
-                read_ebr(prt_list, start);
+            printf("EBR Start: %d Size: %d Type: %d\n", start, size, tbl[4]);
+            if ((tbl[4] == 0x0F) || (tbl[4] == 0x05)) {
+                read_ebr(prt_list, lba + start);
             } else {
                 prt = new Partition(dev, lba + start, size, tbl[4]);
                 **prt_list = prt;

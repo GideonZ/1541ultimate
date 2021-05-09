@@ -40,7 +40,7 @@
 set_global_assignment -name FAMILY "Cyclone IV E"
 set_global_assignment -name DEVICE EP4CE22F17C8
 set_global_assignment -name TOP_LEVEL_ENTITY u2p_nios_solo
-set_global_assignment -name LAST_QUARTUS_VERSION 15.1.0
+set_global_assignment -name LAST_QUARTUS_VERSION "18.1.0 Lite Edition"
 set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
 set_global_assignment -name MIN_CORE_JUNCTION_TEMP 0
 set_global_assignment -name MAX_CORE_JUNCTION_TEMP 85
@@ -415,6 +415,24 @@ set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_RO
 set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
 
 
+#set_global_assignment -name VHDL_FILE "../../../../ult64/proglogic/tl_packages/vhdl_source/tl_sync_fifo_ft-plain.vhd"
+#set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/tl_packages/vhdl_source/tl_sync_fifo_ft.vhd
+#set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/ip/tl_level_synchronizer.vhd
+#set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/network/merge_debug.vhd
+#set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/ip/tl_pulse_synchronizer_with_ack.vhd
+#set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/ip/tl_gray_code_pkg.vhd
+#set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/ip/tl_misc_pkg.vhd
+#set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/ip/tl_async_fifo_ft.vhd
+#set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/ip/tl_stream_bus_fifo_input_adapter.vhd
+#set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/ip/tl_math_pkg.vhd
+#set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/ip/tl_stream_bus_async_buffer.vhd
+#set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/ip/tl_vector_synchronizer_gzw.vhd
+#set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/ip/tl_stream_bus_packet_switch.vhd
+#set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/network/debug_to_udp_payload.vhd
+#set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/network/add_udp_headers.vhd
+#set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/network/udp_header.vhd
+#set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/network/eth_debug_stream.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/debug/vhdl_source/eth_debug_stream.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/acia/vhdl_source/acia6551.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/acia/vhdl_source/acia6551_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/lp_filter2.vhd

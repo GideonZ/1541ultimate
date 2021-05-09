@@ -13,6 +13,8 @@ HEXLAST  =  0x1FFFF
 HEXBASE  =  0x30000000
 HEXEND   =  0x3001FFFF
 
+VPATH	 :=  $(PATH_SW)/chan_fat/tiny_ro + $(VPATH)
+
 SRCS_C   =	start_rtos.c \
 			itu.c \
 			dump_hex.c \
@@ -30,9 +32,9 @@ SRCS_C   =	start_rtos.c \
             alt_malloc_lock.c \
             alt_do_ctors_with_calibration.c \
             ddr2_calibrator_u64.c \
-            ff2.c \
-            ffsyscall.c \
-            ccsbcs.c \
+            ff.c \
+            ffsystem.c \
+            ffunicode.c \
             u64_tester.c \
                         
 SRCS_CC	 =  small_printf.cc \

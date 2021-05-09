@@ -310,7 +310,7 @@ bool AT45_Flash :: read_page(int page, void *buffer)
     return true;
 }
 
-bool AT45_Flash :: write_page(int page, void *buffer)
+bool AT45_Flash :: write_page(int page, const void *buffer)
 {
     int device_addr = (page << page_shift);
     int len = (page_size >> 2);

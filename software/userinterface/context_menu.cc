@@ -14,7 +14,8 @@ ContextMenu :: ContextMenu(UserInterface *ui, TreeBrowserState *state, int initi
 	else
 		contextable = NULL;
 
-    context_state = e_new;
+	selectedAction = NULL;
+	context_state = e_new;
     screen = NULL;
     keyb = NULL;
     window = NULL;
@@ -24,6 +25,7 @@ ContextMenu :: ContextMenu(UserInterface *ui, TreeBrowserState *state, int initi
     hook_y = 0;
     quick_seek_length = 0;
     item_index = initial;
+    subContext = NULL;
 }
 
 // y_offs = line above selected, relative to window
@@ -31,9 +33,20 @@ ContextMenu :: ContextMenu(UserInterface *ui, TreeBrowserState *state, int initi
 
 ContextMenu :: ~ContextMenu(void)
 {
-	for(int i=0;i<actions.get_elements();i++) {
-		delete actions[i];
-	}
+    for(int i=0;i<actions.get_elements();i++) {
+        Action *act = actions[i];
+        if (!(act->isPersistent())) {
+            delete act;
+        }
+    }
+}
+
+int ContextMenu :: get_items(void)
+{
+    if(contextable) {
+        contextable->fetch_context_items(actions);
+    }
+    return actions.get_elements();
 }
 
 void ContextMenu :: init(Window *parwin, Keyboard *key)
@@ -48,10 +61,9 @@ void ContextMenu :: init(Window *parwin, Keyboard *key)
     parwin->getOffsets(ox, hook_y);
 
     if(context_state == e_new) {
-    	contextable->fetch_context_items(actions);
+        int item_count = get_items();
 
-    	int item_count = actions.get_elements();
-    	if(!item_count) {
+        if(!item_count) {
             printf("No items.. exit.\n");
             context_state = e_finished;
             return;
@@ -93,21 +105,25 @@ void ContextMenu :: deinit()
     }
 }
 
-void ContextMenu :: executeAction()
-{
-	Action *act = actions[item_index];
-	const char *filename = (contextable)?(contextable->getName()):"";
-	TreeBrowser *bb = state->browser;
-	SubsysCommand *cmd = new SubsysCommand(user_interface, act, bb->getPath(), filename);
-	cmd->execute();
-	// TODO: do something with return value / data
-}
-
-int ContextMenu :: poll(int dummy)
+int ContextMenu :: poll(int sub)
 {
     int ret = 0;
     int c;
         
+    if (subContext) {
+        if (sub < 0) {
+            delete subContext;
+            subContext = NULL;
+            draw();
+            return 0;
+        } else if (sub > 0) {
+            selectedAction = subContext->getSelectedAction();
+            delete subContext;
+            subContext = NULL;
+            draw();
+        }
+        return sub;
+    }
     if(!keyb) {
         printf("ContextMenu: Keyboard not initialized.. exit.\n");
         return -1;
@@ -136,6 +152,7 @@ int ContextMenu :: handle_key(int c)
 {
     int ret = 0;
     int newpos;
+    Action *a;
     
     switch(c) {
         case KEY_LEFT: // left
@@ -147,18 +164,24 @@ int ContextMenu :: handle_key(int c)
             ret = -1;
             break;
         case KEY_DOWN: // down
-        	//reset_quick_seek();
-        	if (item_index < actions.get_elements()-1) {
-            	item_index++;
-            	draw();
-        	}
-            break;
+        	reset_quick_seek();
+            for (int i=item_index+1; i < actions.get_elements(); i++) {
+                if (actions[i]->isEnabled()) {
+                    item_index = i;
+                    draw();
+                    break;
+                }
+            }
+        	break;
         case KEY_UP: // up
-        	// reset_quick_seek();
-        	if (item_index > 0) {
-        		item_index --;
-        		draw();
-        	}
+        	reset_quick_seek();
+            for (int i=item_index-1; i >= 0; i--) {
+                if (actions[i]->isEnabled()) {
+                    item_index = i;
+                    draw();
+                    break;
+                }
+            }
         	break;
         case KEY_F1: // page up
         case KEY_PAGEUP:
@@ -195,10 +218,17 @@ int ContextMenu :: handle_key(int c)
             break;
         case KEY_SPACE: // space
         case KEY_RETURN: // return
-            //clean_up();
-            ret = 1;
+            ret = select();
             break;
             
+        case KEY_RIGHT: // cursor
+            a = actions[item_index];
+            // only select if it has a submenu, otherwise require enter / space
+            if (a && a->getObject()) {
+                select();
+            }
+            break;
+
         default:
             if((c >= '!')&&(c < 0x80)) {
                 if(quick_seek_length < (MAX_SEARCH_LEN-2)) {
@@ -269,13 +299,27 @@ void ContextMenu :: draw()
 	for (int i=0;i<window->get_size_y();i++) {
 		Action *t = actions[i + first];
 		window->move_cursor(0, i);
+
 		if ((i + first) == item_index) {
 			window->set_color(user_interface->color_sel);
 			window->set_background(user_interface->color_sel_bg);
-		} else {
+		} else if(t->isEnabled()) {
 			window->set_color(user_interface->color_fg);
             window->set_background(0);
+		} else { // not enabled
+	        window->set_color(11); // TODO
+	        window->set_background(0);
 		}
-		window->output_line(t->getName());
+		if (t) {
+			window->output_line(t->getName());
+		} else {
+			window->output_line("");
+		}
 	}
+}
+
+int ContextMenu :: select(void)
+{
+    selectedAction = actions[item_index];
+    return 1;
 }

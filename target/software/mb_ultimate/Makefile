@@ -74,7 +74,6 @@ SRCS_CC	 =  small_printf.cc \
 			editor.cc \
 			tree_browser.cc \
 			tree_browser_state.cc \
-			stream_menu.cc \
 			config_menu.cc \
 			context_menu.cc \
 			task_menu.cc \
@@ -145,7 +144,7 @@ VPATH += $(PATH_SW)/6502/sidcrt/target
 
 SRCS_ASM =  mb_crt0.s portasm.s
 
-SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas
+SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas eapi.tas
 
 SRCS_BIN =  basic.bin chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin sidcrt.bin muscrt.bin musplayer.bin
 

@@ -346,7 +346,7 @@ SECTIONS
 /*
  * Don't override this, override the __alt_stack_* symbols instead.
  */
-__alt_data_end = 0x4000000;
+__alt_data_end = 0xec0000;
 
 /*
  * The next two symbols define the location of the default stack.  You can
@@ -362,4 +362,16 @@ PROVIDE( __alt_stack_limit   = __alt_stack_base );
  * Override this symbol to put the heap in a different memory.
  */
 PROVIDE( __alt_heap_start    = end );
-PROVIDE( __alt_heap_limit    = 0x4000000 );
+PROVIDE( __alt_heap_limit    = 0xec0000 );
+
+/* User defines
+ * for REU and RAMDISK
+ */
+PROVIDE( __reu_ram_start = 0x1000000 );
+PROVIDE( __reu_ram_limit = 0x2000000 );
+
+PROVIDE( __ram_disk_start = 0x2000000 );
+PROVIDE( __ram_disk_limit = 0x3000000 );
+
+PROVIDE( __updater_start = 0x3000000 );
+PROVIDE( __updater_limit = 0x4000000 );

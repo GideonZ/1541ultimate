@@ -57,6 +57,7 @@ SRCS_CC	 =  u2p_init.cc \
 			u64_config.cc \
 			rtc_i2c.cc \
 			c64.cc \
+			u64_machine.cc \
 			c64_subsys.cc \
 			screen.cc \
 			keyboard_c64.cc \
@@ -68,6 +69,7 @@ SRCS_CC	 =  u2p_init.cc \
 			blockdev.cc \
 			blockdev_file.cc \
 			blockdev_ram.cc \
+			blockdev_flash.cc \
 			disk.cc \
 			partition.cc \
 			file_system.cc \
@@ -86,7 +88,6 @@ SRCS_CC	 =  u2p_init.cc \
 			editor.cc \
 			tree_browser.cc \
 			tree_browser_state.cc \
-			stream_menu.cc \
 			config_menu.cc \
 			context_menu.cc \
 			task_menu.cc \
@@ -140,7 +141,6 @@ SRCS_CC	 =  u2p_init.cc \
 			rmii_interface.cc \
             home_directory.cc \
 			reu_preloader.cc \
-			socket_test.cc \
 			fpll.cc \
 			fastuart.cc \
 			wifi.cc \
@@ -178,7 +178,7 @@ SRCS_ASM =
 
 SRCS_ASMS = port_asm.S
 
-SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas
+SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas eapi.tas
 
 SRCS_BIN =  basic.bin sidcrt.bin muscrt.bin musplayer.bin chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin
 

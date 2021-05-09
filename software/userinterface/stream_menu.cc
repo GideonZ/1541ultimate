@@ -100,38 +100,6 @@ int StreamMenu :: into(void)
     currentList = newList;
     return currentList->get_elements();
 }
-
-/*
-void StreamMenu :: invalidate(CachedTreeNode *obj)
-{
-    stream->format("Invalidation event: %s\n", obj->get_name());
-
-    CachedTreeNode *n = node;
-    bool found = false;
-    while(n) {
-        printf("Considering %s\n", n->get_name());
-        if(n == obj) {
-            found = true;
-            break;
-        }
-        n = n->parent;
-    }
-    
-    if(!found) {
-        stream->format("Invalidate doesn't affect us.\n");
-        return;
-    }
-    
-    if(menu) {
-        delete menu;
-        menu = NULL;
-        state = 0;
-    }
-    node = n->parent;
-    node->fetch_children();
-    print_items(0, 9999);
-}
-*/
     
 int StreamMenu :: process_command(char *command)
 {
@@ -171,7 +139,7 @@ int StreamMenu :: process_command(char *command)
         IndexedList<ObjectWithMenu *>*objects = ObjectWithMenu ::getObjectsWithMenu();
 
         for(int i=0;i<objects->get_elements();i++) {
-        	items += (*objects)[i]->fetch_task_items(currentPath, actionList);
+        	items += (*objects)[i]->update_task_items(currentPath, actionList);
         }
         print_actions();
         state = 1;

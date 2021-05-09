@@ -102,6 +102,7 @@ class FileInCBM : public File
         ST_HEADER,
         ST_LINEAR,
         ST_CVT,
+        ST_END,
     } state;
 
     struct {
@@ -130,6 +131,8 @@ class FileInCBM : public File
     SideSectors *side;
 
     int create_cvt_header(void);
+    FRESULT fixup_cbm_file(void);
+    FRESULT fixup_cvt(void);
 
     FRESULT read_header(uint8_t *dst, int len, uint32_t& transferred);
     FRESULT read_linear(uint8_t *dst, int len, uint32_t& transferred);
@@ -146,10 +149,7 @@ public:
     FRESULT read(void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT write(const void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT seek(uint32_t pos);
-
-    uint32_t get_size(void) {
-        return file_size;
-    }
+    uint32_t get_size(void);
 
     uint32_t get_inode(void) {
         return (uint32_t)start_cluster;
@@ -187,6 +187,8 @@ class FileSystemCBM : public FileSystem
     int     get_abs_sector(int track, int sector);
     bool    get_track_sector(int abs, int &track, int &sector);
     FRESULT deallocate_chain(uint8_t track, uint8_t sector, uint8_t *visited);
+    FRESULT deallocate_vlir_records(uint8_t track, uint8_t sector, uint8_t *visited);
+    bool    is_vlir_entry(DirEntryCBM *p);
 
     //  base class functions, to be filled with dummies
     virtual bool allocate_sector_on_track(int track, int &sector) { return false; }

@@ -65,6 +65,7 @@ void REUPreloader::poll(void)
                     break;
                 }
             }
+            delete event;
         }
     }
 }

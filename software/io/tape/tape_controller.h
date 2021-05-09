@@ -48,13 +48,21 @@ class TapeController : public SubSystem, ObjectWithMenu, ConfigurableObject
 	uint8_t  *blockBuffer;
 	TaskHandle_t taskHandle;
 
+	struct {
+	    Action *pause;
+	    Action *resume;
+	    Action *stop;
+	    Action *rewind;
+	} myActions;
+
 	void read_block();
 	static void poll_static(void *a);
 public:
 	TapeController();
 	virtual ~TapeController();
 	
-	int  fetch_task_items(Path *path, IndexedList<Action*> &item_list);
+    void create_task_items(void);
+    void update_task_items(bool writablePath, Path *path);
     const char *identify(void) { return "Tape Player"; }
 	int executeCommand(SubsysCommand *cmd);
 	

@@ -170,6 +170,7 @@ static void poll_usb2(void *a)
 	usb2.init();
 	while(1) {
 		usb2.poll();
+		vTaskDelay(2);
 	}
 }
 
@@ -408,6 +409,7 @@ void UsbBase :: initialize_pipe(struct t_pipe *pipe, UsbDevice *dev, struct t_en
     pipe->SplitCtl = getSplitControl(dev->parent->current_address, dev->parent_port + 1, dev->speed, ep_type);
     pipe->needPing = 0;
     pipe->highSpeed = (dev->speed == 2) ? 1 : 0;
+    pipe->debugMode = false;
 
     memset(pipe->name, 0, 8);
     dev->get_pathname(pipe->name, 7);
@@ -746,7 +748,10 @@ int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout)
     	printf("%s USB unavailable.\n", pipe->name);
     	return -9;
     }
-	// printf("BULK OUT to %4x, len = %d\n", pipe->DevEP, len);
+	if(pipe->debugMode) {
+		printf("BULK OUT to %4x, len = %d\n", pipe->DevEP, len);
+		dump_hex_relative(buf, len);
+	}
 
 	uint8_t sub = PROFILER_SUB; PROFILER_SUB = 13;
     volatile t_usb_descriptor *descr = USB2_DESCRIPTOR(0);
@@ -765,6 +770,7 @@ int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout)
 	uint16_t result;
 	int current_len = 0;
 
+	int retries = 5;
 	do {
 		current_len = (len > 49152) ? 49152 : len;
 		descr->devEP    = pipe->DevEP;
@@ -776,18 +782,25 @@ int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout)
 
 		uint16_t cmd = pipe->Command | UCMD_MEMREAD | UCMD_DO_DATA | UCMD_OUT | UCMD_RETRY_ON_NAK;
 
-//		printf("BO %4x: (%4x) ->", len, cmd);
+		if (pipe->debugMode) {
+			printf("BO %4x: (%4x) ->", len, cmd);
+		}
 		descr->timeout = timeout;
 		descr->started = 0;
 		descr->command = cmd;
 		result = complete_command(timeout); // much longer, as the timeout in usb = 8000 Hz ticks, and these are 200 Hz ticks
-//        printf(" %4x (%4x)\n", result, descr->command);
+		if (pipe->debugMode) {
+			printf("Bulk Out Complete: %4x (%4x)\n", result, descr->command);
+		}
 
 		pipe->Command = (descr->command & URES_TOGGLE); // that's what we start with next time.
 
 		if (((result & URES_RESULT_MSK) != URES_ACK) && ((result & URES_RESULT_MSK) != URES_NYET)) {
 			printf("%s Bulk Out error: $%4x, Transferred: %d. Started = %04x. Ended: %04x\n", pipe->name, result, total_trans, descr->started, NANO_REPORT_FRAME);
-			break;
+
+			if (retries <= 0)
+				break;
+			retries --;
 		}
 
 		//printf("Res = %4x\n", result);
@@ -823,7 +836,8 @@ int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout) //
 
     volatile t_usb_descriptor *descr = USB2_DESCRIPTOR(0);
 
-    //printf("BULK IN from %4x, len = %d\n", pipe->DevEP, len);
+    if (pipe->debugMode)
+    	printf("BULK IN from %4x, len = %d\n", pipe->DevEP, len);
     uint32_t addr = (uint32_t)newbuf;
 	int total_trans = 0;
 
@@ -834,6 +848,7 @@ int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout) //
 	descr->memLo = addr & 0xFFFF;
 	descr->timeout = (uint16_t)timeout;
 
+	int retries = 5;
 	do {
 		int current_len = (len > 49152) ? 49152 : len;
 		descr->length = current_len;
@@ -843,20 +858,29 @@ int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout) //
 		descr->started = 0;
 		descr->command = cmd;
 		uint16_t result = complete_command(timeout);
-//		printf(" %4x (%4x)\n", result, descr->command);
+
+		int transferred = current_len - descr->length;
+	    if (pipe->debugMode)
+	    	printf("Command completion: Result: %4x Command: (%4x)\n", result, descr->command);
 
 		if ((result & URES_RESULT_MSK) != URES_PACKET) {
-			printf("%s Bulk IN error: $%4x, Transferred: %d. Started = %04x. Ended: %04x\n", pipe->name, result, total_trans, descr->started, NANO_REPORT_FRAME);
+			printf("%s Bulk IN error: $%4x, Transferred: %d/%d. Started = %04x. Ended: %04x\n", pipe->name, result, transferred, current_len, descr->started, NANO_REPORT_FRAME);
 			if ((result & URES_RESULT_MSK) == URES_STALL) {
 				total_trans = -4; // error code
-			} else {
-				total_trans = -1; // error code
+				break;
 			}
-			break;
+			if (retries <= 0) {
+				total_trans = -1; // error code
+				break;
+			}
+			retries --;
 		}
 
 		//printf("Res = %4x\n", result);
-		int transferred = current_len - descr->length;
+		if (pipe->debugMode) {
+			printf("Transferred: %d\n", transferred);
+			dump_hex_relative((void *)addr, transferred);
+		}
 
 	    cache_load((uint8_t *)addr, transferred);
 
@@ -864,12 +888,6 @@ int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout) //
 		addr += transferred;
 		len -= transferred;
 		pipe->Command = descr->command & URES_TOGGLE; // that's what we start with next time.
-		if (transferred != current_len) { // some bytes remained?
-			//printf("CMD res: %4x\n", result);
-			//dump_hex_relative(buf, transferred);
-			//total_trans = -8;
-			break;
-		}
 	} while (len > 0);
 
     // printf("Bulk in done: %d\n", total_trans);

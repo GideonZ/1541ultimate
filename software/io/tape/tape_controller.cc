@@ -61,20 +61,41 @@ void TapeController :: poll_static(void *a)
 	}
 }
 
-int  TapeController :: fetch_task_items(Path *path, IndexedList<Action*> &item_list)
+void TapeController :: create_task_items(void)
+{
+    TaskCategory *cat = TasksCollection :: getCategory("Tape", SORT_ORDER_TAPE);
+    myActions.pause = new Action("Pause Tape Playback", SUBSYSID_TAPE_PLAYER, MENU_C2N_PAUSE);
+    myActions.resume = new Action("Resume Tape Playback", SUBSYSID_TAPE_PLAYER, MENU_C2N_RESUME);
+    myActions.stop = new Action("Stop Tape Playback", SUBSYSID_TAPE_PLAYER, MENU_C2N_STOP);
+    // myActions.rewind = new Action("Rewind Tape", SUBSYSID_TAPE_PLAYER, MENU_C2N_REWIND);
+
+    cat->append(myActions.pause);
+    cat->append(myActions.resume);
+    cat->append(myActions.stop);
+    //cat->append(myActions.rewind);
+
+    myActions.pause->hide();
+    myActions.resume->hide();
+    myActions.stop->hide();
+}
+
+void TapeController :: update_task_items(bool writablePath, Path *path)
 {
     if(!file)
-        return 0;
+        return;
 	if(!file->isValid()) {
     	close();
-		return 0;
+		return;
 	}
-	if(paused)
-		item_list.append(new Action("Resume Tape Playback", SUBSYSID_TAPE_PLAYER, MENU_C2N_RESUME));
-	else
-		item_list.append(new Action("Pause Tape Playback", SUBSYSID_TAPE_PLAYER, MENU_C2N_PAUSE));
-    item_list.append(new Action("Stop Tape Playback", SUBSYSID_TAPE_PLAYER, MENU_C2N_STOP));
-	return 2;
+	if(paused) {
+	    myActions.pause->hide();
+	    myActions.resume->show();
+	    myActions.stop->show();
+	} else {
+        myActions.pause->show();
+        myActions.resume->hide();
+        myActions.stop->hide();
+	}
 }
 
 void TapeController :: stop()

@@ -44,16 +44,23 @@ architecture arch of acia6551 is
     signal tx_data_push     : std_logic;
     signal rx_data_valid    : std_logic;
     
-    alias irq           : std_logic is status(7);
-    alias dsr_n         : std_logic is status(6);
-    alias dcd_n         : std_logic is status(5);
-    alias tx_empty      : std_logic is status(4);
-    alias rx_full       : std_logic is status(3);
-    alias overrun_err   : std_logic is status(2);
-    alias framing_err   : std_logic is status(1);
-    alias parity_err    : std_logic is status(0);
+    signal nmi_counter      : natural range 0 to 16383 := 0;
+    signal nmi              : std_logic;
+    signal irq_d            : std_logic;
+    signal dsr_d            : std_logic;
+    signal dcd_d            : std_logic;
+    signal dcd_change       : std_logic := '0';
+    signal dsr_change       : std_logic := '0';
+    alias irq               : std_logic is status(7);
+    alias dsr_n             : std_logic is status(6);
+    alias dcd_n             : std_logic is status(5);
+    alias tx_empty          : std_logic is status(4);
+    alias rx_full           : std_logic is status(3);
+    alias overrun_err       : std_logic is status(2);
+    alias framing_err       : std_logic is status(1);
+    alias parity_err        : std_logic is status(0);
 
-    alias dtr           : std_logic is command(0);
+    alias dtr               : std_logic is command(0);
     signal dtr_d, rts_d     : std_logic;
     
     signal enable           : std_logic;
@@ -103,7 +110,7 @@ begin
 
     slot_resp.reg_output <= enable when slot_req.bus_address(8 downto 2) = slot_base else '0';
     slot_resp.irq  <= irq and not nmi_selected;
-    slot_resp.nmi  <= irq and nmi_selected;
+    slot_resp.nmi  <= nmi and nmi_selected;
 
     irq       <= enable and (rx_interrupt and not command(1));-- or (tx_interrupt and command(2) and not command(3)));
     rts       <= command(2) or command(3);
@@ -113,7 +120,7 @@ begin
 
     -- IRQs to the Host (Slot side)
     tx_interrupt <= tx_empty;
-    -- rx_interrupt <= (rx_data_valid and rts) when rx_rate_cnt = X"00" else '0';
+    rx_interrupt <= rx_data_valid or dsr_change or dcd_change; -- and rts);
     
     -- IRQs to the Application (IO side)
     appl_rx_irq  <= '0' when (rx_head + 1) = rx_tail else '1'; -- RX = Appl -> Host (room for data appl can write)
@@ -128,6 +135,8 @@ begin
             tx_data_push <= '0';
             rts_d <= rts;
             dtr_d <= dtr;
+            irq_d <= irq;
+            
             if tx_head + 1 = tx_tail then
                 tx_empty <= '0';
             else
@@ -138,6 +147,19 @@ begin
             b_we <= '0';
             b_address <= (others => 'X');
             b_wdata <= (others => 'X');
+
+            -- generation of NMI
+            if (irq = '1' and irq_d = '0') or (irq = '1' and nmi_counter = 15000) then
+                nmi <= '1';
+                nmi_counter <= 0;
+            elsif slot_tick = '1' then
+                if nmi_counter = 15 then
+                    nmi <= '0';
+                end if;
+                if nmi_counter /= 16383 then
+                    nmi_counter <= nmi_counter + 1;
+                end if;
+            end if;
 
             if slot_tick = '1' and rx_rate_expired = '0' then
                 if rx_rate_cnt = 0 then
@@ -153,13 +175,16 @@ begin
                 b_we <= '1';
                 b_en <= '1';
                 tx_head <= tx_head + 1;
-            elsif rx_data_valid = '0' and rx_head /= rx_tail and b_pending = '0' and dtr = '1' and rts = '1' and rx_rate_expired = '1' then
+            elsif rx_data_valid = '0' and rx_head /= rx_tail and b_pending = '0' and rx_rate_expired = '1' and rts = '1' then
                 rx_rate_expired <= '0';
                 rx_rate_cnt <= rx_rate & "00011";
                 b_address <= '1' & rx_tail;
                 b_en <= '1';
                 b_pending <= '1';
                 rx_tail <= rx_tail + 1;
+            elsif dtr = '0' or rts = '0' then
+                rx_rate_expired <= '0';
+                rx_rate_cnt <= rx_rate & "00011";
             end if;
 
             if (slot_req.io_address(8 downto 2) = slot_base) and (enable = '1') then
@@ -186,8 +211,8 @@ begin
                         overrun_err <= '0';
                         rx_data_valid <= '0';
                     when c_addr_status_register =>
-                        rx_interrupt <= '0';
-                        null;
+                        dcd_change <= '0';
+                        dsr_change <= '0';
                     when c_addr_command_register =>
                         null;
                     when c_addr_control_register =>
@@ -280,17 +305,26 @@ begin
             if b_pending = '1' then
                 if b_en = '0' then
                     rx_data_valid <= '1';
-                    rx_interrupt <= '1';
                     rx_data <= b_rdata;
                     b_pending <= '0';
                 end if;
             end if;
+
+            dsr_d <= dsr_n;
+            if (dsr_d /= dsr_n) then
+                dsr_change <= '1';
+            end if;
+            dcd_d <= dcd_n;
+            if (dcd_d /= dcd_n) then
+                dcd_change <= '1';
+            end if;             
 
             if (dtr /= dtr_d) or (rts /= rts_d) then
                 rts_dtr_change <= '1';
             end if;
 
             if reset = '1' then
+                nmi <= '0';
                 command <= X"02";
                 control <= X"00";
                 rx_head <= X"00";
@@ -300,7 +334,6 @@ begin
                 enable  <= '0';
                 b_pending <= '0';
                 rx_data_valid <= '0';
-                rx_interrupt <= '0';
                 cts <= '0';
                 dsr_n <= '1';
                 dcd_n <= '1';
@@ -308,6 +341,8 @@ begin
                 rx_irq_en <= '0';
                 ctrl_irq_en <= '0';
                 hs_irq_en <= '0';
+                dsr_change <= '0';
+                dcd_change <= '0';
                 rts_dtr_change <= '0';
                 control_change <= '0';
                 slot_base <= (others => '0');

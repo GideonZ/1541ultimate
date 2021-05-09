@@ -401,7 +401,7 @@ uint16_t SoftIECTarget :: do_load(IecChannel *chan, uint16_t addr)
             error = 1;
             break;
         }
-    } while(res2 != IEC_NO_FILE);
+    } while((res1 != IEC_LAST) && (res2 != IEC_NO_FILE));
 
     if (!cmd_if.is_dma_active()) {
         c64->resume();

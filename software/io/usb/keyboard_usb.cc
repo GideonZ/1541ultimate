@@ -55,7 +55,7 @@ const uint8_t keymap_control[] = {
     ']', '\\', 0x00, ';', '\'', '`', ',', '.',
     '/', KEY_CAPS, KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5, KEY_F6,
     KEY_F7, KEY_F8, KEY_F9, KEY_F10, KEY_F11, KEY_F12, KEY_PRSCR, KEY_SCRLOCK,
-    KEY_BREAK, KEY_HOME, KEY_PAGEUP, KEY_DELETE, KEY_END, KEY_PAGEDOWN, KEY_RIGHT,
+    KEY_BREAK, KEY_INSERT, KEY_CTRL_HOME, KEY_PAGEUP, KEY_DELETE, KEY_END, KEY_PAGEDOWN, KEY_RIGHT,
     KEY_LEFT, KEY_DOWN, KEY_UP, KEY_NUMLOCK, '/', '*', '-', '+',
     KEY_RETURN, '1', '2', '3', '4', '5', '6', '7',
     '8', '9', '0', '.', 0x00 };
@@ -148,7 +148,7 @@ void Keyboard_USB :: usb2matrix(uint8_t *kd)
 	// 1 = left shift   | 5 = right shift
 	// 2 = left alt     | 6 = right alt (altGr)
 	// 3 = left windows | 7 = right windows
-	uint8_t modi = kd[0];
+	const uint8_t modi = kd[0];
     // const uint8_t modifier_locations[] = { 0x72, 0x17, 0x00, 0x75, 0x72, 0x64, 0x00, 0x75 };
 	// without shift
 	const uint8_t modifier_locations[] = { 0x72, 0x00, 0x00, 0x75, 0x72, 0x00, 0x00, 0x75 };
@@ -162,8 +162,8 @@ void Keyboard_USB :: usb2matrix(uint8_t *kd)
 	}
 
 	// Handle the modifiers
-	for(int i=0;i<8;i++, modi >>= 1) {
-		if (modi & 1) {
+	for(int i=0;i<8;i++) {
+		if (modi & (1 << i)) {
 			uint8_t bit = modifier_locations[i];
 			if (bit) {
 				// printf("M%i ", i);

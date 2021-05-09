@@ -135,12 +135,12 @@ UsbDriver * UsbAx88772Driver :: test_driver(UsbInterface *intf)
 
 	UsbDevice *dev = intf->getParentDevice();
 	if(le16_to_cpu(dev->device_descr.vendor) != 0x0b95) {
-		printf("Device is not from Asix..\n");
+		// printf("Device is not from Asix..\n");
 		return 0;
 	}
     uint16_t prodID = le16_to_cpu(dev->device_descr.product);
     if (((prodID & 0xFFFE) != 0x772A) && (prodID != 0x7720)) {
-		printf("Device product ID is not AX88772.\n");
+		// printf("Device product ID is not AX88772.\n");
 		return 0;
 	}
 

@@ -17,7 +17,6 @@
 #include "itu.h"
 #include "profiler.h"
 #include "usb_nano.h"
-#include "u64.h"
 
 void ResetInterruptHandlerCmdIf(void) __attribute__ ((weak));
 void ResetInterruptHandlerU64(void) __attribute__ ((weak));
@@ -111,19 +110,6 @@ static void test_i2c_mdio(void) {
 	mdio_write(0x16, 0x0002); // disable factory reset mode
 
 	codec_init();
-
-/*
-    uint16_t *base = (uint16_t *)NANO_BASE;
-    if (*base) {
-    	printf("Detected debug session. Dumping current USB state.\n");
-    	for (int j=0; j < 64; j++) {
-    		printf("%b0: ", j);
-    		for(int i=16*j; i < (16*j+16); i+=2) {
-    			printf("%04X ", base[i]);
-    		} printf("\n");
-    	}
-    }
-*/
 
 	NANO_START = 0;
 	U2PIO_ULPI_RESET = 1;

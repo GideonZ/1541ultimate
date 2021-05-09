@@ -192,7 +192,7 @@ extern "C" void ultimate_main(void *a)
 #endif
 */
 
-    //custom_outbyte = outbyte_log;
+    custom_outbyte = outbyte_log;
 
     while(c64) {
         int doIt = 0;

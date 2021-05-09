@@ -35,6 +35,9 @@
 #include "keyboard_c64.h"
 #include "config.h"
 #include "iec.h"
+#if U64
+#include "u64_machine.h"
+#endif
 
 #ifndef CMD_IF_SLOT_BASE
 #define CMD_IF_SLOT_BASE       *((volatile uint8_t *)(CMD_IF_BASE + 0x0))
@@ -334,7 +337,11 @@ C64 *C64 :: getMachine(void)
 {
     static C64 *c64 = NULL;
     if (!c64) {
+#if U64
+        c64 = new U64Machine();
+#else
         c64 = new C64();
+#endif
     }
     return c64;
 }
@@ -1026,7 +1033,7 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
 
     if ((def != 0) || startLater) { // special cart
         // C64_BUS_BRIDGE   = 0; // Quiet mode  (to hear the SID difference, let's not set this register now)
-        C64_BUS_INTERNAL = 7; // All ON
+        C64_BUS_INTERNAL = 15; // All ON
         C64_BUS_EXTERNAL = 0; // All OFF
         // these registers will be set back to the correct value upon a reset interrupt, that calls u64_configurator.effectuate_settings()
     }
@@ -1188,29 +1195,32 @@ void C64::enable_kernal(uint8_t *rom, bool fastreset)
     if (fastreset && !memcmp((void *) (rom+0x1d6c), (void *) fastresetOrg, sizeof(fastresetOrg)))
         memcpy((void *) (rom+0x1d6c), (void *) fastresetPatch, 22);
 
-    if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
-        memcpy((void *)U64_KERNAL_BASE, rom, 8192); // as simple as that
-    } else { // the good old way
-        C64_KERNAL_ENABLE = 1;
-        uint8_t *src = rom;
-        uint8_t *dst = (uint8_t *) (C64_KERNAL_BASE + 1);
-        for (int i = 0; i < 8192; i++) {
-            *(dst) = *(src++);
-            dst += 2;
-        }
+#if U64
+
+    memcpy((void *)U64_KERNAL_BASE, rom, 8192); // as simple as that
+
+#else  // the good old way
+
+    C64_KERNAL_ENABLE = 1;
+    uint8_t *src = rom;
+    uint8_t *dst = (uint8_t *) (C64_KERNAL_BASE + 1);
+    for (int i = 0; i < 8192; i++) {
+        *(dst) = *(src++);
+        dst += 2;
     }
+#endif
 }
 
 void C64::disable_kernal()
 {
     C64_KERNAL_ENABLE = 0;
 
-    if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
-    	uint8_t* kernal = (uint8_t *)U64_KERNAL_BASE;
-        flash->read_image(FLASH_ID_ORIG_KERNAL, (uint8_t *)U64_KERNAL_BASE, 8192);
-        if (cfg->get_value(CFG_C64_FASTRESET) && !memcmp((void *) (kernal+0x1d6c), (void *) fastresetOrg, sizeof(fastresetOrg)))
-            memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, 22);
-    }
+#if U64
+    uint8_t* kernal = (uint8_t *)U64_KERNAL_BASE;
+    flash->read_image(FLASH_ID_ORIG_KERNAL, (uint8_t *)U64_KERNAL_BASE, 8192);
+    if (cfg->get_value(CFG_C64_FASTRESET) && !memcmp((void *) (kernal+0x1d6c), (void *) fastresetOrg, sizeof(fastresetOrg)))
+        memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, 22);
+#endif
 }
 
 void C64::init_cartridge()

@@ -16,6 +16,8 @@ typedef enum _context_state {
     e_finished
 } t_context_state;
 
+class ContextMenu;
+
 class ContextMenu : public UIObject
 {
 /* Quick Seek */
@@ -29,12 +31,13 @@ class ContextMenu : public UIObject
 
     UserInterface *user_interface;
     TreeBrowserState *state;
+    Action *selectedAction;
     Browsable *contextable;
+    ContextMenu *subContext;
 
     Screen   *screen;
     Window   *window;
     Keyboard *keyb;
-    
     // some things we like to keep track
     t_context_state context_state;
     IndexedList<Action *> actions;
@@ -47,14 +50,17 @@ public:
     ContextMenu(UserInterface *ui, TreeBrowserState *state, int initial, int y);
     virtual ~ContextMenu(void);
     
-    virtual void executeAction();
+    Action *getSelectedAction(void) { return selectedAction; }
+    Browsable *getContextable(void) { return contextable; }
 
+    void appendAction(Action *a) { actions.append(a); }
+    virtual int get_items();
     virtual void init(Window *pwin, Keyboard *keyb);
     virtual void deinit(void);
     virtual int poll(int);
     virtual void draw();
     void redraw(void);
-
+    virtual int select(void);
     friend class TaskMenu;
 };
 

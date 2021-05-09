@@ -40,6 +40,7 @@ SRCS_CC	 =  memory.cc \
 			pattern.cc \
 			config.cc \
 			c64.cc \
+			u64_machine.cc \
 			screen.cc \
 			screen_vt100.cc \
 			keyboard_c64.cc \

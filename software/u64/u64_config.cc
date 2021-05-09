@@ -826,7 +826,7 @@ void U64Config :: effectuate_settings()
     const t_video_color_timing *ct = color_timings[(int)systemMode];
     C64_BURST_PHASE = ct->burst_phase;
     C64_PHASE_INCR  = ct->phase_inc;
-    C64_VIDEOFORMAT = ct->mode_bits;
+    C64_VIDEOFORMAT = ct->mode_bits | format;
 
     if (doPll) {
         SetVideoPll(systemMode);
@@ -1035,26 +1035,29 @@ int U64Config :: setSidEmuParams(ConfigItem *it)
 #define MENU_U64_DETECT_SIDS 6
 #define MENU_U64_POKE 7
 
-int U64Config :: fetch_task_items(Path *p, IndexedList<Action*> &item_list)
+void U64Config :: create_task_items(void)
 {
-	int count = 0;
-	if(fm->is_path_writable(p)) {
-    	item_list.append(new Action("Save EDID to file", SUBSYSID_U64, MENU_U64_SAVEEDID));
-    	count ++;
-#if DEVELOPER > 1
-        item_list.append(new Action("Save I2C ROM to file", SUBSYSID_U64, MENU_U64_SAVEEEPROM));
-        count ++;
-#endif
-    }
-#if DEVELOPER
-    item_list.append(new Action("Detect SIDs", SUBSYSID_U64, MENU_U64_DETECT_SIDS));  count ++;
-	item_list.append(new Action("Disable WiFi", SUBSYSID_U64, MENU_U64_WIFI_DISABLE));  count++;
-	item_list.append(new Action("Enable WiFi",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE));  count++;
-    item_list.append(new Action("Enable WiFi Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT));  count++;
-    item_list.append(new Action("Poke", SUBSYSID_U64, MENU_U64_POKE));  count++;
-#endif
-	return count;
+    TaskCategory *dev = TasksCollection :: getCategory("Developer", SORT_ORDER_DEVELOPER);
+    myActions.poke      = new Action("Poke", SUBSYSID_U64, MENU_U64_POKE);
+    myActions.saveedid  = new Action("Save EDID to file", SUBSYSID_U64, MENU_U64_SAVEEDID);
+    myActions.siddetect = new Action("Detect SIDs", SUBSYSID_U64, MENU_U64_DETECT_SIDS);
+    myActions.wifioff   = new Action("Disable WiFi", SUBSYSID_U64, MENU_U64_WIFI_DISABLE);
+    myActions.wifion    = new Action("Enable WiFi",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE);
+    myActions.wifiboot  = new Action("Enable WiFi Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT);
 
+    dev->append(myActions.saveedid );
+#if DEVELOPER > 0
+    dev->append(myActions.poke     );
+    dev->append(myActions.siddetect);
+    dev->append(myActions.wifioff  );
+    dev->append(myActions.wifion   );
+    dev->append(myActions.wifiboot );
+#endif
+}
+
+void U64Config :: update_task_items(bool writablePath, Path *p)
+{
+    myActions.saveedid->setDisabled(!writablePath);
 }
 
 int U64Config :: executeCommand(SubsysCommand *cmd)

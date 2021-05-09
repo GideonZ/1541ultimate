@@ -36,14 +36,22 @@ bool    FileSystemFAT :: init(void)
 
 FRESULT FileSystemFAT :: get_free (uint32_t *e)
 {
+#if	FF_FS_MINIMIZE >= 1
+	return FR_NOT_ENABLED;
+#else
     FATFS *fs;
     return f_getfree(prefix, e, &fs);
+#endif
 }
 
 bool    FileSystemFAT :: is_writable()
 {
+#if FF_FS_READONLY
+	return false;
+#else
 	DSTATUS sta = prt->status();
 	return (sta == 0); // not writable when there is no disk, not initialized or protected. All flags should be 0
+#endif
 }
 
 FRESULT FileSystemFAT :: sync(void)
@@ -55,6 +63,9 @@ FRESULT FileSystemFAT :: sync(void)
 // functions for reading directories
 FRESULT FileSystemFAT :: dir_open(const TCHAR *path, Directory **dirout)
 {
+#if	FF_FS_MINIMIZE >= 2
+	return FR_NOT_ENABLED;
+#else
 	*dirout = 0;
 
 	DirectoryFAT *dir = new DirectoryFAT(this);
@@ -74,13 +85,18 @@ FRESULT FileSystemFAT :: dir_open(const TCHAR *path, Directory **dirout)
 		delete dir;
 	}
 	return res;
+#endif
 }
 
 FRESULT FileSystemFAT :: dir_create(const TCHAR *path)
 {
+#if	FF_FS_MINIMIZE >= 1
+	return FR_NOT_ENABLED;
+#else
     mstring prefixedPath(prefix);
     prefixedPath += path;
     return f_mkdir(prefixedPath.c_str());
+#endif
 }
 
 
@@ -123,16 +139,24 @@ FRESULT FileSystemFAT :: file_open(const char *filename, uint8_t flags, File **f
 
 FRESULT FileSystemFAT :: file_rename(const TCHAR *path, const char *new_name)
 {
-    mstring prefixedPath(prefix);
+#if	FF_FS_MINIMIZE >= 1
+    return FR_NOT_ENABLED;
+#else
+	mstring prefixedPath(prefix);
     prefixedPath += path;
     return f_rename(prefixedPath.c_str(), new_name);
+#endif
 }
 
 FRESULT FileSystemFAT :: file_delete(const TCHAR *path)
 {
+#if	FF_FS_MINIMIZE >= 1
+	return FR_NOT_ENABLED;
+#else
     mstring prefixedPath(prefix);
     prefixedPath += path;
     return f_unlink(prefixedPath.c_str());
+#endif
 }
 
 FRESULT FileFAT :: read(void *buffer, uint32_t len, uint32_t *transferred)
@@ -145,26 +169,38 @@ FRESULT FileFAT :: read(void *buffer, uint32_t len, uint32_t *transferred)
 
 FRESULT FileFAT :: write(const void *buffer, uint32_t len, uint32_t *transferred)
 {
-    if (!get_file_system()) {
+#if FF_FS_READONLY
+	return FR_NOT_ENABLED;
+#else
+	if (!get_file_system()) {
         return FR_NOT_READY;
     }
     return f_write(getFIL(), buffer, len, (UINT*)transferred);
+#endif
 }
 
 FRESULT FileFAT :: seek(uint32_t pos)
 {
+#if	FF_FS_MINIMIZE >= 3
+	return FR_NOT_ENABLED;
+#else
     if (!get_file_system()) {
         return FR_NOT_READY;
     }
     return f_lseek(getFIL(), pos);
+#endif
 }
 
 FRESULT FileFAT :: sync(void)
 {
+#if FF_FS_READONLY
+	return FR_NOT_ENABLED;
+#else
     if (!get_file_system()) {
         return FR_NOT_READY;
     }
     return f_sync(getFIL());
+#endif
 }
 
 FRESULT FileFAT :: close(void)
@@ -232,4 +268,3 @@ uint32_t get_fattime (void)     /* 31-25: Year(0-127 org.1980), 24-21: Month(1-1
 */
     return 0x47244C97;
 }
-

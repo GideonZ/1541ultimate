@@ -2,7 +2,6 @@
 #define COMMAND_INTF_H
 
 #include "integer.h"
-#include "menu.h"
 #include "config.h"
 #include "iomap.h"
 #include "subsys.h"
@@ -62,9 +61,8 @@ typedef struct _message
 } Message;
 
 class SubSystem;
-class ObjectWithMenu;
 
-class CommandInterface : public SubSystem, ObjectWithMenu
+class CommandInterface : public SubSystem
 {
 	TaskHandle_t taskHandle;
 	TaskHandle_t resetTaskHandle;
@@ -84,7 +82,6 @@ class CommandInterface : public SubSystem, ObjectWithMenu
     void run_task(void);
     void run_reset_task(void);
 
-    int executeCommand(SubsysCommand *cmd);
 public:
 	QueueHandle_t queue; // needed from IRQ
 
@@ -92,7 +89,6 @@ public:
     ~CommandInterface();
     
     void dump_registers(void);
-    int  fetch_task_items(Path *path, IndexedList<Action*> &item_list);
     const char *identify(void) { return "Command Interface"; }
     bool is_dma_active(void);
 };

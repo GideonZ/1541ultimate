@@ -491,7 +491,9 @@ FRESULT FileSystemCBM::file_rename(const char *old_name, const char *new_name)
             cbm.init(new_name);
         }
 
-        p->std_fileType = (p->std_fileType & 0xF8) | cbm.getType(); // save upper bits
+        if (cbm.getType() != 7) {
+        	p->std_fileType = (p->std_fileType & 0xF8) | cbm.getType(); // save upper bits
+        }
         memset(p->name, 0xA0, 16);
         memcpy(p->name, cbm.getName(), cbm.getLength());
         dirty = 1;
@@ -499,6 +501,28 @@ FRESULT FileSystemCBM::file_rename(const char *old_name, const char *new_name)
     }
 
     delete dd;
+    return res;
+}
+
+FRESULT FileSystemCBM::deallocate_vlir_records(uint8_t track, uint8_t sector, uint8_t *visited)
+{
+	uint8_t *rblk = new uint8_t[256];
+    FRESULT res = read_sector(rblk, track, sector);
+    if (res == FR_OK) {
+    	if ((rblk[0] == 0) && (rblk[1] == 0xFF)) { // valid single block, assuming record block
+    		for (int i=0;i<127;i++) {
+    			if (rblk[2*i+2]) { // valid entry
+    				res = deallocate_chain(rblk[2*i+2], rblk[2*i+3], visited);
+    				if (res != FR_OK) {
+    					break;
+    				}
+    			} else if (!rblk[2*i+3]) {
+    				break; // 00 00 ends the list
+    			}
+    		}
+    	}
+    }
+    delete[] rblk;
     return res;
 }
 
@@ -557,6 +581,7 @@ FRESULT FileSystemCBM::file_delete(const char *path)
     }
     if (res == FR_OK) {
         DirEntryCBM *p = dd->get_pointer();
+        bool vlir = is_vlir_entry(p);
         p->std_fileType = 0x00;
         dirty = 1;
         // Saving information, since moving the window makes *p invalid!
@@ -564,6 +589,9 @@ FRESULT FileSystemCBM::file_delete(const char *path)
         int file_sector = p->data_sector;
         int side_track = p->aux_track;
         int side_sector = p->aux_sector;
+        if (vlir) {
+        	deallocate_vlir_records(file_track, file_sector, dd->visited);
+        }
         deallocate_chain(file_track, file_sector, dd->visited); // file chain
         deallocate_chain(side_track, side_sector, dd->visited); // side sector chain
         sync();
@@ -1324,7 +1352,7 @@ FRESULT DirInCBM::create(const char *filename, bool dir)
 #ifndef RUNS_ON_PC
     int y,m,d,wd,h,mn,s;
     rtc.get_time(y, m, d, wd, h, mn, s);
-    p->year = (uint8_t)(y + 80);
+    p->year = (y >= 20) ? (uint8_t)(y - 20) : (uint8_t)(y + 80);
     p->month = (uint8_t)m;
     p->day = (uint8_t)d;
     p->hour = (uint8_t)h;
@@ -1441,7 +1469,8 @@ FRESULT DirInCBM::get_entry(FileInfo &f)
                 f.size *= 254;
                 f.name_format = NAME_FORMAT_CBM;
 
-                f.date  = ((uint16_t)(p->year - 80)) << 9;
+                uint16_t yr = (p->year < 80) ? (p->year + 20) : (p->year - 80);
+                f.date  = yr << 9;
                 f.date |= (((uint16_t)(p->month)) << 5);
                 f.date |= p->day;
                 f.time  = ((uint16_t)(p->hour)) << 11;
@@ -1559,10 +1588,33 @@ FRESULT FileInCBM::open(uint8_t flags)
             // CVT
             state = ST_HEADER;
             header.data = new uint8_t[4*254];
-            memset(header.data, 0, 4*254);
+            bzero(header.data, 4*254);
             header.size = create_cvt_header();
             header.pos = 0;
         }
+    } else if ((tp == 7) && (flags & FA_CREATE_ANY)) { // creating a new CVT file; see hack in the 'create' function of DirInCBM.
+    	state = ST_HEADER;
+        header.data = new uint8_t[254];
+        bzero(header.data, 254);
+        header.size = 254;
+        header.pos = 0;
+
+        // The header block is never written, although directory entry is taken from here
+        // The second block of the header is the info block and that should always be written to the file system
+        // .. we don't need any data from here to construct the records in case of VLIR, so we can always write it out
+        // The third block of the header is the record block in case of VLIR, and should be written to the file system
+        // .. in case of a linear file, this is the first data block, and should therefore also be written to the file system
+        // The fourth block, if G98 format is never written to the file system, otherwise it is a data block. But we don't
+        // .. know this until the very end when the file is closed.
+        // So the conclusion is that for writing CVT files, only the header block should be seen as 'header'. The rest of the
+        // blocks may be just written to the disk directly. In case of G98, we simply deallocate the 4th block afterwards.
+
+        // Allocate CVT structure. Having this pointer set is handy for knowing later on that we need to fix the disk
+        // structure. Secondly, the structure can be filled by reading the necessary data blocks and decode them. It is easier
+        // to use this structure than to use individual bytes from the disk.
+        cvt = new cvt_t;
+        cvt->records = 0;
+        cvt->current_section = 0;
     }
 
     return FR_OK;
@@ -1580,11 +1632,21 @@ int FileInCBM::create_cvt_header(void)
 
     // Sector 1
     memcpy(header.data, &(dir_entry.std_fileType), 30); // copy Dir entry as is
-    // signature depends on later actions.
+
+    // Let's clear out the track/header info, as it is no longer valid in the cvt file
+
+    header.data[1] = 0;
+    header.data[2] = 0;
+    header.data[19] = 0;
+    header.data[20] = 0;
+
+    // signature depends on later actions, but we start with the standard one
+    strcpy((char *)&header.data[30], cvtSignature);
 
     // Sector 2 -> info block
     FRESULT fres = fs->move_window(fs->get_abs_sector(dir_entry.aux_track, dir_entry.aux_sector));
     if (fres != FR_OK) {
+        printf("Failed to read aux track/sector: %d:%d\n", dir_entry.aux_track, dir_entry.aux_sector);
         return 30; // just the dir entry
     }
     memcpy(&header.data[254], &fs->sect_buffer[2], 254);
@@ -1606,16 +1668,13 @@ int FileInCBM::create_cvt_header(void)
         return 30; // just the dir entry
     }
 
-    // Now we know the first track/sector of the data segment
-    current_track = cvt->record_block[2];
-    current_sector = cvt->record_block[3];
-
     uint8_t *vlir = cvt->record_block + 2;
     memcpy(&header.data[2*254], vlir, 254);
 
     bool long_files = false;
     cvt->records = 127;
-    for (int i = 0; i < 127; i++) {
+
+    for (int i = 0; i < cvt->records; i++) {
         if ((!vlir[2*i]) && (!vlir[1+2*i])) { // both bytes are 0
             cvt->records = i;
             break;
@@ -1633,18 +1692,37 @@ int FileInCBM::create_cvt_header(void)
         //printf("Section #%d. Start: %d, Blocks: %d, Last: %d\n", i, cvt->sections[i].start, cvt->sections[i].blocks, cvt->sections[i].bytes_in_last);
     }
 
+    // Strip off any skips from the end
+    for (int i = cvt->records-1; i >= 0; i--) {
+        if (vlir[2*i]) {
+            cvt->records = i+1;
+            break;
+        }
+    }
+
+    // Find first sector
+    for (int i=0; i < cvt->records; i++) {
+        if (vlir[2*i]) {
+            // Now we know the first track/sector of the data segment
+            current_track = vlir[2*i];
+            current_sector = vlir[2*i+1];
+            cvt->current_section = i;
+            break;
+        }
+    }
+
     // Place the correct header
     if (long_files) {
         memcpy(&header.data[3*254], vlir, 254); // prepare sector 4
         strcpy((char *)&header.data[30], cvtSignatureLong);
-    } else {
-        strcpy((char *)&header.data[30], cvtSignature);
     }
 
     // Header could be SEQ or PRG, depending on actual type
+/*
     if ((dir_entry.std_fileType & 7) != 2) {
         memcpy(header.data+30, "SEQ", 3);
     }
+*/
 
     uint8_t *hdrLo = header.data + 2*254;
     uint8_t *hdrHi = header.data + 3*254;
@@ -1653,53 +1731,251 @@ int FileInCBM::create_cvt_header(void)
         hdrLo[2*i + 0] = (uint8_t)cvt->sections[i].blocks;
         hdrLo[2*i + 1] = (uint8_t)cvt->sections[i].bytes_in_last;
         hdrHi[2*i + 0] = (uint8_t)(cvt->sections[i].blocks >> 8);
-        hdrHi[2*i + 1] = (uint8_t)cvt->sections[i].bytes_in_last;
+        hdrHi[2*i + 1] = 0; // (uint8_t)cvt->sections[i].bytes_in_last;
     }
 
     return (long_files) ? 4*254 : 3*254;
 }
 
+FRESULT FileInCBM::fixup_cbm_file(void)
+{
+	FRESULT res = fs->move_window(dir_sect);
+
+	if (res != FR_OK) {
+		return res;
+	}
+
+    DirEntryCBM *p = (DirEntryCBM *)&fs->sect_buffer[dir_entry_offset];
+	p->std_fileType |= 0x80; // close file
+
+    int tr, sec;
+    fs->get_track_sector(start_cluster, tr, sec);
+    p->data_track = (uint8_t) tr;
+    p->data_sector = (uint8_t) sec;
+
+    if (side) {
+        num_blocks += side->get_number_of_blocks();
+    }
+    p->size_low = num_blocks & 0xFF;
+    p->size_high = num_blocks >> 8;
+
+    if(side) {
+        side->get_track_sector(tr, sec);
+        p->aux_track = (uint8_t) tr;
+        p->aux_sector = (uint8_t) sec;
+        p->record_size = header.data[0];
+        side->validate(p->record_size);
+        side->write(); // this doesn't use move window, so it's OK.
+    }
+    fs->dirty = 1;
+    return fs->sync();
+}
+
+bool FileSystemCBM::is_vlir_entry(DirEntryCBM *p)
+{
+	uint8_t ty = p->std_fileType & 0x07;
+	if ((ty < 1) || (ty > 3)) {
+		return false;
+	}
+	if (! p->geos_filetype) { // not a GEOS file
+		return false;
+	}
+	if (p->geos_structure != 1) { // not a VLIR file
+		return false;
+	}
+	return true;
+}
+
+FRESULT FileInCBM::fixup_cvt(void)
+{
+	int mode = 0;
+	// First the header is verified, to see if we need to do a CVT or G98 decode, or maybe neither
+    if (memcmp(&header.data[33], cvtSignature + 3, 25) == 0) { //
+    	mode = 1;
+    } else if (memcmp(&header.data[33], cvtSignatureLong + 3, 25) == 0) { //
+    	mode = 2;
+    }
+
+	FRESULT res = fs->move_window(dir_sect);
+	if (res != FR_OK) {
+		return res;
+	}
+
+	DirEntryCBM *p = (DirEntryCBM *)&fs->sect_buffer[dir_entry_offset];
+
+    if (!mode) {
+		p->std_fileType = 0x81; // set filetype to SEQ as the header check failed.
+		fs->dirty = 1;
+    	return fixup_cbm_file();
+    }
+
+    // Save chain start, since it will be overwritten shortly.
+    int tr, sec;
+    fs->get_track_sector(start_cluster, tr, sec);
+    uint8_t track = (uint8_t)tr;
+    uint8_t sector = (uint8_t)sec;
+
+    // printf("CVT was written starting from %d:%d\n", track, sector);
+    // We can safely take the dir entry from the header
+    memcpy(&(p->std_fileType), header.data, 30);
+
+    p->data_track = track;
+    p->data_sector = sector;
+    fs->dirty = 1;
+
+    // Do we have an info block? We know this by observing the aux pointer. If it zero, there is no info block  (but what if it is cleared?)
+    // Update: CVT files always have an info block, otherwise it wouldn't be a CVT file to start with.
+    if (true) { // (p->aux_track) {
+    	// Link the first block to the info pointer
+    	p->aux_track = track;
+    	p->aux_sector = sector;
+
+    	// Move pointer to the first block, and clip it there by clearing the track number
+    	int abs = fs->get_abs_sector(track, sector);
+    	res = fs->move_window(abs);
+    	if (res != FR_OK) {
+    		return res;
+    	}
+    	// store link to next
+    	track = fs->sect_buffer[0];
+    	sector = fs->sect_buffer[1];
+
+    	// terminate
+    	fs->sect_buffer[0] = 0;
+    	fs->sect_buffer[1] = 0xFF;
+    	fs->dirty = 1;
+
+    	// Return to directory
+    	res = fs->move_window(dir_sect);
+    	if (res != FR_OK) {
+    		return res;
+    	}
+    }
+
+    // The next block could either be a VLIR record block or the first data block of a sequential file.
+    // Either way, the data pointer should point at it.
+    p->data_track  = track;
+	p->data_sector = sector;
+	fs->dirty = 1;
+
+    if (!p->geos_filetype || !p->geos_structure) { // sequential
+    	// Nothing needs to be done for sequential files;
+    	return fs->sync();
+    }
+
+    // Now we know that the next block is a record block. We now need to know where to cut the chain into records.
+    res = fs->move_window(fs->get_abs_sector(track, sector));
+	if (res != FR_OK) {
+		return res;
+	}
+	track = fs->sect_buffer[0];
+	sector = fs->sect_buffer[1];
+
+	bzero(cvt->sections, sizeof(cvt->sections));
+	uint8_t *vlir = fs->sect_buffer + 2;
+
+	cvt->records = 127;
+	for (int i=0;i<127;i++) {
+        if (!vlir[2*i] && !vlir[2*i+1]) {
+            cvt->records = i;
+            break;
+        }
+        cvt->sections[i].blocks = vlir[2*i];
+		cvt->sections[i].bytes_in_last = vlir[2*i + 1];
+    }
+
+    // Clip the file on disk here, as the record block is only one sector at all times
+    fs->sect_buffer[0] = 0;
+    fs->sect_buffer[1] = 0xFF;
+    fs->dirty = 1;
+/*
+    printf("Record header block (after fix):\n");
+    dump_hex_relative(fs->sect_buffer, 256);
+    printf("Going to consider %d records.\n", cvt->records);
+*/
+
+    // From now on, don't move the window anymore.
+    // When G98 format, the next block contains the high-bytes of the sector counts.
+    if (mode == 2) { // G98 mode
+        res = fs->read_sector(cvt->record_block, track, sector);
+		if (res != FR_OK) {
+			return res;
+		}
+		fs->set_sector_allocation(track, sector, false);
+		// printf("Extended header block:\n");
+		// dump_hex_relative(cvt->record_block, 256);
+
+		track = cvt->record_block[0];
+		sector = cvt->record_block[1];
+
+		vlir = cvt->record_block + 2;
+		for (int i=0; i < cvt->records; i++) {
+			cvt->sections[i].blocks += 256 * (int)vlir[2*i];
+		}
+    }
+
+    // Now that the records lengths and end-bytes have been read, we can traverse through the file and clip
+    // each record by writing the end byte into the link bytes of each last sector
+    // Track and sector are the pointers to the current block. Just read each sector, count and cut.
+    for (int i=0; i < cvt->records; i++) {
+    	if (! cvt->sections[i].blocks) { // 0 blocks are skipped
+    		continue;
+    	}
+        uint8_t ct;
+        uint8_t cs;
+        // printf("Record #%d starts at: %d:%d and should be %d sectors long.\n", i, track, sector, cvt->sections[i].blocks);
+        fs->sect_buffer[2 + 2*i] = track;
+        fs->sect_buffer[3 + 2*i] = sector;
+        int sectors_read = 0;
+        for (int b=0; b < cvt->sections[i].blocks; b++) {
+            ct = track;
+            cs = sector;
+            if (!ct) {
+                break;
+            }
+            res = fs->read_sector(cvt->record_block, ct, cs);
+            if (res != FR_OK) {
+                printf("Read sector %d:%d failed with error %s\n", ct, cs, FileSystem :: get_error_string(res));
+                break;
+    		}
+            // printf("%d: %d:%d\n", sectors_read, ct, cs);
+            sectors_read ++;
+            track = cvt->record_block[0];
+    		sector = cvt->record_block[1];
+    	}
+        if (cvt->sections[i].blocks != sectors_read) {
+            printf("ERROR: Could not read all sectors of this record! Read: %d. Expected: %d\n", sectors_read, cvt->sections[i].blocks);
+            break;
+        }
+        uint8_t last_byte = (uint8_t)cvt->sections[i].bytes_in_last;
+        if (cvt->record_block[0]) {
+            cvt->record_block[0] = 0;
+            cvt->record_block[1] = last_byte;
+            fs->write_sector(cvt->record_block, ct, cs);
+        } else if (cvt->record_block[1] != last_byte) {
+            printf("ERROR: Last byte does not match. (%02x != %02x)\n", cvt->record_block[i], last_byte);
+        }
+    }
+    return fs->sync();
+}
+
 FRESULT FileInCBM::close(void)
 {
     fs->sync();
+    FRESULT res = FR_OK;
 
     if (dir_entry_modified) {
-        dir_entry_modified = 0;
+    	dir_entry_modified = 0;
 
-        FRESULT res = fs->move_window(dir_sect);
-        if (res != FR_OK) {
-            return res;
-        }
-        DirEntryCBM *p = (DirEntryCBM *)&fs->sect_buffer[dir_entry_offset];
-
-        p->std_fileType |= 0x80; // close file
-
-        int tr, sec;
-        fs->get_track_sector(start_cluster, tr, sec);
-        p->data_track = (uint8_t) tr;
-        p->data_sector = (uint8_t) sec;
-
-        if (side) {
-            num_blocks += side->get_number_of_blocks();
-        }
-        p->size_low = num_blocks & 0xFF;
-        p->size_high = num_blocks >> 8;
-
-        if(side) {
-            side->get_track_sector(tr, sec);
-            p->aux_track = (uint8_t) tr;
-            p->aux_sector = (uint8_t) sec;
-            p->record_size = header.data[0];
-            side->validate(p->record_size);
-            side->write(); // this doesn't use move window, so it's OK.
-        }
-
-        fs->dirty = 1;
-        fs->sync();
+    	if (cvt) {
+        	res = fixup_cvt();
+    	} else {
+    		res = fixup_cbm_file();
+    	}
     }
 
     delete this;
-    return FR_OK;
+    return res;
 }
 
 FRESULT FileInCBM::visit(void)
@@ -1738,6 +2014,10 @@ FRESULT FileInCBM::read(void *buffer, uint32_t len, uint32_t *transferred)
             case ST_CVT:
                 res = read_linear(dst, len, tr);
                 break;
+            case ST_END:
+                res = FR_OK;
+                tr = 0;
+                break;
             default:
                 res = FR_DENIED;
         }
@@ -1762,8 +2042,19 @@ FRESULT FileInCBM::read_linear(uint8_t *dst, int len, uint32_t& tr)
 
     // make sure the current sector is within view
     res = fs->move_window(fs->get_abs_sector(current_track, current_sector));
+
+/*
+    printf("Reading track %d sector %d results in %d:\n", current_track, current_sector, res);
+    dump_hex_relative(fs->sect_buffer, 256);
+    printf("--> We are now at %02x offset. Wanting to read %d bytes.\n", offset_in_sector, len);
+*/
+
     if (res != FR_OK)
         return res;
+
+    if (!len) {
+        return FR_OK;
+    }
 
     src = &(fs->sect_buffer[offset_in_sector]);
 
@@ -1773,6 +2064,10 @@ FRESULT FileInCBM::read_linear(uint8_t *dst, int len, uint32_t& tr)
         bytes_left = 256 - offset_in_sector;
     }
     else {
+        if (fs->sect_buffer[1] < 2) {
+            dump_hex_relative(fs->sect_buffer, 32);
+            return FR_DISK_ERR;
+        }
         bytes_left = (1 + (int)fs->sect_buffer[1]) - offset_in_sector;
     }
 
@@ -1781,10 +2076,6 @@ FRESULT FileInCBM::read_linear(uint8_t *dst, int len, uint32_t& tr)
         tr = len;
     else
         tr = bytes_left;
-
-    if (!tr) {
-        return FR_OK;
-    }
 
     // do the actual copy
     memcpy(dst, src, tr);
@@ -1796,14 +2087,19 @@ FRESULT FileInCBM::read_linear(uint8_t *dst, int len, uint32_t& tr)
             if (merge_cvt_sector) { // joining vlir records together
                 do {
                     cvt->current_section ++;
+                    if  (cvt->current_section >= cvt->records) {
+                        break;
+                    }
                     current_track = cvt->record_block[2 + 2*cvt->current_section];
                     current_sector = cvt->record_block[3 + 2*cvt->current_section];
-                } while(!current_track && (cvt->current_section < cvt->records));
+                } while(!current_track);
                 offset_in_sector = 2;
                 if (!current_track) {
+                    state = ST_END;
                     return FR_OK; // no more valid records
                 }
             } else {
+                state = ST_END;
                 return FR_OK; // end of linear file, or end of last vlir record
             }
         } else { // simply follow chain
@@ -1863,6 +2159,7 @@ FRESULT FileInCBM::write(const void *buffer, uint32_t len, uint32_t *transferred
                 res = write_header(src, len, tr);
                 break;
             case ST_LINEAR:
+            case ST_END:
                 res = write_linear(src, len, tr);
                 break;
             case ST_CVT:
@@ -1937,7 +2234,7 @@ FRESULT FileInCBM::write_linear(uint8_t *src, int len, uint32_t& tr)
                 fs->sect_buffer[1] = current_sector;
                 fs->dirty = 1;
                 dir_entry_modified = 1;
-                fs->sync(); // make sure we can use the buffer to play around
+                //fs->sync(); // make sure we can use the buffer to play around
 
                 // Load the new sector
                 res = fs->move_window(fs->get_abs_sector(current_track, current_sector));
@@ -1984,6 +2281,43 @@ FRESULT FileInCBM::write_linear(uint8_t *src, int len, uint32_t& tr)
     // Update link to file in directory,  but we'll do this when we close the file
     // So we set the file status to dirty as well.
     return FR_OK;
+}
+
+uint32_t FileInCBM::get_size()
+{
+    uint32_t size = header.size;
+    if (side) {
+        size += side->get_file_size();
+        file_size = size;
+        return size;
+    }
+
+    // no side sectors, so we check how big the file currently is
+    int ct, cs, abs;
+    abs = start_cluster;
+    memset(visited, 0, fs->num_sectors);
+    fs->get_track_sector(abs, ct, cs);
+    do {
+        abs = fs->get_abs_sector(ct, cs);
+        if (visited[abs]) {
+            break;
+        }
+        visited[abs] = 1;
+        FRESULT res = fs->move_window(abs);
+        if (res != FR_OK)
+            break;
+        if (fs->sect_buffer[0]) {
+            ct = fs->sect_buffer[0];
+            cs = fs->sect_buffer[1];
+            size += 254;
+        } else {
+            size += fs->sect_buffer[1] - 1;
+            break;
+        }
+    } while(1);
+    memset(visited, 0, fs->num_sectors);
+    file_size = size;
+    return size;
 }
 
 FRESULT FileInCBM::seek(uint32_t pos)
@@ -2034,6 +2368,9 @@ FRESULT FileInCBM::seek(uint32_t pos)
             absPos += 254;
         } else {
             pos = fs->sect_buffer[1] - 1;
+            if (pos < 0) {
+            	pos = 0;
+            }
             file_size = (absPos + pos);
             break;
         }
@@ -2049,14 +2386,15 @@ FRESULT FileInCBM::followChain(int track, int sector, int& noSectors, int& bytes
     if (res != FR_OK)
         return res;
 
-    while (fs->sect_buffer[0]) {
+    do {
+        noSectors++;
         FRESULT res = fs->move_window(fs->get_abs_sector(track, sector));
         if (res != FR_OK)
             return res;
         track = fs->sect_buffer[0];
         sector = fs->sect_buffer[1];
-        noSectors++;
-    }
+    } while (fs->sect_buffer[0]);
+
     bytesLastSector = fs->sect_buffer[1];
 
     return FR_OK;

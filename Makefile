@@ -135,8 +135,8 @@ u2p_tester_sw:
 	@$(MAKE) -C target/software/nios2_testloader clean
 	@$(MAKE) -C target/software/nios2_testflasher clean
 	@$(MAKE) -C target/software/nios2_dut
-	@$(MAKE) -C target/software/nios2_tester
 	@$(MAKE) -C target/software/nios2_testloader
+	@$(MAKE) -C target/software/nios2_tester
 	@$(MAKE) -C target/software/nios2_testflasher
 	@$(MAKE) -C target/tester_package force
 	@$(MAKE) -C target/tester_package force

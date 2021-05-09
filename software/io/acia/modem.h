@@ -34,7 +34,7 @@ class Modem : public ConfigurableObject
     void ResetRegisters();
     void WriteRegister(int value);
     int  ReadRegister();
-    void SetHandshakes(bool connected);
+    void SetHandshakes(bool connected, bool connecting);
     void RelayFileToSocket(const char *filename, int socket, const char *alt);
 
     QueueHandle_t commandQueue;
@@ -45,6 +45,9 @@ class Modem : public ConfigurableObject
     ListenerSocket *listenerSocket;
     uint8_t ctsMode, dsrMode, dcdMode;
     uint8_t lastHandshake;
+    char *responseString;
+    uint8_t responseLen;
+    bool verbose;
     bool keepConnection;
     bool commandMode;
     bool busyMode;

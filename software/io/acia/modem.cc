@@ -20,10 +20,32 @@
 #define CFG_MODEM_OFFLINEFILE 0x0B
 #define CFG_MODEM_LISTEN_RING 0x0C
 
+#define RESP_OK				0
+#define RESP_CONNECT		1
+#define RESP_RING			2
+#define RESP_NO_CARRIER		3
+#define RESP_ERROR			4
+#define RESP_CONNECT_1200	5
+#define RESP_NO_DIALTONE	6
+#define RESP_BUSY			7
+#define RESP_NO_ANSWER		8
+#define RESP_CONNECT_2400	9
+#define RESP_CONNECT_4800	10
+#define RESP_CONNECT_9600	11
+#define RESP_CONNECT_14400	12
+#define RESP_CONNECT_19200	13
+#define RESP_CONNECT_38400	14
+
 static const char *interfaces[] = { "ACIA / SwiftLink" };
 static const char *acia_mode[] = { "Off", "DE00/IRQ", "DE00/NMI", "DF00/IRQ", "DF00/NMI", "DF80/IRQ", "DF80/NMI" };
-static const char *dcd_dsr[] = { "Active (Low)", "Active when connected", "Inactive when connected", "Inactive (High)" };
+static const char *dcd_dsr[] = { "Active (Low)", "Active when connected", "Inactive when connected", "Inactive (High)", "Act. when connecting", "Inact. when connecting" };
 static const int acia_base[] = { 0, 0xDE00, 0xDE01, 0xDF00, 0xDF01, 0xDF80, 0xDF81 };
+static char *responseCode[] = {"\r0\r","\r1\r","\r2\r","\r3\r","\r4\r","\r5\r","\r6\r","\r7\r","\r8\r",
+								"\r10\r","\r11\r","\r12\r","\r13\r","\r14\r","\r28\r"};
+static char *responseText[] = {"\rOK\r","\rCONNECT\r","\rRING\r","\rNO CARRIER\r","\rERROR\r","\rCONNECT 1200\r",
+								"\rNO DIALTONE\r","\rBUSY\r","\rNO ANSWER\r","\rCONNECT 2400\r","\rCONNECT 4800\r",
+								"\rCONNECT 9600\r","\rCONNECT 14400\r","\rCONNECT 19200\r","\rCONNECT 38400\r"};
+
 
 /*
 static const AciaMessage_t setDSR = { ACIA_MSG_DSR, 1, 0 };
@@ -41,9 +63,9 @@ struct t_cfg_definition modem_cfg[] = {
     { CFG_MODEM_LISTEN_PORT,   CFG_TYPE_STRING, "Listening Port",                "%s", NULL,         2,  8, (int)"3000" },
     { CFG_MODEM_LISTEN_RING,   CFG_TYPE_ENUM,   "Do RING sequence (incoming)",   "%s", en_dis,       0,  1, 1 },
     { CFG_MODEM_DTRDROP,       CFG_TYPE_ENUM,   "Drop connection on DTR low",    "%s", en_dis,       0,  1, 1 },
-    { CFG_MODEM_CTS,           CFG_TYPE_ENUM,   "CTS Behavior",                  "%s", dcd_dsr,      0,  3, 0 },
-    { CFG_MODEM_DCD,           CFG_TYPE_ENUM,   "DCD Behavior",                  "%s", dcd_dsr,      0,  3, 1 },
-    { CFG_MODEM_DSR,           CFG_TYPE_ENUM,   "DSR Behavior",                  "%s", dcd_dsr,      0,  3, 1 },
+    { CFG_MODEM_CTS,           CFG_TYPE_ENUM,   "CTS Behavior",                  "%s", dcd_dsr,      0,  5, 0 },
+    { CFG_MODEM_DCD,           CFG_TYPE_ENUM,   "DCD Behavior",                  "%s", dcd_dsr,      0,  5, 1 },
+    { CFG_MODEM_DSR,           CFG_TYPE_ENUM,   "DSR Behavior",                  "%s", dcd_dsr,      0,  5, 1 },
     { CFG_MODEM_OFFLINEFILE,   CFG_TYPE_STRING, "Modem Offline Text",            "%s", NULL,         0, 30, (int)"/Usb0/offline.txt" },
     { CFG_MODEM_CONNFILE,      CFG_TYPE_STRING, "Modem Connect Text",            "%s", NULL,         0, 30, (int)"/Usb0/welcome.txt" },
     { CFG_MODEM_BUSYFILE,      CFG_TYPE_STRING, "Modem Busy Text",               "%s", NULL,         0, 30, (int)"/Usb0/busy.txt" },
@@ -73,6 +95,7 @@ Modem :: Modem()
     baudRate = 0;
     dropOnDTR = true;
     lastHandshake = 0;
+    verbose = true;
     ResetRegisters();
 }
 
@@ -119,7 +142,7 @@ void Modem :: RunRelay(int socket)
 
     printf("Modem: Running Relay to socket %d.\n", socket);
     int ret;
-    SetHandshakes(true);
+    SetHandshakes(true, false);
     commandMode = false;
     uint8_t escape = registerValues[MODEM_REG_ESCAPE];
     int escapeTime = 4 * (int)registerValues[MODEM_REG_ESCAPETIME]; // Ultimate Timer is 200 Hz, hence *4, register specifies fiftieths of seconds
@@ -181,7 +204,7 @@ void Modem :: RunRelay(int socket)
         }
     }
     commandMode = true;
-    SetHandshakes(false);
+    SetHandshakes(false, false);
 }
 
 void Modem :: IncomingConnection(int socket)
@@ -198,17 +221,27 @@ void Modem :: IncomingConnection(int socket)
         RelayFileToSocket(cfg->get_string(CFG_MODEM_CONNFILE), socket, "Welcome to the Modem Emulation Layer of the Ultimate!\n");
     }
 
+    SetHandshakes(false, true);
     int connChange;
     if (cfg->get_value(CFG_MODEM_LISTEN_RING)) {
         ModemCommand_t modemCommand;
         registerValues[MODEM_REG_RINGCOUNTER] = 0;
         for(int rings=0; rings < 10; rings++) {
-            acia.SendToRx((uint8_t *)"RING\r", 5);
-            int len = sprintf(buffer, "RING\n");
-            registerValues[MODEM_REG_RINGCOUNTER] ++;
-            if (send(socket, buffer, len, 0) <= 0) {
-                break;
-            }
+
+        	responseString = (verbose==TRUE ? responseText[RESP_RING] : responseCode[RESP_RING]);
+        	responseLen = strlen(responseString);
+        	acia.SendToRx((uint8_t *)responseString, responseLen);
+
+            registerValues[MODEM_REG_RINGCOUNTER]++;
+
+            // this is removed because we dont want to send a response to the user
+            // while they are dialing.  if they dial a number and they see "RING  RING"
+            // it could be confused with an incoming RING. dialing out doesnt display anything
+            // until either gives up or connected
+            //
+            //if (send(socket, responseString, responseLen, 0) <= 0) {
+            //    break;
+            //}
             if (registerValues[MODEM_REG_AUTOANSWER]) {
                 if (registerValues[MODEM_REG_RINGCOUNTER] >= registerValues[MODEM_REG_AUTOANSWER]) {
                     keepConnection = true;
@@ -228,17 +261,39 @@ void Modem :: IncomingConnection(int socket)
         }
 
         if (keepConnection) {
-            int len = sprintf(buffer, "CONNECT %d\r", baudRate);
-            acia.SendToRx((uint8_t*)buffer, len);
-            buffer[len-1] = 0x0a; // Use Newline instead of carriage return for the socket
-            send(socket, buffer, len, 0);
+
+        	uint8_t tmp = RESP_CONNECT;
+
+        	switch(baudRate)
+        	{
+        		case 1200: { tmp=RESP_CONNECT_1200; break; }
+        		case 2400: { tmp=RESP_CONNECT_2400; break; }
+        		case 4800: { tmp=RESP_CONNECT_4800; break; }
+        		case 9600: { tmp=RESP_CONNECT_9600; break; }
+        		case 14400: { tmp=RESP_CONNECT_14400; break; }
+        		case 19200: { tmp=RESP_CONNECT_19200; break; }
+        		case 38400: { tmp=RESP_CONNECT_38400; break; }
+        	}
+
+        	responseString = responseText[tmp];
+        	responseLen = strlen(responseString);
+
+            acia.SendToRx((uint8_t*)responseString, responseLen);
+
+            // I dont believe this should be delivered locally
+            // per usage of other modems
+            //buffer[len-1] = 0x0a; // Use Newline instead of carriage return for the socket
+            //send(socket, buffer, len, 0);
 
             RunRelay(socket);
-            len = sprintf(buffer, "NO CARRIER\r");
-            acia.SendToRx((uint8_t*)buffer, len);
+
+            responseString = (verbose==TRUE ? responseText[RESP_NO_CARRIER] : responseCode[RESP_NO_CARRIER]);
+            responseLen=strlen(responseString);
+            acia.SendToRx((uint8_t*)responseString, responseLen);
         } else {
-            int len = sprintf(buffer, "NO ANSWER\n");
-            send(socket, buffer, len, 0);
+        	responseString = (verbose==TRUE ? responseText[RESP_NO_ANSWER] : responseCode[RESP_NO_ANSWER]);
+        	responseLen=strlen(responseString);
+            send(socket, responseString, responseLen, 0);
         }
     } else {
         // Silent relay
@@ -250,7 +305,7 @@ void Modem :: IncomingConnection(int socket)
     commandMode = true;
 }
 
-void Modem :: SetHandshakes(bool connected)
+void Modem :: SetHandshakes(bool connected, bool connecting)
 {
     uint8_t handshakes = 0;
 
@@ -263,6 +318,12 @@ void Modem :: SetHandshakes(bool connected)
         break;
     case 2: // inactive when connected
         handshakes |= (connected) ? 0 : ACIA_HANDSH_CTS;
+        break;
+    case 4: // active when connecting OR connected
+        handshakes |= (connected || connecting) ? ACIA_HANDSH_CTS : 0;
+        break;
+    case 5: // inactive when connecting OR connected
+        handshakes |= (connected || connecting) ? 0 : ACIA_HANDSH_CTS;
         break;
     default:
         break;
@@ -278,6 +339,12 @@ void Modem :: SetHandshakes(bool connected)
     case 2: // inactive when connected
         handshakes |= (connected) ? 0 : ACIA_HANDSH_DCD;
         break;
+    case 4: // active when connecting OR connected
+        handshakes |= (connected || connecting) ? ACIA_HANDSH_DCD : 0;
+        break;
+    case 5: // inactive when connecting OR connected
+        handshakes |= (connected || connecting) ? 0 : ACIA_HANDSH_DCD;
+        break;
     default:
         break;
     }
@@ -291,6 +358,12 @@ void Modem :: SetHandshakes(bool connected)
         break;
     case 2: // inactive when connected
         handshakes |= (connected) ? 0 : ACIA_HANDSH_DSR;
+        break;
+    case 4: // active when connecting OR connected
+        handshakes |= (connected || connecting) ? ACIA_HANDSH_DSR : 0;
+        break;
+    case 5: // inactive when connecting OR connected
+        handshakes |= (connected || connecting) ? 0 : ACIA_HANDSH_DSR;
         break;
     default:
         break;
@@ -313,7 +386,9 @@ void Modem :: Caller()
     while(1) {
         xQueueReceive(connectQueue, &cmd, portMAX_DELAY);
         if (xSemaphoreTake(connectionLock, 50) != pdTRUE) {
-            acia.SendToRx((uint8_t *)"MODEM BUSY\r", 11);
+        	responseString = (verbose==TRUE ? responseText[RESP_BUSY] : responseCode[RESP_BUSY]);
+        	responseLen=strlen(responseString);
+            acia.SendToRx((uint8_t *)responseString, responseLen );
             continue;
         }
 
@@ -328,14 +403,18 @@ void Modem :: Caller()
         int result = gethostbyname_r(cmd.command, &my_host, buffer, 128, &ret_host, &error);
 
         if (!ret_host) {
-            acia.SendToRx((uint8_t *)"RESOLVE ERROR\r", 14);
+        	responseString = (verbose==TRUE ? responseText[RESP_NO_ANSWER] : responseCode[RESP_NO_ANSWER]);
+        	responseLen=strlen(responseString);
+            acia.SendToRx((uint8_t *)responseString, responseLen);
             xSemaphoreGive(connectionLock);
             continue;
         }
 
         int sock_fd = socket(AF_INET, SOCK_STREAM, 0);
         if (sock_fd < 0) {
-            acia.SendToRx((uint8_t *)"NO SOCKET\r", 10);
+        	responseString = (verbose==TRUE ? responseText[RESP_ERROR] : responseCode[RESP_ERROR]);
+        	responseLen=strlen(responseString);
+        	acia.SendToRx((uint8_t *)responseString, responseLen);
             xSemaphoreGive(connectionLock);
             continue;
         }
@@ -350,7 +429,9 @@ void Modem :: Caller()
         serv_addr.sin_port = htons(portno);
 
         if (connect(sock_fd, (struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0) {
-            acia.SendToRx((uint8_t *)"NO CARRIER\r", 14);
+        	responseString = (verbose==TRUE ? responseText[RESP_NO_CARRIER] : responseCode[RESP_NO_CARRIER]);
+        	responseLen=strlen(responseString);
+        	acia.SendToRx((uint8_t *)responseString, responseLen);
             xSemaphoreGive(connectionLock);
             continue;
         }
@@ -358,11 +439,15 @@ void Modem :: Caller()
         //dump_hex(buffer, 128);
         // run the relay
 
-        acia.SendToRx((uint8_t *)"CONNECTED\r", 10);
+        responseString = (verbose==TRUE ? responseText[RESP_CONNECT] : responseCode[RESP_CONNECT]);
+		responseLen=strlen(responseString);
+		acia.SendToRx((uint8_t *)responseString, responseLen);
         keepConnection = true;
         RunRelay(sock_fd);
         lwip_close(sock_fd);
-        acia.SendToRx((uint8_t *)"NO CARRIER\r", 14);
+        responseString = (verbose==TRUE ? responseText[RESP_NO_CARRIER] : responseCode[RESP_NO_CARRIER]);
+        responseLen=strlen(responseString);
+        acia.SendToRx((uint8_t *)responseString, responseLen);
         keepConnection = false;
         xSemaphoreGive(connectionLock);
     }
@@ -411,9 +496,11 @@ int Modem :: ExecuteCommand(ModemCommand_t *cmd)
 {
     int connectionStateChange = 0;
     char *c;
-    const char *response = "OK\r";
+    const char *response;
     char responseBuffer[16];
     int registerValue, temp;
+
+    response = (verbose==TRUE ? responseText[RESP_OK] : responseCode[RESP_OK]);
 
     printf("MODEM COMMAND: '%s'\n", cmd->command);
 
@@ -460,14 +547,43 @@ int Modem :: ExecuteCommand(ModemCommand_t *cmd)
                 commandMode = false;
                 response = "";
             } else {
-                response = "NO CARRIER\r";
+            	response = (verbose==TRUE ? responseText[RESP_NO_CARRIER] : responseCode[RESP_NO_CARRIER]);
             }
             break;
         case 'V': // Verbose mode
             sscanf(cmd->command + i + 1, "%d", &temp);
             while(i < cmd->length && (isdigit(cmd->command[i+1])))
                 i++;
+
+            if(temp>1)
+            {
+            	response = (verbose==TRUE ? responseText[RESP_ERROR] : responseCode[RESP_ERROR]);
+            }
+            else
+            {
+            	if(temp == 1)
+            		verbose=TRUE;
+            	else
+            		verbose=FALSE;
+
+            	response = (verbose==TRUE ? responseText[RESP_OK] : responseCode[RESP_OK]);
+            }
             break;
+        case 'E':
+        case 'M':
+            sscanf(cmd->command + i + 1, "%d", &temp);
+            while(i < cmd->length && (isdigit(cmd->command[i+1])))
+                i++;
+
+            if(temp>1)
+            {
+            	response = (verbose==TRUE ? responseText[RESP_ERROR] : responseCode[RESP_ERROR]);
+            }
+            else
+            {
+            	response = (verbose==TRUE ? responseText[RESP_OK] : responseCode[RESP_OK]);
+            }
+        	break;
         case 'S': // register select
             registerSelect = 0;
             sscanf(cmd->command + i + 1, "%d", &registerSelect);
@@ -486,7 +602,7 @@ int Modem :: ExecuteCommand(ModemCommand_t *cmd)
             WriteRegister(registerValue);
             break;
         default:
-            response = "?\r";
+        	response = (verbose==TRUE ? responseText[RESP_ERROR] : responseCode[RESP_ERROR]);
             i = cmd->length; // break outer loop
             break;
         }

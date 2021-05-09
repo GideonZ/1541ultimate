@@ -240,15 +240,34 @@ int DataStreamer :: stopStream(SubsysCommand *cmd)
     return 0;
 }
 
-int  DataStreamer :: fetch_task_items(Path *path, IndexedList<Action*> &item_list)
+void DataStreamer :: create_task_items()
 {
-    item_list.append(new Action("Start VIC Stream", DataStreamer :: S_startStream, (int)this, 0));
-    item_list.append(new Action("Stop VIC Stream", DataStreamer :: S_stopStream, (int)this, 0));
-    item_list.append(new Action("Start Audio Stream", DataStreamer :: S_startStream, (int)this, 1));
-    item_list.append(new Action("Stop Audio Stream", DataStreamer :: S_stopStream, (int)this, 1));
-    item_list.append(new Action("Start Debug Stream", DataStreamer :: S_startStream, (int)this, 2));
-    item_list.append(new Action("Stop Debug Stream", DataStreamer :: S_stopStream, (int)this, 2));
-    return 6;
+    TaskCategory *cat = TasksCollection :: getCategory("Streams", 80);
+    TaskCategory *dev = TasksCollection :: getCategory("Developer", 999);
+
+    myActions.startVic = new Action("  VIC Stream", DataStreamer :: S_startStream, (int)this, 0);
+    myActions.stopVic  = new Action("\023 VIC Stream", DataStreamer :: S_stopStream, (int)this, 0);
+    myActions.startAud = new Action("  Audio Stream", DataStreamer :: S_startStream, (int)this, 1);
+    myActions.stopAud  = new Action("\023 Audio Stream", DataStreamer :: S_stopStream, (int)this, 1);
+    myActions.startDbg = new Action("  Debug Stream", DataStreamer :: S_startStream, (int)this, 2);
+    myActions.stopDbg  = new Action("\023 Debug Stream", DataStreamer :: S_stopStream, (int)this, 2);
+
+    cat->append(myActions.startVic);
+    cat->append(myActions.stopVic);
+    cat->append(myActions.startAud);
+    cat->append(myActions.stopAud);
+    dev->append(myActions.startDbg);
+    dev->append(myActions.stopDbg);
+}
+
+void DataStreamer :: update_task_items(bool writablePath, Path *path)
+{
+    myActions.startVic->setHidden(streams[0].enable != 0);
+    myActions.stopVic->setHidden(streams[0].enable == 0);
+    myActions.startAud->setHidden(streams[1].enable != 0);
+    myActions.stopAud->setHidden(streams[1].enable == 0);
+    myActions.startDbg->setHidden(streams[2].enable != 0);
+    myActions.stopDbg->setHidden(streams[2].enable == 0);
 }
 
 void DataStreamer :: send_udp_packet(uint32_t ip, uint16_t port)
@@ -364,8 +383,7 @@ void DataStreamer :: calculate_udp_headers(int id)
     }
     // one's complement fix up
     while(sum & 0xFFFF0000) {
-        sum += (sum >> 16);
-        sum &= 0xFFFF;
+    	sum = (sum >> 16) + (sum & 0xFFFF);
     }
     // write back
     header[24] = 0xFF ^ (uint8_t)(sum >> 8);

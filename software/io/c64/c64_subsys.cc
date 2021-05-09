@@ -87,28 +87,13 @@ static inline uint16_t le2cpu(uint16_t p)
 #endif
 }
 
-// TODO: Remove from here: place these helper functions in a new source file / class
-// TODO: Use these functions in other user-interface based subsystem calls
-// TODO: Asking for a filename could also be factored out
-FRESULT create_file_ask_if_exists(FileManager *fm, UserInterface *ui, const char *path, const char *filename, File **f)
-{
-    FRESULT res = fm->fopen(path, filename, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, f);
-    if (res == FR_EXIST) {
-        if (ui->popup("File already exists. Overwrite?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
-            res = fm->fopen(path, filename, FA_WRITE | FA_CREATE_ALWAYS, f);
-        }
-    }
-    return res;
-}
-
-
 C64_Subsys::C64_Subsys(C64 *machine)  : SubSystem(SUBSYSID_C64) {
 	taskHandle = 0;
 	c64 = machine;
 	fm = FileManager :: getFileManager();
 	taskHandle = 0;
 
-	// xTaskCreate( C64_Subsys :: poll, "C64 Server", configMINIMAL_STACK_SIZE, machine, tskIDLE_PRIORITY + 1, &taskHandle );
+	taskCategory = TasksCollection :: getCategory("C64 Machine", SORT_ORDER_C64);
 }
 
 C64_Subsys::~C64_Subsys() {
@@ -118,50 +103,78 @@ C64_Subsys::~C64_Subsys() {
 
 }
 
-int  C64_Subsys :: fetch_task_items(Path *path, IndexedList<Action *> &item_list)
+void C64_Subsys :: create_task_items(void)
 {
-	int count = 2;
-	item_list.append(new Action("Reset C64", SUBSYSID_C64, MENU_C64_RESET));
-	item_list.append(new Action("Reboot C64", SUBSYSID_C64, MENU_C64_REBOOT));
+    myActions.reset    = new Action("Reset C64", SUBSYSID_C64, MENU_C64_RESET);
+    myActions.reboot   = new Action("Reboot C64", SUBSYSID_C64, MENU_C64_REBOOT);
+    myActions.off      = new Action("Power OFF", SUBSYSID_C64, MENU_C64_POWEROFF);
+    myActions.pause    = new Action("Pause",  SUBSYSID_C64, MENU_C64_PAUSE);
+    myActions.resume   = new Action("Resume", SUBSYSID_C64, MENU_C64_RESUME);
+    myActions.savereu  = new Action("Save REU Memory", SUBSYSID_C64, MENU_C64_SAVEREU);
+    myActions.savemem  = new Action("Save C64 Memory", SUBSYSID_C64, MENU_U64_SAVERAM);
+    myActions.savemod  = new Action("Save Module Memory", SUBSYSID_C64, MENU_C64_SAVEMODULE);
+    myActions.save_ef  = new Action("Save Easyflash", SUBSYSID_C64, MENU_C64_SAVEEASYFLASH);
+    myActions.savemp3a = new Action("Save MP3 Drv A", SUBSYSID_C64, MENU_C64_SAVE_MP3_DRV_A);
+    myActions.savemp3b = new Action("Save MP3 Drv B", SUBSYSID_C64, MENU_C64_SAVE_MP3_DRV_B);
+    myActions.savemp3c = new Action("Save MP3 Drv C", SUBSYSID_C64, MENU_C64_SAVE_MP3_DRV_C);
+    myActions.savemp3d = new Action("Save MP3 Drv D", SUBSYSID_C64, MENU_C64_SAVE_MP3_DRV_D);
+
+    taskCategory->append(myActions.reset);
+    taskCategory->append(myActions.reboot);
 #if U64
-	item_list.append(new Action("Power OFF", SUBSYSID_C64, MENU_C64_POWEROFF));
-	count++;
+    taskCategory->append(myActions.off);
 #endif
 #if DEVELOPER > 0
-    item_list.append(new Action("Pause",  SUBSYSID_C64, MENU_C64_PAUSE));
-    item_list.append(new Action("Resume", SUBSYSID_C64, MENU_C64_RESUME));
-    count+=2;
+    taskCategory->append(myActions.pause);
+    taskCategory->append(myActions.resume);
 #endif
-	//item_list.append(new Action("Hard System Reboot", SUBSYSID_C64, MENU_C64_HARD_BOOT));
-    //item_list.append(new Action("Boot Alternate FPGA", SUBSYSID_C64, MENU_C64_BOOTFPGA));
-    //item_list.append(new Action("Save SID Trace", SUBSYSID_C64, MENU_C64_TRACE));
-
-    if(fm->is_path_writable(path)) {
-    	item_list.append(new Action("Save REU Memory", SUBSYSID_C64, MENU_C64_SAVEREU));
-    	count ++;
-#if 1
-        item_list.append(new Action("Save C64 Memory", SUBSYSID_C64, MENU_U64_SAVERAM));
-        count ++;
+#if U64
+    taskCategory->append(myActions.savemem);
 #endif
-        // item_list.append(new Action("Save Flash", SUBSYSID_C64, MENU_C64_SAVEFLASH));
+    taskCategory->append(myActions.savereu);
+//    taskCategory->append(myActions.savemod);
+    taskCategory->append(myActions.save_ef);
+    taskCategory->append(myActions.savemp3a);
+    taskCategory->append(myActions.savemp3b);
+    taskCategory->append(myActions.savemp3c);
+    taskCategory->append(myActions.savemp3d);
+}
+
+void C64_Subsys :: update_task_items(bool writablePath, Path *p)
+{
+    if (C64 :: isMP3RamDrive(0) > 0) myActions.savemp3a->show(); else myActions.savemp3a->hide();
+    if (C64 :: isMP3RamDrive(1) > 0) myActions.savemp3b->show(); else myActions.savemp3b->hide();
+    if (C64 :: isMP3RamDrive(2) > 0) myActions.savemp3c->show(); else myActions.savemp3c->hide();
+    if (C64 :: isMP3RamDrive(3) > 0) myActions.savemp3d->show(); else myActions.savemp3d->hide();
+    if (C64_CARTRIDGE_TYPE == CART_TYPE_EASY_FLASH) {
+        myActions.save_ef->show();
+    } else {
+        myActions.save_ef->hide();
     }
-#if 0
-    if(fm->is_path_writable(path)) {
-    	item_list.append(new Action("Save Module Memory", SUBSYSID_C64, MENU_C64_SAVEMODULE));
-    	count ++;
-    }
+
+    if (writablePath) {
+#if U64
+        myActions.savemem  ->enable();
 #endif
-    if(fm->is_path_writable(path) && C64_CARTRIDGE_TYPE == CART_TYPE_EASY_FLASH) {
-    	item_list.append(new Action("Save Easyflash", SUBSYSID_C64, MENU_C64_SAVEEASYFLASH));
-    	count ++;
+        myActions.savereu  ->enable();
+        myActions.savemod  ->enable();
+        myActions.save_ef  ->enable();
+        myActions.savemp3a ->enable();
+        myActions.savemp3b ->enable();
+        myActions.savemp3c ->enable();
+        myActions.savemp3d ->enable();
+    } else {
+#if U64
+        myActions.savemem  ->disable();
+#endif
+        myActions.savereu  ->disable();
+        myActions.savemod  ->disable();
+        myActions.save_ef  ->disable();
+        myActions.savemp3a ->disable();
+        myActions.savemp3b ->disable();
+        myActions.savemp3c ->disable();
+        myActions.savemp3d ->disable();
     }
-
-    if (C64 :: isMP3RamDrive(0) > 0) {item_list.append(new Action("Save MP3 Drv A", SUBSYSID_C64, MENU_C64_SAVE_MP3_DRV_A)); count++;}
-    if (C64 :: isMP3RamDrive(1) > 0) {item_list.append(new Action("Save MP3 Drv B", SUBSYSID_C64, MENU_C64_SAVE_MP3_DRV_B)); count++;}
-    if (C64 :: isMP3RamDrive(2) > 0) {item_list.append(new Action("Save MP3 Drv C", SUBSYSID_C64, MENU_C64_SAVE_MP3_DRV_C)); count++;}
-    if (C64 :: isMP3RamDrive(3) > 0) {item_list.append(new Action("Save MP3 Drv D", SUBSYSID_C64, MENU_C64_SAVE_MP3_DRV_D)); count++;}
-
-	return count;
 }
 
 /*
@@ -330,19 +343,10 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
                     printf("Opened file successfully.\n");
 
                     pb = new uint8_t[ram_size];
-                    // Stop is on U64 no longer required (and on C64 not possible to save RAM this way), but for consistency
-                    c64->stop(false);
-                    portENTER_CRITICAL();
-                    C64_DMA_MEMONLY = 1;
-                    memcpy(pb, (uint8_t *)C64_MEMORY_BASE, ram_size);
-                    C64_DMA_MEMONLY = 0;
-                    portEXIT_CRITICAL();
-                    c64->resume();
-                    uint32_t bytes_written;
-                    uint8_t *src;
+                    c64->get_all_memory(pb);
 
-                    src = pb;
-                    f->write(src, ram_size, &bytes_written);
+                    uint32_t bytes_written;
+                    f->write(pb, ram_size, &bytes_written);
 
                     printf("written: %d...", bytes_written);
                     sprintf(buffer, "bytes saved: %d ($%8x)", bytes_written, bytes_written);
@@ -618,7 +622,8 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
 
 	// handshake with boot cart
     c64->stop(false);
-	C64_POKE(C64_BOOTCRT_DRIVENUM, drv);    // drive number for printout
+
+    C64_POKE(C64_BOOTCRT_DRIVENUM, drv);    // drive number for printout
 
 	C64_POKE(C64_BOOTCRT_HANDSHAKE, 0x40);  // signal cart ready for DMA load
 
@@ -650,7 +655,7 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
 
         C64_POKE(C64_BOOTCRT_HANDSHAKE, 0); // signal DMA load done
         C64_POKE(C64_BOOTCRT_RUNCODE, run_code);
-        C64_POKE(0x00BA, c64->cfg->get_value(CFG_C64_DMA_ID));    // fix drive number
+        C64_POKE(0x00BA, drv);    // fix drive number
 	}
 
 	printf("Resuming..\n");

@@ -46,7 +46,7 @@ static const char *helptext=
 		"            wildcard.\n"
         "+/-:        Change value in config.\n"
         "\n"
-//		"F6:         Show debug log\n"
+		"F6:         Show debug log\n"
 		"\nRUN/STOP to close this window.";
 
 #include "stream_textlog.h"
@@ -64,8 +64,8 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root)
 	screen = NULL;
 	window = NULL;
     keyb = NULL;
-    contextMenu = NULL;
     configBrowser = NULL;
+    contextMenu = NULL;
     quick_seek_length = 0;
     quick_seek_string[0] = '\0';
     this->root = root;
@@ -74,7 +74,6 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root)
     fm = FileManager :: getFileManager();
     path = fm->get_new_path("Tree Browser");
     observerQueue = new ObserverQueue("TreeBrowser");
-    fm->registerObserver(observerQueue);
 
     if(!state) {
         state = new TreeBrowserState(root, this, 0);
@@ -99,6 +98,7 @@ void TreeBrowser :: init(Screen *screen, Keyboard *k) // call on root!
 
     screen->move_cursor(screen->get_size_x()-8, screen->get_size_y()-1);
 	screen->output("\eAF3=Help\eO");
+    fm->registerObserver(observerQueue);
 
 	window = new Window(screen, 0, 2, screen->get_size_x(), screen->get_size_y()-3);
 	keyb = k;
@@ -112,6 +112,7 @@ void TreeBrowser :: deinit(void)
 		delete window;
 		window = NULL;
 	}
+    fm->deregisterObserver(observerQueue);
 }
 
 void TreeBrowser :: config(void)
@@ -196,7 +197,18 @@ int TreeBrowser :: poll(int sub_returned)
             // create a return value of a GUI object, and call execute
             // with that immediately.
             state->draw();
-            contextMenu->executeAction();
+
+            Action *act = contextMenu->getSelectedAction();
+            if (act) {
+                printf("Action set was: %s\n", act->getName());
+                Browsable *b = contextMenu->getContextable();
+                const char *p = state->browser->getPath();
+                const char *filename = (b)?(b->getName()):"";
+                SubsysCommand *cmd = new SubsysCommand(user_interface, act, p, filename);
+                cmd->execute();
+            } else {
+                printf("Action was not set in context menu!\n");
+            }
             delete contextMenu;
             contextMenu = NULL;
             state->draw();
@@ -226,106 +238,115 @@ int TreeBrowser :: poll(int sub_returned)
 
 void TreeBrowser :: checkFileManagerEvent(void)
 {
-    FileManagerEvent *event = (FileManagerEvent *)observerQueue->waitForEvent(0);
-    if (event) {
-    	// printf("Event %s on %s\n", FileManager :: eventStrings[(int)event->eventType], event->pathName.c_str() );
+    FileManagerEvent *event;
+    while(1) {
+        event = (FileManagerEvent *)observerQueue->waitForEvent(0);
+        if (!event) {
+            break;
+        }
+        // printf("Event (%p) %s on %s\n", event, FileManager :: eventStrings[(int)event->eventType], event->pathName.c_str() );
 
-    	// example: browser path = /SD/Hallo  Event = media removed /SD/
+        // example: browser path = /SD/Hallo  Event = media removed /SD/
 
-		Path *path = fm->get_new_path("handleEvent");
-		path->cd(event->pathName.c_str()); // now we have a path object, with indexable elements :)
+        Path *path = fm->get_new_path("handleEvent");
+        path->cd(event->pathName.c_str()); // now we have a path object, with indexable elements :)
 
-		TreeBrowserState *st = state_root;
-		// TreeBrowserState *nst = state_root;
+        TreeBrowserState *st = state_root;
+        // TreeBrowserState *nst = state_root;
 
-		bool match_dir = true;
-		bool match_entry = false;
+        bool match_dir = true;
+        bool match_entry = false;
 
-		for (int i=0; i<path->getDepth();i++) {
-			if (st->deeper) {
-				st = st -> deeper;
-			} else {
-				match_dir = false;
-				break;
-			}
-			if (strcmp(st->node->getName(), path->getElement(i)) != 0) {
-				match_dir = false;
-			}
-		}
-		// match dir means: Our view is -or is a child of- the path mentioned in the event.
-		bool match_exact_path = (match_dir) && (st == this->state);
+        for (int i=0; i<path->getDepth();i++) {
+            if (st->deeper) {
+                st = st -> deeper;
+            } else {
+                match_dir = false;
+                break;
+            }
+            if (strcmp(st->node->getName(), path->getElement(i)) != 0) {
+                match_dir = false;
+            }
+        }
+        fm->release_path(path);
+        path = NULL; // make sure it is no longer referenced.
 
-		if (match_dir) {
-			if (st->deeper) {
-				printf("$%p:", st->deeper);
-				printf("%p:", st->deeper->node);
-				printf("%s -> %s\n", st->deeper->node->getName(), event->newName.c_str());
-				if (strcmp(st->deeper->node->getName(), event->newName.c_str()) == 0) {
-					match_entry = true;
-				}
-			}
-		}
+        // match dir means: Our view is -or is a child of- the path mentioned in the event.
+        bool match_exact_path = (match_dir) && (st == this->state);
 
-		// printf("DIR %sMATCHED, ENTRY %sMATCHED, st = %s\n", match_dir?"":"NOT ", match_entry?"":"NOT ", st->node->getName());
-		Browsable *b;
+        if (match_dir) {
+            if (st->deeper) {
+                printf("$%p:", st->deeper);
+                printf("%p:", st->deeper->node);
+                printf("%s -> %s\n", st->deeper->node->getName(), event->newName.c_str());
+                if (strcmp(st->deeper->node->getName(), event->newName.c_str()) == 0) {
+                    match_entry = true;
+                }
+            }
+        }
 
-    	switch (event->eventType) {
-    	case eNodeAdded:
-    	case eRefreshDirectory:
-    		if (match_exact_path) { // are we seeing the change?
-    			state->refresh = true;
-    		}
-    		if (match_dir) {
-    			st->needs_reload = true;
-    		}
-			break;
+        // printf("DIR %sMATCHED, ENTRY %sMATCHED, st = %s\n", match_dir?"":"NOT ", match_entry?"":"NOT ", st->node->getName());
+        Browsable *b;
 
-    	case eNodeRemoved: // node itself is gone
-    		if (event->pathName == getPath()) { // are we only seeing the change?
-    			printf("Refresh because event path and current path are equal.\n");
-    			state->refresh = true;
-    		} else {
-    			if (match_entry) {
-    				while ((state->previous) && (state != st)) {
-    					state->level_up();
-    				}
-    			}
-    			state->refresh = true;
-    		}
-    		if (match_dir) {
-    			b = st->node->findChild(event->newName.c_str());
-    			if (b) {
-    				printf("Removing %s\n", b->getName());
-    				st->node->children.remove(b);
-    			}
-    		}
-    		break;
+        switch (event->eventType) {
+        case eNodeAdded:
+        case eRefreshDirectory:
+            if (match_exact_path) { // are we seeing the change?
+                state->refresh = true;
+            }
+            if (match_dir) {
+                st->needs_reload = true;
+            }
+            break;
 
-    	case eNodeMediaRemoved: // node loses all children
-    		if (event->pathName == getPath()) {
-    			state->refresh = true;
-    		}
-			if (match_entry) {
-				while ((state->previous) && (state != st)) {
-					state->level_up();
-				}
-			}
-			state->refresh = true;
-    		break;
+        case eNodeRemoved: // node itself is gone
+            if (event->pathName == getPath()) { // are we only seeing the change?
+                printf("Refresh because event path and current path are equal.\n");
+                state->refresh = true;
+            } else {
+                if (match_entry) {
+                    while ((state->previous) && (state != st)) {
+                        state->level_up();
+                    }
+                }
+                state->refresh = true;
+            }
+            if (match_dir) {
+                b = st->node->findChild(event->newName.c_str());
+                if (b) {
+                    printf("Removing %s\n", b->getName());
+                    st->node->children.remove(b);
+                }
+            }
+            break;
 
-    	case eNodeUpdated: // one element in the list got updated
-    		if (event->pathName == getPath()) {
-    			state->refresh = true;
-    		}
-    		break;
+        case eNodeMediaRemoved: // node loses all children
+            if (event->pathName == getPath()) {
+                state->refresh = true;
+            }
+            if (match_entry) {
+                while ((state->previous) && (state != st)) {
+                    state->level_up();
+                }
+            }
+            state->refresh = true;
+            break;
 
-    	case eChangeDirectory: // a request to change directory
-    	    this->cd_impl(event->pathName.c_str());
-    	    break;
+        case eNodeUpdated: // one element in the list got updated
+            if (event->pathName == getPath()) {
+                state->refresh = true;
+            }
+            break;
 
-    	default:
-    		break;
-    	}
+        case eChangeDirectory: // a request to change directory
+            this->cd_impl(event->pathName.c_str());
+            break;
+
+        default:
+            break;
+        }
+
+        delete event;
     }
 }
 
@@ -433,7 +454,8 @@ int TreeBrowser :: handle_key(int c)
             break;
         case KEY_RIGHT: // right
             reset_quick_seek();
-			if (state->into2()) context(0);
+			//if (state->into2()) context(0);
+            state->into2();
             break;
         case KEY_LEFT: // left
         	state->level_up();

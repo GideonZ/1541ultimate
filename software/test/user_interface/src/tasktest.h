@@ -20,7 +20,7 @@ public:
 	virtual ~TaskTest() {
 	}
 
-    virtual int fetch_task_items(Path *path, IndexedList<Action*> &item_list);
+    virtual int update_task_items(Path *path, IndexedList<Action*> &item_list);
 
     const char *identify(void) { return "TaskTest"; };
     int executeCommand(SubsysCommand *cmd);

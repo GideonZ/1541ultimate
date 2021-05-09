@@ -25,6 +25,8 @@
 #define MENU_1541_SAVED64   0x1503
 #define MENU_1541_SAVEG64   0x1504
 #define MENU_1541_BLANK     0x1505
+#define MENU_1541_TURNON    0x1506
+#define MENU_1541_TURNOFF   0x1507
 #define MENU_1541_MOUNT     0x1511
 #define MENU_1541_MOUNT_GCR 0x1512
 #define MENU_1541_UNLINK    0x1513
@@ -94,6 +96,7 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     mstring drive_name;
     FileManager *fm;
     
+    TaskCategory *taskItemCategory;
     int iec_address;
     char drive_letter;
     bool large_rom;
@@ -108,6 +111,16 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     BinImage *bin_image;
 
     TaskHandle_t taskHandle;
+
+    struct {
+        Action *reset;
+        Action *remove;
+        Action *saved64;
+        Action *saveg64;
+        Action *blank;
+        Action *turnon;
+        Action *turnoff;
+    } myActions;
 
     void poll();
     static void run(void *a);
@@ -135,8 +148,11 @@ public:
     
     void init(void);
 
-    int  fetch_task_items(Path *path, IndexedList<Action*> &item_list); // from ObjectWithMenu
-    void effectuate_settings(void); // from ConfigurableObject
+    // from ObjectWithMenu
+    void create_task_items(void);
+    void update_task_items(bool, Path *);
+    // from ConfigurableObject
+    void effectuate_settings(void);
 
     // subsys
     const char *identify(void) { return drive_name.c_str(); }

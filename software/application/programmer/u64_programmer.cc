@@ -521,7 +521,7 @@ int socket_test(volatile socket_tester_t *test, volatile uint8_t *ctrl, uint8_t 
     int error = 0;
 
     if (test->id != 0x34) {
-        printf("\e2Socket Tester not found\n");
+        printf("\e2Socket Tester not found (0x%b != 0x34)\n", test->id);
         return -1;
     }
 

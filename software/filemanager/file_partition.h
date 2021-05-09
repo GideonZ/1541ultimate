@@ -20,6 +20,7 @@ public:
 
     const char *get_type_string(uint8_t typ);
     void  get_display_string(char *buffer, int width);
+    int  probe(void);
 };
 
 #endif

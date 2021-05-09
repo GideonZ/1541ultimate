@@ -40,7 +40,8 @@ package iec_bus_bfm_pkg is
 
     type t_iec_bus_bfm_object is record
         next_bfm    : p_iec_bus_bfm_object;
-        name        : string(1 to 256);
+        name1       : string(1 to 256);
+        name2       : string(1 to 256);
 
         -- interface to the user
         status      : t_iec_status;
@@ -77,7 +78,7 @@ package iec_bus_bfm_pkg is
     ------------------------------------------------------------------------------------
     shared variable iec_bus_bfms : p_iec_bus_bfm_object := null;
     ------------------------------------------------------------------------------------
-    procedure register_iec_bus_bfm(named : string; variable pntr: inout p_iec_bus_bfm_object);
+    procedure register_iec_bus_bfm(name1, name2 : string; variable pntr: inout p_iec_bus_bfm_object);
     procedure bind_iec_bus_bfm(named : string; variable pntr: inout p_iec_bus_bfm_object);
     ------------------------------------------------------------------------------------
 
@@ -105,7 +106,7 @@ end iec_bus_bfm_pkg;
 
 package body iec_bus_bfm_pkg is        
 
-    procedure register_iec_bus_bfm(named         : string;
+    procedure register_iec_bus_bfm(name1, name2  : string;
                                    variable pntr : inout p_iec_bus_bfm_object) is
     begin
         -- Allocate a new BFM object in memory
@@ -113,7 +114,8 @@ package body iec_bus_bfm_pkg is
 
         -- Initialize object
         pntr.next_bfm  := null;
-        pntr.name(named'range) := named;
+        pntr.name1(name1'range) := name1;
+        pntr.name2(name2'range) := name2;
         pntr.status      := ok;
         pntr.state       := idle;
         pntr.stopped     := false; -- active;
@@ -139,7 +141,7 @@ package body iec_bus_bfm_pkg is
 
         p := iec_bus_bfms; -- start at the root
         L1: while p /= null loop
-            if p.name(named'range) = named then
+            if p.name1(named'range) = named or p.name2(named'range) = named then
                 pntr := p;
                 exit L1;
             else
@@ -249,6 +251,7 @@ library std;
 use std.textio.all;
 
 entity iec_bus_bfm is
+generic (g_given_name : string := "iec_bfm");
 port (
     iec_clock   : inout std_logic;
     iec_data    : inout std_logic;
@@ -270,7 +273,7 @@ begin
     -- this process registers this instance of the bfm to the server package
     bind: process
     begin
-        register_iec_bus_bfm(iec_bus_bfm'path_name, this);
+        register_iec_bus_bfm(iec_bus_bfm'path_name, g_given_name, this);
         bound <= true;
         wait;
     end process;
@@ -334,12 +337,12 @@ begin
                 this.status := ok;
             end if;
             wait for c_frame_release;
-            atn_o <= '1';
 
         end procedure;
 
         procedure send_byte(byte : std_logic_vector(7 downto 0)) is
         begin
+            atn_o <= '1';
             clk_o <= '1';
             wait until data_i='1'; -- for... (listener hold-off could be infinite)
             wait for c_non_eoi;
@@ -370,7 +373,7 @@ begin
 --            data_o <= '0';
 --            wait for c_eoi_hold;
 --            data_o <= '1';
-            wait until data_i='0' for c_eoi; -- wait for 250 µs to see that listener has acked eoi
+            wait until data_i='0' for c_eoi; -- wait for 250 ï¿½s to see that listener has acked eoi
             if data_i='1' then
                 this.status := no_eoi_ack;
                 return;
@@ -399,12 +402,18 @@ begin
 
         procedure talk_atn_turnaround is
         begin
+            report "Start ATN Turnaround.";
+
+            atn_o <= '1';
             wait for c_talk_atn_rel;
             clk_o  <= '1';
             data_o <= '0';
             wait for c_talk_atn_rel;
-            wait until clk_i = '0';
+            if clk_i /= '0' then
+                wait until clk_i = '0';
+            end if;
             
+            report "We are now listener.";
             this.state       := listener;
             this.msg_buf.len := 0;  -- clear buffer for incoming data
         end procedure;
@@ -423,7 +432,7 @@ begin
             wait for c_clk_low; -- dummy
             data_o <= '1';
             
-            -- check for end of message handshake (data pulses low after >200 µs for >60 µs)
+            -- check for end of message handshake (data pulses low after >200 ï¿½s for >60 ï¿½s)
             wait until clk_i = '0' for c_eoi_min;
             if clk_i='1' then -- eoi timeout
                 eoi := true;

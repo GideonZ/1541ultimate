@@ -63,11 +63,12 @@ typedef enum  {
 class FileManagerEvent
 {
 public:
-	eFileManagerEventType eventType;
+    eFileManagerEventType eventType;
 	mstring pathName;
 	mstring newName;
 
-	FileManagerEvent(eFileManagerEventType e, const char *p, const char *n = "") : eventType(e), pathName(p), newName(n) { }
+	FileManagerEvent(eFileManagerEventType e, const char *p, const char *n = "") : eventType(e), pathName(p), newName(n) {  }
+	~FileManagerEvent() { }
 };
 
 
@@ -188,7 +189,10 @@ public:
 
     void  get_display_string(Path *p, const char *filename, char *buffer, int width);
 
-    FRESULT get_filesystem(Path *path, FileSystem **fs);
+    FRESULT get_free(Path *path, uint32_t &free);
+    FRESULT fs_read_sector(Path *path, uint8_t *buffer, int track, int sector);
+    FRESULT fs_write_sector(Path *path, uint8_t *buffer, int track, int sector);
+
     FRESULT fstat(Path *path, const char *filename, FileInfo &info);
     FRESULT fstat(const char *path, const char *name, FileInfo &info);
     FRESULT fstat(const char *pathname, FileInfo &info);
@@ -220,11 +224,19 @@ public:
     	observers.remove(q);
     }
     void sendEventToObservers(eFileManagerEventType e, const char *p, const char *n="") {
-    	printf("Sending FM event to %d observers: %d %s %s\n", observers.get_elements(), e, p, n);
+        // printf("Sending FM event to %d observers: %d %s %s\n", observers.get_elements(), e, p, n);
     	for(int i=0;i<observers.get_elements();i++) {
+    		ObserverQueue *q = observers[i];
+    		if (!q) {
+    		    continue;
+    		}
     		FileManagerEvent *ev = new FileManagerEvent(e, p, n);
-    		if (!(observers[i]->putEvent(ev))) {
-                printf("Failed to post message to queue #%d - %s.\n", i, observers[i]->getName());
+    		// printf("[%d]", FileManagerEvent :: numFME);
+    		if (!(q->putEvent(ev))) {
+                // printf("Failed to post message to queue #%d - %s.\n", i, q->getName());
+                delete ev;
+    		} else {
+    		    // printf("Sent FM event at %p to %s. (%s)\n", ev, q->getName(), p);
     		}
     	}
     }

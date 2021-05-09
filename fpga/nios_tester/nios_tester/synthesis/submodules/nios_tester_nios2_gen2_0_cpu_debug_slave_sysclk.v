@@ -1,4 +1,4 @@
-//Legal Notice: (C)2019 Altera Corporation. All rights reserved.  Your
+//Legal Notice: (C)2021 Altera Corporation. All rights reserved.  Your
 //use of Altera Corporation's design tools, logic functions and other
 //software and tools, and its AMPP partner logic functions, and any
 //output files any of the foregoing (including device programming or
@@ -58,27 +58,28 @@ module nios_tester_nios2_gen2_0_cpu_debug_slave_sysclk (
   input            vs_udr;
   input            vs_uir;
 
-  reg              enable_action_strobe /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103\""  */;
-  reg     [  1: 0] ir /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,R101\""  */;
-  reg     [ 37: 0] jdo /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,R101\""  */;
-  reg              jxuir /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103\""  */;
-  reg              sync2_udr /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103\""  */;
-  reg              sync2_uir /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103\""  */;
-  wire             sync_udr;
-  wire             sync_uir;
-  wire             take_action_break_a;
-  wire             take_action_break_b;
-  wire             take_action_break_c;
-  wire             take_action_ocimem_a;
-  wire             take_action_ocimem_b;
-  wire             take_action_tracectrl;
-  wire             take_no_action_break_a;
-  wire             take_no_action_break_b;
-  wire             take_no_action_break_c;
-  wire             take_no_action_ocimem_a;
-  wire             unxunused_resetxx3;
-  wire             unxunused_resetxx4;
-  reg              update_jdo_strobe /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103\""  */;
+
+reg              enable_action_strobe /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103\""  */;
+reg     [  1: 0] ir /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,R101\""  */;
+reg     [ 37: 0] jdo /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,R101\""  */;
+reg              jxuir /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103\""  */;
+reg              sync2_udr /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103\""  */;
+reg              sync2_uir /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103\""  */;
+wire             sync_udr;
+wire             sync_uir;
+wire             take_action_break_a;
+wire             take_action_break_b;
+wire             take_action_break_c;
+wire             take_action_ocimem_a;
+wire             take_action_ocimem_b;
+wire             take_action_tracectrl;
+wire             take_no_action_break_a;
+wire             take_no_action_break_b;
+wire             take_no_action_break_c;
+wire             take_no_action_ocimem_a;
+wire             unxunused_resetxx3;
+wire             unxunused_resetxx4;
+reg              update_jdo_strobe /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103\""  */;
   assign unxunused_resetxx3 = 1'b1;
   altera_std_synchronizer the_altera_std_synchronizer3
     (

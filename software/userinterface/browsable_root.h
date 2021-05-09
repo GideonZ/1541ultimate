@@ -120,7 +120,14 @@ public:
 		    error = 0;
 			for(int i=0;i<infos->get_elements();i++) {
 				FileInfo *inf = (*infos)[i];
-				children.append(new BrowsableDirEntry(path, this, inf, !(inf->attrib & AM_VOL))); // pass ownership of the FileInfo to the browsable object
+				bool selectable = true;
+				if (inf->attrib & AM_VOL) {
+					selectable = false;
+				}
+				if (inf->attrib & AM_DIR) {
+					selectable = true;
+				}
+				children.append(new BrowsableDirEntry(path, this, inf, selectable)); // pass ownership of the FileInfo to the browsable object
 			}
 			delete infos; // deletes the indexed list, but not the FileInfos
 		}
@@ -145,16 +152,17 @@ public:
 	virtual void getDisplayString(char *buffer, int width) {
 		static char sizebuf[8];
 		if (info->name_format & NAME_FORMAT_DIRECT) {
-			FileManager :: getFileManager() -> get_display_string(parent_path, info->lfname, buffer, width);
+			FileManager::getFileManager()->get_display_string(parent_path, info->lfname, buffer, width);
 		} else {
-			char sel = getSelection() ? '\x13': ' ';
-			if (info->attrib & AM_VOL) {
-				sprintf(buffer, "\eR%#s\er VOLUME", width-11, info->lfname);
-			} else if(info->is_directory()) {
-				sprintf(buffer, "%#s\eJ DIR%c", width-11, info->lfname, sel);
+			char sel = getSelection() ? '\x13' : ' ';
+			if (info->is_directory()) {
+				sprintf(buffer, "%#s\eJ DIR%c", width - 11, info->lfname, sel);
+			} else if (info->attrib & AM_VOL) {
+				sprintf(buffer, "\eR%#s\er VOLUME", width - 11, info->lfname);
 			} else {
 				size_to_string_bytes(info->size, sizebuf);
-				sprintf(buffer, "%#s\e7 %3s%c%s", width-11, info->lfname, info->extension, sel, sizebuf);
+				sprintf(buffer, "%#s\e7 %3s%c%s", width - 11, info->lfname,
+						info->extension, sel, sizebuf);
 			}
 		}
 	}

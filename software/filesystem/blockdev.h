@@ -16,7 +16,8 @@ typedef enum {
 	e_device_no_media,
 	e_device_not_ready,
 	e_device_ready,
-	e_device_error
+	e_device_error,
+	e_device_failed,
 } t_device_state;
 
 class BlockDevice

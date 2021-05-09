@@ -88,6 +88,11 @@ void ConfigBrowserState :: change(void)
         case CFG_TYPE_ENUM:
             browser->context(it->getValue() - it->definition->min);
             break;
+        case CFG_TYPE_VALUE:
+        	if ((it->definition->max - it->definition->min) < 30) {
+                browser->context(it->getValue() - it->definition->min);
+        	}
+            break;
         case CFG_TYPE_STRING:
             max = it->definition->max;
             if (max > 79)
@@ -202,11 +207,16 @@ int ConfigBrowser :: handle_key(int c)
             break;
         case KEY_SPACE: // space = select
         case KEY_RETURN: // CR = select
-        case KEY_RIGHT: // right
             if(state->level==0)
                 state->into();
             else
                 state->change();
+            break;
+        case KEY_RIGHT: // right
+            if(state->level==0)
+                state->into();
+            else
+                state->increase();
             break;
         case '+':
             if(state->level!=0)
