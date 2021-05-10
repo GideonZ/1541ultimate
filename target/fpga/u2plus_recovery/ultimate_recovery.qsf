@@ -550,6 +550,7 @@ set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/mem32k.
 set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dmem_splitter.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/cached_mblite.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dm_simple.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_debug.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/rxtx_to_buf.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_host_nano.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/token_crc.vhd
