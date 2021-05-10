@@ -83,8 +83,8 @@ const char *cart_mode[] = { "None",
                       "Custom System 3 ROM",
                       "Custom Ocean V1 ROM",
                       "Custom Ocean V2/T2 ROM",
-                      "Custom Final III ROM",
 */
+                      "Custom UUC ROM",
                       "Custom Retro Replay ROM",
                       "Custom Snappy ROM",
                       "Custom KCS ROM",
@@ -121,8 +121,8 @@ cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_
                           { 0x00,               0x000000, 0x80000,  0x08 | CART_REU },
                           { 0x00,               0x000000, 0x80000,  0x0A | CART_REU },
                           { 0x00,               0x000000, 0x80000,  0x0B | CART_REU },
-                          { 0x00,               0x000000, 0x10000,  0x04 },
 */
+                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x10000,  0x04 | CART_REU | CART_ETH },
                           { FLASH_ID_CUSTOM_ROM,0x000000, 0x10000,  0x06 | CART_REU | CART_ETH },
                           { FLASH_ID_CUSTOM_ROM,0x000000, 0x10000,  0x05 | CART_REU },
                           { FLASH_ID_CUSTOM_ROM,0x000000, 0x04000,  0x10 },
@@ -154,7 +154,7 @@ static const char *bus_sharing[] = { "Internal", "External", "Both" };
 
 struct t_cfg_definition c64_config[] = {
 #if U64
-    { CFG_C64_CART,        CFG_TYPE_ENUM, "Cartridge",                    "%s", cart_mode,  0, 20, 0 },
+    { CFG_C64_CART,        CFG_TYPE_ENUM, "Cartridge",                    "%s", cart_mode,  0, 21, 0 },
     { CFG_C64_CART_PREF,   CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,  0,  3, 0 },
     { CFG_BUS_MODE,        CFG_TYPE_ENUM, "Bus Operation Mode",           "%s", bus_modes,    0,  3, 0 },
     { CFG_BUS_SHARING_ROM, CFG_TYPE_ENUM, "Bus Sharing - ROMs",           "%s", bus_sharing,  0,  2, 2 },
@@ -162,7 +162,7 @@ struct t_cfg_definition c64_config[] = {
     { CFG_BUS_SHARING_IO2, CFG_TYPE_ENUM, "Bus Sharing - I/O2",           "%s", bus_sharing,  0,  2, 2 },
     { CFG_BUS_SHARING_IRQ, CFG_TYPE_ENUM, "Bus Sharing - Interrupts",     "%s", bus_sharing,  0,  2, 2 },
 #else
-    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 22, 4 },
+    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 23, 4 },
 #endif
     { CFG_C64_FC3MODE,  CFG_TYPE_ENUM,   "Final Cartridge 3 Mode",       "%s", fc3mode,    0,  2, 0 },
     { CFG_C64_FASTRESET,CFG_TYPE_ENUM,   "Fast Reset",                   "%s", en_dis,     0,  1, 0 },
@@ -1141,6 +1141,16 @@ void C64::set_cartridge(cart_def *def)
             }
             break;
         }
+    } else if (def->id && def->type == (CART_TYPE_FC3 | CART_REU | CART_ETH) ) {
+#ifndef RECOVERYAPP
+#ifndef NO_FILE_ACCESS
+        char* buffer = new char[128 * 1024];
+        printf("Requesting crt copy from Flash, id = %b to mem addr %p\n", def->id, buffer);
+        flash->read_image(def->id, (void *) buffer, 128 * 1024);
+        FileTypeCRT::parseCrt(buffer);
+        delete buffer;
+#endif
+#endif
     } else if (def->id && def->type) {
         printf("Requesting copy from Flash, id = %b to mem addr %p\n", def->id, mem_addr);
         flash->read_image(def->id, (void *) mem_addr, def->length);
@@ -1258,7 +1268,7 @@ void C64::init_cartridge()
         wait_ms(1400);
         start_cartridge(cart2, false);
     }
-    else if (cart2->id == FLASH_ID_CUSTOM_ROM && !cart2->type)
+    else if (cart2->id == FLASH_ID_CUSTOM_ROM && (cart2->type == CART_REU | CART_ETH) )
     {
         C64_MODE = C64_MODE_UNRESET;
         C64_STOP = 0;
