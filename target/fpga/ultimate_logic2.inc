@@ -67,6 +67,7 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/io/rmii/vhdl_source/eth_transmit.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/rmii/vhdl_source/packet_generator.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/rmii/vhdl_source/ethernet_interface.vhd \
+                vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/usb_debug.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/data_crc.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/timer.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/host_sequencer.vhd \
