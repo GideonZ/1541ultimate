@@ -452,6 +452,12 @@ set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/core
 set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/mem.vhd -library mblite
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/xilinx_primitives/RAMB16_S9_S36.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/xilinx_primitives/unisim_VCOMP.vhd
+set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/c64/cia_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/c64/cia_timer.vhd
+set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/c64/cia_registers.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/wd177x.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/c1581_drive.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/cpu_part_1581.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/c1541_timing.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy_stream.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy.vhd

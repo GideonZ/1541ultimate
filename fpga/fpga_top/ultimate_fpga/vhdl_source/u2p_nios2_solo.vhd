@@ -516,6 +516,7 @@ begin
         g_uart          => true,
         g_drive_1541    => true,
         g_drive_1541_2  => true,
+        g_drive_1581    => true, -- Let's try all!!
         g_hardware_gcr  => true,
         g_ram_expansion => true,
         g_extended_reu  => false,
@@ -530,7 +531,6 @@ begin
         g_drive_sound   => true,
         g_rtc_chip      => false,
         g_rtc_timer     => false,
-        g_usb_host      => false,
         g_usb_host2     => true,
         g_spi_flash     => true,
         g_vic_copper    => false,

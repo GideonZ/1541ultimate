@@ -76,6 +76,11 @@ int FileTypeD64 :: fetch_context_items(IndexedList<Action *> &list)
             list.append(new Action("Mount Disk Unl. on B", SUBSYSID_DRIVE_B, D64FILE_MOUNT_UL));
             count += 3;
         }
+    } else if(ftype == 1581) {
+    	if (capabilities & CAPAB_DRIVE_1581) {
+            list.append(new Action("Mount Disk", SUBSYSID_DRIVE_C, D64FILE_MOUNT));
+            list.append(new Action("Mount Disk R/O", SUBSYSID_DRIVE_C, D64FILE_MOUNT_RO));
+    	}
     }
     
     if (C64 :: isMP3RamDrive(0) == ftype) {list.append(new Action("Load into MP3 Drv A", FileTypeD64 :: loadMP3_st, (ftype << 2) | 0)); count++;}

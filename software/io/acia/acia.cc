@@ -55,14 +55,14 @@ int Acia :: init(uint16_t base, bool useNMI, QueueHandle_t controlQueue, QueueHa
     //regs->tx_tail = regs->tx_head; // clear upstream buffer
     //regs->rx_head = regs->rx_tail; // clear downstream buffer
     regs->enable = enable;
-    ioWrite8(ITU_IRQ_HIGH_EN, 1);
+    ioWrite8(ITU_IRQ_HIGH_EN, ioRead8(ITU_IRQ_HIGH_EN) | 1);
 
     return 0;
 }
 
 void Acia :: deinit(void)
 {
-    ioWrite8(ITU_IRQ_HIGH_EN, 0);
+    ioWrite8(ITU_IRQ_HIGH_EN, ioRead8(ITU_IRQ_HIGH_EN) & ~1);
     if (!(getFpgaCapabilities() & CAPAB_ACIA)) {
         return;
     }
@@ -168,7 +168,7 @@ uint8_t Acia :: IrqHandler(void)
 //    }
     // Let's turn it off for now
     // regs->enable &= ~source;
-    return 0;
+    return retVal;
 }
 
 int Acia :: GetRxSpace(void)

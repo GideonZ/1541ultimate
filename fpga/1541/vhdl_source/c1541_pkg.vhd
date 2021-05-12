@@ -16,6 +16,7 @@ package c1541_pkg is
     constant c_drvreg_status    : unsigned(3 downto 0) := X"9";
     constant c_drvreg_memmap    : unsigned(3 downto 0) := X"A";
     constant c_drvreg_audiomap  : unsigned(3 downto 0) := X"B";
+    constant c_drvreg_diskchng  : unsigned(3 downto 0) := X"C";
 
     constant c_drv_dirty_base   : unsigned(15 downto 0) := X"0800";
     constant c_drv_param_base   : unsigned(15 downto 0) := X"1000";

@@ -76,6 +76,7 @@ typedef enum { e_no_disk,
 #define C1541_STATUS      9
 #define C1541_MEM_ADDR   10
 #define C1541_AUDIO_ADDR 11
+#define C1541_DISKCHANGE 12
 
 #define C1541_DIRTYFLAGS    0x0800
 #define C1541_PARAM_RAM     0x1000

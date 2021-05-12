@@ -1,8 +1,7 @@
 
 library ieee;
 use ieee.std_logic_1164.all;
-use ieee.std_logic_unsigned.all;
-use ieee.std_logic_arith.all;
+use ieee.numeric_std.all;
 
 library std;
 use std.textio.all;
@@ -14,7 +13,7 @@ package iec_bus_bfm_pkg is
     
     type t_iec_status  is (ok, no_devices, no_response, timeout, no_eoi_ack);
     type t_iec_state   is (idle, talker, listener);
-    type t_iec_command is (none, send_atn, send_msg, atn_to_listen);
+    type t_iec_command is (none, send_atn, send_msg, atn_to_listen, send_drf);
     
     type t_iec_data is array(natural range <>) of std_logic_vector(7 downto 0);
     type t_iec_message is record
@@ -74,7 +73,8 @@ package iec_bus_bfm_pkg is
     constant c_tlkr_resp_dly : time := 60 us; -- max
     constant c_talk_atn_rel  : time := 30 us;
     constant c_talk_atn_ack  : time := 250 us; -- ?
-
+    constant c_fast_serial   : time := 10 us;
+    
     ------------------------------------------------------------------------------------
     shared variable iec_bus_bfms : p_iec_bus_bfm_object := null;
     ------------------------------------------------------------------------------------
@@ -85,7 +85,8 @@ package iec_bus_bfm_pkg is
     procedure iec_stop(variable bfm : inout p_iec_bus_bfm_object);
     procedure iec_talk(variable bfm : inout p_iec_bus_bfm_object);
     procedure iec_listen(variable bfm : inout p_iec_bus_bfm_object);
-
+    procedure iec_drf(variable bfm : inout p_iec_bus_bfm_object);
+    
     procedure iec_send_atn(variable bfm : inout p_iec_bus_bfm_object;
                             byte : std_logic_vector(7 downto 0));
 
@@ -190,6 +191,16 @@ package body iec_bus_bfm_pkg is
         end loop;
     end procedure;        
 
+    procedure iec_drf(variable bfm : inout p_iec_bus_bfm_object) is
+    begin
+        bfm.to_bfm.command := send_drf;
+        wait for bfm.sample_time;
+        wait for bfm.sample_time;
+        while bfm.from_bfm.busy loop
+            wait for bfm.sample_time;
+        end loop;
+    end procedure;
+
     procedure iec_send_message(variable bfm : inout p_iec_bus_bfm_object;
                                msg: t_iec_message) is
     begin
@@ -208,7 +219,7 @@ package body iec_bus_bfm_pkg is
     begin
         leng := msg'length;
         for i in 1 to leng loop
-            bfm.msg_buf.data(i-1) := conv_std_logic_vector(character'pos(msg(i)), 8);
+            bfm.msg_buf.data(i-1) := std_logic_vector(to_unsigned(character'pos(msg(i)), 8));
         end loop;
         bfm.msg_buf.len := leng;
         iec_send_message(bfm, bfm.msg_buf);
@@ -230,7 +241,7 @@ package body iec_bus_bfm_pkg is
         variable c : character;
     begin
         for i in 0 to msg.len-1 loop
-            c := character'val(conv_integer(msg.data(i)));
+            c := character'val(to_integer(unsigned(msg.data(i))));
             write(L, c);
         end loop;
         writeline(output, L);
@@ -241,8 +252,7 @@ end;
 
 library ieee;
 use ieee.std_logic_1164.all;
-use ieee.std_logic_unsigned.all;
-use ieee.std_logic_arith;
+use ieee.numeric_std.all;
 
 library work;
 use work.iec_bus_bfm_pkg.all;
@@ -255,8 +265,9 @@ generic (g_given_name : string := "iec_bfm");
 port (
     iec_clock   : inout std_logic;
     iec_data    : inout std_logic;
-    iec_atn     : inout std_logic );
-end iec_bus_bfm;
+    iec_atn     : inout std_logic;
+    iec_srq     : inout std_logic );
+end entity;
 
 architecture bfm of iec_bus_bfm is
     shared variable this : p_iec_bus_bfm_object := null;
@@ -268,6 +279,11 @@ architecture bfm of iec_bus_bfm is
     signal data_o   : std_logic;
     signal atn_i    : std_logic;
     signal atn_o    : std_logic;
+    signal srq_i    : std_logic;
+    signal srq_o    : std_logic;
+    signal fast_byte : std_logic_vector(7 downto 0) := X"00";
+    signal fast_byte_available  : boolean;
+    signal fast_byte_reset      : boolean;
 
 begin
     -- this process registers this instance of the bfm to the server package
@@ -282,11 +298,13 @@ begin
     clk_i  <= iec_clock and '1';
     data_i <= iec_data  and '1';
     atn_i  <= iec_atn   and '1';
-
+    srq_i  <= iec_srq   and '1';
+    
     iec_clock <= '0' when clk_o='0'  else 'H';
     iec_data  <= '0' when data_o='0' else 'H';
     iec_atn   <= '0' when atn_o='0'  else 'H';
-    
+    iec_srq   <= '0' when srq_o='0'  else 'H';
+
 --         |<--------- Byte sent under attention (to devices) ------------>|
 --
 -- ___    ____                                                        _____ _____
@@ -398,8 +416,20 @@ begin
             else
                 this.status := ok;
             end if;
+            wait for c_byte_to_byte;
+            clk_o <= '1';
         end procedure;
 
+        procedure do_send_drf is
+        begin
+            for i in 0 to 7 loop
+                srq_o <= '0';
+                wait for c_fast_serial;
+                srq_o <= '1';
+                wait for c_fast_serial;
+            end loop;            
+        end procedure;
+        
         procedure talk_atn_turnaround is
         begin
             report "Start ATN Turnaround.";
@@ -421,16 +451,18 @@ begin
         procedure receive_byte is
             variable b   : std_logic_vector(7 downto 0);
             variable eoi : boolean;
-            variable c   : character;
-            variable L   : LINE;
+--            variable c   : character;
+--            variable L   : LINE;
         begin
             eoi := false;
 
             if clk_i='0' then
                 wait until clk_i='1';
             end if;
+            fast_byte_reset <= true;
             wait for c_clk_low; -- dummy
             data_o <= '1';
+            fast_byte_reset <= false;
             
             -- check for end of message handshake (data pulses low after >200 �s for >60 �s)
             wait until clk_i = '0' for c_eoi_min;
@@ -441,19 +473,23 @@ begin
                 wait for c_eoi_hold;
                 data_o <= '1';
             end if;
-                                        
-            for i in 0 to 7 loop
-                wait until clk_i='1';
+                                            
+            L1: for i in 0 to 7 loop
+                wait until clk_i='1' or fast_byte_available;
+                if fast_byte_available then
+                    b := fast_byte;
+                    exit L1;
+                end if;
                 b(i) := data_i;
             end loop;
+            if not fast_byte_available then
+                wait until clk_i='0';
+            else
+                wait for c_fast_serial;
+            end if;
 
---            c := character'val(conv_integer(b));
---            write(L, c);
---            writeline(output, L);
---
             this.msg_buf.data(this.msg_buf.len) := b;
             this.msg_buf.len := this.msg_buf.len + 1;
-            wait until clk_i='0';
 
             if eoi then
                 this.state := idle;
@@ -468,6 +504,7 @@ begin
         atn_o  <= '1';
         data_o <= '1';
         clk_o  <= '1';
+        srq_o  <= '1';
         wait until bound;
         
         while not this.stopped loop
@@ -509,6 +546,11 @@ begin
                 talk_atn_turnaround;
                 this.from_bfm.busy := false;
                 
+            when send_drf =>
+                this.from_bfm.busy := true;
+                do_send_drf;
+                this.from_bfm.busy := false;
+                
             end case;            
 
             this.to_bfm.command := none;
@@ -522,10 +564,27 @@ begin
         wait;
     end process;
 
+    process(srq_i, fast_byte_reset)
+        variable cnt : integer := 0;
+    begin
+        if fast_byte_reset then
+            cnt := 7;
+            fast_byte_available <= false;
+        elsif rising_edge(srq_i) then
+            if cnt >= 0 then
+                fast_byte(cnt) <= data_i;
+            end if;
+            if cnt = 0 then
+                fast_byte_available <= true;
+            end if;
+            cnt := cnt - 1;
+        end if;
+    end process;
+
     -- if in idle state, and atn_i becomes '0', then become device and listen
     -- but that is only needed for devices... (not for the controller)
     
     -- if listener (means that I am addressed), listen to all bytes
     -- if end of message is detected, switch back to idle state.
-end bfm;
+end architecture;
 

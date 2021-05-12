@@ -17,7 +17,7 @@
 #warning "Clock frequency should be set in makefile, using -DCLOCK_FREQ=nnnnn. Now 50 MHz is assumed."
 #endif
 
-const char *yes_no[] = { "No", "Yes" };
+static const char *yes_no[] = { "No", "Yes" };
 #if U64
 const char *rom_sel[] = { "CBM 1541", "1541 C", "1541-II", "Custom1*", "Custom2*", "Custom3*" };
 #elif CLOCK_FREQ == 62500000
