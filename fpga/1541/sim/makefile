@@ -51,6 +51,7 @@ SOURCE_INCLUDES =
 #       library work
 
 AUTO_DEP_PATHS  = $(wildcard ../vhdl_*/)
+AUTO_DEP_PATHS += $(wildcard ../../../../ult64/proglogic/c64/)
 AUTO_DEP_PATHS += $(wildcard ../../../target/simulation/packages/vhdl_source/)
 AUTO_DEP_PATHS += $(wildcard ../../*/vhdl_source/)
 AUTO_DEP_PATHS += $(wildcard ../../*/*/vhdl_source/)
@@ -101,6 +102,12 @@ $(TESTCASE)_ENTITY			:= $(TESTCASE)
 $(TESTCASE)_TIME			:= 20 us;
 $(TESTCASE)_DO_GUI_BEFORE	:= 
 
+TESTCASE 					:= c1581_startup_tc
+TESTCASES					:= $(TESTCASES) $(TESTCASE)
+$(TESTCASE)_SRC				:= $(TESTCASE).vhd
+$(TESTCASE)_ENTITY			:= $(TESTCASE)
+$(TESTCASE)_TIME			:= 20 us;
+$(TESTCASE)_DO_GUI_BEFORE	:= 
 ###############################################################################
 #### Regression tests
 ###############################################################################

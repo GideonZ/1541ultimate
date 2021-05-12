@@ -24,6 +24,8 @@ port (
     drv_reset       : out std_logic;
     drive_address   : out std_logic_vector(1 downto 0);
     floppy_inserted : out std_logic;
+    disk_change_n   : out std_logic;
+    force_ready     : out std_logic;
     write_prot_n    : out std_logic;
     bank_is_ram     : out std_logic_vector(7 downto 1);
     dirty_led_n     : out std_logic;
@@ -33,7 +35,7 @@ port (
     param_ram_en    : out std_logic;
     param_addr      : out std_logic_vector(10 downto 0);
     param_wdata     : out std_logic_vector(7 downto 0);
-    param_rdata     : in  std_logic_vector(7 downto 0);
+    param_rdata     : in  std_logic_vector(7 downto 0) := X"77";
 
     track           : in  std_logic_vector(6 downto 0);
     mode            : in  std_logic;
@@ -55,6 +57,8 @@ architecture rtl of drive_registers is
     signal sensor_i         : std_logic;
     signal bank_is_ram_i    : std_logic_vector(7 downto 1);
     signal inserted_i       : std_logic;
+    signal disk_change_i    : std_logic;
+    signal force_ready_i    : std_logic;
     signal stop_when_frozen : std_logic;
 begin
     p_reg: process(clock)
@@ -94,6 +98,9 @@ begin
                         any_dirty <= '0';
                     when c_drvreg_dirtyirq =>
                         irq_en <= io_req.data(0);
+                    when c_drvreg_diskchng =>
+                        disk_change_i <= io_req.data(0);
+                        force_ready_i <= io_req.data(1);
                     when others =>
                         null;
                     end case;
@@ -131,6 +138,9 @@ begin
                         io_resp.data(0) <= any_dirty;
                     when c_drvreg_dirtyirq =>
                         io_resp.data(0) <= irq_en;
+                    when c_drvreg_diskchng =>
+                        io_resp.data(0) <= disk_change_i;
+                        io_resp.data(1) <= force_ready_i;
                     when c_drvreg_track =>
                         io_resp.data(6 downto 0) <= track(6 downto 0);
                     when c_drvreg_status =>
@@ -173,11 +183,13 @@ begin
                 sensor_i         <= '0';
                 bank_is_ram_i    <= (others => '0');
                 inserted_i       <= '0';
+                disk_change_i    <= '0';
                 use_c64_reset_i  <= '1';
-                any_dirty <= '0';
-                irq_en    <= '0';
-                wd        <= '0';
+                any_dirty        <= '0';
+                irq_en           <= '0';
+                wd               <= '0';
                 stop_when_frozen <= '1';
+                force_ready_i    <= '0';
             end if;    
         end if;
     end process;
@@ -190,9 +202,11 @@ begin
     power           <= power_i;
     drive_address   <= drive_address_i;
     floppy_inserted <= inserted_i;
+    disk_change_n   <= not disk_change_i;
     write_prot_n    <= sensor_i;
     bank_is_ram     <= bank_is_ram_i;
     dirty_led_n     <= not any_dirty;
     use_c64_reset   <= use_c64_reset_i;
     stop_on_freeze  <= stop_when_frozen;
-end rtl;
+    force_ready     <= force_ready_i;
+end architecture;

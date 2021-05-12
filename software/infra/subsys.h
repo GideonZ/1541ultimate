@@ -25,11 +25,12 @@ class UserInterface;
 #define SUBSYSID_C64             1
 #define SUBSYSID_DRIVE_A         2
 #define SUBSYSID_DRIVE_B         3
-#define SUBSYSID_TAPE_PLAYER     4
-#define SUBSYSID_TAPE_RECORDER   5
-#define SUBSYSID_IEC             6
-#define SUBSYSID_CMD_IF			 7
-#define SUBSYSID_U64			 8
+#define SUBSYSID_DRIVE_C         4
+#define SUBSYSID_TAPE_PLAYER     5
+#define SUBSYSID_TAPE_RECORDER   6
+#define SUBSYSID_IEC             7
+#define SUBSYSID_CMD_IF			 8
+#define SUBSYSID_U64			 9
 
 
 #define SORT_ORDER_CREATE  10

@@ -11,7 +11,7 @@
 #define DRIVE_A_BASE       (IOBASE + 0x20000)
 #define DRIVE_B_BASE       (IOBASE + 0x24000)
 #define IEC_BASE           (IOBASE + 0x28000)
-#define LED_BASE		   (IOBASE + 0x2C000)
+#define DRIVE_C_BASE	   (IOBASE + 0x2C000)
 #define C64_CARTREGS_BASE  (IOBASE + 0x40000)
 #define SID_BASE           (IOBASE + 0x42000)
 #define CMD_IF_BASE        (IOBASE + 0x44000)

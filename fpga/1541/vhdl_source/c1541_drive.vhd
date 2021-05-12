@@ -29,8 +29,8 @@ port (
     io_resp         : out t_io_resp;
                 
     -- master port on memory bus
-    mem_req         : out t_mem_req;
-    mem_resp        : in  t_mem_resp;
+    mem_req         : out t_mem_req_32;
+    mem_resp        : in  t_mem_resp_32;
     
     -- serial bus pins
     atn_o           : out std_logic; -- open drain
@@ -116,6 +116,8 @@ architecture structural of c1541_drive is
     signal mem_resp_flop    : t_mem_resp;
     signal mem_req_snd      : t_mem_req := c_mem_req_init;
     signal mem_resp_snd     : t_mem_resp;
+    signal mem_req_8        : t_mem_req := c_mem_req_init;
+    signal mem_resp_8       : t_mem_resp;
     signal mem_busy         : std_logic;
     
     signal count            : unsigned(7 downto 0) := X"00";
@@ -329,8 +331,19 @@ begin
         resps(1)    => mem_resp_cpu,
         resps(2)    => mem_resp_snd,
         
-        req         => mem_req,
-        resp        => mem_resp );        
+        req         => mem_req_8,
+        resp        => mem_resp_8 );        
+
+    i_conv32: entity work.mem_to_mem32(route_through)
+    generic map (
+        g_big_endian => g_big_endian )
+    port map(
+        clock       => clock,
+        reset       => reset,
+        mem_req_8   => mem_req_8,
+        mem_resp_8  => mem_resp_8,
+        mem_req_32  => mem_req,
+        mem_resp_32 => mem_resp );
 
     process(clock)
     	variable led_int : unsigned(7 downto 0);

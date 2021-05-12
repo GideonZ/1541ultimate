@@ -196,7 +196,7 @@ int main(int argc, char** argv)
 	int i;
 
     uint32_t bin_offset = 0;
-    uint32_t size       = (1<<22); // 4M default
+    uint32_t size       = (1<<23); // 8M default
     uint32_t highest    = 0;
     int      segment    = -1;
     int      help       = 0;

@@ -8,6 +8,7 @@ port (
     clock           : in  std_logic;
     reset           : in  std_logic;
     
+    two_MHz_mode    : in  std_logic := '0';
     tick_4MHz       : in  std_logic;
     mem_busy        : in  std_logic := '0';
     
@@ -19,7 +20,7 @@ port (
     drive_stop      : in  std_logic;
                     
     cia_rising      : out std_logic;
-    cpu_clock_en    : out std_logic ); -- 1/50   (1 MHz)
+    cpu_clock_en    : out std_logic ); 
     
 end c1541_timing;
 
@@ -43,7 +44,11 @@ begin
                     when "01" =>
                         cia_rising <= '1';
                         if behind = 0 then
-                            pre_cnt <= "10";
+                            if two_MHz_mode = '1' then
+                                pre_cnt <= "11";
+                            else
+                                pre_cnt <= "10";
+                            end if;
                         else
                             behind <= behind - 1;
                             pre_cnt <= "11";
@@ -53,7 +58,11 @@ begin
                     when others => -- 11
                         if mem_busy = '0' then
                             cpu_clock_en_i <= '1';
-                            pre_cnt <= "00";
+                            if two_MHz_mode = '1' then
+                                pre_cnt <= "01";
+                            else
+                                pre_cnt <= "00";
+                            end if;
                         elsif signed(behind) /= -1 then
                             behind <= behind + 1;
                         end if;                        
