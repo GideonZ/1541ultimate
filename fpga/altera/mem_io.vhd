@@ -69,16 +69,17 @@ architecture arch of mem_io is
     signal rdata_h          : std_logic_vector(g_data_width-1 downto 0);
     signal rdata_l          : std_logic_vector(g_data_width-1 downto 0);
 
-    signal rdata_r1         : std_logic_vector(2*g_data_width-1 downto 0);
-    signal rdata_r2         : std_logic_vector(2*g_data_width-1 downto 0);
-    signal rdata_r3         : std_logic_vector(2*g_data_width-1 downto 0);
-    signal rdata_f1         : std_logic_vector(2*g_data_width-1 downto 0);
-    signal rdata_f2         : std_logic_vector(2*g_data_width-1 downto 0);
-    signal rdata_f3         : std_logic_vector(2*g_data_width-1 downto 0);
-    
+    signal rdata_l1         : std_logic_vector(g_data_width-1 downto 0);
+    signal rdata_l2         : std_logic_vector(g_data_width-1 downto 0);
+    signal rdata_h1         : std_logic_vector(g_data_width-1 downto 0);
+    signal rdata_h2         : std_logic_vector(g_data_width-1 downto 0);
+    signal rdata_32         : std_logic_vector(4*g_data_width-1 downto 0);
     signal dqs_oe           : std_logic;
     signal mode_r           : std_logic_vector(1 downto 0);
-    
+    signal dqs_in_h         : std_logic;
+    signal dqs_in_l         : std_logic;    
+    signal dqs_in_h1        : std_logic;
+    signal dqs_in_l1        : std_logic;    
     
     COMPONENT altpll
     GENERIC (
@@ -187,7 +188,7 @@ begin
         clk3_divide_by => 2,
         clk3_duty_cycle => 50,
         clk3_multiply_by => 5,
-        clk3_phase_shift => "6960",
+        clk3_phase_shift => "3400",
         clk4_divide_by => 4,
         clk4_duty_cycle => 50,
         clk4_multiply_by => 5,
@@ -391,45 +392,64 @@ begin
         sset        => '0'
     );
 
-    
-    i_dqs: altddio_out 
+    dqs_oe <= wdata_oe or wdata_oe_r;
+    i_dqs: altddio_bidir 
     generic map (
-        extend_oe_disable      => "UNUSED",
+        extend_oe_disable      => "OFF",
         intended_device_family => "Cyclone IV E",
         lpm_hint               => "UNUSED",
-        lpm_type               => "altddio_out",
+        lpm_type               => "altddio_bidir",
+        invert_output          => "OFF",
         oe_reg                 => "REGISTERED",
         power_up_high          => "OFF",
         width                  => 1 
     ) port map (
-        aset                   => sys_reset_pipe(0),
+        -- aset                   => sys_reset_pipe(0),
         datain_h(0)            => wdata_oe_r,
         datain_l(0)            => '0',
-        dataout(0)             => mem_dqs,
+        padio(0)               => mem_dqs,
         oe                     => dqs_oe,
         outclock               => not_addr_clock,
-        outclocken             => '1'
+        outclocken             => '1',
+        inclock                => mem_read_clock,
+        dataout_h(0)           => dqs_in_h,
+        dataout_l(0)           => dqs_in_l,
+        sclr                   => '0',
+        sset                   => '0'        
     );
     not_addr_clock <= not mem_addr_clock;
-    
-    rdata_r1 <= rdata_h & rdata_l;
-
-    process(mem_read_clock)
-    begin
-        if falling_edge(mem_read_clock) then
-            rdata_f1 <= rdata_r1;
-            rdata_f2 <= rdata_f1;
-            rdata_f3 <= rdata_f2;
-        end if;
-    end process;
     
     process(mem_read_clock)
     begin
         if rising_edge(mem_read_clock) then
-            rdata_r2 <= rdata_r1;
-            rdata_r3 <= rdata_r2;
+            rdata_h1 <= rdata_h;
+            rdata_l1 <= rdata_l;
+            rdata_h2 <= rdata_h1;
+            rdata_l2 <= rdata_l1;
+            dqs_in_h1 <= dqs_in_h;
+            dqs_in_l1 <= dqs_in_l;
         end if;
     end process;
+
+    process(mem_read_clock)
+    begin
+        if falling_edge(mem_read_clock) then
+            if dqs_in_h1 = '0' and dqs_in_l1 = '1' then
+                rdata_32 <= rdata_h & rdata_l & rdata_h1 & rdata_l1;
+            else
+                rdata_32 <= rdata_l & rdata_h1 & rdata_l1 & rdata_h2;
+            end if;            
+        end if;
+    end process;
+--
+--    process(dqs_in_h1, dqs_in_l1, rdata_h, rdata_l, rdata_h1, rdata_l1, rdata_h2)
+--    begin
+--        if dqs_in_h1 = '0' and dqs_in_l1 = '1' then
+--            rdata_32 <= rdata_h & rdata_l & rdata_h1 & rdata_l1;
+--        else
+--            rdata_32 <= rdata_l & rdata_h1 & rdata_l1 & rdata_h2;
+--        end if;            
+--    end process;
 
 --    process(mem_sys_clock)
 --    begin
@@ -450,9 +470,11 @@ begin
 --        end if;
 --    end process;
     
-    -- No multiplexer required
-    rdata <= rdata_f1 & rdata_f2 when rising_edge(sys_clock_i);
+    process(sys_clock_i)
+    begin
+        if rising_edge(sys_clock_i) then
+            rdata <= rdata_32;
+        end if;
+    end process;
     
-    
-    dqs_oe <= wdata_oe or wdata_oe_r; --dqs_oe_r or dqs_oe_r2;
 end architecture;
