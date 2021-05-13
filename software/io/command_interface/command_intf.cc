@@ -37,7 +37,7 @@ CommandInterface :: CommandInterface() : SubSystem(SUBSYSID_CMD_IF)
     for(int i=0;i<=CMD_IF_MAX_TARGET;i++)
         command_targets[i] = &cmd_if_empty_target;
 
-    if(getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
+    if((getFpgaCapabilities() & CAPAB_COMMAND_INTF) && (getFpgaCapabilities() & CAPAB_CARTRIDGE)) {
         CMD_IF_SLOT_BASE = 0x47; // $DF1C
         CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;    
     
