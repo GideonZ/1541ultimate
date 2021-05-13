@@ -137,7 +137,6 @@ architecture Gideon of ddr2_ctrl is
     signal phaseupdown        : std_logic;
     signal phasedone          : std_logic;
     signal mode               : std_logic_vector(1 downto 0);
-    signal measurement        : std_logic_vector(11 downto 0);
     signal addr_first         : std_logic_vector(21 downto 0);
     signal addr_second        : std_logic_vector(21 downto 0);
     signal phy_wdata          : std_logic_vector(35 downto 0);
@@ -320,7 +319,6 @@ begin
         phaseupdown        => phaseupdown,
         phasedone          => phasedone,
         mode               => mode,
-        measurement        => measurement,
         addr_first         => addr_first,
         addr_second        => addr_second,
         wdata              => phy_wdata,
@@ -361,8 +359,6 @@ begin
             if io_req.read = '1' then
                 io_resp.ack <= '1';
                 case local is
-                when X"4" =>
-                    io_resp.data <= measurement(11 downto 8) & measurement(5 downto 2);
                 when X"5" =>
                     io_resp.data(0) <= phasedone;
                 when others =>

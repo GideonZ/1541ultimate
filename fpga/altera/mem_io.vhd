@@ -31,8 +31,7 @@ entity mem_io is
         phasestep          : in  std_logic;
         phaseupdown        : in  std_logic;
         phasedone          : out std_logic;
-        mode               : in  std_logic_vector(1 downto 0);
-        measurement        : out std_logic_vector(11 downto 0);
+        mode               : in  std_logic_vector(1 downto 0) := "00";
                 
         addr_first         : in    std_logic_vector(g_addr_cmd_width-1 downto 0);
         addr_second        : in    std_logic_vector(g_addr_cmd_width-1 downto 0);
@@ -79,8 +78,6 @@ architecture arch of mem_io is
     
     signal dqs_oe           : std_logic;
     signal mode_r           : std_logic_vector(1 downto 0);
-    signal measure_h        : std_logic;
-    signal measure_l        : std_logic;
     
     
     COMPONENT altpll
@@ -190,7 +187,7 @@ begin
         clk3_divide_by => 2,
         clk3_duty_cycle => 50,
         clk3_multiply_by => 5,
-        clk3_phase_shift => "4480", -- was 2000 for zero delay design
+        clk3_phase_shift => "6960",
         clk4_divide_by => 4,
         clk4_duty_cycle => 50,
         clk4_multiply_by => 5,
@@ -295,8 +292,8 @@ begin
         oe        => '1',
         datain_h  => "0",
         datain_l  => "1",
-        dataout_h(0) => measure_h,
-        dataout_l(0) => measure_l,
+        dataout_h => open,
+        dataout_l => open,
         combout   => open,
         dqsundelayedout => open,
         outclocken  => '1',
@@ -332,60 +329,6 @@ begin
 
     not_sys_clock <= not sys_clock_i;
     
---    b_measure: block
---        signal measure_l_r  : std_logic;
---        signal measure_h_r  : std_logic;
---        signal count        : unsigned(5 downto 0) := (others => '0');
---        signal value_h      : unsigned(5 downto 0) := (others => '0');
---        signal value_l      : unsigned(5 downto 0) := (others => '0');
---        signal count_h      : unsigned(5 downto 0) := (others => '0');
---        signal count_l      : unsigned(5 downto 0) := (others => '0');
---        signal new_values   : std_logic := '0';
---    begin
---        process(mem_measure_clock)
---        begin
---            if rising_edge(mem_measure_clock) then
---                measure_l_r <= measure_l;
---                measure_h_r <= measure_h;
---                count <= count + 1;
---                new_values <= '0';
---                if signed(count) = -1 then
---                    value_h <= count_h; 
---                    count_h <= (others => '0');
---                    value_l <= count_l; 
---                    count_l <= (others => '0');
---                    new_values <= '1';
---                else
---                    if measure_l_r = '1' then
---                        count_l <= count_l + 1;
---                    end if;
---                    if measure_h_r = '1' then
---                        count_h <= count_h + 1;
---                    end if;
---                end if;
---            end if;
---        end process;
---
---        i_sync: entity work.synchronizer_gzw
---        generic map(
---            g_width     => 12,
---            g_fast      => false
---        )
---        port map (
---            tx_clock    => mem_measure_clock,
---            tx_push     => new_values,
---            tx_data(11 downto 6) => std_logic_vector(value_h),
---            tx_data( 5 downto 0) => std_logic_vector(value_l),
---            tx_done     => open,
---            rx_clock    => sys_clock_i,
---            rx_new_data => open,
---            rx_data     => measurement
---        );
---
---    end block;
-
-    measurement <= X"555";
-
     i_addr: altddio_out 
     generic map (
         extend_oe_disable      => "UNUSED",
@@ -443,34 +386,12 @@ begin
         datain_l  => wdata_half(2*g_data_width-1 downto g_data_width),
         dataout_h => rdata_h,
         dataout_l => rdata_l,
-        combout   => open,
-        dqsundelayedout => open,
         outclocken  => '1',
         sclr        => '0',
         sset        => '0'
     );
 
     
---    i_dqs_oe: altddio_out 
---    generic map (
---        extend_oe_disable      => "UNUSED",
---        intended_device_family => "Cyclone IV E",
---        lpm_hint               => "UNUSED",
---        lpm_type               => "altddio_out",
---        oe_reg                 => "UNUSED",
---        power_up_high          => "OFF",
---        width                  => 1 
---    ) port map (
---        aset                   => sys_reset_pipe(0),
---        datain_h(0)            => dqs_oe_half(0),
---        datain_l(0)            => dqs_oe_half(1),
---        dataout(0)             => dqs_oe,
---        oe                     => '1',
---        outclock               => mem_write_clock,
---        outclocken             => '1'
---    );
-
-
     i_dqs: altddio_out 
     generic map (
         extend_oe_disable      => "UNUSED",
@@ -491,16 +412,16 @@ begin
     );
     not_addr_clock <= not mem_addr_clock;
     
+    rdata_r1 <= rdata_h & rdata_l;
+
     process(mem_read_clock)
     begin
         if falling_edge(mem_read_clock) then
-            rdata_f1 <= rdata_h & rdata_l;
+            rdata_f1 <= rdata_r1;
             rdata_f2 <= rdata_f1;
             rdata_f3 <= rdata_f2;
         end if;
     end process;
-
-    rdata_r1 <= rdata_h & rdata_l;
     
     process(mem_read_clock)
     begin
@@ -510,24 +431,28 @@ begin
         end if;
     end process;
 
-    process(mem_sys_clock)
-    begin
-        if rising_edge(mem_sys_clock) then
-            mode_r <= mode;
-            case mode_r is
-            when "00" =>
-                rdata <= rdata_r1 & rdata_r2;
-            when "01" =>
-                rdata <= rdata_f1 & rdata_f2;
-            when "10" =>
-                rdata <= rdata_r2 & rdata_r3;
-            when "11" =>
-                rdata <= rdata_f2 & rdata_f3;
-            when others =>
-                rdata <= (others => '0');
-            end case;
-        end if;
-    end process;
+--    process(mem_sys_clock)
+--    begin
+--        if rising_edge(mem_sys_clock) then
+--            mode_r <= mode;
+--            case mode_r is
+--            when "00" =>
+--                rdata <= rdata_r1 & rdata_r2;
+--            when "01" =>
+--                rdata <= rdata_f1 & rdata_f2;
+--            when "10" =>
+--                rdata <= rdata_r2 & rdata_r3;
+--            when "11" =>
+--                rdata <= rdata_f2 & rdata_f3;
+--            when others =>
+--                rdata <= (others => '0');
+--            end case;
+--        end if;
+--    end process;
+    
+    -- No multiplexer required
+    rdata <= rdata_f1 & rdata_f2 when rising_edge(sys_clock_i);
+    
     
     dqs_oe <= wdata_oe or wdata_oe_r; --dqs_oe_r or dqs_oe_r2;
 end architecture;
