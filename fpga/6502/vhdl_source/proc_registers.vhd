@@ -34,15 +34,13 @@ port (
     set_data     : in  std_logic_vector(7 downto 0);
     
     -- interrupt pins
-    interrupt    : in  std_logic;
+    set_i_flag   : in  std_logic;
     vect_addr    : in  std_logic_vector(3 downto 0);
-    set_b        : in  std_logic;
-    clear_b      : in  std_logic;
     
     -- from processor state machine and decoder
     sync         : in  std_logic; -- latch ireg
     latch_dreg   : in  std_logic;
-    vect_bit     : in  std_logic;
+    vectoring    : in  std_logic;
     reg_update   : in  std_logic;
     copy_d2p     : in  std_logic;
     a_mux        : in  t_amux;
@@ -97,9 +95,11 @@ architecture gideon of proc_registers is
     alias  V_flag : std_logic is p_reg_i(6);
     alias  N_flag : std_logic is p_reg_i(7);
 
+    signal p_reg_push   : std_logic_vector(7 downto 0);
 begin
     dreg_zero <= '1' when dreg=X"00" else '0';
-    
+    p_reg_push <= p_reg_i(7 downto 6) & '1' & not vectoring & p_reg_i(3 downto 0);
+
     process(clock)
         variable pcl_t : std_logic_vector(8 downto 0);
         variable adl_t : std_logic_vector(8 downto 0);
@@ -118,14 +118,8 @@ begin
 	                p_reg_i <= new_flags;
 	            end if;
 	
-	            if vect_bit='0' then
+                    if set_i_flag='1' then
 	                I_flag <= '1';
-	            end if;
-	
-	            if set_b='1' then
-	                B_flag <= '1';
-	            elsif clear_b='1' then
-	                B_flag <= '0';
 	            end if;
 	
 	            if so_n='0' then -- only 1 bit is affected, so no syncronization needed
@@ -283,7 +277,7 @@ begin
         dreg when reg_d,
         a_reg_i  when reg_accu,
         reg_out  when reg_axy,
-        p_reg_i or X"20" when reg_flags,
+        p_reg_push when reg_flags,
         pcl      when reg_pcl,
         pch      when reg_pch,
         mem_data when shift_res,
