@@ -1006,7 +1006,7 @@ BinImage static_bin_image("Static Binary Image"); // for general use
 int ImageCreator :: S_createD71(SubsysCommand *cmd)
 {
     FileManager *fm = FileManager :: getFileManager();
-    File *f;
+    File *f = 0;
     uint32_t written;
     char name_buffer[32];
     name_buffer[0] = 0;
@@ -1035,7 +1035,7 @@ int ImageCreator :: S_createD71(SubsysCommand *cmd)
 int ImageCreator :: S_createD81(SubsysCommand *cmd)
 {
     FileManager *fm = FileManager :: getFileManager();
-    File *f;
+    File *f = 0;
     uint32_t written;
     char name_buffer[32];
     name_buffer[0] = 0;
@@ -1064,7 +1064,7 @@ int ImageCreator :: S_createD81(SubsysCommand *cmd)
 int ImageCreator :: S_createDNP(SubsysCommand *cmd)
 {
     FileManager *fm = FileManager :: getFileManager();
-    File *f;
+    File *f = 0;
     uint32_t written;
     char name_buffer[32];
     char size_buffer[16];
