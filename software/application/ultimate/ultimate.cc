@@ -157,7 +157,7 @@ extern "C" void ultimate_main(void *a)
     if(capabilities & CAPAB_DRIVE_1541_2) {
         c1541_B = new C1541(C1541_IO_LOC_DRIVE_2, 'B');
     }
-    if(capabilities & CAPAB_DRIVE_1541_2) {
+    if(capabilities & CAPAB_DRIVE_1581) {
         c1581_C = new C1581(C1581_IO_LOC_DRIVE, 'C');
     }
 
