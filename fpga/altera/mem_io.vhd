@@ -62,6 +62,7 @@ architecture arch of mem_io is
     signal wdata_r          : std_logic_vector(4*g_data_width-1 downto 0);
     signal wdata_oe_r       : std_logic;
     signal wdata_oe_r2      : std_logic;
+    signal mode_r           : std_logic_vector(1 downto 0);
     
     signal wdata_half       : std_logic_vector(2*g_data_width-1 downto 0);
     signal wdata_mux        : std_logic;
@@ -75,7 +76,6 @@ architecture arch of mem_io is
     signal rdata_h2         : std_logic_vector(g_data_width-1 downto 0);
     signal rdata_32         : std_logic_vector(4*g_data_width-1 downto 0);
     signal dqs_oe           : std_logic;
-    signal mode_r           : std_logic_vector(1 downto 0);
     signal dqs_in_h         : std_logic;
     signal dqs_in_l         : std_logic;    
     signal dqs_in_h1        : std_logic;

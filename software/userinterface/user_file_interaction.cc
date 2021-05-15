@@ -275,6 +275,7 @@ FRESULT create_user_file(UserInterface *ui, const char *message, const char *ext
 {
     char filename[32];
     FileManager *fm = FileManager :: getFileManager();
+    *f = NULL;
     if(ui->string_box(message, buffer, 22) > 0) {
         strcpy(filename, buffer);
         fix_filename(filename);
