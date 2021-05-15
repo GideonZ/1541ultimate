@@ -146,7 +146,6 @@ void C1581 :: create_task_items(void)
 {
     myActions.reset   = new Action("Reset",        getID(), MENU_1541_RESET, 0);
     myActions.remove  = new Action("Remove Disk",  getID(), MENU_1541_REMOVE, 0);
-    myActions.blank   = new Action("Insert Blank", getID(), MENU_1541_BLANK, 0);
     myActions.turnon  = new Action("Turn On",      getID(), MENU_1541_TURNON, 0);
     myActions.turnoff = new Action("Turn Off",     getID(), MENU_1541_TURNOFF, 0);
 
@@ -154,13 +153,11 @@ void C1581 :: create_task_items(void)
     taskItemCategory->append(myActions.turnoff);
     taskItemCategory->append(myActions.reset);
     taskItemCategory->append(myActions.remove);
-    taskItemCategory->append(myActions.blank);
 }
 
 void C1581 :: update_task_items(bool writablePath, Path *p)
 {
     myActions.remove->hide();
-    myActions.blank->hide();
     myActions.reset->hide();
     myActions.turnon->hide();
 
@@ -174,9 +171,7 @@ void C1581 :: update_task_items(bool writablePath, Path *p)
     myActions.turnoff->show();
     myActions.reset->show();
 
-    if(disk_state == e_no_disk) {
-        myActions.blank->show();
-    } else { // there is a disk in the drive
+    if(disk_state != e_no_disk) {
         myActions.remove->show();
     }
 }
