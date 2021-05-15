@@ -20,6 +20,9 @@
 #include "rtc.h"
 #include "userinterface.h"
 
+#include "filemanager.h"
+#include "init_function.h"
+
 extern uint32_t _ultimate_run_rbf_start;
 extern uint32_t _ultimate_run_rbf_end;
 
@@ -35,6 +38,8 @@ extern uint32_t _ultimate_recovery_rbf_end;
 extern uint32_t _recovery_app_start;
 extern uint32_t _recovery_app_end;
 
+extern uint8_t _1581_bin_start;
+
 void do_update(void)
 {
 	printf("*** U2+ Updater ***\n\n");
@@ -44,8 +49,11 @@ void do_update(void)
     REMOTE_FLASHSELCK_1;
 	Flash *flash = get_flash();
 
-    GenericHost *host = 0;
+	GenericHost *host = 0;
     Stream *stream = new Stream_UART;
+
+    InitFunction :: executeAll();
+    FileManager *fm = FileManager :: getFileManager();
 
     C64 *c64 = C64 :: getMachine();
 
@@ -87,13 +95,22 @@ void do_update(void)
         REMOTE_FLASHSELCK_0;
         REMOTE_FLASHSELCK_1;
 
+        File *f;
+        uint32_t dummy;
+        FRESULT fres = fm->fopen("/flash", "1581.rom", FA_CREATE_ALWAYS | FA_WRITE, &f);
+        if (fres == FR_OK) {
+            fres = f->write(&_1581_bin_start, 0x8000, &dummy);
+            console_print(screen, "Writing 1581 ROM to Flash drive: %s\n", FileSystem :: get_error_string(fres));
+            fm->fclose(f);
+        }
+
         Flash *flash2 = get_flash();
         flash2->protect_disable();
         flash_buffer_at(flash2, screen, 0x000000, false, &_ultimate_run_rbf_start,   &_ultimate_run_rbf_end,   "V1.0", "Runtime FPGA");
         flash_buffer_at(flash2, screen, 0x0C0000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
         flash_buffer_at(flash2, screen, 0x200000, false, &_rom_pack_start, &_rom_pack_end, "V0.0", "ROMs Pack");
 
-    	console_print(screen, "\nConfiguring Flash write protection..\n");
+        console_print(screen, "\nConfiguring Flash write protection..\n");
     	flash2->protect_configure();
     	flash2->protect_enable();
     	console_print(screen, "Done!                            \n");

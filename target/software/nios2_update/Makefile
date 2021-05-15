@@ -20,6 +20,9 @@ SRCS_C   =	itu.c \
             timers.c \
             port.c \
             heap_3.c \
+            ff.c \
+            ffsystem.c \
+            ffunicode.c \
             time.c \
             mdio.c \
             nios_main.c \
@@ -37,6 +40,11 @@ SRCS_CC	 =  memory.cc \
             s25fl_flash.cc \
 			pattern.cc \
 			config.cc \
+			filemanager.cc \
+			file_device.cc \
+			file_partition.cc \
+			filesystem_root.cc \
+			init_function.cc \
 			c64.cc \
 			screen.cc \
 			screen_vt100.cc \
@@ -53,6 +61,16 @@ SRCS_CC	 =  memory.cc \
 			host_stream.cc \
 			prog_flash.cc \
 			stream_uart.cc \
+			path.cc \
+			blockdev.cc \
+			blockdev_flash.cc \
+			disk.cc \
+			partition.cc \
+			file_system.cc \
+			diskio.cc \
+			directory.cc \
+			file.cc \
+			filesystem_fat.cc \
 			$(PRJ).cc
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
@@ -72,7 +90,7 @@ SRCS_ASMS = port_asm.S
 
 SRCS_6502 = 
 
-SRCS_BIN =  chars.bin
+SRCS_BIN =  chars.bin 1581.bin
 
 SRCS_IEC = 
 
