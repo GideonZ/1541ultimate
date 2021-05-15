@@ -1,8 +1,5 @@
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <ctype.h>
-#include <errno.h>
 
 #include "itu.h"
 #include "dump_hex.h"
@@ -10,7 +7,6 @@
 #include "c64.h"
 #include "userinterface.h"
 #include "filemanager.h"
-
 
 static const char *yes_no[]  = { "No", "Yes" };
 
@@ -20,6 +16,7 @@ static const char *yes_no[]  = { "No", "Yes" };
 #define CFG_C1581_LASTMOUNT 0xC4
 #define CFG_C1581_C64RESET  0xC5
 #define CFG_C1581_STOPFREEZ 0xC6
+#define CFG_C1581_ROMFILE   0xC7
 
 const struct t_cfg_definition c1581_config[] = {
     { CFG_C1581_POWERED,   CFG_TYPE_ENUM,   "1581 Drive",                 "%s", en_dis,     0,  1, 1 },
@@ -27,10 +24,11 @@ const struct t_cfg_definition c1581_config[] = {
     { CFG_C1581_SWAPDELAY, CFG_TYPE_VALUE,  "1581 Disk swap delay",       "%d00 ms", NULL,  1, 10, 1 },
     { CFG_C1581_C64RESET,  CFG_TYPE_ENUM,   "1581 Resets when C64 resets","%s", yes_no,     0,  1, 1 },
     { CFG_C1581_STOPFREEZ, CFG_TYPE_ENUM,   "1581 Freezes in menu",       "%s", yes_no,     0,  1, 1 },
+    { CFG_C1581_ROMFILE,   CFG_TYPE_STRING, "1581 ROM File",              "%s", NULL,       1, 32, (int)"1581.rom" },
     { 0xFF, CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
-extern uint8_t _1581_bin_start;
+//extern uint8_t _1581_bin_start;
 //extern uint8_t _sounds_bin_start;
 
 uint16_t crc16_ccitt(uint16_t crc, const uint8_t *buf, int len);
@@ -77,9 +75,6 @@ C1581 :: C1581(volatile uint8_t *regs, char letter) : SubSystem(SUBSYSID_DRIVE_C
     printf("C1581 Memory address: %p\n", mem_address);
 
     if (mem_address) {
-		// Initialize ROM, just one for now
-		memcpy((void *)&memory_map[0x8000], &_1581_bin_start, 0x8000);
-
 		sprintf(buffer, "1581 Drive %c Settings", letter);
 		register_store((uint32_t)regs, buffer, local_config_definitions);
 		sprintf(buffer, "1581 Drive %c", drive_letter);
@@ -117,6 +112,14 @@ void C1581 :: effectuate_settings(void)
 
     set_hw_address(cfg->get_value(CFG_C1581_BUS_ID));
     set_sw_address(cfg->get_value(CFG_C1581_BUS_ID));
+
+    File *romfile = 0;
+    FRESULT fres = fm->fopen("/flash", cfg->get_string(CFG_C1581_ROMFILE), FA_READ, &romfile);
+    uint32_t transferred = 0;
+    if (fres == FR_OK) {
+        fres = romfile->read((uint8_t *)&memory_map[0x8000], 0x8000, &transferred);
+        fm->fclose(romfile);
+    }
 
     drive_reset(0);
 
