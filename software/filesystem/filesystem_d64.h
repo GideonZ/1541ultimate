@@ -285,17 +285,18 @@ public:
 
     FRESULT sync(void)
     {
-        FRESULT fres = FileSystemCBM :: sync();
+        FRESULT fres = FileSystemCBM::sync();
         if (fres == FR_OK) {
-			if (bam2_dirty) {
-				DRESULT res = prt->write(bam2_buffer, get_abs_sector(53, 0), 1);
-				if(res != RES_OK) {
-					return FR_DISK_ERR;
-				}
-				bam2_dirty = false;
-			}
+            if (bam2_dirty) {
+                DRESULT res = prt->write(bam2_buffer, get_abs_sector(53, 0), 1);
+                if (res != RES_OK) {
+                    return FR_DISK_ERR;
+                }
+                prt->ioctl(CTRL_SYNC, NULL);
+                bam2_dirty = false;
+            }
         }
-    	return fres;
+        return fres;
     }
 };
 
@@ -321,17 +322,18 @@ public:
 
     FRESULT sync(void)
     {
-        FRESULT fres = FileSystemCBM :: sync();
+        FRESULT fres = FileSystemCBM::sync();
         if (fres == FR_OK) {
-			if (bam_dirty) {
-				DRESULT res = prt->write(bam_buffer, get_abs_sector(40, 1), 2);
-				if(res != RES_OK) {
-					return FR_DISK_ERR;
-				}
-				bam_dirty = false;
-			}
+            if (bam_dirty) {
+                DRESULT res = prt->write(bam_buffer, get_abs_sector(40, 1), 2);
+                prt->ioctl(CTRL_SYNC, NULL);
+                if (res != RES_OK) {
+                    return FR_DISK_ERR;
+                }
+                bam_dirty = false;
+            }
         }
-    	return fres;
+        return fres;
     }
 };
 
