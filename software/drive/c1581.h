@@ -62,6 +62,11 @@ typedef struct _wd {
 
 typedef uint8_t t_1581_cmd;
 
+#define C1581_RAW_BYTES_BETWEEN_INDEX_PULSES 6250
+#define C1581_DEFAULT_SECTOR_SIZE			 512
+#define C1581_DEFAULT_SECTORS_PER_TRACK  	 10
+#define C1581_BYTES_PER_TRACK			     (C1581_DEFAULT_SECTOR_SIZE * C1581_DEFAULT_SECTORS_PER_TRACK)
+
 class C1581 : public SubSystem, ConfigurableObject, ObjectWithMenu
 {
     volatile uint8_t *memory_map;
@@ -85,12 +90,12 @@ class C1581 : public SubSystem, ConfigurableObject, ObjectWithMenu
     struct {
         Action *reset;
         Action *remove;
-        Action *blank;
         Action *turnon;
         Action *turnoff;
     } myActions;
 
-    uint8_t buffer[6252];
+    uint8_t buffer[C1581_RAW_BYTES_BETWEEN_INDEX_PULSES+2];
+    uint8_t binbuf[C1581_BYTES_PER_TRACK];
     uint8_t track, sector, side, step_dir;
 
     static void run(void *a);
@@ -103,6 +108,8 @@ class C1581 : public SubSystem, ConfigurableObject, ObjectWithMenu
     void remove_disk(void);
     void mount_d81(bool protect, File *);
     void handle_wd177x_command(t_1581_cmd& cmd);
+    int  decode_write_track(uint8_t *inbuf, uint8_t *outbuf, int len);
+
     void do_step(bool update);
 public:
     C1581(volatile uint8_t *regs, char letter);
