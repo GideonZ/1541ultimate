@@ -51,7 +51,6 @@ SOURCE_INCLUDES =
 #       library work
 
 AUTO_DEP_PATHS  = $(wildcard ../vhdl_*/)
-AUTO_DEP_PATHS += $(wildcard ../../../../ult64/proglogic/c64/)
 AUTO_DEP_PATHS += $(wildcard ../../../target/simulation/packages/vhdl_source/)
 AUTO_DEP_PATHS += $(wildcard ../../*/vhdl_source/)
 AUTO_DEP_PATHS += $(wildcard ../../*/*/vhdl_source/)
@@ -60,6 +59,7 @@ AUTO_DEP_PATHS += $(wildcard ../../*/*/vhdl_sim/)
 AUTO_DEP_PATHS += $(wildcard ../../*/vhdl_bfm/)
 AUTO_DEP_PATHS += $(wildcard ../../*/*/vhdl_bfm/)
 AUTO_DEP_PATHS += $(wildcard ../../altera/xilinx_primitives/)
+AUTO_DEP_PATHS += $(wildcard ../../../../ult64/proglogic/c64/)
 
 
 ###############################################################################

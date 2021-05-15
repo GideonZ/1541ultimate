@@ -180,7 +180,9 @@ u2plus_swonly:
 	@$(MAKE) -C target/software/nios2_elf_lwip
 	@$(MAKE) -C target/software/nios2_ultimate
 	@$(MAKE) -C target/software/nios2_recovery
-	cp target/software/nios2_ultimate/result/ultimate.elf .
+	@$(MAKE) -C target/software/nios2_update
+	@cp target/software/nios2_update/result/update.app ./update.u2p
+
 u2plus_swapply:
 	@$(MAKE) -C tools
 	@$(MAKE) -C software/nios_solo_bsp
