@@ -303,9 +303,7 @@ void C1581 :: task()
 		if (mount_file) {
 			if (!mount_file->isValid()) {
 				printf("C1581: File was invalidated..\n");
-				disk_state = e_disk_file_closed;
-				fm->fclose(mount_file);
-				mount_file = NULL;
+				remove_disk();
 			}
 		}
 	}
