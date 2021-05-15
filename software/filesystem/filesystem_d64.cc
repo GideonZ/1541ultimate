@@ -243,6 +243,7 @@ FRESULT FileSystemCBM::sync(void)
         }
         root_dirty = false;
     }
+    prt->ioctl(CTRL_SYNC, NULL);
     return FR_OK;
 }
 
@@ -869,7 +870,7 @@ bool FileSystemD64::set_sector_allocation(int track, int sector, bool alloc)
 {
     uint8_t *m = &root_buffer[4 * track];
     bool success = modify_allocation_bit(m, m+1, sector, alloc);
-    root_dirty = success;
+    root_dirty |= success;
     return success;
 }
 
@@ -909,7 +910,7 @@ bool FileSystemD81::set_sector_allocation(int track, int sector, bool alloc)
     m = fr + 1;
 
     bool success = modify_allocation_bit(fr, m, sector, alloc);
-    bam_dirty = success;
+    bam_dirty |= success;
     return success;
 }
 
@@ -1186,6 +1187,7 @@ FRESULT FileSystemDNP :: sync(void)
         bam += 512;
     }
     bam_dirty = 0;
+    prt->ioctl(CTRL_SYNC, NULL);
     return fres;
 }
 
