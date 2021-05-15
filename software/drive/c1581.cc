@@ -349,6 +349,7 @@ void C1581 :: do_step(bool update)
 void C1581 :: handle_wd177x_command(t_1581_cmd& cmd)
 {
 	printf("1581 Command: %b\n", cmd);
+	int sectors_found;
 	uint16_t crc;
 	uint32_t offset, dummy;
 	FRESULT res;
@@ -426,16 +427,16 @@ void C1581 :: handle_wd177x_command(t_1581_cmd& cmd)
 		// Read Sector Command
 		sector = wd177x->sector;
 		side = 1 - ((registers[C1541_STATUS] >> 1) & 1);
-		offset = (0x2800 * track) + (sector * 0x200) + (side * 0x1400) - 0x200;
+		offset = ((track << 1) + side) * C1581_BYTES_PER_TRACK + (sector-1) * C1581_DEFAULT_SECTOR_SIZE;
 		printf("C1581: Read Sector H/T/S: %d/%d/%d  (offset: %5x) Actual track: %d\n", side, wd177x->track, sector, offset, track);
 
 		if (mount_file) {
 			res = mount_file->seek(offset);
 			if (res == FR_OK) {
-				res = mount_file->read(buffer, 0x200, &dummy);
+				res = mount_file->read(buffer, C1581_DEFAULT_SECTOR_SIZE, &dummy);
 				if (res == FR_OK) {
 					printf("Sector read OK:\n");
-					dump_hex_relative(buffer, 32);
+					//dump_hex_relative(buffer, 32);
 				} else {
 					printf("-> Image read error.\n");
 				}
@@ -446,7 +447,7 @@ void C1581 :: handle_wd177x_command(t_1581_cmd& cmd)
 			printf("-> No mount file.\n");
 		}
 
-		wd177x->dma_len = 0x200;
+		wd177x->dma_len = C1581_DEFAULT_SECTOR_SIZE;
 		wd177x->dma_addr = (uint32_t)buffer;
 		wd177x->dma_mode = 1; // read
         // data transfer, so we are not yet done
@@ -456,14 +457,14 @@ void C1581 :: handle_wd177x_command(t_1581_cmd& cmd)
 	case WD_CMD_WRITE_SECTOR+1:
 		if (wd177x->dma_mode == 3) {
 			printf("Write sector completion. dma_len = %d\n", wd177x->dma_len);
-			dump_hex_relative(buffer, 16);
+			//dump_hex_relative(buffer, 16);
 			wd177x->dma_mode = 0;
 
 			if (mount_file) {
-				offset = (0x2800 * track) + (sector * 0x200) + (side * 0x1400) - 0x200;
+				offset = ((track << 1) + side) * C1581_BYTES_PER_TRACK + (sector-1) * C1581_DEFAULT_SECTOR_SIZE;
 				res = mount_file->seek(offset);
 				if (res == FR_OK) {
-					res = mount_file->write(buffer, 0x200, &dummy);
+					res = mount_file->write(buffer, C1581_DEFAULT_SECTOR_SIZE, &dummy);
 					if (res == FR_OK) {
 						printf("Sector write OK.\n");
 					} else {
@@ -481,10 +482,10 @@ void C1581 :: handle_wd177x_command(t_1581_cmd& cmd)
 			// Write Sector Command
 			sector = wd177x->sector;
 			side = 1 - ((registers[C1541_STATUS] >> 1) & 1);
-			offset = (0x2800 * track) + (sector * 0x200) + (side * 0x1400) - 0x200;
+			offset = ((track << 1) + side) * C1581_BYTES_PER_TRACK + (sector-1) * C1581_DEFAULT_SECTOR_SIZE;
 			printf("C1581: Write Sector H/T/S: %d/%d/%d. Offset: %6x\n", side, track, sector, offset);
-			memset(buffer, 0x77, 0x200);
-			wd177x->dma_len = 0x200;
+			memset(buffer, 0x77, C1581_DEFAULT_SECTOR_SIZE);
+			wd177x->dma_len = C1581_DEFAULT_SECTOR_SIZE;
 			wd177x->dma_addr = (uint32_t)buffer;
 			wd177x->dma_mode = 2; // write
 			// data transfer, so we are not yet done
@@ -496,7 +497,7 @@ void C1581 :: handle_wd177x_command(t_1581_cmd& cmd)
 		side = 1 - ((registers[C1541_STATUS] >> 1) & 1);
 
         sector ++;
-        if (sector > 10)
+        if (sector > C1581_DEFAULT_SECTORS_PER_TRACK)
             sector = 1;
 
 		buffer[0] = track;
@@ -522,15 +523,16 @@ void C1581 :: handle_wd177x_command(t_1581_cmd& cmd)
 	case WD_CMD_WRITE_TRACK:
 		if (wd177x->dma_mode == 3) {
 			side = 1 - ((registers[C1541_STATUS] >> 1) & 1);
-			offset = (0x2800 * track) + (side * 0x1400);
-			printf("Write track completion. Offset = %6x\n", offset);
-			dump_hex_relative(buffer, 768);
-			memset(buffer, 0, 5120);
+			offset = ((track << 1) + side) * C1581_BYTES_PER_TRACK;
+
+			sectors_found = decode_write_track(buffer, binbuf, C1581_RAW_BYTES_BETWEEN_INDEX_PULSES);
+			printf("Write track completion. Offset = %6x. Found %d sectors!\n", offset, sectors_found);
+			//dump_hex_relative(buffer, 800);
 
 			if (mount_file) {
 				res = mount_file->seek(offset);
 				if (res == FR_OK) {
-					res = mount_file->write(buffer, 5120, &dummy);
+					res = mount_file->write(binbuf, C1581_BYTES_PER_TRACK, &dummy);
 					if (res == FR_OK) {
 						printf("Track clear OK.\n");
 					} else {
@@ -548,8 +550,7 @@ void C1581 :: handle_wd177x_command(t_1581_cmd& cmd)
 		} else {
 			// Write Track Command
 			printf("Write track %d %d\n", track, wd177x->track);
-			memset(buffer, 0x77, 0x200);
-			wd177x->dma_len = 6250;
+			wd177x->dma_len = C1581_RAW_BYTES_BETWEEN_INDEX_PULSES;
 			wd177x->dma_addr = (uint32_t)buffer;
 			wd177x->dma_mode = 2; // write
 		}
@@ -560,6 +561,51 @@ void C1581 :: handle_wd177x_command(t_1581_cmd& cmd)
         wd177x->status_clear = WD_STATUS_BUSY;
         break;
 	}
+}
+
+int C1581 :: decode_write_track(uint8_t *inbuf, uint8_t *outbuf, int len)
+{
+	int sectors_found = 0;
+	int rpos = 0;
+	int wpos = 0;
+	uint8_t sector = 1;
+	uint8_t max_sector;
+	int sec_size;
+	memset(outbuf, 0x55, C1581_BYTES_PER_TRACK);
+	while (rpos < len) {
+		if(inbuf[rpos] == 0xFE) { // header
+			if (inbuf[rpos+4] < 4) {
+				sec_size = 1 << (7 + inbuf[rpos+4]);
+				max_sector = 40 >> inbuf[rpos+4]; // 40, 20, 10, 5
+			} else {
+				printf("Illegal sector size.\n");
+				return sectors_found;
+			}
+			printf("Sector header: Track %d/%d Sector: %d of %d bytes\n", inbuf[rpos+1], inbuf[rpos+2], inbuf[rpos+3], sec_size);
+			if (inbuf[rpos+5] != 0xF7) {
+				printf("Expected Header to end with CRC bytes!\n");
+				return sectors_found;
+			}
+			sector = inbuf[rpos+3];
+			rpos += 16;
+		} else if (inbuf[rpos] == 0xFB) { // data
+			if ((sector >= 1) && (sector <= max_sector)) {
+				if (inbuf[rpos + 1 + sec_size] != 0xF7) {
+					printf("Expected Data to end with CRC bytes!\n");
+					return sectors_found;
+				}
+				memcpy(outbuf + sec_size * (sector-1), &inbuf[rpos+1], sec_size);
+				sectors_found ++;
+			} else {
+				printf("Skipped sector #%d - outside of valid range.\n", sector);
+			}
+			rpos += sec_size;
+			rpos += 16;
+		} else {
+			rpos ++;
+		}
+	}
+	return sectors_found;
 }
 
 
