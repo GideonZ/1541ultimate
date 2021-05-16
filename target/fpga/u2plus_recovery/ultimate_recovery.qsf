@@ -455,6 +455,7 @@ set_global_assignment -name VHDL_FILE ../../../fpga/altera/xilinx_primitives/uni
 set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/c64/cia_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/c64/cia_timer.vhd
 set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/c64/cia_registers.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/stepper.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/wd177x.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/c1581_drive.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/cpu_part_1581.vhd

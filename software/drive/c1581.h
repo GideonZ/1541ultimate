@@ -58,6 +58,8 @@ typedef struct _wd {
 	uint8_t dma_mode;
 	uint32_t dma_addr; // little endian
 	uint16_t dma_len; // little endian
+	uint8_t stepper_track;
+	uint8_t step_time;
 } wd177x_t;
 
 typedef uint8_t t_1581_cmd;
@@ -110,7 +112,7 @@ class C1581 : public SubSystem, ConfigurableObject, ObjectWithMenu
     void handle_wd177x_command(t_1581_cmd& cmd);
     int  decode_write_track(uint8_t *inbuf, uint8_t *outbuf, int len);
 
-    void do_step(bool update);
+    void do_step(t_1581_cmd cmd);
 public:
     C1581(volatile uint8_t *regs, char letter);
     ~C1581();

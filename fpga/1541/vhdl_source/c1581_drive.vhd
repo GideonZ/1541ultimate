@@ -22,7 +22,7 @@ port (
     
     -- timing
     tick_4MHz       : in  std_logic;
---    tick_1KHz       : in  std_logic;
+    tick_1KHz       : in  std_logic;
     
     -- slave port on io bus
     io_req          : in  t_io_req;
@@ -46,7 +46,7 @@ port (
     -- Misc
     iec_reset_n     : in  std_logic := '1';
     c64_reset_n     : in  std_logic := '1';
-    
+
     -- LED
     act_led_n       : out std_logic;
     power_led_n     : out std_logic;
@@ -84,6 +84,11 @@ architecture structural of c1581_drive is
     signal drive_stop_i     : std_logic;
     signal stop_on_freeze   : std_logic;
     
+    -- track interface from wd177x
+    signal goto_track       : unsigned(6 downto 0);
+    signal phys_track       : unsigned(6 downto 0);
+    signal step_time        : unsigned(4 downto 0);
+
     signal io_req_regs      : t_io_req;
     signal io_resp_regs     : t_io_resp;
     signal io_req_wd        : t_io_req;
@@ -142,7 +147,7 @@ begin
         data_o      => data_o, -- open drain
         data_i      => data_i,
 
-        fast_clk_o  => fast_clk_o,
+        fast_clk_o  => fast_clk_o, -- open drain
         fast_clk_i  => fast_clk_i,
 
 		-- memory interface
@@ -157,6 +162,11 @@ begin
         io_resp         => io_resp_wd,
         io_irq          => io_irq,
 
+        -- stepper interface
+        goto_track      => goto_track,
+        phys_track      => phys_track,
+        step_time       => step_time,
+
         -- drive pins
         power           => power,
         drive_address   => drive_address,
@@ -170,43 +180,59 @@ begin
         power_led       => power_led_n,
         act_led         => act_led_n );
     
-    rdy_n         <= not (motor_on and floppy_inserted) and not force_ready; -- should have a delay
-    
---    r_snd: if g_audio generate
---        i_snd: entity work.floppy_sound
---        generic map (
---            g_tag          => g_audio_tag,
---            sound_base     => g_audio_base(27 downto 16),
---            motor_hum_addr => X"0000",
---            flop_slip_addr => X"1200",
---            track_in_addr  => X"2400",
---            track_out_addr => X"2C00",
---            head_bang_addr => X"3480",
---            
---            motor_len      => 4410,
---            track_in_len   => X"0800",  -- ~100 ms;
---            track_out_len  => X"0880",  -- ~100 ms;
---            head_bang_len  => X"0880" ) -- ~100 ms;
---        
---        port map (
---            clock           => clock,
---            reset           => drv_reset,
---            
---            tick_4MHz       => tick_4MHz,
---
---            do_trk_out      => do_track_out,
---            do_trk_in       => do_track_in,
---            do_head_bang    => do_head_bang,
---            en_hum          => en_hum,
---            en_slip         => en_slip,
---            
---          -- memory interface
---          mem_req         => mem_req_snd,
---          mem_resp        => mem_resp_snd,
---        
---            -- audio
---            sample_out      => audio_sample );
---    end generate;
+    rdy_n       <= not (motor_on and floppy_inserted) and not force_ready; -- should have a delay
+
+    r_snd: if g_audio generate
+    begin
+        en_hum      <= motor_on and not floppy_inserted;
+        en_slip     <= motor_on and floppy_inserted;
+
+        i_stp: entity work.stepper
+        port map(
+            clock        => clock,
+            reset        => drv_reset,
+            tick_1KHz    => tick_1KHz,
+            goto_track   => goto_track,
+            phys_track   => phys_track,
+            step_time    => step_time,
+            do_track_out => do_track_out,
+            do_track_in  => do_track_in
+        );
+        
+        i_snd: entity work.floppy_sound
+        generic map (
+            g_tag          => g_audio_tag,
+            sound_base     => g_audio_base(27 downto 16),
+            motor_hum_addr => X"0000",
+            flop_slip_addr => X"1200",
+            track_in_addr  => X"2400",
+            track_out_addr => X"2C00",
+            head_bang_addr => X"3480",
+            
+            motor_len      => 4410,
+            track_in_len   => X"0800",  -- ~100 ms;
+            track_out_len  => X"0880",  -- ~100 ms;
+            head_bang_len  => X"0880" ) -- ~100 ms;
+        
+        port map (
+            clock           => clock,
+            reset           => drv_reset,
+            
+            tick_4MHz       => tick_4MHz,
+
+            do_trk_out      => do_track_out,
+            do_trk_in       => do_track_in,
+            do_head_bang    => do_head_bang,
+            en_hum          => en_hum,
+            en_slip         => en_slip,
+            
+            -- memory interface
+            mem_req         => mem_req_snd,
+            mem_resp        => mem_resp_snd,
+          
+            -- audio
+            sample_out      => audio_sample );
+    end generate;
 
     i_regs: entity work.drive_registers
     generic map (
