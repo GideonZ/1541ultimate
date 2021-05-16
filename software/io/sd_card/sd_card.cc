@@ -373,6 +373,8 @@ DRESULT SdCard :: ioctl(uint8_t command, void *data)
         case GET_BLOCK_SIZE:
             (*(uint32_t *)data) = 128*1024;
             break;
+        case CTRL_SYNC:
+            break;
         default:
             printf("IOCTL %d.\n", command);
             return RES_PARERR;
