@@ -896,6 +896,8 @@ DRESULT UsbScsi :: ioctl(uint8_t command, void *pdata)
             return res;
         case GET_SECTOR_SIZE:
             return read_capacity(&dummy, data);
+        case CTRL_SYNC:
+            break;
         default:
             printf("IOCTL %d.\n", command);
             return RES_PARERR;
