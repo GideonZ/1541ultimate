@@ -96,6 +96,8 @@ DRESULT BlockDevice_Flash::ioctl(uint8_t command, void *data)
                 return RES_ERROR;
             *dest = 1; // erase size is 1 sector
             break;
+        case CTRL_SYNC:
+            break;
         default:
             printf("IOCTL %d.\n", command);
             return RES_PARERR;
