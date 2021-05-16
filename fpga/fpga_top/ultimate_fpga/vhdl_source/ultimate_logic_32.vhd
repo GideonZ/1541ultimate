@@ -402,6 +402,7 @@ architecture logic of ultimate_logic_32 is
     
     signal drive_sample_1   : signed(12 downto 0);
     signal drive_sample_2   : signed(12 downto 0);
+    signal drive_sample_3   : signed(12 downto 0);
     signal audio_tape_read  : signed(18 downto 0);
     signal audio_tape_write : signed(18 downto 0);
     signal sid_left         : signed(17 downto 0);
@@ -652,7 +653,7 @@ begin
             
     end generate;
 
-    audio_speaker_tmp <= drive_sample_1 * signed(resize(unsigned(speaker_vol),5));
+    audio_speaker_tmp <= drive_sample_3 * signed(resize(unsigned(speaker_vol),5));
     audio_speaker <= audio_speaker_tmp(16 downto 4);
 
     r_drive_2: if g_drive_1541_2 generate
@@ -751,6 +752,7 @@ begin
             reset        => sys_reset,
             drive_stop   => c64_stopped,
             tick_4MHz    => tick_4MHz,
+            tick_1KHz    => tick_1KHz,
 
             io_req       => io_req_1581,
             io_resp      => io_resp_1581,
@@ -774,7 +776,7 @@ begin
             act_led_n    => act_led3n,
             power_led_n  => power_led3n,
             motor_led_n  => open,
-            audio_sample => open
+            audio_sample => drive_sample_3
         );
     end generate;
 
@@ -1312,14 +1314,6 @@ begin
                 audio_left  <= samp_left & '0';
             when X"7" =>
                 audio_left  <= samp_right & '0';
---            when X"8" =>
---                audio_left  <= (sid_left(17) & sid_left) + (samp_left(17) & samp_left);
---            when X"9" =>
---                audio_left  <= (sid_right(17) & sid_right) + (samp_right(17) & samp_right);
---            when X"A" =>
---                audio_left  <= (sid_left(17) & sid_left) + (sid_right(17) & sid_right);
---            when X"B" =>
---                audio_left  <= (samp_left(17) & samp_left) + (samp_right(17) & samp_right);
             when others =>
                 null;
             end case;                            
@@ -1341,14 +1335,6 @@ begin
                 audio_right  <= samp_left & '0';
             when X"7" =>
                 audio_right  <= samp_right & '0';
---            when X"8" =>
---                audio_right  <= (sid_left(17) & sid_left) + (samp_left(17) & samp_left);
---            when X"9" =>
---                audio_right  <= (sid_right(17) & sid_right) + (samp_right(17) & samp_right);
---            when X"A" =>
---                audio_right  <= (sid_left(17) & sid_left) + (sid_right(17) & sid_right);
---            when X"B" =>
---                audio_right  <= (samp_left(17) & samp_left) + (samp_right(17) & samp_right);
             when others =>
                 null;
             end case;                            

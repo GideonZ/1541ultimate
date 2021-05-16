@@ -74,6 +74,11 @@ port (
     mem_req         : out t_mem_req;
     mem_resp        : in  t_mem_resp;
 
+    -- track stepper interface (for audio samples)
+    goto_track      : out unsigned(6 downto 0);
+    phys_track      : in  unsigned(6 downto 0);
+    step_time       : out unsigned(4 downto 0);
+
     -- I/O interface from application CPU
     io_req          : in  t_io_req;
     io_resp         : out t_io_resp;
@@ -86,6 +91,8 @@ architecture behavioral of wd177x is
     signal mem_rack         : std_logic;
     signal mem_dack         : std_logic;
     signal mem_request      : std_logic := '0';
+
+    signal step_time_i     : std_logic_vector(4 downto 0);
 
     signal status           : std_logic_vector(7 downto 0);
     signal track            : std_logic_vector(7 downto 0);
@@ -120,6 +127,8 @@ begin
     mem_req.request     <= mem_request;
     mem_req.size        <= "00"; -- one byte at a time
     mem_req.tag         <= g_tag;
+
+    step_time  <= unsigned(step_time_i);
 
     with addr select rdata <= 
         status      when "00",
@@ -193,6 +202,10 @@ begin
                     transfer_len(7 downto 0) <= unsigned(io_req.data);
                 when X"D" =>
                     transfer_len(13 downto 8) <= unsigned(io_req.data(5 downto 0)); 
+                when X"E" =>
+                    goto_track  <= unsigned(io_req.data(goto_track'range));
+                when X"F" =>
+                    step_time_i  <= io_req.data(4 downto 0);
 
                 when others =>
                     null;
@@ -230,7 +243,10 @@ begin
                     io_resp.data <= std_logic_vector(transfer_len(7 downto 0));
                 when X"D" =>
                     io_resp.data(5 downto 0) <= std_logic_vector(transfer_len(13 downto 8));
-
+                when X"E" =>
+                    io_resp.data(phys_track'range) <= std_logic_vector(phys_track);
+                when X"F" =>
+                    io_resp.data(4 downto 0) <= step_time_i;
                 when others =>
                     null;
                 end case;
@@ -310,6 +326,8 @@ begin
                 io_irq <= '0';
                 status <= X"00";
                 dma_mode <= "00";
+                step_time_i <= "01100";
+                goto_track <= to_unsigned(0, goto_track'length);
             end if;
         end if;
     end process;

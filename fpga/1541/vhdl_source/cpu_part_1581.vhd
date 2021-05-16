@@ -40,6 +40,11 @@ port (
     io_resp         : out t_io_resp;
     io_irq          : out std_logic;
 
+    -- track stepper interface (for audio samples)
+    goto_track      : out unsigned(6 downto 0);
+    phys_track      : in  unsigned(6 downto 0) := (others => '1');
+    step_time       : out unsigned(4 downto 0);
+
     -- drive pins
     power           : in  std_logic;
     drive_address   : in  std_logic_vector(1 downto 0);
@@ -323,6 +328,10 @@ begin
         wdata        => cpu_wdata,
         rdata        => wd_data,
         
+        goto_track   => goto_track,
+        phys_track   => phys_track,
+        step_time    => step_time,
+
         mem_req      => mem_req_disk,
         mem_resp     => mem_resp_disk,
         io_req       => io_req,

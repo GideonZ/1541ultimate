@@ -312,7 +312,9 @@ void C1581 :: task()
 	}
 }
 
-void C1581 :: do_step(bool update)
+static const uint8_t c_step_times[] = { 6, 12, 20, 30 }; // ms per step
+
+void C1581 :: do_step(t_1581_cmd cmd)
 {
     if (step_dir == 0) {
     	if (track != 0) {
@@ -324,15 +326,10 @@ void C1581 :: do_step(bool update)
     	}
     }
 
-/*
-    if (!track) {
-    	wd177x->status_set = WD_STATUS_TRACK_00;
-    } else {
-    	wd177x->status_clear = WD_STATUS_TRACK_00;
-    }
-*/
+    wd177x->step_time = c_step_times[cmd & 3];
+    wd177x->stepper_track = track;
 
-    if (update) {
+    if (cmd & WD_CMD_UPDATE_BIT) {
         if (step_dir == 0) {
         	if (wd177x->track != 0) {
         		wd177x->track --;
@@ -362,6 +359,8 @@ void C1581 :: handle_wd177x_command(t_1581_cmd& cmd)
 		// Restore (go to track 0)
 		wd177x->track = 0;
         track = 0;
+        wd177x->step_time = c_step_times[cmd & 3];
+        wd177x->stepper_track = 0;
         step_dir = 1;
         if ((cmd & WD_CMD_SPINUP_BIT) == 0) { // if h-bit is clear, do spinup
         	wd177x->status_set = WD_STATUS_SPINUP_OK; // report spinup complete
@@ -376,16 +375,11 @@ void C1581 :: handle_wd177x_command(t_1581_cmd& cmd)
 		// Seek; requested track is in data register
 		track = wd177x->datareg;
 		wd177x->track = track;
+        wd177x->step_time = c_step_times[cmd & 3];
+        wd177x->stepper_track = track;
         if ((cmd & WD_CMD_SPINUP_BIT) == 0) { // if h-bit is clear, do spinup
         	wd177x->status_set = WD_STATUS_SPINUP_OK; // report spinup complete
         }
-/*
-        if (!track) {
-        	wd177x->status_set = WD_STATUS_TRACK_00;
-        } else {
-        	wd177x->status_clear = WD_STATUS_TRACK_00;
-        }
-*/
         // no data transfer
         wd177x->status_clear = WD_STATUS_BUSY;
         break;
@@ -396,7 +390,7 @@ void C1581 :: handle_wd177x_command(t_1581_cmd& cmd)
 		if ((cmd & WD_CMD_SPINUP_BIT) == 0) { // if h-bit is clear, do spinup
 			wd177x->status_set = WD_STATUS_SPINUP_OK; // report spinup complete
 		}
-		do_step(cmd & WD_CMD_UPDATE_BIT);
+		do_step(cmd);
 		// no data transfer
 		wd177x->status_clear = WD_STATUS_BUSY;
 		break;
@@ -408,7 +402,7 @@ void C1581 :: handle_wd177x_command(t_1581_cmd& cmd)
 			wd177x->status_set = WD_STATUS_SPINUP_OK; // report spinup complete
 		}
 		step_dir = 1;
-		do_step(cmd & WD_CMD_UPDATE_BIT);
+		do_step(cmd);
 		// no data transfer
 		wd177x->status_clear = WD_STATUS_BUSY;
 		break;
@@ -416,7 +410,7 @@ void C1581 :: handle_wd177x_command(t_1581_cmd& cmd)
 	case WD_CMD_STEP_OUT:
 	case WD_CMD_STEP_OUT+1:
 		// Step OUT Command
-		if (cmd & WD_CMD_SPINUP_BIT) { // if h-bit is set, do spinup
+		if (cmd) { // if h-bit is set, do spinup
 			wd177x->status_set = WD_STATUS_SPINUP_OK; // report spinup complete
 		}
 		step_dir = 0;
