@@ -539,7 +539,7 @@ int socket_test(volatile socket_tester_t *test, volatile uint8_t *ctrl, uint8_t 
     }
 
     if (elite) {
-        error |= test_socket_voltages(i2c, ctrl, magic | 0,  4800,  5200, false);
+    	error |= test_socket_voltages(i2c, ctrl, magic | 0,  4800,  5200, false);
         error |= test_socket_voltages(i2c, ctrl, magic | 2,  8640,  9560, false) << 3;
         error |= test_socket_voltages(i2c, ctrl, magic | 3, 11600, 13000, false) << 6;
         error |= test_socket_voltages(i2c, ctrl, magic | 7, 11600, 13000, true) << 9;
