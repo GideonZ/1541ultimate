@@ -48,7 +48,6 @@
 #define RUNCODE_NO_CHECKSAVE 0x02
 #define RUNCODE_MOUNT_BUFFER 0x10
 
-typedef enum { e_rom_1541=0, e_rom_1541c=1, e_rom_1541ii=2, e_rom_custom=3, e_rom_custom2=4, e_rom_custom3=5,  e_rom_unset=99 } t_1541_rom;
 typedef enum { e_ram_none      = 0x00,
                e_ram_8000_BFFF = 0x30,
                e_ram_4000_7FFF = 0x0C,
@@ -102,7 +101,6 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     char drive_letter;
     bool large_rom;
     t_1541_ram  ram;
-	t_1541_rom  current_rom;
 	int write_skip;
 	
 	Flash *flash;
@@ -130,7 +128,6 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     void drive_reset(uint8_t doit);
     void set_hw_address(int addr);
     void set_sw_address(int addr);
-    void set_rom(t_1541_rom rom);
     void set_ram(t_1541_ram ram);
     void remove_disk(void);
     void insert_disk(bool protect, GcrImage *image);

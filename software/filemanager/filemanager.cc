@@ -718,6 +718,21 @@ FRESULT FileManager::fcopy(const char *path, const char *filename, const char *d
     return ret;
 }
 
+FRESULT FileManager :: load_file(const char *path, const char *filename, uint8_t *mem, uint32_t maxlen, uint32_t *transferred)
+{
+    File *file = 0;
+    FRESULT fres = fopen(path, filename, FA_READ, &file);
+    uint32_t tr = 0;
+    if (fres == FR_OK) {
+        fres = file->read(mem, maxlen, &tr);
+        fclose(file);
+    }
+    if (transferred) {
+        *transferred = tr;
+    }
+    return fres;
+}
+
 const char *FileManager::eventStrings[] = {
         "eRefreshDirectory",  // Contents of directory have changed
         "eNodeAdded",         // New Node

@@ -113,18 +113,16 @@ void C1581 :: effectuate_settings(void)
     set_hw_address(cfg->get_value(CFG_C1581_BUS_ID));
     set_sw_address(cfg->get_value(CFG_C1581_BUS_ID));
 
-    File *romfile = 0;
-    FRESULT fres = fm->fopen("/flash", cfg->get_string(CFG_C1581_ROMFILE), FA_READ, &romfile);
     uint32_t transferred = 0;
-    if (fres == FR_OK) {
-        fres = romfile->read((uint8_t *)&memory_map[0x8000], 0x8000, &transferred);
-        fm->fclose(romfile);
-    }
+    fm->load_file("/flash", cfg->get_string(CFG_C1581_ROMFILE), (uint8_t *)&memory_map[0x8000], 0x8000, &transferred);
 
     drive_reset(0);
 
     if(registers[C1541_POWER] != cfg->get_value(CFG_C1581_POWERED)) {
         drive_power(cfg->get_value(CFG_C1581_POWERED) != 0);
+    }
+    if (transferred != 0x8000) {
+        drive_power(false);
     }
 
     unlock();
