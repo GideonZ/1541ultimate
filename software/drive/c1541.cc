@@ -35,12 +35,9 @@ const char *ram_board[] = { "Off", "$8000-$BFFF (16K)",
 t_1541_ram ram_modes[] = { e_ram_none, e_ram_8000_BFFF, e_ram_4000_7FFF, e_ram_4000_BFFF,
 						   e_ram_2000_3FFF, e_ram_2000_7FFF, e_ram_2000_BFFF };
 
-t_1541_rom rom_modes[] = { e_rom_1541, e_rom_1541c, e_rom_1541ii, e_rom_custom, e_rom_custom2, e_rom_custom3 };
-
 #define CFG_C1541_POWERED   0xD1
 #define CFG_C1541_BUS_ID    0xD2
-#define CFG_C1541_ROMSEL    0xD3
-//#define CFG_C1541_ROMFILE   0xD4
+#define CFG_C1541_ROMFILE   0xD4
 #define CFG_C1541_RAMBOARD  0xD5
 #define CFG_C1541_SWAPDELAY 0xD6
 #define CFG_C1541_LASTMOUNT 0xD7
@@ -51,13 +48,7 @@ t_1541_rom rom_modes[] = { e_rom_1541, e_rom_1541c, e_rom_1541ii, e_rom_custom, 
 const struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_POWERED,   CFG_TYPE_ENUM,   "1541 Drive",                 "%s", en_dis,     0,  1, 1 },
     { CFG_C1541_BUS_ID,    CFG_TYPE_VALUE,  "1541 Drive Bus ID",          "%d", NULL,       8, 11, 8 },
-#if U64
-    { CFG_C1541_ROMSEL,    CFG_TYPE_ENUM,   "1541 ROM Select",            "%s", rom_sel,    0,  5, 2 },
-#elif CLOCK_FREQ == 62500000
-    { CFG_C1541_ROMSEL,    CFG_TYPE_ENUM,   "1541 ROM Select",            "%s", rom_sel,    0,  4, 2 },
-#else
-    { CFG_C1541_ROMSEL,    CFG_TYPE_ENUM,   "1541 ROM Select",            "%s", rom_sel,    0,  3, 2 },
-#endif
+    { CFG_C1541_ROMFILE,   CFG_TYPE_STRING, "1541 ROM",                   "%s", NULL,       1, 32, (int)"1541.rom" },
     { CFG_C1541_RAMBOARD,  CFG_TYPE_ENUM,   "1541 RAM BOard",             "%s", ram_board,  0,  6, 0 },
     { CFG_C1541_SWAPDELAY, CFG_TYPE_VALUE,  "1541 Disk swap delay",       "%d00 ms", NULL,  1, 10, 1 },
     { CFG_C1541_C64RESET,  CFG_TYPE_ENUM,   "1541 Resets when C64 resets","%s", yes_no,     0,  1, 1 },
@@ -68,10 +59,7 @@ const struct t_cfg_definition c1541_config[] = {
     { 0xFF, CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
-extern uint8_t _1541_bin_start;
-extern uint8_t _1541c_bin_start;
-extern uint8_t _1541_ii_bin_start;
-extern uint8_t _sounds_bin_start;
+//extern uint8_t _sounds_bin_start;
 
 //--------------------------------------------------------------
 // C1541 Drive Class
@@ -82,7 +70,6 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
     registers  = regs;
     mount_file = NULL;
     drive_letter = letter;
-    current_rom = e_rom_unset;
 	flash = get_flash();
     fm = FileManager :: getFileManager();
     
@@ -102,12 +89,11 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
 
     write_skip = 0;
     
-	if(flash) {
-	    void *audio_address = (void *)(((uint32_t)registers[C1541_AUDIO_ADDR]) << 16);
-	    printf("C1541 Audio address: %p, loading... \n", audio_address);
-//	    flash->read_image(FLASH_ID_SOUNDS, audio_address, 0x4800);
-        memcpy(audio_address, &_sounds_bin_start, 0x4800);
-	}    
+    uint8_t *audio_address = (uint8_t *)(((uint32_t)registers[C1541_AUDIO_ADDR]) << 16);
+    printf("C1541 Audio address: %p, loading... \n", audio_address);
+    if (fm->load_file("/flash", "sounds.bin", audio_address, 0x8000, NULL) != FR_OK) {
+        memset(audio_address, 0, 0x4800);
+    }
     drive_name = "Drive ";
     drive_name += letter;
 
@@ -166,17 +152,20 @@ void C1541 :: effectuate_settings(void)
     set_hw_address(cfg->get_value(CFG_C1541_BUS_ID));
     set_sw_address(cfg->get_value(CFG_C1541_BUS_ID));
 
-    t_1541_rom rom = rom_modes[cfg->get_value(CFG_C1541_ROMSEL)];
-    if((rom != current_rom)||
-       (rom == e_rom_custom) || (rom == e_rom_custom2) || (rom == e_rom_custom3)) {
-
-        set_rom(rom);
+    uint32_t transferred = 0;
+    fm->load_file("/flash", cfg->get_string(CFG_C1541_ROMFILE), (uint8_t *)&memory_map[0x8000], 0x8000, &transferred);
+    if (transferred == 0x4000) {
+        memcpy((void *)(memory_map + 0xC000), (void *)(memory_map + 0x8000), 0x4000); // copy 16K if the file was 16K
+        transferred <<= 1;
     }
 
     drive_reset(0);
 
     if(registers[C1541_POWER] != cfg->get_value(CFG_C1541_POWERED)) {
         drive_power(cfg->get_value(CFG_C1541_POWERED) != 0);
+    }
+    if (transferred != 0x8000) {
+        drive_power(false);
     }
 
     unlock();
@@ -315,56 +304,6 @@ int  C1541 :: get_current_iec_address(void)
 		return int(memory_map[0x78] & 0x1F);
 */
 	return iec_address;
-}
-
-void C1541 :: set_rom(t_1541_rom rom)
-{
-    large_rom = false;
-    File *f = 0;
-    FRESULT res;
-    uint32_t transferred;
-	int offset;
-	
-	current_rom = rom;
-	printf("Initializing 1541 rom: ");
-	if(!flash) {
-		printf("no flash.\n");
-		return;
-	}
-
-    switch(rom) {
-        case e_rom_1541:
-			printf("CBM1541\n");
-//            flash->read_image(FLASH_ID_ROM1541, (void *)&memory_map[0xC000], 0x4000);
-            memcpy((void *)&memory_map[0xC000], &_1541_bin_start, 0x4000);
-            break;
-        case e_rom_1541ii:
-			printf("1541-II\n");
-//            flash->read_image(FLASH_ID_ROM1541II, (void *)&memory_map[0xC000], 0x4000);
-            memcpy((void *)&memory_map[0xC000], &_1541_ii_bin_start, 0x4000);
-            break;
-        case e_rom_1541c:
-			printf("1541C\n");
-//            flash->read_image(FLASH_ID_ROM1541C, (void *)&memory_map[0xC000], 0x4000);
-            memcpy((void *)&memory_map[0xC000], &_1541c_bin_start, 0x4000);
-            break;
-        case e_rom_custom2:
-            flash->read_image(FLASH_ID_CUSTOM2_DRV, (void *)&memory_map[0x8000], 0x8000);
-			large_rom = true;
-             break;
-        case e_rom_custom3:
-            flash->read_image(FLASH_ID_CUSTOM3_DRV, (void *)&memory_map[0x8000], 0x8000);
-			large_rom = true;
-             break;
-        default: // custom
-            flash->read_image(FLASH_ID_CUSTOM_DRV, (void *)&memory_map[0x8000], 0x8000);
-			large_rom = true;
-    }
-	if(!large_rom) // if rom <= 16K, then mirror it
-		memcpy((void *)&memory_map[0x8000], (void *)&memory_map[0xC000], 0x4000);
-	
-    set_ram(ram); // use previous value
-    drive_reset(1);
 }
 
 void C1541 :: set_ram(t_1541_ram ram_setting)

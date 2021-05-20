@@ -39,6 +39,25 @@ extern uint32_t _recovery_app_start;
 extern uint32_t _recovery_app_end;
 
 extern uint8_t _1581_bin_start;
+extern uint8_t _1541_bin_start;
+extern uint8_t _1541c_bin_start;
+extern uint8_t _1541_ii_bin_start;
+extern uint8_t _sounds_bin_start;
+
+static Screen *screen;
+
+static void write_flash_file(const char *name, uint8_t *data, int length)
+{
+    File *f;
+    uint32_t dummy;
+    FileManager *fm = FileManager :: getFileManager();
+    FRESULT fres = fm->fopen("/flash", name, FA_CREATE_ALWAYS | FA_WRITE, &f);
+    if (fres == FR_OK) {
+        fres = f->write(data, length, &dummy);
+        console_print(screen, "Writing %s to Flash drive: %s\n", name, FileSystem :: get_error_string(fres));
+        fm->fclose(f);
+    }
+}
 
 void do_update(void)
 {
@@ -62,7 +81,7 @@ void do_update(void)
     } else {
     	host = new HostStream(stream);
     }
-    Screen *screen = host->getScreen();
+    screen = host->getScreen();
 
     UserInterface *user_interface = new UserInterface("\033\021** 1541 Ultimate II+ Updater **\n\033\037");
     user_interface->init(host);
@@ -95,14 +114,11 @@ void do_update(void)
         REMOTE_FLASHSELCK_0;
         REMOTE_FLASHSELCK_1;
 
-        File *f;
-        uint32_t dummy;
-        FRESULT fres = fm->fopen("/flash", "1581.rom", FA_CREATE_ALWAYS | FA_WRITE, &f);
-        if (fres == FR_OK) {
-            fres = f->write(&_1581_bin_start, 0x8000, &dummy);
-            console_print(screen, "Writing 1581 ROM to Flash drive: %s\n", FileSystem :: get_error_string(fres));
-            fm->fclose(f);
-        }
+        write_flash_file("1581.rom", &_1581_bin_start, 0x8000);
+        write_flash_file("1541.rom", &_1541_bin_start, 0x4000);
+        write_flash_file("1541ii.rom", &_1541_ii_bin_start, 0x4000);
+        write_flash_file("1541c.rom", &_1541c_bin_start, 0x4000);
+        write_flash_file("sounds.bin", &_sounds_bin_start, 0x4800);
 
         Flash *flash2 = get_flash();
         flash2->protect_disable();

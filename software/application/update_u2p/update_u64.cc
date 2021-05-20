@@ -23,6 +23,8 @@
 #include "u64.h"
 #include "checksums.h"
 #include "overlay.h"
+#include "filemanager.h"
+#include "init_function.h"
 
 extern uint32_t _u64_rbf_start;
 extern uint32_t _u64_rbf_end;
@@ -33,13 +35,13 @@ extern uint32_t _ultimate_app_end;
 extern uint32_t _rom_pack_start;
 extern uint32_t _rom_pack_end;
 
-/*
-extern uint32_t _ultimate_recovery_rbf_start;
-extern uint32_t _ultimate_recovery_rbf_end;
+extern uint8_t _1581_bin_start;
+extern uint8_t _1541_bin_start;
+extern uint8_t _1541c_bin_start;
+extern uint8_t _1541_ii_bin_start;
+extern uint8_t _sounds_bin_start;
 
-extern uint32_t _recovery_app_start;
-extern uint32_t _recovery_app_end;
-*/
+static Screen *screen;
 
 int calc_checksum(uint8_t *buffer, uint8_t *buffer_end)
 {
@@ -94,6 +96,18 @@ static void move_roms(Flash *flash, Screen *screen)
     delete[] original_data;
 }
 
+static void write_flash_file(const char *name, uint8_t *data, int length)
+{
+    File *f;
+    uint32_t dummy;
+    FileManager *fm = FileManager :: getFileManager();
+    FRESULT fres = fm->fopen("/flash", name, FA_CREATE_ALWAYS | FA_WRITE, &f);
+    if (fres == FR_OK) {
+        fres = f->write(data, length, &dummy);
+        console_print(screen, "Writing %s to Flash drive: %s\n", name, FileSystem :: get_error_string(fres));
+        fm->fclose(f);
+    }
+}
 
 void do_update(void)
 {
@@ -104,6 +118,8 @@ void do_update(void)
     GenericHost *host = 0;
     Stream *stream = new Stream_UART;
 
+    InitFunction :: executeAll();
+
     C64 *c64 = C64 :: getMachine();
 
     if (c64->exists()) {
@@ -111,7 +127,7 @@ void do_update(void)
     } else {
     	host = new HostStream(stream);
     }
-    Screen *screen = host->getScreen();
+    screen = host->getScreen();
 
     OVERLAY_REGS->TRANSPARENCY = 0x00;
 
@@ -187,6 +203,13 @@ void do_update(void)
     bool kernalFound = original_kernal_found(flash2, 0x488000);
 
     if(user_interface->popup("About to flash. Continue?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+
+        write_flash_file("1581.rom", &_1581_bin_start, 0x8000);
+        write_flash_file("1541.rom", &_1541_bin_start, 0x4000);
+        write_flash_file("1541ii.rom", &_1541_ii_bin_start, 0x4000);
+        write_flash_file("1541c.rom", &_1541c_bin_start, 0x4000);
+        write_flash_file("sounds.bin", &_sounds_bin_start, 0x4800);
+
         flash2->protect_disable();
         // If original flash was found at the original location, then move it
         if (original_kernal_found(flash2, 0x458000)) {

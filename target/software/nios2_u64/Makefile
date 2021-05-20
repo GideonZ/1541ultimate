@@ -181,7 +181,7 @@ SRCS_ASMS = port_asm.S
 
 SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas eapi.tas
 
-SRCS_BIN =  basic.bin sidcrt.bin muscrt.bin musplayer.bin chars.bin 1541.bin 1541c.bin 1541-ii.bin 1581.bin sounds.bin module.bin
+SRCS_BIN =  basic.bin sidcrt.bin muscrt.bin musplayer.bin chars.bin module.bin
 
 SRCS_IEC = iec_code.iec
 

@@ -135,19 +135,8 @@ int FileTypeBin :: fetch_context_items(IndexedList<Action *> &list)
 #endif
 
     if (size == 16384 || size == 32768) {
-        list.append(new Action("Use as Drive ROM", FileTypeBin :: execute_st, CMD_SET_DRIVEROM, (int)this));
-        count++;
         list.append(new Action("Load Drive ROM", FileTypeBin :: execute_st, CMD_LOAD_DOS, (int)this));
         count++;
-#if U64
-        list.append(new Action("Use as Drive ROM 2", FileTypeBin :: execute_st, CMD_SET_DRIVEROM2, (int)this));
-        count++;
-        list.append(new Action("Use as Drive ROM 3", FileTypeBin :: execute_st, CMD_SET_DRIVEROM3, (int)this));
-        count++;
-#elif CLOCK_FREQ == 62500000
-        list.append(new Action("Use as Drive ROM 2", FileTypeBin :: execute_st, CMD_SET_DRIVEROM2, (int)this));
-        count++;
-#endif
     }
 
     if(size == 65536 || size == 32768 || size == 16384 || size == 8192) {
@@ -191,21 +180,6 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
 
     case CMD_WRITE_EEPROM:
         size = 256;
-        break;
-
-    case CMD_SET_DRIVEROM:
-        size = 32768;
-        id = FLASH_ID_CUSTOM_DRV;
-        break;
-
-    case CMD_SET_DRIVEROM2:
-        size = 32768;
-        id = FLASH_ID_CUSTOM2_DRV;
-        break;
-
-    case CMD_SET_DRIVEROM3:
-        size = 32768;
-        id = FLASH_ID_CUSTOM3_DRV;
         break;
 
     case CMD_SET_KERNAL:

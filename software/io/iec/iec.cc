@@ -66,7 +66,7 @@ static const char *pr_ich[] = { "International 1", "International 2", "Israel", 
 
 static struct t_cfg_definition iec_config[] = {
     { CFG_IEC_ENABLE,    CFG_TYPE_ENUM,   "IEC Drive and printer",     "%s", en_dis,     0,  1, 0 },
-    { CFG_IEC_BUS_ID,    CFG_TYPE_VALUE,  "Soft Drive Bus ID",         "%d", NULL,       8, 30, 10 },
+    { CFG_IEC_BUS_ID,    CFG_TYPE_VALUE,  "Soft Drive Bus ID",         "%d", NULL,       8, 30, 11 },
     { CFG_IEC_PATH,      CFG_TYPE_STRING, "Default Path",              "%s", NULL,       0, 30, (int) FS_ROOT },
     { CFG_IEC_PRINTER_ID,       CFG_TYPE_VALUE,  "Printer Bus ID",       "%d", NULL,   4,  5, 4 },
     { CFG_IEC_PRINTER_FILENAME, CFG_TYPE_STRING, "Printer output file",  "%s", NULL,   1, 31, (int) FS_ROOT "printer" },
