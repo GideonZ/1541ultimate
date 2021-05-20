@@ -145,8 +145,10 @@ architecture Gideon of via6522 is
 
     signal ca1_c, ca2_c     : std_logic;
     signal cb1_c, cb2_c     : std_logic;
-    signal ca1_d, ca2_d     : std_logic;
-    signal cb1_d, cb2_d     : std_logic;
+    signal ca1_d1, ca2_d1   : std_logic;
+    signal cb1_d1, cb2_d1   : std_logic;
+    signal ca1_d2, ca2_d2   : std_logic;
+    signal cb1_d2, cb2_d2   : std_logic;
     
     signal ca2_handshake_o  : std_logic;
     signal ca2_pulse_o      : std_logic;
@@ -160,10 +162,10 @@ begin
     write_t1c_h <= '1' when addr = X"5" and wen='1' and falling = '1' else '0';
     write_t2c_h <= '1' when addr = X"9" and wen='1' and falling = '1' else '0';
 
-    ca1_event <= (ca1_c xor ca1_d) and (ca1_d xor ca1_edge_select);
-    ca2_event <= (ca2_c xor ca2_d) and (ca2_d xor ca2_edge_select);
-    cb1_event <= (cb1_c xor cb1_d) and (cb1_d xor cb1_edge_select);
-    cb2_event <= (cb2_c xor cb2_d) and (cb2_d xor cb2_edge_select);
+    ca1_event <= (ca1_d1 xor ca1_d2) and (ca1_d2 xor ca1_edge_select);
+    ca2_event <= (ca2_d1 xor ca2_d2) and (ca2_d2 xor ca2_edge_select);
+    cb1_event <= (cb1_d1 xor cb1_d2) and (cb1_d2 xor cb1_edge_select);
+    cb2_event <= (cb2_d1 xor cb2_d2) and (cb2_d2 xor cb2_edge_select);
 
     ca2_t <= ca2_is_output;
     cb2_t_int <= cb2_is_output when serport_en='0' else shift_dir;
@@ -216,10 +218,15 @@ begin
             cb1_c <= To_X01(cb1_i);
             cb2_c <= To_X01(cb2_i);
 
-            ca1_d <= ca1_c;
-            ca2_d <= ca2_c;
-            cb1_d <= cb1_c;
-            cb2_d <= cb2_c;
+            ca1_d1 <= ca1_c;
+            ca2_d1 <= ca2_c;
+            cb1_d1 <= cb1_c;
+            cb2_d1 <= cb2_c;
+
+            ca1_d2 <= ca1_d1;
+            ca2_d2 <= ca2_d1;
+            cb1_d2 <= cb1_d1;
+            cb2_d2 <= cb2_d1;
 
             -- input registers
             port_a_c <= port_a_i;
@@ -236,9 +243,9 @@ begin
 
             -- CA2 logic
             if ca1_event = '1' then
-                ca2_handshake_o <= '1';
-            elsif (ren = '1' or wen = '1') and addr = X"1" and falling = '1' then
                 ca2_handshake_o <= '0';
+            elsif (ren = '1' or wen = '1') and addr = X"1" and falling = '1' then
+                ca2_handshake_o <= '1';
             end if;
             
             if falling = '1' then
@@ -251,9 +258,9 @@ begin
 
             -- CB2 logic
             if cb1_event = '1' then
-                cb2_handshake_o <= '1';
-            elsif (ren = '1' or wen = '1') and addr = X"0" and falling = '1' then
                 cb2_handshake_o <= '0';
+            elsif (ren = '1' or wen = '1') and addr = X"0" and falling = '1' then
+                cb2_handshake_o <= '1';
             end if;
             
             if falling = '1' then
@@ -411,6 +418,20 @@ begin
             end if;
 
             if reset='1' then
+                -- Reset avoids packing into shift register
+                ca1_c  <= '1';
+                ca2_c  <= '1';
+                cb1_c  <= '1';
+                cb2_c  <= '1';
+                ca1_d1 <= '1';
+                ca2_d1 <= '1';
+                cb1_d1 <= '1';
+                cb2_d1 <= '1';
+                ca1_d2 <= '1';
+                ca2_d2 <= '1';
+                cb1_d2 <= '1';
+                cb2_d2 <= '1';
+
                 pio_i         <= pio_default;
                 irq_mask      <= (others => '0');
                 irq_flags     <= (others => '0');
@@ -570,7 +591,6 @@ begin
         signal shift_tick_r  : std_logic;
         signal shift_tick_f  : std_logic;
         signal shift_timer_tick : std_logic;
-        signal cb2_c         : std_logic := '0';
         signal bit_cnt       : integer range 0 to 7;
         signal shift_pulse   : std_logic;
     begin
@@ -604,18 +624,16 @@ begin
         begin
             if rising_edge(clock) then
 
-                cb2_c  <= To_X01(cb2_i);
-
                 if rising = '1' then
 
                     if shift_active='0' then
                         if shift_mode_control = "000" then
-                            shift_clock <= To_X01(cb1_i);
+                            shift_clock <= cb1_d1;
                         else
                             shift_clock <= '1';
                         end if;
                     elsif shift_clk_sel = "11" then
-                        shift_clock <= To_X01(cb1_i);
+                        shift_clock <= cb1_d1;
                     elsif shift_pulse = '1' then
                         shift_clock <= not shift_clock;
                     end if;
@@ -655,7 +673,7 @@ begin
                     elsif shift_dir='1' and shift_tick_f = '1' then -- output
                         shift_reg <= shift_reg(6 downto 0) & shift_reg(7);
                     elsif shift_dir='0' and shift_tick_r = '1' then -- input
-                        shift_reg <= shift_reg(6 downto 0) & cb2_c;
+                        shift_reg <= shift_reg(6 downto 0) & cb2_d1;
                     end if;
                 end if;
             end if;
