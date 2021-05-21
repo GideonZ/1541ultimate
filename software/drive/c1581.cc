@@ -635,6 +635,9 @@ int C1581 :: executeCommand(SubsysCommand *cmd)
 	case MENU_1541_REMOVE:
 		remove_disk();
 		break;
+  case FLOPPY_LOAD_DOS:
+  	memcpy((void *)&memory_map[0x8000], (void*) cmd->buffer, 0x8000);
+    break;
     	
 	default:
 		printf("Unhandled menu item for C1581.\n");

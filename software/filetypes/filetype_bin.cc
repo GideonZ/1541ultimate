@@ -28,6 +28,7 @@
 #include "menu.h"
 #include "c64.h"
 #include "c1541.h"
+#include "c1581.h"
 #include "subsys.h"
 #include "userinterface.h"
 
@@ -56,7 +57,13 @@ extern "C" {
 #define CMD_SET_KERNAL_ALT2  0x4217
 #define CMD_SET_KERNAL_ALT3  0x4218
 #define CMD_LOAD_KERNAL      0x4219
-#define CMD_LOAD_DOS         0x421A
+#define CMD_LOAD_DOS_A       0x421A
+#define CMD_LOAD_DOS_B       0x421B
+#define CMD_LOAD_DOS_C       0x421C
+
+
+#define CFG_C1541_ROMFILE   0xD4
+#define CFG_C1581_ROMFILE   0xC7
 
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_bin(FileType :: getFileTypeFactory(), FileTypeBin :: test_type);
@@ -135,7 +142,12 @@ int FileTypeBin :: fetch_context_items(IndexedList<Action *> &list)
 #endif
 
     if (size == 16384 || size == 32768) {
-        list.append(new Action("Load Drive ROM", FileTypeBin :: execute_st, CMD_LOAD_DOS, (int)this));
+        list.append(new Action("Load Drive A ROM", FileTypeBin :: execute_st, CMD_LOAD_DOS_A, (int)this));
+        list.append(new Action("Load Drive B ROM", FileTypeBin :: execute_st, CMD_LOAD_DOS_B, (int)this));
+        list.append(new Action("Load Drive C ROM", FileTypeBin :: execute_st, CMD_LOAD_DOS_C, (int)this));
+        list.append(new Action("Config. Drive A ROM", FileTypeBin :: setcfg_st, 1, (int)this));
+        list.append(new Action("Config. Drive B ROM", FileTypeBin :: setcfg_st, 2, (int)this));
+        list.append(new Action("Config. Drive C ROM", FileTypeBin :: setcfg_st, 3, (int)this));
         count++;
     }
 
@@ -163,6 +175,39 @@ FileType *FileTypeBin :: test_type(BrowsableDirEntry *obj)
 int FileTypeBin :: execute_st(SubsysCommand *cmd)
 {
 	return ((FileTypeBin *)cmd->mode)->execute(cmd);
+}
+
+// static member
+int FileTypeBin :: setcfg_st(SubsysCommand *cmd)
+{
+  char path[1024];
+  sprintf(path, "%s", cmd->filename.c_str());
+
+	int device = cmd->functionID;
+  if (device == 1)
+  {
+        c1541_A->cfg->set_string(CFG_C1541_ROMFILE, path);
+        c1541_A->effectuate_settings();
+        SubsysCommand *c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, MENU_1541_RESET, 0, 0, 0);
+        c64_command->execute();
+        cmd->user_interface->popup("Set as ROM Image", BUTTON_OK);
+  }
+  else if (device == 2)
+  {
+        c1541_B->cfg->set_string(CFG_C1541_ROMFILE, path);
+        c1541_B->effectuate_settings();
+        SubsysCommand *c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_B, MENU_1541_RESET, 0, 0, 0);
+        c64_command->execute();
+        cmd->user_interface->popup("Set as ROM Image", BUTTON_OK);
+  }
+  else if (device == 3)
+  {
+        c1581_C->cfg->set_string(CFG_C1581_ROMFILE, path);
+        c1581_C->effectuate_settings();
+        SubsysCommand *c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_C, MENU_1541_RESET, 0, 0, 0);
+        c64_command->execute();
+        cmd->user_interface->popup("Set as ROM Image", BUTTON_OK);
+  }
 }
 
 // non-static member
@@ -235,9 +280,14 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
     case CMD_LOAD_KERNAL:
         return load_kernal(cmd);
 
-    case CMD_LOAD_DOS:
-        return load_dos(cmd);
+    case CMD_LOAD_DOS_A:
+        return load_dos(cmd, 1);
 
+    case CMD_LOAD_DOS_B:
+        return load_dos(cmd, 2);
+
+    case CMD_LOAD_DOS_C:
+        return load_dos(cmd, 3);
     }  
 
     printf("Binary Load.. %s\n", cmd->filename.c_str());
@@ -400,7 +450,7 @@ int FileTypeBin :: load_kernal(SubsysCommand *cmd)
     return fres;
 }
 
-int FileTypeBin :: load_dos(SubsysCommand *cmd)
+int FileTypeBin :: load_dos(SubsysCommand *cmd, int dev)
 {
     File *file = 0;
 
@@ -422,6 +472,7 @@ int FileTypeBin :: load_dos(SubsysCommand *cmd)
     		transferred *= 2;
     	}
 
+      if (dev == 1) {
         SubsysCommand *c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, FLOPPY_LOAD_DOS, 0, buffer, size);
         c64_command->execute();
 
@@ -431,6 +482,29 @@ int FileTypeBin :: load_dos(SubsysCommand *cmd)
         
         delete[] buffer;
         return 0;
+      }
+      if (dev == 2) {
+        SubsysCommand *c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_B, FLOPPY_LOAD_DOS, 0, buffer, size);
+        c64_command->execute();
+
+        c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_B, MENU_1541_RESET, 0, 0, 0);
+        c64_command->execute();
+         
+        
+        delete[] buffer;
+        return 0;
+      }
+      if (dev == 3) {
+        SubsysCommand *c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_C, FLOPPY_LOAD_DOS, 0, buffer, size);
+        c64_command->execute();
+
+        c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_C, MENU_1541_RESET, 0, 0, 0);
+        c64_command->execute();
+         
+        
+        delete[] buffer;
+        return 0;
+      }
     }
     return fres;
 }

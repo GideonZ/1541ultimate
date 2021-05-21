@@ -164,6 +164,8 @@ public:
     // Called from user interface thread?  Is this allowed at all? -> no no, the interface thread should
     // issue a subsys command.
     void swap_disk(void);
+
+    friend class FileTypeBin; // bin file needs to access config
 };
 
 extern C1541 *c1541_A;

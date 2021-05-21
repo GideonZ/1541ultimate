@@ -134,6 +134,9 @@ public:
     bool get_drive_power();
 
     uint8_t IrqHandler(void);
+
+
+    friend class FileTypeBin; // bin file needs to access config
 };
 
 extern C1581 *c1581_C;
