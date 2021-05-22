@@ -69,8 +69,8 @@ static const t_flash_address flash_addresses_u2p[] = {
 	{ FLASH_ID_CUSTOM_DRV, 0x00, 0x290000, 0x290000, 0x08000 },
 	{ FLASH_ID_CUSTOM_ROM, 0x00, 0x298000, 0x298000, 0x20000 }, // max size: 128K, free 0x2b8000-0x3f0000
 
-	{ FLASH_ID_KERNAL_ROM2,0x00, 0x29A000, 0x29A000, 0x02000 },
-	{ FLASH_ID_CUSTOM2_DRV,0x00, 0x29C000, 0x29C000, 0x08000 }, // ends at 0x2A4000
+	{ FLASH_ID_KERNAL_ROM2,0x00, 0x2B8000, 0x2B8000, 0x02000 },
+	{ FLASH_ID_CUSTOM2_DRV,0x00, 0x2BA000, 0x2BA000, 0x08000 }, // ends at 0x2C2000
 
 	{ FLASH_ID_FLASHDRIVE, 0x00, 0x300000, 0x300000, 0xF0000 }, // 960KB, will move to 0x200000 when all internal roms are removed
 
