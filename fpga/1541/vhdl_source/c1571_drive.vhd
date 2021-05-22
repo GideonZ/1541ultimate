@@ -6,11 +6,12 @@ library work;
 use work.io_bus_pkg.all;
 use work.mem_bus_pkg.all;
 
-entity c1581_drive is
+entity c1571_drive is
 generic (
     g_big_endian    : boolean;
     g_audio_tag     : std_logic_vector(7 downto 0) := X"01";
     g_floppy_tag    : std_logic_vector(7 downto 0) := X"02";
+    g_disk_tag      : std_logic_vector(7 downto 0) := X"03";
     g_cpu_tag       : std_logic_vector(7 downto 0) := X"04";
     g_audio         : boolean := true;
     g_audio_base    : unsigned(27 downto 0) := X"0030000";
@@ -21,14 +22,14 @@ port (
     drive_stop      : in  std_logic := '0';
     
     -- timing
+    tick_16MHz      : in  std_logic;
     tick_4MHz       : in  std_logic;
-    tick_1KHz       : in  std_logic;
-    
+
     -- slave port on io bus
     io_req          : in  t_io_req;
     io_resp         : out t_io_resp;
     io_irq          : out std_logic;
-    
+
     -- master port on memory bus
     mem_req         : out t_mem_req_32;
     mem_resp        : in  t_mem_resp_32;
@@ -43,44 +44,63 @@ port (
     fast_clk_o      : out std_logic; -- open drain
     fast_clk_i      : in  std_logic;
 
-    -- Misc
     iec_reset_n     : in  std_logic := '1';
     c64_reset_n     : in  std_logic := '1';
+    
+    -- Debug port
+    debug_data      : out std_logic_vector(31 downto 0);
+    debug_valid     : out std_logic;
 
     -- LED
     act_led_n       : out std_logic;
-    power_led_n     : out std_logic;
     motor_led_n     : out std_logic;
     dirty_led_n     : out std_logic;
 
     -- audio out
-    audio_sample    : out signed(12 downto 0) := (others => '0'));
+    audio_sample    : out signed(12 downto 0) );
 
-end entity;
+end c1571_drive;
 
-architecture structural of c1581_drive is
+architecture structural of c1571_drive is
+    signal tick_16M_i       : std_logic;
+    signal cia_rising       : std_logic;
     signal cpu_clock_en     : std_logic;
     signal iec_reset_o      : std_logic;
     
-    signal do_track_out     : std_logic := '0';
-    signal do_track_in      : std_logic := '0';
-    signal do_head_bang     : std_logic := '0';
-    signal en_hum           : std_logic := '0';
-    signal en_slip          : std_logic := '0';
+    signal param_write      : std_logic;
+    signal param_ram_en     : std_logic;
+    signal param_addr       : std_logic_vector(10 downto 0);
+    signal param_wdata      : std_logic_vector(7 downto 0);
+    signal param_rdata      : std_logic_vector(7 downto 0);
+
+    signal do_track_out     : std_logic;
+    signal do_track_in      : std_logic;
+    signal do_head_bang     : std_logic;
+    signal en_hum           : std_logic;
+    signal en_slip          : std_logic;
 
     signal use_c64_reset    : std_logic;
     signal floppy_inserted  : std_logic := '0';
     signal force_ready      : std_logic;
+    signal bank_is_ram      : std_logic_vector(7 downto 1);
+    signal two_MHz          : std_logic;
     signal power            : std_logic;
     signal motor_on         : std_logic;
-    signal side_0           : std_logic;
-    signal track            : std_logic_vector(6 downto 0) := (others => '1');
+    signal mode             : std_logic;
+    signal side             : std_logic;
+    signal step             : std_logic_vector(1 downto 0) := "00";
+    signal rate_ctrl        : std_logic_vector(1 downto 0);
+    signal byte_ready       : std_logic;
+    signal sync             : std_logic;
+    signal track            : std_logic_vector(6 downto 0);
 	signal drive_address	: std_logic_vector(1 downto 0) := "00";
 	signal write_prot_n	    : std_logic := '1';
-	signal disk_change_n    : std_logic := '1';
-	signal rdy_n            : std_logic := '1';
-	
+    signal disk_change_n    : std_logic := '1';
+    signal rdy_n            : std_logic := '1';
+	signal track_0          : std_logic := '0';
     signal drv_reset        : std_logic := '1';
+    signal disk_rdata       : std_logic_vector(7 downto 0);
+    signal disk_wdata       : std_logic_vector(7 downto 0);
     signal drive_stop_i     : std_logic;
     signal stop_on_freeze   : std_logic;
     
@@ -91,10 +111,12 @@ architecture structural of c1581_drive is
 
     signal mem_req_cpu      : t_mem_req;
     signal mem_resp_cpu     : t_mem_resp;
-    signal mem_req_disk     : t_mem_req;
-    signal mem_resp_disk    : t_mem_resp;
+    signal mem_req_flop     : t_mem_req;
+    signal mem_resp_flop    : t_mem_resp;
     signal mem_req_snd      : t_mem_req := c_mem_req_init;
     signal mem_resp_snd     : t_mem_resp;
+    signal mem_req_disk     : t_mem_req;
+    signal mem_resp_disk    : t_mem_resp;
     signal mem_req_8        : t_mem_req := c_mem_req_init;
     signal mem_resp_8       : t_mem_resp;
     signal mem_busy         : std_logic;
@@ -103,6 +125,7 @@ architecture structural of c1581_drive is
 	signal led_intensity	: unsigned(1 downto 0);
 begin        
     drive_stop_i <= drive_stop and stop_on_freeze;
+    tick_16M_i   <= tick_16MHz and not drive_stop_i;
     
     i_timing: entity work.c1541_timing
     port map (
@@ -110,7 +133,7 @@ begin
         reset        => reset,
         
         tick_4MHz    => tick_4MHz,
-        two_MHz_mode => '1',
+        two_MHz_mode => two_MHz,
         mem_busy     => mem_busy,
 
         use_c64_reset=> use_c64_reset,
@@ -120,16 +143,18 @@ begin
     
         drive_stop   => drive_stop_i,
     
-        cpu_clock_en => cpu_clock_en ); -- 2 MHz
+        cia_rising   => cia_rising,
+        cpu_clock_en => cpu_clock_en ); -- 1 MHz or 2 MHz
 
-    i_cpu: entity work.cpu_part_1581
+    i_cpu: entity work.cpu_part_1571
     generic map (
         g_cpu_tag      => g_cpu_tag,
-        g_disk_tag     => g_floppy_tag,
+        g_disk_tag     => g_disk_tag,
         g_ram_base     => g_ram_base )
     port map (
         clock       => clock,
         falling     => cpu_clock_en,
+        rising      => cia_rising,
         reset       => drv_reset,
         
         -- serial bus pins
@@ -141,6 +166,13 @@ begin
         data_i      => data_i,
         fast_clk_o  => fast_clk_o, -- open drain
         fast_clk_i  => fast_clk_i,
+
+        -- trace data
+        debug_data  => debug_data,
+        debug_valid => debug_valid,
+        
+		-- configuration
+--        bank_is_ram    => bank_is_ram,
 
 		-- memory interface
         mem_req_cpu     => mem_req_cpu,
@@ -154,31 +186,72 @@ begin
         io_resp         => io_resp_wd,
         io_irq          => io_irq,
 
-        -- stepper interface
-        tick_1kHz       => tick_1kHz,
-        do_track_out    => do_track_out,
-        do_track_in     => do_track_in,
-
         -- drive pins
         power           => power,
         drive_address   => drive_address,
         write_prot_n    => write_prot_n,
         motor_on        => motor_on,
+        mode            => mode,
+        step            => step,
+        side_0          => side,
+        rate_ctrl       => rate_ctrl,
+        byte_ready      => byte_ready,
+        sync            => sync,
+        two_MHz         => two_MHz,
         rdy_n           => rdy_n,
         disk_change_n   => disk_change_n,
-        side_0          => side_0,
-        
-        -- other
-        power_led       => power_led_n,
-        act_led         => act_led_n );
+        track_0         => track_0,
+
+        drv_rdata       => disk_rdata,
+        drv_wdata       => disk_wdata,
     
+        -- other
+        act_led         => act_led_n );
+
     rdy_n       <= not (motor_on and floppy_inserted) and not force_ready; -- should have a delay
+    
+    i_flop: entity work.floppy
+    generic map (
+        g_big_endian   => g_big_endian,
+        g_tag          => g_floppy_tag )
+    port map (
+        sys_clock       => clock,
+        drv_reset       => drv_reset,
+        tick_16MHz      => tick_16M_i,
+        
+        -- signals from MOS 6522 VIA
+        motor_on        => motor_on,
+        mode            => mode,
+        write_prot_n    => write_prot_n,
+        step            => step,
+        side            => side,
+        rate_ctrl       => rate_ctrl,
+        byte_ready      => byte_ready,
+        sync            => sync,
+        
+        read_data       => disk_rdata,
+        write_data      => disk_wdata,
+        
+        track           => track,
+        track_is_0      => track_0,
+    ---
+        cpu_write       => param_write,
+        cpu_ram_en      => param_ram_en,
+        cpu_addr        => param_addr,
+        cpu_wdata       => param_wdata,
+        cpu_rdata       => param_rdata,
+    ---
+        floppy_inserted => floppy_inserted,
+        do_track_out    => do_track_out,
+        do_track_in     => do_track_in,
+        do_head_bang    => do_head_bang,
+        en_hum          => en_hum,
+        en_slip         => en_slip,
+    ---
+        mem_req         => mem_req_flop,
+        mem_resp        => mem_resp_flop );
 
     r_snd: if g_audio generate
-    begin
-        en_hum      <= motor_on and not floppy_inserted;
-        en_slip     <= motor_on and floppy_inserted;
-        
         i_snd: entity work.floppy_sound
         generic map (
             g_tag          => g_audio_tag,
@@ -206,41 +279,14 @@ begin
             en_hum          => en_hum,
             en_slip         => en_slip,
             
-            -- memory interface
-            mem_req         => mem_req_snd,
-            mem_resp        => mem_resp_snd,
-          
+        	-- memory interface
+        	mem_req		    => mem_req_snd,
+        	mem_resp        => mem_resp_snd,
+        
             -- audio
             sample_out      => audio_sample );
     end generate;
 
-    i_regs: entity work.drive_registers
-    generic map (
-        g_audio_base    => g_audio_base,
-        g_ram_base      => g_ram_base )
-    port map (
-        clock           => clock,
-        reset           => reset,
-                        
-        io_req          => io_req_regs,
-        io_resp         => io_resp_regs,
-        
-        iec_reset_o     => iec_reset_o,
-        use_c64_reset   => use_c64_reset,
-        power           => power,
-        drv_reset       => drv_reset,
-        drive_address   => drive_address,
-        floppy_inserted => floppy_inserted,
-        disk_change_n   => disk_change_n,
-        force_ready     => force_ready,
-        write_prot_n    => write_prot_n,
-        dirty_led_n     => dirty_led_n,
-        stop_on_freeze  => stop_on_freeze,
-        
-        track           => track,
-        mode            => side_0,
-        motor_on        => motor_on );
-            
     -- IO bus split
     i_split: entity work.io_bus_splitter
     generic map (
@@ -258,22 +304,59 @@ begin
         resps(1)   => io_resp_wd
     );
 
+    i_regs: entity work.drive_registers
+    generic map (
+        g_audio_base    => g_audio_base,
+        g_ram_base      => g_ram_base )
+    port map (
+        clock           => clock,
+        reset           => reset,
+                        
+        io_req          => io_req_regs,
+        io_resp         => io_resp_regs,
+        
+        param_write     => param_write,
+        param_ram_en    => param_ram_en,
+        param_addr      => param_addr,
+        param_wdata     => param_wdata,
+        param_rdata     => param_rdata,
+
+        iec_reset_o     => iec_reset_o,
+        use_c64_reset   => use_c64_reset,
+        power           => power,
+        drv_reset       => drv_reset,
+        drive_address   => drive_address,
+        floppy_inserted => floppy_inserted,
+        disk_change_n   => disk_change_n,
+        force_ready     => force_ready,
+        write_prot_n    => write_prot_n,
+        bank_is_ram     => bank_is_ram,
+        dirty_led_n     => dirty_led_n,
+        stop_on_freeze  => stop_on_freeze,
+
+        track           => track,
+        side            => side,
+        mode            => mode,
+        motor_on        => motor_on );
+            
     -- memory arbitration
     i_arb: entity work.mem_bus_arbiter_pri
     generic map (
-        g_ports      => 3,
+        g_ports      => 4,
         g_registered => false )
     port map (
         clock       => clock,
         reset       => reset,
         
-        reqs(0)     => mem_req_cpu,
-        reqs(1)     => mem_req_disk,
+        reqs(0)     => mem_req_flop,
+        reqs(1)     => mem_req_cpu,
         reqs(2)     => mem_req_snd,
-
-        resps(0)    => mem_resp_cpu,
-        resps(1)    => mem_resp_disk,
+        reqs(3)     => mem_req_disk,
+        
+        resps(0)    => mem_resp_flop,
+        resps(1)    => mem_resp_cpu,
         resps(2)    => mem_resp_snd,
+        resps(3)    => mem_resp_disk,
         
         req         => mem_req_8,
         resp        => mem_resp_8 );        

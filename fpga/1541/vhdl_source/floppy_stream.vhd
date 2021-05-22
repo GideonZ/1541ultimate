@@ -45,7 +45,6 @@ port (
     write_prot_n    : in  std_logic;
     step            : in  std_logic_vector(1 downto 0);
     byte_ready      : out std_logic;
-    soe             : in  std_logic;
     rate_ctrl       : in  std_logic_vector(1 downto 0);
     bit_time        : in  unsigned(9 downto 0); -- in steps of 10 ns
         
@@ -227,7 +226,7 @@ begin
                 rd_bit_cnt <= "000";
             end if;
 
-            if (rd_bit_cnt="111") and (soe = '1') and (rd_shift_phase='1') then -- and (bit_slip = '0') then
+            if (rd_bit_cnt="111") and (rd_shift_phase='1') then -- and (bit_slip = '0') then
                 byte_rdy_i <= '0';
             else
                 byte_rdy_i <= '1';
