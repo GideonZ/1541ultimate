@@ -327,11 +327,13 @@ begin
         drv_reset       => drv_reset,
         drive_address   => drive_address,
         floppy_inserted => floppy_inserted,
+        disk_change_n   => disk_change_n,
+        force_ready     => force_ready,
         write_prot_n    => write_prot_n,
         bank_is_ram     => bank_is_ram,
         dirty_led_n     => dirty_led_n,
         stop_on_freeze  => stop_on_freeze,
-        
+
         track           => track,
         side            => side,
         mode            => mode,

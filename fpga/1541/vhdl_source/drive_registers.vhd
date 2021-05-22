@@ -157,7 +157,7 @@ begin
                     end case;
                 when "01" => -- dirty block
                     io_resp.ack <= '1';
-                    io_resp.data(0) <= dirty_bits(to_integer(io_req.address(5 downto 0)));
+                    io_resp.data(0) <= dirty_bits(to_integer(io_req.address(6 downto 0)));
                 when "10" => -- param block
                     param_ack <= '1';
                 when others =>
