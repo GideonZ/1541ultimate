@@ -37,7 +37,7 @@ uint16_t crc16_ccitt(uint16_t crc, const uint8_t *buf, int len);
 C1581 :: C1581(volatile uint8_t *regs, char letter) : SubSystem(SUBSYSID_DRIVE_C)
 {
     registers  = regs;
-    wd177x = (volatile wd177x_t *)(regs + 0x100);
+    wd177x = (volatile wd177x_t *)(regs + 0x1800);
 
     mount_file = NULL;
     drive_letter = letter;
