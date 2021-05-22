@@ -101,7 +101,22 @@ architecture structural of c1581_drive is
     signal count            : unsigned(7 downto 0) := X"00";
 	signal led_intensity	: unsigned(1 downto 0);
 begin        
-    drive_stop_i <= drive_stop and stop_on_freeze;
+    -- IO bus split
+    i_split: entity work.io_bus_splitter
+    generic map (
+        g_range_lo => 12,
+        g_range_hi => 12,
+        g_ports    => 2
+    )
+    port map(
+        clock      => clock,
+        req        => io_req,
+        resp       => io_resp,
+        reqs(0)    => io_req_regs,
+        reqs(1)    => io_req_wd,
+        resps(0)   => io_resp_regs,
+        resps(1)   => io_resp_wd
+    );
     
     i_timing: entity work.c1541_timing
     port map (
@@ -120,6 +135,8 @@ begin
         drive_stop   => drive_stop_i,
     
         cpu_clock_en => cpu_clock_en ); -- 2 MHz
+
+    drive_stop_i <= drive_stop and stop_on_freeze;
 
     i_cpu: entity work.cpu_part_1581
     generic map (
@@ -239,23 +256,6 @@ begin
         mode            => side_0,
         motor_on        => motor_on );
             
-    -- IO bus split
-    i_split: entity work.io_bus_splitter
-    generic map (
-        g_range_lo => 8,
-        g_range_hi => 8,
-        g_ports    => 2
-    )
-    port map(
-        clock      => clock,
-        req        => io_req,
-        resp       => io_resp,
-        reqs(0)    => io_req_regs,
-        reqs(1)    => io_req_wd,
-        resps(0)   => io_resp_regs,
-        resps(1)   => io_resp_wd
-    );
-
     -- memory arbitration
     i_arb: entity work.mem_bus_arbiter_pri
     generic map (
