@@ -67,12 +67,6 @@ architecture structural of c1571_drive is
     signal cpu_clock_en     : std_logic;
     signal iec_reset_o      : std_logic;
     
-    signal param_write      : std_logic;
-    signal param_ram_en     : std_logic;
-    signal param_addr       : std_logic_vector(10 downto 0);
-    signal param_wdata      : std_logic_vector(7 downto 0);
-    signal param_rdata      : std_logic_vector(7 downto 0);
-
     signal do_track_out     : std_logic;
     signal do_track_in      : std_logic;
     signal do_head_bang     : std_logic;

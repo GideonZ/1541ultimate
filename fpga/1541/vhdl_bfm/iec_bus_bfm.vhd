@@ -88,7 +88,8 @@ package iec_bus_bfm_pkg is
     procedure iec_drf(variable bfm : inout p_iec_bus_bfm_object);
     
     procedure iec_send_atn(variable bfm : inout p_iec_bus_bfm_object;
-                            byte : std_logic_vector(7 downto 0));
+                            byte : std_logic_vector(7 downto 0);
+                            atn_off : boolean := false);
 
     procedure iec_turnaround(variable bfm : inout p_iec_bus_bfm_object);
 
@@ -169,10 +170,16 @@ package body iec_bus_bfm_pkg is
     end procedure;
 
     procedure iec_send_atn(variable bfm : inout p_iec_bus_bfm_object;
-                           byte : std_logic_vector(7 downto 0)) is
+                           byte : std_logic_vector(7 downto 0);
+                           atn_off : boolean := false) is
     begin
         bfm.msg_buf.data(0) := byte;
         bfm.msg_buf.len     := 1;
+        if atn_off then
+            bfm.msg_buf.data(1) := X"01";
+        else
+            bfm.msg_buf.data(1) := X"00";
+        end if;
         bfm.to_bfm.command  := send_atn;
         wait for bfm.sample_time;
         wait for bfm.sample_time;
@@ -355,7 +362,9 @@ begin
                 this.status := ok;
             end if;
             wait for c_frame_release;
-
+            if this.msg_buf.data(1)(0) = '1' then
+                atn_o <= '1';
+            end if;
         end procedure;
 
         procedure send_byte(byte : std_logic_vector(7 downto 0)) is

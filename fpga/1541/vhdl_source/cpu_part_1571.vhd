@@ -225,9 +225,9 @@ begin
         -- handshake pins
         ca1_i       => via1_ca1,
                             
-        ca2_o       => via1_ca2_o,
-        ca2_i       => via1_ca2_i,
-        ca2_t       => via1_ca2_t,
+        ca2_o       => via1_ca2_o, -- ignore, driven from LS14
+        ca2_i       => via1_ca2_i, -- connects to write protect pin
+        ca2_t       => via1_ca2_t, -- ignore, driven from LS14
                             
         cb1_o       => via1_cb1_o,
         cb1_i       => via1_cb1_i,
@@ -426,7 +426,7 @@ begin
 
     side_0       <= not via1_port_a_i(2);
     two_MHz      <= via1_port_a_i(5);
-    fast_ser_dir <= via1_port_a_i(3); -- '1' is output
+    fast_ser_dir <= via1_port_a_i(1);
 
     -- Because Port B reads its own output when set to output, we do not need to consider the direction here
     via1_port_b_i(7) <= not atn_i;
@@ -438,6 +438,9 @@ begin
     via1_port_b_i(1) <= '1'; -- data out  - PUP
     via1_port_b_i(0) <= not (data_i and not my_data_out and (not (atn_ack xor (not atn_i))));
 
+    via1_ca2_i       <= write_prot_n;    
+    via1_cb1_i       <= via1_cb1_o or not via1_cb1_t;
+    
     atn_ack     <= via1_port_b_o(4) or not via1_port_b_t(4);
     my_data_out <= via1_port_b_o(1) or not via1_port_b_t(1);
     my_clk_out  <= via1_port_b_o(3) or not via1_port_b_t(3);
@@ -457,7 +460,7 @@ begin
     
     -- CIA ports are not used
     cia_port_a_i <= cia_port_a_o or not cia_port_a_t;
-    cia_port_a_i <= cia_port_b_o or not cia_port_b_t;
+    cia_port_b_i <= cia_port_b_o or not cia_port_b_t;
 
     act_led      <= not (via2_port_b_o(3) or not via2_port_b_t(3)) or not power;
     mode         <= via2_cb2_i;
