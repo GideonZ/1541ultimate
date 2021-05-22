@@ -17,7 +17,10 @@ library ieee;
 
 library unisim;
     use unisim.vcomponents.all;
+
+library work;    
     use work.endianness_pkg.all;
+    use work.io_bus_pkg.all;
     
 entity floppy_param_mem is
 generic (
@@ -26,11 +29,8 @@ port (
     clock       : in  std_logic;
     reset       : in  std_logic;
     
-    cpu_write   : in  std_logic;
-    cpu_ram_en  : in  std_logic;
-    cpu_addr    : in  std_logic_vector(10 downto 0);
-    cpu_wdata   : in  std_logic_vector(7 downto 0);
-    cpu_rdata   : out std_logic_vector(7 downto 0);
+    io_req      : in  t_io_req;
+    io_resp     : out t_io_resp;
 
     track       : in  std_logic_vector(6 downto 0);
     side        : in  std_logic := '0';
@@ -45,15 +45,24 @@ architecture gideon of floppy_param_mem is
     signal param_addr : std_logic_vector(8 downto 0);
     signal param_data : std_logic_vector(31 downto 0);
     signal ram_data   : std_logic_vector(31 downto 0);
+
+    signal cpu_ram_en   : std_logic;
+    signal cpu_ram_en_d : std_logic;
+    signal cpu_rdata    : std_logic_vector(7 downto 0);
 begin
+    cpu_ram_en   <= io_req.read or io_req.write;
+    cpu_ram_en_d <= cpu_ram_en when rising_edge(clock); 
+    io_resp.ack  <= cpu_ram_en_d;
+    io_resp.data <= cpu_rdata when cpu_ram_en_d = '1' else X"00"; 
+    
     ram: RAMB16_S9_S36
     port map (
 		CLKA  => clock,
 		SSRA  => reset,
 		ENA   => cpu_ram_en,
-		WEA   => cpu_write,
-        ADDRA => cpu_addr,
-		DIA   => cpu_wdata,
+		WEA   => io_req.write,
+        ADDRA => std_logic_vector(io_req.address(10 downto 0)),
+		DIA   => io_req.data,
 		DIPA  => "0",
 		DOA   => cpu_rdata,
 		DOPA  => open,

@@ -69,7 +69,6 @@ typedef enum { e_no_disk,
 #define C1541_SENSOR      3
 #define C1541_INSERTED    4
 #define C1541_RAMMAP      5
-#define C1541_ANYDIRTY    6
 #define C1541_DIRTYIRQ    7
 #define C1541_TRACK       8
 #define C1541_STATUS      9

@@ -251,7 +251,7 @@ void C1541 :: drive_power(bool on)
     registers[C1541_POWER] = on?1:0;
     if(on)
         drive_reset(1);
-    registers[C1541_ANYDIRTY] = 0;
+    registers[C1541_DIRTYFLAGS] = 0x80;
 }
 
 bool C1541 :: get_drive_power() 
@@ -320,8 +320,8 @@ void C1541 :: set_ram(t_1541_ram ram_setting)
 
 bool C1541 :: check_if_save_needed(SubsysCommand *cmd)
 {
-    printf("## Checking if disk change is needed: %c %d %d\n", drive_letter, registers[C1541_ANYDIRTY], disk_state);
-	if(!((registers[C1541_ANYDIRTY])||(write_skip))) {
+    printf("## Checking if disk change is needed: %c %d %d\n", drive_letter, registers[C1541_DIRTYFLAGS], disk_state);
+	if(!((registers[C1541_DIRTYFLAGS] & 0x80)||(write_skip))) {
         return false;
     }
     if(disk_state == e_no_disk) {
@@ -378,7 +378,7 @@ void C1541 :: insert_disk(bool protect, GcrImage *image)
         *(param++) = (image->track_length[i]-1) | (bit_time << 16);
         registers[C1541_DIRTYFLAGS + i/2] = 0;
     }            
-	registers[C1541_ANYDIRTY] = 0;
+	registers[C1541_DIRTYFLAGS] = 0x80;
 
     if(!protect) {
         registers[C1541_SENSOR] = SENSOR_LIGHT;
@@ -534,10 +534,10 @@ void C1541 :: swap_disk()
             }
             
             // Write back dirty tracks before mounting new disk...
-            while(((registers[C1541_ANYDIRTY])||(write_skip))) {
-              printf(".");
-              this->poll();
-              vTaskDelay(50);
+            while(((registers[C1541_DIRTYFLAGS] & 0x80)||(write_skip))) {
+                printf(".");
+                this->poll();
+                vTaskDelay(50);
             }
 
             cmd = new SubsysCommand(cmd->user_interface, getID(),
@@ -594,13 +594,13 @@ void C1541 :: poll() // called under mutex
         return;
     }
 
-	if((registers[C1541_ANYDIRTY])||(write_skip)) {
+	if((registers[C1541_DIRTYFLAGS] & 0x80)||(write_skip)) {
 		if(!write_skip) {
-			registers[C1541_ANYDIRTY] = 0;  // clear flag once we didn't skip anything anymore
+			registers[C1541_DIRTYFLAGS] = 0x80;  // clear flag once we didn't skip anything anymore
 		}
 		write_skip = 0;
 		for(tr=0,written=0;tr<C1541_MAXTRACKS/2;tr++) {
-			if(registers[C1541_DIRTYFLAGS + tr]) {
+			if(registers[C1541_DIRTYFLAGS + tr] & 0x01) {
 				if((!(registers[C1541_STATUS] & DRVSTAT_MOTOR)) || ((registers[C1541_TRACK] >> 1) != tr)) {
 					registers[C1541_DIRTYFLAGS + tr] = 0;
 					switch(disk_state) {
