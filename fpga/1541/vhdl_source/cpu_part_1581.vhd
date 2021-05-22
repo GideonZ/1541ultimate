@@ -15,7 +15,8 @@ port (
     clock       : in  std_logic;
     falling     : in  std_logic;
     reset       : in  std_logic;
-    
+    tick_1kHz   : in  std_logic;
+
     -- serial bus pins
     atn_o       : out std_logic; -- open drain
     atn_i       : in  std_logic;
@@ -41,9 +42,8 @@ port (
     io_irq          : out std_logic;
 
     -- track stepper interface (for audio samples)
-    goto_track      : out unsigned(6 downto 0);
-    phys_track      : in  unsigned(6 downto 0) := (others => '1');
-    step_time       : out unsigned(4 downto 0);
+    do_track_in     : out std_logic;
+    do_track_out    : out std_logic;
 
     -- drive pins
     power           : in  std_logic;
@@ -328,9 +328,9 @@ begin
         wdata        => cpu_wdata,
         rdata        => wd_data,
         
-        goto_track   => goto_track,
-        phys_track   => phys_track,
-        step_time    => step_time,
+        tick_1kHz    => tick_1kHz,
+        do_track_out => do_track_out,
+        do_track_in  => do_track_in,
 
         mem_req      => mem_req_disk,
         mem_resp     => mem_resp_disk,

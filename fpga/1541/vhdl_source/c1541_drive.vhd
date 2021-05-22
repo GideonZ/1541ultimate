@@ -97,7 +97,6 @@ architecture structural of c1541_drive is
     signal motor_on         : std_logic;
     signal mode             : std_logic;
     signal step             : std_logic_vector(1 downto 0) := "00";
-    signal soe              : std_logic;
     signal rate_ctrl        : std_logic_vector(1 downto 0);
     signal byte_ready       : std_logic;
     signal sync             : std_logic;
@@ -183,7 +182,6 @@ begin
         motor_on        => motor_on,
         mode            => mode,
         step            => step,
-        soe             => soe,
         rate_ctrl       => rate_ctrl,
         byte_ready      => byte_ready,
         sync            => sync,
@@ -219,7 +217,6 @@ begin
         mode            => mode,
         write_prot_n    => write_prot_n,
         step            => step,
-        soe             => soe,
         rate_ctrl       => rate_ctrl,
         byte_ready      => byte_ready,
         sync            => sync,

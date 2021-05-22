@@ -33,6 +33,7 @@ port (
     cpu_rdata   : out std_logic_vector(7 downto 0);
 
     track       : in  std_logic_vector(6 downto 0);
+    side        : in  std_logic := '0';
     bit_time    : out unsigned(9 downto 0);
     track_start : out std_logic_vector(25 downto 0);
     max_offset  : out std_logic_vector(13 downto 0) );
@@ -67,7 +68,7 @@ begin
 		DOB   => ram_data,
 		DOPB  => open );
 
-    param_addr <= '0' & track & toggle;
+    param_addr <= side & track & toggle;
     param_data <= byte_swap(ram_data, g_big_endian);
 
     process(clock)
