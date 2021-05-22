@@ -38,16 +38,17 @@ port (
     param_rdata     : in  std_logic_vector(7 downto 0) := X"77";
 
     track           : in  std_logic_vector(6 downto 0);
+    side            : in  std_logic := '0';
     mode            : in  std_logic;
     motor_on        : in  std_logic );
 end;
 
 architecture rtl of drive_registers is
-    signal dirty_bits : std_logic_vector(63 downto 0) := (others => '0');
+    signal dirty_bits : std_logic_vector(127 downto 0) := (others => '0');
     signal any_dirty  : std_logic;
     signal irq_en     : std_logic;
     signal wr, wd     : std_logic;
-    signal wa         : integer range 0 to 63 := 0;
+    signal wa         : integer range 0 to 127 := 0;
     signal param_ack  : std_logic;
 
     signal power_i          : std_logic;
@@ -68,7 +69,7 @@ begin
             io_resp <= c_io_resp_init;
             param_ack <= '0';
             wr <= '0';
-            wa <= to_integer(unsigned(track(6 downto 1)));
+            wa <= to_integer(unsigned(side & track(6 downto 1)));
             if mode = '0' and motor_on='1' and inserted_i='1' then
                 wr <= '1';
                 wd <= '1';
@@ -106,7 +107,7 @@ begin
                     end case;
                 when "01" => -- dirty block
                     wr <= '1';
-                    wa <= to_integer(io_req.address(5 downto 0));
+                    wa <= to_integer(io_req.address(6 downto 0));
                     wd <= '0';
                 when "10" => -- param block
                     null;
@@ -143,6 +144,7 @@ begin
                         io_resp.data(1) <= force_ready_i;
                     when c_drvreg_track =>
                         io_resp.data(6 downto 0) <= track(6 downto 0);
+                        io_resp.data(7) <= side;
                     when c_drvreg_status =>
                         io_resp.data(0) <= motor_on;
                         io_resp.data(1) <= not mode; -- mode is '0' when writing
@@ -155,7 +157,7 @@ begin
                     end case;
                 when "01" => -- dirty block
                     io_resp.ack <= '1';
-                    io_resp.data(0) <= dirty_bits(to_integer(io_req.address(5 downto 0)));
+                    io_resp.data(0) <= dirty_bits(to_integer(io_req.address(6 downto 0)));
                 when "10" => -- param block
                     param_ack <= '1';
                 when others =>

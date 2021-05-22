@@ -62,7 +62,8 @@ generic (
 port (
     clock       : in  std_logic;
     reset       : in  std_logic;
-    
+    tick_1kHz   : in  std_logic;
+
     -- register interface from 6502
     addr        : in  unsigned(1 downto 0);
     wen         : in  std_logic;
@@ -75,9 +76,8 @@ port (
     mem_resp        : in  t_mem_resp;
 
     -- track stepper interface (for audio samples)
-    goto_track      : out unsigned(6 downto 0);
-    phys_track      : in  unsigned(6 downto 0);
-    step_time       : out unsigned(4 downto 0);
+    do_track_in     : out std_logic;
+    do_track_out    : out std_logic;
 
     -- I/O interface from application CPU
     io_req          : in  t_io_req;
@@ -117,6 +117,12 @@ architecture behavioral of wd177x is
 
     type t_dma_state is (idle, do_read, reading, do_write, writing);
     signal dma_state        : t_dma_state;
+
+    -- Stepper
+    signal goto_track       : unsigned(6 downto 0);
+    signal phys_track       : unsigned(6 downto 0);
+    signal step_time        : unsigned(4 downto 0);
+
 begin
     mem_rack  <= '1' when mem_resp.rack_tag = g_tag else '0';
     mem_dack  <= '1' when mem_resp.dack_tag = g_tag else '0';
@@ -331,5 +337,17 @@ begin
             end if;
         end if;
     end process;
+    
+    i_stepper: entity work.stepper
+    port map (
+        clock        => clock,
+        reset        => reset,
+        tick_1KHz    => tick_1KHz,
+        goto_track   => goto_track,
+        phys_track   => phys_track,
+        step_time    => step_time,
+        do_track_out => do_track_out,
+        do_track_in  => do_track_in
+    );
     
 end architecture;

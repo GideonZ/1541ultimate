@@ -31,8 +31,8 @@ port (
     motor_on        : in  std_logic;
     mode            : in  std_logic;
     write_prot_n    : in  std_logic;
+    side            : in  std_logic := '0';
     step            : in  std_logic_vector(1 downto 0);
-    soe             : in  std_logic;
     rate_ctrl       : in  std_logic_vector(1 downto 0);
     byte_ready      : out std_logic;
     sync            : out std_logic;
@@ -103,7 +103,6 @@ begin
         write_prot_n    => write_prot_n,
         step            => step,
         byte_ready      => byte_ready,
-        soe             => soe,
         rate_ctrl       => rate_ctrl,
         bit_time        => bit_time,
         
@@ -123,6 +122,7 @@ begin
         cpu_rdata   => cpu_rdata,
     
         track       => track_i,
+        side        => side,
         track_start => track_start,
         max_offset  => max_offset,
         bit_time    => bit_time );
