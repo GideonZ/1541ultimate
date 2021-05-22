@@ -28,9 +28,6 @@ const struct t_cfg_definition c1581_config[] = {
     { 0xFF, CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
-//extern uint8_t _1581_bin_start;
-//extern uint8_t _sounds_bin_start;
-
 uint16_t crc16_ccitt(uint16_t crc, const uint8_t *buf, int len);
 
 //--------------------------------------------------------------
@@ -182,7 +179,6 @@ void C1581 :: drive_power(bool on)
     registers[C1541_POWER] = on?1:0;
     if(on)
         drive_reset(1);
-    registers[C1541_ANYDIRTY] = 0;
 }
 
 bool C1581 :: get_drive_power()

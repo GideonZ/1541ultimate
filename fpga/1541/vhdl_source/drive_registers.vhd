@@ -28,15 +28,8 @@ port (
     force_ready     : out std_logic;
     write_prot_n    : out std_logic;
     bank_is_ram     : out std_logic_vector(7 downto 1);
-    dirty_led_n     : out std_logic;
     stop_on_freeze  : out std_logic;
     
-    param_write     : out std_logic;
-    param_ram_en    : out std_logic;
-    param_addr      : out std_logic_vector(10 downto 0);
-    param_wdata     : out std_logic_vector(7 downto 0);
-    param_rdata     : in  std_logic_vector(7 downto 0) := X"77";
-
     track           : in  std_logic_vector(6 downto 0);
     side            : in  std_logic := '0';
     mode            : in  std_logic;
@@ -44,13 +37,7 @@ port (
 end;
 
 architecture rtl of drive_registers is
-    signal dirty_bits : std_logic_vector(127 downto 0) := (others => '0');
-    signal any_dirty  : std_logic;
     signal irq_en     : std_logic;
-    signal wr, wd     : std_logic;
-    signal wa         : integer range 0 to 127 := 0;
-    signal param_ack  : std_logic;
-
     signal power_i          : std_logic;
     signal drv_reset_i      : std_logic;
     signal use_c64_reset_i  : std_logic;
@@ -65,117 +52,71 @@ begin
     p_reg: process(clock)
     begin
         if rising_edge(clock) then
-
             io_resp <= c_io_resp_init;
-            param_ack <= '0';
-            wr <= '0';
-            wa <= to_integer(unsigned(side & track(6 downto 1)));
-            if mode = '0' and motor_on='1' and inserted_i='1' then
-                wr <= '1';
-                wd <= '1';
-                any_dirty <= '1';
-            end if;
-
             if io_req.write='1' then
                 io_resp.ack <= '1';
-                case io_req.address(12 downto 11) is
-                when "00" => -- registers
-                    case io_req.address(3 downto 0) is
-                    when c_drvreg_power =>
-                        power_i <= io_req.data(0);
-                    when c_drvreg_reset =>
-                        drv_reset_i <= io_req.data(0);
-                        use_c64_reset_i <= io_req.data(1);
-                        stop_when_frozen <= io_req.data(2);
-                    when c_drvreg_address =>
-                        drive_address_i <= io_req.data(1 downto 0);
-                    when c_drvreg_sensor =>
-                        sensor_i <= io_req.data(0);
-                    when c_drvreg_inserted =>
-                        inserted_i <= io_req.data(0);
-                    when c_drvreg_rammap =>
-                        bank_is_ram_i <= io_req.data(7 downto 1);
-                    when c_drvreg_anydirty =>
-                        any_dirty <= '0';
-                    when c_drvreg_dirtyirq =>
-                        irq_en <= io_req.data(0);
-                    when c_drvreg_diskchng =>
-                        disk_change_i <= io_req.data(0);
-                        force_ready_i <= io_req.data(1);
-                    when others =>
-                        null;
-                    end case;
-                when "01" => -- dirty block
-                    wr <= '1';
-                    wa <= to_integer(io_req.address(6 downto 0));
-                    wd <= '0';
-                when "10" => -- param block
-                    null;
-                when others => -- unused
+                case io_req.address(3 downto 0) is
+                when c_drvreg_power =>
+                    power_i <= io_req.data(0);
+                when c_drvreg_reset =>
+                    drv_reset_i <= io_req.data(0);
+                    use_c64_reset_i <= io_req.data(1);
+                    stop_when_frozen <= io_req.data(2);
+                when c_drvreg_address =>
+                    drive_address_i <= io_req.data(1 downto 0);
+                when c_drvreg_sensor =>
+                    sensor_i <= io_req.data(0);
+                when c_drvreg_inserted =>
+                    inserted_i <= io_req.data(0);
+                when c_drvreg_rammap =>
+                    bank_is_ram_i <= io_req.data(7 downto 1);
+                when c_drvreg_dirtyirq =>
+                    irq_en <= io_req.data(0);
+                when c_drvreg_diskchng =>
+                    disk_change_i <= io_req.data(0);
+                    force_ready_i <= io_req.data(1);
+                when others =>
                     null;
                 end case;
             end if; -- write
                 
             if io_req.read='1' then
-                case io_req.address(12 downto 11) is
-                when "00" => -- registers                
-                    io_resp.ack <= '1';
-                    case io_req.address(3 downto 0) is
-                    when c_drvreg_power =>
-                        io_resp.data(0) <= power_i;
-                    when c_drvreg_reset =>
-                        io_resp.data(0) <= drv_reset_i;
-                        io_resp.data(1) <= use_c64_reset_i;
-                        io_resp.data(2) <= stop_when_frozen;
-                    when c_drvreg_address =>
-                        io_resp.data(1 downto 0) <= drive_address_i;
-                    when c_drvreg_sensor =>
-                        io_resp.data(0) <= sensor_i;
-                    when c_drvreg_inserted =>
-                        io_resp.data(0) <= inserted_i;
-                    when c_drvreg_rammap =>
-                        io_resp.data <= bank_is_ram_i & '0';
-                    when c_drvreg_anydirty =>
-                        io_resp.data(0) <= any_dirty;
-                    when c_drvreg_dirtyirq =>
-                        io_resp.data(0) <= irq_en;
-                    when c_drvreg_diskchng =>
-                        io_resp.data(0) <= disk_change_i;
-                        io_resp.data(1) <= force_ready_i;
-                    when c_drvreg_track =>
-                        io_resp.data(6 downto 0) <= track(6 downto 0);
-                        io_resp.data(7) <= side;
-                    when c_drvreg_status =>
-                        io_resp.data(0) <= motor_on;
-                        io_resp.data(1) <= not mode; -- mode is '0' when writing
-                    when c_drvreg_memmap =>
-                        io_resp.data <= std_logic_vector(g_ram_base(23 downto 16));
-                    when c_drvreg_audiomap =>
-                        io_resp.data <= std_logic_vector(g_audio_base(23 downto 16));
-                    when others =>
-                        null;
-                    end case;
-                when "01" => -- dirty block
-                    io_resp.ack <= '1';
-                    io_resp.data(0) <= dirty_bits(to_integer(io_req.address(6 downto 0)));
-                when "10" => -- param block
-                    param_ack <= '1';
+                io_resp.ack <= '1';
+                case io_req.address(3 downto 0) is
+                when c_drvreg_power =>
+                    io_resp.data(0) <= power_i;
+                when c_drvreg_reset =>
+                    io_resp.data(0) <= drv_reset_i;
+                    io_resp.data(1) <= use_c64_reset_i;
+                    io_resp.data(2) <= stop_when_frozen;
+                when c_drvreg_address =>
+                    io_resp.data(1 downto 0) <= drive_address_i;
+                when c_drvreg_sensor =>
+                    io_resp.data(0) <= sensor_i;
+                when c_drvreg_inserted =>
+                    io_resp.data(0) <= inserted_i;
+                when c_drvreg_rammap =>
+                    io_resp.data <= bank_is_ram_i & '0';
+                when c_drvreg_dirtyirq =>
+                    io_resp.data(0) <= irq_en;
+                when c_drvreg_diskchng =>
+                    io_resp.data(0) <= disk_change_i;
+                    io_resp.data(1) <= force_ready_i;
+                when c_drvreg_track =>
+                    io_resp.data(6 downto 0) <= track(6 downto 0);
+                    io_resp.data(7) <= side;
+                when c_drvreg_status =>
+                    io_resp.data(0) <= motor_on;
+                    io_resp.data(1) <= not mode; -- mode is '0' when writing
+                when c_drvreg_memmap =>
+                    io_resp.data <= std_logic_vector(g_ram_base(23 downto 16));
+                when c_drvreg_audiomap =>
+                    io_resp.data <= std_logic_vector(g_audio_base(23 downto 16));
                 when others =>
-                    io_resp.ack <= '1';
+                    null;
                 end case;
             end if; -- read
                                                     
-            -- param response
-            if param_ack='1' then
-                io_resp.ack <= '1';
-                io_resp.data <= param_rdata;
-            end if;
-            
-            -- write into memory array
-            if wr='1' then
-                dirty_bits(wa) <= wd;
-            end if;
-
             drv_reset <= drv_reset_i or iec_reset_o;
 
             if reset='1' then
@@ -187,19 +128,12 @@ begin
                 inserted_i       <= '0';
                 disk_change_i    <= '0';
                 use_c64_reset_i  <= '1';
-                any_dirty        <= '0';
                 irq_en           <= '0';
-                wd               <= '0';
                 stop_when_frozen <= '1';
                 force_ready_i    <= '0';
             end if;    
         end if;
     end process;
-
-    param_write     <= '1' when io_req.write='1' and io_req.address(12 downto 11)="10" else '0';
-    param_ram_en    <= '1' when (io_req.write='1' or io_req.read='1') and io_req.address(12 downto 11)="10" else '0';
-    param_addr      <= std_logic_vector(io_req.address(10 downto 0));
-    param_wdata     <= io_req.data;
 
     power           <= power_i;
     drive_address   <= drive_address_i;
@@ -207,7 +141,6 @@ begin
     disk_change_n   <= not disk_change_i;
     write_prot_n    <= sensor_i;
     bank_is_ram     <= bank_is_ram_i;
-    dirty_led_n     <= not any_dirty;
     use_c64_reset   <= use_c64_reset_i;
     stop_on_freeze  <= stop_when_frozen;
     force_ready     <= force_ready_i;

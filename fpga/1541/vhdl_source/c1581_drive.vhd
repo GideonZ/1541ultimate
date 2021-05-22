@@ -51,7 +51,6 @@ port (
     act_led_n       : out std_logic;
     power_led_n     : out std_logic;
     motor_led_n     : out std_logic;
-    dirty_led_n     : out std_logic;
 
     -- audio out
     audio_sample    : out signed(12 downto 0) := (others => '0'));
@@ -234,7 +233,6 @@ begin
         disk_change_n   => disk_change_n,
         force_ready     => force_ready,
         write_prot_n    => write_prot_n,
-        dirty_led_n     => dirty_led_n,
         stop_on_freeze  => stop_on_freeze,
         
         track           => track,

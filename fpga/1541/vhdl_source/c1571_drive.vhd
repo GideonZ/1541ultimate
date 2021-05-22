@@ -106,6 +106,10 @@ architecture structural of c1571_drive is
     
     signal io_req_regs      : t_io_req;
     signal io_resp_regs     : t_io_resp;
+    signal io_req_param     : t_io_req;
+    signal io_resp_param    : t_io_resp;
+    signal io_req_dirty     : t_io_req;
+    signal io_resp_dirty    : t_io_resp;
     signal io_req_wd        : t_io_req;
     signal io_resp_wd       : t_io_resp;
 
@@ -124,9 +128,26 @@ architecture structural of c1571_drive is
     signal count            : unsigned(7 downto 0) := X"00";
 	signal led_intensity	: unsigned(1 downto 0);
 begin        
-    drive_stop_i <= drive_stop and stop_on_freeze;
-    tick_16M_i   <= tick_16MHz and not drive_stop_i;
-    
+    i_splitter: entity work.io_bus_splitter
+    generic map (
+        g_range_lo => 11,
+        g_range_hi => 12,
+        g_ports    => 4
+    )
+    port map(
+        clock      => clock,
+        req        => io_req,
+        resp       => io_resp,
+        reqs(0)    => io_req_regs,
+        reqs(1)    => io_req_dirty,
+        reqs(2)    => io_req_param,
+        reqs(3)    => io_req_wd,
+        resps(0)   => io_resp_regs,
+        resps(1)   => io_resp_dirty,
+        resps(2)   => io_resp_param,
+        resps(3)   => io_resp_wd
+    );
+
     i_timing: entity work.c1541_timing
     port map (
         clock        => clock,
@@ -145,6 +166,9 @@ begin
     
         cia_rising   => cia_rising,
         cpu_clock_en => cpu_clock_en ); -- 1 MHz or 2 MHz
+
+    drive_stop_i <= drive_stop and stop_on_freeze;
+    tick_16M_i   <= tick_16MHz and not drive_stop_i;
 
     i_cpu: entity work.cpu_part_1571
     generic map (
@@ -215,8 +239,8 @@ begin
         g_big_endian   => g_big_endian,
         g_tag          => g_floppy_tag )
     port map (
-        sys_clock       => clock,
-        drv_reset       => drv_reset,
+        clock           => clock,
+        reset           => drv_reset,
         tick_16MHz      => tick_16M_i,
         
         -- signals from MOS 6522 VIA
@@ -235,11 +259,10 @@ begin
         track           => track,
         track_is_0      => track_0,
     ---
-        cpu_write       => param_write,
-        cpu_ram_en      => param_ram_en,
-        cpu_addr        => param_addr,
-        cpu_wdata       => param_wdata,
-        cpu_rdata       => param_rdata,
+        io_req_param    => io_req_param,
+        io_resp_param   => io_resp_param,
+        io_req_dirty    => io_req_dirty,
+        io_resp_dirty   => io_resp_dirty,
     ---
         floppy_inserted => floppy_inserted,
         do_track_out    => do_track_out,
@@ -247,6 +270,7 @@ begin
         do_head_bang    => do_head_bang,
         en_hum          => en_hum,
         en_slip         => en_slip,
+        dirty_led_n     => dirty_led_n,
     ---
         mem_req         => mem_req_flop,
         mem_resp        => mem_resp_flop );
@@ -315,12 +339,6 @@ begin
         io_req          => io_req_regs,
         io_resp         => io_resp_regs,
         
-        param_write     => param_write,
-        param_ram_en    => param_ram_en,
-        param_addr      => param_addr,
-        param_wdata     => param_wdata,
-        param_rdata     => param_rdata,
-
         iec_reset_o     => iec_reset_o,
         use_c64_reset   => use_c64_reset,
         power           => power,
@@ -331,7 +349,6 @@ begin
         force_ready     => force_ready,
         write_prot_n    => write_prot_n,
         bank_is_ram     => bank_is_ram,
-        dirty_led_n     => dirty_led_n,
         stop_on_freeze  => stop_on_freeze,
 
         track           => track,
