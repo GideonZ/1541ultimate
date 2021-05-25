@@ -44,7 +44,6 @@ port (
     mode            : in  std_logic;
     write_prot_n    : in  std_logic;
     step            : in  std_logic_vector(1 downto 0);
-    long_pulse      : in  std_logic := '0';
     byte_ready      : out std_logic;
     rate_ctrl       : in  std_logic_vector(1 downto 0);
     bit_time        : in  unsigned(9 downto 0); -- in steps of 10 ns
