@@ -61,6 +61,7 @@ generic (
     g_tag       : std_logic_vector(7 downto 0) := X"03" );
 port (
     clock       : in  std_logic;
+    clock_en    : in  std_logic; -- only for register access
     reset       : in  std_logic;
     tick_1kHz   : in  std_logic;
 
@@ -146,7 +147,7 @@ begin
         variable v_addr : unsigned(3 downto 0);
     begin
         if rising_edge(clock) then
-            if wen = '1' then
+            if wen = '1' and clock_en = '1' then
                 case addr is
                 when "00" =>
                     command <= wdata;
@@ -168,7 +169,7 @@ begin
                 
                 end case;
             end if;
-            if ren = '1' then
+            if ren = '1' and clock_en = '1' then
                 case addr is
                 when "11" =>
                     disk_rdata_valid <= '0';

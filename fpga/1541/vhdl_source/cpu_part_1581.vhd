@@ -220,11 +220,11 @@ begin
 
     cpu_rdata <= io_rdata when io_select='1' else ext_rdata;
 
-    cia_wen <= '1' when cpu_write='1' and io_select='1' and cpu_addr(14 downto 13)="10" and cpu_clk_en = '1' else '0';
-    cia_ren <= '1' when cpu_write='0' and io_select='1' and cpu_addr(14 downto 13)="10" and cpu_clk_en = '1' else '0';
+    cia_wen <= '1' when cpu_write='1' and io_select='1' and cpu_addr(14 downto 13)="10" else '0';
+    cia_ren <= '1' when cpu_write='0' and io_select='1' and cpu_addr(14 downto 13)="10" else '0';
 
-    wd_wen  <= '1' when cpu_write='1' and io_select='1' and cpu_addr(14 downto 13)="11" and cpu_clk_en = '1' else '0';
-    wd_ren  <= '1' when cpu_write='0' and io_select='1' and cpu_addr(14 downto 13)="11" and cpu_clk_en = '1' else '0';
+    wd_wen  <= '1' when cpu_write='1' and io_select='1' and cpu_addr(14 downto 13)="11" else '0';
+    wd_ren  <= '1' when cpu_write='0' and io_select='1' and cpu_addr(14 downto 13)="11" else '0';
 
     -- I/O peripherals
     i_cia1: entity work.cia_registers
@@ -321,6 +321,7 @@ begin
     )
     port map(
         clock        => clock,
+        clock_en     => cpu_clk_en,
         reset        => reset,
         addr         => unsigned(cpu_addr(1 downto 0)),
         wen          => wd_wen,
