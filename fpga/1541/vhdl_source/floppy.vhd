@@ -35,7 +35,6 @@ port (
     side            : in  std_logic := '0';
     step            : in  std_logic_vector(1 downto 0);
     rate_ctrl       : in  std_logic_vector(1 downto 0);
-    long_pulse      : in  std_logic := '0';
     byte_ready      : out std_logic;
     sync            : out std_logic;
 
@@ -103,7 +102,6 @@ begin
         mode            => mode,
         write_prot_n    => write_prot_n,
         step            => step,
-        long_pulse      => long_pulse,
         byte_ready      => byte_ready,
         rate_ctrl       => rate_ctrl,
         bit_time        => bit_time,

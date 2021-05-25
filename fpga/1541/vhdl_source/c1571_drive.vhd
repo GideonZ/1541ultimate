@@ -244,7 +244,6 @@ begin
         step            => step,
         side            => side,
         rate_ctrl       => rate_ctrl,
-        long_pulse      => two_MHz, -- ??
         byte_ready      => byte_ready,
         sync            => sync,
         
