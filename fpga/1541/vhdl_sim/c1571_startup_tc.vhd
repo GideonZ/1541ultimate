@@ -16,16 +16,18 @@ end;
 architecture tc of c1571_startup_tc is
     signal irq      : std_logic;
 
-    constant c_wd177x_command       : unsigned(11 downto 0) := X"100";
-    constant c_wd177x_track         : unsigned(11 downto 0) := X"101";
-    constant c_wd177x_sector        : unsigned(11 downto 0) := X"102";
-    constant c_wd177x_datareg       : unsigned(11 downto 0) := X"103";
-    constant c_wd177x_status_clear  : unsigned(11 downto 0) := X"104";
-    constant c_wd177x_status_set    : unsigned(11 downto 0) := X"105";
-    constant c_wd177x_irq_ack       : unsigned(11 downto 0) := X"106";
-    constant c_wd177x_dma_mode      : unsigned(11 downto 0) := X"107";
-    constant c_wd177x_dma_addr      : unsigned(11 downto 0) := X"108"; -- DWORD
-    constant c_wd177x_dma_len       : unsigned(11 downto 0) := X"10C"; -- WORD
+    constant c_wd177x_command       : unsigned(15 downto 0) := X"1800";
+    constant c_wd177x_track         : unsigned(15 downto 0) := X"1801";
+    constant c_wd177x_sector        : unsigned(15 downto 0) := X"1802";
+    constant c_wd177x_datareg       : unsigned(15 downto 0) := X"1803";
+    constant c_wd177x_status_clear  : unsigned(15 downto 0) := X"1804";
+    constant c_wd177x_status_set    : unsigned(15 downto 0) := X"1805";
+    constant c_wd177x_irq_ack       : unsigned(15 downto 0) := X"1806";
+    constant c_wd177x_dma_mode      : unsigned(15 downto 0) := X"1807";
+    constant c_wd177x_dma_addr      : unsigned(15 downto 0) := X"1808"; -- DWORD
+    constant c_wd177x_dma_len       : unsigned(15 downto 0) := X"180C"; -- WORD
+
+    constant c_param_ram            : unsigned(15 downto 0) := X"1000";
 begin
 
     i_harness: entity work.harness_c1571
@@ -38,6 +40,10 @@ begin
         variable dram : h_mem_object;
         variable bfm : p_iec_bus_bfm_object;
         variable msg : t_iec_message;
+        variable value : unsigned(31 downto 0);
+        variable params : std_logic_vector(31 downto 0);
+        variable rotation_speed : natural;
+        variable bit_time : natural;
     begin
         wait for 1 ns;
         bind_io_bus_bfm("io_bfm", io);
@@ -45,22 +51,37 @@ begin
         bind_iec_bus_bfm("iec_bfm", bfm);
 
         load_memory("../../../roms/1571-rom.310654-05.bin", dram, X"00008000");
-        load_memory("../../../roms/sounds.bin", dram, X"00010000");
+        -- load_memory("../../../roms/sounds.bin", dram, X"00000000");
+        load_memory("../../../disks/cpm.g71", dram, X"00100000" ); -- 1 MB offset
 
         wait for 20 us;
         io_write(io, c_drvreg_power, X"01");
         wait for 20 us;
         io_write(io, c_drvreg_reset, X"00");
 
+        rotation_speed := (31250000 / 20);
+        for i in 0 to 34 loop
+            value := unsigned(read_memory_32(dram, std_logic_vector(to_unsigned(16#100000# + 12 + i*8, 32))));
+            value := value + X"00100000";
+            params(15 downto 0) := read_memory_16(dram, std_logic_vector(value));
+            value := value + 2;
+            bit_time := rotation_speed / to_integer(unsigned(params(15 downto 0)));
+            params(31 downto 16) := std_logic_vector(to_unsigned(bit_time, 16));
+            report "Track " & integer'image(i+1) & ": " & hstr(value) & " - " & hstr(params);
+            io_write_32(io, c_param_ram + 16*i, std_logic_vector(value) );
+            io_write_32(io, c_param_ram + 16*i + 4, params );
+            io_write_32(io, c_param_ram + 16*i + 12, params );
+        end loop;
+
         wait for 800 ms;
+        io_write(io, c_drvreg_inserted, X"01");
 
-
-        iec_drf(bfm);
-        iec_send_atn(bfm, X"48"); -- Drive 8, Talk, I will listen
-        iec_send_atn(bfm, X"6F"); -- Open channel 15
-        iec_turnaround(bfm);      -- start to listen
-        iec_get_message(bfm, msg);
-        iec_print_message(msg);
+--        iec_drf(bfm);
+--        iec_send_atn(bfm, X"48"); -- Drive 8, Talk, I will listen
+--        iec_send_atn(bfm, X"6F"); -- Open channel 15
+--        iec_turnaround(bfm);      -- start to listen
+--        iec_get_message(bfm, msg);
+--        iec_print_message(msg);
 
         iec_send_atn(bfm, X"28"); -- Drive 8, Listen
         iec_send_atn(bfm, X"6F"); -- Open channel 15
@@ -68,16 +89,24 @@ begin
         wait for 10 ms;
         iec_send_atn(bfm, X"3F", true); -- UnListen
 
-        wait for 20 ms;
-        iec_drf(bfm);
+--        wait for 20 ms;
+--        iec_drf(bfm);
+--        iec_send_atn(bfm, X"48"); -- Drive 8, Talk, I will listen
+--        iec_send_atn(bfm, X"6F"); -- Open channel 15
+--        iec_turnaround(bfm);      -- start to listen
+--        iec_get_message(bfm, msg);
+--        iec_print_message(msg);
+--
+--        io_write(io, c_drvreg_inserted, X"01");
+--        io_write(io, c_drvreg_diskchng, X"01");
+
+        wait for 1000 ms;
+        
         iec_send_atn(bfm, X"48"); -- Drive 8, Talk, I will listen
         iec_send_atn(bfm, X"6F"); -- Open channel 15
         iec_turnaround(bfm);      -- start to listen
         iec_get_message(bfm, msg);
         iec_print_message(msg);
-
-        io_write(io, c_drvreg_inserted, X"01");
-        io_write(io, c_drvreg_diskchng, X"01");
 
         wait;                
         

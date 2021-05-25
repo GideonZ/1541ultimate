@@ -211,7 +211,7 @@ begin
         motor_on        => motor_on,
         mode            => mode,
         step            => step,
-        side_0          => side,
+        side            => side,
         rate_ctrl       => rate_ctrl,
         byte_ready      => byte_ready,
         sync            => sync,
@@ -244,6 +244,7 @@ begin
         step            => step,
         side            => side,
         rate_ctrl       => rate_ctrl,
+        long_pulse      => two_MHz, -- ??
         byte_ready      => byte_ready,
         sync            => sync,
         
@@ -304,23 +305,6 @@ begin
             -- audio
             sample_out      => audio_sample );
     end generate;
-
-    -- IO bus split
-    i_split: entity work.io_bus_splitter
-    generic map (
-        g_range_lo => 8,
-        g_range_hi => 8,
-        g_ports    => 2
-    )
-    port map(
-        clock      => clock,
-        req        => io_req,
-        resp       => io_resp,
-        reqs(0)    => io_req_regs,
-        reqs(1)    => io_req_wd,
-        resps(0)   => io_resp_regs,
-        resps(1)   => io_resp_wd
-    );
 
     i_regs: entity work.drive_registers
     generic map (
