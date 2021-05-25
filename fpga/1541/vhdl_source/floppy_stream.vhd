@@ -44,6 +44,7 @@ port (
     mode            : in  std_logic;
     write_prot_n    : in  std_logic;
     step            : in  std_logic_vector(1 downto 0);
+    long_pulse      : in  std_logic := '0';
     byte_ready      : out std_logic;
     rate_ctrl       : in  std_logic_vector(1 downto 0);
     bit_time        : in  unsigned(9 downto 0); -- in steps of 10 ns
@@ -63,7 +64,7 @@ architecture gideon of floppy_stream is
     signal mem_shift   : std_logic_vector(7 downto 0);
     signal rd_shift    : std_logic_vector(9 downto 0) := (others => '0');
     signal sync_i      : std_logic;
-    signal byte_rdy_i  : std_logic;
+    signal byte_rdy_i  : std_logic_vector(3 downto 0);
     alias  mem_rd_bit  : std_logic is mem_shift(7);
     signal track_i     : unsigned(6 downto 0);
     signal mode_d      : std_logic;
@@ -225,14 +226,17 @@ begin
             if s = '0' then
                 rd_bit_cnt <= "000";
             end if;
-
+            
             if (rd_bit_cnt="111") and (rd_shift_phase='1') then -- and (bit_slip = '0') then
-                byte_rdy_i <= '0';
-            else
-                byte_rdy_i <= '1';
-            end if;
+                byte_rdy_i <= "0000";
+            elsif rd_shift_pulse = '1' then
+                byte_rdy_i <= '1' & byte_rdy_i(3 downto 1);
+            end if; 
         end if;
     end process;    
+
+    -- which bit is selected determines the length of the pulse.
+    byte_ready <= byte_rdy_i(1);
     
     p_move: process(clock)
         variable st : std_logic_vector(3 downto 0);
@@ -270,7 +274,7 @@ begin
     -- outputs
     sync       <= sync_i;
     read_data  <= rd_shift(7 downto 0);
-    byte_ready <= byte_rdy_i;
+--    byte_ready <= byte_rdy_i;
     track      <= std_logic_vector(track_i);
     track_is_0 <= '1' when track_i = "0000000" else '0';
 end gideon;

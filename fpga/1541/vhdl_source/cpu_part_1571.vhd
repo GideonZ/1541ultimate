@@ -57,7 +57,7 @@ port (
     sync            : in  std_logic;
     rdy_n           : in  std_logic;
     disk_change_n   : in  std_logic;
-    side_0          : out std_logic;
+    side            : out std_logic;
     two_MHz         : out std_logic;
     track_0         : in  std_logic;
     
@@ -262,7 +262,7 @@ begin
         port_b_i    => via2_port_b_i,
     
         -- handshake pins
-        ca1_i       => byte_ready,
+        ca1_i       => so_n,
                             
         ca2_o       => via2_ca2_o,
         ca2_i       => via2_ca2_i,
@@ -424,7 +424,7 @@ begin
     via1_port_a_i(1) <= (via1_port_a_o(1) or not via1_port_a_t(1)); -- SER_DIR
     via1_port_a_i(0) <= (via1_port_a_o(0) or not via1_port_a_t(0)) and not track_0;
 
-    side_0       <= not via1_port_a_i(2);
+    side         <= via1_port_a_i(2);
     two_MHz      <= via1_port_a_i(5);
     fast_ser_dir <= via1_port_a_i(1);
 

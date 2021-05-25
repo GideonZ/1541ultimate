@@ -312,16 +312,21 @@ architecture logic of ultimate_logic_32 is
 
     constant c_tag_1541_cpu_1    : std_logic_vector(7 downto 0) := X"01";
     constant c_tag_1541_floppy_1 : std_logic_vector(7 downto 0) := X"02";
-    constant c_tag_1541_audio_1  : std_logic_vector(7 downto 0) := X"03";
-    constant c_tag_1541_cpu_2    : std_logic_vector(7 downto 0) := X"04";
-    constant c_tag_1541_floppy_2 : std_logic_vector(7 downto 0) := X"05";
-    constant c_tag_1541_audio_2  : std_logic_vector(7 downto 0) := X"06";    
-    constant c_tag_slot          : std_logic_vector(7 downto 0) := X"07";
-    constant c_tag_reu           : std_logic_vector(7 downto 0) := X"08";
-    constant c_tag_usb2          : std_logic_vector(7 downto 0) := X"09";
-    constant c_tag_cpu_i         : std_logic_vector(7 downto 0) := X"0A";
-    constant c_tag_cpu_d         : std_logic_vector(7 downto 0) := X"0B";
+    constant c_tag_1541_disk_1   : std_logic_vector(7 downto 0) := X"03";
+    constant c_tag_1541_audio_1  : std_logic_vector(7 downto 0) := X"04";
+    
+    constant c_tag_1541_cpu_2    : std_logic_vector(7 downto 0) := X"05";
+    constant c_tag_1541_floppy_2 : std_logic_vector(7 downto 0) := X"06";
+    constant c_tag_1541_disk_2   : std_logic_vector(7 downto 0) := X"07";
+    constant c_tag_1541_audio_2  : std_logic_vector(7 downto 0) := X"08";    
+
+    constant c_tag_slot          : std_logic_vector(7 downto 0) := X"09";
+    constant c_tag_reu           : std_logic_vector(7 downto 0) := X"0A";
+    constant c_tag_usb2          : std_logic_vector(7 downto 0) := X"0B";
+    constant c_tag_cpu_i         : std_logic_vector(7 downto 0) := X"0C";
+    constant c_tag_cpu_d         : std_logic_vector(7 downto 0) := X"0D";
     constant c_tag_rmii          : std_logic_vector(7 downto 0) := X"0E"; -- and 0F
+
     constant c_tag_1581_cpu_1    : std_logic_vector(7 downto 0) := X"21";
     constant c_tag_1581_floppy_1 : std_logic_vector(7 downto 0) := X"22";
     constant c_tag_1581_audio_1  : std_logic_vector(7 downto 0) := X"23";
@@ -416,10 +421,13 @@ architecture logic of ultimate_logic_32 is
     signal atn_o, atn_i     : std_logic := '1';
     signal clk_o, clk_i     : std_logic := '1';
     signal data_o, data_i   : std_logic := '1';
-    signal srq_i            : std_logic := '1';
+    signal srq_o, srq_i     : std_logic := '1';
+
     signal atn_o_2          : std_logic := '1';
     signal clk_o_2          : std_logic := '1';
     signal data_o_2         : std_logic := '1';
+    signal srq_o_2          : std_logic := '1';
+
     signal atn_o_3          : std_logic := '1';
     signal clk_o_3          : std_logic := '1';
     signal data_o_3         : std_logic := '1';
@@ -653,7 +661,7 @@ begin
             
     end generate;
 
-    audio_speaker_tmp <= drive_sample_3 * signed(resize(unsigned(speaker_vol),5));
+    audio_speaker_tmp <= drive_sample_1 * signed(resize(unsigned(speaker_vol),5));
     audio_speaker <= audio_speaker_tmp(16 downto 4);
 
     r_drive_2: if g_drive_1541_2 generate
@@ -669,11 +677,12 @@ begin
         signal via1_cb1_t      : std_logic;
         signal track_is_0      : std_logic;
     begin
-        i_drive: entity work.c1541_drive
+        i_drive: entity work.c1571_drive
         generic map (
             g_big_endian    => g_big_endian,
             g_cpu_tag       => c_tag_1541_cpu_2,
             g_floppy_tag    => c_tag_1541_floppy_2,
+            g_disk_tag      => c_tag_1541_disk_2,
             g_audio_tag     => c_tag_1541_audio_2,
             g_audio         => g_drive_sound,
             g_audio_base    => X"0EC0000",
@@ -698,27 +707,27 @@ begin
             -- serial bus pins
             atn_o           => atn_o_2, -- open drain
             atn_i           => atn_i,
-        
             clk_o           => clk_o_2, -- open drain
             clk_i           => clk_i,              
-        
             data_o          => data_o_2, -- open drain
             data_i          => data_i,              
+            fast_clk_o      => srq_o_2,
+            fast_clk_i      => srq_i,
             
             iec_reset_n     => iec_reset_i,
             c64_reset_n     => c64_reset_in_n,
 
-            -- Parallel cable pins
-            track_is_0      => track_is_0,
-            via1_port_a_o   => via1_port_a_o,
-            via1_port_a_i   => via1_port_a_i,
-            via1_port_a_t   => via1_port_a_t,
-            via1_ca2_o      => via1_ca2_o,
-            via1_ca2_i      => via1_ca2_i,
-            via1_ca2_t      => via1_ca2_t,
-            via1_cb1_o      => via1_cb1_o,
-            via1_cb1_i      => via1_cb1_i,
-            via1_cb1_t      => via1_cb1_t,
+--            -- Parallel cable pins
+--            track_is_0      => track_is_0,
+--            via1_port_a_o   => via1_port_a_o,
+--            via1_port_a_i   => via1_port_a_i,
+--            via1_port_a_t   => via1_port_a_t,
+--            via1_ca2_o      => via1_ca2_o,
+--            via1_ca2_i      => via1_ca2_i,
+--            via1_ca2_t      => via1_ca2_t,
+--            via1_cb1_o      => via1_cb1_o,
+--            via1_cb1_i      => via1_cb1_i,
+--            via1_cb1_t      => via1_cb1_t,
 
             -- LED
             act_led_n       => disk_act2n,
@@ -728,11 +737,11 @@ begin
             -- audio out
             audio_sample    => drive_sample_2 );
 
-        via1_port_a_i(7 downto 1) <= via1_port_a_o(7 downto 1) or not via1_port_a_t(7 downto 1);
-        via1_port_a_i(0)          <= track_is_0; -- for 1541C
-        
-        via1_ca2_i    <= via1_ca2_o    or not via1_ca2_t;
-        via1_cb1_i    <= via1_cb1_o    or not via1_cb1_t;
+--        via1_port_a_i(7 downto 1) <= via1_port_a_o(7 downto 1) or not via1_port_a_t(7 downto 1);
+--        via1_port_a_i(0)          <= track_is_0; -- for 1541C
+--        
+--        via1_ca2_i    <= via1_ca2_o    or not via1_ca2_t;
+--        via1_cb1_i    <= via1_cb1_o    or not via1_cb1_t;
     end generate;
 
     r_drive_1581: if g_drive_1581 generate
@@ -1344,7 +1353,7 @@ begin
     iec_atn_o    <= '0' when atn_o='0'  or atn_o_2='0'  or atn_o_3='0'  or hw_atn_o='0'  else '1';
     iec_clock_o  <= '0' when clk_o='0'  or clk_o_2='0'  or clk_o_3='0'  or hw_clk_o='0'  else '1';
     iec_data_o   <= '0' when data_o='0' or data_o_2='0' or data_o_3='0' or hw_data_o='0' else '1';
-    iec_srq_o    <= '0' when                               srq_o_3='0'  or hw_srq_o='0'  else '1';
+    iec_srq_o    <= '0' when srq_o='0'  or srq_o_2='0'  or srq_o_3='0'  or hw_srq_o='0'  else '1';
         
     MOTOR_LEDn  <= motor_led_n;
 	DISK_ACTn   <= disk_led_n;

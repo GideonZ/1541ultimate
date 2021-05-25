@@ -216,7 +216,7 @@ begin
                 when c_itu_ms_timer_hi =>
                     io_resp_ms.data <= std_logic_vector(ms_timer(15 downto 8));
                 when c_itu_irq_act_high =>
-                    io_resp_ms.data <= irq_high;
+                    io_resp_ms.data <= irq_high and imask_high;
                 when c_itu_irq_en_high =>
                     io_resp_ms.data <= imask_high;
                 when others =>
