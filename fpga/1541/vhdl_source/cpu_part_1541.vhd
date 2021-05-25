@@ -225,7 +225,7 @@ begin
         port_b_i    => via2_port_b_i,
     
         -- handshake pins
-        ca1_i       => byte_ready,
+        ca1_i       => so_n,
                             
         ca2_o       => via2_ca2_o,
         ca2_i       => via2_ca2_i,

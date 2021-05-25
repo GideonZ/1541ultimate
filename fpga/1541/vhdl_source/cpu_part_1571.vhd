@@ -404,11 +404,11 @@ begin
     via2_wen <= '1' when cpu_write='1' and cpu_addr(15 downto 10)="000111" else '0';
     via2_ren <= '1' when cpu_write='0' and cpu_addr(15 downto 10)="000111" else '0';
 
-    cia_wen <= '1' when cpu_write='1' and cpu_addr(15 downto 14)="01" and cpu_clk_en = '1' else '0';
-    cia_ren <= '1' when cpu_write='0' and cpu_addr(15 downto 14)="01" and cpu_clk_en = '1' else '0';
+    cia_wen <= '1' when cpu_write='1' and cpu_addr(15 downto 14)="01" else '0';
+    cia_ren <= '1' when cpu_write='0' and cpu_addr(15 downto 14)="01" else '0';
 
-    wd_wen  <= '1' when cpu_write='1' and cpu_addr(15 downto 13)="001" and cpu_clk_en = '1' else '0';
-    wd_ren  <= '1' when cpu_write='0' and cpu_addr(15 downto 13)="001" and cpu_clk_en = '1' else '0';
+    wd_wen  <= '1' when cpu_write='1' and cpu_addr(15 downto 13)="001" else '0';
+    wd_ren  <= '1' when cpu_write='0' and cpu_addr(15 downto 13)="001" else '0';
     
     -- correctly attach the VIA pins to the outside world
     via1_ca1         <= not atn_i;
@@ -492,6 +492,7 @@ begin
     )
     port map(
         clock        => clock,
+        clock_en     => cpu_clk_en,
         reset        => reset,
         addr         => unsigned(cpu_addr(1 downto 0)),
         wen          => wd_wen,

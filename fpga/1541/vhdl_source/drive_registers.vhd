@@ -29,6 +29,7 @@ port (
     write_prot_n    : out std_logic;
     bank_is_ram     : out std_logic_vector(7 downto 1);
     stop_on_freeze  : out std_logic;
+    drive_type      : out natural range 0 to 2;
     
     track           : in  std_logic_vector(6 downto 0);
     side            : in  std_logic := '0';
@@ -48,6 +49,7 @@ architecture rtl of drive_registers is
     signal disk_change_i    : std_logic;
     signal force_ready_i    : std_logic;
     signal stop_when_frozen : std_logic;
+    signal drive_type_i     : std_logic_vector(1 downto 0);
 begin
     p_reg: process(clock)
     begin
@@ -75,6 +77,8 @@ begin
                 when c_drvreg_diskchng =>
                     disk_change_i <= io_req.data(0);
                     force_ready_i <= io_req.data(1);
+                when c_drvreg_drivetype =>
+                    drive_type_i <= io_req.data(1 downto 0);
                 when others =>
                     null;
                 end case;
@@ -102,6 +106,8 @@ begin
                 when c_drvreg_diskchng =>
                     io_resp.data(0) <= disk_change_i;
                     io_resp.data(1) <= force_ready_i;
+                when c_drvreg_drivetype =>
+                    io_resp.data(1 downto 0) <= drive_type_i;
                 when c_drvreg_track =>
                     io_resp.data(6 downto 0) <= track(6 downto 0);
                     io_resp.data(7) <= side;
@@ -131,6 +137,7 @@ begin
                 irq_en           <= '0';
                 stop_when_frozen <= '1';
                 force_ready_i    <= '0';
+                drive_type_i     <= "00";
             end if;    
         end if;
     end process;
@@ -144,4 +151,6 @@ begin
     use_c64_reset   <= use_c64_reset_i;
     stop_on_freeze  <= stop_when_frozen;
     force_ready     <= force_ready_i;
+    drive_type      <= to_integer(unsigned(drive_type_i));
+
 end architecture;

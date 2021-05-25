@@ -116,6 +116,21 @@ $(TESTCASE)_SRC				:= $(TESTCASE).vhd
 $(TESTCASE)_ENTITY			:= $(TESTCASE)
 $(TESTCASE)_TIME			:= 20 us;
 $(TESTCASE)_DO_GUI_BEFORE	:= 
+
+TESTCASE 					:= mm_startup_1541_tc
+TESTCASES					:= $(TESTCASES) $(TESTCASE)
+$(TESTCASE)_SRC				:= $(TESTCASE).vhd
+$(TESTCASE)_ENTITY			:= $(TESTCASE)
+$(TESTCASE)_TIME			:= 20 us;
+$(TESTCASE)_DO_GUI_BEFORE	:= 
+
+TESTCASE 					:= mm_startup_1571_tc
+TESTCASES					:= $(TESTCASES) $(TESTCASE)
+$(TESTCASE)_SRC				:= $(TESTCASE).vhd
+$(TESTCASE)_ENTITY			:= $(TESTCASE)
+$(TESTCASE)_TIME			:= 20 us;
+$(TESTCASE)_DO_GUI_BEFORE	:= 
+
 ###############################################################################
 #### Regression tests
 ###############################################################################
