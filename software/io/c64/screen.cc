@@ -329,12 +329,12 @@ void Window :: move_cursor(int x, int y)
 
 void Window :: clear(void)
 {
+    parent->reverse_mode(0);
     for(int y=0;y<window_y;y++) {
     	parent->move_cursor(offset_x, offset_y+y);
     	parent->repeat(' ', window_x);
     }
     cursor_x = cursor_y = 0;
-    parent->reverse_mode(0);
     parent->scroll_mode(true);
     parent->move_cursor(offset_x, offset_y);
 }
