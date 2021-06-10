@@ -78,7 +78,7 @@ C1581 :: C1581(volatile uint8_t *regs, char letter) : SubSystem(SUBSYSID_DRIVE_C
 		taskItemCategory = TasksCollection :: getCategory(buffer, SORT_ORDER_DRIVES + drive_letter - 'A');
 
 		cmdQueue = xQueueCreate(8, sizeof(t_1581_cmd));
-		ioWrite8(ITU_IRQ_HIGH_EN, ioRead8(ITU_IRQ_HIGH_EN) | 2);
+		// Do NOT enable the interrupt here, because the "this" pointer is not yet set.
     }
 }
 
@@ -137,6 +137,7 @@ void C1581 :: init(void)
 
 	xTaskCreate( C1581 :: run, (const char *)(this->drive_name.c_str()), configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &taskHandle );
     effectuate_settings();
+    ioWrite8(ITU_IRQ_HIGH_EN, ioRead8(ITU_IRQ_HIGH_EN) | 2);
 }
 
 

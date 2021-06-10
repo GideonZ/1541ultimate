@@ -60,33 +60,29 @@ int FileTypeD64 :: fetch_context_items(IndexedList<Action *> &list)
     int count = 0;
     uint32_t capabilities = getFpgaCapabilities();
     C64 *machine = C64 :: getMachine();
-    if (ftype == 1541) {
-        if(capabilities & CAPAB_DRIVE_1541_1) {
-            list.append(new Action("Mount Disk", SUBSYSID_DRIVE_A, D64FILE_MOUNT));
-            if (machine->exists())
-                list.append(new Action("Run Disk", SUBSYSID_DRIVE_A, D64FILE_RUN));
-            list.append(new Action("Mount Disk Read Only", SUBSYSID_DRIVE_A, D64FILE_MOUNT_RO));
-            list.append(new Action("Mount Disk Unlinked", SUBSYSID_DRIVE_A, D64FILE_MOUNT_UL));
-            count += 4;
+
+    if(capabilities & CAPAB_DRIVE_1541_1) {
+        list.append(new Action("Mount Disk", SUBSYSID_DRIVE_A, MENU_1541_MOUNT_D64, ftype));
+        if (machine->exists()) {
+            list.append(new Action("Run Disk", runDisk_st, ftype));
+            count++;
         }
-    
-        if(capabilities & CAPAB_DRIVE_1541_2) {
-            list.append(new Action("Mount Disk on B", SUBSYSID_DRIVE_B, D64FILE_MOUNT));
-            list.append(new Action("Mount Disk R/O on B", SUBSYSID_DRIVE_B, D64FILE_MOUNT_RO));
-            list.append(new Action("Mount Disk Unl. on B", SUBSYSID_DRIVE_B, D64FILE_MOUNT_UL));
-            count += 3;
-        }
-    } else if(ftype == 1581) {
-    	if (capabilities & CAPAB_DRIVE_1581) {
-            list.append(new Action("Mount Disk", SUBSYSID_DRIVE_C, D64FILE_MOUNT));
-            list.append(new Action("Mount Disk R/O", SUBSYSID_DRIVE_C, D64FILE_MOUNT_RO));
-    	}
+        list.append(new Action("Mount Disk Read Only", SUBSYSID_DRIVE_A, MENU_1541_MOUNT_D64_RO, ftype));
+        list.append(new Action("Mount Disk Unlinked", SUBSYSID_DRIVE_A, MENU_1541_MOUNT_D64_UL, ftype));
+        count += 3;
+    }
+
+    if(capabilities & CAPAB_DRIVE_1541_2) {
+        list.append(new Action("Mount Disk on B", SUBSYSID_DRIVE_B, MENU_1541_MOUNT_D64, ftype));
+        list.append(new Action("Mount Disk R/O on B", SUBSYSID_DRIVE_B, MENU_1541_MOUNT_D64_RO, ftype));
+        list.append(new Action("Mount Disk Unl. on B", SUBSYSID_DRIVE_B, MENU_1541_MOUNT_D64_UL, ftype));
+        count += 3;
     }
     
-    if (C64 :: isMP3RamDrive(0) == ftype) {list.append(new Action("Load into MP3 Drv A", FileTypeD64 :: loadMP3_st, (ftype << 2) | 0)); count++;}
-    if (C64 :: isMP3RamDrive(1) == ftype) {list.append(new Action("Load into MP3 Drv B", FileTypeD64 :: loadMP3_st, (ftype << 2) | 1)); count++;}
-    if (C64 :: isMP3RamDrive(2) == ftype) {list.append(new Action("Load into MP3 Drv C", FileTypeD64 :: loadMP3_st, (ftype << 2) | 2)); count++;}
-    if (C64 :: isMP3RamDrive(3) == ftype) {list.append(new Action("Load into MP3 Drv D", FileTypeD64 :: loadMP3_st, (ftype << 2) | 3)); count++;}
+    if (C64 :: isMP3RamDrive(0) == ftype) {list.append(new Action("Load into MP3 Drv A", loadMP3_st, (ftype << 2) | 0)); count++;}
+    if (C64 :: isMP3RamDrive(1) == ftype) {list.append(new Action("Load into MP3 Drv B", loadMP3_st, (ftype << 2) | 1)); count++;}
+    if (C64 :: isMP3RamDrive(2) == ftype) {list.append(new Action("Load into MP3 Drv C", loadMP3_st, (ftype << 2) | 2)); count++;}
+    if (C64 :: isMP3RamDrive(3) == ftype) {list.append(new Action("Load into MP3 Drv D", loadMP3_st, (ftype << 2) | 3)); count++;}
     
     return count;
 }
@@ -103,6 +99,20 @@ FileType *FileTypeD64 :: test_type(BrowsableDirEntry *obj)
     if(strcmp(inf->extension, "DNP")==0)
         return new FileTypeD64(obj, DRVTYPE_MP3_DNP);
     return NULL;
+}
+
+int FileTypeD64 :: runDisk_st(SubsysCommand *cmd)
+{
+    // First command is to mount the disk
+    SubsysCommand *drvcmd = new SubsysCommand(cmd->user_interface, SUBSYSID_DRIVE_A, MENU_1541_MOUNT_D64, cmd->mode, cmd->path.c_str(), cmd->filename.c_str());
+    drvcmd->execute();
+
+    // Second command is to perform a load"*",8,1
+    char *drvId = "H";
+    drvId[0] = 0x40 + c1541_A->get_current_iec_address();
+    SubsysCommand *c64cmd = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DRIVE_LOAD, RUNCODE_MOUNT_LOAD_RUN, drvId, "*");
+    c64cmd->execute();
+    return 0;
 }
 
 int FileTypeD64 :: loadMP3_st(SubsysCommand *cmd)

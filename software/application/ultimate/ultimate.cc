@@ -9,7 +9,6 @@
 #include "c64.h"
 #include "c64_subsys.h"
 #include "c1541.h"
-#include "c1581.h"
 #include "screen.h"
 #include "keyboard.h"
 #include "userinterface.h"
@@ -53,7 +52,6 @@ bool connectedToU64 = false;
 
 C1541 *c1541_A;
 C1541 *c1541_B;
-C1581 *c1581_C;
 
 TreeBrowser *root_tree_browser;
 StreamMenu *root_menu;
@@ -157,9 +155,6 @@ extern "C" void ultimate_main(void *a)
     if(capabilities & CAPAB_DRIVE_1541_2) {
         c1541_B = new C1541(C1541_IO_LOC_DRIVE_2, 'B');
     }
-    if(capabilities & CAPAB_DRIVE_1581) {
-        c1581_C = new C1581(C1581_IO_LOC_DRIVE, 'C');
-    }
 
     if(c1541_A) {
     	c1541_A->init();
@@ -167,10 +162,6 @@ extern "C" void ultimate_main(void *a)
 
     if(c1541_B) {
     	c1541_B->init();
-    }
-
-    if(c1581_C) {
-    	c1581_C->init();
     }
 
     reu_preloader = new REUPreloader();

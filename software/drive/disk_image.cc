@@ -44,6 +44,7 @@ const int track_lengths[] =      { 0x1E00, 0x1BE0, 0x1A00, 0x1860, 0x1E00, 0x1BE
 const int sectors_per_track [] = { 21, 19, 18, 17, 21, 19, 18, 17 };
 const int region_end[] =         { 17, 24, 30, 35, 52, 59, 65, 70 };
 const int sector_gap_lengths[] = {  9, 19, 13, 10,  9, 19, 13, 10 };
+const int region_speed_codes[] = {  3,  2,  1,  0,  3,  2,  1,  0 };
 
 #if HARDWARE_ENCODING == 0
 static uint8_t gcr_table_hi_0[256];
@@ -57,23 +58,50 @@ static uint8_t gcr_table_lo_6[256];
 static bool gcr_table_initialized = false;
 #endif
 
-int track_to_region(int track)
+// Track number is ZERO BASED, whole tracks
+static int track_to_region(int track, bool ds)
 {
-    for(int i=0;i<4;i++) {
+    int regions = ds ? 8 : 4;
+    for(int i=0;i<regions;i++) {
         if(track < region_end[i])
             return i;
     }
-    return 3; // illegal
+    return regions - 1; // illegal
 }
 
-int total_sectors_before_track(int track)
+// Track number is ZERO BASED, whole tracks
+static int total_sectors_before_track(int track, bool ds)
 {
 int count = 0;	
 	for(int i=0;i<track;i++) {
-		int region = track_to_region(i);
+		int region = track_to_region(i, ds);
 		count += sectors_per_track[region];		
 	}
 	return count;
+}
+
+static int bin_track_to_gcr_track(int lt, bool ds)
+{
+    if (lt < 0) {
+        return 0;
+    }
+    int ret = 2*lt;
+    if (ds && (lt >= 35)) {
+        ret = GCRIMAGE_FIRSTTRACKSIDE1 + 2*(lt - 35);
+    }
+    if (ret >= GCRIMAGE_MAXHDRTRACKS) {
+        ret = GCRIMAGE_MAXHDRTRACKS - 1;
+    }
+    return ret;
+}
+
+static int gcr_track_to_bin_track(int pt)
+{
+    int ret = pt / 2; // by default remove half tracks
+    if (pt >= GCRIMAGE_FIRSTTRACKSIDE1) { // side 1, starts at track logical track 35 (0 - 34 is on side 0)
+        ret = 35 + (pt - GCRIMAGE_FIRSTTRACKSIDE1) / 2;
+    }
+    return ret;
 }
 
 GcrImage :: GcrImage(void)
@@ -98,55 +126,95 @@ GcrImage :: GcrImage(void)
         gcr_table_initialized = true;
     }
 #endif
-    gcr_data = new uint8_t[C1541_MAX_GCR_LEN];
-    //gcr_data += 0x80000000; // make it uncachable
+    gcr_data  = new uint8_t[GCRIMAGE_MAXSIZE];
 
-    gcr_image = gcr_data; // point to my own array
-//    mounted_on = NULL;
-
-	dummy_track = &gcr_data[C1541_MAX_GCR_LEN - 0x2000]; // drive logic can only address 8K
-	memset(gcr_data, 0x55, C1541_MAX_GCR_LEN);
+	memset(gcr_data, 0x00, GCRIMAGE_MAXSIZE);
     invalidate();
 }
 
-//extern BYTE dummy_track[]; // dirty, but oh well.
+GcrImage :: ~GcrImage(void)
+{
+    // free
+    delete[] gcr_data;
+}
+
+
+void GcrImage :: dump(void)
+{
+    printf("Trk#  Addr   Len Sp UIM | Addr   Len Sp UIM  Disk is %s sided\n", double_sided ? "double" : "single");
+
+    for(int i=0;i < GCRIMAGE_FIRSTTRACKSIDE1;i++) {
+        int j = i + GCRIMAGE_FIRSTTRACKSIDE1;
+        printf("%2d.%d: ", 1+(i/2), i&1 ? 5 : 0);
+        if (tracks[i].track_address) {
+            printf("%6x %4x %d %c%c%c | ", tracks[i].track_address, tracks[i].track_length, tracks[i].speed_zone,
+                    tracks[i].track_used ? 'U' : ' ', tracks[i].in_image_file ? 'I' : ' ', tracks[i].track_is_mfm ? 'M' : ' ');
+        } else {
+            printf("------ ---- - --- | ");
+        }
+        if (tracks[j].track_address) {
+            printf("%6x %4x %d %c%c%c\n", tracks[j].track_address, tracks[j].track_length, tracks[j].speed_zone,
+                    tracks[j].track_used ? 'U' : ' ', tracks[j].in_image_file ? 'I' : ' ', tracks[j].track_is_mfm ? 'M' : ' ');
+        } else {
+            printf("------ ---- - ---\n");
+        }
+    }
+}
 
 void GcrImage :: invalidate(void)
 {
-    for(int i=0;i<C1541_MAXTRACKS;i++) {
-    	track_address[i] = dummy_track;
-    	track_length[i] = C1541_MAX_GCR_LEN;
-    }
+    memset(tracks, 0, sizeof(tracks));
+
+    // initially the ds flag is set to false, but when a track gets written on side 1
+    // the flag is set to true.
+    set_ds(false);
 }
 
 void GcrImage :: blank(void)
 {
-	memset(gcr_data, 0x00, C1541_MAX_GCR_LEN);
-
-    uint8_t *gcr = gcr_image; // internal storage
-    int length;
-    
-    for(int i=0;i<C1541_MAXTRACKS;i+=2) {
-        length = track_lengths[track_to_region(i/2)];
-        printf("Length of track %d is %d.\n", i+1, length);
-        track_address[i] = gcr;
-        track_length[i] = length;
-		track_address[i + 1] = dummy_track;
-        track_length[i + 1] = length;
-        gcr += length;
-    }
+	invalidate();
+	add_blank_tracks(gcr_data);
+	dump();
 }
-    
-GcrImage :: ~GcrImage(void)
+
+void GcrImage :: add_blank_tracks(uint8_t *gcr)
 {
-    // restore modified pointer
-    gcr_data -= 0x80000000;
+    int length, speed_zone;
+    uint8_t *blank_start = gcr;
+    uint8_t *address_limit = gcr_data + GCRIMAGE_MAXSIZE;
 
-    // free
-    delete[] gcr_data;
+    // Install 40 valid tracks on each side, using only the whole tracks
+    for(int i=0; i < GCRIMAGE_MAXUSEDTRACKS; i+=2) {
+        // i is zero based track number times 2.
+        // This equals the offset on side 0 for whole tracks
+        length = track_lengths[track_to_region(i/2, false)];
+        speed_zone = region_speed_codes[track_to_region(i/2, false)];
 
-    //    if(mounted_on)
-//        mounted_on->remove_disk();
+        // skip if track is aleady defined
+        if (!tracks[i].track_address) {
+            // stop if added track doesn't fit
+            if (gcr + length <= address_limit) {
+                tracks[i].track_address = gcr;
+                tracks[i].track_length = length;
+                tracks[i].speed_zone = speed_zone;
+                gcr += length;
+            }
+        }
+
+        // Now for side 1, with the same track length
+        // skip if track is aleady defined
+        if (!tracks[i + GCRIMAGE_FIRSTTRACKSIDE1].track_address) {
+            // stop if added track doesn't fit
+            if (gcr + length <= address_limit) {
+                tracks[i + GCRIMAGE_FIRSTTRACKSIDE1].track_address = gcr;
+                tracks[i + GCRIMAGE_FIRSTTRACKSIDE1].track_length = length;
+                tracks[i + GCRIMAGE_FIRSTTRACKSIDE1].speed_zone = speed_zone;
+                gcr += length;
+            }
+        }
+    }
+    uint32_t fill_size = gcr - blank_start;
+    memset(blank_start, 0, fill_size);
 }
 
 // aaaabbbb ccccdddd eeeeffff gggghhhh
@@ -178,30 +246,27 @@ uint8_t *GcrImage :: convert_block_bin2gcr(uint8_t *bin, uint8_t *gcr, int len)
     return gcr;
 }
 
-uint8_t *GcrImage :: convert_track_bin2gcr(int track, uint8_t *bin, uint8_t *gcr, uint8_t *errors, int errors_size)
+uint8_t *GcrImage :: convert_track_bin2gcr(uint8_t logical_track_1b, int region, uint8_t *bin, uint8_t *gcr, uint8_t *errors, int errors_size)
 {
-	int track_errors_index = total_sectors_before_track(track);	
 	uint8_t errorcode;
 
-	int region = track_to_region(track);
-	
     uint8_t *bp, chk, b;
     uint8_t *end = gcr + track_lengths[region];
 
-    for(int s=0;s<sectors_per_track[region];s++) {
+    for(uint8_t s=0;s<sectors_per_track[region];s++) {
 		sector_buffer[0] = 7;
 		sector_buffer[258] = 0;
 		sector_buffer[259] = 0;
 
 		header[0] = 8;
-		header[3] = (uint8_t)track+1;
+		header[3] = logical_track_1b;
 		header[4] = id2;
 		header[5] = id1;
 		header[6] = 0x0f;
 		header[7] = 0x0f;
 		errorcode = 0;
-		if (errors != NULL && (track_errors_index + s) < errors_size){
-			errorcode = errors[track_errors_index + s];
+		if (errors != NULL && s < errors_size){
+			errorcode = errors[s];
 		}
         header[2] = (uint8_t)s;
         // calculate header checksum
@@ -218,16 +283,15 @@ uint8_t *GcrImage :: convert_track_bin2gcr(int track, uint8_t *bin, uint8_t *gcr
 				header[1] = ~header[1];
 				break;
 			case 11:
-				header[4] = (id2 ^ ~(s+0x55)) & 0xFF;
-				header[5] = (id1 ^ ~(s+0xAA)) & 0xFF;
+				header[4] = (id2 ^ ~(s+0x55));
+				header[5] = (id1 ^ ~(s+0xAA));
 				break;
 		}		
 		if (errorcode != 3) {
 			// put 5 sync bytes
 			for(int i=0;i<5;i++)
 				*(gcr++) = 0xFF;
-		}
-		else{
+		} else {
 			for(int i=0;i<5;i++)
 				*(gcr++) = 0x00;
 		}
@@ -339,11 +403,32 @@ int GcrImage :: convert_disk_gcr2bin(BinImage *bin_image, UserInterface *user_in
 {
     int errors = 0;
     int result = 0;
-    for(int track=0;track<bin_image->num_tracks;track++) {
-        result = convert_track_gcr2bin(track, bin_image, errors);
+
+    // We don't know yet what the output size is going to be. However, we do know if the output disk is single or double sided.
+    // It is necessary to 'format' the disk correctly to accommodate the tracks.
+    if (double_sided) {
+        bin_image->init(C1541_D71_SIZE_WITH_ERRORS);
+    } else {
+        bin_image->init(C1541_MAX_D64_40_WITH_ERRORS);
+    }
+
+    // Try pushing all valid tracks into the bin image
+    int valid_tracks = 0;
+    for(int pt=0; pt < GCRIMAGE_MAXHDRTRACKS; pt++) {
+        GcrTrack *tr = &(tracks[pt]);
+        if (!tr->track_address) {
+            continue;
+        }
+        int secs = 0;
+        result = bin_image->write_track(pt, this, NULL, errors, secs);
+        if (secs > 0) {
+            valid_tracks++;
+        }
         if(user_interface)
             user_interface->update_progress(NULL, 1);
     }
+    printf("Setting number of valid tracks in bin image to %d.\n", valid_tracks);
+    bin_image->num_tracks = valid_tracks;
     return errors;
 }
 
@@ -455,64 +540,63 @@ int GcrImage :: convert_gcr_track_to_bin(uint8_t *gcr, int trackNumber, int trac
 	return secs;
 }
 
-int GcrImage :: convert_track_gcr2bin(int track, BinImage *bin_image, int &errors)
-{
-    uint8_t status[64];
-    uint8_t header[8];
-	int t, s;
-
-	int expected_secs = bin_image->track_sectors[track];
-	uint8_t *bin = bin_image->track_start[track];
-    uint8_t *begin = track_address[2*track];
-    
-    int secs = convert_gcr_track_to_bin(begin, track+1, track_length[2*track], expected_secs, bin, status);
-	printf("%d sectors found. (", secs);
-
-    for(int i=0;i<2*secs;i++) {
-        printf("%b ", status[i]);
-        if ((i & 1) && (status[i])) {
-            errors++;
-        }
-    } printf(")\n");
-
-	if(secs != expected_secs)
-		return -3;
-
-	return 0;
-}
-
 void GcrImage :: convert_disk_bin2gcr(BinImage *bin_image, UserInterface *user_interface)
 {
 	id1 = bin_image->bin_data[91554];
     id2 = bin_image->bin_data[91555];
 
-    uint8_t *gcr = gcr_image; // internal storage
+    uint8_t *gcr = gcr_data; // internal storage
     uint8_t *newgcr;
 
     invalidate();
+    double_sided = bin_image->double_sided;
 
-    for(int i=0;i<bin_image->num_tracks;i++) {
-//        printf("Track %d starts at: %7x\n", i+1, gcr);
-        track_address[2*i] = gcr;
-        newgcr = convert_track_bin2gcr(i, bin_image->track_start[i], gcr, bin_image->errors, bin_image->error_size);
-        track_length[2*i] = int(newgcr - gcr);
-		track_address[2*i + 1] = dummy_track;
-        track_length[2*i + 1] = int(newgcr - gcr);
+    // Clear all errors beforehand, in case they don't all get overwritten
+    if (bin_image->errors) {
+        memset(bin_image->errors, 0, bin_image->error_size);
+    }
+
+    // Loop over all logical tracks
+    for(int lt=0; lt < bin_image->num_tracks; lt++) {
+        // Calculate the physical track index
+        int pt = bin_track_to_gcr_track(lt, double_sided);
+        // Calculate first sector number of track
+        int sec = total_sectors_before_track(lt, double_sided);
+        // Select region for additional parameters
+        int region = track_to_region(lt, double_sided);
+        // Select error bytes
+        uint8_t *error_bytes = NULL;
+        int error_size = 0;
+        if (bin_image->errors) {
+            error_bytes = bin_image->errors + sec;
+            error_size  = bin_image->error_size - sec;
+        }
+        tracks[pt].track_address = gcr;
+        newgcr = convert_track_bin2gcr((uint8_t)(lt + 1), region, bin_image->track_start[lt], gcr, error_bytes, error_size);
+        tracks[pt].track_length = int(newgcr - gcr);
+        tracks[pt].speed_zone = region_speed_codes[region];
+        tracks[pt].track_used = true;
+        printf("Convert_disk: Track %d => %d. Addr = %6x\n. Len = %4x", lt, pt, gcr, tracks[pt].track_length);
         gcr = newgcr;
         if(user_interface)
             user_interface->update_progress(NULL, 1);
     }
+
+    add_blank_tracks(gcr);
+    dump();
 }
 
 bool GcrImage :: load(File *f)
 {
     // first just load the whole damn thing in memory, up to C1541_MAX_GCR_LEN in length
+    // This space should be enough for 84 tracks, which is single sided plus all half tracks, or double sided without half tracks.
     uint32_t bytes_read;
     uint32_t *pul, offset;
     uint8_t *tr;
-    uint16_t w;
+    uint16_t w = 0x1E00;
 
-    FRESULT res = f->read(gcr_data, C1541_MAX_GCR_LEN, &bytes_read);
+    invalidate();
+    FRESULT res = f->read(gcr_data, GCRIMAGE_MAXSIZE, &bytes_read);
 
     printf("Total bytes read: %d.\n", bytes_read);
     if(res != FR_OK) {
@@ -520,39 +604,57 @@ bool GcrImage :: load(File *f)
     }
     // check signature
     pul = (uint32_t *)gcr_data;
+    int max_tracks;
 
-    if (strncmp("GCR-1541", (char *)gcr_data, 8) != 0) {
+    if (strncmp("GCR-1541", (char *)gcr_data, 8) == 0) {
+        max_tracks = 84;
+    } else if(strncmp("GCR-1571", (char *)gcr_data, 8) == 0) { // double sided mode
+        max_tracks = 168;
+    } else {
         printf("Wrong header.\n");
         return false;
     }
 
+    double_sided = false;
     // extract parameters
     // track offsets start at 0x000c
-    for(int i=0;i<C1541_MAXTRACKS;i++) {
+    for(int i=0;i<max_tracks;i++) {
     	offset = le_to_cpu_32(pul[i+3]);
-    	if(offset > C1541_MAX_GCR_LEN) {
+    	if(offset > GCRIMAGE_MAXSIZE) {
     		printf("Error. Track pointer outside GCR memory range.\n");
     		return false;
     	}
     	tr = gcr_data + offset;
     	if(offset) {
     		w = tr[0] | (uint16_t(tr[1]) << 8);
-	    	track_address[i] = tr + 2;
-    		track_length[i] = (int)w;
-            printf("Set track %d.%d to 0x%6x / 0x%4x.\n", (i>>1)+1, (i&1)?5:0, track_address[i], w);
-        } else {
-            printf("Skipping track %d.%d.\n", (i>>1)+1, (i&1)?5:0);
-            track_address[i] = dummy_track;
-            track_length[i] = (int)w;
-    	}
+	    	tracks[i].track_address = tr + 2;
+    		tracks[i].track_length = (int)(w & 0x3FFF);
+    		tracks[i].track_used = true;
+    		tracks[i].in_image_file = true;
+    		tracks[i].track_is_mfm = (w & 0x8000);
+//            printf("Set track %d.%d to 0x%6x / 0x%4x.\n", (i>>1)+1, (i&1)?5:0, tracks[i].track_address, w);
+            if (i >= GCRIMAGE_FIRSTTRACKSIDE1) {
+                double_sided = true;
+            }
+        }
     }
+    // Track speed zone info starts after the track offsets
+    uint8_t reported_tracks = gcr_data[9];
+    uint32_t *szone = pul + (3 + reported_tracks);
+
+    for(int i=0;i<max_tracks;i++) {
+        tracks[i].speed_zone = le_to_cpu_32(*(szone++));
+    }
+
+    add_blank_tracks(gcr_data + bytes_read);
+    dump();
     return true;
 }
 
 int GcrImage :: find_track_start(int track)
 {
-    uint8_t *begin = track_address[track];
-    uint8_t *end   = track_address[track] + track_length[track];
+    uint8_t *begin = tracks[track].track_address;
+    uint8_t *end   = begin + tracks[track].track_length;
     uint8_t *gcr = begin;
     uint8_t *gcr_data;
     int offset;
@@ -567,70 +669,97 @@ int GcrImage :: find_track_start(int track)
             // sector 0 found!
             offset = (gcr - begin) - 10;
             if(offset < 0)
-                offset += track_length[track];
+                offset += tracks[track].track_length;
             return offset;
         }
     }
     return 0;    
 }
     
+bool GcrImage :: is_double_sided(void)
+{
+/*
+    double_sided = false;
+
+    // Check if there are any tracks defined for side 1
+    for(int i=GCRIMAGE_FIRSTTRACKSIDE1; i < GCRIMAGE_MAXHDRTRACKS; i++) {
+        if (tracks[i].track_address) {
+            double_sided = true;
+            break;
+        }
+    }
+*/
+    return double_sided;
+}
+
 bool GcrImage :: save(File *f, bool align, UserInterface *user_interface)
 {
-    uint8_t *header = new uint8_t[16 + C1541_MAXTRACKS * 8];
+    uint8_t *header;
+    int max_tracks;
 
-    memcpy(header, "GCR-1541", 8);
+    dump();
+
+    if (double_sided) {
+        max_tracks = GCRIMAGE_MAXHDRTRACKS;
+        header = new uint8_t[16 + max_tracks * 8];
+        memcpy(header, "GCR-1571", 8);
+    } else {
+        max_tracks = GCRIMAGE_FIRSTTRACKSIDE1;
+        header = new uint8_t[16 + max_tracks * 8];
+        memcpy(header, "GCR-1541", 8);
+    }
     header[8] = 0;
-    header[9] = C1541_MAXTRACKS;
-    header[10] = (uint8_t)C1541_MAXTRACKLEN;
-    header[11] = (uint8_t)(C1541_MAXTRACKLEN >> 8);
+    header[9] = (uint8_t)max_tracks;
+    header[10] = (uint8_t)GCRIMAGE_MAXTRACKLEN;
+    header[11] = (uint8_t)(GCRIMAGE_MAXTRACKLEN >> 8);
 
     uint32_t *pul = (uint32_t *)&header[12]; // because 12 is a multiple of 4, we can do this
 
-    uint32_t track_start = 12 + C1541_MAXTRACKS * 8;
+    uint32_t track_start = 12 + max_tracks * 8;
     
-    for(int i=0;i<C1541_MAXTRACKS;i++) {
-        if((track_address[i] == dummy_track)||(!track_address[i]))
+    for(int i=0;i<max_tracks;i++) {
+        if(!tracks[i].track_address || !tracks[i].track_used) {
             *(pul++) = 0;
-        else {
+        } else {
             *(pul++) = cpu_to_le_32(track_start);
-            track_start += C1541_MAXTRACKLEN + 2;
-            // track_start += track_length[i] + 2;
+            track_start += tracks[i].track_length + 2;
         }
     }
     int speed;
-    for(int i=0;i<C1541_MAXTRACKS;i++) {
-        if(i<34) speed = 3;
-        else if(i<48) speed = 2;
-        else if(i<60) speed = 1;
-        else speed = 0;
+    for(int i=0;i<max_tracks;i++) {
+        //speed = region_speed_codes[track_to_region((i < GCRIMAGE_FIRSTTRACKSIDE1) ? i/2 : (i - GCRIMAGE_FIRSTTRACKSIDE1) / 2, false)];
 
-        if((track_address[i] == dummy_track)||(!track_address[i]))
+        if(!tracks[i].track_address || !tracks[i].track_used) {
             *(pul++) = 0;
-        else 
-            *(pul++) = cpu_to_le_32(speed);
+        } else {
+            *(pul++) = cpu_to_le_32(tracks[i].speed_zone);
+        }
     }
 
     uint32_t bytes_written;
     FRESULT res;
-    f->write(header, 12 + C1541_MAXTRACKS * 8, &bytes_written);
+    f->write(header, 12 + max_tracks * 8, &bytes_written);
     delete header;
     
-    if(bytes_written != 12 + C1541_MAXTRACKS * 8)
+    if(bytes_written != 12 + max_tracks * 8)
         return false;
         
-    uint8_t *filler_bytes = new uint8_t[C1541_MAXTRACKLEN];
-    memset(filler_bytes, 0xFF, C1541_MAXTRACKLEN);
+    //uint8_t *filler_bytes = new uint8_t[C1541_MAXTRACKLEN];
+    //memset(filler_bytes, 0xFF, C1541_MAXTRACKLEN);
     
     uint8_t size[2];
     int skipped = 0;
-    for(int i=0;i<C1541_MAXTRACKS;i++) {
-        if((track_address[i] == dummy_track)||(!track_address[i])) {
+    for(int i=0;i<max_tracks;i++) {
+        if(!tracks[i].track_address || !tracks[i].track_used) {
             skipped++;
             continue;
         }
-        int reported_length = track_length[i];
+        int reported_length = tracks[i].track_length;
         size[0] = (uint8_t)reported_length;
         size[1] = (uint8_t)(reported_length >> 8);
+        if (tracks[i].track_is_mfm) {
+            size[1] |= 0x80; // MFM flag
+        }
         f->write(size, 2, &bytes_written);
         if(bytes_written != 2)
             break;
@@ -639,16 +768,16 @@ bool GcrImage :: save(File *f, bool align, UserInterface *user_interface)
         if(align)
             start = find_track_start(i);
         if(start > 0) {
-            res = f->write(track_address[i]+start, track_length[i]-start, &bytes_written);
-            if(bytes_written != (track_length[i]-start))
-                break;
-            res = f->write(track_address[i], start, &bytes_written);
+            res = f->write(tracks[i].track_address+start, tracks[i].track_length-start, &bytes_written);
+            if (res == FR_OK) {
+                res = f->write(tracks[i].track_address, start, &bytes_written);
+            }
         } else {
-        	res = f->write(track_address[i], track_length[i], &bytes_written);
+        	res = f->write(tracks[i].track_address, tracks[i].track_length, &bytes_written);
         }
         if(res != FR_OK)
             break;
-        res = f->write(filler_bytes, C1541_MAXTRACKLEN - track_length[i], &bytes_written);
+        //res = f->write(filler_bytes, C1541_MAXTRACKLEN - track_length[i], &bytes_written);
         if(user_interface)
             user_interface->update_progress(NULL, 1 + skipped);
         if(res != FR_OK)
@@ -656,22 +785,45 @@ bool GcrImage :: save(File *f, bool align, UserInterface *user_interface)
         skipped = 0;
     }
     
-    delete filler_bytes;
+    //delete filler_bytes;
     
     if(res != FR_OK)
         return false;
     return true;
 }
     
+void GcrImage :: track_got_written_with_gcr(int track)
+{
+    if(!tracks[track].track_address)
+        return;
+
+    if (track >= GCRIMAGE_FIRSTTRACKSIDE1) {
+        set_ds(true);
+    }
+
+    // There is currently no way to known at what speed the track got written; the hardware does not record it.
+    // So we record the standard speed zone index here. This may overwrite the MFM code, and that is exactly why it is here; to
+    // indicate that this track is now a GCR track.
+    int speed = region_speed_codes[track_to_region((track < GCRIMAGE_FIRSTTRACKSIDE1) ? track/2 : (track - GCRIMAGE_FIRSTTRACKSIDE1) / 2, false)];
+    tracks[track].speed_zone = speed;
+    tracks[track].track_used = true;
+    tracks[track].track_is_mfm = false;
+}
+
 bool GcrImage :: write_track(int track, File *f, bool align)
 {
-	if(track_address[track] == dummy_track)
-		return false;
-
-	uint32_t offset = uint32_t(track_address[track]) - uint32_t(gcr_data);
+	if(!tracks[track].track_address) {
+	    return false;
+	}
+	if(!tracks[track].in_image_file) {
+        return false;
+	}
+	if (!f) {
+	    return false;
+    }
+	uint32_t offset = uint32_t(tracks[track].track_address) - uint32_t(gcr_data);
 	uint32_t bytes_written, bw2;
 
-	//int fres = fseek(f, offset, SEEK_SET);
 	FRESULT res = f->seek(offset);
 	if(res != FR_OK)
 		return false;
@@ -680,13 +832,13 @@ bool GcrImage :: write_track(int track, File *f, bool align)
     if(align)
         start = find_track_start(track);
     if(start > 0) {
-    	res = f->write(track_address[track]+start, track_length[track]-start, &bytes_written);
+    	res = f->write(tracks[track].track_address+start, tracks[track].track_length-start, &bytes_written);
         if(res != FR_OK)
     		return false;
-        res = f->write(track_address[track], start, &bw2);
+        res = f->write(tracks[track].track_address, start, &bw2);
         bytes_written += bw2;
     } else {
-    	res = f->write(track_address[track], track_length[track], &bytes_written);
+    	res = f->write(tracks[track].track_address, tracks[track].track_length, &bytes_written);
     }
 	if(res != FR_OK)
 		return false;
@@ -699,7 +851,7 @@ bool GcrImage :: test(void)
 {
     // first create a temporary binary image
     // and fill it with test data
-    BinImage *bin = new BinImage("Test");
+    BinImage *bin = new BinImage("Test", 35);
     bin->format("diskname");
     
     uint8_t *bin_track0 = bin->track_start[0];
@@ -726,7 +878,7 @@ bool GcrImage :: test(void)
     uint8_t *decoded = bin->track_start[2];
 
     // determine where to put the wrap byte
-    uint8_t *gcr_next = track_address[0] + track_length[0];
+    uint8_t *gcr_next = tracks[0].track_address + tracks[0].track_length;
     
     printf("GCR Image ready to decode...\n");
     
@@ -751,32 +903,54 @@ bool GcrImage :: test(void)
         total += errors;
 
         // shift up one byte
-        *(gcr_next++) = *track_address[0];
-        track_address[0] ++;
+        *(gcr_next++) = *tracks[0].track_address;
+        tracks[0].track_address ++;
     }
     printf("Test was %s\n", total?"NOT successful":"SUCCESSFUL!!");
     delete bin;
     return (total == 0);    
 }
     
+void GcrImage :: set_ds(bool ds)
+{
+    if (ds != double_sided) {
+        printf("CHANGE OF DISK IMAGE: Image is now %s\n", ds ? "Double Sided" : "Single Sided");
+    }
+    double_sided = ds;
+}
+
 //--------------------------------------------------------------
 // Binary Image Class
 //--------------------------------------------------------------
-BinImage :: BinImage(const char *name)
+BinImage :: BinImage(const char *name, int tracks)
 {
-	bin_data = new uint8_t[C1541_MAX_D64_LEN];
-	int sects;
+    if (tracks <= 42) {
+        double_sided = false;
+    } else {
+        double_sided = true;
+    }
+	int sects = 0;
+    for(int i=0;i<tracks;i++) {
+        sects += sectors_per_track[track_to_region(i, double_sided)];
+    }
+    data_size = sects * 256;
+    allocated_size = data_size + sects;
+    bin_data = new uint8_t[allocated_size];
 	uint8_t *track = bin_data;
-	for(int i=0;i<C1541_MAXTRACKS;i++) {
-		sects = sectors_per_track[track_to_region(i)];
+	for(int i=0;i<tracks;i++) {
+		sects = sectors_per_track[track_to_region(i, double_sided)];
 		track_start[i] = track;
 		track_sectors[i] = sects;
 		track += (256 * sects);
 	}
-	errors = NULL;
-	error_size = 0;
-	num_tracks = 35;
-	
+	errors = track;
+	error_size = sects;
+	num_tracks = tracks;
+
+	blk = NULL;
+	prt = NULL;
+	fs  = NULL;
+/*
     // we'll create a ram-mapped block device and a default
     // partition to attach our file system to, so we can access the
     // bin image as if it were a file system as well
@@ -784,13 +958,11 @@ BinImage :: BinImage(const char *name)
     blk = new BlockDevice_Ram(bin_data, 256, 768);
     prt = new Partition(blk, 0, 768, 0);
     fs  = new FileSystemD64(prt, true);
+*/
 }
 
 BinImage :: ~BinImage()
 {
-    //this->detach();
-    //root.children.remove(this);
-    
 	if(bin_data)
 		delete bin_data;
     if(fs)
@@ -801,25 +973,6 @@ BinImage :: ~BinImage()
         delete blk;
 }
 
-/*
-int BinImage :: get_absolute_sector(int track, int sector)
-{
-    track --;
-    if (track < 0)
-        return -1;
-        
-    int result = track * 17;
-    
-    result += 2*max(track, 17);
-    result += max(track, 24);
-    result += max(track, 30);
-
-    if(result >= 785) // 41 tracks limit
-        return 784;
-        
-    return result;
-}
-*/
 
 uint8_t * BinImage :: get_sector_pointer(int track, int sector)
 {
@@ -829,7 +982,7 @@ uint8_t * BinImage :: get_sector_pointer(int track, int sector)
 	if (sector < 0) {
 		return 0;
 	}
-	if (track >= C1541_MAXTRACKS) {
+	if (track >= BINIMAGE_MAXTRACKS) {
 		return 0;
 	}
 	if (sector >= track_sectors[track-1]) {
@@ -840,8 +993,8 @@ uint8_t * BinImage :: get_sector_pointer(int track, int sector)
 
 int BinImage :: copy(uint8_t *data, uint32_t size)
 {
-	if (size > C1541_MAX_D64_LEN)
-		size = C1541_MAX_D64_LEN;
+	if (size > allocated_size)
+		size = allocated_size;
 	memcpy(bin_data, data, size);
 	return init(size);
 }
@@ -856,7 +1009,7 @@ int BinImage :: load(File *file)
 	res = file->seek(0);
 	if(res != FR_OK)
 		return -1;
-	res = file->read(bin_data, C1541_MAX_D64_LEN, &transferred);
+	res = file->read(bin_data, allocated_size, &transferred);
 	if(res != FR_OK)
 		return -2;
 	printf("Transferred: %d bytes\n", transferred);
@@ -868,17 +1021,38 @@ int BinImage :: init(uint32_t size)
 	if(size < C1541_MAX_D64_35_NO_ERRORS) {
 		return -3;
 	}
-	size -= (C1541_MAX_D64_35_NO_ERRORS);
-	num_tracks = 35;
-	errors = &bin_data[C1541_MAX_D64_35_NO_ERRORS];
-	while(size >= 17*256) {
-		num_tracks ++;
-		size -= 17*256;
-		errors += 17*256;
+	double_sided = false;
+	errors = NULL;
+	if (size >= C1541_MIN_D71_SIZE) {
+	    double_sided = true;
+	    size -= C1541_MIN_D71_SIZE;
+	    num_tracks = 70;
+	    errors = &bin_data[C1541_MIN_D71_SIZE];
+	    data_size = C1541_MIN_D71_SIZE;
+	    error_size = size;
+	} else { // single sided
+        size -= C1541_MAX_D64_35_NO_ERRORS;
+        num_tracks = 35;
+        data_size = C1541_MAX_D64_35_NO_ERRORS;
+        errors = &bin_data[C1541_MAX_D64_35_NO_ERRORS];
+        while(size >= 17*256) {
+            num_tracks ++;
+            size -= 17*256;
+            errors += 17*256;
+            data_size += 17*256;
+        }
+        error_size = (int)size;
 	}
-	error_size = (int)size;
-	if(!size)
+	if(size <= 0)
 		errors = NULL;
+
+    uint8_t *track = bin_data;
+    for(int i=0;i<num_tracks;i++) {
+        int sects = sectors_per_track[track_to_region(i, double_sided)];
+        track_start[i] = track;
+        track_sectors[i] = sects;
+        track += (256 * sects);
+    }
 
 	printf("Tracks: %d. Errors: %s\n", num_tracks, errors?"Yes":"No");
 	return 0;
@@ -893,48 +1067,35 @@ int BinImage :: save(File *file, UserInterface *user_interface)
 		return -1;
 	}
 
-	uint8_t *data = bin_data;
-    if(user_interface) {
-        for(int i=0;i<34;i++) {
-        	res = file->write(data, 10 * 512, &transferred);
-        	if(res != FR_OK) {
-                printf("WRITE ERROR: %d. Transferred = %d\n", res, transferred);
-        		return -2;
-            }
+	int secs = 0;
+	for (int tr=0; tr < num_tracks; tr++) {
+        uint8_t *data = track_start[tr];
+        secs += track_sectors[tr];
+        res = file->write(data, track_sectors[tr] * 256, &transferred);
+        if(res != FR_OK) {
+            printf("WRITE ERROR: %d. Transferred = %d\n", res, transferred);
+            return -2;
+        }
+        if (user_interface) {
             user_interface->update_progress(NULL, 1);
-            data += (10 * 512);
         }
-    	res = file->write(data, 3 * 256, &transferred);
-    	if(res != FR_OK) {
-            printf("WRITE ERROR: %d. Transferred = %d\n", res, transferred);
-    		return -2;
-        }
-    } else {
-    	res = file->write(data, 683 * 256, &transferred);
-    	if(res != FR_OK) {
-            printf("WRITE ERROR: %d. Transferred = %d\n", res, transferred);
-    		return -2;
-        }
-    }            
+    }
 
-	data = &bin_data[683*256];
-	int tracks = num_tracks - 35;
-	while(tracks > 0) {
-		tracks--;
-		res = file->write(data, 17*256, &transferred);
-        if(user_interface)
-            user_interface->update_progress(NULL, 1);
-    	if(res != FR_OK) {
-            printf("WRITE ERROR: %d. Transferred = %d\n", res, transferred);
-			return -3;
-        }
-		data += 17*256;
-	}
-	if(errors) {
-		res = file->write(errors, error_size, &transferred);
-    	if(res != FR_OK) {
-            printf("WRITE ERROR: %d. Transferred = %d\n", res, transferred);
-			return -4;
+	if(errors && error_size >= secs) {
+	    uint8_t orred = 0;
+	    int esize = error_size;
+	    if (secs < esize) {
+	        esize = secs;
+	    }
+	    for(int i=0;i<error_size;i++) {
+	       orred |= errors[i];
+	    }
+	    if (orred) { // contains valid error data
+            res = file->write(errors, error_size, &transferred);
+            if(res != FR_OK) {
+                printf("WRITE ERROR: %d. Transferred = %d\n", res, transferred);
+                return -4;
+            }
 	    }
 	}
 	return 0;
@@ -942,31 +1103,94 @@ int BinImage :: save(File *file, UserInterface *user_interface)
 
 int BinImage :: format(const char *name)
 {
-    memset(bin_data, 0, C1541_MAX_D64_LEN);
+    memset(bin_data, 0, data_size);
+
+    int numBlocks = data_size / 256;
+    blk = new BlockDevice_Ram(bin_data, 256, numBlocks);
+    prt = new Partition(blk, 0, numBlocks, 0);
+    if (double_sided && (data_size >= C1541_MIN_D71_SIZE)) {
+        fs = new FileSystemD71(prt, true);
+        num_tracks = 70;
+    } else {
+        fs = new FileSystemD64(prt, true);
+        num_tracks = 35;
+    }
     fs->format(name);
-    num_tracks = 35;
+
+    delete fs;
+    delete prt;
+    delete blk;
+
+    fs = NULL;
+    prt = NULL;
+    blk = NULL;
     return 0;
 }
 
-int BinImage :: write_track(int track, GcrImage *gcr_image, File *file)
+int BinImage :: write_track(int phys_track, GcrImage *gcr_image, File *file, int& errorcount, int &secs)
 {
-	int dummy = 0;
-    int res = gcr_image->convert_track_gcr2bin(track, this, dummy);
-	if(res) {
-        printf("Decode failed with error %d.\n", res);
-		return res;
+	int logical_track = gcr_track_to_bin_track(phys_track);
+	secs = 0;
+
+	uint8_t *bin = track_start[logical_track];
+	if (!bin) {
+	    return -10; // track doesn't exist in binary image
 	}
-	uint32_t offset = uint32_t(track_start[track] - bin_data);
-	res = file->seek(offset);
+	GcrTrack *gcrTrack = &(gcr_image->tracks[phys_track]);
+	uint8_t *gcr = gcrTrack->track_address;
+	if (!gcr) {
+	    return -11; // Track doesn't exist in the gcr image
+	}
+    uint8_t status[64];
+    int expected_secs = track_sectors[logical_track];
+    secs = GcrImage :: convert_gcr_track_to_bin(gcr, logical_track + 1, gcrTrack->track_length, expected_secs, bin, status);
+
+    // Store errors in error bytes
+    int error_offset = 0;
+    if (errors) { // are there error bytes?
+        error_offset = total_sectors_before_track(logical_track, double_sided);
+    }
+
+    // Report
+    printf("%d sectors found. (", secs);
+    for(int i=0;i<2*secs;i+=2) {
+        printf("%b:%b ", status[i], status[i+1]);
+        if (errors) {
+            if (error_offset + status[i] < error_size) {
+                errors[error_offset + status[i]] = status[i+1];
+            }
+        }
+        if (status[i+1]) {
+            errorcount++;
+        }
+    } printf(")\n");
+
+    if(secs != expected_secs) {
+        printf("Decode failed.\n");
+		return -12;
+	}
+
+    if (!file) {
+        // No need to write to a file, just to the image
+        return 0;
+    }
+    uint32_t offset = uint32_t(bin - bin_data);
+	// Write
+	FRESULT res = file->seek(offset);
 	if(res != 0) {
-        printf("While trying to write track %d, seek offset $%6x failed with error %d.\n", track+1, offset, res);
+        printf("While trying to write track %d, seek offset $%6x failed with error %d.\n", logical_track+1, offset, res);
 		return res;
 	}
 	uint32_t transferred;
-	FRESULT fres = file->write(track_start[track], 256*track_sectors[track], &transferred);
+	FRESULT fres = file->write(bin, 256*track_sectors[logical_track], &transferred);
 	if(fres != FR_OK)
 		return res;
     return file->sync();
+}
+
+bool BinImage :: is_double_sided(void)
+{
+    return double_sided;
 }
 
 void BinImage :: get_sensible_name(char *buffer)
@@ -1001,7 +1225,7 @@ void BinImage :: get_sensible_name(char *buffer)
     delete r;
 }
 
-BinImage static_bin_image("Static Binary Image"); // for general use
+//BinImage static_bin_image("Static Binary Image"); // for general use
 
 int ImageCreator :: S_createD71(SubsysCommand *cmd)
 {
@@ -1109,7 +1333,11 @@ int ImageCreator :: S_createDNP(SubsysCommand *cmd)
 
 int ImageCreator :: S_createD64(SubsysCommand *cmd)
 {
-	int doG64 = cmd->mode;
+	int doGCR = (cmd->mode & 1);
+	int doDS  = (cmd->mode & 2);
+
+	const int tracks[] = { 35, 40, 70, 80 };
+	const char *extensions[] = { ".d64", ".g64", ".d71", ".g71" };
 	char buffer[64];
 
 	buffer[0] = 0;
@@ -1118,33 +1346,33 @@ int ImageCreator :: S_createD64(SubsysCommand *cmd)
 	GcrImage *gcr;
 	FileManager *fm = FileManager :: getFileManager();
 	bool save_result;
+	int retval = 0;
 
 	res = cmd->user_interface->string_box("Give name for new disk..", buffer, 22);
 	if(res > 0) {
-	    bin = &static_bin_image; //new BinImage;
+	    bin = new BinImage("Temporary Binary Image", tracks[cmd->mode]);
 		if(bin) {
     		bin->format(buffer);
             fix_filename(buffer);
-			set_extension(buffer, (doG64)?(char *)".g64":(char *)".d64", 32);
+			set_extension(buffer, extensions[cmd->mode], 32);
             File *f = 0;
             FRESULT fres = fm -> fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_NEW, &f);
 			if(f) {
-                if(doG64) {
+                if(doGCR) {
                     gcr = new GcrImage;
                     if(gcr) {
-                        bin->num_tracks = 40;
-                        cmd->user_interface->show_progress("Converting..", 120);
+                        cmd->user_interface->show_progress("Converting..", tracks[cmd->mode]);
                         gcr->convert_disk_bin2gcr(bin, cmd->user_interface);
-                        cmd->user_interface->update_progress("Saving...", 0);
+                        cmd->user_interface->update_progress("Saving...", 1);
                         save_result = gcr->save(f, false, cmd->user_interface); // create image, without alignment, we are aligned already
                         cmd->user_interface->hide_progress();
                         delete gcr;
                     } else {
                         printf("No memory to create gcr image.\n");
-                        return -3;
+                        retval = -3;
                     }
                 } else {
-                    cmd->user_interface->show_progress("Creating D64..", 35);
+                    cmd->user_interface->show_progress("Creating...", 100);
                     save_result = bin->save(f, cmd->user_interface);
                     cmd->user_interface->hide_progress();
                 }
@@ -1153,15 +1381,15 @@ int ImageCreator :: S_createD64(SubsysCommand *cmd)
 			} else {
 				printf("Can't create file '%s'\n", buffer);
 				cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
-				return -2;
+				retval = -2;
 			}
-			// delete bin;
+			delete bin;
 		} else {
 			printf("No memory to create bin.\n");
-			return -1;
+			retval = -1;
 		}
 	}
-	return 0;
+	return retval;
 }
 
 // instantiate so that we exist

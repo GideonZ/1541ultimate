@@ -115,6 +115,8 @@ int uart_get_byte(int delay);
 uint16_t getMsTimer();
 uint32_t getFpgaCapabilities();
 uint8_t  getFpgaVersion();
+void install_high_irq(int irqNr, uint8_t (*func)(void *), void *context);
+void deinstall_high_irq(int irqNr);
 
 extern void (*custom_outbyte)(int c);
 

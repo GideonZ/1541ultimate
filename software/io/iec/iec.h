@@ -11,6 +11,7 @@
 #include "task.h"
 #include "semphr.h"
 #include "fs_errors_flags.h"
+#include "disk_image.h"
 
 #define IECDEBUG 0
 
@@ -88,6 +89,8 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
     int current_channel;
     int warp_drive;
     uint8_t warp_return_code;
+
+    BinImage *ulticopy_bin_image;
 
     void reset(void);
     void poll(void);
