@@ -77,9 +77,13 @@ port (
     mem_resp        : in  t_mem_resp;
 
     -- track stepper interface (for audio samples)
-    do_track_in     : out std_logic;
+    motor_en        : in  std_logic; -- for index pulse
+    stepper_en      : in  std_logic;
+    step            : out std_logic_vector(1 downto 0);
+    cur_track       : in  unsigned(6 downto 0) := (others => '0');
     do_track_out    : out std_logic;
-
+    do_track_in     : out std_logic;
+    
     -- I/O interface from application CPU
     io_req          : in  t_io_req;
     io_resp         : out t_io_resp;
@@ -93,8 +97,7 @@ architecture behavioral of wd177x is
     signal mem_dack         : std_logic;
     signal mem_request      : std_logic := '0';
 
-    signal step_time_i     : std_logic_vector(4 downto 0);
-
+    signal status_idx       : std_logic_vector(7 downto 0);
     signal status           : std_logic_vector(7 downto 0);
     signal track            : std_logic_vector(7 downto 0);
     signal sector           : std_logic_vector(7 downto 0);
@@ -121,9 +124,9 @@ architecture behavioral of wd177x is
 
     -- Stepper
     signal goto_track       : unsigned(6 downto 0);
-    signal phys_track       : unsigned(6 downto 0);
     signal step_time        : unsigned(4 downto 0);
-
+    signal step_busy        : std_logic;
+    signal index_out        : std_logic;
 begin
     mem_rack  <= '1' when mem_resp.rack_tag = g_tag else '0';
     mem_dack  <= '1' when mem_resp.dack_tag = g_tag else '0';
@@ -135,10 +138,16 @@ begin
     mem_req.size        <= "00"; -- one byte at a time
     mem_req.tag         <= g_tag;
 
-    step_time  <= unsigned(step_time_i);
+    process(status, index_out, command)
+    begin
+        status_idx <= status;
+        if command(7) = '0' then -- Type I command
+            status_idx(1) <= not index_out;
+        end if;
+    end process;
 
     with addr select rdata <= 
-        status      when "00",
+        status_idx  when "00",
         track       when "01",
         sector      when "10",
         disk_data   when others;
@@ -212,8 +221,8 @@ begin
                 when X"E" =>
                     goto_track  <= unsigned(io_req.data(goto_track'range));
                 when X"F" =>
-                    step_time_i  <= io_req.data(4 downto 0);
-
+                    step_time  <= unsigned(io_req.data(4 downto 0));
+                    
                 when others =>
                     null;
                 end case;
@@ -251,9 +260,10 @@ begin
                 when X"D" =>
                     io_resp.data(5 downto 0) <= std_logic_vector(transfer_len(13 downto 8));
                 when X"E" =>
-                    io_resp.data(phys_track'range) <= std_logic_vector(phys_track);
+                    io_resp.data(0) <= step_busy;
                 when X"F" =>
-                    io_resp.data(4 downto 0) <= step_time_i;
+                    io_resp.data(4 downto 0) <= std_logic_vector(step_time);
+                    
                 when others =>
                     null;
                 end case;
@@ -333,7 +343,7 @@ begin
                 io_irq <= '0';
                 status <= X"00";
                 dma_mode <= "00";
-                step_time_i <= "01100";
+                step_time <= "01100";
                 goto_track <= to_unsigned(0, goto_track'length);
             end if;
         end if;
@@ -345,10 +355,16 @@ begin
         reset        => reset,
         tick_1KHz    => tick_1KHz,
         goto_track   => goto_track,
-        phys_track   => phys_track,
+        cur_track    => cur_track, -- from drive mechanics
         step_time    => step_time,
+        do_track_in  => do_track_in,
         do_track_out => do_track_out,
-        do_track_in  => do_track_in
+        enable       => stepper_en,
+        busy         => step_busy,
+        step         => step,
+
+        motor_en     => motor_en,
+        index_out    => index_out
     );
     
 end architecture;

@@ -24,6 +24,7 @@ port (
     -- timing
     tick_16MHz      : in  std_logic;
     tick_4MHz       : in  std_logic;
+    tick_1kHz       : in  std_logic;
 
     -- slave port on io bus
     io_req          : in  t_io_req;
@@ -86,7 +87,7 @@ architecture structural of c1571_drive is
     signal rate_ctrl        : std_logic_vector(1 downto 0);
     signal byte_ready       : std_logic;
     signal sync             : std_logic;
-    signal track            : std_logic_vector(6 downto 0);
+    signal track            : unsigned(6 downto 0);
 	signal drive_address	: std_logic_vector(1 downto 0) := "00";
 	signal write_prot_n	    : std_logic := '1';
     signal disk_change_n    : std_logic := '1';
@@ -174,6 +175,7 @@ begin
         falling     => cpu_clock_en,
         rising      => cia_rising,
         reset       => drv_reset,
+        tick_1kHz   => tick_1kHz,
         
         -- serial bus pins
         atn_o       => atn_o, -- open drain
@@ -238,6 +240,7 @@ begin
         tick_16MHz      => tick_16M_i,
         
         -- signals from MOS 6522 VIA
+        stepper_en      => motor_on,
         motor_on        => motor_on,
         mode            => mode,
         write_prot_n    => write_prot_n,

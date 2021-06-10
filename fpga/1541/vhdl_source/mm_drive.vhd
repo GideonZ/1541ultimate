@@ -79,10 +79,6 @@ architecture structural of mm_drive is
     signal cpu_clock_en     : std_logic;
     signal iec_reset_o      : std_logic;
     
-    signal flop_track_out   : std_logic;
-    signal flop_track_in    : std_logic;
-    signal wd_track_out     : std_logic;
-    signal wd_track_in      : std_logic;
     signal do_track_out     : std_logic;
     signal do_track_in      : std_logic;
     signal do_head_bang     : std_logic;
@@ -99,11 +95,12 @@ architecture structural of mm_drive is
     signal motor_on         : std_logic;
     signal mode             : std_logic;
     signal side             : std_logic;
+    signal stepper_en       : std_logic;
     signal step             : std_logic_vector(1 downto 0) := "00";
     signal rate_ctrl        : std_logic_vector(1 downto 0);
     signal byte_ready       : std_logic;
     signal sync             : std_logic;
-    signal track            : std_logic_vector(6 downto 0);
+    signal track            : unsigned(6 downto 0);
 	signal drive_address	: std_logic_vector(1 downto 0) := "00";
 	signal write_prot_n	    : std_logic := '1';
     signal disk_change_n    : std_logic := '1';
@@ -225,10 +222,6 @@ begin
 		-- configuration
         via_mirroring   => bank_is_ram(7), -- FIXME
 
-        -- sound from wd177x
-        wd_track_out    => wd_track_out,
-        wd_track_in     => wd_track_in,
-
 		-- memory interface
         mem_req_cpu     => mem_req_cpu,
         mem_resp_cpu    => mem_resp_cpu,
@@ -247,6 +240,7 @@ begin
         write_prot_n    => write_prot_n,
         motor_sound_on  => motor_sound_on,
         motor_on        => motor_on,
+        stepper_en      => stepper_en,
         mode            => mode,
         step            => step,
         side            => side,
@@ -257,6 +251,7 @@ begin
         rdy_n           => rdy_n,
         disk_change_n   => disk_change_n,
         track_0         => track_0,
+        track           => track,
 
         drv_rdata       => disk_rdata,
         drv_wdata       => disk_wdata,
@@ -265,7 +260,9 @@ begin
         power_led       => open, -- FIXME
         act_led         => act_led_n );
 
-    rdy_n       <= not (motor_on and floppy_inserted) and not force_ready; -- should have a delay
+    -- This may look odd; but 'motor on' is always 0 for the 1581, to shut off the GCR module
+    -- MotorSound, however, is enabled for 1581, and has the same function as motor_on.
+    rdy_n       <= not (motor_sound_on and floppy_inserted) and not force_ready; -- should have a delay
     
     i_flop: entity work.floppy
     generic map (
@@ -277,6 +274,7 @@ begin
         tick_16MHz      => tick_16M_i,
         
         -- signals from MOS 6522 VIA
+        stepper_en      => stepper_en,
         motor_on        => motor_on,
         mode            => mode,
         write_prot_n    => write_prot_n,
@@ -298,8 +296,8 @@ begin
         io_resp_dirty   => io_resp_dirty,
     ---
         floppy_inserted => floppy_inserted,
-        do_track_out    => flop_track_out,
-        do_track_in     => flop_track_in,
+        do_track_out    => do_track_out,
+        do_track_in     => do_track_in,
         do_head_bang    => do_head_bang,
         dirty_led_n     => dirty_led_n,
     ---
@@ -308,8 +306,6 @@ begin
 
     en_hum  <= motor_sound_on and not floppy_inserted;
     en_slip <= motor_sound_on and floppy_inserted;
-    do_track_out <= flop_track_out or wd_track_out;
-    do_track_in  <= flop_track_in or wd_track_in;
 
     r_snd: if g_audio generate
         i_snd: entity work.floppy_sound

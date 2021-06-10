@@ -73,7 +73,7 @@ architecture structural of c1581_drive is
     signal power            : std_logic;
     signal motor_on         : std_logic;
     signal side_0           : std_logic;
-    signal track            : std_logic_vector(6 downto 0) := (others => '1');
+    signal cur_track        : unsigned(6 downto 0) := (others => '1');
 	signal drive_address	: std_logic_vector(1 downto 0) := "00";
 	signal write_prot_n	    : std_logic := '1';
 	signal disk_change_n    : std_logic := '1';
@@ -183,12 +183,27 @@ begin
         rdy_n           => rdy_n,
         disk_change_n   => disk_change_n,
         side_0          => side_0,
+        cur_track       => cur_track,
         
         -- other
         power_led       => power_led_n,
         act_led         => act_led_n );
     
     rdy_n       <= not (motor_on and floppy_inserted) and not force_ready; -- should have a delay
+
+    -- Bare minimum drive mechanics.. :-D
+    process(clock)
+    begin
+        if rising_edge(clock) then
+            if reset = '1' then
+                cur_track <= (others => '0');
+            elsif do_track_in = '1' and cur_track /= 83 then
+                cur_track <= cur_track + 1;
+            elsif do_track_out = '1' and cur_track /= 0 then
+                cur_track <= cur_track - 1;
+            end if;
+        end if;
+    end process;
 
     r_snd: if g_audio generate
     begin
@@ -252,7 +267,7 @@ begin
         write_prot_n    => write_prot_n,
         stop_on_freeze  => stop_on_freeze,
         
-        track           => track,
+        track           => cur_track,
         mode            => side_0,
         motor_on        => motor_on );
             

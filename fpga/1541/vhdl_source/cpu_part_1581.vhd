@@ -48,11 +48,12 @@ port (
     -- drive pins
     power           : in  std_logic;
     drive_address   : in  std_logic_vector(1 downto 0);
-    motor_on        : out std_logic;
     write_prot_n    : in  std_logic;
     rdy_n           : in  std_logic;
     disk_change_n   : in  std_logic;
     side_0          : out std_logic;
+    motor_on        : out std_logic;
+    cur_track       : in  unsigned(6 downto 0);
     
     act_led         : out std_logic;
     power_led       : out std_logic );
@@ -117,6 +118,7 @@ architecture structural of cpu_part_1581 is
     signal rdy_n_i          : std_logic;
     signal motor_n_i        : std_logic;
     signal side_0_i         : std_logic;
+    signal motor_on_i       : std_logic;
 begin
     mem_req_cpu.request     <= mem_request;
     mem_req_cpu.address     <= mem_addr;
@@ -311,7 +313,8 @@ begin
     
     power_led    <= not (power_led_i and power);
     act_led      <= not (act_led_i and power);
-    motor_on     <= not motor_n_i and power;
+    motor_on_i   <= not motor_n_i and power;
+    motor_on     <= motor_on_i;
     side_0       <= side_0_i;
 
     -- Floppy Controller
@@ -332,7 +335,10 @@ begin
         tick_1kHz    => tick_1kHz,
         do_track_out => do_track_out,
         do_track_in  => do_track_in,
-
+        cur_track    => cur_track,
+        stepper_en   => '1',
+        motor_en     => motor_on_i,
+        
         mem_req      => mem_req_disk,
         mem_resp     => mem_resp_disk,
         io_req       => io_req,

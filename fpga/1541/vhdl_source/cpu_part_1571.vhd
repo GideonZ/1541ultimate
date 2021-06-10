@@ -16,6 +16,7 @@ port (
     falling     : in  std_logic;
     rising      : in  std_logic;
     reset       : in  std_logic;
+    tick_1kHz   : in  std_logic;
 
     -- serial bus pins
     atn_o       : out std_logic; -- open drain
@@ -69,6 +70,7 @@ port (
 end entity;
 
 architecture structural of cpu_part_1571 is
+    signal motor_on_i       : std_logic;
     signal soe              : std_logic;
     signal so_n             : std_logic;
     signal cpu_write        : std_logic;
@@ -466,12 +468,12 @@ begin
     mode         <= via2_cb2_i;
     step(0)      <= via2_port_b_o(0) or not via2_port_b_t(0);
     step(1)      <= via2_port_b_o(1) or not via2_port_b_t(1);
-    motor_on     <= (via2_port_b_o(2) or not via2_port_b_t(2)) and power;
+    motor_on_i   <= (via2_port_b_o(2) or not via2_port_b_t(2)) and power;
     rate_ctrl(0) <= via2_port_b_o(5) or not via2_port_b_t(5);
     rate_ctrl(1) <= via2_port_b_o(6) or not via2_port_b_t(6);
     soe          <= via2_ca2_i;
     so_n         <= byte_ready or not soe;
-
+    motor_on     <= motor_on_i;
 
     data_o <= not power or (not my_data_out and my_fast_data_out and (not (atn_ack xor (not atn_i))));
     clk_o  <= not power or not my_clk_out;
@@ -500,9 +502,9 @@ begin
         wdata        => cpu_wdata,
         rdata        => wd_data,
         
-        tick_1kHz    => '0', --tick_1kHz,
---        do_track_out => do_track_out,
---        do_track_in  => do_track_in,
+        motor_en     => motor_on_i,
+        tick_1kHz    => tick_1kHz,
+        stepper_en   => '0',
 
         mem_req      => mem_req_disk,
         mem_resp     => mem_resp_disk,
