@@ -58,7 +58,7 @@ typedef uint8_t t_wd177x_cmd;
 #define MFM_DEFAULT_SECTORS_PER_TRACK  	    10
 #define MFM_BYTES_PER_TRACK			        (MFM_DEFAULT_SECTOR_SIZE * MFM_DEFAULT_SECTORS_PER_TRACK)
 
-typedef void (*track_format_callback_t)(void *obj, int physTrack, int side, MfmTrack *track);
+typedef void (*track_update_callback_t)(void *obj, int physTrack, int side, MfmTrack *track);
 
 class WD177x
 {
@@ -71,7 +71,8 @@ class WD177x
     TaskHandle_t taskHandle;
     QueueHandle_t cmdQueue;
     MfmDisk disk;
-    track_format_callback_t track_updater;
+    track_update_callback_t track_updater;
+
     void *track_update_object;
 
     uint8_t buffer[MFM_RAW_BYTES_BETWEEN_INDEX_PULSES+2];
@@ -96,7 +97,7 @@ public:
     void format_d81(void);
     void set_file(File *);
     MfmDisk *get_disk(void);
-    void set_track_update_callback(void *obj, track_format_callback_t func);
+    void set_track_update_callback(void *obj, track_update_callback_t func);
 
     BaseType_t check_queue(t_wd177x_cmd& cmd); // called from drive class context
     void handle_wd177x_command(t_wd177x_cmd& cmd); // called from drive class context

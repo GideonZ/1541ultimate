@@ -824,11 +824,27 @@ bool GcrImage :: write_track(int track, File *f, bool align)
 	uint32_t offset = uint32_t(tracks[track].track_address) - uint32_t(gcr_data);
 	uint32_t bytes_written, bw2;
 
-	FRESULT res = f->seek(offset);
-	if(res != FR_OK)
+	if (offset < 2) {
+	    return false;
+	}
+	FRESULT res = f->seek(offset-2); // write the length field as well, to update the mfm flag
+	if(res != FR_OK) {
 		return false;
+	}
 
-    int start = 0;
+	uint8_t s[2];
+	s[0] = (uint8_t)(tracks[track].track_length & 0xFF);
+	s[1] = (uint8_t)(tracks[track].track_length >> 8);
+	if (tracks[track].track_is_mfm) {
+	    s[1] |= 0x80;
+	}
+
+	res = f->write(s, 2, &bytes_written);
+	if (res != FR_OK) {
+	    return false;
+	}
+
+	int start = 0;
     if(align)
         start = find_track_start(track);
     if(start > 0) {

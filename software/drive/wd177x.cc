@@ -322,7 +322,13 @@ void WD177x :: handle_wd177x_command(t_wd177x_cmd& cmd)
 			} else {
 				printf("-> No mount file.\n");
 			}
-			wd177x->status_clear = WD_STATUS_BUSY;
+            // Complete by doing the administration on the drive side
+			// Passing a NULL pointer as newTrack signals that only the sector data was updated.
+            if(track_updater) {
+                track_updater(track_update_object, drive->track, drive->side, NULL);
+            }
+
+            wd177x->status_clear = WD_STATUS_BUSY;
 		} else {
 		    wait_head_settle();
 		    // Write Sector Command
@@ -420,7 +426,7 @@ void WD177x :: handle_wd177x_command(t_wd177x_cmd& cmd)
 	}
 }
 
-void WD177x :: set_track_update_callback(void *obj, track_format_callback_t func)
+void WD177x :: set_track_update_callback(void *obj, track_update_callback_t func)
 {
     track_update_object = obj;
     track_updater = func;
