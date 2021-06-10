@@ -370,7 +370,7 @@ begin
         track           => track,
         side            => side,
         mode            => mode,
-        motor_on        => motor_on );
+        motor_on        => motor_sound_on );
             
     -- memory arbitration
     i_arb: entity work.mem_bus_arbiter_pri

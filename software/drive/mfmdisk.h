@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define WD_MAX_SECTORS_PER_TRACK    30
+#define WD_MAX_SECTORS_PER_TRACK    32
 #define WD_MAX_TRACKS_PER_SIDE      82
 
 typedef enum {

@@ -483,8 +483,8 @@ set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/c64/cia_timer.
 set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/c64/cia_registers.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/stepper.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/wd177x.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/c1581_drive.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/cpu_part_1581.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/mm_drive.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/mm_drive_cpu.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/c1541_timing.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy_stream.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy.vhd
@@ -494,12 +494,10 @@ set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy_mem.
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/c1541_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/gcr_encoder.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy_param_mem.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/c1541_drive.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy_sound.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/gcr2bin.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/gcr_codec.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/gcr_decoder.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/cpu_part_1541.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/drive_registers.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_io_regs_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_io_regs.vhd

@@ -48,8 +48,7 @@
 #define C1541_MIN_D71_SIZE           (2*C1541_MAX_D64_35_NO_ERRORS)
 #define C1541_D71_SIZE_WITH_ERRORS   (C1541_MIN_D71_SIZE + 1366)
 
-//#define SPEED_ZONE_MFM               8
-#define MFM_TRACK_HEADER_SIZE        6 + (WD_MAX_SECTORS_PER_TRACK * 5)
+#define MFM_TRACK_HEADER_SIZE        2 + (WD_MAX_SECTORS_PER_TRACK * 5)
 
 class BinImage;
 

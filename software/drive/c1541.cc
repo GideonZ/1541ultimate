@@ -803,36 +803,37 @@ void C1541 :: poll() // called under mutex
 
 void C1541 :: mfm_update_callback(void *obj, int physTrack, int physSide, MfmTrack *tr)
 {
-    printf("MFM Track update %d/%d.\n", physTrack, physSide);
+    printf("MFM Track update %d/%d '%s'.\n", physTrack, physSide, tr ? "Format" : "Sector Write");
     if (obj) {
         C1541 *drv = (C1541 *)obj;
-        int ti = physTrack + (physSide ? GCRIMAGE_FIRSTTRACKSIDE1 : 0);
 
+        // Set MFM dirty bit
+        drv->mfm_dirty_bits[physSide][physTrack >> 5] |= (1 << (physTrack & 31));
+
+        int ti = physTrack + (physSide ? GCRIMAGE_FIRSTTRACKSIDE1 : 0);
         GcrTrack *gtr = &(drv->gcr_image->tracks[ti]);
         if (!gtr->track_address) {
             return; // doesn't exist in image! (TODO: Log error?!)
         }
+
+        if (!tr) {
+            return; // Sector write only. Exit
+        }
+
         gtr->track_used = true;
         gtr->track_is_mfm = true;
+
         if (physSide) { // was side 1 updated, then set image to double sided
             drv->gcr_image->set_ds(true);
         }
         uint8_t *gd = gtr->track_address;
 
         if (gd && (gtr->track_length >= MFM_TRACK_HEADER_SIZE)) {
-            *(gd++) = 'M';
-            *(gd++) = 'F';
-            *(gd++) = 'M';
-            *(gd++) = 0;
-
             *(gd++) = (uint8_t)tr->numSectors;
-            *(gd++) = 0;
+            *(gd++) = 0; // version byte
 /* It seems that in the g64conv.pl script, only one byte is used. Making it two bytes, and adding the error byte makes the header 150+6 = 156 (divisable by 4) */
-            memcpy(gd, tr->sectors, MFM_TRACK_HEADER_SIZE - 6);
+            memcpy(gd, tr->sectors, MFM_TRACK_HEADER_SIZE - 2);
         }
-
-        // Set MFM dirty bit
-        drv->mfm_dirty_bits[physSide][physTrack >> 5] |= (1 << (physTrack & 31));
     }
 }
 
