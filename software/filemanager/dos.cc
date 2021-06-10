@@ -385,9 +385,9 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
         }
 
         if (strncasecmp(ffi->extension, "d64", 3) == 0) {
-            mount_type = D64FILE_MOUNT;
+            mount_type = MENU_1541_MOUNT_D64;
         } else if (strncasecmp(ffi->extension, "g64", 3) == 0) {
-            mount_type = G64FILE_MOUNT;
+            mount_type = MENU_1541_MOUNT_G64;
         } else {
             *status = &c_status_not_a_disk_image;
             delete ffi;
@@ -395,8 +395,7 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
         }
 
         mount_action = new Action("Mount Disk", drive->getID(), mount_type);
-        mount_command = new SubsysCommand((UserInterface*) NULL, mount_action,
-                path->get_path(), filename);
+        mount_command = new SubsysCommand((UserInterface*) NULL, mount_action, path->get_path(), filename);
         mount_command->execute();
 
         delete ffi;

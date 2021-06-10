@@ -10,7 +10,6 @@ extern "C" {
 #include "u64.h"
 #include "filemanager.h"
 #include "userinterface.h"
-#include "disk_image.h"
 #include "pattern.h"
 
 #define MENU_IEC_ON          0xCA0E
@@ -228,6 +227,7 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
     printer = false;
 
     channel_printer = new IecPrinter();
+    ulticopy_bin_image = new BinImage("UltiCopy", 35);
 
     effectuate_settings();
 
@@ -760,7 +760,7 @@ void IecInterface :: get_warp_data(void)
     uint8_t sector = (uint8_t)read;
 #endif
     uint8_t track = HW_IEC_RX_DATA;
-    uint8_t *dest = static_bin_image.get_sector_pointer(track, sector);
+    uint8_t *dest = ulticopy_bin_image->get_sector_pointer(track, sector);
     uint8_t *src = (uint8_t *)temp;
     // printf("Sector {%b %b (%p -> %p}\n", track, sector, src, dest);
     if (dest) {
@@ -800,21 +800,20 @@ void IecInterface :: save_copied_disk()
     int res;
     BinImage *bin;
     
-    static_bin_image.num_tracks = 35; // standard!
+    ulticopy_bin_image->num_tracks = 35; // standard!
 
 	// buffer[0] = 0;
     if (cmd_ui->cfg->get_value(CFG_USERIF_ULTICOPY_NAME)) {
-        static_bin_image.get_sensible_name(buffer);
+        ulticopy_bin_image->get_sensible_name(buffer);
     }
 	res = cmd_ui->string_box("Give name for copied disk..", buffer, 22);
 	if(res > 0) {
 		fix_filename(buffer);
-	    bin = &static_bin_image;
 		set_extension(buffer, ".d64", 32);
         FRESULT fres = fm->fopen(cmd_path, buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
 		if(f) {
-            cmd_ui->show_progress("Saving D64..", 35);
-            save_result = bin->save(f, cmd_ui);
+            cmd_ui->show_progress("Saving D64..", 100);
+            save_result = ulticopy_bin_image->save(f, cmd_ui);
             cmd_ui->hide_progress();
     		printf("Result of save: %d.\n", save_result);
             fm->fclose(f);

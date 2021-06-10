@@ -137,6 +137,7 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         break;
     case SOCKET_CMD_MOUNT_IMG:
     case SOCKET_CMD_RUN_IMG:
+/*
         if (cmd == SOCKET_CMD_MOUNT_IMG) {
             c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, D64FILE_MOUNT,
                 RUNCODE_MOUNT_BUFFER|RUNCODE_NO_CHECKSAVE|RUNCODE_NO_UNFREEZE, buf, len);
@@ -146,6 +147,8 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
 
         }
         c64_command->execute();
+*/
+        printf("WARNING: Mount / Run image currently not implemented from TCP buffer.");
         break;
 
 #ifdef U64

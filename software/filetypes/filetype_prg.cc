@@ -159,7 +159,7 @@ int FileTypePRG :: execute_st(SubsysCommand *cmd)
             	printf("%s\n", FileSystem :: get_error_string(fres));
 
             	printf("Mounting %s to drive A\n", cmd->path.c_str());
-                drive_command = new SubsysCommand(cmd->user_interface, SUBSYSID_DRIVE_A, MENU_1541_MOUNT, 0, 0, cmd->path.c_str());
+                drive_command = new SubsysCommand(cmd->user_interface, SUBSYSID_DRIVE_A, MENU_1541_MOUNT_D64, 0, 0, cmd->path.c_str());
                 drive_command->execute();
                 c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DMA_LOAD_MNT, run_code, cmd->path.c_str(), cmd->filename.c_str());
             } else if (run_code) {
