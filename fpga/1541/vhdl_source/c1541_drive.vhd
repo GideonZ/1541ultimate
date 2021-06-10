@@ -94,7 +94,7 @@ architecture structural of c1541_drive is
     signal rate_ctrl        : std_logic_vector(1 downto 0);
     signal byte_ready       : std_logic;
     signal sync             : std_logic;
-    signal track            : std_logic_vector(6 downto 0);
+    signal track            : unsigned(6 downto 0);
 	signal drive_address	: std_logic_vector(1 downto 0) := "00";
 	signal write_prot_n	    : std_logic := '1';
     signal drv_reset        : std_logic := '1';
@@ -232,6 +232,7 @@ begin
         tick_16MHz      => tick_16M_i,
         
         -- signals from MOS 6522 VIA
+        stepper_en      => motor_on,
         motor_on        => motor_on,
         mode            => mode,
         write_prot_n    => write_prot_n,

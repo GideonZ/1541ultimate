@@ -32,7 +32,7 @@ port (
     io_req      : in  t_io_req;
     io_resp     : out t_io_resp;
 
-    track       : in  std_logic_vector(6 downto 0);
+    track       : in  unsigned(6 downto 0);
     side        : in  std_logic := '0';
     bit_time    : out unsigned(9 downto 0);
     track_start : out std_logic_vector(25 downto 0);
@@ -77,7 +77,7 @@ begin
 		DOB   => ram_data,
 		DOPB  => open );
 
-    param_addr <= side & track & toggle;
+    param_addr <= side & std_logic_vector(track) & toggle;
     param_data <= byte_swap(ram_data, g_big_endian);
 
     process(clock)

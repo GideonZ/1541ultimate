@@ -63,8 +63,6 @@ port (
 
     -- Sound
     motor_sound_on  : out std_logic;
-    wd_track_out    : out std_logic;
-    wd_track_in     : out std_logic;
 
     -- drive pins
     power           : in  std_logic;
@@ -75,9 +73,11 @@ port (
     rdy_n           : in  std_logic;
     disk_change_n   : in  std_logic;
     track_0         : in  std_logic;
+    track           : in  unsigned(6 downto 0);
 
     motor_on        : out std_logic;
     mode            : out std_logic;
+    stepper_en      : out std_logic;
     step            : out std_logic_vector(1 downto 0);
     rate_ctrl       : out std_logic_vector(1 downto 0);
     side            : out std_logic;
@@ -184,6 +184,9 @@ architecture structural of mm_drive_cpu is
         via1_ca2_i      : std_logic;
         fast_ser_dir    : std_logic;
         soe             : std_logic;
+        step            : std_logic_vector(1 downto 0);
+        stepper_en      : std_logic;
+        wd_stepper      : std_logic;
 
         -- Parallel cable
         par_data_o      : std_logic_vector(7 downto 0);
@@ -379,18 +382,22 @@ begin
         clock        => clock,
         clock_en     => cpu_clk_en,
         reset        => reset,
+        tick_1kHz    => tick_1kHz,
+
         addr         => unsigned(cpu_addr(1 downto 0)),
         wen          => wd_wen,
         ren          => wd_ren,
         wdata        => cpu_wdata,
         rdata        => wd_data,
         
-        tick_1kHz    => tick_1kHz,
-        do_track_out => wd_track_out,
-        do_track_in  => wd_track_in,
+        motor_en     => mm.motor_sound_on,
+        stepper_en   => mm.wd_stepper,
+        cur_track    => track,
+        step         => m(2).step,
 
         mem_req      => mem_req_disk,
         mem_resp     => mem_resp_disk,
+
         io_req       => io_req,
         io_resp      => io_resp,
         io_irq       => io_irq
@@ -677,10 +684,18 @@ begin
     m(2).motor_on <= '0'; -- disable memory access to GCR memory
     m(0).motor_sound_on <= m(0).motor_on;
     m(1).motor_sound_on <= m(1).motor_on;
-    
+    m(0).step(0)        <= via2_port_b_o(0) or not via2_port_b_t(0);
+    m(0).step(1)        <= via2_port_b_o(1) or not via2_port_b_t(1);
+    m(1).step(0)        <= via2_port_b_o(0) or not via2_port_b_t(0);
+    m(1).step(1)        <= via2_port_b_o(1) or not via2_port_b_t(1);
+    m(0).wd_stepper     <= '0';
+    m(1).wd_stepper     <= '0';
+    m(2).wd_stepper     <= '1';
+    m(0).stepper_en     <= m(0).motor_on;
+    m(1).stepper_en     <= m(1).motor_on;
+    m(2).stepper_en     <= '1';
+        
     mode         <= via2_cb2_i; -- don't care for 1581
-    step(0)      <= via2_port_b_o(0) or not via2_port_b_t(0); -- don't care for 1581
-    step(1)      <= via2_port_b_o(1) or not via2_port_b_t(1); -- don't care for 1581
     rate_ctrl(0) <= via2_port_b_o(5) or not via2_port_b_t(5); -- don't care for 1581
     rate_ctrl(1) <= via2_port_b_o(6) or not via2_port_b_t(6); -- don't care for 1581
     so_n         <= byte_ready or not mm.soe; -- soe will be '0' for 1581
@@ -698,6 +713,8 @@ begin
     -- Export
     motor_sound_on  <= mm.motor_sound_on;
     motor_on        <= mm.motor_on;
+    stepper_en      <= mm.stepper_en;
+    step            <= mm.step;
     side            <= mm.side;
     two_MHz         <= mm.two_MHz;
     power_led       <= mm.power_led;

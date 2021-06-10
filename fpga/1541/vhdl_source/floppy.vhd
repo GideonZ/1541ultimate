@@ -30,6 +30,7 @@ port (
         
     -- signals from MOS 6522 VIA
     motor_on        : in  std_logic;
+    stepper_en      : in  std_logic;
     mode            : in  std_logic;
     write_prot_n    : in  std_logic;
     side            : in  std_logic := '0';
@@ -38,7 +39,7 @@ port (
     byte_ready      : out std_logic;
     sync            : out std_logic;
 
-    track           : out std_logic_vector(6 downto 0);
+    track           : out unsigned(6 downto 0);
     track_is_0      : out std_logic;
     
     read_data       : out std_logic_vector(7 downto 0);
@@ -70,7 +71,7 @@ architecture structural of floppy is
     signal do_advance       : std_logic;
     signal track_start      : std_logic_vector(25 downto 0);
     signal max_offset       : std_logic_vector(13 downto 0);
-    signal track_i          : std_logic_vector(6 downto 0);
+    signal track_i          : unsigned(6 downto 0);
     signal bit_time         : unsigned(9 downto 0);
 begin
     en_hum  <= motor_on and not floppy_inserted;
@@ -98,6 +99,7 @@ begin
         do_track_out    => do_track_out,
         
         motor_on        => motor_on,
+        stepper_en      => stepper_en,
         sync            => sync,
         mode            => mode,
         write_prot_n    => write_prot_n,

@@ -31,7 +31,7 @@ port (
     stop_on_freeze  : out std_logic;
     drive_type      : out natural range 0 to 2;
     
-    track           : in  std_logic_vector(6 downto 0);
+    track           : in  unsigned(6 downto 0);
     side            : in  std_logic := '0';
     mode            : in  std_logic;
     motor_on        : in  std_logic );
@@ -109,8 +109,9 @@ begin
                 when c_drvreg_drivetype =>
                     io_resp.data(1 downto 0) <= drive_type_i;
                 when c_drvreg_track =>
-                    io_resp.data(6 downto 0) <= track(6 downto 0);
-                    io_resp.data(7) <= side;
+                    io_resp.data(6 downto 0) <= std_logic_vector(track(6 downto 0));
+                when c_drvreg_side =>
+                    io_resp.data(0) <= side;
                 when c_drvreg_status =>
                     io_resp.data(0) <= motor_on;
                     io_resp.data(1) <= not mode; -- mode is '0' when writing
