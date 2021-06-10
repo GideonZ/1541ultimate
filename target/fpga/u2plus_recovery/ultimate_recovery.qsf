@@ -392,6 +392,23 @@ set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to SLOT_ROMLn
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to SLOT_RSTn
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to SLOT_RWn
 
+set_global_assignment -name GENERATE_RBF_FILE ON
+set_global_assignment -name ON_CHIP_BITSTREAM_DECOMPRESSION ON
+set_global_assignment -name ENABLE_SIGNALTAP OFF
+
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SLOT_DATA[0]
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SLOT_DATA[1]
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SLOT_DATA[2]
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SLOT_DATA[3]
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SLOT_DATA[4]
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SLOT_DATA[5]
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SLOT_DATA[6]
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SLOT_DATA[7]
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IEC_ATN
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IEC_CLOCK
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IEC_DATA
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IEC_SRQ_IN
+
 set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
 set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
 set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
@@ -399,16 +416,9 @@ set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
 set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to SDRAM_DM
 set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to SDRAM_DQ
 
-set_global_assignment -name GENERATE_RBF_FILE ON
-set_global_assignment -name ON_CHIP_BITSTREAM_DECOMPRESSION ON
-set_global_assignment -name ENABLE_SIGNALTAP OFF
-set_global_assignment -name USE_SIGNALTAP_FILE stp1.stp
-set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
-
 set_global_assignment -name VHDL_FILE ../../../fpga/io/debug/vhdl_source/eth_debug_stream.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/acia/vhdl_source/acia6551.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/acia/vhdl_source/acia6551_pkg.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_bus_bridge2.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/lp_filter2.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/audio_type_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/generic_mixer.vhd
@@ -457,8 +467,8 @@ set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/c64/cia_timer.
 set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/c64/cia_registers.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/stepper.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/wd177x.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/c1581_drive.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/cpu_part_1581.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/mm_drive.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/mm_drive_cpu.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/c1541_timing.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy_stream.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy.vhd
@@ -468,12 +478,10 @@ set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy_mem.
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/c1541_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/gcr_encoder.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy_param_mem.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/c1541_drive.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy_sound.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/gcr2bin.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/gcr_codec.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/gcr_decoder.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/cpu_part_1541.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/drive_registers.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_io_regs_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_io_regs.vhd
@@ -532,6 +540,7 @@ set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/mem_bu
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_bus_arbiter_pri.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/mem_bus_arbiter_pri_32.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_bus_splitter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_bus_bridge2.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/oc_pusher/vhdl_source/oc_pusher.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/shifter.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/cpu6502.vhd
@@ -637,5 +646,6 @@ set_global_assignment -name VHDL_FILE ../../../fpga/altera/update_io.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/ddr2_ctrl.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/synchronizer_gzw.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/mem_io.vhd
-set_global_assignment -name SIGNALTAP_FILE stp1.stp
-set_global_assignment -name CDF_FILE Chain4.cdf
+
+set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
+
