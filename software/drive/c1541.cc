@@ -94,13 +94,14 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
     
     uint8_t *audio_address = (uint8_t *)(((uint32_t)registers[C1541_AUDIO_ADDR]) << 16);
     printf("C1541 Audio address: %p, loading... \n", audio_address);
-    if (fm->load_file("/flash", "sounds.bin", audio_address, 0x8000, NULL) != FR_OK) {
+    if (fm->load_file("/flash/roms", "sounds.bin", audio_address, 0x8000, NULL) != FR_OK) {
         memset(audio_address, 0, 0x4800);
     }
     drive_name = "Drive ";
     drive_name += letter;
 
     gcr_image = new GcrImage();
+    gcr_image_up_to_date = true;
     bin_image = new BinImage(drive_name.c_str(), 70); // Maximum size for .d71
     mfm_controller = new WD177x(regs + C1541_WD177X, regs, 1 + (letter - 'A'));
     gcr_ram_file = new FileRAM(gcr_image->gcr_data, GCRIMAGE_MAXSIZE, false); // How cool is this?!
@@ -747,7 +748,7 @@ void C1541 :: poll() // called under mutex
 		        // This causes a blank disk, which can be single or double sided to be saved as .g71.
 		        gcr_image->track_got_written_with_gcr(i);
 
-		        if((!(registers[C1541_STATUS] & DRVSTAT_MOTOR)) || (drive_track != tr)) {
+		        if((!(registers[C1541_STATUS] & DRVSTAT_WRITEBUSY)) || (drive_track != tr)) {
 					registers[C1541_DIRTYFLAGS + tr] = 0;
 					switch(disk_state) {
 					case e_gcr_disk:
@@ -773,7 +774,8 @@ void C1541 :: poll() // called under mutex
 		}
 	}
 
-	// Check dirty tracks from MFM engine. Note that for D81, there is no call back, sectors are written directly into .d81 file
+
+    // Check dirty tracks from MFM engine. Note that for D81, there is no call back, sectors are written directly into .d81 file
 	if (disk_state == e_gcr_disk) { // MFM tracks can only be written into GCR disks
         for(int side=0; side<2; side++) {
             uint32_t temp;
@@ -782,7 +784,7 @@ void C1541 :: poll() // called under mutex
                     temp = mfm_dirty_bits[side][tr >> 5];
                 }
                 if (temp & 1) {
-                    if((!(registers[C1541_STATUS] & DRVSTAT_MOTOR)) || (registers[C1541_TRACK] != tr)) {
+                    if((!(registers[C1541_STATUS] & DRVSTAT_WRITEBUSY)) || (registers[C1541_TRACK] != tr)) {
                         printf("--> MFM Track Dirty bit set %d/%d\n", side, tr);
                         // Clear dirty bit
                         mfm_dirty_bits[side][tr >> 5] &= ~(1 << (tr & 31));
@@ -809,6 +811,7 @@ void C1541 :: mfm_update_callback(void *obj, int physTrack, int physSide, MfmTra
 
         // Set MFM dirty bit
         drv->mfm_dirty_bits[physSide][physTrack >> 5] |= (1 << (physTrack & 31));
+        drv->registers[C1541_MAN_WRITE] = 1; // cause 2 sec timer to start
 
         int ti = physTrack + (physSide ? GCRIMAGE_FIRSTTRACKSIDE1 : 0);
         GcrTrack *gtr = &(drv->gcr_image->tracks[ti]);
@@ -867,7 +870,7 @@ FRESULT C1541 :: set_drive_type(t_drive_type drv)
     uint8_t cfg_id_file = (drv == e_dt_1571) ? CFG_C1541_ROMFILE1 : (drv == e_dt_1581) ? CFG_C1541_ROMFILE2 : CFG_C1541_ROMFILE0;
 
     uint32_t transferred = 0;
-    FRESULT res = fm->load_file("/flash", cfg->get_string(cfg_id_file), (uint8_t *)&memory_map[0x8000], 0x8000, &transferred);
+    FRESULT res = fm->load_file("/flash/roms", cfg->get_string(cfg_id_file), (uint8_t *)&memory_map[0x8000], 0x8000, &transferred);
     if (transferred == 0x4000) {
         memcpy((void *)(memory_map + 0xC000), (const void *)(memory_map + 0x8000), 0x4000); // copy 16K if the file was 16K
         transferred <<= 1;

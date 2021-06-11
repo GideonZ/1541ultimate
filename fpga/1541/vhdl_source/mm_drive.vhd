@@ -350,7 +350,8 @@ begin
     port map (
         clock           => clock,
         reset           => reset,
-                        
+        tick_1kHz       => tick_1kHz,
+
         io_req          => io_req_regs,
         io_resp         => io_resp_regs,
         

@@ -58,7 +58,8 @@ SRCS_CC	 =  u2p_init.cc \
 			keyboard_c64.cc \
 			disk_image.cc \
 			c1541.cc \
-			c1581.cc \
+			wd177x.cc \
+			mfmdisk.cc \
 			mystring.cc \
 			path.cc \
 			pattern.cc \

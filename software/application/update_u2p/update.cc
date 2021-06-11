@@ -38,13 +38,23 @@ extern uint32_t _ultimate_recovery_rbf_end;
 extern uint32_t _recovery_app_start;
 extern uint32_t _recovery_app_end;
 
-extern uint8_t _1581_bin_start;
 extern uint8_t _1541_bin_start;
+extern uint8_t _1571_bin_start;
+extern uint8_t _1581_bin_start;
 extern uint8_t _1541c_bin_start;
 extern uint8_t _1541_ii_bin_start;
 extern uint8_t _sounds_bin_start;
 
 static Screen *screen;
+
+static void create_dir(const char *name)
+{
+    FileManager *fm = FileManager :: getFileManager();
+    mstring dir("/flash/");
+    dir += name;
+    FRESULT fres = fm->create_dir(dir.c_str());
+    console_print(screen, "Creating dir: %s\n", FileSystem :: get_error_string(fres));
+}
 
 static void write_flash_file(const char *name, uint8_t *data, int length)
 {
@@ -114,11 +124,13 @@ void do_update(void)
         REMOTE_FLASHSELCK_0;
         REMOTE_FLASHSELCK_1;
 
-        write_flash_file("1581.rom", &_1581_bin_start, 0x8000);
-        write_flash_file("1541.rom", &_1541_bin_start, 0x4000);
-        write_flash_file("1541ii.rom", &_1541_ii_bin_start, 0x4000);
-        write_flash_file("1541c.rom", &_1541c_bin_start, 0x4000);
-        write_flash_file("sounds.bin", &_sounds_bin_start, 0x4800);
+        create_dir("roms");
+        write_flash_file("roms/1581.rom", &_1581_bin_start, 0x8000);
+        write_flash_file("roms/1571.rom", &_1571_bin_start, 0x8000);
+        write_flash_file("roms/1541.rom", &_1541_bin_start, 0x4000);
+//        write_flash_file("roms/1541ii.rom", &_1541_ii_bin_start, 0x4000);
+//        write_flash_file("roms/1541c.rom", &_1541c_bin_start, 0x4000);
+        write_flash_file("roms/sounds.bin", &_sounds_bin_start, 0x4800);
 
         Flash *flash2 = get_flash();
         flash2->protect_disable();

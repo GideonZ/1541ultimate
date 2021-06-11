@@ -11,7 +11,7 @@ package c1541_pkg is
     constant c_drvreg_inserted  : unsigned(3 downto 0) := X"4";
     constant c_drvreg_rammap    : unsigned(3 downto 0) := X"5";
     constant c_drvreg_side      : unsigned(3 downto 0) := X"6";
-    constant c_drvreg_dirtyirq  : unsigned(3 downto 0) := X"7";
+    constant c_drvreg_man_write : unsigned(3 downto 0) := X"7";
     constant c_drvreg_track     : unsigned(3 downto 0) := X"8";
     constant c_drvreg_status    : unsigned(3 downto 0) := X"9";
     constant c_drvreg_memmap    : unsigned(3 downto 0) := X"A";
