@@ -7,9 +7,11 @@
 #include "userinterface.h"
 #include "iomap.h"
 #include "subsys.h"
+#ifdef OS
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
+#endif
 #include "fs_errors_flags.h"
 #include "disk_image.h"
 

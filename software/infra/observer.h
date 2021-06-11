@@ -13,20 +13,18 @@
 #ifdef OS
 #include "FreeRTOS.h"
 #include "queue.h"
-#else
-    typedef void* QueueHandle_t;
 #endif
 
 class ObserverQueue {
-	QueueHandle_t queue;
+#ifdef OS
+    QueueHandle_t queue;
+#endif
 	const char *name;
 	int polls;
 public:
 	ObserverQueue(const char *n) : name(n) {
 #ifdef OS
 		queue = xQueueCreate(8, sizeof(void *));
-#else
-		queue = 0;
 #endif
 		polls = 0;
 	}
@@ -39,6 +37,7 @@ public:
 #ifdef OS
 		return xQueueSend(queue, &el, 5);
 #endif
+		return false;
 	}
 	void *waitForEvent(uint32_t ticks) {
 		polls++;

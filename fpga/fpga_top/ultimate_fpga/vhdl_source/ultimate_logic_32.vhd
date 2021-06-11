@@ -10,7 +10,7 @@ use work.dma_bus_pkg.all;
 
 entity ultimate_logic_32 is
 generic (
-	g_version		: unsigned(7 downto 0) := X"FF";
+	g_version		: unsigned(7 downto 0) := X"1B";
     g_simulation    : boolean := true;
     g_ultimate2plus : boolean := false;
     g_ultimate_64   : boolean := false;
@@ -407,7 +407,6 @@ architecture logic of ultimate_logic_32 is
     
     signal drive_sample_1   : signed(12 downto 0);
     signal drive_sample_2   : signed(12 downto 0);
-    signal drive_sample_3   : signed(12 downto 0);
     signal audio_tape_read  : signed(18 downto 0);
     signal audio_tape_write : signed(18 downto 0);
     signal sid_left         : signed(17 downto 0);
@@ -427,11 +426,6 @@ architecture logic of ultimate_logic_32 is
     signal clk_o_2          : std_logic := '1';
     signal data_o_2         : std_logic := '1';
     signal srq_o_2          : std_logic := '1';
-
-    signal atn_o_3          : std_logic := '1';
-    signal clk_o_3          : std_logic := '1';
-    signal data_o_3         : std_logic := '1';
-    signal srq_o_3          : std_logic := '1';
 
 	signal hw_atn_o		    : std_logic := '1';
 	signal hw_clk_o	        : std_logic := '1';
@@ -750,51 +744,6 @@ begin
         via1_ca2_i    <= via1_ca2_o    or not via1_ca2_t;
         via1_cb1_i    <= via1_cb1_o    or not via1_cb1_t;
     end generate;
-
---    r_drive_1581: if g_drive_1581 generate
---    begin
---        i_drive: entity work.c1581_drive
---        generic map (
---            g_big_endian => g_big_endian,
---            g_audio_tag  => c_tag_1581_audio_1,
---            g_floppy_tag => c_tag_1581_floppy_1,
---            g_cpu_tag    => c_tag_1581_cpu_1,
---            g_audio      => g_drive_sound,
---            g_ram_base   => X"0EB0000",
---            g_audio_base => X"0EC0000"
---        )
---        port map(
---            clock        => sys_clock,
---            reset        => sys_reset,
---            drive_stop   => c64_stopped,
---            tick_4MHz    => tick_4MHz,
---            tick_1KHz    => tick_1KHz,
---
---            io_req       => io_req_1581,
---            io_resp      => io_resp_1581,
---            io_irq       => sys_irq_1581,
---
---            mem_req      => mem_req_32_1581,
---            mem_resp     => mem_resp_32_1581,
---
---            atn_o        => atn_o_3,
---            atn_i        => atn_i,
---            clk_o        => clk_o_3,
---            clk_i        => clk_i,
---            data_o       => data_o_3,
---            data_i       => data_i,
---            fast_clk_o   => srq_o_3,
---            fast_clk_i   => srq_i,
---            
---            iec_reset_n  => iec_reset_i,
---            c64_reset_n  => c64_reset_in_n,
---            
---            act_led_n    => act_led3n,
---            power_led_n  => power_led3n,
---            motor_led_n  => open,
---            audio_sample => drive_sample_3
---        );
---    end generate;
 
     r_cart: if g_cartridge generate
         i_slot_srv: entity work.slot_server_v4
@@ -1357,10 +1306,10 @@ begin
         end if;  
     end process;
 
-    iec_atn_o    <= '0' when atn_o='0'  or atn_o_2='0'  or atn_o_3='0'  or hw_atn_o='0'  else '1';
-    iec_clock_o  <= '0' when clk_o='0'  or clk_o_2='0'  or clk_o_3='0'  or hw_clk_o='0'  else '1';
-    iec_data_o   <= '0' when data_o='0' or data_o_2='0' or data_o_3='0' or hw_data_o='0' else '1';
-    iec_srq_o    <= '0' when srq_o='0'  or srq_o_2='0'  or srq_o_3='0'  or hw_srq_o='0'  else '1';
+    iec_atn_o    <= '0' when atn_o='0'  or atn_o_2='0'  or hw_atn_o='0'  else '1';
+    iec_clock_o  <= '0' when clk_o='0'  or clk_o_2='0'  or hw_clk_o='0'  else '1';
+    iec_data_o   <= '0' when data_o='0' or data_o_2='0' or hw_data_o='0' else '1';
+    iec_srq_o    <= '0' when srq_o='0'  or srq_o_2='0'  or hw_srq_o='0'  else '1';
         
     MOTOR_LEDn  <= motor_led_n;
 	DISK_ACTn   <= disk_led_n;

@@ -79,7 +79,7 @@ typedef enum { e_dt_1541 = 0,
 #define C1541_INSERTED    4
 #define C1541_RAMMAP      5
 #define C1541_SIDE        6
-#define C1541_DIRTYIRQ    7
+#define C1541_MAN_WRITE   7
 #define C1541_TRACK       8
 #define C1541_STATUS      9
 #define C1541_MEM_ADDR   10
@@ -95,9 +95,9 @@ typedef enum { e_dt_1541 = 0,
 #define SENSOR_DARK  0
 #define SENSOR_LIGHT 1
 
-#define DRVSTAT_MOTOR   0x01
-#define DRVSTAT_WRITING 0x02
-
+#define DRVSTAT_MOTOR      0x01
+#define DRVSTAT_WRITING    0x02
+#define DRVSTAT_WRITEBUSY  0x04
 
 class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
 {

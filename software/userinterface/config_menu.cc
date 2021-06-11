@@ -89,7 +89,7 @@ void ConfigBrowserState :: change(void)
             browser->context(it->getValue() - it->definition->min);
             break;
         case CFG_TYPE_VALUE:
-        	if ((it->definition->max - it->definition->min) < 30) {
+        	if ((it->definition->max - it->definition->min) < 40) { // was 30, but days of the month then becomes an exception.. :-/
                 browser->context(it->getValue() - it->definition->min);
         	}
             break;
