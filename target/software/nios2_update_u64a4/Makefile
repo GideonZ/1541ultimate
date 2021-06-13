@@ -95,7 +95,7 @@ SRCS_ASMS = port_asm.S
 
 SRCS_6502 = 
 
-SRCS_BIN =  chars.bin 1581.bin 1571.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin
+SRCS_BIN =  chars.bin 1541.bin 1571.bin 1581.bin snds1541.bin snds1571.bin snds1581.bin
 
 SRCS_IEC = 
 

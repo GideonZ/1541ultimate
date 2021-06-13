@@ -59,16 +59,16 @@ architecture gideon of floppy_sound is
     signal voice1       : t_voice_state;
     signal serve_state  : t_serve_state;
     signal voice1_cnt   : unsigned(13 downto 0); -- max 16K
-    signal voice1_addr  : unsigned(14 downto 0);
+    signal voice1_addr  : unsigned(15 downto 0);
     signal voice2_cnt   : unsigned(13 downto 0); -- max 16K
-    signal mem_addr_i   : unsigned(14 downto 0);
+    signal mem_addr_i   : unsigned(15 downto 0);
 
     signal mem_rack     : std_logic;
     signal mem_dack     : std_logic;
 begin
     mem_req.tag         <= g_tag;
     mem_req.read_writen <= '1'; -- always read
-    mem_req.address     <= sound_base(25 downto 15) & mem_addr_i;
+    mem_req.address     <= sound_base(25 downto 16) & mem_addr_i;
     mem_req.data        <= X"00";
     mem_req.size        <= "00"; -- 1 byte at a time
     mem_rack <= '1' when mem_resp.rack_tag = g_tag else '0';
@@ -122,11 +122,11 @@ begin
             when serve_voice2 =>
                 if en_hum = '1' then
                     mem_req.request     <= '1';
-                    mem_addr_i <= motor_hum_addr(14 downto 0) + ("0" & voice2_cnt);
+                    mem_addr_i <= motor_hum_addr(15 downto 0) + ("00" & voice2_cnt);
                     serve_state <= wait_voice2;                    
                 elsif en_slip = '1' then
                     mem_req.request     <= '1';
-                    mem_addr_i <= flop_slip_addr(14 downto 0) + ("0" & voice2_cnt);
+                    mem_addr_i <= flop_slip_addr(15 downto 0) + ("00" & voice2_cnt);
                     serve_state <= wait_voice2;                    
                 else
                     motor_sample <= X"00";
