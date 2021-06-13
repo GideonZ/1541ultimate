@@ -41,9 +41,9 @@ extern uint32_t _recovery_app_end;
 extern uint8_t _1541_bin_start;
 extern uint8_t _1571_bin_start;
 extern uint8_t _1581_bin_start;
-extern uint8_t _1541c_bin_start;
-extern uint8_t _1541_ii_bin_start;
-extern uint8_t _sounds_bin_start;
+extern uint8_t _snds1541_bin_start;
+extern uint8_t _snds1571_bin_start;
+extern uint8_t _snds1581_bin_start;
 
 static Screen *screen;
 
@@ -128,9 +128,9 @@ void do_update(void)
         write_flash_file("roms/1581.rom", &_1581_bin_start, 0x8000);
         write_flash_file("roms/1571.rom", &_1571_bin_start, 0x8000);
         write_flash_file("roms/1541.rom", &_1541_bin_start, 0x4000);
-//        write_flash_file("roms/1541ii.rom", &_1541_ii_bin_start, 0x4000);
-//        write_flash_file("roms/1541c.rom", &_1541c_bin_start, 0x4000);
-        write_flash_file("roms/sounds.bin", &_sounds_bin_start, 0x4800);
+        write_flash_file("roms/snds1541.bin", &_snds1541_bin_start, 0xC000);
+        write_flash_file("roms/snds1571.bin", &_snds1571_bin_start, 0xC000);
+        write_flash_file("roms/snds1581.bin", &_snds1581_bin_start, 0xC000);
 
         Flash *flash2 = get_flash();
         flash2->protect_disable();
