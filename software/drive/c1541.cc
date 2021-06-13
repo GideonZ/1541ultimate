@@ -19,15 +19,6 @@
 #endif
 
 static const char *yes_no[] = { "No", "Yes" };
-static const char *ram_board[] = { "Off", "$8000-$BFFF (16K)",
-							 "$4000-$7FFF (16K)",
-							 "$4000-$BFFF (32K)",
-							 "$2000-$3FFF ( 8K)",
-							 "$2000-$7FFF (24K)",
-							 "$2000-$BFFF (40K)" };
-
-static t_1541_ram ram_modes[] = { e_ram_none, e_ram_8000_BFFF, e_ram_4000_7FFF, e_ram_4000_BFFF,
-						   e_ram_2000_3FFF, e_ram_2000_7FFF, e_ram_2000_BFFF };
 
 static const char *drive_types[] = { "1541", "1571", "1581" };
 
@@ -43,6 +34,7 @@ static const char *drive_types[] = { "1541", "1571", "1581" };
 #define CFG_C1541_STOPFREEZ 0xDB
 #define CFG_C1541_ROMFILE1  0xDC
 #define CFG_C1541_ROMFILE2  0xDD
+#define CFG_C1541_MIRRORS   0xDE
 
 const struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_POWERED,   CFG_TYPE_ENUM,   "Drive",                      "%s", en_dis,     0,  1, 1 },
@@ -51,7 +43,8 @@ const struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_ROMFILE0,  CFG_TYPE_STRING, "ROM for 1541 mode",          "%s", NULL,       1, 32, (int)"1541.rom" },
     { CFG_C1541_ROMFILE1,  CFG_TYPE_STRING, "ROM for 1571 mode",          "%s", NULL,       1, 32, (int)"1571.rom" },
     { CFG_C1541_ROMFILE2,  CFG_TYPE_STRING, "ROM for 1581 mode",          "%s", NULL,       1, 32, (int)"1581.rom" },
-    { CFG_C1541_RAMBOARD,  CFG_TYPE_ENUM,   "RAM BOard",                  "%s", ram_board,  0,  6, 0 },
+//    { CFG_C1541_RAMBOARD,  CFG_TYPE_ENUM,   "RAM BOard",                  "%s", ram_board,  0,  6, 0 },
+    { CFG_C1541_MIRRORS,   CFG_TYPE_ENUM,   "RAM/VIA Mirrors (1541 only)","%s", yes_no,     0,  1, 1 },
     { CFG_C1541_SWAPDELAY, CFG_TYPE_VALUE,  "Disk swap delay",            "%d00 ms", NULL,  1, 10, 1 },
     { CFG_C1541_C64RESET,  CFG_TYPE_ENUM,   "Resets when C64 resets",     "%s", yes_no,     0,  1, 1 },
     { CFG_C1541_STOPFREEZ, CFG_TYPE_ENUM,   "Freezes in menu",            "%s", yes_no,     0,  1, 1 },
@@ -84,7 +77,7 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
 
     char buffer[32];
     local_config_definitions[0].def = (letter == 'A')?1:0;   // drive A is default 8, drive B is default 9, etc
-    local_config_definitions[1].def = 8 + int(letter - 'A'); // only drive A is by default ON.
+    local_config_definitions[2].def = 8 + int(letter - 'A'); // only drive A is by default ON.
         
     uint32_t mem_address = ((uint32_t)registers[C1541_MEM_ADDR]) << 16;
     memory_map = (volatile uint8_t *)mem_address;
@@ -113,7 +106,6 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
 
     disk_state = e_no_disk;
     iec_address = 8 + int(letter - 'A');
-    ram = e_ram_none;
     large_rom = false;
     dummy_track = NULL;
 
@@ -160,8 +152,9 @@ void C1541 :: effectuate_settings(void)
 	}
 
 	printf("Effectuate 1541 settings:\n");
-    ram = ram_modes[cfg->get_value(CFG_C1541_RAMBOARD)];
-    set_ram(ram);
+
+	uint8_t mir = cfg->get_value(CFG_C1541_MIRRORS);
+    registers[C1541_RAMMAP] = mir ? 0x80 : 0x00;
 
     set_hw_address(cfg->get_value(CFG_C1541_BUS_ID));
     set_sw_address(cfg->get_value(CFG_C1541_BUS_ID));
@@ -201,11 +194,10 @@ void C1541 :: init(void)
     registers[C1541_INSERTED] = 0;
     disk_state = e_no_disk;
 
+    mfm_controller->init();
+    effectuate_settings();
+
 	xTaskCreate( C1541 :: run, (const char *)(this->drive_name.c_str()), configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &taskHandle );
-
-	mfm_controller->init();
-
-	effectuate_settings();
 }
 
 
@@ -348,18 +340,6 @@ int  C1541 :: get_current_iec_address(void)
 */
 	return iec_address;
 }
-
-void C1541 :: set_ram(t_1541_ram ram_setting)
-{
-    ram = ram_setting;
-    
-    uint8_t bank_is_ram = uint8_t(ram);
-    if(large_rom) {
-        bank_is_ram &= 0x0F;
-    }
-    printf("1541 ram banking: %b\n", bank_is_ram);
-    registers[C1541_RAMMAP] = bank_is_ram;
-}    
 
 bool C1541 :: check_if_save_needed(SubsysCommand *cmd)
 {
