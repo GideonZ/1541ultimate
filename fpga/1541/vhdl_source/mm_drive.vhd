@@ -82,6 +82,8 @@ architecture structural of mm_drive is
     signal do_track_out     : std_logic;
     signal do_track_in      : std_logic;
     signal do_head_bang     : std_logic;
+    signal do_snd_insert    : std_logic;
+    signal do_snd_remove    : std_logic;
     signal en_hum           : std_logic;
     signal en_slip          : std_logic;
 
@@ -311,17 +313,20 @@ begin
         i_snd: entity work.floppy_sound
         generic map (
             g_tag          => g_audio_tag,
-            sound_base     => g_audio_base(27 downto 16),
+            sound_base     => g_audio_base(26 downto 15),
             motor_hum_addr => X"0000",
             flop_slip_addr => X"1200",
             track_in_addr  => X"2400",
             track_out_addr => X"2C00",
             head_bang_addr => X"3480",
-            
+            insert_addr    => X"3D00",
+            remove_addr    => X"5E80",
             motor_len      => 4410,
-            track_in_len   => X"0800",  -- ~100 ms;
-            track_out_len  => X"0880",  -- ~100 ms;
-            head_bang_len  => X"0880" ) -- ~100 ms;
+            track_in_len   => X"0800",  -- ~100 ms
+            track_out_len  => X"0880",  -- ~100 ms
+            head_bang_len  => X"0880",  -- ~100 ms
+            insert_len     => X"2180",  -- ~380 ms
+            remove_len     => X"2180" ) -- ~380 ms
         
         port map (
             clock           => clock,
@@ -332,6 +337,8 @@ begin
             do_trk_out      => do_track_out,
             do_trk_in       => do_track_in,
             do_head_bang    => do_head_bang,
+            do_insert       => do_snd_insert,
+            do_remove       => do_snd_remove,
             en_hum          => en_hum,
             en_slip         => en_slip,
             
@@ -367,6 +374,8 @@ begin
         bank_is_ram     => bank_is_ram,
         stop_on_freeze  => stop_on_freeze,
         drive_type      => drive_type,
+        do_snd_insert   => do_snd_insert,
+        do_snd_remove   => do_snd_remove,
 
         track           => track,
         side            => side,

@@ -684,7 +684,7 @@ begin
             g_disk_tag      => c_tag_1541_disk_2,
             g_audio_tag     => c_tag_1541_audio_2,
             g_audio         => g_drive_sound,
-            g_audio_base    => X"0EC0000",
+            g_audio_base    => X"0EC8000",
             g_ram_base      => X"0ED0000" )
         port map (
             clock           => sys_clock,

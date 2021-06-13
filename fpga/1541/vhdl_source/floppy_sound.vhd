@@ -8,17 +8,20 @@ use work.mem_bus_pkg.all;
 entity floppy_sound is
 generic (
     g_tag          : std_logic_vector(7 downto 0) := X"04";
-    sound_base     : unsigned(27 downto 16) := X"103";
+    sound_base     : unsigned(26 downto 15) := X"103";
     motor_hum_addr : unsigned(15 downto 0) := X"0000";
     flop_slip_addr : unsigned(15 downto 0) := X"1200";
     track_in_addr  : unsigned(15 downto 0) := X"2400";
     track_out_addr : unsigned(15 downto 0) := X"2E00";
     head_bang_addr : unsigned(15 downto 0) := X"3800";
-    
+    insert_addr    : unsigned(15 downto 0) := X"4000";
+    remove_addr    : unsigned(15 downto 0) := X"6000";
     motor_len      : integer := 4410;
-    track_in_len   : unsigned(15 downto 0) := X"089D"; -- 100 ms;
-    track_out_len  : unsigned(15 downto 0) := X"089D"; -- 100 ms;
-    head_bang_len  : unsigned(15 downto 0) := X"089D" ); -- 100 ms;
+    track_in_len   : unsigned(15 downto 0) := X"089D"; -- 100 ms
+    track_out_len  : unsigned(15 downto 0) := X"089D"; -- 100 ms
+    head_bang_len  : unsigned(15 downto 0) := X"089D"; -- 100 ms
+    insert_len     : unsigned(15 downto 0) := X"2000"; -- 400 ms
+    remove_len     : unsigned(15 downto 0) := X"2000" ); -- 400 ms
 
 port (
     clock           : in  std_logic;
@@ -29,6 +32,8 @@ port (
     do_trk_out      : in  std_logic;
     do_trk_in       : in  std_logic;
     do_head_bang    : in  std_logic;
+    do_insert       : in  std_logic := '0';
+    do_remove       : in  std_logic := '0';
     en_hum          : in  std_logic;
     en_slip         : in  std_logic;
     
@@ -54,16 +59,16 @@ architecture gideon of floppy_sound is
     signal voice1       : t_voice_state;
     signal serve_state  : t_serve_state;
     signal voice1_cnt   : unsigned(13 downto 0); -- max 16K
-    signal voice1_addr  : unsigned(15 downto 0);
+    signal voice1_addr  : unsigned(14 downto 0);
     signal voice2_cnt   : unsigned(13 downto 0); -- max 16K
-    signal mem_addr_i   : unsigned(15 downto 0);
+    signal mem_addr_i   : unsigned(14 downto 0);
 
     signal mem_rack     : std_logic;
     signal mem_dack     : std_logic;
 begin
     mem_req.tag         <= g_tag;
     mem_req.read_writen <= '1'; -- always read
-    mem_req.address     <= sound_base(25 downto 16) & mem_addr_i;
+    mem_req.address     <= sound_base(25 downto 15) & mem_addr_i;
     mem_req.data        <= X"00";
     mem_req.size        <= "00"; -- 1 byte at a time
     mem_rack <= '1' when mem_resp.rack_tag = g_tag else '0';
@@ -117,11 +122,11 @@ begin
             when serve_voice2 =>
                 if en_hum = '1' then
                     mem_req.request     <= '1';
-                    mem_addr_i <= motor_hum_addr(15 downto 0) + ("00" & voice2_cnt);
+                    mem_addr_i <= motor_hum_addr(14 downto 0) + ("0" & voice2_cnt);
                     serve_state <= wait_voice2;                    
                 elsif en_slip = '1' then
                     mem_req.request     <= '1';
-                    mem_addr_i <= flop_slip_addr(15 downto 0) + ("00" & voice2_cnt);
+                    mem_addr_i <= flop_slip_addr(14 downto 0) + ("0" & voice2_cnt);
                     serve_state <= wait_voice2;                    
                 else
                     motor_sample <= X"00";
@@ -161,6 +166,17 @@ begin
                 voice1_cnt   <= head_bang_len(voice1_cnt'range);
                 voice1_addr  <= head_bang_addr(voice1_addr'range);
             end if;
+            if do_insert = '1' then
+                voice1       <= play;
+                voice1_cnt   <= insert_len(voice1_cnt'range);
+                voice1_addr  <= insert_addr(voice1_addr'range);
+            end if;
+            if do_remove = '1' then
+                voice1       <= play;
+                voice1_cnt   <= remove_len(voice1_cnt'range);
+                voice1_addr  <= remove_addr(voice1_addr'range);
+            end if;
+
             
             if reset='1' then
                 mem_req.request <= '0';
