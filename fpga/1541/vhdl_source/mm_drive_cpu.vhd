@@ -125,6 +125,8 @@ architecture structural of mm_drive_cpu is
     signal cia_cnt_i        : std_logic;
     signal cia_cnt_t        : std_logic;
     signal cia_irq          : std_logic;
+    signal cia_pc_o         : std_logic;
+    signal cia_flag_i       : std_logic;
 
     signal via1_port_a_o    : std_logic_vector(7 downto 0);
     signal via1_port_a_t    : std_logic_vector(7 downto 0);
@@ -179,6 +181,7 @@ architecture structural of mm_drive_cpu is
         -- internal
         cia_port_a_i    : std_logic_vector(7 downto 0);
         cia_port_b_i    : std_logic_vector(7 downto 0);
+        cia_flag_i      : std_logic;
         via1_port_a_i   : std_logic_vector(7 downto 0);
         via1_cb1_i      : std_logic;
         via1_ca2_i      : std_logic;
@@ -367,8 +370,8 @@ begin
         cnt_o       => cia_cnt_o,
         cnt_t       => cia_cnt_t,
         
-        pc_o        => open,
-        flag_i      => atn_i, -- active low ATN in
+        pc_o        => cia_pc_o,
+        flag_i      => mm.cia_flag_i,
         irq         => cia_irq );
 
     cpu_irqn   <= not(via1_irq or via2_irq or cia_irq);
@@ -523,6 +526,7 @@ begin
     m(0).soe          <= via2_ca2_i;
     m(0).cia_port_a_i <= cia_port_a_o or not cia_port_a_t; -- don't care
     m(0).cia_port_b_i <= cia_port_b_o or not cia_port_b_t; -- don't care
+    m(0).cia_flag_i   <= '1';
     m(0).power_led    <= '1';
     
     -- Control signals 1571
@@ -531,7 +535,7 @@ begin
     m(1).fast_ser_dir <= m(1).via1_port_a_i(1);
     m(1).soe          <= via2_ca2_i;
     m(1).cia_port_a_i <= cia_port_a_o or not cia_port_a_t; -- CIA ports are not used
-    m(1).cia_port_b_i <= cia_port_b_o or not cia_port_b_t; -- CIA ports are not used
+    -- m(1).cia_port_b_i <= cia_port_b_o or not cia_port_b_t; -- CIA ports are not used
     m(1).power_led    <= '1';
     
     -- Control signals 1581
@@ -566,6 +570,8 @@ begin
         m(2).cia_port_a_i(1) <= (cia_port_a_o(1) or not cia_port_a_t(1)) and rdy_n;
         m(2).cia_port_a_i(0) <= (cia_port_a_o(0) or not cia_port_a_t(0)); 
     
+        m(2).cia_flag_i   <= atn_i;  -- active low atn signal
+
         m(2).data_o <= (not my_data_out and not (atn_ack and not atn_i) and my_fast_data_out) or not power;
         m(2).clk_o  <= not power or not clock_out;
         m(2).atn_o  <= '1';
@@ -668,13 +674,16 @@ begin
         via1_port_b_i(1) <= '1'; -- data out  - PUP
         via1_port_b_i(0) <= not (data_i and not my_data_out and (not (atn_ack xor (not atn_i))));
 
-        -- Parallel Cable not defined for 1571
-        m(1).par_data_o       <= X"FF";
-        m(1).par_data_t       <= X"00";
-        m(1).par_hsout_o      <= '1';
-        m(1).par_hsout_t      <= '0';
+        -- Parallel Cable connects to 6526 port B on a 1571
+        m(1).cia_port_b_i     <= par_data_i;
+        m(1).cia_flag_i       <= par_hsin_i;
+        
+        m(1).par_data_o       <= cia_port_b_o;
+        m(1).par_data_t       <= cia_port_b_t;
+        m(1).par_hsout_o      <= cia_pc_o;
+        m(1).par_hsout_t      <= '1'; -- PC is always output
         m(1).par_hsin_o       <= '1';
-        m(1).par_hsin_t       <= '0';
+        m(1).par_hsin_t       <= '0'; -- FLAG is always input
     end block;
 
     m(0).act_led  <= not (via2_port_b_o(3) or not via2_port_b_t(3)) or not power;
