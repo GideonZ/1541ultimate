@@ -22,6 +22,8 @@ static const char *yes_no[] = { "No", "Yes" };
 
 static const char *drive_types[] = { "1541", "1571", "1581", "Unknown" };
 
+const char *geosCopyProt[] = { "none", "Gaps", "Track 36", "Both" };
+
 #define CFG_C1541_POWERED   0xD1
 #define CFG_C1541_BUS_ID    0xD2
 #define CFG_C1541_RAMBOARD  0xD5
@@ -36,6 +38,7 @@ static const char *drive_types[] = { "1541", "1571", "1581", "Unknown" };
 #define CFG_C1541_ROMFILE1  0xE2
 #define CFG_C1541_ROMFILE2  0xE3
 #define CFG_C1541_EXITMOUNT 0xE4
+#define CFG_C1541_GEOSGAPS  0xDF
 
 const struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_POWERED,   CFG_TYPE_ENUM,   "Drive",                      "%s", en_dis,     0,  1, 1 },
@@ -50,6 +53,7 @@ const struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_STOPFREEZ, CFG_TYPE_ENUM,   "Freezes in menu",            "%s", yes_no,     0,  1, 1 },
     { CFG_C1541_GCRALIGN,  CFG_TYPE_ENUM,   "GCR Save Align Tracks",      "%s", yes_no,     0,  1, 1 },
     { CFG_C1541_EXITMOUNT, CFG_TYPE_ENUM,   "Leave Menu on Mount",        "%s", yes_no,     0,  1, 1 },
+    { CFG_C1541_GEOSGAPS,  CFG_TYPE_ENUM,   "D64 Geos Copy Protection",   "%s", geosCopyProt, 0,  3, 0 },
     
 //    { CFG_C1541_LASTMOUNT, CFG_TYPE_ENUM,   "Load last mounted disk",  "%s", yes_no,     0,  1, 0 },
     { 0xFF, CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
@@ -567,7 +571,7 @@ void C1541 :: mount_d64(bool protect, File *file, int mode)
         printf("Loading...");
         bin_image->load(file);
         printf("Converting...");
-        gcr_image->convert_disk_bin2gcr(bin_image, NULL);
+        gcr_image->convert_disk_bin2gcr(bin_image, NULL, cfg->get_value(CFG_C1541_GEOSGAPS));
         printf("Inserting...");
         insert_disk(protect, gcr_image);
         printf("Done\n");

@@ -80,7 +80,7 @@ class GcrImage
     static uint8_t *wrap(uint8_t **, uint8_t *, uint8_t *, int, uint8_t *buffer, uint8_t shift);
     static uint8_t *find_sync(uint8_t *, uint8_t *, uint8_t *);
     uint8_t *convert_block_bin2gcr(uint8_t *bin, uint8_t *gcr, int len);
-    uint8_t *convert_track_bin2gcr(uint8_t logical_track_1b, int region, uint8_t *bin, uint8_t *gcr, uint8_t *errors, int errors_size);
+    uint8_t *convert_track_bin2gcr(uint8_t logical_track_1b, int region, uint8_t *bin, uint8_t *gcr, uint8_t *errors, int errors_size, int geosgaps);
     int   find_track_start(int);
     void add_blank_tracks(uint8_t *);
 public:
@@ -92,7 +92,7 @@ public:
     bool load(File *f);
     bool save(File *f, bool, UserInterface *ui);
     bool write_track(int, File *f, bool);
-    void convert_disk_bin2gcr(BinImage *bin_image, UserInterface *ui);
+    void convert_disk_bin2gcr(BinImage *bin_image, UserInterface *ui, int geoscopyprot);
     int  convert_disk_gcr2bin(BinImage *bin_image, UserInterface *ui);
     int  convert_track_gcr2bin(int track, BinImage *bin_image, int &errors);
     void invalidate(void);
