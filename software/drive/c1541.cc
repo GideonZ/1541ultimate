@@ -493,10 +493,7 @@ void C1541 :: map_gcr_image_to_mfm(void)
             mtr->offsetInFile = (int)gcr - (int)gcr_image->gcr_data;
             mtr->offsetInFile += MFM_TRACK_HEADER_SIZE;
 
-//            if (gtr->speed_zone == SPEED_ZONE_MFM) {
-            if (memcmp(gcr, "MFM\0", 4) == 0) {
-                gcr += 4;
-
+            if (gtr->track_is_mfm) {
                 // explicit copy of parameters
                 mtr->numSectors = *gcr;
                 gcr += 2;

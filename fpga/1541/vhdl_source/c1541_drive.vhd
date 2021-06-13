@@ -23,6 +23,7 @@ port (
     -- timing
     tick_16MHz      : in  std_logic;
     tick_4MHz       : in  std_logic;
+    tick_1kHz       : in  std_logic;
 
     -- slave port on io bus
     io_req          : in  t_io_req;
@@ -306,6 +307,7 @@ begin
     port map (
         clock           => clock,
         reset           => reset,
+        tick_1kHz       => tick_1kHz,
                         
         io_req          => io_req_regs,
         io_resp         => io_resp_regs,
