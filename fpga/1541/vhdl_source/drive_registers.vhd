@@ -31,7 +31,9 @@ port (
     bank_is_ram     : out std_logic_vector(7 downto 1);
     stop_on_freeze  : out std_logic;
     drive_type      : out natural range 0 to 2;
-    
+    do_snd_insert   : out std_logic;
+    do_snd_remove   : out std_logic;
+
     track           : in  unsigned(6 downto 0);
     side            : in  std_logic := '0';
     mode            : in  std_logic;
@@ -60,7 +62,9 @@ begin
         if rising_edge(clock) then
             io_resp <= c_io_resp_init;
             manual_write <= '0';
-
+            do_snd_insert <= '0';
+            do_snd_remove <= '0';
+            
             if io_req.write='1' then
                 io_resp.ack <= '1';
                 case io_req.address(3 downto 0) is
@@ -85,6 +89,9 @@ begin
                     force_ready_i <= io_req.data(1);
                 when c_drvreg_drivetype =>
                     drive_type_i <= io_req.data(1 downto 0);
+                when c_drvreg_sound =>
+                    do_snd_insert <= io_req.data(0);
+                    do_snd_remove <= io_req.data(1);
                 when others =>
                     null;
                 end case;
@@ -112,6 +119,7 @@ begin
                     io_resp.data(1) <= force_ready_i;
                 when c_drvreg_drivetype =>
                     io_resp.data(1 downto 0) <= drive_type_i;
+                    io_resp.data(7) <= g_audio_base(15);
                 when c_drvreg_track =>
                     io_resp.data(6 downto 0) <= std_logic_vector(track(6 downto 0));
                 when c_drvreg_side =>

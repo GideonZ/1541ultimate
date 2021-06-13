@@ -18,6 +18,7 @@ package c1541_pkg is
     constant c_drvreg_audiomap  : unsigned(3 downto 0) := X"B";
     constant c_drvreg_diskchng  : unsigned(3 downto 0) := X"C";
     constant c_drvreg_drivetype : unsigned(3 downto 0) := X"D";
+    constant c_drvreg_sound     : unsigned(3 downto 0) := X"E";
 
     constant c_drv_dirty_base   : unsigned(15 downto 0) := X"0800";
     constant c_drv_param_base   : unsigned(15 downto 0) := X"1000";

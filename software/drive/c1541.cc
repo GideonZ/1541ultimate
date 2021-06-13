@@ -88,15 +88,14 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
         
     uint32_t mem_address = ((uint32_t)registers[C1541_MEM_ADDR]) << 16;
     memory_map = (volatile uint8_t *)mem_address;
-    printf("C1541 Memory address: %p\n", mem_address);
 
-    write_skip = 0;
-    
-    uint8_t *audio_address = (uint8_t *)(((uint32_t)registers[C1541_AUDIO_ADDR]) << 16);
-    printf("C1541 Audio address: %p, loading... \n", audio_address);
-    if (fm->load_file("/flash/roms", "sounds.bin", audio_address, 0x8000, NULL) != FR_OK) {
-        memset(audio_address, 0, 0x4800);
+    audio_address = (uint8_t *)(((uint32_t)registers[C1541_AUDIO_ADDR]) << 16);
+    if (registers[C1541_DRIVETYPE] & 0x80) {
+        audio_address += 0x8000;
     }
+    printf("C1541 Memory address: %p\n", mem_address);
+    printf("C1541 Audio address: %p\n", audio_address);
+
     drive_name = "Drive ";
     drive_name += letter;
 
@@ -105,6 +104,7 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
     bin_image = new BinImage(drive_name.c_str(), 70); // Maximum size for .d71
     mfm_controller = new WD177x(regs + C1541_WD177X, regs, 1 + (letter - 'A'));
     gcr_ram_file = new FileRAM(gcr_image->gcr_data, GCRIMAGE_MAXSIZE, false); // How cool is this?!
+    write_skip = 0;
     
     sprintf(buffer, "1541 Drive %c Settings", letter);    
     register_store((uint32_t)regs, buffer, local_config_definitions);
@@ -397,6 +397,9 @@ bool C1541 :: save_if_needed(SubsysCommand *cmd)
 
 void C1541 :: remove_disk(void)
 {
+    if (registers[C1541_INSERTED]) {
+        registers[C1541_SOUNDS] = 2; // play remove sound
+    }
     if(mount_file) {
         fm->fclose(mount_file);
     }
@@ -471,6 +474,7 @@ void C1541 :: insert_disk(bool protect, GcrImage *image)
 
     registers[C1541_INSERTED] = 1;
     registers[C1541_DISKCHANGE] = 1;
+    registers[C1541_SOUNDS] = 1; // play insert sound
     disk_state = e_alien_image;
     last_mounted_drive = this;
 }
@@ -542,6 +546,7 @@ void C1541 :: mount_d64(bool protect, File *file, int mode)
 	    mfm_controller->format_d81();
 	    mfm_controller->set_file(mount_file);
 	    mfm_controller->set_track_update_callback(NULL, NULL);
+	    registers[C1541_SOUNDS] = 1; // play insert sound
 	    registers[C1541_SENSOR] = (protect) ? SENSOR_DARK : SENSOR_LIGHT;
 	    registers[C1541_INSERTED] = 1;
 	    registers[C1541_DISKCHANGE] = 1;
@@ -864,15 +869,22 @@ FRESULT C1541 :: set_drive_type(t_drive_type drv)
     }
 
     registers[C1541_DRIVETYPE] = (uint8_t)drv;
-    uint8_t cfg_id_file = (drv == e_dt_1571) ? CFG_C1541_ROMFILE1 : (drv == e_dt_1581) ? CFG_C1541_ROMFILE2 : CFG_C1541_ROMFILE0;
 
+    // Load the correct sound bank...
+    const char *sounds =  (drv == e_dt_1571) ? "snds1571.bin" : (drv == e_dt_1581) ? "snds1581.bin" : "snds1541.bin";
+    if (fm->load_file("/flash/roms", sounds, audio_address, 0x8000, NULL) != FR_OK) {
+        // Silence upon failure to load
+        memset(audio_address, 0, 0x8000);
+    }
+
+    // Load the correct ROM...
+    uint8_t cfg_id_file = (drv == e_dt_1571) ? CFG_C1541_ROMFILE1 : (drv == e_dt_1581) ? CFG_C1541_ROMFILE2 : CFG_C1541_ROMFILE0;
     uint32_t transferred = 0;
     FRESULT res = fm->load_file("/flash/roms", cfg->get_string(cfg_id_file), (uint8_t *)&memory_map[0x8000], 0x8000, &transferred);
     if (transferred == 0x4000) {
         memcpy((void *)(memory_map + 0xC000), (const void *)(memory_map + 0x8000), 0x4000); // copy 16K if the file was 16K
         transferred <<= 1;
     }
-    // Also load the correct sound bank... TODO
 
     drive_reset(1);
     current_drive_type = drv;

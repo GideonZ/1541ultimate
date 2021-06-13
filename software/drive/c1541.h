@@ -86,6 +86,7 @@ typedef enum { e_dt_1541 = 0,
 #define C1541_AUDIO_ADDR 11
 #define C1541_DISKCHANGE 12
 #define C1541_DRIVETYPE  13
+#define C1541_SOUNDS     14
 
 #define C1541_DIRTYFLAGS    0x0800
 #define C1541_PARAM_RAM     0x1000
@@ -104,6 +105,7 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     static C1541* last_mounted_drive;
     volatile uint8_t *memory_map;
     volatile uint8_t *registers;
+    uint8_t *audio_address;
 
     t_cfg_definition *local_config_definitions;
     mstring drive_name;
