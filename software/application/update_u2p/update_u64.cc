@@ -114,7 +114,7 @@ static void write_flash_file(const char *name, uint8_t *data, int length)
     FRESULT fres = fm->fopen("/flash", name, FA_CREATE_ALWAYS | FA_WRITE, &f);
     if (fres == FR_OK) {
         fres = f->write(data, length, &dummy);
-        console_print(screen, "Writing %s to Flash: %s\n", name, FileSystem :: get_error_string(fres));
+        console_print(screen, "Writing %s to /flash: %s\n", name, FileSystem :: get_error_string(fres));
         fm->fclose(f);
     }
 }
