@@ -46,18 +46,6 @@
 
 #define FLOPPY_LOAD_DOS    0x2131
 
-#define RUNCODE_NO_UNFREEZE  0x01
-// #define RUNCODE_NO_CHECKSAVE 0x02
-// #define RUNCODE_MOUNT_BUFFER 0x10
-
-typedef enum { e_ram_none      = 0x00,
-               e_ram_8000_BFFF = 0x30,
-               e_ram_4000_7FFF = 0x0C,
-               e_ram_4000_BFFF = 0x3C,
-               e_ram_2000_3FFF = 0x02,
-               e_ram_2000_7FFF = 0x0E,
-               e_ram_2000_BFFF = 0x3E } t_1541_ram;
-
 typedef enum { e_no_disk,
                e_alien_image,
                e_disk_file_closed,
@@ -116,7 +104,6 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     int iec_address;
     char drive_letter;
     bool large_rom;
-    t_1541_ram  ram;
 	int write_skip;
 
 	uint32_t mfm_dirty_bits[2][3]; // two sides, max 96 tracks each.
@@ -155,7 +142,6 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     void drive_reset(uint8_t doit);
     void set_hw_address(int addr);
     void set_sw_address(int addr);
-    void set_ram(t_1541_ram ram);
     void remove_disk(void);
     void insert_disk(bool protect, GcrImage *image);
     void unlink(void);
