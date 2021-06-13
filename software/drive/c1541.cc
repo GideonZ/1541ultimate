@@ -872,9 +872,9 @@ FRESULT C1541 :: set_drive_type(t_drive_type drv)
 
     // Load the correct sound bank...
     const char *sounds =  (drv == e_dt_1571) ? "snds1571.bin" : (drv == e_dt_1581) ? "snds1581.bin" : "snds1541.bin";
-    if (fm->load_file("/flash/roms", sounds, audio_address, 0x8000, NULL) != FR_OK) {
+    if (fm->load_file("/flash/roms", sounds, audio_address, 0xC000, NULL) != FR_OK) {
         // Silence upon failure to load
-        memset(audio_address, 0, 0x8000);
+        memset(audio_address, 0, 0xC000);
     }
 
     // Load the correct ROM...

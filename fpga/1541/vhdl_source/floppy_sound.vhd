@@ -8,7 +8,7 @@ use work.mem_bus_pkg.all;
 entity floppy_sound is
 generic (
     g_tag          : std_logic_vector(7 downto 0) := X"04";
-    sound_base     : unsigned(26 downto 15) := X"103";
+    sound_base     : unsigned(27 downto 16) := X"103";
     motor_hum_addr : unsigned(15 downto 0) := X"0000";
     flop_slip_addr : unsigned(15 downto 0) := X"1200";
     track_in_addr  : unsigned(15 downto 0) := X"2400";
