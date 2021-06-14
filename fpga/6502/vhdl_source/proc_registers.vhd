@@ -84,8 +84,8 @@ architecture gideon of proc_registers is
     signal pc_carry_d   : std_logic;
     signal branch_flag  : std_logic;
     signal reg_out      : std_logic_vector(7 downto 0);
-    signal vect         : std_logic_vector(3 downto 0) := "1111";
     signal dreg_zero    : std_logic;
+    signal so_d         : std_logic;
     
     alias  C_flag : std_logic is p_reg_i(0);
     alias  Z_flag : std_logic is p_reg_i(1);
@@ -122,7 +122,8 @@ begin
 	                I_flag <= '1';
 	            end if;
 	
-	            if so_n='0' then -- only 1 bit is affected, so no syncronization needed
+                so_d <= so_n;        
+                if so_n='0' and so_d = '1' then -- assumed that so_n is synchronous
 	                V_flag <= '1';
 	            end if;                
 	
