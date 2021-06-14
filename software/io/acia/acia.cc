@@ -22,6 +22,12 @@ Acia :: Acia(uint32_t base)
     buffer = NULL;
 }
 
+static uint8_t acia_irq(void *context)
+{
+    Acia *a = (Acia *)context;
+    return a->IrqHandler();
+}
+
 int Acia :: init(uint16_t base, bool useNMI, QueueHandle_t controlQueue, QueueHandle_t dataQueue, DataBuffer *buffer)
 {
     if (!(getFpgaCapabilities() & CAPAB_ACIA)) {
@@ -55,13 +61,14 @@ int Acia :: init(uint16_t base, bool useNMI, QueueHandle_t controlQueue, QueueHa
     //regs->tx_tail = regs->tx_head; // clear upstream buffer
     //regs->rx_head = regs->rx_tail; // clear downstream buffer
     regs->enable = enable;
-    ioWrite8(ITU_IRQ_HIGH_EN, ioRead8(ITU_IRQ_HIGH_EN) | 1);
+    install_high_irq(0, acia_irq, this);
 
     return 0;
 }
 
 void Acia :: deinit(void)
 {
+    deinstall_high_irq(0);
     ioWrite8(ITU_IRQ_HIGH_EN, ioRead8(ITU_IRQ_HIGH_EN) & ~1);
     if (!(getFpgaCapabilities() & CAPAB_ACIA)) {
         return;
@@ -197,12 +204,3 @@ void Acia :: SetRxRate(uint8_t value)
 
 // Global Static
 Acia acia(ACIA_BASE);
-
-extern "C" {
-
-uint8_t acia_irq(void)
-{
-    return acia.IrqHandler();
-}
-
-}
