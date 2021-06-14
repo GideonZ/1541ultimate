@@ -119,13 +119,23 @@ int TaskMenu :: select(void)
     if (!a) {
         return 1;
     }
-    subContext = new TaskSubMenu(user_interface, state, cat, item_index);
+    int first_selectable_sub_item = 0;
+    IndexedList <Action *> *actionlist = cat->getActions();
+    int num_el = actionlist->get_elements();
+    for(int i=0; i < num_el; i++) {
+        Action *a = (*actionlist)[i];
+        if(a->isEnabled()) {
+            first_selectable_sub_item = i;
+            break;
+        }
+    }
+    subContext = new TaskSubMenu(user_interface, state, cat, first_selectable_sub_item, item_index);
     subContext->init(window, keyb);
     user_interface->activate_uiobject(subContext);
     return 0;
 }
 
-TaskSubMenu :: TaskSubMenu(UserInterface *ui, TreeBrowserState *state, TaskCategory *cat, int item) : ContextMenu(ui, state, 0, item), category(cat)
+TaskSubMenu :: TaskSubMenu(UserInterface *ui, TreeBrowserState *state, TaskCategory *cat, int first, int item) : ContextMenu(ui, state, first, item), category(cat)
 {
 
 }
@@ -133,15 +143,20 @@ TaskSubMenu :: TaskSubMenu(UserInterface *ui, TreeBrowserState *state, TaskCateg
 int TaskSubMenu :: get_items(void)
 {
     int itms = 0;
+    int enabled = 0;
     IndexedList<Action *> *catActions = category->getActions();
     for (int j=0; j < catActions->get_elements(); j++) {
         Action *a = (*catActions)[j];
         if (a->isShown()) {
             appendAction(a);
+            itms++;
             if (a->isEnabled()) {
-                itms++;
+                enabled++;
             }
         }
+    }
+    if (enabled == 0) {
+        return 0;
     }
     return itms;
 }
