@@ -99,9 +99,9 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
     gcr_ram_file = new FileRAM(gcr_image->gcr_data, GCRIMAGE_MAXSIZE, false); // How cool is this?!
     write_skip = 0;
     
-    sprintf(buffer, "1541 Drive %c Settings", letter);    
+    sprintf(buffer, "Drive %c Settings", letter);
     register_store((uint32_t)regs, buffer, local_config_definitions);
-    sprintf(buffer, "1541 Drive %c", drive_letter);
+    sprintf(buffer, "Drive %c", drive_letter);
     taskItemCategory = TasksCollection :: getCategory(buffer, SORT_ORDER_DRIVES + drive_letter - 'A');
 
     disk_state = e_no_disk;
