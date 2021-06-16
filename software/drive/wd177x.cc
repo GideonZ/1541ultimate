@@ -50,6 +50,7 @@ static uint8_t my_irq(void *context)
 void WD177x :: init(void)
 {
     printf("Init WD177x...\n");
+    wd177x->command = 3; // enable index pulse; inverted
     
 	// xTaskCreate( WD177x :: run, "WD177x", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &taskHandle );
     // Runs from the drive task now
