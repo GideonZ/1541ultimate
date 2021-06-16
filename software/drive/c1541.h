@@ -154,7 +154,6 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     bool are_mfm_dirty_bits_set();
     void map_gcr_image_to_mfm(void);
     static void mfm_update_callback(void *obj, int pt, int ps, MfmTrack *tr);
-
     FRESULT set_drive_type(t_drive_type drv);
     FRESULT change_drive_type(t_drive_type drv,  UserInterface *ui);
 

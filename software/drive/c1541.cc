@@ -34,17 +34,16 @@ static const char *drive_types[] = { "1541", "1571", "1581" };
 #define CFG_C1541_STOPFREEZ 0xDB
 #define CFG_C1541_ROMFILE1  0xDC
 #define CFG_C1541_ROMFILE2  0xDD
-#define CFG_C1541_MIRRORS   0xDE
+#define CFG_C1541_EXTRARAM  0xDE
 
 const struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_POWERED,   CFG_TYPE_ENUM,   "Drive",                      "%s", en_dis,     0,  1, 1 },
     { CFG_C1541_DRIVETYPE, CFG_TYPE_ENUM,   "Drive Type",                 "%s", drive_types,0,  2, 0 },
     { CFG_C1541_BUS_ID,    CFG_TYPE_VALUE,  "Drive Bus ID",               "%d", NULL,       8, 11, 8 },
-    { CFG_C1541_ROMFILE0,  CFG_TYPE_STRING, "ROM for 1541 mode",          "%s", NULL,       1, 32, (int)"1541.rom" },
-    { CFG_C1541_ROMFILE1,  CFG_TYPE_STRING, "ROM for 1571 mode",          "%s", NULL,       1, 32, (int)"1571.rom" },
-    { CFG_C1541_ROMFILE2,  CFG_TYPE_STRING, "ROM for 1581 mode",          "%s", NULL,       1, 32, (int)"1581.rom" },
-//    { CFG_C1541_RAMBOARD,  CFG_TYPE_ENUM,   "RAM BOard",                  "%s", ram_board,  0,  6, 0 },
-    { CFG_C1541_MIRRORS,   CFG_TYPE_ENUM,   "RAM/VIA Mirrors (1541 only)","%s", yes_no,     0,  1, 1 },
+    { CFG_C1541_ROMFILE0,  CFG_TYPE_STRING, "ROM for 1541 mode",          "%s", (const char **)C1541 :: list_roms,  1, 32, (int)"1541.rom" },
+    { CFG_C1541_ROMFILE1,  CFG_TYPE_STRING, "ROM for 1571 mode",          "%s", (const char **)C1541 :: list_roms,  1, 32, (int)"1571.rom" },
+    { CFG_C1541_ROMFILE2,  CFG_TYPE_STRING, "ROM for 1581 mode",          "%s", (const char **)C1541 :: list_roms,  1, 32, (int)"1581.rom" },
+    { CFG_C1541_EXTRARAM,  CFG_TYPE_ENUM,   "Extra RAM",                  "%s", en_dis,     0,  1, 0 },
     { CFG_C1541_SWAPDELAY, CFG_TYPE_VALUE,  "Disk swap delay",            "%d00 ms", NULL,  1, 10, 1 },
     { CFG_C1541_C64RESET,  CFG_TYPE_ENUM,   "Resets when C64 resets",     "%s", yes_no,     0,  1, 1 },
     { CFG_C1541_STOPFREEZ, CFG_TYPE_ENUM,   "Freezes in menu",            "%s", yes_no,     0,  1, 1 },
@@ -153,7 +152,7 @@ void C1541 :: effectuate_settings(void)
 
 	printf("Effectuate 1541 settings:\n");
 
-	uint8_t mir = cfg->get_value(CFG_C1541_MIRRORS);
+	uint8_t mir = cfg->get_value(CFG_C1541_EXTRARAM);
     registers[C1541_RAMMAP] = mir ? 0x80 : 0x00;
 
     set_hw_address(cfg->get_value(CFG_C1541_BUS_ID));
