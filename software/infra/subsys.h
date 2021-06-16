@@ -98,6 +98,7 @@ public:
 		functionID(act->function),
 		mode(act->mode),
 		direct_call(act->func),
+		actionName(act->getName()),
 		path(p), filename(fn) {
 		buffer = NULL;
 		bufferSize = 0;
@@ -110,6 +111,7 @@ public:
 		functionID(funcID),
 		mode(mode),
 		direct_call(0),
+		actionName(""),
 		path(p), filename(fn) {
 		buffer = NULL;
 		bufferSize = 0;
@@ -122,6 +124,7 @@ public:
 		functionID(funcID),
 		mode(mode),
 		direct_call(0),
+        actionName(""),
 		path(""), filename(""),
 		buffer(buffer),
 		bufferSize(bufferSize) {
@@ -167,6 +170,7 @@ public:
 	actionFunction_t direct_call;
 	mstring        path;
 	mstring		   filename;
+	mstring        actionName;
 	void 		  *buffer;
 	int            bufferSize;
 };

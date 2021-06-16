@@ -413,7 +413,7 @@ void ConfigStore :: dump(void)
     for(int n = 0; n < items.get_elements(); n++) {
     	i = items[n];
         printf("ID %02x: ", i->definition->id);
-        if(i->definition->type == CFG_TYPE_STRING) {
+        if ((i->definition->type == CFG_TYPE_STRING) || (i->definition->type ==CFG_TYPE_STRFUNC)) {
             printf("%s = '%s'\n", i->definition->item_text, i->string);
         } else if(i->definition->type == CFG_TYPE_ENUM) {
             printf("%s = %s\n", i->definition->item_text, i->definition->items[i->value]);
@@ -461,7 +461,7 @@ ConfigItem :: ConfigItem(ConfigStore *s, t_cfg_definition *d)
 	hook = NULL;
 	definition = d;
     store = s;
-    if ((d->type == CFG_TYPE_STRING)||(d->type == CFG_TYPE_INFO)) {
+    if ((d->type == CFG_TYPE_STRING)||(d->type == CFG_TYPE_INFO)||(d->type == CFG_TYPE_STRFUNC)) {
         string = new char[d->max+1];
     } else {
         string = NULL;
@@ -478,7 +478,7 @@ ConfigItem :: ~ConfigItem()
 
 void ConfigItem :: reset(void)
 {
-    if (definition->type == CFG_TYPE_STRING) {
+    if ((definition->type == CFG_TYPE_STRING) || (definition->type == CFG_TYPE_STRFUNC)) {
         strncpy(string, (char *)definition->def, definition->max);
         value = 0;
     } else {
@@ -509,6 +509,7 @@ void ConfigItem :: unpack(uint8_t *buffer, int len)
                 value = definition->def;
             break;
         case CFG_TYPE_STRING:
+        case CFG_TYPE_STRFUNC:
             if(field > definition->max)
                 field = definition->max;
             strncpy(string, (char *)buffer, field);
@@ -553,6 +554,7 @@ int ConfigItem :: pack(uint8_t *buffer, int len)
             *(buffer++) = (uint8_t)(value >> 0);
             return 4;
         case CFG_TYPE_STRING:
+        case CFG_TYPE_STRFUNC:
 //            printf("String %s = %s\n", definition->item_text, string);
             if(2+strlen(string) > len) {
                 printf("String doesn't fit.\n");
@@ -588,6 +590,7 @@ const char *ConfigItem :: get_display_string(char *buffer, int width)
             sprintf(buf, definition->item_format, definition->items[value]);
             break;
         case CFG_TYPE_STRING:
+        case CFG_TYPE_STRFUNC:
         case CFG_TYPE_INFO:
             sprintf(buf, definition->item_format, string);
             break;
@@ -656,7 +659,7 @@ void ConfigItem :: setString(const char *s)
     if(this->string) {
         strncpy(this->string, s, this->definition->max);
         this->string[this->definition->max - 1] = 0;
-        if (definition->type == CFG_TYPE_STRING) {
+        if ((definition->type == CFG_TYPE_STRING) || (definition->type == CFG_TYPE_STRFUNC)) {
             setChanged();
         }
     }

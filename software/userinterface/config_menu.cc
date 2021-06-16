@@ -88,6 +88,9 @@ void ConfigBrowserState :: change(void)
         case CFG_TYPE_ENUM:
             browser->context(it->getValue() - it->definition->min);
             break;
+        case CFG_TYPE_STRFUNC:
+            browser->context(0);
+            break;
         case CFG_TYPE_VALUE:
         	if ((it->definition->max - it->definition->min) < 40) { // was 30, but days of the month then becomes an exception.. :-/
                 browser->context(it->getValue() - it->definition->min);
@@ -106,7 +109,7 @@ void ConfigBrowserState :: change(void)
         case CFG_TYPE_FUNC:
             refresh = true;
             func = (t_cfg_func)(it->definition->items);
-            func(browser->user_interface);
+            func(browser->user_interface, it);
             break;
         default:
             break;

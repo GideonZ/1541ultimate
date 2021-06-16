@@ -43,6 +43,25 @@ class BrowsableConfigItem : public Browsable
 		return 0;
 	}
 
+    static int updateString(SubsysCommand *cmd) {
+        ConfigItem *item = (ConfigItem *)(cmd->functionID);
+        printf("Update String: %s\n", cmd->actionName.c_str());
+        item->setString(cmd->actionName.c_str());
+        return 0;
+    }
+
+    static int requestString(SubsysCommand *cmd) {
+        ConfigItem *item = (ConfigItem *)(cmd->functionID);
+        char buffer[36];
+        strncpy(buffer, item->getString(), 32);
+        buffer[32] = 0;
+        if (cmd->user_interface) {
+            if (cmd->user_interface->string_box(cmd->actionName.c_str(), buffer, 32)) {
+                item->setString(buffer);
+            }
+        }
+        return 0;
+    }
 public:
 	BrowsableConfigItem(ConfigItem *i) {
 		item = i;
@@ -57,31 +76,34 @@ public:
 		item->get_display_string(buffer, width);
 	}
 
-	static int contextSelect(SubsysCommand *cmd) {
-		ConfigItem *it = (ConfigItem *)cmd->functionID;
-		printf("ContextSelect of item %s, set value to %d.\n", it->get_item_name(), cmd->mode);
-		it->setValue(cmd->mode);
-		return 0;
-	}
-
-	void fetch_context_items(IndexedList<Action *>&items) {
+	void fetch_context_items(IndexedList<Action *>&actions) {
 		static char buf[32];
 		int i,ret = 0;
+	    t_cfg_strfunc func;
+	    IndexedList<char *> strings(8, NULL);
 
 		switch(item->definition->type) {
 			case CFG_TYPE_VALUE:
-				printf("CFG_TYPE_VALUE\n");
 				for(i=item->definition->min;i<=item->definition->max;i++) {
 					sprintf(buf, item->definition->item_format, i);
-					items.append(new Action(buf, BrowsableConfigItem :: contextSelect, (int)item, i));
+					actions.append(new Action(buf, updateItem, (int)item, i));
 				}
 				break;
 			case CFG_TYPE_ENUM:
 				for(i=item->definition->min;i<=item->definition->max;i++) {
 					sprintf(buf, item->definition->item_format, item->definition->items[i]);
-					items.append(new Action(buf, updateItem, (int)item, i));
+					actions.append(new Action(buf, updateItem, (int)item, i));
 				}
 				break;
+			case CFG_TYPE_STRFUNC: // drop down type
+	            func = (t_cfg_strfunc)(item->definition->items);
+	            func(item, strings);
+	            for(int i=0;i<strings.get_elements();i++) {
+	                actions.append(new Action(strings[i], updateString, (int)item, 0));
+	                delete strings[i];
+	            }
+	            actions.append(new Action("Enter Manually", requestString, (int)item, 0));
+			    break;
 			default:
 				printf("Item not contextable\n");
 		}

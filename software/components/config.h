@@ -26,16 +26,16 @@
 #include "indexed_list.h"
 #include "mystring.h"
 
-#define CFG_TYPE_VALUE  0x01
-#define CFG_TYPE_ENUM   0x02
-#define CFG_TYPE_STRING 0x03
-#define CFG_TYPE_FUNC   0x04
-#define CFG_TYPE_SEP    0x05
-#define CFG_TYPE_INFO   0x06
-#define CFG_TYPE_END    0xFF
+#define CFG_TYPE_VALUE   0x01
+#define CFG_TYPE_ENUM    0x02
+#define CFG_TYPE_STRING  0x03
+#define CFG_TYPE_FUNC    0x04
+#define CFG_TYPE_SEP     0x05
+#define CFG_TYPE_INFO    0x06
+#define CFG_TYPE_STRFUNC 0x07
+#define CFG_TYPE_END     0xFF
 
 class UserInterface;
-typedef void (*t_cfg_func)(UserInterface *);
 
 struct t_cfg_definition
 {
@@ -52,7 +52,11 @@ class ConfigPage;
 class ConfigStore;
 class ConfigurableObject;
 class ConfigItem;
+class Action;
+
 typedef int (*t_change_hook)(ConfigItem *);
+typedef void (*t_cfg_func)(UserInterface *, ConfigItem *);
+typedef void (*t_cfg_strfunc)(ConfigItem *, IndexedList<char *> &strings);
 
 class ConfigSetting
 {
