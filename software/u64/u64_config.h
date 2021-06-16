@@ -112,7 +112,7 @@ public:
     static void fix_splits(uint8_t *base, uint8_t *mask, uint8_t *split);
 
     bool SidAutoConfig(int count, t_sid_definition *requested);
-    static void show_sid_addr(UserInterface *intf);
+    static void show_sid_addr(UserInterface *intf, ConfigItem *it);
 
     volatile uint8_t *access_socket_pre(int socket);
     void access_socket_post(int socket);

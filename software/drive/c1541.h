@@ -180,6 +180,8 @@ public:
     void drive_power(bool on);
     bool get_drive_power();
 
+    static void list_roms(ConfigItem *it, IndexedList<char *>& strings);
+
     // Called from user interface thread?  Is this allowed at all? -> no no, the interface thread should
     // issue a subsys command.
     //void swap_disk(void);

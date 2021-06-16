@@ -40,9 +40,9 @@ const struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_POWERED,   CFG_TYPE_ENUM,   "Drive",                      "%s", en_dis,     0,  1, 1 },
     { CFG_C1541_DRIVETYPE, CFG_TYPE_ENUM,   "Drive Type",                 "%s", drive_types,0,  2, 0 },
     { CFG_C1541_BUS_ID,    CFG_TYPE_VALUE,  "Drive Bus ID",               "%d", NULL,       8, 11, 8 },
-    { CFG_C1541_ROMFILE0,  CFG_TYPE_STRING, "ROM for 1541 mode",          "%s", (const char **)C1541 :: list_roms,  1, 32, (int)"1541.rom" },
-    { CFG_C1541_ROMFILE1,  CFG_TYPE_STRING, "ROM for 1571 mode",          "%s", (const char **)C1541 :: list_roms,  1, 32, (int)"1571.rom" },
-    { CFG_C1541_ROMFILE2,  CFG_TYPE_STRING, "ROM for 1581 mode",          "%s", (const char **)C1541 :: list_roms,  1, 32, (int)"1581.rom" },
+    { CFG_C1541_ROMFILE0,  CFG_TYPE_STRFUNC,"ROM for 1541 mode",          "%s", (const char **)C1541 :: list_roms,  1, 32, (int)"1541.rom" },
+    { CFG_C1541_ROMFILE1,  CFG_TYPE_STRFUNC,"ROM for 1571 mode",          "%s", (const char **)C1541 :: list_roms,  1, 32, (int)"1571.rom" },
+    { CFG_C1541_ROMFILE2,  CFG_TYPE_STRFUNC,"ROM for 1581 mode",          "%s", (const char **)C1541 :: list_roms,  1, 32, (int)"1581.rom" },
     { CFG_C1541_EXTRARAM,  CFG_TYPE_ENUM,   "Extra RAM",                  "%s", en_dis,     0,  1, 0 },
     { CFG_C1541_SWAPDELAY, CFG_TYPE_VALUE,  "Disk swap delay",            "%d00 ms", NULL,  1, 10, 1 },
     { CFG_C1541_C64RESET,  CFG_TYPE_ENUM,   "Resets when C64 resets",     "%s", yes_no,     0,  1, 1 },
@@ -53,7 +53,6 @@ const struct t_cfg_definition c1541_config[] = {
     { 0xFF, CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
-//extern uint8_t _sounds_bin_start;
 
 //--------------------------------------------------------------
 // C1541 Drive Class
@@ -1082,3 +1081,28 @@ bool C1541 :: save_disk_to_file(SubsysCommand *cmd)
 	}
     return false;
 }
+
+void C1541 :: list_roms(ConfigItem *it, IndexedList<char *>& strings)
+{
+    Path p;
+    p.cd("/flash/roms");
+    IndexedList<FileInfo *>infos(16, NULL);
+    FileManager *fm = FileManager :: getFileManager();
+    FRESULT fres = fm->get_directory(&p, infos, NULL);
+    if (fres != FR_OK) {
+        return;
+    }
+
+    // Now convert suitable filenames into actions, which fall through to SET_ROM in this subsys
+    // Quite a detour, but making use of the existing infrastructure. How to pass the filename?!
+    for(int i=0;i<infos.get_elements();i++) {
+        FileInfo *inf = infos[i];
+        if ((inf->size == 16384) || (inf->size == 32768)) {
+            char *s = new char[1+strlen(inf->lfname)];
+            strcpy(s, inf->lfname);
+            strings.append(s);
+        }
+        delete inf;
+    }
+}
+
