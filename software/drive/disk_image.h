@@ -104,7 +104,7 @@ public:
     friend class BinImage;
     friend class C1541;
     static int convert_gcr_track_to_bin(uint8_t *gcr, int trackNumber, int trackLength,
-    		int maxSector, uint8_t *bin, uint8_t *status);
+    		int maxSector, uint8_t *bin, uint8_t *status, int statusLength);
 };
 
 #define BINIMAGE_MAXTRACKS 80

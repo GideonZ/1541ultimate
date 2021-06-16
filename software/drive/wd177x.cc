@@ -117,7 +117,7 @@ void WD177x :: run(void *a)
 
 BaseType_t WD177x :: check_queue(t_wd177x_cmd& cmd)
 {
-    return xQueueReceive(cmdQueue, &cmd, 200);
+    return xQueueReceive(cmdQueue, &cmd, 50);
 }
 
 void WD177x :: task()
