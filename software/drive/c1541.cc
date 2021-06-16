@@ -683,6 +683,10 @@ void C1541 :: task(void)
 {
 	t_wd177x_cmd mfmCommand;
 	while(1) {
+	    if ((registers[C1541_POWER] & 1) == 0) {
+	        vTaskDelay(300);
+	        continue;
+	    }
 	    BaseType_t hasCommand = mfm_controller->check_queue(mfmCommand);
 	    if(lock(drive_name.c_str())) {
 	        if (hasCommand == pdTRUE) {
@@ -709,20 +713,22 @@ void C1541 :: poll() // called under mutex
         mount_file = NULL;
     }
 
-	// Check Dirty flags from GCR write engine
+    drive_track = registers[C1541_TRACK] >> 1;
+    if (registers[C1541_SIDE]) {
+        drive_track += 64;
+    }
+
+    // Check Dirty flags from GCR write engine
 	if((registers[C1541_DIRTYFLAGS] & 0x80)||(write_skip)) {
 		if(!write_skip) {
 			registers[C1541_DIRTYFLAGS] = 0x80;  // clear flag once we didn't skip anything anymore
 		}
 		write_skip = 0;
 		written = 0;
+
 		for(int i=0; i < GCRIMAGE_MAXHDRTRACKS; i++) {
 		    tr = (i >= GCRIMAGE_FIRSTTRACKSIDE1) ? i + 44 : i; // side 1 tracks 0x80 - ...
 		    tr >>= 1;
-		    drive_track = registers[C1541_TRACK] >> 1;
-		    if (registers[C1541_SIDE]) {
-		        drive_track += 64;
-		    }
 		    if(registers[C1541_DIRTYFLAGS + tr] & 0x01) {
 		        // in case a 1571 writes to side 1, the disk image is switched to double sided.
 		        // This causes a blank disk, which can be single or double sided to be saved as .g71.
