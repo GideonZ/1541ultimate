@@ -127,6 +127,8 @@ architecture behavioral of wd177x is
     signal step_time        : unsigned(4 downto 0);
     signal step_busy        : std_logic;
     signal index_out        : std_logic;
+    signal index_enable     : std_logic := '0';
+    signal index_polarity   : std_logic := '0';
 begin
     mem_rack  <= '1' when mem_resp.rack_tag = g_tag else '0';
     mem_dack  <= '1' when mem_resp.dack_tag = g_tag else '0';
@@ -141,8 +143,8 @@ begin
     process(status, index_out, command)
     begin
         status_idx <= status;
-        if command(7) = '0' then -- Type I command
-            status_idx(1) <= not index_out;
+        if command(7) = '0' and index_enable = '1' then -- Type I command
+            status_idx(1) <= index_out xor index_polarity;
         end if;
     end process;
 
@@ -196,6 +198,13 @@ begin
             if io_req.write = '1' then
                 io_resp.ack <= '1';
                 case v_addr is
+                when X"0" =>
+                    index_enable <= io_req.data(0);
+                    index_polarity <= io_req.data(1);
+
+                when X"1" =>
+                    track <= io_req.data;
+                
                 when X"4" =>
                     status <= status and not io_req.data;
 
