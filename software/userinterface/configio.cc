@@ -43,11 +43,9 @@ void ConfigIO :: create_task_items(void)
 void ConfigIO :: update_task_items(bool writablePath, Path *path)
 {
     if (writablePath) {
-        myActions.savecfg  ->enable();
         myActions.savefile ->enable();
         myActions.save_dbg ->enable();
     } else {
-        myActions.savecfg  ->disable();
         myActions.savefile ->disable();
         myActions.save_dbg ->disable();
     }
