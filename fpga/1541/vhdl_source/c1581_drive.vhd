@@ -10,7 +10,7 @@ entity c1581_drive is
 generic (
     g_big_endian    : boolean;
     g_audio_tag     : std_logic_vector(7 downto 0) := X"01";
-    g_floppy_tag    : std_logic_vector(7 downto 0) := X"02";
+    g_disk_tag      : std_logic_vector(7 downto 0) := X"02";
     g_cpu_tag       : std_logic_vector(7 downto 0) := X"04";
     g_audio         : boolean := true;
     g_audio_base    : unsigned(27 downto 0) := X"0030000";
@@ -85,6 +85,10 @@ architecture structural of c1581_drive is
     
     signal io_req_regs      : t_io_req;
     signal io_resp_regs     : t_io_resp;
+    signal io_req_dirty     : t_io_req;
+    signal io_resp_dirty    : t_io_resp;
+    signal io_req_param     : t_io_req;
+    signal io_resp_param    : t_io_resp;
     signal io_req_wd        : t_io_req;
     signal io_resp_wd       : t_io_resp;
 
@@ -102,21 +106,40 @@ architecture structural of c1581_drive is
 	signal led_intensity	: unsigned(1 downto 0);
 begin        
     -- IO bus split
-    i_split: entity work.io_bus_splitter
+    i_splitter: entity work.io_bus_splitter
     generic map (
-        g_range_lo => 12,
+        g_range_lo => 11,
         g_range_hi => 12,
-        g_ports    => 2
+        g_ports    => 4
     )
     port map(
         clock      => clock,
         req        => io_req,
         resp       => io_resp,
         reqs(0)    => io_req_regs,
-        reqs(1)    => io_req_wd,
+        reqs(1)    => io_req_dirty,
+        reqs(2)    => io_req_param,
+        reqs(3)    => io_req_wd,
         resps(0)   => io_resp_regs,
-        resps(1)   => io_resp_wd
+        resps(1)   => io_resp_dirty,
+        resps(2)   => io_resp_param,
+        resps(3)   => io_resp_wd
     );
+
+    i_dummy_dirty: entity work.io_dummy
+    port map (
+        clock   => clock,
+        io_req  => io_req_dirty,
+        io_resp => io_resp_dirty
+    );
+    
+    i_dummy_param: entity work.io_dummy
+    port map (
+        clock   => clock,
+        io_req  => io_req_param,
+        io_resp => io_resp_param
+    );
+
     
     i_timing: entity work.c1541_timing
     port map (
@@ -141,7 +164,7 @@ begin
     i_cpu: entity work.cpu_part_1581
     generic map (
         g_cpu_tag      => g_cpu_tag,
-        g_disk_tag     => g_floppy_tag,
+        g_disk_tag     => g_disk_tag,
         g_ram_base     => g_ram_base )
     port map (
         clock       => clock,
