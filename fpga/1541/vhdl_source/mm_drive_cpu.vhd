@@ -47,8 +47,8 @@ port (
     debug_valid     : out std_logic;
 
     -- Configuration
-    via_mirroring   : in  std_logic := '0';
-
+    extra_ram       : in  std_logic := '0';
+    
     -- memory interface
     mem_req_cpu     : out t_mem_req;
     mem_resp_cpu    : in  t_mem_resp;
@@ -161,7 +161,8 @@ architecture structural of mm_drive_cpu is
     signal cpu_clk_en       : std_logic;
     signal cpu_rising       : std_logic;
     type   t_mem_state  is (idle, newcycle, extcycle);
-    signal mem_state    : t_mem_state;
+    signal mem_state        : t_mem_state;
+    signal ext_sel          : std_logic;
 
     -- "old" style signals
     signal mem_request     : std_logic;
@@ -177,6 +178,7 @@ architecture structural of mm_drive_cpu is
         via2_sel        : std_logic;
         wd_sel          : std_logic;
         cia_sel         : std_logic;
+        open_sel        : std_logic;
 
         -- internal
         cia_port_a_i    : std_logic_vector(7 downto 0);
@@ -433,13 +435,18 @@ begin
                     else -- writing to rom -> ignore
                         mem_state  <= idle;
                     end if;
-                else
-                   -- The lower 32K is not fully decoded; but for now, we simply assume everything is RAM!
-                    if via_mirroring = '1' then
-                        mem_addr(14 downto 13) <= "00";
+                elsif ext_sel = '1' then -- RAM ONLY!
+                    if extra_ram = '0' then
+                        if (drive_type = 0) or (drive_type = 1) then
+                            mem_addr(14 downto 11) <= "0000"; -- 2K RAM
+                        else
+                            mem_addr(14 downto 13) <= "00"; -- 8K RAM 
+                        end if;    
                     end if;
                     mem_request <= '1';
                     mem_state <= extcycle;
+                else
+                    mem_state <= idle;
                 end if;
             
             when extcycle =>
@@ -486,14 +493,16 @@ begin
     process(mm.via1_sel, mm.via2_sel, mm.cia_sel, mm.wd_sel, ext_rdata, via1_data, via2_data, cia_data, wd_data)
         variable rdata : std_logic_vector(7 downto 0);
     begin
+        ext_sel <= '0';
         rdata := X"FF";
         if mm.via1_sel = '1' then  rdata := rdata and via1_data;  end if;
         if mm.via2_sel = '1' then  rdata := rdata and via2_data;  end if;
         if mm.cia_sel  = '1' then  rdata := rdata and cia_data;   end if;
         if mm.wd_sel   = '1' then  rdata := rdata and wd_data;    end if;
         -- "else"
-        if mm.via1_sel = '0' and mm.via2_sel = '0' and mm.cia_sel = '0' and mm.wd_sel = '0' then
+        if mm.via1_sel = '0' and mm.via2_sel = '0' and mm.cia_sel = '0' and mm.wd_sel = '0' and mm.open_sel = '0' then
             rdata := rdata and ext_rdata;
+            ext_sel <= '1';
         end if;
         cpu_rdata <= rdata;
     end process;
@@ -501,20 +510,23 @@ begin
     -- DRIVE SPECIFICS
 
     -- Address decoding 1541
-    m(0).via1_sel <= '1' when cpu_addr(12 downto 10)="110" and cpu_addr(15)='0' and (via_mirroring='1' or cpu_addr(14 downto 13)="00") else '0';
-    m(0).via2_sel <= '1' when cpu_addr(12 downto 10)="111" and cpu_addr(15)='0' and (via_mirroring='1' or cpu_addr(14 downto 13)="00") else '0';
+    m(0).via1_sel <= '1' when cpu_addr(12 downto 10)="110" and cpu_addr(15)='0' and (extra_ram='0' or cpu_addr(14 downto 13)="00") else '0';
+    m(0).via2_sel <= '1' when cpu_addr(12 downto 10)="111" and cpu_addr(15)='0' and (extra_ram='0' or cpu_addr(14 downto 13)="00") else '0';
+    m(0).open_sel <= '1' when (cpu_addr(12) xor cpu_addr(11)) = '1' and cpu_addr(15) = '0' and extra_ram = '0' else '0';
     m(0).cia_sel  <= '0';
     m(0).wd_sel   <= '0';
     
     -- Address decoding 1571
     m(1).via1_sel <= '1' when cpu_addr(15 downto 10)="000110" else '0';
     m(1).via2_sel <= '1' when cpu_addr(15 downto 10)="000111" else '0';
+    m(1).open_sel <= '1' when (cpu_addr(15 downto 11)="00001" or cpu_addr(15 downto 11) = "00010") and extra_ram = '0' else '0';
     m(1).cia_sel  <= '1' when cpu_addr(15 downto 14)="01" else '0';
     m(1).wd_sel   <= '1' when cpu_addr(15 downto 13)="001" else '0';
 
     -- Address decoding 1581
     m(2).via1_sel <= '0';
     m(2).via2_sel <= '0';
+    m(2).open_sel <= '1' when cpu_addr(15 downto 13)="001" and extra_ram = '0' else '0'; -- 2000
     m(2).cia_sel  <= '1' when cpu_addr(15 downto 13)="010" else '0'; -- 4000
     m(2).wd_sel   <= '1' when cpu_addr(15 downto 13)="011" else '0'; -- 6000
 
@@ -627,7 +639,7 @@ begin
     m(1).via1_port_a_i(3) <= (via1_port_a_o(3) or not via1_port_a_t(3));
     m(1).via1_port_a_i(2) <= (via1_port_a_o(2) or not via1_port_a_t(2)); -- SIDE
     m(1).via1_port_a_i(1) <= (via1_port_a_o(1) or not via1_port_a_t(1)); -- SER_DIR
-    m(1).via1_port_a_i(0) <= (via1_port_a_o(0) or not via1_port_a_t(0)) and not track_0;
+    m(1).via1_port_a_i(0) <= not track_0; -- assuming that the LS14 always wins
 
     m(2).via1_port_a_i    <= X"FF"; -- Don't care. 
     
