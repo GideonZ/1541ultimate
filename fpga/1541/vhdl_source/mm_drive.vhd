@@ -222,7 +222,7 @@ begin
         debug_valid => debug_valid,
         
 		-- configuration
-        via_mirroring   => bank_is_ram(7), -- FIXME
+        extra_ram       => bank_is_ram(7), -- FIXME: signal name
 
 		-- memory interface
         mem_req_cpu     => mem_req_cpu,
