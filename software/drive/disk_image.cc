@@ -432,7 +432,7 @@ int GcrImage :: convert_disk_gcr2bin(BinImage *bin_image, UserInterface *user_in
     return errors;
 }
 
-int GcrImage :: convert_gcr_track_to_bin(uint8_t *gcr, int trackNumber, int trackLen, int maxSector, uint8_t *bin, uint8_t *status)
+int GcrImage :: convert_gcr_track_to_bin(uint8_t *gcr, int trackNumber, int trackLen, int maxSector, uint8_t *bin, uint8_t *status, int statlen)
 {
 	static uint8_t header[8];
 	int t, s;
@@ -481,25 +481,29 @@ int GcrImage :: convert_gcr_track_to_bin(uint8_t *gcr, int trackNumber, int trac
 
 			// We found a header, but we are expecting data
 			if (expect_data) {
-				if (st) {
+				if (st && (statlen > 0)) {
 					*(st++) = 0xE4;
+					statlen--;
 				}
 			}
 
 			// new sector, store sector number
-			if (st) {
+            if (st && (statlen > 0)) {
 				*(st++) = s;
+				statlen--;
 			}
 			expect_data = true;
 
 			if(t != trackNumber) {
-				if (st) {
+                if (st && (statlen > 0)) {
 					*(st++) = 0xE1;
+					statlen--;
 					expect_data = false;
 				}
 			} else if(s >= maxSector) {
-				if (st) {
+                if (st && (statlen > 0)) {
 					*(st++) = 0xE2;
+					statlen--;
                     expect_data = false;
 				}
 			}
@@ -523,7 +527,7 @@ int GcrImage :: convert_gcr_track_to_bin(uint8_t *gcr, int trackNumber, int trac
 				conv_5bytes_gcr2bin(&gcr_data, &header[4]);
 				*(dest++) = header[4];
 
-				if (st) {
+                if (st && (statlen > 0)) {
 					uint8_t chk = 0;
 					for (int i=0;i<256;i++) {
 						chk ^= *(binarySector++);
@@ -533,6 +537,7 @@ int GcrImage :: convert_gcr_track_to_bin(uint8_t *gcr, int trackNumber, int trac
 					} else {
 						*(st++) = 0x00;
 					}
+					statlen--;
 				}
 			}
 		}
@@ -1159,7 +1164,7 @@ int BinImage :: write_track(int phys_track, GcrImage *gcr_image, File *file, int
 	}
     uint8_t status[64];
     int expected_secs = track_sectors[logical_track];
-    secs = GcrImage :: convert_gcr_track_to_bin(gcr, logical_track + 1, gcrTrack->track_length, expected_secs, bin, status);
+    secs = GcrImage :: convert_gcr_track_to_bin(gcr, logical_track + 1, gcrTrack->track_length, expected_secs, bin, status, 64);
 
     // Store errors in error bytes
     int error_offset = 0;

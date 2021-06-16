@@ -88,7 +88,7 @@ void ControlTarget :: decode_track(Message *command, Message **reply, Message **
 	trackLen |= ((uint16_t)command->message[13]) << 8;
 
 	int secs = GcrImage :: convert_gcr_track_to_bin((uint8_t *)gcrAddress, track, trackLen, maxSector,
-			(uint8_t *)binAddress, data_message.message + 1);
+			(uint8_t *)binAddress, data_message.message + 1, 2*secs);
 
 	data_message.message[0] = (uint8_t)secs;
 	data_message.length = 1 + 2*secs;
