@@ -119,7 +119,7 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
 
     uint8_t drive_id;
     C1541 *drive;
-    int mount_type;
+    int mount_type, image_type;
     Action* mount_action;
     SubsysCommand* mount_command;
     SubsysCommand* swap_command;
@@ -386,15 +386,26 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
 
         if (strncasecmp(ffi->extension, "d64", 3) == 0) {
             mount_type = MENU_1541_MOUNT_D64;
+            image_type = 1541;
+        } else if (strncasecmp(ffi->extension, "d71", 3) == 0) {
+            mount_type = MENU_1541_MOUNT_D64;
+            image_type = 1571;
+        } else if (strncasecmp(ffi->extension, "d81", 3) == 0) {
+            mount_type = MENU_1541_MOUNT_D64;
+            image_type = 1581;
         } else if (strncasecmp(ffi->extension, "g64", 3) == 0) {
             mount_type = MENU_1541_MOUNT_G64;
+            image_type = 1541;
+        } else if (strncasecmp(ffi->extension, "g71", 3) == 0) {
+            mount_type = MENU_1541_MOUNT_G64;
+            image_type = 1571;
         } else {
             *status = &c_status_not_a_disk_image;
             delete ffi;
             break;
         }
 
-        mount_action = new Action("Mount Disk", drive->getID(), mount_type);
+        mount_action = new Action("Mount Disk", drive->getID(), mount_type, image_type);
         mount_command = new SubsysCommand((UserInterface*) NULL, mount_action, path->get_path(), filename);
         mount_command->execute();
 
