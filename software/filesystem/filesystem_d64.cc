@@ -760,6 +760,11 @@ FRESULT FileSystemD71::format(const char *name)
     set_sector_allocation(root_track, root_sector+1, true);
     set_sector_allocation(dir_track, dir_sector, true);
 
+    // allocate the track on side 1 with extended directory sectors
+    for(int i=0; i < 19; i++) {
+        set_sector_allocation(53, i, true);
+    }
+
     // mark sectors as modified
     root_dirty = true;
     bam2_dirty = true;
