@@ -37,6 +37,9 @@ int MfmDisk :: GetAddress(int physTrack, int physSide, int lastIndex, MfmSector&
     if ((physSide < 0) || (physSide > 1))
         return -1;
     MfmTrack *tr = (physSide) ? &side1[physTrack] : &side0[physTrack];
+    if (!tr->numSectors) {
+        return -1;
+    }
     int idx = lastIndex + 1;
     if (idx >= tr->numSectors) {
         idx = 0;

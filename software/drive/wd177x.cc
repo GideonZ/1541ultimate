@@ -335,6 +335,12 @@ void WD177x :: handle_wd177x_command(t_wd177x_cmd& cmd)
 	    // Read Address Command
         sectIndex = disk.GetAddress(drive->track, drive->side, sectIndex, sectAddr);
 
+        if (sectIndex < 0) {
+            wd177x->status_set = WD_STATUS_RNF;
+            wd177x->status_clear = WD_STATUS_BUSY;
+            break;
+        }
+
 		buffer[0] = sectAddr.track;
 		buffer[1] = sectAddr.side;
 		buffer[2] = sectAddr.sector;
