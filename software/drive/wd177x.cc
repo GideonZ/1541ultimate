@@ -102,7 +102,10 @@ uint8_t WD177x :: IrqHandler()
 {
 	t_wd177x_cmd cmd;
 	cmd = wd177x->command;
-    BaseType_t retVal = pdFALSE;
+	// upon read of the irq_ack register (offset 6), we get the 9th bit of the command, which indicates whether a dma write transfer was completed
+	cmd |= ((uint16_t)wd177x->irq_ack) << 8;
+
+	BaseType_t retVal = pdFALSE;
 
 	xQueueSendFromISR(cmdQueue, &cmd, &retVal);
 	wd177x->irq_ack = 1;
@@ -183,18 +186,20 @@ void WD177x :: do_step(t_wd177x_cmd cmd)
 
 void WD177x :: handle_wd177x_command(t_wd177x_cmd& cmd)
 {
-	printf("WD177x Command: %b\n", cmd);
-	int sectors_found;
+	printf("WD177x Command: %3x\n", cmd);
 	uint16_t crc;
 	uint32_t dummy;
 	FRESULT res;
 	MfmSector sectAddr;
-	MfmTrack newTrack;
 	uint8_t t;
 
-    wd177x->status_clear = WD_STATUS_RNF;
+	if(cmd & WD_CMD_DMA_DONE) {
+	    handle_wd177x_completion(cmd);
+	    return;
+	}
 
-    switch (cmd >> 4) {
+    wd177x->status_clear = WD_STATUS_RNF;
+    switch ((cmd >> 4) & 0x0F) {
 	case WD_CMD_RESTORE:
 		// Restore (go to track 0)
 		wd177x->track = 0;
@@ -303,55 +308,26 @@ void WD177x :: handle_wd177x_command(t_wd177x_cmd& cmd)
 
 	case WD_CMD_WRITE_SECTOR:
 	case WD_CMD_WRITE_SECTOR+1:
-		if (wd177x->dma_mode == 3) {
-			printf("Write sector completion. dma_len = %d\n", wd177x->dma_len);
-			dump_hex_relative(buffer, 32);
-			wd177x->dma_mode = 0;
-
-			if (mount_file) {
-				res = mount_file->seek(offset);
-				if (res == FR_OK) {
-					res = mount_file->write(buffer, sectSize, &dummy);
-					if (res == FR_OK) {
-						printf("Sector write OK. %d/%d bytes written to offset %6x.\n", dummy, sectSize, offset);
-					} else {
-						printf("-> Image write error.\n");
-					}
-				} else {
-					printf("-> Seek error\n");
-				}
-			} else {
-				printf("-> No mount file.\n");
-			}
-            // Complete by doing the administration on the drive side
-			// Passing a NULL pointer as newTrack signals that only the sector data was updated.
-            if(track_updater) {
-                track_updater(track_update_object, drive->track, drive->side, NULL);
-            }
-
+        wait_head_settle();
+        // Write Sector Command
+        sectAddr.sector = wd177x->sector;
+        sectAddr.track  = wd177x->track;
+        sectAddr.side   = drive->side;
+        printf("H/T/S: %d %d %d\n", sectAddr.side, sectAddr.track, sectAddr.sector);
+        sectIndex = disk.GetSector(drive->track, drive->side, sectAddr, offset, sectSize);
+        if (sectIndex >= 0) { // OK!
+            printf("WD177x: Write Sector H/T/S: %d/%d/%d. Offset: %6x\n", sectAddr.side, sectAddr.track, sectAddr.sector, offset);
+            memset(buffer, 0x77, sectSize);
+            wd177x->dma_len = sectSize;
+            wd177x->dma_addr = (uint32_t)buffer;
+            wd177x->dma_mode = 2; // write
+        } else {
+            printf("WD177x: Write Sector %d/%d/%d: Sector not found on track %d in MFM definition! Setting RNF.\n",
+                    sectAddr.track, sectAddr.side, sectAddr.sector, drive->track);
+            wd177x->status_set = WD_STATUS_RNF;
             wd177x->status_clear = WD_STATUS_BUSY;
-		} else {
-		    wait_head_settle();
-		    // Write Sector Command
-		    sectAddr.sector = wd177x->sector;
-		    sectAddr.track  = wd177x->track;
-		    sectAddr.side   = drive->side;
-		    printf("H/T/S: %d %d %d\n", sectAddr.side, sectAddr.track, sectAddr.sector);
-		    sectIndex = disk.GetSector(drive->track, drive->side, sectAddr, offset, sectSize);
-	        if (sectIndex >= 0) { // OK!
-                printf("WD177x: Write Sector H/T/S: %d/%d/%d. Offset: %6x\n", sectAddr.side, sectAddr.track, sectAddr.sector, offset);
-                memset(buffer, 0x77, sectSize);
-                wd177x->dma_len = sectSize;
-                wd177x->dma_addr = (uint32_t)buffer;
-                wd177x->dma_mode = 2; // write
-	        } else {
-	            printf("WD177x: Write Sector %d/%d/%d: Sector not found on track %d in MFM definition! Setting RNF.\n",
-	                    sectAddr.track, sectAddr.side, sectAddr.sector, drive->track);
-	            wd177x->status_set = WD_STATUS_RNF;
-	            wd177x->status_clear = WD_STATUS_BUSY;
-	        }
-			// data transfer, so we are not yet done
-		}
+        }
+        // data transfer, so we are not yet done
 		break;
 
 	case WD_CMD_READ_ADDR:
@@ -379,45 +355,12 @@ void WD177x :: handle_wd177x_command(t_wd177x_cmd& cmd)
         wd177x->status_clear = 1;
         break;
 
-	case WD_CMD_WRITE_TRACK:
-		if (wd177x->dma_mode == 3) {
-            decode_write_track(buffer, binbuf, newTrack);
-            // FIXME: Just continue when there was an error?
-
-            wait_head_settle(); // late, but early enough
-	        disk.UpdateTrack(drive->track, drive->side, newTrack, offset);
-
-			printf("Write track completion. Offset = %6x. Found %d sectors! (Size: %04x)\n", offset, newTrack.numSectors, newTrack.actualDataSize);
-
-			if (mount_file) {
-				res = mount_file->seek(offset);
-				if (res == FR_OK) {
-					res = mount_file->write(binbuf, newTrack.actualDataSize, &dummy);
-					if (res == FR_OK) {
-						printf("Track format OK.\n");
-					} else {
-						printf("-> Image write error.\n");
-					}
-				} else {
-					printf("-> Seek error\n");
-				}
-			} else {
-				printf("-> No mount file.\n");
-			}
-			// Complete by doing the administration on the drive side
-			if(track_updater) {
-                track_updater(track_update_object, drive->track, drive->side, &newTrack);
-            }
-
-			wd177x->dma_mode = 0;
-			wd177x->status_clear = WD_STATUS_BUSY;
-		} else {
-		    // Write Track Command
-			printf("Write track Pos: %d Reg: %d\n", drive->track, wd177x->track);
-			wd177x->dma_len = MFM_RAW_BYTES_BETWEEN_INDEX_PULSES;
-			wd177x->dma_addr = (uint32_t)buffer;
-			wd177x->dma_mode = 2; // write
-		}
+    case WD_CMD_WRITE_TRACK:
+        // Write Track Command
+        printf("Write track Pos: %d Reg: %d\n", drive->track, wd177x->track);
+        wd177x->dma_len = MFM_RAW_BYTES_BETWEEN_INDEX_PULSES;
+        wd177x->dma_addr = (uint32_t)buffer;
+        wd177x->dma_mode = 2; // write
 		break;
 
 	case WD_CMD_ABORT:
@@ -426,6 +369,79 @@ void WD177x :: handle_wd177x_command(t_wd177x_cmd& cmd)
         break;
 	}
 }
+
+void WD177x :: handle_wd177x_completion(t_wd177x_cmd& cmd)
+{
+    int sectors_found;
+    uint32_t dummy;
+    FRESULT res;
+    MfmTrack newTrack;
+
+    switch ((cmd >> 4) & 0x0F) {
+    case WD_CMD_WRITE_SECTOR:
+    case WD_CMD_WRITE_SECTOR+1:
+        printf("Write sector completion. dma_len = %d\n", wd177x->dma_len);
+        dump_hex_relative(buffer, 32);
+        wd177x->dma_mode = 0;
+
+        if (mount_file) {
+            res = mount_file->seek(offset);
+            if (res == FR_OK) {
+                res = mount_file->write(buffer, sectSize, &dummy);
+                if (res == FR_OK) {
+                    printf("Sector write OK. %d/%d bytes written to offset %6x.\n", dummy, sectSize, offset);
+                } else {
+                    printf("-> Image write error.\n");
+                }
+            } else {
+                printf("-> Seek error\n");
+            }
+        } else {
+            printf("-> No mount file.\n");
+        }
+        // Complete by doing the administration on the drive side
+        // Passing a NULL pointer as newTrack signals that only the sector data was updated.
+        if(track_updater) {
+            track_updater(track_update_object, drive->track, drive->side, NULL);
+        }
+        break;
+
+    case WD_CMD_WRITE_TRACK:
+        decode_write_track(buffer, binbuf, newTrack);
+        // FIXME: Just continue when there was an error?
+
+        wait_head_settle(); // late, but early enough
+        disk.UpdateTrack(drive->track, drive->side, newTrack, offset);
+
+        printf("Write track completion. Offset = %6x. Found %d sectors! (Size: %04x)\n", offset, newTrack.numSectors, newTrack.actualDataSize);
+
+        if (mount_file) {
+            res = mount_file->seek(offset);
+            if (res == FR_OK) {
+                res = mount_file->write(binbuf, newTrack.actualDataSize, &dummy);
+                if (res == FR_OK) {
+                    printf("Track format OK.\n");
+                } else {
+                    printf("-> Image write error.\n");
+                }
+            } else {
+                printf("-> Seek error\n");
+            }
+        } else {
+            printf("-> No mount file.\n");
+        }
+        // Complete by doing the administration on the drive side
+        if(track_updater) {
+            track_updater(track_update_object, drive->track, drive->side, &newTrack);
+        }
+        wd177x->dma_mode = 0;
+        break;
+    default:
+        printf("Unrecognized completion..\n");
+        wd177x->status_clear = WD_STATUS_BUSY;
+    }
+}
+
 
 void WD177x :: set_track_update_callback(void *obj, track_update_callback_t func)
 {

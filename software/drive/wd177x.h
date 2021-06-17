@@ -35,6 +35,7 @@
 #define WD_CMD_SPINUP_BIT   0x08
 #define WD_CMD_VERIFY_BIT   0x04
 
+#define WD_CMD_DMA_DONE     0x100 // bit 8
 
 typedef struct _wd {
 	uint8_t command;
@@ -51,7 +52,7 @@ typedef struct _wd {
 	uint8_t step_time;
 } wd177x_t;
 
-typedef uint8_t t_wd177x_cmd;
+typedef uint16_t t_wd177x_cmd;
 
 #define MFM_RAW_BYTES_BETWEEN_INDEX_PULSES  6250
 #define MFM_DEFAULT_SECTOR_SIZE             512
@@ -88,6 +89,7 @@ class WD177x
     int  decode_write_track(uint8_t *inbuf, uint8_t *outbuf, MfmTrack& newTrack);
     void do_step(t_wd177x_cmd cmd);
     void wait_head_settle(void);
+    void handle_wd177x_completion(t_wd177x_cmd& cmd); // called from within
 public:
     WD177x(volatile uint8_t *wd, volatile uint8_t *drv, int irq);
     ~WD177x();

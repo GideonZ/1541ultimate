@@ -122,6 +122,14 @@ architecture behavioral of wd177x is
     type t_dma_state is (idle, do_read, reading, do_write, writing);
     signal dma_state        : t_dma_state;
 
+    -- Command queue
+    signal command_fifo_din     : std_logic_vector(8 downto 0);
+    signal command_fifo_dout    : std_logic_vector(8 downto 0);
+    signal command_fifo_push    : std_logic;
+    signal command_fifo_pop     : std_logic;
+    signal command_fifo_valid   : std_logic;
+    signal completion           : std_logic;
+    
     -- Stepper
     signal goto_track       : unsigned(6 downto 0);
     signal step_time        : unsigned(4 downto 0);
@@ -140,7 +148,7 @@ begin
     mem_req.size        <= "00"; -- one byte at a time
     mem_req.tag         <= g_tag;
 
-    process(status, index_out, command)
+    process(status, index_out, index_enable, index_polarity, command)
     begin
         status_idx <= status;
         if command(7) = '0' and index_enable = '1' then -- Type I command
@@ -158,12 +166,16 @@ begin
         variable v_addr : unsigned(3 downto 0);
     begin
         if rising_edge(clock) then
+            command_fifo_push <= '0';
+            command_fifo_pop  <= '0';
+
             if wen = '1' and clock_en = '1' then
                 case addr is
                 when "00" =>
                     command <= wdata;
                     st_busy <= '1';
-                    io_irq  <= '1';
+                    completion <= '0';
+                    command_fifo_push  <= '1';
                 
                 when "01" =>
                     track   <= wdata;
@@ -195,6 +207,7 @@ begin
 
             io_resp <= c_io_resp_init;
             v_addr := io_req.address(3 downto 0);
+
             if io_req.write = '1' then
                 io_resp.ack <= '1';
                 case v_addr is
@@ -212,10 +225,11 @@ begin
                     status <= status or io_req.data;
 
                 when X"6" =>
-                    io_irq  <= '0';
+                    command_fifo_pop <= '1';
 
                 when X"7" =>
                     dma_mode <= io_req.data(1 downto 0); -- 00 is off, 01 = read (to 1581), 10 = write (to appl)
+                    disk_wdata_valid <= '0';
                     
                 when X"8" =>
                     transfer_addr(7 downto 0) <= unsigned(io_req.data);
@@ -236,11 +250,12 @@ begin
                     null;
                 end case;
             end if;
+
             if io_req.read = '1' then
                 io_resp.ack <= '1';
                 case v_addr is
                 when X"0" =>
-                    io_resp.data <= command;
+                    io_resp.data <= command_fifo_dout(7 downto 0);
                 
                 when X"1" =>
                     io_resp.data <= track;
@@ -254,16 +269,19 @@ begin
                 when X"4"|X"5" =>
                     io_resp.data <= status;
                 
+                when X"6" =>
+                    io_resp.data(0) <= command_fifo_dout(8);
+                    io_resp.data(7) <= command_fifo_valid;
+                
                 when X"7" =>
                     io_resp.data(1 downto 0) <= dma_mode;
-                    disk_wdata_valid <= '0';
-                
-                when X"8" =>
-                    io_resp.data <= std_logic_vector(transfer_addr(7 downto 0));
-                when X"9" =>
-                    io_resp.data <= std_logic_vector(transfer_addr(15 downto 8));
-                when X"A" =>
-                    io_resp.data <= std_logic_vector(transfer_addr(23 downto 16));
+                                                        
+--                when X"8" =>
+--                    io_resp.data <= std_logic_vector(transfer_addr(7 downto 0));
+--                when X"9" =>
+--                    io_resp.data <= std_logic_vector(transfer_addr(15 downto 8));
+--                when X"A" =>
+--                    io_resp.data <= std_logic_vector(transfer_addr(23 downto 16));
                 when X"C" =>
                     io_resp.data <= std_logic_vector(transfer_len(7 downto 0));
                 when X"D" =>
@@ -332,7 +350,9 @@ begin
                     transfer_addr <= transfer_addr + 1;
                     if transfer_len = 0 then
                         dma_mode <= "11"; -- write complete
-                        io_irq <= '1';
+                        st_busy <= '0';
+                        completion <= '1';
+                        command_fifo_push <= '1';
                     end if;
                     dma_state <= idle;
                 end if;
@@ -349,15 +369,37 @@ begin
                 track <= X"01";
                 sector <= X"00";
                 command <= X"00";
-                io_irq <= '0';
                 status <= X"00";
                 dma_mode <= "00";
                 step_time <= "01100";
+                completion <= '0';
                 goto_track <= to_unsigned(0, goto_track'length);
             end if;
         end if;
     end process;
     
+    i_cmd_fifo: entity work.sync_fifo
+    generic map (
+        g_depth        => 7,
+        g_data_width   => 9,
+        g_threshold    => 4,
+        g_storage      => "MRAM",
+        g_fall_through => true
+    )
+    port map (
+        clock          => clock,
+        reset          => reset,
+        flush          => '0',
+        rd_en          => command_fifo_pop,
+        wr_en          => command_fifo_push,
+        din            => command_fifo_din,
+        dout           => command_fifo_dout,
+        valid          => command_fifo_valid
+    );
+    command_fifo_din <= completion & command;
+
+    io_irq <= command_fifo_valid;
+
     i_stepper: entity work.stepper
     port map (
         clock        => clock,
