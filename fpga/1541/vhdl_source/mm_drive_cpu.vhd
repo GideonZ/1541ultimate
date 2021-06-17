@@ -158,6 +158,7 @@ architecture structural of mm_drive_cpu is
 
     -- Local signals
     signal my_fast_data_out : std_logic;
+    signal fast_clk_o_i     : std_logic;
     signal cpu_clk_en       : std_logic;
     signal cpu_rising       : std_logic;
     type   t_mem_state  is (idle, newcycle, extcycle);
@@ -584,8 +585,8 @@ begin
     
         m(2).cia_flag_i   <= atn_i;  -- active low atn signal
 
-        m(2).data_o <= (not my_data_out and not (atn_ack and not atn_i) and my_fast_data_out) or not power;
-        m(2).clk_o  <= not power or not clock_out;
+        m(2).data_o <= not my_data_out and not (atn_ack and not atn_i) and my_fast_data_out;
+        m(2).clk_o  <= not clock_out;
         m(2).atn_o  <= '1';
 
         -- Parallel Cable not defined
@@ -602,8 +603,8 @@ begin
         my_data_out     <= m(2).cia_port_b_i(1);
         
         --disk_change_n_i     <= cia_port_a_i(7);
-        m(2).act_led        <= not (m(2).cia_port_a_i(6) and power);
-        m(2).power_led      <= not (m(2).cia_port_a_i(5) and power);
+        m(2).act_led        <= m(2).cia_port_a_i(6);
+        m(2).power_led      <= m(2).cia_port_a_i(5);
         --drive_address_i(1)  <= cia_port_a_i(4);
         --drive_address_i(0)  <= cia_port_a_i(3);
         m(2).motor_sound_on <= not m(2).cia_port_a_i(2);
@@ -667,13 +668,13 @@ begin
         my_clk_out  <= via1_port_b_o(3) or not via1_port_b_t(3);
     
         -- Serial bus pins 1541
-        m(0).data_o <= not power or (not my_data_out and (not (atn_ack xor (not atn_i))));
-        m(0).clk_o  <= not power or not my_clk_out;
+        m(0).data_o <= not my_data_out and (not (atn_ack xor (not atn_i)));
+        m(0).clk_o  <= not my_clk_out;
         m(0).atn_o  <= '1';
 
         -- Serial bus pins 1571
-        m(1).data_o <= not power or (not my_data_out and my_fast_data_out and (not (atn_ack xor (not atn_i))));
-        m(1).clk_o  <= not power or not my_clk_out;
+        m(1).data_o <= not my_data_out and my_fast_data_out and (not (atn_ack xor (not atn_i)));
+        m(1).clk_o  <= not my_clk_out;
         m(1).atn_o  <= '1';
 
         -- Because Port B reads its own output when set to output, we do not need to consider the direction here
@@ -698,10 +699,10 @@ begin
         m(1).par_hsin_t       <= '0'; -- FLAG is always input
     end block;
 
-    m(0).act_led  <= not (via2_port_b_o(3) or not via2_port_b_t(3)) or not power;
-    m(1).act_led  <= not (via2_port_b_o(3) or not via2_port_b_t(3)) or not power;
-    m(0).motor_on <= (via2_port_b_o(2) or not via2_port_b_t(2)) and power;
-    m(1).motor_on <= (via2_port_b_o(2) or not via2_port_b_t(2)) and power;
+    m(0).act_led  <= (via2_port_b_o(3) or not via2_port_b_t(3));
+    m(1).act_led  <= (via2_port_b_o(3) or not via2_port_b_t(3));
+    m(0).motor_on <= (via2_port_b_o(2) or not via2_port_b_t(2));
+    m(1).motor_on <= (via2_port_b_o(2) or not via2_port_b_t(2));
     m(2).motor_on <= '0'; -- disable memory access to GCR memory
     m(0).motor_sound_on <= m(0).motor_on;
     m(1).motor_sound_on <= m(1).motor_on;
@@ -727,22 +728,25 @@ begin
     cia_sp_i          <= (cia_sp_o or not cia_sp_t) when mm.fast_ser_dir = '1' else
                          data_i;
     
-    fast_clk_o        <= (cia_cnt_o or not cia_cnt_t) or not mm.fast_ser_dir; -- active low!
+    fast_clk_o_i      <= (cia_cnt_o or not cia_cnt_t) or not mm.fast_ser_dir; -- active low!
     cia_cnt_i         <= (cia_cnt_o or not cia_cnt_t) when mm.fast_ser_dir = '1' else -- output
                          fast_clk_i; -- assume that 74LS241 wins 
 
-    -- Export
-    motor_sound_on  <= mm.motor_sound_on;
-    motor_on        <= mm.motor_on;
+    -- Export Inside drive
     stepper_en      <= mm.stepper_en;
     step            <= mm.step;
     side            <= mm.side;
     two_MHz         <= mm.two_MHz;
-    power_led       <= mm.power_led;
-    act_led         <= mm.act_led;
-    clk_o           <= mm.clk_o;
-    data_o          <= mm.data_o;
-    atn_o           <= mm.atn_o;
+
+    -- Export to outside world
+    motor_sound_on  <= power and mm.motor_sound_on;   -- internally active high, externally active high
+    motor_on        <= power and mm.motor_on;         -- internally active high, externally active high
+    power_led       <= not (power and mm.power_led);  -- internally active high, externally active low
+    act_led         <= not (power and mm.act_led);    -- internally active high, externally active low
+    clk_o           <= not power or mm.clk_o;         -- internally active low,  externally active low
+    data_o          <= not power or mm.data_o;        -- internally active low,  externally active low
+    atn_o           <= not power or mm.atn_o;         -- internally active low,  externally active low
+    fast_clk_o      <= not power or fast_clk_o_i;     -- internally active low,  externally active low
     
     -- Parallel cable out
     par_data_o      <= mm.par_data_o;
