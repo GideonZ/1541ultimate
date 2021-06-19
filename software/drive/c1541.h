@@ -179,7 +179,7 @@ public:
     int  get_current_iec_address(void);    
     void drive_power(bool on);
     bool get_drive_power();
-
+    t_drive_type get_drive_type() { return current_drive_type; }
     static void list_roms(ConfigItem *it, IndexedList<char *>& strings);
 
     // Called from user interface thread?  Is this allowed at all? -> no no, the interface thread should

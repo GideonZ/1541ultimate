@@ -130,6 +130,8 @@ public:
     
     int executeCommand(SubsysCommand *cmd); // from SubSystem
     const char *identify(void) { return "IEC"; }
+    int get_current_iec_address(void) { return last_addr; }
+    int get_current_printer_address(void) { return last_printer_addr; }
 
     void create_task_items();
     void update_task_items(bool writablePath, Path *path);
