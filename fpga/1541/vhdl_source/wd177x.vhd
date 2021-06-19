@@ -176,6 +176,7 @@ begin
                     st_busy <= '1';
                     completion <= '0';
                     command_fifo_push  <= '1';
+                    disk_wdata_valid <= '0';
                 
                 when "01" =>
                     track   <= wdata;
@@ -229,7 +230,6 @@ begin
 
                 when X"7" =>
                     dma_mode <= io_req.data(1 downto 0); -- 00 is off, 01 = read (to 1581), 10 = write (to appl)
-                    disk_wdata_valid <= '0';
                     
                 when X"8" =>
                     transfer_addr(7 downto 0) <= unsigned(io_req.data);
