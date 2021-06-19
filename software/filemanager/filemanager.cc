@@ -733,6 +733,22 @@ FRESULT FileManager :: load_file(const char *path, const char *filename, uint8_t
     return fres;
 }
 
+FRESULT FileManager :: save_file(bool overwrite, const char *path, const char *filename, uint8_t *mem, uint32_t len, uint32_t *transferred)
+{
+    File *file = 0;
+    uint8_t flag = FA_WRITE | (overwrite ? FA_CREATE_ALWAYS : FA_CREATE_NEW);
+    FRESULT fres = fopen(path, filename, flag, &file);
+    uint32_t tr = 0;
+    if (fres == FR_OK) {
+        fres = file->write(mem, len, &tr);
+        fclose(file);
+    }
+    if (transferred) {
+        *transferred = tr;
+    }
+    return fres;
+}
+
 const char *FileManager::eventStrings[] = {
         "eRefreshDirectory",  // Contents of directory have changed
         "eNodeAdded",         // New Node
