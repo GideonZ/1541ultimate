@@ -4,6 +4,7 @@
 #include "c64.h"
 #include "tape_recorder.h"
 #include "reu_preloader.h"
+#include "iec.h"
 #if U64
 #include "u64_config.h"
 #include "u64.h"
@@ -224,6 +225,43 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
             *reply = &data_message;
             break;
         }
+        case CTRL_CMD_GET_DRVINFO: {
+            data_message.length = 1;
+            data_message.message[0] = 0;
+            data_message.last_part = true;
+            *status = &c_status_ok;
+            *reply = &data_message;
+            int offs = 1;
+            if (c1541_A) {
+                data_message.message[0]++;
+                data_message.message[offs++] = (uint8_t)c1541_A->get_drive_type();
+                data_message.message[offs++] = (uint8_t)c1541_A->get_current_iec_address();
+                data_message.message[offs++] = c1541_A->get_drive_power() ? 1 : 0;
+                data_message.length += 3;
+            }
+            if (c1541_B) {
+                data_message.message[0]++;
+                data_message.message[offs++] = (uint8_t)c1541_B->get_drive_type();
+                data_message.message[offs++] = (uint8_t)c1541_B->get_current_iec_address();
+                data_message.message[offs++] = c1541_B->get_drive_power() ? 1 : 0;
+                data_message.length += 3;
+            }
+            if (true) { // seems to be always available
+                data_message.message[0]++;
+                data_message.message[offs++] = 0x0F;
+                data_message.message[offs++] = (uint8_t)iec_if.get_current_iec_address();
+                data_message.message[offs++] = iec_if.iec_enable;
+                data_message.length += 3;
+
+                data_message.message[0]++;
+                data_message.message[offs++] = 0x50;
+                data_message.message[offs++] = (uint8_t)iec_if.get_current_printer_address();
+                data_message.message[offs++] = iec_if.iec_enable;
+                data_message.length += 3;
+            }
+            break;
+        }
+
 #ifdef U64
         case CTRL_CMD_U64_SAVEMEM:
             printf("U64 Save C64 Memory\n");
