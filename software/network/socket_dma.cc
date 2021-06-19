@@ -64,7 +64,7 @@ SocketDMA::~SocketDMA() {
 void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint16_t cmd, uint32_t len, struct in_addr *client_ip)
 {
 	uint8_t *buf = (uint8_t *)load_buffer;
-	SubsysCommand *c64_command;
+	SubsysCommand *sys_command;
 
     uint16_t offs;
     uint32_t offs32;
@@ -75,32 +75,32 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
 
     switch(cmd) {
     case SOCKET_CMD_DMA:
-        c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_BUFFER, RUNCODE_DMALOAD, buf, len);
-        c64_command->execute();
+        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_BUFFER, RUNCODE_DMALOAD, buf, len);
+        sys_command->execute();
         break;
     case SOCKET_CMD_DMARUN:
-        c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_BUFFER, RUNCODE_DMALOAD_RUN, buf, len);
-        c64_command->execute();
+        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_BUFFER, RUNCODE_DMALOAD_RUN, buf, len);
+        sys_command->execute();
         break;
     case SOCKET_CMD_DMAJUMP:
-        c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_BUFFER, RUNCODE_DMALOAD_JUMP, buf, len);
-        c64_command->execute();
+        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_BUFFER, RUNCODE_DMALOAD_JUMP, buf, len);
+        sys_command->execute();
         break;
     case SOCKET_CMD_DMAWRITE:
         offs = (uint16_t)buf[0] | (((uint16_t)buf[1]) << 8);
-        c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW, offs, buf + 2, len - 2);
-        c64_command->execute();
+        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW, offs, buf + 2, len - 2);
+        sys_command->execute();
         break;
     case SOCKET_CMD_KEYB:
-        c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW, 0x0277, buf, len);
-        c64_command->execute();
+        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW, 0x0277, buf, len);
+        sys_command->execute();
         buf[0] = len;
-        c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW, 0x00C6, buf, 1);
-        c64_command->execute();
+        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW, 0x00C6, buf, 1);
+        sys_command->execute();
         break;
     case SOCKET_CMD_RESET:
-        c64_command = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_RESET, 0, buf, len);
-        c64_command->execute();
+        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_RESET, 0, buf, len);
+        sys_command->execute();
         break;
     case SOCKET_CMD_WAIT:
         vTaskDelay(len);
@@ -137,38 +137,41 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         break;
     case SOCKET_CMD_MOUNT_IMG:
     case SOCKET_CMD_RUN_IMG:
-/*
-        if (cmd == SOCKET_CMD_MOUNT_IMG) {
-            c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, D64FILE_MOUNT,
-                RUNCODE_MOUNT_BUFFER|RUNCODE_NO_CHECKSAVE|RUNCODE_NO_UNFREEZE, buf, len);
-        } else {
-            c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, D64FILE_RUN,
-                RUNCODE_MOUNT_BUFFER, buf, len);
-
+    {
+        FileManager *fm = FileManager :: getFileManager();
+        FRESULT fres = fm->save_file(true, "/temp", "tcpimage.d64", buf, len, NULL);
+        if (fres == FR_OK) {
+            sys_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, MENU_1541_MOUNT_D64, 1541, "/temp", "tcpimage.d64");
+            sys_command->execute();
         }
-        c64_command->execute();
-*/
-        printf("WARNING: Mount / Run image currently not implemented from TCP buffer.");
-        break;
+        if (cmd == SOCKET_CMD_RUN_IMG) {
+            char *drvId = "H";
+            drvId[0] = 0x40 + c1541_A->get_current_iec_address();
+            SubsysCommand *c64cmd = new SubsysCommand(NULL, SUBSYSID_C64, C64_DRIVE_LOAD, RUNCODE_MOUNT_LOAD_RUN, drvId, "*");
+            c64cmd->execute();
+        }
+    }
+    break;
+
 
 #ifdef U64
     case SOCKET_CMD_VICSTREAM_ON:
         // First DEBUG stream off
-        c64_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 2, "", "");
-        c64_command->direct_call = DataStreamer :: S_stopStream;
-        c64_command->execute();
+        sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 2, "", "");
+        sys_command->direct_call = DataStreamer :: S_stopStream;
+        sys_command->execute();
 
         buf[len] = 0;
         if (len > 2) {
             name = (const char *)&buf[2];
         }
-        c64_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 0, name, "");
-        c64_command->direct_call = DataStreamer :: S_startStream;
+        sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 0, name, "");
+        sys_command->direct_call = DataStreamer :: S_startStream;
 
         if ((len >= 2) && (buf[0] || buf[1])) {
-            c64_command->bufferSize = (((uint32_t)buf[1]) << 8) | buf[0];
+            sys_command->bufferSize = (((uint32_t)buf[1]) << 8) | buf[0];
         }
-        c64_command->execute();
+        sys_command->execute();
         break;
 
     case SOCKET_CMD_AUDIOSTREAM_ON:
@@ -176,50 +179,50 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         if (len > 2) {
             name = (const char *)&buf[2];
         }
-        c64_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 1, name, "");
-        c64_command->direct_call = DataStreamer :: S_startStream;
+        sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 1, name, "");
+        sys_command->direct_call = DataStreamer :: S_startStream;
 
         if ((len >= 2) && (buf[0] || buf[1])) {
-            c64_command->bufferSize = (((uint32_t)buf[1]) << 8) | buf[0];
+            sys_command->bufferSize = (((uint32_t)buf[1]) << 8) | buf[0];
         }
-        c64_command->execute();
+        sys_command->execute();
         break;
 
     case SOCKET_CMD_DEBUGSTREAM_ON:
         // First VIC stream off
-        c64_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 0, "", "");
-        c64_command->direct_call = DataStreamer :: S_stopStream;
-        c64_command->execute();
+        sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 0, "", "");
+        sys_command->direct_call = DataStreamer :: S_stopStream;
+        sys_command->execute();
 
         buf[len] = 0;
         if (len > 2) {
             name = (const char *)&buf[2];
         }
-        c64_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 2, name, "");
-        c64_command->direct_call = DataStreamer :: S_startStream;
+        sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 2, name, "");
+        sys_command->direct_call = DataStreamer :: S_startStream;
 
         if ((len >= 2) && (buf[0] || buf[1])) {
-            c64_command->bufferSize = (((uint32_t)buf[1]) << 8) | buf[0];
+            sys_command->bufferSize = (((uint32_t)buf[1]) << 8) | buf[0];
         }
-        c64_command->execute();
+        sys_command->execute();
         break;
 
     case SOCKET_CMD_VICSTREAM_OFF:
-        c64_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 0, "", "");
-        c64_command->direct_call = DataStreamer :: S_stopStream;
-        c64_command->execute();
+        sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 0, "", "");
+        sys_command->direct_call = DataStreamer :: S_stopStream;
+        sys_command->execute();
         break;
 
     case SOCKET_CMD_AUDIOSTREAM_OFF:
-        c64_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 1, "", "");
-        c64_command->direct_call = DataStreamer :: S_stopStream;
-        c64_command->execute();
+        sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 1, "", "");
+        sys_command->direct_call = DataStreamer :: S_stopStream;
+        sys_command->execute();
         break;
 
     case SOCKET_CMD_DEBUGSTREAM_OFF:
-        c64_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 2, "", "");
-        c64_command->direct_call = DataStreamer :: S_stopStream;
-        c64_command->execute();
+        sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 2, "", "");
+        sys_command->direct_call = DataStreamer :: S_stopStream;
+        sys_command->execute();
         break;
 
     case SOCKET_CMD_DEBUG_REG:
@@ -238,8 +241,8 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
            {
               unsigned int len;
               unsigned char tmp[4];
-              c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, FLASH_CMD_PAGESIZE, (uint8_t*) &len, 0);
-              c64_command->execute();
+              sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, FLASH_CMD_PAGESIZE, (uint8_t*) &len, 0);
+              sys_command->execute();
               tmp[0] = len;
               tmp[1] = len >> 8;
               tmp[2] = len >> 16;
@@ -251,8 +254,8 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
            {
               unsigned int len;
               unsigned char tmp[4];
-              c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, FLASH_CMD_NOPAGES, (uint8_t*) &len, 0);
-              c64_command->execute();
+              sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, FLASH_CMD_NOPAGES, (uint8_t*) &len, 0);
+              sys_command->execute();
               tmp[0] = len;
               tmp[1] = len >> 8;
               tmp[2] = len >> 16;
@@ -264,11 +267,11 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
            {
               int len;
               int page = (((uint32_t)buf[1]) ) | (((uint32_t)buf[2]) << 8) | (((uint32_t)buf[3]) << 16);
-              c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, FLASH_CMD_PAGESIZE, (uint8_t*) &len, 0);
-              c64_command->execute();
+              sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, FLASH_CMD_PAGESIZE, (uint8_t*) &len, 0);
+              sys_command->execute();
               char* buffer = new char[len];
-              c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, FLASH_CMD_GETPAGE + page, buffer, len);
-              c64_command->execute();
+              sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, FLASH_CMD_GETPAGE + page, buffer, len);
+              sys_command->execute();
               writeSocket(socket, buffer, len);
               delete[] buffer;              
               break;
