@@ -118,9 +118,6 @@ class BinImage
     int   allocated_size;
     int   data_size;
     bool  double_sided;
-    BlockDevice_Ram *blk;
-    Partition *prt;
-    FileSystemCBM *fs;
 
     int init(uint32_t size);
 public:
