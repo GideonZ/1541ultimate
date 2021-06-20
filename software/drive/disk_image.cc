@@ -967,31 +967,12 @@ BinImage :: BinImage(const char *name, int tracks)
 	errors = track;
 	error_size = sects;
 	num_tracks = tracks;
-
-	blk = NULL;
-	prt = NULL;
-	fs  = NULL;
-/*
-    // we'll create a ram-mapped block device and a default
-    // partition to attach our file system to, so we can access the
-    // bin image as if it were a file system as well
-    // actually, we could have made a ram-mapped partition as well directly, TODO
-    blk = new BlockDevice_Ram(bin_data, 256, 768);
-    prt = new Partition(blk, 0, 768, 0);
-    fs  = new FileSystemD64(prt, true);
-*/
 }
 
 BinImage :: ~BinImage()
 {
 	if(bin_data)
 		delete bin_data;
-    if(fs)
-        delete fs;
-    if(prt)
-        delete prt;
-    if(blk)
-        delete blk;
 }
 
 
@@ -1127,8 +1108,9 @@ int BinImage :: format(const char *name)
     memset(bin_data, 0, data_size);
 
     int numBlocks = data_size / 256;
-    blk = new BlockDevice_Ram(bin_data, 256, numBlocks);
-    prt = new Partition(blk, 0, numBlocks, 0);
+    BlockDevice_Ram *blk = new BlockDevice_Ram(bin_data, 256, numBlocks);
+    Partition *prt = new Partition(blk, 0, numBlocks, 0);
+    FileSystem *fs;
     if (double_sided && (data_size >= C1541_MIN_D71_SIZE)) {
         fs = new FileSystemD71(prt, true);
         num_tracks = 70;
@@ -1141,10 +1123,6 @@ int BinImage :: format(const char *name)
     delete fs;
     delete prt;
     delete blk;
-
-    fs = NULL;
-    prt = NULL;
-    blk = NULL;
     return 0;
 }
 
@@ -1218,6 +1196,11 @@ void BinImage :: get_sensible_name(char *buffer)
 {
     buffer[0] = 0;
     Directory *r;
+
+    BlockDevice_Ram *blk = new BlockDevice_Ram(bin_data, 256, 683);
+    Partition *prt = new Partition(blk, 0, 683, 0);
+    FileSystem *fs = new FileSystemD64(prt, false);
+
     if (fs->dir_open(NULL, &r) != FR_OK) {
         strcpy(buffer, "Unreadable.");
         return;
@@ -1244,6 +1227,9 @@ void BinImage :: get_sensible_name(char *buffer)
             buffer[i] |= 0x20;
     }
     delete r;
+    delete fs;
+    delete prt;
+    delete blk;
 }
 
 //BinImage static_bin_image("Static Binary Image"); // for general use
