@@ -16,7 +16,8 @@ port (
     falling     : in  std_logic;
     reset       : in  std_logic;
     tick_1kHz   : in  std_logic;
-
+    tick_4MHz   : in  std_logic;
+    
     -- serial bus pins
     atn_o       : out std_logic; -- open drain
     atn_i       : in  std_logic;
@@ -326,13 +327,15 @@ begin
         clock        => clock,
         clock_en     => cpu_clk_en,
         reset        => reset,
+        tick_1kHz    => tick_1kHz,
+        tick_4MHz    => tick_4MHz,
+
         addr         => unsigned(cpu_addr(1 downto 0)),
         wen          => wd_wen,
         ren          => wd_ren,
         wdata        => cpu_wdata,
         rdata        => wd_data,
         
-        tick_1kHz    => tick_1kHz,
         do_track_out => do_track_out,
         do_track_in  => do_track_in,
         cur_track    => cur_track,

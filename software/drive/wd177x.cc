@@ -282,7 +282,7 @@ void WD177x :: handle_wd177x_command(t_wd177x_cmd& cmd)
                     res = mount_file->read(buffer, sectSize, &dummy);
                     if (res == FR_OK) {
                         printf("Sector read OK:\n");
-                        //dump_hex_relative(buffer, 32);
+                        //dump_hex_relative(buffer, sectSize);
                     } else {
                         printf("-> Image read error.\n");
                     }
@@ -387,7 +387,7 @@ void WD177x :: handle_wd177x_completion(t_wd177x_cmd& cmd)
     case WD_CMD_WRITE_SECTOR:
     case WD_CMD_WRITE_SECTOR+1:
         printf("Write sector completion. dma_len = %d\n", wd177x->dma_len);
-        dump_hex_relative(buffer, 32);
+        //dump_hex_relative(buffer, sectSize);
         wd177x->dma_mode = 0;
 
         if (mount_file) {

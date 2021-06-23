@@ -157,6 +157,7 @@ begin
         iec_reset_n  => iec_reset_n,
         iec_reset_o  => iec_reset_o,
     
+        power        => power,
         drive_stop   => drive_stop_i,
     
         cia_rising   => cia_rising,
@@ -176,7 +177,8 @@ begin
         rising      => cia_rising,
         reset       => drv_reset,
         tick_1kHz   => tick_1kHz,
-        
+        tick_4MHz   => tick_4MHz,
+
         -- serial bus pins
         atn_o       => atn_o, -- open drain
         atn_i       => atn_i,

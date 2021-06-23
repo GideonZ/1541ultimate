@@ -486,6 +486,8 @@ set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/stepper.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/wd177x.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/mm_drive.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/mm_drive_cpu.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/c1541_drive.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/cpu_part_1541.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/c1541_timing.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy_stream.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy.vhd

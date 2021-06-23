@@ -40,9 +40,9 @@ static const char *interfaces[] = { "ACIA / SwiftLink" };
 static const char *acia_mode[] = { "Off", "DE00/IRQ", "DE00/NMI", "DF00/IRQ", "DF00/NMI", "DF80/IRQ", "DF80/NMI" };
 static const char *dcd_dsr[] = { "Active (Low)", "Active when connected", "Inactive when connected", "Inactive (High)", "Act. when connecting", "Inact. when connecting" };
 static const int acia_base[] = { 0, 0xDE00, 0xDE01, 0xDF00, 0xDF01, 0xDF80, 0xDF81 };
-static char *responseCode[] = {"\r0\r","\r1\r","\r2\r","\r3\r","\r4\r","\r5\r","\r6\r","\r7\r","\r8\r",
+static const char *responseCode[] = {"\r0\r","\r1\r","\r2\r","\r3\r","\r4\r","\r5\r","\r6\r","\r7\r","\r8\r",
 								"\r10\r","\r11\r","\r12\r","\r13\r","\r14\r","\r28\r"};
-static char *responseText[] = {"\rOK\r","\rCONNECT\r","\rRING\r","\rNO CARRIER\r","\rERROR\r","\rCONNECT 1200\r",
+static const char *responseText[] = {"\rOK\r","\rCONNECT\r","\rRING\r","\rNO CARRIER\r","\rERROR\r","\rCONNECT 1200\r",
 								"\rNO DIALTONE\r","\rBUSY\r","\rNO ANSWER\r","\rCONNECT 2400\r","\rCONNECT 4800\r",
 								"\rCONNECT 9600\r","\rCONNECT 14400\r","\rCONNECT 19200\r","\rCONNECT 38400\r"};
 

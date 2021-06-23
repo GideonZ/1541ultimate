@@ -61,7 +61,14 @@ int FileTypeD64 :: fetch_context_items(IndexedList<Action *> &list)
     uint32_t capabilities = getFpgaCapabilities();
     C64 *machine = C64 :: getMachine();
 
-    if(capabilities & CAPAB_DRIVE_1541_1) {
+    bool can_mount = true;
+    if (!(capabilities & CAPAB_MM_DRIVE) && (ftype != 1541)) {
+        can_mount = false;
+    } else if (ftype < 1541) {
+        can_mount = false;
+    }
+
+    if ((capabilities & CAPAB_DRIVE_1541_1) && can_mount) {
         list.append(new Action("Mount Disk", SUBSYSID_DRIVE_A, MENU_1541_MOUNT_D64, ftype));
         if (machine->exists()) {
             list.append(new Action("Run Disk", runDisk_st, ftype));
@@ -72,7 +79,7 @@ int FileTypeD64 :: fetch_context_items(IndexedList<Action *> &list)
         count += 3;
     }
 
-    if(capabilities & CAPAB_DRIVE_1541_2) {
+    if ((capabilities & CAPAB_DRIVE_1541_2) && can_mount) {
         list.append(new Action("Mount Disk on B", SUBSYSID_DRIVE_B, MENU_1541_MOUNT_D64, ftype));
         list.append(new Action("Mount Disk R/O on B", SUBSYSID_DRIVE_B, MENU_1541_MOUNT_D64_RO, ftype));
         list.append(new Action("Mount Disk Unl. on B", SUBSYSID_DRIVE_B, MENU_1541_MOUNT_D64_UL, ftype));

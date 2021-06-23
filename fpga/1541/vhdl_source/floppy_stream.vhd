@@ -266,7 +266,7 @@ begin
             end if;
                             
             if reset='1' then
-                track_i <= "0100000";
+                track_i <= "0000000";
             end if;            
         end if;
     end process;

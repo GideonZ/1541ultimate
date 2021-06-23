@@ -64,7 +64,8 @@ port (
     clock_en    : in  std_logic; -- only for register access
     reset       : in  std_logic;
     tick_1kHz   : in  std_logic;
-
+    tick_4MHz   : in  std_logic;
+    
     -- register interface from 6502
     addr        : in  unsigned(1 downto 0);
     wen         : in  std_logic;
@@ -119,7 +120,7 @@ architecture behavioral of wd177x is
     signal transfer_addr    : unsigned(23 downto 0) := (others => '0');
     signal transfer_len     : unsigned(13 downto 0) := (others => '0');
 
-    type t_dma_state is (idle, do_read, reading, do_write, writing);
+    type t_dma_state is (idle, do_read, reading, do_write, writing, write_delay);
     signal dma_state        : t_dma_state;
 
     -- Command queue
@@ -129,6 +130,7 @@ architecture behavioral of wd177x is
     signal command_fifo_pop     : std_logic;
     signal command_fifo_valid   : std_logic;
     signal completion           : std_logic;
+    signal write_delay_cnt      : unsigned(7 downto 0);
     
     -- Stepper
     signal goto_track       : unsigned(6 downto 0);
@@ -172,11 +174,13 @@ begin
             if wen = '1' and clock_en = '1' then
                 case addr is
                 when "00" =>
-                    command <= wdata;
-                    st_busy <= '1';
-                    completion <= '0';
-                    command_fifo_push  <= '1';
-                    disk_wdata_valid <= '0';
+                    if st_busy = '0' or wdata(7 downto 4) = X"D" then
+                        command <= wdata;
+                        st_busy <= '1';
+                        completion <= '0';
+                        command_fifo_push  <= '1';
+                        disk_wdata_valid <= '0';
+                    end if;
                 
                 when "01" =>
                     track   <= wdata;
@@ -345,17 +349,26 @@ begin
                 dma_state <= writing;
 
             when writing =>
+                write_delay_cnt <= X"FF"; -- 64 us
                 if mem_rack = '1' then
                     mem_request <= '0';
                     transfer_addr <= transfer_addr + 1;
+                    dma_state <= idle;
                     if transfer_len = 0 then
                         dma_mode <= "11"; -- write complete
-                        st_busy <= '0';
+                        dma_state <= write_delay;
                         completion <= '1';
                         command_fifo_push <= '1';
                     end if;
-                    dma_state <= idle;
                 end if;
+
+            when write_delay =>
+                if write_delay_cnt = 0 then
+                    st_busy <= '0';
+                    dma_state <= idle;
+                elsif tick_4MHz = '1' then
+                    write_delay_cnt <= write_delay_cnt - 1;
+                end if;                    
 
             when others =>
                 null;
@@ -374,6 +387,7 @@ begin
                 step_time <= "01100";
                 completion <= '0';
                 goto_track <= to_unsigned(0, goto_track'length);
+                write_delay_cnt <= X"00";
             end if;
         end if;
     end process;

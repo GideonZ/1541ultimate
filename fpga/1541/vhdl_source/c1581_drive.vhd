@@ -155,6 +155,7 @@ begin
         iec_reset_n  => iec_reset_n,
         iec_reset_o  => iec_reset_o,
     
+        power        => power,
         drive_stop   => drive_stop_i,
     
         cpu_clock_en => cpu_clock_en ); -- 2 MHz
@@ -170,6 +171,8 @@ begin
         clock       => clock,
         falling     => cpu_clock_en,
         reset       => drv_reset,
+        tick_1kHz   => tick_1kHz,
+        tick_4MHz   => tick_4MHz,
         
         -- serial bus pins
         atn_o       => atn_o, -- open drain
@@ -194,7 +197,6 @@ begin
         io_irq          => io_irq,
 
         -- stepper interface
-        tick_1kHz       => tick_1kHz,
         do_track_out    => do_track_out,
         do_track_in     => do_track_in,
 
