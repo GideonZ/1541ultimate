@@ -24,6 +24,9 @@ extern "C" {
 #include "stream_uart.h"
 #include "host_stream.h"
 
+#include "filemanager.h"
+#include "init_function.h"
+
 extern uint8_t _ultimate_bin_start;
 extern uint8_t _ultimate_bin_end;
 extern uint8_t _mb_boot_700_b_start;
@@ -57,16 +60,12 @@ extern uint8_t _tar_ntsc_bin_end;
 extern uint8_t _tar_pal_bin_end;
 extern uint8_t _kcs_bin_end;
 
+extern uint8_t _1541_bin_start;
+extern uint8_t _snds1541_bin_start;
+
 Screen *screen;
 UserInterface *user_interface;
 Flash *flash;
-
-/*
-BlockDevice  *blk;
-Disk         *dsk;
-Partition    *prt;
-FATFS        *fs;
-*/
 
 #undef printf
 //#define printf(x) console_print(screen, x)
@@ -119,6 +118,28 @@ bool my_memcmp(void *a, void *b, int len)
         pulb++;
     }
     return true;
+}
+
+static void create_dir(const char *name)
+{
+    FileManager *fm = FileManager :: getFileManager();
+    mstring dir("/flash/");
+    dir += name;
+    FRESULT fres = fm->create_dir(dir.c_str());
+    console_print(screen, "Creating dir '%s': %s\n", name, FileSystem :: get_error_string(fres));
+}
+
+static void write_flash_file(const char *name, uint8_t *data, int length)
+{
+    File *f;
+    uint32_t dummy;
+    FileManager *fm = FileManager :: getFileManager();
+    FRESULT fres = fm->fopen("/flash", name, FA_CREATE_ALWAYS | FA_WRITE, &f);
+    if (fres == FR_OK) {
+        fres = f->write(data, length, &dummy);
+        console_print(screen, "Writing %s: %s\n", name, FileSystem :: get_error_string(fres));
+        fm->fclose(f);
+    }
 }
 
 static int last_sector = -1;	
@@ -225,6 +246,10 @@ bool program_flash(bool do_update1, bool do_update2, bool do_roms)
 {
 	uint8_t *roms;
 	
+    create_dir("roms");
+    write_flash_file("roms/1541.rom", &_1541_bin_start, 0x4000);
+    write_flash_file("roms/snds1541.bin", &_snds1541_bin_start, 0xC000);
+
 	flash->protect_disable();
 	last_sector = -1;
     int fpga_type = (getFpgaCapabilities() & CAPAB_FPGA_TYPE) >> FPGA_TYPE_SHIFT;
@@ -296,7 +321,7 @@ bool program_flash(bool do_update1, bool do_update2, bool do_roms)
 	console_print(screen, "                       \nDone!\n");
 	return true;
 }
-    
+
 extern "C" void ultimate_main(void *)
 {
 	char time_buffer[32];
@@ -306,14 +331,10 @@ extern "C" void ultimate_main(void *)
 	flash = get_flash();
     printf("Flash = %p. Capabilities = %8x\n", flash, getFpgaCapabilities());
 
-/*
-    static uint8_t bufje[65536];
-    flash->read_linear_addr(0, 65536, bufje);
-    dump_hex_relative(bufje, 65536);
-*/
-
     GenericHost *host = 0;
     Stream *stream = new Stream_UART;
+    InitFunction :: executeAll();
+
     C64 *c64 = C64 :: getMachine();
     c64->reset();
 
@@ -325,7 +346,7 @@ extern "C" void ultimate_main(void *)
     
     printf("host = %p\n", host);
 
-    UserInterface *user_interface = new UserInterface("\033\021** 1541 Ultimate II+ Updater **\n\033\037");
+    UserInterface *user_interface = new UserInterface("\033\021** 1541 Ultimate II Updater **\n\033\037");
     user_interface->init(host);
     host->take_ownership(user_interface);
     user_interface->appear();

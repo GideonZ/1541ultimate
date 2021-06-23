@@ -173,6 +173,7 @@ begin
         iec_reset_n  => iec_reset_n,
         iec_reset_o  => iec_reset_o,
     
+        power        => power,
         drive_stop   => drive_stop_i,
     
         cia_rising   => cia_rising,
@@ -192,6 +193,7 @@ begin
         rising      => cia_rising,
         reset       => drv_reset,
         tick_1kHz   => tick_1kHz,
+        tick_4MHz   => tick_4MHz,
 
         -- Drive type!!
         drive_type  => drive_type,
@@ -352,6 +354,7 @@ begin
 
     i_regs: entity work.drive_registers
     generic map (
+        g_multi_mode    => true,
         g_audio_base    => g_audio_base,
         g_ram_base      => g_ram_base )
     port map (

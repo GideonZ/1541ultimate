@@ -104,10 +104,17 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
 
     disk_state = e_no_disk;
     iec_address = 8 + int(letter - 'A');
-    large_rom = false;
     dummy_track = NULL;
 
     taskHandle = 0;
+
+    registers[C1541_DRIVETYPE] = 2;
+    multi_mode = ((registers[C1541_DRIVETYPE] & 3) == 2);
+
+    if (!multi_mode) {
+        cfg->disable(CFG_C1541_ROMFILE1);
+        cfg->disable(CFG_C1541_ROMFILE2);
+    }
 }
 
 C1541 :: ~C1541()
@@ -232,9 +239,15 @@ void C1541 :: update_task_items(bool writablePath, Path *p)
     myActions.blank->hide();
     myActions.reset->hide();
     myActions.turnon->hide();
-    myActions.mode41->show();
-    myActions.mode71->show();
-    myActions.mode81->show();
+    if (multi_mode) {
+        myActions.mode41->show();
+        myActions.mode71->show();
+        myActions.mode81->show();
+    } else {
+        myActions.mode41->hide();
+        myActions.mode71->hide();
+        myActions.mode81->hide();
+    }
 
     // don't show items for disabled drives
     if ((registers[C1541_POWER] & 1) == 0) {
@@ -848,6 +861,11 @@ bool C1541 :: are_mfm_dirty_bits_set()
 
 FRESULT C1541 :: set_drive_type(t_drive_type drv)
 {
+    // Force 1541 mode, when the target is not multi-mode
+    if (!multi_mode && (drv != e_dt_1541)) {
+        return FR_INVALID_PARAMETER;
+    }
+
     if (current_drive_type == drv) {
         return FR_OK; // do nothing, so success
     }
@@ -882,6 +900,9 @@ FRESULT C1541 :: set_drive_type(t_drive_type drv)
 
 FRESULT C1541 :: change_drive_type(t_drive_type drv,  UserInterface *ui)
 {
+    if (!multi_mode) {
+        return FR_DENIED;
+    }
     bool change = true;
     if (ui) {
         char buf[40];
@@ -1009,11 +1030,6 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
     	cmd->mode = 1;
         save_disk_to_file(cmd);
         break;
-/*
-    case MENU_1541_SWAP:
-        swap_disk();
-        break;
-*/
     case FLOPPY_LOAD_DOS:
     	memcpy((void *)&memory_map[0x8000], (void*) cmd->buffer, 0x8000);
         break;

@@ -515,7 +515,7 @@ begin
         g_uart          => true,
         g_drive_1541    => true,
         g_drive_1541_2  => true,
-        g_drive_1581    => true, -- Let's try all!!
+        g_mm_drive      => true,
         g_hardware_gcr  => true,
         g_ram_expansion => true,
         g_extended_reu  => false,

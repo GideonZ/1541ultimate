@@ -155,6 +155,7 @@ begin
         iec_reset_n  => iec_reset_n,
         iec_reset_o  => iec_reset_o,
     
+        power        => power,
         drive_stop   => drive_stop_i,
     
         cia_rising   => cia_rising,

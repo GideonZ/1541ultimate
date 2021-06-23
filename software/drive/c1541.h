@@ -103,8 +103,8 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     TaskCategory *taskItemCategory;
     int iec_address;
     char drive_letter;
-    bool large_rom;
-	int write_skip;
+    bool multi_mode;
+    int write_skip;
 
 	uint32_t mfm_dirty_bits[2][3]; // two sides, max 96 tracks each.
 	

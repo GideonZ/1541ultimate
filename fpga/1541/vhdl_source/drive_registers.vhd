@@ -9,6 +9,7 @@ use work.c1541_pkg.all;
 entity drive_registers is
 generic (
     g_clock_freq    : natural := 50_000_000;
+    g_multi_mode    : boolean := false;
     g_audio_base    : unsigned(27 downto 0) := X"0030000";
     g_ram_base      : unsigned(27 downto 0) := X"0060000" );
 port (
@@ -88,7 +89,9 @@ begin
                     disk_change_i <= io_req.data(0);
                     force_ready_i <= io_req.data(1);
                 when c_drvreg_drivetype =>
-                    drive_type_i <= io_req.data(1 downto 0);
+                    if g_multi_mode then
+                        drive_type_i <= io_req.data(1 downto 0);
+                    end if;
                 when c_drvreg_sound =>
                     do_snd_insert <= io_req.data(0);
                     do_snd_remove <= io_req.data(1);
@@ -118,7 +121,9 @@ begin
                     io_resp.data(0) <= disk_change_i;
                     io_resp.data(1) <= force_ready_i;
                 when c_drvreg_drivetype =>
-                    io_resp.data(1 downto 0) <= drive_type_i;
+                    if g_multi_mode then
+                        io_resp.data(1 downto 0) <= drive_type_i;
+                    end if;
                     io_resp.data(7) <= g_audio_base(15);
                 when c_drvreg_track =>
                     io_resp.data(6 downto 0) <= std_logic_vector(track(6 downto 0));

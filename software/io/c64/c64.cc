@@ -35,7 +35,6 @@
 #include "keyboard_c64.h"
 #include "config.h"
 #if U64
-#include "iec.h"
 #include "u64_machine.h"
 #endif
 
@@ -49,6 +48,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "filetype_crt.h"
+#include "iec.h"
 #endif
 
 int ultimatedosversion = 0;

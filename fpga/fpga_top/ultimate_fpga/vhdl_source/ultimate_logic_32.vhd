@@ -33,7 +33,7 @@ generic (
     g_uart_rx       : boolean := false;
     g_drive_1541    : boolean := true;
     g_drive_1541_2  : boolean := false;
-    g_drive_1581    : boolean := false;
+    g_mm_drive      : boolean := true;
     g_hardware_gcr  : boolean := true;
     g_cartridge     : boolean := true;
     g_command_intf  : boolean := true;
@@ -285,7 +285,7 @@ architecture logic of ultimate_logic_32 is
         cap(08) := to_std(g_c2n_recorder);
         cap(09) := to_std(g_cartridge);
         cap(10) := to_std(g_ram_expansion);
-        cap(11) := to_std(g_drive_1581);
+        cap(11) := to_std(g_mm_drive);
         cap(12) := to_std(g_rtc_chip);
         cap(13) := to_std(g_rtc_timer);
         cap(14) := to_std(g_spi_flash);
@@ -327,10 +327,6 @@ architecture logic of ultimate_logic_32 is
     constant c_tag_cpu_d         : std_logic_vector(7 downto 0) := X"0D";
     constant c_tag_rmii          : std_logic_vector(7 downto 0) := X"0E"; -- and 0F
 
-    constant c_tag_1581_cpu_1    : std_logic_vector(7 downto 0) := X"21";
-    constant c_tag_1581_floppy_1 : std_logic_vector(7 downto 0) := X"22";
-    constant c_tag_1581_audio_1  : std_logic_vector(7 downto 0) := X"23";
-
     -- Timing
     signal tick_16MHz       : std_logic;
     signal tick_4MHz        : std_logic;
@@ -346,8 +342,6 @@ architecture logic of ultimate_logic_32 is
     signal mem_resp_32_1541      : t_mem_resp_32 := c_mem_resp_32_init;
     signal mem_req_32_1541_2     : t_mem_req_32 := c_mem_req_32_init;
     signal mem_resp_32_1541_2    : t_mem_resp_32 := c_mem_resp_32_init;
-    signal mem_req_32_1581       : t_mem_req_32 := c_mem_req_32_init;
-    signal mem_resp_32_1581      : t_mem_resp_32 := c_mem_resp_32_init;
     signal mem_req_32_cart       : t_mem_req_32 := c_mem_req_32_init;
     signal mem_resp_32_cart      : t_mem_resp_32 := c_mem_resp_32_init;
     signal mem_req_32_usb        : t_mem_req_32 := c_mem_req_32_init;
@@ -367,8 +361,6 @@ architecture logic of ultimate_logic_32 is
     signal io_resp_1541_1   : t_io_resp := c_io_resp_init;
     signal io_req_1541_2    : t_io_req;
     signal io_resp_1541_2   : t_io_resp := c_io_resp_init;
-    signal io_req_1581      : t_io_req;
-    signal io_resp_1581     : t_io_resp := c_io_resp_init;
     signal io_req_itu       : t_io_req;
     signal io_resp_itu      : t_io_resp := c_io_resp_init;
     signal io_req_cart      : t_io_req;
@@ -405,8 +397,8 @@ architecture logic of ultimate_logic_32 is
     signal io_resp_debug    : t_io_resp := c_io_resp_init;
     signal io_irq           : std_logic;
     
-    signal drive_sample_1   : signed(12 downto 0);
-    signal drive_sample_2   : signed(12 downto 0);
+    signal drive_sample_1   : signed(12 downto 0) := (others => '0');
+    signal drive_sample_2   : signed(12 downto 0) := (others => '0');
     signal audio_tape_read  : signed(18 downto 0);
     signal audio_tape_write : signed(18 downto 0);
     signal sid_left         : signed(17 downto 0);
@@ -592,71 +584,135 @@ begin
 
     r_drive: if g_drive_1541 generate
     begin
-        i_drive: entity work.mm_drive
-        generic map (
-            g_big_endian    => g_big_endian,
-            g_cpu_tag       => c_tag_1541_cpu_1,
-            g_floppy_tag    => c_tag_1541_floppy_1,
-            g_disk_tag      => c_tag_1541_disk_1,
-            g_audio_tag     => c_tag_1541_audio_1,
-            g_audio         => g_drive_sound,
-            g_audio_base    => X"0EC0000",
-            g_ram_base      => X"0EE0000" )
-        port map (
-            clock           => sys_clock,
-            reset           => sys_reset,
-            drive_stop      => c64_stopped,
-            
-            -- timing
-            tick_16MHz      => tick_16MHz,
-            tick_4MHz       => tick_4MHz,
-            tick_1kHz       => tick_1kHz,
-            
-            -- slave port on io bus
-            io_req          => io_req_1541_1,
-            io_resp         => io_resp_1541_1,
-            io_irq          => sys_irq_1541_1,
-                        
-            -- master port on memory bus
-            mem_req         => mem_req_32_1541,
-            mem_resp        => mem_resp_32_1541,
-            
-            -- serial bus pins
-            atn_o           => atn_o, -- open drain
-            atn_i           => atn_i,
-            clk_o           => clk_o, -- open drain
-            clk_i           => clk_i,              
-            data_o          => data_o, -- open drain
-            data_i          => data_i,              
-            fast_clk_o      => srq_o,
-            fast_clk_i      => srq_i,
-            
-            iec_reset_n     => iec_reset_i,
-            c64_reset_n     => c64_reset_in_n,
-            
-            -- Debug port
-            debug_data      => drv_debug_data,
-            debug_valid     => drv_debug_valid,
-
-            -- Parallel cable pins
-            via1_port_a_o   => drv_via1_port_a_o,
-            via1_port_a_i   => drv_via1_port_a_i,
-            via1_port_a_t   => drv_via1_port_a_t,
-            via1_ca2_o      => drv_via1_ca2_o,
-            via1_ca2_i      => drv_via1_ca2_i,
-            via1_ca2_t      => drv_via1_ca2_t,
-            via1_cb1_o      => drv_via1_cb1_o,
-            via1_cb1_i      => drv_via1_cb1_i,
-            via1_cb1_t      => drv_via1_cb1_t,
-
-            -- LED
-            act_led_n       => disk_led_n,
-            motor_led_n     => motor_led_n,
-            dirty_led_n     => dirty_led_1_n,
-
-            -- audio out
-            audio_sample    => drive_sample_1 );
-            
+        r_mm: if g_mm_drive generate
+            i_drive: entity work.mm_drive
+            generic map (
+                g_big_endian    => g_big_endian,
+                g_cpu_tag       => c_tag_1541_cpu_1,
+                g_floppy_tag    => c_tag_1541_floppy_1,
+                g_disk_tag      => c_tag_1541_disk_1,
+                g_audio_tag     => c_tag_1541_audio_1,
+                g_audio         => g_drive_sound,
+                g_audio_base    => X"0EC0000",
+                g_ram_base      => X"0EE0000" )
+            port map (
+                clock           => sys_clock,
+                reset           => sys_reset,
+                drive_stop      => c64_stopped,
+                
+                -- timing
+                tick_16MHz      => tick_16MHz,
+                tick_4MHz       => tick_4MHz,
+                tick_1kHz       => tick_1kHz,
+                
+                -- slave port on io bus
+                io_req          => io_req_1541_1,
+                io_resp         => io_resp_1541_1,
+                io_irq          => sys_irq_1541_1,
+                            
+                -- master port on memory bus
+                mem_req         => mem_req_32_1541,
+                mem_resp        => mem_resp_32_1541,
+                
+                -- serial bus pins
+                atn_o           => atn_o, -- open drain
+                atn_i           => atn_i,
+                clk_o           => clk_o, -- open drain
+                clk_i           => clk_i,              
+                data_o          => data_o, -- open drain
+                data_i          => data_i,              
+                fast_clk_o      => srq_o,
+                fast_clk_i      => srq_i,
+                
+                iec_reset_n     => iec_reset_i,
+                c64_reset_n     => c64_reset_in_n,
+                
+                -- Debug port
+                debug_data      => drv_debug_data,
+                debug_valid     => drv_debug_valid,
+    
+                -- Parallel cable pins
+                via1_port_a_o   => drv_via1_port_a_o,
+                via1_port_a_i   => drv_via1_port_a_i,
+                via1_port_a_t   => drv_via1_port_a_t,
+                via1_ca2_o      => drv_via1_ca2_o,
+                via1_ca2_i      => drv_via1_ca2_i,
+                via1_ca2_t      => drv_via1_ca2_t,
+                via1_cb1_o      => drv_via1_cb1_o,
+                via1_cb1_i      => drv_via1_cb1_i,
+                via1_cb1_t      => drv_via1_cb1_t,
+    
+                -- LED
+                act_led_n       => disk_led_n,
+                motor_led_n     => motor_led_n,
+                dirty_led_n     => dirty_led_1_n,
+    
+                -- audio out
+                audio_sample    => drive_sample_1 );
+        end generate;
+                    
+        r_standard: if not g_mm_drive generate
+            i_drive: entity work.c1541_drive
+            generic map (
+                g_big_endian    => g_big_endian,
+                g_cpu_tag       => c_tag_1541_cpu_1,
+                g_floppy_tag    => c_tag_1541_floppy_1,
+                g_audio_tag     => c_tag_1541_audio_1,
+                g_audio         => g_drive_sound,
+                g_audio_base    => X"0EC0000",
+                g_ram_base      => X"0EE0000" )
+            port map (
+                clock           => sys_clock,
+                reset           => sys_reset,
+                drive_stop      => c64_stopped,
+                
+                -- timing
+                tick_16MHz      => tick_16MHz,
+                tick_4MHz       => tick_4MHz,
+                tick_1kHz       => tick_1kHz,
+                
+                -- slave port on io bus
+                io_req          => io_req_1541_1,
+                io_resp         => io_resp_1541_1,
+                            
+                -- master port on memory bus
+                mem_req         => mem_req_32_1541,
+                mem_resp        => mem_resp_32_1541,
+                
+                -- serial bus pins
+                atn_o           => atn_o, -- open drain
+                atn_i           => atn_i,
+                clk_o           => clk_o, -- open drain
+                clk_i           => clk_i,              
+                data_o          => data_o, -- open drain
+                data_i          => data_i,              
+                
+                iec_reset_n     => iec_reset_i,
+                c64_reset_n     => c64_reset_in_n,
+                
+                -- Debug port
+                debug_data      => drv_debug_data,
+                debug_valid     => drv_debug_valid,
+    
+                -- Parallel cable pins
+                via1_port_a_o   => drv_via1_port_a_o,
+                via1_port_a_i   => drv_via1_port_a_i,
+                via1_port_a_t   => drv_via1_port_a_t,
+                via1_ca2_o      => drv_via1_ca2_o,
+                via1_ca2_i      => drv_via1_ca2_i,
+                via1_ca2_t      => drv_via1_ca2_t,
+                via1_cb1_o      => drv_via1_cb1_o,
+                via1_cb1_i      => drv_via1_cb1_i,
+                via1_cb1_t      => drv_via1_cb1_t,
+    
+                -- LED
+                act_led_n       => disk_led_n,
+                motor_led_n     => motor_led_n,
+                dirty_led_n     => dirty_led_1_n,
+    
+                -- audio out
+                audio_sample    => drive_sample_1 );
+        end generate;
     end generate;
 
     audio_speaker_tmp <= (drive_sample_1 + drive_sample_2) * signed(resize(unsigned(speaker_vol),5));
@@ -674,67 +730,128 @@ begin
         signal via1_cb1_i      : std_logic;
         signal via1_cb1_t      : std_logic;
     begin
-        i_drive: entity work.mm_drive
-        generic map (
-            g_big_endian    => g_big_endian,
-            g_cpu_tag       => c_tag_1541_cpu_2,
-            g_floppy_tag    => c_tag_1541_floppy_2,
-            g_disk_tag      => c_tag_1541_disk_2,
-            g_audio_tag     => c_tag_1541_audio_2,
-            g_audio         => g_drive_sound,
-            g_audio_base    => X"0EB0000",
-            g_ram_base      => X"0ED0000" )
-        port map (
-            clock           => sys_clock,
-            reset           => sys_reset,
-            drive_stop      => c64_stopped,
-            
-            -- timing
-            tick_16MHz      => tick_16MHz,
-            tick_4MHz       => tick_4MHz,
-            tick_1kHz       => tick_1kHz,
-            
-            -- slave port on io bus
-            io_req          => io_req_1541_2,
-            io_resp         => io_resp_1541_2,
-            io_irq          => sys_irq_1541_2,
-                                    
-            -- master port on memory bus
-            mem_req         => mem_req_32_1541_2,
-            mem_resp        => mem_resp_32_1541_2,
-            
-            -- serial bus pins
-            atn_o           => atn_o_2, -- open drain
-            atn_i           => atn_i,
-            clk_o           => clk_o_2, -- open drain
-            clk_i           => clk_i,              
-            data_o          => data_o_2, -- open drain
-            data_i          => data_i,              
-            fast_clk_o      => srq_o_2,
-            fast_clk_i      => srq_i,
-            
-            iec_reset_n     => iec_reset_i,
-            c64_reset_n     => c64_reset_in_n,
-
-            -- Parallel cable pins
-            via1_port_a_o   => via1_port_a_o,
-            via1_port_a_i   => via1_port_a_i,
-            via1_port_a_t   => via1_port_a_t,
-            via1_ca2_o      => via1_ca2_o,
-            via1_ca2_i      => via1_ca2_i,
-            via1_ca2_t      => via1_ca2_t,
-            via1_cb1_o      => via1_cb1_o,
-            via1_cb1_i      => via1_cb1_i,
-            via1_cb1_t      => via1_cb1_t,
-
-            -- LED
-            act_led_n       => disk_act2n,
-            motor_led_n     => motor_led2n,
---            dirty_led_n     => dirty_led_2_n,
-
-            -- audio out
-            audio_sample    => drive_sample_2 );
-
+        r_mm: if g_mm_drive generate
+            i_drive: entity work.mm_drive
+            generic map (
+                g_big_endian    => g_big_endian,
+                g_cpu_tag       => c_tag_1541_cpu_2,
+                g_floppy_tag    => c_tag_1541_floppy_2,
+                g_disk_tag      => c_tag_1541_disk_2,
+                g_audio_tag     => c_tag_1541_audio_2,
+                g_audio         => g_drive_sound,
+                g_audio_base    => X"0EB0000",
+                g_ram_base      => X"0ED0000" )
+            port map (
+                clock           => sys_clock,
+                reset           => sys_reset,
+                drive_stop      => c64_stopped,
+                
+                -- timing
+                tick_16MHz      => tick_16MHz,
+                tick_4MHz       => tick_4MHz,
+                tick_1kHz       => tick_1kHz,
+                
+                -- slave port on io bus
+                io_req          => io_req_1541_2,
+                io_resp         => io_resp_1541_2,
+                io_irq          => sys_irq_1541_2,
+                                        
+                -- master port on memory bus
+                mem_req         => mem_req_32_1541_2,
+                mem_resp        => mem_resp_32_1541_2,
+                
+                -- serial bus pins
+                atn_o           => atn_o_2, -- open drain
+                atn_i           => atn_i,
+                clk_o           => clk_o_2, -- open drain
+                clk_i           => clk_i,              
+                data_o          => data_o_2, -- open drain
+                data_i          => data_i,              
+                fast_clk_o      => srq_o_2,
+                fast_clk_i      => srq_i,
+                
+                iec_reset_n     => iec_reset_i,
+                c64_reset_n     => c64_reset_in_n,
+    
+                -- Parallel cable pins
+                via1_port_a_o   => via1_port_a_o,
+                via1_port_a_i   => via1_port_a_i,
+                via1_port_a_t   => via1_port_a_t,
+                via1_ca2_o      => via1_ca2_o,
+                via1_ca2_i      => via1_ca2_i,
+                via1_ca2_t      => via1_ca2_t,
+                via1_cb1_o      => via1_cb1_o,
+                via1_cb1_i      => via1_cb1_i,
+                via1_cb1_t      => via1_cb1_t,
+    
+                -- LED
+                act_led_n       => disk_act2n,
+                motor_led_n     => motor_led2n,
+    --            dirty_led_n     => dirty_led_2_n,
+    
+                -- audio out
+                audio_sample    => drive_sample_2 );
+        end generate;
+        
+        r_standard: if not g_mm_drive generate
+            i_drive: entity work.c1541_drive
+            generic map (
+                g_big_endian    => g_big_endian,
+                g_cpu_tag       => c_tag_1541_cpu_2,
+                g_floppy_tag    => c_tag_1541_floppy_2,
+                g_audio_tag     => c_tag_1541_audio_2,
+                g_audio         => g_drive_sound,
+                g_audio_base    => X"0EB0000",
+                g_ram_base      => X"0ED0000" )
+            port map (
+                clock           => sys_clock,
+                reset           => sys_reset,
+                drive_stop      => c64_stopped,
+                
+                -- timing
+                tick_16MHz      => tick_16MHz,
+                tick_4MHz       => tick_4MHz,
+                tick_1kHz       => tick_1kHz,
+                
+                -- slave port on io bus
+                io_req          => io_req_1541_2,
+                io_resp         => io_resp_1541_2,
+                                        
+                -- master port on memory bus
+                mem_req         => mem_req_32_1541_2,
+                mem_resp        => mem_resp_32_1541_2,
+                
+                -- serial bus pins
+                atn_o           => atn_o_2, -- open drain
+                atn_i           => atn_i,
+                clk_o           => clk_o_2, -- open drain
+                clk_i           => clk_i,              
+                data_o          => data_o_2, -- open drain
+                data_i          => data_i,              
+                
+                iec_reset_n     => iec_reset_i,
+                c64_reset_n     => c64_reset_in_n,
+    
+                -- Parallel cable pins
+                via1_port_a_o   => via1_port_a_o,
+                via1_port_a_i   => via1_port_a_i,
+                via1_port_a_t   => via1_port_a_t,
+                via1_ca2_o      => via1_ca2_o,
+                via1_ca2_i      => via1_ca2_i,
+                via1_ca2_t      => via1_ca2_t,
+                via1_cb1_o      => via1_cb1_o,
+                via1_cb1_i      => via1_cb1_i,
+                via1_cb1_t      => via1_cb1_t,
+    
+                -- LED
+                act_led_n       => disk_act2n,
+                motor_led_n     => motor_led2n,
+    --            dirty_led_n     => dirty_led_2_n,
+    
+                -- audio out
+                audio_sample    => drive_sample_2 );
+        end generate;
+        
         via1_port_a_i <= via1_port_a_o or not via1_port_a_t;
         via1_ca2_i    <= via1_ca2_o    or not via1_ca2_t;
         via1_cb1_i    <= via1_cb1_o    or not via1_cb1_t;
@@ -895,12 +1012,10 @@ begin
         reqs(0)  => io_req_1541_1,  -- 4020000
         reqs(1)  => io_req_1541_2,  -- 4024000
         reqs(2)  => io_req_iec,     -- 4028000
-        -- reqs(3)  => io_req_1581,    -- 402C000
         
         resps(0) => io_resp_1541_1,
         resps(1) => io_resp_1541_2,
         resps(2) => io_resp_iec );
-        -- resps(3)  => io_resp_1581 );
 
     i_split3: entity work.io_bus_splitter
     generic map (
@@ -1196,7 +1311,7 @@ begin
 
     i_mem_arb: entity work.mem_bus_arbiter_pri_32
     generic map (
-        g_ports      => 8,
+        g_ports      => 7,
         g_registered => false )
     port map (
         clock       => sys_clock,
@@ -1204,21 +1319,19 @@ begin
         
         reqs(0)     => mem_req_32_cart,
         reqs(1)     => mem_req_32_1541,
-        reqs(2)     => mem_req_32_1581,
-        reqs(3)     => mem_req_32_1541_2,
-        reqs(4)     => mem_req_32_rmii,
-        reqs(5)     => mem_req_32_usb,
-        reqs(6)     => mem_req_32_cpu,
-        reqs(7)     => ext_mem_req,
+        reqs(2)     => mem_req_32_1541_2,
+        reqs(3)     => mem_req_32_rmii,
+        reqs(4)     => mem_req_32_usb,
+        reqs(5)     => mem_req_32_cpu,
+        reqs(6)     => ext_mem_req,
         
         resps(0)    => mem_resp_32_cart,
         resps(1)    => mem_resp_32_1541,
-        resps(2)    => mem_resp_32_1581,
-        resps(3)    => mem_resp_32_1541_2,
-        resps(4)    => mem_resp_32_rmii,
-        resps(5)    => mem_resp_32_usb,
-        resps(6)    => mem_resp_32_cpu,
-        resps(7)    => ext_mem_resp,
+        resps(2)    => mem_resp_32_1541_2,
+        resps(3)    => mem_resp_32_rmii,
+        resps(4)    => mem_resp_32_usb,
+        resps(5)    => mem_resp_32_cpu,
+        resps(6)    => ext_mem_resp,
         
         req         => mem_req,
         resp        => mem_resp );        

@@ -17,6 +17,7 @@ port (
     rising      : in  std_logic;
     reset       : in  std_logic;
     tick_1kHz   : in  std_logic;
+    tick_4MHz   : in  std_logic;
 
     -- Drive Type
     drive_type  : in  natural range 0 to 2 := 0; -- 0 = 1541, 1 = 1571, 2 = 1581
@@ -236,11 +237,10 @@ begin
         cpu_reset   => reset,    
     
         cpu_write   => cpu_write,
-        
         cpu_wdata   => cpu_wdata,
         cpu_rdata   => cpu_rdata,
         cpu_addr    => cpu_addr,
-        
+
         IRQn        => cpu_irqn, -- IRQ interrupt (level sensitive)
         NMIn        => '1',
     
@@ -389,6 +389,7 @@ begin
         clock_en     => cpu_clk_en,
         reset        => reset,
         tick_1kHz    => tick_1kHz,
+        tick_4MHz    => tick_4MHz,
 
         addr         => unsigned(cpu_addr(1 downto 0)),
         wen          => wd_wen,

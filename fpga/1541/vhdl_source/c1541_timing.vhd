@@ -17,6 +17,7 @@ port (
     iec_reset_n     : in  std_logic;
     iec_reset_o     : out std_logic;
 
+    power           : in  std_logic;
     drive_stop      : in  std_logic;
                     
     cia_rising      : out std_logic;
@@ -36,7 +37,7 @@ begin
         if rising_edge(clock) then
 			cpu_clock_en_i <= '0';
             cia_rising     <= '0';			
-            if drive_stop='0' then
+            if drive_stop='0' and power='1' then
                 if tick_4MHz = '1' then
                     case pre_cnt is
                     when "00" =>

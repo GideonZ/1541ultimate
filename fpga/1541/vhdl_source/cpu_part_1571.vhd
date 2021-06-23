@@ -17,6 +17,7 @@ port (
     rising      : in  std_logic;
     reset       : in  std_logic;
     tick_1kHz   : in  std_logic;
+    tick_4MHz   : in  std_logic;
 
     -- serial bus pins
     atn_o       : out std_logic; -- open drain
@@ -504,6 +505,7 @@ begin
         
         motor_en     => motor_on_i,
         tick_1kHz    => tick_1kHz,
+        tick_4MHz    => tick_4MHz,
         stepper_en   => '0',
 
         mem_req      => mem_req_disk,

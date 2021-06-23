@@ -239,7 +239,7 @@ typedef struct{
 #define HIGH_IRQS 3
 static IrqHandler_t high_irqs[HIGH_IRQS]; // Zero'ed because SBSS
 
-void install_irq(int irqNr, irq_function_t func, void *context)
+void install_high_irq(int irqNr, irq_function_t func, void *context)
 {
     if (irqNr < HIGH_IRQS) {
         high_irqs[irqNr].handler = func;
@@ -247,7 +247,7 @@ void install_irq(int irqNr, irq_function_t func, void *context)
     }
 }
 
-void deinstall_irq(int irqNr)
+void deinstall_high_irq(int irqNr)
 {
     if (irqNr < HIGH_IRQS) {
         high_irqs[irqNr].handler = NULL;
