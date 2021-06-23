@@ -54,6 +54,7 @@ generic (
     g_vic_copper    : boolean := false;
     g_sampler       : boolean := true;
     g_rmii          : boolean := false;
+    g_sdcard        : boolean := false;
     g_kernal_repl   : boolean := true );
 port (
     -- globals
@@ -442,8 +443,7 @@ architecture logic of ultimate_logic_32 is
     signal cas_read_c       : std_logic;
     signal cas_write_c      : std_logic;
 	signal busy_led			: std_logic;
-	signal sd_busy          : std_logic;
-	signal sd_act_stretched : std_logic;
+	signal sd_act_stretched : std_logic := '0';
 	signal disk_led_n		: std_logic := '1';
 	signal motor_led_n		: std_logic := '1';
 	signal cart_led_n		: std_logic := '1';
@@ -1073,37 +1073,54 @@ begin
             sys_irq      => sys_irq_usb );
     end generate;    
 
-    i_sd: entity work.spi_peripheral_io
-    generic map (
-        g_fixed_rate => false,
-        g_init_rate  => 500,
-        g_crc        => true )
-    port map (
-        clock       => sys_clock,
-        reset       => sys_reset,
-        
-        io_req      => io_req_sd,
-        io_resp     => io_resp_sd,
+    r_sdcard: if g_sdcard generate
+        signal sd_busy      : std_logic;
+    begin
+        i_sd: entity work.spi_peripheral_io
+        generic map (
+            g_fixed_rate => false,
+            g_init_rate  => 500,
+            g_crc        => true )
+        port map (
+            clock       => sys_clock,
+            reset       => sys_reset,
             
-		busy		=> sd_busy,
-		
-        SD_DETECTn  => SD_CARDDETn,
-        SD_WRPROTn  => '1', --SD_WRPROTn,
-        SPI_SSn     => SD_SSn,
-        SPI_CLK     => SD_CLK,
-        SPI_MOSI    => SD_MOSI,
-        SPI_MISO    => SD_MISO );
+            io_req      => io_req_sd,
+            io_resp     => io_resp_sd,
+                
+    		busy		=> sd_busy,
+    		
+            SD_DETECTn  => SD_CARDDETn,
+            SD_WRPROTn  => '1', --SD_WRPROTn,
+            SPI_SSn     => SD_SSn,
+            SPI_CLK     => SD_CLK,
+            SPI_MOSI    => SD_MOSI,
+            SPI_MISO    => SD_MISO );
+    
+    	i_stretch: entity work.pulse_stretch
+    	generic map ( g_clock_freq / 200) -- 5 ms
+    	port map (
+    		clock		=> sys_clock,
+    		reset		=> sys_reset,
+    		pulse_in	=> sd_busy,
+    		pulse_out	=> sd_act_stretched );
+    end generate;
+
+    r_no_sdcard: if not g_sdcard generate
+        i_sd_dummy: entity work.io_dummy
+        port map (
+            clock       => sys_clock,
+            io_req      => io_req_sd,
+            io_resp     => io_resp_sd );
+
+        SD_SSn      <= '1';
+        SD_CLK      <= '1';
+        SD_MOSI     <= '1';
+
+    end generate;    
 
     LED_CLK <= 'Z';
     LED_DATA <= 'Z';
-
-	i_stretch: entity work.pulse_stretch
-	generic map ( g_clock_freq / 200) -- 5 ms
-	port map (
-		clock		=> sys_clock,
-		reset		=> sys_reset,
-		pulse_in	=> sd_busy,
-		pulse_out	=> sd_act_stretched );
 
     r_spi_flash: if g_spi_flash generate
         i_spi_flash: entity work.spi_peripheral_io
