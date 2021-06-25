@@ -59,7 +59,7 @@ int FileTypeG64 :: fetch_context_items(IndexedList<Action *> &list)
         C64 *machine = C64 :: getMachine();
         list.append(new Action("Mount Disk", SUBSYSID_DRIVE_A, MENU_1541_MOUNT_G64, ftype));
     	if (machine->exists()) {
-            list.append(new Action("Run Disk", runDisk_st, ftype));
+            list.append(new Action("Run Disk", runDisk_st, 0, ftype));
             count ++;
     	}
         list.append(new Action("Mount Disk Read Only", SUBSYSID_DRIVE_A, MENU_1541_MOUNT_G64_RO, ftype));
@@ -80,7 +80,7 @@ int FileTypeG64 :: fetch_context_items(IndexedList<Action *> &list)
 int FileTypeG64 :: runDisk_st(SubsysCommand *cmd)
 {
     // First command is to mount the disk
-    SubsysCommand *drvcmd = new SubsysCommand(cmd->user_interface, SUBSYSID_DRIVE_A, MENU_1541_MOUNT_D64, cmd->mode, cmd->path.c_str(), cmd->filename.c_str());
+    SubsysCommand *drvcmd = new SubsysCommand(cmd->user_interface, SUBSYSID_DRIVE_A, MENU_1541_MOUNT_G64, cmd->mode, cmd->path.c_str(), cmd->filename.c_str());
     drvcmd->execute();
 
     // Second command is to perform a load"*",8,1
