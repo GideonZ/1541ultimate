@@ -432,117 +432,117 @@ int GcrImage :: convert_disk_gcr2bin(BinImage *bin_image, UserInterface *user_in
     return errors;
 }
 
-int GcrImage :: convert_gcr_track_to_bin(uint8_t *gcr, int trackNumber, int trackLen, int maxSector, uint8_t *bin, uint8_t *status, int statlen)
+int GcrImage::convert_gcr_track_to_bin(uint8_t *gcr, int trackNumber, int trackLen, int maxSector, uint8_t *bin, uint8_t *status, int statlen)
 {
-	static uint8_t header[8];
-	int t, s;
+    static uint8_t header[8];
+    int t, s;
 
     uint8_t *begin;
-	uint8_t *end;
-	uint8_t *current;
-	uint8_t *dest;
+    uint8_t *end;
+    uint8_t *current;
+    uint8_t *dest;
     uint8_t *gcr_data;
-	uint8_t *new_gcr;
-	uint8_t *st = status;
+    uint8_t *new_gcr;
+    uint8_t *st = status;
 
-	bool  expect_data = false;
-	bool  wrapped = false;
+    bool expect_data = false;
+    bool wrapped = false;
 
-	current = gcr;
-	begin = gcr;
-	end = begin + trackLen;
-	gcr = begin;
+    current = gcr;
+    begin = gcr;
+    end = begin + trackLen;
+    gcr = begin;
 
-	int secs = 0;
-	uint8_t sector_buffer[352];
+    int secs = 0;
+    uint8_t sector_buffer[352];
 
-	while(secs < maxSector) {
+    while (secs < maxSector) {
 
-		new_gcr = find_sync(current, begin, end);
-		if (!new_gcr) {
-		    break; // no sync found
-		}
-		if(new_gcr < current) {
-        	if (wrapped) {
-        		break;
-        	}
+        new_gcr = find_sync(current, begin, end);
+        if (!new_gcr) {
+            break; // no sync found
+        }
+        if (new_gcr < current) {
+            if (wrapped) {
+                break;
+            }
             wrapped = true;
         }
         current = new_gcr;
 
         gcr_data = wrap(&current, begin, end, 5, sector_buffer);
-		conv_5bytes_gcr2bin(&gcr_data, &header[0]);
-		if(header[0] == 8) {
+        conv_5bytes_gcr2bin(&gcr_data, &header[0]);
+        if (header[0] == 8) {
             gcr_data = wrap(&current, begin, end, 5, sector_buffer);
-			conv_5bytes_gcr2bin(&gcr_data, &header[4]);
-			t = (int)header[3];
-			s = (int)header[2];
-			dest = bin + (256 * s);
+            conv_5bytes_gcr2bin(&gcr_data, &header[4]);
+            t = (int)header[3];
+            s = (int)header[2];
+            dest = bin + (256 * s);
 
-			// We found a header, but we are expecting data
-			if (expect_data) {
-				if (st && (statlen > 0)) {
-					*(st++) = 0xE4;
-					statlen--;
-				}
-			}
+            // We found a header, but we are expecting data
+            if (expect_data) {
+                if (st && (statlen > 0)) {
+                    *(st++) = 0xE4;
+                    statlen--;
+                }
+            }
 
-			// new sector, store sector number
+            // new sector, store sector number
             if (st && (statlen > 0)) {
-				*(st++) = s;
-				statlen--;
-			}
-			expect_data = true;
+                *(st++) = s;
+                statlen--;
+            }
+            expect_data = true;
 
-			if(t != trackNumber) {
+            if (t != trackNumber) {
                 if (st && (statlen > 0)) {
-					*(st++) = 0xE1;
-					statlen--;
-					expect_data = false;
-				}
-			} else if(s >= maxSector) {
-                if (st && (statlen > 0)) {
-					*(st++) = 0xE2;
-					statlen--;
+                    *(st++) = 0xE1;
+                    statlen--;
                     expect_data = false;
-				}
-			}
-			continue;
-		}
+                }
+            } else if (s >= maxSector) {
+                if (st && (statlen > 0)) {
+                    *(st++) = 0xE2;
+                    statlen--;
+                    expect_data = false;
+                }
+            }
+            continue;
+        }
 
-		if(header[0] == 7) {
-			if(!expect_data) {
+        if (header[0] == 7) {
+            if (!expect_data) {
 
-			} else {
-				expect_data = false;
-				secs++;
-				uint8_t *binarySector = dest;
-				memcpy(dest, &header[1], 3);
-				dest += 3;
+            } else {
+                expect_data = false;
+                secs++;
+                uint8_t *binarySector = dest;
+                memcpy(dest, &header[1], 3);
+                dest += 3;
                 gcr_data = wrap(&current, begin, end, 320, sector_buffer);
-				for(int i=0;i<63;i++) {
-					conv_5bytes_gcr2bin(&gcr_data, dest);
-					dest+=4;
-				}
-				conv_5bytes_gcr2bin(&gcr_data, &header[4]);
-				*(dest++) = header[4];
+                for (int i = 0; i < 63; i++) {
+                    conv_5bytes_gcr2bin(&gcr_data, dest);
+                    dest += 4;
+                }
+                conv_5bytes_gcr2bin(&gcr_data, &header[4]);
+                *(dest++) = header[4];
 
                 if (st && (statlen > 0)) {
-					uint8_t chk = 0;
-					for (int i=0;i<256;i++) {
-						chk ^= *(binarySector++);
-					}
-					if (chk != header[5]) {
-						*(st++) = 0xE3;
-					} else {
-						*(st++) = 0x00;
-					}
-					statlen--;
-				}
-			}
-		}
-	}
-	return secs;
+                    uint8_t chk = 0;
+                    for (int i = 0; i < 256; i++) {
+                        chk ^= *(binarySector++);
+                    }
+                    if (chk != header[5]) {
+                        *(st++) = 0xE3;
+                    } else {
+                        *(st++) = 0x00;
+                    }
+                    statlen--;
+                }
+            }
+        }
+    }
+    return secs;
 }
 
 void GcrImage :: convert_disk_bin2gcr(BinImage *bin_image, UserInterface *user_interface)
