@@ -164,6 +164,7 @@ void C1541 :: effectuate_settings(void)
     set_hw_address(cfg->get_value(CFG_C1541_BUS_ID));
     set_sw_address(cfg->get_value(CFG_C1541_BUS_ID));
 
+    current_drive_type = e_dt_unset;
     uint8_t dt = cfg->get_value(CFG_C1541_DRIVETYPE);
     FRESULT res = set_drive_type((t_drive_type) dt);
 
