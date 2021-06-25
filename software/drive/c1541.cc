@@ -482,7 +482,7 @@ void C1541 :: map_gcr_image_to_mfm(void)
             GcrTrack *gtr = &gcr_image->tracks[i + z*GCRIMAGE_FIRSTTRACKSIDE1];
             MfmTrack *mtr = mfm->GetTrack(i, z);
             uint8_t *gcr = gtr->track_address;
-            if (!gcr) {
+            if (!gcr || !mtr) {
                 continue;
             }
             mtr->reservedSpace = gtr->track_length - MFM_TRACK_HEADER_SIZE;

@@ -1037,7 +1037,7 @@ int BinImage :: init(uint32_t size)
         num_tracks = 35;
         data_size = C1541_MAX_D64_35_NO_ERRORS;
         errors = &bin_data[C1541_MAX_D64_35_NO_ERRORS];
-        while(size >= 17*256) {
+        while ((size >= 17*256) && (num_tracks < BINIMAGE_MAXTRACKS)) {
             num_tracks ++;
             size -= 17*256;
             errors += 17*256;
@@ -1050,10 +1050,16 @@ int BinImage :: init(uint32_t size)
 
     uint8_t *track = bin_data;
     for(int i=0;i<num_tracks;i++) {
-        int sects = sectors_per_track[track_to_region(i, double_sided)];
-        track_start[i] = track;
-        track_sectors[i] = sects;
-        track += (256 * sects);
+        int region = track_to_region(i, double_sided);
+        if (region >= 0) {
+            int sects = sectors_per_track[region];
+            track_start[i] = track;
+            track_sectors[i] = sects;
+            track += (256 * sects);
+        } else {
+            num_tracks = i;
+            break;
+        }
     }
 
 	printf("Tracks: %d. Errors: %s\n", num_tracks, errors?"Yes":"No");
