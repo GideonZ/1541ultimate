@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 #define WD_MAX_SECTORS_PER_TRACK    32
-#define WD_MAX_TRACKS_PER_SIDE      82
+#define WD_MAX_TRACKS_PER_SIDE      84
 
 typedef enum {
     fmt_Clear,
