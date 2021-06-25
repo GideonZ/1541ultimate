@@ -71,7 +71,7 @@ int FileTypeD64 :: fetch_context_items(IndexedList<Action *> &list)
     if ((capabilities & CAPAB_DRIVE_1541_1) && can_mount) {
         list.append(new Action("Mount Disk", SUBSYSID_DRIVE_A, MENU_1541_MOUNT_D64, ftype));
         if (machine->exists()) {
-            list.append(new Action("Run Disk", runDisk_st, ftype));
+            list.append(new Action("Run Disk", runDisk_st, 0, ftype));
             count++;
         }
         list.append(new Action("Mount Disk Read Only", SUBSYSID_DRIVE_A, MENU_1541_MOUNT_D64_RO, ftype));
