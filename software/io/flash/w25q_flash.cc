@@ -42,9 +42,12 @@ static const t_flash_address flash_addresses[] = {
 	{ FLASH_ID_TAR_NTSC,   0x00, 0x0F0000, 0x0F0000, 0x10000 },
 
 	{ FLASH_ID_APPL,       0x01, 0x100000, 0x100000, 0xC0000 }, // max size: 768K
-	{ FLASH_ID_CUSTOM_ROM, 0x00, 0x1C0000, 0x1C0000, 0x20000 }, // max size: 128K
-	{ FLASH_ID_KERNAL_ROM, 0x00, 0x1E0000, 0x1E0000, 0x02000 },
-	{ FLASH_ID_CUSTOM_DRV, 0x00, 0x1E2000, 0x1E2000, 0x08000 }, // free: 1ea000-1f0000
+
+	{ FLASH_ID_FLASHDRIVE, 0x00, 0x1C0000, 0x1C0000, 0x30000 }, // 192KB, will move when all internal roms are removed
+
+//	{ FLASH_ID_CUSTOM_ROM, 0x00, 0x1C0000, 0x1C0000, 0x20000 }, // max size: 128K
+//	{ FLASH_ID_KERNAL_ROM, 0x00, 0x1E0000, 0x1E0000, 0x02000 },
+//	{ FLASH_ID_CUSTOM_DRV, 0x00, 0x1E2000, 0x1E2000, 0x08000 }, // free: 1ea000-1f0000
 	{ FLASH_ID_CONFIG,     0x00, 0x1F0000, 0x1F0000, 0x10000 },
 	{ FLASH_ID_LIST_END,   0x00, 0x1FE000, 0x1FE000, 0x01000 } };
 
@@ -82,6 +85,7 @@ static const t_flash_address flash_addresses_u64[] = {
 	{ FLASH_ID_BOOTFPGA,   0x01, 0x000000, 0x000000, 0x290000 }, // 282BD4
 	{ FLASH_ID_APPL,       0x01, 0x290000, 0x290000, 0x170000 }, // Max 1.5 MB
 
+/*
 	{ FLASH_ID_AR5PAL,     0x00, 0x400000, 0x400000, 0x08000 },
 	{ FLASH_ID_AR6PAL,     0x00, 0x408000, 0x408000, 0x08000 },
 	{ FLASH_ID_FINAL3,     0x00, 0x410000, 0x410000, 0x10000 },
@@ -113,9 +117,10 @@ static const t_flash_address flash_addresses_u64[] = {
     { FLASH_ID_KERNAL_ROM3,  0x00, 0x4AA000, 0x4AA000, 0x02000 },
 
     { FLASH_ID_CUSTOM_ROM,   0x00, 0x4AC000, 0x4AC000, 0x44000 }, // max size: 272K
+*/
 
 // ends at 0x4F0000  (free space: 3136 KB)
-	{ FLASH_ID_FLASHDRIVE,   0x00, 0x4F0000, 0x4F0000, 0x300000 }, // This will move to 0x400000 when all internal roms are removed
+	{ FLASH_ID_FLASHDRIVE,   0x00, 0x400000, 0x400000, 0x3F0000 }, // This will move to 0x400000 when all internal roms are removed
 
 	{ FLASH_ID_CONFIG,     0x00, 0x7F0000, 0x7F0000, 0x10000 },
 	{ FLASH_ID_LIST_END,   0x00, 0x7FE000, 0x7FE000, 0x01000 } };

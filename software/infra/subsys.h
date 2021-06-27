@@ -150,7 +150,6 @@ public:
 			}
 		}
 		delete this;
-		printf("Command executed. Returning %d.\n", retval);
 		return retval;
 	}
 

@@ -157,7 +157,7 @@ public:
     const char *get_store_name() { return store_name.c_str(); }
     const char *get_string(uint8_t id);
     void set_value(uint8_t id, int value);
-    void set_string(uint8_t id, char *s);
+    void set_string(uint8_t id, const char *s);
     void dump(void);
     void check_bounds(void);
     bool is_flash_stale(void) { return staleFlash; }

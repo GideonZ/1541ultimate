@@ -7,23 +7,12 @@
 class FileTypeCRT : public FileType
 {
 	BrowsableDirEntry *node;
-	uint8_t  crt_header[0x20];
-    uint8_t  chip_header[0x10];
-    uint16_t  type_select;
-    uint16_t  max_bank;
-    uint32_t total_read;
-    bool  load_at_a000;    
-    const char *name;
-    bool  check_header(File *f);
-    void  configure_cart(void);
-    bool  read_chip_packet(File *file);
 
     static int execute_st(SubsysCommand *cmd);
     int execute(SubsysCommand *cmd);
     static int executeFlash_st(SubsysCommand *cmd);
     int executeFlash(SubsysCommand *cmd);
 public:
-    static int parseCrt(void *buffer);
     FileTypeCRT(BrowsableDirEntry *node);
     ~FileTypeCRT();
 

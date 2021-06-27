@@ -399,7 +399,7 @@ void ConfigStore :: set_value(uint8_t id, int value)
     }
 }
 
-void ConfigStore :: set_string(uint8_t id, char *s)
+void ConfigStore :: set_string(uint8_t id, const char *s)
 {
     ConfigItem *i = find_item(id);
     if(i) {

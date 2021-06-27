@@ -32,8 +32,10 @@ extern uint32_t _u64_rbf_end;
 extern uint32_t _ultimate_app_start;
 extern uint32_t _ultimate_app_end;
 
+/*
 extern uint32_t _rom_pack_start;
 extern uint32_t _rom_pack_end;
+*/
 
 extern uint8_t _1581_bin_start;
 extern uint8_t _1571_bin_start;
@@ -89,20 +91,10 @@ static bool original_kernal_found(Flash *flash, int addr)
     return (memcmp(buffer, orig_kernal, 16) == 0);
 }
 
-static void move_roms(Flash *flash, Screen *screen)
-{
-    uint8_t *original_data = new uint8_t[0xA000];
-    flash->read_linear_addr(0x456000, 0xA000, original_data);
-    flash_buffer_at(flash, screen, 0x486000, false, original_data, original_data + 0xA000, "", "Moving User ROMs");
-    delete[] original_data;
-}
-
 static void create_dir(const char *name)
 {
     FileManager *fm = FileManager :: getFileManager();
-    mstring dir("/flash/");
-    dir += name;
-    FRESULT fres = fm->create_dir(dir.c_str());
+    FRESULT fres = fm->create_dir(name);
     console_print(screen, "Creating dir: %s\n", FileSystem :: get_error_string(fres));
 }
 
@@ -111,12 +103,21 @@ static void write_flash_file(const char *name, uint8_t *data, int length)
     File *f;
     uint32_t dummy;
     FileManager *fm = FileManager :: getFileManager();
-    FRESULT fres = fm->fopen("/flash", name, FA_CREATE_ALWAYS | FA_WRITE, &f);
+    FRESULT fres = fm->fopen(ROMS_DIRECTORY, name, FA_CREATE_ALWAYS | FA_WRITE, &f);
     if (fres == FR_OK) {
         fres = f->write(data, length, &dummy);
         console_print(screen, "Writing %s to /flash: %s\n", name, FileSystem :: get_error_string(fres));
         fm->fclose(f);
     }
+}
+
+static void copy_flash_binary(Flash *flash, uint32_t addr, uint32_t len, const char *fn)
+{
+    uint8_t *buffer = new uint8_t[len];
+    flash->read_linear_addr(addr, len, buffer);
+    FileManager *fm = FileManager :: getFileManager();
+    console_print(screen, "Saving %s to /flash..\n", fn);
+    fm->save_file(false, ROMS_DIRECTORY, fn, buffer, len, NULL);
 }
 
 void do_update(void)
@@ -179,59 +180,28 @@ void do_update(void)
         while(1);
     }
 
-/*
-    uint8_t was;
-    uint8_t value = S25FLxxxL_Flash :: write_config_register(&was);
-    console_print(screen, "Value of CR3NV was: %b and has become: %b\n", was, value);
-*/
-
-/*    int size = (int)&_u64_rbf_end - (int)&_u64_rbf_start;
-    uint8_t *read_buffer = malloc(size);
-    if (!read_buffer) {
-    	console_print(screen, "Cannot allocate read buffer.\n");
-    	while (1)
-    		;
-    }
-
-    flash2->read_image(FLASH_ID_BOOTFPGA, read_buffer, size);
-
-    uint32_t *pula = (uint32_t *)&_u64_rbf_start;
-    uint32_t *pulb = (uint32_t *)read_buffer;
-    size >>= 2;
-    int errors = 0;
-    int offset = 0;
-    while(size--) {
-    	if(pula[offset] != pulb[offset]) {
-            if (!errors)
-            	console_print(screen, "ERR: %8x: %8x != %8x.\n", offset * 4, pula[offset], pulb[offset]);
-            errors++;
-        }
-    	offset++;
-    }
-    console_print(screen, "Verify errors: %d\n", errors);
-*/
-    bool kernalFound = original_kernal_found(flash2, 0x488000);
-
     if(user_interface->popup("About to flash. Continue?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
 
-        create_dir("roms");
-        write_flash_file("roms/1581.rom", &_1581_bin_start, 0x8000);
-        write_flash_file("roms/1571.rom", &_1571_bin_start, 0x8000);
-        write_flash_file("roms/1541.rom", &_1541_bin_start, 0x4000);
-        write_flash_file("roms/snds1541.bin", &_snds1541_bin_start, 0xC000);
-        write_flash_file("roms/snds1571.bin", &_snds1571_bin_start, 0xC000);
-        write_flash_file("roms/snds1581.bin", &_snds1581_bin_start, 0xC000);
+        create_dir(ROMS_DIRECTORY);
+
+        if(original_kernal_found(flash2, 0x488000)) {
+            copy_flash_binary(flash2, 0x488000, 0x2000, "kernal.bin");
+        } else if (original_kernal_found(flash2, 0x458000)) {
+            copy_flash_binary(flash2, 0x458000, 0x2000, "kernal.bin");
+        }
+        copy_flash_binary(flash2, 0x48A000, 0x2000, "basic.bin");
+        copy_flash_binary(flash2, 0x486000, 0x1000, "chars.bin");
+
+        write_flash_file("1581.rom", &_1581_bin_start, 0x8000);
+        write_flash_file("1571.rom", &_1571_bin_start, 0x8000);
+        write_flash_file("1541.rom", &_1541_bin_start, 0x4000);
+        write_flash_file("snds1541.bin", &_snds1541_bin_start, 0xC000);
+        write_flash_file("snds1571.bin", &_snds1571_bin_start, 0xC000);
+        write_flash_file("snds1581.bin", &_snds1581_bin_start, 0xC000);
 
         flash2->protect_disable();
-        // If original flash was found at the original location, then move it
-        if (original_kernal_found(flash2, 0x458000)) {
-            move_roms(flash2, screen);
-            kernalFound = true;
-        }
-
         flash_buffer_at(flash2, screen, 0x000000, false, &_u64_rbf_start, &_u64_rbf_end,   "V1.0", "Runtime FPGA");
         flash_buffer_at(flash2, screen, 0x290000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
-        flash_buffer_at(flash2, screen, 0x400000, false, &_rom_pack_start, &_rom_pack_end, "V0.0", "ROMs Pack");
 
     	console_print(screen, "\nConfiguring Flash write protection..\n");
     	flash2->protect_configure();
@@ -239,13 +209,10 @@ void do_update(void)
     	console_print(screen, "Done!                            \n");
     }
 
-    if(user_interface->popup(kernalFound ? "Reset Configuration? (Not required)" : "Reset Configuration? (Recommended)", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+    if(user_interface->popup("Reset Configuration? (Recommended)", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
         int num = flash2->get_number_of_config_pages();
         for (int i=0; i < num; i++) {
             flash2->clear_config_page(i);
-        }
-        if (kernalFound) {
-            c64->resetConfigInFlash(0);
         }
     }
 

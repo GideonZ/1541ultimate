@@ -69,8 +69,8 @@ const uint8_t ascii[59] = {
 	0XC7, 0XE7, 0XD1, 0XF1, 0XDD, 0X9F, 0XFD, 0XFF, 0xDF // other chars
 };
 
-cart_def sid_cart = { ID_SIDCART, (void *)0, 0x4000, CART_TYPE_16K | CART_RAM };
-cart_def mus_cart = { ID_SIDCART, (void *)0, 0x4000, CART_TYPE_16K | CART_RAM };
+cart_def sid_cart; // = { ID_SIDCART, (void *)0, 0x4000, CART_TYPE_16K | CART_RAM };
+cart_def mus_cart; // = { ID_SIDCART, (void *)0, 0x4000, CART_TYPE_16K | CART_RAM };
 
 static inline uint16_t swap_word(uint16_t p)
 {
@@ -90,15 +90,24 @@ static void initSidCart(void *object, void *param)
 {
     int size = (int)&_sidcrt_bin_end - (int)&_sidcrt_bin_start;
     uint8_t *sid_rom_area = new uint8_t[16384];
-    sid_cart.custom_addr = sid_rom_area;
-    //sid_cart.length = size;
+    sid_cart.name         = "SID Player Cartridge";
+    sid_cart.custom_addr  = sid_rom_area;
+    sid_cart.length       = 0x4000;
+    sid_cart.type         = CART_TYPE_16K;
+    sid_cart.require      = CART_UCI_DFFC;
+
     memcpy(sid_rom_area, &_sidcrt_bin_start, size);
     printf("%d bytes copied into sid_cart.\n", size);
     memcpy(sid_rom_area + 0x2000, &_basic_bin_start, 8192);
 
     int mus_crt_size = (int)&_muscrt_bin_end - (int)&_muscrt_bin_start;
     uint8_t *mus_rom_area = new uint8_t[16384];
-    mus_cart.custom_addr = mus_rom_area;
+    mus_cart.name         = "MUS Player Cartridge";
+    mus_cart.custom_addr  = mus_rom_area;
+    mus_cart.length       = 0x4000;
+    mus_cart.type         = CART_TYPE_16K;
+    mus_cart.require      = CART_UCI_DFFC;
+
     memcpy(mus_rom_area, &_muscrt_bin_start, mus_crt_size);
     printf("%d bytes copied into mus_cart.\n", mus_crt_size);
     memcpy(mus_rom_area + 0x2000, &_basic_bin_start, 8192);

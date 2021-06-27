@@ -875,7 +875,7 @@ FRESULT C1541 :: set_drive_type(t_drive_type drv)
 
     // Load the correct sound bank...
     const char *sounds =  (drv == e_dt_1571) ? "snds1571.bin" : (drv == e_dt_1581) ? "snds1581.bin" : "snds1541.bin";
-    if (fm->load_file("/flash/roms", sounds, audio_address, 0xC000, NULL) != FR_OK) {
+    if (fm->load_file(ROMS_DIRECTORY, sounds, audio_address, 0xC000, NULL) != FR_OK) {
         // Silence upon failure to load
         memset(audio_address, 0, 0xC000);
     }
@@ -883,7 +883,7 @@ FRESULT C1541 :: set_drive_type(t_drive_type drv)
     // Load the correct ROM...
     uint8_t cfg_id_file = (drv == e_dt_1571) ? CFG_C1541_ROMFILE1 : (drv == e_dt_1581) ? CFG_C1541_ROMFILE2 : CFG_C1541_ROMFILE0;
     uint32_t transferred = 0;
-    FRESULT res = fm->load_file("/flash/roms", cfg->get_string(cfg_id_file), (uint8_t *)&memory_map[0x8000], 0x8000, &transferred);
+    FRESULT res = fm->load_file(ROMS_DIRECTORY, cfg->get_string(cfg_id_file), (uint8_t *)&memory_map[0x8000], 0x8000, &transferred);
     if (transferred == 0x4000) {
         memcpy((void *)(memory_map + 0xC000), (const void *)(memory_map + 0x8000), 0x4000); // copy 16K if the file was 16K
         transferred <<= 1;
@@ -1105,10 +1105,18 @@ bool C1541 :: save_disk_to_file(SubsysCommand *cmd)
     return false;
 }
 
+void C1541 :: set_rom_config(int idx, const char *fname)
+{
+    uint8_t config_ids[] = { CFG_C1541_ROMFILE0, CFG_C1541_ROMFILE1, CFG_C1541_ROMFILE2 };
+    cfg->set_string(config_ids[idx], fname);
+    cfg->write();
+    effectuate_settings();
+}
+
 void C1541 :: list_roms(ConfigItem *it, IndexedList<char *>& strings)
 {
     Path p;
-    p.cd("/flash/roms");
+    p.cd(ROMS_DIRECTORY);
     IndexedList<FileInfo *>infos(16, NULL);
     FileManager *fm = FileManager :: getFileManager();
     FRESULT fres = fm->get_directory(&p, infos, NULL);
@@ -1116,8 +1124,6 @@ void C1541 :: list_roms(ConfigItem *it, IndexedList<char *>& strings)
         return;
     }
 
-    // Now convert suitable filenames into actions, which fall through to SET_ROM in this subsys
-    // Quite a detour, but making use of the existing infrastructure. How to pass the filename?!
     for(int i=0;i<infos.get_elements();i++) {
         FileInfo *inf = infos[i];
         if ((inf->size == 16384) || (inf->size == 32768)) {

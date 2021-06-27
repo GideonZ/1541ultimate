@@ -35,8 +35,6 @@ extern "C" {
 #define MENU_SEND_COMMAND    0xCA1F
 #define MENU_IEC_FLUSH       0xCA20
    
-cart_def warp_cart  = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM };
-
 extern uint8_t  _iec_code_b_start;
 extern uint32_t _iec_code_b_size;
 //extern BYTE _warp_rom_65_start;
