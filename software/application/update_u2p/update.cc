@@ -50,9 +50,7 @@ static Screen *screen;
 static void create_dir(const char *name)
 {
     FileManager *fm = FileManager :: getFileManager();
-    mstring dir("/flash/");
-    dir += name;
-    FRESULT fres = fm->create_dir(dir.c_str());
+    FRESULT fres = fm->create_dir(name);
     console_print(screen, "Creating dir: %s\n", FileSystem :: get_error_string(fres));
 }
 
@@ -61,7 +59,7 @@ static void write_flash_file(const char *name, uint8_t *data, int length)
     File *f;
     uint32_t dummy;
     FileManager *fm = FileManager :: getFileManager();
-    FRESULT fres = fm->fopen("/flash", name, FA_CREATE_ALWAYS | FA_WRITE, &f);
+    FRESULT fres = fm->fopen(ROMS_DIRECTORY, name, FA_CREATE_ALWAYS | FA_WRITE, &f);
     if (fres == FR_OK) {
         fres = f->write(data, length, &dummy);
         console_print(screen, "Writing %s: %s\n", name, FileSystem :: get_error_string(fres));
@@ -124,19 +122,18 @@ void do_update(void)
         REMOTE_FLASHSELCK_0;
         REMOTE_FLASHSELCK_1;
 
-        create_dir("roms");
-        write_flash_file("roms/1581.rom", &_1581_bin_start, 0x8000);
-        write_flash_file("roms/1571.rom", &_1571_bin_start, 0x8000);
-        write_flash_file("roms/1541.rom", &_1541_bin_start, 0x4000);
-        write_flash_file("roms/snds1541.bin", &_snds1541_bin_start, 0xC000);
-        write_flash_file("roms/snds1571.bin", &_snds1571_bin_start, 0xC000);
-        write_flash_file("roms/snds1581.bin", &_snds1581_bin_start, 0xC000);
+        create_dir(ROMS_DIRECTORY);
+        write_flash_file("1581.rom", &_1581_bin_start, 0x8000);
+        write_flash_file("1571.rom", &_1571_bin_start, 0x8000);
+        write_flash_file("1541.rom", &_1541_bin_start, 0x4000);
+        write_flash_file("snds1541.bin", &_snds1541_bin_start, 0xC000);
+        write_flash_file("snds1571.bin", &_snds1571_bin_start, 0xC000);
+        write_flash_file("snds1581.bin", &_snds1581_bin_start, 0xC000);
 
         Flash *flash2 = get_flash();
         flash2->protect_disable();
         flash_buffer_at(flash2, screen, 0x000000, false, &_ultimate_run_rbf_start,   &_ultimate_run_rbf_end,   "V1.0", "Runtime FPGA");
         flash_buffer_at(flash2, screen, 0x0C0000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
-        flash_buffer_at(flash2, screen, 0x200000, false, &_rom_pack_start, &_rom_pack_end, "V0.0", "ROMs Pack");
 
         console_print(screen, "\nConfiguring Flash write protection..\n");
     	flash2->protect_configure();

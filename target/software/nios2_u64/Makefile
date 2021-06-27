@@ -57,6 +57,7 @@ SRCS_CC	 =  u2p_init.cc \
 			u64_config.cc \
 			rtc_i2c.cc \
 			c64.cc \
+			c64_crt.cc \
 			u64_machine.cc \
 			c64_subsys.cc \
 			screen.cc \

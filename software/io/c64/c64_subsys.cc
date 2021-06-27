@@ -25,13 +25,15 @@
 extern uint8_t _bootcrt_65_start;
 extern uint8_t _bootcrt_65_end;
 
-cart_def boot_cart = { 0x00, (void *)0, 0x1000, CART_TYPE_8K | CART_REU | CART_RAM };
+cart_def boot_cart; // static => initialized with all zeros.
 
 static void initBootCart(void *object, void *param)
 {
     int size = (int)&_bootcrt_65_end - (int)&_bootcrt_65_start;
     boot_cart.custom_addr = new uint8_t[8192];
     boot_cart.length = size;
+    boot_cart.type = CART_TYPE_8K;
+
     memcpy(boot_cart.custom_addr, &_bootcrt_65_start, size);
     printf("%d bytes copied into boot_cart.\n", size);
 }
@@ -259,7 +261,7 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
 			c64->client->release_host(); // disconnect from user interface
 			c64->client = 0;
 		}
-		c64->start_cartridge(NULL, false);
+		c64->start_cartridge(NULL);
 		break;
 
     case C64_START_CART:
@@ -267,7 +269,7 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
 			c64->client->release_host(); // disconnect from user interface
 			c64->client = 0;
 		}
-		c64->start_cartridge((cart_def *)cmd->mode, false);
+		c64->start_cartridge((cart_def *)cmd->mode);
 		break;
 
     case MENU_C64_SAVEREU:
@@ -615,7 +617,7 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
     C64_POKE(C64_BOOTCRT_HANDSHAKE, 0x80); // initial boot cart handshake
 
     boot_cart.custom_addr = (void *)&_bootcrt_65_start;
-    c64->start_cartridge(&boot_cart, false);
+    c64->start_cartridge(&boot_cart);
 
 	// perform DMA load
     wait_ms(100);

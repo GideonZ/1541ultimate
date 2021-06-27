@@ -16,6 +16,7 @@ class BlockDevice_Flash : public BlockDevice
     int pages_per_sector;
     int first_sector;
     int first_page;
+    bool requires_erase;
 public:
     BlockDevice_Flash(Flash *);
     ~BlockDevice_Flash();

@@ -9,6 +9,8 @@
 #include "config.h"
 #include "iomap.h"
 
+#define ROMS_DIRECTORY "/flash/roms"
+
 #define REU_MEMORY_BASE 0x1000000
 #define REU_MAX_SIZE    0x1000000
 
@@ -174,12 +176,6 @@
 #define BACKUP_SIZE  2048
 #define CHARSET_SIZE 2048
 
-#define CART_REU 0x80 
-#define CART_ETH 0x40
-#define CART_RAM 0x20
-#define CART_UCI 0x100
-
-#define CFG_C64_CART        0xC1
 #define CFG_C64_CUSTOM      0xC2
 #define CFG_C64_REU_EN      0xC3
 #define CFG_C64_REU_SIZE    0xC4
@@ -193,9 +189,9 @@
 #define CFG_C64_PHI2_REC    0xCC
 #define CFG_C64_RATE        0xCD
 #define CFG_C64_CART_PREF   0xCE
+#define CFG_C64_CART_CRT    0xCF
 #define CFG_CMD_ENABLE      0x71
 #define CFG_CMD_ALLOW_WRITE 0x72
-#define CFG_C64_FC3MODE     0x73
 #define CFG_C64_FASTRESET   0x74
 #define CFG_C64_DO_SYNC     0x75
 #define CFG_C64_REU_PRE     0x80
@@ -210,21 +206,31 @@
 #define CFG_BUS_SHARING_IRQ   0x50
 #define CFG_BUS_SHARING_IO2   0x51
 
-#define ID_MODPLAYER 0xAA
-#define ID_SIDCART   0xBB
-#define ID_CMDTEST   0xCC
+#define CART_ACIA     0x01
+#define CART_REU      0x02
+#define CART_MAXREU   0x02
+#define CART_UCI      0x04
+#define CART_UCI_DFFC 0x08
+#define CART_UCI_DE1C 0x10
+#define CART_SAMPLER  0x20
+#define CART_WMIRROR  0x40
+#define CART_KERNAL   0x80 // special bit that requires the driver to copy the cartridge ROM data to kernal emulation space
 
 typedef struct _cart
 {
-    uint8_t  id;
-    void *custom_addr; // dynamically filled in
-    uint32_t length;
-    uint16_t  type;
+    const char *name;
+    void *custom_addr; // used for precompiled ROMs that are not part of a CRT (yet)
+    uint32_t length;   // used for precompiled ROMs that are not part of a CRT (yet)
+    uint16_t  type;     // raw cart type, which maps on hardware ID
+    uint16_t  prohibit; // flags that tell us what other I/O modules can be switched on
+    uint16_t  require;  // features that need to be turned on for this module to work.
 } cart_def;
 
 
 class C64 : public GenericHost, ConfigurableObject
 {
+    cart_def current_cart_def;
+
     HostClient *client;
     Flash *flash;
     Keyboard *keyb;
@@ -243,10 +249,8 @@ class C64 : public GenericHost, ConfigurableObject
     uint8_t vic_irq;
     uint8_t vic_d011;
     uint8_t vic_d012;
-    uint8_t force_cart;
     bool backupIsValid;
 
-    uint8_t lastCartridgeId;
     volatile bool buttonPushSeen;
     volatile bool available;
 
@@ -257,7 +261,7 @@ class C64 : public GenericHost, ConfigurableObject
     void init_io(void);
     void restore_io(void);
     void set_cartridge(cart_def *def);
-    void set_emulation_flags(cart_def *def);
+    void set_emulation_flags();
     void disable_kernal();
     void init_system_roms(void);
 
@@ -333,17 +337,26 @@ public:
     /* C64 specifics */
     void resetConfigInFlash(int page);
     void unfreeze(void);
-    void start_cartridge(void *def, bool startLater);
+    void start_cartridge(void *def);
     void enable_kernal(uint8_t *rom, bool fastreset = false);
-    void new_system_rom(uint8_t flashId);
+    void set_rom_config(uint8_t idx, const char *fname);
     void init_cartridge(void);
-    void cartridge_test(void);
     void reset(void);
     void start(void);
     void set_kernal_device_id(uint8_t bus_id);
 
     static int isMP3RamDrive(int dev);
     static int getSizeOfMP3NativeRamdrive(int dev);
+
+    static uint8_t *get_cartridge_mem(void) {
+        uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16;
+        return (uint8_t *)mem_addr;
+    }
+
+    static void list_crts(ConfigItem *it, IndexedList<char *>& strings);
+    static void list_kernals(ConfigItem *it, IndexedList<char *>& strings);
+    static void list_basics(ConfigItem *it, IndexedList<char *>& strings);
+    static void list_chars(ConfigItem *it, IndexedList<char *>& strings);
 
     friend class FileTypeSID; // sid load does some tricks
     friend class C64_Subsys; // the wrapper with file access

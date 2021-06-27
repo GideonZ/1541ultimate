@@ -13,18 +13,28 @@ BlockDevice_Flash::BlockDevice_Flash(Flash *flash)
 {
     chip = flash;
     flash->get_image_addresses(FLASH_ID_FLASHDRIVE, &addr);
-	sector_size = flash->get_sector_size(addr.start);
 	page_size = flash->get_page_size();
-	pages_per_sector = sector_size / page_size;
-	first_page = addr.start / page_size;
-	first_sector = flash->page_to_sector(first_page);
+	if (page_size == 528) { // AT45 flash
+	    sector_size = 512;
+	    pages_per_sector = 1;
+	    first_page = addr.device_addr >> 10;
+	    first_sector = first_page;
+	    requires_erase = false;
+	} else { // all other flash
+        sector_size = flash->get_sector_size(addr.start);
+        pages_per_sector = sector_size / page_size;
+        first_page = addr.start / page_size;
+        first_sector = flash->page_to_sector(first_page);
+        requires_erase = true;
+	}
+
 	if (addr.id == FLASH_ID_FLASHDRIVE) {
 		number_of_sectors = addr.max_length / sector_size;
+        set_state(e_device_ready);
     } else {
     	number_of_sectors = 0;
+        set_state(e_device_no_media);
     }
-
-    set_state(e_device_ready);
 }
     
 BlockDevice_Flash::~BlockDevice_Flash()
@@ -62,8 +72,10 @@ DRESULT BlockDevice_Flash::write(const uint8_t *buffer, uint32_t sector, int cou
         
     int page = first_page + (sector * pages_per_sector);
     sector += first_sector;
-    if(!chip->erase_sector(sector)) {
-    	return RES_ERROR;
+    if (requires_erase) {
+        if(!chip->erase_sector(sector)) {
+            return RES_ERROR;
+        }
     }
     for(int i=0; i < pages_per_sector * count; i++) {
     	if (!chip->write_page(page, buffer)) {
