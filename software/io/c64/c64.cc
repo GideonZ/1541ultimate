@@ -1141,10 +1141,7 @@ void C64::disable_kernal()
     C64_KERNAL_ENABLE = 0;
 
 #if U64
-    uint8_t* kernal = (uint8_t *)U64_KERNAL_BASE;
-    flash->read_image(FLASH_ID_ORIG_KERNAL, (uint8_t *)U64_KERNAL_BASE, 8192);
-    if (cfg->get_value(CFG_C64_FASTRESET) && !memcmp((void *) (kernal+0x1d6c), (void *) fastresetOrg, sizeof(fastresetOrg)))
-        memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, 22);
+    init_system_roms();
 #endif
 }
 
