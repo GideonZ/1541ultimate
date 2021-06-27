@@ -59,77 +59,6 @@ extern bool connectedToU64;
 #endif
 
 /* Configuration */
-/*
-const char *cart_mode[] = { "None",
-                      "Final Cart III",
-                      "Action Replay V4.2 PAL",
-                      "Action Replay V6.0 PAL",
-                      "Retro Replay V3.8q PAL",
-                      "SuperSnapshot V5.22 PAL",
-                      "TAsm / CodeNet PAL",
-#ifndef U64
-                      "Action Replay V5.0 NTSC",
-#endif
-                      "Retro Replay V3.8y NTSC",
-                      "SuperSnapshot V5.22 NTSC",
-                      "TAsm / CodeNet NTSC",
-
-                      "Epyx Fastloader",
-                      "KCS Power Cartridge",
-
-                      "GeoRAM",
-                      "Custom 8K ROM",
-                      "Custom 16K ROM Ultimax",
-                      "Custom 16K ROM",
-
-                      "Custom System 3 ROM",
-                      "Custom Ocean V1 ROM",
-                      "Custom Ocean V2/T2 ROM",
-                      "Custom Final III ROM",
-
-                      "Custom Retro Replay ROM",
-                      "Custom Snappy ROM",
-                      "Custom KCS ROM",
-                      "Custom Final V1/V2 ROM",
-#ifndef U64
-                      "Custom C128 External ROM",
-#endif
-                      "Custom CRT"
-                   };
-
-cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_REU | CART_ETH },
-                          { FLASH_ID_FINAL3,    0x000000, 0x10000,  0x04 },
-                          { FLASH_ID_AR5PAL,    0x000000, 0x08000,  0x07 },
-                          { FLASH_ID_AR6PAL,    0x000000, 0x08000,  0x07 },
-                          { FLASH_ID_RR38PAL,   0x000000, 0x10000,  0x06 | CART_REU | CART_ETH },
-                          { FLASH_ID_SS5PAL,    0x000000, 0x10000,  0x05 | CART_REU },
-                          { FLASH_ID_TAR_PAL,   0x000000, 0x10000,  0x06 | CART_ETH },
-
-#ifndef U64
-                          { FLASH_ID_AR5NTSC,   0x000000, 0x08000,  0x07 },
-#endif
-                          { FLASH_ID_RR38NTSC,  0x000000, 0x10000,  0x06 | CART_REU | CART_ETH },
-                          { FLASH_ID_SS5NTSC,   0x000000, 0x10000,  0x05 | CART_REU },
-                          { FLASH_ID_TAR_NTSC,  0x000000, 0x10000,  0x06 | CART_ETH },
-
-                          { FLASH_ID_EPYX,      0x000000, 0x02000,  0x0E },
-                          { FLASH_ID_KCS,       0x000000, 0x04000,  0x10 },
-
-                          { 0x00,               0x000000, 0x04000,  0x15 | CART_UCI }, // GeoRam
-                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x02000,  0x01 | CART_REU | CART_ETH },
-                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x04000,  0x03 | CART_REU | CART_ETH },
-                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x04000,  0x02 | CART_REU | CART_ETH },
-                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x10000,  0x06 | CART_REU | CART_ETH },
-                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x10000,  0x05 | CART_REU },
-                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x04000,  0x10 },
-                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x04000,  0x11 },
-#ifndef U64
-                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x08000,  0x18 | CART_REU | CART_ETH },
-#endif
-                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x00000,  0x00 }
- };
-                          
-*/
 static const char *reu_size[] = { "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };
 static const char *reu_offset[] = { "0 KB", "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };
 static const char *buttons[] = { "Reset|Menu|Freezer", "Freezer|Menu|Reset" };
@@ -295,27 +224,7 @@ C64::~C64()
 
 void C64 :: resetConfigInFlash(int page)
 {
-/*
-    uint8_t kern = cfg->get_value(CFG_C64_ALT_KERN);
-#if U64
-    uint8_t basic = cfg->get_value(CFG_C64_ALT_BASI);
-    uint8_t chars = cfg->get_value(CFG_C64_ALT_CHAR);
-
-    if (kern > 2) {
-        kern = 1;
-    }
-#endif
-    cfg->reset();
-
-    cfg->set_value(CFG_C64_ALT_KERN, kern);
-#if U64
-    cfg->set_value(CFG_C64_ALT_BASI, basic);
-    cfg->set_value(CFG_C64_ALT_CHAR, chars);
-#endif
-    if (cfg->is_flash_stale()) {
-        cfg->write();
-    }
-*/
+    // deprecated
 }
 
 C64 *C64 :: getMachine(void)
