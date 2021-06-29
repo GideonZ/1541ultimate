@@ -29,7 +29,8 @@ typedef enum {
     CART_EXOS,
     CART_SUPERGAMES,
     CART_NORDIC,
-    CART_NORMAL_C128,
+    CART_C128_STD,
+    CART_C128_STD_IO,
 } e_known_cart;
 
 class C64_CRT
