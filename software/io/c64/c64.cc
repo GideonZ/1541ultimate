@@ -128,8 +128,6 @@ C64::C64()
     cfg->set_change_hook(CFG_C64_CART_PREF, C64::setCartPref);
     setCartPref(cfg->find_item(CFG_C64_CART_PREF));
 
-    // char_set = new BYTE[CHARSET_SIZE];
-    // flash->read_image(FLASH_ID_CHARS, (void *)char_set, CHARSET_SIZE);
     char_set = (uint8_t *) &_chars_bin_start;
     keyb = new Keyboard_C64(this, &CIA1_DPB, &CIA1_DPA);
     screen = new Screen_MemMappedCharMatrix((char *) C64_SCREEN, (char *) C64_COLORRAM, 40, 25);
@@ -286,7 +284,6 @@ void C64::set_emulation_flags(void)
             printf("Enabling REU!!\n");
             C64_REU_ENABLE = 1;
         }
-        // C64_REU_SIZE = cfg->get_value(CFG_C64_REU_SIZE);
         if (getFpgaCapabilities() & CAPAB_SAMPLER) {
             printf("Sampler found in FPGA... IO map: ");
             if (cfg->get_value(CFG_C64_MAP_SAMP)) {
@@ -929,14 +926,6 @@ Keyboard *C64::getKeyboard(void)
 
 void C64::set_cartridge(cart_def *cart)
 {
-    // Show what we are going to do
-    printf("Cartridge definition:\n");
-    printf("Name: %s\n", cart->name);
-    printf("Type: %d\n", cart->type);
-    printf("Custom: %p (Length: %d)\n", cart->custom_addr, cart->length);
-    printf("Required: %4x\n", cart->require);
-    printf("Prohibited: %4x\n", cart->prohibit);
-
     // Know where the ROM data is located
     uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16;
     uint8_t *cart_mem = (uint8_t *)mem_addr;
@@ -955,7 +944,14 @@ void C64::set_cartridge(cart_def *cart)
     }
     cart_def *def = &current_cart_def;
 
-    printf("Setting cart mode %u.\n", def->type);
+    // Show what we are going to do
+    printf("Cartridge definition:\n");
+    printf("Name: %s\n", def->name);
+    printf("Type: %d\n", def->type);
+    printf("Custom: %p (Length: %d)\n", def->custom_addr, def->length);
+    printf("Required: %4x\n", def->require);
+    printf("Prohibited: %4x\n", def->prohibit);
+
     C64_CARTRIDGE_TYPE = (uint8_t) def->type;
 
     set_emulation_flags();
@@ -964,6 +960,9 @@ void C64::set_cartridge(cart_def *cart)
         printf("Copying %d bytes from array %p to mem addr %p\n", def->length, def->custom_addr, cart_mem);
         memcpy(cart_mem, def->custom_addr, def->length);
     }
+
+    printf("Begin of cart init: Type: %b. REU: %b. REU_SZ: %b, UCI: %b (%4x), Mode: %b, Sampler: %b\n",
+            C64_CARTRIDGE_TYPE, C64_REU_ENABLE, C64_REU_SIZE, CMD_IF_SLOT_ENABLE, 0xDE00 + uint16_t(CMD_IF_SLOT_BASE * 4), C64_MODE, C64_SAMPLER_ENABLE);
 
     // now overwrite the register settings
     if(def->require & CART_REU) {
@@ -1000,22 +999,48 @@ void C64::set_cartridge(cart_def *cart)
         EnableWriteMirroring();
     }
 #endif
+    def->disabled = 0;
 
     if(def->prohibit & (CART_REU | CART_MAXREU)) {
+        if (C64_REU_ENABLE) {
+            def->disabled |= CART_REU;
+        }
         C64_REU_ENABLE = 0;
     }
     if(def->prohibit & (CART_UCI | CART_UCI_DFFC | CART_UCI_DE1C)) {
         if (getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
+            if (CMD_IF_SLOT_ENABLE) {
+                def->disabled |= CART_UCI;
+            }
             CMD_IF_SLOT_ENABLE = 0;
         }
     }
-    if(def->prohibit & CART_ACIA) {
-
+    if(def->prohibit & CART_SAMPLER) {
+        if (C64_SAMPLER_ENABLE) {
+            def->disabled |= CART_SAMPLER;
+        }
+        C64_SAMPLER_ENABLE = 0;
+    }
+    if(def->prohibit & CART_ACIA_DE) {
+        if (getFpgaCapabilities() & CAPAB_ACIA) {
+            def->disabled |= CART_ACIA_DE;
+        }
+    }
+    if(def->prohibit & CART_ACIA_DF) {
+        if (getFpgaCapabilities() & CAPAB_ACIA) {
+            def->disabled |= CART_ACIA_DF;
+        }
     }
 
     // clear function RAM on the cartridge
     mem_addr -= 65536; // TODO: We know it, because we made the hardware, but the hardware should tell us!
     memset((void *) mem_addr, 0x00, 65536);
+
+    printf("End of cart init: Type: %b. REU: %b. REU_SZ: %b, UCI: %b (%4x), Mode: %b, Sampler: %b\n",
+            C64_CARTRIDGE_TYPE, C64_REU_ENABLE, C64_REU_SIZE, CMD_IF_SLOT_ENABLE, 0xDE00 + uint16_t(CMD_IF_SLOT_BASE * 4), C64_MODE, C64_SAMPLER_ENABLE);
+    if (def->disabled) {
+        printf("---> Some features were disabled: %04x\n", def->disabled);
+    }
 }
 
 void C64::set_colors(int background, int border)
@@ -1078,6 +1103,12 @@ void C64::init_cartridge()
 #endif
 
     set_cartridge(NULL);
+
+    // This forces the cartridge ON on U64, (in Carts V4)
+    C64_CARTRIDGE_TYPE = 0x80 | (uint8_t) current_cart_def.type;
+    // For carts V5, we need to do this:
+    // C64_CARTRIDGE_KILL = 2; // Force update
+
     C64_MODE = C64_MODE_UNRESET;
     C64_STOP = 0;
 }
@@ -1241,6 +1272,11 @@ int C64 :: getSizeOfMP3NativeRamdrive(int devNo)
 
 void C64 :: list_crts(ConfigItem *it, IndexedList<char *>& strings)
 {
+    // Always return at least the empty string
+    char *empty = new char[2];
+    empty[0] = 0;
+    strings.append(empty);
+
     Path p;
     p.cd(CARTS_DIRECTORY);
     IndexedList<FileInfo *>infos(16, NULL);

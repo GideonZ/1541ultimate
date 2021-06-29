@@ -7,7 +7,7 @@ extern uint8_t _eapi_65_start;
 #define CRTHDR_TYPE    0x16
 #define CRTHDR_EXROM   0x18
 #define CRTHDR_GAME    0x19
-#define CRTHDR_SUBTYPE 0x14
+#define CRTHDR_SUBTYPE 0x1A
 
 #define CRTCHP_PKTLEN  0x04
 #define CRTCHP_TYPE    0x08
@@ -70,7 +70,8 @@ const struct C64_CRT::t_cart C64_CRT::c_recognized_c64_carts[] = {
     { 0xFFFF, CART_NOT_IMPL, "" } };
 
 const struct C64_CRT::t_cart C64_CRT::c_recognized_c128_carts[] = {
-    { 0, CART_NORMAL_C128, "C128 Cartridge" },
+    { 0, CART_C128_STD,    "C128 Cartridge" },
+    { 1, CART_C128_STD_IO, "C128 Cartridge with I/O Mirror" },
     { 0xFFFF, CART_NOT_IMPL, "" } };
 
 __inline static uint16_t get_word(uint8_t *p)
@@ -277,14 +278,18 @@ void C64_CRT::configure_cart(cart_def *def)
             break;
         case CART_ACTION:
             cart_type = CART_TYPE_ACTION;
+            prohibit = CART_PROHIBIT_IO;
             break;
         case CART_RETRO:
             cart_type = CART_TYPE_RETRO;
+            prohibit = CART_PROHIBIT_DEXX;
             break;
         case CART_DOMARK:
             cart_type = CART_TYPE_DOMARK;
+            prohibit = CART_PROHIBIT_DEXX;
             break;
         case CART_OCEAN:
+            prohibit = CART_PROHIBIT_DEXX;
             if (load_at_a000) {
                 cart_type = CART_TYPE_OCEAN256; // Ocean 256K
             } else {
@@ -293,53 +298,72 @@ void C64_CRT::configure_cart(cart_def *def)
             break;
         case CART_EASYFLASH:
             cart_type = CART_TYPE_EASY_FLASH; // EasyFlash
+            prohibit = CART_PROHIBIT_ALL_BUT_REU;
             require = CART_UCI_DE1C;
             break;
         case CART_SUPERSNAP:
             cart_type = CART_TYPE_SS5; // Snappy
+            prohibit = CART_PROHIBIT_DEXX;
             break;
         case CART_EPYX:
             cart_type = CART_TYPE_EPYX; // Epyx
+            prohibit = CART_PROHIBIT_DEXX;
             break;
         case CART_FINAL3:
-            cart_type = CART_TYPE_FC3PLUS; // Final3 TODO: Check with HW
+            cart_type = CART_TYPE_FC3; // Final3
+            if (crt_header[CRTHDR_SUBTYPE] == 1) {
+                prohibit = CART_PROHIBIT_ALL_BUT_REU;
+            } else {
+                prohibit = CART_PROHIBIT_IO;
+            }
             break;
         case CART_SYSTEM3:
             cart_type = CART_TYPE_SYSTEM3; // System3
+            prohibit = CART_PROHIBIT_DEXX;
             break;
         case CART_KCS:
             cart_type = CART_TYPE_KCS; // System3
+            prohibit = CART_PROHIBIT_DEXX;
             break;
         case CART_FINAL12:
-            cart_type = CART_TYPE_FINAL12; // System3
+            cart_type = CART_TYPE_FINAL12;
+            prohibit = CART_PROHIBIT_IO;
             break;
         case CART_COMAL80:
-            if (total_read > 65536)
-                cart_type = CART_TYPE_COMAL80PAKMA; // Comal 80 Pakma
-            else
-                cart_type = CART_TYPE_COMAL80; // Comal 80
+            if (total_read > 65536) {
+                cart_type = CART_TYPE_COMAL80PAKMA; // Comal 80 Pakma // V5: Type = Ocean_16K, Variant = 1
+            } else {
+                cart_type = CART_TYPE_COMAL80; // Comal 80 // V5: Type = Ocean_16K, Variant = 0
+            }
+            prohibit = CART_PROHIBIT_DEXX;
             break;
         case CART_SBASIC:
             cart_type = CART_TYPE_SBASIC; // Simons Basic
+            prohibit = CART_PROHIBIT_DEXX;
             break;
         case CART_WESTERMANN:
             cart_type = CART_TYPE_WESTERMANN; // Westermann
+            prohibit = CART_PROHIBIT_IO;
             break;
         case CART_BBASIC:
             cart_type = CART_TYPE_BBASIC; // Business Basic
+            prohibit = CART_PROHIBIT_DEXX;
             break;
         case CART_PAGEFOX:
-            cart_type = CART_TYPE_PAGEFOX; // Business Basic
+            cart_type = CART_TYPE_PAGEFOX; // Pagefox
+            // No prohibits!
             break;
         case CART_SUPERGAMES:
             cart_type = CART_TYPE_SUPERGAMES; // Super Games, 16K banks
+            prohibit = CART_PROHIBIT_DFXX;
             break;
         case CART_NORDIC:
             cart_type = CART_TYPE_NORDIC;
-            require |= CART_WMIRROR;
+            require = CART_WMIRROR | CART_DYNAMIC;
+            prohibit = CART_PROHIBIT_IO;
             break;
         case CART_EXOS:
-            require |= CART_KERNAL;
+            require = CART_KERNAL;
             break;
             /*
              if (total_read > 8192) {
@@ -354,11 +378,17 @@ void C64_CRT::configure_cart(cart_def *def)
              }
              break;
              */
-        case CART_NORMAL_C128:
+        case CART_C128_STD:
+            cart_type = CART_TYPE_128;
+            break;
+
+        case CART_C128_STD_IO:
+            cart_type = CART_TYPE_128 | VARIANT_3; // with IO
+
             if (crt_header[CRTHDR_SUBTYPE] == 1) {
-                cart_type = CART_TYPE_128; // witH IO: TODO
+                prohibit = CART_PROHIBIT_ALL_BUT_REU;
             } else {
-                cart_type = CART_TYPE_128;
+                prohibit = CART_PROHIBIT_IO;
             }
             break;
 
@@ -368,6 +398,8 @@ void C64_CRT::configure_cart(cart_def *def)
     printf("*%b*\n", cart_type);
 
     def->type = cart_type;
+    def->prohibit = prohibit;
+    def->require = require;
 }
 
 int C64_CRT::load_crt(const char *path, const char *filename, cart_def *def, uint8_t *mem)

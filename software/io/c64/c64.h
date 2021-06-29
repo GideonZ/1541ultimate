@@ -131,6 +131,15 @@
 #define CART_TYPE_SUPERGAMES   0x1B
 #define CART_TYPE_NORDIC      0x1C // requires Writes to be on
 
+#define VARIANT_0 0x00
+#define VARIANT_1 0x20
+#define VARIANT_2 0x40
+#define VARIANT_3 0x60
+#define VARIANT_4 0x80
+#define VARIANT_5 0xA0
+#define VARIANT_6 0xC0
+#define VARIANT_7 0xE0
+
 #define DRVTYPE_MP3_DNP       31
 
 #define VIC_REG(x)   *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD000 + x))
@@ -206,24 +215,32 @@
 #define CFG_BUS_SHARING_IRQ   0x50
 #define CFG_BUS_SHARING_IO2   0x51
 
-#define CART_ACIA     0x01
-#define CART_REU      0x02
-#define CART_MAXREU   0x02
-#define CART_UCI      0x04
-#define CART_UCI_DFFC 0x08
-#define CART_UCI_DE1C 0x10
-#define CART_SAMPLER  0x20
-#define CART_WMIRROR  0x40
-#define CART_KERNAL   0x80 // special bit that requires the driver to copy the cartridge ROM data to kernal emulation space
+#define CART_ACIA_DE  0x001
+#define CART_ACIA_DF  0x002
+#define CART_REU      0x004
+#define CART_MAXREU   0x008
+#define CART_UCI      0x010
+#define CART_UCI_DFFC 0x020
+#define CART_UCI_DE1C 0x040
+#define CART_SAMPLER  0x080
+#define CART_WMIRROR  0x100 // U64 bit: this cartridge requires all writes to be mirrored
+#define CART_DYNAMIC  0x200 // U64 bit: this cartridge requires dynamic bus optimization
+#define CART_KERNAL   0x400 // special bit that requires the driver to copy the cartridge ROM data to kernal emulation space
+
+#define CART_PROHIBIT_DEXX (CART_ACIA_DE)
+#define CART_PROHIBIT_DFXX (CART_ACIA_DF | CART_REU | CART_MAXREU | CART_UCI | CART_SAMPLER)
+#define CART_PROHIBIT_IO   (CART_PROHIBIT_DEXX | CART_PROHIBIT_DFXX)
+#define CART_PROHIBIT_ALL_BUT_REU (CART_PROHIBIT_DEXX | CART_ACIA_DF | CART_SAMPLER)
 
 typedef struct _cart
 {
     const char *name;
     void *custom_addr; // used for precompiled ROMs that are not part of a CRT (yet)
     uint32_t length;   // used for precompiled ROMs that are not part of a CRT (yet)
-    uint16_t  type;     // raw cart type, which maps on hardware ID
-    uint16_t  prohibit; // flags that tell us what other I/O modules can be switched on
-    uint16_t  require;  // features that need to be turned on for this module to work.
+    uint16_t type;     // raw cart type, which maps on hardware ID
+    uint16_t prohibit; // flags that tell us what other I/O modules can be switched on
+    uint16_t require;  // features that need to be turned on for this module to work.
+    uint16_t disabled; // Tells us which features got disabled during configuration (I/O conflict)
 } cart_def;
 
 
