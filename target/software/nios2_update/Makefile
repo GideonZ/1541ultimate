@@ -35,7 +35,6 @@ SRCS_CC	 =  memory.cc \
 			small_printf.cc \
 			flash.cc \
 			at45_flash.cc \
-			at49_flash.cc \
 			w25q_flash.cc \
             s25fl_flash.cc \
 			pattern.cc \
