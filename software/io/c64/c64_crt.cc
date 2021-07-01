@@ -307,7 +307,7 @@ void C64_CRT::configure_cart(cart_def *def)
             break;
         case CART_EPYX:
             cart_type = CART_TYPE_EPYX; // Epyx
-            prohibit = CART_PROHIBIT_DEXX;
+            prohibit = CART_PROHIBIT_IO;
             break;
         case CART_FINAL3:
             cart_type = CART_TYPE_FC3; // Final3
