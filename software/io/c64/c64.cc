@@ -279,34 +279,29 @@ void C64::set_emulation_flags(void)
     }
 
     C64_REU_SIZE = cfg->get_value(CFG_C64_REU_SIZE);
-    if (def->type & CART_REU) {
-        if (cfg->get_value(CFG_C64_REU_EN)) {
-            printf("Enabling REU!!\n");
-            C64_REU_ENABLE = 1;
-        }
-        if (getFpgaCapabilities() & CAPAB_SAMPLER) {
-            printf("Sampler found in FPGA... IO map: ");
-            if (cfg->get_value(CFG_C64_MAP_SAMP)) {
-                printf("Enabled!\n");
-                C64_SAMPLER_ENABLE = 1;
-            } else {
-                printf("disabled.\n");
-            }
+    if (cfg->get_value(CFG_C64_REU_EN)) {
+        C64_REU_ENABLE = 1;
+    }
+    if (getFpgaCapabilities() & CAPAB_SAMPLER) {
+        printf("Sampler found in FPGA... IO map: ");
+        if (cfg->get_value(CFG_C64_MAP_SAMP)) {
+            printf("Enabled!\n");
+            C64_SAMPLER_ENABLE = 1;
+        } else {
+            printf("disabled.\n");
         }
     }
-    if (def->type & (CART_REU | CART_UCI)) {
-        if (getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
-            int choice = cfg->get_value(CFG_CMD_ENABLE);
-            CMD_IF_SLOT_ENABLE = !!choice;
-            ultimatedosversion = choice;
+    if (getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
+        int choice = cfg->get_value(CFG_CMD_ENABLE);
+        CMD_IF_SLOT_ENABLE = !!choice;
+        ultimatedosversion = choice;
 #ifdef RECOVERYAPP
-            CMD_IF_SLOT_BASE = 0x47; // $$DF1C
+        CMD_IF_SLOT_BASE = 0x47; // $$DF1C
 #else
-            CMD_IF_SLOT_BASE = connectedToU64 ? 0x46 : 0x47; // $DF18 when 1541 U2(+) connected to U64, $DF1C else.
+        CMD_IF_SLOT_BASE = connectedToU64 ? 0x46 : 0x47; // $DF18 when 1541 U2(+) connected to U64, $DF1C else.
 #endif
-            choice = cfg->get_value(CFG_CMD_ALLOW_WRITE);
-            allowUltimateDosDateSet = choice;
-        }
+        choice = cfg->get_value(CFG_CMD_ALLOW_WRITE);
+        allowUltimateDosDateSet = choice;
     }
     C64_ETHERNET_ENABLE = 0;
 
