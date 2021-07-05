@@ -15,7 +15,7 @@ EASYFLASH_IO_SLOT    = $de01
 EASYFLASH_IO_CONTROL = $de02
 
 ; I/O address for enabling writes to ultimate ram
-EASYFLASH_IO_WRITEKEY = $de08
+EASYFLASH_IO_WRITEKEY = $de09
 
 ; Bit for Expansion Port /GAME line (1 = low)
 EASYFLASH_IO_BIT_GAME    = $01
@@ -123,10 +123,10 @@ jmpTable
         jmp EAPIGetSlot - initCodeBase       ; 27
 
         ; Some local functions, those that do NOT reside in RAM already
-        jsr rwIncAddr - initCodeBase         ; 30
-        jsr rwDecLen - initCodeBase          ; 33
-        jsr ultimateWait4idle - initCodeBase ; 36
-        jsr ultimateWait4data - initCodeBase ; 39
+        jmp rwIncAddr - initCodeBase         ; 30
+        jmp rwDecLen - initCodeBase          ; 33
+        jmp ultimateWait4idle - initCodeBase ; 36
+        jmp ultimateWait4data - initCodeBase ; 39
 jmpTableEnd
 
 JT_EAPIWriteFlash    = jmpTable + 0
@@ -765,7 +765,7 @@ readInc_eof
 ; =============================================================================
 ultimateWait4idle
         lda UCI_CONTROL
-        and #$30
+        and #$35
         bne ultimateWait4idle
         rts
  
