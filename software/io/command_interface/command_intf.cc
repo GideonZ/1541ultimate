@@ -190,6 +190,11 @@ bool CommandInterface :: is_dma_active(void)
     return ((CMD_IF_HANDSHAKE_OUT & CMD_HS_DMA_ACTIVE) != 0);
 }
 
+void CommandInterface :: set_kernal_device_id(uint8_t id)
+{
+    CMD_IF_SLOT_ENABLE = 0x80 | id;
+}
+
 void CommandInterface :: dump_registers(void)
 {
     printf("CMD_IF_SLOT_BASE       %b\n", CMD_IF_SLOT_BASE     );

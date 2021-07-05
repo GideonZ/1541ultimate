@@ -1,8 +1,7 @@
 	.segment "JMPTBL"
 
-	;KERNAL revision
-OUR_DEVICE
-	.byte 9
+	; KERNAL revision
+	.byte 3
 
 	jmp pcint
 	jmp ioinit

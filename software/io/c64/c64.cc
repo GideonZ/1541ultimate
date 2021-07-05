@@ -49,7 +49,6 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "filetype_crt.h"
-#include "iec.h"
 #endif
 
 int ultimatedosversion = 0;
@@ -775,7 +774,6 @@ void C64::init_system_roms(void)
             memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, 22);
         }
     }
-    iec_if.effectuate_settings();
 
     FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_ALT_BASI), (uint8_t *)U64_BASIC_BASE, 8192, NULL);
     FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_ALT_CHAR), (uint8_t *)U64_CHARROM_BASE, 4096, NULL);
@@ -789,19 +787,6 @@ void C64::init_system_roms(void)
         disable_kernal();
     }
     delete[] temp;
-#endif
-}
-
-void C64::set_kernal_device_id(uint8_t bus_id)
-{
-#if U64
-    uint8_t *kernal = (uint8_t *)U64_KERNAL_BASE; // this should be a function
-    if (cfg->get_value(CFG_C64_ALT_KERN) > 1) {
-        kernal[0x1F80] = (uint8_t)bus_id;
-    }
-#else
-    uint8_t *kernal = (uint8_t *) C64_KERNAL_BASE;
-    kernal[2*0x1F80 + 1] = (uint8_t)bus_id;
 #endif
 }
 
