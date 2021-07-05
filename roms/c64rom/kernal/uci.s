@@ -8,6 +8,7 @@
 ;----------------------------------------------------
         .segment "ULTIMATE"
 ;
+        OUR_DEVICE     = $DF1B ; New!
         CMD_IF_CONTROL = $DF1C
         CMD_IF_COMMAND = $DF1D
         CMD_IF_RESULT  = $DF1E
@@ -50,7 +51,6 @@
         UCI_PENDING_CMD = $02BE
         UCI_LAST_CMD    = $02BD
         UCI_LAST_SA     = $02BC
-
 
 ulti_restor
             lda CMD_IF_COMMAND

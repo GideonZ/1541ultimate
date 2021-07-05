@@ -24,10 +24,11 @@ package command_if_pkg is
     constant c_cif_io_irq_mask_set      : unsigned(3 downto 0) := X"4"; -- write only
     constant c_cif_io_irq_mask_clear    : unsigned(3 downto 0) := X"5"; -- write only
 
-    constant c_cif_slot_control         : unsigned(1 downto 0) := "00"; -- R/W
-    constant c_cif_slot_command         : unsigned(1 downto 0) := "01"; -- WO
-    constant c_cif_slot_response        : unsigned(1 downto 0) := "10"; -- RO
-    constant c_cif_slot_status          : unsigned(1 downto 0) := "11"; -- RO
+    constant c_cif_bus_id               : unsigned(2 downto 0) := "011"; -- RO
+    constant c_cif_slot_control         : unsigned(2 downto 0) := "100"; -- R/W
+    constant c_cif_slot_command         : unsigned(2 downto 0) := "101"; -- WO
+    constant c_cif_slot_response        : unsigned(2 downto 0) := "110"; -- RO
+    constant c_cif_slot_status          : unsigned(2 downto 0) := "111"; -- RO
 
     constant c_cmd_if_command_buffer_addr  : unsigned(10 downto 0) := to_unsigned(   0, 11);
     constant c_cmd_if_response_buffer_addr : unsigned(10 downto 0) := to_unsigned( 896, 11);

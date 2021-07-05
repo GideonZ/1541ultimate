@@ -11,6 +11,7 @@ extern "C" {
 #include "filemanager.h"
 #include "userinterface.h"
 #include "pattern.h"
+#include "command_intf.h"
 
 #define MENU_IEC_ON          0xCA0E
 #define MENU_IEC_OFF         0xCA0F
@@ -278,11 +279,7 @@ void IecInterface :: effectuate_settings(void)
     
 //            data = (0x08 << 20) + (bit << 24) + (inv << 29) + (addr << 8) + (value << 0)
     int bus_id = cfg->get_value(CFG_IEC_BUS_ID);
-
-    extern C64 *c64;
-    if (c64) {
-        c64->set_kernal_device_id(bus_id);
-    }
+    cmd_if.set_kernal_device_id(bus_id);
 
     if(bus_id != last_addr) {
         printf("Setting IEC bus ID to %d.\n", bus_id);
