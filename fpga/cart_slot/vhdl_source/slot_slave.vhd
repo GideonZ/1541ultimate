@@ -217,7 +217,7 @@ begin
                 elsif do_sample_io='1' and rwn_c='0' then
                     if allow_write='1' then
                         -- memory write
-                        if address_c(14)='1' then -- IO range
+                        if address_c(15 downto 12)=X"D" then -- IO range
                             if io2n_c='0' or io1n_c='0' then
                                 mem_req_ff <= '1';
                                 state      <= mem_access;

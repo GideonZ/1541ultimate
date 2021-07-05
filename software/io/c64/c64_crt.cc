@@ -214,9 +214,10 @@ void C64_CRT::clear_cart_mem(void)
 void C64_CRT::patch_easyflash_eapi(cart_def *def)
 {
     if (local_type == CART_EASYFLASH) {
-        uint8_t* eapi = cart_memory + 512 * 1024 + 0x1800;
+        uint8_t* eapi = cart_memory + 0x3800;
         if (eapi[0] == 0x65 && eapi[1] == 0x61 && eapi[2] == 0x70 && eapi[3] == 0x69) {
             memcpy(eapi, &_eapi_65_start, 768);
+            printf("EAPI successfully patched!\n");
         }
     }
 }
