@@ -519,7 +519,7 @@ set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_trac
 set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_mapper.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_ctrl.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_timing_62.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/all_carts_v4.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/all_carts_v5.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_slave.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_master_v4.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/reu_pkg.vhd

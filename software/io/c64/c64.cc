@@ -784,7 +784,7 @@ void C64::init_system_roms(void)
     uint8_t *temp = new uint8_t[8192];
     FRESULT fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_ALT_KERN), temp, 8192, NULL);
     if (fres == FR_OK) {
-        enable_kernal(temp, cfg->get_value(CFG_C64_FASTRESET));
+        enable_kernal(temp);
     } else {
         disable_kernal();
     }
@@ -994,6 +994,11 @@ void C64::set_cartridge(cart_def *cart)
         EnableWriteMirroring();
     }
 #endif
+    if (def->require & CART_KERNAL) { // Copy kernal to kernal space
+        uint8_t *src = (uint8_t *) (((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16);
+        C64 :: getMachine()->enable_kernal(src);
+    }
+
     def->disabled = 0;
 
     if(def->prohibit & (CART_REU | CART_MAXREU)) {
@@ -1044,13 +1049,13 @@ void C64::set_colors(int background, int border)
     BACKGROUND = uint8_t(background);
 }
 
-void C64::enable_kernal(uint8_t *rom, bool fastreset)
+void C64::enable_kernal(uint8_t *rom)
 {
+    bool fastreset = (cfg->get_value(CFG_C64_FASTRESET) != 0);
     if (fastreset && !memcmp((void *) (rom+0x1d6c), (void *) fastresetOrg, sizeof(fastresetOrg)))
         memcpy((void *) (rom+0x1d6c), (void *) fastresetPatch, 22);
 
 #if U64
-
     memcpy((void *)U64_KERNAL_BASE, rom, 8192); // as simple as that
 
 #else  // the good old way
@@ -1100,9 +1105,9 @@ void C64::init_cartridge()
     set_cartridge(NULL);
 
     // This forces the cartridge ON on U64, (in Carts V4)
-    C64_CARTRIDGE_TYPE = 0x80 | (uint8_t) current_cart_def.type;
+    // C64_CARTRIDGE_TYPE = 0x80 | (uint8_t) current_cart_def.type;
     // For carts V5, we need to do this:
-    // C64_CARTRIDGE_KILL = 2; // Force update
+    C64_CARTRIDGE_KILL = 2; // Force update
 
     C64_MODE = C64_MODE_UNRESET;
     C64_STOP = 0;

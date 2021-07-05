@@ -13,7 +13,8 @@ typedef enum {
     CART_ACTION,
     CART_RETRO,
     CART_DOMARK,
-    CART_OCEAN,
+    CART_OCEAN_8K,
+    CART_OCEAN_16K,
     CART_EASYFLASH,
     CART_SUPERSNAP,
     CART_EPYX,
@@ -29,6 +30,10 @@ typedef enum {
     CART_EXOS,
     CART_SUPERGAMES,
     CART_NORDIC,
+    CART_GMOD2,
+    CART_BLACKBOX3,
+    CART_BLACKBOX4,
+    CART_BLACKBOX8,
     CART_C128_STD,
     CART_C128_STD_IO,
 } e_known_cart;
@@ -37,6 +42,7 @@ class C64_CRT
 {
     struct t_cart {
         uint16_t     crt_type;
+        uint8_t      max_bank;
         e_known_cart local_type;
         const char  *cart_name;
     };
@@ -45,11 +51,13 @@ class C64_CRT
     const static struct t_cart c_recognized_c128_carts[];
 
     uint8_t     *cart_memory;
+    int          bank_multiplier;
     int          machine;
+    bool         a000_seen;
     e_known_cart local_type;
+    uint8_t      max_bank;
     uint32_t     total_read;
     uint8_t      crt_header[0x20];
-    bool         load_at_a000;
 
     C64_CRT(uint8_t *mem);
 
