@@ -621,7 +621,7 @@ begin
             if slot_addr(15 downto 8)=X"DF" then
                 addr_map <= RAM;
                 allow_write <= '1';
-            elsif ef_write='1' and mode_bits="101" then -- Ultimax mode
+            elsif ef_write='1' and mode_bits="101" and (slot_addr(15 downto 13)="111" or slot_addr(15 downto 13)="100") then -- Ultimax mode, 8000-9FFF and
                 allow_write <= '1';
             end if; 
 
