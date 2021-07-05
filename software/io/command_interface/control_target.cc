@@ -272,7 +272,7 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
 #endif
         case CTRL_CMD_EASYFLASH:
             if (command->length < 3)
-            {
+                    {
                 *status = &c_status_unknown_command;
                 *reply = &c_message_empty;
             }
@@ -282,22 +282,32 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
                 switch (subcommand)
                 {
                     case 0:
-                    {
-                        if (command->length < 5)
                         {
+                        if (command->length < 5)
+                                {
                             *status = &c_status_unknown_command;
                             *reply = &c_message_empty;
                             break;
                         }
 
                         uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16;
-                        unsigned char bank = command->message[3];
+                        uint8_t *mem = (uint8_t *)mem;
+                        unsigned char bank = command->message[3] & 0x38;
                         unsigned char baseAddr = command->message[4];
-                        mem_addr += (bank & 0x38) * 8192;
-                        if (baseAddr & 0x20) mem_addr += 512*1024;
-                        for (int i=0; i<65536; i++)
-                            *(char*)(mem_addr+i) = 0xff;
-                        *reply  = &c_message_empty;
+
+                        if (baseAddr & 0x20) { // high ROM
+                            mem += 0x2000;
+                        }
+                        mem += (bank * 0x4000);
+
+                        // Clear 8 banks of 8K
+                        for (int b = 0; b < 8; b++) {
+                            for (int i = 0; i < 8192; i++) {
+                                mem[i] = 0xff;
+                            }
+                            mem += 0x4000;
+                        }
+                        *reply = &c_message_empty;
                         *status = &c_status_ok;
                         break;
                     }
@@ -306,8 +316,6 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
                         *reply = &c_message_empty;
                         *status = &c_status_unknown_command;
                 }
-                *reply  = &c_message_empty;
-                *status = &c_status_ok;
             }
             break;
 

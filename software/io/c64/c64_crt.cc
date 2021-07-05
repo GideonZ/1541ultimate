@@ -16,63 +16,77 @@ extern uint8_t _eapi_65_start;
 #define CRTCHP_SIZE    0x0E
 
 const struct C64_CRT::t_cart C64_CRT::c_recognized_c64_carts[] = {
-    {  0, CART_NORMAL,    "Normal cartridge" },
-    {  1, CART_ACTION,    "Action Replay" },
-    {  2, CART_KCS,       "KCS Power Cartridge" },
-    {  3, CART_FINAL3,    "Final Cartridge III" },
-    {  4, CART_SBASIC,    "Simons Basic" },
-    {  5, CART_OCEAN,     "Ocean type 1 (256 and 128 Kb)" },
-    {  6, CART_NOT_IMPL,  "Expert Cartridge" },
-    {  7, CART_NOT_IMPL,  "Fun Play" },
-    {  8, CART_SUPERGAMES,"Super Games" },
-    {  9, CART_NORDIC,    "Atomic Power" },
-    { 10, CART_EPYX,      "Epyx Fastload" },
-    { 11, CART_WESTERMANN,"Westermann" },
-    { 12, CART_NOT_IMPL,  "Rex" },
-    { 13, CART_FINAL12,   "Final Cartridge I" },
-    { 14, CART_NOT_IMPL,  "Magic Formel" },
-    { 15, CART_SYSTEM3,   "C64 Game System" },
-    { 16, CART_NOT_IMPL,  "Warpspeed" },
-    { 17, CART_NOT_IMPL,  "Dinamic" },
-    { 18, CART_NOT_IMPL,  "Zaxxon" },
-    { 19, CART_DOMARK,    "Magic Desk, Domark, HES Australia" },
-    { 20, CART_SUPERSNAP, "Super Snapshot 5" },
-    { 21, CART_COMAL80,   "COMAL 80" },
-    { 32, CART_EASYFLASH, "EasyFlash" },
-    { 33, CART_NOT_IMPL,  "EasyFlash X-Bank" },
-    { 34, CART_NOT_IMPL,  "Capture" },
-    { 35, CART_NOT_IMPL,  "Action Replay 3" },
-    { 36, CART_RETRO,     "Retro Replay" },
-    { 37, CART_NOT_IMPL,  "MMC64" },
-    { 38, CART_NOT_IMPL,  "MMC Replay" },
-    { 39, CART_NOT_IMPL,  "IDE64" },
-    { 40, CART_NOT_IMPL,  "Super Snapshot V4" },
-    { 41, CART_NOT_IMPL,  "IEEE 488" },
-    { 42, CART_NOT_IMPL,  "Game Killer" },
-    { 43, CART_NOT_IMPL,  "Prophet 64" },
-    { 44, CART_EXOS,      "EXOS" },
-    { 45, CART_NOT_IMPL,  "Freeze Frame" },
-    { 46, CART_NOT_IMPL,  "Freeze Machine" },
-    { 47, CART_NOT_IMPL,  "Snapshot64" },
-    { 48, CART_NOT_IMPL,  "Super Explode V5" },
-    { 49, CART_NOT_IMPL,  "Magic Voice" },
-    { 50, CART_NOT_IMPL,  "Action Replay 2" },
-    { 51, CART_NOT_IMPL,  "MACH 5" },
-    { 52, CART_NOT_IMPL,  "Diashow Maker" },
-    { 53, CART_PAGEFOX,   "Pagefox" },
-    { 54, CART_BBASIC,    "Kingsoft Business Basic" },
-    { 55, CART_NOT_IMPL,  "Silver Rock 128" },
-    { 56, CART_NOT_IMPL,  "Formel 64" },
-    { 57, CART_NOT_IMPL,  "RGCD" },
-    { 58, CART_NOT_IMPL,  "RR-Net MK3" },
-    { 59, CART_NOT_IMPL,  "Easy Calc" },
-    { 60, CART_NOT_IMPL,  "GMod2" },
-    { 0xFFFF, CART_NOT_IMPL, "" } };
+    {  0, 0xFF, CART_NORMAL,    "Normal cartridge" },
+    {  1, 0xFF, CART_ACTION,    "Action Replay" }, // max 4 banks of 8K
+    {  2, 0xFF, CART_KCS,       "KCS Power Cartridge" },
+    {  3, 0xFF, CART_FINAL3,    "Final Cartridge III" }, // max 16 banks (FC3+)
+    {  4, 0xFF, CART_SBASIC,    "Simons Basic" },
+    {  5, 0xFF, CART_OCEAN_8K,  "Ocean type 1" }, // max 64 banks of 8K, with the exception of the 16K carts, which are limited to 16 banks of 16K
+    {  6, 0xFF, CART_NOT_IMPL,  "Expert Cartridge" },
+    {  7, 0xFF, CART_NOT_IMPL,  "Fun Play" },
+    {  8, 0xFF, CART_SUPERGAMES,"Super Games" },
+    {  9, 0xFF, CART_NORDIC,    "Atomic Power" }, // max 8 banks of 8K
+    { 10, 0xFF, CART_EPYX,      "Epyx Fastload" },
+    { 11, 0xFF, CART_WESTERMANN,"Westermann" },
+    { 12, 0xFF, CART_NOT_IMPL,  "Rex" },
+    { 13, 0xFF, CART_FINAL12,   "Final Cartridge I" },
+    { 14, 0xFF, CART_NOT_IMPL,  "Magic Formel" },
+    { 15, 0xFF, CART_SYSTEM3,   "C64 Game System" },
+    { 16, 0xFF, CART_NOT_IMPL,  "Warpspeed" },
+    { 17, 0xFF, CART_NOT_IMPL,  "Dinamic" },
+    { 18, 0xFF, CART_NOT_IMPL,  "Zaxxon" },
+    { 19, 0xFF, CART_DOMARK,    "Magic Desk, Domark, HES Australia" }, // max 16 banks of 16K
+    { 20, 0xFF, CART_SUPERSNAP, "Super Snapshot 5" },
+    { 21, 0xFF, CART_COMAL80,   "COMAL 80" },
+    { 32, 0xFF, CART_EASYFLASH, "EasyFlash" }, // max 64 banks
+    { 33, 0xFF, CART_NOT_IMPL,  "EasyFlash X-Bank" },
+    { 34, 0xFF, CART_NOT_IMPL,  "Capture" },
+    { 35, 0xFF, CART_NOT_IMPL,  "Action Replay 3" },
+    { 36, 0xFF, CART_RETRO,     "Retro Replay" }, // max 8 banks of 8K
+    { 37, 0xFF, CART_NOT_IMPL,  "MMC64" },
+    { 38, 0xFF, CART_NOT_IMPL,  "MMC Replay" },
+    { 39, 0xFF, CART_NOT_IMPL,  "IDE64" },
+    { 40, 0xFF, CART_NOT_IMPL,  "Super Snapshot V4" },
+    { 41, 0xFF, CART_NOT_IMPL,  "IEEE 488" },
+    { 42, 0xFF, CART_NOT_IMPL,  "Game Killer" },
+    { 43, 0xFF, CART_NOT_IMPL,  "Prophet 64" },
+    { 44, 0xFF, CART_EXOS,      "EXOS" }, // Currently max 1 bank
+    { 45, 0xFF, CART_NOT_IMPL,  "Freeze Frame" },
+    { 46, 0xFF, CART_NOT_IMPL,  "Freeze Machine" },
+    { 47, 0xFF, CART_NOT_IMPL,  "Snapshot64" },
+    { 48, 0xFF, CART_NOT_IMPL,  "Super Explode V5" },
+    { 49, 0xFF, CART_NOT_IMPL,  "Magic Voice" },
+    { 50, 0xFF, CART_NOT_IMPL,  "Action Replay 2" },
+    { 51, 0xFF, CART_NOT_IMPL,  "MACH 5" },
+    { 52, 0xFF, CART_NOT_IMPL,  "Diashow Maker" },
+    { 53, 0xFF, CART_PAGEFOX,   "Pagefox" },
+    { 54, 0xFF, CART_BBASIC,    "Kingsoft Business Basic" },
+    { 55, 0xFF, CART_NOT_IMPL,  "Silver Rock 128" },
+    { 56, 0xFF, CART_NOT_IMPL,  "Formel 64" },
+    { 57, 0xFF, CART_NOT_IMPL,  "RGCD" },
+    { 58, 0xFF, CART_NOT_IMPL,  "RR-Net MK3" },
+    { 59, 0xFF, CART_NOT_IMPL,  "Easy Calc" },
+    { 60, 0xFF, CART_GMOD2,     "GMod2" },
+    { 61, 0xFF, CART_NOT_IMPL,  "MAX Basic" },
+    { 62, 0xFF, CART_NOT_IMPL,  "GMod3" },
+    { 63, 0xFF, CART_NOT_IMPL,  "ZIPP-CODE 48" },
+    { 64, 0xFF, CART_BLACKBOX8, "Blackbox V8" },
+    { 65, 0xFF, CART_BLACKBOX3, "Blackbox V3" },
+    { 66, 0xFF, CART_BLACKBOX4, "Blackbox V4" },
+    { 67, 0xFF, CART_NOT_IMPL,  "REX RAM-Floppy" },
+    { 68, 0xFF, CART_NOT_IMPL,  "BIS-Plus" },
+    { 69, 0xFF, CART_NOT_IMPL,  "SD-BOX" },
+    { 70, 0xFF, CART_NOT_IMPL,  "MultiMAX" },
+    { 71, 0xFF, CART_NOT_IMPL,  "Blackbox V9" },
+    { 72, 0xFF, CART_NOT_IMPL,  "Lt. Kernal Host Adaptor" },
+    { 73, 0xFF, CART_NOT_IMPL,  "RAMLink" },
+    { 74, 0xFF, CART_NOT_IMPL,  "H.E.R.O." },
+    { 0xFFFF, 0xFF, CART_NOT_IMPL, "" } };
 
 const struct C64_CRT::t_cart C64_CRT::c_recognized_c128_carts[] = {
-    { 0, CART_C128_STD,    "C128 Cartridge" },
-    { 1, CART_C128_STD_IO, "C128 Cartridge with I/O Mirror" },
-    { 0xFFFF, CART_NOT_IMPL, "" } };
+    { 0, 0xFF, CART_C128_STD,    "C128 Cartridge" },
+    { 1, 0xFF, CART_C128_STD_IO, "C128 Cartridge with I/O Mirror" },
+    { 0xFFFF, 0xFF, CART_NOT_IMPL, "" } };
 
 __inline static uint16_t get_word(uint8_t *p)
 {
@@ -90,7 +104,9 @@ C64_CRT::C64_CRT(uint8_t *mem)
     local_type = CART_NOT_IMPL;
     machine = 0;
     total_read = 0;
-    load_at_a000 = false;
+    max_bank = 0xFF;
+    a000_seen = false;
+    bank_multiplier = 16 * 1024;
 }
 
 int C64_CRT::check_header(File *f, cart_def *def)
@@ -120,14 +136,10 @@ int C64_CRT::check_header(File *f, cart_def *def)
         if (uint8_t(cart_list->crt_type) == hw_type) {
             def->name = cart_list->cart_name;
             local_type = cart_list->local_type;
+            max_bank = cart_list->max_bank;
             if (local_type == CART_NOT_IMPL) {
                 printf("%s - Not implemented\n", cart_list->cart_name);
                 return -4;
-            }
-            if (local_type == CART_KCS) {
-                /* Bug in many KCS CRT images, wrong header size */
-                crt_header[CRTHDR_HDRSIZE] = crt_header[CRTHDR_HDRSIZE+1] = crt_header[CRTHDR_HDRSIZE+2] = 0;
-                crt_header[CRTHDR_HDRSIZE+3] = 0x40;
             }
             return 0;
         }
@@ -154,64 +166,42 @@ int C64_CRT::read_chip_packet(File *f)
     uint16_t bank = get_word(chip_header + CRTCHP_BANK);
     uint16_t load = get_word(chip_header + CRTCHP_LOAD);
     uint16_t size = get_word(chip_header + CRTCHP_SIZE);
+    uint16_t type = get_word(chip_header + CRTCHP_TYPE);
 
-    if (bank > 0x7f)
-        return -5;
-
-    if ((local_type == CART_OCEAN) && (load == 0xA000))
-        bank &= 0xEF; // max 128k per region
-
-    /*
-     if (bank > max_bank)
-     max_bank = bank;
-     */
-
-    bool split = false;
-    if (size > 0x2000)
-        if ((local_type == CART_OCEAN) || (local_type == CART_EASYFLASH) || (local_type == CART_DOMARK)
-                || (local_type == CART_SYSTEM3))
-            split = true;
-
-    uint8_t *mem_addr = cart_memory;
-
-    if (local_type == CART_KCS) {
-        mem_addr += load - 0x8000;
-    } else if (local_type == CART_NORMAL) {
-        mem_addr += (load & 0x2000); // use bit 13 of the load address
-    } else if (local_type == CART_FINAL3) {
-        mem_addr += 0x4000 * uint32_t(bank) + (load & 0x2000);
-    } else if (split) {
-        mem_addr += 0x2000 * uint32_t(bank);
-    } else {
-        mem_addr += uint32_t(size) * uint32_t(bank);
+    // Detect C128 mode carts
+    if ((load == 0xC000) || (size == 0x8000)) {
+        bank_multiplier = 32 * 1024;
     }
 
-    if (load == 0xA000 && local_type != CART_KCS && local_type != CART_FINAL3) {
-        mem_addr += 512 * 1024; // interleaved mode (TODO: make it the same in hardware as well, currently only for EasyFlash)
-        load_at_a000 = true;
-    }
-    printf("Reading chip data bank %d to $%4x with size $%4x to 0x%8x. %s\n", bank, load, size, mem_addr,
-            (split) ? "Split" : "Contiguous");
-
-    if (size) {
-        if (split) {
-            res = f->read((void *)mem_addr, 0x2000, &bytes_read);
-            total_read += uint32_t(bytes_read);
-            if (bytes_read != 0x2000) {
-                printf("Just read %4x bytes, expecting 8K\n", bytes_read);
-                return -5;
-            }
-            mem_addr += 512 * 1024; // interleaved
-            res = f->read((void *)mem_addr, size - 0x2000, &bytes_read);
-            total_read += bytes_read;
-        } else {
-            res = f->read((void *)mem_addr, size, &bytes_read);
-            total_read += bytes_read;
-            if (bytes_read != size) {
-                printf("Just read %4x bytes\n", bytes_read);
-                return -5;
-            }
+    if ((load == 0xA000) && !a000_seen) {
+        a000_seen = true;
+        if (bank > 0) { // strange; first time A000 is seen, it is not bank 0.
+            max_bank = bank - 1;
         }
+    }
+
+    bank &= max_bank;
+
+    uint32_t offset = uint32_t(bank) * bank_multiplier;
+    offset += (load & 0x3FFF); // switch between 8000 and A000
+    if (offset > 0x1000000) { // max 1 MB
+        return -5;
+    }
+
+    // Valid for ROM only
+    uint8_t *mem_addr = cart_memory;
+    mem_addr += offset; // by default 16K; unless it is a C128 cart.
+    printf("Reading chip data bank %d ($%4x) with size $%4x to 0x%8x.\n", bank, load, size, mem_addr);
+
+    if (size && ((type == 0) || (type == 2))) {
+        res = f->read((void *)mem_addr, size, &bytes_read);
+        total_read += bytes_read;
+        if (bytes_read != size) {
+            printf("Just read %4x bytes\n", bytes_read);
+            return -5;
+        }
+    } else {
+        printf("Skipping Chip packet Type %d with size %4x.\n", type, size);
     }
     return 0;
 }
@@ -240,6 +230,10 @@ int C64_CRT::read_crt(File *file, cart_def *def)
         return retval;
     }
     uint32_t dw = get_dword(crt_header + CRTHDR_HDRSIZE);
+    if (dw < 0x40) {
+        dw = 0x40;
+    }
+
     printf("Header OK. Now reading chip packets starting from %6x.\n", dw);
     FRESULT fres = file->seek(dw);
     if (fres != FR_OK) {
@@ -269,7 +263,7 @@ void C64_CRT::configure_cart(cart_def *def)
     switch (local_type) {
         case CART_NORMAL:
             if ((crt_header[CRTHDR_EXROM] == 1) && (crt_header[CRTHDR_GAME] == 0)) {
-                cart_type = CART_TYPE_16K_UMAX;
+                cart_type = CART_TYPE_UMAX;
             } else if ((crt_header[CRTHDR_EXROM] == 0) && (crt_header[CRTHDR_GAME] == 0)) {
                 cart_type = CART_TYPE_16K;
             } else if ((crt_header[CRTHDR_EXROM] == 0) && (crt_header[CRTHDR_GAME] == 1)) {
@@ -288,12 +282,12 @@ void C64_CRT::configure_cart(cart_def *def)
             cart_type = CART_TYPE_DOMARK;
             prohibit = CART_PROHIBIT_DEXX;
             break;
-        case CART_OCEAN:
+        case CART_OCEAN_8K:
             prohibit = CART_PROHIBIT_DEXX;
-            if (load_at_a000) {
-                cart_type = CART_TYPE_OCEAN256; // Ocean 256K
+            if (a000_seen) { // special case!
+                cart_type = CART_TYPE_OCEAN_16K | VARIANT_3; // 16 banks of 16K
             } else {
-                cart_type = CART_TYPE_OCEAN128; // Ocean 128K/512K
+                cart_type = CART_TYPE_OCEAN_8K;
             }
             break;
         case CART_EASYFLASH:
@@ -316,6 +310,9 @@ void C64_CRT::configure_cart(cart_def *def)
             } else {
                 prohibit = CART_PROHIBIT_IO;
             }
+            if (total_read > 65536) {
+                cart_type |= VARIANT_1;
+            }
             break;
         case CART_SYSTEM3:
             cart_type = CART_TYPE_SYSTEM3; // System3
@@ -331,9 +328,9 @@ void C64_CRT::configure_cart(cart_def *def)
             break;
         case CART_COMAL80:
             if (total_read > 65536) {
-                cart_type = CART_TYPE_COMAL80PAKMA; // Comal 80 Pakma // V5: Type = Ocean_16K, Variant = 1
+                cart_type = CART_TYPE_OCEAN_16K | VARIANT_1; // Comal 80 Pakma // V5: Type = Ocean_16K, Variant = 1
             } else {
-                cart_type = CART_TYPE_COMAL80; // Comal 80 // V5: Type = Ocean_16K, Variant = 0
+                cart_type = CART_TYPE_OCEAN_16K; // Comal 80 // V5: Type = Ocean_16K, Variant = 0
             }
             prohibit = CART_PROHIBIT_DEXX;
             break;
@@ -362,22 +359,25 @@ void C64_CRT::configure_cart(cart_def *def)
             require = CART_WMIRROR | CART_DYNAMIC;
             prohibit = CART_PROHIBIT_IO;
             break;
+        case CART_BLACKBOX3:
+            cart_type = CART_TYPE_BLACKBOX_V3;
+            prohibit = CART_PROHIBIT_IO;
+            break;
+        case CART_BLACKBOX4:
+            cart_type = CART_TYPE_BLACKBOX_V4;
+            prohibit = CART_PROHIBIT_IO;
+            break;
+        case CART_BLACKBOX8:
+            cart_type = CART_TYPE_BLACKBOX_V8;
+            prohibit = CART_PROHIBIT_DFXX;
+            break;
+        case CART_GMOD2:
+            prohibit = CART_PROHIBIT_DEXX;
+            cart_type = CART_TYPE_GMOD2;
+            break;
         case CART_EXOS:
             require = CART_KERNAL;
             break;
-            /*
-             if (total_read > 8192) {
-             C64_KERNAL_ENABLE = 3;
-             uint8_t *src = (uint8_t *) (((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16);
-             for (int i = 16383; i >= 0; i--)
-             *(src + 2 * i + 1) = *(src + i);
-             } else {
-             uint8_t *src = (uint8_t *) (((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16);
-             int fastreset = C64 :: getMachine()->get_cfg_value(CFG_C64_FASTRESET);
-             C64 :: getMachine()->enable_kernal(src, fastreset);
-             }
-             break;
-             */
         case CART_C128_STD:
             cart_type = CART_TYPE_128;
             break;

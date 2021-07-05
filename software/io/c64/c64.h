@@ -102,35 +102,6 @@
 #define FLASH_CMD_NOPAGES     0x02
 #define FLASH_CMD_GETPAGE     0x03
 
-
-#define CART_TYPE_NONE        0x00
-#define CART_TYPE_8K          0x01
-#define CART_TYPE_16K         0x02
-#define CART_TYPE_16K_UMAX    0x03
-#define CART_TYPE_FC3         0x04 // Ok without write mirroring
-#define CART_TYPE_SS5         0x05 // Ok without write mirroring
-#define CART_TYPE_RETRO       0x06 // Ok without write mirroring
-#define CART_TYPE_ACTION      0x07 // Ok without write mirroring
-#define CART_TYPE_SYSTEM3     0x08 // Doesn't have external RAM
-#define CART_TYPE_DOMARK      0x09 // Doesn't have external RAM
-#define CART_TYPE_OCEAN128    0x0A // Doesn't have external RAM
-#define CART_TYPE_OCEAN256    0x0B // Doesn't have external RAM
-#define CART_TYPE_EASY_FLASH  0x0C // ?
-#define CART_TYPE_EPYX        0x0E // Doesn't have external RAM
-#define CART_TYPE_KCS         0x10 // Ok without write mirroring
-#define CART_TYPE_FINAL12     0x11
-#define CART_TYPE_COMAL80     0x12
-#define CART_TYPE_SBASIC      0x13
-#define CART_TYPE_WESTERMANN  0x14
-#define CART_TYPE_GEORAM      0x15
-#define CART_TYPE_BBASIC      0x16
-#define CART_TYPE_PAGEFOX     0x17
-#define CART_TYPE_128         0x18
-#define CART_TYPE_FC3PLUS     0x19
-#define CART_TYPE_COMAL80PAKMA 0x1A
-#define CART_TYPE_SUPERGAMES   0x1B
-#define CART_TYPE_NORDIC      0x1C // requires Writes to be on
-
 #define VARIANT_0 0x00
 #define VARIANT_1 0x20
 #define VARIANT_2 0x40
@@ -139,6 +110,43 @@
 #define VARIANT_5 0xA0
 #define VARIANT_6 0xC0
 #define VARIANT_7 0xE0
+
+
+#define CART_TYPE_NONE        0x00
+#define CART_TYPE_NORMAL      0x01 // variant 0=16K, variant1=Ultimax, variant2=8K, variant3 = off
+#define CART_TYPE_EPYX        0x02 // Doesn't have external RAM
+#define CART_TYPE_128         0x03
+#define CART_TYPE_WESTERMANN  0x04 // 0: Westermann, 1: Blackbox V4
+#define CART_TYPE_SBASIC      0x05
+#define CART_TYPE_BBASIC      0x06
+#define CART_TYPE_BLACKBOX_V3 0x07
+
+#define CART_TYPE_OCEAN_8K    0x08 // 0: ocean, 1: domark, 2: gmod2
+#define CART_TYPE_OCEAN_16K   0x09 // 0: 4 banks, 1: 8 banks, 3: 16 banks, 7: 32 banks
+#define CART_TYPE_SYSTEM3     0x0A // Doesn't have external RAM
+#define CART_TYPE_SUPERGAMES  0x0B
+#define CART_TYPE_BLACKBOX_V8 0x0C
+
+#define CART_TYPE_PAGEFOX     0x10
+#define CART_TYPE_EASY_FLASH  0x11 // ?
+
+#define CART_TYPE_FINAL12     0x18
+#define CART_TYPE_FC3         0x19 // 0: 64K, 1: 256K
+#define CART_TYPE_SS5         0x1A
+#define CART_TYPE_ACTION      0x1B // 0: AR, 1: RR, 2: Nordic
+#define CART_TYPE_KCS         0x1C
+#define CART_TYPE_GEORAM      0x1F
+
+// predefined combinations
+#define CART_TYPE_8K          (CART_TYPE_NORMAL | VARIANT_2)
+#define CART_TYPE_16K         (CART_TYPE_NORMAL | VARIANT_0)
+#define CART_TYPE_UMAX        (CART_TYPE_NORMAL | VARIANT_5) // 1 = Umax, 5 = Umax + serve VIC
+#define CART_TYPE_BLACKBOX_V4 (CART_TYPE_WESTERMANN | VARIANT_1)
+#define CART_TYPE_DOMARK      (CART_TYPE_OCEAN_8K | VARIANT_1)
+#define CART_TYPE_GMOD2       (CART_TYPE_OCEAN_8K | VARIANT_2)
+#define CART_TYPE_RETRO       (CART_TYPE_ACTION | VARIANT_1)
+#define CART_TYPE_NORDIC      (CART_TYPE_ACTION | VARIANT_2)
+#define CART_TYPE_FC3PLUS     (CART_TYPE_FC3 | VARIANT_1)
 
 #define DRVTYPE_MP3_DNP       31
 
@@ -355,7 +363,7 @@ public:
     void resetConfigInFlash(int page);
     void unfreeze(void);
     void start_cartridge(void *def);
-    void enable_kernal(uint8_t *rom, bool fastreset = false);
+    void enable_kernal(uint8_t *rom);
     void set_rom_config(uint8_t idx, const char *fname);
     void init_cartridge(void);
     void reset(void);

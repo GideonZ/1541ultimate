@@ -65,7 +65,6 @@ CommandInterface :: CommandInterface() : SubSystem(SUBSYSID_CMD_IF)
     }
     target = CMD_TARGET_NONE;
     cart_mode = 0;
-
 }
 
 CommandInterface :: ~CommandInterface()

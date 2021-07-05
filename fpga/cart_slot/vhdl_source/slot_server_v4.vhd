@@ -506,7 +506,7 @@ begin
         freeze_act      => freeze_active );
 
 
-    i_cart_logic: entity work.all_carts_v4
+    i_cart_logic: entity work.all_carts_v5
     generic map (
         g_rom_base      => std_logic_vector(g_rom_base_cart),
         g_ram_base      => std_logic_vector(g_ram_base_cart) )
@@ -522,6 +522,7 @@ begin
         cart_active     => status.cart_active,
         
         cart_logic      => control.cartridge_type,
+        cart_variant    => control.cartridge_variant,
         cart_force      => control.cartridge_force,
         cart_kill       => control.cartridge_kill,
         epyx_timeout    => epyx_timeout,
@@ -538,14 +539,12 @@ begin
         allow_write     => allow_write,
         kernal_area     => kernal_area,
         kernal_enable   => control.kernal_enable,
-        kernal_16k      => control.kernal_16k,
         
         irq_n           => irq_n,
         nmi_n           => nmi_n,
         exrom_n         => exrom_n,
         game_n          => game_n,
-        sense           => sense,
-    
+
         CART_LEDn       => cart_led_n,
         size_ctrl       => control.reu_size );
 
