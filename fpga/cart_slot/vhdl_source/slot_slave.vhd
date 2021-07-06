@@ -125,7 +125,8 @@ begin
     slot_req.late_write    <= do_io_event and late_write_cond;
     -- TODO: Do we still need io_read_early? If so, should we not check for PHI2 here? Or will we serve I/O data to the VIC?
     slot_req.io_read_early <= '1' when (addr_is_io and rwn_c='1' and do_sample_addr='1') else '0';
-
+    slot_req.sample_io     <= do_sample_io;
+    
     process(clock)
     begin
         if rising_edge(clock) then
@@ -144,6 +145,7 @@ begin
             ultimax   <= not GAMEn and EXROMn;
             ultimax_d <= ultimax;
             ultimax_d2 <= ultimax_d;
+            slot_req.rom_access  <= not romln_c or not romhn_c;
             
             -- 470 nF / 3.3K pup / Vih = 2V, but might be lower
             -- Voh buffer = 0.3V, so let's take a threshold of 1.2V => 400 cycles

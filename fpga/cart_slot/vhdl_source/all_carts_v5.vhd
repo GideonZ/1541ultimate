@@ -92,6 +92,7 @@ architecture gideon of all_carts_v5 is
     constant c_system3      : std_logic_vector(4 downto 0) := "01010";
     constant c_supergames   : std_logic_vector(4 downto 0) := "01011";
     constant c_blackbox_v8  : std_logic_vector(4 downto 0) := "01100";
+    constant c_zaxxon       : std_logic_vector(4 downto 0) := "01101";
 
     -- Simple bankers with RAM
     constant c_pagefox      : std_logic_vector(4 downto 0) := "10000";
@@ -153,7 +154,17 @@ begin
             unfreeze     <= '0';
                         
             -- control register
-            if reset_in='1' then
+            if freeze_act='1' and freeze_act_d='0' then
+                bank_bits  <= (others => '0');
+                ram_bank   <= (others => '0');
+                mode_bits  <= (others => '0');
+                cart_en    <= '1';
+                hold_nmi   <= '1';
+
+            -- activate change of mode, when:
+            elsif reset_in='1' or cart_force = '1' then
+                cart_logic_d <= cart_logic;
+                variant      <= cart_variant;
                 mode_bits    <= (others => '0');
                 bank_bits    <= (others => '0');
                 ram_bank     <= (others => '0');
@@ -163,20 +174,6 @@ begin
                 do_io2       <= '1';
                 cart_en      <= '1';
                 hold_nmi     <= '0';
-            elsif freeze_act='1' and freeze_act_d='0' then
-                bank_bits  <= (others => '0');
-                ram_bank   <= (others => '0');
-                mode_bits  <= (others => '0');
-                cart_en    <= '1';
-                hold_nmi   <= '1';
-            end if;
-
-            -- activate change of mode, when:
-            if reset_in='1' or cart_en = '0' or cart_force = '1' then
-                cart_logic_d <= cart_logic;
-                variant      <= cart_variant;
-                mode_bits    <= (others => '0');
-                bank_bits    <= (others => '0');
             end if;
                             
             -- Default, everything is off.
@@ -249,11 +246,13 @@ begin
 
             when c_bbasic => -- Write IO1 = off, Read IO1 = ON
                 if io_write='1' and io_addr(8)='0' then
-                    mode_bits(0) <= '0';
-                elsif io_read='1' and io_addr(8)='0' then
                     mode_bits(0) <= '1';
+                    bank_bits(14) <= '1';
+                elsif io_read='1' and io_addr(8)='0' then
+                    mode_bits(0) <= '0';
+                    bank_bits(14) <= '0';
                 end if;
-                if mode_bits(0)='1' then -- ROM mode
+                if mode_bits(0)='0' then -- ROM mode  (starts in ROM mode?)
                    game_n    <= '0';
                    exrom_n   <= '0';
                 -- Dynamic mode, Ultimax in ranges 8000, A000 and E000.  How about writes?
@@ -347,6 +346,16 @@ begin
                 serve_rom <= '1';
                 rom_mode  <= "01"; -- 16K banks
 
+            when c_zaxxon =>
+                -- a read from 8000-8FFF selects bank 0, a read from 9000-9FFF selects bank 1.
+                if slot_req.sample_io = '1' and slot_addr(15 downto 13) = "100" and slot_rwn = '1' then
+                    bank_bits(14) <= slot_addr(12);
+                end if;
+                game_n    <= '0';
+                exrom_n   <= '0';
+                serve_rom <= '1';
+                rom_mode  <= "01"; -- 16K banks
+
             -- (SIMPLE) BANKERS WITH RAM
             when c_pagefox => -- 16K mode on/off, 4 banks
                 if io_write='1' and io_addr(8 downto 7) = "01"  then -- DE80-DEFF
@@ -421,7 +430,7 @@ begin
                         mode_bits <= io_wdata(5) & io_wdata(1 downto 0);
                         unfreeze  <= io_wdata(6);
                         cart_en   <= not io_wdata(2);
-                    elsif io_addr(0)='1' and variant(0)='1' then
+                    elsif io_addr(0)='1' and variant(0)='1' then -- extended register for Retro Replay
                         if io_wdata(6)='1' then
                             do_io2 <= '0';
                         end if;
@@ -439,18 +448,18 @@ begin
                     game_n    <= '0';
                     exrom_n   <= '1';
                     serve_rom <= '1';
-                    serve_io1 <= '0';
-                    serve_io2 <= '0';
-                elsif mode_bits(2 downto 0)="110" and variant(1)='1' then
-                   game_n    <= '0';
-                   -- Switch to Ultimax mode for writes to address A000-BFFF (disable C64 RAM write)
-                   exrom_n   <= slot_addr(15) and not slot_addr(14) and slot_addr(13) and not slot_rwn;
                 else
-                    game_n    <= not mode_bits(0);
-                    exrom_n   <= mode_bits(1);
                     serve_io1 <= c_serve_io_rr(to_integer(unsigned(mode_bits)));
                     serve_io2 <= c_serve_io_rr(to_integer(unsigned(mode_bits))) and do_io2;
                     serve_rom <= c_serve_rom_rr(to_integer(unsigned(mode_bits)));
+                    if mode_bits(2 downto 0)="110" and variant(1)='1' then
+                        game_n    <= '0';
+                        -- Switch to Ultimax mode for writes to address A000-BFFF (disable C64 RAM write)
+                        exrom_n   <= slot_addr(15) and not slot_addr(14) and slot_addr(13) and not slot_rwn;
+                    else
+                        game_n    <= not mode_bits(0);
+                        exrom_n   <= mode_bits(1);
+                    end if;
                 end if;
                 irq_n     <= not(freeze_trig or freeze_act);
                 nmi_n     <= not(freeze_trig or freeze_act);
@@ -516,26 +525,21 @@ begin
             when c_fc =>
                 -- io1 access
                 if (io_read='1' or io_write='1') and io_addr(8) = '0' then -- DE00-DEFF
-                    game_n    <= '1';      -- Cartridge disabled mode
-                    exrom_n   <= '1';
+                    mode_bits(0) <= '1';
                     unfreeze  <= '1';
                 end if;
                 -- io2 access
                 if (io_read='1' or io_write='1') and io_addr(8) = '1' then -- DF00-DFFF
-                    game_n    <= '0';      -- 16K GAME mode
-                    exrom_n   <= '0';
+                    mode_bits(0) <= '0';
                     unfreeze  <= '1';
                 end if;
-                -- on freeze
-                if freeze_trig='1' then
+                -- Freezer runs in Ultimax mode
+                if freeze_act='1' then
                     game_n       <= '0';   -- ULTIMAX mode
                     exrom_n      <= '1';
-                end if;
-                -- on reset/init
-                if reset_in='1' then
-                    game_n       <= '0';   -- 16K GAME mode
-                    exrom_n      <= '0';
-                    unfreeze     <= '1';
+                else
+                    game_n       <= mode_bits(0); -- 16K mode or off
+                    exrom_n      <= mode_bits(0);
                 end if;
                 serve_io1 <= '1';
                 serve_io2 <= '1';

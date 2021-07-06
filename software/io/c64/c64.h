@@ -116,7 +116,7 @@
 #define CART_TYPE_NORMAL      0x01 // variant 0=16K, variant1=Ultimax, variant2=8K, variant3 = off
 #define CART_TYPE_EPYX        0x02 // Doesn't have external RAM
 #define CART_TYPE_128         0x03
-#define CART_TYPE_WESTERMANN  0x04 // 0: Westermann, 1: Blackbox V4
+#define CART_TYPE_WMANN       0x04 // 2: Westermann, 1: Blackbox V4
 #define CART_TYPE_SBASIC      0x05
 #define CART_TYPE_BBASIC      0x06
 #define CART_TYPE_BLACKBOX_V3 0x07
@@ -126,6 +126,7 @@
 #define CART_TYPE_SYSTEM3     0x0A // Doesn't have external RAM
 #define CART_TYPE_SUPERGAMES  0x0B
 #define CART_TYPE_BLACKBOX_V8 0x0C
+#define CART_TYPE_ZAXXON      0x0D
 
 #define CART_TYPE_PAGEFOX     0x10
 #define CART_TYPE_EASY_FLASH  0x11 // ?
@@ -141,7 +142,8 @@
 #define CART_TYPE_8K          (CART_TYPE_NORMAL | VARIANT_2)
 #define CART_TYPE_16K         (CART_TYPE_NORMAL | VARIANT_0)
 #define CART_TYPE_UMAX        (CART_TYPE_NORMAL | VARIANT_5) // 1 = Umax, 5 = Umax + serve VIC
-#define CART_TYPE_BLACKBOX_V4 (CART_TYPE_WESTERMANN | VARIANT_1)
+#define CART_TYPE_BLACKBOX_V4 (CART_TYPE_WMANN | VARIANT_1)
+#define CART_TYPE_WESTERMANN  (CART_TYPE_WMANN | VARIANT_2)
 #define CART_TYPE_DOMARK      (CART_TYPE_OCEAN_8K | VARIANT_1)
 #define CART_TYPE_GMOD2       (CART_TYPE_OCEAN_8K | VARIANT_2)
 #define CART_TYPE_RETRO       (CART_TYPE_ACTION | VARIANT_1)

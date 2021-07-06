@@ -14,6 +14,8 @@ package slot_bus_pkg is
         io_write        : std_logic;
         late_write      : std_logic;
         data            : std_logic_vector(7 downto 0);
+        rom_access      : std_logic; -- synchronized version of ROML and ROMH combined
+        sample_io       : std_logic; -- timing signal, pulses when IO lines and address should be stable
     end record;
     
     type t_slot_resp is record
@@ -32,6 +34,8 @@ package slot_bus_pkg is
         io_read       => '0',
         io_write      => '0',
         late_write    => '0',
+        rom_access    => '0',
+        sample_io     => '0',
         data          => X"00" );
      
     constant c_slot_resp_init : t_slot_resp := (
