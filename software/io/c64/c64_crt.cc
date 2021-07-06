@@ -34,7 +34,7 @@ const struct C64_CRT::t_cart C64_CRT::c_recognized_c64_carts[] = {
     { 15, 0xFF, CART_SYSTEM3,   "C64 Game System" },
     { 16, 0xFF, CART_NOT_IMPL,  "Warpspeed" },
     { 17, 0xFF, CART_NOT_IMPL,  "Dinamic" },
-    { 18, 0xFF, CART_NOT_IMPL,  "Zaxxon" },
+    { 18, 0xFF, CART_ZAXXON,    "Zaxxon" },
     { 19, 0xFF, CART_DOMARK,    "Magic Desk, Domark, HES Australia" }, // max 16 banks of 16K
     { 20, 0xFF, CART_SUPERSNAP, "Super Snapshot 5" },
     { 21, 0xFF, CART_COMAL80,   "COMAL 80" },
@@ -194,11 +194,26 @@ int C64_CRT::read_chip_packet(File *f)
     printf("Reading chip data bank %d ($%4x) with size $%4x to 0x%8x.\n", bank, load, size, mem_addr);
 
     if (size && ((type == 0) || (type == 2))) {
-        res = f->read((void *)mem_addr, size, &bytes_read);
+        res = f->read(mem_addr, size, &bytes_read);
         total_read += bytes_read;
         if (bytes_read != size) {
             printf("Just read %4x bytes\n", bytes_read);
             return -5;
+        }
+        if (bytes_read < 8192) {
+            // round up to the nearest multiple of 2, minimum 256 bytes
+            for (int i=256; i<size; i*=2) {
+                if (bytes_read < i) {
+                    bytes_read = i;
+                    break;
+                }
+            }
+            // mirror data up to 8K block
+            while (bytes_read < 8192) {
+                printf("Mirroring %4x bytes from %p to %p.\n", bytes_read, mem_addr, mem_addr + bytes_read);
+                memcpy(mem_addr + bytes_read, mem_addr, bytes_read);
+                bytes_read <<= 1;
+            }
         }
     } else {
         printf("Skipping Chip packet Type %d with size %4x.\n", type, size);
@@ -299,6 +314,13 @@ void C64_CRT::configure_cart(cart_def *def)
         case CART_SUPERSNAP:
             cart_type = CART_TYPE_SS5; // Snappy
             prohibit = CART_PROHIBIT_DEXX;
+            break;
+        case CART_ZAXXON:
+            cart_type = CART_TYPE_ZAXXON;
+            // in this special case, the first chip chunk should be copied to both banks
+            // the read chip chunk routine should already have doubled the 4K to 8K.
+            printf("Mirroring 2000 bytes from %p to %p.\n", cart_memory, cart_memory + 0x4000);
+            memcpy(cart_memory + 0x4000, cart_memory, 0x2000);
             break;
         case CART_EPYX:
             cart_type = CART_TYPE_EPYX; // Epyx

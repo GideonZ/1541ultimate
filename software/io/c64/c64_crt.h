@@ -20,6 +20,7 @@ typedef enum {
     CART_EPYX,
     CART_FINAL3,
     CART_SYSTEM3,
+    CART_ZAXXON,
     CART_KCS,
     CART_FINAL12,
     CART_COMAL80,
