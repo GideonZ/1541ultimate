@@ -134,7 +134,7 @@ int test_cartbus(Screen *s)
 
 	// let's test ROML and ROMH. Secretly we also test the GAME line
 	C64_MODE           = MODE_ULTIMAX;
-    C64_CARTRIDGE_TYPE = CART_TYPE_16K_UMAX;
+    C64_CARTRIDGE_TYPE = CART_TYPE_NORMAL;
     C64_MODE = C64_MODE_RESET;
     C64_KERNAL_ENABLE = 0;
     wait_ms(10);
