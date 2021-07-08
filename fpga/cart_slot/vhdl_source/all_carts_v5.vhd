@@ -37,6 +37,7 @@ port (
     epyx_timeout    : in  std_logic;
     serve_enable    : out std_logic; -- enables fetching bus address PHI2=1
     serve_vic       : out std_logic; -- enables doing so for PHI2=0
+    serve_128       : out std_logic; -- 8000-FFFF
     serve_rom       : out std_logic; -- ROML or ROMH
     serve_io1       : out std_logic; -- IO1n
     serve_io2       : out std_logic; -- IO2n
@@ -177,6 +178,7 @@ begin
             end if;
                             
             -- Default, everything is off.
+            serve_128 <= '0';
             serve_rom <= '0';
             serve_io1 <= '0';
             serve_io2 <= '0';
@@ -210,7 +212,7 @@ begin
             when c_epyx =>
                 game_n    <= '1';
                 exrom_n   <= epyx_timeout;
-                serve_rom <= '1';
+                serve_128 <= '1'; -- 8000-FFFF
                 serve_io2 <= '1'; -- rom visible df00-dfff
 
             when c_westermann => -- 16K
