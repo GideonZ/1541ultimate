@@ -47,10 +47,15 @@
         SAVEADDR   = $C1
         SAVEEND    = $AE
 
-        MY_OUTLEN       = $02BF ; Last byte of free area, before sprite 11
-        UCI_PENDING_CMD = $02BE
-        UCI_LAST_CMD    = $02BD
-        UCI_LAST_SA     = $02BC
+;        MY_OUTLEN       = $02BF ; Last byte of free area, before sprite 11
+;        UCI_PENDING_CMD = $02BE
+;        UCI_LAST_CMD    = $02BD
+;        UCI_LAST_SA     = $02BC
+
+        MY_OUTLEN       = prty
+        UCI_PENDING_CMD = dpsw
+        UCI_LAST_CMD    = fsblk
+        UCI_LAST_SA     = syno
 
 ulti_restor
             lda CMD_IF_COMMAND
