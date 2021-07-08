@@ -104,8 +104,8 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         sys_command->execute();
         break;
     case SOCKET_CMD_POWEROFF:
-        c64_command = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_POWEROFF, 0, buf, len);
-        c64_command->execute();
+        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_POWEROFF, 0, buf, len);
+        sys_command->execute();
         break;
     case SOCKET_CMD_WAIT:
         vTaskDelay(len);

@@ -30,10 +30,11 @@ architecture tb of tb_floppy_stream is
     signal mode            : std_logic;
     signal write_prot_n    : std_logic;
     signal step            : unsigned(1 downto 0) := "00";
-    signal soe             : std_logic;
-    signal bit_time        : unsigned(8 downto 0) := to_unsigned(335, 9);
-    signal track           : std_logic_vector(6 downto 0);
-    
+    signal bit_time        : unsigned(9 downto 0) := to_unsigned(399, 10); -- 335 for fastest
+    --signal bit_time        : unsigned(9 downto 0) := to_unsigned(335, 10);
+    signal track           : unsigned(6 downto 0);
+    --signal rate_ctrl       : std_logic_vector(1 downto 0) := "11"; -- fastest
+    signal rate_ctrl       : std_logic_vector(1 downto 0) := "00"; -- slowest
     signal byte_ready      : std_logic;
     signal sync            : std_logic;
     signal read_data       : std_logic_vector(7 downto 0);
@@ -43,19 +44,23 @@ architecture tb of tb_floppy_stream is
     signal do_read          : std_logic;
     signal do_write         : std_logic;
     signal do_advance       : std_logic;
-    
+    signal tick_16MHz       : std_logic_vector(24 downto 0) := "0010010010010010010010010";
     type t_buffer_array is array (natural range <>) of std_logic_vector(7 downto 0);
     shared variable my_buffer : t_buffer_array(0 to 15) := (others => X"FF");
     
 begin
-    clock <= not clock after 10 ns;
+    clock <= not clock after 10 ns; -- 50 MHz
     reset <= '1', '0' after 400 ns;
+    
+    tick_16MHz <= tick_16MHz(0) & tick_16MHz(tick_16MHz'high downto 1) when rising_edge(clock);
+
             
     mut: entity work.floppy_stream
     port map (
         clock           => clock,
         reset           => reset,
-        
+        tick_16MHz      => tick_16MHz(0),        
+
         mem_rdata       => mem_rdata,
         floppy_inserted => '1',
         
@@ -66,14 +71,15 @@ begin
         track           => track,
         
         motor_on        => motor_on,
+        stepper_en      => motor_on,
         sync            => sync,
         mode            => mode,
         write_prot_n    => write_prot_n,
         step            => std_logic_vector(step),
         byte_ready      => byte_ready,
-        soe             => soe,
         bit_time        => bit_time,
-                
+        rate_ctrl       => rate_ctrl,
+
         read_data       => read_data );
 
     test: process
@@ -81,9 +87,8 @@ begin
         motor_on     <= '1';
         mode         <= '1';
         write_prot_n <= '1';
-        soe          <= '1';
-        --wait for 700 us;
-        --mode <= '0'; -- switch to write
+        wait for 600 us;
+        mode <= '0'; -- switch to write
         
         wait;
     end process;
@@ -103,7 +108,7 @@ begin
         if rising_edge(clock) then
             if not h_initialized then
                 register_mem_model("my_memory", "my memory", h);
-                load_memory("../../../g64/720_s0.g64", 1, X"00000000");
+                load_memory("../data/720_s0.g64", 1, X"00000000");
                 h_initialized := true; 
                 write_memory_32(h, X"00000400", X"00000000");
                 write_memory_32(h, X"00000404", X"00000000");

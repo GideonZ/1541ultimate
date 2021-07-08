@@ -60,14 +60,6 @@ u2plus:
 	@$(MAKE) -C target/fpga/u2plus_run
 	@$(MAKE) -C target/software/nios2_ultimate
 	@$(MAKE) -C target/software/nios2_recovery
-	@$(MAKE) -C target/software/nios2_flash
-	@$(MAKE) -C target/software/nios2_update
-	@cp target/software/nios2_update/result/update.app ./update.u2p
-
-niosapps:
-	@$(MAKE) -C target/software/nios2_ultimate
-	@$(MAKE) -C target/software/nios2_recovery
-	@$(MAKE) -C target/software/nios2_flash
 	@$(MAKE) -C target/software/nios2_update
 	@cp target/software/nios2_update/result/update.app ./update.u2p
 
@@ -174,6 +166,10 @@ mb_clean:
 	@rm -rf `find target/software/mb* -name output`
 
 u2plus_swonly:
+	@touch software/nios_solo_bsp/Makefile
+	@touch software/nios_solo_bsp/public.mk
+	@touch software/nios_appl_bsp/Makefile
+	@touch software/nios_appl_bsp/public.mk
 	@$(MAKE) -C tools
 	@$(MAKE) -C software/nios_solo_bsp
 	@$(MAKE) -C software/nios_appl_bsp
@@ -226,5 +222,4 @@ u64_clean:
 	@$(MAKE) -C target/software/nios2_update_u64a4 clean
 	@$(MAKE) -C target/software/nios2_update_u64dev clean
 	@$(MAKE) -C target/software/nios2_u64 clean
-
 

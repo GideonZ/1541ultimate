@@ -348,7 +348,7 @@ uint8_t *GcrImage :: find_sync(uint8_t *gcr_data, uint8_t *begin, uint8_t *end)
         if(*gcr_data == 0xFF) {
             sync_count++;
         } else {
-            if(sync_count > 2)
+            if(sync_count >= 2)
                 return gcr_data; // byte after sync
             sync_count = 0;
         }
