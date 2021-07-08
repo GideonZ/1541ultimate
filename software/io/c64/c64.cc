@@ -1275,8 +1275,8 @@ int C64 :: getSizeOfMP3NativeRamdrive(int devNo)
 void C64 :: list_crts(ConfigItem *it, IndexedList<char *>& strings)
 {
     // Always return at least the empty string
-    char *empty = new char[2];
-    empty[0] = 0;
+    char *empty = new char[12];
+    strcpy(empty, "\er- None -");
     strings.append(empty);
 
     Path p;
