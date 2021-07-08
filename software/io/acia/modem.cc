@@ -96,6 +96,7 @@ Modem :: Modem()
     dropOnDTR = true;
     lastHandshake = 0;
     verbose = true;
+    current_iobase = 0;
     ResetRegisters();
 }
 
@@ -750,8 +751,10 @@ void Modem :: effectuate_settings()
     int base = acia_base[cfg->get_value(CFG_MODEM_ACIA)];
     if (!base) {
         acia.deinit();
+        current_iobase = 0;
     } else {
         acia.init(base & 0xFFFE, base & 1, aciaQueue, aciaQueue, aciaTxBuffer);
+        current_iobase = base & 0xFFFE;
     }
 
     dropOnDTR = cfg->get_value(CFG_MODEM_DTRDROP);
@@ -759,6 +762,21 @@ void Modem :: effectuate_settings()
     dsrMode = cfg->get_value(CFG_MODEM_DSR);
     dcdMode = cfg->get_value(CFG_MODEM_DCD);
     listenerSocket->Start(newPort);
+}
+
+void Modem :: reinit_acia(uint16_t base)
+{
+    acia.init(base & 0xFFFE, base & 1, aciaQueue, aciaQueue, aciaTxBuffer);
+    current_iobase = base & 0xFFFE;
+}
+
+bool Modem :: prohibit_acia(uint16_t base)
+{
+    if (base == current_iobase) {
+        acia.deinit();
+        return true;
+    }
+    return false;
 }
 
 Modem modem;

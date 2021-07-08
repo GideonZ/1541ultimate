@@ -45,6 +45,7 @@ class Modem : public ConfigurableObject
     ListenerSocket *listenerSocket;
     uint8_t ctsMode, dsrMode, dcdMode;
     uint8_t lastHandshake;
+    uint16_t current_iobase;
     const char *responseString;
     uint8_t responseLen;
     bool verbose;
@@ -58,6 +59,9 @@ class Modem : public ConfigurableObject
 public:
     Modem();
     void effectuate_settings();
+    void reinit_acia(uint16_t base);
+    bool prohibit_acia(uint16_t base);
+
 };
 
 extern Modem modem;
