@@ -35,6 +35,7 @@
 #include "flash.h"
 #include "keyboard_c64.h"
 #include "config.h"
+#include "modem.h"
 #if U64
 #include "u64_machine.h"
 #endif
@@ -262,9 +263,14 @@ void C64::set_rom_config(uint8_t idx, const char *fname)
     case 2:
         cfg->set_string(CFG_C64_ALT_CHAR, fname);
         break;
+    case 3:
+        cfg->set_string(CFG_C64_CART_CRT, fname);
     }
+
     cfg->write();
-    init_system_roms();
+    if (idx < 3) {
+        init_system_roms();
+    }
 }
 
 void C64::set_emulation_flags(void)
@@ -974,6 +980,14 @@ void C64::set_cartridge(cart_def *cart)
             CMD_IF_SLOT_BASE = 0x07; // $de1c
         }
     }
+#ifndef RECOVERYAPP
+    if(def->require & CART_ACIA_DE) {
+        modem.reinit_acia(0xDE00);
+    }
+    if(def->require & CART_ACIA_DF) {
+        modem.reinit_acia(0xDF00);
+    }
+#endif
 #if U64
     if(def->require & CART_WMIRROR) {
         EnableWriteMirroring();
@@ -983,6 +997,7 @@ void C64::set_cartridge(cart_def *cart)
         uint8_t *src = (uint8_t *) (((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16);
         C64 :: getMachine()->enable_kernal(src);
     }
+
 
     def->disabled = 0;
 
@@ -1006,17 +1021,19 @@ void C64::set_cartridge(cart_def *cart)
         }
         C64_SAMPLER_ENABLE = 0;
     }
+
+#ifndef RECOVERYAPP
     if(def->prohibit & CART_ACIA_DE) {
-        if (getFpgaCapabilities() & CAPAB_ACIA) {
+        if(modem.prohibit_acia(0xDE00)) {
             def->disabled |= CART_ACIA_DE;
         }
     }
     if(def->prohibit & CART_ACIA_DF) {
-        if (getFpgaCapabilities() & CAPAB_ACIA) {
+        if(modem.prohibit_acia(0xDF00)) {
             def->disabled |= CART_ACIA_DF;
         }
     }
-
+#endif
     // clear function RAM on the cartridge
     mem_addr -= 65536; // TODO: We know it, because we made the hardware, but the hardware should tell us!
     memset((void *) mem_addr, 0x00, 65536);
