@@ -176,6 +176,8 @@ void ConfigBrowser :: on_exit(void)
     }
 }
 
+extern const char *helptext;
+
 int ConfigBrowser :: handle_key(int c)
 {
     int ret = 0;
@@ -207,6 +209,11 @@ int ConfigBrowser :: handle_key(int c)
         case KEY_F7: // F7 -> page down
         case KEY_PAGEDOWN:
             state->down(window->get_size_y()/2);
+            break;
+        case KEY_F3: // F3 -> help
+            reset_quick_seek();
+            state->refresh = true;
+            user_interface->run_editor(helptext, strlen(helptext));
             break;
         case KEY_SPACE: // space = select
         case KEY_RETURN: // CR = select

@@ -16,7 +16,7 @@
 #include "keyboard_usb.h"
 #include "home_directory.h"
 
-static const char *helptext=
+const char *helptext=
 		"CRSR UP/DN: Selection up/down\n"
 		"CRSR LEFT:  Go one level up\n"
 		"            leave directory or disk\n"
