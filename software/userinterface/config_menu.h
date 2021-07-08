@@ -49,7 +49,12 @@ class BrowsableConfigItem: public Browsable
     {
         ConfigItem *item = (ConfigItem *)(cmd->functionID);
         printf("Update String: %s\n", cmd->actionName.c_str());
-        item->setString(cmd->actionName.c_str());
+        const char *actionString = cmd->actionName.c_str();
+        if (actionString[0] == '\e') {
+            item->setString("");
+        } else {
+            item->setString(actionString);
+        }
         return 0;
     }
 
