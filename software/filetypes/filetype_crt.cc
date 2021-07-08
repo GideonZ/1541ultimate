@@ -92,12 +92,14 @@ int FileTypeCRT::executeFlash(SubsysCommand *cmd)
     FileManager *fm = FileManager::getFileManager();
 
     fm->create_dir(CARTS_DIRECTORY); // just in case it doesn't exist
-    FRESULT fres = fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), CARTS_DIRECTORY);
+    char fnbuf[36];
+    truncate_filename(cmd->filename.c_str(), fnbuf, 32);
+    FRESULT fres = fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), CARTS_DIRECTORY, fnbuf, true);
     if (fres != FR_OK) {
         cmd->user_interface->popup(FileSystem::get_error_string(fres), BUTTON_OK);
         return 0;
     }
-    cmd->user_interface->popup("Copy OK. Can now select in config.", BUTTON_OK);
+    C64 :: getMachine() -> set_rom_config(3, fnbuf);
 
     return 0;
 }

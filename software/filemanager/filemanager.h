@@ -202,7 +202,7 @@ public:
     FRESULT fopen(const char *pathname, uint8_t flags, File **);
 
     void 	fclose(File *f);
-    FRESULT fcopy(const char *path, const char *filename, const char *dest);
+    FRESULT fcopy(const char *path, const char *filename, const char *dest, const char *dest_filename, bool overwrite);
 
     FRESULT rename(Path *old_path, const char *old_name, Path *new_path, const char *new_name);
     FRESULT rename(Path *path, const char *old_name, const char *new_name);
