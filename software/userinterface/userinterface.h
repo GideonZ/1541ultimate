@@ -26,6 +26,7 @@
 #define CFG_USERIF_SELECTED_BG 0x09
 #define CFG_USERIF_CFG_SAVE    0x0A
 #define CFG_USERIF_ULTICOPY_NAME 0x0B
+#define CFG_USERIF_FILENAME_OVERFLOW_SQUEEZE 0x0C
 
 class UserInterface : public ConfigurableObject, public HostClient
 {
@@ -46,7 +47,7 @@ private:
     bool buttonDownFor(uint32_t ms);
     UIStatusBox *status_box;
 public:
-    int color_border, color_bg, color_fg, color_sel, color_sel_bg, config_save;
+    int color_border, color_bg, color_fg, color_sel, color_sel_bg, config_save, filename_overflow_squeeze;
 
     GenericHost *host;
     Keyboard *keyboard;
