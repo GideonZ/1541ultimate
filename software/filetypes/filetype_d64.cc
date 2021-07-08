@@ -62,6 +62,7 @@ int FileTypeD64 :: fetch_context_items(IndexedList<Action *> &list)
     C64 *machine = C64 :: getMachine();
     if (ftype == 1541) {
         if(capabilities & CAPAB_DRIVE_1541_1) {
+        	list.append(new Action("Directory", SUBSYSID_DRIVE_A, D64_DIR));
             list.append(new Action("Mount Disk", SUBSYSID_DRIVE_A, D64FILE_MOUNT));
             if (machine->exists())
                 list.append(new Action("Run Disk", SUBSYSID_DRIVE_A, D64FILE_RUN));
