@@ -153,7 +153,8 @@ void TreeBrowserState :: draw_item(Browsable *t, int line, bool selected)
 		} else { // non selectable item
 			browser->window->set_color(12); // TODO
 		}
-		t->getDisplayString(buffer, browser->window->get_size_x());
+		int squeeze_type = browser->user_interface->filename_overflow_squeeze;
+		t->getDisplayString(buffer, browser->window->get_size_x(), squeeze_type);
 		browser->window->output_line(buffer);
         browser->window->set_background(0);
     } else {
@@ -172,7 +173,8 @@ void TreeBrowserState :: update_selected(void)
     browser->window->move_cursor(0, selected_line);
     browser->window->set_color(browser->user_interface->color_sel); // highlighted
     browser->window->set_background(browser->user_interface->color_sel_bg);
-    under_cursor->getDisplayString(buffer, browser->window->get_size_x());
+    int squeeze_type = browser->user_interface->filename_overflow_squeeze;
+    under_cursor->getDisplayString(buffer, browser->window->get_size_x(), squeeze_type);
     browser->window->output_line(buffer);
 }
     
