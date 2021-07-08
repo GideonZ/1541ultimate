@@ -123,6 +123,7 @@ void do_update(void)
         REMOTE_FLASHSELCK_1;
 
         create_dir(ROMS_DIRECTORY);
+        create_dir(CARTS_DIRECTORY);
         write_flash_file("1581.rom", &_1581_bin_start, 0x8000);
         write_flash_file("1571.rom", &_1571_bin_start, 0x8000);
         write_flash_file("1541.rom", &_1541_bin_start, 0x4000);
