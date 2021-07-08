@@ -183,6 +183,7 @@ void do_update(void)
     if(user_interface->popup("About to flash. Continue?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
 
         create_dir(ROMS_DIRECTORY);
+        create_dir(CARTS_DIRECTORY);
 
         if(original_kernal_found(flash2, 0x488000)) {
             copy_flash_binary(flash2, 0x488000, 0x2000, "kernal.bin");
