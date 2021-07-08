@@ -645,7 +645,7 @@ FRESULT FileManager::fcopy(const char *path, const char *filename, const char *d
     if ((ret = fstat(sp, filename, *info)) == FR_OK) {
         if (info->attrib & AM_DIR) {
             // create a new directory in our destination path
-            FRESULT dir_create_result = create_dir(dp, filename);
+            FRESULT dir_create_result = create_dir(dp, dest_filename);
             if ((dir_create_result == FR_OK) || ((dir_create_result == FR_EXIST) && overwrite)) {
                 IndexedList<FileInfo *> *dirlist = new IndexedList<FileInfo *>(16, NULL);
                 sp->cd(filename);
@@ -673,11 +673,12 @@ FRESULT FileManager::fcopy(const char *path, const char *filename, const char *d
             if (fi) {
                 File *fo = 0;
                 char dest_name[100];
-                strncpy(dest_name, filename, 100);
+                strncpy(dest_name, dest_filename, 100);
                 // This may look odd, but files inside a D64 for instance, do not have the extension in the filename anymore
                 // so we add it here.
                 set_extension(dest_name, info->extension, 100);
-                ret = fopen(dp, dest_name, FA_CREATE_NEW | FA_WRITE, &fo);
+                uint8_t writeflags = (overwrite)? (FA_WRITE|FA_CREATE_ALWAYS) : (FA_WRITE|FA_CREATE_NEW);
+                ret = fopen(dp, dest_name, writeflags, &fo);
                 if (fo) {
                     uint8_t *buffer = new uint8_t[32768];
                     uint32_t transferred, written;
