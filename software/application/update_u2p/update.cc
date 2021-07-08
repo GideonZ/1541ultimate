@@ -10,6 +10,7 @@
 #include "itu.h"
 #include "host.h"
 #include "c64.h"
+#include "c64_crt.h"
 #include "screen.h"
 #include "keyboard.h"
 #include "stream.h"

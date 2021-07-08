@@ -731,6 +731,7 @@ void C1541 :: poll() // called under mutex
     if (registers[C1541_SIDE]) {
         drive_track += 64;
     }
+    //printf("%c:%d\n", drive_letter, drive_track);
 
     // Check Dirty flags from GCR write engine
 	if((registers[C1541_DIRTYFLAGS] & 0x80)||(write_skip)) {

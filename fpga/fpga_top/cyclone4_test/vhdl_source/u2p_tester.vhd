@@ -757,8 +757,12 @@ begin
     SLOT_ROMHn     <= '1'; -- prim_uart_rts_n;
                       -- prim_uart_cts_n   <= SLOT_RSTn;
                       -- prim_uart_rxd     <= SLOT_IRQn;
-    io_uart_rxd    <= SLOT_IRQn;
-    SLOT_NMIn      <= io_uart_txd;
+
+    -- io_uart_rxd    <= SLOT_IRQn;
+    -- SLOT_NMIn      <= io_uart_txd;
+
+    UART_TXD    <= io_uart_txd;
+    io_uart_rxd <= UART_RXD;
 
     -- SLOT_NMIn      <= prim_uart_txd and io_uart_txd;
     

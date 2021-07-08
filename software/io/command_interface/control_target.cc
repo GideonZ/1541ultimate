@@ -300,6 +300,7 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
                         }
                         mem += (bank * 0x4000);
 
+                        printf("Clearing EF Sector at $%p\n", mem);
                         // Clear 8 banks of 8K
                         for (int b = 0; b < 8; b++) {
                             for (int i = 0; i < 8192; i++) {
