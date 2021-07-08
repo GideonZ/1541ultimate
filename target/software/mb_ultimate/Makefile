@@ -43,6 +43,7 @@ SRCS_CC	 =  small_printf.cc \
 			embedded_fat.cc \
 			rtc.cc \
 			c64.cc \
+			c64_crt.cc \
 			c64_subsys.cc \
 			screen.cc \
 			keyboard_c64.cc \

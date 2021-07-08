@@ -85,8 +85,6 @@ BITGEN_FLAGS     := 	-w -d \
 ################################################################################
 
 ULTIMATE_FPGA   := ../../fpga
-#ULTIMATE_6502   := ../../../ult64/proglogic/c64
-ULTIMATE_6502   := ../../fpga/6502/vhdl_source
 
 include ultimate_logic2.inc
 
