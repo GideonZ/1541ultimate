@@ -153,6 +153,7 @@ architecture structural of slot_server_v4 is
     signal serve_enable    : std_logic := '0'; -- from cartridge emulation logic
     signal serve_inhibit   : std_logic := '0';
     signal serve_vic       : std_logic := '0';
+    signal serve_128       : std_logic := '0';
     signal serve_rom       : std_logic := '0'; -- ROML or ROMH
     signal serve_io1       : std_logic := '0'; -- IO1n
     signal serve_io2       : std_logic := '0'; -- IO2n
@@ -402,6 +403,7 @@ begin
     
         -- interface with freezer (cartridge) logic
         allow_serve     => allow_serve,
+        serve_128       => serve_128, -- 8000-FFFF
         serve_rom       => serve_rom, -- ROML or ROMH
         serve_io1       => serve_io1, -- IO1n
         serve_io2       => serve_io2, -- IO2n
@@ -533,6 +535,7 @@ begin
         mem_addr        => mem_req_32_slot.address, 
         serve_enable    => serve_enable,
         serve_vic       => serve_vic,
+        serve_128       => serve_128, -- 8000-FFFF
         serve_rom       => serve_rom, -- ROML or ROMH
         serve_io1       => serve_io1, -- IO1n
         serve_io2       => serve_io2, -- IO2n

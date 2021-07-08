@@ -49,6 +49,7 @@ port (
     
     -- interface with freezer (cartridge) logic
     allow_serve     : in  std_logic := '0'; -- from timing unit (modified version of serve_enable)
+    serve_128       : in  std_logic := '0';
     serve_rom       : in  std_logic := '0'; -- ROML or ROMH
     serve_io1       : in  std_logic := '0'; -- IO1n
     serve_io2       : in  std_logic := '0'; -- IO2n
@@ -312,14 +313,14 @@ begin
     addr_is_io <= (address_c(15 downto 9)="1101111"); -- DE/DF
     addr_is_kernal <= '1' when (address_c(15 downto 13)="111") else '0';
 
-    process(rwn_c, address_c, addr_is_io, romln_c, romhn_c, serve_rom, serve_io1, serve_io2, ultimax, kernal_enable, ba_c)
+    process(rwn_c, address_c, addr_is_io, romln_c, romhn_c, serve_128, serve_rom, serve_io1, serve_io2, ultimax, kernal_enable, ba_c)
     begin
         servicable <= '0';
         if rwn_c='1' then
             if addr_is_io and (serve_io1='1' or serve_io2='1') then
                 servicable <= '1';
             end if;
-            if (romln_c='0' or romhn_c='0') and (serve_rom='1') then -- for C128
+            if address_c(15)='1' and serve_128='1' then -- 8000-FFFF
                 servicable <= '1';
             end if;
             if address_c(15 downto 14)="10" and (serve_rom='1') then -- 8000-BFFF
