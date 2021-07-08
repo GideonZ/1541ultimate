@@ -342,12 +342,32 @@ int get_extension(const char *name, char *ext)
                 ext[j+1] = 0; // the char after the current is always end
                 if (!name[i+1+j])
                     break;
-                ext[j] = toupper(name[i+1+j]);
+                ext[j] = name[i+1+j];
             }
             break;
         }
     }
     return len;
+}
+
+// Truncates the filename such that the resulting string will always fit in the
+// buffer, and the extension is copied, if at all possible.
+// Example, if bufsize is 32, then the maximum length of the string will be 31.
+// This means that if the length of the extension is 3, the base string will
+// be at most 27 chars.
+void truncate_filename(const char *orig, char *buf, int bufsize)
+{
+    buf[0] = 0;
+    if (bufsize < 5) {
+        return;
+    }
+    char ext[4];
+    get_extension(orig, ext);
+
+    strncpy(buf, orig, bufsize);
+    buf[bufsize-5] = 0;
+
+    set_extension(buf, ext, bufsize);
 }
 
 void petscii_to_fat(const char *pet, char *fat, int maxlen)

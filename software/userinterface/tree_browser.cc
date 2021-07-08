@@ -542,7 +542,7 @@ void TreeBrowser::paste(void)
     user_interface->show_progress("Copying...", items);
     for (int i = 0; i < items; i++) {
         const char *fn = clipboard.getFileNameByIndex(i);
-        FRESULT res = fm->fcopy(clipboard.getPath(), fn, this->getPath());  // from path, filename, dest path
+        FRESULT res = fm->fcopy(clipboard.getPath(), fn, this->getPath(), fn, false);  // from path, filename, dest path
         if (res != FR_OK) {
             user_interface->hide_progress(); // temporarily
             printf("Error while copying: %s %s to %s\n", FileSystem::get_error_string(res), fn, this->getPath());

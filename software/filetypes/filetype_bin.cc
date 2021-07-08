@@ -155,6 +155,9 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
         return 0;
     }
     
+    char fnbuf[36];
+    truncate_filename(cmd->filename.c_str(), fnbuf, 32);
+
     bool ok = true;
     switch(cmd->functionID) {
     case CMD_SET_KERNAL:
@@ -164,7 +167,7 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
             }
         }
         if (ok) {
-            fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), ROMS_DIRECTORY);
+            fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), ROMS_DIRECTORY, fnbuf, true);
             C64 :: getMachine() ->set_rom_config(0, cmd->filename.c_str());
         }
         break;
@@ -176,7 +179,7 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
             }
         }
         if (ok) {
-            fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), ROMS_DIRECTORY);
+            fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), ROMS_DIRECTORY, fnbuf, true);
             C64 :: getMachine() ->set_rom_config(1, cmd->filename.c_str());
         }
         break;
@@ -188,7 +191,7 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
             }
         }
         if (ok) {
-            fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), ROMS_DIRECTORY);
+            fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), ROMS_DIRECTORY, fnbuf, true);
             C64 :: getMachine() ->set_rom_config(2, cmd->filename.c_str());
         }
         break;
@@ -202,7 +205,7 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
     case CMD_SET_DRIVEROM_41:
     case CMD_SET_DRIVEROM_71:
     case CMD_SET_DRIVEROM_81:
-        fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), ROMS_DIRECTORY);
+        fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), ROMS_DIRECTORY, fnbuf, true);
         if(c1541_A) {
             c1541_A->set_rom_config(cmd->functionID - CMD_SET_DRIVEROM_41, cmd->filename.c_str());
         }

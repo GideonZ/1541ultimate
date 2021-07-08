@@ -287,7 +287,7 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
         command->message[command->length] = 0;
         filename = (char *) &command->message[2];
         destination = (char *) &command->message[2 + strlen(filename) + 1];
-        res = fm->fcopy(path->get_path(), filename, destination);
+        res = fm->fcopy(path->get_path(), filename, destination, filename, false);
 
         if (res == FR_OK) {
             *status = &c_status_ok;
