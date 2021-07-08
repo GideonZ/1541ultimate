@@ -30,6 +30,7 @@
 #define SOCKET_CMD_DMAJUMP     0xFF09
 #define SOCKET_CMD_MOUNT_IMG   0xFF0A
 #define SOCKET_CMD_RUN_IMG     0xFF0B
+#define SOCKET_CMD_POWEROFF    0xFF0C
 
 // Only available on U64
 #define SOCKET_CMD_VICSTREAM_ON    0xFF20
@@ -101,6 +102,10 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
     case SOCKET_CMD_RESET:
         sys_command = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_RESET, 0, buf, len);
         sys_command->execute();
+        break;
+    case SOCKET_CMD_POWEROFF:
+        c64_command = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_POWEROFF, 0, buf, len);
+        c64_command->execute();
         break;
     case SOCKET_CMD_WAIT:
         vTaskDelay(len);
