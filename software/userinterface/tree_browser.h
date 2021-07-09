@@ -93,6 +93,7 @@ public:
     void config(void);
     void test_editor(void);
     void copy_selection(void);
+    void delete_selected(void);
     void paste(void);
     void cd(const char *path);
     

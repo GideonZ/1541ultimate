@@ -39,6 +39,7 @@ const char *helptext=
 		"\n"
         "HOME:       Enter home directory\n"
         "C=-HOME:    Set current dir as home\n"
+        "INST:       Delete selected files\n"
         "\n"  
 		"Quick seek: Use the keyboard to type\n"
 		"            the name to search for.\n"
@@ -460,6 +461,9 @@ int TreeBrowser :: handle_key(int c)
         case KEY_LEFT: // left
         	state->level_up();
             break;
+        case KEY_INSERT: // shift del
+            delete_selected();
+            break;
 #ifndef RECOVERYAPP
        case KEY_HOME: // home
             cd(user_interface->cfg->get_string(CFG_USERIF_HOME_DIR));
@@ -560,6 +564,40 @@ void TreeBrowser::paste(void)
     state->needs_reload = true;
 }
 
+void TreeBrowser::delete_selected(void)
+{
+    int items = 0;
+
+    // Count selected files
+    for(int i=0;i<state->children->get_elements();i++) {
+        Browsable *t = (*state->children)[i];
+        if (t && t->getSelection()) {
+            items++;
+        }
+    }
+
+    if (!items) {
+        return;
+    }
+    char buffer[40];
+    sprintf(buffer, "Delete %d file%s?", items, (items > 1) ? "s" : "");
+    int resp = user_interface->popup(buffer, BUTTON_YES | BUTTON_NO);
+    if (resp != BUTTON_YES) {
+        return;
+    }
+    fm->deregisterObserver(observerQueue);
+
+    for(int i=0;i<state->children->get_elements();i++) {
+        Browsable *t = (*state->children)[i];
+        if (t && t->getSelection()) {
+            FRESULT res = fm->delete_recursive(path, t->getName());
+        }
+    }
+
+    fm->registerObserver(observerQueue);
+    state->refresh = true;
+    state->needs_reload = true;
+}
 
 void TreeBrowser :: cd(const char *dst)
 {

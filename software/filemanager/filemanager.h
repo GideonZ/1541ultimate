@@ -118,6 +118,7 @@ class FileManager
 	FRESULT find_pathentry(PathInfo &pathInfo, bool enter_mount);
 	FRESULT fopen_impl(PathInfo &pathInfo, uint8_t flags, File **);
 	FRESULT rename_impl(PathInfo &from, PathInfo &to);
+	FRESULT delete_file_impl(PathInfo &pathInfo);
 
 //	friend class FileDirEntry;
 
@@ -210,6 +211,7 @@ public:
 
     FRESULT delete_file(Path *path, const char *name);
     FRESULT delete_file(const char *pathname);
+    FRESULT delete_recursive(Path *path, const char *name);
 
     FRESULT create_dir(Path *path, const char *name);
     FRESULT create_dir(const char *pathname);
