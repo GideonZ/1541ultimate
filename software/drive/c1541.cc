@@ -435,7 +435,7 @@ void C1541 :: insert_disk(bool protect, GcrImage *image)
         GcrTrack *tr = &image->tracks[i];
         uint32_t bit_time = rotation_speed / tr->track_length;
         if (tr->track_address) {
-            printf("Side0: %2d %08x %08x %d\n", i, tr->track_address, tr->track_length, bit_time);
+            // printf("Side0: %2d %08x %08x %d\n", i, tr->track_address, tr->track_length, bit_time);
             *(param++) = (uint32_t)tr->track_address;
             *(param++) = (tr->track_length-1) | (bit_time << 16);
         } else {
@@ -450,7 +450,7 @@ void C1541 :: insert_disk(bool protect, GcrImage *image)
         GcrTrack *tr = &image->tracks[i];
         uint32_t bit_time = rotation_speed / tr->track_length;
         if (tr->track_address) {
-            printf("Side1: %2d %08x %08x %d\n", i, tr->track_address, tr->track_length, bit_time);
+            // printf("Side1: %2d %08x %08x %d\n", i, tr->track_address, tr->track_length, bit_time);
             *(param++) = (uint32_t)tr->track_address;
             *(param++) = (tr->track_length-1) | (bit_time << 16);
         } else {
