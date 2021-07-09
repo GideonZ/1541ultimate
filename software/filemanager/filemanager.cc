@@ -485,10 +485,9 @@ MountPoint *FileManager::find_mount_point(SubPath *path, FileInfo *info)
     return mp;
 }
 
-FRESULT FileManager::delete_file(const char *pathname)
+
+FRESULT FileManager::delete_file_impl(PathInfo &pathInfo)
 {
-    PathInfo pathInfo(rootfs);
-    pathInfo.init(pathname);
     FRESULT fres = find_pathentry(pathInfo, false);
     if (fres != FR_OK) {
         return fres;
@@ -505,25 +504,50 @@ FRESULT FileManager::delete_file(const char *pathname)
     return fres;
 }
 
+FRESULT FileManager::delete_file(const char *pathname)
+{
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(pathname);
+    return delete_file_impl(pathInfo);
+}
+
 FRESULT FileManager::delete_file(Path *path, const char *name)
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(path, name);
-    FRESULT fres = find_pathentry(pathInfo, false);
-    if (fres != FR_OK) {
-        return fres;
-    }
-    FileSystem *fs = pathInfo.getLastInfo()->fs;
-    fres = fs->file_delete(pathInfo.getPathFromLastFS());
-    if (fres == FR_OK) {
-        mstring work;
-        pathInfo.workPath.getHead(work);
-        sendEventToObservers(eNodeRemoved, pathInfo.workPath.getSub(0, pathInfo.index - 1, work),
-                pathInfo.getFileName());
-    }
-// LOCK & UNLOCK
-    return fres;
+    return delete_file_impl(pathInfo);
 }
+
+FRESULT FileManager::delete_recursive(Path *path, const char *name)
+{
+    FileInfo *info = new FileInfo(INFO_SIZE); // I do not use the stack here for the whole structure, because
+    // we might recurse deeply. Our stack is maybe small.
+
+    FRESULT ret = FR_OK;
+    if ((ret = fstat(path, name, *info)) == FR_OK) {
+        if (info->is_directory()) {
+            path->cd(name);
+            IndexedList<FileInfo *> *dirlist = new IndexedList<FileInfo *>(16, NULL);
+            FRESULT get_dir_result = get_directory(path, *dirlist, NULL);
+            if (get_dir_result == FR_OK) {
+                for (int i = 0; i < dirlist->get_elements(); i++) {
+                    FileInfo *el = (*dirlist)[i];
+                    ret = delete_recursive(path, el->lfname);
+                }
+            } else {
+                ret = get_dir_result;
+            }
+            delete dirlist;
+            path->cd("..");
+        }
+        // After recursive deletion, the dir should be empty.
+        ret = delete_file(path, name);
+    }
+    printf("Deleting %s%s: %s\n", path->get_path(), name, FileSystem::get_error_string(ret));
+    delete info;
+    return ret;
+}
+
 
 FRESULT FileManager::rename(Path *path, const char *old_name, const char *new_name)
 {
