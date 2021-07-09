@@ -75,6 +75,7 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root)
     fm = FileManager :: getFileManager();
     path = fm->get_new_path("Tree Browser");
     observerQueue = new ObserverQueue("TreeBrowser");
+    fm->registerObserver(observerQueue);
 
     if(!state) {
         state = new TreeBrowserState(root, this, 0);
@@ -99,7 +100,6 @@ void TreeBrowser :: init(Screen *screen, Keyboard *k) // call on root!
 
     screen->move_cursor(screen->get_size_x()-8, screen->get_size_y()-1);
 	screen->output("\eAF3=Help\eO");
-    fm->registerObserver(observerQueue);
 
 	window = new Window(screen, 0, 2, screen->get_size_x(), screen->get_size_y()-3);
 	keyb = k;
@@ -113,7 +113,6 @@ void TreeBrowser :: deinit(void)
 		delete window;
 		window = NULL;
 	}
-    fm->deregisterObserver(observerQueue);
 }
 
 void TreeBrowser :: config(void)
@@ -277,9 +276,9 @@ void TreeBrowser :: checkFileManagerEvent(void)
 
         if (match_dir) {
             if (st->deeper) {
-                printf("$%p:", st->deeper);
-                printf("%p:", st->deeper->node);
-                printf("%s -> %s\n", st->deeper->node->getName(), event->newName.c_str());
+                // printf("$%p:", st->deeper);
+                // printf("%p:", st->deeper->node);
+                // printf("%s -> %s\n", st->deeper->node->getName(), event->newName.c_str());
                 if (strcmp(st->deeper->node->getName(), event->newName.c_str()) == 0) {
                     match_entry = true;
                 }

@@ -109,7 +109,11 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
 	uint32_t mfm_dirty_bits[2][3]; // two sides, max 96 tracks each.
 	
 	Flash *flash;
-    File *mount_file;
+	mstring mount_file_path;
+	mstring mount_file_name;
+	int mount_function_id;
+	int mount_mode;
+	File *mount_file;
     File *gcr_ram_file;
     t_disk_state disk_state;
     bool gcr_image_up_to_date;
@@ -153,6 +157,8 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     void clear_mfm_dirty_bits();
     bool are_mfm_dirty_bits_set();
     void map_gcr_image_to_mfm(void);
+    void swap_disk(SubsysCommand *cmd);
+    void wait_for_writeback(void);
     static void mfm_update_callback(void *obj, int pt, int ps, MfmTrack *tr);
     FRESULT set_drive_type(t_drive_type drv);
     FRESULT change_drive_type(t_drive_type drv,  UserInterface *ui);
@@ -182,9 +188,8 @@ public:
     t_drive_type get_drive_type() { return current_drive_type; }
     static void list_roms(ConfigItem *it, IndexedList<char *>& strings);
     void set_rom_config(int idx, const char *fname);
-    // Called from user interface thread?  Is this allowed at all? -> no no, the interface thread should
-    // issue a subsys command.
-    //void swap_disk(void);
+
+    void get_last_mounted_file(mstring& path, mstring& name);
 };
 
 extern C1541 *c1541_A;
