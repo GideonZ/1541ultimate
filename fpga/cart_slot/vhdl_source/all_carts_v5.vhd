@@ -203,7 +203,7 @@ begin
                 serve_vic <= variant(2);
                 
             when c_128 =>
-                serve_rom <= '1';
+                serve_128 <= '1'; -- 8000-FFFF
                 serve_vic <= '1';
                 serve_io1 <= variant(0);
                 serve_io2 <= variant(1);
@@ -212,7 +212,7 @@ begin
             when c_epyx =>
                 game_n    <= '1';
                 exrom_n   <= epyx_timeout;
-                serve_128 <= '1'; -- 8000-FFFF
+                serve_rom <= '1';
                 serve_io2 <= '1'; -- rom visible df00-dfff
 
             when c_westermann => -- 16K
