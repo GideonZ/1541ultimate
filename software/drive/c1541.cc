@@ -396,6 +396,9 @@ void C1541 :: remove_disk(void)
         fm->fclose(mount_file);
     }
     mount_file = NULL;
+    mount_file_path = "";
+    mount_file_name = "";
+
     clear_mfm_dirty_bits();
     mfm_controller->set_file(NULL);
     mfm_controller->set_track_update_callback(NULL, NULL);
@@ -588,103 +591,95 @@ void C1541 :: mount_blank()
     drive_reset(0); // do not reset, but restore the freeze
 }
 
-/*
-void C1541 :: swap_disk()
+void C1541 :: wait_for_writeback(void)
 {
-    if (!mount_file) return;
+    // Note that this function will always return, due to the hardware timeout
+    // after write; even when the motor keeps spinning.
 
-    File *f;        
-    char* path = strdup(mount_file->get_path());  // working on a copy of the current path
-    char* type = path+strlen(path)-3;             // pointer to extension (last three chars)
+    while(((registers[C1541_DIRTYFLAGS] & 0x80)||(write_skip))) {
+        printf(".");
+        this->poll();
+        vTaskDelay(50);
+    }
+}
+
+void C1541 :: swap_disk(SubsysCommand *cmd)
+{
+    if (mount_file_name.length() < 5) {
+        return;
+    }
+
+    mstring work = mount_file_name;
 
     // Try to find the denominating character by searching backwards,
     // beginning with the last character before the extension dot, up
-    // to the path separator. Determine the the position of the first
-    // char that is either alphabetic or numeric and is preceeded and
+    // to the beginning. Determine the the position of the first
+    // char that is either alphabetic or numeric and is preceded and
     // followed by a non-alphabetic or non-numeric character
     // respectively.
 
     int index;
     bool found = false;
     
-    for(index = strlen(path)-5; path[index] != '/'; index--) {
-        
-        if((found = (isalpha(path[index]) && !isalpha(path[index-1]) && !isalpha(path[index+1]))
-            || (isdigit(path[index]) && !isdigit(path[index-1]) && !isdigit(path[index+1])))) {
-               break;
-           }
+    const char *workstr = work.c_str();
+
+    for(index = work.length()-5; index >= 0; index--) {
+        found = (isdigit(workstr[index]) && !isdigit(workstr[index+1]));
+        if (index > 0) { // if we don't check this, we may read out of string bounds
+            found |= (isalpha(workstr[index]) && !isalpha(workstr[index-1]) && !isalpha(workstr[index+1]));
+        } else {
+            found |= (isalpha(workstr[index]) && !isalpha(workstr[index+1]));
+        }
+        if(found) {
+           break;
+       }
     }
 
     if(!found) {
-        printf("Disk Swap: No denominating character found for %s\n", path);
-        free(path);
+        printf("Disk Swap: No denominating character found for %s\n", workstr);
         return;
     }
-    
-    char current = path[index];      // remember current value of denominator
-    
-    for (int i=0; path[i]; i++) {    // operate on upper case path from now on
-        path[i] = toupper(path[i]);
-    }
-    current = toupper(current);
 
-    char top = isalpha(current) ? 'A'-1 : '0'-1;  
+    work.to_upper();                // operate on upper case path from now on
+    char current = workstr[index];  // remember current value of denominator
+
+    char top = isalpha(current) ? 'A' : '0';
     char bottom = isalpha(current) ? 'Z' : '9';
 
-    SubsysCommand *cmd;
     int cmd_type = 0;
-    FileInfo info(32);
+    FileInfo info(64);
     
-    for (path[index]++; path[index] != current; path[index]++) {
+    for (char c = current+1; c != current; c++) {
 
-        if (path[index] > bottom) { // continue from the top
-            path[index] = top;
+        if (c > bottom) { // continue from the top
+            c = top;
             continue;
         }
+        work.set(index, c);
+        printf("Trying %s\n", workstr);
+        if (fm->fstat(mount_file_path.c_str(), work.c_str(), info) == FR_OK) {
 
-        if (fm->fstat(path, info) == FR_OK) { 
-
-            printf("Disk Swap: %s -> %s\n", mount_file->get_path(), path);
-            
-            if (strncmp(type, "D64", 3) == 0) {
-                cmd_type = D64FILE_MOUNT;
-            }
-            else if(strncmp(type, "G64", 3) == 0) {
-                cmd_type = G64FILE_MOUNT;
-            }
-            else {
-                printf("Disk Swap: Wrong type: %s\n", path);
-                free(path);
-                return;
-            }
+            printf("Disk Swap: %s -> %s\n", mount_file_name.c_str(), work.c_str());
             
             // Write back dirty tracks before mounting new disk...
-            while(((registers[C1541_DIRTYFLAGS] & 0x80)||(write_skip))) {
-                printf(".");
-                this->poll();
-                vTaskDelay(50);
-            }
+            wait_for_writeback();
 
-            cmd = new SubsysCommand(cmd->user_interface, getID(),
-                                    cmd_type, 0, 0, path);
+            // Because the previous disk was already successfully mounted, it is known that
+            // the newly found disk is actually of the same type; otherwise it would not be found in the first place
+            // This means that we can also re-use the command code and command mode (mount type).
             
-            executeCommand(cmd);
-            free(cmd);
+            // Instead of running it through the subsystem dispatcher, the local command handler is called directly, because we are still inside
+            // of the mutex. Otherwise we would run into a deadlock. Another way to do this, is to call mount_d64 / mount_g64 directly, after
+            // opening the file, but that would require additional repeated logic here.
+            SubsysCommand *mount_cmd = new SubsysCommand(cmd->user_interface, getID(), mount_function_id, mount_mode, mount_file_path.c_str(), work.c_str());
+            executeCommand(mount_cmd);
+            delete mount_cmd;
 
-            free(path);
             return;
         }
-        else {
-            // no immediate successor was found -> continue from the top
-            if(path[index] > current) {
-                path[index] = top;
-            }
-        }
     }
-    printf("Disk Swap: No matching image found for %s\n", path);
-    free(path);
+    printf("Disk Swap: No matching image found for %s\n", mount_file_name.c_str());
 }
-*/
 
 // static member
 void C1541 :: run(void *a)
@@ -944,7 +939,6 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 	int cmdCode = cmd->functionID & MENU_1541_NO_FLAGS;
 
 
-
 	SubsysCommand *c64_command;
 	char drv[2] = { 0,0 };
 
@@ -987,6 +981,10 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
                 } else {
                     mount_d64(protect, newFile, cmd->mode);
                 }
+                mount_file_path = cmd->path;
+                mount_file_name = cmd->filename;
+                mount_function_id = cmd->functionID;
+                mount_mode = cmd->mode;
             } else {
                 if (cmd->user_interface) {
                     cmd->user_interface->popup("Opening disk file failed.", BUTTON_OK);
@@ -998,6 +996,9 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 	case MENU_1541_UNLINK:
 		unlink();
 		break;
+	case MENU_1541_SWAP:
+	    swap_disk(cmd);
+	    break;
 	case MENU_1541_RESET:
 	    set_hw_address(cfg->get_value(CFG_C1541_BUS_ID));
 	    drive_power(cfg->get_value(CFG_C1541_POWERED) != 0);
@@ -1136,3 +1137,8 @@ void C1541 :: list_roms(ConfigItem *it, IndexedList<char *>& strings)
     }
 }
 
+void C1541 :: get_last_mounted_file(mstring& path, mstring& name)
+{
+    path = mount_file_path;
+    name = mount_file_name;
+}

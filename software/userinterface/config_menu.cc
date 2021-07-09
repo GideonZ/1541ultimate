@@ -52,7 +52,7 @@ void ConfigBrowserState :: into(void)
     deeper->previous = this;
 
     int error;
-    printf("Going deeper into = %s\n", under_cursor->getName());
+    // printf("Going deeper into = %s\n", under_cursor->getName());
 	deeper->children = under_cursor->getSubItems(error);
 	int child_count = deeper->children->get_elements();
     if(child_count < 1) {

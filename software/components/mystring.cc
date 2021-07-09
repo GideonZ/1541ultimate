@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h> // C library
+#include <ctype.h>
 #include "mystring.h" // my class definition
 
 mstring :: mstring()
@@ -182,6 +183,28 @@ mstring mstring::operator+(const char *right)
     mstring result(*this);
     result += right;
     return result;
+}
+
+void mstring::to_upper(void)
+{
+    int len = length();
+    for(int i=0;i<len;i++) {
+        cp[i] = toupper(cp[i]);
+    }
+}
+
+void mstring::set(int index, char c)
+{
+    if (!cp) {
+        return;
+    }
+    if (index >= length()) {
+        return;
+    }
+    if (index < 0) {
+        return;
+    }
+    cp[index] = c;
 }
 
 int strcmp(mstring &a, mstring &b)

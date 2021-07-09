@@ -242,8 +242,6 @@ void TreeBrowserState :: into(void)
 	if(!under_cursor)
 		return;
 
-	printf("Going deeper into = %s\n", under_cursor->getName());
-        
 	deeper = new TreeBrowserState(under_cursor, browser, level+1);
 
 	int error;
@@ -253,7 +251,7 @@ void TreeBrowserState :: into(void)
     	return;
     }
 	browser->path->cd(under_cursor->getName());
-    printf("%d children fetched.\n", deeper->children->get_elements());
+    printf("%d children fetched from %s.\n", deeper->children->get_elements(), under_cursor->getName());
 
 	//user_interface->set_path(under_cursor);
     browser->state = deeper;
@@ -266,8 +264,6 @@ bool TreeBrowserState :: into2(void)
 	if(!under_cursor)
 		return(false);
 
-	printf("Going deeper into = %s\n", under_cursor->getName());
-
 	deeper = new TreeBrowserState(under_cursor, browser, level+1);
 
     int error;
@@ -279,9 +275,8 @@ bool TreeBrowserState :: into2(void)
     	return true;
     }
 	browser->path->cd(under_cursor->getName());
-    printf("%d children fetched.\n", deeper->children->get_elements());
+    printf("%d children fetched from %s.\n", deeper->children->get_elements(), under_cursor->getName());
 
-    // user_interface->set_path(under_cursor);
     browser->state = deeper;
     deeper->previous = this;
 	return false;
@@ -298,15 +293,12 @@ void TreeBrowserState :: into3(const char* name)
 
     for(int i=0; i<children->get_elements(); i++) {
         if(pattern_match(name, (*children)[i]->getName(), false)) {
-        //if(strcasecmp((*children)[i]->getName(), name) == 0) {
             browsable = (*children)[i];
             break;
         }
     }
     if(!browsable)
         return;
-    
-    printf("Going deeper into = %s\n", browsable->getName());
     
     deeper = new TreeBrowserState(browsable, browser, level+1);
     
@@ -317,9 +309,8 @@ void TreeBrowserState :: into3(const char* name)
         return;
     }
     browser->path->cd(browsable->getName());
-    printf("%d children fetched.\n", deeper->children->get_elements());
+    printf("%d children fetched from %s.\n", deeper->children->get_elements(), browsable->getName());
     
-    //user_interface->set_path(under_cursor);
     browser->state = deeper;
     deeper->previous = this;
 }
