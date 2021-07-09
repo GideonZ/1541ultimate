@@ -472,7 +472,7 @@ int TreeBrowser :: handle_key(int c)
            user_interface->cfg->set_string(CFG_USERIF_HOME_DIR, (char*)path->get_path());
            //user_interface->cfg->write();
            HomeDirectory :: setHomeDirectory(path->get_path());
-           user_interface->popup("Current dir set as home dir", BUTTON_OK);
+           user_interface->popup("Set current dir as home dir?", BUTTON_OK);
            break;
 #endif         
         default:
@@ -587,12 +587,25 @@ void TreeBrowser::delete_selected(void)
     }
     fm->deregisterObserver(observerQueue);
 
+    user_interface->show_progress("Deleting...", items);
+    int deleted = 0;
     for(int i=0;i<state->children->get_elements();i++) {
         Browsable *t = (*state->children)[i];
         if (t && t->getSelection()) {
             FRESULT res = fm->delete_recursive(path, t->getName());
+            if (res != FR_OK) {
+                user_interface->hide_progress(); // temporarily
+                int resp = user_interface->popup("Delete error occurred. Continue?", BUTTON_YES | BUTTON_NO);
+                user_interface->show_progress("Deleting...", items); // show it again
+                user_interface->update_progress(0, deleted); // set back to original fill
+                if (resp == BUTTON_NO)
+                    break;
+            }
+            user_interface->update_progress(0, 1);
+            deleted++;
         }
     }
+    user_interface->hide_progress();
 
     fm->registerObserver(observerQueue);
     state->refresh = true;
