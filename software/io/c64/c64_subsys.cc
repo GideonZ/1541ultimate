@@ -179,22 +179,6 @@ void C64_Subsys :: update_task_items(bool writablePath, Path *p)
     }
 }
 
-/*
-void C64_Subsys :: poll(void *a)
-{
-	C64 *c64 = (C64 *)a;
-
-	static uint8_t button_prev;
-	while(1) {
-		uint8_t buttons = ioRead8(ITU_BUTTON_REG) & ITU_BUTTONS;
-		if((buttons & ~button_prev) & ITU_BUTTON1) {
-			c64->buttonPushSeen = true;
-		}
-		button_prev = buttons;
-		vTaskDelay(5);
-	}
-}
-*/
 
 void C64_Subsys :: restoreCart(void)
 {

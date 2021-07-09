@@ -581,7 +581,7 @@ void GcrImage :: convert_disk_bin2gcr(BinImage *bin_image, UserInterface *user_i
         tracks[pt].track_length = int(newgcr - gcr);
         tracks[pt].speed_zone = region_speed_codes[region];
         tracks[pt].track_used = true;
-        printf("Convert_disk: Track %d => %d. Addr = %6x\n. Len = %4x", lt, pt, gcr, tracks[pt].track_length);
+        // printf("Convert_disk: Track %d => %d. Addr = %6x\n. Len = %4x", lt, pt, gcr, tracks[pt].track_length);
         gcr = newgcr;
         if(user_interface)
             user_interface->update_progress(NULL, 1);
