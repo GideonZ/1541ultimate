@@ -10,6 +10,7 @@
 
 #include "ff.h"
 #include "file_system.h"
+#include <ctype.h>
 
 class DirectoryFAT : public Directory
 {
@@ -25,7 +26,9 @@ class DirectoryFAT : public Directory
 		inf->time = fi->ftime;
 		inf->cluster = 0; // unknown for this filesystem
 		get_extension(fi->fname, inf->extension);
-
+		inf->extension[0] = toupper(inf->extension[0]);
+        inf->extension[1] = toupper(inf->extension[1]);
+        inf->extension[2] = toupper(inf->extension[2]);
 		if(inf->lfname) {
 			strncpy(inf->lfname, fi->fname, inf->lfsize);
 		}
