@@ -880,6 +880,8 @@ begin
     -- write 0x0D to $DFFF to generate a sync
     sync        <= '1' when slot_req.io_write = '1' and slot_req.io_address(8 downto 0) = "111111111" and slot_req.data = X"0D" else '0';
     
+    status.nmi  <= not nmin_i when rising_edge(clock);
+
     b_debug: block
         signal phi_c        : std_logic := '0';
         signal phi_d1       : std_logic := '0';

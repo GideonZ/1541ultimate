@@ -916,7 +916,7 @@ begin
             gamen_o         => gamen_o,
             irqn_i          => irqn_i,
             irqn_o          => irqn_o,
-            -- nmin_i          => nmin_i,
+            nmin_i          => nmin_i,
             nmin_o          => nmin_o,
                                            
             romhn_i         => romhn_i,
