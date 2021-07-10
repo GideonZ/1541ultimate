@@ -49,12 +49,14 @@ void do_update(void)
     	console_print(screen, "Done!                            \n");
     }
 */
+    check_flash_disk();
 
     if(user_interface->popup("Flash Runtime?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
     	REMOTE_FLASHSEL_1;
         REMOTE_FLASHSELCK_0;
         REMOTE_FLASHSELCK_1;
 
+        clear_field();
         create_dir(ROMS_DIRECTORY);
         create_dir(CARTS_DIRECTORY);
         write_flash_file("1581.rom", &_1581_bin_start, 0x8000);
