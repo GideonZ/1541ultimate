@@ -694,22 +694,20 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
     systemMode = e_NOT_SET;
     U64_ETHSTREAM_ENA = 0;
 
-/*
-    // This is a work around for warm start tests
-    C64_STOP_MODE = STOP_COND_FORCE;
-    C64_STOP = 1;
-    C64_MODE = C64_MODE_RESET;
-*/
-    C64 *machine;
+    C64 *machine = C64 :: getMachine();
     if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
 		struct t_cfg_definition *def = u64_cfg;
 		register_store(STORE_PAGE_ID, "U64 Specific Settings", def);
 
 		// Tweak: This has to be done first in order to make sure that the correct cart is started
 		// at cold boot.
-		C64 :: getMachine() -> ConfigureU64SystemBus();
+		machine->ConfigureU64SystemBus();
+		if (!(machine-> is_accessible())) {
+		    printf("*** WARNING: The C64 should be stopped at this time for the SID Detection to work!\n");
+		    machine->hard_stop();
+		}
 
-        sidDevice[0] = NULL;
+		sidDevice[0] = NULL;
         sidDevice[1] = NULL;
 
         sockets.detect();
