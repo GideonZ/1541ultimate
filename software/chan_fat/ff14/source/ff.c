@@ -4026,7 +4026,10 @@ FRESULT f_write (
 						clst = create_chain(&fp->obj, fp->clust);	/* Follow or stretch cluster chain on the FAT */
 					}
 				}
-				if (clst == 0) break;		/* Could not allocate a new cluster (disk full) */
+				if (clst == 0) {
+				    fp->flag |= FA_MODIFIED;        /* Set file change flag */
+				    ABORT(fs, FR_DISK_FULL);		/* Could not allocate a new cluster (disk full) */
+				}
 				if (clst == 1) ABORT(fs, FR_INT_ERR);
 				if (clst == 0xFFFFFFFF) ABORT(fs, FR_DISK_ERR);
 				fp->clust = clst;			/* Update current cluster */
@@ -5040,7 +5043,7 @@ FRESULT f_mkdir (
 			sobj.fs = fs;						/* New object id to create a new chain */
 			dcl = create_chain(&sobj, 0);		/* Allocate a cluster for the new directory */
 			res = FR_OK;
-			if (dcl == 0) res = FR_DENIED;		/* No space to allocate a new cluster? */
+			if (dcl == 0) res = FR_DISK_FULL;	/* No space to allocate a new cluster? */
 			if (dcl == 1) res = FR_INT_ERR;		/* Any insanity? */
 			if (dcl == 0xFFFFFFFF) res = FR_DISK_ERR;	/* Disk error? */
 			tm = GET_FATTIME();
