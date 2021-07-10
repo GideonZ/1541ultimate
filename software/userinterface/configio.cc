@@ -9,6 +9,7 @@
 #include "userinterface.h"
 #include "subsys.h"
 #include "userinterface.h"
+#include "c64.h"
 
 ConfigIO::ConfigIO()
 {
@@ -26,6 +27,7 @@ void ConfigIO :: create_task_items(void)
     myActions.savefile  = new Action("Save to File", ConfigIO :: S_save_to_file, 0, 0);
     myActions.loadcfg   = new Action("Reset from Flash", ConfigIO :: S_restore, 0, 0);
     myActions.factory   = new Action("Reset to Defaults", ConfigIO :: S_reset, 0, 0);
+    myActions.clr_flash = new Action("Clear Flash Config", ConfigIO :: S_clear, 0, 0);
     myActions.clear_dbg = new Action("Clear Debug Log", ConfigIO :: S_reset_log, 0, 0);
     myActions.save_dbg  = new Action("Save Debug Log", ConfigIO :: S_save_log, 0, 0);
 
@@ -34,6 +36,7 @@ void ConfigIO :: create_task_items(void)
     cfg->append(myActions.savefile);
     cfg->append(myActions.loadcfg);
     cfg->append(myActions.factory);
+    cfg->append(myActions.clr_flash);
 
     TaskCategory *dev = TasksCollection :: getCategory("Developer", SORT_ORDER_DEVELOPER);
     dev->append(myActions.clear_dbg);
@@ -146,6 +149,28 @@ int ConfigIO :: S_reset(SubsysCommand *cmd)
         s->reset();
         s->write();
         s->effectuate();
+    }
+    return 0;
+}
+
+int ConfigIO :: S_clear(SubsysCommand *cmd)
+{
+    Flash *fl = get_flash();
+    if (!fl) {
+        return 0;
+    }
+    int res = cmd->user_interface->popup("Sure to clear config flash?", BUTTON_YES | BUTTON_NO);
+    if (res != BUTTON_YES) {
+        return 0;
+    }
+    int num = fl->get_number_of_config_pages();
+    for (int i=0; i < num; i++) {
+        fl->clear_config_page(i);
+    }
+    res = cmd->user_interface->popup("Cold Boot Required!", BUTTON_OK | BUTTON_CANCEL);
+    if (res == BUTTON_OK) {
+        SubsysCommand *off = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, MENU_C64_POWEROFF, 0, NULL, 0);
+        off->execute();
     }
     return 0;
 }

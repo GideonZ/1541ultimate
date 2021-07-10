@@ -27,6 +27,7 @@ class ConfigIO : public ObjectWithMenu
         Action *savefile;
         Action *loadcfg;
         Action *factory;
+        Action *clr_flash;
         Action *clear_dbg;
         Action *save_dbg;
     } myActions;
@@ -40,6 +41,7 @@ public:
     static int S_save(SubsysCommand *cmd);
     static int S_restore(SubsysCommand *cmd);
     static int S_reset(SubsysCommand *cmd);
+    static int S_clear(SubsysCommand *cmd);
     static bool S_read_from_file(File *f, StreamTextLog *log);
 };
 
