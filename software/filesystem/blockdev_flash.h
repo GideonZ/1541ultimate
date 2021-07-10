@@ -28,4 +28,6 @@ public:
     virtual DRESULT ioctl(uint8_t, void *);
 };
 
+void reformat_flash_disk(void);
+
 #endif

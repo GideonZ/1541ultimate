@@ -33,17 +33,17 @@ static const t_flash_address flash_addresses[] = {
 	{ FLASH_ID_LIST_END,   0x00, 0x1FE000, 0x1FE000, 0x01000 } };
 
 static const t_flash_address flash_addresses_u2p[] = {
-	{ FLASH_ID_BOOTFPGA,   0x01, 0x000000, 0x000000, 0xC0000  },
+	{ FLASH_ID_BOOTFPGA,   0x01, 0x000000, 0x000000, 0x0C0000 },
 	{ FLASH_ID_APPL,       0x01, 0x0C0000, 0x0C0000, 0x140000 }, // Max 1.25 MB
-	{ FLASH_ID_FLASHDRIVE, 0x00, 0x200000, 0x300000, 0xF0000 },  // free space: 1984 KB
-	{ FLASH_ID_CONFIG,     0x00, 0x3F0000, 0x3F0000, 0x10000 },
-	{ FLASH_ID_LIST_END,   0x00, 0x3FE000, 0x3FE000, 0x01000 } };
+	{ FLASH_ID_FLASHDRIVE, 0x00, 0x200000, 0x200000, 0x1F0000 },  // free space: 1984 KB
+	{ FLASH_ID_CONFIG,     0x00, 0x3F0000, 0x3F0000, 0x010000 },
+	{ FLASH_ID_LIST_END,   0x00, 0x3FE000, 0x3FE000, 0x001000 } };
 
 static const t_flash_address flash_addresses_u64[] = {
 	{ FLASH_ID_BOOTFPGA,   0x01, 0x000000, 0x000000, 0x290000 }, // 282BD4
 	{ FLASH_ID_APPL,       0x01, 0x290000, 0x290000, 0x170000 }, // Max 1.5 MB
-	{ FLASH_ID_FLASHDRIVE, 0x00, 0x400000, 0x400000, 0x3F0000 }, // ends at 0x4F0000  (free space: 4032 KB)
-	{ FLASH_ID_CONFIG,     0x00, 0x7F0000, 0x7F0000, 0x010000 },
+	{ FLASH_ID_FLASHDRIVE, 0x00, 0x400000, 0x400000, 0x3E8000 }, // ends at 0x7E8000  (free space: 4000 KB)
+	{ FLASH_ID_CONFIG,     0x00, 0x7E8000, 0x7E8000, 0x018000 },
 	{ FLASH_ID_LIST_END,   0x00, 0x7FE000, 0x7FE000, 0x001000 } };
 
 W25Q_Flash::W25Q_Flash()
