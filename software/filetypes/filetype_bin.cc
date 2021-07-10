@@ -155,8 +155,8 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
         return 0;
     }
     
-    char fnbuf[36];
-    truncate_filename(cmd->filename.c_str(), fnbuf, 32);
+    char fnbuf[32];
+    truncate_filename(cmd->filename.c_str(), fnbuf, 30);
 
     bool ok = true;
     switch(cmd->functionID) {
