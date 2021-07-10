@@ -670,7 +670,7 @@ FRESULT FileManager::fcopy(const char *path, const char *filename, const char *d
         if (info->attrib & AM_DIR) {
             // create a new directory in our destination path
             FRESULT dir_create_result = create_dir(dp, dest_filename);
-            if ((dir_create_result == FR_OK) || ((dir_create_result == FR_EXIST) && overwrite)) {
+            if ((dir_create_result == FR_OK) || (dir_create_result == FR_EXIST)) {
                 IndexedList<FileInfo *> *dirlist = new IndexedList<FileInfo *>(16, NULL);
                 sp->cd(filename);
                 FRESULT get_dir_result = get_directory(sp, *dirlist, NULL);
@@ -679,6 +679,9 @@ FRESULT FileManager::fcopy(const char *path, const char *filename, const char *d
                     for (int i = 0; i < dirlist->get_elements(); i++) {
                         FileInfo *el = (*dirlist)[i];
                         ret = fcopy(sp->get_path(), el->lfname, dp->get_path(), el->lfname, overwrite);
+                        if (ret != FR_OK) {
+                            break;
+                        }
                     }
                 }
                 else {
