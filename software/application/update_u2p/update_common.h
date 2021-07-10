@@ -169,7 +169,9 @@ static void setup(const char *title)
     }
     screen = host->getScreen();
 
-    OVERLAY_REGS->TRANSPARENCY = 0x00;
+    if (getFpgaCapabilities() & CAPAB_OVERLAY) {
+        OVERLAY_REGS->TRANSPARENCY = 0x00;
+    }
 
     user_interface = new UserInterface(title);
     user_interface->init(host);
