@@ -87,7 +87,7 @@ struct t_cfg_definition c64_config[] = {
     { CFG_C64_ALT_BASI, CFG_TYPE_STRFUNC, "Basic ROM",                    "%s", (const char **)C64 :: list_basics, 0, 32, (int)"basic.bin" },
     { CFG_C64_ALT_CHAR, CFG_TYPE_STRFUNC, "Char ROM",                     "%s", (const char **)C64 :: list_chars, 0, 32, (int)"chars.bin" },
 #else
-    { CFG_C64_ALT_KERN, CFG_TYPE_STRFUNC, "Alternate Kernal",             "%s", (const char **)C64 :: list_kernals, 0, 32, (int)"kernal.bin" },
+    { CFG_C64_ALT_KERN, CFG_TYPE_STRFUNC, "Alternate Kernal",             "%s", (const char **)C64 :: list_kernals, 0, 32, (int)"" },
 #endif
     { CFG_C64_REU_EN,   CFG_TYPE_ENUM,   "RAM Expansion Unit",           "%s", en_dis,     0,  1, 0 },
     { CFG_C64_REU_SIZE, CFG_TYPE_ENUM,   "REU Size",                     "%s", reu_size,   0,  7, 4 },
