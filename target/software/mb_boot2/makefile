@@ -40,7 +40,7 @@ VPATH     += $(PATH_SW)/FreeRTOS/Source/portable/microblaze
 
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -nostartfiles -O2 -DBOOTLOADER -D_FS_READONLY=1 -D_FS_MINIMIZE=3
+OPTIONS  = -g -ffunction-sections -nostartfiles -mcpu=v5.00.a -Os -DBOOTLOADER -DU2 -D_FS_READONLY=1 -D_FS_MINIMIZE=3
 COPTIONS = $(OPTIONS) -std=c99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics
 LINK 	 = ./mb_boot2.lds
