@@ -1061,14 +1061,17 @@ void C64::enable_kernal(uint8_t *rom)
     memcpy((void *)U64_KERNAL_BASE, rom, 8192); // as simple as that
 
 #else  // the good old way
-
-    C64_KERNAL_ENABLE = 1;
+    //  mem_addr_i <= g_kernal_base(27 downto 15) & slot_addr(1 downto 0) & slot_addr(12 downto 2) & "00";
+    //                                             ~~~ outer loop 'j' ~~~   ~~~ inner loop 'i' ~~~ ~~ +4 ~~
     uint8_t *src = rom;
     uint8_t *dst = (uint8_t *) (C64_KERNAL_BASE + 1);
-    for (int i = 0; i < 8192; i++) {
-        *(dst) = *(src++);
-        dst += 2;
+    for (int j = 0; j < 4; j++) {
+        for (int i = j; i < 8192; i+=4) {
+            *(dst) = src[i];
+            dst += 4;
+        }
     }
+    C64_KERNAL_ENABLE = 1;
 #endif
 }
 
