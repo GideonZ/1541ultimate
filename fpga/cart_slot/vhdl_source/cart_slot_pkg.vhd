@@ -50,6 +50,7 @@ package cart_slot_pkg is
         c64_vcc        : std_logic;
         exrom          : std_logic;
         game           : std_logic;
+        nmi            : std_logic;
         reset_in       : std_logic;
     end record;
 

@@ -8,6 +8,8 @@ extern "C" {
 #include "filesystem_fat.h"
 #include "init_function.h"
 #include "dump_hex.h"
+#include "u64.h"
+#include "c64.h"
 
 BlockDevice_Flash::BlockDevice_Flash(Flash *flash)
 {
@@ -137,6 +139,17 @@ static void init_flash_disk(void *obj, void *param)
     if (!flash) {
         return;
     }
+
+#if U64
+    if (U64_RESTORE_REG == 1) {
+        return;
+    }
+#else
+    if (C64 :: c64_get_nmi_state()) {
+        return;
+    }
+#endif
+
     flashdisk_blk = new BlockDevice_Flash(flash);
 
     flashdisk_node = new FileDevice(flashdisk_blk, "Flash", "Flash Disk");

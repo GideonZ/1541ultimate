@@ -82,6 +82,14 @@
 #define C64_DO_STOP        0x01
 #define C64_HAS_STOPPED    0x02
 
+// Bits in CLOCK detect register
+#define C64_CD_PHI2_DETECT  0x01
+#define C64_CD_VCC_DETECT   0x02
+#define C64_CD_EXROM_SENSE  0x04
+#define C64_CD_GAME_SENSE   0x08
+#define C64_CD_RESET_SENSE  0x10
+#define C64_CD_NMI_SENSE    0x20
+
 #define RUNCODE_LOAD_BIT           0x01
 #define RUNCODE_RUN_BIT            0x02
 #define RUNCODE_JUMP_BIT		   0x04
@@ -302,15 +310,14 @@ class C64 : public GenericHost, ConfigurableObject
         return (C64_CLOCK_DETECT & 0x0C) >> 2;
     }
     static bool phi2_present(void) {
-        return (C64_CLOCK_DETECT & 1) == 1;
+        return (C64_CLOCK_DETECT & C64_CD_PHI2_DETECT) == C64_CD_PHI2_DETECT;
     }
     static bool powered_by_c64(void) {
-        return (C64_CLOCK_DETECT & 2) == 2;
+        return (C64_CLOCK_DETECT & C64_CD_VCC_DETECT) == C64_CD_VCC_DETECT;
     }
     static bool c64_reset_detect(void) {
-        return (C64_CLOCK_DETECT & 0x10) == 0x10;
+        return (C64_CLOCK_DETECT & C64_CD_RESET_SENSE) == C64_CD_RESET_SENSE;
     }
-
     static void init_poll_task(void *a);
     static int setCartPref(ConfigItem *item);
 
@@ -377,6 +384,9 @@ public:
     static uint8_t *get_cartridge_mem(void) {
         uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16;
         return (uint8_t *)mem_addr;
+    }
+    static bool c64_get_nmi_state(void) {
+        return (C64_CLOCK_DETECT & C64_CD_NMI_SENSE) == C64_CD_NMI_SENSE;
     }
 
     static void list_crts(ConfigItem *it, IndexedList<char *>& strings);
