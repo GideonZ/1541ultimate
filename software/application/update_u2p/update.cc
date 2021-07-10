@@ -5,33 +5,13 @@
  *      Author: gideon
  */
 
-#include "prog_flash.h"
-#include <stdio.h>
-#include "itu.h"
-#include "host.h"
-#include "c64.h"
-#include "c64_crt.h"
-#include "screen.h"
-#include "keyboard.h"
-#include "stream.h"
-#include "stream_uart.h"
-#include "host_stream.h"
-#include "dump_hex.h"
-#include "u2p.h"
-#include "rtc.h"
-#include "userinterface.h"
-
-#include "filemanager.h"
-#include "init_function.h"
+#include "update_common.h"
 
 extern uint32_t _ultimate_run_rbf_start;
 extern uint32_t _ultimate_run_rbf_end;
 
 extern uint32_t _ultimate_app_start;
 extern uint32_t _ultimate_app_end;
-
-extern uint32_t _rom_pack_start;
-extern uint32_t _rom_pack_end;
 
 extern uint32_t _ultimate_recovery_rbf_start;
 extern uint32_t _ultimate_recovery_rbf_end;
@@ -46,61 +26,13 @@ extern uint8_t _snds1541_bin_start;
 extern uint8_t _snds1571_bin_start;
 extern uint8_t _snds1581_bin_start;
 
-static Screen *screen;
-
-static void create_dir(const char *name)
-{
-    FileManager *fm = FileManager :: getFileManager();
-    FRESULT fres = fm->create_dir(name);
-    console_print(screen, "Creating dir: %s\n", FileSystem :: get_error_string(fres));
-}
-
-static void write_flash_file(const char *name, uint8_t *data, int length)
-{
-    File *f;
-    uint32_t dummy;
-    FileManager *fm = FileManager :: getFileManager();
-    FRESULT fres = fm->fopen(ROMS_DIRECTORY, name, FA_CREATE_ALWAYS | FA_WRITE, &f);
-    if (fres == FR_OK) {
-        fres = f->write(data, length, &dummy);
-        console_print(screen, "Writing %s: %s\n", name, FileSystem :: get_error_string(fres));
-        fm->fclose(f);
-    }
-}
-
 void do_update(void)
 {
-	printf("*** U2+ Updater ***\n\n");
-
-	REMOTE_FLASHSEL_1;
+    REMOTE_FLASHSEL_1;
     REMOTE_FLASHSELCK_0;
     REMOTE_FLASHSELCK_1;
-	Flash *flash = get_flash();
 
-	GenericHost *host = 0;
-    Stream *stream = new Stream_UART;
-
-    InitFunction :: executeAll();
-    FileManager *fm = FileManager :: getFileManager();
-
-    C64 *c64 = C64 :: getMachine();
-
-    if (c64->exists()) {
-    	host = c64;
-    } else {
-    	host = new HostStream(stream);
-    }
-    screen = host->getScreen();
-
-    UserInterface *user_interface = new UserInterface("\033\021** 1541 Ultimate II+ Updater **\n\033\037");
-    user_interface->init(host);
-    host->take_ownership(user_interface);
-    user_interface->appear();
-    screen->move_cursor(0, 2);
-
-    char time_buffer[32];
-    console_print(screen, "%s ", rtc.get_long_date(time_buffer, 32));
-	console_print(screen, "%s\n", rtc.get_time_string(time_buffer, 32));
+    setup("\033\025** 1541 Ultimate II+ Updater **\n\033\037");
 
 /*
     if(user_interface->popup("Flash Recovery?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
@@ -137,26 +69,9 @@ void do_update(void)
         flash_buffer_at(flash2, screen, 0x000000, false, &_ultimate_run_rbf_start,   &_ultimate_run_rbf_end,   "V1.0", "Runtime FPGA");
         flash_buffer_at(flash2, screen, 0x0C0000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
 
-        console_print(screen, "\nConfiguring Flash write protection..\n");
-    	flash2->protect_configure();
-    	flash2->protect_enable();
-    	console_print(screen, "Done!                            \n");
+        write_protect(flash2);
     }
-
-
-    wait_ms(2000);
-    console_print(screen, "\nPLEASE TURN OFF YOUR MACHINE.\n");
-
-    while (1)
-        ;
-
-/*
-    REMOTE_FLASHSEL_1;
-    REMOTE_FLASHSELCK_0;
-    REMOTE_FLASHSELCK_1;
-    REMOTE_RECONFIG = 0xBE;
-	console_print(screen, "You shouldn't see this!\n");
-*/
+    turn_off();
 }
 
 extern "C" int ultimate_main(int argc, char *argv[])

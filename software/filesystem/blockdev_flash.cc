@@ -151,5 +151,17 @@ static void init_flash_disk(void *obj, void *param)
     }
 }
 
+void reformat_flash_disk(void)
+{
+    Flash *flash = get_flash();
+    if (!flash) {
+        return;
+    }
+    flashdisk_node->detach_disk();
+    format_flash();
+    flashdisk_node->attach_disk(flash->get_sector_size(0));
+    flashdisk_node->probe();
+}
+
 InitFunction flashdisk_init(init_flash_disk, NULL, NULL);
 
