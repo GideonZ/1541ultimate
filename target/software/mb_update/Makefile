@@ -61,6 +61,7 @@ SRCS_CC	 =  memory.cc \
 			directory.cc \
 			file.cc \
 			filesystem_fat.cc \
+			prog_flash.cc \
 			$(PRJ).cc
 
 SRCS_ASM =  mb_crt0.s \
