@@ -48,29 +48,53 @@ class C64_CRT
         const char  *cart_name;
     };
 
+    struct t_crt_chip_chunk
+    {
+        uint8_t header[0x10];
+        uint8_t *ram_location;
+    };
+
     const static struct t_cart c_recognized_c64_carts[];
     const static struct t_cart c_recognized_c128_carts[];
 
+    // Local Variables
     uint8_t     *cart_memory;
     int          bank_multiplier;
-    int          machine;
+    int          machine; // 64 or 128
     bool         a000_seen;
     e_known_cart local_type;
     uint8_t      max_bank;
     uint32_t     total_read;
-    uint8_t      crt_header[0x20];
 
-    C64_CRT(uint8_t *mem);
+    // CRT File Structure
+    uint8_t      crt_header[0x40]; // includes name field
+    IndexedList<t_crt_chip_chunk *>chip_chunks;
+
+    // Auxiliary Data chunks
+    uint8_t     *eeprom_buffer;
+    int          eeprom_size;
+    uint8_t     *original_eapi;
+
+    static C64_CRT *get_instance(void); // singleton
+
+    C64_CRT();
+    void initialize(uint8_t *mem);
+    void cleanup(void);
 
     int  check_header(File *f, cart_def *def);
-    int  read_chip_packet(File *f);
+    int  read_chip_packet(File *f, t_crt_chip_chunk *chunk);
     void clear_cart_mem(void);
-    void patch_easyflash_eapi(cart_def *def);
+    void patch_easyflash_eapi();
+    void unpatch_easyflash_eapi();
     int  read_crt(File *file, cart_def *def);
     void configure_cart(cart_def *def);
 
 public:
     static int load_crt(const char *path, const char *filename, cart_def *def, uint8_t *mem);
+    static int save_crt(File *f);
+    static int clear_crt(void);
+    static bool is_valid(void);
+
     static const char *get_error_string(int retval);
 };
 

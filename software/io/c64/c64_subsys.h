@@ -31,7 +31,7 @@ class C64_Subsys : public SubSystem, ObjectWithMenu
         Action *savereu;
         Action *savemem;
         Action *savemod;
-        Action *save_ef;
+        Action *save_crt;
         Action *savemp3a;
         Action *savemp3b;
         Action *savemp3c;

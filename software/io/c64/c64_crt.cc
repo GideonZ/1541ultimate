@@ -98,8 +98,26 @@ __inline static uint32_t get_dword(uint8_t *p)
     return uint32_t(get_word(p) << 16) + get_word(p + 2);
 }
 
-C64_CRT::C64_CRT(uint8_t *mem)
+C64_CRT *C64_CRT :: get_instance()
 {
+    static C64_CRT *crt = NULL;
+    if (!crt) {
+        crt = new C64_CRT();
+    }
+    return crt;
+}
+
+C64_CRT::C64_CRT() : chip_chunks(64, NULL)
+{
+    eeprom_buffer = NULL;
+    original_eapi = NULL;
+    initialize(NULL);
+}
+
+void C64_CRT::initialize(uint8_t *mem)
+{
+    cleanup();
+
     cart_memory = mem;
     local_type = CART_NOT_IMPL;
     machine = 0;
@@ -109,11 +127,33 @@ C64_CRT::C64_CRT(uint8_t *mem)
     bank_multiplier = 16 * 1024;
 }
 
+void C64_CRT::cleanup()
+{
+    for (int i=0; i<chip_chunks.get_elements(); i++) {
+        t_crt_chip_chunk *cc = chip_chunks[i];
+        if (cc) {
+            delete cc;
+        }
+    }
+    chip_chunks.clear_list();
+
+    if (eeprom_buffer) {
+        delete[] eeprom_buffer;
+        eeprom_buffer = NULL;
+    }
+    eeprom_size = 0;
+
+    if (original_eapi) {
+        delete[] original_eapi;
+        original_eapi = NULL;
+    }
+}
+
 int C64_CRT::check_header(File *f, cart_def *def)
 {
     uint32_t bytes_read = 0;
-    FRESULT res = f->read(crt_header, 0x20, &bytes_read);
-    if (bytes_read != 0x20) {
+    FRESULT res = f->read(crt_header, 0x40, &bytes_read);
+    if (bytes_read != 0x40) {
         return -2; // unable to read file header
     }
     machine = 0;
@@ -148,9 +188,10 @@ int C64_CRT::check_header(File *f, cart_def *def)
     return -4;
 }
 
-int C64_CRT::read_chip_packet(File *f)
+int C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
 {
-    uint8_t chip_header[0x10];
+    uint8_t *chip_header = chunk->header;
+    chunk->ram_location = NULL;
 
     uint32_t bytes_read;
     FRESULT res = f->read(chip_header, 0x10, &bytes_read);
@@ -173,6 +214,29 @@ int C64_CRT::read_chip_packet(File *f)
         bank_multiplier = 32 * 1024;
     }
 
+    // Detect E2PROM
+    if (load == 0xDE00) {
+        printf("Reading EEPROM data, size $%4x.\n", size);
+        if (size > 0x800) {
+            printf("EEPROM too large!\n");
+            return -5;
+        }
+        if (eeprom_buffer) { //
+            printf("EEPROM already read!\n");
+            return -5;
+        }
+        eeprom_buffer = new uint8_t[size];
+        eeprom_size = size;
+
+        chunk->ram_location = eeprom_buffer;
+        res = f->read(eeprom_buffer, size, &bytes_read);
+        if (res != FR_OK) {
+            return -5;
+        } else {
+            return 0; // OK
+        }
+    }
+
     if ((load == 0xA000) && !a000_seen) {
         a000_seen = true;
         if (bank > 0) { // strange; first time A000 is seen, it is not bank 0.
@@ -183,7 +247,7 @@ int C64_CRT::read_chip_packet(File *f)
     bank &= max_bank;
 
     uint32_t offset = uint32_t(bank) * bank_multiplier;
-    offset += (load & 0x3FFF); // switch between 8000 and A000
+    offset += (load & 0x2000); // switch between 8000 and A000
     if (offset > 0x1000000) { // max 1 MB
         return -5;
     }
@@ -194,6 +258,7 @@ int C64_CRT::read_chip_packet(File *f)
     printf("Reading chip data bank %d ($%4x) with size $%4x to 0x%8x.\n", bank, load, size, mem_addr);
 
     if (size && ((type == 0) || (type == 2))) {
+        chunk->ram_location = mem_addr;
         res = f->read(mem_addr, size, &bytes_read);
         total_read += bytes_read;
         if (bytes_read != size) {
@@ -226,15 +291,29 @@ void C64_CRT::clear_cart_mem(void)
     memset(cart_memory, 0xff, 1024 * 1024); // clear all cart memory
 }
 
-void C64_CRT::patch_easyflash_eapi(cart_def *def)
+void C64_CRT::patch_easyflash_eapi()
 {
     if (local_type == CART_EASYFLASH) {
         uint8_t* eapi = cart_memory + 0x3800;
         if (eapi[0] == 0x65 && eapi[1] == 0x61 && eapi[2] == 0x70 && eapi[3] == 0x69) {
+            original_eapi = new uint8_t[768];
+            memcpy(original_eapi, eapi, 768);
             memcpy(eapi, &_eapi_65_start, 768);
             printf("EAPI successfully patched!\n");
         }
     }
+}
+
+void C64_CRT::unpatch_easyflash_eapi()
+{
+    if (!original_eapi)
+        return;
+    if (local_type != CART_EASYFLASH)
+        return;
+
+    uint8_t* eapi = cart_memory + 0x3800;
+    memcpy(eapi, original_eapi, 768);
+    printf("EAPI successfully un-patched!\n");
 }
 
 int C64_CRT::read_crt(File *file, cart_def *def)
@@ -257,13 +336,21 @@ int C64_CRT::read_crt(File *file, cart_def *def)
     }
 
     do {
-        retval = read_chip_packet(file);
+        t_crt_chip_chunk *chunk = new t_crt_chip_chunk;
+        retval = read_chip_packet(file, chunk);
+
+        if (retval == 0) {
+            chip_chunks.append(chunk);
+        } else {
+            delete chunk;
+        }
+
     } while (!retval);
     if (retval < 0) {
         return retval;
     }
 
-    patch_easyflash_eapi(def);
+    patch_easyflash_eapi();
     configure_cart(def);
     return 0;
 }
@@ -441,15 +528,70 @@ int C64_CRT::load_crt(const char *path, const char *filename, cart_def *def, uin
         return -1; // cannot read file
     }
 
-    C64_CRT work(mem);
-    int retval = work.read_crt(file, def);
+    C64_CRT *work = get_instance(); // Singleton.
+    work->initialize(mem); // Clear previous definitions
+    int retval = work->read_crt(file, def);
     fm->fclose(file);
+
+    if (retval) {
+        work->initialize(NULL); // clear remaining stuff if not successful
+    }
     return retval;
+}
+
+int C64_CRT::save_crt(File *fo)
+{
+    C64_CRT *crt = get_instance();
+
+    if (!crt->machine) {
+        return -6; // nothing to save
+    }
+
+    uint32_t written;
+
+    FRESULT res = fo->write(crt->crt_header, 0x40, &written);
+    if (res != FR_OK) {
+        return -7;
+    }
+
+    crt->unpatch_easyflash_eapi();
+    for (int i=0; i<crt->chip_chunks.get_elements(); i++) {
+        t_crt_chip_chunk *cc = crt->chip_chunks[i];
+        uint16_t size = get_word(cc->header + CRTCHP_SIZE);
+        res = fo->write(cc->header, 0x10, &written);
+        if (res != FR_OK) {
+            break;
+        }
+        res = fo->write(cc->ram_location, size, &written);
+        if (res != FR_OK) {
+            break;
+        }
+    }
+    crt->patch_easyflash_eapi();
+
+    if (res == FR_OK) {
+        return 0;
+    } else {
+        return -7;
+    }
+}
+
+int C64_CRT :: clear_crt(void)
+{
+    C64_CRT *work = get_instance(); // Singleton.
+    work->initialize(NULL);
+    return 0;
+}
+
+bool C64_CRT :: is_valid(void)
+{
+    C64_CRT *crt = get_instance(); // Singleton.
+    return (crt->machine != 0);
 }
 
 const char *C64_CRT::get_error_string(int retval)
 {
     const char *errors[] = { "", "Unable to open file", "Unable to read header", "Unrecognized header",
-            "Not Implemented", "Error reading chip packet" };
+            "Not Implemented", "Error reading chip packet", "Nothing to save", "Write Error" };
     return errors[-retval];
 }
