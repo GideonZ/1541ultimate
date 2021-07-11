@@ -300,11 +300,7 @@ void C64::set_emulation_flags(void)
         int choice = cfg->get_value(CFG_CMD_ENABLE);
         CMD_IF_SLOT_ENABLE = !!choice;
         ultimatedosversion = choice;
-#ifdef RECOVERYAPP
         CMD_IF_SLOT_BASE = 0x47; // $$DF1C
-#else
-        CMD_IF_SLOT_BASE = connectedToU64 ? 0x46 : 0x47; // $DF18 when 1541 U2(+) connected to U64, $DF1C else.
-#endif
         choice = cfg->get_value(CFG_CMD_ALLOW_WRITE);
         allowUltimateDosDateSet = choice;
     }
@@ -913,8 +909,7 @@ Keyboard *C64::getKeyboard(void)
 void C64::set_cartridge(cart_def *cart)
 {
     // Know where the ROM data is located
-    uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16;
-    uint8_t *cart_mem = (uint8_t *)mem_addr;
+    uint8_t *cart_mem = get_cartridge_rom_addr();
 
     // Just clear internal structure completely
     memset(&current_cart_def, 0, sizeof(cart_def));
@@ -997,10 +992,9 @@ void C64::set_cartridge(cart_def *cart)
     }
 #endif
     if (def->require & CART_KERNAL) { // Copy kernal to kernal space
-        uint8_t *src = (uint8_t *) (((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16);
+        uint8_t *src = get_cartridge_rom_addr();
         C64 :: getMachine()->enable_kernal(src);
     }
-
 
     def->disabled = 0;
 
@@ -1038,8 +1032,7 @@ void C64::set_cartridge(cart_def *cart)
     }
 #endif
     // clear function RAM on the cartridge
-    mem_addr -= 65536; // TODO: We know it, because we made the hardware, but the hardware should tell us!
-    memset((void *) mem_addr, 0x00, 65536);
+    memset(get_cartridge_ram_addr(), 0x00, 65536);
 
     printf("End of cart init: Type: %b. REU: %b. REU_SZ: %b, UCI: %b (%4x), Mode: %b, Sampler: %b\n",
             C64_CARTRIDGE_TYPE, C64_REU_ENABLE, C64_REU_SIZE, CMD_IF_SLOT_ENABLE, 0xDE00 + uint16_t(CMD_IF_SLOT_BASE * 4), C64_MODE, C64_SAMPLER_ENABLE);
@@ -1063,11 +1056,12 @@ void C64::enable_kernal(uint8_t *rom)
 #if U64
     memcpy((void *)U64_KERNAL_BASE, rom, 8192); // as simple as that
 
-#else  // the good old way
+#else
     //  mem_addr_i <= g_kernal_base(27 downto 15) & slot_addr(1 downto 0) & slot_addr(12 downto 2) & "00";
     //                                             ~~~ outer loop 'j' ~~~   ~~~ inner loop 'i' ~~~ ~~ +4 ~~
     uint8_t *src = rom;
-    uint8_t *dst = (uint8_t *) (C64_KERNAL_BASE + 1);
+    extern uint8_t __kernal_area;
+    uint8_t *dst = (&__kernal_area) + 1;
     for (int j = 0; j < 4; j++) {
         for (int i = j; i < 8192; i+=4) {
             *(dst) = src[i];

@@ -8,7 +8,6 @@ package cart_slot_pkg is
     constant c_cart_c64_stop            : unsigned(3 downto 0) := X"1";
     constant c_cart_c64_stop_mode       : unsigned(3 downto 0) := X"2";
     constant c_cart_c64_clock_detect    : unsigned(3 downto 0) := X"3";
-    constant c_cart_cartridge_rom_base  : unsigned(3 downto 0) := X"4";
     constant c_cart_cartridge_type      : unsigned(3 downto 0) := X"5";
     constant c_cart_cartridge_kill      : unsigned(3 downto 0) := X"6";
     constant c_cart_cartridge_active    : unsigned(3 downto 0) := X"6";

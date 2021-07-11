@@ -93,7 +93,7 @@ SRCS_ASM =
 
 SRCS_ASMS = port_asm.S
 
-SRCS_6502 = bootcrt.tas
+SRCS_6502 = bootcrt.tas eapi.tas
 
 SRCS_BIN =  chars.bin
 

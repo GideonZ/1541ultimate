@@ -364,3 +364,21 @@ PROVIDE( __alt_stack_limit   = __alt_stack_base );
  */
 PROVIDE( __alt_heap_start    = end );
 PROVIDE( __alt_heap_limit    = 0x4000000 );
+
+/* User defines
+ * for REU and RAMDISK, Cartridge ROM, RAM, etc
+ */
+PROVIDE( __kernal_area   = 0x0EA8000 );
+PROVIDE( __drive_b_sound = 0x0EB0000 );
+PROVIDE( __drive_a_sound = 0x0EC0000 );
+PROVIDE( __drive_b_area  = 0x0ED0000 );
+PROVIDE( __drive_a_area  = 0x0EE0000 );
+
+PROVIDE( __cart_ram_start = 0x0EF0000 );
+PROVIDE( __cart_ram_limit = 0x0F00000 );
+
+PROVIDE( __cart_rom_start = 0x0F00000 );
+PROVIDE( __cart_rom_limit = 0x1000000 );
+
+PROVIDE( __reu_ram_start = 0x1000000 );
+PROVIDE( __reu_ram_limit = 0x2000000 );

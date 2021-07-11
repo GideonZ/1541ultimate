@@ -48,7 +48,6 @@
 #define C64_STOP                *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x1))
 #define C64_STOP_MODE           *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x2))
 #define C64_CLOCK_DETECT        *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x3))
-#define C64_CARTRIDGE_ROM_BASE  *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x4))
 #define C64_CARTRIDGE_TYPE      *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x5))
 #define C64_CARTRIDGE_KILL      *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x6))
 #define C64_CARTRIDGE_ACTIVE    *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x6))
@@ -61,8 +60,6 @@
 #define C64_SERVE_CONTROL       *((volatile uint8_t *)(C64_CARTREGS_BASE + 0xD))
 #define C64_SAMPLER_ENABLE      *((volatile uint8_t *)(C64_CARTREGS_BASE + 0xE))
 #define C64_ETHERNET_ENABLE     *((volatile uint8_t *)(C64_CARTREGS_BASE + 0xF))
-
-#define C64_KERNAL_BASE         0x0EC8000
 
 #define C64_MODE_ULTIMAX   0x02
 #define C64_MODE_RESET     0x04
@@ -380,10 +377,16 @@ public:
     static int isMP3RamDrive(int dev);
     static int getSizeOfMP3NativeRamdrive(int dev);
 
-    static uint8_t *get_cartridge_mem(void) {
-        uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16;
-        return (uint8_t *)mem_addr;
+    static uint8_t *get_cartridge_rom_addr(void) {
+        extern uint8_t __cart_rom_start;
+        return &__cart_rom_start;
     }
+
+    static uint8_t *get_cartridge_ram_addr(void) {
+        extern uint8_t __cart_ram_start;
+        return &__cart_ram_start;
+    }
+
     static bool c64_get_nmi_state(void) {
         return (C64_CLOCK_DETECT & C64_CD_NMI_SENSE) == C64_CD_NMI_SENSE;
     }
