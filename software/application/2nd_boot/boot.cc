@@ -146,7 +146,7 @@ int try_flash(void)
     static char version[16];
     
 	flash->get_image_addresses(FLASH_ID_APPL, &image_addr);
-    flash->read_dev_addr(image_addr.device_addr+0,  4, &length); // could come from image_addr, too, if we fix it in the interface
+	flash->read_dev_addr(image_addr.device_addr+0,  4, &length); // could come from image_addr, too, if we fix it in the interface
     printf("Length: %08x\n", length);
     flash->read_dev_addr(image_addr.device_addr+4, 12, version); // we should create a flash call for this on the interface
     

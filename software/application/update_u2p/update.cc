@@ -32,7 +32,7 @@ void do_update(void)
     REMOTE_FLASHSELCK_0;
     REMOTE_FLASHSELCK_1;
 
-    setup("\033\025** 1541 Ultimate II+ Updater **\n\033\037");
+    setup("\033\025** Ultimate II+ Updater **\n\033\037");
 
 /*
     if(user_interface->popup("Flash Recovery?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
@@ -68,8 +68,8 @@ void do_update(void)
 
         Flash *flash2 = get_flash();
         flash2->protect_disable();
-        flash_buffer_at(flash2, screen, 0x000000, false, &_ultimate_run_rbf_start,   &_ultimate_run_rbf_end,   "V1.0", "Runtime FPGA");
-        flash_buffer_at(flash2, screen, 0x0C0000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
+        flash_buffer(flash2, screen, FLASH_ID_BOOTFPGA, &_ultimate_run_rbf_start, &_ultimate_run_rbf_end, "", "Runtime FPGA");
+        flash_buffer(flash2, screen, FLASH_ID_APPL,     &_ultimate_app_start,     &_ultimate_app_end,  APPL_VERSION, "Ultimate Application");
 
         write_protect(flash2);
     }

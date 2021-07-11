@@ -19,29 +19,24 @@ W25Q_Flash w25q_flash;
 
 //#define debug(x)
 
-// Free space 0x103000 - 108000 (0x5000)
-// FPGA = ~0x54000 in length
-// MAX APPL length = 500K => 969 pages / 4 sectors
-// CUSTOM FPGA is thus on sector 12.. 
-
 static const t_flash_address flash_addresses[] = {
-	{ FLASH_ID_BOOTFPGA,   0x01, 0x000000, 0x000000, 0x53CA0 },
-	{ FLASH_ID_BOOTAPP,    0x01, 0x054000, 0x054000, 0x0C000 }, // 192 pages (48K)
-	{ FLASH_ID_APPL,       0x01, 0x100000, 0x100000, 0xC0000 }, // max size: 768K
-	{ FLASH_ID_FLASHDRIVE, 0x00, 0x1C0000, 0x1C0000, 0x30000 }, // 192KB, will move when all internal roms are removed
-	{ FLASH_ID_CONFIG,     0x00, 0x1F0000, 0x1F0000, 0x10000 },
+	{ FLASH_ID_BOOTFPGA,   0x01, 0x000000, 0x000000, 0x53CA0 }, // 1341 pages (rounded to 1344 pages)
+	{ FLASH_ID_BOOTAPP,    0x01, 0x054000, 0x054000, 0x0E000 }, //  224 pages (56K)
+	{ FLASH_ID_APPL,       0x01, 0x062000, 0x062000, 0xC6000 }, // 3168 pages (max size: 792K)
+	{ FLASH_ID_FLASHDRIVE, 0x00, 0x128000, 0x128000, 0xC8000 }, // 3200 pages (max size: 800K)
+	{ FLASH_ID_CONFIG,     0x00, 0x1F0000, 0x1F0000, 0x10000 }, //  256 pages
 	{ FLASH_ID_LIST_END,   0x00, 0x1FE000, 0x1FE000, 0x01000 } };
 
 static const t_flash_address flash_addresses_u2p[] = {
-	{ FLASH_ID_BOOTFPGA,   0x01, 0x000000, 0x000000, 0x0C0000 },
-	{ FLASH_ID_APPL,       0x01, 0x0C0000, 0x0C0000, 0x140000 }, // Max 1.25 MB
+	{ FLASH_ID_BOOTFPGA,   0x00, 0x000000, 0x000000, 0x0C0000 },
+	{ FLASH_ID_APPL,       0x00, 0x0C0000, 0x0C0000, 0x140000 }, // Max 1.25 MB
 	{ FLASH_ID_FLASHDRIVE, 0x00, 0x200000, 0x200000, 0x1F0000 },  // free space: 1984 KB
 	{ FLASH_ID_CONFIG,     0x00, 0x3F0000, 0x3F0000, 0x010000 },
 	{ FLASH_ID_LIST_END,   0x00, 0x3FE000, 0x3FE000, 0x001000 } };
 
 static const t_flash_address flash_addresses_u64[] = {
-	{ FLASH_ID_BOOTFPGA,   0x01, 0x000000, 0x000000, 0x290000 }, // 282BD4
-	{ FLASH_ID_APPL,       0x01, 0x290000, 0x290000, 0x170000 }, // Max 1.5 MB
+	{ FLASH_ID_BOOTFPGA,   0x00, 0x000000, 0x000000, 0x290000 }, // 282BD4
+	{ FLASH_ID_APPL,       0x00, 0x290000, 0x290000, 0x170000 }, // Max 1.5 MB
 	{ FLASH_ID_FLASHDRIVE, 0x00, 0x400000, 0x400000, 0x3E8000 }, // ends at 0x7E8000  (free space: 4000 KB)
 	{ FLASH_ID_CONFIG,     0x00, 0x7E8000, 0x7E8000, 0x018000 },
 	{ FLASH_ID_LIST_END,   0x00, 0x7FE000, 0x7FE000, 0x001000 } };
