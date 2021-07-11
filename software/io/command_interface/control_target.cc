@@ -290,8 +290,7 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
                             break;
                         }
 
-                        uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16;
-                        uint8_t *mem = (uint8_t *)mem_addr;
+                        uint8_t *mem = C64 :: get_cartridge_rom_addr();
                         unsigned char bank = command->message[3] & 0x38;
                         unsigned char baseAddr = command->message[4];
 

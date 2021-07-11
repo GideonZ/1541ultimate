@@ -11,8 +11,6 @@ generic (
     g_cartreset_init: std_logic := '0';
     g_boot_stop     : boolean := false;
     g_kernal_repl   : boolean := true;
-    g_rom_base      : unsigned(27 downto 0) := X"0F80000";
-    g_ram_base      : unsigned(27 downto 0) := X"0F70000";
     g_ram_expansion : boolean := true );
 port (
     clock           : in  std_logic;
@@ -102,8 +100,6 @@ begin
                     io_resp.data(3) <= status.game;
                     io_resp.data(4) <= status.reset_in;
                     io_resp.data(5) <= status.nmi;
-                when c_cart_cartridge_rom_base =>
-                    io_resp.data <= std_logic_vector(g_rom_base(23 downto 16));
                 when c_cart_cartridge_type =>
                     io_resp.data(4 downto 0) <= control_i.cartridge_type;
                     io_resp.data(7 downto 5) <= control_i.cartridge_variant;

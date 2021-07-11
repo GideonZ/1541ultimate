@@ -77,14 +77,20 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
     local_config_definitions[0].def = (letter == 'A')?1:0;   // drive A is default 8, drive B is default 9, etc
     local_config_definitions[2].def = 8 + int(letter - 'A'); // only drive A is by default ON.
         
-    uint32_t mem_address = ((uint32_t)registers[C1541_MEM_ADDR]) << 16;
-    memory_map = (volatile uint8_t *)mem_address;
-
-    audio_address = (uint8_t *)(((uint32_t)registers[C1541_AUDIO_ADDR]) << 16);
-    if (registers[C1541_DRIVETYPE] & 0x80) {
-        audio_address += 0x8000;
+    // Reading memory locations from memory is better, but also takes logic
+    // so we do it like this:
+    if (letter == 'A') {
+        extern uint8_t __drive_a_area;
+        extern uint8_t __drive_a_sound;
+        memory_map = &__drive_a_area;
+        audio_address = &__drive_a_sound;
+    } else {
+        extern uint8_t __drive_b_area;
+        extern uint8_t __drive_b_sound;
+        memory_map = &__drive_b_area;
+        audio_address = &__drive_b_sound;
     }
-    printf("C1541 Memory address: %p\n", mem_address);
+    printf("C1541 Memory address: %p\n", memory_map);
     printf("C1541 Audio address: %p\n", audio_address);
 
     drive_name = "Drive ";
@@ -115,6 +121,8 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
         cfg->disable(CFG_C1541_ROMFILE1);
         cfg->disable(CFG_C1541_ROMFILE2);
     }
+    mount_function_id = 0;
+    mount_mode = 0;
 }
 
 C1541 :: ~C1541()

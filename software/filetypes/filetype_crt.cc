@@ -76,7 +76,7 @@ int FileTypeCRT::execute(SubsysCommand *cmd)
     printf("Cartridge Load.. %s\n", cmd->filename.c_str());
 
     cart_def def;
-    int retval = C64_CRT :: load_crt(cmd->path.c_str(), cmd->filename.c_str(), &def, C64 :: get_cartridge_mem());
+    int retval = C64_CRT :: load_crt(cmd->path.c_str(), cmd->filename.c_str(), &def, C64 :: get_cartridge_rom_addr());
 
     if (retval == 0) {
         SubsysCommand *c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_START_CART, (int)&def, "", "");

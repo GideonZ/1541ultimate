@@ -354,9 +354,7 @@ begin
 
     i_regs: entity work.drive_registers
     generic map (
-        g_multi_mode    => true,
-        g_audio_base    => g_audio_base,
-        g_ram_base      => g_ram_base )
+        g_multi_mode    => true )
     port map (
         clock           => clock,
         reset           => reset,

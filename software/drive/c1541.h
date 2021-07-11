@@ -70,8 +70,6 @@ typedef enum { e_dt_1541 = 0,
 #define C1541_MAN_WRITE   7
 #define C1541_TRACK       8
 #define C1541_STATUS      9
-#define C1541_MEM_ADDR   10
-#define C1541_AUDIO_ADDR 11
 #define C1541_DISKCHANGE 12
 #define C1541_DRIVETYPE  13
 #define C1541_SOUNDS     14

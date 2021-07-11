@@ -271,9 +271,6 @@ begin
     end generate;
 
     i_regs: entity work.drive_registers
-    generic map (
-        g_audio_base    => g_audio_base,
-        g_ram_base      => g_ram_base )
     port map (
         clock           => clock,
         reset           => reset,

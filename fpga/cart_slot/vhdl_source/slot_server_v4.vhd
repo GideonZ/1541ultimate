@@ -14,9 +14,10 @@ generic (
     g_clock_freq    : natural := 50_000_000;
     g_tag_slot      : std_logic_vector(7 downto 0) := X"08";
     g_tag_reu       : std_logic_vector(7 downto 0) := X"10";
-    g_ram_base_reu  : unsigned(27 downto 0) := X"1000000"; -- should be on 16M boundary, or should be limited in size
-    g_ram_base_cart : unsigned(27 downto 0) := X"0F70000"; -- should be on a 64K boundary
-    g_rom_base_cart : unsigned(27 downto 0) := X"0F80000"; -- should be on a 512K boundary
+    g_ram_base_reu  : std_logic_vector(27 downto 0) := X"1000000"; -- should be on 16M boundary, or should be limited in size
+    g_ram_base_cart : std_logic_vector(27 downto 0) := X"0EF0000"; -- should be on a 64K boundary
+    g_rom_base_cart : std_logic_vector(27 downto 0) := X"0F00000"; -- should be on a 1M boundary
+    g_kernal_base   : std_logic_vector(27 downto 0) := X"0EA8000"; -- should be on a 32K boundary 
     g_direct_dma    : boolean := false;
     g_ext_freeze_act: boolean := false;
     g_cartreset_init: std_logic := '0';
@@ -306,8 +307,6 @@ begin
     i_registers: entity work.cart_slot_registers
     generic map (
         g_kernal_repl   => g_kernal_repl,
-        g_rom_base      => g_rom_base_cart,
-        g_ram_base      => g_ram_base_cart,
         g_boot_stop     => g_boot_stop,
         g_cartreset_init=> g_cartreset_init,
         g_ram_expansion => g_ram_expansion )
@@ -510,8 +509,10 @@ begin
 
     i_cart_logic: entity work.all_carts_v5
     generic map (
-        g_rom_base      => std_logic_vector(g_rom_base_cart),
-        g_ram_base      => std_logic_vector(g_ram_base_cart) )
+        g_kernal_base   => g_kernal_base,
+        g_georam_base   => g_ram_base_reu,
+        g_rom_base      => g_rom_base_cart,
+        g_ram_base      => g_ram_base_cart )
     port map (
         clock           => clock,
         reset           => reset,
@@ -601,7 +602,7 @@ begin
         i_reu: entity work.reu
         generic map (
             g_extended      => g_extended_reu,
-            g_ram_base      => g_ram_base_reu,
+            g_ram_base      => unsigned(g_ram_base_reu),
             g_ram_tag       => g_tag_reu )
         port map (
             clock           => clock,

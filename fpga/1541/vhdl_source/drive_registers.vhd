@@ -9,9 +9,7 @@ use work.c1541_pkg.all;
 entity drive_registers is
 generic (
     g_clock_freq    : natural := 50_000_000;
-    g_multi_mode    : boolean := false;
-    g_audio_base    : unsigned(27 downto 0) := X"0030000";
-    g_ram_base      : unsigned(27 downto 0) := X"0060000" );
+    g_multi_mode    : boolean := false );
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
@@ -124,7 +122,6 @@ begin
                     if g_multi_mode then
                         io_resp.data(1 downto 0) <= drive_type_i;
                     end if;
-                    io_resp.data(7) <= g_audio_base(15);
                 when c_drvreg_track =>
                     io_resp.data(6 downto 0) <= std_logic_vector(track(6 downto 0));
                 when c_drvreg_side =>
@@ -133,10 +130,6 @@ begin
                     io_resp.data(0) <= motor_on;
                     io_resp.data(1) <= not mode; -- mode is '0' when writing
                     io_resp.data(2) <= write_busy;
-                when c_drvreg_memmap =>
-                    io_resp.data <= std_logic_vector(g_ram_base(23 downto 16));
-                when c_drvreg_audiomap =>
-                    io_resp.data <= std_logic_vector(g_audio_base(23 downto 16));
                 when others =>
                     null;
                 end case;
