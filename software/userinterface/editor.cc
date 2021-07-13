@@ -132,7 +132,7 @@ void Editor :: draw(void)
         if (line.buffer) {
         	window->output_length(line.buffer, line.length);
         } else {
-        	window->output_length("", width);
+        	window->output_length("", 0);
     	}
     }
 }
