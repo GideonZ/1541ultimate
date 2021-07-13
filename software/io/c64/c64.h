@@ -378,13 +378,13 @@ public:
     static int getSizeOfMP3NativeRamdrive(int dev);
 
     static uint8_t *get_cartridge_rom_addr(void) {
-        extern uint8_t __cart_rom_start;
-        return &__cart_rom_start;
+        extern uint8_t __cart_rom_start[1024*1024];
+        return __cart_rom_start;
     }
 
     static uint8_t *get_cartridge_ram_addr(void) {
-        extern uint8_t __cart_ram_start;
-        return &__cart_ram_start;
+        extern uint8_t __cart_ram_start[64*1024];
+        return __cart_ram_start;
     }
 
     static bool c64_get_nmi_state(void) {
