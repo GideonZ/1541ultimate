@@ -240,8 +240,8 @@ void Screen_MemMappedCharMatrix :: output_fixed_length(const char *string, int o
 		char *p = char_base + pointer;
 		*p ^= 0x80; // unplace cursor
 	}
-	pointer = (cursor_y * size_x) + offset_x;
-	cursor_x = offset_x;
+	bool crsr = cursor_on;
+	cursor_on = false;
 
 	char c;
 	int chars_placed = 0;
@@ -254,7 +254,9 @@ void Screen_MemMappedCharMatrix :: output_fixed_length(const char *string, int o
 
         chars_placed += output(c);
     }
-	if (cursor_on) {
+
+    cursor_on = crsr;
+    if (cursor_on) {
 		char *p = char_base + pointer;
 		*p ^= 0x80; // place cursor
 	}
@@ -370,8 +372,10 @@ void Window :: output_line(const char *string)
 void Window :: output_length(const char *string, int len)
 {
 	parent->output_fixed_length(string, offset_x, len);
+/*
 	if ((window_x - len) > 0)
 		parent->repeat(' ', window_x - len);
+*/
 }
 
 void Window :: draw_border(void)

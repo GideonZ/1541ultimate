@@ -98,10 +98,10 @@ int UserFileInteraction::S_rename(SubsysCommand *cmd)
     Path *p = fm->get_new_path("S_rename");
     p->cd(cmd->path.c_str());
 
-    strncpy(buffer, cmd->filename.c_str(), 38);
-    buffer[38] = 0;
+    strncpy(buffer, cmd->filename.c_str(), 64);
+    buffer[63] = 0;
 
-    res = cmd->user_interface->string_box("Give a new name..", buffer, 38);
+    res = cmd->user_interface->string_box("Give a new name..", buffer, 64);
     if (res > 0) {
         fres = fm->rename(p, cmd->filename.c_str(), buffer);
         if (fres != FR_OK) {
