@@ -6,6 +6,7 @@
  */
 #include "ui_elements.h"
 #include <string.h>
+#include <stdio.h>
 
 const char *c_button_names[NUM_BUTTONS] = { " Ok ", " Yes ", " No ", " All ", " Cancel " };
 const char c_button_keys[NUM_BUTTONS] = { 'o', 'y', 'n', 'c', 'a' };
@@ -269,6 +270,7 @@ int UIStringBox :: poll(int dummy)
         }
         break;
     case KEY_HOME: // home
+    case KEY_UP: // up = home
         cur = 0;
         if (edit_offs) { // scroll to the  beginning?
             edit_offs = 0;
