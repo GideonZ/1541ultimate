@@ -4,9 +4,11 @@ use ieee.numeric_std.all;
 
 library work;
 use work.slot_bus_pkg.all;
+use work.io_bus_pkg.all;
 
 entity all_carts_v5 is
 generic (
+    g_eeprom        : boolean := true;
     g_kernal_base   : std_logic_vector(27 downto 0) := X"0EC8000"; -- multiple of 32K
     g_rom_base      : std_logic_vector(27 downto 0) := X"0F00000"; -- multiple of 1M
     g_georam_base   : std_logic_vector(27 downto 0) := X"1000000"; -- Shared with reu
@@ -15,6 +17,9 @@ generic (
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
+
+    io_req_eeprom   : in  t_io_req;
+    io_resp_eeprom  : out t_io_resp := c_io_resp_init;
     
     RST_in          : in  std_logic;
     c64_reset       : in  std_logic;
@@ -77,6 +82,9 @@ architecture gideon of all_carts_v5 is
     signal cart_logic_d : std_logic_vector(cart_logic'range) := (others => '0');
     signal variant      : std_logic_vector(cart_variant'range) := (others => '0');
             
+    signal ee_clk, ee_sel       : std_logic;
+    signal ee_rdata, ee_wdata   : std_logic;
+
     -- Ultra Simple
     constant c_none         : std_logic_vector(4 downto 0) := "00000";
     constant c_normal       : std_logic_vector(4 downto 0) := "00001";
@@ -188,6 +196,9 @@ begin
             game_n    <= '1';
             exrom_n   <= '1';
             rom_mode  <= "01"; -- No banking, All within 16K
+            ee_clk    <= '0';
+            ee_sel    <= '0';
+            ee_wdata  <= '0';
                     
             case cart_logic_d is
             -- ULTRA SIMPLE CARTS, NO BANKING, NO RAM
@@ -291,6 +302,9 @@ begin
                     when "010"|"110" =>
                         mode_bits(1) <= io_wdata(7); -- gmod2 EEPROM write enable
                         mode_bits(0) <= io_wdata(6); -- gmod2 ROM disable
+                        ee_sel       <= io_wdata(6);
+                        ee_clk       <= io_wdata(5);
+                        ee_wdata     <= io_wdata(4);
                     when others =>
                         null;
                     end case;
@@ -300,6 +314,7 @@ begin
                 serve_rom <= '1';
                 cart_en   <= not mode_bits(0);
                 rom_mode  <= "00"; -- 8K banks
+                
             
             when c_ocean_16K =>
                 if io_write='1' and io_addr(8)='0' then -- DE00 range
@@ -685,15 +700,67 @@ begin
 
     mem_addr <= unsigned(mem_addr_i(mem_addr'range));
 
-    slot_resp.data(7) <= bank_bits(16);
-    slot_resp.data(6) <= '1';
-    slot_resp.data(5) <= '0';
-    slot_resp.data(4) <= bank_bits(15);
-    slot_resp.data(3) <= bank_bits(14);
-    slot_resp.data(2) <= '0'; -- freeze button pressed
-    slot_resp.data(1) <= allow_bank; -- '1'; -- allow bank bit stuck at '1' for 1541U
-    slot_resp.data(0) <= '0';
-    
-    slot_resp.reg_output <= '1' when (slot_addr(8 downto 1)="00000000") and (cart_logic_d = c_action) and (variant(0)='1') else '0';
+--    slot_resp.data(7) <= bank_bits(16);
+--    slot_resp.data(6) <= '1';
+--    slot_resp.data(5) <= '0';
+--    slot_resp.data(4) <= bank_bits(15);
+--    slot_resp.data(3) <= bank_bits(14);
+--    slot_resp.data(2) <= '0'; -- freeze button pressed
+--    slot_resp.data(1) <= allow_bank;
+--    slot_resp.data(0) <= '0';
+--    
+--    slot_resp.reg_output <= '1' when (slot_addr(8 downto 1)="00000000") and (cart_logic_d = c_action) and (variant(0)='1') else '0';
 
-end gideon;
+    process(bank_bits, mode_bits, allow_bank, cart_logic_d, variant, slot_addr, ee_rdata)
+    begin
+        slot_resp <= c_slot_resp_init;
+        
+        case cart_logic_d is
+        when c_action =>
+            slot_resp.data(7) <= bank_bits(16);
+            slot_resp.data(6) <= '1';
+            slot_resp.data(5) <= '0';
+            slot_resp.data(4) <= bank_bits(15);
+            slot_resp.data(3) <= bank_bits(14);
+            slot_resp.data(2) <= '0'; -- freeze button pressed
+            slot_resp.data(1) <= allow_bank;
+            slot_resp.data(0) <= '0';
+            if slot_addr(8 downto 1) = X"00" and variant(1)='1' then
+                slot_resp.reg_output <= '1';
+            end if;
+    
+        when c_ocean_8K =>
+            slot_resp.data(7) <= ee_rdata;
+            if slot_addr(8) = '0' and variant(1 downto 0) = "10" then -- gmod2 variant, reading from DExx
+                slot_resp.reg_output <= '1';
+            end if;
+            
+        when others =>
+            null;        
+        end case;
+    end process;
+
+    r_ee: if g_eeprom generate
+        i_ee: entity work.microwire_eeprom
+        port map(
+            clock    => clock,
+            reset    => reset,
+            io_req   => io_req_eeprom,
+            io_resp  => io_resp_eeprom,
+            sel_in   => ee_sel,
+            clk_in   => ee_clk,
+            data_in  => ee_wdata,
+            data_out => ee_rdata
+        );
+    end generate;
+
+    r_no_ee: if not g_eeprom generate
+        i_ee_dummy: entity work.io_dummy
+        port map(
+            clock   => clock,
+            io_req  => io_req_eeprom,
+            io_resp => io_resp_eeprom
+        );
+    end generate;
+
+end architecture;

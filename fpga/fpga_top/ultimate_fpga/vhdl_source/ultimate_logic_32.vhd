@@ -36,6 +36,7 @@ generic (
     g_mm_drive      : boolean := true;
     g_hardware_gcr  : boolean := true;
     g_cartridge     : boolean := true;
+    g_eeprom        : boolean := true;
     g_command_intf  : boolean := true;
     g_acia          : boolean := false;
     g_stereo_sid    : boolean := true;
@@ -297,7 +298,7 @@ architecture logic of ultimate_logic_32 is
         cap(19) := to_std(g_vic_copper);
         cap(20) := to_std(g_video_overlay);
         cap(21) := to_std(g_sampler);
-        cap(22) := '0'; 
+        cap(22) := to_std(g_eeprom); 
         cap(23) := to_std(g_usb_host2);
         cap(24) := to_std(g_rmii);
         cap(25) := to_std(g_ultimate2plus);
@@ -878,6 +879,7 @@ begin
             g_extended_reu  => g_extended_reu,
             g_command_intf  => g_command_intf,
             g_acia          => g_acia,
+            g_eeprom        => g_eeprom,
             g_sampler       => g_sampler,
             g_implement_sid => g_stereo_sid,
             g_sid_voices    => 16,
