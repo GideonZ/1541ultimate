@@ -65,7 +65,8 @@ class BrowsableConfigItem: public Browsable
         strncpy(buffer, item->getString(), 32);
         buffer[32] = 0;
         if (cmd->user_interface) {
-            if (cmd->user_interface->string_box(cmd->actionName.c_str(), buffer, 32)) {
+            int ret = cmd->user_interface->string_box(item->definition->item_text, buffer, 32);
+            if (ret > 0) {
                 item->setString(buffer);
             }
         }

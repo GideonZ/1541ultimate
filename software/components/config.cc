@@ -658,7 +658,10 @@ void ConfigItem :: setString(const char *s)
 {
     if(this->string) {
         strncpy(this->string, s, this->definition->max);
-        this->string[this->definition->max - 1] = 0;
+        if (s[definition->max - 1]) { // has to be terminated
+            string[this->definition->max - 1] = 0;
+            string[this->definition->max - 2] = '*';
+        }
         if ((definition->type == CFG_TYPE_STRING) || (definition->type == CFG_TYPE_STRFUNC)) {
             setChanged();
         }
