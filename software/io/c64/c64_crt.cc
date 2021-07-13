@@ -395,8 +395,12 @@ void C64_CRT::configure_cart(cart_def *def)
             break;
         case CART_EASYFLASH:
             cart_type = CART_TYPE_EASY_FLASH; // EasyFlash
-            prohibit = CART_PROHIBIT_ALL_BUT_REU;
-            require = CART_UCI_DE1C;
+            if (crt_header[CRTHDR_SUBTYPE] == 1) {
+                prohibit = CART_PROHIBIT_ALL_BUT_REU;
+                require = CART_UCI_DE1C;
+            } else {
+                prohibit = CART_PROHIBIT_IO;
+            }
             break;
         case CART_SUPERSNAP:
             cart_type = CART_TYPE_SS5; // Snappy
