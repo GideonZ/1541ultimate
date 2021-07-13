@@ -387,6 +387,10 @@ public:
         return __cart_ram_start;
     }
 
+    static void get_eeprom_data(uint8_t *buffer);
+    static void set_eeprom_data(uint8_t *buffer);
+    static bool get_eeprom_dirty(void);
+
     static bool c64_get_nmi_state(void) {
         return (C64_CLOCK_DETECT & C64_CD_NMI_SENSE) == C64_CD_NMI_SENSE;
     }
