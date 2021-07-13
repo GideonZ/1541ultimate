@@ -72,7 +72,7 @@ static const uint8_t bus_mode_values[] = { 0x00, 0x01, 0x02, 0x03, 0x04 };
 static const char *bus_sharing[] = { "Internal", "External", "Both" };
 
 struct t_cfg_definition c64_config[] = {
-    { CFG_C64_CART_CRT,    CFG_TYPE_STRFUNC,"Cartridge",                  "%s", (const char **)C64 :: list_crts,  0, 32, (int)"" },
+    { CFG_C64_CART_CRT,    CFG_TYPE_STRFUNC,"Cartridge",                  "%s", (const char **)C64 :: list_crts,  0, 30, (int)"" },
 #if U64
     { CFG_C64_CART_PREF,   CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,  0,  3, 0 },
     { CFG_BUS_MODE,        CFG_TYPE_ENUM, "Bus Operation Mode",           "%s", bus_modes,    0,  3, 0 },
@@ -83,11 +83,11 @@ struct t_cfg_definition c64_config[] = {
 #endif
     { CFG_C64_FASTRESET, CFG_TYPE_ENUM,   "Fast Reset",                   "%s", en_dis,     0,  1, 0 },
 #if U64
-    { CFG_C64_ALT_KERN, CFG_TYPE_STRFUNC, "Kernal ROM",                   "%s", (const char **)C64 :: list_kernals, 0, 32, (int)"kernal.bin" },
-    { CFG_C64_ALT_BASI, CFG_TYPE_STRFUNC, "Basic ROM",                    "%s", (const char **)C64 :: list_basics, 0, 32, (int)"basic.bin" },
-    { CFG_C64_ALT_CHAR, CFG_TYPE_STRFUNC, "Char ROM",                     "%s", (const char **)C64 :: list_chars, 0, 32, (int)"chars.bin" },
+    { CFG_C64_ALT_KERN, CFG_TYPE_STRFUNC, "Kernal ROM",                   "%s", (const char **)C64 :: list_kernals, 0, 30, (int)"kernal.bin" },
+    { CFG_C64_ALT_BASI, CFG_TYPE_STRFUNC, "Basic ROM",                    "%s", (const char **)C64 :: list_basics, 0, 30, (int)"basic.bin" },
+    { CFG_C64_ALT_CHAR, CFG_TYPE_STRFUNC, "Char ROM",                     "%s", (const char **)C64 :: list_chars, 0, 30, (int)"chars.bin" },
 #else
-    { CFG_C64_ALT_KERN, CFG_TYPE_STRFUNC, "Alternate Kernal",             "%s", (const char **)C64 :: list_kernals, 0, 32, (int)"" },
+    { CFG_C64_ALT_KERN, CFG_TYPE_STRFUNC, "Alternate Kernal",             "%s", (const char **)C64 :: list_kernals, 0, 30, (int)"" },
 #endif
     { CFG_C64_REU_EN,   CFG_TYPE_ENUM,   "RAM Expansion Unit",           "%s", en_dis,     0,  1, 0 },
     { CFG_C64_REU_SIZE, CFG_TYPE_ENUM,   "REU Size",                     "%s", reu_size,   0,  7, 4 },
@@ -1301,6 +1301,13 @@ void C64 :: list_crts(ConfigItem *it, IndexedList<char *>& strings)
 
 void C64 :: list_kernals(ConfigItem *it, IndexedList<char *>& strings)
 {
+#if !U64
+    // Always return at least the empty string
+    char *empty = new char[12];
+    strcpy(empty, "\er- None -");
+    strings.append(empty);
+#endif
+
     Path p;
     p.cd(ROMS_DIRECTORY);
     IndexedList<FileInfo *>infos(16, NULL);
