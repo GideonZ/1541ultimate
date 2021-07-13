@@ -220,6 +220,7 @@ begin
         g_vic_copper    => false,
         g_video_overlay => false,
         g_sdcard        => true,
+        g_eeprom        => false,
         g_sampler       => not g_dual_drive,
         g_acia          => g_dual_drive )
     port map (

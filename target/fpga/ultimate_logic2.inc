@@ -67,7 +67,7 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/io/rmii/vhdl_source/eth_transmit.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/rmii/vhdl_source/packet_generator.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/rmii/vhdl_source/ethernet_interface.vhd \
-                vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/usb_debug.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/usb_debug.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/data_crc.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/timer.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/host_sequencer.vhd \
@@ -161,12 +161,6 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/1541/vhdl_source/gcr2bin.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/1541/vhdl_source/bin2gcr.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/1541/vhdl_source/gcr_codec.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/zpu/vhdl_source/zpupkg.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/zpu/vhdl_source/zpu_compare.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/zpu/vhdl_source/zpu_8bit_loadb.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/zpu/vhdl_source/zpu.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/zpu/vhdl_source/zpu_profiler.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/cpu_unit/vhdl_source/cpu_wrapper_zpu.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cpu_unit/vhdl_source/mblite_wrapper.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cpu_unit/vhdl_source/mem32k.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cpu_unit/vhdl_source/mem16k.vhd \
@@ -202,6 +196,7 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/all_carts_v5.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/reu_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/reu.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/devices/vhdl_source/microwire_eeprom.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/fpga_top/ultimate_fpga/vhdl_source/s3e_clockgen.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/fpga_top/ultimate_fpga/vhdl_source/s3a_clockgen.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/fpga_top/ultimate_fpga/vhdl_source/ultimate_logic_32.vhd \

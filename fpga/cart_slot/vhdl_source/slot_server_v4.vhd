@@ -30,6 +30,7 @@ generic (
     g_extended_reu  : boolean := false;
     g_sampler       : boolean := false;
     g_acia          : boolean := false;
+    g_eeprom        : boolean := true;
     g_implement_sid : boolean := true;
     g_sid_voices    : natural := 3;
     g_8voices       : boolean := false;
@@ -203,6 +204,8 @@ architecture structural of slot_server_v4 is
     signal io_resp_samp_cpu : t_io_resp := c_io_resp_init;
     signal io_req_acia      : t_io_req;
     signal io_resp_acia     : t_io_resp := c_io_resp_init;
+    signal io_req_eeprom    : t_io_req;
+    signal io_resp_eeprom   : t_io_resp := c_io_resp_init;
     
     signal dma_req_io       : t_dma_req;
     signal dma_resp_io      : t_dma_resp := c_dma_resp_init;
@@ -282,7 +285,7 @@ begin
     generic map (
         g_range_lo  => 13,
         g_range_hi  => 15,
-        g_ports     => 6 )
+        g_ports     => 7 )
     port map (
         clock    => clock,
         
@@ -295,14 +298,16 @@ begin
         reqs(3)  => io_req_copper,   -- 4046000
         reqs(4)  => io_req_samp_cpu, -- 4048000
         reqs(5)  => io_req_acia,     -- 404A000
+        reqs(6)  => io_req_eeprom,   -- 404C000
         
         resps(0) => io_resp_regs,
         resps(1) => io_resp_sid,
         resps(2) => io_resp_cmd,
         resps(3) => io_resp_copper,
         resps(4) => io_resp_samp_cpu,
-        resps(5) => io_resp_acia );
-        
+        resps(5) => io_resp_acia,
+        resps(6) => io_resp_eeprom );
+
 
     i_registers: entity work.cart_slot_registers
     generic map (
@@ -509,6 +514,7 @@ begin
 
     i_cart_logic: entity work.all_carts_v5
     generic map (
+        g_eeprom        => g_eeprom,
         g_kernal_base   => g_kernal_base,
         g_georam_base   => g_ram_base_reu,
         g_rom_base      => g_rom_base_cart,
@@ -532,6 +538,9 @@ begin
 
         slot_req        => slot_req,
         slot_resp       => slot_resp_cart,
+
+        io_req_eeprom   => io_req_eeprom,
+        io_resp_eeprom  => io_resp_eeprom,
 
         mem_addr        => mem_req_32_slot.address, 
         serve_enable    => serve_enable,
