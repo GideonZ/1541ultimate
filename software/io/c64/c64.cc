@@ -1271,6 +1271,27 @@ int C64 :: getSizeOfMP3NativeRamdrive(int devNo)
     return ((uint32_t) noTracks) << 16;
 }
 
+void C64 :: get_eeprom_data(uint8_t *buffer)
+{
+    volatile uint8_t *eeprom = (volatile uint8_t *)(EEPROM_BASE);
+    *eeprom = 1; // clear dirty flag
+    memcpy(buffer, (void *)(eeprom + 2048), 2048);
+}
+
+void C64 :: set_eeprom_data(uint8_t *buffer)
+{
+    volatile uint8_t *eeprom = (volatile uint8_t *)(EEPROM_BASE);
+    memcpy((void *)(eeprom + 2048), buffer, 2048);
+    *eeprom = 1; // clear dirty flag
+}
+
+bool C64 :: get_eeprom_dirty(void)
+{
+    volatile uint8_t *eeprom = (volatile uint8_t *)(EEPROM_BASE);
+    bool dirty = (*eeprom != 0) ? true : false;
+    *eeprom = 1; // clear dirty flag
+    return dirty;
+}
 
 void C64 :: list_crts(ConfigItem *it, IndexedList<char *>& strings)
 {

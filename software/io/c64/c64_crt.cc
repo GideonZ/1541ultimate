@@ -230,6 +230,11 @@ int C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
 
         chunk->ram_location = eeprom_buffer;
         res = f->read(eeprom_buffer, size, &bytes_read);
+
+        if (getFpgaCapabilities() & CAPAB_EEPROM) {
+            C64 :: set_eeprom_data(eeprom_buffer);
+        }
+
         if (res != FR_OK) {
             return -5;
         } else {
@@ -562,10 +567,22 @@ int C64_CRT::save_crt(File *fo)
     for (int i=0; i<crt->chip_chunks.get_elements(); i++) {
         t_crt_chip_chunk *cc = crt->chip_chunks[i];
         uint16_t size = get_word(cc->header + CRTCHP_SIZE);
+        uint16_t load = get_word(cc->header + CRTCHP_LOAD);
         res = fo->write(cc->header, 0x10, &written);
         if (res != FR_OK) {
             break;
         }
+
+        // Get EEPROM state from Hardware
+        if ((load == 0xDE00) && (size == 0x800)) {
+            if (getFpgaCapabilities() & CAPAB_EEPROM) {
+                if (C64 :: get_eeprom_dirty()) {
+                    // if not dirty, there is no need to update buffer
+                    C64 :: get_eeprom_data(cc->ram_location);
+                }
+            }
+        }
+
         res = fo->write(cc->ram_location, size, &written);
         if (res != FR_OK) {
             break;
