@@ -98,7 +98,7 @@ void FileTypeTap :: readIndexFile(void)
     }
 }
 
-static uint32_t readLine(const char *buffer, uint32_t index, char *out, int outlen)
+uint32_t readLine(const char *buffer, uint32_t index, char *out, int outlen)
 {
     int i = 0;
     // trim leading spaces and tabs
@@ -160,12 +160,13 @@ void FileTypeTap :: parseIndexFile(File *f)
     if ((size > 8192) || (size < 8)) { // max 8K index file
         return;
     }
-    char *buffer = new char[size];
+    char *buffer = new char[size+1];
     char *linebuf = new char[80];
     char *name;
 
     uint32_t transferred;
     f->read(buffer, size, &transferred);
+    buffer[size] = 0;
 
     uint32_t offset;
 

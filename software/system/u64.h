@@ -17,10 +17,12 @@
 #define U64_RESAMPLER   0xA0000700
 
 #define VID_IO_BASE  0xA0040000
+
 #define C64_IO_BASE  0xA0080000
+#define C64_PALETTE  0xA0080800
 #define C64_IO_LED   0xA0081000
+#define C64_PLD_ACC  0xA0081800
 #define C64_IO_DEBUG 0xA0082000
-#define C64_PLD_ACC  0xA0083000
 
 #define LEDSTRIP_DATA ( (volatile uint8_t *)(C64_IO_LED))
 #define LEDSTRIP_FROM (*(volatile uint8_t *)(C64_IO_LED + 0x1FE))

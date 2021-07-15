@@ -16,6 +16,8 @@
 #include "sid_device.h"
 #include "u64.h"
 
+#define USER_DIRECTORY "/flash/user"
+
 class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
 {
     struct {
@@ -110,6 +112,8 @@ public:
     static void auto_mirror(uint8_t *base, uint8_t *mask, uint8_t *split, int count);
     static void get_sid_addresses(ConfigStore *cfg, uint8_t *base, uint8_t *mask, uint8_t *split);
     static void fix_splits(uint8_t *base, uint8_t *mask, uint8_t *split);
+    static void list_palettes(ConfigItem *it, IndexedList<char *>& strings);
+    static void set_palette_rgb(uint8_t rgb[16][3]);
 
     bool SidAutoConfig(int count, t_sid_definition *requested);
     static void show_sid_addr(UserInterface *intf, ConfigItem *it);

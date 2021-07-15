@@ -80,14 +80,14 @@ SRCS_CC	 =  u2p_init.cc \
 			directory.cc \
 			file.cc \
 			filesystem_iso9660.cc \
-            filesystem_root.cc \
+			filesystem_root.cc \
 			filesystem_d64.cc \
 			filesystem_t64.cc \
 			filesystem_fat.cc \
 			size_str.cc \
 			userinterface.cc \
 			ui_elements.cc \
-            user_file_interaction.cc \
+			user_file_interaction.cc \
 			editor.cc \
 			tree_browser.cc \
 			tree_browser_state.cc \
@@ -104,9 +104,10 @@ SRCS_CC	 =  u2p_init.cc \
 			filetype_sid.cc \
 			filetype_bin.cc \
 			filetype_cfg.cc \
-            host_stream.cc \
-            keyboard_vt100.cc \
-            screen_vt100.cc \
+			filetype_vpl.cc \
+			host_stream.cc \
+			keyboard_vt100.cc \
+			screen_vt100.cc \
 			usb_base.cc \
 			usb_device.cc \
 			usb_scsi.cc \
