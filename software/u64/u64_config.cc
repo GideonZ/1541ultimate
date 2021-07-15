@@ -102,6 +102,7 @@ static SemaphoreHandle_t resetSemaphore;
 // #define CFG_CART_PREFERENCE   0x4B // moved to C64 for user experience consistency
 #define CFG_SPEED_REGS        0x4C
 #define CFG_IEC_BURST_EN      0x4D
+#define CFG_PALETTE           0x4E
 
 #define CFG_SPEED_PREF        0x52
 #define CFG_BADLINES_EN       0x53
@@ -244,6 +245,7 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  5, 0 },
     { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  1, 0 },
 //    { CFG_CART_PREFERENCE,      CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,    0,  2, 0 }, // moved to C64 for user consistency
+    { CFG_PALETTE,              CFG_TYPE_STRFUNC, "Palette Definition",        "%s", (const char **)U64Config :: list_palettes, 0, 30, (int)"" },
     { CFG_COLOR_CLOCK_ADJ,      CFG_TYPE_VALUE, "Adjust Color Clock",      "%d ppm", NULL,      -100,100, 0 },
     { CFG_ANALOG_OUT_SELECT,    CFG_TYPE_ENUM, "Analog Video Mode",            "%s", video_sel,    0,  1, 0 },
     { CFG_CHROMA_DELAY,         CFG_TYPE_VALUE, "Chroma Delay",                "%d", NULL,        -3,  3, 0 },
@@ -1986,4 +1988,42 @@ bool U64Config :: IsMonitorHDMI()
     }
     printf("EDID: Monitor is HDMI!\n");
     return true;
+}
+
+void U64Config :: list_palettes(ConfigItem *it, IndexedList<char *>& strings)
+{
+    // Always return at least the empty string
+    char *empty = new char[16];
+    strcpy(empty, "\er- Default -");
+    strings.append(empty);
+
+    Path p;
+    p.cd(USER_DIRECTORY);
+    IndexedList<FileInfo *>infos(16, NULL);
+    FileManager *fm = FileManager :: getFileManager();
+    FRESULT fres = fm->get_directory(&p, infos, NULL);
+    if (fres != FR_OK) {
+        return;
+    }
+
+    for(int i=0;i<infos.get_elements();i++) {
+        FileInfo *inf = infos[i];
+        if (strcmp(inf->extension, "VPL") == 0) {
+            char *s = new char[1+strlen(inf->lfname)];
+            strcpy(s, inf->lfname);
+            strings.append(s);
+        }
+        delete inf;
+    }
+}
+
+void U64Config :: set_palette_rgb(uint8_t rgb[16][3])
+{
+    volatile uint8_t *rgb_registers = (volatile uint8_t *)C64_PALETTE;
+    for(int i=0; i<16; i++) {
+        *(rgb_registers++) = rgb[i][0];
+        *(rgb_registers++) = rgb[i][1];
+        *(rgb_registers++) = rgb[i][2];
+        rgb_registers++;
+    }
 }
