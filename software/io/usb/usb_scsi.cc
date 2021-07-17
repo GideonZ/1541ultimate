@@ -268,38 +268,19 @@ void UsbScsi :: reset(void)
 //	printf("Reset Done..\n");
 }
 
-int UsbScsiDriver :: status_transport(void)
+int UsbScsiDriver :: status_transport(int timeout, int retries)
 {
 	uint32_t *signature = (uint32_t *)stat_resp;
 	*signature = 0;
 	int len = 0;
 
-	len = host->bulk_in(&bulk_in, stat_resp, 13);
-
-/*
-	if (len == -4) { // Pipe stalled
-		printf("Stall detected on status read. Clearing stall condition.\n");
-		len = device->unstall_pipe((uint8_t)(bulk_in.DevEP & 0xFF));
-	    bulk_in.Command = 0; // reset toggle
-		if (len < 0) {
-			printf("Clear stall condition failed. %d\n", len);
-			return len;
-		}
-		len = host->bulk_in(&bulk_in, stat_resp, 13);
-		printf("Retry: %d\n", len);
- 	}
-*/
+	len = host->bulk_in(&bulk_in, stat_resp, 13, timeout, retries);
 
 	if((len != 13)||(stat_resp[0] != 0x55)||(stat_resp[1] != 0x53)||(stat_resp[2] != 0x42)||(stat_resp[3] != 0x53)) {
 		printf("Invalid status (len = %d, signature = %8x)..\n", len, *signature);
 		return -1;
 	}
-/*
-	else if(stat_resp[12] == 2) {
-		printf("Phase error.. performing reset.\n");
-		do_reset = true;
-	}
-*/
+
 	return (int)stat_resp[12]; // OK, or other error
 }
 
@@ -357,7 +338,7 @@ int UsbScsiDriver :: request_sense(int lun, bool debug, bool handle)
 	if(debug)
 		print_sense_error(sense_data);
 
-	int retval = status_transport();
+	int retval = status_transport(160, 1); // 20 ms, 1 retry
 
 	if (len == 18) {
         scsi_blk_dev[lun]->handle_sense_error(sense_data);
@@ -426,23 +407,28 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
     	return retval;
     }
 
+    // Check if the command is INQUIRY
+    int timeout = 24000; // 3 seconds
+    int retries = 5;
     if(cmd[0] == 0x12) {
-        vTaskDelay(100);
+        vTaskDelay(100); // wait 0.5 seconds? Why?
+        timeout = 800; // 100 ms
+        retries = 1;
     }
 
     /* DATA PHASE */
     if((data)&&(datalen)) {
     	if(out) {
-			len = host->bulk_out(&bulk_out, data, datalen, 24000); // 3 seconds
+			len = host->bulk_out(&bulk_out, data, datalen, timeout);
     	} else { // in
-			len = host->bulk_in(&bulk_in, data, datalen, 24000); // 3 seconds
+			len = host->bulk_in(&bulk_in, data, datalen, timeout, retries);
 		}
 	}
 
     retval = len;
 
     /* STATUS PHASE */
-    st = status_transport();
+    st = status_transport(timeout, retries);
 
     if (st == -4) {
     	printf("Stalled. Unstalling Endpoint\n");
@@ -475,8 +461,6 @@ void UsbScsi :: inquiry(void)
     }
 
     uint8_t inquiry_command[6] = { 0x12, 0, 0, 0, 36, 0 };
-    //inquiry_command[1] = BYTE(lun << 5);
-
 
     if((len = driver->exec_command(lun, 6, false, inquiry_command, 36, response, false)) < 0) {
     	printf("Inquiry failed. %d\n", len);
