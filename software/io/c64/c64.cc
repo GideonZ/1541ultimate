@@ -921,7 +921,9 @@ void C64::set_cartridge(cart_def *cart)
 #endif
     } else {
 #ifndef RECOVERYAPP
-        C64_CRT :: clear_crt(); // make sure nothing is there to save
+        if (cart->custom_addr) {
+            C64_CRT :: clear_crt(); // make sure nothing is there to save
+        }
 #endif
         // copy external definition
         current_cart_def = *cart;
