@@ -36,6 +36,7 @@ public:
     const char *getLastElement();
 
     bool match(Path *search);
+    bool equals(Path *other);
 };
 
 class SubPath

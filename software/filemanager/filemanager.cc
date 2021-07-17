@@ -667,6 +667,11 @@ FRESULT FileManager::fcopy(const char *path, const char *filename, const char *d
 
     FRESULT ret = FR_OK;
     if ((ret = fstat(sp, filename, *info)) == FR_OK) {
+        // In the special case that one tries to copy a file (or dir) onto itself, we just report
+        // that we're done.
+        if ( sp->equals(dp) && (strcasecmp(info->lfname, dest_filename) == 0)) {
+            return FR_OK;
+        }
         if (info->attrib & AM_DIR) {
             // create a new directory in our destination path
             FRESULT dir_create_result = create_dir(dp, dest_filename);
