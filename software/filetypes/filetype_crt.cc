@@ -62,17 +62,6 @@ FileType *FileTypeCRT::test_type(BrowsableDirEntry *obj)
 // static member
 int FileTypeCRT::execute_st(SubsysCommand *cmd)
 {
-    return ((FileTypeCRT *) cmd->mode)->execute(cmd);
-}
-
-int FileTypeCRT::executeFlash_st(SubsysCommand *cmd)
-{
-    return ((FileTypeCRT *) cmd->mode)->executeFlash(cmd);
-}
-
-// non-static member
-int FileTypeCRT::execute(SubsysCommand *cmd)
-{
     printf("Cartridge Load.. %s\n", cmd->filename.c_str());
 
     cart_def def;
@@ -81,13 +70,14 @@ int FileTypeCRT::execute(SubsysCommand *cmd)
     if (retval == 0) {
         SubsysCommand *c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_START_CART, (int)&def, "", "");
         c64_command->execute();
-    } else {
+    } else if (cmd->user_interface) {
         cmd->user_interface->popup(C64_CRT :: get_error_string(retval), BUTTON_OK);
     }
     return 0;
 }
 
-int FileTypeCRT::executeFlash(SubsysCommand *cmd)
+// static member
+int FileTypeCRT::executeFlash_st(SubsysCommand *cmd)
 {
     FileManager *fm = FileManager::getFileManager();
 

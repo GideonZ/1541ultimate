@@ -17,6 +17,7 @@
 #include "u64.h"
 #include "c1541.h"
 #include "data_streamer.h"
+#include "filetype_crt.h"
 
 // "Ok ok, use them then..."
 #define SOCKET_CMD_DMA         0xFF01
@@ -31,6 +32,7 @@
 #define SOCKET_CMD_MOUNT_IMG   0xFF0A
 #define SOCKET_CMD_RUN_IMG     0xFF0B
 #define SOCKET_CMD_POWEROFF    0xFF0C
+#define SOCKET_CMD_RUN_CRT     0xFF0D
 
 // Only available on U64
 #define SOCKET_CMD_VICSTREAM_ON    0xFF20
@@ -150,7 +152,17 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         }
     }
     break;
-
+    case SOCKET_CMD_RUN_CRT:
+    {
+        FileManager *fm = FileManager :: getFileManager();
+        FRESULT fres = fm->save_file(true, "/temp", "tcpimage.crt", buf, len, NULL);
+        if (fres == FR_OK) {
+            sys_command = new SubsysCommand(NULL, SUBSYSID_C64, 0, 0, "/temp", "tcpimage.crt");
+            FileTypeCRT::execute_st(sys_command);
+            delete sys_command;
+        }
+    }
+    break;
 
 #ifdef U64
     case SOCKET_CMD_VICSTREAM_ON:
@@ -397,7 +409,7 @@ void SocketDMA::dmaThread(void *load_buffer)
 	        uint16_t len = (uint16_t)buf[0] | (((uint16_t)buf[1]) << 8);
 	        uint32_t len32 = len;
 
-	        if ((cmd == SOCKET_CMD_MOUNT_IMG) || (cmd == SOCKET_CMD_RUN_IMG)) {
+	        if ((cmd == SOCKET_CMD_MOUNT_IMG) || (cmd == SOCKET_CMD_RUN_IMG) || (cmd == SOCKET_CMD_RUN_CRT)) {
 	            n = recv(newsockfd, buf+2, 1, 0);
                 len32 |= (((uint32_t)buf[2]) << 16);
 	        }
