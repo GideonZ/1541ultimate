@@ -354,7 +354,7 @@ void UIStatusBox :: init(Screen *screen)
     window->clear();
     window->draw_border();
     window->move_cursor(x_m, 0);
-    window->output_line(message.c_str());
+    window->output(message.c_str());
     window->move_cursor(0, 2);
     screen->sync();
 }
@@ -372,8 +372,11 @@ void UIStatusBox :: update(const char *msg, int steps)
 
     if(msg) {
         message = msg;
+        int message_width = message.length();
+        int x_m = (window->get_size_x() - message_width) / 2;
         window->clear();
-        window->output_line(message.c_str());
+        window->move_cursor(x_m, 0);
+        window->output(message.c_str());
     }
 
     memset(bar, 32, 36);

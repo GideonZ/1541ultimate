@@ -372,10 +372,6 @@ void Window :: output_line(const char *string)
 void Window :: output_length(const char *string, int len)
 {
 	parent->output_fixed_length(string, offset_x, len);
-/*
-	if ((window_x - len) > 0)
-		parent->repeat(' ', window_x - len);
-*/
 }
 
 void Window :: draw_border(void)
