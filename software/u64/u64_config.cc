@@ -28,8 +28,27 @@ extern "C" {
 #include "sid_device_swinsid.h"
 #include "sid_device_armsid.h"
 
+const uint8_t default_colors[16][3] = {
+    { 0x00, 0x00, 0x00 },
+    { 0xEF, 0xEF, 0xEF },
+    { 0x8D, 0x2F, 0x34 },
+    { 0x6A, 0xD4, 0xCD },
+    { 0x98, 0x35, 0xA4 },
+    { 0x4C, 0xB4, 0x42 },
+    { 0x2C, 0x29, 0xB1 },
+    { 0xEF, 0xEF, 0x5D },
+    { 0x98, 0x4E, 0x20 },
+    { 0x5B, 0x38, 0x00 },
+    { 0xD1, 0x67, 0x6D },
+    { 0x4A, 0x4A, 0x4A },
+    { 0x7B, 0x7B, 0x7B },
+    { 0x9F, 0xEF, 0x93 },
+    { 0x6D, 0x6A, 0xEF },
+    { 0xB2, 0xB2, 0xB2 } };
+
 // static pointer
 U64Config u64_configurator;
+
 // Semaphore set by interrupt
 static SemaphoreHandle_t resetSemaphore;
 
@@ -248,7 +267,7 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_PALETTE,              CFG_TYPE_STRFUNC, "Palette Definition",        "%s", (const char **)U64Config :: list_palettes, 0, 30, (int)"" },
     { CFG_COLOR_CLOCK_ADJ,      CFG_TYPE_VALUE, "Adjust Color Clock",      "%d ppm", NULL,      -100,100, 0 },
     { CFG_ANALOG_OUT_SELECT,    CFG_TYPE_ENUM, "Analog Video Mode",            "%s", video_sel,    0,  1, 0 },
-    { CFG_CHROMA_DELAY,         CFG_TYPE_VALUE, "Chroma Delay",                "%d", NULL,        -3,  3, 0 },
+//    { CFG_CHROMA_DELAY,         CFG_TYPE_VALUE, "Chroma Delay",                "%d", NULL,        -3,  3, 0 },
     { CFG_HDMI_ENABLE,          CFG_TYPE_ENUM, "Digital Video Mode",           "%s", dvi_hdmi,     0,  2, 0 },
     { CFG_SCANLINES,            CFG_TYPE_ENUM, "HDMI Scan lines",              "%s", en_dis,       0,  1, 0 },
     { CFG_PARCABLE_ENABLE,      CFG_TYPE_ENUM, "SpeedDOS Parallel Cable",      "%s", en_dis,       0,  1, 0 },
@@ -802,17 +821,8 @@ void U64Config :: effectuate_settings()
     }
 
     U64_INT_CONNECTORS = cfg->get_value(CFG_PARCABLE_ENABLE) | (cfg->get_value(CFG_IEC_BURST_EN) << 1);
-    int chromaDelay  =  cfg->get_value(CFG_CHROMA_DELAY);
-    if (chromaDelay < 0) {
-        uint8_t luma = (uint8_t)(-chromaDelay);
-        C64_COLOR_DELAY  = luma;
-    } else {
-        uint8_t chroma = (uint8_t)(chromaDelay);
-        C64_COLOR_DELAY  = (chroma << 2);
-    }
 
     uint8_t format = 0;
-
     if (cfg->get_value(CFG_ANALOG_OUT_SELECT)) {
         format |= VIDEO_FMT_RGB_OUTPUT;
     }
@@ -824,9 +834,14 @@ void U64Config :: effectuate_settings()
     }
 
     const t_video_color_timing *ct = color_timings[(int)systemMode];
-    C64_BURST_PHASE = ct->burst_phase;
     C64_PHASE_INCR  = ct->phase_inc;
     C64_VIDEOFORMAT = ct->mode_bits | format;
+    const char *palette = cfg->get_string(CFG_PALETTE);
+    if (strlen(palette)) {
+        load_palette_vpl(DATA_DIRECTORY, palette);
+    } else {
+        set_palette_rgb(default_colors);
+    }
 
     if (doPll) {
         SetVideoPll(systemMode);
@@ -1998,7 +2013,7 @@ void U64Config :: list_palettes(ConfigItem *it, IndexedList<char *>& strings)
     strings.append(empty);
 
     Path p;
-    p.cd(USER_DIRECTORY);
+    p.cd(DATA_DIRECTORY);
     IndexedList<FileInfo *>infos(16, NULL);
     FileManager *fm = FileManager :: getFileManager();
     FRESULT fres = fm->get_directory(&p, infos, NULL);
@@ -2017,13 +2032,96 @@ void U64Config :: list_palettes(ConfigItem *it, IndexedList<char *>& strings)
     }
 }
 
-void U64Config :: set_palette_rgb(uint8_t rgb[16][3])
+void U64Config :: set_palette_rgb(const uint8_t rgb[16][3])
 {
     volatile uint8_t *rgb_registers = (volatile uint8_t *)C64_PALETTE;
+    uint8_t yuv[16][3];
     for(int i=0; i<16; i++) {
         *(rgb_registers++) = rgb[i][0];
         *(rgb_registers++) = rgb[i][1];
         *(rgb_registers++) = rgb[i][2];
         rgb_registers++;
+        rgb_to_yuv(rgb[i], yuv[i], false);
     }
+//    dump_hex_relative(rgb, 48);
+//    dump_hex_relative(yuv, 48);
+    set_palette_yuv(yuv);
+}
+
+void U64Config :: set_palette_yuv(const uint8_t yuv[16][3])
+{
+    volatile uint8_t *yuv_registers = (volatile uint8_t *)(C64_PALETTE + 0x400);
+    for(int i=0; i<16; i++) {
+        *(yuv_registers++) = yuv[i][0];
+        *(yuv_registers++) = yuv[i][1];
+        *(yuv_registers++) = yuv[i][2];
+        yuv_registers++;
+    }
+}
+
+void U64Config :: rgb_to_yuv(const uint8_t rgb[3], uint8_t yuv[3], bool ntsc)
+{
+    // Y =  0.299R + 0.587G + 0.114B
+    // U = -0.147R - 0.289G + 0.436B
+    // V =  0.615R - 0.515G - 0.100B
+    // Matrix in 0.14 format. Values for Y are scaled with 0xB6/0xFF for the correct white values
+    //const int Y[3] = {  4899,  9617,  1868 };
+    const int Y[3] = {  3496,  6864,  1333 };
+    const int U[3] = { -2408, -4735,  7143 };
+    const int V[3] = { 10076, -8438, -1638 };
+
+    int y = Y[0] * rgb[0] + Y[1] * rgb[1] + Y[2] * rgb[2];
+    int u = U[0] * rgb[0] + U[1] * rgb[1] + U[2] * rgb[2];
+    int v = V[0] * rgb[0] + V[1] * rgb[1] + V[2] * rgb[2];
+
+    y >>= 14;
+    u >>= 14;
+    v >>= 14;
+
+    if (u > 127) {
+        v *= 127;
+        v /= u;
+        u = 127;
+    }
+    if (u < -127) {
+        v *= -127;
+        v /= u;
+        u = -127;
+    }
+    if (v > 127) {
+        u *= 127;
+        u /= v;
+        v = 127;
+    }
+    if (v < -127) {
+        u *= -127;
+        u /= v;
+        v = -127;
+    }
+
+    yuv[0] = (uint8_t)y;
+    yuv[1] = (uint8_t)u;
+    yuv[2] = (uint8_t)v;
+}
+
+void U64Config :: load_palette_vpl(const char *path, const char *filename)
+{
+    File *file = NULL;
+    FileManager *fm = FileManager :: getFileManager();
+    FRESULT fres = fm->fopen(path, filename, FA_READ, &file);
+
+    uint8_t rgb[16][3];
+
+    if(file) {
+        FileTypePalette :: parseVplFile(file, rgb);
+        set_palette_rgb(rgb);
+        fm->fclose(file);
+    }
+}
+
+void U64Config :: set_palette_filename(const char *filename)
+{
+    cfg->set_string(CFG_PALETTE, filename);
+    cfg->write();
+    cfg->effectuate();
 }

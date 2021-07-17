@@ -36,8 +36,6 @@ extern "C" {
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_vpl(FileType :: getFileTypeFactory(), FileTypePalette :: test_type);
 
-#define UPDATE_RUN 0x7501
-
 /*************************************************************/
 /* Update File Browser Handling                              */
 /*************************************************************/
@@ -56,7 +54,8 @@ FileTypePalette :: ~FileTypePalette()
 int FileTypePalette :: fetch_context_items(IndexedList<Action *> &list)
 {
     int count = 0;
-	list.append(new Action("Apply Palette", FileTypePalette :: execute, UPDATE_RUN ));
+	list.append(new Action("Apply Palette", FileTypePalette :: execute, 0 ));
+    list.append(new Action("Set as Default", FileTypePalette :: executeFlash, 0 ));
 	count++;
     return count;
 }
@@ -94,7 +93,7 @@ static void trimLine(char *line)
     }
 }
 
-static void parseVplFile(File *f, uint8_t rgb[16][3])
+void FileTypePalette :: parseVplFile(File *f, uint8_t rgb[16][3])
 {
     uint32_t size = f->get_size();
     if ((size > 8192) || (size < 8)) { // max 8K index file
@@ -132,17 +131,22 @@ static void parseVplFile(File *f, uint8_t rgb[16][3])
 
 int FileTypePalette :: execute(SubsysCommand *cmd)
 {
-    File *file = NULL;
-    FileManager *fm = FileManager :: getFileManager();
-    FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
-
-    uint8_t rgb[16][3];
-
-    if(file) {
-        parseVplFile(file, rgb);
-        U64Config :: set_palette_rgb(rgb);
-        fm->fclose(file);
-    }
+    U64Config :: load_palette_vpl(cmd->path.c_str(), cmd->filename.c_str());
     return 0;
 }
 
+int FileTypePalette :: executeFlash(SubsysCommand *cmd)
+{
+    FileManager *fm = FileManager::getFileManager();
+
+    fm->create_dir(DATA_DIRECTORY); // just in case it doesn't exist
+    char fnbuf[32];
+    truncate_filename(cmd->filename.c_str(), fnbuf, 30);
+    FRESULT fres = fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), DATA_DIRECTORY, fnbuf, true);
+    if (fres != FR_OK) {
+        cmd->user_interface->popup(FileSystem::get_error_string(fres), BUTTON_OK);
+        return 0;
+    }
+    U64Config :: getConfigurator() -> set_palette_filename(fnbuf);
+    return 0;
+}

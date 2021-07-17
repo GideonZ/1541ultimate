@@ -17,6 +17,9 @@ public:
     static FileType *test_type(BrowsableDirEntry *inf);
 
     static int execute(SubsysCommand *);
+    static int executeFlash(SubsysCommand *cmd);
+
+    static void parseVplFile(File *f, uint8_t rgb[16][3]);
 };
 
 #endif
