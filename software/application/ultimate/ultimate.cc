@@ -193,7 +193,7 @@ extern "C" void ultimate_main(void *a)
 #endif
 */
 
-#ifndef DEVELOPER
+#if !DEVELOPER
     custom_outbyte = outbyte_log;
 #endif
 
