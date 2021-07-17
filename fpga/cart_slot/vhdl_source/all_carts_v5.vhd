@@ -183,6 +183,9 @@ begin
                 do_io2       <= '1';
                 cart_en      <= '1';
                 hold_nmi     <= '0';
+                ee_clk       <= '0';
+                ee_sel       <= '0';
+                ee_wdata     <= '0';
             end if;
                             
             -- Default, everything is off.
@@ -196,9 +199,6 @@ begin
             game_n    <= '1';
             exrom_n   <= '1';
             rom_mode  <= "01"; -- No banking, All within 16K
-            ee_clk    <= '0';
-            ee_sel    <= '0';
-            ee_wdata  <= '0';
                     
             case cart_logic_d is
             -- ULTRA SIMPLE CARTS, NO BANKING, NO RAM
