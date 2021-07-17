@@ -6,7 +6,7 @@
  *    Daniel Kahlin <daniel@kahlin.net>
  *
  *  This file is part of the 1541 Ultimate-II application.
- *  Copyright (C) 200?-2011 Gideon Zweijtzer <info@1541ultimate.net>
+ *  Copyright (C) 2007-2021 Gideon Zweijtzer <info@1541ultimate.net>
  *  Copyright (C) 2011 Daniel Kahlin <daniel@kahlin.net>
  *
  *  This program is free software: you can redistribute it and/or modify
