@@ -439,7 +439,7 @@ void C64_CRT::configure_cart(cart_def *def)
             break;
         case CART_KCS:
             cart_type = CART_TYPE_KCS; // System3
-            prohibit = CART_PROHIBIT_DEXX;
+            prohibit = CART_PROHIBIT_IO;
             break;
         case CART_FINAL12:
             cart_type = CART_TYPE_FINAL12;
