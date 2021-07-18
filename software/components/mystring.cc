@@ -85,7 +85,11 @@ mstring& mstring :: operator=(const mstring &rhs)
                 strcpy(cp, rhs.cp);
             }
         } else { // use current allocation
-            strcpy(cp, rhs.cp);
+            if (rhs.cp) {
+                strcpy(cp, rhs.cp);
+            } else {
+                cp[0] = 0;
+            }
         }
     }
     return *this;
