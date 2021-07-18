@@ -24,7 +24,6 @@ static const char *drive_types[] = { "1541", "1571", "1581", "Unknown" };
 
 #define CFG_C1541_POWERED   0xD1
 #define CFG_C1541_BUS_ID    0xD2
-#define CFG_C1541_ROMFILE0  0xD4
 #define CFG_C1541_RAMBOARD  0xD5
 #define CFG_C1541_SWAPDELAY 0xD6
 #define CFG_C1541_LASTMOUNT 0xD7
@@ -32,9 +31,10 @@ static const char *drive_types[] = { "1541", "1571", "1581", "Unknown" };
 #define CFG_C1541_DRIVETYPE 0xD9
 #define CFG_C1541_GCRALIGN  0xDA
 #define CFG_C1541_STOPFREEZ 0xDB
-#define CFG_C1541_ROMFILE1  0xDC
-#define CFG_C1541_ROMFILE2  0xDD
 #define CFG_C1541_EXTRARAM  0xDE
+#define CFG_C1541_ROMFILE0  0xE1
+#define CFG_C1541_ROMFILE1  0xE2
+#define CFG_C1541_ROMFILE2  0xE3
 
 const struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_POWERED,   CFG_TYPE_ENUM,   "Drive",                      "%s", en_dis,     0,  1, 1 },

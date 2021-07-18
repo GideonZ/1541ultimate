@@ -199,20 +199,16 @@
 #define BACKUP_SIZE  2048
 #define CHARSET_SIZE 2048
 
-#define CFG_C64_CUSTOM      0xC2
 #define CFG_C64_REU_EN      0xC3
 #define CFG_C64_REU_SIZE    0xC4
 #define CFG_C64_ETH_EN      0xC5
 #define CFG_C64_SWAP_BTN    0xC6
 #define CFG_C64_DMA_ID      0xC7
 #define CFG_C64_MAP_SAMP    0xC8
-#define CFG_C64_ALT_KERN    0xC9
-#define CFG_C64_KERNFILE    0xCA
 #define CFG_C64_TIMING      0xCB
 #define CFG_C64_PHI2_REC    0xCC
 #define CFG_C64_RATE        0xCD
 #define CFG_C64_CART_PREF   0xCE
-#define CFG_C64_CART_CRT    0xCF
 #define CFG_CMD_ENABLE      0x71
 #define CFG_CMD_ALLOW_WRITE 0x72
 #define CFG_C64_FASTRESET   0x74
@@ -220,8 +216,11 @@
 #define CFG_C64_REU_PRE     0x80
 #define CFG_C64_REU_IMG     0x81
 #define CFG_C64_REU_OFFS    0x82
-#define CFG_C64_ALT_BASI    0x83
-#define CFG_C64_ALT_CHAR    0x84
+
+#define CFG_C64_KERNFILE    0xE1
+#define CFG_C64_BASIFILE    0xE2
+#define CFG_C64_CHARFILE    0xE3
+#define CFG_C64_CART_CRT    0xE4
 
 #define CFG_BUS_MODE          0x4D
 #define CFG_BUS_SHARING_ROM   0x4E
