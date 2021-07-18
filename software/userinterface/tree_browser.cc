@@ -48,7 +48,9 @@ const char *helptext=
 		"            wildcard.\n"
         "+/-:        Change value in config.\n"
         "\n"
+#ifndef RECOVERYAPP
         "F4:         Show System Information\n"
+#endif
         "F6:         Show debug log\n"
 		"\nRUN/STOP to close this window.";
 
@@ -408,7 +410,9 @@ int TreeBrowser :: handle_key(int c)
         case KEY_F4: // F4 -> show system info
         	reset_quick_seek();
         	state->refresh = true;
+#ifndef RECOVERYAPP
         	SystemInfo::generate(user_interface);
+#endif
         	break;
         case KEY_SCRLOCK:
         case KEY_F10:
