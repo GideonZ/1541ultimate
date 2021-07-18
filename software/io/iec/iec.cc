@@ -623,6 +623,12 @@ void IecInterface :: set_iec_dir(const char *path)
     xQueueSend(queueGuiToIec, &pathcopy, 0); // write into command queue
 }
 
+// called from critical section
+const char *IecInterface :: get_partition_dir(int p)
+{
+    return vfs->GetPartitionPath(p);
+}
+
 // called from GUI task
 void IecInterface :: start_warp(int drive)
 {

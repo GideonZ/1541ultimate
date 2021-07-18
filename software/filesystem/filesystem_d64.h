@@ -207,7 +207,7 @@ public:
     // Create initial structures of empty disk
     virtual FRESULT format(const char *name) { return FR_NO_FILESYSTEM; }
     // Get number of free sectors on the file system
-    virtual FRESULT get_free (uint32_t*) { return FR_NO_FILESYSTEM; }
+    virtual FRESULT get_free (uint32_t*, uint32_t*) { return FR_NO_FILESYSTEM; }
     // Clean-up cached data
     virtual FRESULT sync(void);
 
@@ -253,7 +253,7 @@ public:
 
     bool init(void);
     FRESULT format(const char *name);
-    FRESULT get_free (uint32_t*);
+    FRESULT get_free (uint32_t*, uint32_t*);
 };
 
 class FileSystemD71 : public FileSystemCBM
@@ -281,7 +281,7 @@ public:
 
 	bool init(void);
     FRESULT format(const char *name);
-    FRESULT get_free (uint32_t*);
+    FRESULT get_free (uint32_t*, uint32_t*);
 
     FRESULT sync(void)
     {
@@ -318,7 +318,7 @@ public:
 
     bool init(void);
     FRESULT format(const char *name);
-    FRESULT get_free (uint32_t*);
+    FRESULT get_free (uint32_t*, uint32_t*);
 
     FRESULT sync(void)
     {
@@ -354,7 +354,7 @@ public:
 
     bool init(void);
     FRESULT format(const char *name);
-    FRESULT get_free (uint32_t*);
+    FRESULT get_free (uint32_t*, uint32_t *);
     FRESULT sync(void);
 };
 

@@ -92,7 +92,7 @@ public:
 
     bool    init(void);              // Initialize file system
     FRESULT format(const char *name);// Format!
-    FRESULT get_free (uint32_t *e);  // Get number of free sectors on the file system
+    FRESULT get_free (uint32_t *e, uint32_t *cs);  // Get number of free sectors on the file system
     bool    is_writable();           // by default a file system is not writable, unless we implement it
     FRESULT sync(void); 			 // by default we can't write, and syncing is thus always successful
 

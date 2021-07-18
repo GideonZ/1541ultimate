@@ -23,7 +23,7 @@ public:
 
     File *getFile() { return t64_file; }
 
-    FRESULT get_free (uint32_t*);        // Get number of free sectors on the file system
+    FRESULT get_free (uint32_t*, uint32_t*);        // Get number of free sectors on the file system
 
     // functions for reading directories
     FRESULT dir_open(const char *path, Directory **); // Opens directory (creates dir object)

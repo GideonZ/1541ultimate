@@ -34,13 +34,17 @@ bool    FileSystemFAT :: init(void)
     return (fres == FR_OK);
 }
 
-FRESULT FileSystemFAT :: get_free (uint32_t *e)
+FRESULT FileSystemFAT :: get_free (uint32_t *e, uint32_t *cs)
 {
 #if	FF_FS_MINIMIZE >= 1
 	return FR_NOT_ENABLED;
 #else
-    FATFS *fs;
-    return f_getfree(prefix, e, &fs);
+    FATFS *fs = 0;
+    FRESULT fres = f_getfree(prefix, e, &fs);
+    if (fs) {
+        *cs = fs->ssize * fs->csize;
+    }
+    return fres;
 #endif
 }
 

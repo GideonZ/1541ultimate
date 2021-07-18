@@ -132,6 +132,7 @@ int FileTypeREU :: execute_st(SubsysCommand *cmd)
 			cmd->user_interface->popup(buffer, BUTTON_OK);
 		} else {
 			mod_cart.custom_addr = (void *)&_module_bin_start;
+			mod_cart.name = "MOD Player Cartridge";
 			mod_cart.length = 0x4000;
 			mod_cart.require = CART_MAXREU | CART_SAMPLER | CART_UCI;
 			mod_cart.type = CART_TYPE_16K;

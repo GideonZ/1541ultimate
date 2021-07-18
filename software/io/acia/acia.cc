@@ -202,5 +202,12 @@ void Acia :: SetRxRate(uint8_t value)
     regs->rx_rate = value;
 }
 
+void Acia :: GetHwMapping(uint8_t& enabled, uint16_t& address, uint8_t& nmi)
+{
+    enabled = regs->enable;
+    address = (uint16_t(regs->slot_base & 0x7F) << 2) + 0xDE00;
+    nmi = regs->slot_base >> 7;
+}
+
 // Global Static
 Acia acia(ACIA_BASE);

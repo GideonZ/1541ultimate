@@ -1093,7 +1093,7 @@ bool FileSystemDNP::get_next_free_sector(int &track, int &sector)
 
 
 // Get number of free sectors on the file system
-FRESULT FileSystemD64::get_free(uint32_t *a)
+FRESULT FileSystemD64::get_free(uint32_t *a, uint32_t *cs)
 {
     if (!root_valid) {
         return FR_NO_FILESYSTEM;
@@ -1105,11 +1105,12 @@ FRESULT FileSystemD64::get_free(uint32_t *a)
         }
     }
     *a = f;
+    *cs = 256;
     return FR_OK;
 }
 
 // Get number of free sectors on the file system
-FRESULT FileSystemD71::get_free(uint32_t *a)
+FRESULT FileSystemD71::get_free(uint32_t *a, uint32_t *cs)
 {
     if (!root_valid) {
         return FR_NO_FILESYSTEM;
@@ -1126,11 +1127,12 @@ FRESULT FileSystemD71::get_free(uint32_t *a)
         }
     }
     *a = f;
+    *cs = 256;
     return FR_OK;
 }
 
 // Get number of free sectors on the file system
-FRESULT FileSystemD81::get_free(uint32_t *a)
+FRESULT FileSystemD81::get_free(uint32_t *a, uint32_t *cs)
 {
     if (!bam_valid) {
         return FR_NO_FILESYSTEM;
@@ -1145,10 +1147,11 @@ FRESULT FileSystemD81::get_free(uint32_t *a)
         f += bam_buffer[0x110 + 6 * (i - 41)];
     }
     *a = f;
+    *cs = 256;
     return FR_OK;
 }
 
-FRESULT FileSystemDNP::get_free(uint32_t *a)
+FRESULT FileSystemDNP::get_free(uint32_t *a, uint32_t *cs)
 {
     if (!bam_valid) {
         return FR_NO_FILESYSTEM;
@@ -1169,6 +1172,7 @@ FRESULT FileSystemDNP::get_free(uint32_t *a)
         }
     }
     *a = f;
+    *cs = 256;
     return FR_OK;
 }
 
