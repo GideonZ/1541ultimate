@@ -121,7 +121,7 @@ int UserFileInteraction::S_delete(SubsysCommand *cmd)
     Path *p = fm->get_new_path("S_delete");
     p->cd(cmd->path.c_str());
     if (res == BUTTON_YES) {
-        FRESULT fres = FileManager::getFileManager()->delete_file(p, cmd->filename.c_str());
+        FRESULT fres = FileManager::getFileManager()->delete_recursive(p, cmd->filename.c_str());
         if (fres != FR_OK) {
             sprintf(buffer, "Error: %s", FileSystem::get_error_string(fres));
             cmd->user_interface->popup(buffer, BUTTON_OK);
