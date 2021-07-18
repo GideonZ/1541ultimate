@@ -72,13 +72,21 @@ mstring& mstring :: operator=(const mstring &rhs)
 //    printf("Assignment operator. Left = %s(%p), Right = %s(%p)\n", c_str(), this, rhs.c_str(), &rhs);
     if(this != &rhs) {
         if((rhs.length()+1) > alloc) {
+            // Does not fit, throw away what we already have
             if (cp) {
                 delete[] cp;
+                cp = NULL;
+                alloc = 0;
             }
-            cp = new char[rhs.alloc];
-            alloc = rhs.alloc;
+            // There is actually a string to place
+            if (rhs.length()) {
+                cp = new char[rhs.alloc];
+                alloc = rhs.alloc;
+                strcpy(cp, rhs.cp);
+            }
+        } else { // use current allocation
+            strcpy(cp, rhs.cp);
         }
-        strcpy(cp, rhs.cp);
     }
     return *this;
 }
