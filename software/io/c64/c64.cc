@@ -83,11 +83,11 @@ struct t_cfg_definition c64_config[] = {
 #endif
     { CFG_C64_FASTRESET, CFG_TYPE_ENUM,   "Fast Reset",                   "%s", en_dis,     0,  1, 0 },
 #if U64
-    { CFG_C64_ALT_KERN, CFG_TYPE_STRFUNC, "Kernal ROM",                   "%s", (const char **)C64 :: list_kernals, 0, 30, (int)"kernal.bin" },
-    { CFG_C64_ALT_BASI, CFG_TYPE_STRFUNC, "Basic ROM",                    "%s", (const char **)C64 :: list_basics, 0, 30, (int)"basic.bin" },
-    { CFG_C64_ALT_CHAR, CFG_TYPE_STRFUNC, "Char ROM",                     "%s", (const char **)C64 :: list_chars, 0, 30, (int)"chars.bin" },
+    { CFG_C64_KERNFILE, CFG_TYPE_STRFUNC, "Kernal ROM",                   "%s", (const char **)C64 :: list_kernals, 0, 30, (int)"kernal.bin" },
+    { CFG_C64_BASIFILE, CFG_TYPE_STRFUNC, "Basic ROM",                    "%s", (const char **)C64 :: list_basics, 0, 30, (int)"basic.bin" },
+    { CFG_C64_CHARFILE, CFG_TYPE_STRFUNC, "Char ROM",                     "%s", (const char **)C64 :: list_chars, 0, 30, (int)"chars.bin" },
 #else
-    { CFG_C64_ALT_KERN, CFG_TYPE_STRFUNC, "Alternate Kernal",             "%s", (const char **)C64 :: list_kernals, 0, 30, (int)"" },
+    { CFG_C64_KERNFILE, CFG_TYPE_STRFUNC, "Alternate Kernal",             "%s", (const char **)C64 :: list_kernals, 0, 30, (int)"" },
 #endif
     { CFG_C64_REU_EN,   CFG_TYPE_ENUM,   "RAM Expansion Unit",           "%s", en_dis,     0,  1, 0 },
     { CFG_C64_REU_SIZE, CFG_TYPE_ENUM,   "REU Size",                     "%s", reu_size,   0,  7, 4 },
@@ -181,7 +181,7 @@ void C64 :: init(void)
     if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
         init_system_roms();
         init_cartridge();
-    } else if (strlen(cfg->get_string(CFG_C64_CART_CRT)) || strlen(cfg->get_string(CFG_C64_ALT_KERN))) {
+    } else if (strlen(cfg->get_string(CFG_C64_CART_CRT)) || strlen(cfg->get_string(CFG_C64_KERNFILE))) {
         init_cartridge();
     }
     available = true;
@@ -255,13 +255,13 @@ void C64::set_rom_config(uint8_t idx, const char *fname)
 {
     switch(idx) {
     case 0:
-        cfg->set_string(CFG_C64_ALT_KERN, fname);
+        cfg->set_string(CFG_C64_KERNFILE, fname);
         break;
     case 1:
-        cfg->set_string(CFG_C64_ALT_BASI, fname);
+        cfg->set_string(CFG_C64_BASIFILE, fname);
         break;
     case 2:
-        cfg->set_string(CFG_C64_ALT_CHAR, fname);
+        cfg->set_string(CFG_C64_CHARFILE, fname);
         break;
     case 3:
         cfg->set_string(CFG_C64_CART_CRT, fname);
@@ -768,7 +768,7 @@ void C64::init_system_roms(void)
     C64_KERNAL_ENABLE = 0;
 
 #if U64
-    FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_ALT_KERN), (uint8_t *)U64_KERNAL_BASE, 8192, NULL);
+    FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_KERNFILE), (uint8_t *)U64_KERNAL_BASE, 8192, NULL);
 
     if (cfg->get_value(CFG_C64_FASTRESET)) {
         unsigned char *kernal = (unsigned char *)U64_KERNAL_BASE;
@@ -777,12 +777,12 @@ void C64::init_system_roms(void)
         }
     }
 
-    FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_ALT_BASI), (uint8_t *)U64_BASIC_BASE, 8192, NULL);
-    FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_ALT_CHAR), (uint8_t *)U64_CHARROM_BASE, 4096, NULL);
+    FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_BASIFILE), (uint8_t *)U64_BASIC_BASE, 8192, NULL);
+    FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_CHARFILE), (uint8_t *)U64_CHARROM_BASE, 4096, NULL);
 
 #else
     uint8_t *temp = new uint8_t[8192];
-    FRESULT fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_ALT_KERN), temp, 8192, NULL);
+    FRESULT fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_KERNFILE), temp, 8192, NULL);
     if (fres == FR_OK) {
         enable_kernal(temp);
     } else {
