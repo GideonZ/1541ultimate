@@ -480,6 +480,8 @@ MountPoint *FileManager::find_mount_point(SubPath *path, FileInfo *info)
                 delete emb;
             }
         }
+    } else {
+        printf("FileManager -> can't open file %s to create mountpoint.%s\n", path->get_path(), FileSystem :: get_error_string(fr));
     }
     unlock();
     return mp;
