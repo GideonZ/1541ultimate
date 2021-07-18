@@ -318,7 +318,7 @@ FRESULT FileManager::fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file)
     return fres;
 }
 
-FRESULT FileManager::get_free(Path *path, uint32_t &free)
+FRESULT FileManager::get_free(Path *path, uint32_t &free, uint32_t &cluster_size)
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(path);
@@ -330,7 +330,7 @@ FRESULT FileManager::get_free(Path *path, uint32_t &free)
     if (!inf || !(inf->fs)) {
         return FR_NO_FILESYSTEM;
     }
-    fres = inf->fs->get_free(&free);
+    fres = inf->fs->get_free(&free, &cluster_size);
     return fres;
 }
 

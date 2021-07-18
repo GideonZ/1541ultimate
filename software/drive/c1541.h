@@ -96,6 +96,7 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     t_cfg_definition *local_config_definitions;
     mstring drive_name;
     t_drive_type current_drive_type;
+    mstring current_drive_rom;
     FileManager *fm;
     
     TaskCategory *taskItemCategory;
@@ -184,6 +185,8 @@ public:
     void drive_power(bool on);
     bool get_drive_power();
     t_drive_type get_drive_type() { return current_drive_type; }
+    const char *get_drive_type_string();
+    const char *get_drive_rom_file(void);
     static void list_roms(ConfigItem *it, IndexedList<char *>& strings);
     void set_rom_config(int idx, const char *fname);
 

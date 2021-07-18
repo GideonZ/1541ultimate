@@ -249,6 +249,7 @@
 typedef struct _cart
 {
     const char *name;
+    mstring filename;
     void *custom_addr; // used for precompiled ROMs that are not part of a CRT (yet)
     uint32_t length;   // used for precompiled ROMs that are not part of a CRT (yet)
     uint16_t type;     // raw cart type, which maps on hardware ID
@@ -373,6 +374,8 @@ public:
     void init_cartridge(void);
     void reset(void);
     void start(void);
+
+    const cart_def *get_cart_definition() { return &current_cart_def; } // Dangerous!
 
     static int isMP3RamDrive(int dev);
     static int getSizeOfMP3NativeRamdrive(int dev);

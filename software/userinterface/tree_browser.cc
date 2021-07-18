@@ -15,6 +15,7 @@
 #include "browsable_root.h"
 #include "keyboard_usb.h"
 #include "home_directory.h"
+#include "system_info.h"
 
 const char *helptext=
 		"CRSR UP/DN: Selection up/down\n"
@@ -47,7 +48,8 @@ const char *helptext=
 		"            wildcard.\n"
         "+/-:        Change value in config.\n"
         "\n"
-		"F6:         Show debug log\n"
+        "F4:         Show System Information\n"
+        "F6:         Show debug log\n"
 		"\nRUN/STOP to close this window.";
 
 #include "stream_textlog.h"
@@ -403,13 +405,11 @@ int TreeBrowser :: handle_key(int c)
         case KEY_F2: // F2 -> config
             config();
             break;
-/*
-        case KEY_F4: // F4 -> show threads
+        case KEY_F4: // F4 -> show system info
         	reset_quick_seek();
         	state->refresh = true;
-        	tasklist();
+        	SystemInfo::generate(user_interface);
         	break;
-*/
         case KEY_SCRLOCK:
         case KEY_F10:
         case KEY_ESCAPE:

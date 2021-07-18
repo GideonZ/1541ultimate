@@ -152,7 +152,7 @@ int  Screen_MemMappedCharMatrix :: output(char c)
 		} else if (c == 'r') {
 			reverse_mode(0);
 		} else if (c == 'B') {
-		    set_background(c & 15);
+		    set_background(c & 15); // funny, this will always result in a red background ;)
 		} else {
 			set_color(c & 15);
 		}

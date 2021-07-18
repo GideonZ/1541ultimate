@@ -174,7 +174,6 @@ void GcrImage :: blank(void)
 {
 	invalidate();
 	add_blank_tracks(gcr_data);
-	dump();
 }
 
 void GcrImage :: add_blank_tracks(uint8_t *gcr)

@@ -144,6 +144,7 @@ public:
     IecCommandChannel *get_command_channel();
     IecCommandChannel *get_data_channel(int chan);
     const char *get_root_path();
+    const char *get_partition_dir(int p);
 
     friend class IecChannel;
     friend class IecCommandChannel;

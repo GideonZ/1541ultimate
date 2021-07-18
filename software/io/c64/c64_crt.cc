@@ -528,7 +528,12 @@ int C64_CRT::load_crt(const char *path, const char *filename, cart_def *def, uin
     FileInfo *inf;
     FileManager *fm = FileManager::getFileManager();
 
-    memset(def, 0, sizeof(cart_def));
+    def->custom_addr = 0;
+    def->length = 0;
+    def->require = 0;
+    def->prohibit = 0;
+    def->disabled = 0;
+    def->filename = filename;
     def->type = CART_TYPE_NONE;
     def->name = "None";
 

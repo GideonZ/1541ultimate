@@ -20,7 +20,7 @@
 
 static const char *yes_no[] = { "No", "Yes" };
 
-static const char *drive_types[] = { "1541", "1571", "1581" };
+static const char *drive_types[] = { "1541", "1571", "1581", "Unknown" };
 
 #define CFG_C1541_POWERED   0xD1
 #define CFG_C1541_BUS_ID    0xD2
@@ -593,7 +593,8 @@ void C1541 :: mount_blank()
     wait_ms(250);
 	gcr_image->blank();
 	printf("Inserting blank disk...");
-	insert_disk(false, gcr_image);
+    mount_file_name = "(blank disk)";
+    insert_disk(false, gcr_image);
 	printf("Done\n");
 	disk_state = e_disk_file_closed;
     drive_reset(0); // do not reset, but restore the freeze
@@ -888,6 +889,11 @@ FRESULT C1541 :: set_drive_type(t_drive_type drv)
     uint8_t cfg_id_file = (drv == e_dt_1571) ? CFG_C1541_ROMFILE1 : (drv == e_dt_1581) ? CFG_C1541_ROMFILE2 : CFG_C1541_ROMFILE0;
     uint32_t transferred = 0;
     FRESULT res = fm->load_file(ROMS_DIRECTORY, cfg->get_string(cfg_id_file), (uint8_t *)&memory_map[0x8000], 0x8000, &transferred);
+    if (res == FR_OK) {
+        current_drive_rom = cfg->get_string(cfg_id_file);
+    } else {
+        current_drive_rom = "Unable to load!";
+    }
     if (transferred == 0x4000) {
         memcpy((void *)(memory_map + 0xC000), (const void *)(memory_map + 0x8000), 0x4000); // copy 16K if the file was 16K
         transferred <<= 1;
@@ -1149,4 +1155,14 @@ void C1541 :: get_last_mounted_file(mstring& path, mstring& name)
 {
     path = mount_file_path;
     name = mount_file_name;
+}
+
+const char *C1541 :: get_drive_type_string(void)
+{
+    return drive_types[(int)current_drive_type];
+}
+
+const char *C1541 :: get_drive_rom_file(void)
+{
+    return current_drive_rom.c_str();
 }
