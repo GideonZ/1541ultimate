@@ -392,7 +392,7 @@ int C64_Subsys::executeCommand(SubsysCommand *cmd)
             int ftype = C64::isMP3RamDrive(devNo);
             uint8_t* reu = (uint8_t *)(REU_MEMORY_BASE);
             int expSize = 1;
-            char* extension = 0;
+            const char* extension = 0;
 
             if (ftype == 1541) {
                 expSize = 174848;
