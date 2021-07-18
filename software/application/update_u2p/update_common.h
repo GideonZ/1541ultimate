@@ -134,8 +134,8 @@ static uint32_t print_free_flash_blocks()
     FileManager *fm = FileManager :: getFileManager();
     Path p;
     p.cd("/flash");
-    uint32_t free;
-    fm->get_free(&p, free);
+    uint32_t free, cs;
+    fm->get_free(&p, free, cs);
     console_print(screen, "\e5%d Flash Blocks Free\e?\n", free);
     return free;
 }
