@@ -135,6 +135,7 @@ SRCS_CC	 =  small_printf.cc \
 			ramdisk.cc \
             acia.cc \
             modem.cc \
+            system_info.cc \
             $(PRJ).cc
 
 #            sock_echo.c \
