@@ -181,8 +181,8 @@ void WD177x :: do_step(t_wd177x_cmd cmd)
     drive->diskchange = 0;
 }
 
-//#define printf(...)
-//#define dump_hex_relative(...)
+#define printf(...)
+#define dump_hex_relative(...)
 
 void WD177x :: handle_wd177x_command(t_wd177x_cmd& cmd)
 {
