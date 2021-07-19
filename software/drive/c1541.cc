@@ -38,7 +38,11 @@ static const char *drive_types[] = { "1541", "1571", "1581", "Unknown" };
 
 const struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_POWERED,   CFG_TYPE_ENUM,   "Drive",                      "%s", en_dis,     0,  1, 1 },
+#if U2
+    { CFG_C1541_DRIVETYPE, CFG_TYPE_ENUM,   "Drive Type",                 "%s", drive_types,0,  0, 0 },
+#else
     { CFG_C1541_DRIVETYPE, CFG_TYPE_ENUM,   "Drive Type",                 "%s", drive_types,0,  2, 0 },
+#endif
     { CFG_C1541_BUS_ID,    CFG_TYPE_VALUE,  "Drive Bus ID",               "%d", NULL,       8, 11, 8 },
     { CFG_C1541_ROMFILE0,  CFG_TYPE_STRFUNC,"ROM for 1541 mode",          "%s", (const char **)C1541 :: list_roms,  1, 32, (int)"1541.rom" },
     { CFG_C1541_ROMFILE1,  CFG_TYPE_STRFUNC,"ROM for 1571 mode",          "%s", (const char **)C1541 :: list_roms,  1, 32, (int)"1571.rom" },
