@@ -5707,7 +5707,7 @@ static FRESULT create_partition (
 
 #if FF_LBA64
 	if (sz_drv >= FF_MIN_GPT) {	/* Create partitions in GPT */
-		WORD ss;
+		DWORD ss;
 		UINT sz_pt, pi, si, ofs;
 		DWORD bcc, rnd, align;
 		QWORD s_lba64, n_lba64, sz_pool, s_bpt;
@@ -5843,7 +5843,7 @@ FRESULT f_mkfs (
 	static const WORD cst32[] = {1, 2, 4, 8, 16, 32, 0};	/* Cluster size boundary for FAT32 volume (128Ks unit) */
 	static const MKFS_PARM defopt = {FM_ANY, 0, 0, 0, 0};	/* Default parameter */
 	BYTE fsopt, fsty, sys, *buf, *pte, pdrv, ipart;
-	WORD ss;	/* Sector size */
+	DWORD ss;	/* Sector size */
 	DWORD sz_buf, sz_blk, n_clst, pau, nsect, n;
 	LBA_t sz_vol, b_vol, b_fat, b_data;		/* Size of volume, Base LBA of volume, fat, data */
 	LBA_t sect, lba[2];
