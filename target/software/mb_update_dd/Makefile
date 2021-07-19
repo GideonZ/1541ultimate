@@ -88,9 +88,9 @@ VPATH   += ../mb_boot_dd/result
 VPATH   += ../mb_boot2/result
 
 PATH_INC =  $(addprefix -I, $(VPATH) $(OUTPUT))
-APP_OPTS = -D_NO_FILE_ACCESS -DFIRST_WRITABLE_PAGE=0 -DOS=1 -DSAFEMODE=1 -DUPDATER -DRECOVERYAPP=1
-COPTIONS = -g -ffunction-sections -O2 -std=c99 $(APP_OPTS)
-CPPOPT   = -g -ffunction-sections -O2 -fno-exceptions -fno-rtti -fno-threadsafe-statics $(APP_OPTS)
+APP_OPTS = -DFIRST_WRITABLE_PAGE=0 -DOS=1 -DSAFEMODE=1 -DUPDATER -DRECOVERYAPP=1
+COPTIONS = -g -ffunction-sections -Os -mcpu=v5.00.a -std=c99 $(APP_OPTS) -DRECOVERYAPP=1
+CPPOPT   = -g -ffunction-sections -Os -mcpu=v5.00.a -fno-exceptions -fno-rtti -fno-threadsafe-statics $(APP_OPTS)
 #OPTIONS  = -nostartfiles
 LINK 	 = ./mb_update.lds
 LFLAGS   = --gc-sections 
