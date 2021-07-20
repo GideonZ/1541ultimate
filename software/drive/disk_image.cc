@@ -1112,7 +1112,8 @@ int BinImage :: format(const char *name)
 {
     memset(bin_data, 0, data_size);
 
-    int numBlocks = data_size / 256;
+    volatile int numBlocks = data_size / 256;
+    // printf("NumBlocks = %d\n", numBlocks);
     BlockDevice_Ram *blk = new BlockDevice_Ram(bin_data, 256, numBlocks);
     Partition *prt = new Partition(blk, 0, numBlocks, 0);
     FileSystem *fs;
