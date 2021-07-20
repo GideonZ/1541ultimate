@@ -125,8 +125,10 @@ C64::C64()
 
     register_store(0x43363420, "C64 and Cartridge Settings", c64_config);
 
+#ifdef U64
     cfg->set_change_hook(CFG_C64_CART_PREF, C64::setCartPref);
     setCartPref(cfg->find_item(CFG_C64_CART_PREF));
+#endif
 
     char_set = (uint8_t *) &_chars_bin_start;
     keyb = new Keyboard_C64(this, &CIA1_DPB, &CIA1_DPA);
@@ -139,6 +141,7 @@ C64::C64()
     buttonPushSeen = false;
     client = 0;
     available = false;
+    clear_cart_definition(&current_cart_def);
 
 #ifndef U64
 #ifdef OS
@@ -912,7 +915,7 @@ void C64::set_cartridge(cart_def *cart)
     uint8_t *cart_mem = get_cartridge_rom_addr();
 
     // Just clear internal structure completely
-    memset(&current_cart_def, 0, sizeof(cart_def));
+    clear_cart_definition(&current_cart_def);
     if (!cart) {
         // disable previously started roms.
         cart_mem[5] = 0;

@@ -1,7 +1,5 @@
 
-extern "C" {
-    #include "small_printf.h"
-}
+#include <stdio.h>
 #include "blockdev_ram.h"
 #include "filemanager.h"
 

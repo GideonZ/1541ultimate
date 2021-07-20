@@ -96,6 +96,7 @@ public:
     static bool is_valid(void);
 
     static const char *get_error_string(int retval);
+    static void clear_definition(cart_def *def);
 };
 
 #endif
