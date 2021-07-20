@@ -149,6 +149,18 @@ void C64_CRT::cleanup()
     }
 }
 
+void C64_CRT::clear_definition(cart_def *def)
+{
+    def->custom_addr = 0;
+    def->length = 0;
+    def->require = 0;
+    def->prohibit = 0;
+    def->disabled = 0;
+    def->filename = "";
+    def->type = CART_TYPE_NONE;
+    def->name = "None";
+}
+
 int C64_CRT::check_header(File *f, cart_def *def)
 {
     uint32_t bytes_read = 0;
@@ -528,14 +540,8 @@ int C64_CRT::load_crt(const char *path, const char *filename, cart_def *def, uin
     FileInfo *inf;
     FileManager *fm = FileManager::getFileManager();
 
-    def->custom_addr = 0;
-    def->length = 0;
-    def->require = 0;
-    def->prohibit = 0;
-    def->disabled = 0;
+    clear_definition(def);
     def->filename = filename;
-    def->type = CART_TYPE_NONE;
-    def->name = "None";
 
     FRESULT fres = fm->fopen(path, filename, FA_READ, &file);
     if (fres != FR_OK) {

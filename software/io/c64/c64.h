@@ -374,6 +374,16 @@ public:
     void reset(void);
     void start(void);
 
+    static void clear_cart_definition(cart_def *def) {
+        def->custom_addr = 0;
+        def->length = 0;
+        def->require = 0;
+        def->prohibit = 0;
+        def->disabled = 0;
+        def->filename = "";
+        def->type = CART_TYPE_NONE;
+        def->name = "None";
+    }
     const cart_def *get_cart_definition() { return &current_cart_def; } // Dangerous!
 
     static int isMP3RamDrive(int dev);
