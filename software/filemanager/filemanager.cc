@@ -322,15 +322,20 @@ FRESULT FileManager::get_free(Path *path, uint32_t &free, uint32_t &cluster_size
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(path);
+    lock();
     FRESULT fres = find_pathentry(pathInfo, true);
     if (fres != FR_OK) {
+        unlock();
         return fres;
     }
     FileInfo *inf = pathInfo.getLastInfo();
     if (!inf || !(inf->fs)) {
+        unlock();
         return FR_NO_FILESYSTEM;
     }
     fres = inf->fs->get_free(&free, &cluster_size);
+
+    unlock();
     return fres;
 }
 
@@ -370,11 +375,16 @@ FRESULT FileManager::fstat(Path *path, const char *filename, FileInfo &info)
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(path, filename);
+
+    lock();
     FRESULT fres = find_pathentry(pathInfo, false);
+    unlock();
+
     if (fres != FR_OK) {
         return fres;
     }
     info.copyfrom(pathInfo.getLastInfo());
+
     return FR_OK;
 }
 
@@ -382,7 +392,9 @@ FRESULT FileManager::fstat(const char *path, const char *filename, FileInfo &inf
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(path, filename);
+    lock();
     FRESULT fres = find_pathentry(pathInfo, false);
+    unlock();
     if (fres != FR_OK) {
         return fres;
     }
@@ -394,7 +406,9 @@ FRESULT FileManager::fstat(const char *pathname, FileInfo &info)
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(pathname);
+    lock();
     FRESULT fres = find_pathentry(pathInfo, false);
+    unlock();
     if (fres != FR_OK) {
         return fres;
     }
@@ -580,18 +594,24 @@ FRESULT FileManager::rename(const char *old_name, const char *new_name)
 
 FRESULT FileManager::rename_impl(PathInfo &from, PathInfo &to)
 {
+    lock();
     FRESULT fres = find_pathentry(from, false);
-    if (fres != FR_OK)
+    if (fres != FR_OK) {
+        unlock();
         return fres;
+    }
 
     // source file was found
     fres = find_pathentry(to, false);
-    if (fres == FR_NO_PATH)
+    if (fres == FR_NO_PATH) {
+        unlock();
         return fres;
+    }
 
     if (fres == FR_NO_FILE) { // we MAY be able to do this..
         if (to.getLastInfo()->fs != from.getLastInfo()->fs) {
             printf("Trying to move a file from one file system to another.\n");
+            unlock();
             return FR_INVALID_DRIVE;
         }
         fres = from.getLastInfo()->fs->file_rename(from.getPathFromLastFS(), to.getPathFromLastFS());
@@ -604,8 +624,11 @@ FRESULT FileManager::rename_impl(PathInfo &from, PathInfo &to)
                 sendEventToObservers(eRefreshDirectory, to_path, "");
             }
         }
+        unlock();
         return fres;
     }
+    unlock();
+
     if (fres == FR_OK)
         return FR_EXIST;
     return fres;
@@ -616,12 +639,16 @@ FRESULT FileManager::create_dir(const char *pathname)
     PathInfo pathInfo(rootfs);
     pathInfo.init(pathname);
 
+    lock();
     FRESULT fres = find_pathentry(pathInfo, false);
     if (fres == FR_OK) {
+        unlock();
         return FR_EXIST;
     }
-    if (fres == FR_OK)
+    if (fres == FR_OK) {
+        unlock();
         return FR_EXIST;
+    }
     if (fres == FR_NO_FILE) {
         FileSystem *fs = pathInfo.getLastInfo()->fs;
         fres = fs->dir_create(pathInfo.getPathFromLastFS());
@@ -629,8 +656,8 @@ FRESULT FileManager::create_dir(const char *pathname)
             mstring work;
             sendEventToObservers(eNodeAdded, pathInfo.getFullPath(work, -1), pathInfo.getFileName());
         }
-        return fres;
     }
+    unlock();
     return fres;
 }
 
@@ -639,20 +666,24 @@ FRESULT FileManager::create_dir(Path *path, const char *name)
     PathInfo pathInfo(rootfs);
     pathInfo.init(path, name);
 
+    lock();
     FRESULT fres = find_pathentry(pathInfo, false);
     if (fres == FR_OK) {
+        unlock();
         return FR_EXIST;
     }
-    if (fres == FR_OK)
+    if (fres == FR_OK) {
+        unlock();
         return FR_EXIST;
+    }
     if (fres == FR_NO_FILE) {
         FileSystem *fs = pathInfo.getLastInfo()->fs;
         fres = fs->dir_create(pathInfo.getPathFromLastFS());
         if (fres == FR_OK) {
             sendEventToObservers(eNodeAdded, path->get_path(), name);
         }
-        return fres;
     }
+    unlock();
     return fres;
 }
 
