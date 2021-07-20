@@ -64,7 +64,7 @@ DRESULT BlockDevice_Ram::ioctl(uint8_t command, void *data)
             *dest = sector_size;
             break;
         case GET_BLOCK_SIZE:
-            *dest = sector_size; // dummy
+            *dest = 1;
             break;
         case CTRL_SYNC:
             break;

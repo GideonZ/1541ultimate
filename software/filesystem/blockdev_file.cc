@@ -75,7 +75,7 @@ DRESULT BlockDevice_File::ioctl(uint8_t command, void *data)
             (*(uint32_t *)data) = sector_size;
             break;
         case GET_BLOCK_SIZE:
-            (*(uint32_t *)data) = 128 * 1024;
+            (*(uint32_t *)data) = 1;
             break;
         case CTRL_SYNC:
             if (file) {
