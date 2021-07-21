@@ -52,7 +52,7 @@ XST_OPTIONS		:= -top $(TOP_NAME) \
 				   -opt_level 2 \
 				   -register_balancing no \
 				   -keep_hierarchy no \
-				   -generics g_dual_drive=true
+				   -generics g_dual_drive=true,g_acia=true,g_eeprom=false
 
 # Tools
 MY_PROMGEN := ../../tools/promgen

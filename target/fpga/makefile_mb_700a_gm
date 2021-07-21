@@ -32,7 +32,7 @@ TOP_NAME    	:= $(TARGET)
 CONFIG			:= makefile_mb_700a
 
 # Project ROOT
-WORK_DIR		:= mb700
+WORK_DIR		:= mb700gm
 
 # Part settings
 PART_TYPE        := xc3s700a
@@ -52,7 +52,7 @@ XST_OPTIONS		:= -top $(TOP_NAME) \
 				   -opt_level 2 \
 				   -register_balancing no \
 				   -keep_hierarchy no \
-                   -generics g_dual_drive=false,g_acia=false,g_eeprom=false
+                   -generics g_dual_drive=true,g_acia=false,g_eeprom=true
 
 # Tools
 MY_PROMGEN := ../../tools/promgen

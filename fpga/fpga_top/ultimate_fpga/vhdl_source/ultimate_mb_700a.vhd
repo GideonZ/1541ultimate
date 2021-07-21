@@ -9,6 +9,8 @@ use work.io_bus_pkg.all;
 
 entity ultimate_mb_700a is
 generic (
+    g_acia          : boolean := true;
+    g_eeprom        : boolean := false;
     g_dual_drive    : boolean := false );
 port (
     CLOCK       : in    std_logic;
@@ -218,9 +220,9 @@ begin
         g_vic_copper    => false,
         g_video_overlay => false,
         g_sdcard        => true,
-        g_eeprom        => false,
+        g_eeprom        => g_eeprom,
         g_sampler       => not g_dual_drive,
-        g_acia          => g_dual_drive )
+        g_acia          => g_acia )
     port map (
         -- globals
         sys_clock   => sys_clock,

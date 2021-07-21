@@ -7,27 +7,34 @@ mk3:
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/fpga -f makefile_mb_700a
 	@$(MAKE) -C target/fpga -f makefile_mb_700a_dd
+	@$(MAKE) -C target/fpga -f makefile_mb_700a_gm
 	@$(MAKE) -C target/software/mb_lwip
 	@$(MAKE) -C target/software/mb_boot
 	@$(MAKE) -C target/software/mb_boot_dd
+	@$(MAKE) -C target/software/mb_boot_gm
 	@$(MAKE) -C target/software/mb_boot2
 	@$(MAKE) -C target/software/mb_ultimate
 	@$(MAKE) -C target/software/mb_update
 	@$(MAKE) -C target/software/mb_update_dd
+	@$(MAKE) -C target/software/mb_update_gm
 	@cp target/software/mb_update/result/update.u2u ./update_audio.u2u
-	@cp target/software/mb_update_dd/result/update.u2u ./update_dual_drive.u2u
+	@cp target/software/mb_update_dd/result/update.u2u ./update_dual_drive_acia.u2u
+	@cp target/software/mb_update_dd/result/update.u2u ./update_dual_drive_gmod2.u2u
 
 mb:
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/software/mb_lwip
 	@$(MAKE) -C target/software/mb_boot
 	@$(MAKE) -C target/software/mb_boot_dd
+	@$(MAKE) -C target/software/mb_boot_gm
 	@$(MAKE) -C target/software/mb_boot2
 	@$(MAKE) -C target/software/mb_ultimate
 	@$(MAKE) -C target/software/mb_update
 	@$(MAKE) -C target/software/mb_update_dd
+	@$(MAKE) -C target/software/mb_update_gm
 	@cp target/software/mb_update/result/update.u2u ./update_audio.u2u
-	@cp target/software/mb_update_dd/result/update.u2u ./update_dual_drive.u2u
+	@cp target/software/mb_update_dd/result/update.u2u ./update_dual_drive_acia.u2u
+	@cp target/software/mb_update_dd/result/update.u2u ./update_dual_drive_gmod2.u2u
 
 niosclean:
 	@$(MAKE) -C target/software/nios2_elf_lwip clean
