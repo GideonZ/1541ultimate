@@ -64,7 +64,16 @@ DRESULT BlockDevice_Flash::read(uint8_t *buffer, uint32_t sector, int count)
     if(sector >= number_of_sectors)
         return RES_PARERR;
     
-    chip->read_linear_addr(addr.start + (sector * sector_size), count * sector_size, buffer);
+    int page = first_page + (sector * pages_per_sector);
+    sector += first_sector;
+    for(int i=0; i < pages_per_sector * count; i++) {
+        if (!chip->read_page_power2(page, buffer)) {
+            printf("Read Error\n");
+            return RES_ERROR;
+        }
+        buffer += page_size;
+        page++;
+    }
     return RES_OK;
 }
 
