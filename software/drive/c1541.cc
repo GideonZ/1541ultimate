@@ -38,11 +38,7 @@ static const char *drive_types[] = { "1541", "1571", "1581", "Unknown" };
 
 const struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_POWERED,   CFG_TYPE_ENUM,   "Drive",                      "%s", en_dis,     0,  1, 1 },
-#if U2
-    { CFG_C1541_DRIVETYPE, CFG_TYPE_ENUM,   "Drive Type",                 "%s", drive_types,0,  0, 0 },
-#else
     { CFG_C1541_DRIVETYPE, CFG_TYPE_ENUM,   "Drive Type",                 "%s", drive_types,0,  2, 0 },
-#endif
     { CFG_C1541_BUS_ID,    CFG_TYPE_VALUE,  "Drive Bus ID",               "%d", NULL,       8, 11, 8 },
     { CFG_C1541_ROMFILE0,  CFG_TYPE_STRFUNC,"ROM for 1541 mode",          "%s", (const char **)C1541 :: list_roms,  1, 32, (int)"1541.rom" },
     { CFG_C1541_ROMFILE1,  CFG_TYPE_STRFUNC,"ROM for 1571 mode",          "%s", (const char **)C1541 :: list_roms,  1, 32, (int)"1571.rom" },
@@ -107,10 +103,21 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
     gcr_ram_file = new FileRAM(gcr_image->gcr_data, GCRIMAGE_MAXSIZE, false); // How cool is this?!
     write_skip = 0;
     
+    registers[C1541_DRIVETYPE] = 2;
+    multi_mode = ((registers[C1541_DRIVETYPE] & 3) == 2);
+    if (!multi_mode) {
+        local_config_definitions[1].max = 0; // limit to 1541 only
+    }
+
     sprintf(buffer, "Drive %c Settings", letter);
     register_store((uint32_t)regs, buffer, local_config_definitions);
     sprintf(buffer, "Drive %c", drive_letter);
     taskItemCategory = TasksCollection :: getCategory(buffer, SORT_ORDER_DRIVES + drive_letter - 'A');
+
+    if (!multi_mode) {
+        cfg->disable(CFG_C1541_ROMFILE1);
+        cfg->disable(CFG_C1541_ROMFILE2);
+    }
 
     disk_state = e_no_disk;
     iec_address = 8 + int(letter - 'A');
@@ -118,13 +125,6 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
 
     taskHandle = 0;
 
-    registers[C1541_DRIVETYPE] = 2;
-    multi_mode = ((registers[C1541_DRIVETYPE] & 3) == 2);
-
-    if (!multi_mode) {
-        cfg->disable(CFG_C1541_ROMFILE1);
-        cfg->disable(CFG_C1541_ROMFILE2);
-    }
     mount_function_id = 0;
     mount_mode = 0;
 }
