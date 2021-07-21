@@ -193,6 +193,12 @@ int C64_CRT::check_header(File *f, cart_def *def)
                 printf("%s - Not implemented\n", cart_list->cart_name);
                 return -4;
             }
+            if (local_type == CART_GMOD2) {
+                if (!(getFpgaCapabilities() & CAPAB_EEPROM)) {
+                    printf("GMOD2 EEPROM Not implemented.\n", cart_list->cart_name);
+                    return -4;
+                }
+            }
             return 0;
         }
         cart_list++;
