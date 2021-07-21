@@ -9,8 +9,7 @@ use work.io_bus_pkg.all;
 
 entity ultimate_mb_700a is
 generic (
-    g_dual_drive    : boolean := false;
-    g_version       : unsigned(7 downto 0) := X"17" );
+    g_dual_drive    : boolean := false );
 port (
     CLOCK       : in    std_logic;
     
@@ -192,7 +191,6 @@ begin
 
     i_logic: entity work.ultimate_logic_32
     generic map (
-        g_version       => g_version,
         g_simulation    => false,
         g_clock_freq    => 50_000_000,
         g_baud_rate     => 115_200,
