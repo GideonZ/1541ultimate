@@ -37,9 +37,8 @@ AT45_Flash::AT45_Flash()
 {
 
     page_size    = 528;         // in bytes
-    block_size   = 8;           // in pages
-	sector_size  = 256;			// in pages, default to AT45DB161
-	sector_count = 16;			// default to AT45DB161
+	sector_size  = 1; // 256;			// in pages, default to AT45DB161
+	sector_count = 4096; // 16;			// default to AT45DB161
     total_size   = 4096;		// in pages, default to AT45DB161
     page_shift   = 10;        	// offset in address reg
     config_start = total_size - AT45_NUM_CONFIG_PAGES;
@@ -100,15 +99,15 @@ AT45_Flash *AT45_Flash :: tester()
     	return NULL; // not Atmel
 
 	if(dev_id == 0x26) { // AT45DB161
-		sector_size  = 256;	
-		sector_count = 16;	
+		sector_size  = 1; // 256;
+		sector_count = 4096;
 	    total_size   = 4096;
         config_start = total_size - AT45_NUM_CONFIG_PAGES;
 		return this;
 	}
 	if(dev_id == 0x27) { // AT45DB321
-		sector_size  = 128;	
-		sector_count = 64;	
+		sector_size  = 1; // 128;
+		sector_count = 8192; // 64;
 	    total_size   = 8192;
         config_start = total_size - AT45_NUM_CONFIG_PAGES;
 		return this;
@@ -119,7 +118,7 @@ AT45_Flash *AT45_Flash :: tester()
 
 int AT45_Flash :: get_page_size(void)
 {
-    return 512; // page_size;  This is a hack!
+    return page_size;
 }
 
 int AT45_Flash :: get_sector_size(int addr)
@@ -273,8 +272,7 @@ void AT45_Flash :: clear_config_page(int page)
 bool AT45_Flash :: read_page(int page, void *buffer)
 {
     int device_addr = (page << page_shift);
-    // int len = (page_size >> 2);
-    int len = (512 >> 2); // this is a hack!
+    int len = (page_size >> 2);
     uint32_t *buf = (uint32_t *)buffer;
     
 	portENTER_CRITICAL();
@@ -288,6 +286,26 @@ bool AT45_Flash :: read_page(int page, void *buffer)
     }
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
 	portEXIT_CRITICAL();
+    return true;
+}
+
+bool AT45_Flash :: read_page_power2(int page, void *buffer)
+{
+    int device_addr = (page << page_shift);
+    int len = (512 >> 2); // this is a hack!
+    uint32_t *buf = (uint32_t *)buffer;
+
+    portENTER_CRITICAL();
+    SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
+    SPI_FLASH_DATA = AT45_ContinuousArrayRead_LowFrequency;
+    SPI_FLASH_DATA = uint8_t(device_addr >> 16);
+    SPI_FLASH_DATA = uint8_t(device_addr >> 8);
+    SPI_FLASH_DATA = uint8_t(device_addr);
+    for(int i=0;i<len;i++) {
+        *(buf++) = SPI_FLASH_DATA_32;
+    }
+    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
+    portEXIT_CRITICAL();
     return true;
 }
 

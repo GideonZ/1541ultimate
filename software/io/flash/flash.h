@@ -51,6 +51,7 @@ public:
     virtual bool erase_sector(int sector) { return false; }
 	virtual int  page_to_sector(int page) { return -1; }
     virtual bool read_page(int page, void *buffer) { return false; }
+    virtual bool read_page_power2(int page, void *buffer) { return read_page(page, buffer); }
 	virtual bool write_page(int page, const void *buffer) { return false; }
 	virtual bool need_erase(void) { return false; }
 	int  write_image(int id, uint8_t *buffer, int length);
