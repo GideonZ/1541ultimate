@@ -28,6 +28,7 @@
 #define MENU_1541_BLANK     0x1505
 #define MENU_1541_TURNON    0x1506
 #define MENU_1541_TURNOFF   0x1507
+#define FLOPPY_LOAD_DOS     0x1508
 #define MENU_1541_UNLINK    0x1513
 #define MENU_1541_SWAP      0x1514
 #define MENU_1541_SET_MODE  0x1515
@@ -44,7 +45,6 @@
 #define MENU_1541_MOUNT_G64_RO (MENU_1541_MOUNT_G64 | MENU_1541_READ_ONLY)
 #define MENU_1541_MOUNT_G64_UL (MENU_1541_MOUNT_G64 | MENU_1541_UNLINKED)
 
-#define FLOPPY_LOAD_DOS    0x2131
 
 typedef enum { e_no_disk,
                e_alien_image,
