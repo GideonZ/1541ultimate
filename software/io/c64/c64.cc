@@ -136,7 +136,7 @@ C64::C64()
 
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_MODE = MODE_NORMAL;
-    isFrozen = ((C64_STOP & C64_HAS_STOPPED) == C64_HAS_STOPPED);
+    isFrozen = false; // ((C64_STOP & C64_HAS_STOPPED) == C64_HAS_STOPPED); Freeze is not the same as stop
     backupIsValid = false;
     buttonPushSeen = false;
     client = 0;
