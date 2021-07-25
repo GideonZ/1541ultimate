@@ -27,6 +27,7 @@ extern "C" {
 #include "sid_device_fpgasid.h"
 #include "sid_device_swinsid.h"
 #include "sid_device_armsid.h"
+#include "init_function.h"
 
 const uint8_t default_colors[16][3] = {
     { 0x00, 0x00, 0x00 },
@@ -836,6 +837,7 @@ void U64Config :: effectuate_settings()
     const t_video_color_timing *ct = color_timings[(int)systemMode];
     C64_PHASE_INCR  = ct->phase_inc;
     C64_VIDEOFORMAT = ct->mode_bits | format;
+
     const char *palette = cfg->get_string(CFG_PALETTE);
     if (strlen(palette)) {
         load_palette_vpl(DATA_DIRECTORY, palette);
@@ -2124,4 +2126,21 @@ void U64Config :: set_palette_filename(const char *filename)
     cfg->set_string(CFG_PALETTE, filename);
     cfg->write();
     cfg->effectuate();
+}
+
+// Because the first configurator call to 'effectuate settings' takes place before
+// the flash disk has been initialized, it has to be done again after.
+// The flash disk initializes also with an init function, so make sure the ordering
+// number here is higher than the ordering number in blockdev_flash.
+
+InitFunction init_palette(U64Config :: late_init_palette, NULL, NULL, 9);
+
+void U64Config :: late_init_palette(void *obj, void *param)
+{
+    const char *palette = u64_configurator.cfg->get_string(CFG_PALETTE);
+    if (strlen(palette)) {
+        load_palette_vpl(DATA_DIRECTORY, palette);
+    } else {
+        set_palette_rgb(default_colors);
+    }
 }
