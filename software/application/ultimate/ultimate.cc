@@ -64,6 +64,13 @@ StreamTextLog textLog(96*1024);
 
 extern "C" void (*custom_outbyte)(int c);
 
+void print_tasks(void)
+{
+    static char buffer[8192];
+    vTaskList(buffer);
+    puts(buffer);
+}
+
 void outbyte_log(int c)
 {
 	textLog.charout(c);
@@ -167,9 +174,7 @@ extern "C" void ultimate_main(void *a)
     reu_preloader = new REUPreloader();
     
     printf("All linked modules have been initialized and are now running.\n");
-    static char buffer[8192];
-    vTaskList(buffer);
-    puts(buffer);
+    print_tasks();
 
 /*
 #ifdef U64
