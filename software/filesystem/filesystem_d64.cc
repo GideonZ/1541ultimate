@@ -26,6 +26,8 @@ FileSystemCBM::FileSystemCBM(Partition *p, bool writable, const int *lay) :
     current_sector = -1;
     dirty = 0;
     this->writable = writable;
+    root_buffer = new uint8_t[256];
+    sect_buffer = new uint8_t[256];
 
     p->ioctl(GET_SECTOR_COUNT, &num_sectors);
     root_dirty = false;
@@ -37,6 +39,8 @@ FileSystemCBM::FileSystemCBM(Partition *p, bool writable, const int *lay) :
 
 FileSystemCBM::~FileSystemCBM()
 {
+    delete[] sect_buffer;
+    delete[] root_buffer;
 }
 
 bool FileSystemCBM::is_writable()
