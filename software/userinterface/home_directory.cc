@@ -37,8 +37,9 @@ const char* HomeDirectory::getHomeDirectory(void) {
     return home_directory;
 }
 
-void HomeDirectory::setHomeDirectory(const char* path) {
-  strncpy((char*)home_directory, path, 1023);
+void HomeDirectory::setHomeDirectory(const char* path)
+{
+    strncpy((char*)home_directory, path, 1023);
 }
 
 void HomeDirectory::poll_home_directory(void *a)
