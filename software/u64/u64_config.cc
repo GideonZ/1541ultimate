@@ -2106,7 +2106,7 @@ void U64Config :: rgb_to_yuv(const uint8_t rgb[3], uint8_t yuv[3], bool ntsc)
     yuv[2] = (uint8_t)v;
 }
 
-void U64Config :: load_palette_vpl(const char *path, const char *filename)
+bool U64Config :: load_palette_vpl(const char *path, const char *filename)
 {
     File *file = NULL;
     FileManager *fm = FileManager :: getFileManager();
@@ -2114,11 +2114,15 @@ void U64Config :: load_palette_vpl(const char *path, const char *filename)
 
     uint8_t rgb[16][3];
 
+    bool success = false;
     if(file) {
-        FileTypePalette :: parseVplFile(file, rgb);
-        set_palette_rgb(rgb);
+        success = FileTypePalette :: parseVplFile(file, rgb);
+        if (success) {
+            set_palette_rgb(rgb);
+        }
         fm->fclose(file);
     }
+    return success;
 }
 
 void U64Config :: set_palette_filename(const char *filename)
