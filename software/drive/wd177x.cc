@@ -294,7 +294,7 @@ void WD177x :: handle_wd177x_command(t_wd177x_cmd& cmd)
             }
 		} else {
 		    printf("WD177x: Read Sector: Sector %d/%d/%d not found in MFM definition on track %d! Setting RNF\n", sectAddr.track, sectAddr.side, sectAddr.sector, drive->track);
-		    disk.DumpFormat();
+		    //disk.DumpFormat(true);
 		    wd177x->status_set = WD_STATUS_RNF;
 		    wd177x->status_clear = WD_STATUS_BUSY;
 		    break; // end!

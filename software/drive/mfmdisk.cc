@@ -19,7 +19,7 @@ int MfmDisk :: GetSector(int physTrack, int physSide, const MfmSector& logicalSe
     for(int i=0; i<tr->numSectors; i++) {
         MfmSector *s = &tr->sectors[i];
         if ((s->sector == logicalSector.sector) &&
-            (s->side == logicalSector.side) &&  // Checking the side here is possibly not done by the Wd177x, as there is no 'side' register
+            //(s->side == logicalSector.side) &&  // Checking the side here is possibly not done by the Wd177x, as there is no 'side' register
             (s->track == logicalSector.track)) {
             pos = currentPos;
             sectSize = (s->sector_size < 4) ? (1 << 7 + s->sector_size) : 512;
@@ -140,13 +140,32 @@ MfmTrack *MfmDisk :: GetTrack(int physTrack, int physSide)
     return (physSide) ? &side1[physTrack] : &side0[physTrack];
 }
 
-void MfmDisk :: DumpFormat(void)
+void MfmDisk :: DumpFormat(bool showSectors)
 {
     printf("Trk#  Secs  Data  Offset | ");
     printf("Secs  Data  Offset \n");
 
+    char secs[60];
+    secs[0] = 0;
+
     for(int i=0;i < WD_MAX_TRACKS_PER_SIDE;i++) {
-        printf("%4d  %4d  %4d  %6x | ", i, side0[i].numSectors, side0[i].actualDataSize, side0[i].offsetInFile);
-        printf("%4d  %4d  %6x \n", side1[i].numSectors, side1[i].actualDataSize, side1[i].offsetInFile);
+        MfmTrack *t;
+        t = &side0[i];
+        if (showSectors) {
+            sprintf(secs, "(0:%d/%2d/%d, 1:%d/%2d/%d, 2:%d/%2d/%d, ...)", t->sectors[0].side, t->sectors[0].track, t->sectors[0].sector,
+                t->sectors[1].side, t->sectors[1].track, t->sectors[1].sector,
+                t->sectors[2].side, t->sectors[2].track, t->sectors[2].sector);
+        }
+
+        printf("%4d  %4d  %4d  %6x %s", i, t->numSectors, t->actualDataSize, t->offsetInFile, secs);
+
+        t = &side1[i];
+
+        if (showSectors) {
+            sprintf(secs, "(0:%d/%2d/%d, 1:%d/%2d/%d, 2:%d/%2d/%d, ...)", t->sectors[0].side, t->sectors[0].track, t->sectors[0].sector,
+                t->sectors[1].side, t->sectors[1].track, t->sectors[1].sector,
+                t->sectors[2].side, t->sectors[2].track, t->sectors[2].sector);
+        }
+        printf("| %4d  %4d  %6x %s\n", t->numSectors, t->actualDataSize, t->offsetInFile, secs);
     }
 }
