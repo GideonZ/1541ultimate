@@ -29,12 +29,9 @@ static const char* wdnames[7] = { "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT
 Dos dos1(1);
 Dos dos2(2);
 
-extern int ultimatedosversion;
 extern bool allowUltimateDosDateSet;
 
-static Message c_message_identification_dos10 = { 20, true, (uint8_t *)"ULTIMATE-II DOS V1.0" };
-static Message c_message_identification_dos11 = { 20, true, (uint8_t *)"ULTIMATE-II DOS V1.1" };
-static Message c_message_identification_dos12 = { 20, true, (uint8_t *)"ULTIMATE-II DOS V1.2" };
+static Message c_message_identification_dos = { 20, true, (uint8_t *)"ULTIMATE-II DOS V1.2" };
 static Message c_status_directory_empty     = { 18, true, (uint8_t *)"01,DIRECTORY EMPTY" };
 static Message c_status_truncated           = { 20, true, (uint8_t *)"02,REQUEST TRUNCATED" };
 static Message c_status_not_implemented     = { 27, true, (uint8_t *)"99,FUNCTION NOT IMPLEMENTED" };
@@ -124,35 +121,9 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
     SubsysCommand* mount_command;
     SubsysCommand* swap_command;
 
-    if (ultimatedosversion == 3) /* Ultidos 1.0 */
-    {
-        int cmd = command->message[1];
-        if (cmd >= 0x09 && cmd <= 0x0f)
-            command->message[1] = 0xff;
-        if (cmd >= 0x16 && cmd <= 0x1f)
-            command->message[1] = 0xff;
-        if (cmd >= 0x23 && cmd <= 0x2f)
-            command->message[1] = 0xff;
-    }
-    if (ultimatedosversion == 2) /* Ultidos 1.1 */
-    {
-        int cmd = command->message[1];
-        if (cmd >= 0x0c && cmd <= 0x0f)
-            command->message[1] = 0xff;
-        if (cmd >= 0x18 && cmd <= 0x1f)
-            command->message[1] = 0xff;
-        if (cmd >= 0x26 && cmd <= 0x2f)
-            command->message[1] = 0xff;
-    }
-
     switch (command->message[1]) {
     case DOS_CMD_IDENTIFY:
-        if (ultimatedosversion == 1)
-            *reply = &c_message_identification_dos12;
-        else if (ultimatedosversion == 2)
-            *reply = &c_message_identification_dos11;
-        else
-            *reply = &c_message_identification_dos10;
+        *reply = &c_message_identification_dos;
         *status = &c_status_ok;
         break;
     case DOS_CMD_OPEN_FILE:
