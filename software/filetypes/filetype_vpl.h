@@ -19,7 +19,7 @@ public:
     static int execute(SubsysCommand *);
     static int executeFlash(SubsysCommand *cmd);
 
-    static void parseVplFile(File *f, uint8_t rgb[16][3]);
+    static bool parseVplFile(File *f, uint8_t rgb[16][3]);
 };
 
 #endif

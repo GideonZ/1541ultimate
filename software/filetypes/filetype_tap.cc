@@ -113,7 +113,7 @@ uint32_t readLine(const char *buffer, uint32_t index, char *out, int outlen)
         }
         index++;
     }
-    if (buffer[index] == 0x0A) {
+    if ((buffer[index] == 0x0A) || (buffer[index] == 0x00)) {
         index++;
     }
     out[i] = 0;

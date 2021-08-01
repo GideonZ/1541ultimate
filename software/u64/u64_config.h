@@ -121,7 +121,7 @@ public:
     static void set_palette_rgb(const uint8_t rgb[16][3]);
     static void set_palette_yuv(const uint8_t yuv[16][3]);
     static void rgb_to_yuv(const uint8_t rgb[3], uint8_t yuv[3], bool ntsc);
-    static void load_palette_vpl(const char *path, const char *filename);
+    static bool load_palette_vpl(const char *path, const char *filename);
     static void late_init_palette(void *obj, void *param);
     void set_palette_filename(const char *filename);
 

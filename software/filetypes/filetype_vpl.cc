@@ -93,11 +93,11 @@ static void trimLine(char *line)
     }
 }
 
-void FileTypePalette :: parseVplFile(File *f, uint8_t rgb[16][3])
+bool FileTypePalette :: parseVplFile(File *f, uint8_t rgb[16][3])
 {
     uint32_t size = f->get_size();
     if ((size > 8192) || (size < 8)) { // max 8K index file
-        return;
+        return false;
     }
     char *buffer = new char[size+1];
     char *linebuf = new char[80];
@@ -111,27 +111,37 @@ void FileTypePalette :: parseVplFile(File *f, uint8_t rgb[16][3])
 
     int r, g, b, idx = 0;
     while(index < size) {
+        //uint32_t idx_old = index;
         index = readLine(buffer, index, linebuf, 80);
         trimLine(linebuf);
         if (strlen(linebuf) > 0) {
-            sscanf(linebuf, "%x %x %x", &r, &g, &b);
-            //printf("%d %d %d\n", r, g, b);
-            rgb[idx][0] = (uint8_t)r;
-            rgb[idx][1] = (uint8_t)g;
-            rgb[idx][2] = (uint8_t)b;
-            idx ++;
-            if (idx == 16) {
+            int num_values = sscanf(linebuf, "%x %x %x", &r, &g, &b);
+            //printf("Line (%d-%d): '%s' => %d\n", idx_old, index, linebuf, num_values);
+            if (num_values == 3) {
+                rgb[idx][0] = (uint8_t)r;
+                rgb[idx][1] = (uint8_t)g;
+                rgb[idx][2] = (uint8_t)b;
+                idx ++;
+                if (idx == 16) {
+                    break;
+                }
+            } else {
                 break;
             }
         }
     }
     delete linebuf;
     delete buffer;
+    return (idx == 16);
 }
 
 int FileTypePalette :: execute(SubsysCommand *cmd)
 {
-    U64Config :: load_palette_vpl(cmd->path.c_str(), cmd->filename.c_str());
+    if (!U64Config :: load_palette_vpl(cmd->path.c_str(), cmd->filename.c_str())) {
+        if (cmd->user_interface) {
+            cmd->user_interface->popup("Invalid palette file.", BUTTON_OK);
+        }
+    }
     return 0;
 }
 
