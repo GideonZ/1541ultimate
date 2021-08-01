@@ -58,7 +58,7 @@ public:
     MfmTrack *GetTrack(int track, int side);
 
     // Just for debug
-    void DumpFormat(void);
+    void DumpFormat(bool);
 
 };
 
