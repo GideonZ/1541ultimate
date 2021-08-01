@@ -66,9 +66,25 @@ void TreeBrowserState :: do_refresh()
 
     if(needs_reload) {
     	reload();
-        cursor_pos = first_item_on_screen + selected_line;
-        under_cursor = (*children)[cursor_pos];
     }
+
+    cursor_pos = first_item_on_screen + selected_line;
+    if (cursor_pos >= children->get_elements()) {
+        cursor_pos = children->get_elements() - 1;
+    }
+    if (cursor_pos < 0) {
+        cursor_pos = 0;
+    }
+    do {
+        under_cursor = (*children)[cursor_pos];
+        if (!under_cursor) {
+            break;
+        }
+        if (under_cursor->isSelectable()) {
+            break;
+        }
+        cursor_pos++;
+    } while(1);
 
     if(!under_cursor) { // initial state or reset state
         browser->reset_quick_seek();
@@ -226,15 +242,6 @@ void TreeBrowserState :: reload(void)
 	printf("State %s reloaded. # of children = %d\n", node->getName(), children->get_elements());
 	needs_reload = false;
 	refresh = true;
-//	move_to_index(cursor_pos);
-/*
-	int child_count = node->children->get_elements();
-	node->cleanup_children();
-	node->fetch_children();
-	child_count = node->children->get_elements();
-	reselect();
-	refresh = true;
-*/
 }
 
 void TreeBrowserState :: into(void)
