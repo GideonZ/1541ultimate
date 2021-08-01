@@ -52,7 +52,6 @@
 #include "filetype_crt.h"
 #endif
 
-int ultimatedosversion = 0;
 bool allowUltimateDosDateSet = false;
 #ifndef RECOVERYAPP
 extern bool connectedToU64;
@@ -65,7 +64,6 @@ static const char *buttons[] = { "Reset|Menu|Freezer", "Freezer|Menu|Reset" };
 static const char *timing1[] = { "20ns", "40ns", "60ns", "80ns", "100ns", "120ns", "140ns", "160ns" };
 static const char *timing2[] = { "16ns", "32ns", "48ns", "64ns", "80ns", "96ns", "112ns", "128ns" };
 static const char *timing3[] = { "15ns", "30ns", "45ns", "60ns", "75ns", "90ns", "105ns", "120ns" };
-static const char *ultimatedos[] = { "Disabled", "Enabled", "Enabled (v1.1)", "Enabled (v1.0)" };
 static const char *cartmodes[] = { "Auto", "Internal", "External", "Manual" };
 static const char *bus_modes[] = { "Quiet", "Writes", "Dynamic", "Dyn. & Writes" };
 static const uint8_t bus_mode_values[] = { 0x00, 0x01, 0x02, 0x03, 0x04 };
@@ -106,7 +104,7 @@ struct t_cfg_definition c64_config[] = {
     { CFG_C64_TIMING,   CFG_TYPE_ENUM,   "CPU Addr valid after PHI2",    "%s", timing1,    0,  7, 3 },
     { CFG_C64_PHI2_REC, CFG_TYPE_ENUM,   "PHI2 edge recovery",           "%s", en_dis,     0,  1, 0 },
 #endif
-    { CFG_CMD_ENABLE,   CFG_TYPE_ENUM,   "Command Interface",            "%s", ultimatedos,0,  3, 0 },
+    { CFG_CMD_ENABLE,   CFG_TYPE_ENUM,   "Command Interface",            "%s", en_dis,     0,  1, 0 },
     { CFG_CMD_ALLOW_WRITE, CFG_TYPE_ENUM,   "UltiDOS: Allow SetDate",    "%s", en_dis,     0,  1, 0 },
 #if DEVELOPER > 0
     { CFG_C64_DO_SYNC,  CFG_TYPE_ENUM,   "Perform VIC sync at DMA RUN",  "%s", en_dis,     0,  1, 0 },
@@ -302,7 +300,6 @@ void C64::set_emulation_flags(void)
     if (getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
         int choice = cfg->get_value(CFG_CMD_ENABLE);
         CMD_IF_SLOT_ENABLE = !!choice;
-        ultimatedosversion = choice;
         CMD_IF_SLOT_BASE = 0x47; // $$DF1C
         choice = cfg->get_value(CFG_CMD_ALLOW_WRITE);
         allowUltimateDosDateSet = choice;
