@@ -35,6 +35,7 @@ static const char *drive_types[] = { "1541", "1571", "1581", "Unknown" };
 #define CFG_C1541_ROMFILE0  0xE1
 #define CFG_C1541_ROMFILE1  0xE2
 #define CFG_C1541_ROMFILE2  0xE3
+#define CFG_C1541_EXITMOUNT 0xE4
 
 const struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_POWERED,   CFG_TYPE_ENUM,   "Drive",                      "%s", en_dis,     0,  1, 1 },
@@ -48,6 +49,7 @@ const struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_C64RESET,  CFG_TYPE_ENUM,   "Resets when C64 resets",     "%s", yes_no,     0,  1, 1 },
     { CFG_C1541_STOPFREEZ, CFG_TYPE_ENUM,   "Freezes in menu",            "%s", yes_no,     0,  1, 1 },
     { CFG_C1541_GCRALIGN,  CFG_TYPE_ENUM,   "GCR Save Align Tracks",      "%s", yes_no,     0,  1, 1 },
+    { CFG_C1541_EXITMOUNT, CFG_TYPE_ENUM,   "Leave Menu on Mount",        "%s", yes_no,     0,  1, 1 },
     
 //    { CFG_C1541_LASTMOUNT, CFG_TYPE_ENUM,   "Load last mounted disk",  "%s", yes_no,     0,  1, 0 },
     { 0xFF, CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
@@ -942,6 +944,7 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 	File *newFile = 0;
 	FRESULT res;
 	FileInfo info(32);
+	int returnValue = 0;
 
     fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
 
@@ -1003,6 +1006,9 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
                 mount_file_name = cmd->filename;
                 mount_function_id = cmd->functionID;
                 mount_mode = cmd->mode;
+                if (cfg->get_value(CFG_C1541_EXITMOUNT)) {
+                    returnValue = -1;
+                }
             } else {
                 if (cmd->user_interface) {
                     cmd->user_interface->popup("Opening disk file failed.", BUTTON_OK);
@@ -1042,6 +1048,9 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 		break;
     case MENU_1541_BLANK:
         mount_blank();
+        if (cfg->get_value(CFG_C1541_EXITMOUNT)) {
+            returnValue = -1;
+        }
         break;
     case MENU_1541_SAVED64:
     	cmd->mode = 0;
@@ -1059,7 +1068,7 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 		printf("Unhandled menu item for C1541.\n");
 		return -1;
 	}
-	return 0;
+	return returnValue;
 }
 
 void C1541 :: unlink(void)
