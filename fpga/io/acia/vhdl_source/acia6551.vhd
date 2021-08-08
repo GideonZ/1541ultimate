@@ -61,7 +61,7 @@ architecture arch of acia6551 is
     alias parity_err        : std_logic is status(0);
 
     alias dtr               : std_logic is command(0);
-    signal dtr_d, rts_d     : std_logic;
+    signal dtr_d            : std_logic;
     
     signal enable           : std_logic;
     signal nmi_selected     : std_logic;
@@ -75,7 +75,7 @@ architecture arch of acia6551 is
     signal ctrl_irq_en      : std_logic;
     signal hs_irq_en        : std_logic;
     signal control_change   : std_logic;
-    signal rts_dtr_change   : std_logic;
+    signal dtr_change       : std_logic;
     
     signal cts              : std_logic; -- written by sys
     signal rts              : std_logic; -- written by slot (command register)
@@ -126,14 +126,13 @@ begin
     appl_rx_irq  <= '0' when (rx_head + 1) = rx_tail else '1'; -- RX = Appl -> Host (room for data appl can write)
     appl_tx_irq  <= '1' when tx_head /= tx_tail else '0';      -- TX = Host -> Appl (data appl should read)
     io_irq       <= (appl_rx_irq and rx_irq_en) or (appl_tx_irq and tx_irq_en) or
-                    (control_change and ctrl_irq_en) or (rts_dtr_change and hs_irq_en);
+                    (control_change and ctrl_irq_en) or (dtr_change and hs_irq_en);
     
     process(clock)
     begin
         if rising_edge(clock) then
             soft_reset <= '0';
             tx_data_push <= '0';
-            rts_d <= rts;
             dtr_d <= dtr;
             irq_d <= irq;
             
@@ -182,9 +181,6 @@ begin
                 b_en <= '1';
                 b_pending <= '1';
                 rx_tail <= rx_tail + 1;
-            elsif dtr = '0' or rts = '0' then
-                rx_rate_expired <= '0';
-                rx_rate_cnt <= rx_rate & "00011";
             end if;
 
             if (slot_req.io_address(8 downto 2) = slot_base) and (enable = '1') then
@@ -246,13 +242,14 @@ begin
                         control_change <= '0';
                     end if;
                     if io_req_regs.data(4) = '1' then
-                        rts_dtr_change <= '0';
+                        dtr_change <= '0';
                     end if;
                 when c_reg_slot_base =>
                     slot_base <= unsigned(io_req_regs.data(6 downto 0));
                     nmi_selected <= io_req_regs.data(7);
                 when c_reg_rx_rate =>
                     rx_rate <= unsigned(io_req_regs.data);
+
                 when others =>
                     null;
                 end case;
@@ -289,7 +286,7 @@ begin
                     io_resp_regs.data(1) <= appl_rx_irq;
                     io_resp_regs.data(2) <= appl_tx_irq;
                     io_resp_regs.data(3) <= control_change;
-                    io_resp_regs.data(4) <= rts_dtr_change;
+                    io_resp_regs.data(4) <= dtr_change;
                 when c_reg_slot_base =>
                     io_resp_regs.data(6 downto 0) <= std_logic_vector(slot_base);
                     io_resp_regs.data(7) <= nmi_selected;
@@ -318,11 +315,10 @@ begin
             if (dcd_d /= dcd_n) then
                 dcd_change <= '1';
             end if;             
-
-            if (dtr /= dtr_d) or (rts /= rts_d) then
-                rts_dtr_change <= '1';
+            if (dtr /= dtr_d) then
+                dtr_change <= '1';
             end if;
-
+            
             if reset = '1' then
                 nmi <= '0';
                 command <= X"02";
@@ -343,7 +339,7 @@ begin
                 hs_irq_en <= '0';
                 dsr_change <= '0';
                 dcd_change <= '0';
-                rts_dtr_change <= '0';
+                dtr_change <= '0';
                 control_change <= '0';
                 slot_base <= (others => '0');
                 rx_rate <= X"82";
