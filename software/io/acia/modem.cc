@@ -437,15 +437,23 @@ void Modem :: Caller()
             continue;
         }
 
-        for(int i=2;i<cmd.length;i++) {
-            if (cmd.command[i] == ':') {
-                cmd.command[i] = 0;
-                portString = &cmd.command[i + 1];
+        char *c = cmd.command;
+        int len = cmd.length;
+        portString = NULL;
+
+        while(*c == 0x20) {
+            c++;
+            len--;
+        }
+        for(int i=2;i < len;i++) {
+            if (c[i] == ':') {
+                c[i] = 0;
+                portString = &c[i + 1];
                 break;
             }
         }
         // setup the connection
-        int result = gethostbyname_r(cmd.command, &my_host, buffer, 128, &ret_host, &error);
+        int result = gethostbyname_r(c, &my_host, buffer, 128, &ret_host, &error);
 
         if (!ret_host) {
         	responseString = (verbose==TRUE ? responseText[RESP_NO_ANSWER] : responseCode[RESP_NO_ANSWER]);
