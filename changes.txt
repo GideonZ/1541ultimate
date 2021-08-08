@@ -1,0 +1,75 @@
+Changes in 3.10a, compared to 3.10
+----------------------------------
+
+Fixes:
+    [Issue-234] Deleting last item in directory makes selection invisible
+    [Issue-236] Confirmation modal asking a question only gives 'OK' instead of 'Yes/No'.
+    [Issue-R17] Added mapping of ESC key to RUN/STOP.
+    [Facebook Request] Added: Leave menu on mount (can be selected per drive)
+    [Facebook Bug Report]: Allow Maverick (and others?) to write wrong sector headers on MFM tracks.
+    [Facebook Bug Report]: Unable to select GeoRAM. Is now a mode of the RAM Expansion Unit.
+    [Facebook Bug Report]: Fixes color palette not loaded at boot.
+    [Messenger Report]: Improvements to palette file read. Rejects faulty files. Fixes hang-up
+    [Messenger Report]: Fixes 'Create DNP' when run from Telnet. Turned out to be a stack overflow.
+
+U2:
+    Fixes that U2 updater killed the flash before asking to update, leaving a semi-bricked device.
+
+Modem:
+    ACIA NMI pulse extension to extend over bad line. This allows the 6502 to see it always.
+    Performance optimization ACIA / Modem
+    Allow spaces after ATDT command.
+
+===========================================
+Changes since official release (3.9 / 1.37)
+
+Added features:
+- Hardware emulation of 1571 and 1581 drives (U2+ / U64 only)
+- MFM support on 1571, with enhanced G71 format to store MFM tracks 
+- Added audio samples for insert / remove floppy disk
+- Added second drive sound to speaker output
+- Possiblity to use your own drive sound samples
+- Custom U64 palettes
+- SystemInfo Page, showing drive, cartridge and storage status
+- Flash Disk, to store drive roms, sounds, cartridges and such
+- Cartridges are now always CRT files. Selected by filename in the config
+- Cartridge compatibility check and reporting
+- GMOD2 support, including EEPROM (U2+ / U64 only)
+- Zaxxon Cartridge support
+- Implemented writing CVT files back to a disk image (enables copying CVT files across disks.)
+
+Various UI Improvements:
+- Select & Delete, using Shift-DEL
+- Recursive delete from context menu
+- Long filename truncation (thanks to 'naali' / Antti Svenn)
+- Scrollable string edit box
+- Adds save function for all cartridges, including EasyFlash and GMOD2
+- Full Clear function of configuration in Flash
+- Added 'F3' Help screen to config menu
+
+Technical Fixes:
+- Fixed RGB mode (U64 only)
+- Fixed block read command
+- Fixed access of files with special chars in CBM disk images, accessed from IEC
+- Fixed UCI issues with SidPlay and others
+- Fixed colon issue in Ultimate Kernal ROM
+- Fixed crash on invalid file chain CBM filesystems
+- Fixed check order DIR / VOLUME; fixes some issues with exFAT directories
+- Added M and V commands in modem emulation layer, V now supporting numeric responses. Thanks Scott Hutter
+- Fixed the root cause of the VOLUME bit set in exFAT directories
+- Fixed missing 'probe' for filesystems on multi-partition disks
+- Fixed loading from wrong device ID when issuing the 'run disk' command
+- Fixed many little bugs in the generation of CVT files (copying GEOS files from a disk image)
+- Adopted changes to U64 Kernal to set default loading ID, as submitted by Leif Bloomquist
+- Adopted USB modifier key handling, as submitted by Peter de Schrijver
+- Corrected bug in extended partition table reading
+- Relaxed C128 cartridge timing (for C128 carts)
+- Extended UCI I/O bytes to support Hyperspeed Kernal properly
+- Check for file copy onto itself
+- Increased robustness against loading faulty disk images
+- Fixed VIA latch mode in 1541/1571.
+- [Issue 227] Fixes 'get sensible name' function for Ulticopy
+- Fix for .d71 sector allocation - format should give 1328 blocks free, not 1347.
+- Fixes possible crash when decoding a GCR track to binary
+- [Issue 160]: SpeedDOS / DolphinDOS loading errors
+
