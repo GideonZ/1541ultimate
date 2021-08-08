@@ -171,7 +171,7 @@ void Modem :: RunRelay(int socket)
         if (!tcp_buffer_valid) {
             ret = recv(socket, tcp_receive_buffer, 512, 0);
             if (ret > 0) {
-                printf("[%d] TCP: %d\n", xTaskGetTickCount(), ret);
+                //printf("[%d] TCP: %d\n", xTaskGetTickCount(), ret);
                 tcp_buffer_valid = ret;
                 tcp_buffer_offset= 0;
             } else if(ret == 0) {
@@ -192,13 +192,13 @@ void Modem :: RunRelay(int socket)
                 if (tcp_buffer_valid > space) {
                     memcpy((void *)dest, tcp_receive_buffer + tcp_buffer_offset, space);
                     acia.AdvanceRx(space);
-                    printf("[%d] Rx: Got=%d. Push:%d.\n", xTaskGetTickCount(), tcp_buffer_valid, space);
+                    //printf("[%d] Rx: Got=%d. Push:%d.\n", xTaskGetTickCount(), tcp_buffer_valid, space);
                     tcp_buffer_valid -= space;
                     tcp_buffer_offset += space;
                 } else {
                     memcpy((void *)dest, tcp_receive_buffer + tcp_buffer_offset, tcp_buffer_valid);
                     acia.AdvanceRx(tcp_buffer_valid);
-                    printf("[%d] Rx: Got=%d. Push: All.\n", xTaskGetTickCount(), tcp_buffer_valid);
+                    //printf("[%d] Rx: Got=%d. Push: All.\n", xTaskGetTickCount(), tcp_buffer_valid);
                     tcp_buffer_valid = 0;
                 }
             }
@@ -231,6 +231,7 @@ void Modem :: RunRelay(int socket)
                     }
                 }
                 ret = send(socket, pnt, avail, 0);
+                //printf("[%d] Tx: Got=%d. Sent:%d\n", xTaskGetTickCount(), avail, ret);
                 if (ret > 0) {
                     aciaTxBuffer->AdvanceReadPointer(ret);
                 } else if(ret < 0) {
