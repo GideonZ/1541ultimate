@@ -209,7 +209,7 @@ int TreeBrowser :: poll(int sub_returned)
                 const char *p = state->browser->getPath();
                 const char *filename = (b)?(b->getName()):"";
                 SubsysCommand *cmd = new SubsysCommand(user_interface, act, p, filename);
-                cmd->execute();
+                ret = cmd->execute();
             } else {
                 printf("Action was not set in context menu!\n");
             }
