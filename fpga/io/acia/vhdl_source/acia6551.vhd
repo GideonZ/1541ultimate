@@ -149,11 +149,11 @@ begin
             b_wdata <= (others => 'X');
 
             -- generation of NMI
-            if (irq = '1' and irq_d = '0') or (irq = '1' and nmi_counter = 15000) then
+            if (irq = '1' and irq_d = '0') or (irq = '1' and nmi_counter = 4095) then
                 nmi <= '1';
                 nmi_counter <= 0;
             elsif slot_tick = '1' then
-                if nmi_counter = 15 then
+                if nmi_counter = 127 then
                     nmi <= '0';
                 end if;
                 if nmi_counter /= 16383 then
