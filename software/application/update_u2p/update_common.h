@@ -158,8 +158,6 @@ static void setup(const char *title)
     GenericHost *host = 0;
     Stream *stream = new Stream_UART;
 
-    InitFunction :: executeAll();
-
     C64 *c64 = C64 :: getMachine();
 
     if (c64->exists()) {
@@ -186,6 +184,8 @@ static void setup(const char *title)
 
 static void check_flash_disk()
 {
+    InitFunction :: executeAll();
+
     screen->move_cursor(0, 16);
     uint32_t free = print_free_flash_blocks();
 

@@ -26,10 +26,9 @@ void do_update(void)
 
     setup("\033\025** 1541 Ultimate II Updater **\n\033\037");
 
-    check_flash_disk();
-
     if(user_interface->popup("Flash " APPL_VERSION "?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
 
+        check_flash_disk();
         clear_field();
         create_dir(ROMS_DIRECTORY);
         create_dir(CARTS_DIRECTORY);
