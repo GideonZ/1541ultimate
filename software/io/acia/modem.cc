@@ -19,6 +19,9 @@
 #define CFG_MODEM_CONNFILE    0x0A
 #define CFG_MODEM_OFFLINEFILE 0x0B
 #define CFG_MODEM_LISTEN_RING 0x0C
+#define CFG_MODEM_QUIRKS      0x0D
+#define CFG_MODEM_TCPNODELAY  0x0E
+#define CFG_MODEM_LOOPDELAY   0x0F
 
 #define RESP_OK				0
 #define RESP_CONNECT		1
@@ -69,6 +72,8 @@ struct t_cfg_definition modem_cfg[] = {
     { CFG_MODEM_OFFLINEFILE,   CFG_TYPE_STRING, "Modem Offline Text",            "%s", NULL,         0, 30, (int)"/Usb0/offline.txt" },
     { CFG_MODEM_CONNFILE,      CFG_TYPE_STRING, "Modem Connect Text",            "%s", NULL,         0, 30, (int)"/Usb0/welcome.txt" },
     { CFG_MODEM_BUSYFILE,      CFG_TYPE_STRING, "Modem Busy Text",               "%s", NULL,         0, 30, (int)"/Usb0/busy.txt" },
+    { CFG_MODEM_TCPNODELAY,    CFG_TYPE_ENUM,   "Set Socket Opt TCP_NODELAY",    "%s", en_dis,       0,  1, 0 },
+    { CFG_MODEM_LOOPDELAY,     CFG_TYPE_VALUE,  "Loop Delay (OS ticks)",         "%d", NULL,         1, 20, 2 },
     { CFG_TYPE_END,            CFG_TYPE_END,    "",                              "",   NULL,         0,  0, 0 } };
 
 
@@ -134,11 +139,19 @@ void Modem :: listenerTask(void *a)
 
 void Modem :: RunRelay(int socket)
 {
+    int loopDelay = cfg->get_value(CFG_MODEM_LOOPDELAY);
+    printf("Using loopDelay = %d\n", loopDelay);
+
     struct timeval tv;
-    tv.tv_sec = 10; // bug in lwip; this is just used directly as tick value
-    tv.tv_usec = 10;
+    tv.tv_sec = loopDelay * portTICK_PERIOD_MS;
+    tv.tv_usec = loopDelay * portTICK_PERIOD_MS;
     setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
-    //currentRelaySocket = socket;
+
+    if (cfg->get_value(CFG_MODEM_TCPNODELAY)) {
+        int flags =1;
+        setsockopt(socket, IPPROTO_TCP, TCP_NODELAY, &flags, sizeof(flags));
+    }
+
     ModemCommand_t modemCommand;
 
     printf("Modem: Running Relay to socket %d.\n", socket);
@@ -150,22 +163,48 @@ void Modem :: RunRelay(int socket)
     int escapeCount = 0;
     TickType_t escapeDetectTime = 0;
 
+    tcp_buffer_valid = 0;
+    tcp_buffer_offset = 0;
+
     while(keepConnection) {
-        int space = acia.GetRxSpace();
-        volatile uint8_t *dest = acia.GetRxPointer();
-        if (space > 0) {
-            //printf("RELAY: Recv %p %d ", dest, space);
-            ret = recv(socket, (void *)dest, space, 0);
+        // Do we have space for TCP data? Then lets try to receive some.
+        if (!tcp_buffer_valid) {
+            ret = recv(socket, tcp_receive_buffer, 512, 0);
             if (ret > 0) {
-                acia.AdvanceRx(ret);
-                //printf("%d\n", ret);
+                printf("[%d] TCP: %d\n", xTaskGetTickCount(), ret);
+                tcp_buffer_valid = ret;
+                tcp_buffer_offset= 0;
             } else if(ret == 0) {
                 printf("Receive returned 0. Exiting\n");
                 break;
             }
         } else {
-            vTaskDelay(10);
+            // we did not wait for tcp, so we just wait a little
+            vTaskDelay(loopDelay);
         }
+
+        // Do we have TCP data to send?
+        if (tcp_buffer_valid) {
+            int space = acia.GetRxSpace();
+            // Is there room in the ACIA Rx buffer?
+            if (space > 0) {
+                volatile uint8_t *dest = acia.GetRxPointer();
+                if (tcp_buffer_valid > space) {
+                    memcpy((void *)dest, tcp_receive_buffer + tcp_buffer_offset, space);
+                    acia.AdvanceRx(space);
+                    printf("[%d] Rx: Got=%d. Push:%d.\n", xTaskGetTickCount(), tcp_buffer_valid, space);
+                    tcp_buffer_valid -= space;
+                    tcp_buffer_offset += space;
+                } else {
+                    memcpy((void *)dest, tcp_receive_buffer + tcp_buffer_offset, tcp_buffer_valid);
+                    acia.AdvanceRx(tcp_buffer_valid);
+                    printf("[%d] Rx: Got=%d. Push: All.\n", xTaskGetTickCount(), tcp_buffer_valid);
+                    tcp_buffer_valid = 0;
+                }
+            }
+        }
+
+        // Check for escapes to see if we can get out of data mode
         if (escapeCount == 3) {
             TickType_t since = xTaskGetTickCount() - escapeDetectTime;
             if (since >= escapeTime) {
@@ -174,6 +213,9 @@ void Modem :: RunRelay(int socket)
                 commandMode = true;
             }
         }
+
+        // As long as we are in data mode, all data written to the ACIA shall be
+        // forwarded to TCP.
         if (!commandMode) {
             int avail = aciaTxBuffer->AvailableContiguous();
             if (avail > 0) {
@@ -197,6 +239,8 @@ void Modem :: RunRelay(int socket)
                 }
             }
         }
+
+        // Maybe there are any commands that need to be executed?
         BaseType_t cmdAvailable = xQueueReceive(commandQueue, &modemCommand, 0);
         if (cmdAvailable) {
             ExecuteCommand(&modemCommand);
