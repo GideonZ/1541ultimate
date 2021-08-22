@@ -48,6 +48,9 @@
 #define SOCKET_CMD_READFLASH    0xFF75
 #define SOCKET_CMD_DEBUG_REG    0xFF76
 
+static const char tcpimage_d64[] = "tcpimage.d64";
+static const char tcpimage_crt[] = "tcpimage.crt";
+
 SocketDMA socket_dma; // global that causes the object to exist
 
 extern cart_def sid_cart;
@@ -138,12 +141,9 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
     case SOCKET_CMD_MOUNT_IMG:
     case SOCKET_CMD_RUN_IMG:
     {
-        FileManager *fm = FileManager :: getFileManager();
-        FRESULT fres = fm->save_file(true, "/temp", "tcpimage.d64", buf, len, NULL);
-        if (fres == FR_OK) {
-            sys_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, MENU_1541_MOUNT_D64, 1541, "/temp", "tcpimage.d64");
-            sys_command->execute();
-        }
+		sys_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, MENU_1541_MOUNT_D64, 1541, "/temp", tcpimage_d64);
+		sys_command->execute();
+
         if (cmd == SOCKET_CMD_RUN_IMG) {
             char *drvId = "H";
             drvId[0] = 0x40 + c1541_A->get_current_iec_address();
@@ -154,13 +154,9 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
     break;
     case SOCKET_CMD_RUN_CRT:
     {
-        FileManager *fm = FileManager :: getFileManager();
-        FRESULT fres = fm->save_file(true, "/temp", "tcpimage.crt", buf, len, NULL);
-        if (fres == FR_OK) {
-            sys_command = new SubsysCommand(NULL, SUBSYSID_C64, 0, 0, "/temp", "tcpimage.crt");
-            FileTypeCRT::execute_st(sys_command);
-            delete sys_command;
-        }
+		sys_command = new SubsysCommand(NULL, SUBSYSID_C64, 0, 0, "/temp", tcpimage_crt);
+		FileTypeCRT::execute_st(sys_command);
+		delete sys_command;
     }
     break;
 
@@ -326,6 +322,42 @@ int SocketDMA::writeSocket(int socket, void *buffer, int length)
     return sent;
 }
 
+int SocketDMA::readSocketToFile(int socket, const char *filename, void *buffer, uint32_t len)
+{
+	FileManager *fm = FileManager :: getFileManager();
+	File *file;
+
+	const FRESULT ret = fm->fopen("/temp", filename, FA_WRITE | FA_CREATE_ALWAYS, &file);
+	if (ret != FR_OK) {
+		return -ERR_IF;
+	}
+
+	do {
+		uint32_t current = (len > SOCKET_BUFFER_SIZE) ? SOCKET_BUFFER_SIZE : len;
+		const int bytes_read = readSocket(socket, buffer, current);
+		if (bytes_read < 0) {
+			file->close();
+			return bytes_read;
+		}
+
+		uint32_t written;
+		const FRESULT ret = file->write(buffer, bytes_read, &written);
+		if (ret != FR_OK) {
+			file->close();
+			return -ERR_IF;
+		}
+
+		if (written != bytes_read) {
+			file->close();
+			return -ERR_BUF;
+		}
+
+		len -= written;
+	} while (len != 0);
+
+	file->close();
+}
+
 void SocketDMA::dmaThread(void *load_buffer)
 {
 	int sockfd, newsockfd, portno;
@@ -413,15 +445,23 @@ void SocketDMA::dmaThread(void *load_buffer)
 	            n = recv(newsockfd, buf+2, 1, 0);
                 len32 |= (((uint32_t)buf[2]) << 16);
 	        }
-	        if (len32 > SOCKET_BUFFER_SIZE) {
-	            len32 = SOCKET_BUFFER_SIZE;
-	        }
-	        if (len32) {
-	            n = readSocket(newsockfd, mempntr, len32);
-	        }
-	        if (n <= 0) {
-	            break;
-	        }
+
+			const char *name;
+			switch (cmd) {
+			case SOCKET_CMD_MOUNT_IMG:
+			case SOCKET_CMD_RUN_IMG:
+					name = tcpimage_d64;
+					break;
+			case SOCKET_CMD_RUN_CRT:
+					name = tcpimage_crt;
+					break;
+			default:
+					name = "unknown";
+					break;
+			}
+			if (readSocketToFile(newsockfd, name, load_buffer, len32) < 0) {
+				break;
+			}
             performCommand(newsockfd, load_buffer, n, cmd, len32, &cli_addr.sin_addr);
 		}
         puts("ERROR reading from socket");
