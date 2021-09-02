@@ -303,7 +303,7 @@ class MpsPrinter
 #ifndef NOT_ULTIMATE
         void calcPageNum(void);
 #endif
-        void Print(const char* filename);
+        int  Print(const char* filename);
         void Ink(uint16_t x, uint16_t y, uint8_t c=3);
 #ifdef DEBUG
         void InkTest(uint16_t x, uint16_t y, uint8_t c);

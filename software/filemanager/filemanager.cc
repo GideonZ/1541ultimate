@@ -284,6 +284,9 @@ FRESULT FileManager::find_pathentry(PathInfo &pathInfo, bool open_mount)
 
 FRESULT FileManager::fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file)
 {
+    // Reset output file pointer
+    *file = NULL;
+
     FRESULT fres = find_pathentry(pathInfo, false);
 
     if (fres == FR_NO_PATH)
