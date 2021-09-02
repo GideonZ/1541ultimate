@@ -261,11 +261,9 @@ void UsbScsi :: reset(void)
 
 	set_state(e_device_unknown);
 
-//	printf("Going to do inquiry..\n");
+    vTaskDelay(100); // wait 0.5 seconds? Why?
     inquiry();
     driver->request_sense(lun, true, false);
-
-//	printf("Reset Done..\n");
 }
 
 int UsbScsiDriver :: status_transport(int timeout, int retries)
@@ -284,6 +282,7 @@ int UsbScsiDriver :: status_transport(int timeout, int retries)
 	return (int)stat_resp[12]; // OK, or other error
 }
 
+/*
 int UsbScsiDriver :: mass_storage_reset()
 {
 	uint8_t buf[8];
@@ -298,6 +297,7 @@ int UsbScsiDriver :: mass_storage_reset()
 
 	return i;
 }
+*/
 
 int UsbScsiDriver :: request_sense(int lun, bool debug, bool handle)
 {
@@ -328,15 +328,15 @@ int UsbScsiDriver :: request_sense(int lun, bool debug, bool handle)
         return -11;
     }
     int len = host->bulk_in(&bulk_in, sense_data, 18);
-    if(debug) {
-        printf("%d bytes sense data returned: ", len);
+
+    if(debug && sense_data[2] != 0x06 && sense_data[2] != 0x02) {
+        print_sense_error(sense_data);
+        printf(" - "); //%d bytes sense data returned: ", len);
         for(int i=0;i<len;i++) {
             printf("%b ", sense_data[i]);
         }
         printf(")\n");
     }
-	if(debug)
-		print_sense_error(sense_data);
 
 	int retval = status_transport(160, 1); // 20 ms, 1 retry
 
@@ -399,7 +399,12 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
     int st = host->bulk_out(&bulk_out, &cbw, 31);
     if(st != 31) { // out failed.. terminate.
     	printf("USB SCSI: Out failed... Terminate.\n");
-		retval = -6;
+    	if (st == -4) {
+            printf("Stalled Command Phase. Unstalling Endpoint\n");
+            device->unstall_pipe((uint8_t)(bulk_out.DevEP & 0xFF));
+            bulk_out.Command = 0; // reset toggle
+    	}
+    	retval = -6;
     }
 
     if (retval) {
@@ -411,17 +416,30 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
     int timeout = 24000; // 3 seconds
     int retries = 5;
     if(cmd[0] == 0x12) {
-        vTaskDelay(100); // wait 0.5 seconds? Why?
-        timeout = 800; // 100 ms
-        retries = 1;
+        timeout = 8000; // 1000 ms
+        retries = 3;
     }
 
     /* DATA PHASE */
     if((data)&&(datalen)) {
     	if(out) {
 			len = host->bulk_out(&bulk_out, data, datalen, timeout);
+            if (len == -4) { // Stall
+                printf("Stalled Data Phase. Unstalling Endpoint\n");
+                device->unstall_pipe((uint8_t)(bulk_out.DevEP & 0xFF));
+                bulk_out.Command = 0; // reset toggle
+                xSemaphoreGive(mutex);
+                return -4;
+            }
     	} else { // in
 			len = host->bulk_in(&bulk_in, data, datalen, timeout, retries);
+		    if (len == -4) { // Stall
+                printf("Stalled Data Phase. Unstalling Endpoint\n");
+                device->unstall_pipe((uint8_t)(bulk_in.DevEP & 0xFF));
+                bulk_in.Command = 0; // reset toggle
+                xSemaphoreGive(mutex);
+                return -4;
+		    }
 		}
 	}
 
@@ -431,7 +449,7 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
     st = status_transport(timeout, retries);
 
     if (st == -4) {
-    	printf("Stalled. Unstalling Endpoint\n");
+    	printf("Stalled Status Phase. Unstalling Endpoint\n");
     	device->unstall_pipe((uint8_t)(bulk_in.DevEP & 0xFF));
 	    bulk_in.Command = 0; // reset toggle
     }
@@ -460,13 +478,13 @@ void UsbScsi :: inquiry(void)
     	sprintf(name + strlen(name), "L%d", lun);
     }
 
-    uint8_t inquiry_command[6] = { 0x12, 0, 0, 0, 36, 0 };
+    removable = 1;
+    disp_name[31] = 0;
+    strncpy(disp_name, driver->getDevice()->product, 31);
 
+    uint8_t inquiry_command[6] = { 0x12, 0, 0, 0, 36, 0 };
     if((len = driver->exec_command(lun, 6, false, inquiry_command, 36, response, false)) < 0) {
-    	printf("Inquiry failed. %d\n", len);
-        removable = 1;
-        disp_name[31] = 0;
-        strncpy(disp_name, driver->getDevice()->product, 31);
+        printf("Inquiry failed. %d\n", len);
     	//initialized = false; // don't try again
     	return;
     }
@@ -480,7 +498,7 @@ void UsbScsi :: inquiry(void)
     printf("Device: %s %s\n", (char *)&response[8], (removable)?"(Removable)":"");
     
     // copy display name
-    char *n = disp_name;
+    char n[40];
     int j=0;
     for(int i=8;i<16;i++)
     	n[j++] = (char)response[i];
@@ -489,6 +507,10 @@ void UsbScsi :: inquiry(void)
     	n[j++] = (char)response[i];
     n[j++] = 0;
 
+    // Which of the strings is more informative?
+    if (strlen(n) > strlen(disp_name)) {
+        strcpy(disp_name, n);
+    }
 }
 
 bool UsbScsi :: test_unit_ready(void)
