@@ -14,6 +14,8 @@ library ieee;
     use work.audio_type_pkg.all;
         
 entity u2p_nios_solo is
+generic (
+    g_dual_drive     : boolean := true );
 port (
     -- slot side
     SLOT_PHI2        : in    std_logic;
@@ -514,7 +516,7 @@ begin
         g_icap          => false,
         g_uart          => true,
         g_drive_1541    => true,
-        g_drive_1541_2  => true,
+        g_drive_1541_2  => g_dual_drive,
         g_mm_drive      => true,
         g_hardware_gcr  => true,
         g_ram_expansion => true,
