@@ -88,7 +88,7 @@ class C64_CRT
     void unpatch_easyflash_eapi();
     int  read_crt(File *file, cart_def *def);
     void configure_cart(cart_def *def);
-
+    void find_eeprom(void);
 public:
     static int load_crt(const char *path, const char *filename, cart_def *def, uint8_t *mem);
     static int save_crt(File *f);

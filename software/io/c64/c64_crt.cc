@@ -511,6 +511,7 @@ void C64_CRT::configure_cart(cart_def *def)
         case CART_GMOD2:
             prohibit = CART_PROHIBIT_DEXX;
             cart_type = CART_TYPE_GMOD2;
+            find_eeprom();
             break;
         case CART_EXOS:
             require = CART_KERNAL;
@@ -612,6 +613,49 @@ int C64_CRT::save_crt(File *fo)
     } else {
         return -7;
     }
+}
+
+void C64_CRT :: find_eeprom(void)
+{
+    // If the hardware doesn't support EEPROM, there is no need to modify the CRT.
+    if (!(getFpgaCapabilities() & CAPAB_EEPROM)) {
+        return;
+    }
+
+    // If the CRT contains an eeprom chunk, no modification is required.
+    for(int i=0; i < chip_chunks.get_elements(); i++) {
+        t_crt_chip_chunk *ch = chip_chunks[i];
+        uint16_t load = get_word(ch->header + CRTCHP_LOAD);
+        uint16_t size = get_word(ch->header + CRTCHP_SIZE);
+        if ((load == 0xDE00) && (size <= 0x800)) {
+            // EEPROM found, no action required
+            return;
+        }
+    }
+
+    // EEPROM chunk not found, so let's create one and clear it.
+    t_crt_chip_chunk *ch = new t_crt_chip_chunk;
+    const uint8_t eeprom_header[16] = { 0x43, 0x48, 0x49, 0x50, 0x00, 0x00, 0x08, 0x10,
+                                        0x00, 0x00, 0x00, 0x00, 0xDE, 0x00, 0x08, 0x00
+    };
+    memcpy(ch->header, eeprom_header, 16);
+
+    // This shouldn't happen
+    if (eeprom_buffer) {
+        delete[] eeprom_buffer;
+        eeprom_buffer = 0;
+    }
+    // New bit of memory, cleared
+    eeprom_buffer = new uint8_t[0x800];
+    eeprom_size = 0x800;
+    memset(eeprom_buffer, 0xFF, 0x800);
+    ch->ram_location = eeprom_buffer;
+
+    // Add it to the chunks of the file
+    chip_chunks.append(ch);
+
+    // Clear EEPROM in hardware as well
+    C64 :: set_eeprom_data(eeprom_buffer);
 }
 
 int C64_CRT :: clear_crt(void)
