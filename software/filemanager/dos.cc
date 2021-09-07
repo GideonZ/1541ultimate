@@ -45,6 +45,7 @@ static Message c_status_internal_error      = { 17, true, (uint8_t *)"87,INTERNA
 static Message c_status_no_information      = { 27, true, (uint8_t *)"88,NO INFORMATION AVAILABLE" };
 static Message c_status_not_a_disk_image    = { 19, true, (uint8_t *)"89,NOT A DISK IMAGE" };
 static Message c_status_drive_not_present   = { 20, true, (uint8_t *)"90,DRIVE NOT PRESENT" };
+static Message c_status_incompatible_image  = { 21, true, (uint8_t *)"91,INCOMPATIBLE IMAGE" };
 static Message c_status_prohibited          = { 22, true, (uint8_t *)"98,FUNCTION PROHIBITED" };
 
 Dos::Dos(int id) :
@@ -372,6 +373,11 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
             image_type = 1571;
         } else {
             *status = &c_status_not_a_disk_image;
+            delete ffi;
+            break;
+        }
+        if (!(getFpgaCapabilities() & CAPAB_MM_DRIVE) && (image_type != 1541)) {
+            *status = &c_status_incompatible_image;
             delete ffi;
             break;
         }
