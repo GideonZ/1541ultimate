@@ -269,7 +269,7 @@ begin
         i_snd: entity work.floppy_sound
         generic map (
             g_tag          => g_audio_tag,
-            sound_base     => g_audio_base(26 downto 15),
+            sound_base     => g_audio_base(27 downto 16),
             motor_hum_addr => X"0000",
             flop_slip_addr => X"1200",
             track_in_addr  => X"2400",

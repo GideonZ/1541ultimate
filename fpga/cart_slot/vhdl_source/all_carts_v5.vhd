@@ -730,11 +730,13 @@ begin
             end if;
     
         when c_ocean_8K =>
-            slot_resp.data(7) <= ee_rdata;
-            if slot_addr(8) = '0' and variant(1 downto 0) = "10" then -- gmod2 variant, reading from DExx
-                slot_resp.reg_output <= '1';
+            if g_eeprom then
+                slot_resp.data(7) <= ee_rdata;
+                if slot_addr(8) = '0' and variant(1 downto 0) = "10" then -- gmod2 variant, reading from DExx
+                    slot_resp.reg_output <= '1';
+                end if;
             end if;
-            
+
         when others =>
             null;        
         end case;

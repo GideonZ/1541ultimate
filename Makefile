@@ -19,7 +19,7 @@ mk3:
 	@$(MAKE) -C target/software/mb_update_gm
 	@cp target/software/mb_update/result/update.u2u ./update_audio.u2u
 	@cp target/software/mb_update_dd/result/update.u2u ./update_dual_drive_acia.u2u
-	@cp target/software/mb_update_dd/result/update.u2u ./update_dual_drive_gmod2.u2u
+	@cp target/software/mb_update_gm/result/update.u2u ./update_dual_drive_gmod2.u2u
 
 mb:
 	@$(MAKE) -C tools
@@ -34,7 +34,7 @@ mb:
 	@$(MAKE) -C target/software/mb_update_gm
 	@cp target/software/mb_update/result/update.u2u ./update_audio.u2u
 	@cp target/software/mb_update_dd/result/update.u2u ./update_dual_drive_acia.u2u
-	@cp target/software/mb_update_dd/result/update.u2u ./update_dual_drive_gmod2.u2u
+	@cp target/software/mb_update_gm/result/update.u2u ./update_dual_drive_gmod2.u2u
 
 niosclean:
 	@$(MAKE) -C target/software/nios2_elf_lwip clean
