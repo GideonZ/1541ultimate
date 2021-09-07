@@ -219,6 +219,15 @@ begin
                 serve_io1 <= variant(0);
                 serve_io2 <= variant(1);
                 rom_mode  <= "11"; -- Banking here is 32K!
+                if variant(2)='1' then
+                    if io_write='1' and io_addr(8 downto 0)="101111111" then -- DF7F
+                        bank_bits(19 downto 15) <= io_wdata(4 downto 0);
+                    end if;
+                    if io_write='1' and io_addr(8 downto 0)="101111110" then -- DF7E
+                        ram_bank <= io_wdata(2 downto 0);
+                    end if;
+                end if;
+
 
             when c_epyx =>
                 game_n    <= '1';
@@ -668,6 +677,12 @@ begin
                 addr_map <= GEO;
             end if;
 
+        when c_128 =>
+            if slot_addr(15 downto 8)=X"DF" and slot_addr(7)='1' and variant(2)='1' then
+                allow_write <= '1';
+                addr_map <= RAM;
+            end if;
+            
         when c_pagefox =>
             if ram_bank(15 downto 14)="10" then
                 addr_map <= RAM;
