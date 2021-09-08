@@ -134,7 +134,6 @@ begin
         g_ram_expansion => true,
         g_extended_reu  => true,
         g_hardware_iec  => true,
-        g_iec_prog_tim  => true,
         g_c2n_streamer  => true,
         g_c2n_recorder  => true,
         g_drive_sound   => true,

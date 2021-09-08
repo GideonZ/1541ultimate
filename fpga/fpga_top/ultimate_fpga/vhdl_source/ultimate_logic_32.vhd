@@ -44,7 +44,6 @@ generic (
     g_ram_expansion : boolean := true;
     g_extended_reu  : boolean := false;
     g_hardware_iec  : boolean := true;
-    g_iec_prog_tim  : boolean := false;
     g_c2n_streamer  : boolean := true;
     g_c2n_recorder  : boolean := true;
     g_drive_sound   : boolean := true;
@@ -282,7 +281,7 @@ architecture logic of ultimate_logic_32 is
         cap(03) := to_std(g_drive_sound);
         cap(04) := to_std(g_hardware_gcr);
         cap(05) := to_std(g_hardware_iec);
-        cap(06) := to_std(g_iec_prog_tim);
+        cap(06) := '0'; -- unused
         cap(07) := to_std(g_c2n_streamer);
         cap(08) := to_std(g_c2n_recorder);
         cap(09) := to_std(g_cartridge);
