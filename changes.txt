@@ -2,26 +2,35 @@ Changes in 3.10a, compared to 3.10
 ----------------------------------
 
 Fixes:
+    [Issue-246] Fixed: Virtual Printer crashes when file cannot be created.
     [Issue-234] Deleting last item in directory makes selection invisible
     [Issue-236] Confirmation modal asking a question only gives 'OK' instead of 'Yes/No'.
     [Issue-R17] Added mapping of ESC key to RUN/STOP.
     [Facebook Request] Added: Leave menu on mount (can be selected per drive)
     [Facebook Bug Report]: Allow Maverick (and others?) to write wrong sector headers on MFM tracks.
     [Facebook Bug Report]: Unable to select GeoRAM. Is now a mode of the RAM Expansion Unit.
-    [Facebook Bug Report]: Fixes color palette not loaded at boot.
+    [Facebook Bug Report]: Fixed color palette not loaded at boot (U64 only).
+    [Facebook Bug Report]: Fixed USB sticks not recognized
     [Messenger Report]: Improvements to palette file read. Rejects faulty files. Fixes hang-up
     [Messenger Report]: Fixes 'Create DNP' when run from Telnet. Turned out to be a stack overflow.
+    [Email Discussion]: Adds EEPROM segment to GMOD2 when it is missing in the CRT file
 
 U2:
     Fixes that U2 updater killed the flash before asking to update, leaving a semi-bricked device.
+    Fixes drive sounds.
 
 Modem:
     ACIA NMI pulse extension to extend over bad line. This allows the 6502 to see it always.
     Performance optimization ACIA / Modem
     Allow spaces after ATDT command.
 
-===========================================
-Changes since official release (3.9 / 1.37)
+Cartridge Support:
+    Additional C128 cartridge variant that allows banking and offers some RAM (U2/U2+ only).
+
+====================================================
+
+Changes in 3.10, since official release (3.9 / 1.37)
+----------------------------------------------------
 
 Added features:
 - Hardware emulation of 1571 and 1581 drives (U2+ / U64 only)
