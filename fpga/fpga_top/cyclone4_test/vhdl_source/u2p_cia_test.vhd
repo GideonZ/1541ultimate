@@ -555,7 +555,6 @@ begin
         g_extended_reu  => false,
         g_stereo_sid    => false,
         g_hardware_iec  => false,
-        g_iec_prog_tim  => false,
         g_c2n_streamer  => false,
         g_c2n_recorder  => false,
         g_cartridge     => false,

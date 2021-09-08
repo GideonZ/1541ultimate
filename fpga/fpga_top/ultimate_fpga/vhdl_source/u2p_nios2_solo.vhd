@@ -524,7 +524,6 @@ begin
         g_stereo_sid    => true,
         g_8voices       => true,
         g_hardware_iec  => true,
-        g_iec_prog_tim  => false,
         g_c2n_streamer  => true,
         g_c2n_recorder  => true,
         g_cartridge     => true,
