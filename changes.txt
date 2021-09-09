@@ -7,6 +7,7 @@ Fixes:
     [Issue-236] Confirmation modal asking a question only gives 'OK' instead of 'Yes/No'.
     [Issue-R17] Added mapping of ESC key to RUN/STOP.
     [Facebook Request] Added: Leave menu on mount (can be selected per drive)
+    [Facebook Bug Report]: Fixed starting Kingsoft Business Basic cartridge
     [Facebook Bug Report]: Allow Maverick (and others?) to write wrong sector headers on MFM tracks.
     [Facebook Bug Report]: Unable to select GeoRAM. Is now a mode of the RAM Expansion Unit.
     [Facebook Bug Report]: Fixed color palette not loaded at boot (U64 only).
