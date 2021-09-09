@@ -268,13 +268,11 @@ begin
 
             when c_bbasic => -- Write IO1 = off, Read IO1 = ON
                 if io_write='1' and io_addr(8)='0' then
-                    mode_bits(0) <= '1';
-                    bank_bits(14) <= '1';
-                elsif io_read='1' and io_addr(8)='0' then
                     mode_bits(0) <= '0';
-                    bank_bits(14) <= '0';
+                elsif io_read='1' and io_addr(8)='0' then
+                    mode_bits(0) <= '1';
                 end if;
-                if mode_bits(0)='0' then -- ROM mode  (starts in ROM mode?)
+                if mode_bits(0)='1' then
                    game_n    <= '0';
                    exrom_n   <= '0';
                 -- Dynamic mode, Ultimax in ranges 8000, A000 and E000.  How about writes?
@@ -286,6 +284,9 @@ begin
                    exrom_n   <= '1';
                 end if;
                 serve_rom <= '1';
+                serve_io1 <= '1';
+                rom_mode  <= "11"; -- 32K! The ROMs shall be placed in memory at the right location by the software.
+                -- Note that the CRT files are usually wrong; they list 3 banks of 8K, all at $8000, which is incorrect.
 
             when c_blackbox_v3 =>
                 if io_write='1' and io_addr(8)='0' then -- write IO1 => disable
