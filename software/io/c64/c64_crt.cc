@@ -482,6 +482,10 @@ void C64_CRT::configure_cart(cart_def *def)
         case CART_BBASIC:
             cart_type = CART_TYPE_BBASIC; // Business Basic
             prohibit = CART_PROHIBIT_DEXX;
+            // CHIPs have been loaded at 0000, 4000 and 8000; while they should be at 0000, 2000 and 6000
+            // So source and destinations do not overlap; we can simply copy the data
+            memcpy(cart_memory + 0x2000, cart_memory + 0x4000, 0x2000);
+            memcpy(cart_memory + 0x6000, cart_memory + 0x8000, 0x2000);
             break;
         case CART_PAGEFOX:
             cart_type = CART_TYPE_PAGEFOX; // Pagefox
