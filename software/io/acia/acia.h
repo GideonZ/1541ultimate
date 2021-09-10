@@ -147,6 +147,8 @@ class Acia
     QueueHandle_t controlQueue;
     QueueHandle_t dataQueue;
     DataBuffer *buffer;
+    uint8_t slot_base; // copy of HW register, as register is now write only
+
     static void TaskStart(void *a);
     void Task();
 public:

@@ -287,11 +287,11 @@ begin
                     io_resp_regs.data(2) <= appl_tx_irq;
                     io_resp_regs.data(3) <= control_change;
                     io_resp_regs.data(4) <= dtr_change;
-                when c_reg_slot_base =>
-                    io_resp_regs.data(6 downto 0) <= std_logic_vector(slot_base);
-                    io_resp_regs.data(7) <= nmi_selected;
-                when c_reg_rx_rate =>
-                    io_resp_regs.data <= std_logic_vector(rx_rate);
+--                when c_reg_slot_base =>
+--                    io_resp_regs.data(6 downto 0) <= std_logic_vector(slot_base);
+--                    io_resp_regs.data(7) <= nmi_selected;
+--                when c_reg_rx_rate =>
+--                    io_resp_regs.data <= std_logic_vector(rx_rate);
                 when others =>
                     null;
                 end case;
