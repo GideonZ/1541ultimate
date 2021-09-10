@@ -16,6 +16,7 @@ Acia :: Acia(uint32_t base)
     rx_ram = (volatile uint8_t *)(base + ACIA_RX_RAM_OFFSET);
 
     regs->slot_base = 0;
+    slot_base = 0;
     regs->enable = 0;
     controlQueue = NULL;
     dataQueue = NULL;
@@ -45,6 +46,8 @@ int Acia :: init(uint16_t base, bool useNMI, QueueHandle_t controlQueue, QueueHa
     }
     // regs->enable = 0;
     regs->slot_base = (uint8_t)base;
+    slot_base = (uint8_t)base;
+
     printf("ACIA: Wrote %b to the base register.\n", (uint8_t)base);
 
     this->controlQueue = controlQueue;
@@ -199,14 +202,15 @@ void Acia :: AdvanceRx(int adv)
 
 void Acia :: SetRxRate(uint8_t value)
 {
+    // Warning: Write only register
     regs->rx_rate = value;
 }
 
 void Acia :: GetHwMapping(uint8_t& enabled, uint16_t& address, uint8_t& nmi)
 {
     enabled = regs->enable;
-    address = (uint16_t(regs->slot_base & 0x7F) << 2) + 0xDE00;
-    nmi = regs->slot_base >> 7;
+    address = (uint16_t(slot_base & 0x7F) << 2) + 0xDE00;
+    nmi = slot_base >> 7;
 }
 
 // Global Static
