@@ -35,7 +35,6 @@
 #include "flash.h"
 #include "keyboard_c64.h"
 #include "config.h"
-#include "modem.h"
 #if U64
 #include "u64_machine.h"
 #endif
@@ -50,6 +49,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "filetype_crt.h"
+#include "modem.h"
 #endif
 
 bool allowUltimateDosDateSet = false;
@@ -1305,6 +1305,7 @@ bool C64 :: get_eeprom_dirty(void)
 
 void C64 :: list_crts(ConfigItem *it, IndexedList<char *>& strings)
 {
+#ifndef NO_FILE_ACCESS
     // Always return at least the empty string
     char *empty = new char[12];
     strcpy(empty, "\er- None -");
@@ -1328,6 +1329,7 @@ void C64 :: list_crts(ConfigItem *it, IndexedList<char *>& strings)
         }
         delete inf;
     }
+#endif
 }
 
 void C64 :: list_kernals(ConfigItem *it, IndexedList<char *>& strings)
@@ -1339,6 +1341,7 @@ void C64 :: list_kernals(ConfigItem *it, IndexedList<char *>& strings)
     strings.append(empty);
 #endif
 
+#ifndef NO_FILE_ACCESS
     Path p;
     p.cd(ROMS_DIRECTORY);
     IndexedList<FileInfo *>infos(16, NULL);
@@ -1357,10 +1360,12 @@ void C64 :: list_kernals(ConfigItem *it, IndexedList<char *>& strings)
         }
         delete inf;
     }
+#endif
 }
 
 void C64 :: list_basics(ConfigItem *it, IndexedList<char *>& strings)
 {
+#ifndef NO_FILE_ACCESS
     Path p;
     p.cd(ROMS_DIRECTORY);
     IndexedList<FileInfo *>infos(16, NULL);
@@ -1379,10 +1384,12 @@ void C64 :: list_basics(ConfigItem *it, IndexedList<char *>& strings)
         }
         delete inf;
     }
+#endif
 }
 
 void C64 :: list_chars(ConfigItem *it, IndexedList<char *>& strings)
 {
+#ifndef NO_FILE_ACCESS
     Path p;
     p.cd(ROMS_DIRECTORY);
     IndexedList<FileInfo *>infos(16, NULL);
@@ -1401,4 +1408,5 @@ void C64 :: list_chars(ConfigItem *it, IndexedList<char *>& strings)
         }
         delete inf;
     }
+#endif
 }
