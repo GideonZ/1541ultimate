@@ -60,6 +60,7 @@ SRCS_CC	 =  small_printf.cc \
 			filesystem_root.cc \
 			file_device.cc \
 			blockdev.cc \
+			blockdev_ram.cc \
 			disk.cc \
 			diskio.cc \
 			directory.cc \
@@ -72,6 +73,7 @@ SRCS_CC	 =  small_printf.cc \
 			file.cc \
 			rtc_only_i2c.cc \
 			memory.cc \
+			flash_disk_prep.cc \
 			tester_main.cc
 			
 
@@ -92,7 +94,7 @@ SRCS_ASMS = port_asm.S
 
 SRCS_6502 = 
 
-SRCS_BIN = 
+SRCS_BIN =  chars.bin 1541.bin 1571.bin 1581.bin snds1541.bin snds1571.bin snds1581.bin
 
 SRCS_IEC = 
 

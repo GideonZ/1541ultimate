@@ -36,6 +36,7 @@ extern "C" {
 }
 
 int getNetworkPacket(uint8_t **payload, int *length);
+int prepare_flashdisk(uint8_t *mem, uint32_t mem_size);
 
 #include "usb_base.h"
 
@@ -61,12 +62,14 @@ BinaryImage_t toBeFlashed[] = {
 		{ "/Usb?/flash/recovery.app",          "Recovery Application", 0x00080000, 0, 0 },
 		{ "/Usb?/flash/ultimate_run.swp",      "Runtime FPGA Image",   0x80000000, 0, 0 },
 		{ "/Usb?/flash/ultimate.app",          "Runtime Application",  0x800C0000, 0, 0 },
-		{ "/Usb?/flash/rompack.bin",           "ROM Pack",             0x80200000, 0, 0 }
+		{ NULL,                                "Flash Disk",           0x80200000, 0, 0 },
+		{ NULL, NULL, 0, 0, 0 },
 };
 
 BinaryImage_t toBeFlashedExec[] = {
 		{ "/Usb?/flash/testexec.swp",      "TestExec FPGA Image",      0x00000000, 0, 0 },
 		{ "/Usb?/flash/test_loader.app",   "Test Application Loader",  0x00080000, 0, 0 },
+		{ NULL, NULL, 0, 0, 0 },
 };
 
 BinaryImage_t dutFpga   = { "/Usb?/tester/dut.fpga","DUT FPGA Image", 0, 0, 0 };
@@ -423,9 +426,6 @@ int program_flash(JTAG_Access_t *target, BinaryImage_t *flashFile)
 	return executeDutCommand(target, 12, 60*200, NULL);
 }
 
-
-
-
 int load_file(BinaryImage_t *flashFile)
 {
 	FRESULT fres;
@@ -620,6 +620,8 @@ int jigVoltageRegulatorTest(JTAG_Access_t *target, int timeout, char **log)
 	vTaskDelay(200);
 	jtag_clear_fpga(target->host);
 	vTaskDelay(100);
+    jtag_clear_fpga(target->host);
+    vTaskDelay(100);
 	report_analog();
 	int errors = validate_analog(1);
 	if (errors) {
@@ -1051,8 +1053,11 @@ int flashRoms(JTAG_Access_t *target, int timeout, char **log)
 
 	// Flash Programming
 	int flash = 0;
-	for (int i=0; i<5; i++) {
-		if (!toBeFlashed[i].buffer) {
+	for (int i=0; ; i++) {
+	    if (!toBeFlashed[i].fileName) { // end of list
+	        break;
+	    }
+	    if (!toBeFlashed[i].buffer) {
 			printf("No Valid data for '%s' => Cannot flash.\n", toBeFlashed[i].romName);
 			errors ++;
 		} else {
@@ -1076,7 +1081,10 @@ int flashRomsExec(JTAG_Access_t *target, int timeout, char **log)
 
 	// Flash Programming
 	int flash = 0;
-	for (int i=0; i<2; i++) {
+	for (int i=0; ; i++) {
+        if (!toBeFlashedExec[i].fileName) { // end of list
+            break;
+        }
 		if (!toBeFlashedExec[i].buffer) {
 			printf("No Valid data for '%s' => Cannot flash.\n", toBeFlashed[i].romName);
 			errors ++;
@@ -1597,10 +1605,22 @@ extern "C" {
 
 		// fm->print_directory("/Usb?");
 
-		for (int i=0; i < 5; i++) {
-			load_file(&toBeFlashed[i]);
+		for (int i=0; ; i++) {
+		    if (!toBeFlashed[i].fileName)
+		        break;
+		    load_file(&toBeFlashed[i]);
 		}
-		for (int i=0; i < 2; i++) {
+		const uint32_t flashDiskSize = 0x1F0000;
+		uint8_t *flashDiskImage = new uint8_t[flashDiskSize]; // see w25q_flash.cc
+		int flashDiskUsed = prepare_flashdisk(flashDiskImage, flashDiskSize);
+		if (flashDiskUsed > 0) {
+		    toBeFlashed[4].fileName = "FlashDisk";
+		    toBeFlashed[4].buffer = (uint32_t *)flashDiskImage;
+		    toBeFlashed[4].size = (flashDiskUsed << 12);
+		}
+		for (int i=0; ; i++) {
+            if (!toBeFlashedExec[i].fileName)
+                break;
 			load_file(&toBeFlashedExec[i]);
 		}
 
