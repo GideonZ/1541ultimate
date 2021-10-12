@@ -38,6 +38,7 @@ extern "C" {
 #define ITU_INTERRUPT_RMIITX 0x40
 #define ITU_INTERRUPT_RESET  0x80
 #define ITU_IRQHIGH_ACIA     0x01
+#define ITU_IRQHIGH_1581     0x02
 
 #define CAPAB_UART          0x00000001
 #define CAPAB_DRIVE_1541_1  0x00000002
@@ -50,7 +51,7 @@ extern "C" {
 #define CAPAB_C2N_RECORDER  0x00000100
 #define CAPAB_CARTRIDGE     0x00000200
 #define CAPAB_RAM_EXPANSION 0x00000400
-#define CAPAB_USB_HOST      0x00000800
+#define CAPAB_MM_DRIVE      0x00000800
 #define CAPAB_RTC_CHIP      0x00001000
 #define CAPAB_RTC_TIMER     0x00002000
 #define CAPAB_SPI_FLASH     0x00004000
@@ -61,7 +62,7 @@ extern "C" {
 #define CAPAB_COPPER        0x00080000
 #define CAPAB_OVERLAY       0x00100000
 #define CAPAB_SAMPLER       0x00200000
-#define CAPAB_ANALYZER      0x00400000
+#define CAPAB_EEPROM		0x00400000
 #define CAPAB_USB_HOST2     0x00800000
 #define CAPAB_ETH_RMII		0x01000000
 #define CAPAB_ULTIMATE2PLUS 0x02000000
@@ -114,6 +115,8 @@ int uart_get_byte(int delay);
 uint16_t getMsTimer();
 uint32_t getFpgaCapabilities();
 uint8_t  getFpgaVersion();
+void install_high_irq(int irqNr, uint8_t (*func)(void *), void *context);
+void deinstall_high_irq(int irqNr);
 
 extern void (*custom_outbyte)(int c);
 

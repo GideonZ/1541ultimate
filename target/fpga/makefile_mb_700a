@@ -51,7 +51,8 @@ XST_OPTIONS		:= -top $(TOP_NAME) \
 				   -opt_mode Speed \
 				   -opt_level 2 \
 				   -register_balancing no \
-				   -keep_hierarchy no
+				   -keep_hierarchy no \
+                   -generics g_dual_drive=false,g_acia=false,g_eeprom=false
 
 # Tools
 MY_PROMGEN := ../../tools/promgen
@@ -85,8 +86,6 @@ BITGEN_FLAGS     := 	-w -d \
 ################################################################################
 
 ULTIMATE_FPGA   := ../../fpga
-#ULTIMATE_6502   := ../../../ult64/proglogic/c64
-ULTIMATE_6502   := ../../fpga/6502/vhdl_source
 
 include ultimate_logic2.inc
 

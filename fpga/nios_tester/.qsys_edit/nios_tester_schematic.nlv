@@ -5,7 +5,7 @@ preplace inst nios_tester.pio_1 -pg 1 -lvl 3 -y 1500
 preplace inst nios_tester.audio_out_dma.read_mstr_internal -pg 1
 preplace inst nios_tester.uart_0 -pg 1 -lvl 3 -y 1380
 preplace inst nios_tester.spi_0 -pg 1 -lvl 4 -y 350
-preplace inst nios_tester.clk_0 -pg 1 -lvl 1 -y 310
+preplace inst nios_tester.clk_0 -pg 1 -lvl 1 -y 250
 preplace inst nios_tester.audio_in_dma.dispatcher_internal -pg 1
 preplace inst nios_tester.audio_out_dma -pg 1 -lvl 3 -y 1240
 preplace inst nios_tester.audio_in_dma.write_mstr_internal -pg 1
@@ -25,29 +25,29 @@ preplace inst nios_tester.jtagdebug.write_mstr_internal -pg 1
 preplace inst nios_tester.audio_in_dma -pg 1 -lvl 3 -y 1040
 preplace inst nios_tester.nios2_gen2_0.clock_bridge -pg 1
 preplace inst nios_tester -pg 1 -lvl 1 -y 40 -regy -20
-preplace inst nios_tester.nios2_gen2_0 -pg 1 -lvl 2 -y 240
+preplace inst nios_tester.nios2_gen2_0 -pg 1 -lvl 2 -y 160
 preplace inst nios_tester.avalon2mem_0 -pg 1 -lvl 3 -y 750
 preplace inst nios_tester.io_bridge_0 -pg 1 -lvl 4 -y 230
 preplace inst nios_tester.jtagdebug.rst_inst -pg 1
 preplace inst nios_tester.io_bridge_1 -pg 1 -lvl 3 -y 390
 preplace inst nios_tester.audio_out_dma.rst_inst -pg 1
+preplace netloc EXPORT<net_container>nios_tester</net_container>(SLAVE)nios_tester.mem,(SLAVE)avalon2mem_0.mem) 1 0 3 NJ 800 NJ 800 NJ
+preplace netloc EXPORT<net_container>nios_tester</net_container>(SLAVE)nios_tester.io_u2p,(SLAVE)io_bridge_1.io) 1 0 3 NJ 380 NJ 380 NJ
+preplace netloc EXPORT<net_container>nios_tester</net_container>(SLAVE)io_bridge_0.io,(SLAVE)nios_tester.io) 1 0 4 NJ 320 NJ 320 NJ 320 NJ
+preplace netloc FAN_OUT<net_container>nios_tester</net_container>(MASTER)clk_0.clk,(SLAVE)pio_0.clk,(SLAVE)audio_out_dma.clock,(SLAVE)nios2_gen2_0.clk,(SLAVE)jtagdebug.clock,(SLAVE)jtag_1.clock,(SLAVE)spi_0.clk,(SLAVE)audio_in_dma.clock,(SLAVE)onchip_memory2_0.clk1,(SLAVE)avalon2mem_0.clock,(SLAVE)jtag_0.clock,(SLAVE)uart_0.clk,(SLAVE)pio_1.clk,(SLAVE)io_bridge_0.clock,(SLAVE)io_bridge_1.clock) 1 1 3 280 1430 760 520 1170
 preplace netloc EXPORT<net_container>nios_tester</net_container>(SLAVE)clk_0.clk_in,(SLAVE)nios_tester.sys_clock) 1 0 1 NJ
 preplace netloc EXPORT<net_container>nios_tester</net_container>(SLAVE)nios_tester.jtag0,(SLAVE)jtag_0.jtag) 1 0 4 NJ 80 NJ 80 NJ 80 NJ
-preplace netloc EXPORT<net_container>nios_tester</net_container>(SLAVE)nios_tester.dummy,(SLAVE)pio_0.external_connection) 1 0 3 NJ 200 NJ 200 NJ
-preplace netloc EXPORT<net_container>nios_tester</net_container>(SLAVE)jtagdebug.st_sink,(SLAVE)nios_tester.jtag_in) 1 0 4 NJ 630 NJ 630 NJ 630 NJ
-preplace netloc EXPORT<net_container>nios_tester</net_container>(MASTER)nios_tester.audio_out,(MASTER)audio_out_dma.st_source) 1 3 2 NJ 1290 NJ
+preplace netloc EXPORT<net_container>nios_tester</net_container>(SLAVE)nios_tester.dummy,(SLAVE)pio_0.external_connection) 1 0 3 NJ 120 NJ 120 NJ
+preplace netloc FAN_OUT<net_container>nios_tester</net_container>(SLAVE)pio_0.irq,(SLAVE)jtagdebug.csr_irq,(SLAVE)io_bridge_1.irq,(SLAVE)uart_0.irq,(MASTER)nios2_gen2_0.irq,(SLAVE)audio_in_dma.csr_irq,(SLAVE)audio_out_dma.csr_irq,(SLAVE)spi_0.irq,(SLAVE)io_bridge_0.irq) 1 2 2 780 570 1210
 preplace netloc EXPORT<net_container>nios_tester</net_container>(SLAVE)clk_0.clk_in_reset,(SLAVE)nios_tester.sys_reset) 1 0 1 NJ
-preplace netloc EXPORT<net_container>nios_tester</net_container>(SLAVE)nios_tester.uart,(SLAVE)uart_0.external_connection) 1 0 3 NJ 1410 NJ 1410 NJ
 preplace netloc EXPORT<net_container>nios_tester</net_container>(SLAVE)spi_0.external,(SLAVE)nios_tester.spi) 1 0 4 NJ 400 NJ 400 NJ 380 NJ
-preplace netloc FAN_OUT<net_container>nios_tester</net_container>(SLAVE)avalon2mem_0.clock,(SLAVE)jtag_1.clock,(SLAVE)jtagdebug.clock,(SLAVE)io_bridge_0.clock,(MASTER)clk_0.clk,(SLAVE)io_bridge_1.clock,(SLAVE)jtag_0.clock,(SLAVE)uart_0.clk,(SLAVE)spi_0.clk,(SLAVE)pio_1.clk,(SLAVE)nios2_gen2_0.clk,(SLAVE)pio_0.clk,(SLAVE)onchip_memory2_0.clk1,(SLAVE)audio_out_dma.clock,(SLAVE)audio_in_dma.clock) 1 1 3 280 1430 720 530 1150
-preplace netloc EXPORT<net_container>nios_tester</net_container>(SLAVE)jtag_1.jtag,(SLAVE)nios_tester.jtag1) 1 0 4 NJ 180 NJ 180 NJ 180 NJ
-preplace netloc EXPORT<net_container>nios_tester</net_container>(SLAVE)nios_tester.pio,(SLAVE)pio_1.external_connection) 1 0 3 NJ 1530 NJ 1530 NJ
-preplace netloc EXPORT<net_container>nios_tester</net_container>(SLAVE)io_bridge_1.io,(SLAVE)nios_tester.io_u2p) 1 0 3 NJ 440 NJ 440 NJ
-preplace netloc EXPORT<net_container>nios_tester</net_container>(SLAVE)nios_tester.io,(SLAVE)io_bridge_0.io) 1 0 4 NJ 380 NJ 380 NJ 320 NJ
+preplace netloc EXPORT<net_container>nios_tester</net_container>(SLAVE)nios_tester.jtag_in,(SLAVE)jtagdebug.st_sink) 1 0 4 NJ 630 NJ 630 NJ 630 NJ
+preplace netloc EXPORT<net_container>nios_tester</net_container>(SLAVE)pio_1.external_connection,(SLAVE)nios_tester.pio) 1 0 3 NJ 1530 NJ 1530 NJ
+preplace netloc EXPORT<net_container>nios_tester</net_container>(MASTER)audio_out_dma.st_source,(MASTER)nios_tester.audio_out) 1 3 2 NJ 1290 NJ
 preplace netloc EXPORT<net_container>nios_tester</net_container>(SLAVE)audio_in_dma.st_sink,(SLAVE)nios_tester.audio_in) 1 0 3 NJ 1150 NJ 1150 NJ
-preplace netloc FAN_OUT<net_container>nios_tester</net_container>(SLAVE)jtagdebug.csr_irq,(SLAVE)pio_0.irq,(SLAVE)uart_0.irq,(SLAVE)audio_out_dma.csr_irq,(SLAVE)audio_in_dma.csr_irq,(MASTER)nios2_gen2_0.irq,(SLAVE)io_bridge_1.irq,(SLAVE)io_bridge_0.irq,(SLAVE)spi_0.irq) 1 2 2 740 570 1210
-preplace netloc INTERCONNECT<net_container>nios_tester</net_container>(SLAVE)jtagdebug.csr,(SLAVE)nios2_gen2_0.debug_mem_slave,(SLAVE)pio_1.s1,(SLAVE)audio_in_dma.csr,(SLAVE)pio_0.s1,(SLAVE)audio_in_dma.descriptor_slave,(SLAVE)avalon2mem_0.avalon_slave_0,(SLAVE)jtag_0.avalon_slave_0,(SLAVE)audio_out_dma.csr,(MASTER)audio_in_dma.mm_write,(MASTER)audio_out_dma.mm_read,(SLAVE)spi_0.spi_control_port,(SLAVE)jtagdebug.descriptor_slave,(SLAVE)audio_out_dma.descriptor_slave,(SLAVE)io_bridge_1.avalon_slave_0,(MASTER)nios2_gen2_0.instruction_master,(SLAVE)io_bridge_0.avalon_slave_0,(SLAVE)jtag_1.avalon_slave_0,(MASTER)nios2_gen2_0.data_master,(SLAVE)onchip_memory2_0.s1,(SLAVE)uart_0.s1,(MASTER)jtagdebug.mm_write) 1 1 4 320 1570 700 1200 1130 680 1460
-preplace netloc EXPORT<net_container>nios_tester</net_container>(SLAVE)avalon2mem_0.mem,(SLAVE)nios_tester.mem) 1 0 3 NJ 800 NJ 800 NJ
-preplace netloc FAN_OUT<net_container>nios_tester</net_container>(MASTER)clk_0.clk_reset,(SLAVE)audio_in_dma.reset_n,(SLAVE)audio_out_dma.reset_n,(SLAVE)onchip_memory2_0.reset1,(SLAVE)avalon2mem_0.reset,(SLAVE)io_bridge_0.reset,(SLAVE)spi_0.reset,(SLAVE)jtag_1.reset,(SLAVE)nios2_gen2_0.reset,(SLAVE)uart_0.reset,(SLAVE)io_bridge_1.reset,(SLAVE)jtag_0.reset,(SLAVE)pio_0.reset,(SLAVE)pio_1.reset,(SLAVE)jtagdebug.reset_n) 1 1 3 300 1550 780 610 1190
+preplace netloc EXPORT<net_container>nios_tester</net_container>(SLAVE)uart_0.external_connection,(SLAVE)nios_tester.uart) 1 0 3 NJ 1410 NJ 1410 NJ
+preplace netloc EXPORT<net_container>nios_tester</net_container>(SLAVE)nios_tester.jtag1,(SLAVE)jtag_1.jtag) 1 0 4 NJ 100 NJ 100 NJ 180 NJ
+preplace netloc FAN_OUT<net_container>nios_tester</net_container>(SLAVE)avalon2mem_0.reset,(SLAVE)jtagdebug.reset_n,(SLAVE)nios2_gen2_0.reset,(SLAVE)jtag_0.reset,(SLAVE)spi_0.reset,(SLAVE)pio_1.reset,(SLAVE)io_bridge_1.reset,(SLAVE)onchip_memory2_0.reset1,(MASTER)clk_0.clk_reset,(SLAVE)io_bridge_0.reset,(SLAVE)pio_0.reset,(SLAVE)uart_0.reset,(SLAVE)audio_out_dma.reset_n,(SLAVE)audio_in_dma.reset_n,(SLAVE)jtag_1.reset) 1 1 3 300 1550 800 610 1190
+preplace netloc INTERCONNECT<net_container>nios_tester</net_container>(MASTER)nios2_gen2_0.instruction_master,(SLAVE)io_bridge_0.avalon_slave_0,(SLAVE)jtag_1.avalon_slave_0,(SLAVE)jtagdebug.csr,(MASTER)audio_out_dma.mm_read,(MASTER)audio_in_dma.mm_write,(SLAVE)audio_in_dma.csr,(SLAVE)nios2_gen2_0.debug_mem_slave,(SLAVE)pio_0.s1,(SLAVE)onchip_memory2_0.s1,(SLAVE)audio_out_dma.descriptor_slave,(MASTER)jtagdebug.mm_write,(SLAVE)jtagdebug.descriptor_slave,(SLAVE)uart_0.s1,(SLAVE)spi_0.spi_control_port,(SLAVE)io_bridge_1.avalon_slave_0,(SLAVE)avalon2mem_0.avalon_slave_0,(SLAVE)pio_1.s1,(MASTER)nios2_gen2_0.data_master,(SLAVE)audio_out_dma.csr,(SLAVE)audio_in_dma.descriptor_slave,(SLAVE)jtag_0.avalon_slave_0) 1 1 4 320 1570 740 1200 1130 680 1460
 levelinfo -pg 1 0 70 1570
 levelinfo -hier nios_tester 80 110 460 980 1330 1480

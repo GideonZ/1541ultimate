@@ -21,6 +21,7 @@ use unisim.vcomponents.all;
 entity usb_host_nano is
     generic (
         g_big_endian   : boolean;
+        g_incl_debug   : boolean := false;
         g_tag          : std_logic_vector(7 downto 0) := X"05";
         g_simulation   : boolean := false );
 	port  (
@@ -32,6 +33,9 @@ entity usb_host_nano is
         ulpi_stp    : out   std_logic;
         ulpi_data   : inout std_logic_vector(7 downto 0);
 
+        debug_data  : out   std_logic_vector(31 downto 0);
+        debug_valid : out   std_logic;
+        error_pulse : out   std_logic;
         -- 
         sys_clock   : in  std_logic;
         sys_reset   : in  std_logic;
@@ -51,7 +55,6 @@ architecture arch of usb_host_nano is
     signal nano_read       : std_logic;
     signal nano_wdata      : std_logic_vector(15 downto 0);
     signal nano_rdata      : std_logic_vector(15 downto 0);
-    signal nano_rdata_regs : std_logic_vector(15 downto 0);
     signal nano_rdata_cmd  : std_logic_vector(15 downto 0);
     signal nano_stall      : std_logic := '0';
 
@@ -88,7 +91,6 @@ architecture arch of usb_host_nano is
     signal sys_buf_we      : std_logic_vector(3 downto 0);
     signal sys_buf_wdata   : std_logic_vector(31 downto 0);
     signal sys_buf_rdata   : std_logic_vector(31 downto 0);
-    signal sys_buf_wdata_le: std_logic_vector(31 downto 0);
     signal sys_buf_rdata_le: std_logic_vector(31 downto 0);
 
     signal usb_tx_req      : t_usb_tx_req;
@@ -140,6 +142,7 @@ begin
         sof_tick            => sof_tick,
         speed               => speed,
         frame_count         => frame_count,
+        error_pulse         => error_pulse,
         usb_cmd_req         => usb_cmd_req,
         usb_cmd_resp        => usb_cmd_resp,
         usb_rx              => usb_rx,
@@ -276,6 +279,18 @@ begin
 
         cmd_req     => usb_cmd_req,
         cmd_resp    => usb_cmd_resp );
+
+    i_debug: entity work.usb_debug
+    generic map (
+        g_enabled   => g_incl_debug )
+    port map (
+        clock       => clock,
+        reset       => reset,
+        cmd_req     => usb_cmd_req,
+        cmd_resp    => usb_cmd_resp,
+        debug_data  => debug_data,
+        debug_valid => debug_valid
+    );
 
     i_nano: entity work.nano
     generic map (

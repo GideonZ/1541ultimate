@@ -37,6 +37,10 @@ class Modem : public ConfigurableObject
     void SetHandshakes(bool connected, bool connecting);
     void RelayFileToSocket(const char *filename, int socket, const char *alt);
 
+    uint8_t tcp_receive_buffer[512];
+    int tcp_buffer_valid;
+    int tcp_buffer_offset;
+
     QueueHandle_t commandQueue;
     QueueHandle_t connectQueue;
     SemaphoreHandle_t connectionLock;
@@ -45,6 +49,10 @@ class Modem : public ConfigurableObject
     ListenerSocket *listenerSocket;
     uint8_t ctsMode, dsrMode, dcdMode;
     uint8_t lastHandshake;
+    uint16_t current_iobase;
+    const char *responseString;
+    uint8_t responseLen;
+    bool verbose;
     bool keepConnection;
     bool commandMode;
     bool busyMode;
@@ -55,6 +63,9 @@ class Modem : public ConfigurableObject
 public:
     Modem();
     void effectuate_settings();
+    void reinit_acia(uint16_t base);
+    bool prohibit_acia(uint16_t base);
+
 };
 
 extern Modem modem;

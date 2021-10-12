@@ -64,13 +64,13 @@ typedef union {
  * boundary.  
  */
 #define alt_msgdma_standard_descriptor_packed \
-	__attribute__ ((packed, aligned(16)))
+    __attribute__ ((packed, aligned(16)))
 #define alt_msgdma_extended_descriptor_packed \
-	__attribute__ ((packed, aligned(32)))
+    __attribute__ ((packed, aligned(32)))
 #define alt_msgdma_prefetcher_standard_descriptor_packed \
-	__attribute__ ((packed, aligned(32)))
+    __attribute__ ((packed, aligned(32)))
 #define alt_msgdma_prefetcher_extended_descriptor_packed \
-	__attribute__ ((packed, aligned(64)))
+    __attribute__ ((packed, aligned(64)))
 #define alt_msgdma_response_packed __attribute__ ((packed, aligned(4)))
 
 /*
@@ -152,64 +152,64 @@ typedef struct {
 /* msgdma device structure */
 typedef struct alt_msgdma_dev
 {
-	/* Device linked-list entry */
+    /* Device linked-list entry */
     alt_llist                            llist;
-	/* Name of msgdma in Qsys system */
+    /* Name of msgdma in Qsys system */
     const char                           *name;
-	/* Base address of control and status register */
+    /* Base address of control and status register */
     alt_u32                              *csr_base;
-	/* Base address of the descriptor slave port */
+    /* Base address of the descriptor slave port */
     alt_u32                              *descriptor_base;
-	/* Base address of the response register */
+    /* Base address of the response register */
     alt_u32                              *response_base;
     /* Base address of the prefetcher register */
     alt_u32                              *prefetcher_base;
-	/* device IRQ controller ID */
-	alt_u32                    	         irq_controller_ID;
-	/* device IRQ ID */
-	alt_u32                    	         irq_ID;
-	/* FIFO size to store descriptor count,
-	{ 8, 16, 32, 64,default:128, 256, 512, 1024 } */
+    /* device IRQ controller ID */
+    alt_u32                                 irq_controller_ID;
+    /* device IRQ ID */
+    alt_u32                                 irq_ID;
+    /* FIFO size to store descriptor count,
+    { 8, 16, 32, 64,default:128, 256, 512, 1024 } */
     alt_u32                              descriptor_fifo_depth;
-	/* FIFO size to store response count */
+    /* FIFO size to store response count */
     alt_u32                              response_fifo_depth;
-	/* Callback routine pointer */
+    /* Callback routine pointer */
     alt_msgdma_callback                  callback;
-	/* Callback context pointer */
+    /* Callback context pointer */
     void                                 *callback_context;
-	/* user define control setting during interrupt registering*/
+    /* user define control setting during interrupt registering*/
     alt_u32                              control;
-	/* Enable burst transfer */
-    alt_u8				burst_enable;
-	/* Enable burst wrapping */
-    alt_u8				burst_wrapping_support;
+    /* Enable burst transfer */
+    alt_u8                burst_enable;
+    /* Enable burst wrapping */
+    alt_u8                burst_wrapping_support;
         /* Depth of the internal data path FIFO*/
-    alt_u32				data_fifo_depth;
-	/* Data path Width. This parameter affect both read
+    alt_u32                data_fifo_depth;
+    /* Data path Width. This parameter affect both read
            master and write master data width */
-    alt_u32			        data_width;
-	/* Maximum burst count*/
+    alt_u32                    data_width;
+    /* Maximum burst count*/
     alt_u32                             max_burst_count;
-	/* Maximum transfer length*/
+    /* Maximum transfer length*/
     alt_u32                             max_byte;
-	/* Maximum stride count */
-    alt_u64				max_stride;
-	/* Enable dynamic burst programming*/
-    alt_u8			     programmable_burst_enable;
-	/* Enable stride addressing */
-    alt_u8				stride_enable;
-	/* Supported transaction type */
-    const char                          *transfer_type;	
+    /* Maximum stride count */
+    alt_u64                max_stride;
+    /* Enable dynamic burst programming*/
+    alt_u8                 programmable_burst_enable;
+    /* Enable stride addressing */
+    alt_u8                stride_enable;
+    /* Supported transaction type */
+    const char                          *transfer_type;    
        /* Extended feature support enable "1"-enable  "0"-disable */ 
-    alt_u8				enhanced_features;
-      /* Enable response port "0"-memory-mapped, "1"-streaming, "2"-disable */	
-    alt_u8				response_port;
+    alt_u8                enhanced_features;
+      /* Enable response port "0"-memory-mapped, "1"-streaming, "2"-disable */    
+    alt_u8                response_port;
     /* Prefetcher enabled "0"-disabled, "1"-enabled*/
-    alt_u8				prefetcher_enable;
-	/* Semaphore used to control access registers
-	in multi-threaded mode */
+    alt_u8                prefetcher_enable;
+    /* Semaphore used to control access registers
+    in multi-threaded mode */
     ALT_SEM                              (regs_lock)
-} alt_msgdma_dev;
+} __attribute__ ((aligned(0x10))) alt_msgdma_dev;
 
 
 
@@ -219,171 +219,180 @@ typedef struct alt_msgdma_dev
 alt_msgdma_dev* alt_msgdma_open (const char* name);
  
 void alt_msgdma_register_callback(
-	alt_msgdma_dev *dev,
-	alt_msgdma_callback callback,
-	alt_u32 control,
-	void *context); 
+    alt_msgdma_dev *dev,
+    alt_msgdma_callback callback,
+    alt_u32 control,
+    void *context); 
   
 int alt_msgdma_standard_descriptor_async_transfer(
-	alt_msgdma_dev *dev,
-	alt_msgdma_standard_descriptor *desc);
+    alt_msgdma_dev *dev,
+    alt_msgdma_standard_descriptor *desc);
 
 int alt_msgdma_extended_descriptor_async_transfer(
-	alt_msgdma_dev *dev,
-	alt_msgdma_extended_descriptor *desc);
+    alt_msgdma_dev *dev,
+    alt_msgdma_extended_descriptor *desc);
 
 int alt_msgdma_construct_standard_mm_to_mm_descriptor (
-	alt_msgdma_dev *dev,
-	alt_msgdma_standard_descriptor *descriptor,
-	alt_u32 *read_address,
-	alt_u32 *write_address,
-	alt_u32 length,
-	alt_u32 control);
+    alt_msgdma_dev *dev,
+    alt_msgdma_standard_descriptor *descriptor,
+    alt_u32 *read_address,
+    alt_u32 *write_address,
+    alt_u32 length,
+    alt_u32 control);
 
 int alt_msgdma_construct_standard_st_to_mm_descriptor (
-	alt_msgdma_dev *dev,
-	alt_msgdma_standard_descriptor *descriptor, 
-	alt_u32 *write_address, 
-	alt_u32 length, 
-	alt_u32 control);
+    alt_msgdma_dev *dev,
+    alt_msgdma_standard_descriptor *descriptor, 
+    alt_u32 *write_address, 
+    alt_u32 length, 
+    alt_u32 control);
     
 int alt_msgdma_construct_standard_mm_to_st_descriptor (
-	alt_msgdma_dev *dev,
-	alt_msgdma_standard_descriptor *descriptor, 
-	alt_u32 *read_address, 
-	alt_u32 length, 
-	alt_u32 control);
+    alt_msgdma_dev *dev,
+    alt_msgdma_standard_descriptor *descriptor, 
+    alt_u32 *read_address, 
+    alt_u32 length, 
+    alt_u32 control);
 
 int alt_msgdma_construct_extended_st_to_mm_descriptor (
-	alt_msgdma_dev *dev,
-	alt_msgdma_extended_descriptor *descriptor, 
-	alt_u32 *write_address, 
-	alt_u32 length, 
-	alt_u32 control, 
-	alt_u16 sequence_number,
-	alt_u8 write_burst_count,
-	alt_u16 write_stride);
+    alt_msgdma_dev *dev,
+    alt_msgdma_extended_descriptor *descriptor, 
+    alt_u32 *write_address, 
+    alt_u32 length, 
+    alt_u32 control, 
+    alt_u16 sequence_number,
+    alt_u8 write_burst_count,
+    alt_u16 write_stride);
 
 int alt_msgdma_construct_extended_mm_to_st_descriptor (
-	alt_msgdma_dev *dev,
-	alt_msgdma_extended_descriptor *descriptor, 
-	alt_u32 *read_address, 
-	alt_u32 length, 
-	alt_u32 control, 
-	alt_u16 sequence_number, 
-	alt_u8 read_burst_count, 
-	alt_u16 read_stride);
+    alt_msgdma_dev *dev,
+    alt_msgdma_extended_descriptor *descriptor, 
+    alt_u32 *read_address, 
+    alt_u32 length, 
+    alt_u32 control, 
+    alt_u16 sequence_number, 
+    alt_u8 read_burst_count, 
+    alt_u16 read_stride);
 
 int alt_msgdma_construct_extended_mm_to_mm_descriptor (
-	alt_msgdma_dev *dev,
-	alt_msgdma_extended_descriptor *descriptor, 
-	alt_u32 *read_address, 
-	alt_u32 *write_address, 
-	alt_u32 length, 
-	alt_u32 control,
-	alt_u16 sequence_number,
-	alt_u8 read_burst_count,
-	alt_u8 write_burst_count, 
-	alt_u16 read_stride, 
-	alt_u16 write_stride);
+    alt_msgdma_dev *dev,
+    alt_msgdma_extended_descriptor *descriptor, 
+    alt_u32 *read_address, 
+    alt_u32 *write_address, 
+    alt_u32 length, 
+    alt_u32 control,
+    alt_u16 sequence_number,
+    alt_u8 read_burst_count,
+    alt_u8 write_burst_count, 
+    alt_u16 read_stride, 
+    alt_u16 write_stride);
 
 int alt_msgdma_standard_descriptor_sync_transfer(
-	alt_msgdma_dev *dev,
-	alt_msgdma_standard_descriptor *desc);
+    alt_msgdma_dev *dev,
+    alt_msgdma_standard_descriptor *desc);
 
 int alt_msgdma_extended_descriptor_sync_transfer(
-	alt_msgdma_dev *dev,
-	alt_msgdma_extended_descriptor *desc);
+    alt_msgdma_dev *dev,
+    alt_msgdma_extended_descriptor *desc);
 
 int alt_msgdma_standard_descriptor_sync_transfer(
-	alt_msgdma_dev *dev,
-	alt_msgdma_standard_descriptor *desc);
+    alt_msgdma_dev *dev,
+    alt_msgdma_standard_descriptor *desc);
 
 /***************** MSGDMA PREFETCHER PUBLIC APIs ******************/
 int alt_msgdma_construct_prefetcher_standard_mm_to_mm_descriptor (
-	alt_msgdma_dev *dev,
-	alt_msgdma_prefetcher_standard_descriptor *descriptor,
-	alt_u32 read_address,
-	alt_u32 write_address,
-	alt_u32 length,
-	alt_u32 control);
+    alt_msgdma_dev *dev,
+    alt_msgdma_prefetcher_standard_descriptor *descriptor,
+    alt_u32 read_address,
+    alt_u32 write_address,
+    alt_u32 length,
+    alt_u32 control);
 
 int alt_msgdma_construct_prefetcher_standard_st_to_mm_descriptor (
-	alt_msgdma_dev *dev,
-	alt_msgdma_prefetcher_standard_descriptor *descriptor, 
-	alt_u32 write_address, 
-	alt_u32 length, 
-	alt_u32 control);
+    alt_msgdma_dev *dev,
+    alt_msgdma_prefetcher_standard_descriptor *descriptor, 
+    alt_u32 write_address, 
+    alt_u32 length, 
+    alt_u32 control);
     
 int alt_msgdma_construct_prefetcher_standard_mm_to_st_descriptor (
-	alt_msgdma_dev *dev,
-	alt_msgdma_prefetcher_standard_descriptor *descriptor, 
-	alt_u32 read_address, 
-	alt_u32 length, 
-	alt_u32 control);
+    alt_msgdma_dev *dev,
+    alt_msgdma_prefetcher_standard_descriptor *descriptor, 
+    alt_u32 read_address, 
+    alt_u32 length, 
+    alt_u32 control);
 
 int alt_msgdma_construct_prefetcher_extended_st_to_mm_descriptor (
-	alt_msgdma_dev *dev,
-	alt_msgdma_prefetcher_extended_descriptor *descriptor, 
-	alt_u32 write_address_high,
-	alt_u32 write_address_low, 
-	alt_u32 length, 
-	alt_u32 control, 
-	alt_u16 sequence_number,
-	alt_u8 write_burst_count,
-	alt_u16 write_stride);
+    alt_msgdma_dev *dev,
+    alt_msgdma_prefetcher_extended_descriptor *descriptor, 
+    alt_u32 write_address_high,
+    alt_u32 write_address_low, 
+    alt_u32 length, 
+    alt_u32 control, 
+    alt_u16 sequence_number,
+    alt_u8 write_burst_count,
+    alt_u16 write_stride);
 
 int alt_msgdma_construct_prefetcher_extended_mm_to_st_descriptor (
-	alt_msgdma_dev *dev,
-	alt_msgdma_prefetcher_extended_descriptor *descriptor, 
-	alt_u32 read_address_high,
-	alt_u32 read_address_low, 
-	alt_u32 length, 
-	alt_u32 control, 
-	alt_u16 sequence_number, 
-	alt_u8 read_burst_count, 
-	alt_u16 read_stride);
+    alt_msgdma_dev *dev,
+    alt_msgdma_prefetcher_extended_descriptor *descriptor, 
+    alt_u32 read_address_high,
+    alt_u32 read_address_low, 
+    alt_u32 length, 
+    alt_u32 control, 
+    alt_u16 sequence_number, 
+    alt_u8 read_burst_count, 
+    alt_u16 read_stride);
 
 int alt_msgdma_construct_prefetcher_extended_mm_to_mm_descriptor (
-	alt_msgdma_dev *dev,
-	alt_msgdma_prefetcher_extended_descriptor *descriptor, 
-	alt_u32 read_address_high,
-	alt_u32 read_address_low,
-	alt_u32 write_address_high,
-	alt_u32 write_address_low, 
-	alt_u32 length, 
-	alt_u32 control,
-	alt_u16 sequence_number,
-	alt_u8 read_burst_count,
-	alt_u8 write_burst_count, 
-	alt_u16 read_stride, 
-	alt_u16 write_stride);
+    alt_msgdma_dev *dev,
+    alt_msgdma_prefetcher_extended_descriptor *descriptor, 
+    alt_u32 read_address_high,
+    alt_u32 read_address_low,
+    alt_u32 write_address_high,
+    alt_u32 write_address_low, 
+    alt_u32 length, 
+    alt_u32 control,
+    alt_u16 sequence_number,
+    alt_u8 read_burst_count,
+    alt_u8 write_burst_count, 
+    alt_u16 read_stride, 
+    alt_u16 write_stride);
 
 int alt_msgdma_prefetcher_add_standard_desc_to_list (
-	alt_msgdma_prefetcher_standard_descriptor** list,
-	alt_msgdma_prefetcher_standard_descriptor* descriptor);
+    alt_msgdma_prefetcher_standard_descriptor** list,
+    alt_msgdma_prefetcher_standard_descriptor* descriptor);
 
 int alt_msgdma_prefetcher_add_extended_desc_to_list (
-	alt_msgdma_prefetcher_extended_descriptor** list,
-	alt_msgdma_prefetcher_extended_descriptor* descriptor);
+    alt_msgdma_prefetcher_extended_descriptor** list,
+    alt_msgdma_prefetcher_extended_descriptor* descriptor);
 
 int alt_msgdma_start_prefetcher_with_std_desc_list (
-	alt_msgdma_dev *dev,
-	alt_msgdma_prefetcher_standard_descriptor *list,
-	alt_u8 park_mode_en,
-	alt_u8 poll_en);
+    alt_msgdma_dev *dev,
+    alt_msgdma_prefetcher_standard_descriptor *list,
+    alt_u8 park_mode_en,
+    alt_u8 poll_en,
+    alt_u8 last_desc_owned_by_sw,
+    alt_u8 dcache_flush_desc_list);
 
 int alt_msgdma_start_prefetcher_with_extd_desc_list (
-	alt_msgdma_dev *dev,
-	alt_msgdma_prefetcher_extended_descriptor *list,
-	alt_u8 park_mode_en,
-	alt_u8 poll_en);
+    alt_msgdma_dev *dev,
+    alt_msgdma_prefetcher_extended_descriptor *list,
+    alt_u8 park_mode_en,
+    alt_u8 poll_en,
+    alt_u8 last_desc_owned_by_sw,
+    alt_u8 dcache_flush_desc_list);
 
 int alt_msgdma_prefetcher_set_std_list_own_by_hw_bits (
-	alt_msgdma_prefetcher_standard_descriptor *list);
+    alt_msgdma_prefetcher_standard_descriptor *list,
+    alt_u8 last_desc_owned_by_sw,
+    alt_u8 dcache_flush_desc_list);
+    
 int alt_msgdma_prefetcher_set_extd_list_own_by_hw_bits (
-	alt_msgdma_prefetcher_extended_descriptor *list);
-	
+    alt_msgdma_prefetcher_extended_descriptor *list,
+    alt_u8 last_desc_owned_by_sw,
+    alt_u8 dcache_flush_desc_list);   
+    
 void alt_msgdma_init (alt_msgdma_dev *dev, alt_u32 ic_id, alt_u32 irq);
 
 /* HAL initialization macros */

@@ -10,8 +10,11 @@ extern "C" {
 #include "u64.h"
 #include "filemanager.h"
 #include "userinterface.h"
-#include "disk_image.h"
 #include "pattern.h"
+#include "command_intf.h"
+
+#define MENU_IEC_ON          0xCA0E
+#define MENU_IEC_OFF         0xCA0F
 
 #define MENU_IEC_RESET       0xCA10
 #define MENU_IEC_TRACE_ON    0xCA11
@@ -33,8 +36,6 @@ extern "C" {
 #define MENU_SEND_COMMAND    0xCA1F
 #define MENU_IEC_FLUSH       0xCA20
    
-cart_def warp_cart  = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM };
-
 extern uint8_t  _iec_code_b_start;
 extern uint32_t _iec_code_b_size;
 //extern BYTE _warp_rom_65_start;
@@ -63,7 +64,7 @@ static const char *pr_ich[] = { "International 1", "International 2", "Israel", 
 
 static struct t_cfg_definition iec_config[] = {
     { CFG_IEC_ENABLE,    CFG_TYPE_ENUM,   "IEC Drive and printer",     "%s", en_dis,     0,  1, 0 },
-    { CFG_IEC_BUS_ID,    CFG_TYPE_VALUE,  "Soft Drive Bus ID",         "%d", NULL,       8, 30, 10 },
+    { CFG_IEC_BUS_ID,    CFG_TYPE_VALUE,  "Soft Drive Bus ID",         "%d", NULL,       8, 30, 11 },
     { CFG_IEC_PATH,      CFG_TYPE_STRING, "Default Path",              "%s", NULL,       0, 30, (int) FS_ROOT },
     { CFG_IEC_PRINTER_ID,       CFG_TYPE_VALUE,  "Printer Bus ID",       "%d", NULL,   4,  5, 4 },
     { CFG_IEC_PRINTER_FILENAME, CFG_TYPE_STRING, "Printer output file",  "%s", NULL,   1, 31, (int) FS_ROOT "printer" },
@@ -225,6 +226,7 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
     printer = false;
 
     channel_printer = new IecPrinter();
+    ulticopy_bin_image = new BinImage("UltiCopy", 35);
 
     effectuate_settings();
 
@@ -277,11 +279,7 @@ void IecInterface :: effectuate_settings(void)
     
 //            data = (0x08 << 20) + (bit << 24) + (inv << 29) + (addr << 8) + (value << 0)
     int bus_id = cfg->get_value(CFG_IEC_BUS_ID);
-
-    extern C64 *c64;
-    if (c64) {
-        c64->set_kernal_device_id(bus_id);
-    }
+    cmd_if.set_kernal_device_id(bus_id);
 
     if(bus_id != last_addr) {
         printf("Setting IEC bus ID to %d.\n", bus_id);
@@ -338,14 +336,18 @@ const char *IecInterface :: get_root_path(void)
 void IecInterface :: create_task_items(void)
 {
     TaskCategory *iec = TasksCollection :: getCategory("Software IEC", SORT_ORDER_SOFTIEC);
+    myActions.turn_on	 = new Action("Turn On",        SUBSYSID_IEC, MENU_IEC_ON);
     myActions.reset      = new Action("Reset",          SUBSYSID_IEC, MENU_IEC_RESET);
     myActions.set_dir    = new Action("Set dir. here",  SUBSYSID_IEC, MENU_IEC_SET_DIR);
+    myActions.turn_off	 = new Action("Turn Off",       SUBSYSID_IEC, MENU_IEC_OFF);
     myActions.ulticopy8  = new Action("UltiCopy 8",     SUBSYSID_IEC, MENU_IEC_WARP_8);
     myActions.ulticopy9  = new Action("UltiCopy 9",     SUBSYSID_IEC, MENU_IEC_WARP_9);
     myActions.ulticopy10 = new Action("UltiCopy 10",    SUBSYSID_IEC, MENU_IEC_WARP_10);
     myActions.ulticopy11 = new Action("UltiCopy 11",    SUBSYSID_IEC, MENU_IEC_WARP_11);
     myActions.eject      = new Action("Flush/Eject",    SUBSYSID_IEC, MENU_IEC_FLUSH);
 
+    iec->append(myActions.turn_on);
+    iec->append(myActions.turn_off);
     iec->append(myActions.reset);
     iec->append(myActions.set_dir);
     iec->append(myActions.ulticopy8);
@@ -360,17 +362,24 @@ void IecInterface :: create_task_items(void)
 // called from GUI task
 void IecInterface :: update_task_items(bool writablePath, Path *path)
 {
-    if (writablePath) {
-        myActions.ulticopy8->enable();
-        myActions.ulticopy9->enable();
-        myActions.ulticopy10->enable();
-        myActions.ulticopy11->enable();
-    } else {
-        myActions.ulticopy8->disable();
-        myActions.ulticopy9->disable();
-        myActions.ulticopy10->disable();
-        myActions.ulticopy11->disable();
-    }
+	if (iec_enable) {
+		myActions.turn_off->show();
+		myActions.turn_on->hide();
+	} else {
+		myActions.turn_on->show();
+		myActions.turn_off->hide();
+	}
+	if (writablePath) {
+		myActions.ulticopy8->enable();
+		myActions.ulticopy9->enable();
+		myActions.ulticopy10->enable();
+		myActions.ulticopy11->enable();
+	} else {
+		myActions.ulticopy8->disable();
+		myActions.ulticopy9->disable();
+		myActions.ulticopy10->disable();
+		myActions.ulticopy11->disable();
+	}
 }
 
 // this is actually the task
@@ -528,6 +537,14 @@ int IecInterface :: executeCommand(SubsysCommand *cmd)
     cmd_ui = cmd->user_interface;
 
 	switch(cmd->functionID) {
+		case MENU_IEC_ON:
+			iec_enable = 1;
+			HW_IEC_RESET_ENABLE = 1;
+			break;
+		case MENU_IEC_OFF:
+			iec_enable = 0;
+			HW_IEC_RESET_ENABLE = 0;
+			break;
 		case MENU_IEC_RESET:
             reset();
 			break;
@@ -604,6 +621,12 @@ void IecInterface :: set_iec_dir(const char *path)
     char *pathcopy = new char[strlen(path) + 1];
     strcpy(pathcopy, path);
     xQueueSend(queueGuiToIec, &pathcopy, 0); // write into command queue
+}
+
+// called from critical section
+const char *IecInterface :: get_partition_dir(int p)
+{
+    return vfs->GetPartitionPath(p);
 }
 
 // called from GUI task
@@ -738,7 +761,7 @@ void IecInterface :: get_warp_data(void)
     uint8_t sector = (uint8_t)read;
 #endif
     uint8_t track = HW_IEC_RX_DATA;
-    uint8_t *dest = static_bin_image.get_sector_pointer(track, sector);
+    uint8_t *dest = ulticopy_bin_image->get_sector_pointer(track, sector);
     uint8_t *src = (uint8_t *)temp;
     // printf("Sector {%b %b (%p -> %p}\n", track, sector, src, dest);
     if (dest) {
@@ -778,21 +801,20 @@ void IecInterface :: save_copied_disk()
     int res;
     BinImage *bin;
     
-    static_bin_image.num_tracks = 35; // standard!
+    ulticopy_bin_image->num_tracks = 35; // standard!
 
 	// buffer[0] = 0;
     if (cmd_ui->cfg->get_value(CFG_USERIF_ULTICOPY_NAME)) {
-        static_bin_image.get_sensible_name(buffer);
+        ulticopy_bin_image->get_sensible_name(buffer);
     }
 	res = cmd_ui->string_box("Give name for copied disk..", buffer, 22);
 	if(res > 0) {
 		fix_filename(buffer);
-	    bin = &static_bin_image;
 		set_extension(buffer, ".d64", 32);
         FRESULT fres = fm->fopen(cmd_path, buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
 		if(f) {
-            cmd_ui->show_progress("Saving D64..", 35);
-            save_result = bin->save(f, cmd_ui);
+            cmd_ui->show_progress("Saving D64..", 100);
+            save_result = ulticopy_bin_image->save(f, cmd_ui);
             cmd_ui->hide_progress();
     		printf("Result of save: %d.\n", save_result);
             fm->fclose(f);

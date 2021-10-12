@@ -49,7 +49,6 @@
 class AT45_Flash : public Flash
 {
     int page_size;
-    int block_size;
     int sector_size;
 	int sector_count;
     int total_size;
@@ -81,7 +80,8 @@ public:
     virtual bool erase_sector(int sector);
 	virtual int  page_to_sector(int page);
 	virtual bool read_page(int page, void *buffer);
-	virtual bool write_page(int page, void *buffer);
+    virtual bool read_page_power2(int page, void *buffer);
+	virtual bool write_page(int page, const void *buffer);
 	virtual bool need_erase(void) { return false; }
 
 

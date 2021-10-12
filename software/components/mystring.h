@@ -19,6 +19,8 @@ public:
     const char *c_str(void);
     const int length(void) const;
     const int allocated_space(void) const;
+    void to_upper(void);
+    void set(int index, char c);
 
     mstring& operator=(const char *rhs);
     mstring& operator=(const mstring &rhs);

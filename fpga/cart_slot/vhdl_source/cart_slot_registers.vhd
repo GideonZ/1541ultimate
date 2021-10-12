@@ -11,8 +11,6 @@ generic (
     g_cartreset_init: std_logic := '0';
     g_boot_stop     : boolean := false;
     g_kernal_repl   : boolean := true;
-    g_rom_base      : unsigned(27 downto 0) := X"0F80000";
-    g_ram_base      : unsigned(27 downto 0) := X"0F70000";
     g_ram_expansion : boolean := true );
 port (
     clock           : in  std_logic;
@@ -57,9 +55,10 @@ begin
                     control_i.c64_stop_mode <= io_req.data(1 downto 0);
                 when c_cart_cartridge_type =>
                     control_i.cartridge_type <= io_req.data(4 downto 0);
-                    control_i.cartridge_force <= io_req.data(7);
+                    control_i.cartridge_variant <= io_req.data(7 downto 5);
                 when c_cart_cartridge_kill =>
-                    control_i.cartridge_kill <= '1';
+                    control_i.cartridge_kill <= io_req.data(0);
+                    control_i.cartridge_force <= io_req.data(1);
                 when c_cart_kernal_enable =>
                     if g_kernal_repl then
                         control_i.kernal_enable <= io_req.data(0);
@@ -100,10 +99,10 @@ begin
                     io_resp.data(2) <= status.exrom;
                     io_resp.data(3) <= status.game;
                     io_resp.data(4) <= status.reset_in;
-                when c_cart_cartridge_rom_base =>
-                    io_resp.data <= std_logic_vector(g_rom_base(23 downto 16));
+                    io_resp.data(5) <= status.nmi;
                 when c_cart_cartridge_type =>
                     io_resp.data(4 downto 0) <= control_i.cartridge_type;
+                    io_resp.data(7 downto 5) <= control_i.cartridge_variant;
                 when c_cart_cartridge_active =>
                     io_resp.data(0) <= status.cart_active;
                 when c_cart_kernal_enable =>

@@ -23,34 +23,13 @@ AT45_Flash at45_flash;
 
 // Free space 0x103000 - 108000 (0x5000)
 // FPGA = ~0x54000 in length
-// MAX APPL length = 500K => 969 pages / 4 sectors
-// CUSTOM FPGA is thus on sector 12.. 
 
-static const t_flash_address flash_addresses[] = {
-	{ FLASH_ID_BOOTFPGA,   0x01, 0x000000, 0x000000, 0x53CA0 },
-	{ FLASH_ID_BOOTAPP,    0x01, 0x053CA0, 0x0A2800, 0x0F360 }, // 118 pages
-
-	{ FLASH_ID_AR5PAL,     0x00, 0x063000, 0x0C0000, 0x08000 },
-	{ FLASH_ID_AR6PAL,     0x00, 0x06B000, 0x0CF820, 0x08000 },
-	{ FLASH_ID_FINAL3,     0x00, 0x073000, 0x0DF040, 0x10000 },
-	{ FLASH_ID_KCS,        0x00, 0x083000, 0x0FE080, 0x04000 }, // 1016
-	{ FLASH_ID_EPYX,       0x00, 0x08D000, 0x1115B0, 0x02000 },
-	{ FLASH_ID_RR38PAL,    0x00, 0x093000, 0x11D0C0, 0x10000 },
-	{ FLASH_ID_SS5PAL,     0x00, 0x0A3000, 0x13C100, 0x10000 },
-	{ FLASH_ID_AR5NTSC,    0x00, 0x0B3000, 0x15B140, 0x08000 },
-	{ FLASH_ID_RR38NTSC,   0x00, 0x0C3000, 0x17A180, 0x10000 },
-	{ FLASH_ID_SS5NTSC,    0x00, 0x0D3000, 0x1991C0, 0x10000 },
-	{ FLASH_ID_TAR_PAL,    0x00, 0x0E3000, 0x1B8200, 0x10000 },
-	{ FLASH_ID_TAR_NTSC,   0x00, 0x0F3000, 0x1D7430, 0x10000 },
-
-	{ FLASH_ID_ALL_ROMS,   0x00, 0x063000, 0x0C0000, 0xA4000 },
-	{ FLASH_ID_APPL,       0x01, 0x108000, 0x200000, 0xC0000 }, // exactly half way: page 2048.
-
-	{ FLASH_ID_CUSTOM_ROM, 0x00, 0x1C9E00, 0x378000, 0x20000 }, // max size: 128K (page 0xDE0)
-	{ FLASH_ID_KERNAL_ROM, 0x00, 0x1EAE00, 0x3B8000, 0x02000 }, // page 0xEE0
-	{ FLASH_ID_CUSTOM_DRV, 0x00, 0x1ECF00, 0x3BC000, 0x08000 }, // page 0xEF0 - page 0xF3F
-
-	{ FLASH_ID_CONFIG,     0x00, 0x20DF00, 0x3FC000, 0x02100 }, // page 0xFF0
+static const t_flash_address flash_addresses[] = { // Total 4096 pages.
+	{ FLASH_ID_BOOTFPGA,   0x01, 0x000000, 0x000000, 0x53CA0 }, //  650 pages
+	{ FLASH_ID_BOOTAPP,    0x01, 0x053CA0, 0x0A2800, 0x0E2E0 }, //  110 pages. Offset = Page 650
+	{ FLASH_ID_APPL,       0x01, 0x061F80, 0x0BE000, 0xC6000 }, // 1536 pages. Offset = Page 760  (= max 792 KB)
+    { FLASH_ID_FLASHDRIVE, 0x00, 0x127F80, 0x23E000, 0xDF000 }, // 1784 pages. Offset = Page 2296 (= max 892 KB) <- page size is 512!
+	{ FLASH_ID_CONFIG,     0x00, 0x20DF00, 0x3FC000, 0x02100 }, //   16 pages. Offset = Page 4080 (page 0xFF0-0xFFF)
 	{ FLASH_ID_LIST_END,   0x00, 0x20DCF0, 0x3FBC00, 0x00210 } };
 
 
@@ -58,12 +37,12 @@ AT45_Flash::AT45_Flash()
 {
 
     page_size    = 528;         // in bytes
-    block_size   = 8;           // in pages
-	sector_size  = 256;			// in pages, default to AT45DB161
-	sector_count = 16;			// default to AT45DB161
+	sector_size  = 1; // 256;			// in pages, default to AT45DB161
+	sector_count = 4096; // 16;			// default to AT45DB161
     total_size   = 4096;		// in pages, default to AT45DB161
     page_shift   = 10;        	// offset in address reg
     config_start = total_size - AT45_NUM_CONFIG_PAGES;
+    last_status  = 0x00;
 }
     
 AT45_Flash::~AT45_Flash()
@@ -120,15 +99,15 @@ AT45_Flash *AT45_Flash :: tester()
     	return NULL; // not Atmel
 
 	if(dev_id == 0x26) { // AT45DB161
-		sector_size  = 256;	
-		sector_count = 16;	
+		sector_size  = 1; // 256;
+		sector_count = 4096;
 	    total_size   = 4096;
         config_start = total_size - AT45_NUM_CONFIG_PAGES;
 		return this;
 	}
 	if(dev_id == 0x27) { // AT45DB321
-		sector_size  = 128;	
-		sector_count = 64;	
+		sector_size  = 1; // 128;
+		sector_count = 8192; // 64;
 	    total_size   = 8192;
         config_start = total_size - AT45_NUM_CONFIG_PAGES;
 		return this;
@@ -310,7 +289,27 @@ bool AT45_Flash :: read_page(int page, void *buffer)
     return true;
 }
 
-bool AT45_Flash :: write_page(int page, void *buffer)
+bool AT45_Flash :: read_page_power2(int page, void *buffer)
+{
+    int device_addr = (page << page_shift);
+    int len = (512 >> 2); // this is a hack!
+    uint32_t *buf = (uint32_t *)buffer;
+
+    portENTER_CRITICAL();
+    SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
+    SPI_FLASH_DATA = AT45_ContinuousArrayRead_LowFrequency;
+    SPI_FLASH_DATA = uint8_t(device_addr >> 16);
+    SPI_FLASH_DATA = uint8_t(device_addr >> 8);
+    SPI_FLASH_DATA = uint8_t(device_addr);
+    for(int i=0;i<len;i++) {
+        *(buf++) = SPI_FLASH_DATA_32;
+    }
+    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
+    portEXIT_CRITICAL();
+    return true;
+}
+
+bool AT45_Flash :: write_page(int page, const void *buffer)
 {
     int device_addr = (page << page_shift);
     int len = (page_size >> 2);
@@ -372,18 +371,7 @@ int AT45_Flash :: page_to_sector(int page)
 {
 	return (page / sector_size);
 }
-/*
-static BYTE rotate(BYTE t)
-{
-    BYTE r = 0;
-    for(int b=0;b<8;b++) {
-        r <<= 1;
-        r |= (t & 1);
-        t >>= 1;
-    }
-    return r;
-}
-*/
+
 void AT45_Flash :: reboot(int addr)
 {
     int page = addr / page_size;
@@ -427,13 +415,12 @@ bool AT45_Flash :: protect_configure(void)
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
 	SPI_FLASH_DATA_32 = 0x3D2A7FFC;
 
-	// by default, protect 3/4 of the device and leave 1/4 unprotected
-	int prot = 3 * (sector_count >> 2);
+	// by default, protect 1/2 of the device and leave 1/2 unprotected, which is the flash disk
+	int prot = 2 * (sector_count >> 2);
 	for(int i=0;i<prot;i++) {
 		SPI_FLASH_DATA = 0xFF;
 	}
-	int not_prot = sector_count - prot;
-	for(int i=0;i<not_prot;i++) {
+	for(int i=prot;i<sector_count;i++) {
 		SPI_FLASH_DATA = 0x00;
 	}
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high

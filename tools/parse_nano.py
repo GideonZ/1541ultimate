@@ -169,11 +169,12 @@ def dump_bram_init():
                      
 def dump_nan_file(filename):
     f = open(filename, "wb")
+    b = bytearray(2)
     for i in range(len(program)):
         inst = int(program[i], 16)
-        b0 = inst & 0xFF
-        b1 = (inst >> 8) & 0xFF
-        f.write("%c%c" % (b0, b1))
+        b[0] = inst & 0xFF
+        b[1] = (inst >> 8) & 0xFF
+        f.write(b)
     
     f.close()
         
@@ -228,11 +229,11 @@ def parse_lines(lines):
         mnem = line_split[0]; 
         try:
             (f, code) = mnemonics[mnem]
-        except KeyError,e:
+        except KeyError as e:
             raise NameError("Unknown Mnemonic %s in line %d" % (mnem, nr))
         try:
             code = f(line_split[1].strip(), mnem, code)
-        except IndexError,e:
+        except IndexError as e:
             raise ValueError("Value error in line %d" % (nr,))
         if (phase == 2):
             print ("%03X: %04X | " % (pc-1, code),line)

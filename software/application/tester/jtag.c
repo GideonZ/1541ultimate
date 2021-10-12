@@ -199,11 +199,13 @@ void vji_write_memory(JTAG_Access_t *controller, uint32_t address, int words, ui
 void jtag_clear_fpga(volatile uint32_t *host)
 {
 	jtag_reset_to_idle(host);
+    jtag_instruction(host, 0x2D0); // Disengage active?
 	host[0] = JTAG_TMSSEL | (3 << 16) | 0x03; // send 4 bits: 1, 1, 0, 0 to get into ShiftIR state
 	host[0] = JTAG_LAST   | (9 << 16) | 2;    // send 10 bits of instruction data, we are now in Exit1-IR state
 	host[0] = JTAG_TMSSEL | (3 << 16) | 0x06; // send 4 bits: 0, 1, 1, 0 to get into Idle state through Pause-IR
 	host[0] = JTAG_TMSSEL |	(12499 << 16);    // send 12500 zero bits on TDI, stay in same state
 	host[0] = JTAG_TMSSEL |	(12499 << 16);    // send 12500 zero bits on TDI, stay in same state
+    volatile uint32_t read = host[0];         // this read forces us to wait until the jtag controller is done
 }
 
 void jtag_configure_fpga(volatile uint32_t *host, uint8_t *data, int length)

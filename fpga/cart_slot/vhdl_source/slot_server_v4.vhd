@@ -14,9 +14,10 @@ generic (
     g_clock_freq    : natural := 50_000_000;
     g_tag_slot      : std_logic_vector(7 downto 0) := X"08";
     g_tag_reu       : std_logic_vector(7 downto 0) := X"10";
-    g_ram_base_reu  : unsigned(27 downto 0) := X"1000000"; -- should be on 16M boundary, or should be limited in size
-    g_ram_base_cart : unsigned(27 downto 0) := X"0F70000"; -- should be on a 64K boundary
-    g_rom_base_cart : unsigned(27 downto 0) := X"0F80000"; -- should be on a 512K boundary
+    g_ram_base_reu  : std_logic_vector(27 downto 0) := X"1000000"; -- should be on 16M boundary, or should be limited in size
+    g_ram_base_cart : std_logic_vector(27 downto 0) := X"0EF0000"; -- should be on a 64K boundary
+    g_rom_base_cart : std_logic_vector(27 downto 0) := X"0F00000"; -- should be on a 1M boundary
+    g_kernal_base   : std_logic_vector(27 downto 0) := X"0EA8000"; -- should be on a 32K boundary 
     g_direct_dma    : boolean := false;
     g_ext_freeze_act: boolean := false;
     g_cartreset_init: std_logic := '0';
@@ -29,6 +30,7 @@ generic (
     g_extended_reu  : boolean := false;
     g_sampler       : boolean := false;
     g_acia          : boolean := false;
+    g_eeprom        : boolean := true;
     g_implement_sid : boolean := true;
     g_sid_voices    : natural := 3;
     g_8voices       : boolean := false;
@@ -72,6 +74,7 @@ port (
                     
     irqn_i          : in    std_logic := '1';
     irqn_o          : out   std_logic;
+    nmin_i          : in    std_logic := '1';
     nmin_o          : out   std_logic;
 
     -- other hardware pins
@@ -89,7 +92,10 @@ port (
     freezer_state   : out   std_logic_vector(1 downto 0);
     sync            : out   std_logic;
     sw_trigger      : out   std_logic;
-    
+    debug_data      : out   std_logic_vector(31 downto 0);
+    debug_valid     : out   std_logic;
+    debug_select    : in    std_logic_vector(2 downto 0) := "000";
+
     -- audio output
     sid_left         : out signed(17 downto 0);
     sid_right        : out signed(17 downto 0);
@@ -149,6 +155,7 @@ architecture structural of slot_server_v4 is
     signal serve_enable    : std_logic := '0'; -- from cartridge emulation logic
     signal serve_inhibit   : std_logic := '0';
     signal serve_vic       : std_logic := '0';
+    signal serve_128       : std_logic := '0';
     signal serve_rom       : std_logic := '0'; -- ROML or ROMH
     signal serve_io1       : std_logic := '0'; -- IO1n
     signal serve_io2       : std_logic := '0'; -- IO2n
@@ -197,6 +204,8 @@ architecture structural of slot_server_v4 is
     signal io_resp_samp_cpu : t_io_resp := c_io_resp_init;
     signal io_req_acia      : t_io_req;
     signal io_resp_acia     : t_io_resp := c_io_resp_init;
+    signal io_req_eeprom    : t_io_req;
+    signal io_resp_eeprom   : t_io_resp := c_io_resp_init;
     
     signal dma_req_io       : t_dma_req;
     signal dma_resp_io      : t_dma_resp := c_dma_resp_init;
@@ -276,7 +285,7 @@ begin
     generic map (
         g_range_lo  => 13,
         g_range_hi  => 15,
-        g_ports     => 6 )
+        g_ports     => 7 )
     port map (
         clock    => clock,
         
@@ -289,20 +298,20 @@ begin
         reqs(3)  => io_req_copper,   -- 4046000
         reqs(4)  => io_req_samp_cpu, -- 4048000
         reqs(5)  => io_req_acia,     -- 404A000
+        reqs(6)  => io_req_eeprom,   -- 404C000
         
         resps(0) => io_resp_regs,
         resps(1) => io_resp_sid,
         resps(2) => io_resp_cmd,
         resps(3) => io_resp_copper,
         resps(4) => io_resp_samp_cpu,
-        resps(5) => io_resp_acia );
-        
+        resps(5) => io_resp_acia,
+        resps(6) => io_resp_eeprom );
+
 
     i_registers: entity work.cart_slot_registers
     generic map (
         g_kernal_repl   => g_kernal_repl,
-        g_rom_base      => g_rom_base_cart,
-        g_ram_base      => g_ram_base_cart,
         g_boot_stop     => g_boot_stop,
         g_cartreset_init=> g_cartreset_init,
         g_ram_expansion => g_ram_expansion )
@@ -398,6 +407,7 @@ begin
     
         -- interface with freezer (cartridge) logic
         allow_serve     => allow_serve,
+        serve_128       => serve_128, -- 8000-FFFF
         serve_rom       => serve_rom, -- ROML or ROMH
         serve_io1       => serve_io1, -- IO1n
         serve_io2       => serve_io2, -- IO2n
@@ -502,10 +512,13 @@ begin
         freeze_act      => freeze_active );
 
 
-    i_cart_logic: entity work.all_carts_v4
+    i_cart_logic: entity work.all_carts_v5
     generic map (
-        g_rom_base      => std_logic_vector(g_rom_base_cart),
-        g_ram_base      => std_logic_vector(g_ram_base_cart) )
+        g_eeprom        => g_eeprom,
+        g_kernal_base   => g_kernal_base,
+        g_georam_base   => g_ram_base_reu,
+        g_rom_base      => g_rom_base_cart,
+        g_ram_base      => g_ram_base_cart )
     port map (
         clock           => clock,
         reset           => reset,
@@ -518,6 +531,7 @@ begin
         cart_active     => status.cart_active,
         
         cart_logic      => control.cartridge_type,
+        cart_variant    => control.cartridge_variant,
         cart_force      => control.cartridge_force,
         cart_kill       => control.cartridge_kill,
         epyx_timeout    => epyx_timeout,
@@ -525,23 +539,25 @@ begin
         slot_req        => slot_req,
         slot_resp       => slot_resp_cart,
 
+        io_req_eeprom   => io_req_eeprom,
+        io_resp_eeprom  => io_resp_eeprom,
+
         mem_addr        => mem_req_32_slot.address, 
         serve_enable    => serve_enable,
         serve_vic       => serve_vic,
+        serve_128       => serve_128, -- 8000-FFFF
         serve_rom       => serve_rom, -- ROML or ROMH
         serve_io1       => serve_io1, -- IO1n
         serve_io2       => serve_io2, -- IO2n
         allow_write     => allow_write,
         kernal_area     => kernal_area,
         kernal_enable   => control.kernal_enable,
-        kernal_16k      => control.kernal_16k,
         
         irq_n           => irq_n,
         nmi_n           => nmi_n,
         exrom_n         => exrom_n,
         game_n          => game_n,
-        sense           => sense,
-    
+
         CART_LEDn       => cart_led_n,
         size_ctrl       => control.reu_size );
 
@@ -595,7 +611,7 @@ begin
         i_reu: entity work.reu
         generic map (
             g_extended      => g_extended_reu,
-            g_ram_base      => g_ram_base_reu,
+            g_ram_base      => unsigned(g_ram_base_reu),
             g_ram_tag       => g_tag_reu )
         port map (
             clock           => clock,
@@ -873,4 +889,64 @@ begin
     sw_trigger  <= '1' when slot_req.io_write = '1' and slot_req.io_address(8 downto 0) = "111111110" and slot_req.data = X"54" else '0';
     -- write 0x0D to $DFFF to generate a sync
     sync        <= '1' when slot_req.io_write = '1' and slot_req.io_address(8 downto 0) = "111111111" and slot_req.data = X"0D" else '0';
+    
+    status.nmi  <= not nmin_i when rising_edge(clock);
+
+    b_debug: block
+        signal phi_c        : std_logic := '0';
+        signal phi_d1       : std_logic := '0';
+        signal phi_d2       : std_logic := '0';
+        signal vector_c     : std_logic_vector(31 downto 0) := (others => '0');
+        signal vector_d1    : std_logic_vector(31 downto 0) := (others => '0');
+        signal vector_d2    : std_logic_vector(31 downto 0) := (others => '0');
+        signal ba_history   : std_logic_vector(2 downto 0) := (others => '0');
+        alias cpu_cycle_enable  : std_logic is debug_select(0);
+        alias vic_cycle_enable  : std_logic is debug_select(1);
+        alias drv_enable        : std_logic is debug_select(2);
+    begin 
+        -- Debug Stream
+        process(clock)
+            variable vector_in      : std_logic_vector(31 downto 0);
+        begin
+            if rising_edge(clock) then
+                vector_in := phi2_i & gamen_i & exromn_i & not (romhn_i and romln_i) &
+                             ba_i & irqn_i & nmin_i & rwn_i &
+                             slot_data_i & std_logic_vector(slot_addr_i);
+    
+                phi_c  <= phi2_i;
+                phi_d1 <= phi_c;
+                phi_d2 <= phi_d1;
+                         
+                vector_c  <= vector_in;
+                vector_d1 <= vector_c;
+                vector_d2 <= vector_d1;
+    
+                -- BA  1 1 1 0 0 0 0 0 0 0 1 1 1
+                -- BA0 1 1 1 1 0 0 0 0 0 0 0 1 1
+                -- BA1 1 1 1 1 1 0 0 0 0 0 0 0 1
+                -- BA2 1 1 1 1 1 1 0 0 0 0 0 0 0
+                -- CPU 1 1 1 1 1 1 0 0 0 0 1 1 1 
+                -- 
+                debug_valid <= '0';
+                debug_data  <= vector_d2;    
+
+                if phi_d2 /= phi_d1 then
+                    if phi_d2 = '1' then
+                        ba_history <= ba_history(1 downto 0) & vector_d2(27); -- BA position!
+                    end if;
+                    
+                    if phi_d2 = '1' then
+                        if (vector_d2(27) = '1' or ba_history /= "000" or drv_enable = '1') and cpu_cycle_enable = '1' then
+                            debug_valid <= '1';
+                        elsif vic_cycle_enable = '1' then
+                            debug_valid <= '1';
+                        end if;
+                    elsif vic_cycle_enable = '1' then
+                        debug_valid <= '1';
+                    end if;
+                end if;
+            end if;
+        end process;
+    end block;
+        
 end structural;

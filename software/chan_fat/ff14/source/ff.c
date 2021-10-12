@@ -2172,7 +2172,7 @@ static void get_xfileinfo (
 	fno->fname[di] = 0;						/* Terminate the name */
 	fno->altname[0] = 0;					/* exFAT does not support SFN */
 
-	fno->fattrib = dirb[XDIR_Attr];			/* Attribute */
+	fno->fattrib = dirb[XDIR_Attr] & ~AM_VOL; /* Attribute */
 	fno->fsize = (fno->fattrib & AM_DIR) ? 0 : ld_qword(dirb + XDIR_FileSize);	/* Size */
 	fno->ftime = ld_word(dirb + XDIR_ModTime + 0);	/* Time */
 	fno->fdate = ld_word(dirb + XDIR_ModTime + 2);	/* Date */
@@ -4026,7 +4026,10 @@ FRESULT f_write (
 						clst = create_chain(&fp->obj, fp->clust);	/* Follow or stretch cluster chain on the FAT */
 					}
 				}
-				if (clst == 0) break;		/* Could not allocate a new cluster (disk full) */
+				if (clst == 0) {
+				    fp->flag |= FA_MODIFIED;        /* Set file change flag */
+				    ABORT(fs, FR_DISK_FULL);		/* Could not allocate a new cluster (disk full) */
+				}
 				if (clst == 1) ABORT(fs, FR_INT_ERR);
 				if (clst == 0xFFFFFFFF) ABORT(fs, FR_DISK_ERR);
 				fp->clust = clst;			/* Update current cluster */
@@ -5040,7 +5043,7 @@ FRESULT f_mkdir (
 			sobj.fs = fs;						/* New object id to create a new chain */
 			dcl = create_chain(&sobj, 0);		/* Allocate a cluster for the new directory */
 			res = FR_OK;
-			if (dcl == 0) res = FR_DENIED;		/* No space to allocate a new cluster? */
+			if (dcl == 0) res = FR_DISK_FULL;	/* No space to allocate a new cluster? */
 			if (dcl == 1) res = FR_INT_ERR;		/* Any insanity? */
 			if (dcl == 0xFFFFFFFF) res = FR_DISK_ERR;	/* Disk error? */
 			tm = GET_FATTIME();
@@ -5704,7 +5707,7 @@ static FRESULT create_partition (
 
 #if FF_LBA64
 	if (sz_drv >= FF_MIN_GPT) {	/* Create partitions in GPT */
-		WORD ss;
+		DWORD ss;
 		UINT sz_pt, pi, si, ofs;
 		DWORD bcc, rnd, align;
 		QWORD s_lba64, n_lba64, sz_pool, s_bpt;
@@ -5840,7 +5843,7 @@ FRESULT f_mkfs (
 	static const WORD cst32[] = {1, 2, 4, 8, 16, 32, 0};	/* Cluster size boundary for FAT32 volume (128Ks unit) */
 	static const MKFS_PARM defopt = {FM_ANY, 0, 0, 0, 0};	/* Default parameter */
 	BYTE fsopt, fsty, sys, *buf, *pte, pdrv, ipart;
-	WORD ss;	/* Sector size */
+	DWORD ss;	/* Sector size */
 	DWORD sz_buf, sz_blk, n_clst, pau, nsect, n;
 	LBA_t sz_vol, b_vol, b_fat, b_data;		/* Size of volume, Base LBA of volume, fat, data */
 	LBA_t sect, lba[2];

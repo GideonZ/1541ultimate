@@ -8,6 +8,7 @@
 ;----------------------------------------------------
         .segment "ULTIMATE"
 ;
+        OUR_DEVICE     = $DF1B ; New!
         CMD_IF_CONTROL = $DF1C
         CMD_IF_COMMAND = $DF1D
         CMD_IF_RESULT  = $DF1E
@@ -46,11 +47,15 @@
         SAVEADDR   = $C1
         SAVEEND    = $AE
 
-        MY_OUTLEN       = $02BF ; Last byte of free area, before sprite 11
-        UCI_PENDING_CMD = $02BE
-        UCI_LAST_CMD    = $02BD
-        UCI_LAST_SA     = $02BC
+;        MY_OUTLEN       = $02BF ; Last byte of free area, before sprite 11
+;        UCI_PENDING_CMD = $02BE
+;        UCI_LAST_CMD    = $02BD
+;        UCI_LAST_SA     = $02BC
 
+        MY_OUTLEN       = prty
+        UCI_PENDING_CMD = dpsw
+        UCI_LAST_CMD    = fsblk
+        UCI_LAST_SA     = syno
 
 ulti_restor
             lda CMD_IF_COMMAND
@@ -207,19 +212,19 @@ op2         pla ; throw away return address and exit
 ulticlose   cmp OUR_DEVICE
             beq myclose
 cl1         cmp #3
-            beq op2       ;is screen...done
+            beq closeexit ;is screen...done
             rts           ; return to caller with original flags due to cmp #3
 
 myclose     ldx CMD_IF_COMMAND
             cpx #UCI_IDENTIFIER
             bne cl1
 
-            pla         ; kill return address
-            pla         ; kill return address
             ldx #UCI_CMD_CLOSE
             jsr uci_setup_cmd
             jsr uci_execute
             jsr uci_ack
+closeexit   pla         ; kill return address
+            pla         ; kill return address			
             jmp jx150
 
 ; $FFE4   
@@ -513,8 +518,8 @@ _abrt1      lda #$00
             and #CMD_STATE_BITS
             beq _abrt2 ; UCI is already in idle state; we're done
 
-            cmp #CMD_STATE_MORE_DATA  ; only if it is 'more data', we use abort, otherwise data is just acked.
-            bne uci_ack ; NOT in More Data state, just ack
+;            cmp #CMD_STATE_MORE_DATA  ; only if it is 'more data', we use abort, otherwise data is just acked.
+;            bne uci_ack ; NOT in More Data state, just ack
 
             ; Perform Abort of current command
             lda #CMD_ABORT
@@ -540,7 +545,7 @@ uci_clear_error
 .import frmevl
 .import frmnum
 .import getadr
-.import valtyp
+.importzp valtyp
 .import frefac
 .import newstt
 .import linprt
@@ -548,6 +553,7 @@ uci_clear_error
 .global wedged_execute
 
 at_command
+            plp
             lda #0
             sta STATUS
 
@@ -613,11 +619,12 @@ _kernal_error
 
 wedged_execute
             jsr CHRGET
+            php
             cmp #AT_TOKEN
             beq at_command
             cmp #STRING_TOKEN
             beq dir_command
-            cmp #0
+			plp
             jmp ngone+3 ;$a7e7
 
 get_dev_num jsr getadr
@@ -663,6 +670,7 @@ _dev_ok     cmp #31
 _uci_listen jmp ultichkout_c
 
 dir_command
+            plp
             lda #0
             sta STATUS
             pha          ; Pre-store length = 0 on stack

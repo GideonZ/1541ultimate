@@ -57,18 +57,22 @@ SRCS_CC	 =  u2p_init.cc \
 			u64_config.cc \
 			rtc_i2c.cc \
 			c64.cc \
+			c64_crt.cc \
 			u64_machine.cc \
 			c64_subsys.cc \
 			screen.cc \
 			keyboard_c64.cc \
 			disk_image.cc \
 			c1541.cc \
+			wd177x.cc \
+			mfmdisk.cc \
 			mystring.cc \
 			path.cc \
 			pattern.cc \
 			blockdev.cc \
 			blockdev_file.cc \
 			blockdev_ram.cc \
+			blockdev_flash.cc \
 			disk.cc \
 			partition.cc \
 			file_system.cc \
@@ -76,14 +80,14 @@ SRCS_CC	 =  u2p_init.cc \
 			directory.cc \
 			file.cc \
 			filesystem_iso9660.cc \
-            filesystem_root.cc \
+			filesystem_root.cc \
 			filesystem_d64.cc \
 			filesystem_t64.cc \
 			filesystem_fat.cc \
 			size_str.cc \
 			userinterface.cc \
 			ui_elements.cc \
-            user_file_interaction.cc \
+			user_file_interaction.cc \
 			editor.cc \
 			tree_browser.cc \
 			tree_browser_state.cc \
@@ -100,9 +104,10 @@ SRCS_CC	 =  u2p_init.cc \
 			filetype_sid.cc \
 			filetype_bin.cc \
 			filetype_cfg.cc \
-            host_stream.cc \
-            keyboard_vt100.cc \
-            screen_vt100.cc \
+			filetype_vpl.cc \
+			host_stream.cc \
+			keyboard_vt100.cc \
+			screen_vt100.cc \
 			usb_base.cc \
 			usb_device.cc \
 			usb_scsi.cc \
@@ -155,6 +160,7 @@ SRCS_CC	 =  u2p_init.cc \
 			modem.cc \
 			listener_socket.cc \
 			ramdisk.cc \
+			system_info.cc \
 			$(PRJ).cc
 
 #			usb_em1010.cc \
@@ -177,9 +183,9 @@ SRCS_ASM =
 
 SRCS_ASMS = port_asm.S
 
-SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas
+SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas eapi.tas
 
-SRCS_BIN =  basic.bin sidcrt.bin muscrt.bin musplayer.bin chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin
+SRCS_BIN =  basic.bin sidcrt.bin muscrt.bin musplayer.bin chars.bin module.bin
 
 SRCS_IEC = iec_code.iec
 

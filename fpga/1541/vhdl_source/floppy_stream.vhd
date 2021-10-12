@@ -31,7 +31,7 @@ port (
     do_advance      : out std_logic;
     
     -- info about the head
-    track           : out std_logic_vector(6 downto 0);
+    track           : out unsigned(6 downto 0);
     track_is_0      : out std_logic;
     do_head_bang    : out std_logic;
     do_track_out    : out std_logic;
@@ -39,13 +39,13 @@ port (
 
     -- control i/o
     floppy_inserted : in  std_logic;
+    stepper_en      : in  std_logic;
     motor_on        : in  std_logic;
     sync            : out std_logic;
     mode            : in  std_logic;
     write_prot_n    : in  std_logic;
     step            : in  std_logic_vector(1 downto 0);
     byte_ready      : out std_logic;
-    soe             : in  std_logic;
     rate_ctrl       : in  std_logic_vector(1 downto 0);
     bit_time        : in  unsigned(9 downto 0); -- in steps of 10 ns
         
@@ -64,12 +64,13 @@ architecture gideon of floppy_stream is
     signal mem_shift   : std_logic_vector(7 downto 0);
     signal rd_shift    : std_logic_vector(9 downto 0) := (others => '0');
     signal sync_i      : std_logic;
-    signal byte_rdy_i  : std_logic;
+    signal byte_rdy_i  : std_logic_vector(3 downto 0);
     alias  mem_rd_bit  : std_logic is mem_shift(7);
     signal track_i     : unsigned(6 downto 0);
     signal mode_d      : std_logic;
     signal write_delay : integer range 0 to 3;
     signal random_bit  : std_logic;
+    signal byte_ready_cnt : natural range 0 to 127 := 0;
 
     -- resample
     signal transition_pulse : std_logic;
@@ -78,14 +79,11 @@ architecture gideon of floppy_stream is
     signal rd_shift_pulse   : std_logic;
     signal rd_shift_data    : std_logic;
     signal rd_shift_phase   : std_logic;
+    signal rd_shift_phase_d : std_logic;
     
     -- weak bit implementation
     signal random_data   : std_logic_vector(15 downto 0);
     signal random_trans  : std_logic;
---    signal bit_slip    : std_logic;
---    signal bit_flip    : std_logic;
---    signal weak_count  : integer range 0 to 63 := 0;
---    signal enable_slip : std_logic;
 begin
     p_clock_div: process(clock)
     begin
@@ -199,42 +197,47 @@ begin
             sync_i <= s;
             
             do_advance <= '0';
+            do_write <= '0';
+
             mode_d <= mode;
             if mode_d='1' and mode='0' then -- going to write
-                write_delay <= 2;
-                do_advance <= '1';
+                write_delay <= 1;
+                -- do_advance <= '1';
             end if;
             
-            do_write <= '0';
-            if rd_bit_cnt = "111" and mode='0' and rd_shift_pulse='1' then
-                if write_delay = 0 then
-                    if write_prot_n = '1' and floppy_inserted = '1' then
-                        do_write <= '1';
-                    else
-                        do_advance <= '1';
-                    end if;
-                else
-                    do_advance <= '0';
-                    write_delay <= write_delay - 1;
-                end if;
-            end if;
-            
-            if rd_shift_pulse = '1' then -- and bit_slip = '0' then
-                rd_shift   <= rd_shift(8 downto 0) & rd_shift_data; --(mem_rd_bit or bit_flip);
+            if rd_shift_pulse = '1' then
+                rd_shift   <= rd_shift(8 downto 0) & rd_shift_data;
                 rd_bit_cnt <= rd_bit_cnt + 1;
             end if;
             if s = '0' then
                 rd_bit_cnt <= "000";
             end if;
+                        
+            rd_shift_phase_d <= rd_shift_phase;
+            if (rd_bit_cnt="111") and (rd_shift_phase='1') and (rd_shift_phase_d='0') then
+                byte_ready <= '0';
+                byte_ready_cnt <= 127; -- 8 us!
 
-            if (rd_bit_cnt="111") and (soe = '1') and (rd_shift_phase='1') then -- and (bit_slip = '0') then
-                byte_rdy_i <= '0';
-            else
-                byte_rdy_i <= '1';
-            end if;
+                if mode = '0' then -- if writing
+                    if write_delay = 0 then
+                        if write_prot_n = '1' and floppy_inserted = '1' then
+                            do_write <= '1';
+                        else
+                            do_advance <= '1';
+                        end if;
+                    else
+                        write_delay <= write_delay - 1;
+                        do_advance <= '1';
+                    end if;
+                end if;
+            elsif byte_ready_cnt = 0 then
+                byte_ready <= '1';
+            elsif tick_16MHz = '1' then
+                byte_ready_cnt <= byte_ready_cnt - 1;                
+            end if; 
         end if;
     end process;    
-    
+
     p_move: process(clock)
         variable st : std_logic_vector(3 downto 0);
     begin
@@ -243,7 +246,7 @@ begin
             do_track_out <= '0';
             do_head_bang <= '0';
 
-            if motor_on='1' then
+            if stepper_en='1' then
                 st := std_logic_vector(track_i(1 downto 0)) & step;
     
                 case st is
@@ -263,7 +266,7 @@ begin
             end if;
                             
             if reset='1' then
-                track_i <= "0100000";
+                track_i <= "0000000";
             end if;            
         end if;
     end process;
@@ -271,7 +274,7 @@ begin
     -- outputs
     sync       <= sync_i;
     read_data  <= rd_shift(7 downto 0);
-    byte_ready <= byte_rdy_i;
-    track      <= std_logic_vector(track_i);
+--    byte_ready <= byte_rdy_i;
+    track      <= track_i;
     track_is_0 <= '1' when track_i = "0000000" else '0';
 end gideon;

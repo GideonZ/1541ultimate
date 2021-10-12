@@ -73,6 +73,8 @@ private:
 
     int   cur;
     int   len;
+    int   max_chars; // maximum number of chars shown at once
+    int   edit_offs; // offset in string being edited (scrolling)
 
     // destination
     int   max_len;

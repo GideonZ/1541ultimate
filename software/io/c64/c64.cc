@@ -6,7 +6,7 @@
  *    Daniel Kahlin <daniel@kahlin.net>
  *
  *  This file is part of the 1541 Ultimate-II application.
- *  Copyright (C) 200?-2011 Gideon Zweijtzer <info@1541ultimate.net>
+ *  Copyright (C) 2007-2021 Gideon Zweijtzer <info@1541ultimate.net>
  *  Copyright (C) 2011 Daniel Kahlin <daniel@kahlin.net>
  *
  *  This program is free software: you can redistribute it and/or modify
@@ -31,10 +31,13 @@
 #include "dump_hex.h"
 #include "c64.h"
 #include "u64.h"
+#include "c64_crt.h"
 #include "flash.h"
 #include "keyboard_c64.h"
 #include "config.h"
-#include "iec.h"
+#if U64
+#include "u64_machine.h"
+#endif
 
 #ifndef CMD_IF_SLOT_BASE
 #define CMD_IF_SLOT_BASE       *((volatile uint8_t *)(CMD_IF_BASE + 0x0))
@@ -46,133 +49,46 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "filetype_crt.h"
+#include "modem.h"
 #endif
 
-int ultimatedosversion = 0;
 bool allowUltimateDosDateSet = false;
 #ifndef RECOVERYAPP
 extern bool connectedToU64;
 #endif
 
 /* Configuration */
-const char *cart_mode[] = { "None",
-                      "Final Cart III",
-                      "Action Replay V4.2 PAL",
-                      "Action Replay V6.0 PAL",
-                      "Retro Replay V3.8q PAL",
-                      "SuperSnapshot V5.22 PAL",
-                      "TAsm / CodeNet PAL",
-#ifndef U64
-                      "Action Replay V5.0 NTSC",
-#endif
-                      "Retro Replay V3.8y NTSC",
-                      "SuperSnapshot V5.22 NTSC",
-                      "TAsm / CodeNet NTSC",
-
-                      "Epyx Fastloader",
-                      "KCS Power Cartridge",
-
-                      "GeoRAM",
-                      "Custom 8K ROM",
-                      "Custom 16K ROM Ultimax",
-                      "Custom 16K ROM",
-/*
-                      "Custom System 3 ROM",
-                      "Custom Ocean V1 ROM",
-                      "Custom Ocean V2/T2 ROM",
-                      "Custom Final III ROM",
-*/
-                      "Custom Retro Replay ROM",
-                      "Custom Snappy ROM",
-                      "Custom KCS ROM",
-                      "Custom Final V1/V2 ROM",
-#ifndef U64
-                      "Custom C128 External ROM",
-#endif
-                      "Custom CRT"
-                   };
-
-cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_REU | CART_ETH },
-                          { FLASH_ID_FINAL3,    0x000000, 0x10000,  0x04 },
-                          { FLASH_ID_AR5PAL,    0x000000, 0x08000,  0x07 },
-                          { FLASH_ID_AR6PAL,    0x000000, 0x08000,  0x07 },
-                          { FLASH_ID_RR38PAL,   0x000000, 0x10000,  0x06 | CART_REU | CART_ETH },
-                          { FLASH_ID_SS5PAL,    0x000000, 0x10000,  0x05 | CART_REU },
-                          { FLASH_ID_TAR_PAL,   0x000000, 0x10000,  0x06 | CART_ETH },
-
-#ifndef U64
-                          { FLASH_ID_AR5NTSC,   0x000000, 0x08000,  0x07 },
-#endif
-                          { FLASH_ID_RR38NTSC,  0x000000, 0x10000,  0x06 | CART_REU | CART_ETH },
-                          { FLASH_ID_SS5NTSC,   0x000000, 0x10000,  0x05 | CART_REU },
-                          { FLASH_ID_TAR_NTSC,  0x000000, 0x10000,  0x06 | CART_ETH },
-
-                          { FLASH_ID_EPYX,      0x000000, 0x02000,  0x0E },
-                          { FLASH_ID_KCS,       0x000000, 0x04000,  0x10 },
-
-                          { 0x00,               0x000000, 0x04000,  0x15 | CART_UCI }, // GeoRam
-                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x02000,  0x01 | CART_REU | CART_ETH },
-                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x04000,  0x03 | CART_REU | CART_ETH },
-                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x04000,  0x02 | CART_REU | CART_ETH },
-/*
-                          { 0x00,               0x000000, 0x80000,  0x08 | CART_REU },
-                          { 0x00,               0x000000, 0x80000,  0x0A | CART_REU },
-                          { 0x00,               0x000000, 0x80000,  0x0B | CART_REU },
-                          { 0x00,               0x000000, 0x10000,  0x04 },
-*/
-                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x10000,  0x06 | CART_REU | CART_ETH },
-                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x10000,  0x05 | CART_REU },
-                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x04000,  0x10 },
-                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x04000,  0x11 },
-#ifndef U64
-                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x08000,  0x18 | CART_REU | CART_ETH },
-#endif
-                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x00000,  0x00 }
- };
-                          
 static const char *reu_size[] = { "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };
 static const char *reu_offset[] = { "0 KB", "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };
-static const char *rom_sel[] = { "Factory", "Original", "Alternative" };
-#if U64
-static const char *rom_sel_ker[] = { "Factory", "Original", "Alternative", "Alt. 2", "Alt. 3" };
-#elif CLOCK_FREQ == 62500000
-static const char *rom_sel_ker[] = { "Disabled", "Alternative", "Alt. 2" };
-#endif
 static const char *buttons[] = { "Reset|Menu|Freezer", "Freezer|Menu|Reset" };
 static const char *timing1[] = { "20ns", "40ns", "60ns", "80ns", "100ns", "120ns", "140ns", "160ns" };
 static const char *timing2[] = { "16ns", "32ns", "48ns", "64ns", "80ns", "96ns", "112ns", "128ns" };
 static const char *timing3[] = { "15ns", "30ns", "45ns", "60ns", "75ns", "90ns", "105ns", "120ns" };
-static const char *ultimatedos[] = { "Disabled", "Enabled", "Enabled (v1.1)", "Enabled (v1.0)" };
-static const char *fc3mode[] = { "Unchanged", "Desktop", "BASIC" };
 static const char *cartmodes[] = { "Auto", "Internal", "External", "Manual" };
 static const char *bus_modes[] = { "Quiet", "Writes", "Dynamic", "Dyn. & Writes" };
 static const uint8_t bus_mode_values[] = { 0x00, 0x01, 0x02, 0x03, 0x04 };
 static const char *bus_sharing[] = { "Internal", "External", "Both" };
+static const char *en_dis_geo[] = { "Disabled", "Enabled", "GeoRAM Mode" };
 
 struct t_cfg_definition c64_config[] = {
+    { CFG_C64_CART_CRT,    CFG_TYPE_STRFUNC,"Cartridge",                  "%s", (const char **)C64 :: list_crts,  0, 30, (int)"" },
 #if U64
-    { CFG_C64_CART,        CFG_TYPE_ENUM, "Cartridge",                    "%s", cart_mode,  0, 20, 0 },
     { CFG_C64_CART_PREF,   CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,  0,  3, 0 },
     { CFG_BUS_MODE,        CFG_TYPE_ENUM, "Bus Operation Mode",           "%s", bus_modes,    0,  3, 0 },
     { CFG_BUS_SHARING_ROM, CFG_TYPE_ENUM, "Bus Sharing - ROMs",           "%s", bus_sharing,  0,  2, 2 },
     { CFG_BUS_SHARING_IO1, CFG_TYPE_ENUM, "Bus Sharing - I/O1",           "%s", bus_sharing,  0,  2, 2 },
     { CFG_BUS_SHARING_IO2, CFG_TYPE_ENUM, "Bus Sharing - I/O2",           "%s", bus_sharing,  0,  2, 2 },
     { CFG_BUS_SHARING_IRQ, CFG_TYPE_ENUM, "Bus Sharing - Interrupts",     "%s", bus_sharing,  0,  2, 2 },
-#else
-    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 22, 4 },
 #endif
-    { CFG_C64_FC3MODE,  CFG_TYPE_ENUM,   "Final Cartridge 3 Mode",       "%s", fc3mode,    0,  2, 0 },
-    { CFG_C64_FASTRESET,CFG_TYPE_ENUM,   "Fast Reset",                   "%s", en_dis,     0,  1, 0 },
+    { CFG_C64_FASTRESET, CFG_TYPE_ENUM,   "Fast Reset",                   "%s", en_dis,     0,  1, 0 },
 #if U64
-    { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", rom_sel_ker,0,  4, 0 },
-    { CFG_C64_ALT_BASI, CFG_TYPE_ENUM,   "Alternate Basic",              "%s", rom_sel,    0,  2, 0 },
-    { CFG_C64_ALT_CHAR, CFG_TYPE_ENUM,   "Alternate Chargen",            "%s", rom_sel,    0,  2, 0 },
-#elif CLOCK_FREQ == 62500000
-    { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", rom_sel_ker,0,  2, 0 },
+    { CFG_C64_KERNFILE, CFG_TYPE_STRFUNC, "Kernal ROM",                   "%s", (const char **)C64 :: list_kernals, 0, 30, (int)"kernal.bin" },
+    { CFG_C64_BASIFILE, CFG_TYPE_STRFUNC, "Basic ROM",                    "%s", (const char **)C64 :: list_basics, 0, 30, (int)"basic.bin" },
+    { CFG_C64_CHARFILE, CFG_TYPE_STRFUNC, "Char ROM",                     "%s", (const char **)C64 :: list_chars, 0, 30, (int)"chars.bin" },
 #else
-    { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", en_dis,     0,  1, 0 },
+    { CFG_C64_KERNFILE, CFG_TYPE_STRFUNC, "Alternate Kernal",             "%s", (const char **)C64 :: list_kernals, 0, 30, (int)"" },
 #endif
-    { CFG_C64_REU_EN,   CFG_TYPE_ENUM,   "RAM Expansion Unit",           "%s", en_dis,     0,  1, 0 },
+    { CFG_C64_REU_EN,   CFG_TYPE_ENUM,   "RAM Expansion Unit",           "%s", en_dis_geo, 0,  2, 0 },
     { CFG_C64_REU_SIZE, CFG_TYPE_ENUM,   "REU Size",                     "%s", reu_size,   0,  7, 4 },
     { CFG_C64_REU_PRE,  CFG_TYPE_ENUM,   "REU Preload",                  "%s", en_dis,     0,  1, 0 },
     { CFG_C64_REU_IMG,  CFG_TYPE_STRING, "REU Preload Image",            "%s", NULL,       0, 31, (int)"/Usb0/preload.reu" },
@@ -189,7 +105,7 @@ struct t_cfg_definition c64_config[] = {
     { CFG_C64_TIMING,   CFG_TYPE_ENUM,   "CPU Addr valid after PHI2",    "%s", timing1,    0,  7, 3 },
     { CFG_C64_PHI2_REC, CFG_TYPE_ENUM,   "PHI2 edge recovery",           "%s", en_dis,     0,  1, 0 },
 #endif
-    { CFG_CMD_ENABLE,   CFG_TYPE_ENUM,   "Command Interface",            "%s", ultimatedos,0,  3, 0 },
+    { CFG_CMD_ENABLE,   CFG_TYPE_ENUM,   "Command Interface",            "%s", en_dis,     0,  1, 0 },
     { CFG_CMD_ALLOW_WRITE, CFG_TYPE_ENUM,   "UltiDOS: Allow SetDate",    "%s", en_dis,     0,  1, 0 },
 #if DEVELOPER > 0
     { CFG_C64_DO_SYNC,  CFG_TYPE_ENUM,   "Perform VIC sync at DMA RUN",  "%s", en_dis,     0,  1, 0 },
@@ -208,22 +124,23 @@ C64::C64()
 
     register_store(0x43363420, "C64 and Cartridge Settings", c64_config);
 
+#ifdef U64
     cfg->set_change_hook(CFG_C64_CART_PREF, C64::setCartPref);
     setCartPref(cfg->find_item(CFG_C64_CART_PREF));
+#endif
 
-    // char_set = new BYTE[CHARSET_SIZE];
-    // flash->read_image(FLASH_ID_CHARS, (void *)char_set, CHARSET_SIZE);
     char_set = (uint8_t *) &_chars_bin_start;
     keyb = new Keyboard_C64(this, &CIA1_DPB, &CIA1_DPA);
     screen = new Screen_MemMappedCharMatrix((char *) C64_SCREEN, (char *) C64_COLORRAM, 40, 25);
 
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_MODE = MODE_NORMAL;
-    isFrozen = false;
+    isFrozen = false; // ((C64_STOP & C64_HAS_STOPPED) == C64_HAS_STOPPED); Freeze is not the same as stop
     backupIsValid = false;
     buttonPushSeen = false;
     client = 0;
     available = false;
+    clear_cart_definition(&current_cart_def);
 
 #ifndef U64
 #ifdef OS
@@ -263,12 +180,10 @@ void C64 :: init(void)
 {
     effectuate_settings();
 
-    force_cart = 0x80;
-
     if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
         init_system_roms();
         init_cartridge();
-    } else if (cfg->get_value(CFG_C64_CART) || cfg->get_value(CFG_C64_ALT_KERN)) {
+    } else if (strlen(cfg->get_string(CFG_C64_CART_CRT)) || strlen(cfg->get_string(CFG_C64_KERNFILE))) {
         init_cartridge();
     }
     available = true;
@@ -309,25 +224,7 @@ C64::~C64()
 
 void C64 :: resetConfigInFlash(int page)
 {
-    uint8_t kern = cfg->get_value(CFG_C64_ALT_KERN);
-#if U64
-    uint8_t basic = cfg->get_value(CFG_C64_ALT_BASI);
-    uint8_t chars = cfg->get_value(CFG_C64_ALT_CHAR);
-
-    if (kern > 2) {
-        kern = 1;
-    }
-#endif
-    cfg->reset();
-
-    cfg->set_value(CFG_C64_ALT_KERN, kern);
-#if U64
-    cfg->set_value(CFG_C64_ALT_BASI, basic);
-    cfg->set_value(CFG_C64_ALT_CHAR, chars);
-#endif
-    if (cfg->is_flash_stale()) {
-        cfg->write();
-    }
+    // deprecated
 }
 
 C64 *C64 :: getMachine(void)
@@ -352,40 +249,36 @@ void C64::effectuate_settings(void)
 #if U64
     ConfigureU64SystemBus();
 #endif
-    cart_def *def;
-    int cart = cfg->get_value(CFG_C64_CART);
-    def = &cartridges[cart];
-    set_emulation_flags(def);
+    set_emulation_flags();
 }
 
-void C64::new_system_rom(uint8_t flashId)
+
+void C64::set_rom_config(uint8_t idx, const char *fname)
 {
-    switch(flashId) {
-    case FLASH_ID_ORIG_BASIC:
-        cfg->set_value(CFG_C64_ALT_BASI, 1);
+    switch(idx) {
+    case 0:
+        cfg->set_string(CFG_C64_KERNFILE, fname);
         break;
-    case FLASH_ID_BASIC_ROM:
-        cfg->set_value(CFG_C64_ALT_BASI, 2);
+    case 1:
+        cfg->set_string(CFG_C64_BASIFILE, fname);
         break;
-    case FLASH_ID_ORIG_KERNAL:
-        cfg->set_value(CFG_C64_ALT_KERN, 1);
+    case 2:
+        cfg->set_string(CFG_C64_CHARFILE, fname);
         break;
-    case FLASH_ID_KERNAL_ROM:
-        cfg->set_value(CFG_C64_ALT_KERN, 2);
-        break;
-    case FLASH_ID_ORIG_CHARGEN:
-        cfg->set_value(CFG_C64_ALT_CHAR, 1);
-        break;
-    case FLASH_ID_CHARGEN_ROM:
-        cfg->set_value(CFG_C64_ALT_CHAR, 2);
-        break;
+    case 3:
+        cfg->set_string(CFG_C64_CART_CRT, fname);
     }
+
     cfg->write();
-    init_system_roms();
+    if (idx < 3) {
+        init_system_roms();
+    }
 }
 
-void C64::set_emulation_flags(cart_def *def)
+void C64::set_emulation_flags(void)
 {
+    cart_def *def = &current_cart_def;
+
     C64_REU_ENABLE = 0;
     C64_SAMPLER_ENABLE = 0;
     if (getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
@@ -393,42 +286,26 @@ void C64::set_emulation_flags(cart_def *def)
     }
 
     C64_REU_SIZE = cfg->get_value(CFG_C64_REU_SIZE);
-    if (def->type & CART_REU) {
-        if (cfg->get_value(CFG_C64_REU_EN)) {
-            printf("Enabling REU!!\n");
-            C64_REU_ENABLE = 1;
-        }
-        // C64_REU_SIZE = cfg->get_value(CFG_C64_REU_SIZE);
-        if (getFpgaCapabilities() & CAPAB_SAMPLER) {
-            printf("Sampler found in FPGA... IO map: ");
-            if (cfg->get_value(CFG_C64_MAP_SAMP)) {
-                printf("Enabled!\n");
-                C64_SAMPLER_ENABLE = 1;
-            } else {
-                printf("disabled.\n");
-            }
+    if (cfg->get_value(CFG_C64_REU_EN) == 1) {
+        C64_REU_ENABLE = 1;
+    }
+    if (getFpgaCapabilities() & CAPAB_SAMPLER) {
+        printf("Sampler found in FPGA... IO map: ");
+        if (cfg->get_value(CFG_C64_MAP_SAMP)) {
+            printf("Enabled!\n");
+            C64_SAMPLER_ENABLE = 1;
+        } else {
+            printf("disabled.\n");
         }
     }
-    if (def->type & (CART_REU | CART_UCI)) {
-        if (getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
-            int choice = cfg->get_value(CFG_CMD_ENABLE);
-            CMD_IF_SLOT_ENABLE = !!choice;
-            ultimatedosversion = choice;
-#ifdef RECOVERYAPP
-            CMD_IF_SLOT_BASE = 0x47; // $$DF1C
-#else
-            CMD_IF_SLOT_BASE = connectedToU64 ? 0x46 : 0x47; // $DF18 when 1541 U2(+) connected to U64, $DF1C else.
-#endif
-            choice = cfg->get_value(CFG_CMD_ALLOW_WRITE);
-            allowUltimateDosDateSet = choice;
-        }
+    if (getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
+        int choice = cfg->get_value(CFG_CMD_ENABLE);
+        CMD_IF_SLOT_ENABLE = !!choice;
+        CMD_IF_SLOT_BASE = 0x47; // $$DF1C
+        choice = cfg->get_value(CFG_CMD_ALLOW_WRITE);
+        allowUltimateDosDateSet = choice;
     }
     C64_ETHERNET_ENABLE = 0;
-    if (def->type & CART_ETH) {
-        if (cfg->get_value(CFG_C64_ETH_EN)) {
-            C64_ETHERNET_ENABLE = 1;
-        }
-    }
 
     int recovery = cfg->get_value(CFG_C64_PHI2_REC);
     if (recovery >= 0) {
@@ -892,90 +769,27 @@ void C64::init_system_roms(void)
     C64_KERNAL_ENABLE = 0;
 
 #if U64
-    if (cfg->get_value(CFG_C64_ALT_KERN)) {
-        uint8_t *temp = new uint8_t[8192];
-        if (cfg->get_value(CFG_C64_ALT_KERN) == 1) {
-            flash->read_image(FLASH_ID_ORIG_KERNAL, temp, 8192);
-        } else if (cfg->get_value(CFG_C64_ALT_KERN) == 2) {
-            flash->read_image(FLASH_ID_KERNAL_ROM, temp, 8192);
-        } else if (cfg->get_value(CFG_C64_ALT_KERN) == 3) {
-            flash->read_image(FLASH_ID_KERNAL_ROM2, temp, 8192);
-        } else {
-            flash->read_image(FLASH_ID_KERNAL_ROM3, temp, 8192);
-        }
+    FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_KERNFILE), (uint8_t *)U64_KERNAL_BASE, 8192, NULL);
+
+    if (cfg->get_value(CFG_C64_FASTRESET)) {
         unsigned char *kernal = (unsigned char *)U64_KERNAL_BASE;
-        memcpy(kernal, temp, 8192); // as simple as that
-
-        if (cfg->get_value(CFG_C64_FASTRESET)) {
-            if (!memcmp((void *) (temp+0x1d6c), (void *) fastresetOrg, sizeof(fastresetOrg))) {
-                memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, 22);
-            }
+        if (!memcmp((void *) (kernal+0x1d6c), (void *) fastresetOrg, sizeof(fastresetOrg))) {
+            memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, 22);
         }
-        iec_if.effectuate_settings();
-        delete[] temp;
     }
 
-    if (cfg->get_value(CFG_C64_ALT_BASI)) {
-        uint8_t *temp = new uint8_t[8192];
-        if (cfg->get_value(CFG_C64_ALT_BASI) == 1) {
-            flash->read_image(FLASH_ID_ORIG_BASIC, temp, 8192);
-        } else {
-            flash->read_image(FLASH_ID_BASIC_ROM, temp, 8192);
-        }
-        memcpy((void *)U64_BASIC_BASE, temp, 8192); // as simple as that
-        delete[] temp;
-    }
+    FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_BASIFILE), (uint8_t *)U64_BASIC_BASE, 8192, NULL);
+    FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_CHARFILE), (uint8_t *)U64_CHARROM_BASE, 4096, NULL);
 
-    if (cfg->get_value(CFG_C64_ALT_CHAR)) {
-        uint8_t *temp = new uint8_t[4096];
-        if (cfg->get_value(CFG_C64_ALT_CHAR) == 1) {
-            flash->read_image(FLASH_ID_ORIG_CHARGEN, temp, 4096);
-        } else {
-            flash->read_image(FLASH_ID_CHARGEN_ROM, temp, 4096);
-        }
-        memcpy((void *)U64_CHARROM_BASE, temp, 4096); // as simple as that
-        delete[] temp;
-    }
-#elif CLOCK_FREQ == 62500000
-    if (cfg->get_value(CFG_C64_ALT_KERN)) {
-        uint8_t *temp = new uint8_t[8192];
-        if (cfg->get_value(CFG_C64_ALT_KERN) == 1) {
-            flash->read_image(FLASH_ID_KERNAL_ROM, temp, 8192);
-        } else {
-            flash->read_image(FLASH_ID_KERNAL_ROM2, temp, 8192);
-        }
-        enable_kernal(temp, cfg->get_value(CFG_C64_FASTRESET));
-        delete[] temp;
+#else
+    uint8_t *temp = new uint8_t[8192];
+    FRESULT fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_KERNFILE), temp, 8192, NULL);
+    if (fres == FR_OK) {
+        enable_kernal(temp);
     } else {
         disable_kernal();
     }
-#else
-    if (cfg->get_value(CFG_C64_ALT_KERN)) {
-        uint8_t *temp = new uint8_t[8192];
-        flash->read_image(FLASH_ID_KERNAL_ROM, temp, 8192);
-        enable_kernal(temp, cfg->get_value(CFG_C64_FASTRESET));
-#ifndef RECOVERYAPP
-#ifndef NO_FILE_ACCESS
-        iec_if.effectuate_settings();
-#endif
-#endif
-        delete[] temp;
-    } else {
-        disable_kernal();
-    }
-#endif
-}
-
-void C64::set_kernal_device_id(uint8_t bus_id)
-{
-#if U64
-    uint8_t *kernal = (uint8_t *)U64_KERNAL_BASE; // this should be a function
-    if (cfg->get_value(CFG_C64_ALT_KERN) > 1) {
-        kernal[0x1F80] = (uint8_t)bus_id;
-    }
-#else
-    uint8_t *kernal = (uint8_t *) C64_KERNAL_BASE;
-    kernal[2*0x1F80 + 1] = (uint8_t)bus_id;
+    delete[] temp;
 #endif
 }
 
@@ -998,7 +812,7 @@ void C64::unfreeze()
     isFrozen = false;
 }
 
-void C64 :: start_cartridge(void *vdef, bool startLater)
+void C64 :: start_cartridge(void *vdef)
 {
     cart_def *def = (cart_def *) vdef;
 
@@ -1028,7 +842,7 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
     // On the U64, the external carts should be turned off, otherwise the external cart will conflict with our
     // internal cart, or even override it altogether. This is only done when a custom cart definition is given.
 
-    if ((def != 0) || startLater) { // special cart
+    if (def != 0) { // special cart
         // C64_BUS_BRIDGE   = 0; // Quiet mode  (to hear the SID difference, let's not set this register now)
         C64_BUS_INTERNAL = 15; // All ON
         C64_BUS_EXTERNAL = 0; // All OFF
@@ -1041,32 +855,27 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
 
 
     // The machine is running again, but still in reset.
-    if (!startLater)
-    {
-        // start clean
-        C64_CARTRIDGE_TYPE = 0;
-        C64_REU_ENABLE = 0;
-        C64_SAMPLER_ENABLE = 0;
-        CMD_IF_SLOT_ENABLE = 0;
+    // start clean
+    C64_CARTRIDGE_TYPE = 0;
+    C64_REU_ENABLE = 0;
+    C64_SAMPLER_ENABLE = 0;
+    CMD_IF_SLOT_ENABLE = 0;
 
-        init_system_roms();
-        // Passing 0 to this function means that the default selected cartridge should be run
-        if (def == 0) {
-            bool external = false;
+    init_system_roms();
+    // Passing 0 to this function means that the default selected cartridge should be run
+    if (def == 0) {
+        bool external = false;
 #if U64
-            // In case of the U64, when an external cartridge is detected, we should not enable our cart
-            external = ConfigureU64SystemBus();
+        // In case of the U64, when an external cartridge is detected, we should not enable our cart
+        external = ConfigureU64SystemBus();
 #endif
-            if (!external) {
-                int cart = cfg->get_value(CFG_C64_CART);
-                def = &cartridges[cart];
-                set_cartridge(def);
-            }
-        } else { // Cartridge specified
-            set_cartridge(def);
+        if (!external) {
+            set_cartridge(NULL);
         }
-        C64_MODE = C64_MODE_UNRESET;
+    } else { // Cartridge specified
+        set_cartridge(def);
     }
+    C64_MODE = C64_MODE_UNRESET;
 
     isFrozen = false;
     backupIsValid = false;
@@ -1098,87 +907,148 @@ Keyboard *C64::getKeyboard(void)
     return keyb;
 }
 
-void C64::set_cartridge(cart_def *def)
+void C64::set_cartridge(cart_def *cart)
 {
-    if (!def) {
-        int cart = cfg->get_value(CFG_C64_CART);
-        def = &cartridges[cart];
-    }
-    lastCartridgeId = def->id;
+    // Know where the ROM data is located
+    uint8_t *cart_mem = get_cartridge_rom_addr();
 
-    printf("Setting cart mode %u. Reu enable flag: %b\n", def->type, cfg->get_value(CFG_C64_REU_EN));
-    C64_CARTRIDGE_TYPE = (uint8_t) (def->type & 0x1F) | force_cart;
-    force_cart = 0;
-
-    set_emulation_flags(def);
-
-    uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16;
-    if (def->type & CART_RAM) {
-        printf("Copying %d bytes from array %p to mem addr %p\n", def->length, def->custom_addr, mem_addr);
-        memcpy((void *) mem_addr, def->custom_addr, def->length);
-
-        switch(def->id) {
-        case ID_MODPLAYER:
-            // now overwrite the register settings
-            C64_REU_SIZE = 7;
-            C64_REU_ENABLE = 1;
-            C64_SAMPLER_ENABLE = 1;
-            break;
-        case ID_CMDTEST:
-            if (getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
-                CMD_IF_SLOT_ENABLE = 1;
-                CMD_IF_SLOT_BASE = 0x47; // $df1c
-            }
-            break;
-        case ID_SIDCART:
-            if (getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
-                CMD_IF_SLOT_ENABLE = 1;
-                CMD_IF_SLOT_BASE = 0x7F; // $dffc
-                printf("Enabled UCI at $DFFC\n");
-            }
-            break;
-        }
-    } else if (def->id && def->type) {
-        printf("Requesting copy from Flash, id = %b to mem addr %p\n", def->id, mem_addr);
-        flash->read_image(def->id, (void *) mem_addr, def->length);
-        int fc3mode = cfg->get_value(CFG_C64_FC3MODE);
-
-        if ((def->id == FLASH_ID_FINAL3) && fc3mode)
-        {
-           int found = -1;
-           unsigned char* mem_addr8 = (unsigned char*) mem_addr;
-           for (int i=0; i<300; i++) {
-              if ( mem_addr8[i+0] == 0x58 && mem_addr8[i+1] == 0x68
-                   && mem_addr8[i+2] == 0xAA && mem_addr8[i+3] == 0x68
-                   && mem_addr8[i+4] == 0xE0 && mem_addr8[i+5] == 0x7F
-                   && (mem_addr8[i+6] == 0xD0 || mem_addr8[i+6] == 0xF0)
-                   && mem_addr8[i+8] == 0xe0 && mem_addr8[i+9] == 0xDF
-                   && mem_addr8[i+10] == 0xf0 ) {
-                   found = i;
-                   break;
-              }
-           }
-           if (found != -1) {
-               mem_addr8[found+6] = fc3mode == 1 ? 0xF0 : 0xD0;
-           }
-        }
-    } else if (def->id && !def->type) {
+    // Just clear internal structure completely
+    clear_cart_definition(&current_cart_def);
+    if (!cart) {
+        // disable previously started roms.
+        cart_mem[5] = 0;
 #ifndef RECOVERYAPP
-#ifndef NO_FILE_ACCESS
-        char* buffer = new char[128 * 1024];
-        printf("Requesting crt copy from Flash, id = %b to mem addr %p\n", def->id, buffer);
-        flash->read_image(def->id, (void *) buffer, 128 * 1024);
-        FileTypeCRT::parseCrt(buffer);
-        delete buffer;
+        const char *crt = cfg->get_string(CFG_C64_CART_CRT);
+        if (strlen(crt)) {
+            C64_CRT :: load_crt(CARTS_DIRECTORY, crt, &current_cart_def, cart_mem);
+        } else if (cfg->get_value(CFG_C64_REU_EN) == 2) { // GeoRAM
+            current_cart_def.type = CART_TYPE_GEORAM;
+            current_cart_def.name = "GeoRAM Cartridge";
+            current_cart_def.prohibit = CART_PROHIBIT_IO;
+        }
 #endif
+    } else {
+#ifndef RECOVERYAPP
+        if (cart->custom_addr) {
+            C64_CRT :: clear_crt(); // make sure nothing is there to save
+        }
 #endif
-    } else if (def->length) { // not ram, not flash.. then it has to be custom
-        *(uint8_t *) (mem_addr + 5) = 0; // disable previously started roms.
+        // copy external definition
+        current_cart_def = *cart;
+    }
+    cart_def *def = &current_cart_def;
+
+    // Show what we are going to do
+    printf("Cartridge definition:\n");
+    printf("Name: %s\n", def->name);
+    printf("Type: %d\n", def->type);
+    printf("Custom: %p (Length: %d)\n", def->custom_addr, def->length);
+    printf("Required: %4x\n", def->require);
+    printf("Prohibited: %4x\n", def->prohibit);
+
+    C64_CARTRIDGE_TYPE = (uint8_t) def->type;
+
+    set_emulation_flags();
+
+    if (def->custom_addr) {
+        printf("Copying %d bytes from array %p to mem addr %p\n", def->length, def->custom_addr, cart_mem);
+        memcpy(cart_mem, def->custom_addr, def->length);
     }
 
+    printf("Begin of cart init: Type: %b. REU: %b. REU_SZ: %b, UCI: %b (%4x), Mode: %b, Sampler: %b\n",
+            C64_CARTRIDGE_TYPE, C64_REU_ENABLE, C64_REU_SIZE, CMD_IF_SLOT_ENABLE, 0xDE00 + uint16_t(CMD_IF_SLOT_BASE * 4), C64_MODE, C64_SAMPLER_ENABLE);
+
+    // now overwrite the register settings
+    if(def->require & CART_REU) {
+        // Size as in config
+        C64_REU_ENABLE = 1;
+    }
+    if(def->require & CART_MAXREU) {
+        C64_REU_SIZE = 7;
+        C64_REU_ENABLE = 1;
+    }
+    if(def->require & CART_SAMPLER) {
+        C64_SAMPLER_ENABLE = 1;
+    }
+    if(def->require & CART_UCI) {
+        if (getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
+            CMD_IF_SLOT_ENABLE = 1;
+            CMD_IF_SLOT_BASE = 0x47; // $df1c
+        }
+    }
+    if(def->require & CART_UCI_DFFC) {
+        if (getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
+            CMD_IF_SLOT_ENABLE = 1;
+            CMD_IF_SLOT_BASE = 0x7F; // $dffc
+        }
+    }
+    if(def->require & CART_UCI_DE1C) {
+        if (getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
+            CMD_IF_SLOT_ENABLE = 1;
+            CMD_IF_SLOT_BASE = 0x07; // $de1c
+        }
+    }
+#ifndef RECOVERYAPP
+    if(def->require & CART_ACIA_DE) {
+        modem.reinit_acia(0xDE00);
+    }
+    if(def->require & CART_ACIA_DF) {
+        modem.reinit_acia(0xDF00);
+    }
+#endif
+#if U64
+    if(def->require & CART_WMIRROR) {
+        EnableWriteMirroring();
+    }
+#endif
+    if (def->require & CART_KERNAL) { // Copy kernal to kernal space
+        uint8_t *src = get_cartridge_rom_addr();
+        C64 :: getMachine()->enable_kernal(src);
+    }
+
+    def->disabled = 0;
+
+    if(def->prohibit & (CART_REU | CART_MAXREU)) {
+        if (C64_REU_ENABLE) {
+            def->disabled |= CART_REU;
+        }
+        C64_REU_ENABLE = 0;
+    }
+    if(def->prohibit & (CART_UCI | CART_UCI_DFFC | CART_UCI_DE1C)) {
+        if (getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
+            if (CMD_IF_SLOT_ENABLE) {
+                def->disabled |= CART_UCI;
+            }
+            CMD_IF_SLOT_ENABLE = 0;
+        }
+    }
+    if(def->prohibit & CART_SAMPLER) {
+        if (C64_SAMPLER_ENABLE) {
+            def->disabled |= CART_SAMPLER;
+        }
+        C64_SAMPLER_ENABLE = 0;
+    }
+
+#ifndef RECOVERYAPP
+    if(def->prohibit & CART_ACIA_DE) {
+        if(modem.prohibit_acia(0xDE00)) {
+            def->disabled |= CART_ACIA_DE;
+        }
+    }
+    if(def->prohibit & CART_ACIA_DF) {
+        if(modem.prohibit_acia(0xDF00)) {
+            def->disabled |= CART_ACIA_DF;
+        }
+    }
+#endif
     // clear function RAM on the cartridge
-    mem_addr -= 65536; // TODO: We know it, because we made the hardware, but the hardware should tell us!
-    memset((void *) mem_addr, 0x00, 65536);
+    memset(get_cartridge_ram_addr(), 0x00, 65536);
+
+    printf("End of cart init: Type: %b. REU: %b. REU_SZ: %b, UCI: %b (%4x), Mode: %b, Sampler: %b\n",
+            C64_CARTRIDGE_TYPE, C64_REU_ENABLE, C64_REU_SIZE, CMD_IF_SLOT_ENABLE, 0xDE00 + uint16_t(CMD_IF_SLOT_BASE * 4), C64_MODE, C64_SAMPLER_ENABLE);
+    if (def->disabled) {
+        printf("---> Some features were disabled: %04x\n", def->disabled);
+    }
 }
 
 void C64::set_colors(int background, int border)
@@ -1187,24 +1057,28 @@ void C64::set_colors(int background, int border)
     BACKGROUND = uint8_t(background);
 }
 
-void C64::enable_kernal(uint8_t *rom, bool fastreset)
+void C64::enable_kernal(uint8_t *rom)
 {
+    bool fastreset = (cfg->get_value(CFG_C64_FASTRESET) != 0);
     if (fastreset && !memcmp((void *) (rom+0x1d6c), (void *) fastresetOrg, sizeof(fastresetOrg)))
         memcpy((void *) (rom+0x1d6c), (void *) fastresetPatch, 22);
 
 #if U64
-
     memcpy((void *)U64_KERNAL_BASE, rom, 8192); // as simple as that
 
-#else  // the good old way
-
-    C64_KERNAL_ENABLE = 1;
+#else
+    //  mem_addr_i <= g_kernal_base(27 downto 15) & slot_addr(1 downto 0) & slot_addr(12 downto 2) & "00";
+    //                                             ~~~ outer loop 'j' ~~~   ~~~ inner loop 'i' ~~~ ~~ +4 ~~
     uint8_t *src = rom;
-    uint8_t *dst = (uint8_t *) (C64_KERNAL_BASE + 1);
-    for (int i = 0; i < 8192; i++) {
-        *(dst) = *(src++);
-        dst += 2;
+    extern uint8_t __kernal_area;
+    uint8_t *dst = (&__kernal_area) + 1;
+    for (int j = 0; j < 4; j++) {
+        for (int i = j; i < 8192; i+=4) {
+            *(dst) = src[i];
+            dst += 4;
+        }
     }
+    C64_KERNAL_ENABLE = 1;
 #endif
 }
 
@@ -1213,10 +1087,7 @@ void C64::disable_kernal()
     C64_KERNAL_ENABLE = 0;
 
 #if U64
-    uint8_t* kernal = (uint8_t *)U64_KERNAL_BASE;
-    flash->read_image(FLASH_ID_ORIG_KERNAL, (uint8_t *)U64_KERNAL_BASE, 8192);
-    if (cfg->get_value(CFG_C64_FASTRESET) && !memcmp((void *) (kernal+0x1d6c), (void *) fastresetOrg, sizeof(fastresetOrg)))
-        memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, 22);
+    init_system_roms();
 #endif
 }
 
@@ -1243,44 +1114,15 @@ void C64::init_cartridge()
     }
 #endif
 
-    int cart = cfg->get_value(CFG_C64_CART);
-    cart_def *cart2 = &cartridges[cart];
+    set_cartridge(NULL);
 
-    if (cart2->id ==  FLASH_ID_FINAL3)
-    {
-        C64_MODE = C64_MODE_UNRESET;
-        C64_STOP = 0;
-        wait_ms(100);
-        stop(false);
-        wait_ms(1400);
-        start_cartridge(cart2, false);
-    }
-    else if (cart2->id == FLASH_ID_CUSTOM_ROM && !cart2->type)
-    {
-        C64_MODE = C64_MODE_UNRESET;
-        C64_STOP = 0;
-        wait_ms(100);
-        stop(false);
-        wait_ms(1400);
-        start_cartridge(cart2, false);
-    }
-    else
-    {
-       set_cartridge(cart2);
-       wait_ms(100);
-       C64_MODE = C64_MODE_UNRESET;
-       C64_STOP = 0;
-    }
-}
+    // This forces the cartridge ON on U64, (in Carts V4)
+    // C64_CARTRIDGE_TYPE = 0x80 | (uint8_t) current_cart_def.type;
+    // For carts V5, we need to do this:
+    C64_CARTRIDGE_KILL = 2; // Force update
 
-void C64::cartridge_test(void)
-{
-    for (int i = 0; i < 19; i++) {
-        printf("Setting mode %d\n", i);
-        cfg->set_value(CFG_C64_CART, i);
-        init_cartridge();
-        wait_ms(4000);
-    }
+    C64_MODE = C64_MODE_UNRESET;
+    C64_STOP = 0;
 }
 
 bool C64::buttonPush(void)
@@ -1437,4 +1279,134 @@ int C64 :: getSizeOfMP3NativeRamdrive(int devNo)
     uint16_t dskDrvBase = (((uint16_t) DskDrvBaseH) << 8) | DskDrvBaseL;
     uint8_t noTracks = reu[dskDrvBase + 0x84];
     return ((uint32_t) noTracks) << 16;
+}
+
+void C64 :: get_eeprom_data(uint8_t *buffer)
+{
+    volatile uint8_t *eeprom = (volatile uint8_t *)(EEPROM_BASE);
+    *eeprom = 1; // clear dirty flag
+    memcpy(buffer, (void *)(eeprom + 2048), 2048);
+}
+
+void C64 :: set_eeprom_data(uint8_t *buffer)
+{
+    volatile uint8_t *eeprom = (volatile uint8_t *)(EEPROM_BASE);
+    memcpy((void *)(eeprom + 2048), buffer, 2048);
+    *eeprom = 1; // clear dirty flag
+}
+
+bool C64 :: get_eeprom_dirty(void)
+{
+    volatile uint8_t *eeprom = (volatile uint8_t *)(EEPROM_BASE);
+    bool dirty = (*eeprom != 0) ? true : false;
+    *eeprom = 1; // clear dirty flag
+    return dirty;
+}
+
+void C64 :: list_crts(ConfigItem *it, IndexedList<char *>& strings)
+{
+#ifndef NO_FILE_ACCESS
+    // Always return at least the empty string
+    char *empty = new char[12];
+    strcpy(empty, "\er- None -");
+    strings.append(empty);
+
+    Path p;
+    p.cd(CARTS_DIRECTORY);
+    IndexedList<FileInfo *>infos(16, NULL);
+    FileManager *fm = FileManager :: getFileManager();
+    FRESULT fres = fm->get_directory(&p, infos, NULL);
+    if (fres != FR_OK) {
+        return;
+    }
+
+    for(int i=0;i<infos.get_elements();i++) {
+        FileInfo *inf = infos[i];
+        if (strcmp(inf->extension, "CRT") == 0) {
+            char *s = new char[1+strlen(inf->lfname)];
+            strcpy(s, inf->lfname);
+            strings.append(s);
+        }
+        delete inf;
+    }
+#endif
+}
+
+void C64 :: list_kernals(ConfigItem *it, IndexedList<char *>& strings)
+{
+#if !U64
+    // Always return at least the empty string
+    char *empty = new char[12];
+    strcpy(empty, "\er- None -");
+    strings.append(empty);
+#endif
+
+#ifndef NO_FILE_ACCESS
+    Path p;
+    p.cd(ROMS_DIRECTORY);
+    IndexedList<FileInfo *>infos(16, NULL);
+    FileManager *fm = FileManager :: getFileManager();
+    FRESULT fres = fm->get_directory(&p, infos, NULL);
+    if (fres != FR_OK) {
+        return;
+    }
+
+    for(int i=0;i<infos.get_elements();i++) {
+        FileInfo *inf = infos[i];
+        if (inf->size == 8192) { // TODO: Check first few bytes of the file to know if it is a kernal
+            char *s = new char[1+strlen(inf->lfname)];
+            strcpy(s, inf->lfname);
+            strings.append(s);
+        }
+        delete inf;
+    }
+#endif
+}
+
+void C64 :: list_basics(ConfigItem *it, IndexedList<char *>& strings)
+{
+#ifndef NO_FILE_ACCESS
+    Path p;
+    p.cd(ROMS_DIRECTORY);
+    IndexedList<FileInfo *>infos(16, NULL);
+    FileManager *fm = FileManager :: getFileManager();
+    FRESULT fres = fm->get_directory(&p, infos, NULL);
+    if (fres != FR_OK) {
+        return;
+    }
+
+    for(int i=0;i<infos.get_elements();i++) {
+        FileInfo *inf = infos[i];
+        if (inf->size == 8192) { // TODO: Check first few bytes of the file to know if it is a basic
+            char *s = new char[1+strlen(inf->lfname)];
+            strcpy(s, inf->lfname);
+            strings.append(s);
+        }
+        delete inf;
+    }
+#endif
+}
+
+void C64 :: list_chars(ConfigItem *it, IndexedList<char *>& strings)
+{
+#ifndef NO_FILE_ACCESS
+    Path p;
+    p.cd(ROMS_DIRECTORY);
+    IndexedList<FileInfo *>infos(16, NULL);
+    FileManager *fm = FileManager :: getFileManager();
+    FRESULT fres = fm->get_directory(&p, infos, NULL);
+    if (fres != FR_OK) {
+        return;
+    }
+
+    for(int i=0;i<infos.get_elements();i++) {
+        FileInfo *inf = infos[i];
+        if (inf->size == 4096) {
+            char *s = new char[1+strlen(inf->lfname)];
+            strcpy(s, inf->lfname);
+            strings.append(s);
+        }
+        delete inf;
+    }
+#endif
 }

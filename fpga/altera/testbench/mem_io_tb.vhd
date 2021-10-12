@@ -30,7 +30,6 @@ architecture arch of mem_io_tb is
     signal addr_second        : std_logic_vector(7 downto 0) := X"00";
     signal wdata              : std_logic_vector(15 downto 0) := X"0000";
     signal wdata_oe           : std_logic;
-    signal dqs_burst_oe       : std_logic_vector(3 downto 0) := "0000";
     signal SDRAM_DQ           : std_logic_vector(3 downto 0);
     signal SDRAM_CLK          : std_logic := '0';
 
@@ -53,7 +52,6 @@ begin
         addr_second        => addr_second,
         wdata              => wdata,
         wdata_oe           => wdata_oe,
-        dqs_burst_oe       => dqs_burst_oe,
         mem_clk_p          => mem_clk_p,
         mem_dq             => SDRAM_DQ
     );

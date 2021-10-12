@@ -9,7 +9,6 @@
 #define U64_H_
 
 #include <stdint.h>
-#include "c64.h"
 
 #ifndef U64_IO_BASE
 #define U64_IO_BASE     0xA0000400
@@ -18,10 +17,12 @@
 #define U64_RESAMPLER   0xA0000700
 
 #define VID_IO_BASE  0xA0040000
+
 #define C64_IO_BASE  0xA0080000
+#define C64_PALETTE  0xA0080800
 #define C64_IO_LED   0xA0081000
+#define C64_PLD_ACC  0xA0081800
 #define C64_IO_DEBUG 0xA0082000
-#define C64_PLD_ACC  0xA0083000
 
 #define LEDSTRIP_DATA ( (volatile uint8_t *)(C64_IO_LED))
 #define LEDSTRIP_FROM (*(volatile uint8_t *)(C64_IO_LED + 0x1FE))
@@ -77,9 +78,7 @@
 #define C64_VIDEOFORMAT  (*(volatile uint8_t *)(C64_IO_BASE + 0x01))
 #define C64_TURBOREGS_EN (*(volatile uint8_t *)(C64_IO_BASE + 0x02))
 #define C64_DMA_MEMONLY  (*(volatile uint8_t *)(C64_IO_BASE + 0x03))
-#define C64_COLOR_DELAY  (*(volatile uint8_t *)(C64_IO_BASE + 0x04))
 #define C64_PHASE_INCR   (*(volatile uint8_t *)(C64_IO_BASE + 0x05))
-#define C64_BURST_PHASE  (*(volatile uint8_t *)(C64_IO_BASE + 0x06))
 #define C64_VIC_TEST     (*(volatile uint8_t *)(C64_IO_BASE + 0x07))
 #define C64_SID1_BASE    (*(volatile uint8_t *)(C64_IO_BASE + 0x08))
 #define C64_SID2_BASE    (*(volatile uint8_t *)(C64_IO_BASE + 0x09))
@@ -165,15 +164,5 @@ typedef enum {
     e_NTSC_50_lock,
     e_NOT_SET,
 } t_video_mode;
-
-class U64Machine : public C64
-{
-    U64Machine() { }
-    ~U64Machine() { }
-    void get_all_memory(uint8_t *pb);
-public:
-
-    friend class C64;
-};
 
 #endif /* U64_H_ */

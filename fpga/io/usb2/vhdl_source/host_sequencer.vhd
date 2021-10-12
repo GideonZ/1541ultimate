@@ -37,7 +37,8 @@ port (
     sof_tick        : out std_logic;
     speed           : in  std_logic_vector(1 downto 0);
     frame_count     : out unsigned(15 downto 0);
-        
+    error_pulse     : out std_logic;
+            
     -- low level command interface
     usb_cmd_req     : in  t_usb_cmd_req;
     usb_cmd_resp    : out t_usb_cmd_resp;
@@ -322,6 +323,7 @@ begin
                 when wait_device_response =>
                     usb_tx_req_i.pid <= c_pid_ack; 
                         -- check if we did a start split to an interrupt (or iso) endpoint; in that case, we won't get any reply from the hub.
+                    usb_cmd_resp.error_code <= "000";
                     if usb_cmd_req.split_et(0) = '1' and start_split_active then 
                         usb_cmd_resp.result <= res_ack; -- we just fake the ack for the layer above that doesn't need to know about this USB quirk
                         cmd_done <= '1';
@@ -332,6 +334,7 @@ begin
                         state <= idle;
                     elsif usb_rx.error='1' or timeout='1' then
                         usb_cmd_resp.result <= res_error;
+                        usb_cmd_resp.error_code <= usb_rx.error_code;
                         cmd_done <= '1';
                         state <= idle;
                     elsif valid_packet_received = '1' then -- woohoo!
@@ -388,5 +391,18 @@ begin
             timeout     => timeout );
         
     end block;
+
+    i_error_pulse_timer: entity work.timer
+    generic map (
+        g_reset     => '1',
+        g_width     => 6
+    )
+    port map(
+        clock       => clock,
+        reset       => reset,
+        start       => usb_rx.error,
+        start_value => to_unsigned(60, 6),
+        timeout     => error_pulse  -- active low, but that doesn't matter
+    );
     
 end architecture;

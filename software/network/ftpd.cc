@@ -292,7 +292,8 @@ int FTPDaemonThread::handle_connection()
             }
         } else if (n < 0) {
             if (errno == EAGAIN)
-                continue; dbg_printf("FTPD: ERROR reading from socket %d. Errno = %d", n, errno);
+                continue;
+            dbg_printf("FTPD: ERROR reading from socket %d. Errno = %d", n, errno);
             return errno;
         } else { // n == 0
             dbg_printf("FTPD: Socket got closed\n");

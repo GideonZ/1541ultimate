@@ -45,7 +45,7 @@ public:
 	virtual FRESULT format(const char *name);    // create initial structures of empty disk
 	virtual bool    supports_direct_sector_access(void) { return false; }
 
-    virtual FRESULT get_free (uint32_t *e) { *e = 0; return FR_OK; } // Get number of free sectors on the file system
+    virtual FRESULT get_free (uint32_t *e, uint32_t *cs) { *e = 0; *cs = 0; return FR_OK; } // Get number of free sectors on the file system
     virtual FRESULT sync(void) { return FR_OK; } // by default we can't write, and syncing is thus always successful
     
     // functions for reading directories

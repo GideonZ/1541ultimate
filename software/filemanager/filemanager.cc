@@ -164,7 +164,7 @@ FRESULT FileManager::print_directory(const char *path)
                 fres = dir->get_entry(info);
                 if (fres != FR_OK)
                     break;
-                printf("%32s (%s) %10d\n", info.lfname, (info.attrib & AM_DIR) ? "DIR " : "FILE", info.size);
+                printf("%60s (%s [%02x]) %10d\n", info.lfname, (info.attrib & AM_DIR) ? "DIR " : "FILE", info.attrib, info.size);
             }
             delete dir;
         }
@@ -284,6 +284,9 @@ FRESULT FileManager::find_pathentry(PathInfo &pathInfo, bool open_mount)
 
 FRESULT FileManager::fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file)
 {
+    // Reset output file pointer
+    *file = NULL;
+
     FRESULT fres = find_pathentry(pathInfo, false);
 
     if (fres == FR_NO_PATH)
@@ -318,19 +321,24 @@ FRESULT FileManager::fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file)
     return fres;
 }
 
-FRESULT FileManager::get_free(Path *path, uint32_t &free)
+FRESULT FileManager::get_free(Path *path, uint32_t &free, uint32_t &cluster_size)
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(path);
+    lock();
     FRESULT fres = find_pathentry(pathInfo, true);
     if (fres != FR_OK) {
+        unlock();
         return fres;
     }
     FileInfo *inf = pathInfo.getLastInfo();
     if (!inf || !(inf->fs)) {
+        unlock();
         return FR_NO_FILESYSTEM;
     }
-    fres = inf->fs->get_free(&free);
+    fres = inf->fs->get_free(&free, &cluster_size);
+
+    unlock();
     return fres;
 }
 
@@ -370,11 +378,16 @@ FRESULT FileManager::fstat(Path *path, const char *filename, FileInfo &info)
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(path, filename);
+
+    lock();
     FRESULT fres = find_pathentry(pathInfo, false);
+    unlock();
+
     if (fres != FR_OK) {
         return fres;
     }
     info.copyfrom(pathInfo.getLastInfo());
+
     return FR_OK;
 }
 
@@ -382,7 +395,9 @@ FRESULT FileManager::fstat(const char *path, const char *filename, FileInfo &inf
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(path, filename);
+    lock();
     FRESULT fres = find_pathentry(pathInfo, false);
+    unlock();
     if (fres != FR_OK) {
         return fres;
     }
@@ -394,7 +409,9 @@ FRESULT FileManager::fstat(const char *pathname, FileInfo &info)
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(pathname);
+    lock();
     FRESULT fres = find_pathentry(pathInfo, false);
+    unlock();
     if (fres != FR_OK) {
         return fres;
     }
@@ -480,50 +497,76 @@ MountPoint *FileManager::find_mount_point(SubPath *path, FileInfo *info)
                 delete emb;
             }
         }
+    } else {
+        printf("FileManager -> can't open file %s to create mountpoint.%s\n", path->get_path(), FileSystem :: get_error_string(fr));
     }
     unlock();
     return mp;
+}
+
+
+FRESULT FileManager::delete_file_impl(PathInfo &pathInfo)
+{
+    FRESULT fres = find_pathentry(pathInfo, false);
+    if (fres != FR_OK) {
+        return fres;
+    }
+    FileSystem *fs = pathInfo.getLastInfo()->fs;
+    fres = fs->file_delete(pathInfo.getPathFromLastFS());
+    if (fres == FR_OK) {
+        mstring work;
+        pathInfo.workPath.getHead(work);
+        sendEventToObservers(eNodeRemoved, pathInfo.workPath.getSub(0, pathInfo.index - 1, work),
+                pathInfo.getFileName());
+    }
+// LOCK & UNLOCK
+    return fres;
 }
 
 FRESULT FileManager::delete_file(const char *pathname)
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(pathname);
-    FRESULT fres = find_pathentry(pathInfo, false);
-    if (fres != FR_OK) {
-        return fres;
-    }
-    FileSystem *fs = pathInfo.getLastInfo()->fs;
-    fres = fs->file_delete(pathInfo.getPathFromLastFS());
-    if (fres == FR_OK) {
-        mstring work;
-        pathInfo.workPath.getHead(work);
-        sendEventToObservers(eNodeRemoved, pathInfo.workPath.getSub(0, pathInfo.index - 1, work),
-                pathInfo.getFileName());
-    }
-// LOCK & UNLOCK
-    return fres;
+    return delete_file_impl(pathInfo);
 }
 
 FRESULT FileManager::delete_file(Path *path, const char *name)
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(path, name);
-    FRESULT fres = find_pathentry(pathInfo, false);
-    if (fres != FR_OK) {
-        return fres;
-    }
-    FileSystem *fs = pathInfo.getLastInfo()->fs;
-    fres = fs->file_delete(pathInfo.getPathFromLastFS());
-    if (fres == FR_OK) {
-        mstring work;
-        pathInfo.workPath.getHead(work);
-        sendEventToObservers(eNodeRemoved, pathInfo.workPath.getSub(0, pathInfo.index - 1, work),
-                pathInfo.getFileName());
-    }
-// LOCK & UNLOCK
-    return fres;
+    return delete_file_impl(pathInfo);
 }
+
+FRESULT FileManager::delete_recursive(Path *path, const char *name)
+{
+    FileInfo *info = new FileInfo(INFO_SIZE); // I do not use the stack here for the whole structure, because
+    // we might recurse deeply. Our stack is maybe small.
+
+    FRESULT ret = FR_OK;
+    if ((ret = fstat(path, name, *info)) == FR_OK) {
+        if (info->is_directory()) {
+            path->cd(name);
+            IndexedList<FileInfo *> *dirlist = new IndexedList<FileInfo *>(16, NULL);
+            FRESULT get_dir_result = get_directory(path, *dirlist, NULL);
+            if (get_dir_result == FR_OK) {
+                for (int i = 0; i < dirlist->get_elements(); i++) {
+                    FileInfo *el = (*dirlist)[i];
+                    ret = delete_recursive(path, el->lfname);
+                }
+            } else {
+                ret = get_dir_result;
+            }
+            delete dirlist;
+            path->cd("..");
+        }
+        // After recursive deletion, the dir should be empty.
+        ret = delete_file(path, name);
+    }
+    printf("Deleting %s%s: %s\n", path->get_path(), name, FileSystem::get_error_string(ret));
+    delete info;
+    return ret;
+}
+
 
 FRESULT FileManager::rename(Path *path, const char *old_name, const char *new_name)
 {
@@ -554,18 +597,24 @@ FRESULT FileManager::rename(const char *old_name, const char *new_name)
 
 FRESULT FileManager::rename_impl(PathInfo &from, PathInfo &to)
 {
+    lock();
     FRESULT fres = find_pathentry(from, false);
-    if (fres != FR_OK)
+    if (fres != FR_OK) {
+        unlock();
         return fres;
+    }
 
     // source file was found
     fres = find_pathentry(to, false);
-    if (fres == FR_NO_PATH)
+    if (fres == FR_NO_PATH) {
+        unlock();
         return fres;
+    }
 
     if (fres == FR_NO_FILE) { // we MAY be able to do this..
         if (to.getLastInfo()->fs != from.getLastInfo()->fs) {
             printf("Trying to move a file from one file system to another.\n");
+            unlock();
             return FR_INVALID_DRIVE;
         }
         fres = from.getLastInfo()->fs->file_rename(from.getPathFromLastFS(), to.getPathFromLastFS());
@@ -578,8 +627,11 @@ FRESULT FileManager::rename_impl(PathInfo &from, PathInfo &to)
                 sendEventToObservers(eRefreshDirectory, to_path, "");
             }
         }
+        unlock();
         return fres;
     }
+    unlock();
+
     if (fres == FR_OK)
         return FR_EXIST;
     return fres;
@@ -590,12 +642,16 @@ FRESULT FileManager::create_dir(const char *pathname)
     PathInfo pathInfo(rootfs);
     pathInfo.init(pathname);
 
+    lock();
     FRESULT fres = find_pathentry(pathInfo, false);
     if (fres == FR_OK) {
+        unlock();
         return FR_EXIST;
     }
-    if (fres == FR_OK)
+    if (fres == FR_OK) {
+        unlock();
         return FR_EXIST;
+    }
     if (fres == FR_NO_FILE) {
         FileSystem *fs = pathInfo.getLastInfo()->fs;
         fres = fs->dir_create(pathInfo.getPathFromLastFS());
@@ -603,8 +659,8 @@ FRESULT FileManager::create_dir(const char *pathname)
             mstring work;
             sendEventToObservers(eNodeAdded, pathInfo.getFullPath(work, -1), pathInfo.getFileName());
         }
-        return fres;
     }
+    unlock();
     return fres;
 }
 
@@ -613,24 +669,28 @@ FRESULT FileManager::create_dir(Path *path, const char *name)
     PathInfo pathInfo(rootfs);
     pathInfo.init(path, name);
 
+    lock();
     FRESULT fres = find_pathentry(pathInfo, false);
     if (fres == FR_OK) {
+        unlock();
         return FR_EXIST;
     }
-    if (fres == FR_OK)
+    if (fres == FR_OK) {
+        unlock();
         return FR_EXIST;
+    }
     if (fres == FR_NO_FILE) {
         FileSystem *fs = pathInfo.getLastInfo()->fs;
         fres = fs->dir_create(pathInfo.getPathFromLastFS());
         if (fres == FR_OK) {
             sendEventToObservers(eNodeAdded, path->get_path(), name);
         }
-        return fres;
     }
+    unlock();
     return fres;
 }
 
-FRESULT FileManager::fcopy(const char *path, const char *filename, const char *dest)
+FRESULT FileManager::fcopy(const char *path, const char *filename, const char *dest, const char *dest_filename, bool overwrite)
 {
     printf("Copying %s to %s\n", filename, dest);
     FileInfo *info = new FileInfo(INFO_SIZE); // I do not use the stack here for the whole structure, because
@@ -643,10 +703,15 @@ FRESULT FileManager::fcopy(const char *path, const char *filename, const char *d
 
     FRESULT ret = FR_OK;
     if ((ret = fstat(sp, filename, *info)) == FR_OK) {
+        // In the special case that one tries to copy a file (or dir) onto itself, we just report
+        // that we're done.
+        if ( sp->equals(dp) && (strcasecmp(info->lfname, dest_filename) == 0)) {
+            return FR_OK;
+        }
         if (info->attrib & AM_DIR) {
             // create a new directory in our destination path
-            FRESULT dir_create_result = create_dir(dp, filename);
-            if (dir_create_result == FR_OK) {
+            FRESULT dir_create_result = create_dir(dp, dest_filename);
+            if ((dir_create_result == FR_OK) || (dir_create_result == FR_EXIST)) {
                 IndexedList<FileInfo *> *dirlist = new IndexedList<FileInfo *>(16, NULL);
                 sp->cd(filename);
                 FRESULT get_dir_result = get_directory(sp, *dirlist, NULL);
@@ -654,7 +719,10 @@ FRESULT FileManager::fcopy(const char *path, const char *filename, const char *d
                     dp->cd(filename);
                     for (int i = 0; i < dirlist->get_elements(); i++) {
                         FileInfo *el = (*dirlist)[i];
-                        ret = fcopy(sp->get_path(), el->lfname, dp->get_path());
+                        ret = fcopy(sp->get_path(), el->lfname, dp->get_path(), el->lfname, overwrite);
+                        if (ret != FR_OK) {
+                            break;
+                        }
                     }
                 }
                 else {
@@ -673,12 +741,14 @@ FRESULT FileManager::fcopy(const char *path, const char *filename, const char *d
             if (fi) {
                 File *fo = 0;
                 char dest_name[100];
-                strncpy(dest_name, filename, 100);
+                strncpy(dest_name, dest_filename, 100);
                 // This may look odd, but files inside a D64 for instance, do not have the extension in the filename anymore
                 // so we add it here.
                 set_extension(dest_name, info->extension, 100);
-                ret = fopen(dp, dest_name, FA_CREATE_NEW | FA_WRITE, &fo);
+                uint8_t writeflags = (overwrite)? (FA_WRITE|FA_CREATE_ALWAYS) : (FA_WRITE|FA_CREATE_NEW);
+                ret = fopen(dp, dest_name, writeflags, &fo);
                 if (fo) {
+                    vTaskDelay(2); // since this might take long, we should give other tasks chance to poll the USB devices
                     uint8_t *buffer = new uint8_t[32768];
                     uint32_t transferred, written;
                     do {
@@ -716,6 +786,37 @@ FRESULT FileManager::fcopy(const char *path, const char *filename, const char *d
     release_path(sp);
     delete info;
     return ret;
+}
+
+FRESULT FileManager :: load_file(const char *path, const char *filename, uint8_t *mem, uint32_t maxlen, uint32_t *transferred)
+{
+    File *file = 0;
+    FRESULT fres = fopen(path, filename, FA_READ, &file);
+    uint32_t tr = 0;
+    if (fres == FR_OK) {
+        fres = file->read(mem, maxlen, &tr);
+        fclose(file);
+    }
+    if (transferred) {
+        *transferred = tr;
+    }
+    return fres;
+}
+
+FRESULT FileManager :: save_file(bool overwrite, const char *path, const char *filename, uint8_t *mem, uint32_t len, uint32_t *transferred)
+{
+    File *file = 0;
+    uint8_t flag = FA_WRITE | (overwrite ? FA_CREATE_ALWAYS : FA_CREATE_NEW);
+    FRESULT fres = fopen(path, filename, flag, &file);
+    uint32_t tr = 0;
+    if (fres == FR_OK) {
+        fres = file->write(mem, len, &tr);
+        fclose(file);
+    }
+    if (transferred) {
+        *transferred = tr;
+    }
+    return fres;
 }
 
 const char *FileManager::eventStrings[] = {

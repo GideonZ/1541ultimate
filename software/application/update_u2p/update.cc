@@ -5,20 +5,7 @@
  *      Author: gideon
  */
 
-#include "prog_flash.h"
-#include <stdio.h>
-#include "itu.h"
-#include "host.h"
-#include "c64.h"
-#include "screen.h"
-#include "keyboard.h"
-#include "stream.h"
-#include "stream_uart.h"
-#include "host_stream.h"
-#include "dump_hex.h"
-#include "u2p.h"
-#include "rtc.h"
-#include "userinterface.h"
+#include "update_common.h"
 
 extern uint32_t _ultimate_run_rbf_start;
 extern uint32_t _ultimate_run_rbf_end;
@@ -26,45 +13,26 @@ extern uint32_t _ultimate_run_rbf_end;
 extern uint32_t _ultimate_app_start;
 extern uint32_t _ultimate_app_end;
 
-extern uint32_t _rom_pack_start;
-extern uint32_t _rom_pack_end;
-
 extern uint32_t _ultimate_recovery_rbf_start;
 extern uint32_t _ultimate_recovery_rbf_end;
 
 extern uint32_t _recovery_app_start;
 extern uint32_t _recovery_app_end;
 
+extern uint8_t _1541_bin_start;
+extern uint8_t _1571_bin_start;
+extern uint8_t _1581_bin_start;
+extern uint8_t _snds1541_bin_start;
+extern uint8_t _snds1571_bin_start;
+extern uint8_t _snds1581_bin_start;
+
 void do_update(void)
 {
-	printf("*** U2+ Updater ***\n\n");
-
-	REMOTE_FLASHSEL_1;
+    REMOTE_FLASHSEL_1;
     REMOTE_FLASHSELCK_0;
     REMOTE_FLASHSELCK_1;
-	Flash *flash = get_flash();
 
-    GenericHost *host = 0;
-    Stream *stream = new Stream_UART;
-
-    C64 *c64 = C64 :: getMachine();
-
-    if (c64->exists()) {
-    	host = c64;
-    } else {
-    	host = new HostStream(stream);
-    }
-    Screen *screen = host->getScreen();
-
-    UserInterface *user_interface = new UserInterface("\033\021** 1541 Ultimate II+ Updater **\n\033\037");
-    user_interface->init(host);
-    host->take_ownership(user_interface);
-    user_interface->appear();
-    screen->move_cursor(0, 2);
-
-    char time_buffer[32];
-    console_print(screen, "%s ", rtc.get_long_date(time_buffer, 32));
-	console_print(screen, "%s\n", rtc.get_time_string(time_buffer, 32));
+    setup("\033\025** Ultimate II+ Updater **\n\033\037");
 
 /*
     if(user_interface->popup("Flash Recovery?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
@@ -81,38 +49,31 @@ void do_update(void)
     	console_print(screen, "Done!                            \n");
     }
 */
+    check_flash_disk();
 
     if(user_interface->popup("Flash Runtime?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
     	REMOTE_FLASHSEL_1;
         REMOTE_FLASHSELCK_0;
         REMOTE_FLASHSELCK_1;
 
+        clear_field();
+        create_dir(ROMS_DIRECTORY);
+        create_dir(CARTS_DIRECTORY);
+        write_flash_file("1581.rom", &_1581_bin_start, 0x8000);
+        write_flash_file("1571.rom", &_1571_bin_start, 0x8000);
+        write_flash_file("1541.rom", &_1541_bin_start, 0x4000);
+        write_flash_file("snds1541.bin", &_snds1541_bin_start, 0xC000);
+        write_flash_file("snds1571.bin", &_snds1571_bin_start, 0xC000);
+        write_flash_file("snds1581.bin", &_snds1581_bin_start, 0xC000);
+
         Flash *flash2 = get_flash();
         flash2->protect_disable();
-        flash_buffer_at(flash2, screen, 0x000000, false, &_ultimate_run_rbf_start,   &_ultimate_run_rbf_end,   "V1.0", "Runtime FPGA");
-        flash_buffer_at(flash2, screen, 0x0C0000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
-        flash_buffer_at(flash2, screen, 0x200000, false, &_rom_pack_start, &_rom_pack_end, "V0.0", "ROMs Pack");
+        flash_buffer(flash2, screen, FLASH_ID_BOOTFPGA, &_ultimate_run_rbf_start, &_ultimate_run_rbf_end, "", "Runtime FPGA");
+        flash_buffer(flash2, screen, FLASH_ID_APPL,     &_ultimate_app_start,     &_ultimate_app_end,  APPL_VERSION, "Ultimate Application");
 
-    	console_print(screen, "\nConfiguring Flash write protection..\n");
-    	flash2->protect_configure();
-    	flash2->protect_enable();
-    	console_print(screen, "Done!                            \n");
+        write_protect(flash2);
     }
-
-
-    wait_ms(2000);
-    console_print(screen, "\nPLEASE TURN OFF YOUR MACHINE.\n");
-
-    while (1)
-        ;
-
-/*
-    REMOTE_FLASHSEL_1;
-    REMOTE_FLASHSELCK_0;
-    REMOTE_FLASHSELCK_1;
-    REMOTE_RECONFIG = 0xBE;
-	console_print(screen, "You shouldn't see this!\n");
-*/
+    turn_off();
 }
 
 extern "C" int ultimate_main(int argc, char *argv[])

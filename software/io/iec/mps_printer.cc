@@ -802,22 +802,26 @@ MpsPrinter::FormFeed(void)
 *                                                                       *
 ************************************************************************/
 
-void
+int
 MpsPrinter::Print(const char * filename)
 {
     uint8_t *buffer;
     size_t outsize;
 
     DBGMSG("start PNG encoder");
-#ifndef NOT_ULTIMATE
     ActivityLedOn();
-#endif
     buffer=NULL;
     unsigned error = lodepng_encode(&buffer, &outsize, bitmap, MPS_PRINTER_PAGE_WIDTH, MPS_PRINTER_PAGE_HEIGHT, &lodepng_state);
     DBGMSG("ended PNG encoder, now saving");
-#ifndef NOT_ULTIMATE
     ActivityLedOff();
 
+    if (error) {
+        free(buffer);
+        return -1;
+    }
+
+    int retval = 0;
+#ifndef NOT_ULTIMATE
     File *f;
     FRESULT fres = fm->fopen((const char *) filename, FA_WRITE|FA_CREATE_NEW, &f);
     if (f) {
@@ -829,6 +833,7 @@ MpsPrinter::Print(const char * filename)
     else
     {
         DBGMSG("Saving PNG failed\n");
+        retval = -2;
     }
 #else
     int fhd = open(filename, O_WRONLY|O_CREAT|O_TRUNC, 0666);
@@ -839,10 +844,12 @@ MpsPrinter::Print(const char * filename)
     else
     {
         printf("Saving file failed\n");
+        retval = -2;
     }
 #endif
 
     free(buffer);
+    return retval;
 }
 
 /************************************************************************
@@ -1711,16 +1718,16 @@ MpsPrinter::Char(uint16_t c)
 *                                                                       *
 ************************************************************************/
 
-#ifndef NOT_ULTIMATE
 void
 MpsPrinter::ActivityLedOn(void)
 {
+#ifndef NOT_ULTIMATE
     if (activity == 0)
         ioWrite8(ITU_USB_BUSY, 1);
 
     activity++;
-}
 #endif
+}
 
 /************************************************************************
 *                   MpsPrinter::ActivityLedOff(void)            Private *
@@ -1739,10 +1746,10 @@ MpsPrinter::ActivityLedOn(void)
 *                                                                       *
 ************************************************************************/
 
-#ifndef NOT_ULTIMATE
 void
 MpsPrinter::ActivityLedOff(void)
 {
+#ifndef NOT_ULTIMATE
     if (activity > 0)
     {
         activity--;
@@ -1750,8 +1757,8 @@ MpsPrinter::ActivityLedOff(void)
         if (activity == 0)
             ioWrite8(ITU_USB_BUSY, 0);
     }
-}
 #endif
+}
 
 /*
 void

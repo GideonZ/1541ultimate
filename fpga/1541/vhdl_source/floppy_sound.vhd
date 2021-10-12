@@ -14,11 +14,14 @@ generic (
     track_in_addr  : unsigned(15 downto 0) := X"2400";
     track_out_addr : unsigned(15 downto 0) := X"2E00";
     head_bang_addr : unsigned(15 downto 0) := X"3800";
-    
+    insert_addr    : unsigned(15 downto 0) := X"4000";
+    remove_addr    : unsigned(15 downto 0) := X"6000";
     motor_len      : integer := 4410;
-    track_in_len   : unsigned(15 downto 0) := X"089D"; -- 100 ms;
-    track_out_len  : unsigned(15 downto 0) := X"089D"; -- 100 ms;
-    head_bang_len  : unsigned(15 downto 0) := X"089D" ); -- 100 ms;
+    track_in_len   : unsigned(15 downto 0) := X"089D"; -- 100 ms
+    track_out_len  : unsigned(15 downto 0) := X"089D"; -- 100 ms
+    head_bang_len  : unsigned(15 downto 0) := X"089D"; -- 100 ms
+    insert_len     : unsigned(15 downto 0) := X"2000"; -- 400 ms
+    remove_len     : unsigned(15 downto 0) := X"2000" ); -- 400 ms
 
 port (
     clock           : in  std_logic;
@@ -29,6 +32,8 @@ port (
     do_trk_out      : in  std_logic;
     do_trk_in       : in  std_logic;
     do_head_bang    : in  std_logic;
+    do_insert       : in  std_logic := '0';
+    do_remove       : in  std_logic := '0';
     en_hum          : in  std_logic;
     en_slip         : in  std_logic;
     
@@ -161,6 +166,17 @@ begin
                 voice1_cnt   <= head_bang_len(voice1_cnt'range);
                 voice1_addr  <= head_bang_addr(voice1_addr'range);
             end if;
+            if do_insert = '1' then
+                voice1       <= play;
+                voice1_cnt   <= insert_len(voice1_cnt'range);
+                voice1_addr  <= insert_addr(voice1_addr'range);
+            end if;
+            if do_remove = '1' then
+                voice1       <= play;
+                voice1_cnt   <= remove_len(voice1_cnt'range);
+                voice1_addr  <= remove_addr(voice1_addr'range);
+            end if;
+
             
             if reset='1' then
                 mem_req.request <= '0';

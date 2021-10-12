@@ -9,8 +9,9 @@ use work.io_bus_pkg.all;
 
 entity ultimate_mb_700a is
 generic (
-    g_dual_drive    : boolean := false;
-    g_version       : unsigned(7 downto 0) := X"17" );
+    g_acia          : boolean := true;
+    g_eeprom        : boolean := false;
+    g_dual_drive    : boolean := false );
 port (
     CLOCK       : in    std_logic;
     
@@ -192,7 +193,6 @@ begin
 
     i_logic: entity work.ultimate_logic_32
     generic map (
-        g_version       => g_version,
         g_simulation    => false,
         g_clock_freq    => 50_000_000,
         g_baud_rate     => 115_200,
@@ -200,13 +200,13 @@ begin
         g_uart          => true,
         g_drive_1541    => true,
         g_drive_1541_2  => g_dual_drive,
+        g_mm_drive      => false,
         g_hardware_gcr  => true,
         g_ram_expansion => true,
         g_extended_reu  => false,
         g_stereo_sid    => not g_dual_drive,
         g_8voices       => false,
         g_hardware_iec  => true,
-        g_iec_prog_tim  => false,
         g_c2n_streamer  => true,
         g_c2n_recorder  => g_dual_drive,
         g_cartridge     => true,
@@ -214,13 +214,14 @@ begin
         g_drive_sound   => true,
         g_rtc_chip      => true,
         g_rtc_timer     => false,
-        g_usb_host      => false,
         g_usb_host2     => true,
         g_spi_flash     => true,
         g_vic_copper    => false,
         g_video_overlay => false,
+        g_sdcard        => true,
+        g_eeprom        => g_eeprom,
         g_sampler       => not g_dual_drive,
-        g_acia          => g_dual_drive )
+        g_acia          => g_acia )
     port map (
         -- globals
         sys_clock   => sys_clock,

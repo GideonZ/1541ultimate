@@ -49,6 +49,7 @@ port (
     
     -- interface with freezer (cartridge) logic
     allow_serve     : in  std_logic := '0'; -- from timing unit (modified version of serve_enable)
+    serve_128       : in  std_logic := '0';
     serve_rom       : in  std_logic := '0'; -- ROML or ROMH
     serve_io1       : in  std_logic := '0'; -- IO1n
     serve_io2       : in  std_logic := '0'; -- IO2n
@@ -125,7 +126,8 @@ begin
     slot_req.late_write    <= do_io_event and late_write_cond;
     -- TODO: Do we still need io_read_early? If so, should we not check for PHI2 here? Or will we serve I/O data to the VIC?
     slot_req.io_read_early <= '1' when (addr_is_io and rwn_c='1' and do_sample_addr='1') else '0';
-
+    slot_req.sample_io     <= do_sample_io;
+    
     process(clock)
     begin
         if rising_edge(clock) then
@@ -144,6 +146,7 @@ begin
             ultimax   <= not GAMEn and EXROMn;
             ultimax_d <= ultimax;
             ultimax_d2 <= ultimax_d;
+            slot_req.rom_access  <= not romln_c or not romhn_c;
             
             -- 470 nF / 3.3K pup / Vih = 2V, but might be lower
             -- Voh buffer = 0.3V, so let's take a threshold of 1.2V => 400 cycles
@@ -217,7 +220,7 @@ begin
                 elsif do_sample_io='1' and rwn_c='0' then
                     if allow_write='1' then
                         -- memory write
-                        if address_c(14)='1' then -- IO range
+                        if address_c(15 downto 12)=X"D" then -- IO range
                             if io2n_c='0' or io1n_c='0' then
                                 mem_req_ff <= '1';
                                 state      <= mem_access;
@@ -310,14 +313,14 @@ begin
     addr_is_io <= (address_c(15 downto 9)="1101111"); -- DE/DF
     addr_is_kernal <= '1' when (address_c(15 downto 13)="111") else '0';
 
-    process(rwn_c, address_c, addr_is_io, romln_c, romhn_c, serve_rom, serve_io1, serve_io2, ultimax, kernal_enable, ba_c)
+    process(rwn_c, address_c, addr_is_io, romln_c, romhn_c, serve_128, serve_rom, serve_io1, serve_io2, ultimax, kernal_enable, ba_c)
     begin
         servicable <= '0';
         if rwn_c='1' then
             if addr_is_io and (serve_io1='1' or serve_io2='1') then
                 servicable <= '1';
             end if;
-            if (romln_c='0' or romhn_c='0') and (serve_rom='1') then -- for C128
+            if address_c(15)='1' and serve_128='1' then -- 8000-FFFF
                 servicable <= '1';
             end if;
             if address_c(15 downto 14)="10" and (serve_rom='1') then -- 8000-BFFF

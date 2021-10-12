@@ -67,7 +67,7 @@ int main(int argc, char **argv)
     int flash_type = 0;
     if(manuf == 0x1F) { // Atmel
         read_boot2 = 0x030A2800;
-        read_appl  = 0x03200000;
+        read_appl  = 0x030BE000;
 
         // protect flash the Atmel way
         SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
@@ -76,24 +76,12 @@ int main(int argc, char **argv)
     } else {
         flash_type = 1; // assume Winbond or Spansion
         read_boot2 = 0x03054000;
-        read_appl  = 0x03100000;
+        read_appl  = 0x03062000;
 
-        // protect flash the Winbond way
-        SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
-    	SPI_FLASH_DATA = W25Q_ReadStatusRegister1;
-    	uint8_t status = SPI_FLASH_DATA;
+        // Protection during boot is not required, as the bits are non-volatile.
+        // They are supposed to be set in the updater.
+        // Make sure CSn is high before we start
         SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
-        if ((status & 0x7C) != 0x34) { // on the spansion, this will protect 7/8 not 1/2
-            SPI_FLASH_CTRL = 0;
-        	SPI_FLASH_DATA = W25Q_WriteEnable;
-            SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
-        	SPI_FLASH_DATA = W25Q_WriteStatusRegister1;
-        	SPI_FLASH_DATA = 0x34; // 7/8 on spansion!!
-        	SPI_FLASH_DATA = 0x00;
-            SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
-        	w25q_wait_ready(50); // datasheet winbond: 15 ms max
-        	SPI_FLASH_DATA = W25Q_WriteDisable;
-        }
     }
 
     int length;

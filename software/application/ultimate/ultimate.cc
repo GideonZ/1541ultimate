@@ -64,6 +64,13 @@ StreamTextLog textLog(96*1024);
 
 extern "C" void (*custom_outbyte)(int c);
 
+void print_tasks(void)
+{
+    static char buffer[8192];
+    vTaskList(buffer);
+    puts(buffer);
+}
+
 void outbyte_log(int c)
 {
 	textLog.charout(c);
@@ -149,8 +156,9 @@ extern "C" void ultimate_main(void *a)
 	    tape_controller = new TapeController;
     if(capabilities & CAPAB_C2N_RECORDER)
 	    tape_recorder   = new TapeRecorder;
-    if(capabilities & CAPAB_DRIVE_1541_1)
+    if(capabilities & CAPAB_DRIVE_1541_1) {
         c1541_A = new C1541(C1541_IO_LOC_DRIVE_1, 'A');
+    }
     if(capabilities & CAPAB_DRIVE_1541_2) {
         c1541_B = new C1541(C1541_IO_LOC_DRIVE_2, 'B');
     }
@@ -166,9 +174,7 @@ extern "C" void ultimate_main(void *a)
     reu_preloader = new REUPreloader();
     
     printf("All linked modules have been initialized and are now running.\n");
-    static char buffer[8192];
-    vTaskList(buffer);
-    puts(buffer);
+    print_tasks();
 
 /*
 #ifdef U64
@@ -192,7 +198,9 @@ extern "C" void ultimate_main(void *a)
 #endif
 */
 
+#if !DEVELOPER
     custom_outbyte = outbyte_log;
+#endif
 
     while(c64) {
         int doIt = 0;

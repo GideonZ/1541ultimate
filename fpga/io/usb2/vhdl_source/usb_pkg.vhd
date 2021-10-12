@@ -79,6 +79,7 @@ package usb_pkg is
         valid_handsh    : std_logic;
         valid_packet    : std_logic;
         error           : std_logic;
+        error_code      : std_logic_vector(2 downto 0);
         
         pid             : std_logic_vector(3 downto 0);
         token           : t_token;
@@ -122,7 +123,8 @@ package usb_pkg is
         valid_handsh    => '0',
         valid_packet    => '0',
         error           => '0',
-        
+        error_code      => "000",
+
         pid             => X"0",
         token           => c_token_init,
         split_token     => c_split_token_init,

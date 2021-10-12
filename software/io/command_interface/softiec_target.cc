@@ -261,16 +261,18 @@ void SoftIECTarget :: get_more_data(Message **reply, Message **status)
 
 void SoftIECTarget :: abort(int a)
 {
-#if SIEC_TARGET_DEBUG
-    printf("Abrt(%d)\n", a);
-#endif
     if (input_channel) {
         int bytes = (a < input_length) ? a : input_length;
-        for(int i=0; i<bytes; i++) {
-            input_channel->pop_data(); // how about passing the number of bytes, that would be way more efficient.
-        }
+#if SIEC_TARGET_DEBUG
+        printf("Pop(%d:%d)\n", bytes, a);
+#endif
+        input_channel->pop_more(bytes);
         input_channel->reset_prefetch();
         input_channel = NULL;
+    } else {
+#if SIEC_TARGET_DEBUG
+        printf("Abrt(%d)\n", a);
+#endif
     }
 }
 

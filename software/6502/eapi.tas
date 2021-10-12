@@ -1,0 +1,798 @@
+; error codes
+EAPI_ERR_RAM            = 1
+EAPI_ERR_ROML           = 2
+EAPI_ERR_ROMH           = 3
+EAPI_ERR_ROML_PROTECTED = 4
+EAPI_ERR_ROMH_PROTECTED = 5
+
+; I/O address used to select the bank
+EASYFLASH_IO_BANK    = $de00
+
+; I/O address used to read and to select the slot
+EASYFLASH_IO_SLOT    = $de01
+
+; I/O address for enabling memory configuration, /GAME and /EXROM states
+EASYFLASH_IO_CONTROL = $de02
+
+; I/O address for enabling writes to ultimate ram
+EASYFLASH_IO_WRITEKEY = $de09
+
+; Bit for Expansion Port /GAME line (1 = low)
+EASYFLASH_IO_BIT_GAME    = $01
+
+; Bit for Expansion Port /EXROM line (1 = low)
+EASYFLASH_IO_BIT_EXROM   = $02
+
+; Bit for memory control (1 = enabled)
+EASYFLASH_IO_BIT_MEMCTRL = $04
+
+EASYFLASH_IO_BIT_NO_VIC  = $08
+
+; Bit for status LED (1 = on)
+EASYFLASH_IO_BIT_LED     = $80
+
+EASYFLASH_IO_FLASH_SETUP = EASYFLASH_IO_BIT_MEMCTRL | EASYFLASH_IO_BIT_GAME | EASYFLASH_IO_BIT_NO_VIC | EASYFLASH_IO_BIT_LED
+EASYFLASH_IO_16K_SETUP   = EASYFLASH_IO_BIT_MEMCTRL | EASYFLASH_IO_BIT_GAME | EASYFLASH_IO_BIT_EXROM
+
+
+UCI_CONTROL             = $de1c
+UCI_COMMAND             = $de1d
+UCI_STATUS              = $de1f
+
+EAPI_RAM_CODE           = $df80
+EAPI_RAM_SIZE           = 124
+EAPI_ZP_INIT_CODE_BASE   = $4b
+ZP_TEMP                  = $fb
+
+* = $c000
+EAPICodeBase
+    .byte $65, $61, $70, $69        ; signature "EAPI"
+
+    .text "1541 U2(+) V0.6"
+    .byte 0 ; 16 bytes, must be 0-terminated
+
+; =============================================================================
+;
+; EAPIInit: User API: To be called with JSR <load_address> + 20
+;
+; Read Manufacturer ID and Device ID from the flash chip(s) and check if this
+; chip is supported by this driver. Prepare our private RAM for the other
+; functions of the driver.
+; When this function returns, EasyFlash will be configured to bank in the ROM
+; area at $8000..$bfff.
+;
+; This function calls SEI, it restores all Flags except C before it returns.
+; Do not call it with D-flag set. $01 must enable both ROM areas.
+;
+; parameters
+;       -
+; return
+;       C   set: Flash chip not supported by this driver
+;           clear: Flash chip supported by this driver
+;       If C is clear
+;       A   Device ID
+;       X   Manufacturer ID
+;       Y   Number of physical banks (>= 64) or
+;           number of slots (< 64) with 64 banks each
+;       If C is set
+;       A   Error reason
+; changes
+;       all registers are changed
+;
+; =============================================================================
+EAPIInit
+        php
+        sei
+        ; backup ZP space
+        lda EAPI_ZP_INIT_CODE_BASE
+        pha
+        lda EAPI_ZP_INIT_CODE_BASE + 1
+        pha
+
+        ; find out our memory address
+        lda #$60        ; rts
+        sta EAPI_ZP_INIT_CODE_BASE
+        jsr EAPI_ZP_INIT_CODE_BASE
+initCodeBase = * - 1
+        tsx
+        lda $100, x
+        sta EAPI_ZP_INIT_CODE_BASE + 1
+        dex
+        lda $100, x
+        sta EAPI_ZP_INIT_CODE_BASE
+        clc
+        bcc initContinue
+
+RAMCode
+        ; This code will be copied to EasyFlash RAM at EAPI_RAM_CODE
+        .logical EAPI_RAM_CODE
+RAMContentBegin
+; =============================================================================
+; JUMP TABLE (will be updated to be correct)
+; =============================================================================
+jmpTable
+        jmp EAPIWriteFlash - initCodeBase    ; 0
+        jmp EAPIEraseSector - initCodeBase   ; 3
+        jmp EAPISetBank - initCodeBase       ; 6
+        jmp EAPIGetBank - initCodeBase       ; 9
+        jmp EAPISetPtr - initCodeBase        ; 12
+        jmp EAPISetLen - initCodeBase        ; 15
+        jmp EAPIReadFlashInc - initCodeBase  ; 18
+        jmp EAPIWriteFlashInc - initCodeBase ; 21
+        jmp EAPISetSlot - initCodeBase       ; 24
+        jmp EAPIGetSlot - initCodeBase       ; 27
+
+        ; Some local functions, those that do NOT reside in RAM already
+        jmp rwIncAddr - initCodeBase         ; 30
+        jmp rwDecLen - initCodeBase          ; 33
+        jmp ultimateWait4idle - initCodeBase ; 36
+        jmp ultimateWait4data - initCodeBase ; 39
+jmpTableEnd
+
+JT_EAPIWriteFlash    = jmpTable + 0
+JT_rwIncAddr         = jmpTable + 30
+JT_rwDecLen          = jmpTable + 33
+JT_ultimateWait4idle = jmpTable + 36
+JT_ultimateWait4data = jmpTable + 39
+
+; =============================================================================
+;
+; Read a byte from the inc-address
+;
+; =============================================================================
+readByteRamFunc
+EAPI_RD_ADDR_LO = * + 1
+EAPI_RD_ADDR_HI = * + 2
+        lda $ffff
+        rts
+
+; =============================================================================
+;
+; Write a byte to the inc-address
+;
+; =============================================================================
+writeByteRamFunc
+        pha
+        lda #EASYFLASH_IO_FLASH_SETUP
+        sta EASYFLASH_IO_CONTROL
+        lda #$65
+        sta EASYFLASH_IO_WRITEKEY
+        pla
+
+EAPI_WR_ADDR_LO = * + 1
+EAPI_WR_ADDR_HI = * + 2
+        sta $ffff
+EAPI_CMP_ADDR_LO = * + 1
+EAPI_CMP_ADDR_HI = * + 2
+        cmp $ffff
+        php
+        pha
+        lda #EASYFLASH_IO_16K_SETUP
+        sta EASYFLASH_IO_CONTROL
+        pla
+        plp
+        rts
+
+; =============================================================================
+;
+; Internal function
+;
+; Fill a page with FF (to be used by erase sector)
+;
+; =============================================================================
+fillPageRamFunc
+        lda #EASYFLASH_IO_FLASH_SETUP
+        sta EASYFLASH_IO_CONTROL
+        lda #$65
+        sta EASYFLASH_IO_WRITEKEY
+        lda #$ff 
+-       sta (ZP_TEMP),y
+        iny
+        bne -
+        lda #EASYFLASH_IO_16K_SETUP
+        sta EASYFLASH_IO_CONTROL
+        rts
+
+; =============================================================================
+; Variables
+; =============================================================================
+
+EAPI_TMP_VAL1           .byte 0 ; To store A
+EAPI_TMP_VAL2           .byte 0 ; To store X
+EAPI_TMP_VAL3           .byte 0 ; To store Y
+EAPI_BANK               .byte 0 ; Temporary bank value for erase sector
+EAPI_ERASE_BASE         .byte 0 ; Temporary high byte of address for erase sector
+EAPI_SHADOW_BANK        .byte 0 ; copy of current bank number set by the user
+EAPI_INC_TYPE           .byte 0 ; type used for EAPIReadFlashInc/EAPIWriteFlashInc
+EAPI_INC_ADDR_LO        .byte 0 ; Memory address for auto increment
+EAPI_INC_ADDR_HI        .byte 0 ;
+EAPI_LENGTH_LO          .byte 0 ; Length for read with increment
+EAPI_LENGTH_MED         .byte 0
+EAPI_LENGTH_HI          .byte 0
+; =============================================================================
+
+RAMContentEnd
+	.here
+RAMCodeEnd
+
+.if RAMContentEnd - RAMContentBegin > EAPI_RAM_SIZE 
+    .error "Code too large"
+.fi
+
+.if * - initCodeBase > 256
+    .error "RAMCode not addressable trough (initCodeBase),y"
+.fi
+
+initContinue
+        ; *** copy some code to EasyFlash private RAM ***
+        ; length of data to be copied
+        ldx #RAMCodeEnd - RAMCode - 1
+        ; offset behind initCodeBase of last byte to be copied
+        ldy #RAMCodeEnd - initCodeBase - 1
+cidCopyCode
+        lda (EAPI_ZP_INIT_CODE_BASE),y
+        sta EAPI_RAM_CODE, x
+        cmp EAPI_RAM_CODE, x    ; check if there's really RAM at this address
+        bne ciRamError
+        dey
+        dex
+        bpl cidCopyCode
+
+        ; *** calculate jump table ***
+        ldx #0
+cidFillJMP
+        inx
+        clc
+        lda jmpTable, x
+        adc EAPI_ZP_INIT_CODE_BASE
+        sta jmpTable, x
+        inx
+        lda jmpTable, x
+        adc EAPI_ZP_INIT_CODE_BASE + 1
+        sta jmpTable, x
+        inx
+        cpx #jmpTableEnd - jmpTable
+        bne cidFillJMP
+        clc
+        bcc ciNoRamError
+ciRamError
+        lda #EAPI_ERR_RAM
+        sta EAPI_TMP_VAL1
+        sec                     ; error
+
+ciNoRamError
+        ; restore the caller's ZP state
+        pla
+        sta EAPI_ZP_INIT_CODE_BASE + 1
+        pla
+        sta EAPI_ZP_INIT_CODE_BASE
+
+        bcs returnOnly          ; branch on error from above
+        ; everything okay
+        ; clc
+resetAndReturn:                 ; C indicates error
+        lda #0                  ; Protection test has changed the bank
+        sta EASYFLASH_IO_BANK   ; restore it for compatibility to old versions
+        lda #$87
+        sta EASYFLASH_IO_CONTROL
+
+returnOnly:                     ; C indicates error
+        lda EAPI_TMP_VAL1       ; device or error code in A
+        bcs returnCSet
+        ldx #41                 ; manufacturer in X
+        ldy #64                 ; number of banks in Y
+
+        plp
+        clc                     ; do this after plp :)
+        rts
+returnCSet
+        plp
+        sec                     ; do this after plp :)
+        rts
+
+; =============================================================================
+;
+; EAPIWriteFlash: User API: To be called with JSR jmpTable + 0 = $df80
+;
+; Write a byte to the given address. The address must be as seen in Ultimax
+; mode, i.e. do not use the base addresses $8000 or $a000 but $8000 or $e000.
+;
+; When writing to flash memory only bits containing a '1' can be changed to
+; contain a '0'. Trying to change memory bits from '0' to '1' will result in
+; an error. You must erase a memory block to get '1' bits.
+;
+; This function uses SEI, it restores all flags except C before it returns.
+; Do not call it with D-flag set. $01 must enable both ROM areas.
+; It can only be used after having called EAPIInit.
+;
+; parameters
+;       A   value
+;       XY  address (X = low), $8xxx/$9xxx or $Exxx/$Fxxx
+;
+; return
+;       C   set: Error
+;           clear: Okay
+; changes
+;       Z,N <- value
+;
+; =============================================================================
+EAPIWriteFlash
+    	php
+        sei
+    
+        stx EAPI_WR_ADDR_LO
+        sty EAPI_WR_ADDR_HI
+        stx EAPI_CMP_ADDR_LO
+        sty EAPI_CMP_ADDR_HI
+        jsr writeByteRamFunc
+        bne writeError       
+
+writeOk
+        plp
+        cmp #0 ; to fix Z,N flags according to specification
+        clc
+        rts
+writeError
+        plp
+        cmp #0 ; to fix Z,N flags according to specification
+        sec
+        rts
+
+; =============================================================================
+;
+; EAPIEraseSector: User API: To be called with JSR jmpTable + 3 = $df83
+;
+; Erase the sector at the given address. The bank number currently set and the
+; address together must point to the first byte of a 64 kByte sector.
+;
+; When erasing a sector, all bits of the 64 KiB area will be set to '1'.
+; This means that 8 banks with 8 KiB each will be erased, all of them either
+; in the LOROM chip when $8000 is used or in the HIROM chip when $e000 is
+; used.
+;
+; This function uses SEI, it restores all flags except C before it returns.
+; Do not call it with D-flag set. $01 must enable the affected ROM area.
+; It can only be used after having called EAPIInit.
+;
+; parameters
+;       A   bank
+;       Y   base address (high byte), $80 for LOROM, $a0 or $e0 for HIROM
+;
+; return
+;       C   set: Error
+;           clear: Okay
+;
+; change
+;       Z,N <- bank
+;
+; =============================================================================
+EAPIEraseSector
+        php
+        
+        sei
+        sta EAPI_TMP_VAL1
+        stx EAPI_TMP_VAL2
+        sty EAPI_TMP_VAL3
+        
+        sty EAPI_ERASE_BASE
+        sta EAPI_BANK
+        
+        cpy #$80
+        beq ++
+        cpy #$a0
+        beq ++
+        cpy #$e0
+        beq +
+    
+_erase_param_error
+        cmp #0  ; fix flags according to specification
+        sec
+        rts
+        
+        ; fix to use the ultimax address
++       lda EAPI_ERASE_BASE
+        ora #$40
+        sta EAPI_ERASE_BASE
+        
++       lda UCI_COMMAND
+        cmp #$C9 ; Test for UCI
+        bne EAPIEraseSectorClassic
+        
+EAPIEraseSectorUCI
+        lda #$04 ; oder $0C ?
+        sta UCI_CONTROL
+        jsr JT_ultimateWait4idle
+        
+        lda #$04
+        sta UCI_COMMAND
+        lda #$20
+        sta UCI_COMMAND
+        lda #$00
+        sta UCI_COMMAND
+        
+        lda EAPI_BANK
+        sta UCI_COMMAND
+        lda EAPI_ERASE_BASE
+        sta UCI_COMMAND
+        
+        lda #$01
+        sta UCI_CONTROL
+        
+        jsr JT_ultimateWait4data
+        ; jsr JT_ultimateGetstatus ; Implicit fallthrough of previous
+        lda #$02
+        sta UCI_CONTROL
+        jsr JT_ultimateWait4idle
+        ; Regardless of error, the UCI is now back in idle state
+        
+        cpx #$30
+        bne EAPIEraseSectorClassic
+        cpy #$30
+        beq erasedone
+        
+EAPIEraseSectorClassic
+        ; banks should always go in multiples of 8, since an erase sector is 64K in size
+        lda EAPI_BANK
+        and #$F8
+        sta EAPI_BANK
+        sta EASYFLASH_IO_BANK
+    	
+        ; Create space on zeropage
+        lda ZP_TEMP
+        pha
+        lda ZP_TEMP+1
+        pha
+        
+        ; Now, write FF to 8 banks of 8K, each bank consisting of $20 pages of 256 bytes
+        ldx #8
+erase1:
+        txa	
+        pha
+    
+        ;; Clear 8K of memory
+        lda #0
+        sta ZP_TEMP
+        lda EAPI_ERASE_BASE
+        sta ZP_TEMP+1
+        
+        ldx #$20
+        ldy #0
+-       jsr fillPageRamFunc
+        inc ZP_TEMP+1
+        dex
+        bne -    
+    
+        ; increment bank
+        inc EAPI_BANK
+        sta EASYFLASH_IO_BANK
+        pla
+        tax
+        dex
+        bne erase1
+        
+        ; Restore zero page
+        pla
+        sta ZP_TEMP+1
+        pla
+        sta ZP_TEMP
+
+erasedone:
+        lda EAPI_SHADOW_BANK
+        sta EASYFLASH_IO_BANK
+        plp
+        clc
+        ldy EAPI_TMP_VAL3
+        ldx EAPI_TMP_VAL2
+        lda EAPI_TMP_VAL1
+        rts
+
+; =============================================================================
+;
+; EAPISetBank: User API: To be called with JSR jmpTable + 6 = $df86
+;
+; Set the bank. This will take effect immediately for cartridge read access
+; and will be used for the next flash write or read command.
+;
+; This function can only be used after having called EAPIInit.
+;
+; parameters
+;       A   bank
+;
+; return
+;       -
+;
+; changes
+;       -
+;
+; =============================================================================
+EAPISetBank
+        sta EAPI_SHADOW_BANK
+        sta EASYFLASH_IO_BANK
+        rts
+
+; =============================================================================
+;
+; EAPIGetBank: User API: To be called with JSR jmpTable + 9 = $df89
+;
+; Get the selected bank which has been set with EAPISetBank.
+; Note that the current bank number can not be read back using the hardware
+; register $de00 directly, this function uses a mirror of that register in RAM.
+;
+; This function can only be used after having called EAPIInit.
+;
+; parameters
+;       -
+;
+; return
+;       A  bank
+;
+; changes
+;       Z,N <- bank
+;
+; =============================================================================
+EAPIGetBank
+        lda EAPI_SHADOW_BANK
+        rts
+
+; =============================================================================
+;
+; EAPISetPtr: User API: To be called with JSR jmpTable + 12 = $df8c
+;
+; Set the pointer for EAPIReadFlashInc/EAPIWriteFlashInc.
+;
+; This function can only be used after having called EAPIInit.
+;
+; parameters
+;       A   bank mode, where to continue at the end of a bank
+;           $D0: 00:0:1FFF=>00:1:0000, 00:1:1FFF=>01:0:1FFF (lhlh...)
+;           $B0: 00:0:1FFF=>01:0:0000 (llll...)
+;           $D4: 00:1:1FFF=>01:1:0000 (hhhh...)
+;       XY  address (X = low) address must be in range $8000-$bfff
+;
+; return
+;       -
+;
+; changes
+;       -
+;
+; =============================================================================
+EAPISetPtr
+        sta EAPI_INC_TYPE
+        stx EAPI_INC_ADDR_LO
+        sty EAPI_INC_ADDR_HI
+        rts
+
+; =============================================================================
+;
+; EAPISetLen: User API: To be called with JSR jmpTable + 15 = $df8f
+;
+; Set the number of bytes to be read with EAPIReadFlashInc.
+;
+; This function can only be used after having called EAPIInit.
+;
+; parameters
+;       XYA length, 24 bits (X = low, Y = med, A = high)
+;
+; return
+;       -
+;
+; changes
+;       -
+;
+; =============================================================================
+EAPISetLen
+        stx EAPI_LENGTH_LO
+        sty EAPI_LENGTH_MED
+        sta EAPI_LENGTH_HI
+        rts
+
+; =============================================================================
+;
+; EAPIReadFlashInc: User API: To be called with JSR jmpTable + 18 = $df92
+;
+; Read a byte from the current pointer from EasyFlash flash memory.
+; Increment the pointer according to the current bank wrap strategy.
+; Pointer and wrap strategy have been set by a call to EAPISetPtr.
+;
+; The number of bytes to be read may be set by calling EAPISetLen.
+; EOF will be set if the length is zero, otherwise it will be decremented.
+; Even when EOF is delivered a new byte has been read and the pointer
+; incremented. This means the use of EAPISetLen is optional.
+;
+; This function can only be used after having called EAPIInit.
+;
+; parameters
+;       -
+;
+; return
+;       A   value
+;       C   set if EOF
+;
+; changes
+;       Z,N <- value
+;
+; =============================================================================
+EAPIReadFlashInc
+        ; now we have to activate the right bank
+        lda EAPI_SHADOW_BANK
+        sta EASYFLASH_IO_BANK
+
+        lda EAPI_INC_ADDR_LO
+        sta EAPI_RD_ADDR_LO
+        lda EAPI_INC_ADDR_HI
+        sta EAPI_RD_ADDR_HI
+
+        ; call the read-routine
+        jsr readByteRamFunc
+
+        ; remember the result & x/y registers
+        sta EAPI_TMP_VAL1
+        stx EAPI_TMP_VAL2
+        sty EAPI_TMP_VAL3
+
+        jsr JT_rwIncAddr
+        jsr JT_rwDecLen   ; set C accordingly
+        
+        ldy EAPI_TMP_VAL3
+        ldx EAPI_TMP_VAL2
+        lda EAPI_TMP_VAL1
+        rts
+        
+; =============================================================================
+;
+; EAPIWriteFlashInc: User API: To be called with JSR jmpTable + 21 = $df95
+;
+; Write a byte to the current pointer to EasyFlash flash memory.
+; Increment the pointer according to the current bank wrap strategy.
+; Pointer and wrap strategy have been set by a call to EAPISetPtr.
+;
+; In case of an error the position is not inc'ed.
+;
+;
+; This function can only be used after having called EAPIInit.
+;
+; parameters
+;       A   value
+;
+; return
+;       C   set: Error
+;           clear: Okay
+; changes
+;       Z,N <- value
+;
+; =============================================================================
+EAPIWriteFlashInc
+        sta EAPI_TMP_VAL1
+        stx EAPI_TMP_VAL2
+        sty EAPI_TMP_VAL3
+
+        ; activate the right bank
+        lda EAPI_SHADOW_BANK
+        sta EASYFLASH_IO_BANK
+
+        ; load address to store to (Fix A000-BFFF => E000-FFFF)
+        ldx EAPI_INC_ADDR_LO
+        lda EAPI_INC_ADDR_HI
+        cmp #$a0
+        bcc +
+        ora #$40 ; $a0 => $e0
++       tay
+        lda EAPI_TMP_VAL1
+
+        ; write to flash
+        jsr JT_EAPIWriteFlash
+        bcs writeInc_noIncrement
+
+        ; We know that the carry was clear here
+        jsr JT_rwIncAddr
+        clc ; restore carry
+        
+writeInc_noIncrement
+        ldy EAPI_TMP_VAL3
+        ldx EAPI_TMP_VAL2
+        lda EAPI_TMP_VAL1
+        rts
+
+; =============================================================================
+;
+; Unimplemented Functions
+;
+; =============================================================================
+EAPIGetSlot
+EAPISetSlot
+        rts
+
+; =============================================================================
+;
+; Internal function
+;
+; Increment R/W address, according to bank wrap strategy
+;
+;           $D0: 00:0:1FFF=>00:1:0000, 00:1:1FFF=>01:0:1FFF (lhlh...)
+;           $B0: 00:0:1FFF=>01:0:0000 (llll...)
+;           $D4: 00:1:1FFF=>01:1:0000 (hhhh...)
+;
+; =============================================================================
+rwIncAddr
+        ; inc to next position
+        inc EAPI_INC_ADDR_LO
+        bne +
+        ; inc page
+        inc EAPI_INC_ADDR_HI
+        lda EAPI_INC_TYPE
+        and #$e0
+        cmp EAPI_INC_ADDR_HI
+        bne +
+        ; inc bank
+        lda EAPI_INC_TYPE
+        asl
+        asl
+        asl
+        sta EAPI_INC_ADDR_HI
+        inc EAPI_SHADOW_BANK
++       rts
+
+; =============================================================================
+;
+; Internal function
+;
+; Decrement Length, and set Carry if end has been reached
+;
+; =============================================================================
+rwDecLen
+        ; decrement length
+        lda EAPI_LENGTH_LO
+        bne readInc_nomed
+        lda EAPI_LENGTH_MED
+        bne readInc_nohi
+        lda EAPI_LENGTH_HI
+        beq readInc_eof
+        dec EAPI_LENGTH_HI
+readInc_nohi
+        dec EAPI_LENGTH_MED
+readInc_nomed
+        dec EAPI_LENGTH_LO
+        clc ; no EOF
+        rts
+readInc_eof
+        sec ; EOF
+        rts
+
+; =============================================================================
+;
+; Internal functions for UCI handshaking
+;
+; =============================================================================
+ultimateWait4idle
+        lda UCI_CONTROL
+        and #$35
+        bne ultimateWait4idle
+        rts
+ 
+ultimateWait4data
+        lda UCI_CONTROL
+        and #$20
+        beq ultimateWait4data
+;        rts
+
+;ultimateGetstatus
+
+        ldx #$39
+        ldy #$39
+        lda UCI_CONTROL
+        and #$40
+        beq +
+        ldx UCI_STATUS
+
+        lda UCI_CONTROL
+        and #$40
+        beq +
+        ldy UCI_STATUS
++       rts
+
+
+; =============================================================================
+; We pad the file to the maximal driver size ($0300) to make sure nobody
+; has the idea to use the memory behind EAPI in a cartridge. EasyProg
+; replaces EAPI and would overwrite everything in this space.
+.fill $0300 - (* - EAPICodeBase), $ff

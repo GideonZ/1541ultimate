@@ -95,12 +95,14 @@ bool flash_buffer_at(Flash *flash, Screen *screen, int address, bool header, voi
                 console_print(screen, "Programming error on page %d.\n", page);
                 continue;
             }
-            flash->read_page(page, verify_buffer);
-            if(!my_memcmp(screen, verify_buffer, p, page_size)) {
-                console_print(screen, "Verify failed on page %d.\n", page, retry);
-                // console_print(screen, "%p %p %d\n", verify_buffer, p, page_size);
-                dump_hex_verify(p, verify_buffer, page_size);
-                continue;
+            if (do_erase) { // HACK: For AT45, which does not need to erase, we do not verify either; because write page size = 528 and read page size = 512. ;-)
+                flash->read_page(page, verify_buffer);
+                if(!my_memcmp(screen, verify_buffer, p, page_size)) {
+                    console_print(screen, "Verify failed on page %d.\n", page, retry);
+                    // console_print(screen, "%p %p %d\n", verify_buffer, p, page_size);
+                    dump_hex_verify(p, verify_buffer, page_size);
+                    continue;
+                }
             }
             retry = -2;
         }

@@ -23,9 +23,10 @@ FileSystemT64 :: ~FileSystemT64()
 }
 
 // Get number of free sectors on the file system
-FRESULT FileSystemT64 :: get_free (uint32_t* free)
+FRESULT FileSystemT64 :: get_free (uint32_t* free, uint32_t *cs)
 {
 	*free = 0;
+	*cs = 1;
     return FR_OK;
 }
 

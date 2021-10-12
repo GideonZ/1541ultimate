@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h> // C library
+#include <ctype.h>
 #include "mystring.h" // my class definition
 
 mstring :: mstring()
@@ -71,13 +72,25 @@ mstring& mstring :: operator=(const mstring &rhs)
 //    printf("Assignment operator. Left = %s(%p), Right = %s(%p)\n", c_str(), this, rhs.c_str(), &rhs);
     if(this != &rhs) {
         if((rhs.length()+1) > alloc) {
+            // Does not fit, throw away what we already have
             if (cp) {
                 delete[] cp;
+                cp = NULL;
+                alloc = 0;
             }
-            cp = new char[rhs.alloc];
-            alloc = rhs.alloc;
+            // There is actually a string to place
+            if (rhs.length()) {
+                cp = new char[rhs.alloc];
+                alloc = rhs.alloc;
+                strcpy(cp, rhs.cp);
+            }
+        } else { // use current allocation
+            if (rhs.cp) {
+                strcpy(cp, rhs.cp);
+            } else {
+                cp[0] = 0;
+            }
         }
-        strcpy(cp, rhs.cp);
     }
     return *this;
 }
@@ -182,6 +195,28 @@ mstring mstring::operator+(const char *right)
     mstring result(*this);
     result += right;
     return result;
+}
+
+void mstring::to_upper(void)
+{
+    int len = length();
+    for(int i=0;i<len;i++) {
+        cp[i] = toupper(cp[i]);
+    }
+}
+
+void mstring::set(int index, char c)
+{
+    if (!cp) {
+        return;
+    }
+    if (index >= length()) {
+        return;
+    }
+    if (index < 0) {
+        return;
+    }
+    cp[index] = c;
 }
 
 int strcmp(mstring &a, mstring &b)

@@ -52,15 +52,13 @@ void FilePartition :: init()
     info.fs = prt->attach_filesystem();
 }
     
-/*
-int FilePartition :: fetch_children(void)
+int FilePartition :: probe()
 {
-    init();
+    if (!info.fs) {
+        init();
+    }
+
     if(!info.fs)
         return -1;
-
-    int count = FileDirEntry :: fetch_children();  // we are just a normal directory, so..
-    sort_children();
-    return count;
+    return 1;
 }
-*/

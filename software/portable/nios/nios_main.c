@@ -18,22 +18,43 @@
 #include "profiler.h"
 #include "usb_nano.h"
 
+typedef uint8_t (*irq_function_t)(void *context);
+
+typedef struct{
+    irq_function_t handler;
+    void *context;
+} IrqHandler_t;
+
+#define HIGH_IRQS 3
+static IrqHandler_t high_irqs[HIGH_IRQS];
+
+void install_high_irq(int irqNr, irq_function_t func, void *context)
+{
+    if (irqNr < HIGH_IRQS) {
+        high_irqs[irqNr].handler = func;
+        high_irqs[irqNr].context = context;
+    }
+    ioWrite8(ITU_IRQ_HIGH_EN, ioRead8(ITU_IRQ_HIGH_EN) | (1 << irqNr));
+}
+
+void deinstall_high_irq(int irqNr)
+{
+    ioWrite8(ITU_IRQ_HIGH_EN, ioRead8(ITU_IRQ_HIGH_EN) & ~(1 << irqNr));
+
+    if (irqNr < HIGH_IRQS) {
+        high_irqs[irqNr].handler = NULL;
+        high_irqs[irqNr].context = NULL;
+    }
+}
+
 void ResetInterruptHandlerCmdIf(void) __attribute__ ((weak));
 void ResetInterruptHandlerU64(void) __attribute__ ((weak));
 void RmiiRxInterruptHandler(void) __attribute__ ((weak));
 uint8_t command_interface_irq(void) __attribute__ ((weak));
 uint8_t tape_recorder_irq(void) __attribute__ ((weak));
 uint8_t usb_irq(void) __attribute__ ((weak));
-uint8_t acia_irq(void) __attribute__ ((weak));
 
 uint8_t command_interface_irq(void) {
-    return 0;
-}
-
-uint8_t acia_irq(void)
-{
-    // We shouldn't come here.
-    ioWrite8(ITU_IRQ_HIGH_ACT, 0);
     return 0;
 }
 
@@ -86,8 +107,18 @@ static void ituIrqHandler(void *context) {
 	if (pending & 0x01) {
 		do_switch |= xTaskIncrementTick();
 	}
-	if (ioRead8(ITU_IRQ_HIGH_ACT) & ITU_IRQHIGH_ACIA) {
-	    do_switch |= acia_irq();
+
+	uint8_t h = ioRead8(ITU_IRQ_HIGH_ACT);
+	for(int i=0;i < HIGH_IRQS; i++, h>>=1) {
+	    if (h & 1) {
+	        if (high_irqs[i].handler) {
+	            // Run handler with context parameter if installed
+	            do_switch |= high_irqs[i].handler(high_irqs[i].context);
+	        } else {
+	            // Turn off interrupt if no handler was installed
+	            ioWrite8(ITU_IRQ_HIGH_EN, ioRead8(ITU_IRQ_HIGH_EN) & ~(1 << i));
+	        }
+	    }
 	}
 
 	if (do_switch != pdFALSE) {
@@ -152,7 +183,8 @@ int main(int argc, char *argv[]) {
 	freq /= 200;
 	freq -= 1;
 
-	ioWrite8(ITU_IRQ_TIMER_EN, 0);
+	ioWrite8(ITU_IRQ_HIGH_EN, 0);
+    ioWrite8(ITU_IRQ_TIMER_EN, 0);
 	ioWrite8(ITU_IRQ_DISABLE, 0xFF);
 	ioWrite8(ITU_IRQ_CLEAR, 0xFF);
 	ioWrite8(ITU_IRQ_TIMER_HI, (uint8_t)(freq >> 8));

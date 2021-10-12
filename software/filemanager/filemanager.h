@@ -118,6 +118,7 @@ class FileManager
 	FRESULT find_pathentry(PathInfo &pathInfo, bool enter_mount);
 	FRESULT fopen_impl(PathInfo &pathInfo, uint8_t flags, File **);
 	FRESULT rename_impl(PathInfo &from, PathInfo &to);
+	FRESULT delete_file_impl(PathInfo &pathInfo);
 
 //	friend class FileDirEntry;
 
@@ -189,7 +190,7 @@ public:
 
     void  get_display_string(Path *p, const char *filename, char *buffer, int width);
 
-    FRESULT get_free(Path *path, uint32_t &free);
+    FRESULT get_free(Path *path, uint32_t &free, uint32_t &cluster_size);
     FRESULT fs_read_sector(Path *path, uint8_t *buffer, int track, int sector);
     FRESULT fs_write_sector(Path *path, uint8_t *buffer, int track, int sector);
 
@@ -202,7 +203,7 @@ public:
     FRESULT fopen(const char *pathname, uint8_t flags, File **);
 
     void 	fclose(File *f);
-    FRESULT fcopy(const char *path, const char *filename, const char *dest);
+    FRESULT fcopy(const char *path, const char *filename, const char *dest, const char *dest_filename, bool overwrite);
 
     FRESULT rename(Path *old_path, const char *old_name, Path *new_path, const char *new_name);
     FRESULT rename(Path *path, const char *old_name, const char *new_name);
@@ -210,12 +211,15 @@ public:
 
     FRESULT delete_file(Path *path, const char *name);
     FRESULT delete_file(const char *pathname);
+    FRESULT delete_recursive(Path *path, const char *name);
 
     FRESULT create_dir(Path *path, const char *name);
     FRESULT create_dir(const char *pathname);
 
     FRESULT get_directory(Path *p, IndexedList<FileInfo *> &target, const char *matchPattern);
     FRESULT print_directory(const char *path);
+    FRESULT load_file(const char *path, const char *filename, uint8_t *mem, uint32_t maxlen, uint32_t *transferred);
+    FRESULT save_file(bool overwrite, const char *path, const char *filename, uint8_t *mem, uint32_t len, uint32_t *transferred);
 
     void registerObserver(ObserverQueue *q) {
     	observers.append(q);

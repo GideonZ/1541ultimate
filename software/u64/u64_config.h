@@ -15,6 +15,12 @@
 #include "menu.h"
 #include "sid_device.h"
 #include "u64.h"
+#include "filetype_vpl.h"
+
+#define DATA_DIRECTORY "/flash/data"
+
+class U64Config;
+extern U64Config u64_configurator;
 
 class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
 {
@@ -91,6 +97,7 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
 public:
     U64Config();
     ~U64Config() {}
+    static U64Config *getConfigurator() { return &u64_configurator; }
 
     void ResetHandler();
     void create_task_items(void);
@@ -110,16 +117,22 @@ public:
     static void auto_mirror(uint8_t *base, uint8_t *mask, uint8_t *split, int count);
     static void get_sid_addresses(ConfigStore *cfg, uint8_t *base, uint8_t *mask, uint8_t *split);
     static void fix_splits(uint8_t *base, uint8_t *mask, uint8_t *split);
+    static void list_palettes(ConfigItem *it, IndexedList<char *>& strings);
+    static void set_palette_rgb(const uint8_t rgb[16][3]);
+    static void set_palette_yuv(const uint8_t yuv[16][3]);
+    static void rgb_to_yuv(const uint8_t rgb[3], uint8_t yuv[3], bool ntsc);
+    static bool load_palette_vpl(const char *path, const char *filename);
+    static void late_init_palette(void *obj, void *param);
+    void set_palette_filename(const char *filename);
 
     bool SidAutoConfig(int count, t_sid_definition *requested);
-    static void show_sid_addr(UserInterface *intf);
+    static void show_sid_addr(UserInterface *intf, ConfigItem *it);
 
     volatile uint8_t *access_socket_pre(int socket);
     void access_socket_post(int socket);
 };
 
 bool isEliteBoard(void);
-extern U64Config u64_configurator;
 
 extern uint8_t C64_EMUSID1_BASE_BAK;
 extern uint8_t C64_EMUSID2_BASE_BAK;

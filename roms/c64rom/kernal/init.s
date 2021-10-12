@@ -20,7 +20,7 @@ start	ldx #$ff
 	jmp ($8000)     ; go init as $a000 rom wants
 start1	stx vicreg+22   ;set up refresh (.x=<5)
 	jsr ioinit      ;go initilize i/o devices
-	jsr ramtas      ;go ram test and set
+	jsr devpatch    ;go ram test and set  (call ramtas and set default device after, through patch)
 	jsr ulti_restor ;go set up os vectors
 ;
 	jsr pcint       ;go initilize screen newxxx

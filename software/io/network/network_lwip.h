@@ -42,8 +42,6 @@ class NetworkLWIP : public NetworkInterface, ConfigurableObject
 	Fifo<struct pbuf_custom *> pbuf_fifo;
 
 	char hostname[24];
-
-	void lwip_poll();
 public:
     struct netif   my_net_if;
 

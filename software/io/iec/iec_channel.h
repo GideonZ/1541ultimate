@@ -89,7 +89,8 @@ public:
 
     FRESULT get_free(uint32_t &free)
     {
-        FRESULT fres = fm->get_free(path, free);
+        uint32_t block_size;
+        FRESULT fres = fm->get_free(path, free, block_size);
         return fres;
     }
 
@@ -320,6 +321,14 @@ public:
     const char *GetRootPath()
     {
         return interface->get_root_path();
+    }
+
+    const char *GetPartitionPath(int index)
+    {
+        if (partitions[index]) {
+            return partitions[index]->GetFullPath();
+        }
+        return NULL;
     }
 
     IecPartition *GetPartition(int index)

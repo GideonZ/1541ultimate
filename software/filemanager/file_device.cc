@@ -53,7 +53,8 @@ bool FileDevice :: is_ready(void)
     return (state == e_device_ready);
 }
 
-int FileDevice :: probe(void) {
+int FileDevice :: probe(void)
+{
 	if (initialized)
 		return children.get_elements();
 
@@ -84,8 +85,12 @@ int FileDevice :: probe(void) {
 		// printf("FileSystem = %p\n", info.fs);
 		info.cluster = 0; // indicate root dir
 		info.attrib = AM_DIR; // ;-)  (not read only of course, removed!!)
-		if(!info.fs)
+		if(!info.fs) {
+			initialized = false;
+			delete p;
+			disk->partition_list = NULL;
 			return -1;
+		}
 	    return 1;
     }
 
@@ -103,21 +108,9 @@ int FileDevice :: probe(void) {
     return i;
 }
 
-/*
-int FileDevice :: fetch_children(void)
-{
-	int count = FileDirEntry :: fetch_children();  // we are in this case just a normal directory, so..
-		sort_children();
-		return count;
-    }
-
-    return p_count;
-}
-*/
-
 void FileDevice :: get_display_string(char *buffer, int width)
 {
-	const char *c_state_string[] = { "Unknown", "No media", "Not ready", "Ready", "Error!" };
+	const char *c_state_string[] = { "Unknown", "No media", "Not ready", "Ready", "Error!", "\e2FAILED" };
 
 	t_device_state state = blk->get_state();
 /*

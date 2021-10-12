@@ -28,9 +28,29 @@ extern "C" {
 #include "sid_device_fpgasid.h"
 #include "sid_device_swinsid.h"
 #include "sid_device_armsid.h"
+#include "init_function.h"
+
+const uint8_t default_colors[16][3] = {
+    { 0x00, 0x00, 0x00 },
+    { 0xEF, 0xEF, 0xEF },
+    { 0x8D, 0x2F, 0x34 },
+    { 0x6A, 0xD4, 0xCD },
+    { 0x98, 0x35, 0xA4 },
+    { 0x4C, 0xB4, 0x42 },
+    { 0x2C, 0x29, 0xB1 },
+    { 0xEF, 0xEF, 0x5D },
+    { 0x98, 0x4E, 0x20 },
+    { 0x5B, 0x38, 0x00 },
+    { 0xD1, 0x67, 0x6D },
+    { 0x4A, 0x4A, 0x4A },
+    { 0x7B, 0x7B, 0x7B },
+    { 0x9F, 0xEF, 0x93 },
+    { 0x6D, 0x6A, 0xEF },
+    { 0xB2, 0xB2, 0xB2 } };
 
 // static pointer
 U64Config u64_configurator;
+
 // Semaphore set by interrupt
 static SemaphoreHandle_t resetSemaphore;
 
@@ -103,6 +123,7 @@ static SemaphoreHandle_t resetSemaphore;
 // #define CFG_CART_PREFERENCE   0x4B // moved to C64 for user experience consistency
 #define CFG_SPEED_REGS        0x4C
 #define CFG_IEC_BURST_EN      0x4D
+#define CFG_PALETTE           0x4E
 
 #define CFG_SPEED_PREF        0x52
 #define CFG_BADLINES_EN       0x53
@@ -245,9 +266,10 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  5, 0 },
     { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  1, 0 },
 //    { CFG_CART_PREFERENCE,      CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,    0,  2, 0 }, // moved to C64 for user consistency
+    { CFG_PALETTE,              CFG_TYPE_STRFUNC, "Palette Definition",        "%s", (const char **)U64Config :: list_palettes, 0, 30, (int)"" },
     { CFG_COLOR_CLOCK_ADJ,      CFG_TYPE_VALUE, "Adjust Color Clock",      "%d ppm", NULL,      -100,100, 0 },
     { CFG_ANALOG_OUT_SELECT,    CFG_TYPE_ENUM, "Analog Video Mode",            "%s", video_sel,    0,  1, 0 },
-    { CFG_CHROMA_DELAY,         CFG_TYPE_VALUE, "Chroma Delay",                "%d", NULL,        -3,  3, 0 },
+//    { CFG_CHROMA_DELAY,         CFG_TYPE_VALUE, "Chroma Delay",                "%d", NULL,        -3,  3, 0 },
     { CFG_HDMI_ENABLE,          CFG_TYPE_ENUM, "Digital Video Mode",           "%s", dvi_hdmi,     0,  2, 0 },
     { CFG_SCANLINES,            CFG_TYPE_ENUM, "HDMI Scan lines",              "%s", en_dis,       0,  1, 0 },
     { CFG_PARCABLE_ENABLE,      CFG_TYPE_ENUM, "SpeedDOS Parallel Cable",      "%s", en_dis,       0,  1, 0 },
@@ -695,22 +717,20 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
     systemMode = e_NOT_SET;
     U64_ETHSTREAM_ENA = 0;
 
-/*
-    // This is a work around for warm start tests
-    C64_STOP_MODE = STOP_COND_FORCE;
-    C64_STOP = 1;
-    C64_MODE = C64_MODE_RESET;
-*/
-    C64 *machine;
+    C64 *machine = C64 :: getMachine();
     if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
 		struct t_cfg_definition *def = u64_cfg;
 		register_store(STORE_PAGE_ID, "U64 Specific Settings", def);
 
 		// Tweak: This has to be done first in order to make sure that the correct cart is started
 		// at cold boot.
-		C64 :: getMachine() -> ConfigureU64SystemBus();
+		machine->ConfigureU64SystemBus();
+		if (!(machine-> is_accessible())) {
+		    printf("*** WARNING: The C64 should be stopped at this time for the SID Detection to work!\n");
+		    machine->hard_stop();
+		}
 
-        sidDevice[0] = NULL;
+		sidDevice[0] = NULL;
         sidDevice[1] = NULL;
 
         sockets.detect();
@@ -803,17 +823,8 @@ void U64Config :: effectuate_settings()
     }
 
     U64_INT_CONNECTORS = cfg->get_value(CFG_PARCABLE_ENABLE) | (cfg->get_value(CFG_IEC_BURST_EN) << 1);
-    int chromaDelay  =  cfg->get_value(CFG_CHROMA_DELAY);
-    if (chromaDelay < 0) {
-        uint8_t luma = (uint8_t)(-chromaDelay);
-        C64_COLOR_DELAY  = luma;
-    } else {
-        uint8_t chroma = (uint8_t)(chromaDelay);
-        C64_COLOR_DELAY  = (chroma << 2);
-    }
 
     uint8_t format = 0;
-
     if (cfg->get_value(CFG_ANALOG_OUT_SELECT)) {
         format |= VIDEO_FMT_RGB_OUTPUT;
     }
@@ -825,9 +836,15 @@ void U64Config :: effectuate_settings()
     }
 
     const t_video_color_timing *ct = color_timings[(int)systemMode];
-    C64_BURST_PHASE = ct->burst_phase;
     C64_PHASE_INCR  = ct->phase_inc;
     C64_VIDEOFORMAT = ct->mode_bits | format;
+
+    const char *palette = cfg->get_string(CFG_PALETTE);
+    if (strlen(palette)) {
+        load_palette_vpl(DATA_DIRECTORY, palette);
+    } else {
+        set_palette_rgb(default_colors);
+    }
 
     if (doPll) {
         SetVideoPll(systemMode);
@@ -1910,7 +1927,7 @@ void U64Config :: show_mapping(uint8_t *base, uint8_t *mask, uint8_t *split, int
     }
 }
 
-void U64Config :: show_sid_addr(UserInterface *intf)
+void U64Config :: show_sid_addr(UserInterface *intf, ConfigItem *it)
 {
     SidEditor *se = new SidEditor(intf, u64_configurator.sidaddressing.cfg);
     se->init(intf->screen, intf->keyboard);
@@ -1990,4 +2007,146 @@ bool U64Config :: IsMonitorHDMI()
     }
     printf("EDID: Monitor is HDMI!\n");
     return true;
+}
+
+void U64Config :: list_palettes(ConfigItem *it, IndexedList<char *>& strings)
+{
+    // Always return at least the empty string
+    char *empty = new char[16];
+    strcpy(empty, "\er- Default -");
+    strings.append(empty);
+
+    Path p;
+    p.cd(DATA_DIRECTORY);
+    IndexedList<FileInfo *>infos(16, NULL);
+    FileManager *fm = FileManager :: getFileManager();
+    FRESULT fres = fm->get_directory(&p, infos, NULL);
+    if (fres != FR_OK) {
+        return;
+    }
+
+    for(int i=0;i<infos.get_elements();i++) {
+        FileInfo *inf = infos[i];
+        if (strcmp(inf->extension, "VPL") == 0) {
+            char *s = new char[1+strlen(inf->lfname)];
+            strcpy(s, inf->lfname);
+            strings.append(s);
+        }
+        delete inf;
+    }
+}
+
+void U64Config :: set_palette_rgb(const uint8_t rgb[16][3])
+{
+    volatile uint8_t *rgb_registers = (volatile uint8_t *)C64_PALETTE;
+    uint8_t yuv[16][3];
+    for(int i=0; i<16; i++) {
+        *(rgb_registers++) = rgb[i][0];
+        *(rgb_registers++) = rgb[i][1];
+        *(rgb_registers++) = rgb[i][2];
+        rgb_registers++;
+        rgb_to_yuv(rgb[i], yuv[i], false);
+    }
+//    dump_hex_relative(rgb, 48);
+//    dump_hex_relative(yuv, 48);
+    set_palette_yuv(yuv);
+}
+
+void U64Config :: set_palette_yuv(const uint8_t yuv[16][3])
+{
+    volatile uint8_t *yuv_registers = (volatile uint8_t *)(C64_PALETTE + 0x400);
+    for(int i=0; i<16; i++) {
+        *(yuv_registers++) = yuv[i][0];
+        *(yuv_registers++) = yuv[i][1];
+        *(yuv_registers++) = yuv[i][2];
+        yuv_registers++;
+    }
+}
+
+void U64Config :: rgb_to_yuv(const uint8_t rgb[3], uint8_t yuv[3], bool ntsc)
+{
+    // Y =  0.299R + 0.587G + 0.114B
+    // U = -0.147R - 0.289G + 0.436B
+    // V =  0.615R - 0.515G - 0.100B
+    // Matrix in 0.14 format. Values for Y are scaled with 0xB6/0xFF for the correct white values
+    //const int Y[3] = {  4899,  9617,  1868 };
+    const int Y[3] = {  3496,  6864,  1333 };
+    const int U[3] = { -2408, -4735,  7143 };
+    const int V[3] = { 10076, -8438, -1638 };
+
+    int y = Y[0] * rgb[0] + Y[1] * rgb[1] + Y[2] * rgb[2];
+    int u = U[0] * rgb[0] + U[1] * rgb[1] + U[2] * rgb[2];
+    int v = V[0] * rgb[0] + V[1] * rgb[1] + V[2] * rgb[2];
+
+    y >>= 14;
+    u >>= 14;
+    v >>= 14;
+
+    if (u > 127) {
+        v *= 127;
+        v /= u;
+        u = 127;
+    }
+    if (u < -127) {
+        v *= -127;
+        v /= u;
+        u = -127;
+    }
+    if (v > 127) {
+        u *= 127;
+        u /= v;
+        v = 127;
+    }
+    if (v < -127) {
+        u *= -127;
+        u /= v;
+        v = -127;
+    }
+
+    yuv[0] = (uint8_t)y;
+    yuv[1] = (uint8_t)u;
+    yuv[2] = (uint8_t)v;
+}
+
+bool U64Config :: load_palette_vpl(const char *path, const char *filename)
+{
+    File *file = NULL;
+    FileManager *fm = FileManager :: getFileManager();
+    FRESULT fres = fm->fopen(path, filename, FA_READ, &file);
+
+    uint8_t rgb[16][3];
+
+    bool success = false;
+    if(file) {
+        success = FileTypePalette :: parseVplFile(file, rgb);
+        if (success) {
+            set_palette_rgb(rgb);
+        }
+        fm->fclose(file);
+    }
+    return success;
+}
+
+void U64Config :: set_palette_filename(const char *filename)
+{
+    cfg->set_string(CFG_PALETTE, filename);
+    cfg->write();
+    cfg->effectuate();
+}
+
+// Because the first configurator call to 'effectuate settings' takes place before
+// the flash disk has been initialized, it has to be done again after.
+// The flash disk initializes also with an init function, so make sure the ordering
+// number here is higher than the ordering number in blockdev_flash.
+
+InitFunction init_palette(U64Config :: late_init_palette, NULL, NULL, 9);
+
+void U64Config :: late_init_palette(void *obj, void *param)
+{
+    const char *palette = u64_configurator.cfg->get_string(CFG_PALETTE);
+    if (strlen(palette)) {
+        load_palette_vpl(DATA_DIRECTORY, palette);
+    } else {
+        set_palette_rgb(default_colors);
+    }
 }

@@ -134,15 +134,15 @@ int test_cartbus(Screen *s)
 
 	// let's test ROML and ROMH. Secretly we also test the GAME line
 	C64_MODE           = MODE_ULTIMAX;
-    C64_CARTRIDGE_TYPE = CART_TYPE_16K_UMAX;
+    C64_CARTRIDGE_TYPE = CART_TYPE_NORMAL;
     C64_MODE = C64_MODE_RESET;
     C64_KERNAL_ENABLE = 0;
     wait_ms(10);
     C64_MODE = C64_MODE_UNRESET;
 
     // Now that we are in ultimax mode, we should be able to read back our own ROM data at F0000 in DRAM
-    uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16;
-    uint8_t  *rom = (uint8_t *)mem_addr;
+    uint8_t *rom = C64 :: get_cartridge_rom_addr();
+
 
     if (memcmp(rom, (void *)&ram[0x4000], 0x1000) != 0) {
     	console_print(s, "Memory not equal when comparing my own\nDRAM at %p and C64 ROM at 0x8000\n", rom);

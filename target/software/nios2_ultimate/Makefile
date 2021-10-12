@@ -53,17 +53,21 @@ SRCS_CC	 =  u2p_init.cc \
 			embedded_fat.cc \
 			rtc_i2c.cc \
 			c64.cc \
+			c64_crt.cc \
 			c64_subsys.cc \
 			screen.cc \
 			keyboard_c64.cc \
 			disk_image.cc \
 			c1541.cc \
+			wd177x.cc \
+			mfmdisk.cc \
 			mystring.cc \
 			path.cc \
 			pattern.cc \
 			blockdev.cc \
 			blockdev_file.cc \
 			blockdev_ram.cc \
+			blockdev_flash.cc \
 			disk.cc \
 			partition.cc \
 			file_system.cc \
@@ -109,6 +113,7 @@ SRCS_CC	 =  u2p_init.cc \
 			keyboard_usb.cc \
 			network_interface.cc \
 			network_lwip.cc \
+			debug_streamer_u2p.cc \
 			vfs.cc \
 			ftpd.cc \
 			tape_controller.cc \
@@ -141,6 +146,7 @@ SRCS_CC	 =  u2p_init.cc \
 			modem.cc \
 			listener_socket.cc \
 			ramdisk.cc \
+			system_info.cc \
 			$(PRJ).cc
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
@@ -160,9 +166,9 @@ SRCS_ASM =
 
 SRCS_ASMS = port_asm.S
 
-SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas
+SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas eapi.tas
 
-SRCS_BIN =  basic.bin chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin sidcrt.bin muscrt.bin musplayer.bin
+SRCS_BIN =  basic.bin chars.bin module.bin sidcrt.bin muscrt.bin musplayer.bin
 
 SRCS_IEC = iec_code.iec
 
