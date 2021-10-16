@@ -82,8 +82,9 @@ int FastUART::GetSlipPacket(uint8_t *buffer, int bufferSize, uint32_t timeout)
         if ((slipElement.size <= bufferSize) && (!slipElement.error)) {
             return ReadImpl(&slipRx, buffer, slipElement.size);
         }
+        printf("## %d > %d ## PACKET DROPPED ##\n", slipElement.size, bufferSize);
         slipRx.rxTail += slipElement.size;
-        slipRx.rxTail &= 4095;
+        slipRx.rxTail &= (RX_BUFFER_SIZE-1);
         return -1;
     }
     return -2;
@@ -95,7 +96,7 @@ int FastUART::ReadImpl(rxBuffer_t *b, uint8_t *buffer, int bufferSize)
     while ((b->rxTail != b->rxHead) && (ret < bufferSize)) {
         *(buffer++) = b->rxBuffer[b->rxTail++];
         ret++;
-        b->rxTail &= 4095;
+        b->rxTail &= (RX_BUFFER_SIZE-1);
     }
     return ret;
 }
@@ -203,12 +204,12 @@ BaseType_t FastUART::RxInterrupt()
         }
 
         if (store) {
-            int next = (b->rxHead + 1) & 4095;
+            int next = (b->rxHead + 1) & (RX_BUFFER_SIZE-1);
             if (next != b->rxTail) {
                 b->rxBuffer[b->rxHead] = data;
                 b->rxHead = next;
             } else if (slipMode) {
-                slipError = true;
+                //slipError = true;
             }
         }
     }

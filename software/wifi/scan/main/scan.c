@@ -35,12 +35,52 @@
 #define GPIO_LED0 4
 #define GPIO_LED1 16
 #define GPIO_LED2 19
+#define GPIO_WIFI_MISO 34 // Input Only
+#define GPIO_WIFI_MOSI 35 // Input Only
+#define GPIO_WIFI_CLK  32 // I/O, can be set to output
+#define GPIO_WIFI_CSn  33 // I/O, but shared with IO0, should be input on ESP32
+
+#define PIN_UART_RXD 3
+#define PIN_UART_TXD 1
+#define PIN_UART_RTS GPIO_WIFI_CLK
+#define PIN_UART_CTS GPIO_WIFI_MISO
+
+const uart_config_t uart_config = {
+    .baud_rate = 115200,
+    .data_bits = UART_DATA_8_BITS,
+    .parity = UART_PARITY_DISABLE,
+    .stop_bits = UART_STOP_BITS_1,
+    .flow_ctrl = UART_HW_FLOWCTRL_DISABLE, // UART_HW_FLOWCTRL_CTS_RTS,
+    .rx_flow_ctrl_thresh = 122,
+};
+
+const int uart_buffer_size = (1024 * 2);
+QueueHandle_t uart_queue;
 
 #define DEFAULT_SCAN_LIST_SIZE 24
 
 static const char *TAG = "scan";
 
-#define sendchar(x) {   putchar(x); }
+// #define sendchar(x) {  putchar(x); }
+
+static uint8_t txbuf[128];
+static int txcnt=0;
+
+__inline static void tx_purge()
+{
+    if(txcnt) {
+        uart_write_bytes(UART_NUM_1, txbuf, txcnt);
+        txcnt = 0;
+    }
+}
+
+__inline static void sendchar(uint8_t x)
+{
+    txbuf[txcnt++] = x;
+    if (txcnt >= 128) {
+        tx_purge();
+    }
+}
 
 void send_slip_data(const uint8_t *buffer, int length)
 {
@@ -67,8 +107,9 @@ void send_slip_packet(const void *buffer, int length)
     send_slip_data((uint8_t*)buffer, length);
     // End Character
     sendchar(0xC0);
-}
 
+    tx_purge();
+}
 /* 42 byte AP record */
 
 typedef struct {
@@ -110,14 +151,12 @@ static void wifi_scan(void)
     ESP_ERROR_CHECK(esp_wifi_scan_start(NULL, true));
     ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&number, ap_info));
     ESP_ERROR_CHECK(esp_wifi_scan_get_ap_num(&ap_count));
-    ESP_LOGI(TAG, "Total APs scanned = %u", ap_count);
+    // ESP_LOGI(TAG, "Total APs scanned = %u", ap_count);
     if (ap_count > DEFAULT_SCAN_LIST_SIZE) {
     	ap_count = DEFAULT_SCAN_LIST_SIZE;
     }
     for (int i = 0; i < ap_count; i++) {
-		printf("%-32s Channel: %2d Signal: %4d Mode: %d\n", ap_info[i].ssid, ap_info[i].primary, ap_info[i].rssi, ap_info[i].authmode);
-
-
+//		printf("%-32s Channel: %2d Signal: %4d Mode: %d\n", ap_info[i].ssid, ap_info[i].primary, ap_info[i].rssi, ap_info[i].authmode);
         memcpy(ult_records.aps[i].bssid, ap_info[i].bssid, 6);
         memcpy(ult_records.aps[i].ssid, ap_info[i].ssid, 33);
         ult_records.aps[i].channel = ap_info[i].primary;
@@ -128,7 +167,16 @@ static void wifi_scan(void)
     ult_records.packet_type = 0x01;
     ult_records.num_records = (uint8_t)ap_count;
 
-    send_spi_packet(&ult_records, sizeof(ultimate_ap_records_t));
+    send_slip_packet(&ult_records, sizeof(ultimate_ap_records_t));
+}
+
+void uart_task(void *a)
+{
+    uart_event_t event;
+    while(1) {
+        xQueueReceive(uart_queue, &event, portMAX_DELAY);
+        printf("UartEvent: T:%d, SZ:%d, F:%d\n", event.type, event.size, event.timeout_flag);
+    }
 }
 
 void app_main()
@@ -144,9 +192,6 @@ void app_main()
     ESP_ERROR_CHECK( ret );
 	ESP_LOGI(TAG, "NVS Initialization done.");
 
-	spi_init();
-	ESP_LOGI(TAG, "SPI Initialization done.");
-
     gpio_pad_select_gpio(GPIO_LED0);
     gpio_pad_select_gpio(GPIO_LED1);
     gpio_pad_select_gpio(GPIO_LED2);
@@ -154,7 +199,19 @@ void app_main()
     gpio_set_direction(GPIO_LED1, GPIO_MODE_OUTPUT);
     gpio_set_direction(GPIO_LED2, GPIO_MODE_OUTPUT);
 
+    ESP_ERROR_CHECK( uart_set_pin(UART_NUM_0, GPIO_LED0, GPIO_LED1, -1, -1));
+    ESP_ERROR_CHECK( uart_set_pin(UART_NUM_1, PIN_UART_TXD, PIN_UART_RXD, PIN_UART_RTS, PIN_UART_CTS));
+
+    // Configure UART parameters
+    ESP_ERROR_CHECK(uart_param_config(UART_NUM_1, &uart_config));
+
+    // Now install the driver for UART1
+    // Setup UART buffered IO with event queue
+    ESP_ERROR_CHECK(uart_driver_install(UART_NUM_1, uart_buffer_size, 0, 10, &uart_queue, 0));
+
     wifi_scan();
+
+    xTaskCreate( uart_task, "UART1 Task", configMINIMAL_STACK_SIZE, 0, tskIDLE_PRIORITY + 1, NULL );
 
     printf("That's all folks!\n");
     // Wait forever

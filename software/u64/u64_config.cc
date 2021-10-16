@@ -1053,6 +1053,7 @@ int U64Config :: setSidEmuParams(ConfigItem *it)
 #define MENU_U64_DETECT_SIDS 6
 #define MENU_U64_WIFI_DOWNLOAD 7
 #define MENU_U64_POKE 8
+#define MENU_U64_WIFI_ECHO 9
 
 void U64Config :: create_task_items(void)
 {
@@ -1063,6 +1064,7 @@ void U64Config :: create_task_items(void)
     myActions.wifioff   = new Action("Disable WiFi", SUBSYSID_U64, MENU_U64_WIFI_DISABLE);
     myActions.wifion    = new Action("Enable WiFi",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE);
     myActions.wifiboot  = new Action("Enable WiFi Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT);
+    myActions.wifiecho  = new Action("WiFi Echo", SUBSYSID_U64, MENU_U64_WIFI_ECHO);
 
     dev->append(myActions.saveedid );
 #if DEVELOPER > 0
@@ -1071,6 +1073,7 @@ void U64Config :: create_task_items(void)
     dev->append(myActions.wifioff  );
     dev->append(myActions.wifion   );
     dev->append(myActions.wifiboot );
+    dev->append(myActions.wifiecho );
 #endif
 }
 
@@ -1149,6 +1152,10 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
 
     case MENU_U64_WIFI_BOOT:
         wifi.doBootMode();
+        break;
+
+    case MENU_U64_WIFI_ECHO:
+        wifi.doRequestEcho();
         break;
 
     case MENU_U64_WIFI_DOWNLOAD:

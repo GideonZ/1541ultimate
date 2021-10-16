@@ -18,7 +18,7 @@ int alt_irq_register(int, int, void (*)(void*));
 
 typedef enum
 {
-    WIFI_OFF = 0, WIFI_QUIT, WIFI_BOOTMODE, WIFI_DOWNLOAD, WIFI_START, WIFI_DOWNLOAD_START, WIFI_DOWNLOAD_MSG
+    WIFI_OFF = 0, WIFI_QUIT, WIFI_BOOTMODE, WIFI_DOWNLOAD, WIFI_START, WIFI_DOWNLOAD_START, WIFI_DOWNLOAD_MSG, WIFI_ECHO
 } wifiCommand_e;
 
 typedef struct
@@ -61,14 +61,21 @@ WiFi :: WiFi()
     }
 
     commandQueue = xQueueCreate(8, sizeof(wifiCommand_t));
-    xTaskCreate( WiFi :: TaskStart, "WiFi Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
+    xTaskCreate( WiFi :: CommandTaskStart, "WiFi Command Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
     doClose = false;
     programError = false;
+    runModeTask = NULL;
 }
 
 
 void WiFi :: Disable()
 {
+    // stop running the run-mode task
+    if (runModeTask) {
+        vTaskDelete(runModeTask);
+        runModeTask = NULL;
+    }
+
     U64_WIFI_CONTROL = 0;
 }
 
@@ -78,11 +85,19 @@ void WiFi :: Enable()
     vTaskDelay(50);
     uart->ClearRxBuffer();
     uart->SetBaudRate(115200);
-    U64_WIFI_CONTROL = 5;
+    U64_WIFI_CONTROL = 1; // 5 for watching the UART output directly
+
+    xTaskCreate( WiFi :: RunModeTaskStart, "WiFi RunTask", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &runModeTask );
 }
 
 void WiFi :: Boot()
 {
+    // stop running the run-mode task
+    if (runModeTask) {
+        vTaskDelete(runModeTask);
+        runModeTask = NULL;
+    }
+
     U64_WIFI_CONTROL = 2;
     vTaskDelay(150);
     uart->ClearRxBuffer();
@@ -106,6 +121,22 @@ void WiFi::PackParams(uint8_t *buffer, int numparams, ...)
         buffer += 4;
     }
     va_end(ap);
+}
+
+bool WiFi::RequestEcho(void)
+{
+    const char *test_string = "This string should be echoed.";
+    int length = strlen(test_string);
+
+    uart->SendSlipOpen();
+    uint8_t header[4];
+    header[0] = 0x02;
+    header[1] = 0;
+    header[2] = length & 0xFF;
+    header[3] = length >> 8;
+    uart->SendSlipData(header, 4);
+    uart->SendSlipData(test_string, length);
+    uart->SendSlipClose();
 }
 
 bool WiFi::Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data,
@@ -185,7 +216,7 @@ int WiFi :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
     	return -8;
     }
 
-    uart->SetBaudRate(115200*2);
+    // uart->SetBaudRate(115200*2);
 
     for (int i = 0; i < 10; i++) {
         uart->SendSlipPacket(syncFrame, 44);
@@ -272,12 +303,19 @@ int WiFi :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
     return 0;
 }
 
-void WiFi::TaskStart(void *context)
+void WiFi::CommandTaskStart(void *context)
 {
     WiFi *w = (WiFi *) context;
-    w->Thread();
+    w->CommandThread();
 }
 
+void WiFi::RunModeTaskStart(void *context)
+{
+    WiFi *w = (WiFi *) context;
+    w->RunModeThread();
+}
+
+/*
 void WiFi::EthernetRelay(void *context)
 {
     WiFi *w = (WiFi *) context;
@@ -296,8 +334,9 @@ void WiFi::EthernetRelay(void *context)
     xSemaphoreGive(w->rxSemaphore);
     vTaskDelete(w->relayTask);
 }
+*/
 
-void WiFi::Thread()
+void WiFi::CommandThread()
 {
     uart->EnableRxIRQ(true);
 
@@ -345,6 +384,9 @@ void WiFi::Thread()
                 UserInterface :: postMessage("ESP32 Program Failed.");
             }
             break;
+        case WIFI_ECHO:
+            RequestEcho();
+            break;
         default:
             break;
         }
@@ -359,9 +401,9 @@ void WiFi::Quit()
 {
     uart->EnableRxIRQ(false);
     Disable();
-    // Should also kill the thread?
 }
 
+/*
 void WiFi::Listen()
 {
     int sockfd, portno;
@@ -369,7 +411,7 @@ void WiFi::Listen()
     struct sockaddr_in serv_addr, cli_addr;
     int n;
 
-    /* First call to socket() function */
+     First call to socket() function
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
 
     if (sockfd < 0) {
@@ -379,7 +421,7 @@ void WiFi::Listen()
 
     printf("WiFi Thread Sockfd = %8x\n", sockfd);
 
-    /* Initialize socket structure */
+     Initialize socket structure
     bzero((char *) &serv_addr, sizeof(serv_addr));
     portno = 3333;
 
@@ -387,15 +429,15 @@ void WiFi::Listen()
     serv_addr.sin_addr.s_addr = INADDR_ANY;
     serv_addr.sin_port = htons(portno);
 
-    /* Now bind the host address using bind() call.*/
+     Now bind the host address using bind() call.
     if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
         puts("wifiThread ERROR on binding");
         return;
     }
 
-    /* Now start listening for the clients, here process will
+     Now start listening for the clients, here process will
      * go in sleep mode and will wait for the incoming connection
-     */
+
 
     listen(sockfd, 5);
     clilen = sizeof(cli_addr);
@@ -404,7 +446,7 @@ void WiFi::Listen()
     int read, ret;
 
     while (1) {
-        /* Accept actual connection from the client */
+         Accept actual connection from the client
         actualSocket = accept(sockfd, (struct sockaddr * )&cli_addr, &clilen);
         if (actualSocket < 0) {
             puts("wifiThread ERROR on accept");
@@ -461,6 +503,7 @@ void WiFi::Listen()
         printf("WiFi Socket closed.\n");
     }
 }
+*/
 
 BaseType_t WiFi::doDownload(uint8_t *data, uint32_t address, uint32_t length, bool doFree)
 {
@@ -501,5 +544,21 @@ BaseType_t WiFi::doDownloadWrap(bool start)
     return xQueueSend(commandQueue, &command, 200);
 }
 
+BaseType_t WiFi::doRequestEcho()
+{
+    wifiCommand_t command;
+    command.commandCode = WIFI_ECHO;
+    return xQueueSend(commandQueue, &command, 200);
+}
+
 WiFi wifi;
 
+void WiFi :: RunModeThread()
+{
+    static uint8_t buffer[2048];
+    while(true) {
+        int pktSize = uart->GetSlipPacket(buffer, 2048, portMAX_DELAY);
+        printf("Slip Packet Received (%d):\n", pktSize);
+        dump_hex_relative(buffer, pktSize);
+    }
+}

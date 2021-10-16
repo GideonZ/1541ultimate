@@ -22,8 +22,8 @@ class WiFi
 {
     FastUART *uart;
     SemaphoreHandle_t rxSemaphore;
-    TaskHandle_t relayTask;
     QueueHandle_t commandQueue;
+    TaskHandle_t runModeTask;
 
     bool doClose;
     bool programError;
@@ -34,11 +34,18 @@ class WiFi
     int  Download(const uint8_t *binary, uint32_t address, uint32_t length);
     void PackParams(uint8_t *buffer, int numparams, ...);
     bool Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data, uint8_t *receiveBuffer, int timeout);
+    bool RequestEcho(void);
 
-    static void TaskStart(void *context);
+    static void CommandTaskStart(void *context);
+    static void RunModeTaskStart(void *context);
+/*
+    TaskHandle_t relayTask;
     static void EthernetRelay(void *context);
-    void Thread();
     void Listen();
+*/
+
+    void CommandThread();
+    void RunModeThread();
     int actualSocket;
 public:
     WiFi();
@@ -48,6 +55,7 @@ public:
     BaseType_t doStart();
     BaseType_t doDownload(uint8_t *binary, uint32_t address, uint32_t length, bool doFree);
     BaseType_t doDownloadWrap(bool start);
+    BaseType_t doRequestEcho(void);
 };
 
 

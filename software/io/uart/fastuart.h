@@ -37,6 +37,8 @@ typedef struct
     uint8_t *rxBuffer;
 } rxBuffer_t;
 
+#define RX_BUFFER_SIZE 16384
+
 class FastUART
 {
     volatile fastuart_t *uart;
@@ -63,8 +65,8 @@ public:
         stdRx.rxTail = 0;
         slipRx.rxHead = 0;
         slipRx.rxTail = 0;
-        stdRx.rxBuffer = new uint8_t[4096];
-        slipRx.rxBuffer = new uint8_t[4096];
+        stdRx.rxBuffer = new uint8_t[RX_BUFFER_SIZE];
+        slipRx.rxBuffer = new uint8_t[RX_BUFFER_SIZE];
 
         slipMode = false;
         slipLength = 0;
