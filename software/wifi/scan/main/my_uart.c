@@ -105,7 +105,15 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
     my_uart_obj_t *p_uart = (my_uart_obj_t *) param;
     uint8_t uart_num = p_uart->uart_num;
     uint32_t uart_intr_status = 0;
+    command_buf_t *buf;
+    uint8_t store, data;
+    uint32_t fifo_addr;
+    int rx_fifo_len;
+
     portBASE_TYPE HPTaskAwoken = pdFALSE;
+
+//    uint32_t debug_uart = UART_FIFO_AHB_REG(0);
+//    WRITE_PERI_REG(debug_uart, '_');
 
     while (1) {
         // The `continue statement` may cause the interrupt to loop infinitely
@@ -129,7 +137,7 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
             }
             if (p_uart->current_tx_buf) { // buffer available!
                 // Get FIFO address to write to
-                uint32_t fifo_addr = (uart_num == UART_NUM_0) ? UART_FIFO_AHB_REG(0) : (uart_num == UART_NUM_1) ? UART_FIFO_AHB_REG(1) : UART_FIFO_AHB_REG(2);
+                fifo_addr = (uart_num == UART_NUM_0) ? UART_FIFO_AHB_REG(0) : (uart_num == UART_NUM_1) ? UART_FIFO_AHB_REG(1) : UART_FIFO_AHB_REG(2);
 
                 // We KNOW that there is more than one char available, otherwise the interrupt would not have triggered,
                 // so we can safely send one char before asking how much space is available in the FIFO.
@@ -177,39 +185,48 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
             UART_ENTER_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
             uart_hal_disable_intr_mask(&(uart_context[uart_num].hal), (UART_INTR_RXFIFO_TOUT | UART_INTR_RXFIFO_FULL));
             UART_EXIT_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
+            // Acknowledge the interrupt
             uart_hal_clr_intsts_mask(&(uart_context[uart_num].hal), (UART_INTR_RXFIFO_TOUT | UART_INTR_RXFIFO_FULL));
 
             if (! p_uart->current_rx_buf) { // no buffer available; let's try to get one
+//                WRITE_PERI_REG(debug_uart, '<');
                 if (cmd_buffer_get_free_isr(p_uart->buffer_context, &(p_uart->current_rx_buf), &HPTaskAwoken) == pdTRUE) {
                     p_uart->current_rx_buf->size = 0; // reset pointer
                     p_uart->current_rx_buf->slipEscape = 0;
+                } else {
+//                    WRITE_PERI_REG(debug_uart, '#');
                 }
             }
+
             if (p_uart->current_rx_buf) { // Buffer available
                 // Let's see how many bytes there are in the FIFO
-                int rx_fifo_len = (int)uart_hal_get_rxfifo_len(&(uart_context[uart_num].hal));
-                command_buf_t *buf = p_uart->current_rx_buf;
-
+                rx_fifo_len = (int)uart_hal_get_rxfifo_len(&(uart_context[uart_num].hal));
+                buf = p_uart->current_rx_buf;
                 // Get FIFO address to read from
-                uint32_t fifo_addr = (uart_num == UART_NUM_0) ? UART_FIFO_REG(0) : (uart_num == UART_NUM_1) ? UART_FIFO_REG(1) : UART_FIFO_REG(2);
+                fifo_addr = (uart_num == UART_NUM_0) ? UART_FIFO_REG(0) : (uart_num == UART_NUM_1) ? UART_FIFO_REG(1) : UART_FIFO_REG(2);
 
                 // Copy data into buffer, decoding SLIP packet on the fly
                 while(rx_fifo_len > 0) {
-                    uint8_t data = READ_PERI_REG(fifo_addr);
+                    data = READ_PERI_REG(fifo_addr);
+                    store = 1;
                     switch (data) {
                     case 0x20:
                         buf->slipEscape = 0;
+                        store = 0;
                         if (buf->size) {
+//                            WRITE_PERI_REG(debug_uart, '>');
                             cmd_buffer_received_isr(p_uart->buffer_context, buf, &HPTaskAwoken);
                             p_uart->current_rx_buf = NULL;
                             rx_fifo_len = 0;
-                            break; // let the next IRQ get a new buffer.
+                            buf = NULL;
+                            // let the next IRQ get a new buffer.
                         }
-                        continue;
+                        break;
 
                     case 0xDB:
+                        store = 0;
                         buf->slipEscape = 1;
-                        continue;
+                        break;
 
                     case 0xDC:
                         if (buf->slipEscape) {
@@ -230,16 +247,22 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
                         break;
                     }
 
-                    if (buf->size < CMD_BUF_SIZE) {
-                        buf->data[buf->size++] = data;
-                    } else {
-                        buf->dropped++;
+                    if (store && buf) {
+                        if (buf->size < CMD_BUF_SIZE) {
+                            buf->data[buf->size++] = data;
+                        } else {
+                            buf->dropped++;
+                        }
                     }
                     rx_fifo_len--;
                 }
+//                WRITE_PERI_REG(debug_uart, '{');
                 UART_ENTER_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
                 uart_hal_ena_intr_mask(&(uart_context[uart_num].hal), (UART_INTR_RXFIFO_TOUT | UART_INTR_RXFIFO_FULL));
                 UART_EXIT_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
+//                WRITE_PERI_REG(debug_uart, '}');
+            } else {
+//                WRITE_PERI_REG(debug_uart, '$');
             }
         } // end of receive code
 
@@ -254,6 +277,7 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
     if (HPTaskAwoken == pdTRUE) {
         portYIELD_FROM_ISR();
     }
+//    WRITE_PERI_REG(debug_uart, '=');
 }
 
 BaseType_t my_uart_transmit_packet(uint8_t uart_num, command_buf_t *buf)
@@ -280,7 +304,13 @@ BaseType_t my_uart_receive_packet(uint8_t uart_num, command_buf_t **buf, TickTyp
 BaseType_t my_uart_free_buffer(uint8_t uart_num, command_buf_t *buf)
 {
     my_uart_obj_t *obj = p_uart_obj[uart_num];
-    return cmd_buffer_free(obj->buffer_context, buf);
+    BaseType_t ret = cmd_buffer_free(obj->buffer_context, buf);
+
+    UART_ENTER_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
+    uart_hal_ena_intr_mask(&(uart_context[uart_num].hal), UART_INTR_RXFIFO_TOUT | UART_INTR_RXFIFO_FULL);
+    UART_EXIT_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
+
+    return ret;
 }
 
 BaseType_t my_uart_get_buffer(uint8_t uart_num, command_buf_t **buf, TickType_t ticks)

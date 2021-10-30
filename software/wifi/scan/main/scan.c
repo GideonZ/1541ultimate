@@ -120,15 +120,19 @@ static void wifi_scan(command_buf_t *reply)
     my_uart_transmit_packet(UART_NUM_1, reply);
 }
 
+#include "soc/uart_periph.h"
 
 void uart_task(void *a)
 {
     command_buf_t *b;
+    uint32_t debug_uart = UART_FIFO_AHB_REG(0);
     while(1) {
         my_uart_receive_packet(UART_NUM_1, &b, portMAX_DELAY);
-        printf("UartEvent: BUF #%d, SZ:%d, DR:%d\n", b->bufnr, b->size, b->dropped);
-        dump_hex_relative(b->data, b->size);
+        // printf("UartEvent: Core %d, BUF #%d, SZ:%d, DR:%d\n", xPortGetCoreID(), b->bufnr, b->size, b->dropped);
+        // dump_hex_relative(b->data, b->size);
+        WRITE_PERI_REG(debug_uart, ':');
         my_uart_free_buffer(UART_NUM_1, b);
+        //vTaskDelay(1);
     }
 }
 
@@ -162,12 +166,14 @@ void app_main()
     // Now install the driver for UART1.  We use our own buffer mechanism and interrupt routine
     ESP_ERROR_CHECK(my_uart_init(&work_buffers, UART_NUM_1));
 
+/*
     command_buf_t *reply;
     if (my_uart_get_buffer(UART_NUM_1, &reply, 100)) {
         wifi_scan(reply);
     } else {
         ESP_LOGW(TAG, "No buffer to do scan.");
     }
+*/
 
     xTaskCreate( uart_task, "UART1 Task", configMINIMAL_STACK_SIZE, 0, tskIDLE_PRIORITY + 1, NULL );
 
