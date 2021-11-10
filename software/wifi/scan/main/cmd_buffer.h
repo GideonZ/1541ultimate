@@ -21,6 +21,7 @@ typedef struct {
     int size;
     int slipEscape;
     int dropped;
+    void *object;
 } command_buf_t;
 
 typedef struct {

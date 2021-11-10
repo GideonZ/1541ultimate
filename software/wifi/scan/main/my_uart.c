@@ -32,6 +32,8 @@
 #include "sdkconfig.h"
 #include "esp_rom_gpio.h"
 #include "cmd_buffer.h"
+#include "rpc_dispatch.h"
+#include "dump_hex.h"
 
 #if CONFIG_IDF_TARGET_ESP32
 #include "esp32/clk.h"
@@ -210,12 +212,18 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
                     data = READ_PERI_REG(fifo_addr);
                     store = 1;
                     switch (data) {
-                    case 0x20:
+                    //case 0x0D:
+                    case 0xC0:
                         buf->slipEscape = 0;
                         store = 0;
                         if (buf->size) {
 //                            WRITE_PERI_REG(debug_uart, '>');
-                            cmd_buffer_received_isr(p_uart->buffer_context, buf, &HPTaskAwoken);
+                            if (buf->object) { // Is there a dispatcher associated with the buffer? Use it.
+                                dispatcher_t *dispatcher = (dispatcher_t *)buf->object;
+                                xQueueSendFromISR(dispatcher->queue, buf, &HPTaskAwoken);
+                            } else {
+                                cmd_buffer_received_isr(p_uart->buffer_context, buf, &HPTaskAwoken);
+                            }
                             p_uart->current_rx_buf = NULL;
                             rx_fifo_len = 0;
                             buf = NULL;
@@ -283,8 +291,10 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
 BaseType_t my_uart_transmit_packet(uint8_t uart_num, command_buf_t *buf)
 {
     my_uart_obj_t *obj = p_uart_obj[uart_num];
-    if (cmd_buffer_transmit(obj->buffer_context, buf) == pdTRUE) {
+    printf("Transmit packet:\n");
+    dump_hex_relative(buf->data, buf->size);
 
+    if (cmd_buffer_transmit(obj->buffer_context, buf) == pdTRUE) {
         // Now enable the interrupt, so that the packet is going to be transmitted
         UART_ENTER_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
         uart_hal_ena_intr_mask(&(uart_context[uart_num].hal), UART_INTR_TXFIFO_EMPTY);
@@ -317,6 +327,11 @@ BaseType_t my_uart_get_buffer(uint8_t uart_num, command_buf_t **buf, TickType_t 
 {
     my_uart_obj_t *obj = p_uart_obj[uart_num];
     BaseType_t ret = cmd_buffer_get(obj->buffer_context, buf, ticks);
+    // Initialize
+    if (ret == pdTRUE) {
+        (*buf)->size = 0;
+        (*buf)->dropped = 0;
+    }
     ESP_LOGI(UART_TAG, "Cmd Buffer Get: %d: %p->%p (context=%p)", ret, buf, *buf, obj->buffer_context);
     return ret;
 }
@@ -330,9 +345,6 @@ esp_err_t my_uart_init(command_buf_context_t *buffers, uint8_t uart_num)
 
     obj->uart_num = uart_num;
     obj->buffer_context = buffers;
-
-    // Initialize the single copy transport buffers
-    cmd_buffer_init(buffers);
 
     // Enable the UART and reset it
     periph_module_enable(uart_periph_signal[uart_num].module);

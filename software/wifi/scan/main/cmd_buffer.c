@@ -22,6 +22,7 @@ void cmd_buffer_init(command_buf_context_t *context)
         context->bufs[i].size = 0;
         context->bufs[i].dropped = 0;
         context->bufs[i].slipEscape = 0;
+        context->bufs[i].object = NULL;
     }
 }
 
