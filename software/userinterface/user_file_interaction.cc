@@ -42,7 +42,7 @@ int UserFileInteraction::fetch_context_items(BrowsableDirEntry *br, IndexedList<
 
     bool showRunWithApp = false;
 #ifndef RECOVERYAPP
-    const char* app_directory = HomeDirectory::getHomeDirectory();
+    const char* app_directory = "/Flash/apps";
     char appname[100];
     strcpy(appname, info->extension);
     strcat(appname, ".prg");
@@ -247,7 +247,7 @@ SubsysResultCode_e UserFileInteraction::S_runApp(SubsysCommand *cmd)
         // sprintf(buffer, "Bytes loaded: %d ($%8x)", total_bytes_read, total_bytes_read);
         // cmd->user_interface->popup(buffer, BUTTON_OK);
 
-        const char* app_directory = HomeDirectory::getHomeDirectory(); // cmd->user_interface->cfg->get_string(CFG_USERIF_HOME_DIR);
+        const char* app_directory = "/Flash/apps"; // HomeDirectory::getHomeDirectory(); // cmd->user_interface->cfg->get_string(CFG_USERIF_HOME_DIR);
         SubsysCommand* c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DMA_LOAD, RUNCODE_DMALOAD_RUN,
                 app_directory, appname);
         c64_command->execute();
