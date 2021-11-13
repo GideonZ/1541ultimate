@@ -11,7 +11,6 @@
 #include "dump_hex.h"
 #include <stdarg.h>
 #include "userinterface.h"
-
 extern "C" {
 int alt_irq_register(int, int, void (*)(void*));
 }
@@ -53,10 +52,12 @@ const uint8_t partition_table[] = {
 WiFi :: WiFi()
 {
     rxSemaphore = xSemaphoreCreateBinary();
+    packets = new command_buf_context_t;
+    cmd_buffer_init(packets); // C functions, so no constructor
 
-    uart = new FastUART((void *)U64_WIFI_UART, rxSemaphore);
+    uart = new FastUART((void *)U64_WIFI_UART, rxSemaphore, packets);
 
-    if (-EINVAL == alt_irq_register(1, (int)uart, FastUART :: FastUartRxInterrupt)) {
+    if (-EINVAL == alt_irq_register(1, (int)uart, FastUART :: FastUartInterrupt)) {
         puts("Failed to install WifiUART IRQ handler.");
     }
 
@@ -125,6 +126,7 @@ void WiFi::PackParams(uint8_t *buffer, int numparams, ...)
 
 bool WiFi::RequestEcho(void)
 {
+/*
     const char *test_string = "This string should be echoed.";
     int length = strlen(test_string);
 
@@ -137,26 +139,27 @@ bool WiFi::RequestEcho(void)
     uart->SendSlipData(header, 4);
     uart->SendSlipData(test_string, length);
     uart->SendSlipClose();
+*/
 }
 
 bool WiFi::Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data,
         uint8_t *receiveBuffer, int timeout)
 {
-    uart->SendSlipOpen();
-    uint8_t header[8];
-    memset(header, 0, 8);
-    header[1] = opcode;
-    header[2] = length & 0xFF;
-    header[3] = length >> 8;
-    header[4] = chk;
-    uart->SendSlipData(header, 8);
-    uart->SendSlipData(data, length);
-    uart->SendSlipClose();
+    command_buf_t *buf;
+    if (uart->GetBuffer(&buf, 100) != pdTRUE) {
+        return false;
+    }
+    memset(buf->data, 0, 8);
+    buf->data[1] = opcode;
+    buf->data[2] = length & 0xFF;
+    buf->data[3] = length >> 8;
+    buf->data[4] = chk;
+    memcpy(buf->data + 8, data, length);
+    uart->TransmitPacket(buf);
 
     do {
-        int r = uart->GetSlipPacket(receiveBuffer, 512, timeout);
-
-        if (r > 0) {
+        if (uart->ReceivePacket(&buf, timeout) == pdTRUE) {
+            memcpy(receiveBuffer, buf->data, buf->size); // ## TODO: what if size > sizeof receiveBuffer?
             if (receiveBuffer[0] == 1) {
                 if (receiveBuffer[1] == opcode) {
                     uint8_t size = receiveBuffer[2];
@@ -166,7 +169,7 @@ bool WiFi::Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data,
                         return true;
                     } else {
                         printf("Command: %b. Error = %b.\n", opcode, error);
-                        dump_hex_relative(receiveBuffer, r);
+                        dump_hex_relative(receiveBuffer, buf->size);
                         break;
                     }
                 }
@@ -216,15 +219,20 @@ int WiFi :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
     	return -8;
     }
 
+    uart->EnableSlip(true); // now communicate with packets
     // uart->SetBaudRate(115200*2);
 
+    command_buf_t *buf;
     for (int i = 0; i < 10; i++) {
         uart->SendSlipPacket(syncFrame, 44);
-        int r = uart->GetSlipPacket(receiveBuffer, 512, 200);
-        dump_hex_relative(receiveBuffer, r);
-        memset(receiveBuffer + 4, 0xEE, 4);
-        if ((r == 12) && (memcmp(receiveBuffer, syncResp, 12) == 0)) {
+        uart->ReceivePacket(&buf, 200);
+        dump_hex_relative(buf->data, buf->size);
+        memset(buf->data + 4, 0xEE, 4);
+        if ((buf->size == 12) && (memcmp(buf->data, syncResp, 12) == 0)) {
             synced = true;
+        }
+        uart->FreeBuffer(buf);
+        if (synced) {
             break;
         }
     }
@@ -232,11 +240,13 @@ int WiFi :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
         printf("ESP did not sync\n");
         return -1;
     }
-    int r;
+    BaseType_t received;
     do {
-        r = uart->GetSlipPacket(receiveBuffer, 512, 20);
-        printf("%d.", r);
-    } while (r > 0);
+        received = uart->ReceivePacket(&buf, 20);
+        if (received == pdTRUE) {
+            printf("%d.", buf->size);
+        }
+    } while (received == pdTRUE);
 
     printf("Setting up Flashing ESP32.\n");
     uint8_t parambuf[32]; // up to 8 ints
@@ -338,7 +348,7 @@ void WiFi::EthernetRelay(void *context)
 
 void WiFi::CommandThread()
 {
-    uart->EnableRxIRQ(true);
+    uart->EnableIRQ(true);
 
     wifiCommand_t command;
     bool run = true;
@@ -364,7 +374,7 @@ void WiFi::CommandThread()
             Enable();
             break;
         case WIFI_DOWNLOAD:
-            uart->EnableSlip(true);
+            uart->EnableSlip(false); // first receive boot message
             Boot();
             a = Download((const uint8_t *)command.data, command.address, command.length);
             if (a) {
@@ -393,117 +403,15 @@ void WiFi::CommandThread()
     }
 
     Disable();
-    uart->EnableRxIRQ(false);
+    uart->EnableIRQ(false);
     vTaskDelete(NULL);
 }
 
 void WiFi::Quit()
 {
-    uart->EnableRxIRQ(false);
+    uart->EnableIRQ(false);
     Disable();
 }
-
-/*
-void WiFi::Listen()
-{
-    int sockfd, portno;
-    unsigned long int clilen;
-    struct sockaddr_in serv_addr, cli_addr;
-    int n;
-
-     First call to socket() function
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-
-    if (sockfd < 0) {
-        puts("ERROR wifiThread opening socket");
-        return;
-    }
-
-    printf("WiFi Thread Sockfd = %8x\n", sockfd);
-
-     Initialize socket structure
-    bzero((char *) &serv_addr, sizeof(serv_addr));
-    portno = 3333;
-
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_addr.s_addr = INADDR_ANY;
-    serv_addr.sin_port = htons(portno);
-
-     Now bind the host address using bind() call.
-    if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
-        puts("wifiThread ERROR on binding");
-        return;
-    }
-
-     Now start listening for the clients, here process will
-     * go in sleep mode and will wait for the incoming connection
-
-
-    listen(sockfd, 5);
-    clilen = sizeof(cli_addr);
-
-    uint8_t buffer[512];
-    int read, ret;
-
-    while (1) {
-         Accept actual connection from the client
-        actualSocket = accept(sockfd, (struct sockaddr * )&cli_addr, &clilen);
-        if (actualSocket < 0) {
-            puts("wifiThread ERROR on accept");
-            return;
-        }
-
-        printf("wifiThread actualSocket = %8x\n", actualSocket);
-
-        Boot();
-        uart->EnableSlip(false);
-
-        vTaskDelay(100);
-        read = uart->Read(buffer, 512);
-        printf("%s\n", buffer);
-
-        doClose = false;
-        // xTaskCreate( WiFi :: EthernetRelay, "WiFi Socket Rx", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
-
-        struct timeval tv;
-        tv.tv_sec = 1; // bug in lwip; this is just used directly as tick value
-        tv.tv_usec = 1;
-        setsockopt(actualSocket, SOL_SOCKET, SO_RCVTIMEO, (char * )&tv, sizeof(struct timeval));
-
-        while (!doClose) {
-            // UART RX => Ethernet
-            if (xSemaphoreTake(rxSemaphore, 1) == pdTRUE) {
-                do {
-                    read = uart->Read(buffer, 512);
-                    if (read) {
-                        printf("<%d|", read);
-                        //printf("From ESP:\n");
-                        //dump_hex_relative(buffer, read);
-                        int ret = send(actualSocket, buffer, read, 0);
-                        if (ret < 0) {
-                            break;
-                        }
-                    }
-                } while (read);
-            }
-
-            // Ethernet => UART TX
-            ret = recv(actualSocket, buffer, 512, 0);
-            if (ret > 0) {
-                //printf("To ESP:\n");
-                //dump_hex_relative(buffer, ret);
-                printf(">%d|", ret);
-                uart->Write(buffer, ret);
-            } else if (ret == 0) {
-                printf("Receive returned 0. Exiting\n");
-                break;
-            }
-        }
-        lwip_close(actualSocket);
-        printf("WiFi Socket closed.\n");
-    }
-}
-*/
 
 BaseType_t WiFi::doDownload(uint8_t *data, uint32_t address, uint32_t length, bool doFree)
 {
@@ -555,10 +463,11 @@ WiFi wifi;
 
 void WiFi :: RunModeThread()
 {
-    static uint8_t buffer[2048];
+    command_buf_t *buf;
     while(true) {
-        int pktSize = uart->GetSlipPacket(buffer, 2048, portMAX_DELAY);
-        printf("Slip Packet Received (%d):\n", pktSize);
-        dump_hex_relative(buffer, pktSize);
+        uart->ReceivePacket(&buf, portMAX_DELAY);
+        printf("Slip Packet Received (%d):\n", buf->size);
+        dump_hex_relative(buf->data, buf->size);
+        uart->FreeBuffer(buf);
     }
 }

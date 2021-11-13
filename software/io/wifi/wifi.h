@@ -12,11 +12,13 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
+extern "C" {
+    #include "cmd_buffer.h"
+}
 
-// This class provides an interface to the WiFi module
-// Initially, a simple Uart based interface that links to a TCP socket
-// Later, this class can provide the bridge between the 6551 emulation and the WiFi module
-// or even use the SPI interface for faster transfers
+// This class provides an interface to the WiFi module, to manage and program it
+// When in operational mode, it dispatches the received packets to the
+// socket layer wrapper functions.
 
 class WiFi
 {
@@ -24,6 +26,7 @@ class WiFi
     SemaphoreHandle_t rxSemaphore;
     QueueHandle_t commandQueue;
     TaskHandle_t runModeTask;
+    command_buf_context_t *packets;
 
     bool doClose;
     bool programError;

@@ -6,8 +6,8 @@
  */
 
 #include "cmd_buffer.h"
-#define INL inline __attribute__((always_inline))
 
+#define INL inline __attribute__((always_inline))
 
 void cmd_buffer_init(command_buf_context_t *context)
 {

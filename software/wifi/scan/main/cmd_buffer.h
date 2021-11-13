@@ -9,11 +9,17 @@
 #define CMD_BUFFER_H_
 
 #include <stdint.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/queue.h"
 
 #define CMD_BUF_SIZE 1024
 #define NUM_BUFFERS 16
+
+#if NIOS
+    #include "FreeRTOS.h"
+    #include "queue.h"
+#else
+    #include "freertos/FreeRTOS.h"
+    #include "freertos/queue.h"
+#endif
 
 typedef struct {
     uint8_t data[CMD_BUF_SIZE];
