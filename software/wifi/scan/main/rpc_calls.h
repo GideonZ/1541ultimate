@@ -27,6 +27,17 @@ typedef struct {
 
 typedef struct {
     rpc_header_t hdr;
+} rpc_identify_req;
+
+typedef struct {
+    rpc_header_t hdr;
+    uint16_t major;
+    uint16_t minor;
+    char string;
+} rpc_identify_resp;
+
+typedef struct {
+    rpc_header_t hdr;
     wifi_auth_mode_t auth_mode;
     char ssid[32];
     char password[64];

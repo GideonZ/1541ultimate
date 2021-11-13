@@ -22,6 +22,16 @@ void cmd_echo(command_buf_t *buf)
     my_uart_transmit_packet(UART_CHAN, buf);
 }
 
+void cmd_identify(command_buf_t *buf)
+{
+    rpc_identify_resp *resp = (rpc_identify_resp *)buf->data;
+    resp->major = 0;
+    resp->minor = 9;
+    strcpu(&resp->string, "ESP-32 RPC Socket Layer V0.9");
+    buf->size = sizeof(rpc_identify_resp) + strlen(&resp->string);
+    my_uart_transmit_packet(UART_CHAN, buf);
+}
+
 void cmd_setbaud(command_buf_t *buf)
 {
 }
@@ -29,7 +39,7 @@ void cmd_setbaud(command_buf_t *buf)
 esp_err_t wifi_scan(ultimate_ap_records_t *ult_records);
 void cmd_scan(command_buf_t *buf)
 {
-    rpc_scan_resp *resp = (rpc_scan_resp *)buf;
+    rpc_scan_resp *resp = (rpc_scan_resp *)buf->data;
     resp->esp_err = wifi_scan(&resp->rec);
     buf->size = sizeof(resp->hdr) + sizeof(resp->esp_err) + (resp->rec.num_records * sizeof(ultimate_ap_record_t));
     my_uart_transmit_packet(UART_CHAN, buf);
@@ -273,6 +283,9 @@ void dispatch(void *ct)
         switch(hdr->command) {
         case CMD_ECHO:
             cmd_echo(pbuffer);
+            break;
+        case CMD_IDENTIFY:
+            cmd_identify(pbuffer);
             break;
         case CMD_WIFI_SCAN:
             cmd_scan(pbuffer);
