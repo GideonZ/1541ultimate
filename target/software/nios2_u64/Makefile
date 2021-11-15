@@ -30,7 +30,8 @@ SRCS_C   =	itu.c \
             sid_coeff.c \
             nios_main.c \
             alt_malloc_lock.c \
-            alt_do_ctors.c
+            alt_do_ctors.c \
+            cmd_buffer.c
 
 SRCS_CC	 =  u2p_init.cc \
             i2c_drv.cc \
@@ -172,6 +173,7 @@ VPATH +=	$(BSP)
 VPATH +=	$(BSP)/HAL/inc
 VPATH +=	$(BSP)/drivers/inc
 VPATH +=	$(PATH_SW)/6502/sidcrt/target
+VPATH +=	$(PATH_SW)/wifi/scan/main
 
 #            sock_echo.c \
 #			sys_calls.cc \

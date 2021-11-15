@@ -45,18 +45,21 @@ begin
             case state is
             when Idle =>
                 if DoTx='1' then
+                    bitcnt <= 9;
+                    bitvec <= not(txchar) & '1';
+                    timer  <= to_integer(unsigned(divisor)); --clks_per_bit - 1;
+
                     if cts_c='1' then
                         state <= Transmitting;
                     else
                         state <= Waiting;
+                        bitvec(0) <= '0';
                     end if;
-                    bitcnt <= 9;
-                    bitvec <= not(txchar) & '1';
-                    timer  <= to_integer(unsigned(divisor)); --clks_per_bit - 1;
                 end if;
             when Waiting =>
                 if cts_c='1' then
                     state <= Transmitting;
+                    bitvec(0) <= '1';
                 end if;
             when Transmitting =>
                 if tick = '1' then

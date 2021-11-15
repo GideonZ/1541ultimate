@@ -36,6 +36,7 @@ architecture gideon of uart_peripheral_fast is
 	signal rxfifo_full	: std_logic := '0';
 	signal rxfifo_dav	: std_logic := '0';
     signal rx_interrupt : std_logic := '0';
+    signal tx_interrupt : std_logic := '0';
 	signal overflow		: std_logic := '0';
 	signal flags		: std_logic_vector(7 downto 0);
 	signal imask		: std_logic_vector(1 downto 0);
@@ -51,6 +52,10 @@ architecture gideon of uart_peripheral_fast is
 	signal txchar		: std_logic_vector(7 downto 0);
     signal cts_c        : std_logic;
     signal cts_enable   : std_logic;
+
+    signal rxd_i, txd_i     : std_logic;
+    signal cts_i, rts_i     : std_logic;
+    signal loopback         : std_logic;
     
     signal tx_count     : integer range 0 to 255;
     signal rx_count     : integer range 0 to 255;
@@ -98,8 +103,16 @@ begin
         txchar  => txchar,
         cts     => cts_c,
     
-        txd     => txd,
+        txd     => txd_i,
         done    => done );
+
+    -- External rts/cts signals are active low
+    -- Internal signals are active high
+    rxd_i <= txd_i when loopback = '1' else rxd;
+    cts_i <= rts_i when loopback = '1' else not cts; 
+
+    txd   <= txd_i or loopback;
+    rts   <= not rts_i or loopback;
 
     my_rx: entity work.rx 
     port map (
@@ -109,7 +122,7 @@ begin
         reset   => reset,
         tick    => '1',
     
-        rxd     => rxd,
+        rxd     => rxd_i,
         
         timeout => rx_timeout,
         rxchar  => rxchar,
@@ -146,7 +159,7 @@ begin
 			dotx_d     <= dotx;
 			txfifo_get <= dotx_d;
             io_resp    <= c_io_resp_init;
-			cts_c      <= cts or not cts_enable;
+			cts_c      <= cts_i or not cts_enable;
 			
             dotx   <= txfifo_dav and done and not dotx;
             txchar <= txfifo_dout;
@@ -172,6 +185,7 @@ begin
 
                 when c_uart_flowctrl =>
                     cts_enable <= io_req.data(0);
+                    loopback   <= io_req.data(1);
 
 				when others =>
 					null;
@@ -200,6 +214,8 @@ begin
             end if;
 
 			if reset='1' then
+                loopback <= '0';
+                cts_enable <= '0';
 				overflow <= '0';
 				imask    <= (others => '0');
 				divisor  <= std_logic_vector(to_unsigned(g_divisor-1, divisor'length));
@@ -207,20 +223,20 @@ begin
 		end if;
 	end process;
 
-    rx_interrupt <= rxfifo_afull or rx_timeout_reg;
-    
-    irq <= (txfifo_aempty and imask(1)) or (rx_interrupt and imask(0));
+    rx_interrupt <= (rxfifo_afull or rx_timeout_reg) and imask(0);
+    tx_interrupt <= txfifo_aempty and imask(1);
+    irq <= rx_interrupt or tx_interrupt;
 
 	flags(0) <= overflow;
 	flags(1) <= cts_c;
-	flags(2) <= txfifo_aempty;
+	flags(2) <= tx_interrupt;
 	flags(3) <= txfifo_full;
 	flags(4) <= rx_interrupt;
 	flags(5) <= rxfifo_afull;
 	flags(6) <= rx_timeout_reg;
 	flags(7) <= rxfifo_dav;
 	
-    rts <= not rxfifo_afull;
+    rts_i <= not rxfifo_afull; -- active high (1 = go, 0 = block)
     
 	with io_req.address(2 downto 0) select rdata_mux <=
 		rxfifo_dout                                when c_uart_data,
@@ -228,7 +244,7 @@ begin
 		"000000" & imask                           when c_uart_imask,
 		divisor(7 downto 0)                        when c_uart_divisor_l,
 		"000000" & divisor(9 downto 8)             when c_uart_divisor_h,
-        "0000000" & cts_enable                     when c_uart_flowctrl,
+        "000000" & loopback & cts_enable           when c_uart_flowctrl,
         std_logic_vector(to_unsigned(tx_count, 8)) when c_uart_tx_count,
         std_logic_vector(to_unsigned(rx_count, 8)) when c_uart_rx_count,
 		X"00"                                      when others;

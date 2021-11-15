@@ -190,34 +190,28 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
             // Acknowledge the interrupt
             uart_hal_clr_intsts_mask(&(uart_context[uart_num].hal), (UART_INTR_RXFIFO_TOUT | UART_INTR_RXFIFO_FULL));
 
-            if (! p_uart->current_rx_buf) { // no buffer available; let's try to get one
-//                WRITE_PERI_REG(debug_uart, '<');
-                if (cmd_buffer_get_free_isr(p_uart->buffer_context, &(p_uart->current_rx_buf), &HPTaskAwoken) == pdTRUE) {
-                    p_uart->current_rx_buf->size = 0; // reset pointer
-                    p_uart->current_rx_buf->slipEscape = 0;
-                } else {
-//                    WRITE_PERI_REG(debug_uart, '#');
-                }
-            }
+            // Let's see how many bytes there are in the FIFO
+            rx_fifo_len = (int)uart_hal_get_rxfifo_len(&(uart_context[uart_num].hal));
+            fifo_addr = (uart_num == UART_NUM_0) ? UART_FIFO_REG(0) : (uart_num == UART_NUM_1) ? UART_FIFO_REG(1) : UART_FIFO_REG(2);
 
-            if (p_uart->current_rx_buf) { // Buffer available
-                // Let's see how many bytes there are in the FIFO
-                rx_fifo_len = (int)uart_hal_get_rxfifo_len(&(uart_context[uart_num].hal));
-                buf = p_uart->current_rx_buf;
-                // Get FIFO address to read from
-                fifo_addr = (uart_num == UART_NUM_0) ? UART_FIFO_REG(0) : (uart_num == UART_NUM_1) ? UART_FIFO_REG(1) : UART_FIFO_REG(2);
+            // Copy data into buffer, decoding SLIP packet on the fly
+            // Use the buffer that we already have open, if any
+            buf = p_uart->current_rx_buf;
 
-                // Copy data into buffer, decoding SLIP packet on the fly
-                while(rx_fifo_len > 0) {
-                    data = READ_PERI_REG(fifo_addr);
-                    store = 1;
-                    switch (data) {
-                    //case 0x0D:
-                    case 0xC0:
-                        buf->slipEscape = 0;
-                        store = 0;
+            while(rx_fifo_len > 0) {
+                data = READ_PERI_REG(fifo_addr);
+                store = 1;
+
+                if (data == 0xC0) {
+                    store = 0;
+                    if (!buf) {
+                        if (cmd_buffer_get_free_isr(p_uart->buffer_context, &buf, &HPTaskAwoken) == pdTRUE) {
+                            buf->size = 0; // reset pointer
+                            buf->slipEscape = 0;
+                            p_uart->current_rx_buf = buf;
+                        }
+                    } else {
                         if (buf->size) {
-//                            WRITE_PERI_REG(debug_uart, '>');
                             if (buf->object) { // Is there a dispatcher associated with the buffer? Use it.
                                 dispatcher_t *dispatcher = (dispatcher_t *)buf->object;
                                 xQueueSendFromISR(dispatcher->queue, buf, &HPTaskAwoken);
@@ -225,12 +219,14 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
                                 cmd_buffer_received_isr(p_uart->buffer_context, buf, &HPTaskAwoken);
                             }
                             p_uart->current_rx_buf = NULL;
-                            rx_fifo_len = 0;
                             buf = NULL;
                             // let the next IRQ get a new buffer.
+                        } else {
+                            // Do nothing, apparently we were out of sync
                         }
-                        break;
-
+                    }
+                } else if(buf) {
+                    switch (data) {
                     case 0xDB:
                         store = 0;
                         buf->slipEscape = 1;
@@ -255,7 +251,7 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
                         break;
                     }
 
-                    if (store && buf) {
+                    if (store) {
                         if (buf->size < CMD_BUF_SIZE) {
                             buf->data[buf->size++] = data;
                         } else {
@@ -269,8 +265,6 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
                 uart_hal_ena_intr_mask(&(uart_context[uart_num].hal), (UART_INTR_RXFIFO_TOUT | UART_INTR_RXFIFO_FULL));
                 UART_EXIT_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
 //                WRITE_PERI_REG(debug_uart, '}');
-            } else {
-//                WRITE_PERI_REG(debug_uart, '$');
             }
         } // end of receive code
 

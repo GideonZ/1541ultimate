@@ -34,6 +34,7 @@ architecture gideon of rx is
     signal state  : state_t;
     signal rxd_s  : std_logic;
     signal rxd_c  : std_logic;
+    signal rxd_d  : std_logic;
     signal trigger: std_logic;
 begin
     process(clk, reset)
@@ -41,6 +42,7 @@ begin
         if rising_edge(clk) then
             rxd_s  <= rxd;
             rxd_c  <= rxd_s;
+            rxd_d  <= rxd_c;
             rx_ack <= '0';
             timeout <= '0';
             
@@ -59,7 +61,7 @@ begin
 
                 case state is
                 when Idle =>
-                    if rxd_c = '0' then
+                    if rxd_d = '1' and rxd_c = '0' then -- falling edge
                         timeout <= '0';
                         timer <= '0' & unsigned(divisor(9 downto 1)); --(clks_per_bit / 2) - 1;
                         state <= startbit;

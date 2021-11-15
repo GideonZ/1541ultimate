@@ -10,7 +10,7 @@
 
 #include <stdint.h>
 
-#define CMD_BUF_SIZE 1024
+#define CMD_BUF_SIZE 1536
 #define NUM_BUFFERS 16
 
 #if NIOS

@@ -10,12 +10,13 @@
 #include "task.h"
 #include "semphr.h"
 #include "dump_hex.h"
+#include "itu.h"
 #include <stdio.h>
 #include <string.h>
 
 #define FUART_Overflow    0x01
 #define FUART_ClearToSend 0x02
-#define FUART_TxFifoSpace 0x04 // Almost empty (few bytes in the fifo)
+#define FUART_TxInterrupt 0x04
 #define FUART_TxFifoFull  0x08
 #define FUART_RxInterrupt 0x10
 #define FUART_RxFifoFull  0x20
@@ -25,6 +26,10 @@
 #define FUART_RxIRQ_EN    0x01
 #define FUART_TxIRQ_EN    0x02
 #define FUART_TxFIFO_SIZE 255
+
+#define FUART_HWFLOWCTRL  0x01
+#define FUART_LOOPBACK    0x02
+
 
 int FastUART::Read(uint8_t *buffer, int bufferSize)
 {
@@ -51,10 +56,50 @@ void FastUART::EnableIRQ(bool enable)
     }
 }
 
+void FastUART::EnableLoopback(bool enable)
+{
+    if(enable) {
+        uart->flowctrl |= FUART_LOOPBACK;
+    } else {
+        uart->flowctrl &= ~FUART_LOOPBACK;
+    }
+}
+
+void FastUART::FlowControl(bool enable)
+{
+    if(enable) {
+        uart->flowctrl |= FUART_HWFLOWCTRL;
+    } else {
+        uart->flowctrl &= ~FUART_HWFLOWCTRL;
+    }
+}
+
+int FastUART::GetRxCount(void)
+{
+    int rx_fifo_len = (int)uart->rx_count;
+    if (uart->flags & FUART_RxDataAv) {
+        rx_fifo_len++; // This is a side effect of the fall through fifo; it has an extra register which is not counted.
+    }
+    return rx_fifo_len;
+}
+
 void FastUART::ClearRxBuffer(void)
 {
+    uart->ictrl = 0; // disable interrupts
     stdRx.rxHead = 0;
     stdRx.rxTail = 0;
+    if (current_rx_buf) {
+        FreeBuffer(current_rx_buf);
+        current_rx_buf = NULL;
+    }
+    if (current_tx_buf) {
+        FreeBuffer(current_tx_buf);
+        current_tx_buf = NULL;
+    }
+    int a = 0;
+    while(uart->flags & FUART_RxDataAv) {
+        a += uart->data;
+    }
 }
 
 void FastUART::SetBaudRate(int bps)
@@ -164,6 +209,13 @@ BaseType_t FastUART::RxInterrupt()
     }
     return woken;
 }
+
+void hex(uint8_t h)
+{
+    static const uint8_t hexchars[] = "0123456789ABCDEF";
+    ioWrite8(UART_DATA, hexchars[h >> 4]);
+    ioWrite8(UART_DATA, hexchars[h & 15]);
+}
 */
 
 void FastUART::FastUartInterrupt(void *context)
@@ -179,12 +231,12 @@ void FastUART::FastUartInterrupt(void *context)
     while (1) {
         // The `continue statement` may cause the interrupt to loop infinitely
         // we exit the interrupt here
-        uart_intr_status = u->uart->flags & (FUART_TxFifoSpace | FUART_RxInterrupt);
+        uart_intr_status = u->uart->flags & (FUART_TxInterrupt | FUART_RxInterrupt);
         //Exit form while loop
         if (uart_intr_status == 0) {
             break;
         }
-        if (uart_intr_status & FUART_TxFifoSpace) {
+        if (uart_intr_status & FUART_TxInterrupt) {
             // turn off tx interrupt temporarily (no spinlock needed, as interrupts are not interrupted, and there is just one CPU core)
             u->uart->ictrl &= ~FUART_TxIRQ_EN;
 
@@ -237,39 +289,44 @@ void FastUART::FastUartInterrupt(void *context)
             // Turn off Interrupts temporarily
             u->uart->ictrl &= ~FUART_RxIRQ_EN;
             // Acknowledge the interrupt
-            u->uart->flags = FUART_RxInterrupt;
+            u->uart->flags = FUART_RxTimeout; // fifo full status cannot be acknowledged; only the timeout
 
-            if (( !u->current_rx_buf) && (u->slipMode)) { // no buffer available; let's try to get one
-                if (cmd_buffer_get_free_isr(u->packets, &(u->current_rx_buf), &HPTaskAwoken) == pdTRUE) {
-                    u->current_rx_buf->size = 0; // reset pointer
-                    u->current_rx_buf->slipEscape = 0;
-                }
+            // Let's see how many bytes there are in the FIFO
+            rx_fifo_len = (int)u->uart->rx_count;
+
+            if (u->uart->flags & FUART_RxDataAv) {
+                rx_fifo_len++; // This is a side effect of the fall through fifo; it has an extra register which is not counted.
             }
 
-            if (u->current_rx_buf) { // Buffer available
-                // Let's see how many bytes there are in the FIFO
-                rx_fifo_len = (int)u->uart->rx_count;
-                buf = u->current_rx_buf;
+            // Copy data into buffer, decoding SLIP packet on the fly
+            // Use the buffer that we already have open, if any
+            buf = u->current_rx_buf;
 
-                // Copy data into buffer, decoding SLIP packet on the fly
-                while(rx_fifo_len > 0) {
-                    data = u->uart->data;
-                    store = 1;
-                    switch (data) {
-                    case 0xC0:
-                        buf->slipEscape = 0;
-                        store = 0;
+            while(rx_fifo_len > 0) {
+                data = u->uart->data;
+                store = 1;
+
+                if (data == 0xC0) {
+                    store = 0;
+                    if (!buf) {
+                        if (cmd_buffer_get_free_isr(u->packets, &buf, &HPTaskAwoken) == pdTRUE) {
+                            buf->size = 0; // reset pointer
+                            buf->slipEscape = 0;
+                            u->current_rx_buf = buf;
+                        }
+                    } else {
                         if (buf->size) {
-                            if (buf->object) { // Is there a dispatcher associated with the buffer? Use it.
-                                cmd_buffer_received_isr(u->packets, buf, &HPTaskAwoken);
-                            }
+                            cmd_buffer_received_isr(u->packets, buf, &HPTaskAwoken);
                             u->current_rx_buf = NULL;
-                            rx_fifo_len = 0;
+                            // rx_fifo_len = 0;
                             buf = NULL;
                             // let the next IRQ get a new buffer.
+                        } else {
+                            // Do nothing, apparently we were out of sync
                         }
-                        break;
-
+                    }
+                } else if(buf) {
+                    switch(data) {
                     case 0xDB:
                         store = 0;
                         buf->slipEscape = 1;
@@ -294,26 +351,24 @@ void FastUART::FastUartInterrupt(void *context)
                         break;
                     }
 
-                    if (store && buf) {
+                    if (store) {
                         if (buf->size < CMD_BUF_SIZE) {
                             buf->data[buf->size++] = data;
                         } else {
                             buf->dropped++;
                         }
                     }
-                    rx_fifo_len--;
+                } else { // No buffer, no start of buffer
+                    rxBuffer_t* b = &u->stdRx;
+                    int next = (b->rxHead + 1) & (RX_BUFFER_SIZE-1);
+                    if (next != b->rxTail) {
+                        b->rxBuffer[b->rxHead] = data;
+                        b->rxHead = next;
+                    }
                 }
-                // Enable the receive interrupt again
-                u->uart->ictrl |= FUART_RxIRQ_EN;
-            } else {
-                rxBuffer_t* b = &u->stdRx;
-                int next = (b->rxHead + 1) & (RX_BUFFER_SIZE-1);
-                if (next != b->rxTail) {
-                    b->rxBuffer[b->rxHead] = data;
-                    b->rxHead = next;
-                }
+                rx_fifo_len--;
             }
-
+            u->uart->ictrl |= FUART_RxIRQ_EN;
         } // end of receive code
     }
     if (HPTaskAwoken == pdTRUE) {
@@ -336,13 +391,16 @@ BaseType_t FastUART :: SendSlipPacket(const uint8_t *data, int len)
     return success;
 }
 
-BaseType_t FastUART :: TransmitPacket(command_buf_t *buf)
+BaseType_t FastUART :: TransmitPacket(command_buf_t *buf, uint16_t *ms)
 {
     if (cmd_buffer_transmit(packets, buf) == pdTRUE) {
-        printf("Transmit packet:\n");
-        dump_hex_relative(buf->data, buf->size);
+        printf("Transmit packet: (%d bytes)\n", buf->size);
+        dump_hex_relative(buf->data, (buf->size < 48) ? buf->size : 48);
 
         // Now enable the interrupt, so that the packet is going to be transmitted
+        if (ms) {
+            *ms = getMsTimer();
+        }
         uart->ictrl |= FUART_TxIRQ_EN;
         return pdTRUE;
     }

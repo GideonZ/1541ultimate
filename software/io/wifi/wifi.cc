@@ -86,6 +86,9 @@ void WiFi :: Enable()
     vTaskDelay(50);
     uart->ClearRxBuffer();
     uart->SetBaudRate(115200);
+    uart->EnableLoopback(false);
+    uart->FlowControl(false);
+    uart->EnableIRQ(true);
     U64_WIFI_CONTROL = 1; // 5 for watching the UART output directly
 
     xTaskCreate( WiFi :: RunModeTaskStart, "WiFi RunTask", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &runModeTask );
@@ -103,6 +106,9 @@ void WiFi :: Boot()
     vTaskDelay(150);
     uart->ClearRxBuffer();
     uart->SetBaudRate(115200);
+    uart->EnableLoopback(false);
+    uart->FlowControl(false);
+    uart->EnableIRQ(true);
     U64_WIFI_CONTROL = 3;
 }
 
@@ -126,20 +132,58 @@ void WiFi::PackParams(uint8_t *buffer, int numparams, ...)
 
 bool WiFi::RequestEcho(void)
 {
+    uart->EnableLoopback(true);
+    uart->FlowControl(true);
+    uart->ClearRxBuffer();
+    uart->EnableSlip(true);
+    uart->EnableIRQ(true);
+    int br = 115200;
+    //uart->SetBaudRate(32*115200);
+    command_buf_t *buf;
 /*
-    const char *test_string = "This string should be echoed.";
-    int length = strlen(test_string);
-
-    uart->SendSlipOpen();
-    uint8_t header[4];
-    header[0] = 0x02;
-    header[1] = 0;
-    header[2] = length & 0xFF;
-    header[3] = length >> 8;
-    uart->SendSlipData(header, 4);
-    uart->SendSlipData(test_string, length);
-    uart->SendSlipClose();
+    for(int i=0; i<0x4E; i++) {
+        buf->data[i] = (uint8_t)(i + 49);
+    }
 */
+    uint8_t buffertje[16];
+    int rx;
+    do {
+        rx = uart->Read(buffertje, 16);
+        if (rx) {
+            dump_hex_relative(buffertje, rx);
+        }
+    } while(rx);
+
+    for(int rate = 115200; rate < 8000000; rate *= 2) {
+        uart->SetBaudRate(rate);
+        for(int i=800; i<=1000;i+=50) {
+            uint16_t start, stop;
+            if (uart->GetBuffer(&buf, 100) != pdTRUE) {
+                return false;
+            }
+            memset(buf->data, 0x00, CMD_BUF_SIZE);
+            buf->data[0] = 1;
+            buf->data[i-1] = 2;
+            int txbuf = buf->bufnr;
+            buf->size = i;
+            uart->TransmitPacket(buf, &start);
+
+            if (uart->ReceivePacket(&buf, 100) == pdTRUE) {
+                stop = getMsTimer();
+                int t = 0;
+                for (int j=0;j<buf->size;j++) {
+                    t += (int)buf->data[j];
+                }
+                bool ok = (t == 3) && (buf->data[0] == 1) && (buf->data[i-1] == 2) && (buf->size == i);
+                printf("%d Bytes received from buffer %d in buffer %d after %d ms Verdict: %s\n", buf->size, txbuf, buf->bufnr, stop - start, ok ? "OK!" : "FAIL!");
+                uart->FreeBuffer(buf);
+                //dump_hex_relative(buf->data, buf->size);
+            } else {
+                printf("No packet.\n");
+            }
+        }
+    }
+    uart->EnableLoopback(false);
 }
 
 bool WiFi::Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data,
@@ -155,11 +199,14 @@ bool WiFi::Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data,
     buf->data[3] = length >> 8;
     buf->data[4] = chk;
     memcpy(buf->data + 8, data, length);
-    uart->TransmitPacket(buf);
+    buf->size = 8 + length;
+    uart->TransmitPacket(buf); // will be freed by transmit
 
     do {
         if (uart->ReceivePacket(&buf, timeout) == pdTRUE) {
             memcpy(receiveBuffer, buf->data, buf->size); // ## TODO: what if size > sizeof receiveBuffer?
+            int bsize = buf->size;
+            uart->FreeBuffer(buf);
             if (receiveBuffer[0] == 1) {
                 if (receiveBuffer[1] == opcode) {
                     uint8_t size = receiveBuffer[2];
@@ -169,7 +216,7 @@ bool WiFi::Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data,
                         return true;
                     } else {
                         printf("Command: %b. Error = %b.\n", opcode, error);
-                        dump_hex_relative(receiveBuffer, buf->size);
+                        dump_hex_relative(receiveBuffer, bsize);
                         break;
                     }
                 }
@@ -225,8 +272,12 @@ int WiFi :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
     command_buf_t *buf;
     for (int i = 0; i < 10; i++) {
         uart->SendSlipPacket(syncFrame, 44);
-        uart->ReceivePacket(&buf, 200);
-        dump_hex_relative(buf->data, buf->size);
+        if (uart->ReceivePacket(&buf, 200) == pdTRUE) {
+            dump_hex_relative(buf->data, buf->size);
+        } else {
+            printf("No Reply.\n");
+            continue;
+        }
         memset(buf->data + 4, 0xEE, 4);
         if ((buf->size == 12) && (memcmp(buf->data, syncResp, 12) == 0)) {
             synced = true;
