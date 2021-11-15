@@ -27,7 +27,7 @@ void cmd_identify(command_buf_t *buf)
     rpc_identify_resp *resp = (rpc_identify_resp *)buf->data;
     resp->major = 0;
     resp->minor = 9;
-    strcpu(&resp->string, "ESP-32 RPC Socket Layer V0.9");
+    strcpy(&resp->string, "ESP-32 RPC Socket Layer V0.9");
     buf->size = sizeof(rpc_identify_resp) + strlen(&resp->string);
     my_uart_transmit_packet(UART_CHAN, buf);
 }

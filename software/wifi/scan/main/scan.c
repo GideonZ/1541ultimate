@@ -81,9 +81,9 @@ static void got_ip_event(void *esp_netif, esp_event_base_t base, int32_t event_i
         ev->hdr.command = EVENT_GOTIP;
         ev->hdr.thread = 0;
         ev->hdr.sequence = 0;
-        ev->ip = event->ip_info.ip;
-        ev->netmask = event->ip_info.netmask;
-        ev->gw = event->ip_info.gw;
+        ev->ip = event->ip_info.ip.addr;
+        ev->netmask = event->ip_info.netmask.addr;
+        ev->gw = event->ip_info.gw.addr;
         ev->changed = event->ip_changed;
         reply->size = sizeof(event_pkt_got_ip);
         my_uart_transmit_packet(UART_NUM_1, reply);

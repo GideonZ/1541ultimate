@@ -22,7 +22,7 @@ typedef struct {
 
 typedef struct {
     rpc_header_t hdr;
-    esp_err_t esp_err;
+    int esp_err; // to be casted to esp_err_t
 } rpc_espcmd_resp;
 
 typedef struct {
@@ -38,7 +38,7 @@ typedef struct {
 
 typedef struct {
     rpc_header_t hdr;
-    wifi_auth_mode_t auth_mode;
+    uint8_t auth_mode; // to be casted to wifi_auth_mode_t
     char ssid[32];
     char password[64];
 } rpc_wifi_connect_req;
@@ -60,7 +60,7 @@ typedef struct {
 
 typedef struct {
     rpc_header_t hdr;
-    esp_err_t esp_err;
+    int esp_err;
     ultimate_ap_records_t rec;
 } rpc_scan_resp;
 
@@ -276,9 +276,9 @@ typedef struct {
 // Events
 typedef struct {
     rpc_header_t hdr;
-    esp_ip4_addr_t ip;
-    esp_ip4_addr_t netmask;
-    esp_ip4_addr_t gw;
+    uint32_t ip;       // to be casted to [esp_]ip4_addr_t
+    uint32_t netmask;  // to be casted to [esp_]ip4_addr_t
+    uint32_t gw;       // to be casted to [esp_]ip4_addr_t
     uint8_t changed;
 } event_pkt_got_ip;
 
