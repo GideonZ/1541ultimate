@@ -59,6 +59,8 @@ class FastUART
     BaseType_t RxInterrupt();
     int ReadImpl(rxBuffer_t *b, uint8_t *buffer, int bufferSize);
 public:
+    bool txDebug;
+
     FastUART(void *registers, void *sem, command_buf_context_t *pkts)
     {
         uart = (volatile fastuart_t *) registers;
@@ -71,6 +73,7 @@ public:
         current_rx_buf = NULL;
         current_tx_pnt = 0;
         slipMode = false;
+        txDebug = false;
         uint16_t rate = (((uint16_t)uart->rate_h) << 8) | uart->rate_l;
 
         printf("FastUART initialized. Start rate: %d bps\n", CLOCK_FREQ / (rate + 1));
@@ -81,6 +84,7 @@ public:
     void FlowControl(bool enable);
     void EnableIRQ(bool);
     void ClearRxBuffer(void);
+    void PrintRxMessage(void);
     void SetBaudRate(int bps);
     static void FastUartInterrupt(void *context);
 

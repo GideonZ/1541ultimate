@@ -11,13 +11,16 @@
 #include "dump_hex.h"
 #include <stdarg.h>
 #include "userinterface.h"
+#include "rpc_calls.h"
+#include "network_esp32.h"
+
 extern "C" {
 int alt_irq_register(int, int, void (*)(void*));
 }
 
 typedef enum
 {
-    WIFI_OFF = 0, WIFI_QUIT, WIFI_BOOTMODE, WIFI_DOWNLOAD, WIFI_START, WIFI_DOWNLOAD_START, WIFI_DOWNLOAD_MSG, WIFI_ECHO
+    WIFI_OFF = 0, WIFI_QUIT, WIFI_BOOTMODE, WIFI_DOWNLOAD, WIFI_START, WIFI_DOWNLOAD_START, WIFI_DOWNLOAD_MSG, WIFI_ECHO, UART_ECHO,
 } wifiCommand_e;
 
 typedef struct
@@ -84,14 +87,17 @@ void WiFi :: Enable()
 {
     U64_WIFI_CONTROL = 0;
     vTaskDelay(50);
-    uart->ClearRxBuffer();
     uart->SetBaudRate(115200);
     uart->EnableLoopback(false);
     uart->FlowControl(false);
+    uart->ClearRxBuffer();
+    uart->EnableSlip(true);
     uart->EnableIRQ(true);
+
     U64_WIFI_CONTROL = 1; // 5 for watching the UART output directly
 
-    xTaskCreate( WiFi :: RunModeTaskStart, "WiFi RunTask", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &runModeTask );
+    uart->PrintRxMessage();
+    //    xTaskCreate( WiFi :: RunModeTaskStart, "WiFi RunTask", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &runModeTask );
 }
 
 void WiFi :: Boot()
@@ -104,12 +110,14 @@ void WiFi :: Boot()
 
     U64_WIFI_CONTROL = 2;
     vTaskDelay(150);
-    uart->ClearRxBuffer();
     uart->SetBaudRate(115200);
     uart->EnableLoopback(false);
     uart->FlowControl(false);
+    uart->ClearRxBuffer();
+    uart->EnableSlip(true);
     uart->EnableIRQ(true);
     U64_WIFI_CONTROL = 3;
+    //uart->PrintRxMessage(); Do not print message, because Download routine expects a message and verifies it
 }
 
 void WiFi::PackParams(uint8_t *buffer, int numparams, ...)
@@ -130,7 +138,7 @@ void WiFi::PackParams(uint8_t *buffer, int numparams, ...)
     va_end(ap);
 }
 
-bool WiFi::RequestEcho(void)
+bool WiFi::UartEcho(void)
 {
     uart->EnableLoopback(true);
     uart->FlowControl(true);
@@ -140,19 +148,6 @@ bool WiFi::RequestEcho(void)
     int br = 115200;
     //uart->SetBaudRate(32*115200);
     command_buf_t *buf;
-/*
-    for(int i=0; i<0x4E; i++) {
-        buf->data[i] = (uint8_t)(i + 49);
-    }
-*/
-    uint8_t buffertje[16];
-    int rx;
-    do {
-        rx = uart->Read(buffertje, 16);
-        if (rx) {
-            dump_hex_relative(buffertje, rx);
-        }
-    } while(rx);
 
     for(int rate = 115200; rate < 8000000; rate *= 2) {
         uart->SetBaudRate(rate);
@@ -184,6 +179,62 @@ bool WiFi::RequestEcho(void)
         }
     }
     uart->EnableLoopback(false);
+}
+
+bool WiFi::RequestEcho(void)
+{
+    command_buf_t *buf;
+    uart->txDebug = false;
+
+    uart->SetBaudRate(115200);
+
+    while (uart->ReceivePacket(&buf, 100) == pdTRUE) {
+        printf("%d Bytes received in buffer %d\n", buf->size, buf->bufnr);
+        uart->FreeBuffer(buf);
+    }
+
+    char string[40];
+    uint16_t major, minor;
+    if (wifi_detect(&major, &minor, string, 40) == pdTRUE) {
+        printf("ESP32 module V%d.%d detected: %s\n", major, minor, string);
+    }
+
+
+    for(int rate = 115200; rate <= 5000000; rate *= 2) {
+        wifi_setbaud(rate, 0); // uart->SetBaudRate(rate); + remote switch as well     uart->FlowControl(false);
+
+        for(int i=800; i<=1000;i+=50) {
+            uint16_t start, stop;
+            if (uart->GetBuffer(&buf, 100) != pdTRUE) {
+                return false;
+            }
+            memset(buf->data, 0x00, CMD_BUF_SIZE);
+            rpc_identify_req *req = (rpc_identify_req *)buf->data;
+            req->hdr.command = CMD_ECHO;
+            buf->data[i-1] = 2;
+            int txbuf = buf->bufnr;
+            buf->size = i;
+            uart->TransmitPacket(buf, &start);
+
+            while (uart->ReceivePacket(&buf, 200) == pdTRUE) {
+                stop = getMsTimer();
+                int t = 0;
+                for (int j=0;j<buf->size;j++) {
+                    t += (int)buf->data[j];
+                }
+                bool ok = (t == 3) && (buf->data[0] == 1) && (buf->data[i-1] == 2) && (buf->size == i);
+                printf("%d Bytes received from buffer %d in buffer %d after %d ms Verdict: %s\n", buf->size, txbuf, buf->bufnr, stop - start, ok ? "OK!" : "FAIL!");
+                if (!ok) {
+                    dump_hex_relative(buf->data, buf->size);
+                }
+                uart->FreeBuffer(buf);
+                //dump_hex_relative(buf->data, buf->size);
+            }
+            //printf("End of packets. Aux data:\n");
+            //uart->PrintRxMessage();
+        }
+    }
+    uart->txDebug = false;
 }
 
 bool WiFi::Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data,
@@ -448,6 +499,9 @@ void WiFi::CommandThread()
         case WIFI_ECHO:
             RequestEcho();
             break;
+        case UART_ECHO:
+            UartEcho();
+            break;
         default:
             break;
         }
@@ -507,6 +561,13 @@ BaseType_t WiFi::doRequestEcho()
 {
     wifiCommand_t command;
     command.commandCode = WIFI_ECHO;
+    return xQueueSend(commandQueue, &command, 200);
+}
+
+BaseType_t WiFi::doUartEcho()
+{
+    wifiCommand_t command;
+    command.commandCode = UART_ECHO;
     return xQueueSend(commandQueue, &command, 200);
 }
 

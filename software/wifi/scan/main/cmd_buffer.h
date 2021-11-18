@@ -38,6 +38,7 @@ typedef struct {
 } command_buf_context_t;
 
 void cmd_buffer_init(command_buf_context_t *context);
+void cmd_buffer_reset(command_buf_context_t *context);
 BaseType_t cmd_buffer_free(command_buf_context_t *context, command_buf_t *b);
 BaseType_t cmd_buffer_get(command_buf_context_t *context, command_buf_t **b, TickType_t t);
 BaseType_t cmd_buffer_transmit(command_buf_context_t *context, command_buf_t *b);

@@ -27,13 +27,37 @@ void cmd_identify(command_buf_t *buf)
     rpc_identify_resp *resp = (rpc_identify_resp *)buf->data;
     resp->major = 0;
     resp->minor = 9;
-    strcpy(&resp->string, "ESP-32 RPC Socket Layer V0.9");
+    strcpy(&resp->string, IDENT_STRING);
     buf->size = sizeof(rpc_identify_resp) + strlen(&resp->string);
     my_uart_transmit_packet(UART_CHAN, buf);
 }
 
 void cmd_setbaud(command_buf_t *buf)
 {
+    rpc_setbaud_req *req = (rpc_setbaud_req *)buf->data;
+    rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
+
+    uart_config_t uart_config = {
+        .baud_rate = 115200,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .rx_flow_ctrl_thresh = 122,
+        .source_clk = UART_SCLK_APB,
+    };
+
+    if (req->flowctrl) {
+        uart_config.flow_ctrl = UART_HW_FLOWCTRL_CTS_RTS;
+    }
+    uart_config.baud_rate = req->baudrate;
+    resp->esp_err = uart_param_config(UART_CHAN, &uart_config);
+#if UART_DEBUG
+    ESP_LOGI("CMD", "Baud Rate set to %d -> Err = %d", uart_config.baud_rate, resp->esp_err);
+#endif
+    vTaskDelay(1000 / portTICK_PERIOD_MS); // Wait one second
+    buf->size = sizeof(rpc_espcmd_resp);
+    my_uart_transmit_packet(UART_CHAN, buf);
 }
 
 esp_err_t wifi_scan(ultimate_ap_records_t *ult_records);
@@ -278,7 +302,11 @@ void dispatch(void *ct)
     rpc_header_t *hdr;
 
     while(1) {
+        pbuffer = NULL;
         xQueueReceive(queue, &pbuffer, portMAX_DELAY);
+#if UART_DEBUG
+        printf("Received buffer %d with %d bytes.\n", pbuffer->bufnr, pbuffer->size);
+#endif
         hdr = (rpc_header_t *)(pbuffer->data);
         switch(hdr->command) {
         case CMD_ECHO:
@@ -286,6 +314,9 @@ void dispatch(void *ct)
             break;
         case CMD_IDENTIFY:
             cmd_identify(pbuffer);
+            break;
+        case CMD_SET_BAUD:
+            cmd_setbaud(pbuffer);
             break;
         case CMD_WIFI_SCAN:
             cmd_scan(pbuffer);
@@ -344,7 +375,6 @@ void dispatch(void *ct)
         case CMD_SETSOCKOPT:
         case CMD_IOCTL:
         case CMD_FCNTL:
-        case CMD_SET_BAUD:
         default:
             cmd_not_implemented(pbuffer);
             break;

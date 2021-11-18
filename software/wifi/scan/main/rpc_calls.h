@@ -38,6 +38,12 @@ typedef struct {
 
 typedef struct {
     rpc_header_t hdr;
+    int baudrate;
+    uint8_t flowctrl;
+} rpc_setbaud_req;
+
+typedef struct {
+    rpc_header_t hdr;
     uint8_t auth_mode; // to be casted to wifi_auth_mode_t
     char ssid[32];
     char password[64];

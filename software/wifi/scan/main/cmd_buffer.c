@@ -15,6 +15,15 @@ void cmd_buffer_init(command_buf_context_t *context)
     context->transmitQueue = xQueueCreate(NUM_BUFFERS, sizeof(command_buf_t*));
     context->receivedQueue = xQueueCreate(NUM_BUFFERS, sizeof(command_buf_t*));
 
+    cmd_buffer_reset(context);
+}
+
+void cmd_buffer_reset(command_buf_context_t *context)
+{
+    xQueueGenericReset(context->freeQueue, pdFALSE);
+    xQueueGenericReset(context->transmitQueue, pdFALSE);
+    xQueueGenericReset(context->receivedQueue, pdFALSE);
+
     for(int i=0; i<NUM_BUFFERS; i++) {
         command_buf_t *buf = &(context->bufs[i]);
         xQueueSend(context->freeQueue, &buf, 0);

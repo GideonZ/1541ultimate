@@ -100,6 +100,12 @@ static uart_context_t uart_context[UART_NUM_MAX] = {
 #endif
 };
 
+void hex(uint8_t h)
+{
+    static const uint8_t hexchars[] = "0123456789ABCDEF";
+    WRITE_PERI_REG(UART_FIFO_AHB_REG(0), hexchars[h >> 4]);
+    WRITE_PERI_REG(UART_FIFO_AHB_REG(0), hexchars[h & 15]);
+}
 
 // User ISR handler for UART
 void UART_ISR_ATTR my_uart_intr_handler(void *param)
@@ -113,9 +119,6 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
     int rx_fifo_len;
 
     portBASE_TYPE HPTaskAwoken = pdFALSE;
-
-//    uint32_t debug_uart = UART_FIFO_AHB_REG(0);
-//    WRITE_PERI_REG(debug_uart, '_');
 
     while (1) {
         // The `continue statement` may cause the interrupt to loop infinitely
@@ -198,8 +201,13 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
             // Use the buffer that we already have open, if any
             buf = p_uart->current_rx_buf;
 
+#if UART_DEBUG
+            WRITE_PERI_REG(UART_FIFO_AHB_REG(0), 'R');
+            hex(rx_fifo_len);
+#endif
             while(rx_fifo_len > 0) {
                 data = READ_PERI_REG(fifo_addr);
+                rx_fifo_len--;
                 store = 1;
 
                 if (data == 0xC0) {
@@ -214,8 +222,16 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
                         if (buf->size) {
                             if (buf->object) { // Is there a dispatcher associated with the buffer? Use it.
                                 dispatcher_t *dispatcher = (dispatcher_t *)buf->object;
+#if UART_DEBUG
+                                WRITE_PERI_REG(UART_FIFO_AHB_REG(0), ']');
+                                hex(buf->bufnr);
+#endif
                                 xQueueSendFromISR(dispatcher->queue, buf, &HPTaskAwoken);
                             } else {
+#if UART_DEBUG
+                                WRITE_PERI_REG(UART_FIFO_AHB_REG(0), '>');
+                                hex(buf->bufnr);
+#endif
                                 cmd_buffer_received_isr(p_uart->buffer_context, buf, &HPTaskAwoken);
                             }
                             p_uart->current_rx_buf = NULL;
@@ -258,14 +274,17 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
                             buf->dropped++;
                         }
                     }
-                    rx_fifo_len--;
+                } else {
+                    // Data that we can't store anywhere else
+                    // sneakily return it to UART0 for debug
+                    WRITE_PERI_REG(UART_FIFO_AHB_REG(0), data);
                 }
-//                WRITE_PERI_REG(debug_uart, '{');
-                UART_ENTER_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
-                uart_hal_ena_intr_mask(&(uart_context[uart_num].hal), (UART_INTR_RXFIFO_TOUT | UART_INTR_RXFIFO_FULL));
-                UART_EXIT_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
-//                WRITE_PERI_REG(debug_uart, '}');
             }
+            WRITE_PERI_REG(UART_FIFO_AHB_REG(0), '{');
+            UART_ENTER_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
+            uart_hal_ena_intr_mask(&(uart_context[uart_num].hal), (UART_INTR_RXFIFO_TOUT | UART_INTR_RXFIFO_FULL));
+            UART_EXIT_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
+            WRITE_PERI_REG(UART_FIFO_AHB_REG(0), '}');
         } // end of receive code
 
         if (uart_intr_status & UART_INTR_RXFIFO_OVF) {
@@ -284,10 +303,13 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
 
 BaseType_t my_uart_transmit_packet(uint8_t uart_num, command_buf_t *buf)
 {
-    my_uart_obj_t *obj = p_uart_obj[uart_num];
-    printf("Transmit packet:\n");
+#if UART_DEBUG
+    static int count = 0;
+    printf("Transmit packet %d:\n", ++count);
     dump_hex_relative(buf->data, buf->size);
+#endif
 
+    my_uart_obj_t *obj = p_uart_obj[uart_num];
     if (cmd_buffer_transmit(obj->buffer_context, buf) == pdTRUE) {
         // Now enable the interrupt, so that the packet is going to be transmitted
         UART_ENTER_CRITICAL_ISR(&(uart_context[uart_num].spinlock));

@@ -230,13 +230,17 @@ void app_main()
     gpio_set_direction(GPIO_LED1, GPIO_MODE_OUTPUT);
     gpio_set_direction(GPIO_LED2, GPIO_MODE_OUTPUT);
 
-    //ESP_ERROR_CHECK( uart_set_pin(UART_NUM_0, GPIO_LED0, GPIO_LED1, -1, -1));
-    //ESP_ERROR_CHECK( uart_set_pin(UART_NUM_1, PIN_UART_TXD, PIN_UART_RXD, PIN_UART_RTS, PIN_UART_CTS));
+    ESP_LOGI(TAG, IDENT_STRING);
+    ESP_LOGI(TAG, "Now switching UART I/O pins...");
+    vTaskDelay(100);
 
+#if U64BUILD
+    ESP_ERROR_CHECK( uart_set_pin(UART_NUM_0, GPIO_LED0, GPIO_LED1, -1, -1));
+    ESP_ERROR_CHECK( uart_set_pin(UART_NUM_1, PIN_UART_TXD, PIN_UART_RXD, PIN_UART_RTS, PIN_UART_CTS));
+#else
     // Just configure UART1 to RECEIVE through the same pin as UART0... bravo ;)
     ESP_ERROR_CHECK( uart_set_pin(UART_NUM_1, PIN_DEVKIT_LED, PIN_UART_RXD, -1, -1));
-    // ESP_ERROR_CHECK( uart_set_pin(UART_NUM_1, PIN_UART_TXD, PIN_UART_RXD, -1, -1));
-
+#endif
     // Initialize the single copy transport buffers, and attach dispatchers to each buffer
     cmd_buffer_init(&work_buffers);
 

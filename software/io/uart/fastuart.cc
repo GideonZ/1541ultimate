@@ -100,6 +100,27 @@ void FastUART::ClearRxBuffer(void)
     while(uart->flags & FUART_RxDataAv) {
         a += uart->data;
     }
+    cmd_buffer_reset(packets);
+}
+
+void FastUART::PrintRxMessage(void)
+{
+    uint8_t buffertje[128];
+    int rx, to = 5;
+    do {
+        rx = Read(buffertje, 120);
+        buffertje[rx] = 0;
+        if (rx) {
+            printf((char *)buffertje);
+            to = 5;
+        } else {
+            vTaskDelay(15);
+            to --;
+            if (to == 0) {
+                break;
+            }
+        }
+    } while(true);
 }
 
 void FastUART::SetBaudRate(int bps)
@@ -394,9 +415,10 @@ BaseType_t FastUART :: SendSlipPacket(const uint8_t *data, int len)
 BaseType_t FastUART :: TransmitPacket(command_buf_t *buf, uint16_t *ms)
 {
     if (cmd_buffer_transmit(packets, buf) == pdTRUE) {
-        printf("Transmit packet: (%d bytes)\n", buf->size);
-        dump_hex_relative(buf->data, (buf->size < 48) ? buf->size : 48);
-
+        if (txDebug) {
+            printf("Transmit packet: (%d bytes)\n", buf->size);
+            dump_hex_relative(buf->data, (buf->size < 48) ? buf->size : 48);
+        }
         // Now enable the interrupt, so that the packet is going to be transmitted
         if (ms) {
             *ms = getMsTimer();

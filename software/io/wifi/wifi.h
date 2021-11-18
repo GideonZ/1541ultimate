@@ -22,7 +22,6 @@ extern "C" {
 
 class WiFi
 {
-    FastUART *uart;
     SemaphoreHandle_t rxSemaphore;
     QueueHandle_t commandQueue;
     TaskHandle_t runModeTask;
@@ -37,6 +36,7 @@ class WiFi
     int  Download(const uint8_t *binary, uint32_t address, uint32_t length);
     void PackParams(uint8_t *buffer, int numparams, ...);
     bool Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data, uint8_t *receiveBuffer, int timeout);
+    bool UartEcho(void);
     bool RequestEcho(void);
 
     static void CommandTaskStart(void *context);
@@ -59,6 +59,9 @@ public:
     BaseType_t doDownload(uint8_t *binary, uint32_t address, uint32_t length, bool doFree);
     BaseType_t doDownloadWrap(bool start);
     BaseType_t doRequestEcho(void);
+    BaseType_t doUartEcho(void);
+
+    FastUART *uart;
 };
 
 

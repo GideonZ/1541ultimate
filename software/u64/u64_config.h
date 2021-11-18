@@ -31,6 +31,7 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
         Action *wifioff;
         Action *wifion;
         Action *wifiboot;
+        Action *uartecho;
         Action *wifiecho;
     } myActions;
 
