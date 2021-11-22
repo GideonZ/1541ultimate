@@ -52,7 +52,7 @@
 #define PIN_UART_RXD 3
 #define PIN_UART_TXD 1
 #define PIN_UART_RTS GPIO_WIFI_CLK
-#define PIN_UART_CTS GPIO_WIFI_MISO
+#define PIN_UART_CTS GPIO_WIFI_MOSI
 
 #define NET_CMD_BUFSIZE 512
 
@@ -66,7 +66,7 @@ wifi_ap_record_t ap_info[DEFAULT_SCAN_LIST_SIZE];
 
 static esp_netif_t *sta_netif = NULL;
 
-static void got_ip_event(void *esp_netif, esp_event_base_t base, int32_t event_id, void *data)
+static void got_ip_event_handler(void *esp_netif, esp_event_base_t base, int32_t event_id, void *data)
 {
     const ip_event_got_ip_t *event = (const ip_event_got_ip_t *) data;
 
@@ -79,7 +79,7 @@ static void got_ip_event(void *esp_netif, esp_event_base_t base, int32_t event_i
     if (my_uart_get_buffer(UART_NUM_1, &reply, 100)) {
         event_pkt_got_ip *ev = (event_pkt_got_ip *)reply->data;
         ev->hdr.command = EVENT_GOTIP;
-        ev->hdr.thread = 0;
+        ev->hdr.thread = 0xFF;
         ev->hdr.sequence = 0;
         ev->ip = event->ip_info.ip.addr;
         ev->netmask = event->ip_info.netmask.addr;
@@ -88,9 +88,37 @@ static void got_ip_event(void *esp_netif, esp_event_base_t base, int32_t event_i
         reply->size = sizeof(event_pkt_got_ip);
         my_uart_transmit_packet(UART_NUM_1, reply);
     } else {
-        ESP_LOGW(TAG, "No buffer send event.");
+        ESP_LOGW(TAG, "No buffer to send event.");
     }
 }
+
+static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t event_id, void *data)
+{
+    ESP_LOGW(TAG, "WiFi Event %x, data %p", event_id, data);
+
+    uint8_t evcode = 0;
+    switch(event_id) {
+        case WIFI_EVENT_STA_DISCONNECTED:
+            evcode = EVENT_DISCONNECTED;
+            break;
+        default:
+            break;
+    }
+    if (evcode) {
+        command_buf_t *reply;
+        if (my_uart_get_buffer(UART_NUM_1, &reply, 100)) {
+            rpc_header_t *ev = (rpc_header_t *)reply->data;
+            ev->command = evcode;
+            ev->thread = 0xFF;
+            ev->sequence = 0;
+            reply->size = sizeof(rpc_header_t);
+            my_uart_transmit_packet(UART_NUM_1, reply);
+        } else {
+            ESP_LOGW(TAG, "No buffer to send event.");
+        }
+    }
+}
+
 
 // Initialize Wi-Fi as sta
 static void wifi_init()
@@ -105,12 +133,17 @@ static void wifi_init()
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
-                                                        IP_EVENT_STA_GOT_IP,
-                                                        &got_ip_event,
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
+                                                        ESP_EVENT_ANY_ID,
+                                                        &wifi_event_handler,
                                                         NULL,
                                                         NULL));
 
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
+                                                        IP_EVENT_STA_GOT_IP,
+                                                        &got_ip_event_handler,
+                                                        NULL,
+                                                        NULL));
 }
 
 // Initialize Wi-Fi issue scan command

@@ -104,4 +104,6 @@ public:
     BaseType_t GetBuffer(command_buf_t **buf, TickType_t ticks);
 };
 
+BaseType_t u64_buffer_received_isr(command_buf_context_t *context, command_buf_t *b, BaseType_t *w);
+
 #endif /* FASTUART_H_ */

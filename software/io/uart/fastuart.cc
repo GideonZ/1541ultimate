@@ -133,104 +133,6 @@ void FastUART::SetBaudRate(int bps)
 }
 
 /*
-void FastUART::FastUartRxInterrupt(void *context)
-{
-    FastUART *u = (FastUART *) context;
-    BaseType_t woken = u->RxInterrupt();
-    if (woken == pdTRUE) {
-        vTaskSwitchContext(); // TODO: This should not be here, but right now, the UART is the only client on this IRQ number
-    }
-}
-*/
-
-/*
-BaseType_t FastUART::RxInterrupt()
-{
-    slipElement_t slipElement;
-    BaseType_t woken = pdFALSE;
-    bool giveSem = false;
-    bool store;
-
-    if (uart->flags & FUART_RxInterrupt) {
-        int rx_bytes = (int)uart->rx_count;
-        while(rx_bytes > 0) {
-            // try allocating space in buffer
-            uint8_t data = uart->data; // possibly drop the char, if our buffer is full.. otherwise we keep getting interrupts
-            rx_bytes--;
-
-            //printf("[%b]", data);
-            store = true;
-            if (slipEnabled) {
-                switch (data) {
-                case 0xC0:
-                    store = false;
-                    slipEscape = false;
-                    if ((slipMode) && (slipLength > 0)) {
-                        slipElement.size = slipLength;
-                        slipElement.error = slipError;
-                        xQueueSendFromISR(slipQueue, &slipElement, &woken);
-                        slipError = false;
-                        slipMode = false;
-                        slipLength = 0;
-                    } else {
-                        slipMode = true;
-                        slipLength = 0;
-                    }
-                    break;
-                case 0xDB:
-                    if (slipMode) {
-                        slipEscape = true;
-                        store = false;
-                    }
-                    break;
-                case 0xDC:
-                    if (slipEscape) {
-                        data = 0xC0;
-                        slipLength++;
-                        slipEscape = false;
-                    }
-                    break;
-                case 0xDD:
-                    if (slipEscape) {
-                        data = 0xDB;
-                        slipLength++;
-                        slipEscape = false;
-                    }
-                    break;
-                default:
-                    slipEscape = false;
-                    if (slipMode) {
-                        slipLength++;
-                    }
-                    break;
-                }
-            }
-
-            rxBuffer_t* b;
-            if (slipMode) {
-                b = &slipRx;
-            } else {
-                b = &stdRx;
-                giveSem = true;
-            }
-
-            if (store) {
-                int next = (b->rxHead + 1) & (RX_BUFFER_SIZE-1);
-                if (next != b->rxTail) {
-                    b->rxBuffer[b->rxHead] = data;
-                    b->rxHead = next;
-                } else if (slipMode) {
-                    //slipError = true;
-                }
-            }
-        }
-    }
-    if (giveSem) {
-        xSemaphoreGiveFromISR(rxSemaphore, &woken);
-    }
-    return woken;
-}
-
 void hex(uint8_t h)
 {
     static const uint8_t hexchars[] = "0123456789ABCDEF";
@@ -337,7 +239,7 @@ void FastUART::FastUartInterrupt(void *context)
                         }
                     } else {
                         if (buf->size) {
-                            cmd_buffer_received_isr(u->packets, buf, &HPTaskAwoken);
+                            u64_buffer_received_isr(u->packets, buf, &HPTaskAwoken);
                             u->current_rx_buf = NULL;
                             // rx_fifo_len = 0;
                             buf = NULL;

@@ -7,8 +7,6 @@
 
 #include "cmd_buffer.h"
 
-#define INL inline __attribute__((always_inline))
-
 void cmd_buffer_init(command_buf_context_t *context)
 {
     context->freeQueue     = xQueueCreate(NUM_BUFFERS, sizeof(command_buf_t*));
@@ -77,4 +75,3 @@ INL BaseType_t cmd_buffer_get_free_isr(command_buf_context_t *context, command_b
 INL BaseType_t cmd_buffer_received_isr(command_buf_context_t *context, command_buf_t *b, BaseType_t *w) {
     return xQueueSendFromISR(context->receivedQueue, &b, w);
 }
-

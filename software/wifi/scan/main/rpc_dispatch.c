@@ -25,10 +25,18 @@ void cmd_echo(command_buf_t *buf)
 void cmd_identify(command_buf_t *buf)
 {
     rpc_identify_resp *resp = (rpc_identify_resp *)buf->data;
-    resp->major = 0;
-    resp->minor = 9;
+    resp->major = IDENT_MAJOR;
+    resp->minor = IDENT_MINOR;
     strcpy(&resp->string, IDENT_STRING);
     buf->size = sizeof(rpc_identify_resp) + strlen(&resp->string);
+    my_uart_transmit_packet(UART_CHAN, buf);
+}
+
+void cmd_getmac(command_buf_t *buf)
+{
+    rpc_getmac_resp *resp = (rpc_getmac_resp *)buf->data;
+    resp->esp_err = esp_wifi_get_mac(WIFI_IF_STA, resp->mac);
+    buf->size = sizeof(rpc_getmac_resp);
     my_uart_transmit_packet(UART_CHAN, buf);
 }
 
@@ -37,25 +45,20 @@ void cmd_setbaud(command_buf_t *buf)
     rpc_setbaud_req *req = (rpc_setbaud_req *)buf->data;
     rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
 
-    uart_config_t uart_config = {
-        .baud_rate = 115200,
-        .data_bits = UART_DATA_8_BITS,
-        .parity = UART_PARITY_DISABLE,
-        .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-        .rx_flow_ctrl_thresh = 122,
-        .source_clk = UART_SCLK_APB,
-    };
-
-    if (req->flowctrl) {
-        uart_config.flow_ctrl = UART_HW_FLOWCTRL_CTS_RTS;
+    esp_err_t err = uart_set_baudrate(UART_CHAN, req->baudrate);
+    if (err == ESP_OK) {
+        err = uart_set_hw_flow_ctrl(UART_CHAN, req->flowctrl ? UART_HW_FLOWCTRL_CTS_RTS : UART_HW_FLOWCTRL_DISABLE, 122);
     }
-    uart_config.baud_rate = req->baudrate;
-    resp->esp_err = uart_param_config(UART_CHAN, &uart_config);
+    if (err == ESP_OK) {
+        err = uart_set_line_inverse(UART_CHAN, req->inversions);
+    }
+
 #if UART_DEBUG
-    ESP_LOGI("CMD", "Baud Rate set to %d -> Err = %d", uart_config.baud_rate, resp->esp_err);
+    ESP_LOGI("CMD", "Baud Rate set to %d -> Err = %d", req->baudrate, err);
 #endif
     vTaskDelay(1000 / portTICK_PERIOD_MS); // Wait one second
+
+    resp->esp_err = err;
     buf->size = sizeof(rpc_espcmd_resp);
     my_uart_transmit_packet(UART_CHAN, buf);
 }
@@ -326,6 +329,9 @@ void dispatch(void *ct)
             break;
         case CMD_WIFI_DISCONNECT:
             cmd_wifi_disconnect(pbuffer);
+            break;
+        case CMD_WIFI_GETMAC:
+            cmd_getmac(pbuffer);
             break;
         case CMD_SOCKET:
             cmd_socket(pbuffer);

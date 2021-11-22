@@ -21,7 +21,9 @@ typedef struct {
 void create_dispatchers(int stacksize, command_buf_context_t *bufs);
 void dispatch(void *ct);
 
-#define IDENT_STRING "ESP-32 RPC Socket Layer V0.9"
+#define IDENT_MAJOR  0
+#define IDENT_MINOR  6
+#define IDENT_STRING "ESP-32 RPC Socket Layer V0.6"
 #define UART_DEBUG 0
 #define U64BUILD   1
 

@@ -38,8 +38,15 @@ typedef struct {
 
 typedef struct {
     rpc_header_t hdr;
+    int esp_err; // to be casted to esp_err_t
+    uint8_t mac[6];
+} rpc_getmac_resp;
+
+typedef struct {
+    rpc_header_t hdr;
     int baudrate;
     uint8_t flowctrl;
+    uint8_t inversions;
 } rpc_setbaud_req;
 
 typedef struct {
@@ -294,6 +301,7 @@ typedef struct {
 #define CMD_WIFI_SCAN       0x04
 #define CMD_WIFI_CONNECT    0x05
 #define CMD_WIFI_DISCONNECT 0x06
+#define CMD_WIFI_GETMAC     0x07
 #define CMD_SOCKET          0x11
 #define CMD_CONNECT         0x12
 #define CMD_ACCEPT          0x13
@@ -315,8 +323,8 @@ typedef struct {
 #define CMD_IOCTL           0x28
 #define CMD_FCNTL           0x29
 
-
 #define EVENT_GOTIP         0x41
+#define EVENT_DISCONNECTED  0x42
 
 // int lwip_socket(int domain, int type, int protocol);
 // int lwip_connect(int s, const struct sockaddr *name, socklen_t namelen);

@@ -48,4 +48,6 @@ BaseType_t cmd_buffer_free_isr(command_buf_context_t *context, command_buf_t *b,
 BaseType_t cmd_buffer_get_free_isr(command_buf_context_t *context, command_buf_t **b, BaseType_t *w);
 BaseType_t cmd_buffer_received_isr(command_buf_context_t *context, command_buf_t *b, BaseType_t *w);
 
+#define INL inline __attribute__((always_inline))
+
 #endif /* CMD_BUFFER_H_ */

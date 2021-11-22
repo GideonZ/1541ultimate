@@ -166,18 +166,6 @@ void NetworkLWIP :: stop()
     //if_up = false;
 }
 
-/*
-void NetworkLWIP :: poll()
-{
-    if (netif_is_up(&my_net_if) && !if_up) {
-        //printf("**** NETIF IS NOW UP ****\n");
-        if_up = true;
-    } else if(!netif_is_up(&my_net_if) && if_up) {
-        //printf("#### NETIF IS NOW DOWN ####\n");
-        if_up = false;
-    }
-}
-*/
 
 void NetworkLWIP :: statusCallback(struct netif *net)
 {

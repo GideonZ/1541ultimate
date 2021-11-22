@@ -13,6 +13,7 @@
 #include "userinterface.h"
 #include "rpc_calls.h"
 #include "network_esp32.h"
+#include "filemanager.h"
 
 extern "C" {
 int alt_irq_register(int, int, void (*)(void*));
@@ -69,6 +70,12 @@ WiFi :: WiFi()
     doClose = false;
     programError = false;
     runModeTask = NULL;
+    state = eWifi_NotDetected;\
+
+    bzero(my_mac, 6);
+    my_ip = 0;
+    my_gateway = 0;
+    my_netmask = 0;
 }
 
 
@@ -97,7 +104,7 @@ void WiFi :: Enable()
     U64_WIFI_CONTROL = 1; // 5 for watching the UART output directly
 
     uart->PrintRxMessage();
-    //    xTaskCreate( WiFi :: RunModeTaskStart, "WiFi RunTask", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &runModeTask );
+    xTaskCreate( WiFi :: RunModeTaskStart, "WiFi RunTask", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &runModeTask );
 }
 
 void WiFi :: Boot()
@@ -199,9 +206,10 @@ bool WiFi::RequestEcho(void)
         printf("ESP32 module V%d.%d detected: %s\n", major, minor, string);
     }
 
+    const int rates[] = { 115200, 230400, 460800, 921600, 1000000, 2000000, 4000000, 6666666 };
 
-    for(int rate = 115200; rate <= 5000000; rate *= 2) {
-        wifi_setbaud(rate, 0); // uart->SetBaudRate(rate); + remote switch as well     uart->FlowControl(false);
+    for(int rate = 0; rate < 8; rate ++) {
+        wifi_setbaud(rates[rate], 1); // uart->SetBaudRate(rate); + remote switch as well     uart->FlowControl(false);
 
         for(int i=800; i<=1000;i+=50) {
             uint16_t start, stop;
@@ -216,7 +224,7 @@ bool WiFi::RequestEcho(void)
             buf->size = i;
             uart->TransmitPacket(buf, &start);
 
-            while (uart->ReceivePacket(&buf, 200) == pdTRUE) {
+            if (uart->ReceivePacket(&buf, 200) == pdTRUE) {
                 stop = getMsTimer();
                 int t = 0;
                 for (int j=0;j<buf->size;j++) {
@@ -427,26 +435,6 @@ void WiFi::RunModeTaskStart(void *context)
     w->RunModeThread();
 }
 
-/*
-void WiFi::EthernetRelay(void *context)
-{
-    WiFi *w = (WiFi *) context;
-    uint8_t buffer[256];
-    int ret;
-    while (1) {
-        ret = recv(w->actualSocket, buffer, 256, 0);
-        if (ret > 0) {
-            printf(">%d|", ret);
-            w->uart->Write(buffer, ret);
-        } else {
-            break;
-        }
-    }
-    w->doClose = true;
-    xSemaphoreGive(w->rxSemaphore);
-    vTaskDelete(w->relayTask);
-}
-*/
 
 void WiFi::CommandThread()
 {
@@ -572,14 +560,119 @@ BaseType_t WiFi::doUartEcho()
 }
 
 WiFi wifi;
+ultimate_ap_records_t wifi_aps;
 
 void WiFi :: RunModeThread()
 {
-    command_buf_t *buf;
-    while(true) {
-        uart->ReceivePacket(&buf, portMAX_DELAY);
-        printf("Slip Packet Received (%d):\n", buf->size);
-        dump_hex_relative(buf->data, buf->size);
-        uart->FreeBuffer(buf);
+    state = eWifi_NotDetected;
+
+    // quick hack to perform update on the browser
+    FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
+
+    uint16_t major, minor;
+    BaseType_t suc = pdFALSE;
+    while(!suc) {
+        suc = wifi_detect(&major, &minor, moduleName, 32);
     }
+
+    state = eWifi_Detected;
+    FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
+
+
+    int result = wifi_setbaud(6666666, 1);
+    printf("Result of setbaud: %d\n", result);
+
+    wifi_getmac(my_mac);
+    state = eWifi_NotConnected;
+    FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
+
+    wifi_scan(&wifi_aps);
+
+    command_buf_t *buf;
+    rpc_header_t *hdr;
+    event_pkt_got_ip *ev;
+    while(1) {
+        cmd_buffer_received(packets, &buf, portMAX_DELAY);
+        dump_hex_relative(buf->data, buf->size);
+        hdr = (rpc_header_t *)(buf->data);
+        switch(hdr->command) {
+        case EVENT_GOTIP:
+            ev = (event_pkt_got_ip *)buf->data;
+            my_ip = ev->ip;
+            my_gateway = ev->gw;
+            my_netmask = ev->netmask;
+            state = eWifi_Connected;
+            FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
+            break;
+        case EVENT_DISCONNECTED:
+            state = eWifi_NotConnected;
+            FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
+            break;
+        default:
+            break;
+        }
+        cmd_buffer_free(packets, buf);
+    }
+
+    // Wait forever
+    vTaskDelay(portMAX_DELAY);
+}
+
+IndexedList<Browsable *> * BrowsableWifi :: getSubItems(int &error)
+{
+    ultimate_ap_records_t *aps = &wifi_aps;
+    ENTER_SAFE_SECTION;
+    for(int i=0; i<aps->num_records; i++) {
+        children.append(new BrowsableWifiAP(this, (char *)aps->aps[i].ssid, aps->aps[i].rssi, aps->aps[i].authmode));
+    }
+    LEAVE_SAFE_SECTION;
+
+    error = 0;
+    return &children;
+}
+
+void BrowsableWifi :: fetch_context_items(IndexedList<Action *>&items)
+{
+    if (wifi.getState() == eWifi_Connected) {
+        items.append(new Action("Disconnect", BrowsableWifi :: disconnect, 0, 0));
+    } else if(wifi.getState() == eWifi_NotConnected) {
+        items.append(new Action("Show APs..", BrowsableWifi :: list_aps, 0, 0));
+    }
+}
+
+#include "subsys.h"
+int BrowsableWifi :: disconnect(SubsysCommand *cmd)
+{
+    // This should be a command passed to the Wifi thread, don't execute this
+    // from the UI thread
+    wifi_wifi_disconnect();
+//    wifi.state = eWifi_NotConnected;
+}
+
+int BrowsableWifi :: list_aps(SubsysCommand *cmd)
+{
+    if(cmd->user_interface) {
+        return cmd->user_interface->enterSelection();
+    }
+    return -1;
+}
+
+
+void BrowsableWifiAP :: fetch_context_items(IndexedList<Action *>&items)
+{
+    items.append(new Action("Connect", BrowsableWifiAP :: connect_ap, (int)this, 0));
+}
+
+int BrowsableWifiAP :: connect_ap(SubsysCommand *cmd)
+{
+    char password[64] = { 0 };
+    BrowsableWifiAP *bap = (BrowsableWifiAP *)cmd->functionID;
+    if (bap->auth) {
+        if(cmd->user_interface) {
+            cmd->user_interface->string_box("Enter password", password, 64);
+        }
+    }
+    int result = wifi_wifi_connect(bap->ssid, password, bap->auth);
+    printf("Connect result: %d\n", result);
+    return 0;
 }

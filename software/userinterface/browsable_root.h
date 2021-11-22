@@ -14,6 +14,7 @@
 #include "size_str.h"
 #include "user_file_interaction.h"
 #include "network_interface.h"
+#include "wifi.h"
 
 class BrowsableNetwork : public Browsable
 {
@@ -241,6 +242,9 @@ public:
 			for(int i=0; i < NetworkInterface :: getNumberOfInterfaces(); i++) {
 				children.append(new BrowsableNetwork(this, i));
 			}
+#if U64
+			children.append(new BrowsableWifi(this));
+#endif
 		}
 		error = 0;
 		return &children;
