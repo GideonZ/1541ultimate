@@ -38,17 +38,17 @@ extern "C" {
 
 class NetworkLWIP : public NetworkInterface, ConfigurableObject
 {
-	struct pbuf_custom pbuf_array[PBUF_FIFO_SIZE];
-	Fifo<struct pbuf_custom *> pbuf_fifo;
+	struct pbuf pbuf_array[PBUF_FIFO_SIZE];
+	Fifo<struct pbuf *> pbuf_fifo;
 
 	char hostname[24];
 public:
     struct netif   my_net_if;
 
     // fields that are filled in by the configuration
-    struct ip_addr my_ip;
-    struct ip_addr my_netmask;
-    struct ip_addr my_gateway;
+    ip_addr_t my_ip;
+    ip_addr_t my_netmask;
+    ip_addr_t my_gateway;
     int dhcp_enable;
 
     bool   if_up;
@@ -77,7 +77,7 @@ public:
         printf("Network Interface: Output Callback - Base\n");
     }
 
-    void free_pbuf(struct pbuf_custom *pbuf);
+    void free_pbuf(struct pbuf *pbuf);
 
     // from ConfigurableObject
     void effectuate_settings(void);

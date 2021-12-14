@@ -856,7 +856,7 @@ void FTPDataConnection::close_connection()
         lwip_close(sockfd);
 }
 
-int FTPDataConnection::connect_to(struct ip_addr ip, uint16_t port) // active mode
+int FTPDataConnection::connect_to(ip_addr_t ip, uint16_t port) // active mode
 {
     if (sockfd < 0)
         return -ENOTCONN;

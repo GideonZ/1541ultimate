@@ -18,14 +18,14 @@ OUTPUT_FP = $(shell pwd)/output
 PRJ      =  liblwip
 PATH_SW  =  ../../../software
 
-VPATH     = $(PATH_SW)/lwip-1.4.1/src/ \
-			$(PATH_SW)/lwip-1.4.1/src/core/ \
-			$(PATH_SW)/lwip-1.4.1/src/core/ipv4 \
-			$(PATH_SW)/lwip-1.4.1/src/core/snmp \
-			$(PATH_SW)/lwip-1.4.1/src/api \
-			$(PATH_SW)/lwip-1.4.1/src/netif \
-			$(PATH_SW)/lwip-1.4.1/src/include \
-			$(PATH_SW)/lwip-1.4.1/src/include/ipv4 \
+VPATH     = $(PATH_SW)/lwip-2.1.3/src/ \
+			$(PATH_SW)/lwip-2.1.3/src/core/ \
+			$(PATH_SW)/lwip-2.1.3/src/core/ipv4 \
+			$(PATH_SW)/lwip-2.1.3/src/core/snmp \
+			$(PATH_SW)/lwip-2.1.3/src/api \
+			$(PATH_SW)/lwip-2.1.3/src/netif \
+			$(PATH_SW)/lwip-2.1.3/src/include \
+			$(PATH_SW)/lwip-2.1.3/src/include/ipv4 \
 			$(PATH_SW)/FreeRTOS/Source \
 			$(PATH_SW)/FreeRTOS/Source/include \
 			$(PATH_SW)/FreeRTOS/Source/portable/microblaze \
@@ -39,45 +39,42 @@ INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
 SRCS_C   =	sys_arch.c \
 			def.c \
-			dhcp.c \
 			dns.c \
+			inet_chksum.c \
 			init.c \
 			mem.c \
 			memp.c \
 			netif.c \
 			pbuf.c \
 			raw.c \
+			ip.c \
 			stats.c \
 			sys.c \
 			tcp.c \
 			tcp_in.c \
 			tcp_out.c \
-			timers.c \
+			timeouts.c \
 			udp.c \
 			autoip.c \
+			etharp.c \
+			dhcp.c \
 			icmp.c \
 			igmp.c \
-			inet.c \
-			inet_chksum.c \
-			ip.c \
-			ip_addr.c \
-			ip_frag.c \
-			asn1_dec.c \
-			asn1_enc.c \
-			mib2.c \
-			mib_structs.c \
-			msg_in.c \
-			msg_out.c \
+			ip4_addr.c \
+			ip4_frag.c \
+			ip4.c \
 			api_lib.c \
 			api_msg.c \
 			err.c \
+			if_api.c \
 			netbuf.c \
 			netdb.c \
 			netifapi.c \
 			sockets.c \
 			tcpip.c \
-			etharp.c \
-			slipif.c 
+			ethernet.c \
+			slipif.c \
+			zepif.c \
 
 # the order of the files is important, because of the static constructors.
 # main loop defines two important globals that define the event based polling mechanism:

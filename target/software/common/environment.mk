@@ -19,9 +19,9 @@ CROSS        ?= mb-
 ELFTYPE      ?= elf32-microblaze
 ARCHITECTURE ?= MicroBlaze
 
-BOOT = ../2nd_boot
+BOOT    = ../2nd_boot
+LWIP   ?= lwip-2.1.3
 LWIPLIB = ../$(subst -,_,$(CROSS))lwip/result/liblwip.a
-
 
 # External inputs
 ROMS = ../../../roms
@@ -35,7 +35,6 @@ OUTPUT_FP = $(shell pwd)/$(OUTPUT)
 
 PATH_SW  =  ../../../software
 
-LWIP ?= lwip-1.4.1
 
 VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/application/ultimate \
@@ -79,6 +78,8 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/$(LWIP)/src/include/ipv4 \
 			$(PATH_SW)/$(LWIP)/src/include/posix/sys \
 			$(PATH_SW)/$(LWIP)/src/include/posix \
+			$(PATH_SW)/$(LWIP)/src/include/compat/posix/sys \
+			$(PATH_SW)/$(LWIP)/src/include/compat/posix \
 			$(ROMS)
 
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))

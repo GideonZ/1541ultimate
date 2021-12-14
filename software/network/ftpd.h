@@ -93,7 +93,7 @@ class FTPDaemonThread
 	enum ftpd_state_e state;
 	vfs_t *vfs;
 
-	struct ip_addr dataip;
+	ip_addr_t dataip;
 	uint16_t dataport;
 	int passive;
 	FTPDataConnection *connection;
@@ -159,7 +159,7 @@ class FTPDataConnection
 	char buffer[1024];
 
 	int setup_connection();
-	int connect_to(struct ip_addr ip, uint16_t port);
+	int connect_to(ip_addr_t ip, uint16_t port);
 	static void accept_data(void *); // task
 	TaskHandle_t acceptTaskHandle;
 	TaskHandle_t spawningTask;
