@@ -6,13 +6,6 @@
 #include <string.h>
 #include "pattern.h"
 
-#if RUNS_ON_PC
-#include <netinet/in.h>
-#else
-#define fcntl(a,b,c)          lwip_fcntl(a,b,c)
-#endif
-
-#include <sys/fcntl.h>
 #include <ctype.h>
 #include <time.h>
 
@@ -243,7 +236,7 @@ void FTPDaemonThread::run(void *a)
 {
     FTPDaemonThread *thread = (FTPDaemonThread *) a;
     thread->handle_connection();
-    lwip_close(thread->socket);
+    __close(thread->socket);
     delete thread;
     num_threads--;
     vTaskDelete(NULL);
@@ -314,7 +307,7 @@ void FTPDaemonThread::send_msg(const char *msg, ...)
     va_end(arg);
     strcat(buffer, "\r\n");
     len = strlen(buffer);
-    lwip_write(socket, buffer, len);
+    __write(socket, buffer, len);
     dbg_printf("FTPD response: %s", buffer);
 }
 
@@ -851,9 +844,9 @@ int FTPDataConnection::setup_connection()
 void FTPDataConnection::close_connection()
 {
     if (actual_socket)
-        lwip_close(actual_socket);
+        __close(actual_socket);
     if ((sockfd) && (actual_socket != sockfd))
-        lwip_close(sockfd);
+        __close(sockfd);
 }
 
 int FTPDataConnection::connect_to(struct ip_addr ip, uint16_t port) // active mode
@@ -967,7 +960,7 @@ void FTPDataConnection::directory(int listType, vfs_dir_t *dir)
                 len = sprintf(buffer, "Internal Error\r\n");
             }
             buffer[len] = 0;
-            lwip_send(actual_socket, buffer, len, 0);
+            send(actual_socket, buffer, len, 0);
 
             // for the next iteration
             vfs_dirent = vfs_readdir(dir);
@@ -983,7 +976,7 @@ void FTPDataConnection::sendfile(vfs_file_t *file)
         do {
             read = vfs_read(buffer, 1024, 1, file);
             if (read)
-                lwip_send(actual_socket, buffer, read, 0);
+                send(actual_socket, buffer, read, 0);
         } while (read > 0);
     }
     vfs_close(file);

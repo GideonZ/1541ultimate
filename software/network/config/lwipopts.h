@@ -965,7 +965,7 @@
  * Disable this option if you use a POSIX operating system that uses the same
  * names (read, write & close). (only used if you use sockets.c)
  */
-#define LWIP_POSIX_SOCKETS_IO_NAMES     0
+#define LWIP_POSIX_SOCKETS_IO_NAMES     1
 
 /**
  * LWIP_TCP_KEEPALIVE==1: Enable TCP_KEEPIDLE, TCP_KEEPINTVL and TCP_KEEPCNT

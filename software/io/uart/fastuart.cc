@@ -318,8 +318,8 @@ BaseType_t FastUART :: TransmitPacket(command_buf_t *buf, uint16_t *ms)
 {
     if (cmd_buffer_transmit(packets, buf) == pdTRUE) {
         if (txDebug) {
-            printf("Transmit packet: (%d bytes)\n", buf->size);
-            dump_hex_relative(buf->data, (buf->size < 48) ? buf->size : 48);
+            printf("Transmit packet %d: (%d bytes)\n", buf->bufnr, buf->size);
+            dump_hex_relative(buf->data, (buf->size < 64) ? buf->size : 64);
         }
         // Now enable the interrupt, so that the packet is going to be transmitted
         if (ms) {

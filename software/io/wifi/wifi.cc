@@ -90,9 +90,9 @@ void WiFi :: Disable()
     U64_WIFI_CONTROL = 0;
 }
 
-void WiFi :: Enable()
+void WiFi :: Enable(bool startTask)
 {
-    U64_WIFI_CONTROL = 0;
+    Disable();
     vTaskDelay(50);
     uart->SetBaudRate(115200);
     uart->EnableLoopback(false);
@@ -104,16 +104,14 @@ void WiFi :: Enable()
     U64_WIFI_CONTROL = 1; // 5 for watching the UART output directly
 
     uart->PrintRxMessage();
-    xTaskCreate( WiFi :: RunModeTaskStart, "WiFi RunTask", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &runModeTask );
+    if (startTask) {
+        xTaskCreate( WiFi :: RunModeTaskStart, "WiFi RunTask", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &runModeTask );
+    }
 }
 
 void WiFi :: Boot()
 {
-    // stop running the run-mode task
-    if (runModeTask) {
-        vTaskDelete(runModeTask);
-        runModeTask = NULL;
-    }
+    Disable();
 
     U64_WIFI_CONTROL = 2;
     vTaskDelay(150);
@@ -461,7 +459,7 @@ void WiFi::CommandThread()
             break;
         case WIFI_START:
             uart->EnableSlip(true);
-            Enable();
+            Enable(true);
             break;
         case WIFI_DOWNLOAD:
             uart->EnableSlip(false); // first receive boot message
@@ -485,9 +483,11 @@ void WiFi::CommandThread()
             }
             break;
         case WIFI_ECHO:
+            Enable(false);
             RequestEcho();
             break;
         case UART_ECHO:
+            Disable();
             UartEcho();
             break;
         default:
@@ -571,13 +571,14 @@ void WiFi :: RunModeThread()
 
     uint16_t major, minor;
     BaseType_t suc = pdFALSE;
+
+    uart->txDebug = true;
     while(!suc) {
         suc = wifi_detect(&major, &minor, moduleName, 32);
     }
 
     state = eWifi_Detected;
     FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
-
 
     int result = wifi_setbaud(6666666, 1);
     printf("Result of setbaud: %d\n", result);
@@ -591,6 +592,7 @@ void WiFi :: RunModeThread()
     command_buf_t *buf;
     rpc_header_t *hdr;
     event_pkt_got_ip *ev;
+
     while(1) {
         cmd_buffer_received(packets, &buf, portMAX_DELAY);
         dump_hex_relative(buf->data, buf->size);
@@ -605,7 +607,11 @@ void WiFi :: RunModeThread()
             FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
             break;
         case EVENT_DISCONNECTED:
-            state = eWifi_NotConnected;
+            if (state == eWifi_Connected) {
+                state = eWifi_NotConnected;
+            } else {
+                state = eWifi_Failed;
+            }
             FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
             break;
         default:
@@ -635,7 +641,7 @@ void BrowsableWifi :: fetch_context_items(IndexedList<Action *>&items)
 {
     if (wifi.getState() == eWifi_Connected) {
         items.append(new Action("Disconnect", BrowsableWifi :: disconnect, 0, 0));
-    } else if(wifi.getState() == eWifi_NotConnected) {
+    } else if ((wifi.getState() == eWifi_NotConnected) || (wifi.getState() == eWifi_Failed)) {
         items.append(new Action("Show APs..", BrowsableWifi :: list_aps, 0, 0));
     }
 }

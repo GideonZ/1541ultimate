@@ -28,6 +28,7 @@ typedef enum {
     eWifi_Detected,
     eWifi_NotConnected,
     eWifi_Connected,
+    eWifi_Failed,
 } WifiState_t;
 
 class WiFi
@@ -47,7 +48,7 @@ class WiFi
     bool doClose;
     bool programError;
 
-    void Enable();
+    void Enable(bool);
     void Disable();
     void Boot();
     int  Download(const uint8_t *binary, uint32_t address, uint32_t length);
@@ -126,6 +127,10 @@ public:
             break;
         case eWifi_Detected:
             sprintf(buffer, "WiFi    %#s\eJLink Down", width-17, wifi.moduleName);
+            break;
+        case eWifi_Failed:
+            wifi.getMacAddr(mac);
+            sprintf(buffer, "WiFi    MAC %b:%b:%b:%b:%b:%b%#s\eGFailed", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], width-38, "");
             break;
         case eWifi_NotConnected:
             wifi.getMacAddr(mac);

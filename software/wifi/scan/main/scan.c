@@ -278,8 +278,9 @@ void app_main()
     cmd_buffer_init(&work_buffers);
 
     // Initialize Dispatchers and attach them to the buffers
-    //create_dispatchers(2048, &work_buffers);
-
+#if MULTITHREADED
+    create_dispatchers(DISPATCHER_STACK, &work_buffers);
+#endif
     // Now install the driver for UART1.  We use our own buffer mechanism and interrupt routine
     ESP_ERROR_CHECK(my_uart_init(&work_buffers, UART_NUM_1));
 

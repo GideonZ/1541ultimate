@@ -21,10 +21,12 @@ typedef struct {
 void create_dispatchers(int stacksize, command_buf_context_t *bufs);
 void dispatch(void *ct);
 
-#define IDENT_MAJOR  0
-#define IDENT_MINOR  6
-#define IDENT_STRING "ESP-32 RPC Socket Layer V0.6"
-#define UART_DEBUG 0
-#define U64BUILD   1
+#define IDENT_STRING "ESP-32 RPC Socket Layer V0.7"
+#define IDENT_MAJOR   0
+#define IDENT_MINOR   7
+#define UART_DEBUG    0
+#define U64BUILD      1
+#define MULTITHREADED 1
+#define DISPATCHER_STACK 2000
 
 #endif /* SOFTWARE_WIFI_SCAN_MAIN_RPC_DISPATCH_H_ */

@@ -290,6 +290,46 @@ void cmd_gethostbyname(command_buf_t *buf)
     my_uart_transmit_packet(UART_CHAN, buf);
 }
 
+void cmd_getsockname(command_buf_t *buf)
+{
+    rpc_getsockname_req *param = (rpc_getsockname_req *)buf->data;
+    rpc_getsockname_resp *resp = (rpc_getsockname_resp *)buf->data;
+    socklen_t len = param->namelen;
+    socklen_t newlen = 0;
+    resp->retval = getsockname(param->socket, &resp->name, &newlen);
+    resp->xerrno = errno;
+    if (newlen > len) {
+        newlen = len;
+    }
+    buf->size = sizeof(rpc_getsockname_resp) + newlen - 1;
+    my_uart_transmit_packet(UART_CHAN, buf);
+}
+
+void cmd_getsockopt(command_buf_t *buf)
+{
+    rpc_getsockopt_req *param = (rpc_getsockopt_req *)buf->data;
+    rpc_getsockopt_resp *resp = (rpc_getsockopt_resp *)buf->data;
+    socklen_t len = param->optlen;
+    socklen_t newlen = 0;
+    resp->retval = getsockopt(param->socket, param->level, param->optname, &resp->optval, &newlen);
+    resp->xerrno = errno;
+    if (newlen > len) {
+        newlen = len;
+    }
+    buf->size = sizeof(rpc_getsockopt_resp) + newlen - 1;
+    my_uart_transmit_packet(UART_CHAN, buf);
+}
+
+void cmd_setsockopt(command_buf_t *buf)
+{
+    rpc_setsockopt_req *param = (rpc_setsockopt_req *)buf->data;
+    rpc_setsockopt_resp *resp = (rpc_setsockopt_resp *)buf->data;
+    resp->retval = setsockopt(param->socket, param->level, param->optname, &param->optval, param->optlen);
+    resp->xerrno = errno;
+    buf->size = sizeof(rpc_setsockopt_resp);
+    my_uart_transmit_packet(UART_CHAN, buf);
+}
+
 void cmd_not_implemented(command_buf_t *buf)
 {
     rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
@@ -304,6 +344,7 @@ void dispatch(void *ct)
     command_buf_t *pbuffer;
     rpc_header_t *hdr;
 
+    printf("Dispatcher Start. Queue = %p\n", queue);
     while(1) {
         pbuffer = NULL;
         xQueueReceive(queue, &pbuffer, portMAX_DELAY);
@@ -375,10 +416,16 @@ void dispatch(void *ct)
         case CMD_GETHOSTBYNAME:
             cmd_gethostbyname(pbuffer);
             break;
-        case CMD_GETPEERNAME:
         case CMD_GETSOCKNAME:
+            cmd_getsockname(pbuffer);
+            break;
         case CMD_GETSOCKOPT:
+            cmd_getsockopt(pbuffer);
+            break;
         case CMD_SETSOCKOPT:
+            cmd_setsockopt(pbuffer);
+            break;
+        case CMD_GETPEERNAME:
         case CMD_IOCTL:
         case CMD_FCNTL:
         default:

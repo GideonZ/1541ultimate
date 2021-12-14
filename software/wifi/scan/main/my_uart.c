@@ -107,6 +107,16 @@ void hex(uint8_t h)
     WRITE_PERI_REG(UART_FIFO_AHB_REG(0), hexchars[h & 15]);
 }
 
+void hexp(void *p)
+{
+    uint32_t v = (uint32_t)p;
+    hex(v >> 24);
+    hex(v >> 16);
+    hex(v >> 8);
+    hex(v >> 0);
+}
+
+
 // User ISR handler for UART
 void UART_ISR_ATTR my_uart_intr_handler(void *param)
 {
@@ -225,8 +235,12 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
 #if UART_DEBUG
                                 WRITE_PERI_REG(UART_FIFO_AHB_REG(0), ']');
                                 hex(buf->bufnr);
+                                WRITE_PERI_REG(UART_FIFO_AHB_REG(0), ':');
+                                hexp(dispatcher);
+                                WRITE_PERI_REG(UART_FIFO_AHB_REG(0), '\'');
+                                hexp(dispatcher->queue);
 #endif
-                                xQueueSendFromISR(dispatcher->queue, buf, &HPTaskAwoken);
+                                xQueueSendFromISR(dispatcher->queue, &buf, &HPTaskAwoken);
                             } else {
 #if UART_DEBUG
                                 WRITE_PERI_REG(UART_FIFO_AHB_REG(0), '>');

@@ -425,8 +425,8 @@ void SocketDMA::dmaThread(void *load_buffer)
             performCommand(newsockfd, load_buffer, n, cmd, len32, &cli_addr.sin_addr);
 		}
         puts("ERROR reading from socket");
-        lwip_close(newsockfd);
+        __close(newsockfd);
     }
     // this will never happen
-    lwip_close(sockfd);
+    __close(sockfd);
 }

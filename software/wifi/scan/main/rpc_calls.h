@@ -275,16 +275,66 @@ typedef struct {
     struct in_addr addr;
 } rpc_gethostbyname_resp;
 
+//----------------------------------
+// getsockname
 
+typedef struct {
+    rpc_header_t hdr;
+    int socket;
+    int namelen;
+} rpc_getsockname_req;
+
+typedef struct {
+    rpc_header_t hdr;
+    int retval;
+    int xerrno;
+    int namelen;
+    struct sockaddr name;
+} rpc_getsockname_resp;
+
+//----------------------------------
+// setsockopt
+
+typedef struct {
+    rpc_header_t hdr;
+    int socket;
+    int level;
+    int optname;
+    int optlen;
+    char optval;
+} rpc_setsockopt_req;
+
+typedef struct {
+    rpc_header_t hdr;
+    int retval;
+    int xerrno;
+} rpc_setsockopt_resp;
+
+//----------------------------------
+// getsockopt
+
+typedef struct {
+    rpc_header_t hdr;
+    int socket;
+    int level;
+    int optname;
+    int optlen;
+} rpc_getsockopt_req;
+
+typedef struct {
+    rpc_header_t hdr;
+    int retval;
+    int xerrno;
+    int optlen;
+    char optval;
+} rpc_getsockopt_resp;
 
 // ioctl
 // fcntl
 // getpeername
-// getsockname
-// getsockopt
-// setsockopt
 
 // select
+
 
 // Events
 typedef struct {
@@ -326,33 +376,33 @@ typedef struct {
 #define EVENT_GOTIP         0x41
 #define EVENT_DISCONNECTED  0x42
 
-// int lwip_socket(int domain, int type, int protocol);
-// int lwip_connect(int s, const struct sockaddr *name, socklen_t namelen);
-// int lwip_accept(int s, struct sockaddr *addr, socklen_t *addrlen);
-// int lwip_bind(int s, const struct sockaddr *name, socklen_t namelen);
-// int lwip_shutdown(int s, int how);
-// int lwip_close(int s);
-// int lwip_listen(int s, int backlog);
+// int socket(int domain, int type, int protocol);
+// int connect(int s, const struct sockaddr *name, socklen_t namelen);
+// int accept(int s, struct sockaddr *addr, socklen_t *addrlen);
+// int bind(int s, const struct sockaddr *name, socklen_t namelen);
+// int shutdown(int s, int how);
+// int close(int s);
+// int listen(int s, int backlog);
 
-// int lwip_read(int s, void *mem, size_t len);
-// int lwip_recv(int s, void *mem, size_t len, int flags);
-// int lwip_recvfrom(int s, void *mem, size_t len, int flags,
+// int read(int s, void *mem, size_t len);
+// int recv(int s, void *mem, size_t len, int flags);
+// int recvfrom(int s, void *mem, size_t len, int flags,
 //       struct sockaddr *from, socklen_t *fromlen);
 
-// int lwip_write(int s, const void *dataptr, size_t size);
-// int lwip_send(int s, const void *dataptr, size_t size, int flags);
-// int lwip_sendto(int s, const void *dataptr, size_t size, int flags,
+// int write(int s, const void *dataptr, size_t size);
+// int send(int s, const void *dataptr, size_t size, int flags);
+// int sendto(int s, const void *dataptr, size_t size, int flags,
 //     const struct sockaddr *to, socklen_t tolen);
 
-// int lwip_getpeername (int s, struct sockaddr *name, socklen_t *namelen);
-// int lwip_getsockname (int s, struct sockaddr *name, socklen_t *namelen);
-// int lwip_getsockopt (int s, int level, int optname, void *optval, socklen_t *optlen);
-// int lwip_setsockopt (int s, int level, int optname, const void *optval, socklen_t optlen);
+// int getpeername (int s, struct sockaddr *name, socklen_t *namelen);
+// int getsockname (int s, struct sockaddr *name, socklen_t *namelen);
+// int getsockopt (int s, int level, int optname, void *optval, socklen_t *optlen);
+// int setsockopt (int s, int level, int optname, const void *optval, socklen_t optlen);
 
-// int lwip_ioctl(int s, long cmd, void *argp);
-// int lwip_fcntl(int s, int cmd, int val);
+// int ioctl(int s, long cmd, void *argp);
+// int fcntl(int s, int cmd, int val);
 
-// int lwip_select(int maxfdp1, fd_set *readset, fd_set *writeset, fd_set *exceptset,
+// int select(int maxfdp1, fd_set *readset, fd_set *writeset, fd_set *exceptset,
 //                 struct timeval *timeout);
 
 
