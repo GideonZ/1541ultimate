@@ -321,8 +321,13 @@ void Modem :: IncomingConnection(int socket)
         		case 38400: { tmp=RESP_CONNECT_38400; break; }
         	}
 
-        	responseString = responseText[tmp];
-        	responseLen = strlen(responseString);
+        	if(verbose == TRUE) {
+        		responseString = responseText[tmp];
+        		responseLen = strlen(responseString);
+        	} else {
+        		responseString = responseCode[tmp];
+        		responseLen = strlen(responseString);
+        	}
 
             acia.SendToRx((uint8_t*)responseString, responseLen);
 
