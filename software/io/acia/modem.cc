@@ -211,6 +211,10 @@ void Modem :: RunRelay(int socket)
                 printf("Modem Escape detected!\n");
                 escapeCount = 0;
                 commandMode = true;
+
+                responseString = (verbose==TRUE ? responseText[RESP_OK] : responseCode[RESP_OK]);
+                responseLen=strlen(responseString);
+                acia.SendToRx((uint8_t*)responseString, responseLen);
             }
         }
 
@@ -558,6 +562,7 @@ int Modem :: ExecuteCommand(ModemCommand_t *cmd)
     const char *response;
     char responseBuffer[16];
     int registerValue, temp;
+    bool doesResponse = true;
 
     response = (verbose==TRUE ? responseText[RESP_OK] : responseCode[RESP_OK]);
 
@@ -579,7 +584,7 @@ int Modem :: ExecuteCommand(ModemCommand_t *cmd)
             response = "";
             break;
         case 'I': // identify
-            response = "ULTIMATE-II MODEM EMULATION LAYER\rMADE BY GIDEON\rVERSION V1.0\r";
+            response = "ULTIMATE-II MODEM EMULATION LAYER\rMADE BY GIDEON\rVERSION V1.1\r";
             break;
         case 'Z': // reset
             ResetRegisters();
@@ -600,6 +605,7 @@ int Modem :: ExecuteCommand(ModemCommand_t *cmd)
             }
             keepConnection = true;
             connectionStateChange = 2;
+            doesResponse=false;
             break;
         case 'O': // Return Online
             if (keepConnection) {
@@ -666,7 +672,11 @@ int Modem :: ExecuteCommand(ModemCommand_t *cmd)
             break;
         }
     }
-    acia.SendToRx((uint8_t *)response, strlen(response));
+
+    //ATA command does not return a response (except for CONNECT response)
+    if(doesResponse)
+    	acia.SendToRx((uint8_t *)response, strlen(response));
+
     return connectionStateChange;
 }
 
