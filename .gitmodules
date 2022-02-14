@@ -1,0 +1,3 @@
+[submodule "neorv32"]
+	path = neorv32
+	url = https://github.com/GideonZ/neorv32
