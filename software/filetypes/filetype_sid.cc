@@ -10,6 +10,7 @@
 #include "init_function.h"
 #include "dump_hex.h"
 #include "sid_config.h"
+#include "endianness.h"
 
 extern uint8_t _sidcrt_bin_start;
 extern uint8_t _sidcrt_bin_end;
@@ -72,18 +73,6 @@ const uint8_t ascii[59] = {
 cart_def sid_cart; // = { ID_SIDCART, (void *)0, 0x4000, CART_TYPE_16K | CART_RAM };
 cart_def mus_cart; // = { ID_SIDCART, (void *)0, 0x4000, CART_TYPE_16K | CART_RAM };
 
-static inline uint16_t swap_word(uint16_t p)
-{
-#if NIOS
-	return p;
-#else
-	uint16_t out = (p >> 8) | (p << 8);
-	return out;
-#endif
-}
-
-#define le2cpu  swap_word
-#define cpu2le  swap_word
 #define swap(p) (((p) >> 8) | ((p) << 8))
 
 static void initSidCart(void *object, void *param)

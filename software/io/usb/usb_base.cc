@@ -7,15 +7,10 @@ extern "C" {
 #include "usb_device.h"
 #include "task.h"
 #include "profiler.h"
+#include "endianness.h"
 
 #include <stdlib.h>
 #include <string.h>
-
-#ifdef NIOS
-#define nano_word(x) ((x >> 8) | ((x & 0xFF) << 8))
-#else // assume big endian
-#define nano_word(x) x
-#endif
 
 UsbBase usb2;
 

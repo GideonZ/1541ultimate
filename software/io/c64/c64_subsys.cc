@@ -13,6 +13,7 @@
 #include "userinterface.h"
 #include "u64.h"
 #include "c1541.h"
+#include "endianness.h"
 
 #define C64_BOOTCRT_DOSYNC    0x014F
 #define C64_BOOTCRT_RUNCODE   0x0172
@@ -39,16 +40,6 @@ static void initBootCart(void *object, void *param)
     printf("%d bytes copied into boot_cart.\n", size);
 }
 InitFunction bootCart_initializer(initBootCart, NULL, NULL);
-
-static inline uint16_t le2cpu(uint16_t p)
-{
-#if NIOS
-	return p;
-#else
-	uint16_t out = (p >> 8) | (p << 8);
-	return out;
-#endif
-}
 
 C64_Subsys::C64_Subsys(C64 *machine)  : SubSystem(SUBSYSID_C64) {
 	taskHandle = 0;
