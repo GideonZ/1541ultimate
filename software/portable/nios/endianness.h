@@ -16,4 +16,6 @@ __inline uint16_t cpu_to_16le(uint16_t p)
 #define le16_to_cpu(x)  cpu_to_16le(x)
 #define le_to_cpu_32(x) cpu_to_32le(x)
 
+#define BYTE_ORDER LITTLE_ENDIAN
+
 #endif /* ENDIANNESS_H */
