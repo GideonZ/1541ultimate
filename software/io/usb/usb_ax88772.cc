@@ -8,6 +8,7 @@
 #include "profiler.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include "endianness.h"
 
 #define DEBUG_RAW_PKT 0
 #define DEBUG_INVALID_PKT 0
@@ -57,27 +58,6 @@ const uint16_t good_srom[] = {
 	0x6500, 0x6300, 0x2E00, 0x2000, 0x4300, 0x6F00, 0x7200, 0x7000,
 	0x2E00, 0x1203, 0x4100, 0x5800, 0x3800, 0x3800, 0x7800, 0x3700,
 	0x3200, 0x4100, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF };
-
-__inline uint32_t cpu_to_32le(uint32_t a)
-{
-#ifdef NIOS
-	return a;
-#else
-	uint32_t m1, m2;
-    m1 = (a & 0x00FF0000) >> 8;
-    m2 = (a & 0x0000FF00) << 8;
-    return (a >> 24) | (a << 24) | m1 | m2;
-#endif
-}
-
-__inline uint16_t le16_to_cpu(uint16_t h)
-{
-#ifdef NIOS
-	return h;
-#else // assume big endian
-    return (h >> 8) | (h << 8);
-#endif
-}
 
 // Entry point for call-backs.
 void UsbAx88772Driver_interrupt_callback(void *object) {
