@@ -32,13 +32,8 @@ FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_sid(FileType :: getFi
 const uint8_t DEFAULT_SONG_LENGTH_MUS = 3;		// in minutes
 const uint8_t DEFAULT_SONG_LENGTH_SID = 5;		// in minutes
 
-#if NIOS
 const uint32_t magic_psid = 0x44495350; // little endian
 const uint32_t magic_rsid = 0x44495352; // little endian
-#else
-const uint32_t magic_psid = 0x50534944; // big endian
-const uint32_t magic_rsid = 0x52534944; // big endian
-#endif
 
 const int string_offsets[4] = { 0x16, 0x36, 0x56, 0x76 };
 
@@ -205,7 +200,7 @@ int FileTypeSID :: readHeader(void)
 
     // header checks
     magic = (uint32_t *)sid_header;
-    if ((*magic != magic_rsid)&&(*magic != magic_psid)) {
+    if ((cpu_to_32le(*magic) != magic_rsid)&&(cpu_to_32le(*magic) != magic_psid)) {
         printf("Filetype not as expected. (%08x)\n", *magic);
 		fm->fclose(file);
 		file = NULL;

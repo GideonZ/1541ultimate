@@ -743,11 +743,9 @@ void IecInterface :: get_warp_data(void)
     GCR_DECODER_GCR_IN = 0x55;
     *(dw++) = GCR_DECODER_BIN_OUT_32;
 
-#if NIOS
+    read = cpu_to_32le(read);
     uint8_t sector = (uint8_t)(read >> 24);
-#else
-    uint8_t sector = (uint8_t)read;
-#endif
+
     uint8_t track = HW_IEC_RX_DATA;
     uint8_t *dest = ulticopy_bin_image->get_sector_pointer(track, sector);
     uint8_t *src = (uint8_t *)temp;
