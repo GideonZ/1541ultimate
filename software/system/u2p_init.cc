@@ -8,7 +8,6 @@
 #include "u2p_init.h"
 #include <stdio.h>
 
-#include "system.h"
 #include "u2p.h"
 
 U2P_Init hardwareInitializer;
