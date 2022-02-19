@@ -104,7 +104,7 @@ bool SidAutoConfig(int count, t_sid_definition *requests) __attribute__((weak));
 
 bool SidAutoConfig(int count, t_sid_definition *requests)
 {
-
+    return true;
 }
 
 bool FileTypeSID :: ConfigSIDs(void)

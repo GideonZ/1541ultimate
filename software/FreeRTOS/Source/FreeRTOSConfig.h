@@ -47,6 +47,11 @@ your application. */
 #define configTIMER_QUEUE_LENGTH                10
 #define configTIMER_TASK_STACK_DEPTH            configMINIMAL_STACK_SIZE
 
+/* Definitions added for RiscV. */
+#define configISR_STACK_SIZE_WORDS      256
+#define configMTIME_BASE_ADDRESS        ( 0 )
+#define configMTIMECMP_BASE_ADDRESS     ( 0 )
+
 /* Interrupt nesting behaviour configuration. */
 #define configKERNEL_INTERRUPT_PRIORITY         0x01
 #define configMAX_SYSCALL_INTERRUPT_PRIORITY    0x03
@@ -79,9 +84,12 @@ void vAssertCalled( const char* fileName, uint16_t lineNo );
 
 /* A header file that defines trace macro can be included here. */
 
+
 #include "profiler.h"
-#define traceTASK_SWITCHED_OUT(x)  PROFILER_TASK = 0;
-#define traceTASK_SWITCHED_IN(x)   PROFILER_TASK = pxCurrentTCB->uxTCBNumber;
+//#define traceTASK_SWITCHED_OUT(x)  PROFILER_TASK = 0;
+//#define traceTASK_SWITCHED_IN(x)   PROFILER_TASK = pxCurrentTCB->uxTCBNumber;
 //#define traceTASK_SWITCHED_IN(x)   do { PROFILER_TASK = pxCurrentTCB->uxTCBNumber; outbyte(0x40 + (pxCurrentTCB->uxTCBNumber)); } while(0);
+
+// Our RiscV does not have MTIME, nor CLINT, because we're poor
 
 #endif /* FREERTOS_CONFIG_H */

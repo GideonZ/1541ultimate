@@ -16,7 +16,7 @@
 #if RUNS_ON_PC
 	#include <netinet/in.h>
 #else
-	#define fcntl(a,b,c)          lwip_fcntl(a,b,c)
+//	#define fcntl(a,b,c)          lwip_fcntl(a,b,c)
 #endif
 
 #include <sys/fcntl.h>

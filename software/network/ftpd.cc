@@ -9,7 +9,7 @@
 #if RUNS_ON_PC
 #include <netinet/in.h>
 #else
-#define fcntl(a,b,c)          lwip_fcntl(a,b,c)
+//#define fcntl(a,b,c)          lwip_fcntl(a,b,c)
 #endif
 
 #include <sys/fcntl.h>
@@ -911,6 +911,7 @@ int FTPDataConnection::do_bind(void)
     xTaskCreate(FTPDataConnection::accept_data, "FTP Data", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 2,
             &acceptTaskHandle);
     vTaskDelay(1); // allow the other task to run
+    return 0;
 }
 
 // static
