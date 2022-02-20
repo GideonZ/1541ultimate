@@ -15,9 +15,6 @@ library ieee;
     use ieee.std_logic_1164.all;
     use ieee.numeric_std.all;
 
-library unisim;
-    use unisim.vcomponents.all;
-
 library work;    
     use work.endianness_pkg.all;
     use work.io_bus_pkg.all;
@@ -42,7 +39,7 @@ end floppy_param_mem;
 
 architecture gideon of floppy_param_mem is
     signal toggle     : std_logic;
-    signal param_addr : std_logic_vector(8 downto 0);
+    signal param_addr : unsigned(8 downto 0);
     signal param_data : std_logic_vector(31 downto 0);
     signal ram_data   : std_logic_vector(31 downto 0);
 
@@ -53,31 +50,22 @@ begin
     cpu_ram_en   <= io_req.read or io_req.write;
     cpu_ram_en_d <= cpu_ram_en when rising_edge(clock); 
     io_resp.ack  <= cpu_ram_en_d;
-    io_resp.data <= cpu_rdata when cpu_ram_en_d = '1' else X"00"; 
+    io_resp.data <= X"00"; -- cpu_rdata when cpu_ram_en_d = '1' else X"00"; 
     
-    ram: RAMB16_S9_S36
+    ram: entity work.pseudo_dpram_8x32
     port map (
-		CLKA  => clock,
-		SSRA  => reset,
-		ENA   => cpu_ram_en,
-		WEA   => io_req.write,
-        ADDRA => std_logic_vector(io_req.address(10 downto 0)),
-		DIA   => io_req.data,
-		DIPA  => "0",
-		DOA   => cpu_rdata,
-		DOPA  => open,
-    
-		CLKB  => clock,
-		SSRB  => reset,
-		ENB   => '1',
-		WEB   => '0',
-        ADDRB => param_addr,
-		DIB   => X"00000000",
-		DIPB  => X"0",
-		DOB   => ram_data,
-		DOPB  => open );
+        wr_clock    => clock,
+        wr_en       => io_req.write,
+        wr_address  => io_req.address(10 downto 0),
+        wr_data     => io_req.data,
 
-    param_addr <= side & std_logic_vector(track) & toggle;
+        rd_clock    => clock,
+        rd_en       => '1',
+        rd_address  => param_addr,    
+        rd_data     => ram_data
+    );
+		
+    param_addr <= side & track & toggle;
     param_data <= byte_swap(ram_data, g_big_endian);
 
     process(clock)

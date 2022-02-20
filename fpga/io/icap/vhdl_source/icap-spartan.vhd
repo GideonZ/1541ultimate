@@ -11,6 +11,7 @@ use unisim.vcomponents.all;
 
 entity icap is
 generic (
+    g_enable    : boolean := true;
     g_fpga_type	: std_logic_vector(7 downto 0) := X"3A" );
 port (
     clock       : in  std_logic;
@@ -88,13 +89,14 @@ begin
         end if;
     end process;
 
-    i_icap: ICAP_SPARTAN3A
-    port map (
-        CLK     => icap_clk,
-        CE      => icap_cen,
-        WRITE   => icap_cen,
-        I       => icap_data,
-        O       => open,
-        BUSY    => open );
-
+    r_icap: if g_enable generate
+        i_icap: ICAP_SPARTAN3A
+        port map (
+            CLK     => icap_clk,
+            CE      => icap_cen,
+            WRITE   => icap_cen,
+            I       => icap_data,
+            O       => open,
+            BUSY    => open );
+    end generate;
 end architecture;
