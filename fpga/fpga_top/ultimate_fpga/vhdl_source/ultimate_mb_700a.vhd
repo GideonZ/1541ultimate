@@ -141,7 +141,13 @@ architecture structural of ultimate_mb_700a is
     signal memctrl_inhibit  : std_logic;
     signal mem_req          : t_mem_req_32;
     signal mem_resp         : t_mem_resp_32;
-
+    signal cpu_mem_req      : t_mem_req_32;
+    signal cpu_mem_resp     : t_mem_resp_32;
+    signal misc_io          : std_logic_vector(7 downto 0);
+    signal io_req           : t_io_req;
+    signal io_resp          : t_io_resp;
+    signal io_irq           : std_logic;
+    
     -- IEC open drain
     signal iec_atn_o   : std_logic;
     signal iec_data_o  : std_logic;
@@ -176,6 +182,10 @@ architecture structural of ultimate_mb_700a is
     signal audio_left  : signed(18 downto 0);
     signal audio_right : signed(18 downto 0);
 
+    -- Some CPU locals
+    signal invalidate       : std_logic;
+    signal inv_addr         : std_logic_vector(31 downto 0);
+    constant c_tag_usb2     : std_logic_vector(7 downto 0) := X"09";
 begin
     reset_in <= '1' when BUTTON="000" else '0'; -- all 3 buttons pressed
     button_i <= not BUTTON;
@@ -190,6 +200,34 @@ begin
         sys_clock    => sys_clock,    -- 50 MHz
         sys_reset    => sys_reset,
         sys_clock_2x => sys_clock_2x );
+
+    i_cpu: entity work.mblite_wrapper
+    generic map (
+        g_tag_i     => X"20",
+        g_tag_d     => X"21" )
+    port map (
+        clock       => sys_clock,
+        reset       => sys_reset,
+        mb_reset    => '0',
+        
+        irq_i       => io_irq,
+        disable_i   => misc_io(1),
+        disable_d   => misc_io(2),
+        invalidate  => invalidate,
+        inv_addr    => inv_addr,
+        
+        -- memory interface
+        mem_req     => cpu_mem_req,
+        mem_resp    => cpu_mem_resp,
+        
+        io_busy     => open,
+        io_req      => io_req,
+        io_resp     => io_resp );
+
+    -- TODO: also invalidate for rmii
+    invalidate <= misc_io(0) when (mem_resp.rack_tag(5 downto 0) = c_tag_usb2(5 downto 0)) and (mem_req.read_writen = '0') else '0';
+    inv_addr(31 downto 26) <= (others => '0');
+    inv_addr(25 downto 0) <= std_logic_vector(mem_req.address);
 
     i_logic: entity work.ultimate_logic_32
     generic map (
@@ -261,6 +299,14 @@ begin
         io1n_i      => IO1n,
         io2n_i      => IO2n,
         
+        -- CPU Interface
+        misc_io     => misc_io,
+        ext_io_req  => io_req,
+        ext_io_resp => io_resp,
+        ext_mem_req => cpu_mem_req,
+        ext_mem_resp=> cpu_mem_resp,
+        cpu_irq     => io_irq,
+
         -- local bus side
         mem_inhibit => memctrl_inhibit,
         --memctrl_idle    => memctrl_idle,

@@ -24,8 +24,7 @@ generic (
     g_boot_stop     : boolean := false;
     g_direct_dma    : boolean := false;
     g_ext_freeze_act: boolean := false;
-    g_microblaze    : boolean := true;
-    g_big_endian    : boolean := true;
+    g_big_endian    : boolean := false;
     g_boot_rom      : boolean := false;
     g_video_overlay : boolean := false;
     g_icap          : boolean := false;
@@ -246,12 +245,12 @@ port (
     keyb_row    : in    std_logic_vector(7 downto 0) := (others => '1');
     keyb_col    : inout std_logic_vector(7 downto 0) := (others => '1');
 
-    -- Simulation port
+    -- CPU / Simulation port
+    misc_io     : out std_logic_vector(7 downto 0); -- switches to control caches
     ext_io_req  : in  t_io_req := c_io_req_init;
     ext_io_resp : out t_io_resp;
     ext_mem_req : in  t_mem_req_32 := c_mem_req_32_init;
     ext_mem_resp: out t_mem_resp_32;
-    
     cpu_irq     : out std_logic;
     trigger     : in  std_logic := '0';
     sw_trigger  : out std_logic;
@@ -334,10 +333,6 @@ architecture logic of ultimate_logic_32 is
     signal tick_1MHz        : std_logic;
     signal tick_1kHz        : std_logic;    
 
-	-- Memory interface
-    signal mem_req_32_cpu        : t_mem_req_32 := c_mem_req_32_init;
-    signal mem_resp_32_cpu       : t_mem_resp_32 := c_mem_resp_32_init;
-
     -- converted to 32 bits
     signal mem_req_32_1541       : t_mem_req_32 := c_mem_req_32_init;
     signal mem_resp_32_1541      : t_mem_resp_32 := c_mem_resp_32_init;
@@ -351,11 +346,6 @@ architecture logic of ultimate_logic_32 is
     signal mem_resp_32_rmii      : t_mem_resp_32 := c_mem_resp_32_init;
 
     -- IO Bus
-    signal cpu_io_busy      : std_logic;
-    signal cpu_io_req       : t_io_req;
-    signal cpu_io_resp      : t_io_resp := c_io_resp_init;
-    signal io_req           : t_io_req;
-    signal io_resp          : t_io_resp := c_io_resp_init;
     signal io_req_1541      : t_io_req;
     signal io_resp_1541     : t_io_resp := c_io_resp_init;
     signal io_req_1541_1    : t_io_req;
@@ -465,67 +455,11 @@ architecture logic of ultimate_logic_32 is
     signal sys_irq_eth_rx   : std_logic := '0';
     signal sys_irq_1541_1   : std_logic := '0';
     signal sys_irq_1541_2   : std_logic := '0';
-    signal misc_io          : std_logic_vector(7 downto 0);
 
     signal audio_speaker_tmp : signed(17 downto 0);
 begin
-    r_mb: if g_microblaze generate
-        signal invalidate       : std_logic;
-        signal inv_addr         : std_logic_vector(31 downto 0);
-    begin
-        i_cpu: entity work.mblite_wrapper
-        generic map (
-            g_tag_i     => c_tag_cpu_i,
-            g_tag_d     => c_tag_cpu_d )
-        port map (
-            clock       => sys_clock,
-            reset       => sys_reset,
-            mb_reset    => mb_reset,
-            
-            irq_i       => io_irq,
-            disable_i   => misc_io(1),
-            disable_d   => misc_io(2),
-            invalidate  => invalidate,
-            inv_addr    => inv_addr,
-            
-            -- memory interface
-            mem_req     => mem_req_32_cpu,
-            mem_resp    => mem_resp_32_cpu,
-            
-            io_busy     => cpu_io_busy,
-            io_req      => cpu_io_req,
-            io_resp     => cpu_io_resp );
-
-        -- TODO: also invalidate for rmii
-        invalidate <= misc_io(0) when (mem_resp_32_usb.rack_tag(5 downto 0) = c_tag_usb2(5 downto 0)) and (mem_req_32_usb.read_writen = '0') else '0';
-        inv_addr(31 downto 26) <= (others => '0');
-        inv_addr(25 downto 0) <= std_logic_vector(mem_req_32_usb.address);
-    end generate;
-
---    r_no_mb: if not g_microblaze generate
---        -- route the memory access of the processor to the outside world
---        mem_req_32_cpu <= ext_mem_req;
---        ext_mem_resp   <= mem_resp_32_cpu;
---    end generate;
-
     cpu_irq <= io_irq;
 		
-    i_io_arb: entity work.io_bus_arbiter_pri
-    generic map (
-        g_ports     => 2 )
-    port map (
-        clock       => sys_clock,
-        reset       => sys_reset,
-        
-        reqs(0)     => ext_io_req,
-        reqs(1)     => cpu_io_req,
-        
-        resps(0)    => ext_io_resp,
-        resps(1)    => cpu_io_resp,
-        
-        req         => io_req,
-        resp        => io_resp );
-
     i_timing: entity work.fractional_div
     generic map(
         g_numerator   => g_numerator,
@@ -978,8 +912,8 @@ begin
     port map (
         clock    => sys_clock,
         
-        req      => io_req,
-        resp     => io_resp,
+        req      => ext_io_req,
+        resp     => ext_io_resp,
         
         reqs(0)  => io_req_itu,     -- 4000000 ( 16 ... 400000F)
         reqs(1)  => io_req_1541,    -- 4020000 (  8K... 4021FFF) & 4024000 for drive B 
@@ -1330,7 +1264,7 @@ begin
 
     i_mem_arb: entity work.mem_bus_arbiter_pri_32
     generic map (
-        g_ports      => 7,
+        g_ports      => 6,
         g_registered => false )
     port map (
         clock       => sys_clock,
@@ -1341,16 +1275,14 @@ begin
         reqs(2)     => mem_req_32_1541_2,
         reqs(3)     => mem_req_32_rmii,
         reqs(4)     => mem_req_32_usb,
-        reqs(5)     => mem_req_32_cpu,
-        reqs(6)     => ext_mem_req,
+        reqs(5)     => ext_mem_req,
         
         resps(0)    => mem_resp_32_cart,
         resps(1)    => mem_resp_32_1541,
         resps(2)    => mem_resp_32_1541_2,
         resps(3)    => mem_resp_32_rmii,
         resps(4)    => mem_resp_32_usb,
-        resps(5)    => mem_resp_32_cpu,
-        resps(6)    => ext_mem_resp,
+        resps(5)    => ext_mem_resp,
         
         req         => mem_req,
         resp        => mem_resp );        

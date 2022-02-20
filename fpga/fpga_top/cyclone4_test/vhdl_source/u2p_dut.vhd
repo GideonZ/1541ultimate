@@ -485,7 +485,6 @@ begin
         g_denominator   => 125,
         g_baud_rate     => 115_200,
         g_timer_rate    => 200_000,
-        g_microblaze    => false,
         g_big_endian    => false,
         g_icap          => false,
         g_uart          => true,
