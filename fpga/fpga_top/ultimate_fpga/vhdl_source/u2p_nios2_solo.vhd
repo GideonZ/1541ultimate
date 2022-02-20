@@ -696,7 +696,6 @@ begin
 
         -- Buttons
         sw_trigger  => sw_trigger,
-        trigger     => sw_trigger,
         BUTTON      => button_i );
 
     -- Parallel cable not implemented. This is the way to stub it...

@@ -186,7 +186,7 @@ port (
     SD_MOSI     : out   std_logic;
     SD_MISO     : in    std_logic := '1';
     SD_CARDDETn : in    std_logic := '1';
-    SD_DATA     : inout std_logic_vector(2 downto 1) := "ZZ";
+    SD_DATA     : inout std_logic_vector(2 downto 1);
     
     -- LED interface
     LED_CLK     : out   std_logic;
@@ -244,7 +244,7 @@ port (
     vid_data    : out   unsigned(3 downto 0);
     overlay_on  : out   std_logic;
     keyb_row    : in    std_logic_vector(7 downto 0) := (others => '1');
-    keyb_col    : inout std_logic_vector(7 downto 0) := (others => '1');
+    keyb_col    : out   std_logic_vector(7 downto 0) := (others => '1');
 
     -- Simulation port
     ext_io_req  : in  t_io_req := c_io_req_init;
@@ -253,7 +253,6 @@ port (
     ext_mem_resp: out t_mem_resp_32;
     
     cpu_irq     : out std_logic;
-    trigger     : in  std_logic := '0';
     sw_trigger  : out std_logic;
         
     -- Buttons
