@@ -670,7 +670,7 @@ begin
     begin
         i_io_bridge: entity work.slot_to_io_bridge
         generic map (
-            g_io_base       => X"48000", -- dont care in this context
+            g_io_base       => X"048000", -- dont care in this context
             g_slot_start    => "100100000",
             g_slot_stop     => "111111111" )
         port map (

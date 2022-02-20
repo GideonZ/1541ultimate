@@ -26,7 +26,7 @@ architecture rtl of io_bus_bridge2 is
     signal req_vector_a     : std_logic_vector(c_io_bus_req_vector_width-1 downto 0);
     signal request_b        : std_logic;
     signal req_vector_b     : std_logic_vector(c_io_bus_req_vector_width-1 downto 0);
-    signal address_b        : unsigned(19 downto 0) := (others => '0');    
+    signal address_b        : unsigned(req_b.address'range) := (others => '0');    
     signal resp_vector_a    : std_logic_vector(7 downto 0);
     signal response_a       : std_logic;
 begin
