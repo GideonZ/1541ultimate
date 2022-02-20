@@ -1290,15 +1290,15 @@ begin
     c2n_sense_out <= c2n_play_sense_out or c2n_rec_sense_out;
     c2n_motor_out <= c2n_play_motor_out or c2n_rec_motor_out;
 
-    r_icap: if g_icap generate
-        i_icap: entity work.icap
-        port map (
-            clock           => sys_clock,
-            reset           => sys_reset,
-        
-            io_req          => io_req_icap,
-            io_resp         => io_resp_icap );
-    end generate;
+    i_icap: entity work.icap
+    generic map (
+        g_enable        => g_icap )
+    port map (
+        clock           => sys_clock,
+        reset           => sys_reset,
+    
+        io_req          => io_req_icap,
+        io_resp         => io_resp_icap );
 
     r_overlay: if g_video_overlay generate
         i_overlay: entity work.char_generator_peripheral
