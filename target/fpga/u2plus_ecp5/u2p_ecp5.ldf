@@ -1,0 +1,703 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<BaliProject version="3.2" title="u2p_ecp5" device="LFE5U-25F-6BG256C" default_implementation="impl1">
+    <Options>
+        <Option name="HDL type" value="VHDL"/>
+    </Options>
+    <Implementation title="impl1" dir="impl1" description="impl1" synthesis="synplify" default_strategy="Strategy1">
+        <Options def_top="packet_generator" lib="work" top="u2p_riscv_lattice"/>
+        <Source name="../../../neorv32/rtl/core/neorv32_application_image.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_boot_rom.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_bootloader_image.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_bus_keeper.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_busswitch.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_cfs.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_cpu_alu.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_cpu_bus.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_cpu_control.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_cpu_cp_bitmanip.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_cpu_cp_cfu.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_cpu_cp_fpu.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_cpu_cp_muldiv.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_cpu_cp_shifter.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_cpu_decompressor.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_cpu_regfile.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_cpu.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_debug_dm.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_debug_dtm.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_dmem.entity.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_fifo.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_gpio.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_gptmr.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_icache.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_imem.entity.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_mtime.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_neoled.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_package.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_pwm.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_slink.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_spi.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_sysinfo.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_top.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_trng.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_twi.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_uart.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_wdt.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_wishbone.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_xip.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/neorv32_xirq.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/mem/neorv32_dmem.default.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../neorv32/rtl/core/mem/neorv32_imem.default.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="neorv32"/>
+        </Source>
+        <Source name="../../../fpga/cpu_unit/vhdl_source/neorv32_wrapper.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="work"/>
+        </Source>
+        <Source name="../../../fpga/ip/busses/vhdl_source/mem_bus_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="work"/>
+        </Source>
+        <Source name="../../../fpga/ip/busses/vhdl_source/io_bus_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="work"/>
+        </Source>
+        <Source name="../../../fpga/cpu_unit/vhdl_source/wishbone2memio.vhd" type="VHDL" type_short="VHDL">
+            <Options lib="work"/>
+        </Source>
+        <Source name="../../../fpga/lattice/primitives_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/fpga_top/ultimate_fpga/vhdl_source/u2p_riscv_lattice.vhd" type="VHDL" type_short="VHDL">
+            <Options top_module="u2p_riscv_lattice"/>
+        </Source>
+        <Source name="../../../fpga/fpga_top/ultimate_fpga/vhdl_source/ultimate_logic_32.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/6502n/vhdl_source/alu.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/6502n/vhdl_source/bit_cpx_cpy.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/6502n/vhdl_source/cpu6502.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/6502n/vhdl_source/data_oper.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/6502n/vhdl_source/implied.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/6502n/vhdl_source/pkg_6502_decode.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/6502n/vhdl_source/pkg_6502_defs.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/6502n/vhdl_source/pkg_6502_opcodes.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/6502n/vhdl_source/proc_control.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/6502n/vhdl_source/proc_core.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/6502n/vhdl_source/proc_interrupt.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/6502n/vhdl_source/proc_registers.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/6502n/vhdl_source/shifter.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/1541/vhdl_source/c1541_drive.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/1541/vhdl_source/c1541_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/1541/vhdl_source/c1541_timing.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/1541/vhdl_source/cia_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/1541/vhdl_source/cia_registers.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/1541/vhdl_source/cia_timer.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/1541/vhdl_source/cpu_part_1541.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/1541/vhdl_source/drive_registers.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/1541/vhdl_source/floppy_mem.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/1541/vhdl_source/floppy_param_mem.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/1541/vhdl_source/floppy_sound.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/1541/vhdl_source/floppy_stream.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/1541/vhdl_source/floppy.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/1541/vhdl_source/gcr_codec.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/1541/vhdl_source/gcr2bin.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/1541/vhdl_source/mm_drive_cpu.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/1541/vhdl_source/mm_drive.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/1541/vhdl_source/stepper.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/1541/vhdl_source/via6522.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/1541/vhdl_source/wd177x.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/1541/vhdl_source/bin2gcr.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/cart_slot/vhdl_source/all_carts_v5.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/cart_slot/vhdl_source/cart_slot_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/cart_slot/vhdl_source/cart_slot_registers.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/cart_slot/vhdl_source/reu_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/cart_slot/vhdl_source/freezer.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/cart_slot/vhdl_source/reu.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/cart_slot/vhdl_source/slot_master_v4.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/cart_slot/vhdl_source/slot_server_v4.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/cart_slot/vhdl_source/slot_slave.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/cart_slot/vhdl_source/slot_timing.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/devices/vhdl_source/microwire_eeprom.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/busses/vhdl_source/dma_bus_arbiter_pri.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/busses/vhdl_source/dma_bus_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/busses/vhdl_source/endianness_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/busses/vhdl_source/io_bus_arbiter_pri.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/busses/vhdl_source/io_bus_bridge2.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/busses/vhdl_source/io_bus_splitter.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/busses/vhdl_source/slot_to_io_bridge.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/busses/vhdl_source/slot_bus_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/busses/vhdl_source/mem_to_mem32.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/busses/vhdl_source/io_dummy.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/busses/vhdl_source/io_to_dma_bridge.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/busses/vhdl_source/mem_bus_arbiter_pri_32.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/busses/vhdl_source/mem_bus_arbiter_pri.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/sid6581/vhdl_source/adsr_multi.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/sid6581/vhdl_source/mult_acc.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/sid6581/vhdl_source/oscillator.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/sid6581/vhdl_source/Q_table.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/sid6581/vhdl_source/sid_ctrl.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/sid6581/vhdl_source/sid_debug_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/sid6581/vhdl_source/sid_filter.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/sid6581/vhdl_source/sid_io_regs_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/sid6581/vhdl_source/sid_io_regs.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/sid6581/vhdl_source/sid_mapper.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/sid6581/vhdl_source/sid_mixer.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/sid6581/vhdl_source/sid_peripheral.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/sid6581/vhdl_source/sid_regs.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/sid6581/vhdl_source/sid_top.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/sid6581/vhdl_source/wave_map.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/memory/vhdl_source/dpram_io.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/memory/vhdl_source/dpram.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/memory/vhdl_source/spram.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/nano_cpu/vhdl_source/nano_alu.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/nano_cpu/vhdl_source/nano_cpu_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/nano_cpu/vhdl_source/nano_cpu.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/nano_cpu/vhdl_source/nano.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/synchroniser/vhdl_source/synchronizer_gzw.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/acia/vhdl_source/acia6551.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/acia/vhdl_source/acia6551_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/sync_fifo/vhdl_source/sync_fifo.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/sigma_delta_dac/vhdl_source/noise_generator.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/sigma_delta_dac/vhdl_source/sigma_delta_dac.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/audio/audio_type_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/audio/generic_mixer.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/audio/i2s_serializer.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/audio/lp_filter2.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/audio/mul_add.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/audio/sys_to_aud.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/c2n_playback/vhdl_source/c2n_playback_io.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/c2n_playback/vhdl_source/tape_speed_control.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/c2n_record/vhdl_source/c2n_record.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/command_interface/vhdl_source/command_if_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/command_interface/vhdl_source/command_interface.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/command_interface/vhdl_source/command_protocol.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/debug/vhdl_source/eth_debug_stream.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/iec_interface/vhdl_source/iec_processor_io.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/itu/vhdl_source/itu_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/itu/vhdl_source/itu.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/rmii/vhdl_source/crc32.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/rmii/vhdl_source/eth_filter.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/rmii/vhdl_source/eth_transmit.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/rmii/vhdl_source/ethernet_interface.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/rmii/vhdl_source/ethernet_rmii.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/rmii/vhdl_source/packet_generator.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/rmii/vhdl_source/rmii_transceiver.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/sampler/vhdl_source/sampler_accu.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/sampler/vhdl_source/sampler_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/sampler/vhdl_source/sampler_regs.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/sampler/vhdl_source/sampler.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/spi/vhdl_source/spi_peripheral_io.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/spi/vhdl_source/spi.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/spike_filter/vhdl_source/spike_filter.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/uart_lite/vhdl_source/tx.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/uart_lite/vhdl_source/rx.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/uart_lite/vhdl_source/uart_peripheral_io.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/usb2/vhdl_source/bridge_to_mem_ctrl.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/usb2/vhdl_source/data_crc.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/usb2/vhdl_source/host_sequencer.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/usb2/vhdl_source/mem_addr_counter.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/usb2/vhdl_source/mem_remain_counter.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/usb2/vhdl_source/nano_minimal_io.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/usb2/vhdl_source/timer.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/usb2/vhdl_source/token_crc_19.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/usb2/vhdl_source/token_crc_check.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/usb2/vhdl_source/token_crc.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/usb2/vhdl_source/ulpi_bus.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/usb2/vhdl_source/ulpi_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/usb2/vhdl_source/ulpi_rx.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/usb2/vhdl_source/ulpi_tx.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/usb2/vhdl_source/usb_cmd_nano.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/usb2/vhdl_source/usb_cmd_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/usb2/vhdl_source/usb_debug.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/usb2/vhdl_source/usb_host_interface.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/usb2/vhdl_source/usb_host_nano.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/usb2/vhdl_source/usb_memory_ctrl.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/usb2/vhdl_source/usb_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/sigma_delta_dac/vhdl_source/my_math_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/memory/vhdl_source/pseudo_dpram_8x16-lattice.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/memory/vhdl_source/pseudo_dpram_8x16.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/memory/vhdl_source/pseudo_dpram_8x32-lattice.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/memory/vhdl_source/pseudo_dpram_8x32.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/synchroniser/vhdl_source/level_synchronizer.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/video/vhdl_source/char_generator_rom.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/video/vhdl_source/char_generator_rom_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/video/vhdl_source/char_generator_regs.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/video/vhdl_source/char_generator_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/video/vhdl_source/char_generator_peripheral.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/copper/vhdl_source/copper.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/copper/vhdl_source/copper_engine.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/copper/vhdl_source/copper_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/copper/vhdl_source/copper_regs.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/video/vhdl_source/char_generator_slave.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/free_queue/vhdl_source/block_bus_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/free_queue/vhdl_source/free_queue.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/oc_pusher/vhdl_source/oc_pusher.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/altera/u2p_io.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/altera/distributed_stack.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/synchroniser/vhdl_source/pulse_synchronizer.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/audio_select/vhdl_source/audio_select.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/altera/align_read_to_bram.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/pulse_stretch/vhdl_source/pulse_stretch.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/clock/vhdl_source/real_time_clock.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/clock/vhdl_source/fractional_div.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/async_fifo/vhdl_source/gray_code_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/async_fifo/vhdl_source/async_fifo_ft.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/memory/vhdl_source/dpram_8x16.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/memory/vhdl_source/dpram_8x16-lattice.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/memory/vhdl_source/dpram_8x32.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/memory/vhdl_source/dpram_8x32-lattice.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/iec_interface/vhdl_source/iec_processor.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/ip/srl_fifo/vhdl_source/srl_fifo-generic.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/lattice/io_primitives.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/lattice/pll1/pll1.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/mem_ctrl/vhdl_source/ext_mem_ctrl_temp.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/icap/vhdl_source/icap-dummy.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/icap/vhdl_source/icap_pkg.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="sixtytwo.tpf" type="Timing Analysis" type_short="TPF">
+            <Options/>
+        </Source>
+        <Source name="u2p_ecp5.lpf" type="Logic Preference" type_short="LPF">
+            <Options/>
+        </Source>
+    </Implementation>
+    <Strategy name="Strategy1" file="neorv321.sty"/>
+</BaliProject>
