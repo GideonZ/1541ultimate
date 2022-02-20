@@ -7,6 +7,7 @@ entity sync_fifo is
         g_data_width   : integer := 32;
         g_threshold    : integer := 13;
         g_storage      : string  := "auto";     -- can also be "blockram" or "distributed"
+        g_storage_lat  : string  := "block_ram"; -- can also be "distrubuted" or "registers" even
         g_fall_through : boolean := false);
     port (
         clock       : in  std_logic;
@@ -40,6 +41,9 @@ architecture  rtl  of  sync_fifo  is
     attribute ram_style of data_array : signal is g_storage;
     attribute ramstyle        : string;
     attribute ramstyle of data_array : signal is g_storage;
+    -- Lattice Attribute
+    attribute syn_ramstyle     : string;
+    attribute syn_ramstyle of data_array : signal is g_storage_lat ;
 
     signal rd_en_flt    : std_logic;
     signal rd_enable    : std_logic;
