@@ -99,6 +99,9 @@ target/fpga/u2plus_recovery/*.txt
 target/fpga/u2plus_recovery/db
 target/fpga/u2plus_recovery/incremental_db
 target/fpga/u2plus_recovery/output_files
+target/fpga/u2p_riscv/db
+target/fpga/u2p_riscv/incremental_db
+target/fpga/u2p_riscv/output_files
 target/fpga/u2plus_recovery/ultimate_recovery_assignment_defaults.qdf
 target/fpga/u2plus_run/*.cdf
 target/fpga/u2plus_run/*.hex
