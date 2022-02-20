@@ -28,6 +28,15 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/memory/vhdl_source/spram.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/memory/vhdl_source/dpram.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/memory/vhdl_source/dpram_io.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/ip/memory/vhdl_source/spram.vhd \
+                vhdl,work,$(ULTIMATE_FPGA)/ip/memory/vhdl_source/pseudo_dpram_8x32.vhd \
+                vhdl,work,$(ULTIMATE_FPGA)/ip/memory/vhdl_source/pseudo_dpram_8x32-xilinx.vhd \
+                vhdl,work,$(ULTIMATE_FPGA)/ip/memory/vhdl_source/pseudo_dpram_8x16.vhd \
+                vhdl,work,$(ULTIMATE_FPGA)/ip/memory/vhdl_source/pseudo_dpram_8x16-xilinx.vhd \
+                vhdl,work,$(ULTIMATE_FPGA)/ip/memory/vhdl_source/dpram_8x16.vhd \
+                vhdl,work,$(ULTIMATE_FPGA)/ip/memory/vhdl_source/dpram_8x16-xilinx.vhd \
+                vhdl,work,$(ULTIMATE_FPGA)/ip/memory/vhdl_source/dpram_8x32.vhd \
+                vhdl,work,$(ULTIMATE_FPGA)/ip/memory/vhdl_source/dpram_8x32-xilinx.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/video/vhdl_source/char_generator_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/video/vhdl_source/char_generator_rom_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/video/vhdl_source/char_generator_rom.vhd \
@@ -92,7 +101,7 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/io/itu/vhdl_source/itu_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/itu/vhdl_source/itu.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/icap/vhdl_source/icap_pkg.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/io/icap/vhdl_source/icap.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/icap/vhdl_source/icap-spartan.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/iec_interface/vhdl_source/iec_processor.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/iec_interface/vhdl_source/iec_processor_io.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/c2n_playback/vhdl_source/c2n_playback_io.vhd \

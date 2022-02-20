@@ -433,10 +433,6 @@ set_global_assignment -name VHDL_FILE ../../../fpga/altera/mem_io.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/srl_fifo.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/u2p_io.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/update_io.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/altera/xilinx_primitives/RAMB16_S9_S18.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/altera/xilinx_primitives/RAMB16_S9_S36.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/altera/xilinx_primitives/RAMB16BWE_S36_S9.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/altera/xilinx_primitives/unisim_VCOMP.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/all_carts_v5.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/cart_slot_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/cart_slot_registers.vhd
@@ -573,9 +569,13 @@ set_global_assignment -name VHDL_FILE ../../../fpga/ip/clock/vhdl_source/fractio
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/fall_through/vhdl_source/fall_through_add_on.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/free_queue/vhdl_source/block_bus_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/free_queue/vhdl_source/free_queue.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/dpram_8x16.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/dpram_8x32.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/dpram_io.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/dpram_rdw_byte.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/dpram_rdw.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/pseudo_dpram_8x16.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/pseudo_dpram_8x32.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/pseudo_dpram.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/spram.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/nano_cpu/vhdl_source/nano_alu.vhd
@@ -609,6 +609,12 @@ set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/wave_map
 set_global_assignment -name VHDL_FILE ../../../target/simulation/packages/vhdl_source/tl_file_io_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../target/simulation/packages/vhdl_source/tl_string_util_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../target/simulation/packages/vhdl_source/tl_vector_pkg.vhd
+set_global_assignment -name VHDL_FILE "../../../fpga/io/icap/vhdl_source/icap-dummy.vhd"
+set_global_assignment -name VHDL_FILE "../../../fpga/ip/memory/vhdl_source/dpram_8x16-altera.vhd"
+set_global_assignment -name VHDL_FILE "../../../fpga/ip/memory/vhdl_source/dpram_8x32-altera.vhd"
+set_global_assignment -name VHDL_FILE "../../../fpga/ip/memory/vhdl_source/pseudo_dpram_8x16-altera.vhd"
+set_global_assignment -name VHDL_FILE "../../../fpga/ip/memory/vhdl_source/pseudo_dpram_8x32-altera.vhd"
+
 set_global_assignment -name STRATIX_DEVICE_IO_STANDARD "2.5 V"
 set_instance_assignment -name CURRENT_STRENGTH_NEW "MINIMUM CURRENT" -to UART_RXD
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to UART_RXD
@@ -665,5 +671,6 @@ set_instance_assignment -name CURRENT_STRENGTH_NEW 2MA -to SLOT_DATA[0]
 
 
 set_global_assignment -name SIGNALTAP_FILE nios.stp
+
 
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
