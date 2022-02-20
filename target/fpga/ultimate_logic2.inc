@@ -58,16 +58,11 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/rx.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/uart_peripheral_io.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/sigma_delta_dac/vhdl_source/sigma_delta_dac.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/io/sigma_delta_dac/vhdl_source/delta_sigma_2to5.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/sigma_delta_dac/vhdl_source/noise_generator.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/sigma_delta_dac/vhdl_source/high_pass.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/sigma_delta_dac/vhdl_source/my_math_pkg.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/io/sigma_delta_dac/vhdl_source/hf_noise.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/io/sigma_delta_dac/vhdl_source/sine_osc.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/io/sigma_delta_dac/vhdl_source/mash.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/spi/vhdl_source/spi.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/spi/vhdl_source/spi_peripheral_io.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/io/mem_ctrl/vhdl_source/ext_mem_ctrl_v4b.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/mem_ctrl/vhdl_source/ext_mem_ctrl_v5.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/spike_filter/vhdl_source/spike_filter.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/rmii/vhdl_source/rmii_transceiver.vhd \
@@ -118,9 +113,6 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/io/sampler/vhdl_source/sampler_accu.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/sampler/vhdl_source/sampler_regs.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/sampler/vhdl_source/sampler.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/io/debug/vhdl_source/logic_analyzer.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/io/debug/vhdl_source/logic_analyzer_32.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/io/debug/vhdl_source/bus_analyzer_32.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/sid6581/vhdl_source/sid_debug_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/sid6581/vhdl_source/sid_trace.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/sid6581/vhdl_source/Q_table.vhd \
