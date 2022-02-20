@@ -227,9 +227,9 @@ architecture rtl of u2p_tester is
         
     -- io buses
     signal io_irq           : std_logic;
-    signal io_req           : t_io_req;
+    signal io_req           : t_io_req := c_io_req_init;
     signal io_resp          : t_io_resp;
-    signal io_u2p_req       : t_io_req;
+    signal io_u2p_req       : t_io_req := c_io_req_init;
     signal io_u2p_resp      : t_io_resp;
     signal io_req_new_io    : t_io_req;
     signal io_resp_new_io   : t_io_resp;
@@ -356,7 +356,7 @@ begin
         io_u2p_read             => io_u2p_req.read,
         io_u2p_wdata            => io_u2p_req.data,
         io_u2p_write            => io_u2p_req.write,
-        unsigned(io_u2p_address) => io_u2p_req.address,
+        unsigned(io_u2p_address) => io_u2p_req.address(19 downto 0),
         io_u2p_irq              => '0',
 
         io_ack               => io_resp.ack,
@@ -364,7 +364,7 @@ begin
         io_read              => io_req.read,
         io_wdata             => io_req.data,
         io_write             => io_req.write,
-        unsigned(io_address) => io_req.address,
+        unsigned(io_address) => io_req.address(19 downto 0),
         io_irq               => io_irq,
 
         jtag0_jtag_tck          => jtag0_jtag_tck,

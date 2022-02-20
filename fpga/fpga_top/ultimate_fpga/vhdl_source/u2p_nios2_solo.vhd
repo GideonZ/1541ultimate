@@ -355,7 +355,7 @@ begin
         io_read            => io_req.read,
         io_wdata           => io_req.data,
         io_write           => io_req.write,
-        unsigned(io_address) => io_req.address,
+        unsigned(io_address) => io_req.address(19 downto 0),
         io_irq             => io_irq,
 
         io_u2p_ack         => io_u2p_resp.ack,
@@ -363,7 +363,7 @@ begin
         io_u2p_read        => io_u2p_req.read,
         io_u2p_wdata       => io_u2p_req.data,
         io_u2p_write       => io_u2p_req.write,
-        unsigned(io_u2p_address) => io_u2p_req.address,
+        unsigned(io_u2p_address) => io_u2p_req.address(19 downto 0),
         io_u2p_irq         => '0',
         
         unsigned(mem_mem_req_address) => cpu_mem_req.address,
