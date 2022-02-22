@@ -2,6 +2,9 @@
 CROSS	     = riscv32-unknown-elf-
 ELFTYPE      = elf32-littleriscv
 ARCHITECTURE = riscv
+# CPU architecture and ABI
+MARCH ?= rv32i
+MABI  ?= ilp32
 
 include ../common/environment.mk
 
@@ -13,24 +16,24 @@ SRCS_C   =	itu.c \
 			assert.c \
 			profiler.c \
 			croutine.c \
-            event_groups.c \
-            list.c \
-            queue.c \
-            tasks.c \
-            timers.c \
-            port.c \
-            heap_3.c \
-            ff.c \
-            ffsystem.c \
-            ffunicode.c \
-            time.c \
-            mdio.c \
-            sid_coeff.c \
-            riscv_main.c \
+			event_groups.c \
+			list.c \
+			queue.c \
+			tasks.c \
+			timers.c \
+			port.c \
+			heap_3.c \
+			ff.c \
+			ffsystem.c \
+			ffunicode.c \
+			time.c \
+			mdio.c \
+			sid_coeff.c \
+			riscv_main.c \
 
 SRCS_CC	 =  u2p_init.cc \
-            i2c_drv.cc \
-            codec.cc \
+			i2c_drv.cc \
+			codec.cc \
 			small_printf.cc \
 			stream.cc \
 			stream_uart.cc \
@@ -154,11 +157,12 @@ VPATH +=	$(PATH_SW)/portable/riscv
 #VPATH +=	$(PATH_SW)/nios_appl_bsp/HAL/inc
 #VPATH +=	$(PATH_SW)/nios_appl_bsp/drivers/inc
 VPATH +=	$(PATH_SW)/6502/sidcrt/target
+VPATH +=	$(PATH_SW)/../neorv32/sw/common
 
 
 SRCS_ASM =
 
-SRCS_ASMS = port_asm.S
+SRCS_ASMS = crt0.S port_asm.S
 
 SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas eapi.tas
 
@@ -169,11 +173,12 @@ SRCS_IEC = iec_code.iec
 SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -Os -DOS -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=50000000 -Wno-write-strings
+OPTIONS  = -march=$(MARCH) -mabi=$(MABI) $(EFFORT) -ffunction-sections -fdata-sections -nostartfiles -mno-fdiv
+OPTIONS += -g -Os -DOS -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=50000000 -Wno-write-strings
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = linker.x
-#LIBS2    = $(BSP)/libhal_bsp.a ../nios2_elf_lwip/result/liblwip.a
+LIBS2    = ../riscv32_unknown_elf_lwip/result/liblwip.a
 #LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
 LFLAGS   = --gc-sections
 

@@ -4,14 +4,14 @@
 
 MEMORY
 {
-    memory : ORIGIN = 0x0, LENGTH = 67108864
-    reset  : ORIGIN = 0x20000000, LENGTH = 32
-    onchip : ORIGIN = 0x20000020, LENGTH = 2016
+    memory : ORIGIN = 0x0, LENGTH = 0xEA0000
+    onchip : ORIGIN = 0xFFFF0000, LENGTH = 2048
+    iodev (rw) : ORIGIN = 0xFFFFFE00, LENGTH = 512
 }
 
 /* Define symbols for each memory base-address */
 __memory = 0x0;
-__onchip = 0x20000000;
+__onchip = 0xFFFF0000;
 
 OUTPUT_FORMAT( "elf32-littleriscv",
                "elf32-littleriscv",
@@ -19,301 +19,261 @@ OUTPUT_FORMAT( "elf32-littleriscv",
 OUTPUT_ARCH( riscv )
 ENTRY( _start )
 
-/*
- * The alt_load() facility is disabled. This typically happens when an
- * external bootloader is provided or the application runs in place.
- * The LMA (aka physical address) of each section defaults to its VMA.
- */
-
 SECTIONS
 {
+  /* start section on WORD boundary */
+  . = ALIGN(4);
 
-    /*
-     * Output sections associated with reset and exceptions (they have to be first)
-     */
+  /* Actual instructions */
+  .text :
+  {
+    PROVIDE(__text_start = .);
+    PROVIDE(__textstart = .);
 
-    .entry :
-    {
-        KEEP (*(.entry))
-    } > reset
+    PROVIDE_HIDDEN (__rela_iplt_start = .);
+    *(.rela.iplt)
+    PROVIDE_HIDDEN (__rela_iplt_end = .);
 
-    .exceptions :
-    {
-        PROVIDE (__ram_exceptions_start = ABSOLUTE(.));
-        . = ALIGN(0x20);
-        KEEP (*(.irq));
-        KEEP (*(.exceptions.entry.label));
-        KEEP (*(.exceptions.entry.user));
-        KEEP (*(.exceptions.entry.ecc_fatal));
-        KEEP (*(.exceptions.entry));
-        KEEP (*(.exceptions.irqtest.user));
-        KEEP (*(.exceptions.irqtest));
-        KEEP (*(.exceptions.irqhandler.user));
-        KEEP (*(.exceptions.irqhandler));
-        KEEP (*(.exceptions.irqreturn.user));
-        KEEP (*(.exceptions.irqreturn));
-        KEEP (*(.exceptions.notirq.label));
-        KEEP (*(.exceptions.notirq.user));
-        KEEP (*(.exceptions.notirq));
-        KEEP (*(.exceptions.soft.user));
-        KEEP (*(.exceptions.soft));
-        KEEP (*(.exceptions.unknown.user));
-        KEEP (*(.exceptions.unknown));
-        KEEP (*(.exceptions.exit.label));
-        KEEP (*(.exceptions.exit.user));
-        KEEP (*(.exceptions.exit));
-        KEEP (*(.exceptions));
-        PROVIDE (__ram_exceptions_end = ABSOLUTE(.));
-    } > memory
+    *(.rela.plt)
 
-    PROVIDE (__flash_exceptions_start = LOADADDR(.exceptions));
+    KEEP(*(.text.boot)); /* keep start-up code at the beginning of rom */
 
-    .text :
-    {
-        /*
-         * All code sections are merged into the text output section, along with
-         * the read only data sections.
-         *
-         */
+    KEEP (*(SORT_NONE(.init)))
 
-        PROVIDE (stext = ABSOLUTE(.));
+    *(.text.unlikely .text.*_unlikely .text.unlikely.*)
+    *(.text.exit .text.exit.*)
+    *(.text.startup .text.startup.*)
+    *(.text.hot .text.hot.*)
+    *(SORT(.text.sorted.*))
+    *(.text .stub .text.* .gnu.linkonce.t.*)
+    /* .gnu.warning sections are handled specially by elf.em.  */
+    *(.gnu.warning)
 
-        *(.interp)
-        *(.hash)
-        *(.dynsym)
-        *(.dynstr)
-        *(.gnu.version)
-        *(.gnu.version_d)
-        *(.gnu.version_r)
-        *(.rel.init)
-        *(.rela.init)
-        *(.rel.text .rel.text.* .rel.gnu.linkonce.t.*)
-        *(.rela.text .rela.text.* .rela.gnu.linkonce.t.*)
-        *(.rel.fini)
-        *(.rela.fini)
-        *(.rel.rodata .rel.rodata.* .rel.gnu.linkonce.r.*)
-        *(.rela.rodata .rela.rodata.* .rela.gnu.linkonce.r.*)
-        *(.rel.data .rel.data.* .rel.gnu.linkonce.d.*)
-        *(.rela.data .rela.data.* .rela.gnu.linkonce.d.*)
-        *(.rel.tdata .rel.tdata.* .rel.gnu.linkonce.td.*)
-        *(.rela.tdata .rela.tdata.* .rela.gnu.linkonce.td.*)
-        *(.rel.tbss .rel.tbss.* .rel.gnu.linkonce.tb.*)
-        *(.rela.tbss .rela.tbss.* .rela.gnu.linkonce.tb.*)
-        *(.rel.ctors)
-        *(.rela.ctors)
-        *(.rel.dtors)
-        *(.rela.dtors)
-        *(.rel.got)
-        *(.rela.got)
-        *(.rel.sdata .rel.sdata.* .rel.gnu.linkonce.s.*)
-        *(.rela.sdata .rela.sdata.* .rela.gnu.linkonce.s.*)
-        *(.rel.sbss .rel.sbss.* .rel.gnu.linkonce.sb.*)
-        *(.rela.sbss .rela.sbss.* .rela.gnu.linkonce.sb.*)
-        *(.rel.sdata2 .rel.sdata2.* .rel.gnu.linkonce.s2.*)
-        *(.rela.sdata2 .rela.sdata2.* .rela.gnu.linkonce.s2.*)
-        *(.rel.sbss2 .rel.sbss2.* .rel.gnu.linkonce.sb2.*)
-        *(.rela.sbss2 .rela.sbss2.* .rela.gnu.linkonce.sb2.*)
-        *(.rel.bss .rel.bss.* .rel.gnu.linkonce.b.*)
-        *(.rela.bss .rela.bss.* .rela.gnu.linkonce.b.*)
-        *(.rel.plt)
-        *(.rela.plt)
-        *(.rel.dyn)
+    KEEP (*(SORT_NONE(.fini)))
 
-        KEEP (*(.init))
-        *(.plt)
-        *(.text .stub .text.* .gnu.linkonce.t.*)
+    /* gcc uses crtbegin.o to find the start of
+       the constructors, so we make sure it is
+       first.  Because this is a wildcard, it
+       doesn't matter if the user does not
+       actually link against crtbegin.o; the
+       linker won't look for a file to match a
+       wildcard.  The wildcard also means that it
+       doesn't matter which directory crtbegin.o
+       is in.  */
+    KEEP (*crtbegin.o(.ctors))
+    KEEP (*crtbegin?.o(.ctors))
+    /* We don't want to include the .ctor section from
+       the crtend.o file until after the sorted ctors.
+       The .ctor section from the crtend file contains the
+       end of ctors marker and it must be last */
+    KEEP (*(EXCLUDE_FILE (*crtend.o *crtend?.o ) .ctors))
+    KEEP (*(SORT(.ctors.*)))
+    KEEP (*(.ctors))
 
-        /* .gnu.warning sections are handled specially by elf32.em.  */
+    KEEP (*crtbegin.o(.dtors))
+    KEEP (*crtbegin?.o(.dtors))
+    KEEP (*(EXCLUDE_FILE (*crtend.o *crtend?.o ) .dtors))
+    KEEP (*(SORT(.dtors.*)))
+    KEEP (*(.dtors))
 
-        *(.gnu.warning.*)
-        KEEP (*(.fini))
-        PROVIDE (__etext = ABSOLUTE(.));
-        PROVIDE (_etext = ABSOLUTE(.));
-        PROVIDE (etext = ABSOLUTE(.));
+    /* finish section on WORD boundary */
+    . = ALIGN(4);
 
-        *(.eh_frame_hdr)
-        /* Ensure the __preinit_array_start label is properly aligned.  We
-           could instead move the label definition inside the section, but
-           the linker would then create the section even if it turns out to
-           be empty, which isn't pretty.  */
-        . = ALIGN(4);
-        PROVIDE (__preinit_array_start = ABSOLUTE(.));
-        *(.preinit_array)
-        PROVIDE (__preinit_array_end = ABSOLUTE(.));
-        PROVIDE (__init_array_start = ABSOLUTE(.));
-        *(.init_array)
-        PROVIDE (__init_array_end = ABSOLUTE(.));
-        PROVIDE (__fini_array_start = ABSOLUTE(.));
-        *(.fini_array)
-        PROVIDE (__fini_array_end = ABSOLUTE(.));
-        SORT(CONSTRUCTORS)
-        KEEP (*(.eh_frame))
-        *(.gcc_except_table .gcc_except_table.*)
-        *(.dynamic)
-        PROVIDE (__CTOR_LIST__ = ABSOLUTE(.));
-        KEEP (*(.ctors))
-        KEEP (*(SORT(.ctors.*)))
-        PROVIDE (__CTOR_END__ = ABSOLUTE(.));
-        PROVIDE (__DTOR_LIST__ = ABSOLUTE(.));
-        KEEP (*(.dtors))
-        KEEP (*(SORT(.dtors.*)))
-        PROVIDE (__DTOR_END__ = ABSOLUTE(.));
-        KEEP (*(.jcr))
-        . = ALIGN(4);
-    } > memory = 0x0 /* TODO: Should here be a NOP instruction? */
+    PROVIDE (__etext = .);
+    PROVIDE (_etext = .);
+    PROVIDE (etext = .);
+  } > memory
 
-    .rodata :
-    {
-        PROVIDE (__ram_rodata_start = ABSOLUTE(.));
-        . = ALIGN(4);
-        *(.rodata .rodata.* .gnu.linkonce.r.*)
-        *(.rodata1)
-        . = ALIGN(4);
-        PROVIDE (__ram_rodata_end = ABSOLUTE(.));
-    } > memory
 
-    PROVIDE (__flash_rodata_start = LOADADDR(.rodata));
+  /* read-only data, appended to .text */
+  .rodata :
+  {
+    PROVIDE_HIDDEN (__init_array_start = .);
+    KEEP (*(SORT_BY_INIT_PRIORITY(.init_array.*) SORT_BY_INIT_PRIORITY(.ctors.*)))
+    KEEP (*(.init_array EXCLUDE_FILE (*crtbegin.o *crtbegin?.o *crtend.o *crtend?.o ) .ctors))
+    PROVIDE_HIDDEN (__init_array_end = .);
 
-    .rwdata :
-    {
-        PROVIDE (__ram_rwdata_start = ABSOLUTE(.));
-        . = ALIGN(4);
-        *(.got.plt) *(.got)
-        *(.data1)
-        *(.data .data.* .gnu.linkonce.d.*)
+    PROVIDE_HIDDEN (__fini_array_start = .);
+    KEEP (*(SORT_BY_INIT_PRIORITY(.fini_array.*) SORT_BY_INIT_PRIORITY(.dtors.*)))
+    KEEP (*(.fini_array EXCLUDE_FILE (*crtbegin.o *crtbegin?.o *crtend.o *crtend?.o ) .dtors))
+    PROVIDE_HIDDEN (__fini_array_end = .);
 
-        _gp = ABSOLUTE(. + 0x8000);
-        PROVIDE(gp = _gp);
+    *(.rodata .rodata.* .gnu.linkonce.r.*)
+    *(.rodata1)
 
-        *(.rwdata .rwdata.*)
-        *(.sdata .sdata.* .gnu.linkonce.s.*)
-        *(.sdata2 .sdata2.* .gnu.linkonce.s2.*)
+    /* finish section on WORD boundary */
+    . = ALIGN(4);
+  } > memory
 
-        . = ALIGN(4);
-        _edata = ABSOLUTE(.);
-        PROVIDE (edata = ABSOLUTE(.));
-        PROVIDE (__ram_rwdata_end = ABSOLUTE(.));
-    } > memory
 
-    PROVIDE (__flash_rwdata_start = LOADADDR(.rwdata));
+  /* initialized read/write data, accessed in RAM, placed in ROM, copied during boot */
+  .data :
+  {
+    __DATA_BEGIN__ = .;
+    __SDATA_BEGIN__ = .;
+    *(.sdata2 .sdata2.* .gnu.linkonce.s2.*)
+    *(.data1)
+    *(.data .data.* .gnu.linkonce.d.*)
+    SORT(CONSTRUCTORS)
 
-    .bss :
-    {
-        __bss_start = ABSOLUTE(.);
-        PROVIDE (__sbss_start = ABSOLUTE(.));
-        PROVIDE (___sbss_start = ABSOLUTE(.));
+    *(.data.rel.ro.local* .gnu.linkonce.d.rel.ro.local.*) *(.data.rel.ro .data.rel.ro.* .gnu.linkonce.d.rel.ro.*)
+    *(.dynamic)
 
-        *(.dynsbss)
-        *(.sbss .sbss.* .gnu.linkonce.sb.*)
-        *(.sbss2 .sbss2.* .gnu.linkonce.sb2.*)
-        *(.scommon)
+    /* We want the small data sections together, so single-instruction offsets
+       can access them all, and initialized data all before uninitialized, so
+       we can shorten the on-disk segment size.  */
 
-        PROVIDE (__sbss_end = ABSOLUTE(.));
-        PROVIDE (___sbss_end = ABSOLUTE(.));
+    *(.srodata.cst16) *(.srodata.cst8) *(.srodata.cst4) *(.srodata.cst2) *(.srodata .srodata.*)
+    *(.sdata .sdata.* .gnu.linkonce.s.*)
 
-        *(.dynbss)
-        *(.bss .bss.* .gnu.linkonce.b.*)
-        *(COMMON)
+    PROVIDE_HIDDEN (__tdata_start = .);
+    *(.tdata .tdata.* .gnu.linkonce.td.*)
 
-        . = ALIGN(4);
-        __bss_end = ABSOLUTE(.);
-    } > memory
 
-    /*
-     *
-     * One output section mapped to the associated memory device for each of
-     * the available memory devices. These are not used by default, but can
-     * be used by user applications by using the .section directive.
-     *
-     * The output section used for the heap is treated in a special way,
-     * i.e. the symbols "end" and "_end" are added to point to the heap start.
-     *
-     */
+    /* finish section on WORD boundary */
+    . = ALIGN(4);
 
-    .memory :
-    {
-        PROVIDE (_partition_memory_start = ABSOLUTE(.));
-        *(.memory .memory. memory.*)
-        . = ALIGN(4);
-        PROVIDE (_partition_memory_end = ABSOLUTE(.));
-        _end = ABSOLUTE(.);
-        end = ABSOLUTE(.);
-        ___stack_base = ABSOLUTE(.);
-    } > memory
+    _edata = .; PROVIDE (edata = .);
+    . = .;
+    __DATA_END__ = .;
+    __global_pointer$ = __DATA_END__ + 0x800;
 
-    PROVIDE (_partition_memory_load_addr = LOADADDR(.memory));
+  } > memory
 
-    .onchip :
-    {
-        PROVIDE (_partition_onchip_start = ABSOLUTE(.));
-        *(.onchip .onchip. onchip.*)
-        . = ALIGN(4);
-        PROVIDE (_partition_onchip_end = ABSOLUTE(.));
-    } > onchip
 
-    PROVIDE (_partition_onchip_load_addr = LOADADDR(.onchip));
+  /* zero/non-initialized read/write data placed in RAM */
+  .bss (NOLOAD):
+  {
+    . = ALIGN(4);
+    __BSS_START__ = .;
+    *(.dynsbss)
+    *(.sbss .sbss.* .gnu.linkonce.sb.*)
+    *(.sbss2 .sbss2.* .gnu.linkonce.sb2.*)
+    *(.tbss .tbss.* .gnu.linkonce.tb.*) *(.tcommon)
+    *(.scommon)
+    *(.dynbss)
+    *(.bss .bss.* .gnu.linkonce.b.*)
 
-    /*
-     * Stabs debugging sections.
-     *
-     */
+    PROVIDE_HIDDEN (__preinit_array_start = .);
+    KEEP (*(.preinit_array))
+    PROVIDE_HIDDEN (__preinit_array_end = .);
 
-    .stab          0 : { *(.stab) }
-    .stabstr       0 : { *(.stabstr) }
-    .stab.excl     0 : { *(.stab.excl) }
-    .stab.exclstr  0 : { *(.stab.exclstr) }
-    .stab.index    0 : { *(.stab.index) }
-    .stab.indexstr 0 : { *(.stab.indexstr) }
-    .comment       0 : { *(.comment) }
-    /* DWARF debug sections.
-       Symbols in the DWARF debugging sections are relative to the beginning
-       of the section so we begin them at 0.  */
-    /* DWARF 1 */
-    .debug          0 : { *(.debug) }
-    .line           0 : { *(.line) }
-    /* GNU DWARF 1 extensions */
-    .debug_srcinfo  0 : { *(.debug_srcinfo) }
-    .debug_sfnames  0 : { *(.debug_sfnames) }
-    /* DWARF 1.1 and DWARF 2 */
-    .debug_aranges  0 : { *(.debug_aranges) }
-    .debug_pubnames 0 : { *(.debug_pubnames) }
-    /* DWARF 2 */
-    .debug_info     0 : { *(.debug_info .gnu.linkonce.wi.*) }
-    .debug_abbrev   0 : { *(.debug_abbrev) }
-    .debug_line     0 : { *(.debug_line) }
-    .debug_frame    0 : { *(.debug_frame) }
-    .debug_str      0 : { *(.debug_str) }
-    .debug_loc      0 : { *(.debug_loc) }
-    .debug_macinfo  0 : { *(.debug_macinfo) }
-    /* SGI/MIPS DWARF 2 extensions */
-    .debug_weaknames 0 : { *(.debug_weaknames) }
-    .debug_funcnames 0 : { *(.debug_funcnames) }
-    .debug_typenames 0 : { *(.debug_typenames) }
-    .debug_varnames  0 : { *(.debug_varnames) }
+    *(COMMON)
+    /* Align here to ensure that the .bss section occupies space up to
+       _end.  Align after .bss to ensure correct alignment even if the
+       .bss section disappears because there are no input sections.
+       FIXME: Why do we need it? When there is no .bss section, we do not
+       pad the .data section.  */
+    . = ALIGN(. != 0 ? 32 / 8 : 1);
+
+    . = ALIGN(4);
+    __BSS_END__ = .;
+    _end = .; PROVIDE (end = .);
+  } > memory
+
+  /* heap for dynamic memory allocation (use carefully!) */
+  .heap :
+  {
+    PROVIDE(__heap_start = .);
+    PROVIDE(__heap_limit = LENGTH(memory)); /* only works because memory starts at 0 */
+  } > memory
+
+
+  /* Yet unused */
+  .jcr                : { KEEP (*(.jcr)) }
+  .got                : { *(.got.plt) *(.igot.plt) *(.got) *(.igot) }  .interp         : { *(.interp) }
+  .note.gnu.build-id  : { *(.note.gnu.build-id) }
+  .hash               : { *(.hash) }
+  .gnu.hash           : { *(.gnu.hash) }
+  .dynsym             : { *(.dynsym) }
+  .dynstr             : { *(.dynstr) }
+  .gnu.version        : { *(.gnu.version) }
+  .gnu.version_d      : { *(.gnu.version_d) }
+  .gnu.version_r      : { *(.gnu.version_r) }
+  .rela.init          : { *(.rela.init) }
+  .rela.text          : { *(.rela.text .rela.text.* .rela.gnu.linkonce.t.*) }
+  .rela.fini          : { *(.rela.fini) }
+  .rela.rodata        : { *(.rela.rodata .rela.rodata.* .rela.gnu.linkonce.r.*) }
+  .rela.data.rel.ro   : { *(.rela.data.rel.ro .rela.data.rel.ro.* .rela.gnu.linkonce.d.rel.ro.*) }
+  .rela.data          : { *(.rela.data .rela.data.* .rela.gnu.linkonce.d.*) }
+  .rela.tdata         : { *(.rela.tdata .rela.tdata.* .rela.gnu.linkonce.td.*) }
+  .rela.tbss          : { *(.rela.tbss .rela.tbss.* .rela.gnu.linkonce.tb.*) }
+  .rela.ctors         : { *(.rela.ctors) }
+  .rela.dtors         : { *(.rela.dtors) }
+  .rela.got           : { *(.rela.got) }
+  .rela.sdata         : { *(.rela.sdata .rela.sdata.* .rela.gnu.linkonce.s.*) }
+  .rela.sbss          : { *(.rela.sbss .rela.sbss.* .rela.gnu.linkonce.sb.*) }
+  .rela.sdata2        : { *(.rela.sdata2 .rela.sdata2.* .rela.gnu.linkonce.s2.*) }
+  .rela.sbss2         : { *(.rela.sbss2 .rela.sbss2.* .rela.gnu.linkonce.sb2.*) }
+  .rela.bss           : { *(.rela.bss .rela.bss.* .rela.gnu.linkonce.b.*) }
+
+
+  /* Stabs debugging sections.  */
+  .stab          0 : { *(.stab) }
+  .stabstr       0 : { *(.stabstr) }
+  .stab.excl     0 : { *(.stab.excl) }
+  .stab.exclstr  0 : { *(.stab.exclstr) }
+  .stab.index    0 : { *(.stab.index) }
+  .stab.indexstr 0 : { *(.stab.indexstr) }
+  .comment       0 : { *(.comment) }
+  .gnu.build.attributes : { *(.gnu.build.attributes .gnu.build.attributes.*) }
+  /* DWARF debug sections.
+     Symbols in the DWARF debugging sections are relative to the beginning
+     of the section so we begin them at 0.  */
+  /* DWARF 1 */
+  .debug          0 : { *(.debug) }
+  .line           0 : { *(.line) }
+  /* GNU DWARF 1 extensions */
+  .debug_srcinfo  0 : { *(.debug_srcinfo) }
+  .debug_sfnames  0 : { *(.debug_sfnames) }
+  /* DWARF 1.1 and DWARF 2 */
+  .debug_aranges  0 : { *(.debug_aranges) }
+  .debug_pubnames 0 : { *(.debug_pubnames) }
+  /* DWARF 2 */
+  .debug_info     0 : { *(.debug_info .gnu.linkonce.wi.*) }
+  .debug_abbrev   0 : { *(.debug_abbrev) }
+  .debug_line     0 : { *(.debug_line .debug_line.* .debug_line_end) }
+  .debug_frame    0 : { *(.debug_frame) }
+  .debug_str      0 : { *(.debug_str) }
+  .debug_loc      0 : { *(.debug_loc) }
+  .debug_macinfo  0 : { *(.debug_macinfo) }
+  /* SGI/MIPS DWARF 2 extensions */
+  .debug_weaknames 0 : { *(.debug_weaknames) }
+  .debug_funcnames 0 : { *(.debug_funcnames) }
+  .debug_typenames 0 : { *(.debug_typenames) }
+  .debug_varnames  0 : { *(.debug_varnames) }
+  /* DWARF 3 */
+  .debug_pubtypes 0 : { *(.debug_pubtypes) }
+  .debug_ranges   0 : { *(.debug_ranges) }
+  /* DWARF Extension.  */
+  .debug_macro    0 : { *(.debug_macro) }
+  .debug_addr     0 : { *(.debug_addr) }
+  .gnu.attributes 0 : { KEEP (*(.gnu.attributes)) }
+  /DISCARD/ : { *(.note.GNU-stack) *(.gnu_debuglink) *(.gnu.lto_*) }
 }
 
 /* provide a pointer for the stack */
 
 /*
- * Don't override this, override the __stack_* symbols instead.
- */
-__data_end = 0xea0000;
-
-/*
  * The next two symbols define the location of the default stack.  You can
  * override them to move the stack to a different memory.
- */
 PROVIDE( __stack_pointer = __data_end );
 PROVIDE( __stack_limit   = __stack_base );
-
-/*
- * This symbol controls where the start of the heap is.  If the stack is
- * contiguous with the heap then the stack will contract as memory is
- * allocated to the heap.
- * Override this symbol to put the heap in a different memory.
  */
-PROVIDE( __heap_start    = end );
-PROVIDE( __heap_limit    = 0xea0000 );
+
+
+  /* Provide symbols for neorv32 crt0 start-up code */
+  PROVIDE(__ctr0_imem_begin          = ORIGIN(memory));
+  PROVIDE(__ctr0_dmem_begin          = ORIGIN(memory));
+  PROVIDE(__crt0_stack_begin         = (__heap_limit - 4));
+  PROVIDE(__crt0_bss_start           = __BSS_START__);
+  PROVIDE(__crt0_bss_end             = __BSS_END__);
+  PROVIDE(__crt0_copy_data_src_begin = __etext + SIZEOF(.rodata));
+  PROVIDE(__crt0_copy_data_dst_begin = __DATA_BEGIN__);
+  PROVIDE(__crt0_copy_data_dst_end   = __DATA_BEGIN__ + SIZEOF(.data));
+  PROVIDE(__ctr0_io_space_begin      = ORIGIN(iodev));
+  PROVIDE(__ctr0_io_space_end        = ORIGIN(iodev) + LENGTH(iodev));
+
 
 /* User defines
  * for REU and RAMDISK, Cartridge ROM, RAM, etc
