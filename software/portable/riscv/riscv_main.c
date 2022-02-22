@@ -69,7 +69,7 @@ void ResetInterruptHandlerU64()
 {
 }
 
-static void ituIrqHandler(void *context)
+void ituIrqHandler(void *context)
 {
 	static uint8_t pending;
 

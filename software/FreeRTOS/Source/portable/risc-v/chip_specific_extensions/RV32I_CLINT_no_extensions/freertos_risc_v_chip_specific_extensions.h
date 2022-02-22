@@ -54,11 +54,11 @@
 #ifndef __FREERTOS_RISC_V_EXTENSIONS_H__
 #define __FREERTOS_RISC_V_EXTENSIONS_H__
 
-#define portasmHAS_SIFIVE_CLINT 0
+#define portasmHAS_SIFIVE_CLINT 1
 #define portasmHAS_MTIME 0
 #define portasmADDITIONAL_CONTEXT_SIZE 0 /* Must be even number on 32-bit cores. */
 
-#define portasmHANDLE_INTERRUPT blah
+#define portasmHANDLE_INTERRUPT ituIrqHandler
 
 .macro portasmSAVE_ADDITIONAL_REGISTERS
 	/* No additional registers to save, so this macro does nothing. */
