@@ -51,6 +51,7 @@ architecture arch of wishbone2memio is
     signal remain       : integer range 0 to 3;
     
     signal mem_req_i        : t_mem_req_32 := c_mem_req_32_init;
+    signal mem_req_r        : std_logic;
     signal read_ack         : std_logic;
     signal write_ack        : std_logic;
     signal request_accepted : std_logic := '0';
@@ -65,10 +66,10 @@ begin
     mem_req_i.data <= std_logic_vector(wb_dat_o);
     mem_req_i.read_writen <= not wb_we_o;
     mem_req_i.tag <= g_tag;
-    mem_req_i.request <= wb_stb_o and mem_in_range and not request_accepted;
+    mem_req_i.request <= (wb_stb_o or mem_req_r) and mem_in_range;--  and not request_accepted;
     
     mem_in_range <= '1' when wb_adr_o(31 downto 28) = X"0" else '0';
-    read_ack <= '1'  when mem_resp.dack_tag = g_tag and mem_req_i.read_writen = '1' else '0';
+    --read_ack <= '1'  when mem_resp.dack_tag = g_tag and mem_req_i.read_writen = '1' else '0';
     write_ack <= '1' when mem_resp.rack_tag = g_tag and mem_req_i.read_writen = '0' else '0';
 
     wb_ack_i <= read_ack or write_ack or io_ack;
@@ -100,10 +101,12 @@ begin
             io_req_i.read <= '0';
             io_req_i.write <= '0';
             io_ack <= '0';
-
+            read_ack <= '0';
+            
             case state is
             when idle =>
                 wb_dat_i <= (others => '0');
+                mem_req_r <= '0';
                 if wb_stb_o = '1' then
                     io_req_i.address <= unsigned(wb_adr_o(io_req_i.address'range));
                     remain <= c_remain(to_integer(unsigned(wb_sel_o)));
@@ -115,7 +118,8 @@ begin
                             io_req_i.read <= '1';
                         end if;
                         state <= io_access;
-                    elsif mem_req_i.request = '1' then
+                    elsif mem_req_i.request = '1' and (mem_resp.rack = '0' or mem_req_i.read_writen = '1') then
+                        mem_req_r <= '1';
                         if wb_we_o = '1' then
                             state <= mem_write;
                         else
@@ -155,16 +159,19 @@ begin
 
             when mem_read =>
                 if mem_resp.rack_tag = g_tag then
+                    mem_req_r <= '0';
                     request_accepted <= '1';
                 end if;
                 if mem_resp.dack_tag = g_tag then
                     request_accepted <= '0';
                     wb_dat_i <= std_ulogic_vector(mem_resp.data);
+                    read_ack <= '1';
                     state <= idle;
                 end if;
                 
             when mem_write =>
                 if mem_resp.rack_tag = g_tag then
+                    mem_req_r <= '0';
                     state <= idle;
                 end if;
 

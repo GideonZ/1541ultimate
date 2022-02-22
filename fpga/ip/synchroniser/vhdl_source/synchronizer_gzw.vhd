@@ -82,7 +82,9 @@ begin
     begin
         if rising_edge(tx_clock) then
             -- path to receive side
-            tx_tig_src  <= tx_tig_src xor tx_enable; -- toggle flipfop
+            if tx_enable = '1' then
+                tx_tig_src <= not tx_tig_src;  -- toggle flipfop
+            end if;
             if tx_enable = '1' then
                 tx_data_tig_src <= tx_data;
             end if;

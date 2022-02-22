@@ -3,9 +3,9 @@
 #include "iomap.h"
 #include <stdio.h>
 
-#define DDR2_TESTLOC0  (*(volatile uint32_t *)(0x0000))
-#define DDR2_TESTLOC1  (*(volatile uint32_t *)(0x0004))
-#define DDR2_TESTLOC2  (*(volatile uint32_t *)(0x0008))
+#define DDR2_TESTLOC0  (*(volatile uint32_t *)(0x0010))
+#define DDR2_TESTLOC1  (*(volatile uint32_t *)(0x0014))
+#define DDR2_TESTLOC2  (*(volatile uint32_t *)(0x0018))
 
 #define MR     0x0232
 #define EMR    0x4440 // 01 0 0 0 1 (no DQSn) 000 (no OCD) 1 (150ohm) 000 (no AL) 0 (150 ohm) 0 (full drive) 0 (dll used)
@@ -105,7 +105,7 @@ int try_mode(int mode)
 {
     int phase, rep, good;
     int last_begin, best_pos, best_length;
-    int state;
+    int state, total_good;
 
     DDR2_TESTLOC0 = TESTVALUE1;
     DDR2_TESTLOC1 = TESTVALUE2;
@@ -119,6 +119,7 @@ int try_mode(int mode)
     outbyte(mode + '0');
     outbyte(':');
 
+    total_good = 0;
     for (phase = 0; phase < (2 * PHASE_STEPS); phase ++) { // 720 degrees
         good = 0;
         for (rep = 0; rep < 5; rep ++) {
@@ -131,6 +132,7 @@ int try_mode(int mode)
         }
         DDR2_PLLPHASE = MOVE_READ_CLOCK;
         outbyte(hexchars[good]);
+        total_good += good;
 
         if ((state == 0) && (good >= 14)) {
             last_begin = phase;
@@ -144,6 +146,10 @@ int try_mode(int mode)
         }
     }
 
+    if (total_good == 30 * PHASE_STEPS) {
+        puts("Sim?");
+        return 1;
+    }
     if (best_pos < 0) {
         return 0;
     }

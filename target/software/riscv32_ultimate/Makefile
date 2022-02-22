@@ -153,9 +153,6 @@ SRCS_CC	 =  u2p_init.cc \
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/risc-v
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/risc-v/chip_specific_extensions/RV32I_CLINT_no_extensions
 VPATH +=	$(PATH_SW)/portable/riscv
-#VPATH +=	$(PATH_SW)/nios_appl_bsp
-#VPATH +=	$(PATH_SW)/nios_appl_bsp/HAL/inc
-#VPATH +=	$(PATH_SW)/nios_appl_bsp/drivers/inc
 VPATH +=	$(PATH_SW)/6502/sidcrt/target
 VPATH +=	$(PATH_SW)/../neorv32/sw/common
 

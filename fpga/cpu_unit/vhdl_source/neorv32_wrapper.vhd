@@ -82,14 +82,15 @@ begin
         PMP_NUM_REGIONS              => 0,
         HPM_NUM_CNTS                 => 0,
         MEM_INT_IMEM_EN              => false,
-        MEM_INT_DMEM_EN              => false,
+        MEM_INT_DMEM_EN              => true,   -- implement processor-internal data memory
+        MEM_INT_DMEM_SIZE            => 2*1024, -- size of processor-internal data memory in bytes
         ICACHE_EN                    => true,
         ICACHE_NUM_BLOCKS            => 256,
         ICACHE_BLOCK_SIZE            => 8,
         ICACHE_ASSOCIATIVITY         => 1,
         MEM_EXT_EN                   => true,
         MEM_EXT_TIMEOUT              => 255,
-        MEM_EXT_PIPE_MODE            => false,
+        MEM_EXT_PIPE_MODE            => true,
         MEM_EXT_BIG_ENDIAN           => false,
         MEM_EXT_ASYNC_RX             => false,
         SLINK_NUM_TX                 => 0,
