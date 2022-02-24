@@ -101,7 +101,7 @@ port (
 
     -- Flash Interface
     FLASH_CSn   : out   std_logic;
-    FLASH_SCK   : out   std_logic;
+--    FLASH_SCK   : out   std_logic;
     FLASH_MOSI  : out   std_logic;
     FLASH_MISO  : in    std_logic;
     FLASH_SEL   : out   std_logic := '0';
@@ -673,7 +673,7 @@ begin
     
         -- Flash Interface
         FLASH_CSn   => FLASH_CSn,
-        FLASH_SCK   => FLASH_SCK,
+        FLASH_SCK   => open, --FLASH_SCK,
         FLASH_MOSI  => FLASH_MOSI,
         FLASH_MISO  => FLASH_MISO,
     
