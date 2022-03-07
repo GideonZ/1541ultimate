@@ -15,6 +15,7 @@ library ieee;
         
 entity u2p_riscv_lattice is
 generic (
+    g_jtag_debug     : boolean := true;
     g_dual_drive     : boolean := true );
 port (
     -- slot side
@@ -58,6 +59,13 @@ port (
     AUDIO_LRCLK : out   std_logic := '0';
     AUDIO_SDO   : out   std_logic := '0';
     AUDIO_SDI   : in    std_logic;
+
+    -- JTAG on-chip debugger interface (available if ON_CHIP_DEBUGGER_EN = true) --
+    JTAG_TRST   : in    std_ulogic := '0'; -- low-active TAP reset (optional)
+    JTAG_TCK    : in    std_ulogic := '0'; -- serial clock
+    JTAG_TDI    : in    std_ulogic := '1'; -- serial data input
+    JTAG_TDO    : out   std_ulogic;        -- serial data output
+    JTAG_TMS    : in    std_ulogic := '1'; -- mode select
 
     -- IEC bus
     IEC_ATN     : inout std_logic;
@@ -324,13 +332,19 @@ begin
 
     i_riscv: entity work.neorv32_wrapper
     generic map (
-        g_frequency => 62_500_000,
+        g_jtag_debug=> g_jtag_debug,
+        g_frequency => 50_000_000,
         g_tag       => X"20"
     )
     port map (
         clock       => sys_clock,
         reset       => sys_reset,
         cpu_reset   => '0',
+        jtag_trst_i => JTAG_TRST,
+        jtag_tck_i  => JTAG_TCK,
+        jtag_tdi_i  => JTAG_TDI,
+        jtag_tdo_o  => JTAG_TDO,
+        jtag_tms_i  => JTAG_TMS,
         irq_i       => io_irq,
         irq_o       => open,
         io_req      => io_req_riscv,
@@ -548,7 +562,7 @@ begin
         g_spi_flash     => true,
         g_vic_copper    => false,
         g_video_overlay => false,
-        g_sampler       => true,
+        g_sampler       => false,
         g_acia          => true,
         g_rmii          => true )
     port map (

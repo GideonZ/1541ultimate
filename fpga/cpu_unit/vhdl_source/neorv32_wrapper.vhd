@@ -16,6 +16,7 @@ library neorv32;
 
 entity neorv32_wrapper is
 generic (
+    g_jtag_debug    : boolean := true;
     g_frequency     : natural := 50_000_000;
     g_tag           : std_logic_vector(7 downto 0) := X"20" );
 port (
@@ -23,6 +24,13 @@ port (
     reset           : in    std_logic;
     cpu_reset       : in    std_logic;
     
+    -- JTAG on-chip debugger interface (available if ON_CHIP_DEBUGGER_EN = true) --
+    jtag_trst_i     : in    std_ulogic := '0'; -- low-active TAP reset (optional)
+    jtag_tck_i      : in    std_ulogic := '0'; -- serial clock
+    jtag_tdi_i      : in    std_ulogic := '1'; -- serial data input
+    jtag_tdo_o      : out   std_ulogic;        -- serial data output
+    jtag_tms_i      : in    std_ulogic := '1'; -- mode select
+
     irq_i           : in    std_logic := '0';
     irq_o           : out   std_logic := '0';
     
@@ -61,7 +69,7 @@ begin
         CLOCK_FREQUENCY              => g_frequency,
         HW_THREAD_ID                 => 0,
         INT_BOOTLOADER_EN            => true,
-        ON_CHIP_DEBUGGER_EN          => false,
+        ON_CHIP_DEBUGGER_EN          => g_jtag_debug,
         CPU_EXTENSION_RISCV_A        => false,
         CPU_EXTENSION_RISCV_B        => false,
         CPU_EXTENSION_RISCV_C        => false,
@@ -72,7 +80,7 @@ begin
         CPU_EXTENSION_RISCV_Zicsr    => true, -- for Interrupts
         CPU_EXTENSION_RISCV_Zicntr   => false,
         CPU_EXTENSION_RISCV_Zihpm    => false,
-        CPU_EXTENSION_RISCV_Zifencei => false,
+        CPU_EXTENSION_RISCV_Zifencei => g_jtag_debug,
         CPU_EXTENSION_RISCV_Zmmul    => false,
         CPU_EXTENSION_RISCV_Zxcfu    => false,
         FAST_MUL_EN                  => false,
@@ -116,11 +124,11 @@ begin
         clk_i                        => clock,
         rstn_i                       => reset_n,
 
-        jtag_trst_i                  => '0',
-        jtag_tck_i                   => '0',
-        jtag_tdi_i                   => '0',
-        jtag_tdo_o                   => open,
-        jtag_tms_i                   => '0',
+        jtag_trst_i                  => jtag_trst_i,
+        jtag_tck_i                   => jtag_tck_i,
+        jtag_tdi_i                   => jtag_tdi_i,
+        jtag_tdo_o                   => jtag_tdo_o,
+        jtag_tms_i                   => jtag_tms_i,
 
         wb_tag_o                     => wb_tag_o,
         wb_adr_o                     => wb_adr_o,
