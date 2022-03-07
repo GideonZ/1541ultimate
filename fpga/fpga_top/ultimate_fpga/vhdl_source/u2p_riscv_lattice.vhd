@@ -19,10 +19,14 @@ generic (
     g_dual_drive     : boolean := true );
 port (
     -- slot side
+    SLOT_DATA_OEn    : out   std_logic;
+    SLOT_DATA_DIR    : out   std_logic;
+    SLOT_ADDR_OEn    : out   std_logic;
+    SLOT_ADDR_DIR    : out   std_logic;
     SLOT_PHI2        : in    std_logic;
     SLOT_DOTCLK      : in    std_logic;
     SLOT_RSTn        : inout std_logic;
-    SLOT_BUFFER_ENn  : out   std_logic;
+    SLOT_BUFFER_EN   : out   std_logic;
     SLOT_ADDR        : inout unsigned(15 downto 0);
     SLOT_DATA        : inout std_logic_vector(7 downto 0);
     SLOT_RWn         : inout std_logic;
@@ -68,11 +72,18 @@ port (
     JTAG_TMS    : in    std_ulogic := '1'; -- mode select
 
     -- IEC bus
-    IEC_ATN     : inout std_logic;
-    IEC_DATA    : inout std_logic;
-    IEC_CLOCK   : inout std_logic;
-    IEC_RESET   : in    std_logic;
-    IEC_SRQ_IN  : inout std_logic;
+    IEC_ATN_O   : out   std_logic;
+    IEC_DATA_O  : out   std_logic;
+    IEC_CLOCK_O : out   std_logic;
+    IEC_RESET_O : out   std_logic;
+    IEC_SRQ_O   : out   std_logic;
+
+    IEC_ATN_I   : in    std_logic;
+    IEC_DATA_I  : in    std_logic;
+    IEC_CLOCK_I : in    std_logic;
+    IEC_RESET_I : in    std_logic;
+    IEC_SRQ_I   : in    std_logic;
+
     
     LED_DISKn   : out   std_logic; -- activity LED
     LED_CARTn   : out   std_logic;
@@ -112,10 +123,9 @@ port (
 --    FLASH_SCK   : out   std_logic;
     FLASH_MOSI  : out   std_logic;
     FLASH_MISO  : in    std_logic;
-    FLASH_SEL   : out   std_logic := '0';
-    FLASH_SELCK : out   std_logic := '0';
 
     -- USB Interface (ULPI)
+    ULPI_REFCLK : out   std_logic;
     ULPI_RESET  : out   std_logic;
     ULPI_CLOCK  : in    std_logic;
     ULPI_NXT    : in    std_logic;
@@ -165,6 +175,7 @@ architecture rtl of u2p_riscv_lattice is
     signal slot_data_t  : std_logic;
     signal slot_rwn_o   : std_logic;
     
+    signal clock_24     : std_logic;
     signal sys_clock    : std_logic;
     signal sys_reset    : std_logic;
     signal audio_clock  : std_logic;
@@ -196,10 +207,6 @@ architecture rtl of u2p_riscv_lattice is
     signal trigger     : std_logic;
         
     -- IEC open drain
-    signal iec_atn_o   : std_logic;
-    signal iec_data_o  : std_logic;
-    signal iec_clock_o : std_logic;
-    signal iec_srq_o   : std_logic;
     signal sw_iec_o    : std_logic_vector(3 downto 0);
     signal sw_iec_i    : std_logic_vector(3 downto 0);
     
@@ -303,10 +310,13 @@ begin
     port map (
         CLKI   => RMII_REFCLK, -- 50 MHz
         CLKOP  => sys_clock,   -- 50 MHz
-        CLKOS  => HUB_CLOCK,   -- 24 MHz
+        CLKOS  => clock_24,   -- 24 MHz
         CLKOS2 => audio_clock, -- 12.245 MHz (47.831 kHz sample rate)
         LOCK   => pll_locked );
 
+    HUB_CLOCK <= clock_24;
+    ULPI_REFCLK <= clock_24;
+    
     sys_reset <= not pll_locked when rising_edge(sys_clock);
 
     i_audio_reset: entity work.level_synchronizer
@@ -631,17 +641,17 @@ begin
         aud_sid_2       => ult_sid_2,
         
         -- IEC bus
-        iec_reset_i => IEC_RESET,
-        iec_atn_i   => IEC_ATN,
-        iec_data_i  => IEC_DATA,
-        iec_clock_i => IEC_CLOCK,
-        iec_srq_i   => IEC_SRQ_IN,
+        iec_reset_i => IEC_RESET_I,
+        iec_atn_i   => IEC_ATN_I,
+        iec_data_i  => IEC_DATA_I,
+        iec_clock_i => IEC_CLOCK_I,
+        iec_srq_i   => IEC_SRQ_I,
                                   
-        iec_reset_o => open,
-        iec_atn_o   => iec_atn_o,
-        iec_data_o  => iec_data_o,
-        iec_clock_o => iec_clock_o,
-        iec_srq_o   => iec_srq_o,
+        iec_reset_o => IEC_RESET_O,
+        iec_atn_o   => IEC_ATN_O,
+        iec_data_o  => IEC_DATA_O,
+        iec_clock_o => IEC_CLOCK_O,
+        iec_srq_o   => IEC_SRQ_O,
                                     
         MOTOR_LEDn  => led_n(0),
         DISK_ACTn   => led_n(1),
@@ -761,12 +771,12 @@ begin
     LED_CARTn  <= led_n(2) xor sys_reset;
     LED_SDACTn <= led_n(3) xor sys_reset;
 
-    IEC_SRQ_IN <= '0' when iec_srq_o   = '0' or sw_iec_o(3) = '0' else 'Z';
-    IEC_ATN    <= '0' when iec_atn_o   = '0' or sw_iec_o(2) = '0' else 'Z';
-    IEC_DATA   <= '0' when iec_data_o  = '0' or sw_iec_o(1) = '0' else 'Z';
-    IEC_CLOCK  <= '0' when iec_clock_o = '0' or sw_iec_o(0) = '0' else 'Z';
+--    IEC_SRQ_IN <= '0' when iec_srq_o   = '0' or sw_iec_o(3) = '0' else 'Z';
+--    IEC_ATN    <= '0' when iec_atn_o   = '0' or sw_iec_o(2) = '0' else 'Z';
+--    IEC_DATA   <= '0' when iec_data_o  = '0' or sw_iec_o(1) = '0' else 'Z';
+--    IEC_CLOCK  <= '0' when iec_clock_o = '0' or sw_iec_o(0) = '0' else 'Z';
 
-    sw_iec_i <= IEC_SRQ_IN & IEC_ATN & IEC_DATA & IEC_CLOCK;
+    sw_iec_i <= IEC_SRQ_I & IEC_ATN_I & IEC_DATA_I & IEC_CLOCK_I;
 
     button_i <= not BUTTON;
 
@@ -880,7 +890,7 @@ begin
 
     end block;
     
-    SLOT_BUFFER_ENn <= not buffer_en;
+    SLOT_BUFFER_EN <= buffer_en;
 
     i_debug_eth: entity work.eth_debug_stream
     port map (
@@ -908,9 +918,9 @@ begin
         drv_debug_data      => drv_debug_data,
         drv_debug_valid     => drv_debug_valid,
     
-        IEC_ATN             => IEC_ATN,
-        IEC_CLOCK           => IEC_CLOCK,
-        IEC_DATA            => IEC_DATA
+        IEC_ATN             => IEC_ATN_I,
+        IEC_CLOCK           => IEC_CLOCK_I,
+        IEC_DATA            => IEC_DATA_I
     );
 
     -- Transceiver
@@ -933,5 +943,13 @@ begin
         eth_tx_valid    => eth_tx_valid,
         eth_tx_ready    => eth_tx_ready,
         ten_meg_mode    => '0'   );
+
+    SLOT_DATA_OEn    <= '1';
+    SLOT_DATA_DIR    <= '1';
+    SLOT_ADDR_OEn    <= '1';
+    SLOT_ADDR_DIR    <= '1';
+    
+    SDRAM_DQS <= RMII_RX_ER and UART_RXD and SLOT_DOTCLK;
+    SDRAM_CLKn <= '0';    
 
 end architecture;
