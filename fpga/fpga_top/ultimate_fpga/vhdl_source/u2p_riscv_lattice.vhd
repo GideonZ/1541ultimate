@@ -65,11 +65,11 @@ port (
     AUDIO_SDI   : in    std_logic;
 
     -- JTAG on-chip debugger interface (available if ON_CHIP_DEBUGGER_EN = true) --
-    JTAG_TRST   : in    std_ulogic := '0'; -- low-active TAP reset (optional)
-    JTAG_TCK    : in    std_ulogic := '0'; -- serial clock
-    JTAG_TDI    : in    std_ulogic := '1'; -- serial data input
-    JTAG_TDO    : out   std_ulogic;        -- serial data output
-    JTAG_TMS    : in    std_ulogic := '1'; -- mode select
+    DEBUG_TRSTn : in    std_ulogic := '0'; -- low-active TAP reset (optional)
+    DEBUG_TCK   : in    std_ulogic := '0'; -- serial clock
+    DEBUG_TMS   : in    std_ulogic := '1'; -- mode select
+    DEBUG_TDI   : in    std_ulogic := '1'; -- serial data input
+    DEBUG_TDO   : out   std_ulogic;        -- serial data output
 
     -- IEC bus
     IEC_ATN_O   : out   std_logic;
@@ -350,11 +350,11 @@ begin
         clock       => sys_clock,
         reset       => sys_reset,
         cpu_reset   => '0',
-        jtag_trst_i => JTAG_TRST,
-        jtag_tck_i  => JTAG_TCK,
-        jtag_tdi_i  => JTAG_TDI,
-        jtag_tdo_o  => JTAG_TDO,
-        jtag_tms_i  => JTAG_TMS,
+        jtag_trst_i => DEBUG_TRSTn,
+        jtag_tck_i  => DEBUG_TCK,
+        jtag_tdi_i  => DEBUG_TDI,
+        jtag_tdo_o  => DEBUG_TDO,
+        jtag_tms_i  => DEBUG_TMS,
         irq_i       => io_irq,
         irq_o       => open,
         io_req      => io_req_riscv,
