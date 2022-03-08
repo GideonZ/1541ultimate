@@ -130,6 +130,58 @@ LOCATE COMP "RMII_RX_ER" SITE "A2" ;
 LOCATE COMP "RMII_CRS_DV" SITE "B2" ;
 LOCATE COMP "RMII_RX_DATA[0]" SITE "B1" ;
 LOCATE COMP "RMII_RX_DATA[1]" SITE "C2" ;
+LOCATE COMP "MDIO_CLK"  SITE "C1" ;
+LOCATE COMP "MDIO_DATA" SITE "D1" ;
+LOCATE COMP "I2C_SCL_18" SITE "E2" ;
+LOCATE COMP "I2C_SDA_18" SITE "E1" ;
+
+LOCATE COMP "AUDIO_SDO"   SITE "F2";
+LOCATE COMP "AUDIO_SDI"   SITE "F1";
+LOCATE COMP "AUDIO_BCLK"  SITE "G2";
+LOCATE COMP "AUDIO_LRCLK" SITE "G1";
+LOCATE COMP "AUDIO_MCLK"  SITE "H2";
+
+LOCATE COMP "RMII_REFCLK"   SITE "C8";
+LOCATE COMP "BOARD_REVn[0]" SITE "E9" ;
+LOCATE COMP "BOARD_REVn[1]" SITE "E10" ;
+LOCATE COMP "BOARD_REVn[2]" SITE "E11" ;
+LOCATE COMP "BOARD_REVn[3]" SITE "E12" ;
+LOCATE COMP "BOARD_REVn[4]" SITE "E13" ;
+
+LOCATE COMP "CAS_WRITE" SITE "P1";
+LOCATE COMP "CAS_READ"  SITE "N1";
+LOCATE COMP "CAS_SENSE" SITE "M2";
+LOCATE COMP "CAS_MOTOR" SITE "M1";
+
+LOCATE COMP "BUTTON[0]" SITE "E7";
+LOCATE COMP "BUTTON[1]" SITE "C7";
+LOCATE COMP "BUTTON[2]" SITE "D7";
+
+LOCATE COMP "LED_DISKn"  SITE "C5";
+LOCATE COMP "LED_CARTn"  SITE "C6";
+LOCATE COMP "LED_SDACTn" SITE "D6";
+LOCATE COMP "LED_MOTORn" SITE "D5";
+
+LOCATE COMP "DEBUG_TCK"   SITE "E8";
+LOCATE COMP "DEBUG_TMS"   SITE "D8";
+LOCATE COMP "DEBUG_TDI"   SITE "D9";
+LOCATE COMP "DEBUG_TDO"   SITE "D10";
+LOCATE COMP "DEBUG_TRSTn" SITE "C10";
+
+LOCATE COMP "HUB_CLOCK" SITE "K12";
+LOCATE COMP "HUB_RESETn" SITE "C11";
+
+LOCATE COMP "I2C_SCL" SITE "L2";
+LOCATE COMP "I2C_SDA" SITE "L1";
+LOCATE COMP "SPEAKER_DATA" SITE "M3";
+LOCATE COMP "SPEAKER_ENABLE" SITE "L4";
+LOCATE COMP "UART_TXD" SITE "L3";
+
+
+
+
+
+
 DEFINE PORT GROUP "SDRAM_C" "SDRAM_A[13]" 
 "SDRAM_A[12]" 
 "SDRAM_A[11]" 
@@ -215,10 +267,6 @@ IOBUF GROUP "SDRAM_D" IO_TYPE=SSTL18_I ;
 IOBUF GROUP "SDRAM_C" IO_TYPE=SSTL18_I ;
 DEFINE PORT GROUP "Misc3V3" "FLASH_MISO" 
 "CAS_MOTOR" 
-"LED_DISKn" 
-"LED_CARTn" 
-"LED_SDACTn" 
-"LED_MOTORn" 
 "SPEAKER_DATA" 
 "SPEAKER_ENABLE" 
 "I2C_SDA" 
@@ -229,7 +277,6 @@ DEFINE PORT GROUP "Misc3V3" "FLASH_MISO"
 "UART_TXD" 
 "FLASH_CSn" 
 "FLASH_MOSI" 
-"HUB_RESETn" 
 "HUB_CLOCK" 
 "IEC_ATN_I" 
 "IEC_DATA_I" 
@@ -243,6 +290,11 @@ DEFINE PORT GROUP "Misc3V3" "FLASH_MISO"
 "IEC_SRQ_O" 
 "UART_RXD" ;
 DEFINE PORT GROUP "Misc1V8" "AUDIO_SDI" 
+"LED_DISKn" 
+"LED_CARTn" 
+"LED_SDACTn" 
+"LED_MOTORn" 
+"HUB_RESETn" 
 "ETH_IRQn" 
 "RMII_CRS_DV" 
 "RMII_RX_DATA[1]" 
@@ -259,7 +311,12 @@ DEFINE PORT GROUP "Misc1V8" "AUDIO_SDI"
 "MDIO_DATA" 
 "I2C_SDA_18" 
 "I2C_SCL_18" 
-"RMII_RX_ER" ;
+"RMII_RX_ER"
+"DEBUG_TRSTn" 
+"DEBUG_TCK" 
+"DEBUG_TMS" 
+"DEBUG_TDI" 
+"DEBUG_TDO" ;
 DEFINE PORT GROUP "Ulpi" "ULPI_NXT" 
 "ULPI_DIR" 
 "ULPI_RESET" 
@@ -325,26 +382,6 @@ DEFINE CELL GROUP "TigSrc" "b_audio.i_ultfilt8/i_sync/tx_tig_src"
 "b_audio.i_ultfilt7/i_sync/tx_data_tig_src[16]" 
 "b_audio.i_ultfilt7/i_sync/tx_data_tig_src[17]" 
 "b_audio.i_ultfilt7/i_sync/rx_tig_src" 
-"b_audio.i_ultfilt6/i_sync/tx_tig_src" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[0]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[1]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[2]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[3]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[4]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[5]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[6]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[7]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[8]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[9]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[10]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[11]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[12]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[13]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[14]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[15]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[16]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[17]" 
-"b_audio.i_ultfilt6/i_sync/rx_tig_src" 
 "b_audio.i_ultfilt5/i_sync/tx_tig_src" 
 "b_audio.i_ultfilt5/i_sync/tx_data_tig_src[0]" 
 "b_audio.i_ultfilt5/i_sync/tx_data_tig_src[1]" 
@@ -529,26 +566,6 @@ DEFINE CELL GROUP "TigDst" "b_audio.i_ultfilt8/i_sync/tx_tig_dst"
 "b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[15]" 
 "b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[16]" 
 "b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[17]" 
-"b_audio.i_ultfilt6/i_sync/tx_tig_dst" 
-"b_audio.i_ultfilt6/i_sync/rx_tig_dst" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[0]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[1]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[2]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[3]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[4]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[5]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[6]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[7]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[8]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[9]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[10]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[11]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[12]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[13]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[14]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[15]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[16]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[17]" 
 "b_audio.i_ultfilt5/i_sync/tx_tig_dst" 
 "b_audio.i_ultfilt5/i_sync/rx_tig_dst" 
 "b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[0]" 
