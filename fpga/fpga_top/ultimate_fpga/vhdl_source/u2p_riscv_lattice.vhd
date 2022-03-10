@@ -70,7 +70,8 @@ port (
     DEBUG_TMS   : in    std_ulogic := '1'; -- mode select
     DEBUG_TDI   : in    std_ulogic := '1'; -- serial data input
     DEBUG_TDO   : out   std_ulogic;        -- serial data output
-
+    DEBUG_SPARE : out   std_ulogic := '0';
+    
     -- IEC bus
     IEC_ATN_O   : out   std_logic;
     IEC_DATA_O  : out   std_logic;
