@@ -13,6 +13,9 @@ library ieee;
     use work.my_math_pkg.all;
     use work.audio_type_pkg.all;
         
+library ECP5U;
+use ECP5U.components.all;
+
 entity u2p_riscv_lattice is
 generic (
     g_jtag_debug     : boolean := true;
@@ -162,6 +165,7 @@ architecture rtl of u2p_riscv_lattice is
         LOCK: out  std_logic);
     end component;
 
+    signal flash_sck    : std_logic;
     signal por_n        : std_logic;
     signal pll_locked   : std_logic;
     signal ref_reset    : std_logic;
@@ -292,6 +296,9 @@ architecture rtl of u2p_riscv_lattice is
     signal eth_rx_sof    : std_logic;
     signal eth_rx_eof    : std_logic;
     signal eth_rx_valid  : std_logic;
+
+--    attribute syn_noprune: boolean ;
+--    attribute syn_noprune of USRMCLK: component is true;
 begin
     process(RMII_REFCLK)
     begin
@@ -698,7 +705,7 @@ begin
     
         -- Flash Interface
         FLASH_CSn   => FLASH_CSn,
-        FLASH_SCK   => open, --FLASH_SCK,
+        FLASH_SCK   => flash_sck,
         FLASH_MOSI  => FLASH_MOSI,
         FLASH_MISO  => FLASH_MISO,
     
@@ -742,6 +749,11 @@ begin
     drv_via1_ca2_i    <= drv_via1_ca2_o    or not drv_via1_ca2_t;
     drv_via1_cb1_i    <= drv_via1_cb1_o    or not drv_via1_cb1_t;
 
+    u1: USRMCLK
+    port map (
+        USRMCLKI => flash_sck,
+        USRMCLKTS => '0'
+    );
 
     process(sys_clock)
         variable c, d  : std_logic := '0';
