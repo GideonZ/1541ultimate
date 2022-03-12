@@ -32,7 +32,10 @@ port (
     ulpi_nxt    : in    std_logic;
     ulpi_stp    : out   std_logic;
     ulpi_dir    : in    std_logic;
-    ulpi_data   : inout std_logic_vector(7 downto 0) );
+    ulpi_data_i : in    std_logic_vector(7 downto 0);
+    ulpi_data_o : out   std_logic_vector(7 downto 0);
+    ulpi_data_t : out   std_logic );
+    
 end entity;
 
 architecture structural of usb_host_interface is
@@ -65,7 +68,9 @@ begin
             clock       => clock,
             reset       => reset,
             
-            ULPI_DATA   => ulpi_data,
+            ULPI_DATA_I => ulpi_data_i,
+            ULPI_DATA_O => ulpi_data_o,
+            ULPI_DATA_T => ulpi_data_t,
             ULPI_DIR    => ulpi_dir,
             ULPI_NXT    => ulpi_nxt,
             ULPI_STP    => ulpi_stp,

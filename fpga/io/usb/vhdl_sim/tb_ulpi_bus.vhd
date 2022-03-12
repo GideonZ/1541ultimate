@@ -10,6 +10,8 @@ architecture tb of tb_ulpi_bus is
     signal clock       : std_logic := '0';
     signal reset       : std_logic;
     signal ULPI_DATA   : std_logic_vector(7 downto 0);
+    signal ULPI_DATA_O : std_logic_vector(7 downto 0);
+    signal ULPI_DATA_T : std_logic;
     signal ULPI_DIR    : std_logic;
     signal ULPI_NXT    : std_logic;
     signal ULPI_STP    : std_logic;
@@ -36,7 +38,9 @@ begin
         clock       => clock,
         reset       => reset,
         
-        ULPI_DATA   => ULPI_DATA,
+        ULPI_DATA_I => ULPI_DATA,
+        ULPI_DATA_O => ULPI_DATA_O,
+        ULPI_DATA_T => ULPI_DATA_T,
         ULPI_DIR    => ULPI_DIR,
         ULPI_NXT    => ULPI_NXT,
         ULPI_STP    => ULPI_STP,
@@ -56,6 +60,8 @@ begin
         rx_store    => rx_store,
         rx_valid    => rx_valid );
 
+    ULPI_DATA <= ULPI_DATA_O when ULPI_DATA_T = '1' else "ZZZZZZZZ";
+    
     i_bfm: entity work.usb1_ulpi_phy_bfm
     port map (
         clock       => clock,
