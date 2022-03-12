@@ -197,6 +197,8 @@ architecture rtl of u2p_nios_solo is
         
     -- miscellaneous interconnect
     signal ulpi_reset_i     : std_logic;
+    signal ulpi_data_o      : std_logic_vector(7 downto 0);
+    signal ulpi_data_t      : std_logic;
     
     -- memory controller interconnect
     signal memctrl_inhibit  : std_logic;
@@ -667,7 +669,9 @@ begin
         ULPI_NXT    => ULPI_NXT,
         ULPI_STP    => ULPI_STP,
         ULPI_DIR    => ULPI_DIR,
-        ULPI_DATA   => ULPI_DATA,
+        ULPI_DATA_O => ulpi_data_o,
+        ULPI_DATA_I => ULPI_DATA,
+        ULPI_DATA_T => ulpi_data_t,
     
         -- Cassette Interface
         c2n_read_in    => c2n_read_in, 
@@ -696,6 +700,8 @@ begin
         -- Buttons
         sw_trigger  => sw_trigger,
         BUTTON      => button_i );
+
+    ULPI_DATA <= ulpi_data_o when ulpi_data_t = '1' else "ZZZZZZZZ";
 
     -- Parallel cable not implemented. This is the way to stub it...
     drv_via1_port_a_i(7 downto 1) <= drv_via1_port_a_o(7 downto 1) or not drv_via1_port_a_t(7 downto 1);
