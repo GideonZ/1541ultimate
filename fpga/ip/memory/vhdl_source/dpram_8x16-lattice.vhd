@@ -3,7 +3,12 @@ library ECP5U;
 use ECP5U.components.all;
 
 architecture lattice of dpram_8x16 is
+    signal delayed_reset_a  : std_logic;
+    signal delayed_reset_b  : std_logic;
 begin
+    delayed_reset_a <= SSRA when falling_edge(CLKA);
+    delayed_reset_b <= SSRB when falling_edge(CLKB);
+
     true_dpram_8x16: DP16KD
         generic map (
             INIT_DATA     =>  "STATIC",
@@ -58,7 +63,7 @@ begin
             CSA2  => '0',
             CSA1  => '0',
             CSA0  => '0',
-            RSTA  => SSRA,
+            RSTA  => delayed_reset_a,
             DIB17 => '0',
             DIB16 => DIB(15),
             DIB15 => DIB(14),
@@ -98,7 +103,7 @@ begin
             CSB2  => '0',
             CSB1  => '0',
             CSB0  => '0',
-            RSTB  => SSRB,
+            RSTB  => delayed_reset_b,
             DOA17 => open,
             DOA16 => open,
             DOA15 => open,

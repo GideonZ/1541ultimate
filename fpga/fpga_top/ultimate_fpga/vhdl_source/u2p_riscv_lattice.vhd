@@ -195,6 +195,8 @@ architecture rtl of u2p_riscv_lattice is
     signal ulpi_data_o      : std_logic_vector(7 downto 0);
     signal ulpi_data_t      : std_logic;
     signal ulpi_data_i      : std_logic_vector(7 downto 0);
+    signal ulpi_nxt_i       : std_logic;
+    signal ulpi_dir_i       : std_logic;
         
     -- memory controller interconnect
     signal memctrl_inhibit  : std_logic;
@@ -713,9 +715,9 @@ begin
         FLASH_MISO  => FLASH_MISO,
     
         -- USB Interface (ULPI)
-        ULPI_NXT    => ULPI_NXT,
+        ULPI_NXT    => ulpi_nxt_i,
+        ULPI_DIR    => ulpi_dir_i,
         ULPI_STP    => ULPI_STP,
-        ULPI_DIR    => ULPI_DIR,
         ULPI_DATA_O => ulpi_data_o,
         ULPI_DATA_I => ulpi_data_i,
         ULPI_DATA_T => ulpi_data_t,
@@ -753,7 +755,8 @@ begin
         i_delay: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => ULPI_DATA(i), Z => ulpi_data_i(i));
         --i_delay: DELAYG generic map (DEL_VALUE => "DELAY5") port map (A => ULPI_DATA(i), Z => ulpi_data_delayed(i));
     end generate;
-
+    i_delay_ulpi_nxt: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => ULPI_NXT, Z => ulpi_nxt_i);
+    i_delay_ulpi_dir: DELAYG generic map (DEL_MODE => "USER_DEFINED", DEL_VALUE => 5) port map (A => ULPI_DIR, Z => ulpi_dir_i);
 
     -- Parallel cable not implemented. This is the way to stub it...
     drv_via1_port_a_i(7 downto 1) <= drv_via1_port_a_o(7 downto 1) or not drv_via1_port_a_t(7 downto 1);
