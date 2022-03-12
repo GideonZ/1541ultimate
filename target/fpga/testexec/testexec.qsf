@@ -428,7 +428,7 @@ set_global_assignment -name VHDL_FILE ../../../fpga/altera/dpram_sc.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/dpram.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/megafunctions/pll.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/mem_io.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/altera/srl_fifo.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/srl_fifo-altera.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/u2p_io.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/update_io.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/all_carts_v5.vhd
