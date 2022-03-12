@@ -2,18 +2,11 @@ BLOCK RESETPATHS ;
 BLOCK ASYNCPATHS ;
 FREQUENCY PORT "RMII_REFCLK" 50.000000 MHz CLOCK_JITTER 0.200000 ns ;
 FREQUENCY PORT "ULPI_CLOCK" 60.000000 MHz CLOCK_JITTER 0.200000 ns ;
-INPUT_SETUP PORT "ULPI_NXT" 9.000000 ns CLKPORT "ULPI_CLOCK" ;
-INPUT_SETUP PORT "ULPI_DIR" 9.000000 ns CLKPORT "ULPI_CLOCK" ;
-INPUT_SETUP PORT "ULPI_DATA[0]" 9.000000 ns CLKPORT "ULPI_CLOCK" ;
-INPUT_SETUP PORT "ULPI_DATA[1]" 9.000000 ns CLKPORT "ULPI_CLOCK" ;
-INPUT_SETUP PORT "ULPI_DATA[2]" 9.000000 ns CLKPORT "ULPI_CLOCK" ;
-INPUT_SETUP PORT "ULPI_DATA[3]" 9.000000 ns CLKPORT "ULPI_CLOCK" ;
-INPUT_SETUP PORT "ULPI_DATA[4]" 9.000000 ns CLKPORT "ULPI_CLOCK" ;
-INPUT_SETUP PORT "ULPI_DATA[5]" 9.000000 ns CLKPORT "ULPI_CLOCK" ;
-INPUT_SETUP PORT "ULPI_DATA[6]" 9.000000 ns CLKPORT "ULPI_CLOCK" ;
-INPUT_SETUP PORT "ULPI_DATA[7]" 9.000000 ns CLKPORT "ULPI_CLOCK" ;
-CLOCK_TO_OUT PORT "ULPI_STP" 8.000000 ns CLKPORT "ULPI_CLOCK" ;
-CLOCK_TO_OUT PORT "ULPI_DATA*" 8.000000 ns CLKPORT "ULPI_CLOCK" ;
+INPUT_SETUP PORT "ULPI_NXT" 11.500000 ns HOLD 1.5 ns CLKPORT "ULPI_CLOCK" ;
+INPUT_SETUP PORT "ULPI_DIR" 11.500000 ns HOLD 1.5 ns CLKPORT "ULPI_CLOCK" ;
+INPUT_SETUP PORT "ULPI_DATA*" 11.500000 ns HOLD 1.5 ns CLKPORT "ULPI_CLOCK" ;
+CLOCK_TO_OUT PORT "ULPI_STP" 10.000000 ns CLKPORT "ULPI_CLOCK" ;
+CLOCK_TO_OUT PORT "ULPI_DATA*" 10.000000 ns CLKPORT "ULPI_CLOCK" ;
 SYSCONFIG CONFIG_IOVOLTAGE=3.3 MCCLK_FREQ=19.4 SLAVE_SPI_PORT=DISABLE MASTER_SPI_PORT=DISABLE SLAVE_PARALLEL_PORT=DISABLE TRANSFR=OFF CONFIG_MODE=SPI_SERIAL ;
 LOCATE COMP "FLASH_CSn" SITE "N8" ;
 LOCATE COMP "FLASH_MISO" SITE "T7" ;
@@ -332,7 +325,8 @@ IOBUF GROUP "Misc3V3" IO_TYPE=LVCMOS33 ;
 IOBUF GROUP "Misc1V8" IO_TYPE=LVCMOS18 ;
 IOBUF GROUP "Ulpi" IO_TYPE=LVCMOS18 ;
 IOBUF GROUP "Undecided" IO_TYPE=LVCMOS18 ;
-DEFINE CELL GROUP "TigSrc" "b_audio.i_ultfilt8/i_sync/tx_tig_src" 
+DEFINE CELL GROUP "TigSrc"
+"b_audio.i_ultfilt8/i_sync/tx_tig_src" 
 "b_audio.i_ultfilt8/i_sync/tx_data_tig_src[0]" 
 "b_audio.i_ultfilt8/i_sync/tx_data_tig_src[1]" 
 "b_audio.i_ultfilt8/i_sync/tx_data_tig_src[2]" 
@@ -516,7 +510,8 @@ DEFINE CELL GROUP "TigSrc" "b_audio.i_ultfilt8/i_sync/tx_tig_src"
 "i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_tail_gray_tig_src[6]" 
 "i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_tail_gray_tig_src[7]" 
 "i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_tail_gray_tig_src[8]" ;
-DEFINE CELL GROUP "TigDst" "b_audio.i_ultfilt8/i_sync/tx_tig_dst" 
+DEFINE CELL GROUP "TigDst"
+"b_audio.i_ultfilt8/i_sync/tx_tig_dst" 
 "b_audio.i_ultfilt8/i_sync/rx_tig_dst" 
 "b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[0]" 
 "b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[1]" 
@@ -701,6 +696,19 @@ DEFINE CELL GROUP "TigDst" "b_audio.i_ultfilt8/i_sync/tx_tig_dst"
 "i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_head_gray_tig_dst[7]" 
 "i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_head_gray_tig_dst[8]" ;
 BLOCK PATH FROM GROUP "TigSrc" TO GROUP "TigDst" ;
+BLOCK PATH FROM CELL "sys_reset" TO CELL "i_audio_reset/sync1";
+#MULTICYCLE FROM <Source Register> CLKNET “CLK” CLKEN_NET “CE” TO <Destination Register> CLKNET “CLK” 2 X
+#BLOCK PATH FROM CELL "i_logic/r_usb2.i_usb2/i_intf/ulpi_dir_d1" TO PIN "ulpi_data_t";
+#USE DIN FALSE CELL "i_logic_r_usb2.i_usb2_i_intf_i_ulpi_ulpi_data_inio[0]";
+#USE DIN FALSE CELL "i_logic_r_usb2.i_usb2_i_intf_i_ulpi_ulpi_data_inio[1]";
+#USE DIN FALSE CELL "i_logic_r_usb2.i_usb2_i_intf_i_ulpi_ulpi_data_inio[2]";
+#USE DIN FALSE CELL "i_logic_r_usb2.i_usb2_i_intf_i_ulpi_ulpi_data_inio[3]";
+#USE DIN FALSE CELL "i_logic_r_usb2.i_usb2_i_intf_i_ulpi_ulpi_data_inio[4]";
+#USE DIN FALSE CELL "i_logic_r_usb2.i_usb2_i_intf_i_ulpi_ulpi_data_inio[5]";
+#USE DIN FALSE CELL "i_logic_r_usb2.i_usb2_i_intf_i_ulpi_ulpi_data_inio[6]";
+#USE DIN FALSE CELL "i_logic_r_usb2.i_usb2_i_intf_i_ulpi_ulpi_data_inio[7]";
+#USE DIN FALSE CELL "i_logic_r_usb2.i_usb2_i_intf_i_ulpi_ulpi_dir_d1io";
+#USE DIN FALSE CELL "i_logic_r_usb2.i_usb2_i_intf_i_ulpi_ulpi_nxt_d1io";
 TEMPERATURE 50.000 C;
 IOBUF PORT "RMII_REFCLK" IO_TYPE=LVCMOS18 ;
 IOBUF PORT "ULPI_CLOCK" IO_TYPE=LVCMOS18 ;
