@@ -60,7 +60,14 @@ architecture arch of tb_ctrl_with_phy is
     signal rdata_valid        : std_logic := '0';
     signal count              : unsigned(7 downto 0) := (others => '0');
 
-    signal req                : t_mem_req_32 := c_mem_req_32_init;
+    signal req                : t_mem_req_32 := (
+        tag         => X"00",
+        request     => '0',
+        read_writen => '1',
+        address     => (others => '0'),
+        byte_en     => "1111",
+        data        => X"CCBBAA00"
+    );
     signal resp               : t_mem_resp_32;
 
     -- PHY controls
@@ -125,55 +132,88 @@ begin
         rdata_valid       => rdata_valid
     );
         
-    process(ctrl_clock)
-        variable rw : std_logic := '0';
-        variable rq : std_logic := '1';
-        variable num_writes : integer := 0;
-    begin
-        if rising_edge(ctrl_clock) then
-            if ready='1' then
-                req.request <= rq;
-                rw := req.address(4);
-                req.read_writen <= rw;
+--    p_pattern: process(ctrl_clock)
+--        variable rw : std_logic := '0';
+--        variable rq : std_logic := '1';
+--        variable num_writes : integer := 0;
+--    begin
+--        if rising_edge(ctrl_clock) then
+--            if ready='1' then
+--                req.request <= rq;
+--                rw := req.address(4);
+--                req.read_writen <= rw;
+--
+--                if resp.rack = '1' then
+----                    if req.read_writen = '0' and num_writes = 2 then
+----                        rq := '0';
+----                        req.request <= '0';
+----                    end if;                        
+--                    req.address <= req.address + 4;
+--                    if rw = '0' and rq = '1' then
+--                        req.data <= std_logic_vector(unsigned(req.data) + 1);
+--                        num_writes := num_writes + 1;
+--                    end if; 
+--                end if;
+--            end if;
+--        end if;
+--    end process;
 
+    p_pattern: process
+    begin
+        wait until ready = '1';
+        wait until ctrl_clock = '1';
+
+        for i in 1 to 4 loop
+            req.read_writen <= '0';
+            req.request <= '1';
+            req.byte_en <= "1001";
+            L1: while true loop
+                wait until ctrl_clock = '1';
                 if resp.rack = '1' then
-                    if req.read_writen = '0' and num_writes = 2 then
-                        rq := '0';
-                        req.request <= '0';
-                    end if;                        
-                    req.address <= req.address + 4;
-                    if rw = '0' and rq = '1' then
-                        req.data <= std_logic_vector(unsigned(req.data) + 1);
-                        num_writes := num_writes + 1;
-                    end if; 
+                    exit L1;
                 end if;
-            end if;
-        end if;
+            end loop;    
+            req.request <= '0';
+            req.address <= req.address + 4;
+            req.data <= std_logic_vector(unsigned(req.data) + 1);
+        end loop;
+        wait;
     end process;
 
     b_sdram_read: block
-        signal dqs_queue        : std_logic_vector(13 downto 0) := (others => '0');
-        signal dqst_queue       : std_logic_vector(13 downto 0) := (others => '1');
-        signal read_queue       : std_logic_vector(13 downto 0) := (others => '0');
+        constant c_cas_latency  : natural := 3;
+        constant c_additive_lat : natural := 2;
+        constant c              : natural := 2*(c_cas_latency + c_additive_lat);
+        type t_bytes is array (natural range <>) of std_logic_vector(7 downto 0);
+        signal dqs_queue        : std_logic_vector(c+3 downto 0) := (others => '0');
+        signal dqst_queue       : std_logic_vector(c+3 downto 0) := (others => '1');
+        signal read_queue       : std_logic_vector(c+3 downto 0) := (others => '0');
+        signal data_queue       : t_bytes(c+3 downto 0) := (others => (others => '0'));
     begin        
         process(SDRAM_CLK)
         begin
             if rising_edge(SDRAM_CLK) then
+                data_queue <= X"AA" & data_queue(data_queue'high downto 1);
                 read_queue <= '0' & read_queue(read_queue'high downto 1);
                 dqs_queue <= '0' & dqs_queue(dqs_queue'high downto 1);
                 dqst_queue <= '1' & dqst_queue(dqst_queue'high downto 1);
                 if SDRAM_CSn = '0' and SDRAM_RASn = '1' and SDRAM_CASn = '0' and SDRAM_WEn = '1' then -- Start Read
-                    read_queue(13 downto 10) <= "1111";
-                    dqs_queue(13 downto 10) <= "0101";
-                    dqst_queue(13 downto 8) <= "000000";                
+                    read_queue(c+3 downto c) <= "1111";
+                    dqs_queue(c+3 downto c) <= "0101";
+                    dqst_queue(c+3 downto c-2) <= "000000";                
+                    data_queue(c) <= X"B" & '0' & SDRAM_BA;
+                    data_queue(c+1) <= SDRAM_A(7 downto 0);
+                    data_queue(c+2) <= X"CC";
+                    data_queue(c+3) <= X"33";
                 end if;
             elsif falling_edge(SDRAM_CLK) then
+                data_queue <= X"55" & data_queue(data_queue'high downto 1);
                 read_queue <= '0' & read_queue(read_queue'high downto 1);
                 dqs_queue <= '0' & dqs_queue(dqs_queue'high downto 1);
                 dqst_queue <= '1' & dqst_queue(dqst_queue'high downto 1);
             end if;
         end process;
-        SDRAM_DQ <= X"33" when read_queue(0) = '1' else (others => 'Z');
+        SDRAM_DQ <= data_queue(0) when read_queue(0) = '1' else (others => 'Z');
         SDRAM_DQS <= dqs_queue(0) when dqst_queue(0) = '0' else 'Z';
     end block;
     
