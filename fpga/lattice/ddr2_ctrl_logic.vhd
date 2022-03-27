@@ -138,10 +138,8 @@ architecture Gideon of ddr2_ctrl_logic is
         read            : std_logic_vector(1 downto 0);
         wmask           : std_logic_vector(3 downto 0);
         wdata           : std_logic_vector(31 downto 0);
-        wdata_t1        : std_logic_vector(1 downto 0);
-        wdata_t2        : std_logic_vector(1 downto 0);
-        dqs_o1          : std_logic_vector(3 downto 0);
-        dqs_o2          : std_logic_vector(3 downto 0);
+        wdata_t         : std_logic_vector(1 downto 0);
+        dqs_o           : std_logic_vector(3 downto 0);
         dqs_t1          : std_logic_vector(1 downto 0);
         dqs_t2          : std_logic_vector(1 downto 0);
     end record;
@@ -158,10 +156,8 @@ architecture Gideon of ddr2_ctrl_logic is
         read         => "00",
         wmask        => "1111",
         wdata        => (others => 'X'),
-        wdata_t1     => "11",
-        wdata_t2     => "11",
-        dqs_o1       => "0000",
-        dqs_o2       => "0000",
+        wdata_t      => "11",
+        dqs_o        => "0000",
         dqs_t1       => "11",
         dqs_t2       => "11"
     );
@@ -202,12 +198,17 @@ architecture Gideon of ddr2_ctrl_logic is
     signal addr1        : t_address_command; -- all pins in the first half cycle
     signal addr2        : t_address_command; -- all pins in the second half cycle
     signal datap        : t_data_path;
-    signal wdata_t2     : std_logic_vector(1 downto 0) := "11";
     signal dqs_t2       : std_logic_vector(1 downto 0) := "11";
-    signal dqs_o2       : std_logic_vector(3 downto 0) := "0000";
     signal cur          : t_internal_state := c_internal_state_init;
     signal nxt          : t_internal_state;
 
+    signal zwdata       : std_logic_vector(31 downto 0);
+    signal zwdata_m     : std_logic_vector(3 downto 0);
+    signal zwdata_t     : std_logic_vector(1 downto 0);
+    signal zdqs_o       : std_logic_vector(3 downto 0);
+    signal zdqs_t       : std_logic_vector(1 downto 0);
+    signal zread        : std_logic_vector(1 downto 0);
+    
     signal ext_addr         : std_logic_vector(15 downto 0) := (others => '0');
     signal ext_cmd          : std_logic_vector(3 downto 0) := c_cmd_inactive;
     signal ext_cmd_valid    : std_logic := '0';
@@ -220,7 +221,7 @@ begin
     resp.rack_tag <= nxt.rack_tag; -- was cur
     resp.dack_tag <= dack_pipe(dack_pipe'high);
     
-    process(req, inhibit, cur, ext_cmd, ext_cmd_valid, ext_addr, enable_sdram, refresh_en, dqs_t2, dqs_o2, wdata_t2)
+    process(req, inhibit, cur, ext_cmd, ext_cmd_valid, ext_addr, enable_sdram, refresh_en, dqs_t2)
         procedure send_refresh_cmd is
         begin
             addr1.sdram_cmd  <= c_cmd_refresh;
@@ -259,15 +260,13 @@ begin
                     addr1.sdram_cmd <= c_cmd_active;
                     addr2.sdram_cmd <= c_cmd_write;
 
-                    -- First cycle only add active bits
-                    datap.wdata_t1(1) <= '0'; -- <= "01"; -- output data!
-                    datap.dqs_t1(1) <= '0';--   <= "01"; -- output dqs!
-                    datap.dqs_o1(3) <= '1'; --   <= "1000";
+                    -- Now
+                    datap.wdata_t  <= "00";
+                    datap.dqs_t1   <= "00";
+                    datap.dqs_o    <= "1010"; 
 
                     -- Second cycle program leadout
-                    datap.wdata_t2 <= "10";
-                    datap.dqs_t2   <= "00";
-                    datap.dqs_o2   <= "0010"; 
+                    datap.dqs_t2   <= "10";
 
                     nxt.rack       <= '1';
                     nxt.rack_tag   <= req.tag;
@@ -298,8 +297,6 @@ begin
         addr2.sdram_cke  <= enable_sdram;
         datap            <= c_data_path_init;
         datap.dqs_t1     <= dqs_t2;        
-        datap.dqs_o1     <= dqs_o2;        
-        datap.wdata_t1   <= wdata_t2;        
 
         ext_cmd_done <= '0';
                 
@@ -358,25 +355,32 @@ begin
             end if;
             dack_pipe(dack_pipe'high downto 1) <= dack_pipe(dack_pipe'high-1 downto 0);
             
+            dqs_t2  <= datap.dqs_t2; -- For the next cycle
+
             -- In all fairness, this step takes 10 ns, which might not be necessary
             addr_first  <= addr1.sdram_cke & addr1.sdram_odt & addr1.sdram_cmd(2 downto 0) & addr1.sdram_ba & addr1.sdram_a;
             addr_second <= addr2.sdram_cke & addr2.sdram_odt & addr2.sdram_cmd(2 downto 0) & addr2.sdram_ba & addr2.sdram_a;
             csn <= addr2.sdram_cmd(3) & addr1.sdram_cmd(3);
             
-            wdata   <= datap.wdata;
-            wdata_t <= datap.wdata_t1; -- Now
-            wdata_t2 <= datap.wdata_t2; -- For the next cycle
-            wdata_m <= datap.wmask;
-            dqs_o   <= datap.dqs_o1; -- Now
-            dqs_o2  <= datap.dqs_o2; -- For the next cycle
-            dqs_t   <= datap.dqs_t1; -- Now
-            dqs_t2  <= datap.dqs_t2; -- For the next cycle
-            read    <= datap.read;
+            zwdata   <= datap.wdata;
+            zwdata_t <= datap.wdata_t;
+            zwdata_m <= datap.wmask;
+            zdqs_o   <= datap.dqs_o;
+            zdqs_t   <= datap.dqs_t1; -- Now
+
+            zread    <= datap.read;
+            read     <= zread;        
 
             if reset='1' then
                 cur <= c_internal_state_init;
             end if;
         end if;
     end process;
+
+    i_wdata_delay: entity work.half_cycle_delay generic map(32) port map(clock, zwdata, wdata);
+    i_wdatt_delay: entity work.half_cycle_delay generic map( 2) port map(clock, zwdata_t, wdata_t);
+    i_wdatm_delay: entity work.half_cycle_delay generic map( 4) port map(clock, zwdata_m, wdata_m);
+    i_dqso_delay:  entity work.half_cycle_delay generic map( 4) port map(clock, zdqs_o, dqs_o);
+    i_dqst_delay:  entity work.half_cycle_delay generic map( 2) port map(clock, zdqs_t, dqs_t);
 
 end architecture;
