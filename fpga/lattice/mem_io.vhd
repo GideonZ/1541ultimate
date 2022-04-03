@@ -24,11 +24,11 @@ entity mem_io is
         sys_clock_4x       : in  std_logic;
 
         clock_enable       : in  std_logic := '1';
-        delay_step         : in  std_logic_vector(g_data_width-1 downto 0);
-        delay_load         : in  std_logic;
-        delay_dir          : in  std_logic;
+        delay_rdstep       : in  std_logic := '0';
+        delay_wrstep       : in  std_logic := '0';
         delay_rdloadn      : in  std_logic := '1';
         delay_wrloadn      : in  std_logic := '1';
+        delay_dir          : in  std_logic := '0';
         
         -- Calibration controls
         stop               : in    std_logic;
@@ -40,6 +40,7 @@ entity mem_io is
         datavalid          : out   std_logic;
         burstdet           : out   std_logic;
         dll_lock           : out   std_logic;
+        sclk_out           : out   std_logic;
         
         -- inputs at sys_clock_2x (sclk = 100 MHz)
         addr_first         : in    std_logic_vector(g_addr_width-1 downto 0);
@@ -96,7 +97,7 @@ begin
     process(sys_clock_4x)
     begin
         if rising_edge(sys_clock_4x) then
-            rst <= sys_reset;
+            --rst <= sys_reset;
             if srst = '1' then
                 phase <= '1';
             else
@@ -104,7 +105,8 @@ begin
             end if;
         end if;
     end process;
-        
+    rst <= srst;
+    
     -- Make clocks, based on 50 MHz reference. ECLK = 200 MHz, SCLK = 100 MHz, ECLK90 = 90 degree shifted ECLK
     i_eclk_sync: ECLKSYNCB port map (
         ECLKI   => sys_clock_4x,
@@ -146,10 +148,10 @@ begin
         DYNDELAY1   => '0', 
         DYNDELAY0   => '0', 
         RDLOADN     => delay_rdloadn,
-        RDMOVE      => '0', 
+        RDMOVE      => delay_rdstep, 
         RDDIRECTION => delay_dir,
         WRLOADN     => delay_wrloadn, 
-        WRMOVE      => '0',
+        WRMOVE      => delay_wrstep,
         WRDIRECTION => delay_dir, 
         DQSR90      => dqsr90,
         DQSW270     => dqsw270,
@@ -169,7 +171,7 @@ begin
     generic map (DIV=> "2.0")
     port map (
         CLKI    => eclk,
-        RST     => rst,
+        RST     => '0', -- rst
         ALIGNWD => '0', 
         CDIVX   => sclk_i );
 
@@ -322,9 +324,6 @@ begin
             port map (
                 A => mem_dq_i(i),
                 Z => mem_dq_i_delayed(i) );
---                LOADN => delay_load,
---                MOVE  => delay_step(i),
---                DIRECTION => delay_dir );
 
             i_buf: BB port map (I => mem_dq_o(i), T => mem_dq_t, B => mem_dq(i), O => mem_dq_i(i));
     
@@ -371,6 +370,7 @@ begin
     end generate;
 
     sys_clock_2x <= sclk_i;
+    sclk_out     <= sclk_i;
     sys_clock    <= hclk;
     
 end architecture;

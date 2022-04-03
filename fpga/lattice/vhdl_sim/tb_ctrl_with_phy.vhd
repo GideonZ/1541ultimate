@@ -72,8 +72,6 @@ architecture arch of tb_ctrl_with_phy is
 
     -- PHY controls
     signal clock_enable       : std_logic := '1';
-    signal delay_step         : std_logic_vector(7 downto 0) := (others => '0');
-    signal delay_load         : std_logic := '1';
     signal delay_rdloadn      : std_logic := '1';
     signal delay_wrloadn      : std_logic := '1';
     signal delay_dir          : std_logic := '1';
@@ -101,6 +99,7 @@ architecture arch of tb_ctrl_with_phy is
     signal SDRAM_DQS          : std_logic := 'Z';
 
     signal my_net             : std_logic := '0';
+    signal random             : std_logic_vector(23 downto 0);
 begin
     PUR_INST: entity work.P port map (PUR => my_net);
     GSR_INST: entity work.G port map (GSR => my_net);
@@ -163,10 +162,12 @@ begin
         wait until ready = '1';
         wait until ctrl_clock = '1';
 
-        for i in 1 to 4 loop
-            req.read_writen <= '0';
+        for i in 1 to 100 loop
+            --req.read_writen <= random(23);
+            --req.address(22 downto 0) <= unsigned(random(22 downto 0));
+            req.read_writen <= '1';
             req.request <= '1';
-            req.byte_en <= "1001";
+            req.tag <= std_logic_vector(unsigned(req.tag) + 1);
             L1: while true loop
                 wait until ctrl_clock = '1';
                 if resp.rack = '1' then
@@ -179,6 +180,15 @@ begin
         end loop;
         wait;
     end process;
+
+    i_random: entity work.noise_generator
+    port map (
+        clock           => ctrl_clock,
+        enable          => '1',
+        reset           => reset,
+        q               => random
+    );
+    
 
     b_sdram_read: block
         constant c_cas_latency  : natural := 3;
@@ -247,8 +257,6 @@ begin
         sys_clock_4x     => mem_clock,
         
         clock_enable     => clock_enable,
-        delay_step       => delay_step,
-        delay_load       => delay_load,
         delay_dir        => delay_dir,
         delay_rdloadn    => delay_rdloadn,
         delay_wrloadn    => delay_wrloadn,
