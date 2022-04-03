@@ -7,7 +7,7 @@
 -------------------------------------------------------------------------------
 library ieee;
     use ieee.std_logic_1164.all;
-
+    
 entity half_cycle_delay is
 generic (
     g_bits      : natural := 8 );

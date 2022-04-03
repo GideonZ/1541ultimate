@@ -162,6 +162,7 @@ architecture rtl of u2p_riscv_lattice is
         CLKOP: out  std_logic; 
         CLKOS: out  std_logic;
         CLKOS2: out  std_logic; 
+        CLKOS3: out  std_logic; 
         LOCK: out  std_logic);
     end component;
 
@@ -180,9 +181,13 @@ architecture rtl of u2p_riscv_lattice is
     signal slot_data_t  : std_logic;
     signal slot_rwn_o   : std_logic;
     
-    signal clock_24     : std_logic;
+    signal mem_clock    : std_logic;
+    signal ctrl_clock   : std_logic;
+    signal toggle       : std_logic;
+    signal eth_clock    : std_logic;
     signal sys_clock    : std_logic;
     signal sys_reset    : std_logic;
+    signal clock_24     : std_logic;
     signal audio_clock  : std_logic;
     signal audio_reset  : std_logic;
     signal eth_reset    : std_logic;
@@ -205,6 +210,8 @@ architecture rtl of u2p_riscv_lattice is
     signal cpu_mem_resp     : t_mem_resp_32;
     signal mem_req          : t_mem_req_32;
     signal mem_resp         : t_mem_resp_32;
+    signal mem_req_2x       : t_mem_req_32;
+    signal mem_resp_2x      : t_mem_resp_32;
 
     signal uart_txd_from_logic  : std_logic;
     signal i2c_sda_i   : std_logic;
@@ -322,10 +329,13 @@ begin
     i_pll: pll1
     port map (
         CLKI   => RMII_REFCLK, -- 50 MHz
-        CLKOP  => sys_clock,   -- 50 MHz
+        CLKOP  => mem_clock,   -- 200 MHz
         CLKOS  => clock_24,   -- 24 MHz
         CLKOS2 => audio_clock, -- 12.245 MHz (47.831 kHz sample rate)
+        CLKOS3 => sys_clock, -- 50 MHz
         LOCK   => pll_locked );
+
+    eth_clock <= sys_clock; -- same net
 
     HUB_CLOCK <= clock_24;
     ULPI_REFCLK <= clock_24;
@@ -349,7 +359,7 @@ begin
     i_eth_reset: entity work.level_synchronizer
     generic map ('1')
     port map (
-        clock       => RMII_REFCLK,
+        clock       => eth_clock,
         input       => sys_reset,
         input_c     => eth_reset  );
 
@@ -443,63 +453,50 @@ begin
         resps(1)   => io_resp_debug
     );
 
---    i_memphy: entity work.ddr2_ctrl
---    port map (
---        ref_clock         => RMII_REFCLK,
---        ref_reset         => ref_reset,
---        sys_clock_o       => sys_clock,
---        sys_reset_o       => sys_reset,
---        clock             => sys_clock,
---        reset             => sys_reset,
---        io_req            => io_req_ddr2,
---        io_resp           => io_resp_ddr2,
---        inhibit           => memctrl_inhibit,
---        is_idle           => is_idle,
---
---        req               => mem_req,
---        resp              => mem_resp,
---        
---        SDRAM_CLK         => SDRAM_CLK,
---        SDRAM_CLKn        => SDRAM_CLKn,
---        SDRAM_CKE         => SDRAM_CKE,
---        SDRAM_ODT         => SDRAM_ODT,
---        SDRAM_CSn         => SDRAM_CSn,
---        SDRAM_RASn        => SDRAM_RASn,
---        SDRAM_CASn        => SDRAM_CASn,
---        SDRAM_WEn         => SDRAM_WEn,
---        SDRAM_A           => SDRAM_A,
---        SDRAM_BA          => SDRAM_BA(1 downto 0),
---        SDRAM_DM          => SDRAM_DM,
---        SDRAM_DQ          => SDRAM_DQ,
---        SDRAM_DQS         => SDRAM_DQS
---    );
-
-    i_mem_ctrl: entity work.ext_mem_ctrl_v5
+    i_double_freq_bridge: entity work.memreq_halfrate
     generic map (
-        g_simulation => false )
+        g_reg_in    => true
+    )
+    port map(
+        clock_1x    => sys_clock,
+        clock_2x    => ctrl_clock,
+        reset_1x    => sys_clock,
+        mem_req_1x  => mem_req,
+        mem_resp_1x => mem_resp,
+        mem_req_2x  => mem_req_2x,
+        mem_resp_2x => mem_resp_2x
+    );
+
+    i_memctrl: entity work.ddr2_ctrl
     port map (
-        clock       => sys_clock,
-        clk_2x      => sys_clock,--_2x, !!!
-        reset       => sys_reset,
-    
-        inhibit     => memctrl_inhibit,
-        is_idle     => open,
-    
-        req         => mem_req,
-        resp        => mem_resp,
-    
-        SDRAM_CLK   => SDRAM_CLK,
-        SDRAM_CKE   => SDRAM_CKE,
-        SDRAM_CSn   => SDRAM_CSn,
-        SDRAM_RASn  => SDRAM_RASn,
-        SDRAM_CASn  => SDRAM_CASn,
-        SDRAM_WEn   => SDRAM_WEn,
-        SDRAM_DQM   => SDRAM_DM,
-    
-        SDRAM_BA    => SDRAM_BA(1 downto 0),
-        SDRAM_A     => SDRAM_A(12 downto 0),
-        SDRAM_DQ    => SDRAM_DQ );
-    
+        mem_clock         => mem_clock,
+        reset             => sys_reset,
+
+        io_clock          => sys_clock,
+        io_reset          => sys_reset,
+        io_req            => io_req_ddr2,
+        io_resp           => io_resp_ddr2,
+        inhibit           => memctrl_inhibit,
+        is_idle           => is_idle,
+        mem_clock_half    => ctrl_clock,
+
+        req               => mem_req_2x,
+        resp              => mem_resp_2x,
+        
+        SDRAM_CLK         => SDRAM_CLK,
+        SDRAM_CLKn        => SDRAM_CLKn,
+        SDRAM_CKE         => SDRAM_CKE,
+        SDRAM_ODT         => SDRAM_ODT,
+        SDRAM_CSn         => SDRAM_CSn,
+        SDRAM_RASn        => SDRAM_RASn,
+        SDRAM_CASn        => SDRAM_CASn,
+        SDRAM_WEn         => SDRAM_WEn,
+        SDRAM_A           => SDRAM_A,
+        SDRAM_BA          => SDRAM_BA,
+        SDRAM_DM          => SDRAM_DM,
+        SDRAM_DQ          => SDRAM_DQ,
+        SDRAM_DQS         => SDRAM_DQS
+    );
 
     i_remote_dummy: entity work.io_dummy
     port map(
@@ -735,7 +732,7 @@ begin
         c2n_motor_out  => c2n_motor_out, 
         
         -- Ethernet Interface (RMII)
-        eth_clock    => RMII_REFCLK, 
+        eth_clock    => eth_clock, 
         eth_reset    => eth_reset,
         eth_rx_data  => eth_rx_data,
         eth_rx_sof   => eth_rx_sof,
@@ -922,7 +919,7 @@ begin
 
     i_debug_eth: entity work.eth_debug_stream
     port map (
-        eth_clock     => RMII_REFCLK,
+        eth_clock     => eth_clock,
         eth_reset     => eth_reset,
 
         eth_u2p_data  => eth_u2p_data,
@@ -954,7 +951,7 @@ begin
     -- Transceiver
     i_rmii: entity work.rmii_transceiver
     port map (
-        clock           => RMII_REFCLK,
+        clock           => eth_clock,
         reset           => eth_reset,
         rmii_crs_dv     => RMII_CRS_DV, 
         rmii_rxd        => RMII_RX_DATA,
@@ -974,10 +971,7 @@ begin
 
     SLOT_DATA_OEn    <= '1';
     SLOT_DATA_DIR    <= '1';
-    SLOT_ADDR_OEn    <= '1';
-    SLOT_ADDR_DIR    <= '1';
-    
-    SDRAM_DQS <= RMII_RX_ER and UART_RXD and SLOT_DOTCLK;
-    SDRAM_CLKn <= '0';    
-
+    SLOT_ADDR_OEn    <= toggle;
+    SLOT_ADDR_DIR    <= RMII_RX_ER and UART_RXD and SLOT_DOTCLK;
+    toggle <= not toggle when rising_edge(ctrl_clock);
 end architecture;

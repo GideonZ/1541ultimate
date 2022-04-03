@@ -4,9 +4,9 @@
   (keywordMap (keywordLevel 0))
   (status
     (written
-      (timestamp 2022 2 17 15 28 57)
+      (timestamp 2022 4 2 17 23 7)
       (program "SCUBA" (version "Diamond (64-bit) 3.12.0.240.2"))))
-      (comment "/usr/local/diamond/3.12/ispfpga/bin/lin64/scuba -w -n pll1 -lang vhdl -synth synplify -bus_exp 7 -bb -arch sa5p00 -type pll -fin 50 -clkibuf LVCMOS18 -fclkop 50 -fclkop_tol 2.0 -fclkos 24 -fclkos_tol 2.0 -phases 0 -fclkos2 12.288 -fclkos2_tol 2.0 -phases2 0 -phase_cntl STATIC -lock -fb_mode 1 -fdc /home/gideon/proj/ultimate/neorv32/lattice/pll1/pll1.fdc ")
+      (comment "/usr/local/diamond/3.12/ispfpga/bin/lin64/scuba -w -n pll1 -lang vhdl -synth synplify -bus_exp 7 -bb -arch sa5p00 -type pll -fin 50 -fclkop 200 -fclkop_tol 2.0 -fclkos 24 -fclkos_tol 2.0 -phases 0 -fclkos2 12.288 -fclkos2_tol 2.0 -phases2 0 -fclkos3 50 -fclkos3_tol 2.0 -phases3 11.25 -phase_cntl STATIC -lock -fb_mode 1 -fdc /home/gideon/proj/ultimate/fpga/lattice/pll1/pll1.fdc ")
   (library ORCLIB
     (edifLevel 0)
     (technology
@@ -74,15 +74,6 @@
         (interface
           (port Z
             (direction OUTPUT)))))
-    (cell IB
-      (cellType GENERIC)
-      (view view1
-        (viewType NETLIST)
-        (interface
-          (port I
-            (direction INPUT))
-          (port O
-            (direction OUTPUT)))))
     (cell pll1
       (cellType GENERIC)
       (view view1
@@ -96,15 +87,12 @@
             (direction OUTPUT))
           (port CLKOS2
             (direction OUTPUT))
+          (port CLKOS3
+            (direction OUTPUT))
           (port LOCK
             (direction OUTPUT)))
         (property NGD_DRC_MASK (integer 1))
         (contents
-          (instance Inst1_IB
-            (viewRef view1 
-              (cellRef IB))
-            (property IO_TYPE
-              (string "LVCMOS18")))
           (instance scuba_vhi_inst
             (viewRef view1 
               (cellRef VHI)))
@@ -123,9 +111,9 @@
             (property DPHASE_SOURCE
               (string "DISABLED"))
             (property CLKOS3_FPHASE
-              (string "0"))
+              (string "3"))
             (property CLKOS3_CPHASE
-              (string "0"))
+              (string "11"))
             (property CLKOS2_FPHASE
               (string "0"))
             (property CLKOS2_CPHASE
@@ -137,7 +125,7 @@
             (property CLKOP_FPHASE
               (string "0"))
             (property CLKOP_CPHASE
-              (string "11"))
+              (string "2"))
             (property PLL_LOCK_MODE
               (string "0"))
             (property CLKOS_TRIM_DELAY
@@ -148,10 +136,12 @@
               (string "0"))
             (property CLKOP_TRIM_POL
               (string "FALLING"))
+            (property FREQUENCY_PIN_CLKOS3
+              (string "50.000000"))
             (property OUTDIVIDER_MUXD
               (string "DIVD"))
             (property CLKOS3_ENABLE
-              (string "DISABLED"))
+              (string "ENABLED"))
             (property FREQUENCY_PIN_CLKOS2
               (string "12.244898"))
             (property OUTDIVIDER_MUXC
@@ -165,7 +155,7 @@
             (property CLKOS_ENABLE
               (string "ENABLED"))
             (property FREQUENCY_PIN_CLKOP
-              (string "50.000000"))
+              (string "200.000000"))
             (property OUTDIVIDER_MUXA
               (string "DIVA"))
             (property CLKOP_ENABLE
@@ -177,15 +167,15 @@
             (property LPF_RESISTOR
               (string "8"))
             (property CLKOS3_DIV
-              (string "1"))
+              (string "12"))
             (property CLKOS2_DIV
               (string "49"))
             (property CLKOS_DIV
               (string "25"))
             (property CLKOP_DIV
-              (string "12"))
+              (string "3"))
             (property CLKFB_DIV
-              (string "1"))
+              (string "4"))
             (property CLKI_DIV
               (string "1"))
             (property FEEDBK_PATH
@@ -193,10 +183,6 @@
           (net REFCLK
             (joined
               (portRef REFCLK (instanceRef PLLInst_0))))
-          (net buf_CLKI
-            (joined
-              (portRef O (instanceRef Inst1_IB))
-              (portRef CLKI (instanceRef PLLInst_0))))
           (net scuba_vhi
             (joined
               (portRef Z (instanceRef scuba_vhi_inst))))
@@ -219,6 +205,10 @@
             (joined
               (portRef LOCK)
               (portRef LOCK (instanceRef PLLInst_0))))
+          (net CLKOS3
+            (joined
+              (portRef CLKOS3)
+              (portRef CLKOS3 (instanceRef PLLInst_0))))
           (net CLKOS2
             (joined
               (portRef CLKOS2)
@@ -235,7 +225,7 @@
           (net CLKI
             (joined
               (portRef CLKI)
-              (portRef I (instanceRef Inst1_IB))))))))
+              (portRef CLKI (instanceRef PLLInst_0))))))))
   (design pll1
     (cellRef pll1
       (libraryRef ORCLIB)))

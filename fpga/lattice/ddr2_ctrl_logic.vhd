@@ -93,10 +93,17 @@ port (
     
     enable_sdram: in  std_logic := '1';
     refresh_en  : in  std_logic := '1';
+    odt_enable  : in  std_logic := '0';
     inhibit     : in  std_logic := '0';
     is_idle     : out std_logic;
     req         : in  t_mem_req_32 := c_mem_req_32_init;
     resp        : out t_mem_resp_32;
+
+    -- Commands to set up the DDR2 chip (mode registers and forced precharges)
+    ext_addr         : in  std_logic_vector(15 downto 0) := (others => '0');
+    ext_cmd          : in  std_logic_vector(3 downto 0) := (others => '1');
+    ext_cmd_valid    : in  std_logic := '0';
+    ext_cmd_done     : out std_logic;
 
     -- Connections to PHY
     addr_first  : out std_logic_vector(21 downto 0);
@@ -192,9 +199,6 @@ architecture Gideon of ddr2_ctrl_logic is
         rack_tag        => (others => '0')
     );    
 
-    type t_tag_array is array(natural range <>) of std_logic_vector(req.tag'range);
-    signal dack_pipe    : t_tag_array(4 downto 0) := (others => (others => '0'));
-    
     signal addr1        : t_address_command; -- all pins in the first half cycle
     signal addr2        : t_address_command; -- all pins in the second half cycle
     signal datap        : t_data_path;
@@ -209,19 +213,16 @@ architecture Gideon of ddr2_ctrl_logic is
     signal zdqs_t       : std_logic_vector(1 downto 0);
     signal zread        : std_logic_vector(1 downto 0);
     
-    signal ext_addr         : std_logic_vector(15 downto 0) := (others => '0');
-    signal ext_cmd          : std_logic_vector(3 downto 0) := c_cmd_inactive;
-    signal ext_cmd_valid    : std_logic := '0';
-    signal ext_cmd_done     : std_logic;
+    signal dack_tag     : std_logic_vector(7 downto 0);
 begin
     is_idle <= '1';
     
     resp.data     <= rdata;
     resp.rack     <= nxt.rack;  -- was cur
     resp.rack_tag <= nxt.rack_tag; -- was cur
-    resp.dack_tag <= dack_pipe(dack_pipe'high);
+    resp.dack_tag <= dack_tag when rdata_valid = '1' else X"00";
     
-    process(req, inhibit, cur, ext_cmd, ext_cmd_valid, ext_addr, enable_sdram, refresh_en, dqs_t2)
+    process(req, inhibit, cur, ext_cmd, ext_cmd_valid, ext_addr, enable_sdram, refresh_en, odt_enable, dqs_t2)
         procedure send_refresh_cmd is
         begin
             addr1.sdram_cmd  <= c_cmd_refresh;
@@ -295,6 +296,8 @@ begin
         addr2            <= c_address_init;
         addr1.sdram_cke  <= enable_sdram;
         addr2.sdram_cke  <= enable_sdram;
+        addr1.sdram_odt  <= odt_enable;
+        addr2.sdram_odt  <= odt_enable;
         datap            <= c_data_path_init;
         datap.dqs_t1     <= dqs_t2;        
 
@@ -344,16 +347,30 @@ begin
         end if;
     end process;
 
+    i_tag_fifo: entity work.sync_fifo
+    generic map(
+        g_depth        => 15,
+        g_data_width   => 8,
+        g_threshold    => 3,
+        g_storage      => "MRAM",
+        g_storage_lat  => "LUT",
+        g_fall_through => true
+    )
+    port map(
+        clock          => clock,
+        reset          => reset,
+        rd_en          => rdata_valid,
+        wr_en          => cur.read_issued,
+        din            => cur.tag,
+        dout           => dack_tag,
+        flush          => '0',
+        valid          => open
+    );
+    
     process(clock)
     begin
         if rising_edge(clock) then
             cur <= nxt;
-            if nxt.read_issued = '1' then
-                dack_pipe(0) <= cur.tag;
-            else
-                dack_pipe(0) <= (others => '0');
-            end if;
-            dack_pipe(dack_pipe'high downto 1) <= dack_pipe(dack_pipe'high-1 downto 0);
             
             dqs_t2  <= datap.dqs_t2; -- For the next cycle
 
