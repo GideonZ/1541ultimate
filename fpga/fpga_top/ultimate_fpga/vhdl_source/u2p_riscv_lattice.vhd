@@ -22,8 +22,6 @@ generic (
     g_dual_drive     : boolean := true );
 port (
     -- slot side
-    SLOT_DATA_OEn    : out   std_logic;
-    SLOT_DATA_DIR    : out   std_logic;
     SLOT_ADDR_OEn    : out   std_logic;
     SLOT_ADDR_DIR    : out   std_logic;
     SLOT_PHI2        : in    std_logic;
@@ -115,6 +113,11 @@ port (
     -- Debug UART
     UART_TXD    : out   std_logic;
     UART_RXD    : in    std_logic;
+    
+    -- USB Experiment
+    USB_DP      : inout std_logic;
+    USB_DM      : inout std_logic;
+    USB_PULLUP  : out   std_logic;
     
     -- I2C Interface for RTC, audio codec and usb hub
     I2C_SDA     : inout std_logic := 'Z';
@@ -969,9 +972,13 @@ begin
         eth_tx_ready    => eth_tx_ready,
         ten_meg_mode    => '0'   );
 
-    SLOT_DATA_OEn    <= '1';
-    SLOT_DATA_DIR    <= '1';
+    USB_DP      <= 'Z' when toggle='1' else '0';
+    USB_DM      <= 'Z' when toggle='1' else '1';
+    USB_PULLUP  <= '1';
+
+    -- SLOT_DATA_OEn    <= '1';
+    -- SLOT_DATA_DIR    <= '1';
     SLOT_ADDR_OEn    <= toggle;
     SLOT_ADDR_DIR    <= RMII_RX_ER and UART_RXD and SLOT_DOTCLK;
-    toggle <= not toggle when rising_edge(ctrl_clock);
+    toggle <= not toggle when rising_edge(sys_clock);
 end architecture;
