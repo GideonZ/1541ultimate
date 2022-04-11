@@ -123,6 +123,10 @@ architecture behavioral of wd177x is
     type t_dma_state is (idle, do_read, reading, do_write, writing, write_delay);
     signal dma_state        : t_dma_state;
 
+    -- Memory timing closure
+    signal mem_dack_r           : std_logic := '0';
+    signal mem_data_r           : std_logic_vector(7 downto 0);
+    
     -- Command queue
     signal command_fifo_din     : std_logic_vector(8 downto 0);
     signal command_fifo_dout    : std_logic_vector(8 downto 0);
@@ -170,6 +174,8 @@ begin
         if rising_edge(clock) then
             command_fifo_push <= '0';
             command_fifo_pop  <= '0';
+            mem_dack_r <= mem_dack;
+            mem_data_r <= mem_resp.data;
 
             if wen = '1' and clock_en = '1' then
                 case addr is
@@ -333,8 +339,8 @@ begin
                 if mem_rack = '1' then
                     mem_request <= '0';
                 end if;
-                if mem_dack = '1' then
-                    disk_data <= mem_resp.data;
+                if mem_dack_r = '1' then
+                    disk_data <= mem_data_r;
                     disk_rdata_valid <= '1';
                     st_data_request <= '1';
                     transfer_len <= transfer_len - 1;
