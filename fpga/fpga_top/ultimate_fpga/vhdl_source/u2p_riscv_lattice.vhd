@@ -21,6 +21,9 @@ generic (
     g_jtag_debug     : boolean := true;
     g_dual_drive     : boolean := true );
 port (
+    -- (Optional) Oscillator
+    CLOCK_50         : in    std_logic := '0';
+    
     -- slot side
     SLOT_ADDR_OEn    : out   std_logic;
     SLOT_ADDR_DIR    : out   std_logic;
@@ -297,6 +300,13 @@ architecture rtl of u2p_riscv_lattice is
     signal drv_debug_data   : std_logic_vector(31 downto 0);
     signal drv_debug_valid  : std_logic;
     
+    signal rmii_tx_en_i     : std_logic;
+    signal rmii_tx_data_i   : std_logic_vector(1 downto 0);
+    signal rmii_crs_dv_i    : std_logic;
+    signal rmii_rx_data_i   : std_logic_vector(1 downto 0);
+    signal rmii_crs_dv_d    : std_logic;
+    signal rmii_rx_data_d   : std_logic_vector(1 downto 0);
+
     signal eth_tx_data   : std_logic_vector(7 downto 0);
     signal eth_tx_last   : std_logic;
     signal eth_tx_valid  : std_logic;
@@ -331,15 +341,17 @@ begin
     
     i_pll: pll1
     port map (
-        CLKI   => RMII_REFCLK, -- 50 MHz
+        CLKI   => CLOCK_50, -- 50 MHz oscillator
+        -- CLKI   => RMII_REFCLK, -- 50 MHz
         CLKOP  => mem_clock,   -- 200 MHz
         CLKOS  => clock_24,   -- 24 MHz
         CLKOS2 => audio_clock, -- 12.245 MHz (47.831 kHz sample rate)
         CLKOS3 => sys_clock, -- 50 MHz
         LOCK   => pll_locked );
 
-    eth_clock <= sys_clock; -- same net
-
+    --eth_clock <= sys_clock; -- same net
+    eth_clock <= RMII_REFCLK; -- dedicated pin
+    
     HUB_CLOCK <= clock_24;
     ULPI_REFCLK <= clock_24;
     
@@ -956,10 +968,10 @@ begin
     port map (
         clock           => eth_clock,
         reset           => eth_reset,
-        rmii_crs_dv     => RMII_CRS_DV, 
-        rmii_rxd        => RMII_RX_DATA,
-        rmii_tx_en      => RMII_TX_EN,
-        rmii_txd        => RMII_TX_DATA,
+        rmii_crs_dv     => rmii_crs_dv_d, 
+        rmii_rxd        => rmii_rx_data_d,
+        rmii_tx_en      => rmii_tx_en_i,
+        rmii_txd        => rmii_tx_data_i,
         
         eth_rx_data     => eth_rx_data,
         eth_rx_sof      => eth_rx_sof,
@@ -971,6 +983,21 @@ begin
         eth_tx_valid    => eth_tx_valid,
         eth_tx_ready    => eth_tx_ready,
         ten_meg_mode    => '0'   );
+
+    -- I/O Delays
+    i_delay_rmii_rxdv: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => RMII_CRS_DV,     Z => rmii_crs_dv_i);
+    i_delay_rmii_rxd0: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => RMII_RX_DATA(0), Z => rmii_rx_data_i(0));
+    i_delay_rmii_rxd1: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => RMII_RX_DATA(1), Z => rmii_rx_data_i(1));
+
+    process(eth_clock)
+    begin
+        if rising_edge(eth_clock) then
+            rmii_crs_dv_d  <= rmii_crs_dv_i;
+            rmii_rx_data_d <= rmii_rx_data_i;
+            RMII_TX_EN     <= rmii_tx_en_i;
+            RMII_TX_DATA   <= rmii_tx_data_i;
+        end if;
+    end process;
 
     USB_DP      <= 'Z' when toggle='1' else '0';
     USB_DM      <= 'Z' when toggle='1' else '1';
