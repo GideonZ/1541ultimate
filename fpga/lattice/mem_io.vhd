@@ -14,12 +14,12 @@ use ECP5U.components.all;
 
 entity mem_io is
     generic (
+        g_addr_out_method   : natural := 1; -- 0 = generic, 1 = ddr ff
         g_data_width        : natural := 4;
         g_mask_width        : natural := 1;
         g_addr_width        : natural := 8 );
 	port (
         sys_reset          : in  std_logic;
-        sys_clock          : out std_logic;
         sys_clock_2x       : out std_logic;
         sys_clock_4x       : in  std_logic;
 
@@ -31,6 +31,7 @@ entity mem_io is
         delay_dir          : in  std_logic := '0';
         
         -- Calibration controls
+        read_delay         : in    std_logic_vector(1 downto 0);
         stop               : in    std_logic;
         uddcntln           : in    std_logic;
         freeze             : in    std_logic;
@@ -70,8 +71,12 @@ architecture lattice of mem_io is
     signal ddrdel           : std_logic;
     signal sclk, sclk_i     : std_logic;
     signal eclk             : std_logic;
-    signal hclk             : std_logic := '0';
     signal rst              : std_logic;
+
+    signal read_s           : std_logic_vector(1 downto 0);
+    signal read_d1          : std_logic_vector(1 downto 0);
+    signal read_d2          : std_logic_vector(1 downto 0);
+    signal read_d3          : std_logic_vector(1 downto 0);
 
     signal mem_dqs_o        : std_logic_vector(g_mask_width-1 downto 0);
     signal mem_dqs_t        : std_logic;
@@ -121,6 +126,36 @@ begin
         DDRDEL      => ddrdel,   -- code to delay block
         LOCK        => dll_lock );   -- back to mem_sync
 
+    i_read_delay_1: entity work.half_cycle_delay
+    generic map (2)
+    port map (
+        clock  => sclk,
+        din    => read,
+        dout   => read_d1
+    );
+    
+    i_read_delay_2: entity work.half_cycle_delay
+    generic map (2)
+    port map (
+        clock  => sclk,
+        din    => read_d1,
+        dout   => read_d2
+    );
+
+    i_read_delay_3: entity work.half_cycle_delay
+    generic map (2)
+    port map (
+        clock  => sclk,
+        din    => read_d2,
+        dout   => read_d3
+    );
+
+    with read_delay select read_s <=
+        read    when "00",
+        read_d1 when "01",
+        read_d2 when "10",
+        read_d3 when others;
+
     i_dqsbufm: DQSBUFM
     generic map (
         DQS_LO_DEL_VAL =>  0,
@@ -129,8 +164,8 @@ begin
         DQS_LI_DEL_ADJ => "FACTORYONLY")
     port map (
         DQSI        => mem_dqs_i,
-        READ1       => read(1),
-        READ0       => read(0), 
+        READ1       => read_s(1),
+        READ0       => read_s(0), 
         READCLKSEL2 => readclksel(2),
         READCLKSEL1 => readclksel(1), 
         READCLKSEL0 => readclksel(0),
@@ -177,13 +212,6 @@ begin
 
     sclk <= sclk_i;
     
---    i_sysclk: CLKDIVF
---    generic map (DIV=> "2.0")
---    port map (
---        CLKI    => sclk_i,
---        RST     => rst,
---        ALIGNWD => '0', 
---        CDIVX   => hclk );
 
     -- Generate Clock out, which is synchronous to the clock_4x, but delayed slightly compared to the address clocked out
     -- The clock gets a delay of g_delay_clk_edge taps, to be somewhat centered in the address
@@ -219,24 +247,26 @@ begin
 --        i_obuf: OBCO port map (I => clk_p_d, OT => mem_clk_p, OC => mem_clk_n );
     end block;
 
-    -- The address is clocked out at 100 MHz, with DDR flipflops
---    r_addr: for i in 0 to g_addr_width-1 generate
---        i_addr: ODDRX1F port map (
---            D0    => addr_first(i),
---            D1    => addr_second(i),
---            SCLK  => sclk,
---            RST   => rst,
---            Q     => mem_addr(i));
---    end generate;
---
---    i_csn: ODDRX1F port map (
---        D0    => csn(0),
---        D1    => csn(1),
---        SCLK  => sclk,
---        RST   => rst,
---        Q     => mem_csn);
-
-    b_addr: block
+    r_addr_ddr: if g_addr_out_method = 1 generate
+      -- The address is clocked out at 100 MHz, with DDR flipflops
+      r_addr: for i in 0 to g_addr_width-1 generate
+          i_addr: ODDRX1F port map (
+              D0    => addr_first(i),
+              D1    => addr_second(i),
+              SCLK  => sclk,
+              RST   => rst,
+              Q     => mem_addr(i));
+      end generate;
+  
+      i_csn: ODDRX1F port map (
+          D0    => csn(0),
+          D1    => csn(1),
+          SCLK  => sclk,
+          RST   => rst,
+          Q     => mem_csn);
+    end generate;
+    
+    r_addr_ioff: if g_addr_out_method = 0 generate
         signal addr_out : std_logic_vector(addr_first'range);
         signal csn_out  : std_logic;
     begin
@@ -248,7 +278,7 @@ begin
                 D     => addr_out(i),
                 SCLK  => sys_clock_4x,
                 SP    => '1',
-                PD    => rst,
+                PD    => '0', -- rst
                 Q     => mem_addr(i));
         end generate;
     
@@ -256,9 +286,9 @@ begin
             D     => csn_out,
             SCLK  => sys_clock_4x,
             SP    => '1',
-            PD    => rst,
+            PD    => '0', -- rst
             Q     => mem_csn);
-    end block;
+    end generate;
     
 --    process(sys_clock_4x)
 --    begin
@@ -371,6 +401,5 @@ begin
 
     sys_clock_2x <= sclk_i;
     sclk_out     <= sclk_i;
-    sys_clock    <= hclk;
     
 end architecture;
