@@ -252,6 +252,7 @@ begin
         delay_wrstep     => delay_step(1),
         delay_rdloadn    => delay_loadn(0),
         delay_wrloadn    => delay_loadn(1),
+        read_delay       => read_delay,
         stop             => stop,
         uddcntln         => uddcntln,
         freeze           => freeze,
