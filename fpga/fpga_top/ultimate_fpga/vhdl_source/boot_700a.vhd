@@ -123,6 +123,8 @@ architecture structural of boot_700a is
         
     -- miscellaneous interconnect
     signal ulpi_reset_i     : std_logic;
+    signal ulpi_data_o      : std_logic_vector(7 downto 0);
+    signal ulpi_data_t      : std_logic;
     
     -- memory controller interconnect
     signal memctrl_inhibit  : std_logic;
@@ -260,7 +262,9 @@ begin
         ULPI_NXT    => ULPI_NXT,
         ULPI_STP    => ULPI_STP,
         ULPI_DIR    => ULPI_DIR,
-        ULPI_DATA   => ULPI_DATA,
+        ULPI_DATA_O => ulpi_data_o,
+        ULPI_DATA_I => ULPI_DATA,
+        ULPI_DATA_T => ulpi_data_t,
     
         -- Cassette Interface
         CAS_MOTOR   => CAS_MOTOR,
@@ -271,6 +275,7 @@ begin
         -- Buttons
         BUTTON      => button_i );
 
+    ULPI_DATA <= ulpi_data_o when ulpi_data_t = '1' else "ZZZZZZZZ";
 
     IEC_ATN    <= '0' when iec_atn_o   = '0' else 'Z';
     IEC_DATA   <= '0' when iec_data_o  = '0' else 'Z';
