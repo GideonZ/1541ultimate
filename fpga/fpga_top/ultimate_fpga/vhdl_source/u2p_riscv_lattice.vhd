@@ -13,14 +13,18 @@ library ieee;
     use work.my_math_pkg.all;
     use work.audio_type_pkg.all;
         
+library ECP5U;
+use ECP5U.components.all;
+
 entity u2p_riscv_lattice is
 generic (
     g_jtag_debug     : boolean := true;
     g_dual_drive     : boolean := true );
 port (
+    -- (Optional) Oscillator
+    CLOCK_50         : in    std_logic := '0';
+    
     -- slot side
-    SLOT_DATA_OEn    : out   std_logic;
-    SLOT_DATA_DIR    : out   std_logic;
     SLOT_ADDR_OEn    : out   std_logic;
     SLOT_ADDR_DIR    : out   std_logic;
     SLOT_PHI2        : in    std_logic;
@@ -65,12 +69,13 @@ port (
     AUDIO_SDI   : in    std_logic;
 
     -- JTAG on-chip debugger interface (available if ON_CHIP_DEBUGGER_EN = true) --
-    JTAG_TRST   : in    std_ulogic := '0'; -- low-active TAP reset (optional)
-    JTAG_TCK    : in    std_ulogic := '0'; -- serial clock
-    JTAG_TDI    : in    std_ulogic := '1'; -- serial data input
-    JTAG_TDO    : out   std_ulogic;        -- serial data output
-    JTAG_TMS    : in    std_ulogic := '1'; -- mode select
-
+    DEBUG_TRSTn : in    std_ulogic := '0'; -- low-active TAP reset (optional)
+    DEBUG_TCK   : in    std_ulogic := '0'; -- serial clock
+    DEBUG_TMS   : in    std_ulogic := '1'; -- mode select
+    DEBUG_TDI   : in    std_ulogic := '1'; -- serial data input
+    DEBUG_TDO   : out   std_ulogic;        -- serial data output
+    DEBUG_SPARE : out   std_ulogic := '0';
+    
     -- IEC bus
     IEC_ATN_O   : out   std_logic;
     IEC_DATA_O  : out   std_logic;
@@ -111,6 +116,11 @@ port (
     -- Debug UART
     UART_TXD    : out   std_logic;
     UART_RXD    : in    std_logic;
+    
+    -- USB Experiment
+    USB_DP      : inout std_logic;
+    USB_DM      : inout std_logic;
+    USB_PULLUP  : out   std_logic;
     
     -- I2C Interface for RTC, audio codec and usb hub
     I2C_SDA     : inout std_logic := 'Z';
@@ -158,9 +168,11 @@ architecture rtl of u2p_riscv_lattice is
         CLKOP: out  std_logic; 
         CLKOS: out  std_logic;
         CLKOS2: out  std_logic; 
+        CLKOS3: out  std_logic; 
         LOCK: out  std_logic);
     end component;
 
+    signal flash_sck    : std_logic;
     signal por_n        : std_logic;
     signal pll_locked   : std_logic;
     signal ref_reset    : std_logic;
@@ -175,9 +187,13 @@ architecture rtl of u2p_riscv_lattice is
     signal slot_data_t  : std_logic;
     signal slot_rwn_o   : std_logic;
     
-    signal clock_24     : std_logic;
+    signal mem_clock    : std_logic;
+    signal ctrl_clock   : std_logic;
+    signal toggle       : std_logic;
+    signal eth_clock    : std_logic;
     signal sys_clock    : std_logic;
     signal sys_reset    : std_logic;
+    signal clock_24     : std_logic;
     signal audio_clock  : std_logic;
     signal audio_reset  : std_logic;
     signal eth_reset    : std_logic;
@@ -187,7 +203,12 @@ architecture rtl of u2p_riscv_lattice is
         
     -- miscellaneous interconnect
     signal ulpi_reset_i     : std_logic;
-    
+    signal ulpi_data_o      : std_logic_vector(7 downto 0);
+    signal ulpi_data_t      : std_logic;
+    signal ulpi_data_i      : std_logic_vector(7 downto 0);
+    signal ulpi_nxt_i       : std_logic;
+    signal ulpi_dir_i       : std_logic;
+        
     -- memory controller interconnect
     signal memctrl_inhibit  : std_logic;
     signal is_idle          : std_logic;
@@ -195,6 +216,8 @@ architecture rtl of u2p_riscv_lattice is
     signal cpu_mem_resp     : t_mem_resp_32;
     signal mem_req          : t_mem_req_32;
     signal mem_resp         : t_mem_resp_32;
+    signal mem_req_2x       : t_mem_req_32;
+    signal mem_resp_2x      : t_mem_resp_32;
 
     signal uart_txd_from_logic  : std_logic;
     signal i2c_sda_i   : std_logic;
@@ -277,6 +300,13 @@ architecture rtl of u2p_riscv_lattice is
     signal drv_debug_data   : std_logic_vector(31 downto 0);
     signal drv_debug_valid  : std_logic;
     
+    signal rmii_tx_en_i     : std_logic;
+    signal rmii_tx_data_i   : std_logic_vector(1 downto 0);
+    signal rmii_crs_dv_i    : std_logic;
+    signal rmii_rx_data_i   : std_logic_vector(1 downto 0);
+    signal rmii_crs_dv_d    : std_logic;
+    signal rmii_rx_data_d   : std_logic_vector(1 downto 0);
+
     signal eth_tx_data   : std_logic_vector(7 downto 0);
     signal eth_tx_last   : std_logic;
     signal eth_tx_valid  : std_logic;
@@ -291,6 +321,9 @@ architecture rtl of u2p_riscv_lattice is
     signal eth_rx_sof    : std_logic;
     signal eth_rx_eof    : std_logic;
     signal eth_rx_valid  : std_logic;
+
+--    attribute syn_noprune: boolean ;
+--    attribute syn_noprune of USRMCLK: component is true;
 begin
     process(RMII_REFCLK)
     begin
@@ -308,12 +341,17 @@ begin
     
     i_pll: pll1
     port map (
-        CLKI   => RMII_REFCLK, -- 50 MHz
-        CLKOP  => sys_clock,   -- 50 MHz
+        CLKI   => CLOCK_50, -- 50 MHz oscillator
+        -- CLKI   => RMII_REFCLK, -- 50 MHz
+        CLKOP  => mem_clock,   -- 200 MHz
         CLKOS  => clock_24,   -- 24 MHz
         CLKOS2 => audio_clock, -- 12.245 MHz (47.831 kHz sample rate)
+        CLKOS3 => sys_clock, -- 50 MHz
         LOCK   => pll_locked );
 
+    --eth_clock <= sys_clock; -- same net
+    eth_clock <= RMII_REFCLK; -- dedicated pin
+    
     HUB_CLOCK <= clock_24;
     ULPI_REFCLK <= clock_24;
     
@@ -336,7 +374,7 @@ begin
     i_eth_reset: entity work.level_synchronizer
     generic map ('1')
     port map (
-        clock       => RMII_REFCLK,
+        clock       => eth_clock,
         input       => sys_reset,
         input_c     => eth_reset  );
 
@@ -350,11 +388,11 @@ begin
         clock       => sys_clock,
         reset       => sys_reset,
         cpu_reset   => '0',
-        jtag_trst_i => JTAG_TRST,
-        jtag_tck_i  => JTAG_TCK,
-        jtag_tdi_i  => JTAG_TDI,
-        jtag_tdo_o  => JTAG_TDO,
-        jtag_tms_i  => JTAG_TMS,
+        jtag_trst_i => DEBUG_TRSTn,
+        jtag_tck_i  => DEBUG_TCK,
+        jtag_tdi_i  => DEBUG_TDI,
+        jtag_tdo_o  => DEBUG_TDO,
+        jtag_tms_i  => DEBUG_TMS,
         irq_i       => io_irq,
         irq_o       => open,
         io_req      => io_req_riscv,
@@ -430,63 +468,50 @@ begin
         resps(1)   => io_resp_debug
     );
 
---    i_memphy: entity work.ddr2_ctrl
---    port map (
---        ref_clock         => RMII_REFCLK,
---        ref_reset         => ref_reset,
---        sys_clock_o       => sys_clock,
---        sys_reset_o       => sys_reset,
---        clock             => sys_clock,
---        reset             => sys_reset,
---        io_req            => io_req_ddr2,
---        io_resp           => io_resp_ddr2,
---        inhibit           => memctrl_inhibit,
---        is_idle           => is_idle,
---
---        req               => mem_req,
---        resp              => mem_resp,
---        
---        SDRAM_CLK         => SDRAM_CLK,
---        SDRAM_CLKn        => SDRAM_CLKn,
---        SDRAM_CKE         => SDRAM_CKE,
---        SDRAM_ODT         => SDRAM_ODT,
---        SDRAM_CSn         => SDRAM_CSn,
---        SDRAM_RASn        => SDRAM_RASn,
---        SDRAM_CASn        => SDRAM_CASn,
---        SDRAM_WEn         => SDRAM_WEn,
---        SDRAM_A           => SDRAM_A,
---        SDRAM_BA          => SDRAM_BA(1 downto 0),
---        SDRAM_DM          => SDRAM_DM,
---        SDRAM_DQ          => SDRAM_DQ,
---        SDRAM_DQS         => SDRAM_DQS
---    );
-
-    i_mem_ctrl: entity work.ext_mem_ctrl_v5
+    i_double_freq_bridge: entity work.memreq_halfrate
     generic map (
-        g_simulation => false )
+        g_reg_in    => true
+    )
+    port map(
+        clock_1x    => sys_clock,
+        clock_2x    => ctrl_clock,
+        reset_1x    => sys_clock,
+        mem_req_1x  => mem_req,
+        mem_resp_1x => mem_resp,
+        mem_req_2x  => mem_req_2x,
+        mem_resp_2x => mem_resp_2x
+    );
+
+    i_memctrl: entity work.ddr2_ctrl
     port map (
-        clock       => sys_clock,
-        clk_2x      => sys_clock,--_2x, !!!
-        reset       => sys_reset,
-    
-        inhibit     => memctrl_inhibit,
-        is_idle     => open,
-    
-        req         => mem_req,
-        resp        => mem_resp,
-    
-        SDRAM_CLK   => SDRAM_CLK,
-        SDRAM_CKE   => SDRAM_CKE,
-        SDRAM_CSn   => SDRAM_CSn,
-        SDRAM_RASn  => SDRAM_RASn,
-        SDRAM_CASn  => SDRAM_CASn,
-        SDRAM_WEn   => SDRAM_WEn,
-        SDRAM_DQM   => SDRAM_DM,
-    
-        SDRAM_BA    => SDRAM_BA(1 downto 0),
-        SDRAM_A     => SDRAM_A(12 downto 0),
-        SDRAM_DQ    => SDRAM_DQ );
-    
+        mem_clock         => mem_clock,
+        reset             => sys_reset,
+
+        io_clock          => sys_clock,
+        io_reset          => sys_reset,
+        io_req            => io_req_ddr2,
+        io_resp           => io_resp_ddr2,
+        inhibit           => memctrl_inhibit,
+        is_idle           => is_idle,
+        mem_clock_half    => ctrl_clock,
+
+        req               => mem_req_2x,
+        resp              => mem_resp_2x,
+        
+        SDRAM_CLK         => SDRAM_CLK,
+        SDRAM_CLKn        => SDRAM_CLKn,
+        SDRAM_CKE         => SDRAM_CKE,
+        SDRAM_ODT         => SDRAM_ODT,
+        SDRAM_CSn         => SDRAM_CSn,
+        SDRAM_RASn        => SDRAM_RASn,
+        SDRAM_CASn        => SDRAM_CASn,
+        SDRAM_WEn         => SDRAM_WEn,
+        SDRAM_A           => SDRAM_A,
+        SDRAM_BA          => SDRAM_BA,
+        SDRAM_DM          => SDRAM_DM,
+        SDRAM_DQ          => SDRAM_DQ,
+        SDRAM_DQS         => SDRAM_DQS
+    );
 
     i_remote_dummy: entity work.io_dummy
     port map(
@@ -697,15 +722,17 @@ begin
     
         -- Flash Interface
         FLASH_CSn   => FLASH_CSn,
-        FLASH_SCK   => open, --FLASH_SCK,
+        FLASH_SCK   => flash_sck,
         FLASH_MOSI  => FLASH_MOSI,
         FLASH_MISO  => FLASH_MISO,
     
         -- USB Interface (ULPI)
-        ULPI_NXT    => ULPI_NXT,
+        ULPI_NXT    => ulpi_nxt_i,
+        ULPI_DIR    => ulpi_dir_i,
         ULPI_STP    => ULPI_STP,
-        ULPI_DIR    => ULPI_DIR,
-        ULPI_DATA   => ULPI_DATA,
+        ULPI_DATA_O => ulpi_data_o,
+        ULPI_DATA_I => ulpi_data_i,
+        ULPI_DATA_T => ulpi_data_t,
     
         -- Cassette Interface
         c2n_read_in    => c2n_read_in, 
@@ -720,7 +747,7 @@ begin
         c2n_motor_out  => c2n_motor_out, 
         
         -- Ethernet Interface (RMII)
-        eth_clock    => RMII_REFCLK, 
+        eth_clock    => eth_clock, 
         eth_reset    => eth_reset,
         eth_rx_data  => eth_rx_data,
         eth_rx_sof   => eth_rx_sof,
@@ -735,12 +762,25 @@ begin
         sw_trigger  => sw_trigger,
         BUTTON      => button_i );
 
+    ULPI_DATA <= ulpi_data_o when ulpi_data_t = '1' else "ZZZZZZZZ";
+    r: for i in ULPI_DATA'range generate
+        i_delay: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => ULPI_DATA(i), Z => ulpi_data_i(i));
+        --i_delay: DELAYG generic map (DEL_VALUE => "DELAY5") port map (A => ULPI_DATA(i), Z => ulpi_data_delayed(i));
+    end generate;
+    i_delay_ulpi_nxt: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => ULPI_NXT, Z => ulpi_nxt_i);
+    i_delay_ulpi_dir: DELAYG generic map (DEL_MODE => "USER_DEFINED", DEL_VALUE => 5) port map (A => ULPI_DIR, Z => ulpi_dir_i);
+
     -- Parallel cable not implemented. This is the way to stub it...
     drv_via1_port_a_i(7 downto 1) <= drv_via1_port_a_o(7 downto 1) or not drv_via1_port_a_t(7 downto 1);
     drv_via1_port_a_i(0)          <= drv_track_is_0; -- for 1541C
     drv_via1_ca2_i    <= drv_via1_ca2_o    or not drv_via1_ca2_t;
     drv_via1_cb1_i    <= drv_via1_cb1_o    or not drv_via1_cb1_t;
 
+    u1: USRMCLK
+    port map (
+        USRMCLKI => flash_sck,
+        USRMCLKTS => '0'
+    );
 
     process(sys_clock)
         variable c, d  : std_logic := '0';
@@ -894,7 +934,7 @@ begin
 
     i_debug_eth: entity work.eth_debug_stream
     port map (
-        eth_clock     => RMII_REFCLK,
+        eth_clock     => eth_clock,
         eth_reset     => eth_reset,
 
         eth_u2p_data  => eth_u2p_data,
@@ -926,12 +966,12 @@ begin
     -- Transceiver
     i_rmii: entity work.rmii_transceiver
     port map (
-        clock           => RMII_REFCLK,
+        clock           => eth_clock,
         reset           => eth_reset,
-        rmii_crs_dv     => RMII_CRS_DV, 
-        rmii_rxd        => RMII_RX_DATA,
-        rmii_tx_en      => RMII_TX_EN,
-        rmii_txd        => RMII_TX_DATA,
+        rmii_crs_dv     => rmii_crs_dv_d, 
+        rmii_rxd        => rmii_rx_data_d,
+        rmii_tx_en      => rmii_tx_en_i,
+        rmii_txd        => rmii_tx_data_i,
         
         eth_rx_data     => eth_rx_data,
         eth_rx_sof      => eth_rx_sof,
@@ -944,12 +984,28 @@ begin
         eth_tx_ready    => eth_tx_ready,
         ten_meg_mode    => '0'   );
 
-    SLOT_DATA_OEn    <= '1';
-    SLOT_DATA_DIR    <= '1';
-    SLOT_ADDR_OEn    <= '1';
-    SLOT_ADDR_DIR    <= '1';
-    
-    SDRAM_DQS <= RMII_RX_ER and UART_RXD and SLOT_DOTCLK;
-    SDRAM_CLKn <= '0';    
+    -- I/O Delays
+    i_delay_rmii_rxdv: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => RMII_CRS_DV,     Z => rmii_crs_dv_i);
+    i_delay_rmii_rxd0: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => RMII_RX_DATA(0), Z => rmii_rx_data_i(0));
+    i_delay_rmii_rxd1: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => RMII_RX_DATA(1), Z => rmii_rx_data_i(1));
 
+    process(eth_clock)
+    begin
+        if rising_edge(eth_clock) then
+            rmii_crs_dv_d  <= rmii_crs_dv_i;
+            rmii_rx_data_d <= rmii_rx_data_i;
+            RMII_TX_EN     <= rmii_tx_en_i;
+            RMII_TX_DATA   <= rmii_tx_data_i;
+        end if;
+    end process;
+
+    USB_DP      <= 'Z' when toggle='1' else '0';
+    USB_DM      <= 'Z' when toggle='1' else '1';
+    USB_PULLUP  <= '1';
+
+    -- SLOT_DATA_OEn    <= '1';
+    -- SLOT_DATA_DIR    <= '1';
+    SLOT_ADDR_OEn    <= toggle;
+    SLOT_ADDR_DIR    <= RMII_RX_ER and UART_RXD and SLOT_DOTCLK;
+    toggle <= not toggle when rising_edge(sys_clock);
 end architecture;

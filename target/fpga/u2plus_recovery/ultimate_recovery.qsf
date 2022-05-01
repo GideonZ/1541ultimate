@@ -448,7 +448,7 @@ set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/i2s_serializer.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/sine_osc.vhd
 set_global_assignment -name QIP_FILE ../../../fpga/nios_solo/nios_solo/synthesis/nios_solo.qip
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/distributed_stack.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/altera/srl_fifo.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/srl_fifo-altera.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/dpram.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/std/dsram.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/dpram_sc.vhd

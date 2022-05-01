@@ -429,6 +429,8 @@ begin
             
             when newcycle => -- we have a new address now
                 mem_addr(15 downto  0) <= unsigned(cpu_addr(15 downto 0));
+                mem_rwn   <= not cpu_write;
+                mem_wdata <= cpu_wdata; 
 
                 if cpu_addr(15) = '1' then -- ROM Area, which is not overridden as RAM
                     if cpu_write = '0' then
@@ -474,8 +476,6 @@ begin
         end if;
     end process;
 
-    mem_rwn   <= not cpu_write;
-    mem_wdata <= cpu_wdata; 
 
     -- Select drive type
     mm <= m(drive_type);

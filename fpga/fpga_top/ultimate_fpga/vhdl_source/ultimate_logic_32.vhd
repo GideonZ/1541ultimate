@@ -205,9 +205,11 @@ port (
 
     -- USB Interface (ULPI)
     ULPI_NXT    : in    std_logic := '0';
-    ULPI_STP    : out   std_logic;
+    ULPI_STP    : out   std_logic := '0';
     ULPI_DIR    : in    std_logic := '0';
-    ULPI_DATA   : inout std_logic_vector(7 downto 0) := "ZZZZZZZZ";
+    ULPI_DATA_I : in    std_logic_vector(7 downto 0) := X"00";
+    ULPI_DATA_O : out   std_logic_vector(7 downto 0) := X"00";
+    ULPI_DATA_T : out   std_logic := '0';
 
     -- Cassette Interface
     c2n_read_in     : in  std_logic := '1';
@@ -995,7 +997,9 @@ begin
             ulpi_nxt     => ulpi_nxt,
             ulpi_dir     => ulpi_dir,
             ulpi_stp     => ulpi_stp,
-            ulpi_data    => ulpi_data,
+            ulpi_data_i  => ulpi_data_i,
+            ulpi_data_o  => ulpi_data_o,
+            ulpi_data_t  => ulpi_data_t,
             debug_data   => usb_debug_data,
             debug_valid  => usb_debug_valid,
             error_pulse  => usb_error_pulse,

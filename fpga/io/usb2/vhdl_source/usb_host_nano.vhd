@@ -28,7 +28,9 @@ entity usb_host_nano is
         ulpi_nxt    : in    std_logic;
         ulpi_dir    : in    std_logic;
         ulpi_stp    : out   std_logic;
-        ulpi_data   : inout std_logic_vector(7 downto 0);
+        ulpi_data_i : in    std_logic_vector(7 downto 0);
+        ulpi_data_o : out   std_logic_vector(7 downto 0);
+        ulpi_data_t : out   std_logic;
 
         debug_data  : out   std_logic_vector(31 downto 0);
         debug_valid : out   std_logic;
@@ -125,7 +127,9 @@ begin
         ulpi_nxt    => ulpi_nxt,
         ulpi_stp    => ulpi_stp,
         ulpi_dir    => ulpi_dir,
-        ulpi_data   => ulpi_data );
+        ulpi_data_i => ulpi_data_i,
+        ulpi_data_o => ulpi_data_o,
+        ulpi_data_t => ulpi_data_t );
     
     i_seq: entity work.host_sequencer
     port map (

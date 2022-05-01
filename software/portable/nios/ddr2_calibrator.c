@@ -7,7 +7,7 @@
 #define DDR2_TESTLOC1  (*(volatile uint32_t *)(0x0004))
 #define DDR2_TESTLOC2  (*(volatile uint32_t *)(0x0008))
 
-#define MR     0x0232
+#define MR     0x0232 // 00 0 0 0 0 (fast exit) | 0 0 1 (WR=2) | 0 (dll no reset) | 0 (normal) | 0 1 1 (CL3) | 0 (sequential) | 0 1 0 (BL = 4)
 #define EMR    0x4440 // 01 0 0 0 1 (no DQSn) 000 (no OCD) 1 (150ohm) 000 (no AL) 0 (150 ohm) 0 (full drive) 0 (dll used)
 #define EMROCD 0x47C0 // 01 0 0 0 1 (no DQSn) 111 (do OCD) 1 (150ohm) 000 (no AL) 0 (150 ohm) 0 (full drive) 0 (dll used)
 #define EMR2   0x8000 // no extended refresh

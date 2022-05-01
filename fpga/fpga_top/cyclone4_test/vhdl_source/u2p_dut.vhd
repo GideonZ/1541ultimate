@@ -200,6 +200,8 @@ architecture rtl of u2p_dut is
         
     -- miscellaneous interconnect
     signal ulpi_reset_i     : std_logic;
+    signal ulpi_data_o      : std_logic_vector(7 downto 0);
+    signal ulpi_data_t      : std_logic;
     
     -- memory controller interconnect
     signal is_idle          : std_logic;
@@ -541,7 +543,9 @@ begin
         ULPI_NXT    => ULPI_NXT,
         ULPI_STP    => ULPI_STP,
         ULPI_DIR    => ULPI_DIR,
-        ULPI_DATA   => ULPI_DATA,
+        ULPI_DATA_O => ulpi_data_o,
+        ULPI_DATA_I => ULPI_DATA,
+        ULPI_DATA_T => ulpi_data_t,
     
         -- Parallel cable pins
         drv_via1_port_a_o   => drv_via1_port_a_o,
@@ -568,6 +572,8 @@ begin
 
         -- Buttons
         BUTTON      => not BUTTON );
+
+    ULPI_DATA <= ulpi_data_o when ulpi_data_t = '1' else "ZZZZZZZZ";
 
     -- Parallel cable not implemented. This is the way to stub it...
     drv_via1_port_a_i <= drv_via1_port_a_o or not drv_via1_port_a_t;
