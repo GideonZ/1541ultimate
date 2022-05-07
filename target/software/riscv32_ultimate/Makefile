@@ -30,6 +30,7 @@ SRCS_C   =	itu.c \
 			mdio.c \
 			sid_coeff.c \
 			riscv_main.c \
+			syscalls.c \
 
 SRCS_CC	 =  u2p_init.cc \
 			i2c_drv.cc \
@@ -155,6 +156,8 @@ VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/risc-v/chip_specific_extensions/RV3
 VPATH +=	$(PATH_SW)/portable/riscv
 VPATH +=	$(PATH_SW)/6502/sidcrt/target
 VPATH +=	$(PATH_SW)/../neorv32/sw/common
+VPATH +=	$(PATH_SW)/../neorv32/sw/lib/include
+VPATH +=	$(PATH_SW)/../neorv32/sw/lib/source
 
 
 SRCS_ASM =
@@ -175,9 +178,10 @@ OPTIONS += -g -Os -DOS -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = linker.x
-LIBS2    = ../riscv32_unknown_elf_lwip/result/liblwip.a
+LIBS    = ../riscv32_unknown_elf_lwip/result/liblwip.a
 #LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
 LFLAGS   = --gc-sections
+LINKMETHOD = ld
 
 include ../common/rules.mk
 

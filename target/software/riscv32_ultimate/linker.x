@@ -4,7 +4,7 @@
 
 MEMORY
 {
-    memory : ORIGIN = 0x0, LENGTH = 0xEA0000
+    memory : ORIGIN = 0x30000, LENGTH = 0xE70000
     onchip : ORIGIN = 0xFFFF0000, LENGTH = 2048
     iodev (rw) : ORIGIN = 0xFFFFFE00, LENGTH = 512
 }
@@ -175,7 +175,8 @@ SECTIONS
   .heap :
   {
     PROVIDE(__heap_start = .);
-    PROVIDE(__heap_limit = LENGTH(memory)); /* only works because memory starts at 0 */
+    PROVIDE(__heap_limit = ORIGIN(memory) + LENGTH(memory));
+	PROVIDE(__heap_end = ORIGIN(memory) + LENGTH(memory));
   } > memory
 
 
