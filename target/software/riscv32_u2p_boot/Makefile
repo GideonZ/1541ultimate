@@ -11,12 +11,9 @@ include ../common/environment.mk
 DEST     =  $(PATH_SW)/../fpga/cpu_unit/vhdl_source/bootloader.vhd
 PRJ      =  bootloader
 FINAL    =  $(RESULT)/$(PRJ).elf $(RESULT)/$(PRJ).bin $(RESULT)/$(PRJ).vhd $(DEST)
-HEXLAST  =  0x07FF
-HEXBASE  =  0x20000000
-HEXEND   =  0x200007FF
 IMAGE_GEN = $(PATH_SW)/../neorv32/sw/image_gen/image_gen 
 
-SRCS_C   =	bootloader.c ddr2_calibrator.c small_printf.c itu.c
+SRCS_C   =	bootloader.c ddr2_calibrator_u64.c small_printf.c itu.c
                         
 SRCS_CC	 =  
 

@@ -20,6 +20,7 @@ U2P_Init :: U2P_Init()
     REMOTE_FLASHSELCK_1;
 }
 
+/*
 extern "C" {
 void _exit(int a)
 {
@@ -27,3 +28,4 @@ void _exit(int a)
 		;
 }
 }
+*/
