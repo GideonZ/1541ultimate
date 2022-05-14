@@ -81,3 +81,40 @@ int main (void)
    	return 0;
 }
 
+void vPortSetupTimerInterrupt( void )
+{
+	uint32_t freq = 50000000;
+	freq >>= 8;
+	freq /= 200;
+	freq -= 1;
+
+	ioWrite8(ITU_IRQ_HIGH_EN, 0);
+    ioWrite8(ITU_IRQ_TIMER_EN, 0);
+	ioWrite8(ITU_IRQ_DISABLE, 0xFF);
+	ioWrite8(ITU_IRQ_CLEAR, 0xFF);
+	ioWrite8(ITU_IRQ_TIMER_HI, (uint8_t)(freq >> 8));
+	ioWrite8(ITU_IRQ_TIMER_LO, (uint8_t)(freq & 0xFF));
+	ioWrite8(ITU_IRQ_TIMER_EN, 1);
+	ioWrite8(ITU_IRQ_ENABLE, 0x01); // timer only : other modules shall enable their own interrupt
+	ioWrite8(ITU_IRQ_GLOBAL, 0x01); // Enable interrupts globally
+	ioWrite8(UART_DATA, 0x35);
+}
+
+void ituIrqHandler(void *context)
+{
+	static uint8_t pending;
+
+	/* Which interrupts are pending? */
+	pending = ioRead8(ITU_IRQ_ACTIVE);
+	ioWrite8(ITU_IRQ_CLEAR, pending);
+
+	BaseType_t do_switch = pdFALSE;
+
+	if (pending & 0x01) {
+		do_switch |= xTaskIncrementTick();
+	}
+
+	if (do_switch != pdFALSE) {
+		vTaskSwitchContext();
+	}
+}

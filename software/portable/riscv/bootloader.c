@@ -30,7 +30,11 @@ void ddr2_calibrate(void);
 
 int main()
 {
-    DDR2_ENABLE    = 1;
+	if (getFpgaCapabilities() & CAPAB_SIMULATION) {
+		jump_run(0x30000);
+	}
+
+	DDR2_ENABLE    = 1;
 #if RECOVERY
     uint8_t buttons = ioRead8(ITU_BUTTON_REG) & ITU_BUTTONS;
     if ((buttons & ITU_BUTTON1) == 0) { // middle button not pressed
@@ -65,6 +69,7 @@ int main()
 //    uint32_t version = SPI_FLASH_DATA_32;
 
     puts(APPL);
+/*
     if(length != -1) {
         while(length > 0) {
             *(dest++) = SPI_FLASH_DATA_32;
@@ -80,9 +85,12 @@ int main()
     	}
         while(1);
     }
+*/
 
     puts("Empty");
-    while(1)
-    	;
+    while(1) {
+        REMOTE_FLASHSELCK_0;
+        REMOTE_FLASHSELCK_1;
+    }
     return 0;
 }

@@ -70,7 +70,6 @@ begin
         HW_THREAD_ID                 => 0,
         INT_BOOTLOADER_EN            => true,
         ON_CHIP_DEBUGGER_EN          => g_jtag_debug,
-        CPU_EXTENSION_RISCV_A        => false,
         CPU_EXTENSION_RISCV_B        => false,
         CPU_EXTENSION_RISCV_C        => false,
         CPU_EXTENSION_RISCV_E        => false,
@@ -138,7 +137,6 @@ begin
         wb_sel_o                     => wb_sel_o,
         wb_stb_o                     => wb_stb_o,
         wb_cyc_o                     => wb_cyc_o,
-        wb_lock_o                    => wb_lock_o,
         wb_ack_i                     => wb_ack_i,
         wb_err_i                     => wb_err_i,
 
@@ -161,7 +159,6 @@ begin
         wb_sel_o  => wb_sel_o,
         wb_stb_o  => wb_stb_o,
         wb_cyc_o  => wb_cyc_o,
-        wb_lock_o => wb_lock_o,
         wb_ack_i  => wb_ack_i,
         wb_err_i  => wb_err_i,
         io_busy   => io_busy,

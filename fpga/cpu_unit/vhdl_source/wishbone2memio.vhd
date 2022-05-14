@@ -28,7 +28,6 @@ entity wishbone2memio is
         wb_sel_o    : in  std_ulogic_vector(03 downto 0); -- byte enable
         wb_stb_o    : in  std_ulogic; -- strobe
         wb_cyc_o    : in  std_ulogic; -- valid cycle
-        wb_lock_o   : in  std_ulogic; -- exclusive access request
         wb_ack_i    : out std_ulogic := 'L'; -- transfer acknowledge
         wb_err_i    : out std_ulogic := 'L'; -- transfer error
 
@@ -56,7 +55,7 @@ architecture arch of wishbone2memio is
     signal write_ack        : std_logic;
     signal request_accepted : std_logic := '0';
     signal mem_in_range     : std_logic;
-    
+    signal rack             : std_logic;
 begin
     mem_req <= mem_req_i;
 
@@ -69,8 +68,10 @@ begin
     mem_req_i.request <= (wb_stb_o or mem_req_r) and mem_in_range;--  and not request_accepted;
     
     mem_in_range <= '1' when wb_adr_o(31 downto 28) = X"0" else '0';
+
+    rack <= '1' when mem_resp.rack = '1' and mem_resp.rack_tag = g_tag else '0';
     --read_ack <= '1'  when mem_resp.dack_tag = g_tag and mem_req_i.read_writen = '1' else '0';
-    write_ack <= '1' when mem_resp.rack_tag = g_tag and mem_req_i.read_writen = '0' else '0';
+    write_ack <= '1' when rack = '1' and mem_req_i.read_writen = '0' else '0';
 
     wb_ack_i <= read_ack or write_ack or io_ack;
     wb_err_i <= '0';
@@ -118,11 +119,16 @@ begin
                             io_req_i.read <= '1';
                         end if;
                         state <= io_access;
-                    elsif mem_req_i.request = '1' and (mem_resp.rack = '0' or mem_req_i.read_writen = '1') then
-                        mem_req_r <= '1';
+                    elsif mem_req_i.request = '1' then
                         if wb_we_o = '1' then
-                            state <= mem_write;
+                            if rack = '0' then
+                                mem_req_r <= '1';
+                                state <= mem_write;
+                            end if;
                         else
+                            if rack = '0' then
+                                mem_req_r <= '1';
+                            end if;
                             state <= mem_read;
                         end if;
                     end if;
@@ -158,7 +164,7 @@ begin
                 end if;
 
             when mem_read =>
-                if mem_resp.rack_tag = g_tag then
+                if rack = '1' then
                     mem_req_r <= '0';
                     request_accepted <= '1';
                 end if;
@@ -170,7 +176,7 @@ begin
                 end if;
                 
             when mem_write =>
-                if mem_resp.rack_tag = g_tag then
+                if rack = '1' then
                     mem_req_r <= '0';
                     state <= idle;
                 end if;

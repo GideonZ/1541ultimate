@@ -158,13 +158,15 @@ static void test_i2c_mdio(void)
 #define CLOCK_FREQ 50000000
 #endif
 
+void _do_ctors(void);
+
 int main(int argc, char *argv[]) {
 	/* When re-starting a debug session (rather than cold booting) we want
 	 to ensure the installed interrupt handlers do not execute until after the
 	 scheduler has been started. */
 	portDISABLE_INTERRUPTS();
-
 	ioWrite8(UART_DATA, 0x33);
+	_do_ctors();
 
 	xTaskCreate(ultimate_main, "U-II Main", configMINIMAL_STACK_SIZE, NULL,
 			tskIDLE_PRIORITY + 2, NULL);
@@ -179,6 +181,15 @@ int main(int argc, char *argv[]) {
 	}
 */
 
+	// Finally start the scheduler.
+	vTaskStartScheduler();
+
+	// Should not get here as the processor is now under control of the
+	// scheduler!
+}
+
+void vPortSetupTimerInterrupt( void )
+{
 	uint32_t freq = CLOCK_FREQ;
 	freq >>= 8;
 	freq /= 200;
@@ -194,10 +205,4 @@ int main(int argc, char *argv[]) {
 	ioWrite8(ITU_IRQ_ENABLE, 0x01); // timer only : other modules shall enable their own interrupt
 	ioWrite8(ITU_IRQ_GLOBAL, 0x01); // Enable interrupts globally
 	ioWrite8(UART_DATA, 0x35);
-
-	// Finally start the scheduler.
-	vTaskStartScheduler();
-
-	// Should not get here as the processor is now under control of the
-	// scheduler!
 }
