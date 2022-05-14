@@ -31,6 +31,8 @@ SRCS_C   =	itu.c \
 			sid_coeff.c \
 			riscv_main.c \
 			syscalls.c \
+			do_ctors.c \
+			malloc_lock.c \
 
 SRCS_CC	 =  u2p_init.cc \
 			i2c_drv.cc \
@@ -174,7 +176,7 @@ SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -march=$(MARCH) -mabi=$(MABI) $(EFFORT) -ffunction-sections -fdata-sections -nostartfiles -mno-fdiv
-OPTIONS += -g -Os -DOS -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=50000000 -Wno-write-strings
+OPTIONS += -gdwarf-2 -Os -DOS -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=50000000 -Wno-write-strings
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = linker.x

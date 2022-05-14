@@ -1,36 +1,38 @@
 
-CROSS	     = nios2-elf-
-ELFTYPE      = elf32-littlenios2
-ARCHITECTURE = nios2
+CROSS	     = riscv32-unknown-elf-
+ELFTYPE      = elf32-littleriscv
+ARCHITECTURE = riscv
+# CPU architecture and ABI
+MARCH ?= rv32i
+MABI  ?= ilp32
 
 include ../common/environment.mk
 
 PRJ      =  ultimate
 FINAL    =  $(RESULT)/$(PRJ).app $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
 
-BSP      = $(PATH_SW)/nios_appl_bsp
-
 SRCS_C   =	itu.c \
 			dump_hex.c \
 			assert.c \
 			profiler.c \
 			croutine.c \
-            event_groups.c \
-            list.c \
-            queue.c \
-            tasks.c \
-            timers.c \
-            port.c \
-            heap_3.c \
-            ff.c \
-            ffsystem.c \
-            ffunicode.c \
-            time.c \
-            mdio.c \
-            sid_coeff.c \
-            nios_main.c \
-            alt_malloc_lock.c \
-            alt_do_ctors.c
+			event_groups.c \
+			list.c \
+			queue.c \
+			tasks.c \
+			timers.c \
+			port.c \
+			heap_3.c \
+			ff.c \
+			ffsystem.c \
+			ffunicode.c \
+			time.c \
+			mdio.c \
+			sid_coeff.c \
+			riscv_main.c \
+			syscalls.c \
+			do_ctors.c \
+			malloc_lock.c \
 
 SRCS_CC	 =  u2p_init.cc \
 			i2c_drv.cc \
@@ -146,8 +148,6 @@ SRCS_CC	 =  u2p_init.cc \
 			home_directory.cc \
 			reu_preloader.cc \
 			fpll.cc \
-			fastuart.cc \
-			wifi.cc \
 			led_strip.cc \
 			data_streamer.cc \
 			configio.cc \
@@ -164,24 +164,22 @@ SRCS_CC	 =  u2p_init.cc \
 			$(PRJ).cc
 
 #			usb_em1010.cc \
+#			fastuart.cc \
+#			wifi.cc \
 
-VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
-VPATH +=	$(PATH_SW)/portable/nios
+VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/risc-v
+VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/risc-v/chip_specific_extensions/RV32I_CLINT_no_extensions
+VPATH +=	$(PATH_SW)/portable/riscv
 VPATH +=	$(PATH_SW)/u64
 VPATH +=	$(PATH_SW)/6502/sidcrt/target
-VPATH +=	$(BSP)
-VPATH +=	$(BSP)/HAL/inc
-VPATH +=	$(BSP)/drivers/inc
-
-#            sock_echo.c \
-#			sys_calls.cc \
-####			sampler.cc \
-####			copper.cc \
+VPATH +=	$(PATH_SW)/../neorv32/sw/common
+VPATH +=	$(PATH_SW)/../neorv32/sw/lib/include
+VPATH +=	$(PATH_SW)/../neorv32/sw/lib/source
 
 
 SRCS_ASM =
 
-SRCS_ASMS = port_asm.S
+SRCS_ASMS = crt0.S port_asm.S
 
 SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas eapi.tas
 
@@ -192,12 +190,15 @@ SRCS_IEC = iec_code.iec
 SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -Os -DOS -DDEVELOPER=0 -DNIOS=1 -DCLOCK_FREQ=66666667 -DU64=1 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
+OPTIONS  = -march=$(MARCH) -mabi=$(MABI) $(EFFORT) -ffunction-sections -fdata-sections -nostartfiles -mno-fdiv
+OPTIONS += -gdwarf-2 -Os -DOS -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=6666667 -DU64=1 -Wno-write-strings
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
-LINK 	 = $(BSP)/linker.x
-LIBS2    = $(BSP)/libhal_bsp.a ../nios2_elf_lwip/result/liblwip.a
-LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
+LINK 	 = linker.x
+LIBS    = ../riscv32_unknown_elf_lwip/result/liblwip.a
+#LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
+LFLAGS   = --gc-sections
+LINKMETHOD = ld
 
 include ../common/rules.mk
 
