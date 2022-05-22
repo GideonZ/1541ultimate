@@ -77,8 +77,8 @@ extern "C" {
 #ifdef OS
 # include "FreeRTOSConfig.h"
 # include "portmacro.h"
-# define ENTER_SAFE_SECTION portDISABLE_INTERRUPTS(); // ioWrite8(ITU_IRQ_GLOBAL,0);
-# define LEAVE_SAFE_SECTION portENABLE_INTERRUPTS();  // ioWrite8(ITU_IRQ_GLOBAL,1);
+# define ENTER_SAFE_SECTION portENTER_CRITICAL();
+# define LEAVE_SAFE_SECTION portEXIT_CRITICAL();
 #else
 # define ENTER_SAFE_SECTION
 # define LEAVE_SAFE_SECTION

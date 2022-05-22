@@ -64,11 +64,8 @@ StreamTextLog textLog(96*1024);
 
 extern "C" void (*custom_outbyte)(int c);
 
-void print_tasks(void)
-{
-    static char buffer[8192];
-    vTaskList(buffer);
-    puts(buffer);
+extern "C" {
+	void print_tasks(void);
 }
 
 void outbyte_log(int c)
@@ -199,7 +196,7 @@ extern "C" void ultimate_main(void *a)
 */
 
 #if !DEVELOPER
-    custom_outbyte = outbyte_log;
+//    custom_outbyte = outbyte_log;
 #endif
 
     while(c64) {

@@ -69,11 +69,22 @@ void ResetInterruptHandlerU64()
 {
 }
 
-void ituIrqHandler(void *context)
+extern void *freertos_risc_v_trap_handler;
+//void ituIrqHandler(void *context)
+void freertos_risc_v_application_interrupt_handler(void)
 {
-	static uint8_t pending;
+	uint32_t cause;
+	__asm__("csrr %0, mcause" : "=r" (cause));
+	if(cause != 0x8000000B) {
+		printf("IRQ: %8x\n", cause);
+/*
+	} else {
+		outbyte('.');
+*/
+	}
 
-	PROFILER_SUB = 1;
+	static uint8_t pending;
+	ioWrite8(ITU_USB_BUSY, 1);
 	/* Which interrupts are pending? */
 	pending = ioRead8(ITU_IRQ_ACTIVE);
 	ioWrite8(ITU_IRQ_CLEAR, pending);
@@ -124,6 +135,7 @@ void ituIrqHandler(void *context)
 	if (do_switch != pdFALSE) {
 		vTaskSwitchContext();
 	}
+	ioWrite8(ITU_USB_BUSY, 0);
 }
 void ultimate_main(void *context);
 
@@ -164,9 +176,10 @@ int main(int argc, char *argv[]) {
 	/* When re-starting a debug session (rather than cold booting) we want
 	 to ensure the installed interrupt handlers do not execute until after the
 	 scheduler has been started. */
-	portDISABLE_INTERRUPTS();
+	ioWrite8(ITU_SD_BUSY, 0);
+	ioWrite8(ITU_USB_BUSY, 0);
 	ioWrite8(UART_DATA, 0x33);
-	_do_ctors();
+//	_do_ctors();
 
 	xTaskCreate(ultimate_main, "U-II Main", configMINIMAL_STACK_SIZE, NULL,
 			tskIDLE_PRIORITY + 2, NULL);
@@ -190,9 +203,11 @@ int main(int argc, char *argv[]) {
 
 void vPortSetupTimerInterrupt( void )
 {
+	__asm__("csrw mtvec, %0" :: "r" (freertos_risc_v_trap_handler));
+
 	uint32_t freq = CLOCK_FREQ;
 	freq >>= 8;
-	freq /= 200;
+	freq /= 2000	; // This is wrong, but this is how it was by mistake!
 	freq -= 1;
 
 	ioWrite8(ITU_IRQ_HIGH_EN, 0);

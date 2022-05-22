@@ -650,6 +650,15 @@ begin
         end generate;
     end generate;
 
+    r_no_drive_a: if not g_drive_1541 generate
+        i_dummy: entity work.io_dummy
+        port map (
+            clock   => sys_clock,
+            io_req  => io_req_1541_1,
+            io_resp => io_resp_1541_1
+        );
+    end generate;
+
     audio_speaker_tmp <= (drive_sample_1 + drive_sample_2) * signed(resize(unsigned(speaker_vol),5));
     audio_speaker <= audio_speaker_tmp(16 downto 4);
 
@@ -790,6 +799,15 @@ begin
         via1_port_a_i <= via1_port_a_o or not via1_port_a_t;
         via1_ca2_i    <= via1_ca2_o    or not via1_ca2_t;
         via1_cb1_i    <= via1_cb1_o    or not via1_cb1_t;
+    end generate;
+
+    r_no_drive_b: if not g_drive_1541_2 generate
+        i_dummy: entity work.io_dummy
+        port map (
+            clock   => sys_clock,
+            io_req  => io_req_1541_2,
+            io_resp => io_resp_1541_2
+        );
     end generate;
 
     r_cart: if g_cartridge generate
