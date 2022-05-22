@@ -67,7 +67,7 @@ begin
     mem_req_i.tag <= g_tag;
     mem_req_i.request <= (wb_stb_o or mem_req_r) and mem_in_range;--  and not request_accepted;
     
-    mem_in_range <= '1' when wb_adr_o(31 downto 28) = X"0" else '0';
+    mem_in_range <= '1' when wb_adr_o(31 downto 26) = "000000" else '0';
 
     rack <= '1' when mem_resp.rack = '1' and mem_resp.rack_tag = g_tag else '0';
     --read_ack <= '1'  when mem_resp.dack_tag = g_tag and mem_req_i.read_writen = '1' else '0';
@@ -112,7 +112,7 @@ begin
                     io_req_i.address <= unsigned(wb_adr_o(io_req_i.address'range));
                     remain <= c_remain(to_integer(unsigned(wb_sel_o)));
                     
-                    if wb_adr_o(31 downto 28) = X"1" then -- I/O
+                    if wb_adr_o(31 downto 24) = X"10" then -- I/O
                         if wb_we_o = '1' then
                             io_req_i.write <= '1';
                         else

@@ -47,7 +47,13 @@ UsbBase :: UsbBase()
 	initialized = false;
 	bus_speed = -1;
 	setupBuffer = new uint8_t[8];
-//	initHardware();
+	cleanup_queue = NULL;
+	commandSemaphore = NULL;
+	mutex = NULL;
+	queue = NULL;
+	prev_status = 0;
+	irq_count = 0;
+	//	initHardware();
 }
 
 UsbBase :: ~UsbBase()

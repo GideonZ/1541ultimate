@@ -191,7 +191,7 @@ SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -march=$(MARCH) -mabi=$(MABI) $(EFFORT) -ffunction-sections -fdata-sections -nostartfiles -mno-fdiv
-OPTIONS += -gdwarf-2 -Os -DOS -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=6666667 -DU64=1 -Wno-write-strings
+OPTIONS += -gdwarf-2 -O0 -DOS -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=66666667 -DU64=1 -Wno-write-strings
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = linker.x

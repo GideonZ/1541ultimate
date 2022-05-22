@@ -21,7 +21,7 @@ extern "C" {
 #include "i2c_drv.h"
 #include "overlay.h"
 #include "u2p.h"
-#include "sys/alt_irq.h"
+//#include "sys/alt_irq.h"
 #include "c64.h"
 #include "sid_editor.h"
 #include "sid_device_fpgasid.h"
@@ -895,7 +895,7 @@ int U64Config :: setFilter(ConfigItem *it)
     if (it->definition->id == CFG_EMUSID2_FILTER) {
         base += 0x800;
     }
-    uint16_t *coef = sid8580_filter_coefficients;
+    const uint16_t *coef = sid8580_filter_coefficients;
     int mul = 1;
     int div = 4;
     switch(it->getValue()) {
@@ -1159,7 +1159,7 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
             sscanf(poke_buffer, "%x,%x", &addr, &value);
 
             C64 *machine = C64 :: getMachine();
-            irq_context = alt_irq_disable_all();
+            portENTER_CRITICAL();
 
             if (!(C64_STOP & C64_HAS_STOPPED)) {
                 machine->stop(false);
@@ -1170,7 +1170,7 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
             } else {
                 C64_POKE(addr, value);
             }
-            alt_irq_enable_all(irq_context);
+            portEXIT_CRITICAL();
         }
         break;
 
@@ -1501,7 +1501,7 @@ extern "C" {
 }
 
 
-const uint32_t c_filter2_coef_pal_alt[] = {
+const int32_t c_filter2_coef_pal_alt[] = {
     5, 4, 5, 6, 8, 10, 13, 16, 19, 22, 26, 31, 36, 41, 47, 54, 61, 68, 75, 84, 92, 101,
     110, 119, 128, 137, 146, 155, 163, 171, 179, 186, 192, 197, 201, 203, 204, 204, 202,
     198, 193, 185, 176, 164, 150, 134, 116, 96, 73, 49, 22, -6, -36, -68, -100, -134,
@@ -1561,7 +1561,7 @@ const uint32_t c_filter2_coef_pal_alt[] = {
 -- Result = 0.01 dB ripple, -108 dB atten!  The perfect filter ;)
 */
 
-const uint32_t c_filter2_coef_ntsc[] = {
+const int32_t c_filter2_coef_ntsc[] = {
     -1, -1, -1, -2, -3, -4, -5, -6, -7, -8, -8, -8, -7, -5, -3, 0, 4, 7, 11, 15, 18, 20, 21,
     20, 18, 15, 11, 6, 0, -5, -10, -14, -16, -16, -14, -9, -4, 4, 11, 18, 24, 28, 30, 29, 24,
     17, 7, -4, -15, -25, -33, -38, -39, -35, -27, -16, -1, 15, 30, 43, 53, 57, 55, 47, 33, 14,
@@ -1600,7 +1600,7 @@ void U64Config :: SetResampleFilter(t_video_mode m)
     const t_video_color_timing *ct = color_timings[(int)m];
     int mode = (ct->audio_div == 77) ? 0 : 1;
 
-    const uint32_t *pulFilter = (mode == 0) ? c_filter2_coef_pal_alt : c_filter2_coef_ntsc;
+    const uint32_t *pulFilter = (mode == 0) ? (uint32_t*)c_filter2_coef_pal_alt : (uint32_t*)c_filter2_coef_ntsc;
     int size = (mode == 0) ? 675 : 512;
 
     U64_RESAMPLE_RESET = 1;
@@ -1720,7 +1720,6 @@ int U64Config :: S_SidDetector(int &sid1, int &sid2)
 {
     S_SetupDetectionAddresses();
 
-
     C64 :: hard_stop();
 
     uint8_t buffer[64];
@@ -1730,9 +1729,9 @@ int U64Config :: S_SidDetector(int &sid1, int &sid2)
     for (int attempt = 0; attempt < 3; attempt++) {
         // Prepare the machine to execute the detection code
 
-        alt_irq_context context = alt_irq_disable_all();
+    	portENTER_CRITICAL();
         DetectSidImpl(buffer);
-        alt_irq_enable_all(context);
+        portEXIT_CRITICAL();
 
         // Now analyze the data
         if ((buffer[17] == 2) && (buffer[1] == 0))  {
@@ -1936,7 +1935,7 @@ volatile uint8_t *U64Config :: access_socket_pre(int socket)
 {
     C64 *machine = C64 :: getMachine();
 
-    irq_context = alt_irq_disable_all();
+    portENTER_CRITICAL();
     S_SetupDetectionAddresses();
 
     if (!(C64_STOP & C64_HAS_STOPPED)) {
@@ -1964,7 +1963,7 @@ void U64Config :: access_socket_post(int socket)
         machine->resume();
     }
 
-    alt_irq_enable_all(irq_context);
+    portEXIT_CRITICAL();
 }
 
 bool U64Config :: IsMonitorHDMI()

@@ -50,13 +50,12 @@ architecture arch of neorv32_wrapper is
 
     signal wb_tag_o       : std_ulogic_vector(02 downto 0); -- request tag
     signal wb_adr_o       : std_ulogic_vector(31 downto 0); -- address
-    signal wb_dat_i       : std_ulogic_vector(31 downto 0) := (others => 'U'); -- read data
     signal wb_dat_o       : std_ulogic_vector(31 downto 0); -- write data
     signal wb_we_o        : std_ulogic; -- read/write
     signal wb_sel_o       : std_ulogic_vector(03 downto 0); -- byte enable
     signal wb_stb_o       : std_ulogic; -- strobe
     signal wb_cyc_o       : std_ulogic; -- valid cycle
-    signal wb_lock_o      : std_ulogic; -- exclusive access request
+    signal wb_dat_i       : std_ulogic_vector(31 downto 0) := (others => 'U'); -- read data
     signal wb_ack_i       : std_ulogic := 'L'; -- transfer acknowledge
     signal wb_err_i       : std_ulogic := 'L'; -- transfer error
 
@@ -131,12 +130,12 @@ begin
 
         wb_tag_o                     => wb_tag_o,
         wb_adr_o                     => wb_adr_o,
-        wb_dat_i                     => wb_dat_i,
         wb_dat_o                     => wb_dat_o,
         wb_we_o                      => wb_we_o,
         wb_sel_o                     => wb_sel_o,
         wb_stb_o                     => wb_stb_o,
         wb_cyc_o                     => wb_cyc_o,
+        wb_dat_i                     => wb_dat_i,
         wb_ack_i                     => wb_ack_i,
         wb_err_i                     => wb_err_i,
 
@@ -153,12 +152,12 @@ begin
         reset     => reset,
         wb_tag_o  => wb_tag_o,
         wb_adr_o  => wb_adr_o,
-        wb_dat_i  => wb_dat_i,
         wb_dat_o  => wb_dat_o,
         wb_we_o   => wb_we_o,
         wb_sel_o  => wb_sel_o,
         wb_stb_o  => wb_stb_o,
         wb_cyc_o  => wb_cyc_o,
+        wb_dat_i  => wb_dat_i,
         wb_ack_i  => wb_ack_i,
         wb_err_i  => wb_err_i,
         io_busy   => io_busy,
@@ -167,5 +166,5 @@ begin
         mem_req   => mem_req,
         mem_resp  => mem_resp
     );
-    
+        
 end architecture;

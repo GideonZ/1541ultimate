@@ -89,7 +89,6 @@ tcpip_thread(void *arg)
     LWIP_TCPIP_THREAD_ALIVE();
     /* wait for a message, timeouts are processed while waiting */
     sys_timeouts_mbox_fetch(&mbox, (void **)&msg);
-	PROFILER_SUB = 10;
     LOCK_TCPIP_CORE();
     switch (msg->type) {
 #if LWIP_NETCONN
@@ -150,7 +149,6 @@ tcpip_thread(void *arg)
       LWIP_ASSERT("tcpip_thread: invalid message", 0);
       break;
     }
-	PROFILER_SUB = 11;
   }
 }
 
@@ -165,7 +163,6 @@ tcpip_thread(void *arg)
 err_t
 tcpip_input(struct pbuf *p, struct netif *inp)
 {
-	PROFILER_SUB = 8;
 #if LWIP_TCPIP_CORE_LOCKING_INPUT
   err_t ret;
   LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_input: PACKET %p/%p\n", (void *)p, (void *)inp));
@@ -194,7 +191,6 @@ tcpip_input(struct pbuf *p, struct netif *inp)
   msg->type = TCPIP_MSG_INPKT;
   msg->msg.inp.p = p;
   msg->msg.inp.netif = inp;
-  PROFILER_SUB = 9;
   if (sys_mbox_trypost(&mbox, msg) != ERR_OK) {
     memp_free(MEMP_TCPIP_MSG_INPKT, msg);
     return ERR_MEM;
