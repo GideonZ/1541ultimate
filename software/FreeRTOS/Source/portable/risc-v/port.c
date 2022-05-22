@@ -207,7 +207,15 @@ void vPortEndScheduler( void )
 	for( ;; );
 }
 
+void vAssertIfInISR(void)
+{
+	uint32_t cause;
+	__asm__("csrr %0, mcause" : "=r" (cause));
 
+	if(cause) {
+		printf("Cause: %8x\n");
+		configASSERT(0);
+	}
+}
 
-
-
+int xCriticalNesting;

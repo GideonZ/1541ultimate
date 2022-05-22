@@ -162,8 +162,7 @@ freertos_risc_v_trap_handler:
 	csrr a1, mepc
 
 test_if_asynchronous:
-	srli a2, a0, __riscv_xlen - 1		/* MSB of mcause is 1 if handing an asynchronous interrupt - shift to LSB to clear other bits. */
-	beq a2, x0, handle_synchronous		/* Branch past interrupt handing if not asynchronous. */
+	bge a0, x0, handle_synchronous		/* Branch past interrupt handing if not asynchronous. */
 	store_x a1, 0( sp )					/* Asynch so save unmodified exception return address. */
 
 handle_asynchronous:
