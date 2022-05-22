@@ -45,7 +45,7 @@
             <lattice:device>LFE5U-25F-6BG256C</lattice:device>
             <lattice:synthesis>synplify</lattice:synthesis>
             <lattice:date>2022-02-17.15:28:57</lattice:date>
-            <lattice:modified>2022-04-02.17:23:07</lattice:modified>
+            <lattice:modified>2022-04-10.21:40:40</lattice:modified>
             <lattice:diamond>3.12.0.240.2</lattice:diamond>
             <lattice:language>VHDL</lattice:language>
             <lattice:attributes>
@@ -115,7 +115,7 @@
                 </lattice:lpcentry>
                 <lattice:lpcentry>
                     <lattice:lpckey>Date</lattice:lpckey>
-                    <lattice:lpcvalue lattice:resolve="constant">04/02/2022</lattice:lpcvalue>
+                    <lattice:lpcvalue lattice:resolve="constant">04/10/2022</lattice:lpcvalue>
                 </lattice:lpcentry>
                 <lattice:lpcentry>
                     <lattice:lpckey>ModuleName</lattice:lpckey>
@@ -131,7 +131,7 @@
                 </lattice:lpcentry>
                 <lattice:lpcentry>
                     <lattice:lpckey>Time</lattice:lpckey>
-                    <lattice:lpcvalue lattice:resolve="constant">17:23:05</lattice:lpcvalue>
+                    <lattice:lpcvalue lattice:resolve="constant">21:40:38</lattice:lpcvalue>
                 </lattice:lpcentry>
                 <lattice:lpcentry>
                     <lattice:lpckey>VendorName</lattice:lpckey>
