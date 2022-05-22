@@ -737,9 +737,9 @@ int bringupConfigure(JTAG_Access_t *target, int timeout, char **log)
 		return -1;
 	}
 
-	portDISABLE_INTERRUPTS();
+	portENTER_CRITICAL();
 	jtag_configure_fpga(target->host, (uint8_t *)dutFpga.buffer, (int)dutFpga.size);
-	portENABLE_INTERRUPTS();
+	portEXIT_CRITICAL();
 	vTaskDelay(100);
 	report_analog();
 

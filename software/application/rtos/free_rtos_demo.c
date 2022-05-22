@@ -100,7 +100,7 @@ void vPortSetupTimerInterrupt( void )
 	ioWrite8(UART_DATA, 0x35);
 }
 
-void ituIrqHandler(void *context)
+void freertos_risc_v_application_interrupt_handler(void *context)
 {
 	static uint8_t pending;
 

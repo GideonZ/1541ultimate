@@ -261,19 +261,21 @@ IecCommandChannel *IecInterface :: get_data_channel(int chan)
 
 void IecInterface :: effectuate_settings(void)
 {
-    uint32_t was_talk   = 0x18800040 + last_addr; // compare instruction
-    uint32_t was_listen = 0x18800020 + last_addr;
-    uint32_t was_printer_listen = 0x18800020 + last_printer_addr;
+    uint32_t was_talk   = 0x18800040 + 10; // compare instruction
+    uint32_t was_listen = 0x18800020 + 10;
+    uint32_t was_printer_listen = 0x18800020 + 4;
     
 //            data = (0x08 << 20) + (bit << 24) + (inv << 29) + (addr << 8) + (value << 0)
     int bus_id = cfg->get_value(CFG_IEC_BUS_ID);
     cmd_if.set_kernal_device_id(bus_id);
 
+	const uint32_t *src = (uint32_t*)&_iec_code_b_start;
     if(bus_id != last_addr) {
         printf("Setting IEC bus ID to %d.\n", bus_id);
         int replaced = 0;
+
         for(int i=0;i<512;i++) {
-        	uint32_t word_read = cpu_to_32le(HW_IEC_RAM_DW[i]);
+        	uint32_t word_read = cpu_to_32le(src[i]);
         	if ((word_read & 0x1F8000FF) == was_listen) {
                 // printf("Replacing %8x with %8x at %d.\n", HW_IEC_RAM_DW[i], (HW_IEC_RAM_DW[i] & 0xFFFFFF00) + bus_id + 0x20, i);
                 HW_IEC_RAM_DW[i] = cpu_to_32le((word_read & 0xFFFFFF00) + bus_id + 0x20);
@@ -292,7 +294,7 @@ void IecInterface :: effectuate_settings(void)
         printf("Setting IEC printer ID to %d.\n", bus_id);
         int replaced = 0;
         for(int i=0;i<512;i++) {
-        	uint32_t word_read = cpu_to_32le(HW_IEC_RAM_DW[i]);
+        	uint32_t word_read = cpu_to_32le(src[i]);
             if ((word_read & 0x1F8000FF) == was_printer_listen) {
                 HW_IEC_RAM_DW[i] = cpu_to_32le((word_read & 0xFFFFFF00) + bus_id + 0x20);
                 replaced ++;

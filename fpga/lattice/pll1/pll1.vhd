@@ -2,7 +2,7 @@
 -- Module  Version: 5.7
 --/usr/local/diamond/3.12/ispfpga/bin/lin64/scuba -w -n pll1 -lang vhdl -synth synplify -bus_exp 7 -bb -arch sa5p00 -type pll -fin 50 -fclkop 200 -fclkop_tol 2.0 -fclkos 24 -fclkos_tol 2.0 -phases 0 -fclkos2 12.288 -fclkos2_tol 2.0 -phases2 0 -fclkos3 50 -fclkos3_tol 2.0 -phases3 11.25 -phase_cntl STATIC -lock -fb_mode 1 -fdc /home/gideon/proj/ultimate/fpga/lattice/pll1/pll1.fdc 
 
--- Sat Apr  2 17:23:07 2022
+-- Sun Apr 10 21:40:40 2022
 
 library IEEE;
 use IEEE.std_logic_1164.all;

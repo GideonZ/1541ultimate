@@ -31,6 +31,8 @@ SECTIONS
     PROVIDE(__text_start = .);
     PROVIDE(__textstart = .);
 
+    *(.text.crt0)
+
     PROVIDE_HIDDEN (__rela_iplt_start = .);
     *(.rela.iplt)
     PROVIDE_HIDDEN (__rela_iplt_end = .);

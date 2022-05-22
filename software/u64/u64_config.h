@@ -38,7 +38,7 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
 	bool skipReset;
     TaskHandle_t resetTaskHandle;
     SidDevice *sidDevice[2];
-    alt_irq_context irq_context;
+    //alt_irq_context irq_context;
     bool temporary_stop;
 
     class U64Mixer : public ConfigurableObject
