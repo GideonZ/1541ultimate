@@ -435,7 +435,7 @@ set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to SDRAM_DQ
 #set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/network/eth_debug_stream.vhd
 
 set_global_assignment -name VHDL_FILE ../../../fpga/io/icap/vhdl_source/icap_pkg.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/icap/vhdl_source/icap-dummy.vhd
+set_global_assignment -name VHDL_FILE "../../../fpga/io/icap/vhdl_source/icap-dummy.vhd"
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/pseudo_dpram_8x32.vhd
 set_global_assignment -name VHDL_FILE "../../../fpga/ip/memory/vhdl_source/pseudo_dpram_8x32-altera.vhd"
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/pseudo_dpram_8x16.vhd
@@ -510,7 +510,7 @@ set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/rmii_tra
 set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/i2s_serializer.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/sine_osc.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/distributed_stack.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/altera/srl_fifo.vhd
+set_global_assignment -name VHDL_FILE "../../../fpga/altera/srl_fifo-altera.vhd"
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/dpram.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/std/dsram.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/dpram_sc.vhd
