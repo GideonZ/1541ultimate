@@ -22,7 +22,25 @@ typedef struct _t_genericvector {
     uint8_t mask;
     uint8_t before;
     uint8_t expect;
+    const char **pinnames;
 } t_generic_vector;
+
+static void PrintPinNames(const char **names, uint8_t bits)
+{
+    for(int i=0; i<8; i++) {
+        if (bits & 1) {
+            printf(names[i]);
+            bits >>= 1;
+            if (bits) {
+                printf(", ");
+            } else {
+                break;
+            }
+        } else {
+            bits >>= 1;
+        }
+    }
+}
 
 static int PerformTest(const t_generic_vector *vec)
 {
@@ -43,18 +61,32 @@ static int PerformTest(const t_generic_vector *vec)
         }
         if (vec[i].inreg) {
             after = *(vec[i].inreg);
-            if ((before & vec[i].mask) != vec[i].before) {
-                printf("Before %s: Read: %b&%b, expected: %b\n", vec[i].pinName, before, vec[i].mask, vec[i].before);
+            uint8_t bdiff = (before & vec[i].mask) ^ vec[i].before;
+            uint8_t adiff = (after & vec[i].mask) ^ vec[i].expect;
+            if (bdiff) {
+                printf("Before %12s Read: %b&%b, exp: %b (diff: %b [", vec[i].pinName, before, vec[i].mask, vec[i].before, bdiff);
+                if (vec[i].pinnames) {
+                    PrintPinNames(vec[i].pinnames, bdiff);
+                }
+                printf("])\n");
                 errors ++;
             }
-            if ((after & vec[i].mask) != vec[i].expect) {
-                printf("After %s: Read: %b&%b, expected: %b\n", vec[i].pinName, after, vec[i].mask, vec[i].expect);
+            if (adiff) {
+                printf(" After %12s Read: %b&%b, exp: %b (diff: %b [", vec[i].pinName, after, vec[i].mask, vec[i].expect, adiff);
+                if (vec[i].pinnames) {
+                    PrintPinNames(vec[i].pinnames, adiff);
+                }
+                printf("])\n");
                 errors ++;
             }
         }
     }
     return errors;
 }
+const char *cia1_pb_pins[] = { "PB0", "PB1", "PB2", "PB3", "PB4", "PB5", "PB6", "PB7" };
+const char *cia1_pa_pins[] = { "PA0", "PA1", "PA2", "PA3", "PA4", "PA5", "PA6", "PA7" };
+const char *cia2_pb_pins[] = { "PB0", "PB1", "PB2", "PB3", "PB4", "PB5", "PB6 (CIA2)", "PB7 (CIA2)" };
+// const char *cia2_pa_pins[] = { "PA0", "PA1", "PA2", "PA3", "PA4", "PA5", "PA6", "PA7" };
 
 int U64TestKeyboard()
 {
@@ -65,30 +97,30 @@ int U64TestKeyboard()
     const t_generic_vector vec[] = {
             // first test PB6 and PB7 to see if they connect correctly to the PLD
 
-            { "Init",     &PLD_CIA1_A, 0xFF, NULL, 0, 0, 0 },
-            { "Init",     &PLD_CIA1_B, 0xFF, NULL, 0, 0, 0 },
+            { "Init",     &PLD_CIA1_A, 0xFF, NULL, 0, 0, 0, NULL },
+            { "Init",     &PLD_CIA1_B, 0xFF, NULL, 0, 0, 0, NULL },
 
-            { "PA7->PB0", &PLD_CIA1_A, 0x7F, &PLD_CIA1_B, 0xFF, 0xFF, 0xFE },
-            { "PA6->PB6", &PLD_CIA1_A, 0xBF, &PLD_CIA1_B, 0xFF, 0xFE, 0xBF },
-            { "PA5->PB5", &PLD_CIA1_A, 0xDF, &PLD_CIA1_B, 0xFF, 0xBF, 0xDF },
-            { "PA4->PB4", &PLD_CIA1_A, 0xEF, &PLD_CIA1_B, 0xFF, 0xDF, 0xEF },
-            { "PA3->PB7", &PLD_CIA1_A, 0xF7, &PLD_CIA1_B, 0xFF, 0xEF, 0x7F },
-            { "PA2->PB2", &PLD_CIA1_A, 0xFB, &PLD_CIA1_B, 0xFF, 0x7F, 0xFB },
-            { "PA1->PB1", &PLD_CIA1_A, 0xFD, &PLD_CIA1_B, 0xFF, 0xFB, 0xFD },
-            { "PA0->PB3", &PLD_CIA1_A, 0xFE, &PLD_CIA1_B, 0xFF, 0xFD, 0xF7 },
-            { "Arelease", &PLD_CIA1_A, 0xFF, &PLD_CIA1_B, 0xFF, 0xF7, 0xFF },
+            { "PA7->PB0", &PLD_CIA1_A, 0x7F, &PLD_CIA1_B, 0xFF, 0xFF, 0xFE, cia1_pb_pins },
+            { "PA6->PB6", &PLD_CIA1_A, 0xBF, &PLD_CIA1_B, 0xFF, 0xFE, 0xBF, cia1_pb_pins },
+            { "PA5->PB5", &PLD_CIA1_A, 0xDF, &PLD_CIA1_B, 0xFF, 0xBF, 0xDF, cia1_pb_pins },
+            { "PA4->PB4", &PLD_CIA1_A, 0xEF, &PLD_CIA1_B, 0xFF, 0xDF, 0xEF, cia1_pb_pins },
+            { "PA3->PB7", &PLD_CIA1_A, 0xF7, &PLD_CIA1_B, 0xFF, 0xEF, 0x7F, cia1_pb_pins },
+            { "PA2->PB2", &PLD_CIA1_A, 0xFB, &PLD_CIA1_B, 0xFF, 0x7F, 0xFB, cia1_pb_pins },
+            { "PA1->PB1", &PLD_CIA1_A, 0xFD, &PLD_CIA1_B, 0xFF, 0xFB, 0xFD, cia1_pb_pins },
+            { "PA0->PB3", &PLD_CIA1_A, 0xFE, &PLD_CIA1_B, 0xFF, 0xFD, 0xF7, cia1_pb_pins },
+            { "Arelease", &PLD_CIA1_A, 0xFF, &PLD_CIA1_B, 0xFF, 0xF7, 0xFF, cia1_pb_pins },
 
-            { "PB7->PA3", &LOCAL_CIA1, 0x80, &PLD_CIA1_A, 0xFF, 0xFF, 0xF7 },
-            { "PB6->PA6", &LOCAL_CIA1, 0x40, &PLD_CIA1_A, 0xFF, 0xF7, 0xBF },
-            { "CiaRel",   &LOCAL_CIA1, 0x00, NULL, 0, 0, 0 },
-            { "PB5->PA5", &PLD_CIA1_B, 0xDF, &PLD_CIA1_A, 0xFF, 0xFF, 0xDF },
-            { "PB4->PA4", &PLD_CIA1_B, 0xEF, &PLD_CIA1_A, 0xFF, 0xDF, 0xEF },
-            { "PB3->PA0", &PLD_CIA1_B, 0xF7, &PLD_CIA1_A, 0xFF, 0xEF, 0xFE },
-            { "PB2->PA2", &PLD_CIA1_B, 0xFB, &PLD_CIA1_A, 0xFF, 0xFE, 0xFB },
-            { "PB1->PA1", &PLD_CIA1_B, 0xFD, &PLD_CIA1_A, 0xFF, 0xFB, 0xFD },
-            { "PB0->PA7", &PLD_CIA1_B, 0xFE, &PLD_CIA1_A, 0xFF, 0xFD, 0x7F },
-            { "Brelease", &PLD_CIA1_B, 0xFF, &PLD_CIA1_A, 0xFF, 0x7F, 0xFF },
-            { NULL, NULL, 0, NULL, 0, 0, 0 },
+            { "PB7->PA3", &LOCAL_CIA1, 0x80, &PLD_CIA1_A, 0xFF, 0xFF, 0xF7, cia1_pa_pins },
+            { "PB6->PA6", &LOCAL_CIA1, 0x40, &PLD_CIA1_A, 0xFF, 0xF7, 0xBF, cia1_pa_pins },
+            { "CiaRel",   &LOCAL_CIA1, 0x00, NULL, 0, 0, 0, NULL },
+            { "PB5->PA5", &PLD_CIA1_B, 0xDF, &PLD_CIA1_A, 0xFF, 0xFF, 0xDF, cia1_pa_pins },
+            { "PB4->PA4", &PLD_CIA1_B, 0xEF, &PLD_CIA1_A, 0xFF, 0xDF, 0xEF, cia1_pa_pins },
+            { "PB3->PA0", &PLD_CIA1_B, 0xF7, &PLD_CIA1_A, 0xFF, 0xEF, 0xFE, cia1_pa_pins },
+            { "PB2->PA2", &PLD_CIA1_B, 0xFB, &PLD_CIA1_A, 0xFF, 0xFE, 0xFB, cia1_pa_pins },
+            { "PB1->PA1", &PLD_CIA1_B, 0xFD, &PLD_CIA1_A, 0xFF, 0xFB, 0xFD, cia1_pa_pins },
+            { "PB0->PA7", &PLD_CIA1_B, 0xFE, &PLD_CIA1_A, 0xFF, 0xFD, 0x7F, cia1_pa_pins },
+            { "Brelease", &PLD_CIA1_B, 0xFF, &PLD_CIA1_A, 0xFF, 0x7F, 0xFF, cia1_pa_pins },
+            { NULL, NULL, 0, NULL, 0, 0, 0, NULL },
     };
     int errors = PerformTest(vec);
     if (!errors) {
@@ -107,32 +139,34 @@ int U64TestUserPort()
     const t_generic_vector vec[] = {
             // first test PB6 and PB7 to see if they connect correctly to the PLD
 
-            { "Init",     &PLD_CIA1_B, 0xFF, NULL, 0, 0, 0 },
-            { "Init",     &PLD_CIA2_B, 0xFF, NULL, 0, 0, 0 },
-            { "Init",     &LOCAL_IEC,  0xFF, NULL, 0, 0, 0 },
-            { "Release1", &LOCAL_CIA1, 0x00, NULL, 0, 0, 0 },
-            { "Release2", &LOCAL_CIA2, 0x00, NULL, 0, 0, 0 },
-            { "CIA1_PB7", &LOCAL_CIA1, 0x80, &PLD_CIA1_B, 0xC0, 0xC0, 0x40 },
-            { "CIA1_PB6", &LOCAL_CIA1, 0x40, &PLD_CIA1_B, 0xC0, 0x40, 0x80 },
-            { "CIA2_PB7", &LOCAL_CIA1, 0x20, &PLD_CIA2_B, 0xC0, 0xC0, 0x40 },
-            { "CIA2_PB6", &LOCAL_CIA1, 0x10, &PLD_CIA2_B, 0xC0, 0x40, 0x80 },
-            { "Release2", &LOCAL_CIA1, 0x00, NULL, 0, 0, 0 },
+            { "Init",     &PLD_CIA1_A, 0xFF, NULL, 0, 0, 0, NULL },
+            { "Init",     &PLD_CIA1_B, 0xFF, NULL, 0, 0, 0, NULL },
+            { "Init",     &PLD_CIA2_A, 0xFF, NULL, 0, 0, 0, NULL },
+            { "Init",     &PLD_CIA2_B, 0xFF, NULL, 0, 0, 0, NULL },
+            { "Init",     &LOCAL_IEC,  0xFF, NULL, 0, 0, 0, NULL },
+            { "Release1", &LOCAL_CIA1, 0x00, NULL, 0, 0, 0, NULL },
+            { "Release2", &LOCAL_CIA2, 0x00, NULL, 0, 0, 0, NULL },
+            { "CIA1_PB7", &LOCAL_CIA1, 0x80, &PLD_CIA1_B, 0xC0, 0xC0, 0x40, cia1_pb_pins },
+            { "CIA1_PB6", &LOCAL_CIA1, 0x40, &PLD_CIA1_B, 0xC0, 0x40, 0x80, cia1_pb_pins },
+            { "CIA2_PB7", &LOCAL_CIA1, 0x20, &PLD_CIA2_B, 0xC0, 0xC0, 0x40, cia2_pb_pins },
+            { "CIA2_PB6", &LOCAL_CIA1, 0x10, &PLD_CIA2_B, 0xC0, 0x40, 0x80, cia2_pb_pins },
+            { "Release2", &LOCAL_CIA1, 0x00, NULL, 0, 0, 0, NULL },
 
             // then test the connections of the loopback cable: 10 connections
-            { "Release PLD", &PLD_CIA2_A, 0xFF, NULL, 0, 0, 0 },
-            { "/FLAG2->PA2", &PLD_CIA2_A, 0xFB, &LOCAL_CIA2, 0x80, 0x80, 0x00 },
-            { "/RESET->PB7", &LOCAL_CART, 0x20, &PLD_CIA2_B, 0x80, 0x80, 0x00 },
-            { "ReleaseRST",  &LOCAL_CART, 0x00, NULL, 0, 0, 0 },
-            { "PB0->PWM1",   &PLD_CIA2_B, 0xFE, &LOCAL_CIA2, 0x02, 0x02, 0x00 },
-            { "CNT1->PB6",   &LOCAL_CIA1, 0x10, &LOCAL_CIA1, 0x08, 0x08, 0x00 },
-            { "CiaRel",      &LOCAL_CIA1, 0x00, NULL, 0, 0, 0 },
-            { "PB1->ATN",    &PLD_CIA2_B, 0xFD, &LOCAL_IEC,  0x01, 0x01, 0x00 },
-            { "SP1->PB5",    &PLD_CIA2_B, 0xDF, &LOCAL_CIA1, 0x04, 0x04, 0x00 },
-            { "PB2->/PC2",   &LOCAL_CIA1, 0x08, &PLD_CIA2_B, 0xFF, 0xDF, 0xDB },
-            { "CNT2->PB4",   &PLD_CIA2_B, 0xEF, &LOCAL_CIA1, 0x02, 0x02, 0x00 },
-            { "PB3->SP2",    &PLD_CIA2_B, 0xF7, &LOCAL_CIA1, 0x01, 0x01, 0x00 },
-            { "PWM0->PWM1",  &LOCAL_CIA2, 0x04, &LOCAL_CIA2, 0x02, 0x02, 0x00 },
-            { NULL, NULL, 0, NULL, 0, 0, 0 },
+            { "Release PLD", &PLD_CIA2_A, 0xFF, NULL, 0, 0, 0, NULL },
+            { "/FLAG2->PA2", &PLD_CIA2_A, 0xFB, &LOCAL_CIA2, 0x80, 0x80, 0x00, NULL },
+            { "/RESET->PB7", &LOCAL_CART, 0x20, &PLD_CIA2_B, 0x80, 0x80, 0x00, NULL },
+            { "ReleaseRST",  &LOCAL_CART, 0x00, NULL, 0, 0, 0, NULL },
+            { "PB0->PWM1",   &PLD_CIA2_B, 0xFE, &LOCAL_CIA2, 0x02, 0x02, 0x00, NULL },
+            { "CNT1->PB6",   &LOCAL_CIA1, 0x10, &LOCAL_CIA1, 0x08, 0x08, 0x00, NULL },
+            { "CiaRel",      &LOCAL_CIA1, 0x00, NULL, 0, 0, 0, NULL },
+            { "PB1->ATN",    &PLD_CIA2_B, 0xFD, &LOCAL_IEC,  0x01, 0x01, 0x00, NULL },
+            { "SP1->PB5",    &PLD_CIA2_B, 0xDF, &LOCAL_CIA1, 0x04, 0x04, 0x00, NULL },
+            { "PB2->/PC2",   &LOCAL_CIA1, 0x08, &PLD_CIA2_B, 0xFF, 0xDF, 0xDB, NULL },
+            { "CNT2->PB4",   &PLD_CIA2_B, 0xEF, &LOCAL_CIA1, 0x02, 0x02, 0x00, NULL },
+            { "PB3->SP2",    &PLD_CIA2_B, 0xF7, &LOCAL_CIA1, 0x01, 0x01, 0x00, NULL },
+            { "PWM0->PWM1",  &LOCAL_CIA2, 0x04, &LOCAL_CIA2, 0x02, 0x02, 0x00, NULL },
+            { NULL, NULL, 0, NULL, 0, 0, 0, NULL },
     };
 
     int errors = PerformTest(vec);
@@ -179,7 +213,7 @@ int U64TestCartridge()
         readback = remoteRegs[(1 << i) + 2];
         if (readback != (1 << (i-8))) {
             errors ++;
-            printf("A%d:%b ", i, readback);
+            printf("ADDR %d:%b ", i, readback);
         }
     }
     if (errors) {
@@ -188,23 +222,26 @@ int U64TestCartridge()
 
     // Now check each of the other cartridge I/O lines (PHI2 was already used, and R/Wn and IO1 and IO2 as well)
     // SO there are 38-16-8-4 = 10 left?  DMA, BA, ROML, ROMH, GAME, EXROM, DOTCLK, IRQ, NMI, RESET
+    const char *remote_cart_pins[] = { "IRQ", "NMI", "ROML", "ROMH", "DOTCK", "RST#", "BA", "??" };
+    const char *local_cart_pins[] = { "IRQ", "NMI", "EXROM", "GAME", "DMA", "??", "??", "??" };
+
     const t_generic_vector vec[] = {
-            { "Init",  &LOCAL_CART, 0x00, NULL, 0, 0, 0 },
-            { "Init",  &REMOTE_CART_OUT, 0x00, NULL, 0, 0, 0 },
-            { "IRQ#",  &LOCAL_CART, 0x01, &REMOTE_CART_IN, 0xFF, 0x23, 0x22 },
-            { "NMI#",  &LOCAL_CART, 0x02, &REMOTE_CART_IN, 0xFF, 0x22, 0x21 },
-            { "ROML#", &LOCAL_CART, 0x04, &REMOTE_CART_IN, 0xFF, 0x21, 0x27 },
-            { "ROMH#", &LOCAL_CART, 0x08, &REMOTE_CART_IN, 0xFF, 0x27, 0x2B },
-            { "DOTCK", &LOCAL_CART, 0x10, &REMOTE_CART_IN, 0xFF, 0x2B, 0x33 },
-            { "RST#",  &LOCAL_CART, 0x20, &REMOTE_CART_IN, 0xFF, 0x33, 0x03 },
-            { "BA",    &LOCAL_CART, 0x40, &REMOTE_CART_IN, 0xFF, 0x03, 0x63 },
-            { "End",   &LOCAL_CART, 0x00, NULL, 0, 0, 0 },
-            { "DMA#",  &REMOTE_CART_OUT, 0x10, &LOCAL_CART, 0xFF, 0x3F, 0x2F },
-            { "GAME#", &REMOTE_CART_OUT, 0x04, &LOCAL_CART, 0xFF, 0x2F, 0x3B },
-            { "EXROM#",&REMOTE_CART_OUT, 0x08, &LOCAL_CART, 0xFF, 0x3B, 0x37 },
-            { "NMI#r", &REMOTE_CART_OUT, 0x02, &LOCAL_CART, 0xFF, 0x37, 0x3D },
-            { "IRQ#r", &REMOTE_CART_OUT, 0x01, &LOCAL_CART, 0xFF, 0x3D, 0x3E },
-            { NULL, NULL, 0, NULL, 0, 0, 0 },
+            { "Init",  &LOCAL_CART, 0x00, NULL, 0, 0, 0, NULL },
+            { "Init",  &REMOTE_CART_OUT, 0x00, NULL, 0, 0, 0, NULL },
+            { "IRQ#",  &LOCAL_CART, 0x01, &REMOTE_CART_IN, 0xFF, 0x23, 0x22, remote_cart_pins },
+            { "NMI#",  &LOCAL_CART, 0x02, &REMOTE_CART_IN, 0xFF, 0x22, 0x21, remote_cart_pins },
+            { "ROML#", &LOCAL_CART, 0x04, &REMOTE_CART_IN, 0xFF, 0x21, 0x27, remote_cart_pins },
+            { "ROMH#", &LOCAL_CART, 0x08, &REMOTE_CART_IN, 0xFF, 0x27, 0x2B, remote_cart_pins },
+            { "DOTCK", &LOCAL_CART, 0x10, &REMOTE_CART_IN, 0xFF, 0x2B, 0x33, remote_cart_pins },
+            { "RST#",  &LOCAL_CART, 0x20, &REMOTE_CART_IN, 0xFF, 0x33, 0x03, remote_cart_pins },
+            { "BA",    &LOCAL_CART, 0x40, &REMOTE_CART_IN, 0xFF, 0x03, 0x63, remote_cart_pins },
+            { "End",   &LOCAL_CART, 0x00, NULL, 0, 0, 0, NULL },
+            { "DMA#",  &REMOTE_CART_OUT, 0x10, &LOCAL_CART, 0xFF, 0x3F, 0x2F, local_cart_pins },
+            { "GAME#", &REMOTE_CART_OUT, 0x04, &LOCAL_CART, 0xFF, 0x2F, 0x3B, local_cart_pins },
+            { "EXROM#",&REMOTE_CART_OUT, 0x08, &LOCAL_CART, 0xFF, 0x3B, 0x37, local_cart_pins },
+            { "NMI#r", &REMOTE_CART_OUT, 0x02, &LOCAL_CART, 0xFF, 0x37, 0x3D, local_cart_pins },
+            { "IRQ#r", &REMOTE_CART_OUT, 0x01, &LOCAL_CART, 0xFF, 0x3D, 0x3E, local_cart_pins },
+            { NULL, NULL, 0, NULL, 0, 0, 0, NULL },
     };
 
     errors += PerformTest(vec);
@@ -218,15 +255,16 @@ int U64TestCartridge()
 
 int U64TestIEC()
 {
+    const char *iec_pins[] = { "ATN", "CLK", "DATA", "SRQ", "??", "??", "??", "??" };
     const t_generic_vector vec[] = {
-            { "Init",     &PLD_CIA2_A, 0xFF, NULL, 0, 0, 0 },
-            { "Init",     &PLD_CIA2_B, 0xFF, NULL, 0, 0, 0 },
-            { "Init",     &LOCAL_IEC,  0xFF, NULL, 0, 0, 0 },
-            { "Init",     &REMOTE_IEC, 0x00, NULL, 0, 0, 0 },
-            { "IEC ATN",  &LOCAL_IEC,  0xFE, &LOCAL_IEC,  0xFF, 0x0F, 0x0E },
-            { "IEC CLK",  &LOCAL_IEC,  0xFD, &LOCAL_IEC,  0xFF, 0x0E, 0x0D },
-            { "IEC DAT",  &LOCAL_IEC,  0xFB, &LOCAL_IEC,  0xFF, 0x0D, 0x0B },
-            { "IEC SRQ",  &LOCAL_IEC,  0xF7, &LOCAL_IEC,  0xFF, 0x0B, 0x07 },
+            { "Init",     &PLD_CIA2_A, 0xFF, NULL, 0, 0, 0, NULL },
+            { "Init",     &PLD_CIA2_B, 0xFF, NULL, 0, 0, 0, NULL },
+            { "Init",     &LOCAL_IEC,  0xFF, NULL, 0, 0, 0, NULL },
+            { "Init",     &REMOTE_IEC, 0x00, NULL, 0, 0, 0, NULL },
+            { "IEC ATN",  &LOCAL_IEC,  0xFE, &LOCAL_IEC,  0xFF, 0x0F, 0x0E, iec_pins },
+            { "IEC CLK",  &LOCAL_IEC,  0xFD, &LOCAL_IEC,  0xFF, 0x0E, 0x0D, iec_pins },
+            { "IEC DAT",  &LOCAL_IEC,  0xFB, &LOCAL_IEC,  0xFF, 0x0D, 0x0B, iec_pins },
+            { "IEC SRQ",  &LOCAL_IEC,  0xF7, &LOCAL_IEC,  0xFF, 0x0B, 0x07, iec_pins },
             { NULL, NULL, 0, NULL, 0, 0, 0 },
     };
     int errors = PerformTest(vec);

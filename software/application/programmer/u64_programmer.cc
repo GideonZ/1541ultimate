@@ -615,38 +615,39 @@ extern "C" {
 	    printf("Ultimate-64 - LOADER...\n");
         codec_init();
         bool elite = isEliteBoard();
-	    int errors = 0, joy = 0;
+        bool advanced_joy = elite;
+        int errors = 0, joy = 0;
 	    if (!test_memory()) {
 	        if (!load_images()) {
 	            screen->clear();
 	            screen->move_cursor(0,0);
 #if DOTESTS
-                printf("\e4U64 Tester - 15.05.2020 - 10:52\e?\n");
+                printf("\e4U64 Tester - 25.01.2022 - 11:19\e?\n");
                 errors =  test_esp32();
 	            errors += U64AudioCodecTest();
-                errors += TestSidSockets(elite);
+                errors += U64PaddleTest();
+                errors += U64TestIEC();
+                errors += U64TestCartridge();
+                errors += U64TestCassette();
+                if (!rtc.is_valid()) {
+                    errors ++;
+                    printf("\e2RTC not valid. Battery inserted?\n\eO");
+                }
 	            if (elite) {
 	                joy = U64EliteTestJoystick();
 	                if (joy < 0) {
-	                    elite = false;
+	                    advanced_joy = false;
 	                } else {
 	                    errors += joy;
 	                }
 	            }
-	            errors += U64PaddleTest();
-	            if (!elite) {
+	            if (!advanced_joy) {
 	                printf("\e?Remove joystick tester boards and press power button.\n");
 	                wait_button();
 	            }
-	            errors += U64TestKeyboard();
-	            //errors += U64TestUserPort();
-                errors += U64TestIEC();
-	            errors += U64TestCartridge();
-	            errors += U64TestCassette();
-	            if (!rtc.is_valid()) {
-	                errors ++;
-	                printf("\e2RTC not valid. Battery inserted?\n\eO");
-	            }
+                errors += U64TestKeyboard();
+                errors += U64TestUserPort();
+                errors += TestSidSockets(elite);
                 if (errors) {
                     printf("\n\e2** BOARD FAILED **\n");
                 } else {
@@ -654,7 +655,7 @@ extern "C" {
                     do_update();
                 }
 #else
-                printf("\e4U64 Programmer - 24.06.2020 - 20:40\e?\n");
+                printf("\e4U64 Programmer - 25.01.2022 - 11:19\e?\n");
                 printf("\n\e5Tests skipped.\n\e?");
                 do_update();
 #endif
