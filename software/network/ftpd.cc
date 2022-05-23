@@ -467,7 +467,7 @@ void FTPDaemonThread::cmd_mlst(const char *arg)
         sprintf(buffer, "250- Listing %s\r\ntype=%s;modify=%04d%02d%02d%02d%02d%02d; %s\r\n250 End", st.name, type, st.year,
                 st.month, st.day, st.hr, st.min, st.sec, st.name);
     else
-        sprintf(buffer, "250- Listing %s\r\ntype=%s;size=%s;modify=%04d%02d%02d%02d%02d%02d; %s\r\n250 End", st.name, type,
+        sprintf(buffer, "250- Listing %s\r\ntype=%s;size=%d;modify=%04d%02d%02d%02d%02d%02d; %s\r\n250 End", st.name, type,
                 st.st_size, st.year, st.month, st.day, st.hr, st.min, st.sec, st.name);
     send_msg(buffer);
 }
