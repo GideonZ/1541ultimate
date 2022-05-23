@@ -220,8 +220,13 @@ main:
     li a3, 0
     li a4, 0
     li a5, 0
+
     li s1, 0x800
     csrs mie, s1 // enable external interrupts
+
+    li s1, 0x8000
+    csrw dcsr, s1 // enable entering debug mode upon ebreak
+
     csrs mstatus, 8 // enable global interrupt flag
     li s0, 0x1000003f
     nop
@@ -237,6 +242,12 @@ main:
     sb a3, 0(s0)
     sb a4, 0(s0)
     sb a5, 0(s0)
+    nop
+    nop
+    nop
+    ebreak
+    nop
+    nop
     nop
     jal .-4
 

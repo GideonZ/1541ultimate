@@ -17,6 +17,9 @@ architecture test of neorv32_boot_appl is
     signal uart_txd_o : std_ulogic; -- UART0 send data
     signal uart_rxd_i : std_ulogic := '0'; -- UART0 receive data
 
+    signal irq_count    : natural := 0;
+    signal my_irq       : std_logic := '0';
+    signal my_irq_ack   : std_logic := '0';
     signal io_irq       : std_logic;
     signal io_req_riscv : t_io_req;
     signal io_resp_riscv: t_io_resp;
@@ -35,7 +38,7 @@ begin
     
     i_riscv: entity work.neorv32_wrapper
     generic map (
-        g_jtag_debug=> false,
+        g_jtag_debug=> true,
         g_frequency => 50_000_000,
         g_tag       => X"20"
     )
@@ -50,7 +53,7 @@ begin
         jtag_tms_i  => '0',
         jtag_tdo_o  => open,
 
-        irq_i       => io_irq,
+        irq_i       => my_irq,
         irq_o       => open,
         io_req      => io_req_riscv,
         io_resp     => io_resp_riscv,
@@ -122,7 +125,30 @@ begin
         wait for 1 ns;
         bind_mem_model("ram", mem);
         --load_memory("../../target/software/riscv32_ultimate/result/ultimate.bin", mem, X"00030000" );
-        load_memory("../../target/software/riscv32_rtos/result/free_rtos_demo.bin", mem, X"00030000" );
+        --load_memory("../../target/software/riscv32_rtos/result/free_rtos_demo.bin", mem, X"00030000" );
+        load_memory("../../target/software/riscv32_ecall/result/ecall_test.bin", mem, X"00030000" );
+        wait;
+    end process;
+    
+    my_irq_ack <= io_req_riscv.write when io_req_riscv.address(7 downto 0) = X"3E" else '0';
+    process(sys_clock)
+    begin
+        if rising_edge(sys_clock) then
+            if sys_reset='1' then
+                irq_count <= 0;
+            elsif my_irq_ack='1' then
+                irq_count <= irq_count + 1;
+            end if;
+        end if;
+    end process;
+    
+    p_hammer_irq: process
+    begin
+        wait for 300 us; -- start up, let's be nice
+        wait until sys_clock = '1';
+        my_irq <= '1';
+        wait for 50 us;
+        my_irq <= '0';
         wait;
     end process;
     
