@@ -389,24 +389,24 @@ int U64PaddleTest(void)
     // X1: 5, Y1: 2, X2: 10, Y2: 3
 
     int errors = 0;
-    if ((x1 < 47) || (x1 > 59)) {
-        printf("\e\022Paddle X on Port 1 FAIL. Expected ~52, got %d\n", x1);
+    if ((x1 < 61) || (x1 > 82)) {
+        printf("\e\022Paddle X on Port 1 FAIL. Expected ~72, got %d\n", x1);
         errors++;
     }
-    if ((y1 < 4) || (y1 > 8)) {
-        printf("\e\022Paddle Y on Port 1 FAIL. Expected ~7, got: %d\n", y1);
+    if ((y1 < 11) || (y1 > 19)) {
+        printf("\e\022Paddle Y on Port 1 FAIL. Expected ~15, got: %d\n", y1);
         errors++;
     }
-    if ((x2 < 96) || (x2 > 124)) {
-        printf("\e\022Paddle X on Port 2 FAIL. Expected ~106, got: %d\n", x2);
+    if ((x2 < 118) || (x2 > 159)) {
+        printf("\e\022Paddle X on Port 2 FAIL. Expected ~137, got: %d\n", x2);
         errors++;
     }
-    if ((y2 < 12) || (y2 > 34)) {
+    if ((y2 < 12) || (y2 > 50)) {
         printf("\e\022Paddle Y on Port 2 FAIL. Expected ~31, got: %d\n", y2);
         errors++;
     }
     if (!errors) {
-        printf("\e\025Paddle test passed.\n");
+        printf("\e\025Paddle test passed. (%d,%d,%d,%d)\n", x1, y1, x2, y2);
     }
     return errors;
 }
