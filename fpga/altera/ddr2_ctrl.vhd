@@ -223,9 +223,9 @@ begin
                 ext_cmd_done <= '1';
                 nxt.state <= delay_1; 
             elsif inhibit='0' then -- make sure we are allowed to start a new cycle
+                nxt.refresh_inhibit <= '0';
                 if req.request='1' and cur.refr_delay = 0 then
                     accept_req;
-                    nxt.refresh_inhibit <= '0';
                     if req.read_writen = '1' then
                         nxt.state <= sd_read;
                     else
