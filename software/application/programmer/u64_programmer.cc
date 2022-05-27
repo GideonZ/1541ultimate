@@ -692,7 +692,7 @@ extern "C" {
 	            screen->clear();
 	            screen->move_cursor(0,0);
 #if DOTESTS
-                printf("\e4U64 Tester - 23.05.2022 - 19:48\e?\n");
+                printf("\e4U64 Tester - 26.05.2022 - 14:48\e?\n");
                 errors =  test_esp32();
 	            errors += U64AudioCodecTest();
                 errors += U64PaddleTest();
@@ -728,7 +728,7 @@ extern "C" {
                     do_update();
                 }
 #else
-                printf("\e4U64 Programmer - 23.05.2022 - 19:48\e?\n");
+                printf("\e4U64 Programmer - 26.05.2022 - 12:44\e?\n");
                 printf("\n\e5Tests skipped.\n\e?");
                 do_update();
 #endif

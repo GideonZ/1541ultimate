@@ -282,13 +282,13 @@ int U64TestCassette()
         printf("\e2Cassette test: Remote tester not found\n\eO");
         return 1;
     }
-
+    const char *cas_pins[] = { "MOTOR", "READ", "WRITE", "SENSE", "?", "?", "?", "?" };
     const t_generic_vector vec[] = {
-            { "Init",      &LOCAL_CAS,  0x00, NULL, 0, 0, 0 },
-            { "Cas Motor", &LOCAL_CAS,  0x01, &REMOTE_CAS, 0xFF, 0x00, 0x01 },
-            { "Cas Read",  &LOCAL_CAS,  0x02, &REMOTE_CAS, 0xFF, 0x01, 0x02 },
-            { "Cas Write", &LOCAL_CAS,  0x04, &REMOTE_CAS, 0xFF, 0x02, 0x04 },
-            { "Cas Sense", &LOCAL_CAS,  0x08, &REMOTE_CAS, 0xFF, 0x04, 0x08 },
+            { "Init",      &LOCAL_CAS,  0x00, NULL, 0, 0, 0, NULL },
+            { "Cas Motor", &LOCAL_CAS,  0x01, &REMOTE_CAS, 0xFF, 0x00, 0x01, cas_pins },
+            { "Cas Read",  &LOCAL_CAS,  0x02, &REMOTE_CAS, 0xFF, 0x01, 0x02, cas_pins },
+            { "Cas Write", &LOCAL_CAS,  0x04, &REMOTE_CAS, 0xFF, 0x02, 0x04, cas_pins },
+            { "Cas Sense", &LOCAL_CAS,  0x08, &REMOTE_CAS, 0xFF, 0x04, 0x08, cas_pins },
             { NULL, NULL, 0, NULL, 0, 0, 0 },
     };
     int errors = PerformTest(vec);
@@ -401,8 +401,8 @@ int U64PaddleTest(void)
         printf("\e\022Paddle X on Port 2 FAIL. Expected ~137, got: %d\n", x2);
         errors++;
     }
-    if ((y2 < 12) || (y2 > 50)) {
-        printf("\e\022Paddle Y on Port 2 FAIL. Expected ~31, got: %d\n", y2);
+    if ((y2 < 12) || (y2 > 65)) {
+        printf("\e\022Paddle Y on Port 2 FAIL. Expected ~51, got: %d\n", y2);
         errors++;
     }
     if (!errors) {
