@@ -73,18 +73,7 @@ extern void *freertos_risc_v_trap_handler;
 //void ituIrqHandler(void *context)
 void freertos_risc_v_application_interrupt_handler(void)
 {
-	uint32_t cause;
-	__asm__("csrr %0, mcause" : "=r" (cause));
-	if(cause != 0x8000000B) {
-		printf("IRQ: %8x\n", cause);
-/*
-	} else {
-		outbyte('.');
-*/
-	}
-
 	static uint8_t pending;
-	ioWrite8(ITU_USB_BUSY, 1);
 	/* Which interrupts are pending? */
 	pending = ioRead8(ITU_IRQ_ACTIVE);
 	ioWrite8(ITU_IRQ_CLEAR, pending);
@@ -109,16 +98,16 @@ void freertos_risc_v_application_interrupt_handler(void)
 	if (pending & 0x04) {
 		do_switch |= usb_irq();
 	}
-	/*
-	 if (pending & 0x02) {
-	 do_switch |= uart_irq();
-	 }
 
-	 */
+//    if (pending & 0x02) {
+//	    do_switch |= uart_irq();
+//	}
+
 	if (pending & 0x01) {
 		do_switch |= xTaskIncrementTick();
 	}
 
+/*
 	uint8_t h = ioRead8(ITU_IRQ_HIGH_ACT);
 	for(int i=0;i < HIGH_IRQS; i++, h>>=1) {
 	    if (h & 1) {
@@ -131,11 +120,11 @@ void freertos_risc_v_application_interrupt_handler(void)
 	        }
 	    }
 	}
+*/
 
 	if (do_switch != pdFALSE) {
 		vTaskSwitchContext();
 	}
-	ioWrite8(ITU_USB_BUSY, 0);
 }
 void ultimate_main(void *context);
 
@@ -170,16 +159,11 @@ static void test_i2c_mdio(void)
 #define CLOCK_FREQ 50000000
 #endif
 
-void _do_ctors(void);
-
 int main(int argc, char *argv[]) {
 	/* When re-starting a debug session (rather than cold booting) we want
 	 to ensure the installed interrupt handlers do not execute until after the
 	 scheduler has been started. */
-	ioWrite8(ITU_SD_BUSY, 0);
-	ioWrite8(ITU_USB_BUSY, 0);
 	ioWrite8(UART_DATA, 0x33);
-//	_do_ctors();
 
 	xTaskCreate(ultimate_main, "U-II Main", configMINIMAL_STACK_SIZE, NULL,
 			tskIDLE_PRIORITY + 2, NULL);
@@ -187,12 +171,6 @@ int main(int argc, char *argv[]) {
 	ioWrite8(UART_DATA, 0x34);
 
 	test_i2c_mdio();
-
-/*
-	if (-EINVAL == alt_irq_register(0, 0x0, ituIrqHandler)) {
-		puts("Failed to install ITU IRQ handler.");
-	}
-*/
 
 	// Finally start the scheduler.
 	vTaskStartScheduler();
@@ -207,11 +185,11 @@ void vPortSetupTimerInterrupt( void )
 
 	uint32_t freq = CLOCK_FREQ;
 	freq >>= 8;
-	freq /= 2000	; // This is wrong, but this is how it was by mistake!
+	freq /= 200; // 200 Hz is actually a lot, no need
 	freq -= 1;
 
 	ioWrite8(ITU_IRQ_HIGH_EN, 0);
-    ioWrite8(ITU_IRQ_TIMER_EN, 0);
+	ioWrite8(ITU_IRQ_TIMER_EN, 0);
 	ioWrite8(ITU_IRQ_DISABLE, 0xFF);
 	ioWrite8(ITU_IRQ_CLEAR, 0xFF);
 	ioWrite8(ITU_IRQ_TIMER_HI, (uint8_t)(freq >> 8));
