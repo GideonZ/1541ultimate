@@ -4,7 +4,7 @@
  *  Created on: Jul 22, 2015
  *      Author: Gideon
  */
-
+#include "../network/user_listener.h"
 #include "network_target.h"
 #include "network_interface.h"
 #include "socket.h"
@@ -23,12 +23,19 @@ Message c_status_no_socket           = { 23, true, (uint8_t *)"85,ERROR OPENING 
 Message c_status_socket_closed       = { 28, true, (uint8_t *)"01,CONNECTION CLOSED BY HOST" };
 Message c_status_net_no_data         = { 26, true, (uint8_t *)"03,MORE DATA NOT SUPPORTED" };
 Message c_status_internal_error      = { 17, true, (uint8_t *)"86,INTERNAL ERROR" };
+Message c_status_listen_bind_error	 = { 30, true, (uint8_t *)"87,LISTENER PORT BINDING ERROR" };
+Message c_status_listen_open_error	 = { 27, true, (uint8_t *)"88,LISTENER PORT OPEN ERROR" };
+Message c_status_listen_error 		 = { 29, true, (uint8_t *)"88,LISTENER PORT LISTEN ERROR" };
+Message c_status_listen_accept_error = { 29, true, (uint8_t *)"88,LISTENER PORT ACCEPT ERROR" };
+Message c_status_listen_connected    = { 29, true, (uint8_t *)"89,LISTENER ALREADY CONNECTED" };
 
 NetworkTarget::NetworkTarget(int id)
 {
     command_targets[id] = this;
     data_message.message = new uint8_t[512];
     status_message.message = new uint8_t[80];
+
+	userlistener.set_state(INCOMING_SOCKET_STATE_NOT_LISTENING);
 }
 
 NetworkTarget::~NetworkTarget()
@@ -165,6 +172,84 @@ void NetworkTarget :: parse_command(Message *command, Message **reply, Message *
         case NET_CMD_WRITE_SOCKET:
         	write_socket(command, reply, status);
         	break;
+		case NET_CMD_START_LISTEN_SOCKET:
+		{
+			uint8_t lstnState = userlistener.get_state();
+			int port_number = uint16_t(command->message[2]) | (uint16_t(command->message[3]) << 8);
+
+			if (lstnState == INCOMING_SOCKET_STATE_NOT_LISTENING)
+			{
+				userlistener.set_port(port_number);
+				userlistener.set_state(INCOMING_SOCKET_STATE_LISTENING);
+				*reply = &c_message_empty;
+				*status = &c_status_ok;
+				break;
+			}
+			if (lstnState == INCOMING_SOCKET_STATE_LISTENING)
+			{
+				// user could change the listening port, so shut down current listener
+				userlistener.set_state(INCOMING_SOCKET_STATE_NOT_LISTENING);
+				userlistener.set_port(port_number);
+				userlistener.set_state(INCOMING_SOCKET_STATE_LISTENING);
+				*reply = &c_message_empty;
+				*status = &c_status_ok;
+				break;
+			}
+			if(lstnState == INCOMING_SOCKET_STATE_CONNECTED)
+			{
+				*reply = &c_message_empty;
+				*status = &c_status_listen_connected;
+				break;
+			}
+			if(lstnState == INCOMING_SOCKET_STATE_BIND_ERROR)
+			{
+				*reply = &c_message_empty;
+				*status = &c_status_listen_bind_error;
+				break;
+			}
+			if(lstnState == INCOMING_SOCKET_STATE_OPEN_ERROR)
+			{
+				*reply = &c_message_empty;
+				*status = &c_status_listen_open_error;
+				break;
+			}
+			if(lstnState == INCOMING_SOCKET_STATE_LISTEN_ERROR)
+			{
+				*reply = &c_message_empty;
+				*status = &c_status_listen_error;
+				break;
+			}
+			if(lstnState == INCOMING_SOCKET_STATE_ACCEPT_ERROR)
+			{
+				*reply = &c_message_empty;
+				*status = &c_status_listen_accept_error;
+				break;
+			}
+			break;
+		}
+		case NET_CMD_STOP_LISTEN_SOCKET:
+			userlistener.set_state(INCOMING_SOCKET_STATE_NOT_LISTENING);
+			*reply = &c_message_empty;
+            *status = &c_status_ok;
+			break;
+		case NET_CMD_GET_LISTEN_STATE:
+			uint8_t listenstate;
+			listenstate = userlistener.get_state();
+            *status = &c_status_ok;
+			*reply = &data_message;
+        	data_message.message[0] = listenstate;
+        	data_message.length = 1;
+            data_message.last_part = true;
+			break;
+		case NET_CMD_GET_LISTEN_SOCKET:
+			int listensocket;
+			listensocket = userlistener.get_socket();
+            *status = &c_status_ok;
+			*reply = &data_message;
+			data_message.message[0] = (uint8_t)listensocket;
+			data_message.length = 1;
+			data_message.last_part = true;
+			break;
         default:
             *reply  = &c_message_empty;
             *status = &c_status_unknown_command;
