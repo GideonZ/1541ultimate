@@ -94,6 +94,7 @@ port (
     enable_sdram: in  std_logic := '1';
     refresh_en  : in  std_logic := '1';
     odt_enable  : in  std_logic := '0';
+    offset      : in  std_logic_vector(1 downto 0) := "00";
     inhibit     : in  std_logic := '0';
     is_idle     : out std_logic;
     req         : in  t_mem_req_32 := c_mem_req_32_init;
@@ -106,9 +107,8 @@ port (
     ext_cmd_done     : out std_logic;
 
     -- Connections to PHY
-    addr_first  : out std_logic_vector(21 downto 0);
-    addr_second : out std_logic_vector(21 downto 0);
-    csn         : out std_logic_vector(1 downto 0);
+    addr_first  : out std_logic_vector(23 downto 0);
+    addr_second : out std_logic_vector(23 downto 0);
     wdata       : out std_logic_vector(31 downto 0);
     wdata_t     : out std_logic_vector(1 downto 0);
     wdata_m     : out std_logic_vector(3 downto 0);
@@ -143,6 +143,7 @@ architecture Gideon of ddr2_ctrl_logic is
     
     type t_data_path is record
         read            : std_logic_vector(1 downto 0);
+        read_8          : std_logic;
         wmask           : std_logic_vector(3 downto 0);
         wdata           : std_logic_vector(31 downto 0);
         wdata_t         : std_logic_vector(1 downto 0);
@@ -161,8 +162,9 @@ architecture Gideon of ddr2_ctrl_logic is
     
     constant c_data_path_init : t_data_path := (
         read         => "00",
+        read_8       => '0',
         wmask        => "1111",
-        wdata        => (others => 'X'),
+        wdata        => (others => '0'),
         wdata_t      => "11",
         dqs_o        => "0000",
         dqs_t1       => "11",
@@ -178,6 +180,7 @@ architecture Gideon of ddr2_ctrl_logic is
         refr_delay      : integer range 0 to SDRAM_Refr_delay;
         timer           : integer range 0 to SDRAM_Refr_delay;
         bank_timers     : t_bank_timers(0 to 7);
+        write_recovery  : integer range 0 to c_max_delay-1;
         read_issued     : std_logic;   
         do_refresh      : std_logic;
         refresh_inhibit : std_logic;
@@ -191,6 +194,7 @@ architecture Gideon of ddr2_ctrl_logic is
         refr_delay      => 3,
         bank_timers     => (others => c_max_delay-1),
         timer           => c_max_delay-1,
+        write_recovery  => 0,
         read_issued     => '0',
         do_refresh      => '0',
         refresh_inhibit => '0',
@@ -199,20 +203,38 @@ architecture Gideon of ddr2_ctrl_logic is
         rack_tag        => (others => '0')
     );    
 
+    signal pattern      : unsigned(1 downto 0) := "00";
     signal addr1        : t_address_command; -- all pins in the first half cycle
     signal addr2        : t_address_command; -- all pins in the second half cycle
     signal datap        : t_data_path;
     signal dqs_t2       : std_logic_vector(1 downto 0) := "11";
+    signal read_8       : std_logic;
     signal cur          : t_internal_state := c_internal_state_init;
     signal nxt          : t_internal_state;
 
+    signal zread        : std_logic_vector(1 downto 0);
+    signal yread        : std_logic_vector(1 downto 0);
+    
     signal zwdata       : std_logic_vector(31 downto 0);
     signal zwdata_m     : std_logic_vector(3 downto 0);
     signal zwdata_t     : std_logic_vector(1 downto 0);
     signal zdqs_o       : std_logic_vector(3 downto 0);
     signal zdqs_t       : std_logic_vector(1 downto 0);
-    signal zread        : std_logic_vector(1 downto 0);
-    
+
+    signal ywdata       : std_logic_vector(31 downto 0);
+    signal ywdata_m     : std_logic_vector(3 downto 0);
+    signal ywdata_t     : std_logic_vector(1 downto 0);
+    signal ydqs_o       : std_logic_vector(3 downto 0);
+    signal ydqs_t       : std_logic_vector(1 downto 0);
+
+    signal xwdata       : std_logic_vector(31 downto 0);
+    signal xwdata_m     : std_logic_vector(3 downto 0);
+    signal xwdata_t     : std_logic_vector(1 downto 0);
+    signal xdqs_o       : std_logic_vector(3 downto 0);
+    signal xdqs_t       : std_logic_vector(1 downto 0);
+
+    signal wwdata_t     : std_logic_vector(1 downto 0);
+
     signal dack_tag     : std_logic_vector(7 downto 0);
 begin
     is_idle <= '1';
@@ -222,7 +244,7 @@ begin
     resp.rack_tag <= nxt.rack_tag; -- was cur
     resp.dack_tag <= dack_tag when rdata_valid = '1' else X"00";
     
-    process(req, inhibit, cur, ext_cmd, ext_cmd_valid, ext_addr, enable_sdram, refresh_en, odt_enable, dqs_t2)
+    process(req, inhibit, cur, ext_cmd, ext_cmd_valid, ext_addr, enable_sdram, refresh_en, odt_enable, dqs_t2, read_8)
         procedure send_refresh_cmd is
         begin
             addr1.sdram_cmd  <= c_cmd_refresh;
@@ -242,12 +264,12 @@ begin
             nxt.tag        <= req.tag;
 
             -- Output data by default
-            datap.wdata <= req.data;
-            datap.wmask <= not req.byte_en;
+--            datap.wdata <= req.data;
+--            datap.wmask <= not req.byte_en;
             
             -- extract address bits
             bank := to_integer(req.address(4 downto 2));
-            col(1 downto 0) := std_logic_vector(req.address( 1 downto  0)); -- 2 column bits
+            col(1 downto 0) := offset; -- std_logic_vector(req.address( 1 downto  0)); -- 2 column bits
             col(9 downto 2) := std_logic_vector(req.address(12 downto  5)); -- 8 column bits
 
             addr1.sdram_ba  <= std_logic_vector(req.address(4 downto 2)); --  3 bank bits
@@ -257,11 +279,15 @@ begin
             addr2.sdram_a   <= "0001" & col; -- '1' is auto precharge on A10
 
             if cur.bank_timers(bank) = 0 then
+                -- Read_issued delays the read by one cycle, to avoid bus contention
+                -- Since write has one cycle less latency.
                 if req.read_writen = '0' and cur.read_issued = '0' then
                     addr1.sdram_cmd <= c_cmd_active;
                     addr2.sdram_cmd <= c_cmd_write;
 
                     -- Now
+                    datap.wdata    <= req.data;
+                    datap.wmask    <= not req.byte_en;
                     datap.wdata_t  <= "00";
                     datap.dqs_t1   <= "00";
                     datap.dqs_o    <= "1010"; 
@@ -273,10 +299,14 @@ begin
                     nxt.rack_tag   <= req.tag;
                     nxt.bank_timers(bank) <= 6;
                     nxt.refr_delay <= 6;
-                elsif req.read_writen = '1' then -- read
+                    nxt.write_recovery <= 6;
+                elsif req.read_writen = '1' and cur.write_recovery = 0 then -- read
+                    -- Write recovery delay is to make sure writes have been completed
+                    -- before any read command is issued.
                     addr1.sdram_cmd <= c_cmd_active;
                     addr2.sdram_cmd <= c_cmd_read;
                     datap.read <= "11"; -- might get delayed later
+                    -- datap.read_8 <= '1';
                     nxt.rack       <= '1';
                     nxt.rack_tag   <= req.tag;
                     nxt.bank_timers(bank) <= 5;
@@ -300,6 +330,7 @@ begin
         addr2.sdram_odt  <= odt_enable;
         datap            <= c_data_path_init;
         datap.dqs_t1     <= dqs_t2;        
+        datap.read       <= read_8 & read_8;
 
         ext_cmd_done <= '0';
                 
@@ -311,15 +342,17 @@ begin
             nxt.timer <= cur.timer - 1;
         end if;
 
+        if cur.write_recovery /= 0 then
+            nxt.write_recovery <= cur.write_recovery - 1;
+        end if;
+
         for i in 0 to 7 loop
             if cur.bank_timers(i) /= 0 then
                 nxt.bank_timers(i) <= cur.bank_timers(i) - 1;
             end if;
         end loop;
 
-        if inhibit='1' then
-            nxt.refresh_inhibit <= '1';
-        end if;
+        nxt.refresh_inhibit <= inhibit;
 
         -- first cycle after inhibit goes 1, should not be a refresh
         -- this enables putting cartridge images in sdram, because we guarantee the first access after inhibit to be a cart cycle
@@ -328,9 +361,14 @@ begin
                 send_refresh_cmd;
             end if;
         elsif ext_cmd_valid = '1' and cur.refr_delay = 0 then
+            if ext_cmd = c_cmd_read then
+                datap.read <= "11";
+                datap.read_8 <= '1';
+            end if;
             addr1.sdram_cmd <= ext_cmd;
             addr1.sdram_a <= ext_addr(13 downto 0);
             addr1.sdram_ba <= '0' & ext_addr(15 downto 14);
+
             ext_cmd_done <= '1';
             nxt.refr_delay <= SDRAM_Refr_delay-1; 
         elsif inhibit='0' then -- make sure we are allowed to start a new cycle
@@ -367,17 +405,22 @@ begin
         valid          => open
     );
     
+    pattern(0) <= '1' when addr1.sdram_cmd = c_cmd_write else '0';
+    pattern(1) <= '1' when addr2.sdram_cmd = c_cmd_write else '0';
+
     process(clock)
+        constant c_pattern_0 : std_logic_vector(0 to 3) := "0010";
+        constant c_pattern_1 : std_logic_vector(0 to 3) := "0100";
     begin
         if rising_edge(clock) then
             cur <= nxt;
             
             dqs_t2  <= datap.dqs_t2; -- For the next cycle
+            read_8  <= datap.read_8;
 
             -- In all fairness, this step takes 10 ns, which might not be necessary
-            addr_first  <= addr1.sdram_cke & addr1.sdram_odt & addr1.sdram_cmd(2 downto 0) & addr1.sdram_ba & addr1.sdram_a;
-            addr_second <= addr2.sdram_cke & addr2.sdram_odt & addr2.sdram_cmd(2 downto 0) & addr2.sdram_ba & addr2.sdram_a;
-            csn <= addr2.sdram_cmd(3) & addr1.sdram_cmd(3);
+            addr_first  <= pattern(0) & addr1.sdram_cke & addr1.sdram_odt & addr1.sdram_cmd & addr1.sdram_ba & addr1.sdram_a;
+            addr_second <= pattern(1) & addr2.sdram_cke & addr2.sdram_odt & addr2.sdram_cmd & addr2.sdram_ba & addr2.sdram_a;
             
             zwdata   <= datap.wdata;
             zwdata_t <= datap.wdata_t;
@@ -385,8 +428,29 @@ begin
             zdqs_o   <= datap.dqs_o;
             zdqs_t   <= datap.dqs_t1; -- Now
 
+            ywdata   <= zwdata;
+            ywdata_t <= zwdata_t;
+            ywdata_m <= zwdata_m;
+            ydqs_o   <= zdqs_o;
+            ydqs_t   <= zdqs_t; 
+            
+            xwdata   <= ywdata;
+            xwdata_t <= ywdata_t;
+            xwdata_m <= ywdata_m;
+            xdqs_o   <= ydqs_o;
+            xdqs_t   <= ydqs_t; 
+
+            wwdata_t <= xwdata_t;
+
+            wdata   <= xwdata;
+            wdata_t <= xwdata_t and wwdata_t; -- lengthen tristate by a whole burst
+            wdata_m <= xwdata_m;
+            dqs_o   <= xdqs_o;
+            dqs_t   <= xdqs_t; 
+
             zread    <= datap.read;
-            read     <= zread;        
+            yread    <= zread;
+            read     <= yread;
 
             if reset='1' then
                 cur <= c_internal_state_init;
@@ -394,10 +458,10 @@ begin
         end if;
     end process;
 
-    i_wdata_delay: entity work.half_cycle_delay generic map(32) port map(clock, zwdata, wdata);
-    i_wdatt_delay: entity work.half_cycle_delay generic map( 2) port map(clock, zwdata_t, wdata_t);
-    i_wdatm_delay: entity work.half_cycle_delay generic map( 4) port map(clock, zwdata_m, wdata_m);
-    i_dqso_delay:  entity work.half_cycle_delay generic map( 4) port map(clock, zdqs_o, dqs_o);
-    i_dqst_delay:  entity work.half_cycle_delay generic map( 2) port map(clock, zdqs_t, dqs_t);
+--    i_wdata_delay: entity work.half_cycle_delay generic map(32) port map(clock, zwdata, wdata);
+--    i_wdatt_delay: entity work.half_cycle_delay generic map( 2) port map(clock, zwdata_t, wdata_t);
+--    i_wdatm_delay: entity work.half_cycle_delay generic map( 4) port map(clock, zwdata_m, wdata_m);
+--    i_dqso_delay:  entity work.half_cycle_delay generic map( 4) port map(clock, zdqs_o, dqs_o);
+--    i_dqst_delay:  entity work.half_cycle_delay generic map( 2) port map(clock, zdqs_t, dqs_t);
 
 end architecture;

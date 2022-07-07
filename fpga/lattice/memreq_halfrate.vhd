@@ -73,9 +73,16 @@ begin
         if rising_edge(clock_2x) then
             if phase = '1' then
                 mem_resp_1x.dack_tag <= (others => '0');
+                mem_resp_1x.rack_tag <= (others => '0');
+                mem_resp_1x.rack <= '0';
             end if;
             if unsigned(mem_resp_2x.dack_tag) /= 0 then
-                mem_resp_1x <= mem_resp_2x;
+                mem_resp_1x.dack_tag <= mem_resp_2x.dack_tag;
+                mem_resp_1x.data     <= mem_resp_2x.data;
+            end if;
+            if mem_resp_2x.rack = '1' then
+                mem_resp_1x.rack <= '1';
+                mem_resp_1x.rack_tag <= mem_resp_2x.rack_tag;
             end if;
         end if;
     end process;

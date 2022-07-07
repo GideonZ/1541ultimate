@@ -47,9 +47,8 @@ architecture arch of tb_ctrl_with_phy is
     signal reset              : std_logic;
     signal ctrl_clock         : std_logic := '0';
     signal mem_clock          : std_logic := '0';
-    signal addr_first         : std_logic_vector(21 downto 0);
-    signal addr_second        : std_logic_vector(21 downto 0);
-    signal csn                : std_logic_vector(1 downto 0);
+    signal addr_first         : std_logic_vector(22 downto 0);
+    signal addr_second        : std_logic_vector(22 downto 0);
     signal wdata              : std_logic_vector(31 downto 0);
     signal wdata_t            : std_logic_vector(1 downto 0);
     signal wdata_m            : std_logic_vector(3 downto 0);
@@ -120,7 +119,6 @@ begin
         resp              => resp,
         addr_first        => addr_first,
         addr_second       => addr_second,
-        csn               => csn,
         wdata             => wdata,
         wdata_t           => wdata_t,
         wdata_m           => wdata_m,
@@ -245,11 +243,11 @@ begin
         wait;
     end process;
 
-    i_phy: entity work.mem_io
+    i_phy: entity work.mem_io_lattice
     generic map (
         g_data_width     => 8,
         g_mask_width     => 1,
-        g_addr_width     => 22
+        g_addr_width     => 23
     )
     port map (
         sys_reset        => reset,
@@ -270,7 +268,6 @@ begin
         dll_lock         => dll_lock,
         addr_first       => addr_first,
         addr_second      => addr_second,
-        csn              => csn,
         wdata            => wdata,
         wdata_t          => wdata_t,
         wdata_m          => wdata_m,
@@ -281,9 +278,9 @@ begin
 
         mem_clk_p              => SDRAM_CLK,
         mem_clk_n              => SDRAM_CLKn,
-        mem_csn                => SDRAM_CSn,
-        mem_addr(21)           => SDRAM_CKE,
-        mem_addr(20)           => SDRAM_ODT,
+        mem_addr(22)           => SDRAM_CKE,
+        mem_addr(21)           => SDRAM_ODT,
+        mem_addr(20)           => SDRAM_CSn,
         mem_addr(19)           => SDRAM_RASn,
         mem_addr(18)           => SDRAM_CASn,
         mem_addr(17)           => SDRAM_WEn,
