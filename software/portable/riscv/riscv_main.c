@@ -132,7 +132,8 @@ void ultimate_main(void *context);
 #include "dump_hex.h"
 
 void codec_init();
-void USb2512Init();
+void USB2513Init();
+void USB2503Init();
 
 static void test_i2c_mdio(void)
 {
@@ -148,7 +149,8 @@ static void test_i2c_mdio(void)
 	for (int i = 0; i < 2048; i += 2) {
 		*(dst++) = 0;
 	}
-	USb2512Init();
+	//USB2513Init();
+	USB2503Init();
 	U2PIO_ULPI_RESET = 0;
 
 	// enable buffer
@@ -163,6 +165,8 @@ int main(int argc, char *argv[]) {
 	/* When re-starting a debug session (rather than cold booting) we want
 	 to ensure the installed interrupt handlers do not execute until after the
 	 scheduler has been started. */
+	// DDR2_ENABLE = 0x05;
+	
 	ioWrite8(UART_DATA, 0x33);
 
 	xTaskCreate(ultimate_main, "U-II Main", configMINIMAL_STACK_SIZE, NULL,

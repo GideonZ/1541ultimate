@@ -20,6 +20,8 @@
 #define U2P_AUDIO_MIXER (U2P_IO_BASE + 0x10000)
 #define U2P_DEBUG_ETH   (U2P_IO_BASE + 0x11000)
 
+// Altera
+// Write
 #define DDR2_ADDR_LOW  (*(volatile uint8_t *)(DDR2_BASE + 0x00))
 #define DDR2_ADDR_HIGH (*(volatile uint8_t *)(DDR2_BASE + 0x01))
 #define DDR2_COMMAND   (*(volatile uint8_t *)(DDR2_BASE + 0x02))
@@ -27,8 +29,27 @@
 #define DDR2_PLLPHASE  (*(volatile uint8_t *)(DDR2_BASE + 0x09))
 #define DDR2_ENABLE    (*(volatile uint8_t *)(DDR2_BASE + 0x0C))
 
-#define DDR2_MEASURE   (*(volatile uint8_t *)(DDR2_BASE + 0x04))
-#define DDR2_PHASEDONE (*(volatile uint8_t *)(DDR2_BASE + 0x05))
+// Read
+#define DDR2_PHASEDONE     (*(volatile uint8_t *)(DDR2_BASE + 0x05))
+#define DDR2_WRITERECOVERY (*(volatile uint8_t *)(DDR2_BASE + 0x0D))
+#define DDR2_ADDITIVE_LAT  (*(volatile uint8_t *)(DDR2_BASE + 0x0E))
+
+// Lattice
+// Write
+#define LATTICE_DDR2_ADDR_LOW  (*(volatile uint8_t *)(DDR2_BASE + 0x00))
+#define LATTICE_DDR2_ADDR_HIGH (*(volatile uint8_t *)(DDR2_BASE + 0x01))
+#define LATTICE_DDR2_COMMAND   (*(volatile uint8_t *)(DDR2_BASE + 0x02))
+#define LATTICE_DDR2_READDELAY (*(volatile uint8_t *)(DDR2_BASE + 0x08))
+#define LATTICE_DDR2_DELAYSTEP (*(volatile uint8_t *)(DDR2_BASE + 0x09))
+#define LATTICE_DDR2_DELAYDIR  (*(volatile uint8_t *)(DDR2_BASE + 0x0A))
+#define LATTICE_DDR2_PHYCTRL   (*(volatile uint8_t *)(DDR2_BASE + 0x0B))
+#define LATTICE_DDR2_ENABLE    (*(volatile uint8_t *)(DDR2_BASE + 0x0C))
+
+// Read
+#define LATTICE_DDR2_VALIDCNT  (*(volatile uint8_t *)(DDR2_BASE + 0x07))
+#define LATTICE_DDR2_BURSTDET  (*(volatile uint8_t *)(DDR2_BASE + 0x0D))
+#define LATTICE_DDR2_DLL_LOCK  (*(volatile uint8_t *)(DDR2_BASE + 0x0E))
+
 
 #define U2PIO_SET_SCL  (*(volatile uint8_t *)(U2P_IO_BASE + 0x08))
 #define U2PIO_SET_SDA  (*(volatile uint8_t *)(U2P_IO_BASE + 0x09))

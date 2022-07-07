@@ -20,13 +20,12 @@ void jump_run(uint32_t a)
     function();
 }
 
-#if RECOVERY
-#define APPL "bootloader"
-#else
 #define APPL "application"
-#endif
 
 void ddr2_calibrate(void);
+void hexword(uint32_t);
+
+#define MAX_APPL_SIZE 0x140000
 
 int main()
 {
@@ -34,29 +33,12 @@ int main()
 		jump_run(0x30000);
 	}
 
-	DDR2_ENABLE    = 1;
-#if RECOVERY
-    uint8_t buttons = ioRead8(ITU_BUTTON_REG) & ITU_BUTTONS;
-    if ((buttons & ITU_BUTTON1) == 0) { // middle button not pressed
-        REMOTE_FLASHSEL_1;
-        REMOTE_FLASHSELCK_0;
-        REMOTE_FLASHSELCK_1;
-        REMOTE_RECONFIG = 0xBE;
-    }
-#endif
+	DDR2_ENABLE    = 7;
 
     ddr2_calibrate();
 
-#if RECOVERY
-	uint32_t flash_addr = 0x80000; // 512K from start. FPGA image is (compressed) ~330K
-	REMOTE_FLASHSEL_0;
-#else
-	uint32_t flash_addr = 0xC0000; // 768K from start. FPGA image is (uncompressed) 745K
-	REMOTE_FLASHSEL_1;
-#endif
-    REMOTE_FLASHSELCK_0;
-    REMOTE_FLASHSELCK_1;
-
+	uint32_t flash_addr = 0xA0000; // 576K from start. FPGA image is (uncompressed) 571K
+    
 	SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = W25Q_ContinuousArrayRead_LowFrequency;
     SPI_FLASH_DATA = (uint8_t)(flash_addr >> 16);
@@ -66,12 +48,17 @@ int main()
     uint32_t *dest   = (uint32_t *)SPI_FLASH_DATA_32;
     int      length  = (int)SPI_FLASH_DATA_32;
     uint32_t run_address = SPI_FLASH_DATA_32;
+
+    hexword((uint32_t)dest);
+    hexword((uint32_t)length);
+    hexword(run_address);
+
 //    uint32_t version = SPI_FLASH_DATA_32;
 
     puts(APPL);
-/*
+
     if(length != -1) {
-        while(length > 0) {
+        while ((length > 0) && (length < MAX_APPL_SIZE)) {
             *(dest++) = SPI_FLASH_DATA_32;
             length -= 4;
         }
@@ -83,14 +70,16 @@ int main()
     	} else {
     		puts("Lock");
     	}
-        while(1);
+        while(1) {
+            ioWrite8(ITU_SD_BUSY, 1);
+            ioWrite8(ITU_SD_BUSY, 0);
+        }
     }
-*/
 
     puts("Empty");
     while(1) {
-        REMOTE_FLASHSELCK_0;
-        REMOTE_FLASHSELCK_1;
+        ioWrite8(ITU_SD_BUSY, 1);
+        ioWrite8(ITU_SD_BUSY, 0);
     }
     return 0;
 }
