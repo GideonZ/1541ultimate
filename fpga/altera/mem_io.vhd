@@ -47,7 +47,7 @@ entity mem_io is
     );
 end entity;
 
-architecture arch of mem_io is
+architecture altera of mem_io is
     signal sys_clock_pll    : std_logic;
     signal sys_clock_i      : std_logic;
     signal sys_reset_pipe   : std_logic_vector(3 downto 0);
