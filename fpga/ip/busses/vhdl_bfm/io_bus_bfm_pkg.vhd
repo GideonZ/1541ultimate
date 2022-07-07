@@ -21,7 +21,7 @@ package io_bus_bfm_pkg is
         name        : string(1 to 256);
 
         command     : t_io_bfm_command;
-        address     : unsigned(19 downto 0);
+        address     : unsigned(23 downto 0);
         data        : std_logic_vector(7 downto 0);
 
     end record;
@@ -84,7 +84,7 @@ package body io_bus_bfm_pkg is
 
     procedure io_read(variable io : inout p_io_bus_bfm_object; addr : unsigned;
                       data : out std_logic_vector(7 downto 0)) is
-        variable a_i : unsigned(19 downto 0);
+        variable a_i : unsigned(io.address'range);
     begin
         a_i := (others => '0');
         a_i(addr'length-1 downto 0) := addr;
@@ -98,7 +98,7 @@ package body io_bus_bfm_pkg is
                       
     procedure io_write(variable io : inout p_io_bus_bfm_object; addr : unsigned;
                        data : std_logic_vector(7 downto 0)) is
-        variable a_i : unsigned(19 downto 0);
+        variable a_i : unsigned(io.address'range);
     begin
         a_i := (others => '0');
         a_i(addr'length-1 downto 0) := addr;
