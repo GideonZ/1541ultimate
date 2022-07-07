@@ -135,8 +135,15 @@ int read_hex_file(FILE *fp, uint8_t *buffer, uint32_t offset, uint32_t size, int
     			}
                 break;
     
+            case 0x03: // start address in x86 extended memory format
+                addr2 = 0;
+                paddr2[1] = data[4];
+                paddr2[0] = data[5];
+                addr2 <<= 4;
+                printf("Start address: 0x%08x\n", addr2);
+                break;
+
             case 0x05: // start address
-            case 0x03: // start address
                 paddr2[0] = data[7];
                 paddr2[1] = data[6];
                 paddr2[2] = data[5];
