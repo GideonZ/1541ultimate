@@ -5,7 +5,7 @@
 MEMORY
 {
     memory  : ORIGIN = 0x00000000, LENGTH = 0xEA0000
-    bootrom : ORIGIN = 0xFFFF0000, LENGTH = 2048
+    bootrom : ORIGIN = 0xFFFF0000, LENGTH = 4096
     ram     : ORIGIN = 0x80000000, LENGTH = 2048
     iodev (rw) : ORIGIN = 0xFFFFFE00, LENGTH = 512
 }
@@ -30,6 +30,8 @@ SECTIONS
   {
     PROVIDE(__text_start = .);
     PROVIDE(__textstart = .);
+
+    *(.text.crt0)
 
     PROVIDE_HIDDEN (__rela_iplt_start = .);
     *(.rela.iplt)
@@ -262,5 +264,5 @@ PROVIDE(__crt0_bss_end             = __BSS_END__);
 PROVIDE(__crt0_copy_data_src_begin = __etext + SIZEOF(.rodata));
 PROVIDE(__crt0_copy_data_dst_begin = __DATA_BEGIN__);
 PROVIDE(__crt0_copy_data_dst_end   = __DATA_BEGIN__ + SIZEOF(.data));
-PROVIDE(__ctr0_io_space_begin      = ORIGIN(iodev));
-PROVIDE(__ctr0_io_space_end        = ORIGIN(iodev) + LENGTH(iodev));
+PROVIDE(__crt0_io_space_begin      = ORIGIN(iodev));
+PROVIDE(__crt0_io_space_end        = ORIGIN(iodev) + LENGTH(iodev));

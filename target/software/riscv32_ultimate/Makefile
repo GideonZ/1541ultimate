@@ -43,7 +43,6 @@ SRCS_CC	 =  u2p_init.cc \
 			memory.cc \
 			init_function.cc \
 			flash.cc \
-			at45_flash.cc \
 			w25q_flash.cc \
 			s25fl_flash.cc \
 			prog_flash.cc \
