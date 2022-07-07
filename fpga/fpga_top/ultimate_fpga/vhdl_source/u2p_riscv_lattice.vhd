@@ -19,7 +19,7 @@ use ECP5U.components.all;
 entity u2p_riscv_lattice is
 generic (
     g_jtag_debug     : boolean := true;
-    g_dual_drive     : boolean := true );
+    g_dual_drive     : boolean := false );
 port (
     -- (Optional) Oscillator
     CLOCK_50         : in    std_logic := '0';
@@ -75,7 +75,9 @@ port (
     DEBUG_TDI   : in    std_ulogic := '1'; -- serial data input
     DEBUG_TDO   : out   std_ulogic;        -- serial data output
     DEBUG_SPARE : out   std_ulogic := '0';
-    
+    UNUSED_H3   : out   std_logic;
+    UNUSED_F4   : out   std_logic;
+
     -- IEC bus
     IEC_ATN_O   : out   std_logic;
     IEC_DATA_O  : out   std_logic;
@@ -172,7 +174,8 @@ architecture rtl of u2p_riscv_lattice is
         LOCK: out  std_logic);
     end component;
 
-    signal flash_sck    : std_logic;
+    signal flash_sck_o  : std_logic;
+    signal flash_sck_t  : std_logic;
     signal por_n        : std_logic;
     signal pll_locked   : std_logic;
     signal ref_reset    : std_logic;
@@ -341,8 +344,8 @@ begin
     
     i_pll: pll1
     port map (
-        CLKI   => CLOCK_50, -- 50 MHz oscillator
-        -- CLKI   => RMII_REFCLK, -- 50 MHz
+        -- CLKI   => CLOCK_50, -- 50 MHz oscillator
+        CLKI   => RMII_REFCLK, -- 50 MHz
         CLKOP  => mem_clock,   -- 200 MHz
         CLKOS  => clock_24,   -- 24 MHz
         CLKOS2 => audio_clock, -- 12.245 MHz (47.831 kHz sample rate)
@@ -468,19 +471,30 @@ begin
         resps(1)   => io_resp_debug
     );
 
-    i_double_freq_bridge: entity work.memreq_halfrate
-    generic map (
-        g_reg_in    => true
-    )
-    port map(
-        clock_1x    => sys_clock,
-        clock_2x    => ctrl_clock,
-        reset_1x    => sys_clock,
-        mem_req_1x  => mem_req,
-        mem_resp_1x => mem_resp,
-        mem_req_2x  => mem_req_2x,
-        mem_resp_2x => mem_resp_2x
-    );
+--    i_double_freq_bridge: entity work.memreq_halfrate
+--    generic map (
+--        g_reg_in    => true
+--    )
+--    port map(
+--        clock_1x    => sys_clock,
+--        clock_2x    => ctrl_clock,
+--        reset_1x    => sys_clock,
+--        mem_req_1x  => mem_req,
+--        mem_resp_1x => mem_resp,
+--        mem_req_2x  => mem_req_2x,
+--        mem_resp_2x => mem_resp_2x
+--    );
+   i_double_freq_bridge: entity work.mem_bus_bridge
+   port map (
+       a_clock    => sys_clock,
+       a_reset    => sys_reset,
+       a_mem_req  => mem_req,
+       a_mem_resp => mem_resp,
+       b_clock    => ctrl_clock,
+       b_reset    => sys_reset,
+       b_mem_req  => mem_req_2x,
+       b_mem_resp => mem_resp_2x
+   );
 
     i_memctrl: entity work.ddr2_ctrl
     port map (
@@ -498,6 +512,8 @@ begin
         req               => mem_req_2x,
         resp              => mem_resp_2x,
         
+        SDRAM_TEST1       => UNUSED_H3,
+        SDRAM_TEST2       => UNUSED_F4,
         SDRAM_CLK         => SDRAM_CLK,
         SDRAM_CLKn        => SDRAM_CLKn,
         SDRAM_CKE         => SDRAM_CKE,
@@ -512,6 +528,7 @@ begin
         SDRAM_DQ          => SDRAM_DQ,
         SDRAM_DQS         => SDRAM_DQS
     );
+--    UNUSED_F4 <= '0';
 
     i_remote_dummy: entity work.io_dummy
     port map(
@@ -519,19 +536,6 @@ begin
         io_req  => io_req_remote,
         io_resp => io_resp_remote
     );
---    
---
---    i_remote: entity work.update_io
---    port map (
---        clock       => sys_clock,
---        reset       => sys_reset,
---        slow_clock  => audio_clock,
---        slow_reset  => audio_reset,
---        io_req      => io_req_remote,
---        io_resp     => io_resp_remote,
---        flash_selck => FLASH_SELCK,
---        flash_sel   => FLASH_SEL
---    );
 
     i_u2p_io: entity work.u2p_io
     port map (
@@ -577,17 +581,17 @@ begin
         g_big_endian    => false,
         g_icap          => false,
         g_uart          => true,
-        g_drive_1541    => true,
+        g_drive_1541    => false,
         g_drive_1541_2  => g_dual_drive,
         g_mm_drive      => true,
         g_hardware_gcr  => true,
         g_ram_expansion => true,
         g_extended_reu  => false,
-        g_stereo_sid    => true,
+        g_stereo_sid    => false,
         g_8voices       => false,
         g_hardware_iec  => true,
-        g_c2n_streamer  => true,
-        g_c2n_recorder  => true,
+        g_c2n_streamer  => false,
+        g_c2n_recorder  => false,
         g_cartridge     => true,
         g_command_intf  => true,
         g_drive_sound   => true,
@@ -678,7 +682,7 @@ begin
         iec_clock_o => IEC_CLOCK_O,
         iec_srq_o   => IEC_SRQ_O,
                                     
-        MOTOR_LEDn  => led_n(0),
+        MOTOR_LEDn  => open,--led_n(0),
         DISK_ACTn   => led_n(1),
         CART_LEDn   => led_n(2),
         SDACT_LEDn  => led_n(3),
@@ -722,7 +726,7 @@ begin
     
         -- Flash Interface
         FLASH_CSn   => FLASH_CSn,
-        FLASH_SCK   => flash_sck,
+        FLASH_SCK   => flash_sck_o,
         FLASH_MOSI  => FLASH_MOSI,
         FLASH_MISO  => FLASH_MISO,
     
@@ -778,8 +782,8 @@ begin
 
     u1: USRMCLK
     port map (
-        USRMCLKI => flash_sck,
-        USRMCLKTS => '0'
+        USRMCLKI => flash_sck_o,
+        USRMCLKTS => flash_sck_t
     );
 
     process(sys_clock)
@@ -807,9 +811,9 @@ begin
     gam_push: entity work.oc_pusher port map(clock => sys_clock, sig_in => game_oc, oc_out => SLOT_GAMEn);
     
     LED_MOTORn <= led_n(0) xor sys_reset;
-    LED_DISKn  <= led_n(1) xor sys_reset;
-    LED_CARTn  <= led_n(2) xor sys_reset;
-    LED_SDACTn <= led_n(3) xor sys_reset;
+    LED_DISKn  <= not sys_reset; --'1';--led_n(1) xor sys_reset;
+    LED_CARTn  <= '1';--led_n(2) xor sys_reset;
+    LED_SDACTn <= '1';--led_n(3) xor sys_reset;
 
 --    IEC_SRQ_IN <= '0' when iec_srq_o   = '0' or sw_iec_o(3) = '0' else 'Z';
 --    IEC_ATN    <= '0' when iec_atn_o   = '0' or sw_iec_o(2) = '0' else 'Z';
@@ -1006,6 +1010,17 @@ begin
     -- SLOT_DATA_OEn    <= '1';
     -- SLOT_DATA_DIR    <= '1';
     SLOT_ADDR_OEn    <= toggle;
-    SLOT_ADDR_DIR    <= RMII_RX_ER and UART_RXD and SLOT_DOTCLK;
+    SLOT_ADDR_DIR    <= RMII_RX_ER and UART_RXD and SLOT_DOTCLK and IEC_RESET_I and CAS_SENSE and CAS_MOTOR when rising_edge(CLOCK_50);
     toggle <= not toggle when rising_edge(sys_clock);
+    DEBUG_SPARE      <= '0';
+    flash_sck_t      <= sys_reset; -- 0 when not in reset = enabled
+    
+    process(ctrl_clock)
+        variable cnt : unsigned(23 downto 0) := (others => '0');
+    begin
+        if rising_edge(ctrl_clock) then
+            cnt := cnt + 1;
+            led_n(0) <= cnt(cnt'high);
+        end if;
+    end process;
 end architecture;
