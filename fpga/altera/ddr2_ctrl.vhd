@@ -53,7 +53,7 @@ port (
 
     -- address group
     SDRAM_A     : out   std_logic_vector(13 downto 0);
-    SDRAM_BA    : out   std_logic_vector(1 downto 0);
+    SDRAM_BA    : out   std_logic_vector(2 downto 0);
 
     -- data group
     SDRAM_DM    : inout std_logic := 'Z';
@@ -87,7 +87,7 @@ architecture Gideon of ddr2_ctrl is
         sdram_odt       : std_logic;
         sdram_cke       : std_logic;
         sdram_a         : std_logic_vector(13 downto 0);
-        sdram_ba        : std_logic_vector(1 downto 0);
+        sdram_ba        : std_logic_vector(2 downto 0);
 
         write           : std_logic;
         wmask           : std_logic_vector(3 downto 0);
@@ -97,7 +97,7 @@ architecture Gideon of ddr2_ctrl is
     type t_internal_state is record
         state           : t_state;
         col_addr        : std_logic_vector(9 downto 0);
-        bank_addr       : std_logic_vector(1 downto 0);
+        bank_addr       : std_logic_vector(2 downto 0);
         refresh_cnt     : integer range 0 to SDRAM_Refr_period-1;
         refr_delay      : integer range 0 to SDRAM_Refr_delay-1;
         delay           : integer range 0 to 7;
@@ -138,8 +138,8 @@ architecture Gideon of ddr2_ctrl is
     signal phaseupdown        : std_logic;
     signal phasedone          : std_logic;
     signal mode               : std_logic_vector(1 downto 0);
-    signal addr_first         : std_logic_vector(21 downto 0);
-    signal addr_second        : std_logic_vector(21 downto 0);
+    signal addr_first         : std_logic_vector(22 downto 0);
+    signal addr_second        : std_logic_vector(22 downto 0);
     signal phy_wdata          : std_logic_vector(35 downto 0);
     signal phy_rdata          : std_logic_vector(35 downto 0);
     signal phy_write          : std_logic;
@@ -175,8 +175,8 @@ begin
             nxt.wmask      <= not req.byte_en;
             
             nxt.col_addr   <= std_logic_vector(req.address( 9 downto  0)); -- 10 column bits
-            nxt.bank_addr  <= std_logic_vector(req.address(11 downto 10)); --  2 bank bits
-            outp.sdram_ba  <= std_logic_vector(req.address(11 downto 10)); --  2 bank bits
+            nxt.bank_addr  <= '0' & std_logic_vector(req.address(11 downto 10)); --  2 bank bits
+            outp.sdram_ba  <= '0' & std_logic_vector(req.address(11 downto 10)); --  2 bank bits
             outp.sdram_a   <= std_logic_vector(req.address(25 downto 12)); -- 14 row bits
             outp.sdram_cmd <= c_cmd_active;
         end procedure;
@@ -219,7 +219,7 @@ begin
             elsif ext_cmd_valid = '1' and cur.refr_delay = 0 then
                 outp.sdram_cmd <= ext_cmd;
                 outp.sdram_a <= ext_addr(13 downto 0);
-                outp.sdram_ba <= ext_addr(15 downto 14);
+                outp.sdram_ba <= '0' & ext_addr(15 downto 14);
                 ext_cmd_done <= '1';
                 nxt.state <= delay_1; 
             elsif inhibit='0' then -- make sure we are allowed to start a new cycle
@@ -308,7 +308,7 @@ begin
     i_phy: entity work.mem_io
     generic map (
         g_data_width       => 9,
-        g_addr_cmd_width   => 22
+        g_addr_cmd_width   => 23
     )
     port map(
         ref_clock          => ref_clock,
@@ -332,13 +332,13 @@ begin
 
         mem_clk_p          => SDRAM_CLK,
         mem_clk_n          => SDRAM_CLKn,
-        mem_addr(21)       => SDRAM_CKE,
-        mem_addr(20)       => SDRAM_ODT,
-        mem_addr(19)       => SDRAM_CSn,
-        mem_addr(18)       => SDRAM_RASn,
-        mem_addr(17)       => SDRAM_CASn,
-        mem_addr(16)       => SDRAM_WEn,
-        mem_addr(15 downto 14) => SDRAM_BA,
+        mem_addr(22)       => SDRAM_CKE,
+        mem_addr(21)       => SDRAM_ODT,
+        mem_addr(20)       => SDRAM_CSn,
+        mem_addr(19)       => SDRAM_RASn,
+        mem_addr(18)       => SDRAM_CASn,
+        mem_addr(17)       => SDRAM_WEn,
+        mem_addr(16 downto 14) => SDRAM_BA,
         mem_addr(13 downto 0)  => SDRAM_A,
         mem_dqs            => SDRAM_DQS,
         mem_dq(8)          => SDRAM_DM,
@@ -362,6 +362,10 @@ begin
                 case local is
                 when X"5" =>
                     io_resp.data(0) <= phasedone;
+                when X"D" =>
+                    io_resp.data(3 downto 0) <= X"2"; -- Write Recovery
+                when X"E" =>
+                    io_resp.data(3 downto 0) <= X"0"; -- Additive Latency
                 when others =>
                     null;
                 end case;
