@@ -47,7 +47,7 @@ package tl_sctb_pkg is
     procedure sctb_open_simulation(testcase_name    : string;
                                    output_file_name : string;
                                    log_level        : integer := c_log_level_error);
-    procedure sctb_close_simulation(force: boolean := false);
+    procedure sctb_close_simulation(force_close: boolean := false);
 
     ---------------------------------------------------------------------------
     -- procedures to open and close a region within a simulation
@@ -285,7 +285,7 @@ package body tl_sctb_pkg is
         sctb_set_log_level(log_level);
     end procedure;
 
-    procedure sctb_close_simulation(force: boolean := false) is
+    procedure sctb_close_simulation(force_close: boolean := false) is
     begin
         assert(error_simulation.region_active = false)
             report "tl_sctb_pkg: close active region before closing simulation!!"&
@@ -309,7 +309,7 @@ package body tl_sctb_pkg is
             file_close(output_file);
         end if;
 
-        if force then
+        if force_close then
             report "simulation end forced using report failure (this does not imply a simulation error). " &
                    "See simulation verdict for actual simulation result!"
             severity failure;
