@@ -35,6 +35,22 @@ extern "C" {
     {
         I2C_Driver i2c;
 
+#define HUB_RESET_0   U2PIO_HUB_RESET = 1
+#define HUB_RESET_1   U2PIO_HUB_RESET = 0
+
+        i2c.i2c_start();
+        i2c.i2c_stop();
+
+        HUB_RESET_0;
+        for(int i=0;i<50;i++) {
+            (void)U2PIO_HUB_RESET;
+        }
+        HUB_RESET_1;
+        for(int i=0;i<50;i++) {
+            (void)U2PIO_HUB_RESET;
+        }
+        i2c.i2c_scan_bus();
+
         i2c.i2c_write_word(0x14, SGTL5000_CHIP_ANA_POWER, 0x4260);
         i2c.i2c_write_word(0x14, SGTL5000_CHIP_CLK_TOP_CTRL, 0x0800);
         i2c.i2c_write_word(0x14, SGTL5000_CHIP_ANA_POWER, 0x4A60);
