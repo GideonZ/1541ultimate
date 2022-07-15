@@ -183,7 +183,7 @@ void C64 :: init(void)
     if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
         init_system_roms();
         init_cartridge();
-    } else if (strlen(cfg->get_string(CFG_C64_CART_CRT)) || strlen(cfg->get_string(CFG_C64_KERNFILE))) {
+    } else if (strlen(cfg->get_string(CFG_C64_CART_CRT)) || strlen(cfg->get_string(CFG_C64_KERNFILE)) || cfg->get_value(CFG_C64_REU_EN) == 2) {
         init_cartridge();
     }
     available = true;
