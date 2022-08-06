@@ -27,7 +27,6 @@ const uint8_t hexchars[] = "0123456789ABCDEF";
 #define MOVE_READ_CLOCK 0x33
 //#define MOVE_MEASURE_CLOCK 0x34
 
-
 int try_mode(int mode);
 
 void ddr2_calibrate()
@@ -180,4 +179,17 @@ int try_mode(int mode)
     }
     DDR2_ENABLE = 0x87; // Calibration done
     return 1;
+}
+
+void hexword(uint32_t val)
+{
+    outbyte(hexchars[(val >> 28) & 15]);
+    outbyte(hexchars[(val >> 24) & 15]);
+    outbyte(hexchars[(val >> 20) & 15]);
+    outbyte(hexchars[(val >> 16) & 15]);
+    outbyte(hexchars[(val >> 12) & 15]);
+    outbyte(hexchars[(val >> 8)  & 15]);
+    outbyte(hexchars[(val >> 4)  & 15]);
+    outbyte(hexchars[(val >> 0)  & 15]);
+    outbyte(' ');
 }

@@ -149,8 +149,11 @@ static void test_i2c_mdio(void)
 	for (int i = 0; i < 2048; i += 2) {
 		*(dst++) = 0;
 	}
-	//USB2513Init();
+#ifdef USB2503
 	USB2503Init();
+#else
+	USB2513Init();
+#endif
 	U2PIO_ULPI_RESET = 0;
 
 	// enable buffer
@@ -202,4 +205,11 @@ void vPortSetupTimerInterrupt( void )
 	ioWrite8(ITU_IRQ_ENABLE, 0x01); // timer only : other modules shall enable their own interrupt
 	ioWrite8(ITU_IRQ_GLOBAL, 0x01); // Enable interrupts globally
 	ioWrite8(UART_DATA, 0x35);
+}
+
+void C_exception_handler(uint32_t addr, uint32_t cause, uint32_t value)
+{
+	printf("\n*GURU MEDITATION: %08x | %08x | %08x\n", addr, cause, value);
+	while(1)
+		;
 }

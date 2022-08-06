@@ -34,7 +34,9 @@ extern "C" {
 }
 
 #ifdef U64
+#ifndef RISCV
 #include "wifi.h"
+#endif
 #endif
 #include "acia.h"
 
@@ -136,7 +138,9 @@ int FileTypeUpdate :: execute(SubsysCommand *cmd)
 		cmd->user_interface->host->release_ownership();
 		file = NULL;
 #if U64
+#ifndef RISCV
 		wifi.Disable();
+#endif
 #endif
 #ifndef RECOVERYAPP
         acia.deinit();

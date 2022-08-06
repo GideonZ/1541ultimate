@@ -146,9 +146,16 @@ begin
     begin
         wait for 300 us; -- start up, let's be nice
         wait until sys_clock = '1';
-        my_irq <= '1';
-        wait for 50 us;
-        my_irq <= '0';
+        for j in 1 to 40 loop
+            my_irq <= '1';
+            wait until my_irq_ack='1';
+            my_irq <= '0';
+            for i in 1 to j loop
+                wait until sys_clock = '1';
+            end loop;
+        end loop;
+--        wait for 50 us;
+--        my_irq <= '0';
         wait;
     end process;
     

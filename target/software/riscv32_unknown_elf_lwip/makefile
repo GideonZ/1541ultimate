@@ -88,7 +88,7 @@ SRCS_CC	 =
 SRCS_ASM =  
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -Os -ffunction-sections
+OPTIONS  = -g -Os -ffunction-sections -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000
 COPTIONS = $(OPTIONS) -std=c99 
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti
 LINK 	 = 
