@@ -37,7 +37,7 @@ int main()
 
     ddr2_calibrate();
 
-	uint32_t flash_addr = 0xA0000; // 576K from start. FPGA image is (uncompressed) 571K
+	uint32_t flash_addr = 0xA0000; // 640K from start. FPGA image is (uncompressed) 571K
     
 	SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = W25Q_ContinuousArrayRead_LowFrequency;
@@ -53,8 +53,14 @@ int main()
     hexword((uint32_t)length);
     hexword(run_address);
 
+#if NO_BOOT
+    puts("Waiting for JTAG download");
+    while(1) {
+        ioWrite8(ITU_SD_BUSY, 1);
+        ioWrite8(ITU_SD_BUSY, 0);
+    }
 //    uint32_t version = SPI_FLASH_DATA_32;
-
+#else
     puts(APPL);
 
     if(length != -1) {
@@ -82,4 +88,5 @@ int main()
         ioWrite8(ITU_SD_BUSY, 0);
     }
     return 0;
+#endif
 }

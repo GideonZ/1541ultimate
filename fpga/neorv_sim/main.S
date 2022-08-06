@@ -190,7 +190,7 @@ __ecall_handler:
 
 __irq_handler:
   sb x0, -1(s0)  // IO write to ack IRQ and count them in test bench IO addr 3E
-  // addi  a4, a4, 1
+  addi  a4, a4, 1
   mret
 
 // ************************************************************************************************
@@ -224,9 +224,6 @@ main:
     li s1, 0x800
     csrs mie, s1 // enable external interrupts
 
-    li s1, 0x8000
-    csrw dcsr, s1 // enable entering debug mode upon ebreak
-
     csrs mstatus, 8 // enable global interrupt flag
     li s0, 0x1000003f
     nop
@@ -244,8 +241,6 @@ main:
     sb a5, 0(s0)
     nop
     nop
-    nop
-    ebreak
     nop
     nop
     nop
