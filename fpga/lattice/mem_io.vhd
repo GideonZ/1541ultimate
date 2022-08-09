@@ -72,6 +72,7 @@ architecture lattice of mem_io_lattice is
     signal ddrdel           : std_logic;
     signal sclk, sclk_i     : std_logic;
     signal eclk             : std_logic;
+    signal ddr_reset_r      : std_logic;
     --signal rst              : std_logic;
     --signal rst_dqsbufm      : std_logic;
 
@@ -211,11 +212,13 @@ begin
         RDCFLAG     => open,
         WRCFLAG     => open );
     
+    ddr_reset_r <= ddr_reset when rising_edge(sys_clock_4x);
+
     i_sclk: CLKDIVF
     generic map (GSR => "ENABLED", DIV=> "2.0")
     port map (
         CLKI    => eclk,
-        RST     => ddr_reset, --'0', 
+        RST     => ddr_reset_r, --'0', 
         ALIGNWD => '0', 
         CDIVX   => sclk_i );
 

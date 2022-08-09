@@ -100,8 +100,8 @@ void ddr2_calibrate()
     outbyte('$');
 
     if (coarse_calibration()) {
-        if (ram_test()) {
-            return;
+        while (ram_test()) {
+            //return;
         }
     }
 
@@ -109,9 +109,13 @@ void ddr2_calibrate()
     outbyte(':');
     outbyte('-');
     outbyte('{');
-    while(1);
+    while(1) {
+        __asm__("nop");
+        __asm__("nop");
+        __asm__("nop");
+    }
 }
-
+#if 0
 int try_mode(int mode)
 {
     int phase, rep, good;
@@ -191,39 +195,58 @@ int try_mode(int mode)
     outbyte('\n');
     return 1;
 }
+#endif
+
+void hexbyte(uint8_t val)
+{
+    outbyte(hexchars[(val >> 4)  & 15]);
+    outbyte(hexchars[(val >> 0)  & 15]);
+}
 
 void hexword(uint32_t val)
 {
-    outbyte(hexchars[(val >> 28) & 15]);
-    outbyte(hexchars[(val >> 24) & 15]);
-    outbyte(hexchars[(val >> 20) & 15]);
-    outbyte(hexchars[(val >> 16) & 15]);
-    outbyte(hexchars[(val >> 12) & 15]);
-    outbyte(hexchars[(val >> 8)  & 15]);
-    outbyte(hexchars[(val >> 4)  & 15]);
-    outbyte(hexchars[(val >> 0)  & 15]);
+    hexbyte(val >> 24);
+    hexbyte(val >> 16);
+    hexbyte(val >> 8);
+    hexbyte(val);
     outbyte(' ');
 }
 
 int ram_test(void)
 {
     int errors = 0;
+    static int run = 0;
     LATTICE_DDR2_ENABLE = 5; // Refresh On, Clock On, ODT off
+//    LATTICE_DDR2_PHYCTRL = 4; // set freeze = 1
+    outbyte('A' + run);
+    run++;
+
     puts("Write");
     uint16_t *mem16 = (uint16_t *)0x10000;
-    for(int i=0;i<65536;i++) {
+    uint32_t i;
+    for(i=0;i<65536;i++) {
         mem16[i] = (uint16_t)i;
     }
     puts("Read");
-    for(int i=0;i<65536;i++) {
+    LATTICE_DDR2_VALIDCNT = 0;
+    for(i=0;i<65536;i++) {
+        __asm__("nop");
         if (mem16[i] != (uint16_t)i)
             errors++;
     }
 
     if (errors) {
         puts("RAM error.");
-/*
+        hexword(errors);
+        hexbyte(LATTICE_DDR2_VALIDCNT);
+        outbyte('\n');
         volatile uint32_t *mem32 = (uint32_t *)0x10000;
+        hexword(mem32[0]);
+        hexword(mem32[1]);
+        hexword(mem32[2]);
+        hexword(mem32[3]);
+        outbyte('\n');
+/*
 
         mem32[0] = 0x12345678;
         mem32[1] = 0x87654321;
@@ -291,8 +314,10 @@ int detect_bursts(void)
 
 int coarse_calibration()
 {
-    LATTICE_DDR2_READDELAY = 0x10; // RD=2, SEL=0
-    LATTICE_DDR2_DELAYSTEP = 0x00; // turn off automatic updates
+    LATTICE_DDR2_DELAYSTEP = 0x00; // turn on automatic updates
+
+    LATTICE_DDR2_READDELAY = 0x11; // RD=2, SEL=0
+    LATTICE_DDR2_PHYCTRL = 1; // force update
 
     // Terminate by setting the burst length to 4 for normal operation
     LATTICE_DDR2_ADDR_LOW  = (MR_BL4 & 0xFF);
