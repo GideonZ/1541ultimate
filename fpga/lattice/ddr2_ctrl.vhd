@@ -124,6 +124,8 @@ architecture Gideon of ddr2_ctrl is
     signal stop               : std_logic := '0';
     signal uddcntln           : std_logic := '1';
     signal freeze             : std_logic := '0';
+    signal freeze_usr         : std_logic := '0';
+    signal freeze_sync        : std_logic := '0';
     signal pause              : std_logic := '0';
     signal pause_usr          : std_logic := '0';
     signal pause_sync         : std_logic := '0';
@@ -224,7 +226,7 @@ begin
                     pause_usr <= ctrl_req.data(1);
 --                    stop        <= ctrl_req.data(0);
 --                    uddcntln    <= not ctrl_req.data(1);
---                    freeze      <= ctrl_req.data(2);
+                    freeze_usr <= ctrl_req.data(2);
 --                    pause       <= ctrl_req.data(3);
                     byte_offset <= ctrl_req.data(5 downto 4);    
                 when X"C" =>
@@ -241,6 +243,7 @@ begin
 --                freeze <= '0';
 --                pause <= '0';
                 pause_usr <= '0';
+                freeze_usr <= '0';
                 readclksel <= "000";
                 read_delay <= "00";
                 clock_enable <= '1';
@@ -351,7 +354,7 @@ begin
         update    => update, -- new register bit
         pause     => pause_sync, -- to be orred with our own pause
         stop      => stop,
-        freeze    => freeze,
+        freeze    => freeze_sync,
         uddcntln  => uddcntln,
         dll_rst   => dll_reset, 
         ddr_rst   => ddr_reset,
@@ -359,6 +362,7 @@ begin
       );
 
       pause <= pause_sync or pause_usr;
+      freeze <= freeze_sync or freeze_usr;
 end Gideon;
 
 

@@ -95,7 +95,7 @@ begin
         ICACHE_BLOCK_SIZE            => 8,
         ICACHE_ASSOCIATIVITY         => 1,
         MEM_EXT_EN                   => true,
-        MEM_EXT_TIMEOUT              => 255,
+        MEM_EXT_TIMEOUT              => 4095,
         MEM_EXT_PIPE_MODE            => true,
         MEM_EXT_BIG_ENDIAN           => false,
         MEM_EXT_ASYNC_RX             => false,
