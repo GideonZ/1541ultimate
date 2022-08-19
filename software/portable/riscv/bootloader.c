@@ -20,10 +20,11 @@ void jump_run(uint32_t a)
     function();
 }
 
-#define APPL "application"
+#define APPL "application\n"
 
 void ddr2_calibrate(void);
 void hexword(uint32_t);
+void my_puts(const char *);
 
 #define MAX_APPL_SIZE 0x140000
 
@@ -33,8 +34,7 @@ int main()
 		jump_run(0x30000);
 	}
 
-	DDR2_ENABLE    = 7;
-
+    outbyte('#');
     ddr2_calibrate();
 
 	uint32_t flash_addr = 0xA0000; // 640K from start. FPGA image is (uncompressed) 571K
@@ -54,14 +54,14 @@ int main()
     hexword(run_address);
 
 #if NO_BOOT
-    puts("Waiting for JTAG download");
+    my_puts("Waiting for JTAG download!\n\n");
     while(1) {
         ioWrite8(ITU_SD_BUSY, 1);
         ioWrite8(ITU_SD_BUSY, 0);
     }
 //    uint32_t version = SPI_FLASH_DATA_32;
 #else
-    puts(APPL);
+    my_puts(APPL);
 
     if(length != -1) {
         while ((length > 0) && (length < MAX_APPL_SIZE)) {
@@ -69,12 +69,12 @@ int main()
             length -= 4;
         }
     	SPI_FLASH_CTRL = 0; // reset SPI chip select to idle
-        puts("Running");
+        my_puts("Running\n");
     	uint8_t buttons = ioRead8(ITU_BUTTON_REG) & ITU_BUTTONS;
     	if ((buttons & ITU_BUTTON2) == 0) {  // right button not pressed
     		jump_run(run_address);
     	} else {
-    		puts("Lock");
+    		my_puts("Lock\n");
     	}
         while(1) {
             ioWrite8(ITU_SD_BUSY, 1);
@@ -82,7 +82,7 @@ int main()
         }
     }
 
-    puts("Empty");
+    my_puts("Empty\n");
     while(1) {
         ioWrite8(ITU_SD_BUSY, 1);
         ioWrite8(ITU_SD_BUSY, 0);

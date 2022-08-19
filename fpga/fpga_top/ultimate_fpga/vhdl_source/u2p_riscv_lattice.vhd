@@ -19,7 +19,7 @@ use ECP5U.components.all;
 entity u2p_riscv_lattice is
 generic (
     g_jtag_debug     : boolean := true;
-    g_dual_drive     : boolean := false );
+    g_dual_drive     : boolean := true );
 port (
     -- (Optional) Oscillator
     CLOCK_50         : in    std_logic := '0';
@@ -75,6 +75,7 @@ port (
     DEBUG_TDI   : in    std_ulogic := '1'; -- serial data input
     DEBUG_TDO   : out   std_ulogic;        -- serial data output
     DEBUG_SPARE : out   std_ulogic := '0';
+    UNUSED_G12  : out   std_logic; -- not on test pad
     UNUSED_H3   : out   std_logic;
     UNUSED_F4   : out   std_logic;
 
@@ -90,7 +91,6 @@ port (
     IEC_CLOCK_I : in    std_logic;
     IEC_RESET_I : in    std_logic;
     IEC_SRQ_I   : in    std_logic;
-
     
     LED_DISKn   : out   std_logic; -- activity LED
     LED_CARTn   : out   std_logic;
@@ -171,16 +171,34 @@ architecture rtl of u2p_riscv_lattice is
         CLKOS: out  std_logic;
         CLKOS2: out  std_logic; 
         CLKOS3: out  std_logic; 
+        PHASESEL: in  std_logic_vector(1 downto 0); 
+        PHASEDIR: in  std_logic; 
+        PHASESTEP: in  std_logic; 
+        PHASELOADREG: in  std_logic; 
+        LOCK: out  std_logic);
+    end component;
+
+    component pll2 is
+    port (
+        CLKI: in  std_logic;  -- 100
+        CLKFB: in  std_logic; 
+        CLKOP: out  std_logic;  -- 50 
+        CLKOS: out  std_logic;  -- 100 
         LOCK: out  std_logic);
     end component;
 
     signal flash_sck_o  : std_logic;
     signal flash_sck_t  : std_logic;
-    signal por_n        : std_logic;
+    signal locked       : std_logic;
+    signal locked_c1    : std_logic;
+    signal locked_c2    : std_logic;
     signal pll_locked   : std_logic;
-    signal ref_reset    : std_logic;
+    signal mem_ready    : std_logic;
+    signal pll2_reset   : std_logic;
+    signal pll2_locked  : std_logic := '1';
     signal por_count    : unsigned(15 downto 0) := (others => '0');
-    signal led_n        : std_logic_vector(0 to 3);
+    signal debug1       : std_logic;
+    signal debug2       : std_logic;
     signal RSTn_out     : std_logic;
     signal irq_oc, nmi_oc, rst_oc, dma_oc, exrom_oc, game_oc    : std_logic;
     signal slot_addr_o  : unsigned(15 downto 0);
@@ -190,12 +208,19 @@ architecture rtl of u2p_riscv_lattice is
     signal slot_data_t  : std_logic;
     signal slot_rwn_o   : std_logic;
     
+    signal start_clock  : std_logic;
+    signal start_reset  : std_logic;
+    signal half_clock   : std_logic;
     signal mem_clock    : std_logic;
+    signal toggle_reset : std_logic;
+    signal toggle_check : std_logic;
     signal ctrl_clock   : std_logic;
+    signal ctrl_reset_c : std_logic;
+    signal ctrl_reset   : std_logic;
     signal toggle       : std_logic;
     signal eth_clock    : std_logic;
     signal sys_clock    : std_logic;
-    signal sys_reset    : std_logic;
+    signal sys_reset    : std_logic := '1';
     signal clock_24     : std_logic;
     signal audio_clock  : std_logic;
     signal audio_reset  : std_logic;
@@ -232,9 +257,14 @@ architecture rtl of u2p_riscv_lattice is
     signal sw_trigger     : std_logic;
     signal trigger     : std_logic;
         
-    -- IEC open drain
+    -- IEC open drain and inversions
     signal sw_iec_o    : std_logic_vector(3 downto 0);
     signal sw_iec_i    : std_logic_vector(3 downto 0);
+    signal ult_atn_o   : std_logic; 
+    signal ult_data_o  : std_logic;
+    signal ult_clock_o : std_logic;
+    signal ult_reset_o : std_logic;
+    signal ult_srq_o   : std_logic;
     
     -- Cassette
     signal c2n_read_in      : std_logic;
@@ -325,46 +355,93 @@ architecture rtl of u2p_riscv_lattice is
     signal eth_rx_eof    : std_logic;
     signal eth_rx_valid  : std_logic;
 
+    signal phase_sel     : std_logic_vector(1 downto 0);
+    signal phase_dir     : std_logic;
+    signal phase_step    : std_logic;
+    signal phase_loadreg : std_logic;
+
 --    attribute syn_noprune: boolean ;
 --    attribute syn_noprune of USRMCLK: component is true;
 begin
-    process(RMII_REFCLK)
+
+    i_pll: pll1
+    port map (
+        CLKI   => RMII_REFCLK, -- 50 MHz
+        CLKOP  => mem_clock,   -- 200 MHz
+        CLKOS  => ctrl_clock, -- 100 MHz 
+        CLKOS2 => open, --sys_clock,   -- 50 MHz
+        CLKOS3 => clock_24,    -- 24 MHz --audio_clock, -- 12.245 MHz (47.831 kHz sample rate)
+        PHASESEL  => phase_sel, 
+        PHASEDIR  => phase_dir, 
+        PHASESTEP => phase_step, 
+        PHASELOADREG => phase_loadreg, 
+        LOCK   => pll_locked );
+
+    start_clock <= ctrl_clock;
+    start_reset <= not pll_locked when rising_edge(start_clock);
+
+    audio_clock <= clock_24; -- for the time being
+
+--    i_pll2: pll2
+--    port map (
+--        CLKI   => half_clock, -- sclk
+--        CLKFB  => sys_clock,  -- phase aligned
+--        CLKOP  => sys_clock,  -- phase aligned
+--        CLKOS  => ctrl_clock, -- sort of phase aligned, light load
+--        LOCK   => pll2_locked
+--    );
+    i_pll2: pll2
+    port map (
+        CLKI   => ctrl_clock, -- sclk
+        CLKFB  => sys_clock,  -- phase aligned
+        CLKOP  => sys_clock,  -- phase aligned
+        CLKOS  => open,--ctrl_clock, -- sort of phase aligned, light load
+        LOCK   => pll2_locked
+    );
+
+    process(sys_clock)
     begin
-        if rising_edge(RMII_REFCLK) then
-            if por_count = X"FFFF" then
-                por_n <= '1';
+        if rising_edge(sys_clock) then
+            locked    <= pll_locked and pll2_locked;
+            locked_c1 <= locked;
+            locked_c2 <= locked_c1;
+            if locked_c2 = '0' then
+                por_count <= (others => '0');
+                sys_reset <= '1';
+            elsif por_count = X"FFFF" then
+                sys_reset <= '0';
             else
-                por_n <= '0';
+                sys_reset <= '1';
                 por_count <= por_count + 1;
             end if;
         end if;
     end process;
 
-    ref_reset <= not por_n;
+    -- ctrl_reset <= sys_reset;
     
-    i_pll: pll1
-    port map (
-        -- CLKI   => CLOCK_50, -- 50 MHz oscillator
-        CLKI   => RMII_REFCLK, -- 50 MHz
-        CLKOP  => mem_clock,   -- 200 MHz
-        CLKOS  => clock_24,   -- 24 MHz
-        CLKOS2 => audio_clock, -- 12.245 MHz (47.831 kHz sample rate)
-        CLKOS3 => sys_clock, -- 50 MHz
-        LOCK   => pll_locked );
-
+    process(ctrl_clock)
+    begin
+        if rising_edge(ctrl_clock) then
+            ctrl_reset_c <= sys_reset;
+            ctrl_reset   <= ctrl_reset_c;
+        end if;
+    end process;
+    
     --eth_clock <= sys_clock; -- same net
-    eth_clock <= RMII_REFCLK; -- dedicated pin
-    
-    HUB_CLOCK <= clock_24;
+    eth_clock   <= RMII_REFCLK; -- dedicated pin
+    HUB_CLOCK   <= clock_24;
     ULPI_REFCLK <= clock_24;
+
+--    pll2_reset <= not mem_ready;
+
     
-    sys_reset <= not pll_locked when rising_edge(sys_clock);
+--    sys_reset <= not pll_locked or not pll2_locked when rising_edge(sys_clock);
 
     i_audio_reset: entity work.level_synchronizer
     generic map ('1')
     port map (
         clock       => audio_clock,
-        input       => sys_reset,
+        input       => not pll_locked,
         input_c     => audio_reset  );
     
     i_ulpi_reset: entity work.level_synchronizer
@@ -484,35 +561,51 @@ begin
 --        mem_req_2x  => mem_req_2x,
 --        mem_resp_2x => mem_resp_2x
 --    );
-   i_double_freq_bridge: entity work.mem_bus_bridge
-   port map (
-       a_clock    => sys_clock,
-       a_reset    => sys_reset,
-       a_mem_req  => mem_req,
-       a_mem_resp => mem_resp,
-       b_clock    => ctrl_clock,
-       b_reset    => sys_reset,
-       b_mem_req  => mem_req_2x,
-       b_mem_resp => mem_resp_2x
-   );
+    i_double_freq_bridge: entity work.mem_bus_bridge_sync
+    port map (
+        phase_out  => toggle_check,
+        a_clock    => sys_clock,
+        a_reset    => sys_reset,
+        a_mem_req  => mem_req,
+        a_mem_resp => mem_resp,
+        b_clock    => ctrl_clock,
+        b_reset    => ctrl_reset,
+        b_toggle_r => toggle_reset,
+        b_mem_req  => mem_req_2x,
+        b_mem_resp => mem_resp_2x
+    );
 
     i_memctrl: entity work.ddr2_ctrl
     port map (
+        start_clock       => start_clock,
+        start_reset       => start_reset,
+        start_ready       => mem_ready,
         mem_clock         => mem_clock,
-        reset             => sys_reset,
+        mem_clock_half    => half_clock,
+        
+        debug1            => debug1,
+        debug2            => debug2,
+        toggle_reset      => toggle_reset,
+        toggle_check      => toggle_check,
+
+        ctrl_clock        => ctrl_clock,
+        ctrl_reset        => ctrl_reset,
+        req               => mem_req_2x,
+        resp              => mem_resp_2x,
+        inhibit           => memctrl_inhibit,
+        is_idle           => is_idle,
 
         io_clock          => sys_clock,
         io_reset          => sys_reset,
         io_req            => io_req_ddr2,
         io_resp           => io_resp_ddr2,
-        inhibit           => memctrl_inhibit,
-        is_idle           => is_idle,
-        mem_clock_half    => ctrl_clock,
 
-        req               => mem_req_2x,
-        resp              => mem_resp_2x,
-        
-        SDRAM_TEST1       => UNUSED_H3,
+        phase_sel         => phase_sel, 
+        phase_dir         => phase_dir, 
+        phase_step        => phase_step, 
+        phase_loadreg     => phase_loadreg, 
+
+        SDRAM_TEST1       => UNUSED_G12,
         SDRAM_TEST2       => UNUSED_F4,
         SDRAM_CLK         => SDRAM_CLK,
         SDRAM_CLKn        => SDRAM_CLKn,
@@ -573,6 +666,9 @@ begin
     generic map (
         g_simulation    => false,
         g_ultimate2plus => true,
+--        g_clock_freq    => 62_500_000,
+--        g_numerator     => 32,
+--        g_denominator   => 125,
         g_clock_freq    => 50_000_000,
         g_numerator     => 8,
         g_denominator   => 25,
@@ -581,19 +677,19 @@ begin
         g_big_endian    => false,
         g_icap          => false,
         g_uart          => true,
-        g_drive_1541    => false,
-        g_drive_1541_2  => g_dual_drive,
+        g_drive_1541    => false,--,true,
+        g_drive_1541_2  => false,--,g_dual_drive,
         g_mm_drive      => true,
         g_hardware_gcr  => true,
         g_ram_expansion => true,
         g_extended_reu  => false,
-        g_stereo_sid    => false,
+        g_stereo_sid    => false,--,true,
         g_8voices       => false,
         g_hardware_iec  => true,
-        g_c2n_streamer  => false,
-        g_c2n_recorder  => false,
+        g_c2n_streamer  => false,--,true,
+        g_c2n_recorder  => false,--,true,
         g_cartridge     => true,
-        g_command_intf  => true,
+        g_command_intf  => false,--,true,
         g_drive_sound   => true,
         g_rtc_chip      => false,
         g_rtc_timer     => false,
@@ -622,7 +718,7 @@ begin
         BUFFER_ENn  => open,
         VCC         => SLOT_VCC,
 
-        phi2_i      => SLOT_PHI2,
+        phi2_i      => not SLOT_PHI2, -- 74LV14
         dotclk_i    => SLOT_DOTCLK,
         rstn_i      => SLOT_RSTn,
         rstn_o      => RSTn_out,
@@ -670,22 +766,22 @@ begin
         aud_sid_2       => ult_sid_2,
         
         -- IEC bus
-        iec_reset_i => IEC_RESET_I,
-        iec_atn_i   => IEC_ATN_I,
-        iec_data_i  => IEC_DATA_I,
-        iec_clock_i => IEC_CLOCK_I,
-        iec_srq_i   => IEC_SRQ_I,
+        iec_reset_i => not IEC_RESET_I, -- 74LV14
+        iec_atn_i   => not IEC_ATN_I,   -- 74LV14
+        iec_data_i  => not IEC_DATA_I,  -- 74LV14
+        iec_clock_i => not IEC_CLOCK_I, -- 74LV14
+        iec_srq_i   => not IEC_SRQ_I,   -- 74LV14
                                   
-        iec_reset_o => IEC_RESET_O,
-        iec_atn_o   => IEC_ATN_O,
-        iec_data_o  => IEC_DATA_O,
-        iec_clock_o => IEC_CLOCK_O,
-        iec_srq_o   => IEC_SRQ_O,
+        iec_reset_o => ult_reset_o,
+        iec_atn_o   => ult_atn_o,
+        iec_data_o  => ult_data_o,
+        iec_clock_o => ult_clock_o,
+        iec_srq_o   => ult_srq_o,
                                     
-        MOTOR_LEDn  => open,--led_n(0),
-        DISK_ACTn   => led_n(1),
-        CART_LEDn   => led_n(2),
-        SDACT_LEDn  => led_n(3),
+        MOTOR_LEDn  => open, -- LED_MOTORn,
+        DISK_ACTn   => open, -- LED_DISKn,
+        CART_LEDn   => open, -- LED_CARTn,
+        SDACT_LEDn  => open, -- LED_SDACTn,
 
         -- Parallel cable pins
         drv_track_is_0      => drv_track_is_0,
@@ -766,6 +862,12 @@ begin
         sw_trigger  => sw_trigger,
         BUTTON      => button_i );
 
+    IEC_ATN_O   <= not ult_atn_o;
+    IEC_DATA_O  <= not ult_data_o;
+    IEC_CLOCK_O <= not ult_clock_o;
+    IEC_RESET_O <= not ult_reset_o;
+    IEC_SRQ_O   <= not ult_srq_o;
+
     ULPI_DATA <= ulpi_data_o when ulpi_data_t = '1' else "ZZZZZZZZ";
     r: for i in ULPI_DATA'range generate
         i_delay: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => ULPI_DATA(i), Z => ulpi_data_i(i));
@@ -810,11 +912,6 @@ begin
     exr_push: entity work.oc_pusher port map(clock => sys_clock, sig_in => exrom_oc, oc_out => SLOT_EXROMn);
     gam_push: entity work.oc_pusher port map(clock => sys_clock, sig_in => game_oc, oc_out => SLOT_GAMEn);
     
-    LED_MOTORn <= led_n(0) xor sys_reset;
-    LED_DISKn  <= not sys_reset; --'1';--led_n(1) xor sys_reset;
-    LED_CARTn  <= '1';--led_n(2) xor sys_reset;
-    LED_SDACTn <= '1';--led_n(3) xor sys_reset;
-
 --    IEC_SRQ_IN <= '0' when iec_srq_o   = '0' or sw_iec_o(3) = '0' else 'Z';
 --    IEC_ATN    <= '0' when iec_atn_o   = '0' or sw_iec_o(2) = '0' else 'Z';
 --    IEC_DATA   <= '0' when iec_data_o  = '0' or sw_iec_o(1) = '0' else 'Z';
@@ -824,7 +921,7 @@ begin
 
     button_i <= not BUTTON;
 
-    ULPI_RESET <= por_n;
+    ULPI_RESET <= not sys_reset; --por_n;
     UART_TXD <= uart_txd_from_logic; -- and uart_txd_from_qsys;
 
     -- Tape
@@ -1015,12 +1112,9 @@ begin
     DEBUG_SPARE      <= '0';
     flash_sck_t      <= sys_reset; -- 0 when not in reset = enabled
     
-    process(ctrl_clock)
-        variable cnt : unsigned(23 downto 0) := (others => '0');
-    begin
-        if rising_edge(ctrl_clock) then
-            cnt := cnt + 1;
-            led_n(0) <= cnt(cnt'high);
-        end if;
-    end process;
+    LED_MOTORn <= not debug1;
+    LED_DISKn  <= not debug2;
+    LED_CARTn  <= not mem_ready;
+    LED_SDACTn <= not toggle_check;
+    
 end architecture;

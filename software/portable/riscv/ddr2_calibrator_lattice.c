@@ -29,10 +29,6 @@
 #define EMR3   0xC000 // all bits reserved
 #define DLLRST 0x0100 // MR DLL RESET
 
-#define TESTVALUE1  0xFF00FF00
-#define TESTVALUE2  0x00FF00FF
-#define TESTVALUE3  0x12345678
-
 #define DELAY_STEPS 128
 
 const uint8_t hexchars[] = "0123456789ABCDEF";
@@ -42,16 +38,31 @@ int try_mode(int mode);
 int coarse_calibration(void);
 int ram_test(void);
 
-void ddr2_calibrate()
+void hexbyte(uint8_t val)
 {
-    outbyte('@');
-    for (int i=0;i<1000;i++)
-        ;
-    LATTICE_DDR2_ENABLE    = 7;
+    outbyte(hexchars[(val >> 4)  & 15]);
+    outbyte(hexchars[(val >> 0)  & 15]);
+}
 
-    outbyte('#');
-    for (int i=0;i<1000;i++)
-        ;
+void hexword(uint32_t val)
+{
+    hexbyte(val >> 24);
+    hexbyte(val >> 16);
+    hexbyte(val >> 8);
+    hexbyte(val);
+    outbyte(' ');
+}
+
+void my_puts(const char *str)
+{
+    while(*str) {
+        outbyte(*(str++));
+    }
+}
+
+static void init_mode_regs()
+{
+    LATTICE_DDR2_ENABLE    = 3; // Make sure refresh is off for now
 
     LATTICE_DDR2_ADDR_LOW  = 0x00;
     LATTICE_DDR2_ADDR_HIGH = 0x04; // A10 = all banks
@@ -97,192 +108,120 @@ void ddr2_calibrate()
     for (int i=0;i<1000;i++) {
 
     }
+}
+
+void ddr2_calibrate()
+{
+    // Turn on clock and let DDR stabilize
+    LATTICE_DDR2_ENABLE    = 3;
+
+    for (int i=0;i<1000;i++)
+        ;
+
+    init_mode_regs();
     outbyte('$');
 
-    if (coarse_calibration()) {
-        while (ram_test()) {
-            //return;
+    LATTICE_PLL_SELECT = 4; // reverse direction CLKOS
+    uint8_t prev,cur = 0x55;
+    for(int i=0;i<50;i++) {
+        prev = cur;
+        cur = LATTICE_PLL_MEASURE;
+        hexbyte(cur);
+        outbyte(' ');
+        if (!prev && cur) {
+            break;
+        }
+        LATTICE_PLL_PULSE = 1;
+        for(int j=0;j<1000;j++)
+            ;
+    }
+    outbyte('\n');
+
+    for(int i=0;i<46;i++) {
+        hexbyte(i);
+        outbyte(' ');
+#if VERBOSE
+        outbyte('\n');
+#endif
+        if (coarse_calibration()) {
+            //break;
+        }
+        outbyte(' ');
+        hexbyte(LATTICE_PLL_MEASURE);
+
+        outbyte('\n');
+        LATTICE_PLL_PULSE = 1;
+    }
+
+    // Now, pulse the phase reset for the alignment of the 50 MHz clock
+    for(int i=0;i<200;i++) {
+        LATTICE_CLK_PHASERESET = 1;
+        if (LATTICE_CLK_PHASECHECK) {
+            hexbyte(i);
+            outbyte('\n');
+            my_puts("Success! Let's do a RAM test.\n");
+            break;
         }
     }
 
+#if NO_BOOT > 1
+    while(ram_test())
+        ;
+#else
+    if (ram_test()) {
+        return;
+    }
+#endif
+
     outbyte('\n');
-    outbyte(':');
-    outbyte('-');
-    outbyte('{');
     while(1) {
         __asm__("nop");
         __asm__("nop");
-        __asm__("nop");
     }
-}
-#if 0
-int try_mode(int mode)
-{
-    int phase, rep, good;
-    int last_begin, best_pos, best_length;
-    int state, total_good;
-
-    outbyte('%');
-
-    DDR2_TESTLOC0 = TESTVALUE1;
-    DDR2_TESTLOC1 = TESTVALUE2;
-    DDR2_TESTLOC2 = TESTVALUE3;
-    
-    outbyte('W');
-
-    // Select one of the 32 possible modes and boot up DLL 
-    LATTICE_DDR2_READDELAY = (mode & 3);
-    outbyte('1');
-    LATTICE_DDR2_DELAYSTEP = 0x0C; // Reset delays
-    outbyte('2');
-    LATTICE_DDR2_PHYCTRL   = 2;
-    outbyte('3');
-    LATTICE_DDR2_PHYCTRL   = (mode & 0x1C) << 2;
-    outbyte('4');
-    LATTICE_DDR2_DELAYDIR  = 1; 
-    state = 0;
-    best_pos = -1;
-    best_length = 0;
-
-    outbyte('\n');
-    outbyte(mode + '0');
-    outbyte(':');
-    
-    total_good = 0;
-    for (phase = 0; phase < DELAY_STEPS; phase ++) {
-        good = 0;
-        for (rep = 0; rep < 5; rep ++) {
-            if (DDR2_TESTLOC0 == TESTVALUE1)
-                good++;
-            if (DDR2_TESTLOC1 == TESTVALUE2)
-                good++;
-            if (DDR2_TESTLOC2 == TESTVALUE3)
-                good++;
-        }
-        LATTICE_DDR2_DELAYSTEP = 0x01; // Move 
-        outbyte(hexchars[good]);
-        total_good += good;
-
-        if ((state == 0) && (good >= 14)) {
-            last_begin = phase;
-            state = 1;
-        } else if ((state == 1) && (good < 14)) {
-            state = 0;
-            if ((phase - last_begin) > best_length) {
-                best_length = phase - last_begin;
-                best_pos = last_begin + (best_length >> 1);
-            }
-        }
-    }
-
-    if (best_pos < 0) {
-        return 0;
-    }
-    if (best_length < 8) {
-        return 0;
-    }
-
-    //printf("Chosen: Mode = %d, Pos = %d. Window = %d ps\n\r", best_mode, final_pos, 100 * best_overall);
-    LATTICE_DDR2_DELAYSTEP = 0x0C; // Reset delays
-    for (phase = 0; phase < best_pos; phase ++) {
-        LATTICE_DDR2_DELAYSTEP = 0x01; // Step
-    }
-    outbyte('\n');
-    outbyte(hexchars[mode & 15]);
-    outbyte(hexchars[best_pos >> 4]);
-    outbyte(hexchars[best_pos & 15]);
-    outbyte('\r');
-    outbyte('\n');
-    return 1;
-}
-#endif
-
-void hexbyte(uint8_t val)
-{
-    outbyte(hexchars[(val >> 4)  & 15]);
-    outbyte(hexchars[(val >> 0)  & 15]);
-}
-
-void hexword(uint32_t val)
-{
-    hexbyte(val >> 24);
-    hexbyte(val >> 16);
-    hexbyte(val >> 8);
-    hexbyte(val);
-    outbyte(' ');
 }
 
 int ram_test(void)
 {
-    int errors = 0;
-    static int run = 0;
-    LATTICE_DDR2_ENABLE = 5; // Refresh On, Clock On, ODT off
-//    LATTICE_DDR2_PHYCTRL = 4; // set freeze = 1
-    outbyte('A' + run);
-    run++;
+    // Make sure Refresh is now ON
+    LATTICE_DDR2_ENABLE    = 7;
 
-    puts("Write");
+    int errors = 0;
+#if NO_BOOT > 1
+    static int run = 0;
+    hexword(run);
+    run++;
+#else
+    const int run = 0;
+#endif
+
+    //my_puts("Write..");
     uint16_t *mem16 = (uint16_t *)0x10000;
     uint32_t i;
     for(i=0;i<65536;i++) {
-        mem16[i] = (uint16_t)i;
+        mem16[i] = (uint16_t)(i+run);
     }
-    puts("Read");
-    LATTICE_DDR2_VALIDCNT = 0;
+    //my_puts("Read..");
+    // LATTICE_DDR2_VALIDCNT = 0;
     for(i=0;i<65536;i++) {
-        __asm__("nop");
-        if (mem16[i] != (uint16_t)i)
+        if (mem16[i] != (uint16_t)(i+run))
             errors++;
     }
 
     if (errors) {
-        puts("RAM error.");
+        my_puts("RAM error.\n");
+#if NO_BOOT
         hexword(errors);
-        hexbyte(LATTICE_DDR2_VALIDCNT);
+        // hexbyte(LATTICE_DDR2_VALIDCNT);
         outbyte('\n');
         volatile uint32_t *mem32 = (uint32_t *)0x10000;
         hexword(mem32[0]);
         hexword(mem32[1]);
         hexword(mem32[2]);
-        hexword(mem32[3]);
         outbyte('\n');
-/*
-
-        mem32[0] = 0x12345678;
-        mem32[1] = 0x87654321;
-        mem32[2] = 0xDEADBABE;
-        mem32[3] = 0xABCDEF01;
-
-        hexword(mem32[0]);                
-        hexword(mem32[0]);                
-        LATTICE_DDR2_PHYCTRL = 0x10;
-        hexword(mem32[0]);                
-        LATTICE_DDR2_PHYCTRL = 0x20;
-        hexword(mem32[0]);                
-        LATTICE_DDR2_PHYCTRL = 0x30;
-        hexword(mem32[0]);                
-        LATTICE_DDR2_PHYCTRL = 0x00;
-        hexword(mem32[0]);                
-
-        while(!ioRead8(ITU_BUTTON_REG)) {
-            mem32[4] = 0x11204081; // bit 7, 6, 5, 4 occur sequentually, and bit 0 follows the 1001 pattern.
-        }
-
-        // LATTICE_DDR2_PHYCTRL |= 0x80; // Issue reset without changing settings
-        puts("Going to read now!");
-
-        uint32_t sum = 1;
-        while(sum) {
-            //LATTICE_DDR2_PHYCTRL = 0x10; // manual read to sync fifos
-            sum += mem32[0]; 
-            sum += mem32[1]; 
-            sum += mem32[2]; 
-//            sum += mem32[3]; 
-        }
-*/
+#endif
         return 0;
     }
-    puts("RAM OK!!");
+    my_puts("RAM OK!!\r");
     return 1;
 }
 
@@ -302,22 +241,35 @@ int detect_bursts(void)
             det++;
         }
     }
-    outbyte(hexchars[det >> 4]);
-    outbyte(hexchars[det & 15]);
-    outbyte('/');
     uint8_t valids = LATTICE_DDR2_VALIDCNT;
-    outbyte(hexchars[valids >> 4]);
-    outbyte(hexchars[valids & 15]);
+#if VERBOSE
+    hexbyte(det);
+    outbyte('/');
+    hexbyte(valids);
     outbyte(' ');
-    return det;
+#endif
+    return det + valids;
 }
 
-int coarse_calibration()
+static void set_timing(int rd, int clksel)
 {
+//    LATTICE_DDR2_PHYCTRL = 2; // pause
+    LATTICE_DDR2_READDELAY = (rd << 3) | clksel;
+    LATTICE_DDR2_PHYCTRL = 0x80; // do ddr buffer reset
+    LATTICE_DDR2_PHYCTRL = 0; // unpause
+    LATTICE_DDR2_PHYCTRL = 1; // do update
+    for(int i;i<200;i++)
+        ;
+}
+
+int coarse_calibration(void)
+{
+    init_mode_regs();
+
     LATTICE_DDR2_DELAYSTEP = 0x00; // turn on automatic updates
 
-    LATTICE_DDR2_READDELAY = 0x11; // RD=2, SEL=0
-    LATTICE_DDR2_PHYCTRL = 1; // force update
+#if 0
+    set_timing(2, 2);
 
     // Terminate by setting the burst length to 4 for normal operation
     LATTICE_DDR2_ADDR_LOW  = (MR_BL4 & 0xFF);
@@ -330,55 +282,66 @@ int coarse_calibration()
     LATTICE_DDR2_COMMAND   = 2; // Precharge
 
     return 1; // ignore the rest
-/*
-    LATTICE_DDR2_ENABLE = 1; // Refresh off
+#else
     LATTICE_DDR2_ADDR_HIGH = 0;
     LATTICE_DDR2_ADDR_LOW = 0;
     LATTICE_DDR2_COMMAND = 3; // open row 0 in bank 0
 
     // Select one of the 32 possible modes and boot up DLL 
 
-    uint8_t ok = 0, good_rd = 0, good_sel = 0;
+    uint8_t ok = 0;
+    uint8_t good_rd = 0;
+    uint8_t good_sel = 0;
+#if VERBOSE
     outbyte('\n');
-        for (int rd = 0; rd < 4; rd++) {
+#endif
+        for (int rd = 3; rd >= 0; rd--) {
+#if VERBOSE
         outbyte('0' + rd);
         outbyte(':');
+#endif
+        int ok_len = 0;
         for (int clksel = 0; clksel < 8; clksel++) {
-            LATTICE_DDR2_PHYCTRL = 2; // pause
-            LATTICE_DDR2_READDELAY = (rd << 3) | clksel;
-            LATTICE_DDR2_PHYCTRL = 0; // unpause
-            LATTICE_DDR2_PHYCTRL = 1; // update done
-
+            set_timing(rd, clksel);
             int det = detect_bursts();
 
-            if ((det == BURSTS) && ((clksel&3) == 2) && (rd == 2) && (!ok)) {
-                ok = 1;
-                good_sel = clksel;
-                good_rd = rd;
+            if (det == 3*BURSTS) {
+                ok_len ++;
+
+                if (ok_len > 1) {
+                    good_rd = rd;
+                    good_sel = clksel - ((ok_len-1) >> 1);
+                    ok = 1;
+                }
+            } else {
+                ok_len = 0;
             }
         }
+#if VERBOSE
         outbyte('\n');
+#endif
+        if (ok) {
+            break;
+        }
     }
-
-    good_rd  = 3;
-    good_sel = 0;
-
-    outbyte('0' + good_sel);
-    outbyte('0' + good_rd);
-    outbyte(':');
-    LATTICE_DDR2_PHYCTRL = 2; // pause
-    LATTICE_DDR2_READDELAY = (good_rd << 3) | good_sel;
-    LATTICE_DDR2_PHYCTRL = 0; // unpause
-    LATTICE_DDR2_PHYCTRL = 1; // update done
+    if (ok) {
+        my_puts("OK");
+        outbyte('0' + good_rd);
+        outbyte('0' + good_sel);
+    } else {
+        my_puts("FAIL");
+    }
 
     // Precharge all banks
     LATTICE_DDR2_ADDR_LOW  = 0x00;
     LATTICE_DDR2_ADDR_HIGH = 0x04; // A10 = all banks
     LATTICE_DDR2_COMMAND   = 2; // Precharge
 
-    LATTICE_DDR2_DELAYSTEP = 0x0C; // turn off automatic updates from now on.
+    //set_timing(2,2);
+    if (ok) {
+        set_timing(good_rd, good_sel);
+    }
 
-//    return 1;
     // Terminate by setting the burst length to 4 for normal operation
     LATTICE_DDR2_ADDR_LOW  = (MR_BL4 & 0xFF);
     LATTICE_DDR2_ADDR_HIGH = (MR_BL4 >> 8);
@@ -389,18 +352,6 @@ int coarse_calibration()
     LATTICE_DDR2_ADDR_HIGH = 0x04; // A10 = all banks
     LATTICE_DDR2_COMMAND   = 2; // Precharge
 
-    // Open Row
-    LATTICE_DDR2_ADDR_HIGH = 0;
-    LATTICE_DDR2_ADDR_LOW = 0;
-    LATTICE_DDR2_COMMAND = 3; // open row 0 in bank 0
-
-    detect_bursts();
-
-    // Precharge all banks
-    LATTICE_DDR2_ADDR_LOW  = 0x00;
-    LATTICE_DDR2_ADDR_HIGH = 0x04; // A10 = all banks
-    LATTICE_DDR2_COMMAND   = 2; // Precharge
-
-    return 1;
-*/
+    return ok;
+#endif
 }

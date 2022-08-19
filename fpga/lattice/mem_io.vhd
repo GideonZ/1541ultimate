@@ -19,9 +19,8 @@ entity mem_io_lattice is
         g_mask_width        : natural := 1;
         g_addr_width        : natural := 8 );
 	port (
-        sys_reset          : in  std_logic;
-        sys_clock_2x       : out std_logic;
         sys_clock_4x       : in  std_logic;
+        start_reset        : in  std_logic;
 
         clock_enable       : in  std_logic := '1';
         delay_rdstep       : in  std_logic := '0';
@@ -31,21 +30,20 @@ entity mem_io_lattice is
         delay_dir          : in  std_logic := '0';
         dll_reset          : in  std_logic;
         ddr_reset          : in  std_logic;
-
+        buf_reset          : in  std_logic;
+        
         -- Calibration controls
-        read_delay         : in    std_logic_vector(1 downto 0);
         stop               : in    std_logic;
         uddcntln           : in    std_logic;
         freeze             : in    std_logic;
         pause              : in    std_logic;
         readclksel         : in    std_logic_vector(2 downto 0);
-        read               : in    std_logic_vector(1 downto 0);
-        datavalid          : out   std_logic;
         burstdet           : out   std_logic;
         dll_lock           : out   std_logic;
         sclk_out           : out   std_logic;
         
-        -- inputs at sys_clock_2x (sclk = 100 MHz)
+        -- inputs at ctrl_clock
+        read               : in    std_logic_vector(1 downto 0);
         addr_first         : in    std_logic_vector(g_addr_width-1 downto 0);
         addr_second        : in    std_logic_vector(g_addr_width-1 downto 0);
         wdata              : in    std_logic_vector(4*g_data_width-1 downto 0);
@@ -56,6 +54,7 @@ entity mem_io_lattice is
 
         -- output at sys_clock_2x (sclk)
         rdata              : out   std_logic_vector(4*g_data_width-1 downto 0);
+        datavalid          : out   std_logic;
         
         -- Memory pins
 		mem_clk_p          : out   std_logic;
@@ -73,14 +72,9 @@ architecture lattice of mem_io_lattice is
     signal sclk, sclk_i     : std_logic;
     signal eclk             : std_logic;
     signal ddr_reset_r      : std_logic;
+    --signal div_reset_r      : std_logic;
     --signal rst              : std_logic;
     --signal rst_dqsbufm      : std_logic;
-
-    signal read_s           : std_logic_vector(1 downto 0);
-    signal read_d1          : std_logic_vector(1 downto 0);
-    signal read_d2          : std_logic_vector(1 downto 0);
-    signal read_d3          : std_logic_vector(1 downto 0);
-    signal read_d4          : std_logic_vector(1 downto 0);
 
     signal mem_dqs_o        : std_logic_vector(g_mask_width-1 downto 0);
     signal mem_dqs_t        : std_logic;
@@ -92,79 +86,56 @@ architecture lattice of mem_io_lattice is
     signal dqsw270          : std_logic;
     signal dqsw0            : std_logic; 
 
-    signal phase, srst      : std_logic;
+    signal phase, srst      : std_logic := '0';
 begin
-    process(sys_reset, sclk)
-    begin
-        if sys_reset='1' then
-            srst <= '1';
-        elsif rising_edge(sclk) then
-            srst <= '0';
-        end if;
-    end process;
-    
-    process(sys_clock_4x)
-    begin
-        if rising_edge(sys_clock_4x) then
-            if srst = '1' then
-                phase <= '1';
-            else
-                phase <= not phase;
-            end if;
-        end if;
-    end process;
+--    process(div_reset_r, sclk)
+--    begin
+--        if div_reset_r='1' then
+--            srst <= '1';
+--        elsif rising_edge(sclk) then
+--            srst <= '0';
+--        end if;
+--    end process;
+--    
+--    process(sys_clock_4x)
+--    begin
+--        if rising_edge(sys_clock_4x) then
+--            if srst = '1' then
+--                phase <= '1';
+--            else
+--                phase <= not phase;
+--            end if;
+--        end if;
+--    end process;
 
     -- Make clocks, based on 50 MHz reference. ECLK = 200 MHz, SCLK = 100 MHz, ECLK90 = 90 degree shifted ECLK
+    ddr_reset_r <= ddr_reset   when rising_edge(sys_clock_4x); -- software controlled
+    --div_reset_r <= start_reset when rising_edge(sys_clock_4x); -- only at boot
+    
     i_eclk_sync: ECLKSYNCB port map (
         ECLKI   => sys_clock_4x,
-        STOP    => stop,
+        STOP    => stop, -- is this really necessary?
         ECLKO   => eclk );
 
-    i_dll: DDRDLLA port map (
+
+    i_sclk: CLKDIVF
+    generic map (GSR => "ENABLED", DIV=> "2.0")
+    port map (
+        CLKI    => eclk,
+        RST     => ddr_reset,--_r, --'0', 
+        ALIGNWD => '0', 
+        CDIVX   => sclk_i );
+
+    sclk <= sclk_i;
+
+    i_dll: DDRDLLA 
+    port map (
         CLK         => eclk,
         RST         => dll_reset,  -- from mem_sync
         UDDCNTLN    => uddcntln, -- from mem_sync
         FREEZE      => freeze,   -- from mem_sync
         DDRDEL      => ddrdel,   -- code to delay block
         LOCK        => dll_lock );   -- back to mem_sync
-
-    i_read_delay_1: entity work.half_cycle_delay
-    generic map (2)
-    port map (
-        clock  => sclk,
-        din    => read,
-        dout   => read_d1
-    );
-    
-    i_read_delay_2: entity work.half_cycle_delay
-    generic map (2)
-    port map (
-        clock  => sclk,
-        din    => read_d1,
-        dout   => read_d2
-    );
-
-    i_read_delay_3: entity work.half_cycle_delay
-    generic map (2)
-    port map (
-        clock  => sclk,
-        din    => read_d2,
-        dout   => read_d3
-    );
-
-    i_read_delay_4: entity work.half_cycle_delay
-    generic map (2)
-    port map (
-        clock  => sclk,
-        din    => read_d3,
-        dout   => read_d4
-    );
-
-    with read_delay select read_s <=
-        read_d1 when "00",
-        read_d2 when "01",
-        read_d3 when "10",
-        read_d4 when others;
 
     i_dqsbufm: DQSBUFM
     generic map (
@@ -174,15 +145,15 @@ begin
         DQS_LI_DEL_ADJ => "FACTORYONLY")
     port map (
         DQSI        => mem_dqs_i,
-        READ1       => read_s(1),
-        READ0       => read_s(0), 
+        READ1       => read(1),
+        READ0       => read(0), 
         READCLKSEL2 => readclksel(2),
         READCLKSEL1 => readclksel(1), 
         READCLKSEL0 => readclksel(0),
         DDRDEL      => ddrdel, -- from DDRDLLA
         ECLK        => eclk, 
         SCLK        => sclk,
-        RST         => ddr_reset,
+        RST         => buf_reset,
         PAUSE       => pause, 
         DYNDELAY7   => '0',
         DYNDELAY6   => '0', 
@@ -212,19 +183,6 @@ begin
         RDCFLAG     => open,
         WRCFLAG     => open );
     
-    ddr_reset_r <= ddr_reset when rising_edge(sys_clock_4x);
-
-    i_sclk: CLKDIVF
-    generic map (GSR => "ENABLED", DIV=> "2.0")
-    port map (
-        CLKI    => eclk,
-        RST     => ddr_reset_r, --'0', 
-        ALIGNWD => '0', 
-        CDIVX   => sclk_i );
-
-    sclk <= sclk_i;
-    
-
     -- Generate Clock out, which is synchronous to the clock_4x, but delayed slightly compared to the address clocked out
     -- The clock gets a delay of g_delay_clk_edge taps, to be somewhat centered in the address
     b_clock: block
@@ -424,7 +382,6 @@ begin
         
     end generate;
 
-    sys_clock_2x <= sclk_i;
-    sclk_out     <= sclk_i;
+    sclk_out <= sclk_i;
     
 end architecture;
