@@ -19,7 +19,7 @@ entity sync_fifo is
         din         : in  std_logic_vector(g_data_width-1 downto 0);
         dout        : out std_logic_vector(g_data_width-1 downto 0);
 
-        flush       : in  std_logic;
+        flush       : in  std_logic := '0';
 
         full        : out std_logic;
         almost_full : out std_logic;

@@ -16,7 +16,7 @@ HomeDirectory::HomeDirectory(UserInterface *ui, TreeBrowser *browser)
     observerQueue = new ObserverQueue("HomeDir");
     fm->registerObserver(observerQueue);
 
-    xTaskCreate( HomeDirectory :: poll_home_directory, "Home Directory", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL);
+//    xTaskCreate( HomeDirectory :: poll_home_directory, "Home Directory", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL);
 #endif
 }
 

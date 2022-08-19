@@ -44,6 +44,11 @@
 #define LATTICE_DDR2_DELAYDIR  (*(volatile uint8_t *)(DDR2_BASE + 0x0A))
 #define LATTICE_DDR2_PHYCTRL   (*(volatile uint8_t *)(DDR2_BASE + 0x0B))
 #define LATTICE_DDR2_ENABLE    (*(volatile uint8_t *)(DDR2_BASE + 0x0C))
+#define LATTICE_PLL_SELECT     (*(volatile uint8_t *)(DDR2_BASE + 0x04))
+#define LATTICE_PLL_PULSE      (*(volatile uint8_t *)(DDR2_BASE + 0x05))
+#define LATTICE_PLL_MEASURE    (*(volatile uint8_t *)(DDR2_BASE + 0x06))
+#define LATTICE_CLK_PHASERESET (*(volatile uint8_t *)(DDR2_BASE + 0x03))
+#define LATTICE_CLK_PHASECHECK (*(volatile uint8_t *)(DDR2_BASE + 0x03))
 
 // Read
 #define LATTICE_DDR2_VALIDCNT  (*(volatile uint8_t *)(DDR2_BASE + 0x07))

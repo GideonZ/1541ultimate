@@ -84,6 +84,7 @@ library work;
 
 entity ddr2_ctrl_logic is
 generic (
+    g_register_rdata   : boolean := false;
     SDRAM_Refr_delay   : integer := 13;
     SDRAM_Refr_period  : integer := 781 );
 port (
@@ -96,6 +97,8 @@ port (
     odt_enable  : in  std_logic := '0';
     offset      : in  std_logic_vector(1 downto 0) := "00";
     inhibit     : in  std_logic := '0';
+    read_delay  : in  std_logic_vector(1 downto 0) := "00";
+    
     is_idle     : out std_logic;
     req         : in  t_mem_req_32 := c_mem_req_32_init;
     resp        : out t_mem_resp_32;
@@ -180,6 +183,7 @@ architecture Gideon of ddr2_ctrl_logic is
         refr_delay      : integer range 0 to SDRAM_Refr_delay;
         timer           : integer range 0 to SDRAM_Refr_delay;
         bank_timers     : t_bank_timers(0 to 7);
+        bank_busy       : std_logic_vector(0 to 7);
         write_recovery  : integer range 0 to c_max_delay-1;
         read_issued     : std_logic;   
         do_refresh      : std_logic;
@@ -193,6 +197,7 @@ architecture Gideon of ddr2_ctrl_logic is
         refresh_cnt     => 0,
         refr_delay      => 3,
         bank_timers     => (others => c_max_delay-1),
+        bank_busy       => (others => '1'),
         timer           => c_max_delay-1,
         write_recovery  => 0,
         read_issued     => '0',
@@ -214,6 +219,7 @@ architecture Gideon of ddr2_ctrl_logic is
 
     signal zread        : std_logic_vector(1 downto 0);
     signal yread        : std_logic_vector(1 downto 0);
+    signal read_s       : std_logic_vector(1 downto 0);
     
     signal zwdata       : std_logic_vector(31 downto 0);
     signal zwdata_m     : std_logic_vector(3 downto 0);
@@ -236,13 +242,26 @@ architecture Gideon of ddr2_ctrl_logic is
     signal wwdata_t     : std_logic_vector(1 downto 0);
 
     signal dack_tag     : std_logic_vector(7 downto 0);
+    signal rdata_i      : std_logic_vector(31 downto 0);
+    signal rdata_valid_i: std_logic;
 begin
     is_idle <= '1';
     
-    resp.data     <= rdata;
     resp.rack     <= nxt.rack;  -- was cur
     resp.rack_tag <= nxt.rack_tag; -- was cur
-    resp.dack_tag <= dack_tag when rdata_valid = '1' else X"00";
+
+    r_regout: if g_register_rdata generate
+        rdata_i <= rdata when rising_edge(clock);
+        rdata_valid_i <= rdata_valid when rising_edge(clock);
+    end generate;
+    
+    r_directout: if not g_register_rdata generate
+        rdata_i <= rdata;
+        rdata_valid_i <= rdata_valid;
+    end generate;
+
+    resp.data     <= rdata_i;
+    resp.dack_tag <= dack_tag when rdata_valid_i = '1' else X"00";
     
     process(req, inhibit, cur, ext_cmd, ext_cmd_valid, ext_addr, enable_sdram, refresh_en, odt_enable, dqs_t2, read_8)
         procedure send_refresh_cmd is
@@ -278,7 +297,7 @@ begin
             addr2.sdram_ba  <= std_logic_vector(req.address(4 downto 2));
             addr2.sdram_a   <= "0001" & col; -- '1' is auto precharge on A10
 
-            if cur.bank_timers(bank) = 0 then
+            if cur.bank_busy(bank) = '0' then
                 -- Read_issued delays the read by one cycle, to avoid bus contention
                 -- Since write has one cycle less latency.
                 if req.read_writen = '0' and cur.read_issued = '0' then
@@ -297,7 +316,8 @@ begin
 
                     nxt.rack       <= '1';
                     nxt.rack_tag   <= req.tag;
-                    nxt.bank_timers(bank) <= 6;
+                    nxt.bank_timers(bank) <= 6-1;
+                    nxt.bank_busy(bank) <= '1';
                     nxt.refr_delay <= 6;
                     nxt.write_recovery <= 6;
                 elsif req.read_writen = '1' and cur.write_recovery = 0 then -- read
@@ -309,7 +329,8 @@ begin
                     -- datap.read_8 <= '1';
                     nxt.rack       <= '1';
                     nxt.rack_tag   <= req.tag;
-                    nxt.bank_timers(bank) <= 5;
+                    nxt.bank_timers(bank) <= 5-1;
+                    nxt.bank_busy(bank) <= '1';
                     nxt.refr_delay <= 5;
                     nxt.read_issued <= '1';
                 end if;                
@@ -349,6 +370,8 @@ begin
         for i in 0 to 7 loop
             if cur.bank_timers(i) /= 0 then
                 nxt.bank_timers(i) <= cur.bank_timers(i) - 1;
+            else
+                nxt.bank_busy(i) <= '0';
             end if;
         end loop;
 
@@ -365,9 +388,9 @@ begin
                 datap.read <= "11";
                 datap.read_8 <= '1';
             end if;
-            addr1.sdram_cmd <= ext_cmd;
-            addr1.sdram_a <= ext_addr(13 downto 0);
-            addr1.sdram_ba <= '0' & ext_addr(15 downto 14);
+            addr2.sdram_cmd <= ext_cmd;
+            addr2.sdram_a <= ext_addr(13 downto 0);
+            addr2.sdram_ba <= '0' & ext_addr(15 downto 14);
 
             ext_cmd_done <= '1';
             nxt.refr_delay <= SDRAM_Refr_delay-1; 
@@ -397,7 +420,7 @@ begin
     port map(
         clock          => clock,
         reset          => reset,
-        rd_en          => rdata_valid,
+        rd_en          => rdata_valid_i,
         wr_en          => cur.read_issued,
         din            => cur.tag,
         dout           => dack_tag,
@@ -450,14 +473,60 @@ begin
 
             zread    <= datap.read;
             yread    <= zread;
-            read     <= yread;
+            read     <= read_s;
 
             if reset='1' then
+                addr_first(20) <= '1'; -- make sure it is not merged with addr_second
                 cur <= c_internal_state_init;
             end if;
         end if;
     end process;
 
+    b_read_delay: block
+        signal read_d1          : std_logic_vector(1 downto 0);
+        signal read_d2          : std_logic_vector(1 downto 0);
+        signal read_d3          : std_logic_vector(1 downto 0);
+        signal read_d4          : std_logic_vector(1 downto 0);
+    begin
+        i_read_delay_1: entity work.half_cycle_delay
+        generic map (2)
+        port map (
+            clock  => clock,
+            din    => yread,
+            dout   => read_d1
+        );
+        
+        i_read_delay_2: entity work.half_cycle_delay
+        generic map (2)
+        port map (
+            clock  => clock,
+            din    => read_d1,
+            dout   => read_d2
+        );
+    
+        i_read_delay_3: entity work.half_cycle_delay
+        generic map (2)
+        port map (
+            clock  => clock,
+            din    => read_d2,
+            dout   => read_d3
+        );
+    
+        i_read_delay_4: entity work.half_cycle_delay
+        generic map (2)
+        port map (
+            clock  => clock,
+            din    => read_d3,
+            dout   => read_d4
+        );
+    
+        with read_delay select read_s <=
+            read_d1 when "00",
+            read_d2 when "01",
+            read_d3 when "10",
+            read_d4 when others;
+    end block;
+        
 --    i_wdata_delay: entity work.half_cycle_delay generic map(32) port map(clock, zwdata, wdata);
 --    i_wdatt_delay: entity work.half_cycle_delay generic map( 2) port map(clock, zwdata_t, wdata_t);
 --    i_wdatm_delay: entity work.half_cycle_delay generic map( 4) port map(clock, zwdata_m, wdata_m);

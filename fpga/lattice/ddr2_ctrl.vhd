@@ -20,12 +20,28 @@ library work;
 
 entity ddr2_ctrl is
 generic (
+    g_register_rdata   : boolean := true;
     SDRAM_Refr_delay   : integer := 13;
     SDRAM_Refr_period  : integer := 781 );
 port (
+    -- Startup
+    start_clock : in  std_logic;
+    start_reset : in  std_logic;
+    start_ready : out std_logic;
+
+    debug1      : out std_logic;
+    debug2      : out std_logic;
+
+    toggle_reset    : out std_logic;
+    toggle_check    : in  std_logic;
+
     -- 200 MHz input
     mem_clock   : in  std_logic := '0';
-    reset       : in  std_logic := '0';
+    -- 100 MHz output
+    mem_clock_half  : out std_logic; -- SCLK
+
+    ctrl_clock  : in  std_logic;
+    ctrl_reset  : in  std_logic := '0';
     
     -- Clock for the I/O and memory bus
     io_clock    : in  std_logic := '0';
@@ -39,8 +55,12 @@ port (
     req         : in  t_mem_req_32 := c_mem_req_32_init;
     resp        : out t_mem_resp_32;
 
-    -- 100 MHz output
-    mem_clock_half  : out std_logic;
+    -- PLL alignment
+    phase_sel       : out std_logic_vector(1 downto 0);
+    phase_dir       : out std_logic;
+    phase_step      : out std_logic;
+    phase_loadreg   : out std_logic;
+
 
     -- DDR2 signals
 	SDRAM_CLK	: out std_logic;
@@ -87,7 +107,6 @@ architecture Gideon of ddr2_ctrl is
     end component;
 
     -- Between Controller and PHY
-    signal ctrl_clock         : std_logic; -- 100 MHz
     signal addr_first         : std_logic_vector(23 downto 0);
     signal addr_second        : std_logic_vector(23 downto 0);
     signal wdata              : std_logic_vector(31 downto 0);
@@ -113,14 +132,16 @@ architecture Gideon of ddr2_ctrl is
     signal delay_step         : std_logic_vector(1 downto 0) := "00";
     signal delay_dir          : std_logic := '1';
 
-    signal update_r           : std_logic;
-    signal update_d           : std_logic;
-    signal update             : std_logic;
+    signal update_r           : std_logic := '0';
+    signal update_d           : std_logic := '0';
+    signal update_sync        : std_logic;
     signal dll_reset          : std_logic;
-    signal ddr_reset          : std_logic;
+    signal buf_reset          : std_logic;
+    signal ddr_reset_sync     : std_logic;
+    signal ddr_reset_r        : std_logic := '0';
+    signal ddr_reset_d        : std_logic := '0';
     signal ready              : std_logic;
 
-    signal byte_offset        : std_logic_vector(1 downto 0) := "00";
     signal stop               : std_logic := '0';
     signal uddcntln           : std_logic := '1';
     signal freeze             : std_logic := '0';
@@ -133,10 +154,12 @@ architecture Gideon of ddr2_ctrl is
     signal readclksel         : std_logic_vector(2 downto 0) := "000";
     signal burstdet           : std_logic;
     signal dll_lock           : std_logic;
-    signal ctrl_reset         : std_logic := '1';
     signal ctrl_req           : t_io_req;
     signal ctrl_resp          : t_io_resp;
     signal valid_cnt          : unsigned(7 downto 0) := X"00";
+
+    signal sclk_out           : std_logic;
+    signal phase_meas         : std_logic_vector(7 downto 0) := (others => '0');     
 begin
     i_bridge: entity work.io_bus_bridge2
     generic map (
@@ -158,7 +181,6 @@ begin
         variable local  : unsigned(3 downto 0);
     begin
         if rising_edge(ctrl_clock) then
-            ctrl_reset <= io_reset;
             local := ctrl_req.address(3 downto 0);
             ctrl_resp <= c_io_resp_init;
             if ext_cmd_done = '1' then
@@ -168,14 +190,14 @@ begin
             if ctrl_req.read = '1' then
                 ctrl_resp.ack <= '1';
                 case local is
+                when X"3" =>
+                    ctrl_resp.data(0) <= toggle_check;
+                when X"6" =>
+                    ctrl_resp.data <= phase_meas;
                 when X"8" =>
                     ctrl_resp.data(2 downto 0) <= readclksel;
                     ctrl_resp.data(4 downto 3) <= read_delay;
                 when X"B" =>
---                    ctrl_resp.data(0) <= stop;
---                    ctrl_resp.data(1) <= not uddcntln;
---                    ctrl_resp.data(2) <= pause;
---                    ctrl_resp.data(3) <= freeze;
                     ctrl_resp.data(1) <= pause_usr;
                     ctrl_resp.data(7) <= ready;
                 when X"C" =>
@@ -196,6 +218,12 @@ begin
             delay_step <= "00";
             update_r <= '0';
             update_d <= update_r;
+            ddr_reset_r <= '0';
+            ddr_reset_d <= ddr_reset_r;
+            toggle_reset <= '0';
+            
+            phase_step    <= '1';
+            phase_loadreg <= '1'; 
 
             if rdata_valid = '1' then
                 valid_cnt <= valid_cnt + 1;
@@ -211,6 +239,17 @@ begin
                 when X"2" =>
                     ext_cmd <= ctrl_req.data(3 downto 0);
                     ext_cmd_valid <= '1';
+                when X"3" =>
+                    toggle_reset <= '1';
+
+                when X"4" =>
+                    phase_sel <= ctrl_req.data(1 downto 0);
+                    phase_dir <= ctrl_req.data(2);
+
+                when X"5" =>
+                    phase_step    <= not ctrl_req.data(0);
+                    phase_loadreg <= not ctrl_req.data(1);
+                    
                 when X"7" =>
                     valid_cnt <= X"00";
                 when X"8" =>
@@ -224,11 +263,8 @@ begin
                 when X"B" =>
                     update_r  <= ctrl_req.data(0);
                     pause_usr <= ctrl_req.data(1);
---                    stop        <= ctrl_req.data(0);
---                    uddcntln    <= not ctrl_req.data(1);
                     freeze_usr <= ctrl_req.data(2);
---                    pause       <= ctrl_req.data(3);
-                    byte_offset <= ctrl_req.data(5 downto 4);    
+                    ddr_reset_r <= ctrl_req.data(7);
                 when X"C" =>
                     clock_enable <= ctrl_req.data(0);
                     odt_enable <= ctrl_req.data(1);
@@ -238,10 +274,6 @@ begin
                 end case;
             end if;           
             if ctrl_reset = '1' then
---                stop <= '0';
---                uddcntln <= '1';
---                freeze <= '0';
---                pause <= '0';
                 pause_usr <= '0';
                 freeze_usr <= '0';
                 readclksel <= "000";
@@ -251,22 +283,28 @@ begin
                 ext_cmd_valid <= '0';
                 delay_dir <= '1';
                 delay_loadn <= "00";
+                phase_sel     <= "00";
+                phase_dir     <= '0';
             end if;                     
         end if;
     end process;
-    update <= update_r or update_d; -- 50 MHz pulse
+    buf_reset <= ddr_reset_sync or ddr_reset_r or ddr_reset_d; -- 50 MHz pulse
 
     i_ctrl: entity work.ddr2_ctrl_logic
+    generic map (
+        g_register_rdata  => g_register_rdata,
+        SDRAM_Refr_delay  => SDRAM_Refr_delay,
+        SDRAM_Refr_period => SDRAM_Refr_period )
     port map(
         clock             => ctrl_clock,
-        reset             => reset,
+        reset             => ctrl_reset,
         enable_sdram      => clock_enable,
         refresh_en        => refresh_enable,
-        offset            => byte_offset,
         odt_enable        => odt_enable,
         inhibit           => inhibit,
         is_idle           => is_idle,
-
+        read_delay        => read_delay,
+        
         req               => req,
         resp              => resp,
 
@@ -294,9 +332,14 @@ begin
         g_addr_width     => 24
     )
     port map (
-        sys_reset        => reset,
-        sys_clock_2x     => ctrl_clock,
         sys_clock_4x     => mem_clock,
+        start_reset      => start_reset,
+        
+        dll_reset        => dll_reset,
+        dll_lock         => dll_lock,
+        ddr_reset        => ddr_reset_sync,
+        buf_reset        => buf_reset,
+        sclk_out         => sclk_out,
         
         clock_enable     => clock_enable,
         delay_dir        => delay_dir,
@@ -305,9 +348,6 @@ begin
         delay_rdloadn    => delay_loadn(0),
         delay_wrloadn    => delay_loadn(1),
 
-        dll_reset        => dll_reset,
-        ddr_reset        => ddr_reset,
-        read_delay       => read_delay,
         stop             => stop,
         uddcntln         => uddcntln,
         freeze           => freeze,
@@ -315,8 +355,6 @@ begin
         readclksel       => readclksel,
         read             => read,
         burstdet         => burstdet,
-        dll_lock         => dll_lock,
-        sclk_out         => mem_clock_half,
         addr_first       => addr_first,
         addr_second      => addr_second,
         wdata            => wdata,
@@ -344,25 +382,67 @@ begin
     );
 
     SDRAM_TEST2 <= rdata_valid;
+    mem_clock_half <= sclk_out;
+    
+    i_update_sync: entity work.pulse_synchronizer
+    port map (
+        clock_in  => ctrl_clock,
+        pulse_in  => update_r,
+        clock_out => start_clock,
+        pulse_out => update_sync
+    );
+--    update_sync <= update_r or update_d;
 
     i_mem_sync: mem_sync
-      port map (
-        start_clk => io_clock,
-        rst       => io_reset,
+    port map (
+        start_clk => start_clock,
+        rst       => start_reset,
         dll_lock  => dll_lock,
-        pll_lock  => '1', -- already covered by io_reset
-        update    => update, -- new register bit
+        pll_lock  => '1', -- already covered by start_reset
+        update    => update_sync, -- new register bit
         pause     => pause_sync, -- to be orred with our own pause
         stop      => stop,
         freeze    => freeze_sync,
         uddcntln  => uddcntln,
         dll_rst   => dll_reset, 
-        ddr_rst   => ddr_reset,
+        ddr_rst   => ddr_reset_sync,
         ready     => ready
-      );
+    );
 
-      pause <= pause_sync or pause_usr;
-      freeze <= freeze_sync or freeze_usr;
+    pause <= pause_sync or pause_usr;
+    freeze <= freeze_sync or freeze_usr;
+
+--    debug1      <= dll_reset;
+--    debug2      <= dll_lock;
+    debug1      <= ddr_reset_sync;
+    debug2      <= buf_reset;
+    start_ready <= ready;
+    
+    b_phase_measurement: block
+        signal testclk_c    : std_logic;
+        signal testclk_c2   : std_logic;        
+        signal period       : unsigned(7 downto 0) := (others => '0');
+        signal counter      : unsigned(7 downto 0) := (others => '0');
+    begin
+        process(ctrl_clock)
+        begin
+            if rising_edge(ctrl_clock) then
+                testclk_c  <= sclk_out;
+                testclk_c2 <= testclk_c;
+                period <= period + 1;
+
+                if period = 0 then
+                    phase_meas <= std_logic_vector(counter);
+                    counter <= (others => '0');
+                else
+                    if testclk_c2 = '1' then
+                        counter <= counter + 1;
+                    end if;
+                end if;                
+            end if;
+        end process;
+    end block;
+
 end Gideon;
 
 
