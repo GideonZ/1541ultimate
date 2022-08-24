@@ -11,6 +11,7 @@ use ECP5U.components.all;
 
 entity pll1 is
     port (
+        RST : in  std_logic;
         CLKI: in  std_logic; 
         PHASESEL: in  std_logic_vector(1 downto 0); 
         PHASEDIR: in  std_logic; 
@@ -62,10 +63,10 @@ begin
         port map (Z=>scuba_vlo);
 
     PLLInst_0: EHXPLLL
-        generic map (PLLRST_ENA=> "DISABLED", INTFB_WAKE=> "DISABLED", 
+        generic map (PLLRST_ENA=> "ENABLED", INTFB_WAKE=> "DISABLED", 
         STDBY_ENABLE=> "DISABLED", DPHASE_SOURCE=> "ENABLED", 
         CLKOS3_FPHASE=>  0, CLKOS3_CPHASE=>  24, CLKOS2_FPHASE=>  0, 
-        CLKOS2_CPHASE=>  11, CLKOS_FPHASE=>  3, CLKOS_CPHASE=>  5, 
+        CLKOS2_CPHASE=>  11, CLKOS_FPHASE=>  0, CLKOS_CPHASE=>  5, 
         CLKOP_FPHASE=>  0, CLKOP_CPHASE=>  2, PLL_LOCK_MODE=>  0, 
         CLKOS_TRIM_DELAY=>  0, CLKOS_TRIM_POL=> "FALLING", 
         CLKOP_TRIM_DELAY=>  0, CLKOP_TRIM_POL=> "FALLING", 
@@ -78,7 +79,7 @@ begin
         port map (CLKI=>CLKI, CLKFB=>CLKFB_t, PHASESEL1=>PHASESEL(1), 
             PHASESEL0=>PHASESEL(0), PHASEDIR=>PHASEDIR, 
             PHASESTEP=>PHASESTEP, PHASELOADREG=>PHASELOADREG, 
-            STDBY=>scuba_vlo, PLLWAKESYNC=>scuba_vlo, RST=>scuba_vlo, 
+            STDBY=>scuba_vlo, PLLWAKESYNC=>scuba_vlo, RST=>RST, 
             ENCLKOP=>scuba_vlo, ENCLKOS=>scuba_vlo, ENCLKOS2=>scuba_vlo, 
             ENCLKOS3=>scuba_vlo, CLKOP=>CLKOP_t, CLKOS=>CLKOS_t, 
             CLKOS2=>CLKOS2_t, CLKOS3=>CLKOS3_t, LOCK=>LOCK, 

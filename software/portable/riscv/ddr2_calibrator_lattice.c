@@ -29,7 +29,7 @@
 #define EMR3   0xC000 // all bits reserved
 #define DLLRST 0x0100 // MR DLL RESET
 
-#define DELAY_STEPS 128
+#define VERBOSE 1
 
 const uint8_t hexchars[] = "0123456789ABCDEF";
 
@@ -38,10 +38,24 @@ int try_mode(int mode);
 int coarse_calibration(void);
 int ram_test(void);
 
+void my_puts(const char *str)
+{
+    while(*str) {
+        outbyte(*(str++));
+    }
+}
+
 void hexbyte(uint8_t val)
 {
     outbyte(hexchars[(val >> 4)  & 15]);
     outbyte(hexchars[(val >> 0)  & 15]);
+}
+
+void hex16(uint16_t val, const char *postfix)
+{
+    hexbyte(val >> 8);
+    hexbyte(val);
+    my_puts(postfix);
 }
 
 void hexword(uint32_t val)
@@ -51,13 +65,6 @@ void hexword(uint32_t val)
     hexbyte(val >> 8);
     hexbyte(val);
     outbyte(' ');
-}
-
-void my_puts(const char *str)
-{
-    while(*str) {
-        outbyte(*(str++));
-    }
 }
 
 static void init_mode_regs()
@@ -110,6 +117,54 @@ static void init_mode_regs()
     }
 }
 
+static void reset_toggle()
+{
+    outbyte('#');
+    for(int i=0;i<200;i++) {
+        LATTICE_CLK_PHASERESET = 1;
+        if (LATTICE_CLK_PHASECHECK) {
+            hexbyte(i);
+            outbyte('\n');
+            break;
+        }
+    }
+}
+
+static void show_phase_sys()
+{
+    my_puts("\nSysClock vs CtrlClock:\n");
+    LATTICE_PLL_SELECT = 1; // CLKOS2 (sys clock)
+    for(int i=0;i<96;i++) {
+        hexbyte(LATTICE_PLL_MEASURE2);
+        outbyte(' ');
+        LATTICE_PLL_PULSE = 1;
+        for(int j=0;j<1000;j++)
+            ;
+    }
+    outbyte('\n');
+}
+
+static void show_phase_sclk()
+{
+    my_puts("\nSCLK vs CtrlClock:\n");
+    LATTICE_PLL_SELECT = 0; // CLKOS
+    for(int i=0;i<48;i++) {
+        hexbyte(LATTICE_PLL_MEASURE1);
+        outbyte(' ');
+        LATTICE_PLL_PULSE = 1;
+        for(int j=0;j<1000;j++)
+            ;
+    }
+    outbyte('\n');
+}
+
+static uint16_t get_latency_count()
+{
+    uint16_t count = ((uint16_t)U2PIO_VALUE3) << 8;
+    count |= U2PIO_VALUE2;
+    return count;
+}
+
 void ddr2_calibrate()
 {
     // Turn on clock and let DDR stabilize
@@ -118,17 +173,136 @@ void ddr2_calibrate()
     for (int i=0;i<1000;i++)
         ;
 
+    while((ioRead8(ITU_BUTTON_REG) & ITU_BUTTONS) & ITU_BUTTON2); 
+    volatile uint32_t *mem32 = (uint32_t *)0x10000;
+
     init_mode_regs();
     outbyte('$');
+    uint8_t sys=0;
+    uint8_t sclk=0;
+    uint16_t start, stop;
+    do {
+        int u = uart_get_byte(1000);
+        if (u == -2) {
+            outbyte('*');
+        } else switch(u) {
+            case 'a':
+                show_phase_sys();
+                break;
+            case 'b':
+                show_phase_sclk();
+                break;
+            case 'c':
+                coarse_calibration();
+                break;
+            case 'r':
+                reset_toggle();
+                ram_test();
+                break;
+            case 't':
+                reset_toggle();
+                break;
+            case 'l':
+                start = get_latency_count();
+                for(int j=0;j<256;j++) {
+                    uint32_t test = mem32[0];
+                }
+                stop = get_latency_count();
+                hexbyte(U2PIO_VALUE1);
+                outbyte('-');
+                hex16(stop-start, "\n");
+                break;
+            case 's':
+                LATTICE_DDR2_PHYCTRL = 0x40; // send reset to sync module
+                break;
+            case 'z':
+                LATTICE_PLL_SELECT = 5;
+                LATTICE_PLL_PULSE = 1;
+                for(int j=0;j<1000;j++)
+                    ;
+                hexbyte(--sys);
+                break;
+            case 'x':
+                LATTICE_PLL_SELECT = 1;
+                LATTICE_PLL_PULSE = 1;
+                for(int j=0;j<1000;j++)
+                    ;
+                hexbyte(++sys);
+                break;
+            case 'n':
+                LATTICE_PLL_SELECT = 4;
+                LATTICE_PLL_PULSE = 1;
+                for(int j=0;j<1000;j++)
+                    ;
+                hexbyte(--sclk);
+                break;
+            case 'm':
+                LATTICE_PLL_SELECT = 0;
+                LATTICE_PLL_PULSE = 1;
+                for(int j=0;j<1000;j++)
+                    ;
+                hexbyte(++sclk);
+                break;
+            default:
+                my_puts("Unknown ");
+                outbyte(u);
+                break;
+        }
+    } while(1);
 
-    LATTICE_PLL_SELECT = 4; // reverse direction CLKOS
-    uint8_t prev,cur = 0x55;
-    for(int i=0;i<50;i++) {
+/*
+    my_puts("SysClock vs CtrlClock:\n");
+    LATTICE_PLL_SELECT = 1; // CLKOS2 (sys clock)
+    for(int i=0;i<96;i++) {
+        hexbyte(LATTICE_PLL_MEASURE2);
+        outbyte(' ');
+        LATTICE_PLL_PULSE = 1;
+        for(int j=0;j<1000;j++)
+            ;
+    }
+    outbyte('\n');
+
+    uint8_t prev,cur = 0x80;
+    for(int i=0;i<96;i++) {
         prev = cur;
-        cur = LATTICE_PLL_MEASURE;
+        cur = LATTICE_PLL_MEASURE2;
         hexbyte(cur);
         outbyte(' ');
-        if (!prev && cur) {
+        LATTICE_PLL_PULSE = 1;
+        for(int j=0;j<1000;j++)
+            ;
+        if ((prev < 0x80) && (cur >= 0x80)) {
+            break;
+        }
+    }
+    outbyte('\n');
+    LATTICE_PLL_SELECT = 5; // reverse CLKOS2 (sys clock)
+    LATTICE_PLL_PULSE = 1;
+    LATTICE_PLL_PULSE = 1;
+    LATTICE_PLL_PULSE = 1;
+    LATTICE_PLL_PULSE = 1;
+    LATTICE_PLL_PULSE = 1;
+
+    my_puts("SysClock vs CtrlClock:\n");
+    LATTICE_PLL_SELECT = 1; // CLKOS2 (sys clock)
+    for(int i=0;i<96;i++) {
+        hexbyte(LATTICE_PLL_MEASURE2);
+        outbyte(' ');
+        LATTICE_PLL_PULSE = 1;
+        for(int j=0;j<1000;j++)
+            ;
+    }
+    outbyte('\n');
+
+    my_puts("SCLK vs CtrlClock:\n");
+    cur = 0x80;
+    LATTICE_PLL_SELECT = 0; // CLKOS
+    for(int i=0;i<50;i++) {
+        prev = cur;
+        cur = LATTICE_PLL_MEASURE1;
+        hexbyte(cur);
+        outbyte(' ');
+        if ((prev < 0x80) && (cur >= 0x80)) {
             break;
         }
         LATTICE_PLL_PULSE = 1;
@@ -137,7 +311,7 @@ void ddr2_calibrate()
     }
     outbyte('\n');
 
-    for(int i=0;i<46;i++) {
+    for(int i=0;i<45;i++) {
         hexbyte(i);
         outbyte(' ');
 #if VERBOSE
@@ -147,7 +321,7 @@ void ddr2_calibrate()
             //break;
         }
         outbyte(' ');
-        hexbyte(LATTICE_PLL_MEASURE);
+        hexbyte(LATTICE_PLL_MEASURE1);
 
         outbyte('\n');
         LATTICE_PLL_PULSE = 1;
@@ -163,6 +337,7 @@ void ddr2_calibrate()
             break;
         }
     }
+*/
 
 #if NO_BOOT > 1
     while(ram_test())
@@ -179,6 +354,8 @@ void ddr2_calibrate()
         __asm__("nop");
     }
 }
+
+#define RAM_TEST_REPORT 20
 
 int ram_test(void)
 {
@@ -203,8 +380,13 @@ int ram_test(void)
     //my_puts("Read..");
     // LATTICE_DDR2_VALIDCNT = 0;
     for(i=0;i<65536;i++) {
-        if (mem16[i] != (uint16_t)(i+run))
+        if (mem16[i] != (uint16_t)(i+run)) {
+            if (errors < RAM_TEST_REPORT) {
+                hex16(mem16[i], " != ");
+                hex16((uint16_t)(i+run), "\n");
+            }
             errors++;
+        }
     }
 
     if (errors) {
