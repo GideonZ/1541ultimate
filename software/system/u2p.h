@@ -46,7 +46,8 @@
 #define LATTICE_DDR2_ENABLE    (*(volatile uint8_t *)(DDR2_BASE + 0x0C))
 #define LATTICE_PLL_SELECT     (*(volatile uint8_t *)(DDR2_BASE + 0x04))
 #define LATTICE_PLL_PULSE      (*(volatile uint8_t *)(DDR2_BASE + 0x05))
-#define LATTICE_PLL_MEASURE    (*(volatile uint8_t *)(DDR2_BASE + 0x06))
+#define LATTICE_PLL_MEASURE1   (*(volatile uint8_t *)(DDR2_BASE + 0x06))
+#define LATTICE_PLL_MEASURE2   (*(volatile uint8_t *)(DDR2_BASE + 0x05))
 #define LATTICE_CLK_PHASERESET (*(volatile uint8_t *)(DDR2_BASE + 0x03))
 #define LATTICE_CLK_PHASECHECK (*(volatile uint8_t *)(DDR2_BASE + 0x03))
 
@@ -68,6 +69,10 @@
 #define U2PIO_SW_IEC     (*(volatile uint8_t *)(U2P_IO_BASE + 0x0E))
 #define U2PIO_ULPI_RESET (*(volatile uint8_t *)(U2P_IO_BASE + 0x0F))
 #define U2PIO_BOARDREV   (*(volatile uint8_t *)(U2P_IO_BASE + 0x0C))
+
+#define U2PIO_VALUE1     (*(volatile uint8_t *)(U2P_IO_BASE + 0x10))
+#define U2PIO_VALUE2     (*(volatile uint8_t *)(U2P_IO_BASE + 0x11))
+#define U2PIO_VALUE3     (*(volatile uint8_t *)(U2P_IO_BASE + 0x12))
 
 #define REMOTE_RECONFIG     (*(volatile uint8_t *)(REMOTE_BASE + 0x06))
 #define REMOTE_FLASHSEL_0   (*(volatile uint8_t *)(REMOTE_BASE + 0x0A)) = 1

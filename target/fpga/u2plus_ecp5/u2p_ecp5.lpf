@@ -1,3 +1,4 @@
+rvl_alias "ctrl_clock" "ctrl_clock";
 BLOCK RESETPATHS ;
 FREQUENCY PORT "ULPI_CLOCK" 60.000000 MHz CLOCK_JITTER 0.200000 ns ;
 INPUT_SETUP PORT "ULPI_NXT" 11.500000 ns HOLD 1.500000 ns CLKPORT "ULPI_CLOCK" ;
@@ -373,6 +374,26 @@ DEFINE CELL GROUP "TigSrc7" "b_audio.i_ultfilt7/i_sync/tx_tig_src"
 "b_audio.i_ultfilt7/i_sync/tx_data_tig_src[16]" 
 "b_audio.i_ultfilt7/i_sync/tx_data_tig_src[17]" 
 "b_audio.i_ultfilt7/i_sync/rx_tig_src" ;
+DEFINE CELL GROUP "TigSrc6" "b_audio.i_ultfilt6/i_sync/tx_tig_src" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[0]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[1]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[2]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[3]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[4]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[5]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[6]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[7]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[8]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[9]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[10]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[11]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[12]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[13]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[14]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[15]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[16]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[17]" 
+"b_audio.i_ultfilt6/i_sync/rx_tig_src" ;
 DEFINE CELL GROUP "TigSrc5" "b_audio.i_ultfilt5/i_sync/tx_tig_src" 
 "b_audio.i_ultfilt5/i_sync/tx_data_tig_src[0]" 
 "b_audio.i_ultfilt5/i_sync/tx_data_tig_src[1]" 
@@ -582,6 +603,26 @@ DEFINE CELL GROUP "TigDst7" "b_audio.i_ultfilt7/i_sync/tx_tig_dst"
 "b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[15]" 
 "b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[16]" 
 "b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[17]" ;
+DEFINE CELL GROUP "TigDst6" "b_audio.i_ultfilt6/i_sync/tx_tig_dst" 
+"b_audio.i_ultfilt6/i_sync/rx_tig_dst" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[0]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[1]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[2]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[3]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[4]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[5]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[6]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[7]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[8]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[9]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[10]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[11]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[12]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[13]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[14]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[15]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[16]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[17]" ;
 DEFINE CELL GROUP "TigDst5" "b_audio.i_ultfilt5/i_sync/tx_tig_dst" 
 "b_audio.i_ultfilt5/i_sync/rx_tig_dst" 
 "b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[0]" 
@@ -756,6 +797,7 @@ BLOCK PATH FROM GROUP "TigSrc2" TO GROUP "TigDst2" ;
 BLOCK PATH FROM GROUP "TigSrc3" TO GROUP "TigDst3" ;
 BLOCK PATH FROM GROUP "TigSrc4" TO GROUP "TigDst4" ;
 BLOCK PATH FROM GROUP "TigSrc5" TO GROUP "TigDst5" ;
+BLOCK PATH FROM GROUP "TigSrc6" TO GROUP "TigDst6" ;
 BLOCK PATH FROM GROUP "TigSrc7" TO GROUP "TigDst7" ;
 BLOCK PATH FROM GROUP "TigSrc8" TO GROUP "TigDst8" ;
 BLOCK PATH FROM GROUP "TigSrcUsb" TO GROUP "TigDstUsb" ;
@@ -764,6 +806,17 @@ BLOCK PATH FROM GROUP "TigSrcMem" TO GROUP "TigDstMem" ;
 BLOCK PATH FROM ASIC "i_memctrl/i_phy/i_sclk" PIN "CDIVX" TO CELL "i_memctrl/b_phase_measurement.testclk_c" ;
 BLOCK PATH FROM CELL "sys_reset" TO CELL "i_audio_reset/sync1" ;
 BLOCK PATH FROM CELL "b_audio.i_sync_get/in_toggle" TO CELL "b_audio.i_sync_get/sync1" ;
+
+BLOCK PATH FROM CELL "sys_reset" TO CELL "i_logic/r_rmii.i_rmii/i_rx/i_fifo/aclr_wr[1]";
+BLOCK PATH FROM CELL "sys_reset" TO CELL "i_logic/r_rmii.i_rmii/i_rx/i_fifo/aclr_wr[2]";
+BLOCK PATH FROM CELL "sys_reset" TO CELL "i_logic/r_rmii.i_rmii/i_tx/i_fifo/aclr_rd[1]";
+BLOCK PATH FROM CELL "sys_reset" TO CELL "i_logic/r_rmii.i_rmii/i_tx/i_fifo/aclr_rd[2]";
+BLOCK PATH FROM CELL "sys_reset" TO CELL "i_eth_reset/sync1";
+BLOCK PATH FROM CELL "i_logic/r_rmii.i_rmii/i_rx/rx_enable" TO CELL "i_logic/r_rmii.i_rmii/i_rx/i_fifo/aclr_wr[1]";
+BLOCK PATH FROM CELL "i_logic/r_rmii.i_rmii/i_rx/rx_enable" TO CELL "i_logic/r_rmii.i_rmii/i_rx/i_fifo/aclr_wr[2]";
+BLOCK PATH FROM CELL "i_logic/r_rmii.i_rmii/i_rx/rx_enable" TO CELL "i_logic/r_rmii.i_rmii/i_rx/i_sync_enable/sync1";
+BLOCK PATH FROM CELL "i_logic/r_rmii.i_rmii/i_tx/i_sync/in_toggle" TO CELL "i_logic/r_rmii.i_rmii/i_tx/i_sync/sync1";
+
 #MULTICYCLE FROM <Source Register> CLKNET “CLK” CLKEN_NET “CE” TO <Destination Register> CLKNET “CLK” 2 X
 #BLOCK PATH FROM CELL "i_logic/r_usb2.i_usb2/i_intf/ulpi_dir_d1" TO PIN "ulpi_data_t";
 #USE DIN FALSE CELL "i_logic_r_usb2.i_usb2_i_intf_i_ulpi_ulpi_data_inio[0]";
@@ -776,7 +829,6 @@ BLOCK PATH FROM CELL "b_audio.i_sync_get/in_toggle" TO CELL "b_audio.i_sync_get/
 #USE DIN FALSE CELL "i_logic_r_usb2.i_usb2_i_intf_i_ulpi_ulpi_data_inio[7]";
 #USE DIN FALSE CELL "i_logic_r_usb2.i_usb2_i_intf_i_ulpi_ulpi_dir_d1io";
 #USE DIN FALSE CELL "i_logic_r_usb2.i_usb2_i_intf_i_ulpi_ulpi_nxt_d1io";
-TEMPERATURE 80.000 C;
 IOBUF PORT "RMII_REFCLK" IO_TYPE=LVCMOS18 ;
 IOBUF PORT "CLOCK_50" IO_TYPE=LVCMOS18 ;
 IOBUF PORT "ULPI_CLOCK" IO_TYPE=LVCMOS18 ;
@@ -896,6 +948,32 @@ MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[20]" TO CELL "i_memctrl/i_phy/r
 MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[21]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr.21.i_addr" 1.500000 ns ;
 MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[22]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr.22.i_addr" 1.500000 ns ;
 MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[23]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr.23.i_addr" 1.500000 ns ;
+
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[0]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr(0).i_addr" 1.500000 ns ;
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[1]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr(1).i_addr" 1.500000 ns ;
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[2]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr(2).i_addr" 1.500000 ns ;
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[3]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr(3).i_addr" 1.500000 ns ;
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[4]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr(4).i_addr" 1.500000 ns ;
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[5]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr(5).i_addr" 1.500000 ns ;
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[6]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr(6).i_addr" 1.500000 ns ;
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[7]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr(7).i_addr" 1.500000 ns ;
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[8]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr(8).i_addr" 1.500000 ns ;
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[9]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr(9).i_addr" 1.500000 ns ;
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[10]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr(10).i_addr" 1.500000 ns ;
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[11]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr(11).i_addr" 1.500000 ns ;
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[12]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr(12).i_addr" 1.500000 ns ;
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[13]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr(13).i_addr" 1.500000 ns ;
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[14]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr(14).i_addr" 1.500000 ns ;
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[15]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr(15).i_addr" 1.500000 ns ;
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[16]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr(16).i_addr" 1.500000 ns ;
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[17]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr(17).i_addr" 1.500000 ns ;
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[18]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr(18).i_addr" 1.500000 ns ;
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[19]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr(19).i_addr" 1.500000 ns ;
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[20]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr(20).i_addr" 1.500000 ns ;
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[21]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr(21).i_addr" 1.500000 ns ;
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[22]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr(22).i_addr" 1.500000 ns ;
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_second[23]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr(23).i_addr" 1.500000 ns ;
+
 MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_first_1[0]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr.0.i_addr" 1.500000 ns ;
 MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_first_1[1]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr.1.i_addr" 1.500000 ns ;
 MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_first_1[2]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr.2.i_addr" 1.500000 ns ;
@@ -920,4 +998,12 @@ MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_first_1[19]" TO CELL "i_memctrl/i_phy/
 #MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_first_1[21]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr.21.i_addr" 1.500000 ns ;
 #MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_first_1[22]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr.22.i_addr" 1.500000 ns ;
 #MAXDELAY FROM CELL "i_memctrl/i_ctrl/addr_first_1[23]" TO CELL "i_memctrl/i_phy/r_addr_ddr.r_addr.23.i_addr" 1.500000 ns ;
-FREQUENCY NET "ctrl_clock" 100.000000 MHz PAR_ADJ 10.000000 HOLD_MARGIN 0.100000 ns ;
+
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/read[0]" TO ASIC "i_memctrl/i_phy/i_dqsbufm" PIN "READ0" 1.500000 ns ;
+MAXDELAY FROM CELL "i_memctrl/i_ctrl/read[1]" TO ASIC "i_memctrl/i_phy/i_dqsbufm" PIN "READ1" 1.500000 ns ;
+
+
+FREQUENCY NET "ctrl_clock" 100.000000 MHz PAR_ADJ 20.000000 HOLD_MARGIN 0.200000 ns CLOCK_JITTER 0.2 ns;
+#FREQUENCY NET "ctrl_clock" 100.000000 MHz HOLD_MARGIN 0.100000 ns CLOCK_JITTER 0.2 ns;
+FREQUENCY NET "mem_clock" 200.000000 MHz HOLD_MARGIN 0.100000 ns CLOCK_JITTER 0.2 ns;
+FREQUENCY NET "sys_clock" 50.0 MHz HOLD_MARGIN 0.1 ns CLOCK_JITTER 0.2 ns;

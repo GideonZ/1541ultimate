@@ -122,7 +122,7 @@ begin
     generic map (GSR => "ENABLED", DIV=> "2.0")
     port map (
         CLKI    => eclk,
-        RST     => ddr_reset,--_r, --'0', 
+        RST     => ddr_reset, --'0', 
         ALIGNWD => '0', 
         CDIVX   => sclk_i );
 

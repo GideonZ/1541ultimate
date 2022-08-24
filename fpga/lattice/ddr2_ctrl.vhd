@@ -29,9 +29,6 @@ port (
     start_reset : in  std_logic;
     start_ready : out std_logic;
 
-    debug1      : out std_logic;
-    debug2      : out std_logic;
-
     toggle_reset    : out std_logic;
     toggle_check    : in  std_logic;
 
@@ -40,6 +37,7 @@ port (
     -- 100 MHz output
     mem_clock_half  : out std_logic; -- SCLK
 
+    sys_clock   : in  std_logic;
     ctrl_clock  : in  std_logic;
     ctrl_reset  : in  std_logic := '0';
     
@@ -56,10 +54,10 @@ port (
     resp        : out t_mem_resp_32;
 
     -- PLL alignment
-    phase_sel       : out std_logic_vector(1 downto 0);
-    phase_dir       : out std_logic;
-    phase_step      : out std_logic;
-    phase_loadreg   : out std_logic;
+    phase_sel       : out std_logic_vector(1 downto 0) := "00";
+    phase_dir       : out std_logic := '0';
+    phase_step      : out std_logic := '0';
+    phase_loadreg   : out std_logic := '0';
 
 
     -- DDR2 signals
@@ -133,11 +131,12 @@ architecture Gideon of ddr2_ctrl is
     signal delay_dir          : std_logic := '1';
 
     signal update_r           : std_logic := '0';
-    signal update_d           : std_logic := '0';
     signal update_sync        : std_logic;
     signal dll_reset          : std_logic;
     signal buf_reset          : std_logic;
+    signal ddr_reset          : std_logic;
     signal ddr_reset_sync     : std_logic;
+    signal ddr_reset_ext      : std_logic := '0';
     signal ddr_reset_r        : std_logic := '0';
     signal ddr_reset_d        : std_logic := '0';
     signal ready              : std_logic;
@@ -158,8 +157,13 @@ architecture Gideon of ddr2_ctrl is
     signal ctrl_resp          : t_io_resp;
     signal valid_cnt          : unsigned(7 downto 0) := X"00";
 
+    signal sync_reset_r     : std_logic;
+    signal sync_reset_sync  : std_logic;
+    signal sync_reset       : std_logic;
+    
     signal sclk_out           : std_logic;
-    signal phase_meas         : std_logic_vector(7 downto 0) := (others => '0');     
+    signal phase_meas1        : std_logic_vector(7 downto 0) := (others => '0');     
+    signal phase_meas2        : std_logic_vector(7 downto 0) := (others => '0');     
 begin
     i_bridge: entity work.io_bus_bridge2
     generic map (
@@ -192,8 +196,12 @@ begin
                 case local is
                 when X"3" =>
                     ctrl_resp.data(0) <= toggle_check;
+                when X"5" =>
+                    ctrl_resp.data <= phase_meas2;
                 when X"6" =>
-                    ctrl_resp.data <= phase_meas;
+                    ctrl_resp.data <= phase_meas1;
+                when X"7" =>
+                    ctrl_resp.data <= std_logic_vector(valid_cnt);
                 when X"8" =>
                     ctrl_resp.data(2 downto 0) <= readclksel;
                     ctrl_resp.data(4 downto 3) <= read_delay;
@@ -208,8 +216,6 @@ begin
                     ctrl_resp.data(0) <= burstdet;
                 when X"E" =>
                     ctrl_resp.data(0) <= dll_lock;
-                when X"7" =>
-                    ctrl_resp.data <= std_logic_vector(valid_cnt);
                 when others =>
                     null;
                 end case;
@@ -217,13 +223,13 @@ begin
 
             delay_step <= "00";
             update_r <= '0';
-            update_d <= update_r;
             ddr_reset_r <= '0';
             ddr_reset_d <= ddr_reset_r;
             toggle_reset <= '0';
+            sync_reset_r <= '0';
             
-            phase_step    <= '1';
-            phase_loadreg <= '1'; 
+            phase_step    <= '0';
+            phase_loadreg <= '0'; 
 
             if rdata_valid = '1' then
                 valid_cnt <= valid_cnt + 1;
@@ -247,8 +253,8 @@ begin
                     phase_dir <= ctrl_req.data(2);
 
                 when X"5" =>
-                    phase_step    <= not ctrl_req.data(0);
-                    phase_loadreg <= not ctrl_req.data(1);
+                    phase_step    <= ctrl_req.data(0);
+                    phase_loadreg <= ctrl_req.data(1);
                     
                 when X"7" =>
                     valid_cnt <= X"00";
@@ -264,6 +270,7 @@ begin
                     update_r  <= ctrl_req.data(0);
                     pause_usr <= ctrl_req.data(1);
                     freeze_usr <= ctrl_req.data(2);
+                    sync_reset_r <= ctrl_req.data(6);
                     ddr_reset_r <= ctrl_req.data(7);
                 when X"C" =>
                     clock_enable <= ctrl_req.data(0);
@@ -283,12 +290,11 @@ begin
                 ext_cmd_valid <= '0';
                 delay_dir <= '1';
                 delay_loadn <= "00";
-                phase_sel     <= "00";
-                phase_dir     <= '0';
             end if;                     
         end if;
     end process;
-    buf_reset <= ddr_reset_sync or ddr_reset_r or ddr_reset_d; -- 50 MHz pulse
+    buf_reset <= ddr_reset_sync or ddr_reset_ext;
+    ddr_reset_ext <= ddr_reset_r or ddr_reset_d when rising_edge(ctrl_clock); -- 50 MHz pulse
 
     i_ctrl: entity work.ddr2_ctrl_logic
     generic map (
@@ -337,7 +343,7 @@ begin
         
         dll_reset        => dll_reset,
         dll_lock         => dll_lock,
-        ddr_reset        => ddr_reset_sync,
+        ddr_reset        => ddr_reset,
         buf_reset        => buf_reset,
         sclk_out         => sclk_out,
         
@@ -391,12 +397,21 @@ begin
         clock_out => start_clock,
         pulse_out => update_sync
     );
---    update_sync <= update_r or update_d;
+
+    i_reset_sync: entity work.pulse_synchronizer
+    port map (
+        clock_in  => ctrl_clock,
+        pulse_in  => sync_reset_r,
+        clock_out => start_clock,
+        pulse_out => sync_reset_sync
+    );
+
+    sync_reset <= sync_reset_sync or start_reset;
 
     i_mem_sync: mem_sync
     port map (
         start_clk => start_clock,
-        rst       => start_reset,
+        rst       => sync_reset,
         dll_lock  => dll_lock,
         pll_lock  => '1', -- already covered by start_reset
         update    => update_sync, -- new register bit
@@ -411,32 +426,38 @@ begin
 
     pause <= pause_sync or pause_usr;
     freeze <= freeze_sync or freeze_usr;
-
---    debug1      <= dll_reset;
---    debug2      <= dll_lock;
-    debug1      <= ddr_reset_sync;
-    debug2      <= buf_reset;
+    ddr_reset <= ddr_reset_sync when rising_edge(start_clock);
     start_ready <= ready;
     
     b_phase_measurement: block
-        signal testclk_c    : std_logic;
-        signal testclk_c2   : std_logic;        
+        signal testclk1_c   : std_logic;
+        signal testclk1_c2  : std_logic;        
+        signal testclk2_c   : std_logic;
+        signal testclk2_c2  : std_logic;        
         signal period       : unsigned(7 downto 0) := (others => '0');
-        signal counter      : unsigned(7 downto 0) := (others => '0');
+        signal counter1     : unsigned(7 downto 0) := (others => '0');
+        signal counter2     : unsigned(7 downto 0) := (others => '0');
     begin
         process(ctrl_clock)
         begin
             if rising_edge(ctrl_clock) then
-                testclk_c  <= sclk_out;
-                testclk_c2 <= testclk_c;
+                testclk1_c  <= sclk_out;
+                testclk1_c2 <= testclk1_c;
+                testclk2_c  <= sys_clock;
+                testclk2_c2 <= testclk2_c;
                 period <= period + 1;
 
                 if period = 0 then
-                    phase_meas <= std_logic_vector(counter);
-                    counter <= (others => '0');
+                    phase_meas1 <= std_logic_vector(counter1);
+                    phase_meas2 <= std_logic_vector(counter2);
+                    counter1 <= (others => '0');
+                    counter2 <= (others => '0');
                 else
-                    if testclk_c2 = '1' then
-                        counter <= counter + 1;
+                    if testclk1_c2 = '1' then
+                        counter1 <= counter1 + 1;
+                    end if;
+                    if testclk2_c2 = period(0) then
+                        counter2 <= counter2 + 1;
                     end if;
                 end if;                
             end if;

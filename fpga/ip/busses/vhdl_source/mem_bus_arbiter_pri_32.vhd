@@ -49,7 +49,7 @@ begin
     begin
         if rising_edge(clock) then
             req_c  <= req_i;
-            if resp.rack = '1' and (resp.rack_tag = req_c.tag) then
+            if resp.rack = '1' then
                 req_c.request <= '0';
             end if;
         end if;
