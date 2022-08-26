@@ -19,23 +19,12 @@ port (
 
     phase_out   : out std_logic;
     toggle_r_2x : in  std_logic := '0';
-
-    dbg1_request : out std_logic;
-    dbg1_rwn     : out std_logic;
-    dbg1_rack    : out std_logic;
-    dbg1_rack_tag: out std_logic_vector(7 downto 0);
-    dbg1_dack_tag: out std_logic_vector(7 downto 0);
-    dbg1_rdata   : out std_logic_vector(31 downto 0);
-    dbg2_request : out std_logic;
-    dbg2_rwn     : out std_logic;
-    dbg2_rack    : out std_logic;
-    dbg2_rack_tag: out std_logic_vector(7 downto 0);
-    dbg2_dack_tag: out std_logic_vector(7 downto 0);
-    dbg2_rdata   : out std_logic_vector(31 downto 0);
     
+    inhibit_1x  : in  std_logic := '0';
     mem_req_1x  : in  t_mem_req_32;
     mem_resp_1x : out t_mem_resp_32;
     
+    inhibit_2x  : out std_logic;
     mem_req_2x  : out t_mem_req_32;
     mem_resp_2x : in  t_mem_resp_32 );
     
@@ -46,59 +35,12 @@ architecture Gideon of memreq_halfrate is
     signal toggle_r_1x  : std_logic;
     signal req_2x_i     : t_mem_req_32 := c_mem_req_32_init;
     signal resp_1x_i    : t_mem_resp_32 := c_mem_resp_32_init;
-
---    subtype t_state is std_logic_vector(1 downto 0);
---    constant c_idle     : t_state := "00";
---    constant c_offer    : t_state := "01";
---    constant c_reply    : t_state := "11";
-    type t_state is (c_idle, c_offer, c_reply, c_illegal);
+    signal local_req    : t_mem_req_32 := c_mem_req_32_init;
+        
+    type t_state is (c_idle, c_offer);--, c_reply, c_illegal);
     signal state        : t_state := c_idle;
     
---    attribute syn_keep : boolean;
---    attribute syn_keep of dbg1_request  : signal is true;
---    attribute syn_keep of dbg1_rwn      : signal is true;
---    attribute syn_keep of dbg1_rack     : signal is true;
---    attribute syn_keep of dbg1_rack_tag : signal is true;
---    attribute syn_keep of dbg1_dack_tag : signal is true;
---    attribute syn_keep of dbg1_rdata    : signal is true;
---    attribute syn_keep of dbg2_request  : signal is true;
---    attribute syn_keep of dbg2_rwn      : signal is true;
---    attribute syn_keep of dbg2_rack     : signal is true;
---    attribute syn_keep of dbg2_rack_tag : signal is true;
---    attribute syn_keep of dbg2_dack_tag : signal is true;
---    attribute syn_keep of dbg2_rdata    : signal is true;
 begin
---    process(mem_req_1x, resp_1x_i, req_2x_i, mem_resp_2x, reset_1x)
---    begin
-        dbg1_request  <= mem_req_1x.request;
-        dbg1_rwn      <= mem_req_1x.read_writen;
-        dbg1_rack     <= resp_1x_i.rack;
-        dbg1_rack_tag <= resp_1x_i.rack_tag;
-        dbg1_dack_tag <= resp_1x_i.dack_tag;
-        dbg1_rdata    <= resp_1x_i.data;
-    
-        dbg2_request  <= req_2x_i.request;
-        dbg2_rwn      <= req_2x_i.read_writen;
-        dbg2_rack     <= mem_resp_2x.rack;
-        dbg2_rack_tag <= mem_resp_2x.rack_tag;
-        dbg2_dack_tag <= mem_resp_2x.dack_tag;
-        dbg2_rdata    <= mem_resp_2x.data;
-        
---        if reset_1x='1' then
---            dbg1_request  <= '0';
---            dbg1_rack     <= '0';
---            dbg1_rack_tag <= (others => '0');
---            dbg1_dack_tag <= (others => '0');
---            dbg1_rdata    <= (others => '0');
---        
---            dbg2_request  <= '1';            
---            dbg2_rack     <= '1';            
---            dbg2_rack_tag <= (others => '1');
---            dbg2_dack_tag <= (others => '1');
---            dbg2_rdata    <= (others => '1');
---        end if;
---
---    end process;
     
     i_toggle_reset_sync: entity work.pulse_synchronizer
     port map (
@@ -118,17 +60,37 @@ begin
     mem_req_2x  <= req_2x_i;
     mem_resp_1x <= resp_1x_i;
     
+--    process(resp_1x_i, state, mem_req_1x, a_mem_resp)
+--    begin
+--        -- default what we make in the 2x clock process, with the exception of .. the rack!
+--        -- mem_resp_1x <= a_mem_resp; -- FIFO alternative
+--        mem_resp_1x <= resp_1x_i; -- direct
+--
+--        if state = c_idle and mem_req_1x.request='1' then
+--            mem_resp_1x.rack <= '1';
+--            mem_resp_1x.rack_tag <= mem_req_1x.tag;
+--        else
+--            mem_resp_1x.rack <= '0';
+--            mem_resp_1x.rack_tag <= (others => '0');
+--        end if;
+--    end process;
+    
     -- Forward path state machine, return path registers
-    -- return path - register needed to keep last value
-    -- acknowledge can only be cleared when toggle = 1.
     process(clock_2x)
     begin
         if rising_edge(clock_2x) then
+            if toggle = '1' then
+                resp_1x_i.rack <= '0';
+                resp_1x_i.rack_tag <= (others => '0');
+            end if;
+            
+            inhibit_2x <= inhibit_1x;
+
             case state is
             when c_idle =>
-                if mem_req_1x.request='1' then -- either toggle is ok if timing was checked correctly
-                    req_2x_i           <= mem_req_1x;
-                    resp_1x_i.rack     <= '1';
+                if mem_req_1x.request='1' and inhibit_1x = '0' then
+                    req_2x_i <= mem_req_1x;
+                    resp_1x_i.rack <= '1';
                     resp_1x_i.rack_tag <= mem_req_1x.tag;
                     state <= c_offer;
                 end if;
@@ -138,36 +100,22 @@ begin
                     req_2x_i.request <= '0'; -- stop requesting
                     if toggle = '1' then
                         state <= c_idle;
-                    elsif resp_1x_i.rack = '0' then
-                        state <= c_idle;
-                    else
-                        state <= c_reply;
                     end if;
-                end if;
-                if toggle = '1' then
-                    resp_1x_i.rack <= '0';
-                    resp_1x_i.rack_tag <= (others => '0');
+                elsif req_2x_i.request = '0' and toggle = '1' then
+                    state <= c_idle;
                 end if;
                             
-            when c_reply =>
-                if toggle = '1' then
-                    state <= c_idle;
-                    resp_1x_i.rack <= '0';
-                    resp_1x_i.rack_tag <= (others => '0');
-                end if;
-            
             when others =>
                 state <= c_idle;
             end case;
 
             if reset_1x = '1' then
                 req_2x_i.request <= '0';
-                resp_1x_i.rack <= '0';
-                resp_1x_i.rack_tag <= (others => '0');
                 state <= c_idle;
             end if;
 
             -- Return path for data
+            -- Yields: "resp_1x_i"
             if toggle = '1' then
                 resp_1x_i.dack_tag <= (others => '0');
             end if;

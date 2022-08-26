@@ -53,7 +53,7 @@ int main()
     hexword((uint32_t)length);
     hexword(run_address);
 
-#if NO_BOOT
+#if NO_BOOT == 1
     my_puts("Waiting for JTAG download!\n\n");
     while(1) {
         ioWrite8(ITU_SD_BUSY, 1);

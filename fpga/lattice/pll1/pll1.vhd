@@ -45,7 +45,7 @@ architecture Structure of pll1 is
     attribute LPF_RESISTOR : string; 
     attribute FREQUENCY_PIN_CLKOS3 of PLLInst_0 : label is "24.000000";
     attribute FREQUENCY_PIN_CLKOS2 of PLLInst_0 : label is "50.000000";
-    attribute FREQUENCY_PIN_CLKOS of PLLInst_0 : label is "100.000000";
+    attribute FREQUENCY_PIN_CLKOS of PLLInst_0 : label is "12.288"; -- Edited!
     attribute FREQUENCY_PIN_CLKOP of PLLInst_0 : label is "200.000000";
     attribute FREQUENCY_PIN_CLKI of PLLInst_0 : label is "50.000000";
     attribute ICP_CURRENT of PLLInst_0 : label is "12";
@@ -74,7 +74,7 @@ begin
         OUTDIVIDER_MUXC=> "DIVC", CLKOS2_ENABLE=> "ENABLED", 
         OUTDIVIDER_MUXB=> "DIVB", CLKOS_ENABLE=> "ENABLED", 
         OUTDIVIDER_MUXA=> "DIVA", CLKOP_ENABLE=> "ENABLED", CLKOS3_DIV=>  25, 
-        CLKOS2_DIV=>  12, CLKOS_DIV=>  6, CLKOP_DIV=>  3, CLKFB_DIV=>  4, 
+        CLKOS2_DIV=>  12, CLKOS_DIV=>  49, CLKOP_DIV=>  3, CLKFB_DIV=>  4, 
         CLKI_DIV=>  1, FEEDBK_PATH=> "INT_OP")
         port map (CLKI=>CLKI, CLKFB=>CLKFB_t, PHASESEL1=>PHASESEL(1), 
             PHASESEL0=>PHASESEL(0), PHASEDIR=>PHASEDIR, 

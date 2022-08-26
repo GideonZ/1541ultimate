@@ -38,6 +38,7 @@
 // Write
 #define LATTICE_DDR2_ADDR_LOW  (*(volatile uint8_t *)(DDR2_BASE + 0x00))
 #define LATTICE_DDR2_ADDR_HIGH (*(volatile uint8_t *)(DDR2_BASE + 0x01))
+#define LATTICE_DDR2_ADDR      (*(volatile uint16_t*)(DDR2_BASE + 0x00))
 #define LATTICE_DDR2_COMMAND   (*(volatile uint8_t *)(DDR2_BASE + 0x02))
 #define LATTICE_DDR2_READDELAY (*(volatile uint8_t *)(DDR2_BASE + 0x08))
 #define LATTICE_DDR2_DELAYSTEP (*(volatile uint8_t *)(DDR2_BASE + 0x09))

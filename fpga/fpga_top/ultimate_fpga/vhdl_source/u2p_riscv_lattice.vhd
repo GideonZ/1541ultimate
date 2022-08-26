@@ -348,35 +348,11 @@ architecture rtl of u2p_riscv_lattice is
     signal phase_step    : std_logic;
     signal phase_loadreg : std_logic;
 
-    signal dbg1_request : std_logic;
-    signal dbg1_rwn     : std_logic;
-    signal dbg1_rack    : std_logic;
-    signal dbg1_rack_tag: std_logic_vector(7 downto 0);
-    signal dbg1_dack_tag: std_logic_vector(7 downto 0);
-    signal dbg1_rdata   : std_logic_vector(31 downto 0);
-    signal dbg2_request : std_logic;
-    signal dbg2_rwn     : std_logic;
-    signal dbg2_rack    : std_logic;
-    signal dbg2_rack_tag: std_logic_vector(7 downto 0);
-    signal dbg2_dack_tag: std_logic_vector(7 downto 0);
-    signal dbg2_rdata   : std_logic_vector(31 downto 0);
-
-
-    function xor_reduce(a : std_logic_vector) return std_logic is
-        variable r : std_logic := '0';
-    begin
-        for i in a'range loop
-            r := r xor a(i);
-        end loop;
-        return r;
-    end function;
---    attribute syn_noprune: boolean ;
---    attribute syn_noprune of USRMCLK: component is true;
 begin
     b_por: block
         signal rst_c1   : std_logic := '0';
         signal rst_c2   : std_logic := '0';
-        signal count    : unsigned(19 downto 0) := (others => '0');
+        signal count    : unsigned(15 downto 0) := (others => '0');
     begin
         process(RMII_REFCLK)
         begin
@@ -386,7 +362,7 @@ begin
                 if rst_c2 = '1' then
                     count <= (others => '0');
                     pll_reset <= '1';
-                elsif count = X"FFFFF" then
+                elsif count = X"FFFF" then
                     pll_reset <= '0';
                 else
                     pll_reset <= '1';
@@ -401,9 +377,9 @@ begin
         RST    => pll_reset,
         CLKI   => RMII_REFCLK, -- 50 MHz
         CLKOP  => mem_clock,   -- 200 MHz
-        CLKOS  => open,--ctrl_clock, -- 100 MHz 
+        CLKOS  => audio_clock, -- 12.245 MHz (47.831 kHz sample rate)
         CLKOS2 => sys_clock,   -- 50 MHz
-        CLKOS3 => clock_24,    -- 24 MHz --audio_clock, -- 12.245 MHz (47.831 kHz sample rate)
+        CLKOS3 => clock_24,    -- 24 MHz
         PHASESEL  => phase_sel, 
         PHASEDIR  => phase_dir, 
         PHASESTEP => phase_step, 
@@ -418,8 +394,6 @@ begin
     start_clock <= sys_clock;
     start_reset <= sys_reset;
     
-    audio_clock <= clock_24; -- for the time being
-
     b_sys_reset: block
         signal rst_c1   : std_logic := '0';
         signal rst_c2   : std_logic := '0';
@@ -568,53 +542,51 @@ begin
         resps(1)   => io_resp_debug
     );
 
---    i_double_freq_bridge: entity work.memreq_halfrate
---    port map(
---        dbg1_request  => dbg1_request,
---        dbg1_rwn      => dbg1_rwn,
---        dbg1_rack     => dbg1_rack,
---        dbg1_rack_tag => dbg1_rack_tag,
---        dbg1_dack_tag => dbg1_dack_tag,
---        dbg1_rdata    => dbg1_rdata,
---        dbg2_request  => dbg2_request,
---        dbg2_rwn      => dbg2_rwn,
---        dbg2_rack     => dbg2_rack,
---        dbg2_rack_tag => dbg2_rack_tag,
---        dbg2_dack_tag => dbg2_dack_tag,
---        dbg2_rdata    => dbg2_rdata,
---
---
---        phase_out   => toggle_check,
---        toggle_r_2x => toggle_reset,
---        clock_1x    => sys_clock,
---        clock_2x    => ctrl_clock,
---        reset_1x    => sys_clock,
---        mem_req_1x  => mem_req,
---        mem_resp_1x => mem_resp,
---        mem_req_2x  => mem_req_2x,
---        mem_resp_2x => mem_resp_2x
---    );
-    i_double_freq_bridge: entity work.mem_bus_bridge_sync
-    port map (
-        phase_out  => toggle_check,
-        a_clock    => sys_clock,
-        a_reset    => sys_reset,
-        a_mem_req  => mem_req,
-        a_mem_resp => mem_resp,
-        b_clock    => ctrl_clock,
-        b_reset    => ctrl_reset,
-        b_toggle_r => toggle_reset,
-        b_mem_req  => mem_req_2x,
-        b_mem_resp => mem_resp_2x
+    i_double_freq_bridge: entity work.memreq_halfrate
+    port map(
+        phase_out   => toggle_check,
+        toggle_r_2x => toggle_reset,
+        clock_1x    => sys_clock,
+        clock_2x    => ctrl_clock,
+        reset_1x    => sys_reset,
+        mem_req_1x  => mem_req,
+        mem_resp_1x => mem_resp,
+        mem_req_2x  => mem_req_2x,
+        mem_resp_2x => mem_resp_2x
     );
+--    i_double_freq_bridge: entity work.mem_bus_bridge_sync
+--    port map (
+--        phase_out  => toggle_check,
+--        a_clock    => sys_clock,
+--        a_reset    => sys_reset,
+--        a_mem_req  => mem_req,
+--        a_mem_resp => mem_resp,
+--        b_clock    => ctrl_clock,
+--        b_reset    => ctrl_reset,
+--        b_toggle_r => toggle_reset,
+--        b_mem_req  => mem_req_2x,
+--        b_mem_resp => mem_resp_2x
+--    );
+
+--    i_double_freq_bridge: entity work.mem_bus_bridge
+--    port map (
+--        a_clock    => sys_clock,
+--        a_reset    => sys_reset,
+--        a_mem_req  => mem_req,
+--        a_mem_resp => mem_resp,
+--        b_clock    => ctrl_clock,
+--        b_reset    => ctrl_reset,
+--        b_mem_req  => mem_req_2x,
+--        b_mem_resp => mem_resp_2x
+--    );
 
     b_latency: block    
         signal rq, rq_d, ack    : std_logic;
         signal count            : natural range 0 to 255;
     begin
-        rq <= '1' when mem_req.request='1' and mem_req.tag = X"20" and mem_req.read_writen = '1' else '0';
+        rq <= '1' when cpu_mem_req.request='1' and cpu_mem_req.tag = X"20" and cpu_mem_req.read_writen = '1' else '0';
         rq_d <= rq when rising_edge(sys_clock);
-        ack <= '1' when mem_resp.dack_tag = X"20" else '0';
+        ack <= '1' when cpu_mem_resp.dack_tag = X"20" else '0';
     
         process(sys_clock)
         begin
@@ -739,8 +711,8 @@ begin
         g_icap          => false,
         g_uart          => true,
         g_uart_rx       => true,
-        g_drive_1541    => false,--,true,
-        g_drive_1541_2  => false,--,g_dual_drive,
+        g_drive_1541    => true,
+        g_drive_1541_2  => g_dual_drive,
         g_mm_drive      => true,
         g_hardware_gcr  => true,
         g_ram_expansion => true,
@@ -748,10 +720,10 @@ begin
         g_stereo_sid    => false,--,true,
         g_8voices       => false,
         g_hardware_iec  => true,
-        g_c2n_streamer  => false,--,true,
-        g_c2n_recorder  => false,--,true,
+        g_c2n_streamer  => true,
+        g_c2n_recorder  => true,
         g_cartridge     => true,
-        g_command_intf  => false,--,true,
+        g_command_intf  => true,
         g_drive_sound   => true,
         g_rtc_chip      => false,
         g_rtc_timer     => false,
@@ -1177,19 +1149,5 @@ begin
     LED_MOTORn <= not toggle_check;
     LED_DISKn  <= '1'; -- off
     LED_CARTn  <= not mem_ready;
-    -- LED_SDACTn <= not toggle_check;
-    
-    LED_SDACTn <= xor_reduce(
-        dbg1_request  &
-        dbg1_rwn      &
-        dbg1_rack     &
-        dbg1_rack_tag &
-        dbg1_dack_tag &
-        dbg1_rdata    &
-        dbg2_request  &
-        dbg2_rwn      &
-        dbg2_rack     &
-        dbg2_rack_tag &
-        dbg2_dack_tag &
-        dbg2_rdata    );
+    LED_SDACTn <= not toggle_check;
 end architecture;

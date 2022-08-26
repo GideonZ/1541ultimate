@@ -361,6 +361,8 @@ int ram_test(void)
 {
     // Make sure Refresh is now ON
     LATTICE_DDR2_ENABLE    = 7;
+    // Make sure Refresh is now OFF
+    //LATTICE_DDR2_ENABLE    = 3;
 
     int errors = 0;
 #if NO_BOOT > 1
@@ -373,17 +375,20 @@ int ram_test(void)
 
     //my_puts("Write..");
     uint16_t *mem16 = (uint16_t *)0x10000;
+    uint16_t modifier = (run & 1) ? 0xFFFF : 0x0000;
     uint32_t i;
     for(i=0;i<65536;i++) {
-        mem16[i] = (uint16_t)(i+run);
+        mem16[i] = (uint16_t)(i ^ modifier);
     }
     //my_puts("Read..");
     // LATTICE_DDR2_VALIDCNT = 0;
     for(i=0;i<65536;i++) {
-        if (mem16[i] != (uint16_t)(i+run)) {
+        uint16_t expected = (uint16_t)(i ^ modifier);
+        if (mem16[i] != expected) {
             if (errors < RAM_TEST_REPORT) {
-                hex16(mem16[i], " != ");
-                hex16((uint16_t)(i+run), "\n");
+                hex16(errors,":");
+                hex16(expected, " != ");
+                hex16(mem16[i], "\n");
             }
             errors++;
         }
