@@ -95,7 +95,6 @@ port (
     enable_sdram: in  std_logic := '1';
     refresh_en  : in  std_logic := '1';
     odt_enable  : in  std_logic := '0';
-    offset      : in  std_logic_vector(1 downto 0) := "00";
     inhibit     : in  std_logic := '0';
     read_delay  : in  std_logic_vector(1 downto 0) := "00";
     
@@ -288,7 +287,7 @@ begin
             
             -- extract address bits
             bank := to_integer(req.address(4 downto 2));
-            col(1 downto 0) := offset; -- std_logic_vector(req.address( 1 downto  0)); -- 2 column bits
+            col(1 downto 0) := std_logic_vector(req.address( 1 downto  0)); -- 2 column bits
             col(9 downto 2) := std_logic_vector(req.address(12 downto  5)); -- 8 column bits
 
             addr1.sdram_ba  <= std_logic_vector(req.address(4 downto 2)); --  3 bank bits

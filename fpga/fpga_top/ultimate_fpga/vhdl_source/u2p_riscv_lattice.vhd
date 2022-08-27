@@ -223,8 +223,8 @@ architecture rtl of u2p_riscv_lattice is
     signal ulpi_dir_i       : std_logic;
         
     -- memory controller interconnect
-    signal memctrl_inhibit  : std_logic;
-    signal is_idle          : std_logic;
+    signal mem_inhibit_1x   : std_logic;
+    signal mem_inhibit_2x   : std_logic;
     signal cpu_mem_req      : t_mem_req_32;
     signal cpu_mem_resp     : t_mem_resp_32;
     signal mem_req          : t_mem_req_32;
@@ -339,9 +339,6 @@ architecture rtl of u2p_riscv_lattice is
     signal eth_rx_sof    : std_logic;
     signal eth_rx_eof    : std_logic;
     signal eth_rx_valid  : std_logic;
-
-    signal last_count    : unsigned(7 downto 0) := (others => '0');
-    signal count_sum     : unsigned(15 downto 0) := (others => '0');
 
     signal phase_sel     : std_logic_vector(1 downto 0);
     signal phase_dir     : std_logic;
@@ -551,59 +548,12 @@ begin
         reset_1x    => sys_reset,
         mem_req_1x  => mem_req,
         mem_resp_1x => mem_resp,
+        inhibit_1x  => mem_inhibit_1x,
         mem_req_2x  => mem_req_2x,
-        mem_resp_2x => mem_resp_2x
+        mem_resp_2x => mem_resp_2x,
+        inhibit_2x  => mem_inhibit_2x
     );
---    i_double_freq_bridge: entity work.mem_bus_bridge_sync
---    port map (
---        phase_out  => toggle_check,
---        a_clock    => sys_clock,
---        a_reset    => sys_reset,
---        a_mem_req  => mem_req,
---        a_mem_resp => mem_resp,
---        b_clock    => ctrl_clock,
---        b_reset    => ctrl_reset,
---        b_toggle_r => toggle_reset,
---        b_mem_req  => mem_req_2x,
---        b_mem_resp => mem_resp_2x
---    );
 
---    i_double_freq_bridge: entity work.mem_bus_bridge
---    port map (
---        a_clock    => sys_clock,
---        a_reset    => sys_reset,
---        a_mem_req  => mem_req,
---        a_mem_resp => mem_resp,
---        b_clock    => ctrl_clock,
---        b_reset    => ctrl_reset,
---        b_mem_req  => mem_req_2x,
---        b_mem_resp => mem_resp_2x
---    );
-
-    b_latency: block    
-        signal rq, rq_d, ack    : std_logic;
-        signal count            : natural range 0 to 255;
-    begin
-        rq <= '1' when cpu_mem_req.request='1' and cpu_mem_req.tag = X"20" and cpu_mem_req.read_writen = '1' else '0';
-        rq_d <= rq when rising_edge(sys_clock);
-        ack <= '1' when cpu_mem_resp.dack_tag = X"20" else '0';
-    
-        process(sys_clock)
-        begin
-            if rising_edge(sys_clock) then
-                if rq = '1' and rq_d = '0' then
-                    count <= 1;
-                else
-                    count <= count + 1;
-                end if;
-                if ack = '1' then
-                    last_count <= to_unsigned(count, last_count'length);
-                    count_sum  <= count_sum + count;
-                end if;
-            end if;
-        end process;
-    end block;
-    
     i_memctrl: entity work.ddr2_ctrl
     port map (
         start_clock       => start_clock,
@@ -620,8 +570,7 @@ begin
         ctrl_reset        => ctrl_reset,
         req               => mem_req_2x,
         resp              => mem_resp_2x,
-        inhibit           => memctrl_inhibit,
-        is_idle           => is_idle,
+        inhibit           => mem_inhibit_2x,
 
         io_clock          => sys_clock,
         io_reset          => sys_reset,
@@ -673,10 +622,6 @@ begin
         i2c_sda_o  => i2c_sda_o,
         iec_i      => sw_iec_i,
         iec_o      => sw_iec_o,
-
-        value1     => last_count,
-        value2     => count_sum(7 downto 0),
-        value3     => count_sum(15 downto 8),
 
         board_rev  => not BOARD_REVn,
         eth_irq_i  => ETH_IRQn,
@@ -782,7 +727,7 @@ begin
         io2n_i      => SLOT_IO2n,
                 
         -- local bus side
-        mem_inhibit => memctrl_inhibit,
+        mem_inhibit => mem_inhibit_1x,
         mem_req     => mem_req,
         mem_resp    => mem_resp,
                  
@@ -812,10 +757,10 @@ begin
         iec_clock_o => ult_clock_o,
         iec_srq_o   => ult_srq_o,
                                     
-        MOTOR_LEDn  => open, -- LED_MOTORn,
-        DISK_ACTn   => open, -- LED_DISKn,
-        CART_LEDn   => open, -- LED_CARTn,
-        SDACT_LEDn  => open, -- LED_SDACTn,
+        MOTOR_LEDn  => LED_MOTORn,
+        DISK_ACTn   => LED_DISKn,
+        CART_LEDn   => LED_CARTn,
+        SDACT_LEDn  => LED_SDACTn,
 
         -- Parallel cable pins
         drv_track_is_0      => drv_track_is_0,
@@ -1146,8 +1091,8 @@ begin
     DEBUG_SPARE      <= '0';
     flash_sck_t      <= sys_reset; -- 0 when not in reset = enabled
     
-    LED_MOTORn <= not toggle_check;
-    LED_DISKn  <= '1'; -- off
-    LED_CARTn  <= not mem_ready;
-    LED_SDACTn <= not toggle_check;
+    --LED_MOTORn <= not toggle_check;
+    --LED_DISKn  <= '1'; -- off
+    --LED_CARTn  <= not mem_ready;
+    --LED_SDACTn <= not toggle_check;
 end architecture;
