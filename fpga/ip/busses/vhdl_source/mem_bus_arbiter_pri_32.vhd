@@ -7,7 +7,7 @@ use work.mem_bus_pkg.all;
 
 entity mem_bus_arbiter_pri_32 is
 generic (
-    g_registered: boolean := true;
+    g_registered: boolean := false;
     g_ports     : positive := 3 );
 port (
     clock       : in  std_logic;
@@ -37,19 +37,14 @@ begin
     end process;
 
     -- send the reply to everyone (including tag)
-    process(resp)
-    begin
-        for i in resps'range loop
-            resps(i) <= resp;
-        end loop;
-    end process;
+    resps <= (others => resp);
     
     -- output register (will be eliminated when not used)
     process(clock)
     begin
         if rising_edge(clock) then
             req_c  <= req_i;
-            if resp.rack = '1' then
+            if resp.rack = '1' and resp.rack_tag = req_c.tag then
                 req_c.request <= '0';
             end if;
         end if;

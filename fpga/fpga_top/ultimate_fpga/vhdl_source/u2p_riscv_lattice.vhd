@@ -19,7 +19,7 @@ use ECP5U.components.all;
 entity u2p_riscv_lattice is
 generic (
     g_jtag_debug     : boolean := true;
-    g_dual_drive     : boolean := true );
+    g_dual_drive     : boolean := false );
 port (
     -- (Optional) Oscillator
     CLOCK_50         : in    std_logic := '0';
@@ -164,21 +164,6 @@ end entity;
 
 architecture rtl of u2p_riscv_lattice is
 
-    component pll1
-    port (
-        RST : in  std_logic;
-        CLKI: in  std_logic;
-        CLKOP: out  std_logic; 
-        CLKOS: out  std_logic;
-        CLKOS2: out  std_logic; 
-        CLKOS3: out  std_logic; 
-        PHASESEL: in  std_logic_vector(1 downto 0); 
-        PHASEDIR: in  std_logic; 
-        PHASESTEP: in  std_logic; 
-        PHASELOADREG: in  std_logic; 
-        LOCK: out  std_logic);
-    end component;
-
     signal flash_sck_o  : std_logic;
     signal flash_sck_t  : std_logic;
     signal pll_reset    : std_logic;
@@ -200,19 +185,18 @@ architecture rtl of u2p_riscv_lattice is
     signal toggle_reset : std_logic;
     signal toggle_check : std_logic;
     signal ctrl_clock   : std_logic;
-    signal ctrl_reset_c : std_logic;
     signal ctrl_reset   : std_logic;
-    signal toggle       : std_logic;
-    signal eth_clock    : std_logic;
     signal sys_clock    : std_logic;
     signal sys_reset    : std_logic := '1';
     signal clock_24     : std_logic;
     signal audio_clock  : std_logic;
     signal audio_reset  : std_logic;
+    signal eth_clock    : std_logic;
     signal eth_reset    : std_logic;
     signal ulpi_reset_req : std_logic;
     signal button_i     : std_logic_vector(2 downto 0);
     signal buffer_en    : std_logic;
+    signal toggle       : std_logic;
         
     -- miscellaneous interconnect
     signal ulpi_reset_i     : std_logic;
@@ -345,96 +329,12 @@ architecture rtl of u2p_riscv_lattice is
     signal phase_step    : std_logic;
     signal phase_loadreg : std_logic;
 
+    signal ctrl_reset_pulse : std_logic;
 begin
-    b_por: block
-        signal rst_c1   : std_logic := '0';
-        signal rst_c2   : std_logic := '0';
-        signal count    : unsigned(15 downto 0) := (others => '0');
-    begin
-        process(RMII_REFCLK)
-        begin
-            if rising_edge(RMII_REFCLK) then
-                rst_c1    <= button_i(0);
-                rst_c2    <= rst_c1;
-                if rst_c2 = '1' then
-                    count <= (others => '0');
-                    pll_reset <= '1';
-                elsif count = X"FFFF" then
-                    pll_reset <= '0';
-                else
-                    pll_reset <= '1';
-                    count <= count + 1;
-                end if;
-            end if;
-        end process;
-    end block;
-    
-    i_pll: pll1
-    port map (
-        RST    => pll_reset,
-        CLKI   => RMII_REFCLK, -- 50 MHz
-        CLKOP  => mem_clock,   -- 200 MHz
-        CLKOS  => audio_clock, -- 12.245 MHz (47.831 kHz sample rate)
-        CLKOS2 => sys_clock,   -- 50 MHz
-        CLKOS3 => clock_24,    -- 24 MHz
-        PHASESEL  => phase_sel, 
-        PHASEDIR  => phase_dir, 
-        PHASESTEP => phase_step, 
-        PHASELOADREG => phase_loadreg, 
-        LOCK   => pll_locked );
-
-    ctrl_clock <= half_clock;
-    
-    --start_clock <= ctrl_clock;
-    --start_reset <= sys_reset;
-    
-    start_clock <= sys_clock;
-    start_reset <= sys_reset;
-    
-    b_sys_reset: block
-        signal rst_c1   : std_logic := '0';
-        signal rst_c2   : std_logic := '0';
-        signal count    : unsigned(15 downto 0) := (others => '0');
-    begin
-        process(sys_clock)
-        begin
-            if rising_edge(sys_clock) then
-                rst_c1  <= not pll_locked;
-                rst_c2  <= rst_c1;
-                if rst_c2 = '1' then
-                    count <= (others => '0');
-                    sys_reset <= '1';
-                elsif count = X"FFFF" then
-                    sys_reset <= '0';
-                else
-                    sys_reset <= count(count'high);
-                    count <= count + 1;
-                end if;
-            end if;
-        end process;
-    end block;
-    
-    process(ctrl_clock)
-    begin
-        if rising_edge(ctrl_clock) then
-            ctrl_reset_c <= sys_reset;
-            ctrl_reset   <= ctrl_reset_c;
-        end if;
-    end process;
-    
-    --eth_clock <= sys_clock; -- same net
-    eth_clock   <= RMII_REFCLK; -- dedicated pin
+    ctrl_clock  <= half_clock;
     HUB_CLOCK   <= clock_24;
     ULPI_REFCLK <= clock_24;
 
-
-    i_audio_reset: entity work.level_synchronizer
-    generic map ('1')
-    port map (
-        clock       => audio_clock,
-        input       => sys_clock,
-        input_c     => audio_reset  );
-    
     i_ulpi_reset: entity work.level_synchronizer
     generic map ('1')
     port map (
@@ -442,12 +342,29 @@ begin
         input       => ulpi_reset_req,
         input_c     => ulpi_reset_i  );
 
-    i_eth_reset: entity work.level_synchronizer
-    generic map ('1')
+    i_startup: entity work.startup
     port map (
-        clock       => eth_clock,
-        input       => sys_reset,
-        input_c     => eth_reset  );
+        ref_clock     => RMII_REFCLK,
+        phase_sel     => phase_sel,
+        phase_dir     => phase_dir,
+        phase_step    => phase_step,
+        phase_loadreg => phase_loadreg,
+        start_clock   => start_clock,
+        start_reset   => start_reset,
+        mem_clock     => mem_clock,
+        mem_ready     => mem_ready,
+        ctrl_clock    => ctrl_clock,
+        ctrl_reset    => ctrl_reset,
+        restart       => ctrl_reset_pulse,
+        sys_clock     => sys_clock,
+        sys_reset     => sys_reset,
+        audio_clock   => audio_clock,
+        audio_reset   => audio_reset,
+        eth_clock     => eth_clock,
+        eth_reset     => eth_reset,
+        clock_24      => clock_24
+    );
+    
 
     i_riscv: entity work.neorv32_wrapper
     generic map (
@@ -464,6 +381,7 @@ begin
         jtag_tdi_i  => DEBUG_TDI,
         jtag_tdo_o  => DEBUG_TDO,
         jtag_tms_i  => DEBUG_TMS,
+        timeout     => LED_SDACTn,
         irq_i       => io_irq,
         irq_o       => open,
         io_req      => io_req_riscv,
@@ -571,7 +489,8 @@ begin
         req               => mem_req_2x,
         resp              => mem_resp_2x,
         inhibit           => mem_inhibit_2x,
-
+        reset_out         => ctrl_reset_pulse,
+        
         io_clock          => sys_clock,
         io_reset          => sys_reset,
         io_req            => io_req_ddr2,
@@ -760,7 +679,7 @@ begin
         MOTOR_LEDn  => LED_MOTORn,
         DISK_ACTn   => LED_DISKn,
         CART_LEDn   => LED_CARTn,
-        SDACT_LEDn  => LED_SDACTn,
+        SDACT_LEDn  => open, --LED_SDACTn,
 
         -- Parallel cable pins
         drv_track_is_0      => drv_track_is_0,

@@ -21,6 +21,11 @@
 #define EMR    (NO_DQSN | RTT_150 | AL_2 )//| HALF_DRIVE)
 #define EMROCD (EMR | OCD_ENABLE)
 
+#define CLOCKPIN 1
+#define ODT      2
+#define REFRESH  4
+#define CKE      8
+
 #define EMR2   0x8000 // no extended refresh
 #define EMR3   0xC000 // all bits reserved
 #define DLLRST 0x0100 // MR DLL RESET
@@ -64,7 +69,7 @@ void hexword(uint32_t val)
 
 static void init_mode_regs()
 {
-    LATTICE_DDR2_ENABLE    = 3; // Make sure refresh is off for now
+    LATTICE_DDR2_ENABLE    = CLOCKPIN | CKE; // Make sure refresh is off
 
     LATTICE_DDR2_ADDR      = 0x0400;
     LATTICE_DDR2_COMMAND   = 2; // Precharge
@@ -75,10 +80,10 @@ static void init_mode_regs()
     LATTICE_DDR2_ADDR      = EMR3;
     LATTICE_DDR2_COMMAND   = 0; // write MR
 
-    LATTICE_DDR2_ADDR      = EMROCD;
+    LATTICE_DDR2_ADDR      = EMR;
     LATTICE_DDR2_COMMAND   = 0; // write MR
 
-    LATTICE_DDR2_ADDR      = DLLRST;
+    LATTICE_DDR2_ADDR      = MR_BL8 | DLLRST;
     LATTICE_DDR2_COMMAND   = 0; // write MR
 
     LATTICE_DDR2_ADDR      = 0x0400;
@@ -93,6 +98,12 @@ static void init_mode_regs()
     LATTICE_DDR2_COMMAND   = 0; // write MR
 
     LATTICE_DDR2_ADDR      = EMR;
+    LATTICE_DDR2_COMMAND   = 0; // write MR
+
+    LATTICE_DDR2_ADDR      = EMROCD; // OCD Defaults = 111
+    LATTICE_DDR2_COMMAND   = 0; // write MR
+
+    LATTICE_DDR2_ADDR      = EMR; // OCD EXIT = 000
     LATTICE_DDR2_COMMAND   = 0; // write MR
 
     for (int i=0;i<1000;i++) {
@@ -153,18 +164,22 @@ static void move_sys_clock()
     LATTICE_PLL_PULSE = 1;
 }
 
+
 void ddr2_calibrate()
 {
     // Turn on clock and let DDR stabilize
-    LATTICE_DDR2_ENABLE    = 3;
-
-    for (int i=0;i<1000;i++)
+    LATTICE_DDR2_ENABLE    = CLOCKPIN;
+    for (int i=0;i<5000;i++)
         ;
+    LATTICE_DDR2_ENABLE    = CLOCKPIN | CKE;
+
 
 #if NO_BOOT
     volatile uint32_t *mem32 = (uint32_t *)0x10000;
 
     init_mode_regs();
+    outbyte('$');
+    outbyte('$');
     outbyte('$');
     uint8_t sys=0;
     uint16_t start, stop;
@@ -218,6 +233,9 @@ void ddr2_calibrate()
             case 's':
                 LATTICE_DDR2_PHYCTRL = 0x40; // send reset to sync module
                 break;
+            case 'p':
+                LATTICE_DDR2_PHYCTRL = 0x20; // send reset to pll
+                break;
             case 'z':
                 LATTICE_PLL_SELECT = 5;
                 LATTICE_PLL_PULSE = 1;
@@ -256,9 +274,7 @@ void ddr2_calibrate()
 int ram_test(void)
 {
     // Make sure Refresh is now ON
-    LATTICE_DDR2_ENABLE    = 7;
-    // Make sure Refresh is now OFF
-    //LATTICE_DDR2_ENABLE    = 3;
+    LATTICE_DDR2_ENABLE  = CLOCKPIN | CKE | REFRESH | ODT;
 
     int errors = 0;
 #if NO_BOOT > 1

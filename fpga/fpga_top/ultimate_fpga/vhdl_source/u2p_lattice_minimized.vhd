@@ -546,4 +546,29 @@ begin
             led_n(0) <= cnt(cnt'high);
         end if;
     end process;
+
+    b_latency: block    
+        signal rq, rq_d, ack    : std_logic;
+        signal count            : natural range 0 to 255;
+    begin
+        rq <= '1' when cpu_mem_req.request='1' and cpu_mem_req.tag = X"20" and cpu_mem_req.read_writen = '1' else '0';
+        rq_d <= rq when rising_edge(sys_clock);
+        ack <= '1' when cpu_mem_resp.dack_tag = X"20" else '0';
+    
+        process(sys_clock)
+        begin
+            if rising_edge(sys_clock) then
+                if rq = '1' and rq_d = '0' then
+                    count <= 1;
+                else
+                    count <= count + 1;
+                end if;
+                if ack = '1' then
+                    last_count <= to_unsigned(count, last_count'length);
+                    count_sum  <= count_sum + count;
+                end if;
+            end if;
+        end process;
+    end block;
+    
 end architecture;

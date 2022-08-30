@@ -393,7 +393,7 @@ begin
 
             ext_cmd_done <= '1';
             nxt.refr_delay <= SDRAM_Refr_delay-1; 
-        elsif inhibit='0' then -- make sure we are allowed to start a new cycle
+        else --if inhibit='0' then -- make sure we are allowed to start a new cycle
             if req.request='1' and cur.timer = 0 then
                 accept_req;
             end if;
@@ -427,8 +427,8 @@ begin
         valid          => open
     );
     
-    pattern(0) <= '1' when addr1.sdram_cmd = c_cmd_write else '0';
-    pattern(1) <= '1' when addr2.sdram_cmd = c_cmd_write else '0';
+    pattern(0) <= '1';-- when addr1.sdram_cmd = c_cmd_write else '0';
+    pattern(1) <= '1';-- when addr2.sdram_cmd = c_cmd_write else '0';
 
     process(clock)
         constant c_pattern_0 : std_logic_vector(0 to 3) := "0010";

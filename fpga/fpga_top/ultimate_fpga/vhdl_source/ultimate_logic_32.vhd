@@ -1286,7 +1286,7 @@ begin
     i_mem_arb: entity work.mem_bus_arbiter_pri_32
     generic map (
         g_ports      => 6,
-        g_registered => false )
+        g_registered => false ) -- Must be false to make sure cart requests go first and no pending request from other enties exist
     port map (
         clock       => sys_clock,
         reset       => sys_reset,

@@ -20,7 +20,6 @@ entity mem_io_lattice is
         g_addr_width        : natural := 8 );
 	port (
         sys_clock_4x       : in  std_logic;
-        start_reset        : in  std_logic;
 
         clock_enable       : in  std_logic := '1';
         delay_rdstep       : in  std_logic := '0';
@@ -239,7 +238,7 @@ begin
                 D0    => addr_first(i),
                 D1    => addr_second(i),
                 SCLK  => sclk,
-                RST   => ddr_reset,
+                RST   => '0', -- dit is onzin
                 Q     => mem_addr(i));
         end generate;
     end generate;

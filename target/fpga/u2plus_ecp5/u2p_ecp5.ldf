@@ -716,6 +716,12 @@
         <Source name="../../../fpga/ip/busses/vhdl_source/mem_bus_bridge_sync.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
+        <Source name="cart.rva" type="Reveal Analyzer Project File" type_short="RVA">
+            <Options/>
+        </Source>
+        <Source name="cart.rvl" type="Reveal" type_short="Reveal">
+            <Options/>
+        </Source>
         <Source name="impl1/impl1.xcf" type="Programming Project File" type_short="Programming">
             <Options/>
         </Source>

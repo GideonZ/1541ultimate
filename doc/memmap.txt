@@ -8,6 +8,12 @@ Global:
 04000000-040FFFFF  1 MB I/O space - common block ultimate_logic_32
 A0000000-A00FFFFF  1 MB I/O space - U2+ / U64 specific I/O
 
+U2P+L / RiscV based products:
+
+00000000-07FFFFFF 128 MB RAM (U2+L)
+10000000-10FFFFFF 16 MB I/O space - common block ultimate_logic_32
+
+
 RAM Usage:
 00000000-00E9FFFF ~14.6 MB Application space (Code, Heap, Stack)
 00EA0000-00EA7FFF  32 KB -Reserved-
