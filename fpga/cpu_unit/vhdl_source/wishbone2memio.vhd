@@ -31,6 +31,7 @@ entity wishbone2memio is
         wb_ack_i    : out std_ulogic := 'L'; -- transfer acknowledge
         wb_err_i    : out std_ulogic := 'L'; -- transfer error
 
+        timeout     : out std_logic;
         io_busy     : out std_logic;
         io_req      : out t_io_req;
         io_resp     : in  t_io_resp;
@@ -56,6 +57,7 @@ architecture arch of wishbone2memio is
     signal request_accepted : std_logic := '0';
     signal mem_in_range     : std_logic;
     signal rack             : std_logic;
+    signal timeout_count    : natural range 0 to 255;
 begin
     mem_req <= mem_req_i;
 
@@ -104,9 +106,18 @@ begin
             io_ack <= '0';
             read_ack <= '0';
             
+            if timeout_count = 0 then
+                timeout <= '1';
+            else
+                timeout_count <= timeout_count - 1;
+            end if;
+
             case state is
             when idle =>
                 wb_dat_i <= (others => '0');
+                timeout_count <= 200;
+                timeout <= '0';
+
                 mem_req_r <= '0';
                 if wb_stb_o = '1' then
                     io_req_i.address <= unsigned(wb_adr_o(io_req_i.address'range));

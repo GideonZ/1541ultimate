@@ -49,7 +49,8 @@ port (
 
     inhibit     : in  std_logic := '0';
     is_idle     : out std_logic;
-
+    reset_out   : out std_logic := '0';
+    
     req         : in  t_mem_req_32 := c_mem_req_32_init;
     resp        : out t_mem_resp_32;
 
@@ -123,6 +124,7 @@ architecture Gideon of ddr2_ctrl is
     signal ext_cmd_done     : std_logic;
 
     -- PHY controls
+    signal cke_enable         : std_logic := '0';
     signal clock_enable       : std_logic := '0';
     signal odt_enable         : std_logic := '0';
     signal refresh_enable     : std_logic := '0';
@@ -141,6 +143,7 @@ architecture Gideon of ddr2_ctrl is
     signal ddr_reset_d        : std_logic := '0';
     signal ready              : std_logic;
 
+    signal stop_sync          : std_logic := '0';
     signal stop               : std_logic := '0';
     signal uddcntln           : std_logic := '1';
     signal freeze             : std_logic := '0';
@@ -157,6 +160,7 @@ architecture Gideon of ddr2_ctrl is
     signal ctrl_resp          : t_io_resp;
     signal valid_cnt          : unsigned(7 downto 0) := X"00";
 
+    signal pll_reset_r      : std_logic;
     signal sync_reset_r     : std_logic;
     signal sync_reset_sync  : std_logic;
     signal sync_reset       : std_logic;
@@ -227,6 +231,7 @@ begin
             ddr_reset_d <= ddr_reset_r;
             toggle_reset <= '0';
             sync_reset_r <= '0';
+            pll_reset_r <= '0';
             
             phase_step    <= '0';
             phase_loadreg <= '0'; 
@@ -270,12 +275,14 @@ begin
                     update_r  <= ctrl_req.data(0);
                     pause_usr <= ctrl_req.data(1);
                     freeze_usr <= ctrl_req.data(2);
+                    pll_reset_r <= ctrl_req.data(5);
                     sync_reset_r <= ctrl_req.data(6);
                     ddr_reset_r <= ctrl_req.data(7);
                 when X"C" =>
                     clock_enable <= ctrl_req.data(0);
                     odt_enable <= ctrl_req.data(1);
                     refresh_enable <= ctrl_req.data(2);
+                    cke_enable <= ctrl_req.data(3);
                 when others =>
                     null;
                 end case;
@@ -285,7 +292,8 @@ begin
                 freeze_usr <= '0';
                 readclksel <= "000";
                 read_delay <= "00";
-                clock_enable <= '1';
+                clock_enable <= '0';
+                cke_enable <= '0';
                 odt_enable <= '0';
                 ext_cmd_valid <= '0';
                 delay_dir <= '1';
@@ -293,6 +301,9 @@ begin
             end if;                     
         end if;
     end process;
+    
+    reset_out <= pll_reset_r;
+    
     buf_reset <= ddr_reset_sync or ddr_reset_ext;
     ddr_reset_ext <= ddr_reset_r or ddr_reset_d when rising_edge(ctrl_clock); -- 50 MHz pulse
 
@@ -304,7 +315,7 @@ begin
     port map(
         clock             => ctrl_clock,
         reset             => ctrl_reset,
-        enable_sdram      => clock_enable,
+        enable_sdram      => cke_enable, -- this signal controls the cke pin
         refresh_en        => refresh_enable,
         odt_enable        => odt_enable,
         inhibit           => inhibit,
@@ -339,7 +350,6 @@ begin
     )
     port map (
         sys_clock_4x     => mem_clock,
-        start_reset      => start_reset,
         
         dll_reset        => dll_reset,
         dll_lock         => dll_lock,
@@ -347,7 +357,7 @@ begin
         buf_reset        => buf_reset,
         sclk_out         => sclk_out,
         
-        clock_enable     => clock_enable,
+        clock_enable     => clock_enable, -- this signal enables the clock output
         delay_dir        => delay_dir,
         delay_rdstep     => delay_step(0),
         delay_wrstep     => delay_step(1),
@@ -405,7 +415,7 @@ begin
         clock_out => start_clock,
         pulse_out => sync_reset_sync
     );
-
+    
     sync_reset <= sync_reset_sync or start_reset;
 
     i_mem_sync: mem_sync
@@ -416,14 +426,16 @@ begin
         pll_lock  => '1', -- already covered by start_reset
         update    => update_sync, -- new register bit
         pause     => pause_sync, -- to be orred with our own pause
-        stop      => stop,
+        stop      => stop_sync,
         freeze    => freeze_sync,
         uddcntln  => uddcntln,
         dll_rst   => dll_reset, 
         ddr_rst   => ddr_reset_sync,
         ready     => ready
     );
-
+    
+    stop <= stop_sync;
+    
     pause <= pause_sync or pause_usr;
     freeze <= freeze_sync or freeze_usr;
     ddr_reset <= ddr_reset_sync when rising_edge(start_clock);

@@ -164,12 +164,8 @@ static void test_i2c_mdio(void)
 #define CLOCK_FREQ 50000000
 #endif
 
-int main(int argc, char *argv[]) {
-	/* When re-starting a debug session (rather than cold booting) we want
-	 to ensure the installed interrupt handlers do not execute until after the
-	 scheduler has been started. */
-	// DDR2_ENABLE = 0x05;
-	
+int main(int argc, char *argv[])
+{
 	ioWrite8(UART_DATA, 0x33);
 
 	xTaskCreate(ultimate_main, "U-II Main", configMINIMAL_STACK_SIZE, NULL,

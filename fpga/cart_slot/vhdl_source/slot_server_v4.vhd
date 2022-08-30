@@ -724,6 +724,15 @@ begin
 
     end generate;
 
+    r_no_sampler: if not g_sampler generate
+        i_dummy: entity work.io_dummy
+        port map (
+            clock   => clock,
+            io_req  => io_req_samp_cpu,
+            io_resp => io_resp_samp_cpu
+        );
+    end generate;
+
     r_acia: if g_acia generate
         i_acia: entity work.acia6551
         port map (

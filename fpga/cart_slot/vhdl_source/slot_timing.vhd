@@ -48,10 +48,10 @@ architecture gideon of slot_timing is
     signal phi2_tick_i  : std_logic;
     signal serve_en_i   : std_logic := '0';
     signal off_cnt      : integer range 0 to 7;
-
+    signal clear_inhibit: std_logic;
     constant c_memdelay    : integer := 5;
     
-    constant c_sample      : integer := 6;
+--    constant c_sample      : integer := 6;
     constant c_probe_end   : integer := 11;
     constant c_sample_vic  : integer := 10;
     constant c_io          : integer := 19;
@@ -125,15 +125,17 @@ begin
             do_io_event <= phi2_falling;
 
             -- timing pulses
+            clear_inhibit <= '0';
             if phase_h = 0 then
                 inhibit <= serve_en_i;
-            elsif phase_h = c_sample then
+            elsif clear_inhibit='1' then
                 inhibit <= '0';
             end if;
 
             do_sample_addr <= '0';
             if phase_h = timing_addr then
                 do_sample_addr <= '1';
+                clear_inhibit <= '1';
             end if;
             
             do_probe_end <= '0';            

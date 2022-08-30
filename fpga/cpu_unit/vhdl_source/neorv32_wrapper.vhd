@@ -33,6 +33,7 @@ port (
 
     irq_i           : in    std_logic := '0';
     irq_o           : out   std_logic := '0';
+    timeout         : out   std_logic;
     
     io_req          : out   t_io_req;
     io_resp         : in    t_io_resp;
@@ -160,6 +161,7 @@ begin
         wb_dat_i  => wb_dat_i,
         wb_ack_i  => wb_ack_i,
         wb_err_i  => wb_err_i,
+        timeout   => timeout,
         io_busy   => io_busy,
         io_req    => io_req,
         io_resp   => io_resp,
