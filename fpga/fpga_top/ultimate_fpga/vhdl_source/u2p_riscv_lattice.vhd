@@ -561,6 +561,7 @@ begin
     generic map (
         g_simulation    => false,
         g_ultimate2plus => true,
+        g_fpga_type     => 1,
 --        g_clock_freq    => 62_500_000,
 --        g_numerator     => 32,
 --        g_denominator   => 125,
