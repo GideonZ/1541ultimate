@@ -19,7 +19,7 @@ end entity;
 
 architecture Gideon of half_cycle_delay is
     constant c_half     : natural := g_bits/2;
-    signal remainder    : std_logic_vector(c_half-1 downto 0) := (others => '1');
+    signal remainder    : std_logic_vector(c_half-1 downto 0) := (others => '0');
 begin
     remainder <= din(din'high downto c_half) when rising_edge(clock);
     dout <= din(c_half-1 downto 0) & remainder;

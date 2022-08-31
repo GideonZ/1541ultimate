@@ -210,15 +210,15 @@ architecture Gideon of ddr2_ctrl_logic is
     signal pattern      : unsigned(1 downto 0) := "00";
     signal addr1        : t_address_command; -- all pins in the first half cycle
     signal addr2        : t_address_command; -- all pins in the second half cycle
-    signal datap        : t_data_path;
+    signal datap        : t_data_path := c_data_path_init;
     signal dqs_t2       : std_logic_vector(1 downto 0) := "11";
-    signal read_8       : std_logic;
+    signal read_8       : std_logic := '0';
     signal cur          : t_internal_state := c_internal_state_init;
     signal nxt          : t_internal_state;
 
-    signal zread        : std_logic_vector(1 downto 0);
-    signal yread        : std_logic_vector(1 downto 0);
-    signal read_s       : std_logic_vector(1 downto 0);
+    signal zread        : std_logic_vector(1 downto 0) := "00";
+    signal yread        : std_logic_vector(1 downto 0) := "00";
+    signal read_s       : std_logic_vector(1 downto 0) := "00";
     
     signal zwdata       : std_logic_vector(31 downto 0);
     signal zwdata_m     : std_logic_vector(3 downto 0);
