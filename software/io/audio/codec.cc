@@ -49,7 +49,9 @@ extern "C" {
         for(int i=0;i<50;i++) {
             (void)U2PIO_HUB_RESET;
         }
-        i2c.i2c_scan_bus();
+        // i2c.i2c_scan_bus();
+        i2c.i2c_start();
+        i2c.i2c_stop();
 
         i2c.i2c_write_word(0x14, SGTL5000_CHIP_ANA_POWER, 0x4260);
         i2c.i2c_write_word(0x14, SGTL5000_CHIP_CLK_TOP_CTRL, 0x0800);
