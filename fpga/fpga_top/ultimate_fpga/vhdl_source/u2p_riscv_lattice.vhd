@@ -19,7 +19,7 @@ use ECP5U.components.all;
 entity u2p_riscv_lattice is
 generic (
     g_jtag_debug     : boolean := true;
-    g_dual_drive     : boolean := false );
+    g_dual_drive     : boolean := true );
 port (
     -- (Optional) Oscillator
     CLOCK_50         : in    std_logic := '0';
@@ -166,11 +166,9 @@ architecture rtl of u2p_riscv_lattice is
 
     signal flash_sck_o  : std_logic;
     signal flash_sck_t  : std_logic;
-    signal pll_reset    : std_logic;
-    signal pll_locked   : std_logic;
     signal mem_ready    : std_logic;
     signal RSTn_out     : std_logic;
-    signal irq_oc, nmi_oc, rst_oc, dma_oc, exrom_oc, game_oc    : std_logic;
+    signal irq_oc, nmi_oc, dma_oc, exrom_oc, game_oc    : std_logic;
     signal slot_addr_o  : unsigned(15 downto 0);
     signal slot_addr_tl : std_logic;
     signal slot_addr_th : std_logic;
@@ -381,7 +379,7 @@ begin
         jtag_tdi_i  => DEBUG_TDI,
         jtag_tdo_o  => DEBUG_TDO,
         jtag_tms_i  => DEBUG_TMS,
-        timeout     => LED_SDACTn,
+        timeout     => open,--LED_SDACTn,
         irq_i       => io_irq,
         irq_o       => open,
         io_req      => io_req_riscv,
@@ -581,7 +579,7 @@ begin
         g_hardware_gcr  => true,
         g_ram_expansion => true,
         g_extended_reu  => false,
-        g_stereo_sid    => false,--,true,
+        g_stereo_sid    => true,
         g_8voices       => false,
         g_hardware_iec  => true,
         g_c2n_streamer  => true,
@@ -679,7 +677,7 @@ begin
         MOTOR_LEDn  => LED_MOTORn,
         DISK_ACTn   => LED_DISKn,
         CART_LEDn   => LED_CARTn,
-        SDACT_LEDn  => open, --LED_SDACTn,
+        SDACT_LEDn  => LED_SDACTn,
 
         -- Parallel cable pins
         drv_track_is_0      => drv_track_is_0,
@@ -854,8 +852,6 @@ begin
         signal aud_samp_r       : signed(17 downto 0);
         signal aud_sid_1        : signed(17 downto 0);
         signal aud_sid_2        : signed(17 downto 0);
-        signal audio_sid1       : std_logic_vector(17 downto 0);
-        signal audio_sid2       : std_logic_vector(17 downto 0);
         signal codec_left_in    : std_logic_vector(23 downto 0);
         signal codec_right_in   : std_logic_vector(23 downto 0);
         signal codec_left_out   : std_logic_vector(23 downto 0);
@@ -1009,9 +1005,5 @@ begin
     toggle <= not toggle when rising_edge(sys_clock);
     DEBUG_SPARE      <= '0';
     flash_sck_t      <= sys_reset; -- 0 when not in reset = enabled
-    
-    --LED_MOTORn <= not toggle_check;
-    --LED_DISKn  <= '1'; -- off
-    --LED_CARTn  <= not mem_ready;
-    --LED_SDACTn <= not toggle_check;
+
 end architecture;

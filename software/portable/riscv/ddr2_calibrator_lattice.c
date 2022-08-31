@@ -173,11 +173,20 @@ void ddr2_calibrate()
         ;
     LATTICE_DDR2_ENABLE    = CLOCKPIN | CKE;
 
+    move_sys_clock();
+    if (!coarse_calibration()) {
+        LATTICE_DDR2_PHYCTRL = 0x20; // Reset PLL and start all over.
+        outbyte('~');
+    } else {
+        reset_toggle();
+        if(ram_test()) {
+            my_puts("\nReady to rumble!\n");
+        }
+    }
 
 #if NO_BOOT
     volatile uint32_t *mem32 = (uint32_t *)0x10000;
 
-    init_mode_regs();
     outbyte('$');
     outbyte('$');
     outbyte('$');
@@ -199,6 +208,9 @@ void ddr2_calibrate()
                 break;
             case '!':
                 return; // boot!
+            case 'i':
+                init_mode_regs();
+                break;
             case 'a':
                 show_phase_sys();
                 break;
