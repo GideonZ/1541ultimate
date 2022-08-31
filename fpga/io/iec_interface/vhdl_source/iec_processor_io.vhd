@@ -98,14 +98,11 @@ begin
         srq_o           => srq_o,
         srq_i           => srq_i );
 
-    i_ram: entity work.pseudo_dpram_8x32
+    i_ram: entity work.pseudo_dpram_8x32 -- little endian definition
     port map (
         rd_clock   => clock,
         rd_address => instr_addr,
-        rd_data(31 downto 24) => instr_data(7 downto 0), -- CPU is big endian
-        rd_data(23 downto 16) => instr_data(15 downto 8),
-        rd_data(15 downto 8) => instr_data(23 downto 16),
-        rd_data(7 downto 0) => instr_data(31 downto 24),
+        rd_data    => instr_data,
         rd_en      => instr_en,
 
         wr_clock   => clock,
