@@ -326,12 +326,13 @@ architecture rtl of u2p_riscv_lattice is
     signal phase_dir     : std_logic;
     signal phase_step    : std_logic;
     signal phase_loadreg : std_logic;
-
+    signal all_buttons   : std_logic;
     signal ctrl_reset_pulse : std_logic;
 begin
     ctrl_clock  <= half_clock;
     HUB_CLOCK   <= clock_24;
     ULPI_REFCLK <= clock_24;
+    all_buttons <= '1' when button_i = "111" else '0';
 
     i_ulpi_reset: entity work.level_synchronizer
     generic map ('1')
@@ -354,6 +355,7 @@ begin
         ctrl_clock    => ctrl_clock,
         ctrl_reset    => ctrl_reset,
         restart       => ctrl_reset_pulse,
+        button        => all_buttons,
         sys_clock     => sys_clock,
         sys_reset     => sys_reset,
         audio_clock   => audio_clock,
@@ -374,7 +376,7 @@ begin
         clock       => sys_clock,
         reset       => sys_reset,
         cpu_reset   => '0',
-        jtag_trst_i => '1',
+        jtag_trst_i => DEBUG_TRSTn,
         jtag_tck_i  => DEBUG_TCK,
         jtag_tdi_i  => DEBUG_TDI,
         jtag_tdo_o  => DEBUG_TDO,

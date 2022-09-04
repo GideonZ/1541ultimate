@@ -35,6 +35,7 @@ port (
     ctrl_clock    : in  std_logic;
     ctrl_reset    : out std_logic;
     restart       : in  std_logic := '0'; -- pulse to request reboot
+    button        : in  std_logic := '0';
                   
     sys_clock     : out std_logic;
     sys_reset     : out std_logic;
@@ -67,9 +68,14 @@ architecture boot of startup is
         LOCK: out  std_logic);
     end component;
 
+    component OSCG
+    port (
+        OSC : out std_logic );
+    end component;
+    
     signal count    : unsigned(19 downto 0) := (others => '0');
-    type t_state is (do_pll_reset, wait_ref_stable, wait_pll_lock, pll_locked_delay, start_clocks, wait_mem_ready, run); 
-    signal state    : t_state := do_pll_reset;
+    type t_state is (wait_ref_stable, do_pll_reset, wait_pll_lock, pll_locked_delay, start_clocks, wait_mem_ready, run); 
+    signal state    : t_state := wait_ref_stable;
 
     signal audio_clock_i        : std_logic;
     signal sys_clock_i          : std_logic;
@@ -81,8 +87,10 @@ architecture boot of startup is
     signal ref_sys_reset        : std_logic;
     signal ref_pll_locked       : std_logic;
     signal ref_mem_ready        : std_logic;
+    signal ref_button           : std_logic;
     signal pll_locked           : std_logic;
     signal enable_clocks        : std_logic := '0';
+    signal start_clock_i        : std_logic := '0';
 begin
     i_reset_sync: entity work.pulse_synchronizer
     port map (
@@ -92,12 +100,31 @@ begin
         pulse_out => ref_restart
     );
 
+    i_button_sync: entity work.level_synchronizer
+    generic map ('0')
+    port map (
+        clock       => ref_clock,
+        reset       => '0',
+        input       => button,
+        input_c     => ref_button
+    );
+
     process(ref_clock)
     begin
         if rising_edge(ref_clock) then
             count <= count + 1;
 
             case state is
+            when wait_ref_stable =>
+                pll_reset <= '0';
+                ref_start_reset <= '1';
+                ref_sys_reset <= '1';
+                enable_clocks <= '0';
+                
+                if count(7 downto 0) = X"FF" then
+                    state <= do_pll_reset;
+                end if;
+
             when do_pll_reset =>
                 pll_reset <= '1';
                 ref_start_reset <= '1';
@@ -108,16 +135,6 @@ begin
                     (count = X"00FFF" and g_simulation)) then
                     state <= wait_pll_lock;
                 end if; 
-
-            when wait_ref_stable =>
-                pll_reset <= '0';
-                ref_start_reset <= '1';
-                ref_sys_reset <= '1';
-                enable_clocks <= '0';
-                
-                if count(7 downto 0) = X"FF" then
-                    state <= do_pll_reset;
-                end if;
 
             when wait_pll_lock =>
                 pll_reset <= '0';
@@ -181,7 +198,7 @@ begin
 
             end case;
 
-            if ref_restart = '1' then
+            if ref_restart = '1' or ref_button = '1' then
                 count <= (others => '0');
                 state <= wait_ref_stable;
             end if;
@@ -205,14 +222,19 @@ begin
         PHASELOADREG => phase_loadreg, 
         LOCK   => pll_locked );
 
+    i_osc: OSCG
+    port map (
+        OSC => start_clock_i );
+    -- start_clock_i <= sys_clock_i;    
+
     audio_clock <= audio_clock_i;
     sys_clock   <= sys_clock_i;
-    start_clock <= sys_clock_i;    
+    start_clock <= start_clock_i;
 
     i_start_reset_sync: entity work.level_synchronizer
     generic map ('1')
     port map(
-        clock       => sys_clock_i,
+        clock       => start_clock_i,
         input       => ref_start_reset,
         input_c     => start_reset
     );

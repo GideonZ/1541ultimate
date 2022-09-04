@@ -196,7 +196,7 @@ begin
             D3    => clock_enable,
             ECLK  => eclk,
             SCLK  => sclk,
-            RST   => ddr_reset,
+            RST   => '0',
             Q     => clk_p);
     
         i_delay_p: DELAYG generic map (DEL_MODE => "DQS_CMD_CLK") port map (A => clk_p, Z => mem_clk_p);
@@ -209,7 +209,7 @@ begin
             D3    => '0',
             ECLK  => eclk,
             SCLK  => sclk,
-            RST   => ddr_reset,
+            RST   => '0',
             Q     => clk_n);
     
         i_delay_n: DELAYG generic map (DEL_MODE => "DQS_CMD_CLK") port map (A => clk_n, Z => mem_clk_n);

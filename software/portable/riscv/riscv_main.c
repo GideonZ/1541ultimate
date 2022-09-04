@@ -107,7 +107,6 @@ void freertos_risc_v_application_interrupt_handler(void)
 		do_switch |= xTaskIncrementTick();
 	}
 
-/*
 	uint8_t h = ioRead8(ITU_IRQ_HIGH_ACT);
 	for(int i=0;i < HIGH_IRQS; i++, h>>=1) {
 	    if (h & 1) {
@@ -120,7 +119,6 @@ void freertos_risc_v_application_interrupt_handler(void)
 	        }
 	    }
 	}
-*/
 
 	if (do_switch != pdFALSE) {
 		vTaskSwitchContext();
@@ -203,9 +201,9 @@ void vPortSetupTimerInterrupt( void )
 	ioWrite8(UART_DATA, 0x35);
 }
 
-void C_exception_handler(uint32_t addr, uint32_t cause, uint32_t value)
+void C_exception_handler(uint32_t cause, uint32_t addr, uint32_t status, uint32_t value)
 {
-	printf("\n*GURU MEDITATION: %08x | %08x | %08x\n", addr, cause, value);
+	printf("\n** GURU MEDITATION:\n   Address: %08x\n   Cause:   %08x\n   Value:   %08x\n", addr, cause, value);
 	while(1)
 		;
 }
