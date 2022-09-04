@@ -310,7 +310,7 @@ begin
         cpu_irq     => io_irq,
 
         -- local bus side
-        mem_inhibit => memctrl_inhibit,
+        mem_refr_inhibit => memctrl_inhibit,
         --memctrl_idle    => memctrl_idle,
         mem_req     => mem_req,
         mem_resp    => mem_resp,

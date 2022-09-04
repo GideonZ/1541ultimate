@@ -26,7 +26,9 @@ port (
     clock_det       : out std_logic;
     vic_cycle       : out std_logic;    
 
-    inhibit         : out std_logic;
+    refr_inhibit    : out std_logic;
+    reqs_inhibit    : out std_logic;
+    
     do_sample_addr  : out std_logic;
     do_probe_end    : out std_logic;
     do_sample_io    : out std_logic;
@@ -49,11 +51,9 @@ architecture gideon of slot_timing is
     signal serve_en_i   : std_logic := '0';
     signal off_cnt      : integer range 0 to 7;
     signal clear_inhibit: std_logic;
-    constant c_memdelay    : integer := 5;
-    
---    constant c_sample      : integer := 6;
+    constant c_memdelay    : integer := 6;
     constant c_probe_end   : integer := 11;
-    constant c_sample_vic  : integer := 10;
+    constant c_sample_vic  : integer := 8;
     constant c_io          : integer := 19;
 
     attribute register_duplication : string;
@@ -84,27 +84,23 @@ begin
                 serve_en_i <= '1';
             end if;
 
---            if (phi2_rec_i='0' and allow_tick_h) or
---               (phi2_rec_i='1' and allow_tick_l) then
---                phi2_rec_i <= PHI2;
---            end if;
-
-            -- related to rising edge
---            if  then  -- rising edge
+            -- detect or create rising edge
             if ((edge_recover = '1') and (phase_l = 24)) or 
                ((edge_recover = '0') and phi2_d='0' and phi2_c='1' and allow_tick_h) then
                 ba_hist      <= ba_hist(2 downto 0) & ba_c;
                 phi2_tick_i  <= '1';
                 phi2_rec_i   <= '1';
                 phase_h      <= 0;
+                reqs_inhibit <= serve_en_i;
                 clock_det    <= '1';
                 allow_tick_h <= false; -- filter
             elsif phase_h = 63 then
                 clock_det <= '0';
+                refr_inhibit <= '0';
             else                            
-                phase_h   <= phase_h + 1;
+                phase_h <= phase_h + 1;
             end if;
-            if phase_h = 46 then -- max 1.06 MHz
+            if phase_h = 42 then -- max 1.16 MHz
                 allow_tick_h <= true;
             end if;
 
@@ -118,41 +114,41 @@ begin
             elsif phase_l /= 63 then
                 phase_l <= phase_l + 1;
             end if;
-            if phase_l = 46 then -- max 1.06 MHz
+            if phase_l = 42 then -- max 1.16 MHz
                 allow_tick_l <= true;
             end if;
 
             do_io_event <= phi2_falling;
 
             -- timing pulses
-            clear_inhibit <= '0';
-            if phase_h = 0 then
-                inhibit <= serve_en_i;
-            elsif clear_inhibit='1' then
-                inhibit <= '0';
-            end if;
-
             do_sample_addr <= '0';
+            clear_inhibit <= '0';
             if phase_h = timing_addr then
                 do_sample_addr <= '1';
                 clear_inhibit <= '1';
             end if;
+
+            if phase_l = (c_sample_vic - c_memdelay) then
+                reqs_inhibit <= serve_en_i and serve_vic;
+            elsif phase_l = (c_sample_vic - 1) then
+                do_sample_addr <= '1';            
+                clear_inhibit <= '1';
+            end if;
+
+            if clear_inhibit='1' then
+                reqs_inhibit <= '0';
+            end if;
             
+            if phase_l = 20 or phase_h = 20 then
+                refr_inhibit <= '1'; -- doesn't matter if serve is on or off, refresh can always be in cadence with PHI2
+            elsif clear_inhibit = '1' then
+                refr_inhibit <= '0';
+            end if;   
+
             do_probe_end <= '0';            
             if phase_h = c_probe_end then
                 do_probe_end <= '1';
             end if;
-
-            if serve_vic='1' then
-                if phase_l = (c_sample_vic - c_memdelay) then
-                    inhibit <= serve_en_i;
-                elsif phase_l = (c_sample_vic - 1) then
-                    do_sample_addr <= '1';            
-                end if;
-            end if;
-            if phase_l = c_sample_vic then
-                inhibit <= '0';
-            end if;                        
 
             do_sample_io <= '0';
             if phase_h = c_io - 1 then
@@ -164,7 +160,8 @@ begin
                 allow_tick_l <= true;
                 phase_h      <= 63;
                 phase_l      <= 63;
-                inhibit      <= '0';
+                refr_inhibit <= '0';
+                reqs_inhibit <= '0';
                 clock_det    <= '0';
             end if;
         end if;
