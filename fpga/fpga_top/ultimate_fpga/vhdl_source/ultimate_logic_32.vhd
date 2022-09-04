@@ -35,6 +35,7 @@ generic (
     g_mm_drive      : boolean := true;
     g_hardware_gcr  : boolean := true;
     g_cartridge     : boolean := true;
+    g_register_addr : boolean := false;
     g_eeprom        : boolean := true;
     g_command_intf  : boolean := true;
     g_acia          : boolean := false;
@@ -823,6 +824,7 @@ begin
             g_rom_base_cart => X"0F00000", -- should be on a 1M boundary
             g_ram_base_cart => X"0EF0000", -- should be on a 64K boundary
             g_kernal_base   => X"0EA8000", -- should be on a 32K boundary
+            g_register_addr => g_register_addr,
             g_big_endian    => g_big_endian,
             g_cartreset_init=> g_cartreset_init,
             g_boot_stop     => g_boot_stop,

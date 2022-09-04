@@ -8,6 +8,7 @@ use work.io_bus_pkg.all;
 
 entity all_carts_v5 is
 generic (
+    g_register_addr : boolean := false;
     g_eeprom        : boolean := true;
     g_kernal_base   : std_logic_vector(27 downto 0) := X"0EC8000"; -- multiple of 32K
     g_rom_base      : std_logic_vector(27 downto 0) := X"0F00000"; -- multiple of 1M
@@ -76,6 +77,7 @@ architecture gideon of all_carts_v5 is
     signal allow_bank   : std_logic;
     signal hold_nmi     : std_logic;
     signal mem_addr_i   : std_logic_vector(27 downto 0);
+    signal mem_addr_c   : std_logic_vector(27 downto 0);
     signal rom_addr     : std_logic_vector(27 downto 0);
     signal ram_addr     : std_logic_vector(27 downto 0);
 
@@ -714,7 +716,9 @@ begin
         end if;
     end process;
 
-    mem_addr <= unsigned(mem_addr_i(mem_addr'range));
+    mem_addr_c <= mem_addr_i when rising_edge(clock);
+    mem_addr <= unsigned(mem_addr_c(mem_addr'range)) when g_register_addr else
+                unsigned(mem_addr_i(mem_addr'range));
 
 --    slot_resp.data(7) <= bank_bits(16);
 --    slot_resp.data(6) <= '1';
