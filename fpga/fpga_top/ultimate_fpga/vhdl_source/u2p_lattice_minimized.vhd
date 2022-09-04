@@ -161,22 +161,8 @@ end entity;
 
 architecture rtl of u2p_lattice_minimized is
 
-    component pll1
-    port (
-        CLKI: in  std_logic;
-        CLKOP: out  std_logic; 
-        CLKOS: out  std_logic;
-        CLKOS2: out  std_logic; 
-        CLKOS3: out  std_logic; 
-        LOCK: out  std_logic);
-    end component;
-
     signal flash_sck_o  : std_logic;
     signal flash_sck_t  : std_logic;
-    signal por_n        : std_logic;
-    signal pll_locked   : std_logic;
-    signal ref_reset    : std_logic;
-    signal por_count    : unsigned(15 downto 0) := (others => '0');
     signal led_n        : std_logic_vector(0 to 3);
     signal busy_led     : std_logic;
 
@@ -191,7 +177,11 @@ architecture rtl of u2p_lattice_minimized is
     signal audio_reset  : std_logic;
         
     -- memory controller interconnect
-    signal memctrl_inhibit  : std_logic := '0';
+    signal ctrl_reset_pulse : std_logic;
+    signal phase_sel        : std_logic_vector(1 downto 0);
+    signal phase_dir        : std_logic;
+    signal phase_step       : std_logic;
+    signal phase_loadreg    : std_logic;
     signal is_idle          : std_logic;
     signal mem_req          : t_mem_req_32;
     signal mem_resp         : t_mem_resp_32;
@@ -235,37 +225,39 @@ architecture rtl of u2p_lattice_minimized is
     end function;
 
 begin
-    process(RMII_REFCLK)
-    begin
-        if rising_edge(RMII_REFCLK) then
-            if por_count = X"FFFF" then
-                por_n <= '1';
-            else
-                por_n <= '0';
-                por_count <= por_count + 1;
-            end if;
-        end if;
-    end process;
-
-    ref_reset <= not por_n;
-    
-    i_pll: pll1
-    port map (
-        -- CLKI   => CLOCK_50, -- 50 MHz oscillator
-        CLKI   => RMII_REFCLK, -- 50 MHz
-        CLKOP  => mem_clock,   -- 200 MHz
-        CLKOS  => clock_24,   -- 24 MHz
-        CLKOS2 => audio_clock, -- 12.245 MHz (47.831 kHz sample rate)
-        CLKOS3 => sys_clock, -- 50 MHz
-        LOCK   => pll_locked );
-
-    --eth_clock <= sys_clock; -- same net
-    eth_clock <= RMII_REFCLK; -- dedicated pin
-    
-    HUB_CLOCK <= clock_24;
+    ctrl_clock  <= half_clock;
+    HUB_CLOCK   <= clock_24;
     ULPI_REFCLK <= clock_24;
-    
-    sys_reset <= not pll_locked when rising_edge(sys_clock);
+
+    i_ulpi_reset: entity work.level_synchronizer
+    generic map ('1')
+    port map (
+        clock       => ulpi_clock,
+        input       => ulpi_reset_req,
+        input_c     => ulpi_reset_i  );
+
+    i_startup: entity work.startup
+    port map (
+        ref_clock     => RMII_REFCLK,
+        phase_sel     => phase_sel,
+        phase_dir     => phase_dir,
+        phase_step    => phase_step,
+        phase_loadreg => phase_loadreg,
+        start_clock   => start_clock,
+        start_reset   => start_reset,
+        mem_clock     => mem_clock,
+        mem_ready     => mem_ready,
+        ctrl_clock    => ctrl_clock,
+        ctrl_reset    => ctrl_reset,
+        restart       => ctrl_reset_pulse,
+        sys_clock     => sys_clock,
+        sys_reset     => sys_reset,
+        audio_clock   => audio_clock,
+        audio_reset   => audio_reset,
+        eth_clock     => eth_clock,
+        eth_reset     => eth_reset,
+        clock_24      => clock_24
+    );
 
     i_riscv: entity work.neorv32_wrapper
     generic map (
@@ -365,64 +357,46 @@ begin
         uart_txd    => UART_TXD,
         uart_rxd    => UART_RXD );
 
---    i_double_freq_bridge: entity work.memreq_halfrate
---    generic map (
---        g_reg_in    => true
---    )
---    port map(
---        clock_1x    => sys_clock,
---        clock_2x    => ctrl_clock,
---        reset_1x    => sys_clock,
---        mem_req_1x  => mem_req,
---        mem_resp_1x => mem_resp,
---        mem_req_2x  => mem_req_2x,
---        mem_resp_2x => mem_resp_2x
---    );
---    i_double_freq_bridge: entity work.mem_bus_bridge
---    port map (
---        a_clock    => sys_clock,
---        a_reset    => sys_reset,
---        a_mem_req  => mem_req,
---        a_mem_resp => mem_resp,
---        b_clock    => ctrl_clock,
---        b_reset    => sys_reset,
---        b_mem_req  => mem_req_2x,
---        b_mem_resp => mem_resp_2x
---    );
-
-    i_double_freq_bridge: entity work.mem_bus_bridge
-    port map (
-        a_clock    => sys_clock,
-        a_reset    => sys_reset,
-        a_mem_req  => mem_req,
-        a_mem_resp => mem_resp,
-        b_clock    => ctrl_clock,
-        b_reset    => sys_reset,
-        b_mem_req  => mem_req_2x,
-        b_mem_resp => mem_resp_2x
+    i_double_freq_bridge: entity work.memreq_halfrate
+    generic map (
+        g_reg_in    => true
+    )
+    port map(
+        clock_1x    => sys_clock,
+        clock_2x    => ctrl_clock,
+        reset_1x    => sys_reset,
+        inbihit_1x  => '0',
+        mem_req_1x  => mem_req,
+        mem_resp_1x => mem_resp,
+        inhibit_2x  => open,
+        mem_req_2x  => mem_req_2x,
+        mem_resp_2x => mem_resp_2x
     );
 
     i_memctrl: entity work.ddr2_ctrl
     port map (
-        start_clock       => sys_clock,
-        start_reset       => sys_reset,
-
+        start_clock       => start_clock,
+        start_reset       => start_reset,
+        start_ready       => mem_ready,
         mem_clock         => mem_clock,
-        reset             => sys_reset,
+        mem_clock_half    => half_clock,
+        
+        toggle_reset      => toggle_reset,
+        toggle_check      => toggle_check,
 
-        io_clock          => sys_clock,
-        io_reset          => sys_reset,
-        io_req            => io_req_ddr2,
-        io_resp           => io_resp_ddr2,
-        inhibit           => memctrl_inhibit,
-        is_idle           => is_idle,
-        mem_clock_half    => ctrl_clock,
+        sys_clock         => sys_clock,
+        ctrl_clock        => ctrl_clock,
+        ctrl_reset        => ctrl_reset,
+        req               => mem_req_2x,
+        resp              => mem_resp_2x,
+        inhibit           => mem_inhibit_2x,
+        reset_out         => ctrl_reset_pulse,
 
         req               => mem_req_2x,
         resp              => mem_resp_2x,
         
         SDRAM_TEST1       => UNUSED_H3,
-        SDRAM_TEST2       => UNUSED_F4,
+        SDRAM_TEST2       => open,
         SDRAM_CLK         => SDRAM_CLK,
         SDRAM_CLKn        => SDRAM_CLKn,
         SDRAM_CKE         => SDRAM_CKE,
