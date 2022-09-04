@@ -190,24 +190,29 @@ void ddr2_calibrate()
     }
     LATTICE_DDR2_ENABLE    = CLOCKPIN | CKE;
 
-    move_sys_clock();
-    if (!coarse_calibration()) {
+    for(int i=0; i<3; i++) {
+        move_sys_clock();
+        if (coarse_calibration()) {
+            reset_toggle();
+            if(ram_test()) {
+                my_puts("\nReady to rumble!\n");
 #if !NO_BOOT
-        LATTICE_DDR2_PHYCTRL = 0x20; // Reset PLL and start all over.
+                return;
 #endif
-    } else {
-        reset_toggle();
-        if(ram_test()) {
-            my_puts("\nReady to rumble!\n");
-#if !NO_BOOT
-            return;
-#endif
+            } else {
+                my_puts("\nBoo!!\n");
+            }
         } else {
-            my_puts("\nBoo!!\n");
+        	uint8_t buttons = ioRead8(ITU_BUTTON_REG) & ITU_BUTTONS;
+        	if ((buttons & ITU_BUTTON2) == 0) {  // right button not pressed
+                for (int i=0;i<50000;i++) {
+                    __asm__("nop");
+                }
+                LATTICE_DDR2_PHYCTRL = 0x20; // Reset PLL and start all over.
+            }
         }
     }
 
-#if NO_BOOT
     volatile uint32_t *mem32 = (uint32_t *)0x10000;
 
     outbyte('$');
@@ -263,6 +268,12 @@ void ddr2_calibrate()
                 outbyte('-');
                 hex16(stop-start, "\n");
                 break;
+            case 'n':
+                LATTICE_DDR2_DELAYSTEP = 0x0C; // automatic updates
+                break;
+            case 'm':
+                LATTICE_DDR2_DELAYSTEP = 0x00; // automatic updates
+                break;
             case 's':
                 LATTICE_DDR2_PHYCTRL = 0x40; // send reset to sync module
                 break;
@@ -285,13 +296,6 @@ void ddr2_calibrate()
                 break;
         }
     } while(1);
-#else
-    LATTICE_DDR2_PHYCTRL = 0x20; // Reset PLL and start all over.
-    while(1) {
-        __asm__("nop");
-        __asm__("nop");
-    }
-#endif
 }
 
 
@@ -416,7 +420,7 @@ int coarse_calibration(void)
 #if VERBOSE
     outbyte('\n');
 #endif
-        for (int rd = 3; rd >= 0; rd--) {
+        for (int rd = 2; rd >= 0; rd--) {
 #if VERBOSE
         outbyte('0' + rd);
         outbyte(':');

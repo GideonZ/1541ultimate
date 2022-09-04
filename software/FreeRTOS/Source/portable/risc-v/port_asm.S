@@ -241,6 +241,8 @@ is_exception:
 	csrr a0, mcause						/* For viewing in the debugger only. */
 	csrr a1, mepc						/* For viewing in the debugger only */
 	csrr a2, mstatus
+	csrr a3, mtval
+
 	/* j is_exception */						/* No other exceptions handled yet. */
 	j C_exception_handler
 
