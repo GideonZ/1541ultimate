@@ -12,6 +12,7 @@ generic (
 port (
     clock       : in  std_logic;
     reset       : in  std_logic;
+    inhibit     : in  std_logic := '0'; -- when '1', the output request is squelched
     
     reqs        : in  t_mem_req_32_array(0 to g_ports-1);
     resps       : out t_mem_resp_32_array(0 to g_ports-1);
@@ -25,7 +26,7 @@ architecture rtl of mem_bus_arbiter_pri_32 is
     signal req_c    : t_mem_req_32;
 begin
     -- prioritize the first request found onto output
-    process(reqs)
+    process(reqs, inhibit)
     begin
         req_i <= c_mem_req_32_init;
         for i in reqs'range loop
@@ -34,6 +35,9 @@ begin
                 exit;
             end if;
         end loop;
+        if inhibit = '1' then
+            req_i.request <= '0';
+        end if;
     end process;
 
     -- send the reply to everyone (including tag)

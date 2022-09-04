@@ -15,7 +15,7 @@ library work;
 
 entity ddr2_ctrl is
 generic (
-    SDRAM_Refr_delay   : integer := 7;
+    SDRAM_Refr_delay   : integer := 9;
     SDRAM_Refr_period  : integer := 488 );
 port (
     ref_clock   : in  std_logic := '0';
@@ -206,9 +206,7 @@ begin
             nxt.delay <= cur.delay - 1;
         end if;
 
-        if inhibit='1' then
-            nxt.refresh_inhibit <= '1';
-        end if;
+        nxt.refresh_inhibit <= inhibit;
 
         case cur.state is
         when idle =>
@@ -222,15 +220,12 @@ begin
                 outp.sdram_ba <= '0' & ext_addr(15 downto 14);
                 ext_cmd_done <= '1';
                 nxt.state <= delay_1; 
-            elsif inhibit='0' then -- make sure we are allowed to start a new cycle
-                nxt.refresh_inhibit <= '0';
-                if req.request='1' and cur.refr_delay = 0 then
-                    accept_req;
-                    if req.read_writen = '1' then
-                        nxt.state <= sd_read;
-                    else
-                        nxt.state <= sd_write;
-                    end if;
+            elsif req.request='1' and cur.refr_delay = 0 then
+                accept_req;
+                if req.read_writen = '1' then
+                    nxt.state <= sd_read;
+                else
+                    nxt.state <= sd_write;
                 end if;
             end if;
                 

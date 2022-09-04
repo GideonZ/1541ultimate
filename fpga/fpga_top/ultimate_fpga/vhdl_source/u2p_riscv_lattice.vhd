@@ -645,7 +645,7 @@ begin
         io2n_i      => SLOT_IO2n,
                 
         -- local bus side
-        mem_inhibit => mem_inhibit_1x,
+        mem_refr_inhibit => mem_inhibit_1x,
         mem_req     => mem_req,
         mem_resp    => mem_resp,
                  

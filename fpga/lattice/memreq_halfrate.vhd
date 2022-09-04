@@ -88,7 +88,7 @@ begin
 
             case state is
             when c_idle =>
-                if mem_req_1x.request='1' and inhibit_1x = '0' then
+                if mem_req_1x.request='1' then -- and inhibit_1x = '0' then
                     req_2x_i <= mem_req_1x;
                     resp_1x_i.rack <= '1';
                     resp_1x_i.rack_tag <= mem_req_1x.tag;

@@ -107,7 +107,8 @@ port (
     c64_stopped     : out   std_logic;
 
     -- master on memory bus
-    memctrl_inhibit : out   std_logic;
+    mem_refr_inhibit: out   std_logic;
+    mem_reqs_inhibit: out   std_logic;
     mem_req         : out   t_mem_req_32;
     mem_resp        : in    t_mem_resp_32;
 
@@ -132,8 +133,8 @@ architecture structural of slot_server_v4 is
     signal do_sample_io    : std_logic;
     signal do_io_event     : std_logic;
     signal do_probe_end    : std_logic;
-    signal timing_inhibit  : std_logic;
-
+    signal reqs_inhibit    : std_logic;
+    
     signal slave_dout      : std_logic_vector(7 downto 0);
     signal slave_dtri      : std_logic := '0';
 
@@ -351,12 +352,14 @@ begin
         clock_det       => status.clock_detect,
         vic_cycle       => vic_cycle,    
     
-        inhibit         => timing_inhibit,
+        refr_inhibit    => mem_refr_inhibit,
+        reqs_inhibit    => reqs_inhibit,
         do_sample_addr  => do_sample_addr,
         do_sample_io    => do_sample_io,
         do_probe_end    => do_probe_end,
         do_io_event     => do_io_event );
 
+    mem_reqs_inhibit <= reqs_inhibit;
     mem_req_32_slot.tag <= g_tag_slot;
     mem_req_32_slot.byte_en <= "1000" when g_big_endian else "0001";
     mem_rack_slot <= '1' when mem_resp_32_slot.rack_tag = g_tag_slot else '0';
@@ -874,13 +877,9 @@ begin
         req         => mem_req,
         resp        => mem_resp );
 
-    -- Delay the inhibit one clock cycle, because our
-    -- arbiter introduces one clock cycle delay as well.
     process(clock)
     begin
         if rising_edge(clock) then
-            memctrl_inhibit <= timing_inhibit;
-
             status.c64_vcc <= VCC;            
             status.exrom <= not exromn_i;
             status.game <= not gamen_i;

@@ -107,9 +107,9 @@ port (
     freeze_activate : in  std_logic := '0';
 
     -- local bus side
-    mem_inhibit : out   std_logic;
-    mem_req     : out   t_mem_req_32;
-    mem_resp    : in    t_mem_resp_32;
+    mem_refr_inhibit : out   std_logic;
+    mem_req          : out   t_mem_req_32;
+    mem_resp         : in    t_mem_resp_32;
     
     -- Direct DMA for U64
     direct_dma_req   : out   t_dma_req := c_dma_req_init;
@@ -345,7 +345,8 @@ architecture logic of ultimate_logic_32 is
     signal mem_resp_32_usb       : t_mem_resp_32 := c_mem_resp_32_init;
     signal mem_req_32_rmii       : t_mem_req_32 := c_mem_req_32_init;
     signal mem_resp_32_rmii      : t_mem_resp_32 := c_mem_resp_32_init;
-
+    signal mem_reqs_inhibit      : std_logic;
+    
     -- IO Bus
     signal io_req_1541      : t_io_req;
     signal io_resp_1541     : t_io_resp := c_io_resp_init;
@@ -907,9 +908,10 @@ begin
             phi2_tick       => phi2_tick,
 
             -- master on memory bus
-            memctrl_inhibit => mem_inhibit,
-            mem_req         => mem_req_32_cart,
-            mem_resp        => mem_resp_32_cart,
+            mem_refr_inhibit => mem_refr_inhibit,
+            mem_reqs_inhibit => mem_reqs_inhibit,
+            mem_req          => mem_req_32_cart,
+            mem_resp         => mem_resp_32_cart,
 
             direct_dma_req  => direct_dma_req,
             direct_dma_resp => direct_dma_resp,
@@ -1291,6 +1293,8 @@ begin
         clock       => sys_clock,
         reset       => sys_reset,
         
+        inhibit     => mem_reqs_inhibit,
+
         reqs(0)     => mem_req_32_cart,
         reqs(1)     => mem_req_32_1541,
         reqs(2)     => mem_req_32_1541_2,
