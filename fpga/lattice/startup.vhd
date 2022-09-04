@@ -57,6 +57,9 @@ architecture boot of startup is
         CLKOS: out  std_logic;
         CLKOS2: out  std_logic; 
         CLKOS3: out  std_logic; 
+        ENCLKOS: in  std_logic; 
+        ENCLKOS2: in  std_logic; 
+        ENCLKOS3: in  std_logic; 
         PHASESEL: in  std_logic_vector(1 downto 0); 
         PHASEDIR: in  std_logic; 
         PHASESTEP: in  std_logic; 
@@ -65,13 +68,13 @@ architecture boot of startup is
     end component;
 
     signal count    : unsigned(19 downto 0) := (others => '0');
-    type t_state is (wait_ref_stable, do_pll_reset, wait_pll_lock, wait_mem_ready, run); 
-    signal state    : t_state := wait_ref_stable;
+    type t_state is (do_pll_reset, wait_ref_stable, wait_pll_lock, pll_locked_delay, start_clocks, wait_mem_ready, run); 
+    signal state    : t_state := do_pll_reset;
 
     signal audio_clock_i        : std_logic;
     signal sys_clock_i          : std_logic;
     signal sys_reset_i          : std_logic;
-    signal pll_reset            : std_logic;
+    signal pll_reset            : std_logic := '1';
     signal ctrl_reset_c         : std_logic;    
     signal ref_restart          : std_logic;
     signal ref_start_reset      : std_logic;
@@ -79,6 +82,7 @@ architecture boot of startup is
     signal ref_pll_locked       : std_logic;
     signal ref_mem_ready        : std_logic;
     signal pll_locked           : std_logic;
+    signal enable_clocks        : std_logic := '0';
 begin
     i_reset_sync: entity work.pulse_synchronizer
     port map (
@@ -94,41 +98,69 @@ begin
             count <= count + 1;
 
             case state is
-            when wait_ref_stable =>
-                pll_reset <= '0';
-                ref_start_reset <= '1';
-                ref_sys_reset <= '1';
-                
-                if count(7 downto 0) = X"FF" then
-                    state <= do_pll_reset;
-                end if;
-
             when do_pll_reset =>
                 pll_reset <= '1';
                 ref_start_reset <= '1';
                 ref_sys_reset <= '1';
+                enable_clocks <= '0';
+
                 if ((count = X"FFFFF" and not g_simulation) or 
                     (count = X"00FFF" and g_simulation)) then
                     state <= wait_pll_lock;
                 end if; 
 
+            when wait_ref_stable =>
+                pll_reset <= '0';
+                ref_start_reset <= '1';
+                ref_sys_reset <= '1';
+                enable_clocks <= '0';
+                
+                if count(7 downto 0) = X"FF" then
+                    state <= do_pll_reset;
+                end if;
+
             when wait_pll_lock =>
                 pll_reset <= '0';
                 ref_start_reset <= '1';
                 ref_sys_reset <= '1';
+                enable_clocks <= '0';
+                count <= (others => '0');
+                
+                if ref_pll_locked = '1' then
+                    state <= pll_locked_delay;
+                end if;
+            
+            when pll_locked_delay =>
+                pll_reset <= '0';
+                ref_start_reset <= '1';
+                ref_sys_reset <= '1';
+                enable_clocks <= '0';
 
-                if ref_pll_locked = '1' and 
-                    ((count >= 65536 and not g_simulation) or 
-                     (count >= 5000 and g_simulation)) then
+                if ((count = X"07FFF" and not g_simulation) or
+                    (count = X"0007F" and g_simulation)) then
+                    state <= start_clocks;
+                end if;
+            
+            when start_clocks =>
+                pll_reset <= '0';
+                ref_start_reset <= '1';
+                ref_sys_reset <= '1';
+                enable_clocks <= '1';
+            
+                if ((count = X"0FFFF" and not g_simulation) or
+                    (count = X"000FF" and g_simulation)) then
                     state <= wait_mem_ready;
-                end if; 
+                end if;                
                 
             when wait_mem_ready =>
                 pll_reset <= '0';
                 ref_start_reset <= '0';
                 ref_sys_reset <= '1';
+                enable_clocks <= '1';
 
-                if ref_mem_ready = '1' then
+                if ref_mem_ready = '1' and 
+                    ((count >= 131072 and not g_simulation) or 
+                     (count >= 1000 and g_simulation)) then
                     state <= run;
                 end if;
 
@@ -136,6 +168,7 @@ begin
                 pll_reset <= '0';
                 ref_start_reset <= '0';
                 ref_sys_reset <= '0';
+                enable_clocks <= '1';
                 
                 if ref_pll_locked = '0' then
                     state <= wait_ref_stable;
@@ -163,6 +196,9 @@ begin
         CLKOS  => audio_clock_i, -- 12.245 MHz (47.831 kHz sample rate)
         CLKOS2 => sys_clock_i,   -- 50 MHz
         CLKOS3 => clock_24,      -- 24 MHz
+        ENCLKOS  => enable_clocks, 
+        ENCLKOS2 => enable_clocks, 
+        ENCLKOS3 => enable_clocks, 
         PHASESEL  => phase_sel, 
         PHASEDIR  => phase_dir, 
         PHASESTEP => phase_step, 

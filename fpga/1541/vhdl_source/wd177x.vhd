@@ -281,6 +281,7 @@ begin
                 
                 when X"6" =>
                     io_resp.data(0) <= command_fifo_dout(8);
+                    io_resp.data(6) <= reset;
                     io_resp.data(7) <= command_fifo_valid;
                 
                 when X"7" =>

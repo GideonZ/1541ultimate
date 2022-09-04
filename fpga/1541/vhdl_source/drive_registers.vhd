@@ -135,7 +135,7 @@ begin
                 end case;
             end if; -- read
                                                     
-            drv_reset <= drv_reset_i or iec_reset_o;
+            drv_reset <= drv_reset_i or iec_reset_o or reset;
 
             if reset='1' then
                 power_i          <= '0';

@@ -30,7 +30,10 @@
 #define EMR3   0xC000 // all bits reserved
 #define DLLRST 0x0100 // MR DLL RESET
 
-#define VERBOSE 1
+#ifndef VERBOSE
+#define VERBOSE 0
+#endif
+
 #define RAM_TEST_REPORT 20
 
 const uint8_t hexchars[] = "0123456789ABCDEF";
@@ -53,17 +56,19 @@ void hexbyte(uint8_t val)
 
 void hex16(uint16_t val, const char *postfix)
 {
-    hexbyte(val >> 8);
-    hexbyte(val);
+    uint8_t *p = (uint8_t *)&val;
+    hexbyte(p[1]);
+    hexbyte(p[0]);
     my_puts(postfix);
 }
 
 void hexword(uint32_t val)
 {
-    hexbyte(val >> 24);
-    hexbyte(val >> 16);
-    hexbyte(val >> 8);
-    hexbyte(val);
+    uint8_t *p = (uint8_t *)&val;
+    hexbyte(p[3]);
+    hexbyte(p[2]);
+    hexbyte(p[1]);
+    hexbyte(p[0]);
     outbyte(' ');
 }
 
@@ -107,7 +112,7 @@ static void init_mode_regs()
     LATTICE_DDR2_COMMAND   = 0; // write MR
 
     for (int i=0;i<1000;i++) {
-
+        __asm__("nop");
     }
 }
 
@@ -129,8 +134,9 @@ static void show_phase_sys()
     my_puts("\nSysClock vs CtrlClock:\n");
     LATTICE_PLL_SELECT = 1; // CLKOS2 (sys clock)
     for(int i=0;i<96;i++) {
-        for(int j=0;j<200;j++)
-            ;
+        for(int j=0;j<200;j++) {
+            __asm__("nop");
+        }
         hexbyte(LATTICE_PLL_MEASURE2);
         outbyte(' ');
         LATTICE_PLL_PULSE = 1;
@@ -151,8 +157,9 @@ static void move_sys_clock()
     uint8_t prev,cur = 0x80;
     for(int i=0;i<96;i++) {
         prev = cur;
-        for(int j=0;j<200;j++)
-            ;
+        for(int j=0;j<200;j++) {
+            __asm__("nop");
+        }
         cur = LATTICE_PLL_MEASURE2;
         if ((prev < 0x80) && (cur >= 0x80)) {
             break;
@@ -165,30 +172,44 @@ static void move_sys_clock()
 }
 
 
+#define DRIVE1IRQ (*(volatile uint8_t *)(DRIVE_A_BASE + 0x1806))
+#define DRIVE2IRQ (*(volatile uint8_t *)(DRIVE_B_BASE + 0x1806))
+
 void ddr2_calibrate()
 {
+
+    hexbyte(DRIVE1IRQ);
+    outbyte('^');
+    hexbyte(DRIVE2IRQ);
+    outbyte('^');
+
     // Turn on clock and let DDR stabilize
     LATTICE_DDR2_ENABLE    = CLOCKPIN;
-    for (int i=0;i<5000;i++)
-        ;
+    for (int i=0;i<5000;i++) {
+        __asm__("nop");
+    }
     LATTICE_DDR2_ENABLE    = CLOCKPIN | CKE;
 
     move_sys_clock();
     if (!coarse_calibration()) {
+#if !NO_BOOT
         LATTICE_DDR2_PHYCTRL = 0x20; // Reset PLL and start all over.
-        outbyte('~');
+#endif
     } else {
         reset_toggle();
         if(ram_test()) {
             my_puts("\nReady to rumble!\n");
+#if !NO_BOOT
+            return;
+#endif
+        } else {
+            my_puts("\nBoo!!\n");
         }
     }
 
 #if NO_BOOT
     volatile uint32_t *mem32 = (uint32_t *)0x10000;
 
-    outbyte('$');
-    outbyte('$');
     outbyte('$');
     uint8_t sys=0;
     uint16_t start, stop;
@@ -251,15 +272,11 @@ void ddr2_calibrate()
             case 'z':
                 LATTICE_PLL_SELECT = 5;
                 LATTICE_PLL_PULSE = 1;
-                for(int j=0;j<1000;j++)
-                    ;
                 hexbyte(--sys);
                 break;
             case 'x':
                 LATTICE_PLL_SELECT = 1;
                 LATTICE_PLL_PULSE = 1;
-                for(int j=0;j<1000;j++)
-                    ;
                 hexbyte(++sys);
                 break;
             default:
@@ -269,12 +286,7 @@ void ddr2_calibrate()
         }
     } while(1);
 #else
-    move_sys_clock();
-    if (coarse_calibration()) {
-        if (ram_test()) {
-            return;
-        }
-    }
+    LATTICE_DDR2_PHYCTRL = 0x20; // Reset PLL and start all over.
     while(1) {
         __asm__("nop");
         __asm__("nop");
@@ -369,8 +381,9 @@ static void set_timing(int rd, int clksel)
     LATTICE_DDR2_PHYCTRL = 0x80; // do ddr buffer reset
     LATTICE_DDR2_PHYCTRL = 0; // unpause
     LATTICE_DDR2_PHYCTRL = 1; // do update
-    for(int i;i<200;i++)
-        ;
+    for(int j=0;j<200;j++) {
+        __asm__("nop");
+    }
 }
 
 int coarse_calibration(void)

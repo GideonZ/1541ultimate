@@ -55,6 +55,11 @@ void WD177x :: init(void)
 	// xTaskCreate( WD177x :: run, "WD177x", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &taskHandle );
     // Runs from the drive task now
 
+	while(wd177x->irq_ack & 0x80) {
+		printf("Hey, fifo valid??\n");
+		wd177x->irq_ack = 1;
+	}
+
 	install_high_irq(irqNr, my_irq, this);
 }
 
