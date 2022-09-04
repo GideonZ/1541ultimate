@@ -410,16 +410,10 @@
         <Source name="../../../fpga/io/audio/audio_type_pkg.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
-        <Source name="../../../fpga/io/audio/generic_mixer.vhd" type="VHDL" type_short="VHDL">
-            <Options/>
-        </Source>
         <Source name="../../../fpga/io/audio/i2s_serializer.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
         <Source name="../../../fpga/io/audio/lp_filter2.vhd" type="VHDL" type_short="VHDL">
-            <Options/>
-        </Source>
-        <Source name="../../../fpga/io/audio/mul_add.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
         <Source name="../../../fpga/io/audio/sys_to_aud.vhd" type="VHDL" type_short="VHDL">
@@ -635,9 +629,6 @@
         <Source name="../../../fpga/ip/synchroniser/vhdl_source/pulse_synchronizer.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
-        <Source name="../../../fpga/io/audio_select/vhdl_source/audio_select.vhd" type="VHDL" type_short="VHDL">
-            <Options/>
-        </Source>
         <Source name="../../../fpga/altera/align_read_to_bram.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
@@ -716,13 +707,22 @@
         <Source name="../../../fpga/ip/busses/vhdl_source/mem_bus_bridge_sync.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
+        <Source name="../../../fpga/lattice/startup.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/audio_select/vhdl_source/audio_select.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/audio/generic_mixer.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/audio/mul_add.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
         <Source name="cart.rva" type="Reveal Analyzer Project File" type_short="RVA">
             <Options/>
         </Source>
-        <Source name="cart.rvl" type="Reveal" type_short="Reveal">
-            <Options/>
-        </Source>
-        <Source name="impl1/impl1.xcf" type="Programming Project File" type_short="Programming">
+        <Source name="cart.rvl" type="Reveal" type_short="Reveal" excluded="TRUE">
             <Options/>
         </Source>
         <Source name="u2p_ecp5.lpf" type="Logic Preference" type_short="LPF">
