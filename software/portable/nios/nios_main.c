@@ -133,7 +133,7 @@ void ultimate_main(void *context);
 #include "dump_hex.h"
 
 void codec_init();
-void USb2512Init();
+void USB2513Init();
 
 static void test_i2c_mdio(void) {
 	// mdio_reset();
@@ -148,7 +148,7 @@ static void test_i2c_mdio(void) {
 	for (int i = 0; i < 2048; i += 2) {
 		*(dst++) = 0;
 	}
-	USb2512Init();
+	USB2513Init();
 	U2PIO_ULPI_RESET = 0;
 
 	// enable buffer

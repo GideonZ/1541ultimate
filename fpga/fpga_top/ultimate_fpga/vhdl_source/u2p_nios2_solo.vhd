@@ -454,7 +454,7 @@ begin
         SDRAM_CASn        => SDRAM_CASn,
         SDRAM_WEn         => SDRAM_WEn,
         SDRAM_A           => SDRAM_A,
-        SDRAM_BA          => SDRAM_BA(1 downto 0),
+        SDRAM_BA          => SDRAM_BA,
         SDRAM_DM          => SDRAM_DM,
         SDRAM_DQ          => SDRAM_DQ,
         SDRAM_DQS         => SDRAM_DQS
