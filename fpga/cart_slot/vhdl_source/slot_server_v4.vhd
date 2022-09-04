@@ -18,6 +18,7 @@ generic (
     g_ram_base_cart : std_logic_vector(27 downto 0) := X"0EF0000"; -- should be on a 64K boundary
     g_rom_base_cart : std_logic_vector(27 downto 0) := X"0F00000"; -- should be on a 1M boundary
     g_kernal_base   : std_logic_vector(27 downto 0) := X"0EA8000"; -- should be on a 32K boundary 
+    g_register_addr : boolean := false;
     g_direct_dma    : boolean := false;
     g_ext_freeze_act: boolean := false;
     g_cartreset_init: std_logic := '0';
@@ -517,6 +518,7 @@ begin
 
     i_cart_logic: entity work.all_carts_v5
     generic map (
+        g_register_addr => g_register_addr,
         g_eeprom        => g_eeprom,
         g_kernal_base   => g_kernal_base,
         g_georam_base   => g_ram_base_reu,
