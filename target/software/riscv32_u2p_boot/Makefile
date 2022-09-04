@@ -36,7 +36,7 @@ VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/risc-v
 
 PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -march=$(MARCH) -mabi=$(MABI) $(EFFORT) -ffunction-sections -fdata-sections -nostartfiles -mno-fdiv -Dmake_bootloader
-OPTIONS += -g -Os -DOS -DNO_BOOT=2 -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=50000000 -Wno-write-strings
+OPTIONS += -g -Os -DOS -DNO_IO_RESET=1 -DVERBOSE=1 -DNO_BOOT=0 -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=50000000 -Wno-write-strings
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = linker.x

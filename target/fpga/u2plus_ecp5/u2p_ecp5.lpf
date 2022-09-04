@@ -1,4 +1,4 @@
-rvl_alias "reveal_ist_709" "i_memctrl/i_phy/sclk";
+rvl_alias "reveal_ist_418" "i_memctrl/i_phy/sclk";
 BLOCK RESETPATHS ;
 FREQUENCY PORT "ULPI_CLOCK" 60.000000 MHz CLOCK_JITTER 0.200000 ns ;
 INPUT_SETUP PORT "ULPI_NXT" 11.500000 ns HOLD 1.500000 ns CLKPORT "ULPI_CLOCK" ;
@@ -816,6 +816,9 @@ BLOCK PATH FROM CELL "i_logic/r_rmii.i_rmii/i_rx/rx_enable" TO CELL "i_logic/r_r
 BLOCK PATH FROM CELL "i_logic/r_rmii.i_rmii/i_rx/rx_enable" TO CELL "i_logic/r_rmii.i_rmii/i_rx/i_sync_enable/sync1";
 BLOCK PATH FROM CELL "i_logic/r_rmii.i_rmii/i_tx/i_sync/in_toggle" TO CELL "i_logic/r_rmii.i_rmii/i_tx/i_sync/sync1";
 
+BLOCK PATH FROM CELL "i_startup/i_reset_sync/in_toggle" TO CELL "i_startup/i_reset_sync/sync1";
+BLOCK PATH FROM CELL "i_startup/i_mem_sync/cs_memsync[0]" TO CELL "i_startup/i_mem_ready_sync/sync1";
+
 BLOCK PATH FROM CELL "i_startup/i_sys_reset_sync/sync2" TO CELL "i_startup/i_audio_reset/sync1";
 BLOCK PATH FROM CELL "i_startup/i_sys_reset_sync/sync2" TO CELL "i_startup/i_eth_reset/sync1";
 BLOCK PATH FROM CELL "i_startup/i_sys_reset_sync/sync2" TO CELL "i_startup/ctrl_reset_c";
@@ -869,6 +872,6 @@ FREQUENCY PORT "CLOCK_50" 50.000000 MHz CLOCK_JITTER 0.100000 ns ;
 INPUT_SETUP PORT "RMII_CRS_DV" 6.500000 ns HOLD 6.500000 ns CLKPORT "RMII_REFCLK" ;
 
 USE PRIMARY NET "half_clock" ;
-FREQUENCY NET "half_clock" 100.000000 MHz PAR_ADJ 10.000000 HOLD_MARGIN 0.100000 ns CLOCK_JITTER 0.1 ns;
-FREQUENCY NET "mem_clock" 200.000000 MHz HOLD_MARGIN 0.100000 ns CLOCK_JITTER 0.2 ns;
-FREQUENCY NET "sys_clock" 50.0 MHz HOLD_MARGIN 0.1 ns CLOCK_JITTER 0.2 ns;
+FREQUENCY NET "half_clock" 100.000000 MHz PAR_ADJ 15.000000 HOLD_MARGIN 0.100000 ns CLOCK_JITTER 0.1 ns;
+FREQUENCY NET "mem_clock" 200.000000 MHz HOLD_MARGIN 0.100000 ns CLOCK_JITTER 0.1 ns;
+FREQUENCY NET "sys_clock" 50.0 MHz PAR_ADJ 3.000000 HOLD_MARGIN 0.1 ns CLOCK_JITTER 0.1 ns;
