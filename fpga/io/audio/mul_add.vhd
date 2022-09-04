@@ -25,15 +25,16 @@ architecture arch of mul_add is
     signal mult         : signed(26 downto 0);
     signal accu_reg1    : signed(31 downto 0);
     signal accu_reg2    : signed(31 downto 0);
+    signal clear_d      : std_logic := '0';
 begin
     process(clock)
     begin
         if rising_edge(clock) then
-            if clear = '1' then
-                accu_reg1 <= (others => '0');
+            clear_d <= clear;
+            accu_reg1 <= accu_reg2 + mult;
+            if clear = '1' or clear_d = '1' then
                 accu_reg2 <= (others => '0');
             else
-                accu_reg1 <= accu_reg2 + mult;
                 accu_reg2 <= accu_reg1;
             end if;
             mult <= a * b;                            
