@@ -54,9 +54,9 @@ architecture  rtl  of  sync_fifo  is
     signal wr_pnt       : integer range 0 to g_depth-1;
 
     signal num_el       : integer range 0 to g_depth;
-    signal full_i       : std_logic;
-    signal empty_i      : std_logic;
-    signal valid_i      : std_logic;
+    signal full_i       : std_logic := '0';
+    signal empty_i      : std_logic := '1';
+    signal valid_i      : std_logic := '0';
 begin
 
     -- Check generic values (also for synthesis)
@@ -92,7 +92,7 @@ begin
         if rising_edge(clock) then
 
             -- data on the output becomes valid after an external read OR after an automatic read when fifo is not empty.
-            if rd_en = '1' then
+            if rd_en = '1' or reset = '1' then -- fix?!
                 valid_i <= not empty_i;
             elsif valid_i = '0' and empty_i = '0' and g_fall_through then
                 valid_i <= '1';

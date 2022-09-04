@@ -517,10 +517,10 @@ begin
         uart_rxd    => UART_RXD );
 
 
-    r_drive: if g_drive_1541 generate
+    r_drive1: if g_drive_1541 generate
     begin
-        r_mm: if g_mm_drive generate
-            i_drive: entity work.mm_drive
+        r_mm1: if g_mm_drive generate
+            i_drive1: entity work.mm_drive
             generic map (
                 g_big_endian    => g_big_endian,
                 g_cpu_tag       => c_tag_1541_cpu_1,
