@@ -18,7 +18,7 @@ use ECP5U.components.all;
 
 entity u2p_riscv_lattice is
 generic (
-    g_jtag_debug     : boolean := true;
+    g_jtag_debug     : boolean := false;
     g_dual_drive     : boolean := true );
 port (
     -- (Optional) Oscillator
@@ -595,7 +595,7 @@ begin
         g_spi_flash     => true,
         g_vic_copper    => false,
         g_video_overlay => false,
-        g_sampler       => false,
+        g_sampler       => true,
         g_acia          => true,
         g_rmii          => true )
     port map (
@@ -1003,7 +1003,7 @@ begin
     -- SLOT_DATA_OEn    <= '1';
     -- SLOT_DATA_DIR    <= '1';
     SLOT_ADDR_OEn    <= toggle;
-    SLOT_ADDR_DIR    <= DEBUG_TRSTn and RMII_RX_ER and UART_RXD and SLOT_DOTCLK and IEC_RESET_I and CAS_SENSE and CAS_MOTOR when rising_edge(CLOCK_50);
+    SLOT_ADDR_DIR    <= DEBUG_TRSTn and DEBUG_TDI and DEBUG_TMS and DEBUG_TCK and RMII_RX_ER and UART_RXD and SLOT_DOTCLK and IEC_RESET_I and CAS_SENSE and CAS_MOTOR when rising_edge(CLOCK_50);
     toggle <= not toggle when rising_edge(sys_clock);
     DEBUG_SPARE      <= '0';
     flash_sck_t      <= sys_reset; -- 0 when not in reset = enabled
