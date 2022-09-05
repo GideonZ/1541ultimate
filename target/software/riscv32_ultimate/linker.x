@@ -140,7 +140,6 @@ SECTIONS
     . = .;
     __DATA_END__ = .;
 
-/*  } > dataram  AT >memory */
   } > memory 
 
   /* zero/non-initialized read/write data placed in RAM */
