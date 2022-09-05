@@ -34,6 +34,13 @@ static const t_flash_address flash_addresses_u2p[] = {
 	{ FLASH_ID_CONFIG,     0x00, 0x3F0000, 0x3F0000, 0x010000 },
 	{ FLASH_ID_LIST_END,   0x00, 0x3FE000, 0x3FE000, 0x001000 } };
 
+static const t_flash_address flash_addresses_u2pl[] = {
+	{ FLASH_ID_BOOTFPGA,   0x00, 0x000000, 0x000000, 0x0C0000 },
+	{ FLASH_ID_APPL,       0x00, 0x0A0000, 0x0A0000, 0x160000 }, // Max 1.375 MB
+	{ FLASH_ID_FLASHDRIVE, 0x00, 0x200000, 0x200000, 0x5F0000 }, // free space: 6080 KB
+	{ FLASH_ID_CONFIG,     0x00, 0x7F0000, 0x7F0000, 0x010000 },
+	{ FLASH_ID_LIST_END,   0x00, 0x7FE000, 0x7FE000, 0x001000 } };
+
 static const t_flash_address flash_addresses_u64[] = {
 	{ FLASH_ID_BOOTFPGA,   0x00, 0x000000, 0x000000, 0x290000 }, // 282BD4
 	{ FLASH_ID_APPL,       0x00, 0x290000, 0x290000, 0x170000 }, // Max 1.5 MB
@@ -60,7 +67,11 @@ void W25Q_Flash :: get_image_addresses(int id, t_flash_address *addr)
 	if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
 		a = (t_flash_address *)flash_addresses_u64;
 	} else if (getFpgaCapabilities() & CAPAB_ULTIMATE2PLUS) {
-		a = (t_flash_address *)flash_addresses_u2p;
+		if (getFpgaCapabilities() & CAPAB_FPGA_TYPE) {
+			a = (t_flash_address *)flash_addresses_u2pl;
+		} else {
+			a = (t_flash_address *)flash_addresses_u2p;
+		}
 	} else {
 		a = (t_flash_address *)flash_addresses;
 	}
