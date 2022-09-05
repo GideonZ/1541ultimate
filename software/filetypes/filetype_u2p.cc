@@ -71,7 +71,10 @@ int FileTypeUpdate :: fetch_context_items(IndexedList<Action *> &list)
 FileType *FileTypeUpdate :: test_type(BrowsableDirEntry *br)
 {
 	FileInfo *inf = br->getInfo();
-	const char *ext = (getFpgaCapabilities() & CAPAB_ULTIMATE64) ? "U64" : "U2P";
+	uint32_t cap = getFpgaCapabilities();
+	const char *ext = (cap & CAPAB_ULTIMATE64) ? "U64" :
+			          (cap & CAPAB_FPGA_TYPE) ? "U2L" :
+			        		  "U2P";
 	if(strcmp(inf->extension, ext)==0)
         return new FileTypeUpdate(br);
     return NULL;
