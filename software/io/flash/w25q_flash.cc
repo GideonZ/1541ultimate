@@ -402,20 +402,27 @@ bool W25Q_Flash :: protect_configure(void)
 	// SEC TB BP2 BP1 BP0 = 0 0 1 0 0
 	// CMP is bit 6 in Status Register 2. (0x40)
 
-	// protect the LOWER HALF of the device:
+	// protect the LOWER QUARTER of the device:
 	// SEC = 0
 	// TB = 1
 	// BP[2:0] = 101
 	// SRP0, SEC, TB, BP2, BP1, BP0, WEL, BUSY
 	//  0     0    1   1    0    1    0     0
 	
-	// program status register with value 0x34
+	// protect the LOWER HALF of the device:
+	// SEC = 0
+	// TB = 1
+	// BP[2:0] = 101
+	// SRP0, SEC, TB, BP2, BP1, BP0, WEL, BUSY
+	//  0     0    1   1    1    0    0     0
+
+	// program status register with value 0x34 for 8MB and 0x38 for 4MB devices
     portENTER_CRITICAL();
 	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteEnable;
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
 	SPI_FLASH_DATA = W25Q_WriteStatusRegister1;
-	SPI_FLASH_DATA = 0x34;
+	SPI_FLASH_DATA = (total_size >= 32768) ? 0x34 : 0x38;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
 	wait_ready(50);
 
