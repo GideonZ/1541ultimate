@@ -28,6 +28,7 @@
 #include "prog_flash.h"
 #include "u64_tester.h"
 #include "i2c_drv_sockettest.h"
+#include "stream_textlog.h"
 
 typedef struct {
 	const char *fileName;
@@ -42,35 +43,14 @@ typedef struct {
 BinaryImage_t images[] = {
      { "/Usb?/u64/u64.swp",      "FPGA Binary",         0x000000, 0, 0 },
      { "/Usb?/u64/ultimate.app", "Application Binary",  0x290000, 0, 0 },
-     { "/Usb?/u64/ar5pal.bin",   "Action Replay 5",     0x400000, 0, 0 },
-     { "/Usb?/u64/ar6pal.bin",   "Action Replay 6",     0x408000, 0, 0 },
-     { "/Usb?/u64/final3.bin",   "Final Cartridge III", 0x410000, 0, 0 },
-     { "/Usb?/u64/rr38pal.bin",  "Retro Replay",        0x420000, 0, 0 },
-	 { "/Usb?/u64/ss5pal.bin",   "Super Snapshot",      0x430000, 0, 0 },
-	 { "/Usb?/u64/tar_pal.bin",  "Turbo Assembler",     0x440000, 0, 0 },
-     { "/Usb?/u64/rr38ntsc.bin", "Retro Replay NTSC",   0x450000, 0, 0 },
-     { "/Usb?/u64/ss5ntsc.bin",  "Super Snapshot NTSC", 0x460000, 0, 0 },
-     { "/Usb?/u64/tar_ntsc.bin", "Turbo Assembler NTSC",0x470000, 0, 0 },
-	 { "/Usb?/u64/kcs.bin",      "KCS",                 0x480000, 0, 0 },
-     { "/Usb?/u64/epyx.bin",     "Epyx Fastloader",     0x484000, 0, 0 },
-//     { "/Usb?/u64/kerna*.bin",   "Kernal ROM",          0x446000, 0, 0 },
+     { NULL,                     "Flash Filesystem",    0x400000, 0, 0 },
+     { "/Usb?/u64/1541.rom",     NULL,                  0x000000, 0, 0 },
+     { "/Usb?/u64/1571.rom",     NULL,                  0x000000, 0, 0 },
+     { "/Usb?/u64/1581.rom",     NULL,                  0x000000, 0, 0 },
+     { "/Usb?/u64/snds1541.bin", NULL,                  0x000000, 0, 0 },
+     { "/Usb?/u64/snds1571.bin", NULL,                  0x000000, 0, 0 },
+     { "/Usb?/u64/snds1581.bin", NULL,                  0x000000, 0, 0 },
 };
-
-/*
-{ FLASH_ID_AR5PAL,     0x00, 0x400000, 0x400000, 0x08000 },
-{ FLASH_ID_AR6PAL,     0x00, 0x408000, 0x408000, 0x08000 },
-{ FLASH_ID_FINAL3,     0x00, 0x410000, 0x410000, 0x10000 },
-{ FLASH_ID_RR38PAL,    0x00, 0x420000, 0x420000, 0x10000 },
-{ FLASH_ID_SS5PAL,     0x00, 0x430000, 0x430000, 0x10000 },
-{ FLASH_ID_TAR_PAL,    0x00, 0x440000, 0x440000, 0x10000 },
-
-{ FLASH_ID_RR38NTSC,   0x00, 0x450000, 0x450000, 0x10000 },
-{ FLASH_ID_SS5NTSC,    0x00, 0x460000, 0x460000, 0x10000 },
-{ FLASH_ID_TAR_NTSC,   0x00, 0x470000, 0x470000, 0x10000 },
-
-{ FLASH_ID_KCS,        0x00, 0x480000, 0x480000, 0x04000 },
-{ FLASH_ID_EPYX,       0x00, 0x484000, 0x484000, 0x02000 },
-*/
 
 #define NUM_IMAGES (sizeof(images) / sizeof(BinaryImage_t))
 
@@ -163,6 +143,9 @@ int load_file(BinaryImage_t *flashFile)
 	File *file;
 	uint32_t transferred;
 
+	if (!flashFile->fileName) {
+	    return 0; // not to be loaded but created locally
+	}
 	FileManager *fm = FileManager :: getFileManager();
 	fres = fm->fopen(flashFile->fileName, FA_READ, &file);
 	if (fres == FR_OK) {
@@ -183,6 +166,7 @@ int load_file(BinaryImage_t *flashFile)
 }
 
 Screen *screen;
+StreamTextLog textLog(96*1024);
 
 #define CHARGEN_BASE      0xA0040000
 #define CHARGEN_TIMING    (CHARGEN_BASE + 0x0000)
@@ -193,6 +177,7 @@ Screen *screen;
 extern "C" {
     static void screen_outbyte(int c) {
         screen->output(c);
+        textLog.charout(c);
     }
 }
 
@@ -367,6 +352,9 @@ void do_update(void)
     flash2->protect_disable();
 
     for(int i=0;i<NUM_IMAGES;i++) {
+        if (!images[i].romName) { // skip those with no name
+            continue;
+        }
         if (! flash_buffer_length(flash2, screen, images[i].flashAddress, false, images[i].buffer, images[i].size, "?", images[i].romName)) {
             printf("\033\022ERROR!\n\n");
             while(1)
@@ -412,6 +400,47 @@ void initScreen()
     printf("Screen Initialized.\n");
 }
 
+#define ROMS_DIRECTORY  "/prep/roms"
+#define CARTS_DIRECTORY "/prep/carts"
+
+int prepare_flashdisk_pre(uint8_t *mem, uint32_t mem_size);
+int prepare_flashdisk_used(uint32_t mem_size);
+
+static void create_dir(const char *name)
+{
+    FileManager *fm = FileManager :: getFileManager();
+    FRESULT fres = fm->create_dir(name);
+    printf("Creating '%s': %s\n", name, FileSystem :: get_error_string(fres));
+}
+
+static FRESULT write_file(const char *name, uint8_t *data, int length)
+{
+    File *f;
+    uint32_t dummy;
+    FileManager *fm = FileManager :: getFileManager();
+    FRESULT fres = fm->fopen(ROMS_DIRECTORY, name, FA_CREATE_ALWAYS | FA_WRITE, &f);
+    if (fres == FR_OK) {
+        fres = f->write(data, length, &dummy);
+        printf("Writing %s to /prep: %s\n", name, FileSystem :: get_error_string(fres));
+        fm->fclose(f);
+    }
+    if (fres != FR_OK) {
+        printf("Failed to write essentials. Abort!\n");
+        while(1)
+            ;
+    }
+    return fres;
+}
+
+void copy_roms(void)
+{
+    create_dir(ROMS_DIRECTORY);
+    create_dir(CARTS_DIRECTORY);
+    for(int i=3; i<NUM_IMAGES; i++) {
+        write_file(images[i].fileName + 10, (uint8_t*)images[i].buffer, (int)images[i].size); // +10 = snoop "/Usb?/u64/"
+    }
+}
+
 int load_images(void)
 {
     usb2.initHardware();
@@ -432,6 +461,21 @@ int load_images(void)
             return -1;
         }
     }
+
+    const uint32_t flashDiskSize = 0x3E8000;
+    uint8_t *flashDiskImage = new uint8_t[flashDiskSize]; // see w25q_flash.cc
+    if (prepare_flashdisk_pre(flashDiskImage, flashDiskSize)) {
+        printf("\e2Error preparing flash image.\n");
+        return -1;
+    }
+    copy_roms();
+    int flashDiskUsed = prepare_flashdisk_used(flashDiskSize);
+    if (flashDiskUsed > 0) {
+        images[2].fileName = "FlashDisk";
+        images[2].buffer = (uint32_t *)flashDiskImage;
+        images[2].size = (flashDiskUsed << 12);
+    }
+
     return 0;
 }
 
@@ -543,7 +587,7 @@ int socket_test(volatile socket_tester_t *test, volatile uint8_t *ctrl, uint8_t 
         error |= test_socket_voltages(i2c, ctrl, magic | 2,  8640,  9560, false) << 3;
         error |= test_socket_voltages(i2c, ctrl, magic | 3, 11600, 13000, false) << 6;
         error |= test_socket_voltages(i2c, ctrl, magic | 7, 11600, 13000, true) << 9;
-        error |= test_socket_caps(test, ctrl, magic | 7, 20000, 24800, 22470) << 12;
+        error |= test_socket_caps(test, ctrl, magic | 7, 19500, 25000, 22470) << 12;
         error |= test_socket_caps(test, ctrl, magic | 15, 200, 900, 470) << 14;
     } else {
         error |= test_socket_voltages(i2c, 0, 0, 11600, 12800, true);
@@ -551,7 +595,7 @@ int socket_test(volatile socket_tester_t *test, volatile uint8_t *ctrl, uint8_t 
         printf("\e?Place all jumpers for socket %d and press power button.\n", (test == SOCKET1)?1:2);
         wait_button();
         error |= test_socket_voltages(i2c, ctrl, magic | 2,  8640,  9400, true) << 8;
-        error |= test_socket_caps(test, 0, 0, 20000, 24800, 22470) << 11;
+        error |= test_socket_caps(test, 0, 0, 19500, 25000, 22470) << 11;
     }
 
     if (!error) {
@@ -589,6 +633,32 @@ int TestSidSockets(bool elite)
     return error;
 }
 
+void write_log(void)
+{
+    FRESULT fres;
+    File *file;
+    uint32_t transferred;
+    uint8_t s[8];
+    char fn[40];
+
+    FileManager *fm = FileManager :: getFileManager();
+    Flash *flash = get_flash();
+    flash->read_serial(s);
+
+    for (int attempt = 0; attempt < 10; attempt++) {
+        sprintf(fn, "/Usb?/logs/%b%b%b%b%b%b%b%b-%d", s[7], s[6], s[5], s[4], s[3], s[2], s[1], s[0], attempt);
+
+        fres = fm->fopen(fn, FA_CREATE_NEW | FA_WRITE, &file);
+        if (fres == FR_OK) {
+            printf("\e6Saving %s\n", fn);
+            fres = file->write(textLog.getText(), textLog.getLength(), &transferred);
+            if (fres == FR_OK) {
+                fm->fclose(file);
+                break;
+            }
+        }
+    }
+}
 
 extern "C" {
     void codec_init(void);
@@ -615,46 +685,50 @@ extern "C" {
 	    printf("Ultimate-64 - LOADER...\n");
         codec_init();
         bool elite = isEliteBoard();
-	    int errors = 0, joy = 0;
+        bool advanced_joy = elite;
+        int errors = 0, joy = 0;
 	    if (!test_memory()) {
 	        if (!load_images()) {
 	            screen->clear();
 	            screen->move_cursor(0,0);
 #if DOTESTS
-                printf("\e4U64 Tester - 15.05.2020 - 10:52\e?\n");
+                printf("\e4U64 Tester - 26.05.2022 - 14:48\e?\n");
                 errors =  test_esp32();
 	            errors += U64AudioCodecTest();
-                errors += TestSidSockets(elite);
+                errors += U64PaddleTest();
+                errors += U64TestIEC();
+                errors += U64TestCartridge();
+                errors += U64TestCassette();
+                if (!rtc.is_valid()) {
+                    errors ++;
+                    printf("\e2RTC not valid. Battery inserted?\n\eO");
+                }
 	            if (elite) {
 	                joy = U64EliteTestJoystick();
 	                if (joy < 0) {
-	                    elite = false;
+	                    advanced_joy = false;
 	                } else {
 	                    errors += joy;
 	                }
 	            }
-	            errors += U64PaddleTest();
-	            if (!elite) {
+	            if (!advanced_joy) {
 	                printf("\e?Remove joystick tester boards and press power button.\n");
 	                wait_button();
 	            }
-	            errors += U64TestKeyboard();
-	            //errors += U64TestUserPort();
-                errors += U64TestIEC();
-	            errors += U64TestCartridge();
-	            errors += U64TestCassette();
-	            if (!rtc.is_valid()) {
-	                errors ++;
-	                printf("\e2RTC not valid. Battery inserted?\n\eO");
-	            }
+                errors += U64TestKeyboard();
+                errors += U64TestUserPort();
+                errors += TestSidSockets(elite);
+
                 if (errors) {
                     printf("\n\e2** BOARD FAILED **\n");
+                    write_log();
                 } else {
                     printf("\n\e5-> Passed!\n\e?");
+                    write_log();
                     do_update();
                 }
 #else
-                printf("\e4U64 Programmer - 24.06.2020 - 20:40\e?\n");
+                printf("\e4U64 Programmer - 26.05.2022 - 12:44\e?\n");
                 printf("\n\e5Tests skipped.\n\e?");
                 do_update();
 #endif
@@ -670,3 +744,4 @@ extern "C" {
         }
 	}
 }
+

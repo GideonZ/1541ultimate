@@ -11,9 +11,10 @@ BSP 	 =  ../../../../ult64/proglogic/nios_small/loader_bsp
 FINAL    =  $(RESULT)/$(PRJ).hex $(RESULT)/$(PRJ).elf $(RESULT)/$(PRJ).app $(DEST)
 HEXLAST  =  0x1FFFF
 HEXBASE  =  0x30000000
-HEXEND   =  0x3001FFFF
+HEXEND   =  0x3002FFFF
 
-VPATH	 :=  $(PATH_SW)/chan_fat/tiny_ro + $(VPATH)
+#VPATH	 :=  $(PATH_SW)/chan_fat/tiny_ro + $(VPATH)
+VPATH    += $(PATH_SW)/application/tester
 
 SRCS_C   =	start_rtos.c \
 			itu.c \
@@ -50,6 +51,7 @@ SRCS_CC	 =  small_printf.cc \
 			filesystem_root.cc \
 			file_device.cc \
 			blockdev.cc \
+			blockdev_ram.cc \
 			disk.cc \
 			diskio.cc \
 			directory.cc \
@@ -70,8 +72,8 @@ SRCS_CC	 =  small_printf.cc \
 			w25q_flash.cc \
             s25fl_flash.cc \
             s25fl_l_flash.cc \
+            flash_disk_prep.cc \
 			u64_programmer.cc
-			
 
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
@@ -88,7 +90,7 @@ SRCS_ASMS = port_asm.S
 
 SRCS_6502 = 
 
-SRCS_BIN =
+SRCS_BIN =  
 
 SRCS_IEC = 
 

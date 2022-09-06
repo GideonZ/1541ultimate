@@ -63,7 +63,7 @@ MEMORY
  */
     avalon2mem_0 : ORIGIN = 0x3800000, LENGTH = 0x800000
     reset : ORIGIN = 0x30000000, LENGTH = 32
-    onchip_memory2_0 : ORIGIN = 0x30000020, LENGTH = 131040
+    onchip_memory2_0 : ORIGIN = 0x30000020, LENGTH = 0x2FFE0 /*131040*/
 }
 
 /* Define symbols for each memory base-address */
@@ -357,7 +357,7 @@ SECTIONS
 /*
  * Don't override this, override the __alt_stack_* symbols instead.
  */
-__alt_data_end = 0x30020000;
+__alt_data_end = 0x30030000;
 
 /*
  * The next two symbols define the location of the default stack.  You can
