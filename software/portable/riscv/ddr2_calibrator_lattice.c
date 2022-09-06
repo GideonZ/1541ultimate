@@ -177,7 +177,6 @@ static void move_sys_clock()
 
 void ddr2_calibrate()
 {
-
     hexbyte(DRIVE1IRQ);
     outbyte('^');
     hexbyte(DRIVE2IRQ);
@@ -392,9 +391,13 @@ static void set_timing(int rd, int clksel)
 
 int coarse_calibration(void)
 {
-    init_mode_regs();
-
+/*
     LATTICE_DDR2_DELAYSTEP = 0x00; // turn on automatic updates
+    for (int i=0;i<1000;i++) {
+        __asm__("nop");
+    }
+*/
+    init_mode_regs();
 
 #if 0
     set_timing(2, 2);

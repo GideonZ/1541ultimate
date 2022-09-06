@@ -358,11 +358,11 @@ begin
         sclk_out         => sclk_out,
         
         clock_enable     => clock_enable, -- this signal enables the clock output
-        delay_dir        => delay_dir,
-        delay_rdstep     => delay_step(0),
-        delay_wrstep     => delay_step(1),
-        delay_rdloadn    => delay_loadn(0),
-        delay_wrloadn    => delay_loadn(1),
+        delay_dir        => '0', --delay_dir,
+        delay_rdstep     => '0', --delay_step(0),
+        delay_wrstep     => '0', --delay_step(1),
+        delay_rdloadn    => '0', --delay_loadn(0),
+        delay_wrloadn    => '0', --delay_loadn(1),
 
         stop             => stop,
         uddcntln         => uddcntln,
