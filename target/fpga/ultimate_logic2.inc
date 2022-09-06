@@ -15,7 +15,7 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/busses/vhdl_source/slot_to_io_bridge.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/busses/vhdl_source/endianness_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/sync_fifo/vhdl_source/sync_fifo.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/ip/srl_fifo/vhdl_source/srl_fifo.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/ip/srl_fifo/vhdl_source/srl_fifo-xilinx.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/stack/vhdl_source/distributed_stack.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/pulse_stretch/vhdl_source/pulse_stretch.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/oc_pusher/vhdl_source/oc_pusher.vhd \
