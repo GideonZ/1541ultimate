@@ -300,11 +300,3 @@ void vTaskISRHandler( void )
 		vTaskSwitchContext();
 	}
 }
-
-/*-----------------------------------------------------------*/
-void vAssertCalled(const char* fileName, uint16_t lineNo )
-{
-	printf("ASSERTION FAIL: %s:%d\n", fileName, lineNo);
-	while(1)
-		;
-}
