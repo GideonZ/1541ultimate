@@ -391,12 +391,6 @@ static void set_timing(int rd, int clksel)
 
 int coarse_calibration(void)
 {
-/*
-    LATTICE_DDR2_DELAYSTEP = 0x00; // turn on automatic updates
-    for (int i=0;i<1000;i++) {
-        __asm__("nop");
-    }
-*/
     init_mode_regs();
 
 #if 0
