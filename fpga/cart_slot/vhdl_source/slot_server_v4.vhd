@@ -135,7 +135,7 @@ architecture structural of slot_server_v4 is
     signal do_io_event     : std_logic;
     signal do_probe_end    : std_logic;
     signal reqs_inhibit    : std_logic;
-    
+    signal clear_inhibit   : std_logic;
     signal slave_dout      : std_logic_vector(7 downto 0);
     signal slave_dtri      : std_logic := '0';
 
@@ -355,6 +355,8 @@ begin
     
         refr_inhibit    => mem_refr_inhibit,
         reqs_inhibit    => reqs_inhibit,
+        clear_inhibit   => clear_inhibit,
+        
         do_sample_addr  => do_sample_addr,
         do_sample_io    => do_sample_io,
         do_probe_end    => do_probe_end,
@@ -416,6 +418,7 @@ begin
         serve_io1       => serve_io1, -- IO1n
         serve_io2       => serve_io2, -- IO2n
         allow_write     => allow_write,
+        clear_inhibit   => clear_inhibit,
 
         -- kernal emulation
         kernal_enable   => control.kernal_enable,
