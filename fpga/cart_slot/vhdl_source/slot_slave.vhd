@@ -58,6 +58,7 @@ port (
     kernal_probe    : out std_logic := '0';
     kernal_area     : out std_logic := '0';
     force_ultimax   : out std_logic := '0';
+    clear_inhibit   : out std_logic := '0';
 
     epyx_timeout    : out std_logic; -- '0' => epyx is on, '1' epyx is off    
     cpu_write       : out std_logic; -- for freezer
@@ -85,14 +86,12 @@ architecture gideon of slot_slave is
     signal mem_req_ff   : std_logic;
 
     signal servicable   : std_logic;
-    signal io_out       : boolean := false;
     signal io_read_cond : std_logic;
     signal io_write_cond: std_logic;
     signal late_write_cond  : std_logic;
     signal ultimax      : std_logic;
     signal ultimax_d    : std_logic := '0';
     signal ultimax_d2   : std_logic := '0';
-    signal last_rwn     : std_logic;
     signal mem_wdata_i  : std_logic_vector(7 downto 0);
     signal kernal_probe_i   : std_logic;
     signal kernal_area_i    : std_logic;
@@ -108,7 +107,7 @@ architecture gideon of slot_slave is
     attribute register_duplication of romhn_c   : signal is "no";
     attribute register_duplication of reset_out : signal is "no";
 
-    type   t_state is (idle, mem_access, wait_end, reg_out);
+    type   t_state is (idle, mem_access, wait_end);
                        
     attribute iob : string;
     attribute iob of data_c : signal is "true"; 
@@ -184,53 +183,35 @@ begin
                 force_ultimax <= '0';
             end if;
             
+            clear_inhibit <= '0';
             case state is
             when idle =>
-                if do_sample_addr='1' then
-                    -- register output
-                    -- TODO: Should we not check for PHI2 here? Or will we serve I/O data to the VIC?
-                    if slot_resp.reg_output='1' and addr_is_io and rwn_c='1' then -- read register
-                        mem_data_0 <= slot_resp.data;
-                        io_out     <= true;
-                        dav        <= '1';
-                        state      <= reg_out;
-
-                    elsif allow_serve='1' and servicable='1' and rwn_c='1' then
-                        io_out <= false;
+                if do_sample_addr='1' and rwn_c = '1' then -- early read
+                    if allow_serve='1' and servicable='1' then
                         -- memory read
+                        clear_inhibit <= '1';
+                        mem_req_ff <= '1';
+                        state      <= mem_access;
+
                         if kernal_enable='1' and ultimax='0' and addr_is_kernal='1' and ba_c='1' then
                             kernal_probe_i <= '1';
                             kernal_area_i  <= '1';
                         end if;
-                        if addr_is_io then
-                            --if ba_c='1' then -- only serve IO when BA='1' (Fix for Ethernet)
-                                mem_req_ff <= '1';
-                                state      <= mem_access;
-                            --end if;
-                            if address_c(8)='0' and serve_io1='1' then
-                                io_out <= (rwn_c='1');
-                            elsif address_c(8)='1' and serve_io2='1' then
-                                io_out <= (rwn_c='1');
-                            end if;
-                        else -- non-IO, always serve
-                            mem_req_ff <= '1';
-                            state      <= mem_access;
-                        end if;
+                    else
+                        -- no memory read needed
+                        clear_inhibit <= '1';
                     end if;
-                elsif do_sample_io='1' and rwn_c='0' then
-                    if allow_write='1' then
+
+                elsif do_sample_io='1' then
+                    -- last moment to clear the inhibit, always regardless whether we do an access
+                    clear_inhibit <= '1';
+                    
+                    if allow_write='1' and rwn_c='0' then
                         -- memory write
-                        if address_c(15 downto 12)=X"D" then -- IO range
-                            if io2n_c='0' or io1n_c='0' then
-                                mem_req_ff <= '1';
-                                state      <= mem_access;
-                            end if;
-                        else
-                            mem_req_ff <= '1';
-                            state      <= mem_access;
-                        end if;
-                    elsif kernal_enable='1' and addr_is_kernal='1' then
-                    --  do mirror to kernal write address
+                        mem_req_ff <= '1';
+                        state      <= mem_access;
+                    elsif kernal_enable='1' and addr_is_kernal='1' and rwn_c='0' then
+                        --  do mirror to kernal write address
                         mem_req_ff  <= '1';
                         state       <= mem_access;
                         kernal_area_i <= '1';
@@ -262,16 +243,6 @@ begin
                 if phi2_tick='1' or do_io_event='1' then -- around the clock edges
                     kernal_area_i <= '0';
                     state <= idle;
-                    io_out <= false;
-                    dav    <= '0';
-                end if;
-
-            when reg_out =>
-                mem_data_0 <= slot_resp.data;
-
-                if phi2_tick='1' or do_io_event='1' then -- around the clock edges
-                    state <= idle;
-                    io_out <= false;
                     dav    <= '0';
                 end if;
                 
@@ -280,22 +251,11 @@ begin
 
             end case;
 
-            if (kernal_area_i='1') then
-                DATA_tri <= not romhn_c and ultimax_d2 and rwn_c;
-            elsif (io_out and (io1n_c='0' or io2n_c='0')) or
-              ((romln_c='0' or romhn_c='0') and (rwn_c='1')) then
-                DATA_tri <= mem_dack or dav;
-            else
-                DATA_tri <= '0';
-            end if;
-
             if reset='1' then
                 data_mux        <= '0';
-                last_rwn        <= '1';
                 dav             <= '0';
                 state           <= idle;
                 mem_req_ff      <= '0';
-                io_out          <= false;
                 io_read_cond    <= '0';
                 io_write_cond   <= '0';
                 late_write_cond <= '0';
@@ -335,14 +295,45 @@ begin
         end if;
     end process;
 
+    process(rwn_c, io1n_c, io2n_c, romln_c, romhn_c, kernal_area_i, data_mux,
+            mem_data_0, mem_data_1, dav, slot_resp, ultimax_d2, serve_io1, serve_io2)
+    begin
+        DATA_tri <= '0';
+        DATA_out <= X"FF";
+        if rwn_c = '1' then -- if current cycle is a read
+            if kernal_area_i='1' then -- we did a kernal fetch; could be mirrored ram or rom
+                DATA_tri <= dav and not romhn_c and ultimax_d2;
+                if data_mux = '0' then
+                    DATA_out <= mem_data_0;
+                else
+                    DATA_out <= mem_data_1;
+                end if;
+                
+            elsif io1n_c='0' or io2n_c='0' then -- IO Reads
+                if slot_resp.reg_output = '1' then -- cartridge has something to say (register read)
+                    DATA_tri <= '1';
+                    DATA_out <= slot_resp.data;
+                elsif serve_io1 = '1' and dav = '1' and io1n_c = '0' then -- read of I/O1
+                    DATA_tri <= '1';
+                    DATA_out <= mem_data_0;
+                elsif serve_io2 = '1' and dav = '1' and io2n_c = '0' then -- read of I/O2
+                    DATA_tri <= '1';
+                    DATA_out <= mem_data_0;
+                end if;
+            
+            elsif (romln_c='0' or romhn_c='0') and dav='1' then -- ROM reads
+                DATA_tri <= '1';
+                DATA_out <= mem_data_0;
+            end if;
+        end if;
+    end process;
+
     mem_req    <= mem_req_ff;
     mem_rwn    <= rwn_c;
     mem_wdata  <= mem_wdata_i & X"0000" & mem_wdata_i; -- support both little endian as well as big endian
         
     BUFFER_ENn <= '0';
 
-    DATA_out <= mem_data_0 when data_mux='0' else mem_data_1;
-                                
     slot_req.data        <= mem_wdata_i;
     slot_req.bus_address <= unsigned(address_c(15 downto 0));
     slot_req.bus_rwn     <= rwn_c;

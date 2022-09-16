@@ -28,6 +28,7 @@ port (
 
     refr_inhibit    : out std_logic;
     reqs_inhibit    : out std_logic;
+    clear_inhibit   : in  std_logic;
     
     do_sample_addr  : out std_logic;
     do_probe_end    : out std_logic;
@@ -50,7 +51,6 @@ architecture gideon of slot_timing is
     signal phi2_tick_i  : std_logic;
     signal serve_en_i   : std_logic := '0';
     signal off_cnt      : integer range 0 to 7;
-    signal clear_inhibit: std_logic;
     constant c_memdelay    : integer := 6;
     constant c_probe_end   : integer := 11;
     constant c_sample_vic  : integer := 8;
@@ -122,17 +122,14 @@ begin
 
             -- timing pulses
             do_sample_addr <= '0';
-            clear_inhibit <= '0';
             if phase_h = timing_addr then
                 do_sample_addr <= '1';
-                clear_inhibit <= '1';
             end if;
 
             if phase_l = (c_sample_vic - c_memdelay) then
                 reqs_inhibit <= serve_en_i and serve_vic;
             elsif phase_l = (c_sample_vic - 1) then
                 do_sample_addr <= '1';            
-                clear_inhibit <= '1';
             end if;
 
             if clear_inhibit='1' then
