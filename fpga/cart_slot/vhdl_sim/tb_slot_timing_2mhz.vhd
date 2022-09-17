@@ -17,7 +17,7 @@ architecture tb of tb_slot_timing_2mhz is
     signal serve_vic       : std_logic := '1';
     signal serve_enable    : std_logic := '1';
     signal serve_inhibit   : std_logic := '0';
-    signal timing_addr     : unsigned(2 downto 0) := "111";
+    signal timing_addr     : unsigned(2 downto 0) := "011";
     signal edge_recover    : std_logic := '0';
     signal allow_serve     : std_logic;
     signal phi2_tick       : std_logic;
@@ -27,6 +27,7 @@ architecture tb of tb_slot_timing_2mhz is
     signal vic_cycle       : std_logic;    
     signal refr_inhibit    : std_logic;
     signal reqs_inhibit    : std_logic;
+    signal clear_inhibit   : std_logic;
     signal do_sample_addr  : std_logic;
     signal do_probe_end    : std_logic;
     signal do_sample_io    : std_logic;
@@ -55,6 +56,11 @@ architecture tb of tb_slot_timing_2mhz is
     signal data_o           : std_logic_vector(7 downto 0);
     signal data_t           : std_logic;
     signal read_d           : std_logic_vector(5 downto 0) := (others => '0');
+
+    signal mintime_cpu      : time := 1000 ns;
+    signal maxtime_cpu      : time := 0 ns;
+    signal mintime_vic      : time := 1000 ns;
+    signal maxtime_vic      : time := 0 ns;
 begin
     clock <= not clock after 10 ns; -- 50 MHz
     ctrl_clock <= not ctrl_clock after 5 ns; -- 100 MHz
@@ -123,6 +129,7 @@ begin
         do_probe_end   => do_probe_end,
         do_sample_io   => do_sample_io,
         do_io_event    => do_io_event,
+        clear_inhibit  => clear_inhibit,
         dma_active_n   => '1',
         allow_serve    => allow_serve,
         serve_128      => '1',
@@ -160,6 +167,7 @@ begin
         vic_cycle      => vic_cycle,
         refr_inhibit   => refr_inhibit,
         reqs_inhibit   => reqs_inhibit,
+        clear_inhibit  => clear_inhibit,
         do_sample_addr => do_sample_addr,
         do_probe_end   => do_probe_end,
         do_sample_io   => do_sample_io,
@@ -247,17 +255,34 @@ begin
     process
     begin
         wait until PHI2 = '1';
-        if RWn = '1' then
-            if data_t'last_event < 150 ns then
-            report "CPU:" & time'image(data_t'last_event);
+        wait until PHI2 = '1';
+        wait until PHI2 = '1';
+        while true loop
+            wait until PHI2 = '0';
+            if RWn = '1' then
+                if data_t'last_event < mintime_cpu then
+                    mintime_cpu <= data_t'last_event;
+                end if;
+                if data_t'last_event > maxtime_cpu then
+                    maxtime_cpu <= data_t'last_event;
+                end if;
+                if data_t'last_event < 150 ns then
+                    report "CPU:" & time'image(data_t'last_event);
+                end if;
             end if;
-        end if;
-        wait until PHI2 = '0';
-        if RWn = '1' then
-            if data_t'last_event < 150 ns then
-                report "VIC:" & time'image(data_t'last_event);
+            wait until PHI2 = '1';
+            if RWn = '1' then
+                if data_t'last_event < mintime_vic then
+                    mintime_vic <= data_t'last_event;
+                end if;
+                if data_t'last_event > maxtime_vic then
+                    maxtime_vic <= data_t'last_event;
+                end if;
+                if data_t'last_event < 150 ns then
+                    report "VIC:" & time'image(data_t'last_event);
+                end if;
             end if;
-        end if;
+        end loop;
     end process;
 
 end architecture;
