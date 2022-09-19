@@ -50,17 +50,19 @@ architecture gideon of slot_timing is
     
     signal phi2_tick_i  : std_logic;
     signal serve_en_i   : std_logic := '0';
+    signal vic_cycle_i  : std_logic := '0';
     signal off_cnt      : integer range 0 to 7;
     constant c_memdelay    : integer := 6;
-    constant c_probe_end   : integer := 11;
-    constant c_sample_vic  : integer := 8;
+    constant c_probe_end   : integer := 14; -- 300 ns after PHI2
+    constant c_sample_vic  : integer := 10; -- 220 ns after PHI2 (!)
     constant c_io          : integer := 19;
 
     attribute register_duplication : string;
     attribute register_duplication of ba_c    : signal is "no";
     attribute register_duplication of phi2_c  : signal is "no";
 begin
-    vic_cycle      <= '1' when (ba_hist = "0000") else '0';
+    vic_cycle_i    <= '1' when (ba_hist = "0000") else '0';
+    vic_cycle      <= vic_cycle_i;
     phi2_recovered <= phi2_rec_i;
     phi2_tick      <= phi2_tick_i;
     phi2_fall      <= phi2_d and not phi2_c;
@@ -122,7 +124,8 @@ begin
 
             -- timing pulses
             do_sample_addr <= '0';
-            if phase_h = timing_addr then
+            if (vic_cycle_i = '0' and phase_h = timing_addr) or 
+               (vic_cycle_i = '1' and phase_h = c_sample_vic - 1) then
                 do_sample_addr <= '1';
             end if;
 
