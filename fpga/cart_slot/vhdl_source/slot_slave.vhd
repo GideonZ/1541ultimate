@@ -95,6 +95,7 @@ architecture gideon of slot_slave is
     signal mem_wdata_i  : std_logic_vector(7 downto 0);
     signal kernal_probe_i   : std_logic;
     signal kernal_area_i    : std_logic;
+    signal kernal_read      : std_logic;
     signal mem_data_0       : std_logic_vector(7 downto 0) := X"00";
     signal mem_data_1       : std_logic_vector(7 downto 0) := X"00";
     signal data_mux         : std_logic;
@@ -126,7 +127,9 @@ begin
     -- TODO: Do we still need io_read_early? If so, should we not check for PHI2 here? Or will we serve I/O data to the VIC?
     slot_req.io_read_early <= '1' when (addr_is_io and rwn_c='1' and do_sample_addr='1') else '0';
     slot_req.sample_io     <= do_sample_io;
-    
+
+    kernal_area_i <= kernal_enable and not ultimax and addr_is_kernal and (ba_c or not rwn_c);
+
     process(clock)
     begin
         if rising_edge(clock) then
@@ -185,6 +188,7 @@ begin
             
             clear_inhibit <= '0';
             case state is
+
             when idle =>
                 if do_sample_addr='1' and rwn_c = '1' then -- early read
                     if allow_serve='1' and servicable='1' then
@@ -192,29 +196,22 @@ begin
                         clear_inhibit <= '1';
                         mem_req_ff <= '1';
                         state      <= mem_access;
-
-                        if kernal_enable='1' and ultimax='0' and addr_is_kernal='1' and ba_c='1' then
-                            kernal_probe_i <= '1';
-                            kernal_area_i  <= '1';
-                        end if;
+                        kernal_probe_i <= kernal_area_i;
+                        kernal_read <= kernal_area_i;
                     else
                         -- no memory read needed
                         clear_inhibit <= '1';
                     end if;
 
                 elsif do_sample_io='1' then
-                    -- last moment to clear the inhibit, always regardless whether we do an access
+                    -- last moment to clear the inhibit, always regardless whether we do an access or not
                     clear_inhibit <= '1';
-                    
-                    if allow_write='1' and rwn_c='0' then
-                        -- memory write
-                        mem_req_ff <= '1';
-                        state      <= mem_access;
-                    elsif kernal_enable='1' and addr_is_kernal='1' and rwn_c='0' then
-                        --  do mirror to kernal write address
-                        mem_req_ff  <= '1';
-                        state       <= mem_access;
-                        kernal_area_i <= '1';
+                    if rwn_c = '0' then -- Memory write?
+                        if allow_write='1' or kernal_area_i='1' then
+                            -- memory write
+                            mem_req_ff <= '1';
+                            state      <= mem_access;
+                        end if;
                     end if;
                 end if;
                             
@@ -222,7 +219,6 @@ begin
                 if mem_rack='1' then
                     mem_req_ff <= '0'; -- clear request
                     if rwn_c='0' then  -- if write, we're done.
-                        kernal_area_i <= '0';
                         state <= idle;
                     else -- if read, then we need to wait for the data
                         state <= wait_end;
@@ -230,7 +226,7 @@ begin
                 end if;
 
             when wait_end =>
-                if mem_dack='1' then -- the data is available, put it on the bus!
+                if mem_dack='1' then -- the data is available, register it for putting it on the bus
                     if g_big_endian then
                         mem_data_0 <= mem_rdata(31 downto 24);
                         mem_data_1 <= mem_rdata(23 downto 16);
@@ -241,7 +237,7 @@ begin
                     dav      <= '1';
                 end if;
                 if phi2_tick='1' or do_io_event='1' then -- around the clock edges
-                    kernal_area_i <= '0';
+                    kernal_read <= '0';
                     state <= idle;
                     dav    <= '0';
                 end if;
@@ -263,7 +259,7 @@ begin
                 cpu_write       <= '0';
                 epyx_reset      <= '1';
                 kernal_probe_i  <= '0';
-                kernal_area_i   <= '0';
+                kernal_read     <= '0';
                 force_ultimax   <= '0';
             end if;
         end if;
@@ -295,14 +291,14 @@ begin
         end if;
     end process;
 
-    process(rwn_c, io1n_c, io2n_c, romln_c, romhn_c, kernal_area_i, data_mux,
+    process(rwn_c, io1n_c, io2n_c, romln_c, romhn_c, kernal_read, data_mux,
             mem_data_0, mem_data_1, dav, slot_resp, ultimax_d2, serve_io1, serve_io2)
     begin
         DATA_tri <= '0';
         DATA_out <= X"FF";
         if rwn_c = '1' then -- if current cycle is a read
-            if kernal_area_i='1' then -- we did a kernal fetch; could be mirrored ram or rom
-                DATA_tri <= dav and not romhn_c and ultimax_d2;
+            if kernal_read='1' then -- we did a kernal fetch; could be mirrored ram or rom
+                DATA_tri <= dav and not romhn_c;-- and ultimax_d2;
                 if data_mux = '0' then
                     DATA_out <= mem_data_0;
                 else
