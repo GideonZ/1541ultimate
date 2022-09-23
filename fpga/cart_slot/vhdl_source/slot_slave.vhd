@@ -156,7 +156,7 @@ begin
     slot_req.io_read_early <= '1' when (addr_is_io and rwn_c='1' and do_sample_addr='1') else '0';
     slot_req.sample_io     <= do_sample_io;
 
-    kernal_area_i <= kernal_enable and not ultimax and addr_is_kernal and (ba_c or not rwn_c);
+    kernal_area_i <= kernal_enable and not ultimax and addr_is_kernal and phi2_c and (ba_c or not rwn_c);
 
     process(clock)
     begin
@@ -177,7 +177,6 @@ begin
             ultimax   <= not GAMEn and EXROMn;
             ultimax_d <= ultimax;
             ultimax_d2 <= ultimax_d;
-            slot_req.rom_access  <= not romln_c or not romhn_c;
             
             -- 470 nF / 3.3K pup / Vih = 2V, but might be lower
             -- Voh buffer = 0.3V, so let's take a threshold of 1.2V => 400 cycles
@@ -210,9 +209,12 @@ begin
             if do_probe_end='1' then
                 data_mux <= kernal_probe_i and not romhn_c;
                 force_ultimax <= kernal_probe_i;
+                kernal_ready <= '1';
                 kernal_probe_i <= '0';
             elsif do_io_event='1' then
                 force_ultimax <= '0';
+                kernal_ready <= '0';
+                kernal_read <= '0';
             end if;
             
             clear_inhibit <= '0';
@@ -227,6 +229,7 @@ begin
                         state      <= mem_access;
                         kernal_probe_i <= kernal_area_i;
                         kernal_read <= kernal_area_i;
+                        kernal_ready <= '0';
                     else
                         -- no memory read needed
                         clear_inhibit <= '1';
@@ -236,7 +239,12 @@ begin
                     -- last moment to clear the inhibit, always regardless whether we do an access or not
                     clear_inhibit <= '1';
                     if rwn_c = '0' then -- Memory write?
-                        if allow_write='1' or kernal_area_i='1' then
+                        if addr_is_io and allow_write='1' then -- cartridge allows writing to I/O mapped memory
+                            if io1n_c='0' or io2n_c='0' then -- check if I/O selects are asserted
+                                mem_req_ff <= '1';
+                                state <= mem_access;
+                            end if;                                
+                        elsif allow_write='1' or kernal_area_i='1' then -- not I/O area
                             -- memory write
                             mem_req_ff <= '1';
                             state      <= mem_access;
@@ -266,7 +274,6 @@ begin
                     dav      <= '1';
                 end if;
                 if phi2_tick='1' or do_io_event='1' then -- around the clock edges
-                    kernal_read <= '0';
                     state <= idle;
                     dav    <= '0';
                 end if;
@@ -289,6 +296,7 @@ begin
                 epyx_reset      <= '1';
                 kernal_probe_i  <= '0';
                 kernal_read     <= '0';
+                kernal_ready    <= '0';
                 force_ultimax   <= '0';
             end if;
         end if;
@@ -320,14 +328,14 @@ begin
         end if;
     end process;
 
-    process(rwn_c, io1n_c, io2n_c, romln_c, romhn_c, kernal_read, data_mux,
+    process(rwn_c, io1n_c, io2n_c, romln_c, romhn_c, kernal_read, kernal_ready, data_mux,
             mem_data_0, mem_data_1, dav, slot_resp, ultimax_d2, serve_io1, serve_io2)
     begin
         DATA_tri <= '0';
         DATA_out <= X"FF";
         if rwn_c = '1' then -- if current cycle is a read
             if kernal_read='1' then -- we did a kernal fetch; could be mirrored ram or rom
-                DATA_tri <= dav and not romhn_c;-- and ultimax_d2;
+                DATA_tri <= dav and kernal_ready and not romhn_c;-- and ultimax_d2;
                 if data_mux = '0' then
                     DATA_out <= mem_data_0;
                 else

@@ -54,8 +54,8 @@ architecture gideon of slot_timing is
     signal off_cnt      : integer range 0 to 7;
     constant c_memdelay    : integer := 6;
     constant c_probe_end   : integer := 14; -- 300 ns after PHI2
-    constant c_sample_vic  : integer := 10; -- 220 ns after PHI2 (!)
-    constant c_io          : integer := 19;
+    constant c_sample_vic  : integer := 9; -- 200 ns after PHI2 (!)
+    constant c_io          : integer := 15;
 
     attribute register_duplication : string;
     attribute register_duplication of ba_c    : signal is "no";
