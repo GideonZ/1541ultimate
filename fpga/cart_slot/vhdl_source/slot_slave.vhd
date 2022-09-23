@@ -15,6 +15,7 @@ port (
     -- Cartridge pins
     VCC             : in  std_logic;
     RSTn            : in  std_logic;
+    PHI2            : in  std_logic;
     IO1n            : in  std_logic;
     IO2n            : in  std_logic;
     ROMLn           : in  std_logic;
@@ -80,6 +81,7 @@ architecture gideon of slot_slave is
     signal romhn_c      : std_logic := '1';
     signal romln_c      : std_logic := '1';
     signal ba_c         : std_logic := '0';
+    signal phi2_c       : std_logic := '0';
     signal dav          : std_logic := '0';
     signal addr_is_io   : boolean;
     signal addr_is_kernal : std_logic;
@@ -95,18 +97,44 @@ architecture gideon of slot_slave is
     signal mem_wdata_i  : std_logic_vector(7 downto 0);
     signal kernal_probe_i   : std_logic;
     signal kernal_area_i    : std_logic;
+    signal kernal_ready     : std_logic;
     signal kernal_read      : std_logic;
     signal mem_data_0       : std_logic_vector(7 downto 0) := X"00";
     signal mem_data_1       : std_logic_vector(7 downto 0) := X"00";
     signal data_mux         : std_logic;
     
+    -- Xilinx attributes
     attribute register_duplication : string;
+    attribute register_duplication of ba_c      : signal is "no";
+    attribute register_duplication of phi2_c    : signal is "no";
     attribute register_duplication of rwn_c     : signal is "no";
     attribute register_duplication of io1n_c    : signal is "no";
     attribute register_duplication of io2n_c    : signal is "no";
     attribute register_duplication of romln_c   : signal is "no";
     attribute register_duplication of romhn_c   : signal is "no";
     attribute register_duplication of reset_out : signal is "no";
+
+    -- Lattice attributes
+    attribute syn_replicate                     : boolean;
+    attribute syn_replicate of ba_c             : signal is false;
+    attribute syn_replicate of phi2_c           : signal is false;
+    attribute syn_replicate of rwn_c            : signal is false;
+    attribute syn_replicate of io1n_c           : signal is false;
+    attribute syn_replicate of io2n_c           : signal is false;
+    attribute syn_replicate of romln_c          : signal is false;
+    attribute syn_replicate of romhn_c          : signal is false;
+    attribute syn_replicate of reset_out        : signal is false;
+
+    -- Altera attributes
+    attribute dont_replicate                    : boolean;
+    attribute dont_replicate of ba_c            : signal is true;
+    attribute dont_replicate of rwn_c           : signal is true;
+    attribute dont_replicate of phi2_c          : signal is false;
+    attribute dont_replicate of io1n_c          : signal is false;
+    attribute dont_replicate of io2n_c          : signal is false;
+    attribute dont_replicate of romln_c         : signal is false;
+    attribute dont_replicate of romhn_c         : signal is false;
+    attribute dont_replicate of reset_out       : signal is false;
 
     type   t_state is (idle, mem_access, wait_end);
                        
@@ -139,6 +167,7 @@ begin
                 address_c <= ADDRESS;
             end if;
             reset_out <= reset or (not RSTn and VCC);
+            phi2_c    <= PHI2;
             ba_c      <= BA;
             io1n_c    <= IO1n;
             io2n_c    <= IO2n;

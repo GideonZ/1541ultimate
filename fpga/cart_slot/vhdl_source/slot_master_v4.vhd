@@ -67,9 +67,20 @@ architecture gideon of slot_master_v4 is
     signal ba_count     : integer range 0 to 15;
     signal c64_stopped_i: std_logic;
     
+    -- Xilinx attributes
     attribute register_duplication : string;
-    attribute register_duplication of rwn_c   : signal is "no";
-    attribute register_duplication of ba_c    : signal is "no";
+    attribute register_duplication of ba_c      : signal is "no";
+    attribute register_duplication of rwn_c     : signal is "no";
+
+    -- Lattice attributes
+    attribute syn_replicate                     : boolean;
+    attribute syn_replicate of ba_c             : signal is false;
+    attribute syn_replicate of rwn_c            : signal is false;
+
+    -- Altera attributes
+    attribute dont_replicate                    : boolean;
+    attribute dont_replicate of ba_c            : signal is true;
+    attribute dont_replicate of rwn_c           : signal is true;
 
     attribute keep : string;
     attribute keep of rwn_hist : signal is "true";
@@ -77,8 +88,6 @@ architecture gideon of slot_master_v4 is
     type   t_state is (idle, stopped, do_dma );
     signal state     : t_state;
     
---    attribute fsm_encoding : string;
---    attribute fsm_encoding of state : signal is "sequential";
     signal dma_rack     : std_logic;
 
 begin

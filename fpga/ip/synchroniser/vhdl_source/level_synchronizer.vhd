@@ -44,6 +44,9 @@ entity level_synchronizer is
     attribute dont_replicate of level_synchronizer          : entity is true;
     attribute dont_retime                                   : boolean;
     attribute dont_retime of level_synchronizer             : entity is true;
+    -- Lattice attributes
+    attribute syn_replicate                                 : boolean;
+    attribute syn_replicate of level_synchronizer           : entity is false;
     ---------------------------------------------------------------------------
 
 end level_synchronizer;
