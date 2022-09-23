@@ -31,6 +31,9 @@ entity pulse_synchronizer is
     -- Altera attributes
     attribute dont_retime                                   : boolean;
     attribute dont_retime of pulse_synchronizer             : entity is true;
+    -- Lattice attributes
+    attribute syn_replicate                                 : boolean;
+    attribute syn_replicate of pulse_synchronizer           : entity is false;
     ---------------------------------------------------------------------------
 
 end pulse_synchronizer;
@@ -54,8 +57,12 @@ architecture rtl of pulse_synchronizer is
     attribute dont_replicate                   : boolean;
     attribute dont_replicate of sync1          : signal is true;
     attribute dont_replicate of sync2          : signal is true;
-    ---------------------------------------------------------------------------
 
+    -- Lattice attributes
+    attribute syn_pipeline                     : boolean;
+    attribute syn_pipeline of sync1            : signal is false;
+    attribute syn_pipeline of sync2            : signal is false;
+    ---------------------------------------------------------------------------
 begin
     p_input_toggle : process(clock_in)
     begin

@@ -377,6 +377,7 @@ begin
         
         -- Cartridge pins
         VCC             => VCC,
+        PHI2            => phi2_i,
         RSTn            => rstn_i,
         IO1n            => io1n_i,
         IO2n            => io2n_i,
