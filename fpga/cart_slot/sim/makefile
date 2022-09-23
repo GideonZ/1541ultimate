@@ -77,6 +77,14 @@ $(TESTBENCH)_DO_GUI_BEFORE		:=
 $(TESTBENCH)_DO_GUI_AFTER		:= 
 $(TESTBENCH)_DO_GUI_OVERRIDE	:= 
 
+TESTBENCH 						:= tb_slot_kernal
+TESTBENCHES						:= $(TESTBENCHES) $(TESTBENCH)
+$(TESTBENCH)_SRC				:= 
+$(TESTBENCH)_ENTITY				:= 
+$(TESTBENCH)_TIME				:= 
+$(TESTBENCH)_DO_GUI_BEFORE		:= 
+$(TESTBENCH)_DO_GUI_AFTER		:= 
+$(TESTBENCH)_DO_GUI_OVERRIDE	:= 
 
 ###############################################################################
 #### Testcases

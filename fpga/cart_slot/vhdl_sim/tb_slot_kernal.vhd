@@ -5,17 +5,18 @@ use work.io_bus_pkg.all;
 use work.mem_bus_pkg.all;
 use work.slot_bus_pkg.all;
 
-entity tb_slot_timing_2mhz is
+entity tb_slot_kernal is
 end entity;
 
-architecture tb of tb_slot_timing_2mhz is
+architecture tb of tb_slot_kernal is
     signal clock           : std_logic := '1';
     signal ctrl_clock      : std_logic := '1';
     signal reset           : std_logic;
     signal stat_reset      : std_logic;
     signal PHI2            : std_logic := '0';
-    signal ADDRESS         : unsigned(15 downto 0) := X"8000";
+    signal ADDRESS         : unsigned(15 downto 0) := X"F000";
     signal BA              : std_logic := '1';
+    signal ROMHn           : std_logic := '1';
     signal serve_vic       : std_logic := '1';
     signal serve_enable    : std_logic := '1';
     signal serve_inhibit   : std_logic := '0';
@@ -58,7 +59,13 @@ architecture tb of tb_slot_timing_2mhz is
     signal data_o           : std_logic_vector(7 downto 0);
     signal data_t           : std_logic;
     signal read_d           : std_logic_vector(5 downto 0) := (others => '0');
-
+    signal kernal_probe     : std_logic;
+    signal kernal_area      : std_logic;
+    signal force_ultimax    : std_logic;
+    signal force_addr_a000  : std_logic;
+    signal kernal_addr_out  : std_logic;
+    signal hiram            : std_logic := '0';
+    
     signal mintime_cpu      : time := 1000 ns;
     signal maxtime_cpu      : time := 0 ns;
     signal mintime_vic      : time := 1000 ns;
@@ -118,7 +125,7 @@ begin
         IO1n           => '1',
         IO2n           => '1',
         ROMLn          => '1',
-        ROMHn          => '0',
+        ROMHn          => ROMHn,
         BA             => BA,
         GAMEn          => '1',
         EXROMn         => '0',
@@ -142,15 +149,15 @@ begin
         clear_inhibit  => clear_inhibit,
         dma_active_n   => '1',
         allow_serve    => allow_serve,
-        serve_128      => '1',
-        serve_rom      => '1',
-        serve_io1      => '1',
-        serve_io2      => '1',
-        allow_write    => '1',
-        kernal_enable  => '0',
-        kernal_probe   => open,
-        kernal_area    => open,
-        force_ultimax  => open,
+        serve_128      => '0',
+        serve_rom      => '0',
+        serve_io1      => '0',
+        serve_io2      => '0',
+        allow_write    => '0',
+        kernal_enable  => '1',
+        kernal_probe   => kernal_probe,
+        kernal_area    => kernal_area,
+        force_ultimax  => force_ultimax,
         epyx_timeout   => open,
         cpu_write      => open,
         slot_req       => slot_req,
@@ -158,7 +165,7 @@ begin
         BUFFER_ENn     => open
     );
 
-    i_dut: entity work.slot_timing
+    i_timing: entity work.slot_timing
     port map(
         clock          => clock,
         reset          => reset,
@@ -226,6 +233,16 @@ begin
     read_d <= read_d(read_d'high-1 downto 0) & read(0) when rising_edge(ctrl_clock);
     rdata_valid <= read_d(read_d'high);
 
+    p_probe_address_delay: process(clock)
+        variable kernal_probe_d : std_logic_vector(2 downto 0) := (others => '0');
+    begin
+        if rising_edge(clock) then
+            kernal_addr_out <= kernal_probe_d(0);
+            kernal_probe_d := kernal_probe & kernal_probe_d(kernal_probe_d'high downto 1);
+        end if;
+    end process;
+    force_addr_a000 <= kernal_addr_out and kernal_probe;
+
     process
     begin
         -- VIC is busy, PAL mode
@@ -236,24 +253,28 @@ begin
         RWn <= '1';
         wait for 10 us;
         wait until PHI2 = '1';
-        BA <= '0';
+        BA <= '1';
         while not stop loop
             -- read
             wait until PHI2'event;
             wait for 20 ns;
             RWn <= '1';
+            BA <= '0';
             -- read
             wait until PHI2'event;
             wait for 20 ns;
             RWn <= '1';
+            BA <= '1';
             -- read
             wait until PHI2'event;
             wait for 20 ns;
             RWn <= '1';
+            BA <= '0';
             -- write
             wait until PHI2'event;
             wait for 20 ns;
             RWn <= '0';
+            BA <= '1';
         end loop;
         wait;
     end process;    
@@ -310,12 +331,29 @@ begin
     begin
         while not stop loop
             wait for 5 ns;
+            if force_addr_a000='1' then
+                ADDRESS <= X"A000";
+            else
+                ADDRESS <= X"F000";
+            end if;
             t := integer(PHI2'last_event / 5 ns);
             if t >= 0 then
-                ADDRESS(14 downto 7) <= to_unsigned(t, 8);
-                ADDRESS(6) <= PHI2;
+                ADDRESS(9 downto 2) <= to_unsigned(t, 8);
+                ADDRESS(10) <= PHI2;
             end if;
         end loop;
+    end process;
+
+    p_sort_of_pla: process(ADDRESS, force_ultimax, kernal_probe, hiram)
+        variable rom    : std_logic;
+    begin
+        rom := '1';
+        if ADDRESS(15 downto 13) = "111" and force_ultimax = '1' then
+            rom := '0';
+        elsif ADDRESS(15 downto 13) = "101" and force_ultimax = '0' and kernal_probe = '1' and hiram = '0' then
+            rom := '0';
+        end if;
+        ROMHn <= transport rom after 60 ns;
     end process;
 
     process(clock)
@@ -323,8 +361,8 @@ begin
     begin
         if rising_edge(clock) then
             if mem_resp.rack_tag = X"01" and mem_resp.rack = '1' then
-                t := 5 * to_integer(mem_req.address(14 downto 7));
-                if mem_req.address(6) = '1' then -- CPU
+                t := 5 * to_integer(mem_req.address(9 downto 2));
+                if mem_req.address(10) = '1' then -- CPU
                     if mem_req.read_writen = '1' then
                         report "ADDR: " & integer'image(t);
                         if t > max_addr_cpu_read then
@@ -367,7 +405,5 @@ begin
             end if;
         end if;
     end process;
-
-    slot_resp.reg_output <= '1';
 
 end architecture;
