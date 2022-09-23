@@ -359,7 +359,7 @@ begin
         
         do_sample_addr  => do_sample_addr,
         do_sample_io    => do_sample_io,
-        do_probe_end    => do_probe_end,
+        do_probe_end    => open, --do_probe_end,
         do_io_event     => do_io_event );
 
     mem_reqs_inhibit <= reqs_inhibit;
@@ -770,22 +770,24 @@ begin
     slot_resp <= or_reduce(slot_resp_reu & slot_resp_cart & slot_resp_sid & slot_resp_cmd &
                            slot_resp_samp & slot_resp_acia);
 
-    p_probe_address_delay: process(clock)
-        variable kernal_probe_d : std_logic_vector(2 downto 0) := (others => '0');
+    p_probe_end_delay: process(clock)
+         variable probe_end_d : std_logic_vector(4 downto 0) := (others => '0');
     begin
         if rising_edge(clock) then
-            kernal_addr_out <= kernal_probe_d(0);
-            kernal_probe_d := kernal_probe & kernal_probe_d(kernal_probe_d'high downto 1);
+            kernal_addr_out <= kernal_probe;
+            do_probe_end <= probe_end_d(0);
+            probe_end_d := (kernal_probe and not kernal_addr_out) & probe_end_d(probe_end_d'high downto 1);
         end if;
     end process;
 
-    process(address_out, kernal_addr_out, kernal_probe, address_tri_l, address_tri_h)
+    process(address_out, kernal_addr_out, kernal_probe, do_probe_end, address_tri_l, address_tri_h)
     begin
         slot_addr_o <= unsigned(address_out);
         slot_addr_tl <= address_tri_l;
         slot_addr_th <= address_tri_h;
         if kernal_addr_out='1' and kernal_probe='1' then
-            slot_addr_o(15 downto 13) <= "101";
+            slot_addr_o(15 downto 13) <= "101"; -- A000-BFFF
+            slot_addr_o(14) <= do_probe_end;
             slot_addr_th <= '1';
         end if;
     end process;
