@@ -84,7 +84,6 @@ begin
         CPU_EXTENSION_RISCV_Zxcfu    => false,
         FAST_MUL_EN                  => false,
         FAST_SHIFT_EN                => false,
-        CPU_CNT_WIDTH                => 32,
         CPU_IPB_ENTRIES              => 2,
         PMP_NUM_REGIONS              => 0,
         HPM_NUM_CNTS                 => 0,

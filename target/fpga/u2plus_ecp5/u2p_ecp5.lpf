@@ -1,4 +1,4 @@
-rvl_alias "reveal_ist_418" "i_memctrl/i_phy/sclk";
+rvl_alias "sys_clock" "sys_clock";
 BLOCK RESETPATHS ;
 FREQUENCY PORT "ULPI_CLOCK" 60.000000 MHz CLOCK_JITTER 0.200000 ns ;
 INPUT_SETUP PORT "ULPI_NXT" 11.500000 ns HOLD 1.500000 ns CLKPORT "ULPI_CLOCK" ;

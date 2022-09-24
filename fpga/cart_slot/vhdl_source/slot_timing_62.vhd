@@ -28,6 +28,7 @@ port (
 
     refr_inhibit    : out std_logic;
     reqs_inhibit    : out std_logic;
+    clear_inhibit   : in  std_logic;
     
     do_sample_addr  : out std_logic;
     do_probe_end    : out std_logic;
@@ -49,8 +50,8 @@ architecture gideon of slot_timing is
     
     signal phi2_tick_i  : std_logic;
     signal serve_en_i   : std_logic := '0';
+    signal vic_cycle_i  : std_logic := '0';
     signal off_cnt      : integer range 0 to 7;
-    signal clear_inhibit: std_logic;
 
     constant c_memdelay    : integer := 5;
     
@@ -74,7 +75,8 @@ architecture gideon of slot_timing is
     attribute dont_retime of ba_c   : signal is true;
     attribute dont_retime of phi2_c : signal is true;
 begin
-    vic_cycle      <= '1' when (ba_hist = "0000") else '0';
+    vic_cycle_i    <= '1' when (ba_hist = "0000") else '0';
+    vic_cycle      <= vic_cycle_i;
     phi2_recovered <= phi2_rec_i;
     phi2_tick      <= phi2_tick_i;
     phi2_fall      <= phi2_d and not phi2_c;
@@ -136,10 +138,9 @@ begin
 
             -- timing pulses
             do_sample_addr <= '0';
-            clear_inhibit <= '0';
-            if phase_h = timing_addr then
+            if (vic_cycle_i = '0' and phase_h = timing_addr) or 
+               (vic_cycle_i = '1' and phase_h = c_sample_vic - 1) then
                 do_sample_addr <= '1';
-                clear_inhibit <= '1';
             end if;
 
             if serve_vic = '1' and serve_en_i = '1' then
@@ -147,7 +148,6 @@ begin
                     reqs_inhibit <= '1';
                 elsif phase_l = (c_sample_vic - 1) then
                     do_sample_addr <= '1';            
-                    clear_inhibit <= '1';
                 end if;
             end if;
             
