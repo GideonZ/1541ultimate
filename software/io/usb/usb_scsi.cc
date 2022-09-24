@@ -267,6 +267,10 @@ int UsbScsiDriver :: status_transport(int timeout, int retries)
 		printf("Invalid status (len = %d, signature = %8x)..\n", len, *signature);
 		return -1;
 	}
+    if (stat_resp[12]) {
+        printf("USBS reports error?\n");
+        dump_hex_relative(stat_resp, 13);
+    }
 
 	return (int)stat_resp[12]; // OK, or other error
 }
@@ -445,6 +449,9 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
 
 	xSemaphoreGive(mutex);
 	if(st == 1) {
+        printf("Command issued:\n");
+        dump_hex_relative(&cbw, 31);
+        printf("Bytes transferred: %d\n", len);
 		request_sense(lun, true, true);
 		retval = -7;
 	}

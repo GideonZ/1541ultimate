@@ -7,7 +7,8 @@
 
 class BlockDevice_Emulated : public BlockDevice
 {
-    FILE *f;
+    //FILE *f;
+    int fd;
     long file_size;
     int sector_size;
     int test;

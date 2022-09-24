@@ -748,7 +748,9 @@ FRESULT FileManager::fcopy(const char *path, const char *filename, const char *d
                 uint8_t writeflags = (overwrite)? (FA_WRITE|FA_CREATE_ALWAYS) : (FA_WRITE|FA_CREATE_NEW);
                 ret = fopen(dp, dest_name, writeflags, &fo);
                 if (fo) {
+#if OS
                     vTaskDelay(2); // since this might take long, we should give other tasks chance to poll the USB devices
+#endif
                     uint8_t *buffer = new uint8_t[32768];
                     uint32_t transferred, written;
                     do {
