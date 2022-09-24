@@ -40,13 +40,7 @@ const uint8_t hexchars[] = "0123456789ABCDEF";
 
 int coarse_calibration(void);
 int ram_test(void);
-
-void my_puts(const char *str)
-{
-    while(*str) {
-        outbyte(*(str++));
-    }
-}
+void my_puts(const char *);
 
 void hexbyte(uint8_t val)
 {

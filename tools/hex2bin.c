@@ -63,6 +63,7 @@ int read_hex_file(FILE *fp, uint8_t *buffer, uint32_t offset, uint32_t size, int
 	uint8_t  data[64], i, b, r;
 	uint32_t  addr = 0;
 	uint32_t  addr2 = 0;
+    uint32_t  temp;
 	uint32_t  last_addr = 0xBAD;
 	uint32_t  high = 0;
 	uint8_t  *paddr;
@@ -140,6 +141,11 @@ int read_hex_file(FILE *fp, uint8_t *buffer, uint32_t offset, uint32_t size, int
                 paddr2[1] = data[4];
                 paddr2[0] = data[5];
                 addr2 <<= 4;
+                temp = addr2;
+                addr2 = 0;
+                paddr2[1] = data[6];
+                paddr2[0] = data[7];
+                addr2 += temp;
                 printf("Start address: 0x%08x\n", addr2);
                 break;
 
