@@ -24,7 +24,12 @@ void jump_run(uint32_t a)
 
 void ddr2_calibrate(void);
 void hexword(uint32_t);
-void my_puts(const char *);
+void my_puts(const char *str)
+{
+    while(*str) {
+        outbyte(*(str++));
+    }
+}
 
 #define MAX_APPL_SIZE 0x140000
 

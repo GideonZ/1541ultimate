@@ -26,7 +26,7 @@
 // alpha = \020
 // beta  = \021
 
-#define APPL_VERSION "3.10c"
+#define APPL_VERSION "3.10d"
 #define BOOT_VERSION "V3.2"
 #define FPGA_VERSION "FPGA U2 V116"
 #define MINIMUM_FPGA_REV 0x18
