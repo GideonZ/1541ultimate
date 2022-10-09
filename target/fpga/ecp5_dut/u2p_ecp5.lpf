@@ -1,0 +1,886 @@
+RVL_ALIAS "sys_clock" "sys_clock"; 
+BLOCK RESETPATHS ;
+FREQUENCY PORT "ULPI_CLOCK" 60.000000 MHz CLOCK_JITTER 0.200000 ns ;
+INPUT_SETUP PORT "ULPI_NXT" 11.500000 ns HOLD 1.500000 ns CLKPORT "ULPI_CLOCK" ;
+INPUT_SETUP PORT "ULPI_DIR" 11.500000 ns HOLD 1.500000 ns CLKPORT "ULPI_CLOCK" ;
+INPUT_SETUP PORT "ULPI_DATA*" 11.500000 ns HOLD 1.500000 ns CLKPORT "ULPI_CLOCK" ;
+CLOCK_TO_OUT PORT "ULPI_STP" 11.000000 ns CLKPORT "ULPI_CLOCK" ;
+CLOCK_TO_OUT PORT "ULPI_DATA*" 11.000000 ns CLKPORT "ULPI_CLOCK" ;
+INPUT_SETUP PORT "RMII_RX*" 6.500000 ns HOLD 6.500000 ns CLKPORT "RMII_REFCLK" ;
+CLOCK_TO_OUT PORT "RMII_TX*" 15.000000 ns CLKPORT "RMII_REFCLK" ;
+SYSCONFIG CONFIG_IOVOLTAGE=3.3 MCCLK_FREQ=38.8 SLAVE_SPI_PORT=DISABLE MASTER_SPI_PORT=DISABLE SLAVE_PARALLEL_PORT=DISABLE TRANSFR=OFF CONFIG_MODE=SPI_SERIAL WAKE_UP=21 INBUF=OFF ;
+LOCATE COMP "FLASH_CSn" SITE "N8" ;
+LOCATE COMP "FLASH_MISO" SITE "T7" ;
+LOCATE COMP "FLASH_MOSI" SITE "T8" ;
+LOCATE COMP "SDRAM_DQ[6]" SITE "J12" ;
+LOCATE COMP "SDRAM_DQ[5]" SITE "J13" ;
+LOCATE COMP "SDRAM_DQ[1]" SITE "H14" ;
+LOCATE COMP "SDRAM_DM" SITE "H13" ;
+LOCATE COMP "SDRAM_DQ[2]" SITE "G15" ;
+LOCATE COMP "SDRAM_DQ[7]" SITE "K14" ;
+LOCATE COMP "SDRAM_DQ[4]" SITE "H12" ;
+LOCATE COMP "SDRAM_DQ[0]" SITE "J14" ;
+LOCATE COMP "SDRAM_DQS" SITE "G16" ;
+LOCATE COMP "SDRAM_DQ[3]" SITE "H15" ;
+LOCATE COMP "SDRAM_CLK" SITE "K15" ;
+LOCATE COMP "SDRAM_CLKn" SITE "K16" ;
+LOCATE COMP "SDRAM_ODT" SITE "J15" ;
+LOCATE COMP "SDRAM_CSn" SITE "J16" ;
+LOCATE COMP "SDRAM_A[0]" SITE "F16" ;
+LOCATE COMP "SDRAM_A[4]" SITE "F15" ;
+LOCATE COMP "SDRAM_A[8]" SITE "E16" ;
+LOCATE COMP "SDRAM_A[13]" SITE "E15" ;
+LOCATE COMP "SDRAM_A[6]" SITE "D16" ;
+LOCATE COMP "SDRAM_A[11]" SITE "D14" ;
+LOCATE COMP "SDRAM_A[2]" SITE "C16" ;
+LOCATE COMP "SDRAM_CASn" SITE "C15" ;
+LOCATE COMP "SDRAM_RASn" SITE "B16" ;
+LOCATE COMP "SDRAM_CKE" SITE "B15" ;
+LOCATE COMP "SDRAM_WEn" SITE "A15" ;
+LOCATE COMP "SDRAM_BA[0]" SITE "B14" ;
+LOCATE COMP "SDRAM_BA[1]" SITE "A14" ;
+LOCATE COMP "SDRAM_A[10]" SITE "B13" ;
+LOCATE COMP "SDRAM_A[9]" SITE "A13" ;
+LOCATE COMP "SDRAM_A[5]" SITE "B12" ;
+LOCATE COMP "SDRAM_A[12]" SITE "A12" ;
+LOCATE COMP "SDRAM_A[7]" SITE "C14" ;
+LOCATE COMP "SDRAM_A[3]" SITE "C13" ;
+LOCATE COMP "SDRAM_A[1]" SITE "D12" ;
+LOCATE COMP "SDRAM_BA[2]" SITE "C12" ;
+LOCATE COMP "USB_DM" SITE "L14" ;
+LOCATE COMP "USB_DP" SITE "L16" ;
+LOCATE COMP "USB_PULLUP" SITE "L15" ;
+LOCATE COMP "SLOT_DATA[0]" SITE "M16" ;
+LOCATE COMP "SLOT_DATA[1]" SITE "M15" ;
+LOCATE COMP "SLOT_DATA[2]" SITE "N16" ;
+LOCATE COMP "SLOT_DATA[3]" SITE "P16" ;
+LOCATE COMP "SLOT_DATA[4]" SITE "P15" ;
+LOCATE COMP "SLOT_DATA[5]" SITE "R16" ;
+LOCATE COMP "SLOT_DATA[6]" SITE "R15" ;
+LOCATE COMP "SLOT_DATA[7]" SITE "T15" ;
+LOCATE COMP "SLOT_DMAn" SITE "R14" ;
+LOCATE COMP "SLOT_BA" SITE "T14" ;
+LOCATE COMP "SLOT_ROMLn" SITE "R13" ;
+LOCATE COMP "SLOT_IO2n" SITE "T13" ;
+LOCATE COMP "SLOT_BUFFER_EN" SITE "R12" ;
+#LOCATE COMP "SLOT_DATA_DIR"  SITE  ;
+#LOCATE COMP "SLOT_DATA_OEn"  SITE  ;
+LOCATE COMP "SLOT_ADDR[0]" SITE "K13" ;
+LOCATE COMP "SLOT_ADDR[1]" SITE "L13" ;
+LOCATE COMP "SLOT_ADDR[2]" SITE "L12" ;
+LOCATE COMP "SLOT_ADDR[3]" SITE "M14" ;
+LOCATE COMP "SLOT_ADDR[4]" SITE "M13" ;
+LOCATE COMP "SLOT_ADDR[5]" SITE "N14" ;
+LOCATE COMP "SLOT_ADDR[6]" SITE "P14" ;
+LOCATE COMP "SLOT_ADDR[7]" SITE "N13" ;
+LOCATE COMP "SLOT_ADDR[8]" SITE "P13" ;
+LOCATE COMP "SLOT_ADDR[9]" SITE "N12" ;
+LOCATE COMP "SLOT_ADDR[10]" SITE "P12" ;
+LOCATE COMP "SLOT_ADDR[11]" SITE "P11" ;
+LOCATE COMP "SLOT_EXROMn" SITE "R7" ;
+LOCATE COMP "SLOT_GAMEn" SITE "T6" ;
+LOCATE COMP "SLOT_IO1n" SITE "R6" ;
+LOCATE COMP "SLOT_DOTCLK" SITE "M1" ;# Was R5
+LOCATE COMP "SLOT_RWn" SITE "T4" ;
+LOCATE COMP "SLOT_PHI2" SITE "R4" ;
+LOCATE COMP "SLOT_NMIn" SITE "T3" ;
+LOCATE COMP "SLOT_RSTn" SITE "R3" ;
+LOCATE COMP "SLOT_ADDR_DIR" SITE "T2" ;
+LOCATE COMP "SLOT_ADDR_OEn" SITE "R2" ;
+LOCATE COMP "SLOT_ADDR[12]" SITE "P7" ;
+LOCATE COMP "SLOT_ADDR[13]" SITE "N7" ;
+LOCATE COMP "SLOT_ADDR[14]" SITE "P6" ;
+LOCATE COMP "SLOT_ADDR[15]" SITE "N6" ;
+LOCATE COMP "SLOT_IRQn" SITE "P5" ;
+LOCATE COMP "SLOT_ROMHn" SITE "N5" ;
+LOCATE COMP "SLOT_VCC" SITE "K4" ;
+LOCATE COMP "SLOT_DRV_RST" SITE "P3" ;
+LOCATE COMP "IEC_CLOCK_O" SITE "N4" ;
+LOCATE COMP "IEC_ATN_O" SITE "M4" ;
+LOCATE COMP "IEC_SRQ_O" SITE "P4" ;
+LOCATE COMP "IEC_RESET_O" SITE "P2" ;
+LOCATE COMP "IEC_DATA_O" SITE "R1" ;
+LOCATE COMP "IEC_SRQ_I" SITE "M9" ;
+LOCATE COMP "IEC_ATN_I" SITE "M11" ;
+LOCATE COMP "IEC_CLOCK_I" SITE "M6" ;
+LOCATE COMP "IEC_DATA_I" SITE "M7" ;
+LOCATE COMP "IEC_RESET_I" SITE "R8" ;
+LOCATE COMP "ULPI_REFCLK" SITE "B11" ;
+LOCATE COMP "ULPI_RESET" SITE "A11" ;
+LOCATE COMP "ULPI_STP" SITE "B10" ;
+LOCATE COMP "ULPI_DIR" SITE "A10" ;
+LOCATE COMP "ULPI_NXT" SITE "B9" ;
+LOCATE COMP "ULPI_DATA[0]" SITE "A9" ;
+LOCATE COMP "ULPI_DATA[1]" SITE "C9" ;
+LOCATE COMP "ULPI_DATA[2]" SITE "A8" ;
+LOCATE COMP "ULPI_DATA[3]" SITE "B8" ;
+LOCATE COMP "ULPI_CLOCK" SITE "A7" ;
+LOCATE COMP "ULPI_DATA[4]" SITE "B7" ;
+LOCATE COMP "ULPI_DATA[5]" SITE "A6" ;
+LOCATE COMP "ULPI_DATA[6]" SITE "B6" ;
+LOCATE COMP "ULPI_DATA[7]" SITE "A5" ;
+LOCATE COMP "ETH_RESETn" SITE "B5" ;
+LOCATE COMP "RMII_TX_DATA[1]" SITE "A4" ;
+LOCATE COMP "RMII_TX_DATA[0]" SITE "B4" ;
+LOCATE COMP "RMII_TX_EN" SITE "A3" ;
+LOCATE COMP "ETH_IRQn" SITE "B3" ;
+LOCATE COMP "RMII_RX_ER" SITE "A2" ;
+LOCATE COMP "RMII_CRS_DV" SITE "B2" ;
+LOCATE COMP "RMII_RX_DATA[0]" SITE "B1" ;
+LOCATE COMP "RMII_RX_DATA[1]" SITE "C2" ;
+LOCATE COMP "MDIO_CLK" SITE "C1" ;
+LOCATE COMP "MDIO_DATA" SITE "D1" ;
+LOCATE COMP "I2C_SCL_18" SITE "E2" ;
+LOCATE COMP "I2C_SDA_18" SITE "E1" ;
+LOCATE COMP "AUDIO_SDO" SITE "F2" ;
+LOCATE COMP "AUDIO_SDI" SITE "F1" ;
+LOCATE COMP "AUDIO_BCLK" SITE "G2" ;
+LOCATE COMP "AUDIO_LRCLK" SITE "G1" ;
+LOCATE COMP "AUDIO_MCLK" SITE "H2" ;
+LOCATE COMP "RMII_REFCLK" SITE "C8" ;
+LOCATE COMP "CLOCK_50" SITE "J1" ;
+LOCATE COMP "BOARD_REVn[0]" SITE "E9" ;
+LOCATE COMP "BOARD_REVn[1]" SITE "E10" ;
+LOCATE COMP "BOARD_REVn[2]" SITE "E11" ;
+LOCATE COMP "BOARD_REVn[3]" SITE "E12" ;
+LOCATE COMP "BOARD_REVn[4]" SITE "E13" ;
+LOCATE COMP "CAS_WRITE" SITE "P1" ;
+LOCATE COMP "CAS_READ" SITE "N1" ;
+LOCATE COMP "CAS_SENSE" SITE "N3" ;
+LOCATE COMP "CAS_MOTOR" SITE "M2" ;
+LOCATE COMP "BUTTON[0]" SITE "E7" ;
+LOCATE COMP "BUTTON[1]" SITE "C7" ;
+LOCATE COMP "BUTTON[2]" SITE "D7" ;
+LOCATE COMP "LED_DISKn" SITE "C5" ;
+LOCATE COMP "LED_CARTn" SITE "C6" ;
+LOCATE COMP "LED_SDACTn" SITE "D6" ;
+LOCATE COMP "LED_MOTORn" SITE "D5" ;
+LOCATE COMP "DEBUG_TCK" SITE "E8" ;
+LOCATE COMP "DEBUG_TMS" SITE "D8" ;
+LOCATE COMP "DEBUG_TDI" SITE "D9" ;
+LOCATE COMP "DEBUG_TDO" SITE "D10" ;
+LOCATE COMP "DEBUG_TRSTn" SITE "C10" ;
+LOCATE COMP "DEBUG_SPARE" SITE "D11" ;
+LOCATE COMP "HUB_CLOCK" SITE "K12" ;
+LOCATE COMP "HUB_RESETn" SITE "C11" ;
+LOCATE COMP "I2C_SCL" SITE "L1" ;
+LOCATE COMP "I2C_SDA" SITE "L2" ;
+LOCATE COMP "SPEAKER_DATA" SITE "L4" ;
+LOCATE COMP "SPEAKER_ENABLE" SITE "M3" ;
+LOCATE COMP "UART_TXD" SITE "L3" ;
+LOCATE COMP "UART_RXD" SITE "L5" ;
+LOCATE COMP "UNUSED_F4" SITE "F4" ;
+LOCATE COMP "UNUSED_H3" SITE "H3" ;
+LOCATE COMP "UNUSED_G12" SITE "G12" ;
+DEFINE PORT GROUP "SDRAM_C" "SDRAM_A[13]" 
+"SDRAM_A[12]" 
+"SDRAM_A[11]" 
+"SDRAM_A[10]" 
+"SDRAM_A[9]" 
+"SDRAM_A[8]" 
+"SDRAM_A[7]" 
+"SDRAM_A[6]" 
+"SDRAM_A[5]" 
+"SDRAM_A[4]" 
+"SDRAM_A[3]" 
+"SDRAM_A[2]" 
+"SDRAM_A[1]" 
+"SDRAM_A[0]" 
+"SDRAM_BA[2]" 
+"SDRAM_BA[1]" 
+"SDRAM_BA[0]" 
+"SDRAM_CSn" 
+"SDRAM_RASn" 
+"SDRAM_CASn" 
+"SDRAM_WEn" 
+"SDRAM_CKE" 
+"SDRAM_CLK" 
+"SDRAM_CLKn" 
+"SDRAM_ODT" ;
+DEFINE PORT GROUP "SDRAM_D" "SDRAM_DQ[7]" 
+"SDRAM_DQ[6]" 
+"SDRAM_DQ[5]" 
+"SDRAM_DQ[4]" 
+"SDRAM_DQ[3]" 
+"SDRAM_DQ[2]" 
+"SDRAM_DQ[1]" 
+"SDRAM_DQ[0]" 
+"SDRAM_DM" 
+"SDRAM_DQS" ;
+DEFINE PORT GROUP "SLOT" "SLOT_PHI2" 
+"SLOT_BA" 
+"SLOT_ROMHn" 
+"SLOT_ROMLn" 
+"SLOT_IO1n" 
+"SLOT_IO2n" 
+"SLOT_VCC" 
+"SLOT_DMAn" 
+"SLOT_IRQn" 
+"SLOT_DRV_RST" 
+"SLOT_RSTn" 
+"SLOT_ADDR[15]" 
+"SLOT_ADDR[14]" 
+"SLOT_ADDR[13]" 
+"SLOT_ADDR[12]" 
+"SLOT_ADDR[11]" 
+"SLOT_ADDR[10]" 
+"SLOT_ADDR[9]" 
+"SLOT_ADDR[8]" 
+"SLOT_ADDR[7]" 
+"SLOT_ADDR[6]" 
+"SLOT_ADDR[5]" 
+"SLOT_ADDR[4]" 
+"SLOT_ADDR[3]" 
+"SLOT_ADDR[2]" 
+"SLOT_ADDR[1]" 
+"SLOT_ADDR[0]" 
+"SLOT_DATA[7]" 
+"SLOT_DATA[6]" 
+"SLOT_DATA[5]" 
+"SLOT_DATA[4]" 
+"SLOT_DATA[3]" 
+"SLOT_DATA[2]" 
+"SLOT_DATA[1]" 
+"SLOT_DATA[0]" 
+"SLOT_RWn" 
+"SLOT_EXROMn" 
+"SLOT_GAMEn" 
+"SLOT_NMIn" 
+"SLOT_ADDR_OEn" 
+"SLOT_ADDR_DIR" 
+"SLOT_BUFFER_EN" 
+"SLOT_DOTCLK" ;
+IOBUF GROUP "SLOT" IO_TYPE=LVCMOS33 PULLMODE=NONE DRIVE=16 ;
+IOBUF GROUP "SDRAM_D" IO_TYPE=SSTL18_I ;
+IOBUF GROUP "SDRAM_C" IO_TYPE=SSTL18_I ;
+DEFINE PORT GROUP "Misc3V3" "FLASH_MISO" 
+"CAS_MOTOR" 
+"SPEAKER_DATA" 
+"SPEAKER_ENABLE" 
+"I2C_SDA" 
+"I2C_SCL" 
+"CAS_SENSE" 
+"CAS_READ" 
+"CAS_WRITE" 
+"UART_TXD" 
+"FLASH_CSn" 
+"FLASH_MOSI" 
+"HUB_CLOCK" 
+"IEC_ATN_I" 
+"IEC_DATA_I" 
+"IEC_CLOCK_I" 
+"IEC_RESET_I" 
+"IEC_SRQ_I" 
+"IEC_ATN_O" 
+"IEC_DATA_O" 
+"IEC_CLOCK_O" 
+"IEC_RESET_O" 
+"IEC_SRQ_O" 
+"UART_RXD" ;
+DEFINE PORT GROUP "Misc1V8" "AUDIO_SDI" 
+"LED_DISKn" 
+"LED_CARTn" 
+"LED_SDACTn" 
+"LED_MOTORn" 
+"HUB_RESETn" 
+"ETH_IRQn" 
+"RMII_CRS_DV" 
+"RMII_RX_DATA[1]" 
+"RMII_RX_DATA[0]" 
+"AUDIO_MCLK" 
+"AUDIO_BCLK" 
+"AUDIO_LRCLK" 
+"AUDIO_SDO" 
+"ETH_RESETn" 
+"RMII_TX_DATA[1]" 
+"RMII_TX_DATA[0]" 
+"RMII_TX_EN" 
+"MDIO_CLK" 
+"MDIO_DATA" 
+"I2C_SDA_18" 
+"I2C_SCL_18" 
+"RMII_RX_ER" 
+"UNUSED_H3" 
+"UNUSED_F4" 
+"UNUSED_G12" 
+"DEBUG_SPARE" 
+"DEBUG_TDO" ;
+DEFINE PORT GROUP "Ulpi" "ULPI_NXT" 
+"ULPI_DIR" 
+"ULPI_RESET" 
+"ULPI_REFCLK" 
+"ULPI_STP" 
+"ULPI_DATA[7]" 
+"ULPI_DATA[6]" 
+"ULPI_DATA[5]" 
+"ULPI_DATA[4]" 
+"ULPI_DATA[3]" 
+"ULPI_DATA[2]" 
+"ULPI_DATA[1]" 
+"ULPI_DATA[0]" ;
+DEFINE PORT GROUP "Undecided" "BOARD_REVn[4]" 
+"BOARD_REVn[3]" 
+"BOARD_REVn[2]" 
+"BOARD_REVn[1]" 
+"BOARD_REVn[0]" 
+"BUTTON[2]" 
+"BUTTON[1]" 
+"BUTTON[0]" ;
+IOBUF GROUP "Misc3V3" IO_TYPE=LVCMOS33 ;
+IOBUF GROUP "Misc1V8" IO_TYPE=LVCMOS18 ;
+IOBUF GROUP "Ulpi" IO_TYPE=LVCMOS18 ;
+IOBUF GROUP "Undecided" IO_TYPE=LVCMOS18 ;
+DEFINE CELL GROUP "TigSrc8" "b_audio.i_ultfilt8/i_sync/tx_tig_src" 
+"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[0]" 
+"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[1]" 
+"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[2]" 
+"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[3]" 
+"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[4]" 
+"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[5]" 
+"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[6]" 
+"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[7]" 
+"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[8]" 
+"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[9]" 
+"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[10]" 
+"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[11]" 
+"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[12]" 
+"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[13]" 
+"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[14]" 
+"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[15]" 
+"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[16]" 
+"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[17]" 
+"b_audio.i_ultfilt8/i_sync/rx_tig_src" ;
+DEFINE CELL GROUP "TigSrc7" "b_audio.i_ultfilt7/i_sync/tx_tig_src" 
+"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[0]" 
+"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[1]" 
+"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[2]" 
+"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[3]" 
+"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[4]" 
+"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[5]" 
+"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[6]" 
+"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[7]" 
+"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[8]" 
+"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[9]" 
+"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[10]" 
+"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[11]" 
+"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[12]" 
+"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[13]" 
+"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[14]" 
+"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[15]" 
+"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[16]" 
+"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[17]" 
+"b_audio.i_ultfilt7/i_sync/rx_tig_src" ;
+DEFINE CELL GROUP "TigSrc6" "b_audio.i_ultfilt6/i_sync/tx_tig_src" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[0]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[1]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[2]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[3]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[4]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[5]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[6]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[7]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[8]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[9]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[10]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[11]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[12]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[13]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[14]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[15]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[16]" 
+"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[17]" 
+"b_audio.i_ultfilt6/i_sync/rx_tig_src" ;
+DEFINE CELL GROUP "TigSrc5" "b_audio.i_ultfilt5/i_sync/tx_tig_src" 
+"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[0]" 
+"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[1]" 
+"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[2]" 
+"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[3]" 
+"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[4]" 
+"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[5]" 
+"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[6]" 
+"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[7]" 
+"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[8]" 
+"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[9]" 
+"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[10]" 
+"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[11]" 
+"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[12]" 
+"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[13]" 
+"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[14]" 
+"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[15]" 
+"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[16]" 
+"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[17]" 
+"b_audio.i_ultfilt5/i_sync/rx_tig_src" ;
+DEFINE CELL GROUP "TigSrc4" "b_audio.i_ultfilt4/i_sync/tx_tig_src" 
+"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[0]" 
+"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[1]" 
+"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[2]" 
+"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[3]" 
+"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[4]" 
+"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[5]" 
+"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[6]" 
+"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[7]" 
+"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[8]" 
+"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[9]" 
+"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[10]" 
+"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[11]" 
+"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[12]" 
+"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[13]" 
+"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[14]" 
+"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[15]" 
+"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[16]" 
+"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[17]" 
+"b_audio.i_ultfilt4/i_sync/rx_tig_src" ;
+DEFINE CELL GROUP "TigSrc3" "b_audio.i_ultfilt3/i_sync/tx_tig_src" 
+"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[0]" 
+"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[1]" 
+"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[2]" 
+"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[3]" 
+"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[4]" 
+"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[5]" 
+"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[6]" 
+"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[7]" 
+"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[8]" 
+"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[9]" 
+"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[10]" 
+"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[11]" 
+"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[12]" 
+"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[13]" 
+"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[14]" 
+"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[15]" 
+"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[16]" 
+"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[17]" 
+"b_audio.i_ultfilt3/i_sync/rx_tig_src" ;
+DEFINE CELL GROUP "TigSrc2" "b_audio.i_ultfilt2/i_sync/tx_tig_src" 
+"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[0]" 
+"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[1]" 
+"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[2]" 
+"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[3]" 
+"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[4]" 
+"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[5]" 
+"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[6]" 
+"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[7]" 
+"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[8]" 
+"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[9]" 
+"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[10]" 
+"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[11]" 
+"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[12]" 
+"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[13]" 
+"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[14]" 
+"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[15]" 
+"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[16]" 
+"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[17]" 
+"b_audio.i_ultfilt2/i_sync/rx_tig_src" ;
+DEFINE CELL GROUP "TigSrc1" "b_audio.i_ultfilt1/i_sync/tx_tig_src" 
+"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[0]" 
+"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[1]" 
+"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[2]" 
+"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[3]" 
+"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[4]" 
+"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[5]" 
+"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[6]" 
+"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[7]" 
+"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[8]" 
+"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[9]" 
+"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[10]" 
+"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[11]" 
+"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[12]" 
+"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[13]" 
+"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[14]" 
+"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[15]" 
+"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[16]" 
+"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[17]" 
+"b_audio.i_ultfilt1/i_sync/rx_tig_src" ;
+DEFINE CELL GROUP "TigSrcUsb" "i_logic/r_usb2.i_usb2/i_bridge_to_mem_ctrl/i_cmd_fifo/wr_head_gray_tig_src[0]" 
+"i_logic/r_usb2.i_usb2/i_bridge_to_mem_ctrl/i_cmd_fifo/wr_head_gray_tig_src[1]" 
+"i_logic/r_usb2.i_usb2/i_bridge_to_mem_ctrl/i_cmd_fifo/wr_head_gray_tig_src[2]" 
+"i_logic/r_usb2.i_usb2/i_bridge_to_mem_ctrl/i_cmd_fifo/rd_tail_gray_tig_src[0]" 
+"i_logic/r_usb2.i_usb2/i_bridge_to_mem_ctrl/i_cmd_fifo/rd_tail_gray_tig_src[1]" 
+"i_logic/r_usb2.i_usb2/i_bridge_to_mem_ctrl/i_cmd_fifo/rd_tail_gray_tig_src[2]" ;
+DEFINE CELL GROUP "TigSrcRmii" "i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_head_gray_tig_src[0]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_head_gray_tig_src[1]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_head_gray_tig_src[2]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_head_gray_tig_src[3]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_head_gray_tig_src[4]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_head_gray_tig_src[5]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_head_gray_tig_src[6]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_head_gray_tig_src[7]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_head_gray_tig_src[8]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_head_gray_tig_src[9]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_tail_gray_tig_src[0]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_tail_gray_tig_src[1]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_tail_gray_tig_src[2]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_tail_gray_tig_src[3]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_tail_gray_tig_src[4]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_tail_gray_tig_src[5]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_tail_gray_tig_src[6]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_tail_gray_tig_src[7]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_tail_gray_tig_src[8]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_tail_gray_tig_src[9]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_head_gray_tig_src[0]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_head_gray_tig_src[1]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_head_gray_tig_src[2]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_head_gray_tig_src[3]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_head_gray_tig_src[4]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_head_gray_tig_src[5]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_head_gray_tig_src[6]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_head_gray_tig_src[7]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_head_gray_tig_src[8]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_tail_gray_tig_src[0]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_tail_gray_tig_src[1]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_tail_gray_tig_src[2]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_tail_gray_tig_src[3]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_tail_gray_tig_src[4]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_tail_gray_tig_src[5]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_tail_gray_tig_src[6]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_tail_gray_tig_src[7]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_tail_gray_tig_src[8]" ;
+DEFINE CELL GROUP "TigSrcMem" "i_memctrl/i_bridge/i_terug/tx_tig_src" 
+"i_memctrl/i_bridge/i_terug/tx_data_tig_src[0]" 
+"i_memctrl/i_bridge/i_terug/tx_data_tig_src[1]" 
+"i_memctrl/i_bridge/i_terug/tx_data_tig_src[2]" 
+"i_memctrl/i_bridge/i_terug/tx_data_tig_src[3]" 
+"i_memctrl/i_bridge/i_terug/tx_data_tig_src[4]" 
+"i_memctrl/i_bridge/i_terug/tx_data_tig_src[5]" 
+"i_memctrl/i_bridge/i_terug/tx_data_tig_src[6]" 
+"i_memctrl/i_bridge/i_terug/rx_tig_src" 
+"i_memctrl/i_bridge/i_heen/tx_tig_src" 
+"i_memctrl/i_bridge/i_heen/tx_data_tig_src[0]" 
+"i_memctrl/i_bridge/i_heen/tx_data_tig_src[1]" 
+"i_memctrl/i_bridge/i_heen/tx_data_tig_src[2]" 
+"i_memctrl/i_bridge/i_heen/tx_data_tig_src[3]" 
+"i_memctrl/i_bridge/i_heen/tx_data_tig_src[4]" 
+"i_memctrl/i_bridge/i_heen/tx_data_tig_src[5]" 
+"i_memctrl/i_bridge/i_heen/tx_data_tig_src[6]" 
+"i_memctrl/i_bridge/i_heen/tx_data_tig_src[7]" 
+"i_memctrl/i_bridge/i_heen/tx_data_tig_src[8]" 
+"i_memctrl/i_bridge/i_heen/tx_data_tig_src[9]" 
+"i_memctrl/i_bridge/i_heen/tx_data_tig_src[10]" 
+"i_memctrl/i_bridge/i_heen/tx_data_tig_src[11]" 
+"i_memctrl/i_bridge/i_heen/tx_data_tig_src[12]" 
+"i_memctrl/i_bridge/i_heen/tx_data_tig_src[13]" 
+"i_memctrl/i_bridge/i_heen/rx_tig_src" ;
+DEFINE CELL GROUP "TigDst8" "b_audio.i_ultfilt8/i_sync/tx_tig_dst" 
+"b_audio.i_ultfilt8/i_sync/rx_tig_dst" 
+"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[0]" 
+"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[1]" 
+"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[2]" 
+"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[3]" 
+"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[4]" 
+"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[5]" 
+"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[6]" 
+"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[7]" 
+"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[8]" 
+"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[9]" 
+"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[10]" 
+"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[11]" 
+"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[12]" 
+"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[13]" 
+"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[14]" 
+"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[15]" 
+"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[16]" 
+"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[17]" ;
+DEFINE CELL GROUP "TigDst7" "b_audio.i_ultfilt7/i_sync/tx_tig_dst" 
+"b_audio.i_ultfilt7/i_sync/rx_tig_dst" 
+"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[0]" 
+"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[1]" 
+"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[2]" 
+"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[3]" 
+"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[4]" 
+"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[5]" 
+"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[6]" 
+"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[7]" 
+"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[8]" 
+"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[9]" 
+"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[10]" 
+"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[11]" 
+"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[12]" 
+"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[13]" 
+"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[14]" 
+"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[15]" 
+"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[16]" 
+"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[17]" ;
+DEFINE CELL GROUP "TigDst6" "b_audio.i_ultfilt6/i_sync/tx_tig_dst" 
+"b_audio.i_ultfilt6/i_sync/rx_tig_dst" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[0]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[1]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[2]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[3]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[4]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[5]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[6]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[7]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[8]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[9]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[10]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[11]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[12]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[13]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[14]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[15]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[16]" 
+"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[17]" ;
+DEFINE CELL GROUP "TigDst5" "b_audio.i_ultfilt5/i_sync/tx_tig_dst" 
+"b_audio.i_ultfilt5/i_sync/rx_tig_dst" 
+"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[0]" 
+"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[1]" 
+"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[2]" 
+"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[3]" 
+"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[4]" 
+"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[5]" 
+"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[6]" 
+"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[7]" 
+"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[8]" 
+"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[9]" 
+"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[10]" 
+"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[11]" 
+"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[12]" 
+"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[13]" 
+"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[14]" 
+"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[15]" 
+"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[16]" 
+"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[17]" ;
+DEFINE CELL GROUP "TigDst4" "b_audio.i_ultfilt4/i_sync/tx_tig_dst" 
+"b_audio.i_ultfilt4/i_sync/rx_tig_dst" 
+"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[0]" 
+"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[1]" 
+"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[2]" 
+"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[3]" 
+"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[4]" 
+"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[5]" 
+"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[6]" 
+"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[7]" 
+"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[8]" 
+"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[9]" 
+"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[10]" 
+"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[11]" 
+"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[12]" 
+"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[13]" 
+"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[14]" 
+"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[15]" 
+"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[16]" 
+"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[17]" ;
+DEFINE CELL GROUP "TigDst3" "b_audio.i_ultfilt3/i_sync/tx_tig_dst" 
+"b_audio.i_ultfilt3/i_sync/rx_tig_dst" 
+"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[0]" 
+"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[1]" 
+"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[2]" 
+"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[3]" 
+"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[4]" 
+"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[5]" 
+"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[6]" 
+"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[7]" 
+"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[8]" 
+"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[9]" 
+"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[10]" 
+"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[11]" 
+"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[12]" 
+"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[13]" 
+"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[14]" 
+"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[15]" 
+"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[16]" 
+"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[17]" ;
+DEFINE CELL GROUP "TigDst2" "b_audio.i_ultfilt2/i_sync/tx_tig_dst" 
+"b_audio.i_ultfilt2/i_sync/rx_tig_dst" 
+"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[0]" 
+"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[1]" 
+"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[2]" 
+"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[3]" 
+"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[4]" 
+"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[5]" 
+"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[6]" 
+"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[7]" 
+"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[8]" 
+"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[9]" 
+"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[10]" 
+"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[11]" 
+"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[12]" 
+"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[13]" 
+"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[14]" 
+"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[15]" 
+"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[16]" 
+"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[17]" ;
+DEFINE CELL GROUP "TigDst1" "b_audio.i_ultfilt1/i_sync/tx_tig_dst" 
+"b_audio.i_ultfilt1/i_sync/rx_tig_dst" 
+"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[0]" 
+"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[1]" 
+"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[2]" 
+"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[3]" 
+"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[4]" 
+"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[5]" 
+"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[6]" 
+"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[7]" 
+"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[8]" 
+"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[9]" 
+"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[10]" 
+"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[11]" 
+"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[12]" 
+"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[13]" 
+"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[14]" 
+"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[15]" 
+"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[16]" 
+"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[17]" ;
+DEFINE CELL GROUP "TigDstUsb" "i_logic/r_usb2.i_usb2/i_bridge_to_mem_ctrl/i_cmd_fifo/wr_tail_gray_tig_dst[0]" 
+"i_logic/r_usb2.i_usb2/i_bridge_to_mem_ctrl/i_cmd_fifo/wr_tail_gray_tig_dst[1]" 
+"i_logic/r_usb2.i_usb2/i_bridge_to_mem_ctrl/i_cmd_fifo/wr_tail_gray_tig_dst[2]" 
+"i_logic/r_usb2.i_usb2/i_bridge_to_mem_ctrl/i_cmd_fifo/rd_head_gray_tig_dst[0]" 
+"i_logic/r_usb2.i_usb2/i_bridge_to_mem_ctrl/i_cmd_fifo/rd_head_gray_tig_dst[1]" 
+"i_logic/r_usb2.i_usb2/i_bridge_to_mem_ctrl/i_cmd_fifo/rd_head_gray_tig_dst[2]" ;
+DEFINE CELL GROUP "TigDstRmii" "i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_tail_gray_tig_dst[0]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_tail_gray_tig_dst[1]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_tail_gray_tig_dst[2]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_tail_gray_tig_dst[3]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_tail_gray_tig_dst[4]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_tail_gray_tig_dst[5]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_tail_gray_tig_dst[6]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_tail_gray_tig_dst[7]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_tail_gray_tig_dst[8]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_tail_gray_tig_dst[9]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_head_gray_tig_dst[0]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_head_gray_tig_dst[1]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_head_gray_tig_dst[2]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_head_gray_tig_dst[3]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_head_gray_tig_dst[4]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_head_gray_tig_dst[5]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_head_gray_tig_dst[6]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_head_gray_tig_dst[7]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_head_gray_tig_dst[8]" 
+"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_head_gray_tig_dst[9]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_tail_gray_tig_dst[0]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_tail_gray_tig_dst[1]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_tail_gray_tig_dst[2]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_tail_gray_tig_dst[3]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_tail_gray_tig_dst[4]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_tail_gray_tig_dst[5]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_tail_gray_tig_dst[6]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_tail_gray_tig_dst[7]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_tail_gray_tig_dst[8]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_head_gray_tig_dst[0]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_head_gray_tig_dst[1]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_head_gray_tig_dst[2]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_head_gray_tig_dst[3]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_head_gray_tig_dst[4]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_head_gray_tig_dst[5]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_head_gray_tig_dst[6]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_head_gray_tig_dst[7]" 
+"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_head_gray_tig_dst[8]" ;
+DEFINE CELL GROUP "TigDstMem" "i_memctrl/i_bridge/i_terug/tx_tig_dst" 
+"i_memctrl/i_bridge/i_terug/rx_tig_dst" 
+"i_memctrl/i_bridge/i_terug/rx_data_tig_dst[0]" 
+"i_memctrl/i_bridge/i_terug/rx_data_tig_dst[1]" 
+"i_memctrl/i_bridge/i_terug/rx_data_tig_dst[2]" 
+"i_memctrl/i_bridge/i_terug/rx_data_tig_dst[3]" 
+"i_memctrl/i_bridge/i_terug/rx_data_tig_dst[4]" 
+"i_memctrl/i_bridge/i_terug/rx_data_tig_dst[5]" 
+"i_memctrl/i_bridge/i_terug/rx_data_tig_dst[6]" 
+"i_memctrl/i_bridge/i_heen/tx_tig_dst" 
+"i_memctrl/i_bridge/i_heen/rx_tig_dst" 
+"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[0]" 
+"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[1]" 
+"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[2]" 
+"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[3]" 
+"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[4]" 
+"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[5]" 
+"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[6]" 
+"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[7]" 
+"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[8]" 
+"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[9]" 
+"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[10]" 
+"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[11]" 
+"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[12]" 
+"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[13]" ;
+BLOCK PATH FROM GROUP "TigSrc1" TO GROUP "TigDst1" ;
+BLOCK PATH FROM GROUP "TigSrc2" TO GROUP "TigDst2" ;
+BLOCK PATH FROM GROUP "TigSrc3" TO GROUP "TigDst3" ;
+BLOCK PATH FROM GROUP "TigSrc4" TO GROUP "TigDst4" ;
+BLOCK PATH FROM GROUP "TigSrc5" TO GROUP "TigDst5" ;
+BLOCK PATH FROM GROUP "TigSrc6" TO GROUP "TigDst6" ;
+BLOCK PATH FROM GROUP "TigSrc7" TO GROUP "TigDst7" ;
+BLOCK PATH FROM GROUP "TigSrc8" TO GROUP "TigDst8" ;
+BLOCK PATH FROM GROUP "TigSrcUsb" TO GROUP "TigDstUsb" ;
+BLOCK PATH FROM GROUP "TigSrcRmii" TO GROUP "TigDstRmii" ;
+BLOCK PATH FROM GROUP "TigSrcMem" TO GROUP "TigDstMem" ;
+BLOCK PATH FROM ASIC "i_memctrl/i_phy/i_sclk" PIN "CDIVX" TO CELL "i_memctrl/b_phase_measurement.testclk1_c" ;
+BLOCK PATH FROM CELL "b_audio.i_sync_get/in_toggle" TO CELL "b_audio.i_sync_get/sync1" ;
+BLOCK PATH FROM CELL "i_startup/i_sys_reset_sync/sync2" TO CELL "i_logic/r_rmii.i_rmii/i_rx/i_fifo/aclr_wr[1]" ;
+BLOCK PATH FROM CELL "i_startup/i_sys_reset_sync/sync2" TO CELL "i_logic/r_rmii.i_rmii/i_rx/i_fifo/aclr_wr[2]" ;
+BLOCK PATH FROM CELL "i_startup/i_sys_reset_sync/sync2" TO CELL "i_logic/r_rmii.i_rmii/i_tx/i_fifo/aclr_rd[1]" ;
+BLOCK PATH FROM CELL "i_startup/i_sys_reset_sync/sync2" TO CELL "i_logic/r_rmii.i_rmii/i_tx/i_fifo/aclr_rd[2]" ;
+BLOCK PATH FROM CELL "i_startup/i_sys_reset_sync/sync2" TO CELL "i_eth_reset/sync1" ;
+BLOCK PATH FROM CELL "i_logic/r_rmii.i_rmii/i_rx/rx_enable" TO CELL "i_logic/r_rmii.i_rmii/i_rx/i_fifo/aclr_wr[1]" ;
+BLOCK PATH FROM CELL "i_logic/r_rmii.i_rmii/i_rx/rx_enable" TO CELL "i_logic/r_rmii.i_rmii/i_rx/i_fifo/aclr_wr[2]" ;
+BLOCK PATH FROM CELL "i_logic/r_rmii.i_rmii/i_rx/rx_enable" TO CELL "i_logic/r_rmii.i_rmii/i_rx/i_sync_enable/sync1" ;
+BLOCK PATH FROM CELL "i_logic/r_rmii.i_rmii/i_tx/i_sync/in_toggle" TO CELL "i_logic/r_rmii.i_rmii/i_tx/i_sync/sync1" ;
+BLOCK PATH FROM CELL "i_startup/i_reset_sync/in_toggle" TO CELL "i_startup/i_reset_sync/sync1" ;
+BLOCK PATH FROM CELL "i_startup/i_mem_sync/cs_memsync[0]" TO CELL "i_startup/i_mem_ready_sync/sync1" ;
+BLOCK PATH FROM CELL "i_startup/i_sys_reset_sync/sync2" TO CELL "i_startup/i_audio_reset/sync1" ;
+BLOCK PATH FROM CELL "i_startup/i_sys_reset_sync/sync2" TO CELL "i_startup/i_eth_reset/sync1" ;
+BLOCK PATH FROM CELL "i_startup/i_sys_reset_sync/sync2" TO CELL "i_startup/ctrl_reset_c" ;
+BLOCK PATH FROM CELL "i_memctrl/i_update_sync/in_toggle" TO CELL "i_memctrl/i_update_sync/sync1" ;
+BLOCK PATH FROM CELL "i_memctrl/i_reset_sync/in_toggle" TO CELL "i_memctrl/i_reset_sync/sync1" ;
+IOBUF PORT "RMII_REFCLK" IO_TYPE=LVCMOS18 PULLMODE=DOWN ;
+IOBUF PORT "CLOCK_50" IO_TYPE=LVCMOS18 PULLMODE=DOWN ;
+IOBUF PORT "ULPI_CLOCK" IO_TYPE=LVCMOS18 ;
+IOBUF PORT "USB_DP" IO_TYPE=LVCMOS33 ;
+IOBUF PORT "USB_DM" IO_TYPE=LVCMOS33 ;
+IOBUF PORT "USB_PULLUP" IO_TYPE=LVCMOS33 DRIVE=4 ;
+IOBUF PORT "LED_DISKn" OPENDRAIN=ON IO_TYPE=LVCMOS18 ;
+IOBUF PORT "LED_CARTn" OPENDRAIN=ON IO_TYPE=LVCMOS18 ;
+IOBUF PORT "LED_MOTORn" OPENDRAIN=ON IO_TYPE=LVCMOS18 ;
+IOBUF PORT "LED_SDACTn" OPENDRAIN=ON IO_TYPE=LVCMOS18 ;
+#IOBUF PORT "SDRAM_CLK" SLEWRATE=FAST ;
+#IOBUF PORT "SDRAM_CLKn" SLEWRATE=FAST ;
+IOBUF PORT "SDRAM_DM" SLEWRATE=FAST ;
+IOBUF PORT "SDRAM_DQS" SLEWRATE=FAST TERMINATION=75 PULLMODE=NONE IO_TYPE=SSTL18_I DRIVE=8 ;
+IOBUF PORT "SDRAM_DQ[0]" SLEWRATE=FAST ;
+IOBUF PORT "SDRAM_DQ[1]" SLEWRATE=FAST ;
+IOBUF PORT "SDRAM_DQ[2]" SLEWRATE=FAST ;
+IOBUF PORT "SDRAM_DQ[3]" SLEWRATE=FAST ;
+IOBUF PORT "SDRAM_DQ[4]" SLEWRATE=FAST ;
+IOBUF PORT "SDRAM_DQ[5]" SLEWRATE=FAST ;
+IOBUF PORT "SDRAM_DQ[6]" SLEWRATE=FAST ;
+IOBUF PORT "SDRAM_DQ[7]" SLEWRATE=FAST ;
+#IOBUF PORT "SDRAM_DQS" TERMINATION=75 ; 
+IOBUF PORT "I2C_SCL" OPENDRAIN=ON IO_TYPE=LVCMOS33 ;
+IOBUF PORT "I2C_SDA" OPENDRAIN=ON IO_TYPE=LVCMOS33 ;
+IOBUF PORT "I2C_SCL_18" OPENDRAIN=ON IO_TYPE=LVCMOS18 ;
+IOBUF PORT "I2C_SDA_18" OPENDRAIN=ON IO_TYPE=LVCMOS18 ;
+IOBUF PORT "HUB_RESETn" OPENDRAIN=ON IO_TYPE=LVCMOS18 ;
+IOBUF PORT "SLOT_RWn" PULLMODE=UP IO_TYPE=LVCMOS33 ;
+IOBUF PORT "SLOT_RSTn" PULLMODE=UP IO_TYPE=LVCMOS33 ;
+IOBUF PORT "SLOT_NMIn" PULLMODE=UP IO_TYPE=LVCMOS33 ;
+IOBUF PORT "SLOT_GAMEn" PULLMODE=UP IO_TYPE=LVCMOS33 ;
+IOBUF PORT "SLOT_EXROMn" PULLMODE=UP IO_TYPE=LVCMOS33 ;
+IOBUF PORT "DEBUG_TRSTn" PULLMODE=UP IO_TYPE=LVCMOS18 ;
+IOBUF PORT "DEBUG_TMS" PULLMODE=UP IO_TYPE=LVCMOS18 ;
+IOBUF PORT "DEBUG_TDI" PULLMODE=UP IO_TYPE=LVCMOS18 ;
+IOBUF PORT "DEBUG_TCK" PULLMODE=DOWN IO_TYPE=LVCMOS18 ;
+FREQUENCY PORT "CLOCK_50" 50.000000 MHz CLOCK_JITTER 0.100000 ns ;
+INPUT_SETUP PORT "RMII_CRS_DV" 6.500000 ns HOLD 6.500000 ns CLKPORT "RMII_REFCLK" ;
+FREQUENCY NET "half_clock" 100.000000 MHz PAR_ADJ 15.000000 HOLD_MARGIN 0.100000 ns CLOCK_JITTER 0.100000 ns ;
+FREQUENCY NET "mem_clock" 200.000000 MHz HOLD_MARGIN 0.100000 ns CLOCK_JITTER 0.100000 ns ;
+FREQUENCY NET "sys_clock" 50.000000 MHz PAR_ADJ 3.000000 HOLD_MARGIN 0.100000 ns CLOCK_JITTER 0.100000 ns ;
+IOBUF PORT "SLOT_BA" PULLMODE=NONE IO_TYPE=LVCMOS33 ;
+IOBUF PORT "SLOT_DOTCLK" PULLMODE=NONE IO_TYPE=LVCMOS33 ;
+IOBUF PORT "SLOT_IO1n" PULLMODE=UP IO_TYPE=LVCMOS33 ;
+IOBUF PORT "SLOT_IO2n" PULLMODE=UP IO_TYPE=LVCMOS33 ;
+IOBUF PORT "SLOT_PHI2" PULLMODE=UP IO_TYPE=LVCMOS33 ;
+IOBUF PORT "SLOT_ROMHn" PULLMODE=UP IO_TYPE=LVCMOS33 ;
+IOBUF PORT "SLOT_ROMLn" PULLMODE=UP IO_TYPE=LVCMOS33 ;
+IOBUF PORT "SLOT_VCC" PULLMODE=NONE IO_TYPE=LVCMOS33 ;
+IOBUF PORT "UART_RXD" PULLMODE=UP IO_TYPE=LVCMOS33 ;
+IOBUF PORT "CAS_READ" PULLMODE=UP IO_TYPE=LVCMOS33 ;
+IOBUF PORT "CAS_SENSE" PULLMODE=UP IO_TYPE=LVCMOS33 ;
+IOBUF PORT "CAS_WRITE" PULLMODE=UP IO_TYPE=LVCMOS33 ;
+IOBUF PORT "BOARD_REVn[0]" PULLMODE=UP IO_TYPE=LVCMOS18 ;
+IOBUF PORT "BOARD_REVn[1]" PULLMODE=UP IO_TYPE=LVCMOS18 ;
+IOBUF PORT "BOARD_REVn[2]" PULLMODE=UP IO_TYPE=LVCMOS18 ;
+IOBUF PORT "BOARD_REVn[3]" PULLMODE=UP IO_TYPE=LVCMOS18 ;
+IOBUF PORT "BOARD_REVn[4]" PULLMODE=UP IO_TYPE=LVCMOS18 ;
+IOBUF PORT "BUTTON[0]" PULLMODE=UP IO_TYPE=LVCMOS18 ;
+IOBUF PORT "BUTTON[1]" PULLMODE=UP IO_TYPE=LVCMOS18 ;
+IOBUF PORT "BUTTON[2]" PULLMODE=UP IO_TYPE=LVCMOS18 ;
+USE PRIMARY NET "half_clock" QUADRANT_TR QUADRANT_BR ;
+PROHIBIT PRIMARY NET "i_logic/r_drive1.r_mm1.i_drive1/drv_reset" ;
+USE PRIMARY NET "i_logic/r_drive_2.r_mm.i_drive/drv_reset" QUADRANT_TL ;
+USE DOUT FALSE CELL "led_n_0io[0]" ;
+FREQUENCY NET "i_jtag/tck" 25.000000 MHz HOLD_MARGIN 0.100000 ns ;
