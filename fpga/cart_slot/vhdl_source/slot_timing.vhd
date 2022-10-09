@@ -7,7 +7,7 @@ port (
     clock           : in  std_logic;
     reset           : in  std_logic;
     
-    -- Cartridge pins
+    -- Cartridge pins -- Already synchronized!
     PHI2            : in  std_logic;
     BA              : in  std_logic;
 
@@ -37,9 +37,7 @@ port (
 end slot_timing;
 
 architecture gideon of slot_timing is
-    signal phi2_c       : std_logic;
     signal phi2_d       : std_logic;
-    signal ba_c         : std_logic;
     signal phase_h      : integer range 0 to 63 := 0;
     signal phase_l      : integer range 0 to 63 := 0;
     signal allow_tick_h : boolean := true;
@@ -56,23 +54,17 @@ architecture gideon of slot_timing is
     constant c_probe_end   : integer := 14; -- 300 ns after PHI2
     constant c_sample_vic  : integer := 9; -- 200 ns after PHI2 (!)
     constant c_io          : integer := 15;
-
-    attribute register_duplication : string;
-    attribute register_duplication of ba_c    : signal is "no";
-    attribute register_duplication of phi2_c  : signal is "no";
 begin
     vic_cycle_i    <= '1' when (ba_hist = "0000") else '0';
     vic_cycle      <= vic_cycle_i;
     phi2_recovered <= phi2_rec_i;
     phi2_tick      <= phi2_tick_i;
-    phi2_fall      <= phi2_d and not phi2_c;
+    phi2_fall      <= phi2_d and not PHI2;
     
     process(clock)
     begin
         if rising_edge(clock) then
-            ba_c        <= BA;
-            phi2_c      <= PHI2;
-            phi2_d      <= phi2_c;
+            phi2_d      <= PHI2;
             phi2_tick_i <= '0';
             
             -- Off counter, to allow software to gracefully quit
@@ -81,15 +73,15 @@ begin
                 serve_en_i <= '1';
             elsif off_cnt = 0 then
                 serve_en_i <= '0';
-            elsif phi2_tick_i='1' and ba_c='1' then
+            elsif phi2_tick_i='1' and BA='1' then
                 off_cnt <= off_cnt - 1;
                 serve_en_i <= '1';
             end if;
 
             -- detect or create rising edge
             if ((edge_recover = '1') and (phase_l = 24)) or 
-               ((edge_recover = '0') and phi2_d='0' and phi2_c='1' and allow_tick_h) then
-                ba_hist      <= ba_hist(2 downto 0) & ba_c;
+               ((edge_recover = '0') and phi2_d='0' and PHI2='1' and allow_tick_h) then
+                ba_hist      <= ba_hist(2 downto 0) & BA;
                 phi2_tick_i  <= '1';
                 phi2_rec_i   <= '1';
                 phase_h      <= 0;
@@ -108,7 +100,7 @@ begin
 
             -- related to falling edge
             phi2_falling <= '0';
-            if phi2_d='1' and phi2_c='0' and allow_tick_l then  -- falling edge
+            if phi2_d='1' and PHI2='0' and allow_tick_l then  -- falling edge
                 phi2_falling <= '1';
                 phi2_rec_i   <= '0';
                 phase_l      <= 0;
