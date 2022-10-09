@@ -12,7 +12,7 @@ port (
     clock           : in  std_logic;
     reset           : in  std_logic;
 
-    -- Cartridge pins
+    -- Cartridge pins (ALL SYNCHRONIZED EXTERNALLY!)
     VCC             : in  std_logic;
     RSTn            : in  std_logic;
     PHI2            : in  std_logic;
@@ -73,20 +73,11 @@ port (
 end slot_slave;    
 
 architecture gideon of slot_slave is
-    signal address_c    : unsigned(15 downto 0) := (others => '0');
-    signal data_c       : std_logic_vector(7 downto 0) := X"FF";
-    signal io1n_c       : std_logic := '1';
-    signal io2n_c       : std_logic := '1';
-    signal rwn_c        : std_logic := '1';
-    signal romhn_c      : std_logic := '1';
-    signal romln_c      : std_logic := '1';
-    signal ba_c         : std_logic := '0';
-    signal phi2_c       : std_logic := '0';
     signal dav          : std_logic := '0';
     signal addr_is_io   : boolean;
     signal addr_is_kernal : std_logic;
     signal mem_req_ff   : std_logic;
-
+    signal mem_rwn_i    : std_logic;
     signal servicable   : std_logic;
     signal io_read_cond : std_logic;
     signal io_write_cond: std_logic;
@@ -102,50 +93,11 @@ architecture gideon of slot_slave is
     signal mem_data_0       : std_logic_vector(7 downto 0) := X"00";
     signal mem_data_1       : std_logic_vector(7 downto 0) := X"00";
     signal data_mux         : std_logic;
-    
-    -- Xilinx attributes
-    attribute register_duplication : string;
-    attribute register_duplication of ba_c      : signal is "no";
-    attribute register_duplication of phi2_c    : signal is "no";
-    attribute register_duplication of rwn_c     : signal is "no";
-    attribute register_duplication of io1n_c    : signal is "no";
-    attribute register_duplication of io2n_c    : signal is "no";
-    attribute register_duplication of romln_c   : signal is "no";
-    attribute register_duplication of romhn_c   : signal is "no";
-    attribute register_duplication of reset_out : signal is "no";
-
-    -- Lattice attributes
-    attribute syn_replicate                     : boolean;
-    attribute syn_replicate of ba_c             : signal is false;
-    attribute syn_replicate of phi2_c           : signal is false;
-    attribute syn_replicate of rwn_c            : signal is false;
-    attribute syn_replicate of io1n_c           : signal is false;
-    attribute syn_replicate of io2n_c           : signal is false;
-    attribute syn_replicate of romln_c          : signal is false;
-    attribute syn_replicate of romhn_c          : signal is false;
-    attribute syn_replicate of reset_out        : signal is false;
-
-    -- Altera attributes
-    attribute dont_replicate                    : boolean;
-    attribute dont_replicate of ba_c            : signal is true;
-    attribute dont_replicate of rwn_c           : signal is true;
-    attribute dont_replicate of phi2_c          : signal is false;
-    attribute dont_replicate of io1n_c          : signal is false;
-    attribute dont_replicate of io2n_c          : signal is false;
-    attribute dont_replicate of romln_c         : signal is false;
-    attribute dont_replicate of romhn_c         : signal is false;
-    attribute dont_replicate of reset_out       : signal is false;
 
     type   t_state is (idle, mem_access, wait_end);
                        
-    attribute iob : string;
-    attribute iob of data_c : signal is "true"; 
-
     signal state     : t_state;
     
---    attribute fsm_encoding : string;
---    attribute fsm_encoding of state : signal is "sequential";
-
     signal epyx_timer       : natural range 0 to 511;
     signal epyx_reset       : std_logic := '0';
 begin
@@ -153,28 +105,16 @@ begin
     slot_req.io_read       <= do_io_event and io_read_cond;
     slot_req.late_write    <= do_io_event and late_write_cond;
     -- TODO: Do we still need io_read_early? If so, should we not check for PHI2 here? Or will we serve I/O data to the VIC?
-    slot_req.io_read_early <= '1' when (addr_is_io and rwn_c='1' and do_sample_addr='1') else '0';
+    slot_req.io_read_early <= '1' when (addr_is_io and RWn='1' and do_sample_addr='1') else '0';
     slot_req.sample_io     <= do_sample_io;
 
-    kernal_area_i <= kernal_enable and not ultimax and addr_is_kernal and phi2_c and (ba_c or not rwn_c);
+    kernal_area_i <= kernal_enable and not ultimax and addr_is_kernal and PHI2 and (BA or not RWn);
 
+    ultimax <= not GAMEn and EXROMn;
     process(clock)
     begin
         if rising_edge(clock) then
-            -- synchronization
-            if mem_req_ff='0' then -- don't change while an access is taking place
-                rwn_c     <= RWn;
-                address_c <= ADDRESS;
-            end if;
             reset_out <= reset or (not RSTn and VCC);
-            phi2_c    <= PHI2;
-            ba_c      <= BA;
-            io1n_c    <= IO1n;
-            io2n_c    <= IO2n;
-            romln_c   <= ROMLn;
-            romhn_c   <= ROMHn;
-            data_c    <= DATA_in;
-            ultimax   <= not GAMEn and EXROMn;
             ultimax_d <= ultimax;
             ultimax_d2 <= ultimax_d;
             
@@ -197,17 +137,17 @@ begin
                 cpu_write  <= not RWn;
 
                 slot_req.bus_write  <= not RWn;
-                slot_req.io_address <= address_c;
-                mem_wdata_i         <= data_c;
+                slot_req.io_address <= ADDRESS;
+                mem_wdata_i         <= DATA_in;
 
-                late_write_cond <= not rwn_c;
-                io_write_cond <= not rwn_c and (not io2n_c or not io1n_c);
-                io_read_cond  <= rwn_c and (not io2n_c or not io1n_c);
-                epyx_reset    <= not io1n_c or not romln_c or not RSTn;
+                late_write_cond <= not RWn;
+                io_write_cond <= not RWn and (not IO2n or not IO1n);
+                io_read_cond  <=     RWn and (not IO2n or not IO1n);
+                epyx_reset    <= not IO1n or not ROMLn or not RSTn;
             end if;
 
             if do_probe_end='1' then
-                data_mux <= kernal_probe_i and not romhn_c;
+                data_mux <= kernal_probe_i and not ROMHn;
                 force_ultimax <= kernal_probe_i;
                 kernal_ready <= '1';
                 kernal_probe_i <= '0';
@@ -221,11 +161,12 @@ begin
             case state is
 
             when idle =>
-                if do_sample_addr='1' and rwn_c = '1' then -- early read
+                if do_sample_addr='1' and RWn = '1' then -- early read
                     if allow_serve='1' and servicable='1' then
                         -- memory read
                         clear_inhibit <= '1';
                         mem_req_ff <= '1';
+                        mem_rwn_i  <= '1';
                         state      <= mem_access;
                         kernal_probe_i <= kernal_area_i;
                         kernal_read <= kernal_area_i;
@@ -238,15 +179,17 @@ begin
                 elsif do_sample_io='1' then
                     -- last moment to clear the inhibit, always regardless whether we do an access or not
                     clear_inhibit <= '1';
-                    if rwn_c = '0' then -- Memory write?
+                    if RWn = '0' then -- Memory write?
                         if addr_is_io and allow_write='1' then -- cartridge allows writing to I/O mapped memory
-                            if io1n_c='0' or io2n_c='0' then -- check if I/O selects are asserted
+                            if IO1n='0' or IO2n='0' then -- check if I/O selects are asserted
                                 mem_req_ff <= '1';
+                                mem_rwn_i  <= '0';
                                 state <= mem_access;
                             end if;                                
                         elsif allow_write='1' or kernal_area_i='1' then -- not I/O area
                             -- memory write
                             mem_req_ff <= '1';
+                            mem_rwn_i  <= '0';
                             state      <= mem_access;
                         end if;
                     end if;
@@ -255,7 +198,7 @@ begin
             when mem_access =>
                 if mem_rack='1' then
                     mem_req_ff <= '0'; -- clear request
-                    if rwn_c='0' then  -- if write, we're done.
+                    if mem_rwn_i='0' then  -- if write, we're done.
                         state <= idle;
                     else -- if read, then we need to wait for the data
                         state <= wait_end;
@@ -288,6 +231,7 @@ begin
                 dav             <= '0';
                 state           <= idle;
                 mem_req_ff      <= '0';
+                mem_rwn_i       <= '1';
                 io_read_cond    <= '0';
                 io_write_cond   <= '0';
                 late_write_cond <= '0';
@@ -303,58 +247,58 @@ begin
     end process;
     
     -- combinatoric
-    addr_is_io <= (address_c(15 downto 9)="1101111"); -- DE/DF
-    addr_is_kernal <= '1' when (address_c(15 downto 13)="111") else '0';
+    addr_is_io <= (ADDRESS(15 downto 9)="1101111"); -- DE/DF
+    addr_is_kernal <= '1' when (ADDRESS(15 downto 13)="111") else '0';
 
-    process(rwn_c, address_c, addr_is_io, romln_c, romhn_c, serve_128, serve_rom, serve_io1, serve_io2, ultimax, kernal_enable, ba_c)
+    process(RWn, ADDRESS, addr_is_io, ROMLn, ROMHn, serve_128, serve_rom, serve_io1, serve_io2, ultimax, kernal_enable, BA)
     begin
         servicable <= '0';
-        if rwn_c='1' then
+        if RWn='1' then
             if addr_is_io and (serve_io1='1' or serve_io2='1') then
                 servicable <= '1';
             end if;
-            if address_c(15)='1' and serve_128='1' then -- 8000-FFFF
+            if ADDRESS(15)='1' and serve_128='1' then -- 8000-FFFF
                 servicable <= '1';
             end if;
-            if address_c(15 downto 14)="10" and (serve_rom='1') then -- 8000-BFFF
+            if ADDRESS(15 downto 14)="10" and (serve_rom='1') then -- 8000-BFFF
                 servicable <= '1';
             end if;
-            if address_c(15 downto 13)="111" and (serve_rom='1') and (ultimax='1') then
+            if ADDRESS(15 downto 13)="111" and (serve_rom='1') and (ultimax='1') then
                 servicable <= '1';
             end if;
-            if address_c(15 downto 13)="111" and (kernal_enable='1') and (ba_c='1') then
+            if ADDRESS(15 downto 13)="111" and (kernal_enable='1') and (BA='1') then
                 servicable <= '1';
             end if;
         end if;
     end process;
 
-    process(rwn_c, io1n_c, io2n_c, romln_c, romhn_c, kernal_read, kernal_ready, data_mux,
+    process(RWn, IO1n, IO2n, ROMLn, ROMHn, kernal_read, kernal_ready, data_mux,
             mem_data_0, mem_data_1, dav, slot_resp, ultimax_d2, serve_io1, serve_io2)
     begin
         DATA_tri <= '0';
         DATA_out <= X"FF";
-        if rwn_c = '1' then -- if current cycle is a read
+        if RWn = '1' then -- if current cycle is a read
             if kernal_read='1' then -- we did a kernal fetch; could be mirrored ram or rom
-                DATA_tri <= dav and kernal_ready and not romhn_c;-- and ultimax_d2;
+                DATA_tri <= dav and kernal_ready and not ROMHn;-- and ultimax_d2;
                 if data_mux = '0' then
                     DATA_out <= mem_data_0;
                 else
                     DATA_out <= mem_data_1;
                 end if;
                 
-            elsif io1n_c='0' or io2n_c='0' then -- IO Reads
+            elsif IO1n='0' or IO2n='0' then -- IO Reads
                 if slot_resp.reg_output = '1' then -- cartridge has something to say (register read)
                     DATA_tri <= '1';
                     DATA_out <= slot_resp.data;
-                elsif serve_io1 = '1' and dav = '1' and io1n_c = '0' then -- read of I/O1
+                elsif serve_io1 = '1' and dav = '1' and IO1n = '0' then -- read of I/O1
                     DATA_tri <= '1';
                     DATA_out <= mem_data_0;
-                elsif serve_io2 = '1' and dav = '1' and io2n_c = '0' then -- read of I/O2
+                elsif serve_io2 = '1' and dav = '1' and IO2n = '0' then -- read of I/O2
                     DATA_tri <= '1';
                     DATA_out <= mem_data_0;
                 end if;
             
-            elsif (romln_c='0' or romhn_c='0') and dav='1' then -- ROM reads
+            elsif (ROMLn='0' or ROMHn='0') and dav='1' then -- ROM reads
                 DATA_tri <= '1';
                 DATA_out <= mem_data_0;
             end if;
@@ -362,14 +306,14 @@ begin
     end process;
 
     mem_req    <= mem_req_ff;
-    mem_rwn    <= rwn_c;
+    mem_rwn    <= mem_rwn_i;
     mem_wdata  <= mem_wdata_i & X"0000" & mem_wdata_i; -- support both little endian as well as big endian
         
     BUFFER_ENn <= '0';
 
     slot_req.data        <= mem_wdata_i;
-    slot_req.bus_address <= unsigned(address_c(15 downto 0));
-    slot_req.bus_rwn     <= rwn_c;
+    slot_req.bus_address <= ADDRESS;
+    slot_req.bus_rwn     <= RWn;
 
     kernal_probe <= kernal_probe_i;
     kernal_area  <= kernal_area_i;

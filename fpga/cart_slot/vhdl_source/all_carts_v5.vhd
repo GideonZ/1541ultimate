@@ -49,6 +49,7 @@ port (
     serve_io2       : out std_logic; -- IO2n
     allow_write     : out std_logic;
 
+    mem_req         : in  std_logic; -- if '1', the address shouldn't change
     mem_addr        : out unsigned(25 downto 0);   
 
     irq_n           : out std_logic;
@@ -716,7 +717,7 @@ begin
         end if;
     end process;
 
-    mem_addr_c <= mem_addr_i when rising_edge(clock);
+    mem_addr_c <= mem_addr_i when rising_edge(clock) and mem_req='0';
     mem_addr <= unsigned(mem_addr_c(mem_addr'range)) when g_register_addr else
                 unsigned(mem_addr_i(mem_addr'range));
 
