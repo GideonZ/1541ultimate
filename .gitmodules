@@ -1,3 +1,6 @@
 [submodule "neorv32"]
 	path = neorv32
 	url = https://github.com/GideonZ/neorv32
+[submodule "tools/ecpprog"]
+	path = tools/ecpprog
+	url = https://github.com/GideonZ/ecpprog
