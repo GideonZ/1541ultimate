@@ -21,7 +21,7 @@ end entity;
 
 architecture rtl of io_bus_bridge2 is
     constant c_io_bus_req_vector_width  : natural := g_addr_width + 10;
-      
+    signal terug_push       : std_logic;
     signal request_a        : std_logic;
     signal req_vector_a     : std_logic_vector(c_io_bus_req_vector_width-1 downto 0);
     signal request_b        : std_logic;
@@ -31,7 +31,7 @@ architecture rtl of io_bus_bridge2 is
     signal response_a       : std_logic;
 begin
     req_vector_a <= std_logic_vector(req_a.address(g_addr_width-1 downto 0)) & req_a.data & req_a.read & req_a.write;
-    request_a    <= req_a.write or req_a.read;
+    request_a    <= (req_a.write or req_a.read) and not reset_a;
 
     i_heen: entity work.synchronizer_gzw
     generic map(
@@ -53,6 +53,8 @@ begin
     req_b.read    <= req_vector_b(1) and request_b;
     req_b.write   <= req_vector_b(0) and request_b;
 
+    terug_push <= resp_b.ack and not reset_b;
+
     i_terug: entity work.synchronizer_gzw
     generic map(
         g_width     => 8,
@@ -60,7 +62,7 @@ begin
     )
     port map(
         tx_clock    => clock_b,
-        tx_push     => resp_b.ack,
+        tx_push     => terug_push,
         tx_data     => resp_b.data,
         tx_done     => open,
         rx_clock    => clock_a,

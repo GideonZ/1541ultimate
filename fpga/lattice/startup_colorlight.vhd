@@ -1,5 +1,5 @@
 -------------------------------------------------------------------------------
--- Title      : Startup
+-- Title      : startup_colorlight
 -------------------------------------------------------------------------------
 -- Author     : Gideon Zweijtzer <gideon.zweijtzer@gmail.com>
 -------------------------------------------------------------------------------
@@ -16,55 +16,31 @@ library ieee;
     use ieee.std_logic_1164.all;
     use ieee.numeric_std.all;
 
-entity startup is
+entity startup_colorlight is
 generic (
     g_simulation    : boolean := false );
 port (
     ref_clock     : in  std_logic;
 
-    phase_sel     : in  std_logic_vector(1 downto 0);
-    phase_dir     : in  std_logic;
-    phase_step    : in  std_logic;
-    phase_loadreg : in  std_logic;
-
     start_clock   : out std_logic;
     start_reset   : out std_logic;
-    mem_clock     : out std_logic;
-    mem_ready     : in  std_logic;
-    
-    ctrl_clock    : in  std_logic;
-    ctrl_reset    : out std_logic;
-    restart       : in  std_logic := '0'; -- pulse to request reboot
-    button        : in  std_logic := '0';
-                  
+
     sys_clock     : out std_logic;
     sys_reset     : out std_logic;
                   
-    audio_clock   : out std_logic;
-    audio_reset   : out std_logic;
-                  
     eth_clock     : out std_logic;
-    eth_reset     : out std_logic;
+    eth_reset     : out std_logic );
 
-    clock_24      : out std_logic );
 end entity;
 
-architecture boot of startup is
-    component pll1
+architecture boot of startup_colorlight is
+    component pll2
     port (
         RST : in  std_logic;
         CLKI: in  std_logic;
         CLKOP: out  std_logic; 
         CLKOS: out  std_logic;
-        CLKOS2: out  std_logic; 
-        CLKOS3: out  std_logic; 
         ENCLKOS: in  std_logic; 
-        ENCLKOS2: in  std_logic; 
-        ENCLKOS3: in  std_logic; 
-        PHASESEL: in  std_logic_vector(1 downto 0); 
-        PHASEDIR: in  std_logic; 
-        PHASESTEP: in  std_logic; 
-        PHASELOADREG: in  std_logic; 
         LOCK: out  std_logic);
     end component;
 
@@ -77,41 +53,20 @@ architecture boot of startup is
     type t_state is (wait_ref_stable, do_pll_reset, wait_pll_lock, pll_locked_delay, start_clocks, wait_mem_ready, run); 
     signal state    : t_state := wait_ref_stable;
 
-    signal audio_clock_i        : std_logic;
     signal sys_clock_i          : std_logic;
     signal sys_reset_i          : std_logic;
+    signal eth_clock_i          : std_logic;
     signal pll_reset            : std_logic := '1';
-    signal ctrl_reset_c         : std_logic;    
-    signal ref_restart          : std_logic;
     signal ref_start_reset      : std_logic;
     signal ref_sys_reset        : std_logic;
     signal ref_pll_locked       : std_logic;
-    signal ref_mem_ready        : std_logic;
-    signal ref_button           : std_logic;
     signal pll_locked           : std_logic;
     signal enable_clocks        : std_logic := '0';
     signal start_clock_i        : std_logic := '0';
 begin
-    i_reset_sync: entity work.pulse_synchronizer
-    port map (
-        clock_in  => ctrl_clock,
-        pulse_in  => restart,
-        clock_out => ref_clock,
-        pulse_out => ref_restart
-    );
-
-    i_button_sync: entity work.level_synchronizer
-    generic map ('0')
-    port map (
-        clock       => ref_clock,
-        reset       => '0',
-        input       => button,
-        input_c     => ref_button
-    );
-
-    process(ref_clock)
+    process(start_clock_i)
     begin
-        if rising_edge(ref_clock) then
+        if rising_edge(start_clock_i) then
             count <= count + 1;
 
             case state is
@@ -175,9 +130,8 @@ begin
                 ref_sys_reset <= '1';
                 enable_clocks <= '1';
 
-                if ref_mem_ready = '1' and 
-                    ((count >= 131072 and not g_simulation) or 
-                     (count >= 1000 and g_simulation)) then
+                if ((count >= 131072 and not g_simulation) or 
+                    (count >= 1000 and g_simulation)) then
                     state <= run;
                 end if;
 
@@ -197,29 +151,16 @@ begin
                 count <= (others => '0');
 
             end case;
-
-            if ref_restart = '1' or ref_button = '1' then
-                count <= (others => '0');
-                state <= wait_ref_stable;
-            end if;
         end if;
     end process;
     
-    i_pll: pll1
+    i_pll: pll2
     port map (
         RST    => pll_reset,
-        CLKI   => ref_clock,     -- 50 MHz
-        CLKOP  => mem_clock,     -- 200 MHz
-        CLKOS  => audio_clock_i, -- 12.245 MHz (47.831 kHz sample rate)
-        CLKOS2 => sys_clock_i,   -- 50 MHz
-        CLKOS3 => clock_24,      -- 24 MHz
+        CLKI   => ref_clock,     -- 25 MHz
+        CLKOP  => eth_clock_i,   -- 125 MHz
+        CLKOS  => sys_clock_i,   -- 50 MHz
         ENCLKOS  => enable_clocks, 
-        ENCLKOS2 => enable_clocks, 
-        ENCLKOS3 => enable_clocks, 
-        PHASESEL  => phase_sel, 
-        PHASEDIR  => phase_dir, 
-        PHASESTEP => phase_step, 
-        PHASELOADREG => phase_loadreg, 
         LOCK   => pll_locked );
 
     i_osc: OSCG
@@ -227,7 +168,6 @@ begin
         OSC => start_clock_i );
     -- start_clock_i <= sys_clock_i;    
 
-    audio_clock <= audio_clock_i;
     sys_clock   <= sys_clock_i;
     start_clock <= start_clock_i;
 
@@ -253,50 +193,19 @@ begin
     i_pll_locked_sync: entity work.level_synchronizer
     generic map ('0')
     port map(
-        clock       => ref_clock,
+        clock       => start_clock_i,
         input       => pll_locked,
         input_c     => ref_pll_locked
     );
 
-    i_mem_ready_sync: entity work.level_synchronizer
-    generic map ('0')
-    port map(
-        clock       => ref_clock,
-        input       => mem_ready,
-        input_c     => ref_mem_ready
-    );
-    
-    process(ctrl_clock)
-    begin
-        if rising_edge(ctrl_clock) then
-            ctrl_reset_c <= sys_reset_i;
-            ctrl_reset   <= ctrl_reset_c;
-        end if;
-    end process;
+    eth_clock   <= eth_clock_i; -- dedicated pin
 
-    eth_clock   <= ref_clock; -- dedicated pin
-
---    i_24_reset: entity work.level_synchronizer
---    generic map ('1')
---    port map (
---        clock       => clock_24,
---        input       => sys_reset,
---        input_c     => aux_reset  );
-
-    i_audio_reset: entity work.level_synchronizer
-    generic map ('1')
-    port map (
-        clock       => audio_clock_i,
-        input       => sys_reset_i,
-        input_c     => audio_reset  );
-    
     i_eth_reset: entity work.level_synchronizer
     generic map ('1')
     port map (
-        clock       => ref_clock,
+        clock       => eth_clock_i,
         input       => sys_reset_i,
         input_c     => eth_reset  );
-
 
 end architecture;
     

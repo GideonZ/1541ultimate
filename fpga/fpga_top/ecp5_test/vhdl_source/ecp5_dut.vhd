@@ -179,6 +179,7 @@ architecture rtl of ecp5_dut is
     signal eth_reset    : std_logic;
     signal sys_clock    : std_logic;
     signal sys_reset    : std_logic;
+    signal cpu_reset    : std_logic;
     signal clock_24     : std_logic;
     signal audio_clock  : std_logic;
     signal audio_reset  : std_logic;
@@ -235,7 +236,9 @@ architecture rtl of ecp5_dut is
     signal tick_1kHz        : std_logic;    
 
     signal write_vector     : std_logic_vector(7 downto 0);
-
+    signal console_data     : std_logic_vector(7 downto 0);
+    signal console_valid    : std_logic;
+    signal console_count    : unsigned(7 downto 0) := X"00";
     function xor_reduce(a : std_logic_vector) return std_logic is
         variable r : std_logic := '0';
     begin
@@ -244,6 +247,7 @@ architecture rtl of ecp5_dut is
         end loop;
         return r;
     end function;
+    signal sample_vector        : std_logic_vector(31 downto 0) := X"AAAA0000";
 begin
     i_jtag: entity work.jtag_client_lattice
         port map (
@@ -256,9 +260,40 @@ begin
 
             clock_1           => start_clock,
             clock_2           => RMII_REFCLK,
-            --sample_vector     => sample_vector,
+
+            console_data      => console_data,
+            console_valid     => console_valid,
+
+            sample_vector     => sample_vector,
             write_vector      => write_vector
         );
+
+    sample_vector(0) <= sys_clock;
+    sample_vector(1) <= sys_reset;
+    sample_vector(2) <= ctrl_clock;
+    sample_vector(3) <= ctrl_reset;
+    sample_vector(4) <= io_req.read;
+    sample_vector(5) <= io_req.write;
+    sample_vector(6) <= io_req_jtag.read;
+    sample_vector(7) <= io_req_jtag.write;
+    sample_vector(8) <= io_req_riscv.read;
+    sample_vector(9) <= io_req_riscv.write;
+    sample_vector(10) <= io_resp.ack;
+    sample_vector(11) <= io_resp_jtag.ack;
+    sample_vector(12) <= io_resp_riscv.ack;
+    sample_vector(23 downto 16) <= std_logic_vector(console_count);
+
+    -- snoop writes to the UART
+    console_data <= io_req.data;
+    console_valid <= io_req.write when io_req.address = 16 else '0';
+    process(sys_clock)
+    begin
+        if rising_edge(sys_clock) then
+            if console_valid = '1' then
+                console_count <= console_count + 1;
+            end if;
+        end if;
+    end process;
 
     i_mem_arb: entity work.mem_bus_arbiter_pri_32
         generic map (
@@ -311,6 +346,8 @@ begin
         clock_24      => clock_24
     );
 
+    cpu_reset <= write_vector(7) when rising_edge(sys_clock);
+
     i_riscv: entity work.neorv32_wrapper
     generic map (
         g_jtag_debug=> g_jtag_debug,
@@ -320,7 +357,7 @@ begin
     port map (
         clock       => sys_clock,
         reset       => sys_reset,
-        cpu_reset   => '0',
+        cpu_reset   => cpu_reset,
         jtag_trst_i => '1', -- DEBUG_TRSTn,
         jtag_tck_i  => DEBUG_TCK,
         jtag_tdi_i  => DEBUG_TDI,
@@ -342,10 +379,10 @@ begin
         port map (
             clock   => sys_clock,
             reset   => sys_reset,
-            reqs(0) => io_req_jtag,
-            reqs(1) => io_req_riscv,
-            resps(0)=> io_resp_jtag,
-            resps(1)=> io_resp_riscv,
+            reqs(0) => io_req_riscv,
+            reqs(1) => io_req_jtag,
+            resps(0)=> io_resp_riscv,
+            resps(1)=> io_resp_jtag,
             req     => io_req,
             resp    => io_resp
         );
@@ -399,7 +436,7 @@ begin
     i_itu: entity work.itu
     generic map (
 		g_version	    => X"77",
-        g_capabilities  => X"00000000",
+        g_capabilities  => X"00000001",
         g_uart          => true,
         g_uart_rx       => false,
         g_edge_init     => "10000101",
@@ -424,20 +461,32 @@ begin
         uart_txd    => UART_TXD,
         uart_rxd    => UART_RXD );
 
-    i_double_freq_bridge: entity work.memreq_halfrate
-    port map(
-        phase_out   => toggle_check,
-        toggle_r_2x => toggle_reset,
-        clock_1x    => sys_clock,
-        clock_2x    => ctrl_clock,
-        reset_1x    => sys_reset,
-        inhibit_1x  => '0',
-        mem_req_1x  => mem_req,
-        mem_resp_1x => mem_resp,
-        inhibit_2x  => open,
-        mem_req_2x  => mem_req_2x,
-        mem_resp_2x => mem_resp_2x
-    );
+    -- i_double_freq_bridge: entity work.memreq_halfrate
+    -- port map(
+    --     phase_out   => toggle_check,
+    --     toggle_r_2x => toggle_reset,
+    --     clock_1x    => sys_clock,
+    --     clock_2x    => ctrl_clock,
+    --     reset_1x    => sys_reset,
+    --     inhibit_1x  => '0',
+    --     mem_req_1x  => mem_req,
+    --     mem_resp_1x => mem_resp,
+    --     inhibit_2x  => open,
+    --     mem_req_2x  => mem_req_2x,
+    --     mem_resp_2x => mem_resp_2x
+    -- );
+
+    i_mem_bridge: entity work.mem_bus_bridge
+        port map (
+            a_clock    => sys_clock,
+            a_reset    => sys_reset,
+            a_mem_req  => mem_req,
+            a_mem_resp => mem_resp,
+            b_clock    => ctrl_clock,
+            b_reset    => ctrl_reset,
+            b_mem_req  => mem_req_2x,
+            b_mem_resp => mem_resp_2x
+        );
 
     i_memctrl: entity work.ddr2_ctrl
     port map (

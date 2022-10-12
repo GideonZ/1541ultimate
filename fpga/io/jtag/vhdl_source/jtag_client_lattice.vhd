@@ -22,9 +22,12 @@ port (
     mem_resp        : in  t_mem_resp_32;
     io_req          : out t_io_req;
     io_resp         : in  t_io_resp;
+    console_data    : in  std_logic_vector(7 downto 0) := X"00";
+    console_valid   : in  std_logic := '0';
+
     clock_1         : in  std_logic := '0';
     clock_2         : in  std_logic := '1';
-    sample_vector   : in  std_logic_vector(47 downto 0) := X"476964656F6E";
+    sample_vector   : in  std_logic_vector(31 downto 0) := X"47696465";
     write_vector    : out std_logic_vector(7 downto 0) );
 end entity;
 
@@ -87,6 +90,11 @@ architecture arch of jtag_client_lattice is
     signal avm_wfifo_count  : unsigned(4 downto 0);
     signal avm_exec_count   : unsigned(2 downto 0) := "000";
     signal sys_clock_count  : unsigned(2 downto 0) := "000";
+
+    signal console_fifo_get     : std_logic;
+    signal console_fifo_data    : std_logic_vector(7 downto 0);
+    signal shiftreg_console     : std_logic_vector(7 downto 0);
+    signal console_fifo_count   : unsigned(8 downto 0);
 
     signal tck_c, tck_d, tck_d2         : std_logic;
     signal tdi_c, tdi_d, tdi_d2, tdi_in : std_logic;
@@ -175,6 +183,7 @@ begin
     process(shift_clock)
     begin
         if rising_edge(shift_clock) then
+            console_fifo_get <= '0';
             read_fifo_get <= '0';
             write_fifo_put <= '0';
             if write_fifo_put = '1' then
@@ -216,6 +225,13 @@ begin
                     else
                         shiftreg_fifo <= '0' & shiftreg_fifo(shiftreg_fifo'high downto 1);
                     end if;
+                elsif ir_in = X"A" then
+                    if bit_count(2 downto 0) = "111" then
+                        shiftreg_console <= console_fifo_data;
+                        console_fifo_get <= not tdi_in;
+                    else
+                        shiftreg_console <= '0' & shiftreg_console(shiftreg_console'high downto 1);
+                    end if;
                 end if;
             end if;
 
@@ -227,6 +243,7 @@ begin
                 wbit_count <= (others => '0');
                 rbit_select <= 0;
                 shiftreg_fifo <= X"00" & std_logic_vector(read_fifo_count);
+                shiftreg_console <= std_logic_vector(console_fifo_count(7 downto 0));
                 shiftreg_debug <= std_logic_vector(read_fifo_count) & debug_bits & last_command & std_logic_vector(cmd_count);
                 if ir_in = X"8" then
                     shiftreg_clock <= clock_1_shift;
@@ -281,6 +298,8 @@ begin
             tdo2 <= shiftreg_fifo(0);
         when X"8" | X"9" =>
             tdo2 <= shiftreg_clock(rbit_select);
+        when X"A" =>
+            tdo2 <= shiftreg_console(0);
         when others =>
             tdo2 <= bypass_reg;
         end case;            
@@ -342,6 +361,25 @@ begin
         rd_dout      => read_fifo_data,
         rd_valid     => open,
         rd_count     => read_fifo_count
+    );
+
+    i_console_fifo: entity work.async_fifo_ft
+    generic map(
+        g_data_width => 8,
+        g_depth_bits => 8 )
+    port map(
+        wr_clock     => sys_clock,
+        wr_reset     => sys_reset,
+        wr_en        => console_valid,
+        wr_din       => console_data,
+        wr_full      => open,
+
+        rd_clock     => shift_clock,
+        rd_reset     => '0',
+        rd_next      => console_fifo_get,
+        rd_dout      => console_fifo_data,
+        rd_valid     => open,
+        rd_count     => console_fifo_count
     );
 
     process(sys_clock)

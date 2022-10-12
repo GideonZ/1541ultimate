@@ -11,6 +11,9 @@
 
 #define SPI_FORCE_SS 0x01
 #define SPI_LEVEL_SS 0x02
+#define BOOT_MAGIC_LOCATION *((volatile uint32_t*)0xFC)
+#define BOOT_MAGIC_JUMPADDR *((volatile uint32_t*)0xF8)
+#define BOOT_MAGIC_VALUE    (0x1571BABE)
 
 void jump_run(uint32_t a)
 {
@@ -24,6 +27,7 @@ void jump_run(uint32_t a)
 
 void ddr2_calibrate(void);
 void hexword(uint32_t);
+void hexbyte(uint8_t);
 void my_puts(const char *str)
 {
     while(*str) {
@@ -35,7 +39,14 @@ void my_puts(const char *str)
 
 int main()
 {
+    // volatile uint8_t *p = ((volatile uint8_t *)0x10000010);
+    // for (int i=0;i<32;i++) {
+    //     hexbyte(p[i]);
+    // }
+    // outbyte('\n');
     uint32_t capabilities = getFpgaCapabilities();
+    hexword(capabilities);
+
 	if (capabilities & CAPAB_SIMULATION) {
 		jump_run(0x30000);
 	}
@@ -43,7 +54,10 @@ int main()
     outbyte('#');
     ddr2_calibrate();
 
-    if (capabilities) {
+    capabilities = getFpgaCapabilities();
+    hexword(capabilities);
+
+    if (capabilities > 1) {
         uint32_t flash_addr = 0xA0000; // 640K from start. FPGA image is (uncompressed) 571K
         
         SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
@@ -84,16 +98,20 @@ int main()
                 my_puts("Lock\n");
             }
             while(1) {
-                ioWrite8(ITU_SD_BUSY, 1);
-                ioWrite8(ITU_SD_BUSY, 0);
+                __asm__("nop");
+                __asm__("nop");
             }
         }
+    } else if(BOOT_MAGIC_LOCATION == BOOT_MAGIC_VALUE) {
+        my_puts("Magic!\n");
+        BOOT_MAGIC_LOCATION = 0;
+        jump_run(BOOT_MAGIC_JUMPADDR);
     }
 
     my_puts("Empty\n");
     while(1) {
-        ioWrite8(ITU_SD_BUSY, 1);
-        ioWrite8(ITU_SD_BUSY, 0);
+        __asm__("nop");
+        __asm__("nop");
     }
     return 0;
 #endif

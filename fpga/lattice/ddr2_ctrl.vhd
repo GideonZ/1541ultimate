@@ -157,7 +157,7 @@ architecture Gideon of ddr2_ctrl is
     signal burstdet           : std_logic;
     signal dll_lock           : std_logic;
     signal ctrl_req           : t_io_req;
-    signal ctrl_resp          : t_io_resp;
+    signal ctrl_resp          : t_io_resp := c_io_resp_init;
     signal valid_cnt          : unsigned(7 downto 0) := X"00";
 
     signal pll_reset_r      : std_logic;
