@@ -58,7 +58,7 @@ set Para(PartType) "LFE5U-25F"
 
 set Para(tech_syn) ecp5u
 set Para(tech_cae) ecp5u
-set Para(Package) "CABGA256"
+set Para(Package) "CABGA381"
 set Para(SpeedGrade) "6"
 set Para(FMax) "100"
 set fdcfile "$Para(sbp_path)/$Para(ModuleName).fdc"

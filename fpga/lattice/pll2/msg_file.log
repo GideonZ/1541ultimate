@@ -1,5 +1,5 @@
 SCUBA, Version Diamond (64-bit) 3.12.0.240.2
-Mon Aug 15 22:57:27 2022
+Wed Oct 12 10:58:31 2022
   
 Copyright (c) 1991-1994 by NeoCAD Inc. All rights reserved.
 Copyright (c) 1995 AT&T Corp.   All rights reserved.
@@ -9,12 +9,12 @@ Copyright (c) 2002-2020 Lattice Semiconductor Corporation,  All rights reserved.
   
 BEGIN SCUBA Module Synthesis
   
-    Issued command   : /usr/local/diamond/3.12/ispfpga/bin/lin64/scuba -w -n pll2 -lang vhdl -synth synplify -bus_exp 7 -bb -arch sa5p00 -type pll -fin 100 -fclkop 50 -fclkop_tol 1.0 -phasep 0 -fclkos 100 -fclkos_tol 1.0 -phases 0 -phase_cntl STATIC -lock -fb_mode 9 
+    Issued command   : /usr/local/diamond/3.12/ispfpga/bin/lin64/scuba -w -n pll2 -lang vhdl -synth synplify -bus_exp 7 -bb -arch sa5p00 -type pll -fin 25 -fclkop 125 -fclkop_tol 1.0 -fclkos 50 -fclkos_tol 1.0 -phases 0 -phase_cntl STATIC -enable_s -rst -lock -fb_mode 1 
     Circuit name     : pll2
     Module type      : pll
     Module Version   : 5.7
     Ports            : 
-    Inputs       : CLKI, CLKFB
+    Inputs       : CLKI, RST, ENCLKOS
     Outputs      : CLKOP, CLKOS, LOCK
     I/O buffer       : not inserted
     EDIF output      : pll2.edn
