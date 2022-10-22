@@ -39,11 +39,6 @@ void my_puts(const char *str)
 
 int main()
 {
-    // volatile uint8_t *p = ((volatile uint8_t *)0x10000010);
-    // for (int i=0;i<32;i++) {
-    //     hexbyte(p[i]);
-    // }
-    // outbyte('\n');
     uint32_t capabilities = getFpgaCapabilities();
     hexword(capabilities);
 
@@ -51,8 +46,12 @@ int main()
 		jump_run(0x30000);
 	}
 
-    outbyte('#');
-    ddr2_calibrate();
+    if(capabilities) { // only TESTER has zero as capabilities. Tester doesn't have DDR2
+        outbyte('#');
+        ddr2_calibrate();
+    } else {
+        my_puts("Tester Module.\n");
+    }
 
     capabilities = getFpgaCapabilities();
     hexword(capabilities);

@@ -187,7 +187,7 @@ uint16_t I2C_Driver :: i2c_read_word(const uint8_t devaddr, const uint16_t regad
 	int res;
 	res = i2c_send_byte(devaddr);
 	if(res) {
-		printf("Error sending write address (%d)\n", res);
+		printf("Error sending address (%d)\n", res);
 	}
 	res = i2c_send_byte(regaddr >> 8);
 	res += i2c_send_byte(regaddr & 0xFF);
@@ -203,6 +203,22 @@ uint16_t I2C_Driver :: i2c_read_word(const uint8_t devaddr, const uint16_t regad
 	result |= i2c_receive_byte(0);
 	i2c_stop();
 	return result;
+}
+
+void I2C_Driver :: i2c_read_raw_16(const uint8_t devaddr, uint16_t *dest, int count)
+{
+	i2c_start();
+	int res;
+	res = i2c_send_byte(devaddr | 1);
+	if(res) {
+		printf("Error sending read address (%d)\n", res);
+	}
+	for (int i=0;i<count;i++) {
+		uint16_t result = ((uint16_t)i2c_receive_byte(1)) << 8;
+		result |= i2c_receive_byte(0);
+		*(dest++) = result;
+	}
+	i2c_stop();
 }
 
 int I2C_Driver :: i2c_write_word(const uint8_t devaddr, const uint16_t regaddr, const uint16_t data)

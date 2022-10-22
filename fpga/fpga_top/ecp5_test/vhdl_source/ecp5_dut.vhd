@@ -195,6 +195,8 @@ architecture rtl of ecp5_dut is
     signal is_idle          : std_logic;
     signal mem_req_cpu      : t_mem_req_32;
     signal mem_resp_cpu     : t_mem_resp_32;
+    signal mem_req_io       : t_mem_req_32;
+    signal mem_resp_io      : t_mem_resp_32;
     signal mem_req_jtag     : t_mem_req_32;
     signal mem_resp_jtag    : t_mem_resp_32;
     signal mem_req          : t_mem_req_32;
@@ -211,6 +213,31 @@ architecture rtl of ecp5_dut is
     signal button_i    : std_logic_vector(2 downto 0);
     signal ulpi_reset_req   : std_logic;
     signal ulpi_reset_i     : std_logic;
+
+    -- Ethernet
+    signal rmii_tx_en_i     : std_logic;
+    signal rmii_tx_data_i   : std_logic_vector(1 downto 0);
+    signal rmii_crs_dv_i    : std_logic;
+    signal rmii_rx_data_i   : std_logic_vector(1 downto 0);
+    signal rmii_crs_dv_d    : std_logic;
+    signal rmii_rx_data_d   : std_logic_vector(1 downto 0);
+
+    signal eth_tx_data   : std_logic_vector(7 downto 0);
+    signal eth_tx_last   : std_logic;
+    signal eth_tx_valid  : std_logic;
+    signal eth_tx_ready  : std_logic := '1';
+
+    signal eth_rx_data   : std_logic_vector(7 downto 0);
+    signal eth_rx_sof    : std_logic;
+    signal eth_rx_eof    : std_logic;
+    signal eth_rx_valid  : std_logic;
+
+    -- USB
+    signal ulpi_data_o      : std_logic_vector(7 downto 0);
+    signal ulpi_data_t      : std_logic;
+    signal ulpi_data_i      : std_logic_vector(7 downto 0);
+    signal ulpi_nxt_i       : std_logic;
+    signal ulpi_dir_i       : std_logic;
 
     -- io buses
     signal io_irq           : std_logic;
@@ -298,15 +325,17 @@ begin
     i_mem_arb: entity work.mem_bus_arbiter_pri_32
         generic map (
             g_registered => false,
-            g_ports      => 2
+            g_ports      => 3
         )
         port map (
             clock   => sys_clock,
             reset   => sys_reset,
             reqs(0) => mem_req_jtag,
-            reqs(1) => mem_req_cpu,
+            reqs(1) => mem_req_io,
+            reqs(2) => mem_req_cpu,
             resps(0)=> mem_resp_jtag,
-            resps(1)=> mem_resp_cpu,
+            resps(1)=> mem_resp_io,
+            resps(2)=> mem_resp_cpu,
             req     => mem_req,
             resp    => mem_resp
         );
@@ -419,47 +448,51 @@ begin
         resps(1)   => io_resp_ddr2
     );
 
+    i_basic_io: entity work.basic_io
+        generic map (
+            g_version     => X"77",
+            g_numerator   => 8,
+            g_denominator => 25,
+            g_baud_rate   => 115_200
+        )
+        port map (
+            sys_clock    => sys_clock,
+            sys_reset    => sys_reset,
+            io_req       => io_req_legacy,
+            io_resp      => io_resp_legacy,
+            io_irq       => io_irq,
+            mem_req      => mem_req_io,
+            mem_resp     => mem_resp_io,
+            UART_TXD     => UART_TXD,
+            UART_RXD     => UART_RXD,
 
-    i_timing: entity work.fractional_div
-    generic map ( 
-        g_numerator   => 8,  -- 16 MHz = 8/25 * 50 MHz
-        g_denominator => 25
-    )
-    port map(
-        clock         => sys_clock,
-        tick          => tick_16MHz,
-        tick_by_4     => tick_4MHz,
-        tick_by_16    => tick_1MHz,
-        one_16000     => tick_1kHz
-    );
+            FLASH_CSn    => FLASH_CSn,
+            FLASH_SCK    => flash_sck_o,
+            FLASH_MOSI   => FLASH_MOSI,
+            FLASH_MISO   => FLASH_MISO,
 
-    i_itu: entity work.itu
-    generic map (
-		g_version	    => X"77",
-        g_capabilities  => X"00000001",
-        g_uart          => true,
-        g_uart_rx       => false,
-        g_edge_init     => "10000101",
-        g_edge_write    => false,
-        g_baudrate      => 115200 )
-    port map (
-        clock       => sys_clock,
-        reset       => sys_reset,
-        
-        io_req      => io_req_legacy,
-        io_resp     => io_resp_legacy,
-    
-        tick_4MHz   => tick_4MHz,
-        tick_1us    => tick_1MHz,
-        tick_1ms    => tick_1kHz,
-        buttons     => button_i,
+            ulpi_clock   => ulpi_clock,
+            ulpi_reset   => ulpi_reset_i,
+            ULPI_NXT     => ULPI_NXT,
+            ULPI_STP     => ULPI_STP,
+            ULPI_DIR     => ULPI_DIR,
+            ULPI_DATA_I  => ulpi_data_i,
+            ULPI_DATA_O  => ulpi_data_o,
+            ULPI_DATA_T  => ulpi_data_t,
 
-        irq_out     => io_irq,
-        
-        busy_led    => busy_led,
+            eth_clock    => eth_clock,
+            eth_reset    => eth_reset,
+            eth_tx_data  => eth_tx_data,
+            eth_tx_eof   => eth_tx_last,
+            eth_tx_valid => eth_tx_valid,
+            eth_tx_ready => eth_tx_ready,
+            eth_rx_data  => eth_rx_data,
+            eth_rx_sof   => eth_rx_sof,
+            eth_rx_eof   => eth_rx_eof,
+            eth_rx_valid => eth_rx_valid,
 
-        uart_txd    => UART_TXD,
-        uart_rxd    => UART_RXD );
+            button       => button_i
+        );
 
     -- i_double_freq_bridge: entity work.memreq_halfrate
     -- port map(
@@ -563,9 +596,64 @@ begin
     I2C_SDA_18  <= '0' when i2c_sda_o = '0' else 'Z';
     MDIO_DATA   <= '0' when mdio_o = '0' else 'Z';
     
+    -- Audio Codec transceiver
+    i2s: entity work.i2s_serializer
+    port map (
+        clock            => audio_clock,
+        reset            => audio_reset,
+        i2s_out          => AUDIO_SDO,
+        i2s_in           => AUDIO_SDI,
+        i2s_bclk         => AUDIO_BCLK,
+        i2s_fs           => AUDIO_LRCLK,
+        sample_pulse     => open,
+        
+        left_sample_out  => open,
+        right_sample_out => open,
+        left_sample_in   => X"000000",
+        right_sample_in  => X"000000" );
+
+    AUDIO_MCLK <= audio_clock;
+
+    -- Ethernet Transceiver
+    i_rmii: entity work.rmii_transceiver
+    port map (
+        clock           => eth_clock,
+        reset           => eth_reset,
+        rmii_crs_dv     => rmii_crs_dv_d, 
+        rmii_rxd        => rmii_rx_data_d,
+        rmii_tx_en      => rmii_tx_en_i,
+        rmii_txd        => rmii_tx_data_i,
+        
+        eth_rx_data     => eth_rx_data,
+        eth_rx_sof      => eth_rx_sof,
+        eth_rx_eof      => eth_rx_eof,
+        eth_rx_valid    => eth_rx_valid,
+
+        eth_tx_data     => eth_tx_data,
+        eth_tx_eof      => eth_tx_last,
+        eth_tx_valid    => eth_tx_valid,
+        eth_tx_ready    => eth_tx_ready,
+        ten_meg_mode    => '0'   );
+
+    -- I/O Delays
+    i_delay_rmii_rxdv: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => RMII_CRS_DV,     Z => rmii_crs_dv_i);
+    i_delay_rmii_rxd0: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => RMII_RX_DATA(0), Z => rmii_rx_data_i(0));
+    i_delay_rmii_rxd1: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => RMII_RX_DATA(1), Z => rmii_rx_data_i(1));
+
+    process(eth_clock)
+    begin
+        if rising_edge(eth_clock) then
+            rmii_crs_dv_d  <= rmii_crs_dv_i;
+            rmii_rx_data_d <= rmii_rx_data_i;
+            RMII_TX_EN     <= rmii_tx_en_i;
+            RMII_TX_DATA   <= rmii_tx_data_i;
+        end if;
+    end process;
+
+    flash_sck_t  <= sys_reset; -- 0 when not in reset = enabled
     u1: USRMCLK
     port map (
-        USRMCLKI => flash_sck_o,
+        USRMCLKI  => flash_sck_o,
         USRMCLKTS => flash_sck_t
     );
 
@@ -589,9 +677,9 @@ begin
     toggle <= not toggle when rising_edge(sys_clock);
     USB_DP      <= 'Z' when toggle='1' else '0';
     USB_DM      <= 'Z' when toggle='1' else '1';
-    USB_PULLUP  <= '1';
+    --USB_PULLUP  <= '1';
 
-    ULPI_STP    <= xor_reduce(    
+    USB_PULLUP    <= xor_reduce(    
         SLOT_PHI2        &
         SLOT_DOTCLK      &
         SLOT_RSTn        &
@@ -608,22 +696,22 @@ begin
         SLOT_IRQn        &
         SLOT_NMIn        &
         SLOT_VCC         &
-        AUDIO_SDI        &
+--        AUDIO_SDI        &
         IEC_ATN_I        &
         IEC_DATA_I       &
         IEC_CLOCK_I      &
         IEC_RESET_I      &
         IEC_SRQ_I        &
         ETH_IRQn         &
-        RMII_REFCLK      &
-        RMII_CRS_DV      &
+--        RMII_REFCLK      &
+--        RMII_CRS_DV      &
         RMII_RX_ER       &
-        RMII_RX_DATA     &
+--        RMII_RX_DATA     &
         UART_RXD         &
 --        FLASH_MISO       &
-        ULPI_NXT         &
-        ULPI_DIR         &
-        ULPI_DATA        &
+--        ULPI_NXT         &
+--        ULPI_DIR         &
+--        ULPI_DATA        &
         CAS_MOTOR        &
         CAS_SENSE        &
         CAS_READ         &
@@ -633,9 +721,6 @@ begin
     SLOT_ADDR_OEn    <= '1';
     SLOT_ADDR_DIR    <= FLASH_MISO and DEBUG_TRSTn and RMII_RX_ER and UART_RXD and SLOT_DOTCLK and IEC_RESET_I and CAS_SENSE and CAS_MOTOR when rising_edge(CLOCK_50);
     DEBUG_SPARE      <= '0';
-    flash_sck_t      <= sys_reset; -- 0 when not in reset = enabled
-    FLASH_CSn        <= '1';
-    FLASH_MOSI       <= '1';
 
     process(ctrl_clock)
         variable cnt : unsigned(23 downto 0) := (others => '0');
@@ -654,4 +739,13 @@ begin
     SLOT_DMAn <= '1';
     SLOT_GAMEn <= '1';
     SLOT_EXROMn <= '1';
+
+    ULPI_DATA <= ulpi_data_o when ulpi_data_t = '1' else "ZZZZZZZZ";
+    r: for i in ULPI_DATA'range generate
+        i_delay: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => ULPI_DATA(i), Z => ulpi_data_i(i));
+        --i_delay: DELAYG generic map (DEL_VALUE => "DELAY5") port map (A => ULPI_DATA(i), Z => ulpi_data_delayed(i));
+    end generate;
+    i_delay_ulpi_nxt: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => ULPI_NXT, Z => ulpi_nxt_i);
+    i_delay_ulpi_dir: DELAYG generic map (DEL_MODE => "USER_DEFINED", DEL_VALUE => 5) port map (A => ULPI_DIR, Z => ulpi_dir_i);
+
 end architecture;

@@ -8,6 +8,41 @@
 library ieee;
     use ieee.std_logic_1164.all;
     use ieee.numeric_std.all;
+
+entity div is
+generic (
+    div: natural := 5
+);
+port (
+    clock : in  std_logic;
+    sig   : inout std_logic 
+);
+end entity;
+
+architecture divider of div is
+    signal counter : natural range 0 to div-1 := 0;
+begin
+    process(clock)
+    begin
+        if rising_edge(clock) then
+            if counter = div-1 then
+                counter <= 0;
+                sig <= '1';
+            elsif counter = (div/2)-1 then
+                sig <= '0';
+                counter <= counter + 1;
+            else
+                sig <= 'Z';
+                counter <= counter + 1;
+            end if;
+        end if;
+    end process;
+end architecture;
+
+-------------------------------------------------------------------------------
+library ieee;
+    use ieee.std_logic_1164.all;
+    use ieee.numeric_std.all;
     use work.io_bus_pkg.all;
     use work.mem_bus_pkg.all;
         
@@ -121,7 +156,7 @@ architecture rtl of ecp5_tester is
     -- memory controller interconnect
     signal mem_req_cpu      : t_mem_req_32;
     signal mem_resp_cpu     : t_mem_resp_32;
-    signal mem_req_jtag     : t_mem_req_32;
+    signal mem_req_jtag     : t_mem_req_32 := c_mem_req_32_init;
     signal mem_resp_jtag    : t_mem_resp_32;
     signal mem_req          : t_mem_req_32;
     signal mem_resp         : t_mem_resp_32;
@@ -219,28 +254,38 @@ begin
             resp    => mem_resp
         );
 
-    i_sdram: entity work.ext_mem_ctrl_sdr_32
-        generic map (
-            g_simulation      => false,
-            A_Width           => 11
-        )
-        port map (
-            clock      => sys_clock,
-            reset      => sys_reset,
-            inhibit    => '0',
-            req        => mem_req,
-            resp       => mem_resp,
+    -- i_sdram: entity work.ext_mem_ctrl_sdr_32
+    --     generic map (
+    --         g_simulation      => false,
+    --         A_Width           => 11
+    --     )
+    --     port map (
+    --         clock      => sys_clock,
+    --         reset      => sys_reset,
+    --         inhibit    => '0',
+    --         req        => mem_req,
+    --         resp       => mem_resp,
 
-            SDRAM_CLK  => SDRAM_CLK,
-            --SDRAM_CKE  => SDRAM_CKE,
-            --SDRAM_CSn  => SDRAM_CSn,
-            SDRAM_RASn => SDRAM_RASn,
-            SDRAM_CASn => SDRAM_CASn,
-            SDRAM_WEn  => SDRAM_WEn,
-            --SDRAM_DQM  => SDRAM_DQM,
-            MEM_A      => SDRAM_A,
-            MEM_BA     => SDRAM_BA,
-            MEM_D      => SDRAM_DQ
+    --         SDRAM_CLK  => SDRAM_CLK,
+    --         --SDRAM_CKE  => SDRAM_CKE,
+    --         --SDRAM_CSn  => SDRAM_CSn,
+    --         SDRAM_RASn => SDRAM_RASn,
+    --         SDRAM_CASn => SDRAM_CASn,
+    --         SDRAM_WEn  => SDRAM_WEn,
+    --         --SDRAM_DQM  => SDRAM_DQM,
+    --         MEM_A      => SDRAM_A,
+    --         MEM_BA     => SDRAM_BA,
+    --         MEM_D      => SDRAM_DQ
+    --     );
+    SDRAM_CLK <= '0';
+    SDRAM_DQ <= (others => 'Z');
+
+    mem_bus_ram_inst: entity work.mem_bus_ram
+        generic map (16) -- 64K
+        port map (
+            clock => sys_clock,
+            req   => mem_req,
+            resp  => mem_resp
         );
 
     i_startup: entity work.startup_colorlight
@@ -350,7 +395,7 @@ begin
     i_itu: entity work.itu
     generic map (
 		g_version	    => X"77",
-        g_capabilities  => X"00000001",
+        g_capabilities  => X"00000000",
         g_uart          => true,
         g_uart_rx       => false,
         g_edge_init     => "10000101",
@@ -428,7 +473,7 @@ begin
         SLOT_IRQn        &
         SLOT_NMIn        &
         UART_RXD         &
---        FLASH_MISO       &
+        FLASH_MISO       &
         DUT_MOTOR        &
         DUT_SENSE        &
         DUT_READ         &
@@ -443,11 +488,11 @@ begin
         PHY1_RXC         &
         PHY1_RX_DV       &
         PHY1_RXD         &
+        SDRAM_DQ         &
         '0' ) when rising_edge(sys_clock);
     
     PHYS_RESET <= not sys_reset;
 
-    LED_YELLOWn      <= FLASH_MISO when rising_edge(sys_clock);
     flash_sck_t      <= sys_reset; -- 0 when not in reset = enabled
     FLASH_CSn        <= '1';
     FLASH_MOSI       <= '1';
@@ -475,6 +520,36 @@ begin
     DUT_CARTPWR <= write_vector(4);
     DUT_USBPWR  <= write_vector(5);
 
-    LED_ORANGEn <= '1';
+    LED_ORANGEn <= write_vector(6); --'1';
+    LED_YELLOWn <= write_vector(7);
+    
+    -- i_a0: entity work.div generic map(12) port map(eth_clock, SLOT_ADDR(0));
+    -- i_a1: entity work.div generic map(13) port map(eth_clock, SLOT_ADDR(1));
+    -- i_a2: entity work.div generic map(14) port map(eth_clock, SLOT_ADDR(2));
+    -- i_a3: entity work.div generic map(15) port map(eth_clock, SLOT_ADDR(3));
+    -- i_a4: entity work.div generic map(16) port map(eth_clock, SLOT_ADDR(4));
+    -- i_a5: entity work.div generic map(17) port map(eth_clock, SLOT_ADDR(5));
+    -- i_a6: entity work.div generic map(18) port map(eth_clock, SLOT_ADDR(6));
+    -- i_a7: entity work.div generic map(19) port map(eth_clock, SLOT_ADDR(7));
 
+    -- i_a8: entity work.div generic map(20) port map(eth_clock, SLOT_ADDR(8));
+    -- i_a9: entity work.div generic map(21) port map(eth_clock, SLOT_ADDR(9));
+    -- i_aa: entity work.div generic map(22) port map(eth_clock, SLOT_ADDR(10));
+    -- i_ab: entity work.div generic map(23) port map(eth_clock, SLOT_ADDR(11));
+    -- i_ac: entity work.div generic map(24) port map(eth_clock, SLOT_ADDR(12));
+    -- i_ad: entity work.div generic map(25) port map(eth_clock, SLOT_ADDR(13));
+    -- i_ae: entity work.div generic map(26) port map(eth_clock, SLOT_ADDR(14));
+    -- i_af: entity work.div generic map(27) port map(eth_clock, SLOT_ADDR(15));
+
+    -- i_d0: entity work.div generic map(2) port map(eth_clock, SLOT_DATA(0));
+    -- i_d1: entity work.div generic map(3) port map(eth_clock, SLOT_DATA(1));
+    -- i_d2: entity work.div generic map(4) port map(eth_clock, SLOT_DATA(2));
+    -- i_d3: entity work.div generic map(5) port map(eth_clock, SLOT_DATA(3));
+    -- i_d4: entity work.div generic map(6) port map(eth_clock, SLOT_DATA(4));
+    -- i_d5: entity work.div generic map(7) port map(eth_clock, SLOT_DATA(5));
+    -- i_d6: entity work.div generic map(8) port map(eth_clock, SLOT_DATA(6));
+    -- i_d7: entity work.div generic map(9) port map(eth_clock, SLOT_DATA(7));
+
+    --i_sda: entity work.div generic map(100) port map(eth_clock, DUT_SDA);
+    --i_scl: entity work.div generic map(62) port map(eth_clock, DUT_SCL);
 end architecture;

@@ -102,7 +102,7 @@ architecture arch of jtag_client_lattice is
     signal shift_clock                  : std_logic;
     signal tdi_valid1                   : std_logic;
     signal tdi_valid2                   : std_logic;
-
+    signal jupdate_h                    : std_logic;
     -- Avalon signals
     signal avm_read             : std_logic := '0';
     signal avm_write            : std_logic := '0';
@@ -114,6 +114,7 @@ architecture arch of jtag_client_lattice is
     signal avm_readdatavalid    : std_logic;
     signal mem_addr_jtag        : std_logic_vector(25 downto 0);
 
+    signal ucnt                 : unsigned(3 downto 0) := X"0";
     signal io_read              : std_logic := '0';
     signal io_write             : std_logic := '0';
     signal io_wdata             : std_logic_vector(7 downto 0);
@@ -125,7 +126,7 @@ begin
         jtdo1       => tdo1,
         jtdo2       => tdo2,
         jshift      => jshift,
-        jupdate     => jupdate,
+        jupdate     => jupdate_h,
         jce1        => jce1,
         jce2        => jce2,
         jrti1       => open,
@@ -158,6 +159,7 @@ begin
     --     end if;
     -- end process;
     tdi_in <= tdi when falling_edge(tck);
+    jupdate <= jupdate_h when falling_edge(tck);
     shift_clock <= tck;
 
     -- Recreate IR on USER1
@@ -165,8 +167,11 @@ begin
     begin
         if rising_edge(shift_clock) then
             tdi_valid1 <= jce1 and jshift;
+            if jupdate = '1' then
+                ucnt <= ucnt + 1;
+            end if;
             if jce1 = '1' and jshift = '0' then
-                ir_shift <= X"B";
+                ir_shift <= std_logic_vector(ucnt); --X"B";
             elsif tdi_valid1 = '1' then -- jce1 = '1' and jshift = '1' then
                 ir_shift <= tdi_in & ir_shift(ir_shift'high downto 1);
             elsif jupdate = '1' then
