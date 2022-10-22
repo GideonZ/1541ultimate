@@ -45,6 +45,9 @@ architecture boot of startup_colorlight is
     end component;
 
     component OSCG
+    generic (
+        DIV : natural := 128
+    );
     port (
         OSC : out std_logic );
     end component;
@@ -164,6 +167,7 @@ begin
         LOCK   => pll_locked );
 
     i_osc: OSCG
+    generic map (10)
     port map (
         OSC => start_clock_i );
     -- start_clock_i <= sys_clock_i;    
