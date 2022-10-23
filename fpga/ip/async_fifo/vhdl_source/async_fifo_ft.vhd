@@ -42,6 +42,9 @@ entity async_fifo_ft is
     -- Altera attributes
     attribute dont_replicate                            : boolean;
     attribute dont_replicate of async_fifo_ft           : entity is true;
+    -- Lattice attributes
+    attribute syn_replicate                             : boolean;
+    attribute syn_replicate of async_fifo_ft            : entity is false;
     ---------------------------------------------------------------------------
 end entity;
 

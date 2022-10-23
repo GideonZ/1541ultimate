@@ -19,6 +19,7 @@
 #define MATRIX_KEYB     (U2P_IO_BASE + 0x0300)
 #define U2P_AUDIO_MIXER (U2P_IO_BASE + 0x10000)
 #define U2P_DEBUG_ETH   (U2P_IO_BASE + 0x11000)
+#define U2PL_DUT_AUDIO_DMA (U2P_IO_BASE + 0x0200)
 
 // Altera
 // Write
@@ -84,6 +85,13 @@
 #define REMOTE_READ_PARAM   (*(volatile uint8_t *)(REMOTE_BASE + 0x04)) = 1
 #define REMOTE_BUSY         (*(volatile uint8_t *)(REMOTE_BASE + 0x05))
 #define REMOTE_READ_RESULT  (*(volatile uint32_t *)(REMOTE_BASE + 0x00))
+
+#define AUDIO_DMA_IN_ADDR    (*(volatile uint32_t *)(U2PL_DUT_AUDIO_DMA + 0x00))
+#define AUDIO_DMA_IN_END     (*(volatile uint32_t *)(U2PL_DUT_AUDIO_DMA + 0x04))
+#define AUDIO_DMA_IN_ENABLE  (*(volatile uint8_t *)(U2PL_DUT_AUDIO_DMA + 0x08))
+#define AUDIO_DMA_OUT_ADDR   (*(volatile uint32_t *)(U2PL_DUT_AUDIO_DMA + 0x10))
+#define AUDIO_DMA_OUT_END    (*(volatile uint32_t *)(U2PL_DUT_AUDIO_DMA + 0x14))
+#define AUDIO_DMA_OUT_ENABLE (*(volatile uint8_t *)(U2PL_DUT_AUDIO_DMA + 0x18))
 
 #define U2PIO_UR_BUFFER_ENABLE  0x80
 #define U2PIO_UR_BUFFER_DISABLE 0x40

@@ -392,6 +392,15 @@
         <Source name="../../../fpga/fpga_top/ecp5_test/vhdl_source/basic_io.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
+        <Source name="../../../fpga/altera/distributed_stack.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/io/audio/i2s_serializer.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="../../../fpga/fpga_top/ecp5_test/vhdl_source/audio_dma.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
         <Source name="impl1/impl1.xcf" type="Programming Project File" type_short="Programming">
             <Options/>
         </Source>

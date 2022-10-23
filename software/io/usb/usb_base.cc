@@ -203,7 +203,7 @@ void UsbBase :: initHardware()
 
         xTaskCreate( poll_usb2, "USB Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
     } else {
-        printf("No USB2 hardware found.\n");
+        printf("No USB2 hardware found. (%08x)\n", getFpgaCapabilities());
     }
 }
 

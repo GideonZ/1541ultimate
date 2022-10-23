@@ -397,7 +397,7 @@ begin
         mem_dq(7 downto 0)     => SDRAM_DQ
     );
 
-    SDRAM_TEST2 <= rdata_valid;
+    SDRAM_TEST2 <= burstdet; --rdata_valid;
     mem_clock_half <= sclk_out;
     
     i_update_sync: entity work.pulse_synchronizer

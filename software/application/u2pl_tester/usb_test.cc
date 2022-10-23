@@ -24,8 +24,8 @@ int checkUsbHub(void)
 		printf("Primary device is not from Microchip %04x.\n", device->vendorID);
 		return -2;
 	}
-	if (device->productID != 0x2512) {
-		printf("Primary device does not have the right product ID.\n", device->productID);
+	if (device->productID != 0x2503) {
+		printf("Primary device does not have the right product ID %04x.\n", device->productID);
 		return -3;
 	}
 	return 0;
