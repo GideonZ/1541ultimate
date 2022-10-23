@@ -26,6 +26,10 @@ int checkUsbSticks();
 void printUsbSticksFound(void);
 void initializeUsb(void);
 void codec_init(void);
+uint32_t getFpgaCapabilities()
+{
+	return CAPAB_ETH_RMII | CAPAB_SPI_FLASH | CAPAB_UART | CAPAB_USB_HOST2 | CAPAB_ULTIMATE2PLUS;
+}
 }
 int getNetworkPacket(uint8_t **payload, int *length);
 
@@ -60,7 +64,16 @@ int generate_mono()
 
 int generate_stereo()
 {
-	return 0;//startAudioOutput(512);
+	printf("Playing and recording 2 seconds of audio.\n");
+	AUDIO_DMA_IN_ADDR = 0x1000000;
+	AUDIO_DMA_IN_END  = 0x1000000 + (2 * 48000 * 8); // 8 bytes per sample, 2 seconds, 48 kHz
+
+	AUDIO_DMA_OUT_ADDR = 0x1100000;
+	AUDIO_DMA_OUT_END  = 0x1100000 + (2 * 48000 * 8); // 8 bytes per sample, 2 seconds, 48 kHz
+
+	AUDIO_DMA_OUT_ENABLE = 3; // continuous
+	AUDIO_DMA_IN_ENABLE  = 1; // once
+	return 0;
 }
 
 int verify_stereo()
@@ -110,6 +123,9 @@ int checkUsbPhy()
 			printf("Expected %04x but got %04x\n", expected[i], nano[i]);
 			errors++;
 		}
+	}
+	if (!errors) {
+		printf("USB Phy OK!\n");
 	}
 	return errors;
 }

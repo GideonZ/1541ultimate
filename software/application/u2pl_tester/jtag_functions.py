@@ -2,10 +2,13 @@ import sys
 import socket
 import struct
 import time
+import math
+from datetime import datetime
 
 test_file = '../../../target/fpga/ecp5_tester/impl1/ecp5_tester_impl1.bit'
 dut_fpga  = '../../../target/fpga/ecp5_dut/impl1/u2p_ecp5_dut_impl1.bit'
 dut_appl  = '../../../target/software/riscv32_dut/result/dut.bin'
+sound     = '../../../software/application/u2pl_tester/untitled.raw'
 hello_world = 'hello_world.bin'
 
 DAEMON_ID = 0xCC41
@@ -33,8 +36,32 @@ CODE_VERIFY_ERROR = 0xEA
 DUT_TO_TESTER   = 0x0094
 TESTER_TO_DUT   = 0x0098
 TEST_STATUS     = 0x009C
-TIME            = 0x00B0 # b0-bf
+RTC_DATA        = 0x00B0 # b0-bf
 
+class Rtc:
+    @staticmethod
+    def bin2bcd(val):
+        if val < 0:
+            return 0
+        if val > 99:
+            return 99
+        return ((val // 10) * 16) + val % 10
+
+    @staticmethod
+    def from_current_time():
+        now = datetime.now()
+        rtc = bytearray(12)
+        rtc[0] = 0x21
+        rtc[1] = 0x07
+        rtc[4] = Rtc.bin2bcd(now.second)
+        rtc[5] = Rtc.bin2bcd(now.minute)
+        rtc[6] = Rtc.bin2bcd(now.hour)
+        rtc[7] = Rtc.bin2bcd(now.day)
+        rtc[8] = (now.weekday() + 1) % 7
+        rtc[9] = Rtc.bin2bcd(now.month)
+        rtc[10] = Rtc.bin2bcd(now.year - 1980)
+        return rtc
+ 
 class JtagClient:
     def __init__(self, host, port):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -76,10 +103,9 @@ class JtagClient:
         self.sock.sendall(struct.pack(">H", USER_READ_CONSOLE))
         ret = self.sock.recv(4, socket.MSG_WAITALL) # Expect 4 bytes back with length info
         (_, len) = struct.unpack("<HH", ret)
-        print(f"Expecting {len} bytes!")
+        #print(f"Expecting {len} bytes!")
         ret = self.sock.recv(len, socket.MSG_WAITALL)
-        #print(ret.decode())
-        print(ret)
+        return ret
 
     def user_upload(self, name, addr):
         self.sock.sendall(struct.pack(">H", USER_UPLOAD))
@@ -100,11 +126,45 @@ class JtagClient:
         ret = self.sock.recv(2, socket.MSG_WAITALL) # Expect 2 bytes back
         print(ret)
 
-    def user_write_uint32(self, addr, value):
+    def user_write_int32(self, addr, value):
         self.sock.sendall(struct.pack(">H", USER_WRITE_MEMORY))
-        self.sock.sendall(struct.pack("<LLL", addr, 4, value))
+        self.sock.sendall(struct.pack("<LLi", addr, 4, value))
         ret = self.sock.recv(2, socket.MSG_WAITALL) # Expect 2 bytes back
-        print(ret)
+        #print(ret)
+
+    def user_read_int32(self, addr):
+        self.sock.sendall(struct.pack(">H", USER_READ_MEMORY))
+        self.sock.sendall(struct.pack("<LL", addr, 1))
+        ret = self.sock.recv(6, socket.MSG_WAITALL) # Expect 6 bytes back
+        (val,) = struct.unpack("<i", ret[2:])
+        #print (val)
+        return val
+
+    def user_write_memory(self, addr, bytes):
+        self.sock.sendall(struct.pack(">H", USER_WRITE_MEMORY))
+        self.sock.sendall(struct.pack("<LL", addr, len(bytes)))
+        self.sock.sendall(bytes)
+        ret = self.sock.recv(2, socket.MSG_WAITALL) # Expect 2 bytes back
+        #print(ret)
+
+    def user_read_memory(self, addr, len):
+        words = len >> 2
+        len = words << 2
+        self.sock.sendall(struct.pack(">H", USER_READ_MEMORY))
+        self.sock.sendall(struct.pack("<LL", addr, words))
+        ret = self.sock.recv(2+len, socket.MSG_WAITALL)
+        return ret[2:]
+
+    def perform_test(self, test_id, max_time = 10):
+        self.user_write_int32(TESTER_TO_DUT, test_id)
+        while dut.user_read_int32(TESTER_TO_DUT) == test_id and max_time > 0:
+            time.sleep(.2)
+            max_time -= 1
+        if dut.user_read_int32(TESTER_TO_DUT) == test_id:
+            return (None, "Test did not complete in time.")
+        text = self.user_read_console()
+        result = dut.user_read_int32(TEST_STATUS)
+        return (result, text.decode(encoding='cp1252'))
 
 if __name__ == '__main__':
     client = JtagClient("localhost", 5000)
@@ -133,13 +193,70 @@ if __name__ == '__main__':
     print("{0:8x}".format(client.user_read_id()))
     dut.user_upload(dut_appl, 0x100)
     dut.user_run_app(0x100)
-    for i in range(5):
+    while len(dut.user_read_console()) != 0:
         time.sleep(.2)
-        dut.user_read_console()
-    dut.user_write_uint32(TESTER_TO_DUT, 99);
-    time.sleep(.2)
-    dut.user_read_console()
+        
+    (result, console) = dut.perform_test(99)
+    print(f"Result of test 99: {result}")
+    print(f"Console Output:\n{console}")
 
+    (result, console) = dut.perform_test(7)
+    print(f"Result of test 7: {result}")
+    print(f"Console Output:\n{console}")
+
+    (result, console) = dut.perform_test(11)
+    print(f"Result of test 11: {result}")
+    print(f"Console Output:\n{console}")
+
+    time.sleep(3)
+    print(dut.user_read_console().decode(encoding='cp1252'))
+
+    (result, console) = dut.perform_test(8)
+    print(f"Result of test 8: {result}")
+    print(f"Console Output:\n{console}")
+
+    (result, console) = dut.perform_test(13) # Test RTC
+    print(f"Result of test 13: {result}")
+    print(f"Console Output:\n{console}")
+
+    (result, console) = dut.perform_test(14) # Read RTC
+    print(f"Result of test 14: {result}")
+    print(f"Console Output:\n{console}")
+    rtc = dut.user_read_memory(RTC_DATA, 16)
+    print(rtc)
+
+    rtc = Rtc.from_current_time()
+    dut.user_write_memory(RTC_DATA, rtc)
+
+    (result, console) = dut.perform_test(15) # Write RTC
+    print(f"Result of test 15: {result}")
+    print(f"Console Output:\n{console}")
+
+    print("Generating sine wave")
+    #scale = math.pow(2.0, 31) * 0.9
+    #data = b''
+    #for i in range(192):
+    #    phase = i * (2. * math.pi / 48.)
+    #    sampleL = scale * math.sin(phase)
+    #    phase = i * (2. * math.pi / 64.)
+    #    sampleR = scale * math.sin(phase)
+    #    data += struct.pack("<ll", int(sampleL), int(sampleR))
+    ## data should now have 192 samples. 500* 192 samples = 96000 samples = 2 seconds
+    #data *= 500
+    data = bytearray(48000*8*2) # zeros
+    print("Uploading sound.")
+    dut.user_write_memory(0x1100000, data)
+#    dut.user_upload(sound, 0x1100000)
+
+    (result, console) = dut.perform_test(2) # Do some audio stuff
+    print(f"Result of test 2: {result}")
+    print(f"Console Output:\n{console}")
+    time.sleep(2) # Could be 1 probably as download of data takes some time
+
+    # Download one second of data
+    data = dut.user_read_memory(0x1000000, 48000 * 2 * 4)
+    with open("audio.bin", 'wb') as fo:
+        fo.write(data)
 
 #    time.sleep(1)
 #    dut.user_read_console()

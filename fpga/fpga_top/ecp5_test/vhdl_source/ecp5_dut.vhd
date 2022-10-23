@@ -54,8 +54,8 @@ port (
     SDRAM_CASn  : out   std_logic;
     SDRAM_WEn   : out   std_logic;
     SDRAM_CKE   : out   std_logic;
-    SDRAM_CLK   : inout std_logic;
-    SDRAM_CLKn  : inout std_logic;
+    SDRAM_CLK   : out   std_logic;
+    SDRAM_CLKn  : out   std_logic;
     SDRAM_ODT   : out   std_logic;
     SDRAM_DQS   : inout std_logic;
      
@@ -166,7 +166,7 @@ architecture rtl of ecp5_dut is
     signal flash_sck_t  : std_logic;
     signal led_n        : std_logic_vector(0 to 3);
     signal busy_led     : std_logic;
-
+    signal burstdet     : std_logic;
     signal start_clock  : std_logic;
     signal start_reset  : std_logic;
     signal half_clock   : std_logic;
@@ -186,6 +186,13 @@ architecture rtl of ecp5_dut is
     signal toggle_check : std_logic;
     signal toggle_reset : std_logic;
         
+    -- Audio
+    signal audio_pulse  : std_logic;
+    signal left_in      : std_logic_vector(23 downto 0);
+    signal right_in     : std_logic_vector(23 downto 0);
+    signal left_out     : std_logic_vector(23 downto 0);
+    signal right_out    : std_logic_vector(23 downto 0);
+
     -- memory controller interconnect
     signal ctrl_reset_pulse : std_logic;
     signal phase_sel        : std_logic_vector(1 downto 0);
@@ -197,6 +204,8 @@ architecture rtl of ecp5_dut is
     signal mem_resp_cpu     : t_mem_resp_32;
     signal mem_req_io       : t_mem_req_32;
     signal mem_resp_io      : t_mem_resp_32;
+    signal mem_req_dma      : t_mem_req_32;
+    signal mem_resp_dma     : t_mem_resp_32;
     signal mem_req_jtag     : t_mem_req_32;
     signal mem_resp_jtag    : t_mem_resp_32;
     signal mem_req          : t_mem_req_32;
@@ -255,6 +264,8 @@ architecture rtl of ecp5_dut is
     signal io_resp_new_io   : t_io_resp;
     signal io_req_ddr2      : t_io_req;
     signal io_resp_ddr2     : t_io_resp;
+    signal io_req_dma       : t_io_req := c_io_req_init;
+    signal io_resp_dma      : t_io_resp;
 
     -- Timing
     signal tick_16MHz       : std_logic;
@@ -325,17 +336,19 @@ begin
     i_mem_arb: entity work.mem_bus_arbiter_pri_32
         generic map (
             g_registered => false,
-            g_ports      => 3
+            g_ports      => 4
         )
         port map (
             clock   => sys_clock,
             reset   => sys_reset,
             reqs(0) => mem_req_jtag,
             reqs(1) => mem_req_io,
-            reqs(2) => mem_req_cpu,
+            reqs(2) => mem_req_dma,
+            reqs(3) => mem_req_cpu,
             resps(0)=> mem_resp_jtag,
             resps(1)=> mem_resp_io,
-            resps(2)=> mem_resp_cpu,
+            resps(2)=> mem_resp_dma,
+            resps(3)=> mem_resp_cpu,
             req     => mem_req,
             resp    => mem_resp
         );
@@ -435,8 +448,8 @@ begin
     i_split: entity work.io_bus_splitter
     generic map (
         g_range_lo => 8,
-        g_range_hi => 9,
-        g_ports    => 2
+        g_range_hi => 10,
+        g_ports    => 3
     )
     port map (
         clock      => sys_clock,
@@ -444,8 +457,10 @@ begin
         resp       => io_resp_u2p,
         reqs(0)    => io_req_new_io,
         reqs(1)    => io_req_ddr2,
+        reqs(2)    => io_req_dma,
         resps(0)   => io_resp_new_io,
-        resps(1)   => io_resp_ddr2
+        resps(1)   => io_resp_ddr2,
+        resps(2)   => io_resp_dma
     );
 
     i_basic_io: entity work.basic_io
@@ -552,7 +567,7 @@ begin
         phase_loadreg     => phase_loadreg, 
 
         SDRAM_TEST1       => UNUSED_G12,
-        SDRAM_TEST2       => open,
+        SDRAM_TEST2       => burstdet,
         SDRAM_CLK         => SDRAM_CLK,
         SDRAM_CLKn        => SDRAM_CLKn,
         SDRAM_CKE         => SDRAM_CKE,
@@ -605,14 +620,32 @@ begin
         i2s_in           => AUDIO_SDI,
         i2s_bclk         => AUDIO_BCLK,
         i2s_fs           => AUDIO_LRCLK,
-        sample_pulse     => open,
+        sample_pulse     => audio_pulse,
         
-        left_sample_out  => open,
-        right_sample_out => open,
-        left_sample_in   => X"000000",
-        right_sample_in  => X"000000" );
+        left_sample_out  => left_in,
+        right_sample_out => right_in,
+        left_sample_in   => left_out,
+        right_sample_in  => right_out );
 
     AUDIO_MCLK <= audio_clock;
+
+    -- Audio DMA
+    i_audio_dma: entity work.audio_dma
+        port map (
+            audio_clock => audio_clock,
+            audio_reset => audio_reset,
+            audio_pulse => audio_pulse,
+            left_out    => left_out,
+            right_out   => right_out,
+            left_in     => left_in,
+            right_in    => right_in,
+            sys_clock   => sys_clock,
+            sys_reset   => sys_reset,
+            io_req      => io_req_dma,
+            io_resp     => io_resp_dma,
+            mem_req     => mem_req_dma,
+            mem_resp    => mem_resp_dma
+        );
 
     -- Ethernet Transceiver
     i_rmii: entity work.rmii_transceiver
@@ -667,10 +700,10 @@ begin
     SLOT_DATA <= (others => 'Z');
     SLOT_RWn  <= 'Z';
 
-    LED_MOTORn <= not write_vector(0);
-    LED_DISKn  <= not write_vector(1);
-    LED_CARTn  <= not write_vector(2);
-    LED_SDACTn <= not write_vector(3);
+    LED_MOTORn <= not burstdet;--write_vector(0);
+    LED_DISKn  <= not sys_reset; --write_vector(1);
+    LED_CARTn  <= not mem_resp.rack; --sys_clock; -- write_vector(2);
+    LED_SDACTn <= not mem_req.request; --write_vector(3);
 
     ULPI_RESET <= not sys_reset; --por_n;
 
