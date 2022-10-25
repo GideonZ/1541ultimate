@@ -55,20 +55,20 @@ port (
     CLOCK_25         : in    std_logic := '0';
     
     -- slot side
-    SLOT_PHI2        : in    std_logic;
-    SLOT_DOTCLK      : in    std_logic;
+    SLOT_PHI2        : inout std_logic;
+    SLOT_DOTCLK      : inout std_logic;
     SLOT_RSTn        : inout std_logic;
     SLOT_ADDR        : inout std_logic_vector(15 downto 0);
     SLOT_DATA        : inout std_logic_vector(7 downto 0);
     SLOT_RWn         : inout std_logic;
-    SLOT_BA          : in    std_logic;
-    SLOT_DMAn        : out   std_logic;
+    SLOT_BA          : inout std_logic;
+    SLOT_DMAn        : inout std_logic;
     SLOT_EXROMn      : inout std_logic;
     SLOT_GAMEn       : inout std_logic;
-    SLOT_ROMHn       : in    std_logic;
-    SLOT_ROMLn       : in    std_logic;
-    SLOT_IO1n        : in    std_logic;
-    SLOT_IO2n        : in    std_logic;
+    SLOT_ROMHn       : inout std_logic;
+    SLOT_ROMLn       : inout std_logic;
+    SLOT_IO1n        : inout std_logic;
+    SLOT_IO2n        : inout std_logic;
     SLOT_IRQn        : inout std_logic;
     SLOT_NMIn        : inout std_logic;
     
@@ -81,7 +81,7 @@ port (
     SDRAM_CASn  : out   std_logic;
     SDRAM_WEn   : out   std_logic;
     -- SDRAM_CKE   : out   std_logic; -- VCC
-    SDRAM_CLK   : inout std_logic;
+    SDRAM_CLK   : out   std_logic;
      
     -- LEDs
     LED_GREENn  : out   std_logic;
@@ -123,7 +123,7 @@ port (
 
     -- Other DUT pins
     DUT_TXD     : in  std_logic;
-    DUT_RXD     : out std_logic;
+    DUT_RXD     : in  std_logic; -- used to measure clocks!
     DUT_SPK_A   : in  std_logic;
     DUT_SPK_B   : in  std_logic;
     DUT_CARTPWR : out std_logic;
@@ -131,7 +131,7 @@ port (
     DUT_REFCLK  : in  std_logic;
 
     -- Cassette Interface
-    DUT_MOTOR   : in    std_logic := '0';
+    DUT_MOTOR   : inout std_logic;
     DUT_SENSE   : inout std_logic;
     DUT_READ    : inout std_logic;
     DUT_WRITE   : inout std_logic );
@@ -156,6 +156,8 @@ architecture rtl of ecp5_tester is
     -- memory controller interconnect
     signal mem_req_cpu      : t_mem_req_32;
     signal mem_resp_cpu     : t_mem_resp_32;
+    signal mem_req_dma      : t_mem_req_32;
+    signal mem_resp_dma     : t_mem_resp_32;
     signal mem_req_jtag     : t_mem_req_32 := c_mem_req_32_init;
     signal mem_resp_jtag    : t_mem_resp_32;
     signal mem_req          : t_mem_req_32;
@@ -183,14 +185,24 @@ architecture rtl of ecp5_tester is
     signal io_resp_u2p      : t_io_resp;
     signal io_req_new_io    : t_io_req;
     signal io_resp_new_io   : t_io_resp;
-    signal io_req_ddr2      : t_io_req;
-    signal io_resp_ddr2     : t_io_resp;
+    signal io_req_pio       : t_io_req;
+    signal io_resp_pio      : t_io_resp;
+    signal io_req_dma       : t_io_req;
+    signal io_resp_dma      : t_io_resp;
+    signal io_req_meas      : t_io_req;
+    signal io_resp_meas     : t_io_resp;
 
     -- Timing
     signal tick_16MHz       : std_logic;
     signal tick_4MHz        : std_logic;
     signal tick_1MHz        : std_logic;
     signal tick_1kHz        : std_logic;    
+
+    signal pio_i            : std_logic_vector(63 downto 0) := (others => '0');
+    signal pio_o            : std_logic_vector(63 downto 0);
+    signal pio_t            : std_logic_vector(63 downto 0);
+    signal pio_t_reg        : std_logic_vector(63 downto 0);
+    signal power_detect     : std_logic;
 
     signal write_vector     : std_logic_vector(7 downto 0);
     signal console_data     : std_logic_vector(7 downto 0);
@@ -204,9 +216,11 @@ architecture rtl of ecp5_tester is
         end loop;
         return r;
     end function;
-    signal sample_vector        : std_logic_vector(31 downto 0) := X"AAAA0000";
 begin
     i_jtag: entity work.jtag_client_lattice
+        generic map (
+            g_sample_width    => pio_i'length
+        )
         port map (
             sys_clock         => sys_clock,
             sys_reset         => sys_reset,
@@ -215,13 +229,10 @@ begin
             io_req            => io_req_jtag,
             io_resp           => io_resp_jtag,
 
-            clock_1           => start_clock,
-            clock_2           => sys_clock,
-
             console_data      => console_data,
             console_valid     => console_valid,
 
-            sample_vector     => sample_vector,
+            sample_vector     => pio_i,
             write_vector      => write_vector
         );
 
@@ -241,15 +252,17 @@ begin
     i_mem_arb: entity work.mem_bus_arbiter_pri_32
         generic map (
             g_registered => false,
-            g_ports      => 2
+            g_ports      => 3
         )
         port map (
             clock   => sys_clock,
             reset   => sys_reset,
             reqs(0) => mem_req_jtag,
-            reqs(1) => mem_req_cpu,
+            reqs(1) => mem_req_dma,
+            reqs(2) => mem_req_cpu,
             resps(0)=> mem_resp_jtag,
-            resps(1)=> mem_resp_cpu,
+            resps(1)=> mem_resp_dma,
+            resps(2)=> mem_resp_cpu,
             req     => mem_req,
             resp    => mem_resp
         );
@@ -360,23 +373,31 @@ begin
     generic map (
         g_range_lo => 8,
         g_range_hi => 9,
-        g_ports    => 2
+        g_ports    => 4
     )
     port map (
         clock      => sys_clock,
         req        => io_req_u2p,
         resp       => io_resp_u2p,
         reqs(0)    => io_req_new_io,
-        reqs(1)    => io_req_ddr2,
+        reqs(1)    => io_req_meas,
+        reqs(2)    => io_req_dma,
+        reqs(3)    => io_req_pio,
         resps(0)   => io_resp_new_io,
-        resps(1)   => io_resp_ddr2
+        resps(1)   => io_resp_meas,
+        resps(2)   => io_resp_dma,
+        resps(3)   => io_resp_pio
     );
 
-    i_ddr2_dummy: entity work.io_dummy
+    i_generic_pio: entity work.generic_pio
     port map (
         clock   => sys_clock,
-        io_req  => io_req_ddr2,
-        io_resp => io_resp_ddr2
+        reset   => sys_reset,
+        io_req  => io_req_pio,
+        io_resp => io_resp_pio,
+        pio_i   => pio_i,
+        pio_o   => pio_o,
+        pio_t   => pio_t_reg
     );
 
     i_timing: entity work.fractional_div
@@ -440,6 +461,70 @@ begin
         hub_reset_n=> open
     );
 
+    b_audio: block
+        signal class_d_sampled  : std_logic_vector(1 downto 0);
+        signal class_d_data     : signed(17 downto 0);
+        signal class_d_filtered : signed(17 downto 0);
+        signal class_d_std      : std_logic_vector(23 downto 0) := (others => '0');
+        constant c_divider      : natural := 50_024_000 / 48_000;
+        signal div              : natural range 0 to c_divider-1;
+        signal audio_pulse      : std_logic;
+    begin
+        process(sys_clock)
+        begin
+            if rising_edge(sys_clock) then
+                audio_pulse <= '0';
+                if sys_reset = '1' then
+                    div <= c_divider-1;
+                elsif div = 0 then
+                    audio_pulse <= '1';
+                    div <= c_divider-1;
+                else
+                    div <= div - 1;
+                end if;
+
+                class_d_sampled <= DUT_SPK_B & DUT_SPK_A;
+                if class_d_sampled = "10" then
+                    class_d_data <= to_signed(110000, 18);
+                elsif class_d_sampled = "01" then
+                    class_d_data <= to_signed(-110000, 18);
+                else
+                    class_d_data <= to_signed(0, 18);
+                end if;
+            end if;
+        end process;
+        class_d_std(23 downto 6) <= std_logic_vector(class_d_filtered);
+
+        i_filt_left: entity work.lp_filter
+        port map (
+            clock     => sys_clock,
+            reset     => sys_reset,
+            signal_in => class_d_data,
+            low_pass  => class_d_filtered );
+
+        -- Audio DMA
+        i_audio_dma: entity work.audio_dma
+        generic map (
+            g_mono      => true
+        )
+        port map (
+            audio_clock => sys_clock,
+            audio_reset => sys_reset,
+            audio_pulse => audio_pulse,
+            left_out    => open,
+            right_out   => open,
+            left_in     => class_d_std,
+            right_in    => X"000000",
+            sys_clock   => sys_clock,
+            sys_reset   => sys_reset,
+            io_req      => io_req_dma,
+            io_resp     => io_resp_dma,
+            mem_req     => mem_req_dma,
+            mem_resp    => mem_resp_dma
+        );
+
+    end block;
+
     i2c_scl_i   <= DUT_SCL;
     i2c_sda_i   <= DUT_SDA;
     DUT_SCL     <= '0' when i2c_scl_o = '0' else 'Z';
@@ -457,30 +542,9 @@ begin
     toggle <= not toggle when rising_edge(sys_clock);
 
     LED_GREENn <= xor_reduce(    
-        SLOT_PHI2        &
-        SLOT_DOTCLK      &
-        SLOT_RSTn        &
-        SLOT_ADDR        &
-        SLOT_DATA        &
-        SLOT_RWn         &
-        SLOT_BA          &
-        SLOT_EXROMn      &
-        SLOT_GAMEn       &
-        SLOT_ROMHn       &
-        SLOT_ROMLn       &
-        SLOT_IO1n        &
-        SLOT_IO2n        &
-        SLOT_IRQn        &
-        SLOT_NMIn        &
         UART_RXD         &
         FLASH_MISO       &
-        DUT_MOTOR        &
-        DUT_SENSE        &
-        DUT_READ         &
-        DUT_WRITE        &
         DUT_TXD          &
-        DUT_SPK_A        &
-        DUT_SPK_B        &
         DUT_REFCLK       &
         PHY0_RXC         &
         PHY0_RX_DV       &
@@ -506,50 +570,79 @@ begin
         end if;
     end process;
 
-    SLOT_ADDR <= X"FFFF" when write_vector = X"BB" else (others => 'Z');
-    SLOT_DATA <= X"FF" when write_vector = X"BB" else (others => 'Z');
-    SLOT_IRQn <= '1'  when write_vector = X"BB" else 'Z';
-    SLOT_NMIn <= '1'  when write_vector = X"BB" else 'Z';
-    SLOT_RWn  <= '1'  when write_vector = X"BB" else 'Z';
-    SLOT_RSTn <= '0'  when write_vector = X"BB" else 'Z';
-    SLOT_DMAn <= '1';
-    SLOT_GAMEn <= '1';
-    SLOT_EXROMn <= '1';
-
-    DUT_RXD     <= '1';
+    --DUT_RXD     <= 'Z';
     DUT_CARTPWR <= write_vector(4);
     DUT_USBPWR  <= write_vector(5);
 
     LED_ORANGEn <= write_vector(6); --'1';
     LED_YELLOWn <= write_vector(7);
     
-    -- i_a0: entity work.div generic map(12) port map(eth_clock, SLOT_ADDR(0));
-    -- i_a1: entity work.div generic map(13) port map(eth_clock, SLOT_ADDR(1));
-    -- i_a2: entity work.div generic map(14) port map(eth_clock, SLOT_ADDR(2));
-    -- i_a3: entity work.div generic map(15) port map(eth_clock, SLOT_ADDR(3));
-    -- i_a4: entity work.div generic map(16) port map(eth_clock, SLOT_ADDR(4));
-    -- i_a5: entity work.div generic map(17) port map(eth_clock, SLOT_ADDR(5));
-    -- i_a6: entity work.div generic map(18) port map(eth_clock, SLOT_ADDR(6));
-    -- i_a7: entity work.div generic map(19) port map(eth_clock, SLOT_ADDR(7));
+    process(sys_clock)
+    begin
+        if rising_edge(sys_clock) then
+            if write_vector(4) = '0' and write_vector(5) = '0' then
+                power_detect <= '0';
+            elsif DUT_TXD = '1' then
+                power_detect <= '1';
+            end if;
+        end if;
+    end process;
+    pio_t <= pio_t_reg when power_detect = '1' else (others => '0');
 
-    -- i_a8: entity work.div generic map(20) port map(eth_clock, SLOT_ADDR(8));
-    -- i_a9: entity work.div generic map(21) port map(eth_clock, SLOT_ADDR(9));
-    -- i_aa: entity work.div generic map(22) port map(eth_clock, SLOT_ADDR(10));
-    -- i_ab: entity work.div generic map(23) port map(eth_clock, SLOT_ADDR(11));
-    -- i_ac: entity work.div generic map(24) port map(eth_clock, SLOT_ADDR(12));
-    -- i_ad: entity work.div generic map(25) port map(eth_clock, SLOT_ADDR(13));
-    -- i_ae: entity work.div generic map(26) port map(eth_clock, SLOT_ADDR(14));
-    -- i_af: entity work.div generic map(27) port map(eth_clock, SLOT_ADDR(15));
+    r_a: for i in SLOT_ADDR'range generate
+        SLOT_ADDR(i) <= pio_o(i) when pio_t(i) = '1' else 'Z';
+    end generate;
+    r_d: for i in SLOT_DATA'range generate
+        SLOT_DATA(i) <= pio_o(i+16) when pio_t(i+16) = '1' else 'Z';
+    end generate;
 
-    -- i_d0: entity work.div generic map(2) port map(eth_clock, SLOT_DATA(0));
-    -- i_d1: entity work.div generic map(3) port map(eth_clock, SLOT_DATA(1));
-    -- i_d2: entity work.div generic map(4) port map(eth_clock, SLOT_DATA(2));
-    -- i_d3: entity work.div generic map(5) port map(eth_clock, SLOT_DATA(3));
-    -- i_d4: entity work.div generic map(6) port map(eth_clock, SLOT_DATA(4));
-    -- i_d5: entity work.div generic map(7) port map(eth_clock, SLOT_DATA(5));
-    -- i_d6: entity work.div generic map(8) port map(eth_clock, SLOT_DATA(6));
-    -- i_d7: entity work.div generic map(9) port map(eth_clock, SLOT_DATA(7));
+    SLOT_PHI2        <= pio_o(24) when pio_t(24) = '1' else 'Z';
+    SLOT_DOTCLK      <= pio_o(25) when pio_t(25) = '1' else 'Z';
+    SLOT_RSTn        <= pio_o(26) when pio_t(26) = '1' else 'Z';
+    SLOT_RWn         <= pio_o(27) when pio_t(27) = '1' else 'Z';
+    SLOT_BA          <= pio_o(28) when pio_t(28) = '1' else 'Z';
+    SLOT_DMAn        <= pio_o(29) when pio_t(29) = '1' else 'Z';
+    SLOT_EXROMn      <= pio_o(30) when pio_t(30) = '1' else 'Z';
+    SLOT_GAMEn       <= pio_o(31) when pio_t(31) = '1' else 'Z';
+    SLOT_ROMHn       <= pio_o(32) when pio_t(32) = '1' else 'Z';
+    SLOT_ROMLn       <= pio_o(33) when pio_t(33) = '1' else 'Z';
+    SLOT_IO1n        <= pio_o(34) when pio_t(34) = '1' else 'Z';
+    SLOT_IO2n        <= pio_o(35) when pio_t(35) = '1' else 'Z';
+    SLOT_IRQn        <= pio_o(36) when pio_t(36) = '1' else 'Z';
+    SLOT_NMIn        <= pio_o(37) when pio_t(37) = '1' else 'Z';
+    DUT_MOTOR        <= pio_o(40) when pio_t(40) = '1' else 'Z';
+    DUT_SENSE        <= pio_o(41) when pio_t(41) = '1' else 'Z';
+    DUT_READ         <= pio_o(42) when pio_t(42) = '1' else 'Z';
+    DUT_WRITE        <= pio_o(43) when pio_t(43) = '1' else 'Z';
 
-    --i_sda: entity work.div generic map(100) port map(eth_clock, DUT_SDA);
-    --i_scl: entity work.div generic map(62) port map(eth_clock, DUT_SCL);
+    pio_i(15 downto 0) <= SLOT_ADDR;
+    pio_i(23 downto 16) <= SLOT_DATA;
+    pio_i(24)        <= SLOT_PHI2;
+    pio_i(25)        <= SLOT_DOTCLK;
+    pio_i(26)        <= SLOT_RSTn;
+    pio_i(27)        <= SLOT_RWn;
+    pio_i(28)        <= SLOT_BA;
+    pio_i(29)        <= SLOT_DMAn;
+    pio_i(30)        <= SLOT_EXROMn;
+    pio_i(31)        <= SLOT_GAMEn;
+    pio_i(32)        <= SLOT_ROMHn;
+    pio_i(33)        <= SLOT_ROMLn;
+    pio_i(34)        <= SLOT_IO1n;
+    pio_i(35)        <= SLOT_IO2n;
+    pio_i(36)        <= SLOT_IRQn;
+    pio_i(37)        <= SLOT_NMIn;
+    pio_i(40)        <= DUT_MOTOR;
+    pio_i(41)        <= DUT_SENSE;
+    pio_i(42)        <= DUT_READ;
+    pio_i(43)        <= DUT_WRITE;
+
+    i_clock_measure: entity work.clock_measure
+    port map (
+        sys_clock  => sys_clock,
+        sys_reset  => sys_reset,
+        io_req     => io_req_meas,
+        io_resp    => io_resp_meas,
+        meas_clock => DUT_RXD
+    );    
+
 end architecture;
