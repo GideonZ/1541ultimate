@@ -67,10 +67,14 @@ class JtagClient:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.connect((host, port))
 
+    # TODO: Add proper error handling for these functions
     def check_daemon(self):
         self.sock.sendall(struct.pack(">H", DAEMON_ID))
         ret = self.sock.recv(4, socket.MSG_WAITALL) # Expect 4 bytes back
-        print(ret)
+        if ret[0] != CODE_OKAY or ret[1] != (DAEMON_ID & 0xFF):
+            print(ret.hex())
+            return "Daemon fault."
+        # Return None if everything is OK
 
     def ecp_read_id(self):
         self.sock.sendall(struct.pack(">H", ECP_READ_ID))
@@ -155,6 +159,19 @@ class JtagClient:
         ret = self.sock.recv(2+len, socket.MSG_WAITALL)
         return ret[2:]
 
+    def user_write_io(self, addr, bytes):
+        self.sock.sendall(struct.pack(">H", USER_WRITE_IO_REGISTERS))
+        self.sock.sendall(struct.pack("<LL", addr, len(bytes)))
+        self.sock.sendall(bytes)
+        ret = self.sock.recv(2, socket.MSG_WAITALL) # Expect 2 bytes back
+        #print(ret)
+
+    def user_read_io(self, addr, len):
+        self.sock.sendall(struct.pack(">H", USER_READ_IO_REGISTERS))
+        self.sock.sendall(struct.pack("<LL", addr, len))
+        ret = self.sock.recv(2+len, socket.MSG_WAITALL)
+        return ret[2:]
+
     def perform_test(self, test_id, max_time = 10):
         self.user_write_int32(TESTER_TO_DUT, test_id)
         while dut.user_read_int32(TESTER_TO_DUT) == test_id and max_time > 0:
@@ -166,13 +183,19 @@ class JtagClient:
         result = dut.user_read_int32(TEST_STATUS)
         return (result, text.decode(encoding='cp1252'))
 
-if __name__ == '__main__':
-    client = JtagClient("localhost", 5000)
-    client.check_daemon()
+def startup():
+    client = JtagClient("localhost", 5001)
+    ret = client.check_daemon()
+    if ret:
+        return (None, None, ret)
+    if client.ecp_read_id() != 0x41111043:
+        return (None, None, "Tester FPGA ID fail")
     client.ecp_load_fpga(test_file)
-    print("{0:8x}".format(client.user_read_id()))
-    client.user_set_io(0x10)
+    if client.user_read_id() != 0xdead1541:
+        return (None, None, "Tester User JTAG fail!")
+    client.user_set_io(0x10)  # Turn on DUT power
     time.sleep(1)
+
     #client.user_read_console()
 
     #client.user_upload(hello_world, 0x100)
@@ -184,13 +207,23 @@ if __name__ == '__main__':
     #time.sleep(1)
 
     dut = JtagClient("localhost", 5002)
-    dut.check_daemon()
-    print("{0:08x}".format(dut.ecp_read_id()))
+    ret = dut.check_daemon()
+    if ret:
+        return (None, None, ret)
+
+    #return (client, dut, None)
+
+    if dut.ecp_read_id() != 0x41111043:
+        return (client, None, "DUT FPGA ID fail")
     dut.ecp_load_fpga(dut_fpga)
     time.sleep(0.2)
     dut.user_read_console()
     #dut.ecp_prog_flash(dut_fpga, 0)
-    print("{0:8x}".format(client.user_read_id()))
+    if dut.user_read_id() != 0xdead1541:
+        return (client, None, "DUT User JTAG fail!")
+    return (client, dut, None)
+
+if False:
     dut.user_upload(dut_appl, 0x100)
     dut.user_run_app(0x100)
     while len(dut.user_read_console()) != 0:
@@ -264,3 +297,111 @@ if __name__ == '__main__':
 #    dut.user_set_io(0x00)
 #    time.sleep(1)
 #    dut.user_read_console()
+def find_ones(b):
+    ret = []
+    for idx,byte in enumerate(b):
+        for i in range(8):
+            if byte & (1 << i) != 0:
+                ret.append(idx * 8 + i)
+    return ret
+
+def find_zeros(b):
+    ret = []
+    for idx,byte in enumerate(b):
+        for i in range(8):
+            if byte & (1 << i) == 0:
+                ret.append(idx * 8 + i)
+    return ret
+
+def test_cart_io(tester, dut):
+    # Set everything to input on dut
+    # Bit 47 has to be set to 1, because that's BUFFER_EN
+    zeros = bytearray(8)
+    buf_en = bytearray(8)
+    buf_en[5] = 0x80
+    dut.user_write_io(0x100308, zeros)
+    dut.user_write_io(0x100300, buf_en)
+    print("Setting bits: ", find_ones(buf_en))
+    rb = dut.user_read_io(0x100300, 8)
+    print("Read: ", find_ones(rb))
+
+    # Set everything to output on tester
+    ones = b'\xff' * 8
+    tester.user_write_io(0x100308, ones)
+
+    slot_bits = [x for x in range(38)]
+    cassette_bits = [x for x in range(40, 44)]
+    test_bits = slot_bits + cassette_bits
+    errors = 0
+
+#    for i in test_bits:
+#        pattern = bytearray(6)
+#        pattern[i//8] |= 1 << (i %8)
+#        print("Writing: ", pattern.hex())
+#        tester.user_write_io(0x100300, pattern)
+#        trb = tester.user_read_io(0x100300, 6)
+#        #print("Tester:  ", trb.hex(), find_ones(trb))
+#        if (trb != pattern):
+#            print(f"BIT {i} is stuck hard!")
+#        rb = bytearray(dut.user_read_io(0x100300, 6))
+#        # Turn off bit 39
+#        rb[4] &= 0x7F
+#        print("Read:    ", rb.hex(), find_ones(rb))
+#        if (rb != pattern):
+#            errors += 1
+
+    for i in range(32):
+        pattern = bytearray(b'\xFF' * 4)
+        pattern[i//8] &= ~(1 << (i %8))
+        print("Writing: ", pattern.hex())
+        tester.user_write_io(0x100300, pattern)
+        trb = tester.user_read_io(0x100300, 4)
+        print("Tester:  ", trb.hex(), find_zeros(trb))
+        if (trb != pattern):
+            print(f"BIT {i} is stuck hard!")
+        rb = bytearray(dut.user_read_io(0x100300, 4))
+        print("Read:    ", rb.hex(), find_zeros(rb))
+        if (rb != pattern):
+            errors += 1
+
+    print(f"Errors: {errors}")
+
+def test_iec_io(dut):
+    # IEC is only available on the dut.
+    # Can only toggle each output and observe the input
+    # While the pins are active low, the signals in the
+    # FPGA are active high.
+    patterns = b'\x00\x01\x02\x04\x08\x10\x1F\x1E\x1D\x1B\x17\x0F'
+    errors = 0
+    for i in patterns:
+        wr = bytearray(1)
+        wr[0] = i
+        dut.user_write_io(0x100306, wr)
+        rb = dut.user_read_io(0x100306, 1)
+        print("{0:02x} {1:02x}".format(i, rb[0]))
+        if i != rb[0]:
+            errors += 1
+    # TODO: Report more accurately *which signal* is stuck at 0, stuck at 1, or shorted to another
+    return errors
+
+if __name__ == '__main__':
+    (client, dut, err) = startup()
+    if not err:
+        print("I/O register test Tester")
+        print(client.user_read_io(0x100000, 16).hex())
+        print(client.user_read_io(0x100100, 16).hex())
+        print(client.user_read_io(0x100200, 16).hex())
+        print(client.user_read_io(0x100300, 16).hex())
+
+        print("I/O register test DUT")
+        print(dut.user_read_io(0x100000, 16).hex())
+        print(dut.user_read_io(0x100100, 16).hex())
+        print(dut.user_read_io(0x100200, 16).hex())
+        print(dut.user_read_io(0x100300, 16).hex())
+
+        test_iec_io(dut)
+        #test_cart_io(client, dut)
+    else:
+        print (err)
+    if client:
+        client.user_set_io(0x00) # Turn off DUT power

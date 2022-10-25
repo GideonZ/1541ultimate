@@ -22,23 +22,24 @@ port (
     CLOCK_50         : in    std_logic := '0';
     
     -- slot side
-    SLOT_ADDR_OEn    : out   std_logic;
-    SLOT_ADDR_DIR    : out   std_logic;
-    SLOT_PHI2        : in    std_logic;
-    SLOT_DOTCLK      : in    std_logic;
+    SLOT_ADDR_OEn    : out std_logic;
+    SLOT_ADDR_DIR    : out std_logic;
+    SLOT_BUFFER_EN   : out std_logic;
+
+    SLOT_PHI2        : inout std_logic;
+    SLOT_DOTCLK      : inout std_logic;
     SLOT_RSTn        : inout std_logic;
-    SLOT_BUFFER_EN   : out   std_logic;
     SLOT_ADDR        : inout std_logic_vector(15 downto 0);
     SLOT_DATA        : inout std_logic_vector(7 downto 0);
     SLOT_RWn         : inout std_logic;
-    SLOT_BA          : in    std_logic;
-    SLOT_DMAn        : out   std_logic;
+    SLOT_BA          : inout std_logic;
+    SLOT_DMAn        : inout std_logic;
     SLOT_EXROMn      : inout std_logic;
     SLOT_GAMEn       : inout std_logic;
-    SLOT_ROMHn       : in    std_logic;
-    SLOT_ROMLn       : in    std_logic;
-    SLOT_IO1n        : in    std_logic;
-    SLOT_IO2n        : in    std_logic;
+    SLOT_ROMHn       : inout std_logic;
+    SLOT_ROMLn       : inout std_logic;
+    SLOT_IO1n        : inout std_logic;
+    SLOT_IO2n        : inout std_logic;
     SLOT_IRQn        : inout std_logic;
     SLOT_NMIn        : inout std_logic;
     SLOT_VCC         : in    std_logic;
@@ -88,7 +89,6 @@ port (
     IEC_CLOCK_I : in    std_logic;
     IEC_RESET_I : in    std_logic;
     IEC_SRQ_I   : in    std_logic;
-
     
     LED_DISKn   : out   std_logic; -- activity LED
     LED_CARTn   : out   std_logic;
@@ -115,7 +115,7 @@ port (
 
     -- Debug UART
     UART_TXD    : out   std_logic;
-    UART_RXD    : in    std_logic;
+    UART_RXD    : out   std_logic;
     
     -- USB Experiment
     USB_DP      : inout std_logic;
@@ -149,7 +149,7 @@ port (
 	BOARD_REVn  : in    std_logic_vector(4 downto 0);
 
     -- Cassette Interface
-    CAS_MOTOR   : in    std_logic := '0';
+    CAS_MOTOR   : inout std_logic := '0';
     CAS_SENSE   : inout std_logic;
     CAS_READ    : inout std_logic;
     CAS_WRITE   : inout std_logic;
@@ -218,10 +218,12 @@ architecture rtl of ecp5_dut is
     signal i2c_scl_i   : std_logic;
     signal i2c_scl_o   : std_logic;
     signal mdio_o      : std_logic;
-    signal RSTn_out    : std_logic;
     signal button_i    : std_logic_vector(2 downto 0);
     signal ulpi_reset_req   : std_logic;
     signal ulpi_reset_i     : std_logic;
+    signal pio_i            : std_logic_vector(63 downto 0) := (others => '0');
+    signal pio_o            : std_logic_vector(63 downto 0);
+    signal pio_t            : std_logic_vector(63 downto 0);
 
     -- Ethernet
     signal rmii_tx_en_i     : std_logic;
@@ -266,6 +268,8 @@ architecture rtl of ecp5_dut is
     signal io_resp_ddr2     : t_io_resp;
     signal io_req_dma       : t_io_req := c_io_req_init;
     signal io_resp_dma      : t_io_resp;
+    signal io_req_pio       : t_io_req;
+    signal io_resp_pio      : t_io_resp;
 
     -- Timing
     signal tick_16MHz       : std_logic;
@@ -285,9 +289,11 @@ architecture rtl of ecp5_dut is
         end loop;
         return r;
     end function;
-    signal sample_vector        : std_logic_vector(31 downto 0) := X"AAAA0000";
 begin
     i_jtag: entity work.jtag_client_lattice
+        generic map (
+            g_sample_width    => pio_i'length
+        )
         port map (
             sys_clock         => sys_clock,
             sys_reset         => sys_reset,
@@ -296,30 +302,12 @@ begin
             io_req            => io_req_jtag,
             io_resp           => io_resp_jtag,
 
-            clock_1           => start_clock,
-            clock_2           => RMII_REFCLK,
-
             console_data      => console_data,
             console_valid     => console_valid,
 
-            sample_vector     => sample_vector,
+            sample_vector     => pio_i,
             write_vector      => write_vector
         );
-
-    sample_vector(0) <= sys_clock;
-    sample_vector(1) <= sys_reset;
-    sample_vector(2) <= ctrl_clock;
-    sample_vector(3) <= ctrl_reset;
-    sample_vector(4) <= io_req.read;
-    sample_vector(5) <= io_req.write;
-    sample_vector(6) <= io_req_jtag.read;
-    sample_vector(7) <= io_req_jtag.write;
-    sample_vector(8) <= io_req_riscv.read;
-    sample_vector(9) <= io_req_riscv.write;
-    sample_vector(10) <= io_resp.ack;
-    sample_vector(11) <= io_resp_jtag.ack;
-    sample_vector(12) <= io_resp_riscv.ack;
-    sample_vector(23 downto 16) <= std_logic_vector(console_count);
 
     -- snoop writes to the UART
     console_data <= io_req.data;
@@ -449,7 +437,7 @@ begin
     generic map (
         g_range_lo => 8,
         g_range_hi => 10,
-        g_ports    => 3
+        g_ports    => 4
     )
     port map (
         clock      => sys_clock,
@@ -458,9 +446,11 @@ begin
         reqs(0)    => io_req_new_io,
         reqs(1)    => io_req_ddr2,
         reqs(2)    => io_req_dma,
+        reqs(3)    => io_req_pio,
         resps(0)   => io_resp_new_io,
         resps(1)   => io_resp_ddr2,
-        resps(2)   => io_resp_dma
+        resps(2)   => io_resp_dma,
+        resps(3)   => io_resp_pio
     );
 
     i_basic_io: entity work.basic_io
@@ -479,7 +469,7 @@ begin
             mem_req      => mem_req_io,
             mem_resp     => mem_resp_io,
             UART_TXD     => UART_TXD,
-            UART_RXD     => UART_RXD,
+            UART_RXD     => '1',
 
             FLASH_CSn    => FLASH_CSn,
             FLASH_SCK    => flash_sck_o,
@@ -603,6 +593,17 @@ begin
         hub_reset_n=> HUB_RESETn
     );
 
+    i_generic_pio: entity work.generic_pio
+    port map (
+        clock   => sys_clock,
+        reset   => sys_reset,
+        io_req  => io_req_pio,
+        io_resp => io_resp_pio,
+        pio_i   => pio_i,
+        pio_o   => pio_o,
+        pio_t   => pio_t
+    );
+
     i2c_scl_i   <= I2C_SCL and I2C_SCL_18;
     i2c_sda_i   <= I2C_SDA and I2C_SDA_18;
     I2C_SCL     <= '0' when i2c_scl_o = '0' else 'Z';
@@ -690,15 +691,7 @@ begin
         USRMCLKTS => flash_sck_t
     );
 
-    RSTn_out <= '1';
     button_i <= not BUTTON;
-    
-    SLOT_RSTn <= '0' when RSTn_out = '0' else 'Z';
-    SLOT_DRV_RST <= not RSTn_out when rising_edge(sys_clock); -- Drive this pin HIGH when we want to reset the C64 (uses NFET on Rev.E boards)
-    
-    SLOT_ADDR <= (others => 'Z');
-    SLOT_DATA <= (others => 'Z');
-    SLOT_RWn  <= 'Z';
 
     LED_MOTORn <= not burstdet;--write_vector(0);
     LED_DISKn  <= not sys_reset; --write_vector(1);
@@ -713,46 +706,20 @@ begin
     --USB_PULLUP  <= '1';
 
     USB_PULLUP    <= xor_reduce(    
-        SLOT_PHI2        &
-        SLOT_DOTCLK      &
-        SLOT_RSTn        &
-        SLOT_ADDR        &
-        SLOT_DATA        &
-        SLOT_RWn         &
-        SLOT_BA          &
-        SLOT_EXROMn      &
-        SLOT_GAMEn       &
-        SLOT_ROMHn       &
-        SLOT_ROMLn       &
-        SLOT_IO1n        &
-        SLOT_IO2n        &
-        SLOT_IRQn        &
-        SLOT_NMIn        &
-        SLOT_VCC         &
---        AUDIO_SDI        &
-        IEC_ATN_I        &
-        IEC_DATA_I       &
-        IEC_CLOCK_I      &
-        IEC_RESET_I      &
-        IEC_SRQ_I        &
         ETH_IRQn         &
 --        RMII_REFCLK      &
 --        RMII_CRS_DV      &
         RMII_RX_ER       &
 --        RMII_RX_DATA     &
-        UART_RXD         &
+--        UART_RXD         &
 --        FLASH_MISO       &
 --        ULPI_NXT         &
 --        ULPI_DIR         &
 --        ULPI_DATA        &
-        CAS_MOTOR        &
-        CAS_SENSE        &
-        CAS_READ         &
-        CAS_WRITE        &
         '0' ) when rising_edge(ULPI_CLOCK);
     
     SLOT_ADDR_OEn    <= '1';
-    SLOT_ADDR_DIR    <= FLASH_MISO and DEBUG_TRSTn and RMII_RX_ER and UART_RXD and SLOT_DOTCLK and IEC_RESET_I and CAS_SENSE and CAS_MOTOR when rising_edge(CLOCK_50);
+    SLOT_ADDR_DIR    <= FLASH_MISO and DEBUG_TRSTn and RMII_RX_ER when rising_edge(CLOCK_50);
     DEBUG_SPARE      <= '0';
 
     process(ctrl_clock)
@@ -764,14 +731,7 @@ begin
         end if;
     end process;
 
-    SLOT_ADDR <= X"FFFF" when write_vector = X"BB" else (others => 'Z');
-    SLOT_DATA <= X"FF" when write_vector = X"BB" else (others => 'Z');
-    SLOT_IRQn <= '1'  when write_vector = X"BB" else 'Z';
-    SLOT_NMIn <= '1'  when write_vector = X"BB" else 'Z';
-    SLOT_BUFFER_EN <= '0';
-    SLOT_DMAn <= '1';
-    SLOT_GAMEn <= '1';
-    SLOT_EXROMn <= '1';
+    UART_RXD <= RMII_REFCLK;
 
     ULPI_DATA <= ulpi_data_o when ulpi_data_t = '1' else "ZZZZZZZZ";
     r: for i in ULPI_DATA'range generate
@@ -780,5 +740,65 @@ begin
     end generate;
     i_delay_ulpi_nxt: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => ULPI_NXT, Z => ulpi_nxt_i);
     i_delay_ulpi_dir: DELAYG generic map (DEL_MODE => "USER_DEFINED", DEL_VALUE => 5) port map (A => ULPI_DIR, Z => ulpi_dir_i);
+
+    r_a: for i in SLOT_ADDR'range generate
+        SLOT_ADDR(i) <= pio_o(i) when pio_t(i) = '1' else 'Z';
+    end generate;
+    r_d: for i in SLOT_DATA'range generate
+        SLOT_DATA(i) <= pio_o(i+16) when pio_t(i+16) = '1' else 'Z';
+    end generate;
+
+    SLOT_PHI2        <= pio_o(24) when pio_t(24) = '1' else 'Z';
+    SLOT_DOTCLK      <= pio_o(25) when pio_t(25) = '1' else 'Z';
+    SLOT_RSTn        <= pio_o(26) when pio_t(26) = '1' else 'Z';
+    SLOT_RWn         <= pio_o(27) when pio_t(27) = '1' else 'Z';
+    SLOT_BA          <= pio_o(28) when pio_t(28) = '1' else 'Z';
+    SLOT_DMAn        <= pio_o(29) when pio_t(29) = '1' else 'Z';
+    SLOT_EXROMn      <= pio_o(30) when pio_t(30) = '1' else 'Z';
+    SLOT_GAMEn       <= pio_o(31) when pio_t(31) = '1' else 'Z';
+    SLOT_ROMHn       <= pio_o(32) when pio_t(32) = '1' else 'Z';
+    SLOT_ROMLn       <= pio_o(33) when pio_t(33) = '1' else 'Z';
+    SLOT_IO1n        <= pio_o(34) when pio_t(34) = '1' else 'Z';
+    SLOT_IO2n        <= pio_o(35) when pio_t(35) = '1' else 'Z';
+    SLOT_IRQn        <= pio_o(36) when pio_t(36) = '1' else 'Z';
+    SLOT_NMIn        <= pio_o(37) when pio_t(37) = '1' else 'Z';
+    SLOT_DRV_RST     <= pio_o(38);
+    CAS_MOTOR        <= pio_o(40) when pio_t(40) = '1' else 'Z';
+    CAS_SENSE        <= pio_o(41) when pio_t(41) = '1' else 'Z';
+    CAS_READ         <= pio_o(42) when pio_t(42) = '1' else 'Z';
+    CAS_WRITE        <= pio_o(43) when pio_t(43) = '1' else 'Z';
+    SLOT_BUFFER_EN   <= pio_o(47);
+    IEC_ATN_O        <= pio_o(48);
+    IEC_DATA_O       <= pio_o(49);
+    IEC_CLOCK_O      <= pio_o(50);
+    IEC_RESET_O      <= pio_o(51);
+    IEC_SRQ_O        <= pio_o(52);
+
+    pio_i(15 downto 0) <= SLOT_ADDR;
+    pio_i(23 downto 16) <= SLOT_DATA;
+    pio_i(24)        <= not SLOT_PHI2;
+    pio_i(25)        <= SLOT_DOTCLK;
+    pio_i(26)        <= SLOT_RSTn;
+    pio_i(27)        <= SLOT_RWn;
+    pio_i(28)        <= SLOT_BA;
+    pio_i(29)        <= SLOT_DMAn;
+    pio_i(30)        <= SLOT_EXROMn;
+    pio_i(31)        <= SLOT_GAMEn;
+    pio_i(32)        <= SLOT_ROMHn;
+    pio_i(33)        <= SLOT_ROMLn;
+    pio_i(34)        <= SLOT_IO1n;
+    pio_i(35)        <= SLOT_IO2n;
+    pio_i(36)        <= SLOT_IRQn;
+    pio_i(37)        <= SLOT_NMIn;
+    pio_i(39)        <= SLOT_VCC;
+    pio_i(40)        <= CAS_MOTOR;
+    pio_i(41)        <= CAS_SENSE;
+    pio_i(42)        <= CAS_READ;
+    pio_i(43)        <= CAS_WRITE;
+    pio_i(48)        <= IEC_ATN_I;
+    pio_i(49)        <= IEC_DATA_I;
+    pio_i(50)        <= IEC_CLOCK_I;
+    pio_i(51)        <= IEC_RESET_I;
+    pio_i(52)        <= IEC_SRQ_I;
 
 end architecture;

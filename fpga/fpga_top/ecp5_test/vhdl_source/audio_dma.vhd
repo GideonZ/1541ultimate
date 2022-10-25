@@ -8,6 +8,7 @@ use work.mem_bus_pkg.all;
 
 entity audio_dma is
 generic (
+    g_mono      : boolean := false;
     g_tag       : std_logic_vector(7 downto 0) := X"BA"
 );
 port (
@@ -139,7 +140,11 @@ begin
                     mem_req.address <= out_address;
                     mem_req.read_writen <= '1';
                     mem_req.request <= '1';
-                    state <= read2;
+                    if g_mono then
+                        state <= read3;
+                    else
+                        state <= read2;
+                    end if;
                     out_address <= out_address + 4;
                 else
                     state <= idle;
@@ -148,13 +153,17 @@ begin
             when write2 =>
                 if mem_resp.rack = '1' and mem_resp.rack_tag = g_tag then -- write request accepted
                     sys_in_ready <= '1';                    
-                    mem_req.data <= sys_in_data(23 downto 00) & X"00";
-                    mem_req.address <= in_address;
-                    mem_req.byte_en <= "1111";
-                    mem_req.read_writen <= '0';
-                    mem_req.request <= '1';
-                    state <= write3;
-                    in_address <= in_address + 4;
+                    if g_mono then
+                        state <= idle;
+                    else
+                        mem_req.data <= sys_in_data(23 downto 00) & X"00";
+                        mem_req.address <= in_address;
+                        mem_req.byte_en <= "1111";
+                        mem_req.read_writen <= '0';
+                        mem_req.request <= '1';
+                        state <= write3;
+                        in_address <= in_address + 4;
+                    end if;
                 end if;
 
             when write3 =>
@@ -165,7 +174,7 @@ begin
 
             when read2 =>
                 if mem_resp.rack = '1' and mem_resp.rack_tag = g_tag then -- read request accepted -- assume no data yet
-                    mem_req.address <= out_address;
+                    mem_req.address <= out_address; -- another access
                     out_address <= out_address + 4;
                     state <= read3;
                 end if ;
@@ -176,7 +185,12 @@ begin
                 end if;
                 if mem_resp.dack_tag = g_tag then
                     sys_out_data(47 downto 24) <= mem_resp.data(31 downto 8);
-                    state <= read4;
+                    if g_mono then
+                        state <= idle;
+                        sys_out_valid <= '1';
+                    else
+                        state <= read4;
+                    end if;
                 end if;
             
             when read4 =>

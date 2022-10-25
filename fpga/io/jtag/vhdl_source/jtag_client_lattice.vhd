@@ -1,9 +1,9 @@
 --------------------------------------------------------------------------------
--- Entity: jtag_client
--- Date:2016-11-08  
+-- Entity: jtag_client_lattice
+-- Date: 2022-10-08  
 -- Author: Gideon     
 --
--- Description: Client for Virtual JTAG module
+-- Description: Client for User JTAG on ECP5.
 --------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
@@ -15,6 +15,10 @@ library ECP5U;
 use ECP5U.components.all;
 
 entity jtag_client_lattice is
+generic (
+    g_sample_width  : natural := 8;
+    g_write_width   : natural := 8
+);
 port (
     sys_clock       : in  std_logic;
     sys_reset       : in  std_logic;
@@ -22,13 +26,12 @@ port (
     mem_resp        : in  t_mem_resp_32;
     io_req          : out t_io_req;
     io_resp         : in  t_io_resp;
+
     console_data    : in  std_logic_vector(7 downto 0) := X"00";
     console_valid   : in  std_logic := '0';
-
-    clock_1         : in  std_logic := '0';
-    clock_2         : in  std_logic := '1';
-    sample_vector   : in  std_logic_vector(31 downto 0) := X"47696465";
-    write_vector    : out std_logic_vector(7 downto 0) );
+    sample_vector   : in  std_logic_vector(g_sample_width-1 downto 0) := (others => '0');
+    write_vector    : out std_logic_vector(g_write_width-1 downto 0)
+);
 end entity;
 
 architecture arch of jtag_client_lattice is
@@ -38,10 +41,7 @@ architecture arch of jtag_client_lattice is
     signal shiftreg_sample    : std_logic_vector(sample_vector'range);
     signal shiftreg_write     : std_logic_vector(write_vector'range);
     signal shiftreg_debug     : std_logic_vector(31 downto 0);
-    signal shiftreg_clock     : std_logic_vector(7 downto 0);
     signal debug_bits         : std_logic_vector(3 downto 0);
-    signal clock_1_shift      : std_logic_vector(7 downto 0) := X"00";
-    signal clock_2_shift      : std_logic_vector(7 downto 0) := X"00";
 
     signal bypass_reg         : std_logic;
     signal bit_count          : unsigned(4 downto 0) := (others => '0');    
@@ -74,7 +74,7 @@ architecture arch of jtag_client_lattice is
     signal incrementing     : std_logic;
     signal byte_count       : integer range 0 to 3;
     signal read_count       : unsigned(7 downto 0);
-    signal write_vector_i   : std_logic_vector(7 downto 0) := (others => '0');
+    signal write_vector_i   : std_logic_vector(write_vector'range) := (others => '0');
     signal avm_read_reg     : std_logic_vector(31 downto 0) := (others => '0');
     signal write_enabled    : std_logic;
     signal write_data       : std_logic_vector(31 downto 0) := (others => '0');
@@ -89,12 +89,11 @@ architecture arch of jtag_client_lattice is
     signal avm_wfifo_dout   : std_logic_vector(11 downto 0);
     signal avm_wfifo_count  : unsigned(4 downto 0);
     signal avm_exec_count   : unsigned(2 downto 0) := "000";
-    signal sys_clock_count  : unsigned(2 downto 0) := "000";
 
     signal console_fifo_get     : std_logic;
     signal console_fifo_data    : std_logic_vector(7 downto 0);
     signal shiftreg_console     : std_logic_vector(7 downto 0);
-    signal console_fifo_count   : unsigned(8 downto 0);
+    signal console_fifo_count   : unsigned(10 downto 0);
 
     signal tck_c, tck_d, tck_d2         : std_logic;
     signal tdi_c, tdi_d, tdi_d2, tdi_in : std_logic;
@@ -202,7 +201,6 @@ begin
                 shiftreg_sample <= tdi_in & shiftreg_sample(shiftreg_sample'high downto 1);
                 shiftreg_write <= tdi_in & shiftreg_write(shiftreg_write'high downto 1);
                 shiftreg_debug <= tdi_in & shiftreg_debug(shiftreg_debug'high downto 1);
-                shiftreg_clock <= tdi_in & shiftreg_clock(shiftreg_clock'high downto 1);
                 wbit_count <= wbit_count + 1;
                 if ir_in = X"5" then
                     shiftreg_fifo <= tdi_in & shiftreg_fifo(shiftreg_fifo'high downto 1);
@@ -248,14 +246,12 @@ begin
                 wbit_count <= (others => '0');
                 rbit_select <= 0;
                 shiftreg_fifo <= X"00" & std_logic_vector(read_fifo_count);
-                shiftreg_console <= std_logic_vector(console_fifo_count(7 downto 0));
+                if console_fifo_count >= 256 then
+                    shiftreg_console <= X"FF";
+                else
+                    shiftreg_console <= std_logic_vector(console_fifo_count(7 downto 0));
+                end if;
                 shiftreg_debug <= std_logic_vector(read_fifo_count) & debug_bits & last_command & std_logic_vector(cmd_count);
-                if ir_in = X"8" then
-                    shiftreg_clock <= clock_1_shift;
-                end if;  
-                if ir_in = X"9" then
-                    shiftreg_clock <= clock_2_shift;
-                end if;  
             end if;
         
             -- UPDATE
@@ -271,24 +267,10 @@ begin
     end process;
     write_vector <= write_vector_i;
 
-    process(clock_1)
-    begin
-        if rising_edge(clock_1) then
-            clock_1_shift <= clock_1_shift(6 downto 0) & not clock_1_shift(3);
-        end if;
-    end process;
-    
-    process(clock_2)
-    begin
-        if rising_edge(clock_2) then
-            clock_2_shift <= clock_2_shift(6 downto 0) & not clock_2_shift(3);
-        end if;
-    end process;
-
     -- tdo2 <= data(to_integer(bit_count));
     -- read_vec <= X"BABE" & ir_in & ir_shift & ir_shift & ir_shift;
 
-    process(ir_in, rbit_select, bit_count, shiftreg_sample, shiftreg_write, bypass_reg, shiftreg_fifo, shiftreg_debug, shiftreg_clock)
+    process(ir_in, rbit_select, bit_count, shiftreg_sample, shiftreg_write, bypass_reg, shiftreg_fifo, shiftreg_debug)
     begin
         case ir_in is
         when X"0" =>
@@ -301,8 +283,6 @@ begin
             tdo2 <= shiftreg_debug(rbit_select);
         when X"4" =>
             tdo2 <= shiftreg_fifo(0);
-        when X"8" | X"9" =>
-            tdo2 <= shiftreg_clock(rbit_select);
         when X"A" =>
             tdo2 <= shiftreg_console(0);
         when others =>
@@ -371,7 +351,7 @@ begin
     i_console_fifo: entity work.async_fifo_ft
     generic map(
         g_data_width => 8,
-        g_depth_bits => 8 )
+        g_depth_bits => 10 )
     port map(
         wr_clock     => sys_clock,
         wr_reset     => sys_reset,
@@ -391,7 +371,6 @@ begin
         variable v_cmd  : std_logic_vector(3 downto 0);
     begin
         if rising_edge(sys_clock) then
-            sys_clock_count <= sys_clock_count + 1;
             case state is
             when idle =>
                 avm_rfifo_put <= '0';
