@@ -90,7 +90,7 @@ int receiveEthernetPacket()
 		return 1;
 	} else {
 		printf("YES! Network packet received with length = %d\n", length);
-		if (length != 1000) {
+		if (length != 900) {
 			return 2;
 		}
 	}
@@ -136,38 +136,36 @@ int testButtons()
 	int end = start + 2400; // 12 seconds
 
 	int retval = 7;
-/* 	IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_3_BASE, 0x0D);
+	uint8_t ledval = 0x80;
 
 	while ((end - (int)xTaskGetTickCount()) > 0) {
-		uint32_t buttons = (IORD_ALTERA_AVALON_PIO_DATA(PIO_2_BASE) >> 16) & 7;
+		U2PL_DUT_GPIO_DATA(7) = ledval; // LEDs Off
+		uint32_t buttons = ioRead8(ITU_BUTTON_REG) & ITU_BUTTONS;
 		switch(buttons) {
-		case 1:
+		case ITU_BUTTON0:
 			retval &= ~1;
-			IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_3_BASE, 0x01);
+			ledval |= 1;
 			break;
-		case 2:
+		case ITU_BUTTON1:
 			retval &= ~2;
-			IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_3_BASE, 0x04);
+			ledval |= 4;
 			break;
-		case 3:
-		case 5:
-		case 6:
-		case 7:
-			retval |= 16;
-			IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_3_BASE, 0x02);
-			break;
-		case 4:
+		case ITU_BUTTON2:
 			retval &= ~4;
-			IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_3_BASE, 0x08);
+			ledval |= 8;
+			break;
+		case 0:
 			break;
 		default:
+			retval |= 16;
+			ledval |= 2;
 			break;
 		}
 		if (retval == 0)
 			break;
 	}
-	IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_3_BASE, 0x0F);
- */
+	U2PL_DUT_GPIO_DATA(7) = 0; // let Jtag take over again
+
 	return retval;
 }
 
