@@ -123,7 +123,7 @@ port (
 
     -- Other DUT pins
     DUT_TXD     : in  std_logic;
-    DUT_RXD     : in  std_logic; -- used to measure clocks!
+    DUT_RXD     : out std_logic; -- used to measure clocks!
     DUT_SPK_A   : in  std_logic;
     DUT_SPK_B   : in  std_logic;
     DUT_CARTPWR : out std_logic;
@@ -144,6 +144,7 @@ architecture rtl of ecp5_tester is
     signal flash_sck_o  : std_logic;
     signal flash_sck_t  : std_logic;
 
+    signal timer_out    : std_logic;
     signal start_clock  : std_logic;
     signal start_reset  : std_logic;
     signal toggle       : std_logic;
@@ -636,13 +637,16 @@ begin
     pio_i(42)        <= DUT_READ;
     pio_i(43)        <= DUT_WRITE;
 
+    DUT_RXD          <= timer_out when power_detect = '1' else '0';
+
     i_clock_measure: entity work.clock_measure
     port map (
         sys_clock  => sys_clock,
         sys_reset  => sys_reset,
         io_req     => io_req_meas,
         io_resp    => io_resp_meas,
-        meas_clock => DUT_RXD
+        timer_out  => timer_out,
+        meas_clock => start_clock
     );    
 
 end architecture;

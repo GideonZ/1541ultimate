@@ -7,7 +7,7 @@ use work.io_bus_pkg.all;
 
 entity clock_measure is
 generic (
-	g_divider		: natural := 50*65536
+    g_divider		: natural range 1 to 64*1024*1024-1 := 50*65536
 );
 port (
     sys_clock   : in  std_logic;
@@ -15,6 +15,8 @@ port (
     io_req      : in  t_io_req := c_io_req_init;
     io_resp     : out t_io_resp;
 
+    ext_tick    : in  std_logic := '0';
+    timer_out   : out std_logic;
     meas_clock  : in  std_logic
 );
 end entity;
@@ -26,16 +28,30 @@ architecture gideon of clock_measure is
     signal clock_freq           : std_logic_vector(23 downto 0);
     signal clock_freq_valid     : std_logic;
     signal valid                : std_logic;
+    signal ext_tick_c           : std_logic;
+    signal ext_tick_d1          : std_logic;
+    signal ext_tick_d2          : std_logic;
+    signal toggle               : std_logic;
 begin
+    timer_out <= toggle;
+
     process(sys_clock)
         variable v_div  : natural range 0 to g_divider-1;
     begin
         if rising_edge(sys_clock) then
+            ext_tick_c  <= ext_tick;
+            ext_tick_d1 <= ext_tick_c;
+            ext_tick_d2 <= ext_tick_d1;
+
             sys_measure_pulse <= '0';
             if sys_reset = '1' then
                 v_div := g_divider-1;
+                toggle <= '0';
+            elsif g_divider = 1 then
+                sys_measure_pulse <= ext_tick_d2 xor ext_tick_d1;
             elsif v_div = 0 then
                 sys_measure_pulse <= '1';
+                toggle <= not toggle;
                 v_div := g_divider-1;
             else
                 v_div := v_div - 1;

@@ -47,7 +47,7 @@ begin
 
             if reset = '1' then
                 pio_t_i <= (others => '0');
-                pio_o <= (others => '1');
+                pio_o <= (others => '0');
             end if;
         end if;
     end process;

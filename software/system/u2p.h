@@ -20,6 +20,7 @@
 #define U2P_AUDIO_MIXER (U2P_IO_BASE + 0x10000)
 #define U2P_DEBUG_ETH   (U2P_IO_BASE + 0x11000)
 #define U2PL_DUT_AUDIO_DMA (U2P_IO_BASE + 0x0200)
+#define U2PL_DUT_GPIO      (U2P_IO_BASE + 0x0300)
 
 // Altera
 // Write
@@ -92,6 +93,9 @@
 #define AUDIO_DMA_OUT_ADDR   (*(volatile uint32_t *)(U2PL_DUT_AUDIO_DMA + 0x10))
 #define AUDIO_DMA_OUT_END    (*(volatile uint32_t *)(U2PL_DUT_AUDIO_DMA + 0x14))
 #define AUDIO_DMA_OUT_ENABLE (*(volatile uint8_t *)(U2PL_DUT_AUDIO_DMA + 0x18))
+
+#define U2PL_DUT_GPIO_DIR(x)  (*(volatile uint8_t *)(U2PL_DUT_GPIO + 0x08 + x))
+#define U2PL_DUT_GPIO_DATA(x) (*(volatile uint8_t *)(U2PL_DUT_GPIO + 0x00 + x))
 
 #define U2PIO_UR_BUFFER_ENABLE  0x80
 #define U2PIO_UR_BUFFER_DISABLE 0x40

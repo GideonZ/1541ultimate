@@ -115,7 +115,7 @@ port (
 
     -- Debug UART
     UART_TXD    : out   std_logic;
-    UART_RXD    : out   std_logic;
+    UART_RXD    : in    std_logic;
     
     -- USB Experiment
     USB_DP      : inout std_logic;
@@ -180,6 +180,7 @@ architecture rtl of ecp5_dut is
     signal sys_clock    : std_logic;
     signal sys_reset    : std_logic;
     signal cpu_reset    : std_logic;
+    signal ddr_reset    : std_logic;
     signal clock_24     : std_logic;
     signal audio_clock  : std_logic;
     signal audio_reset  : std_logic;
@@ -270,6 +271,10 @@ architecture rtl of ecp5_dut is
     signal io_resp_dma      : t_io_resp;
     signal io_req_pio       : t_io_req;
     signal io_resp_pio      : t_io_resp;
+    signal io_req_meas1     : t_io_req;
+    signal io_resp_meas1    : t_io_resp;
+    signal io_req_meas2     : t_io_req;
+    signal io_resp_meas2   : t_io_resp;
 
     -- Timing
     signal tick_16MHz       : std_logic;
@@ -437,7 +442,7 @@ begin
     generic map (
         g_range_lo => 8,
         g_range_hi => 10,
-        g_ports    => 4
+        g_ports    => 6
     )
     port map (
         clock      => sys_clock,
@@ -447,10 +452,14 @@ begin
         reqs(1)    => io_req_ddr2,
         reqs(2)    => io_req_dma,
         reqs(3)    => io_req_pio,
+        reqs(4)    => io_req_meas1,
+        reqs(5)    => io_req_meas2,
         resps(0)   => io_resp_new_io,
         resps(1)   => io_resp_ddr2,
         resps(2)   => io_resp_dma,
-        resps(3)   => io_resp_pio
+        resps(3)   => io_resp_pio,
+        resps(4)   => io_resp_meas1,
+        resps(5)   => io_resp_meas2
     );
 
     i_basic_io: entity work.basic_io
@@ -499,32 +508,34 @@ begin
             button       => button_i
         );
 
-    -- i_double_freq_bridge: entity work.memreq_halfrate
-    -- port map(
-    --     phase_out   => toggle_check,
-    --     toggle_r_2x => toggle_reset,
-    --     clock_1x    => sys_clock,
-    --     clock_2x    => ctrl_clock,
-    --     reset_1x    => sys_reset,
-    --     inhibit_1x  => '0',
-    --     mem_req_1x  => mem_req,
-    --     mem_resp_1x => mem_resp,
-    --     inhibit_2x  => open,
-    --     mem_req_2x  => mem_req_2x,
-    --     mem_resp_2x => mem_resp_2x
-    -- );
+    i_double_freq_bridge: entity work.memreq_halfrate
+    port map(
+        phase_out   => toggle_check,
+        toggle_r_2x => toggle_reset,
+        clock_1x    => sys_clock,
+        clock_2x    => ctrl_clock,
+        reset_1x    => sys_reset,
+        inhibit_1x  => '0',
+        mem_req_1x  => mem_req,
+        mem_resp_1x => mem_resp,
+        inhibit_2x  => open,
+        mem_req_2x  => mem_req_2x,
+        mem_resp_2x => mem_resp_2x
+    );
 
-    i_mem_bridge: entity work.mem_bus_bridge
-        port map (
-            a_clock    => sys_clock,
-            a_reset    => sys_reset,
-            a_mem_req  => mem_req,
-            a_mem_resp => mem_resp,
-            b_clock    => ctrl_clock,
-            b_reset    => ctrl_reset,
-            b_mem_req  => mem_req_2x,
-            b_mem_resp => mem_resp_2x
-        );
+    -- i_mem_bridge: entity work.mem_bus_bridge
+    --     port map (
+    --         a_clock    => sys_clock,
+    --         a_reset    => sys_reset,
+    --         a_mem_req  => mem_req,
+    --         a_mem_resp => mem_resp,
+    --         b_clock    => ctrl_clock,
+    --         b_reset    => ctrl_reset,
+    --         b_mem_req  => mem_req_2x,
+    --         b_mem_resp => mem_resp_2x
+    --     );
+
+    ddr_reset <= cpu_reset or sys_reset;
 
     i_memctrl: entity work.ddr2_ctrl
     port map (
@@ -547,7 +558,7 @@ begin
         resp              => mem_resp_2x,
         
         io_clock          => sys_clock,
-        io_reset          => sys_reset,
+        io_reset          => ddr_reset,
         io_req            => io_req_ddr2,
         io_resp           => io_resp_ddr2,
 
@@ -603,6 +614,28 @@ begin
         pio_o   => pio_o,
         pio_t   => pio_t
     );
+
+    i_clock_measure_1: entity work.clock_measure
+    generic map (1)
+    port map (
+        sys_clock  => sys_clock,
+        sys_reset  => sys_reset,
+        ext_tick   => UART_RXD,
+        io_req     => io_req_meas1,
+        io_resp    => io_resp_meas1,
+        meas_clock => RMII_REFCLK
+    );    
+
+    i_clock_measure_2: entity work.clock_measure
+    generic map (1)
+    port map (
+        sys_clock  => sys_clock,
+        sys_reset  => sys_reset,
+        ext_tick   => UART_RXD,
+        io_req     => io_req_meas2,
+        io_resp    => io_resp_meas2,
+        meas_clock => start_clock
+    );    
 
     i2c_scl_i   <= I2C_SCL and I2C_SCL_18;
     i2c_sda_i   <= I2C_SDA and I2C_SDA_18;
@@ -693,10 +726,10 @@ begin
 
     button_i <= not BUTTON;
 
-    LED_MOTORn <= not burstdet;--write_vector(0);
-    LED_DISKn  <= not sys_reset; --write_vector(1);
-    LED_CARTn  <= not mem_resp.rack; --sys_clock; -- write_vector(2);
-    LED_SDACTn <= not mem_req.request; --write_vector(3);
+    LED_MOTORn <= not write_vector(0) when pio_o(63) = '0' else not pio_o(56);
+    LED_DISKn  <= not write_vector(1) when pio_o(63) = '0' else not pio_o(57);
+    LED_CARTn  <= not write_vector(2) when pio_o(63) = '0' else not pio_o(58);
+    LED_SDACTn <= not write_vector(3) when pio_o(63) = '0' else not pio_o(59);
 
     ULPI_RESET <= not sys_reset; --por_n;
 
@@ -730,8 +763,6 @@ begin
             led_n(0) <= cnt(cnt'high);
         end if;
     end process;
-
-    UART_RXD <= RMII_REFCLK;
 
     ULPI_DATA <= ulpi_data_o when ulpi_data_t = '1' else "ZZZZZZZZ";
     r: for i in ULPI_DATA'range generate
