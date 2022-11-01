@@ -228,6 +228,10 @@ int writeRtc()
 	printf("Written to RTC: %s ", rtc.get_long_date(date, 32));
 	printf("%s\n", rtc.get_time_string(time, 32));
 
+	ENTER_SAFE_SECTION
+    result |= i2c.i2c_write_byte(0xA2, 0, 0x01); // Start!
+	LEAVE_SAFE_SECTION
+
 	return result;
 }
 

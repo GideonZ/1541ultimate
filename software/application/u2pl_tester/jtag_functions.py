@@ -1,4 +1,4 @@
-import sys
+import os
 import socket
 import struct
 
@@ -76,12 +76,13 @@ class JtagClient:
         if ret[0] == 0:
             (_, code) = struct.unpack("<LQ", ret)
             lot = (code >> 24) & 0xFFFFFFFF
-            wafer = (code >> 19) & 0x31
+            wafer = (code >> 19) & 31
             x = (code >> 12) & 127
             y = (code >> 5) & 127
-            print("  Wafer Lot#: {0:08x}".format(lot))
-            print("  Wafer #: {0:d}".format(wafer))
-            print("  Wafer X/Y: {%u, %u)".format(x,y))
+            print(f"  Whole code: {code:016x}")
+            print(f"  Wafer Lot#: {lot:08x}")
+            print(f"  Wafer #: {wafer}")
+            print(f"  Wafer X/Y: {x}, {y}")
 
             return (code, lot, wafer, x, y)
         raise JtagClientException("Failed to read FPGA Unique Identity: " + self.errorstring(ret[0]))
@@ -100,13 +101,18 @@ class JtagClient:
             raise JtagClientException("Failed to configure FPGA: " + self.errorstring(ret[0]))
 
     def ecp_prog_flash(self, name, addr):
+        file_size = os.stat(name)
+        print("Size of file :", file_size.st_size, "bytes")
+        pages = (file_size.st_size + 255) // 256
         self.sock.sendall(struct.pack(">H", ECP_PROGFLASH))
         self.sock.sendall(struct.pack("<LB", addr, len(name)))
         self.sock.sendall(name.encode())
+        prog = 0
         while(True):
             ret = self.sock.recv(2, socket.MSG_WAITALL) # Expect 2 bytes back
             if ret[0] == CODE_PROGRESS:
-                print('.', end='', flush=True)
+                prog += 100
+                print(f"{(prog / pages):.1f}%", end='\r', flush=True)
             else:
                 break
 

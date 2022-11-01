@@ -681,6 +681,17 @@ begin
             mem_resp    => mem_resp_dma
         );
 
+    i_pwm0: entity work.sigma_delta_dac --delta_sigma_2to5
+    generic map (
+        g_left_shift => 0,
+        g_divider => 3,
+        g_width => left_out'length )
+    port map (
+        clock   => sys_clock,
+        reset   => sys_reset,
+        dac_in  => signed(left_out),
+        dac_out => SPEAKER_DATA );
+
     -- Ethernet Transceiver
     i_rmii: entity work.rmii_transceiver
     port map (
@@ -769,8 +780,8 @@ begin
         i_delay: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => ULPI_DATA(i), Z => ulpi_data_i(i));
         --i_delay: DELAYG generic map (DEL_VALUE => "DELAY5") port map (A => ULPI_DATA(i), Z => ulpi_data_delayed(i));
     end generate;
-    i_delay_ulpi_nxt: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => ULPI_NXT, Z => ulpi_nxt_i);
-    i_delay_ulpi_dir: DELAYG generic map (DEL_MODE => "USER_DEFINED", DEL_VALUE => 5) port map (A => ULPI_DIR, Z => ulpi_dir_i);
+    i_delay_ulpi_nxt: DELAYG generic map (DEL_MODE => "USER_DEFINED", DEL_VALUE => 18) port map (A => ULPI_NXT, Z => ulpi_nxt_i);
+    i_delay_ulpi_dir: DELAYG generic map (DEL_MODE => "USER_DEFINED", DEL_VALUE => 18) port map (A => ULPI_DIR, Z => ulpi_dir_i);
 
     r_a: for i in SLOT_ADDR'range generate
         SLOT_ADDR(i) <= pio_o(i) when pio_t(i) = '1' else 'Z';
