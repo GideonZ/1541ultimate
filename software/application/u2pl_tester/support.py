@@ -71,13 +71,13 @@ class Rtc:
 
     @staticmethod
     def from_rtc_bytes(rtc):
-        sec = Rtc.bcd2bin(rtc[4])
-        min = Rtc.bcd2bin(rtc[5])
-        hr  = Rtc.bcd2bin(rtc[6])
-        day = Rtc.bcd2bin(rtc[7])
-        mon = Rtc.bcd2bin(rtc[9])
+        sec = Rtc.bcd2bin(rtc[4]) % 60
+        min = Rtc.bcd2bin(rtc[5]) % 60
+        hr  = Rtc.bcd2bin(rtc[6]) % 24
+        day = (Rtc.bcd2bin(rtc[7])-1) % 31
+        mon = (Rtc.bcd2bin(rtc[9])-1) % 12
         yr  = Rtc.bcd2bin(rtc[10]) + 1980
-        dt = datetime(yr, mon, day, hr, min, sec)
+        dt = datetime(yr, mon+1, day+1, hr, min, sec)
         return dt
 
 class Tester(JtagClient):
@@ -159,7 +159,7 @@ def find_zeros(b):
             if byte & (1 << i) == 0:
                 ret.append(idx * 8 + i)
     return ret
-    
+
 if __name__ == '__main__':
     t = Tester()
 

@@ -62,6 +62,7 @@ def plot_all(left, right, samplingFrequency, fftleft, fftright):
 
     # Frequency domain representation
     axis[3].set_title('Fourier transform Right')
+    axis[3].set_yscale("log")
     axis[3].plot(frequencies, fftright)
     axis[3].set_xlabel('Frequency')
     axis[3].set_ylabel('Amplitude')
@@ -70,7 +71,7 @@ def plot_all(left, right, samplingFrequency, fftleft, fftright):
 
 def calc_fft(filename, plot = False):
     # Create arrays from file
-    filedata = np.fromfile("audio.bin", [('left', np.int32), ('right', np.int32)])
+    filedata = np.fromfile(filename, [('left', np.int32), ('right', np.int32)])
     left, right = zip(*filedata)
     left = np.array(left) / pow(2.0, 31)
     right = np.array(right) / pow(2.0, 31)
@@ -84,3 +85,18 @@ def calc_fft(filename, plot = False):
         plot_all(left, right, samplingFrequency, fft_left, fft_right)
 
     return ((left_ampl, left_freq), (right_ampl, right_freq))
+
+def calc_fft_mono(filename, plot = False):
+    # Create arrays from file
+    filedata = np.fromfile(filename, [('spk', np.int32)])
+    (spk,) = zip(*filedata)
+    spk = np.array(spk) / pow(2.0, 31)
+
+    # How many time points are needed i,e., Sampling Frequency
+    samplingFrequency   = 48000
+    ampl, freq, fft = do_fft(spk, samplingFrequency)    
+
+    if plot:
+        plot_all(spk, spk, samplingFrequency, fft, fft)
+
+    return (ampl, freq)

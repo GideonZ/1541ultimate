@@ -3,7 +3,7 @@ from support import Tester, DeviceUnderTest, find_ones, find_zeros
 import time
 import math
 import struct
-from fft import calc_fft
+from fft import calc_fft, calc_fft_mono
 import numpy as np
 
 dut_fpga  = '../../../target/fpga/ecp5_dut/impl1/u2p_ecp5_dut_impl1.bit'
@@ -23,6 +23,53 @@ TEST_RTC_ACCESS = 13
 TEST_RTC_READ = 14
 TEST_RTC_WRITE = 15
 TEST_USB_SHOW = 17
+
+pio_names = {
+     0: 'SLOT_ADDR[0]',
+     1: 'SLOT_ADDR[1]',
+     2: 'SLOT_ADDR[2]',
+     3: 'SLOT_ADDR[3]',
+     4: 'SLOT_ADDR[4]',
+     5: 'SLOT_ADDR[5]',
+     6: 'SLOT_ADDR[6]',
+     7: 'SLOT_ADDR[7]',
+     8: 'SLOT_ADDR[8]',
+     9: 'SLOT_ADDR[9]',
+    10: 'SLOT_ADDR[10]',
+    11: 'SLOT_ADDR[11]',
+    12: 'SLOT_ADDR[12]',
+    13: 'SLOT_ADDR[13]',
+    14: 'SLOT_ADDR[14]',
+    15: 'SLOT_ADDR[15]',
+    16: 'SLOT_DATA[0]',
+    17: 'SLOT_DATA[1]',
+    18: 'SLOT_DATA[2]',
+    19: 'SLOT_DATA[3]',
+    20: 'SLOT_DATA[4]',
+    21: 'SLOT_DATA[5]',
+    22: 'SLOT_DATA[6]',
+    23: 'SLOT_DATA[7]',
+    24: 'SLOT_PHI2',
+    25: 'SLOT_DOTCLK',
+    26: 'SLOT_RSTn',
+    27: 'SLOT_RWn',
+    28: 'SLOT_BA',
+    29: 'SLOT_DMAn',
+    30: 'SLOT_EXROMn',
+    31: 'SLOT_GAMEn',
+    32: 'SLOT_ROMHn',
+    33: 'SLOT_ROMLn',
+    34: 'SLOT_IO1n',
+    35: 'SLOT_IO2n',
+    36: 'SLOT_IRQn',
+    37: 'SLOT_NMIn',
+    38: 'SLOT_VCC',
+    40: 'CAS_MOTOR',
+    41: 'CAS_SENSE',
+    42: 'CAS_READ',
+    43: 'CAS_WRITE',
+}
+
 
 # This startup function returns a tuple with two JtagClients.
 class TestFail(Exception):
@@ -82,7 +129,7 @@ class UltimateIIPlusLatticeTests:
 
         if not ok:
             self.tester.report_adcs()
-            raise TestFail('One or more regulator voltages out of range')
+            #raise TestFail('One or more regulator voltages out of range')
 
     def test_002_power_switchover(self):
         # Switch to MicroUSB supply mode
@@ -282,7 +329,15 @@ class UltimateIIPlusLatticeTests:
         test_bits = slot_bits + cassette_bits
         errors = 0
 
+        #while(1):
+        #    for i in test_bits:
+        #        pattern = bytearray(6)
+        #        pattern[i//8] |= 1 << (i %8)
+        #        print("Writing: ", pattern.hex())
+        #        self.tester.user_write_io(0x100300, pattern)
+
         # Walking one test
+        diffs = set()
         for i in test_bits:
             pattern = bytearray(6)
             pattern[i//8] |= 1 << (i %8)
@@ -296,6 +351,11 @@ class UltimateIIPlusLatticeTests:
             # Turn off bit 39 (VCC)
             rb[4] &= 0x7F
             print("Read:    ", rb.hex(), find_ones(rb))
+            diff = bytearray(6)
+            for i in range(6):
+                diff[i] = pattern[i] ^ rb[i]
+            print("Diff:    ", diff.hex(), find_ones(diff))
+            diffs.update(find_ones(diff))
             if (rb != pattern):
                 errors += 1
 
@@ -315,10 +375,18 @@ class UltimateIIPlusLatticeTests:
             rb[4] |= 0xC0 #0x3F
             rb[5] |= 0xF0 #0x0F
             print("Read:    ", rb.hex(), find_zeros(rb))
+            diff = bytearray(6)
+            for i in range(6):
+                diff[i] = pattern[i] ^ rb[i]
+            print("Diff:    ", diff.hex(), find_ones(diff))
+            diffs.update(find_ones(diff))
             if (rb != pattern):
                 errors += 1
 
         print(f"Errors: {errors}")
+        pins = [pio_names[x] for x in diffs]
+        print(pins)
+
         if errors > 0:
             raise TestFail("Cartridge / Cassette I/O failure.")
 
@@ -365,51 +433,131 @@ class UltimateIIPlusLatticeTests:
             raise TestFail("Cartridge / Cassette I/O failure.")
 
     def test_015_leds(self):
-        self.dut.user_set_io(0x80)  # Put local CPU in reset
-        self.tester.user_set_io(0x10) # Turn on DUT power only through Cartridge
-        time.sleep(0.2)
-        led0 = self.tester.read_adc_channel('Cartridge Current', 10)
-        self.dut.user_set_io(0x81)
-        led1 = self.tester.read_adc_channel('Cartridge Current', 10)
-        self.dut.user_set_io(0x83)
-        led2 = self.tester.read_adc_channel('Cartridge Current', 10)
-        self.dut.user_set_io(0x87)
-        led3 = self.tester.read_adc_channel('Cartridge Current', 10)
-        self.dut.user_set_io(0x8F)
-        led4 = self.tester.read_adc_channel('Cartridge Current', 10)
-        if (led4 > led3) and (led3 > led2) and (led2 > led1) and (led1 > led0):
-            print("LEDs OK!")
-        else:
-            raise TestFail("LEDs not properly detected.")
+        for i in range(3):
+            self.dut.user_set_io(0x80)  # Put local CPU in reset
+            self.tester.user_set_io(0x10) # Turn on DUT power only through Cartridge
+            time.sleep(0.2)
+            led0 = self.tester.read_adc_channel('Cartridge Current', 10)
+            self.dut.user_set_io(0x81)
+            led1 = self.tester.read_adc_channel('Cartridge Current', 10)
+            self.dut.user_set_io(0x83)
+            led2 = self.tester.read_adc_channel('Cartridge Current', 10)
+            self.dut.user_set_io(0x87)
+            led3 = self.tester.read_adc_channel('Cartridge Current', 10)
+            self.dut.user_set_io(0x8F)
+            led4 = self.tester.read_adc_channel('Cartridge Current', 10)
+            self.dut.user_set_io(0x00)  # Take CPU out of reset
+            if (led4 > led3) and (led3 > led2) and (led2 > led1) and (led1 > led0):
+                print("LEDs OK!")
+                return
+            else:
+                print(f"{led0} {led1} {led2} {led3} {led4}")
+
+        raise TestFail("LEDs not properly detected.")
 
     def test_016_speaker(self):
-        pass
+        print("Generating sine wave")
+        scale = math.pow(2.0, 31) * 0.99
+        data = b''
+        for i in range(192):
+            phase = i * (2. * math.pi / 192.) # 250 Hz
+            sampleL = scale * math.sin(phase)
+            phase = i * (2. * math.pi / 96.) # 500 Hz
+            sampleR = scale * math.sin(phase)
+            data += struct.pack("<ll", int(sampleL), int(sampleR))
+
+        ## data should now have 192 samples
+        print("Uploading sound.")
+        self.dut.user_write_memory(0x1100000, data)
+
+        # Now let's enable this sound on the output
+        regs = struct.pack("<LLB", 0x1100000, 0x1100000 + 192*8, 3)
+        self.dut.user_write_io(0x100210, regs)
+
+        # Now let's enable this sound on the output, by writing '1' to speaker enable
+        # The oscillator should already be running.
+        self.dut.user_write_io(0x10000C, b'\x01')
+
+        # Let's now also start recording (once ~4000 samples, which takes < 0.1 second to do
+        # This is done on the tester; not on the dut!
+        regs = struct.pack("<LLB", 0x8000, 0x8000 + 4096*4, 1)
+        self.tester.user_write_io(0x100200, regs)
+
+        # Now download the data (assuming we will never be faster than writing the data)
+        print("Downloading audio data...")
+        data = self.tester.user_read_memory(0x8000, 4096 * 4)
+        with open("speaker.bin", 'wb') as fo:
+            fo.write(data)
+
+        (ampl, peak) = calc_fft_mono("speaker.bin", False) #needs mono variant
+        if ampl < 0.22:
+            raise TestFail(f"Amplitude on speaker channel low. {ampl}")
+        if int(peak) != 246:
+            raise TestFail(f"Peak in spectrum not at 1000 Hz {peak}")
 
     def test_017_program(self):
         # Program the flash in three steps: 1) FPGA, 2) Application, 3) FAT Filesystem
-        #self.dut.ecp_prog_flash(final_fpga, 0)
-        #self.dut.ecp_prog_flash(final_appl, 0xA0000)
+        self.dut.ecp_prog_flash(final_fpga, 0)
+        self.dut.ecp_prog_flash(final_appl, 0xA0000)
         self.dut.ecp_prog_flash(final_fat, 0x200000)
+
+    def test_018_frequencies(self):
+        for i in range(3):
+            clk1 = self.dut.user_read_io(0x100400, 16)
+            (_f1, f2, f3, _f4) = struct.unpack("<LLLL", clk1)
+            if f2 == f3 or i == 2:
+                freq = (f2 & 0xFFFFFF) / 65536
+                self.refclk = freq
+                self.ppm = 1e6 * ((freq / 50.) - 1.)
+                print(f"Frequency: {freq:.6f} MHz")
+                print(f"Diff: {self.ppm:.1f} ppm")
+                break
+
+        clk2 = self.dut.user_read_io(0x100500, 16)
+        for i in range(3):
+            (_f1, f2, f3, _f4) = struct.unpack("<LLLL", clk2)
+            if f2 == f3 or i == 2:
+                freq = (f2 & 0xFFFFFF) / 65536
+                self.osc = freq
+                print(f"Oscillator: {freq:.6f} MHz")
+                break
+
+        if abs(self.ppm) > 120.:
+            raise TestFail("Reference frequency out of range.")
+
+    def test_019_unique_id(self):
+        (code, lot, wafer, x, y) = self.dut.ecp_read_unique_id()
+        self.unique = code
+        self.lot = lot
+        self.wafer = wafer
+        self.x_pos = x
+        self.y_pos = y
 
 if __name__ == '__main__':
     tests = UltimateIIPlusLatticeTests()
     tests.startup(proto = True)
-    tests.test_000_boot_current()
-    tests.test_001_regulators()
-    tests.test_002_power_switchover()
-    tests.test_003_test_fpga()
-    tests.test_004_ddr2_memory()
-    tests.test_005_start_app()
-    #tests.test_006_buttons()
-    #tests.test_007_ethernet()
-    #tests.test_008_usb_phy()
-    #tests.test_009_usb_hub()
-    #tests.test_010_usb_sticks()
-    #tests.test_011_rtc()
-    #tests.test_012_audio()
-    #tests.test_013_cartio_in()
-    #tests.test_014_cartio_out()
-    #tests.test_015_leds()
-    tests.test_016_speaker()
-    tests.test_017_program()
+    try:
+        tests.test_000_boot_current()
+        tests.test_001_regulators()
+        tests.test_002_power_switchover()
+        tests.test_003_test_fpga()
+        tests.test_015_leds()
+        tests.test_019_unique_id()
+        tests.test_004_ddr2_memory()
+        tests.test_018_frequencies()
+        tests.test_005_start_app()
+        tests.test_007_ethernet()
+        tests.test_012_audio()
+        tests.test_016_speaker()
+        tests.test_006_buttons()
+        tests.test_008_usb_phy()
+        tests.test_009_usb_hub()
+        tests.test_010_usb_sticks()
+        tests.test_011_rtc()
+        tests.test_013_cartio_in()
+        tests.test_014_cartio_out()
+        tests.test_017_program()
+    except TestFail as e:
+        print(f"One of the tests failed: {e}")
+
     tests.shutdown()
