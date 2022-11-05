@@ -1,4 +1,4 @@
-import time, struct
+import time, struct, logging
 from datetime import datetime
 from jtag_functions import JtagClient, JtagClientException
 
@@ -10,6 +10,16 @@ TESTER_TO_DUT   = 0x0098
 TEST_STATUS     = 0x009C
 RTC_DATA        = 0x00B0 # b0-bf
 ADC_DATA        = 0x00C0
+
+class TestFail(Exception):
+    pass
+
+# create logger
+logger = logging.getLogger('Support')
+logger.setLevel(logging.INFO)
+ch = logging.StreamHandler()
+ch.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logger.addHandler(ch)
 
 class TesterADC:
     factors = [125, 2, 1, 1, 1, 2, 1, 1, 1, 125, 2, 4.03]
@@ -25,7 +35,7 @@ class TesterADC:
         ch = [0] * 12
         (ch[0], ch[1], ch[2], ch[3], ch[4], ch[5], ch[6], ch[7], ch[8], ch[9], ch[10], ch[11], cnt, _) = struct.unpack("<HHHHHHHHHHHHHH", mem1)
         for i, val in enumerate(ch):
-            print("{0:18s}{1:.3f}{2:s}".format(TesterADC.names[i], val * 0.004 * TesterADC.factors[i], TesterADC.units[i]))
+            logger.info("{0:18s}{1:.3f}{2:s}".format(TesterADC.names[i], val * 0.004 * TesterADC.factors[i], TesterADC.units[i]))
 #        print(f"Count: {cnt}")
 
     @staticmethod
@@ -122,7 +132,7 @@ class DeviceUnderTest(JtagClient):
             time.sleep(.2)
             max_time -= 1
         if self.user_read_int32(TESTER_TO_DUT) == test_id:
-            return (None, "Test did not complete in time.")
+            raise JtagClientException("Test did not complete in time.")
         text = self.user_read_console()
         result = self.user_read_int32(TEST_STATUS)
         return (result, text)
@@ -132,15 +142,18 @@ class DeviceUnderTest(JtagClient):
         self.user_write_memory(RTC_DATA, rtc)
         TEST_RTC_WRITE = 15
         (result, console) = self.perform_test(TEST_RTC_WRITE)
-        print(f"Console Output:\n{console}")
+        logger.debug(f"Console Output:\n{console}")
+        return result
 
     def get_seconds_after_epoch(self):
         TEST_RTC_READ = 14
         (result, console) = self.perform_test(TEST_RTC_READ)
-        print(f"Console Output:\n{console}")
+        if (result != 0):
+            raise TestFail("Reading RTC from DUT failed.")
+        logger.debug(f"Console Output:\n{console}")
         rtc = self.user_read_memory(RTC_DATA, 12)
         dt = Rtc.from_rtc_bytes(rtc)
-        print("Date read from RTC: " + dt.strftime("%A %Y-%m-%d, %H:%M:%S"))
+        logger.info("Date read from RTC: " + dt.strftime("%A %Y-%m-%d, %H:%M:%S"))
         fixed = datetime(1980, 1, 1)
         return dt.timestamp() - fixed.timestamp()
 
@@ -165,4 +178,4 @@ if __name__ == '__main__':
 
     #TesterADC.report_adcs(t)
     sup = TesterADC.read_adc_channel(t, 'Supply', 4)
-    print(f"Supply is: {sup:.2f} V")
+    logger.info(f"Supply is: {sup:.2f} V")
