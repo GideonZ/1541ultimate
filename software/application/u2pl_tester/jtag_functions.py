@@ -1,6 +1,14 @@
 import os
 import socket
 import struct
+import logging
+
+# create logger
+logger = logging.getLogger('JTAG')
+logger.setLevel(logging.DEBUG)
+ch = logging.StreamHandler()
+ch.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logger.addHandler(ch)
 
 DAEMON_ID = 0xCC41
 ECP_LOADFPGA = 0xCC21
@@ -36,9 +44,10 @@ class JtagClient:
     def __init__(self, host, port):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.port = port
+        self.flash_callback = None
         for i in range(20):
             try:
-                print (f"Trying to connect to port {self.port}")
+                logger.info(f"Trying to connect to port {self.port}")
                 self.sock.connect((host, self.port))
                 break
             except ConnectionRefusedError:
@@ -57,7 +66,11 @@ class JtagClient:
         return 'Unknown Error {0:02x}'.format(b)
 
     def check_daemon(self):
-        self.sock.sendall(struct.pack(">H", DAEMON_ID))
+        try:
+            self.sock.sendall(struct.pack(">H", DAEMON_ID))
+        except BrokenPipeError as e:
+            raise JtagClientException(str(e))
+
         ret = self.sock.recv(4, socket.MSG_WAITALL) # Expect 4 bytes back
         if ret[0] != CODE_OKAY or ret[1] != (DAEMON_ID & 0xFF):
             raise JtagClientException("Daemon fault! " + str(ret.hex()) + self.errorstring(ret[0]))
@@ -79,12 +92,13 @@ class JtagClient:
             wafer = (code >> 19) & 31
             x = (code >> 12) & 127
             y = (code >> 5) & 127
-            print(f"  Whole code: {code:016x}")
-            print(f"  Wafer Lot#: {lot:08x}")
-            print(f"  Wafer #: {wafer}")
-            print(f"  Wafer X/Y: {x}, {y}")
+            e = (code & 31)
+            logger.info(f"  Whole code: {code:016x}")
+            logger.info(f"  Wafer Lot#: {lot:08x}")
+            logger.info(f"  Wafer #: {wafer}")
+            logger.info(f"  Wafer X/Y/E: {x}, {y}, {e}")
 
-            return (code, lot, wafer, x, y)
+            return (code, lot, wafer, x, y, e)
         raise JtagClientException("Failed to read FPGA Unique Identity: " + self.errorstring(ret[0]))
 
     def ecp_clear_fpga(self):
@@ -102,8 +116,8 @@ class JtagClient:
 
     def ecp_prog_flash(self, name, addr):
         file_size = os.stat(name)
-        print("Size of file :", file_size.st_size, "bytes")
-        pages = (file_size.st_size + 255) // 256
+        logger.info(f"Size of file: {file_size.st_size} bytes")
+        pages = (file_size.st_size + 1023) // 1024 #Callback for every 1 KB
         self.sock.sendall(struct.pack(">H", ECP_PROGFLASH))
         self.sock.sendall(struct.pack("<LB", addr, len(name)))
         self.sock.sendall(name.encode())
@@ -112,7 +126,10 @@ class JtagClient:
             ret = self.sock.recv(2, socket.MSG_WAITALL) # Expect 2 bytes back
             if ret[0] == CODE_PROGRESS:
                 prog += 100
-                print(f"{(prog / pages):.1f}%", end='\r', flush=True)
+                if self.flash_callback:
+                    self.flash_callback(prog / pages)
+                else:
+                    print(f"{(prog / pages):.1f}%", end='\r', flush=True)
             else:
                 break
 
@@ -132,7 +149,7 @@ class JtagClient:
         ret = self.sock.recv(8, socket.MSG_WAITALL) # Expect 8 bytes back
         if ret[0] == 0:
             (_, dbg) = struct.unpack("<LL", ret)
-            print("Debug: {0:08x}".format(dbg))
+            logger.debug("Debug: {0:08x}".format(dbg))
             return dbg
         raise JtagClientException("Failed to read User Debug Register: " + self.errorstring(ret[0]))
 
