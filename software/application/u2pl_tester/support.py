@@ -14,6 +14,9 @@ ADC_DATA        = 0x00C0
 class TestFail(Exception):
     pass
 
+class TestFailCritical(TestFail):
+    pass
+
 # create logger
 logger = logging.getLogger('Support')
 logger.setLevel(logging.INFO)
@@ -50,6 +53,10 @@ class TesterADC:
             total += ch[idx]
         return (total * 0.004 * TesterADC.factors[idx]) / repeat
 
+    @staticmethod
+    def add_log_handler(ch):
+        global logger
+        logger.addHandler(ch)
 
 class Rtc:
     @staticmethod

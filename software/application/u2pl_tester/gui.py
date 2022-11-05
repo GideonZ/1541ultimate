@@ -4,7 +4,8 @@ import tkinter.scrolledtext as tkscrolled
 from PIL import ImageTk, Image
 from pprint import pprint
 import logging
-from tests import UltimateIIPlusLatticeTests, TestFail, JtagClientException
+from tests import UltimateIIPlusLatticeTests, TestFail, TestFailCritical, JtagClientException
+from support import TesterADC
 
 # sudo apt install python3-pil python3-pil.imagetk
 
@@ -102,14 +103,20 @@ class MyGui:
         self.textbox.insert(tk.END, f"Running test '{doc}'\n{'-' * (14 + len(doc))}\n")
         self.textbox.see(tk.END)
         self.window.update()
+        critical = False
         try:
             func(self.testsuite)
             self.test_icon_canvases[name].itemconfig(self.test_icon_images[name], image = self.img_pass)
             self.textbox.insert(tk.END, "-> Result: OK!\n\n")
+        except TestFailCritical as e:
+            self.test_icon_canvases[name].itemconfig(self.test_icon_images[name], image = self.img_fail)
+            self.textbox.insert(tk.END, "-> Result: CRITICAL FAILURE!\n")
+            self.textbox.insert(tk.END, f"Reason: {e}\n\n")
+            critical = True
         except TestFail as e:
             self.test_icon_canvases[name].itemconfig(self.test_icon_images[name], image = self.img_fail)
-            self.textbox.insert(tk.END, "-> Result: FAIL!\n\n")
-            self.textbox.insert(tk.END, f"Reason: {e}")
+            self.textbox.insert(tk.END, "-> Result: FAIL!\n")
+            self.textbox.insert(tk.END, f"Reason: {e}\n\n")
             self.errors += 1
         except JtagClientException:
             messagebox.showerror("Failure!", "Communication Error!\nRestart Tester Application!")
@@ -118,9 +125,9 @@ class MyGui:
         if name in self.after:
             self.after[name]()
 
-        self.textbox.insert(tk.END, "\n*** BOARD SUCCESSFULLY TESTED AND PROGRAMMED! ***\n\n")
         self.textbox.see(tk.END)
         self.window.update()
+        return critical
 
     def ExecuteTests(self):
         self.start_button.configure(state = 'disabled')
@@ -155,14 +162,19 @@ class MyGui:
         self.window.update()
 
         for name in self.functions:
-            self.RunOneTest(name)           
-            #break # Just do one test for now
+            if self.RunOneTest(name):
+                break
 
         # If all tests are successful, the board can be flashed
         if self.errors == 0:
             self.testsuite.program_flash([self.FlashUpdateFPGA, self.FlashUpdateAppl, self.FlashUpdateFAT])
         else:
             messagebox.showerror("Reject", "Board has not been programmed due to errors.")
+
+        if self.errors == 0:
+            self.textbox.insert(tk.END, "\n*** BOARD SUCCESSFULLY TESTED AND PROGRAMMED! ***\n\n")
+            self.textbox.see(tk.END)
+            self.window.update()
 
         self.testsuite.shutdown()
         self.start_button.configure(state = 'normal')
@@ -235,8 +247,13 @@ class MyGui:
         ch = TextboxLogHandler(self.textbox)
         ch.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(message)s'))
         UltimateIIPlusLatticeTests.add_log_handler(ch)
+        TesterADC.add_log_handler(ch)
 
         messagebox.showinfo("Welcome!", "Welcome to the U2+L Tester.\nPlace a board and press start!\n")
+
+        self.textbox.insert(tk.END, "Welcome to the U2+L Tester.\nPlace a board and press start!\n")
+        self.textbox.see(tk.END)
+        self.window.update()
 
     def run(self):
         self.window.mainloop()
