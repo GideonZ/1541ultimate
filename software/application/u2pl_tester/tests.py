@@ -1,6 +1,6 @@
 
 from jtag_functions import JtagClientException
-from support import TestFail, Tester, DeviceUnderTest, find_ones, find_zeros
+from support import TestFail, TestFailCritical, Tester, DeviceUnderTest, find_ones, find_zeros
 import os
 import subprocess
 import time
@@ -179,7 +179,7 @@ class UltimateIIPlusLatticeTests:
         # Switch to MicroUSB supply mode
         self.tester.user_set_io(0x20)
         v18 = self.tester.read_adc_channel('+1.8V', 5)
-        if v18 < 1.7:
+        if v18 < 1.6:
             raise TestFail('Power went off when switching to MicroUSB power')
         curr = self.tester.read_adc_channel('Cartridge Current', 5)
         if curr > 5.0:
@@ -198,12 +198,12 @@ class UltimateIIPlusLatticeTests:
     def test_003_test_fpga(self):
         """FPGA Detection & Load"""
         if self.dut.ecp_read_id() != 0x41111043:
-            raise TestFail("FPGA on DUT not recognized")
+            raise TestFailCritical("FPGA on DUT not recognized")
 
         self.dut.ecp_load_fpga(dut_fpga)
 
         if self.dut.user_read_id() != 0xdead1541:
-            raise TestFail("DUT: User JTAG not working. (bad ID)")
+            raise TestFailCritical("DUT: User JTAG not working. (bad ID)")
         
     def test_015_leds(self):
         """LED Presence"""
@@ -235,7 +235,7 @@ class UltimateIIPlusLatticeTests:
         time.sleep(0.5)
         text = self.dut.user_read_console(True)
         if "RAM OK!!" not in text:
-            raise TestFail("Memory calibration failed.")
+            raise TestFailCritical("Memory calibration failed.")
 
         random = {} # Map of random byte blocks
         for i in range(6,26):
@@ -253,7 +253,7 @@ class UltimateIIPlusLatticeTests:
             if rb != random[i]:
                 logger.debug(random[i].hex())
                 logger.debug(rb.hex())
-                raise TestFail('Verify error on DDR2 memory')
+                raise TestFailCritical('Verify error on DDR2 memory')
 
     def test_018_frequencies(self):
         """Crystal Accuracy"""
@@ -300,7 +300,7 @@ class UltimateIIPlusLatticeTests:
         time.sleep(0.5)
         text = self.dut.user_read_console()
         if "DUT Main" not in text:
-            raise TestFail('Running test application failed')
+            raise TestFailCritical('Running test application failed')
 
     def test_006_buttons(self):
         """Button Test"""
@@ -584,11 +584,14 @@ class UltimateIIPlusLatticeTests:
         with open("speaker.bin", 'wb') as fo:
             fo.write(data)
 
-        (ampl, peak) = calc_fft_mono("speaker.bin", False) #needs mono variant
+        (ampl, peak) = calc_fft_mono("speaker.bin", False)
+        
         if ampl < 0.22:
+            calc_fft_mono("speaker.bin", True)
             raise TestFail(f"Amplitude on speaker channel low. {ampl}")
         if int(peak) != 246:
-            raise TestFail(f"Peak in spectrum not at 1000 Hz {peak}")
+            calc_fft_mono("speaker.bin", True)
+            raise TestFail(f"Peak in spectrum not at 250 Hz {peak}")
 
 
     def program_flash(self, cb = [None, None, None]):
