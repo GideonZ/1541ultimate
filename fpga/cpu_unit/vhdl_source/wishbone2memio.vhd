@@ -101,8 +101,6 @@ begin
     process(clock)
     begin
         if rising_edge(clock) then
-            io_req_i.read <= '0';
-            io_req_i.write <= '0';
             io_ack <= '0';
             read_ack <= '0';
             
@@ -114,6 +112,8 @@ begin
 
             case state is
             when idle =>
+                io_req_i.read <= '0';
+                io_req_i.write <= '0';
                 wb_dat_i <= (others => '0');
                 timeout_count <= 200;
                 timeout <= '0';
@@ -161,16 +161,13 @@ begin
 
                 if io_resp.ack = '1' then
                     if remain = 0 then
+                        io_req_i.read <= '0';
+                        io_req_i.write <= '0';
                         state <= idle;
                         io_ack <= '1';
                     else
                         remain <= remain - 1;
                         io_req_i.address(1 downto 0) <= io_req_i.address(1 downto 0) + 1;
-                        if mem_req_i.read_writen = '0' then
-                            io_req_i.write <= '1';
-                        else
-                            io_req_i.read <= '1';
-                        end if;
                     end if;
                 end if;
 

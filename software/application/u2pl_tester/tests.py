@@ -112,15 +112,15 @@ class UltimateIIPlusLatticeTests:
         time.sleep(0.2) # Check Power supplt after some time
 
         supply = self.tester.read_adc_channel('Supply', 5)
-        if supply < 5.0:
-            TestFail('Tester Supply Voltage Low')
         self.supply = supply # For later use
+        if supply < 5.0:
+            TestFailCritical('Tester Supply Voltage Low')
 
         curr = self.tester.read_adc_channel('Cartridge Current', 5) + self.tester.read_adc_channel('MicroUSB Current', 5)
+        self.current = curr # For later use
         logger.info(f"After CLEAR FPGA: {curr:.1f} mA")
         if curr > 250.:   # Unfortunately this is including USB sticks and network loopback attached!
-            TestFail('Board Current too high')
-        self.current = curr # For later use
+            TestFailCritical('Board Current too high')
 
     def test_001_regulators(self):
         """Voltage Regulators"""
@@ -183,7 +183,7 @@ class UltimateIIPlusLatticeTests:
             raise TestFail('Power went off when switching to MicroUSB power')
         curr = self.tester.read_adc_channel('Cartridge Current', 5)
         if curr > 5.0:
-            raise TestFail('Current flow from Cartridge Supply')
+            raise TestFail(f'Current flow from Cartridge Supply {curr:.0f} mA')
         self.tester.user_set_io(0x30)
         # Switch to Cartridge Power Mode
         self.tester.user_set_io(0x10)
@@ -192,7 +192,7 @@ class UltimateIIPlusLatticeTests:
             raise TestFail('Power went off when switching to Cartridge power')
         curr = self.tester.read_adc_channel('MicroUSB Current', 5)
         if curr > 5.0:
-            raise TestFail('Current flow from MicroUSB Supply')
+            raise TestFail(f'Current flow from MicroUSB Supply {curr:.0f} mA')
         self.tester.user_set_io(0x30)
 
     def test_003_test_fpga(self):
@@ -292,6 +292,16 @@ class UltimateIIPlusLatticeTests:
     def test_020_board_revision(self):
         "Board Revision"
         self.revision = int(self.dut.user_read_io(0x10000c, 1)[0]) >> 3
+        self.dut.user_write_io(0x60208, b'\x03')
+        self.dut.user_write_io(0x60200, b'\xFF')
+        self.dut.user_write_io(0x60208, b'\x01')
+        self.dut.user_write_io(0x60200, b'\x4B')
+        self.dut.user_write_io(0x60200, b'\x00\x00\x00\x00')
+        idbytes = self.dut.user_read_io(0x60200, 4)
+        idbytes += self.dut.user_read_io(0x60200, 4)
+        self.dut.user_write_io(0x60208, b'\x03')
+        logger.info(f"FlashID = {idbytes.hex()}")
+        self.flashid = struct.unpack(">Q", idbytes)[0]
 
     def test_005_start_app(self):
         """Run Application on DUT"""
@@ -453,7 +463,7 @@ class UltimateIIPlusLatticeTests:
         #        print("Writing: ", pattern.hex())
         #        self.tester.user_write_io(0x100300, pattern)
 
-        # Walking one test
+        ## Walking one test
         diffs = set()
         for i in test_bits:
             pattern = bytearray(6)
@@ -498,6 +508,9 @@ class UltimateIIPlusLatticeTests:
             diffs.update(find_ones(diff))
             if (rb != pattern):
                 errors += 1
+
+        self.tester.user_write_io(0x100308, zeros)
+        self.tester.user_read_console(True)
 
         logger.info(f"Errors: {errors}")
         pins = [pio_names[x] for x in diffs]
