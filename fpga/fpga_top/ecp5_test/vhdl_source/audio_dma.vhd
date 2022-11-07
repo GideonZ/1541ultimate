@@ -110,6 +110,7 @@ begin
             mem_req.tag <= g_tag;
             case state is
             when idle =>
+                mem_req.request <= '0';
                 if in_address >= in_end and in_enable = '1' then
                     if in_continuous = '1' then
                         in_address <= in_start;
@@ -152,6 +153,7 @@ begin
             
             when write2 =>
                 if mem_resp.rack = '1' and mem_resp.rack_tag = g_tag then -- write request accepted
+                    mem_req.request <= '0';
                     sys_in_ready <= '1';                    
                     if g_mono then
                         state <= idle;

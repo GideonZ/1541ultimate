@@ -118,8 +118,8 @@ class MyGui:
             self.textbox.insert(tk.END, "-> Result: FAIL!\n")
             self.textbox.insert(tk.END, f"Reason: {e}\n\n")
             self.errors += 1
-        except JtagClientException:
-            messagebox.showerror("Failure!", "Communication Error!\nRestart Tester Application!")
+        except JtagClientException as e:
+            messagebox.showerror("Failure!", f"Communication Error!\n{e}\nRestart Tester Application!")
             exit()
 
         if name in self.after:
@@ -146,7 +146,7 @@ class MyGui:
             try:
                 self.testsuite.startup()
             except JtagClientException as e:
-                messagebox.showerror("Failure!", "Could not communicate with tester.\nCheck if it is powered.\nCheck the USB connection.")
+                messagebox.showerror("Failure!", f"Could not communicate with tester.\n{e}\nCheck if it is powered.\nCheck the USB connection.")
                 self.start_button.configure(state = 'normal')
                 return
 
@@ -162,7 +162,7 @@ class MyGui:
         self.window.update()
 
         for name in self.functions:
-            if self.RunOneTest(name):
+            if self.RunOneTest(name): # Returns 'true' when a critical error occurred (could also have re-raised)
                 break
 
         # If all tests are successful, the board can be flashed
@@ -182,11 +182,11 @@ class MyGui:
     def setup(self):
         self.window=tk.Tk()
         self.window.title('Ultimate-II+L Factory Tester')
-
         self.img_logo = ImageTk.PhotoImage(Image.open("logo.jpg"))
         self.img_pass = ImageTk.PhotoImage(Image.open("pass.png"))
         self.img_fail = ImageTk.PhotoImage(Image.open("fail.png"))
         self.img_err  = ImageTk.PhotoImage(Image.open("err.png"))
+        self.window.wm_iconphoto(False, self.img_pass)
 
         self.window.columnconfigure(0, weight = 2)
         self.window.columnconfigure(1, weight = 1)
@@ -240,8 +240,8 @@ class MyGui:
         self.progress_frame.grid(columnspan = 3, column = 1, row = 2, padx = 10, pady = 5)
 
         self.stats = InfoFields(self.window, ["Serial #", "Tester Supply", "Boot Current", "+5.0V", "+4.3V", "+3.3V", "+2.5V", "+1.8V",
-                                              "+1.1V", "+0.9V",
-                                              "Unique ID", "Lot #", "Wafer #", "X / Y / Step",
+                                              "+1.1V", "+0.9V", "Flash ID",
+                                              "FPGA ID", "Lot #", "Wafer #", "X / Y / Step",
                                               "Ref. Clock", "Oscillator", "Board Revision"], 1, 1, 14, 20)
 
         ch = TextboxLogHandler(self.textbox)
@@ -276,13 +276,14 @@ class MyGui:
         self.stats.set('Oscillator', f'{self.testsuite.osc:.6f} MHz')
         
     def UpdateUniqueId(self):
-        self.stats.set('Unique ID', f'{self.testsuite.unique:016X}')
+        self.stats.set('FPGA ID', f'{self.testsuite.unique:016X}')
         self.stats.set('Lot #', f'{self.testsuite.lot:08X}')
         self.stats.set('Wafer #', f'{self.testsuite.wafer}')
         self.stats.set('X / Y / Step', f'({self.testsuite.x_pos}, {self.testsuite.y_pos}, {self.testsuite.extra})')
 
     def UpdateBoardRevision(self):
         self.stats.set('Board Revision', f'{self.testsuite.revision}')
+        self.stats.set('Flash ID', f'{self.testsuite.flashid:016X}')
         if self.testsuite.revision == 16:
             self.testsuite.proto = True
             self.errors -= 1

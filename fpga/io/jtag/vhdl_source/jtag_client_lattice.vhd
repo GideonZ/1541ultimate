@@ -525,7 +525,7 @@ begin
         "110" when do_io_write,
         "111" when others;
 
-    debug_bits(3) <= avm_read_i or avm_write_i;
+    debug_bits(3) <= avm_read_i or avm_write_i or io_read or io_write;
     
     avm_read      <= avm_read_i;
     avm_write     <= avm_write_i;

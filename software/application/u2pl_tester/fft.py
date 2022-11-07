@@ -39,7 +39,7 @@ def plot_all(left, right, samplingFrequency, fftleft, fftright):
     frequencies = values/timePeriod
 
     # Create subplot
-    figure, axis = plotter.subplots(4, 1)
+    figure, axis = plotter.subplots(4 if right else 2, 1)
     plotter.subplots_adjust(hspace=1)
 
     # Time domain representation for sine wave 1
@@ -48,24 +48,25 @@ def plot_all(left, right, samplingFrequency, fftleft, fftright):
     axis[0].set_xlabel('Time')
     axis[0].set_ylabel('Amplitude')
     
-    # Time domain representation for sine wave 2
-    axis[1].set_title('Right Wave')
-    axis[1].plot(time, right)
-    axis[1].set_xlabel('Time')
+    # Frequency domain representation
+    axis[1].set_title('Fourier transform Left')
+    axis[1].plot(frequencies, fftleft)
+    axis[1].set_xlabel('Frequency')
     axis[1].set_ylabel('Amplitude')
- 
-    # Frequency domain representation
-    axis[2].set_title('Fourier transform Left')
-    axis[2].plot(frequencies, fftleft)
-    axis[2].set_xlabel('Frequency')
-    axis[2].set_ylabel('Amplitude')
 
-    # Frequency domain representation
-    axis[3].set_title('Fourier transform Right')
-    axis[3].set_yscale("log")
-    axis[3].plot(frequencies, fftright)
-    axis[3].set_xlabel('Frequency')
-    axis[3].set_ylabel('Amplitude')
+    if right:
+        # Time domain representation for sine wave 2
+        axis[2].set_title('Right Wave')
+        axis[2].plot(time, right)
+        axis[2].set_xlabel('Time')
+        axis[2].set_ylabel('Amplitude')
+    
+        # Frequency domain representation
+        axis[3].set_title('Fourier transform Right')
+        axis[3].set_yscale("log")
+        axis[3].plot(frequencies, fftright)
+        axis[3].set_xlabel('Frequency')
+        axis[3].set_ylabel('Amplitude')
 
     plotter.show()
 
@@ -97,6 +98,6 @@ def calc_fft_mono(filename, plot = False):
     ampl, freq, fft = do_fft(spk, samplingFrequency)    
 
     if plot:
-        plot_all(spk, spk, samplingFrequency, fft, fft)
+        plot_all(spk, None, samplingFrequency, fft, fft)
 
     return (ampl, freq)
