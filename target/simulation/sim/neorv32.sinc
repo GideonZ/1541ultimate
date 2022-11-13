@@ -1,0 +1,50 @@
+# Syntax of the source-include lines:
+# 1 = language
+# 2 = library (destination)
+# 3 = source file
+# 4 = space separated list of dependencies
+#
+# Note: paths are not necessary if the paths are already included in the "AUTO_DEP_PATHS".
+
+vhdl,neorv32,neorv32_package.vhd
+vhdl,neorv32,neorv32_dmem.default.vhd
+vhdl,neorv32,neorv32_imem.default.vhd
+vhdl,neorv32,neorv32_application_image.vhd
+vhdl,neorv32,neorv32_bootloader_image.vhd
+vhdl,neorv32,neorv32_boot_rom.vhd,neorv32_bootloader_image.vhd
+vhdl,neorv32,neorv32_bus_keeper.vhd
+vhdl,neorv32,neorv32_busswitch.vhd
+vhdl,neorv32,neorv32_cfs.vhd
+vhdl,neorv32,neorv32_debug_dm.vhd
+vhdl,neorv32,neorv32_debug_dtm.vhd
+vhdl,neorv32,neorv32_dmem.entity.vhd
+vhdl,neorv32,neorv32_fifo.vhd,neorv32_package.vhd
+vhdl,neorv32,neorv32_gpio.vhd
+vhdl,neorv32,neorv32_gptmr.vhd
+vhdl,neorv32,neorv32_icache.vhd
+vhdl,neorv32,neorv32_imem.entity.vhd,neorv32_application_image.vhd
+vhdl,neorv32,neorv32_mtime.vhd
+vhdl,neorv32,neorv32_neoled.vhd
+vhdl,neorv32,neorv32_pwm.vhd
+vhdl,neorv32,neorv32_slink.vhd
+vhdl,neorv32,neorv32_spi.vhd
+vhdl,neorv32,neorv32_sysinfo.vhd
+vhdl,neorv32,neorv32_trng.vhd
+vhdl,neorv32,neorv32_twi.vhd
+vhdl,neorv32,neorv32_uart.vhd
+vhdl,neorv32,neorv32_wdt.vhd
+vhdl,neorv32,neorv32_wishbone.vhd
+vhdl,neorv32,neorv32_xip.vhd
+vhdl,neorv32,neorv32_xirq.vhd
+vhdl,neorv32,neorv32_cpu_alu.vhd,neorv32_cpu_cp_shifter.vhd neorv32_cpu_cp_muldiv.vhd neorv32_cpu_cp_bitmanip.vhd neorv32_cpu_cp_fpu.vhd neorv32_cpu_cp_cfu.vhd
+vhdl,neorv32,neorv32_cpu_bus.vhd
+vhdl,neorv32,neorv32_cpu_cp_bitmanip.vhd
+vhdl,neorv32,neorv32_cpu_cp_cfu.vhd
+vhdl,neorv32,neorv32_cpu_cp_fpu.vhd
+vhdl,neorv32,neorv32_cpu_cp_muldiv.vhd
+vhdl,neorv32,neorv32_cpu_cp_shifter.vhd
+vhdl,neorv32,neorv32_cpu_decompressor.vhd
+vhdl,neorv32,neorv32_cpu_regfile.vhd
+vhdl,neorv32,neorv32_cpu_control.vhd,neorv32_fifo.vhd neorv32_cpu_decompressor.vhd
+vhdl,neorv32,neorv32_cpu.vhd,neorv32_cpu_control.vhd neorv32_cpu_regfile.vhd neorv32_cpu_alu.vhd neorv32_cpu_bus.vhd
+vhdl,neorv32,neorv32_top.vhd,neorv32_cpu.vhd neorv32_icache.vhd neorv32_busswitch.vhd neorv32_bus_keeper.vhd neorv32_imem.entity.vhd neorv32_dmem.entity.vhd neorv32_boot_rom.vhd neorv32_wishbone.vhd neorv32_xip.vhd neorv32_cfs.vhd neorv32_gpio.vhd neorv32_wdt.vhd neorv32_mtime.vhd neorv32_uart.vhd neorv32_spi.vhd neorv32_twi.vhd neorv32_pwm.vhd neorv32_trng.vhd neorv32_neoled.vhd neorv32_slink.vhd neorv32_xirq.vhd neorv32_gptmr.vhd neorv32_sysinfo.vhd neorv32_debug_dm.vhd neorv32_debug_dtm.vhd neorv32_dmem.default.vhd neorv32_imem.default.vhd
