@@ -1,0 +1,84 @@
+
+
+
+The file system is said to be "PC" oriented, with support for CBM storage.
+This means that filenames are in 'fat' format, with the extension appended as a complete string.
+CBM filenames are converted. 'Normal' characters are converted to lowercase ascii. All other chars
+are converted to hex, enclosed within { }, e.g, an uppercase 'A' written from basic would become '{C1}'.
+'ABC' would become '{C1C2C3}'.
+
+Examples:
+
+hello.prg
+{C8}ello.seq
+
+This will be the string that is sent to the file system "fopen" call. This applies both to create as well as open for reading.
+
+When getting file entries from the CBM disk images, a flag is set in FileInfo. This flag can be used for proper comparing.
+Match function is in walk path routines (filemanager); when the FileInfo is in CBM format when reading directory entries,
+the search string is first converted TO CBM format, such that single char wildcards work. For example, when the fopen call
+searches for {C8}, it is converted to one character when comparing against a CBM name. This means that the extension should
+be stripped off from the filename as well. In the above example searching for {C8}ello.seq should match "Hello" with the
+extension "seq". At this point, the extension is not yet checked.
+
+
+When reading directory
+FileInfo: lfname,        extension          format
+CBM:      base name      file type (ascii)  CBM
+FAT:      complete name  extension          0 
+
+When showing directory, it depends on the agent reading the file system.
+In case of a PC interface, the basename passes through petscii_to_fat, and the extension is added (converted to lowercase).
+For example, in case of FTP, this is done in vfs.cc in "fstat". An alternative could have been to ask the filesystem for a 
+FAT compatible list of filenames. This is actually better.
+
+When creating a file, this is done inside the filesystem; i.e. the internal format is always 'fat', so this only needs to
+be done in the FileSystemD64 class.
+
+
+Now, when copying, the filename should be converted to the correct format as well. 
+
+
+
+Access from IEC...
+Reading files still works as it used to work: The directory is read it its entirety, and a CBM name is created of every entry.
+Then when a file is opened; the internal directory is queried against the CBM names. This is actually no longer necessary, because:
+
+Opening a file: Filename is converted to FAT format, since it is the internal format. Then file system fopen is called and it is
+handled proplerly from there. However... will this work with wildcards? Most likely not, so we'll keep the way it works now.
+
+
+
+So reading a directory could yield two types of encodings: FAT and CBM, discerned by a flag.
+The internal file system works with FAT naming, so access to the D64 filesystem is done with a FAT name as well.
+This means that the function to compare a local name against the external name should compare FAT <-> CBM.
+The extension hereby is of utmost importance. The compare function should 'add' the extension to the CBM name
+and then compare; or, compare it separately by first stripping off the extension from the search string, and then
+compare it to the CBM string, using the proper conversion. In any case, this test sequence should always work:
+- Read CBM directory
+- Convert filenames to FAT
+- Lookup all FAT names, and check if it can be found
+
+Conversion takes time during compare, and the result is almost always thrown away. Imagine converting the entrire string
+and then find at the first character that it doesn't match. So a better way to do it, is to compare the base name without
+extension, using the pattern_match_escaped function, and then check the extension separately. Since the search pattern
+needs to be stripped only once, and not for every file, this is not too expensive. If only this could be done in the
+compare function itself.. :-/  If you want to do it only once, it has to be done outside of the loop, which breaks
+the beauty.
+
+Example:
+Read dir, find "myfile.txt.prg". Lookup "myfile.txt", without the .prg extension, then check for PRG in the extension field.
+
+Works.
+However, when created differently, it goes like this:
+Example: Create file: "myfile.txt" => in cbm: myfile.txt of type PRG.  (basically, the filename becomes myfile.txt.prg)
+When looking for just "myfile.txt", the file cannot be found, as the extension .txt is stripped off. 'myfile' does not exist.
+
+So a better way to do it, is to look for the result of how the file is named inside of the cbm image. In other words,
+convert the search string as if it is going to be created in the cbm file format. Then compare the result. This is time consuming,
+but it makes perfect sense. The best way to do it is to create an FileInfo object from it, since it has base name and
+extension separated.
+
+
+
+
