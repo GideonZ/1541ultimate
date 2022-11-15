@@ -6,10 +6,12 @@
 **/*.u64
 **/*.u2u
 **/*.u2p
+**/*.pyc
 **/output
 **/result
 **/python_out_iec
 **/python_out_nano
+**/work
 /audio
 **/.asdb
 dataset.*
@@ -53,6 +55,13 @@ software/nios_dut_bsp/obj
 software/nios_tester_bsp/obj
 software/nios_solo_bsp/obj
 software/zlib-1.2.8
+target/fpga/**/impl1
+target/fpga/**/.*
+target/fpga/**/*.dir
+target/fpga/**/*.html
+target/fpga/**/*.xml
+target/fpga/**/*.rv*
+target/fpga/**/readback
 target/fpga/*.xrpt
 target/fpga/_xmsgs
 target/fpga/boot400
@@ -133,6 +142,7 @@ target/simulation/sim/transcript
 target/simulation/sim/unisim
 target/simulation/sim/vsim.wlf
 target/simulation/sim/work
+target/software/**/d
 target/software/1st_boot/output
 target/software/1st_boot/result
 target/software/2nd_boot/output

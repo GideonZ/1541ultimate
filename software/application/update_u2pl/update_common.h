@@ -91,7 +91,11 @@ static FRESULT write_flash_file(const char *name, uint8_t *data, int length)
     File *f;
     uint32_t dummy;
     FileManager *fm = FileManager :: getFileManager();
-    FRESULT fres = fm->fopen(ROMS_DIRECTORY, name, FA_CREATE_ALWAYS | FA_WRITE, &f);
+    FRESULT fres = fm->fopen(ROMS_DIRECTORY, name, FA_CREATE_NEW | FA_WRITE, &f);
+    if (fres == FR_EXIST) {
+        console_print(screen, "File %s exists. SKIPPED\n", name);
+        return FR_OK;
+    }
     if (fres == FR_OK) {
         fres = f->write(data, length, &dummy);
         console_print(screen, "Writing %s to /flash: %s\n", name, FileSystem :: get_error_string(fres));
