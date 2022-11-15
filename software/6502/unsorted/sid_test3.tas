@@ -1,0 +1,227 @@
+
+	*=$0801
+	.word ss,2005
+	.null $9e,^start;sys
+ss	.word 0
+
+
+
+sid_freq_l1      = $D400
+sid_freq_h1      = $D401
+sid_pw_l1        = $D402
+sid_pw_h1        = $D403 
+sid_control1     = $D404
+sid_ad1          = $D405
+sid_sr1          = $D406
+
+sid_freq_l2      = $D407
+sid_freq_h2      = $D408
+sid_pw_l2        = $D409
+sid_pw_h2        = $D40A 
+sid_control2     = $D40B
+sid_ad2          = $D40C
+sid_sr2          = $D40D
+
+sid_freq_l3      = $D40E
+sid_freq_h3      = $D40F
+sid_pw_l3        = $D410
+sid_pw_h3        = $D411 
+sid_control3     = $D412
+sid_ad3          = $D413
+sid_sr3          = $D414
+sid_filt_lo      = $D415
+sid_filt_hi      = $D416
+sid_filt_route   = $D417
+sid_volume       = $D418
+
+sid_osc3         = $D41B
+sid_env3         = $D41C
+
+
+start	sei
+        lda #$0B
+        sta $D011
+        
+        lda #0
+        tax
+-       sta $d400,x
+        inx
+        cpx #$20
+        bne -
+        
+; Oscillator value is zero, so asserting test will reset the oscillator itself and stay at 0
+        lda #$08
+        sta sid_control1
+        sta sid_control2
+        sta sid_control2
+
+        lda #$00
+        sta sid_control1
+        sta sid_control2
+        sta sid_control2
+                
+; Initialize square
+        lda #$03
+        sta sid_pw_h1
+        
+        lda #15
+        sta sid_volume
+        jsr delay
+
+; Now test the sequencing through the different waveform generators
+        lda #$33
+        sta sid_ad1
+        lda #$ff
+        sta sid_sr1
+        
+; Now simply trigger the adsr
+        lda #$01
+        sta sid_control1
+        
+        jsr delay
+        
+; Now simply set the freqency generator to turn on  
+        lda #$11
+        sta sid_control1
+        
+        jsr delay
+        
+
+; Let's oscillate for a while
+        lda #$50
+        sta sid_freq_h1
+        
+        jsr delay
+        
+; And while we oscillate, we simply switch the generator type
+        lda #$21
+        sta sid_control1
+        jsr delay
+        
+; And while we oscillate, we simply switch the generator type
+        lda #$41
+        sta sid_control1
+        jsr delay
+
+; And while we oscillate, we simply switch the generator type
+        lda #$21
+        sta sid_control1
+        jsr delay
+
+; And while we oscillate, we simply switch the generator type
+        lda #$41
+        sta sid_control1
+        jsr delay
+
+        lda #$10
+        sta sid_filt_hi
+        lda #$01
+        sta sid_filt_route
+        
+; Now let's pass through the available filters
+        lda #$1F
+        sta sid_volume
+        jsr delay
+
+        lda #$2F
+        sta sid_volume
+        jsr delay
+
+        lda #$4F
+        sta sid_volume
+        jsr delay
+
+; Now lets do some filter sweeps
+        jsr filters
+
+        lda #$08
+        sta sid_filt_hi
+        jsr filters
+                
+        lda #$18
+        sta sid_filt_hi
+        jsr filters
+
+exit
+        lda #0
+        sta sid_volume
+        lda #$1B
+        sta $D011
+        cli
+        rts
+
+
+delay   pha
+        txa
+        pha
+        tya
+        pha
+        ldx #$00
+        ldy #$00
+-       dey
+        bne -
+        dex
+        bne -
+        pla
+        tay
+        pla
+        tax
+        pla
+        rts
+
+sweep
+; Now sweep the frequency
+        ldx #$00
+        ldy #$00
+-       stx sid_freq_h1
+        sty sid_freq_l1
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        iny
+        bne -
+        inx
+        bne -
+        rts
+
+filters
+        lda #$2F ; band pass
+        sta sid_volume
+        ; maximize resonance
+        lda #$F1
+        sta sid_filt_route
+        lda #$11
+        sta sid_control1
+        
+        jsr sweep
+        
+        lda #$1F ; low pass
+        sta sid_volume
+        ; maximize resonance
+        lda #$F1
+        sta sid_filt_route
+        lda #$11
+        sta sid_control1
+        
+        jsr sweep
+
+        lda #$4F ; high pass
+        sta sid_volume
+        ; maximize resonance
+        lda #$F1
+        sta sid_filt_route
+        lda #$11
+        sta sid_control1
+        
+        jsr sweep
+        rts

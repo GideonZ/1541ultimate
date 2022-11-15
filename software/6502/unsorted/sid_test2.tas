@@ -1,0 +1,211 @@
+
+	*=$0801
+	.word ss,2005
+	.null $9e,^start;sys
+ss	.word 0
+
+reu_status      = $DF00
+reu_command     = $DF01
+reu_c64base_l   = $DF02
+reu_c64base_h   = $DF03
+reu_reubase_l   = $DF04
+reu_reubase_m   = $DF05
+reu_reubase_h   = $DF06
+reu_translen_l  = $DF07
+reu_translen_h  = $DF08
+reu_irqmask     = $DF09
+reu_control     = $DF0A
+
+;reu_size_read   = $DF0C
+;reu_start_delay = $DF0D
+;reu_rate_div    = $DF0E
+;reu_translen_x  = $DF0F
+
+reu_mode_toreu   = $B0
+reu_mode_toc64   = $B1
+reu_mode_swap    = $B2
+reu_mode_verify  = $B3
+
+reu_ctrl_nofix   = $00
+reu_ctrl_fixc64  = $80
+reu_ctrl_fixreu  = $40
+reu_ctrl_fixboth = $C0
+
+sid_freq_l3      = $D40E
+sid_freq_h3      = $D40F
+sid_pw_l3        = $D410
+sid_pw_h3        = $D411 
+sid_control3     = $D412
+sid_ad3          = $D413
+sid_sr3          = $D414
+sid_volume       = $D418
+sid_osc3         = $D41B
+sid_env3         = $D41C
+
+buffer_addr      = $1000
+buffer_size      = $C000     
+sample_length    = $FFFF
+
+
+start	sei
+        lda #$0B
+        sta $D011
+        
+        lda #$00
+        sta sid_sr3
+
+; delay loop
+        ldx #0
+        ldy #0
+-       dey
+        bne -
+        dex
+        bne -
+
+        lda #15
+        sta sid_volume
+
+        lda #<(sample_length & $FFFF)
+        sta reu_translen_l
+        lda #>(sample_length & $FFFF)
+        sta reu_translen_h
+        ;lda #(sample_length >> 16)
+        ;sta reu_translen_x
+        lda #0
+        sta reu_reubase_l
+        sta reu_reubase_m
+        sta reu_reubase_h
+        lda #<sid_env3
+        sta reu_c64base_l
+        lda #>sid_env3
+        sta reu_c64base_h
+        lda #reu_ctrl_fixc64
+        sta reu_control
+
+        lda #$40
+        sta sid_freq_h3
+
+        lda #$01 ; attack=2, decay=1
+        sta sid_ad3
+        lda #$04 ; sustain=8, release=4.
+        sta sid_sr3
+        lda #$11 ; 2 cycles
+        sta sid_control3 ; 4 cycles
+        
+; delay loop = 328964 cycles (good for attack prescalers up to 050A, setting up to 9)
+;        ldx #254  ; 2 cycles
+;        ldy #0  ; 2 cycles
+;-       dey     ; 2 cycles * 65536
+;        bne -   ; 3 cycles * 65536
+;        dex     ; 2 cycles * 256
+;        bne -   ; 3 cycles * 256
+;
+;        lda #6
+;        sta reu_start_delay
+        lda #reu_mode_toreu
+        sta reu_command
+;        lda #$10 ; gate off
+;        sta sid_control3
+        ; reu starts now!
+
+        
+        lda #$1B
+        sta $d011
+
+analyze
+
+        jsr fetch_buffer
+        lda #$36
+        sta $01
+        jsr count_bytes
+        lda #$37
+        sta $01
+done
+        rts
+
+
+fetch_buffer
+        ; fetch reu data to C64 memory
+        lda #<buffer_size
+        sta reu_translen_l
+        lda #>buffer_size
+        sta reu_translen_h
+        lda #$00
+        sta reu_reubase_l
+        sta reu_reubase_m
+        sta reu_reubase_h
+        lda #<buffer_addr
+        sta reu_c64base_l
+        lda #>buffer_addr
+        sta reu_c64base_h
+        lda #reu_ctrl_nofix
+        sta reu_control
+        lda #reu_mode_toc64
+        sta reu_command
+        nop
+        nop
+        nop
+        rts
+       
+        
+count_bytes
+        lda #<buffer_addr
+        sta $fb
+        lda #>buffer_addr
+        sta $fc
+        lda #$55
+        sta $02 
+        lda #0
+        sta $fd
+        sta $fe
+        
+        ldy #0
+-       lda ($fb),y
+        cmp $02
+        bne ++
+        inc $fd
+        bne +
+        inc $fe
++       iny
+        bne -
+        inc $fc
+        lda $fc
+        cmp #$d0
+        bne -
+        rts
+
++       pha
+        lda $02
+        jsr hexbyte
+        pla
+        sta $02
+        lda $fe
+        jsr hexbyte
+        lda $fd
+        jsr hexbyte
+        lda #$0d
+        jsr $ffd2
+        lda #$00
+        sta $fd
+        sta $fe
+        beq -
+        jmp $fce2        
+
+hexbyte
+        pha
+        lsr
+        lsr
+        lsr
+        lsr
+        tax
+        lda hex,x
+        jsr $ffd2
+        pla
+        and #$0F
+        tax
+        lda hex,x
+        jmp $ffd2
+        
+hex
+    .text "0123456789ABCDEF"
+
