@@ -1,0 +1,28 @@
+; just to make it compile and easy to inspect
+
+    *=$0801
+    .word ss,2020
+    .null $9e,^start;sys
+ss  .word 0
+
+start
+    sei
+
+    lda #$FF
+    sta $dd03
+    
+    ldx #$00
+-   stx $dd01
+    cpx $dd01
+    bne +
+    inx
+    bne - 
+    lda #$05
+    sta $d020
+    jmp -    
+
++   lda #$02
+    sta $d020
+    cli
+    rts
+    

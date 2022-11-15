@@ -1,0 +1,91 @@
+;**************************************************************************
+;*
+;* FILE  gmod2.tas
+;* Copyright (c) 2021 Gideon Zweijtzer <gideon.zweijtzer>
+;*
+;* DESCRIPTION
+;*   This is a simple prg file the reads and writes eeprom of Gmod2 cart
+;*
+;******
+    * = $0801
+
+    .word $080b
+    .word 1541
+    .byte $9e, $20, $32, $30, $36, $34, $00
+    .byte 0, 0, 0, 0
+
+    jmp read
+    jmp write
+    
+    .include 'eeprom.tas'    
+read
+    jsr eeprom_reset
+
+    ldx #0
+    ldy #0
+    jsr eeprom_read_begin
+    
+    lda #0
+    sta $fb
+    lda #4
+    sta $fc
+    ldy #0
+-   jsr eeprom_read_byte
+    sta ($fb),y
+    iny
+    bne -
+    inc $fc
+-   jsr eeprom_read_byte
+    sta ($fb),y
+    iny
+    bne -
+    
+    jsr eeprom_read_end
+        
+    rts
+
+write
+    jsr eeprom_reset
+
+    jsr eeprom_ewen
+    
+    ldy #100
+    ldx #0
+    jsr eeprom_write_begin
+    lda #1
+    jsr eeprom_write_byte
+    lda #2
+    jsr eeprom_write_byte
+    jsr eeprom_write_end
+
+    ldy #101
+    ldx #0
+    jsr eeprom_write_begin
+    lda #3
+    jsr eeprom_write_byte
+    lda #4
+    jsr eeprom_write_byte
+    jsr eeprom_write_end
+
+    ldy #102
+    ldx #0
+    jsr eeprom_write_begin
+    lda #5
+    jsr eeprom_write_byte
+    lda #6
+    jsr eeprom_write_byte
+    jsr eeprom_write_end
+
+    ldy #103
+    ldx #0
+    jsr eeprom_write_begin
+    lda #7
+    jsr eeprom_write_byte
+    lda #8
+    jsr eeprom_write_byte
+    jsr eeprom_write_end
+
+    jsr eeprom_ewds
+
+    rts
+    
