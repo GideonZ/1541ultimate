@@ -463,6 +463,9 @@ void C64_CRT::configure_cart(cart_def *def)
         case CART_SUPERSNAP:
             cart_type = CART_TYPE_SS5; // Snappy
             prohibit = CART_PROHIBIT_DEXX;
+            if (total_read > 65536) {
+                cart_type |= VARIANT_1;
+            }
             break;
         case CART_ZAXXON:
             cart_type = CART_TYPE_ZAXXON;
