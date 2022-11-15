@@ -499,6 +499,9 @@ begin
             when c_ss5 =>
                 if io_write='1' and io_addr(8) = '0' and cart_en='1' then -- DE00-DEFF
                     bank_bits(15 downto 14) <= io_wdata(4) & io_wdata(2); -- 4 banks of 16K
+                    if variant(0)='1' then -- 128K version
+                        bank_bits(16) <= io_wdata(5);
+                    end if;
                     mode_bits <= io_wdata(3) & io_wdata(1) & io_wdata(0);
                     unfreeze  <= not io_wdata(0);
                     cart_en   <= not io_wdata(3);
