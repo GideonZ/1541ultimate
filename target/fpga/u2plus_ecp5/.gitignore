@@ -5,4 +5,5 @@ impl1
 .*.ini
 promote.xml
 reportview.xml
+build.log
 
