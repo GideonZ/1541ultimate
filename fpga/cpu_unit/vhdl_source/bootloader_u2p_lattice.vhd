@@ -2,7 +2,7 @@
 -- Auto-generated memory initialization file (for BOOTLOADER) from source file <riscv32_u2p_boot/result/bootloader.bin>
 -- Size: 3700 bytes
 -- MARCH: default
--- Built: 16.10.2022 11:56:54
+-- Built: 16.11.2022 10:49:12
 
 -- prototype defined in 'neorv32_package.vhd'
 package body neorv32_bootloader_image is

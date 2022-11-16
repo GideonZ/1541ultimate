@@ -231,12 +231,12 @@ u64_clean:
 	@$(MAKE) -C target/software/nios2_u64 clean
 
 u2pl:
-        @$(MAKE) -C tools
-        @$(MAKE) -C target/software/riscv32_unknown_elf_lwip
-        @$(MAKE) -C target/software/riscv32_u2p_boot
-        @$(MAKE) -C target/fpga/u2plus_ecp5
-        @$(MAKE) -C target/software/riscv32_ultimate
-        @$(MAKE) -C target/software/riscv32_update
-        @cp target/software/riscv32_update/result/update.app ./update.u2l
+	@$(MAKE) -C tools
+	@$(MAKE) -C target/software/riscv32_unknown_elf_lwip
+	@$(MAKE) -C target/software/riscv32_u2p_boot
+	@$(MAKE) -C target/fpga/u2plus_ecp5
+	@$(MAKE) -C target/software/riscv32_ultimate
+	@$(MAKE) -C target/software/riscv32_update
+	@cp target/software/riscv32_update/result/update.app ./update.u2l
 
 
