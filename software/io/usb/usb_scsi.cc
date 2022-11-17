@@ -10,18 +10,7 @@ extern "C" {
 #include "filemanager.h"
 #include "FreeRTOS.h"
 #include "task.h"
-
-__inline uint32_t cpu_to_32le(uint32_t a)
-{
-#ifdef NIOS
-	return a;
-#else
-	uint32_t m1, m2;
-    m1 = (a & 0x00FF0000) >> 8;
-    m2 = (a & 0x0000FF00) << 8;
-    return (a >> 24) | (a << 24) | m1 | m2;
-#endif
-}
+#include "endianness.h"
 
 uint8_t c_scsi_getmaxlun[] = { 0xA1, 0xFE, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 };
 uint8_t c_scsi_reset[]     = { 0x21, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
@@ -278,6 +267,10 @@ int UsbScsiDriver :: status_transport(int timeout, int retries)
 		printf("Invalid status (len = %d, signature = %8x)..\n", len, *signature);
 		return -1;
 	}
+    if (stat_resp[12]) {
+        printf("USBS reports error?\n");
+        dump_hex_relative(stat_resp, 13);
+    }
 
 	return (int)stat_resp[12]; // OK, or other error
 }
@@ -456,6 +449,9 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
 
 	xSemaphoreGive(mutex);
 	if(st == 1) {
+        printf("Command issued:\n");
+        dump_hex_relative(&cbw, 31);
+        printf("Bytes transferred: %d\n", len);
 		request_sense(lun, true, true);
 		retval = -7;
 	}

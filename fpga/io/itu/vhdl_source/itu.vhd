@@ -29,7 +29,7 @@ port (
     buttons         : in  std_logic_vector(2 downto 0);
     
     irq_timer_tick  : in  std_logic := '0';
-    irq_in          : in  std_logic_vector(7 downto 2);
+    irq_in          : in  std_logic_vector(7 downto 2) := (others => '0');
     irq_flags       : out std_logic_vector(7 downto 0);
     irq_high        : in  std_logic_vector(7 downto 0) := X"00";
 

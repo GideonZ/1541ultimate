@@ -73,9 +73,29 @@ package mem_bus_pkg is
     type t_mem_req_32_array is array(natural range <>) of t_mem_req_32;
     type t_mem_resp_32_array is array(natural range <>) of t_mem_resp_32;
 
+    constant c_mem_bus_req_width    : natural := 71;
+    function to_std_logic_vector(a: t_mem_req_32) return std_logic_vector;
+    function to_mem_req(a: std_logic_vector(c_mem_bus_req_width-1 downto 0); valid: std_logic) return t_mem_req_32;
 end package;
 
 package body mem_bus_pkg is
+    function to_std_logic_vector(a: t_mem_req_32) return std_logic_vector is
+        variable ret : std_logic_vector(c_mem_bus_req_width-1 downto 0);
+    begin
+        ret := a.read_writen & a.byte_en & a.tag & std_logic_vector(a.address) & a.data;
+        return ret;
+    end function;
 
+    function to_mem_req(a: std_logic_vector(c_mem_bus_req_width-1 downto 0); valid: std_logic) return t_mem_req_32 is
+        variable ret : t_mem_req_32;
+    begin
+        ret.read_writen := a(70);
+        ret.byte_en     := a(69 downto 66);
+        ret.tag         := a(65 downto 58);
+        ret.address     := unsigned(a(57 downto 32));
+        ret.data        := a(31 downto 0);
+        ret.request     := valid;
+        return ret;
+    end function;
 end package body;
-    
+   

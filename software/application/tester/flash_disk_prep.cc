@@ -76,10 +76,8 @@ static void copy_files(void)
     write_file("snds1581.bin", &_snds1581_bin_start, 0xC000);
 }
 
-int prepare_flashdisk(uint8_t *mem, uint32_t mem_size)
+int prepare_flashdisk_pre(uint8_t *mem, uint32_t mem_size)
 {
-//  { FLASH_ID_FLASHDRIVE, 0x00, 0x200000, 0x200000, 0x1F0000 },  // free space: 1984 KB
-
     prep_blk = new BlockDevice_Ram(mem, 4096, mem_size >> 12);
     format_block_dev(prep_blk, "FlashDisk");
 
@@ -91,7 +89,11 @@ int prepare_flashdisk(uint8_t *mem, uint32_t mem_size)
     } else {
         return -1;
     }
-    copy_files();
+    return 0;
+}
+
+int prepare_flashdisk_used(uint32_t mem_size)
+{
     uint32_t free, cs;
     Path p;
     p.cd("/prep");
@@ -104,4 +106,14 @@ int prepare_flashdisk(uint8_t *mem, uint32_t mem_size)
         printf("Used blocks: %d\n", used);
     }
     return (int)used;
+}
+
+int prepare_flashdisk(uint8_t *mem, uint32_t mem_size)
+{
+    int pre = prepare_flashdisk_pre(mem, mem_size);
+    if (pre) {
+        return pre;
+    }
+    copy_files();
+    return prepare_flashdisk_used(mem_size);
 }

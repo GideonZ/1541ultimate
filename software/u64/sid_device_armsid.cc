@@ -296,6 +296,7 @@ int SidDeviceArmSid::ArmSidConfig:: S_cfg_armsid_type(ConfigItem *it)
     S_config_mode(base);
     S_set_mode(base, it->getValue() ? '8' : '6');
     post(it);
+    return 0;
 }
 
 int SidDeviceArmSid::ArmSidConfig:: S_cfg_armsid_filt(ConfigItem *it)
@@ -307,6 +308,7 @@ int SidDeviceArmSid::ArmSidConfig:: S_cfg_armsid_filt(ConfigItem *it)
     S_save_ram(base);
 
     post(it);
+    return 0;
 }
 
 void SidDeviceArmSid :: SetSidType(int type)

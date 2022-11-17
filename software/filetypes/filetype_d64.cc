@@ -197,5 +197,5 @@ int FileTypeD64 :: loadMP3_st(SubsysCommand *cmd)
         cmd->user_interface->popup(FileSystem::get_error_string(fres), BUTTON_OK);
         return -2;
     }
-
+    return 0;
 }

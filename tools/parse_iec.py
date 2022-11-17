@@ -356,26 +356,11 @@ def _wait(params):
 def unknown_mnem(params):
     print ("Unknown mnemonic: '%s'" % params)
 
-def dump_bram_init():
-    bram = [0]*2048
-    for i in range(len(program)):
-        inst = int(program[i], 16)
-        bram[4*i+0] = inst & 0xFF
-        bram[4*i+1] = (inst >> 8) & 0xFF
-        bram[4*i+2] = (inst >> 16) & 0xFF
-        bram[4*i+3] = (inst >> 24) & 0xFF
-    
-    for i in range(64):
-        hx = ''
-        for j in range(31,-1,-1):
-            hx = hx + "%02X" % bram[i*32+j]
-        print ("        INIT_%02X => X\"%s\"," % (i, hx))
-         
 def dump_iec_file(filename):
     f = open(filename, "wb")
     for i in range(len(program)):
         inst = int(program[i], 16)
-        f.write(struct.pack(">L", inst))
+        f.write(struct.pack("<L", inst))
     
     f.close()
         
@@ -452,6 +437,5 @@ if __name__ == "__main__":
 
 #    print program
     
-#    dump_bram_init()
     dump_iec_file(outputfile)
     

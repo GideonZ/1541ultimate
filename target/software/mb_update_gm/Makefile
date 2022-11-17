@@ -17,6 +17,7 @@ SRCS_C   =	mbstart_rtos.c \
             tasks.c \
             timers.c \
             port.c \
+			assert.c \
             heap_3.c \
             ff.c \
             ffsystem.c \

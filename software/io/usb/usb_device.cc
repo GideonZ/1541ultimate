@@ -7,19 +7,11 @@ extern "C" {
 #include <stdlib.h>
 #include <string.h>
 #include "task.h"
+#include "endianness.h"
 
 #if DISABLE_USB_DEBUG
     #define printf(...)
 #endif
-
-__inline uint16_t le16_to_cpu(uint16_t h)
-{
-#ifdef NIOS
-	return h;
-#else // assume big endian
-    return (h >> 8) | (h << 8);
-#endif
-}
 
 char *unicode_to_ascii(uint8_t *in, char *out, int maxlen)
 {

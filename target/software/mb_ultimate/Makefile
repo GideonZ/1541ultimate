@@ -7,12 +7,13 @@ LINKMETHOD = ld
 SIMOFFSET  = 65536
 
 SRCS_C   =	mbstart_rtos.c \
-			malloc_lock.c \
-			itu.c \
-			dump_hex.c \
-			profiler.c \
-			croutine.c \
-            event_groups.c \
+		malloc_lock.c \
+		itu.c \
+		dump_hex.c \
+		profiler.c \
+		croutine.c \
+		event_groups.c \
+		assert.c \
             list.c \
             queue.c \
             tasks.c \

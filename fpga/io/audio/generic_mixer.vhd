@@ -45,9 +45,6 @@ architecture arch of generic_mixer is
     type t_state is (idle, accumulate, collect, collect2, collect3);
     signal state    : t_state;
     signal pointer  : natural range 0 to 2*g_num_sources;
-    signal sys_en   : std_logic;
-    signal sys_en_d : std_logic;
-    signal sys_rdata: std_logic_vector(7 downto 0);
 
     signal ram_addr : unsigned(7 downto 0);
     signal ram_rdata: std_logic_vector(7 downto 0);
@@ -87,26 +84,15 @@ begin
         
         b_clock        => sys_clock,
         b_address      => req.address(7 downto 0),
-        b_rdata        => sys_rdata,
+        b_rdata        => open,
         b_wdata        => req.data,
-        b_en           => sys_en,
+        b_en           => req.write,
         b_we           => req.write
     );
     
-    sys_en <= req.write or req.read;
+    resp.data <= X"00";
+    resp.ack  <= req.write or req.read;
     
-    process(sys_clock)
-    begin
-        if rising_edge(sys_clock) then
-            sys_en_d <= sys_en;
-            resp <= c_io_resp_init;
-            if sys_en_d = '1' then
-                resp.data <= sys_rdata;
-                resp.ack <= '1';
-            end if;
-        end if;
-    end process;
-
     process(clock)
     begin
         if rising_edge(clock) then

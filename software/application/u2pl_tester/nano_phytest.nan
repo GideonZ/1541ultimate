@@ -1,0 +1,90 @@
+; Read registers
+FILTERED_STAT_1 = $39
+FRAME_COUNTER   = $3B
+FRAME_TICK      = $3C ; clear on write
+MEM_CTRL_READY  = $3D
+DISCONNECTED    = $3E ; clear on write
+STATUS          = $3F
+
+; Write registers
+SPEED                = $26
+
+SET_DO_CHIRP         = $20
+SET_CHIRP_LEVEL      = $21
+;SET_CONNECTED        = $22
+;SET_OPERATIONAL      = $23
+;SET_SUSPENDED        = $24
+SET_SOF_ENABLE       = $27
+SEND_INTERRUPT       = $28
+CLR_DO_CHIRP         = $30
+CLR_CHIRP_LEVEL      = $31
+;CLR_CONNECTED        = $32
+;CLR_OPERATIONAL      = $33
+;CLR_SUSPENDED        = $34
+CLR_SOF_ENABLE       = $37
+
+PULSE_WAKEUP         = $25
+PULSE_RESET_FILTER   = $29
+
+; Command interface to USB sequencer
+CMD_REQUEST          = $60
+CMD_DATA_BUFFER_CTRL = $61
+CMD_DEVICE_ENDPOINT  = $62
+CMD_SPLIT_CONTROL    = $63
+CMD_RESPONSE         = $64
+
+; Command interface to Memory Controller
+MEM_ADDR_LO          = $70
+MEM_ADDR_HI          = $71
+MEM_TRANSFER_WRITE   = $72
+MEM_TRANSFER_READ    = $73
+MEM_BUFFER_INDEX     = $74
+
+; Ulpi registers
+ULPI_REG_READ_0      = $80
+ULPI_REG_WRITE_0     = $C0
+ULPI_R_IRQ_STATUS  = $93
+ULPI_W_FUNC_CTRL   = $C4
+ULPI_R_FUNC_CTRL   = $84
+ULPI_W_OTG_CONTROL = $CA
+ULPI_W_SCRATCH     = $D6
+ULPI_R_SCRATCH     = $96
+ULPI_R_VENDOR      = $80
+ULPI_R_PRODUCT_LOW = $82
+
+begin
+	INP   $80
+	STORE $3FC
+	INP   $81
+	STORE $3FD
+	INP   $82
+	STORE $3FE
+	INP   $83
+	STORE $3FF
+	
+	LOAD  #$5A
+	OUTP  ULPI_W_SCRATCH
+	INP   $80
+	INP   ULPI_R_SCRATCH
+	STORE $3F8
+	
+	LOAD  #$A5
+	OUTP  ULPI_W_SCRATCH
+	INP   $80
+	INP   ULPI_R_SCRATCH
+	STORE $3F9
+	
+	LOAD  #$33
+	OUTP  ULPI_W_SCRATCH
+	INP   $80
+	INP   ULPI_R_SCRATCH
+	STORE $3FA
+
+	LOAD  #$99
+	OUTP  ULPI_W_SCRATCH
+	INP   $80
+	INP   ULPI_R_SCRATCH
+	STORE $3FB
+
+stop
+    BRA   stop

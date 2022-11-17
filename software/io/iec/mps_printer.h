@@ -65,10 +65,8 @@
 /* Define this for computed RGB palette but not realistic */
 //#define TRUE_CMYK
 
-#ifdef NIOS
+#ifndef FS_ROOT
 #define FS_ROOT "/Usb0/"
-#else
-#define FS_ROOT "/SD/"
 #endif
 
 /******************************  Debug macros  **************************/

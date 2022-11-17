@@ -197,6 +197,8 @@ architecture rtl of u2p_nios_solo is
         
     -- miscellaneous interconnect
     signal ulpi_reset_i     : std_logic;
+    signal ulpi_data_o      : std_logic_vector(7 downto 0);
+    signal ulpi_data_t      : std_logic;
     
     -- memory controller interconnect
     signal memctrl_inhibit  : std_logic;
@@ -355,7 +357,7 @@ begin
         io_read            => io_req.read,
         io_wdata           => io_req.data,
         io_write           => io_req.write,
-        unsigned(io_address) => io_req.address,
+        unsigned(io_address) => io_req.address(19 downto 0),
         io_irq             => io_irq,
 
         io_u2p_ack         => io_u2p_resp.ack,
@@ -363,7 +365,7 @@ begin
         io_u2p_read        => io_u2p_req.read,
         io_u2p_wdata       => io_u2p_req.data,
         io_u2p_write       => io_u2p_req.write,
-        unsigned(io_u2p_address) => io_u2p_req.address,
+        unsigned(io_u2p_address) => io_u2p_req.address(19 downto 0),
         io_u2p_irq         => '0',
         
         unsigned(mem_mem_req_address) => cpu_mem_req.address,
@@ -452,7 +454,7 @@ begin
         SDRAM_CASn        => SDRAM_CASn,
         SDRAM_WEn         => SDRAM_WEn,
         SDRAM_A           => SDRAM_A,
-        SDRAM_BA          => SDRAM_BA(1 downto 0),
+        SDRAM_BA          => SDRAM_BA,
         SDRAM_DM          => SDRAM_DM,
         SDRAM_DQ          => SDRAM_DQ,
         SDRAM_DQS         => SDRAM_DQS
@@ -511,7 +513,6 @@ begin
         g_denominator   => 125,
         g_baud_rate     => 115_200,
         g_timer_rate    => 200_000,
-        g_microblaze    => false,
         g_big_endian    => false,
         g_icap          => false,
         g_uart          => true,
@@ -586,7 +587,7 @@ begin
         io2n_i      => SLOT_IO2n,
                 
         -- local bus side
-        mem_inhibit => memctrl_inhibit,
+        mem_refr_inhibit => memctrl_inhibit,
         mem_req     => mem_req,
         mem_resp    => mem_resp,
                  
@@ -668,7 +669,9 @@ begin
         ULPI_NXT    => ULPI_NXT,
         ULPI_STP    => ULPI_STP,
         ULPI_DIR    => ULPI_DIR,
-        ULPI_DATA   => ULPI_DATA,
+        ULPI_DATA_O => ulpi_data_o,
+        ULPI_DATA_I => ULPI_DATA,
+        ULPI_DATA_T => ulpi_data_t,
     
         -- Cassette Interface
         c2n_read_in    => c2n_read_in, 
@@ -696,8 +699,9 @@ begin
 
         -- Buttons
         sw_trigger  => sw_trigger,
-        trigger     => sw_trigger,
         BUTTON      => button_i );
+
+    ULPI_DATA <= ulpi_data_o when ulpi_data_t = '1' else "ZZZZZZZZ";
 
     -- Parallel cable not implemented. This is the way to stub it...
     drv_via1_port_a_i(7 downto 1) <= drv_via1_port_a_o(7 downto 1) or not drv_via1_port_a_t(7 downto 1);

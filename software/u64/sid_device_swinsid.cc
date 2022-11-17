@@ -128,6 +128,7 @@ int SidDeviceSwinSid::SwinSidConfig:: S_cfg_swinsid_type(ConfigItem *it)
     base[31] = it->getValue() ? '8' : '6';
     wait_ms(5);
     post(it);
+    return 0;
 }
 
 int SidDeviceSwinSid::SwinSidConfig:: S_cfg_swinsid_pitch(ConfigItem *it)
@@ -141,6 +142,7 @@ int SidDeviceSwinSid::SwinSidConfig:: S_cfg_swinsid_pitch(ConfigItem *it)
     base[31] = it->getValue() ? 'S' : 'L';
     wait_ms(5);
     post(it);
+    return 0;
 }
 
 int SidDeviceSwinSid::SwinSidConfig:: S_cfg_swinsid_audioin(ConfigItem *it)
@@ -154,5 +156,6 @@ int SidDeviceSwinSid::SwinSidConfig:: S_cfg_swinsid_audioin(ConfigItem *it)
     base[31] = it->getValue() ? 'A' : 'D';
     wait_ms(5);
     post(it);
+    return 0;
 }
 

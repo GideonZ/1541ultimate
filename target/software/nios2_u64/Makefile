@@ -34,10 +34,10 @@ SRCS_C   =	itu.c \
             cmd_buffer.c
 
 SRCS_CC	 =  u2p_init.cc \
-            i2c_drv.cc \
-            codec.cc \
+			i2c_drv.cc \
+			codec.cc \
 			small_printf.cc \
-            stream.cc \
+			stream.cc \
 			stream_uart.cc \
 			memory.cc \
 			init_function.cc \
@@ -45,7 +45,7 @@ SRCS_CC	 =  u2p_init.cc \
 			at45_flash.cc \
 			w25q_flash.cc \
 			s25fl_flash.cc \
-            s25fl_l_flash.cc \
+			s25fl_l_flash.cc \
 			prog_flash.cc \
 			config.cc \
 			filemanager.cc \
@@ -140,11 +140,11 @@ SRCS_CC	 =  u2p_init.cc \
 			mps_charset.cc \
 			lodepng.cc \
 			filetype_tap.cc \
-            socket_stream.cc \
-            socket_gui.cc \
+			socket_stream.cc \
+			socket_gui.cc \
 			socket_dma.cc \
 			rmii_interface.cc \
-            home_directory.cc \
+			home_directory.cc \
 			reu_preloader.cc \
 			fpll.cc \
 			fastuart.cc \
@@ -169,6 +169,7 @@ SRCS_CC	 =  u2p_init.cc \
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
 VPATH +=	$(PATH_SW)/portable/nios
 VPATH +=	$(PATH_SW)/u64
+VPATH +=	$(PATH_SW)/6502/sidcrt/target
 VPATH +=	$(BSP)
 VPATH +=	$(BSP)/HAL/inc
 VPATH +=	$(BSP)/drivers/inc

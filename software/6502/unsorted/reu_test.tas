@@ -1,0 +1,145 @@
+
+    *=$0801
+    .word ss,2005
+    .null $9e,^start;sys
+ss  .word 0
+
+reu_status      = $DF00
+reu_command     = $DF01
+reu_c64base_l   = $DF02
+reu_c64base_h   = $DF03
+reu_reubase_l   = $DF04
+reu_reubase_m   = $DF05
+reu_reubase_h   = $DF06
+reu_translen_l  = $DF07
+reu_translen_h  = $DF08
+reu_irqmask     = $DF09
+reu_control     = $DF0A
+reu_size_read   = $DF0C
+
+reu_mode_toreu   = $B0
+reu_mode_toc64   = $B1
+reu_mode_swap    = $B2
+reu_mode_verify  = $B3
+
+reu_ctrl_nofix   = $00
+reu_ctrl_fixc64  = $80
+reu_ctrl_fixreu  = $40
+reu_ctrl_fixboth = $C0
+
+start   sei
+
+    ; fill screen
+        ldx #$00
+-       txa
+        eor #$ff
+        sta $0400,x
+        sta $0500,x
+        sta $0600,x
+        sta $0700,x
+        inx
+        bne -
+
+    ; setup reu 
+        lda #$00
+        sta reu_reubase_l
+        sta reu_reubase_m
+        sta reu_reubase_h
+        sta reu_translen_l
+        sta reu_c64base_l
+        lda #$04
+        sta reu_translen_h
+        sta reu_c64base_h
+
+        lda #$40
+-       cmp $d012
+        bne -
+
+        lda #reu_ctrl_nofix
+        sta reu_control
+        lda #reu_mode_toreu
+        sta reu_command
+
+
+    ; setup reu for copy back 
+        lda #$00
+        sta reu_reubase_l
+        sta reu_reubase_h
+        sta reu_translen_l
+        sta reu_c64base_l
+        lda #$04
+        sta reu_reubase_m
+        sta reu_translen_h
+        sta reu_c64base_h
+
+        lda #$40
+-       cmp $d012
+        bne -
+
+        lda #reu_ctrl_nofix
+        sta reu_control
+        lda #reu_mode_toc64
+        sta reu_command
+
+
+    ; setup reu for copy back 
+        lda #$00
+        sta reu_reubase_l
+        sta reu_reubase_m
+        sta reu_reubase_h
+        sta reu_translen_l
+        sta reu_c64base_l
+        lda #$04
+        sta reu_translen_h
+        lda #$14
+        sta reu_c64base_h
+
+        lda #reu_ctrl_nofix
+        sta reu_control
+        lda #reu_mode_toc64
+        sta reu_command
+
+    ; Now compare
+
+        ldx #$00
+-       txa
+        eor #$ff
+        cmp $1400,x
+        bne error
+        cmp $1500,x
+        bne error
+        cmp $1600,x
+        bne error
+        cmp $1700,x
+        bne error
+        inx
+        bne -
+        
+        lda #$05
+-       sta $d020
+
+
+    ; setup reu for copy back 
+        lda #$00
+        sta reu_reubase_l
+        sta reu_reubase_m
+        sta reu_reubase_h
+        sta reu_translen_l
+        sta reu_c64base_l
+        lda #$01
+        sta reu_translen_h
+        lda #$d8
+        sta reu_c64base_h
+
+        lda #reu_ctrl_nofix
+        sta reu_control
+        lda #reu_mode_toc64
+        sta reu_command
+
+
+        cli
+        rts
+
+error   lda #$02
+        bne -
+        

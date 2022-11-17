@@ -35,6 +35,8 @@ LIBS			= # is automatically generated from the source include files
 
 VSIM_SOURCES 	= # is automatically generated from the source include files or autodep search
 
+SOURCE_INCLUDES = neorv32.sinc brams.sinc
+
 WORK_DIR		= work
 
 # AUTO_DEP_PATHS
@@ -51,6 +53,10 @@ AUTO_DEP_PATHS  = $(wildcard ../vhdl_bfm/)
 AUTO_DEP_PATHS += $(wildcard ../vhdl_sim/)
 AUTO_DEP_PATHS += $(wildcard ../usb_stuff/)
 AUTO_DEP_PATHS += $(wildcard ../packages/vhdl_source/)
+AUTO_DEP_PATHS += $(wildcard ../../../neorv32/rtl/core)
+AUTO_DEP_PATHS += $(wildcard ../../../neorv32/rtl/core/mem)
+AUTO_DEP_PATHS += $(wildcard ../../../fpga/altera/)
+AUTO_DEP_PATHS += $(wildcard ../../../fpga/io/audio/)
 AUTO_DEP_PATHS += $(wildcard ../../../fpga/*/vhdl_source/)
 AUTO_DEP_PATHS += $(wildcard ../../../fpga/*/*/vhdl_source/)
 AUTO_DEP_PATHS += $(wildcard ../../../fpga/*/*/*/vhdl_source/)
@@ -261,6 +267,13 @@ $(TESTCASE)_TIME			:= 20 us;
 $(TESTCASE)_DO_GUI_BEFORE	:= 
 
 TESTCASE 					:= harness_logic_32
+TESTCASES					:= $(TESTCASES) $(TESTCASE)
+$(TESTCASE)_SRC				:= $(TESTCASE).vhd
+$(TESTCASE)_ENTITY			:= $(TESTCASE)
+$(TESTCASE)_TIME			:= 20 us;
+$(TESTCASE)_DO_GUI_BEFORE	:= 
+
+TESTCASE 					:= harness_u2p_riscv
 TESTCASES					:= $(TESTCASES) $(TESTCASE)
 $(TESTCASE)_SRC				:= $(TESTCASE).vhd
 $(TESTCASE)_ENTITY			:= $(TESTCASE)

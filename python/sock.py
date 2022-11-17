@@ -198,6 +198,20 @@ if __name__ == "__main__":
                 s.sock.shutdown(0)
                 s.sock.close()
 
+    elif (sys.argv[1] == 'd'):
+        with open(sys.argv[2], "rb") as f:
+            bytes = f.read(65536) # max 64K 
+            if bytes != "":
+                s = mysocket()
+                s.connect(sys.argv[3], 64)
+
+                s.mysend(pack("<H", 0xFF01))
+                s.mysend(pack("<H", len(bytes)))
+                s.mysend(bytes)
+                
+                s.sock.shutdown(0)
+                s.sock.close()
+
     elif (sys.argv[1] == 'U'):
         with open(sys.argv[2], "rb") as f:
             bytes = f.read(2*1024*1024) # max 2 Meg

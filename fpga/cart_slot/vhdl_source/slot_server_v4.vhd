@@ -18,6 +18,7 @@ generic (
     g_ram_base_cart : std_logic_vector(27 downto 0) := X"0EF0000"; -- should be on a 64K boundary
     g_rom_base_cart : std_logic_vector(27 downto 0) := X"0F00000"; -- should be on a 1M boundary
     g_kernal_base   : std_logic_vector(27 downto 0) := X"0EA8000"; -- should be on a 32K boundary 
+    g_register_addr : boolean := false;
     g_direct_dma    : boolean := false;
     g_ext_freeze_act: boolean := false;
     g_cartreset_init: std_logic := '0';
@@ -107,7 +108,8 @@ port (
     c64_stopped     : out   std_logic;
 
     -- master on memory bus
-    memctrl_inhibit : out   std_logic;
+    mem_refr_inhibit: out   std_logic;
+    mem_reqs_inhibit: out   std_logic;
     mem_req         : out   t_mem_req_32;
     mem_resp        : in    t_mem_resp_32;
 
@@ -123,6 +125,72 @@ port (
 end slot_server_v4;    
 
 architecture structural of slot_server_v4 is
+    -- Synchronized input signals
+    signal phi2_c          : std_logic;
+    signal io1n_c          : std_logic;
+    signal io2n_c          : std_logic;
+    signal romln_c         : std_logic;
+    signal romhn_c         : std_logic;
+    signal ba_c            : std_logic := '0';
+    signal rstn_c          : std_logic := '1';
+    signal slot_addr_c     : unsigned(15 downto 0) := (others => '1');
+    signal slot_data_c     : std_logic_vector(7 downto 0) := (others => '1');
+    signal rwn_c           : std_logic;
+    signal exromn_c        : std_logic := '1';
+    signal gamen_c         : std_logic := '1';
+    signal irqn_c          : std_logic := '1';
+    signal nmin_c          : std_logic := '1';
+
+    -- Xilinx attributes
+    attribute register_duplication : string;
+    attribute register_duplication of phi2_c      : signal is "no";
+    attribute register_duplication of io1n_c      : signal is "no";
+    attribute register_duplication of io2n_c      : signal is "no";
+    attribute register_duplication of romln_c     : signal is "no";
+    attribute register_duplication of romhn_c     : signal is "no";
+    attribute register_duplication of ba_c        : signal is "no";
+    attribute register_duplication of rwn_c       : signal is "no";
+    attribute register_duplication of rstn_c      : signal is "no";
+    attribute register_duplication of slot_addr_c : signal is "no";
+    attribute register_duplication of slot_data_c : signal is "no";
+    attribute register_duplication of exromn_c    : signal is "no";
+    attribute register_duplication of gamen_c     : signal is "no";
+    attribute register_duplication of irqn_c      : signal is "no";
+    attribute register_duplication of nmin_c      : signal is "no";
+
+    -- Lattice attributes
+    attribute syn_replicate                     : boolean;
+    attribute syn_replicate of phi2_c           : signal is false;
+    attribute syn_replicate of io1n_c           : signal is false;
+    attribute syn_replicate of io2n_c           : signal is false;
+    attribute syn_replicate of romln_c          : signal is false;
+    attribute syn_replicate of romhn_c          : signal is false;
+    attribute syn_replicate of ba_c             : signal is false;
+    attribute syn_replicate of rwn_c            : signal is false;
+    attribute syn_replicate of rstn_c           : signal is false;
+    attribute syn_replicate of slot_addr_c      : signal is false;
+    attribute syn_replicate of slot_data_c      : signal is false;
+    attribute syn_replicate of exromn_c         : signal is false;
+    attribute syn_replicate of gamen_c          : signal is false;
+    attribute syn_replicate of irqn_c           : signal is false;
+    attribute syn_replicate of nmin_c           : signal is false;
+
+    -- Altera attributes
+    attribute dont_replicate                    : boolean;
+    attribute dont_replicate of phi2_c          : signal is true;
+    attribute dont_replicate of io1n_c          : signal is true;
+    attribute dont_replicate of io2n_c          : signal is true;
+    attribute dont_replicate of romln_c         : signal is true;
+    attribute dont_replicate of romhn_c         : signal is true;
+    attribute dont_replicate of ba_c            : signal is true;
+    attribute dont_replicate of rwn_c           : signal is true;
+    attribute dont_replicate of rstn_c          : signal is true;
+    attribute dont_replicate of slot_addr_c     : signal is true;
+    attribute dont_replicate of slot_data_c     : signal is true;
+    attribute dont_replicate of exromn_c        : signal is true;
+    attribute dont_replicate of gamen_c         : signal is true;
+    attribute dont_replicate of irqn_c          : signal is true;
+    attribute dont_replicate of nmin_c          : signal is true;
 
     signal phi2_tick_i     : std_logic;
     signal phi2_fall       : std_logic;
@@ -132,8 +200,8 @@ architecture structural of slot_server_v4 is
     signal do_sample_io    : std_logic;
     signal do_io_event     : std_logic;
     signal do_probe_end    : std_logic;
-    signal timing_inhibit  : std_logic;
-
+    signal reqs_inhibit    : std_logic;
+    signal clear_inhibit   : std_logic;
     signal slave_dout      : std_logic_vector(7 downto 0);
     signal slave_dtri      : std_logic := '0';
 
@@ -238,14 +306,114 @@ architecture structural of slot_server_v4 is
     signal mem_req_32_samp  : t_mem_req_32  := c_mem_req_32_init;
     signal mem_resp_32_samp : t_mem_resp_32 := c_mem_resp_32_init;
     
---    signal mem_req_trace    : t_mem_req;
---    signal mem_resp_trace   : t_mem_resp;
-    
     signal mem_rack_slot    : std_logic;
     signal mem_dack_slot    : std_logic;
 
     signal phi2_tick_avail  : std_logic;
 begin
+    b_sync: block
+        signal phi2_f          : std_logic;
+        signal io1n_f          : std_logic;
+        signal io2n_f          : std_logic;
+        signal romln_f         : std_logic;
+        signal romhn_f         : std_logic;
+        signal ba_f            : std_logic := '0';
+        signal rstn_f          : std_logic := '1';
+        signal slot_addr_f     : unsigned(15 downto 0) := (others => '1');
+        signal slot_data_f     : std_logic_vector(7 downto 0) := (others => '1');
+        signal rwn_f           : std_logic;
+        signal exromn_f        : std_logic := '1';
+        signal gamen_f         : std_logic := '1';
+        signal irqn_f          : std_logic := '1';
+        signal nmin_f          : std_logic := '1';
+
+        -- Xilinx attributes
+        attribute register_duplication of phi2_f      : signal is "no";
+        attribute register_duplication of io1n_f      : signal is "no";
+        attribute register_duplication of io2n_f      : signal is "no";
+        attribute register_duplication of romln_f     : signal is "no";
+        attribute register_duplication of romhn_f     : signal is "no";
+        attribute register_duplication of ba_f        : signal is "no";
+        attribute register_duplication of rwn_f       : signal is "no";
+        attribute register_duplication of rstn_f      : signal is "no";
+        attribute register_duplication of slot_addr_f : signal is "no";
+        attribute register_duplication of slot_data_f : signal is "no";
+        attribute register_duplication of exromn_f    : signal is "no";
+        attribute register_duplication of gamen_f     : signal is "no";
+        attribute register_duplication of irqn_f      : signal is "no";
+        attribute register_duplication of nmin_f      : signal is "no";
+
+        -- Lattice attributes
+        attribute syn_replicate of phi2_f           : signal is false;
+        attribute syn_replicate of io1n_f           : signal is false;
+        attribute syn_replicate of io2n_f           : signal is false;
+        attribute syn_replicate of romln_f          : signal is false;
+        attribute syn_replicate of romhn_f          : signal is false;
+        attribute syn_replicate of ba_f             : signal is false;
+        attribute syn_replicate of rwn_f            : signal is false;
+        attribute syn_replicate of rstn_f           : signal is false;
+        attribute syn_replicate of slot_addr_f      : signal is false;
+        attribute syn_replicate of slot_data_f      : signal is false;
+        attribute syn_replicate of exromn_f         : signal is false;
+        attribute syn_replicate of gamen_f          : signal is false;
+        attribute syn_replicate of irqn_f           : signal is false;
+        attribute syn_replicate of nmin_f           : signal is false;
+
+        -- Altera attributes
+        attribute dont_replicate of phi2_f          : signal is true;
+        attribute dont_replicate of io1n_f          : signal is true;
+        attribute dont_replicate of io2n_f          : signal is true;
+        attribute dont_replicate of romln_f         : signal is true;
+        attribute dont_replicate of romhn_f         : signal is true;
+        attribute dont_replicate of ba_f            : signal is true;
+        attribute dont_replicate of rwn_f           : signal is true;
+        attribute dont_replicate of rstn_f          : signal is true;
+        attribute dont_replicate of slot_addr_f     : signal is true;
+        attribute dont_replicate of slot_data_f     : signal is true;
+        attribute dont_replicate of exromn_f        : signal is true;
+        attribute dont_replicate of gamen_f         : signal is true;
+        attribute dont_replicate of irqn_f          : signal is true;
+        attribute dont_replicate of nmin_f          : signal is true;
+
+    begin
+        process(clock)
+        begin
+            if falling_edge(clock) then
+                phi2_f      <= phi2_i;
+                io1n_f      <= io1n_i;
+                io2n_f      <= io2n_i;
+                romln_f     <= romln_i;
+                romhn_f     <= romhn_i;
+                ba_f        <= ba_i;
+                rstn_f      <= rstn_i;
+                slot_addr_f <= slot_addr_i;
+                slot_data_f <= slot_data_i;
+                rwn_f       <= rwn_i;
+                exromn_f    <= exromn_i;
+                gamen_f     <= gamen_i;
+                irqn_f      <= irqn_i;
+                nmin_f      <= nmin_i;
+            end if;
+
+            if rising_edge(clock) then
+                phi2_c      <= phi2_f;
+                io1n_c      <= io1n_f;
+                io2n_c      <= io2n_f;
+                romln_c     <= romln_f;
+                romhn_c     <= romhn_f;
+                ba_c        <= ba_f;
+                rstn_c      <= rstn_f;
+                slot_addr_c <= slot_addr_f;
+                slot_data_c <= slot_data_f;
+                rwn_c       <= rwn_f;
+                exromn_c    <= exromn_f;
+                gamen_c     <= gamen_f;
+                irqn_c      <= irqn_f;
+                nmin_c      <= nmin_f;
+            end if;
+        end process;
+    end block b_sync;
+
     reset_button  <= buttons(0) when control.swap_buttons='0' else buttons(2);
     freeze_button <= buttons(2) when control.swap_buttons='0' else buttons(0);
 
@@ -334,8 +502,8 @@ begin
         reset           => reset,
 
         -- Cartridge pins
-        PHI2            => phi2_i,
-        BA              => ba_i,
+        PHI2            => phi2_c,
+        BA              => ba_c,
     
         serve_vic       => serve_vic,
         serve_enable    => serve_enable,
@@ -351,12 +519,16 @@ begin
         clock_det       => status.clock_detect,
         vic_cycle       => vic_cycle,    
     
-        inhibit         => timing_inhibit,
+        refr_inhibit    => mem_refr_inhibit,
+        reqs_inhibit    => reqs_inhibit,
+        clear_inhibit   => clear_inhibit,
+        
         do_sample_addr  => do_sample_addr,
         do_sample_io    => do_sample_io,
-        do_probe_end    => do_probe_end,
+        do_probe_end    => open, --do_probe_end,
         do_io_event     => do_io_event );
 
+    mem_reqs_inhibit <= reqs_inhibit;
     mem_req_32_slot.tag <= g_tag_slot;
     mem_req_32_slot.byte_en <= "1000" when g_big_endian else "0001";
     mem_rack_slot <= '1' when mem_resp_32_slot.rack_tag = g_tag_slot else '0';
@@ -371,17 +543,18 @@ begin
         
         -- Cartridge pins
         VCC             => VCC,
-        RSTn            => rstn_i,
-        IO1n            => io1n_i,
-        IO2n            => io2n_i,
-        ROMLn           => romln_i,
-        ROMHn           => romhn_i,
-        GAMEn           => gamen_i,
-        EXROMn          => exromn_i,
-        RWn             => rwn_i,
-        BA              => ba_i,
-        ADDRESS         => slot_addr_i,
-        DATA_in         => slot_data_i,
+        PHI2            => phi2_c,
+        RSTn            => rstn_c,
+        IO1n            => io1n_c,
+        IO2n            => io2n_c,
+        ROMLn           => romln_c,
+        ROMHn           => romhn_c,
+        GAMEn           => gamen_c,
+        EXROMn          => exromn_c,
+        RWn             => rwn_c,
+        BA              => ba_c,
+        ADDRESS         => slot_addr_c,
+        DATA_in         => slot_data_c,
         DATA_out        => slave_dout,
         DATA_tri        => slave_dtri,
     
@@ -412,6 +585,7 @@ begin
         serve_io1       => serve_io1, -- IO1n
         serve_io2       => serve_io2, -- IO2n
         allow_write     => allow_write,
+        clear_inhibit   => clear_inhibit,
 
         -- kernal emulation
         kernal_enable   => control.kernal_enable,
@@ -439,8 +613,8 @@ begin
             
             -- Cartridge pins
             DMAn            => dma_n,
-            BA              => ba_i,
-            RWn_in          => rwn_i,
+            BA              => ba_c,
+            RWn_in          => rwn_c,
             RWn_out         => rwn_o,
             RWn_tri         => open,
             
@@ -448,7 +622,7 @@ begin
             ADDRESS_tri_h   => address_tri_h,
             ADDRESS_tri_l   => address_tri_l,
             
-            DATA_in         => slot_data_i,
+            DATA_in         => slot_data_c,
             DATA_out        => master_dout,
             DATA_tri        => master_dtri,
         
@@ -514,6 +688,7 @@ begin
 
     i_cart_logic: entity work.all_carts_v5
     generic map (
+        g_register_addr => g_register_addr,
         g_eeprom        => g_eeprom,
         g_kernal_base   => g_kernal_base,
         g_georam_base   => g_ram_base_reu,
@@ -542,6 +717,7 @@ begin
         io_req_eeprom   => io_req_eeprom,
         io_resp_eeprom  => io_resp_eeprom,
 
+        mem_req         => mem_req_32_slot.request,
         mem_addr        => mem_req_32_slot.address, 
         serve_enable    => serve_enable,
         serve_vic       => serve_vic,
@@ -644,7 +820,7 @@ begin
             clock       => clock,
             reset       => reset,
             
-            irq_n       => irqn_i,
+            irq_n       => irqn_c,
             phi2_tick   => phi2_tick_i,
             
             trigger_1   => trigger_1,
@@ -670,7 +846,7 @@ begin
     begin
         i_io_bridge: entity work.slot_to_io_bridge
         generic map (
-            g_io_base       => X"48000", -- dont care in this context
+            g_io_base       => X"048000", -- dont care in this context
             g_slot_start    => "100100000",
             g_slot_stop     => "111111111" )
         port map (
@@ -724,6 +900,15 @@ begin
 
     end generate;
 
+    r_no_sampler: if not g_sampler generate
+        i_dummy: entity work.io_dummy
+        port map (
+            clock   => clock,
+            io_req  => io_req_samp_cpu,
+            io_resp => io_resp_samp_cpu
+        );
+    end generate;
+
     r_acia: if g_acia generate
         i_acia: entity work.acia6551
         port map (
@@ -752,22 +937,24 @@ begin
     slot_resp <= or_reduce(slot_resp_reu & slot_resp_cart & slot_resp_sid & slot_resp_cmd &
                            slot_resp_samp & slot_resp_acia);
 
-    p_probe_address_delay: process(clock)
-        variable kernal_probe_d : std_logic_vector(2 downto 0) := (others => '0');
+    p_probe_end_delay: process(clock)
+         variable probe_end_d : std_logic_vector(4 downto 0) := (others => '0');
     begin
         if rising_edge(clock) then
-            kernal_addr_out <= kernal_probe_d(0);
-            kernal_probe_d := kernal_probe & kernal_probe_d(kernal_probe_d'high downto 1);
+            kernal_addr_out <= kernal_probe;
+            do_probe_end <= probe_end_d(0);
+            probe_end_d := (kernal_probe and not kernal_addr_out) & probe_end_d(probe_end_d'high downto 1);
         end if;
     end process;
 
-    process(address_out, kernal_addr_out, kernal_probe, address_tri_l, address_tri_h)
+    process(address_out, kernal_addr_out, kernal_probe, do_probe_end, address_tri_l, address_tri_h)
     begin
         slot_addr_o <= unsigned(address_out);
         slot_addr_tl <= address_tri_l;
         slot_addr_th <= address_tri_h;
         if kernal_addr_out='1' and kernal_probe='1' then
-            slot_addr_o(15 downto 13) <= "101";
+            slot_addr_o(15 downto 13) <= "101"; -- A000-BFFF
+            slot_addr_o(14) <= do_probe_end;
             slot_addr_th <= '1';
         end if;
     end process;
@@ -856,28 +1043,22 @@ begin
         reqs(1)     => mem_req_32_reu,
         reqs(2)     => mem_req_32_samp,
         
---        reqs(3)     => mem_req_trace,
         resps(0)    => mem_resp_32_slot,
         resps(1)    => mem_resp_32_reu,
         resps(2)    => mem_resp_32_samp,
---        resps(3)    => mem_resp_trace,
         
         req         => mem_req,
         resp        => mem_resp );
 
-    -- Delay the inhibit one clock cycle, because our
-    -- arbiter introduces one clock cycle delay as well.
     process(clock)
     begin
         if rising_edge(clock) then
-            memctrl_inhibit <= timing_inhibit;
-
             status.c64_vcc <= VCC;            
-            status.exrom <= not exromn_i;
-            status.game <= not gamen_i;
-            status.reset_in <= not rstn_i;
         end if;
     end process;
+    status.exrom    <= not exromn_c;
+    status.game     <= not gamen_c;
+    status.reset_in <= not rstn_c;
 
     phi2_tick_avail <= phi2_tick_i;
     phi2_tick   <= phi2_tick_avail;
@@ -893,12 +1074,7 @@ begin
     status.nmi  <= not nmin_i when rising_edge(clock);
 
     b_debug: block
-        signal phi_c        : std_logic := '0';
         signal phi_d1       : std_logic := '0';
-        signal phi_d2       : std_logic := '0';
-        signal vector_c     : std_logic_vector(31 downto 0) := (others => '0');
-        signal vector_d1    : std_logic_vector(31 downto 0) := (others => '0');
-        signal vector_d2    : std_logic_vector(31 downto 0) := (others => '0');
         signal ba_history   : std_logic_vector(2 downto 0) := (others => '0');
         alias cpu_cycle_enable  : std_logic is debug_select(0);
         alias vic_cycle_enable  : std_logic is debug_select(1);
@@ -909,18 +1085,12 @@ begin
             variable vector_in      : std_logic_vector(31 downto 0);
         begin
             if rising_edge(clock) then
-                vector_in := phi2_i & gamen_i & exromn_i & not (romhn_i and romln_i) &
-                             ba_i & irqn_i & nmin_i & rwn_i &
-                             slot_data_i & std_logic_vector(slot_addr_i);
+                vector_in := phi2_c & gamen_c & exromn_c & not (romhn_c and romln_c) &
+                             ba_c & irqn_c & nmin_c & rwn_c &
+                             slot_data_c & std_logic_vector(slot_addr_c);
     
-                phi_c  <= phi2_i;
-                phi_d1 <= phi_c;
-                phi_d2 <= phi_d1;
+                phi_d1 <= phi2_c;
                          
-                vector_c  <= vector_in;
-                vector_d1 <= vector_c;
-                vector_d2 <= vector_d1;
-    
                 -- BA  1 1 1 0 0 0 0 0 0 0 1 1 1
                 -- BA0 1 1 1 1 0 0 0 0 0 0 0 1 1
                 -- BA1 1 1 1 1 1 0 0 0 0 0 0 0 1
@@ -928,15 +1098,15 @@ begin
                 -- CPU 1 1 1 1 1 1 0 0 0 0 1 1 1 
                 -- 
                 debug_valid <= '0';
-                debug_data  <= vector_d2;    
+                debug_data  <= vector_in;    
 
-                if phi_d2 /= phi_d1 then
-                    if phi_d2 = '1' then
-                        ba_history <= ba_history(1 downto 0) & vector_d2(27); -- BA position!
+                if phi_d1 /= phi2_c then
+                    if phi_d1 = '1' then
+                        ba_history <= ba_history(1 downto 0) & ba_c;
                     end if;
                     
-                    if phi_d2 = '1' then
-                        if (vector_d2(27) = '1' or ba_history /= "000" or drv_enable = '1') and cpu_cycle_enable = '1' then
+                    if phi_d1 = '1' then
+                        if (ba_c = '1' or ba_history /= "000" or drv_enable = '1') and cpu_cycle_enable = '1' then
                             debug_valid <= '1';
                         elsif vic_cycle_enable = '1' then
                             debug_valid <= '1';

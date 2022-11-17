@@ -1,0 +1,144 @@
+* = $C000
+    .text "This is ROML, and is not used."
+
+* = $E000
+
+reset
+    sei
+    ldx #$ff
+    txs
+    
+    lda #$00
+    sta $d01A
+    lda #$0f
+    sta $d019
+    lda #$1F
+    sta $dc0d
+    ldx $dc0d
+    sta $dd0d
+    ldx $dd0d
+
+    lda #$06
+    sta $d020
+    lda #$0C
+    sta $d021
+    lda #$3B
+    sta $d011
+    
+    ldx #$00
+-   lda #$00
+    sta $0002,x
+    sta $0100,x
+    sta $0200,x
+    sta $0300,x
+    lda #$03
+    sta $1000,x
+    sta $1100,x
+    sta $1200,x
+    sta $1300,x
+    lda #$33
+    sta $2000,x
+    sta $2100,x
+    sta $2200,x
+    sta $2300,x
+    lda #$DA
+    sta $3000,x
+    sta $3100,x
+    sta $3200,x
+    sta $3300,x
+
+    lda #$01
+    sta $0400,x
+    sta $0500,x
+    sta $0600,x
+    sta $0700,x
+    lda #$0e
+    sta $d800,x
+    sta $d900,x
+    sta $da00,x
+    sta $db00,x
+    
+    inx
+    bne -    
+
+    stx $D010
+    stx $d017
+    stx $d01b
+    stx $d01c
+    stx $d01d
+    ldx #$08
+    stx $d016
+    
+    lda #$64
+    sta $D000
+    clc
+    adc #30
+    sta $D002
+    clc
+    adc #30
+    sta $D004
+    clc
+    adc #30
+    sta $D006
+    lda #50+170
+    sta $D001
+    sta $D003
+    sta $D005
+    sta $D007
+
+    lda #$0F
+    sta $D015
+
+    lda #$0B
+    sta $d027
+    sta $d028
+    sta $d029
+    sta $d02a
+    
+    ; VM = 0001 (0x0400)
+    ; CB = 100 (0x2000 / upper half)
+    ; sprite pointers should be $0000,$1000,$2000,$3000
+    lda #$01   
+    sta $07f8
+    lda #$41
+    sta $07f9
+    lda #$81
+    sta $07fa
+    lda #$C1
+    sta $07fb
+
+    lda #$18
+    sta $d018
+
+-   jmp -
+
+irqvec
+    lda #$04
+    sta $d020
+
+    lda #$00
+    sta $d01A
+    lda #$0f
+    sta $d019
+    lda #$1F
+    sta $dc0d
+    lda $dc0d
+    rti
+
+nmivec
+    lda #$05
+    sta $d020
+    
+    lda #$1F
+    sta $dd0d
+    lda $dd0d
+    rti
+    
+* = $F000
+    .binary "../../roms/chars.bin", 0, 4090
+
+
+* = $FFFA
+    .word nmivec
+    .word reset
+    .word irqvec

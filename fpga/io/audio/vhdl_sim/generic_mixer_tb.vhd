@@ -23,9 +23,12 @@ architecture tb of generic_mixer_tb is
     signal req         : t_io_req;
     signal resp        : t_io_resp;
     signal inputs      : t_audio_array(0 to 7);
-    signal out_L       : t_audio;
-    signal out_R       : t_audio;                
+    signal out_L       : std_logic_vector(23 downto 0);
+    signal out_R       : std_logic_vector(23 downto 0);                
     type t_byte_array is array(natural range <>) of std_logic_vector(7 downto 0);
+    type t_numeric_array is array(natural range <>) of integer;
+
+    constant c_inputs : t_numeric_array(0 to 7) := (-5, 6, -7, 8, -9, 131071, -131072, 12);
     constant c_gains : t_byte_array(0 to 15) := ( X"80", X"00",
                                                   X"00", X"80",
                                                   X"80", X"00",
@@ -34,17 +37,44 @@ architecture tb of generic_mixer_tb is
                                                   X"00", X"80",
                                                   X"01", X"00",
                                                   X"00", X"80" );
+
+--    constant c_inputs : t_numeric_array(0 to 7) := (1, 2, 3, 4, 5, 6, 7, 8);
+--    constant c_gains : t_byte_array(0 to 15) := ( X"01", X"00",
+--                                                  X"00", X"00",
+--                                                  X"00", X"00",
+--                                                  X"00", X"00",
+--                                                  X"00", X"00",
+--                                                  X"00", X"00",
+--                                                  X"00", X"00",
+--                                                  X"00", X"01" );
+
+    function make_signed_array(values: t_numeric_array) return t_audio_array is
+        variable ret : t_audio_array(values'range);
+    begin
+        for i in ret'range loop
+            ret(i) := to_signed(values(i), 18);
+        end loop;
+        return ret;
+    end function;
+
+    signal expected_L   : integer;
+    signal expected_R   : integer;    
     
 begin
-    inputs <= ( 0 => to_signed(-5, 18),
-                1 => to_signed(6, 18),
-                2 => to_signed(-7, 18),
-                3 => to_signed(8, 18),
-                4 => to_signed(-9, 18),
-                5 => "011111111111111111",
-                6 => "100000000000000000",
-                7 => to_signed(12, 18) );
+    inputs <= make_signed_array(c_inputs);
                 
+    process
+        variable L, R   : integer := 0;
+    begin
+        for i in inputs'range loop
+            L := L + to_integer(unsigned(c_gains(i*2))) * c_inputs(i);
+            R := R + to_integer(unsigned(c_gains(i*2 + 1))) * c_inputs(i);
+        end loop;
+        expected_L <= L;
+        expected_R <= R;
+        wait;
+    end process;
+
     clock <= not clock after 10 ns;
     reset <= '1', '0' after 100 ns;
 

@@ -7,7 +7,7 @@ package io_bus_pkg is
     type t_io_req is record
         read    : std_logic;
         write   : std_logic;
-        address : unsigned(19 downto 0);
+        address : unsigned(23 downto 0);
         data    : std_logic_vector(7 downto 0);
     end record;
     
@@ -19,7 +19,7 @@ package io_bus_pkg is
     constant c_io_req_init : t_io_req := (
         read    => '0',
         write   => '0',
-        address => X"00000",
+        address => X"000000",
         data    => X"00" );
      
     constant c_io_resp_init : t_io_resp := (
@@ -44,4 +44,3 @@ package body io_bus_pkg is
         return ret;        
     end function or_reduce;
 end package body;
-    

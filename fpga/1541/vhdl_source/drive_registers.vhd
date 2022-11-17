@@ -41,7 +41,7 @@ end;
 
 architecture rtl of drive_registers is
     signal power_i          : std_logic;
-    signal drv_reset_i      : std_logic;
+    signal drv_reset_i      : std_logic := '0';
     signal use_c64_reset_i  : std_logic;
     signal drive_address_i  : std_logic_vector(1 downto 0);
     signal sensor_i         : std_logic;
@@ -135,7 +135,7 @@ begin
                 end case;
             end if; -- read
                                                     
-            drv_reset <= drv_reset_i or iec_reset_o;
+            drv_reset <= drv_reset_i or iec_reset_o or reset;
 
             if reset='1' then
                 power_i          <= '0';

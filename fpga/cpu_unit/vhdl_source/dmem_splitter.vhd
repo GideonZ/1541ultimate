@@ -103,7 +103,7 @@ begin
                     mem_req_i.data <= dmem_o.dat_o;
                     mem_req_i.read_writen <= not dmem_o.we_o;
                     mem_req_i.tag <= g_tag;
-                    io_req_i.address <= unsigned(dmem_o.adr_o(19 downto 0));
+                    io_req_i.address <= unsigned(dmem_o.adr_o(io_req_i.address'range));
                     remain <= c_remain(to_integer(unsigned(dmem_o.sel_o)));
                     
                     if dmem_o.adr_o(26) = '0' or not g_support_io then

@@ -1,30 +1,33 @@
 
+#include <unistd.h>
+#include <fcntl.h>
 #include <stdio.h>
-#include <sys/stat.h>
+#include <cerrno>
 #include "blockdev_emul.h"
 #include "dump_hex.h"
 
 BlockDevice_Emulated::BlockDevice_Emulated(const char *name, int sec_size)
 {
+    fd = 0;
     test = 12345;
     sector_size = sec_size;
-    struct stat file_status;
-    if(!stat(name, &file_status)) {
-        file_size = file_status.st_size;
-        f = fopen(name, "rb+");
+    fd = open(name, O_RDONLY);
+    if (fd != -1) {
+        file_size = lseek(fd, 0, SEEK_END);
+        lseek(fd, 0, SEEK_SET);
         set_state(e_device_ready);
-		printf("Construct block device, opening file %s of size %ld (%p).\n", name, file_size, f);
+		printf("Construct block device, opening file %s of size %ld (%d).\n", name, file_size, fd);
     } else {
         set_state(e_device_no_media);
-		printf("Construct block device, fstat failed (file not found: %s)\n", name);
-        f = NULL;
+		printf("Construct block device, (file could not be opened: %s, errno = %d)\n", name, errno);
+        fd = 0;
     }
 }
     
 BlockDevice_Emulated::~BlockDevice_Emulated()
 {
-    if(f)
-        fclose(f);
+    if(fd)
+        close(fd);
 }
 
 DSTATUS BlockDevice_Emulated::init(void)
@@ -35,7 +38,7 @@ DSTATUS BlockDevice_Emulated::init(void)
         
 DSTATUS BlockDevice_Emulated::status(void)
 {
-    if(f)
+    if(fd)
         return 0;
     else
         return STA_NODISK;
@@ -43,13 +46,11 @@ DSTATUS BlockDevice_Emulated::status(void)
     
 DRESULT BlockDevice_Emulated::read(uint8_t *buffer, uint32_t sector, int count)
 {
-    //printf("Device read sector %d.\n", sector);
-
-    if(fseek(f, sector * sector_size, SEEK_SET))
-        return RES_PARERR;
-        
-    int read = fread(buffer, sector_size, (int)count, f);
-    if(read != (int)count) {
+    printf("Device read sector %d. (%d)\n", sector, count);
+    ssize_t offset = (ssize_t)sector * (ssize_t)sector_size;
+    ssize_t read_size = (ssize_t)count * (ssize_t)sector_size;
+    ssize_t bytes_read = pread(fd, buffer, read_size, offset);
+    if(bytes_read != read_size) {
         return RES_ERROR;
     }
     
@@ -61,12 +62,10 @@ DRESULT BlockDevice_Emulated::write(const uint8_t *buffer, uint32_t sector, int 
 {
 //    printf("Device write sector %d. ", sector);
 
-    if(fseek(f, sector * sector_size, SEEK_SET))
-        return RES_PARERR;
-        
-    int written = fwrite(buffer, sector_size, (int)count, f);
-//    printf("%d\n", written);
-    if(written != (int)count)
+    ssize_t offset = (ssize_t)sector * (ssize_t)sector_size;
+    ssize_t write_size = (ssize_t)count * (ssize_t)sector_size;
+    ssize_t written = pwrite(fd, buffer, write_size, offset);
+    if(written != write_size)
         return RES_ERROR;
     
     return RES_OK;
@@ -80,7 +79,7 @@ DRESULT BlockDevice_Emulated::ioctl(uint8_t command, void *data)
     
     switch(command) {
         case GET_SECTOR_COUNT:
-            if(!f)
+            if(!fd)
                 return RES_ERROR;
             size = file_size / sector_size;
             *dest = size;

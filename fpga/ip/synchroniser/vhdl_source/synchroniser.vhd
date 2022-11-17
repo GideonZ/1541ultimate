@@ -42,7 +42,10 @@ entity synchroniser is
     attribute dont_replicate of synchroniser       : entity is true;
     attribute dont_retime                          : boolean;
     attribute dont_retime of synchroniser          : entity is true;
-    
+    -- Lattice attributes
+    attribute syn_replicate                        : boolean;
+    attribute syn_replicate of synchroniser        : entity is false;
+   
 end synchroniser;
 
 architecture rtl of synchroniser is

@@ -28,11 +28,12 @@ void outbyte(int c)
 }
 
 void ddr2_calibrate();
+void hexword(uint32_t val);
 
 int main()
 {
     ddr2_calibrate();
-
+    outbyte('*');
 	uint32_t flash_addr = 0x290000;
 
 	SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
@@ -45,6 +46,11 @@ int main()
     int      length  = (int)SPI_FLASH_DATA_32;
     uint32_t run_address = SPI_FLASH_DATA_32;
 
+    hexword((uint32_t)dest);
+    hexword(length);
+    hexword(run_address);
+    outbyte('\n');
+
     if(length != -1) {
         while(length > 0) {
             *(dest++) = SPI_FLASH_DATA_32;
@@ -56,7 +62,9 @@ int main()
     }
 
     puts("Flash Empty");
-    while(1)
+    while(1) {
+        __asm__("nop");
+    }
     	;
     return 0;
 }
