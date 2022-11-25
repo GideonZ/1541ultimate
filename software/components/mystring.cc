@@ -10,6 +10,13 @@ mstring :: mstring()
     cp = NULL;
 }
 
+mstring :: mstring(int space)
+{
+    alloc = space;
+    cp = new char[alloc];
+    cp[0] = 0;
+}
+
 mstring :: mstring(const char *k)
 {
 //    printf("Create mstring from char*. Source = %s\n", k);

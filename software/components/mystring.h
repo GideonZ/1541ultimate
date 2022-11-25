@@ -12,6 +12,7 @@ private:
     char *cp;
 public:
     mstring();
+    mstring(int space);
     mstring(const char *k);
     mstring(mstring &k);
     ~mstring();
