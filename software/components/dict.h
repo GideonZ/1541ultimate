@@ -55,6 +55,13 @@ public:
 		return keys.get_size();
 	}
 
+    K get_key(int index) {
+        if (index < 0 || index >= keys.get_elements()) {
+            return defK;
+        }
+        return keys[index];
+    }
+
     int index_of(K key) {
         int el = keys.get_elements();
         for (int i=0;i<el;i++) {

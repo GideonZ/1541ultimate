@@ -120,7 +120,7 @@ public:
 	int remove_idx(int idx) {
 		int res = 0;
 		ENTER_SAFE_SECTION
-		if (idx >= elements) {
+		if (idx < elements) {
 			elements--;
 			for(int j=idx;j<elements;j++) {
 				element_array[j] = element_array[j+1];
