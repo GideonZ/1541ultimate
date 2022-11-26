@@ -11,11 +11,10 @@
 /* Defines.                                                                  */
 /* ************************************************************************* */
 
-#define mprintf(...) outf.format(__VA_ARGS__)
-
 #define P_REQUIRED      0x01
 #define P_ALLOW_UNNAMED 0x02
 #define P_SWITCH        0x04
+#define P_LAST_ARG      0x08
 
 typedef struct {
     const char *long_param;
@@ -30,6 +29,7 @@ typedef struct {
     const char *descr;                         // Description of the command 
     const Param_t *params;                     // Supported Parameters
     const char *switches;                      // Known / supported switches
+    bool allow_unnamed;                        // allow superfluous unnamed arguments
 } CliCommand_t;
 
 class Args : public Dict<const char *, const char *>
@@ -109,6 +109,11 @@ public:
         unnamed.clear_list();
         switches = "";
 
+        // no string => done
+        if (!args) {
+            return 0;
+        }
+
         // This function takes an argument string and unravels it into a dictionary.
         // The string can contain switches, named arguments, or unnamed arguments:
         // -a : Switch a set to true.
@@ -127,7 +132,7 @@ public:
         strcpy(cmd, args);
         int last = 0;
         for (int i=0;i<=len;i++) {
-            if (!cmd[i] || (cmd[i] == ' ' && !quoted)) {
+            if (!cmd[i] || (cmd[i] == '\n') || (cmd[i] == ' ' && !quoted)) {
                 cmd[i] = 0;
                 if (i - last >= 1) {
                     slices.append(cmd + last);
@@ -157,8 +162,9 @@ public:
         return 1;
     }
 
-    void Validate(const CliCommand_t& def)
+    int Validate(const CliCommand_t& def)
     {
+        int errors = 0;
         // checks if all elements from the dictionary are
         // actually valid commands
         uint32_t matched = 0;
@@ -175,17 +181,36 @@ public:
             }
             if(!found) {
                 printf("--> Function %s does not have parameter %s\n", def.cmd, k);
+                errors ++;
             }
         }
+
+        // check if all switches are valid
+        for (int i=0; i < switches.length(); i++) {
+            char requested = switches.c_str()[i];
+            bool ok = false;
+            for(int j=0; j < strlen(def.switches); j++) {
+                if (requested == def.switches[j]) {
+                    ok = true;
+                    break;
+                }
+            }
+            if (!ok) {
+                printf("--> Function %s does not understand switch %c\n", def.cmd, requested);
+                errors ++;
+            }
+        }
+
         // now see if there are any unmatched parameters
         // that could be attached to the unnamed args
         const Param_t *p = def.params;
         for(int i=0; p[i].long_param; i++) {
             if (!(matched & (1 << i))) {
                 if(p[i].flags & P_ALLOW_UNNAMED) {
-                    const char *arg = unnamed[0];
+                    int idx = (p[i].flags & P_LAST_ARG) ? unnamed.get_elements()-1 : 0;
+                    const char *arg = unnamed[idx];
                     if (arg) {
-                        unnamed.remove_idx(0);
+                        unnamed.remove_idx(idx);
                         set(p[i].long_param, arg);
                         matched |= (1 << i);
                     }
@@ -199,9 +224,18 @@ public:
             if (!(matched & (1 << i))) {
                 if(p[i].flags & P_REQUIRED) {
                     printf("--> Function %s requires parameter %s\n", def.cmd, p[i].long_param);
+                    errors ++;
                 }
             }
         }
+
+        // Check if the function accepts the unnamed arguments if there are any left
+        if (get_number_of_unnamed_args() > 0 && !def.allow_unnamed) {
+            printf("--> Function %s does not allow superfluous unnamed arguments.\n", def.cmd);
+            errors ++;
+        }
+
+        return errors;
     }
 
     void dump_args(void)
@@ -215,9 +249,38 @@ public:
         printf("Switches: %s\n", switches.c_str());
     }
 
+    int get_number_of_unnamed_args()
+    {
+        return unnamed.get_elements();
+    }
+
+    const char *get_unnamed_arg(int idx)
+    {
+        return unnamed[idx];
+    }
+
+    bool check_switch(char s)
+    {
+        const char *sw = switches.c_str();
+        for (int i=0; i<strlen(sw); i++) {
+            if (sw[i] == s) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+
 };
 
-#define CLI_COMMAND(NAME, DESCR, PARAMS, SWITCHES)            \
+#ifndef NR_OF_EL
+#define NR_OF_EL(a)		(sizeof(a) / sizeof(a[0]))
+#endif
+#define ARRAY(...) __VA_ARGS__
+#define P_END ARRAY({ NULL, 0})
+#define mprintf(...) outf.format(__VA_ARGS__)
+
+#define CLI_COMMAND(NAME, DESCR, PARAMS, SWITCHES, UNNAMED)   \
     static int Do ## NAME(Stream& outf, Args& args);          \
     const Param_t c_params ## NAME[] =  PARAMS;               \
     const CliCommand_t cli_ ## NAME =                         \
@@ -226,10 +289,10 @@ public:
         ((const char*)                   DESCR     ),         \
         ((const Param_t *)               c_params ## NAME ),  \
         ((const char*)                   SWITCHES  ),         \
+        ((bool)                          UNNAMED   ),         \
     };                                                        \
     CliCommandRegistrar RegisterCli_ ## NAME(& cli_ ## NAME); \
     static int Do ## NAME(Stream& outf, Args& args)
-
 
 IndexedList<const CliCommand_t *> *getCliCommandList(void);
 
