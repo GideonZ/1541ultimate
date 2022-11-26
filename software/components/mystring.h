@@ -14,6 +14,7 @@ public:
     mstring();
     mstring(int space);
     mstring(const char *k);
+    mstring(const char *k, int from, int to);
     mstring(mstring &k);
     ~mstring();
     
