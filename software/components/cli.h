@@ -11,6 +11,7 @@
 /* Defines.                                                                  */
 /* ************************************************************************* */
 
+#define P_OPTIONAL      0x00
 #define P_REQUIRED      0x01
 #define P_ALLOW_UNNAMED 0x02
 #define P_SWITCH        0x04
@@ -89,11 +90,11 @@ class Args : public Dict<const char *, const char *>
     }
 
 public:
-    Args() : Dict(8, NULL, NULL), cmd(NULL), unnamed(4, NULL), switches(8)
+    Args() : Dict(8, NULL, NULL, strcmp), cmd(NULL), unnamed(4, NULL), switches(8)
     {
     }
 
-    Args(const char *args) : Dict(8, NULL, NULL), unnamed(4, NULL), switches(8)
+    Args(const char *args) : Dict(8, NULL, NULL, strcmp), unnamed(4, NULL), switches(8)
     {
         Parse(args);
     }
@@ -105,11 +106,16 @@ public:
         }
     }
 
-    int Parse(const char *args)
+    void ClearArgs()
     {
-        clear();
+        clear(); // clears the dict
         unnamed.clear_list();
         switches = "";
+    }
+
+    int Parse(const char *args)
+    {
+        ClearArgs();
 
         // no string => done
         if (!args) {
@@ -249,6 +255,11 @@ public:
             printf(" '%s'\n", unnamed[i]);
         }
         printf("Switches: %s\n", switches.c_str());
+    }
+
+    void add_unnamed(const char *str)
+    {
+        unnamed.append(str);
     }
 
     int get_number_of_unnamed_args()

@@ -12,8 +12,9 @@ private:
     IndexedList<V> values;
     K defK;
     V defV;
+    int (*compare)(K, K);
 public:
-    Dict(int initial, K defK, V defV) : keys(initial, defK), values(initial, defV)
+    Dict(int initial, K defK, V defV, int(*compfunc)(K, K)) : keys(initial, defK), values(initial, defV), compare(compfunc)
     {
         this->defK = defK;
         this->defV = defV;
@@ -83,9 +84,17 @@ public:
 
 	V operator[] (K key) {
         int el = keys.get_elements();
-        for (int i=0;i<el;i++) {
-            if(keys[i] == key) {
-                return values[i];
+        if (!compare) {
+            for (int i=0;i<el;i++) {
+                if(keys[i] == key) {
+                    return values[i];
+                }
+            }
+        } else {
+            for (int i=0;i<el;i++) {
+                if(compare(keys[i], key) == 0) {
+                    return values[i];
+                }
             }
         }
         return defV;
@@ -94,7 +103,7 @@ public:
     void dump(void)
     {
         for(int i=0;i<keys.get_elements();i++) {
-            printf(" '%s' => '%s'\n", keys[i], values[i]);
+            printf(" '%s' => '%s'\n", keys[i], (const char *)values[i]);
         }
     }
 };
