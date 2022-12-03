@@ -6,6 +6,11 @@
 
 #include "httpd.h"
 
+extern "C" {
+    #include "server.h" // from MicroHTTPServer
+    #include "middleware.h" // from MicroHTTPServer
+}
+
 static int num_threads = 0;
 
 #ifdef HTTPD_DEBUG
@@ -15,6 +20,9 @@ int dbg_printf(const char *fmt, ...);
 #endif
 
 HTTPDaemon httpd; // the class that causes us to exist
+
+/* The HTTP server of this process. */
+HTTPServer srv;
 
 const char *dummy_header =
         "HTTP/1.1 200 OK\r\n"
@@ -49,9 +57,23 @@ HTTPDaemon::HTTPDaemon()
 
 void HTTPDaemon::http_listen_task(void *a)
 {
-    HTTPDaemon *daemon = (HTTPDaemon *) a;
-    int error = daemon->listen_task();
-    printf("Going to suspend the HTTPDaemon. Error = %d\n", error);
+/* Running the MicroHTTPServer code */
+    printf("Waiting to start HTTP Server.\n");
+    vTaskDelay(2000); /// wait for 10 sec
+
+    printf("Init HTTP Server.\n");
+	HTTPServerInit(&srv, MHS_PORT);
+	/* Run the HTTP server forever. */
+	/* Run the dispatch callback if there is a new request */
+    printf("Run HTTP Server Loop.\n");
+	HTTPServerRunLoop(&srv, Dispatch);
+	HTTPServerClose(&srv);
+
+/* Running my own HTTPD */
+//    HTTPDaemon *daemon = (HTTPDaemon *) a;
+//    int error = daemon->listen_task();
+//    printf("Going to suspend the HTTPDaemon. Error = %d\n", error);
+
     vTaskSuspend(NULL);
 }
 
