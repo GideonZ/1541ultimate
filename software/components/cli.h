@@ -89,7 +89,7 @@ class Args : public Dict<const char *, const char *>
     }
 
 public:
-    Args() : Dict(8, NULL, NULL), unnamed(4, NULL), switches(8)
+    Args() : Dict(8, NULL, NULL), cmd(NULL), unnamed(4, NULL), switches(8)
     {
     }
 
@@ -100,7 +100,9 @@ public:
 
     virtual ~Args()
     {
-        delete[] cmd;
+        if(cmd) {
+            delete[] cmd;
+        }
     }
 
     int Parse(const char *args)
