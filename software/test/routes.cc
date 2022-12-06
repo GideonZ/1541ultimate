@@ -27,6 +27,7 @@ API_CALL(files, createDiskImage, "Create a disk image", ARRAY({{"type", P_REQUIR
     return 0;
 }
 
+/*
 int main()
 {
     Stream_StdOut out;
@@ -44,6 +45,7 @@ int main()
         printf("Unknown route or command!\n");
     }
 }
+*/
 
 /*
     const ApiCall_t *call = ArgsURI::find_api_call("help", "empty");

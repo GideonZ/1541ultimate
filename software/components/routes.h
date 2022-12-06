@@ -2,7 +2,9 @@
 #define ROUTES_H
 
 #include "cli.h"
-#include "url.h"
+extern "C" {
+    #include "url.h"
+}
 
 class ArgsURI;
 
