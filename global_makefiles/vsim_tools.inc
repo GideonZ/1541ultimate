@@ -88,7 +88,7 @@ VLIB	= ${TL_ENV} $(ENVIRONMENTS) && vlib
 VMAP	= ${TL_ENV} $(ENVIRONMENTS) && vmap
 VDEPENDS	?= $(GLOBAL_INCS)/scripts/vdepends
 
-VCOM_FLAGS = -93 -quiet
+VCOM_FLAGS = -93 -quiet -relax
 
 
 ################################################################################

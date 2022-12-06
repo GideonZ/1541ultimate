@@ -5,9 +5,6 @@ use ieee.numeric_std.all;
 use work.nano_cpu_pkg.all;
 use work.io_bus_pkg.all;
 
-library unisim;
-use unisim.vcomponents.all;
-
 entity nano is
 generic (
     g_big_endian  : boolean := false );
@@ -88,8 +85,7 @@ begin
         io_rdata    => io_rdata,
         stall       => stall );
 
-    --i_buf_ram: entity work.RAMB16_S9_S18(model)
-    i_buf_ram: RAMB16_S9_S18
+    i_buf_ram: entity work.dpram_8x16
     port map (
 		CLKB  => clock,
 		SSRB  => reset,
@@ -97,7 +93,6 @@ begin
 		WEB   => ram_we,
         ADDRB => ram_addr,
 		DIB   => ram_wdata,
-		DIPB  => "00",
 		DOB   => ram_rdata,
 		
 		CLKA  => sys_clock,
@@ -106,7 +101,6 @@ begin
 		WEA   => sys_io_req_bram.write,
         ADDRA => sys_bram_addr,
 		DIA   => sys_io_req_bram.data,
-        DIPA  => "0",
 		DOA   => bram_data );
 
     sys_bram_addr(10 downto 1) <= std_logic_vector(sys_io_req_bram.address(10 downto 1));

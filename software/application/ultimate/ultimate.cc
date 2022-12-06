@@ -64,11 +64,8 @@ StreamTextLog textLog(96*1024);
 
 extern "C" void (*custom_outbyte)(int c);
 
-void print_tasks(void)
-{
-    static char buffer[8192];
-    vTaskList(buffer);
-    puts(buffer);
+extern "C" {
+	void print_tasks(void);
 }
 
 void outbyte_log(int c)
@@ -82,7 +79,7 @@ extern "C" void ultimate_main(void *a)
 
     uint32_t capabilities = getFpgaCapabilities();
 
-	printf("*** 1541 Ultimate V3.0 ***\n");
+	printf("*** Ultimate-II V3.x ***\n");
     printf("*** FPGA Capabilities: %8x ***\n\n", capabilities);
     
 	printf("%s ", rtc.get_long_date(time_buffer, 32));
@@ -110,7 +107,11 @@ extern "C" void ultimate_main(void *a)
             sprintf(title, "\eA*** Ultimate 64 V1.%b - %s ***\eO", C64_CORE_VERSION, APPL_VERSION);
         }
     } else if(capabilities & CAPAB_ULTIMATE2PLUS) {
-    	sprintf(title, "\eA*** Ultimate-II Plus %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
+        if (capabilities & CAPAB_FPGA_TYPE) {
+    	    sprintf(title, "\eA*** Ultimate-II Plus-L %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
+        } else {
+    	    sprintf(title, "\eA*** Ultimate-II Plus %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
+        }
     } else {
     	sprintf(title, "\eA*** 1541 Ultimate-II %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
     }
@@ -199,7 +200,7 @@ extern "C" void ultimate_main(void *a)
 */
 
 #if !DEVELOPER
-    custom_outbyte = outbyte_log;
+//    custom_outbyte = outbyte_log;
 #endif
 
     while(c64) {

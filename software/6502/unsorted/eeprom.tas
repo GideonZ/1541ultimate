@@ -1,0 +1,223 @@
+;============================================================
+;						GMOD2 EEPROM Runtime
+;						Version 1.0.0
+;						(C) 2016 by Chester Kollschen
+;------------------------------------------------------------
+
+;------------------------------------------------------------
+;						Defines
+;------------------------------------------------------------
+						EEPROM_DO = $80
+						EEPROM_CS = $40
+						EEPROM_CLK = $20
+						EEPROM_DI = $10
+						
+;------------------------------------------------------------
+;						Address Aliases
+;------------------------------------------------------------
+eeprom_port				= $de00
+						
+;------------------------------------------------------------
+;						Const Data
+;------------------------------------------------------------
+
+;------------------------------------------------------------
+;						Data
+;------------------------------------------------------------
+eeprom_latch			= $c000 ; .byte $00
+eeprom_shift			= $c001 ; .byte $00
+
+;------------------------------------------------------------
+;						Code
+;------------------------------------------------------------
+eeprom_reset
+						lda #$00
+						sta eeprom_latch
+						sta eeprom_port
+
+						rts
+
+;------------------------------------------------------------
+eeprom_cs_lo
+						lda eeprom_latch
+						and #255-(EEPROM_CS)
+						sta eeprom_latch
+						sta eeprom_port
+
+						rts
+
+;------------------------------------------------------------
+eeprom_cs_high
+						lda eeprom_latch
+						ora #(EEPROM_CS)
+						sta eeprom_latch
+						sta eeprom_port
+
+						rts
+
+;------------------------------------------------------------
+eeprom_clk_lo
+						lda eeprom_latch
+						and #255-(EEPROM_CLK)
+						sta eeprom_latch
+						sta eeprom_port
+
+						rts
+
+;------------------------------------------------------------
+eeprom_clk_high
+						lda eeprom_latch
+						ora #(EEPROM_CLK)
+						sta eeprom_latch
+						sta eeprom_port
+
+						rts
+
+;------------------------------------------------------------
+eeprom_wait_ready
+						jsr eeprom_cs_lo
+						jsr eeprom_cs_high
+
+						lda #(EEPROM_DO)
+eeprom_wait_ready_loop
+						bit eeprom_port
+						beq eeprom_wait_ready_loop
+
+						rts
+
+;------------------------------------------------------------
+eeprom_send_bits
+						sta eeprom_shift
+eeprom_send_bits_loop
+						asl eeprom_shift
+
+						lda eeprom_latch
+						and #255-(EEPROM_DI)
+						bcc eeprom_send_bits_zero
+						ora #(EEPROM_DI)
+eeprom_send_bits_zero
+						sta eeprom_latch
+						sta eeprom_port
+
+						jsr eeprom_clk_high
+						jsr eeprom_clk_lo
+
+						dex
+						bne eeprom_send_bits_loop
+
+						rts
+
+;------------------------------------------------------------
+eeprom_receive_byte
+						ldx #$08
+eeprom_receive_byte_loop
+						jsr eeprom_clk_high
+						jsr eeprom_clk_lo
+
+						lda eeprom_port
+						asl
+						rol eeprom_shift
+
+						dex
+						bne eeprom_receive_byte_loop
+
+						lda eeprom_shift
+						rts
+
+;------------------------------------------------------------
+eeprom_ewen
+						jsr eeprom_cs_high
+
+						lda #%10011000
+						ldx #$05
+						jsr eeprom_send_bits
+
+						lda #%00000000
+						ldx #$08
+						jsr eeprom_send_bits
+
+						jmp eeprom_cs_lo
+
+;------------------------------------------------------------
+eeprom_ewds
+						jsr eeprom_cs_high
+
+						lda #%10000000
+						ldx #$05
+						jsr eeprom_send_bits
+
+						lda #%00000000
+						ldx #$08
+						jsr eeprom_send_bits
+
+						jmp eeprom_cs_lo
+
+;------------------------------------------------------------
+eeprom_eral
+						jsr eeprom_cs_high
+
+						lda #%10010000
+						ldx #$05
+						jsr eeprom_send_bits
+
+						lda #%00000000
+						ldx #$08
+						jsr eeprom_send_bits
+
+						jsr eeprom_wait_ready
+						jmp eeprom_cs_lo
+
+;------------------------------------------------------------
+eeprom_read_begin
+						jsr eeprom_cs_high
+
+						sty eeprom_read_begin_sm1+1
+
+						txa
+						and #$03
+						asl
+						asl
+						asl
+						ora #%11000000
+						ldx #$05
+						jsr eeprom_send_bits
+eeprom_read_begin_sm1
+						lda #$00
+						ldx #$08
+						jmp eeprom_send_bits
+
+;------------------------------------------------------------
+eeprom_read_byte		= eeprom_receive_byte
+
+;------------------------------------------------------------
+eeprom_read_end			= eeprom_cs_lo
+
+;------------------------------------------------------------
+eeprom_write_begin
+						jsr eeprom_cs_high
+
+						sty eeprom_write_begin_sm1+1
+
+						txa
+						and #$03
+						asl
+						asl
+						asl
+						ora #%10100000
+						ldx #$05
+						jsr eeprom_send_bits
+eeprom_write_begin_sm1
+						lda #$00
+						ldx #$08
+						jmp eeprom_send_bits
+
+;------------------------------------------------------------
+eeprom_write_byte
+						ldx #$08
+						jmp eeprom_send_bits
+
+;------------------------------------------------------------
+eeprom_write_end
+						jsr eeprom_wait_ready
+						jmp eeprom_cs_lo
+

@@ -32,9 +32,9 @@ public:
     
     // Fall through:
     DSTATUS status(void);
-    DRESULT read(uint8_t *, uint32_t, uint8_t);
+    DRESULT read(uint8_t *, uint32_t, int);
 #if	_READONLY == 0
-    DRESULT write(const uint8_t *, uint32_t, uint8_t);
+    DRESULT write(const uint8_t *, uint32_t, int);
 #endif
     DRESULT ioctl(uint8_t, void *);
 };

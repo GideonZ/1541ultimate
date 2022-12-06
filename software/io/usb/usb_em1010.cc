@@ -7,28 +7,7 @@ extern "C" {
 }
 #include "integer.h"
 #include "usb_em1010.h"
-
-__inline uint32_t cpu_to_32le(uint32_t a)
-{
-#ifdef NIOS
-	return a;
-#else
-	uint32_t m1, m2;
-    m1 = (a & 0x00FF0000) >> 8;
-    m2 = (a & 0x0000FF00) << 8;
-    return (a >> 24) | (a << 24) | m1 | m2;
-#endif
-}
-
-__inline uint16_t le16_to_cpu(uint16_t h)
-{
-#ifdef NIOS
-	return h;
-#else // assume big endian
-    return (h >> 8) | (h << 8);
-#endif
-}
-
+#include "endianness.h"
 /*********************************************************************
 / The driver is the "bridge" between the system and the device
 / and necessary system objects

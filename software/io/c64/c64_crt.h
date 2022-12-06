@@ -52,6 +52,7 @@ class C64_CRT
     {
         uint8_t header[0x10];
         uint8_t *ram_location;
+        bool mandatory; // if true, then it is saved always - even when empty. Required for GMOD2, used for everything non easyflash.
     };
 
     const static struct t_cart c_recognized_c64_carts[];
@@ -86,6 +87,7 @@ class C64_CRT
     void clear_cart_mem(void);
     void patch_easyflash_eapi();
     void unpatch_easyflash_eapi();
+    void regenerate_easyflash_chunks();
     int  read_crt(File *file, cart_def *def);
     void configure_cart(cart_def *def);
     void find_eeprom(void);

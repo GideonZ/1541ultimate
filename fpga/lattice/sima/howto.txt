@@ -1,0 +1,4 @@
+vcom ../../../target/fpga/u2plus_ecp5/impl1/u2p_ecp5_impl1_vho.vho
+vcom ../vhdl_sim/tb_top.vhd
+asim -noglitch +no_glitch_msg -sdftyp i_dut=../../../target/fpga/u2plus_ecp5/impl1/u2p_ecp5_impl1_vho.sdf tb_top
+

@@ -1,0 +1,13 @@
+# Syntax of the source-include lines:
+# 1 = language
+# 2 = library (destination)
+# 3 = source file
+# 4 = space separated list of dependencies
+#
+# Note: paths are not necessary if the paths are already included in the "AUTO_DEP_PATHS".
+
+vhdl,work,dpram_8x16-model.vhd,dpram_8x16.vhd
+vhdl,work,dpram_8x32-model.vhd,dpram_8x32.vhd
+vhdl,work,pseudo_dpram_8x16-model.vhd,pseudo_dpram_8x16.vhd
+vhdl,work,pseudo_dpram_8x32-model.vhd,pseudo_dpram_8x32.vhd
+vhdl,work,uart_peripheral_io.vhd,io_bus_pkg.vhd tx.vhd rx.vhd srl_fifo-generic.vhd icap-dummy.vhd pseudo_dpram_8x32.vhd pseudo_dpram_8x32-model.vhd pseudo_dpram_8x16-model.vhd pseudo_dpram_8x16.vhd dpram_8x32-model.vhd dpram_8x32.vhd dpram_8x16-model.vhd,dpram_8x16.vhd  

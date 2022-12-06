@@ -210,6 +210,7 @@ int C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
 {
     uint8_t *chip_header = chunk->header;
     chunk->ram_location = NULL;
+    chunk->mandatory = true;
 
     uint32_t bytes_read;
     FRESULT res = f->read(chip_header, 0x10, &bytes_read);
@@ -314,6 +315,39 @@ void C64_CRT::clear_cart_mem(void)
     memset(cart_memory, 0xff, 1024 * 1024); // clear all cart memory
 }
 
+void C64_CRT::regenerate_easyflash_chunks()
+{
+    if (local_type == CART_EASYFLASH) {
+        for (int i=0; i<chip_chunks.get_elements(); i++) {
+            t_crt_chip_chunk *cc = chip_chunks[i];
+            if (cc) {
+                delete cc;
+            }
+        }
+        chip_chunks.clear_list();
+        
+        static const uint8_t chip_header[16] = { 0x43, 0x48, 0x49, 0x50, 0x00, 0x02, 0x20, 0x10, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x20, 0x00};
+
+        for (int i=0; i<64; i++)
+        {
+            t_crt_chip_chunk *ch = new t_crt_chip_chunk;
+            ch->mandatory = false;
+            memcpy(ch->header, chip_header, 16);
+            ch->header[11] = (uint8_t) i;
+            ch->header[12] = 0x80;
+            ch->ram_location = cart_memory + uint32_t(i) * 16384;
+            chip_chunks.append(ch);
+
+            ch = new t_crt_chip_chunk;
+            ch->mandatory = false;
+            memcpy(ch->header, chip_header, 16);
+            ch->header[11] = (uint8_t) i;
+            ch->header[12] = 0xA0;
+            ch->ram_location = cart_memory + uint32_t(i) * 16384 + 8192;
+            chip_chunks.append(ch);
+        }
+    }
+}
 void C64_CRT::patch_easyflash_eapi()
 {
     if (local_type == CART_EASYFLASH) {
@@ -374,6 +408,7 @@ int C64_CRT::read_crt(File *file, cart_def *def)
     }
 
     patch_easyflash_eapi();
+    regenerate_easyflash_chunks();
     configure_cart(def);
     return 0;
 }
@@ -428,6 +463,9 @@ void C64_CRT::configure_cart(cart_def *def)
         case CART_SUPERSNAP:
             cart_type = CART_TYPE_SS5; // Snappy
             prohibit = CART_PROHIBIT_DEXX;
+            if (total_read > 65536) {
+                cart_type |= VARIANT_1;
+            }
             break;
         case CART_ZAXXON:
             cart_type = CART_TYPE_ZAXXON;
@@ -594,10 +632,7 @@ int C64_CRT::save_crt(File *fo)
         t_crt_chip_chunk *cc = crt->chip_chunks[i];
         uint16_t size = get_word(cc->header + CRTCHP_SIZE);
         uint16_t load = get_word(cc->header + CRTCHP_LOAD);
-        res = fo->write(cc->header, 0x10, &written);
-        if (res != FR_OK) {
-            break;
-        }
+        
 
         // Get EEPROM state from Hardware
         if ((load == 0xDE00) && (size == 0x800)) {
@@ -607,6 +642,25 @@ int C64_CRT::save_crt(File *fo)
                     C64 :: get_eeprom_data(cc->ram_location);
                 }
             }
+        }
+
+        if (!cc->mandatory)
+        {
+           bool empty = true;
+           uint32_t *ram_location_32bit = (uint32_t *) cc->ram_location;
+           
+           for (int i=0; i<size/4; i++)
+              if (ram_location_32bit[i] != 0xFFFFFFFF)
+                 empty = false;
+                 
+           if (empty)
+               continue;
+        }
+        
+        
+        res = fo->write(cc->header, 0x10, &written);
+        if (res != FR_OK) {
+            break;
         }
 
         res = fo->write(cc->ram_location, size, &written);
@@ -643,6 +697,7 @@ void C64_CRT :: find_eeprom(void)
 
     // EEPROM chunk not found, so let's create one and clear it.
     t_crt_chip_chunk *ch = new t_crt_chip_chunk;
+    ch->mandatory = true;
     const uint8_t eeprom_header[16] = { 0x43, 0x48, 0x49, 0x50, 0x00, 0x00, 0x08, 0x10,
                                         0x00, 0x00, 0x00, 0x00, 0xDE, 0x00, 0x08, 0x00
     };

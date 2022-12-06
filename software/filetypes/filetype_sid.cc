@@ -10,6 +10,7 @@
 #include "init_function.h"
 #include "dump_hex.h"
 #include "sid_config.h"
+#include "endianness.h"
 
 extern uint8_t _sidcrt_bin_start;
 extern uint8_t _sidcrt_bin_end;
@@ -31,13 +32,8 @@ FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_sid(FileType :: getFi
 const uint8_t DEFAULT_SONG_LENGTH_MUS = 3;		// in minutes
 const uint8_t DEFAULT_SONG_LENGTH_SID = 5;		// in minutes
 
-#if NIOS
 const uint32_t magic_psid = 0x44495350; // little endian
 const uint32_t magic_rsid = 0x44495352; // little endian
-#else
-const uint32_t magic_psid = 0x50534944; // big endian
-const uint32_t magic_rsid = 0x52534944; // big endian
-#endif
 
 const int string_offsets[4] = { 0x16, 0x36, 0x56, 0x76 };
 
@@ -72,18 +68,6 @@ const uint8_t ascii[59] = {
 cart_def sid_cart; // = { ID_SIDCART, (void *)0, 0x4000, CART_TYPE_16K | CART_RAM };
 cart_def mus_cart; // = { ID_SIDCART, (void *)0, 0x4000, CART_TYPE_16K | CART_RAM };
 
-static inline uint16_t swap_word(uint16_t p)
-{
-#if NIOS
-	return p;
-#else
-	uint16_t out = (p >> 8) | (p << 8);
-	return out;
-#endif
-}
-
-#define le2cpu  swap_word
-#define cpu2le  swap_word
 #define swap(p) (((p) >> 8) | ((p) << 8))
 
 static void initSidCart(void *object, void *param)
@@ -120,7 +104,7 @@ bool SidAutoConfig(int count, t_sid_definition *requests) __attribute__((weak));
 
 bool SidAutoConfig(int count, t_sid_definition *requests)
 {
-
+    return true;
 }
 
 bool FileTypeSID :: ConfigSIDs(void)
@@ -216,7 +200,7 @@ int FileTypeSID :: readHeader(void)
 
     // header checks
     magic = (uint32_t *)sid_header;
-    if ((*magic != magic_rsid)&&(*magic != magic_psid)) {
+    if ((cpu_to_32le(*magic) != magic_rsid)&&(cpu_to_32le(*magic) != magic_psid)) {
         printf("Filetype not as expected. (%08x)\n", *magic);
 		fm->fclose(file);
 		file = NULL;

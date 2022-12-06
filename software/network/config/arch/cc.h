@@ -42,10 +42,8 @@
 
 #define LWIP_MEM_ALIGN(addr) ((void *)((((mem_ptr_t)(addr) + MEM_ALIGNMENT - 1) & ~(mem_ptr_t)(MEM_ALIGNMENT-1))))
 
-#ifdef NIOS
+#ifndef BYTE_ORDER
 #define BYTE_ORDER LITTLE_ENDIAN
-#else
-#define BYTE_ORDER BIG_ENDIAN
 #endif
 
 typedef unsigned   char    u8_t;

@@ -8,6 +8,7 @@ use work.io_bus_pkg.all;
 
 entity all_carts_v5 is
 generic (
+    g_register_addr : boolean := false;
     g_eeprom        : boolean := true;
     g_kernal_base   : std_logic_vector(27 downto 0) := X"0EC8000"; -- multiple of 32K
     g_rom_base      : std_logic_vector(27 downto 0) := X"0F00000"; -- multiple of 1M
@@ -48,6 +49,7 @@ port (
     serve_io2       : out std_logic; -- IO2n
     allow_write     : out std_logic;
 
+    mem_req         : in  std_logic; -- if '1', the address shouldn't change
     mem_addr        : out unsigned(25 downto 0);   
 
     irq_n           : out std_logic;
@@ -76,6 +78,7 @@ architecture gideon of all_carts_v5 is
     signal allow_bank   : std_logic;
     signal hold_nmi     : std_logic;
     signal mem_addr_i   : std_logic_vector(27 downto 0);
+    signal mem_addr_c   : std_logic_vector(27 downto 0);
     signal rom_addr     : std_logic_vector(27 downto 0);
     signal ram_addr     : std_logic_vector(27 downto 0);
 
@@ -496,6 +499,9 @@ begin
             when c_ss5 =>
                 if io_write='1' and io_addr(8) = '0' and cart_en='1' then -- DE00-DEFF
                     bank_bits(15 downto 14) <= io_wdata(4) & io_wdata(2); -- 4 banks of 16K
+                    if variant(0)='1' then -- 128K version
+                        bank_bits(16) <= io_wdata(5);
+                    end if;
                     mode_bits <= io_wdata(3) & io_wdata(1) & io_wdata(0);
                     unfreeze  <= not io_wdata(0);
                     cart_en   <= not io_wdata(3);
@@ -714,7 +720,9 @@ begin
         end if;
     end process;
 
-    mem_addr <= unsigned(mem_addr_i(mem_addr'range));
+    mem_addr_c <= mem_addr_i when rising_edge(clock) and mem_req='0';
+    mem_addr <= unsigned(mem_addr_c(mem_addr'range)) when g_register_addr else
+                unsigned(mem_addr_i(mem_addr'range));
 
 --    slot_resp.data(7) <= bank_bits(16);
 --    slot_resp.data(6) <= '1';

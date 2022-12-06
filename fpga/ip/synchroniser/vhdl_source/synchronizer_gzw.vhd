@@ -54,6 +54,9 @@ entity synchronizer_gzw is
     attribute dont_replicate of synchronizer_gzw          : entity is true;
     attribute dont_retime                                 : boolean;
     attribute dont_retime of synchronizer_gzw             : entity is true;
+    -- Lattice attributes
+    attribute syn_replicate                               : boolean;
+    attribute syn_replicate of synchronizer_gzw           : entity is false;
     -----------------------------------------------------------------------------
 
 end entity;
@@ -82,7 +85,9 @@ begin
     begin
         if rising_edge(tx_clock) then
             -- path to receive side
-            tx_tig_src  <= tx_tig_src xor tx_enable; -- toggle flipfop
+            if tx_enable = '1' then
+                tx_tig_src <= not tx_tig_src;  -- toggle flipfop
+            end if;
             if tx_enable = '1' then
                 tx_data_tig_src <= tx_data;
             end if;

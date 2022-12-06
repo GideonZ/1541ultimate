@@ -12,7 +12,7 @@ OBJS_RBF = $(notdir $(SRCS_RBF:%.rbf=%.o))
 OBJS_APP = $(notdir $(SRCS_APP:%.app=%.ao))
 CHK_BIN  = $(notdir $(SRCS_BIN:%.bin=%.chk))
 
-ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_ASM) $(OBJS_ASMS) $(OBJS_C) $(OBJS_CC) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO) $(OBJS_RBF) $(OBJS_APP))
+ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_ASM) $(OBJS_ASMS) $(OBJS_C) $(OBJS_CC) $(OBJS_IEC) $(OBJS_NANO) $(OBJS_6502) $(OBJS_BIN) $(OBJS_RBF) $(OBJS_APP))
 ALL_DEP_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_C) $(OBJS_CC))
 
 

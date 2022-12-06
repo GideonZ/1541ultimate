@@ -15,6 +15,7 @@ VPATH +=	$(PATH_SW)/nios_appl_bsp
 VPATH +=	$(PATH_SW)/nios_appl_bsp/HAL/inc
 VPATH +=	$(PATH_SW)/nios_appl_bsp/drivers/inc
 VPATH +=	$(PATH_SW)/application/rtos
+VPATH +=        $(PATH_SW)/system
 
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
@@ -29,6 +30,7 @@ SRCS_C   =	croutine.c \
             small_printf.c \
             dump_hex.c \
             heap_3.c \
+            assert.c \
             $(PRJ).c
 
 SRCS_CC	 =  

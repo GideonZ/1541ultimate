@@ -16,6 +16,11 @@ TIMEGRP usb_data OFFSET = OUT 10.5 ns AFTER ULPI_CLOCK;
 TIMEGRP usb_control OFFSET = IN 10.5 ns BEFORE ULPI_CLOCK;
 TIMEGRP usb_control OFFSET = OUT 10.5 ns AFTER ULPI_CLOCK;
 
+INST "i_logic/r_cart.i_slot_srv/*" TNM = cart_self;
+INST "i_logic/r_cart.i_slot_srv/slot*_f*" TNM_NET = cart_din;
+TIMESPEC "TS_cart_loop_tig1" = FROM "cart_self" TO "cart_din"  TIG;
+
+
 NET "BA"   IOSTANDARD = LVCMOS33  |PULLDOWN ; 
 NET "BUFFER_ENn"   IOSTANDARD = LVCMOS33  |SLEW = SLOW  |DRIVE = 2 ; 
 NET "BUTTON(0)"   IOSTANDARD = LVCMOS33  |PULLUP ; 

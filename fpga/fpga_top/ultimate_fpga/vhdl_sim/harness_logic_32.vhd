@@ -112,6 +112,8 @@ architecture tb of harness_logic_32 is
     signal ULPI_STP    : std_logic;
     signal ULPI_DIR    : std_logic := '0';
     signal ULPI_DATA   : std_logic_vector(7 downto 0) := (others => 'H');
+    signal ulpi_data_o      : std_logic_vector(7 downto 0);
+    signal ulpi_data_t      : std_logic;
 
     signal sys_clock    : std_logic := '1';
     signal sys_reset    : std_logic := '1';
@@ -273,10 +275,14 @@ begin
         ULPI_NXT        => ULPI_NXT,
         ULPI_STP        => ULPI_STP,
         ULPI_DIR        => ULPI_DIR,
-        ULPI_DATA       => ULPI_DATA,
+        ULPI_DATA_O     => ulpi_data_o,
+        ULPI_DATA_I     => ULPI_DATA,
+        ULPI_DATA_T     => ulpi_data_t,
         ext_io_req      => io_req,
         ext_io_resp     => io_resp );
     
+    ULPI_DATA <= ulpi_data_o when ulpi_data_t = '1' else "ZZZZZZZZ";
+
     SLOT_ADDR(15 downto 12) <= slot_addr_o(15 downto 12) when slot_addr_th = '1' else (others => 'H');
     SLOT_ADDR(11 downto 00) <= slot_addr_o(11 downto 00) when slot_addr_tl = '1' else (others => 'H');
     SLOT_DATA               <= slot_data_o when slot_data_t = '1' else (others => 'H');

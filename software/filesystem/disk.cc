@@ -8,18 +8,19 @@ extern "C" {
 
 Disk::Disk(BlockDevice *b, int sec = 512)
 {
+    partition_list = NULL;
+    last_partition = NULL;
     dev = b;
     sector_size = sec;
-    buf = new uint8_t[sec];
-    partition_list = NULL;
     p_count = 0;
+    buf = new uint8_t[sec];
 }
 
 Disk::~Disk()
 {
     Partition *prt, *next;
     if(buf)
-        delete[] buf;
+         delete[] buf;
 
     prt = partition_list;
     while(prt) {
@@ -89,9 +90,8 @@ int Disk::Init(bool isFloppy)
         return -4; // can't read device size
     }
     
-    //printf("Going to read partition table.\n");
+    printf("Going to read partition table. partition_list is %p\n", partition_list);
     
-    prt_list = &partition_list; // the first entry should be stored here in the class
     lba = 0L;
     p_count = 0;        
 
@@ -105,11 +105,17 @@ int Disk::Init(bool isFloppy)
             size  = LD_DWORD(&tbl[12]);
             printf("MBR Start: %d Size: %d Type: %d\n", start, size, tbl[4]);
             if ((tbl[4] == 0x0F) || (tbl[4] == 0x05)) {
-                printf("Result of EBR read: %d.\n", read_ebr(&prt_list, start));
+                printf("Result of EBR read: %d.\n", read_ebr(start));
             } else {
                 prt = new Partition(dev, lba + start, size, tbl[4]);
-                *prt_list = prt;
-                prt_list = &prt->next_partition;
+                printf("Partition created! %p\n", prt);
+                if (last_partition) {
+                    last_partition->next_partition = prt;
+                } else {
+                    partition_list = prt;
+                }
+                last_partition = prt;
+
                 p_count ++;
             }
         }
@@ -118,7 +124,7 @@ int Disk::Init(bool isFloppy)
     return p_count;        
 }
 
-int Disk :: read_ebr(Partition ***prt_list, uint32_t lba)
+int Disk :: read_ebr(uint32_t lba)
 {
     uint8_t *local_buf = new uint8_t[sector_size];
     Partition *prt;
@@ -144,11 +150,16 @@ int Disk :: read_ebr(Partition ***prt_list, uint32_t lba)
             size  = LD_DWORD(&tbl[12]);
             printf("EBR Start: %d Size: %d Type: %d\n", start, size, tbl[4]);
             if ((tbl[4] == 0x0F) || (tbl[4] == 0x05)) {
-                read_ebr(prt_list, lba + start);
+                read_ebr(lba + start);
             } else {
                 prt = new Partition(dev, lba + start, size, tbl[4]);
-                **prt_list = prt;
-                *prt_list = &prt->next_partition;
+
+                if (last_partition) {
+                    last_partition->next_partition = prt;
+                } else {
+                    partition_list = prt;
+                }
+                last_partition = prt;
                 p_count ++;
             }
         }

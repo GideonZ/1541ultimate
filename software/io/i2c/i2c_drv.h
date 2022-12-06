@@ -37,6 +37,7 @@ public:
     int i2c_write_byte(const uint8_t devaddr, const uint8_t regaddr, const uint8_t data);
     int i2c_write_word(const uint8_t devaddr, const uint16_t regaddr, const uint16_t data);
     int i2c_write_block(const uint8_t devaddr, const uint8_t regaddr, const uint8_t *data, const int length);
+    void i2c_read_raw_16(const uint8_t devaddr, uint16_t *dest, int count);
 };
 
 extern "C" {

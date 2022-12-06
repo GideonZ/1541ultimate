@@ -24,7 +24,7 @@ use work.slot_bus_pkg.all;
 
 entity slot_to_io_bridge is
 generic (
-    g_io_base       : unsigned(19 downto 0);
+    g_io_base       : unsigned(23 downto 0);
     g_slot_start    : unsigned(8 downto 0);
     g_slot_stop     : unsigned(8 downto 0) );
 port (

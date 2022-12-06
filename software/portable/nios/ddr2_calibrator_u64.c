@@ -3,12 +3,15 @@
 #include "iomap.h"
 #include <stdio.h>
 
-#define DDR2_TESTLOC0  (*(volatile uint32_t *)(0x0000))
-#define DDR2_TESTLOC1  (*(volatile uint32_t *)(0x0004))
+#define DDR2_TESTLOC0  (*(volatile uint32_t *)(0x0014))
+#define DDR2_TESTLOC1  (*(volatile uint32_t *)(0x0018))
 
-#define MR     0x0232
-#define EMROCD 0x4780 // 01 0 0 0 1 (no DQSn) 111 (do OCD) 1 (150ohm) 000 (no AL) 0 (150 ohm) 0 (half drive) 0 (dll used)
-#define EMR    0x4442 // 01 0 0 0 1 (no DQSn) 000 (no OCD) 1 (150ohm) 000 (no AL) 0 (150 ohm) 0 (half drive) 0 (dll used)
+#define MR         0x0232 // xx00.0010.0011.0010 => PD = 0, WREC=001, DLLReset=0, TMode=0, CAS=011=3, BT=SEQ, BL=010=4
+#define EMROCD_AL0 0x4780 // 01 0 0 0 1 (no DQSn) 111 (do OCD) 1 (150ohm) 000 (no AL) 0 (150 ohm) 0 (half drive) 0 (dll used)
+#define EMR_AL0    0x4442 // 01 0 0 0 1 (no DQSn) 000 (no OCD) 1 (150ohm) 000 (no AL) 0 (150 ohm) 0 (half drive) 0 (dll used)
+#define EMROCD_AL1 0x4788 // 01 0 0 0 1 (no DQSn) 111 (do OCD) 1 (150ohm) 001 (AL=1) 0 (150 ohm) 0 (full drive) 0 (dll used)
+#define EMR_AL1    0x444A // 01 0 0 0 1 (no DQSn) 000 (no OCD) 1 (150ohm) 001 (AL=1) 0 (150 ohm) 1 (half drive) 0 (dll used)
+
 #define EMR2   0x8000 // no extended refresh
 #define EMR3   0xC000 // all bits reserved
 #define DLLRST 0x0100 // MR DLL RESET
@@ -24,39 +27,42 @@ const uint8_t hexchars[] = "0123456789ABCDEF";
 #define MOVE_READ_CLOCK 0x33
 //#define MOVE_MEASURE_CLOCK 0x34
 
-
 int try_mode(int mode);
+
+void hexbyte(uint8_t val)
+{
+    outbyte(hexchars[(val >> 4)  & 15]);
+    outbyte(hexchars[(val >> 0)  & 15]);
+}
 
 void ddr2_calibrate()
 {
     outbyte('@');
-    DDR2_ENABLE    = 1;
+    DDR2_ENABLE    = 7;
     int i;
     for (i=0;i<1000;i++)
         ;
 
-    DDR2_ADDR_LOW  = 0x00;
-    DDR2_ADDR_HIGH = 0x04;
+    DDR2_ADDR      = 0x0400;
     DDR2_COMMAND   = 2; // Precharge all
 
-    DDR2_ADDR_LOW  = (EMR2 & 0xFF);
-    DDR2_ADDR_HIGH = (EMR2 >> 8);
+    DDR2_ADDR      = EMR2;
     DDR2_COMMAND   = 0; // write MR
 
-    DDR2_ADDR_LOW  = (EMR3 & 0xFF);
-    DDR2_ADDR_HIGH = (EMR3 >> 8);
+    DDR2_ADDR      = EMR3;
     DDR2_COMMAND   = 0; // write MR
 
-    DDR2_ADDR_LOW  = (EMROCD & 0xFF);
-    DDR2_ADDR_HIGH = (EMROCD >> 8);
+    if (DDR2_ADDITIVE_LAT) {
+        DDR2_ADDR  = EMROCD_AL1;
+    } else {
+        DDR2_ADDR  = EMROCD_AL0;
+    }
     DDR2_COMMAND   = 0; // write MR
 
-    DDR2_ADDR_LOW  = (DLLRST & 0xFF);
-    DDR2_ADDR_HIGH = (DLLRST >> 8);
+    DDR2_ADDR      = DLLRST;
     DDR2_COMMAND   = 0; // write MR
 
-    DDR2_ADDR_LOW  = 0x00;
-    DDR2_ADDR_HIGH = 0x04;
+    DDR2_ADDR      = 0x0400;
     DDR2_COMMAND   = 2; // Precharge all
 
     DDR2_COMMAND   = 1; // Refresh
@@ -64,12 +70,14 @@ void ddr2_calibrate()
     DDR2_COMMAND   = 1; // Refresh
     DDR2_COMMAND   = 1; // Refresh
 
-    DDR2_ADDR_LOW  = (MR & 0xFF);
-    DDR2_ADDR_HIGH = (MR >> 8);
+    DDR2_ADDR      = MR;
     DDR2_COMMAND   = 0; // write MR
 
-    DDR2_ADDR_LOW  = (EMR & 0xFF);
-    DDR2_ADDR_HIGH = (EMR >> 8);
+    if (DDR2_ADDITIVE_LAT) {
+        DDR2_ADDR  = EMR_AL1;
+    } else {
+        DDR2_ADDR  = EMR_AL0;
+    }
     DDR2_COMMAND   = 0; // write MR
 
     for (int i=0;i<1000;i++) {
@@ -77,23 +85,10 @@ void ddr2_calibrate()
     }
 
     while(1) {
-        if (try_mode(2)) {
-            return;
-        }
-        if (try_mode(0)) {
-            return;
-        }
-        if (try_mode(2)) {
-            return;
-        }
-        if (try_mode(0)) {
-            return;
-        }
-        if (try_mode(1)) {
-            return;
-        }
-        if (try_mode(3)) {
-            return;
+        for(int i=7;i>=0;i--) {
+            if (try_mode(i)) {
+                return;
+            }
         }
     }
 }
@@ -165,7 +160,7 @@ int try_mode(int mode)
     outbyte('\r');
     outbyte('\n');
 
-    uint16_t *mem16 = (uint16_t *)0;
+    uint16_t *mem16 = (uint16_t *)256;
     for(int i=0;i<65536;i++) {
         mem16[i] = (uint16_t)i;
     }
@@ -178,5 +173,16 @@ int try_mode(int mode)
         puts("RAM error.");
         return 0;
     }
+    //DDR2_ENABLE = 0x87; // Calibration done
     return 1;
+}
+
+void hexword(uint32_t val)
+{
+    uint8_t *p = (uint8_t *)&val;
+    hexbyte(p[3]);
+    hexbyte(p[2]);
+    hexbyte(p[1]);
+    hexbyte(p[0]);
+    outbyte(' ');
 }

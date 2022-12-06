@@ -128,8 +128,8 @@ FRESULT print_directory(FileSystem *fs, const char *path, int indent = 0)
         printf("Directory '%s' cannot be opened: %s\n", path, FileSystem::get_error_string(fres));
     }
     if (!indent) {
-        uint32_t fre;
-        fres = fs->get_free(&fre);
+        uint32_t fre, cs;
+        fres = fs->get_free(&fre, &cs);
         printf("%u BLOCKS FREE.\n", fre);
     }
     return fres;
@@ -171,8 +171,8 @@ bool test_fs(FileSystem *fs)
     uint32_t tr = 0;
     printf("Formatted:\n");
     print_directory(fs, "");
-    uint32_t empty_size;
-    FRESULT fres = fs->get_free(&empty_size);
+    uint32_t empty_size, cs;
+    FRESULT fres = fs->get_free(&empty_size, &cs);
     ok = ok && (fres == FR_OK); // it should be possible to get the number of free sectors.
 
     File *f;
@@ -225,7 +225,7 @@ bool test_fs(FileSystem *fs)
     }
     print_directory(fs, "");
     uint32_t fre;
-    fs->get_free(&fre);
+    fs->get_free(&fre, &cs);
     if (empty_size < 775) {
         ok = ok && (fre == 0);
         ok = ok && (fres == FR_DISK_FULL); // we expect that the disk is full when there are no blocks free
@@ -250,7 +250,7 @@ bool test_fs(FileSystem *fs)
     }
     print_directory(fs, "");
 
-    fs->get_free(&fre);
+    fs->get_free(&fre, &cs);
     ok = ok && (fre == (empty_size - 40)); // 10000 bytes = 40 blocks
 
     fres = fs->file_open("test.seq", FA_WRITE, &f );
@@ -306,7 +306,7 @@ bool test_fs(FileSystem *fs)
     printf("Delete result: %s\n", FileSystem::get_error_string(fres));
     print_directory(fs, "");
 
-    fs->get_free(&fre);
+    fs->get_free(&fre, &cs);
     ok = ok && (fre == empty_size); // disk should be empty again
 
     printf("Creating BLAHDIR/SECOND...\n");
@@ -327,7 +327,7 @@ bool test_fs(FileSystem *fs)
     printf("Create DIR result: %s\n", FileSystem::get_error_string(fres));
     print_directory(fs, "");
 
-    fs->get_free(&fre);
+    fs->get_free(&fre, &cs);
     ok = ok && (fre == (empty_size - 4)); // 4 blocks should be used for 2 dirs
 
     fres = fs->file_open("BLAHDIR/SECOND/sub.rel", FA_WRITE | FA_CREATE_NEW, &f );
@@ -347,7 +347,7 @@ bool test_fs(FileSystem *fs)
     if (empty_size > 720)
         expected_rel_blocks += 1; // Super side block
 
-    fs->get_free(&fre);
+    fs->get_free(&fre, &cs);
     ok = ok && (fre == (empty_size - 4 - expected_rel_blocks)); // 4 blocks should be used for 2 dirs
 
     copy_from(fs, "BLAHDIR/SECOND/sub.rel", "sub.rel");

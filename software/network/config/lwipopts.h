@@ -71,7 +71,7 @@
  */
 #include "profiler.h"
 
-#define MEMCPY(dst,src,len)             profiled_memcpy(dst,src,len)
+#define MEMCPY(dst,src,len)             memcpy(dst,src,len)
 
 /**
  * SMEMCPY: override this with care! Some compilers (e.g. gcc) can inline a

@@ -7,15 +7,10 @@ extern "C" {
 #include "usb_device.h"
 #include "task.h"
 #include "profiler.h"
+#include "endianness.h"
 
 #include <stdlib.h>
 #include <string.h>
-
-#ifdef NIOS
-#define nano_word(x) ((x >> 8) | ((x & 0xFF) << 8))
-#else // assume big endian
-#define nano_word(x) x
-#endif
 
 UsbBase usb2;
 
@@ -23,14 +18,14 @@ UsbBase usb2;
     #define printf(...)
 #endif
 
-#define BIT31 0x80000000
-
 /*
  * This function is required to fill the cache manually after a USB transfer. This is required, since
  * the hardware invalidation has been turned off. The cache invalidation seems to cause random crashes.
  */
 void cache_load(uint8_t *buffer, int length)
 {
+#if DATACACHE
+#define BIT31 0x80000000
     if (length <= 0) {
         return;
     }
@@ -40,6 +35,7 @@ void cache_load(uint8_t *buffer, int length)
     uint8_t *source = (uint8_t *)(addr | BIT31);
     uint8_t *dest   = (uint8_t *)addr;
     memcpy(buffer, source, length);
+#endif
 }
 
 UsbBase :: UsbBase()
@@ -51,7 +47,13 @@ UsbBase :: UsbBase()
 	initialized = false;
 	bus_speed = -1;
 	setupBuffer = new uint8_t[8];
-//	initHardware();
+	cleanup_queue = NULL;
+	commandSemaphore = NULL;
+	mutex = NULL;
+	queue = NULL;
+	prev_status = 0;
+	irq_count = 0;
+	//	initHardware();
 }
 
 UsbBase :: ~UsbBase()
@@ -201,7 +203,7 @@ void UsbBase :: initHardware()
 
         xTaskCreate( poll_usb2, "USB Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
     } else {
-        printf("No USB2 hardware found.\n");
+        printf("No USB2 hardware found. (%08x)\n", getFpgaCapabilities());
     }
 }
 

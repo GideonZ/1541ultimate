@@ -9,36 +9,35 @@
 #define U64_H_
 
 #include <stdint.h>
+#include "u2p.h"
 
-#ifndef U64_IO_BASE
-#define U64_IO_BASE     0xA0000400
-#define U64_AUDIO_MIXER 0xA0000500
-#define U64_WIFI_UART   0xA0000600
-#define U64_RESAMPLER   0xA0000700
+#define U64_IO_BASE     (U2P_IO_BASE + 0x0400)
+#define U64_AUDIO_MIXER (U2P_IO_BASE + 0x0500)
+#define U64_WIFI_UART   (U2P_IO_BASE + 0x0600)
+#define U64_RESAMPLER   (U2P_IO_BASE + 0x0700)
 
-#define VID_IO_BASE  0xA0040000
+#define VID_IO_BASE  (U2P_IO_BASE + 0x40000)
 
-#define C64_IO_BASE  0xA0080000
-#define C64_PALETTE  0xA0080800
-#define C64_IO_LED   0xA0081000
-#define C64_PLD_ACC  0xA0081800
-#define C64_IO_DEBUG 0xA0082000
+#define C64_IO_BASE  (U2P_IO_BASE + 0x80000)
+#define C64_PALETTE  (U2P_IO_BASE + 0x80800)
+#define C64_IO_LED   (U2P_IO_BASE + 0x81000)
+#define C64_PLD_ACC  (U2P_IO_BASE + 0x81800)
+#define C64_IO_DEBUG (U2P_IO_BASE + 0x82000)
 
 #define LEDSTRIP_DATA ( (volatile uint8_t *)(C64_IO_LED))
 #define LEDSTRIP_FROM (*(volatile uint8_t *)(C64_IO_LED + 0x1FE))
 #define LEDSTRIP_LEN  (*(volatile uint8_t *)(C64_IO_LED + 0x1FF))
 #define U64_DEBUG_REGISTER (*(volatile uint8_t *)C64_IO_DEBUG)
 
-#define C64_SID_BASE     0xA0084000
-#define U64_ROMS_BASE    0xA0088000
-#define U64_CHARROM_BASE 0xA008C000
-#define U64_UDP_BASE     0xA0090000
+#define C64_SID_BASE     (U2P_IO_BASE + 0x84000)
+#define U64_ROMS_BASE    (U2P_IO_BASE + 0x88000)
+#define U64_CHARROM_BASE (U2P_IO_BASE + 0x8C000)
+#define U64_UDP_BASE     (U2P_IO_BASE + 0x90000)
 
 #define U64_BASIC_BASE   (U64_ROMS_BASE + 0x0000)
 #define U64_KERNAL_BASE  (U64_ROMS_BASE + 0x2000)
 
 //#define U64_RAM_BASE     0xA00A0000 // No longer available -> use DMA channel with C64_DMA_MEMONLY
-#endif
 
 #define U64_HDMI_REG       (*(volatile uint8_t *)(U64_IO_BASE + 0x00))
 #define U64_POWER_REG      (*(volatile uint8_t *)(U64_IO_BASE + 0x01))

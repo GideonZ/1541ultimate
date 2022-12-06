@@ -15,9 +15,6 @@ use work.usb_cmd_pkg.all;
 use work.mem_bus_pkg.all;
 use work.endianness_pkg.all;
 
-library unisim;
-use unisim.vcomponents.all;
-
 entity usb_host_nano is
     generic (
         g_big_endian   : boolean;
@@ -31,7 +28,9 @@ entity usb_host_nano is
         ulpi_nxt    : in    std_logic;
         ulpi_dir    : in    std_logic;
         ulpi_stp    : out   std_logic;
-        ulpi_data   : inout std_logic_vector(7 downto 0);
+        ulpi_data_i : in    std_logic_vector(7 downto 0);
+        ulpi_data_o : out   std_logic_vector(7 downto 0);
+        ulpi_data_t : out   std_logic;
 
         debug_data  : out   std_logic_vector(31 downto 0);
         debug_valid : out   std_logic;
@@ -88,6 +87,7 @@ architecture arch of usb_host_nano is
 
     signal sys_buf_addr    : std_logic_vector(10 downto 2);
     signal sys_buf_en      : std_logic;
+    signal sys_buf_we1     : std_logic;
     signal sys_buf_we      : std_logic_vector(3 downto 0);
     signal sys_buf_wdata   : std_logic_vector(31 downto 0);
     signal sys_buf_rdata   : std_logic_vector(31 downto 0);
@@ -127,7 +127,9 @@ begin
         ulpi_nxt    => ulpi_nxt,
         ulpi_stp    => ulpi_stp,
         ulpi_dir    => ulpi_dir,
-        ulpi_data   => ulpi_data );
+        ulpi_data_i => ulpi_data_i,
+        ulpi_data_o => ulpi_data_o,
+        ulpi_data_t => ulpi_data_t );
     
     i_seq: entity work.host_sequencer
     port map (
@@ -149,25 +151,23 @@ begin
         usb_tx_req          => usb_tx_req,
         usb_tx_resp         => usb_tx_resp );
 
-    i_buf_ram: RAMB16BWE_S36_S9
+    i_buf_ram: entity work.dpram_8x32
     port map (
-        CLKB  => clock,
-        SSRB  => reset,
-        ENB   => buf_en,
-        WEB   => buf_we,
-        ADDRB => std_logic_vector(buf_address),
-        DIB   => buf_wdata,
-        DIPB  => "0",
-        DOB   => buf_rdata,
+        CLKA  => clock,
+        SSRA  => reset,
+        ENA   => buf_en,
+        WEA   => buf_we,
+        ADDRA => std_logic_vector(buf_address),
+        DIA   => buf_wdata,
+        DOA   => buf_rdata,
 
-        CLKA  => sys_clock,
-        SSRA  => sys_reset,
-        ENA   => sys_buf_en,
-        WEA   => sys_buf_we,
-        ADDRA => sys_buf_addr,
-        DIA   => sys_buf_wdata,
-        DIPA  => "0000",
-        DOA   => sys_buf_rdata_le );
+        CLKB  => sys_clock,
+        SSRB  => sys_reset,
+        ENB   => sys_buf_en,
+        WEB   => sys_buf_we1,
+        ADDRB => sys_buf_addr,
+        DIB   => sys_buf_wdata,
+        DOB   => sys_buf_rdata_le );
 
     sys_buf_rdata <= byte_swap(sys_buf_rdata_le, g_big_endian);
         
@@ -216,6 +216,9 @@ begin
         -- memory interface
         mem_req     => sys_mem_req,
         mem_resp    => sys_mem_resp );
+
+    -- THIS MIGHT BE AN ISSUE
+    sys_buf_we1 <= sys_buf_we(0) or sys_buf_we(1) or sys_buf_we(2) or sys_buf_we(3);
 
     i_sync: entity work.level_synchronizer
     port map (
