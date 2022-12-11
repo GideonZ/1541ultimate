@@ -26,8 +26,9 @@ Dict<const char *, IndexedList<const ApiCall_t *>*> *getRoutesList(void);
 class ArgsURI : public Args
 {
     UrlComponents comps;
+    StreamTextLog errortext;
 public:
-    ArgsURI() : Args()
+    ArgsURI() : Args(), errortext(1024)
     {
         bzero(&comps, sizeof(comps));
     }
@@ -123,7 +124,7 @@ public:
                 }
             }
             if(!found) {
-                printf("--> Function %s does not have parameter %s\n", def.cmd, k);
+                errortext.format("--> Function %s does not have parameter %s<br>\n", def.cmd, k);
                 errors ++;
             }
         }
@@ -175,4 +176,7 @@ public:
         commandList->append(func);
     }
 };
+
+void build_response(HTTPRespMessage *resp, int code, const char *fmt, ...);
+
 #endif // ROUTES_H

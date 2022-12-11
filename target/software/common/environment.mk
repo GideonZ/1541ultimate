@@ -66,6 +66,7 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/io/uart \
 			$(PATH_SW)/io/wifi \
 			$(PATH_SW)/io/acia \
+			$(PATH_SW)/api \
 			$(PATH_SW)/network/config \
 			$(PATH_SW)/io/iec \
 			$(PATH_SW)/6502 \
