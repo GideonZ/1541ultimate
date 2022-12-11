@@ -18,18 +18,31 @@ class StreamTextLog
     	((StreamTextLog *)param)->charout((int)c);
     }
     char *buffer;
+    bool buffer_owned;
     int offset;
     int size;
     bool enabled;
 public:
     StreamTextLog(int size) {
     	buffer = new char[size];
+        buffer_owned = true;
     	this->size = size - 4;
     	offset = 0;
     	enabled = true;
     }
+
+    StreamTextLog(int size, char *existing) {
+    	buffer = existing;
+        buffer_owned = false;
+    	this->size = size - 4;
+    	offset = 0;
+    	enabled = true;
+    }
+
     ~StreamTextLog() {
-    	delete buffer;
+        if (buffer_owned) {
+    	    delete buffer;
+        }
     }
 
     void charout(int c) {
@@ -56,6 +69,10 @@ public:
 
     int getLength(void) {
     	return offset;
+    }
+
+    int format(const char *fmt, va_list ap) {
+        return _my_vprintf(StreamTextLog :: _put, (void **)this, fmt, ap);
     }
 
     int format(const char *fmt, ...) {

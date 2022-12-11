@@ -2,17 +2,21 @@
 #define ROUTES_H
 
 #include "cli.h"
+#include "stream_textlog.h"
+
 extern "C" {
     #include "url.h"
 }
 
 class ArgsURI;
+typedef int (*APIFUNC)(ArgsURI& args, HTTPReqMessage *req, HTTPRespMessage *resp, void *body);
+typedef void *(*BodyHandlerSetupFunc_t)(HTTPReqMessage *req, HTTPRespMessage *resp, APIFUNC func, ArgsURI *args);
 
 typedef struct {
     const char *route;                         // String pointer to route
     const char *cmd;                           // Command string 
-    int (*proc)(Stream& outf, ArgsURI& args);  // Procedure handling the command . Return value is HTTP error code
-    const char *descr;                         // Description of the command 
+    APIFUNC proc;                              // Procedure handling the command
+    BodyHandlerSetupFunc_t body_handler;       // Setup function for streaming body data (NULL for ditch or manual)
     const Param_t *params;                     // Supported Parameters
 } ApiCall_t;
 
@@ -129,30 +133,35 @@ public:
         for(int i=0; p[i].long_param; i++) {
             if (!(matched & (1 << i))) {
                 if(p[i].flags & P_REQUIRED) {
-                    printf("--> Function %s requires parameter %s\n", def.cmd, p[i].long_param);
+                    errortext.format("--> Function %s requires parameter %s<br>\n", def.cmd, p[i].long_param);
                     errors ++;
                 }
             }
         }
 
         return errors;
-    }    
+    }
+
+    const char *get_errortext()
+    {
+        return errortext.getText();
+    }
 };
 
 #define MCONC(A,B) A##B
 
-#define API_CALL(ROUTE, COMMAND, DESCR, PARAMS)                                                                        \
-    static int Do##ROUTE##_##COMMAND(Stream &outf, ArgsURI &args);                                                        \
+#define API_CALL(ROUTE, COMMAND, BODYSETUP, PARAMS)                                                                    \
+    static int Do##ROUTE##_##COMMAND(ArgsURI &args, HTTPReqMessage *req, HTTPRespMessage *resp, void *body);           \
     const Param_t c_params_##ROUTE##_##COMMAND[] = PARAMS;                                                             \
     const ApiCall_t http_##ROUTE##_##COMMAND = {                                                                       \
         ((const char *)#ROUTE),                                                                                        \
         ((const char *)#COMMAND),                                                                                      \
-        ((int (*)(Stream &, ArgsURI &))Do##ROUTE##_##COMMAND),                                                            \
-        ((const char *)DESCR),                                                                                         \
+        ((APIFUNC)Do##ROUTE##_##COMMAND),                                                                              \
+        ((BodyHandlerSetupFunc_t)BODYSETUP),                                                                           \
         ((const Param_t *)c_params_##ROUTE##_##COMMAND),                                                               \
     };                                                                                                                 \
     ApiCallRegistrar RegisterApiCall_##ROUTE##_##COMMAND(&http_##ROUTE##_##COMMAND);                                   \
-    static int Do##ROUTE##_##COMMAND(Stream &outf, ArgsURI &args)
+    static int Do##ROUTE##_##COMMAND(ArgsURI &args, HTTPReqMessage *req, HTTPRespMessage *resp, void *body)
 
 class ApiCallRegistrar
 {
