@@ -63,6 +63,13 @@ public:
         return keys[index];
     }
 
+    V get_value(int index) {
+        if (index < 0 || index >= values.get_elements()) {
+            return defV;
+        }
+        return values[index];
+    }
+
     int index_of(K key) {
         int el = keys.get_elements();
         for (int i=0;i<el;i++) {

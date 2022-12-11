@@ -152,7 +152,7 @@ public:
 #define MCONC(A,B) A##B
 
 #define API_CALL(ROUTE, COMMAND, BODYSETUP, PARAMS)                                                                    \
-    static int Do##ROUTE##_##COMMAND(ArgsURI &args, HTTPReqMessage *req, HTTPRespMessage *resp, void *body);           \
+    static void Do##ROUTE##_##COMMAND(ArgsURI &args, HTTPReqMessage *req, HTTPRespMessage *resp, void *body);           \
     const Param_t c_params_##ROUTE##_##COMMAND[] = PARAMS;                                                             \
     const ApiCall_t http_##ROUTE##_##COMMAND = {                                                                       \
         ((const char *)#ROUTE),                                                                                        \
@@ -162,7 +162,7 @@ public:
         ((const Param_t *)c_params_##ROUTE##_##COMMAND),                                                               \
     };                                                                                                                 \
     ApiCallRegistrar RegisterApiCall_##ROUTE##_##COMMAND(&http_##ROUTE##_##COMMAND);                                   \
-    static int Do##ROUTE##_##COMMAND(ArgsURI &args, HTTPReqMessage *req, HTTPRespMessage *resp, void *body)
+    static void Do##ROUTE##_##COMMAND(ArgsURI &args, HTTPReqMessage *req, HTTPRespMessage *resp, void *body)
 
 class ApiCallRegistrar
 {
