@@ -30,7 +30,14 @@ SRCS_C   =	itu.c \
             sid_coeff.c \
             nios_main.c \
             alt_malloc_lock.c \
-            alt_do_ctors.c
+            alt_do_ctors.c \
+			server.c \
+			middleware.c \
+			multipart.c \
+			url.c \
+
+#            cmd_buffer.c \
+#            network_esp32.c
 
 SRCS_CC	 =  u2p_init.cc \
 			i2c_drv.cc \
@@ -67,6 +74,7 @@ SRCS_CC	 =  u2p_init.cc \
 			wd177x.cc \
 			mfmdisk.cc \
 			mystring.cc \
+			json.cc \
 			path.cc \
 			pattern.cc \
 			blockdev.cc \
@@ -118,9 +126,9 @@ SRCS_CC	 =  u2p_init.cc \
 			keyboard_usb.cc \
 			network_interface.cc \
 			network_lwip.cc \
-			network_esp32.cc \
 			vfs.cc \
 			ftpd.cc \
+			httpd.cc \
 			tape_controller.cc \
 			tape_recorder.cc \
 			command_intf.cc \
@@ -149,6 +157,9 @@ SRCS_CC	 =  u2p_init.cc \
 			fpll.cc \
 			fastuart.cc \
 			wifi.cc \
+			acia.cc \
+			modem.cc \
+			listener_socket.cc \
 			led_strip.cc \
 			data_streamer.cc \
 			configio.cc \
@@ -157,11 +168,11 @@ SRCS_CC	 =  u2p_init.cc \
 			sid_device_fpgasid.cc \
 			sid_device_swinsid.cc \
 			sid_device_armsid.cc \
-			acia.cc \
-			modem.cc \
-			listener_socket.cc \
 			ramdisk.cc \
 			system_info.cc \
+			ult_syscalls.cc \
+			routes.cc \
+			route_files.cc \
 			$(PRJ).cc
 
 #			usb_em1010.cc \
