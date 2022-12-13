@@ -44,42 +44,56 @@ public:
     }
 };
 
+class JSON_Bool : public JSON
+{
+    bool value;
+public:
+    JSON_Bool(int v) : value(v) {}
+    const char *render() {
+        return value ? "true" : "false";
+    }
+};
+
 class JSON_Object : public JSON
 {
-    Dict<const char *, JSON *> members;
+    IndexedList<const char *>keys;
+    IndexedList<JSON *>values;
     mstring renderspace;
 public:
-    JSON_Object() : members(4, NULL, NULL, NULL) { }
+    JSON_Object() : keys(4, NULL), values(4, NULL) { }
 
     ~JSON_Object() {
-        for (int i=0;i<members.get_elements();i++) {
-            delete members.get_value(i);
+        for (int i=0;i<values.get_elements();i++) {
+            delete values[i];
         }
     }
 
     JSON_Object *add(const char *key, JSON *value) {
-        members.set(key, value);
+        keys.append(key);
+        values.append(value);
         return this;
     }
 
     JSON_Object *add(const char *key, const char *str) {
-        members.set(key, new JSON_String(str));
-        return this;
+        return add(key, new JSON_String(str));
     }
 
     JSON_Object *add(const char *key, int val) {
-        members.set(key, new JSON_Integer(val));
-        return this;
+        return add(key, new JSON_Integer(val));
+    }
+
+    JSON_Object *add(const char *key, const bool val) {
+        return add(key, new JSON_Bool(val));
     }
 
     const char *render() {
         renderspace = "{ \n";
-        for (int i=0;i<members.get_elements();i++) {
+        for (int i=0;i<keys.get_elements();i++) {
             renderspace += "  \"";
-            renderspace += members.get_key(i);
+            renderspace += keys[i];
             renderspace += "\" : ";
-            renderspace += members.get_value(i)->render();
-            if (i != members.get_elements()-1) {
+            renderspace += values[i]->render();
+            if (i != keys.get_elements()-1) {
                 renderspace += ",";
             }
             renderspace += "\n";
@@ -114,6 +128,11 @@ public:
 
     JSON_List *add(int val) {
         members.append(new JSON_Integer(val));
+        return this;
+    }
+
+    JSON_List *add(const bool val) {
+        members.append(new JSON_Bool(val));
         return this;
     }
 

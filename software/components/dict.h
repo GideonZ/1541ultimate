@@ -72,12 +72,28 @@ public:
 
     int index_of(K key) {
         int el = keys.get_elements();
-        for (int i=0;i<el;i++) {
-            if(keys[i] == key) {
-                return i;
+        if (!compare) {
+            for (int i=0;i<el;i++) {
+                if(keys[i] == key) {
+                    return i;
+                }
+            }
+        } else {
+            for (int i=0;i<el;i++) {
+                if(compare(keys[i], key) == 0) {
+                    return i;
+                }
             }
         }
         return -1;
+    }
+
+    V get_or(K key, V alt) {
+        int idx = index_of(key);
+        if (idx == -1) {
+            return alt;
+        }
+        return values[idx];
     }
 
     void set(K key, V value) {
@@ -90,21 +106,7 @@ public:
     }
 
 	V operator[] (K key) {
-        int el = keys.get_elements();
-        if (!compare) {
-            for (int i=0;i<el;i++) {
-                if(keys[i] == key) {
-                    return values[i];
-                }
-            }
-        } else {
-            for (int i=0;i<el;i++) {
-                if(compare(keys[i], key) == 0) {
-                    return values[i];
-                }
-            }
-        }
-        return defV;
+        return get_or(key, defV);
 	}
 
     void dump(void)

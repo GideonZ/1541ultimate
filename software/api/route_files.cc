@@ -12,7 +12,7 @@ API_CALL(files, info, NULL, ARRAY({P_END}))
     if (fres == FR_OK) {
         reply->add("path", args.get_path())
             ->add("filename", info.lfname)
-            ->add("size", info.size)
+            ->add("size", (int)info.size)
             //->add("date", date_from_int(info.date))
             //->add("time", time_from_int(info.time))
             ->add("extension", info.extension)
