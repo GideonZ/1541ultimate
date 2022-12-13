@@ -173,6 +173,7 @@ SRCS_CC	 =  u2p_init.cc \
 			ult_syscalls.cc \
 			routes.cc \
 			route_files.cc \
+			route_drives.cc \
 			$(PRJ).cc
 
 #			usb_em1010.cc \
