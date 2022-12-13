@@ -42,9 +42,9 @@ void build_response(HTTPRespMessage *resp, int code, const char *fmt, ...)
     resp->_index = (size_t)log.getLength();
 }
 
-API_CALL(help, none, NULL, ARRAY({{"command", P_REQUIRED}, P_END}))
+API_CALL(GET, help, none, NULL, ARRAY({{"command", P_REQUIRED}, P_END}))
 {
-    if (args.Validate(http_help_none) != 0) {
+    if (args.Validate(http_GET_help_none) != 0) {
         build_response(resp, 400, "During parsing, the following errors occurred:<br><br>%s", args.get_errortext());
         return;
     }
@@ -53,7 +53,7 @@ API_CALL(help, none, NULL, ARRAY({{"command", P_REQUIRED}, P_END}))
 }
 
 /*
-API_CALL(files, createDiskImage, NULL, ARRAY({{"type", P_REQUIRED}, {"format", P_OPTIONAL}, P_END }))
+API_CALL(PUT, files, createDiskImage, NULL, ARRAY({{"type", P_REQUIRED}, {"format", P_OPTIONAL}, P_END }))
 {
     if (args.Validate(http_files_createDiskImage) != 0) {
         build_response(resp, 400, "During parsing, the following errors occurred:<br><br>%s", args.get_errortext());
@@ -63,9 +63,9 @@ API_CALL(files, createDiskImage, NULL, ARRAY({{"type", P_REQUIRED}, {"format", P
     build_response(resp, 200, "Create Disk Image of type %s into file '%s'<br>", args["type"], args.get_path());
 }
 
-API_CALL(drives, mount, &attachment_writer, ARRAY({P_END}))
+API_CALL(PUT, drives, mount, &attachment_writer, ARRAY({P_END}))
 {
-    if (args.Validate(http_drives_mount) != 0) {
+    if (args.Validate(http_PUT, drives_mount) != 0) {
         build_response(resp, 400, "During parsing, the following errors occurred:<br><br>%s", args.get_errortext());
         return;
     }

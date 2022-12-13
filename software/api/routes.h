@@ -13,6 +13,7 @@ typedef int (*APIFUNC)(ArgsURI& args, HTTPReqMessage *req, HTTPRespMessage *resp
 typedef void *(*BodyHandlerSetupFunc_t)(HTTPReqMessage *req, HTTPRespMessage *resp, APIFUNC func, ArgsURI *args);
 
 typedef struct {
+    HTTPMethod method;                         // Method / Verb
     const char *route;                         // String pointer to route
     const char *cmd;                           // Command string 
     APIFUNC proc;                              // Procedure handling the command
@@ -55,7 +56,7 @@ public:
         ClearArgs();
     }
 
-    static const ApiCall_t *find_api_call(const char *route, const char *command)
+    static const ApiCall_t *find_api_call(HTTPMethod method, const char *route, const char *command)
     {
         IndexedList<const ApiCall_t *> *commandTable = (*getRoutesList())[route];
         if (!commandTable) {
@@ -64,6 +65,9 @@ public:
         }
         for (int i = 0; i < commandTable->get_elements(); i++) {
             const ApiCall_t *t = (*commandTable)[i];
+            if (t->method != method) {
+                continue;
+            }
             if (strcmp(command, t->cmd)==0) {
                 return t;
             }
@@ -98,7 +102,7 @@ public:
         }
         add_unnamed(comps.path);
 
-        return find_api_call(comps.route, comps.command);
+        return find_api_call(hdr->Method, comps.route, comps.command);
     }
 
     const char *get_path(void)
@@ -151,18 +155,20 @@ public:
 
 #define MCONC(A,B) A##B
 
-#define API_CALL(ROUTE, COMMAND, BODYSETUP, PARAMS)                                                                    \
-    static void Do##ROUTE##_##COMMAND(ArgsURI &args, HTTPReqMessage *req, HTTPRespMessage *resp, void *body);           \
-    const Param_t c_params_##ROUTE##_##COMMAND[] = PARAMS;                                                             \
-    const ApiCall_t http_##ROUTE##_##COMMAND = {                                                                       \
+#define API_CALL(VERB, ROUTE, COMMAND, BODYSETUP, PARAMS)                                                              \
+    static void Do_##VERB##_##ROUTE##_##COMMAND(ArgsURI &args, HTTPReqMessage *req, HTTPRespMessage *resp,             \
+                                                void *body);                                                           \
+    const Param_t c_params_##VERB##_##ROUTE##_##COMMAND[] = PARAMS;                                                    \
+    const ApiCall_t http_##VERB##_##ROUTE##_##COMMAND = {                                                              \
+        ((HTTPMethod)HTTP_##VERB),                                                                                     \
         ((const char *)#ROUTE),                                                                                        \
         ((const char *)#COMMAND),                                                                                      \
-        ((APIFUNC)Do##ROUTE##_##COMMAND),                                                                              \
+        ((APIFUNC)Do_##VERB##_##ROUTE##_##COMMAND),                                                                    \
         ((BodyHandlerSetupFunc_t)BODYSETUP),                                                                           \
-        ((const Param_t *)c_params_##ROUTE##_##COMMAND),                                                               \
+        ((const Param_t *)c_params_##VERB##_##ROUTE##_##COMMAND),                                                      \
     };                                                                                                                 \
-    ApiCallRegistrar RegisterApiCall_##ROUTE##_##COMMAND(&http_##ROUTE##_##COMMAND);                                   \
-    static void Do##ROUTE##_##COMMAND(ArgsURI &args, HTTPReqMessage *req, HTTPRespMessage *resp, void *body)
+    ApiCallRegistrar RegisterApiCall_##VERB##_##ROUTE##_##COMMAND(&http_##VERB##_##ROUTE##_##COMMAND);                 \
+    static void Do_##VERB##_##ROUTE##_##COMMAND(ArgsURI &args, HTTPReqMessage *req, HTTPRespMessage *resp, void *body)
 
 class ApiCallRegistrar
 {
