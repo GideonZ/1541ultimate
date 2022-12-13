@@ -98,7 +98,8 @@ public:
                 }
                 // The actual function should now be called to do something with these files
                 if (func) {
-                    func(*args, req, resp, this);
+                    ResponseWrapper respw(resp);
+                    func(*args, req, &respw, this);
                     delete args;
                 }
                 break;

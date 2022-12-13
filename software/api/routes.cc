@@ -23,33 +23,14 @@ TempfileWriter *attachment_writer(HTTPReqMessage *req, HTTPRespMessage *resp, AP
 }
 int TempfileWriter :: temp_count = 0;
 
-void build_response(HTTPRespMessage *resp, int code, const char *fmt, ...)
-{
-    va_list ap;
-    StreamTextLog log(1024, (char *)resp->_buf);
-    const char *reply = (code == 200)   ? "OK"
-                        : (code == 400) ? "Bad Request"
-                        : (code == 403) ? "Forbidden"
-                        : (code == 404) ? "Not Found"
-                                        : "Unknown";
-
-    log.format("HTTP/1.1 %d %s\r\nConnection: close\r\nContent-Type: application/json\r\n\r\n", code, reply);
-    //log.format("<html><body>");
-    va_start(ap, fmt);
-    log.format(fmt, ap);
-    va_end(ap);
-    //log.format("</body></html>\r\n\r\n");
-    resp->_index = (size_t)log.getLength();
-}
-
 API_CALL(GET, help, none, NULL, ARRAY({{"command", P_REQUIRED}, P_END}))
 {
-    if (args.Validate(http_GET_help_none) != 0) {
-        build_response(resp, 400, "During parsing, the following errors occurred:<br><br>%s", args.get_errortext());
+    if (args.Validate(http_GET_help_none, resp) != 0) {
+        resp->html_response(400, "Illegal Arguments", "Please note the following errors:<br>");
         return;
     }
 
-    build_response(resp, 200, "This function provides some help.<br>");
+    resp->html_response(200, "This function provides some help!", "Help text.");
 }
 
 /*
@@ -94,7 +75,8 @@ int execute_api_v1(HTTPReqMessage *req, HTTPRespMessage *resp)
             // Do not delete args, the body handler will do so after calling the function
         }
         if (!body) {
-            func->proc(*args, req, resp, NULL);
+            ResponseWrapper respw(resp);
+            func->proc(*args, req, &respw, NULL);
             delete args;
         }
         return 0;

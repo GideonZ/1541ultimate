@@ -3,13 +3,16 @@
 
 #include "cli.h"
 #include "stream_textlog.h"
+#include "json.h"
 
 extern "C" {
     #include "url.h"
 }
 
 class ArgsURI;
-typedef int (*APIFUNC)(ArgsURI& args, HTTPReqMessage *req, HTTPRespMessage *resp, void *body);
+class ResponseWrapper;
+
+typedef int (*APIFUNC)(ArgsURI& args, HTTPReqMessage *req, ResponseWrapper *resp, void *body);
 typedef void *(*BodyHandlerSetupFunc_t)(HTTPReqMessage *req, HTTPRespMessage *resp, APIFUNC func, ArgsURI *args);
 
 typedef struct {
@@ -24,12 +27,78 @@ typedef struct {
 // Map of routes to lists of commands
 Dict<const char *, IndexedList<const ApiCall_t *>*> *getRoutesList(void);
 
+class ResponseWrapper
+{
+public:
+    JSON_Object *json;
+    JSON_List *errors;
+    HTTPRespMessage *resp;
+
+    ResponseWrapper(HTTPRespMessage *resp) : resp(resp) {
+        errors = JSON::List();
+    }
+
+    ~ResponseWrapper() {
+        delete json;
+        if (errors) {
+            delete errors;
+        }
+    }
+
+    const char *return_codestr(int code) {
+        const char *reply = (code == 200)   ? "OK"
+                            : (code == 400) ? "Bad Request"
+                            : (code == 403) ? "Forbidden"
+                            : (code == 404) ? "Not Found"
+                                            : "Unknown";
+        return reply;
+    }
+
+    void json_response(int code)
+    {
+        json->add("errors", errors);
+        errors = NULL;
+
+        const char *return_str = return_codestr(code);
+        StreamTextLog log(1024, (char *)resp->_buf);
+        log.format("HTTP/1.1 %d %s\r\nConnection: close\r\nContent-Type: application_json\r\n\r\n", code, return_str);
+        log.format(json->render());
+        resp->_index = (size_t)log.getLength();
+    }
+
+    void html_response(int code, const char *title, const char *fmt, ...)
+    {
+        const char *return_str = return_codestr(code);
+        StreamTextLog log(1024, (char *)resp->_buf);
+        log.format("HTTP/1.1 %d %s\r\nConnection: close\r\nContent-Type: text_html\r\n\r\n", code, return_str);
+
+        va_list ap;
+        log.format("<html><body><h1>%s</h1>\n<p>", title);
+        va_start(ap, fmt);
+        log.format(fmt, ap);
+        va_end(ap);
+
+        log.format("</p></body></html>\r\n\r\n");
+        resp->_index = (size_t)log.getLength();
+    }
+
+    void error(const char *fmt, ...)
+    {
+        // TODO should be dynamic. Maybe mstring should have a format function!
+        char msg[200];
+        va_list ap;
+        va_start(ap, fmt);
+        vsprintf(msg, fmt, ap);
+        va_end(ap);
+        errors->add(msg);
+    }
+};
+
 class ArgsURI : public Args
 {
     UrlComponents comps;
-    StreamTextLog errortext;
 public:
-    ArgsURI() : Args(), errortext(1024)
+    ArgsURI() : Args()
     {
         bzero(&comps, sizeof(comps));
     }
@@ -110,7 +179,7 @@ public:
         return get_unnamed_arg(0);
     }
 
-    int Validate(const ApiCall_t& def)
+    int Validate(const ApiCall_t& def, ResponseWrapper *resp)
     {
         int errors = 0;
         // checks if all elements from the dictionary are
@@ -128,7 +197,7 @@ public:
                 }
             }
             if(!found) {
-                errortext.format("--> Function %s does not have parameter %s<br>\n", def.cmd, k);
+                resp->error("Function %s does not have parameter %s", def.cmd, k);
                 errors ++;
             }
         }
@@ -138,7 +207,7 @@ public:
         for(int i=0; p[i].long_param; i++) {
             if (!(matched & (1 << i))) {
                 if(p[i].flags & P_REQUIRED) {
-                    errortext.format("--> Function %s requires parameter %s<br>\n", def.cmd, p[i].long_param);
+                    resp->error("Function %s requires parameter %s", def.cmd, p[i].long_param);
                     errors ++;
                 }
             }
@@ -146,17 +215,13 @@ public:
 
         return errors;
     }
-
-    const char *get_errortext()
-    {
-        return errortext.getText();
-    }
 };
+
 
 #define MCONC(A,B) A##B
 
 #define API_CALL(VERB, ROUTE, COMMAND, BODYSETUP, PARAMS)                                                              \
-    static void Do_##VERB##_##ROUTE##_##COMMAND(ArgsURI &args, HTTPReqMessage *req, HTTPRespMessage *resp,             \
+    static void Do_##VERB##_##ROUTE##_##COMMAND(ArgsURI &args, HTTPReqMessage *req, ResponseWrapper *resp,             \
                                                 void *body);                                                           \
     const Param_t c_params_##VERB##_##ROUTE##_##COMMAND[] = PARAMS;                                                    \
     const ApiCall_t http_##VERB##_##ROUTE##_##COMMAND = {                                                              \
@@ -168,7 +233,7 @@ public:
         ((const Param_t *)c_params_##VERB##_##ROUTE##_##COMMAND),                                                      \
     };                                                                                                                 \
     ApiCallRegistrar RegisterApiCall_##VERB##_##ROUTE##_##COMMAND(&http_##VERB##_##ROUTE##_##COMMAND);                 \
-    static void Do_##VERB##_##ROUTE##_##COMMAND(ArgsURI &args, HTTPReqMessage *req, HTTPRespMessage *resp, void *body)
+    static void Do_##VERB##_##ROUTE##_##COMMAND(ArgsURI &args, HTTPReqMessage *req, ResponseWrapper *resp, void *body)
 
 class ApiCallRegistrar
 {

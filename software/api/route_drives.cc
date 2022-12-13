@@ -52,21 +52,20 @@ static void iec_info(JSON_List *obj)
 // List all the available drives
 API_CALL(GET, drives, none, NULL, ARRAY({P_END}))
 {
-    JSON_List *errors = JSON::List();
     JSON_List *drives = JSON::List();
-    JSON_Object *obj = JSON::Obj()->add("drives", drives)->add("errors", errors);
+    resp->json->add("drives", drives);
     if (c1541_A) drive_info(drives, c1541_A, "a");
     if (c1541_B) drive_info(drives, c1541_B, "b");
     // iec_info(obj);
-    build_response(resp, 200, obj->render());
-    delete obj;
+    resp->json_response(200);
 }
 
-void api_mount(HTTPRespMessage *resp, const char *fn, const char *drive, const char *type, const char *mode)
+void api_mount(ResponseWrapper *resp, const char *fn, const char *drive, const char *type, const char *mode)
 {
     int subsys_id = driveToSubsys[drive];
     if (subsys_id < 0) {
-        build_response(resp, 403, "Invalid Drive");
+        resp->error("Invalid Drive '%s'", drive);
+        resp->json_response(403);
         return;
     }
 
@@ -74,17 +73,19 @@ void api_mount(HTTPRespMessage *resp, const char *fn, const char *drive, const c
     int command = imageTypeToCommand[type];
 
     if (!command) {
-        build_response(resp, 403, "Invalid Type %s", type);
+        resp->error("Invalid Type '%s'", type);
+        resp->json_response(403);
         return;
     }
 
-    printf("Subsys %d ftype: %d\n", subsys_id, ftype);
+    resp->json->add("Subsys", subsys_id)->add("Ftype", ftype);
+    resp->json_response(200);
 }
 
 API_CALL(PUT, drives, mount, NULL, ARRAY({{ "image", P_REQUIRED }, { "type", P_OPTIONAL }, { "mode", P_OPTIONAL }, P_END }))
 {
-    if (args.Validate(http_PUT_drives_mount) != 0) {
-        build_response(resp, 400, "During parsing, the following errors occurred:<br><br>%s", args.get_errortext());
+    if (args.Validate(http_PUT_drives_mount, resp) != 0) {
+        resp->json_response(400);
         return;
     }
     printf("Mount disk from path '%s' on drive '%s'\n", args["image"], args.get_path());
@@ -95,14 +96,15 @@ API_CALL(PUT, drives, mount, NULL, ARRAY({{ "image", P_REQUIRED }, { "type", P_O
 
 API_CALL(POST, drives, mount, &attachment_writer, ARRAY({ { "type", P_OPTIONAL }, { "mode", P_OPTIONAL }, P_END }))
 {
-    if (args.Validate(http_POST_drives_mount) != 0) {
-        build_response(resp, 400, "During parsing, the following errors occurred:<br><br>%s", args.get_errortext());
+    if (args.Validate(http_POST_drives_mount, resp) != 0) {
+        resp->json_response(400);
         return;
     }
     TempfileWriter *handler = (TempfileWriter *)body;
     const char *fn = handler->get_filename(0);
     if (!fn) {
-        build_response(resp, 400, "Upload of file seems has failed.");
+        resp->error("Upload of file failed.");
+        resp->json_response(400);
     }
     printf("Mount disk from upload: '%s'\n", fn);
     char ext[4];
