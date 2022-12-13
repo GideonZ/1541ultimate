@@ -35,6 +35,7 @@ public:
     HTTPRespMessage *resp;
 
     ResponseWrapper(HTTPRespMessage *resp) : resp(resp) {
+        json = JSON::Obj();
         errors = JSON::List();
     }
 
