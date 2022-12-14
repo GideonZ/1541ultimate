@@ -44,8 +44,8 @@ public:
     virtual bool output(uint8_t *raw_buffer, int pkt_size) { return false; }
     virtual void effectuate_settings(void) { }
 
-	virtual void getIpAddr(uint8_t *a)  { bzero(a, 12); }
-	virtual void getMacAddr(uint8_t *a) { bzero(a, 6); }
+	virtual void getIpAddr(uint8_t *a)  { memset(a, 0, 12); }
+	virtual void getMacAddr(uint8_t *a) { memset(a, 0, 6); }
 	virtual bool peekArpTable(uint32_t ip, uint8_t *mac) { return false; }
 	virtual void setIpAddr(uint8_t *a)  { }
 	virtual char *getIpAddrString(char *buf, int buflen) { buf[0] = 0; return buf; }

@@ -102,7 +102,7 @@ int DataStreamer :: startStream(SubsysCommand *cmd)
     } ip;
 
     uint8_t his_mac[6];
-    bzero(his_mac, 6);
+    memset(his_mac, 0, 6);
     intf->getIpAddr(ip.ipaddr);
     intf->getMacAddr(my_mac);
     my_ip = ip.ipaddr32[0];
@@ -282,7 +282,7 @@ void DataStreamer :: send_udp_packet(uint32_t ip, uint16_t port)
         return;
     }
 
-    bzero((char*)&server, sizeof(server));
+    memset((char*)&server, 0, sizeof(server));
     server.sin_family = AF_INET;
     server.sin_addr.s_addr = ip;
     server.sin_port = htons(port);

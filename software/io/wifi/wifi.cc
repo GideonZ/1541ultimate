@@ -95,7 +95,7 @@ void WiFi :: Thread()
     printf("WiFi Thread Sockfd = %8x\n", sockfd);
 
     /* Initialize socket structure */
-    bzero((char *) &serv_addr, sizeof(serv_addr));
+    memset((char *) &serv_addr, 0, sizeof(serv_addr));
     portno = 3333;
 
     serv_addr.sin_family = AF_INET;

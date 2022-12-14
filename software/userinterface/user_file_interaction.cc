@@ -291,7 +291,7 @@ FRESULT write_zeros(File *f, int size, uint32_t &written)
     uint8_t *buffer = new uint8_t[16384];
     written = 0;
     uint32_t wr;
-    bzero(buffer, 16384);
+    memset(buffer, 0, 16384);
     FRESULT fres = FR_OK;
     while(size > 0) {
         int now = (size > 16384) ? 16384 : size;

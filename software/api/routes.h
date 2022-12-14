@@ -101,7 +101,7 @@ class ArgsURI : public Args
 public:
     ArgsURI() : Args()
     {
-        bzero(&comps, sizeof(comps));
+        memset(&comps, 0, sizeof(comps));
     }
 
     virtual ~ArgsURI()
