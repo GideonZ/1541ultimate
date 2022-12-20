@@ -15,8 +15,8 @@
 
 extern C1541 *c1541_A;
 extern C1541 *c1541_B;
-/*
 
+/*
 Drive Status information:
 
 Drive A:      Enabled
@@ -47,22 +47,11 @@ void SystemInfo :: drive_info(StreamTextLog &b, C1541 *drive, char letter)
     b.format("\n");
 }
 
-void SystemInfo :: iec_info(StreamTextLog &b)
+void iec_info(StreamTextLog &b) __attribute__((weak));
+
+void iec_info(StreamTextLog &b)
 {
-    char buffer[64];
-    b.format("SoftwareIEC:  %s\n", iec_if.iec_enable ? "Enabled" : "Disabled");
-    if (iec_if.iec_enable) {
-        b.format("Drive Bus ID: %d\n", iec_if.get_current_iec_address());
-        iec_if.get_error_string(buffer);
-        b.format("Error string: %s\n", buffer);
-        for (int i=0; i < MAX_PARTITIONS; i++) {
-            const char *p = iec_if.get_partition_dir(i);
-            if (p) {
-                b.format("Partition%3d: %s\n", i, p);
-            }
-        }
-    }
-    b.format("\n");
+
 }
 
 void SystemInfo :: hw_modules(StreamTextLog &b, uint16_t bits, const char *msg)

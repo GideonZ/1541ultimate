@@ -151,7 +151,7 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     void mount_d64(bool protect, File *, int);
     void mount_g64(bool protect, File *);
     void mount_blank(void);
-    bool check_if_save_needed(SubsysCommand *cmd);
+    bool check_if_save_needed(void);
     bool save_if_needed(SubsysCommand *cmd);
     void clear_mfm_dirty_bits();
     bool are_mfm_dirty_bits_set();
@@ -159,8 +159,8 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     void swap_disk(SubsysCommand *cmd);
     void wait_for_writeback(void);
     static void mfm_update_callback(void *obj, int pt, int ps, MfmTrack *tr);
-    FRESULT set_drive_type(t_drive_type drv);
-    FRESULT change_drive_type(t_drive_type drv,  UserInterface *ui);
+    int set_drive_type(t_drive_type drv);
+    int change_drive_type(t_drive_type drv,  UserInterface *ui);
 
 public:
     C1541(volatile uint8_t *regs, char letter);

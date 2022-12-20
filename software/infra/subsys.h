@@ -18,6 +18,8 @@
 #include "semphr.h"
 #include <stdio.h>
 
+#include "http_codes.h"
+
 class SubsysCommand;
 class UserInterface;
 
@@ -32,7 +34,6 @@ class UserInterface;
 #define SUBSYSID_CMD_IF			 8
 #define SUBSYSID_U64			 9
 
-
 #define SORT_ORDER_CREATE  10
 #define SORT_ORDER_C64     20
 #define SORT_ORDER_DRIVES  30
@@ -42,13 +43,29 @@ class UserInterface;
 #define SORT_ORDER_CONFIG  70
 #define SORT_ORDER_DEVELOPER 999
 
+#define SSRET_OK 0
+#define SSRET_GENERIC_ERROR -1
+#define SSRET_SUBSYS_NOT_PRESENT -2
+#define SSRET_SUBSYS_NO_EXEC -3
+#define SSRET_NO_LOCK -4
+#define SSRET_DISK_MODIFIED -5
+#define SSRET_NO_DRIVE_ROM -6
+#define SSRET_INVALID_DRIVE_ROM -7
+#define SSRET_ONLY_1541 -8
+#define SSRET_WRONG_DRIVE_TYPE -9
+#define SSRET_CANNOT_OPEN_FILE -10
+#define SSRET_WRONG_MOUNT_MODE -11
+#define SSRET_UNDEFINED_COMMAND -12
+
+#define SSRET_LAST_ERROR -12
+
 class SubSystem  // implements function "executeCommand"
 {
 	int myID;
 	SemaphoreHandle_t myMutex;
 	friend class SubsysCommand;
 
-	virtual int executeCommand(SubsysCommand *cmd) { return -2; }
+	virtual int executeCommand(SubsysCommand *cmd) { return SSRET_SUBSYS_NO_EXEC; }
 public:
 	SubSystem(int id) {
 		myID = id;
@@ -131,7 +148,7 @@ public:
 	}
 
 	int execute(void) {
-		int retval = -5;
+		int retval = SSRET_SUBSYS_NOT_PRESENT;
 		if(direct_call) {
 			retval = direct_call(this);
 		} else {
@@ -146,6 +163,7 @@ public:
 					//puts("after give");
 				} else {
 					printf("Could not get lock on %s. Command not executed.\n", subsys->identify());
+					retval = SSRET_NO_LOCK;
 				}
 			}
 		}
@@ -162,7 +180,59 @@ public:
 		printf("  Buffer = %p (size: %d)\n", buffer, bufferSize);
 	}
 
-	UserInterface *user_interface;
+    static const char *error_string(int resultCode)
+    {
+        static const char *error_strings[] = {
+            "All Okay",        
+            "Generic Error",    
+            "SubSystem does not exist", 
+            "SubSystem does not implement command executer",
+            "Could not obtain lock of subsystem",   
+            "Disk has been modified, save first",    
+            "Drive ROM not found",       
+            "Drive ROM is invalid",
+            "This hardware only supports 1541", 
+            "Drive is in the wrong mode",
+            "Cannot open file",
+            "Illegal mount mode / drive type",
+            "Undefined subsystem command",
+        };
+        if (resultCode >= 0) {
+                return "Ok";
+        }
+        if (resultCode < SSRET_LAST_ERROR) {
+                return "Invalid Error Code";
+        }
+        return error_strings[-resultCode];
+    }
+
+    static int http_response_map(int resultCode)
+    {
+        static const int codes[] = {
+            HTTP_OK, // "All Okay",        
+            HTTP_INTERNAL_SERVER_ERROR, // "Generic Error (Unspecified!)",    
+            HTTP_SERVICE_UNAVAILABLE, // "SubSystem does not exist", 
+            HTTP_METHOD_NOT_ALLOWED, // "SubSystem does not implement command executer",
+            HTTP_LOCKED, // "Could not obtain lock of subsystem",   
+            HTTP_FORBIDDEN, // "Disk has been modified, save first",    
+            HTTP_PRECONDITION_FAILED, // "Drive ROM not found",       
+            HTTP_PRECONDITION_FAILED, // "Drive ROM is invalid",
+            HTTP_METHOD_NOT_ALLOWED, // "This hardware only supports 1541", 
+            HTTP_METHOD_NOT_ALLOWED, // "Drive is in the wrong mode",
+            HTTP_NOT_FOUND, // "Cannot open file",
+            HTTP_INTERNAL_SERVER_ERROR, // "Illegal mount mode / drive type",
+            HTTP_INTERNAL_SERVER_ERROR, // "Undefined subsystem command",
+        }; 
+        if (resultCode >= 0) {
+            return HTTP_OK;
+        }
+        if (resultCode < SSRET_LAST_ERROR) {
+            return HTTP_INTERNAL_SERVER_ERROR;
+        }
+        return codes[-resultCode];
+    }
+
+    UserInterface *user_interface;
 	int            subsysID;
 	int			   functionID;
 	int 		   mode;

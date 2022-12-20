@@ -14,6 +14,7 @@
 #endif
 #include "fs_errors_flags.h"
 #include "disk_image.h"
+#include "stream_textlog.h"
 
 #define IECDEBUG 0
 
@@ -151,8 +152,10 @@ public:
     friend class IecPrinter;
 };
 
-extern IecInterface iec_if;
- 
+extern IecInterface *iec_if;
+void init_software_iec(void*, void*);
+void iec_info(StreamTextLog &b);
+
 class UltiCopy : public UIObject
 {
 public:

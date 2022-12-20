@@ -6,9 +6,10 @@
 class DriveToSubsys : public Dict<const char *, int>
 {
 public:
-    DriveToSubsys() : Dict(2, NULL, -1, &strcasecmp) {
+    DriveToSubsys() : Dict(3, NULL, -1, &strcasecmp) {
         set("a", SUBSYSID_DRIVE_A);
         set("b", SUBSYSID_DRIVE_B);
+        set("softiec", SUBSYSID_IEC);
     }
 };
 
@@ -41,5 +42,15 @@ public:
         set("readwrite", 0);
         set("readonly", MENU_1541_READ_ONLY);
         set("unlinked", MENU_1541_UNLINKED);
+    }
+};
+
+class DriveTypeToInt : public Dict<const char *, int>
+{
+public:
+    DriveTypeToInt() : Dict(3, NULL, -1, &strcasecmp) {
+        set("1541", 0);
+        set("1571", 1);
+        set("1581", 2);
     }
 };

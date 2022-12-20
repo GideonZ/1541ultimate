@@ -9,11 +9,13 @@
 
 extern C1541 *c1541_A;
 extern C1541 *c1541_B;
+//extern IecInterface *iec_if;
 
 DriveToSubsys driveToSubsys;
 ImageTypeToInt imageTypeToInt;
 ImageTypeToCommand imageTypeToCommand;
 ModeToInt modeToInt;
+DriveTypeToInt driveTypeToInt;
 
 static void drive_info(JSON_List *obj, C1541 *drive, const char *letter)
 {
@@ -28,25 +30,9 @@ static void drive_info(JSON_List *obj, C1541 *drive, const char *letter)
         ->add("image_path", path.c_str())));
 }
 
-static void iec_info(JSON_List *obj)
+void iec_info(JSON_List *obj) __attribute__((weak));
+void iec_info(JSON_List *obj)
 {
-    char buffer[64];
-    iec_if.get_error_string(buffer);
-    
-    JSON_List *partitions = JSON::List();
-    for (int i=0; i < MAX_PARTITIONS; i++) {
-        const char *p = iec_if.get_partition_dir(i);
-        if (p) {
-            partitions->add(JSON::Obj()->add("id", i)->add("path", p));
-        }
-    }
-
-    obj->add(JSON::Obj()->add("softiec", JSON::Obj()
-        ->add("enabled", iec_if.iec_enable))
-        ->add("bus_id", iec_if.get_current_iec_address())
-        ->add("type", "DOS emulation")
-        ->add("last_error", buffer)
-        ->add("partitions", partitions));
 }
 
 // List all the available drives
@@ -56,8 +42,8 @@ API_CALL(GET, drives, none, NULL, ARRAY({P_END}))
     resp->json->add("drives", drives);
     if (c1541_A) drive_info(drives, c1541_A, "a");
     if (c1541_B) drive_info(drives, c1541_B, "b");
-    // iec_info(obj);
-    resp->json_response(200);
+    if (iec_if) iec_info(drives);
+    resp->json_response(HTTP_OK);
 }
 
 void api_mount(ResponseWrapper *resp, const char *fn, const char *drive, const char *type, const char *mode)
@@ -65,27 +51,32 @@ void api_mount(ResponseWrapper *resp, const char *fn, const char *drive, const c
     int subsys_id = driveToSubsys[drive];
     if (subsys_id < 0) {
         resp->error("Invalid Drive '%s'", drive);
-        resp->json_response(403);
+        resp->json_response(HTTP_BAD_REQUEST);
         return;
     }
 
-    int ftype = imageTypeToInt[type] | modeToInt[mode];
-    int command = imageTypeToCommand[type];
+    int ftype = imageTypeToInt[type];
+    int command = imageTypeToCommand[type] | modeToInt[mode];
 
-    if (!command) {
+    if (command < 0) {
         resp->error("Invalid Type '%s'", type);
-        resp->json_response(403);
+        resp->json_response(HTTP_BAD_REQUEST);
         return;
     }
 
-    resp->json->add("Subsys", subsys_id)->add("Ftype", ftype);
-    resp->json_response(200);
+    resp->json->add("Subsys", subsys_id)->add("Ftype", ftype)->add("command", command)->add("file", fn);
+    SubsysCommand *cmd = new SubsysCommand(NULL, subsys_id, command, ftype, "", fn);
+    int retval = cmd->execute();
+    if (retval != SSRET_OK) {
+        resp->error(SubsysCommand::error_string(retval));
+    }
+    resp->json_response(SubsysCommand::http_response_map(retval));
 }
 
 API_CALL(PUT, drives, mount, NULL, ARRAY({{ "image", P_REQUIRED }, { "type", P_OPTIONAL }, { "mode", P_OPTIONAL }, P_END }))
 {
     if (args.Validate(http_PUT_drives_mount, resp) != 0) {
-        resp->json_response(400);
+        resp->json_response(HTTP_BAD_REQUEST);
         return;
     }
     printf("Mount disk from path '%s' on drive '%s'\n", args["image"], args.get_path());
@@ -97,17 +88,117 @@ API_CALL(PUT, drives, mount, NULL, ARRAY({{ "image", P_REQUIRED }, { "type", P_O
 API_CALL(POST, drives, mount, &attachment_writer, ARRAY({ { "type", P_OPTIONAL }, { "mode", P_OPTIONAL }, P_END }))
 {
     if (args.Validate(http_POST_drives_mount, resp) != 0) {
-        resp->json_response(400);
+        resp->json_response(HTTP_BAD_REQUEST);
         return;
     }
     TempfileWriter *handler = (TempfileWriter *)body;
     const char *fn = handler->get_filename(0);
     if (!fn) {
         resp->error("Upload of file failed.");
-        resp->json_response(400);
+        resp->json_response(HTTP_BAD_REQUEST);
     }
     printf("Mount disk from upload: '%s'\n", fn);
     char ext[4];
     get_extension(fn, ext);
     api_mount(resp, fn, args.get_path(), args.get_or("type", ext), args["mode"]);
+
+    //auto lamb = [] () { printf("Hello!\n"); };
+    //lamb();
+}
+
+//#define MENU_1541_SAVED64   0x1503
+//#define MENU_1541_SAVEG64   0x1504
+//#define MENU_1541_BLANK     0x1505
+//#define FLOPPY_LOAD_DOS     0x1508
+//#define MENU_1541_SWAP      0x1514
+
+static void simple_drive_command(ArgsURI& args, ResponseWrapper *resp, int command)
+{
+    const char *drive = args.get_path();
+    int subsys_id = driveToSubsys[drive];
+    if (subsys_id < 0) {
+        resp->error("Invalid Drive '%s'", drive);
+        resp->json_response(HTTP_BAD_REQUEST);
+        return;
+    }
+
+    SubsysCommand *cmd = new SubsysCommand(NULL, subsys_id, command, 0, "", "");
+    int retval = cmd->execute();
+    if (retval != SSRET_OK) {
+        resp->error(SubsysCommand::error_string(retval));
+    }
+    resp->json_response(SubsysCommand::http_response_map(retval));
+}
+
+API_CALL(PUT, drives, reset, NULL, ARRAY({P_END}))
+{
+    if (args.Validate(http_PUT_drives_reset, resp) != 0) {
+        resp->json_response(HTTP_BAD_REQUEST);
+        return;
+    }
+    return simple_drive_command(args, resp, MENU_1541_RESET);
+}
+
+API_CALL(PUT, drives, remove, NULL, ARRAY({P_END}))
+{
+    if (args.Validate(http_PUT_drives_remove, resp) != 0) {
+        resp->json_response(HTTP_BAD_REQUEST);
+        return;
+    }
+    return simple_drive_command(args, resp, MENU_1541_REMOVE);
+}
+
+API_CALL(PUT, drives, on, NULL, ARRAY({P_END}))
+{
+    if (args.Validate(http_PUT_drives_on, resp) != 0) {
+        resp->json_response(HTTP_BAD_REQUEST);
+        return;
+    }
+    return simple_drive_command(args, resp, MENU_1541_TURNON);
+}
+
+API_CALL(PUT, drives, off, NULL, ARRAY({P_END}))
+{
+    if (args.Validate(http_PUT_drives_off, resp) != 0) {
+        resp->json_response(HTTP_BAD_REQUEST);
+        return;
+    }
+    return simple_drive_command(args, resp, MENU_1541_TURNOFF);
+}
+
+API_CALL(PUT, drives, unlink, NULL, ARRAY({P_END}))
+{
+    if (args.Validate(http_PUT_drives_unlink, resp) != 0) {
+        resp->json_response(HTTP_BAD_REQUEST);
+        return;
+    }
+    return simple_drive_command(args, resp, MENU_1541_UNLINK);
+}
+
+API_CALL(PUT, drives, set_mode, NULL, ARRAY({{ "mode", P_REQUIRED }, P_END}))
+{
+    if (args.Validate(http_PUT_drives_set_mode, resp) != 0) {
+        resp->json_response(HTTP_BAD_REQUEST);
+        return;
+    }
+    const char *drive = args.get_path();
+    int subsys_id = driveToSubsys[drive];
+    if (subsys_id < 0) {
+        resp->error("Invalid Drive '%s'", drive);
+        resp->json_response(HTTP_BAD_REQUEST);
+        return;
+    }
+    int mode = driveTypeToInt[args["mode"]];
+    if (mode < 0) {
+        resp->error("Invalid Drive Type '%s'", args["mode"]);
+        resp->json_response(HTTP_BAD_REQUEST);
+        return;
+    }
+    resp->json->add("mode", args["mode"]);
+    SubsysCommand *cmd = new SubsysCommand(NULL, subsys_id, MENU_1541_SET_MODE, mode, "", "");
+    int retval = cmd->execute();
+    if (retval != SSRET_OK) {
+        resp->error(SubsysCommand::error_string(retval));
+    }
+    resp->json_response(SubsysCommand::http_response_map(retval));
 }

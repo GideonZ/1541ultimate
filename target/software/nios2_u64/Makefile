@@ -135,18 +135,6 @@ SRCS_CC	 =  u2p_init.cc \
 			dos.cc \
 			network_target.cc \
 			control_target.cc \
-			softiec_target.cc \
-			iec.cc \
-			iec_channel.cc \
-			iec_printer.cc \
-			mps_printer.cc \
-			mps_printer_cbm.cc \
-			mps_printer_epson.cc \
-			mps_printer_ibmgp.cc \
-			mps_printer_ibmpp.cc \
-			mps_chargen.cc \
-			mps_charset.cc \
-			lodepng.cc \
 			filetype_tap.cc \
 			socket_stream.cc \
 			socket_gui.cc \
@@ -175,6 +163,19 @@ SRCS_CC	 =  u2p_init.cc \
 			route_files.cc \
 			route_drives.cc \
 			$(PRJ).cc
+
+SRCS_CC +=  iec.cc \
+			iec_channel.cc \
+			iec_printer.cc \
+			mps_printer.cc \
+			mps_printer_cbm.cc \
+			mps_printer_epson.cc \
+			mps_printer_ibmgp.cc \
+			mps_printer_ibmpp.cc \
+			mps_chargen.cc \
+			mps_charset.cc \
+			lodepng.cc \
+			softiec_target.cc \
 
 #			usb_em1010.cc \
 
@@ -207,7 +208,7 @@ SRCS_NANO = nano_minimal.nan
 PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -g -ffunction-sections -Os -DOS -DDEVELOPER=0 -DNIOS=1 -DCLOCK_FREQ=66666667 -DU64=1 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
 COPTIONS = $(OPTIONS) -std=gnu99
-CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
+CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = $(BSP)/linker.x
 LIBS2    = $(BSP)/libhal_bsp.a ../nios2_elf_lwip/result/liblwip.a
 LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o

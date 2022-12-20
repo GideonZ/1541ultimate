@@ -4,6 +4,7 @@
 #include "cli.h"
 #include "stream_textlog.h"
 #include "json.h"
+#include "http_codes.h"
 
 extern "C" {
     #include "url.h"
