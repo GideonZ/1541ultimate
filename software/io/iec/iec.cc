@@ -527,7 +527,7 @@ void IecInterface :: poll()
 }
 
 // called from GUI task
-int IecInterface :: executeCommand(SubsysCommand *cmd)
+SubsysResultCode_t IecInterface :: executeCommand(SubsysCommand *cmd)
 {
 	File *f = 0;
 	uint32_t transferred;
@@ -599,7 +599,7 @@ int IecInterface :: executeCommand(SubsysCommand *cmd)
 		default:
 			break;
     }
-    return 0;
+    return SSRET_OK;
 }
 
 void IecInterface :: reset(void)

@@ -144,7 +144,7 @@ void C64_Subsys :: restoreCart(void)
 }
 
 
-int C64_Subsys::executeCommand(SubsysCommand *cmd)
+SubsysResultCode_t C64_Subsys::executeCommand(SubsysCommand *cmd)
 {
     File *f = 0;
     FRESULT res;
@@ -439,7 +439,7 @@ int C64_Subsys::executeCommand(SubsysCommand *cmd)
             break;
     }
 
-    return 0;
+    return SSRET_OK;
 }
 
 int C64_Subsys :: dma_load_raw(File *f)

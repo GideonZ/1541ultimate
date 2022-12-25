@@ -28,6 +28,7 @@ typedef struct {
     const char *cmd;                           // Command string 
     int (*proc)(Stream& outf, Args& args);     // Procedure handling the command . Return value is HTTP error code
     const char *descr;                         // Description of the command 
+    const int param_count;                     // automatically generated number of parameters
     const Param_t *params;                     // Supported Parameters
     const char *switches;                      // Known / supported switches
     bool allow_unnamed;                        // allow superfluous unnamed arguments
@@ -290,21 +291,22 @@ public:
 #define NR_OF_EL(a)		(sizeof(a) / sizeof(a[0]))
 #endif
 #define ARRAY(...) __VA_ARGS__
-#define P_END ARRAY({ NULL, 0})
+//#define P_END ARRAY({ NULL, 0})
 #define mprintf(...) outf.format(__VA_ARGS__)
 
-#define CLI_COMMAND(NAME, DESCR, PARAMS, SWITCHES, UNNAMED)   \
-    static int Do ## NAME(Stream& outf, Args& args);          \
-    const Param_t c_params ## NAME[] =  PARAMS;               \
-    const CliCommand_t cli_ ## NAME =                         \
-    {   ((const char*)                   #NAME     ),         \
-        ((int(*)(Stream&, Args&))        Do ## NAME),         \
-        ((const char*)                   DESCR     ),         \
-        ((const Param_t *)               c_params ## NAME ),  \
-        ((const char*)                   SWITCHES  ),         \
-        ((bool)                          UNNAMED   ),         \
-    };                                                        \
-    CliCommandRegistrar RegisterCli_ ## NAME(& cli_ ## NAME); \
+#define CLI_COMMAND(NAME, DESCR, PARAMS, SWITCHES, UNNAMED)      \
+    static int Do ## NAME(Stream& outf, Args& args);             \
+    const Param_t c_params ## NAME[] =  PARAMS;                  \
+    const CliCommand_t cli_ ## NAME =                            \
+    {   ((const char*)                   #NAME     ),            \
+        ((int(*)(Stream&, Args&))        Do ## NAME),            \
+        ((const char*)                   DESCR     ),            \
+        ((const int)sizeof(c_params ## NAME) / sizeof(Param_t)), \
+        ((const Param_t *)               c_params ## NAME ),     \
+        ((const char*)                   SWITCHES  ),            \
+        ((bool)                          UNNAMED   ),            \
+    };                                                           \
+    CliCommandRegistrar RegisterCli_ ## NAME(& cli_ ## NAME);    \
     static int Do ## NAME(Stream& outf, Args& args)
 
 IndexedList<const CliCommand_t *> *getCliCommandList(void);

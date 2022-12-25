@@ -14,7 +14,7 @@ class ArgsURI;
 class ResponseWrapper;
 
 typedef int (*APIFUNC)(ArgsURI& args, HTTPReqMessage *req, ResponseWrapper *resp, void *body);
-typedef void *(*BodyHandlerSetupFunc_t)(HTTPReqMessage *req, HTTPRespMessage *resp, APIFUNC func, ArgsURI *args);
+typedef void *(*BodyHandlerSetupFunc_t)(HTTPReqMessage *req, HTTPRespMessage *resp, const void *func, ArgsURI *args);
 
 typedef struct {
     HTTPMethod method;                         // Method / Verb
@@ -22,6 +22,7 @@ typedef struct {
     const char *cmd;                           // Command string 
     APIFUNC proc;                              // Procedure handling the command
     BodyHandlerSetupFunc_t body_handler;       // Setup function for streaming body data (NULL for ditch or manual)
+    int param_count;                           // automatically filled field with number of specified parameters
     const Param_t *params;                     // Supported Parameters
 } ApiCall_t;
 
@@ -191,7 +192,7 @@ public:
             const char *k = get_key(i);
             const Param_t *p = def.params;
             bool found = false;
-            for(int j=0; p[j].long_param; j++) {
+            for(int j=0; j < def.param_count; j++) {
                 if (strcmp(k, p[j].long_param) == 0) {
                     matched |= (1 << j);
                     found = true;
@@ -206,7 +207,7 @@ public:
 
         // Now check if all required arguments are actually given
         const Param_t *p = def.params;
-        for(int i=0; p[i].long_param; i++) {
+        for(int i=0; i < def.param_count; i++) {
             if (!(matched & (1 << i))) {
                 if(p[i].flags & P_REQUIRED) {
                     resp->error("Function %s requires parameter %s", def.cmd, p[i].long_param);
@@ -232,6 +233,7 @@ public:
         ((const char *)#COMMAND),                                                                                      \
         ((APIFUNC)Do_##VERB##_##ROUTE##_##COMMAND),                                                                    \
         ((BodyHandlerSetupFunc_t)BODYSETUP),                                                                           \
+        ((const int)sizeof(c_params_##VERB##_##ROUTE##_##COMMAND)/sizeof(Param_t)),                                    \
         ((const Param_t *)c_params_##VERB##_##ROUTE##_##COMMAND),                                                      \
     };                                                                                                                 \
     ApiCallRegistrar RegisterApiCall_##VERB##_##ROUTE##_##COMMAND(&http_##VERB##_##ROUTE##_##COMMAND);                 \

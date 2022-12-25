@@ -42,7 +42,7 @@ class C64_Subsys : public SubSystem, ObjectWithMenu
 
     /* Subsystem */
 	const char *identify(void) { return "C64 Machine"; }
-	int executeCommand(SubsysCommand *cmd);
+	SubsysResultCode_t executeCommand(SubsysCommand *cmd);
 
     /* Object With Menu */
     void create_task_items(void);

@@ -43,21 +43,24 @@ class UserInterface;
 #define SORT_ORDER_CONFIG  70
 #define SORT_ORDER_DEVELOPER 999
 
-#define SSRET_OK 0
-#define SSRET_GENERIC_ERROR -1
-#define SSRET_SUBSYS_NOT_PRESENT -2
-#define SSRET_SUBSYS_NO_EXEC -3
-#define SSRET_NO_LOCK -4
-#define SSRET_DISK_MODIFIED -5
-#define SSRET_NO_DRIVE_ROM -6
-#define SSRET_INVALID_DRIVE_ROM -7
-#define SSRET_ONLY_1541 -8
-#define SSRET_WRONG_DRIVE_TYPE -9
-#define SSRET_CANNOT_OPEN_FILE -10
-#define SSRET_WRONG_MOUNT_MODE -11
-#define SSRET_UNDEFINED_COMMAND -12
+typedef enum {
+	SSRET_OK = 0,
+	SSRET_GENERIC_ERROR,
+	SSRET_SUBSYS_NOT_PRESENT,
+	SSRET_SUBSYS_NO_EXEC,
+	SSRET_NO_LOCK,
+	SSRET_DISK_MODIFIED,
+	SSRET_NO_DRIVE_ROM,
+	SSRET_INVALID_DRIVE_ROM,
+	SSRET_ONLY_1541,
+	SSRET_WRONG_DRIVE_TYPE,
+	SSRET_CANNOT_OPEN_FILE,
+	SSRET_WRONG_MOUNT_MODE,
+	SSRET_UNDEFINED_COMMAND,
+	SSRET_ABORTED_BY_USER,
+	SSRET_SAVE_FAILED,
+} SubsysResultCode_t;
 
-#define SSRET_LAST_ERROR -12
 
 class SubSystem  // implements function "executeCommand"
 {
@@ -65,7 +68,7 @@ class SubSystem  // implements function "executeCommand"
 	SemaphoreHandle_t myMutex;
 	friend class SubsysCommand;
 
-	virtual int executeCommand(SubsysCommand *cmd) { return SSRET_SUBSYS_NO_EXEC; }
+	virtual SubsysResultCode_t executeCommand(SubsysCommand *cmd) { return SSRET_SUBSYS_NO_EXEC; }
 public:
 	SubSystem(int id) {
 		myID = id;
@@ -147,10 +150,10 @@ public:
 		bufferSize(bufferSize) {
 	}
 
-	int execute(void) {
-		int retval = SSRET_SUBSYS_NOT_PRESENT;
+	SubsysResultCode_t execute(void) {
+		SubsysResultCode_t retval = SSRET_SUBSYS_NOT_PRESENT;
 		if(direct_call) {
-			retval = direct_call(this);
+			retval = (SubsysResultCode_t)direct_call(this);
 		} else {
 		    SubSystem *subsys;    // filled in by factory
 			subsys = (*SubSystem :: getSubSystems())[subsysID];
@@ -180,7 +183,7 @@ public:
 		printf("  Buffer = %p (size: %d)\n", buffer, bufferSize);
 	}
 
-    static const char *error_string(int resultCode)
+    static const char *error_string(SubsysResultCode_t resultCode)
     {
         static const char *error_strings[] = {
             "All Okay",        
@@ -196,17 +199,13 @@ public:
             "Cannot open file",
             "Illegal mount mode / drive type",
             "Undefined subsystem command",
+			"Operation aborted by user",
+			"Save failed",
         };
-        if (resultCode >= 0) {
-                return "Ok";
-        }
-        if (resultCode < SSRET_LAST_ERROR) {
-                return "Invalid Error Code";
-        }
-        return error_strings[-resultCode];
+        return error_strings[(int)resultCode];
     }
 
-    static int http_response_map(int resultCode)
+    static int http_response_map(SubsysResultCode_t resultCode)
     {
         static const int codes[] = {
             HTTP_OK, // "All Okay",        
@@ -218,18 +217,14 @@ public:
             HTTP_PRECONDITION_FAILED, // "Drive ROM not found",       
             HTTP_PRECONDITION_FAILED, // "Drive ROM is invalid",
             HTTP_METHOD_NOT_ALLOWED, // "This hardware only supports 1541", 
-            HTTP_METHOD_NOT_ALLOWED, // "Drive is in the wrong mode",
+            HTTP_UNSUPPORTED_MEDIA_TYPE, // "Drive is in the wrong mode",
             HTTP_NOT_FOUND, // "Cannot open file",
             HTTP_INTERNAL_SERVER_ERROR, // "Illegal mount mode / drive type",
             HTTP_INTERNAL_SERVER_ERROR, // "Undefined subsystem command",
+			HTTP_INTERNAL_SERVER_ERROR, // "Aborted by user" <-- should not happen from HTTP
+			HTTP_FAILED_DEPENDENCY, // "Save failed", not sure what went wrong, but the save was unsuccessful
         }; 
-        if (resultCode >= 0) {
-            return HTTP_OK;
-        }
-        if (resultCode < SSRET_LAST_ERROR) {
-            return HTTP_INTERNAL_SERVER_ERROR;
-        }
-        return codes[-resultCode];
+        return codes[(int)resultCode];
     }
 
     UserInterface *user_interface;

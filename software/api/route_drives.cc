@@ -36,7 +36,7 @@ void iec_info(JSON_List *obj)
 }
 
 // List all the available drives
-API_CALL(GET, drives, none, NULL, ARRAY({P_END}))
+API_CALL(GET, drives, none, NULL, ARRAY({ }))
 {
     JSON_List *drives = JSON::List();
     resp->json->add("drives", drives);
@@ -66,36 +66,29 @@ void api_mount(ResponseWrapper *resp, const char *fn, const char *drive, const c
 
     resp->json->add("Subsys", subsys_id)->add("Ftype", ftype)->add("command", command)->add("file", fn);
     SubsysCommand *cmd = new SubsysCommand(NULL, subsys_id, command, ftype, "", fn);
-    int retval = cmd->execute();
+    SubsysResultCode_t retval = cmd->execute();
     if (retval != SSRET_OK) {
         resp->error(SubsysCommand::error_string(retval));
     }
     resp->json_response(SubsysCommand::http_response_map(retval));
 }
 
-API_CALL(PUT, drives, mount, NULL, ARRAY({{ "image", P_REQUIRED }, { "type", P_OPTIONAL }, { "mode", P_OPTIONAL }, P_END }))
+API_CALL(PUT, drives, mount, NULL, ARRAY({{ "image", P_REQUIRED }, { "type", P_OPTIONAL }, { "mode", P_OPTIONAL } }))
 {
-    if (args.Validate(http_PUT_drives_mount, resp) != 0) {
-        resp->json_response(HTTP_BAD_REQUEST);
-        return;
-    }
     printf("Mount disk from path '%s' on drive '%s'\n", args["image"], args.get_path());
     char ext[4];
     get_extension(args["image"], ext);
     api_mount(resp, args["image"], args.get_path(), args.get_or("type", ext), args["mode"]);
 }
 
-API_CALL(POST, drives, mount, &attachment_writer, ARRAY({ { "type", P_OPTIONAL }, { "mode", P_OPTIONAL }, P_END }))
+API_CALL(POST, drives, mount, &attachment_writer, ARRAY({ { "type", P_OPTIONAL }, { "mode", P_OPTIONAL } }))
 {
-    if (args.Validate(http_POST_drives_mount, resp) != 0) {
-        resp->json_response(HTTP_BAD_REQUEST);
-        return;
-    }
     TempfileWriter *handler = (TempfileWriter *)body;
     const char *fn = handler->get_filename(0);
     if (!fn) {
         resp->error("Upload of file failed.");
         resp->json_response(HTTP_BAD_REQUEST);
+        return;
     }
     printf("Mount disk from upload: '%s'\n", fn);
     char ext[4];
@@ -109,7 +102,6 @@ API_CALL(POST, drives, mount, &attachment_writer, ARRAY({ { "type", P_OPTIONAL }
 //#define MENU_1541_SAVED64   0x1503
 //#define MENU_1541_SAVEG64   0x1504
 //#define MENU_1541_BLANK     0x1505
-//#define FLOPPY_LOAD_DOS     0x1508
 //#define MENU_1541_SWAP      0x1514
 
 static void simple_drive_command(ArgsURI& args, ResponseWrapper *resp, int command)
@@ -122,65 +114,59 @@ static void simple_drive_command(ArgsURI& args, ResponseWrapper *resp, int comma
         return;
     }
 
-    SubsysCommand *cmd = new SubsysCommand(NULL, subsys_id, command, 0, "", "");
-    int retval = cmd->execute();
+    SubsysCommand *cmd = new SubsysCommand(NULL, subsys_id, command, 0, "", args.get_or("file", ""));
+    SubsysResultCode_t retval = cmd->execute();
     if (retval != SSRET_OK) {
         resp->error(SubsysCommand::error_string(retval));
     }
     resp->json_response(SubsysCommand::http_response_map(retval));
 }
 
-API_CALL(PUT, drives, reset, NULL, ARRAY({P_END}))
+API_CALL(PUT, drives, reset, NULL, ARRAY({ }))
 {
-    if (args.Validate(http_PUT_drives_reset, resp) != 0) {
-        resp->json_response(HTTP_BAD_REQUEST);
-        return;
-    }
     return simple_drive_command(args, resp, MENU_1541_RESET);
 }
 
-API_CALL(PUT, drives, remove, NULL, ARRAY({P_END}))
+API_CALL(PUT, drives, remove, NULL, ARRAY({ }))
 {
-    if (args.Validate(http_PUT_drives_remove, resp) != 0) {
-        resp->json_response(HTTP_BAD_REQUEST);
-        return;
-    }
     return simple_drive_command(args, resp, MENU_1541_REMOVE);
 }
 
-API_CALL(PUT, drives, on, NULL, ARRAY({P_END}))
+API_CALL(PUT, drives, on, NULL, ARRAY({ }))
 {
-    if (args.Validate(http_PUT_drives_on, resp) != 0) {
-        resp->json_response(HTTP_BAD_REQUEST);
-        return;
-    }
     return simple_drive_command(args, resp, MENU_1541_TURNON);
 }
 
-API_CALL(PUT, drives, off, NULL, ARRAY({P_END}))
+API_CALL(PUT, drives, off, NULL, ARRAY({ }))
 {
-    if (args.Validate(http_PUT_drives_off, resp) != 0) {
-        resp->json_response(HTTP_BAD_REQUEST);
-        return;
-    }
     return simple_drive_command(args, resp, MENU_1541_TURNOFF);
 }
 
-API_CALL(PUT, drives, unlink, NULL, ARRAY({P_END}))
+API_CALL(PUT, drives, unlink, NULL, ARRAY({ }))
 {
-    if (args.Validate(http_PUT_drives_unlink, resp) != 0) {
-        resp->json_response(HTTP_BAD_REQUEST);
-        return;
-    }
     return simple_drive_command(args, resp, MENU_1541_UNLINK);
 }
 
-API_CALL(PUT, drives, set_mode, NULL, ARRAY({{ "mode", P_REQUIRED }, P_END}))
+API_CALL(PUT, drives, load_rom, NULL, ARRAY({{ "file", P_REQUIRED }}))
 {
-    if (args.Validate(http_PUT_drives_set_mode, resp) != 0) {
+    return simple_drive_command(args, resp, FLOPPY_LOAD_DOS);
+}
+
+API_CALL(POST, drives, load_rom, &attachment_writer, ARRAY({ }))
+{
+    TempfileWriter *handler = (TempfileWriter *)body;
+    const char *fn = handler->get_filename(0);
+    if (!fn) {
+        resp->error("Upload of file failed.");
         resp->json_response(HTTP_BAD_REQUEST);
         return;
     }
+    args.set("file", fn);
+    return simple_drive_command(args, resp, FLOPPY_LOAD_DOS);
+}
+
+API_CALL(PUT, drives, set_mode, NULL, ARRAY({{ "mode", P_REQUIRED }}))
+{
     const char *drive = args.get_path();
     int subsys_id = driveToSubsys[drive];
     if (subsys_id < 0) {
@@ -196,7 +182,7 @@ API_CALL(PUT, drives, set_mode, NULL, ARRAY({{ "mode", P_REQUIRED }, P_END}))
     }
     resp->json->add("mode", args["mode"]);
     SubsysCommand *cmd = new SubsysCommand(NULL, subsys_id, MENU_1541_SET_MODE, mode, "", "");
-    int retval = cmd->execute();
+    SubsysResultCode_t retval = cmd->execute();
     if (retval != SSRET_OK) {
         resp->error(SubsysCommand::error_string(retval));
     }

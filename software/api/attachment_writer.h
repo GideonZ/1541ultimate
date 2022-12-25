@@ -16,7 +16,7 @@ class TempfileWriter
     HTTPReqMessage *req;
     HTTPRespMessage *resp;
     ArgsURI *args;
-    APIFUNC func;
+    const ApiCall_t *func;
 public:
     TempfileWriter() : filenames(4, NULL) {
         fo = NULL;
@@ -34,7 +34,7 @@ public:
         }
     }
 
-    void create_callback(HTTPReqMessage *req, HTTPRespMessage *resp, ArgsURI *args, APIFUNC func)
+    void create_callback(HTTPReqMessage *req, HTTPRespMessage *resp, ArgsURI *args, const ApiCall_t *func)
     {
         this->req = req;
         this->resp = resp;
@@ -99,7 +99,11 @@ public:
                 // The actual function should now be called to do something with these files
                 if (func) {
                     ResponseWrapper respw(resp);
-                    func(*args, req, &respw, this);
+                    if (args->Validate(*func, &respw) != 0) {
+                        respw.json_response(HTTP_BAD_REQUEST);
+                    } else {
+                        func->proc(*args, req, &respw, this); // this = body (attachment writer object)
+                    }
                     delete args;
                 }
                 break;
@@ -112,6 +116,6 @@ public:
     }
 };
 
-TempfileWriter *attachment_writer(HTTPReqMessage *req, HTTPRespMessage *resp, APIFUNC func, ArgsURI *args);
+TempfileWriter *attachment_writer(HTTPReqMessage *req, HTTPRespMessage *resp, const ApiCall_t *func, ArgsURI *args);
 
 #endif

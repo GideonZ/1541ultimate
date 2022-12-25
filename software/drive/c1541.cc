@@ -875,7 +875,7 @@ bool C1541 :: are_mfm_dirty_bits_set()
     return (orred != 0);
 }
 
-int C1541 :: set_drive_type(t_drive_type drv)
+SubsysResultCode_t C1541 :: set_drive_type(t_drive_type drv)
 {
     // Force 1541 mode, when the target is not multi-mode
     if (!multi_mode && (drv != e_dt_1541)) {
@@ -919,24 +919,25 @@ int C1541 :: set_drive_type(t_drive_type drv)
     return SSRET_OK;
 }
 
-int C1541 :: change_drive_type(t_drive_type drv,  UserInterface *ui)
+SubsysResultCode_t C1541 :: change_drive_type(t_drive_type drv,  UserInterface *ui)
 {
     if (!multi_mode && drv != e_dt_1541) {
         return SSRET_ONLY_1541;
     }
-    if (!ui) {
-        return SSRET_WRONG_DRIVE_TYPE;
-    }
-
-    char buf[40];
-    sprintf(buf, "Change drive type to %s?", drive_types[(int)drv]);
-    if (ui->popup(buf, BUTTON_CANCEL | BUTTON_OK) != BUTTON_OK) {
-        return SSRET_WRONG_DRIVE_TYPE;
+//    if (!ui) {
+//        return SSRET_WRONG_DRIVE_TYPE;
+//    }
+    if (ui) {
+        char buf[40];
+        sprintf(buf, "Change drive type to %s?", drive_types[(int)drv]);
+        if (ui->popup(buf, BUTTON_CANCEL | BUTTON_OK) != BUTTON_OK) {
+            return SSRET_WRONG_DRIVE_TYPE;
+        }
     }
     return set_drive_type(drv);
 }
 
-int C1541 :: executeCommand(SubsysCommand *cmd)
+SubsysResultCode_t C1541 :: executeCommand(SubsysCommand *cmd)
 {
 	bool g64;
 	bool protect;
@@ -944,7 +945,7 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 	File *newFile = 0;
 	FRESULT res;
 	FileInfo info(32);
-	int returnValue = SSRET_OK;
+	SubsysResultCode_t returnValue = SSRET_OK;
 
     fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
 
@@ -1069,7 +1070,7 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
         save_disk_to_file(cmd);
         break;
     case FLOPPY_LOAD_DOS:
-    	memcpy((void *)&memory_map[0x8000], (void*) cmd->buffer, 0x8000);
+        returnValue = load_dos_from_file(cmd->path.c_str(), cmd->filename.c_str());
         break;
     	
 	default:
@@ -1077,6 +1078,32 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 		return SSRET_UNDEFINED_COMMAND;
 	}
 	return returnValue;
+}
+
+SubsysResultCode_t C1541 :: load_dos_from_file(const char *path, const char *filename)
+{
+    FileManager *fm = FileManager :: getFileManager();
+    uint32_t size = 32768;
+    uint32_t transferred = 0;
+    uint8_t *buffer = (uint8_t *)&memory_map[0x8000];
+
+    printf("Binary Load.. %s\n", filename);
+    FRESULT fres = fm->load_file(path, filename, buffer, size, &transferred);
+
+    if(fres == FR_OK) {
+    	if ((size == 32768) && (transferred == 16384)) {
+    		memcpy(buffer + 16384, buffer, 16384);
+    	}
+    } else {
+        return SSRET_CANNOT_OPEN_FILE;
+    }
+    if (transferred) {
+        drive_reset(1);
+    }
+    if ((transferred == 16384) || (transferred == 32768)) {
+        return SSRET_OK;
+    }
+    return SSRET_INVALID_DRIVE_ROM;
 }
 
 void C1541 :: unlink(void)
@@ -1089,7 +1116,7 @@ void C1541 :: unlink(void)
 	mfm_controller->set_file(NULL);
 }
 
-bool C1541 :: save_disk_to_file(SubsysCommand *cmd)
+SubsysResultCode_t C1541 :: save_disk_to_file(SubsysCommand *cmd)
 {
     static char buffer[32] = {0};
     char errstr[40];
@@ -1098,6 +1125,10 @@ bool C1541 :: save_disk_to_file(SubsysCommand *cmd)
 	int res;
 	bool success = true;
 	const char *ext;
+
+    if ((current_drive_type != e_dt_1541) && (current_drive_type != e_dt_1571)) {
+        return SSRET_WRONG_DRIVE_TYPE;
+    }
 
 	// Note that when we get here, the GCR disk is leading. The BIN image is only used to store
 	// the binary data that is converted FROM the GCR image. For this reason, whether the disk
@@ -1134,12 +1165,12 @@ bool C1541 :: save_disk_to_file(SubsysCommand *cmd)
 				cmd->user_interface->hide_progress();
 			}
 			fm->fclose(file);
-			return success;
+			return success ? SSRET_OK : SSRET_SAVE_FAILED;
 		} else {
 			cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
 		}
 	}
-    return false;
+    return SSRET_ABORTED_BY_USER;
 }
 
 void C1541 :: set_rom_config(int idx, const char *fname)

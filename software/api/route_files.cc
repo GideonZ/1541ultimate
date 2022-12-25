@@ -2,7 +2,7 @@
 #include "filemanager.h"
 #include "json.h"
 
-API_CALL(GET, files, info, NULL, ARRAY({P_END}))
+API_CALL(GET, files, info, NULL, ARRAY({ }))
 {
     FileManager *fm = FileManager::getFileManager();
     FileInfo info(128);
