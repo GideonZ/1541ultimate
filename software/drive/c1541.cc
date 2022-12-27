@@ -1063,11 +1063,11 @@ SubsysResultCode_t C1541 :: executeCommand(SubsysCommand *cmd)
         break;
     case MENU_1541_SAVED64:
     	cmd->mode = 0;
-    	save_disk_to_file(cmd);
+    	returnValue = save_disk_to_file(cmd);
         break;
     case MENU_1541_SAVEG64:
     	cmd->mode = 1;
-        save_disk_to_file(cmd);
+        returnValue = save_disk_to_file(cmd);
         break;
     case FLOPPY_LOAD_DOS:
         returnValue = load_dos_from_file(cmd->path.c_str(), cmd->filename.c_str());
@@ -1127,6 +1127,7 @@ SubsysResultCode_t C1541 :: save_disk_to_file(SubsysCommand *cmd)
 	const char *ext;
 
     if ((current_drive_type != e_dt_1541) && (current_drive_type != e_dt_1571)) {
+        cmd->user_interface->popup("Only valid for 1541 or 1571.", BUTTON_OK);
         return SSRET_WRONG_DRIVE_TYPE;
     }
 
