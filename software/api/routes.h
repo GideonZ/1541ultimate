@@ -78,7 +78,7 @@ public:
         va_list ap;
         log.format("<html><body><h1>%s</h1>\n<p>", title);
         va_start(ap, fmt);
-        log.format(fmt, ap);
+        log.format_ap(fmt, ap);
         va_end(ap);
 
         log.format("</p></body></html>\r\n\r\n");

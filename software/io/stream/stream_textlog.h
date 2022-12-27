@@ -71,7 +71,7 @@ public:
     	return offset;
     }
 
-    int format(const char *fmt, va_list ap) {
+    int format_ap(const char *fmt, va_list ap) {
         return _my_vprintf(StreamTextLog :: _put, (void **)this, fmt, ap);
     }
 

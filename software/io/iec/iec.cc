@@ -1111,11 +1111,10 @@ void UltiCopy :: close(void)
     
 void iec_info(StreamTextLog &b)
 {
+    char buffer[64];
     if (!iec_if) {
         return;
     }
-
-    char buffer[64];
     b.format("SoftwareIEC:  %s\n", iec_if->iec_enable ? "Enabled" : "Disabled");
     if (iec_if->iec_enable) {
         b.format("Drive Bus ID: %d\n", iec_if->get_current_iec_address());
@@ -1134,6 +1133,9 @@ void iec_info(StreamTextLog &b)
 void iec_info(JSON_List *obj)
 {
     char buffer[64];
+    if (!iec_if) {
+        return;
+    }
     iec_if->get_error_string(buffer);
     
     JSON_List *partitions = JSON::List();
