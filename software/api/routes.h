@@ -100,10 +100,12 @@ public:
 class ArgsURI : public Args
 {
     UrlComponents comps;
+    IndexedList<const char *> *temporaries;
 public:
     ArgsURI() : Args()
     {
         memset(&comps, 0, sizeof(comps));
+        temporaries = NULL;
     }
 
     virtual ~ArgsURI()
@@ -113,6 +115,13 @@ public:
 
     void ClearAll()
     {
+        // clear temporaries
+        if (temporaries) {
+            for(int i=0; i<temporaries->get_elements(); i++) {
+                delete (*temporaries)[i];
+            }
+            delete temporaries;
+        }
         // clear comps
         if(comps.url_copy) {
             free(comps.url_copy);
@@ -126,6 +135,14 @@ public:
 
         // clear args
         ClearArgs();
+    }
+
+    void temporary(const char *im_trash)
+    {
+        if (!temporaries) {
+            temporaries = new IndexedList<const char *>(2, NULL);
+        }
+        temporaries->append(im_trash);
     }
 
     static const ApiCall_t *find_api_call(HTTPMethod method, const char *route, const char *command)
@@ -180,6 +197,15 @@ public:
     const char *get_path(void)
     {
         return get_unnamed_arg(0);
+    }
+
+    int get_int(const char *key, int alt)
+    {
+        const char *str = get_or(key, NULL);
+        if (!str) {
+            return alt;
+        }
+        return strtol(str, NULL, 0);
     }
 
     int Validate(const ApiCall_t& def, ResponseWrapper *resp)

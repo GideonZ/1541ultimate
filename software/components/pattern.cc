@@ -370,6 +370,18 @@ void truncate_filename(const char *orig, char *buf, int bufsize)
     set_extension(buf, ext, bufsize);
 }
 
+const char *get_filename(const char *path)
+{
+    int n = strlen(path);
+    while(n) {
+        if (path[n] == '/') {
+            return path + n + 1;
+        }
+        n--;
+    }
+    return path;
+}
+
 void petscii_to_fat(const char *pet, char *fat, int maxlen)
 {
     // clear output string
