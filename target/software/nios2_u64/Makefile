@@ -32,6 +32,7 @@ SRCS_C   =	itu.c \
             alt_malloc_lock.c \
             alt_do_ctors.c \
 			server.c \
+			http_protocol.c \
 			middleware.c \
 			multipart.c \
 			url.c \
@@ -162,6 +163,8 @@ SRCS_CC	 =  u2p_init.cc \
 			routes.cc \
 			route_files.cc \
 			route_drives.cc \
+			route_runners.cc \
+			route_configs.cc \
 			$(PRJ).cc
 
 SRCS_CC +=  iec.cc \

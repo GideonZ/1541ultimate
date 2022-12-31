@@ -2,7 +2,7 @@
 #define ROUTES_H
 
 #include "cli.h"
-#include "stream_textlog.h"
+#include "stream_ramfile.h"
 #include "json.h"
 #include "http_codes.h"
 
@@ -57,32 +57,46 @@ public:
         return reply;
     }
 
+    static int stream_body(void *context, uint8_t *buf, int len)
+    {
+        StreamRamFile *log = (StreamRamFile *)context;
+        int result = log->read((char *)(void *)buf, len);
+        if (!result) {
+            delete log;
+        }
+        return result;
+    }
+
     void json_response(int code)
     {
         json->add("errors", errors);
         errors = NULL;
 
         const char *return_str = return_codestr(code);
-        StreamTextLog log(1024, (char *)resp->_buf);
-        log.format("HTTP/1.1 %d %s\r\nConnection: close\r\nContent-Type: application_json\r\n\r\n", code, return_str);
-        log.format(json->render());
-        resp->_index = (size_t)log.getLength();
+        StreamRamFile *log = new StreamRamFile(HTTP_BUFFER_SIZE);
+        log->format("HTTP/1.1 %d %s\r\nConnection: close\r\nContent-Type: application_json\r\n\r\n", code, return_str);
+        log->format(json->render());
+        // resp->_index = (size_t)log.getLength();
+        resp->BodyContext = log;
+        resp->BodyCB = &stream_body;
     }
 
     void html_response(int code, const char *title, const char *fmt, ...)
     {
         const char *return_str = return_codestr(code);
-        StreamTextLog log(1024, (char *)resp->_buf);
-        log.format("HTTP/1.1 %d %s\r\nConnection: close\r\nContent-Type: text_html\r\n\r\n", code, return_str);
+        StreamRamFile *log = new StreamRamFile(HTTP_BUFFER_SIZE);
+        log->format("HTTP/1.1 %d %s\r\nConnection: close\r\nContent-Type: text_html\r\n\r\n", code, return_str);
 
         va_list ap;
-        log.format("<html><body><h1>%s</h1>\n<p>", title);
+        log->format("<html><body><h1>%s</h1>\n<p>", title);
         va_start(ap, fmt);
-        log.format_ap(fmt, ap);
+        log->format_ap(fmt, ap);
         va_end(ap);
 
-        log.format("</p></body></html>\r\n\r\n");
-        resp->_index = (size_t)log.getLength();
+        log->format("</p></body></html>\r\n\r\n");
+        // resp->_index = (size_t)log.getLength();
+        resp->BodyContext = log;
+        resp->BodyCB = &stream_body;
     }
 
     void error(const char *fmt, ...)
