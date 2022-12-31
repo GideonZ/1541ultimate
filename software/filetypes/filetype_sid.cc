@@ -149,17 +149,40 @@ bool FileTypeSID :: ConfigSIDs(void)
 /*************************************************************/
 FileTypeSID :: FileTypeSID(BrowsableDirEntry *node)
 {
-    fm = FileManager :: getFileManager();
-	this->node = node;
 	printf("Creating SID type from info: %s\n", node->getName());
+    fm = FileManager :: getFileManager();
     file = NULL;
     header_valid = false;
     number_of_songs = 0;
     cmd = NULL;
 
+	path_string = node->getPath()->get_path();
+	file_string = node->getName();
+
+	strcpy(ssl_filename, "SONGLENGTHS/");
+	strncat(ssl_filename, node->getName(), 79);
+	ssl_filename[91] = 0;
+	set_extension(ssl_filename, ".ssl", 92);
+
 	FileInfo *inf = node->getInfo();
 	mus_file = strcmp(inf->extension, "MUS") == 0 || strcmp(inf->extension, "STR") == 0;
 	sid_file = !mus_file;
+}
+
+FileTypeSID :: FileTypeSID(const char *filename, const char *sslfile, bool mus)
+{
+    fm = FileManager :: getFileManager();
+    file = NULL;
+    header_valid = false;
+    number_of_songs = 0;
+    cmd = NULL;
+
+	file_string = filename;
+
+    strncpy(ssl_filename, sslfile, 92);
+    ssl_filename[91] = 0;
+    mus_file = mus;
+    sid_file = !mus;
 }
 
 FileTypeSID :: ~FileTypeSID()
@@ -177,7 +200,7 @@ int FileTypeSID :: readHeader(void)
 
 	// if we didn't open the file yet, open it now
 	if (!file) {
-		fres = fm->fopen(node->getPath(), node->getName(), FA_READ, &file);
+		fres = fm->fopen(path_string.c_str(), file_string.c_str(), FA_READ, &file);
 
 		if (fres != FR_OK) {
 			printf("opening file was not successful. %s\n", FileSystem :: get_error_string(fres));
@@ -288,7 +311,7 @@ int FileTypeSID :: createMusHeader(void)
 	sid_header[0x77] = 0x29;	// default flags set for 8580, NTSC and MUS data only
 
 	// set filename as title
-	const char *filename = node->getName();
+	const char *filename = file_string.c_str();
 	int size = strlen(filename);
 
 	// truncate filename where extension begins
@@ -428,7 +451,11 @@ int FileTypeSID :: execute(SubsysCommand *cmd)
 		return -2;
 	}
 	if (error) {
-		cmd->user_interface->popup((char*)errors[error], BUTTON_OK);
+		if (cmd->user_interface) {
+			cmd->user_interface->popup((char*)errors[error], BUTTON_OK);
+		} else {
+			printf("Error: %s\n", errors[error]);
+		}
 		if (file) {
 			fm->fclose(file);
 			file = NULL;
@@ -442,17 +469,7 @@ int FileTypeSID :: execute(SubsysCommand *cmd)
 
 void FileTypeSID :: readSongLengths(void)
 {
-	Path *slPath = fm->get_new_path("sid file");
 	File *sslFile;
-
-	slPath->cd(cmd->path.c_str());
-	slPath->cd("SONGLENGTHS");
-	char filename[80];
-	strncpy(filename, cmd->filename.c_str(), 79);
-	filename[79] = 0;
-
-	set_extension(filename, ".ssl", 80);
-
 	uint8_t *sid_rom;
 
 	if (mus_file) {
@@ -465,7 +482,7 @@ void FileTypeSID :: readSongLengths(void)
 	memset(sid_rom + 0x3000, 0, 512);
 
 	uint32_t songLengthsArrayLength = 0;
-	if (fm->fopen(slPath->get_path(), filename, FA_READ, &sslFile) == FR_OK) {
+	if (fm->fopen(path_string.c_str(), ssl_filename, FA_READ, &sslFile) == FR_OK) {
 		sslFile->read(sid_rom + 0x3000, 512, &songLengthsArrayLength);
 		printf("Song length array loaded. %d bytes\n", songLengthsArrayLength);
 		fm->fclose(sslFile);
@@ -508,8 +525,6 @@ void FileTypeSID :: readSongLengths(void)
 			sid_rom[0x3000 + i] = mus_file ? DEFAULT_SONG_LENGTH_MUS : DEFAULT_SONG_LENGTH_SID;
 		}
 	}
-
-	fm->release_path(slPath);
 }
 
 bool FileTypeSID :: tryLoadStereoMus(int offset)
@@ -518,12 +533,12 @@ bool FileTypeSID :: tryLoadStereoMus(int offset)
 		File *strFile;
 
 		char filename[80];
-		strncpy(filename, cmd->filename.c_str(), 79);
+		strncpy(filename, file_string.c_str(), 79);
 		filename[79] = 0;
 
 		set_extension(filename, ".str", 80);
 
-		if (fm->fopen(node->getPath(), filename, FA_READ, &strFile) == FR_OK) {
+		if (fm->fopen(path_string.c_str(), filename, FA_READ, &strFile) == FR_OK) {
 			if (strFile->seek(2) != FR_OK) {	// skip first 2 bytes
 				fm->fclose(strFile);
 				return false;
@@ -542,9 +557,9 @@ bool FileTypeSID :: tryLoadStereoMus(int offset)
 int FileTypeSID :: prepare(bool use_default)
 {
 	if (use_default) {
-		printf("PREPARE DEFAULT SONG in %s.\n", node->getName());
+		printf("PREPARE DEFAULT SONG in %s.\n", file_string.c_str());
     } else {
-		printf("PREPARE SONG #%d in %s.\n", song, node->getName());
+		printf("PREPARE SONG #%d in %s.\n", song, file_string.c_str());
 	}
 
 	FileInfo *info;
@@ -553,7 +568,7 @@ int FileTypeSID :: prepare(bool use_default)
 	int  length;
 
 	char filename[80];
-	strncpy(filename, cmd->filename.c_str(), 79);
+	strncpy(filename, file_string.c_str(), 79);
 	filename[79] = 0;
 
 	if (mus_file && !sid_file) {
@@ -564,7 +579,8 @@ int FileTypeSID :: prepare(bool use_default)
 	// reload header, reset state of file
 	uint32_t *magic = (uint32_t *)sid_header;
 	if (!file) {
-		if (fm->fopen(cmd->path.c_str(), filename, FA_READ, &file) != FR_OK) {
+		printf("Open: '%s' / '%s'\n", path_string.c_str(), filename);
+		if (fm->fopen(path_string.c_str(), filename, FA_READ, &file) != FR_OK) {
 			file = NULL;
 			return 1;
 		}
@@ -859,4 +875,20 @@ void FileTypeSID :: configureMusEnv(int offsetLoadEnd)
 		sid_header[0x78] = 0x04;
 		sid_header[0x79] = 0x0C;
 	}
+}
+
+int FileTypeSID ::play_file(const char *filename, const char *ssl_file, int song)
+{
+	char ext[4];
+	get_extension(filename, ext);
+	bool mus = (strcmp(ext, "MUS") == 0) || (strcmp(ext, "STR") == 0);
+	FileTypeSID *sid = new FileTypeSID(filename, ssl_file, mus);
+    if (song <= 0) {
+		song = SIDFILE_PLAY_MAIN;
+    }
+    SubsysCommand *cmd = new SubsysCommand(NULL, -1, song, 0, "", "");
+    int retval = sid->execute(cmd);
+    delete cmd;
+    delete sid;
+    return retval;
 }

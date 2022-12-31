@@ -55,6 +55,7 @@ public:
 
         switch(block->type) {
             case eStart:
+                fo = NULL;
                 break;
             case eDataStart:
                 sprintf(filename, FILE_PATH "temp%04x", temp_count++);
@@ -89,9 +90,14 @@ public:
             case eDataEnd:
                 if (fo) {
                     fclose(fo);
+                    fo = NULL;
                 }
                 break;
             case eTerminate:
+                if (fo) {
+                    fclose(fo);
+                    fo = NULL;
+                }
                 printf("Uploaded files:\n");
                 for (int i=0;i<filenames.get_elements();i++) {
                     printf("  '%s'\n", filenames[i]);
