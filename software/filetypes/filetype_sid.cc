@@ -159,10 +159,12 @@ FileTypeSID :: FileTypeSID(BrowsableDirEntry *node)
 	path_string = node->getPath()->get_path();
 	file_string = node->getName();
 
-	strcpy(ssl_filename, "SONGLENGTHS/");
-	strncat(ssl_filename, node->getName(), 79);
-	ssl_filename[91] = 0;
-	set_extension(ssl_filename, ".ssl", 92);
+	char temp[92];
+	strcpy(temp, "SONGLENGTHS/");
+	strncat(temp, node->getName(), 79);
+	temp[91] = 0;
+	set_extension(temp, ".ssl", 92);
+	ssl_filename = temp;
 
 	FileInfo *inf = node->getInfo();
 	mus_file = strcmp(inf->extension, "MUS") == 0 || strcmp(inf->extension, "STR") == 0;
@@ -171,6 +173,7 @@ FileTypeSID :: FileTypeSID(BrowsableDirEntry *node)
 
 FileTypeSID :: FileTypeSID(const char *filename, const char *sslfile, bool mus)
 {
+	printf("Creating a SID file '%s' with SSL: '%s'\n", filename, sslfile);
     fm = FileManager :: getFileManager();
     file = NULL;
     header_valid = false;
@@ -178,9 +181,8 @@ FileTypeSID :: FileTypeSID(const char *filename, const char *sslfile, bool mus)
     cmd = NULL;
 
 	file_string = filename;
+	ssl_filename = sslfile;
 
-    strncpy(ssl_filename, sslfile, 92);
-    ssl_filename[91] = 0;
     mus_file = mus;
     sid_file = !mus;
 }
@@ -482,7 +484,7 @@ void FileTypeSID :: readSongLengths(void)
 	memset(sid_rom + 0x3000, 0, 512);
 
 	uint32_t songLengthsArrayLength = 0;
-	if (fm->fopen(path_string.c_str(), ssl_filename, FA_READ, &sslFile) == FR_OK) {
+	if (fm->fopen(path_string.c_str(), ssl_filename.c_str(), FA_READ, &sslFile) == FR_OK) {
 		sslFile->read(sid_rom + 0x3000, 512, &songLengthsArrayLength);
 		printf("Song length array loaded. %d bytes\n", songLengthsArrayLength);
 		fm->fclose(sslFile);
@@ -882,7 +884,21 @@ int FileTypeSID ::play_file(const char *filename, const char *ssl_file, int song
 	char ext[4];
 	get_extension(filename, ext);
 	bool mus = (strcmp(ext, "MUS") == 0) || (strcmp(ext, "STR") == 0);
-	FileTypeSID *sid = new FileTypeSID(filename, ssl_file, mus);
+	Path *ssl_path = NULL;
+	FileTypeSID *sid;
+	if (!ssl_file) {
+		ssl_path = new Path(filename);
+		char temp[80];
+		strncpy(temp, ssl_path->getLastElement(), 80);
+		temp[79] = 0;
+		set_extension(temp, ".ssl", 80);
+		ssl_path->cd("..");
+		ssl_path->cd("SONGLENGTHS");
+		ssl_path->cd(temp);
+		sid = new FileTypeSID(filename, ssl_path->get_path(), mus);		
+	} else {
+		sid = new FileTypeSID(filename, ssl_file, mus);		
+	}
     if (song <= 0) {
 		song = SIDFILE_PLAY_MAIN;
     }
@@ -890,5 +906,8 @@ int FileTypeSID ::play_file(const char *filename, const char *ssl_file, int song
     int retval = sid->execute(cmd);
     delete cmd;
     delete sid;
+	if (ssl_path) {
+		delete ssl_path;
+	}
     return retval;
 }

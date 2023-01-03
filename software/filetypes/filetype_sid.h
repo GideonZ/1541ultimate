@@ -8,9 +8,9 @@ class FileTypeSID : public FileType
 {
 	FileManager *fm;
 	SubsysCommand *cmd;
-	char ssl_filename[92];
 	mstring path_string;
 	mstring file_string;
+	mstring ssl_filename;
 
 	File *file;
 	uint8_t sid_header[0x80];
