@@ -75,8 +75,7 @@ public:
         const char *return_str = return_codestr(code);
         StreamRamFile *log = new StreamRamFile(HTTP_BUFFER_SIZE);
         log->format("HTTP/1.1 %d %s\r\nConnection: close\r\nContent-Type: application/json\r\n\r\n", code, return_str);
-        log->format(json->render());
-        // resp->_index = (size_t)log.getLength();
+        json->render(log);
         resp->BodyContext = log;
         resp->BodyCB = &stream_body;
     }

@@ -4,6 +4,7 @@
 #include "dict.h"
 #include "indexed_list.h"
 #include <stdio.h>
+#include "stream_ramfile.h"
 
 class JSON_Object;
 class JSON_List;
@@ -14,6 +15,9 @@ public:
     JSON() { }
     virtual const char *render() {
         return "base?";
+    }
+    virtual void render(StreamRamFile *s) {
+        s->format("base?");
     }
     virtual ~JSON() { }
     static JSON_List *List();
@@ -30,6 +34,7 @@ public:
         str += "\"";
     }
     const char *render() { return str.c_str(); }
+    void render(StreamRamFile *s) { s->format("%s", str.c_str()); }
 };
 
 class JSON_Integer : public JSON
@@ -42,6 +47,7 @@ public:
         sprintf(work, "%d", value);
         return work;
     }
+    void render(StreamRamFile *s) { s->format("%d", value); }
 };
 
 class JSON_Bool : public JSON
@@ -51,6 +57,9 @@ public:
     JSON_Bool(int v) : value(v) {}
     const char *render() {
         return value ? "true" : "false";
+    }
+    void render(StreamRamFile *s) {
+        s->format(value ? "true" : "false");
     }
 };
 
@@ -101,6 +110,19 @@ public:
         renderspace += "}";
         return renderspace.c_str();
     }
+
+    void render(StreamRamFile *s) {
+        s->format("{ \n");
+        for (int i=0;i<keys.get_elements();i++) {
+            s->format("  \"%s\" : ", keys[i]);
+            values[i]->render(s);
+            if (i != keys.get_elements()-1) {
+                s->charout(',');
+            }
+            s->charout('\n');
+        }
+        s->charout('}');
+    }
 };
 
 class JSON_List : public JSON
@@ -147,6 +169,18 @@ public:
         renderspace += " ]";
         return renderspace.c_str();
     }
+
+    void render(StreamRamFile *s) {
+        s->format("[ ");
+        for (int i=0;i<members.get_elements();i++) {
+            members[i]->render(s);
+            if (i != members.get_elements()-1) {
+                s->format(", ");
+            }
+        }
+        s->format(" ]");
+    }
+
 };
 
 
