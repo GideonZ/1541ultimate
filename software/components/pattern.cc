@@ -182,7 +182,7 @@ bool pattern_match_escaped(const char *pattern, const char *fixed, bool case_sen
     return false; // never gets here.
 }
 
-void split_string(char sep, char *s, char **parts, int maxParts)
+int split_string(char sep, char *s, char **parts, int maxParts)
 {
     int len = strlen(s);
     int idx = 0;
@@ -193,6 +193,7 @@ void split_string(char sep, char *s, char **parts, int maxParts)
             parts[idx++] = s + i + 1;
         }
     }
+    return idx;
 }
 
 bool isEmptyString(const char *c)

@@ -9,11 +9,11 @@ API_CALL(GET, files, info, NULL, ARRAY({ }))
 {
     FileManager *fm = FileManager::getFileManager();
     FileInfo info(128);
-    FRESULT fres = fm->fstat(args.get_path(), info);
+    FRESULT fres = fm->fstat(args.get_full_path(), info);
 
     if (fres == FR_OK) {
         resp->json->add("files", JSON::Obj()
-            ->add("path", args.get_path())
+            ->add("path", args.get_full_path())
             ->add("filename", info.lfname)
             ->add("size", (int)info.size)
             //->add("date", date_from_int(info.date))
@@ -62,7 +62,7 @@ static void enforce_diskname(ArgsURI &args)
 {
     const char *fn = args["diskname"];
     if (!fn) {
-        char *dup = strdup(get_filename(args.get_path()));
+        char *dup = strdup(get_filename(args.get_full_path()));
         set_extension(dup, "", strlen(dup));
         args.set("diskname", dup);
         args.temporary(dup);
@@ -72,7 +72,7 @@ static void enforce_diskname(ArgsURI &args)
 API_CALL(PUT, files, create_d64, NULL, ARRAY( { { "tracks", P_OPTIONAL }, { "diskname", P_OPTIONAL } } ))
 {
     int tracks = args.get_int("tracks", 35);
-    resp->json->add("path", args.get_path());
+    resp->json->add("path", args.get_full_path());
     resp->json->add("tracks", tracks);
 
     enforce_diskname(args);
@@ -86,7 +86,7 @@ API_CALL(PUT, files, create_d64, NULL, ARRAY( { { "tracks", P_OPTIONAL }, { "dis
     }
 
     int size = (17 * (tracks - 35) + 683) * 256;
-    File *f = create_file_of_size(resp, args.get_path(), size);
+    File *f = create_file_of_size(resp, args.get_full_path(), size);
     if (f) {
         BlockDevice_File blk(f, 256);
         Partition prt(&blk, 0, 0, 0);
@@ -105,7 +105,7 @@ API_CALL(PUT, files, create_d64, NULL, ARRAY( { { "tracks", P_OPTIONAL }, { "dis
 API_CALL(PUT, files, create_d71, NULL, ARRAY( { { "diskname", P_OPTIONAL } } ))
 {
     int tracks = 70;
-    resp->json->add("path", args.get_path());
+    resp->json->add("path", args.get_full_path());
     resp->json->add("tracks", tracks);
 
     enforce_diskname(args);
@@ -113,7 +113,7 @@ API_CALL(PUT, files, create_d71, NULL, ARRAY( { { "diskname", P_OPTIONAL } } ))
     resp->json->add("diskname", fn);
 
     int size = 683 * 2 * 256;
-    File *f = create_file_of_size(resp, args.get_path(), size);
+    File *f = create_file_of_size(resp, args.get_full_path(), size);
     if (f) {
         BlockDevice_File blk(f, 256);
         Partition prt(&blk, 0, 0, 0);
@@ -131,13 +131,13 @@ API_CALL(PUT, files, create_d71, NULL, ARRAY( { { "diskname", P_OPTIONAL } } ))
 
 API_CALL(PUT, files, create_d81, NULL, ARRAY( { { "diskname", P_OPTIONAL } } ))
 {
-    resp->json->add("path", args.get_path());
+    resp->json->add("path", args.get_full_path());
 
     enforce_diskname(args);
     const char *fn = args["diskname"];
     resp->json->add("diskname", fn);
 
-    File *f = create_file_of_size(resp, args.get_path(), 256*3200);
+    File *f = create_file_of_size(resp, args.get_full_path(), 256*3200);
     if (f) {
         BlockDevice_File blk(f, 256);
         Partition prt(&blk, 0, 0, 0);
@@ -156,7 +156,7 @@ API_CALL(PUT, files, create_d81, NULL, ARRAY( { { "diskname", P_OPTIONAL } } ))
 API_CALL(PUT, files, create_dnp, NULL, ARRAY( { { "tracks", P_REQUIRED }, { "diskname", P_OPTIONAL } } ))
 {
     int tracks = args.get_int("tracks", 0);
-    resp->json->add("path", args.get_path());
+    resp->json->add("path", args.get_full_path());
     resp->json->add("tracks", tracks);
     if ((tracks < 1) || (tracks > 255)) {
         resp->error("Invalid number of tracks (1-255).");
@@ -168,7 +168,7 @@ API_CALL(PUT, files, create_dnp, NULL, ARRAY( { { "tracks", P_REQUIRED }, { "dis
     const char *fn = args["diskname"];
     resp->json->add("diskname", fn);
 
-    File *f = create_file_of_size(resp, args.get_path(), tracks * 65536);
+    File *f = create_file_of_size(resp, args.get_full_path(), tracks * 65536);
     if (f) {
         BlockDevice_File blk(f, 256);
         Partition prt(&blk, 0, 0, 0);

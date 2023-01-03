@@ -5,6 +5,7 @@
 #include "stream_ramfile.h"
 #include "json.h"
 #include "http_codes.h"
+#include "pattern.h"
 
 extern "C" {
     #include "url.h"
@@ -113,12 +114,42 @@ public:
 class ArgsURI : public Args
 {
     UrlComponents comps;
+    int path_depth;
+    char *path_parts[16];
+    char *path_copy;
+    mstring full_path;
     IndexedList<const char *> *temporaries;
+
+    void store_path(const char *fp)
+    {
+        path_depth = 0;
+        full_path = "";
+        if (!fp) {
+            return;
+        }
+        if (strlen(fp) == 0) {
+            return;
+        }
+        if (!path_copy) {
+            path_copy = strdup(fp);
+            path_depth = split_string('/', path_copy, path_parts, 16);
+            for (int i = 0; i < path_depth; i++) {
+                url_decode(path_parts[i], path_parts[i], 0);
+                if (i != 0) {
+                    full_path += "/";
+                }
+                full_path += path_parts[i];
+            }
+        }
+    }
+
 public:
-    ArgsURI() : Args()
+    ArgsURI() : Args(), full_path()
     {
         memset(&comps, 0, sizeof(comps));
         temporaries = NULL;
+        path_copy = NULL;
+        path_depth = 0;
     }
 
     virtual ~ArgsURI()
@@ -134,7 +165,14 @@ public:
                 delete (*temporaries)[i];
             }
             delete temporaries;
+            temporaries = NULL;
         }
+        if (path_copy) {
+            free(path_copy);
+            path_copy = NULL;
+            path_depth = 0;
+        }
+
         // clear comps
         if(comps.url_copy) {
             free(comps.url_copy);
@@ -196,20 +234,41 @@ public:
 
         while ((value = token = strsep(&copy, "&")) != NULL) {
             name = strsep(&value, "=");
+            url_decode(name, name, 0);
             if (value == NULL) {
                 set(name, "");
             } else {
+                url_decode(value, value, 0);
                 set(name, value);
             }
         }
-        add_unnamed(comps.path);
+        printf("%s:", comps.path);
+        store_path(comps.path);
+        printf("%s -> %d [", full_path.c_str(), path_depth);
+        for (int i=0;i<path_depth;i++) {
+            printf("%s, ", path_parts[i]);
+        } printf("]\n");
 
         return find_api_call(hdr->Method, comps.route, comps.command);
     }
 
-    const char *get_path(void)
+
+    int get_path_depth(void)
     {
-        return get_unnamed_arg(0);
+        return path_depth;
+    }
+
+    const char *get_full_path()
+    {
+        return full_path.c_str();
+    }
+
+    const char *get_path(int index)
+    {
+        if ((index < 0) || (index >= path_depth)) {
+            return NULL;
+        }
+        return path_parts[index];
     }
 
     int get_int(const char *key, int alt)

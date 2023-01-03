@@ -75,10 +75,10 @@ void api_mount(ResponseWrapper *resp, const char *fn, const char *drive, const c
 
 API_CALL(PUT, drives, mount, NULL, ARRAY({{ "image", P_REQUIRED }, { "type", P_OPTIONAL }, { "mode", P_OPTIONAL } }))
 {
-    printf("Mount disk from path '%s' on drive '%s'\n", args["image"], args.get_path());
+    printf("Mount disk from path '%s' on drive '%s'\n", args["image"], args.get_path(0));
     char ext[4];
     get_extension(args["image"], ext);
-    api_mount(resp, args["image"], args.get_path(), args.get_or("type", ext), args["mode"]);
+    api_mount(resp, args["image"], args.get_path(0), args.get_or("type", ext), args["mode"]);
 }
 
 API_CALL(POST, drives, mount, &attachment_writer, ARRAY({ { "type", P_OPTIONAL }, { "mode", P_OPTIONAL } }))
@@ -93,7 +93,7 @@ API_CALL(POST, drives, mount, &attachment_writer, ARRAY({ { "type", P_OPTIONAL }
     printf("Mount disk from upload: '%s'\n", fn);
     char ext[4];
     get_extension(fn, ext);
-    api_mount(resp, fn, args.get_path(), args.get_or("type", ext), args["mode"]);
+    api_mount(resp, fn, args.get_path(0), args.get_or("type", ext), args["mode"]);
 
     //auto lamb = [] () { printf("Hello!\n"); };
     //lamb();
@@ -106,7 +106,7 @@ API_CALL(POST, drives, mount, &attachment_writer, ARRAY({ { "type", P_OPTIONAL }
 
 static void simple_drive_command(ArgsURI& args, ResponseWrapper *resp, int command)
 {
-    const char *drive = args.get_path();
+    const char *drive = args.get_path(0);
     int subsys_id = driveToSubsys[drive];
     if (subsys_id < 0) {
         resp->error("Invalid Drive '%s'", drive);
@@ -167,7 +167,7 @@ API_CALL(POST, drives, load_rom, &attachment_writer, ARRAY({ }))
 
 API_CALL(PUT, drives, set_mode, NULL, ARRAY({{ "mode", P_REQUIRED }}))
 {
-    const char *drive = args.get_path();
+    const char *drive = args.get_path(0);
     int subsys_id = driveToSubsys[drive];
     if (subsys_id < 0) {
         resp->error("Invalid Drive '%s'", drive);
