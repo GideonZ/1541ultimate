@@ -47,10 +47,11 @@ extern "C" {
  */
 typedef enum {
     JSMN_UNDEFINED = 0,
-    JSMN_OBJECT = 1 << 0,
-    JSMN_ARRAY = 1 << 1,
-    JSMN_STRING = 1 << 2,
-    JSMN_PRIMITIVE = 1 << 3
+    JSMN_OBJECT,// = 1 << 0,
+    JSMN_ARRAY,// = 1 << 1,
+    JSMN_STRING,// = 1 << 2,
+    JSMN_PRIMITIVE,// = 1 << 3
+    JSMN_KEY, // strings can get converted to keys
 } jsmntype_t;
 
 enum jsmnerr {
@@ -59,7 +60,9 @@ enum jsmnerr {
     /* Invalid character inside JSON string */
     JSMN_ERROR_INVAL = -2,
     /* The string is not a full JSON packet, more bytes expected */
-    JSMN_ERROR_PART = -3
+    JSMN_ERROR_PART = -3,
+    /* The conversion to JSON objects failed; illegal structure detected */
+    JSMN_ERROR_ILLEGAL = -4,
 };
 
 /**

@@ -9,17 +9,23 @@
 class JSON_Object;
 class JSON_List;
 
+typedef enum {
+    eBase = 0,
+    eString,
+    eInteger,
+    eBool,
+    eObject,
+    eList,
+} JsonType_t;
+
 class JSON
 {
-public:
-    JSON() { }
-    virtual const char *render() {
-        return "base?";
-    }
-    virtual void render(StreamRamFile *s) {
-        s->format("base?");
-    }
-    virtual ~JSON() { }
+  public:
+    JSON() {}
+    virtual const char *render() { return "base?"; }
+    virtual void render(StreamRamFile *s) { s->format("base?"); }
+    virtual ~JSON() {}
+    virtual JsonType_t type() { return eBase; }
     static JSON_List *List();
     static JSON_Object *Obj();
 };
@@ -27,14 +33,20 @@ public:
 class JSON_String : public JSON
 {
     mstring str;
+    mstring renderspace;
 public:
     JSON_String(const char *s) {
-        str = "\"";
         str += s;
-        str += "\"";
     }
-    const char *render() { return str.c_str(); }
-    void render(StreamRamFile *s) { s->format("%s", str.c_str()); }
+    JsonType_t type() { return eString; }
+    const char *get_string() { return str.c_str(); }
+    const char *render() {
+        renderspace = "\"";
+        renderspace += str;
+        renderspace += "\"";
+        return renderspace.c_str();
+    }
+    void render(StreamRamFile *s) { s->format("\"%s\"", str.c_str()); }
 };
 
 class JSON_Integer : public JSON
@@ -43,6 +55,7 @@ class JSON_Integer : public JSON
     char work[12];
 public:
     JSON_Integer(int v) : value(v) {}
+    JsonType_t type() { return eInteger; }
     const char *render() {
         sprintf(work, "%d", value);
         return work;
@@ -55,6 +68,7 @@ class JSON_Bool : public JSON
     bool value;
 public:
     JSON_Bool(int v) : value(v) {}
+    JsonType_t type() { return eBool; }
     const char *render() {
         return value ? "true" : "false";
     }
@@ -70,6 +84,7 @@ class JSON_Object : public JSON
     mstring renderspace;
 public:
     JSON_Object() : keys(4, NULL), values(4, NULL) { }
+    JsonType_t type() { return eObject; }
 
     ~JSON_Object() {
         for (int i=0;i<values.get_elements();i++) {
@@ -123,6 +138,14 @@ public:
         }
         s->charout('}');
     }
+
+    IndexedList<const char *> *get_keys() {
+        return &keys;
+    }
+
+    IndexedList<JSON *> *get_values() {
+        return &values;
+    }
 };
 
 class JSON_List : public JSON
@@ -131,6 +154,7 @@ class JSON_List : public JSON
     mstring renderspace;
 public:
     JSON_List() : members(4, NULL) { }
+    JsonType_t type() { return eList; }
 
     ~JSON_List() {
         for (int i=0;i<members.get_elements();i++) {
