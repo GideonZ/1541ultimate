@@ -183,5 +183,6 @@ public:
 
 };
 
+int convert_text_to_json_objects(char *text, size_t text_size, size_t max_tokens, JSON **out);
 
 #endif
