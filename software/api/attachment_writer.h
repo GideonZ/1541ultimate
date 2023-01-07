@@ -10,15 +10,17 @@ extern "C" {
 class TempfileWriter
 {
     IndexedList<const char *> filenames;
+    IndexedList<size_t> filesizes;
+    IndexedList<uint8_t *>filebuffers;
     static int temp_count;
     FILE *fo;
-    
+    size_t file_size;    
     HTTPReqMessage *req;
     HTTPRespMessage *resp;
     ArgsURI *args;
     const ApiCall_t *func;
 public:
-    TempfileWriter() : filenames(4, NULL) {
+    TempfileWriter() : filenames(4, NULL), filesizes(4, 0), filebuffers(4, NULL) {
         fo = NULL;
         req = NULL;
         resp = NULL;
@@ -31,6 +33,9 @@ public:
         // filenames were created with strdup, so we need to free them here
         for (int i=0; i<filenames.get_elements(); i++) {
             free((char *)filenames[i]);
+        }
+        for (int i=0; i<filebuffers.get_elements(); i++) {
+            free(filebuffers[i]);
         }
     }
 
@@ -61,6 +66,7 @@ public:
                 sprintf(filename, FILE_PATH "temp%04x", temp_count++);
                 filenames.append(strdup(filename));
                 fo = fopen(filename, "wb");
+                file_size = 0;
                 break;
             case eSubHeader:
                 sprintf(filename, FILE_PATH "temp%04x", temp_count++);
@@ -81,14 +87,17 @@ public:
                 }
                 filenames.append(strdup(filename));
                 fo = fopen(filename, "wb");
+                file_size = 0;
                 break;
             case eDataBlock:
                 if (fo) {
                     fwrite(block->data, 1, block->length, fo);
+                    file_size += block->length;
                 }
                 break;
             case eDataEnd:
                 if (fo) {
+                    filesizes.append(file_size);
                     fclose(fo);
                     fo = NULL;
                 }
@@ -100,7 +109,7 @@ public:
                 }
                 printf("Uploaded files:\n");
                 for (int i=0;i<filenames.get_elements();i++) {
-                    printf("  '%s'\n", filenames[i]);
+                    printf("  '%s' (%d)\n", filenames[i], filesizes[i]);
                 }
                 // The actual function should now be called to do something with these files
                 if (func) {
@@ -119,6 +128,39 @@ public:
     const char *get_filename(int index)
     {
         return filenames[index];
+    }
+    size_t get_filesize(int index)
+    {
+        return filesizes[index];
+    }
+    uint8_t *get_buffer(int index)
+    {
+        return filebuffers[index];
+    }
+
+    int buffer_file(int index, size_t max_size)
+    {
+        size_t size = filesizes[index];
+        if (size == 0) {
+            return -1; // no data
+        }
+        if (size > max_size) {
+            return -2; // too large
+        }
+
+        uint8_t *buffer = (uint8_t *)malloc(size);
+        if (buffer) {
+            FILE *f = fopen(get_filename(index), "rb");
+            if (f) {
+                fread(buffer, size, 1, f);
+                fclose(f);
+                filebuffers.append(buffer);
+                return 0; // success
+            }
+            free(buffer);
+            return -4; // can't open file
+        }
+        return -3; // no mem
     }
 };
 
