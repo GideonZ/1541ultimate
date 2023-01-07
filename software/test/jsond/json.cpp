@@ -72,3 +72,19 @@ TEST_F(JSONDecodeTest, ReadConfig)
         delete obj2;
     }
 }
+
+TEST_F(JSONDecodeTest, ReadNotSoGreatConfig)
+{
+    read_file("cfg2.json");
+
+    JSON *obj = NULL;
+
+    int tokens = convert_text_to_json_objects(raw_space, used_bytes, 256, &obj);
+
+    EXPECT_EQ(tokens, -4);
+    EXPECT_EQ((long)obj, 0);
+    
+    if (obj) {
+        delete obj;
+    }
+}

@@ -250,7 +250,7 @@ bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log)
             for(int i=1;i<128;i++) {
                 if (line[i] == ']') {
                     line[i] = 0;
-                    store = S_find_store(cm, line + 1);
+                    store = cm->find_store(line + 1);
                     if (!store) {
                         log->format("Line %d: Store name '%s' not found.\n", linenr, line + 1);
                     }
@@ -270,17 +270,6 @@ bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log)
         }
     }
     return allOK;
-}
-
-ConfigStore *ConfigIO :: S_find_store(ConfigManager *cm, char *storename)
-{
-    for(int i=0; i < cm->stores.get_elements(); i++) {
-        ConfigStore *st = cm->stores[i];
-        if (strcasecmp(st->store_name.c_str(), storename) == 0) {
-            return st;
-        }
-    }
-    return NULL;
 }
 
 bool ConfigIO :: S_read_store_element(ConfigStore *st, const char *line, int linenr, StreamTextLog *log)
@@ -307,13 +296,7 @@ bool ConfigIO :: S_read_store_element(ConfigStore *st, const char *line, int lin
         return false;
     }
     // now look for the store element with the itemname
-    ConfigItem *item = 0;
-    for(int n = 0; n < st->items.get_elements(); n++) {
-        if (strcasecmp(itemname, st->items[n]->definition->item_text) == 0) {
-            item = st->items[n];
-            break;
-        }
-    }
+    ConfigItem *item = st->find_item(itemname);
     if (!item) {
         log->format("Line %d: Item '%s' not found in this store [%s].\n", linenr, itemname, st->store_name.c_str());
         return false;

@@ -153,6 +153,7 @@ public:
     ConfigurableObject *get_first_object(void) { return objects[0]; }
 
     ConfigItem *find_item(uint8_t id);
+    ConfigItem *find_item(const char *str);
     int  get_value(uint8_t id);
     const char *get_store_name() { return store_name.c_str(); }
     const char *get_string(uint8_t id);
@@ -224,6 +225,7 @@ public:
 	}
     
     ConfigStore *register_store(uint32_t page_id, const char *name, t_cfg_definition *defs, ConfigurableObject *ob);
+    ConfigStore *find_store(const char *storename);
     void add_custom_store(ConfigStore *cfg);
     void remove_store(ConfigStore *cfg);
 
