@@ -173,7 +173,7 @@ API_CALL(GET, configs, none, NULL, ARRAY ( { } ))
     resp->json_response(HTTP_OK);
 }
 
-API_CALL(PUT, configs, none, NULL, ARRAY ( { {"value", P_OPTIONAL }} ))
+API_CALL(PUT, configs, none, NULL, ARRAY ( { {"value", P_REQUIRED }} ))
 {
     ConfigManager *cfg = ConfigManager::getConfigManager();
     IndexedList<ConfigStore *> *stores = cfg->getStores();
@@ -264,4 +264,96 @@ API_CALL(POST, configs, none, &attachment_writer, ARRAY ( { } ))
     }
     //resp->json->add("parsed", obj); // now it's owned by the reply! no need to clean up
     delete obj;
+}
+
+
+API_CALL(PUT, configs, load_from_flash, NULL, ARRAY ( {  } ))
+{
+    ConfigManager *cm = ConfigManager :: getConfigManager();
+    ConfigStore *s;
+    IndexedList<ConfigStore *> *stores = cm->getStores();
+    int path_elements = args.get_path_depth();
+    if (path_elements > 1) {
+        resp->error("Path depth exceeds 1.");
+        resp->json_response(HTTP_BAD_REQUEST);
+        return;
+    }
+    JSON_List *list = NULL;
+    if (path_elements == 1) {
+        list = JSON::List();
+        resp->json->add("loaded", list);
+    }
+    for(int n = 0; n < (*stores).get_elements();n++) {
+        s = (*stores)[n];
+        if ((path_elements == 0) || (pattern_match(args.get_path(0), s->get_store_name()))) {
+            s->read(false);
+            s->effectuate();
+            if (path_elements == 1) {
+                list->add(s->get_store_name());
+            }
+        }
+    }
+    resp->json_response(HTTP_OK);
+}
+
+API_CALL(PUT, configs, save_to_flash, NULL, ARRAY ( {  } ))
+{
+    ConfigManager *cm = ConfigManager :: getConfigManager();
+    ConfigStore *s;
+    IndexedList<ConfigStore *> *stores = cm->getStores();
+    int path_elements = args.get_path_depth();
+
+    if (path_elements > 1) {
+        resp->error("Path depth exceeds 1.");
+        resp->json_response(HTTP_BAD_REQUEST);
+        return;
+    }
+    JSON_List *list = NULL;
+    if (path_elements == 1) {
+        list = JSON::List();
+        resp->json->add("written", list);
+    }
+    for(int n = 0; n < (*stores).get_elements();n++) {
+        s = (*stores)[n];
+        if ((path_elements == 0) || (pattern_match(args.get_path(0), s->get_store_name()))) {
+            if (s->is_flash_stale()) {
+                s->write();
+                if (path_elements == 1) {
+                    list->add(s->get_store_name());
+                }
+            }
+        }
+    }
+    resp->json_response(HTTP_OK);
+}
+
+API_CALL(PUT, configs, reset_to_default, NULL, ARRAY ( {  } ))
+{
+    ConfigManager *cm = ConfigManager :: getConfigManager();
+    ConfigStore *s;
+    IndexedList<ConfigStore *> *stores = cm->getStores();
+    int path_elements = args.get_path_depth();
+
+    if (path_elements > 1) {
+        resp->error("Path depth exceeds 1.");
+        resp->json_response(HTTP_BAD_REQUEST);
+        return;
+    }
+    JSON_List *list = NULL;
+    if (path_elements == 1) {
+        list = JSON::List();
+        resp->json->add("reset", list);
+    }
+
+    for(int n = 0; n < (*stores).get_elements();n++) {
+        s = (*stores)[n];
+        if ((path_elements == 0) || (pattern_match(args.get_path(0), s->get_store_name()))) {
+            s->reset();
+            s->effectuate();
+            if (path_elements == 1) {
+                list->add(s->get_store_name());
+            }
+        }
+    }
+    resp->json_response(HTTP_OK);
 }
