@@ -18,6 +18,7 @@ public:
 
     int   fetch_context_items(IndexedList<Action *> &list);
     static FileType *test_type(BrowsableDirEntry *obj);
+    static SubsysResultCode_t start_prg(const char *filename, bool run);
 };
 
 

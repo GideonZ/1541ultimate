@@ -12,6 +12,14 @@
 #include "sid_config.h"
 #include "endianness.h"
 
+#define SIDERR_OPEN_FAILED 1
+#define SIDERR_SEEK_FAILED 2
+#define SIDERR_READ_FAILED 3
+#define SIDERR_MAGIC_FAILED 4
+#define SIDERR_INTERNAL 5
+#define SIDERR_NO_MEM 6
+#define SIDERR_ROLLOVER 7
+
 extern uint8_t _sidcrt_bin_start;
 extern uint8_t _sidcrt_bin_end;
 extern uint8_t _muscrt_bin_start;
@@ -206,13 +214,13 @@ int FileTypeSID :: readHeader(void)
 
 		if (fres != FR_OK) {
 			printf("opening file was not successful. %s\n", FileSystem :: get_error_string(fres));
-			return -3;
+			return SIDERR_OPEN_FAILED;
 		}
 	} else {
 		if (file->seek(0) != FR_OK) {
 			fm->fclose(file);
 			file = NULL;
-			return -1;
+			return SIDERR_SEEK_FAILED;
 		}
 	}
 
@@ -220,7 +228,7 @@ int FileTypeSID :: readHeader(void)
 	if (fres != FR_OK) {
 		fm->fclose(file);
 		file = NULL;
-		return -1;
+		return SIDERR_READ_FAILED;
 	}
 
     // header checks
@@ -229,7 +237,7 @@ int FileTypeSID :: readHeader(void)
         printf("Filetype not as expected. (%08x)\n", *magic);
 		fm->fclose(file);
 		file = NULL;
-        return -1;
+        return SIDERR_MAGIC_FAILED;
     }
 
 	fm->fclose(file);
@@ -429,14 +437,20 @@ int FileTypeSID :: execute_st(SubsysCommand *cmd)
 	return ((FileTypeSID *)cmd->mode)->execute(cmd);
 }
 
-int FileTypeSID :: execute(SubsysCommand *cmd)
+const char *FileTypeSID :: get_error(int err)
 {
-	int error = 0;
 	const char *errors[] = { "", "Can't open file",
 		"File seek failed", "Can't read header",
 		"File type error", "Internal error",
 		"No memory location for player data",
 	    "Illegal: Load rolls over $FFFF" };
+
+	return errors[err];
+}
+
+int FileTypeSID :: execute(SubsysCommand *cmd)
+{
+	int error = 0;
 
 	int selection = cmd->functionID;
 	this->cmd = cmd;
@@ -450,20 +464,20 @@ int FileTypeSID :: execute(SubsysCommand *cmd)
 		error = prepare(false);
 	} else {
 		this->cmd = 0;
-		return -2;
+		return SSRET_UNDEFINED_COMMAND;
 	}
 	if (error) {
 		if (cmd->user_interface) {
-			cmd->user_interface->popup((char*)errors[error], BUTTON_OK);
+			cmd->user_interface->popup(get_error(error), BUTTON_OK);
 		} else {
-			printf("Error: %s\n", errors[error]);
+			printf("Error: %s\n", get_error(error));
 		}
 		if (file) {
 			fm->fclose(file);
 			file = NULL;
 		}
 		this->cmd = 0;
-		return -3;
+		return SSRET_GENERIC_ERROR;
 	}
 	this->cmd = 0;
 	return 0;
@@ -584,11 +598,11 @@ int FileTypeSID :: prepare(bool use_default)
 		printf("Open: '%s' / '%s'\n", path_string.c_str(), filename);
 		if (fm->fopen(path_string.c_str(), filename, FA_READ, &file) != FR_OK) {
 			file = NULL;
-			return 1;
+			return SIDERR_OPEN_FAILED;
 		}
 	}
 	if (file->seek(0) != FR_OK) {
-		return 2;
+		return SIDERR_SEEK_FAILED;
 	}
 
 	int bytesToSkip = 0;
@@ -601,15 +615,15 @@ int FileTypeSID :: prepare(bool use_default)
 		bytesToSkip = 2;
 
 		if (file->seek(data_offset + bytesToSkip) != FR_OK) {
-			return 2;
+			return SIDERR_SEEK_FAILED;
 		}
 	} else {
 		if (file->read(sid_header, 0x7E, &bytes_read) != FR_OK) {
-			return 3;
+			return SIDERR_READ_FAILED;
 		}
 		if ((*magic != magic_rsid)&&(*magic != magic_psid)) {
 			printf("Filetype not as expected. (%08x)\n", *magic);
-			return 4;
+			return SIDERR_MAGIC_FAILED;
 		}
 
 		processHeader();
@@ -619,18 +633,18 @@ int FileTypeSID :: prepare(bool use_default)
 			bytesToSkip = 2;
 
 			if (file->seek(data_offset + bytesToSkip) != FR_OK) {
-				return 2;
+				return SIDERR_SEEK_FAILED;
 			}
 		} else {
 			if (file->seek(data_offset) != FR_OK) {
-				return 2;
+				return SIDERR_SEEK_FAILED;
 			}
 			start = uint16_t(sid_header[0x08]) << 8;
 			start |= sid_header[0x09];
 
 			if (start == 0) {
 				if (file->read(&start, 2, &bytes_read) != FR_OK) {
-					return 3;
+					return SIDERR_READ_FAILED;
 				}
 			}
 			bytesToSkip = 2;
@@ -646,7 +660,7 @@ int FileTypeSID :: prepare(bool use_default)
 
 	if (end < start) {
 		printf("Wrap around $0000!\n");
-		return 7;
+		return SIDERR_ROLLOVER;
 	}
 
 	if (start >= 0x03c0) {
@@ -655,7 +669,7 @@ int FileTypeSID :: prepare(bool use_default)
 		header_location = 0xff70;
 	} else {
 		printf("Space for header too small.\n");
-		return 6;
+		return SIDERR_NO_MEM;
 	}
 
     printf("SID header address: %04x.\n", header_location);

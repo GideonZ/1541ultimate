@@ -40,6 +40,7 @@ class FileTypeSID : public FileType
     void readSongLengths(void);
 	void configureMusEnv(int offsetLoadEnd);
     bool ConfigSIDs(void);
+	const char *get_error(int);
 public:
     FileTypeSID(BrowsableDirEntry *n);
 	FileTypeSID(const char *filename, const char *sslfile, bool mus);
