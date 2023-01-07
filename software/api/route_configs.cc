@@ -1,6 +1,7 @@
 #include "routes.h"
 #include "pattern.h"
 #include "config.h"
+#include "attachment_writer.h"
 
 void emit_store(ConfigStore *st, JSON_Object *pobj, ArgsURI &args)
 {
@@ -157,7 +158,27 @@ API_CALL(PUT, configs, none, NULL, ARRAY ( { {"value", P_OPTIONAL }} ))
     resp->json_response(HTTP_OK);
 }
 
-//API_CALL(POST, configs, none, &attachment_writer, ARRAY ( { } ))
-//{
-//
-//}
+API_CALL(POST, configs, none, &attachment_writer, ARRAY ( { } ))
+{
+    if (strcasecmp(req->ContentType, "application/json") != 0)  {
+        resp->error("Content type should be 'application/json'.");
+        resp->json_response(HTTP_BAD_REQUEST);
+        return;
+    }
+    TempfileWriter *handler = (TempfileWriter *)body;
+    if (handler->buffer_file(0, 32768) != 0) {
+        resp->error("Could not buffer attachment.");
+        resp->json_response(HTTP_INTERNAL_SERVER_ERROR);
+        return;
+    }
+    JSON *obj = NULL;
+    char *text = (char *)handler->get_buffer(0);
+    int tokens = convert_text_to_json_objects(text, handler->get_filesize(0), 1024, &obj);
+    if (tokens < 0) {
+        resp->error("JSON content could not be parsed. Error: %d", tokens);
+        resp->json_response(HTTP_BAD_REQUEST);
+        return;
+    }
+    resp->json->add("parsed", obj); // now it's owned by the reply! no need to clean up
+    resp->json_response(HTTP_OK);
+}
