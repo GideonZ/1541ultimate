@@ -143,7 +143,7 @@ bool apply_config(ResponseWrapper *resp, JSON *obj)
         // store is valid and items is an object
         JSON_Object *itemsObj = (JSON_Object *)items;
         success &= apply_store(resp, store, itemsObj);
-        store->effectuate();
+        store->at_close_config();
     }
     return success;
 }
@@ -229,7 +229,7 @@ API_CALL(PUT, configs, none, NULL, ARRAY ( { {"value", P_REQUIRED }} ))
 
     // now we know what item should be configured, and how to 'read' the string
     if (set_item(resp, item, valuestr)) {
-        st->effectuate();
+        st->at_close_config();
         resp->json_response(HTTP_OK);
     } else {
         resp->json_response(HTTP_BAD_REQUEST);
@@ -287,7 +287,7 @@ API_CALL(PUT, configs, load_from_flash, NULL, ARRAY ( {  } ))
         s = (*stores)[n];
         if ((path_elements == 0) || (pattern_match(args.get_path(0), s->get_store_name()))) {
             s->read(false);
-            s->effectuate();
+            s->at_close_config();
             if (path_elements == 1) {
                 list->add(s->get_store_name());
             }
@@ -309,18 +309,15 @@ API_CALL(PUT, configs, save_to_flash, NULL, ARRAY ( {  } ))
         return;
     }
     JSON_List *list = NULL;
-    if (path_elements == 1) {
-        list = JSON::List();
-        resp->json->add("written", list);
-    }
+    list = JSON::List();
+    resp->json->add("written", list);
+
     for(int n = 0; n < (*stores).get_elements();n++) {
         s = (*stores)[n];
         if ((path_elements == 0) || (pattern_match(args.get_path(0), s->get_store_name()))) {
             if (s->is_flash_stale()) {
                 s->write();
-                if (path_elements == 1) {
-                    list->add(s->get_store_name());
-                }
+                list->add(s->get_store_name());
             }
         }
     }
