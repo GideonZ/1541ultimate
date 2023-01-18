@@ -1051,18 +1051,24 @@ int U64Config :: setSidEmuParams(ConfigItem *it)
 #define MENU_U64_WIFI_BOOT 5
 #define MENU_U64_DETECT_SIDS 6
 #define MENU_U64_POKE 7
+#define MENU_U64_SAVE_FLASH_FS 8
+#define MENU_U64_SAVE_FLASH 9
 
 void U64Config :: create_task_items(void)
 {
     TaskCategory *dev = TasksCollection :: getCategory("Developer", SORT_ORDER_DEVELOPER);
     myActions.poke      = new Action("Poke", SUBSYSID_U64, MENU_U64_POKE);
     myActions.saveedid  = new Action("Save EDID to file", SUBSYSID_U64, MENU_U64_SAVEEDID);
+    myActions.saveflash1= new Action("Save Flash FS", SUBSYSID_U64, MENU_U64_SAVE_FLASH_FS);
+    myActions.saveflash2= new Action("Save Entire Flash", SUBSYSID_U64, MENU_U64_SAVE_FLASH);
     myActions.siddetect = new Action("Detect SIDs", SUBSYSID_U64, MENU_U64_DETECT_SIDS);
     myActions.wifioff   = new Action("Disable WiFi", SUBSYSID_U64, MENU_U64_WIFI_DISABLE);
     myActions.wifion    = new Action("Enable WiFi",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE);
     myActions.wifiboot  = new Action("Enable WiFi Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT);
 
     dev->append(myActions.saveedid );
+    dev->append(myActions.saveflash1);
+    dev->append(myActions.saveflash2);
 #if DEVELOPER > 0
     dev->append(myActions.poke     );
     dev->append(myActions.siddetect);
@@ -1092,6 +1098,9 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
 	I2C_Driver i2c;
 	static char poke_buffer[16];
 	uint32_t addr, value;
+    Flash *flash;
+    uint8_t *bufje;
+    t_flash_address flash_addr;
 
 	switch(cmd->functionID) {
     case MENU_U64_SAVEEDID:
@@ -1118,6 +1127,56 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
     		}
     	}
     	break;
+
+    case MENU_U64_SAVE_FLASH:
+        flash = get_flash();
+        if (!flash) {
+            break;
+        }
+
+        if (cmd->user_interface->string_box("Save Flash Chip to File:", name, 31) > 0) {
+            set_extension(name, ".bin", 32);
+            fres = fm->fopen(cmd->path.c_str(), name, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+            if (fres == FR_OK) {
+                bufje = new uint8_t[4096];
+                cmd->user_interface->show_progress("Saving...", 2048);
+                for (uint32_t offs = 0; offs < 0x800000; offs += 4096) {
+                    flash->read_linear_addr(offs, 4096, bufje);
+                    f->write(bufje, 4096, &trans);
+                    cmd->user_interface->update_progress(NULL, 1);
+                }
+                cmd->user_interface->hide_progress();
+                fm->fclose(f);
+                delete[] bufje;
+            }
+        }
+        break;
+
+    case MENU_U64_SAVE_FLASH_FS:
+        flash = get_flash();
+        if (!flash) {
+            break;
+        }
+
+        if (cmd->user_interface->string_box("Save Flash Filesystem:", name, 31) > 0) {
+            set_extension(name, ".fs", 32);
+            fres = fm->fopen(cmd->path.c_str(), name, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+            if (fres == FR_OK) {
+                bufje = new uint8_t[4096];
+                flash->get_image_addresses(FLASH_ID_FLASHDRIVE, &flash_addr);
+                cmd->user_interface->show_progress("Saving...", 1000);
+                for (uint32_t offs = 0; offs < flash_addr.max_length; offs += 4096) {
+                    flash->read_linear_addr(flash_addr.start + offs, 4096, bufje);
+                    f->write(bufje, 4096, &trans);
+                    cmd->user_interface->update_progress(NULL, 1);
+                }
+                cmd->user_interface->hide_progress();
+                fm->fclose(f);
+                delete[] bufje;
+            }
+        }
+        break;
+
 #if 0
     case MENU_U64_SAVEEEPROM:
         // Try to read EDID, just a hardware test

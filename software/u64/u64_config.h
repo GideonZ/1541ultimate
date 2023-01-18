@@ -31,6 +31,8 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
         Action *wifioff;
         Action *wifion;
         Action *wifiboot;
+        Action *saveflash1;
+        Action *saveflash2;
     } myActions;
 
     t_video_mode systemMode;
