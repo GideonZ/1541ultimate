@@ -101,6 +101,9 @@ public:
 
     void error(const char *fmt, ...)
     {
+        if (!fmt) {
+            return;
+        }
         // TODO should be dynamic. Maybe mstring should have a format function!
         char msg[200];
         va_list ap;

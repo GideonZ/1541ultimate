@@ -153,6 +153,7 @@ SubsysResultCode_t C64_Subsys::executeCommand(SubsysCommand *cmd)
     int ram_size;
     char buffer[64] = "memory";
     uint8_t *pb;
+    SubsysResultCode_t result = SSRET_OK;
 
     switch (cmd->functionID) {
         case C64_PUSH_BUTTON:
@@ -322,6 +323,8 @@ SubsysResultCode_t C64_Subsys::executeCommand(SubsysCommand *cmd)
             if (res == FR_OK) {
                 dma_load(f, NULL, 0, cmd->filename.c_str(), cmd->mode, c64->cfg->get_value(CFG_C64_DMA_ID));
                 fm->fclose(f);
+            } else {
+                result = SSRET_CANNOT_OPEN_FILE;
             }
             break;
 
@@ -331,6 +334,8 @@ SubsysResultCode_t C64_Subsys::executeCommand(SubsysCommand *cmd)
             if (res == FR_OK) {
                 dma_load(f, NULL, 0, cmd->filename.c_str(), cmd->mode, c1541_A->get_current_iec_address());
                 fm->fclose(f);
+            } else {
+                result = SSRET_CANNOT_OPEN_FILE;
             }
             break;
 #endif
@@ -339,6 +344,8 @@ SubsysResultCode_t C64_Subsys::executeCommand(SubsysCommand *cmd)
             if (res == FR_OK) {
                 dma_load_raw(f);
                 fm->fclose(f);
+            } else {
+                result = SSRET_CANNOT_OPEN_FILE;
             }
             break;
         case C64_DRIVE_LOAD:
@@ -439,7 +446,7 @@ SubsysResultCode_t C64_Subsys::executeCommand(SubsysCommand *cmd)
             break;
     }
 
-    return SSRET_OK;
+    return result;
 }
 
 int C64_Subsys :: dma_load_raw(File *f)

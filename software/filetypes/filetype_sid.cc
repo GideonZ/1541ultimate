@@ -19,6 +19,8 @@
 #define SIDERR_INTERNAL 5
 #define SIDERR_NO_MEM 6
 #define SIDERR_ROLLOVER 7
+#define SIDERR_SONGNR 8
+#define SIDERR_UNKNOWN 9
 
 extern uint8_t _sidcrt_bin_start;
 extern uint8_t _sidcrt_bin_end;
@@ -443,7 +445,8 @@ const char *FileTypeSID :: get_error(int err)
 		"File seek failed", "Can't read header",
 		"File type error", "Internal error",
 		"No memory location for player data",
-	    "Illegal: Load rolls over $FFFF" };
+	    "Illegal: Load rolls over $FFFF",
+		"Song Number out of Range", "Unknown Command" };
 
 	return errors[err];
 }
@@ -464,7 +467,7 @@ int FileTypeSID :: execute(SubsysCommand *cmd)
 		error = prepare(false);
 	} else {
 		this->cmd = 0;
-		return SSRET_UNDEFINED_COMMAND;
+		return SIDERR_UNKNOWN;
 	}
 	if (error) {
 		if (cmd->user_interface) {
@@ -477,7 +480,7 @@ int FileTypeSID :: execute(SubsysCommand *cmd)
 			file = NULL;
 		}
 		this->cmd = 0;
-		return SSRET_GENERIC_ERROR;
+		return error;
 	}
 	this->cmd = 0;
 	return 0;
@@ -684,6 +687,10 @@ int FileTypeSID :: prepare(bool use_default)
 	if (use_default) {
 		song = default_song;
 		printf("Default song = %d\n", song + 1);
+	}
+
+	if (song > number_of_songs) {
+		return SIDERR_SONGNR;
 	}
 
 	// write back the default song, for some players that only look here

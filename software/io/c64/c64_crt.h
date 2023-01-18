@@ -3,6 +3,7 @@
 
 #include "filemanager.h"
 #include "c64.h"
+#include "subsys.h"
 
 #define CARTS_DIRECTORY "/flash/carts"
 
@@ -82,17 +83,17 @@ class C64_CRT
     void initialize(uint8_t *mem);
     void cleanup(void);
 
-    int  check_header(File *f, cart_def *def);
-    int  read_chip_packet(File *f, t_crt_chip_chunk *chunk);
+    int check_header(File *f, cart_def *def);
+    int read_chip_packet(File *f, t_crt_chip_chunk *chunk);
     void clear_cart_mem(void);
     void patch_easyflash_eapi();
     void unpatch_easyflash_eapi();
     void regenerate_easyflash_chunks();
-    int  read_crt(File *file, cart_def *def);
+    SubsysResultCode_t read_crt(File *file, cart_def *def);
     void configure_cart(cart_def *def);
     void find_eeprom(void);
 public:
-    static int load_crt(const char *path, const char *filename, cart_def *def, uint8_t *mem);
+    static SubsysResultCode_t load_crt(const char *path, const char *filename, cart_def *def, uint8_t *mem);
     static int save_crt(File *f);
     static int clear_crt(void);
     static bool is_valid(void);

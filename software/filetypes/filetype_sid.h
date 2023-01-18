@@ -40,7 +40,6 @@ class FileTypeSID : public FileType
     void readSongLengths(void);
 	void configureMusEnv(int offsetLoadEnd);
     bool ConfigSIDs(void);
-	const char *get_error(int);
 public:
     FileTypeSID(BrowsableDirEntry *n);
 	FileTypeSID(const char *filename, const char *sslfile, bool mus);
@@ -50,6 +49,7 @@ public:
     int fetch_context_items(IndexedList<Action *> &list);
     static FileType *test_type(BrowsableDirEntry *obj);
 	static int play_file(const char *filename, const char *sslfile, int song);
+	static const char *get_error(int);
 };
 
 #endif

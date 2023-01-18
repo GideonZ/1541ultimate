@@ -16,6 +16,7 @@ public:
     static FileType *test_type(BrowsableDirEntry *obj);
 
     static int execute_st(SubsysCommand *cmd);
+    static void start_modplayer();
 };
 
 

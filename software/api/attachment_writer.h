@@ -56,6 +56,7 @@ public:
     void collect(BodyDataBlock_t *block)
     {
         char filename[128];
+        char *fn;
         HTTPHeaderField *f;
 
         switch(block->type) {
@@ -76,12 +77,17 @@ public:
                         // extract filename from value string, e.g. 'form-data; name="bestand"; filename="sample.html"'
                         char *sub = strstr(f[i].value, "filename=\"");
                         if (sub) {
-                            strncpy(filename + strlen(FILE_PATH), sub + 10, 127-strlen(FILE_PATH) );
-                            filename[127] = 0;
-                            char *quote = strstr(filename, "\"");
+                            sub += 10; // remove the 'filename="' part
+                            char *quote = strstr(sub, "\"");
                             if (quote) {
                                 *quote = 0;
                             }
+                            while((*sub == '.') || (*sub == '\\') || (*sub == '/')) {
+                                sub++;
+                            }
+                            fix_filename(sub);
+                            strncpy(filename + strlen(FILE_PATH), sub, 127-strlen(FILE_PATH) );
+                            filename[127] = 0;
                         }
                     }
                 }

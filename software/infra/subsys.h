@@ -55,10 +55,16 @@ typedef enum {
 	SSRET_ONLY_1541,
 	SSRET_WRONG_DRIVE_TYPE,
 	SSRET_CANNOT_OPEN_FILE,
+	SSRET_FILE_SEEK_FAILED,
+	SSRET_FILE_READ_FAILED,
 	SSRET_WRONG_MOUNT_MODE,
 	SSRET_UNDEFINED_COMMAND,
 	SSRET_ABORTED_BY_USER,
 	SSRET_SAVE_FAILED,
+	SSRET_EEPROM_TOO_LARGE,
+	SSRET_EEPROM_ALREADY_DEFINED,
+	SSRET_ROM_IMAGE_TOO_LARGE,
+	SSRET_ERROR_IN_FILE_FORMAT,
 } SubsysResultCode_t;
 
 
@@ -186,7 +192,7 @@ public:
     static const char *error_string(SubsysResultCode_t resultCode)
     {
         static const char *error_strings[] = {
-            "All Okay",        
+            NULL,        
             "Generic Error",    
             "SubSystem does not exist", 
             "SubSystem does not implement command executer",
@@ -197,10 +203,14 @@ public:
             "This hardware only supports 1541", 
             "Drive is in the wrong mode",
             "Cannot open file",
+			"Seek operation on file failed",
+			"Read operation on file failed",
             "Illegal mount mode / drive type",
             "Undefined subsystem command",
 			"Operation aborted by user",
 			"Save failed",
+			"ROM image is too large",
+			"Error detected in file format",
         };
         return error_strings[(int)resultCode];
     }
@@ -219,10 +229,14 @@ public:
             HTTP_METHOD_NOT_ALLOWED, // "This hardware only supports 1541", 
             HTTP_UNSUPPORTED_MEDIA_TYPE, // "Drive is in the wrong mode",
             HTTP_NOT_FOUND, // "Cannot open file",
+			HTTP_INTERNAL_SERVER_ERROR, // "File seek failed"
+			HTTP_INTERNAL_SERVER_ERROR, // "File read failed"
             HTTP_INTERNAL_SERVER_ERROR, // "Illegal mount mode / drive type",
             HTTP_INTERNAL_SERVER_ERROR, // "Undefined subsystem command",
 			HTTP_INTERNAL_SERVER_ERROR, // "Aborted by user" <-- should not happen from HTTP
 			HTTP_FAILED_DEPENDENCY, // "Save failed", not sure what went wrong, but the save was unsuccessful
+			HTTP_PRECONDITION_FAILED, // ROM Image is too large
+			HTTP_UNSUPPORTED_MEDIA_TYPE, // Error detected in file format
         }; 
         return codes[(int)resultCode];
     }

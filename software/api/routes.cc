@@ -1,5 +1,6 @@
 #include "routes.h"
 #include "attachment_writer.h"
+#include "attachment_reu.h"
 #include "stream_uart.h"
 #include "dump_hex.h"
 #include <string.h>
@@ -23,6 +24,18 @@ TempfileWriter *attachment_writer(HTTPReqMessage *req, HTTPRespMessage *resp, co
     return NULL;
 }
 int TempfileWriter :: temp_count = 0;
+
+/* REU Writer */
+REUWriter *attachment_reu(HTTPReqMessage *req, HTTPRespMessage *resp, const ApiCall_t *func, ArgsURI *args)
+{
+    if (req->bodyType != eNoBody) {
+        REUWriter *writer = new REUWriter();
+        writer->create_callback(req, resp, args, (const ApiCall_t *)func);
+        setup_multipart(req, &REUWriter::collect_wrapper, writer);
+        return writer;
+    }
+    return NULL;
+}
 
 API_CALL(GET, help, none, NULL, ARRAY({{"command", P_REQUIRED}}))
 {
@@ -70,4 +83,10 @@ int execute_api_v1(HTTPReqMessage *req, HTTPRespMessage *resp)
         return -1;
     }
 }
+}
+
+API_CALL(GET, version, none, NULL, ARRAY( { }))
+{
+    resp->json->add("version", "0.1");
+    resp->json_response(HTTP_OK);
 }
