@@ -11,7 +11,7 @@ your application. */
 #define configTICK_RATE_HZ                      200
 #define configMAX_PRIORITIES                    5
 #define configMINIMAL_STACK_SIZE                1600
-//#define configTOTAL_HEAP_SIZE                   10240
+#define configTOTAL_HEAP_SIZE                   10240
 #define configMAX_TASK_NAME_LEN                 16
 #define configUSE_16_BIT_TICKS                  0
 #define configIDLE_SHOULD_YIELD                 1
@@ -84,12 +84,9 @@ void vAssertCalled( const char* fileName, uint16_t lineNo );
 
 /* A header file that defines trace macro can be included here. */
 
-
 #include "profiler.h"
-//#define traceTASK_SWITCHED_OUT(x)  PROFILER_TASK = 0;
-//#define traceTASK_SWITCHED_IN(x)   PROFILER_TASK = pxCurrentTCB->uxTCBNumber;
+#define traceTASK_SWITCHED_OUT(x)  PROFILER_TASK = 0;
+#define traceTASK_SWITCHED_IN(x)   PROFILER_TASK = pxCurrentTCB->uxTCBNumber;
 //#define traceTASK_SWITCHED_IN(x)   do { PROFILER_TASK = pxCurrentTCB->uxTCBNumber; outbyte(0x40 + (pxCurrentTCB->uxTCBNumber)); } while(0);
-
-// Our RiscV does not have MTIME, nor CLINT, because we're poor
 
 #endif /* FREERTOS_CONFIG_H */
