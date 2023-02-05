@@ -18,6 +18,7 @@
 #include "c1541.h"
 #include "data_streamer.h"
 #include "filetype_crt.h"
+#include "network_lwip.h"
 
 // "Ok ok, use them then..."
 #define SOCKET_CMD_DMA         0xFF01
@@ -449,6 +450,9 @@ void SocketDMA::identThread(void *_a)
     socklen_t client_struct_length = sizeof(cli_addr);
     int  n;
     char client_message[256];
+    char menu_header[64];
+
+    getVersionString(menu_header);
 
     /* First call to socket() function */
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -477,8 +481,9 @@ void SocketDMA::identThread(void *_a)
     }
     while(1) {
         // Receive client's message:
-        if (recvfrom(sockfd, client_message, sizeof(client_message), 0,
-            (struct sockaddr*)&cli_addr, &client_struct_length) < 0) {
+        int n = recvfrom(sockfd, client_message, sizeof(client_message), 0,
+            (struct sockaddr*)&cli_addr, &client_struct_length);
+        if (n < 0) {
             printf("Couldn't receive\n");
             return;
         }
@@ -486,7 +491,16 @@ void SocketDMA::identThread(void *_a)
             inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
         
         // Respond to client:
-        getVersionString(client_message);
+        if (n > 32) {
+            n = 32;
+        }
+
+        ConfigStore *cs = ConfigManager::getConfigManager()->find_store("Network settings");
+        const char *hostname = "Unknown";
+        if (cs) {
+            hostname = cs->get_string(CFG_NET_HOSTNAME);
+        }
+        sprintf(client_message + n, ",%s,%s", hostname, menu_header);
 
         if (sendto(sockfd, client_message, strlen(client_message), 0, (struct sockaddr *)&cli_addr,
                    client_struct_length) < 0) {
