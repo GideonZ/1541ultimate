@@ -316,7 +316,9 @@ void UserInterface :: set_screen_title()
 
     screen->clear();
     screen->move_cursor(hpos, 0);
+    screen->output("\eA");
     screen->output(title.c_str());
+    screen->output("\eO");
     screen->move_cursor(0, 1);
 	screen->repeat('\002', width);
     screen->move_cursor(0, height-1);
