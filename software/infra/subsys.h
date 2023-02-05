@@ -65,6 +65,7 @@ typedef enum {
 	SSRET_EEPROM_ALREADY_DEFINED,
 	SSRET_ROM_IMAGE_TOO_LARGE,
 	SSRET_ERROR_IN_FILE_FORMAT,
+	SSRET_NOT_IMPLEMENTED,
 } SubsysResultCode_t;
 
 
@@ -131,7 +132,7 @@ public:
 	}
 
 	// The most common form of Subsys command; one that is called just about anywhere; with a reference to a path and file
-	SubsysCommand(UserInterface *ui, int subID, int funcID, int mode, const char *p, const char *fn) :
+	SubsysCommand(UserInterface *ui, int subID, int funcID, int mode, const char *p = NULL, const char *fn = NULL) :
 		user_interface(ui),
 		subsysID(subID),
 		functionID(funcID),
@@ -211,6 +212,7 @@ public:
 			"Save failed",
 			"ROM image is too large",
 			"Error detected in file format",
+			"This command is not supported on this architecture",
         };
         return error_strings[(int)resultCode];
     }
@@ -237,6 +239,7 @@ public:
 			HTTP_FAILED_DEPENDENCY, // "Save failed", not sure what went wrong, but the save was unsuccessful
 			HTTP_PRECONDITION_FAILED, // ROM Image is too large
 			HTTP_UNSUPPORTED_MEDIA_TYPE, // Error detected in file format
+			HTTP_NOT_IMPLEMENTED, // This command is not supported on this architecture.
         }; 
         return codes[(int)resultCode];
     }

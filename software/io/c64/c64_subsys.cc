@@ -184,10 +184,14 @@ SubsysResultCode_t C64_Subsys::executeCommand(SubsysCommand *cmd)
             break;
 
         case MENU_C64_POWEROFF:
+#if U64
             U64_POWER_REG = 0x2B;
             U64_POWER_REG = 0xB2;
             U64_POWER_REG = 0x2B;
             U64_POWER_REG = 0xB2;
+#else
+            result = SSRET_NOT_IMPLEMENTED;
+#endif
             break;
 
         case MENU_C64_REBOOT:
@@ -355,8 +359,11 @@ SubsysResultCode_t C64_Subsys::executeCommand(SubsysCommand *cmd)
             dma_load(0, (const uint8_t *)cmd->buffer, cmd->bufferSize, cmd->filename.c_str(), cmd->mode,
                     c64->cfg->get_value(CFG_C64_DMA_ID));
             break;
-        case C64_DMA_RAW:
-            dma_load_raw_buffer((uint16_t)cmd->mode, (const uint8_t *)cmd->buffer, cmd->bufferSize);
+        case C64_DMA_RAW_WRITE:
+            dma_load_raw_buffer((uint16_t)cmd->mode, (uint8_t *)cmd->buffer, cmd->bufferSize, 0);
+            break;
+        case C64_DMA_RAW_READ:
+            dma_load_raw_buffer((uint16_t)cmd->mode, (uint8_t *)cmd->buffer, cmd->bufferSize, 1);
             break;
         case C64_STOP_COMMAND:
             c64->stop(false);
@@ -469,7 +476,7 @@ int C64_Subsys :: dma_load_raw(File *f)
 	return bytes;
 }
 
-int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, const uint8_t *buffer, int length)
+int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, uint8_t *buffer, int length, int rw)
 {
 	bool i_stopped_it = false;
 	if (c64->client) {
@@ -483,7 +490,11 @@ int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, const uint8_t *buffer, in
 
 	volatile uint8_t *dest = (volatile uint8_t *)(C64_MEMORY_BASE + offset);
 
-	memcpy((void *)dest, buffer, length);
+    if (rw) {
+	    memcpy(buffer, (void *)dest, length);
+    } else {
+	    memcpy((void *)dest, buffer, length);
+    }
 
 	if (i_stopped_it) {
 		c64->resume();

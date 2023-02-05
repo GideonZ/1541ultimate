@@ -102,14 +102,14 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         break;
     case SOCKET_CMD_DMAWRITE:
         offs = (uint16_t)buf[0] | (((uint16_t)buf[1]) << 8);
-        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW, offs, buf + 2, len - 2);
+        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW_WRITE, offs, buf + 2, len - 2);
         sys_command->execute();
         break;
     case SOCKET_CMD_KEYB:
-        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW, 0x0277, buf, len);
+        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW_WRITE, 0x0277, buf, len);
         sys_command->execute();
         buf[0] = len;
-        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW, 0x00C6, buf, 1);
+        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW_WRITE, 0x00C6, buf, 1);
         sys_command->execute();
         break;
     case SOCKET_CMD_RESET:

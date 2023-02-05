@@ -53,7 +53,7 @@ class C64_Subsys : public SubSystem, ObjectWithMenu
     		const char *name, uint8_t run_mode, uint8_t drv, uint16_t reloc=0);
     int  dma_load_buffer(uint8_t prg_buffer, uint8_t run_mode, uint16_t reloc=0);
     int  dma_load_raw(File *f);
-    int  dma_load_raw_buffer(uint16_t offset, const uint8_t *buffer, int length);
+    int  dma_load_raw_buffer(uint16_t offset, uint8_t *buffer, int length, int rw);
 
     int  load_file_dma(File *f, uint16_t reloc);
     int  load_buffer_dma(const uint8_t *buffer, const int bufferSize, uint16_t reloc);
