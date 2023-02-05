@@ -207,3 +207,44 @@ void C_exception_handler(uint32_t cause, uint32_t addr, uint32_t status, uint32_
 	while(1)
 		;
 }
+
+void _exit(int exit_status)
+{
+    // jump to crt0's shutdown code
+    asm volatile ("la t0, __crt0_main_exit \n"
+                  "jr t0                   \n");
+
+    while(1); // will never be reached
+}
+
+extern char __heap_start[];
+extern char __heap_end[];
+static char *brk = &__heap_start[0];
+
+int _brk(void *addr)
+{
+    brk = addr;
+    return 0;
+}
+
+void *_sbrk(ptrdiff_t incr)
+{
+    char *old_brk = brk;
+
+    if (&__heap_start[0] == &__heap_end[0]) {
+        return NULL;
+    }
+
+    if ((brk += incr) < &__heap_end[0]) {
+        brk += incr;
+    } else {
+        brk = &__heap_end[0];
+    }
+    return old_brk;
+}
+
+int isatty(int);
+int _isatty(int fd)
+{
+    return isatty(fd);
+}

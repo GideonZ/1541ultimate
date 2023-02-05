@@ -1,6 +1,7 @@
 #include "filemanager.h"
 #include <errno.h>
 #include <fcntl.h>
+#include <unistd.h>
 
 /* It turns out that older newlib versions use different symbol names which goes
  * against newlib recommendations. Anyway this is fixed in later version.
@@ -31,6 +32,12 @@ static int find_slot()
 }
 
 extern "C" {
+
+int _fstat(int file, struct stat *st)
+{
+    st->st_mode = S_IFCHR; // all files are "character special files"
+    return 0;
+}
 
 int _open(const char *name, int oflag, ...)
 {
