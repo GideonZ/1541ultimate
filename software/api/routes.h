@@ -2,6 +2,7 @@
 #define ROUTES_H
 
 #include "cli.h"
+#include "stream_textlog.h"
 #include "stream_ramfile.h"
 #include "json.h"
 #include "http_codes.h"
@@ -73,12 +74,19 @@ public:
         json->add("errors", errors);
         errors = NULL;
 
-        const char *return_str = return_codestr(code);
+        // First, the body data is prepared
         StreamRamFile *log = new StreamRamFile(HTTP_BUFFER_SIZE);
-        log->format("HTTP/1.1 %d %s\r\nConnection: close\r\nContent-Type: application/json\r\n\r\n", code, return_str);
         json->render(log);
         resp->BodyContext = log;
         resp->BodyCB = &stream_body;
+
+        // Then the header is made, based on the size of the body
+        StreamTextLog *hdr = new StreamTextLog(HTTP_BUFFER_SIZE, (char *)resp->_buf);
+        const char *return_str = return_codestr(code);
+        hdr->format("HTTP/1.1 %d %s\r\nConnection: close\r\nContent-Type: application/json\r\n", code, return_str);
+        hdr->format("Content-Length: %d\r\n\r\n", log->getLength());
+        resp->_index = hdr->getLength();
+        delete hdr; // no longer needed
     }
 
     void html_response(int code, const char *title, const char *fmt, ...)
