@@ -191,15 +191,15 @@ convertMusInfo  ldx #$00
                 sta MUS_INFO_CONV_LOC_HI
                 sta MUS_INFO_COLOR_HI
 
-                lda #$00
-                sta MUS_INFO_INVERSE
-
                 ldy #$00
 infoLoop        lda (MUS_INFO_LOCATION_LO),y
                 bne +
                 jmp infoEnd
 
-+               jsr handleColorChar
++               lda #$00
+                sta MUS_INFO_INVERSE
+
+                jsr handleColorChar
                 beq nextMusChar                 ; if it is a color, then jump to next char
 
                 cmp #$0a

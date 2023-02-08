@@ -283,8 +283,18 @@ int FileTypeSID :: createMusHeader(void)
 	number_of_songs = 1;
 	song = 1;
 
+    if (mus_file && !sid_file) {
 	for (int b = 0; b < 0x80; b++) {
 		sid_header[b] = 0;
+    }
+    } else {
+        for (int b = 0; b < 0x16; b++) {
+            sid_header[b] = 0;
+        }
+
+        for (int b = 0x36; b < 0x80; b++) {
+            sid_header[b] = 0;
+        }
     }
 
 	sid_header[0x00] = 'P';
@@ -322,6 +332,7 @@ int FileTypeSID :: createMusHeader(void)
 
 	sid_header[0x77] = 0x29;	// default flags set for 8580, NTSC and MUS data only
 
+    if (sid_header[0x16] == 0 ) {
 	// set filename as title
 	const char *filename = file_string.c_str();
 	int size = strlen(filename);
@@ -347,6 +358,7 @@ int FileTypeSID :: createMusHeader(void)
 			c = 0x20;			// convert underscore to space
 		}
 		sid_header[0x16 + b] = c;
+        }
     }
 
 	header_valid = true;
