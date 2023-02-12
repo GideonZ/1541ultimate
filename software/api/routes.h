@@ -2,6 +2,7 @@
 #define ROUTES_H
 
 #include "cli.h"
+#include "indexed_list.h"
 #include "stream_textlog.h"
 #include "stream_ramfile.h"
 #include "json.h"
@@ -37,10 +38,13 @@ public:
     JSON_Object *json;
     JSON_List *errors;
     HTTPRespMessage *resp;
+    IndexedList<StreamRamFile *> attachments;
+    mstring boundary;
 
-    ResponseWrapper(HTTPRespMessage *resp) : resp(resp) {
+    ResponseWrapper(HTTPRespMessage *resp) : resp(resp), attachments(2, NULL), boundary() {
         json = JSON::Obj();
         errors = JSON::List();
+        boundary = "ultimate8710370172309182";
     }
 
     ~ResponseWrapper() {
@@ -48,6 +52,20 @@ public:
         if (errors) {
             delete errors;
         }
+        for (int i=0; i<attachments.get_elements(); i++) {
+            StreamRamFile *rf = attachments[i];
+            if (rf) {
+                delete rf;
+            }
+        }
+    }
+
+    StreamRamFile *add_attachment(void) {
+        StreamRamFile *rf = new StreamRamFile(1024);
+        if(rf) {
+            attachments.append(rf);
+        }
+        return rf;
     }
 
     const char *return_codestr(int code) {
