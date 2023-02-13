@@ -75,7 +75,6 @@ SRCS_CC	 =  u2p_init.cc \
 			wd177x.cc \
 			mfmdisk.cc \
 			mystring.cc \
-			json.cc \
 			path.cc \
 			pattern.cc \
 			blockdev.cc \
@@ -129,7 +128,6 @@ SRCS_CC	 =  u2p_init.cc \
 			network_lwip.cc \
 			vfs.cc \
 			ftpd.cc \
-			httpd.cc \
 			tape_controller.cc \
 			tape_recorder.cc \
 			command_intf.cc \
@@ -160,11 +158,14 @@ SRCS_CC	 =  u2p_init.cc \
 			ramdisk.cc \
 			system_info.cc \
 			ult_syscalls.cc \
+			httpd.cc \
+			json.cc \
 			routes.cc \
 			route_files.cc \
 			route_drives.cc \
 			route_runners.cc \
 			route_configs.cc \
+			route_machine.cc \
 			$(PRJ).cc
 
 SRCS_CC +=  iec.cc \
