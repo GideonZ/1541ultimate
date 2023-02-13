@@ -61,6 +61,7 @@ baseCrt         .binclude 'basecrt.asm'
                 jsr calculateLocations
 
                 lda SCREEN_LOCATION
+                beq noScreen
                 and #$f0
                 cmp #$d0
                 bne +
@@ -73,7 +74,7 @@ baseCrt         .binclude 'basecrt.asm'
 
                 jsr songlengths.displayCurSongLength
 
-                jsr copyPlayer
+noScreen        jsr copyPlayer
                 jsr setPlayerVars
 
                 lda EXTRA_PLAYER_LOCATION
