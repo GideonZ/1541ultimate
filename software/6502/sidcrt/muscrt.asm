@@ -191,15 +191,15 @@ convertMusInfo  ldx #$00
                 sta MUS_INFO_CONV_LOC_HI
                 sta MUS_INFO_COLOR_HI
 
+                lda #$00
+                sta MUS_INFO_INVERSE
+
                 ldy #$00
 infoLoop        lda (MUS_INFO_LOCATION_LO),y
                 bne +
                 jmp infoEnd
 
-+               ldx #$00
-                stx MUS_INFO_INVERSE
-
-                jsr handleColorChar
++               jsr handleColorChar
                 beq nextMusChar                 ; if it is a color, then jump to next char
 
                 cmp #$0a
@@ -258,13 +258,14 @@ infoLoop        lda (MUS_INFO_LOCATION_LO),y
                 bcc ++
                 cmp #$c0
                 bcs ++
-                ; char is >= $60 and < $80
+                ; char is >= $80 and < $c0
 +               sec
                 sbc #$40
 +
 storeChar       and #$7f
                 ora MUS_INFO_INVERSE
                 sta (MUS_INFO_CONV_LOC_LO),y    ; store char
+
                 lda MUS_CURRENT_COLOR
                 sta (MUS_INFO_COLOR_LO),y       ; store color
 
@@ -354,6 +355,9 @@ handleNextLine  cmp #$0d                        ; next line
                 sta MUS_INFO_COLOR_LO
                 lda #$00
                 sta MUS_INFO_CONV_LOC_LO
+
+                lda #$00
+                sta MUS_INFO_INVERSE
 +               rts
 
 handleColorChar
