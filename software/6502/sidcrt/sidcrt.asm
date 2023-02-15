@@ -1,10 +1,10 @@
 ;-----------------------------------------------------------------------
-; Ultimate SID Player V2.0c - Sidplayer for the Ultimate hardware
+; Ultimate SID Player V2.0d - Sidplayer for the Ultimate hardware
 ;
 ; Written by Wilfred Bos - April 2009
 ;                          August 2017 - January 2018
 ;
-; Copyright (c) 2009 - 2019 Wilfred Bos / Gideon Zweijtzer
+; Copyright (c) 2009 - 2023 Wilfred Bos / Gideon Zweijtzer
 ;
 ; Info:
 ;  Editing the source code should be done in a text editor which supports UTF-8.
@@ -33,7 +33,7 @@
                 .byte >baseCrt.startNMI
                 .byte 'C' + $80, 'B' + $80, 'M' + $80, '8', '0'   ; CBM80
 
-                .text 0, 'Ultimate SID Player Cartridge V2.0c - Copyright (c) 2009-2019 Wilfred Bos / Gideon Zweijtzer', 0
+                .text 0, 'Ultimate SID Player Cartridge V2.0d - Copyright (c) 2009-2023 Wilfred Bos / Gideon Zweijtzer', 0
 
 baseCrt         .binclude 'basecrt.asm'
 
