@@ -206,6 +206,8 @@ architecture rtl of ecp5_tester is
     signal power_detect     : std_logic;
 
     signal write_vector     : std_logic_vector(7 downto 0);
+    signal uart_data        : std_logic_vector(7 downto 0);
+    signal uart_valid       : std_logic;
     signal console_data     : std_logic_vector(7 downto 0);
     signal console_valid    : std_logic;
     signal console_count    : unsigned(7 downto 0) := X"00";
@@ -233,6 +235,10 @@ begin
             console_data      => console_data,
             console_valid     => console_valid,
 
+            console2_data     => uart_data,
+            console2_valid    => uart_valid,
+            console2_clear    => not power_detect,
+
             sample_vector     => pio_i,
             write_vector      => write_vector
         );
@@ -240,6 +246,20 @@ begin
     -- snoop writes to the UART
     console_data <= io_req.data;
     console_valid <= io_req.write when io_req.address = 16 else '0';
+
+    i_uart_rx: entity work.rx
+        generic map (
+            clks_per_bit => 434
+        )
+        port map (
+            clk    => sys_clock,
+            reset  => sys_reset,
+            tick   => '1',
+            rxd    => DUT_TXD,
+            rxchar => uart_data,
+            rx_ack => uart_valid
+        );
+
 
     process(sys_clock)
     begin
