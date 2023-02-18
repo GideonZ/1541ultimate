@@ -78,6 +78,25 @@ public:
         return (ret);
     }
 
+    void write(uint8_t *buffer, int len)
+    {
+        while(len) {
+            int avail = blocksize - write_offset;
+            if (avail <= 0) {
+                write_block = new char[blocksize];
+                blocks.append(write_block);
+                write_offset = 0;
+                avail = blocksize;
+            }
+            int current = avail > len ? len : avail;
+            printf("%p <- %p (%d)\n", write_block + write_offset, buffer, current);
+            memcpy(write_block + write_offset, buffer, current);
+            write_offset += current;
+            buffer += current;
+            len -= current;
+        }
+    }
+
     int read(char *buf, int len)
     {
         if (!read_block) {

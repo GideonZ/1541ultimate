@@ -38,13 +38,12 @@ public:
     JSON_Object *json;
     JSON_List *errors;
     HTTPRespMessage *resp;
-    IndexedList<StreamRamFile *> attachments;
-    mstring boundary;
+    StreamRamFile *attachment;
 
-    ResponseWrapper(HTTPRespMessage *resp) : resp(resp), attachments(2, NULL), boundary() {
+    ResponseWrapper(HTTPRespMessage *resp) : resp(resp) {
         json = JSON::Obj();
         errors = JSON::List();
-        boundary = "ultimate8710370172309182";
+        attachment = NULL;
     }
 
     ~ResponseWrapper() {
@@ -52,24 +51,21 @@ public:
         if (errors) {
             delete errors;
         }
-        for (int i=0; i<attachments.get_elements(); i++) {
-            StreamRamFile *rf = attachments[i];
-            if (rf) {
-                delete rf;
-            }
+        if (attachment) {
+            delete attachment;
         }
     }
 
     StreamRamFile *add_attachment(void) {
-        StreamRamFile *rf = new StreamRamFile(1024);
-        if(rf) {
-            attachments.append(rf);
+        if (!attachment) {
+            attachment = new StreamRamFile(1024);
         }
-        return rf;
+        return attachment;
     }
 
     const char *return_codestr(int code) {
         const char *reply = (code == 200)   ? "OK"
+                            : (code == 203) ? "No Content"
                             : (code == 400) ? "Bad Request"
                             : (code == 403) ? "Forbidden"
                             : (code == 404) ? "Not Found"
@@ -103,6 +99,24 @@ public:
         const char *return_str = return_codestr(code);
         hdr->format("HTTP/1.1 %d %s\r\nConnection: close\r\nContent-Type: application/json\r\n", code, return_str);
         hdr->format("Content-Length: %d\r\n\r\n", log->getLength());
+        resp->_index = hdr->getLength();
+        delete hdr; // no longer needed
+    }
+
+    void binary_response(void)
+    {
+        StreamTextLog *hdr = new StreamTextLog(HTTP_BUFFER_SIZE, (char *)resp->_buf);
+        if (attachment) {
+            hdr->format("HTTP/1.1 200 OK\r\n");
+            hdr->format("Content-Type: application/octet-stream\r\n");
+            hdr->format("Content-Disposition: attachment\r\n");
+            hdr->format("Content-Length: %d\r\n", attachment->getLength());
+            resp->BodyContext = attachment;
+            resp->BodyCB = &stream_body;
+        } else {
+            hdr->format("HTTP/1.1 203 No Content\r\n");
+        }
+        hdr->format("Connection: close\r\n\r\n");
         resp->_index = hdr->getLength();
         delete hdr; // no longer needed
     }

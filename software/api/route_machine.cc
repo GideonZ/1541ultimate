@@ -162,7 +162,7 @@ API_CALL(GET, machine, readmem, NULL, ARRAY( { {"address", P_REQUIRED}, {"length
         return;
     }
 
-    int datalen = strtol(args["length"], NULL, 0);
+    int datalen = args.get_int("length", 256);
     if ((datalen < 0) || (datalen > 65536)) {
         resp->error("Invalid length");
         resp->json_response(HTTP_BAD_REQUEST);
@@ -180,9 +180,13 @@ API_CALL(GET, machine, readmem, NULL, ARRAY( { {"address", P_REQUIRED}, {"length
     SubsysResultCode_t retval = cmd->execute();
     if (retval == SSRET_OK) {
         // output result in JSON format
-
+        StreamRamFile *rf = resp->add_attachment();
+        rf->write(buffer, datalen);
+        delete[] buffer;
+        resp->binary_response();
+    } else {
+        resp->error(SubsysCommand::error_string(retval));
+        resp->json_response(SubsysCommand::http_response_map(retval));
+        delete[] buffer;
     }
-    delete[] buffer;
-    resp->error(SubsysCommand::error_string(retval));
-    resp->json_response(SubsysCommand::http_response_map(retval));
 }
