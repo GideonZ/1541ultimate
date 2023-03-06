@@ -113,6 +113,7 @@ public:
             hdr->format("Content-Length: %d\r\n", attachment->getLength());
             resp->BodyContext = attachment;
             resp->BodyCB = &stream_body;
+            attachment = NULL; // now owned by BodyCB
         } else {
             hdr->format("HTTP/1.1 203 No Content\r\n");
         }
