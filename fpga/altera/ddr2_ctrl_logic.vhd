@@ -165,7 +165,7 @@ architecture Gideon of ddr2_ctrl_logic is
         refresh_cnt     : integer range 0 to SDRAM_Refr_period-1;
         refr_delay      : integer range 0 to SDRAM_Refr_delay;
         timer           : integer range 0 to SDRAM_Refr_delay;
-        bank_timers     : t_bank_timers(0 to 7);
+        bank_timers     : t_bank_timers(0 to 3);
         write_recovery  : integer range 0 to c_max_delay-1;
         read_issued     : std_logic;   
         do_refresh      : std_logic;
@@ -229,7 +229,7 @@ begin
         -- A5..12 => remaining column bits (A2..A9)
         -- A13..26 => row bits (A0..A13)
         procedure accept_req is
-            variable bank : natural range 0 to 7;
+            variable bank : natural range 0 to 3;
             variable col  : std_logic_vector(9 downto 0);
         begin
             nxt.tag        <= req.tag;
@@ -239,14 +239,14 @@ begin
             datap.wmask <= not req.byte_en;
             
             -- extract address bits
-            bank := to_integer(req.address(4 downto 2));
+            bank := to_integer(req.address(3 downto 2));
             col(1 downto 0) := std_logic_vector(req.address( 1 downto  0)); -- 2 column bits
-            col(9 downto 2) := std_logic_vector(req.address(12 downto  5)); -- 8 column bits
+            col(9 downto 2) := std_logic_vector(req.address(11 downto  4)); -- 8 column bits
 
-            addr1.sdram_ba  <= std_logic_vector(req.address(4 downto 2)); --  3 bank bits
-            addr1.sdram_a   <= '0' & std_logic_vector(req.address(25 downto 13)); -- 14 row bits
+            addr1.sdram_ba  <= '0' & std_logic_vector(req.address(3 downto 2)); --  2 bank bits
+            addr1.sdram_a   <= std_logic_vector(req.address(25 downto 12)); -- 14 row bits
 
-            addr2.sdram_ba  <= std_logic_vector(req.address(4 downto 2));
+            addr2.sdram_ba  <= '0' & std_logic_vector(req.address(3 downto 2));
             addr2.sdram_a   <= "0001" & col; -- '1' is auto precharge on A10
 
             if cur.bank_timers(bank) = 0 then
@@ -313,7 +313,7 @@ begin
             nxt.write_recovery <= cur.write_recovery - 1;
         end if;
 
-        for i in 0 to 7 loop
+        for i in cur.bank_timers'range loop
             if cur.bank_timers(i) /= 0 then
                 nxt.bank_timers(i) <= cur.bank_timers(i) - 1;
             end if;
