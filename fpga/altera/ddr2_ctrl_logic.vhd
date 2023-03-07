@@ -333,7 +333,7 @@ begin
             addr1.sdram_ba <= '0' & ext_addr(15 downto 14);
             ext_cmd_done <= '1';
             nxt.refr_delay <= SDRAM_Refr_delay-1; 
-        elsif inhibit='0' then -- make sure we are allowed to start a new cycle
+        else --if inhibit='0' then -- make sure we are allowed to start a new cycle
             if req.request='1' and cur.timer = 0 then
                 accept_req;
             end if;
