@@ -505,12 +505,13 @@ begin
         PHI2            => phi2_c,
         BA              => ba_c,
     
-        serve_vic       => serve_vic,
+        serve_vic       => control.force_serve_vic, --serve_vic,
         serve_enable    => serve_enable,
         serve_inhibit   => serve_inhibit,
         allow_serve     => allow_serve,
 
-        timing_addr     => control.timing_addr_valid,
+        timing_phi1     => control.timing_addr_phi1,
+        timing_phi2     => control.timing_addr_phi2,
         edge_recover    => control.phi2_edge_recover,
     
         phi2_tick       => phi2_tick_i,

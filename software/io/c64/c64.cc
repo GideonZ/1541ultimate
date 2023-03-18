@@ -61,7 +61,7 @@ extern bool connectedToU64;
 static const char *reu_size[] = { "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };
 static const char *reu_offset[] = { "0 KB", "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };
 static const char *buttons[] = { "Reset|Menu|Freezer", "Freezer|Menu|Reset" };
-static const char *timing1[] = { "20ns", "40ns", "60ns", "80ns", "100ns", "120ns", "140ns", "160ns" };
+static const char *timing1[] = { "20ns", "40ns", "60ns", "80ns", "100ns", "120ns", "140ns", "160ns", "180ns", "200ns", "220ns", "240ns", "260ns", "280ns", "300ns" };
 static const char *timing2[] = { "16ns", "32ns", "48ns", "64ns", "80ns", "96ns", "112ns", "128ns" };
 static const char *timing3[] = { "15ns", "30ns", "45ns", "60ns", "75ns", "90ns", "105ns", "120ns" };
 static const char *cartmodes[] = { "Auto", "Internal", "External", "Manual" };
@@ -103,6 +103,8 @@ struct t_cfg_definition c64_config[] = {
     { CFG_C64_PHI2_REC, CFG_TYPE_ENUM,   "PHI2 edge recovery",           "%s", en_dis,     0,  1, 0 },
 #elif CLOCK_FREQ == 50000000
     { CFG_C64_TIMING,   CFG_TYPE_ENUM,   "CPU Addr valid after PHI2",    "%s", timing1,    0,  7, 3 },
+    { CFG_C64_TIMING1,  CFG_TYPE_ENUM,   "CPU Addr valid after PHI1",    "%s", timing1,    0,  14, 3 },
+    { CFG_SERVE_PHI1,   CFG_TYPE_ENUM,   "Enable serving PHI1 cycles",   "%s", en_dis,     0,  1, 0 },
     { CFG_C64_PHI2_REC, CFG_TYPE_ENUM,   "PHI2 edge recovery",           "%s", en_dis,     0,  1, 0 },
 #endif
     { CFG_CMD_ENABLE,   CFG_TYPE_ENUM,   "Command Interface",            "%s", en_dis,     0,  1, 0 },
@@ -310,7 +312,13 @@ void C64::set_emulation_flags(void)
     int recovery = cfg->get_value(CFG_C64_PHI2_REC);
     if (recovery >= 0) {
         C64_PHI2_EDGE_RECOVER = cfg->get_value(CFG_C64_PHI2_REC);
-        C64_TIMING_ADDR_VALID = cfg->get_value(CFG_C64_TIMING);
+        if (cfg->get_value(CFG_C64_TIMING1) >= 0) {
+            uint8_t byte = cfg->get_value(CFG_C64_TIMING) | (cfg->get_value(CFG_C64_TIMING1) << 4) | (cfg->get_value(CFG_SERVE_PHI1) << 3);
+            printf("Writing %b to timing register. %d/%d/%d\n", byte, cfg->get_value(CFG_C64_TIMING), cfg->get_value(CFG_C64_TIMING1), cfg->get_value(CFG_SERVE_PHI1));
+            C64_TIMING_ADDR_VALID = byte;
+        } else {
+            C64_TIMING_ADDR_VALID = cfg->get_value(CFG_C64_TIMING);
+        }
     } else { // U64
         C64_PHI2_EDGE_RECOVER = 0;
         C64_TIMING_ADDR_VALID = 5;
