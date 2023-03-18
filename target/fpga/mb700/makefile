@@ -12,7 +12,7 @@
 ################################################################################
 
 # GLOBAL incs should point to the make include files directory
-export GLOBAL_INCS = $(strip $(shell pwd)/../../global_makefiles)
+export GLOBAL_INCS = $(strip $(shell pwd)/../../../global_makefiles)
 							
 
 .SUFFIXES:		#delete all known suffixes
@@ -22,22 +22,22 @@ export GLOBAL_INCS = $(strip $(shell pwd)/../../global_makefiles)
 ################################################################################
 #SHELL           := /bin/bash
 
-TARGET 			:= ultimate_1541_250e
+TARGET 			:= ultimate_mb_700a
 
 ISE_VERSION		:= 13
 
 DESIGN_NAME 	:= $(TARGET)
 TOP_NAME    	:= $(TARGET)
 
-CONFIG			:= makefile_250e
+CONFIG			:= makefile
 
 # Project ROOT
-WORK_DIR		:= work250
+WORK_DIR		:= work
 
 # Part settings
-PART_TYPE        := xc3s250e
+PART_TYPE        := xc3s700a
 PART_SPEED_GRADE := 4
-PART_PACKAGE     := pq208
+PART_PACKAGE     := ft256
 PART             := $(PART_TYPE)-$(PART_SPEED_GRADE)-$(PART_PACKAGE)
 
 #Synthesis options
@@ -51,18 +51,19 @@ XST_OPTIONS		:= -top $(TOP_NAME) \
 				   -opt_mode Speed \
 				   -opt_level 2 \
 				   -register_balancing no \
-				   -keep_hierarchy no
+				   -keep_hierarchy no \
+				   -generics g_dual_drive=false,g_acia=false,g_eeprom=false
 
 # Tools
-MY_PROMGEN := ../../tools/promgen
+MY_PROMGEN := ../../../tools/promgen
 
 #SETTING FILES		    
-UCF_FILES := ./ucf/sd_cartridge_v3.ucf	# constraint/pin-assignment file(s)
-BMM_FILE  := ./ucf/sd_ram4.bmm			# bmm file location
+UCF_FILES := ../ucf/ultimate_ii_mb.ucf 		# constraint/pin-assignment file(s)
+BMM_FILE  := ../ucf/cache_ram.bmm			# bmm file location
 
 # TOOL FLAGS
 NGDBUILD_FLAGS	 := 	
-MAP_FLAGS        := 	-cm area -timing -pr b
+MAP_FLAGS        := 	-cm area -timing -pr b -detail
 PAR_FLAGS        := 	-w 
 TRCE_FLAGS       := 	-e 9 -l 11
 PROMGEN_FLAGS	 := 	-w -p mcs -c FF -x xcf04s
@@ -75,7 +76,7 @@ BITGEN_FLAGS     := 	-w -d \
 					    -g StartUpClk:CClk -g DONE_cycle:4 -g GTS_cycle:5 \
 					    -g GWE_cycle:6 -g LCK_cycle:NoWait -g Security:None \
 					    -g Persist:No -g DonePipe:no \
-					    -g DriveDone:Yes
+					    -g DriveDone:Yes -g en_porb:Yes 
 								
 ################################################################################
 ## The SYNTH_PROJ variable contains all the project file locations. It is a 
@@ -84,13 +85,13 @@ BITGEN_FLAGS     := 	-w -d \
 ## (for example: vhdl,work,../../dummy.vhdl)
 ################################################################################
 
+ULTIMATE_FPGA   := ../../../fpga
 
-ULTIMATE_FPGA := ../../fpga
-include ultimate_logic.inc
+include ../ultimate_logic2.inc
 
 SYNTH_PROJ	:= 	$(ALL_ULTIMATE_LOGIC) \
-				vhdl,work,$(ULTIMATE_FPGA)/io/mem_ctrl/vhdl_source/ext_mem_ctrl_v4_u1.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/fpga_top/ultimate_fpga/vhdl_source/$(TARGET).vhd
+
 
  ################################################################################
  #### Special flow options    
@@ -109,7 +110,8 @@ IGNORE_TIMING_PIN_ERRORS = no
 .PHONY: all test
 all: $(TARGET).bit			# may be changed
 
-test::
+test:
+	echo $(SYNTH_PROJ)
 	echo $(XILINX)
 	echo $(XST)
 	echo "$(GEN_VAR_DEP_FILE)"
