@@ -12,7 +12,7 @@
 ################################################################################
 
 # GLOBAL incs should point to the make include files directory
-export GLOBAL_INCS = $(strip $(shell pwd)/../../global_makefiles)
+export GLOBAL_INCS = $(strip $(shell pwd)/../../../global_makefiles)
 							
 
 .SUFFIXES:		#delete all known suffixes
@@ -22,17 +22,17 @@ export GLOBAL_INCS = $(strip $(shell pwd)/../../global_makefiles)
 ################################################################################
 #SHELL           := /bin/bash
 
-TARGET 			:= boot_700a
+TARGET 			:= ultimate_mb_700a
 
-ISE_VERSION		:= 12
+ISE_VERSION		:= 13
 
 DESIGN_NAME 	:= $(TARGET)
 TOP_NAME    	:= $(TARGET)
 
-CONFIG			:= makefile_boot_700a
+CONFIG			:= makefile
 
 # Project ROOT
-WORK_DIR		:= boot700
+WORK_DIR		:= work
 
 # Part settings
 PART_TYPE        := xc3s700a
@@ -51,14 +51,15 @@ XST_OPTIONS		:= -top $(TOP_NAME) \
 				   -opt_mode Speed \
 				   -opt_level 2 \
 				   -register_balancing no \
-				   -keep_hierarchy no
+				   -keep_hierarchy no \
+				   -generics g_dual_drive=true,g_acia=true,g_eeprom=false
 
 # Tools
-MY_PROMGEN := ../../tools/promgen
+MY_PROMGEN := ../../../tools/promgen
 
 #SETTING FILES		    
-UCF_FILES := ./ucf/ultimate_ii.ucf 		# constraint/pin-assignment file(s)
-BMM_FILE  := ./ucf/sd_ram32.bmm			# bmm file location
+UCF_FILES := ../ucf/ultimate_ii_mb.ucf 		# constraint/pin-assignment file(s)
+BMM_FILE  := ../ucf/cache_ram.bmm			# bmm file location
 
 # TOOL FLAGS
 NGDBUILD_FLAGS	 := 	
@@ -75,7 +76,7 @@ BITGEN_FLAGS     := 	-w -d \
 					    -g StartUpClk:CClk -g DONE_cycle:4 -g GTS_cycle:5 \
 					    -g GWE_cycle:6 -g LCK_cycle:NoWait -g Security:None \
 					    -g Persist:No -g DonePipe:no \
-					    -g DriveDone:Yes
+					    -g DriveDone:Yes -g en_porb:Yes 
 								
 ################################################################################
 ## The SYNTH_PROJ variable contains all the project file locations. It is a 
@@ -84,11 +85,13 @@ BITGEN_FLAGS     := 	-w -d \
 ## (for example: vhdl,work,../../dummy.vhdl)
 ################################################################################
 
-ULTIMATE_FPGA := ../../fpga
-include ultimate_logic.inc
+ULTIMATE_FPGA   := ../../../fpga
+
+include ../ultimate_logic2.inc
 
 SYNTH_PROJ	:= 	$(ALL_ULTIMATE_LOGIC) \
 				vhdl,work,$(ULTIMATE_FPGA)/fpga_top/ultimate_fpga/vhdl_source/$(TARGET).vhd
+
 
  ################################################################################
  #### Special flow options    
@@ -107,7 +110,8 @@ IGNORE_TIMING_PIN_ERRORS = no
 .PHONY: all test
 all: $(TARGET).bit			# may be changed
 
-test::
+test:
+	echo $(SYNTH_PROJ)
 	echo $(XILINX)
 	echo $(XST)
 	echo "$(GEN_VAR_DEP_FILE)"

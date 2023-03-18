@@ -5,8 +5,8 @@ PRJ        =  mb_boot
 FINAL      =  $(RESULT)/$(PRJ).bin $(RESULT)/$(PRJ)_700.bit $(OUTPUT)/mb_boot.m32
 LINKMETHOD = ld
 
-FPGA_700      = ../../fpga/mb700/ultimate_mb_700a.bit
-FPGA_700_BMM  = ../../fpga/mb700/ultimate_mb_700a_bd.bmm
+FPGA_700      = ../../fpga/mb700/work/ultimate_mb_700a.bit
+FPGA_700_BMM  = ../../fpga/mb700/work/ultimate_mb_700a_bd.bmm
 
 PATH_SW  =  ../../../software
 
