@@ -1,13 +1,11 @@
 
-# .PHONY: all mk1 mk2 mk3 mk3only prog special clean sw_clean loader
+all: u2 u2plus u64
 
-all: mk3 u2plus u64
-
-mk3:
+u2:
 	@$(MAKE) -C tools
-	@$(MAKE) -C target/fpga -f makefile_mb_700a
-	@$(MAKE) -C target/fpga -f makefile_mb_700a_dd
-	@$(MAKE) -C target/fpga -f makefile_mb_700a_gm
+	@$(MAKE) -C target/fpga/mb700
+	@$(MAKE) -C target/fpga/mb700dd
+	@$(MAKE) -C target/fpga/mb700gm
 	@$(MAKE) -C target/software/mb_lwip
 	@$(MAKE) -C target/software/mb_boot
 	@$(MAKE) -C target/software/mb_boot_dd
@@ -69,34 +67,6 @@ u2plus:
 	@$(MAKE) -C target/software/nios2_recovery
 	@$(MAKE) -C target/software/nios2_update
 	@cp target/software/nios2_update/result/update.app ./update.u2p
-
-k1:
-	@svn up
-	@$(MAKE) -C tools
-	@$(MAKE) -C target/fpga -f makefile_250e
-	@$(MAKE) -C target/software/1st_boot mk1
-	@$(MAKE) -C target/software/ultimate appl
-	@cp target/software/ultimate/result/appl.bin .
-
-prog:
-	@$(MAKE) mk2
-	@$(MAKE) -C target/fpga -f makefile_boot_700a
-	@$(MAKE) -C target/software/programmer
-	@cp target/software/programmer/result/*.bit .
-
-special:
-	@svn up
-	@$(MAKE) -C target/fpga -f makefile_1400a
-	@$(MAKE) -C target/fpga -f makefile_400a
-	@$(MAKE) -C target/software/1st_boot special
-	@$(MAKE) -C target/software/ultimate
-	@echo "Bitfiles and application made.. No updater or such available."
-
-loader:
-	@$(MAKE) -C target/fpga -f makefile_boot_400a
-	@$(MAKE) -C target/fpga -f makefile_boot_700a
-	@$(MAKE) -C target/software/programmer
-	@cp target/software/programmer/result/*.bit .
 
 u2p_tester:
 	@$(MAKE) -C target/software/nios2_elf_lwip
