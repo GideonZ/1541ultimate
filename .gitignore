@@ -55,8 +55,8 @@ software/nios_dut_bsp/obj
 software/nios_tester_bsp/obj
 software/nios_solo_bsp/obj
 software/zlib-1.2.8
+target/fpga/**/.*.ini
 target/fpga/**/impl1
-target/fpga/**/.*
 target/fpga/**/*.dir
 target/fpga/**/*.html
 target/fpga/**/*.xml
@@ -67,8 +67,6 @@ target/fpga/_xmsgs
 target/fpga/boot400
 target/fpga/boot700
 target/fpga/lx16
-target/fpga/mb700
-target/fpga/mb700dd
 target/fpga/testdut/*.hex
 target/fpga/testdut/*.sopcinfo
 target/fpga/testdut/*.stp
