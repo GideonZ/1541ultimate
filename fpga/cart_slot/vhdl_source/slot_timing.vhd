@@ -15,7 +15,8 @@ port (
     serve_enable    : in  std_logic;
     serve_inhibit   : in  std_logic;
 
-    timing_addr     : in  unsigned(2 downto 0) := "000";
+    timing_phi2     : in  unsigned(2 downto 0) := "000";
+    timing_phi1     : in  unsigned(3 downto 0) := "0000";
     edge_recover    : in  std_logic;
     
     allow_serve     : out std_logic;
@@ -52,7 +53,7 @@ architecture gideon of slot_timing is
     signal off_cnt      : integer range 0 to 7;
     constant c_memdelay    : integer := 6;
     constant c_probe_end   : integer := 14; -- 300 ns after PHI2
-    constant c_sample_vic  : integer := 9; -- 200 ns after PHI2 (!)
+    --constant c_sample_vic  : integer := 9; -- 200 ns after PHI2 (!)
     constant c_io          : integer := 15;
 begin
     vic_cycle_i    <= '1' when (ba_hist = "0000") else '0';
@@ -104,6 +105,7 @@ begin
                 phi2_falling <= '1';
                 phi2_rec_i   <= '0';
                 phase_l      <= 0;
+                reqs_inhibit <= serve_en_i and serve_vic;
                 allow_tick_l <= false; -- filter
             elsif phase_l /= 63 then
                 phase_l <= phase_l + 1;
@@ -116,14 +118,12 @@ begin
 
             -- timing pulses
             do_sample_addr <= '0';
-            if (vic_cycle_i = '0' and phase_h = timing_addr) or 
-               (vic_cycle_i = '1' and phase_h = c_sample_vic - 1) then
+--            if (vic_cycle_i = '0' and phase_h = timing_phi2) or
+--               (vic_cycle_i = '1' and phase_h = timing_phi1) then
+            if phase_h = timing_phi2 then
                 do_sample_addr <= '1';
             end if;
-
-            if phase_l = (c_sample_vic - c_memdelay) then
-                reqs_inhibit <= serve_en_i and serve_vic;
-            elsif phase_l = (c_sample_vic - 1) then
+            if phase_l = timing_phi1 then
                 do_sample_addr <= '1';            
             end if;
 
