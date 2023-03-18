@@ -24,6 +24,10 @@
 static Screen *screen;
 static UserInterface *user_interface;
 
+#ifndef HTML_DIRECTORY
+#define HTML_DIRECTORY "/flash/html"
+#endif
+
 int calc_checksum(uint8_t *buffer, uint8_t *buffer_end)
 {
     int check = 0;
