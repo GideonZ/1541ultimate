@@ -530,8 +530,8 @@ MpsPrinter::CBM_Interpreter(uint8_t input)
                         state = MPS_PRINTER_STATE_INITIAL;
                     }
 
-                    if (margin_bottom > MPS_PRINTER_PAGE_PRINTABLE_HEIGHT - MPS_PRINTER_HEAD_HEIGHT)
-                        margin_bottom = MPS_PRINTER_PAGE_PRINTABLE_HEIGHT - MPS_PRINTER_HEAD_HEIGHT;
+                    if (margin_bottom > MPS_PRINTER_MAX_MARGIN_BOTTOM)
+                        margin_bottom = MPS_PRINTER_MAX_MARGIN_BOTTOM;
 
                     break;
 

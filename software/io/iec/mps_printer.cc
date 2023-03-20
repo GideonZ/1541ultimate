@@ -627,8 +627,8 @@ MpsPrinter::Init(void)
     state           = MPS_PRINTER_STATE_INITIAL;
     margin_left     = 0;
     margin_top      = 0;
-    margin_right    = MPS_PRINTER_PAGE_PRINTABLE_WIDTH;
-    margin_bottom   = MPS_PRINTER_PAGE_PRINTABLE_HEIGHT - MPS_PRINTER_HEAD_HEIGHT;
+    margin_right    = MPS_PRINTER_MAX_MARGIN_RIGHT;
+    margin_bottom   = MPS_PRINTER_MAX_MARGIN_BOTTOM;
     bim_K_density   = 0;    /* EPSON specific 60 dpi */
     bim_L_density   = 1;    /* EPSON specific 120 dpi */
     bim_Y_density   = 2;    /* EPSON specific 120 dpi high speed */
