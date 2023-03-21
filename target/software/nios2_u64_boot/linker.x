@@ -52,7 +52,7 @@ MEMORY
 {
     avalon2mem_0 : ORIGIN = 0x0, LENGTH = 67108864
     reset : ORIGIN = 0x30000000, LENGTH = 32
-    onchip_memory2_0 : ORIGIN = 0x30000020, LENGTH = 1888
+    onchip_memory2_0 : ORIGIN = 0x30000020, LENGTH = 0xEE0 /* Leaving 0x100 for stack */
 }
 
 /* Define symbols for each memory base-address */
@@ -407,7 +407,7 @@ SECTIONS
 /*
  * Don't override this, override the __alt_stack_* symbols instead.
  */
-__alt_data_end = 0x30000780;
+__alt_data_end = 0x30000FBC;
 
 /*
  * The next two symbols define the location of the default stack.  You can
@@ -423,4 +423,4 @@ PROVIDE( __alt_stack_limit   = __alt_stack_base );
  * Override this symbol to put the heap in a different memory.
  */
 PROVIDE( __alt_heap_start    = end );
-PROVIDE( __alt_heap_limit    = 0x30000780 );
+PROVIDE( __alt_heap_limit    = 0x30000FBC );

@@ -25,11 +25,12 @@ class UserInterface;
 #define SUBSYSID_C64             1
 #define SUBSYSID_DRIVE_A         2
 #define SUBSYSID_DRIVE_B         3
-#define SUBSYSID_TAPE_PLAYER     4
-#define SUBSYSID_TAPE_RECORDER   5
-#define SUBSYSID_IEC             6
-#define SUBSYSID_CMD_IF			 7
-#define SUBSYSID_U64			 8
+#define SUBSYSID_DRIVE_C         4
+#define SUBSYSID_TAPE_PLAYER     5
+#define SUBSYSID_TAPE_RECORDER   6
+#define SUBSYSID_IEC             7
+#define SUBSYSID_CMD_IF			 8
+#define SUBSYSID_U64			 9
 
 
 #define SORT_ORDER_CREATE  10
@@ -97,6 +98,7 @@ public:
 		functionID(act->function),
 		mode(act->mode),
 		direct_call(act->func),
+		actionName(act->getName()),
 		path(p), filename(fn) {
 		buffer = NULL;
 		bufferSize = 0;
@@ -109,6 +111,7 @@ public:
 		functionID(funcID),
 		mode(mode),
 		direct_call(0),
+		actionName(""),
 		path(p), filename(fn) {
 		buffer = NULL;
 		bufferSize = 0;
@@ -121,6 +124,7 @@ public:
 		functionID(funcID),
 		mode(mode),
 		direct_call(0),
+        actionName(""),
 		path(""), filename(""),
 		buffer(buffer),
 		bufferSize(bufferSize) {
@@ -146,7 +150,6 @@ public:
 			}
 		}
 		delete this;
-		printf("Command executed. Returning %d.\n", retval);
 		return retval;
 	}
 
@@ -166,6 +169,7 @@ public:
 	actionFunction_t direct_call;
 	mstring        path;
 	mstring		   filename;
+	mstring        actionName;
 	void 		  *buffer;
 	int            bufferSize;
 };

@@ -12,6 +12,7 @@
 #include "flash.h"
 #include "iomap.h"
 #include "browsable_root.h"
+#include "wd177x.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -27,41 +28,36 @@
 #define MENU_1541_BLANK     0x1505
 #define MENU_1541_TURNON    0x1506
 #define MENU_1541_TURNOFF   0x1507
-#define MENU_1541_MOUNT     0x1511
-#define MENU_1541_MOUNT_GCR 0x1512
+#define FLOPPY_LOAD_DOS     0x1508
 #define MENU_1541_UNLINK    0x1513
 #define MENU_1541_SWAP      0x1514
+#define MENU_1541_SET_MODE  0x1515
 
-#define D64FILE_RUN        0x2101
-#define D64FILE_MOUNT      0x2102
-#define D64FILE_MOUNT_RO   0x2103
-#define D64FILE_MOUNT_UL   0x2104
+#define MENU_1541_READ_ONLY    0x8000
+#define MENU_1541_UNLINKED     0x4000
+#define MENU_1541_NO_FLAGS     0x1FFF
 
-#define G64FILE_RUN        0x2121
-#define G64FILE_MOUNT      0x2122
-#define G64FILE_MOUNT_RO   0x2123
-#define G64FILE_MOUNT_UL   0x2124
+#define MENU_1541_MOUNT_D64    0x1520 // +1 for .d71, +2 for .d81
+#define MENU_1541_MOUNT_D64_RO (MENU_1541_MOUNT_D64 | MENU_1541_READ_ONLY)
+#define MENU_1541_MOUNT_D64_UL (MENU_1541_MOUNT_D64 | MENU_1541_UNLINKED)
 
-#define FLOPPY_LOAD_DOS    0x2131
+#define MENU_1541_MOUNT_G64    0x1530
+#define MENU_1541_MOUNT_G64_RO (MENU_1541_MOUNT_G64 | MENU_1541_READ_ONLY)
+#define MENU_1541_MOUNT_G64_UL (MENU_1541_MOUNT_G64 | MENU_1541_UNLINKED)
 
-#define RUNCODE_NO_UNFREEZE  0x01
-#define RUNCODE_NO_CHECKSAVE 0x02
-#define RUNCODE_MOUNT_BUFFER 0x10
-
-typedef enum { e_rom_1541=0, e_rom_1541c=1, e_rom_1541ii=2, e_rom_custom=3, e_rom_custom2=4, e_rom_custom3=5,  e_rom_unset=99 } t_1541_rom;
-typedef enum { e_ram_none      = 0x00,
-               e_ram_8000_BFFF = 0x30,
-               e_ram_4000_7FFF = 0x0C,
-               e_ram_4000_BFFF = 0x3C,
-               e_ram_2000_3FFF = 0x02,
-               e_ram_2000_7FFF = 0x0E,
-               e_ram_2000_BFFF = 0x3E } t_1541_ram;
 
 typedef enum { e_no_disk,
                e_alien_image,
                e_disk_file_closed,
                e_d64_disk,
+               e_d81_disk,
                e_gcr_disk } t_disk_state;
+
+typedef enum { e_dt_1541 = 0,
+               e_dt_1571 = 1,
+               e_dt_1581 = 2,
+               e_dt_unset = 3,
+} t_drive_type;
 
 // register offsets
 #define C1541_POWER       0
@@ -70,45 +66,61 @@ typedef enum { e_no_disk,
 #define C1541_SENSOR      3
 #define C1541_INSERTED    4
 #define C1541_RAMMAP      5
-#define C1541_ANYDIRTY    6
-#define C1541_DIRTYIRQ    7
+#define C1541_SIDE        6
+#define C1541_MAN_WRITE   7
 #define C1541_TRACK       8
 #define C1541_STATUS      9
-#define C1541_MEM_ADDR   10
-#define C1541_AUDIO_ADDR 11
+#define C1541_DISKCHANGE 12
+#define C1541_DRIVETYPE  13
+#define C1541_SOUNDS     14
 
 #define C1541_DIRTYFLAGS    0x0800
 #define C1541_PARAM_RAM     0x1000
+#define C1541_WD177X        0x1800
 
 // constants
 #define SENSOR_DARK  0
 #define SENSOR_LIGHT 1
 
-#define DRVSTAT_MOTOR   0x01
-#define DRVSTAT_WRITING 0x02
+#define DRVSTAT_MOTOR      0x01
+#define DRVSTAT_WRITING    0x02
+#define DRVSTAT_WRITEBUSY  0x04
 
 class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
 {
     static C1541* last_mounted_drive;
     volatile uint8_t *memory_map;
     volatile uint8_t *registers;
+    uint8_t *audio_address;
+
     t_cfg_definition *local_config_definitions;
     mstring drive_name;
+    t_drive_type current_drive_type;
+    mstring current_drive_rom;
     FileManager *fm;
     
     TaskCategory *taskItemCategory;
     int iec_address;
     char drive_letter;
-    bool large_rom;
-    t_1541_ram  ram;
-	t_1541_rom  current_rom;
-	int write_skip;
+    bool multi_mode;
+    int write_skip;
+
+	uint32_t mfm_dirty_bits[2][3]; // two sides, max 96 tracks each.
 	
 	Flash *flash;
-    File *mount_file;
+	mstring mount_file_path;
+	mstring mount_file_name;
+	int mount_function_id;
+	int mount_mode;
+	File *mount_file;
+    File *gcr_ram_file;
     t_disk_state disk_state;
+    bool gcr_image_up_to_date;
+
     GcrImage *gcr_image;
     BinImage *bin_image;
+    uint8_t *dummy_track;
+    WD177x *mfm_controller;
 
     TaskHandle_t taskHandle;
 
@@ -120,26 +132,36 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
         Action *blank;
         Action *turnon;
         Action *turnoff;
+        Action *mode41;
+        Action *mode71;
+        Action *mode81;
     } myActions;
 
-    void poll();
     static void run(void *a);
+    void task();
+    void poll();
 
     bool save_disk_to_file(SubsysCommand *cmd);
     void drive_reset(uint8_t doit);
     void set_hw_address(int addr);
     void set_sw_address(int addr);
-    void set_rom(t_1541_rom rom);
-    void set_ram(t_1541_ram ram);
     void remove_disk(void);
     void insert_disk(bool protect, GcrImage *image);
     void unlink(void);
-    void mount_d64(bool protect, uint8_t *, uint32_t size);
-    void mount_d64(bool protect, File *);
+    void mount_d64(bool protect, File *, int);
     void mount_g64(bool protect, File *);
     void mount_blank(void);
     bool check_if_save_needed(SubsysCommand *cmd);
     bool save_if_needed(SubsysCommand *cmd);
+    void clear_mfm_dirty_bits();
+    bool are_mfm_dirty_bits_set();
+    void map_gcr_image_to_mfm(void);
+    void swap_disk(SubsysCommand *cmd);
+    void wait_for_writeback(void);
+    static void mfm_update_callback(void *obj, int pt, int ps, MfmTrack *tr);
+    FRESULT set_drive_type(t_drive_type drv);
+    FRESULT change_drive_type(t_drive_type drv,  UserInterface *ui);
+
 public:
     C1541(volatile uint8_t *regs, char letter);
     ~C1541();
@@ -162,10 +184,13 @@ public:
     int  get_current_iec_address(void);    
     void drive_power(bool on);
     bool get_drive_power();
+    t_drive_type get_drive_type() { return current_drive_type; }
+    const char *get_drive_type_string();
+    const char *get_drive_rom_file(void);
+    static void list_roms(ConfigItem *it, IndexedList<char *>& strings);
+    void set_rom_config(int idx, const char *fname);
 
-    // Called from user interface thread?  Is this allowed at all? -> no no, the interface thread should
-    // issue a subsys command.
-    void swap_disk(void);
+    void get_last_mounted_file(mstring& path, mstring& name);
 };
 
 extern C1541 *c1541_A;

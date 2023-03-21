@@ -102,6 +102,7 @@ class FileInCBM : public File
         ST_HEADER,
         ST_LINEAR,
         ST_CVT,
+        ST_END,
     } state;
 
     struct {
@@ -130,6 +131,8 @@ class FileInCBM : public File
     SideSectors *side;
 
     int create_cvt_header(void);
+    FRESULT fixup_cbm_file(void);
+    FRESULT fixup_cvt(void);
 
     FRESULT read_header(uint8_t *dst, int len, uint32_t& transferred);
     FRESULT read_linear(uint8_t *dst, int len, uint32_t& transferred);
@@ -166,8 +169,8 @@ class FileSystemCBM : public FileSystem
 	int dir_track, dir_sector;
 	int volume_name_offset;
 
-	uint8_t sect_buffer[256]; // one sector
-    uint8_t root_buffer[256];
+	uint8_t *sect_buffer; // one sector
+    uint8_t *root_buffer;
     bool root_valid;
     bool root_dirty;
     bool writable;
@@ -184,6 +187,8 @@ class FileSystemCBM : public FileSystem
     int     get_abs_sector(int track, int sector);
     bool    get_track_sector(int abs, int &track, int &sector);
     FRESULT deallocate_chain(uint8_t track, uint8_t sector, uint8_t *visited);
+    FRESULT deallocate_vlir_records(uint8_t track, uint8_t sector, uint8_t *visited);
+    bool    is_vlir_entry(DirEntryCBM *p);
 
     //  base class functions, to be filled with dummies
     virtual bool allocate_sector_on_track(int track, int &sector) { return false; }
@@ -202,7 +207,7 @@ public:
     // Create initial structures of empty disk
     virtual FRESULT format(const char *name) { return FR_NO_FILESYSTEM; }
     // Get number of free sectors on the file system
-    virtual FRESULT get_free (uint32_t*) { return FR_NO_FILESYSTEM; }
+    virtual FRESULT get_free (uint32_t*, uint32_t*) { return FR_NO_FILESYSTEM; }
     // Clean-up cached data
     virtual FRESULT sync(void);
 
@@ -248,12 +253,12 @@ public:
 
     bool init(void);
     FRESULT format(const char *name);
-    FRESULT get_free (uint32_t*);
+    FRESULT get_free (uint32_t*, uint32_t*);
 };
 
 class FileSystemD71 : public FileSystemCBM
 {
-	uint8_t bam2_buffer[256];
+	uint8_t *bam2_buffer;
 	bool bam2_dirty;
 	bool bam2_valid;
 
@@ -265,6 +270,7 @@ class FileSystemD71 : public FileSystemCBM
 public:
     FileSystemD71(Partition *p, bool writable) : FileSystemCBM(p, writable, layout_d71)
 	{
+        bam2_buffer = new uint8_t[256];
         init();
     	bam2_dirty = false;
     	if(p->read(bam2_buffer, get_abs_sector(53, 0), 1) == RES_OK) {
@@ -272,31 +278,34 @@ public:
         }
 	}
 
-	~FileSystemD71() { }
+	~FileSystemD71() {
+	    delete[] bam2_buffer;
+	}
 
 	bool init(void);
     FRESULT format(const char *name);
-    FRESULT get_free (uint32_t*);
+    FRESULT get_free (uint32_t*, uint32_t*);
 
     FRESULT sync(void)
     {
-        FRESULT fres = FileSystemCBM :: sync();
+        FRESULT fres = FileSystemCBM::sync();
         if (fres == FR_OK) {
-			if (bam2_dirty) {
-				DRESULT res = prt->write(bam2_buffer, get_abs_sector(53, 0), 1);
-				if(res != RES_OK) {
-					return FR_DISK_ERR;
-				}
-				bam2_dirty = false;
-			}
+            if (bam2_dirty) {
+                DRESULT res = prt->write(bam2_buffer, get_abs_sector(53, 0), 1);
+                if (res != RES_OK) {
+                    return FR_DISK_ERR;
+                }
+                prt->ioctl(CTRL_SYNC, NULL);
+                bam2_dirty = false;
+            }
         }
-    	return fres;
+        return fres;
     }
 };
 
 class FileSystemD81 : public FileSystemCBM
 {
-	uint8_t bam_buffer[512]; // two sectors!
+	uint8_t *bam_buffer; // two sectors! Need 512 bytes
 	bool bam_dirty;
 	bool bam_valid;
 
@@ -305,34 +314,38 @@ class FileSystemD81 : public FileSystemCBM
 public:
     FileSystemD81(Partition *p, bool writable) : FileSystemCBM(p, writable, layout_d81)
 	{
+        bam_buffer = new uint8_t[512];
         init();
 	}
 
-    ~FileSystemD81() { }
+    ~FileSystemD81() {
+        delete[] bam_buffer;
+    }
 
     bool init(void);
     FRESULT format(const char *name);
-    FRESULT get_free (uint32_t*);
+    FRESULT get_free (uint32_t*, uint32_t*);
 
     FRESULT sync(void)
     {
-        FRESULT fres = FileSystemCBM :: sync();
+        FRESULT fres = FileSystemCBM::sync();
         if (fres == FR_OK) {
-			if (bam_dirty) {
-				DRESULT res = prt->write(bam_buffer, get_abs_sector(40, 1), 2);
-				if(res != RES_OK) {
-					return FR_DISK_ERR;
-				}
-				bam_dirty = false;
-			}
+            if (bam_dirty) {
+                DRESULT res = prt->write(bam_buffer, get_abs_sector(40, 1), 2);
+                prt->ioctl(CTRL_SYNC, NULL);
+                if (res != RES_OK) {
+                    return FR_DISK_ERR;
+                }
+                bam_dirty = false;
+            }
         }
-    	return fres;
+        return fres;
     }
 };
 
 class FileSystemDNP : public FileSystemCBM
 {
-    uint8_t bam_buffer[8192]; // 32 sectors!!
+    uint8_t *bam_buffer; // 32 sectors!! Need 8192 bytes
     uint32_t bam_dirty;
     bool bam_valid;
 
@@ -340,23 +353,18 @@ class FileSystemDNP : public FileSystemCBM
     bool set_sector_allocation(int track, int sector, bool alloc);
 public:
     FileSystemDNP(Partition *p, bool writable) : FileSystemCBM(p, writable, layout_dnp) {
+        bam_buffer = new uint8_t[8192];
         init();
     }
 
-    ~FileSystemDNP() { }
+    ~FileSystemDNP() {
+        delete[] bam_buffer;
+    }
 
     bool init(void);
     FRESULT format(const char *name);
-    FRESULT get_free (uint32_t*);
+    FRESULT get_free (uint32_t*, uint32_t *);
     FRESULT sync(void);
 };
-
-#if 0
-int section;
-uint8_t vlir[256];
-uint8_t tmpBuffer[256];
-bool isVlir;
-FRESULT openCVT(FileInfo *info, uint8_t flags,int,int,int);
-#endif
 
 #endif /* FILESYSTEM_D64_FILESYSTEM_H_ */

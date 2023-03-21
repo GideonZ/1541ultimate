@@ -65,6 +65,8 @@ architecture structural of proc_core is
     
     signal vect_addr    : std_logic_vector(3 downto 0);
     signal interrupt    : std_logic;
+    signal vectoring    : std_logic;
+    signal set_i_flag   : std_logic;
 
     signal new_flags    : std_logic_vector(7 downto 0);
     signal n_out        : std_logic;
@@ -73,8 +75,6 @@ architecture structural of proc_core is
     signal z_out        : std_logic;
     signal d_out        : std_logic;
     signal i_out        : std_logic;
-    signal set_b        : std_logic;
-    signal clear_b      : std_logic;
     signal a16          : std_logic;
 begin
     inst_out <= i_reg; -- for debug only
@@ -95,6 +95,9 @@ begin
         reset        => reset,
                                     
         interrupt    => interrupt,
+        vectoring    => vectoring,
+        set_i_flag   => set_i_flag,
+
         i_reg        => i_reg,
         index_carry  => index_carry,
         pc_carry     => pc_carry,
@@ -103,7 +106,6 @@ begin
         sync         => sync,
         latch_dreg   => latch_dreg,
         reg_update   => reg_update,
-        set_b        => set_b,
         copy_d2p     => copy_d2p,
         vect_bit     => vect_bit,
         a16          => a16,
@@ -177,14 +179,12 @@ begin
         
         -- from interrupt controller
         vect_addr    => vect_addr,
-        interrupt    => interrupt,
-        set_b        => set_b,
-        clear_b      => clear_b,
         
         -- from processor state machine and decoder
         sync         => sync,
         latch_dreg   => latch_dreg,
-        vect_bit     => vect_bit,
+        set_i_flag   => set_i_flag,
+        vectoring    => vectoring,
         reg_update   => reg_update,
         copy_d2p     => copy_d2p,
         a_mux        => a_mux,
@@ -221,7 +221,6 @@ begin
         nmi_n       => nmi_n,
         
         i_flag      => p_reg(2),
-        clear_b     => clear_b,
         
         vect_bit    => vect_bit,
         interrupt   => interrupt,

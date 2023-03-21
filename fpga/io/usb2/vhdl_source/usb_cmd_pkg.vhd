@@ -47,6 +47,7 @@ package usb_cmd_pkg is
     type t_usb_cmd_resp is record
         done            : std_logic;
         result          : t_usb_result;
+        error_code      : std_logic_vector(2 downto 0);
 
         -- data descriptor
         data_length     : unsigned(9 downto 0);

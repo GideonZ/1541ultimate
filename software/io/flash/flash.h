@@ -7,35 +7,7 @@
 #define FLASH_ID_BOOTFPGA   0x00
 #define FLASH_ID_BOOTAPP    0x01
 #define FLASH_ID_APPL       0x02
-//#define FLASH_ID_CUSTOMFPGA 0x03
-
-#define FLASH_ID_AR5PAL     0x40
-#define FLASH_ID_AR6PAL     0x41
-#define FLASH_ID_FINAL3     0x42
-#define FLASH_ID_EPYX       0x43
-#define FLASH_ID_RR38PAL    0x44
-#define FLASH_ID_SS5PAL     0x45
-#define FLASH_ID_AR5NTSC    0x46
-#define FLASH_ID_RR38NTSC   0x47
-#define FLASH_ID_SS5NTSC    0x48
-#define FLASH_ID_TAR_PAL    0x49
-#define FLASH_ID_TAR_NTSC   0x4A
-#define FLASH_ID_KCS	    0x4B
-#define FLASH_ID_CUSTOM_ROM 0x4C
-#define FLASH_ID_KERNAL_ROM 0x4D
-#define FLASH_ID_CUSTOM_DRV 0x4E
-#define FLASH_ID_ORIG_KERNAL 0x4F
-#define FLASH_ID_BASIC_ROM  0x50
-#define FLASH_ID_CHARGEN_ROM 0x51
-#define FLASH_ID_ORIG_BASIC 0x52
-#define FLASH_ID_ORIG_CHARGEN 0x53
-#define FLASH_ID_CUSTOM2_DRV 0x54
-#define FLASH_ID_KERNAL_ROM2 0x55
-#define FLASH_ID_CUSTOM3_DRV 0x56
-#define FLASH_ID_KERNAL_ROM3 0x57
-
-#define FLASH_ID_ALL_ROMS   0x5F
-
+#define FLASH_ID_FLASHDRIVE 0xFD
 #define FLASH_ID_CONFIG     0xFE
 #define FLASH_ID_LIST_END	0xFF
 
@@ -79,7 +51,8 @@ public:
     virtual bool erase_sector(int sector) { return false; }
 	virtual int  page_to_sector(int page) { return -1; }
     virtual bool read_page(int page, void *buffer) { return false; }
-	virtual bool write_page(int page, void *buffer) { return false; }
+    virtual bool read_page_power2(int page, void *buffer) { return read_page(page, buffer); }
+	virtual bool write_page(int page, const void *buffer) { return false; }
 	virtual bool need_erase(void) { return false; }
 	int  write_image(int id, uint8_t *buffer, int length);
 

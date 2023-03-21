@@ -1,0 +1,38 @@
+
+Ultimate-II / II+ / U64 Memory Map
+
+Global:
+
+00000000-01FFFFFF 32 MB RAM (U2)
+02000000-03FFFFFF 32 MB RAM (U2+ / U64)
+04000000-040FFFFF  1 MB I/O space - common block ultimate_logic_32
+A0000000-A00FFFFF  1 MB I/O space - U2+ / U64 specific I/O
+
+U2P+L / RiscV based products:
+
+00000000-07FFFFFF 128 MB RAM (U2+L)
+10000000-10FFFFFF 16 MB I/O space - common block ultimate_logic_32
+
+
+RAM Usage:
+00000000-00E9FFFF ~14.6 MB Application space (Code, Heap, Stack)
+00EA0000-00EA7FFF  32 KB -Reserved-
+00EA8000-00EAFFFF  32 KB Kernal replacement space (3x 8K ROM + 8K Shadow RAM)
+00EB0000-00EBFFFF  64 KB Drive B Sound samples
+00EC0000-00ECFFFF  64 KB Drive A Sound samples
+00ED0000-00EDFFFF  64 KB Drive B CPU space (RAM & ROM)
+00EE0000-00EEFFFF  64 KB Drive A CPU space (RAM & ROM)
+00EF0000-00EFFFFF  64 KB Cartridge RAM space
+00F00000-00FFFFFF   1 MB Cartridge ROM space
+01000000-01FFFFFF  16 MB REU / GeoRAM space
+
+U2+ / U64 only:
+02000000-02FFFFFF  16 MB RAM Disk (/temp)
+03000000-03FFFFFF  16 MB Reserved space for loading updater program
+
+U64 only:
+08000000-0BFFFFFF  64 MB Reserved RAM (Currently Not implemented / Not mapped)
+
+Note:
+RAM Disk on U2 is allocated on the HEAP of the application and is only 3 MB in size.
+

@@ -24,6 +24,10 @@ port (
     iec_i       : in  std_logic_vector(3 downto 0) := X"F";
     iec_o       : out std_logic_vector(3 downto 0);
 
+    value1      : in  unsigned(7 downto 0) := X"00";
+    value2      : in  unsigned(7 downto 0) := X"00";
+    value3      : in  unsigned(7 downto 0) := X"00";
+
     board_rev   : in  std_logic_vector(4 downto 0);    
     eth_irq_i   : in  std_logic;
     hub_reset_n : out std_logic;
@@ -44,7 +48,7 @@ architecture rtl of u2p_io is
     signal ulpi_reset_i : std_logic;
 begin
     process(clock, reset)
-        variable local  : unsigned(3 downto 0);
+        variable local  : unsigned(7 downto 0) := X"00";
     begin
         if reset = '1' then -- switched to asynchronous reset
             i2c_scl_o <= '1';
@@ -57,30 +61,36 @@ begin
             buffer_en <= '0';
             iec_o <= (others => '1');
         elsif rising_edge(clock) then
-            local := io_req.address(3 downto 0);
+            local(4 downto 0) := io_req.address(4 downto 0);
             io_resp <= c_io_resp_init;
             
             if io_req.read = '1' then
                 io_resp.ack <= '1';
                 case local is
-                when X"0" | X"1" | X"8" =>
+                when X"00" | X"01" | X"08" =>
                     io_resp.data(0) <= i2c_scl_i;
-                when X"2" | X"3" | X"9" =>
+                when X"02" | X"03" | X"09" =>
                     io_resp.data(0) <= i2c_sda_i;
-                when X"4" | X"5" | X"A" =>
+                when X"04" | X"05" | X"0A" =>
                     io_resp.data(0) <= mdc_out;
-                when X"6" | X"7" | X"B" =>
+                when X"06" | X"07" | X"0B" =>
                     io_resp.data(0) <= mdio_i;
-                when X"C" =>
+                when X"0C" =>
                     io_resp.data(0) <= speaker_en_i;
                     io_resp.data(7 downto 3) <= board_rev;
-                when X"D" =>
+                when X"0D" =>
                     io_resp.data(0) <= hub_reset_i;
-                when X"E" =>
+                when X"0E" =>
                     io_resp.data(0) <= eth_irq_i;
                     io_resp.data(7 downto 4) <= iec_i;
-                when X"F" =>
+                when X"0F" =>
                     io_resp.data(0) <= ulpi_reset_i;
+                when X"10" =>
+                    io_resp.data <= std_logic_vector(value1);
+                when X"11" =>
+                    io_resp.data <= std_logic_vector(value2);
+                when X"12" =>
+                    io_resp.data <= std_logic_vector(value3);
                 when others =>
                     null;
                 end case;
@@ -88,38 +98,38 @@ begin
             if io_req.write = '1' then
                 io_resp.ack <= '1';
                 case local is
-                when X"0" =>
+                when X"00" =>
                     i2c_scl_o <= '0';
-                when X"1" =>
+                when X"01" =>
                     i2c_scl_o <= '1';
-                when X"2" =>
+                when X"02" =>
                     i2c_sda_o <= '0';
-                when X"3" =>
+                when X"03" =>
                     i2c_sda_o <= '1';
-                when X"4" =>
+                when X"04" =>
                     mdc_out <= '0';
-                when X"5" =>
+                when X"05" =>
                     mdc_out <= '1';
-                when X"6" =>
+                when X"06" =>
                     mdio_o <= '0';
-                when X"7" =>
+                when X"07" =>
                     mdio_o <= '1';
-                when X"8" =>
+                when X"08" =>
                     i2c_scl_o <= io_req.data(0);
-                when X"9" =>
+                when X"09" =>
                     i2c_sda_o <= io_req.data(0);
-                when X"A" =>
+                when X"0A" =>
                     mdc_out <= io_req.data(0);
-                when X"B" =>
+                when X"0B" =>
                     mdio_o <= io_req.data(0);
-                when X"C" =>
+                when X"0C" =>
                     speaker_en_i <= io_req.data(0);
                     speaker_vol_i <= io_req.data(4 downto 1);
-                when X"D" =>
+                when X"0D" =>
                     hub_reset_i <= io_req.data(0);
-                when X"E" =>
+                when X"0E" =>
                     iec_o <= io_req.data(7 downto 4);
-                when X"F" =>
+                when X"0F" =>
                     ulpi_reset_i <= io_req.data(0);
                     if io_req.data(7) = '1' then
                         buffer_en <= '1';

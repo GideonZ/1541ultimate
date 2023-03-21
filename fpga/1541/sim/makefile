@@ -59,6 +59,7 @@ AUTO_DEP_PATHS += $(wildcard ../../*/*/vhdl_sim/)
 AUTO_DEP_PATHS += $(wildcard ../../*/vhdl_bfm/)
 AUTO_DEP_PATHS += $(wildcard ../../*/*/vhdl_bfm/)
 AUTO_DEP_PATHS += $(wildcard ../../altera/xilinx_primitives/)
+AUTO_DEP_PATHS += $(wildcard ../../../../ult64/proglogic/c64/)
 
 
 ###############################################################################
@@ -70,7 +71,17 @@ AUTO_DEP_PATHS += $(wildcard ../../altera/xilinx_primitives/)
 ###############################################################################
 
 #### tb1 #####
-TESTBENCH 						:= harness_floppy
+TESTBENCH 						:= mm_address_decode_tb
+TESTBENCHES						:= $(TESTBENCHES) $(TESTBENCH)
+$(TESTBENCH)_SRC				:= 
+$(TESTBENCH)_ENTITY				:= 
+$(TESTBENCH)_TIME				:= 
+$(TESTBENCH)_DO_GUI_BEFORE		:= 
+$(TESTBENCH)_DO_GUI_AFTER		:= 
+$(TESTBENCH)_DO_GUI_OVERRIDE	:= 
+
+#### tb1 #####
+TESTBENCH 						:= tb_floppy_stream
 TESTBENCHES						:= $(TESTBENCHES) $(TESTBENCH)
 $(TESTBENCH)_SRC				:= 
 $(TESTBENCH)_ENTITY				:= 
@@ -95,6 +106,35 @@ $(TESTBENCH)_DO_GUI_OVERRIDE	:=
 
 #### tc1 #####
 TESTCASE 					:= c1541_startup_tc
+TESTCASES					:= $(TESTCASES) $(TESTCASE)
+$(TESTCASE)_SRC				:= $(TESTCASE).vhd
+$(TESTCASE)_ENTITY			:= $(TESTCASE)
+$(TESTCASE)_TIME			:= 20 us;
+$(TESTCASE)_DO_GUI_BEFORE	:= 
+
+
+TESTCASE 					:= c1571_startup_tc
+TESTCASES					:= $(TESTCASES) $(TESTCASE)
+$(TESTCASE)_SRC				:= $(TESTCASE).vhd
+$(TESTCASE)_ENTITY			:= $(TESTCASE)
+$(TESTCASE)_TIME			:= 20 us;
+$(TESTCASE)_DO_GUI_BEFORE	:= 
+
+TESTCASE 					:= c1581_startup_tc
+TESTCASES					:= $(TESTCASES) $(TESTCASE)
+$(TESTCASE)_SRC				:= $(TESTCASE).vhd
+$(TESTCASE)_ENTITY			:= $(TESTCASE)
+$(TESTCASE)_TIME			:= 20 us;
+$(TESTCASE)_DO_GUI_BEFORE	:= 
+
+TESTCASE 					:= mm_startup_1541_tc
+TESTCASES					:= $(TESTCASES) $(TESTCASE)
+$(TESTCASE)_SRC				:= $(TESTCASE).vhd
+$(TESTCASE)_ENTITY			:= $(TESTCASE)
+$(TESTCASE)_TIME			:= 20 us;
+$(TESTCASE)_DO_GUI_BEFORE	:= 
+
+TESTCASE 					:= mm_startup_1571_tc
 TESTCASES					:= $(TESTCASES) $(TESTCASE)
 $(TESTCASE)_SRC				:= $(TESTCASE).vhd
 $(TESTCASE)_ENTITY			:= $(TESTCASE)

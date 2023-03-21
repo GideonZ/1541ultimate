@@ -42,8 +42,6 @@ class NetworkLWIP : public NetworkInterface, ConfigurableObject
 	Fifo<struct pbuf_custom *> pbuf_fifo;
 
 	char hostname[24];
-
-	void lwip_poll();
 public:
     struct netif   my_net_if;
 
@@ -77,6 +75,7 @@ public:
     virtual void init_callback();
     virtual uint8_t output_callback(struct netif *, struct pbuf *) {
         printf("Network Interface: Output Callback - Base\n");
+        return 0;
     }
 
     void free_pbuf(struct pbuf_custom *pbuf);

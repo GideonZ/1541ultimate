@@ -115,10 +115,12 @@ void Screen_VT100::repeat(char c, int rep)
 
 void Screen_VT100::output_fixed_length(const char *string, int offset_x, int width)
 {
+/*
 	if (offset_x)
 		stream->format("\r\e[%dC", offset_x);
 	else
 		stream->format("\r");
+*/
 
 	//repeat(' ', offset_x);
 	while(width > 0) {

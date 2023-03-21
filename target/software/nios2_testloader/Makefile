@@ -25,9 +25,9 @@ SRCS_C   =	start_rtos.c \
             time.c \
             alt_malloc_lock.c \
             alt_do_ctors.c \
-            ff2.c \
-            ffsyscall.c \
-            ccsbcs.c
+            ff.c \
+            ffsystem.c \
+            ffunicode.c
                         
 SRCS_CC	 =  small_printf.cc \
             i2c_drv.cc \

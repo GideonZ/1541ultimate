@@ -64,6 +64,10 @@ StreamTextLog textLog(96*1024);
 
 extern "C" void (*custom_outbyte)(int c);
 
+extern "C" {
+	void print_tasks(void);
+}
+
 void outbyte_log(int c)
 {
 	textLog.charout(c);
@@ -75,7 +79,7 @@ extern "C" void ultimate_main(void *a)
 
     uint32_t capabilities = getFpgaCapabilities();
 
-	printf("*** 1541 Ultimate V3.0 ***\n");
+	printf("*** Ultimate-II V3.x ***\n");
     printf("*** FPGA Capabilities: %8x ***\n\n", capabilities);
     
 	printf("%s ", rtc.get_long_date(time_buffer, 32));
@@ -103,7 +107,11 @@ extern "C" void ultimate_main(void *a)
             sprintf(title, "\eA*** Ultimate 64 V1.%b - %s ***\eO", C64_CORE_VERSION, APPL_VERSION);
         }
     } else if(capabilities & CAPAB_ULTIMATE2PLUS) {
-    	sprintf(title, "\eA*** Ultimate-II Plus %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
+        if (capabilities & CAPAB_FPGA_TYPE) {
+    	    sprintf(title, "\eA*** Ultimate-II Plus-L %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
+        } else {
+    	    sprintf(title, "\eA*** Ultimate-II Plus %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
+        }
     } else {
     	sprintf(title, "\eA*** 1541 Ultimate-II %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
     }
@@ -149,8 +157,9 @@ extern "C" void ultimate_main(void *a)
 	    tape_controller = new TapeController;
     if(capabilities & CAPAB_C2N_RECORDER)
 	    tape_recorder   = new TapeRecorder;
-    if(capabilities & CAPAB_DRIVE_1541_1)
+    if(capabilities & CAPAB_DRIVE_1541_1) {
         c1541_A = new C1541(C1541_IO_LOC_DRIVE_1, 'A');
+    }
     if(capabilities & CAPAB_DRIVE_1541_2) {
         c1541_B = new C1541(C1541_IO_LOC_DRIVE_2, 'B');
     }
@@ -166,9 +175,7 @@ extern "C" void ultimate_main(void *a)
     reu_preloader = new REUPreloader();
     
     printf("All linked modules have been initialized and are now running.\n");
-    static char buffer[8192];
-    vTaskList(buffer);
-    puts(buffer);
+    print_tasks();
 
 /*
 #ifdef U64
@@ -192,7 +199,9 @@ extern "C" void ultimate_main(void *a)
 #endif
 */
 
-    custom_outbyte = outbyte_log;
+#if !DEVELOPER
+//    custom_outbyte = outbyte_log;
+#endif
 
     while(c64) {
         int doIt = 0;

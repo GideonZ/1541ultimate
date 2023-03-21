@@ -31,18 +31,7 @@
 #include "c64.h"
 #include "dump_hex.h"
 #include "tape_controller.h"
-
-__inline uint32_t le_to_cpu_32(uint32_t a)
-{
-#ifdef NIOS
-	return a;
-#else
-	uint32_t m1, m2;
-    m1 = (a & 0x00FF0000) >> 8;
-    m2 = (a & 0x0000FF00) << 8;
-    return (a >> 24) | (a << 24) | m1 | m2;
-#endif
-}
+#include "endianness.h"
 
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_tap(FileType :: getFileTypeFactory(), FileTypeTap :: test_type);
@@ -98,7 +87,7 @@ void FileTypeTap :: readIndexFile(void)
     }
 }
 
-static uint32_t readLine(const char *buffer, uint32_t index, char *out, int outlen)
+uint32_t readLine(const char *buffer, uint32_t index, char *out, int outlen)
 {
     int i = 0;
     // trim leading spaces and tabs
@@ -113,7 +102,7 @@ static uint32_t readLine(const char *buffer, uint32_t index, char *out, int outl
         }
         index++;
     }
-    if (buffer[index] == 0x0A) {
+    if ((buffer[index] == 0x0A) || (buffer[index] == 0x00)) {
         index++;
     }
     out[i] = 0;
@@ -160,12 +149,13 @@ void FileTypeTap :: parseIndexFile(File *f)
     if ((size > 8192) || (size < 8)) { // max 8K index file
         return;
     }
-    char *buffer = new char[size];
+    char *buffer = new char[size+1];
     char *linebuf = new char[80];
     char *name;
 
     uint32_t transferred;
     f->read(buffer, size, &transferred);
+    buffer[size] = 0;
 
     uint32_t offset;
 

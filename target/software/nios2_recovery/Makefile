@@ -44,6 +44,7 @@ SRCS_CC	 =  u2p_init.cc \
 			file_partition.cc \
 			rtc_i2c.cc \
 			c64.cc \
+			c64_crt.cc \
 			c64_subsys.cc \
 			screen.cc \
 			keyboard_c64.cc \
@@ -92,7 +93,7 @@ SRCS_ASM =
 
 SRCS_ASMS = port_asm.S
 
-SRCS_6502 = bootcrt.tas
+SRCS_6502 = bootcrt.tas eapi.tas
 
 SRCS_BIN =  chars.bin
 

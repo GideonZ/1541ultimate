@@ -66,11 +66,10 @@ UsbDriver *UsbHubDriver :: test_driver(UsbInterface *intf)
 
 	//printf("** Test UsbHubDriver **\n");
 	if(dev->device_descr.device_class != 0x09) {
-		printf("Device is not a hub..\n");
 		return 0;
 	}
 	if((dev->device_descr.protocol != 0x01)&&(dev->device_descr.protocol != 0x02)) {
-		printf("Device protocol: no TT's. [%b]\n", dev->device_descr.protocol);
+		// printf("Device protocol: no TT's. [%b]\n", dev->device_descr.protocol);
 		return 0;
 	}
 //	if(dev->interface_descr.sub_class != 0x00) {
@@ -247,7 +246,7 @@ void UsbHubDriver :: interrupt_handler()
     //printf("This = %p. HUB (ADDR=%d) IRQ data (%d bytes), at %p: ", this, device->current_address, data_length, irq_data_in);
 	configASSERT(data_length <= 4);
 
-	host->resume_input_pipe(irq_transaction);
+	// host->resume_input_pipe(irq_transaction);
 }
 
 void UsbHubDriver :: handle_irqdata(void)

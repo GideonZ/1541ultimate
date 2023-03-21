@@ -16,6 +16,7 @@ port (
     resp            : out t_io_resp;
     
     c64_stopped		: in  std_logic;
+    generated_tick  : out std_logic;
     
     c2n_motor_in    : in  std_logic;
     c2n_motor_out   : out std_logic := '0'; -- not yet used
@@ -246,5 +247,7 @@ begin
         motor_en  => motor_en,
         tick_out  => tick_out
     );
+
+    generated_tick <= tick_out;
 
 end gideon;

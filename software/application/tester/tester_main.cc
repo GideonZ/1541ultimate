@@ -23,6 +23,7 @@
 #include "filemanager.h"
 #include "stream_textlog.h"
 #include "itu.h"
+#include "flash.h"
 
 extern "C" {
 	#include "jtag.h"
@@ -35,12 +36,18 @@ extern "C" {
 }
 
 int getNetworkPacket(uint8_t **payload, int *length);
+int prepare_flashdisk(uint8_t *mem, uint32_t mem_size);
 
 #include "usb_base.h"
 
 extern unsigned char _dut_start;
 extern unsigned char _dut_end;
 extern unsigned char _dut_application_start;
+
+extern uint8_t _testexec_rbf_start;
+extern uint8_t _testexec_rbf_end;
+extern uint8_t _test_loader_app_start;
+extern uint8_t _test_loader_app_end;
 
 typedef struct {
 	const char *fileName;
@@ -55,12 +62,14 @@ BinaryImage_t toBeFlashed[] = {
 		{ "/Usb?/flash/recovery.app",          "Recovery Application", 0x00080000, 0, 0 },
 		{ "/Usb?/flash/ultimate_run.swp",      "Runtime FPGA Image",   0x80000000, 0, 0 },
 		{ "/Usb?/flash/ultimate.app",          "Runtime Application",  0x800C0000, 0, 0 },
-		{ "/Usb?/flash/rompack.bin",           "ROM Pack",             0x80200000, 0, 0 }
+		{ NULL,                                "Flash Disk",           0x80200000, 0, 0 },
+		{ NULL, NULL, 0, 0, 0 },
 };
 
 BinaryImage_t toBeFlashedExec[] = {
 		{ "/Usb?/flash/testexec.swp",      "TestExec FPGA Image",      0x00000000, 0, 0 },
 		{ "/Usb?/flash/test_loader.app",   "Test Application Loader",  0x00080000, 0, 0 },
+		{ NULL, NULL, 0, 0, 0 },
 };
 
 BinaryImage_t dutFpga   = { "/Usb?/tester/dut.fpga","DUT FPGA Image", 0, 0, 0 };
@@ -86,6 +95,127 @@ static void outbyte_local(int c)
 	while (ioRead8(UART_FLAGS) & UART_TxFifoFull);
 	ioWrite8(UART_DATA, c);
 }
+
+static bool my_memcmp(void *a, void *b, int len)
+{
+    uint32_t *pula = (uint32_t *)a;
+    uint32_t *pulb = (uint32_t *)b;
+    len >>= 2;
+    while(len--) {
+        if(*pula != *pulb) {
+            printf("ERR: %p: %8x, %p %8x.\n", pula, *pula, pulb, *pulb);
+            return false;
+        }
+        pula++;
+        pulb++;
+    }
+    return true;
+}
+
+static bool flash_buffer_at(Flash *flash, int address, bool header, void *buffer, void *buf_end, const char *version, const char *descr)
+{
+	static int last_sector = -1;
+	int length = (int)buf_end - (int)buffer;
+	if (length > 9000000) {
+		return false;
+	}
+    int page_size = flash->get_page_size();
+    int page = address / page_size;
+    char *p;
+    char *verify_buffer = new char[page_size]; // is never freed, but the hell we care!
+
+    if(header) {
+        printf("Flashing  \033\027%s\033\037,\n  version \033\027%s\033\037..\n", descr, version);
+        uint8_t *bin = new uint8_t[length+16];
+        uint32_t *pul;
+        pul = (uint32_t *)bin;
+        *(pul++) = (uint32_t)length;
+        memset(pul, 0, 12);
+        strcpy((char*)pul, version);
+        memcpy(bin+16, buffer, length);
+        length+=16;
+        p = (char *)bin;
+    }
+    else {
+        printf("Flashing  \033\027%s\033\037..      \n", descr);
+        p = (char *)buffer;
+    }
+
+	bool do_erase = flash->need_erase();
+	int sector;
+    while(length > 0) {
+		if (do_erase) {
+			sector = flash->page_to_sector(page);
+			if (sector != last_sector) {
+				last_sector = sector;
+				//printf("Erasing     %d   \n", sector);
+				if(!flash->erase_sector(sector)) {
+			        printf("Erase failed...\n");
+					last_sector = -1;
+					return false;
+				}
+			}
+		}
+        printf("Programming %d  \r", page);
+        int retry = 3;
+        while(retry > 0) {
+            retry --;
+            if(!flash->write_page(page, p)) {
+                printf("Programming error on page %d.\n", page);
+                continue;
+            }
+            flash->read_page(page, verify_buffer);
+            if(!my_memcmp(verify_buffer, p, page_size)) {
+                printf("Verify failed on page %d.\n", page, retry);
+                // printf("%p %p %d\n", verify_buffer, p, page_size);
+                dump_hex_verify(p, verify_buffer, page_size);
+                continue;
+            }
+            retry = -2;
+        }
+        if(retry != -2) {
+			last_sector = -1;
+            printf("Programming failed...\n");
+            return false;
+        }
+        page ++;
+        p += page_size;
+        length -= page_size;
+    }
+    return true;
+}
+
+static void update_self(void)
+{
+	printf("*** Flash Programmer To program Test Loader ***\n\n");
+
+	REMOTE_FLASHSEL_0;
+    REMOTE_FLASHSELCK_0;
+    REMOTE_FLASHSELCK_1;
+	Flash *flash = get_flash();
+
+	printf("Flash: %p. Capabilities: %8x\n", flash, getFpgaCapabilities());
+
+	if (flash->get_number_of_pages() != 4096) { // this is later not anymore so for the DUTs. But we can continue using this for the tester itself
+		printf("* ERROR: Unexpected flash type Bank #0\n");
+		while(1)
+			;
+	}
+	flash->protect_disable();
+
+	flash_buffer_at(flash, 0x00000, false, &_testexec_rbf_start,   &_testexec_rbf_end,   "V1.0", "Test Exec FPGA");
+	flash_buffer_at(flash, 0x80000, false, &_test_loader_app_start,  &_test_loader_app_end,  "V1.0", "Test Loader Appl.");
+
+	flash->protect_configure();
+	flash->protect_enable();
+
+	printf("Done!                            \n");
+
+	REMOTE_FLASHSEL_0;
+    REMOTE_FLASHSELCK_0;
+    REMOTE_FLASHSELCK_1;
+}
+
 
 int run_application_on_dut(JTAG_Access_t *target, uint32_t *app)
 {
@@ -296,9 +426,6 @@ int program_flash(JTAG_Access_t *target, BinaryImage_t *flashFile)
 	return executeDutCommand(target, 12, 60*200, NULL);
 }
 
-
-
-
 int load_file(BinaryImage_t *flashFile)
 {
 	FRESULT fres;
@@ -388,6 +515,56 @@ int checkMemory(JTAG_Access_t *target, int timeout, char **log)
 	return retval;
 }
 
+int checkMemoryBetter(JTAG_Access_t *target, int timeout, char **log)
+{
+	int retval = 0;
+
+	uint8_t reset = 0x80;
+	uint8_t download = 0x00;
+	vji_write(target, 2, &reset, 1);
+	vji_write(target, 2, &download, 1);
+	vTaskDelay(100);
+
+	uint32_t dest = 0;
+	uint16_t *src = random; // 8K of data, that is 2K words of 32 bit
+	// Every time we will write 256 words, so the last that can be addressed is
+	// A one word shift could then give us 0x700 test blocks.
+	// The first address is 0x100; the last address: 0x3FFFC00
+
+	dest = 0;
+	for(int i=0; i < 0x700; i++) {
+		vji_write_memory(target, dest, 256, (uint32_t *)src);
+		if ((i & 31) == 31) {
+			printf(">");
+		}
+		src += 2;
+		dest += 0x9244;
+	}
+
+	printf("\n");
+	dest = 0;
+	src = random;
+	static uint32_t verifyBuffer[256];
+
+	for(int i=0; i < 0x700; i++) {
+		vji_read_memory(target, dest, 256, verifyBuffer);
+		if ((i & 31) == 31) {
+			printf("<");
+		}
+
+		if(memcmp(verifyBuffer, src, 256) != 0) {
+			printf("\nVerify failure. RAM error at address %p.\n", dest);
+			dump_hex_verify(src, verifyBuffer, 256);
+			retval = -3;
+			break;
+		}
+		src += 2;
+		dest += 0x9244;
+	}
+	return retval;
+}
+
+
 int jigPowerSwitchOverTest(JTAG_Access_t *target, int timeout, char **log)
 {
 	IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, 0xF0); // turn off DUT
@@ -443,6 +620,8 @@ int jigVoltageRegulatorTest(JTAG_Access_t *target, int timeout, char **log)
 	vTaskDelay(200);
 	jtag_clear_fpga(target->host);
 	vTaskDelay(100);
+    jtag_clear_fpga(target->host);
+    vTaskDelay(100);
 	report_analog();
 	int errors = validate_analog(1);
 	if (errors) {
@@ -558,9 +737,9 @@ int bringupConfigure(JTAG_Access_t *target, int timeout, char **log)
 		return -1;
 	}
 
-	portDISABLE_INTERRUPTS();
+	portENTER_CRITICAL();
 	jtag_configure_fpga(target->host, (uint8_t *)dutFpga.buffer, (int)dutFpga.size);
-	portENABLE_INTERRUPTS();
+	portEXIT_CRITICAL();
 	vTaskDelay(100);
 	report_analog();
 
@@ -874,8 +1053,11 @@ int flashRoms(JTAG_Access_t *target, int timeout, char **log)
 
 	// Flash Programming
 	int flash = 0;
-	for (int i=0; i<5; i++) {
-		if (!toBeFlashed[i].buffer) {
+	for (int i=0; ; i++) {
+	    if (!toBeFlashed[i].fileName) { // end of list
+	        break;
+	    }
+	    if (!toBeFlashed[i].buffer) {
 			printf("No Valid data for '%s' => Cannot flash.\n", toBeFlashed[i].romName);
 			errors ++;
 		} else {
@@ -899,7 +1081,10 @@ int flashRomsExec(JTAG_Access_t *target, int timeout, char **log)
 
 	// Flash Programming
 	int flash = 0;
-	for (int i=0; i<2; i++) {
+	for (int i=0; ; i++) {
+        if (!toBeFlashedExec[i].fileName) { // end of list
+            break;
+        }
 		if (!toBeFlashedExec[i].buffer) {
 			printf("No Valid data for '%s' => Cannot flash.\n", toBeFlashed[i].romName);
 			errors ++;
@@ -1120,6 +1305,15 @@ TestDefinition_t checks[] = {
 		{ "", NULL, 0, false, false, false }
 };
 
+TestDefinition_t mem_only[] = {
+		{ "Power up DUT in slot",   dutPowerOn,              1,  true, false, false },
+		{ "Check FPGA ID Code",     bringupIdCode,           1,  true, false,  true },
+		{ "Configure the FPGA",     bringupConfigure,        1,  true, false,  true },
+		{ "Verify DUT appl running",checkApplicationRun,   150,  true, false,  true },
+		{ "Run Deep Memory Test",   checkMemoryBetter,     600, false, false,  true },
+		{ "", NULL, 0, false, false, false }
+};
+
 TestDefinition_t usb_only[] = {
 		{ "Power up DUT in slot",   dutPowerOn,              1,  true, false, false },
 		{ "Check FPGA ID Code",     bringupIdCode,           1,  true, false,  true },
@@ -1180,6 +1374,20 @@ int writeLog(StreamTextLog *log, const char *prefix, const char *name)
 	return fres;
 }
 
+void checkUpdate(void)
+{
+	if (getFpgaVersion() < 0x70) {
+		printf("The Test Executer is outdated and needs to be updated. Continue? (Y/n)\n");
+		int ch;
+		do {
+			ch = uart_get_byte(0);
+		} while(ch < 0);
+		if (ch == 'Y') {
+			update_self();
+		}
+	}
+}
+
 void setTime(void)
 {
 	char buffer[32];
@@ -1224,7 +1432,7 @@ void setDate(void)
 {
 	char buffer[32];
 	printf("The current date is set to: %s\n", rtc.get_date_string(buffer, 32));
-	printf("Enter new date, using 6 numeric chars:\n");
+	printf("Enter new date, using 6 numeric chars in YY-MM-DD format:\n");
 	int ch;
 	char *input = "_______";
 	int Yi,Mi,Di;
@@ -1355,12 +1563,13 @@ void usage()
 	char date[48];
 	char time[48];
 
-	printf("\n** Ultimate 2+ Tester *** V1.7 *** ");
-	printf("%s %s ***\n", rtc.get_long_date(date, 40), rtc.get_time_string(time, 40));
+	printf("\n** Ultimate 2+ Tester *** V1.8 *** February 2021 ***");
+	printf("\nIt is: %s %s ***\n", rtc.get_long_date(date, 40), rtc.get_time_string(time, 40));
 	printf("Press 'j' or left button on Tester to run test on JIG.\n");
 	printf("Press 's' or right button on Tester to run test in Slot.\n");
-	printf("Press 'c' to read the test report from the board.\n");
-	printf("Press 'u' to run the USB test only.\n");
+	printf("Press 'c' to read the test report from the board (jig).\n");
+	printf("Press 'u' to run the USB test only (slot).\n");
+	printf("Press 'M' to run the Memory test only (slot).\n");
 	printf("Press 'P' to turn on jig and slot. Press any key to turn off power.\n");
 	printf("Press 'D' to set RTC date. (ISO Format: YYYY-MM-DD\n");
 	printf("Press 'T' to set RTC time. (24 hr format)\n");
@@ -1374,6 +1583,9 @@ extern "C" {
 		IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x08); // green
 		configure_adc();
 		printf("Welcome to the Ultimate-II+ automated test system. (Build October 2019, FPGA Version: %b)\n", getFpgaVersion());
+
+		checkUpdate();
+
 		printf("Initializing local USB devices...\n");
 
 		// rtc.set_time_in_chip(0, 2016 - 1980, 11, 19, 6, 17, 45, 0);
@@ -1393,10 +1605,22 @@ extern "C" {
 
 		// fm->print_directory("/Usb?");
 
-		for (int i=0; i < 5; i++) {
-			load_file(&toBeFlashed[i]);
+		for (int i=0; ; i++) {
+		    if (!toBeFlashed[i].fileName)
+		        break;
+		    load_file(&toBeFlashed[i]);
 		}
-		for (int i=0; i < 2; i++) {
+		const uint32_t flashDiskSize = 0x1F0000;
+		uint8_t *flashDiskImage = new uint8_t[flashDiskSize]; // see w25q_flash.cc
+		int flashDiskUsed = prepare_flashdisk(flashDiskImage, flashDiskSize);
+		if (flashDiskUsed > 0) {
+		    toBeFlashed[4].fileName = "FlashDisk";
+		    toBeFlashed[4].buffer = (uint32_t *)flashDiskImage;
+		    toBeFlashed[4].size = (flashDiskUsed << 12);
+		}
+		for (int i=0; ; i++) {
+            if (!toBeFlashedExec[i].fileName)
+                break;
 			load_file(&toBeFlashedExec[i]);
 		}
 
@@ -1412,12 +1636,24 @@ extern "C" {
 		TestSuite slotSuite("Slot Test Suite", slot_tests);
 		TestSuite checkSuite("Check Suite", checks);
 		TestSuite usbSuite("USB Suite", usb_only);
+		TestSuite memSuite("Memory Test Suite", mem_only);
 		TestSuite flashSuite("Flash Suite", flash_only);
 		TestSuite prepareSuite("Prepare Tester", prepare_testexec);
 
 		printf("Generating Random numbers for testing memory.\n");
 		generateRandom();
 		printf("Done!\n\n");
+
+		while(1) {
+			int y, M, d, wd, h, m, s;
+			rtc.get_time(y, M, d, wd, h, m ,s);
+			if (y >= 41) {
+				break;
+			}
+			printf("Wrong date. (Y = %d) Please set the date / time first.\n", y);
+			setDate();
+			setTime();
+		}
 
 		usage();
 
@@ -1507,6 +1743,10 @@ extern "C" {
 				writeLog(&logger, "/Usb?/logs/slot_", slotSuite.getDateTime());
 			}
 
+			if (ub == 0x06) {
+				update_self();
+			}
+
 			if (ub == (int)'#') {
 				prepareSuite.Reset((volatile uint32_t *)JTAG_1_BASE);
 				logger.Reset();
@@ -1555,6 +1795,21 @@ extern "C" {
 				logger.Stop();
 				IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, 0xF4);
 				if (!usbSuite.Passed()) {
+					IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x02); // red one
+				} else {
+					IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x01); // green one
+				}
+			}
+
+			if ((buttons == 0x00) && (ub == (int)'M')) {
+				memSuite.Reset((volatile uint32_t *)JTAG_1_BASE);
+				logger.Reset();
+				IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x04);
+				memSuite.Run();
+				memSuite.Report();
+				logger.Stop();
+				IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, 0xF4);
+				if (!memSuite.Passed()) {
 					IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x02); // red one
 				} else {
 					IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x01); // green one

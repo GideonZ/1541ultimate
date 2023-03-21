@@ -47,6 +47,11 @@ your application. */
 #define configTIMER_QUEUE_LENGTH                10
 #define configTIMER_TASK_STACK_DEPTH            configMINIMAL_STACK_SIZE
 
+/* Definitions added for RiscV. */
+#define configISR_STACK_SIZE_WORDS      256
+#define configMTIME_BASE_ADDRESS        ( 0 )
+#define configMTIMECMP_BASE_ADDRESS     ( 0 )
+
 /* Interrupt nesting behaviour configuration. */
 #define configKERNEL_INTERRUPT_PRIORITY         0x01
 #define configMAX_SYSCALL_INTERRUPT_PRIORITY    0x03

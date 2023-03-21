@@ -26,7 +26,7 @@ class TaskSubMenu : public ContextMenu
 {
     TaskCategory *category;
 public:
-    TaskSubMenu(UserInterface *ui, TreeBrowserState *state, TaskCategory *cat, int item);
+    TaskSubMenu(UserInterface *ui, TreeBrowserState *state, TaskCategory *cat, int first, int item);
     ~TaskSubMenu() { }
     int get_items(void);
 };

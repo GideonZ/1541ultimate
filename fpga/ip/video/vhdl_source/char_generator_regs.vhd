@@ -27,14 +27,15 @@ port (
     io_req          : in  t_io_req;
     io_resp         : out t_io_resp;
 
-    keyb_row        : in    std_logic_vector(7 downto 0);
-    keyb_col        : inout std_logic_vector(7 downto 0);
+    keyb_row        : in  std_logic_vector(7 downto 0);
+    keyb_col        : out std_logic_vector(7 downto 0);
     
     control         : out t_chargen_control );
 end entity;
 
 architecture gideon of char_generator_regs is
     signal control_i        : t_chargen_control := c_chargen_control_init;
+    signal keyb_col_i       : std_logic_vector(7 downto 0);
 begin
     process(clock)
     begin
@@ -75,7 +76,7 @@ begin
                         control_i.transparent <= io_req.data(3 downto 0);
                         control_i.overlay_on  <= io_req.data(7);
                     when c_chargen_keyb_col =>
-                        keyb_col <= io_req.data;
+                        keyb_col_i <= io_req.data;
                     when others =>
                         null;
                 end case;
@@ -85,7 +86,7 @@ begin
                     when c_chargen_keyb_row =>
                         io_resp.data <= keyb_row;
                     when c_chargen_keyb_col =>
-                        io_resp.data <= keyb_col;
+                        io_resp.data <= keyb_col_i;
                     when others =>
                         null;
                 end case;
@@ -93,10 +94,11 @@ begin
 
             if reset='1' then
 --                control_i <= c_chargen_control_init;
-                keyb_col  <= (others => '1');
+                keyb_col_i  <= (others => '1');
             end if;
         end if;
     end process;
     
+    keyb_col <= keyb_col_i;
     control <= control_i;
 end gideon;

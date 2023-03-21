@@ -66,9 +66,25 @@ void TreeBrowserState :: do_refresh()
 
     if(needs_reload) {
     	reload();
-        cursor_pos = first_item_on_screen + selected_line;
-        under_cursor = (*children)[cursor_pos];
     }
+
+    cursor_pos = first_item_on_screen + selected_line;
+    if (cursor_pos >= children->get_elements()) {
+        cursor_pos = children->get_elements() - 1;
+    }
+    if (cursor_pos < 0) {
+        cursor_pos = 0;
+    }
+    do {
+        under_cursor = (*children)[cursor_pos];
+        if (!under_cursor) {
+            break;
+        }
+        if (under_cursor->isSelectable()) {
+            break;
+        }
+        cursor_pos++;
+    } while(1);
 
     if(!under_cursor) { // initial state or reset state
         browser->reset_quick_seek();
@@ -153,7 +169,8 @@ void TreeBrowserState :: draw_item(Browsable *t, int line, bool selected)
 		} else { // non selectable item
 			browser->window->set_color(12); // TODO
 		}
-		t->getDisplayString(buffer, browser->window->get_size_x());
+		int squeeze_type = browser->user_interface->filename_overflow_squeeze;
+		t->getDisplayString(buffer, browser->window->get_size_x(), squeeze_type);
 		browser->window->output_line(buffer);
         browser->window->set_background(0);
     } else {
@@ -172,7 +189,8 @@ void TreeBrowserState :: update_selected(void)
     browser->window->move_cursor(0, selected_line);
     browser->window->set_color(browser->user_interface->color_sel); // highlighted
     browser->window->set_background(browser->user_interface->color_sel_bg);
-    under_cursor->getDisplayString(buffer, browser->window->get_size_x());
+    int squeeze_type = browser->user_interface->filename_overflow_squeeze;
+    under_cursor->getDisplayString(buffer, browser->window->get_size_x(), squeeze_type);
     browser->window->output_line(buffer);
 }
     
@@ -224,15 +242,6 @@ void TreeBrowserState :: reload(void)
 	printf("State %s reloaded. # of children = %d\n", node->getName(), children->get_elements());
 	needs_reload = false;
 	refresh = true;
-//	move_to_index(cursor_pos);
-/*
-	int child_count = node->children->get_elements();
-	node->cleanup_children();
-	node->fetch_children();
-	child_count = node->children->get_elements();
-	reselect();
-	refresh = true;
-*/
 }
 
 void TreeBrowserState :: into(void)
@@ -240,8 +249,6 @@ void TreeBrowserState :: into(void)
 	if(!under_cursor)
 		return;
 
-	printf("Going deeper into = %s\n", under_cursor->getName());
-        
 	deeper = new TreeBrowserState(under_cursor, browser, level+1);
 
 	int error;
@@ -251,7 +258,7 @@ void TreeBrowserState :: into(void)
     	return;
     }
 	browser->path->cd(under_cursor->getName());
-    printf("%d children fetched.\n", deeper->children->get_elements());
+    printf("%d children fetched from %s.\n", deeper->children->get_elements(), under_cursor->getName());
 
 	//user_interface->set_path(under_cursor);
     browser->state = deeper;
@@ -264,8 +271,6 @@ bool TreeBrowserState :: into2(void)
 	if(!under_cursor)
 		return(false);
 
-	printf("Going deeper into = %s\n", under_cursor->getName());
-
 	deeper = new TreeBrowserState(under_cursor, browser, level+1);
 
     int error;
@@ -274,15 +279,14 @@ bool TreeBrowserState :: into2(void)
     if(error < 0) {
     	delete deeper;
     	deeper = NULL;
-    	return(true);
+    	return true;
     }
 	browser->path->cd(under_cursor->getName());
-    printf("%d children fetched.\n", deeper->children->get_elements());
+    printf("%d children fetched from %s.\n", deeper->children->get_elements(), under_cursor->getName());
 
-    // user_interface->set_path(under_cursor);
     browser->state = deeper;
     deeper->previous = this;
-	return(false);
+	return false;
 }
 
 // step into browsable by name, used by TreeBrowser::cd(char* path)
@@ -296,15 +300,12 @@ void TreeBrowserState :: into3(const char* name)
 
     for(int i=0; i<children->get_elements(); i++) {
         if(pattern_match(name, (*children)[i]->getName(), false)) {
-        //if(strcasecmp((*children)[i]->getName(), name) == 0) {
             browsable = (*children)[i];
             break;
         }
     }
     if(!browsable)
         return;
-    
-    printf("Going deeper into = %s\n", browsable->getName());
     
     deeper = new TreeBrowserState(browsable, browser, level+1);
     
@@ -315,9 +316,8 @@ void TreeBrowserState :: into3(const char* name)
         return;
     }
     browser->path->cd(browsable->getName());
-    printf("%d children fetched.\n", deeper->children->get_elements());
+    printf("%d children fetched from %s.\n", deeper->children->get_elements(), browsable->getName());
     
-    //user_interface->set_path(under_cursor);
     browser->state = deeper;
     deeper->previous = this;
 }

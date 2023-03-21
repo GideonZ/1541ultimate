@@ -10,18 +10,7 @@ extern "C" {
 #include "filemanager.h"
 #include "FreeRTOS.h"
 #include "task.h"
-
-__inline uint32_t cpu_to_32le(uint32_t a)
-{
-#ifdef NIOS
-	return a;
-#else
-	uint32_t m1, m2;
-    m1 = (a & 0x00FF0000) >> 8;
-    m2 = (a & 0x0000FF00) << 8;
-    return (a >> 24) | (a << 24) | m1 | m2;
-#endif
-}
+#include "endianness.h"
 
 static uint8_t c_cbi_reset[]                  = { 0x1D, 0x04, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 static uint8_t c_request_sense[]              = { 0x03, 0x00, 0x00, 0x00, 0x12, 0x00, 0x00, 0x00 };

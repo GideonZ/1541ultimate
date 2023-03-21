@@ -46,22 +46,7 @@ class mysocket:
         self.conn = conn
         
 if __name__ == "__main__":
-    if (sys.argv[1] == 'c'):
-        s = mysocket()
-        
-        message = (("abcdefghijklmnopqrstuvwxyz" * 5) + ("0123456789" * 10)) * 10
-        #print message
-        message = message * 2000
-        
-        if (len(sys.argv) == 3):
-            s.connect(sys.argv[2], 5001)
-        else:
-            s.connect("localhost", 5001)
-        s.mysend(message)
-        s.sock.shutdown(0)
-        s.sock.close()
-
-    elif (sys.argv[1] == 't'):
+    if (sys.argv[1] == 't'):
         s = mysocket()
         
         if (len(sys.argv) == 3):
@@ -91,6 +76,20 @@ if __name__ == "__main__":
                 s.sock.shutdown(0)
                 s.sock.close()
 
+    elif (sys.argv[1] == 'c'):
+        with open(sys.argv[2], "rb") as f:
+            bytes = f.read(200000) # max 200K 
+            if bytes != "":
+                s = mysocket()
+                s.connect(sys.argv[3], 64)
+
+                s.mysend(pack("<H", 0xFF0D))
+                lenbytes = pack("<L", len(bytes))
+                s.mysend(lenbytes[0:3]) # Send only 3 of the 4 bytes. Who invented this?!
+                s.mysend(bytes)
+                
+                s.sock.shutdown(0)
+                s.sock.close()
 
     elif (sys.argv[1] == 'D'):
         s = mysocket()
@@ -193,6 +192,20 @@ if __name__ == "__main__":
                 #s.mysend(bytes)
 
                 s.mysend(pack("<H", 0xFF02))
+                s.mysend(pack("<H", len(bytes)))
+                s.mysend(bytes)
+                
+                s.sock.shutdown(0)
+                s.sock.close()
+
+    elif (sys.argv[1] == 'd'):
+        with open(sys.argv[2], "rb") as f:
+            bytes = f.read(65536) # max 64K 
+            if bytes != "":
+                s = mysocket()
+                s.connect(sys.argv[3], 64)
+
+                s.mysend(pack("<H", 0xFF01))
                 s.mysend(pack("<H", len(bytes)))
                 s.mysend(bytes)
                 

@@ -9,7 +9,7 @@
 #if RUNS_ON_PC
 #include <netinet/in.h>
 #else
-#define fcntl(a,b,c)          lwip_fcntl(a,b,c)
+//#define fcntl(a,b,c)          lwip_fcntl(a,b,c)
 #endif
 
 #include <sys/fcntl.h>
@@ -292,7 +292,8 @@ int FTPDaemonThread::handle_connection()
             }
         } else if (n < 0) {
             if (errno == EAGAIN)
-                continue; dbg_printf("FTPD: ERROR reading from socket %d. Errno = %d", n, errno);
+                continue;
+            dbg_printf("FTPD: ERROR reading from socket %d. Errno = %d", n, errno);
             return errno;
         } else { // n == 0
             dbg_printf("FTPD: Socket got closed\n");
@@ -466,7 +467,7 @@ void FTPDaemonThread::cmd_mlst(const char *arg)
         sprintf(buffer, "250- Listing %s\r\ntype=%s;modify=%04d%02d%02d%02d%02d%02d; %s\r\n250 End", st.name, type, st.year,
                 st.month, st.day, st.hr, st.min, st.sec, st.name);
     else
-        sprintf(buffer, "250- Listing %s\r\ntype=%s;size=%s;modify=%04d%02d%02d%02d%02d%02d; %s\r\n250 End", st.name, type,
+        sprintf(buffer, "250- Listing %s\r\ntype=%s;size=%d;modify=%04d%02d%02d%02d%02d%02d; %s\r\n250 End", st.name, type,
                 st.st_size, st.year, st.month, st.day, st.hr, st.min, st.sec, st.name);
     send_msg(buffer);
 }
@@ -910,6 +911,7 @@ int FTPDataConnection::do_bind(void)
     xTaskCreate(FTPDataConnection::accept_data, "FTP Data", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 2,
             &acceptTaskHandle);
     vTaskDelay(1); // allow the other task to run
+    return 0;
 }
 
 // static

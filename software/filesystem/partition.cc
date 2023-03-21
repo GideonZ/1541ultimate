@@ -51,7 +51,7 @@ FileSystem *Partition :: attach_filesystem(void)
 	return NULL;
 }
     
-DRESULT Partition::read(uint8_t *buffer, uint32_t sector, uint8_t count)
+DRESULT Partition::read(uint8_t *buffer, uint32_t sector, int count)
 {
 	if(!dev)
         return RES_NOTRDY;
@@ -61,7 +61,7 @@ DRESULT Partition::read(uint8_t *buffer, uint32_t sector, uint8_t count)
 }
 
 #if	_READONLY == 0
-DRESULT Partition::write(const uint8_t *buffer, uint32_t sector, uint8_t count)
+DRESULT Partition::write(const uint8_t *buffer, uint32_t sector, int count)
 {
     if(!dev)
         return RES_NOTRDY;
@@ -73,14 +73,17 @@ DRESULT Partition::write(const uint8_t *buffer, uint32_t sector, uint8_t count)
 
 DRESULT Partition::ioctl(uint8_t command, void *data)
 {
-	if(command == CTRL_SYNC) {
-		return RES_OK; // we don't implement any caches yet
-	}
-	if(command == GET_SECTOR_COUNT) {
+    /*
+     // Let's just forward the sync command, as we do not yet implement caches.
+     if(command == CTRL_SYNC) {
+     return RES_OK;
+     }
+     */
+    if (command == GET_SECTOR_COUNT) {
         *((uint32_t *)data) = length;
         return RES_OK;
     }
-    if(!dev)
+    if (!dev)
         return RES_NOTRDY;
     return dev->ioctl(command, data);
 }

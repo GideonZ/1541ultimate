@@ -1,5 +1,6 @@
 import sys
 import logging
+import struct
 
 console = logging.StreamHandler()
 logger = logging.getLogger()
@@ -353,32 +354,13 @@ def _wait(params):
     logger.info("PC: %03x: %08x WAIT %s" % (pc, last_data, dbg))
 
 def unknown_mnem(params):
-    print "Unknown mnemonic: '%s'" % params
+    print ("Unknown mnemonic: '%s'" % params)
 
-def dump_bram_init():
-    bram = [0]*2048
-    for i in range(len(program)):
-        inst = int(program[i], 16)
-        bram[4*i+0] = inst & 0xFF
-        bram[4*i+1] = (inst >> 8) & 0xFF
-        bram[4*i+2] = (inst >> 16) & 0xFF
-        bram[4*i+3] = (inst >> 24) & 0xFF
-    
-    for i in range(64):
-        hx = ''
-        for j in range(31,-1,-1):
-            hx = hx + "%02X" % bram[i*32+j]
-        print "        INIT_%02X => X\"%s\"," % (i, hx)
-         
 def dump_iec_file(filename):
     f = open(filename, "wb")
     for i in range(len(program)):
         inst = int(program[i], 16)
-        b0 = inst & 0xFF
-        b1 = (inst >> 8) & 0xFF
-        b2 = (inst >> 16) & 0xFF
-        b3 = (inst >> 24) & 0xFF
-        f.write("%c%c%c%c" % (b3, b2, b1, b0))
+        f.write(struct.pack("<L", inst))
     
     f.close()
         
@@ -416,7 +398,7 @@ def parse_lines(lines):
         if (line[0] != ' ') and (line[0] != '\t'):
             add_label(line.rstrip())
             if (phase == 2):
-                print "            ", line
+                print ("            ", line)
             continue
         #print "Line: '%s'" % line_strip
         line_split = line_strip.split(" ", 1)
@@ -424,7 +406,7 @@ def parse_lines(lines):
             line_split.append("")
         try:
             f = mnemonics[line_split[0]]
-        except KeyError,e:
+        except KeyError as e:
             raise NameError("Unknown Mnemonic %s in line %d" % (line_split[0], nr))
         f(line_split[1].strip())
         global pc
@@ -455,6 +437,5 @@ if __name__ == "__main__":
 
 #    print program
     
-#    dump_bram_init()
     dump_iec_file(outputfile)
     

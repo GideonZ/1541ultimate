@@ -7,12 +7,13 @@ LINKMETHOD = ld
 SIMOFFSET  = 65536
 
 SRCS_C   =	mbstart_rtos.c \
-			malloc_lock.c \
-			itu.c \
-			dump_hex.c \
-			profiler.c \
-			croutine.c \
-            event_groups.c \
+		malloc_lock.c \
+		itu.c \
+		dump_hex.c \
+		profiler.c \
+		croutine.c \
+		event_groups.c \
+		assert.c \
             list.c \
             queue.c \
             tasks.c \
@@ -43,17 +44,21 @@ SRCS_CC	 =  small_printf.cc \
 			embedded_fat.cc \
 			rtc.cc \
 			c64.cc \
+			c64_crt.cc \
 			c64_subsys.cc \
 			screen.cc \
 			keyboard_c64.cc \
 			disk_image.cc \
 			c1541.cc \
+			wd177x.cc \
+			mfmdisk.cc \
 			mystring.cc \
 			path.cc \
 			pattern.cc \
 			blockdev.cc \
 			blockdev_file.cc \
 			blockdev_ram.cc \
+			blockdev_flash.cc \
 			disk.cc \
 			partition.cc \
 			file_system.cc \
@@ -128,8 +133,10 @@ SRCS_CC	 =  small_printf.cc \
             reu_preloader.cc \
             configio.cc \
             listener_socket.cc \
+			ramdisk.cc \
             acia.cc \
             modem.cc \
+            system_info.cc \
             $(PRJ).cc
 
 #            sock_echo.c \
@@ -144,9 +151,9 @@ VPATH += $(PATH_SW)/6502/sidcrt/target
 
 SRCS_ASM =  mb_crt0.s portasm.s
 
-SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas
+SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas eapi.tas
 
-SRCS_BIN =  basic.bin chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin sidcrt.bin muscrt.bin musplayer.bin
+SRCS_BIN =  basic.bin chars.bin module.bin sidcrt.bin muscrt.bin musplayer.bin
 
 SRCS_IEC = iec_code.iec
 
@@ -155,7 +162,7 @@ SRCS_NANO = nano_minimal.nan
 # TOOLCHAIN ?= $(XILINX_EDK)/gnu/microblaze/lin64
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -nostartfiles -mcpu=v5.00.a -Os -DOS -DCLOCK_FREQ=50000000
+OPTIONS  = -g -ffunction-sections -nostartfiles -mcpu=v5.00.a -Os -DOS -DU2 -DCLOCK_FREQ=50000000
 COPTIONS = $(OPTIONS) -std=c99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics
 LINK 	 = ./mb_app.lds

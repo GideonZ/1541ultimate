@@ -4,35 +4,16 @@
 #include "c64.h"
 #include "tape_recorder.h"
 #include "reu_preloader.h"
+#include "iec.h"
 #if U64
 #include "u64_config.h"
 #include "u64.h"
 #else
 #include "audio_select.h"
 #endif
+#include "endianness.h"
 
 extern REUPreloader *reu_preloader;
-
-__inline uint32_t cpu_to_32le(uint32_t a)
-{
-#ifdef NIOS
-	return a;
-#else
-	uint32_t m1, m2;
-    m1 = (a & 0x00FF0000) >> 8;
-    m2 = (a & 0x0000FF00) << 8;
-    return (a >> 24) | (a << 24) | m1 | m2;
-#endif
-}
-
-__inline uint16_t cpu_to_16le(uint16_t a)
-{
-#ifdef NIOS
-	return a;
-#else
-	return (a >> 8) | (a << 8);
-#endif
-}
 
 // crate and register ourselves!
 ControlTarget ct1(4);
@@ -88,7 +69,7 @@ void ControlTarget :: decode_track(Message *command, Message **reply, Message **
 	trackLen |= ((uint16_t)command->message[13]) << 8;
 
 	int secs = GcrImage :: convert_gcr_track_to_bin((uint8_t *)gcrAddress, track, trackLen, maxSector,
-			(uint8_t *)binAddress, data_message.message + 1);
+			(uint8_t *)binAddress, data_message.message + 1, 2*secs);
 
 	data_message.message[0] = (uint8_t)secs;
 	data_message.length = 1 + 2*secs;
@@ -224,6 +205,43 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
             *reply = &data_message;
             break;
         }
+        case CTRL_CMD_GET_DRVINFO: {
+            data_message.length = 1;
+            data_message.message[0] = 0;
+            data_message.last_part = true;
+            *status = &c_status_ok;
+            *reply = &data_message;
+            int offs = 1;
+            if (c1541_A) {
+                data_message.message[0]++;
+                data_message.message[offs++] = (uint8_t)c1541_A->get_drive_type();
+                data_message.message[offs++] = (uint8_t)c1541_A->get_current_iec_address();
+                data_message.message[offs++] = c1541_A->get_drive_power() ? 1 : 0;
+                data_message.length += 3;
+            }
+            if (c1541_B) {
+                data_message.message[0]++;
+                data_message.message[offs++] = (uint8_t)c1541_B->get_drive_type();
+                data_message.message[offs++] = (uint8_t)c1541_B->get_current_iec_address();
+                data_message.message[offs++] = c1541_B->get_drive_power() ? 1 : 0;
+                data_message.length += 3;
+            }
+            if (true) { // seems to be always available
+                data_message.message[0]++;
+                data_message.message[offs++] = 0x0F;
+                data_message.message[offs++] = (uint8_t)iec_if.get_current_iec_address();
+                data_message.message[offs++] = iec_if.iec_enable;
+                data_message.length += 3;
+
+                data_message.message[0]++;
+                data_message.message[offs++] = 0x50;
+                data_message.message[offs++] = (uint8_t)iec_if.get_current_printer_address();
+                data_message.message[offs++] = iec_if.iec_enable;
+                data_message.length += 3;
+            }
+            break;
+        }
+
 #ifdef U64
         case CTRL_CMD_U64_SAVEMEM:
             printf("U64 Save C64 Memory\n");
@@ -234,7 +252,7 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
 #endif
         case CTRL_CMD_EASYFLASH:
             if (command->length < 3)
-            {
+                    {
                 *status = &c_status_unknown_command;
                 *reply = &c_message_empty;
             }
@@ -244,22 +262,32 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
                 switch (subcommand)
                 {
                     case 0:
-                    {
-                        if (command->length < 5)
                         {
+                        if (command->length < 5)
+                                {
                             *status = &c_status_unknown_command;
                             *reply = &c_message_empty;
                             break;
                         }
 
-                        uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16;
-                        unsigned char bank = command->message[3];
+                        uint8_t *mem = C64 :: get_cartridge_rom_addr();
+                        unsigned char bank = command->message[3] & 0x38;
                         unsigned char baseAddr = command->message[4];
-                        mem_addr += (bank & 0x38) * 8192;
-                        if (baseAddr & 0x20) mem_addr += 512*1024;
-                        for (int i=0; i<65536; i++)
-                            *(char*)(mem_addr+i) = 0xff;
-                        *reply  = &c_message_empty;
+
+                        if (baseAddr & 0x20) { // high ROM
+                            mem += 0x2000;
+                        }
+                        mem += (bank * 0x4000);
+
+                        printf("Clearing EF Sector at $%p\n", mem);
+                        // Clear 8 banks of 8K
+                        for (int b = 0; b < 8; b++) {
+                            for (int i = 0; i < 8192; i++) {
+                                mem[i] = 0xff;
+                            }
+                            mem += 0x4000;
+                        }
+                        *reply = &c_message_empty;
                         *status = &c_status_ok;
                         break;
                     }
@@ -268,8 +296,6 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
                         *reply = &c_message_empty;
                         *status = &c_status_unknown_command;
                 }
-                *reply  = &c_message_empty;
-                *status = &c_status_ok;
             }
             break;
 
@@ -441,7 +467,7 @@ void ControlTarget :: save_u64_memory(Message *command)
         uint8_t *dest = new uint8_t[65536];
         portENTER_CRITICAL();
         C64_DMA_MEMONLY = 1;
-        memcpy(dest, (uint8_t *)C64_MEMORY_BASE, 65536);
+        memcpy(dest, (const void *)C64_MEMORY_BASE, 65536);
         C64_DMA_MEMONLY = 0;
         portEXIT_CRITICAL();
         uint32_t bytes_written;

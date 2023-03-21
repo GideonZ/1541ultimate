@@ -16,8 +16,10 @@ class InitFunction {
 	initFunction_t function;
 	void *object;
 	void *param;
+	int   ordering;
+	static int compare(IndexedList<InitFunction *> *list, int a, int b);
 public:
-	InitFunction(initFunction_t func, void *obj, void *prm);
+    InitFunction(initFunction_t func, void *obj, void *prm, int ord = 0);
 	virtual ~InitFunction();
 	static void executeAll();
 };

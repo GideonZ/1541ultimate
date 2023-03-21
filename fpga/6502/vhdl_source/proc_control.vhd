@@ -20,12 +20,13 @@ port (
       
     sync         : out std_logic;
     dummy_cycle  : out std_logic;
-    set_b        : out std_logic;
     latch_dreg   : out std_logic;
     copy_d2p     : out std_logic;
     reg_update   : out std_logic;
     rwn          : out std_logic;
     vect_bit     : out std_logic := '0';
+    set_i_flag   : out std_logic;
+    vectoring    : out std_logic;
     a16          : out std_logic;
     a_mux        : out t_amux := c_amux_pc;
     dout_mux     : out t_dout_mux;
@@ -51,12 +52,11 @@ architecture gideon of proc_control is
     signal next_dreg    : std_logic;
     signal next_amux    : t_amux;
     signal next_dout    : t_dout_mux;
-    signal next_set_b   : std_logic;
     signal next_dummy   : std_logic;        
-    signal vectoring    : std_logic;
+    signal vectoring_i  : std_logic;
 begin
     -- combinatroial process
-    process(state, i_reg, index_carry, pc_carry, branch_taken, interrupt, vectoring)
+    process(state, i_reg, index_carry, pc_carry, branch_taken, interrupt, vectoring_i)
         variable v_stack_idx : std_logic_vector(1 downto 0);
     begin
         -- defaults
@@ -71,7 +71,6 @@ begin
         next_dreg  <= '1';
         next_cp_p  <= '0';
         next_dout  <= reg_d;
-        next_set_b <= '0';
         next_dummy <= '0';
         
         v_stack_idx := stack_idx(i_reg);
@@ -88,7 +87,6 @@ begin
                 next_amux  <= c_amux_stack;
             else
                 next_state <= decode;
-                next_set_b <= '1';
             end if;
                         
         when decode =>
@@ -144,7 +142,6 @@ begin
                 next_amux <= c_amux_stack;
                 case v_stack_idx is
                 when c_stack_idx_brk =>
---                    next_set_b <= '1';   
                     next_rwn   <= '0';
                     next_dout  <= reg_pch;
                     next_state <= push1;
@@ -288,7 +285,7 @@ begin
         when jump =>
             pc_oper    <= copy;
             next_amux  <= c_amux_pc;
-            if is_stack(i_reg) and v_stack_idx=c_stack_idx_rts and vectoring='0' then
+            if is_stack(i_reg) and v_stack_idx=c_stack_idx_rts and vectoring_i='0' then
                 next_state <= retrn;
             else
                 next_state <= fetch;
@@ -335,7 +332,7 @@ begin
         when push2 =>
             pc_oper    <= keep;
             s_oper     <= decrement;
-            if (v_stack_idx=c_stack_idx_jsr) and vectoring='0' then
+            if (v_stack_idx=c_stack_idx_jsr) and vectoring_i='0' then
                 next_state <= jump;
                 next_amux  <= c_amux_pc;
             else
@@ -348,7 +345,7 @@ begin
         when push3 =>
             pc_oper    <= keep;
             s_oper     <= decrement;
-            if is_implied(i_reg) and vectoring='0' then -- PHP, PHA
+            if is_implied(i_reg) and vectoring_i='0' then -- PHP, PHA
                 next_amux  <= c_amux_pc;
                 next_state <= fetch;
             else
@@ -426,9 +423,10 @@ begin
         end case;
     end process;
     
-    reg_update <= '1' when (state = fetch) and vectoring='0' and
+    reg_update <= '1' when (state = fetch) and vectoring_i='0' and
                            not is_stack(i_reg) and not is_relative(i_reg) else '0';
                            
+    set_i_flag <= '1' when state = vector else '0';
     vect_bit   <= '0' when state = vector else '1';
     
     process(clock)
@@ -441,7 +439,6 @@ begin
                 rwn         <= next_rwn;
                 latch_dreg  <= next_dreg and next_rwn; -- disable dreg latch for writes
                 copy_d2p    <= next_cp_p;
-                set_b       <= next_set_b;
                 dummy_cycle <= next_dummy;
                 
                 if next_amux = c_amux_vector or next_amux = c_amux_pc then
@@ -451,7 +448,7 @@ begin
                 end if;
 
                 if state = fetch then
-                    vectoring <= interrupt;
+                    vectoring_i <= interrupt;
                 end if;
             end if;
             if reset='1' then
@@ -462,11 +459,12 @@ begin
                 latch_dreg  <= '1';
                 dout_mux    <= reg_d;
                 copy_d2p    <= '0';
-                set_b       <= '0';
-                vectoring   <= '0';
+                vectoring_i <= '0';
                 dummy_cycle <= '0';
             end if;
         end if;    
     end process;
-end gideon;
 
+    vectoring <= vectoring_i;
+
+end architecture;

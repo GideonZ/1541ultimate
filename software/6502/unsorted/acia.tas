@@ -1,0 +1,65 @@
+; just to make it compile and easy to inspect
+
+    *=$0801
+    .word ss,2020
+    .null $9e,^start;sys
+ss  .word 0
+
+ACIA_DATA    = $DE00
+ACIA_STATUS  = $DE01
+ACIA_COMMAND = $DE02
+ACIA_CONTROL = $DE03
+CHROUT       = $FFD2
+TEMP         = $FB
+COUNT        = $FD
+
+start
+    lda #$1E  ; 19200 baud
+    sta ACIA_CONTROL
+    lda #$07  ; Enable DTR and RTS
+    sta ACIA_COMMAND
+    
+    ldx #$0F
+    jsr receive
+    
+    lda #<ata
+    ldx #>ata
+    ldy #4
+    jsr send
+
+    ldx #$24
+    jsr receive
+    
+    ; drop DTR
+    lda #$06
+    sta ACIA_COMMAND
+    rts
+
+
+receive
+-   lda ACIA_STATUS
+    and #$08
+    beq -
+    lda ACIA_DATA
+    jsr CHROUT
+    dex
+    bne -
+    rts
+
+send        
+    sta TEMP
+    stx TEMP+1
+    sty COUNT
+    ldy #0
+-   lda ACIA_STATUS
+    and #$10
+    beq -
+    lda (TEMP),y   
+    sta ACIA_DATA
+    iny
+    cmp COUNT
+    bcs -
+    rts
+
+ata
+    .text "ATA", 13

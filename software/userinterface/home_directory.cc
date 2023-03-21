@@ -16,7 +16,7 @@ HomeDirectory::HomeDirectory(UserInterface *ui, TreeBrowser *browser)
     observerQueue = new ObserverQueue("HomeDir");
     fm->registerObserver(observerQueue);
 
-    xTaskCreate( HomeDirectory :: poll_home_directory, "Home Directory", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL);
+//    xTaskCreate( HomeDirectory :: poll_home_directory, "Home Directory", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL);
 #endif
 }
 
@@ -37,8 +37,9 @@ const char* HomeDirectory::getHomeDirectory(void) {
     return home_directory;
 }
 
-void HomeDirectory::setHomeDirectory(const char* path) {
-  strncpy((char*)home_directory, path, 1023);
+void HomeDirectory::setHomeDirectory(const char* path)
+{
+    strncpy((char*)home_directory, path, 1023);
 }
 
 void HomeDirectory::poll_home_directory(void *a)
@@ -66,10 +67,10 @@ void HomeDirectory::poll(void)
 
     while (!available && (timeout > 0)) {
         if ((event = (FileManagerEvent *)observerQueue->waitForEvent(0))) {
-            // printf("event->eventType = %d. PathName = %s\n", event->eventType, event->pathName.c_str());
+            // printf("HOME DIRECTORY: event->eventType = %d. PathName = %s\n", event->eventType, event->pathName.c_str());
             if (((event->eventType == eNodeUpdated) || (event->eventType == eNodeAdded)) && event->pathName == "/") {
                 if (strcasecmp(path->getElement(0), event->newName.c_str()) == 0) {
-                    printf("HOME DIRECTORY: filesystem %s mounted\n", event->newName.c_str());
+                    // printf("HOME DIRECTORY: filesystem %s mounted\n", event->newName.c_str());
                     available = true;
                     break;
                 }

@@ -7,7 +7,9 @@ port (
     clock       : in    std_logic;
     reset       : in    std_logic;
     
-    ULPI_DATA   : inout std_logic_vector(7 downto 0);
+    ULPI_DATA_I : in    std_logic_vector(7 downto 0);
+    ULPI_DATA_O : out   std_logic_vector(7 downto 0);
+    ULPI_DATA_T : out   std_logic;
     ULPI_DIR    : in    std_logic;
     ULPI_NXT    : in    std_logic;
     ULPI_STP    : out   std_logic;
@@ -79,7 +81,6 @@ architecture gideon of ulpi_bus is
     attribute iob of ulpi_nxt_d1   : signal is "true";
     attribute iob of ulpi_data_out : signal is "true";
     attribute iob of ULPI_STP      : signal is "true";
-    
 begin
     -- Marking incoming data based on next/dir pattern
     rx_data      <= ulpi_data_in;
@@ -100,7 +101,7 @@ begin
     p_sample: process(clock, reset)
     begin
         if rising_edge(clock) then
-            ulpi_data_in <= ULPI_DATA;
+            ulpi_data_in <= ULPI_DATA_I;
 
             reg_cmd_d2   <= ulpi_data_in(7) and ulpi_data_in(6);
             reg_cmd_d3   <= reg_cmd_d2;
@@ -242,7 +243,10 @@ begin
         end case;            
     end process;
 
-    ULPI_STP   <= ulpi_stop;
-    ULPI_DATA  <= ulpi_data_out when bus_has_our_data = '1'  else (others => 'Z');
     bus_has_our_data <= '1' when ULPI_DIR='0' and ulpi_dir_d1='0' else '0';    
+--    ULPI_DATA  <= ulpi_data_out when bus_has_our_data = '1'  else (others => 'Z');
+
+    ULPI_DATA_O <= ulpi_data_out;
+    ULPI_DATA_T <= bus_has_our_data;
+    ULPI_STP    <= ulpi_stop;
 end gideon;    

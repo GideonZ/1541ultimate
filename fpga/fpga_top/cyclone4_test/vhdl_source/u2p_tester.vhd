@@ -179,11 +179,11 @@ architecture rtl of u2p_tester is
             spi_SCLK                : out   std_logic;                                        -- SCLK
             spi_SS_n                : out   std_logic;                                        -- SS_n
             sys_clock_clk           : in    std_logic                     := 'X';             -- clk
-            sys_reset_reset_n       : in    std_logic                     := 'X';             -- reset_n
-            uart_rxd                : in    std_logic                     := 'X';             -- rxd
-            uart_txd                : out   std_logic;                                        -- txd
-            uart_cts_n              : in    std_logic                     := 'X';             -- cts_n
-            uart_rts_n              : out   std_logic                                        -- rts_n
+            sys_reset_reset_n       : in    std_logic                     := 'X'              -- reset_n
+--            uart_rxd                : in    std_logic                     := 'X';             -- rxd
+--            uart_txd                : out   std_logic;                                        -- txd
+--            uart_cts_n              : in    std_logic                     := 'X';             -- cts_n
+--            uart_rts_n              : out   std_logic                                        -- rts_n
         );
     end component nios_tester;
 
@@ -210,6 +210,8 @@ architecture rtl of u2p_tester is
         
     -- miscellaneous interconnect
     signal ulpi_reset_i     : std_logic;
+    signal ulpi_data_o      : std_logic_vector(7 downto 0);
+    signal ulpi_data_t      : std_logic;
     
     -- memory controller interconnect
     signal memctrl_inhibit  : std_logic;
@@ -227,9 +229,9 @@ architecture rtl of u2p_tester is
         
     -- io buses
     signal io_irq           : std_logic;
-    signal io_req           : t_io_req;
+    signal io_req           : t_io_req := c_io_req_init;
     signal io_resp          : t_io_resp;
-    signal io_u2p_req       : t_io_req;
+    signal io_u2p_req       : t_io_req := c_io_req_init;
     signal io_u2p_resp      : t_io_resp;
     signal io_req_new_io    : t_io_req;
     signal io_resp_new_io   : t_io_resp;
@@ -264,10 +266,10 @@ architecture rtl of u2p_tester is
     signal spi_SCLK                : std_logic;                                        -- SCLK
     signal spi_SS_n                : std_logic;                                        -- SS_n
 
-    signal prim_uart_rxd           : std_logic := '1';
-    signal prim_uart_txd           : std_logic := '1';
-    signal prim_uart_cts_n         : std_logic := '1';
-    signal prim_uart_rts_n         : std_logic := '1';
+--    signal prim_uart_rxd           : std_logic := '1';
+--    signal prim_uart_txd           : std_logic := '1';
+--    signal prim_uart_cts_n         : std_logic := '1';
+--    signal prim_uart_rts_n         : std_logic := '1';
 
     signal io_uart_rxd             : std_logic := '1';
     signal io_uart_txd             : std_logic := '1';
@@ -356,7 +358,7 @@ begin
         io_u2p_read             => io_u2p_req.read,
         io_u2p_wdata            => io_u2p_req.data,
         io_u2p_write            => io_u2p_req.write,
-        unsigned(io_u2p_address) => io_u2p_req.address,
+        unsigned(io_u2p_address) => io_u2p_req.address(19 downto 0),
         io_u2p_irq              => '0',
 
         io_ack               => io_resp.ack,
@@ -364,7 +366,7 @@ begin
         io_read              => io_req.read,
         io_wdata             => io_req.data,
         io_write             => io_req.write,
-        unsigned(io_address) => io_req.address,
+        unsigned(io_address) => io_req.address(19 downto 0),
         io_irq               => io_irq,
 
         jtag0_jtag_tck          => jtag0_jtag_tck,
@@ -400,15 +402,15 @@ begin
         spi_SS_n                => spi_ss_n,
 
         sys_clock_clk           => sys_clock,
-        sys_reset_reset_n       => not sys_reset,
+        sys_reset_reset_n       => not sys_reset
 
-        uart_rxd                => prim_uart_rxd,
-        uart_txd                => prim_uart_txd,
-        uart_cts_n              => prim_uart_cts_n,
-        uart_rts_n              => prim_uart_rts_n
+--        uart_rxd                => prim_uart_rxd,
+--        uart_txd                => prim_uart_txd,
+--        uart_cts_n              => prim_uart_cts_n,
+--        uart_rts_n              => prim_uart_rts_n
     );
 
-    UART_TXD <= prim_uart_txd;
+--    UART_TXD <= prim_uart_txd;
     
     i_split: entity work.io_bus_splitter
     generic map (
@@ -503,7 +505,7 @@ begin
 
     i_logic: entity work.ultimate_logic_32
     generic map (
-        g_version       => X"6F",
+        g_version       => X"70",
         g_simulation    => false,
         g_ultimate2plus => true,
         g_clock_freq    => 62_500_000,
@@ -511,7 +513,6 @@ begin
         g_denominator   => 125,
         g_baud_rate     => 115_200,
         g_timer_rate    => 200_000,
-        g_microblaze    => false,
         g_big_endian    => false,
         g_icap          => false,
         g_uart          => true,
@@ -523,7 +524,6 @@ begin
         g_extended_reu  => false,
         g_stereo_sid    => false,
         g_hardware_iec  => false,
-        g_iec_prog_tim  => false,
         g_c2n_streamer  => false,
         g_c2n_recorder  => false,
         g_cartridge     => false,
@@ -531,14 +531,11 @@ begin
         g_drive_sound   => false,
         g_rtc_chip      => false,
         g_rtc_timer     => false,
-        g_usb_host      => false,
         g_usb_host2     => true,
         g_spi_flash     => true,
         g_vic_copper    => false,
         g_video_overlay => false,
         g_sampler       => false,
-        g_analyzer      => false,
-        g_profiler      => true,
         g_rmii          => true )
     port map (
         -- globals
@@ -572,7 +569,9 @@ begin
         ULPI_NXT    => ULPI_NXT,
         ULPI_STP    => ULPI_STP,
         ULPI_DIR    => ULPI_DIR,
-        ULPI_DATA   => ULPI_DATA,
+        ULPI_DATA_O => ulpi_data_o,
+        ULPI_DATA_I => ULPI_DATA,
+        ULPI_DATA_T => ulpi_data_t,
     
         -- Parallel cable pins
         drv_via1_port_a_o   => drv_via1_port_a_o,
@@ -599,6 +598,8 @@ begin
 
         -- Buttons
         BUTTON      => not BUTTON );
+
+    ULPI_DATA <= ulpi_data_o when ulpi_data_t = '1' else "ZZZZZZZZ";
 
     -- Parallel cable not implemented. This is the way to stub it...
     drv_via1_port_a_i <= drv_via1_port_a_o or not drv_via1_port_a_t;
@@ -756,11 +757,17 @@ begin
     
     SLOT_BUFFER_ENn <= '0'; -- once configured, we can connect
 
-    SLOT_ROMHn     <= prim_uart_rts_n;
-                      prim_uart_cts_n   <= SLOT_RSTn;
-                      prim_uart_rxd     <= SLOT_IRQn;
-                      io_uart_rxd       <= SLOT_IRQn;
-    SLOT_NMIn      <= prim_uart_txd and io_uart_txd;
+    SLOT_ROMHn     <= '1'; -- prim_uart_rts_n;
+                      -- prim_uart_cts_n   <= SLOT_RSTn;
+                      -- prim_uart_rxd     <= SLOT_IRQn;
+
+    -- io_uart_rxd    <= SLOT_IRQn;
+    -- SLOT_NMIn      <= io_uart_txd;
+
+    UART_TXD    <= io_uart_txd;
+    io_uart_rxd <= UART_RXD;
+
+    -- SLOT_NMIn      <= prim_uart_txd and io_uart_txd;
     
     pio_in_port(4) <= SLOT_PHI2;  --        <= usb_to_host_vbus; // B5 input only on FPGA
     pio_in_port(5) <= SLOT_DOTCLK; --       <= jig_spkr.n;       // T6 input only on FPGA

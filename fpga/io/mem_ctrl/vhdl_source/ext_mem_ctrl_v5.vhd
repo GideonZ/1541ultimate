@@ -220,9 +220,7 @@ begin
             nxt.delay <= cur.delay - 1;
         end if;
 
-        if inhibit='1' then
-            nxt.refresh_inhibit <= '1';
-        end if;
+        nxt.refresh_inhibit <= inhibit;
 
         case cur.state is
         when boot =>
@@ -258,15 +256,12 @@ begin
             -- this enables putting cartridge images in sdram, because we guarantee the first access after inhibit to be a cart cycle
             if cur.do_refresh='1' and cur.refresh_inhibit='0' then
                 send_refresh_cmd;
-            elsif inhibit='0' then -- make sure we are allowed to start a new cycle
-                if req.request='1' and cur.refr_delay = 0 then
-                    accept_req;
-                    nxt.refresh_inhibit <= '0';
-                    if req.read_writen = '1' then
-                        nxt.state <= sd_read;
-                    else
-                        nxt.state <= sd_write;
-                    end if;
+            elsif req.request='1' and cur.refr_delay = 0 then
+                accept_req;
+                if req.read_writen = '1' then
+                    nxt.state <= sd_read;
+                else
+                    nxt.state <= sd_write;
                 end if;
             end if;
                 

@@ -383,8 +383,7 @@ void DataStreamer :: calculate_udp_headers(int id)
     }
     // one's complement fix up
     while(sum & 0xFFFF0000) {
-        sum += (sum >> 16);
-        sum &= 0xFFFF;
+    	sum = (sum >> 16) + (sum & 0xFFFF);
     }
     // write back
     header[24] = 0xFF ^ (uint8_t)(sum >> 8);

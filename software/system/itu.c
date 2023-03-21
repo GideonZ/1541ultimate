@@ -15,7 +15,7 @@ void itu_clear_irqs(void)
     ioWrite8(ITU_IRQ_HIGH_EN, 0x00);
 }
 
-
+uint32_t getFpgaCapabilities() __attribute__((weak));
 uint32_t getFpgaCapabilities()
 {
 	uint32_t res = 0;

@@ -8,18 +8,19 @@ extern "C" {
 
 Disk::Disk(BlockDevice *b, int sec = 512)
 {
+    partition_list = NULL;
+    last_partition = NULL;
     dev = b;
     sector_size = sec;
-    buf = new uint8_t[sec];
-    partition_list = NULL;
     p_count = 0;
+    buf = new uint8_t[sec];
 }
 
 Disk::~Disk()
 {
     Partition *prt, *next;
     if(buf)
-        delete[] buf;
+         delete[] buf;
 
     prt = partition_list;
     while(prt) {
@@ -89,9 +90,8 @@ int Disk::Init(bool isFloppy)
         return -4; // can't read device size
     }
     
-    //printf("Going to read partition table.\n");
+    printf("Going to read partition table. partition_list is %p\n", partition_list);
     
-    prt_list = &partition_list; // the first entry should be stored here in the class
     lba = 0L;
     p_count = 0;        
 
@@ -103,12 +103,19 @@ int Disk::Init(bool isFloppy)
         if(tbl[4]) {
             start = LD_DWORD(&tbl[8]);
             size  = LD_DWORD(&tbl[12]);
-            if(tbl[4] == 0x0F) {
-                printf("Result of EBR read: %d.\n", read_ebr(&prt_list, start));
+            printf("MBR Start: %d Size: %d Type: %d\n", start, size, tbl[4]);
+            if ((tbl[4] == 0x0F) || (tbl[4] == 0x05)) {
+                printf("Result of EBR read: %d.\n", read_ebr(start));
             } else {
                 prt = new Partition(dev, lba + start, size, tbl[4]);
-                *prt_list = prt;
-                prt_list = &prt->next_partition;
+                printf("Partition created! %p\n", prt);
+                if (last_partition) {
+                    last_partition->next_partition = prt;
+                } else {
+                    partition_list = prt;
+                }
+                last_partition = prt;
+
                 p_count ++;
             }
         }
@@ -117,7 +124,7 @@ int Disk::Init(bool isFloppy)
     return p_count;        
 }
 
-int Disk :: read_ebr(Partition ***prt_list, uint32_t lba)
+int Disk :: read_ebr(uint32_t lba)
 {
     uint8_t *local_buf = new uint8_t[sector_size];
     Partition *prt;
@@ -125,28 +132,34 @@ int Disk :: read_ebr(Partition ***prt_list, uint32_t lba)
     uint8_t *tbl;
 
     if(dev->read(local_buf, lba, 1) != RES_OK) {
-        delete local_buf;
+        delete[] local_buf;
         return -2; // partition unreadable
     }
     
     if(LD_WORD(local_buf + BS_Signature) != 0xAA55) {
-        delete local_buf;
+        delete[] local_buf;
         return -3; // partition unformatted 
     }
             
     tbl = &local_buf[MBR_PTable];
-//    dump_hex(tbl, 66);
+    dump_hex_relative(tbl, 66);
 
     for(int p=0;p<4;p++) {
         if(tbl[4]) {
             start = LD_DWORD(&tbl[8]);
             size  = LD_DWORD(&tbl[12]);
-            if(tbl[4] == 0x0F) {
-                read_ebr(prt_list, start);
+            printf("EBR Start: %d Size: %d Type: %d\n", start, size, tbl[4]);
+            if ((tbl[4] == 0x0F) || (tbl[4] == 0x05)) {
+                read_ebr(lba + start);
             } else {
                 prt = new Partition(dev, lba + start, size, tbl[4]);
-                **prt_list = prt;
-                *prt_list = &prt->next_partition;
+
+                if (last_partition) {
+                    last_partition->next_partition = prt;
+                } else {
+                    partition_list = prt;
+                }
+                last_partition = prt;
                 p_count ++;
             }
         }

@@ -98,10 +98,10 @@ int UserFileInteraction::S_rename(SubsysCommand *cmd)
     Path *p = fm->get_new_path("S_rename");
     p->cd(cmd->path.c_str());
 
-    strncpy(buffer, cmd->filename.c_str(), 38);
-    buffer[38] = 0;
+    strncpy(buffer, cmd->filename.c_str(), 64);
+    buffer[63] = 0;
 
-    res = cmd->user_interface->string_box("Give a new name..", buffer, 38);
+    res = cmd->user_interface->string_box("Give a new name..", buffer, 63);
     if (res > 0) {
         fres = fm->rename(p, cmd->filename.c_str(), buffer);
         if (fres != FR_OK) {
@@ -121,7 +121,7 @@ int UserFileInteraction::S_delete(SubsysCommand *cmd)
     Path *p = fm->get_new_path("S_delete");
     p->cd(cmd->path.c_str());
     if (res == BUTTON_YES) {
-        FRESULT fres = FileManager::getFileManager()->delete_file(p, cmd->filename.c_str());
+        FRESULT fres = FileManager::getFileManager()->delete_recursive(p, cmd->filename.c_str());
         if (fres != FR_OK) {
             sprintf(buffer, "Error: %s", FileSystem::get_error_string(fres));
             cmd->user_interface->popup(buffer, BUTTON_OK);
@@ -275,6 +275,7 @@ FRESULT create_user_file(UserInterface *ui, const char *message, const char *ext
 {
     char filename[32];
     FileManager *fm = FileManager :: getFileManager();
+    *f = NULL;
     if(ui->string_box(message, buffer, 22) > 0) {
         strcpy(filename, buffer);
         fix_filename(filename);

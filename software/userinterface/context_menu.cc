@@ -310,7 +310,11 @@ void ContextMenu :: draw()
 	        window->set_color(11); // TODO
 	        window->set_background(0);
 		}
-		window->output_line(t->getName());
+		if (t) {
+			window->output_line(t->getName());
+		} else {
+			window->output_line("");
+		}
 	}
 }
 

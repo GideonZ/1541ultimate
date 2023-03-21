@@ -15,8 +15,9 @@
 #include "browsable_root.h"
 #include "keyboard_usb.h"
 #include "home_directory.h"
+#include "system_info.h"
 
-static const char *helptext=
+const char *helptext=
 		"CRSR UP/DN: Selection up/down\n"
 		"CRSR LEFT:  Go one level up\n"
 		"            leave directory or disk\n"
@@ -39,6 +40,7 @@ static const char *helptext=
 		"\n"
         "HOME:       Enter home directory\n"
         "C=-HOME:    Set current dir as home\n"
+        "INST:       Delete selected files\n"
         "\n"  
 		"Quick seek: Use the keyboard to type\n"
 		"            the name to search for.\n"
@@ -46,7 +48,10 @@ static const char *helptext=
 		"            wildcard.\n"
         "+/-:        Change value in config.\n"
         "\n"
-		"F6:         Show debug log\n"
+#ifndef RECOVERYAPP
+        "F4:         Show System Information\n"
+#endif
+        "F6:         Show debug log\n"
 		"\nRUN/STOP to close this window.";
 
 #include "stream_textlog.h"
@@ -74,6 +79,7 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root)
     fm = FileManager :: getFileManager();
     path = fm->get_new_path("Tree Browser");
     observerQueue = new ObserverQueue("TreeBrowser");
+    fm->registerObserver(observerQueue);
 
     if(!state) {
         state = new TreeBrowserState(root, this, 0);
@@ -98,7 +104,6 @@ void TreeBrowser :: init(Screen *screen, Keyboard *k) // call on root!
 
     screen->move_cursor(screen->get_size_x()-8, screen->get_size_y()-1);
 	screen->output("\eAF3=Help\eO");
-    fm->registerObserver(observerQueue);
 
 	window = new Window(screen, 0, 2, screen->get_size_x(), screen->get_size_y()-3);
 	keyb = k;
@@ -112,7 +117,6 @@ void TreeBrowser :: deinit(void)
 		delete window;
 		window = NULL;
 	}
-    fm->deregisterObserver(observerQueue);
 }
 
 void TreeBrowser :: config(void)
@@ -205,7 +209,7 @@ int TreeBrowser :: poll(int sub_returned)
                 const char *p = state->browser->getPath();
                 const char *filename = (b)?(b->getName()):"";
                 SubsysCommand *cmd = new SubsysCommand(user_interface, act, p, filename);
-                cmd->execute();
+                ret = cmd->execute();
             } else {
                 printf("Action was not set in context menu!\n");
             }
@@ -276,9 +280,9 @@ void TreeBrowser :: checkFileManagerEvent(void)
 
         if (match_dir) {
             if (st->deeper) {
-                printf("$%p:", st->deeper);
-                printf("%p:", st->deeper->node);
-                printf("%s -> %s\n", st->deeper->node->getName(), event->newName.c_str());
+                // printf("$%p:", st->deeper);
+                // printf("%p:", st->deeper->node);
+                // printf("%s -> %s\n", st->deeper->node->getName(), event->newName.c_str());
                 if (strcmp(st->deeper->node->getName(), event->newName.c_str()) == 0) {
                     match_entry = true;
                 }
@@ -403,13 +407,13 @@ int TreeBrowser :: handle_key(int c)
         case KEY_F2: // F2 -> config
             config();
             break;
-/*
-        case KEY_F4: // F4 -> show threads
+        case KEY_F4: // F4 -> show system info
         	reset_quick_seek();
         	state->refresh = true;
-        	tasklist();
+#ifndef RECOVERYAPP
+        	SystemInfo::generate(user_interface);
+#endif
         	break;
-*/
         case KEY_SCRLOCK:
         case KEY_F10:
         case KEY_ESCAPE:
@@ -454,20 +458,24 @@ int TreeBrowser :: handle_key(int c)
             break;
         case KEY_RIGHT: // right
             reset_quick_seek();
-			if (state->into2()) context(0);
+			//if (state->into2()) context(0);
+            state->into2();
             break;
         case KEY_LEFT: // left
         	state->level_up();
+            break;
+        case KEY_INSERT: // shift del
+            delete_selected();
             break;
 #ifndef RECOVERYAPP
        case KEY_HOME: // home
             cd(user_interface->cfg->get_string(CFG_USERIF_HOME_DIR));
             break;
        case KEY_CTRL_HOME: // set home
-           user_interface->cfg->set_string(CFG_USERIF_HOME_DIR, (char*)path->get_path());
-           //user_interface->cfg->write();
-           HomeDirectory :: setHomeDirectory(path->get_path());
-           user_interface->popup("Current dir set as home dir", BUTTON_OK);
+           if (user_interface->popup("Set current dir as home dir?", BUTTON_OK | BUTTON_CANCEL) == BUTTON_OK) {
+               user_interface->cfg->set_string(CFG_USERIF_HOME_DIR, (char*)path->get_path());
+               user_interface->cfg->write();
+           }
            break;
 #endif         
         default:
@@ -541,7 +549,7 @@ void TreeBrowser::paste(void)
     user_interface->show_progress("Copying...", items);
     for (int i = 0; i < items; i++) {
         const char *fn = clipboard.getFileNameByIndex(i);
-        FRESULT res = fm->fcopy(clipboard.getPath(), fn, this->getPath());  // from path, filename, dest path
+        FRESULT res = fm->fcopy(clipboard.getPath(), fn, this->getPath(), fn, false);  // from path, filename, dest path
         if (res != FR_OK) {
             user_interface->hide_progress(); // temporarily
             printf("Error while copying: %s %s to %s\n", FileSystem::get_error_string(res), fn, this->getPath());
@@ -559,6 +567,53 @@ void TreeBrowser::paste(void)
     state->needs_reload = true;
 }
 
+void TreeBrowser::delete_selected(void)
+{
+    int items = 0;
+
+    // Count selected files
+    for(int i=0;i<state->children->get_elements();i++) {
+        Browsable *t = (*state->children)[i];
+        if (t && t->getSelection()) {
+            items++;
+        }
+    }
+
+    if (!items) {
+        return;
+    }
+    char buffer[40];
+    sprintf(buffer, "Delete %d file%s?", items, (items > 1) ? "s" : "");
+    int resp = user_interface->popup(buffer, BUTTON_YES | BUTTON_NO);
+    if (resp != BUTTON_YES) {
+        return;
+    }
+    fm->deregisterObserver(observerQueue);
+
+    user_interface->show_progress("Deleting...", items);
+    int deleted = 0;
+    for(int i=0;i<state->children->get_elements();i++) {
+        Browsable *t = (*state->children)[i];
+        if (t && t->getSelection()) {
+            FRESULT res = fm->delete_recursive(path, t->getName());
+            if (res != FR_OK) {
+                user_interface->hide_progress(); // temporarily
+                int resp = user_interface->popup("Delete error occurred. Continue?", BUTTON_YES | BUTTON_NO);
+                user_interface->show_progress("Deleting...", items); // show it again
+                user_interface->update_progress(0, deleted); // set back to original fill
+                if (resp == BUTTON_NO)
+                    break;
+            }
+            user_interface->update_progress(0, 1);
+            deleted++;
+        }
+    }
+    user_interface->hide_progress();
+
+    fm->registerObserver(observerQueue);
+    state->refresh = true;
+    state->needs_reload = true;
+}
 
 void TreeBrowser :: cd(const char *dst)
 {

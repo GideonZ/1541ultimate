@@ -93,12 +93,12 @@ OBJ_DIR := ./obj
 
 # This following VERSION comment indicates the version of the tool used to 
 # generate this makefile. A makefile variable is provided for VERSION as well. 
-# ACDS_VERSION: 15.1
-ACDS_VERSION := 15.1
+# ACDS_VERSION: 18.1
+ACDS_VERSION := 18.1
 
 # This following BUILD_NUMBER comment indicates the build number of the tool 
 # used to generate this makefile. 
-# BUILD_NUMBER: 185
+# BUILD_NUMBER: 625
 
 SETTINGS_FILE := settings.bsp
 SOPC_FILE := ../../fpga/nios_tester/nios_tester.sopcinfo
@@ -219,17 +219,6 @@ altera_avalon_spi_driver_SRCS_ROOT := drivers
 altera_avalon_spi_driver_C_LIB_SRCS := \
 	$(altera_avalon_spi_driver_SRCS_ROOT)/src/altera_avalon_spi.c
 
-# altera_avalon_uart_driver sources root 
-altera_avalon_uart_driver_SRCS_ROOT := drivers
-
-# altera_avalon_uart_driver sources 
-altera_avalon_uart_driver_C_LIB_SRCS := \
-	$(altera_avalon_uart_driver_SRCS_ROOT)/src/altera_avalon_uart_fd.c \
-	$(altera_avalon_uart_driver_SRCS_ROOT)/src/altera_avalon_uart_init.c \
-	$(altera_avalon_uart_driver_SRCS_ROOT)/src/altera_avalon_uart_ioctl.c \
-	$(altera_avalon_uart_driver_SRCS_ROOT)/src/altera_avalon_uart_read.c \
-	$(altera_avalon_uart_driver_SRCS_ROOT)/src/altera_avalon_uart_write.c
-
 # altera_msgdma_driver sources root 
 altera_msgdma_driver_SRCS_ROOT := drivers
 
@@ -337,7 +326,6 @@ hal_C_LIB_SRCS := \
 # Assemble all component C source files 
 COMPONENT_C_LIB_SRCS += \
 	$(altera_avalon_spi_driver_C_LIB_SRCS) \
-	$(altera_avalon_uart_driver_C_LIB_SRCS) \
 	$(altera_msgdma_driver_C_LIB_SRCS) \
 	$(altera_nios2_gen2_hal_driver_C_LIB_SRCS) \
 	$(hal_C_LIB_SRCS)

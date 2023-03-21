@@ -274,6 +274,20 @@ bool Path :: match(Path *search)
     return true;
 }
 
+// Return true when the paths are exactly equal, case insensitive though.
+bool Path :: equals(Path *search)
+{
+    if (search->getDepth() != depth) {
+        return false;
+    }
+    for(int i=0; i<depth; i++) {
+        if (strcasecmp(search->getElement(i), getElement(i)) != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
 // Return true when the search path is at least as long as
 // the 'this' path.
 bool SubPath :: match(Path *search)

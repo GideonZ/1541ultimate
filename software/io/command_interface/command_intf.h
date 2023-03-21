@@ -91,6 +91,7 @@ public:
     void dump_registers(void);
     const char *identify(void) { return "Command Interface"; }
     bool is_dma_active(void);
+    void set_kernal_device_id(uint8_t id);
 };
 
 extern CommandInterface cmd_if;

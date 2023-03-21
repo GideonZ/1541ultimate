@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h> // C library
+#include <ctype.h>
 #include "mystring.h" // my class definition
 
 mstring :: mstring()
@@ -12,9 +13,14 @@ mstring :: mstring()
 mstring :: mstring(const char *k)
 {
 //    printf("Create mstring from char*. Source = %s\n", k);
-    alloc = 1+strlen(k);
-    cp = new char[alloc];
-    strcpy(cp, k);
+    if (k) {
+        alloc = 1+strlen(k);
+        cp = new char[alloc];
+        strcpy(cp, k);
+    } else {
+        alloc = 0;
+        cp = NULL;
+    }
 }
 
 mstring :: mstring(mstring &ref)
@@ -54,15 +60,21 @@ const int mstring :: allocated_space(void) const
 mstring& mstring :: operator=(const char *rhs)
 {
 //    printf("Operator = char*rhs=%s. This = %p.\n", rhs, this);
-    int n = strlen(rhs);
-    if((n+1) > alloc) {    
-        if(cp) {
-            delete[] cp;
+    if (rhs) {
+        int n = strlen(rhs);
+        if((n+1) > alloc) {
+            if(cp) {
+                delete[] cp;
+            }
+            cp = new char[n+1];
+            alloc = n+1;
         }
-        cp = new char[n+1];
-        alloc = n+1;
+        strcpy(cp, rhs);
+    } else {
+        if (cp) {
+            *cp = 0;
+        }
     }
-    strcpy(cp, rhs);
     return *this;
 }
 
@@ -71,13 +83,25 @@ mstring& mstring :: operator=(const mstring &rhs)
 //    printf("Assignment operator. Left = %s(%p), Right = %s(%p)\n", c_str(), this, rhs.c_str(), &rhs);
     if(this != &rhs) {
         if((rhs.length()+1) > alloc) {
+            // Does not fit, throw away what we already have
             if (cp) {
                 delete[] cp;
+                cp = NULL;
+                alloc = 0;
             }
-            cp = new char[rhs.alloc];
-            alloc = rhs.alloc;
+            // There is actually a string to place
+            if (rhs.length()) {
+                cp = new char[rhs.alloc];
+                alloc = rhs.alloc;
+                strcpy(cp, rhs.cp);
+            }
+        } else { // use current allocation
+            if (rhs.cp) {
+                strcpy(cp, rhs.cp);
+            } else {
+                cp[0] = 0;
+            }
         }
-        strcpy(cp, rhs.cp);
     }
     return *this;
 }
@@ -182,6 +206,28 @@ mstring mstring::operator+(const char *right)
     mstring result(*this);
     result += right;
     return result;
+}
+
+void mstring::to_upper(void)
+{
+    int len = length();
+    for(int i=0;i<len;i++) {
+        cp[i] = toupper(cp[i]);
+    }
+}
+
+void mstring::set(int index, char c)
+{
+    if (!cp) {
+        return;
+    }
+    if (index >= length()) {
+        return;
+    }
+    if (index < 0) {
+        return;
+    }
+    cp[index] = c;
 }
 
 int strcmp(mstring &a, mstring &b)

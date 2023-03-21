@@ -30,16 +30,37 @@
 #define GCR_DECODER_BIN_OUT_32 (*(volatile uint32_t *)(GCR_CODER_BASE + 0x00))
 
 
-#define C1541_MAXTRACKS   84
-#define C1541_MAXTRACKLEN 0x1EF8
-#define C1541_MAX_D64_LEN 201216
-#define C1541_MAX_GCR_LEN (C1541_MAXTRACKLEN * C1541_MAXTRACKS)
-#define C1541_MAX_D64_35_NO_ERRORS (174848)
+#define GCRIMAGE_MAXUSEDTRACKS  80
+#define GCRIMAGE_MAXHDRTRACKS   168
+#define GCRIMAGE_FIRSTTRACKSIDE1 84
+
+#define GCRIMAGE_MAXMETADATA    (12 + (GCRIMAGE_MAXHDRTRACKS * 10)) // 10 bytes: 2 len, 4 pointer, 4 speed zone
+#define GCRIMAGE_MAXTRACKLEN    0x1EF8
+#define GCRIMAGE_DUMMYTRACKLEN  0x1E00
+
+#define GCRIMAGE_MAXSIZE        ((GCRIMAGE_MAXTRACKLEN * GCRIMAGE_MAXUSEDTRACKS) + GCRIMAGE_MAXMETADATA)
+
+#define C1541_MAX_D64_LEN            (201216)
+#define C1541_MAX_D64_35_NO_ERRORS   (174848)
 #define C1541_MAX_D64_35_WITH_ERRORS (175531)
-#define C1541_MAX_D64_40_NO_ERRORS (196608)
+#define C1541_MAX_D64_40_NO_ERRORS   (196608)
 #define C1541_MAX_D64_40_WITH_ERRORS (197376)
+#define C1541_MIN_D71_SIZE           (2*C1541_MAX_D64_35_NO_ERRORS)
+#define C1541_D71_SIZE_WITH_ERRORS   (C1541_MIN_D71_SIZE + 1366)
+
+#define MFM_TRACK_HEADER_SIZE        2 + (WD_MAX_SECTORS_PER_TRACK * 5)
 
 class BinImage;
+
+struct GcrTrack
+{
+    uint8_t  *track_address;
+    int       track_length; // double sided
+    int       speed_zone;
+    bool      track_used;
+    bool      in_image_file;
+    bool      track_is_mfm;
+};
 
 class GcrImage
 {
@@ -50,24 +71,23 @@ class GcrImage
     // temporaries that don't need to be allocated over and over
     uint8_t header[8];
     uint8_t sector_buffer[352]; // 260 for bin sector, 349 for gcr sector + header (352 to be a multiple of 4)
+
     uint8_t *gcr_data;
+    GcrTrack tracks[GCRIMAGE_MAXHDRTRACKS];
+    bool  double_sided;
 
     // private functions
     static uint8_t *wrap(uint8_t **, uint8_t *, uint8_t *, int, uint8_t *buffer);
     static uint8_t *find_sync(uint8_t *, uint8_t *, uint8_t *);
     uint8_t *convert_block_bin2gcr(uint8_t *bin, uint8_t *gcr, int len);
-    uint8_t *convert_track_bin2gcr(int track, uint8_t *bin, uint8_t *gcr, uint8_t *errors, int errors_size);
+    uint8_t *convert_track_bin2gcr(uint8_t logical_track_1b, int region, uint8_t *bin, uint8_t *gcr, uint8_t *errors, int errors_size);
     int   find_track_start(int);
+    void add_blank_tracks(uint8_t *);
 public:
     GcrImage();
     ~GcrImage();
 
-    uint8_t *dummy_track;
-
-    uint8_t  *track_address[C1541_MAXTRACKS];
-    uint8_t  *gcr_image; // pointer to array, in order to do something special later.
-    int    track_length[C1541_MAXTRACKS];
-
+    void dump(void);
     void blank(void);
     bool load(File *f);
     bool save(File *f, bool, UserInterface *ui);
@@ -77,39 +97,42 @@ public:
     int  convert_track_gcr2bin(int track, BinImage *bin_image, int &errors);
     void invalidate(void);
     bool test(void);
+    void set_ds(bool);
+    bool is_double_sided(void);
+    void track_got_written_with_gcr(int track);
     
     friend class BinImage;
+    friend class C1541;
     static int convert_gcr_track_to_bin(uint8_t *gcr, int trackNumber, int trackLength,
-    		int maxSector, uint8_t *bin, uint8_t *status);
+    		int maxSector, uint8_t *bin, uint8_t *status, int statusLength);
 };
 
+#define BINIMAGE_MAXTRACKS 80
 
 class BinImage
 {
-    uint8_t *track_start[C1541_MAXTRACKS];
-    int   track_sectors[C1541_MAXTRACKS];
+    uint8_t *track_start[BINIMAGE_MAXTRACKS];
+    int      track_sectors[BINIMAGE_MAXTRACKS];
     uint8_t *errors; // NULL means no error bytes
     int   error_size;
-
-    BlockDevice_Ram *blk;
-    Partition *prt;
-    FileSystemCBM *fs;
+    int   allocated_size;
+    int   data_size;
+    bool  double_sided;
 
     int init(uint32_t size);
 public:
     int   num_tracks;
     uint8_t *bin_data;
 
-    BinImage(const char *);
+    BinImage(const char *, int tracks);
     ~BinImage();
 
     int format(const char *diskname);
     int copy(uint8_t *, uint32_t size);
     int load(File *);
     int save(File *, UserInterface *ui);
-    int write_track(int track, GcrImage *, File *);
-
-    // int get_absolute_sector(int track, int sector);
+    int write_track(int track, GcrImage *, File *, int& numerrors, int& secs);
+    bool is_double_sided(void);
     uint8_t * get_sector_pointer(int track, int sector);
 
     friend class GcrImage;
@@ -122,11 +145,11 @@ extern BinImage static_bin_image; // for general use
 class ImageCreator : public ObjectWithMenu
 {
     TaskCategory *taskCategory;
-    Action *d64, *g64, *d71, *d81, *dnp;
+    Action *d64, *g64, *d71, *g71, *d81, *dnp;
 public:
 	ImageCreator() {
 	    taskCategory = TasksCollection :: getCategory("Create", SORT_ORDER_CREATE);
-	    d64 = g64 = d71 = d81 = dnp = NULL;
+	    d64 = g64 = d71 = g71 = d81 = dnp = NULL;
 	}
 	~ImageCreator() { }
 
@@ -140,12 +163,14 @@ public:
     {
         d64 = new Action("D64 Image", ImageCreator :: S_createD64, 0, 0);
         g64 = new Action("G64 Image", ImageCreator :: S_createD64, 0, 1);
-        d71 = new Action("D71 Image", ImageCreator :: S_createD71, 0, 0);
+        d71 = new Action("D71 Image", ImageCreator :: S_createD71, 0, 0); // may also be created using createD64 with mode 2
+        g71 = new Action("G71 Image", ImageCreator :: S_createD64, 0, 3);
         d81 = new Action("D81 Image", ImageCreator :: S_createD81, 0, 0);
         dnp = new Action("DNP Image", ImageCreator :: S_createDNP, 0, 0);
         taskCategory->append(d64);
         taskCategory->append(g64);
         taskCategory->append(d71);
+        taskCategory->append(g71);
         taskCategory->append(d81);
         taskCategory->append(dnp);
     }
@@ -155,6 +180,7 @@ public:
 	    d64->setDisabled(!writablePath);
         g64->setDisabled(!writablePath);
         d71->setDisabled(!writablePath);
+        g71->setDisabled(!writablePath);
         d81->setDisabled(!writablePath);
         dnp->setDisabled(!writablePath);
 	}

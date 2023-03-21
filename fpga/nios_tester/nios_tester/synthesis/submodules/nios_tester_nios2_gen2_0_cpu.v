@@ -1,4 +1,4 @@
-//Legal Notice: (C)2019 Altera Corporation. All rights reserved.  Your
+//Legal Notice: (C)2021 Altera Corporation. All rights reserved.  Your
 //use of Altera Corporation's design tools, logic functions and other
 //software and tools, and its AMPP partner logic functions, and any
 //output files any of the foregoing (including device programming or
@@ -41,9 +41,10 @@ module nios_tester_nios2_gen2_0_cpu_register_bank_a_module (
   input   [  4: 0] wraddress;
   input            wren;
 
-  wire    [ 31: 0] q;
-  wire    [ 31: 0] ram_data;
-  wire    [ 31: 0] ram_q;
+
+wire    [ 31: 0] q;
+wire    [ 31: 0] ram_data;
+wire    [ 31: 0] ram_q;
   assign q = ram_q;
   assign ram_data = data;
   altsyncram the_altsyncram
@@ -106,9 +107,10 @@ module nios_tester_nios2_gen2_0_cpu_register_bank_b_module (
   input   [  4: 0] wraddress;
   input            wren;
 
-  wire    [ 31: 0] q;
-  wire    [ 31: 0] ram_data;
-  wire    [ 31: 0] ram_q;
+
+wire    [ 31: 0] q;
+wire    [ 31: 0] ram_data;
+wire    [ 31: 0] ram_q;
   assign q = ram_q;
   assign ram_data = data;
   altsyncram the_altsyncram
@@ -196,17 +198,18 @@ module nios_tester_nios2_gen2_0_cpu_nios2_oci_debug (
   input            take_action_ocireg;
   input            xbrk_break;
 
-  reg              break_on_reset /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,R101\""  */;
-  wire             debugack;
-  reg              jtag_break /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,R101\""  */;
-  reg              monitor_error /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=D101"  */;
-  reg              monitor_go /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=D101"  */;
-  reg              monitor_ready /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=D101"  */;
-  wire             oci_hbreak_req;
-  wire             reset_sync;
-  reg              resetlatch /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,R101\""  */;
-  reg              resetrequest /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,R101\""  */;
-  wire             unxcomplemented_resetxx0;
+
+reg              break_on_reset /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,R101\""  */;
+wire             debugack;
+reg              jtag_break /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,R101\""  */;
+reg              monitor_error /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=D101"  */;
+reg              monitor_go /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=D101"  */;
+reg              monitor_ready /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=D101"  */;
+wire             oci_hbreak_req;
+wire             reset_sync;
+reg              resetlatch /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,R101\""  */;
+reg              resetrequest /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,R101\""  */;
+wire             unxcomplemented_resetxx0;
   assign unxcomplemented_resetxx0 = jrst_n;
   altera_std_synchronizer the_altera_std_synchronizer
     (
@@ -349,37 +352,38 @@ module nios_tester_nios2_gen2_0_cpu_nios2_oci_break (
   input            xbrk_goto0;
   input            xbrk_goto1;
 
-  wire    [  3: 0] break_a_wpr;
-  wire    [  1: 0] break_a_wpr_high_bits;
-  wire    [  1: 0] break_a_wpr_low_bits;
-  wire    [  1: 0] break_b_rr;
-  wire    [  1: 0] break_c_rr;
-  reg     [ 31: 0] break_readreg /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,R101\""  */;
-  wire             dbrk0_high_value;
-  wire             dbrk0_low_value;
-  wire             dbrk1_high_value;
-  wire             dbrk1_low_value;
-  wire             dbrk2_high_value;
-  wire             dbrk2_low_value;
-  wire             dbrk3_high_value;
-  wire             dbrk3_low_value;
-  wire             dbrk_hit0_latch;
-  wire             dbrk_hit1_latch;
-  wire             dbrk_hit2_latch;
-  wire             dbrk_hit3_latch;
-  wire             take_action_any_break;
-  reg              trigbrktype /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,R101\""  */;
-  reg              trigger_state;
-  wire             trigger_state_0;
-  wire             trigger_state_1;
-  wire    [ 31: 0] xbrk0_value;
-  wire    [ 31: 0] xbrk1_value;
-  wire    [ 31: 0] xbrk2_value;
-  wire    [ 31: 0] xbrk3_value;
-  reg     [  7: 0] xbrk_ctrl0 /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,R101\""  */;
-  reg     [  7: 0] xbrk_ctrl1 /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,R101\""  */;
-  reg     [  7: 0] xbrk_ctrl2 /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,R101\""  */;
-  reg     [  7: 0] xbrk_ctrl3 /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,R101\""  */;
+
+wire    [  3: 0] break_a_wpr;
+wire    [  1: 0] break_a_wpr_high_bits;
+wire    [  1: 0] break_a_wpr_low_bits;
+wire    [  1: 0] break_b_rr;
+wire    [  1: 0] break_c_rr;
+reg     [ 31: 0] break_readreg /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,R101\""  */;
+wire             dbrk0_high_value;
+wire             dbrk0_low_value;
+wire             dbrk1_high_value;
+wire             dbrk1_low_value;
+wire             dbrk2_high_value;
+wire             dbrk2_low_value;
+wire             dbrk3_high_value;
+wire             dbrk3_low_value;
+wire             dbrk_hit0_latch;
+wire             dbrk_hit1_latch;
+wire             dbrk_hit2_latch;
+wire             dbrk_hit3_latch;
+wire             take_action_any_break;
+reg              trigbrktype /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,R101\""  */;
+reg              trigger_state;
+wire             trigger_state_0;
+wire             trigger_state_1;
+wire    [ 31: 0] xbrk0_value;
+wire    [ 31: 0] xbrk1_value;
+wire    [ 31: 0] xbrk2_value;
+wire    [ 31: 0] xbrk3_value;
+reg     [  7: 0] xbrk_ctrl0 /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,R101\""  */;
+reg     [  7: 0] xbrk_ctrl1 /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,R101\""  */;
+reg     [  7: 0] xbrk_ctrl2 /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,R101\""  */;
+reg     [  7: 0] xbrk_ctrl3 /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,R101\""  */;
   assign break_a_wpr = jdo[35 : 32];
   assign break_a_wpr_high_bits = break_a_wpr[3 : 2];
   assign break_a_wpr_low_bits = break_a_wpr[1 : 0];
@@ -623,54 +627,55 @@ module nios_tester_nios2_gen2_0_cpu_nios2_oci_xbrk (
   input   [  7: 0] xbrk_ctrl2;
   input   [  7: 0] xbrk_ctrl3;
 
-  wire             D_cpu_addr_en;
-  wire             E_cpu_addr_en;
-  reg              E_xbrk_goto0;
-  reg              E_xbrk_goto1;
-  reg              E_xbrk_traceoff;
-  reg              E_xbrk_traceon;
-  reg              E_xbrk_trigout;
-  wire    [ 29: 0] cpu_i_address;
-  wire             xbrk0_armed;
-  wire             xbrk0_break_hit;
-  wire             xbrk0_goto0_hit;
-  wire             xbrk0_goto1_hit;
-  wire             xbrk0_toff_hit;
-  wire             xbrk0_ton_hit;
-  wire             xbrk0_tout_hit;
-  wire             xbrk1_armed;
-  wire             xbrk1_break_hit;
-  wire             xbrk1_goto0_hit;
-  wire             xbrk1_goto1_hit;
-  wire             xbrk1_toff_hit;
-  wire             xbrk1_ton_hit;
-  wire             xbrk1_tout_hit;
-  wire             xbrk2_armed;
-  wire             xbrk2_break_hit;
-  wire             xbrk2_goto0_hit;
-  wire             xbrk2_goto1_hit;
-  wire             xbrk2_toff_hit;
-  wire             xbrk2_ton_hit;
-  wire             xbrk2_tout_hit;
-  wire             xbrk3_armed;
-  wire             xbrk3_break_hit;
-  wire             xbrk3_goto0_hit;
-  wire             xbrk3_goto1_hit;
-  wire             xbrk3_toff_hit;
-  wire             xbrk3_ton_hit;
-  wire             xbrk3_tout_hit;
-  reg              xbrk_break;
-  wire             xbrk_break_hit;
-  wire             xbrk_goto0;
-  wire             xbrk_goto0_hit;
-  wire             xbrk_goto1;
-  wire             xbrk_goto1_hit;
-  wire             xbrk_toff_hit;
-  wire             xbrk_ton_hit;
-  wire             xbrk_tout_hit;
-  wire             xbrk_traceoff;
-  wire             xbrk_traceon;
-  wire             xbrk_trigout;
+
+wire             D_cpu_addr_en;
+wire             E_cpu_addr_en;
+reg              E_xbrk_goto0;
+reg              E_xbrk_goto1;
+reg              E_xbrk_traceoff;
+reg              E_xbrk_traceon;
+reg              E_xbrk_trigout;
+wire    [ 29: 0] cpu_i_address;
+wire             xbrk0_armed;
+wire             xbrk0_break_hit;
+wire             xbrk0_goto0_hit;
+wire             xbrk0_goto1_hit;
+wire             xbrk0_toff_hit;
+wire             xbrk0_ton_hit;
+wire             xbrk0_tout_hit;
+wire             xbrk1_armed;
+wire             xbrk1_break_hit;
+wire             xbrk1_goto0_hit;
+wire             xbrk1_goto1_hit;
+wire             xbrk1_toff_hit;
+wire             xbrk1_ton_hit;
+wire             xbrk1_tout_hit;
+wire             xbrk2_armed;
+wire             xbrk2_break_hit;
+wire             xbrk2_goto0_hit;
+wire             xbrk2_goto1_hit;
+wire             xbrk2_toff_hit;
+wire             xbrk2_ton_hit;
+wire             xbrk2_tout_hit;
+wire             xbrk3_armed;
+wire             xbrk3_break_hit;
+wire             xbrk3_goto0_hit;
+wire             xbrk3_goto1_hit;
+wire             xbrk3_toff_hit;
+wire             xbrk3_ton_hit;
+wire             xbrk3_tout_hit;
+reg              xbrk_break;
+wire             xbrk_break_hit;
+wire             xbrk_goto0;
+wire             xbrk_goto0_hit;
+wire             xbrk_goto1;
+wire             xbrk_goto1_hit;
+wire             xbrk_toff_hit;
+wire             xbrk_ton_hit;
+wire             xbrk_tout_hit;
+wire             xbrk_traceoff;
+wire             xbrk_traceon;
+wire             xbrk_trigout;
   assign cpu_i_address = {F_pc, 2'b00};
   assign D_cpu_addr_en = D_valid;
   assign E_cpu_addr_en = E_valid;
@@ -839,53 +844,54 @@ module nios_tester_nios2_gen2_0_cpu_nios2_oci_dbrk (
   input            debugack;
   input            reset_n;
 
-  wire    [ 31: 0] cpu_d_address;
-  wire             cpu_d_read;
-  wire    [ 31: 0] cpu_d_readdata;
-  wire             cpu_d_wait;
-  wire             cpu_d_write;
-  wire    [ 31: 0] cpu_d_writedata;
-  wire             dbrk0_armed;
-  wire             dbrk0_break_pulse;
-  wire             dbrk0_goto0;
-  wire             dbrk0_goto1;
-  wire             dbrk0_traceme;
-  wire             dbrk0_traceoff;
-  wire             dbrk0_traceon;
-  wire             dbrk0_trigout;
-  wire             dbrk1_armed;
-  wire             dbrk1_break_pulse;
-  wire             dbrk1_goto0;
-  wire             dbrk1_goto1;
-  wire             dbrk1_traceme;
-  wire             dbrk1_traceoff;
-  wire             dbrk1_traceon;
-  wire             dbrk1_trigout;
-  wire             dbrk2_armed;
-  wire             dbrk2_break_pulse;
-  wire             dbrk2_goto0;
-  wire             dbrk2_goto1;
-  wire             dbrk2_traceme;
-  wire             dbrk2_traceoff;
-  wire             dbrk2_traceon;
-  wire             dbrk2_trigout;
-  wire             dbrk3_armed;
-  wire             dbrk3_break_pulse;
-  wire             dbrk3_goto0;
-  wire             dbrk3_goto1;
-  wire             dbrk3_traceme;
-  wire             dbrk3_traceoff;
-  wire             dbrk3_traceon;
-  wire             dbrk3_trigout;
-  reg              dbrk_break;
-  reg              dbrk_break_pulse;
-  wire    [ 31: 0] dbrk_data;
-  reg              dbrk_goto0;
-  reg              dbrk_goto1;
-  reg              dbrk_traceme;
-  reg              dbrk_traceoff;
-  reg              dbrk_traceon;
-  reg              dbrk_trigout;
+
+wire    [ 31: 0] cpu_d_address;
+wire             cpu_d_read;
+wire    [ 31: 0] cpu_d_readdata;
+wire             cpu_d_wait;
+wire             cpu_d_write;
+wire    [ 31: 0] cpu_d_writedata;
+wire             dbrk0_armed;
+wire             dbrk0_break_pulse;
+wire             dbrk0_goto0;
+wire             dbrk0_goto1;
+wire             dbrk0_traceme;
+wire             dbrk0_traceoff;
+wire             dbrk0_traceon;
+wire             dbrk0_trigout;
+wire             dbrk1_armed;
+wire             dbrk1_break_pulse;
+wire             dbrk1_goto0;
+wire             dbrk1_goto1;
+wire             dbrk1_traceme;
+wire             dbrk1_traceoff;
+wire             dbrk1_traceon;
+wire             dbrk1_trigout;
+wire             dbrk2_armed;
+wire             dbrk2_break_pulse;
+wire             dbrk2_goto0;
+wire             dbrk2_goto1;
+wire             dbrk2_traceme;
+wire             dbrk2_traceoff;
+wire             dbrk2_traceon;
+wire             dbrk2_trigout;
+wire             dbrk3_armed;
+wire             dbrk3_break_pulse;
+wire             dbrk3_goto0;
+wire             dbrk3_goto1;
+wire             dbrk3_traceme;
+wire             dbrk3_traceoff;
+wire             dbrk3_traceon;
+wire             dbrk3_trigout;
+reg              dbrk_break;
+reg              dbrk_break_pulse;
+wire    [ 31: 0] dbrk_data;
+reg              dbrk_goto0;
+reg              dbrk_goto1;
+reg              dbrk_traceme;
+reg              dbrk_traceoff;
+reg              dbrk_traceon;
+reg              dbrk_trigout;
   assign cpu_d_address = d_address;
   assign cpu_d_readdata = av_ld_data_aligned_filtered;
   assign cpu_d_read = d_read;
@@ -1005,47 +1011,33 @@ module nios_tester_nios2_gen2_0_cpu_nios2_oci_itrace (
   input            xbrk_traceon;
   input            xbrk_wrap_traceoff;
 
-  wire             advanced_exc_occured;
-  wire             curr_pid;
-  reg     [ 29: 0] dct_buffer /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
-  wire    [  1: 0] dct_code;
-  reg     [  3: 0] dct_count /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
-  wire             dct_is_taken;
-  wire    [ 31: 0] eic_addr;
-  wire    [ 31: 0] exc_addr;
-  wire             instr_retired;
-  wire             is_cond_dct;
-  wire             is_dct;
-  wire             is_exception_no_break;
-  wire             is_external_interrupt;
-  wire             is_fast_tlb_miss_exception;
-  wire             is_idct;
-  reg     [ 35: 0] itm /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
-  wire             not_in_debug_mode;
-  reg              pending_curr_pid /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
-  reg              pending_exc /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
-  reg     [ 31: 0] pending_exc_addr /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
-  reg     [ 31: 0] pending_exc_handler /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
-  reg              pending_exc_record_handler /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
-  reg     [  3: 0] pending_frametype /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
-  reg              pending_prev_pid /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
-  reg              prev_pid /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
-  reg              prev_pid_valid /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
-  wire             record_dct_outcome_in_sync;
-  wire             record_itrace;
-  wire    [ 31: 0] retired_pcb;
-  reg              snapped_curr_pid /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
-  reg              snapped_pid /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
-  reg              snapped_prev_pid /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
-  wire    [  1: 0] sync_code;
-  wire    [  6: 0] sync_interval;
-  reg     [  6: 0] sync_timer /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
-  wire    [  6: 0] sync_timer_next;
-  wire             sync_timer_reached_zero;
-  reg              trc_clear /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=D101"  */;
-  wire    [ 15: 0] trc_ctrl;
-  reg     [ 10: 0] trc_ctrl_reg /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
-  wire             trc_on;
+
+wire             advanced_exc_occured;
+wire             curr_pid;
+wire    [  1: 0] dct_code;
+wire             dct_is_taken;
+wire    [ 31: 0] eic_addr;
+wire    [ 31: 0] exc_addr;
+wire             instr_retired;
+wire             is_cond_dct;
+wire             is_dct;
+wire             is_exception_no_break;
+wire             is_external_interrupt;
+wire             is_fast_tlb_miss_exception;
+wire             is_idct;
+wire    [ 35: 0] itm;
+wire             not_in_debug_mode;
+wire             record_dct_outcome_in_sync;
+wire             record_itrace;
+wire    [ 31: 0] retired_pcb;
+wire    [  1: 0] sync_code;
+wire    [  6: 0] sync_interval;
+wire    [  6: 0] sync_timer;
+wire    [  6: 0] sync_timer_next;
+wire             sync_timer_reached_zero;
+wire    [ 15: 0] trc_ctrl;
+reg     [ 10: 0] trc_ctrl_reg /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
+wire             trc_on;
   assign is_cond_dct = 1'b0;
   assign is_dct = 1'b0;
   assign dct_is_taken = 1'b0;
@@ -1067,163 +1059,8 @@ module nios_tester_nios2_gen2_0_cpu_nios2_oci_itrace (
   assign sync_timer_next = sync_timer_reached_zero ? sync_timer : (sync_timer - 1);
   assign record_itrace = trc_on & trc_ctrl[4];
   assign dct_code = {is_cond_dct, dct_is_taken};
-  always @(posedge clk or negedge jrst_n)
-    begin
-      if (jrst_n == 0)
-          trc_clear <= 0;
-      else 
-        trc_clear <= 1'b1;
-    end
-
-
-  always @(posedge clk or negedge jrst_n)
-    begin
-      if (jrst_n == 0)
-        begin
-          itm <= 0;
-          dct_buffer <= 0;
-          dct_count <= 0;
-          sync_timer <= 0;
-          pending_frametype <= 4'b0000;
-          pending_exc <= 0;
-          pending_exc_addr <= 0;
-          pending_exc_handler <= 0;
-          pending_exc_record_handler <= 0;
-          prev_pid <= 0;
-          prev_pid_valid <= 0;
-          snapped_pid <= 0;
-          snapped_curr_pid <= 0;
-          snapped_prev_pid <= 0;
-          pending_curr_pid <= 0;
-          pending_prev_pid <= 0;
-        end
-      else if (trc_clear)
-        begin
-          itm <= 0;
-          dct_buffer <= 0;
-          dct_count <= 0;
-          sync_timer <= 0;
-          pending_frametype <= 4'b0000;
-          pending_exc <= 0;
-          pending_exc_addr <= 0;
-          pending_exc_handler <= 0;
-          pending_exc_record_handler <= 0;
-          prev_pid <= 0;
-          prev_pid_valid <= 0;
-          snapped_pid <= 0;
-          snapped_curr_pid <= 0;
-          snapped_prev_pid <= 0;
-          pending_curr_pid <= 0;
-          pending_prev_pid <= 0;
-        end
-      else 
-        begin
-          if (!prev_pid_valid)
-            begin
-              prev_pid <= curr_pid;
-              prev_pid_valid <= 1;
-            end
-          if ((curr_pid != prev_pid) & prev_pid_valid & !snapped_pid)
-            begin
-              snapped_pid <= 1;
-              snapped_curr_pid <= curr_pid;
-              snapped_prev_pid <= prev_pid;
-              prev_pid <= curr_pid;
-              prev_pid_valid <= 1;
-            end
-          if (instr_retired | advanced_exc_occured)
-            begin
-              if (~record_itrace)
-                  pending_frametype <= 4'b1010;
-              else if (is_exception_no_break)
-                begin
-                  pending_exc <= 1;
-                  pending_exc_addr <= exc_addr;
-                  pending_exc_record_handler <= 0;
-                  if (is_external_interrupt)
-                      pending_exc_handler <= eic_addr;
-                  else if (is_fast_tlb_miss_exception)
-                      pending_exc_handler <= 32'h0;
-                  else 
-                    pending_exc_handler <= 32'h0;
-                  pending_frametype <= 4'b0000;
-                end
-              else if (is_idct)
-                  pending_frametype <= 4'b1001;
-              else if (record_dct_outcome_in_sync)
-                  pending_frametype <= 4'b1000;
-              else if (!is_dct & snapped_pid)
-                begin
-                  pending_frametype <= 4'b0011;
-                  pending_curr_pid <= snapped_curr_pid;
-                  pending_prev_pid <= snapped_prev_pid;
-                  snapped_pid <= 0;
-                end
-              else 
-                pending_frametype <= 4'b0000;
-              if ((dct_count != 0) & 
-             (~record_itrace | 
-              is_exception_no_break |
-              is_idct |
-              record_dct_outcome_in_sync |
-              (!is_dct & snapped_pid)))
-                begin
-                  itm <= {4'b0001, dct_buffer, 2'b00};
-                  dct_buffer <= 0;
-                  dct_count <= 0;
-                  sync_timer <= sync_timer_next;
-                end
-              else 
-                begin
-                  if (record_itrace & (is_dct & (dct_count != 4'd15)) & ~record_dct_outcome_in_sync & ~advanced_exc_occured)
-                    begin
-                      dct_buffer <= {dct_code, dct_buffer[29 : 2]};
-                      dct_count <= dct_count + 1;
-                    end
-                  if (record_itrace & (
-                  (pending_frametype == 4'b1000) |
-                  (pending_frametype == 4'b1010) |
-                  (pending_frametype == 4'b1001)))
-                    begin
-                      itm <= {pending_frametype, retired_pcb};
-                      sync_timer <= sync_interval;
-                    end
-                  else if (record_itrace & is_dct)
-                    begin
-                      if (dct_count == 4'd15)
-                        begin
-                          itm <= {4'b0001, dct_code, dct_buffer};
-                          dct_buffer <= 0;
-                          dct_count <= 0;
-                          sync_timer <= sync_timer_next;
-                        end
-                      else 
-                        itm <= 4'b0000;
-                    end
-                  else 
-                    itm <= {4'b0000, 32'b0};
-                end
-            end
-          else if (record_itrace & pending_exc)
-            begin
-              if (pending_exc_record_handler)
-                begin
-                  itm <= {4'b0010, pending_exc_handler[31 : 1], 1'b1};
-                  pending_exc <= 1'b0;
-                  pending_exc_record_handler <= 1'b0;
-                end
-              else 
-                begin
-                  itm <= {4'b0010, pending_exc_addr[31 : 1], 1'b0};
-                  pending_exc_record_handler <= 1'b1;
-                end
-            end
-          else 
-            itm <= {4'b0000, 32'b0};
-        end
-    end
-
-
+  assign itm = 36'd0;
+  assign sync_timer = 7'd1;
   always @(posedge clk or negedge jrst_n)
     begin
       if (jrst_n == 0)
@@ -1287,8 +1124,9 @@ module nios_tester_nios2_gen2_0_cpu_nios2_oci_td_mode (
   output  [  3: 0] td_mode;
   input   [  8: 0] ctrl;
 
-  wire    [  2: 0] ctrl_bits_for_mux;
-  reg     [  3: 0] td_mode;
+
+wire    [  2: 0] ctrl_bits_for_mux;
+reg     [  3: 0] td_mode;
   assign ctrl_bits_for_mux = ctrl[7 : 5];
   always @(ctrl_bits_for_mux)
     begin
@@ -1372,17 +1210,18 @@ module nios_tester_nios2_gen2_0_cpu_nios2_oci_dtrace (
   input            jrst_n;
   input   [ 15: 0] trc_ctrl;
 
-  reg     [ 35: 0] atm /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
-  wire    [ 31: 0] cpu_d_address_0_padded;
-  wire    [ 31: 0] cpu_d_readdata_0_padded;
-  wire    [ 31: 0] cpu_d_writedata_0_padded;
-  reg     [ 35: 0] dtm /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
-  wire             dummy_tie_off;
-  wire             record_load_addr;
-  wire             record_load_data;
-  wire             record_store_addr;
-  wire             record_store_data;
-  wire    [  3: 0] td_mode_trc_ctrl;
+
+reg     [ 35: 0] atm /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
+wire    [ 31: 0] cpu_d_address_0_padded;
+wire    [ 31: 0] cpu_d_readdata_0_padded;
+wire    [ 31: 0] cpu_d_writedata_0_padded;
+reg     [ 35: 0] dtm /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
+wire             dummy_tie_off;
+wire             record_load_addr;
+wire             record_load_data;
+wire             record_store_addr;
+wire             record_store_data;
+wire    [  3: 0] td_mode_trc_ctrl;
   assign cpu_d_writedata_0_padded = cpu_d_writedata | 32'b0;
   assign cpu_d_readdata_0_padded = cpu_d_readdata | 32'b0;
   assign cpu_d_address_0_padded = cpu_d_address | 32'b0;
@@ -1439,8 +1278,9 @@ module nios_tester_nios2_gen2_0_cpu_nios2_oci_compute_input_tm_cnt (
   input            dtm_valid;
   input            itm_valid;
 
-  reg     [  1: 0] compute_input_tm_cnt;
-  wire    [  2: 0] switch_for_mux;
+
+reg     [  1: 0] compute_input_tm_cnt;
+wire    [  2: 0] switch_for_mux;
   assign switch_for_mux = {itm_valid, atm_valid, dtm_valid};
   always @(switch_for_mux)
     begin
@@ -1510,7 +1350,8 @@ module nios_tester_nios2_gen2_0_cpu_nios2_oci_fifo_wrptr_inc (
   input            ge3_free;
   input   [  1: 0] input_tm_cnt;
 
-  reg     [  3: 0] fifo_wrptr_inc;
+
+reg     [  3: 0] fifo_wrptr_inc;
   always @(ge2_free or ge3_free or input_tm_cnt)
     begin
       if (ge3_free & (input_tm_cnt == 3))
@@ -1554,7 +1395,8 @@ module nios_tester_nios2_gen2_0_cpu_nios2_oci_fifo_cnt_inc (
   input            ge3_free;
   input   [  1: 0] input_tm_cnt;
 
-  reg     [  4: 0] fifo_cnt_inc;
+
+reg     [  4: 0] fifo_cnt_inc;
   always @(empty or ge2_free or ge3_free or input_tm_cnt)
     begin
       if (empty)
@@ -1612,79 +1454,80 @@ module nios_tester_nios2_gen2_0_cpu_nios2_oci_fifo (
   input            reset_n;
   input            trc_on;
 
-  wire             atm_valid;
-  wire    [  1: 0] compute_input_tm_cnt;
-  wire             dtm_valid;
-  wire             empty;
-  reg     [ 35: 0] fifo_0;
-  wire             fifo_0_enable;
-  wire    [ 35: 0] fifo_0_mux;
-  reg     [ 35: 0] fifo_1;
-  reg     [ 35: 0] fifo_10;
-  wire             fifo_10_enable;
-  wire    [ 35: 0] fifo_10_mux;
-  reg     [ 35: 0] fifo_11;
-  wire             fifo_11_enable;
-  wire    [ 35: 0] fifo_11_mux;
-  reg     [ 35: 0] fifo_12;
-  wire             fifo_12_enable;
-  wire    [ 35: 0] fifo_12_mux;
-  reg     [ 35: 0] fifo_13;
-  wire             fifo_13_enable;
-  wire    [ 35: 0] fifo_13_mux;
-  reg     [ 35: 0] fifo_14;
-  wire             fifo_14_enable;
-  wire    [ 35: 0] fifo_14_mux;
-  reg     [ 35: 0] fifo_15;
-  wire             fifo_15_enable;
-  wire    [ 35: 0] fifo_15_mux;
-  wire             fifo_1_enable;
-  wire    [ 35: 0] fifo_1_mux;
-  reg     [ 35: 0] fifo_2;
-  wire             fifo_2_enable;
-  wire    [ 35: 0] fifo_2_mux;
-  reg     [ 35: 0] fifo_3;
-  wire             fifo_3_enable;
-  wire    [ 35: 0] fifo_3_mux;
-  reg     [ 35: 0] fifo_4;
-  wire             fifo_4_enable;
-  wire    [ 35: 0] fifo_4_mux;
-  reg     [ 35: 0] fifo_5;
-  wire             fifo_5_enable;
-  wire    [ 35: 0] fifo_5_mux;
-  reg     [ 35: 0] fifo_6;
-  wire             fifo_6_enable;
-  wire    [ 35: 0] fifo_6_mux;
-  reg     [ 35: 0] fifo_7;
-  wire             fifo_7_enable;
-  wire    [ 35: 0] fifo_7_mux;
-  reg     [ 35: 0] fifo_8;
-  wire             fifo_8_enable;
-  wire    [ 35: 0] fifo_8_mux;
-  reg     [ 35: 0] fifo_9;
-  wire             fifo_9_enable;
-  wire    [ 35: 0] fifo_9_mux;
-  reg     [  4: 0] fifo_cnt /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
-  wire    [  4: 0] fifo_cnt_inc;
-  wire    [ 35: 0] fifo_head;
-  reg     [  3: 0] fifo_rdptr /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
-  wire    [ 35: 0] fifo_read_mux;
-  reg     [  3: 0] fifo_wrptr /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
-  wire    [  3: 0] fifo_wrptr_inc;
-  wire    [  3: 0] fifo_wrptr_plus1;
-  wire    [  3: 0] fifo_wrptr_plus2;
-  wire             ge2_free;
-  wire             ge3_free;
-  wire             input_ge1;
-  wire             input_ge2;
-  wire             input_ge3;
-  wire    [  1: 0] input_tm_cnt;
-  wire             itm_valid;
-  reg              overflow_pending /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
-  wire    [ 35: 0] overflow_pending_atm;
-  wire    [ 35: 0] overflow_pending_dtm;
-  wire             trc_this;
-  wire    [ 35: 0] tw;
+
+wire             atm_valid;
+wire    [  1: 0] compute_input_tm_cnt;
+wire             dtm_valid;
+wire             empty;
+reg     [ 35: 0] fifo_0;
+wire             fifo_0_enable;
+wire    [ 35: 0] fifo_0_mux;
+reg     [ 35: 0] fifo_1;
+reg     [ 35: 0] fifo_10;
+wire             fifo_10_enable;
+wire    [ 35: 0] fifo_10_mux;
+reg     [ 35: 0] fifo_11;
+wire             fifo_11_enable;
+wire    [ 35: 0] fifo_11_mux;
+reg     [ 35: 0] fifo_12;
+wire             fifo_12_enable;
+wire    [ 35: 0] fifo_12_mux;
+reg     [ 35: 0] fifo_13;
+wire             fifo_13_enable;
+wire    [ 35: 0] fifo_13_mux;
+reg     [ 35: 0] fifo_14;
+wire             fifo_14_enable;
+wire    [ 35: 0] fifo_14_mux;
+reg     [ 35: 0] fifo_15;
+wire             fifo_15_enable;
+wire    [ 35: 0] fifo_15_mux;
+wire             fifo_1_enable;
+wire    [ 35: 0] fifo_1_mux;
+reg     [ 35: 0] fifo_2;
+wire             fifo_2_enable;
+wire    [ 35: 0] fifo_2_mux;
+reg     [ 35: 0] fifo_3;
+wire             fifo_3_enable;
+wire    [ 35: 0] fifo_3_mux;
+reg     [ 35: 0] fifo_4;
+wire             fifo_4_enable;
+wire    [ 35: 0] fifo_4_mux;
+reg     [ 35: 0] fifo_5;
+wire             fifo_5_enable;
+wire    [ 35: 0] fifo_5_mux;
+reg     [ 35: 0] fifo_6;
+wire             fifo_6_enable;
+wire    [ 35: 0] fifo_6_mux;
+reg     [ 35: 0] fifo_7;
+wire             fifo_7_enable;
+wire    [ 35: 0] fifo_7_mux;
+reg     [ 35: 0] fifo_8;
+wire             fifo_8_enable;
+wire    [ 35: 0] fifo_8_mux;
+reg     [ 35: 0] fifo_9;
+wire             fifo_9_enable;
+wire    [ 35: 0] fifo_9_mux;
+reg     [  4: 0] fifo_cnt /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
+wire    [  4: 0] fifo_cnt_inc;
+wire    [ 35: 0] fifo_head;
+reg     [  3: 0] fifo_rdptr /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
+wire    [ 35: 0] fifo_read_mux;
+reg     [  3: 0] fifo_wrptr /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
+wire    [  3: 0] fifo_wrptr_inc;
+wire    [  3: 0] fifo_wrptr_plus1;
+wire    [  3: 0] fifo_wrptr_plus2;
+wire             ge2_free;
+wire             ge3_free;
+wire             input_ge1;
+wire             input_ge2;
+wire             input_ge3;
+wire    [  1: 0] input_tm_cnt;
+wire             itm_valid;
+reg              overflow_pending /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=R101"  */;
+wire    [ 35: 0] overflow_pending_atm;
+wire    [ 35: 0] overflow_pending_dtm;
+wire             trc_this;
+wire    [ 35: 0] tw;
   assign trc_this = trc_on | (dbrk_traceon & ~dbrk_traceoff) | dbrk_traceme;
   assign itm_valid = |itm[35 : 32];
   assign atm_valid = |atm[35 : 32] & trc_this;
@@ -2075,7 +1918,8 @@ module nios_tester_nios2_gen2_0_cpu_nios2_oci_pib (
 
   output  [ 35: 0] tr_data;
 
-  wire    [ 35: 0] tr_data;
+
+wire    [ 35: 0] tr_data;
   assign tr_data = 0;
 
 endmodule
@@ -2117,15 +1961,16 @@ module nios_tester_nios2_gen2_0_cpu_nios2_oci_im (
   input   [ 15: 0] trc_ctrl;
   input   [ 35: 0] tw;
 
-  wire             tracemem_on;
-  wire    [ 35: 0] tracemem_trcdata;
-  wire             tracemem_tw;
-  reg     [  6: 0] trc_im_addr /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
-  wire    [ 35: 0] trc_im_data;
-  wire             trc_on_chip;
-  reg              trc_wrap /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
-  wire             tw_valid;
-  wire             xbrk_wrap_traceoff;
+
+wire             tracemem_on;
+wire    [ 35: 0] tracemem_trcdata;
+wire             tracemem_tw;
+reg     [  6: 0] trc_im_addr /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
+wire    [ 35: 0] trc_im_data;
+wire             trc_on_chip;
+reg              trc_wrap /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
+wire             tw_valid;
+wire             xbrk_wrap_traceoff;
   assign trc_im_data = tw;
   always @(posedge clk or negedge jrst_n)
     begin
@@ -2160,6 +2005,7 @@ endmodule
 
 module nios_tester_nios2_gen2_0_cpu_nios2_performance_monitors 
 ;
+
 
 
 
@@ -2212,17 +2058,18 @@ module nios_tester_nios2_gen2_0_cpu_nios2_avalon_reg (
   input            write;
   input   [ 31: 0] writedata;
 
-  reg     [ 31: 0] oci_ienable;
-  wire             oci_reg_00_addressed;
-  wire             oci_reg_01_addressed;
-  wire    [ 31: 0] oci_reg_readdata;
-  reg              oci_single_step_mode;
-  wire             ocireg_ers;
-  wire             ocireg_mrs;
-  wire             ocireg_sstep;
-  wire             take_action_oci_intr_mask_reg;
-  wire             take_action_ocireg;
-  wire             write_strobe;
+
+reg     [ 31: 0] oci_ienable;
+wire             oci_reg_00_addressed;
+wire             oci_reg_01_addressed;
+wire    [ 31: 0] oci_reg_readdata;
+reg              oci_single_step_mode;
+wire             ocireg_ers;
+wire             ocireg_mrs;
+wire             ocireg_sstep;
+wire             take_action_oci_intr_mask_reg;
+wire             take_action_ocireg;
+wire             write_strobe;
   assign oci_reg_00_addressed = address == 9'h100;
   assign oci_reg_01_addressed = address == 9'h101;
   assign write_strobe = write & debugaccess;
@@ -2248,9 +2095,9 @@ module nios_tester_nios2_gen2_0_cpu_nios2_avalon_reg (
   always @(posedge clk or negedge reset_n)
     begin
       if (reset_n == 0)
-          oci_ienable <= 32'b00000000000000000000000101111111;
+          oci_ienable <= 32'b00000000000000000000000101110111;
       else if (take_action_oci_intr_mask_reg)
-          oci_ienable <= writedata | ~(32'b00000000000000000000000101111111);
+          oci_ienable <= writedata | ~(32'b00000000000000000000000101110111);
     end
 
 
@@ -2291,9 +2138,10 @@ module nios_tester_nios2_gen2_0_cpu_ociram_sp_ram_module (
   input            reset_req;
   input            wren;
 
-  wire             clocken;
-  wire    [ 31: 0] q;
-  wire    [ 31: 0] ram_q;
+
+wire             clocken;
+wire    [ 31: 0] q;
+wire    [ 31: 0] ram_q;
   assign q = ram_q;
   assign clocken = ~reset_req;
   altsyncram the_altsyncram
@@ -2313,6 +2161,7 @@ module nios_tester_nios2_gen2_0_cpu_ociram_sp_ram_module (
            the_altsyncram.operation_mode = "SINGLE_PORT",
            the_altsyncram.outdata_reg_a = "UNREGISTERED",
            the_altsyncram.ram_block_type = "AUTO",
+           the_altsyncram.read_during_write_mode_port_a = "DONT_CARE",
            the_altsyncram.width_a = 32,
            the_altsyncram.width_byteena_a = 4,
            the_altsyncram.widthad_a = 8;
@@ -2369,25 +2218,27 @@ module nios_tester_nios2_gen2_0_cpu_nios2_ocimem (
   input            write;
   input   [ 31: 0] writedata;
 
-  reg     [ 10: 0] MonAReg /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
-  wire    [  8: 0] MonARegAddrInc;
-  wire             MonARegAddrIncAccessingRAM;
-  reg     [ 31: 0] MonDReg /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
-  reg              avalon_ociram_readdata_ready /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
-  wire             avalon_ram_wr;
-  wire    [ 31: 0] cfgrom_readdata;
-  reg              jtag_ram_access /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
-  reg              jtag_ram_rd /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
-  reg              jtag_ram_rd_d1 /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
-  reg              jtag_ram_wr /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
-  reg              jtag_rd /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
-  reg              jtag_rd_d1 /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
-  wire    [  7: 0] ociram_addr;
-  wire    [  3: 0] ociram_byteenable;
-  wire    [ 31: 0] ociram_readdata;
-  wire    [ 31: 0] ociram_wr_data;
-  wire             ociram_wr_en;
-  reg              waitrequest /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
+
+reg     [ 10: 0] MonAReg /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
+wire    [  8: 0] MonARegAddrInc;
+wire             MonARegAddrIncAccessingRAM;
+reg     [ 31: 0] MonDReg /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
+reg              avalon_ociram_readdata_ready /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
+wire             avalon_ram_wr;
+wire    [ 31: 0] cfgrom_readdata;
+reg              jtag_ram_access /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
+reg              jtag_ram_rd /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
+reg              jtag_ram_rd_d1 /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
+reg              jtag_ram_wr /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
+reg              jtag_rd /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
+reg              jtag_rd_d1 /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
+wire    [  7: 0] ociram_addr;
+wire    [  3: 0] ociram_byteenable;
+wire    [ 31: 0] ociram_readdata;
+wire             ociram_reset_req;
+wire    [ 31: 0] ociram_wr_data;
+wire             ociram_wr_en;
+reg              waitrequest /* synthesis ALTERA_ATTRIBUTE = "SUPPRESS_DA_RULE_INTERNAL=\"D101,D103,R101\""  */;
   always @(posedge clk or negedge jrst_n)
     begin
       if (jrst_n == 0)
@@ -2467,6 +2318,7 @@ module nios_tester_nios2_gen2_0_cpu_nios2_ocimem (
   assign ociram_wr_data = jtag_ram_access ? MonDReg[31 : 0] : writedata;
   assign ociram_byteenable = jtag_ram_access ? 4'b1111 : byteenable;
   assign ociram_wr_en = jtag_ram_access ? jtag_ram_wr : avalon_ram_wr;
+  assign ociram_reset_req = reset_req & ~jtag_ram_access;
 //nios_tester_nios2_gen2_0_cpu_ociram_sp_ram, which is an nios_sp_ram
 nios_tester_nios2_gen2_0_cpu_ociram_sp_ram_module nios_tester_nios2_gen2_0_cpu_ociram_sp_ram
   (
@@ -2475,7 +2327,7 @@ nios_tester_nios2_gen2_0_cpu_ociram_sp_ram_module nios_tester_nios2_gen2_0_cpu_o
     .clock      (clk),
     .data       (ociram_wr_data),
     .q          (ociram_readdata),
-    .reset_req  (reset_req),
+    .reset_req  (ociram_reset_req),
     .wren       (ociram_wr_en)
   );
 
@@ -2569,90 +2421,91 @@ module nios_tester_nios2_gen2_0_cpu_nios2_oci (
   input            write_nxt;
   input   [ 31: 0] writedata_nxt;
 
-  wire    [ 31: 0] MonDReg;
-  reg     [  8: 0] address;
-  wire    [ 35: 0] atm;
-  wire    [ 31: 0] break_readreg;
-  reg     [  3: 0] byteenable;
-  wire    [ 31: 0] cpu_d_address;
-  wire             cpu_d_read;
-  wire    [ 31: 0] cpu_d_readdata;
-  wire             cpu_d_wait;
-  wire             cpu_d_write;
-  wire    [ 31: 0] cpu_d_writedata;
-  wire             dbrk_break;
-  wire             dbrk_goto0;
-  wire             dbrk_goto1;
-  wire             dbrk_hit0_latch;
-  wire             dbrk_hit1_latch;
-  wire             dbrk_hit2_latch;
-  wire             dbrk_hit3_latch;
-  wire             dbrk_traceme;
-  wire             dbrk_traceoff;
-  wire             dbrk_traceon;
-  wire             dbrk_trigout;
-  wire             debug_mem_slave_debugaccess_to_roms;
-  reg              debugaccess;
-  wire             debugack;
-  wire             debugreq;
-  wire    [ 35: 0] dtm;
-  wire             dummy_sink;
-  wire    [ 35: 0] itm;
-  wire    [ 37: 0] jdo;
-  wire             jrst_n;
-  wire             monitor_error;
-  wire             monitor_go;
-  wire             monitor_ready;
-  wire             oci_hbreak_req;
-  wire    [ 31: 0] oci_ienable;
-  wire    [ 31: 0] oci_reg_readdata;
-  wire             oci_single_step_mode;
-  wire    [ 31: 0] ociram_readdata;
-  wire             ocireg_ers;
-  wire             ocireg_mrs;
-  reg              read;
-  reg     [ 31: 0] readdata;
-  wire             resetlatch;
-  wire             resetrequest;
-  wire             st_ready_test_idle;
-  wire             take_action_break_a;
-  wire             take_action_break_b;
-  wire             take_action_break_c;
-  wire             take_action_ocimem_a;
-  wire             take_action_ocimem_b;
-  wire             take_action_ocireg;
-  wire             take_action_tracectrl;
-  wire             take_no_action_break_a;
-  wire             take_no_action_break_b;
-  wire             take_no_action_break_c;
-  wire             take_no_action_ocimem_a;
-  wire    [ 35: 0] tr_data;
-  wire             tracemem_on;
-  wire    [ 35: 0] tracemem_trcdata;
-  wire             tracemem_tw;
-  wire    [ 15: 0] trc_ctrl;
-  wire    [  6: 0] trc_im_addr;
-  wire             trc_on;
-  wire             trc_wrap;
-  wire             trigbrktype;
-  wire             trigger_state_0;
-  wire             trigger_state_1;
-  wire             trigout;
-  wire    [ 35: 0] tw;
-  wire             waitrequest;
-  reg              write;
-  reg     [ 31: 0] writedata;
-  wire             xbrk_break;
-  wire    [  7: 0] xbrk_ctrl0;
-  wire    [  7: 0] xbrk_ctrl1;
-  wire    [  7: 0] xbrk_ctrl2;
-  wire    [  7: 0] xbrk_ctrl3;
-  wire             xbrk_goto0;
-  wire             xbrk_goto1;
-  wire             xbrk_traceoff;
-  wire             xbrk_traceon;
-  wire             xbrk_trigout;
-  wire             xbrk_wrap_traceoff;
+
+wire    [ 31: 0] MonDReg;
+reg     [  8: 0] address;
+wire    [ 35: 0] atm;
+wire    [ 31: 0] break_readreg;
+reg     [  3: 0] byteenable;
+wire    [ 31: 0] cpu_d_address;
+wire             cpu_d_read;
+wire    [ 31: 0] cpu_d_readdata;
+wire             cpu_d_wait;
+wire             cpu_d_write;
+wire    [ 31: 0] cpu_d_writedata;
+wire             dbrk_break;
+wire             dbrk_goto0;
+wire             dbrk_goto1;
+wire             dbrk_hit0_latch;
+wire             dbrk_hit1_latch;
+wire             dbrk_hit2_latch;
+wire             dbrk_hit3_latch;
+wire             dbrk_traceme;
+wire             dbrk_traceoff;
+wire             dbrk_traceon;
+wire             dbrk_trigout;
+wire             debug_mem_slave_debugaccess_to_roms;
+reg              debugaccess;
+wire             debugack;
+wire             debugreq;
+wire    [ 35: 0] dtm;
+wire             dummy_sink;
+wire    [ 35: 0] itm;
+wire    [ 37: 0] jdo;
+wire             jrst_n;
+wire             monitor_error;
+wire             monitor_go;
+wire             monitor_ready;
+wire             oci_hbreak_req;
+wire    [ 31: 0] oci_ienable;
+wire    [ 31: 0] oci_reg_readdata;
+wire             oci_single_step_mode;
+wire    [ 31: 0] ociram_readdata;
+wire             ocireg_ers;
+wire             ocireg_mrs;
+reg              read;
+reg     [ 31: 0] readdata;
+wire             resetlatch;
+wire             resetrequest;
+wire             st_ready_test_idle;
+wire             take_action_break_a;
+wire             take_action_break_b;
+wire             take_action_break_c;
+wire             take_action_ocimem_a;
+wire             take_action_ocimem_b;
+wire             take_action_ocireg;
+wire             take_action_tracectrl;
+wire             take_no_action_break_a;
+wire             take_no_action_break_b;
+wire             take_no_action_break_c;
+wire             take_no_action_ocimem_a;
+wire    [ 35: 0] tr_data;
+wire             tracemem_on;
+wire    [ 35: 0] tracemem_trcdata;
+wire             tracemem_tw;
+wire    [ 15: 0] trc_ctrl;
+wire    [  6: 0] trc_im_addr;
+wire             trc_on;
+wire             trc_wrap;
+wire             trigbrktype;
+wire             trigger_state_0;
+wire             trigger_state_1;
+wire             trigout;
+wire    [ 35: 0] tw;
+wire             waitrequest;
+reg              write;
+reg     [ 31: 0] writedata;
+wire             xbrk_break;
+wire    [  7: 0] xbrk_ctrl0;
+wire    [  7: 0] xbrk_ctrl1;
+wire    [  7: 0] xbrk_ctrl2;
+wire    [  7: 0] xbrk_ctrl3;
+wire             xbrk_goto0;
+wire             xbrk_goto1;
+wire             xbrk_traceoff;
+wire             xbrk_traceon;
+wire             xbrk_trigout;
+wire             xbrk_wrap_traceoff;
   nios_tester_nios2_gen2_0_cpu_nios2_oci_debug the_nios_tester_nios2_gen2_0_cpu_nios2_oci_debug
     (
       .clk                  (clk),
@@ -3038,625 +2891,628 @@ module nios_tester_nios2_gen2_0_cpu (
   input            reset_n;
   input            reset_req;
 
-  wire    [  1: 0] D_compare_op;
-  wire             D_ctrl_alu_force_and;
-  wire             D_ctrl_alu_force_xor;
-  wire             D_ctrl_alu_signed_comparison;
-  wire             D_ctrl_alu_subtract;
-  wire             D_ctrl_b_is_dst;
-  wire             D_ctrl_br;
-  wire             D_ctrl_br_cmp;
-  wire             D_ctrl_br_uncond;
-  wire             D_ctrl_break;
-  wire             D_ctrl_crst;
-  wire             D_ctrl_custom;
-  wire             D_ctrl_custom_multi;
-  wire             D_ctrl_exception;
-  wire             D_ctrl_force_src2_zero;
-  wire             D_ctrl_hi_imm16;
-  wire             D_ctrl_ignore_dst;
-  wire             D_ctrl_implicit_dst_eretaddr;
-  wire             D_ctrl_implicit_dst_retaddr;
-  wire             D_ctrl_intr_inst;
-  wire             D_ctrl_jmp_direct;
-  wire             D_ctrl_jmp_indirect;
-  wire             D_ctrl_ld;
-  wire             D_ctrl_ld_ex;
-  wire             D_ctrl_ld_io;
-  wire             D_ctrl_ld_non_io;
-  wire             D_ctrl_ld_signed;
-  wire             D_ctrl_ld_st_ex;
-  wire             D_ctrl_logic;
-  wire             D_ctrl_mem16;
-  wire             D_ctrl_mem32;
-  wire             D_ctrl_mem8;
-  wire             D_ctrl_rd_ctl_reg;
-  wire             D_ctrl_retaddr;
-  wire             D_ctrl_rot_right;
-  wire             D_ctrl_set_src2_rem_imm;
-  wire             D_ctrl_shift_logical;
-  wire             D_ctrl_shift_right_arith;
-  wire             D_ctrl_shift_rot;
-  wire             D_ctrl_shift_rot_right;
-  wire             D_ctrl_signed_imm12;
-  wire             D_ctrl_src2_choose_imm;
-  wire             D_ctrl_src_imm5_shift_rot;
-  wire             D_ctrl_st;
-  wire             D_ctrl_st_ex;
-  wire             D_ctrl_uncond_cti_non_br;
-  wire             D_ctrl_unsigned_lo_imm16;
-  wire             D_ctrl_wrctl_inst;
-  wire    [  4: 0] D_dst_regnum;
-  wire    [ 55: 0] D_inst;
-  wire             D_is_opx_inst;
-  reg     [ 31: 0] D_iw /* synthesis ALTERA_IP_DEBUG_VISIBLE = 1 */;
-  wire    [  4: 0] D_iw_a;
-  wire    [  4: 0] D_iw_b;
-  wire    [  4: 0] D_iw_c;
-  wire    [  4: 0] D_iw_control_regnum;
-  wire    [  7: 0] D_iw_custom_n;
-  wire             D_iw_custom_readra;
-  wire             D_iw_custom_readrb;
-  wire             D_iw_custom_writerc;
-  wire    [ 15: 0] D_iw_imm16;
-  wire    [ 25: 0] D_iw_imm26;
-  wire    [  4: 0] D_iw_imm5;
-  wire    [  1: 0] D_iw_memsz;
-  wire    [  5: 0] D_iw_op;
-  wire    [  5: 0] D_iw_opx;
-  wire    [ 27: 0] D_jmp_direct_target_waddr;
-  wire    [  1: 0] D_logic_op;
-  wire    [  1: 0] D_logic_op_raw;
-  wire             D_mem16;
-  wire             D_mem32;
-  wire             D_mem8;
-  wire             D_op_add;
-  wire             D_op_addi;
-  wire             D_op_and;
-  wire             D_op_andhi;
-  wire             D_op_andi;
-  wire             D_op_beq;
-  wire             D_op_bge;
-  wire             D_op_bgeu;
-  wire             D_op_blt;
-  wire             D_op_bltu;
-  wire             D_op_bne;
-  wire             D_op_br;
-  wire             D_op_break;
-  wire             D_op_bret;
-  wire             D_op_call;
-  wire             D_op_callr;
-  wire             D_op_cmpeq;
-  wire             D_op_cmpeqi;
-  wire             D_op_cmpge;
-  wire             D_op_cmpgei;
-  wire             D_op_cmpgeu;
-  wire             D_op_cmpgeui;
-  wire             D_op_cmplt;
-  wire             D_op_cmplti;
-  wire             D_op_cmpltu;
-  wire             D_op_cmpltui;
-  wire             D_op_cmpne;
-  wire             D_op_cmpnei;
-  wire             D_op_crst;
-  wire             D_op_custom;
-  wire             D_op_div;
-  wire             D_op_divu;
-  wire             D_op_eret;
-  wire             D_op_flushd;
-  wire             D_op_flushda;
-  wire             D_op_flushi;
-  wire             D_op_flushp;
-  wire             D_op_hbreak;
-  wire             D_op_initd;
-  wire             D_op_initda;
-  wire             D_op_initi;
-  wire             D_op_intr;
-  wire             D_op_jmp;
-  wire             D_op_jmpi;
-  wire             D_op_ldb;
-  wire             D_op_ldbio;
-  wire             D_op_ldbu;
-  wire             D_op_ldbuio;
-  wire             D_op_ldh;
-  wire             D_op_ldhio;
-  wire             D_op_ldhu;
-  wire             D_op_ldhuio;
-  wire             D_op_ldl;
-  wire             D_op_ldw;
-  wire             D_op_ldwio;
-  wire             D_op_mul;
-  wire             D_op_muli;
-  wire             D_op_mulxss;
-  wire             D_op_mulxsu;
-  wire             D_op_mulxuu;
-  wire             D_op_nextpc;
-  wire             D_op_nor;
-  wire             D_op_op_rsv02;
-  wire             D_op_op_rsv09;
-  wire             D_op_op_rsv10;
-  wire             D_op_op_rsv17;
-  wire             D_op_op_rsv18;
-  wire             D_op_op_rsv25;
-  wire             D_op_op_rsv26;
-  wire             D_op_op_rsv33;
-  wire             D_op_op_rsv34;
-  wire             D_op_op_rsv41;
-  wire             D_op_op_rsv42;
-  wire             D_op_op_rsv49;
-  wire             D_op_op_rsv57;
-  wire             D_op_op_rsv61;
-  wire             D_op_op_rsv62;
-  wire             D_op_op_rsv63;
-  wire             D_op_opx_rsv00;
-  wire             D_op_opx_rsv10;
-  wire             D_op_opx_rsv15;
-  wire             D_op_opx_rsv17;
-  wire             D_op_opx_rsv21;
-  wire             D_op_opx_rsv25;
-  wire             D_op_opx_rsv33;
-  wire             D_op_opx_rsv34;
-  wire             D_op_opx_rsv35;
-  wire             D_op_opx_rsv42;
-  wire             D_op_opx_rsv43;
-  wire             D_op_opx_rsv44;
-  wire             D_op_opx_rsv47;
-  wire             D_op_opx_rsv50;
-  wire             D_op_opx_rsv51;
-  wire             D_op_opx_rsv55;
-  wire             D_op_opx_rsv56;
-  wire             D_op_opx_rsv60;
-  wire             D_op_opx_rsv63;
-  wire             D_op_or;
-  wire             D_op_orhi;
-  wire             D_op_ori;
-  wire             D_op_rdctl;
-  wire             D_op_rdprs;
-  wire             D_op_ret;
-  wire             D_op_rol;
-  wire             D_op_roli;
-  wire             D_op_ror;
-  wire             D_op_sll;
-  wire             D_op_slli;
-  wire             D_op_sra;
-  wire             D_op_srai;
-  wire             D_op_srl;
-  wire             D_op_srli;
-  wire             D_op_stb;
-  wire             D_op_stbio;
-  wire             D_op_stc;
-  wire             D_op_sth;
-  wire             D_op_sthio;
-  wire             D_op_stw;
-  wire             D_op_stwio;
-  wire             D_op_sub;
-  wire             D_op_sync;
-  wire             D_op_trap;
-  wire             D_op_wrctl;
-  wire             D_op_wrprs;
-  wire             D_op_xor;
-  wire             D_op_xorhi;
-  wire             D_op_xori;
-  reg              D_valid;
-  wire    [ 71: 0] D_vinst;
-  wire             D_wr_dst_reg;
-  wire    [ 31: 0] E_alu_result;
-  reg              E_alu_sub;
-  wire    [ 32: 0] E_arith_result;
-  wire    [ 31: 0] E_arith_src1;
-  wire    [ 31: 0] E_arith_src2;
-  wire             E_ci_multi_stall;
-  wire    [ 31: 0] E_ci_result;
-  wire             E_cmp_result;
-  wire    [ 31: 0] E_control_rd_data;
-  wire             E_eq;
-  reg              E_invert_arith_src_msb;
-  wire             E_ld_stall;
-  wire    [ 31: 0] E_logic_result;
-  wire             E_logic_result_is_0;
-  wire             E_lt;
-  wire    [ 31: 0] E_mem_baddr;
-  wire    [  3: 0] E_mem_byte_en;
-  reg              E_new_inst;
-  wire             E_rf_ecc_recoverable_valid;
-  wire             E_rf_ecc_unrecoverable_valid;
-  wire             E_rf_ecc_valid_any;
-  reg     [  4: 0] E_shift_rot_cnt;
-  wire    [  4: 0] E_shift_rot_cnt_nxt;
-  wire             E_shift_rot_done;
-  wire             E_shift_rot_fill_bit;
-  reg     [ 31: 0] E_shift_rot_result;
-  wire    [ 31: 0] E_shift_rot_result_nxt;
-  wire    [  4: 0] E_shift_rot_shfcnt;
-  wire             E_shift_rot_stall;
-  reg     [ 31: 0] E_src1;
-  reg     [ 31: 0] E_src2;
-  wire    [ 31: 0] E_st_data;
-  wire             E_st_stall;
-  wire             E_stall;
-  wire             E_valid;
-  reg              E_valid_from_R;
-  wire    [ 71: 0] E_vinst;
-  wire             E_wrctl_bstatus;
-  wire             E_wrctl_estatus;
-  wire             E_wrctl_ienable;
-  wire             E_wrctl_status;
-  wire    [ 31: 0] F_av_iw;
-  wire    [  4: 0] F_av_iw_a;
-  wire    [  4: 0] F_av_iw_b;
-  wire    [  4: 0] F_av_iw_c;
-  wire    [  4: 0] F_av_iw_control_regnum;
-  wire    [  7: 0] F_av_iw_custom_n;
-  wire             F_av_iw_custom_readra;
-  wire             F_av_iw_custom_readrb;
-  wire             F_av_iw_custom_writerc;
-  wire    [ 15: 0] F_av_iw_imm16;
-  wire    [ 25: 0] F_av_iw_imm26;
-  wire    [  4: 0] F_av_iw_imm5;
-  wire    [  1: 0] F_av_iw_memsz;
-  wire    [  5: 0] F_av_iw_op;
-  wire    [  5: 0] F_av_iw_opx;
-  wire             F_av_mem16;
-  wire             F_av_mem32;
-  wire             F_av_mem8;
-  wire    [ 55: 0] F_inst;
-  wire             F_is_opx_inst;
-  wire    [ 31: 0] F_iw;
-  wire    [  4: 0] F_iw_a;
-  wire    [  4: 0] F_iw_b;
-  wire    [  4: 0] F_iw_c;
-  wire    [  4: 0] F_iw_control_regnum;
-  wire    [  7: 0] F_iw_custom_n;
-  wire             F_iw_custom_readra;
-  wire             F_iw_custom_readrb;
-  wire             F_iw_custom_writerc;
-  wire    [ 15: 0] F_iw_imm16;
-  wire    [ 25: 0] F_iw_imm26;
-  wire    [  4: 0] F_iw_imm5;
-  wire    [  1: 0] F_iw_memsz;
-  wire    [  5: 0] F_iw_op;
-  wire    [  5: 0] F_iw_opx;
-  wire    [  1: 0] F_jmp_direct_pc_hi;
-  wire             F_mem16;
-  wire             F_mem32;
-  wire             F_mem8;
-  wire             F_op_add;
-  wire             F_op_addi;
-  wire             F_op_and;
-  wire             F_op_andhi;
-  wire             F_op_andi;
-  wire             F_op_beq;
-  wire             F_op_bge;
-  wire             F_op_bgeu;
-  wire             F_op_blt;
-  wire             F_op_bltu;
-  wire             F_op_bne;
-  wire             F_op_br;
-  wire             F_op_break;
-  wire             F_op_bret;
-  wire             F_op_call;
-  wire             F_op_callr;
-  wire             F_op_cmpeq;
-  wire             F_op_cmpeqi;
-  wire             F_op_cmpge;
-  wire             F_op_cmpgei;
-  wire             F_op_cmpgeu;
-  wire             F_op_cmpgeui;
-  wire             F_op_cmplt;
-  wire             F_op_cmplti;
-  wire             F_op_cmpltu;
-  wire             F_op_cmpltui;
-  wire             F_op_cmpne;
-  wire             F_op_cmpnei;
-  wire             F_op_crst;
-  wire             F_op_custom;
-  wire             F_op_div;
-  wire             F_op_divu;
-  wire             F_op_eret;
-  wire             F_op_flushd;
-  wire             F_op_flushda;
-  wire             F_op_flushi;
-  wire             F_op_flushp;
-  wire             F_op_hbreak;
-  wire             F_op_initd;
-  wire             F_op_initda;
-  wire             F_op_initi;
-  wire             F_op_intr;
-  wire             F_op_jmp;
-  wire             F_op_jmpi;
-  wire             F_op_ldb;
-  wire             F_op_ldbio;
-  wire             F_op_ldbu;
-  wire             F_op_ldbuio;
-  wire             F_op_ldh;
-  wire             F_op_ldhio;
-  wire             F_op_ldhu;
-  wire             F_op_ldhuio;
-  wire             F_op_ldl;
-  wire             F_op_ldw;
-  wire             F_op_ldwio;
-  wire             F_op_mul;
-  wire             F_op_muli;
-  wire             F_op_mulxss;
-  wire             F_op_mulxsu;
-  wire             F_op_mulxuu;
-  wire             F_op_nextpc;
-  wire             F_op_nor;
-  wire             F_op_op_rsv02;
-  wire             F_op_op_rsv09;
-  wire             F_op_op_rsv10;
-  wire             F_op_op_rsv17;
-  wire             F_op_op_rsv18;
-  wire             F_op_op_rsv25;
-  wire             F_op_op_rsv26;
-  wire             F_op_op_rsv33;
-  wire             F_op_op_rsv34;
-  wire             F_op_op_rsv41;
-  wire             F_op_op_rsv42;
-  wire             F_op_op_rsv49;
-  wire             F_op_op_rsv57;
-  wire             F_op_op_rsv61;
-  wire             F_op_op_rsv62;
-  wire             F_op_op_rsv63;
-  wire             F_op_opx_rsv00;
-  wire             F_op_opx_rsv10;
-  wire             F_op_opx_rsv15;
-  wire             F_op_opx_rsv17;
-  wire             F_op_opx_rsv21;
-  wire             F_op_opx_rsv25;
-  wire             F_op_opx_rsv33;
-  wire             F_op_opx_rsv34;
-  wire             F_op_opx_rsv35;
-  wire             F_op_opx_rsv42;
-  wire             F_op_opx_rsv43;
-  wire             F_op_opx_rsv44;
-  wire             F_op_opx_rsv47;
-  wire             F_op_opx_rsv50;
-  wire             F_op_opx_rsv51;
-  wire             F_op_opx_rsv55;
-  wire             F_op_opx_rsv56;
-  wire             F_op_opx_rsv60;
-  wire             F_op_opx_rsv63;
-  wire             F_op_or;
-  wire             F_op_orhi;
-  wire             F_op_ori;
-  wire             F_op_rdctl;
-  wire             F_op_rdprs;
-  wire             F_op_ret;
-  wire             F_op_rol;
-  wire             F_op_roli;
-  wire             F_op_ror;
-  wire             F_op_sll;
-  wire             F_op_slli;
-  wire             F_op_sra;
-  wire             F_op_srai;
-  wire             F_op_srl;
-  wire             F_op_srli;
-  wire             F_op_stb;
-  wire             F_op_stbio;
-  wire             F_op_stc;
-  wire             F_op_sth;
-  wire             F_op_sthio;
-  wire             F_op_stw;
-  wire             F_op_stwio;
-  wire             F_op_sub;
-  wire             F_op_sync;
-  wire             F_op_trap;
-  wire             F_op_wrctl;
-  wire             F_op_wrprs;
-  wire             F_op_xor;
-  wire             F_op_xorhi;
-  wire             F_op_xori;
-  reg     [ 27: 0] F_pc /* synthesis ALTERA_IP_DEBUG_VISIBLE = 1 */;
-  wire             F_pc_en;
-  wire    [ 27: 0] F_pc_no_crst_nxt;
-  wire    [ 27: 0] F_pc_nxt;
-  wire    [ 27: 0] F_pc_plus_one;
-  wire    [  1: 0] F_pc_sel_nxt;
-  wire    [ 29: 0] F_pcb;
-  wire    [ 29: 0] F_pcb_nxt;
-  wire    [ 29: 0] F_pcb_plus_four;
-  wire             F_valid;
-  wire    [ 71: 0] F_vinst;
-  reg     [  1: 0] R_compare_op;
-  reg              R_ctrl_alu_force_and;
-  wire             R_ctrl_alu_force_and_nxt;
-  reg              R_ctrl_alu_force_xor;
-  wire             R_ctrl_alu_force_xor_nxt;
-  reg              R_ctrl_alu_signed_comparison;
-  wire             R_ctrl_alu_signed_comparison_nxt;
-  reg              R_ctrl_alu_subtract;
-  wire             R_ctrl_alu_subtract_nxt;
-  reg              R_ctrl_b_is_dst;
-  wire             R_ctrl_b_is_dst_nxt;
-  reg              R_ctrl_br;
-  reg              R_ctrl_br_cmp;
-  wire             R_ctrl_br_cmp_nxt;
-  wire             R_ctrl_br_nxt;
-  reg              R_ctrl_br_uncond;
-  wire             R_ctrl_br_uncond_nxt;
-  reg              R_ctrl_break;
-  wire             R_ctrl_break_nxt;
-  reg              R_ctrl_crst;
-  wire             R_ctrl_crst_nxt;
-  reg              R_ctrl_custom;
-  reg              R_ctrl_custom_multi;
-  wire             R_ctrl_custom_multi_nxt;
-  wire             R_ctrl_custom_nxt;
-  reg              R_ctrl_exception;
-  wire             R_ctrl_exception_nxt;
-  reg              R_ctrl_force_src2_zero;
-  wire             R_ctrl_force_src2_zero_nxt;
-  reg              R_ctrl_hi_imm16;
-  wire             R_ctrl_hi_imm16_nxt;
-  reg              R_ctrl_ignore_dst;
-  wire             R_ctrl_ignore_dst_nxt;
-  reg              R_ctrl_implicit_dst_eretaddr;
-  wire             R_ctrl_implicit_dst_eretaddr_nxt;
-  reg              R_ctrl_implicit_dst_retaddr;
-  wire             R_ctrl_implicit_dst_retaddr_nxt;
-  reg              R_ctrl_intr_inst;
-  wire             R_ctrl_intr_inst_nxt;
-  reg              R_ctrl_jmp_direct;
-  wire             R_ctrl_jmp_direct_nxt;
-  reg              R_ctrl_jmp_indirect;
-  wire             R_ctrl_jmp_indirect_nxt;
-  reg              R_ctrl_ld;
-  reg              R_ctrl_ld_ex;
-  wire             R_ctrl_ld_ex_nxt;
-  reg              R_ctrl_ld_io;
-  wire             R_ctrl_ld_io_nxt;
-  reg              R_ctrl_ld_non_io;
-  wire             R_ctrl_ld_non_io_nxt;
-  wire             R_ctrl_ld_nxt;
-  reg              R_ctrl_ld_signed;
-  wire             R_ctrl_ld_signed_nxt;
-  reg              R_ctrl_ld_st_ex;
-  wire             R_ctrl_ld_st_ex_nxt;
-  reg              R_ctrl_logic;
-  wire             R_ctrl_logic_nxt;
-  reg              R_ctrl_mem16;
-  wire             R_ctrl_mem16_nxt;
-  reg              R_ctrl_mem32;
-  wire             R_ctrl_mem32_nxt;
-  reg              R_ctrl_mem8;
-  wire             R_ctrl_mem8_nxt;
-  reg              R_ctrl_rd_ctl_reg;
-  wire             R_ctrl_rd_ctl_reg_nxt;
-  reg              R_ctrl_retaddr;
-  wire             R_ctrl_retaddr_nxt;
-  reg              R_ctrl_rot_right;
-  wire             R_ctrl_rot_right_nxt;
-  reg              R_ctrl_set_src2_rem_imm;
-  wire             R_ctrl_set_src2_rem_imm_nxt;
-  reg              R_ctrl_shift_logical;
-  wire             R_ctrl_shift_logical_nxt;
-  reg              R_ctrl_shift_right_arith;
-  wire             R_ctrl_shift_right_arith_nxt;
-  reg              R_ctrl_shift_rot;
-  wire             R_ctrl_shift_rot_nxt;
-  reg              R_ctrl_shift_rot_right;
-  wire             R_ctrl_shift_rot_right_nxt;
-  reg              R_ctrl_signed_imm12;
-  wire             R_ctrl_signed_imm12_nxt;
-  reg              R_ctrl_src2_choose_imm;
-  wire             R_ctrl_src2_choose_imm_nxt;
-  reg              R_ctrl_src_imm5_shift_rot;
-  wire             R_ctrl_src_imm5_shift_rot_nxt;
-  reg              R_ctrl_st;
-  reg              R_ctrl_st_ex;
-  wire             R_ctrl_st_ex_nxt;
-  wire             R_ctrl_st_nxt;
-  reg              R_ctrl_uncond_cti_non_br;
-  wire             R_ctrl_uncond_cti_non_br_nxt;
-  reg              R_ctrl_unsigned_lo_imm16;
-  wire             R_ctrl_unsigned_lo_imm16_nxt;
-  reg              R_ctrl_wrctl_inst;
-  wire             R_ctrl_wrctl_inst_nxt;
-  reg     [  4: 0] R_dst_regnum /* synthesis ALTERA_IP_DEBUG_VISIBLE = 1 */;
-  wire             R_en;
-  reg     [  1: 0] R_logic_op;
-  wire    [ 31: 0] R_rf_a;
-  wire    [ 31: 0] R_rf_a_q;
-  wire    [ 31: 0] R_rf_b;
-  wire    [ 31: 0] R_rf_b_q;
-  wire    [ 31: 0] R_src1;
-  wire    [ 31: 0] R_src2;
-  wire    [ 15: 0] R_src2_hi;
-  wire    [ 15: 0] R_src2_lo;
-  reg              R_src2_use_imm;
-  wire    [  7: 0] R_stb_data;
-  wire    [ 15: 0] R_sth_data;
-  wire    [ 31: 0] R_stw_data;
-  reg              R_valid;
-  wire    [ 71: 0] R_vinst;
-  reg              R_wr_dst_reg;
-  reg              W1_rf_ecc_recoverable_valid;
-  reg     [ 31: 0] W_alu_result;
-  wire             W_br_taken;
-  reg              W_bstatus_reg;
-  wire             W_bstatus_reg_inst_nxt;
-  wire             W_bstatus_reg_nxt;
-  reg     [ 31: 0] W_cdsr_reg;
-  reg              W_cmp_result;
-  reg     [ 31: 0] W_control_rd_data;
-  wire    [ 31: 0] W_cpuid_reg;
-  wire    [  4: 0] W_dst_regnum;
-  reg              W_estatus_reg;
-  wire             W_estatus_reg_inst_nxt;
-  wire             W_estatus_reg_nxt;
-  reg     [ 31: 0] W_ienable_reg;
-  wire    [ 31: 0] W_ienable_reg_nxt;
-  reg     [ 31: 0] W_ipending_reg;
-  wire    [ 31: 0] W_ipending_reg_nxt;
-  wire    [ 31: 0] W_mem_baddr;
-  reg              W_rf_ecc_recoverable_valid;
-  reg              W_rf_ecc_unrecoverable_valid;
-  wire             W_rf_ecc_valid_any;
-  wire    [ 31: 0] W_rf_wr_data;
-  wire             W_rf_wren;
-  wire             W_status_reg;
-  reg              W_status_reg_pie;
-  wire             W_status_reg_pie_inst_nxt;
-  wire             W_status_reg_pie_nxt;
-  reg              W_up_ex_mon_state;
-  reg              W_valid /* synthesis ALTERA_IP_DEBUG_VISIBLE = 1 */;
-  wire    [ 71: 0] W_vinst;
-  wire    [ 31: 0] W_wr_data;
-  wire    [ 31: 0] W_wr_data_non_zero;
-  wire             av_fill_bit;
-  reg     [  1: 0] av_ld_align_cycle;
-  wire    [  1: 0] av_ld_align_cycle_nxt;
-  wire             av_ld_align_one_more_cycle;
-  reg              av_ld_aligning_data;
-  wire             av_ld_aligning_data_nxt;
-  reg     [  7: 0] av_ld_byte0_data;
-  wire    [  7: 0] av_ld_byte0_data_nxt;
-  reg     [  7: 0] av_ld_byte1_data;
-  wire             av_ld_byte1_data_en;
-  wire    [  7: 0] av_ld_byte1_data_nxt;
-  reg     [  7: 0] av_ld_byte2_data;
-  wire    [  7: 0] av_ld_byte2_data_nxt;
-  reg     [  7: 0] av_ld_byte3_data;
-  wire    [  7: 0] av_ld_byte3_data_nxt;
-  wire    [ 31: 0] av_ld_data_aligned_filtered;
-  wire    [ 31: 0] av_ld_data_aligned_unfiltered;
-  wire             av_ld_done;
-  wire             av_ld_extend;
-  wire             av_ld_getting_data;
-  wire             av_ld_rshift8;
-  reg              av_ld_waiting_for_data;
-  wire             av_ld_waiting_for_data_nxt;
-  wire             av_sign_bit;
-  wire    [ 31: 0] d_address;
-  reg     [  3: 0] d_byteenable;
-  reg              d_read;
-  wire             d_read_nxt;
-  reg              d_write;
-  wire             d_write_nxt;
-  reg     [ 31: 0] d_writedata;
-  wire             debug_mem_slave_clk;
-  wire             debug_mem_slave_debugaccess_to_roms;
-  wire    [ 31: 0] debug_mem_slave_readdata;
-  wire             debug_mem_slave_reset;
-  wire             debug_mem_slave_waitrequest;
-  wire             debug_reset_request;
-  wire             dummy_ci_port;
-  reg              hbreak_enabled;
-  reg              hbreak_pending;
-  wire             hbreak_pending_nxt;
-  wire             hbreak_req;
-  wire    [ 29: 0] i_address;
-  reg              i_read;
-  wire             i_read_nxt;
-  wire    [ 31: 0] iactive;
-  wire             intr_req;
-  wire             oci_hbreak_req;
-  wire    [ 31: 0] oci_ienable;
-  wire             oci_single_step_mode;
-  wire             oci_tb_hbreak_req;
-  wire             test_has_ended;
-  reg              wait_for_one_post_bret_inst;
+
+reg              A_valid_from_M /* synthesis ALTERA_IP_DEBUG_VISIBLE = 1 */;
+wire    [  1: 0] D_compare_op;
+wire             D_ctrl_alu_force_and;
+wire             D_ctrl_alu_force_xor;
+wire             D_ctrl_alu_signed_comparison;
+wire             D_ctrl_alu_subtract;
+wire             D_ctrl_b_is_dst;
+wire             D_ctrl_br;
+wire             D_ctrl_br_cmp;
+wire             D_ctrl_br_uncond;
+wire             D_ctrl_break;
+wire             D_ctrl_crst;
+wire             D_ctrl_custom;
+wire             D_ctrl_custom_multi;
+wire             D_ctrl_exception;
+wire             D_ctrl_force_src2_zero;
+wire             D_ctrl_hi_imm16;
+wire             D_ctrl_ignore_dst;
+wire             D_ctrl_implicit_dst_eretaddr;
+wire             D_ctrl_implicit_dst_retaddr;
+wire             D_ctrl_intr_inst;
+wire             D_ctrl_jmp_direct;
+wire             D_ctrl_jmp_indirect;
+wire             D_ctrl_ld;
+wire             D_ctrl_ld_ex;
+wire             D_ctrl_ld_io;
+wire             D_ctrl_ld_non_io;
+wire             D_ctrl_ld_signed;
+wire             D_ctrl_ld_st_ex;
+wire             D_ctrl_logic;
+wire             D_ctrl_mem16;
+wire             D_ctrl_mem32;
+wire             D_ctrl_mem8;
+wire             D_ctrl_rd_ctl_reg;
+wire             D_ctrl_retaddr;
+wire             D_ctrl_rot_right;
+wire             D_ctrl_set_src2_rem_imm;
+wire             D_ctrl_shift_logical;
+wire             D_ctrl_shift_right_arith;
+wire             D_ctrl_shift_rot;
+wire             D_ctrl_shift_rot_right;
+wire             D_ctrl_signed_imm12;
+wire             D_ctrl_src2_choose_imm;
+wire             D_ctrl_src_imm5_shift_rot;
+wire             D_ctrl_st;
+wire             D_ctrl_st_ex;
+wire             D_ctrl_uncond_cti_non_br;
+wire             D_ctrl_unsigned_lo_imm16;
+wire             D_ctrl_wrctl_inst;
+wire    [  4: 0] D_dst_regnum;
+wire    [ 55: 0] D_inst;
+wire             D_is_opx_inst;
+reg     [ 31: 0] D_iw /* synthesis ALTERA_IP_DEBUG_VISIBLE = 1 */;
+wire    [  4: 0] D_iw_a;
+wire    [  4: 0] D_iw_b;
+wire    [  4: 0] D_iw_c;
+wire    [  4: 0] D_iw_control_regnum;
+wire    [  7: 0] D_iw_custom_n;
+wire             D_iw_custom_readra;
+wire             D_iw_custom_readrb;
+wire             D_iw_custom_writerc;
+wire    [ 15: 0] D_iw_imm16;
+wire    [ 25: 0] D_iw_imm26;
+wire    [  4: 0] D_iw_imm5;
+wire    [  1: 0] D_iw_memsz;
+wire    [  5: 0] D_iw_op;
+wire    [  5: 0] D_iw_opx;
+wire    [ 27: 0] D_jmp_direct_target_waddr;
+wire    [  1: 0] D_logic_op;
+wire    [  1: 0] D_logic_op_raw;
+wire             D_mem16;
+wire             D_mem32;
+wire             D_mem8;
+wire             D_op_add;
+wire             D_op_addi;
+wire             D_op_and;
+wire             D_op_andhi;
+wire             D_op_andi;
+wire             D_op_beq;
+wire             D_op_bge;
+wire             D_op_bgeu;
+wire             D_op_blt;
+wire             D_op_bltu;
+wire             D_op_bne;
+wire             D_op_br;
+wire             D_op_break;
+wire             D_op_bret;
+wire             D_op_call;
+wire             D_op_callr;
+wire             D_op_cmpeq;
+wire             D_op_cmpeqi;
+wire             D_op_cmpge;
+wire             D_op_cmpgei;
+wire             D_op_cmpgeu;
+wire             D_op_cmpgeui;
+wire             D_op_cmplt;
+wire             D_op_cmplti;
+wire             D_op_cmpltu;
+wire             D_op_cmpltui;
+wire             D_op_cmpne;
+wire             D_op_cmpnei;
+wire             D_op_crst;
+wire             D_op_custom;
+wire             D_op_div;
+wire             D_op_divu;
+wire             D_op_eret;
+wire             D_op_flushd;
+wire             D_op_flushda;
+wire             D_op_flushi;
+wire             D_op_flushp;
+wire             D_op_hbreak;
+wire             D_op_initd;
+wire             D_op_initda;
+wire             D_op_initi;
+wire             D_op_intr;
+wire             D_op_jmp;
+wire             D_op_jmpi;
+wire             D_op_ldb;
+wire             D_op_ldbio;
+wire             D_op_ldbu;
+wire             D_op_ldbuio;
+wire             D_op_ldh;
+wire             D_op_ldhio;
+wire             D_op_ldhu;
+wire             D_op_ldhuio;
+wire             D_op_ldl;
+wire             D_op_ldw;
+wire             D_op_ldwio;
+wire             D_op_mul;
+wire             D_op_muli;
+wire             D_op_mulxss;
+wire             D_op_mulxsu;
+wire             D_op_mulxuu;
+wire             D_op_nextpc;
+wire             D_op_nor;
+wire             D_op_op_rsv02;
+wire             D_op_op_rsv09;
+wire             D_op_op_rsv10;
+wire             D_op_op_rsv17;
+wire             D_op_op_rsv18;
+wire             D_op_op_rsv25;
+wire             D_op_op_rsv26;
+wire             D_op_op_rsv33;
+wire             D_op_op_rsv34;
+wire             D_op_op_rsv41;
+wire             D_op_op_rsv42;
+wire             D_op_op_rsv49;
+wire             D_op_op_rsv57;
+wire             D_op_op_rsv61;
+wire             D_op_op_rsv62;
+wire             D_op_op_rsv63;
+wire             D_op_opx_rsv00;
+wire             D_op_opx_rsv10;
+wire             D_op_opx_rsv15;
+wire             D_op_opx_rsv17;
+wire             D_op_opx_rsv21;
+wire             D_op_opx_rsv25;
+wire             D_op_opx_rsv33;
+wire             D_op_opx_rsv34;
+wire             D_op_opx_rsv35;
+wire             D_op_opx_rsv42;
+wire             D_op_opx_rsv43;
+wire             D_op_opx_rsv44;
+wire             D_op_opx_rsv47;
+wire             D_op_opx_rsv50;
+wire             D_op_opx_rsv51;
+wire             D_op_opx_rsv55;
+wire             D_op_opx_rsv56;
+wire             D_op_opx_rsv60;
+wire             D_op_opx_rsv63;
+wire             D_op_or;
+wire             D_op_orhi;
+wire             D_op_ori;
+wire             D_op_rdctl;
+wire             D_op_rdprs;
+wire             D_op_ret;
+wire             D_op_rol;
+wire             D_op_roli;
+wire             D_op_ror;
+wire             D_op_sll;
+wire             D_op_slli;
+wire             D_op_sra;
+wire             D_op_srai;
+wire             D_op_srl;
+wire             D_op_srli;
+wire             D_op_stb;
+wire             D_op_stbio;
+wire             D_op_stc;
+wire             D_op_sth;
+wire             D_op_sthio;
+wire             D_op_stw;
+wire             D_op_stwio;
+wire             D_op_sub;
+wire             D_op_sync;
+wire             D_op_trap;
+wire             D_op_wrctl;
+wire             D_op_wrprs;
+wire             D_op_xor;
+wire             D_op_xorhi;
+wire             D_op_xori;
+reg              D_valid;
+wire    [ 71: 0] D_vinst;
+wire             D_wr_dst_reg;
+wire    [ 31: 0] E_alu_result;
+reg              E_alu_sub;
+wire    [ 32: 0] E_arith_result;
+wire    [ 31: 0] E_arith_src1;
+wire    [ 31: 0] E_arith_src2;
+wire             E_ci_multi_stall;
+wire    [ 31: 0] E_ci_result;
+wire             E_cmp_result;
+wire    [ 31: 0] E_control_rd_data;
+wire             E_eq;
+reg              E_invert_arith_src_msb;
+wire             E_ld_stall;
+wire    [ 31: 0] E_logic_result;
+wire             E_logic_result_is_0;
+wire             E_lt;
+wire    [ 31: 0] E_mem_baddr;
+wire    [  3: 0] E_mem_byte_en;
+reg              E_new_inst;
+wire             E_rf_ecc_recoverable_valid;
+wire             E_rf_ecc_unrecoverable_valid;
+wire             E_rf_ecc_valid_any;
+reg     [  4: 0] E_shift_rot_cnt;
+wire    [  4: 0] E_shift_rot_cnt_nxt;
+wire             E_shift_rot_done;
+wire             E_shift_rot_fill_bit;
+reg     [ 31: 0] E_shift_rot_result;
+wire    [ 31: 0] E_shift_rot_result_nxt;
+wire    [  4: 0] E_shift_rot_shfcnt;
+wire             E_shift_rot_stall;
+reg     [ 31: 0] E_src1;
+reg     [ 31: 0] E_src2;
+wire    [ 31: 0] E_st_data;
+wire             E_st_stall;
+wire             E_stall;
+wire             E_valid;
+reg              E_valid_from_R;
+wire    [ 71: 0] E_vinst;
+wire             E_wrctl_bstatus;
+wire             E_wrctl_estatus;
+wire             E_wrctl_ienable;
+wire             E_wrctl_status;
+wire    [ 31: 0] F_av_iw;
+wire    [  4: 0] F_av_iw_a;
+wire    [  4: 0] F_av_iw_b;
+wire    [  4: 0] F_av_iw_c;
+wire    [  4: 0] F_av_iw_control_regnum;
+wire    [  7: 0] F_av_iw_custom_n;
+wire             F_av_iw_custom_readra;
+wire             F_av_iw_custom_readrb;
+wire             F_av_iw_custom_writerc;
+wire    [ 15: 0] F_av_iw_imm16;
+wire    [ 25: 0] F_av_iw_imm26;
+wire    [  4: 0] F_av_iw_imm5;
+wire    [  1: 0] F_av_iw_memsz;
+wire    [  5: 0] F_av_iw_op;
+wire    [  5: 0] F_av_iw_opx;
+wire             F_av_mem16;
+wire             F_av_mem32;
+wire             F_av_mem8;
+wire    [ 55: 0] F_inst;
+wire             F_is_opx_inst;
+wire    [ 31: 0] F_iw;
+wire    [  4: 0] F_iw_a;
+wire    [  4: 0] F_iw_b;
+wire    [  4: 0] F_iw_c;
+wire    [  4: 0] F_iw_control_regnum;
+wire    [  7: 0] F_iw_custom_n;
+wire             F_iw_custom_readra;
+wire             F_iw_custom_readrb;
+wire             F_iw_custom_writerc;
+wire    [ 15: 0] F_iw_imm16;
+wire    [ 25: 0] F_iw_imm26;
+wire    [  4: 0] F_iw_imm5;
+wire    [  1: 0] F_iw_memsz;
+wire    [  5: 0] F_iw_op;
+wire    [  5: 0] F_iw_opx;
+wire    [  1: 0] F_jmp_direct_pc_hi;
+wire             F_mem16;
+wire             F_mem32;
+wire             F_mem8;
+wire             F_op_add;
+wire             F_op_addi;
+wire             F_op_and;
+wire             F_op_andhi;
+wire             F_op_andi;
+wire             F_op_beq;
+wire             F_op_bge;
+wire             F_op_bgeu;
+wire             F_op_blt;
+wire             F_op_bltu;
+wire             F_op_bne;
+wire             F_op_br;
+wire             F_op_break;
+wire             F_op_bret;
+wire             F_op_call;
+wire             F_op_callr;
+wire             F_op_cmpeq;
+wire             F_op_cmpeqi;
+wire             F_op_cmpge;
+wire             F_op_cmpgei;
+wire             F_op_cmpgeu;
+wire             F_op_cmpgeui;
+wire             F_op_cmplt;
+wire             F_op_cmplti;
+wire             F_op_cmpltu;
+wire             F_op_cmpltui;
+wire             F_op_cmpne;
+wire             F_op_cmpnei;
+wire             F_op_crst;
+wire             F_op_custom;
+wire             F_op_div;
+wire             F_op_divu;
+wire             F_op_eret;
+wire             F_op_flushd;
+wire             F_op_flushda;
+wire             F_op_flushi;
+wire             F_op_flushp;
+wire             F_op_hbreak;
+wire             F_op_initd;
+wire             F_op_initda;
+wire             F_op_initi;
+wire             F_op_intr;
+wire             F_op_jmp;
+wire             F_op_jmpi;
+wire             F_op_ldb;
+wire             F_op_ldbio;
+wire             F_op_ldbu;
+wire             F_op_ldbuio;
+wire             F_op_ldh;
+wire             F_op_ldhio;
+wire             F_op_ldhu;
+wire             F_op_ldhuio;
+wire             F_op_ldl;
+wire             F_op_ldw;
+wire             F_op_ldwio;
+wire             F_op_mul;
+wire             F_op_muli;
+wire             F_op_mulxss;
+wire             F_op_mulxsu;
+wire             F_op_mulxuu;
+wire             F_op_nextpc;
+wire             F_op_nor;
+wire             F_op_op_rsv02;
+wire             F_op_op_rsv09;
+wire             F_op_op_rsv10;
+wire             F_op_op_rsv17;
+wire             F_op_op_rsv18;
+wire             F_op_op_rsv25;
+wire             F_op_op_rsv26;
+wire             F_op_op_rsv33;
+wire             F_op_op_rsv34;
+wire             F_op_op_rsv41;
+wire             F_op_op_rsv42;
+wire             F_op_op_rsv49;
+wire             F_op_op_rsv57;
+wire             F_op_op_rsv61;
+wire             F_op_op_rsv62;
+wire             F_op_op_rsv63;
+wire             F_op_opx_rsv00;
+wire             F_op_opx_rsv10;
+wire             F_op_opx_rsv15;
+wire             F_op_opx_rsv17;
+wire             F_op_opx_rsv21;
+wire             F_op_opx_rsv25;
+wire             F_op_opx_rsv33;
+wire             F_op_opx_rsv34;
+wire             F_op_opx_rsv35;
+wire             F_op_opx_rsv42;
+wire             F_op_opx_rsv43;
+wire             F_op_opx_rsv44;
+wire             F_op_opx_rsv47;
+wire             F_op_opx_rsv50;
+wire             F_op_opx_rsv51;
+wire             F_op_opx_rsv55;
+wire             F_op_opx_rsv56;
+wire             F_op_opx_rsv60;
+wire             F_op_opx_rsv63;
+wire             F_op_or;
+wire             F_op_orhi;
+wire             F_op_ori;
+wire             F_op_rdctl;
+wire             F_op_rdprs;
+wire             F_op_ret;
+wire             F_op_rol;
+wire             F_op_roli;
+wire             F_op_ror;
+wire             F_op_sll;
+wire             F_op_slli;
+wire             F_op_sra;
+wire             F_op_srai;
+wire             F_op_srl;
+wire             F_op_srli;
+wire             F_op_stb;
+wire             F_op_stbio;
+wire             F_op_stc;
+wire             F_op_sth;
+wire             F_op_sthio;
+wire             F_op_stw;
+wire             F_op_stwio;
+wire             F_op_sub;
+wire             F_op_sync;
+wire             F_op_trap;
+wire             F_op_wrctl;
+wire             F_op_wrprs;
+wire             F_op_xor;
+wire             F_op_xorhi;
+wire             F_op_xori;
+reg     [ 27: 0] F_pc /* synthesis ALTERA_IP_DEBUG_VISIBLE = 1 */;
+wire             F_pc_en;
+wire    [ 27: 0] F_pc_no_crst_nxt;
+wire    [ 27: 0] F_pc_nxt;
+wire    [ 27: 0] F_pc_plus_one;
+wire    [  1: 0] F_pc_sel_nxt;
+wire    [ 29: 0] F_pcb;
+wire    [ 29: 0] F_pcb_nxt;
+wire    [ 29: 0] F_pcb_plus_four;
+wire             F_valid;
+wire    [ 71: 0] F_vinst;
+reg     [  1: 0] R_compare_op;
+reg              R_ctrl_alu_force_and;
+wire             R_ctrl_alu_force_and_nxt;
+reg              R_ctrl_alu_force_xor;
+wire             R_ctrl_alu_force_xor_nxt;
+reg              R_ctrl_alu_signed_comparison;
+wire             R_ctrl_alu_signed_comparison_nxt;
+reg              R_ctrl_alu_subtract;
+wire             R_ctrl_alu_subtract_nxt;
+reg              R_ctrl_b_is_dst;
+wire             R_ctrl_b_is_dst_nxt;
+reg              R_ctrl_br;
+reg              R_ctrl_br_cmp;
+wire             R_ctrl_br_cmp_nxt;
+wire             R_ctrl_br_nxt;
+reg              R_ctrl_br_uncond;
+wire             R_ctrl_br_uncond_nxt;
+reg              R_ctrl_break;
+wire             R_ctrl_break_nxt;
+reg              R_ctrl_crst;
+wire             R_ctrl_crst_nxt;
+reg              R_ctrl_custom;
+reg              R_ctrl_custom_multi;
+wire             R_ctrl_custom_multi_nxt;
+wire             R_ctrl_custom_nxt;
+reg              R_ctrl_exception;
+wire             R_ctrl_exception_nxt;
+reg              R_ctrl_force_src2_zero;
+wire             R_ctrl_force_src2_zero_nxt;
+reg              R_ctrl_hi_imm16;
+wire             R_ctrl_hi_imm16_nxt;
+reg              R_ctrl_ignore_dst;
+wire             R_ctrl_ignore_dst_nxt;
+reg              R_ctrl_implicit_dst_eretaddr;
+wire             R_ctrl_implicit_dst_eretaddr_nxt;
+reg              R_ctrl_implicit_dst_retaddr;
+wire             R_ctrl_implicit_dst_retaddr_nxt;
+reg              R_ctrl_intr_inst;
+wire             R_ctrl_intr_inst_nxt;
+reg              R_ctrl_jmp_direct;
+wire             R_ctrl_jmp_direct_nxt;
+reg              R_ctrl_jmp_indirect;
+wire             R_ctrl_jmp_indirect_nxt;
+reg              R_ctrl_ld;
+reg              R_ctrl_ld_ex;
+wire             R_ctrl_ld_ex_nxt;
+reg              R_ctrl_ld_io;
+wire             R_ctrl_ld_io_nxt;
+reg              R_ctrl_ld_non_io;
+wire             R_ctrl_ld_non_io_nxt;
+wire             R_ctrl_ld_nxt;
+reg              R_ctrl_ld_signed;
+wire             R_ctrl_ld_signed_nxt;
+reg              R_ctrl_ld_st_ex;
+wire             R_ctrl_ld_st_ex_nxt;
+reg              R_ctrl_logic;
+wire             R_ctrl_logic_nxt;
+reg              R_ctrl_mem16;
+wire             R_ctrl_mem16_nxt;
+reg              R_ctrl_mem32;
+wire             R_ctrl_mem32_nxt;
+reg              R_ctrl_mem8;
+wire             R_ctrl_mem8_nxt;
+reg              R_ctrl_rd_ctl_reg;
+wire             R_ctrl_rd_ctl_reg_nxt;
+reg              R_ctrl_retaddr;
+wire             R_ctrl_retaddr_nxt;
+reg              R_ctrl_rot_right;
+wire             R_ctrl_rot_right_nxt;
+reg              R_ctrl_set_src2_rem_imm;
+wire             R_ctrl_set_src2_rem_imm_nxt;
+reg              R_ctrl_shift_logical;
+wire             R_ctrl_shift_logical_nxt;
+reg              R_ctrl_shift_right_arith;
+wire             R_ctrl_shift_right_arith_nxt;
+reg              R_ctrl_shift_rot;
+wire             R_ctrl_shift_rot_nxt;
+reg              R_ctrl_shift_rot_right;
+wire             R_ctrl_shift_rot_right_nxt;
+reg              R_ctrl_signed_imm12;
+wire             R_ctrl_signed_imm12_nxt;
+reg              R_ctrl_src2_choose_imm;
+wire             R_ctrl_src2_choose_imm_nxt;
+reg              R_ctrl_src_imm5_shift_rot;
+wire             R_ctrl_src_imm5_shift_rot_nxt;
+reg              R_ctrl_st;
+reg              R_ctrl_st_ex;
+wire             R_ctrl_st_ex_nxt;
+wire             R_ctrl_st_nxt;
+reg              R_ctrl_uncond_cti_non_br;
+wire             R_ctrl_uncond_cti_non_br_nxt;
+reg              R_ctrl_unsigned_lo_imm16;
+wire             R_ctrl_unsigned_lo_imm16_nxt;
+reg              R_ctrl_wrctl_inst;
+wire             R_ctrl_wrctl_inst_nxt;
+reg     [  4: 0] R_dst_regnum /* synthesis ALTERA_IP_DEBUG_VISIBLE = 1 */;
+wire             R_en;
+reg     [  1: 0] R_logic_op;
+wire    [ 31: 0] R_rf_a;
+wire    [ 31: 0] R_rf_a_q;
+wire    [ 31: 0] R_rf_b;
+wire    [ 31: 0] R_rf_b_q;
+wire    [ 31: 0] R_src1;
+wire    [ 31: 0] R_src2;
+wire    [ 15: 0] R_src2_hi;
+wire    [ 15: 0] R_src2_lo;
+reg              R_src2_use_imm;
+wire    [  7: 0] R_stb_data;
+wire    [ 15: 0] R_sth_data;
+wire    [ 31: 0] R_stw_data;
+reg              R_valid;
+wire    [ 71: 0] R_vinst;
+reg              R_wr_dst_reg;
+reg              W1_rf_ecc_recoverable_valid;
+reg     [ 31: 0] W_alu_result;
+wire             W_br_taken;
+reg              W_bstatus_reg;
+wire             W_bstatus_reg_inst_nxt;
+wire             W_bstatus_reg_nxt;
+reg     [ 31: 0] W_cdsr_reg;
+reg              W_cmp_result;
+reg     [ 31: 0] W_control_rd_data;
+wire    [ 31: 0] W_cpuid_reg;
+wire    [  4: 0] W_dst_regnum;
+reg              W_estatus_reg;
+wire             W_estatus_reg_inst_nxt;
+wire             W_estatus_reg_nxt;
+reg     [ 31: 0] W_ienable_reg;
+wire    [ 31: 0] W_ienable_reg_nxt;
+reg     [ 31: 0] W_ipending_reg;
+wire    [ 31: 0] W_ipending_reg_nxt;
+wire    [ 31: 0] W_mem_baddr;
+reg              W_rf_ecc_recoverable_valid;
+reg              W_rf_ecc_unrecoverable_valid;
+wire             W_rf_ecc_valid_any;
+wire    [ 31: 0] W_rf_wr_data;
+wire             W_rf_wren;
+wire             W_status_reg;
+reg              W_status_reg_pie;
+wire             W_status_reg_pie_inst_nxt;
+wire             W_status_reg_pie_nxt;
+reg              W_up_ex_mon_state;
+reg              W_valid /* synthesis ALTERA_IP_DEBUG_VISIBLE = 1 */;
+wire             W_valid_from_M;
+wire    [ 71: 0] W_vinst;
+wire    [ 31: 0] W_wr_data;
+wire    [ 31: 0] W_wr_data_non_zero;
+wire             av_fill_bit;
+reg     [  1: 0] av_ld_align_cycle;
+wire    [  1: 0] av_ld_align_cycle_nxt;
+wire             av_ld_align_one_more_cycle;
+reg              av_ld_aligning_data;
+wire             av_ld_aligning_data_nxt;
+reg     [  7: 0] av_ld_byte0_data;
+wire    [  7: 0] av_ld_byte0_data_nxt;
+reg     [  7: 0] av_ld_byte1_data;
+wire             av_ld_byte1_data_en;
+wire    [  7: 0] av_ld_byte1_data_nxt;
+reg     [  7: 0] av_ld_byte2_data;
+wire    [  7: 0] av_ld_byte2_data_nxt;
+reg     [  7: 0] av_ld_byte3_data;
+wire    [  7: 0] av_ld_byte3_data_nxt;
+wire    [ 31: 0] av_ld_data_aligned_filtered;
+wire    [ 31: 0] av_ld_data_aligned_unfiltered;
+wire             av_ld_done;
+wire             av_ld_extend;
+wire             av_ld_getting_data;
+wire             av_ld_rshift8;
+reg              av_ld_waiting_for_data;
+wire             av_ld_waiting_for_data_nxt;
+wire             av_sign_bit;
+wire    [ 31: 0] d_address;
+reg     [  3: 0] d_byteenable;
+reg              d_read;
+wire             d_read_nxt;
+reg              d_write;
+wire             d_write_nxt;
+reg     [ 31: 0] d_writedata;
+wire             debug_mem_slave_clk;
+wire             debug_mem_slave_debugaccess_to_roms;
+wire    [ 31: 0] debug_mem_slave_readdata;
+wire             debug_mem_slave_reset;
+wire             debug_mem_slave_waitrequest;
+wire             debug_reset_request;
+wire             dummy_ci_port;
+reg              hbreak_enabled;
+reg              hbreak_pending;
+wire             hbreak_pending_nxt;
+wire             hbreak_req;
+wire    [ 29: 0] i_address;
+reg              i_read;
+wire             i_read_nxt;
+wire    [ 31: 0] iactive;
+wire             intr_req;
+wire             oci_hbreak_req;
+wire    [ 31: 0] oci_ienable;
+wire             oci_single_step_mode;
+wire             oci_tb_hbreak_req;
+wire             test_has_ended;
+reg              wait_for_one_post_bret_inst;
   //the_nios_tester_nios2_gen2_0_cpu_test_bench, which is an e_instance
   nios_tester_nios2_gen2_0_cpu_test_bench the_nios_tester_nios2_gen2_0_cpu_test_bench
     (
@@ -4001,7 +3857,7 @@ module nios_tester_nios2_gen2_0_cpu (
   //custom_instruction_master, which is an e_custom_instruction_master
   assign dummy_ci_port = 1'b0;
   assign E_ci_multi_stall = 1'b0;
-  assign iactive = irq[31 : 0] & 32'b00000000000000000000000101111111;
+  assign iactive = irq[31 : 0] & 32'b00000000000000000000000101110111;
   assign F_pc_sel_nxt = (R_ctrl_exception | W_rf_ecc_unrecoverable_valid) ? 2'b00 :
     R_ctrl_break                              ? 2'b01 :
     (W_br_taken | R_ctrl_uncond_cti_non_br)   ? 2'b10 :
@@ -4528,12 +4384,22 @@ defparam nios_tester_nios2_gen2_0_cpu_register_bank_b.lpm_file = "nios_tester_ni
     end
 
 
+  assign W_valid_from_M = W_valid;
   always @(posedge clk or negedge reset_n)
     begin
       if (reset_n == 0)
           W_valid <= 0;
       else 
         W_valid <= E_valid & ~E_stall;
+    end
+
+
+  always @(posedge clk or negedge reset_n)
+    begin
+      if (reset_n == 0)
+          A_valid_from_M <= 0;
+      else 
+        A_valid_from_M <= E_valid & ~E_stall;
     end
 
 
@@ -4658,9 +4524,9 @@ defparam nios_tester_nios2_gen2_0_cpu_register_bank_b.lpm_file = "nios_tester_ni
 
   assign W_bstatus_reg_nxt = E_valid ? W_bstatus_reg_inst_nxt : W_bstatus_reg;
   assign W_ienable_reg_nxt = ((E_wrctl_ienable & E_valid) ? 
-    E_src1[31 : 0] : W_ienable_reg) & 32'b00000000000000000000000101111111;
+    E_src1[31 : 0] : W_ienable_reg) & 32'b00000000000000000000000101110111;
 
-  assign W_ipending_reg_nxt = iactive & W_ienable_reg & oci_ienable & 32'b00000000000000000000000101111111;
+  assign W_ipending_reg_nxt = iactive & W_ienable_reg & oci_ienable & 32'b00000000000000000000000101110111;
   always @(posedge clk or negedge reset_n)
     begin
       if (reset_n == 0)

@@ -131,8 +131,9 @@ void Editor :: draw(void)
         line = (*text)[i + first_line];
         if (line.buffer) {
         	window->output_length(line.buffer, line.length);
+        	window->repeat(' ', width - line.length);
         } else {
-        	window->output_length("", width);
+            window->repeat(' ', width);
     	}
     }
 }

@@ -7,10 +7,13 @@
 #include "userinterface.h"
 #include "iomap.h"
 #include "subsys.h"
+#ifdef OS
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
+#endif
 #include "fs_errors_flags.h"
+#include "disk_image.h"
 
 #define IECDEBUG 0
 
@@ -89,6 +92,8 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
     int warp_drive;
     uint8_t warp_return_code;
 
+    BinImage *ulticopy_bin_image;
+
     void reset(void);
     void poll(void);
     void test_master(int);
@@ -107,7 +112,9 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
     static void iec_task(void *a);
 
     struct {
-        Action *reset;
+        Action *turn_on;
+        Action *turn_off;
+    	Action *reset;
         Action *set_dir;
         Action *ulticopy8;
         Action *ulticopy9;
@@ -123,6 +130,8 @@ public:
     
     int executeCommand(SubsysCommand *cmd); // from SubSystem
     const char *identify(void) { return "IEC"; }
+    int get_current_iec_address(void) { return last_addr; }
+    int get_current_printer_address(void) { return last_printer_addr; }
 
     void create_task_items();
     void update_task_items(bool writablePath, Path *path);
@@ -135,6 +144,7 @@ public:
     IecCommandChannel *get_command_channel();
     IecCommandChannel *get_data_channel(int chan);
     const char *get_root_path();
+    const char *get_partition_dir(int p);
 
     friend class IecChannel;
     friend class IecCommandChannel;

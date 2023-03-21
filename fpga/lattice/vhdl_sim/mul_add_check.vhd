@@ -1,0 +1,1582 @@
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+library ecp5u;
+use ecp5u.components.all;
+
+entity mul_add_uniq_0 is
+port(
+ram : in std_logic_vector(7 downto 0);
+a_1 : in std_logic_vector(17 downto 0);
+result : out std_logic_vector(31 downto 1);
+clear :  in std_logic;
+AUDIO_MCLK_c :  in std_logic);
+end mul_add_uniq_0;
+
+architecture beh of mul_add_uniq_0 is
+signal ACCU_REG1 : std_logic_vector(0 to 0);
+signal ACCU_REG2 : std_logic_vector(31 downto 0);
+signal ACCU_REG2_QN : std_logic_vector(31 downto 0);
+signal MULT : std_logic_vector(26 downto 0);
+signal VCC : std_logic ;
+signal \RESULT_\ : std_logic ;
+signal RESULT_2296 : std_logic ;
+signal RESULT_2297 : std_logic ;
+signal RESULT_2298 : std_logic ;
+signal RESULT_2299 : std_logic ;
+signal RESULT_2300 : std_logic ;
+signal RESULT_2301 : std_logic ;
+signal RESULT_2302 : std_logic ;
+signal RESULT_2303 : std_logic ;
+signal RESULT_2304 : std_logic ;
+signal RESULT_2305 : std_logic ;
+signal RESULT_2306 : std_logic ;
+signal RESULT_2307 : std_logic ;
+signal RESULT_2308 : std_logic ;
+signal RESULT_2309 : std_logic ;
+signal RESULT_2310 : std_logic ;
+signal RESULT_2311 : std_logic ;
+signal RESULT_2312 : std_logic ;
+signal RESULT_2313 : std_logic ;
+signal RESULT_2314 : std_logic ;
+signal RESULT_2315 : std_logic ;
+signal RESULT_2316 : std_logic ;
+signal RESULT_2317 : std_logic ;
+signal RESULT_2318 : std_logic ;
+signal RESULT_2319 : std_logic ;
+signal RESULT_2320 : std_logic ;
+signal RESULT_2321 : std_logic ;
+signal RESULT_2322 : std_logic ;
+signal RESULT_2323 : std_logic ;
+signal RESULT_2324 : std_logic ;
+signal RESULT_2325 : std_logic ;
+signal GND : std_logic ;
+signal MULT_1_SIGNEDP : std_logic ;
+signal UN4_ACCU_REG1_PT_SIGNEDP : std_logic ;
+signal MULT_1_ROB17 : std_logic ;
+signal MULT_1_ROB16 : std_logic ;
+signal MULT_1_ROB15 : std_logic ;
+signal MULT_1_ROB14 : std_logic ;
+signal MULT_1_ROB13 : std_logic ;
+signal MULT_1_ROB12 : std_logic ;
+signal MULT_1_ROB11 : std_logic ;
+signal MULT_1_ROB10 : std_logic ;
+signal MULT_1_ROB9 : std_logic ;
+signal MULT_1_ROB8 : std_logic ;
+signal MULT_1_ROB7 : std_logic ;
+signal MULT_1_ROB6 : std_logic ;
+signal MULT_1_ROB5 : std_logic ;
+signal MULT_1_ROB4 : std_logic ;
+signal MULT_1_ROB3 : std_logic ;
+signal MULT_1_ROB2 : std_logic ;
+signal MULT_1_ROB1 : std_logic ;
+signal MULT_1_ROB0 : std_logic ;
+signal MULT_1_ROA17 : std_logic ;
+signal MULT_1_ROA16 : std_logic ;
+signal MULT_1_ROA15 : std_logic ;
+signal MULT_1_ROA14 : std_logic ;
+signal MULT_1_ROA13 : std_logic ;
+signal MULT_1_ROA12 : std_logic ;
+signal MULT_1_ROA11 : std_logic ;
+signal MULT_1_ROA10 : std_logic ;
+signal MULT_1_ROA9 : std_logic ;
+signal MULT_1_ROA8 : std_logic ;
+signal MULT_1_ROA7 : std_logic ;
+signal MULT_1_ROA6 : std_logic ;
+signal MULT_1_ROA5 : std_logic ;
+signal MULT_1_ROA4 : std_logic ;
+signal MULT_1_ROA3 : std_logic ;
+signal MULT_1_ROA2 : std_logic ;
+signal MULT_1_ROA1 : std_logic ;
+signal MULT_1_ROA0 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROB17 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROB16 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROB15 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROB14 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROB13 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROB12 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROB11 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROB10 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROB9 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROB8 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROB7 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROB6 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROB5 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROB4 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROB3 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROB2 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROB1 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROB0 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROA17 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROA16 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROA15 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROA14 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROA13 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROA12 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROA11 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROA10 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROA9 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROA8 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROA7 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROA6 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROA5 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROA4 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROA3 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROA2 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROA1 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROA0 : std_logic ;
+signal MULT_1_P35 : std_logic ;
+signal MULT_1_P34 : std_logic ;
+signal MULT_1_P33 : std_logic ;
+signal MULT_1_P32 : std_logic ;
+signal MULT_1_P31 : std_logic ;
+signal MULT_1_P30 : std_logic ;
+signal MULT_1_P29 : std_logic ;
+signal MULT_1_P28 : std_logic ;
+signal MULT_1_P27 : std_logic ;
+signal UN4_ACCU_REG1_PT_P35 : std_logic ;
+signal UN4_ACCU_REG1_PT_P34 : std_logic ;
+signal UN4_ACCU_REG1_PT_P33 : std_logic ;
+signal UN4_ACCU_REG1_PT_P32 : std_logic ;
+signal UN4_ACCU_REG1_PT_P31 : std_logic ;
+signal UN4_ACCU_REG1_PT_P30 : std_logic ;
+signal UN4_ACCU_REG1_PT_P29 : std_logic ;
+signal UN4_ACCU_REG1_PT_P28 : std_logic ;
+signal UN4_ACCU_REG1_PT_P27 : std_logic ;
+signal UN4_ACCU_REG1_PT_P26 : std_logic ;
+signal UN4_ACCU_REG1_PT_P25 : std_logic ;
+signal UN4_ACCU_REG1_PT_P24 : std_logic ;
+signal UN4_ACCU_REG1_PT_P23 : std_logic ;
+signal UN4_ACCU_REG1_PT_P22 : std_logic ;
+signal UN4_ACCU_REG1_PT_P21 : std_logic ;
+signal UN4_ACCU_REG1_PT_P20 : std_logic ;
+signal UN4_ACCU_REG1_PT_P19 : std_logic ;
+signal UN4_ACCU_REG1_PT_P18 : std_logic ;
+signal UN4_ACCU_REG1_PT_P17 : std_logic ;
+signal UN4_ACCU_REG1_PT_P16 : std_logic ;
+signal UN4_ACCU_REG1_PT_P15 : std_logic ;
+signal UN4_ACCU_REG1_PT_P14 : std_logic ;
+signal UN4_ACCU_REG1_PT_P13 : std_logic ;
+signal UN4_ACCU_REG1_PT_P12 : std_logic ;
+signal UN4_ACCU_REG1_PT_P11 : std_logic ;
+signal UN4_ACCU_REG1_PT_P10 : std_logic ;
+signal UN4_ACCU_REG1_PT_P9 : std_logic ;
+signal UN4_ACCU_REG1_PT_P8 : std_logic ;
+signal UN4_ACCU_REG1_PT_P7 : std_logic ;
+signal UN4_ACCU_REG1_PT_P6 : std_logic ;
+signal UN4_ACCU_REG1_PT_P5 : std_logic ;
+signal UN4_ACCU_REG1_PT_P4 : std_logic ;
+signal UN4_ACCU_REG1_PT_P3 : std_logic ;
+signal UN4_ACCU_REG1_PT_P2 : std_logic ;
+signal UN4_ACCU_REG1_PT_P1 : std_logic ;
+signal UN4_ACCU_REG1_PT_P0 : std_logic ;
+signal UN4_ACCU_REG1_SIGNEDR : std_logic ;
+signal UN4_ACCU_REG1_R53 : std_logic ;
+signal UN4_ACCU_REG1_R52 : std_logic ;
+signal UN4_ACCU_REG1_R51 : std_logic ;
+signal UN4_ACCU_REG1_R50 : std_logic ;
+signal UN4_ACCU_REG1_R49 : std_logic ;
+signal UN4_ACCU_REG1_R48 : std_logic ;
+signal UN4_ACCU_REG1_R47 : std_logic ;
+signal UN4_ACCU_REG1_R46 : std_logic ;
+signal UN4_ACCU_REG1_R45 : std_logic ;
+signal UN4_ACCU_REG1_R44 : std_logic ;
+signal UN4_ACCU_REG1_R43 : std_logic ;
+signal UN4_ACCU_REG1_R42 : std_logic ;
+signal UN4_ACCU_REG1_R41 : std_logic ;
+signal UN4_ACCU_REG1_R40 : std_logic ;
+signal UN4_ACCU_REG1_R39 : std_logic ;
+signal UN4_ACCU_REG1_R38 : std_logic ;
+signal UN4_ACCU_REG1_R37 : std_logic ;
+signal UN4_ACCU_REG1_R36 : std_logic ;
+signal UN4_ACCU_REG1_R35 : std_logic ;
+signal UN4_ACCU_REG1_R34 : std_logic ;
+signal UN4_ACCU_REG1_R33 : std_logic ;
+signal UN4_ACCU_REG1_R32 : std_logic ;
+signal UN4_ACCU_REG1_CO53 : std_logic ;
+signal UN4_ACCU_REG1_CO52 : std_logic ;
+signal UN4_ACCU_REG1_CO51 : std_logic ;
+signal UN4_ACCU_REG1_CO50 : std_logic ;
+signal UN4_ACCU_REG1_CO49 : std_logic ;
+signal UN4_ACCU_REG1_CO48 : std_logic ;
+signal UN4_ACCU_REG1_CO47 : std_logic ;
+signal UN4_ACCU_REG1_CO46 : std_logic ;
+signal UN4_ACCU_REG1_CO45 : std_logic ;
+signal UN4_ACCU_REG1_CO44 : std_logic ;
+signal UN4_ACCU_REG1_CO43 : std_logic ;
+signal UN4_ACCU_REG1_CO42 : std_logic ;
+signal UN4_ACCU_REG1_CO41 : std_logic ;
+signal UN4_ACCU_REG1_CO40 : std_logic ;
+signal UN4_ACCU_REG1_CO39 : std_logic ;
+signal UN4_ACCU_REG1_CO38 : std_logic ;
+signal UN4_ACCU_REG1_CO37 : std_logic ;
+signal UN4_ACCU_REG1_CO36 : std_logic ;
+signal UN4_ACCU_REG1_CO35 : std_logic ;
+signal UN4_ACCU_REG1_CO34 : std_logic ;
+signal UN4_ACCU_REG1_CO33 : std_logic ;
+signal UN4_ACCU_REG1_CO32 : std_logic ;
+signal UN4_ACCU_REG1_CO31 : std_logic ;
+signal UN4_ACCU_REG1_CO30 : std_logic ;
+signal UN4_ACCU_REG1_CO29 : std_logic ;
+signal UN4_ACCU_REG1_CO28 : std_logic ;
+signal UN4_ACCU_REG1_CO27 : std_logic ;
+signal UN4_ACCU_REG1_CO26 : std_logic ;
+signal UN4_ACCU_REG1_CO25 : std_logic ;
+signal UN4_ACCU_REG1_CO24 : std_logic ;
+signal UN4_ACCU_REG1_CO23 : std_logic ;
+signal UN4_ACCU_REG1_CO22 : std_logic ;
+signal UN4_ACCU_REG1_CO21 : std_logic ;
+signal UN4_ACCU_REG1_CO20 : std_logic ;
+signal UN4_ACCU_REG1_CO19 : std_logic ;
+signal UN4_ACCU_REG1_CO18 : std_logic ;
+signal UN4_ACCU_REG1_CO17 : std_logic ;
+signal UN4_ACCU_REG1_CO16 : std_logic ;
+signal UN4_ACCU_REG1_CO15 : std_logic ;
+signal UN4_ACCU_REG1_CO14 : std_logic ;
+signal UN4_ACCU_REG1_CO13 : std_logic ;
+signal UN4_ACCU_REG1_CO12 : std_logic ;
+signal UN4_ACCU_REG1_CO11 : std_logic ;
+signal UN4_ACCU_REG1_CO10 : std_logic ;
+signal UN4_ACCU_REG1_CO9 : std_logic ;
+signal UN4_ACCU_REG1_CO8 : std_logic ;
+signal UN4_ACCU_REG1_CO7 : std_logic ;
+signal UN4_ACCU_REG1_CO6 : std_logic ;
+signal UN4_ACCU_REG1_CO5 : std_logic ;
+signal UN4_ACCU_REG1_CO4 : std_logic ;
+signal UN4_ACCU_REG1_CO3 : std_logic ;
+signal UN4_ACCU_REG1_CO2 : std_logic ;
+signal UN4_ACCU_REG1_CO1 : std_logic ;
+signal UN4_ACCU_REG1_CO0 : std_logic ;
+signal UN4_ACCU_REG1_EQZ : std_logic ;
+signal UN4_ACCU_REG1_EQZM : std_logic ;
+signal UN4_ACCU_REG1_EQOM : std_logic ;
+signal UN4_ACCU_REG1_EQPAT : std_logic ;
+signal UN4_ACCU_REG1_EQPATB : std_logic ;
+signal UN4_ACCU_REG1_OVER : std_logic ;
+signal UN4_ACCU_REG1_UNDER : std_logic ;
+signal UN4_ACCU_REG1_OVERUNDER : std_logic ;
+signal UN4_ACCU_REG1_PT_SROA17 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROA16 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROA15 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROA14 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROA13 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROA12 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROA11 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROA10 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROA9 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROA8 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROA7 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROA6 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROA5 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROA4 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROA3 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROA2 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROA1 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROA0 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROB17 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROB16 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROB15 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROB14 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROB13 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROB12 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROB11 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROB10 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROB9 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROB8 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROB7 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROB6 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROB5 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROB4 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROB3 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROB2 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROB1 : std_logic ;
+signal UN4_ACCU_REG1_PT_SROB0 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROC17 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROC16 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROC15 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROC14 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROC13 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROC12 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROC11 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROC10 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROC9 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROC8 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROC7 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROC6 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROC5 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROC4 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROC3 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROC2 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROC1 : std_logic ;
+signal UN4_ACCU_REG1_PT_ROC0 : std_logic ;
+signal MULT_1_SROA17 : std_logic ;
+signal MULT_1_SROA16 : std_logic ;
+signal MULT_1_SROA15 : std_logic ;
+signal MULT_1_SROA14 : std_logic ;
+signal MULT_1_SROA13 : std_logic ;
+signal MULT_1_SROA12 : std_logic ;
+signal MULT_1_SROA11 : std_logic ;
+signal MULT_1_SROA10 : std_logic ;
+signal MULT_1_SROA9 : std_logic ;
+signal MULT_1_SROA8 : std_logic ;
+signal MULT_1_SROA7 : std_logic ;
+signal MULT_1_SROA6 : std_logic ;
+signal MULT_1_SROA5 : std_logic ;
+signal MULT_1_SROA4 : std_logic ;
+signal MULT_1_SROA3 : std_logic ;
+signal MULT_1_SROA2 : std_logic ;
+signal MULT_1_SROA1 : std_logic ;
+signal MULT_1_SROA0 : std_logic ;
+signal MULT_1_SROB17 : std_logic ;
+signal MULT_1_SROB16 : std_logic ;
+signal MULT_1_SROB15 : std_logic ;
+signal MULT_1_SROB14 : std_logic ;
+signal MULT_1_SROB13 : std_logic ;
+signal MULT_1_SROB12 : std_logic ;
+signal MULT_1_SROB11 : std_logic ;
+signal MULT_1_SROB10 : std_logic ;
+signal MULT_1_SROB9 : std_logic ;
+signal MULT_1_SROB8 : std_logic ;
+signal MULT_1_SROB7 : std_logic ;
+signal MULT_1_SROB6 : std_logic ;
+signal MULT_1_SROB5 : std_logic ;
+signal MULT_1_SROB4 : std_logic ;
+signal MULT_1_SROB3 : std_logic ;
+signal MULT_1_SROB2 : std_logic ;
+signal MULT_1_SROB1 : std_logic ;
+signal MULT_1_SROB0 : std_logic ;
+signal MULT_1_ROC17 : std_logic ;
+signal MULT_1_ROC16 : std_logic ;
+signal MULT_1_ROC15 : std_logic ;
+signal MULT_1_ROC14 : std_logic ;
+signal MULT_1_ROC13 : std_logic ;
+signal MULT_1_ROC12 : std_logic ;
+signal MULT_1_ROC11 : std_logic ;
+signal MULT_1_ROC10 : std_logic ;
+signal MULT_1_ROC9 : std_logic ;
+signal MULT_1_ROC8 : std_logic ;
+signal MULT_1_ROC7 : std_logic ;
+signal MULT_1_ROC6 : std_logic ;
+signal MULT_1_ROC5 : std_logic ;
+signal MULT_1_ROC4 : std_logic ;
+signal MULT_1_ROC3 : std_logic ;
+signal MULT_1_ROC2 : std_logic ;
+signal MULT_1_ROC1 : std_logic ;
+signal MULT_1_ROC0 : std_logic ;
+begin
+\ACCU_REG2[0]_REG_Z504\: FD1S3IX port map (
+D => ACCU_REG1(0),
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(0));
+\ACCU_REG2[1]_REG_Z506\: FD1S3IX port map (
+D => \RESULT_\,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(1));
+\ACCU_REG2[2]_REG_Z508\: FD1S3IX port map (
+D => RESULT_2296,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(2));
+\ACCU_REG2[3]_REG_Z510\: FD1S3IX port map (
+D => RESULT_2297,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(3));
+\ACCU_REG2[4]_REG_Z512\: FD1S3IX port map (
+D => RESULT_2298,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(4));
+\ACCU_REG2[5]_REG_Z514\: FD1S3IX port map (
+D => RESULT_2299,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(5));
+\ACCU_REG2[6]_REG_Z516\: FD1S3IX port map (
+D => RESULT_2300,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(6));
+\ACCU_REG2[7]_REG_Z518\: FD1S3IX port map (
+D => RESULT_2301,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(7));
+\ACCU_REG2[8]_REG_Z520\: FD1S3IX port map (
+D => RESULT_2302,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(8));
+\ACCU_REG2[9]_REG_Z522\: FD1S3IX port map (
+D => RESULT_2303,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(9));
+\ACCU_REG2[10]_REG_Z524\: FD1S3IX port map (
+D => RESULT_2304,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(10));
+\ACCU_REG2[11]_REG_Z526\: FD1S3IX port map (
+D => RESULT_2305,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(11));
+\ACCU_REG2[12]_REG_Z528\: FD1S3IX port map (
+D => RESULT_2306,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(12));
+\ACCU_REG2[13]_REG_Z530\: FD1S3IX port map (
+D => RESULT_2307,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(13));
+\ACCU_REG2[14]_REG_Z532\: FD1S3IX port map (
+D => RESULT_2308,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(14));
+\ACCU_REG2[15]_REG_Z534\: FD1S3IX port map (
+D => RESULT_2309,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(15));
+\ACCU_REG2[16]_REG_Z536\: FD1S3IX port map (
+D => RESULT_2310,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(16));
+\ACCU_REG2[17]_REG_Z538\: FD1S3IX port map (
+D => RESULT_2311,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(17));
+\ACCU_REG2[18]_REG_Z540\: FD1S3IX port map (
+D => RESULT_2312,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(18));
+\ACCU_REG2[19]_REG_Z542\: FD1S3IX port map (
+D => RESULT_2313,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(19));
+\ACCU_REG2[20]_REG_Z544\: FD1S3IX port map (
+D => RESULT_2314,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(20));
+\ACCU_REG2[21]_REG_Z546\: FD1S3IX port map (
+D => RESULT_2315,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(21));
+\ACCU_REG2[22]_REG_Z548\: FD1S3IX port map (
+D => RESULT_2316,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(22));
+\ACCU_REG2[23]_REG_Z550\: FD1S3IX port map (
+D => RESULT_2317,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(23));
+\ACCU_REG2[24]_REG_Z552\: FD1S3IX port map (
+D => RESULT_2318,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(24));
+\ACCU_REG2[25]_REG_Z554\: FD1S3IX port map (
+D => RESULT_2319,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(25));
+\ACCU_REG2[26]_REG_Z556\: FD1S3IX port map (
+D => RESULT_2320,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(26));
+\ACCU_REG2[27]_REG_Z558\: FD1S3IX port map (
+D => RESULT_2321,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(27));
+\ACCU_REG2[28]_REG_Z560\: FD1S3IX port map (
+D => RESULT_2322,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(28));
+\ACCU_REG2[29]_REG_Z562\: FD1S3IX port map (
+D => RESULT_2323,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(29));
+\ACCU_REG2[30]_REG_Z564\: FD1S3IX port map (
+D => RESULT_2324,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(30));
+\ACCU_REG2[31]_REG_Z566\: FD1S3IX port map (
+D => RESULT_2325,
+CK => AUDIO_MCLK_c,
+CD => clear,
+Q => ACCU_REG2(31));
+\UN4_ACCU_REG1[31:0]\: ALU54B 
+generic map(
+  REG_INPUTC0_CLK => "NONE",
+  REG_INPUTC0_CE => "CE0",
+  REG_INPUTC0_RST => "RST0",
+  REG_INPUTC1_CLK => "NONE",
+  REG_INPUTC1_CE => "CE0",
+  REG_INPUTC1_RST => "RST0",
+  REG_OPCODEOP0_0_CLK => "NONE",
+  REG_OPCODEOP0_0_CE => "CE0",
+  REG_OPCODEOP0_0_RST => "RST0",
+  REG_OPCODEOP1_0_CLK => "NONE",
+  REG_OPCODEOP0_1_CLK => "NONE",
+  REG_OPCODEOP0_1_CE => "CE0",
+  REG_OPCODEOP0_1_RST => "RST0",
+  REG_OPCODEOP1_1_CLK => "NONE",
+  REG_OPCODEIN_0_CLK => "NONE",
+  REG_OPCODEIN_0_CE => "CE0",
+  REG_OPCODEIN_0_RST => "RST0",
+  REG_OPCODEIN_1_CLK => "NONE",
+  REG_OPCODEIN_1_CE => "CE0",
+  REG_OPCODEIN_1_RST => "RST0",
+  REG_OUTPUT0_CLK => "CLK0",
+  REG_OUTPUT0_CE => "CE0",
+  REG_OUTPUT0_RST => "RST1",
+  REG_OUTPUT1_CLK => "CLK0",
+  REG_OUTPUT1_CE => "CE0",
+  REG_OUTPUT1_RST => "RST1",
+  MCPAT_SOURCE => "STATIC",
+  MASKPAT_SOURCE => "STATIC",
+  MASK01 => "0x00000000000000",
+  MCPAT => "0x00000000000000",
+  MASKPAT => "0x00000000000000",
+  RNDPAT => "0x00000000000000",
+  GSR => "DISABLED",
+  RESETMODE => "SYNC",
+  MULT9_MODE => "DISABLED",
+  LEGACY => "DISABLED",
+  REG_INPUTCFB_CLK => "NONE",
+  REG_INPUTCFB_CE => "CE0",
+  REG_INPUTCFB_RST => "RST0",
+  CLK0_DIV => "ENABLED",
+  CLK1_DIV => "ENABLED",
+  CLK2_DIV => "ENABLED",
+  CLK3_DIV => "ENABLED"
+)
+port map (
+CE0 => VCC,
+CE1 => GND,
+CE2 => GND,
+CE3 => GND,
+CLK0 => AUDIO_MCLK_c,
+CLK1 => GND,
+CLK2 => GND,
+CLK3 => GND,
+RST0 => GND,
+RST1 => clear,
+RST2 => GND,
+RST3 => GND,
+SIGNEDIA => MULT_1_SIGNEDP,
+SIGNEDIB => UN4_ACCU_REG1_PT_SIGNEDP,
+A35 => MULT_1_ROB17,
+A34 => MULT_1_ROB16,
+A33 => MULT_1_ROB15,
+A32 => MULT_1_ROB14,
+A31 => MULT_1_ROB13,
+A30 => MULT_1_ROB12,
+A29 => MULT_1_ROB11,
+A28 => MULT_1_ROB10,
+A27 => MULT_1_ROB9,
+A26 => MULT_1_ROB8,
+A25 => MULT_1_ROB7,
+A24 => MULT_1_ROB6,
+A23 => MULT_1_ROB5,
+A22 => MULT_1_ROB4,
+A21 => MULT_1_ROB3,
+A20 => MULT_1_ROB2,
+A19 => MULT_1_ROB1,
+A18 => MULT_1_ROB0,
+A17 => MULT_1_ROA17,
+A16 => MULT_1_ROA16,
+A15 => MULT_1_ROA15,
+A14 => MULT_1_ROA14,
+A13 => MULT_1_ROA13,
+A12 => MULT_1_ROA12,
+A11 => MULT_1_ROA11,
+A10 => MULT_1_ROA10,
+A9 => MULT_1_ROA9,
+A8 => MULT_1_ROA8,
+A7 => MULT_1_ROA7,
+A6 => MULT_1_ROA6,
+A5 => MULT_1_ROA5,
+A4 => MULT_1_ROA4,
+A3 => MULT_1_ROA3,
+A2 => MULT_1_ROA2,
+A1 => MULT_1_ROA1,
+A0 => MULT_1_ROA0,
+B35 => UN4_ACCU_REG1_PT_ROB17,
+B34 => UN4_ACCU_REG1_PT_ROB16,
+B33 => UN4_ACCU_REG1_PT_ROB15,
+B32 => UN4_ACCU_REG1_PT_ROB14,
+B31 => UN4_ACCU_REG1_PT_ROB13,
+B30 => UN4_ACCU_REG1_PT_ROB12,
+B29 => UN4_ACCU_REG1_PT_ROB11,
+B28 => UN4_ACCU_REG1_PT_ROB10,
+B27 => UN4_ACCU_REG1_PT_ROB9,
+B26 => UN4_ACCU_REG1_PT_ROB8,
+B25 => UN4_ACCU_REG1_PT_ROB7,
+B24 => UN4_ACCU_REG1_PT_ROB6,
+B23 => UN4_ACCU_REG1_PT_ROB5,
+B22 => UN4_ACCU_REG1_PT_ROB4,
+B21 => UN4_ACCU_REG1_PT_ROB3,
+B20 => UN4_ACCU_REG1_PT_ROB2,
+B19 => UN4_ACCU_REG1_PT_ROB1,
+B18 => UN4_ACCU_REG1_PT_ROB0,
+B17 => UN4_ACCU_REG1_PT_ROA17,
+B16 => UN4_ACCU_REG1_PT_ROA16,
+B15 => UN4_ACCU_REG1_PT_ROA15,
+B14 => UN4_ACCU_REG1_PT_ROA14,
+B13 => UN4_ACCU_REG1_PT_ROA13,
+B12 => UN4_ACCU_REG1_PT_ROA12,
+B11 => UN4_ACCU_REG1_PT_ROA11,
+B10 => UN4_ACCU_REG1_PT_ROA10,
+B9 => UN4_ACCU_REG1_PT_ROA9,
+B8 => UN4_ACCU_REG1_PT_ROA8,
+B7 => UN4_ACCU_REG1_PT_ROA7,
+B6 => UN4_ACCU_REG1_PT_ROA6,
+B5 => UN4_ACCU_REG1_PT_ROA5,
+B4 => UN4_ACCU_REG1_PT_ROA4,
+B3 => UN4_ACCU_REG1_PT_ROA3,
+B2 => UN4_ACCU_REG1_PT_ROA2,
+B1 => UN4_ACCU_REG1_PT_ROA1,
+B0 => UN4_ACCU_REG1_PT_ROA0,
+C53 => GND,
+C52 => GND,
+C51 => GND,
+C50 => GND,
+C49 => GND,
+C48 => GND,
+C47 => GND,
+C46 => GND,
+C45 => GND,
+C44 => GND,
+C43 => GND,
+C42 => GND,
+C41 => GND,
+C40 => GND,
+C39 => GND,
+C38 => GND,
+C37 => GND,
+C36 => GND,
+C35 => GND,
+C34 => GND,
+C33 => GND,
+C32 => GND,
+C31 => GND,
+C30 => GND,
+C29 => GND,
+C28 => GND,
+C27 => GND,
+C26 => GND,
+C25 => GND,
+C24 => GND,
+C23 => GND,
+C22 => GND,
+C21 => GND,
+C20 => GND,
+C19 => GND,
+C18 => GND,
+C17 => GND,
+C16 => GND,
+C15 => GND,
+C14 => GND,
+C13 => GND,
+C12 => GND,
+C11 => GND,
+C10 => GND,
+C9 => GND,
+C8 => GND,
+C7 => GND,
+C6 => GND,
+C5 => GND,
+C4 => GND,
+C3 => GND,
+C2 => GND,
+C1 => GND,
+C0 => GND,
+MA35 => MULT_1_P35,
+MA34 => MULT_1_P34,
+MA33 => MULT_1_P33,
+MA32 => MULT_1_P32,
+MA31 => MULT_1_P31,
+MA30 => MULT_1_P30,
+MA29 => MULT_1_P29,
+MA28 => MULT_1_P28,
+MA27 => MULT_1_P27,
+MA26 => MULT(26),
+MA25 => MULT(25),
+MA24 => MULT(24),
+MA23 => MULT(23),
+MA22 => MULT(22),
+MA21 => MULT(21),
+MA20 => MULT(20),
+MA19 => MULT(19),
+MA18 => MULT(18),
+MA17 => MULT(17),
+MA16 => MULT(16),
+MA15 => MULT(15),
+MA14 => MULT(14),
+MA13 => MULT(13),
+MA12 => MULT(12),
+MA11 => MULT(11),
+MA10 => MULT(10),
+MA9 => MULT(9),
+MA8 => MULT(8),
+MA7 => MULT(7),
+MA6 => MULT(6),
+MA5 => MULT(5),
+MA4 => MULT(4),
+MA3 => MULT(3),
+MA2 => MULT(2),
+MA1 => MULT(1),
+MA0 => MULT(0),
+MB35 => UN4_ACCU_REG1_PT_P35,
+MB34 => UN4_ACCU_REG1_PT_P34,
+MB33 => UN4_ACCU_REG1_PT_P33,
+MB32 => UN4_ACCU_REG1_PT_P32,
+MB31 => UN4_ACCU_REG1_PT_P31,
+MB30 => UN4_ACCU_REG1_PT_P30,
+MB29 => UN4_ACCU_REG1_PT_P29,
+MB28 => UN4_ACCU_REG1_PT_P28,
+MB27 => UN4_ACCU_REG1_PT_P27,
+MB26 => UN4_ACCU_REG1_PT_P26,
+MB25 => UN4_ACCU_REG1_PT_P25,
+MB24 => UN4_ACCU_REG1_PT_P24,
+MB23 => UN4_ACCU_REG1_PT_P23,
+MB22 => UN4_ACCU_REG1_PT_P22,
+MB21 => UN4_ACCU_REG1_PT_P21,
+MB20 => UN4_ACCU_REG1_PT_P20,
+MB19 => UN4_ACCU_REG1_PT_P19,
+MB18 => UN4_ACCU_REG1_PT_P18,
+MB17 => UN4_ACCU_REG1_PT_P17,
+MB16 => UN4_ACCU_REG1_PT_P16,
+MB15 => UN4_ACCU_REG1_PT_P15,
+MB14 => UN4_ACCU_REG1_PT_P14,
+MB13 => UN4_ACCU_REG1_PT_P13,
+MB12 => UN4_ACCU_REG1_PT_P12,
+MB11 => UN4_ACCU_REG1_PT_P11,
+MB10 => UN4_ACCU_REG1_PT_P10,
+MB9 => UN4_ACCU_REG1_PT_P9,
+MB8 => UN4_ACCU_REG1_PT_P8,
+MB7 => UN4_ACCU_REG1_PT_P7,
+MB6 => UN4_ACCU_REG1_PT_P6,
+MB5 => UN4_ACCU_REG1_PT_P5,
+MB4 => UN4_ACCU_REG1_PT_P4,
+MB3 => UN4_ACCU_REG1_PT_P3,
+MB2 => UN4_ACCU_REG1_PT_P2,
+MB1 => UN4_ACCU_REG1_PT_P1,
+MB0 => UN4_ACCU_REG1_PT_P0,
+CIN53 => GND,
+CIN52 => GND,
+CIN51 => GND,
+CIN50 => GND,
+CIN49 => GND,
+CIN48 => GND,
+CIN47 => GND,
+CIN46 => GND,
+CIN45 => GND,
+CIN44 => GND,
+CIN43 => GND,
+CIN42 => GND,
+CIN41 => GND,
+CIN40 => GND,
+CIN39 => GND,
+CIN38 => GND,
+CIN37 => GND,
+CIN36 => GND,
+CIN35 => GND,
+CIN34 => GND,
+CIN33 => GND,
+CIN32 => GND,
+CIN31 => GND,
+CIN30 => GND,
+CIN29 => GND,
+CIN28 => GND,
+CIN27 => GND,
+CIN26 => GND,
+CIN25 => GND,
+CIN24 => GND,
+CIN23 => GND,
+CIN22 => GND,
+CIN21 => GND,
+CIN20 => GND,
+CIN19 => GND,
+CIN18 => GND,
+CIN17 => GND,
+CIN16 => GND,
+CIN15 => GND,
+CIN14 => GND,
+CIN13 => GND,
+CIN12 => GND,
+CIN11 => GND,
+CIN10 => GND,
+CIN9 => GND,
+CIN8 => GND,
+CIN7 => GND,
+CIN6 => GND,
+CIN5 => GND,
+CIN4 => GND,
+CIN3 => GND,
+CIN2 => GND,
+CIN1 => GND,
+CIN0 => GND,
+CFB53 => GND,
+CFB52 => GND,
+CFB51 => GND,
+CFB50 => GND,
+CFB49 => GND,
+CFB48 => GND,
+CFB47 => GND,
+CFB46 => GND,
+CFB45 => GND,
+CFB44 => GND,
+CFB43 => GND,
+CFB42 => GND,
+CFB41 => GND,
+CFB40 => GND,
+CFB39 => GND,
+CFB38 => GND,
+CFB37 => GND,
+CFB36 => GND,
+CFB35 => GND,
+CFB34 => GND,
+CFB33 => GND,
+CFB32 => GND,
+CFB31 => GND,
+CFB30 => GND,
+CFB29 => GND,
+CFB28 => GND,
+CFB27 => GND,
+CFB26 => GND,
+CFB25 => GND,
+CFB24 => GND,
+CFB23 => GND,
+CFB22 => GND,
+CFB21 => GND,
+CFB20 => GND,
+CFB19 => GND,
+CFB18 => GND,
+CFB17 => GND,
+CFB16 => GND,
+CFB15 => GND,
+CFB14 => GND,
+CFB13 => GND,
+CFB12 => GND,
+CFB11 => GND,
+CFB10 => GND,
+CFB9 => GND,
+CFB8 => GND,
+CFB7 => GND,
+CFB6 => GND,
+CFB5 => GND,
+CFB4 => GND,
+CFB3 => GND,
+CFB2 => GND,
+CFB1 => GND,
+CFB0 => GND,
+OP10 => GND,
+OP9 => VCC,
+OP8 => GND,
+OP7 => GND,
+OP6 => GND,
+OP5 => GND,
+OP4 => GND,
+OP3 => VCC,
+OP2 => GND,
+OP1 => GND,
+OP0 => VCC,
+SIGNEDCIN => GND,
+SIGNEDR => UN4_ACCU_REG1_SIGNEDR,
+R53 => UN4_ACCU_REG1_R53,
+R52 => UN4_ACCU_REG1_R52,
+R51 => UN4_ACCU_REG1_R51,
+R50 => UN4_ACCU_REG1_R50,
+R49 => UN4_ACCU_REG1_R49,
+R48 => UN4_ACCU_REG1_R48,
+R47 => UN4_ACCU_REG1_R47,
+R46 => UN4_ACCU_REG1_R46,
+R45 => UN4_ACCU_REG1_R45,
+R44 => UN4_ACCU_REG1_R44,
+R43 => UN4_ACCU_REG1_R43,
+R42 => UN4_ACCU_REG1_R42,
+R41 => UN4_ACCU_REG1_R41,
+R40 => UN4_ACCU_REG1_R40,
+R39 => UN4_ACCU_REG1_R39,
+R38 => UN4_ACCU_REG1_R38,
+R37 => UN4_ACCU_REG1_R37,
+R36 => UN4_ACCU_REG1_R36,
+R35 => UN4_ACCU_REG1_R35,
+R34 => UN4_ACCU_REG1_R34,
+R33 => UN4_ACCU_REG1_R33,
+R32 => UN4_ACCU_REG1_R32,
+R31 => RESULT_2325,
+R30 => RESULT_2324,
+R29 => RESULT_2323,
+R28 => RESULT_2322,
+R27 => RESULT_2321,
+R26 => RESULT_2320,
+R25 => RESULT_2319,
+R24 => RESULT_2318,
+R23 => RESULT_2317,
+R22 => RESULT_2316,
+R21 => RESULT_2315,
+R20 => RESULT_2314,
+R19 => RESULT_2313,
+R18 => RESULT_2312,
+R17 => RESULT_2311,
+R16 => RESULT_2310,
+R15 => RESULT_2309,
+R14 => RESULT_2308,
+R13 => RESULT_2307,
+R12 => RESULT_2306,
+R11 => RESULT_2305,
+R10 => RESULT_2304,
+R9 => RESULT_2303,
+R8 => RESULT_2302,
+R7 => RESULT_2301,
+R6 => RESULT_2300,
+R5 => RESULT_2299,
+R4 => RESULT_2298,
+R3 => RESULT_2297,
+R2 => RESULT_2296,
+R1 => \RESULT_\,
+R0 => ACCU_REG1(0),
+CO53 => UN4_ACCU_REG1_CO53,
+CO52 => UN4_ACCU_REG1_CO52,
+CO51 => UN4_ACCU_REG1_CO51,
+CO50 => UN4_ACCU_REG1_CO50,
+CO49 => UN4_ACCU_REG1_CO49,
+CO48 => UN4_ACCU_REG1_CO48,
+CO47 => UN4_ACCU_REG1_CO47,
+CO46 => UN4_ACCU_REG1_CO46,
+CO45 => UN4_ACCU_REG1_CO45,
+CO44 => UN4_ACCU_REG1_CO44,
+CO43 => UN4_ACCU_REG1_CO43,
+CO42 => UN4_ACCU_REG1_CO42,
+CO41 => UN4_ACCU_REG1_CO41,
+CO40 => UN4_ACCU_REG1_CO40,
+CO39 => UN4_ACCU_REG1_CO39,
+CO38 => UN4_ACCU_REG1_CO38,
+CO37 => UN4_ACCU_REG1_CO37,
+CO36 => UN4_ACCU_REG1_CO36,
+CO35 => UN4_ACCU_REG1_CO35,
+CO34 => UN4_ACCU_REG1_CO34,
+CO33 => UN4_ACCU_REG1_CO33,
+CO32 => UN4_ACCU_REG1_CO32,
+CO31 => UN4_ACCU_REG1_CO31,
+CO30 => UN4_ACCU_REG1_CO30,
+CO29 => UN4_ACCU_REG1_CO29,
+CO28 => UN4_ACCU_REG1_CO28,
+CO27 => UN4_ACCU_REG1_CO27,
+CO26 => UN4_ACCU_REG1_CO26,
+CO25 => UN4_ACCU_REG1_CO25,
+CO24 => UN4_ACCU_REG1_CO24,
+CO23 => UN4_ACCU_REG1_CO23,
+CO22 => UN4_ACCU_REG1_CO22,
+CO21 => UN4_ACCU_REG1_CO21,
+CO20 => UN4_ACCU_REG1_CO20,
+CO19 => UN4_ACCU_REG1_CO19,
+CO18 => UN4_ACCU_REG1_CO18,
+CO17 => UN4_ACCU_REG1_CO17,
+CO16 => UN4_ACCU_REG1_CO16,
+CO15 => UN4_ACCU_REG1_CO15,
+CO14 => UN4_ACCU_REG1_CO14,
+CO13 => UN4_ACCU_REG1_CO13,
+CO12 => UN4_ACCU_REG1_CO12,
+CO11 => UN4_ACCU_REG1_CO11,
+CO10 => UN4_ACCU_REG1_CO10,
+CO9 => UN4_ACCU_REG1_CO9,
+CO8 => UN4_ACCU_REG1_CO8,
+CO7 => UN4_ACCU_REG1_CO7,
+CO6 => UN4_ACCU_REG1_CO6,
+CO5 => UN4_ACCU_REG1_CO5,
+CO4 => UN4_ACCU_REG1_CO4,
+CO3 => UN4_ACCU_REG1_CO3,
+CO2 => UN4_ACCU_REG1_CO2,
+CO1 => UN4_ACCU_REG1_CO1,
+CO0 => UN4_ACCU_REG1_CO0,
+EQZ => UN4_ACCU_REG1_EQZ,
+EQZM => UN4_ACCU_REG1_EQZM,
+EQOM => UN4_ACCU_REG1_EQOM,
+EQPAT => UN4_ACCU_REG1_EQPAT,
+EQPATB => UN4_ACCU_REG1_EQPATB,
+OVER => UN4_ACCU_REG1_OVER,
+UNDER => UN4_ACCU_REG1_UNDER,
+OVERUNDER => UN4_ACCU_REG1_OVERUNDER);
+UN4_ACCU_REG1_PT: MULT18X18D 
+generic map(
+  REG_INPUTA_CLK => "NONE",
+  REG_INPUTA_CE => "CE0",
+  REG_INPUTA_RST => "RST0",
+  REG_INPUTB_CLK => "NONE",
+  REG_INPUTB_CE => "CE0",
+  REG_INPUTB_RST => "RST0",
+  REG_INPUTC_CLK => "NONE",
+  REG_INPUTC_CE => "CE0",
+  REG_INPUTC_RST => "RST0",
+  REG_PIPELINE_CLK => "NONE",
+  REG_PIPELINE_CE => "CE0",
+  REG_PIPELINE_RST => "RST0",
+  REG_OUTPUT_CLK => "NONE",
+  REG_OUTPUT_CE => "CE0",
+  REG_OUTPUT_RST => "RST0",
+  GSR => "DISABLED",
+  CAS_MATCH_REG => "FALSE",
+  MULT_BYPASS => "ENABLED",
+  RESETMODE => "ASYNC",
+  SOURCEB_MODE => "B_SHIFT",
+  CLK0_DIV => "ENABLED",
+  CLK1_DIV => "ENABLED",
+  CLK2_DIV => "ENABLED",
+  CLK3_DIV => "ENABLED",
+  HIGHSPEED_CLK => "NONE"
+)
+port map (
+SIGNEDP => UN4_ACCU_REG1_PT_SIGNEDP,
+P35 => UN4_ACCU_REG1_PT_P35,
+P34 => UN4_ACCU_REG1_PT_P34,
+P33 => UN4_ACCU_REG1_PT_P33,
+P32 => UN4_ACCU_REG1_PT_P32,
+P31 => UN4_ACCU_REG1_PT_P31,
+P30 => UN4_ACCU_REG1_PT_P30,
+P29 => UN4_ACCU_REG1_PT_P29,
+P28 => UN4_ACCU_REG1_PT_P28,
+P27 => UN4_ACCU_REG1_PT_P27,
+P26 => UN4_ACCU_REG1_PT_P26,
+P25 => UN4_ACCU_REG1_PT_P25,
+P24 => UN4_ACCU_REG1_PT_P24,
+P23 => UN4_ACCU_REG1_PT_P23,
+P22 => UN4_ACCU_REG1_PT_P22,
+P21 => UN4_ACCU_REG1_PT_P21,
+P20 => UN4_ACCU_REG1_PT_P20,
+P19 => UN4_ACCU_REG1_PT_P19,
+P18 => UN4_ACCU_REG1_PT_P18,
+P17 => UN4_ACCU_REG1_PT_P17,
+P16 => UN4_ACCU_REG1_PT_P16,
+P15 => UN4_ACCU_REG1_PT_P15,
+P14 => UN4_ACCU_REG1_PT_P14,
+P13 => UN4_ACCU_REG1_PT_P13,
+P12 => UN4_ACCU_REG1_PT_P12,
+P11 => UN4_ACCU_REG1_PT_P11,
+P10 => UN4_ACCU_REG1_PT_P10,
+P9 => UN4_ACCU_REG1_PT_P9,
+P8 => UN4_ACCU_REG1_PT_P8,
+P7 => UN4_ACCU_REG1_PT_P7,
+P6 => UN4_ACCU_REG1_PT_P6,
+P5 => UN4_ACCU_REG1_PT_P5,
+P4 => UN4_ACCU_REG1_PT_P4,
+P3 => UN4_ACCU_REG1_PT_P3,
+P2 => UN4_ACCU_REG1_PT_P2,
+P1 => UN4_ACCU_REG1_PT_P1,
+P0 => UN4_ACCU_REG1_PT_P0,
+SROA17 => UN4_ACCU_REG1_PT_SROA17,
+SROA16 => UN4_ACCU_REG1_PT_SROA16,
+SROA15 => UN4_ACCU_REG1_PT_SROA15,
+SROA14 => UN4_ACCU_REG1_PT_SROA14,
+SROA13 => UN4_ACCU_REG1_PT_SROA13,
+SROA12 => UN4_ACCU_REG1_PT_SROA12,
+SROA11 => UN4_ACCU_REG1_PT_SROA11,
+SROA10 => UN4_ACCU_REG1_PT_SROA10,
+SROA9 => UN4_ACCU_REG1_PT_SROA9,
+SROA8 => UN4_ACCU_REG1_PT_SROA8,
+SROA7 => UN4_ACCU_REG1_PT_SROA7,
+SROA6 => UN4_ACCU_REG1_PT_SROA6,
+SROA5 => UN4_ACCU_REG1_PT_SROA5,
+SROA4 => UN4_ACCU_REG1_PT_SROA4,
+SROA3 => UN4_ACCU_REG1_PT_SROA3,
+SROA2 => UN4_ACCU_REG1_PT_SROA2,
+SROA1 => UN4_ACCU_REG1_PT_SROA1,
+SROA0 => UN4_ACCU_REG1_PT_SROA0,
+SROB17 => UN4_ACCU_REG1_PT_SROB17,
+SROB16 => UN4_ACCU_REG1_PT_SROB16,
+SROB15 => UN4_ACCU_REG1_PT_SROB15,
+SROB14 => UN4_ACCU_REG1_PT_SROB14,
+SROB13 => UN4_ACCU_REG1_PT_SROB13,
+SROB12 => UN4_ACCU_REG1_PT_SROB12,
+SROB11 => UN4_ACCU_REG1_PT_SROB11,
+SROB10 => UN4_ACCU_REG1_PT_SROB10,
+SROB9 => UN4_ACCU_REG1_PT_SROB9,
+SROB8 => UN4_ACCU_REG1_PT_SROB8,
+SROB7 => UN4_ACCU_REG1_PT_SROB7,
+SROB6 => UN4_ACCU_REG1_PT_SROB6,
+SROB5 => UN4_ACCU_REG1_PT_SROB5,
+SROB4 => UN4_ACCU_REG1_PT_SROB4,
+SROB3 => UN4_ACCU_REG1_PT_SROB3,
+SROB2 => UN4_ACCU_REG1_PT_SROB2,
+SROB1 => UN4_ACCU_REG1_PT_SROB1,
+SROB0 => UN4_ACCU_REG1_PT_SROB0,
+ROA17 => UN4_ACCU_REG1_PT_ROA17,
+ROA16 => UN4_ACCU_REG1_PT_ROA16,
+ROA15 => UN4_ACCU_REG1_PT_ROA15,
+ROA14 => UN4_ACCU_REG1_PT_ROA14,
+ROA13 => UN4_ACCU_REG1_PT_ROA13,
+ROA12 => UN4_ACCU_REG1_PT_ROA12,
+ROA11 => UN4_ACCU_REG1_PT_ROA11,
+ROA10 => UN4_ACCU_REG1_PT_ROA10,
+ROA9 => UN4_ACCU_REG1_PT_ROA9,
+ROA8 => UN4_ACCU_REG1_PT_ROA8,
+ROA7 => UN4_ACCU_REG1_PT_ROA7,
+ROA6 => UN4_ACCU_REG1_PT_ROA6,
+ROA5 => UN4_ACCU_REG1_PT_ROA5,
+ROA4 => UN4_ACCU_REG1_PT_ROA4,
+ROA3 => UN4_ACCU_REG1_PT_ROA3,
+ROA2 => UN4_ACCU_REG1_PT_ROA2,
+ROA1 => UN4_ACCU_REG1_PT_ROA1,
+ROA0 => UN4_ACCU_REG1_PT_ROA0,
+ROB17 => UN4_ACCU_REG1_PT_ROB17,
+ROB16 => UN4_ACCU_REG1_PT_ROB16,
+ROB15 => UN4_ACCU_REG1_PT_ROB15,
+ROB14 => UN4_ACCU_REG1_PT_ROB14,
+ROB13 => UN4_ACCU_REG1_PT_ROB13,
+ROB12 => UN4_ACCU_REG1_PT_ROB12,
+ROB11 => UN4_ACCU_REG1_PT_ROB11,
+ROB10 => UN4_ACCU_REG1_PT_ROB10,
+ROB9 => UN4_ACCU_REG1_PT_ROB9,
+ROB8 => UN4_ACCU_REG1_PT_ROB8,
+ROB7 => UN4_ACCU_REG1_PT_ROB7,
+ROB6 => UN4_ACCU_REG1_PT_ROB6,
+ROB5 => UN4_ACCU_REG1_PT_ROB5,
+ROB4 => UN4_ACCU_REG1_PT_ROB4,
+ROB3 => UN4_ACCU_REG1_PT_ROB3,
+ROB2 => UN4_ACCU_REG1_PT_ROB2,
+ROB1 => UN4_ACCU_REG1_PT_ROB1,
+ROB0 => UN4_ACCU_REG1_PT_ROB0,
+ROC17 => UN4_ACCU_REG1_PT_ROC17,
+ROC16 => UN4_ACCU_REG1_PT_ROC16,
+ROC15 => UN4_ACCU_REG1_PT_ROC15,
+ROC14 => UN4_ACCU_REG1_PT_ROC14,
+ROC13 => UN4_ACCU_REG1_PT_ROC13,
+ROC12 => UN4_ACCU_REG1_PT_ROC12,
+ROC11 => UN4_ACCU_REG1_PT_ROC11,
+ROC10 => UN4_ACCU_REG1_PT_ROC10,
+ROC9 => UN4_ACCU_REG1_PT_ROC9,
+ROC8 => UN4_ACCU_REG1_PT_ROC8,
+ROC7 => UN4_ACCU_REG1_PT_ROC7,
+ROC6 => UN4_ACCU_REG1_PT_ROC6,
+ROC5 => UN4_ACCU_REG1_PT_ROC5,
+ROC4 => UN4_ACCU_REG1_PT_ROC4,
+ROC3 => UN4_ACCU_REG1_PT_ROC3,
+ROC2 => UN4_ACCU_REG1_PT_ROC2,
+ROC1 => UN4_ACCU_REG1_PT_ROC1,
+ROC0 => UN4_ACCU_REG1_PT_ROC0,
+A17 => ACCU_REG2(17),
+A16 => ACCU_REG2(16),
+A15 => ACCU_REG2(15),
+A14 => ACCU_REG2(14),
+A13 => ACCU_REG2(13),
+A12 => ACCU_REG2(12),
+A11 => ACCU_REG2(11),
+A10 => ACCU_REG2(10),
+A9 => ACCU_REG2(9),
+A8 => ACCU_REG2(8),
+A7 => ACCU_REG2(7),
+A6 => ACCU_REG2(6),
+A5 => ACCU_REG2(5),
+A4 => ACCU_REG2(4),
+A3 => ACCU_REG2(3),
+A2 => ACCU_REG2(2),
+A1 => ACCU_REG2(1),
+A0 => ACCU_REG2(0),
+B17 => GND,
+B16 => GND,
+B15 => GND,
+B14 => GND,
+B13 => ACCU_REG2(31),
+B12 => ACCU_REG2(30),
+B11 => ACCU_REG2(29),
+B10 => ACCU_REG2(28),
+B9 => ACCU_REG2(27),
+B8 => ACCU_REG2(26),
+B7 => ACCU_REG2(25),
+B6 => ACCU_REG2(24),
+B5 => ACCU_REG2(23),
+B4 => ACCU_REG2(22),
+B3 => ACCU_REG2(21),
+B2 => ACCU_REG2(20),
+B1 => ACCU_REG2(19),
+B0 => ACCU_REG2(18),
+C17 => GND,
+C16 => GND,
+C15 => GND,
+C14 => GND,
+C13 => GND,
+C12 => GND,
+C11 => GND,
+C10 => GND,
+C9 => GND,
+C8 => GND,
+C7 => GND,
+C6 => GND,
+C5 => GND,
+C4 => GND,
+C3 => GND,
+C2 => GND,
+C1 => GND,
+C0 => GND,
+SRIA17 => GND,
+SRIA16 => GND,
+SRIA15 => GND,
+SRIA14 => GND,
+SRIA13 => GND,
+SRIA12 => GND,
+SRIA11 => GND,
+SRIA10 => GND,
+SRIA9 => GND,
+SRIA8 => GND,
+SRIA7 => GND,
+SRIA6 => GND,
+SRIA5 => GND,
+SRIA4 => GND,
+SRIA3 => GND,
+SRIA2 => GND,
+SRIA1 => GND,
+SRIA0 => GND,
+SRIB17 => GND,
+SRIB16 => GND,
+SRIB15 => GND,
+SRIB14 => GND,
+SRIB13 => GND,
+SRIB12 => GND,
+SRIB11 => GND,
+SRIB10 => GND,
+SRIB9 => GND,
+SRIB8 => GND,
+SRIB7 => GND,
+SRIB6 => GND,
+SRIB5 => GND,
+SRIB4 => GND,
+SRIB3 => GND,
+SRIB2 => GND,
+SRIB1 => GND,
+SRIB0 => GND,
+SIGNEDA => GND,
+SIGNEDB => GND,
+CE0 => VCC,
+CE1 => GND,
+CE2 => GND,
+CE3 => GND,
+CLK0 => AUDIO_MCLK_c,
+CLK1 => GND,
+CLK2 => GND,
+CLK3 => GND,
+RST0 => GND,
+RST1 => clear,
+RST2 => GND,
+RST3 => GND,
+SOURCEA => GND,
+SOURCEB => GND);
+\MULT_1[26:0]\: MULT18X18D 
+generic map(
+  REG_INPUTA_CLK => "CLK0",
+  REG_INPUTA_CE => "CE0",
+  REG_INPUTA_RST => "RST0",
+  REG_INPUTB_CLK => "CLK0",
+  REG_INPUTB_CE => "CE0",
+  REG_INPUTB_RST => "RST0",
+  REG_INPUTC_CLK => "NONE",
+  REG_INPUTC_CE => "CE0",
+  REG_INPUTC_RST => "RST0",
+  REG_PIPELINE_CLK => "CLK0",
+  REG_PIPELINE_CE => "CE0",
+  REG_PIPELINE_RST => "RST0",
+  REG_OUTPUT_CLK => "NONE",
+  REG_OUTPUT_CE => "CE0",
+  REG_OUTPUT_RST => "RST0",
+  GSR => "DISABLED",
+  CAS_MATCH_REG => "FALSE",
+  MULT_BYPASS => "DISABLED",
+  RESETMODE => "ASYNC",
+  SOURCEB_MODE => "B_SHIFT",
+  CLK0_DIV => "ENABLED",
+  CLK1_DIV => "ENABLED",
+  CLK2_DIV => "ENABLED",
+  CLK3_DIV => "ENABLED",
+  HIGHSPEED_CLK => "NONE"
+)
+port map (
+SIGNEDP => MULT_1_SIGNEDP,
+P35 => MULT_1_P35,
+P34 => MULT_1_P34,
+P33 => MULT_1_P33,
+P32 => MULT_1_P32,
+P31 => MULT_1_P31,
+P30 => MULT_1_P30,
+P29 => MULT_1_P29,
+P28 => MULT_1_P28,
+P27 => MULT_1_P27,
+P26 => MULT(26),
+P25 => MULT(25),
+P24 => MULT(24),
+P23 => MULT(23),
+P22 => MULT(22),
+P21 => MULT(21),
+P20 => MULT(20),
+P19 => MULT(19),
+P18 => MULT(18),
+P17 => MULT(17),
+P16 => MULT(16),
+P15 => MULT(15),
+P14 => MULT(14),
+P13 => MULT(13),
+P12 => MULT(12),
+P11 => MULT(11),
+P10 => MULT(10),
+P9 => MULT(9),
+P8 => MULT(8),
+P7 => MULT(7),
+P6 => MULT(6),
+P5 => MULT(5),
+P4 => MULT(4),
+P3 => MULT(3),
+P2 => MULT(2),
+P1 => MULT(1),
+P0 => MULT(0),
+SROA17 => MULT_1_SROA17,
+SROA16 => MULT_1_SROA16,
+SROA15 => MULT_1_SROA15,
+SROA14 => MULT_1_SROA14,
+SROA13 => MULT_1_SROA13,
+SROA12 => MULT_1_SROA12,
+SROA11 => MULT_1_SROA11,
+SROA10 => MULT_1_SROA10,
+SROA9 => MULT_1_SROA9,
+SROA8 => MULT_1_SROA8,
+SROA7 => MULT_1_SROA7,
+SROA6 => MULT_1_SROA6,
+SROA5 => MULT_1_SROA5,
+SROA4 => MULT_1_SROA4,
+SROA3 => MULT_1_SROA3,
+SROA2 => MULT_1_SROA2,
+SROA1 => MULT_1_SROA1,
+SROA0 => MULT_1_SROA0,
+SROB17 => MULT_1_SROB17,
+SROB16 => MULT_1_SROB16,
+SROB15 => MULT_1_SROB15,
+SROB14 => MULT_1_SROB14,
+SROB13 => MULT_1_SROB13,
+SROB12 => MULT_1_SROB12,
+SROB11 => MULT_1_SROB11,
+SROB10 => MULT_1_SROB10,
+SROB9 => MULT_1_SROB9,
+SROB8 => MULT_1_SROB8,
+SROB7 => MULT_1_SROB7,
+SROB6 => MULT_1_SROB6,
+SROB5 => MULT_1_SROB5,
+SROB4 => MULT_1_SROB4,
+SROB3 => MULT_1_SROB3,
+SROB2 => MULT_1_SROB2,
+SROB1 => MULT_1_SROB1,
+SROB0 => MULT_1_SROB0,
+ROA17 => MULT_1_ROA17,
+ROA16 => MULT_1_ROA16,
+ROA15 => MULT_1_ROA15,
+ROA14 => MULT_1_ROA14,
+ROA13 => MULT_1_ROA13,
+ROA12 => MULT_1_ROA12,
+ROA11 => MULT_1_ROA11,
+ROA10 => MULT_1_ROA10,
+ROA9 => MULT_1_ROA9,
+ROA8 => MULT_1_ROA8,
+ROA7 => MULT_1_ROA7,
+ROA6 => MULT_1_ROA6,
+ROA5 => MULT_1_ROA5,
+ROA4 => MULT_1_ROA4,
+ROA3 => MULT_1_ROA3,
+ROA2 => MULT_1_ROA2,
+ROA1 => MULT_1_ROA1,
+ROA0 => MULT_1_ROA0,
+ROB17 => MULT_1_ROB17,
+ROB16 => MULT_1_ROB16,
+ROB15 => MULT_1_ROB15,
+ROB14 => MULT_1_ROB14,
+ROB13 => MULT_1_ROB13,
+ROB12 => MULT_1_ROB12,
+ROB11 => MULT_1_ROB11,
+ROB10 => MULT_1_ROB10,
+ROB9 => MULT_1_ROB9,
+ROB8 => MULT_1_ROB8,
+ROB7 => MULT_1_ROB7,
+ROB6 => MULT_1_ROB6,
+ROB5 => MULT_1_ROB5,
+ROB4 => MULT_1_ROB4,
+ROB3 => MULT_1_ROB3,
+ROB2 => MULT_1_ROB2,
+ROB1 => MULT_1_ROB1,
+ROB0 => MULT_1_ROB0,
+ROC17 => MULT_1_ROC17,
+ROC16 => MULT_1_ROC16,
+ROC15 => MULT_1_ROC15,
+ROC14 => MULT_1_ROC14,
+ROC13 => MULT_1_ROC13,
+ROC12 => MULT_1_ROC12,
+ROC11 => MULT_1_ROC11,
+ROC10 => MULT_1_ROC10,
+ROC9 => MULT_1_ROC9,
+ROC8 => MULT_1_ROC8,
+ROC7 => MULT_1_ROC7,
+ROC6 => MULT_1_ROC6,
+ROC5 => MULT_1_ROC5,
+ROC4 => MULT_1_ROC4,
+ROC3 => MULT_1_ROC3,
+ROC2 => MULT_1_ROC2,
+ROC1 => MULT_1_ROC1,
+ROC0 => MULT_1_ROC0,
+A17 => a_1(17),
+A16 => a_1(16),
+A15 => a_1(15),
+A14 => a_1(14),
+A13 => a_1(13),
+A12 => a_1(12),
+A11 => a_1(11),
+A10 => a_1(10),
+A9 => a_1(9),
+A8 => a_1(8),
+A7 => a_1(7),
+A6 => a_1(6),
+A5 => a_1(5),
+A4 => a_1(4),
+A3 => a_1(3),
+A2 => a_1(2),
+A1 => a_1(1),
+A0 => a_1(0),
+B17 => GND,
+B16 => GND,
+B15 => GND,
+B14 => GND,
+B13 => GND,
+B12 => GND,
+B11 => GND,
+B10 => GND,
+B9 => GND,
+B8 => GND,
+B7 => ram(7),
+B6 => ram(6),
+B5 => ram(5),
+B4 => ram(4),
+B3 => ram(3),
+B2 => ram(2),
+B1 => ram(1),
+B0 => ram(0),
+C17 => GND,
+C16 => GND,
+C15 => GND,
+C14 => GND,
+C13 => GND,
+C12 => GND,
+C11 => GND,
+C10 => GND,
+C9 => GND,
+C8 => GND,
+C7 => GND,
+C6 => GND,
+C5 => GND,
+C4 => GND,
+C3 => GND,
+C2 => GND,
+C1 => GND,
+C0 => GND,
+SRIA17 => GND,
+SRIA16 => GND,
+SRIA15 => GND,
+SRIA14 => GND,
+SRIA13 => GND,
+SRIA12 => GND,
+SRIA11 => GND,
+SRIA10 => GND,
+SRIA9 => GND,
+SRIA8 => GND,
+SRIA7 => GND,
+SRIA6 => GND,
+SRIA5 => GND,
+SRIA4 => GND,
+SRIA3 => GND,
+SRIA2 => GND,
+SRIA1 => GND,
+SRIA0 => GND,
+SRIB17 => GND,
+SRIB16 => GND,
+SRIB15 => GND,
+SRIB14 => GND,
+SRIB13 => GND,
+SRIB12 => GND,
+SRIB11 => GND,
+SRIB10 => GND,
+SRIB9 => GND,
+SRIB8 => GND,
+SRIB7 => GND,
+SRIB6 => GND,
+SRIB5 => GND,
+SRIB4 => GND,
+SRIB3 => GND,
+SRIB2 => GND,
+SRIB1 => GND,
+SRIB0 => GND,
+SIGNEDA => VCC,
+SIGNEDB => VCC,
+CE0 => VCC,
+CE1 => GND,
+CE2 => GND,
+CE3 => GND,
+CLK0 => AUDIO_MCLK_c,
+CLK1 => GND,
+CLK2 => GND,
+CLK3 => GND,
+RST0 => GND,
+RST1 => clear,
+RST2 => GND,
+RST3 => GND,
+SOURCEA => GND,
+SOURCEB => GND);
+II_VCC: VHI port map (
+Z => VCC);
+II_GND: VLO port map (
+Z => GND);
+result(1) <= \RESULT_\;
+result(2) <= RESULT_2296;
+result(3) <= RESULT_2297;
+result(4) <= RESULT_2298;
+result(5) <= RESULT_2299;
+result(6) <= RESULT_2300;
+result(7) <= RESULT_2301;
+result(8) <= RESULT_2302;
+result(9) <= RESULT_2303;
+result(10) <= RESULT_2304;
+result(11) <= RESULT_2305;
+result(12) <= RESULT_2306;
+result(13) <= RESULT_2307;
+result(14) <= RESULT_2308;
+result(15) <= RESULT_2309;
+result(16) <= RESULT_2310;
+result(17) <= RESULT_2311;
+result(18) <= RESULT_2312;
+result(19) <= RESULT_2313;
+result(20) <= RESULT_2314;
+result(21) <= RESULT_2315;
+result(22) <= RESULT_2316;
+result(23) <= RESULT_2317;
+result(24) <= RESULT_2318;
+result(25) <= RESULT_2319;
+result(26) <= RESULT_2320;
+result(27) <= RESULT_2321;
+result(28) <= RESULT_2322;
+result(29) <= RESULT_2323;
+result(30) <= RESULT_2324;
+result(31) <= RESULT_2325;
+end beh;

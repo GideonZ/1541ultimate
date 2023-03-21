@@ -63,10 +63,10 @@ DRESULT BlockDevice_File::ioctl(uint8_t command, void *data)
 {
     uint32_t size;
     uint32_t *dest = (uint32_t *)data;
-    
-    switch(command) {
+    FRESULT fres = FR_DENIED;
+    switch (command) {
         case GET_SECTOR_COUNT:
-            if(!file)
+            if (!file)
                 return RES_ERROR;
             size = file_size >> shift;
             *dest = size;
@@ -75,7 +75,15 @@ DRESULT BlockDevice_File::ioctl(uint8_t command, void *data)
             (*(uint32_t *)data) = sector_size;
             break;
         case GET_BLOCK_SIZE:
-            (*(uint32_t *)data) = 128*1024;
+            (*(uint32_t *)data) = 1;
+            break;
+        case CTRL_SYNC:
+            if (file) {
+                fres = file->sync();
+            }
+            if (fres != FR_OK) {
+                return RES_ERROR;
+            }
             break;
         default:
             printf("IOCTL %d.\n", command);

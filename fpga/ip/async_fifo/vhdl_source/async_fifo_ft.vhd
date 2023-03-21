@@ -30,7 +30,8 @@ entity async_fifo_ft is
         rd_reset        : in  std_logic;
         rd_next         : in  std_logic;
         rd_dout         : out std_logic_vector(g_data_width-1 downto 0);
-        rd_valid        : out std_logic );
+        rd_valid        : out std_logic;
+        rd_count        : out unsigned(g_depth_bits downto 0) );
 
     ---------------------------------------------------------------------------
     -- synthesis attributes to prevent duplication and balancing.
@@ -41,6 +42,9 @@ entity async_fifo_ft is
     -- Altera attributes
     attribute dont_replicate                            : boolean;
     attribute dont_replicate of async_fifo_ft           : entity is true;
+    -- Lattice attributes
+    attribute syn_replicate                             : boolean;
+    attribute syn_replicate of async_fifo_ft            : entity is false;
     ---------------------------------------------------------------------------
 end entity;
 
@@ -250,6 +254,7 @@ begin
     begin
         if rising_edge(rd_clock) then
             v_next_count := rd_head - rd_tail_next;
+            rd_count <= '0' & v_next_count;
 
             if v_next_count = 0 then
                 rd_empty_i <= '1';

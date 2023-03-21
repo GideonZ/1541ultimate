@@ -1,0 +1,159 @@
+;**************************************************************************
+;*
+;* FILE  alutest.tas
+;* Copyright (c) 2018 Gideon Zweijtzer <gideon.zweijtzer>
+;*
+;* DESCRIPTION
+;*   This is a simple prg file that tries all combinations of an alu-alike
+;*   instruction and tests it against what we expect
+;*
+;******
+    * = $0801
+
+    .word $080b
+    .word 1541
+    .byte $9e, $20, $32, $30, $36, $34, $00
+    .byte 0, 0, 0, 0
+
+    jsr store
+    jmp test
+    
+
+result  = $fb
+flags   = $fc
+input_a = $fd
+input_m = $fe
+temp    = $ff
+result_c = $0400
+flags_c  = $0401
+        
+test
+    ldx #$00
+    ldy #$00
+    sed
+-   clc
+    sty param
+    sty input_m
+    txa
+    sta input_a
+inst
+    .byte $6b
+param
+    .byte 0
+    sta result
+    php
+    pla
+    sta flags
+
+    jsr check
+    
+    iny
+    bne -
+    inx
+    bne -
+
+    cld
+    rts
+
+check1
+    ; Assumption is that the operation is (A&M)>>1
+    ; and that the carry flag is used to go to bit 7 (ROR)
+    ; and that the flags are actually coming from the ADC operation
+    ; after the ANDing
+    
+;    txa
+;    pha
+;    tya
+;    pha
+    
+    ; check result
+    clc
+
+;    lda input_a
+;    and input_m
+;    ror
+;    cmp result
+;    bne error1
+    
+    ; check V flag
+    lda input_a
+    and input_m
+    sta temp
+    lsr
+    eor temp
+    and #$40
+    sta temp
+    lda flags
+    and #$40
+    cmp temp
+    bne error2    
+    rts
+
+    ; check C flag    
+    lda input_a
+    and input_m
+    asl
+    lda #$00
+    rol
+    sta temp
+    lda flags
+    and #$01
+    cmp temp
+    bne error2
+    
+    rts
+    
+error1
+    cld
+    ldx #$01
+    brk
+error2
+    cld
+    ldx #$02
+    brk
+error3
+    cld
+    ldx #$03
+    brk
+
+store
+    cld
+    ldy #$00
+    
+-   sty opc+1
+    tya
+    clc
+opc
+    .byte $6b
+    .byte $00
+
+    sta $1600,y
+    php
+    pla
+    sta $1700,y    
+    iny
+    bne -
+    cld
+    rts
+
+; Check if flags are always the same whether we do ARR a,m or ARR a&m, a&m. Because if that is the case, the complexity reduces quite a lot
+check
+    lda input_a
+    and input_m
+    sta opc2+1
+    clc
+opc2
+    .byte $6b
+    .byte $00
+    
+    sta result_c
+    php
+    pla
+    sta flags_c
+    
+    cmp flags
+    bne error2
+    lda result_c
+    cmp result
+    bne error1
+    rts

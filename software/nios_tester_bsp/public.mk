@@ -77,12 +77,12 @@ ALT_CPPFLAGS += -pipe
 
 # This following VERSION comment indicates the version of the tool used to 
 # generate this makefile. A makefile variable is provided for VERSION as well. 
-# ACDS_VERSION: 15.1
-ACDS_VERSION := 15.1
+# ACDS_VERSION: 18.1
+ACDS_VERSION := 18.1
 
 # This following BUILD_NUMBER comment indicates the build number of the tool 
 # used to generate this makefile. 
-# BUILD_NUMBER: 185
+# BUILD_NUMBER: 625
 
 # Qsys--generated SOPCINFO file. Required for resolving node instance ID's with 
 # design component names. 
@@ -145,15 +145,6 @@ SOPC_NAME := nios_tester
 # SopcBuilder Simulation Enabled 
 # setting SOPC_SIMULATION_ENABLED is false
 ELF_PATCH_FLAG  += --simulation_enabled false
-
-# Enable driver ioctl() support. This feature is not compatible with the 
-# 'small' driver; ioctl() support will not be compiled if either the UART 
-# 'enable_small_driver' or HAL 'enable_reduced_device_drivers' settings are 
-# enabled. none 
-# setting altera_avalon_uart_driver.enable_ioctl is false
-
-# Small-footprint (polled mode) driver none 
-# setting altera_avalon_uart_driver.enable_small_driver is false
 
 # Build a custom version of newlib with the specified space-separated compiler 
 # flags. The custom newlib build will be placed in the <bsp root>/newlib 
@@ -244,6 +235,18 @@ ALT_CPPFLAGS += -DALT_NO_INSTRUCTION_EMULATION
 # setting hal.enable_sopc_sysid_check is false
 SOPC_SYSID_FLAG += --accept-bad-sysid
 
+# C/C++ compiler to generate (do not generate) GP-relative accesses. 'none' 
+# tells the compilter not to generate GP-relative accesses. 'local' will 
+# generate GP-relative accesses for small data objects that are not external, 
+# weak, or uninitialized common symbols. Also use GP-relative addressing for 
+# objects that have been explicitly placed in a small data section via a 
+# section attribute. provides the default set of debug symbols typically 
+# required to debug a typical application. 'global' is same as 'local' but also 
+# generate GP-relative accesses for small data objects that are external, weak, 
+# or common. none 
+# setting hal.make.cflags_mgpopt is -mgpopt=global
+ALT_CFLAGS += -mgpopt=global
+
 # Enable BSP generation to query if SOPC system is big endian. If true ignores 
 # export of 'ALT_CFLAGS += -meb' to public.mk if big endian system. none 
 # setting hal.make.ignore_system_derived.big_endian is false
@@ -320,18 +323,18 @@ SOPC_SYSID_FLAG += --accept-bad-sysid
 
 # Slave descriptor of STDERR character-mode device. This setting is used by the 
 # ALT_STDERR family of defines in system.h. none 
-# setting hal.stderr is uart_0
-ELF_PATCH_FLAG  += --stderr_dev uart_0
+# setting hal.stderr is none
+ELF_PATCH_FLAG  += --stderr_dev none
 
 # Slave descriptor of STDIN character-mode device. This setting is used by the 
 # ALT_STDIN family of defines in system.h. none 
-# setting hal.stdin is uart_0
-ELF_PATCH_FLAG  += --stdin_dev uart_0
+# setting hal.stdin is none
+ELF_PATCH_FLAG  += --stdin_dev none
 
 # Slave descriptor of STDOUT character-mode device. This setting is used by the 
 # ALT_STDOUT family of defines in system.h. none 
-# setting hal.stdout is uart_0
-ELF_PATCH_FLAG  += --stdout_dev uart_0
+# setting hal.stdout is none
+ELF_PATCH_FLAG  += --stdout_dev none
 
 
 #------------------------------------------------------------------------------

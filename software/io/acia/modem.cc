@@ -19,11 +19,36 @@
 #define CFG_MODEM_CONNFILE    0x0A
 #define CFG_MODEM_OFFLINEFILE 0x0B
 #define CFG_MODEM_LISTEN_RING 0x0C
+#define CFG_MODEM_QUIRKS      0x0D
+#define CFG_MODEM_TCPNODELAY  0x0E
+#define CFG_MODEM_LOOPDELAY   0x0F
+
+#define RESP_OK				0
+#define RESP_CONNECT		1
+#define RESP_RING			2
+#define RESP_NO_CARRIER		3
+#define RESP_ERROR			4
+#define RESP_CONNECT_1200	5
+#define RESP_NO_DIALTONE	6
+#define RESP_BUSY			7
+#define RESP_NO_ANSWER		8
+#define RESP_CONNECT_2400	9
+#define RESP_CONNECT_4800	10
+#define RESP_CONNECT_9600	11
+#define RESP_CONNECT_14400	12
+#define RESP_CONNECT_19200	13
+#define RESP_CONNECT_38400	14
 
 static const char *interfaces[] = { "ACIA / SwiftLink" };
 static const char *acia_mode[] = { "Off", "DE00/IRQ", "DE00/NMI", "DF00/IRQ", "DF00/NMI", "DF80/IRQ", "DF80/NMI" };
 static const char *dcd_dsr[] = { "Active (Low)", "Active when connected", "Inactive when connected", "Inactive (High)", "Act. when connecting", "Inact. when connecting" };
 static const int acia_base[] = { 0, 0xDE00, 0xDE01, 0xDF00, 0xDF01, 0xDF80, 0xDF81 };
+static const char *responseCode[] = {"\r0\r","\r1\r","\r2\r","\r3\r","\r4\r","\r5\r","\r6\r","\r7\r","\r8\r",
+								"\r10\r","\r11\r","\r12\r","\r13\r","\r14\r","\r28\r"};
+static const char *responseText[] = {"\rOK\r","\rCONNECT\r","\rRING\r","\rNO CARRIER\r","\rERROR\r","\rCONNECT 1200\r",
+								"\rNO DIALTONE\r","\rBUSY\r","\rNO ANSWER\r","\rCONNECT 2400\r","\rCONNECT 4800\r",
+								"\rCONNECT 9600\r","\rCONNECT 14400\r","\rCONNECT 19200\r","\rCONNECT 38400\r"};
+
 
 /*
 static const AciaMessage_t setDSR = { ACIA_MSG_DSR, 1, 0 };
@@ -47,6 +72,8 @@ struct t_cfg_definition modem_cfg[] = {
     { CFG_MODEM_OFFLINEFILE,   CFG_TYPE_STRING, "Modem Offline Text",            "%s", NULL,         0, 30, (int)"/Usb0/offline.txt" },
     { CFG_MODEM_CONNFILE,      CFG_TYPE_STRING, "Modem Connect Text",            "%s", NULL,         0, 30, (int)"/Usb0/welcome.txt" },
     { CFG_MODEM_BUSYFILE,      CFG_TYPE_STRING, "Modem Busy Text",               "%s", NULL,         0, 30, (int)"/Usb0/busy.txt" },
+    { CFG_MODEM_TCPNODELAY,    CFG_TYPE_ENUM,   "Set Socket Opt TCP_NODELAY",    "%s", en_dis,       0,  1, 0 },
+    { CFG_MODEM_LOOPDELAY,     CFG_TYPE_VALUE,  "Loop Delay (OS ticks)",         "%d", NULL,         1, 20, 2 },
     { CFG_TYPE_END,            CFG_TYPE_END,    "",                              "",   NULL,         0,  0, 0 } };
 
 
@@ -73,6 +100,8 @@ Modem :: Modem()
     baudRate = 0;
     dropOnDTR = true;
     lastHandshake = 0;
+    verbose = true;
+    current_iobase = 0;
     ResetRegisters();
 }
 
@@ -110,11 +139,19 @@ void Modem :: listenerTask(void *a)
 
 void Modem :: RunRelay(int socket)
 {
+    int loopDelay = cfg->get_value(CFG_MODEM_LOOPDELAY);
+    printf("Using loopDelay = %d\n", loopDelay);
+
     struct timeval tv;
-    tv.tv_sec = 10; // bug in lwip; this is just used directly as tick value
-    tv.tv_usec = 10;
+    tv.tv_sec = loopDelay * portTICK_PERIOD_MS;
+    tv.tv_usec = loopDelay * portTICK_PERIOD_MS;
     setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
-    //currentRelaySocket = socket;
+
+    if (cfg->get_value(CFG_MODEM_TCPNODELAY)) {
+        int flags =1;
+        setsockopt(socket, IPPROTO_TCP, TCP_NODELAY, &flags, sizeof(flags));
+    }
+
     ModemCommand_t modemCommand;
 
     printf("Modem: Running Relay to socket %d.\n", socket);
@@ -126,30 +163,63 @@ void Modem :: RunRelay(int socket)
     int escapeCount = 0;
     TickType_t escapeDetectTime = 0;
 
+    tcp_buffer_valid = 0;
+    tcp_buffer_offset = 0;
+
     while(keepConnection) {
-        int space = acia.GetRxSpace();
-        volatile uint8_t *dest = acia.GetRxPointer();
-        if (space > 0) {
-            //printf("RELAY: Recv %p %d ", dest, space);
-            ret = recv(socket, (void *)dest, space, 0);
+        // Do we have space for TCP data? Then lets try to receive some.
+        if (!tcp_buffer_valid) {
+            ret = recv(socket, tcp_receive_buffer, 512, 0);
             if (ret > 0) {
-                acia.AdvanceRx(ret);
-                //printf("%d\n", ret);
+                //printf("[%d] TCP: %d\n", xTaskGetTickCount(), ret);
+                tcp_buffer_valid = ret;
+                tcp_buffer_offset= 0;
             } else if(ret == 0) {
                 printf("Receive returned 0. Exiting\n");
                 break;
             }
         } else {
-            vTaskDelay(10);
+            // we did not wait for tcp, so we just wait a little
+            vTaskDelay(loopDelay);
         }
+
+        // Do we have TCP data to send?
+        if (tcp_buffer_valid) {
+            int space = acia.GetRxSpace();
+            // Is there room in the ACIA Rx buffer?
+            if (space > 0) {
+                volatile uint8_t *dest = acia.GetRxPointer();
+                if (tcp_buffer_valid > space) {
+                    memcpy((void *)dest, tcp_receive_buffer + tcp_buffer_offset, space);
+                    acia.AdvanceRx(space);
+                    //printf("[%d] Rx: Got=%d. Push:%d.\n", xTaskGetTickCount(), tcp_buffer_valid, space);
+                    tcp_buffer_valid -= space;
+                    tcp_buffer_offset += space;
+                } else {
+                    memcpy((void *)dest, tcp_receive_buffer + tcp_buffer_offset, tcp_buffer_valid);
+                    acia.AdvanceRx(tcp_buffer_valid);
+                    //printf("[%d] Rx: Got=%d. Push: All.\n", xTaskGetTickCount(), tcp_buffer_valid);
+                    tcp_buffer_valid = 0;
+                }
+            }
+        }
+
+        // Check for escapes to see if we can get out of data mode
         if (escapeCount == 3) {
             TickType_t since = xTaskGetTickCount() - escapeDetectTime;
             if (since >= escapeTime) {
                 printf("Modem Escape detected!\n");
                 escapeCount = 0;
                 commandMode = true;
+
+                responseString = (verbose==TRUE ? responseText[RESP_OK] : responseCode[RESP_OK]);
+                responseLen=strlen(responseString);
+                acia.SendToRx((uint8_t*)responseString, responseLen);
             }
         }
+
+        // As long as we are in data mode, all data written to the ACIA shall be
+        // forwarded to TCP.
         if (!commandMode) {
             int avail = aciaTxBuffer->AvailableContiguous();
             if (avail > 0) {
@@ -165,6 +235,7 @@ void Modem :: RunRelay(int socket)
                     }
                 }
                 ret = send(socket, pnt, avail, 0);
+                //printf("[%d] Tx: Got=%d. Sent:%d\n", xTaskGetTickCount(), avail, ret);
                 if (ret > 0) {
                     aciaTxBuffer->AdvanceReadPointer(ret);
                 } else if(ret < 0) {
@@ -173,6 +244,8 @@ void Modem :: RunRelay(int socket)
                 }
             }
         }
+
+        // Maybe there are any commands that need to be executed?
         BaseType_t cmdAvailable = xQueueReceive(commandQueue, &modemCommand, 0);
         if (cmdAvailable) {
             ExecuteCommand(&modemCommand);
@@ -204,12 +277,21 @@ void Modem :: IncomingConnection(int socket)
         ModemCommand_t modemCommand;
         registerValues[MODEM_REG_RINGCOUNTER] = 0;
         for(int rings=0; rings < 10; rings++) {
-            acia.SendToRx((uint8_t *)"RING\r", 5);
-            int len = sprintf(buffer, "RING\n");
-            registerValues[MODEM_REG_RINGCOUNTER] ++;
-            if (send(socket, buffer, len, 0) <= 0) {
-                break;
-            }
+
+        	responseString = (verbose==TRUE ? responseText[RESP_RING] : responseCode[RESP_RING]);
+        	responseLen = strlen(responseString);
+        	acia.SendToRx((uint8_t *)responseString, responseLen);
+
+            registerValues[MODEM_REG_RINGCOUNTER]++;
+
+            // this is removed because we dont want to send a response to the user
+            // while they are dialing.  if they dial a number and they see "RING  RING"
+            // it could be confused with an incoming RING. dialing out doesnt display anything
+            // until either gives up or connected
+            //
+            //if (send(socket, responseString, responseLen, 0) <= 0) {
+            //    break;
+            //}
             if (registerValues[MODEM_REG_AUTOANSWER]) {
                 if (registerValues[MODEM_REG_RINGCOUNTER] >= registerValues[MODEM_REG_AUTOANSWER]) {
                     keepConnection = true;
@@ -229,17 +311,44 @@ void Modem :: IncomingConnection(int socket)
         }
 
         if (keepConnection) {
-            int len = sprintf(buffer, "CONNECT %d\r", baudRate);
-            acia.SendToRx((uint8_t*)buffer, len);
-            buffer[len-1] = 0x0a; // Use Newline instead of carriage return for the socket
-            send(socket, buffer, len, 0);
+
+        	uint8_t tmp = RESP_CONNECT;
+
+        	switch(baudRate)
+        	{
+        		case 1200: { tmp=RESP_CONNECT_1200; break; }
+        		case 2400: { tmp=RESP_CONNECT_2400; break; }
+        		case 4800: { tmp=RESP_CONNECT_4800; break; }
+        		case 9600: { tmp=RESP_CONNECT_9600; break; }
+        		case 14400: { tmp=RESP_CONNECT_14400; break; }
+        		case 19200: { tmp=RESP_CONNECT_19200; break; }
+        		case 38400: { tmp=RESP_CONNECT_38400; break; }
+        	}
+
+        	if(verbose == TRUE) {
+        		responseString = responseText[tmp];
+        		responseLen = strlen(responseString);
+        	} else {
+        		responseString = responseCode[tmp];
+        		responseLen = strlen(responseString);
+        	}
+
+            acia.SendToRx((uint8_t*)responseString, responseLen);
+
+            // I dont believe this should be delivered locally
+            // per usage of other modems
+            //buffer[len-1] = 0x0a; // Use Newline instead of carriage return for the socket
+            //send(socket, buffer, len, 0);
 
             RunRelay(socket);
-            len = sprintf(buffer, "NO CARRIER\r");
-            acia.SendToRx((uint8_t*)buffer, len);
+
+            responseString = (verbose==TRUE ? responseText[RESP_NO_CARRIER] : responseCode[RESP_NO_CARRIER]);
+            responseLen=strlen(responseString);
+            acia.SendToRx((uint8_t*)responseString, responseLen);
         } else {
-            int len = sprintf(buffer, "NO ANSWER\n");
-            send(socket, buffer, len, 0);
+        	responseString = (verbose==TRUE ? responseText[RESP_NO_ANSWER] : responseCode[RESP_NO_ANSWER]);
+        	responseLen=strlen(responseString);
+            send(socket, responseString, responseLen, 0);
         }
     } else {
         // Silent relay
@@ -332,29 +441,43 @@ void Modem :: Caller()
     while(1) {
         xQueueReceive(connectQueue, &cmd, portMAX_DELAY);
         if (xSemaphoreTake(connectionLock, 50) != pdTRUE) {
-            acia.SendToRx((uint8_t *)"MODEM BUSY\r", 11);
+        	responseString = (verbose==TRUE ? responseText[RESP_BUSY] : responseCode[RESP_BUSY]);
+        	responseLen=strlen(responseString);
+            acia.SendToRx((uint8_t *)responseString, responseLen );
             continue;
         }
 
-        for(int i=2;i<cmd.length;i++) {
-            if (cmd.command[i] == ':') {
-                cmd.command[i] = 0;
-                portString = &cmd.command[i + 1];
+        char *c = cmd.command;
+        int len = cmd.length;
+        portString = NULL;
+
+        while(*c == 0x20) {
+            c++;
+            len--;
+        }
+        for(int i=2;i < len;i++) {
+            if (c[i] == ':') {
+                c[i] = 0;
+                portString = &c[i + 1];
                 break;
             }
         }
         // setup the connection
-        int result = gethostbyname_r(cmd.command, &my_host, buffer, 128, &ret_host, &error);
+        int result = gethostbyname_r(c, &my_host, buffer, 128, &ret_host, &error);
 
         if (!ret_host) {
-            acia.SendToRx((uint8_t *)"RESOLVE ERROR\r", 14);
+        	responseString = (verbose==TRUE ? responseText[RESP_NO_ANSWER] : responseCode[RESP_NO_ANSWER]);
+        	responseLen=strlen(responseString);
+            acia.SendToRx((uint8_t *)responseString, responseLen);
             xSemaphoreGive(connectionLock);
             continue;
         }
 
         int sock_fd = socket(AF_INET, SOCK_STREAM, 0);
         if (sock_fd < 0) {
-            acia.SendToRx((uint8_t *)"NO SOCKET\r", 10);
+        	responseString = (verbose==TRUE ? responseText[RESP_ERROR] : responseCode[RESP_ERROR]);
+        	responseLen=strlen(responseString);
+        	acia.SendToRx((uint8_t *)responseString, responseLen);
             xSemaphoreGive(connectionLock);
             continue;
         }
@@ -369,7 +492,9 @@ void Modem :: Caller()
         serv_addr.sin_port = htons(portno);
 
         if (connect(sock_fd, (struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0) {
-            acia.SendToRx((uint8_t *)"NO CARRIER\r", 14);
+        	responseString = (verbose==TRUE ? responseText[RESP_NO_CARRIER] : responseCode[RESP_NO_CARRIER]);
+        	responseLen=strlen(responseString);
+        	acia.SendToRx((uint8_t *)responseString, responseLen);
             xSemaphoreGive(connectionLock);
             continue;
         }
@@ -377,11 +502,15 @@ void Modem :: Caller()
         //dump_hex(buffer, 128);
         // run the relay
 
-        acia.SendToRx((uint8_t *)"CONNECTED\r", 10);
+        responseString = (verbose==TRUE ? responseText[RESP_CONNECT] : responseCode[RESP_CONNECT]);
+		responseLen=strlen(responseString);
+		acia.SendToRx((uint8_t *)responseString, responseLen);
         keepConnection = true;
         RunRelay(sock_fd);
         lwip_close(sock_fd);
-        acia.SendToRx((uint8_t *)"NO CARRIER\r", 14);
+        responseString = (verbose==TRUE ? responseText[RESP_NO_CARRIER] : responseCode[RESP_NO_CARRIER]);
+        responseLen=strlen(responseString);
+        acia.SendToRx((uint8_t *)responseString, responseLen);
         keepConnection = false;
         xSemaphoreGive(connectionLock);
     }
@@ -430,9 +559,12 @@ int Modem :: ExecuteCommand(ModemCommand_t *cmd)
 {
     int connectionStateChange = 0;
     char *c;
-    const char *response = "OK\r";
+    const char *response;
     char responseBuffer[16];
     int registerValue, temp;
+    bool doesResponse = true;
+
+    response = (verbose==TRUE ? responseText[RESP_OK] : responseCode[RESP_OK]);
 
     printf("MODEM COMMAND: '%s'\n", cmd->command);
 
@@ -452,7 +584,7 @@ int Modem :: ExecuteCommand(ModemCommand_t *cmd)
             response = "";
             break;
         case 'I': // identify
-            response = "ULTIMATE-II MODEM EMULATION LAYER\rMADE BY GIDEON\rVERSION V1.0\r";
+            response = "ULTIMATE-II MODEM EMULATION LAYER\rMADE BY GIDEON\rVERSION V1.1\r";
             break;
         case 'Z': // reset
             ResetRegisters();
@@ -473,20 +605,50 @@ int Modem :: ExecuteCommand(ModemCommand_t *cmd)
             }
             keepConnection = true;
             connectionStateChange = 2;
+            doesResponse=false;
             break;
         case 'O': // Return Online
             if (keepConnection) {
                 commandMode = false;
                 response = "";
             } else {
-                response = "NO CARRIER\r";
+            	response = (verbose==TRUE ? responseText[RESP_NO_CARRIER] : responseCode[RESP_NO_CARRIER]);
             }
             break;
         case 'V': // Verbose mode
             sscanf(cmd->command + i + 1, "%d", &temp);
             while(i < cmd->length && (isdigit(cmd->command[i+1])))
                 i++;
+
+            if(temp>1)
+            {
+            	response = (verbose==TRUE ? responseText[RESP_ERROR] : responseCode[RESP_ERROR]);
+            }
+            else
+            {
+            	if(temp == 1)
+            		verbose=TRUE;
+            	else
+            		verbose=FALSE;
+
+            	response = (verbose==TRUE ? responseText[RESP_OK] : responseCode[RESP_OK]);
+            }
             break;
+        case 'E':
+        case 'M':
+            sscanf(cmd->command + i + 1, "%d", &temp);
+            while(i < cmd->length && (isdigit(cmd->command[i+1])))
+                i++;
+
+            if(temp>1)
+            {
+            	response = (verbose==TRUE ? responseText[RESP_ERROR] : responseCode[RESP_ERROR]);
+            }
+            else
+            {
+            	response = (verbose==TRUE ? responseText[RESP_OK] : responseCode[RESP_OK]);
+            }
+        	break;
         case 'S': // register select
             registerSelect = 0;
             sscanf(cmd->command + i + 1, "%d", &registerSelect);
@@ -505,12 +667,16 @@ int Modem :: ExecuteCommand(ModemCommand_t *cmd)
             WriteRegister(registerValue);
             break;
         default:
-            response = "?\r";
+        	response = (verbose==TRUE ? responseText[RESP_ERROR] : responseCode[RESP_ERROR]);
             i = cmd->length; // break outer loop
             break;
         }
     }
-    acia.SendToRx((uint8_t *)response, strlen(response));
+
+    //ATA command does not return a response (except for CONNECT response)
+    if(doesResponse)
+    	acia.SendToRx((uint8_t *)response, strlen(response));
+
     return connectionStateChange;
 }
 
@@ -653,8 +819,10 @@ void Modem :: effectuate_settings()
     int base = acia_base[cfg->get_value(CFG_MODEM_ACIA)];
     if (!base) {
         acia.deinit();
+        current_iobase = 0;
     } else {
         acia.init(base & 0xFFFE, base & 1, aciaQueue, aciaQueue, aciaTxBuffer);
+        current_iobase = base & 0xFFFE;
     }
 
     dropOnDTR = cfg->get_value(CFG_MODEM_DTRDROP);
@@ -662,6 +830,21 @@ void Modem :: effectuate_settings()
     dsrMode = cfg->get_value(CFG_MODEM_DSR);
     dcdMode = cfg->get_value(CFG_MODEM_DCD);
     listenerSocket->Start(newPort);
+}
+
+void Modem :: reinit_acia(uint16_t base)
+{
+    acia.init(base & 0xFFFE, base & 1, aciaQueue, aciaQueue, aciaTxBuffer);
+    current_iobase = base & 0xFFFE;
+}
+
+bool Modem :: prohibit_acia(uint16_t base)
+{
+    if (base == current_iobase) {
+        acia.deinit();
+        return true;
+    }
+    return false;
 }
 
 Modem modem;

@@ -8,9 +8,9 @@ include ../common/environment.mk
 DEST     =  ../../../../ult64/target/u64_a4/onchip_mem.hex
 PRJ      =  u64_boot
 FINAL    =  $(RESULT)/$(PRJ).hex $(RESULT)/$(PRJ).elf $(DEST)
-HEXLAST  =  0x07FF
+HEXLAST  =  0x0FFF
 HEXBASE  =  0x30000000
-HEXEND   =  0x300007FF
+HEXEND   =  0x30000FFF
 BSP      = $(PATH_SW)/nios_solo_bsp
 
 SRCS_C   =	u64_boot.c ddr2_calibrator_u64.c small_printf.c

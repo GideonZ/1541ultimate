@@ -72,6 +72,33 @@ FRESULT verify_file(FileSystem *fs, const char *from, const uint8_t *to, int siz
     return fres;
 }
 
+FRESULT copy_to(const char *from, FileSystem *fs, const char *to)
+{
+    printf("Copying %s to %s.\n", from, to);
+    File *fo;
+
+    FILE *fi = fopen(from, "rb");
+    if (!fi) {
+        return FR_NO_FILE;
+    }
+
+    uint8_t *buffer = new uint8_t[16384];
+    FRESULT fres = fs->file_open(to, FA_WRITE | FA_CREATE_ALWAYS, &fo);
+    if (fres == FR_OK) {
+        uint32_t tr;
+        do {
+            tr = fread(buffer, 1, 16384, fi);
+            fres = fo->write(buffer, tr, &tr);
+        } while(tr);
+        fclose(fi);
+        fo->close();
+    } else {
+        printf("File '%s' could not be opened for writing. (%s)\n", to, FileSystem::get_error_string(fres));
+    }
+    delete[] buffer;
+    return fres;
+}
+
 FRESULT print_directory(FileSystem *fs, const char *path, int indent = 0)
 {
     Directory *dir;
@@ -85,7 +112,7 @@ FRESULT print_directory(FileSystem *fs, const char *path, int indent = 0)
             if (fres != FR_OK)
                 break;
             info.generate_fat_name(fatname, 48);
-            printf("%s%-5d%-32s %s @ %u\n", &spaces[40-indent], info.size / 254, fatname, (info.attrib &AM_DIR)?"DIR ":"FILE", info.cluster);
+            printf("%s%-5d%-32s %s (%02x)\n", &spaces[40-indent], info.size / 254, fatname, (info.attrib &AM_DIR)?"DIR ":"FILE", info.attrib);
             //printf("%s%-32s (%s) %10d\n", &spaces[40-indent], info.lfname, (info.attrib &AM_DIR)?"DIR ":"FILE", info.size);
 
             if (info.attrib & AM_DIR) {
@@ -101,8 +128,8 @@ FRESULT print_directory(FileSystem *fs, const char *path, int indent = 0)
         printf("Directory '%s' cannot be opened: %s\n", path, FileSystem::get_error_string(fres));
     }
     if (!indent) {
-        uint32_t fre;
-        fres = fs->get_free(&fre);
+        uint32_t fre, cs;
+        fres = fs->get_free(&fre, &cs);
         printf("%u BLOCKS FREE.\n", fre);
     }
     return fres;
@@ -113,17 +140,21 @@ FRESULT copy_all(FileSystem *fs)
     Directory *dir;
     FileInfo info(INFO_SIZE);
     char fatname[48];
-    FRESULT fres = fs->dir_open("", &dir);
-    if (fres == FR_OK) {
+    FRESULT fres = FR_OK;
+    FRESULT dres = fs->dir_open("", &dir);
+    if (dres == FR_OK) {
         while(1) {
-            fres = dir->get_entry(info);
-            if (fres != FR_OK)
+            dres = dir->get_entry(info);
+            if (dres != FR_OK)
                 break;
             if (info.attrib & (AM_DIR | AM_VOL)) {
                 continue;
             }
             info.generate_fat_name(fatname, 48);
             fres = copy_from(fs, fatname, fatname);
+            if (fres != FR_OK) {
+                break;
+            }
         }
         delete dir; // close directory
     }
@@ -140,8 +171,8 @@ bool test_fs(FileSystem *fs)
     uint32_t tr = 0;
     printf("Formatted:\n");
     print_directory(fs, "");
-    uint32_t empty_size;
-    FRESULT fres = fs->get_free(&empty_size);
+    uint32_t empty_size, cs;
+    FRESULT fres = fs->get_free(&empty_size, &cs);
     ok = ok && (fres == FR_OK); // it should be possible to get the number of free sectors.
 
     File *f;
@@ -194,7 +225,7 @@ bool test_fs(FileSystem *fs)
     }
     print_directory(fs, "");
     uint32_t fre;
-    fs->get_free(&fre);
+    fs->get_free(&fre, &cs);
     if (empty_size < 775) {
         ok = ok && (fre == 0);
         ok = ok && (fres == FR_DISK_FULL); // we expect that the disk is full when there are no blocks free
@@ -219,7 +250,7 @@ bool test_fs(FileSystem *fs)
     }
     print_directory(fs, "");
 
-    fs->get_free(&fre);
+    fs->get_free(&fre, &cs);
     ok = ok && (fre == (empty_size - 40)); // 10000 bytes = 40 blocks
 
     fres = fs->file_open("test.seq", FA_WRITE, &f );
@@ -275,7 +306,7 @@ bool test_fs(FileSystem *fs)
     printf("Delete result: %s\n", FileSystem::get_error_string(fres));
     print_directory(fs, "");
 
-    fs->get_free(&fre);
+    fs->get_free(&fre, &cs);
     ok = ok && (fre == empty_size); // disk should be empty again
 
     printf("Creating BLAHDIR/SECOND...\n");
@@ -296,7 +327,7 @@ bool test_fs(FileSystem *fs)
     printf("Create DIR result: %s\n", FileSystem::get_error_string(fres));
     print_directory(fs, "");
 
-    fs->get_free(&fre);
+    fs->get_free(&fre, &cs);
     ok = ok && (fre == (empty_size - 4)); // 4 blocks should be used for 2 dirs
 
     fres = fs->file_open("BLAHDIR/SECOND/sub.rel", FA_WRITE | FA_CREATE_NEW, &f );
@@ -316,7 +347,7 @@ bool test_fs(FileSystem *fs)
     if (empty_size > 720)
         expected_rel_blocks += 1; // Super side block
 
-    fs->get_free(&fre);
+    fs->get_free(&fre, &cs);
     ok = ok && (fre == (empty_size - 4 - expected_rel_blocks)); // 4 blocks should be used for 2 dirs
 
     copy_from(fs, "BLAHDIR/SECOND/sub.rel", "sub.rel");
@@ -461,7 +492,7 @@ void read_dnp()
     FileSystemCBM *fs = new FileSystemDNP(prt, true);
     print_directory(fs, "");
 
-#if 1
+#if 0
     File *f;
 /*
     fs->file_open("userlog2.rel", FA_READ, &f);
@@ -528,21 +559,34 @@ void read_d81()
     delete blk;
 }
 
-void read_cvt()
+bool read_cvt(char *fn, char *file)
 {
-    BlockDevice_Emulated blk("megapatch/mp33r6-en.d81", 256);
+    //BlockDevice_Emulated blk("megapatch/mp33r6-en.d81", 256);
+    BlockDevice_Emulated blk(fn, 256);
     Partition prt(&blk, 0, 0, 0);
     FileSystemD81 fs(&prt, false);
 
     print_directory(&fs, "");
-    copy_from(&fs, "s{65747570}mp64.1.cvt", "setup2.cvt");
-    copy_all(&fs);
+    if (file) {
+        FRESULT fres = copy_from(&fs, file, file);
+        if (fres != FR_OK) {
+            return false;
+        }
+    } else {
+        FRESULT fres = copy_all(&fs);
+        if (fres != FR_OK) {
+            printf("ERR.\n");
+            return false;
+        }
+    }
+    return true;
 }
 
 // To be moved to its own target, to test FAT specific things
 void test_fat()
 {
-    BlockDevice_Emulated blk("fat/exfat.fat", 512);
+	//BlockDevice_Emulated blk("fat/exfat.fat", 512);
+    BlockDevice_Emulated blk("fingerprint.fat", 512);
     Partition prt(&blk, 0, 0, 0);
     FileSystemFAT fs(&prt);
     if (!fs.init()) {
@@ -551,29 +595,143 @@ void test_fat()
     }
     print_directory(&fs, "");
 
-    print_directory(&fs, "/main.dnp/utilities");
-    print_directory(&fs, "/megapatch/mp33r6-en.d81/blah");
+    //print_directory(&fs, "/main.dnp/utilities");
+    //print_directory(&fs, "/megapatch/mp33r6-en.d81/blah");
 }
 
-int main()
+bool test1(int argc, char **argv)
 {
     bool ok = true;
-    //printf("Size of Dir entry: %d\n", sizeof(struct DirEntryCBM));
-    //    read_d81();
-
-    //read_cvt();
-    read_dnp();
-    //test_fat();
-    return 0;
 
     ok &= test_format_d64();
     ok &= test_format_d71();
     ok &= test_format_d81();
     ok &= test_format_dnp();
+    //ok &= test_format_fat();
 
+    return ok;
+}
+
+bool test2(int argc, char **argv)
+{
+	if (argc < 1) {
+		printf("Test 2 requires at least one argument.\n");
+		return false;
+	}
+	return read_cvt(argv[0], (argc > 1) ? argv[1] : 0);
+}
+
+bool test3(int argc, char **argv)
+{
+	if (argc < 1) {
+		printf("Test 3 requires at least one argument.\n");
+		return false;
+	}
+	char filename[80];
+	strncpy(filename, argv[0], 75);
+	strcat(filename, ".d81");
+	create_file(filename, 3200);
+    BlockDevice_Emulated blk(filename, 256);
+    Partition prt(&blk, 0, 3200, 0);
+    FileSystemD81 fs(&prt, true);
+    fs.format("TEST3,03");
+
+    for(int i=1; i < argc; i++) {
+    	FRESULT fres = copy_to(argv[i], &fs, argv[i]);
+    	if (fres != FR_OK) {
+    		return false;
+    	}
+    }
+    return true;
+}
+
+bool test4(int argc, char **argv)
+{
+	if (argc < 1) {
+		printf("Test 4 requires at least one argument.\n");
+		return false;
+	}
+
+	BlockDevice *blk = new BlockDevice_Emulated(argv[0], 256);
+    Partition *prt = new Partition(blk, 0, 0, 0);
+    uint32_t sectors = 0, free = 0;
+    prt->ioctl(GET_SECTOR_COUNT, &sectors);
+    printf("Partition number of sectors: %u\n", sectors);
+    FileSystemCBM *fs = new FileSystemD81(prt, true);
+    print_directory(fs, "");
+
+    {
+        Directory *dir;
+        FileInfo info(INFO_SIZE);
+        char fatname[48];
+        FRESULT fres = fs->dir_open(NULL, &dir);
+        if (fres == FR_OK) {
+            while(1) {
+                fres = dir->get_entry(info);
+                if (fres != FR_OK)
+                    break;
+                info.generate_fat_name(fatname, 48);
+
+                fres = fs->file_delete(fatname);
+                printf("Deleting '%s' => %s\n", fatname, FileSystem::get_error_string(fres));
+            }
+            delete dir; // close directory
+        }
+    }
+
+    print_directory(fs, "");
+    delete fs;
+    delete prt;
+    delete blk;
+    return true;
+}
+
+int main(int argc, char **argv)
+{
+    if (argc < 2) {
+    	printf("Usage: %s <testcase> [testcase params]\n", argv[0]);
+    	printf("Testcase 1: Deep test of formatting D64, D71, D81, DNP, writing files,\n");
+        printf("            checking them, etc.. No params.\n");
+    	printf("Testcase 2: CVT Extraction test. <image file> [specific file to extract].\n");
+    	printf("            If file not given, it extracts all into current directory.\n");
+    	printf("Testcase 3: CVT Writeback test. <base name> [files]\n");
+    	printf("            Creates a D81 file, and copies all specified files into it.\n");
+    	printf("Testcase 4: Delete all files from disk image and show resulting");
+		printf("            free blocks.\n");
+    	exit(0);
+    }
+
+    int testcase = atoi(argv[1]);
+    argc -= 2;
+    argv++;
+    argv++;
+
+    bool ok = true;
+    switch(testcase) {
+    case 1:
+    	ok = test1(argc, argv);
+    	break;
+    case 2:
+    	ok = test2(argc, argv);
+    	break;
+    case 3:
+    	ok = test3(argc, argv);
+    	break;
+    case 4:
+    	ok = test4(argc, argv);
+    	break;
+    default:
+    	printf("Undefined test.\n");
+    	ok = false;
+    }
+    // read_dnp();
+    // test_fat();
+    // return 0;
     if (!ok) {
         printf("\nTest FAILED.\n");
+        return 1;
     } else {
         printf("\nTest PASSED.\n");
+        return 0;
     }
 }

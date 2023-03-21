@@ -68,6 +68,8 @@ const char *FileSystem :: get_error_string(FRESULT res)
 			return "DIRECTORY NOT EMPTY";
 		case FR_LOOP_DETECTED:
 		    return "LOOP DETECTED";
+		case FR_LOCKED:
+		    return "LOCKED";
 		default:
 			return "UNKNOWN ERROR";
 	}

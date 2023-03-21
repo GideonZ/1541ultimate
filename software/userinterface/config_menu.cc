@@ -52,7 +52,7 @@ void ConfigBrowserState :: into(void)
     deeper->previous = this;
 
     int error;
-    printf("Going deeper into = %s\n", under_cursor->getName());
+    // printf("Going deeper into = %s\n", under_cursor->getName());
 	deeper->children = under_cursor->getSubItems(error);
 	int child_count = deeper->children->get_elements();
     if(child_count < 1) {
@@ -88,6 +88,14 @@ void ConfigBrowserState :: change(void)
         case CFG_TYPE_ENUM:
             browser->context(it->getValue() - it->definition->min);
             break;
+        case CFG_TYPE_STRFUNC:
+            browser->context(0);
+            break;
+        case CFG_TYPE_VALUE:
+        	if ((it->definition->max - it->definition->min) < 40) { // was 30, but days of the month then becomes an exception.. :-/
+                browser->context(it->getValue() - it->definition->min);
+        	}
+            break;
         case CFG_TYPE_STRING:
             max = it->definition->max;
             if (max > 79)
@@ -101,7 +109,7 @@ void ConfigBrowserState :: change(void)
         case CFG_TYPE_FUNC:
             refresh = true;
             func = (t_cfg_func)(it->definition->items);
-            func(browser->user_interface);
+            func(browser->user_interface, it);
             break;
         default:
             break;
@@ -168,6 +176,8 @@ void ConfigBrowser :: on_exit(void)
     }
 }
 
+extern const char *helptext;
+
 int ConfigBrowser :: handle_key(int c)
 {
     int ret = 0;
@@ -200,13 +210,23 @@ int ConfigBrowser :: handle_key(int c)
         case KEY_PAGEDOWN:
             state->down(window->get_size_y()/2);
             break;
+        case KEY_F3: // F3 -> help
+            reset_quick_seek();
+            state->refresh = true;
+            user_interface->run_editor(helptext, strlen(helptext));
+            break;
         case KEY_SPACE: // space = select
         case KEY_RETURN: // CR = select
-        case KEY_RIGHT: // right
             if(state->level==0)
                 state->into();
             else
                 state->change();
+            break;
+        case KEY_RIGHT: // right
+            if(state->level==0)
+                state->into();
+            else
+                state->increase();
             break;
         case '+':
             if(state->level!=0)

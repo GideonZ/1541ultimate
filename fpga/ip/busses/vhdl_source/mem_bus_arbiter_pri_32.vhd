@@ -7,11 +7,12 @@ use work.mem_bus_pkg.all;
 
 entity mem_bus_arbiter_pri_32 is
 generic (
-    g_registered: boolean := true;
+    g_registered: boolean := false;
     g_ports     : positive := 3 );
 port (
     clock       : in  std_logic;
     reset       : in  std_logic;
+    inhibit     : in  std_logic := '0'; -- when '1', the output request is squelched
     
     reqs        : in  t_mem_req_32_array(0 to g_ports-1);
     resps       : out t_mem_resp_32_array(0 to g_ports-1);
@@ -25,7 +26,7 @@ architecture rtl of mem_bus_arbiter_pri_32 is
     signal req_c    : t_mem_req_32;
 begin
     -- prioritize the first request found onto output
-    process(reqs)
+    process(reqs, inhibit)
     begin
         req_i <= c_mem_req_32_init;
         for i in reqs'range loop
@@ -34,22 +35,20 @@ begin
                 exit;
             end if;
         end loop;
+        if inhibit = '1' then
+            req_i.request <= '0';
+        end if;
     end process;
 
     -- send the reply to everyone (including tag)
-    process(resp)
-    begin
-        for i in resps'range loop
-            resps(i) <= resp;
-        end loop;
-    end process;
+    resps <= (others => resp);
     
     -- output register (will be eliminated when not used)
     process(clock)
     begin
         if rising_edge(clock) then
             req_c  <= req_i;
-            if resp.rack = '1' and (resp.rack_tag = req_c.tag) then
+            if resp.rack = '1' and resp.rack_tag = req_c.tag then
                 req_c.request <= '0';
             end if;
         end if;

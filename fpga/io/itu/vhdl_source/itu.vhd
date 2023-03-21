@@ -29,7 +29,7 @@ port (
     buttons         : in  std_logic_vector(2 downto 0);
     
     irq_timer_tick  : in  std_logic := '0';
-    irq_in          : in  std_logic_vector(7 downto 2);
+    irq_in          : in  std_logic_vector(7 downto 2) := (others => '0');
     irq_flags       : out std_logic_vector(7 downto 0);
     irq_high        : in  std_logic_vector(7 downto 0) := X"00";
 
@@ -216,7 +216,7 @@ begin
                 when c_itu_ms_timer_hi =>
                     io_resp_ms.data <= std_logic_vector(ms_timer(15 downto 8));
                 when c_itu_irq_act_high =>
-                    io_resp_ms.data <= irq_high;
+                    io_resp_ms.data <= irq_high and imask_high;
                 when c_itu_irq_en_high =>
                     io_resp_ms.data <= imask_high;
                 when others =>

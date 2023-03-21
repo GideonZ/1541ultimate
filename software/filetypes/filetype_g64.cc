@@ -39,9 +39,10 @@ FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_g64(FileType :: getFi
 /* G64 File Browser Handling                                 */
 /*************************************************************/
 
-FileTypeG64 :: FileTypeG64(BrowsableDirEntry *node)
+FileTypeG64 :: FileTypeG64(BrowsableDirEntry *node, int type)
 {
 	this->node = node; // link
+	this->ftype = type;
 }
 
 FileTypeG64 :: ~FileTypeG64()
@@ -56,28 +57,46 @@ int FileTypeG64 :: fetch_context_items(IndexedList<Action *> &list)
     uint32_t capabilities = getFpgaCapabilities();
     if(capabilities & CAPAB_DRIVE_1541_1) {
         C64 *machine = C64 :: getMachine();
-        list.append(new Action("Mount Disk", SUBSYSID_DRIVE_A, G64FILE_MOUNT));
-    	if (machine->exists())
-    		list.append(new Action("Run Disk", SUBSYSID_DRIVE_A, G64FILE_RUN));
-        list.append(new Action("Mount Disk Read Only", SUBSYSID_DRIVE_A, G64FILE_MOUNT_RO));
-        list.append(new Action("Mount Disk Unlinked", SUBSYSID_DRIVE_A, G64FILE_MOUNT_UL));
-        count += 4;
+        list.append(new Action("Mount Disk", SUBSYSID_DRIVE_A, MENU_1541_MOUNT_G64, ftype));
+    	if (machine->exists()) {
+            list.append(new Action("Run Disk", runDisk_st, 0, ftype));
+            count ++;
+    	}
+        list.append(new Action("Mount Disk Read Only", SUBSYSID_DRIVE_A, MENU_1541_MOUNT_G64_RO, ftype));
+        list.append(new Action("Mount Disk Unlinked", SUBSYSID_DRIVE_A, MENU_1541_MOUNT_G64_UL, ftype));
+        count += 3;
     }
 
     if(capabilities & CAPAB_DRIVE_1541_2) {
-        list.append(new Action("Mount Disk on B", SUBSYSID_DRIVE_B, G64FILE_MOUNT));
-        list.append(new Action("Mount Disk R/O on B", SUBSYSID_DRIVE_B, G64FILE_MOUNT_RO));
-        list.append(new Action("Mount Disk Unl. on B", SUBSYSID_DRIVE_B, G64FILE_MOUNT_UL));
+        list.append(new Action("Mount Disk on B", SUBSYSID_DRIVE_B, MENU_1541_MOUNT_G64, ftype));
+        list.append(new Action("Mount Disk R/O on B", SUBSYSID_DRIVE_B, MENU_1541_MOUNT_G64_RO, ftype));
+        list.append(new Action("Mount Disk Unl. on B", SUBSYSID_DRIVE_B, MENU_1541_MOUNT_G64_UL, ftype));
         count += 3;
     }
 
     return count;
 }
 
+int FileTypeG64 :: runDisk_st(SubsysCommand *cmd)
+{
+    // First command is to mount the disk
+    SubsysCommand *drvcmd = new SubsysCommand(cmd->user_interface, SUBSYSID_DRIVE_A, MENU_1541_MOUNT_G64, cmd->mode, cmd->path.c_str(), cmd->filename.c_str());
+    drvcmd->execute();
+
+    // Second command is to perform a load"*",8,1
+    char *drvId = "H";
+    drvId[0] = 0x40 + c1541_A->get_current_iec_address();
+    SubsysCommand *c64cmd = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DRIVE_LOAD, RUNCODE_MOUNT_LOAD_RUN, drvId, "*");
+    c64cmd->execute();
+    return 0;
+}
+
 FileType *FileTypeG64 :: test_type(BrowsableDirEntry *obj)
 {
 	FileInfo *inf = obj->getInfo();
     if(strcmp(inf->extension, "G64")==0)
-        return new FileTypeG64(obj);
+        return new FileTypeG64(obj, 1541);
+    if(strcmp(inf->extension, "G71")==0)
+        return new FileTypeG64(obj, 1571);
     return NULL;
 }

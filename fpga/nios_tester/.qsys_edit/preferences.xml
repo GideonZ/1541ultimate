@@ -3,11 +3,11 @@
  <debug showDebugMenu="1" />
  <systemtable filter="All Interfaces">
   <columns>
-   <connections preferredWidth="207" />
+   <connections preferredWidth="191" />
    <irq preferredWidth="34" />
   </columns>
  </systemtable>
- <library expandedCategories="Project,Library" />
- <window width="2495" height="1416" x="65" y="24" />
+ <library expandedCategories="Library,Project" />
+ <window width="2026" height="1099" x="65" y="24" />
  <generation path="_PROJECT_NAME_" synthesis="VHDL" />
 </preferences>

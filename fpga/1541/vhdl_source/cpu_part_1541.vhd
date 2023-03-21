@@ -55,7 +55,6 @@ port (
     mode            : out std_logic;
     write_prot_n    : in  std_logic;
     step            : out std_logic_vector(1 downto 0);
-    soe             : out std_logic;
     rate_ctrl       : out std_logic_vector(1 downto 0);
     byte_ready      : in  std_logic;
     sync            : in  std_logic;
@@ -68,6 +67,8 @@ port (
 end cpu_part_1541;
 
 architecture structural of cpu_part_1541 is
+    signal soe              : std_logic;
+    signal so_n             : std_logic;
     signal bank_is_ram_i    : std_logic_vector(7 downto 0);
     signal cpu_write        : std_logic;
     signal cpu_wdata        : std_logic_vector(7 downto 0);
@@ -145,7 +146,7 @@ begin
         IRQn        => cpu_irqn, -- IRQ interrupt (level sensitive)
         NMIn        => '1',
     
-        SOn         => byte_ready );
+        SOn         => so_n );
 
     -- Generate an output stream to debug internal operation of 1541 CPU
     process(clock)
@@ -153,7 +154,7 @@ begin
         if rising_edge(clock) then
             debug_valid <= '0';
             if cpu_clk_en = '1' then
-                debug_data  <= '0' & atn_i & data_i & clk_i & sync & byte_ready & cpu_irqn & not cpu_write & cpu_rdata & cpu_addr(15 downto 0);
+                debug_data  <= '0' & atn_i & data_i & clk_i & sync & so_n & cpu_irqn & not cpu_write & cpu_rdata & cpu_addr(15 downto 0);
                 debug_valid <= '1';
                 if cpu_write = '1' then
                     debug_data(23 downto 16) <= cpu_wdata;
@@ -224,7 +225,7 @@ begin
         port_b_i    => via2_port_b_i,
     
         -- handshake pins
-        ca1_i       => byte_ready,
+        ca1_i       => so_n,
                             
         ca2_o       => via2_ca2_o,
         ca2_i       => via2_ca2_i,
@@ -365,29 +366,29 @@ begin
     step(0)      <= via2_port_b_o(0) or not via2_port_b_t(0);
     step(1)      <= via2_port_b_o(1) or not via2_port_b_t(1);
     motor_on     <= (via2_port_b_o(2) or not via2_port_b_t(2)) and power;
-    soe          <= via2_ca2_i;
     rate_ctrl(0) <= via2_port_b_o(5) or not via2_port_b_t(5);
     rate_ctrl(1) <= via2_port_b_o(6) or not via2_port_b_t(6);
-       
 
+    soe          <= via2_ca2_i;
+    so_n         <= byte_ready or not soe;
 end structural;
 
 -- Original mapping:
 -- 0000-07FF   RAM
 -- 0800-17FF   open
 -- 1800-1BFF   VIA 1
--- 1C00-1CFF   VIA 2
+-- 1C00-1FFF   VIA 2
 -- 2000-27FF   RAM
 -- 2800-37FF   open
 -- 3800-3BFF   VIA 1
--- 3C00-3CFF   VIA 2
+-- 3C00-3FFF   VIA 2
 -- 4000-47FF   RAM
 -- 4800-57FF   open
 -- 5800-5BFF   VIA 1
--- 5C00-5CFF   VIA 2
+-- 5C00-5FFF   VIA 2
 -- 6000-67FF   RAM
 -- 6800-77FF   open
 -- 7800-7BFF   VIA 1
--- 7C00-7CFF   VIA 2
+-- 7C00-7FFF   VIA 2
 -- 8000-BFFF   ROM image (mirror) 
 -- C000-FFFF   ROM image 

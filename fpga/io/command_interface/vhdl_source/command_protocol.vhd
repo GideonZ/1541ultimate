@@ -63,7 +63,7 @@ end entity;
 
 architecture gideon of command_protocol is
     signal enabled          : std_logic;
-    signal slot_base        : unsigned(6 downto 0);
+    signal slot_base        : unsigned(6 downto 1);
     signal do_write         : std_logic;
     signal trigger          : std_logic;
     signal freeze_i         : std_logic;
@@ -80,6 +80,7 @@ architecture gideon of command_protocol is
     signal rdata_resp       : std_logic_vector(7 downto 0);
     signal rdata_stat       : std_logic_vector(7 downto 0);
     
+    signal bus_id           : std_logic_vector(7 downto 0) := X"00";
     signal slot_status      : std_logic_vector(7 downto 0);
     alias  response_valid   : std_logic                    is slot_status(7);
     alias  status_valid     : std_logic                    is slot_status(6);
@@ -93,16 +94,18 @@ begin
 --
     command_length <= command_pointer - c_cmd_if_command_buffer_addr;
 
-    with slot_req.bus_address(1 downto 0) select slot_resp.data <=
+    with slot_req.bus_address(2 downto 0) select slot_resp.data <=
         slot_status when c_cif_slot_control,
         X"C9"       when c_cif_slot_command,
         rdata_resp  when c_cif_slot_response, 
-        rdata_stat  when others;   
+        rdata_stat  when c_cif_slot_status,
+        bus_id      when c_cif_bus_id,
+        X"FF"       when others;   
         
     rdata_resp <= rdata when response_valid='1' else X"00";
     rdata_stat <= rdata when status_valid='1' else X"00";
 
-    slot_resp.reg_output <= enabled when slot_req.bus_address(8 downto 2) = slot_base else '0';
+    slot_resp.reg_output <= enabled when slot_req.bus_address(8 downto 3) = slot_base else '0';
     slot_resp.irq <= '0';
     slot_resp.nmi <= '0';
 
@@ -134,9 +137,9 @@ begin
             else
                 status_valid <= '0';
             end if;
-            if (slot_req.io_address(8 downto 2) = slot_base) and (enabled = '1') then
+            if (slot_req.io_address(8 downto 3) = slot_base) and (enabled = '1') then
                 if slot_req.io_write='1' then
-                    case slot_req.io_address(1 downto 0) is
+                    case slot_req.io_address(2 downto 0) is
                     when c_cif_slot_command =>
                         if command_pointer /= c_cmd_if_command_buffer_end then
                             command_pointer <= command_pointer + 1;
@@ -156,7 +159,7 @@ begin
                             end if;
                         end if;
                         if slot_req.data(1)='1' and state(1) = '1' then -- data accept
-                            handshake_in(1) <= '1'; -- data accepted, only ultimate can clear it
+                            handshake_in(1) <= state(0); -- data accepted, only ultimate can clear it, only data more
                             state(1) <= '0'; -- either goes to idle, or back to wait for software
                         end if;
                         if slot_req.data(2)='1' then
@@ -166,7 +169,7 @@ begin
                         null;
                     end case;
                 elsif slot_req.io_read='1' then
-                    case slot_req.io_address(1 downto 0) is
+                    case slot_req.io_address(2 downto 0) is
                     when c_cif_slot_response =>
                         if response_pointer /= c_cmd_if_response_buffer_end then
                             response_pointer <= response_pointer + 1;
@@ -193,7 +196,11 @@ begin
                 when c_cif_io_slot_base      =>
                     slot_base <= unsigned(io_req.data(slot_base'range));
                 when c_cif_io_slot_enable    =>
-                    enabled <= io_req.data(0);
+                    if io_req.data(7) = '0' then
+                        enabled <= io_req.data(0);
+                    else
+                        bus_id(4 downto 0) <= io_req.data(4 downto 0); -- max 31 (valid: 4-30)
+                    end if;
                 when c_cif_io_handshake_out  =>
                     if io_req.data(0)='1' then -- reset
                         handshake_in(0) <= '0';

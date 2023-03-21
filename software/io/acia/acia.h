@@ -147,6 +147,8 @@ class Acia
     QueueHandle_t controlQueue;
     QueueHandle_t dataQueue;
     DataBuffer *buffer;
+    uint8_t slot_base; // copy of HW register, as register is now write only
+
     static void TaskStart(void *a);
     void Task();
 public:
@@ -168,6 +170,8 @@ public:
     void     AdvanceRx(int);
 
     uint8_t IrqHandler(void);
+
+    void GetHwMapping(uint8_t& enabled, uint16_t& address, uint8_t& nmi);
 };
 
 extern Acia acia;

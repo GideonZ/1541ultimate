@@ -10,6 +10,7 @@
 #include "init_function.h"
 #include "dump_hex.h"
 #include "sid_config.h"
+#include "endianness.h"
 
 extern uint8_t _sidcrt_bin_start;
 extern uint8_t _sidcrt_bin_end;
@@ -31,13 +32,8 @@ FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_sid(FileType :: getFi
 const uint8_t DEFAULT_SONG_LENGTH_MUS = 3;		// in minutes
 const uint8_t DEFAULT_SONG_LENGTH_SID = 5;		// in minutes
 
-#if NIOS
 const uint32_t magic_psid = 0x44495350; // little endian
 const uint32_t magic_rsid = 0x44495352; // little endian
-#else
-const uint32_t magic_psid = 0x50534944; // big endian
-const uint32_t magic_rsid = 0x52534944; // big endian
-#endif
 
 const int string_offsets[4] = { 0x16, 0x36, 0x56, 0x76 };
 
@@ -69,36 +65,33 @@ const uint8_t ascii[59] = {
 	0XC7, 0XE7, 0XD1, 0XF1, 0XDD, 0X9F, 0XFD, 0XFF, 0xDF // other chars
 };
 
-cart_def sid_cart = { ID_SIDCART, (void *)0, 0x4000, CART_TYPE_16K | CART_RAM };
-cart_def mus_cart = { ID_SIDCART, (void *)0, 0x4000, CART_TYPE_16K | CART_RAM };
+cart_def sid_cart; // = { ID_SIDCART, (void *)0, 0x4000, CART_TYPE_16K | CART_RAM };
+cart_def mus_cart; // = { ID_SIDCART, (void *)0, 0x4000, CART_TYPE_16K | CART_RAM };
 
-static inline uint16_t swap_word(uint16_t p)
-{
-#if NIOS
-	return p;
-#else
-	uint16_t out = (p >> 8) | (p << 8);
-	return out;
-#endif
-}
-
-#define le2cpu  swap_word
-#define cpu2le  swap_word
 #define swap(p) (((p) >> 8) | ((p) << 8))
 
 static void initSidCart(void *object, void *param)
 {
     int size = (int)&_sidcrt_bin_end - (int)&_sidcrt_bin_start;
     uint8_t *sid_rom_area = new uint8_t[16384];
-    sid_cart.custom_addr = sid_rom_area;
-    //sid_cart.length = size;
+    sid_cart.name         = "SID Player Cartridge";
+    sid_cart.custom_addr  = sid_rom_area;
+    sid_cart.length       = 0x4000;
+    sid_cart.type         = CART_TYPE_16K;
+    sid_cart.require      = CART_UCI_DFFC;
+
     memcpy(sid_rom_area, &_sidcrt_bin_start, size);
     printf("%d bytes copied into sid_cart.\n", size);
     memcpy(sid_rom_area + 0x2000, &_basic_bin_start, 8192);
 
     int mus_crt_size = (int)&_muscrt_bin_end - (int)&_muscrt_bin_start;
     uint8_t *mus_rom_area = new uint8_t[16384];
-    mus_cart.custom_addr = mus_rom_area;
+    mus_cart.name         = "MUS Player Cartridge";
+    mus_cart.custom_addr  = mus_rom_area;
+    mus_cart.length       = 0x4000;
+    mus_cart.type         = CART_TYPE_16K;
+    mus_cart.require      = CART_UCI_DFFC;
+
     memcpy(mus_rom_area, &_muscrt_bin_start, mus_crt_size);
     printf("%d bytes copied into mus_cart.\n", mus_crt_size);
     memcpy(mus_rom_area + 0x2000, &_basic_bin_start, 8192);
@@ -111,7 +104,7 @@ bool SidAutoConfig(int count, t_sid_definition *requests) __attribute__((weak));
 
 bool SidAutoConfig(int count, t_sid_definition *requests)
 {
-
+    return true;
 }
 
 bool FileTypeSID :: ConfigSIDs(void)
@@ -207,7 +200,7 @@ int FileTypeSID :: readHeader(void)
 
     // header checks
     magic = (uint32_t *)sid_header;
-    if ((*magic != magic_rsid)&&(*magic != magic_psid)) {
+    if ((cpu_to_32le(*magic) != magic_rsid)&&(cpu_to_32le(*magic) != magic_psid)) {
         printf("Filetype not as expected. (%08x)\n", *magic);
 		fm->fclose(file);
 		file = NULL;
