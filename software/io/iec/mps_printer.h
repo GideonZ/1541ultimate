@@ -303,7 +303,7 @@ class MpsPrinter
 #ifndef NOT_ULTIMATE
         void calcPageNum(void);
 #endif
-        int  Print(const char* filename);
+        void Print(const char* filename);
         void Ink(uint16_t x, uint16_t y, uint8_t c=3);
 #ifdef DEBUG
         void InkTest(uint16_t x, uint16_t y, uint8_t c);
@@ -317,8 +317,11 @@ class MpsPrinter
         void PrintString(const char *s, uint16_t x, uint16_t y);
         void PrintStringNlq(const char *s, uint16_t x, uint16_t y);
         bool IsPrintable(uint8_t input);
+
+#ifndef NOT_ULTIMATE
         void ActivityLedOn(void);
         void ActivityLedOff(void);
+#endif
 
         /* CBM related interpreter */
         void CBM_Interpreter(uint8_t input);
