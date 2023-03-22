@@ -814,20 +814,22 @@ MpsPrinter::Print(const char * filename)
 #endif
     buffer=NULL;
     unsigned error = lodepng_encode(&buffer, &outsize, bitmap, MPS_PRINTER_PAGE_WIDTH, MPS_PRINTER_PAGE_HEIGHT, &lodepng_state);
-    DBGMSG("ended PNG encoder, now saving");
 #ifndef NOT_ULTIMATE
     ActivityLedOff();
 #endif
 
     if (error)
     {
+        DBGMSG("PNG encoder failed, abort saving");
+
         if (buffer)
             free(buffer);
 
         return;
     }
 
-    int retval = 0;
+    DBGMSG("ended PNG encoder, now saving");
+
 #ifndef NOT_ULTIMATE
     File *f;
     FRESULT fres = fm->fopen((const char *) filename, FA_WRITE|FA_CREATE_NEW, &f);
@@ -840,11 +842,12 @@ MpsPrinter::Print(const char * filename)
     }
     else
     {
-        DBGMSG("Saving PNG failed\n");
+        DBGMSG("Saving PNG failed");
     }
 #else
     int fhd = open(filename, O_WRONLY|O_CREAT|O_TRUNC, 0666);
-    if (fhd) {
+    if (fhd)
+    {
         write(fhd, buffer, outsize);
         close(fhd);
     }
