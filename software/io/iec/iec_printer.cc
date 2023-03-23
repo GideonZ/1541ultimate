@@ -115,8 +115,8 @@ int IecPrinter::push_data(uint8_t b)
 }
 
 /************************************************************************
-*                       IecPrinter::push_data(b)                Pubic   *
-*                       ~~~~~~~~~~~~~~~~~~~~~~~~                        *
+*                       IecPrinter::push_command(b)             Pubic   *
+*                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~                     *
 * Function : Interpret one data byte received by IEC command channel    *
 *-----------------------------------------------------------------------*
 * Inputs:                                                               *

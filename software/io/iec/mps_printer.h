@@ -152,7 +152,7 @@ class MpsPrinter
         /* Dot spacing on Y axis depending on character style (normal, superscript, subscript) */
         static uint8_t spacing_y[6][17];
 
-        /* CBM character specia for quote mode */
+        /* CBM character special for quote mode */
         static uint8_t cbm_special[MPS_PRINTER_MAX_SPECIAL];
 
 #ifndef TRUE_CMYK
