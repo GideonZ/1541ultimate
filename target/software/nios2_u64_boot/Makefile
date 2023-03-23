@@ -5,7 +5,7 @@ ARCHITECTURE = nios2
 
 include ../common/environment.mk
 
-DEST     =  ../../../../ult64/target/u64_a4/onchip_mem.hex
+DEST     =  ../../../../target/u64_a4/onchip_mem.hex
 PRJ      =  u64_boot
 FINAL    =  $(RESULT)/$(PRJ).hex $(RESULT)/$(PRJ).elf $(DEST)
 HEXLAST  =  0x0FFF
