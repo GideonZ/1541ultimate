@@ -68,6 +68,7 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/io/acia \
 			$(PATH_SW)/network/config \
 			$(PATH_SW)/io/iec \
+			$(PATH_SW)/io/printer \
 			$(PATH_SW)/6502 \
 			$(PATH_SW)/ModPlayer_16k \
 			$(PATH_SW)/chan_fat/ff14/source \
