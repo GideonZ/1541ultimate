@@ -9,7 +9,7 @@ MAKEFILE = Makefile
 
 # Core information
 CC  = gcc
-
+CFLAGS = -std=c99
 
 
 # --------------------------------------------------------------------------
