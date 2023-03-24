@@ -257,6 +257,12 @@ class MpsPrinter
         FileManager *fm;
         Path *path;
         uint8_t activity;
+
+        /* =======  Objects for taks notifications IEC/Printer */
+        const uint8_t * interpreter_buffer_input;
+        uint32_t interpreter_buffer_size;
+        TaskHandle_t xCallerTask;
+        TaskHandle_t xPrinterTask;
 #endif
         /* =======  Current spacing configuration */
         uint8_t step;     /* X spacing */
@@ -300,9 +306,6 @@ class MpsPrinter
         uint8_t Combine(uint8_t c1, uint8_t c2);
         void Clear(void);
         void Init(void);
-#ifndef NOT_ULTIMATE
-        void calcPageNum(void);
-#endif
         void Print(const char* filename);
         void Ink(uint16_t x, uint16_t y, uint8_t c=3);
 #ifdef DEBUG
@@ -319,8 +322,11 @@ class MpsPrinter
         bool IsPrintable(uint8_t input);
 
 #ifndef NOT_ULTIMATE
+        void calcPageNum(void);
         void ActivityLedOn(void);
         void ActivityLedOff(void);
+        static void PrinterInterpreterTask(void);
+        void _Interpreter(const uint8_t * input, uint32_t size);
 #endif
 
         /* CBM related interpreter */
