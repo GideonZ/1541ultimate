@@ -46,7 +46,6 @@ architecture gideon of slot_timing is
     signal phi2_falling : std_logic;
     signal ba_hist      : std_logic_vector(3 downto 0) := (others => '0');
     signal phi2_rec_i   : std_logic := '0';
-    
     signal phi2_tick_i  : std_logic;
     signal serve_en_i   : std_logic := '0';
     signal vic_cycle_i  : std_logic := '0';
@@ -55,6 +54,7 @@ architecture gideon of slot_timing is
     constant c_probe_end   : integer := 14; -- 300 ns after PHI2
     --constant c_sample_vic  : integer := 9; -- 200 ns after PHI2 (!)
     constant c_io          : integer := 15;
+    signal reqs_inhibit_i : std_logic;
 begin
     vic_cycle_i    <= '1' when (ba_hist = "0000") else '0';
     vic_cycle      <= vic_cycle_i;
@@ -86,7 +86,7 @@ begin
                 phi2_tick_i  <= '1';
                 phi2_rec_i   <= '1';
                 phase_h      <= 0;
-                reqs_inhibit <= serve_en_i;
+                reqs_inhibit_i <= serve_en_i;
                 clock_det    <= '1';
                 allow_tick_h <= false; -- filter
             elsif phase_h = 63 then
@@ -105,7 +105,7 @@ begin
                 phi2_falling <= '1';
                 phi2_rec_i   <= '0';
                 phase_l      <= 0;
-                reqs_inhibit <= serve_en_i and serve_vic;
+                reqs_inhibit_i <= serve_en_i and serve_vic;
                 allow_tick_l <= false; -- filter
             elsif phase_l /= 63 then
                 phase_l <= phase_l + 1;
@@ -124,11 +124,11 @@ begin
                 do_sample_addr <= '1';
             end if;
             if phase_l = timing_phi1 then
-                do_sample_addr <= '1';            
+                do_sample_addr <= '1';
             end if;
 
             if clear_inhibit='1' then
-                reqs_inhibit <= '0';
+                reqs_inhibit_i <= '0';
             end if;
             
             if phase_l = 20 or phase_h = 20 then
@@ -153,11 +153,12 @@ begin
                 phase_h      <= 63;
                 phase_l      <= 63;
                 refr_inhibit <= '0';
-                reqs_inhibit <= '0';
+                reqs_inhibit_i <= '0';
                 clock_det    <= '0';
             end if;
         end if;
     end process;
     
-    allow_serve <= serve_en_i;
+    allow_serve  <= reqs_inhibit_i; --serve_en_i;
+    reqs_inhibit <= reqs_inhibit_i;
 end gideon;
