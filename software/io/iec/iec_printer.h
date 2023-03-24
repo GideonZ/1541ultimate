@@ -72,7 +72,7 @@ class IecPrinter
         /* Printer emulation interface */
         MpsPrinter *mps;
 
-        /* Printer buffer ant its pointer */
+        /* Printer buffer and its pointer */
         uint8_t buffer[IEC_PRINTER_BUFFERSIZE];
         int  buffer_pointer;
 
