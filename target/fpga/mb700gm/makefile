@@ -12,7 +12,7 @@
 ################################################################################
 
 # GLOBAL incs should point to the make include files directory
-export GLOBAL_INCS = $(strip $(shell pwd)/../../global_makefiles)
+export GLOBAL_INCS = $(strip $(shell pwd)/../../../global_makefiles)
 							
 
 .SUFFIXES:		#delete all known suffixes
@@ -29,10 +29,10 @@ ISE_VERSION		:= 13
 DESIGN_NAME 	:= $(TARGET)
 TOP_NAME    	:= $(TARGET)
 
-CONFIG			:= makefile_mb_700a
+CONFIG			:= makefile
 
 # Project ROOT
-WORK_DIR		:= mb700
+WORK_DIR		:= work
 
 # Part settings
 PART_TYPE        := xc3s700a
@@ -52,14 +52,14 @@ XST_OPTIONS		:= -top $(TOP_NAME) \
 				   -opt_level 2 \
 				   -register_balancing no \
 				   -keep_hierarchy no \
-                   -generics g_dual_drive=false,g_acia=false,g_eeprom=false
+				   -generics g_dual_drive=true,g_acia=false,g_eeprom=true
 
 # Tools
-MY_PROMGEN := ../../tools/promgen
+MY_PROMGEN := ../../../tools/promgen
 
 #SETTING FILES		    
-UCF_FILES := ./ucf/ultimate_ii_mb.ucf 		# constraint/pin-assignment file(s)
-BMM_FILE  := ./ucf/cache_ram.bmm			# bmm file location
+UCF_FILES := ../ucf/ultimate_ii_mb.ucf 		# constraint/pin-assignment file(s)
+BMM_FILE  := ../ucf/cache_ram.bmm			# bmm file location
 
 # TOOL FLAGS
 NGDBUILD_FLAGS	 := 	
@@ -85,9 +85,9 @@ BITGEN_FLAGS     := 	-w -d \
 ## (for example: vhdl,work,../../dummy.vhdl)
 ################################################################################
 
-ULTIMATE_FPGA   := ../../fpga
+ULTIMATE_FPGA   := ../../../fpga
 
-include ultimate_logic2.inc
+include ../ultimate_logic2.inc
 
 SYNTH_PROJ	:= 	$(ALL_ULTIMATE_LOGIC) \
 				vhdl,work,$(ULTIMATE_FPGA)/fpga_top/ultimate_fpga/vhdl_source/$(TARGET).vhd

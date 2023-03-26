@@ -572,7 +572,7 @@ begin
         g_big_endian    => false,
         g_icap          => false,
         g_uart          => true,
-        g_uart_rx       => true,
+        g_uart_rx       => false,
         g_drive_1541    => true,
         g_drive_1541_2  => g_dual_drive,
         g_mm_drive      => true,
