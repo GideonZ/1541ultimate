@@ -71,6 +71,22 @@
          *
          *  Bits 1 and 2 are unused and reserved for future use.
          *
+         *  Notice that these tables are not ASCII tables, they contain all
+         *  the chars for all the printers emulations (CBM, Epson, IBM).
+         *  A complete table contains 404 chars. Italic is not complete, it
+         *  contains only 129 chars, mainly letters, figures and symbols, so
+         *  there are "holes" that are completed with regular draft chars.
+         *
+         *  The order is the same as in the MPS-1230 ROM. Some characters with
+         *  gliches in the original ROM have been fixed to look better.
+         *  (Was this intentional to allow the printer type to be guessed from
+         *  the printouts ?)
+         *
+         *  Italic is only available in draft mode. There is no NLQ italic.
+         *
+         *  Usable chars for each emulation are described in the charset
+         *  file where chargen indexes are ordered to ASCII/PETASCII.
+         *
         -*/
 
 /* -------  Drafs Italic characters (not a complete chargen) */
@@ -709,14 +725,6 @@ uint8_t MpsPrinter::chargen_nlq_low[404][12] = {
     { 0x0C, 0x52, 0x20, 0x10, 0x00, 0x08, 0x00, 0x04, 0x00, 0x12, 0x0D, 0 },  /* 403 */
 };
 
-/* -------  Draft Charset (complete) */
-
-        /*-
-         *
-         *  Same behaviour as Italic
-         *
-        -*/
-
 uint8_t MpsPrinter::chargen_nlq_high[404][12] = {
     { 0x05, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0 },  /* 0 */
     { 0x05, 0x00, 0x0A, 0x00, 0x05, 0x00, 0x0A, 0x00, 0x05, 0x00, 0x00, 0 },  /* 1 */
@@ -1123,6 +1131,14 @@ uint8_t MpsPrinter::chargen_nlq_high[404][12] = {
     { 0x02, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x02, 0x00, 0x00, 0 },  /* 402 */
     { 0x1C, 0x40, 0x22, 0x22, 0x32, 0x22, 0x2A, 0x22, 0x26, 0x02, 0x1D, 0 },  /* 403 */
 };
+
+/* -------  Draft Charset (complete) */
+
+        /*-
+         *
+         *  Same behaviour as Italic
+         *
+        -*/
 
 uint8_t MpsPrinter::chargen_draft[404][12] = {
     { 0x05, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0 },  /* 0 */
