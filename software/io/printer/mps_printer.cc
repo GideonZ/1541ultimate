@@ -554,7 +554,7 @@ MpsPrinter::setColorMode(bool mode, bool init)
             lodepng_palette_add(&lodepng_state.info_raw, r, g, b, 255);
         }
 
-        /* Bitmap uses 6 bit depth and a palette */
+        /* Bitmap uses 8 bit depth and a palette */
         lodepng_state.info_png.color.colortype  = LCT_PALETTE;
         lodepng_state.info_png.color.bitdepth   = MPS_PRINTER_PAGE_DEPTH_COLOR;
         lodepng_state.info_raw.colortype        = LCT_PALETTE;
