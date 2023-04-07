@@ -1072,6 +1072,8 @@ begin
         clock       => clock,
         reset       => reset,
         
+        inhibit     => reqs_inhibit,
+
         reqs(0)     => mem_req_32_slot,
         reqs(1)     => mem_req_32_reu,
         reqs(2)     => mem_req_32_samp,
