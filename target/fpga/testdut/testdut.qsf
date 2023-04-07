@@ -448,7 +448,7 @@ set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/reu.vh
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_master_v4.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_server_v4.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_slave.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_timing_62.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_timing.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/devices/vhdl_source/microwire_eeprom.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/fpga_top/cyclone4_test/vhdl_source/u2p_dut.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/fpga_top/ultimate_fpga/vhdl_source/ultimate_logic_32.vhd

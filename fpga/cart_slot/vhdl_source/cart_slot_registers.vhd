@@ -71,8 +71,7 @@ begin
                 when c_cart_serve_control =>
                     control_i.serve_while_stopped <= io_req.data(0);
                 when c_cart_timing =>
-                    control_i.timing_addr_phi2 <= unsigned(io_req.data(2 downto 0));
-                    control_i.force_serve_vic <= io_req.data(3); 
+                    control_i.timing_addr_phi2 <= unsigned(io_req.data(3 downto 0));
                     control_i.timing_addr_phi1 <= unsigned(io_req.data(7 downto 4)); 
                 when c_cart_phi2_recover =>
                     control_i.phi2_edge_recover <= io_req.data(0);
