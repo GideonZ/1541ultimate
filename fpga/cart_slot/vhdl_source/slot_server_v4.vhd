@@ -497,6 +497,9 @@ begin
     serve_inhibit <= status.c64_stopped and not control.serve_while_stopped;
 
     i_timing: entity work.slot_timing
+    generic map (
+        g_frequency     => g_clock_freq
+    )
     port map (
         clock           => clock,
         reset           => reset,
