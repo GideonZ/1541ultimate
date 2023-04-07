@@ -785,6 +785,15 @@ begin
 
     end generate;
     
+    r_no_sid: if not g_implement_sid generate
+        i_io_dummy: entity work.io_dummy
+            port map (
+                clock   => clock,
+                io_req  => io_req_sid,
+                io_resp => io_resp_sid
+            );
+    end generate;
+
     g_cmd: if g_command_intf generate
         i_cmd: entity work.command_interface
         port map (
