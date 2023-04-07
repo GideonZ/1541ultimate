@@ -212,6 +212,7 @@
 #define CFG_C64_CART_PREF   0xCE
 #define CFG_C64_TIMING1     0xCF
 #define CFG_SERVE_PHI1      0xD0
+#define CFG_MEASURE_MODE    0xD1
 #define CFG_CMD_ENABLE      0x71
 #define CFG_CMD_ALLOW_WRITE 0x72
 #define CFG_C64_FASTRESET   0x74

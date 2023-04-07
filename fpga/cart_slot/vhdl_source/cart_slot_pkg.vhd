@@ -41,6 +41,7 @@ package cart_slot_pkg is
         timing_addr_phi1    : unsigned(3 downto 0);
         force_serve_vic     : std_logic;
         phi2_edge_recover   : std_logic;
+        measure_enable      : std_logic;
         serve_while_stopped : std_logic;
     end record;
     
@@ -74,6 +75,7 @@ package cart_slot_pkg is
         timing_addr_phi1  => "1001",
         force_serve_vic   => '0',
         phi2_edge_recover => '1',
+        measure_enable => '0',
         swap_buttons   => '1',
         serve_while_stopped => '0' );
 

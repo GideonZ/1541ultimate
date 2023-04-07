@@ -490,7 +490,8 @@ set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/reu.vh
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_master_v4.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_server_v4.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_slave.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_timing_62.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_timing.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_measure.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/devices/vhdl_source/microwire_eeprom.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/fpga_top/ultimate_fpga/vhdl_source/u2p_nios2_solo.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/fpga_top/ultimate_fpga/vhdl_source/ultimate_logic_32.vhd
@@ -594,6 +595,7 @@ set_global_assignment -name VHDL_FILE ../../../fpga/ip/nano_cpu/vhdl_source/nano
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/nano_cpu/vhdl_source/nano.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/oc_pusher/vhdl_source/oc_pusher.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/pulse_stretch/vhdl_source/pulse_stretch.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/async_fifo/vhdl_source/gray_code_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/sync_fifo/vhdl_source/sync_fifo.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/input_synchronizer.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/level_synchronizer.vhd

@@ -55,6 +55,8 @@ port (
     serve_io1       : in  std_logic := '0'; -- IO1n
     serve_io2       : in  std_logic := '0'; -- IO2n
     allow_write     : in  std_logic := '0';
+    measure         : in  std_logic := '0'; -- Timing measurement mode
+    measure_data    : in  std_logic_vector(7 downto 0) := X"55";
     kernal_enable   : in  std_logic := '0';
     kernal_probe    : out std_logic := '0';
     kernal_area     : out std_logic := '0';
@@ -296,8 +298,15 @@ begin
                 elsif serve_io2 = '1' and dav = '1' and IO2n = '0' then -- read of I/O2
                     DATA_tri <= '1';
                     DATA_out <= mem_data_0;
+                elsif measure = '1' and ADDRESS(7) = '1' then -- DE80 - DEFF and DF80 - DFFF
+                    DATA_tri <= '1';
+                    DATA_out <= measure_data;
                 end if;
             
+            elsif (ROMLn='0' or ROMHn='0') and measure='1' and ADDRESS(11) = '0' then -- 8000-87FF, 9000-97FF, E000-E7FF and F000-F7FF
+                DATA_tri <= '1';
+                DATA_out <= measure_data;
+
             elsif (ROMLn='0' or ROMHn='0') and dav='1' then -- ROM reads
                 DATA_tri <= '1';
                 DATA_out <= mem_data_0;
