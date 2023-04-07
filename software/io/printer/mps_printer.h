@@ -29,7 +29,6 @@
 
 #ifndef NOT_ULTIMATE
 #include "filemanager.h"
-#include "task.h"
 #endif
 
 #include <stdint.h>
@@ -257,12 +256,6 @@ class MpsPrinter
         FileManager *fm;
         Path *path;
         uint8_t activity;
-
-        /* =======  Objects for taks notifications IEC/Printer */
-        const uint8_t * interpreter_buffer_input;
-        uint32_t interpreter_buffer_size;
-        TaskHandle_t xCallerTask;
-        TaskHandle_t xPrinterTask;
 #endif
         /* =======  Current spacing configuration */
         uint8_t step;     /* X spacing */
@@ -325,8 +318,6 @@ class MpsPrinter
         void calcPageNum(void);
         void ActivityLedOn(void);
         void ActivityLedOff(void);
-        static void PrinterInterpreterTask(void);
-        void _Interpreter(const uint8_t * input, uint32_t size);
 #endif
 
         /* CBM related interpreter */

@@ -202,25 +202,6 @@ MpsPrinter::MpsPrinter(char * filename)
     Reset();
 
 #ifndef NOT_ULTIMATE
-    /* =======  Create printer thread */
-    {
-        BaseType_t xReturned;
-
-        /* Create the task, storing the handle. */
-        xReturned = xTaskCreate((TaskFunction_t) MpsPrinter::PrinterInterpreterTask, "Virtual Printer",
-                                configMINIMAL_STACK_SIZE, this, 
-                                tskIDLE_PRIORITY, &xPrinterTask);
-
-        if( xReturned == pdPASS )
-        {
-            DBGMSG("Printer task creation success");
-        }
-        else
-        {
-            DBGMSG("Printer task creation failed");
-        }
-    }
-
     /* Activity LED status */
     activity = 0;
 #endif
@@ -245,9 +226,6 @@ MpsPrinter::MpsPrinter(char * filename)
 MpsPrinter::~MpsPrinter()
 {
 #ifndef NOT_ULTIMATE
-    /* =======  Terminate printer task */
-    vTaskDelete( xPrinterTask );
-
     /* =======  Release resources */
     fm->release_path(path);
 #endif
@@ -1531,44 +1509,6 @@ MpsPrinter::CharNLQ(uint16_t c, uint16_t x, uint16_t y)
     return spacing_x[step][12]<<(double_width?1:0);
 }
 
-#ifndef NOT_ULTIMATE
-/************************************************************************
-*                            PrinterInterpreterTask()           Static  *
-*                            ~~~~~~~~~~~~~~~~~~~~~~~~                   *
-* Function : Low priority interpreter task                              *
-*-----------------------------------------------------------------------*
-* Inputs:                                                               *
-*                                                                       *
-*    none                                                               *
-*                                                                       *
-*-----------------------------------------------------------------------*
-* Outputs:                                                              *
-*                                                                       *
-*    none                                                               *
-*                                                                       *
-************************************************************************/
-
-void
-MpsPrinter::PrinterInterpreterTask(void)
-{
-    MpsPrinter *p = getMpsPrinter();
-
-    for(;;)
-    {
-        /* =======  Wait for job notification */
-        while (ulTaskNotifyTake(pdTRUE, portMAX_DELAY) != pdTRUE);
-
-        /* =======  Interpreter call */
-        p->_Interpreter(p->interpreter_buffer_input, p->interpreter_buffer_size);
-        p->interpreter_buffer_input = NULL;
-        p->interpreter_buffer_size = 0;
-
-        /* =======  Notify caller */
-        xTaskNotifyGive(p->xCallerTask);
-    }
-}
-#endif /* NOT_ULTIMATE */
-
 /************************************************************************
 *                MpsPrinter::Interpreter(buffer, size)          Public  *
 *                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                  *
@@ -1591,42 +1531,6 @@ MpsPrinter::Interpreter(const uint8_t * input, uint32_t size)
 {
     DBGMSGV("Interpreter called with %d bytes", size);
 #ifndef NOT_ULTIMATE
-    /* =======  Send job to printer thread */
-    
-    /* Parameters to the interpreter task */
-    interpreter_buffer_input = input;
-    interpreter_buffer_size  = size;
-    xCallerTask = xTaskGetCurrentTaskHandle();
-
-    /* Notify interpreter task that a job has been queued */
-    xTaskNotifyGive(xPrinterTask);
-
-    /* Wait end of job as IEC needs to be held while printer is busy */
-    while (ulTaskNotifyTake(pdTRUE, portMAX_DELAY) != pdTRUE);
-}
-
-/************************************************************************
-*                MpsPrinter::_Interpreter(buffer, size)         Private *
-*                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                 *
-* Function : Interpret a set of data as sent by the computer            *
-*            prvate version for use in the printer task on Ultimate     *
-*-----------------------------------------------------------------------*
-* Inputs:                                                               *
-*                                                                       *
-*    buffer : (uint8_t *) Buffer to interpret                           *
-*    size   : (uint32_t) bytes in buffer to interpret                   *
-*                                                                       *
-*-----------------------------------------------------------------------*
-* Outputs:                                                              *
-*                                                                       *
-*    none                                                               *
-*                                                                       *
-************************************************************************/
-
-void
-MpsPrinter::_Interpreter(const uint8_t * input, uint32_t size)
-{
-    DBGMSGV("Interpreter called with %d bytes", size);
     ActivityLedOn();
 #endif /* NOT_ULTIMATE */
 
