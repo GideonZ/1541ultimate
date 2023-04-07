@@ -429,7 +429,7 @@ begin
         resps(1)   => io_resp_debug
     );
 
-    i_memphy: entity work.ddr2_ctrl
+    i_memphy: entity work.ddr2_ctrl_fast
     port map (
         ref_clock         => RMII_REFCLK,
         ref_reset         => ref_reset,

@@ -473,12 +473,13 @@ set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/proc_regis
 set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/shifter.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/align_read_to_bram.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/async_fifo_ft.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/altera/ddr2_ctrl.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/ddr2_ctrl_logic.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/ddr2_ctrl_fast.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/distributed_stack.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/dpram_sc.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/dpram.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/mem_io.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/altera/srl_fifo-altera.vhd
+set_global_assignment -name VHDL_FILE "../../../fpga/altera/srl_fifo-altera.vhd"
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/u2p_io.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/update_io.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/all_carts_v5.vhd
