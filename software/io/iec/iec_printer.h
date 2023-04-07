@@ -28,7 +28,11 @@
 #define IEC_PRINTER_H
 
 #include "integer.h"
+#include "menu.h"
+#include "config.h"
+#include "userinterface.h"
 #include "iec.h"
+#include "subsys.h"
 #include "dump_hex.h"
 #include "iec_channel.h"
 #include <ctype.h>
@@ -66,7 +70,7 @@ typedef struct PrinterEvent {
 /* Class IecPrinter                                                     */
 /*======================================================================*/
 
-class IecPrinter
+class IecPrinter : public SubSystem, ObjectWithMenu, ConfigurableObject
 {
     private:
         /* PETASCII to ASCII lookup table */
@@ -80,6 +84,12 @@ class IecPrinter
 
         /* Output base filename */
         const char *output_filename;
+
+        /* Printer IEC address */
+        int last_printer_addr;
+
+        /* Printer enabled or not */
+        uint8_t printer_enable;
 
         /* Printer emulation interface */
         MpsPrinter *mps;
@@ -97,6 +107,9 @@ class IecPrinter
         /* Flag set to true while in Ultimate init sequence */
         bool init;
 
+        /* User interface descriptor */
+        UserInterface *cmd_ui;
+
         /* The printer task itself */
         TaskHandle_t taskHandle;
 
@@ -112,40 +125,28 @@ class IecPrinter
         int _push_data(uint8_t b);
         int _push_command(uint8_t b);
 
+        struct {
+            Action *turn_on;
+            Action *turn_off;
+            Action *eject;
+        } myActions;
+
     public:
-        /* =======  Constructors */
-        IecPrinter()
-        {
-            fm = FileManager::getFileManager();
-
-            output_filename = NULL;
-            f = NULL;
-            mps = MpsPrinter::getMpsPrinter();
-            buffer_pointer = 0;
-            output_type = PRINTER_PNG_OUTPUT;
-            init = true;
-
-            /* Create the queue */
-            queueHandle = xQueueCreate( 1, sizeof(PrinterEvent_t));
-
-            /* Create the task, storing the handle. */
-            xTaskCreate((TaskFunction_t) IecPrinter::task, "Virtual Printer",
-                        configMINIMAL_STACK_SIZE, this,
-                        tskIDLE_PRIORITY, &taskHandle);
-        }
-
-        /* =======  Destructors */
-        virtual ~IecPrinter()
-        {
-            vTaskDelete(taskHandle);
-            close_file();
-        }
+        IecPrinter(void);
+        ~IecPrinter(void);
 
         int push_data(uint8_t b);
         int push_command(uint8_t b);
         int flush(void);
         int init_done(void);
         int reset(void);
+
+        /* =======  Interface menu */
+        void create_task_items();
+        void update_task_items(bool writablePath, Path *path);
+        void effectuate_settings(void); // from ConfigurableObject
+        int executeCommand(SubsysCommand *cmd); // from SubSystem
+        const char *identify(void) { return "Virtual Printer"; }
 
         /* =======  Setters */
         int set_filename(const char *file);
@@ -156,11 +157,16 @@ class IecPrinter
         int set_ibm_charset(int d);
         int set_output_type(int t);
 
+        /* =======  Getters */
+        int get_current_printer_address(void) { return last_printer_addr; }
+
     private:
         /* =======  Output file management */
         int open_file(void);
         int close_file(void);
 };
+
+extern IecPrinter iec_printer;
 
 #endif /* IEC_PRINTER_H */
 

@@ -31,6 +31,7 @@ class UserInterface;
 #define SUBSYSID_IEC             7
 #define SUBSYSID_CMD_IF			 8
 #define SUBSYSID_U64			 9
+#define SUBSYSID_PRINTER         10
 
 
 #define SORT_ORDER_CREATE  10

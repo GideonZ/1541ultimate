@@ -25,6 +25,26 @@
 /******************************  Inclusions  ****************************/
 
 #include "iec_printer.h"
+#include "endianness.h"
+
+/******************************  Definitions  ***************************/
+
+#define CFG_PRINTER_ID         0x30
+#define CFG_PRINTER_FILENAME   0x31
+#define CFG_PRINTER_TYPE       0x32
+#define CFG_PRINTER_DENSITY    0x33
+#define CFG_PRINTER_EMULATION  0x34
+#define CFG_PRINTER_CBM_CHAR   0x35
+#define CFG_PRINTER_EPSON_CHAR 0x36
+#define CFG_PRINTER_IBM_CHAR   0x37
+#define CFG_PRINTER_ENABLE     0x38
+
+#define MENU_PRINTER_ON        0x1230
+#define MENU_PRINTER_OFF       0x1231
+#define MENU_PRINTER_FLUSH     0x1232
+
+extern uint8_t  _iec_code_b_start;
+extern uint32_t _iec_code_b_size;
 
 /************************************************************************
 *                                                                       *
@@ -52,6 +72,272 @@ uint8_t IecPrinter::ascii_lut[256] =
     32, 32, 32, 45, 45,124, 32, 32, 32, 32,124, 43, 32, 43, 43, 32, // E
     43, 43, 43, 43,124, 32, 32, 45, 32, 32, 32, 32, 32, 43, 32, 32  // F
 };
+
+/* =======  User interface menu items */
+
+static const char *pr_typ[] = { "RAW", "ASCII", "PNG B&W", "PNG COLOR" };
+static const char *pr_ink[] = { "Low", "Medium", "High" };
+static const char *pr_emu[] = { "Commodore MPS", "Epson FX-80/JX-80", "IBM Graphics Printer", "IBM Proprinter" };
+static const char *pr_cch[] = { "USA/UK", "Denmark", "France/Italy", "Germany", "Spain", "Sweden", "Switzerland" };
+static const char *pr_ech[] = { "Basic", "USA", "France", "Germany", "UK", "Denmark I",
+                                "Sweden", "Italy", "Spain", "Japan", "Norway", "Denmark II" };
+static const char *pr_ich[] = { "International 1", "International 2", "Israel", "Greece", "Portugal", "Spain" };
+
+static struct t_cfg_definition iec_printer_config[] = {
+    { CFG_PRINTER_ENABLE,   CFG_TYPE_ENUM,   "IEC printer",       "%s", en_dis, 0,  1, 0 },
+    { CFG_PRINTER_ID,       CFG_TYPE_VALUE,  "Bus ID",            "%d", NULL,   4,  5, 4 },
+    { CFG_PRINTER_FILENAME, CFG_TYPE_STRING, "Output file",       "%s", NULL,   1, 31, (int) FS_ROOT "printer" },
+    { CFG_PRINTER_TYPE,     CFG_TYPE_ENUM,   "Output type",       "%s", pr_typ, 0,  3, 2 },
+    { CFG_PRINTER_DENSITY,  CFG_TYPE_ENUM,   "Ink density",       "%s", pr_ink, 0,  2, 1 },
+    { CFG_PRINTER_EMULATION,CFG_TYPE_ENUM,   "Emulation",         "%s", pr_emu, 0,  3, 0 },
+    { CFG_PRINTER_CBM_CHAR, CFG_TYPE_ENUM,   "Commodore charset", "%s", pr_cch, 0,  6, 0 },
+    { CFG_PRINTER_EPSON_CHAR,CFG_TYPE_ENUM,  "Epson charset",     "%s", pr_ech, 0,  11, 0 },
+    { CFG_PRINTER_IBM_CHAR, CFG_TYPE_ENUM,   "IBM table 2",       "%s", pr_ich, 0,  5, 0 },
+    { 0xFF, CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
+};
+
+/* This is where the virtual printer is created */
+IecPrinter iec_printer;
+
+/************************************************************************
+*                  IecPrinter::effectuate_settings()            Public  *
+*                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                    *
+* Function : Load and apply virtual printer configuration from nvram    *
+*-----------------------------------------------------------------------*
+* Inputs:                                                               *
+*                                                                       *
+*    (none)                                                             *
+*                                                                       *
+*-----------------------------------------------------------------------*
+* Outputs:                                                              *
+*                                                                       *
+*    (none)                                                             *
+*                                                                       *
+************************************************************************/
+
+void IecPrinter::effectuate_settings(void)
+{
+    /* IEC CPU machine code for printer device detection on IEC */
+    uint32_t was_printer_listen = 0x18800020 + last_printer_addr;
+
+    /* Printer ID on IEC from nvram */
+    int bus_id = cfg->get_value(CFG_PRINTER_ID);
+
+    /* IEC CPU code base */
+    const uint32_t *src = (uint32_t*)&_iec_code_b_start;
+
+    /* Search and replace machine code if device number has changed */
+    if(bus_id != last_printer_addr)
+    {
+        printf("Setting IEC printer ID to %d.\n", bus_id);
+        int replaced = 0;
+
+        for(int i=0;i<512;i++)
+        {
+            uint32_t word_read = cpu_to_32le(src[i]);
+
+            if ((word_read & 0x1F8000FF) == was_printer_listen)
+            {
+                HW_IEC_RAM_DW[i] = cpu_to_32le((word_read & 0xFFFFFF00) + bus_id + 0x20);
+                replaced ++;
+            }
+        }
+
+        printf("Replaced: %d words.\n", replaced);
+        last_printer_addr = bus_id;
+    }
+
+    /* Load and apply virtual printer configuration from nvram */
+    set_filename(cfg->get_string(CFG_PRINTER_FILENAME));
+    set_output_type(cfg->get_value(CFG_PRINTER_TYPE));
+    set_ink_density(cfg->get_value(CFG_PRINTER_DENSITY));
+    set_emulation(cfg->get_value(CFG_PRINTER_EMULATION));
+    set_cbm_charset(cfg->get_value(CFG_PRINTER_CBM_CHAR));
+    set_epson_charset(cfg->get_value(CFG_PRINTER_EPSON_CHAR));
+    set_ibm_charset(cfg->get_value(CFG_PRINTER_IBM_CHAR));
+
+    /* Enable printer if requested */
+    printer_enable = uint8_t(cfg->get_value(CFG_PRINTER_ENABLE));
+    //HW_IEC_RESET_ENABLE = iec_enable;
+}
+
+/************************************************************************
+*                    IecPrinter::create_task_items()            Public  *
+*                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                    *
+* Function : Create context F5 menu items for the virtual printer tasks *
+*-----------------------------------------------------------------------*
+* Inputs:                                                               *
+*                                                                       *
+*    (none)                                                             *
+*                                                                       *
+*-----------------------------------------------------------------------*
+* Outputs:                                                              *
+*                                                                       *
+*    (none)                                                             *
+*                                                                       *
+************************************************************************/
+
+void IecPrinter :: create_task_items(void)
+{
+    /* Create items */
+    myActions.eject    = new Action("Flush/Eject", SUBSYSID_PRINTER, MENU_PRINTER_FLUSH);
+    myActions.turn_on  = new Action("Turn On",     SUBSYSID_PRINTER, MENU_PRINTER_ON);
+    myActions.turn_off = new Action("Turn Off",    SUBSYSID_PRINTER, MENU_PRINTER_OFF);
+
+    /* Create collection and attach items */
+    TaskCategory *prt = TasksCollection :: getCategory("Printer", SORT_ORDER_PRINTER);
+    prt->append(myActions.eject);
+    prt->append(myActions.turn_on);
+    prt->append(myActions.turn_off);
+}
+
+/************************************************************************
+*              IecPrinter::update_task_items(writable,path)     Public  *
+*              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~             *
+* Function : Create context F5 menu items for the virtual printer tasks *
+*-----------------------------------------------------------------------*
+* Inputs:                                                               *
+*                                                                       *
+*    writable : (bool) ignored                                          *
+*    path     : (Path *) ignored                                        *
+*                                                                       *
+*-----------------------------------------------------------------------*
+* Outputs:                                                              *
+*                                                                       *
+*    (none)                                                             *
+*                                                                       *
+************************************************************************/
+
+void IecPrinter :: update_task_items(bool writablePath, Path *path)
+{
+    if (printer_enable) {
+        myActions.turn_off->show();
+        myActions.turn_on->hide();
+        myActions.eject->enable();
+    } else {
+        myActions.turn_off->hide();
+        myActions.turn_on->show();
+        myActions.eject->disable();
+    }
+}
+
+/************************************************************************
+*                     IecPrinter::executeCommand(cmd)           Public  *
+*                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                   *
+* Function : Callback called when user selects one task menu item       *
+*            called from GUI task                                       *
+*-----------------------------------------------------------------------*
+* Inputs:                                                               *
+*                                                                       *
+*    cmd : (SubsysCommand *) item selected by user                      *
+*                                                                       *
+*-----------------------------------------------------------------------*
+* Outputs:                                                              *
+*                                                                       *
+*    (none)                                                             *
+*                                                                       *
+************************************************************************/
+
+int IecPrinter :: executeCommand(SubsysCommand *cmd)
+{
+    File *f = 0;
+    uint32_t transferred;
+    char buffer[24];
+    int res;
+    FRESULT fres;
+
+    cmd_ui = cmd->user_interface;
+
+    switch(cmd->functionID)
+    {
+        case MENU_PRINTER_ON:
+            printer_enable = 1;
+            break;
+
+        case MENU_PRINTER_OFF:
+            printer_enable = 0;
+            break;
+
+        case MENU_PRINTER_FLUSH:
+            flush();
+            break;
+
+        default:
+            break;
+    }
+
+    return 0;
+}
+
+/************************************************************************
+*                         IecPrinter::IecPrinter()         Constructor  *
+*                         ~~~~~~~~~~~~~~~~~~~~~~~~                      *
+* Function : Instanciate one IecPrinter object                          *
+*-----------------------------------------------------------------------*
+* Inputs:                                                               *
+*                                                                       *
+*    (none)                                                             *
+*                                                                       *
+*-----------------------------------------------------------------------*
+* Outputs:                                                              *
+*                                                                       *
+*    (none)                                                             *
+*                                                                       *
+************************************************************************/
+
+IecPrinter::IecPrinter() : SubSystem(SUBSYSID_PRINTER)
+{
+    fm = FileManager::getFileManager();
+
+    /* Create printer settings page in F2 menu */
+    register_store(0x4d505300, "Printer Settings", iec_printer_config);
+
+    /* Initial values */
+    output_filename = NULL;
+    f = NULL;
+    last_printer_addr = 4;
+    mps = MpsPrinter::getMpsPrinter();
+    buffer_pointer = 0;
+    output_type = PRINTER_PNG_OUTPUT;
+    init = true;
+    cmd_ui = 0;
+
+    /* Read configuration from nvram if it exists */
+    effectuate_settings();
+
+    /* Create the queue */
+    queueHandle = xQueueCreate( 1, sizeof(PrinterEvent_t));
+
+    /* Create the task, storing the handle. */
+    xTaskCreate((TaskFunction_t) IecPrinter::task, "Virtual Printer",
+                configMINIMAL_STACK_SIZE, this,
+                tskIDLE_PRIORITY, &taskHandle);
+}
+
+/************************************************************************
+*                         IecPrinter::~IecPrinter()         Destructor  *
+*                         ~~~~~~~~~~~~~~~~~~~~~~~~~                     *
+* Function : Delete a IecPrinter object                                 *
+*-----------------------------------------------------------------------*
+* Inputs:                                                               *
+*                                                                       *
+*    (none)                                                             *
+*                                                                       *
+*-----------------------------------------------------------------------*
+* Outputs:                                                              *
+*                                                                       *
+*    (none)                                                             *
+*                                                                       *
+************************************************************************/
+
+IecPrinter::~IecPrinter()
+{
+    /* Remove task from process list */
+    vTaskDelete(taskHandle);
+
+    /* Close/flush output file */
+    close_file();
+}
 
 /************************************************************************
 *                       IecPrinter::push_data(b)                Public  *
@@ -237,10 +523,14 @@ int IecPrinter::_push_command(uint8_t b)
 
 int IecPrinter::flush(void)
 {
+    cmd_ui->show_progress("Flushing/Ejecting page...", 0);
+
     if (buffer_pointer && output_type != PRINTER_PNG_OUTPUT && !f)
         open_file();
 
     close_file();
+
+    cmd_ui->hide_progress();
 
     return IEC_OK;
 }

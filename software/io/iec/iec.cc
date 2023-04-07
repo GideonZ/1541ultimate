@@ -46,36 +46,12 @@ extern uint32_t _ulticopy_65_size;
 #define CFG_IEC_ENABLE   0x51
 #define CFG_IEC_BUS_ID   0x52
 #define CFG_IEC_PATH     0x53
-#define CFG_IEC_PRINTER_ID 	 0x30
-#define CFG_IEC_PRINTER_FILENAME 0x31
-#define CFG_IEC_PRINTER_TYPE     0x32
-#define CFG_IEC_PRINTER_DENSITY  0x33
-#define CFG_IEC_PRINTER_EMULATION  0x34
-#define CFG_IEC_PRINTER_CBM_CHAR   0x35
-#define CFG_IEC_PRINTER_EPSON_CHAR 0x36
-#define CFG_IEC_PRINTER_IBM_CHAR   0x37
-
-static const char *pr_typ[] = { "RAW", "ASCII", "PNG B&W", "PNG COLOR" };
-static const char *pr_ink[] = { "Low", "Medium", "High" };
-static const char *pr_emu[] = { "Commodore MPS", "Epson FX-80/JX-80", "IBM Graphics Printer", "IBM Proprinter" };
-static const char *pr_cch[] = { "USA/UK", "Denmark", "France/Italy", "Germany", "Spain", "Sweden", "Switzerland" };
-static const char *pr_ech[] = { "Basic", "USA", "France", "Germany", "UK", "Denmark I",
-                                "Sweden", "Italy", "Spain", "Japan", "Norway", "Denmark II" };
-static const char *pr_ich[] = { "International 1", "International 2", "Israel", "Greece", "Portugal", "Spain" };
 
 static struct t_cfg_definition iec_config[] = {
-    { CFG_IEC_ENABLE,    CFG_TYPE_ENUM,   "IEC Drive and printer",     "%s", en_dis,     0,  1, 0 },
-    { CFG_IEC_BUS_ID,    CFG_TYPE_VALUE,  "Soft Drive Bus ID",         "%d", NULL,       8, 30, 11 },
-    { CFG_IEC_PATH,      CFG_TYPE_STRING, "Default Path",              "%s", NULL,       0, 30, (int) FS_ROOT },
-    { CFG_IEC_PRINTER_ID,       CFG_TYPE_VALUE,  "Printer Bus ID",       "%d", NULL,   4,  5, 4 },
-    { CFG_IEC_PRINTER_FILENAME, CFG_TYPE_STRING, "Printer output file",  "%s", NULL,   1, 31, (int) FS_ROOT "printer" },
-    { CFG_IEC_PRINTER_TYPE,     CFG_TYPE_ENUM,   "Printer output type",  "%s", pr_typ, 0,  3, 2 },
-    { CFG_IEC_PRINTER_DENSITY,  CFG_TYPE_ENUM,   "Printer ink density",  "%s", pr_ink, 0,  2, 1 },
-    { CFG_IEC_PRINTER_EMULATION,CFG_TYPE_ENUM,   "Printer emulation",    "%s", pr_emu, 0,  3, 0 },
-    { CFG_IEC_PRINTER_CBM_CHAR, CFG_TYPE_ENUM,   "Printer Commodore charset", "%s", pr_cch, 0,  6, 0 },
-    { CFG_IEC_PRINTER_EPSON_CHAR,CFG_TYPE_ENUM,  "Printer Epson charset","%s", pr_ech, 0,  11, 0 },
-    { CFG_IEC_PRINTER_IBM_CHAR, CFG_TYPE_ENUM,   "Printer IBM table 2",  "%s", pr_ich, 0,  5, 0 },
-    { 0xFF, CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
+    { CFG_IEC_ENABLE,    CFG_TYPE_ENUM,   "IEC Drive",         "%s", en_dis, 0,  1, 0 },
+    { CFG_IEC_BUS_ID,    CFG_TYPE_VALUE,  "Soft Drive Bus ID", "%d", NULL,   8, 30, 11 },
+    { CFG_IEC_PATH,      CFG_TYPE_STRING, "Default Path",      "%s", NULL,   0, 30, (int) FS_ROOT },
+    { 0xFF, CFG_TYPE_END, "", "", NULL, 0, 0, 0 }
 };
 
 // this global will cause us to run!
@@ -209,11 +185,9 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
     current_channel = 0;
     talking = false;
     last_addr = 10;
-    last_printer_addr = 4;
     wait_irq = false;
     printer = false;
 
-    channel_printer = new IecPrinter();
     ulticopy_bin_image = new BinImage("UltiCopy", 35);
 
     effectuate_settings();
@@ -225,7 +199,7 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
     }
     channels[15] = new IecCommandChannel(this, 15);
     
-    channel_printer->init_done();
+    iec_printer.init_done();
 
     ulticopyBusy = xSemaphoreCreateBinary();
     ulticopyMutex = xSemaphoreCreateMutex();
@@ -245,7 +219,6 @@ IecInterface :: ~IecInterface()
     for(int i=0;i<16;i++)
         delete channels[i];
 
-    delete channel_printer;
     fm->release_path(cmd_path);
 }
 
@@ -289,29 +262,8 @@ void IecInterface :: effectuate_settings(void)
         printf("Replaced: %d words.\n", replaced);
         last_addr = bus_id;    
     }
-    bus_id = cfg->get_value(CFG_IEC_PRINTER_ID);
-    if(bus_id != last_printer_addr) {
-        printf("Setting IEC printer ID to %d.\n", bus_id);
-        int replaced = 0;
-        for(int i=0;i<512;i++) {
-        	uint32_t word_read = cpu_to_32le(src[i]);
-            if ((word_read & 0x1F8000FF) == was_printer_listen) {
-                HW_IEC_RAM_DW[i] = cpu_to_32le((word_read & 0xFFFFFF00) + bus_id + 0x20);
-                replaced ++;
-            }
-        } 
-        printf("Replaced: %d words.\n", replaced);
-        last_printer_addr = bus_id;   
-    }
 
     rootPath = cfg->get_string(CFG_IEC_PATH);
-    channel_printer->set_filename(cfg->get_string(CFG_IEC_PRINTER_FILENAME));
-    channel_printer->set_output_type(cfg->get_value(CFG_IEC_PRINTER_TYPE));
-    channel_printer->set_ink_density(cfg->get_value(CFG_IEC_PRINTER_DENSITY));
-    channel_printer->set_emulation(cfg->get_value(CFG_IEC_PRINTER_EMULATION));
-    channel_printer->set_cbm_charset(cfg->get_value(CFG_IEC_PRINTER_CBM_CHAR));
-    channel_printer->set_epson_charset(cfg->get_value(CFG_IEC_PRINTER_EPSON_CHAR));
-    channel_printer->set_ibm_charset(cfg->get_value(CFG_IEC_PRINTER_IBM_CHAR));
 
     iec_enable = uint8_t(cfg->get_value(CFG_IEC_ENABLE));
     HW_IEC_RESET_ENABLE = iec_enable;
@@ -334,7 +286,6 @@ void IecInterface :: create_task_items(void)
     myActions.ulticopy9  = new Action("UltiCopy 9",     SUBSYSID_IEC, MENU_IEC_WARP_9);
     myActions.ulticopy10 = new Action("UltiCopy 10",    SUBSYSID_IEC, MENU_IEC_WARP_10);
     myActions.ulticopy11 = new Action("UltiCopy 11",    SUBSYSID_IEC, MENU_IEC_WARP_11);
-    myActions.eject      = new Action("Flush/Eject",    SUBSYSID_IEC, MENU_IEC_FLUSH);
 
     iec->append(myActions.turn_on);
     iec->append(myActions.turn_off);
@@ -344,9 +295,6 @@ void IecInterface :: create_task_items(void)
     iec->append(myActions.ulticopy9);
     iec->append(myActions.ulticopy10);
     iec->append(myActions.ulticopy11);
-
-    TaskCategory *prt = TasksCollection :: getCategory("Printer", SORT_ORDER_PRINTER);
-    prt->append(myActions.eject);
 }
 
 // called from GUI task
@@ -427,7 +375,7 @@ void IecInterface :: poll()
 					case 0x45:
 						//printf("{end} ");
 						if (printer) {
-							channel_printer->push_command(0xFF);
+							iec_printer.push_command(0xFF);
 							printer = false;
 						} else {
 							channels[current_channel]->push_command(0);
@@ -447,7 +395,7 @@ void IecInterface :: poll()
 						break;
 					case 0x46:
 						printer = true;
-						channel_printer->push_command(0xFE);
+						iec_printer.push_command(0xFE);
 						break;
 					default:
 						//printf("<%b> ", data);
@@ -460,7 +408,7 @@ void IecInterface :: poll()
 #endif
 					if(data >= 0x60) {  // workaround for passing of wrong atn codes talk/untalk
 						if (printer) {
-							channel_printer->push_command(data & 0x7);
+							iec_printer.push_command(data & 0x7);
 						} else {
 							current_channel = int(data & 0x0F);
 							channels[current_channel]->push_command(data & 0xF0);
@@ -468,7 +416,7 @@ void IecInterface :: poll()
 					}
 				} else {
 					if (printer) {
-						channel_printer->push_data(data);
+						iec_printer.push_data(data);
 					} else {
 #if IECDEBUG > 2
 						printf("[%b] ", data);
@@ -538,9 +486,6 @@ int IecInterface :: executeCommand(SubsysCommand *cmd)
 		case MENU_IEC_RESET:
             reset();
 			break;
-		case MENU_IEC_FLUSH:
-			channel_printer->flush();
-			break;
 		case MENU_IEC_WARP_8:
 			start_warp(8);
 			break;
@@ -593,7 +538,7 @@ int IecInterface :: executeCommand(SubsysCommand *cmd)
 void IecInterface :: reset(void)
 {
     HW_IEC_RESET_ENABLE = 0;
-    channel_printer->reset();
+    iec_printer.reset();
     for(int i=0; i < 16; i++) {
         channels[i]->reset();
     }

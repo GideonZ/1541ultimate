@@ -81,13 +81,11 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
 
     const char *rootPath;
     int last_addr;
-    int last_printer_addr;
     bool wait_irq;
     bool atn;
     bool talking;
     bool printer;
     IecChannel *channels[16];
-    IecPrinter *channel_printer;
     int current_channel;
     int warp_drive;
     uint8_t warp_return_code;
@@ -120,7 +118,6 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
         Action *ulticopy9;
         Action *ulticopy10;
         Action *ulticopy11;
-        Action *eject;
     } myActions;
 public:
     uint8_t iec_enable;
@@ -131,7 +128,6 @@ public:
     int executeCommand(SubsysCommand *cmd); // from SubSystem
     const char *identify(void) { return "IEC"; }
     int get_current_iec_address(void) { return last_addr; }
-    int get_current_printer_address(void) { return last_printer_addr; }
 
     void create_task_items();
     void update_task_items(bool writablePath, Path *path);
