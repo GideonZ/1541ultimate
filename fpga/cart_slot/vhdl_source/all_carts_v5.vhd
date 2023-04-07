@@ -204,6 +204,10 @@ begin
             rom_mode  <= "01"; -- No banking, All within 16K
                     
             case cart_logic_d is
+            when c_none =>
+                cart_en <= '0';
+                -- other defaults are OK
+
             -- ULTRA SIMPLE CARTS, NO BANKING, NO RAM
             when c_normal =>
                 if io_write='1' and io_addr(8 downto 0) = "111111111" then -- DFFF
@@ -230,7 +234,6 @@ begin
                         ram_bank <= io_wdata(2 downto 0);
                     end if;
                 end if;
-
 
             when c_epyx =>
                 game_n    <= '1';
