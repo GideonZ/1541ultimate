@@ -41,7 +41,8 @@
 /*******************************  Constants  ****************************/
 
 #define IEC_PRINTER_BUFFERSIZE  256
-
+#define IEC_PRINTER_EVENT_CMD	0
+#define IEC_PRINTER_EVENT
 /*********************************  Types  ******************************/
 
 enum t_printer_output_type {
@@ -49,6 +50,17 @@ enum t_printer_output_type {
     PRINTER_RAW_OUTPUT,
     PRINTER_ASCII_OUTPUT
 };
+
+enum t_printer_event_type {
+    PRINTER_EVENT_CMD=0,
+    PRINTER_EVENT_DATA,
+    PRINTER_EVENT_USER
+};
+
+typedef struct PrinterEvent {
+    t_printer_event_type type;
+    uint8_t value;
+} PrinterEvent_t;
 
 /*======================================================================*/
 /* Class IecPrinter                                                     */
@@ -85,11 +97,22 @@ class IecPrinter
         /* Flag set to true while in Ultimate init sequence */
         bool init;
 
-    public:
+        /* The printer task itself */
+        TaskHandle_t taskHandle;
+
+        /* Queue to send IEC data to printer */
+	QueueHandle_t queueHandle;
+
         /*==============================================*/
         /*                 M E T H O D S                */
         /*==============================================*/
 
+        /* =======  Printter task related methods */
+        static void task(IecPrinter *iecPrinter);
+        int _push_data(uint8_t b);
+        int _push_command(uint8_t b);
+
+    public:
         /* =======  Constructors */
         IecPrinter()
         {
@@ -101,11 +124,20 @@ class IecPrinter
             buffer_pointer = 0;
             output_type = PRINTER_PNG_OUTPUT;
             init = true;
+
+            /* Create the queue */
+            queueHandle = xQueueCreate( 1, sizeof(PrinterEvent_t));
+
+            /* Create the task, storing the handle. */
+            xTaskCreate((TaskFunction_t) IecPrinter::task, "Virtual Printer",
+                        configMINIMAL_STACK_SIZE, this,
+                        tskIDLE_PRIORITY, &taskHandle);
         }
 
         /* =======  Destructors */
         virtual ~IecPrinter()
         {
+            vTaskDelete(taskHandle);
             close_file();
         }
 

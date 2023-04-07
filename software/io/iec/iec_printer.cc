@@ -54,7 +54,7 @@ uint8_t IecPrinter::ascii_lut[256] =
 };
 
 /************************************************************************
-*                       IecPrinter::push_data(b)                Pubic   *
+*                       IecPrinter::push_data(b)                Public  *
 *                       ~~~~~~~~~~~~~~~~~~~~~~~~                        *
 * Function : Interpret one data byte received by data IEC channel       *
 *-----------------------------------------------------------------------*
@@ -70,6 +70,32 @@ uint8_t IecPrinter::ascii_lut[256] =
 ************************************************************************/
 
 int IecPrinter::push_data(uint8_t b)
+{
+    PrinterEvent_t printerEvent;
+
+    printerEvent.type = PRINTER_EVENT_DATA;
+    printerEvent.value = b;
+
+    while( xQueueSend( queueHandle, (void *) &printerEvent, portMAX_DELAY) != pdTRUE);
+}
+
+/************************************************************************
+*                       IecPrinter::_push_data(b)              Private  *
+*                       ~~~~~~~~~~~~~~~~~~~~~~~~~                       *
+* Function : Interpret one data byte received by data IEC channel       *
+*-----------------------------------------------------------------------*
+* Inputs:                                                               *
+*                                                                       *
+*    b : (uint8_t) received data byte                                   *
+*                                                                       *
+*-----------------------------------------------------------------------*
+* Outputs:                                                              *
+*                                                                       *
+*    IEC_OK on success or IEC_BYTE_LOST if an error occured             *
+*                                                                       *
+************************************************************************/
+
+int IecPrinter::_push_data(uint8_t b)
 {
     if (output_type == PRINTER_ASCII_OUTPUT)
     {
@@ -115,7 +141,7 @@ int IecPrinter::push_data(uint8_t b)
 }
 
 /************************************************************************
-*                       IecPrinter::push_command(b)             Pubic   *
+*                       IecPrinter::push_command(b)             Public  *
 *                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~                     *
 * Function : Interpret one data byte received by IEC command channel    *
 *-----------------------------------------------------------------------*
@@ -131,6 +157,32 @@ int IecPrinter::push_data(uint8_t b)
 ************************************************************************/
 
 int IecPrinter::push_command(uint8_t b)
+{
+    PrinterEvent_t printerEvent;
+
+    printerEvent.type = PRINTER_EVENT_CMD;
+    printerEvent.value = b;
+
+    while( xQueueSend( queueHandle, (void *) &printerEvent, portMAX_DELAY) != pdTRUE);
+}
+
+/************************************************************************
+*                       IecPrinter::push_command(b)            Private  *
+*                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~                     *
+* Function : Interpret one data byte received by IEC command channel    *
+*-----------------------------------------------------------------------*
+* Inputs:                                                               *
+*                                                                       *
+*    b : (uint8_t) received command byte                                *
+*                                                                       *
+*-----------------------------------------------------------------------*
+* Outputs:                                                              *
+*                                                                       *
+*    IEC_OK always                                                      *
+*                                                                       *
+************************************************************************/
+
+int IecPrinter::_push_command(uint8_t b)
 {
     switch(b) {
         case 0xFE: // Received printer OPEN
@@ -239,6 +291,49 @@ int IecPrinter::reset(void)
     mps->Reset();
 
     return IEC_OK;
+}
+
+/************************************************************************
+*                                   task()                      Static  *
+*                                   ~~~~~~                              *
+* Function : Low priority iec printer task                              *
+*-----------------------------------------------------------------------*
+* Inputs:                                                               *
+*                                                                       *
+*    none                                                               *
+*                                                                       *
+*-----------------------------------------------------------------------*
+* Outputs:                                                              *
+*                                                                       *
+*    none                                                               *
+*                                                                       *
+************************************************************************/
+
+void
+IecPrinter::task(IecPrinter *p)
+{
+    PrinterEvent_t printerEvent;
+
+    for(;;)
+    {
+        if( xQueueReceive( p->queueHandle, &printerEvent,
+                           portMAX_DELAY ) == pdTRUE )
+        {
+	    switch (printerEvent.type)
+            {
+                case PRINTER_EVENT_CMD:
+                    p->_push_command(printerEvent.value);
+                    break;
+
+                case PRINTER_EVENT_DATA:
+                    p->_push_data(printerEvent.value);
+                    break;
+
+                case PRINTER_EVENT_USER:
+                    break;
+            }
+        }
+    }
 }
 
 /************************************************************************
