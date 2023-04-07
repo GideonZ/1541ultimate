@@ -37,7 +37,7 @@ package cart_slot_pkg is
         reu_size            : std_logic_vector(2 downto 0);
         sampler_enable      : std_logic;
         swap_buttons        : std_logic;
-        timing_addr_phi2    : unsigned(2 downto 0);
+        timing_addr_phi2    : unsigned(3 downto 0);
         timing_addr_phi1    : unsigned(3 downto 0);
         force_serve_vic     : std_logic;
         phi2_edge_recover   : std_logic;
@@ -70,7 +70,7 @@ package cart_slot_pkg is
         reu_enable     => '0',
         reu_size       => "111",
         sampler_enable => '0',
-        timing_addr_phi2  => "100",
+        timing_addr_phi2  => "1001",
         timing_addr_phi1  => "1001",
         force_serve_vic   => '0',
         phi2_edge_recover => '1',
