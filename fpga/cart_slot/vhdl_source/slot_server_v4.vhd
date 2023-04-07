@@ -19,6 +19,7 @@ generic (
     g_rom_base_cart : std_logic_vector(27 downto 0) := X"0F00000"; -- should be on a 1M boundary
     g_kernal_base   : std_logic_vector(27 downto 0) := X"0EA8000"; -- should be on a 32K boundary 
     g_register_addr : boolean := false;
+    g_timing_meas   : boolean := false;
     g_direct_dma    : boolean := false;
     g_ext_freeze_act: boolean := false;
     g_cartreset_init: std_logic := '0';
@@ -228,6 +229,9 @@ architecture structural of slot_server_v4 is
     signal serve_io1       : std_logic := '0'; -- IO1n
     signal serve_io2       : std_logic := '0'; -- IO2n
     signal allow_write     : std_logic := '0';
+
+    -- timing measurement
+    signal measure_data    : std_logic_vector(7 downto 0) := X"FF";
 
     -- kernal replacement logic
     signal kernal_area     : std_logic := '0';
@@ -479,6 +483,7 @@ begin
 
     i_registers: entity work.cart_slot_registers
     generic map (
+        g_timing_meas   => g_timing_meas,
         g_kernal_repl   => g_kernal_repl,
         g_boot_stop     => g_boot_stop,
         g_cartreset_init=> g_cartreset_init,
@@ -508,7 +513,7 @@ begin
         PHI2            => phi2_c,
         BA              => ba_c,
     
-        serve_vic       => control.force_serve_vic, --serve_vic,
+        serve_vic       => serve_vic, --control.force_serve_vic, --serve_vic,
         serve_enable    => serve_enable,
         serve_inhibit   => serve_inhibit,
         allow_serve     => allow_serve,
@@ -591,6 +596,10 @@ begin
         allow_write     => allow_write,
         clear_inhibit   => clear_inhibit,
 
+        -- timing measurement
+        measure         => control.measure_enable,
+        measure_data    => measure_data,
+
         -- kernal emulation
         kernal_enable   => control.kernal_enable,
         kernal_probe    => kernal_probe,
@@ -605,6 +614,17 @@ begin
         
         -- interface with hardware
         BUFFER_ENn      => BUFFER_ENn );
+
+    r_measure: if g_timing_meas generate
+        i_slot_measure: entity work.slot_measure
+            port map (
+                clock    => clock,
+                reset    => reset,
+                phi2     => phi2_c,
+                addr     => slot_addr_c,
+                data_out => measure_data
+            );
+    end generate;
 
     r_master: if not g_direct_dma generate
         i_master: entity work.slot_master_v4
