@@ -416,11 +416,11 @@ begin
         variable v_cmd  : std_logic_vector(3 downto 0);
     begin
         if rising_edge(sys_clock) then
+            io_read <= '0';
+            io_write <= '0';
             case state is
             when idle =>
                 avm_rfifo_put <= '0';
-                io_read <= '0';
-                io_write <= '0';
                 if avm_wfifo_valid = '1' then -- command?
                     avm_exec_count <= avm_exec_count + 1;
                     v_cmd := avm_wfifo_dout(11 downto 8);
