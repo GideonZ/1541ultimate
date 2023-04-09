@@ -197,6 +197,7 @@ architecture structural of slot_server_v4 is
     signal phi2_fall       : std_logic;
     signal phi2_recovered  : std_logic;
     signal vic_cycle       : std_logic;
+    signal dma_data_out    : std_logic;
     signal do_sample_addr  : std_logic;
     signal do_sample_io    : std_logic;
     signal do_io_event     : std_logic;
@@ -224,6 +225,7 @@ architecture structural of slot_server_v4 is
     signal serve_enable    : std_logic := '0'; -- from cartridge emulation logic
     signal serve_inhibit   : std_logic := '0';
     signal serve_vic       : std_logic := '0';
+    signal serve_vic_f     : std_logic := '0';
     signal serve_128       : std_logic := '0';
     signal serve_rom       : std_logic := '0'; -- ROML or ROMH
     signal serve_io1       : std_logic := '0'; -- IO1n
@@ -500,6 +502,7 @@ begin
         
 
     serve_inhibit <= status.c64_stopped and not control.serve_while_stopped;
+    serve_vic_f   <= serve_vic or control.force_serve_vic;
 
     i_timing: entity work.slot_timing
     generic map (
@@ -513,7 +516,7 @@ begin
         PHI2            => phi2_c,
         BA              => ba_c,
     
-        serve_vic       => serve_vic, --control.force_serve_vic, --serve_vic,
+        serve_vic       => serve_vic_f,
         serve_enable    => serve_enable,
         serve_inhibit   => serve_inhibit,
         allow_serve     => allow_serve,
@@ -652,6 +655,7 @@ begin
         
             -- timing inputs
             vic_cycle       => vic_cycle,    
+            dma_data_out    => dma_data_out,
             phi2_recovered  => phi2_recovered,
             phi2_tick       => phi2_tick_i,
             do_sample_addr  => do_sample_addr,
