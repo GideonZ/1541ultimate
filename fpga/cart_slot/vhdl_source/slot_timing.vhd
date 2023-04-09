@@ -27,6 +27,7 @@ port (
     phi2_tick       : out std_logic;
     phi2_fall       : out std_logic;
     phi2_recovered  : out std_logic;
+    dma_data_out    : out std_logic;
     clock_det       : out std_logic;
     vic_cycle       : out std_logic;    
 
@@ -45,6 +46,7 @@ architecture gideon of slot_timing is
     constant c_probe_end : natural := ((g_frequency + 1_666_666) / 3_333_333) -1;  -- 300 ns after PHI2
     constant c_500ns     : natural := ((g_frequency + 1_000_000) / 2_000_000) -1;  -- 500 ns
     constant c_400ns     : natural := (((c_500ns + 1) * 4) / 5) -1;
+    constant c_80ns      : natural := (((c_500ns + 1) * 4) / 25) -1;
     constant c_850ns     : natural := ((g_frequency +   600_000) / 1_200_000) -1;  -- ~850 ns
     constant c_write     : natural := c_400ns - 2;
     signal phi2_d       : std_logic;
@@ -57,13 +59,11 @@ architecture gideon of slot_timing is
     signal phi2_rec_i   : std_logic := '0';
     signal phi2_tick_i  : std_logic;
     signal serve_en_i   : std_logic := '0';
-    signal vic_cycle_i  : std_logic := '0';
     signal off_cnt      : integer range 0 to 7;
     --constant c_sample_vic  : integer := 9; -- 200 ns after PHI2 (!)
     signal reqs_inhibit_i : std_logic;
 begin
-    vic_cycle_i    <= '1' when (ba_hist = "0000") else '0';
-    vic_cycle      <= vic_cycle_i;
+    vic_cycle      <= '1' when (ba_hist = "0000") else '0';
     phi2_recovered <= phi2_rec_i;
     phi2_tick      <= phi2_tick_i;
     phi2_fall      <= phi2_d and not PHI2;
@@ -85,10 +85,13 @@ begin
                 serve_en_i <= '1';
             end if;
 
+            if phi2_d='0' and PHI2='1' then
+                ba_hist <= ba_hist(2 downto 0) & BA;
+            end if;
+
             -- detect or create rising edge
             if ((edge_recover = '1') and (phase_l = c_500ns)) or 
                ((edge_recover = '0') and phi2_d='0' and PHI2='1' and allow_tick_h) then
-                ba_hist      <= ba_hist(2 downto 0) & BA;
                 phi2_tick_i  <= '1';
                 phi2_rec_i   <= '1';
                 phase_h      <= 0;
@@ -108,6 +111,7 @@ begin
             -- related to falling edge
             phi2_falling <= '0';
             if phi2_d='1' and PHI2='0' and allow_tick_l then  -- falling edge
+                dma_data_out <= '0';
                 phi2_falling <= '1';
                 phi2_rec_i   <= '0';
                 phase_l      <= 0;
@@ -124,8 +128,6 @@ begin
 
             -- timing pulses
             do_sample_addr <= '0';
---            if (vic_cycle_i = '0' and phase_h = timing_phi2) or
---               (vic_cycle_i = '1' and phase_h = timing_phi1) then
             if phase_h = timing_phi2 then
                 do_sample_addr <= '1';
             end if;
@@ -149,11 +151,16 @@ begin
                 do_probe_end <= '1';
             end if;
 
+            if phase_h = c_80ns then
+                dma_data_out <= '1';
+            end if;
+
             if (phase_h = c_write) or (phase_l = c_write) then
                 do_sample_io <= '1';
             end if;
 
             if reset='1' then
+                dma_data_out <= '0';
                 allow_tick_h <= true;
                 allow_tick_l <= true;
                 phase_h      <= c_max_count;

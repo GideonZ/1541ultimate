@@ -102,13 +102,13 @@ struct t_cfg_definition c64_config[] = {
     { CFG_C64_TIMING,   CFG_TYPE_ENUM,   "CPU Addr valid after PHI2",    "%s", timing2,    0,  15, 5 },
     { CFG_C64_TIMING1,  CFG_TYPE_ENUM,   "CPU Addr valid after PHI1",    "%s", timing2,    0,  15, 5 },
     { CFG_SERVE_PHI1,   CFG_TYPE_ENUM,   "Enable serving PHI1 cycles",   "%s", en_dis,     0,  1, 0 },
-    { CFG_MEASURE_MODE, CFG_TYPE_ENUM,   "Enable timing measurement",    "%s", en_dis,     0,  1, 0 },
+//    { CFG_MEASURE_MODE, CFG_TYPE_ENUM,   "Enable timing measurement",    "%s", en_dis,     0,  1, 0 },
     { CFG_C64_PHI2_REC, CFG_TYPE_ENUM,   "PHI2 edge recovery",           "%s", en_dis,     0,  1, 0 },
 #elif CLOCK_FREQ == 50000000
     { CFG_C64_TIMING,   CFG_TYPE_ENUM,   "CPU Addr valid after PHI2",    "%s", timing1,    0,  15, 3 },
     { CFG_C64_TIMING1,  CFG_TYPE_ENUM,   "CPU Addr valid after PHI1",    "%s", timing1,    0,  15, 3 },
     { CFG_SERVE_PHI1,   CFG_TYPE_ENUM,   "Enable serving PHI1 cycles",   "%s", en_dis,     0,  1, 0 },
-    { CFG_MEASURE_MODE, CFG_TYPE_ENUM,   "Enable timing measurement",    "%s", en_dis,     0,  1, 0 },
+//    { CFG_MEASURE_MODE, CFG_TYPE_ENUM,   "Enable timing measurement",    "%s", en_dis,     0,  1, 0 },
     { CFG_C64_PHI2_REC, CFG_TYPE_ENUM,   "PHI2 edge recovery",           "%s", en_dis,     0,  1, 0 },
 #endif
     { CFG_CMD_ENABLE,   CFG_TYPE_ENUM,   "Command Interface",            "%s", en_dis,     0,  1, 0 },
@@ -311,11 +311,10 @@ void C64::set_emulation_flags(void)
         choice = cfg->get_value(CFG_CMD_ALLOW_WRITE);
         allowUltimateDosDateSet = choice;
     }
-    C64_ETHERNET_ENABLE = 0;
 
     int recovery = cfg->get_value(CFG_C64_PHI2_REC);
     if (recovery >= 0) {
-        uint8_t edge = cfg->get_value(CFG_C64_PHI2_REC); // | (cfg->get_value(CFG_MEASURE_MODE) << 1) | (cfg->get_value(CFG_SERVE_PHI1) << 2)
+        uint8_t edge = cfg->get_value(CFG_C64_PHI2_REC) | (cfg->get_value(CFG_SERVE_PHI1) << 2); // | (cfg->get_value(CFG_MEASURE_MODE) << 1) | 
         C64_PHI2_EDGE_RECOVER = edge;
         if (cfg->get_value(CFG_C64_TIMING1) >= 0) {
             uint8_t byte = cfg->get_value(CFG_C64_TIMING) | (cfg->get_value(CFG_C64_TIMING1) << 4);

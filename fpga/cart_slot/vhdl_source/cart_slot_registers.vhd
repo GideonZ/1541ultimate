@@ -120,15 +120,15 @@ begin
                     io_resp.data(0) <= control_i.serve_while_stopped;
                 when c_cart_sampler_enable =>
                     io_resp.data(0) <= control_i.sampler_enable;
-                when c_cart_timing =>
-                    io_resp.data(3 downto 0) <= std_logic_vector(control_i.timing_addr_phi2);
-                    io_resp.data(7 downto 4) <= std_logic_vector(control_i.timing_addr_phi1); 
+--                when c_cart_timing =>
+--                    io_resp.data(3 downto 0) <= std_logic_vector(control_i.timing_addr_phi2);
+--                    io_resp.data(7 downto 4) <= std_logic_vector(control_i.timing_addr_phi1); 
                 when c_cart_phi2_recover =>
                     io_resp.data(0) <= control_i.phi2_edge_recover;
-                    io_resp.data(1) <= control_i.measure_enable;
+--                    io_resp.data(1) <= control_i.measure_enable;
                     io_resp.data(2) <= control_i.force_serve_vic; 
-                when c_cart_swap_buttons =>
-                	io_resp.data(0) <= control_i.swap_buttons;
+--                when c_cart_swap_buttons =>
+--                	io_resp.data(0) <= control_i.swap_buttons;
                 when others =>
                     null;
                 end case;

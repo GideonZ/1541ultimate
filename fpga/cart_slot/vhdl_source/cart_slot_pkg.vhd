@@ -19,7 +19,6 @@ package cart_slot_pkg is
     constant c_cart_phi2_recover        : unsigned(3 downto 0) := X"C";
     constant c_cart_serve_control       : unsigned(3 downto 0) := X"D";
     constant c_cart_sampler_enable      : unsigned(3 downto 0) := X"E";
-    constant c_cart_ethernet_enable     : unsigned(3 downto 0) := X"F";
 
     type t_cart_control is record
         c64_reset           : std_logic;
