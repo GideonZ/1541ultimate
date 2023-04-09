@@ -528,6 +528,7 @@ begin
         phi2_tick       => phi2_tick_i,
         phi2_fall       => phi2_fall,
         phi2_recovered  => phi2_recovered,
+        dma_data_out    => dma_data_out,
         clock_det       => status.clock_detect,
         vic_cycle       => vic_cycle,    
     
