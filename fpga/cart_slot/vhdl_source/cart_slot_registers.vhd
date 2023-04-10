@@ -63,7 +63,8 @@ begin
                 when c_cart_kernal_enable =>
                     if g_kernal_repl then
                         control_i.kernal_enable <= io_req.data(0);
-                        control_i.kernal_16k <= io_req.data(1);
+--                        control_i.kernal_16k <= io_req.data(1);
+                        control_i.kernal_shadow <= io_req.data(2);
                     end if;
                 when c_cart_reu_enable =>
                     control_i.reu_enable <= io_req.data(0);
@@ -111,7 +112,8 @@ begin
                     io_resp.data(0) <= status.cart_active;
                 when c_cart_kernal_enable =>
                     io_resp.data(0) <= control_i.kernal_enable;
-                    io_resp.data(1) <= control_i.kernal_16k;
+--                    io_resp.data(1) <= control_i.kernal_16k;
+--                    io_resp.data(2) <= control_i.kernal_shadow;
                 when c_cart_reu_enable =>
                     io_resp.data(0) <= control_i.reu_enable;
                 when c_cart_reu_size =>
