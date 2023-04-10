@@ -523,7 +523,7 @@ begin
         g_ram_expansion => true,
         g_extended_reu  => false,
         g_stereo_sid    => true,
-        g_8voices       => false,
+        g_8voices       => true,
         g_hardware_iec  => true,
         g_c2n_streamer  => true,
         g_c2n_recorder  => true,
@@ -821,8 +821,8 @@ begin
 
         i_ultfilt1: entity work.sys_to_aud port map(sys_clock, sys_reset, sys_get_sample, ult_drive1, audio_clock, aud_drive1 );
         i_ultfilt2: entity work.sys_to_aud port map(sys_clock, sys_reset, sys_get_sample, ult_drive2, audio_clock, aud_drive2 );
-        i_ultfilt3: entity work.sys_to_aud port map(sys_clock, sys_reset, sys_get_sample, ult_tape_r, audio_clock, aud_tape_r );
-        i_ultfilt4: entity work.sys_to_aud port map(sys_clock, sys_reset, sys_get_sample, ult_tape_w, audio_clock, aud_tape_w );
+        i_ultfilt3: entity work.sys_to_aud generic map (false) port map(sys_clock, sys_reset, sys_get_sample, ult_tape_r, audio_clock, aud_tape_r );
+        i_ultfilt4: entity work.sys_to_aud generic map (false) port map(sys_clock, sys_reset, sys_get_sample, ult_tape_w, audio_clock, aud_tape_w );
         i_ultfilt5: entity work.sys_to_aud port map(sys_clock, sys_reset, sys_get_sample, ult_samp_l, audio_clock, aud_samp_l );
         i_ultfilt6: entity work.sys_to_aud port map(sys_clock, sys_reset, sys_get_sample, ult_samp_r, audio_clock, aud_samp_r );
         i_ultfilt7: entity work.sys_to_aud port map(sys_clock, sys_reset, sys_get_sample, ult_sid_1,  audio_clock, aud_sid_1 );
