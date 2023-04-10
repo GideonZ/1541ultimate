@@ -4,6 +4,7 @@ use ieee.numeric_std.all;
 
 entity slot_timing is
 generic (
+    g_mem_latency   : natural := 7;
     g_frequency     : natural := 50_000_000
 );
 port (
@@ -93,7 +94,9 @@ begin
                 phi2_tick_i  <= '1';
                 phi2_rec_i   <= '1';
                 phase_h      <= 0;
-                reqs_inhibit_i <= serve_en_i;
+                if timing_phi2 < g_mem_latency then
+                    reqs_inhibit_i <= serve_en_i;
+                end if;
                 clock_det    <= '1';
                 allow_tick_h <= false; -- filter
             elsif phase_h = c_max_count then
@@ -105,6 +108,9 @@ begin
             if phase_h = c_850ns then
                 allow_tick_h <= true;
             end if;
+            if timing_phi2 >= g_mem_latency and (phase_h = timing_phi2 - g_mem_latency) then
+                reqs_inhibit_i <= serve_en_i;
+            end if;
 
             -- related to falling edge
             phi2_falling <= '0';
@@ -113,13 +119,18 @@ begin
                 phi2_falling <= '1';
                 phi2_rec_i   <= '0';
                 phase_l      <= 0;
-                reqs_inhibit_i <= serve_en_i and serve_vic;
+                if timing_phi1 < g_mem_latency then
+                    reqs_inhibit_i <= serve_en_i and serve_vic;
+                end if;
                 allow_tick_l <= false; -- filter
             elsif phase_l /= c_max_count then
                 phase_l <= phase_l + 1;
             end if;
             if phase_l = c_850ns then -- max 1.16 MHz
                 allow_tick_l <= true;
+            end if;
+            if timing_phi1 >= g_mem_latency and (phase_l = timing_phi1 - g_mem_latency) then
+                reqs_inhibit_i <= serve_en_i and serve_vic;
             end if;
 
             do_io_event <= phi2_falling;
