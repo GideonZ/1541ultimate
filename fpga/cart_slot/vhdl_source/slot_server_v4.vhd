@@ -538,7 +538,6 @@ begin
         
         do_sample_addr  => do_sample_addr,
         do_sample_io    => do_sample_io,
-        do_probe_end    => open, --do_probe_end,
         do_io_event     => do_io_event );
 
     mem_reqs_inhibit <= reqs_inhibit;
@@ -976,7 +975,8 @@ begin
                            slot_resp_samp & slot_resp_acia);
 
     p_probe_end_delay: process(clock)
-         variable probe_end_d : std_logic_vector(4 downto 0) := (others => '0');
+        constant c_probe_time : natural := ((g_clock_freq + 5_000_000) / 10_000_000);
+        variable probe_end_d : std_logic_vector(c_probe_time-1 downto 0) := (others => '0');
     begin
         if rising_edge(clock) then
             kernal_addr_out <= kernal_probe;
@@ -991,6 +991,7 @@ begin
         slot_addr_tl <= address_tri_l;
         slot_addr_th <= address_tri_h;
         if kernal_addr_out='1' and kernal_probe='1' then
+            slot_addr_o(12) <= slot_addr_c(12);
             slot_addr_o(15 downto 13) <= "101"; -- A000-BFFF
             slot_addr_o(14) <= do_probe_end;
             slot_addr_th <= '1';
