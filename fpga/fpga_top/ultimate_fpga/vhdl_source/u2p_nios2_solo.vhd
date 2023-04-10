@@ -523,7 +523,7 @@ begin
         g_ram_expansion => true,
         g_extended_reu  => false,
         g_stereo_sid    => true,
-        g_8voices       => true,
+        g_8voices       => false,
         g_hardware_iec  => true,
         g_c2n_streamer  => true,
         g_c2n_recorder  => true,
