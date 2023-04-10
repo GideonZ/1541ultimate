@@ -605,6 +605,7 @@ begin
 
         -- kernal emulation
         kernal_enable   => control.kernal_enable,
+        kernal_shadow   => control.kernal_shadow,
         kernal_probe    => kernal_probe,
         kernal_area     => kernal_area,
         force_ultimax   => force_ultimax,

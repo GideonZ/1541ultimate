@@ -32,6 +32,7 @@ package cart_slot_pkg is
         cartridge_force     : std_logic;
         kernal_enable       : std_logic;
         kernal_16k          : std_logic;
+        kernal_shadow       : std_logic;
         reu_enable          : std_logic;
         reu_size            : std_logic_vector(2 downto 0);
         sampler_enable      : std_logic;
@@ -67,6 +68,7 @@ package cart_slot_pkg is
         cartridge_force=> '0',
         kernal_enable  => '0',
         kernal_16k     => '0',
+        kernal_shadow  => '0',
         reu_enable     => '0',
         reu_size       => "111",
         sampler_enable => '0',

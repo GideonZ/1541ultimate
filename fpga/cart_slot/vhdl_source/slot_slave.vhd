@@ -57,6 +57,7 @@ port (
     allow_write     : in  std_logic := '0';
     measure         : in  std_logic := '0'; -- Timing measurement mode
     measure_data    : in  std_logic_vector(7 downto 0) := X"55";
+    kernal_shadow   : in  std_logic := '1';
     kernal_enable   : in  std_logic := '0';
     kernal_probe    : out std_logic := '0';
     kernal_area     : out std_logic := '0';
@@ -146,9 +147,13 @@ begin
 
             if do_probe_end='1' then
                 data_mux <= kernal_probe_i and not ROMHn;
-                force_ultimax <= kernal_probe_i;
-                kernal_ready <= '1';
                 kernal_probe_i <= '0';
+                -- if ROMHn = 0 then it is a ROM area; we need to serve if kernal_probe_i was 1.
+                -- if ROMHn = 1 then it is a RAM area; we will serve only when kernal shadow ram is enabled (should be off for C128)
+                if ROMHn = '0' or kernal_shadow = '1' then
+                    force_ultimax <= kernal_probe_i;
+                    kernal_ready <= '1';
+                end if;
             elsif do_io_event='1' then
                 force_ultimax <= '0';
                 kernal_ready <= '0';
