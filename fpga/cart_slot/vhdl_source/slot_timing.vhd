@@ -36,14 +36,12 @@ port (
     clear_inhibit   : in  std_logic;
     
     do_sample_addr  : out std_logic;
-    do_probe_end    : out std_logic;
     do_sample_io    : out std_logic;
     do_io_event     : out std_logic );
 end slot_timing;
 
 architecture gideon of slot_timing is
     constant c_max_count : natural := g_frequency / 800_000;
-    constant c_probe_end : natural := ((g_frequency + 1_666_666) / 3_333_333) -1;  -- 300 ns after PHI2
     constant c_500ns     : natural := ((g_frequency + 1_000_000) / 2_000_000) -1;  -- 500 ns
     constant c_400ns     : natural := (((c_500ns + 1) * 4) / 5) -1;
     constant c_80ns      : natural := (((c_500ns + 1) * 4) / 25) -1;
@@ -145,11 +143,6 @@ begin
             elsif clear_inhibit = '1' then
                 refr_inhibit <= '0';
             end if;   
-
-            do_probe_end <= '0';            
-            if phase_h = c_probe_end then
-                do_probe_end <= '1';
-            end if;
 
             if phase_h = c_80ns then
                 dma_data_out <= '1';
