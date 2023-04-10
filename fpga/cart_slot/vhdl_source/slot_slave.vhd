@@ -88,11 +88,7 @@ architecture gideon of slot_slave is
     signal mem_wdata_i  : std_logic_vector(7 downto 0);
     signal kernal_probe_i   : std_logic;
     signal kernal_area_i    : std_logic;
-    signal kernal_ready     : std_logic;
-    signal kernal_read      : std_logic;
     signal mem_data_0       : std_logic_vector(7 downto 0) := X"00";
-    signal mem_data_1       : std_logic_vector(7 downto 0) := X"00";
-    signal data_mux         : std_logic;
 
     type   t_state is (idle, mem_access, wait_end);
                        
@@ -145,14 +141,12 @@ begin
             end if;
 
             if do_probe_end='1' then
-                data_mux <= kernal_probe_i and not ROMHn;
-                force_ultimax <= kernal_probe_i;
-                kernal_ready <= '1';
                 kernal_probe_i <= '0';
+                if kernal_probe_i = '1' and ROMHn = '0' then -- ROM!
+                    force_ultimax <= '1';
+                end if;
             elsif do_io_event='1' then
                 force_ultimax <= '0';
-                kernal_ready <= '0';
-                kernal_read <= '0';
             end if;
             
             clear_inhibit <= '0';
@@ -167,8 +161,6 @@ begin
                         mem_rwn_i  <= '1';
                         state      <= mem_access;
                         kernal_probe_i <= kernal_area_i;
-                        kernal_read <= kernal_area_i;
-                        kernal_ready <= '0';
                     else
                         -- no memory read needed
                         clear_inhibit <= '1';
@@ -184,7 +176,7 @@ begin
                                 mem_rwn_i  <= '0';
                                 state <= mem_access;
                             end if;                                
-                        elsif allow_write='1' or kernal_area_i='1' then -- not I/O area
+                        elsif allow_write='1' and not kernal_area_i='1' then -- not I/O area
                             -- memory write
                             mem_req_ff <= '1';
                             mem_rwn_i  <= '0';
@@ -207,16 +199,14 @@ begin
                 if mem_dack='1' then -- the data is available, register it for putting it on the bus
                     if g_big_endian then
                         mem_data_0 <= mem_rdata(31 downto 24);
-                        mem_data_1 <= mem_rdata(23 downto 16);
                     else
                         mem_data_0 <= mem_rdata(7 downto 0);
-                        mem_data_1 <= mem_rdata(15 downto 8);
                     end if;
-                    dav      <= '1';
+                    dav <= '1';
                 end if;
                 if phi2_tick='1' or do_io_event='1' then -- around the clock edges
                     state <= idle;
-                    dav    <= '0';
+                    dav <= '0';
                 end if;
                 
             when others =>
@@ -225,7 +215,6 @@ begin
             end case;
 
             if reset='1' then
-                data_mux        <= '0';
                 dav             <= '0';
                 state           <= idle;
                 mem_req_ff      <= '0';
@@ -237,8 +226,6 @@ begin
                 cpu_write       <= '0';
                 epyx_reset      <= '1';
                 kernal_probe_i  <= '0';
-                kernal_read     <= '0';
-                kernal_ready    <= '0';
                 force_ultimax   <= '0';
             end if;
         end if;
@@ -270,21 +257,13 @@ begin
         end if;
     end process;
 
-    process(RWn, PHI2, IO1n, IO2n, ROMLn, ROMHn, kernal_read, kernal_ready, data_mux, measure, measure_data,
-            mem_data_0, mem_data_1, dav, slot_resp, serve_io1, serve_io2)
+    process(RWn, PHI2, IO1n, IO2n, ROMLn, ROMHn, measure, measure_data,
+            mem_data_0, dav, slot_resp, serve_io1, serve_io2)
     begin
         DATA_tri <= '0';
         DATA_out <= X"FF";
         if RWn = '1' or PHI2 = '0' then -- if current cycle is a read
-            if kernal_read='1' then -- we did a kernal fetch; could be mirrored ram or rom
-                DATA_tri <= dav and kernal_ready and not ROMHn;
-                if data_mux = '0' then
-                    DATA_out <= mem_data_0;
-                else
-                    DATA_out <= mem_data_1;
-                end if;
-                
-            elsif IO1n='0' or IO2n='0' then -- IO Reads
+            if IO1n='0' or IO2n='0' then -- IO Reads
                 if slot_resp.reg_output = '1' then -- cartridge has something to say (register read)
                     DATA_tri <= '1';
                     DATA_out <= slot_resp.data;

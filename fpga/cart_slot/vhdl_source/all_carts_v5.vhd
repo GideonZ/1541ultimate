@@ -719,7 +719,7 @@ begin
         end case;                
 
         if kernal_area='1' then -- This bit-order reduces the number of multiplexers
-            mem_addr_i <= g_kernal_base(27 downto 15) & slot_addr(1 downto 0) & slot_addr(12 downto 2) & "00";
+            mem_addr_i <= g_kernal_base(27 downto 13) & slot_addr(12 downto 0);
         end if;
     end process;
 

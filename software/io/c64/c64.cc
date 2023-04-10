@@ -1081,24 +1081,10 @@ void C64::enable_kernal(uint8_t *rom)
     memcpy((void *)U64_KERNAL_BASE, rom, 8192); // as simple as that
 
 #else
-    //  mem_addr_i <= g_kernal_base(27 downto 15) & slot_addr(1 downto 0) & slot_addr(12 downto 2) & "00";
-    //                                             ~~~ outer loop 'j' ~~~   ~~~ inner loop 'i' ~~~ ~~ +4 ~~
-    uint8_t *src = rom;
+    //  mem_addr_i <= g_kernal_base(27 downto 13) & slot_addr(12 downto 0);
     extern uint8_t __kernal_area;
-    uint8_t *dst = (&__kernal_area) + 1;
-    for (int j = 0; j < 4; j++) {
-        for (int i = j; i < 8192; i+=4) {
-            *(dst) = src[i];
-            dst += 4;
-        }
-    }
-
-    // For testing purposes, we write an ident string in the kernal replacement RAM
-    char *kern = (char *)&__kernal_area;
-    const char *ident = "KERNAL REPLACEMENT SHADOW RAM!";
-    for(; *ident; ident++, kern += 4) {
-        *kern = *ident;
-    }
+    uint8_t *dst = (&__kernal_area) + 0;
+    memcpy(dst, rom, 8192);
 
     C64_KERNAL_ENABLE = 1;
 #endif
