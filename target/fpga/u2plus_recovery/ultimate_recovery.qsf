@@ -647,7 +647,8 @@ set_global_assignment -name QIP_FILE ../../../fpga/altera/megafunctions/pll.qip
 set_global_assignment -name QIP_FILE ../../../fpga/altera/megafunctions/update/synthesis/update.qip
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/u2p_io.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/update_io.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/altera/ddr2_ctrl.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/ddr2_ctrl_logic.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/ddr2_ctrl_fast.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/synchronizer_gzw.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/mem_io.vhd
 
