@@ -619,16 +619,16 @@ begin
         -- interface with hardware
         BUFFER_ENn      => BUFFER_ENn );
 
-    r_measure: if g_timing_meas generate
-        i_slot_measure: entity work.slot_measure
-            port map (
-                clock    => clock,
-                reset    => reset,
-                phi2     => phi2_c,
-                addr     => slot_addr_c,
-                data_out => measure_data
-            );
-    end generate;
+    -- r_measure: if g_timing_meas generate
+    --     i_slot_measure: entity work.slot_measure
+    --         port map (
+    --             clock    => clock,
+    --             reset    => reset,
+    --             phi2     => phi2_c,
+    --             addr     => slot_addr_c,
+    --             data_out => measure_data
+    --         );
+    -- end generate;
 
     r_master: if not g_direct_dma generate
         i_master: entity work.slot_master_v4
