@@ -449,8 +449,37 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
 #endif
             }
             break;
+
+        case CTRL_CMD_GET_RAMDISKINFO: {
+                data_message.length = 8;
+                unsigned char* data = (unsigned char*) data_message.message;
+                for (int i=0; i<4; i++)
+                {
+                    int typ = C64 :: isMP3RamDrive(i);
+                    unsigned char ty = 0;
+                    unsigned char si = 0;
+                    if (typ == 0) ty = 0;
+                    else if (typ == 1541) ty = 0x41;
+                    else if (typ == 1571) ty = 0x71;
+                    else if (typ == 1581) ty = 0x81;
+                    else if (typ == DRVTYPE_MP3_DNP)
+                    {
+                        ty = 0xDD;
+                        si = (unsigned char)(C64 :: getSizeOfMP3NativeRamdrive(i) >> 16);
+                    }
+                    else
+                       ty = si = 0;
+                       
+                    data[2*i] = ty;
+                    data[2*i+1] = si;
+                    
+                }
+                *status = &c_status_ok;
+                data_message.last_part = true;
+                *reply = &data_message;
+            }
+            break;
         }
-    
     }
 }
 
