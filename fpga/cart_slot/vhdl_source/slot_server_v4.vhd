@@ -19,6 +19,7 @@ generic (
     g_rom_base_cart : std_logic_vector(27 downto 0) := X"0F00000"; -- should be on a 1M boundary
     g_kernal_base   : std_logic_vector(27 downto 0) := X"0EA8000"; -- should be on a 32K boundary 
     g_register_addr : boolean := false;
+    g_timing_meas   : boolean := false;
     g_direct_dma    : boolean := false;
     g_ext_freeze_act: boolean := false;
     g_cartreset_init: std_logic := '0';
@@ -196,6 +197,7 @@ architecture structural of slot_server_v4 is
     signal phi2_fall       : std_logic;
     signal phi2_recovered  : std_logic;
     signal vic_cycle       : std_logic;
+    signal dma_data_out    : std_logic;
     signal do_sample_addr  : std_logic;
     signal do_sample_io    : std_logic;
     signal do_io_event     : std_logic;
@@ -223,11 +225,15 @@ architecture structural of slot_server_v4 is
     signal serve_enable    : std_logic := '0'; -- from cartridge emulation logic
     signal serve_inhibit   : std_logic := '0';
     signal serve_vic       : std_logic := '0';
+    signal serve_vic_f     : std_logic := '0';
     signal serve_128       : std_logic := '0';
     signal serve_rom       : std_logic := '0'; -- ROML or ROMH
     signal serve_io1       : std_logic := '0'; -- IO1n
     signal serve_io2       : std_logic := '0'; -- IO2n
     signal allow_write     : std_logic := '0';
+
+    -- timing measurement
+    signal measure_data    : std_logic_vector(7 downto 0) := X"FF";
 
     -- kernal replacement logic
     signal kernal_area     : std_logic := '0';
@@ -479,6 +485,7 @@ begin
 
     i_registers: entity work.cart_slot_registers
     generic map (
+        g_timing_meas   => g_timing_meas,
         g_kernal_repl   => g_kernal_repl,
         g_boot_stop     => g_boot_stop,
         g_cartreset_init=> g_cartreset_init,
@@ -495,8 +502,12 @@ begin
         
 
     serve_inhibit <= status.c64_stopped and not control.serve_while_stopped;
+    serve_vic_f   <= serve_vic or control.force_serve_vic;
 
     i_timing: entity work.slot_timing
+    generic map (
+        g_frequency     => g_clock_freq
+    )
     port map (
         clock           => clock,
         reset           => reset,
@@ -505,17 +516,19 @@ begin
         PHI2            => phi2_c,
         BA              => ba_c,
     
-        serve_vic       => serve_vic,
+        serve_vic       => serve_vic_f,
         serve_enable    => serve_enable,
         serve_inhibit   => serve_inhibit,
         allow_serve     => allow_serve,
 
-        timing_addr     => control.timing_addr_valid,
+        timing_phi1     => control.timing_addr_phi1,
+        timing_phi2     => control.timing_addr_phi2,
         edge_recover    => control.phi2_edge_recover,
     
         phi2_tick       => phi2_tick_i,
         phi2_fall       => phi2_fall,
         phi2_recovered  => phi2_recovered,
+        dma_data_out    => dma_data_out,
         clock_det       => status.clock_detect,
         vic_cycle       => vic_cycle,    
     
@@ -525,7 +538,6 @@ begin
         
         do_sample_addr  => do_sample_addr,
         do_sample_io    => do_sample_io,
-        do_probe_end    => open, --do_probe_end,
         do_io_event     => do_io_event );
 
     mem_reqs_inhibit <= reqs_inhibit;
@@ -587,8 +599,13 @@ begin
         allow_write     => allow_write,
         clear_inhibit   => clear_inhibit,
 
+        -- timing measurement
+        measure         => control.measure_enable,
+        measure_data    => measure_data,
+
         -- kernal emulation
         kernal_enable   => control.kernal_enable,
+        kernal_shadow   => control.kernal_shadow,
         kernal_probe    => kernal_probe,
         kernal_area     => kernal_area,
         force_ultimax   => force_ultimax,
@@ -601,6 +618,17 @@ begin
         
         -- interface with hardware
         BUFFER_ENn      => BUFFER_ENn );
+
+    -- r_measure: if g_timing_meas generate
+    --     i_slot_measure: entity work.slot_measure
+    --         port map (
+    --             clock    => clock,
+    --             reset    => reset,
+    --             phi2     => phi2_c,
+    --             addr     => slot_addr_c,
+    --             data_out => measure_data
+    --         );
+    -- end generate;
 
     r_master: if not g_direct_dma generate
         i_master: entity work.slot_master_v4
@@ -628,6 +656,7 @@ begin
         
             -- timing inputs
             vic_cycle       => vic_cycle,    
+            dma_data_out    => dma_data_out,
             phi2_recovered  => phi2_recovered,
             phi2_tick       => phi2_tick_i,
             do_sample_addr  => do_sample_addr,
@@ -761,6 +790,15 @@ begin
 
     end generate;
     
+    r_no_sid: if not g_implement_sid generate
+        i_io_dummy: entity work.io_dummy
+            port map (
+                clock   => clock,
+                io_req  => io_req_sid,
+                io_resp => io_resp_sid
+            );
+    end generate;
+
     g_cmd: if g_command_intf generate
         i_cmd: entity work.command_interface
         port map (
@@ -938,7 +976,8 @@ begin
                            slot_resp_samp & slot_resp_acia);
 
     p_probe_end_delay: process(clock)
-         variable probe_end_d : std_logic_vector(4 downto 0) := (others => '0');
+        constant c_probe_time : natural := ((g_clock_freq + 5_000_000) / 10_000_000);
+        variable probe_end_d : std_logic_vector(c_probe_time-1 downto 0) := (others => '0');
     begin
         if rising_edge(clock) then
             kernal_addr_out <= kernal_probe;
@@ -953,6 +992,7 @@ begin
         slot_addr_tl <= address_tri_l;
         slot_addr_th <= address_tri_h;
         if kernal_addr_out='1' and kernal_probe='1' then
+            slot_addr_o(12) <= slot_addr_c(12);
             slot_addr_o(15 downto 13) <= "101"; -- A000-BFFF
             slot_addr_o(14) <= do_probe_end;
             slot_addr_th <= '1';
@@ -1039,6 +1079,8 @@ begin
         clock       => clock,
         reset       => reset,
         
+        inhibit     => reqs_inhibit,
+
         reqs(0)     => mem_req_32_slot,
         reqs(1)     => mem_req_32_reu,
         reqs(2)     => mem_req_32_samp,
