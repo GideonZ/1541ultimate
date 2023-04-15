@@ -1,0 +1,221 @@
+# IEC processor code used when IEC Printer is enabled and IEC Drive is disabled
+# A printer is a very simple IEC device. LISTENER only, never TALKER
+
+Tv = 1475
+Ts = 1475
+Ttk = 200
+Tda = 80
+T0 = 80
+T1 = 80
+Tne = 40
+Tye = 1000
+Tbb = 90
+
+start
+            JUMP reset_vec
+
+# IRQ is at address 1
+ATN_IRQ
+            CLRST
+            SET DATA=0 # not ready to receive
+            SET CLK=1  # release clock
+            WAIT FOR 20 us
+            WAIT UNTIL CLK=0
+
+# We are now able to release data, unless we are not ready to receive data
+# So we have to check our FIFO and see if it has room for a new byte.
+            LOAD $41
+            PUSHC
+
+            WAIT UNTIL CLK=1
+            SUB RECEIVE_ATN_BYTE
+            WAIT FOR 10 us
+            JUMP _no_push
+_atn_loop
+            WAIT UNTIL CLK=1
+            SUB RECEIVE_BYTE
+            IF NOT LISTENER THEN _no_push
+            SUB PUSH_BYTE
+_no_push
+            SUB CHECK_ATN_BYTE
+            IF LISTENER THEN _keep_data
+            WAIT FOR 70 us
+            SET DATA=1
+            WAIT UNTIL NOT ATN=0        # ATN is not for us, wait end of ATN
+            LOAD $42
+            PUSHC
+            JUMP RELEASE
+_keep_data
+            WAIT UNTIL NOT CLK=0,ATN=0
+
+            IF NOT ATN THEN _atn_loop  #CLK might still be 0
+            LOAD $42  # Tell to the software that ATN is now released
+            PUSHC
+
+            # If we don't need to listen, just get off the bus and die
+
+            IF NOT LISTENER THEN RELEASE
+
+            # We need to listen!
+#            LOAD $44
+#            PUSHC
+
+_listen_normally
+            WAIT UNTIL CLK=1
+            SUB RECEIVE_BYTE
+            SUB PUSH_BYTE
+            IF NOT EOI THEN _listen_normally
+            SET LISTENER=0
+            WAIT FOR 70 us
+            LOAD $5b
+            PUSHC
+
+RELEASE
+            # Release from bus and die
+            SET ATN=1
+            SET CLK=1
+            SET DATA=1
+            WAIT FOR 100 us
+            JUMP reset_vec
+
+RECEIVE_BYTE
+# initial state: DATA is low, CLK=1
+
+_wait1
+            IF UPFIFOFULL THEN _wait1
+            SET DATA=1
+
+            WAIT UNTIL CLK=0 FOR Tv
+            SET EOI=TIMEOUT  # If there was a timeout, set the EOI flag
+            IF NOT EOI THEN _recv0
+            IF NOT ATN THEN _recv0
+            SET DATA=0
+            WAIT FOR 70 us
+            SET DATA=1
+            WAIT UNTIL CLK=0 FOR 1000 us
+            IF TIMEOUT THEN _error
+
+_recv0
+            SUB _recv8bits
+
+# Now acknowledge byte
+            WAIT FOR 50 us
+            SET  DATA=0
+            RET
+
+RECEIVE_ATN_BYTE
+            SET DATA=1
+            WAIT UNTIL CLK=0    # Possibly forever!
+            IF TIMEOUT THEN _error1
+
+_recv8bits
+            WAIT UNTIL CLK=1 FOR Ts
+            IN   DATABIT0=DATA
+            IF TIMEOUT THEN _error2
+            WAIT UNTIL CLK=0 FOR Tv
+
+            WAIT UNTIL CLK=1 FOR Ts
+            IN   DATABIT1=DATA
+            IF TIMEOUT THEN _error2
+            WAIT UNTIL CLK=0 FOR Tv
+
+            WAIT UNTIL CLK=1 FOR Ts
+            IN   DATABIT2=DATA
+            IF TIMEOUT THEN _error2
+            WAIT UNTIL CLK=0 FOR Tv
+
+            WAIT UNTIL CLK=1 FOR Ts
+            IN   DATABIT3=DATA
+            IF TIMEOUT THEN _error2
+            WAIT UNTIL CLK=0 FOR Tv
+
+            WAIT UNTIL CLK=1 FOR Ts
+            IN   DATABIT4=DATA
+            IF TIMEOUT THEN _error2
+            WAIT UNTIL CLK=0 FOR Tv
+
+            WAIT UNTIL CLK=1 FOR Ts
+            IN   DATABIT5=DATA
+            IF TIMEOUT THEN _error2
+            WAIT UNTIL CLK=0 FOR Tv
+
+            WAIT UNTIL CLK=1 FOR Ts
+            IN   DATABIT6=DATA
+            IF TIMEOUT THEN _error2
+            WAIT UNTIL CLK=0 FOR Tv
+
+            WAIT UNTIL CLK=1 FOR Ts
+            IN   DATABIT7=DATA
+            IF TIMEOUT THEN _error2
+            WAIT UNTIL CLK=0 FOR Tv
+            WAIT FOR 20 us
+            SET DATA=0
+            RET
+
+PUSH_BYTE
+            PUSHD # Push received byte to software
+            IF NOT EOI THEN _noeoi
+            # If end flag was received, push end marker to software
+            LOAD $45
+            PUSHC
+_noeoi
+            RET
+
+CHECK_ATN_BYTE
+            IF NOT DATABYTE IS $24 THEN _dont_print
+            LOAD $46
+            PUSHC
+            SET LISTENER=1
+            SET TALKER=0
+_dont_print
+            RET
+
+# Below are some different error codes for debug
+_error
+            LOAD $EE
+            PUSHC
+            JUMP RELEASE
+
+_error1
+            LOAD $E8
+            PUSHC
+            JUMP RELEASE
+
+_error2
+            LOAD $E9
+            PUSHC
+            JUMP RELEASE
+
+reset_vec
+            CLRST
+            SET IRQ_EN=1
+            POPB ; hang
+            IF NOT CTRL THEN reset_vec
+            IF DATABYTE IS $1D THEN MASTER_START
+            JUMP reset_vec
+
+MASTER_START
+            JUMP RELEASE
+
+; Control codes sent to software via FIFO
+; $41 : Start of ATN
+; $42 : End of ATN
+; $43 : Ready to send (software can now push data to be sent in FIFO)
+; $44 : Ready to receive (not sent to software)
+; $45 : End of reception (OEI)
+; $46 : Start of printer data
+; $47 : Byte transmitted  (we need to know this, because our fifo can get flushed by ATN)
+
+; $57 : Acknowledge WARP mode enabled
+; $AD : End of WARP bloc reception (328 bytes)
+; $AE : Timeout on WARP (never sent because subroutine never called)
+; $DA : Start of WARP reception
+; $DE : WARP reception failure
+
+; $E5 : Invalid control code received from software
+; $E6 : No device, we are alone on IEC bus
+
+
+; Control codes received from software via FIFO
+; $57 : Switch to WARP mode (from initial waiting state)
+; $1D : Switch to MASTER mode to send ATN commands (from initial waiting state)

@@ -187,7 +187,7 @@ SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas eapi.tas
 
 SRCS_BIN =  basic.bin sidcrt.bin muscrt.bin musplayer.bin chars.bin module.bin
 
-SRCS_IEC = iec_code.iec
+SRCS_IEC = iec_code_pr.iec iec_code_dr_pr.iec iec_code_dr.iec
 
 SRCS_NANO = nano_minimal.nan
 

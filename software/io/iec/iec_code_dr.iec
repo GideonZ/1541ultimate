@@ -1,3 +1,4 @@
+# IEC processor code used when IEC Drive is anabled and IEC Printer is disabled
 
 Tv = 1475
 Ts = 1475
@@ -78,6 +79,7 @@ _listen_normally
             SUB RECEIVE_BYTE
             SUB PUSH_BYTE
             IF NOT EOI THEN _listen_normally
+            SET LISTENER=0
             WAIT FOR 70 us
             LOAD $5b
             PUSHC
@@ -285,12 +287,6 @@ _dont_unlisten
             SET LISTENER=1
             SET TALKER=0
 _dont_listen
-            IF NOT DATABYTE IS $24 THEN _dont_print
-            LOAD $46
-            PUSHC
-            SET LISTENER=1
-            SET TALKER=0
-_dont_print
             RET
 
 # Below are some different error codes for debug
@@ -474,7 +470,6 @@ get_68
 ; $43 : Ready to send (software can now push data to be sent in FIFO)
 ; $44 : Ready to receive (not sent to software)
 ; $45 : End of reception (OEI)
-; $46 : Start of printer data
 ; $47 : Byte transmitted  (we need to know this, because our fifo can get flushed by ATN)
 
 ; $57 : Acknowledge WARP mode enabled
