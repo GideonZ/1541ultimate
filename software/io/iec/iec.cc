@@ -37,8 +37,6 @@ extern "C" {
 #define MENU_SEND_COMMAND    0xCA1F
 #define MENU_IEC_FLUSH       0xCA20
    
-extern uint8_t  _iec_code_b_start;
-extern uint32_t _iec_code_b_size;
 //extern BYTE _warp_rom_65_start;
 extern uint8_t _ulticopy_65_start;
 extern uint32_t _ulticopy_65_size;
@@ -154,6 +152,100 @@ void IecInterface :: iec_task(void *a)
 	iec->poll();
 }
 
+void IecInterface :: iec_processor_configure(void)
+{
+    int size;
+    uint8_t *code_src;
+
+    int current_config = (iec_drive_enabled ? 0x01 : 0x00) | (iec_printer_enabled ? 0x02 : 0x00);
+
+    switch (current_config)
+    {
+        case 0x00:  /* No IEC device enabled, disable IEC processor */
+            printf("Disable IEC processor\n");
+            HW_IEC_RESET_ENABLE = 0; // disable
+            return;
+
+        case 0x01:  /* IEC drive enabled, IEC printed disabled */
+            printf("Enable IEC for drive only\n");
+            size = (int)&_iec_code_dr_b_size;
+            code_src = &_iec_code_dr_b_start;
+            break;
+
+        case 0x02:  /* IEC drive disabled, IEC printer enabled */
+            printf("Enable IEC for printer only\n");
+            size = (int)&_iec_code_pr_b_size;
+            code_src = &_iec_code_pr_b_start;
+            break;
+
+        case 0x03:  /* IEC drive enabled, IEC printer enabled */
+            printf("Enable IEC for drive and printer\n");
+            size = (int)&_iec_code_dr_pr_b_size;
+            code_src = &_iec_code_dr_pr_b_start;
+            break;
+    }
+
+    HW_IEC_RESET_ENABLE = 0; // disable while loading code
+
+    printf("IEC Processor found: Version = %b. Loading code...", HW_IEC_VERSION);
+    uint8_t *dst = (uint8_t *)HW_IEC_CODE;
+    uint8_t *src = code_src;
+
+    for(int i=0;i<size;i++)
+        *(dst++) = *(src++);
+
+    printf("%d bytes loaded.\n", size);
+
+    uint32_t was_talk   = 0x18800040 + 10; // compare instruction
+    uint32_t was_listen = 0x18800020 + 10;
+    uint32_t was_printer_listen = 0x18800020 + 4;
+
+    printf("Setting IEC bus ID to %d for drive and %d for printer.\n", iec_drive_id, iec_printer_id);
+    int replaced = 0;
+
+    /* Convert bytes size to words size */
+    size >>= 2;
+
+    for(int i=0;i<size;i++) {
+        uint32_t word_read = cpu_to_32le(HW_IEC_RAM_DW[i]);
+
+        if ((word_read & 0x1F8000FF) == was_listen) {
+            HW_IEC_RAM_DW[i] = cpu_to_32le((word_read & 0xFFFFFF00) + iec_drive_id + 0x20);
+            replaced ++;
+        }
+
+        if ((word_read & 0x1F8000FF) == was_talk) {
+            HW_IEC_RAM_DW[i] = cpu_to_32le((word_read & 0xFFFFFF00) + iec_drive_id + 0x40);
+            replaced ++;
+        }
+
+        if ((word_read & 0x1F8000FF) == was_printer_listen) {
+            HW_IEC_RAM_DW[i] = cpu_to_32le((word_read & 0xFFFFFF00) + iec_printer_id + 0x20);
+            replaced ++;
+        }
+    }
+
+    printf("Replaced: %d words in %d words.\n", replaced, size);
+
+    HW_IEC_RESET_ENABLE = 1; // enable
+}
+
+void IecInterface :: iec_drive_enable(bool b, uint8_t id)
+{
+    iec_drive_enabled = b;
+    if (id) iec_drive_id = id;
+
+    iec_processor_configure();
+}
+
+void IecInterface :: iec_printer_enable(bool b, uint8_t id)
+{
+    iec_printer_enabled = b;
+    if (id) iec_printer_id = id;
+
+    iec_processor_configure();
+}
+
 IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
 {
 	fm = FileManager :: getFileManager();
@@ -164,15 +256,12 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
 
     register_store(0x49454300, "Software IEC Settings", iec_config);
 
-    HW_IEC_RESET_ENABLE = 0; // disable
+    iec_drive_enabled = 0;
+    iec_printer_enabled = 0;
+    iec_drive_id = 10;
+    iec_printer_id = 4;
 
-    int size = (int)&_iec_code_b_size;
-    printf("IEC Processor found: Version = %b. Loading code...", HW_IEC_VERSION);
-    uint8_t *src = &_iec_code_b_start;
-    uint8_t *dst = (uint8_t *)HW_IEC_CODE;
-    for(int i=0;i<size;i++)
-        *(dst++) = *(src++);
-    printf("%d bytes loaded.\n", size);
+    HW_IEC_RESET_ENABLE = 0; // disable
 
     atn = false;
     cmd_path = fm->get_new_path("IEC Gui Path");
@@ -234,41 +323,15 @@ IecCommandChannel *IecInterface :: get_data_channel(int chan)
 
 void IecInterface :: effectuate_settings(void)
 {
-    uint32_t was_talk   = 0x18800040 + 10; // compare instruction
-    uint32_t was_listen = 0x18800020 + 10;
-    uint32_t was_printer_listen = 0x18800020 + 4;
     
-//            data = (0x08 << 20) + (bit << 24) + (inv << 29) + (addr << 8) + (value << 0)
     int bus_id = cfg->get_value(CFG_IEC_BUS_ID);
     cmd_if.set_kernal_device_id(bus_id);
-
-	const uint32_t *src = (uint32_t*)&_iec_code_b_start;
-    if(bus_id != last_addr) {
-        printf("Setting IEC bus ID to %d.\n", bus_id);
-        int replaced = 0;
-
-        for(int i=0;i<512;i++) {
-        	uint32_t word_read = cpu_to_32le(src[i]);
-        	if ((word_read & 0x1F8000FF) == was_listen) {
-                // printf("Replacing %8x with %8x at %d.\n", HW_IEC_RAM_DW[i], (HW_IEC_RAM_DW[i] & 0xFFFFFF00) + bus_id + 0x20, i);
-                HW_IEC_RAM_DW[i] = cpu_to_32le((word_read & 0xFFFFFF00) + bus_id + 0x20);
-                replaced ++;
-            }
-            if ((word_read & 0x1F8000FF) == was_talk) {
-                HW_IEC_RAM_DW[i] = cpu_to_32le((word_read & 0xFFFFFF00) + bus_id + 0x40);
-                replaced ++;
-            }
-        }  
-        printf("Replaced: %d words.\n", replaced);
-        last_addr = bus_id;    
-    }
-
-    rootPath = cfg->get_string(CFG_IEC_PATH);
-
-    iec_enable = uint8_t(cfg->get_value(CFG_IEC_ENABLE));
-    HW_IEC_RESET_ENABLE = iec_enable;
-}
     
+    rootPath = cfg->get_string(CFG_IEC_PATH);
+    iec_enable = uint8_t(cfg->get_value(CFG_IEC_ENABLE));
+
+    iec_drive_enable(iec_enable, bus_id);
+}
 
 const char *IecInterface :: get_root_path(void)
 {
@@ -477,11 +540,11 @@ int IecInterface :: executeCommand(SubsysCommand *cmd)
 	switch(cmd->functionID) {
 		case MENU_IEC_ON:
 			iec_enable = 1;
-			HW_IEC_RESET_ENABLE = 1;
+                        iec_drive_enable(iec_enable);
 			break;
 		case MENU_IEC_OFF:
 			iec_enable = 0;
-			HW_IEC_RESET_ENABLE = 0;
+			iec_drive_enable(iec_enable);
 			break;
 		case MENU_IEC_RESET:
             reset();
@@ -538,13 +601,11 @@ int IecInterface :: executeCommand(SubsysCommand *cmd)
 void IecInterface :: reset(void)
 {
     HW_IEC_RESET_ENABLE = 0;
-    iec_printer.reset();
     for(int i=0; i < 16; i++) {
         channels[i]->reset();
     }
-    HW_IEC_RESET_ENABLE = iec_enable;
+    iec_drive_enable(iec_enable);
 }
-
 
 #include "c1541.h"
 extern C1541 *c1541_A;

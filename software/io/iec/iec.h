@@ -89,6 +89,12 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
     int current_channel;
     int warp_drive;
     uint8_t warp_return_code;
+ 
+    /* Needed to configure IEC processor */
+    bool iec_drive_enabled;
+    bool iec_printer_enabled;
+    uint8_t iec_drive_id;
+    uint8_t iec_printer_id;
 
     BinImage *ulticopy_bin_image;
 
@@ -108,6 +114,10 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
     UltiCopy *ui_window;
     uint8_t last_track;
     static void iec_task(void *a);
+
+    void iec_processor_configure(void);
+    void iec_drive_enable(bool b, uint8_t id=0);
+    void iec_printer_enable(bool b, uint8_t id=0);
 
     struct {
         Action *turn_on;
@@ -209,5 +219,18 @@ typedef struct {
 	uint8_t len;
 } IEC_ERROR_MSG;
 
+/* -------  IEC processor code location and size */
+
+/* Code for drive and printer */
+extern uint8_t  _iec_code_dr_pr_b_start;
+extern uint32_t _iec_code_dr_pr_b_size;
+
+/* Code for drive only */
+extern uint8_t  _iec_code_dr_b_start;
+extern uint32_t _iec_code_dr_b_size;
+
+/* Code for printer only */
+extern uint8_t  _iec_code_pr_b_start;
+extern uint32_t _iec_code_pr_b_size;
 
 #endif

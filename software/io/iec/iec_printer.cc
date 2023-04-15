@@ -42,9 +42,7 @@
 #define MENU_PRINTER_ON        0x1230
 #define MENU_PRINTER_OFF       0x1231
 #define MENU_PRINTER_FLUSH     0x1232
-
-extern uint8_t  _iec_code_b_start;
-extern uint32_t _iec_code_b_size;
+#define MENU_PRINTER_RESET     0x1233
 
 /************************************************************************
 *                                                                       *
@@ -118,34 +116,10 @@ IecPrinter iec_printer;
 void IecPrinter::effectuate_settings(void)
 {
     /* IEC CPU machine code for printer device detection on IEC */
-    uint32_t was_printer_listen = 0x18800020 + last_printer_addr;
+    uint32_t was_printer_listen = 0x18800020 + 4;
 
     /* Printer ID on IEC from nvram */
     int bus_id = cfg->get_value(CFG_PRINTER_ID);
-
-    /* IEC CPU code base */
-    const uint32_t *src = (uint32_t*)&_iec_code_b_start;
-
-    /* Search and replace machine code if device number has changed */
-    if(bus_id != last_printer_addr)
-    {
-        printf("Setting IEC printer ID to %d.\n", bus_id);
-        int replaced = 0;
-
-        for(int i=0;i<512;i++)
-        {
-            uint32_t word_read = cpu_to_32le(src[i]);
-
-            if ((word_read & 0x1F8000FF) == was_printer_listen)
-            {
-                HW_IEC_RAM_DW[i] = cpu_to_32le((word_read & 0xFFFFFF00) + bus_id + 0x20);
-                replaced ++;
-            }
-        }
-
-        printf("Replaced: %d words.\n", replaced);
-        last_printer_addr = bus_id;
-    }
 
     /* Load and apply virtual printer configuration from nvram */
     set_filename(cfg->get_string(CFG_PRINTER_FILENAME));
@@ -158,7 +132,8 @@ void IecPrinter::effectuate_settings(void)
 
     /* Enable printer if requested */
     printer_enable = uint8_t(cfg->get_value(CFG_PRINTER_ENABLE));
-    //HW_IEC_RESET_ENABLE = iec_enable;
+
+    iec_if.iec_printer_enable(printer_enable, bus_id);
 }
 
 /************************************************************************
@@ -181,12 +156,14 @@ void IecPrinter :: create_task_items(void)
 {
     /* Create items */
     myActions.eject    = new Action("Flush/Eject", SUBSYSID_PRINTER, MENU_PRINTER_FLUSH);
+    myActions.reset    = new Action("Reset",       SUBSYSID_PRINTER, MENU_PRINTER_RESET);
     myActions.turn_on  = new Action("Turn On",     SUBSYSID_PRINTER, MENU_PRINTER_ON);
     myActions.turn_off = new Action("Turn Off",    SUBSYSID_PRINTER, MENU_PRINTER_OFF);
 
     /* Create collection and attach items */
     TaskCategory *prt = TasksCollection :: getCategory("Printer", SORT_ORDER_PRINTER);
     prt->append(myActions.eject);
+    prt->append(myActions.reset);
     prt->append(myActions.turn_on);
     prt->append(myActions.turn_off);
 }
@@ -214,10 +191,12 @@ void IecPrinter :: update_task_items(bool writablePath, Path *path)
         myActions.turn_off->show();
         myActions.turn_on->hide();
         myActions.eject->enable();
+        myActions.reset->enable();
     } else {
         myActions.turn_off->hide();
         myActions.turn_on->show();
         myActions.eject->disable();
+        myActions.reset->disable();
     }
 }
 
@@ -252,14 +231,22 @@ int IecPrinter :: executeCommand(SubsysCommand *cmd)
     {
         case MENU_PRINTER_ON:
             printer_enable = 1;
+            iec_if.iec_printer_enable(printer_enable);
             break;
 
         case MENU_PRINTER_OFF:
             printer_enable = 0;
+            iec_if.iec_printer_enable(printer_enable);
             break;
 
         case MENU_PRINTER_FLUSH:
             flush();
+            break;
+
+        case MENU_PRINTER_RESET:
+            HW_IEC_RESET_ENABLE = 0;
+            reset();
+            iec_if.iec_printer_enable(printer_enable);
             break;
 
         default:

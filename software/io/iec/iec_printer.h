@@ -129,6 +129,7 @@ class IecPrinter : public SubSystem, ObjectWithMenu, ConfigurableObject
             Action *turn_on;
             Action *turn_off;
             Action *eject;
+            Action *reset;
         } myActions;
 
     public:
