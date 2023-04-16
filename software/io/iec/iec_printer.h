@@ -61,6 +61,11 @@ enum t_printer_event_type {
     PRINTER_EVENT_USER
 };
 
+enum t_printer_usercmd_type {
+    PRINTER_USERCMD_RESET=0,
+    PRINTER_USERCMD_FLUSH
+};
+
 typedef struct PrinterEvent {
     t_printer_event_type type;
     uint8_t value;

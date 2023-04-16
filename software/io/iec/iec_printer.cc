@@ -219,6 +219,7 @@ void IecPrinter :: update_task_items(bool writablePath, Path *path)
 
 int IecPrinter :: executeCommand(SubsysCommand *cmd)
 {
+    PrinterEvent_t printerEvent;
     File *f = 0;
     uint32_t transferred;
     char buffer[24];
@@ -241,13 +242,15 @@ int IecPrinter :: executeCommand(SubsysCommand *cmd)
             break;
 
         case MENU_PRINTER_FLUSH:
-            flush();
+            printerEvent.type = PRINTER_EVENT_USER;
+            printerEvent.value = PRINTER_USERCMD_FLUSH;
+            while( xQueueSend( queueHandle, (void *) &printerEvent, portMAX_DELAY) != pdTRUE);
             break;
 
         case MENU_PRINTER_RESET:
-            HW_IEC_RESET_ENABLE = 0;
-            reset();
-            iec_if.iec_printer_enable(printer_enable);
+            printerEvent.type = PRINTER_EVENT_USER;
+            printerEvent.value = PRINTER_USERCMD_RESET;
+            while( xQueueSend( queueHandle, (void *) &printerEvent, portMAX_DELAY) != pdTRUE);
             break;
 
         default:
@@ -574,7 +577,8 @@ int IecPrinter::reset(void)
 /************************************************************************
 *                                   task()                      Static  *
 *                                   ~~~~~~                              *
-* Function : Low priority iec printer task                              *
+* Function : Low priority iec printer task. Notice that task is loaded  *
+*            even if printer is disabled. It will not run at all.       *
 *-----------------------------------------------------------------------*
 * Inputs:                                                               *
 *                                                                       *
@@ -608,6 +612,18 @@ IecPrinter::task(IecPrinter *p)
                     break;
 
                 case PRINTER_EVENT_USER:
+                    switch (printerEvent.value)
+                    {
+                        case PRINTER_USERCMD_RESET:
+                            HW_IEC_RESET_ENABLE = 0;
+                            p->reset();
+                            iec_if.iec_printer_enable(p->printer_enable);
+                            break;
+
+                        case PRINTER_USERCMD_FLUSH:
+                            p->flush();
+                            break;
+                    }
                     break;
             }
         }
