@@ -230,6 +230,7 @@ int IecPrinter :: executeCommand(SubsysCommand *cmd)
     switch(cmd->functionID)
     {
         case MENU_PRINTER_ON:
+            reset();
             printer_enable = 1;
             iec_if.iec_printer_enable(printer_enable);
             break;
