@@ -206,6 +206,9 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
             break;
         }
         case CTRL_CMD_GET_DRVINFO: {
+            int effectiveOD = 1;
+            if (command->length > 2)
+               effectiveOD = command->message[2];
             data_message.length = 1;
             data_message.message[0] = 0;
             data_message.last_part = true;
@@ -215,14 +218,20 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
             if (c1541_A) {
                 data_message.message[0]++;
                 data_message.message[offs++] = (uint8_t)c1541_A->get_drive_type();
-                data_message.message[offs++] = (uint8_t)c1541_A->get_current_iec_address();
+                if (effectiveOD)
+                    data_message.message[offs++] = (uint8_t)c1541_A->get_effective_iec_address();
+                else
+                    data_message.message[offs++] = (uint8_t)c1541_A->get_current_iec_address();
                 data_message.message[offs++] = c1541_A->get_drive_power() ? 1 : 0;
                 data_message.length += 3;
             }
             if (c1541_B) {
                 data_message.message[0]++;
                 data_message.message[offs++] = (uint8_t)c1541_B->get_drive_type();
-                data_message.message[offs++] = (uint8_t)c1541_B->get_current_iec_address();
+                if (effectiveOD)
+                    data_message.message[offs++] = (uint8_t)c1541_B->get_effective_iec_address();
+                else
+                    data_message.message[offs++] = (uint8_t)c1541_B->get_current_iec_address();
                 data_message.message[offs++] = c1541_B->get_drive_power() ? 1 : 0;
                 data_message.length += 3;
             }
