@@ -45,8 +45,8 @@
 /*******************************  Constants  ****************************/
 
 #define IEC_PRINTER_BUFFERSIZE  256
-#define IEC_PRINTER_EVENT_CMD	0
-#define IEC_PRINTER_EVENT
+#define IEC_PRINTER_EVENT_CMD   0
+
 /*********************************  Types  ******************************/
 
 enum t_printer_output_type {
@@ -119,7 +119,7 @@ class IecPrinter : public SubSystem, ObjectWithMenu, ConfigurableObject
         TaskHandle_t taskHandle;
 
         /* Queue to send IEC data to printer */
-	QueueHandle_t queueHandle;
+        QueueHandle_t queueHandle;
 
         /*==============================================*/
         /*                 M E T H O D S                */
@@ -130,6 +130,7 @@ class IecPrinter : public SubSystem, ObjectWithMenu, ConfigurableObject
         int _push_data(uint8_t b);
         int _push_command(uint8_t b);
 
+        /* -------  User action menu */
         struct {
             Action *turn_on;
             Action *turn_off;

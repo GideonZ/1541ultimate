@@ -28,7 +28,7 @@ ATN_IRQ
 
             WAIT UNTIL CLK=1
             SUB RECEIVE_ATN_BYTE
-			WAIT FOR 10 us
+            WAIT FOR 10 us
             JUMP _no_push2
 _atn_loop
             WAIT UNTIL CLK=1
@@ -257,7 +257,7 @@ _recv8bits
             IF TIMEOUT THEN _error2
             WAIT UNTIL CLK=0 FOR Tv
             WAIT FOR 20 us
-			SET DATA=0
+            SET DATA=0
             RET
 
 PUSH_BYTE
@@ -335,7 +335,7 @@ _atn_send
             SUB TX_BYTE
             JUMP _atn_send
 _master_test
-			POPB
+            POPB
             IF DATABYTE IS $1D THEN MASTER_START
             IF DATABYTE IS $1C THEN _release_atn_and_tx
             IF DATABYTE IS $1B THEN RELEASE

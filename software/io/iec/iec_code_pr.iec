@@ -200,22 +200,6 @@ MASTER_START
 ; Control codes sent to software via FIFO
 ; $41 : Start of ATN
 ; $42 : End of ATN
-; $43 : Ready to send (software can now push data to be sent in FIFO)
 ; $44 : Ready to receive (not sent to software)
 ; $45 : End of reception (OEI)
 ; $46 : Start of printer data
-; $47 : Byte transmitted  (we need to know this, because our fifo can get flushed by ATN)
-
-; $57 : Acknowledge WARP mode enabled
-; $AD : End of WARP bloc reception (328 bytes)
-; $AE : Timeout on WARP (never sent because subroutine never called)
-; $DA : Start of WARP reception
-; $DE : WARP reception failure
-
-; $E5 : Invalid control code received from software
-; $E6 : No device, we are alone on IEC bus
-
-
-; Control codes received from software via FIFO
-; $57 : Switch to WARP mode (from initial waiting state)
-; $1D : Switch to MASTER mode to send ATN commands (from initial waiting state)

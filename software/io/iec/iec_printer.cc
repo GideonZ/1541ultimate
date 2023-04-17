@@ -82,16 +82,16 @@ static const char *pr_ech[] = { "Basic", "USA", "France", "Germany", "UK", "Denm
 static const char *pr_ich[] = { "International 1", "International 2", "Israel", "Greece", "Portugal", "Spain" };
 
 static struct t_cfg_definition iec_printer_config[] = {
-    { CFG_PRINTER_ENABLE,   CFG_TYPE_ENUM,   "IEC printer",       "%s", en_dis, 0,  1, 0 },
-    { CFG_PRINTER_ID,       CFG_TYPE_VALUE,  "Bus ID",            "%d", NULL,   4,  5, 4 },
-    { CFG_PRINTER_FILENAME, CFG_TYPE_STRING, "Output file",       "%s", NULL,   1, 31, (int) FS_ROOT "printer" },
-    { CFG_PRINTER_TYPE,     CFG_TYPE_ENUM,   "Output type",       "%s", pr_typ, 0,  3, 2 },
-    { CFG_PRINTER_DENSITY,  CFG_TYPE_ENUM,   "Ink density",       "%s", pr_ink, 0,  2, 1 },
-    { CFG_PRINTER_EMULATION,CFG_TYPE_ENUM,   "Emulation",         "%s", pr_emu, 0,  3, 0 },
-    { CFG_PRINTER_CBM_CHAR, CFG_TYPE_ENUM,   "Commodore charset", "%s", pr_cch, 0,  6, 0 },
-    { CFG_PRINTER_EPSON_CHAR,CFG_TYPE_ENUM,  "Epson charset",     "%s", pr_ech, 0,  11, 0 },
-    { CFG_PRINTER_IBM_CHAR, CFG_TYPE_ENUM,   "IBM table 2",       "%s", pr_ich, 0,  5, 0 },
-    { 0xFF, CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
+    { CFG_PRINTER_ENABLE,     CFG_TYPE_ENUM,   "IEC printer",       "%s", en_dis, 0,  1, 0 },
+    { CFG_PRINTER_ID,         CFG_TYPE_VALUE,  "Bus ID",            "%d", NULL,   4,  5, 4 },
+    { CFG_PRINTER_FILENAME,   CFG_TYPE_STRING, "Output file",       "%s", NULL,   1, 31, (int) FS_ROOT "printer" },
+    { CFG_PRINTER_TYPE,       CFG_TYPE_ENUM,   "Output type",       "%s", pr_typ, 0,  3, 2 },
+    { CFG_PRINTER_DENSITY,    CFG_TYPE_ENUM,   "Ink density",       "%s", pr_ink, 0,  2, 1 },
+    { CFG_PRINTER_EMULATION,  CFG_TYPE_ENUM,   "Emulation",         "%s", pr_emu, 0,  3, 0 },
+    { CFG_PRINTER_CBM_CHAR,   CFG_TYPE_ENUM,   "Commodore charset", "%s", pr_cch, 0,  6, 0 },
+    { CFG_PRINTER_EPSON_CHAR, CFG_TYPE_ENUM,   "Epson charset",     "%s", pr_ech, 0, 11, 0 },
+    { CFG_PRINTER_IBM_CHAR,   CFG_TYPE_ENUM,   "IBM table 2",       "%s", pr_ich, 0,  5, 0 },
+    { 0xFF,                   CFG_TYPE_END,    "",                  "",   NULL,   0,  0, 0 }
 };
 
 /* This is where the virtual printer is created */
@@ -152,7 +152,7 @@ void IecPrinter::effectuate_settings(void)
 *                                                                       *
 ************************************************************************/
 
-void IecPrinter :: create_task_items(void)
+void IecPrinter::create_task_items(void)
 {
     /* Create items */
     myActions.eject    = new Action("Flush/Eject", SUBSYSID_PRINTER, MENU_PRINTER_FLUSH);
@@ -171,7 +171,7 @@ void IecPrinter :: create_task_items(void)
 /************************************************************************
 *              IecPrinter::update_task_items(writable,path)     Public  *
 *              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~             *
-* Function : Create context F5 menu items for the virtual printer tasks *
+* Function : Update context F5 menu items for the virtual printer tasks *
 *-----------------------------------------------------------------------*
 * Inputs:                                                               *
 *                                                                       *
@@ -185,7 +185,7 @@ void IecPrinter :: create_task_items(void)
 *                                                                       *
 ************************************************************************/
 
-void IecPrinter :: update_task_items(bool writablePath, Path *path)
+void IecPrinter::update_task_items(bool writablePath, Path *path)
 {
     if (printer_enable) {
         myActions.turn_off->show();
@@ -213,19 +213,15 @@ void IecPrinter :: update_task_items(bool writablePath, Path *path)
 *-----------------------------------------------------------------------*
 * Outputs:                                                              *
 *                                                                       *
-*    (none)                                                             *
+*    (int) always 0                                                     *
 *                                                                       *
 ************************************************************************/
 
-int IecPrinter :: executeCommand(SubsysCommand *cmd)
+int IecPrinter::executeCommand(SubsysCommand *cmd)
 {
-    PrinterEvent_t printerEvent;
-    File *f = 0;
-    uint32_t transferred;
-    char buffer[24];
-    int res;
-    FRESULT fres;
+    PrinterEvent_t printerEvent;  // event to send to printer task
 
+    /* Record user_interface for modal popup */
     cmd_ui = cmd->user_interface;
 
     switch(cmd->functionID)
@@ -342,7 +338,7 @@ IecPrinter::~IecPrinter()
 *-----------------------------------------------------------------------*
 * Outputs:                                                              *
 *                                                                       *
-*    IEC_OK on success or IEC_BYTE_LOST if an error occured             *
+*    IEC_OK always                                                      *
 *                                                                       *
 ************************************************************************/
 
@@ -354,6 +350,8 @@ int IecPrinter::push_data(uint8_t b)
     printerEvent.value = b;
 
     while( xQueueSend( queueHandle, (void *) &printerEvent, portMAX_DELAY) != pdTRUE);
+
+    return IEC_OK;
 }
 
 /************************************************************************
@@ -441,6 +439,8 @@ int IecPrinter::push_command(uint8_t b)
     printerEvent.value = b;
 
     while( xQueueSend( queueHandle, (void *) &printerEvent, portMAX_DELAY) != pdTRUE);
+
+    return IEC_OK;
 }
 
 /************************************************************************
@@ -582,7 +582,7 @@ int IecPrinter::reset(void)
 *-----------------------------------------------------------------------*
 * Inputs:                                                               *
 *                                                                       *
-*    none                                                               *
+*    (IecPrinter *) pointer to object printer that ccreated this task   *
 *                                                                       *
 *-----------------------------------------------------------------------*
 * Outputs:                                                              *
@@ -591,8 +591,7 @@ int IecPrinter::reset(void)
 *                                                                       *
 ************************************************************************/
 
-void
-IecPrinter::task(IecPrinter *p)
+void IecPrinter::task(IecPrinter *p)
 {
     PrinterEvent_t printerEvent;
 
@@ -601,7 +600,7 @@ IecPrinter::task(IecPrinter *p)
         if( xQueueReceive( p->queueHandle, &printerEvent,
                            portMAX_DELAY ) == pdTRUE )
         {
-	    switch (printerEvent.type)
+            switch (printerEvent.type)
             {
                 case PRINTER_EVENT_CMD:
                     p->_push_command(printerEvent.value);
