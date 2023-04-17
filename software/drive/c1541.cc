@@ -367,6 +367,13 @@ int  C1541 :: get_current_iec_address(void)
 	return iec_address;
 }
 
+int  C1541 :: get_effective_iec_address(void)
+{
+	if(registers[C1541_POWER]) // if powered, read actual address from its ram
+		return int(memory_map[0x78] & 0x1F);
+	return iec_address;
+}
+
 bool C1541 :: check_if_save_needed(SubsysCommand *cmd)
 {
     if ((disk_state == e_gcr_disk) && (!gcr_image_up_to_date)) {

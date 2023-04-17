@@ -70,10 +70,10 @@ C1541* Dos::getDriveByID(uint8_t id) {
     C1541* drive = NULL;
 
     if (id) {
-        if (c1541_A != NULL && c1541_A->get_current_iec_address() == id) {
+        if (c1541_A != NULL && c1541_A->get_drive_power() && c1541_A->get_effective_iec_address() == id) {
             drive = c1541_A;
-        } else if (c1541_B != NULL
-                && c1541_B->get_current_iec_address() == id) {
+        } else if (c1541_B != NULL && c1541_B->get_drive_power() 
+                && c1541_B->get_effective_iec_address() == id) {
             drive = c1541_B;
         }
     } else {
