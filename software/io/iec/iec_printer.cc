@@ -322,6 +322,9 @@ IecPrinter::~IecPrinter()
     /* Remove task from process list */
     vTaskDelete(taskHandle);
 
+    /* Remove message queue */
+    vQueueDelete(queueHandle);
+
     /* Close/flush output file */
     close_file();
 }
