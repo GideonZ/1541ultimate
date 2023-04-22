@@ -218,6 +218,7 @@ architecture Gideon of ddr2_ctrl_logic is
 
     signal zread        : std_logic_vector(1 downto 0) := "00";
     signal yread        : std_logic_vector(1 downto 0) := "00";
+    signal xread        : std_logic_vector(1 downto 0) := "00";
     signal read_s       : std_logic_vector(1 downto 0) := "00";
     
     signal zwdata       : std_logic_vector(31 downto 0);
@@ -472,7 +473,8 @@ begin
 
             zread    <= datap.read;
             yread    <= zread;
-            read     <= read_s;
+            --read     <= read_s;
+            xread    <= yread;
 
             if reset='1' then
                 addr_first(20) <= '1'; -- make sure it is not merged with addr_second
@@ -491,7 +493,7 @@ begin
         generic map (2)
         port map (
             clock  => clock,
-            din    => yread,
+            din    => xread, -- goes with mux at the end
             dout   => read_d1
         );
         
@@ -519,7 +521,7 @@ begin
             dout   => read_d4
         );
     
-        with read_delay select read_s <=
+        with read_delay select read <= -- combinatorial mux causes more hold slack
             read_d1 when "00",
             read_d2 when "01",
             read_d3 when "10",
