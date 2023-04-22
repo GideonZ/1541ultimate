@@ -232,6 +232,13 @@ int  C1581 :: get_current_iec_address(void)
 	return iec_address;
 }
 
+int  C1541 :: get_effective_iec_address(void)
+{
+	if(registers[C1541_POWER]) // if powered, read actual address from its ram
+		return int(memory_map[0x78] & 0x1F);
+	return iec_address;
+}
+
 void C1581 :: remove_disk(void)
 {
     registers[C1541_INSERTED] = 0;

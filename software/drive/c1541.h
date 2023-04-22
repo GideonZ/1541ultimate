@@ -182,6 +182,7 @@ public:
 
     // called from IEC (UltiCopy)
     int  get_current_iec_address(void);    
+    int  get_effective_iec_address(void);    
     void drive_power(bool on);
     bool get_drive_power();
     t_drive_type get_drive_type() { return current_drive_type; }
