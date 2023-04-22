@@ -4,6 +4,7 @@ use ieee.numeric_std.all;
 
 entity slot_timing is
 generic (
+    g_optimized     : boolean := false;
     g_mem_latency   : natural := 7;
     g_frequency     : natural := 50_000_000
 );
@@ -94,7 +95,11 @@ begin
                 phi2_tick_i  <= '1';
                 phi2_rec_i   <= '1';
                 phase_h      <= 0;
-                if timing_phi2 < g_mem_latency then
+                if g_optimized then
+                    if timing_phi2 < g_mem_latency then
+                        reqs_inhibit_i <= serve_en_i;
+                    end if;
+                else
                     reqs_inhibit_i <= serve_en_i;
                 end if;
                 clock_det    <= '1';
@@ -108,7 +113,7 @@ begin
             if phase_h = c_850ns then
                 allow_tick_h <= true;
             end if;
-            if timing_phi2 >= g_mem_latency and (phase_h = timing_phi2 - g_mem_latency) then
+            if timing_phi2 >= g_mem_latency and (phase_h = timing_phi2 - g_mem_latency) and g_optimized then
                 reqs_inhibit_i <= serve_en_i;
             end if;
 
@@ -119,7 +124,11 @@ begin
                 phi2_falling <= '1';
                 phi2_rec_i   <= '0';
                 phase_l      <= 0;
-                if timing_phi1 < g_mem_latency then
+                if g_optimized then
+                    if timing_phi1 < g_mem_latency then
+                        reqs_inhibit_i <= serve_en_i and serve_vic;
+                    end if;
+                else
                     reqs_inhibit_i <= serve_en_i and serve_vic;
                 end if;
                 allow_tick_l <= false; -- filter
@@ -129,7 +138,7 @@ begin
             if phase_l = c_850ns then -- max 1.16 MHz
                 allow_tick_l <= true;
             end if;
-            if timing_phi1 >= g_mem_latency and (phase_l = timing_phi1 - g_mem_latency) then
+            if timing_phi1 >= g_mem_latency and (phase_l = timing_phi1 - g_mem_latency) and g_optimized then
                 reqs_inhibit_i <= serve_en_i and serve_vic;
             end if;
 
