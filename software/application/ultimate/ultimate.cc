@@ -209,7 +209,7 @@ extern "C" void ultimate_main(void *a)
 */
 
 #if !DEVELOPER
-//    custom_outbyte = outbyte_log;
+    custom_outbyte = outbyte_log;
 #endif
 
     while(c64) {

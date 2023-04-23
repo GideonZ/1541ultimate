@@ -273,11 +273,12 @@ void outbyte(int c)
 {
     if (custom_outbyte) {
         custom_outbyte(c);
-    } else {
+    }
+//    else {
         // Wait for space in FIFO
         while (ioRead8(UART_FLAGS) & UART_TxFifoFull);
         ioWrite8(UART_DATA, c);
-    }
+//    }
 }
 
 #ifdef RUNS_ON_PC

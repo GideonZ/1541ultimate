@@ -1,3 +1,5 @@
+RVL_ALIAS "ctrl_clock" "i_double_freq_bridge/clock_2x"; 
+RVL_ALIAS "ctrl_clock" "i_double_freq_bridge/clock_2x"; 
 RVL_ALIAS "sys_clock" "sys_clock"; 
 BLOCK RESETPATHS ;
 FREQUENCY PORT "ULPI_CLOCK" 60.000000 MHz CLOCK_JITTER 0.200000 ns ;
@@ -410,46 +412,44 @@ DEFINE CELL GROUP "TigSrc5" "b_audio.i_ultfilt5/i_sync/tx_tig_src"
 "b_audio.i_ultfilt5/i_sync/tx_data_tig_src[16]" 
 "b_audio.i_ultfilt5/i_sync/tx_data_tig_src[17]" 
 "b_audio.i_ultfilt5/i_sync/rx_tig_src" ;
-DEFINE CELL GROUP "TigSrc4" "b_audio.i_ultfilt4/i_sync/tx_tig_src" 
-"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[0]" 
-"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[1]" 
-"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[2]" 
-"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[3]" 
-"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[4]" 
-"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[5]" 
-"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[6]" 
-"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[7]" 
-"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[8]" 
-"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[9]" 
-"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[10]" 
-"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[11]" 
-"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[12]" 
-"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[13]" 
-"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[14]" 
-"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[15]" 
-"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[16]" 
-"b_audio.i_ultfilt4/i_sync/tx_data_tig_src[17]" 
-"b_audio.i_ultfilt4/i_sync/rx_tig_src" ;
-DEFINE CELL GROUP "TigSrc3" "b_audio.i_ultfilt3/i_sync/tx_tig_src" 
-"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[0]" 
-"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[1]" 
-"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[2]" 
-"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[3]" 
-"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[4]" 
-"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[5]" 
-"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[6]" 
-"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[7]" 
-"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[8]" 
-"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[9]" 
-"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[10]" 
-"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[11]" 
-"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[12]" 
-"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[13]" 
-"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[14]" 
-"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[15]" 
-"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[16]" 
-"b_audio.i_ultfilt3/i_sync/tx_data_tig_src[17]" 
-"b_audio.i_ultfilt3/i_sync/rx_tig_src" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[0]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[0]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[1]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[1]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[2]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[2]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[3]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[3]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[4]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[4]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[5]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[5]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[6]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[6]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[7]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[7]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[8]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[8]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[9]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[9]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[10]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[10]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[11]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[11]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[12]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[12]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[13]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[13]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[14]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[14]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[15]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[15]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[16]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[16]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[17]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[17]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/rx_tig_src" TO CELL "b_audio.i_ultfilt4/i_sync/rx_tig_dst" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[0]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[0]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[1]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[1]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[2]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[2]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[3]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[3]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[4]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[4]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[5]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[5]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[6]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[6]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[7]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[7]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[8]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[8]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[9]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[9]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[10]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[10]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[11]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[11]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[12]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[12]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[13]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[13]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[14]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[14]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[15]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[15]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[16]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[16]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[17]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[17]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/rx_tig_src" TO CELL "b_audio.i_ultfilt3/i_sync/rx_tig_dst" ;
 DEFINE CELL GROUP "TigSrc2" "b_audio.i_ultfilt2/i_sync/tx_tig_src" 
 "b_audio.i_ultfilt2/i_sync/tx_data_tig_src[0]" 
 "b_audio.i_ultfilt2/i_sync/tx_data_tig_src[1]" 
@@ -639,46 +639,6 @@ DEFINE CELL GROUP "TigDst5" "b_audio.i_ultfilt5/i_sync/tx_tig_dst"
 "b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[15]" 
 "b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[16]" 
 "b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[17]" ;
-DEFINE CELL GROUP "TigDst4" "b_audio.i_ultfilt4/i_sync/tx_tig_dst" 
-"b_audio.i_ultfilt4/i_sync/rx_tig_dst" 
-"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[0]" 
-"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[1]" 
-"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[2]" 
-"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[3]" 
-"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[4]" 
-"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[5]" 
-"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[6]" 
-"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[7]" 
-"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[8]" 
-"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[9]" 
-"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[10]" 
-"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[11]" 
-"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[12]" 
-"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[13]" 
-"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[14]" 
-"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[15]" 
-"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[16]" 
-"b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[17]" ;
-DEFINE CELL GROUP "TigDst3" "b_audio.i_ultfilt3/i_sync/tx_tig_dst" 
-"b_audio.i_ultfilt3/i_sync/rx_tig_dst" 
-"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[0]" 
-"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[1]" 
-"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[2]" 
-"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[3]" 
-"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[4]" 
-"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[5]" 
-"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[6]" 
-"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[7]" 
-"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[8]" 
-"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[9]" 
-"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[10]" 
-"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[11]" 
-"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[12]" 
-"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[13]" 
-"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[14]" 
-"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[15]" 
-"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[16]" 
-"b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[17]" ;
 DEFINE CELL GROUP "TigDst2" "b_audio.i_ultfilt2/i_sync/tx_tig_dst" 
 "b_audio.i_ultfilt2/i_sync/rx_tig_dst" 
 "b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[0]" 
@@ -790,8 +750,6 @@ DEFINE CELL GROUP "TigDstMem" "i_memctrl/i_bridge/i_terug/tx_tig_dst"
 "i_memctrl/i_bridge/i_heen/rx_data_tig_dst[13]" ;
 BLOCK PATH FROM GROUP "TigSrc1" TO GROUP "TigDst1" ;
 BLOCK PATH FROM GROUP "TigSrc2" TO GROUP "TigDst2" ;
-BLOCK PATH FROM GROUP "TigSrc3" TO GROUP "TigDst3" ;
-BLOCK PATH FROM GROUP "TigSrc4" TO GROUP "TigDst4" ;
 BLOCK PATH FROM GROUP "TigSrc5" TO GROUP "TigDst5" ;
 BLOCK PATH FROM GROUP "TigSrc6" TO GROUP "TigDst6" ;
 BLOCK PATH FROM GROUP "TigSrc7" TO GROUP "TigDst7" ;
@@ -831,7 +789,7 @@ BLOCK JTAGPATHS ;
 #IOBUF PORT "SDRAM_CLK" SLEWRATE=FAST ;
 #IOBUF PORT "SDRAM_CLKn" SLEWRATE=FAST ;
 IOBUF PORT "SDRAM_DM" SLEWRATE=FAST ;
-IOBUF PORT "SDRAM_DQS" SLEWRATE=FAST TERMINATION=75 PULLMODE=NONE IO_TYPE=SSTL18_I DRIVE=8 ;
+IOBUF PORT "SDRAM_DQS" SLEWRATE=FAST TERMINATION=OFF PULLMODE=NONE IO_TYPE=SSTL18_I DRIVE=8 ;
 IOBUF PORT "SDRAM_DQ[0]" SLEWRATE=FAST ;
 IOBUF PORT "SDRAM_DQ[1]" SLEWRATE=FAST ;
 IOBUF PORT "SDRAM_DQ[2]" SLEWRATE=FAST ;
@@ -883,3 +841,14 @@ IOBUF PORT "BUTTON[2]" PULLMODE=UP IO_TYPE=LVCMOS18 ;
 USE PRIMARY NET "half_clock" QUADRANT_TR QUADRANT_BR ;
 PROHIBIT PRIMARY NET "i_logic/r_drive1.r_mm1.i_drive1/drv_reset" ;
 USE PRIMARY NET "i_logic/r_drive_2.r_mm.i_drive/drv_reset" QUADRANT_TL ;
+PROHIBIT PRIMARY NET "i_mem_bus_reg.req_c.request2_fc" ;
+PROHIBIT PRIMARY NET "req_c.request2" ;
+IOBUF PORT "MDIO_DATA" PULLMODE=UP IO_TYPE=LVCMOS18 ;
+PROHIBIT PRIMARY NET "i_double_freq_bridge/un1_mem_resp_2x_4_i" ;
+PROHIBIT PRIMARY NET "i_double_freq_bridge/toggle_r_1x" ;
+PROHIBIT PRIMARY NET "i_double_freq_bridge/read_writen_0_sqmuxa" ;
+PROHIBIT PRIMARY NET "i_double_freq_bridge/rack_1_sqmuxa_i" ;
+PROHIBIT PRIMARY NET "i_double_freq_bridge/dack_tag_1_sqmuxa_i" ;
+PROHIBIT PRIMARY NET "i_double_freq_bridge.busy" ;
+PROHIBIT PRIMARY NET "i_double_freq_bridge/dack_tag_2x_1_sqmuxa_i" ;
+PROHIBIT PRIMARY NET "i_double_freq_bridge/un1_mem_resp_2x_1_i" ;

@@ -131,6 +131,7 @@ public:
 
     // Misc
     int  get_current_iec_address(void);
+    int  get_effective_iec_address(void);    
     bool get_drive_power();
 
     uint8_t IrqHandler(void);

@@ -60,7 +60,6 @@
 #define C64_PHI2_EDGE_RECOVER   *((volatile uint8_t *)(C64_CARTREGS_BASE + 0xC))
 #define C64_SERVE_CONTROL       *((volatile uint8_t *)(C64_CARTREGS_BASE + 0xD))
 #define C64_SAMPLER_ENABLE      *((volatile uint8_t *)(C64_CARTREGS_BASE + 0xE))
-#define C64_ETHERNET_ENABLE     *((volatile uint8_t *)(C64_CARTREGS_BASE + 0xF))
 
 #define C64_MODE_ULTIMAX   0x02
 #define C64_MODE_RESET     0x04
@@ -132,6 +131,7 @@
 #define CART_TYPE_SUPERGAMES  0x0B
 #define CART_TYPE_BLACKBOX_V8 0x0C
 #define CART_TYPE_ZAXXON      0x0D
+#define CART_TYPE_BLACKBOX_V9 0x0E
 
 #define CART_TYPE_PAGEFOX     0x10
 #define CART_TYPE_EASY_FLASH  0x11 // ?
@@ -210,6 +210,10 @@
 #define CFG_C64_PHI2_REC    0xCC
 #define CFG_C64_RATE        0xCD
 #define CFG_C64_CART_PREF   0xCE
+#define CFG_C64_TIMING1     0xCF
+#define CFG_SERVE_PHI1      0xD0
+#define CFG_MEASURE_MODE    0xD1
+#define CFG_KERNAL_SHADOW   0xD2
 #define CFG_CMD_ENABLE      0x71
 #define CFG_CMD_ALLOW_WRITE 0x72
 #define CFG_C64_FASTRESET   0x74

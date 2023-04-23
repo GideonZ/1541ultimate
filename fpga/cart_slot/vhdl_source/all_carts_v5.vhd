@@ -105,6 +105,7 @@ architecture gideon of all_carts_v5 is
     constant c_supergames   : std_logic_vector(4 downto 0) := "01011";
     constant c_blackbox_v8  : std_logic_vector(4 downto 0) := "01100";
     constant c_zaxxon       : std_logic_vector(4 downto 0) := "01101";
+    constant c_blackbox_v9  : std_logic_vector(4 downto 0) := "01110";
 
     -- Simple bankers with RAM
     constant c_pagefox      : std_logic_vector(4 downto 0) := "10000";
@@ -204,6 +205,10 @@ begin
             rom_mode  <= "01"; -- No banking, All within 16K
                     
             case cart_logic_d is
+            when c_none =>
+                cart_en <= '0';
+                -- other defaults are OK
+
             -- ULTRA SIMPLE CARTS, NO BANKING, NO RAM
             when c_normal =>
                 if io_write='1' and io_addr(8 downto 0) = "111111111" then -- DFFF
@@ -230,7 +235,6 @@ begin
                         ram_bank <= io_wdata(2 downto 0);
                     end if;
                 end if;
-
 
             when c_epyx =>
                 game_n    <= '1';
@@ -374,6 +378,26 @@ begin
                 game_n    <= mode_bits(1);
                 exrom_n   <= mode_bits(0);
                 serve_rom <= '1';
+                rom_mode  <= "01"; -- 16K banks
+
+            when c_blackbox_v9 =>
+                if io_write='1' and io_addr(8)='0' then -- write to DExx
+                    bank_bits(14) <= not io_addr(7); -- 2 banks of 16K
+                    mode_bits(1) <= io_addr(0);
+                    mode_bits(0) <= not io_addr(6);
+                end if;
+                if io_read='1' and io_addr(8)='0' then
+                    bank_bits(14) <= io_addr(7); -- 2 banks of 16K
+                    mode_bits(1) <= io_addr(0);
+                    mode_bits(0) <= not io_addr(6);
+                end if;
+                if reset_in='1' or cart_force = '1' then
+                    bank_bits(14) <= '1'; -- start in last bank
+                end if;
+                game_n    <= mode_bits(1);
+                exrom_n   <= not mode_bits(0);
+                serve_rom <= '1';
+                serve_io1 <= '1';
                 rom_mode  <= "01"; -- 16K banks
 
             when c_zaxxon =>

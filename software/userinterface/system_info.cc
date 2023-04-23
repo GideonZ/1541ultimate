@@ -12,6 +12,9 @@
 #include "iec_channel.h"
 #include "command_intf.h"
 #include "acia.h"
+#include "versions.h"
+#include "gitinfo.h"
+#include "u64.h"
 
 extern C1541 *c1541_A;
 extern C1541 *c1541_B;
@@ -152,6 +155,19 @@ void SystemInfo :: generate(UserInterface *ui)
 {
     StreamTextLog buffer(4096);
 
+    buffer.format("Version Information:\n");
+    buffer.format("====================\n");
+    buffer.format("Software version:   " APPL_VERSION "\n");
+    buffer.format("   Build date:      " APP_BUILD_DATE "\n");
+    buffer.format("   Build machine:   " APP_BUILD_MACHINE "\n");
+    buffer.format("Ultimate FPGA core: 1%02X\n", getFpgaVersion());
+    if(getFpgaCapabilities() & CAPAB_ULTIMATE64) {
+        buffer.format("C64 FPGA version:   V1.%02X\n", C64_CORE_VERSION);
+    }
+    buffer.format("Git tag:  " APP_VERSION_TAG "\n");
+    buffer.format("Git hash: " APP_VERSION_HASH "\n");
+    buffer.format("Git date: " APP_VERSION_DATE "\n\n");
+    
     buffer.format("Drive Status:\n");
     buffer.format("=============\n");
     if (c1541_A) {

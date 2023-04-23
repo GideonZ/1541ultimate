@@ -78,7 +78,7 @@ const struct C64_CRT::t_cart C64_CRT::c_recognized_c64_carts[] = {
     { 68, 0xFF, CART_NOT_IMPL,  "BIS-Plus" },
     { 69, 0xFF, CART_NOT_IMPL,  "SD-BOX" },
     { 70, 0xFF, CART_NOT_IMPL,  "MultiMAX" },
-    { 71, 0xFF, CART_NOT_IMPL,  "Blackbox V9" },
+    { 71, 0xFF, CART_BLACKBOX9, "Blackbox V9" },
     { 72, 0xFF, CART_NOT_IMPL,  "Lt. Kernal Host Adaptor" },
     { 73, 0xFF, CART_NOT_IMPL,  "RAMLink" },
     { 74, 0xFF, CART_NOT_IMPL,  "H.E.R.O." },
@@ -552,6 +552,10 @@ void C64_CRT::configure_cart(cart_def *def)
         case CART_BLACKBOX8:
             cart_type = CART_TYPE_BLACKBOX_V8;
             prohibit = CART_PROHIBIT_DFXX;
+            break;
+        case CART_BLACKBOX9:
+            cart_type = CART_TYPE_BLACKBOX_V9;
+            prohibit = CART_PROHIBIT_DEXX;
             break;
         case CART_GMOD2:
             prohibit = CART_PROHIBIT_DEXX;

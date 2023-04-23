@@ -29,6 +29,7 @@ port (
 
     -- timing inputs
     vic_cycle       : in  std_logic;
+    dma_data_out    : in  std_logic;
     phi2_recovered  : in  std_logic;
     phi2_tick       : in  std_logic;
     do_sample_addr  : in  std_logic;
@@ -56,7 +57,6 @@ architecture gideon of slot_master_v4 is
     signal drive_al     : std_logic;
     signal dma_ack_i    : std_logic;
     signal rwn_out_i    : std_logic;
-    signal phi2_dly     : std_logic_vector(6 downto 0) := (others => '0');
     signal reu_active   : std_logic;
     signal cmd_if_active: std_logic;
     constant match_ptrn : std_logic_vector(1 downto 0) := "01"; -- read from left to right
@@ -71,7 +71,6 @@ architecture gideon of slot_master_v4 is
     signal state     : t_state;
     
     signal dma_rack     : std_logic;
-
 begin
     process(clock)
         variable stop : boolean;
@@ -80,7 +79,6 @@ begin
             data_d(0) <= DATA_in;
             data_d(1 to 7) <= data_d(0 to 6);
             dma_rack  <= '0';
-            phi2_dly  <= phi2_dly(phi2_dly'high-1 downto 0) & phi2_recovered;
             
             -- consecutive write counter (match counter)
             if do_sample_addr='1' and phi2_recovered='1' then -- count CPU cycles only (sample might become true for VIC cycles)
@@ -188,9 +186,7 @@ begin
     dma_resp.rack <= dma_rack;
     dma_resp.data <= data_d(2) when dma_ack_i='1' and rwn_out_i='1' else X"00";
     
-    -- by shifting the phi2 and anding it with the original, we make the write enable narrower,
-    -- starting only halfway through the cycle. We should not be too fast!
-    DATA_tri      <= '1' when (dma_n_i='0' and phi2_recovered='1' and phi2_dly(phi2_dly'high)='1' and
+    DATA_tri      <= '1' when (dma_n_i='0' and dma_data_out='1' and
                                vic_cycle='0' and rwn_out_i='0') else '0';
                                
     drive_ah <= drive_al when rising_edge(clock); -- one cycle later on (SSO)

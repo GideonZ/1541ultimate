@@ -367,13 +367,12 @@ int  C1541 :: get_current_iec_address(void)
 	return iec_address;
 }
 
-//    if(cmd->user_interface == NULL || !cmd->user_interface->is_available()) {
-//        return false;
-//    }
-//	if(cmd->user_interface->popup("About to remove a changed disk. Save?", BUTTON_YES|BUTTON_NO) == BUTTON_NO) {
-//	    return false;
-//    }
-//(cmd->user_interface->popup("Not all tracks were saved. Save disk?", BUTTON_YES|BUTTON_NO) == BUTTON_YES);
+int  C1541 :: get_effective_iec_address(void)
+{
+	if(registers[C1541_POWER]) // if powered, read actual address from its ram
+		return int(memory_map[0x78] & 0x1F);
+	return iec_address;
+}
 
 bool C1541 :: check_if_save_needed(void)
 {

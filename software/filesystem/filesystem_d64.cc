@@ -479,12 +479,36 @@ FRESULT FileSystemCBM::file_open(const char *pathname, uint8_t flags, File **fil
 
 FRESULT FileSystemCBM::file_rename(const char *old_name, const char *new_name)
 {
+    PathInfo pi(this);
+    pi.init(old_name);
+    PathStatus_t pres = walk_path(pi);
+    if (pres == e_DirNotFound) {
+        return FR_NO_PATH;
+    }
+    if (pres != e_EntryFound) {
+        return FR_NO_FILE;
+    }
+    const char *filename = pi.getFileName();
+
+    DirInCBM *dd = new DirInCBM(this, pi.getParentInfo()->cluster);
+    FileInfo info(20);
+    FRESULT res = find_file(filename, dd, &info);
+
+/*
     FileInfo info(20);
     DirInCBM *dd = new DirInCBM(this);
     FRESULT res = find_file(old_name, dd, &info);
+*/
 
-    if (new_name[0] == '/')
-        new_name++;
+   {
+      char *p = new_name;
+      while (*p)
+      {
+         if (*p == '/')
+           new_name = p+1;
+         p++;
+      }
+   }
 
     CbmFileName cbm;
 
