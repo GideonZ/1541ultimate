@@ -1,3 +1,34 @@
+Changes in 3.10f, compared to 3.10a
+-----------------------------------
+
+Background:
+    If you would take some time to check the commit history of the repository
+    at GitHub, you may find over 500 commits since the last released version, 3.10a.
+    This is a lotttt more than it usually takes to release a next firmware version.
+    The version is still 3.10, so there are not many functional changes. Yet, files
+    have been touched, updated, or just made compatible with the new Ultimate-II+L
+    hardware. It was more difficult than expected to get the Lattice FPGA to work
+    correctly and keep compatibility with the existing hardware platforms. This is
+    the reason that there is no update yet for the older 1541U2 at this point. 
+
+Fixes:
+    [Important] Fixed ExFAT filesystems with 128kB clusters
+                (Fixes failing D64 mounts from some ExFAT thumbdrives)
+    [Facebook Discussion] EasyFlash save function now saves all chip chunks to
+                support incomplete CRT files
+    [Issue-271] GEORAM at boot (MarkusC64)
+    [Issue-279] Support for 2 MHz operation for any cartridge, including EasyFlash
+    Minor fixes in the modem emulation layer from Scott Hutter (xlar54)
+
+Additions:
+    Firmware target added: Ultimate-II+L; the Lattice version!
+    System Information page now shows elaborate version info.
+    GEOS support functions from MarkusC64
+
+Cartridge Support:
+    [Issue-314] Added support for Blackbox V9.
+
+
 Changes in 3.10a, compared to 3.10
 ----------------------------------
 
