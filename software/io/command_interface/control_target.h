@@ -24,6 +24,7 @@
 #define CTRL_CMD_DISABLE_DISK_B 0x33
 #define CTRL_CMD_DISK_A_POWER   0x34
 #define CTRL_CMD_DISK_B_POWER   0x35
+#define CTRL_CMD_GET_RAMDISKINFO   0x40
 
 class ControlTarget : CommandTarget
 {
