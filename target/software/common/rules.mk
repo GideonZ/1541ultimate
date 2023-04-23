@@ -23,7 +23,7 @@ all: $(OUTPUT) gitinfo $(RESULT) $(FINAL)
 
 gitinfo::
 	@echo '/* Generated file, do not edit. */' >output/gitinfo.h
-	@echo '#define APP_VERSION_TAG  "'`git describe --all`'"' >>output/gitinfo.h
+	@echo '#define APP_VERSION_TAG  "'`git describe --tags`'"' >>output/gitinfo.h
 	@echo '#define APP_VERSION_DATE "'`git log -n 1 --format=%ai`'"' >>output/gitinfo.h
 	@echo '#define APP_VERSION_HASH "'`git rev-parse --short HEAD`'"' >>output/gitinfo.h
 	@echo '#define APP_BUILD_DATE "'`date +"%F %R"`'"' >>output/gitinfo.h
