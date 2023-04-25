@@ -940,7 +940,7 @@ void C64::set_cartridge(cart_def *cart)
         } else if (cfg->get_value(CFG_C64_REU_EN) == 2) { // GeoRAM
             current_cart_def.type = CART_TYPE_GEORAM;
             current_cart_def.name = "GeoRAM Cartridge";
-            current_cart_def.prohibit = CART_PROHIBIT_IO;
+            current_cart_def.prohibit = CART_PROHIBIT_ALL_BUT_REU;
         }
 #endif
     } else {
