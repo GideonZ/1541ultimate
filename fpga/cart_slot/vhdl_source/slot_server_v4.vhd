@@ -258,6 +258,7 @@ architecture structural of slot_server_v4 is
     signal exrom_n          : std_logic := '1';
     signal game_n           : std_logic := '1';
 
+    signal freezer_ena      : std_logic;
     signal unfreeze         : std_logic;
     signal freeze_trig      : std_logic;
     signal freeze_active    : std_logic;
@@ -711,6 +712,7 @@ begin
         freezer_state   => freezer_state,
 
         unfreeze        => unfreeze,
+        freezer_ena     => freezer_ena,
         freeze_trig     => freeze_trig,
         freeze_act      => freeze_active );
 
@@ -729,6 +731,7 @@ begin
         RST_in          => reset_button,
         c64_reset       => control.c64_reset,
 
+        freezer_ena     => freezer_ena,
         freeze_trig     => freeze_trig,
         freeze_act      => freeze_active, 
         unfreeze        => unfreeze,
