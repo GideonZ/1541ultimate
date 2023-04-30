@@ -31,8 +31,8 @@
 #ifdef NOT_ULTIMATE
 #include <strings.h>
 #endif
-#include "lodepng.h"
 #include "mps_printer.h"
+#include "mps_png.h"
 
 /************************************************************************
 *                                                                       *
@@ -466,13 +466,14 @@ MpsPrinter::setColorMode(bool mode, bool init)
     /* PNG compression settings */
     lodepng_state.encoder.zlibsettings.btype        = 2;
     lodepng_state.encoder.zlibsettings.use_lz77     = true;
-    lodepng_state.encoder.zlibsettings.windowsize   = 1024;
-    lodepng_state.encoder.zlibsettings.minmatch     = 3;
-    lodepng_state.encoder.zlibsettings.nicematch    = 128;
+    lodepng_state.encoder.zlibsettings.windowsize   = 128;
+    lodepng_state.encoder.zlibsettings.minmatch     = 5;
+    lodepng_state.encoder.zlibsettings.nicematch    = 64;
+
+    lodepng_state.encoder.zlibsettings.lazymatching = true;
 
     /* Initialise color palette for memory bitmap and file output */
     lodepng_palette_clear(&lodepng_state.info_png.color);
-    lodepng_palette_clear(&lodepng_state.info_raw);
 
     if (color_mode)
     {
@@ -529,14 +530,11 @@ MpsPrinter::setColorMode(bool mode, bool init)
 
 #endif /* TRUE_CMYK */
             lodepng_palette_add(&lodepng_state.info_png.color, r, g, b, 255);
-            lodepng_palette_add(&lodepng_state.info_raw, r, g, b, 255);
         }
 
         /* Bitmap uses 8 bit depth and a palette */
         lodepng_state.info_png.color.colortype  = LCT_PALETTE;
         lodepng_state.info_png.color.bitdepth   = MPS_PRINTER_PAGE_DEPTH_COLOR;
-        lodepng_state.info_raw.colortype        = LCT_PALETTE;
-        lodepng_state.info_raw.bitdepth         = MPS_PRINTER_PAGE_DEPTH_COLOR;
     }
     else
     {
@@ -544,29 +542,22 @@ MpsPrinter::setColorMode(bool mode, bool init)
 
         /* White */
         lodepng_palette_add(&lodepng_state.info_png.color, 255, 255, 255, 255);
-        lodepng_palette_add(&lodepng_state.info_raw, 255, 255, 255, 255);
 
         /* Light grey */
         lodepng_palette_add(&lodepng_state.info_png.color, 224, 224, 224, 255);
-        lodepng_palette_add(&lodepng_state.info_raw, 224, 224, 224, 255);
 
         /* Dark grey */
         lodepng_palette_add(&lodepng_state.info_png.color, 160, 160, 160, 255);
-        lodepng_palette_add(&lodepng_state.info_raw, 160, 160, 160, 255);
 
         /* Black */
         lodepng_palette_add(&lodepng_state.info_png.color, 0, 0, 0, 255);
-        lodepng_palette_add(&lodepng_state.info_raw, 0, 0, 0, 255);
 
         /* Bitmap uses 2 bit depth and a palette */
         lodepng_state.info_png.color.colortype  = LCT_PALETTE;
         lodepng_state.info_png.color.bitdepth   = MPS_PRINTER_PAGE_DEPTH;
-        lodepng_state.info_raw.colortype        = LCT_PALETTE;
-        lodepng_state.info_raw.bitdepth         = MPS_PRINTER_PAGE_DEPTH;
     }
 
     /* Physical page description (A4 240x216 dpi) */
-    lodepng_state.info_png.phys_defined     = 1;
     lodepng_state.info_png.phys_x           = 9448;
     lodepng_state.info_png.phys_y           = 8687;
     lodepng_state.info_png.phys_unit        = 1;
@@ -815,7 +806,7 @@ MpsPrinter::Print(const char * filename)
     ActivityLedOn();
 #endif
     buffer=NULL;
-    unsigned error = lodepng_encode(&buffer, &outsize, bitmap, MPS_PRINTER_PAGE_WIDTH, MPS_PRINTER_PAGE_HEIGHT, &lodepng_state);
+    unsigned error = lodepng_encode_mps(&buffer, &outsize, bitmap, MPS_PRINTER_PAGE_WIDTH, MPS_PRINTER_PAGE_HEIGHT, &lodepng_state);
 #ifndef NOT_ULTIMATE
     ActivityLedOff();
 #endif
@@ -834,6 +825,7 @@ MpsPrinter::Print(const char * filename)
 
 #ifndef NOT_ULTIMATE
     File *f;
+    printf("Saving printer file %s\n", filename);
     FRESULT fres = fm->fopen((const char *) filename, FA_WRITE|FA_CREATE_NEW, &f);
     if (f)
     {
@@ -984,7 +976,7 @@ MpsPrinter::Ink(uint16_t x, uint16_t y, uint8_t c)
     {
         /* =======  Color printer mode, each pixel is coded with 8 bits */
         /* -------  Which byte address is it on raster buffer */
-        uint32_t byte = ((ty*MPS_PRINTER_PAGE_WIDTH+tx)*MPS_PRINTER_PAGE_DEPTH_COLOR)>>3;
+        uint32_t byte = (((ty*MPS_PRINTER_PAGE_WIDTH+tx)*MPS_PRINTER_PAGE_DEPTH_COLOR)>>3)+ty+1;
 
         /* -------  Which bits on byte are coding the color (1 pixel per byte) */
         switch (color)
@@ -1061,7 +1053,7 @@ MpsPrinter::Ink(uint16_t x, uint16_t y, uint8_t c)
     {
         /* =======  Greyscale printer mode, each pixel is coded with 2 bits */
         /* -------  Which byte address is it on raster buffer */
-        uint32_t byte = ((ty*MPS_PRINTER_PAGE_WIDTH+tx)*MPS_PRINTER_PAGE_DEPTH)>>3;
+        uint32_t byte = (((ty*MPS_PRINTER_PAGE_WIDTH+tx)*MPS_PRINTER_PAGE_DEPTH)>>3)+ty+1;
 
         /* -------  Whitch bits on byte are coding the pixel (4 pixels per byte) */
         uint8_t sub = tx & 0x3;
@@ -1111,7 +1103,7 @@ MpsPrinter::InkTest(uint16_t x, uint16_t y, uint8_t c)
 
     if (color_mode)
     {
-        uint32_t byte = ((ty*MPS_PRINTER_PAGE_WIDTH+tx)*MPS_PRINTER_PAGE_DEPTH_COLOR)>>3;
+        uint32_t byte = (((ty*MPS_PRINTER_PAGE_WIDTH+tx)*MPS_PRINTER_PAGE_DEPTH_COLOR)>>3)+ty+1;
         bitmap[byte]=c;
     }
 }

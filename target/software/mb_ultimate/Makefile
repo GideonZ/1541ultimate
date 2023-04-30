@@ -124,7 +124,7 @@ SRCS_CC	 =  small_printf.cc \
 			mps_printer_ibmpp.cc \
 			mps_chargen.cc \
 			mps_charset.cc \
-			lodepng.cc \
+			mps_png.cc \
 			filetype_tap.cc \
             socket_stream.cc \
             socket_gui.cc \
@@ -171,7 +171,7 @@ LFLAGS   = --gc-sections  --relax
 
 include ../common/rules.mk
 
-lodepng.o: lodepng.cc
+mps_png.o: mps_png.cc
 	@echo Compiling $(<F) optimized for speed
 	@$(CPP) $(CPPOPT) -Os $(PATH_INC) -B. -c -o $(OUTPUT)/$(@F) $<
 	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
