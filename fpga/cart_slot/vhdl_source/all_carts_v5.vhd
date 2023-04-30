@@ -53,6 +53,7 @@ port (
     mem_req         : in  std_logic; -- if '1', the address shouldn't change
     mem_addr        : out unsigned(25 downto 0);   
 
+    phi2            : in  std_logic;
     irq_n           : out std_logic;
     nmi_n           : out std_logic;
     exrom_n         : out std_logic;
@@ -396,8 +397,10 @@ begin
                 if reset_in='1' or cart_force = '1' then
                     bank_bits(14) <= '1'; -- start in last bank
                 end if;
-                game_n    <= mode_bits(1);
-                exrom_n   <= not mode_bits(0);
+                if phi2='1' then
+                    game_n    <= mode_bits(1);
+                    exrom_n   <= not mode_bits(0);
+                end if;
                 serve_rom <= '1';
                 serve_io1 <= '1';
                 rom_mode  <= "01"; -- 16K banks
