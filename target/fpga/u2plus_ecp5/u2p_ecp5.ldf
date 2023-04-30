@@ -4,7 +4,7 @@
         <Option name="HDL type" value="VHDL"/>
     </Options>
     <Implementation title="impl1" dir="impl1" description="impl1" synthesis="synplify" default_strategy="Strategy1">
-        <Options def_top="mem_bus_register" lib="work" top="u2p_riscv_lattice"/>
+        <Options def_top="slot_measure" lib="work" top="u2p_riscv_lattice"/>
         <Source name="../../../neorv32/rtl/core/neorv32_application_image.vhd" type="VHDL" type_short="VHDL">
             <Options lib="neorv32"/>
         </Source>
