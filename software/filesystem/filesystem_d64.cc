@@ -500,15 +500,15 @@ FRESULT FileSystemCBM::file_rename(const char *old_name, const char *new_name)
     FRESULT res = find_file(old_name, dd, &info);
 */
 
-   {
-      char *p = new_name;
-      while (*p)
-      {
-         if (*p == '/')
-           new_name = p+1;
-         p++;
-      }
-   }
+    {
+        const char *p = new_name;
+        while (*p)
+        {
+            if (*p == '/')
+                new_name = p + 1;
+            p++;
+        }
+    }
 
     CbmFileName cbm;
 

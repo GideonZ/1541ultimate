@@ -19,6 +19,7 @@ Fixes:
     [Issue-271] GEORAM at boot (MarkusC64)
     [Issue-279] Support for 2 MHz operation for any cartridge, including EasyFlash
     Minor fixes in the modem emulation layer from Scott Hutter (xlar54)
+    U64 only: Multicolor graphics side border bug (core version V1.41 => V1.42)
 
 Additions:
     Firmware target added: Ultimate-II+L; the Lattice version!

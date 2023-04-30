@@ -17,6 +17,7 @@ port (
     
     freezer_state   : out std_logic_vector(1 downto 0); -- debug
 
+    freezer_ena     : in  std_logic;
     unfreeze        : in  std_logic; -- could be software driven, or automatic, depending on cartridge
     freeze_trig     : out std_logic;
     freeze_act      : out std_logic );
@@ -85,7 +86,7 @@ begin
                 state <= idle;
             end case;
             
-            if reset_in='1' then
+            if reset_in='1' or freezer_ena = '0' then
                 state <= idle;
                 wr_cnt <= 0;
                 activate_d <= '0';
