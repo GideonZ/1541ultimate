@@ -155,7 +155,7 @@ void IecInterface :: iec_task(void *a)
 void IecInterface :: iec_processor_configure(void)
 {
     int size;
-    uint8_t *code_src;
+    uint8_t *src;
 
     int current_config = (iec_drive_enabled ? 0x01 : 0x00) | (iec_printer_enabled ? 0x02 : 0x00);
 
@@ -169,19 +169,19 @@ void IecInterface :: iec_processor_configure(void)
         case 0x01:  /* IEC drive enabled, IEC printed disabled */
             printf("Enable IEC for drive only\n");
             size = (int)&_iec_code_dr_b_size;
-            code_src = &_iec_code_dr_b_start;
+            src = &_iec_code_dr_b_start;
             break;
 
         case 0x02:  /* IEC drive disabled, IEC printer enabled */
             printf("Enable IEC for printer only\n");
             size = (int)&_iec_code_pr_b_size;
-            code_src = &_iec_code_pr_b_start;
+            src = &_iec_code_pr_b_start;
             break;
 
         case 0x03:  /* IEC drive enabled, IEC printer enabled */
             printf("Enable IEC for drive and printer\n");
             size = (int)&_iec_code_dr_pr_b_size;
-            code_src = &_iec_code_dr_pr_b_start;
+            src = &_iec_code_dr_pr_b_start;
             break;
     }
 
@@ -189,43 +189,40 @@ void IecInterface :: iec_processor_configure(void)
 
     printf("IEC Processor found: Version = %b. Loading code...", HW_IEC_VERSION);
     uint8_t *dst = (uint8_t *)HW_IEC_CODE;
-    uint8_t *src = code_src;
 
-    for(int i=0;i<size;i++)
-        *(dst++) = *(src++);
-
-    printf("%d bytes loaded.\n", size);
-
-    uint32_t was_talk   = 0x18800040 + 10; // compare instruction
-    uint32_t was_listen = 0x18800020 + 10;
+    /* In stock IEC program, drive is id=10 and printer is id=4 */
+    uint32_t was_drive_talk     = 0x18800040 + 10; // compare instruction
+    uint32_t was_drive_listen   = 0x18800020 + 10;
     uint32_t was_printer_listen = 0x18800020 + 4;
 
     printf("Setting IEC bus ID to %d for drive and %d for printer.\n", iec_drive_id, iec_printer_id);
     int replaced = 0;
 
-    /* Convert bytes size to words size */
-    size >>= 2;
+    for(int i=0;i<size;i+=4)
+    {
+        /* Each instruction is a 32 bit word */
+        uint32_t word_read = src[i]<<24 | src[i+1]<<16 | src[i+2]<<8 | src[i+3];
 
-    for(int i=0;i<size;i++) {
-        uint32_t word_read = cpu_to_32le(HW_IEC_RAM_DW[i]);
+        dst[i] = src[i];
+        dst[i+1] = src[i+1];
+        dst[i+2] = src[i+2];
 
-        if ((word_read & 0x1F8000FF) == was_listen) {
-            HW_IEC_RAM_DW[i] = cpu_to_32le((word_read & 0xFFFFFF00) + iec_drive_id + 0x20);
+        /* Replace device ID in LSByte */
+        if ((word_read & 0x1F8000FF) == was_drive_listen) {
+            dst[i+3] = iec_drive_id + 0x20;
             replaced ++;
-        }
-
-        if ((word_read & 0x1F8000FF) == was_talk) {
-            HW_IEC_RAM_DW[i] = cpu_to_32le((word_read & 0xFFFFFF00) + iec_drive_id + 0x40);
+        } else if ((word_read & 0x1F8000FF) == was_drive_talk) {
+            dst[i+3] = iec_drive_id + 0x40;
             replaced ++;
-        }
-
-        if ((word_read & 0x1F8000FF) == was_printer_listen) {
-            HW_IEC_RAM_DW[i] = cpu_to_32le((word_read & 0xFFFFFF00) + iec_printer_id + 0x20);
+        } else if ((word_read & 0x1F8000FF) == was_printer_listen) {
+            dst[i+3] = iec_printer_id + 0x20;
             replaced ++;
+        } else {
+            dst[i+3] = src[i+3];
         }
     }
 
-    printf("Replaced: %d words in %d words.\n", replaced, size);
+    printf("%d bytes loaded with %d replaced bytes.\n", size, replaced);
 
     HW_IEC_RESET_ENABLE = 1; // enable
 }
