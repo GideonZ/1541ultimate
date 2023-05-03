@@ -430,7 +430,9 @@ BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[14]" TO CELL "b_
 BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[15]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[15]" ;
 BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[16]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[16]" ;
 BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[17]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[17]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/rx_tig_src" TO CELL "b_audio.i_ultfilt4/i_sync/rx_tig_dst" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_tig_src" TO CELL "b_audio.i_ultfilt4/i_sync/rx_tig_dst" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[14]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[6]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[10]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[5]" ;
 BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[0]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[0]" ;
 BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[1]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[1]" ;
 BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[2]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[2]" ;
@@ -449,7 +451,9 @@ BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[14]" TO CELL "b_
 BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[15]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[15]" ;
 BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[16]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[16]" ;
 BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[17]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[17]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/rx_tig_src" TO CELL "b_audio.i_ultfilt3/i_sync/rx_tig_dst" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[14]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[6]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[10]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[5]" ;
+BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_tig_src" TO CELL "b_audio.i_ultfilt3/i_sync/rx_tig_dst" ;
 DEFINE CELL GROUP "TigSrc2" "b_audio.i_ultfilt2/i_sync/tx_tig_src" 
 "b_audio.i_ultfilt2/i_sync/tx_data_tig_src[0]" 
 "b_audio.i_ultfilt2/i_sync/tx_data_tig_src[1]" 
