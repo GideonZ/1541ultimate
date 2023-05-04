@@ -238,9 +238,12 @@ int IecPrinter::executeCommand(SubsysCommand *cmd)
             break;
 
         case MENU_PRINTER_FLUSH:
+            cmd_ui->show_progress("Flushing/Ejecting page...", 0); /* modal dialog while printing */
             printerEvent.type = PRINTER_EVENT_USER;
             printerEvent.value = PRINTER_USERCMD_FLUSH;
             while( xQueueSend( queueHandle, (void *) &printerEvent, portMAX_DELAY) != pdTRUE);
+            xSemaphoreTake( xCallerSemaphore, portMAX_DELAY); /* Wait end of printer job */
+            cmd_ui->hide_progress();
             break;
 
         case MENU_PRINTER_RESET:
@@ -292,6 +295,9 @@ IecPrinter::IecPrinter() : SubSystem(SUBSYSID_PRINTER)
     /* Read configuration from nvram if it exists */
     effectuate_settings();
 
+    /* Initially, no caller task */
+    xCallerSemaphore = xSemaphoreCreateBinary();
+
     /* Create the queue */
     queueHandle = xQueueCreate( 1, sizeof(PrinterEvent_t));
 
@@ -325,6 +331,8 @@ IecPrinter::~IecPrinter()
     /* Remove message queue */
     vQueueDelete(queueHandle);
 
+    /* Remove semaphore */
+    vSemaphoreDelete( xCallerSemaphore );
     /* Close/flush output file */
     close_file();
 }
@@ -517,14 +525,10 @@ int IecPrinter::_push_command(uint8_t b)
 
 int IecPrinter::flush(void)
 {
-    cmd_ui->show_progress("Flushing/Ejecting page...", 0);
-
     if (buffer_pointer && output_type != PRINTER_PNG_OUTPUT && !f)
         open_file();
 
     close_file();
-
-    cmd_ui->hide_progress();
 
     return IEC_OK;
 }
@@ -624,6 +628,7 @@ void IecPrinter::task(IecPrinter *p)
 
                         case PRINTER_USERCMD_FLUSH:
                             p->flush();
+                            xSemaphoreGive(p->xCallerSemaphore);
                             break;
                     }
                     break;

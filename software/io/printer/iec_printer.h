@@ -121,6 +121,9 @@ class IecPrinter : public SubSystem, ObjectWithMenu, ConfigurableObject
         /* Queue to send IEC data to printer */
         QueueHandle_t queueHandle;
 
+        /* Binary Semaphore to hold the action menu caller Task */
+        SemaphoreHandle_t xCallerSemaphore;
+
         /*==============================================*/
         /*                 M E T H O D S                */
         /*==============================================*/
