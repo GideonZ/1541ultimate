@@ -17,6 +17,14 @@
 
 #define IECDEBUG 0
 
+#if (IECDEBUG>1)
+#define DBGIEC(x) printf(x)
+#define DBGIECV(x, ...) printf(x, __VA_ARGS__)
+#else
+#define DBGIEC(x)
+#define DBGIECV(x, ...)
+#endif
+
 #define HW_IEC_REGS      IEC_BASE
 #define HW_IEC_CODE      (IEC_BASE + 0x800)
 

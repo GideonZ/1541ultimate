@@ -201,25 +201,28 @@ void IecInterface :: iec_processor_configure(void)
     for(int i=0;i<size;i+=4)
     {
         /* Each instruction is a 32 bit word */
-        uint32_t word_read = src[i]<<24 | src[i+1]<<16 | src[i+2]<<8 | src[i+3];
+        uint32_t word_read = cpu_to_32le(src[i] | src[i+1]<<8 | src[i+2]<<16 | src[i+3]<<24);
 
-        dst[i] = src[i];
-        dst[i+1] = src[i+1];
-        dst[i+2] = src[i+2];
+        if (i<16) printf("%03x: 0x%08x\n", i, word_read);
 
         /* Replace device ID in LSByte */
         if ((word_read & 0x1F8000FF) == was_drive_listen) {
-            dst[i+3] = iec_drive_id + 0x20;
+            word_read = (word_read & 0xFFFFFFE0) + iec_drive_id;
             replaced ++;
         } else if ((word_read & 0x1F8000FF) == was_drive_talk) {
-            dst[i+3] = iec_drive_id + 0x40;
+            word_read = (word_read & 0xFFFFFFE0) + iec_drive_id;
             replaced ++;
         } else if ((word_read & 0x1F8000FF) == was_printer_listen) {
-            dst[i+3] = iec_printer_id + 0x20;
+            word_read = (word_read & 0xFFFFFFE0) + iec_printer_id;
             replaced ++;
-        } else {
-            dst[i+3] = src[i+3];
         }
+
+        word_read = cpu_to_32le(word_read);
+
+        dst[i] = (uint8_t) (word_read & 0xFF);
+        dst[i+1] = (uint8_t) ((word_read >> 8) & 0xFF);
+        dst[i+2] = (uint8_t) ((word_read >> 16) & 0xFF);
+        dst[i+3] = (uint8_t) ((word_read >> 24) & 0xFF);
     }
 
     printf("%d bytes loaded with %d replaced bytes.\n", size, replaced);
@@ -388,24 +391,28 @@ void IecInterface :: poll()
     BaseType_t gotSomething;
 
     while(1) {
-    	if(wait_irq) {
-			if (HW_IEC_IRQ & 0x01) {
-				get_warp_data();
-			}
-		    continue;
-		}
-    	gotSomething = xQueueReceive(queueGuiToIec, &pathstring, 2); // here is the vTaskDelay(2) that used to be here
-    	if (gotSomething == pdTRUE) {
-    	    if (!pathstring) {
-    	        start_warp_iec();
-    	    } else {
-    	        IecPartition *p = vfs->GetPartition(0);
-    	        p->cd(pathstring);
-    	        delete[] pathstring;
-    	    }
-    	}
-		uint8_t a;
+        if(wait_irq) {
+            if (HW_IEC_IRQ & 0x01) {
+                get_warp_data();
+            }
+            continue;
+        }
+
+        gotSomething = xQueueReceive(queueGuiToIec, &pathstring, 2); // here is the vTaskDelay(2) that used to be here
+
+        if (gotSomething == pdTRUE) {
+            if (!pathstring) {
+                start_warp_iec();
+            } else {
+                IecPartition *p = vfs->GetPartition(0);
+                p->cd(pathstring);
+                delete[] pathstring;
+            }
+        }
+
+        uint8_t a;
         int looplimit = 500;
+
         while (!((a = HW_IEC_RX_FIFO_STATUS) & IEC_FIFO_EMPTY)) {
 
             if ((--looplimit) < 0) {
@@ -415,119 +422,137 @@ void IecInterface :: poll()
                 break;
             }
 
-			data = HW_IEC_RX_DATA;
-			if(a & IEC_FIFO_CTRL) {
+            data = HW_IEC_RX_DATA;
 
-#if IECDEBUG > 2
-			    if (data == 0x41) printf("\n");
-			    printf("<%b>", data);
-#endif
-				switch(data) {
-					case 0xDA:
-						HW_IEC_TX_DATA = 0x00; // handshake and wait for IRQ
-						wait_irq = true;
-						break;
-					case 0xAD:
-						ioWrite8(UART_DATA, 0x23); // printf("{warp_end}");
-						break;
-					case 0xDE:
-						get_warp_error();
-						break;
-					case 0x57:
-						printf("{warp mode}");
-						break;
-					case 0x43:
-					    channels[current_channel]->talk();
-					    HW_IEC_TX_FIFO_RELEASE = 1;
-						talking = true;
-						break;
-					case 0x45:
-						//printf("{end} ");
-						if (printer) {
-							iec_printer.push_command(0xFF);
-							printer = false;
-						} else {
-							channels[current_channel]->push_command(0);
-						}
-						break;
-					case 0x41:
-						atn = true;
+            if(a & IEC_FIFO_CTRL) {
+                switch(data) {
+                    case 0xDA:
+                        DBGIEC("[WARP:START.");
+                        HW_IEC_TX_DATA = 0x00; // handshake and wait for IRQ
+                        wait_irq = true;
+                        break;
+
+                    case 0xAD:
+                        DBGIEC(".WARP:OK]");
+                        ioWrite8(UART_DATA, 0x23); // printf("{warp_end}");
+                        break;
+
+                    case 0xDE:
+                        DBGIEC(".WARP:ERR]");
+                        get_warp_error();
+                        break;
+
+                    case 0x57:
+                        DBGIEC(".WARP:ACK.");
+                        break;
+
+                    case 0x43:
+                        DBGIEC(".RTS.");
+                        channels[current_channel]->talk();
+                        HW_IEC_TX_FIFO_RELEASE = 1;
+                        talking = true;
+                        break;
+
+                    case 0x45:
+                        DBGIEC(".EOI]\n");
+                        if (printer) {
+                            iec_printer.push_command(0xFF);
+                            printer = false;
+                        } else {
+                            channels[current_channel]->push_command(0);
+                        }
+                        break;
+
+                    case 0x41:
+                        DBGIEC("\n[ATN.");
+                        atn = true;
                         talking = false;
-						break;
-					case 0x42:
-						atn = false;
-						break;
-					case 0x47:
-						if (!printer) {
-							channels[current_channel]->pop_data();
-						}
-						break;
-					case 0x46:
-						printer = true;
-						iec_printer.push_command(0xFE);
-						break;
-					default:
-						//printf("<%b> ", data);
-						break;
-				}
-			} else {
-				if(atn) {
-#if IECDEBUG > 2
-					printf("[/%b] ", data);
-#endif
-					if(data >= 0x60) {  // workaround for passing of wrong atn codes talk/untalk
-						if (printer) {
-							iec_printer.push_command(data & 0x7);
-						} else {
-							current_channel = int(data & 0x0F);
-							channels[current_channel]->push_command(data & 0xF0);
-						}
-					}
-				} else {
-					if (printer) {
-						iec_printer.push_data(data);
-					} else {
-#if IECDEBUG > 2
-						printf("[%b] ", data);
-#endif
-						channels[current_channel]->push_data(data);
-					}
-				}
-			}
-			if (wait_irq) {
-				break;
-			}
-		}
+                        printer = false;
+                        break;
 
-		int st;
-		if(talking) {
-		    while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)) {
-				st = channels[current_channel]->prefetch_data(data);
-				if(st == IEC_OK) {
-					HW_IEC_TX_DATA = data;
-#if IECDEBUG > 2
-					outbyte(data < 0x20?'.':data);
-#endif
-				} else if(st == IEC_LAST) {
-					HW_IEC_TX_LAST = data;
+                    case 0x42:
+                        DBGIEC(".ATN>");
+                        atn = false;
+                        break;
+
+                    case 0x47:
+                        DBGIEC("o");
+                        if (!printer) {
+                            channels[current_channel]->pop_data();
+                        }
+                        break;
+
+                    case 0x46:
+                        DBGIEC(".PRINTER.");
+                        printer = true;
+                        iec_printer.push_command(0xFE);
+                        break;
+
+                    default:
+                        DBGIECV(".<%b>.", data);
+                        break;
+                }
+            } else {
+                if(atn) {
+                    DBGIECV(".<%b>.", data);
+
+                    if(data >= 0x60) {  // workaround for passing of wrong atn codes talk/untalk
+                        if (printer) {
+                            DBGIECV(".PRTCMD(%b).", data);
+                            iec_printer.push_command(data & 0x7);
+                        } else {
+                            DBGIECV(".DRVCMD(%b).", data);
+                            current_channel = int(data & 0x0F);
+                            channels[current_channel]->push_command(data & 0xF0);
+                        }
+                    }
+                } else {
+                    DBGIECV(".%b.", data);
+
+                    if (printer) {
+                        iec_printer.push_data(data);
+                    } else {
+                        channels[current_channel]->push_data(data);
+                    }
+                }
+            }
+
+            if (wait_irq) {
+                break;
+            }
+        }
+
+        int st;
+
+        if(talking) {
+            while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)) {
+                st = channels[current_channel]->prefetch_data(data);
+
+                if(st == IEC_OK) {
+                    HW_IEC_TX_DATA = data;
 #if IECDEBUG > 2
                     outbyte(data < 0x20?'.':data);
 #endif
-					talking = false;
-					break;
-				} else if(st == IEC_BUFFER_END) {
-					break;
-				} else {
-					printf("Talk Error = %d\n", st);
-					HW_IEC_TX_CTRL = 0x10;
-					talking = false;
-					break;
-				}
-			}
+                } else if(st == IEC_LAST) {
+                                        HW_IEC_TX_LAST = data;
+#if IECDEBUG > 2
+                    outbyte(data < 0x20?'.':data);
+#endif
+                    talking = false;
+                    break;
+                } else if(st == IEC_BUFFER_END) {
+                    break;
+                } else {
+                    printf("Talk Error = %d\n", st);
+                    HW_IEC_TX_CTRL = 0x10;
+                    talking = false;
+                    break;
+                }
+            }
 #if IECDEBUG > 2
             outbyte('\'');
 #endif
-		}
+        }
     }
 }
 
