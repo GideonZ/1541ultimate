@@ -335,6 +335,13 @@ uint8_t *GcrImage :: find_sync(uint8_t *gcr_data, uint8_t *begin, uint8_t *end)
     int sync_count = 0;
 
     do {
+        if(gcr_data >= end) {
+            gcr_data = begin;
+            if (wrap) {
+                return NULL;
+            }
+            wrap = true;
+        }
         if(*gcr_data == 0xFF) {
             sync_count++;
         } else {
@@ -342,14 +349,7 @@ uint8_t *GcrImage :: find_sync(uint8_t *gcr_data, uint8_t *begin, uint8_t *end)
                 return gcr_data; // byte after sync
             sync_count = 0;
         }
-		if(gcr_data < end) {
-    		gcr_data++;
-        } else {
-            if(wrap)
-                return NULL;
-            wrap = true;
-            gcr_data = begin;
-        }
+        gcr_data++;
     } while(1);
     return NULL;
 }
