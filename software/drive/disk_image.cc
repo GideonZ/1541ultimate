@@ -370,47 +370,44 @@ inline void conv_5bytes_gcr2bin(uint8_t **gcr, uint8_t *bin)
 	*gcr = b;
 }
 
-uint8_t *GcrImage :: wrap(uint8_t **current, uint8_t *begin, uint8_t *end, int count, uint8_t *buffer, uint8_t shift)
+uint8_t *GcrImage ::wrap(uint8_t **current, uint8_t *begin, uint8_t *end, int count, uint8_t *buffer, uint8_t shift)
 {
     uint8_t *gcr = *current;
-    
-    if (shift == 0)
-    {
-       if(gcr > (end - count)) {
-           uint8_t *d = buffer;
-		   uint8_t *s = gcr;
-		   *current = (gcr + count) - (end - begin);
-		   while(count--)
-           {
-               if (s == end) s = begin;
-		       *(d++) = *(s++);
-           }
-		   return buffer; // set decode pointer to the scratch pad
-	     }
-       *current = gcr + count;
-       return gcr;
-    }
-    else
-    {
-           uint8_t *d = buffer;
-		   uint8_t *s = gcr;
-           uint8_t curByte = *(s++) << shift;
-           if(gcr > (end - count))
-		      *current = (gcr + count) - (end - begin);
-           else
-              *current = gcr + count;
-		   while(count--)
-           {
-               if (s == end) s = begin;
-               curByte |= *s >> (8-shift);
-               *(d++) = curByte;
-               curByte = *s << shift;
-               s++; 
-           }
-		   return buffer; // set decode pointer to the scratch pad
+
+    if (shift == 0) {
+        if (gcr > (end - count)) {
+            uint8_t *d = buffer;
+            uint8_t *s = gcr;
+            *current = (gcr + count) - (end - begin);
+            while (count--) {
+                if (s == end)
+                    s = begin;
+                *(d++) = *(s++);
+            }
+            return buffer; // set decode pointer to the scratch pad
+        }
+        *current = gcr + count;
+        return gcr;
+    } else {
+        uint8_t *d = buffer;
+        uint8_t *s = gcr;
+        uint8_t curByte = *(s++) << shift;
+        if (gcr > (end - count))
+            *current = (gcr + count) - (end - begin);
+        else
+            *current = gcr + count;
+        while (count--) {
+            if (s == end)
+                s = begin;
+            curByte |= *s >> (8 - shift);
+            *(d++) = curByte;
+            curByte = *s << shift;
+            s++;
+        }
+        return buffer; // set decode pointer to the scratch pad
     }
 }
-    
+
 int GcrImage :: convert_disk_gcr2bin(BinImage *bin_image, UserInterface *user_interface)
 {
     int errors = 0;
@@ -482,18 +479,18 @@ int GcrImage::convert_gcr_track_to_bin(uint8_t *gcr, int trackNumber, int trackL
             wrapped = true;
         }
         pntr = current = new_gcr;
-        
+
         uint8_t shift = 0;
         uint8_t firstByte = *new_gcr;
-        
-        while (firstByte & 0x80)
-        {
-           shift++;
-           firstByte = firstByte << 1;
-           if (shift == 8) break;
+
+        while (firstByte & 0x80) {
+            shift++;
+            firstByte <<= 1;
+            if (shift == 8)
+                break;
         }
 
-        gcr_data = wrap(&current, begin, end, 5, sector_buffer, shift);
+        gcr_data = wrap(&pntr, begin, end, 5, sector_buffer, shift);
         conv_5bytes_gcr2bin(&gcr_data, &header[0]);
         if (header[0] == 8) {
             gcr_data = wrap(&pntr, begin, end, 5, sector_buffer, shift);
