@@ -425,6 +425,7 @@ int GcrImage::convert_gcr_track_to_bin(uint8_t *gcr, int trackNumber, int trackL
     uint8_t *begin;
     uint8_t *end;
     uint8_t *current;
+    uint8_t *pntr;
     uint8_t *dest;
     uint8_t *gcr_data;
     uint8_t *new_gcr;
@@ -453,12 +454,12 @@ int GcrImage::convert_gcr_track_to_bin(uint8_t *gcr, int trackNumber, int trackL
             }
             wrapped = true;
         }
-        current = new_gcr;
+        pntr = current = new_gcr;
 
-        gcr_data = wrap(&current, begin, end, 5, sector_buffer);
+        gcr_data = wrap(&pntr, begin, end, 5, sector_buffer);
         conv_5bytes_gcr2bin(&gcr_data, &header[0]);
         if (header[0] == 8) {
-            gcr_data = wrap(&current, begin, end, 5, sector_buffer);
+            gcr_data = wrap(&pntr, begin, end, 5, sector_buffer);
             conv_5bytes_gcr2bin(&gcr_data, &header[4]);
             t = (int)header[3];
             s = (int)header[2];
@@ -492,6 +493,9 @@ int GcrImage::convert_gcr_track_to_bin(uint8_t *gcr, int trackNumber, int trackL
                     expect_data = false;
                 }
             }
+            if (expect_data) {
+                current = pntr;
+            }
             continue;
         }
 
@@ -504,7 +508,7 @@ int GcrImage::convert_gcr_track_to_bin(uint8_t *gcr, int trackNumber, int trackL
                 uint8_t *binarySector = dest;
                 memcpy(dest, &header[1], 3);
                 dest += 3;
-                gcr_data = wrap(&current, begin, end, 320, sector_buffer);
+                gcr_data = wrap(&pntr, begin, end, 320, sector_buffer);
                 for (int i = 0; i < 63; i++) {
                     conv_5bytes_gcr2bin(&gcr_data, dest);
                     dest += 4;
@@ -521,6 +525,7 @@ int GcrImage::convert_gcr_track_to_bin(uint8_t *gcr, int trackNumber, int trackL
                         *(st++) = 0xE3;
                     } else {
                         *(st++) = 0x00;
+                        current = pntr;
                     }
                     statlen--;
                 }
