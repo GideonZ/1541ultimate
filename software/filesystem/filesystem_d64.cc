@@ -875,7 +875,7 @@ FRESULT FileSystemDNP::format(const char *name)
     bam_buffer[4] = root_buffer[22];
     bam_buffer[5] = root_buffer[23];
     bam_buffer[6] = 0xC0; // verify on
-    bam_buffer[7] = (uint8_t )((num_sectors + 255) / 256); // num tracks
+    bam_buffer[8] = (uint8_t )((num_sectors + 255) / 256); // num tracks
 
     int bam_bytes = num_sectors / 8;
     bam_buffer[36] = 0x1F; // in total 32+3 blocks in use after format
