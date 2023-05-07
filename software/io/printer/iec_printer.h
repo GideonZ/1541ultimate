@@ -109,6 +109,9 @@ class IecPrinter : public SubSystem, ObjectWithMenu, ConfigurableObject
         /* Selected output type (RAW, PNG, ASCII) */
         t_printer_output_type output_type;
 
+        /* Printer is color (only used for progress bar) */
+        bool is_color;
+
         /* Flag set to true while in Ultimate init sequence */
         bool init;
 
@@ -157,6 +160,7 @@ class IecPrinter : public SubSystem, ObjectWithMenu, ConfigurableObject
         void effectuate_settings(void); // from ConfigurableObject
         int executeCommand(SubsysCommand *cmd); // from SubSystem
         const char *identify(void) { return "Virtual Printer"; }
+        void updateFlushProgressBar(void);
 
         /* =======  Setters */
         int set_filename(const char *file);

@@ -238,7 +238,16 @@ int IecPrinter::executeCommand(SubsysCommand *cmd)
             break;
 
         case MENU_PRINTER_FLUSH:
-            cmd_ui->show_progress("Flushing/Ejecting page...", 0); /* modal dialog while printing */
+
+            /*-
+             *  Modal dialog while printing
+             *
+             *  a progress bar shows how manu blocs have been compressed in deflate method
+             *  the total number of blocs depends on data size to compress, 8 blocs for
+             *  B&W printer pages and 20 blocs for color pages
+            -*/
+
+            cmd_ui->show_progress("Flushing/Ejecting page...", is_color ? 20 : 8);
             printerEvent.type = PRINTER_EVENT_USER;
             printerEvent.value = PRINTER_USERCMD_FLUSH;
             while( xQueueSend( queueHandle, (void *) &printerEvent, portMAX_DELAY) != pdTRUE);
@@ -256,7 +265,36 @@ int IecPrinter::executeCommand(SubsysCommand *cmd)
             break;
     }
 
+    cmd_ui = NULL;
+
     return 0;
+}
+
+/************************************************************************
+*                 IecPrinter::updateFlushProgressBar()          Public  *
+*                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                  *
+* Function : Callback called when one bloc has been compressed in PNG   *
+*            generation routine. It updates the progress bar when eject *
+*            has been started by the Action menu                        *
+*-----------------------------------------------------------------------*
+* Inputs:                                                               *
+*                                                                       *
+*    (none)                                                             *
+*                                                                       *
+*-----------------------------------------------------------------------*
+* Outputs:                                                              *
+*                                                                       *
+*    (none)                                                             *
+*                                                                       *
+************************************************************************/
+
+void IecPrinter::updateFlushProgressBar(void)
+{
+    if (cmd_ui)
+    {
+        /* One step ahead for progress bar in interactive mode only */
+        cmd_ui->update_progress(NULL, 1);
+    }
 }
 
 /************************************************************************
@@ -291,6 +329,7 @@ IecPrinter::IecPrinter() : SubSystem(SUBSYSID_PRINTER)
     output_type = PRINTER_PNG_OUTPUT;
     init = true;
     cmd_ui = 0;
+    is_color = false;
 
     /* Read configuration from nvram if it exists */
     effectuate_settings();
@@ -873,12 +912,12 @@ int IecPrinter::set_output_type(int t)
 
         case 2: // PNG grey output format
             new_output_type = PRINTER_PNG_OUTPUT;
-            mps->setColorMode(false);
+            mps->setColorMode(is_color=false);
             break;
 
         case 3: // PNG color output format
             new_output_type = PRINTER_PNG_OUTPUT;
-            mps->setColorMode(true);
+            mps->setColorMode(is_color=true);
             break;
     }
 

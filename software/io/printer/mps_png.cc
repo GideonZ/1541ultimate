@@ -28,6 +28,10 @@
 #include <cstdlib>
 #include "mps_png.h"
 
+#ifndef NOT_ULTIMATE
+#include "iec_printer.h"    /* Only to handle progression bar while printing */
+#endif /* NOT_ULTIMATE */
+
 /*******************************  Constants  ****************************/
 
 /*this is a good tradeoff between speed and compression ratio*/
@@ -1862,6 +1866,9 @@ static unsigned lodepng_deflatev(ucvector* out, const unsigned char* in, size_t 
                 end = insize;
 
             error = deflateDynamic(&writer, &hash, in, start, end, settings, final);
+#ifndef NOT_ULTIMATE
+            iec_printer.updateFlushProgressBar();
+#endif /* NOT_ULTIMATE */
         }
     }
 
