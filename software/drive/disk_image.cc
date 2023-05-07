@@ -1092,15 +1092,11 @@ int BinImage :: save(File *file, UserInterface *user_interface)
 
 	if(errors && error_size >= secs) {
 	    uint8_t orred = 0;
-	    int esize = error_size;
-	    if (secs < esize) {
-	        esize = secs;
-	    }
-	    for(int i=0;i<esize;i++) {
+	    for(int i=0;i<secs;i++) {
 	       orred |= errors[i];
 	    }
 	    if (orred) { // contains valid error data
-            res = file->write(errors, esize, &transferred);
+            res = file->write(errors, secs, &transferred);
             if(res != FR_OK) {
                 printf("WRITE ERROR: %d. Transferred = %d\n", res, transferred);
                 return -4;
