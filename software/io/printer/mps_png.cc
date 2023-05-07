@@ -761,25 +761,6 @@ static unsigned HuffmanTree_makeFromLengths(HuffmanTree* tree, const unsigned* b
     return HuffmanTree_makeFromLengths2(tree);
 }
 
-/*get the distance code tree of a deflated block with fixed tree, as specified in the deflate specification*/
-static unsigned generateFixedDistanceTree(HuffmanTree* tree)
-{
-    unsigned i, error = 0;
-    unsigned* bitlen = (unsigned*)malloc(NUM_DISTANCE_SYMBOLS * sizeof(unsigned));
-
-    if(!bitlen)
-        return 83; /*alloc fail*/
-
-    /*there are 32 distance codes, but 30-31 are unused*/
-    for(i = 0; i != NUM_DISTANCE_SYMBOLS; ++i)
-        bitlen[i] = 5;
-
-    error = HuffmanTree_makeFromLengths(tree, bitlen, NUM_DISTANCE_SYMBOLS, 15);
-    free(bitlen);
-
-    return error;
-}
-
 /* LSB of value is written first, and LSB of bytes is used first */
 static void writeBits(LodePNGBitWriter* writer, unsigned value, size_t nbits)
 {
@@ -851,34 +832,6 @@ static void HuffmanTree_cleanup(HuffmanTree* tree)
     free(tree->lengths);
     free(tree->table_len);
     free(tree->table_value);
-}
-
-/*get the literal and length code tree of a deflated block with fixed tree, as per the deflate specification*/
-static unsigned generateFixedLitLenTree(HuffmanTree* tree)
-{
-    unsigned i, error = 0;
-    unsigned* bitlen = (unsigned*)malloc(NUM_DEFLATE_CODE_SYMBOLS * sizeof(unsigned));
-
-    if(!bitlen)
-        return 83; /*alloc fail*/
-
-    /*288 possible codes: 0-255=literals, 256=endcode, 257-285=lengthcodes, 286-287=unused*/
-    for(i =   0; i <= 143; ++i)
-        bitlen[i] = 8;
-
-    for(i = 144; i <= 255; ++i)
-        bitlen[i] = 9;
-
-    for(i = 256; i <= 279; ++i)
-        bitlen[i] = 7;
-
-    for(i = 280; i <= 287; ++i)
-        bitlen[i] = 8;
-
-    error = HuffmanTree_makeFromLengths(tree, bitlen, NUM_DEFLATE_CODE_SYMBOLS, 15);
-    free(bitlen);
-
-    return error;
 }
 
 /*creates a new chain node with the given parameters, from the memory in the lists */
@@ -1529,21 +1482,10 @@ static unsigned deflateDynamic(LodePNGBitWriter* writer, Hash* hash,
         memset(frequencies_d, 0, 30 * sizeof(*frequencies_d));
         memset(frequencies_cl, 0, NUM_CODE_LENGTH_CODES * sizeof(*frequencies_cl));
 
-        if(settings->use_lz77)
-        {
-            error = encodeLZ77(&lz77_encoded, hash, data, datapos, dataend, settings->windowsize,
-                               settings->minmatch, settings->nicematch, settings->lazymatching);
-            if(error)
-                break;
-        }
-        else
-        {
-            if (!uivector_resize(&lz77_encoded, datasize))
-                ERROR_BREAK(83 /*alloc fail*/);
-
-            for (i = datapos; i < dataend; ++i)
-                lz77_encoded.data[i - datapos] = data[i]; /*no LZ77, but still will be Huffman compressed*/
-        }
+        error = encodeLZ77(&lz77_encoded, hash, data, datapos, dataend, settings->windowsize,
+                           settings->minmatch, settings->nicematch, settings->lazymatching);
+        if(error)
+            break;
 
         /*Count the frequencies of lit, len and dist codes*/
         for (i = 0; i != lz77_encoded.size; ++i)
@@ -1748,64 +1690,6 @@ static unsigned deflateDynamic(LodePNGBitWriter* writer, Hash* hash,
     return error;
 }
 
-static unsigned deflateFixed(LodePNGBitWriter* writer, Hash* hash,
-                             const unsigned char* data,
-                             size_t datapos, size_t dataend,
-                             const LodePNGCompressSettings* settings, unsigned final)
-{
-    HuffmanTree tree_ll; /*tree for literal values and length codes*/
-    HuffmanTree tree_d; /*tree for distance codes*/
-
-    unsigned BFINAL = final;
-    unsigned error = 0;
-    size_t i;
-
-    HuffmanTree_init(&tree_ll);
-    HuffmanTree_init(&tree_d);
-
-    error = generateFixedLitLenTree(&tree_ll);
-
-    if(!error)
-        error = generateFixedDistanceTree(&tree_d);
-
-    if(!error)
-    {
-        writeBits(writer, BFINAL, 1);
-        writeBits(writer, 1, 1); /*first bit of BTYPE*/
-        writeBits(writer, 0, 1); /*second bit of BTYPE*/
-
-        if(settings->use_lz77) /*LZ77 encoded*/
-        {
-            uivector lz77_encoded;
-            uivector_init(&lz77_encoded);
-            error = encodeLZ77(&lz77_encoded, hash, data, datapos, dataend, settings->windowsize,
-                                settings->minmatch, settings->nicematch, settings->lazymatching);
-
-            if(!error)
-                writeLZ77data(writer, &lz77_encoded, &tree_ll, &tree_d);
-
-            uivector_cleanup(&lz77_encoded);
-        }
-        else /*no LZ77, but still will be Huffman compressed*/
-        {
-            for(i = datapos; i < dataend; ++i)
-            {
-                writeBitsReversed(writer, tree_ll.codes[data[i]], tree_ll.lengths[data[i]]);
-            }
-        }
-
-        /*add END code*/
-        if(!error)
-            writeBitsReversed(writer,tree_ll.codes[256], tree_ll.lengths[256]);
-    }
-
-    /*cleanup*/
-    HuffmanTree_cleanup(&tree_ll);
-    HuffmanTree_cleanup(&tree_d);
-
-    return error;
-}
-
 static unsigned hash_init(Hash* hash, unsigned windowsize)
 {
     unsigned i;
@@ -1838,45 +1722,6 @@ static unsigned hash_init(Hash* hash, unsigned windowsize)
 
     for(i = 0; i != windowsize; ++i)
         hash->chainz[i] = i; /*same value as index indicates uninitialized*/
-
-    return 0;
-}
-
-static unsigned deflateNoCompression(ucvector* out, const unsigned char* data, size_t datasize)
-{
-    /*non compressed deflate block data: 1 bit BFINAL,2 bits BTYPE,(5 bits): it jumps to start of next byte,
-    2 bytes LEN, 2 bytes NLEN, LEN bytes literal DATA*/
-
-    size_t i, numdeflateblocks = (datasize + 65534u) / 65535u;
-    unsigned datapos = 0;
-
-    for(i = 0; i != numdeflateblocks; ++i)
-    {
-        unsigned BFINAL, BTYPE, LEN, NLEN;
-        unsigned char firstbyte;
-        size_t pos = out->size;
-
-        BFINAL = (i == numdeflateblocks - 1);
-        BTYPE = 0;
-        LEN = 65535;
-
-        if(datasize - datapos < 65535u)
-            LEN = (unsigned)datasize - datapos;
-
-        NLEN = 65535 - LEN;
-
-        if(!ucvector_resize(out, out->size + LEN + 5))
-            return 83; /*alloc fail*/
-
-        firstbyte = (unsigned char)(BFINAL + ((BTYPE & 1u) << 1u) + ((BTYPE & 2u) << 1u));
-        out->data[pos + 0] = firstbyte;
-        out->data[pos + 1] = (unsigned char)(LEN & 255);
-        out->data[pos + 2] = (unsigned char)(LEN >> 8u);
-        out->data[pos + 3] = (unsigned char)(NLEN & 255);
-        out->data[pos + 4] = (unsigned char)(NLEN >> 8u);
-        memcpy(out->data + pos + 5, data + datapos, LEN);
-        datapos += LEN;
-    }
 
     return 0;
 }
@@ -1916,22 +1761,6 @@ static unsigned adler32(const unsigned char* data, unsigned len)
     return update_adler32(1u, data, len);
 }
 
-static unsigned deflate(unsigned char** out, size_t* outsize,
-                        const unsigned char* in, size_t insize,
-                        const LodePNGCompressSettings* settings)
-{
-    if(settings->custom_deflate)
-    {
-        unsigned error = settings->custom_deflate(out, outsize, in, insize, settings);
-        /*the custom deflate is allowed to have its own error codes, however, we translate it to code 111*/
-        return error ? 111 : 0;
-    }
-    else
-    {
-        return lodepng_deflate(out, outsize, in, insize, settings);
-    }
-}
-
 /* ////////////////////////////////////////////////////////////////////////// */
 /* / Zlib                                                                   / */
 /* ////////////////////////////////////////////////////////////////////////// */
@@ -1944,7 +1773,7 @@ unsigned lodepng_zlib_compress(unsigned char** out, size_t* outsize, const unsig
     unsigned char* deflatedata = 0;
     size_t deflatesize = 0;
 
-    error = deflate(&deflatedata, &deflatesize, in, insize, settings);
+    error = lodepng_deflate(&deflatedata, &deflatesize, in, insize, settings);
 
     *out = NULL;
     *outsize = 0;
@@ -1984,22 +1813,6 @@ unsigned lodepng_zlib_compress(unsigned char** out, size_t* outsize, const unsig
     return error;
 }
 
-/* compress using the default or custom zlib function */
-static unsigned zlib_compress(unsigned char** out, size_t* outsize, const unsigned char* in,
-                              size_t insize, const LodePNGCompressSettings* settings)
-{
-    if(settings->custom_zlib)
-    {
-        unsigned error = settings->custom_zlib(out, outsize, in, insize, settings);
-        /*the custom zlib is allowed to have its own error codes, however, we translate it to code 111*/
-        return error ? 111 : 0;
-    }
-    else
-    {
-        return lodepng_zlib_compress(out, outsize, in, insize, settings);
-    }
-}
-
 static void hash_cleanup(Hash* hash)
 {
     free(hash->head);
@@ -2021,23 +1834,14 @@ static unsigned lodepng_deflatev(ucvector* out, const unsigned char* in, size_t 
 
     LodePNGBitWriter_init(&writer, out);
 
-    if(settings->btype > 2)
-        return 61;
-    else if(settings->btype == 0)
-        return deflateNoCompression(out, in, insize);
-    else if(settings->btype == 1)
-        blocksize = insize;
-    else /*if(settings->btype == 2)*/
-    {
-        /*on PNGs, deflate blocks of 65-262k seem to give most dense encoding*/
-        blocksize = insize / 8u + 8;
+    /*on PNGs, deflate blocks of 65-262k seem to give most dense encoding*/
+    blocksize = insize / 8u + 8;
 
-        if(blocksize < 65536)
-            blocksize = 65536;
+    if(blocksize < 65536)
+        blocksize = 65536;
 
-        if(blocksize > 262144)
-            blocksize = 262144;
-    }
+    if(blocksize > 262144)
+        blocksize = 262144;
 
     numdeflateblocks = (insize + blocksize - 1) / blocksize;
 
@@ -2057,10 +1861,7 @@ static unsigned lodepng_deflatev(ucvector* out, const unsigned char* in, size_t 
             if(end > insize)
                 end = insize;
 
-            if(settings->btype == 1)
-                error = deflateFixed(&writer, &hash, in, start, end, settings, final);
-            else if(settings->btype == 2)
-                error = deflateDynamic(&writer, &hash, in, start, end, settings, final);
+            error = deflateDynamic(&writer, &hash, in, start, end, settings, final);
         }
     }
 
@@ -2089,7 +1890,7 @@ static unsigned addChunk_IDAT(ucvector* out, const unsigned char* data, size_t d
     unsigned char* zlib = 0;
     size_t zlibsize = 0;
 
-    error = zlib_compress(&zlib, &zlibsize, data, datasize, zlibsettings);
+    error = lodepng_zlib_compress(&zlib, &zlibsize, data, datasize, zlibsettings);
 
     if(!error)
     {
@@ -2104,19 +1905,13 @@ static unsigned addChunk_IDAT(ucvector* out, const unsigned char* data, size_t d
 void lodepng_compress_settings_init(LodePNGCompressSettings* settings)
 {
     /*compress with dynamic huffman tree (not in the mathematical sense, just not the predefined one)*/
-    settings->btype = 2;
-    settings->use_lz77 = 1;
     settings->windowsize = DEFAULT_WINDOWSIZE;
     settings->minmatch = 3;
     settings->nicematch = 128;
     settings->lazymatching = 1;
-
-    settings->custom_zlib = 0;
-    settings->custom_deflate = 0;
-    settings->custom_context = 0;
 }
 
-const LodePNGCompressSettings lodepng_default_compress_settings = {2, 1, DEFAULT_WINDOWSIZE, 3, 128, 1, 0, 0, 0};
+const LodePNGCompressSettings lodepng_default_compress_settings = {DEFAULT_WINDOWSIZE, 3, 128, 1};
 
 void lodepng_encoder_settings_init(LodePNGEncoderSettings* settings)
 {

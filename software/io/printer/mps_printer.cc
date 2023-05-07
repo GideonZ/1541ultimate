@@ -464,8 +464,6 @@ MpsPrinter::setColorMode(bool mode, bool init)
     lodepng_state_init(&lodepng_state);
 
     /* PNG compression settings */
-    lodepng_state.encoder.zlibsettings.btype        = 2;          /* Dynamic deflate */
-    lodepng_state.encoder.zlibsettings.use_lz77     = true;
     lodepng_state.encoder.zlibsettings.windowsize   = 1024;
     lodepng_state.encoder.zlibsettings.minmatch     = 5;
     lodepng_state.encoder.zlibsettings.nicematch    = 64;
