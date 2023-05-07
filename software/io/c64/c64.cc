@@ -1144,8 +1144,10 @@ void C64::init_cartridge()
     set_cartridge(NULL);
 
     // This forces the cartridge ON on U64, (in Carts V4)
-    // C64_CARTRIDGE_TYPE = 0x80 | (uint8_t) current_cart_def.type;
     // For carts V5, we need to do this:
+    C64_CARTRIDGE_KILL = 2; // Force update
+    // And a second time, because if carttype WAS none, then
+    // Cart enable gets cleared again in the cycle after it was set.
     C64_CARTRIDGE_KILL = 2; // Force update
 
     C64_MODE = C64_MODE_UNRESET;
