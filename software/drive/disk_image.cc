@@ -335,6 +335,13 @@ uint8_t *GcrImage :: find_sync(uint8_t *gcr_data, uint8_t *begin, uint8_t *end)
     int sync_count = 0;
 
     do {
+        if(gcr_data >= end) {
+            gcr_data = begin;
+            if (wrap) {
+                return NULL;
+            }
+            wrap = true;
+        }
         if(*gcr_data == 0xFF) {
             sync_count++;
         } else {
@@ -342,14 +349,7 @@ uint8_t *GcrImage :: find_sync(uint8_t *gcr_data, uint8_t *begin, uint8_t *end)
                 return gcr_data; // byte after sync
             sync_count = 0;
         }
-		if(gcr_data < end) {
-    		gcr_data++;
-        } else {
-            if(wrap)
-                return NULL;
-            wrap = true;
-            gcr_data = begin;
-        }
+        gcr_data++;
     } while(1);
     return NULL;
 }
@@ -370,25 +370,44 @@ inline void conv_5bytes_gcr2bin(uint8_t **gcr, uint8_t *bin)
 	*gcr = b;
 }
 
-uint8_t *GcrImage :: wrap(uint8_t **current, uint8_t *begin, uint8_t *end, int count, uint8_t *buffer)
+uint8_t *GcrImage ::wrap(uint8_t **current, uint8_t *begin, uint8_t *end, int count, uint8_t *buffer, uint8_t shift)
 {
     uint8_t *gcr = *current;
 
-    if(gcr > (end - count)) {
-		uint8_t *d = buffer;
-		uint8_t *s = gcr;
-        *current = (gcr + count) - (end - begin);
-		while((s < end)&&(count--))
-			*(d++) = *(s++);
-		s = begin;
-		while(count--)
-			*(d++) = *(s++);
-		return buffer; // set decode pointer to the scratch pad
-	}
-    *current = gcr + count;
-	return gcr;
+    if (shift == 0) {
+        if (gcr > (end - count)) {
+            uint8_t *d = buffer;
+            uint8_t *s = gcr;
+            *current = (gcr + count) - (end - begin);
+            while (count--) {
+                if (s == end)
+                    s = begin;
+                *(d++) = *(s++);
+            }
+            return buffer; // set decode pointer to the scratch pad
+        }
+        *current = gcr + count;
+        return gcr;
+    } else {
+        uint8_t *d = buffer;
+        uint8_t *s = gcr;
+        uint8_t curByte = *(s++) << shift;
+        if (gcr > (end - count))
+            *current = (gcr + count) - (end - begin);
+        else
+            *current = gcr + count;
+        while (count--) {
+            if (s == end)
+                s = begin;
+            curByte |= *s >> (8 - shift);
+            *(d++) = curByte;
+            curByte = *s << shift;
+            s++;
+        }
+        return buffer; // set decode pointer to the scratch pad
+    }
 }
-    
+
 int GcrImage :: convert_disk_gcr2bin(BinImage *bin_image, UserInterface *user_interface)
 {
     int errors = 0;
@@ -461,10 +480,20 @@ int GcrImage::convert_gcr_track_to_bin(uint8_t *gcr, int trackNumber, int trackL
         }
         pntr = current = new_gcr;
 
-        gcr_data = wrap(&pntr, begin, end, 5, sector_buffer);
+        uint8_t shift = 0;
+        uint8_t firstByte = *new_gcr;
+
+        while (firstByte & 0x80) {
+            shift++;
+            firstByte <<= 1;
+            if (shift == 8)
+                break;
+        }
+
+        gcr_data = wrap(&pntr, begin, end, 5, sector_buffer, shift);
         conv_5bytes_gcr2bin(&gcr_data, &header[0]);
         if (header[0] == 8) {
-            gcr_data = wrap(&pntr, begin, end, 5, sector_buffer);
+            gcr_data = wrap(&pntr, begin, end, 5, sector_buffer, shift);
             conv_5bytes_gcr2bin(&gcr_data, &header[4]);
             t = (int)header[3];
             s = (int)header[2];
@@ -513,7 +542,7 @@ int GcrImage::convert_gcr_track_to_bin(uint8_t *gcr, int trackNumber, int trackL
                 uint8_t *binarySector = dest;
                 memcpy(dest, &header[1], 3);
                 dest += 3;
-                gcr_data = wrap(&pntr, begin, end, 320, sector_buffer);
+                gcr_data = wrap(&pntr, begin, end, 320, sector_buffer, shift);
                 for (int i = 0; i < 63; i++) {
                     conv_5bytes_gcr2bin(&gcr_data, dest);
                     dest += 4;
@@ -663,7 +692,7 @@ int GcrImage :: find_track_start(int track)
         gcr = find_sync(gcr, begin, end);
         if(!gcr)
             return 0;
-        gcr_data = wrap(&gcr, begin, end, 5, sector_buffer);
+        gcr_data = wrap(&gcr, begin, end, 5, sector_buffer, 0);
     	conv_5bytes_gcr2bin(&gcr_data, &header[0]);
     	if((header[0] == 8)&&(header[2] == 0)) {
             // sector 0 found!
@@ -1092,15 +1121,11 @@ int BinImage :: save(File *file, UserInterface *user_interface)
 
 	if(errors && error_size >= secs) {
 	    uint8_t orred = 0;
-	    int esize = error_size;
-	    if (secs < esize) {
-	        esize = secs;
-	    }
-	    for(int i=0;i<esize;i++) {
+	    for(int i=0;i<secs;i++) {
 	       orred |= errors[i];
 	    }
 	    if (orred) { // contains valid error data
-            res = file->write(errors, esize, &transferred);
+            res = file->write(errors, secs, &transferred);
             if(res != FR_OK) {
                 printf("WRITE ERROR: %d. Transferred = %d\n", res, transferred);
                 return -4;
