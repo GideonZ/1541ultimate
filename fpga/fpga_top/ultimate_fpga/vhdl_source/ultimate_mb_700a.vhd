@@ -234,6 +234,7 @@ begin
     i_logic: entity work.ultimate_logic_32
     generic map (
         g_simulation    => false,
+        g_big_endian    => true,
         g_clock_freq    => 50_000_000,
         g_baud_rate     => 115_200,
         g_icap          => true,
