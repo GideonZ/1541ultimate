@@ -411,14 +411,9 @@ void IecInterface :: poll()
         }
 
         uint8_t a;
-        int looplimit = 500;
-
-        while (!((a = HW_IEC_RX_FIFO_STATUS) & IEC_FIFO_EMPTY)) {
-
-            if ((--looplimit) < 0) {
-                printf("-> ** IEC Processor seems to have gone haywire. Stopped! **\n");
-                iec_enable = 0;
-                HW_IEC_RESET_ENABLE = 0;
+        for (int loopcnt = 0; loopcnt < 500; loopcnt++) {
+            a = HW_IEC_RX_FIFO_STATUS;
+            if (a & IEC_FIFO_EMPTY) {
                 break;
             }
 
