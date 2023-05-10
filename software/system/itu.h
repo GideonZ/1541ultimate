@@ -28,6 +28,7 @@ extern "C" {
 #define ITU_MISC_IO	      (ITU_BASE + 0x26)
 #define ITU_IRQ_HIGH_EN   (ITU_BASE + 0x27)
 #define ITU_IRQ_HIGH_ACT  (ITU_BASE + 0x28)
+#define ITU_PRINTER_BUSY  (ITU_BASE + 0x29)
 
 #define ITU_INTERRUPT_TIMER  0x01
 #define ITU_INTERRUPT_UART   0x02

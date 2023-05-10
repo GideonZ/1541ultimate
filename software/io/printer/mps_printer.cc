@@ -33,6 +33,7 @@
 #endif
 #include "mps_printer.h"
 #include "mps_png.h"
+#include "itu.h"
 
 /************************************************************************
 *                                                                       *
@@ -1724,7 +1725,7 @@ void
 MpsPrinter::ActivityLedOn(void)
 {
     if (activity == 0)
-        ioWrite8(ITU_USB_BUSY, 1);
+        ioWrite8(ITU_PRINTER_BUSY, 1);
 
     activity++;
 }
@@ -1756,7 +1757,7 @@ MpsPrinter::ActivityLedOff(void)
         activity--;
 
         if (activity == 0)
-            ioWrite8(ITU_USB_BUSY, 0);
+            ioWrite8(ITU_PRINTER_BUSY, 0);
     }
 }
 #endif
