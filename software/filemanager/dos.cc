@@ -267,7 +267,8 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
                 | (((uint32_t) command->message[8]) << 16)
                 | (((uint32_t) command->message[7]) << 8) | command->message[6];
         addr &= 0x00FFFFFF;
-        len &= 0x00FFFFFF;
+        // For "len", we need one bit more in order to save the whole 16 MB REU
+        len &= 0x01FFFFFF;
         if ((addr + len) > 0x01000000) {
             len = 0x01000000 - addr;
             *status = &c_status_truncated;
@@ -299,7 +300,8 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
                 | (((uint32_t) command->message[8]) << 16)
                 | (((uint32_t) command->message[7]) << 8) | command->message[6];
         addr &= 0x00FFFFFF;
-        len &= 0x00FFFFFF;
+        // For "len", we need one bit more in order to save the whole 16 MB REU
+        len &= 0x01FFFFFF;
         if ((addr + len) > 0x01000000) {
             len = 0x01000000 - addr;
             *status = &c_status_truncated;
