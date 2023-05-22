@@ -28,7 +28,6 @@ package core_pkg is
     type t_csr_input_sel    is (CSR_REG, CSR_IMM);
     
     type t_fetch_in is record
-        hazard        : std_logic;
         branch        : std_logic;
         branch_target : std_logic_vector(31 downto 0);
     end record;
@@ -102,6 +101,7 @@ package core_pkg is
     );
 
     type t_execute_out is record
+        valid               : std_logic;
         program_counter     : std_logic_vector(31 downto 0);
         do_jump             : std_logic;
         target_pc           : std_logic_vector(31 downto 0);
@@ -118,6 +118,7 @@ package core_pkg is
     end record;
 
     constant c_execute_nop : t_execute_out := (
+        valid               => '0',
         program_counter     => X"00000000",
         do_jump             => '0',
         target_pc           => X"00000000",
@@ -155,7 +156,6 @@ package core_pkg is
         irq         : std_logic;
     end record;
 
-
     type ctrl_memory_writeback_type is record
         mem_read      : std_logic;
         transfer_size : t_transfer_size;
@@ -167,6 +167,7 @@ package core_pkg is
     end record;
 
     type t_gprf_in is record
+        read_en : std_logic;
         adr_a_i : std_logic_vector(4 downto 0);
         adr_b_i : std_logic_vector(4 downto 0);
     end record;

@@ -11,12 +11,13 @@ port
     decode_o    : out t_decoded_instruction;
     gprf_o      : out t_gprf_in;
     decode_i    : in  t_fetch_out;
-    hazard      : in  std_logic;
     flush       : in  std_logic;
+    hazard      : in  std_logic;
     irq_i       : in  std_logic := '0';
-    ena_i       : in std_logic;
-    rst_i       : in std_logic;
-    clk_i       : in std_logic
+    rdy_i       : in  std_logic;
+    rdy_o       : out std_logic;
+    rst_i       : in  std_logic;
+    clk_i       : in  std_logic
 );
 end entity;
 
@@ -40,7 +41,7 @@ begin
         if rising_edge(clk_i) then
             if rst_i = '1' then
                 decoded_r <= c_decoded_nop; 
-            elsif ena_i = '1' and hazard = '0' then
+            elsif rdy_i = '1' or decoded_r.valid = '0' then
                 decoded_r <= decoded_c;
             end if;
             if flush = '1' then
@@ -50,7 +51,11 @@ begin
     end process;
 
     decode_o <= decoded_r;
+
     gprf_o.adr_a_i <= decoded_c.reg_rs1 when hazard = '0' else decoded_r.reg_rs1;
     gprf_o.adr_b_i <= decoded_c.reg_rs2 when hazard = '0' else decoded_r.reg_rs2;
+    gprf_o.read_en <= hazard or rdy_i;
+
+    rdy_o <= rdy_i or not decoded_r.valid;
 
 end architecture;

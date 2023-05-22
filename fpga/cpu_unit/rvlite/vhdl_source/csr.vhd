@@ -15,6 +15,7 @@ port
     int_i       : in  std_logic;
     csr_i       : in  t_csr_in;
     csr_o       : out t_csr_out;
+    ena_i       : in  std_logic;
     rst_i       : in  std_logic;
     clk_i       : in  std_logic
 );
@@ -86,33 +87,35 @@ begin
     process(clk_i)
     begin
         if rising_edge(clk_i) then
-            if csr_i.enable = '1' and csr_i.oper /= CSR_NONE then -- user writes
-                case csr_i.address is
-                when c_mstatus =>
-                    mstat_mie <= wdata(3);
-                    mstat_mpie <= wdata(7);
-                when c_mscratch =>
-                    mscratch <= wdata;
-                when c_mtvec =>
-                    mtvec <= wdata(31 downto 2) & "00";
-                when c_mepc =>
-                    mepc <= wdata;
-                when c_mie => -- Interrupt Enable.. which interrupts do we have?
-                    mie_mei <= wdata(11);
-                when others =>
-                    null;
-                end case;
-            end if;
-            -- overwrite by traps
-            if csr_i.trap.trap = '1' then
-                mcause(31) <= csr_i.trap.cause(csr_i.trap.cause'high);
-                mcause(csr_i.trap.cause'high-1 downto 0) <= csr_i.trap.cause(csr_i.trap.cause'high-1 downto 0);
-                mepc <= csr_i.trap.program_counter;
-                mstat_mie <= '0';
-                mstat_mpie <= mstat_mie;
-            elsif csr_i.trap.mret = '1' then
-                mstat_mie <= mstat_mpie;
-                mstat_mpie <= '1'; -- see 3.1.7 from Volume II: Risc-V privileged architectures
+            if ena_i = '1' then
+                if csr_i.enable = '1' and csr_i.oper /= CSR_NONE then -- user writes
+                    case csr_i.address is
+                    when c_mstatus =>
+                        mstat_mie <= wdata(3);
+                        mstat_mpie <= wdata(7);
+                    when c_mscratch =>
+                        mscratch <= wdata;
+                    when c_mtvec =>
+                        mtvec <= wdata(31 downto 2) & "00";
+                    when c_mepc =>
+                        mepc <= wdata;
+                    when c_mie => -- Interrupt Enable.. which interrupts do we have?
+                        mie_mei <= wdata(11);
+                    when others =>
+                        null;
+                    end case;
+                end if;
+                -- overwrite by traps
+                if csr_i.trap.trap = '1' then
+                    mcause(31) <= csr_i.trap.cause(csr_i.trap.cause'high);
+                    mcause(csr_i.trap.cause'high-1 downto 0) <= csr_i.trap.cause(csr_i.trap.cause'high-1 downto 0);
+                    mepc <= csr_i.trap.program_counter;
+                    mstat_mie <= '0';
+                    mstat_mpie <= mstat_mie;
+                elsif csr_i.trap.mret = '1' then
+                    mstat_mie <= mstat_mpie;
+                    mstat_mpie <= '1'; -- see 3.1.7 from Volume II: Risc-V privileged architectures
+                end if;
             end if;
             -- reset: disable interrupts
             if rst_i = '1' then

@@ -23,6 +23,8 @@ architecture run of tb_core is
     signal rst_i       : std_logic;
     signal clk_i       : std_logic := '0';
 
+    signal imem_delay  : natural := 2;
+    signal dmem_delay  : natural := 0;
 	signal last_char   : character;
 
     type t_mem_array is array(natural range <>) of std_logic_vector(31 downto 0);
@@ -44,36 +46,59 @@ begin
 
     -- memory and IO
     process(clk_i)
-        variable s    : line;
-        variable char : character;
-        variable byte : std_logic_vector(7 downto 0);
+        variable s      : line;
+        variable char   : character;
+        variable byte   : std_logic_vector(7 downto 0);
+        variable imem_l : imem_out_type;
+        variable imem_count : natural;
+        variable dmem_l : dmem_out_type;
+        variable dmem_count : natural;
     begin
         if rising_edge(clk_i) then
-            dmem_i.dat_i <= (others => '-');
-            dmem_i.ena_i <= '0';
-            if imem_o.ena_o = '1' then
-                imem_i.dat_i <= memory(to_integer(unsigned(imem_o.adr_o(21 downto 2))));
+            if imem_i.ena_i = '1' then
+                if imem_o.ena_o = '1' then
+                    imem_l := imem_o;
+                    imem_count := imem_delay;
+                end if;
             end if;
-            if dmem_o.ena_o = '1' then
-                if dmem_o.adr_o(31 downto 25) = "0000000" then
-                    if dmem_o.we_o = '1' then
-                        -- report "Writing " & hstr(dmem_o.dat_o) & " to " & hstr(dmem_o.adr_o);
+            if imem_count /= 0 then
+                imem_count := imem_count - 1;
+                imem_i.ena_i <= '0';
+            else
+                imem_i.ena_i <= '1';
+                imem_i.dat_i <= memory(to_integer(unsigned(imem_l.adr_o(21 downto 2))));
+            end if;
+
+            if dmem_i.ena_i = '1' then
+                if dmem_o.ena_o = '1' then
+                    dmem_l := dmem_o;
+                    dmem_count := dmem_delay;
+                end if;
+            end if;
+            if dmem_count /= 0 then
+                dmem_count := dmem_count - 1;
+                dmem_i.ena_i <= '0';
+            else
+                dmem_i.ena_i <= '1';
+                if dmem_l.adr_o(31 downto 25) = "0000000" and dmem_l.ena_o = '1' then
+                    if dmem_l.we_o = '1' then
+                        -- report "Writing " & hstr(dmem_l.dat_o) & " to " & hstr(dmem_l.adr_o);
                         for i in 0 to 3 loop
-                            if dmem_o.sel_o(i) = '1' then
-                                memory(to_integer(unsigned(dmem_o.adr_o(21 downto 2))))(i*8+7 downto i*8) := dmem_o.dat_o(i*8+7 downto i*8);
+                            if dmem_l.sel_o(i) = '1' then
+                                memory(to_integer(unsigned(dmem_l.adr_o(21 downto 2))))(i*8+7 downto i*8) := dmem_l.dat_o(i*8+7 downto i*8);
                             end if;
                         end loop;
                     else -- read
-                        dmem_i.dat_i <= memory(to_integer(unsigned(dmem_o.adr_o(21 downto 2))));
-                        -- report "Reading " & hstr(memory(to_integer(unsigned(dmem_o.adr_o(21 downto 2))))) & " from " & hstr(dmem_o.adr_o);
+                        dmem_i.dat_i <= memory(to_integer(unsigned(dmem_l.adr_o(21 downto 2))));
+                        -- report "Reading " & hstr(memory(to_integer(unsigned(dmem_l.adr_o(21 downto 2))))) & " from " & hstr(dmem_l.adr_o);
                     end if;
-                else -- I/O
-                    if dmem_o.we_o = '1' then -- write
-                        case dmem_o.adr_o(19 downto 0) is
+                elsif dmem_l.ena_o = '1' then -- I/O
+                    if dmem_l.we_o = '1' then -- write
+                        case dmem_l.adr_o(19 downto 0) is
                         when X"00000" => -- interrupt
                             null;
                         when X"00010" => -- UART_DATA
-                            byte := dmem_o.dat_o(31 downto 24);
+                            byte := dmem_l.dat_o(31 downto 24);
                             char := character'val(to_integer(unsigned(byte)));
 							last_char <= char;
                             if byte = X"0D" then
@@ -81,16 +106,16 @@ begin
                             elsif byte = X"0A" then
                                 -- Writeline on character 10 (newline)
                                 writeline(output, s);
-                                int_i <= '1' after 1 us;
+                                int_i <= '1' after 5 us;
                             else
                                 -- Write to buffer
                                 write(s, char);
                             end if;
                         when others =>
-                            report "I/O write to " & hstr(dmem_o.adr_o) & " dropped";
+                            report "I/O write to " & hstr(dmem_l.adr_o) & " dropped";
                         end case;
                     else -- read
-                        case dmem_o.adr_o(19 downto 0) is
+                        case dmem_l.adr_o(19 downto 0) is
                         when X"0000C" => -- Capabilities
                             dmem_i.dat_i <= X"00000002";
                         when X"00012" => -- UART_FLAGS
@@ -100,11 +125,12 @@ begin
                         when X"2000B" => -- 1541_A audiomap
                             dmem_i.dat_i <= X"3E3E3E3E";
                         when others =>
-                            report "I/O read to " & hstr(dmem_o.adr_o) & " dropped";
+                            report "I/O read to " & hstr(dmem_l.adr_o) & " dropped";
                             dmem_i.dat_i <= X"00000000";
                         end case;
                     end if;
                 end if;
+                dmem_l.ena_o := '0';
             end if;
 
             if rst_i = '1' then

@@ -6,22 +6,27 @@ use ieee.numeric_std.all;
 use work.core_pkg.all;
 use work.alu_pkg.all;
 
--- use work.tl_string_util_pkg.all;
--- library std;
--- use std.textio.all;
+-- synopsis translate_off
+-- synthesis translate_off
+use work.tl_string_util_pkg.all;
+-- synthesis translate_on
+-- synopsis translate_on
+library std;
+use std.textio.all;
 
 entity execute is
 port
 (
-    hazard      : in  std_logic;
     flush       : in  std_logic;
+    hazard      : in  std_logic;
     exec_i      : in  t_decoded_instruction;
     gprf_i      : in  t_gprf_out;
     exec_o      : out t_execute_out;
     dmem_o      : out dmem_out_type;
     csr_i       : in  t_csr_out;
     csr_o       : out t_csr_in;
-    ena_i       : in std_logic;
+    rdy_o       : out std_logic;
+    rdy_i       : in std_logic;
     rst_i       : in std_logic;
     clk_i       : in std_logic
 );
@@ -29,6 +34,7 @@ end entity;
 
 architecture arch of execute is
     signal exec_c       : t_execute_out;
+    signal exec_r       : t_execute_out;
     signal alu_data_2   : std_logic_vector(31 downto 0);
     signal branch_taken : std_logic;
     signal mem_address  : std_logic_vector(31 downto 0);
@@ -67,7 +73,7 @@ begin
         csr_i.mtvec when TRGT_TRAP,
         X"00000000" when others;
 
-    inst_valid <= exec_i.valid and not hazard and not flush;
+    inst_valid <= exec_i.valid and not flush and not hazard;
     
     -- Port to CSR
     csr_o.address <= exec_i.imm_value(11 downto 0);
@@ -83,7 +89,7 @@ begin
     dmem_o.adr_o <= mem_address;
     dmem_o.dat_o <= align_mem_store(gprf_i.dat_b_o, exec_i.mem_transfer_size);
     dmem_o.sel_o <= decode_mem_store(mem_address(1 downto 0), exec_i.mem_transfer_size);
-    dmem_o.we_o  <= exec_i.mem_write;
+    dmem_o.we_o  <= exec_i.mem_write and inst_valid;
     dmem_o.ena_o <= (exec_i.mem_write or exec_i.mem_read) and inst_valid; 
 
     -- Work done here
@@ -100,28 +106,35 @@ begin
     exec_c.csr_data          <= csr_i.rdata;
     exec_c.pc_plus4          <= std_logic_vector(unsigned(exec_i.program_counter) + 4);
     exec_c.rel_address       <= target_pc; --rel_address;
+    exec_c.valid             <= exec_i.valid; --inst_valid;
 
     process(clk_i)
-        -- variable s : line;
+        variable s : line;
     begin
         if rising_edge(clk_i) then
             if rst_i = '1' then
-                exec_o <= c_execute_nop; 
-            elsif ena_i = '1' then
-                exec_o <= exec_c;
+                exec_r <= c_execute_nop; 
+            elsif rdy_i = '1' or exec_r.valid = '0' then
+                exec_r <= exec_c;
             end if;
-            -- if exec_i.valid = '1' then
-            --     write(s, "PC: " & hstr(exec_i.program_counter) & " IMM: " & hstr(exec_i.imm_value) 
-            --         & " RS1: " & hstr(exec_i.reg_rs1) & ":" & hstr(gprf_i.dat_a_o) 
-            --         & " RS2: " & hstr(exec_i.reg_rs2) & ":" & hstr(gprf_i.dat_b_o)
-            --         & " RD:  " & hstr(exec_i.reg_rd) & ":" & t_reg_write_sel'image(exec_i.reg_write_sel)
-            --         & " ALU: " & hstr(exec_c.alu_result)
-            --         & " MEMA:" & hstr(mem_address) & "->" & std_logic'image(exec_i.mem_write)
-            --     );
-            --     writeline(output, s);
-            -- end if;
-
+-- synthesis translate_off
+-- synopsis translate_off
+            if exec_i.valid = '1' and rdy_i = '1' and false then
+                write(s, "PC: " & hstr(exec_i.program_counter) & " IMM: " & hstr(exec_i.imm_value) 
+                    & " RS1: " & hstr(exec_i.reg_rs1) & ":" & hstr(gprf_i.dat_a_o) 
+                    & " RS2: " & hstr(exec_i.reg_rs2) & ":" & hstr(gprf_i.dat_b_o)
+                    & " RD:  " & hstr(exec_i.reg_rd) & ":" & t_reg_write_sel'image(exec_i.reg_write_sel)
+                    & " ALU: " & hstr(exec_c.alu_result)
+                    & " MEMA:" & hstr(mem_address) & "->" & std_logic'image(exec_i.mem_write)
+                );
+                writeline(output, s);
+            end if;
+-- synthesis translate_on
+-- synopsis translate_on
         end if;
     end process;
+
+    exec_o <= exec_r;
+    rdy_o <= (rdy_i and not hazard) or not exec_r.valid;
 
 end architecture;
