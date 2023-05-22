@@ -46,9 +46,9 @@ begin
         if rising_edge(clk_i) then
             if ena_i = '1' then
                 dat_o <= ram(to_integer(unsigned(adr_i)));
-                if wre_i = '1' then
-                    ram(to_integer(unsigned(adr_w_i))) <= dat_w_i;
-                end if;
+            end if;
+            if wre_i = '1' then
+                ram(to_integer(unsigned(adr_w_i))) <= dat_w_i;
             end if;
         end if;
     end process;

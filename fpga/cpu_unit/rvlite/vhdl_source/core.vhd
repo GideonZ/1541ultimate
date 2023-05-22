@@ -23,7 +23,10 @@ port (
 end entity;
 
 architecture gideon of core is
-    signal ena_i        : std_logic := '1';
+    signal dec_ready    : std_logic;
+    signal ex_ready     : std_logic;
+    signal wb_ready     : std_logic;
+
     signal fetch_i      : t_fetch_in;
     signal fetch_o      : t_fetch_out;
     signal decode_o     : t_decoded_instruction;
@@ -44,12 +47,12 @@ architecture gideon of core is
 begin
     fetch_i.branch <= exec_o.do_jump;
     fetch_i.branch_target <= exec_o.target_pc;
-    fetch_i.hazard <= hazard;
 
-    -- Hazards exists when read from register file is from data that still needs to be written to regfile
-    -- Thus, the read register data is marked as 'invalid' in the case that the read address matches
-    -- with the address from exec_o; because once the data is on the output of exec.o, it is *being* written
-    -- to the reg file
+    -- Hazards exists when read from register file is from data that still needs to be written to regfile.
+    -- In case of this pipeline, the invalid register data coincides with 'decode_o', or 'exec_i'.
+    -- 'decode_o' says: "I have read the register", and the hazard detection says: "fine, but it was invalid,
+    -- read it again!"
+    -- This means that the decoded instruction becomes invalid and exec should not execute it.
     reg_rd_d     <= exec_o.reg_rd when rising_edge(clk_i);
     reg_write_d  <= exec_o.reg_write when rising_edge(clk_i);
     hazard_rs1ex <= decode_o.reg_rs1_read when (exec_o.reg_rd = decode_o.reg_rs1 and exec_o.reg_write = '1') else '0';
@@ -68,19 +71,20 @@ begin
         fetch_i => fetch_i,
         imem_i  => imem_i,
         rst_i   => rst_i,
-        ena_i   => ena_i,
+        rdy_i   => dec_ready,
         clk_i   => clk_i
     );
 
     i_decode: entity work.decode
     port map (
-        hazard   => hazard,
         flush    => exec_o.do_jump,
+        hazard   => hazard,
         decode_o => decode_o,
         gprf_o   => to_gprf,
         decode_i => fetch_o,
         irq_i    => from_csr.irq,
-        ena_i    => ena_i,
+        rdy_i    => ex_ready,
+        rdy_o    => dec_ready,
         rst_i    => rst_i,
         clk_i    => clk_i
     );
@@ -90,24 +94,26 @@ begin
         gprf_o => from_gprf,
         gprf_i => to_gprf,
         wb_i   => wb,
-        ena_i  => ena_i,
         clk_i  => clk_i
     );
 
     i_exec: entity work.execute
       port map (
-        hazard => hazard,
         flush  => exec_o.do_jump,
+        hazard => hazard,
         exec_i => decode_o,
         gprf_i => from_gprf,
         exec_o => exec_o,
         dmem_o => dmem_o,
         csr_i  => from_csr,
         csr_o  => to_csr,
-        ena_i  => ena_i,
+
+        rdy_i  => wb_ready,
+        rdy_o  => ex_ready,
         rst_i  => rst_i,
         clk_i  => clk_i
       );
+
 
     i_csr: entity work.csr
     generic map (
@@ -118,6 +124,7 @@ begin
         int_i => int_i,
         csr_i => to_csr,
         csr_o => from_csr,
+        ena_i => ex_ready,
         rst_i => rst_i,
         clk_i => clk_i
     );
@@ -125,6 +132,7 @@ begin
     i_wb: entity work.writeback
     port map (
         exec_i => exec_o,
+        rdy_o  => wb_ready,
         dmem_i => dmem_i,
         wb_o   => wb
     );

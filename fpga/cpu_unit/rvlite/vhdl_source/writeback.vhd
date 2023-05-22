@@ -11,6 +11,7 @@ port
 (
     exec_i      : in  t_execute_out;
     dmem_i      : in  dmem_in_type;
+    rdy_o       : out std_logic;
     wb_o        : out t_writeback
 );
 end entity;
@@ -30,4 +31,5 @@ begin
     wb_o.reg     <= exec_i.reg_rd;
     wb_o.write   <= exec_i.reg_write;
 
+    rdy_o <= dmem_i.ena_i;
 end architecture;

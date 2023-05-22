@@ -206,6 +206,18 @@ begin
         if inst_opcode(1 downto 0) /= "11" then
             decoded.illegal <= '1';
         end if;
+
+        -- if the input instruction was not valid, the register reads
+        -- cannot cause hazards either.
+        if inst_valid = '0' then
+            decoded.reg_rs1_read <= '0';
+            decoded.reg_rs2_read <= '0';
+            decoded.reg_write <= '0';
+            decoded.csr_access <= '0';
+            decoded.mem_read <= '0';
+            decoded.mem_write <= '0';
+        end if;
+
         decoded.instruction_type <= inst_type;
         decoded.imm_value        <= imm_value;
     end process;

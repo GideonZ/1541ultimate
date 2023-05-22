@@ -24,7 +24,6 @@ entity gprf is port
     gprf_o : out t_gprf_out;
     gprf_i : in t_gprf_in;
     wb_i   : in t_writeback;
-    ena_i  : in std_logic;
     clk_i  : in std_logic
 );
 end entity;
@@ -46,7 +45,7 @@ begin
     (
         dat_o   => gprf_o.dat_a_o,
         adr_i   => gprf_i.adr_a_i,
-        ena_i   => ena_i,
+        ena_i   => gprf_i.read_en,
         dat_w_i => wb_i.data,
         adr_w_i => wb_i.reg,
         wre_i   => wb_i.write,
@@ -63,7 +62,7 @@ begin
     (
         dat_o   => gprf_o.dat_b_o,
         adr_i   => gprf_i.adr_b_i,
-        ena_i   => ena_i,
+        ena_i   => gprf_i.read_en,
         dat_w_i => wb_i.data,
         adr_w_i => wb_i.reg,
         wre_i   => wb_i.write,
