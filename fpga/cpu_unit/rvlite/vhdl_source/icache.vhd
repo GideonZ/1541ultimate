@@ -1,11 +1,10 @@
 --------------------------------------------------------------------------------
 -- Entity: icache
 -- Date: 2023-05-22
--- Based on dm_simple from mblite era (Date: 2014-12-08)  
 -- Author: Gideon     
 --
 -- Description: Simple direct mapped cache controller, compatible with the
---              I/D buses of the mblite and rvlite 
+--              instruction bus of the mblite and rvlite 
 --------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
@@ -15,16 +14,14 @@ use work.core_pkg.all;
 
 
 entity icache is
-    generic (
-        g_mem_direct    : boolean := false );
     port  (
         clock       : in  std_logic;
         reset       : in  std_logic;
         
         disable     : in  std_logic := '0';
 
-        dmem_i      : in  dmem_out_type;
-        dmem_o      : out dmem_in_type;
+        dmem_i      : in  imem_out_type;
+        dmem_o      : out imem_in_type;
         
         mem_o       : out dmem_out_type;
         mem_i       : in  dmem_in_type );
@@ -104,7 +101,7 @@ architecture arch of icache is
     signal d_tag_in             : t_tag;
     signal d_miss               : std_logic;
 
-    signal dmem_r               : dmem_out_type;
+    signal dmem_r               : imem_out_type;
     signal mem_r                : dmem_in_type;
 
     type t_state is (idle, fill, reg);
@@ -180,12 +177,11 @@ begin
     cache_write <= '1' when state = fill and mem_i.ena_i = '1' else '0';
 
     -- port to memory
-    process(dmem_r, d_miss)
-    begin
-        mem_o       <= dmem_r;
-        mem_o.adr_o <= dmem_r.adr_o;
-        mem_o.ena_o <= d_miss;
-    end process;
+    mem_o.adr_o <= dmem_r.adr_o;
+    mem_o.ena_o <= d_miss;
+    mem_o.dat_o <= (others => '0');
+    mem_o.sel_o <= X"F";
+    mem_o.we_o  <= '0';
 
     -- reply to processor
     with outsel select dmem_o.dat_i <=
@@ -236,7 +232,7 @@ begin
         d_miss <= '0';
         if state = idle then
             if dmem_r.ena_o = '1' then -- registered (=delayed request valid)
-                if (address_to_tag(dmem_r.adr_o, '1') = d_tag_out) and (dmem_r.we_o='0') and is_cacheable(dmem_r.adr_o) and disable = '0' then -- read hit!
+                if (address_to_tag(dmem_r.adr_o, '1') = d_tag_out) and is_cacheable(dmem_r.adr_o) and disable = '0' then -- read hit!
                     d_miss <= '0';
                 else -- miss or write
                     d_miss <= '1';
