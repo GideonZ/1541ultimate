@@ -1,10 +1,13 @@
 --------------------------------------------------------------------------------
 -- Gideon's Logic Architectures - Copyright 2014
--- Entity: dmem_splitter
+-- Entity: bus_converter
 -- Date:2015-02-28  
 -- Author: Gideon     
 -- Description: This module takes the Wishbone alike memory bus and splits it
 --              into a 32 bit DRAM bus and an 8-bit IO bus
+--
+-- This module is based on "dmem_splitter" from the mblite era. However,
+-- this uses the rvlite definitions and is little endian.
 --------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
@@ -13,11 +16,9 @@ use ieee.numeric_std.all;
 library work;
     use work.mem_bus_pkg.all;
     use work.io_bus_pkg.all;
-    
-library mblite;
-    use mblite.core_Pkg.all;
+    use work.core_pkg.all;
 
-entity dmem_splitter is
+entity bus_converter is
     generic (
         g_tag           : std_logic_vector(7 downto 0) := X"AE";
         g_io_bit        : natural := 26;
@@ -38,7 +39,7 @@ entity dmem_splitter is
 
 end entity;
 
-architecture arch of dmem_splitter is
+architecture arch of bus_converter is
     type t_state is (idle, mem_read, mem_write, io_access);
     signal state        : t_state;
 
@@ -75,13 +76,13 @@ begin
         -- Fill in the byte to write, based on the address
         -- Note that mem-req stored the 32 bits data, so we can use it, dmem.o might have become invalid
         case io_req_i.address(1 downto 0) is
-        when "00" =>
-            io_req.data <= mem_req_i.data(31 downto 24);
-        when "01" =>
-            io_req.data <= mem_req_i.data(23 downto 16);
-        when "10" =>
-            io_req.data <= mem_req_i.data(15 downto 08);
         when "11" =>
+            io_req.data <= mem_req_i.data(31 downto 24);
+        when "10" =>
+            io_req.data <= mem_req_i.data(23 downto 16);
+        when "01" =>
+            io_req.data <= mem_req_i.data(15 downto 08);
+        when "00" =>
             io_req.data <= mem_req_i.data(07 downto 00);
         when others =>
             null;
@@ -97,7 +98,7 @@ begin
             case state is
             when idle =>
                 if dmem_o.ena_o = '1' then
-                    dmem_i.dat_i <= (others => 'X');
+                    dmem_i.dat_i <= (others => '1');
                     mem_req_i.address <= unsigned(dmem_o.adr_o(mem_req_i.address'range));
                     mem_req_i.address(1 downto 0) <= "00";
                     mem_req_i.byte_en <= dmem_o.sel_o;
@@ -141,13 +142,13 @@ begin
 
             when io_access =>
                 case io_req_i.address(1 downto 0) is
-                when "00" =>
-                    dmem_i.dat_i(31 downto 24) <= io_resp.data;
-                when "01" =>
-                    dmem_i.dat_i(23 downto 16) <= io_resp.data;
-                when "10" =>
-                    dmem_i.dat_i(15 downto 8) <= io_resp.data;
                 when "11" =>
+                    dmem_i.dat_i(31 downto 24) <= io_resp.data;
+                when "10" =>
+                    dmem_i.dat_i(23 downto 16) <= io_resp.data;
+                when "01" =>
+                    dmem_i.dat_i(15 downto 8) <= io_resp.data;
+                when "00" =>
                     dmem_i.dat_i(7 downto 0) <= io_resp.data;
                 when others =>
                     null;
@@ -179,4 +180,4 @@ begin
     end process;
     io_busy <= '1' when state = io_access else '0';
     
-end arch;
+end architecture;

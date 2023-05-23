@@ -24,14 +24,15 @@ architecture run of tb_core is
     signal clk_i       : std_logic := '0';
 
     signal imem_delay  : natural := 2;
-    signal dmem_delay  : natural := 0;
+    signal dmem_delay  : natural := 4;
 	signal last_char   : character;
+    signal hellos      : natural := 0;
+    signal interrupts  : natural := 0;
 
     type t_mem_array is array(natural range <>) of std_logic_vector(31 downto 0);
     shared variable memory  : t_mem_array(0 to 1048575) := (others => (others => '0')); -- 4MB
 begin
     clk_i <= not clk_i after 10 ns;
-    rst_i <= '1', '0' after 100 ns;
 
     i_core: entity work.core
     port map (
@@ -55,6 +56,10 @@ begin
         variable dmem_count : natural;
     begin
         if rising_edge(clk_i) then
+            if rst_i = '1' then
+                int_i <= '0';
+                interrupts <= 0;
+            end if;
             if imem_i.ena_i = '1' then
                 if imem_o.ena_o = '1' then
                     imem_l := imem_o;
@@ -95,8 +100,8 @@ begin
                 elsif dmem_l.ena_o = '1' then -- I/O
                     if dmem_l.we_o = '1' then -- write
                         case dmem_l.adr_o(19 downto 0) is
-                        when X"00000" => -- interrupt
-                            null;
+                        when X"0001F" => -- interrupt
+                            interrupts <= interrupts + 1;
                         when X"00010" => -- UART_DATA
                             byte := dmem_l.dat_o(31 downto 24);
                             char := character'val(to_integer(unsigned(byte)));
@@ -105,6 +110,9 @@ begin
                                 -- Ignore character 13
                             elsif byte = X"0A" then
                                 -- Writeline on character 10 (newline)
+                                if s.all = "Hello world! :-)" then
+                                    hellos <= hellos + 1;
+                                end if;
                                 writeline(output, s);
                                 int_i <= '1' after 5 us;
                             else
@@ -140,4 +148,25 @@ begin
         end if;
     end process;
     
+    process
+    begin
+        for i in 0 to 4 loop
+            for d in 0 to 4 loop
+                imem_delay <= i;
+                dmem_delay <= d;
+                rst_i <= '1';
+                wait for 100 ns;
+                rst_i <= '0';
+                wait for 20 us * (i+1) + 5 us * (d+1);
+                assert interrupts > 0
+                    report "Core failed to interrupt"
+                    severity failure;
+            end loop;
+        end loop;
+        assert hellos = 25
+            report "Core failed to print hello world 25 times"
+            severity failure;
+        wait;
+    end process;
+
 end architecture;

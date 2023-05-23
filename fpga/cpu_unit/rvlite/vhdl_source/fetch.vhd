@@ -17,8 +17,15 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
-
 use work.core_pkg.all;
+
+-- synopsis translate_off
+-- synthesis translate_off
+use work.tl_string_util_pkg.all;
+library std;
+use std.textio.all;
+-- synthesis translate_on
+-- synopsis translate_on
 
 entity fetch is
 generic (
@@ -81,4 +88,19 @@ begin
         end if;
     end process;
 
-end arch;
+-- synthesis translate_off
+-- synopsis translate_off
+    p_debug: process(clk_i)
+        variable s : line;
+    begin
+        if rising_edge(clk_i) then
+            if rdy_i='1' and possibly_valid = '1' and imem_i.ena_i = '1' and false then
+                write(s, "PC: " & hstr(pc) & " INST: " & hstr(imem_i.dat_i));
+                writeline(output, s);
+            end if;
+        end if;
+    end process;
+-- synthesis translate_on
+-- synopsis translate_on
+
+end architecture;

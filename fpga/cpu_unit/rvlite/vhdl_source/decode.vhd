@@ -24,7 +24,8 @@ end entity;
 architecture arch of decode is
     signal instruction  : std_logic_vector(31 downto 0);
     signal decoded_c    : t_decoded_instruction;
-    signal decoded_r    : t_decoded_instruction;
+    signal decoded_r    : t_decoded_instruction := c_decoded_nop;
+    signal rdy_o_i      : std_logic;
 begin
     instruction <= X"80000073" when irq_i = '1' else decode_i.instruction;
 
@@ -39,23 +40,34 @@ begin
     process(clk_i)
     begin
         if rising_edge(clk_i) then
-            if rst_i = '1' then
-                decoded_r <= c_decoded_nop; 
-            elsif rdy_i = '1' or decoded_r.valid = '0' then
+            if rdy_o_i = '1' then
                 decoded_r <= decoded_c;
             end if;
-            if flush = '1' then
+            if flush = '1' or rst_i = '1' then
                 decoded_r.valid <= '0';
             end if;
         end if;
     end process;
 
-    decode_o <= decoded_r;
+    process(decoded_r, hazard)
+    begin
+        decode_o <= decoded_r;
+        if hazard = '1' then
+            decode_o.valid <= '0';
+        end if;
+    end process;
 
     gprf_o.adr_a_i <= decoded_c.reg_rs1 when hazard = '0' else decoded_r.reg_rs1;
     gprf_o.adr_b_i <= decoded_c.reg_rs2 when hazard = '0' else decoded_r.reg_rs2;
-    gprf_o.read_en <= hazard or rdy_i;
+    gprf_o.read_en <= hazard or rdy_i or not decoded_r.valid;
 
-    rdy_o <= rdy_i or not decoded_r.valid;
+    -- Merge of valids and readys.
+    -- Valid down = decode_r.valid and not hazard. Cleared when rdy_i = 1
+    -- Ready up = '1' when:
+    -- * decoded_r.valid = 0 => new instruction needed
+    -- * decoded_o.valid = 1 and rdy_i = 1 => instruction accepted by exec             
+    -- -> decoded_o.valid = 1 is equal to decoded_r.valid and not hazard
+    rdy_o_i <= not decoded_r.valid or (rdy_i and decoded_r.valid and not hazard);
+    rdy_o   <= rdy_o_i;
 
 end architecture;
