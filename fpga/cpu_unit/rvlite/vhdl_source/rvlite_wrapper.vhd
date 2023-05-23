@@ -62,22 +62,14 @@ begin
 
     r_icache: if g_icache generate
         i_cache: entity work.icache
-        generic map (
-            g_mem_direct     => true )
         port map (
             clock  => clock,
             reset  => reset,
     
             disable => '0',
             
-            dmem_i.adr_o => cimem_o.adr_o,
-            dmem_i.ena_o => cimem_o.ena_o,
-            dmem_i.sel_o => "0000",
-            dmem_i.we_o  => '0',
-            dmem_i.dat_o => (others => '0'),
-            
-            dmem_o.ena_i => cimem_i.ena_i,
-            dmem_o.dat_i => cimem_i.dat_i,
+            dmem_i  => cimem_o,
+            dmem_o  => cimem_i,
     
             mem_o  => imem_o,
             mem_i  => imem_i );
