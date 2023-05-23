@@ -100,7 +100,6 @@ begin
     i_exec: entity work.execute
       port map (
         flush  => exec_o.do_jump,
-        hazard => hazard,
         exec_i => decode_o,
         gprf_i => from_gprf,
         exec_o => exec_o,

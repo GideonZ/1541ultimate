@@ -53,6 +53,7 @@ AUTO_DEP_PATHS += $(wildcard ../../../ip/memory/vhdl_source/)
 AUTO_DEP_PATHS += $(wildcard ../../../../target/simulation/packages/vhdl_source/)
 AUTO_DEP_PATHS += $(wildcard ../vhdl_source/)
 AUTO_DEP_PATHS += $(wildcard ../vhdl_sim/)
+AUTO_DEP_PATHS += $(wildcard ../../vhdl_source/)
 
 
 ###############################################################################
@@ -89,6 +90,15 @@ $(TESTBENCH)_SRC				:=
 $(TESTBENCH)_ENTITY				:= 
 $(TESTBENCH)_TIME				:= 
 $(TESTBENCH)_DO_GUI_BEFORE		:= mem load -infile ../../../../target/software/riscv32_hello/result/hello_world.hex -format hex /tb_core/memory
+$(TESTBENCH)_DO_GUI_AFTER		:= 
+$(TESTBENCH)_DO_GUI_OVERRIDE	:= 
+
+TESTBENCH 						:= tb_wrapper
+TESTBENCHES						:= $(TESTBENCHES) $(TESTBENCH)
+$(TESTBENCH)_SRC				:= 
+$(TESTBENCH)_ENTITY				:= 
+$(TESTBENCH)_TIME				:= 
+$(TESTBENCH)_DO_GUI_BEFORE		:= 
 $(TESTBENCH)_DO_GUI_AFTER		:= 
 $(TESTBENCH)_DO_GUI_OVERRIDE	:= 
 

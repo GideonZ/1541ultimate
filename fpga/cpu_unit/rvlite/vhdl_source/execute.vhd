@@ -18,7 +18,6 @@ entity execute is
 port
 (
     flush       : in  std_logic;
-    hazard      : in  std_logic;
     exec_i      : in  t_decoded_instruction;
     gprf_i      : in  t_gprf_out;
     exec_o      : out t_execute_out;
@@ -73,7 +72,7 @@ begin
         csr_i.mtvec when TRGT_TRAP,
         X"00000000" when others;
 
-    inst_valid <= exec_i.valid and not flush and not hazard;
+    inst_valid <= exec_i.valid and not flush;
     
     -- Port to CSR
     csr_o.address <= exec_i.imm_value(11 downto 0);
@@ -135,6 +134,6 @@ begin
     end process;
 
     exec_o <= exec_r;
-    rdy_o <= (rdy_i and not hazard) or not exec_r.valid;
+    rdy_o <= rdy_i or not exec_r.valid;
 
 end architecture;
