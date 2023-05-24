@@ -16,6 +16,7 @@ library work;
 
 entity rvlite_wrapper is
 generic (
+    g_bootrom       : boolean := true;
     g_icache        : boolean := true;
     g_tag_i         : std_logic_vector(7 downto 0) := X"20";
     g_tag_d         : std_logic_vector(7 downto 0) := X"21" );
@@ -47,6 +48,8 @@ architecture arch of rvlite_wrapper is
     signal dmem_resp   : t_mem_resp_32;
     signal imem_req    : t_mem_req_32;
     signal imem_resp   : t_mem_resp_32;
+    signal mem_req_i   : t_mem_req_32;
+    signal mem_resp_i  : t_mem_resp_32;
 begin
 
     i_core: entity work.core
@@ -127,7 +130,24 @@ begin
         reqs(1)      => imem_req,
         resps(0)     => dmem_resp,
         resps(1)     => imem_resp,
-        req          => mem_req,
-        resp         => mem_resp );
+        req          => mem_req_i,
+        resp         => mem_resp_i );
     
+    r_no_boot: if not g_bootrom generate
+        mem_req    <= mem_req_i;
+        mem_resp_i <= mem_resp;
+    end generate;
+    
+    r_boot: if g_bootrom generate
+        i_boot: entity work.bootrom
+        port map (
+            clock   => clock,
+            reset   => reset,
+            ireq    => mem_req_i,
+            iresp   => mem_resp_i,
+            oreq    => mem_req,
+            oresp   => mem_resp 
+        );
+    end generate;
+
 end architecture;

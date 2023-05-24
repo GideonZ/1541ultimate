@@ -44,14 +44,13 @@ architecture arch of bus_converter is
     signal state        : t_state;
 
     signal mem_req_i   : t_mem_req_32 := c_mem_req_32_init;
-    signal io_req_i    : t_io_req;
+    signal io_req_i    : t_io_req := c_io_req_init;
+    signal addr_i      : unsigned(mem_req_i.address'range);
     type t_int4_array is array(natural range <>) of integer range 0 to 3;
     --                                               0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F  => 1,2,4,8 byte, 3,C word, F dword
     constant c_remain   : t_int4_array(0 to 15) := ( 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 3 );
     signal remain       : integer range 0 to 3;
 begin
-    mem_req <= mem_req_i;
-    
     process(state, mem_resp)
     begin
         dmem_i.ena_i <= '0';
@@ -69,13 +68,17 @@ begin
         end case;
     end process;
 
-    process(io_req_i, mem_req_i)
+    process(io_req_i, mem_req_i, addr_i)
     begin
         io_req <= io_req_i;
+        io_req.address <= addr_i(io_req.address'range);
+        mem_req <= mem_req_i;
+        mem_req_i.address <= addr_i;
+        mem_req_i.address(1 downto 0) <= "00";
 
         -- Fill in the byte to write, based on the address
         -- Note that mem-req stored the 32 bits data, so we can use it, dmem.o might have become invalid
-        case io_req_i.address(1 downto 0) is
+        case addr_i(1 downto 0) is
         when "11" =>
             io_req.data <= mem_req_i.data(31 downto 24);
         when "10" =>
@@ -98,14 +101,12 @@ begin
             case state is
             when idle =>
                 if dmem_o.ena_o = '1' then
-                    dmem_i.dat_i <= (others => '1');
-                    mem_req_i.address <= unsigned(dmem_o.adr_o(mem_req_i.address'range));
-                    mem_req_i.address(1 downto 0) <= "00";
+                    dmem_i.dat_i <= (others => '0');
+                    addr_i <= unsigned(dmem_o.adr_o(mem_req_i.address'range));
                     mem_req_i.byte_en <= dmem_o.sel_o;
                     mem_req_i.data <= dmem_o.dat_o;
                     mem_req_i.read_writen <= not dmem_o.we_o;
                     mem_req_i.tag <= g_tag;
-                    io_req_i.address <= unsigned(dmem_o.adr_o(io_req_i.address'range));
                     remain <= c_remain(to_integer(unsigned(dmem_o.sel_o)));
                     
                     if dmem_o.adr_o(g_io_bit) = '0' or not g_support_io then
@@ -141,7 +142,7 @@ begin
                 end if;
 
             when io_access =>
-                case io_req_i.address(1 downto 0) is
+                case addr_i(1 downto 0) is
                 when "11" =>
                     dmem_i.dat_i(31 downto 24) <= io_resp.data;
                 when "10" =>
@@ -159,7 +160,7 @@ begin
                         state <= idle;
                     else
                         remain <= remain - 1;
-                        io_req_i.address(1 downto 0) <= io_req_i.address(1 downto 0) + 1;
+                        addr_i(1 downto 0) <= addr_i(1 downto 0) + 1;
                         if mem_req_i.read_writen = '0' then
                             io_req_i.write <= '1';
                         else
