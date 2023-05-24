@@ -220,6 +220,8 @@ begin
                 null;
             end case;
             if reset = '1' then
+                mem_r.ena_i <= '0';
+                dmem_r.ena_o <= '0';
                 state <= idle;
                 outsel <= cache;
             end if;

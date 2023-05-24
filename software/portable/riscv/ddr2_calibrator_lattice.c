@@ -205,6 +205,9 @@ void ddr2_calibrate()
             }
         }
     }
+#if NO_EXPLORE
+    return;
+#endif
 
     volatile uint32_t *mem32 = (uint32_t *)0x10000;
 
