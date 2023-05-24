@@ -457,7 +457,7 @@ begin
         resps(1)   => io_resp_debug
     );
 
-    i_double_freq_bridge: entity work.memreq_halfrate
+    i_double_freq_bridge: entity work.memreq_halfrate2
     port map(
         phase_out   => toggle_check,
         toggle_r_2x => toggle_reset,

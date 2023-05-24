@@ -29,6 +29,7 @@ port (
     kernal_area     : in  std_logic;
     freeze_trig     : in  std_logic; -- goes '1' when the button has been pressed and we're waiting to enter the freezer
     freeze_act      : in  std_logic; -- goes '1' when we need to switch in the cartridge for freeze mode
+    freezer_ena     : out std_logic; -- is '1' for carts that support a freezer
     unfreeze        : out std_logic; -- indicates the freeze logic to switch back to non-freeze mode.
     cart_active     : out std_logic; -- indicates that the cartridge is active
 
@@ -52,6 +53,7 @@ port (
     mem_req         : in  std_logic; -- if '1', the address shouldn't change
     mem_addr        : out unsigned(25 downto 0);   
 
+    phi2            : in  std_logic;
     irq_n           : out std_logic;
     nmi_n           : out std_logic;
     exrom_n         : out std_logic;
@@ -105,6 +107,7 @@ architecture gideon of all_carts_v5 is
     constant c_supergames   : std_logic_vector(4 downto 0) := "01011";
     constant c_blackbox_v8  : std_logic_vector(4 downto 0) := "01100";
     constant c_zaxxon       : std_logic_vector(4 downto 0) := "01101";
+    constant c_blackbox_v9  : std_logic_vector(4 downto 0) := "01110";
 
     -- Simple bankers with RAM
     constant c_pagefox      : std_logic_vector(4 downto 0) := "10000";
@@ -164,7 +167,7 @@ begin
             reset_in     <= reset or RST_in or c64_reset;
             freeze_act_d <= freeze_act;
             unfreeze     <= '0';
-                        
+
             -- control register
             if freeze_act='1' and freeze_act_d='0' then
                 bank_bits  <= (others => '0');
@@ -202,6 +205,7 @@ begin
             game_n    <= '1';
             exrom_n   <= '1';
             rom_mode  <= "01"; -- No banking, All within 16K
+            freezer_ena <= '0';
                     
             case cart_logic_d is
             when c_none =>
@@ -379,6 +383,28 @@ begin
                 serve_rom <= '1';
                 rom_mode  <= "01"; -- 16K banks
 
+            when c_blackbox_v9 =>
+                if io_write='1' and io_addr(8)='0' then -- write to DExx
+                    bank_bits(14) <= not io_addr(7); -- 2 banks of 16K
+                    mode_bits(1) <= io_addr(0);
+                    mode_bits(0) <= not io_addr(6);
+                end if;
+                if io_read='1' and io_addr(8)='0' then
+                    bank_bits(14) <= io_addr(7); -- 2 banks of 16K
+                    mode_bits(1) <= io_addr(0);
+                    mode_bits(0) <= not io_addr(6);
+                end if;
+                if reset_in='1' or cart_force = '1' then
+                    bank_bits(14) <= '1'; -- start in last bank
+                end if;
+                if phi2='1' then
+                    game_n    <= mode_bits(1);
+                    exrom_n   <= not mode_bits(0);
+                end if;
+                serve_rom <= '1';
+                serve_io1 <= '1';
+                rom_mode  <= "01"; -- 16K banks
+
             when c_zaxxon =>
                 -- a read from 8000-8FFF selects bank 0, a read from 9000-9FFF selects bank 1.
                 if slot_req.sample_io = '1' and slot_addr(15 downto 13) = "100" and slot_rwn = '1' then
@@ -453,6 +479,7 @@ begin
                 serve_io2 <= '1';
                 nmi_n     <= not(freeze_trig or freeze_act or hold_nmi);
                 rom_mode  <= "01"; -- 16K banks
+                freezer_ena <= '1';
                                     
             when c_action =>
                 -- variant bit 0: Retro Extension (0 = All of DExx / 1 = Only DE00/01, and REU compatible mapping / extra RAM)
@@ -497,7 +524,7 @@ begin
                 irq_n     <= not(freeze_trig or freeze_act);
                 nmi_n     <= not(freeze_trig or freeze_act);
                 rom_mode  <= "00"; -- 8K banks
-
+                freezer_ena <= '1';
                 
             when c_ss5 =>
                 if io_write='1' and io_addr(8) = '0' and cart_en='1' then -- DE00-DEFF
@@ -517,6 +544,7 @@ begin
                 irq_n     <= not(freeze_trig or freeze_act);
                 nmi_n     <= not(freeze_trig or freeze_act);
                 rom_mode  <= "01"; -- 16K banks
+                freezer_ena <= '1';
 
             when c_kcs =>
                 -- mode_bit(0) -> ULTIMAX
@@ -557,6 +585,7 @@ begin
                 serve_rom <= '1';
                 serve_vic <= mode_bits(1);
                 nmi_n     <= not(freeze_trig or freeze_act);
+                freezer_ena <= '1';
 
             when c_fc =>
                 -- io1 access
@@ -581,6 +610,7 @@ begin
                 serve_io2 <= '1';
                 serve_rom <= '1';
                 nmi_n     <= not(freeze_trig or freeze_act);
+                freezer_ena <= '1';
 
             -- EXOTICS
             when c_georam =>
@@ -601,6 +631,7 @@ begin
             if cart_kill='1' then
                 cart_en  <= '0';
                 hold_nmi <= '0';
+                unfreeze <= '1';
             end if;
         end if;
     end process;

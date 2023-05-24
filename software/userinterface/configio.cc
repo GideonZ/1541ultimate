@@ -182,7 +182,9 @@ int ConfigIO :: S_restore(SubsysCommand *cmd)
     for(int n = 0; n < cm->stores.get_elements();n++) {
         s = cm->stores[n];
         s->read(false);
-        s->effectuate();
+        if (!cm->safeMode) {
+            s->effectuate();
+        }
     }
     return 0;
 }

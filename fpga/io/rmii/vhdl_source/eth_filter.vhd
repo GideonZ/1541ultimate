@@ -20,6 +20,7 @@ library work;
         
 entity eth_filter is
 generic (
+    g_max_packet    : natural := 1536;
     g_mem_tag       : std_logic_vector(7 downto 0) := X"13" );
 port (
     clock           : in  std_logic;
@@ -88,7 +89,10 @@ architecture gideon of eth_filter is
     signal eth_wr_din   : std_logic_vector(17 downto 0);
     signal eth_wr_en    : std_logic;
     signal eth_wr_full  : std_logic;
-    signal eth_length   : unsigned(11 downto 0);
+    signal eth_length   : unsigned(10 downto 0);
+    -- round down to the last odd value smaller than given max length
+    -- 1536 /2 = 768 -1 = 767 = 10.1111.1111 & 1 => 101.1111.1111 = 1535
+    constant c_eth_maxlen : unsigned(10 downto 0) := to_unsigned((g_max_packet/2)-1, 10) & '1';
     signal crc_ok       : std_logic;
     signal toggle       : std_logic;
 begin
@@ -139,7 +143,7 @@ begin
 
                 if eth_rx_valid = '1' then
                     eth_length <= eth_length + 1;
-                    if eth_wr_full = '1' then
+                    if eth_length = c_eth_maxlen or eth_wr_full = '1' then
                         receive_state <= ovfl;
                     else
                         eth_wr_en <= '1';

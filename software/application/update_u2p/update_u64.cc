@@ -72,7 +72,7 @@ void do_update(void)
 
     check_flash_disk();
 
-    if(user_interface->popup("About to flash. Continue?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+    if(user_interface->popup("About to update. Continue?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
 
         clear_field();
         create_dir(ROMS_DIRECTORY);
