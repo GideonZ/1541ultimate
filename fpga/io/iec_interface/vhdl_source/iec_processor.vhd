@@ -74,7 +74,7 @@ architecture mixed of iec_processor is
     signal timeout_reg  : std_logic := '0';
     signal flush_stack  : std_logic;
         
-    type t_state is (idle, get_inst, decode, wait_true);
+    type t_state is (idle, get_inst, slow_ram, decode, wait_true);
     signal state        : t_state;
 
     signal instruction  : std_logic_vector(29 downto 0);
@@ -121,7 +121,7 @@ begin
     instr_addr <= pc;
     instr_en   <= '1' when (state = get_inst) else '0';
 
-    instruction <= instr_data;
+    instruction <= instr_data when rising_edge(clock);
     
     process(clock)
     begin
@@ -150,6 +150,9 @@ begin
                 
             when get_inst =>
                 pc <= pc + 1;
+                state <= slow_ram;
+
+            when slow_ram =>
                 state <= decode;
 
             when decode =>

@@ -206,6 +206,9 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
             break;
         }
         case CTRL_CMD_GET_DRVINFO: {
+            int effectiveOD = 1;
+            if (command->length > 2)
+               effectiveOD = command->message[2];
             data_message.length = 1;
             data_message.message[0] = 0;
             data_message.last_part = true;
@@ -215,14 +218,20 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
             if (c1541_A) {
                 data_message.message[0]++;
                 data_message.message[offs++] = (uint8_t)c1541_A->get_drive_type();
-                data_message.message[offs++] = (uint8_t)c1541_A->get_current_iec_address();
+                if (effectiveOD)
+                    data_message.message[offs++] = (uint8_t)c1541_A->get_effective_iec_address();
+                else
+                    data_message.message[offs++] = (uint8_t)c1541_A->get_current_iec_address();
                 data_message.message[offs++] = c1541_A->get_drive_power() ? 1 : 0;
                 data_message.length += 3;
             }
             if (c1541_B) {
                 data_message.message[0]++;
                 data_message.message[offs++] = (uint8_t)c1541_B->get_drive_type();
-                data_message.message[offs++] = (uint8_t)c1541_B->get_current_iec_address();
+                if (effectiveOD)
+                    data_message.message[offs++] = (uint8_t)c1541_B->get_effective_iec_address();
+                else
+                    data_message.message[offs++] = (uint8_t)c1541_B->get_current_iec_address();
                 data_message.message[offs++] = c1541_B->get_drive_power() ? 1 : 0;
                 data_message.length += 3;
             }
@@ -449,8 +458,37 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
 #endif
             }
             break;
+
+        case CTRL_CMD_GET_RAMDISKINFO: {
+                data_message.length = 8;
+                unsigned char* data = (unsigned char*) data_message.message;
+                for (int i=0; i<4; i++)
+                {
+                    int typ = C64 :: isMP3RamDrive(i);
+                    unsigned char ty = 0;
+                    unsigned char si = 0;
+                    if (typ == 0) ty = 0;
+                    else if (typ == 1541) ty = 0x41;
+                    else if (typ == 1571) ty = 0x71;
+                    else if (typ == 1581) ty = 0x81;
+                    else if (typ == DRVTYPE_MP3_DNP)
+                    {
+                        ty = 0xDD;
+                        si = (unsigned char)(C64 :: getSizeOfMP3NativeRamdrive(i) >> 16);
+                    }
+                    else
+                       ty = si = 0;
+                       
+                    data[2*i] = ty;
+                    data[2*i+1] = si;
+                    
+                }
+                *status = &c_status_ok;
+                data_message.last_part = true;
+                *reply = &data_message;
+            }
+            break;
         }
-    
     }
 }
 

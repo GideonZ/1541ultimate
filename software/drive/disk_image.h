@@ -77,7 +77,7 @@ class GcrImage
     bool  double_sided;
 
     // private functions
-    static uint8_t *wrap(uint8_t **, uint8_t *, uint8_t *, int, uint8_t *buffer);
+    static uint8_t *wrap(uint8_t **, uint8_t *, uint8_t *, int, uint8_t *buffer, uint8_t shift);
     static uint8_t *find_sync(uint8_t *, uint8_t *, uint8_t *);
     uint8_t *convert_block_bin2gcr(uint8_t *bin, uint8_t *gcr, int len);
     uint8_t *convert_track_bin2gcr(uint8_t logical_track_1b, int region, uint8_t *bin, uint8_t *gcr, uint8_t *errors, int errors_size);
