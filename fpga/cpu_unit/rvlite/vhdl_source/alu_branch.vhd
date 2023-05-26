@@ -74,7 +74,7 @@ begin
 
     -- Barrel func
     result_left <= shift_left(data_1, data_2(4 downto 0));
-    result_right <= shift_right(data_1, data_2(4 downto 0), func);
+    result_right <= shift_right(data_1, data_2(4 downto 0), (func and data_1(31)));
 
     -- -- Barrel Inst
     -- i_barrel: entity work.barrel
