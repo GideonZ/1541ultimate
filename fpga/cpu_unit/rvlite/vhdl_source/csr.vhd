@@ -82,7 +82,15 @@ begin
     csr_o.rdata <= rdata;
     csr_o.mtvec <= mtvec;
     csr_o.mepc  <= mepc;
-    csr_o.irq   <= mie_mei and int_i and mstat_mie;
+
+    -- Generate an interrupt to the core when the machine interrupt is enabled (mie.mei),
+    -- the external interrupt pin is active (int_i), the machine status bit is set to allow
+    -- interrupts (mstat_mie) and, the CSR is not currently being changed. The latter is
+    -- important, because when decode_o has this bit set, the next instruction could already
+    -- be in the decode stage. In the decode state the instructions are replaced with an
+    -- interrupt dummy, which should not happen when the interrutps are getting disabled,
+    -- otherwise the instruction after interrupt disable may be executed still.
+    csr_o.irq   <= mie_mei and int_i and mstat_mie and not csr_i.enable;
 
     process(clk_i)
     begin
