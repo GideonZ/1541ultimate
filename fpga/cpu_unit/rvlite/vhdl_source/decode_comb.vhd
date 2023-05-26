@@ -12,10 +12,15 @@ use ieee.numeric_std.all;
 use work.core_pkg.all;
 
 entity decode_comb is
+generic (
+    g_trap_illegal  : boolean := true
+);
 port (
     program_counter : in  std_logic_vector(31 downto 0) := (others => '0');
+    interrupt       : in  std_logic;
     instruction     : in  std_logic_vector(31 downto 0);
     inst_valid      : in  std_logic;
+    illegal_inst    : out std_logic;
     decoded         : out t_decoded_instruction
 );
 end entity;
@@ -34,12 +39,37 @@ architecture gideon of decode_comb is
 begin
     process(program_counter, instruction, inst_valid, inst_func3, inst_imm12, inst_opcode, inst_type, imm_value)
         variable opcode_idx   : natural range 0 to 31;
+
+        procedure illegal is
+        begin
+            illegal_inst <= '1';
+            decoded.csr_access  <= '0';
+            decoded.reg_write   <= '0';
+            decoded.mem_read    <= '0';
+            decoded.mem_write   <= '0';
+            decoded.flow_ctrl   <= FL_JUMP;
+            decoded.flow_target <= TRGT_TRAP;
+            decoded.cause       <= "00010";
+        end procedure;
+
+        procedure irq is
+        begin
+            decoded.csr_access  <= '0';
+            decoded.reg_write   <= '0';
+            decoded.mem_read    <= '0';
+            decoded.mem_write   <= '0';
+            decoded.flow_ctrl   <= FL_JUMP;
+            decoded.flow_target <= TRGT_TRAP;
+            decoded.cause       <= "11011";
+        end procedure;
+
     begin
         -- default: handle instruction as nop
         decoded <= c_decoded_nop;
         decoded.valid <= inst_valid;
         decoded.program_counter <= program_counter;
         inst_type <= Itype;
+        illegal_inst <= '0';
 
         -- Memory transfer size is determined by func3
         decoded.alu_operation <= inst_func3;
@@ -68,8 +98,8 @@ begin
             decoded.mem_read_sext <= not inst_func3(2);
             -- mem address is always rs1 + imm
 
-        when  3 => -- FENCE
-            null;
+        -- when  3 => -- FENCE
+        --    null;
 
         when  4 => -- ALU_IMM
             inst_type <= Itype;
@@ -94,8 +124,8 @@ begin
             decoded.mem_write <= '1';
             -- mem address is always rs1 + imm
 
-        when 11 => -- ATOMIC
-            null;
+        -- when 11 => -- ATOMIC
+        --    null;
 
         when 12 => -- ALU_REG
             inst_type <= Rtype;
@@ -140,10 +170,14 @@ begin
             case inst_func3 is
             when "000" => -- ECALL, EBREAK, MRET
                 case inst_imm12 is
-                when X"000" | X"800" => -- ECALL (or IRQ)
+                -- when X"000" | X"800" => -- ECALL (or IRQ)
+                --     decoded.flow_ctrl   <= FL_JUMP;
+                --     decoded.flow_target <= TRGT_TRAP;
+                --     decoded.cause  <= inst_imm12(11) & X"B";
+                when X"000" => -- ECALL
                     decoded.flow_ctrl   <= FL_JUMP;
                     decoded.flow_target <= TRGT_TRAP;
-                    decoded.cause  <= inst_imm12(11) & X"B";
+                    decoded.cause  <= '0' & X"B";
                 when X"001" => -- EBREAK
                     decoded.flow_ctrl   <= FL_JUMP;
                     decoded.flow_target <= TRGT_TRAP;
@@ -154,7 +188,8 @@ begin
                 when X"105" => -- WFI
                     null; -- nop
                 when others =>
-                    decoded.illegal <= '1';
+                    null;
+                    -- decoded.illegal <= '1';
                 end case;
             when "001" => -- CSRRW (reg)
                 decoded.csr_access <= '1';
@@ -200,11 +235,19 @@ begin
             end case;
 
         when others =>
-            decoded.illegal <= '1';
+            if g_trap_illegal then
+                illegal;
+            end if;
         end case;
 
         if inst_opcode(1 downto 0) /= "11" then
-            decoded.illegal <= '1';
+            if g_trap_illegal then
+                illegal;
+            end if;
+        end if;
+
+        if interrupt = '1' then
+            irq;
         end if;
 
         -- if the input instruction was not valid, the register reads

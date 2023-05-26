@@ -26,16 +26,25 @@ architecture arch of decode is
     signal decoded_c    : t_decoded_instruction;
     signal decoded_r    : t_decoded_instruction := c_decoded_nop;
     signal rdy_o_i      : std_logic;
+    signal illegal_inst : std_logic;
+    signal illegal      : std_logic;
+    signal valid        : std_logic;
 begin
-    instruction <= X"80000073" when irq_i = '1' else decode_i.instruction;
+    -- instruction <= X"80000073" when irq_i = '1' else decode_i.instruction;
+    instruction <= decode_i.instruction;
 
     i_decode_comb: entity work.decode_comb
     port map (
+        interrupt       => irq_i,
         program_counter => decode_i.program_counter,
         instruction     => instruction,
         inst_valid      => decode_i.inst_valid,
+        illegal_inst    => illegal_inst,
         decoded         => decoded_c
     );
+
+    illegal <= illegal_inst and decode_i.inst_valid;
+    valid <= decode_i.inst_valid;
 
     process(clk_i)
     begin
