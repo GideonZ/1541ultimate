@@ -88,6 +88,25 @@ __crt0_cpu_csr_init:
   csrw minstret,  zero                  // reset instructions-retired counter
   csrw minstreth, zero
 
+/*
+  la   x9, 0x1234
+  la   x10, 0x400
+  nop
+  nop
+  nop
+  sw   x9,-16(x10)
+  sw   x9,-12(x10)
+  sw   x9,-8(x10)
+  sw   x9,-4(x10)
+  lw   x8,-16(x10)
+  addi x8,x8,1
+  sw   x8,-20(x10)
+  nop
+  nop
+  nop
+  lw   x8,-16(x10)
+  sw   x8,-20(x10)
+*/
 
 // ************************************************************************************************
 // Initialize integer register file (lower half)
@@ -259,9 +278,18 @@ __crt0_main_aftermath_end:
 // go to endless sleep mode
 // ************************************************************************************************
 __crt0_shutdown:
-  csrci mstatus, 8                   // disable global IRQs (clear mstatus.mie)
+  // csrci mstatus, 8                   // disable global IRQs (clear mstatus.mie)
   wfi                                // go to sleep mode
   j .                                // endless loop
+
+  nop
+  nop
+  nop
+  nop
+  nop
+  nop
+  nop
+  nop
 
 
 // ************************************************************************************************
@@ -296,6 +324,10 @@ __crt0_dummy_trap_handler_exc_uncrompressed:       // is uncompressed instructio
   csrw  mepc, x8
 
 __crt0_dummy_trap_handler_irq:
+  lui   x8,   0x10000
+  li    x9,   0x49
+  sb    x9, 31(x8)
+
   lw    x8,   0(sp)
   lw    x9,   4(sp)
   addi  sp,   sp, +8

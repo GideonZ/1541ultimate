@@ -366,31 +366,43 @@ begin
     );
     
 
-    i_riscv: entity work.neorv32_wrapper
-    generic map (
-        g_jtag_debug=> g_jtag_debug,
-        g_frequency => 50_000_000,
-        g_tag       => X"20"
-    )
+    -- i_riscv: entity work.neorv32_wrapper
+    -- generic map (
+    --     g_jtag_debug=> g_jtag_debug,
+    --     g_frequency => 50_000_000,
+    --     g_tag       => X"20"
+    -- )
+    -- port map (
+    --     clock       => sys_clock,
+    --     reset       => sys_reset,
+    --     cpu_reset   => '0',
+    --     jtag_trst_i => DEBUG_TRSTn,
+    --     jtag_tck_i  => DEBUG_TCK,
+    --     jtag_tdi_i  => DEBUG_TDI,
+    --     jtag_tdo_o  => DEBUG_TDO,
+    --     jtag_tms_i  => DEBUG_TMS,
+    --     timeout     => open,--LED_SDACTn,
+    --     irq_i       => io_irq,
+    --     irq_o       => open,
+    --     io_req      => io_req_riscv,
+    --     io_resp     => io_resp_riscv,
+    --     io_busy     => open,
+    --     mem_req     => cpu_mem_req,
+    --     mem_resp    => cpu_mem_resp
+    -- );
+    
+    i_riscv: entity work.rvlite_wrapper
     port map (
         clock       => sys_clock,
         reset       => sys_reset,
-        cpu_reset   => '0',
-        jtag_trst_i => DEBUG_TRSTn,
-        jtag_tck_i  => DEBUG_TCK,
-        jtag_tdi_i  => DEBUG_TDI,
-        jtag_tdo_o  => DEBUG_TDO,
-        jtag_tms_i  => DEBUG_TMS,
-        timeout     => open,--LED_SDACTn,
-        irq_i       => io_irq,
-        irq_o       => open,
+        irq_i       => '0', --io_irq,
         io_req      => io_req_riscv,
         io_resp     => io_resp_riscv,
         io_busy     => open,
         mem_req     => cpu_mem_req,
         mem_resp    => cpu_mem_resp
     );
-    
+
     i_u2p_io_split: entity work.io_bus_splitter
     generic map (
         g_range_lo => 20,
@@ -574,12 +586,12 @@ begin
         g_uart          => true,
         g_uart_rx       => false,
         g_drive_1541    => true,
-        g_drive_1541_2  => g_dual_drive,
+        g_drive_1541_2  => false, --g_dual_drive,
         g_mm_drive      => true,
         g_hardware_gcr  => true,
         g_ram_expansion => true,
         g_extended_reu  => false,
-        g_stereo_sid    => true,
+        g_stereo_sid    => false, --true,
         g_8voices       => false,
         g_hardware_iec  => true,
         g_c2n_streamer  => true,

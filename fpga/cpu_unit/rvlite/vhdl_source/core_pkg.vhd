@@ -209,8 +209,6 @@ package core_pkg is
     ----------------------------------------------------------------------------------------------
     -- FUNCTIONS USED IN RV-LITE
     ----------------------------------------------------------------------------------------------
-    function select_register_data (cfg_reg_fwd_wrb: boolean; reg_dat, wb_dat : std_logic_vector; write : std_logic) return std_logic_vector;
-    function forward_condition (reg_write : std_logic; reg_a, reg_d : std_logic_vector) return std_logic;
     function align_mem_load (data : std_logic_vector; size : t_transfer_size; address : std_logic_vector; sext : std_logic) return std_logic_vector;
     function align_mem_store (data : std_logic_vector; size : t_transfer_size) return std_logic_vector;
     function decode_mem_store (address : std_logic_vector(1 downto 0); size : t_transfer_size) return std_logic_vector;
@@ -218,33 +216,6 @@ package core_pkg is
 end package;
 
 package body core_pkg is
-
-    -- This function selects the register value:
-    --      A) zero
-    --      B) bypass value read from register file
-    --      C) value from register file
-    function select_register_data (cfg_reg_fwd_wrb : boolean; reg_dat, wb_dat : std_logic_vector; write : std_logic) return std_logic_vector is
-        variable tmp : std_logic_vector(31 downto 0);
-    begin
-        if cfg_reg_fwd_wrb = true and write = '1' then
-            tmp := wb_dat;
-        else
-            tmp := reg_dat;
-        end if;
-        return tmp;
-    end select_register_data;
-
-    -- This function checks if a forwarding condition is met. The condition is met if register A and D match
-    -- and the signal needs to be written back to the register file, and when register index is not zero.
-    function forward_condition (reg_write : std_logic; reg_a, reg_d : std_logic_vector ) return std_logic is
-    begin
-        if reg_a = reg_d then
-            if reg_a /= "00000" then
-                return reg_write;
-            end if;
-        end if;
-        return '0';
-    end forward_condition;
 
     -- This function aligns the memory load operation (Little endian) 
     function align_mem_load (data : std_logic_vector; size : t_transfer_size; address : std_logic_vector; sext : std_logic )
