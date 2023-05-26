@@ -395,7 +395,7 @@ begin
     port map (
         clock       => sys_clock,
         reset       => sys_reset,
-        irq_i       => '0', --io_irq,
+        irq_i       => io_irq,
         io_req      => io_req_riscv,
         io_resp     => io_resp_riscv,
         io_busy     => open,
