@@ -50,8 +50,8 @@ begin
     i_mem: entity work.mem_bus_32_slave_bfm
     generic map (
         g_name        => "dram",
-        g_time_to_ack => 1,
-        g_latency     => 3
+        g_time_to_ack => -7,  -- random mode
+        g_latency     => 5
     )
     port map (
         clock => clock,
@@ -72,6 +72,7 @@ begin
     process(clock)
         variable s      : line;
         variable char   : character;
+        variable irq_delay : time := 0 ns;
     begin
         if rising_edge(clock) then
             io_resp <= c_io_resp_init;
@@ -107,8 +108,12 @@ begin
                         -- Write to buffer
                         write(s, char);
                     end if;
+                when X"00001F" => -- irq!
+                    irq_i <= '0', '1' after 20 us + irq_delay;
+                    irq_delay := irq_delay + 20 ns;
                 when others =>
-                    report "I/O write to " & hstr(io_req.address) & " dropped";
+                    null;
+                    --report "I/O write to " & hstr(io_req.address) & " dropped";
                 end case;
             end if;
         end if;
