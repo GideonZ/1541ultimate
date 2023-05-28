@@ -54,6 +54,12 @@ begin
             end if;
             if flush = '1' or rst_i = '1' then
                 decoded_r.valid <= '0';
+                -- Keeping the reg_read signals high may cause
+                -- a hazard to be detected in a cancelled instruction,
+                -- which causes in turn the wrong registers to be read
+                -- in the next valid instruction.
+                decoded_r.reg_rs1_read <= '0';
+                decoded_r.reg_rs2_read <= '0';
             end if;
         end if;
     end process;
