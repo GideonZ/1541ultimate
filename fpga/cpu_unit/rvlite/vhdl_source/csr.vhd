@@ -90,8 +90,11 @@ begin
     -- be in the decode stage. In the decode state the instructions are replaced with an
     -- interrupt dummy, which should not happen when the interrutps are getting disabled,
     -- otherwise the instruction after interrupt disable may be executed still.
-    csr_o.irq   <= mie_mei and int_i and mstat_mie and not csr_i.enable;
+    csr_o.irq   <= mie_mei and int_i and mstat_mie and not csr_i.inhibit_irq;
 
+    -- report pending interrupt in mip
+    mip_mei <= int_i;
+    
     process(clk_i)
     begin
         if rising_edge(clk_i) then
