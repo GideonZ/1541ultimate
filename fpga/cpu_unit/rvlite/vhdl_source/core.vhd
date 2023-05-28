@@ -123,7 +123,7 @@ begin
         int_i => int_i,
         csr_i => to_csr,
         csr_o => from_csr,
-        ena_i => ex_ready,
+        ena_i => wb_ready,
         rst_i => rst_i,
         clk_i => clk_i
     );
