@@ -42,7 +42,6 @@ package core_pkg is
         valid               : std_logic;
         program_counter     : std_logic_vector(31 downto 0);
         instruction_type    : t_instruction_type;
-        illegal             : std_logic;
 
         reg_rs1             : std_logic_vector(4 downto 0);
         reg_rs1_read        : std_logic;
@@ -76,7 +75,6 @@ package core_pkg is
         valid               => '0',
         program_counter     => X"00000000",
         instruction_type    => Itype,
-        illegal             => '0',
         reg_rs1             => "00000",
         reg_rs1_read        => '0',
         reg_rs2             => "00000",
