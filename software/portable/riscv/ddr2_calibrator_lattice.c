@@ -152,7 +152,7 @@ static void move_sys_clock()
     uint8_t prev,cur = 0x80;
     for(int i=0;i<96;i++) {
         prev = cur;
-        for(int j=0;j<200;j++) {
+        for(int j=0;j<1000;j++) {
             __asm__("nop");
         }
         cur = LATTICE_PLL_MEASURE2;
@@ -164,8 +164,10 @@ static void move_sys_clock()
     LATTICE_PLL_SELECT = 5; // reverse CLKOS2 (sys clock)
     LATTICE_PLL_PULSE = 1;
     LATTICE_PLL_PULSE = 1;
+    for(int j=0;j<1000;j++) {
+        __asm__("nop");
+    }
 }
-
 
 #define DRIVE1IRQ (*(volatile uint8_t *)(DRIVE_A_BASE + 0x1806))
 #define DRIVE2IRQ (*(volatile uint8_t *)(DRIVE_B_BASE + 0x1806))
