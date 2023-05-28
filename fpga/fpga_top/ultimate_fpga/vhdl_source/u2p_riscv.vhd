@@ -320,24 +320,36 @@ begin
         input       => sys_reset,
         input_c     => eth_reset  );
 
-    i_riscv: entity work.neorv32_wrapper
-    generic map (
-        g_frequency => 62_500_000,
-        g_tag       => X"20"
-    )
+    -- i_riscv: entity work.neorv32_wrapper
+    -- generic map (
+    --     g_frequency => 62_500_000,
+    --     g_tag       => X"20"
+    -- )
+    -- port map (
+    --     clock       => sys_clock,
+    --     reset       => sys_reset,
+    --     cpu_reset   => '0',
+    --     irq_i       => io_irq,
+    --     irq_o       => open,
+    --     io_req      => io_req_riscv,
+    --     io_resp     => io_resp_riscv,
+    --     io_busy     => open,
+    --     mem_req     => cpu_mem_req,
+    --     mem_resp    => cpu_mem_resp
+    -- );
+    
+    i_riscv: entity work.rvlite_wrapper
     port map (
         clock       => sys_clock,
         reset       => sys_reset,
-        cpu_reset   => '0',
         irq_i       => io_irq,
-        irq_o       => open,
         io_req      => io_req_riscv,
         io_resp     => io_resp_riscv,
         io_busy     => open,
         mem_req     => cpu_mem_req,
         mem_resp    => cpu_mem_resp
     );
-    
+
     i_u2p_io_split: entity work.io_bus_splitter
     generic map (
         g_range_lo => 20,
@@ -404,7 +416,7 @@ begin
         resps(1)   => io_resp_debug
     );
 
-    i_memphy: entity work.ddr2_ctrl
+    i_memphy: entity work.ddr2_ctrl_fast
     port map (
         ref_clock         => RMII_REFCLK,
         ref_reset         => ref_reset,
@@ -429,7 +441,7 @@ begin
         SDRAM_CASn        => SDRAM_CASn,
         SDRAM_WEn         => SDRAM_WEn,
         SDRAM_A           => SDRAM_A,
-        SDRAM_BA          => SDRAM_BA(1 downto 0),
+        SDRAM_BA          => SDRAM_BA,
         SDRAM_DM          => SDRAM_DM,
         SDRAM_DQ          => SDRAM_DQ,
         SDRAM_DQS         => SDRAM_DQS
