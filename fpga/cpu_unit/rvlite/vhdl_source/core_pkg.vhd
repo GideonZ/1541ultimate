@@ -147,6 +147,7 @@ package core_pkg is
         oper        : t_csr_action;
         enable      : std_logic;
         trap        : t_trap;
+        inhibit_irq : std_logic;
     end record;
 
     type t_csr_out is record

@@ -53,8 +53,11 @@ begin
                 decoded_r <= decoded_c;
             end if;
             if flush = '1' or rst_i = '1' then
+                -- when the pipeline needs to be flushed, we simply
+                -- tell exec that the instruction is not valid. This
+                -- will turn off memory accesses and register writeback.
                 decoded_r.valid <= '0';
-                -- Keeping the reg_read signals high may cause
+                -- Keeping the reg_read signals active may cause
                 -- a hazard to be detected in a cancelled instruction,
                 -- which causes in turn the wrong registers to be read
                 -- in the next valid instruction.

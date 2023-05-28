@@ -79,9 +79,10 @@ begin
     csr_o.wdata   <= gprf_i.dat_a_o when exec_i.csr_sel = CSR_REG else sign_extend(exec_i.reg_rs1, exec_i.reg_rs1(4), 32);
     csr_o.oper    <= exec_i.csr_action;
     csr_o.enable  <= exec_i.csr_access and inst_valid;
-    csr_o.trap.trap  <= inst_valid when (exec_i.flow_target = TRGT_TRAP) and (exec_i.flow_ctrl = FL_JUMP) else '0';
-    csr_o.trap.mret  <= inst_valid when (exec_i.flow_target = TRGT_MEPC) and (exec_i.flow_ctrl = FL_JUMP) else '0';
-    csr_o.trap.cause <= exec_i.cause;
+    csr_o.inhibit_irq <= exec_i.csr_access; -- even during a hazard
+    csr_o.trap.trap   <= inst_valid when (exec_i.flow_target = TRGT_TRAP) and (exec_i.flow_ctrl = FL_JUMP) else '0';
+    csr_o.trap.mret   <= inst_valid when (exec_i.flow_target = TRGT_MEPC) and (exec_i.flow_ctrl = FL_JUMP) else '0';
+    csr_o.trap.cause  <= exec_i.cause;
     csr_o.trap.program_counter <= exec_i.program_counter;
 
     -- Port to memory (combinatorial)
