@@ -5,14 +5,10 @@
 MEMORY
 {
     memory  : ORIGIN = 0x00001000, LENGTH = 0xE9F000
-    bootrom : ORIGIN = 0x00000000, LENGTH = 3072
-    ram     : ORIGIN = 0x00000C00, LENGTH = 1024
+    bootrom : ORIGIN = 0x00000000, LENGTH = 3584
+    ram     : ORIGIN = 0x00000E00, LENGTH = 512
     iodev (rw) : ORIGIN = 0xFFFFFE00, LENGTH = 512
 }
-
-/* Define symbols for each memory base-address */
-__memory = 0x0;
-__bootrom = 0xFFFF0000;
 
 OUTPUT_FORMAT( "elf32-littleriscv",
                "elf32-littleriscv",
