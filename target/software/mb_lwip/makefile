@@ -93,7 +93,7 @@ SRCS_CC	 =
 SRCS_ASM =  
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-COPTIONS = -g -ffunction-sections -Os -mcpu=v5.00.a -std=c99 
+COPTIONS = -g -ffunction-sections -Os -mcpu=v5.00.a -std=c99 -DBYTE_ORDER=BIG_ENDIAN
 CPPOPT   = -g -ffunction-sections -Os -mcpu=v5.00.a -fno-exceptions -fno-rtti
 LINK 	 = ./mb_app.lds
 LLIB     =  -L ../mb_lib/result_mb \
