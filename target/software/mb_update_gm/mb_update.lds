@@ -5,7 +5,8 @@ ENTRY(_premain)
 
 MEMORY
 {
-    DRAM (rwx)  : ORIGIN = 0x01000000, LENGTH = 0x01000000 /* thus until 02000000 */
+    PROG (rx)  : ORIGIN = 0x01000000, LENGTH = 0x00800000 /* thus until 01800000 */
+    DRAM (rw)  : ORIGIN = 0x01800000, LENGTH = 0x00800000 /* thus until 02000000 */
 }
 
 SECTIONS
@@ -13,16 +14,16 @@ SECTIONS
   .text 0x1000000 : {
     *(.text.start)
     *(.text .stub .text.* .gnu.linkonce.t.*)
-  } > DRAM
+  } > PROG
   .fini           :
   {
     KEEP (*(.fini))
-  } > DRAM
+  } > PROG
 
   .init :
   {
     KEEP (*(.init))
-  } > DRAM
+  } > PROG
   
   end_of_text = .;
 
@@ -33,12 +34,10 @@ SECTIONS
     *(.rodata .rodata.* .gnu.linkonce.r.*)
     *(.rodata1)
   	
-  } > DRAM
+  } > PROG
 
-  .data ALIGN(4) :
+  .ctors ALIGN(4):
   {
-    __data_start = . ;
-    *(.data .data.* .gnu.linkonce.d.* .gcc_except_table)
     __constructor_list = .;
     KEEP (*(.ctors))
     __end_of_constructors = .;
@@ -46,11 +45,17 @@ SECTIONS
     __destructor_list = .;
     KEEP (*(.dtors))
     __end_of_destructors = .;
+  } > PROG
+
+  .data :
+  {
+    __data_start = . ;
+    *(.data .data.* .gnu.linkonce.d.* .gcc_except_table)
 
     KEEP (*(.jcr))
 /*     SORT(CONSTRUCTORS)  */
     __data_end = .;
-  } > DRAM
+  } > DRAM AT>PROG
 
   __bss_start = .;
   __bss_start__ = .;
@@ -69,6 +74,7 @@ SECTIONS
   _bss_end__ = . ; __bss_end__ = . ; __end__ = . ;
 
   PROVIDE (end = .);
+  __data_load = LOADADDR(.data);
 
   .heap ALIGN(32) : {
      _heap = .;
