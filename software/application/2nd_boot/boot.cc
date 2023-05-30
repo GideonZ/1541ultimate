@@ -196,7 +196,11 @@ int main(int argc, char *argv[])
 	file_system_err = init_fat_on_sd();
 
     if(!file_system_err) { // will return error code, 0 = ok
+#ifdef RISCV
+        res = try_loading("update.u2r", UPDATER_RUN_ADDRESS);
+#else
         res = try_loading("recover.u2u", UPDATER_RUN_ADDRESS);
+#endif
         res = try_loading("ultimate.bin", APPLICATION_RUN_ADDRESS);
         //delete prt;
         //delete dsk;

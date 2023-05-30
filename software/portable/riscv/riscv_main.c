@@ -133,6 +133,7 @@ void codec_init();
 void USB2513Init();
 void USB2503Init();
 
+#ifndef U2	
 static void test_i2c_mdio(void)
 {
 	// mdio_reset();
@@ -156,7 +157,8 @@ static void test_i2c_mdio(void)
 
 	// enable buffer
 	U2PIO_ULPI_RESET = U2PIO_UR_BUFFER_ENABLE;
- }
+}
+#endif
 
 #ifndef CLOCK_FREQ
 #define CLOCK_FREQ 50000000
@@ -171,8 +173,9 @@ int main(int argc, char *argv[])
 
 	ioWrite8(UART_DATA, 0x34);
 
+#ifndef U2	
 	test_i2c_mdio();
-
+#endif
 	// Finally start the scheduler.
 	vTaskStartScheduler();
 
