@@ -4,7 +4,7 @@
 
 MEMORY
 {
-    memory : ORIGIN = 0x30000, LENGTH = 0xE70000
+    memory : ORIGIN = 0x10000, LENGTH = 0xE70000
     dataram : ORIGIN = 0xF00000, LENGTH = 0x100000
     onchip : ORIGIN = 0xFFFF0000, LENGTH = 2048
     iodev (rw) : ORIGIN = 0xFFFFFE00, LENGTH = 512

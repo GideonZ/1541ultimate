@@ -23,8 +23,10 @@ u2_rv:
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/software/riscv32_u2_boot
 	@$(MAKE) -C target/software/riscv32_u2_boot2
+	@$(MAKE) -C target/software/riscv32_unknown_elf_lwip
 	@$(MAKE) -C target/software/riscv32_u2_ultimate
 	@$(MAKE) -C target/fpga/rv700
+	@$(MAKE) -C target/software/mb_lwip
 	@$(MAKE) -C target/software/mb_update_to_rv
 
 mb:
