@@ -184,9 +184,6 @@ int main(int argc, char *argv[])
 	printf("*** 1541 Ultimate-II - Bootloader %s - FPGA Version: %2x ***\n\n",
             BOOT_VERSION, getFpgaVersion());
 
-	dump_hex(0, 16);
-	// set(0, 0xB0000000);
-
 	if (getFpgaCapabilities() & CAPAB_SIMULATION) {
         ioWrite8(UART_DATA, '*');
         jump_run(APPLICATION_RUN_ADDRESS);

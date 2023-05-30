@@ -176,6 +176,10 @@ BaseType_t xPortStartScheduler( void )
 	*p++ = (0xB0000000 | (addr >> 16));    // imm  #<high>
 	*p++ = (0xB8080000 | (addr & 0xFFFF)); // brai <low>
 
+    // From now on, it is no longer allowed to write to the first MB, so we set the guru detect
+    ioWrite8(ITU_IRQ_HIGH_EN, ioRead8(ITU_IRQ_HIGH_EN) | 0x80);
+    ioWrite8(ITU_MISC_IO, 0x80); // Enable writes to the first MB of memory and pull interrupt when we do so.
+
 	/* Setup the hardware to generate the tick.  Interrupts are disabled when
 	this function is called. */
 	prvSetupTimerInterrupt();
@@ -268,7 +272,15 @@ void vTaskISRHandler( void )
 	ioWrite8(ITU_IRQ_CLEAR, pending);
 
 	BaseType_t do_switch = pdFALSE;
+    uint8_t h = ioRead8(ITU_IRQ_HIGH_ACT);
 
+    if (h & 0x80) {
+        uint32_t addr;
+        __asm__("or %0,r14,r0" : "=r" (addr));
+        printf("\n** GURU MEDITATION:\n   Address: %08x\n", addr);
+        while(1)
+            ;
+    }
 	if (pending & 0x10) {
 		do_switch = command_interface_irq();
 	}
@@ -284,7 +296,6 @@ void vTaskISRHandler( void )
 	if (pending & 0x01) {
         do_switch |= xTaskIncrementTick();
 	}
-    uint8_t h = ioRead8(ITU_IRQ_HIGH_ACT);
     for(int i=0;i < HIGH_IRQS; i++, h>>=1) {
         if (h & 1) {
             if (high_irqs[i].handler) {
