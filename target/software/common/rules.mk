@@ -84,6 +84,7 @@ $(OUTPUT)/$(PRJ).shex: $(OUTPUT)/$(PRJ).out
 	@$(eval was := _binary_$(subst .,_,$(subst /,_,$(subst -,_,$<))))
 	@$(eval becomes := _$(subst .,_,$(subst -,_,$(<F))))
 	@$(OBJCOPY) -I binary -O $(ELFTYPE) --binary-architecture $(ARCHITECTURE) $< $(OUTPUT)/$@ \
+	--rename-section .data=.rodata,alloc,load,readonly,data,contents \
 	--redefine-sym $(was)_start=$(becomes)_start \
 	--redefine-sym $(was)_size=$(becomes)_size \
 	--redefine-sym $(was)_end=$(becomes)_end
@@ -138,6 +139,7 @@ $(OUTPUT)/$(PRJ).shex: $(OUTPUT)/$(PRJ).out
 	@$(eval was := _binary_$(subst .,_,$(subst /,_,$(subst -,_,$(fn)))))
 	@$(eval becomes := _$(subst .,_,$(subst /,_,$(<F))))
 	@$(OBJCOPY) -I binary -O $(ELFTYPE) --binary-architecture $(ARCHITECTURE) $(fn) $(OUTPUT)/$@ \
+	--rename-section .data=.rodata,alloc,load,readonly,data,contents \
 	--redefine-sym $(was)_start=$(becomes)_start \
 	--redefine-sym $(was)_size=$(becomes)_size \
 	--redefine-sym $(was)_end=$(becomes)_end
@@ -148,6 +150,7 @@ $(OUTPUT)/$(PRJ).shex: $(OUTPUT)/$(PRJ).out
 	@$(eval was := _binary_$(subst .,_,$(subst /,_,$(subst -,_,$(fn)))))
 	@$(eval becomes := _$(subst .,_,$(subst /,_,$(<F))))
 	@$(OBJCOPY) -I binary -O $(ELFTYPE) --binary-architecture $(ARCHITECTURE) $(fn) $(OUTPUT)/$@ \
+	--rename-section .data=.rodata,alloc,load,readonly,data,contents \
 	--redefine-sym $(was)_start=$(becomes)_start \
 	--redefine-sym $(was)_size=$(becomes)_size \
 	--redefine-sym $(was)_end=$(becomes)_end
