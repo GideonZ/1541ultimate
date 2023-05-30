@@ -19,6 +19,14 @@ u2:
 	@cp target/software/mb_update_dd/result/update.u2u ./update_dual_drive_acia.u2u
 	@cp target/software/mb_update_gm/result/update.u2u ./update_dual_drive_gmod2.u2u
 
+u2_rv:
+	@$(MAKE) -C tools
+	@$(MAKE) -C target/software/riscv_u2_boot
+	@$(MAKE) -C target/software/riscv_u2_boot2
+	@$(MAKE) -C target/software/riscv_u2_ultimate
+	@$(MAKE) -C target/fpga/rv700
+	@$(MAKE) -C target/software/mb_update_to_rv
+
 mb:
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/software/mb_lwip
@@ -121,8 +129,6 @@ clean:
 	@rm -rf target/fpga/work700
 	@rm -rf target/fpga/boot_700
 	@rm -rf target/fpga/work250
-	@rm -rf target/fpga/mb700
-	@rm -rf target/fpga/mb700dd
 	@rm -rf target/fpga/_xm*
 	@rm -rf target/fpga/x*
 	@rm -rf target/fpga/*.x*
@@ -217,6 +223,13 @@ u2pl:
 	@$(MAKE) -C target/software/riscv32_unknown_elf_lwip
 	@$(MAKE) -C target/software/riscv32_u2p_boot
 	@$(MAKE) -C target/fpga/u2plus_ecp5
+	@$(MAKE) -C target/software/riscv32_ultimate
+	@$(MAKE) -C target/software/riscv32_update
+	@cp target/software/riscv32_update/result/update.app ./update.u2l
+
+u2pl_swonly:
+	@$(MAKE) -C tools
+	@$(MAKE) -C target/software/riscv32_unknown_elf_lwip
 	@$(MAKE) -C target/software/riscv32_ultimate
 	@$(MAKE) -C target/software/riscv32_update
 	@cp target/software/riscv32_update/result/update.app ./update.u2l

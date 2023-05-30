@@ -65,8 +65,13 @@ int FileTypeUpdate :: fetch_context_items(IndexedList<Action *> &list)
 FileType *FileTypeUpdate :: test_type(BrowsableDirEntry *br)
 {
 	FileInfo *inf = br->getInfo();
+#ifdef RISCV
+	if(strcmp(inf->extension, "U2R")==0)
+        return new FileTypeUpdate(br);
+#else
 	if(strcmp(inf->extension, "U2U")==0)
         return new FileTypeUpdate(br);
+#endif
     return NULL;
 }
 

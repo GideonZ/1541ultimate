@@ -18,12 +18,8 @@ extern char _heap[];
 extern char _heap_end[];
 void *sbrk(int inc);
 
-//extern void _init(void);
-void __clear_bss();
-//void __copy_data();
 
 void _premain() __attribute__ ((section(".text.start")));
-
 
 typedef void(*fptr)(void);
 
