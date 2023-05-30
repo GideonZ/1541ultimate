@@ -72,12 +72,37 @@ void _exit()
 	while(1);
 }
 
+
+void __clear_bss(void)
+{
+    extern char __bss_start__[], __bss_end__[];
+    //printf("Clear BSS: %p-%p\n", __bss_start__, __bss_end__);
+	unsigned int *cptr;
+	cptr = (unsigned int*)__bss_start__;
+	do {
+        *cptr = 0;
+        cptr++;
+    } while(cptr < (unsigned int *)(__bss_end__));
+}
+
+void __copy_data(void)
+{
+    extern unsigned char __data_start[],__data_end[],__data_load[];
+	unsigned int *src  = (unsigned int*)__data_load;
+	unsigned int *dest = (unsigned int*)__data_start;
+    unsigned int *dend = (unsigned int*)__data_end;
+	do {
+		*(dest++) = *(src++);
+	} while (dest < dend);
+}
+
 void _premain()
 {
 	portDISABLE_INTERRUPTS();
 	ioWrite8(UART_DATA, 0x31);
 
     __clear_bss();
+    __copy_data();
 
     ioWrite8(UART_DATA, 0x32);
 
@@ -97,47 +122,6 @@ void _construct_and_go()
     // TODO: Kill all tasks?
     exit(0);
 }
-
-extern char __bss_start__[], __bss_end__[];
-
-void __clear_bss(void)
-{
-    //printf("Clear BSS: %p-%p\n", __bss_start__, __bss_end__);
-	unsigned int *cptr;
-	cptr = (unsigned int*)__bss_start__;
-	do {
-        *cptr = 0;
-        cptr++;
-    } while(cptr < (unsigned int *)(__bss_end__));
-}
-
-/*
-extern unsigned char __ram_start,__data_start,__data_end;
-extern unsigned char ___jcr_start,___jcr_begin,___jcr_end;
-
-*/
-
-/*
-void __copy_data(void)
-{
-	unsigned int *cptr;
-	cptr = (unsigned int*)&__ram_start;
-	unsigned int *dptr;
-	dptr = (unsigned int*)&__data_start;
-
-	do {
-		*(dptr++) = *(cptr++);
-	} while (dptr<(unsigned int*)(&__data_end));
-
-	cptr = (unsigned int*)&___jcr_start;
-	dptr = (unsigned int*)&___jcr_begin;
-
-	while (dptr<(unsigned int*)(&___jcr_end)) {
-		*dptr = *cptr;
-		cptr++,dptr++;
-	}
-}
-*/
 
 /* 
  * Output one character to the serial port 
