@@ -16,6 +16,7 @@ SRCS_C   =	itu.c \
 			dump_hex.c \
 			ff.c \
 			diskio.c \
+			syscalls.c \
 			small_printf.c
 
 SRCS_CC	 =  blockdev.cc \
@@ -41,6 +42,8 @@ VPATH     := $(PATH_SW)/chan_fat/tiny_ro  $(VPATH)
 VPATH     += $(PATH_SW)/portable/riscv
 VPATH     += $(PATH_SW)/application/2nd_boot
 VPATH     += $(PATH_SW)/../neorv32/sw/common
+VPATH     += $(PATH_SW)/../neorv32/sw/lib/include
+VPATH     += $(PATH_SW)/../neorv32/sw/lib/source
 VPATH     += $(PATH_SW)/FreeRTOS/Source/portable/risc-v
 
 #OPTIONS += -g -Os -DOS 
@@ -49,7 +52,7 @@ PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -g -Os -ffunction-sections -fdata-sections -nostartfiles -Wno-write-strings
 OPTIONS += -march=$(MARCH) -mabi=$(MABI) -DU2 -DRISCV -D_FS_READONLY=1 -D_FS_MINIMIZE=3
 OPTIONS += -DNO_IO_RESET=1 -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=50000000
-COPTIONS = $(OPTIONS) -std=c99
+COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics
 LINK 	 = ./linker.x
 LFLAGS   = --gc-sections 

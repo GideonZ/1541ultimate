@@ -168,6 +168,14 @@ SECTIONS
     _end = .; PROVIDE (end = .);
   } > ram
 
+  /* heap for dynamic memory allocation (use carefully!) */
+  .heap :
+  {
+    PROVIDE(__heap_start = .);
+    PROVIDE(__heap_limit = ORIGIN(ram) + LENGTH(ram));
+	  PROVIDE(__heap_end = ORIGIN(ram) + LENGTH(ram));
+  } > ram
+
   /* Yet unused */
   .jcr                : { KEEP (*(.jcr)) }
   .got                : { *(.got.plt) *(.igot.plt) *(.got) *(.igot) }  .interp         : { *(.interp) }

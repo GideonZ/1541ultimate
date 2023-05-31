@@ -184,11 +184,6 @@ architecture structural of ultimate_riscv_700a is
     -- Audio outputs
     signal audio_left  : signed(18 downto 0);
     signal audio_right : signed(18 downto 0);
-
-    -- Some CPU locals
-    signal invalidate       : std_logic;
-    signal inv_addr         : std_logic_vector(31 downto 0);
-    constant c_tag_usb2     : std_logic_vector(7 downto 0) := X"09";
 begin
     reset_in <= '1' when BUTTON="000" else '0'; -- all 3 buttons pressed
     button_i <= not BUTTON;
@@ -204,24 +199,6 @@ begin
         sys_reset    => sys_reset,
         sys_clock_2x => sys_clock_2x );
 
-    -- i_cpu: entity work.neorv32_wrapper
-    -- generic map (
-    --     g_jtag_debug=> false,
-    --     g_frequency => 50_000_000,
-    --     g_tag       => X"20"
-    -- )
-    -- port map (
-    --     clock       => sys_clock,
-    --     reset       => sys_reset,
-    --     cpu_reset   => '0',
-    --     jtag_trst_i => '1',
-    --     irq_i       => io_irq,
-    --     io_req      => io_req,
-    --     io_resp     => io_resp,
-    --     mem_req     => cpu_mem_req,
-    --     mem_resp    => cpu_mem_resp
-    -- );
-
     i_riscv: entity work.rvlite_wrapper
     port map (
         clock       => sys_clock,
@@ -233,11 +210,6 @@ begin
         mem_req     => cpu_mem_req,
         mem_resp    => cpu_mem_resp
     );
-
-    -- TODO: also invalidate for rmii
-    invalidate <= misc_io(0) when (mem_resp.rack_tag(5 downto 0) = c_tag_usb2(5 downto 0)) and (mem_req.read_writen = '0') else '0';
-    inv_addr(31 downto 26) <= (others => '0');
-    inv_addr(25 downto 0) <= std_logic_vector(mem_req.address);
 
     i_logic: entity work.ultimate_logic_32
     generic map (
