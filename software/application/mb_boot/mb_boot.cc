@@ -40,16 +40,25 @@ bool w25q_wait_ready(int time_out)
     return ret;
 }
 
+void uart_write_hex_long(uint32_t hex)
+{
+    uart_write_hex(uint8_t(hex >> 24));
+    uart_write_hex(uint8_t(hex >> 16));
+    uart_write_hex(uint8_t(hex >> 8));
+    uart_write_hex(uint8_t(hex));
+}
 
 int main(int argc, char **argv)
 {
-    if (getFpgaCapabilities() & CAPAB_SIMULATION) {
+    custom_outbyte = 0;
+    puts("**Primary Boot 3.3**");
+    uint32_t capab = getFpgaCapabilities();
+    uart_write_hex_long(capab);
+    if (capab & CAPAB_SIMULATION) {
         ioWrite8(UART_DATA, '*');
         jump_run(BOOT2_RUN_ADDR);
     }
     ioWrite8(UART_DATA, '$');
-    custom_outbyte = 0;
-    puts("**Primary Boot 3.1**");
 
 	SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
     SPI_FLASH_DATA = 0xFF;

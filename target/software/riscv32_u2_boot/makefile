@@ -37,6 +37,7 @@ PATH_INC =  $(addprefix -I, $(VPATH))
 APPL_OPT = -DBOOTLOADER -D_FS_READONLY=1 -D_FS_MINIMIZE=3
 OPTIONS  = $(APPL_OPT) -march=$(MARCH) -mabi=$(MABI) -ffunction-sections -fdata-sections -nostartfiles -mno-fdiv -Dmake_bootloader
 OPTIONS += -g -Os -DOS -DNO_IO_RESET=1 -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=50000000 -Wno-write-strings
+COPTIONS = $(OPTIONS)
 CPPOPT   = $(OPTIONS) -ffunction-sections -Os -fno-exceptions -fno-rtti
 LINK 	 = linker.x
 LFLAGS   = --gc-sections 
