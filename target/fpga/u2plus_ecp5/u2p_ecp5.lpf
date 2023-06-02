@@ -1,5 +1,6 @@
-RVL_ALIAS "ctrl_clock" "i_double_freq_bridge/clock_2x"; 
 rvl_alias "sys_clock" "i_riscv/i_core/clk_i";
+rvl_alias "ulpi_clock" "ulpi_clock";
+RVL_ALIAS "ctrl_clock" "i_double_freq_bridge/clock_2x"; 
 RVL_ALIAS "sys_clock" "sys_clock"; 
 BLOCK RESETPATHS ;
 FREQUENCY PORT "ULPI_CLOCK" 60.000000 MHz CLOCK_JITTER 0.200000 ns ;
