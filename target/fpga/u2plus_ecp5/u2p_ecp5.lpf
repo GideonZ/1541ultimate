@@ -1,5 +1,5 @@
-rvl_alias "sys_clock" "i_riscv/i_core/clk_i";
-rvl_alias "ulpi_clock" "ulpi_clock";
+RVL_ALIAS "sys_clock" "i_riscv/i_core/clk_i"; 
+RVL_ALIAS "ulpi_clock" "ulpi_clock"; 
 RVL_ALIAS "ctrl_clock" "i_double_freq_bridge/clock_2x"; 
 RVL_ALIAS "sys_clock" "sys_clock"; 
 BLOCK RESETPATHS ;
@@ -878,3 +878,5 @@ PROHIBIT PRIMARY NET "i_riscv/i_dmem/un1_state_2_1_i" ;
 PROHIBIT PRIMARY NET "i_riscv/i_dmem/un1_state_6_i" ;
 PROHIBIT PRIMARY NET "i_riscv/i_imem/N_547_2" ;
 PROHIBIT PRIMARY NET "i_riscv/rst_d" ;
+PROHIBIT PRIMARY NET "i_riscv/i_core/i_decode/N_286_i_0" ;
+PROHIBIT PRIMARY NET "i_riscv/i_dmem/read_writen_0_sqmuxa" ;
