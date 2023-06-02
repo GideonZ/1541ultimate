@@ -99,7 +99,7 @@ VPATH +=	$(PATH_SW)/../neorv32/sw/lib/source
 VPATH   += $(PATH_SW)/application/rv_update_u2
 VPATH   += ../riscv32_u2_ultimate/result
 VPATH   += ../riscv32_u2_boot2/result
-VPATH   += ../../fpga/rv700/rv700dd
+VPATH   += ../../fpga/rv700dd/rv700dd
 
 PATH_INC =  $(addprefix -I, $(VPATH) $(OUTPUT))
 OPTIONS  = -march=$(MARCH) -mabi=$(MABI) -ffunction-sections -fdata-sections -nostartfiles -mno-fdiv
