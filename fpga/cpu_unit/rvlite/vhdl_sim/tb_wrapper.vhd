@@ -64,7 +64,8 @@ begin
     begin
         wait for 1 ns;
         bind_mem_model("dram", mem);
-        load_memory("../../../../target/software/riscv32_hello/result/hello_world.bin", mem, X"00000000");
+        load_memory("../../../../target/software/riscv32_u2_boot2/result/boot2.bin", mem, X"00001000");
+        load_memory("../../../../target/software/riscv32_u2_ultimate/result/ultimate.bin", mem, X"00010000");
         wait;
     end process;
 

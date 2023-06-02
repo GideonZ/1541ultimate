@@ -162,18 +162,18 @@ __crt0_reg_file_clear:
 // that is catched (but not further processed) by the dummy trap handler.
 // This can be disabled by defining 'NO_IO_RESET' before re-compiling.
 // ************************************************************************************************
+
+#if 0
 __crt0_reset_io:
   la   x8,   __crt0_io_space_begin         // start of processor-internal IO region
   la   x9,   __crt0_io_space_end           // end of processor-internal IO region
 
 // Make this opt-out so that certain modules (like the XIP module) can keep running after being configured by the bootloader
-#ifndef NO_IO_RESET
 __crt0_reset_io_loop:
   sw   zero, 0(x8)
   addi x8,   x8, 4
   bne  x8,   x9, __crt0_reset_io_loop
 #endif
-
 
 // ************************************************************************************************
 // Copy initialized .data section from ROM to RAM (word-wise, section begins and ends on word boundary)

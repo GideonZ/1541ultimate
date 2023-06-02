@@ -143,14 +143,17 @@ int try_flash(void)
 	t_flash_address image_addr;
     
     static uint32_t length;
-    static char version[16];
-    
+    static uint8_t version[16];
+
 	flash->get_image_addresses(FLASH_ID_APPL, &image_addr);
-	flash->read_dev_addr(image_addr.device_addr+0,  4, &length); // could come from image_addr, too, if we fix it in the interface
-    printf("Length: %08x\n", length);
-    flash->read_dev_addr(image_addr.device_addr+4, 12, version); // we should create a flash call for this on the interface
-    
-    printf("Application length = %08x, version %s\n", length, version);
+    flash->read_dev_addr(image_addr.device_addr+0, 16, version); // we should create a flash call for this on the interface
+
+    // Length is encoded as big-endian, for backwards compatibility reasons
+    length =  ((uint32_t)version[0]) << 24;
+    length |= ((uint32_t)version[1]) << 16;
+    length |= ((uint32_t)version[2]) << 8;
+    length |= ((uint32_t)version[3]);
+    printf("Application length = %08x, version %s\n", length, (char *)version+4);
     if(length != 0xFFFFFFFF) {
         flash->read_dev_addr(image_addr.device_addr+16, length, (void *)APPLICATION_RUN_ADDRESS); // we should use flash->read_image here
 
