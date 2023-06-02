@@ -323,11 +323,14 @@ void UserInterface :: set_screen_title()
 	screen->scroll_mode(false);
 	screen->repeat('\002', width);
 }
-    
+
 /* Blocking variants of our simple objects follow: */
 int  UserInterface :: popup(const char *msg, uint8_t flags)
 {
-    UIPopup *pop = new UIPopup(msg, flags);
+    const char *c_button_names[] = { " Ok ", " Yes ", " No ", " All ", " Cancel " };
+    const char c_button_keys[] = { 'o', 'y', 'n', 'c', 'a' };
+
+    UIPopup *pop = new UIPopup(msg, flags, 5, c_button_names, c_button_keys);
     pop->init(screen, keyboard);
     int ret;
     do {
@@ -337,6 +340,18 @@ int  UserInterface :: popup(const char *msg, uint8_t flags)
     return ret;
 }
     
+int  UserInterface :: popup(const char *msg, int count, const char **names, const char *keys)
+{
+    UIPopup *pop = new UIPopup(msg, (1 << (count + 1))-1, count, names, keys);
+    pop->init(screen, keyboard);
+    int ret;
+    do {
+        ret = pop->poll(0);
+    } while(!ret);
+    pop->deinit();
+    return ret;
+}
+
 int UserInterface :: string_box(const char *msg, char *buffer, int maxlen)
 {
     UIStringBox *box = new UIStringBox(msg, buffer, maxlen);

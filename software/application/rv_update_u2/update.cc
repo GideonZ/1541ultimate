@@ -11,6 +11,8 @@ extern uint8_t _ultimate_bin_start;
 extern uint8_t _ultimate_bin_end;
 extern uint8_t _rv700dd_b_start;
 extern uint8_t _rv700dd_b_end;
+extern uint8_t _rv700au_b_start;
+extern uint8_t _rv700au_b_end;
 extern uint8_t _boot2_bin_start;
 extern uint8_t _boot2_bin_end;
 
@@ -26,8 +28,9 @@ void do_update(void)
 
     setup("\033\025** 1541 Ultimate II Updater **\n\033\037");
 
-    if(user_interface->popup("Flash " APPL_VERSION "?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
-
+    const char *names[] = { " Audio ", " Dual Drive ", " Cancel " };
+    int choice = user_interface->popup("Flash " APPL_VERSION "?", 3, names, "adc");
+    if(choice != 4) {
         check_flash_disk();
         clear_field();
         create_dir(ROMS_DIRECTORY);
@@ -35,7 +38,11 @@ void do_update(void)
         write_flash_file("1541.rom", &_1541_bin_start, 0x4000);
         write_flash_file("snds1541.bin", &_snds1541_bin_start, 0xC000);
 
-        flash_buffer(flash2, screen, FLASH_ID_BOOTFPGA, &_rv700dd_b_start, &_rv700dd_b_end, "", "FPGA w/ RiscV CPU");
+        if (choice == 1) {
+            flash_buffer(flash2, screen, FLASH_ID_BOOTFPGA, &_rv700au_b_start, &_rv700au_b_end, "", "Audio FPGA w/ RiscV CPU");
+        } else {
+            flash_buffer(flash2, screen, FLASH_ID_BOOTFPGA, &_rv700dd_b_start, &_rv700dd_b_end, "", "Dual Drive FPGA w/ RiscV");
+        }
         flash_buffer(flash2, screen, FLASH_ID_BOOTAPP,  &_boot2_bin_start,  &_boot2_bin_end,  BOOT_VERSION, "Secondary bootloader");
         flash_buffer(flash2, screen, FLASH_ID_APPL,     &_ultimate_bin_start,  &_ultimate_bin_end,  APPL_VERSION, "Ultimate Application");
 
@@ -47,4 +54,5 @@ void do_update(void)
 extern "C" int ultimate_main(int argc, char *argv[])
 {
 	do_update();
+    return 0;
 }
