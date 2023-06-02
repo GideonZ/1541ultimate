@@ -64,7 +64,7 @@ BMM_FILE  :=
 
 # TOOL FLAGS
 NGDBUILD_FLAGS	 := 	
-MAP_FLAGS        := 	-cm area -timing -pr b -detail
+MAP_FLAGS        := 	-cm area -timing -pr b -detail -ignore_keep_hierarchy
 PAR_FLAGS        := 	-w 
 TRCE_FLAGS       := 	-e 9 -l 11
 PROMGEN_FLAGS	 := 	-w -p mcs -c FF -x xcf04s
