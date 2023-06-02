@@ -81,6 +81,7 @@ SRCS_6502 =
 
 SRCS_BIN =  ultimate.bin \
 			rv700dd.bin \
+			rv700au.bin \
 			boot2.bin \
 			chars.bin \
 			1541.bin \
@@ -100,6 +101,7 @@ VPATH   += $(PATH_SW)/application/rv_update_u2
 VPATH   += ../riscv32_u2_ultimate/result
 VPATH   += ../riscv32_u2_boot2/result
 VPATH   += ../../fpga/rv700dd/rv700dd
+VPATH   += ../../fpga/rv700au/work
 
 PATH_INC =  $(addprefix -I, $(VPATH) $(OUTPUT))
 OPTIONS  = -march=$(MARCH) -mabi=$(MABI) -ffunction-sections -fdata-sections -nostartfiles -mno-fdiv
