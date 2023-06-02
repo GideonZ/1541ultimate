@@ -26,11 +26,13 @@ u2_rv:
 	@$(MAKE) -C target/software/riscv32_u2_loader
 	@$(MAKE) -C target/software/riscv32_unknown_elf_lwip
 	@$(MAKE) -C target/software/riscv32_u2_ultimate
-	@$(MAKE) -C target/fpga/rv700
+	@$(MAKE) -C target/fpga/rv700dd
 	@$(MAKE) -C target/fpga/rv700_loader
 	@$(MAKE) -C target/software/riscv32_u2_update
 	@$(MAKE) -C target/software/mb_lwip
 	@$(MAKE) -C target/software/mb_update_to_rv
+	@cp target/software/mb_update_to_rv/result/update.u2u ./update_to_rv.u2u
+	@cp target/software/riscv32_u2_update/result/update.u2r ./update.u2r
 
 mb:
 	@$(MAKE) -C tools

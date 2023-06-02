@@ -86,7 +86,7 @@ VPATH   += $(PATH_SW)/portable/microblaze
 VPATH   += $(PATH_SW)/application/rv_update_u2
 VPATH   += ../riscv32_u2_ultimate/result
 VPATH   += ../riscv32_u2_boot2/result
-VPATH   += ../../fpga/rv700/rv700dd
+VPATH   += ../../fpga/rv700dd/rv700dd
 
 PATH_INC =  $(addprefix -I, $(VPATH) $(OUTPUT))
 APP_OPTS = -DFIRST_WRITABLE_PAGE=0 -DOS=1 -DSAFEMODE=1 -DUPDATER -DRECOVERYAPP=1
