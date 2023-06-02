@@ -88,26 +88,6 @@ __crt0_cpu_csr_init:
   csrw minstret,  zero                  // reset instructions-retired counter
   csrw minstreth, zero
 
-/*
-  la   x9, 0x1234
-  la   x10, 0x400
-  nop
-  nop
-  nop
-  sw   x9,-16(x10)
-  sw   x9,-12(x10)
-  sw   x9,-8(x10)
-  sw   x9,-4(x10)
-  lw   x8,-16(x10)
-  addi x8,x8,1
-  sw   x8,-20(x10)
-  nop
-  nop
-  nop
-  lw   x8,-16(x10)
-  sw   x8,-20(x10)
-*/
-
 // ************************************************************************************************
 // Initialize integer register file (lower half)
 // ************************************************************************************************
