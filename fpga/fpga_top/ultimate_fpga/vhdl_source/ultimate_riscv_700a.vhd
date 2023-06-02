@@ -418,6 +418,7 @@ begin
 
     i_mem_ctrl: entity work.ext_mem_ctrl_v5
     generic map (
+        g_big_endian => false,
         g_simulation => false )
     port map (
         clock       => sys_clock,

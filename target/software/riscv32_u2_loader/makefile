@@ -8,8 +8,10 @@ MABI  ?= ilp32
 include ../common/environment.mk
 
 PRJ        =  boot2
-FINAL      =  $(RESULT)/$(PRJ).bin
+DEST       =  $(PATH_SW)/../fpga/cpu_unit/rvlite/vhdl_source/bootrom_pkg_u2_loader.vhd
+FINAL      =  $(RESULT)/$(PRJ).bin $(DEST)
 #LINKMETHOD = ld
+IMAGE_GEN  =  $(PATH_SW)/../tools/bin2vhdl.py 
 
 SRCS_C   =	itu.c \
 			xmodem.c \
@@ -58,3 +60,6 @@ LINK 	 = ./linker.x
 LFLAGS   = --gc-sections 
 	
 include ../common/rules.mk
+
+$(DEST) : $(RESULT)/$(PRJ).bin 
+	$(IMAGE_GEN) $< $(DEST) 32768
