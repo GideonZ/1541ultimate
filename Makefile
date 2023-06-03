@@ -1,5 +1,5 @@
 
-all: u2 u2plus u2pl u64
+all: u2 u2_rv u2plus u2pl u64
 
 u2:
 	@$(MAKE) -C tools
