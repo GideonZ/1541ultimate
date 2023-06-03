@@ -211,6 +211,7 @@ u64_clean:
 
 u2pl:
 	@$(MAKE) -C tools
+	@$(MAKE) -C neorv32/sw/example all
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u2plus_L/riscv/bootloader
 	@$(MAKE) -C target/u2plus_L/rvlite/bootloader
