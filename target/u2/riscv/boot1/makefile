@@ -20,7 +20,7 @@ VPATH +=	$(PATH_SW)/../neorv32/sw/common
 
 SRCS_C   =	itu.c \
 
-SRCS_CC	 =  mb_boot.cc \
+SRCS_CC	 =  bootloader_u2.cc \
             small_printf.cc
 
 SRCS_ASMS =  crt0.S
