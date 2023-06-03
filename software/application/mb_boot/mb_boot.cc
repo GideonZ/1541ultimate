@@ -13,7 +13,7 @@ void jump_run(uint32_t a)
 	uint32_t *dp = (uint32_t *)&function;
     *dp = a;
     function();
-    puts("Application exit.");
+    uart_write_buffer("Application exit.\n", 18);
     while(1)
     	;
 }
@@ -48,59 +48,78 @@ void uart_write_hex_long(uint32_t hex)
     uart_write_hex(uint8_t(hex));
 }
 
-void hex16(uint16_t val, const char *postfix)
+void send_addr(uint32_t addr)
 {
-    uint8_t *p = (uint8_t *)&val;
-    uart_write_hex(p[1]);
-    uart_write_hex(p[0]);
-    while(*postfix) {
-        outbyte(*(postfix++));
-    }
+    SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
+    SPI_FLASH_DATA = 0x03;
+    SPI_FLASH_DATA = addr >> 16;
+    SPI_FLASH_DATA = addr >> 8;
+    SPI_FLASH_DATA = (uint8_t)addr;
 }
 
-#define TEST_WORD_COUNT 65536
-#define RAM_TEST_REPORT 16
-
-int ram_test(void)
+int get_length(uint32_t addr)
 {
-    int errors = 0;
+    int length;
+    uint32_t dummy; 
 
-    uint16_t *mem16 = (uint16_t *)0x10000;
-    const uint16_t modifier = 0x55AA;
-    uint32_t i;
+    send_addr(addr);
+    length  = ((int)SPI_FLASH_DATA) << 24;
+    length |= ((int)SPI_FLASH_DATA) << 16;
+    length |= ((int)SPI_FLASH_DATA) << 8;
+    length |= ((int)SPI_FLASH_DATA);
+    dummy = SPI_FLASH_DATA_32;
+    dummy = SPI_FLASH_DATA_32;
+    dummy = SPI_FLASH_DATA_32;
+    dummy = SPI_FLASH_DATA_32;
 
-    for(i=0;i<TEST_WORD_COUNT;i++) {
-        mem16[i] = (uint16_t)(i ^ modifier);
+    return length;
+}
+
+uint32_t *load(int length)
+{
+    uint32_t *dest = (uint32_t *)BOOT2_RUN_ADDR;
+    while(length > 0) {
+        *(dest++) = SPI_FLASH_DATA_32;
+        length -= 4;
     }
+    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
+    //uart_write_hex_long((uint32_t)dest);
+    return dest;
+}
 
-    for(i=0;i<TEST_WORD_COUNT;i++) {
-        uint16_t expected = (uint16_t)(i ^ modifier);
-        uint16_t read = mem16[i];
-        if (read != expected) {
-            if (errors < RAM_TEST_REPORT) {
-                hex16(errors,":");
-                hex16(expected, " != ");
-                hex16(read, "\n");
-            }
-            errors++;
-        }
-    }
+void go(uint32_t boot2, uint32_t appl)
+{
+    int length;
 
-    if (errors) {
-        puts("RAM error.");
-        return 0;
+    length = get_length(boot2);
+    if(length != -1) {
+        load(length);
+        uart_write_buffer("Running 2nd boot.\n", 18);
+        jump_run(BOOT2_RUN_ADDR);
+        while(1);
     }
-    puts("RAM OK!!");
-    return 1;
+    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
+    uart_write_buffer("No bootloader.\n", 15);
+
+    length = get_length(appl);
+    if(length != -1) {
+        load(length);
+        // outbyte('-');
+        jump_run(APPL_RUN_ADDR);
+        while(1);
+    }
+    uart_write_buffer("Nothing to boot.\n", 17);
+    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
+    while(1);
 }
 
 int main(int argc, char **argv)
 {
     custom_outbyte = 0;
 
-    puts("**Primary Boot 3.4**");
+    uart_write_buffer("**Primary Boot 3.4**\n", 20);
     uint32_t capab = getFpgaCapabilities();
-    uart_write_hex_long(capab);
+    // uart_write_hex_long(capab);
     if (capab & CAPAB_SIMULATION) {
         ioWrite8(UART_DATA, '*');
         jump_run(BOOT2_RUN_ADDR);
@@ -110,8 +129,6 @@ int main(int argc, char **argv)
 	SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
     SPI_FLASH_DATA = 0xFF;
 
-    ram_test();
-
     // check flash
     SPI_FLASH_CTRL = SPI_FORCE_SS;
     SPI_FLASH_DATA = 0x9F; // JEDEC Get ID
@@ -119,28 +136,8 @@ int main(int argc, char **argv)
 	uint8_t dev_id = SPI_FLASH_DATA;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
 
-    uint8_t read_boot2[4];
-    uint8_t read_appl[4];
-    uint32_t *dest;
-
-    // outbyte('(');
-    // uart_write_hex(manuf);
-    // outbyte(',');
-    // uart_write_hex(dev_id);
-    // outbyte(')');
-
-    read_boot2[0] = 3;
-    read_appl[0] = 3;
-    read_boot2[3] = 0;
-    read_appl[3] = 0;
-
     int flash_type = 0;
     if(manuf == 0x1F) { // Atmel 
-        read_boot2[1] = 0x0a; // 0A2800
-        read_boot2[2] = 0x28;
-        read_appl[1] = 0x0B; // 0BE000
-        read_appl[2] = 0xE0;
-
         // protect flash the Atmel way
         SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     	SPI_FLASH_DATA = 0x3D;
@@ -150,92 +147,15 @@ int main(int argc, char **argv)
         SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
     } else {
         flash_type = 1; // assume Winbond or Spansion
-        read_boot2[1] = 0x05; // 054000
-        read_boot2[2] = 0x40;
-        read_appl[1] = 0x06; // 062000
-        read_appl[2] = 0x20;
 
         // Protection during boot is not required, as the bits are non-volatile.
         // They are supposed to be set in the updater.
         // Make sure CSn is high before we start
-        SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
     }
 
-    int length;
-    uint32_t dummy; 
-
-    SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
-    SPI_FLASH_DATA = read_boot2[0];
-    SPI_FLASH_DATA = read_boot2[1];
-    SPI_FLASH_DATA = read_boot2[2];
-    SPI_FLASH_DATA = read_boot2[3];
-    length  = ((int)SPI_FLASH_DATA) << 24;
-    length |= ((int)SPI_FLASH_DATA) << 16;
-    length |= ((int)SPI_FLASH_DATA) << 8;
-    length |= ((int)SPI_FLASH_DATA);
-    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
-
-    if(length != -1) {
-        SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
-        SPI_FLASH_DATA = read_boot2[0];
-        SPI_FLASH_DATA = read_boot2[1];
-        SPI_FLASH_DATA = read_boot2[2];
-        SPI_FLASH_DATA = read_boot2[3];
-        // skip the first 16 bytes
-        dummy = SPI_FLASH_DATA_32;
-        dummy = SPI_FLASH_DATA_32;
-        dummy = SPI_FLASH_DATA_32;
-        dummy = SPI_FLASH_DATA_32;
-        dest = (uint32_t *)BOOT2_RUN_ADDR;
-        while(length > 0) {
-            *(dest++) = SPI_FLASH_DATA_32;
-            length -= 4;
-        }
-        //uart_write_hex_long(*(uint32_t *)BOOT2_RUN_ADDR);
-        uart_write_buffer("Running 2nd boot.\n\r", 19);
-        jump_run(BOOT2_RUN_ADDR);
-        while(1);
+    if (flash_type) {
+        go(0x54000, 0x62000);
+    } else {
+        go(0xA2800, 0xBE000);
     }
-
-    puts("No bootloader.");
-
-    SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
-    SPI_FLASH_DATA = read_appl[0];
-    SPI_FLASH_DATA = read_appl[1];
-    SPI_FLASH_DATA = read_appl[2];
-    SPI_FLASH_DATA = read_appl[3];
-    length  = ((int)SPI_FLASH_DATA) << 24;
-    length |= ((int)SPI_FLASH_DATA) << 16;
-    length |= ((int)SPI_FLASH_DATA) << 8;
-    length |= ((int)SPI_FLASH_DATA);
-    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
-    uart_write_hex_long((uint32_t)length);
-    outbyte(':');
-
-    if(length != -1) {
-        SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
-        SPI_FLASH_DATA = read_appl[0];
-        SPI_FLASH_DATA = read_appl[1];
-        SPI_FLASH_DATA = read_appl[2];
-        SPI_FLASH_DATA = read_appl[3];
-        // skip the first 16 bytes
-        dummy = SPI_FLASH_DATA_32;
-        dummy = SPI_FLASH_DATA_32;
-        dummy = SPI_FLASH_DATA_32;
-        dummy = SPI_FLASH_DATA_32;
-        dest = (uint32_t *)APPL_RUN_ADDR;
-        uart_write_hex_long((uint32_t)dest);
-        while(length > 0) {
-            *(dest++) = SPI_FLASH_DATA_32;
-            length -= 4;
-        }
-        outbyte('-');
-        uart_write_hex_long((uint32_t)dest);
-        SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
-
-        jump_run(APPL_RUN_ADDR);
-        while(1);
-    }
-    puts("Nothing to boot.");
-    while(1);
 }
