@@ -1,22 +1,17 @@
 # System tool locations
 
-HERE = $(shell pwd)
 TOOLS = ../../../tools
 BIN2HEX = $(TOOLS)/bin2hex
 HEX2BIN = $(TOOLS)/hex2bin
 MAKEAPPL = $(TOOLS)/makeappl
 
-# Configuration
-SHELL     = bash
-CROSS     = mb
+include ../../../common/environment.mk
 
 # Outputs
-RESULT    = $(shell pwd)/result
+RESULT    = ./result
 OUTPUT    = ./output
-OUTPUT_FP = $(shell pwd)/output
 
 PRJ      =  liblwip
-PATH_SW  =  ../../../software
 
 VPATH     = $(PATH_SW)/lwip-1.4.1/src/ \
 			$(PATH_SW)/lwip-1.4.1/src/core/ \
@@ -79,15 +74,7 @@ SRCS_C   =	sys_arch.c \
 			etharp.c \
 			slipif.c 
 
-# the order of the files is important, because of the static constructors.
-# main loop defines two important globals that define the event based polling mechanism:
-# poll_list and the event queue. The sources following the main loop are the ones
-# that register themselves in the main loop. The file manager is the second important
-# root of the application. Devices can register themselves in the file system tree.
-# Therefore, the file manager needs to exist.
-
 SRCS_CC	 =
-####  			$(PRJ).cc
 
 
 SRCS_ASM =  
@@ -95,8 +82,8 @@ SRCS_ASM =
 PATH_INC =  $(addprefix -I, $(VPATH))
 COPTIONS = -g -ffunction-sections -Os -mcpu=v5.00.a -std=c99 -DBYTE_ORDER=BIG_ENDIAN
 CPPOPT   = -g -ffunction-sections -Os -mcpu=v5.00.a -fno-exceptions -fno-rtti
-LINK 	 = ./mb_app.lds
-LLIB     =  -L ../mb_lib/result_mb \
+#LINK 	 = ./mb_app.lds
+#LLIB     =  -L ../mb_lib/result_mb \
             -L $(TOOLCHAIN)/microblaze-xilinx-elf/lib \
             -L $(TOOLCHAIN)/lib/gcc/microblaze-xilinx-elf/4.1.2
 #LIBS     = -lstdc++ -lsupc++ -lgcc --start-group -lxil -lc -lm --end-group -lgcc
@@ -105,76 +92,11 @@ LFLAGS   = --gc-sections
 
 VPATH   += $(OUTPUT) $(RESULT)
 
-CC		  = $(CROSS)-gcc
-CPP		  = $(CROSS)-g++
-LD		  = $(CROSS)-ld
-OBJDUMP   = $(CROSS)-objdump
-OBJCOPY	  = $(CROSS)-objcopy
-
-.SUFFIXES:
-
-OBJS_ASM = $(notdir $(SRCS_ASM:%.s=%.o))
-OBJS_C   = $(notdir $(SRCS_C:%.c=%.o))
-OBJS_CC  = $(notdir $(SRCS_CC:%.cc=%.o))
-
-ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_ASM) $(OBJS_C) $(OBJS_CC))
-ALL_DEP_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_C) $(OBJS_CC))
-
-
-.PHONY: hex clean all dep test
-
 all: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).a
 
-test: sys_arch.p
 
-$(OUTPUT):
-	@mkdir $(OUTPUT)
+#$(RESULT)/$(PRJ).a: $(LINK) $(OBJS_C)
+#	@echo "Creating Archive $@"
+#	$(AR) -rc $@ $(ALL_OBJS)
 
-$(RESULT):
-	@mkdir $(RESULT)
-		
-$(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
-	@echo "Creating Binary $@"
-	@$(OBJCOPY) -O binary $< $@
-
-$(RESULT)/$(PRJ).a: $(LINK) $(OBJS_C)
-	@echo "Creating Archive $@"
-	$(AR) -rc $@ $(ALL_OBJS)
-
-%.o: %.s
-	@echo "Compiling $<"
-	@$(CC) $(OPTIONS) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
-
-%.o: %.c
-	@echo "Compiling $<"
-	@$(CC) $(COPTIONS) $(PATH_INC) -E -o $(OUTPUT)/$(@F:.o=.pre) $<
-	@$(CC) $(COPTIONS) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
-
-%.o: %.cc
-	@echo "Compiling $<"
-	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -o $(OUTPUT)/$(@F) $<
-	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
-
-%.pre: %.c
-	@echo "Running preprocessor on $<"
-	@$(CC) $(COPTIONS) $(PATH_INC) -B. -E -o $(OUTPUT)/$(@F) $<
-
-%.d: %.cc
-	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
-
-%.d: %.c
-	@$(CC) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
-
-$(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM)
-	@echo "Linking..."
-	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS)
-
-
-# pull in dependency info for *existing* .o files
--include $(ALL_DEP_OBJS:.o=.d)
-
-clean:
-	@-rm -rf $(OUTPUT)
-	@-rm -rf $(RESULT)
-
-dep:  $(OBJS_CC:.o=.d) $(OBJS_C:.o=.d)
+include ../../../common/rules.mk
