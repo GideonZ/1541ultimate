@@ -170,6 +170,9 @@ BaseType_t xPortStartScheduler( void )
     extern void ( __FreeRTOS_interrupt_handler )( void );
     extern void ( vStartFirstTask )( void );
 
+    // Make sure Guru check is off
+    ioWrite8(ITU_MISC_IO, 0x00);
+
 	/* Setup the FreeRTOS interrupt handler.   */
     volatile uint32_t *p = (volatile uint32_t *)0x10;
 	uint32_t addr = (uint32_t)__FreeRTOS_interrupt_handler;
