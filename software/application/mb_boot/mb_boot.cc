@@ -70,8 +70,7 @@ int get_length(uint32_t addr)
     dummy = SPI_FLASH_DATA_32;
     dummy = SPI_FLASH_DATA_32;
     dummy = SPI_FLASH_DATA_32;
-    dummy = SPI_FLASH_DATA_32;
-
+    //uart_write_hex_long(length);
     return length;
 }
 
