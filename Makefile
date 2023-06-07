@@ -35,6 +35,12 @@ u2_rv:
 	@cp target/u2/microblaze/mb_update_to_rv/result/update.u2u ./update_to_rv.u2u
 	@cp target/u2/riscv/updater/result/update.u2r ./update.u2r
 
+u2_rv_revert:
+	@$(MAKE) u2
+	@$(MAKE) u2_rv
+	@$(MAKE) -C target/u2/riscv/reverter
+	@cp target/u2/riscv/reverter/result/revert.u2r ./revert_to_mb.u2r
+
 mb:
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/u2/microblaze/mb_lwip
