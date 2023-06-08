@@ -403,63 +403,61 @@ void W25Q_Flash :: protect_disable(void)
     portEXIT_CRITICAL();
 }
 
-bool W25Q_Flash :: protect_configure(void)
+bool W25Q_Flash ::protect_configure(void)
 {
-	// to protect the LOWER 7/8 of the device,
-	// the the following bits need to be set:
-	// WPS = 0, CMP = 1
-	// SEC TB BP2 BP1 BP0 = 0 0 1 0 0
-	// CMP is bit 6 in Status Register 2. (0x40)
+    // protect the LOWER QUARTER of the device:
+    // SEC = 0
+    // TB = 1
+    // BP[2:0] = 101
+    // SRP0, SEC, TB, BP2, BP1, BP0, WEL, BUSY
+    //  0     0    1   1    0    1    0     0
 
-	// protect the LOWER QUARTER of the device:
-	// SEC = 0
-	// TB = 1
-	// BP[2:0] = 101
-	// SRP0, SEC, TB, BP2, BP1, BP0, WEL, BUSY
-	//  0     0    1   1    0    1    0     0
-	
-	// protect the LOWER HALF of the device:
-	// SEC = 0
-	// TB = 1
-	// BP[2:0] = 101
-	// SRP0, SEC, TB, BP2, BP1, BP0, WEL, BUSY
-	//  0     0    1   1    1    0    0     0
+    // protect the LOWER HALF of the device:
+    // SEC = 0
+    // TB = 1
+    // BP[2:0] = 101
+    // SRP0, SEC, TB, BP2, BP1, BP0, WEL, BUSY
+    //  0     0    1   1    1    0    0     0
 
-	// program status register with value 0x34 for 8MB and 0x38 for 4MB devices
+    // W25Q16: Lower Half: 00110100 = 0x34 (1M), Lower Quarter (512KB): 00110000 = 0x30 (U2)  => 0x34: 1 MB locked
+    // W25Q32: Lower Half: 00111000 = 0x38 (2M), Lower Quarter (   1M): 00110100 = 0x34 (U2+) => 0x38: 2 MB locked
+    // W25Q64: Lower Half: 00111000 = 0x38 (4M), Lower Quarter (   2M): 00110100 = 0x34 (U64) => 0x38: 4 MB locked
+
+    // program status register with value 0x34 for 8MB and 0x38 for 4MB devices
     portENTER_CRITICAL();
-	SPI_FLASH_CTRL = 0;
-	SPI_FLASH_DATA = W25Q_WriteEnable;
+    SPI_FLASH_CTRL = 0;
+    SPI_FLASH_DATA = W25Q_WriteEnable;
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
-	SPI_FLASH_DATA = W25Q_WriteStatusRegister1;
-	SPI_FLASH_DATA = (total_size >= 32768) ? 0x34 : 0x38;
+    SPI_FLASH_DATA = W25Q_WriteStatusRegister1;
+    SPI_FLASH_DATA = (total_size <= 8192) ? 0x34 : 0x38;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
-	wait_ready(50);
+    wait_ready(50);
 
-	SPI_FLASH_CTRL = 0;
-	SPI_FLASH_DATA = W25Q_WriteEnable;
+    SPI_FLASH_CTRL = 0;
+    SPI_FLASH_DATA = W25Q_WriteEnable;
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
-	SPI_FLASH_DATA = W25Q_WriteStatusRegister2;
-	SPI_FLASH_DATA = 0x00;
+    SPI_FLASH_DATA = W25Q_WriteStatusRegister2;
+    SPI_FLASH_DATA = 0x00;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
-	wait_ready(50);
+    wait_ready(50);
 
-	SPI_FLASH_CTRL = 0;
-	SPI_FLASH_DATA = W25Q_WriteDisable;
+    SPI_FLASH_CTRL = 0;
+    SPI_FLASH_DATA = W25Q_WriteDisable;
     portEXIT_CRITICAL();
-	return true;
+    return true;
 }
 
-void W25Q_Flash :: protect_enable(void)
+void W25Q_Flash ::protect_enable(void)
 {
     portENTER_CRITICAL();
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
-	SPI_FLASH_DATA = W25Q_ReadStatusRegister1;
-	uint8_t status = SPI_FLASH_DATA;
+    SPI_FLASH_DATA = W25Q_ReadStatusRegister1;
+    uint8_t status = SPI_FLASH_DATA;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
     portEXIT_CRITICAL();
 
-    if ((status & 0x7C) != 0x10)
-    	protect_configure();
+    if ((status & 0x70) != 0x30)
+        protect_configure();
 }
 
 bool W25Q_Flash :: wait_ready(int time_out)
