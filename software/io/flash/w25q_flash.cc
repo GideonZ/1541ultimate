@@ -164,15 +164,15 @@ const char *W25Q_Flash :: get_type_string(void)
 {
 	switch(total_size) {
 	case 4096:
-		return "W25Q80";
+		return "Winbond W25Q80";
 	case 8192:
-		return "W25Q16";
+		return "Winbond W25Q16";
 	case 16384:
-		return "W25Q32";
+		return "Winbond W25Q32";
 	case 32768:
-		return "W25Q64";
+		return "Winbond W25Q64";
 	case 65536:
-		return "W25Q128";
+		return "Winbond W25Q128";
 	default:
 		return "Winbond";
 	}

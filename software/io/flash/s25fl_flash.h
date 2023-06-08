@@ -37,6 +37,7 @@ public:
     virtual ~S25FL_Flash();
 
 	virtual Flash *tester(void);
+    virtual const char *get_type_string(void);
     
 	// Protection functions
 	virtual void protect_disable(void);
