@@ -180,8 +180,8 @@ BaseType_t xPortStartScheduler( void )
 	*p++ = (0xB8080000 | (addr & 0xFFFF)); // brai <low>
 
     // From now on, it is no longer allowed to write to the first MB, so we set the guru detect
-    ioWrite8(ITU_IRQ_HIGH_EN, ioRead8(ITU_IRQ_HIGH_EN) | 0x80);
-    ioWrite8(ITU_MISC_IO, 0x80); // Enable writes to the first MB of memory and pull interrupt when we do so.
+//    ioWrite8(ITU_IRQ_HIGH_EN, ioRead8(ITU_IRQ_HIGH_EN) | 0x80);
+//    ioWrite8(ITU_MISC_IO, 0x80); // Enable writes to the first MB of memory and pull interrupt when we do so.
 
 	/* Setup the hardware to generate the tick.  Interrupts are disabled when
 	this function is called. */
