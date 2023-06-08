@@ -177,7 +177,7 @@ void SystemInfo :: generate(UserInterface *ui)
     }
     Flash *flash = get_flash();
     if (flash) {
-        buffer.format("Flash Type: %\n", flash->get_type_string());
+        buffer.format("Flash Type: %s\n", flash->get_type_string());
     }
     buffer.format("Git tag:    " APP_VERSION_TAG "\n");
     buffer.format("Git branch: " APP_VERSION_BRANCH "\n");
