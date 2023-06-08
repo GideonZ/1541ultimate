@@ -29,6 +29,7 @@ void do_update(void)
     flash2->protect_disable();
 
     setup("\033\025** 1541 Ultimate II Reverter **\n\033\037");
+    console_print(screen, "\eJFlash Type: %s\e\037\n", flash2->get_type_string());
 
     const char *names[] = { " Audio ", " Modem ", " Gmod2 ", " Cancel " };
     int choice = user_interface->popup("Flash " APPL_VERSION "?", 4, names, "amgc");

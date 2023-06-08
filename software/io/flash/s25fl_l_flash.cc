@@ -98,11 +98,11 @@ const char *S25FLxxxL_Flash :: get_type_string(void)
 {
 	switch(total_size) {
 	case 32768:
-		return "S25FL064L";
+		return "Cypress S25FL064L";
 	case 65536:
-		return "S25FL128L";
+		return "Cypress S25FL128L";
 	case 131072:
-		return "S25FL256L";
+		return "Cypress S25FL256L";
 	default:
 		return "Cypress";
 	}

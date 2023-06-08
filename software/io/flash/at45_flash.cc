@@ -116,6 +116,19 @@ AT45_Flash *AT45_Flash :: tester()
 	return NULL;
 }
 
+const char *AT45_Flash ::get_type_string(void)
+{
+    switch (total_size) {
+    case 4096:
+        return "Atmel AT45DB161";
+    case 8192:
+        return "Atmel AT45DB321";
+    default:
+        return "Atmel";
+    }
+}
+
+
 int AT45_Flash :: get_page_size(void)
 {
     return page_size;
