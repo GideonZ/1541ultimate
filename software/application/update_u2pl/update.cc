@@ -24,6 +24,8 @@ void do_update(void)
 {
     setup("\033\025** Ultimate II+L Updater **\n\033\037");
 
+    Flash *flash2 = get_flash();
+    flash2->protect_disable();
     check_flash_disk();
 
     if(user_interface->popup("Flash Runtime?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
@@ -37,13 +39,12 @@ void do_update(void)
         write_flash_file("snds1571.bin", &_snds1571_bin_start, 0xC000);
         write_flash_file("snds1581.bin", &_snds1581_bin_start, 0xC000);
 
-        Flash *flash2 = get_flash();
-        flash2->protect_disable();
         flash_buffer(flash2, screen, FLASH_ID_BOOTFPGA, &_u2p_ecp5_impl1_bit_start, &_u2p_ecp5_impl1_bit_end, "", "Runtime FPGA");
         flash_buffer(flash2, screen, FLASH_ID_APPL,     &_ultimate_app_start,     &_ultimate_app_end,  APPL_VERSION, "Ultimate Application");
 
         write_protect(flash2);
     }
+    reset_config(flash2);
     turn_off();
 }
 
