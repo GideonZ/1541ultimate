@@ -53,13 +53,13 @@ XST_OPTIONS		:= -top $(TOP_NAME) \
 				   -register_balancing no \
 				   -keep_hierarchy no \
 				   -generics g_audio=true,g_dual_drive=false,g_acia=false,g_eeprom=false \
-				   -use_new_parser yes
+				   -use_new_parser no
 
 # Tools
 MY_PROMGEN := ../../../tools/promgen
 
 #SETTING FILES		    
-UCF_FILES := ../ucf/ultimate_ii_rv.ucf 		# constraint/pin-assignment file(s)
+UCF_FILES := ../ucf/ultimate_ii_mb.ucf 		# constraint/pin-assignment file(s)
 BMM_FILE  := 
 
 # TOOL FLAGS
