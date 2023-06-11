@@ -429,7 +429,12 @@ bool W25Q_Flash ::protect_configure(void)
     SPI_FLASH_DATA = W25Q_WriteEnable;
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = W25Q_WriteStatusRegister1;
-    SPI_FLASH_DATA = (total_size <= 8192) ? 0x34 : 0x38;
+#if U64
+    SPI_FLASH_DATA = 0x38; // 4 MB locked
+#else
+    SPI_FLASH_DATA = (total_size == 16384) ? 0x38 : 0x34; // 4MB is used on U2+, which locks half of the device. U2+L uses 8MB, of which only 2 MB needs protection
+#endif
+
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
     wait_ready(50);
 
