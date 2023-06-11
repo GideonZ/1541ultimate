@@ -1,6 +1,6 @@
 -------------------------------------------------------------------------------
 --
--- (C) COPYRIGHT 2010 - Gideon's Logic Architectures
+-- (C) COPYRIGHT 2022 - Gideon's Logic B.V.
 --
 -------------------------------------------------------------------------------
 -- Title      : CS8900A bus interface module
@@ -11,7 +11,7 @@
 --              from the cartridge port, as well as from the other CPU as I/O
 --              device. This allows the software to emulate the functionality
 --              of the link, while this hardware block only implements how the
---              chip behaves as seen from the cartrige port.
+--              chip behaves as seen from the cartridge port.
 -------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
@@ -19,30 +19,39 @@ use ieee.numeric_std.all;
 
 library work;
 use work.io_bus_pkg.all;
+use work.slot_bus_pkg.all;
 
 entity cs8900a_bus is
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
                     
-    bus_addr        : in  std_logic_vector(3 downto 0);
-    bus_write       : in  std_logic;
-    bus_read        : in  std_logic;
-    bus_wdata       : in  std_logic_vector(7 downto 0);
-    bus_rdata       : out std_logic_vector(7 downto 0);
-                    
-    pp_addr         : out unsigned(11 downto 0);
-    pp_write        : out std_logic;
-    pp_read         : out std_logic;
-    pp_tx_data      : out std_logic; -- put
-    pp_rx_data      : out std_logic; -- get
-    pp_wdata        : out std_logic_vector(15 downto 0);
-    pp_rdata        : in  std_logic_vector(15 downto 0);
-    pp_new_rx_pkt   : in  std_logic );
+    slot_req        : in  t_slot_req;
+    slot_resp       : out t_slot_resp;
     
-end cs8900a_bus;
+    io_req          : in  t_io_req;
+    io_resp         : out t_io_resp );
+    
+end entity;
 
 architecture gideon of cs8900a_bus is
+    signal enable          : std_logic;
+    signal bus_waddr       : std_logic_vector(3 downto 0);
+    signal bus_raddr       : std_logic_vector(3 downto 0);
+    signal bus_write       : std_logic;
+    signal bus_read        : std_logic;
+    signal bus_wdata       : std_logic_vector(7 downto 0);
+    signal bus_rdata       : std_logic_vector(7 downto 0);
+                    
+    signal pp_addr         : unsigned(11 downto 0);
+    signal pp_write        : std_logic;
+    signal pp_read         : std_logic;
+    signal pp_tx_data      : std_logic; -- put
+    signal pp_rx_data      : std_logic; -- get
+    signal pp_wdata        : std_logic_vector(15 downto 0);
+    signal pp_rdata        : std_logic_vector(15 downto 0);
+    signal pp_new_rx_pkt   : std_logic;
+
     -- The 8900A chip is accessed in WORDs, using alternately
     -- even and odd bytes. Only PacketPage access in I/O mode
     -- is supported.
@@ -72,6 +81,24 @@ architecture gideon of cs8900a_bus is
     signal word_buffer              : std_logic_vector(15 downto 0);
     signal rx_count                 : integer range 0 to 2;
 begin
+    b_bus: block
+        signal sel : std_logic;
+    begin
+        sel        <= enable when 
+                        slot_req.io_address(8 downto 4) = "00000" and
+                        slot_req.io_address(3 downto 1) /= "000"
+                 else '0';
+        bus_waddr  <= slot_req.io_address(3 downto 0);
+        bus_raddr  <= slot_req.bus_address(3 downto 0);
+        bus_write  <= slot_req.io_write and sel;
+        bus_read   <= slot_req.io_read and sel;
+        bus_wdata  <= slot_req.data;
+
+        slot_resp  <= c_slot_resp_init;
+        slot_resp.data <= bus_rdata;
+        slot_resp.reg_output <= sel;
+    end block;
+
     pp_wdata <= word_buffer;
     
     process(clock)

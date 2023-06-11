@@ -230,11 +230,11 @@ port (
     eth_tx_data     : out std_logic_vector(7 downto 0);
     eth_tx_eof      : out std_logic;
     eth_tx_valid    : out std_logic;
-    eth_tx_ready    : in  std_logic;
-    eth_rx_data     : in  std_logic_vector(7 downto 0);
-    eth_rx_sof      : in  std_logic;
-    eth_rx_eof      : in  std_logic;
-    eth_rx_valid    : in  std_logic;
+    eth_tx_ready    : in  std_logic := '0';
+    eth_rx_data     : in  std_logic_vector(7 downto 0) := X"00";
+    eth_rx_sof      : in  std_logic := '0';
+    eth_rx_eof      : in  std_logic := '0';
+    eth_rx_valid    : in  std_logic := '0';
 
     -- Interface to other graphical output (Full HD of course and in 3D!) ;-)
     vid_clock   : in    std_logic := '0';
@@ -256,7 +256,8 @@ port (
     ext_mem_resp: out t_mem_resp_32;
     cpu_irq     : out std_logic;
     sw_trigger  : out std_logic;
-        
+    guru_irq    : in  std_logic := '0';
+
     -- Buttons
     button      : in  std_logic_vector(2 downto 0) );
 	
@@ -502,7 +503,8 @@ begin
         irq_high(0) => sys_irq_acia,
         irq_high(1) => sys_irq_1541_1,
         irq_high(2) => sys_irq_1541_2,
-        irq_high(7 downto 3) => "00000",
+        irq_high(6 downto 3) => "0000",
+        irq_high(7) => guru_irq,
         irq_in(7)   => c64_reset_in,
         irq_in(6)   => sys_irq_eth_tx,
         irq_in(5)   => sys_irq_eth_rx,
@@ -517,7 +519,6 @@ begin
 
         uart_txd    => UART_TXD,
         uart_rxd    => UART_RXD );
-
 
     r_drive1: if g_drive_1541 generate
     begin

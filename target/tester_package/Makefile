@@ -8,12 +8,11 @@ all: $(FLASH) $(FLASH)/rompack.bin $(FLASH)/ultimate_run.swp $(FLASH)/ultimate_r
 	 $(FLASH)/testexec.swp $(FLASH)/test_loader.app
 
 force::
-	@make -C ../software/nios2_flash ultimate_run.swp
-	@make -C ../software/nios2_flash ultimate_recovery.swp
-	@make -C ../software/nios2_ultimate
-	@make -C ../software/nios2_recovery
-	@make -C ../software/nios2_dut
-	@make -C ../software/nios2_tester
+	@make -C ../u2plus/nios/flash 
+	@make -C ../u2plus/nios/ultimate
+	@make -C ../u2plus/nios/recovery
+	@make -C ../tester_u2p/nios/dut
+	@make -C ../tester_u2p/nios/tester
 	@make all
 	
 $(FLASH)/rompack.bin: $(ROMS)/ar5pal.bin $(ROMS)/ar6pal.bin $(ROMS)/final3.bin $(ROMS)/rr38pal.bin $(ROMS)/rr38ntsc.bin $(ROMS)/tar_pal.bin \
@@ -22,32 +21,32 @@ $(FLASH)/rompack.bin: $(ROMS)/ar5pal.bin $(ROMS)/ar6pal.bin $(ROMS)/final3.bin $
 	@cat $(ROMS)/ar5pal.bin $(ROMS)/ar6pal.bin $(ROMS)/final3.bin $(ROMS)/rr38pal.bin $(ROMS)/rr38ntsc.bin $(ROMS)/tar_pal.bin \
 	$(ROMS)/tar_ntsc.bin $(ROMS)/ss5pal.bin $(ROMS)/ss5ntsc.bin $(ROMS)/ar5ntsc.bin $(ROMS)/kcs.bin $(ROMS)/epyx.bin >$@
 
-$(FLASH)/ultimate_run.swp : ../software/nios2_flash/output/ultimate_run.swp
+$(FLASH)/ultimate_run.swp : ../u2plus/nios/flash/output/ultimate_run.swp
 	@cp $< $@
 
-$(FLASH)/ultimate_recovery.swp : ../software/nios2_flash/output/ultimate_recovery.swp
+$(FLASH)/ultimate_recovery.swp : ../u2plus/nios/flash/output/ultimate_recovery.swp
 	@cp $< $@
 
-$(FLASH)/testexec.swp : ../software/nios2_testflasher/output/testexec.swp
+$(FLASH)/testexec.swp : ../tester_u2p/nios/testflasher/output/testexec.swp
 	@cp $< $@
 
-$(FLASH)/test_loader.app : ../software/nios2_testloader/result/test_loader.app
+$(FLASH)/test_loader.app : ../tester_u2p/nios/testloader/result/test_loader.app
 	@cp $< $@
 
-$(FLASH)/ultimate.app : ../software/nios2_ultimate/result/ultimate.app
+$(FLASH)/ultimate.app : ../u2plus/nios/ultimate/result/ultimate.app
 	@cp $< $@
 
-$(FLASH)/recovery.app : ../software/nios2_recovery/result/recovery.app
+$(FLASH)/recovery.app : ../u2plus/nios/recovery/result/recovery.app
 	@cp $< $@
 
 $(TESTER)/dut.fpga: ../fpga/testdut/output_files/testdut.svf
 	@$(SVFDUMP) $< >/dev/null
 	@mv dump.bin $@
 
-$(TESTER)/dut.app: ../software/nios2_dut/result/dut.app
+$(TESTER)/dut.app: ../tester_u2p/nios/dut/result/dut.app
 	@cp $< $@
 
-$(TESTER)/tester.app: ../software/nios2_tester/result/tester_main.app
+$(TESTER)/tester.app: ../tester_u2p/nios/tester/result/tester_main.app
 	@cp $< $@
 
 $(FLASH)::
@@ -56,26 +55,26 @@ $(FLASH)::
 $(TESTER)::
 	@mkdir -p $(TESTER)
 
-../software/nios2_flash/output/ultimate_run.swp:
-	@make -C ../software/nios2_flash ultimate_run.swp
+../u2plus/nios/flash/output/ultimate_run.swp:
+	@make -C ../u2plus/nios/flash ultimate_run.swp
 
-../software/nios2_flash/output/ultimate_recovery.swp:
-	@make -C ../software/nios2_flash ultimate_recovery.swp
+../u2plus/nios/flash/output/ultimate_recovery.swp:
+	@make -C ../u2plus/nios/flash ultimate_recovery.swp
 
-../software/nios2_testflasher/output/testexec.swp:
-	@make -C ../software/nios2_testflasher testexec.swp
+../tester_u2p/nios/testflasher/output/testexec.swp:
+	@make -C ../tester_u2p/nios/testflasher testexec.swp
 
-../software/nios2_testloader/result/test_loader.app:
-	@make -C ../software/nios2_testloader
+../tester_u2p/nios/testloader/result/test_loader.app:
+	@make -C ../tester_u2p/nios/testloader
 
-../software/nios2_ultimate/result/ultimate.app:
-	@make -C ../software/nios2_ultimate
+../u2plus/nios/ultimate/result/ultimate.app:
+	@make -C ../u2plus/nios/ultimate
 
-../software/nios2_recovery/result/recovery.app:
-	@make -C ../software/nios2_recovery
+../u2plus/nios/recovery/result/recovery.app:
+	@make -C ../u2plus/nios/recovery
 
- ../software/nios2_dut/result/dut.app:
-	@make -C ../software/nios2_dut
+ ../tester_u2p/nios/dut/result/dut.app:
+	@make -C  ../tester_u2p/nios/dut
 
-../software/nios2_tester/result/tester_main.app:
-	@make -C ../software/nios2_tester
+../tester_u2p/nios/tester/result/tester_main.app:
+	@make -C ../tester_u2p/nios/tester

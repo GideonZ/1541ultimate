@@ -211,7 +211,7 @@ uint16_t uart_write_buffer(const void *buf, uint16_t count)
 */
 uint16_t uart_write_hex(uint8_t b)
 {
-    const char hex[] = "0123456789ABCDEF";
+    static const char hex[] = "0123456789ABCDEF";
     outbyte(hex[b >> 4]);
     outbyte(hex[b & 15]);
     return 2;

@@ -118,3 +118,10 @@ void freertos_risc_v_application_interrupt_handler(void *context)
 		vTaskSwitchContext();
 	}
 }
+
+void C_exception_handler(uint32_t cause, uint32_t addr, uint32_t status, uint32_t value)
+{
+	printf("\n** GURU MEDITATION:\n   Address: %08x\n   Cause:   %08x\n   Value:   %08x\n", addr, cause, value);
+	while(1)
+		;
+}

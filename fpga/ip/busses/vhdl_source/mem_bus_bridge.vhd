@@ -66,7 +66,7 @@ begin
     i_return_fifo: entity work.async_fifo_ft
     generic map (
         g_data_width => a_mem_resp_vec'length,
-        g_depth_bits => 3
+        g_depth_bits => 4
     )
     port map (
         wr_clock => b_clock,

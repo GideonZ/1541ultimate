@@ -2,6 +2,7 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use ieee.math_real.all;
 
 library work;
 use work.mem_bus_pkg.all;
@@ -11,7 +12,7 @@ use work.tl_flat_memory_model_pkg.all;
 entity mem_bus_32_slave_bfm is
 generic (
     g_name      : string;
-    g_time_to_ack : natural := 0;
+    g_time_to_ack : integer := 0;
     g_latency	: positive := 2 );
 port (
     clock       : in    std_logic;
@@ -24,10 +25,9 @@ end mem_bus_32_slave_bfm;
 architecture bfm of mem_bus_32_slave_bfm is
     shared variable mem : h_mem_object;
 	signal bound		: boolean := false;
-    signal delay        : t_mem_req_32_array(0 to g_time_to_ack) := (others => c_mem_req_32_init);
+    signal delay        : natural := 0;
 	signal req_i        : t_mem_req_32 := c_mem_req_32_init;
 	signal pipe			: t_mem_req_32_array(0 to g_latency-1) := (others => c_mem_req_32_init);
-    signal suppress     : std_logic := '0';
 begin
     -- this process registers this instance of the bfm to the server package
     bind: process
@@ -37,13 +37,14 @@ begin
         wait;
     end process;
 
-    -- Time to ack is implemented with a delay line on the requestor
-    process(req, suppress)
+    -- Time to ack is implemented with a counter
+    process(req, delay)
     begin
-        delay(0) <= req;
-        delay(0).request <= req.request and not suppress;    
+        req_i <= req;
+        if delay /= 0 then
+            req_i.request <= '0';
+        end if;
     end process;
-    req_i <= delay(g_time_to_ack);
     
 	resp.rack     <= '1' when bound and req_i.request='1' else '0';
 	resp.rack_tag <= req_i.tag when bound and req_i.request='1' else (others => '0');
@@ -52,16 +53,21 @@ begin
         variable data : std_logic_vector(31 downto 0);
         variable word_addr : unsigned(31 downto 2);
         variable byte_addr : unsigned(1 downto 0);
+        variable seed1 : positive := 1;
+        variable seed2 : positive := 1;
+        variable x : real;
     begin
         if rising_edge(clock) then
-            delay(1 to g_time_to_ack) <= delay(0 to g_time_to_ack-1);
-            if req.request = '1' then
-                suppress <= '1';
-            end if;
             if req_i.request = '1' then
-                suppress <= '0';
+                if g_time_to_ack >= 0 then
+                    delay <= g_time_to_ack;
+                else
+                    uniform(seed1, seed2, x);
+                    delay <= integer(floor(x * real(-g_time_to_ack)));
+                end if;
+            elsif req.request = '1' and delay /= 0 then
+                delay <= delay - 1;
             end if;
-
 			pipe(0 to g_latency-2) <= pipe(1 to g_latency-1);
 			pipe(g_latency-1) <= req_i;
 			resp.dack_tag <= (others => '0');

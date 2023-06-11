@@ -98,11 +98,11 @@ const char *S25FLxxxL_Flash :: get_type_string(void)
 {
 	switch(total_size) {
 	case 32768:
-		return "S25FL064L";
+		return "Cypress S25FL064L";
 	case 65536:
-		return "S25FL128L";
+		return "Cypress S25FL128L";
 	case 131072:
-		return "S25FL256L";
+		return "Cypress S25FL256L";
 	default:
 		return "Cypress";
 	}
@@ -146,8 +146,17 @@ bool S25FLxxxL_Flash :: write_page(int page, const void *buffer)
     SPI_FLASH_DATA = uint8_t(device_addr >> 16);
     SPI_FLASH_DATA = uint8_t(device_addr >> 8);
     SPI_FLASH_DATA = uint8_t(device_addr);
-    for(int i=0;i<len;i++) {
-        SPI_FLASH_DATA_32 = *(buf++);
+    uint32_t buf_addr = (uint32_t)buffer;
+    if (buf_addr & 3) { // not aligned
+        len *= 4;
+        uint8_t *buf8 = (uint8_t *)buffer;
+        for (int i = 0; i < len; i++) {
+            SPI_FLASH_DATA = *(buf8++);
+        }
+    } else {
+        for (int i = 0; i < len; i++) {
+            SPI_FLASH_DATA_32 = *(buf++);
+        }
     }
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
     bool ret = wait_ready(15); // datasheet: max 3 ms for page write, spansion: 5 ms max

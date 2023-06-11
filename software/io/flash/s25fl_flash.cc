@@ -71,6 +71,18 @@ Flash *S25FL_Flash :: tester()
 	return NULL;
 }
 
+const char *S25FL_Flash ::get_type_string(void)
+{
+    switch (total_size) {
+    case 8192:
+        return "Spansion S25FL116K"; // reverse engineered; not 100% sure
+    case 16384:
+        return "Spansion S25FL132K";
+    default:
+        return "Spansion";
+    }
+}
+
 void S25FL_Flash :: protect_disable(void)
 {
 	// unprotect the device

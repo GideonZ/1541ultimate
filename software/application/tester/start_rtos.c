@@ -77,7 +77,7 @@ static void ituIrqHandler(void *context)
 int alt_irq_register(int, int, void(*)(void*));
 
 void main_task(void *context);
-void USb2512Init();
+void USB2513Init();
 
 int main(int argc, char *argv[])
 {
@@ -93,7 +93,7 @@ int main(int argc, char *argv[])
     for(int i=0; i<2048; i+=2) {
     	*(dst++) = 0;
     }
-    USb2512Init();
+    USB2513Init();
     U2PIO_ULPI_RESET = 0;
 
     ioWrite8(UART_DATA, 0x31);

@@ -751,7 +751,7 @@ int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout)
     	return -9;
     }
 	if(pipe->debugMode) {
-		printf("BULK OUT to %4x, len = %d\n", pipe->DevEP, len);
+		printf("BULK OUT %p to %4x, len = %d\n", buf, pipe->DevEP, len);
 		dump_hex_relative(buf, len);
 	}
 

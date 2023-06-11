@@ -88,7 +88,6 @@ __crt0_cpu_csr_init:
   csrw minstret,  zero                  // reset instructions-retired counter
   csrw minstreth, zero
 
-
 // ************************************************************************************************
 // Initialize integer register file (lower half)
 // ************************************************************************************************
@@ -143,18 +142,18 @@ __crt0_reg_file_clear:
 // that is catched (but not further processed) by the dummy trap handler.
 // This can be disabled by defining 'NO_IO_RESET' before re-compiling.
 // ************************************************************************************************
+
+#if 0
 __crt0_reset_io:
   la   x8,   __crt0_io_space_begin         // start of processor-internal IO region
   la   x9,   __crt0_io_space_end           // end of processor-internal IO region
 
 // Make this opt-out so that certain modules (like the XIP module) can keep running after being configured by the bootloader
-#ifndef NO_IO_RESET
 __crt0_reset_io_loop:
   sw   zero, 0(x8)
   addi x8,   x8, 4
   bne  x8,   x9, __crt0_reset_io_loop
 #endif
-
 
 // ************************************************************************************************
 // Copy initialized .data section from ROM to RAM (word-wise, section begins and ends on word boundary)
@@ -259,9 +258,18 @@ __crt0_main_aftermath_end:
 // go to endless sleep mode
 // ************************************************************************************************
 __crt0_shutdown:
-  csrci mstatus, 8                   // disable global IRQs (clear mstatus.mie)
+  // csrci mstatus, 8                   // disable global IRQs (clear mstatus.mie)
   wfi                                // go to sleep mode
   j .                                // endless loop
+
+  nop
+  nop
+  nop
+  nop
+  nop
+  nop
+  nop
+  nop
 
 
 // ************************************************************************************************
@@ -296,6 +304,10 @@ __crt0_dummy_trap_handler_exc_uncrompressed:       // is uncompressed instructio
   csrw  mepc, x8
 
 __crt0_dummy_trap_handler_irq:
+  lui   x8,   0x10000
+  li    x9,   0x49
+  sb    x9, 31(x8)
+
   lw    x8,   0(sp)
   lw    x9,   4(sp)
   addi  sp,   sp, +8

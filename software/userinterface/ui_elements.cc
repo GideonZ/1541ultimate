@@ -8,14 +8,13 @@
 #include <string.h>
 #include <stdio.h>
 
-const char *c_button_names[NUM_BUTTONS] = { " Ok ", " Yes ", " No ", " All ", " Cancel " };
-const char c_button_keys[NUM_BUTTONS] = { 'o', 'y', 'n', 'c', 'a' };
-const int c_button_widths[NUM_BUTTONS] = { 4, 5, 4, 5, 8 };
 
 /* User Interface Objects */
 /* Popup */
-UIPopup :: UIPopup(const char *msg, uint8_t btns) : message(msg)
+UIPopup :: UIPopup(const char *msg, uint8_t btns, int count, const char **names, const char *keys) : message(msg), button_count(count)
 {
+    button_names = names;
+    button_keys = keys;
     buttons = btns;
     btns_active = 0;
     active_button = 0; // we can change this
@@ -32,10 +31,10 @@ void UIPopup :: init(Screen *screen, Keyboard *k)
     keyboard = k;
 
     uint8_t b = buttons;
-    for(int i=0;i<NUM_BUTTONS;i++) {
+    for(int i=0;i<button_count;i++) {
         if(b & 1) {
             btns_active ++;
-            button_width += c_button_widths[i];
+            button_width += strlen(button_names[i]);
         }
         b >>= 1;
     }
@@ -68,11 +67,11 @@ void UIPopup :: draw_buttons()
     window->move_cursor(button_start_x, 2);
     int j=0;
     int b = buttons;
-    for(int i=0;i<NUM_BUTTONS;i++) {
+    for(int i=0;i<button_count;i++) {
         if(b & 1) {
 			window->reverse_mode((j == active_button)? 1 : 0);
-        	window->output((char *)c_button_names[i]);
-            button_key[j++] = c_button_keys[i];
+        	window->output((char *)button_names[i]);
+            button_key[j++] = button_keys[i];
         }
         b >>= 1;
     }
@@ -95,7 +94,7 @@ int UIPopup :: poll(int dummy)
         }
     }
     if((c == KEY_RETURN)||(c == KEY_SPACE)) {
-		for(int i=0,j=0;i<NUM_BUTTONS;i++) {
+		for(int i=0,j=0;i < button_count;i++) {
 			if(buttons & (1 << i)) {
 				if(active_button == j)
 					return (1 << i);

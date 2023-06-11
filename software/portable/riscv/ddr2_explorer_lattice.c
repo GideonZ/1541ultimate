@@ -3,9 +3,9 @@
 #include "iomap.h"
 #include <stdio.h>
 
-#define DDR2_TESTLOC0  (*(volatile uint32_t *)(0x0010))
-#define DDR2_TESTLOC1  (*(volatile uint32_t *)(0x0014))
-#define DDR2_TESTLOC2  (*(volatile uint32_t *)(0x0018))
+#define DDR2_TESTLOC0  (*(volatile uint32_t *)(0x1000))
+#define DDR2_TESTLOC1  (*(volatile uint32_t *)(0x1004))
+#define DDR2_TESTLOC2  (*(volatile uint32_t *)(0x1008))
 
 #define MR_BL4 0x0232
 #define MR_BL8 0x0233
