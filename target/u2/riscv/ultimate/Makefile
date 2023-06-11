@@ -134,7 +134,7 @@ SRCS_CC	 =	small_printf.cc \
 			mps_printer_ibmpp.cc \
 			mps_chargen.cc \
 			mps_charset.cc \
-			lodepng.cc \
+			mps_png.cc \
 			filetype_tap.cc \
 			socket_stream.cc \
 			socket_gui.cc \
@@ -166,7 +166,7 @@ SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas eapi.tas
 
 SRCS_BIN =  basic.bin chars.bin module.bin sidcrt.bin muscrt.bin musplayer.bin
 
-SRCS_IEC = iec_code.iec
+SRCS_IEC = iec_code_pr.iec iec_code_dr_pr.iec iec_code_dr.iec
 
 SRCS_NANO = nano_minimal.nan
 
@@ -183,7 +183,7 @@ LINKMETHOD = ld
 
 include ../../../common/rules.mk
 
-lodepng.o: lodepng.cc
+mps_png.o: mps_png.cc
 	@echo Compiling $(<F) optimized for speed
 	@$(CPP) $(CPPOPT) -O3 $(PATH_INC) -B. -c -o $(OUTPUT)/$(@F) $<
 	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
