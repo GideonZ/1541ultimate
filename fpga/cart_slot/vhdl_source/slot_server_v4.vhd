@@ -127,8 +127,6 @@ end slot_server_v4;
 
 architecture structural of slot_server_v4 is
     -- Synchronized input signals
-    signal phi2_f          : std_logic;
-
     signal phi2_c          : std_logic;
     signal io1n_c          : std_logic;
     signal io2n_c          : std_logic;
@@ -146,7 +144,6 @@ architecture structural of slot_server_v4 is
 
     -- Xilinx attributes
     attribute register_duplication : string;
-    attribute register_duplication of phi2_f      : signal is "no";
     attribute register_duplication of phi2_c      : signal is "no";
     attribute register_duplication of io1n_c      : signal is "no";
     attribute register_duplication of io2n_c      : signal is "no";
@@ -164,7 +161,6 @@ architecture structural of slot_server_v4 is
 
     -- Lattice attributes
     attribute syn_replicate                     : boolean;
-    attribute syn_replicate of phi2_f           : signal is false;
     attribute syn_replicate of phi2_c           : signal is false;
     attribute syn_replicate of io1n_c           : signal is false;
     attribute syn_replicate of io2n_c           : signal is false;
@@ -182,7 +178,6 @@ architecture structural of slot_server_v4 is
 
     -- Altera attributes
     attribute dont_replicate                    : boolean;
-    attribute dont_replicate of phi2_f          : signal is true;
     attribute dont_replicate of phi2_c          : signal is true;
     attribute dont_replicate of io1n_c          : signal is true;
     attribute dont_replicate of io2n_c          : signal is true;
@@ -324,6 +319,7 @@ architecture structural of slot_server_v4 is
     signal phi2_tick_avail  : std_logic;
 begin
     b_sync: block
+        signal phi2_f          : std_logic;
         signal io1n_f          : std_logic;
         signal io2n_f          : std_logic;
         signal romln_f         : std_logic;
@@ -339,6 +335,7 @@ begin
         signal nmin_f          : std_logic := '1';
 
         -- Xilinx attributes
+        attribute register_duplication of phi2_f      : signal is "no";
         attribute register_duplication of io1n_f      : signal is "no";
         attribute register_duplication of io2n_f      : signal is "no";
         attribute register_duplication of romln_f     : signal is "no";
@@ -354,6 +351,7 @@ begin
         attribute register_duplication of nmin_f      : signal is "no";
 
         -- Lattice attributes
+        attribute syn_replicate of phi2_f           : signal is false;
         attribute syn_replicate of io1n_f           : signal is false;
         attribute syn_replicate of io2n_f           : signal is false;
         attribute syn_replicate of romln_f          : signal is false;
@@ -369,6 +367,7 @@ begin
         attribute syn_replicate of nmin_f           : signal is false;
 
         -- Altera attributes
+        attribute dont_replicate of phi2_f          : signal is true;
         attribute dont_replicate of io1n_f          : signal is true;
         attribute dont_replicate of io2n_f          : signal is true;
         attribute dont_replicate of romln_f         : signal is true;
@@ -762,7 +761,7 @@ begin
         kernal_area     => kernal_area,
         kernal_enable   => control.kernal_enable,
         
-        phi2            => phi2_f,
+        phi2            => phi2_c,
         irq_n           => irq_n,
         nmi_n           => nmi_n,
         exrom_n         => exrom_n,
