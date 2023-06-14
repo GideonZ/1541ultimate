@@ -59,6 +59,7 @@ architecture gideon of slot_timing is
     signal phi2_rec_i   : std_logic := '0';
     signal phi2_tick_i  : std_logic;
     signal serve_en_i   : std_logic := '0';
+    signal dma_data_out_i : std_logic;
     signal off_cnt      : integer range 0 to 7;
     --constant c_sample_vic  : integer := 9; -- 200 ns after PHI2 (!)
     signal reqs_inhibit_i : std_logic;
@@ -120,7 +121,7 @@ begin
             -- related to falling edge
             phi2_falling <= '0';
             if phi2_d='1' and PHI2='0' and allow_tick_l then  -- falling edge
-                dma_data_out <= '0';
+                dma_data_out_i <= '0';
                 phi2_falling <= '1';
                 phi2_rec_i   <= '0';
                 phase_l      <= 0;
@@ -165,15 +166,17 @@ begin
             end if;   
 
             if phase_h = c_80ns then
-                dma_data_out <= '1';
+                dma_data_out_i <= '1';
             end if;
 
             if (phase_h = c_write) or (phase_l = c_write) then
                 do_sample_io <= '1';
             end if;
 
+            dma_data_out <= dma_data_out_i; -- one cycle later to provide a bit of hold time
+
             if reset='1' then
-                dma_data_out <= '0';
+                dma_data_out_i <= '0';
                 allow_tick_h <= true;
                 allow_tick_l <= true;
                 phase_h      <= c_max_count;
