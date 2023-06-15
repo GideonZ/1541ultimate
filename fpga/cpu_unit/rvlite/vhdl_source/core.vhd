@@ -15,18 +15,19 @@ use work.core_pkg.all;
 
 entity core is
 generic (
+    g_gprf_ram  : string := "auto";
     g_hart_id   : natural := 0;
     g_start_addr: std_logic_vector(31 downto 0) := X"00000000";
     g_version   : std_logic_vector(31 downto 0) := X"475A0001"
 );
 port (
-    imem_o      : out imem_out_type;
-    imem_i      : in  imem_in_type;
-    dmem_o      : out dmem_out_type;
-    dmem_i      : in  dmem_in_type;
-    int_i       : in  std_logic;
-    rst_i       : in  std_logic;
-    clk_i       : in  std_logic
+    clock       : in  std_logic;
+    reset       : in  std_logic;
+    irq         : in  std_logic;
+    imem_req    : out t_imem_req;
+    imem_resp   : in  t_imem_resp;
+    dmem_req    : out t_dmem_req;
+    dmem_resp   : in  t_dmem_resp
 );
 end entity;
 
@@ -37,13 +38,13 @@ architecture structural of core is
 
     signal fetch_i      : t_fetch_in;
     signal fetch_o      : t_fetch_out;
-    signal decode_o     : t_decoded_instruction;
+    signal decode_o     : t_decode_out;
     signal exec_o       : t_execute_out;
     signal wb           : t_writeback;
-    signal to_gprf      : t_gprf_in;
-    signal from_gprf    : t_gprf_out;
-    signal to_csr       : t_csr_in;
-    signal from_csr     : t_csr_out;
+    signal gprf_req     : t_gprf_req;
+    signal gprf_resp    : t_gprf_resp;
+    signal csr_req      : t_csr_req;
+    signal csr_resp     : t_csr_resp;
 
     signal hazard_rs1ex : std_logic;
     signal hazard_rs2ex : std_logic;
@@ -61,8 +62,8 @@ begin
     -- 'decode_o' says: "I have read the register", and the hazard detection says: "fine, but it was invalid,
     -- read it again!"
     -- This means that the decoded instruction becomes invalid and exec should not execute it.
-    reg_rd_d     <= exec_o.reg_rd when rising_edge(clk_i);
-    reg_write_d  <= exec_o.reg_write when rising_edge(clk_i);
+    reg_rd_d     <= exec_o.reg_rd when rising_edge(clock);
+    reg_write_d  <= exec_o.reg_write when rising_edge(clock);
     hazard_rs1ex <= decode_o.reg_rs1_read when (exec_o.reg_rd = decode_o.reg_rs1 and exec_o.reg_write = '1') else '0';
     hazard_rs2ex <= decode_o.reg_rs2_read when (exec_o.reg_rd = decode_o.reg_rs2 and exec_o.reg_write = '1') else '0';
     hazard_rs1wb <= decode_o.reg_rs1_read when (reg_rd_d = decode_o.reg_rs1 and reg_write_d = '1') else '0';
@@ -74,51 +75,53 @@ begin
         g_start_addr => g_start_addr
     )
     port map (
-        fetch_o => fetch_o,
-        imem_o  => imem_o,
+        clock   => clock,
+        reset   => reset,
         fetch_i => fetch_i,
-        imem_i  => imem_i,
-        rst_i   => rst_i,
-        rdy_i   => dec_ready,
-        clk_i   => clk_i
+        fetch_o => fetch_o,
+        imem_o  => imem_req,
+        imem_i  => imem_resp,
+        rdy_i   => dec_ready
     );
 
     i_decode: entity work.decode
     port map (
+        clock    => clock,
+        reset    => reset,
+        decode_i => fetch_o,
+        decode_o => decode_o,
+        gprf_o   => gprf_req,
+        irq_i    => csr_resp.irq,
         flush    => exec_o.do_jump,
         hazard   => hazard,
-        decode_o => decode_o,
-        gprf_o   => to_gprf,
-        decode_i => fetch_o,
-        irq_i    => from_csr.irq,
         rdy_i    => ex_ready,
-        rdy_o    => dec_ready,
-        rst_i    => rst_i,
-        clk_i    => clk_i
+        rdy_o    => dec_ready
     );
 
     i_gprf: entity work.gprf
+    generic map (
+        g_ram_style => g_gprf_ram
+    )
     port map (
-        gprf_o => from_gprf,
-        gprf_i => to_gprf,
-        wb_i   => wb,
-        clk_i  => clk_i
+        clock  => clock,
+        gprf_i => gprf_req,
+        gprf_o => gprf_resp,
+        wb_i   => wb
     );
 
     i_exec: entity work.execute
-      port map (
-        flush  => exec_o.do_jump,
-        exec_i => decode_o,
-        gprf_i => from_gprf,
-        exec_o => exec_o,
-        dmem_o => dmem_o,
-        csr_i  => from_csr,
-        csr_o  => to_csr,
-
-        rdy_i  => wb_ready,
-        rdy_o  => ex_ready,
-        rst_i  => rst_i,
-        clk_i  => clk_i
+    port map (
+        clock     => clock,
+        reset     => reset,
+        exec_i    => decode_o,
+        exec_o    => exec_o,
+        gprf_i    => gprf_resp,
+        csr_resp  => csr_resp,
+        csr_req   => csr_req,
+        dmem_o    => dmem_req,
+        flush     => exec_o.do_jump,
+        rdy_i     => wb_ready,
+        rdy_o     => ex_ready
       );
 
 
@@ -128,19 +131,19 @@ begin
         g_version => g_version
     )
     port map (
-        int_i => int_i,
-        csr_i => to_csr,
-        csr_o => from_csr,
+        clock => clock,
+        reset => reset,
         ena_i => wb_ready,
-        rst_i => rst_i,
-        clk_i => clk_i
+        int_i => irq,
+        csr_i => csr_req,
+        csr_o => csr_resp
     );
 
     i_wb: entity work.writeback
     port map (
         exec_i => exec_o,
         rdy_o  => wb_ready,
-        dmem_i => dmem_i,
+        dmem_i => dmem_resp,
         wb_o   => wb
     );
     

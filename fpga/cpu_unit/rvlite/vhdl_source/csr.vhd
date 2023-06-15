@@ -13,11 +13,11 @@ generic (
 port
 (
     int_i       : in  std_logic;
-    csr_i       : in  t_csr_in;
-    csr_o       : out t_csr_out;
+    csr_i       : in  t_csr_req;
+    csr_o       : out t_csr_resp;
     ena_i       : in  std_logic;
-    rst_i       : in  std_logic;
-    clk_i       : in  std_logic
+    reset       : in  std_logic;
+    clock       : in  std_logic
 );
 end entity;
 
@@ -95,9 +95,9 @@ begin
     -- report pending interrupt in mip
     mip_mei <= int_i;
     
-    process(clk_i)
+    process(clock)
     begin
-        if rising_edge(clk_i) then
+        if rising_edge(clock) then
             if ena_i = '1' then
                 if csr_i.enable = '1' and csr_i.oper /= CSR_NONE then -- user writes
                     case csr_i.address is
@@ -129,7 +129,7 @@ begin
                 end if;
             end if;
             -- reset: disable interrupts
-            if rst_i = '1' then
+            if reset = '1' then
                 mstat_mie <= '0';
                 mstat_mpie <= '0';
                 mie <= (others => '0');

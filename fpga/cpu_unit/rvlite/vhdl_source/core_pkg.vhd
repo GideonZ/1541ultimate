@@ -41,7 +41,7 @@ package core_pkg is
         inst_valid      : std_logic;
     end record;
 
-    type t_decoded_instruction is record
+    type t_decode_out is record
         valid               : std_logic;
         program_counter     : std_logic_vector(31 downto 0);
         instruction_type    : t_instruction_type;
@@ -74,7 +74,7 @@ package core_pkg is
         imm_value           : std_logic_vector(31 downto 0);
     end record;
 
-    constant c_decoded_nop : t_decoded_instruction := (
+    constant c_decoded_nop : t_decode_out := (
         valid               => '0',
         program_counter     => X"00000000",
         instruction_type    => Itype,
@@ -142,7 +142,7 @@ package core_pkg is
         program_counter     : std_logic_vector(31 downto 0);
     end record;
 
-    type t_csr_in is record
+    type t_csr_req is record
         address     : std_logic_vector(11 downto 0);
         wdata       : std_logic_vector(31 downto 0);
         oper        : t_csr_action;
@@ -151,20 +151,20 @@ package core_pkg is
         inhibit_irq : std_logic;
     end record;
 
-    type t_csr_out is record
+    type t_csr_resp is record
         rdata       : std_logic_vector(31 downto 0);
         mtvec       : std_logic_vector(31 downto 0);
         mepc        : std_logic_vector(31 downto 0);
         irq         : std_logic;
     end record;
 
-    type t_gprf_in is record
+    type t_gprf_req is record
         read_en : std_logic;
         adr_a_i : std_logic_vector(4 downto 0);
         adr_b_i : std_logic_vector(4 downto 0);
     end record;
 
-    type t_gprf_out is record
+    type t_gprf_resp is record
         dat_a_o : std_logic_vector(31 downto 0);
         dat_b_o : std_logic_vector(31 downto 0);
     end record;
@@ -175,17 +175,17 @@ package core_pkg is
         write   : std_logic;
     end record;
 
-    type imem_out_type is record
+    type t_imem_req is record
         adr_o : std_logic_vector(31 downto 0);
         ena_o : std_logic;
     end record;
 
-    type imem_in_type is record
+    type t_imem_resp is record
         dat_i : std_logic_vector(31 downto 0);
         ena_i : std_logic;
     end record;
 
-    type dmem_out_type is record
+    type t_dmem_req is record
         dat_o : std_logic_vector(31 downto 0);
         adr_o : std_logic_vector(31 downto 0);
         sel_o : std_logic_vector(3 downto 0);
@@ -193,7 +193,7 @@ package core_pkg is
         ena_o : std_logic;
     end record;
 
-    type dmem_in_type is record
+    type t_dmem_resp is record
         dat_i : std_logic_vector(31 downto 0);
         ena_i : std_logic;
     end record;

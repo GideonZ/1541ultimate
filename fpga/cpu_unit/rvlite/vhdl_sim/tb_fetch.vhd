@@ -15,12 +15,12 @@ entity tb_fetch is
 end entity;
 
 architecture run of tb_fetch is
-    signal imem_o       : imem_out_type;
-    signal imem_i       : imem_in_type;
+    signal imem_o       : t_imem_req;
+    signal imem_i       : t_imem_resp;
     signal fetch_i      : t_fetch_in;
     signal fetch_o      : t_fetch_out;
-    signal rst_i        : std_logic;
-    signal clk_i        : std_logic := '0';
+    signal reset        : std_logic;
+    signal clock        : std_logic := '0';
     signal rdy_i        : std_logic := '0';
     signal rdy_interval  : natural := 5;
     signal imem_interval : natural := 5;
@@ -30,8 +30,8 @@ architecture run of tb_fetch is
     constant rdy_pattern : std_logic_vector := "01111110111110111101110110100000100001000100101111100000";
 
 begin
-    clk_i <= not clk_i after 10 ns;
-    rst_i <= '1', '0' after 100 ns;
+    clock <= not clock after 10 ns;
+    reset <= '1', '0' after 100 ns;
 
     i_fetch: entity work.fetch
     generic map (
@@ -42,9 +42,9 @@ begin
         fetch_i => fetch_i,
         imem_o  => imem_o,
         imem_i  => imem_i,
-        rst_i   => rst_i,
+        reset   => reset,
         rdy_i   => rdy_i,
-        clk_i   => clk_i
+        clock   => clock
     );
 
     fetch_i.branch_target <= X"00000000";
@@ -57,17 +57,17 @@ begin
     --         wait until fetch_o.inst_valid = '1';
     --     end if;
     --     for i in 0 to rdy_interval-1 loop
-    --         wait until clk_i='1';
+    --         wait until clock='1';
     --     end loop;
     --     ack <= '1';
-    --     wait until clk_i='1';
+    --     wait until clock='1';
     -- end process;
     -- rdy_i <= '1';--not fetch_o.inst_valid or ack;
     process
     begin
         for i in rdy_pattern'range loop
             rdy_i <= rdy_pattern(i);
-            wait until clk_i='1';
+            wait until clock='1';
         end loop;
     end process;
 
@@ -77,10 +77,10 @@ begin
         for j in 1 to 10 loop
             fetch_i.branch <= '0';
             for i in 1 to 50+j loop 
-                wait until clk_i = '1';
+                wait until clock = '1';
             end loop;
             fetch_i.branch <= '1';
-            wait until clk_i = '1';
+            wait until clock = '1';
         end loop;
         if rdy_interval = 0 then
             rdy_interval <= 5;
@@ -92,11 +92,11 @@ begin
 
 
     -- memory and IO
-    process(clk_i)
-        variable imem_l     : imem_out_type;
+    process(clock)
+        variable imem_l     : t_imem_req;
         variable imem_count : natural;
     begin
-        if rising_edge(clk_i) then
+        if rising_edge(clock) then
             if imem_i.ena_i = '1' then
                 if imem_o.ena_o = '1' then
                     imem_l := imem_o;
@@ -111,15 +111,15 @@ begin
                 imem_i.dat_i <= imem_l.adr_o;
             end if;
 
-            if rst_i = '1' then
+            if reset = '1' then
                 imem_i.ena_i <= '1';
             end if;
         end if;
     end process;
 
-    process(clk_i)
+    process(clock)
     begin
-        if rising_edge(clk_i) then
+        if rising_edge(clock) then
             if rdy_i = '1' and fetch_o.inst_valid = '1' then
                 if fetch_o.program_counter /= std_logic_vector(to_unsigned(expected, 32)) then
                     wrong <= '1';

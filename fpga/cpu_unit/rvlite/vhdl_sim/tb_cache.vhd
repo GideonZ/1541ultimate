@@ -15,14 +15,14 @@ entity tb_cache is
 end entity;
 
 architecture run of tb_cache is
-    signal cimem_o      : imem_out_type;
-    signal cimem_i      : imem_in_type;
-    signal imem_o       : dmem_out_type;
-    signal imem_i       : dmem_in_type;
+    signal cimem_o      : t_imem_req;
+    signal cimem_i      : t_imem_resp;
+    signal imem_o       : t_dmem_req;
+    signal imem_i       : t_dmem_resp;
     signal fetch_i      : t_fetch_in;
     signal fetch_o      : t_fetch_out;
-    signal rst_i        : std_logic;
-    signal clk_i        : std_logic := '0';
+    signal reset        : std_logic;
+    signal clock        : std_logic := '0';
     signal rdy_i        : std_logic := '0';
     signal imem_interval : natural := 5;
     signal expected     : std_logic_vector(31 downto 0) := (others => '0');
@@ -34,8 +34,8 @@ architecture run of tb_cache is
         X"00000000", X"00001000", X"00002000", X"00000000", X"00000FF0", X"00001FF0", X"00000030" );
 
 begin
-    clk_i <= not clk_i after 10 ns;
-    rst_i <= '1', '0' after 100 ns;
+    clock <= not clock after 10 ns;
+    reset <= '1', '0' after 100 ns;
 
     i_fetch: entity work.fetch
     generic map (
@@ -46,15 +46,15 @@ begin
         fetch_i => fetch_i,
         imem_o  => cimem_o,
         imem_i  => cimem_i,
-        rst_i   => rst_i,
+        reset   => reset,
         rdy_i   => rdy_i,
-        clk_i   => clk_i
+        clock   => clock
     );
 
     i_cache: entity work.icache
       port map (
-        clock   => clk_i,
-        reset   => rst_i,
+        clock   => clock,
+        reset   => reset,
         disable => '0',
         dmem_i  => cimem_o,
         dmem_o  => cimem_i,
@@ -67,7 +67,7 @@ begin
     begin
         for i in rdy_pattern'range loop
             rdy_i <= '1'; --rdy_pattern(i);
-            wait until clk_i='1';
+            wait until clock='1';
         end loop;
     end process;
 
@@ -81,22 +81,22 @@ begin
                     fetch_i.branch <= '0';
                     fetch_i.branch_target <= (others => 'X');
                     for i in 1 to 50+j loop 
-                        wait until clk_i = '1';
+                        wait until clock = '1';
                     end loop;
                     fetch_i.branch <= '1';
                     fetch_i.branch_target <= c_targets(k);
-                    wait until clk_i = '1';
+                    wait until clock = '1';
                 end loop;
             end loop;
         end loop;
     end process;
 
     -- memory and IO
-    process(clk_i)
-        variable imem_l     : dmem_out_type;
+    process(clock)
+        variable imem_l     : t_dmem_req;
         variable imem_count : natural;
     begin
-        if rising_edge(clk_i) then
+        if rising_edge(clock) then
             if imem_i.ena_i = '1' then
                 if imem_o.ena_o = '1' then
                     imem_l := imem_o;
@@ -111,15 +111,15 @@ begin
                 imem_i.dat_i <= imem_l.adr_o;
             end if;
 
-            if rst_i = '1' then
+            if reset = '1' then
                 imem_i.ena_i <= '1';
             end if;
         end if;
     end process;
 
-    process(clk_i)
+    process(clock)
     begin
-        if rising_edge(clk_i) then
+        if rising_edge(clock) then
             if rdy_i = '1' and fetch_o.inst_valid = '1' then
                 if fetch_o.program_counter /= expected then
                     wrong <= '1';
