@@ -18,11 +18,11 @@ port  (
     
     disable     : in  std_logic := '0';
 
-    dmem_i      : in  imem_out_type;
-    dmem_o      : out imem_in_type;
+    dmem_i      : in  t_imem_req;
+    dmem_o      : out t_imem_resp;
     
-    mem_o       : out dmem_out_type;
-    mem_i       : in  dmem_in_type );
+    mem_o       : out t_dmem_req;
+    mem_i       : in  t_dmem_resp );
 
 end entity;
 
@@ -99,8 +99,8 @@ architecture arch of icache is
     signal d_tag_in             : t_tag;
     signal d_miss               : std_logic;
 
-    signal dmem_r               : imem_out_type;
-    signal mem_r                : dmem_in_type;
+    signal dmem_r               : t_imem_req;
+    signal mem_r                : t_dmem_resp;
 
     type t_state is (idle, fill, reg);
     signal state        : t_state;
@@ -109,8 +109,8 @@ architecture arch of icache is
 begin
     i_tag_ram: entity work.dsram
     generic map (
-        WIDTH => c_tag_width,
-        SIZE  => c_tag_size_bits
+        g_width => c_tag_width,
+        g_depth => c_tag_size_bits
     )
     port map (
         dat_o   => tag_rdata,
@@ -119,7 +119,7 @@ begin
         dat_w_i => tag_wdata,
         adr_w_i => tag_waddr,
         wre_i   => tag_write,
-        clk_i   => clock
+        clock   => clock
     );
 
     d_tag_out <= vector_to_tag(tag_rdata);
@@ -127,8 +127,8 @@ begin
 
     i_cache_ram: entity work.dsram
     generic map (
-        WIDTH => 32,
-        SIZE  => c_cache_size_bits-2
+        g_width => 32,
+        g_depth => c_cache_size_bits-2
     )
     port map (
         dat_o   => cache_rdata,
@@ -137,7 +137,7 @@ begin
         dat_w_i => cache_wdata,
         adr_w_i => cache_waddr,
         wre_i   => cache_write,
-        clk_i   => clock
+        clock   => clock
     );
 
     -- Access pattern:

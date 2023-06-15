@@ -14,10 +14,10 @@ generic (
     g_ram_style : string := "distributed"
 );
 port (
-    gprf_o : out t_gprf_out;
-    gprf_i : in t_gprf_in;
+    gprf_o : out t_gprf_resp;
+    gprf_i : in t_gprf_req;
     wb_i   : in t_writeback;
-    clk_i  : in std_logic
+    clock  : in std_logic
 );
 end entity;
 
@@ -29,8 +29,8 @@ begin
     generic map
     (
         g_ram_style => g_ram_style,
-        WIDTH => 32,
-        SIZE  => 5
+        g_width => 32,
+        g_depth => 5
     )
     port map
     (
@@ -40,15 +40,15 @@ begin
         dat_w_i => wb_i.data,
         adr_w_i => wb_i.reg,
         wre_i   => wb_i.write,
-        clk_i   => clk_i
+        clock   => clock
     );
 
     b : entity work.dsram
     generic map
     (
         g_ram_style => g_ram_style,
-        WIDTH => 32,
-        SIZE  => 5
+        g_width => 32,
+        g_depth => 5
     )
     port map
     (
@@ -58,7 +58,7 @@ begin
         dat_w_i => wb_i.data,
         adr_w_i => wb_i.reg,
         wre_i   => wb_i.write,
-        clk_i   => clk_i
+        clock   => clock
     );
 
 end architecture;

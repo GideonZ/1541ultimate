@@ -27,11 +27,11 @@ port
 (
     fetch_o : out t_fetch_out;
     fetch_i : in  t_fetch_in;
-    imem_o  : out imem_out_type;
-    imem_i  : in  imem_in_type;
-    rst_i   : in std_logic;
+    imem_o  : out t_imem_req;
+    imem_i  : in  t_imem_resp;
+    reset   : in std_logic;
     rdy_i   : in std_logic;
-    clk_i   : in std_logic
+    clock   : in std_logic
 );
 end fetch;
 
@@ -61,10 +61,10 @@ begin
         end if;
     end process;
 
-    fetch_seq: process(clk_i)
+    fetch_seq: process(clock)
     begin
-        if rising_edge(clk_i) then
-            rst_d <= rst_i;
+        if rising_edge(clock) then
+            rst_d <= reset;
             if rst_d = '1' then
                 pc <= g_start_addr;
                 possibly_valid <= '0';
@@ -82,10 +82,10 @@ begin
 
 -- synthesis translate_off
 -- synopsis translate_off
-    p_debug: process(clk_i)
+    p_debug: process(clock)
         variable s : line;
     begin
-        if rising_edge(clk_i) then
+        if rising_edge(clock) then
             if rdy_i='1' and possibly_valid = '1' and imem_i.ena_i = '1' and false then
                 write(s, "PC: " & hstr(pc) & " INST: " & hstr(imem_i.dat_i));
                 writeline(output, s);

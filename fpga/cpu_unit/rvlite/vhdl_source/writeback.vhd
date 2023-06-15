@@ -17,7 +17,7 @@ entity writeback is
 port
 (
     exec_i      : in  t_execute_out;
-    dmem_i      : in  dmem_in_type;
+    dmem_i      : in  t_dmem_resp;
     rdy_o       : out std_logic;
     wb_o        : out t_writeback
 );

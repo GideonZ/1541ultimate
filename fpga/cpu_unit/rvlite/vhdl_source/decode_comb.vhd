@@ -31,7 +31,7 @@ port (
     instruction     : in  std_logic_vector(31 downto 0);
     inst_valid      : in  std_logic;
     illegal_inst    : out std_logic;
-    decoded         : out t_decoded_instruction
+    decoded         : out t_decode_out
 );
 end entity;
 
