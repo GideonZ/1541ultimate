@@ -1,18 +1,11 @@
-----------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- Gideon's Logic B.V. - Copyright 2023
 --
---      Input file         : dsram.vhd
---      Design name        : dsram
---      Author             : Tamar Kranenburg
---      Company            : Delft University of Technology
---                         : Faculty EEMCS, Department ME&CE
---                         : Systems and Circuits group
---
---      Description        : Dual Port Synchronous 'read after write' Ram. 1 Read Port and 1
---                           Write Port.
---
---
-----------------------------------------------------------------------------------------------
-
+-- Description: A simple dual-port synchronous RAM; synthesizable / inferable in
+--              Xilinx, Lattice and Altera. It has one read port and one write
+--              port, both on the same clock. This block is used for the
+--              register file, and (outside of the core) for the I-cache.
+--------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
@@ -20,6 +13,7 @@ use ieee.numeric_std.all;
 entity dsram is
 generic
 (
+    g_ram_style : string := "auto";
     WIDTH : positive := 32;
     SIZE  : positive := 8
 );
@@ -39,7 +33,9 @@ architecture arch of dsram is
     type ram_type is array(0 to 2 ** SIZE - 1) of std_logic_vector(WIDTH - 1 downto 0);
     signal ram :  ram_type := (others => (others => '0'));
     attribute ram_style : string;
-    attribute ram_style of ram : signal is "auto";
+    attribute ram_style of ram : signal is g_ram_style;
+    attribute syn_ramstyle : string;
+    attribute syn_ramstyle of ram : signal is g_ram_style;
 begin
     process(clk_i)
     begin

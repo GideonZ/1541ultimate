@@ -1,4 +1,11 @@
-
+--------------------------------------------------------------------------------
+-- Gideon's Logic B.V. - Copyright 2023
+--
+-- Description: The 'execute' stage takes the ALU and extends it with logic to
+--              control the memory and CSR. Branches, when taken cause the
+--              signal 'do_jump' to be set, which causes the fetch unit to
+--              continue streaming instructions from a new address.
+--------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;

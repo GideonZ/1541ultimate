@@ -1,26 +1,19 @@
-----------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- Gideon's Logic B.V. - Copyright 2023
 --
---      Input file         : gprf.vhd
---      Design name        : gprf
---      Author             : Tamar Kranenburg
---      Company            : Delft University of Technology
---                         : Faculty EEMCS, Department ME&CE
---                         : Systems and Circuits group
---
---      Description        : The general purpose register infers memory blocks to implement
---                           the register file. All outputs are registered, possibly by using
---                           registered memory elements.
---
-----------------------------------------------------------------------------------------------
-
+-- Description: The 'gprf' implements the General Purpose Register File, with
+--              two read ports and one write port. This is implemented by
+--              two RAMs in parallel that are both written with the same data.
+--------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
-
 use work.core_pkg.all;
 
-entity gprf is port
-(
+entity gprf is
+generic (
+    g_ram_style : string := "distributed"
+);
+port (
     gprf_o : out t_gprf_out;
     gprf_i : in t_gprf_in;
     wb_i   : in t_writeback;
@@ -28,16 +21,14 @@ entity gprf is port
 );
 end entity;
 
--- This architecture is the default implementation. It
--- consists of two dual port memories. Other
--- architectures can be added while configurations can
--- control the implemented architecture.
+
 architecture arch of gprf is
 begin
     
     a : entity work.dsram
     generic map
     (
+        g_ram_style => g_ram_style,
         WIDTH => 32,
         SIZE  => 5
     )
@@ -55,6 +46,7 @@ begin
     b : entity work.dsram
     generic map
     (
+        g_ram_style => g_ram_style,
         WIDTH => 32,
         SIZE  => 5
     )

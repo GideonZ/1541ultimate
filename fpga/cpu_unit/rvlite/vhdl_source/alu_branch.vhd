@@ -1,3 +1,17 @@
+--------------------------------------------------------------------------------
+-- Gideon's Logic B.V. - Copyright 2023
+--
+-- Description: The alu_branch module is a fully combinatoric implementation of
+--              the RISC-V standard integer ALU. Because of the overlap with
+--              the branch condition checking logic, this has been merged into
+--              this block. The operations include: AND, OR, XOR, ADD, SUB,
+--              SLL, SRL, SRA, SLT (Set if less than) and SLTU (SLT for unsigned
+--              values. There are some variations possible; see comments in the
+--              code. Eventually, the one with the lowest LUT count was chosen.
+--
+--              Currently this block implements  barrel shifter, which is rather
+--              large.
+--------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
@@ -27,8 +41,6 @@ architecture gideon of alu_branch is
     signal less_than_u  : std_logic_vector(31 downto 0) := (others => '0');
     signal result_left  : std_logic_vector(31 downto 0);
     signal result_right : std_logic_vector(31 downto 0);
-    -- signal uns1_compare : unsigned(31 downto 0);
-    -- signal uns2_compare : unsigned(31 downto 0);
     signal uns31_less   : std_logic; 
     signal equal        : std_logic;
 begin
@@ -49,6 +61,7 @@ begin
         data_2      => data_2,
         oper        => oper(1 downto 0),
         data_out    => result_log );
+
     result_xor <= result_log;
     result_and <= result_log;
     result_or  <= result_log;

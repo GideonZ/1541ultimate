@@ -1,19 +1,11 @@
-----------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- Gideon's Logic B.V. - Copyright 2023
 --
---      Input file         : fetch.vhd
---      Design name        : fetch
---      Author             : Tamar Kranenburg
---      Company            : Delft University of Technology
---                         : Faculty EEMCS, Department ME&CE
---                         : Systems and Circuits group
---
---      Description        : Instruction Fetch Stage inserts instruction into the pipeline. It
---                           uses a single port Random Access Memory component which holds
---                           the instructions. The next instruction is computed in the decode
---                           stage.
---
-----------------------------------------------------------------------------------------------
-
+-- Description: The 'fetch' unit streams instruction words from memory and
+--              implements the program counter. When the signal 'branch'
+--              is '1', the program counter is loaded with the 'branch_target',
+--              and streaming will continue from there.
+--------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;

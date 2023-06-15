@@ -1,10 +1,20 @@
-    -- Instruction formats
-    -- R-type: funct7            rs2(5)  rs1(5) funct3 rd(5)       opcode(7)
-    -- I-type: imm[11:0]                 rs1(5) funct3 rd(5)       opcode(7)
-    -- S-type: imm[11:5]         rs2(5)  rs1(5) funct3 imm[4:0]    opcode(7)
-    -- U-type: imm[31:12]                              rd(5)       opcode(7)
-    -- J-type: imm[20] imm[10:1] imm[11] imm[19:12]    rd(5)       opcode(7)
-    -- B-type: imm[12] imm[10:5] rs2(5)  rs1(5) funct3 imm[4:1,11] opcode(7)   
+--------------------------------------------------------------------------------
+-- Gideon's Logic B.V. - Copyright 2023
+--
+-- Description: The block 'decode_comb' is, as the name suggests a combinatorial
+--              implementation of a minimal decode stage for RiscV; RV32I+Zicsr.
+--              Some illegal combinations are marked as illegal and will cause
+--              an illegal instruction trap. Many others are not, just to keep
+--              the logic to a minimum.
+--------------------------------------------------------------------------------
+-- Instruction formats
+-- R-type: funct7            rs2(5)  rs1(5) funct3 rd(5)       opcode(7)
+-- I-type: imm[11:0]                 rs1(5) funct3 rd(5)       opcode(7)
+-- S-type: imm[11:5]         rs2(5)  rs1(5) funct3 imm[4:0]    opcode(7)
+-- U-type: imm[31:12]                              rd(5)       opcode(7)
+-- J-type: imm[20] imm[10:1] imm[11] imm[19:12]    rd(5)       opcode(7)
+-- B-type: imm[12] imm[10:5] rs2(5)  rs1(5) funct3 imm[4:1,11] opcode(7)   
+--------------------------------------------------------------------------------
 
 library ieee;
 use ieee.std_logic_1164.all;

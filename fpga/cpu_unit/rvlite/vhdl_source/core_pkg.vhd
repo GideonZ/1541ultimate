@@ -1,8 +1,12 @@
+--------------------------------------------------------------------------------
+-- Gideon's Logic B.V. - Copyright 2023
+--
+-- Description: Package with constants and type definitions used in this RiscV
+--              implementation.
+--------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
-
--- use work.alu_pkg.all;
 
 package core_pkg is
 
@@ -18,7 +22,6 @@ package core_pkg is
     type t_instruction_type is (Rtype, Itype, Stype, Btype, Utype, Jtype);
     type t_alu_operation    is (ALU_ADDSUB, ALU_SH_LEFT, ALU_LESSTHAN, ALU_LESSTHAN_U, ALU_XOR, ALU_SH_RIGHT, ALU_OR, ALU_AND );
     type t_branch_condition is (BEQ, BNE, NOP, BRA, BLT, BGE, BLTU, BGEU);
-    --type t_src_type_a       is (ALU_SRC_REGA, ALU_SRC_PC );
     type t_src_type_b       is (ALU_SRC_REGB, ALU_SRC_IMM );
     type t_reg_write_sel    is (WB_MEM, WB_ALU, WB_PC4, WB_CSR, WB_REL );
     type t_flow_ctrl        is (FL_NEXT, FL_JUMP, FL_COND);
@@ -155,16 +158,6 @@ package core_pkg is
         irq         : std_logic;
     end record;
 
-    type ctrl_memory_writeback_type is record
-        mem_read      : std_logic;
-        transfer_size : t_transfer_size;
-    end record;
-
-    type forward_type is record
-        reg_d     : std_logic_vector(4 downto 0);
-        reg_write : std_logic;
-    end record;
-
     type t_gprf_in is record
         read_en : std_logic;
         adr_a_i : std_logic_vector(4 downto 0);
@@ -182,17 +175,12 @@ package core_pkg is
         write   : std_logic;
     end record;
 
-    type imem_in_type is record
-        dat_i : std_logic_vector(31 downto 0);
-        ena_i : std_logic;
-    end record;
-
     type imem_out_type is record
         adr_o : std_logic_vector(31 downto 0);
         ena_o : std_logic;
     end record;
 
-    type dmem_in_type is record
+    type imem_in_type is record
         dat_i : std_logic_vector(31 downto 0);
         ena_i : std_logic;
     end record;
@@ -203,6 +191,11 @@ package core_pkg is
         sel_o : std_logic_vector(3 downto 0);
         we_o  : std_logic;
         ena_o : std_logic;
+    end record;
+
+    type dmem_in_type is record
+        dat_i : std_logic_vector(31 downto 0);
+        ena_i : std_logic;
     end record;
 
     ----------------------------------------------------------------------------------------------
