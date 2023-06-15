@@ -1,8 +1,16 @@
-
+--------------------------------------------------------------------------------
+-- Gideon's Logic B.V. - Copyright 2023
+--
+-- Description: Top level of the Risc-V CPU core, dubbed "Frenix".
+--              The CPU has two buses; the instruction bus and data bus. Both
+--              buses assume a one-cycle latency from the request to the
+--              response. When wait cycles are necessary, the 'ena_i' signal
+--              can be de-asserted in the response. The interrupt input is
+--              level triggered, and masked through the CSR. It causes the
+--              external machine interupt (MIE), cause 0x8000000B.
+--------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
-
 use work.core_pkg.all;
 
 entity core is
@@ -22,7 +30,7 @@ port (
 );
 end entity;
 
-architecture gideon of core is
+architecture structural of core is
     signal dec_ready    : std_logic;
     signal ex_ready     : std_logic;
     signal wb_ready     : std_logic;

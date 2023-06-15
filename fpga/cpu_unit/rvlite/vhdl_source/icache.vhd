@@ -1,10 +1,8 @@
 --------------------------------------------------------------------------------
--- Entity: icache
--- Date: 2023-05-22
--- Author: Gideon     
+-- Gideon's Logic B.V. - Copyright 2023
 --
 -- Description: Simple direct mapped cache controller, compatible with the
---              instruction bus of the mblite and rvlite 
+--              instruction bus of processor core.
 --------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
@@ -14,17 +12,17 @@ use work.core_pkg.all;
 
 
 entity icache is
-    port  (
-        clock       : in  std_logic;
-        reset       : in  std_logic;
-        
-        disable     : in  std_logic := '0';
+port  (
+    clock       : in  std_logic;
+    reset       : in  std_logic;
+    
+    disable     : in  std_logic := '0';
 
-        dmem_i      : in  imem_out_type;
-        dmem_o      : out imem_in_type;
-        
-        mem_o       : out dmem_out_type;
-        mem_i       : in  dmem_in_type );
+    dmem_i      : in  imem_out_type;
+    dmem_o      : out imem_in_type;
+    
+    mem_o       : out dmem_out_type;
+    mem_i       : in  dmem_in_type );
 
 end entity;
 

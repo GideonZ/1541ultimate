@@ -1,9 +1,9 @@
 --------------------------------------------------------------------------------
--- Gideon's Logic Architectures - Copyright 2014
--- Entity: mblite_sdram
--- Date:2015-01-02  
--- Author: Gideon     
--- Description: mblite processor with sdram interface - test module
+-- Gideon's Logic B.V. - Copyright 2023
+--
+-- Description: This wrapper module combines the processor core with instruction
+--              cache, bus converters to the bus definition used in the Ultimate,
+--              and adds an optional boot rom at address 0.
 --------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
