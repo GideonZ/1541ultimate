@@ -1,5 +1,12 @@
-
-
+--------------------------------------------------------------------------------
+-- Gideon's Logic B.V. - Copyright 2023
+--
+-- Description: The writeback module simply implements a multiplexer for the
+--              data that is to be written to the register file. The mux
+--              setting comes from exec, just like the output of the ALU and
+--              CSR. The data from the memory comes directly from the data
+--              port of the processor.
+--------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
@@ -10,7 +17,7 @@ entity writeback is
 port
 (
     exec_i      : in  t_execute_out;
-    dmem_i      : in  dmem_in_type;
+    dmem_i      : in  t_dmem_resp;
     rdy_o       : out std_logic;
     wb_o        : out t_writeback
 );

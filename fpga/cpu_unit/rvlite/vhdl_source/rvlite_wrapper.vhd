@@ -1,9 +1,9 @@
 --------------------------------------------------------------------------------
--- Gideon's Logic Architectures - Copyright 2014
--- Entity: mblite_sdram
--- Date:2015-01-02  
--- Author: Gideon     
--- Description: mblite processor with sdram interface - test module
+-- Gideon's Logic B.V. - Copyright 2023
+--
+-- Description: This wrapper module combines the processor core with instruction
+--              cache, bus converters to the bus definition used in the Ultimate,
+--              and adds an optional boot rom at address 0.
 --------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
@@ -37,12 +37,12 @@ end entity;
 
 architecture arch of rvlite_wrapper is
 
-    signal dmem_o      : dmem_out_type;
-    signal dmem_i      : dmem_in_type;
-    signal imem_o      : dmem_out_type;
-    signal imem_i      : dmem_in_type;
-    signal cimem_o     : imem_out_type;
-    signal cimem_i     : imem_in_type;
+    signal dmem_o      : t_dmem_req;
+    signal dmem_i      : t_dmem_resp;
+    signal imem_o      : t_dmem_req;
+    signal imem_i      : t_dmem_resp;
+    signal cimem_o     : t_imem_req;
+    signal cimem_i     : t_imem_resp;
 
     signal dmem_req    : t_mem_req_32;
     signal dmem_resp   : t_mem_resp_32;
@@ -54,13 +54,13 @@ begin
 
     i_core: entity work.core
     port map (
-        imem_o => cimem_o,
-        imem_i => cimem_i,
-        dmem_o => dmem_o,
-        dmem_i => dmem_i,
-        int_i  => irq_i,
-        rst_i  => reset,
-        clk_i  => clock
+        clock     => clock,
+        reset     => reset,
+        irq       => irq_i,
+        imem_req  => cimem_o,
+        imem_resp => cimem_i,
+        dmem_req  => dmem_o,
+        dmem_resp => dmem_i
     );
 
     r_icache: if g_icache generate
@@ -96,8 +96,8 @@ begin
     port map (
         clock        => clock,
         reset        => reset,
-        dmem_i       => imem_i,
-        dmem_o       => imem_o,
+        dmem_req     => imem_o,
+        dmem_resp    => imem_i,
         mem_req      => imem_req,
         mem_resp     => imem_resp,
         io_req       => open,
@@ -111,8 +111,8 @@ begin
     port map (
         clock        => clock,
         reset        => reset,
-        dmem_i       => dmem_i,
-        dmem_o       => dmem_o,
+        dmem_req     => dmem_o,
+        dmem_resp    => dmem_i,
         mem_req      => dmem_req,
         mem_resp     => dmem_resp,
         io_busy      => io_busy,

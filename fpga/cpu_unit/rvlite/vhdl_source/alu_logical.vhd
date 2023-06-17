@@ -1,6 +1,13 @@
+--------------------------------------------------------------------------------
+-- Gideon's Logic B.V. - Copyright 2023
+--
+-- Description: The alu_logical is a fully combinatorial implementation of the
+--              logic functions AND, OR and XOR. Interestingly, the total ALU
+--              became smaller when these functions were extracted from the main
+--              multiplexer. - at least for architectures with 4-input LUTs.
+--------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
 
 entity alu_logical is
 port (

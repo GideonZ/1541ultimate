@@ -1,4 +1,11 @@
-
+--------------------------------------------------------------------------------
+-- Gideon's Logic B.V. - Copyright 2023
+--
+-- Description: The 'execute' stage takes the ALU and extends it with logic to
+--              control the memory and CSR. Branches, when taken cause the
+--              signal 'do_jump' to be set, which causes the fetch unit to
+--              continue streaming instructions from a new address.
+--------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
@@ -17,17 +24,17 @@ use std.textio.all;
 entity execute is
 port
 (
+    clock       : in  std_logic;
+    reset       : in  std_logic;
     flush       : in  std_logic;
-    exec_i      : in  t_decoded_instruction;
-    gprf_i      : in  t_gprf_out;
+    exec_i      : in  t_decode_out;
+    gprf_i      : in  t_gprf_resp;
     exec_o      : out t_execute_out;
-    dmem_o      : out dmem_out_type;
-    csr_i       : in  t_csr_out;
-    csr_o       : out t_csr_in;
+    dmem_o      : out t_dmem_req;
+    csr_req     : out t_csr_req;
+    csr_resp    : in  t_csr_resp;
     rdy_o       : out std_logic;
-    rdy_i       : in std_logic;
-    rst_i       : in std_logic;
-    clk_i       : in std_logic
+    rdy_i       : in  std_logic
 );
 end entity;
 
@@ -66,24 +73,24 @@ begin
         '0' when others;
 
     with exec_i.flow_target select target_pc <=
-        mem_address when TRGT_MEM,
-        rel_address when TRGT_REL,
-        csr_i.mepc  when TRGT_MEPC,
-        csr_i.mtvec when TRGT_TRAP,
-        X"00000000" when others;
+        mem_address    when TRGT_MEM,
+        rel_address    when TRGT_REL,
+        csr_resp.mepc  when TRGT_MEPC,
+        csr_resp.mtvec when TRGT_TRAP,
+        X"00000000"    when others;
 
     inst_valid <= exec_i.valid and not flush;
     
     -- Port to CSR
-    csr_o.address <= exec_i.imm_value(11 downto 0);
-    csr_o.wdata   <= gprf_i.dat_a_o when exec_i.csr_sel = CSR_REG else sign_extend(exec_i.reg_rs1, exec_i.reg_rs1(4), 32);
-    csr_o.oper    <= exec_i.csr_action;
-    csr_o.enable  <= exec_i.csr_access and inst_valid;
-    csr_o.inhibit_irq <= exec_i.csr_access; -- even during a hazard
-    csr_o.trap.trap   <= inst_valid when (exec_i.flow_target = TRGT_TRAP) and (exec_i.flow_ctrl = FL_JUMP) else '0';
-    csr_o.trap.mret   <= inst_valid when (exec_i.flow_target = TRGT_MEPC) and (exec_i.flow_ctrl = FL_JUMP) else '0';
-    csr_o.trap.cause  <= exec_i.cause;
-    csr_o.trap.program_counter <= exec_i.program_counter;
+    csr_req.address <= exec_i.imm_value(11 downto 0);
+    csr_req.wdata   <= gprf_i.dat_a_o when exec_i.csr_sel = CSR_REG else sign_extend(exec_i.reg_rs1, exec_i.reg_rs1(4), 32);
+    csr_req.oper    <= exec_i.csr_action;
+    csr_req.enable  <= exec_i.csr_access and inst_valid;
+    csr_req.inhibit_irq <= exec_i.csr_access; -- even during a hazard
+    csr_req.trap.trap   <= inst_valid when (exec_i.flow_target = TRGT_TRAP) and (exec_i.flow_ctrl = FL_JUMP) else '0';
+    csr_req.trap.mret   <= inst_valid when (exec_i.flow_target = TRGT_MEPC) and (exec_i.flow_ctrl = FL_JUMP) else '0';
+    csr_req.trap.cause  <= exec_i.cause;
+    csr_req.trap.program_counter <= exec_i.program_counter;
 
     -- Port to memory (combinatorial)
     dmem_o.adr_o <= mem_address;
@@ -103,16 +110,16 @@ begin
     exec_c.mem_offset        <= mem_address(1 downto 0);
     exec_c.reg_write         <= (exec_i.reg_write and inst_valid) when exec_i.reg_rd /= "00000" else '0';
     exec_c.reg_write_sel     <= exec_i.reg_write_sel;
-    exec_c.csr_data          <= csr_i.rdata;
+    exec_c.csr_data          <= csr_resp.rdata;
     exec_c.pc_plus4          <= std_logic_vector(unsigned(exec_i.program_counter) + 4);
     exec_c.rel_address       <= target_pc; --rel_address;
     exec_c.valid             <= exec_i.valid; --inst_valid;
 
-    process(clk_i)
+    process(clock)
         variable s : line;
     begin
-        if rising_edge(clk_i) then
-            if rst_i = '1' then
+        if rising_edge(clock) then
+            if reset = '1' then
                 exec_r <= c_execute_nop; 
             elsif rdy_i = '1' or exec_r.valid = '0' then
                 exec_r <= exec_c;

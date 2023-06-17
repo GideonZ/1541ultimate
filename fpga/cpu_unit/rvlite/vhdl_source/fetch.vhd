@@ -1,19 +1,11 @@
-----------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- Gideon's Logic B.V. - Copyright 2023
 --
---      Input file         : fetch.vhd
---      Design name        : fetch
---      Author             : Tamar Kranenburg
---      Company            : Delft University of Technology
---                         : Faculty EEMCS, Department ME&CE
---                         : Systems and Circuits group
---
---      Description        : Instruction Fetch Stage inserts instruction into the pipeline. It
---                           uses a single port Random Access Memory component which holds
---                           the instructions. The next instruction is computed in the decode
---                           stage.
---
-----------------------------------------------------------------------------------------------
-
+-- Description: The 'fetch' unit streams instruction words from memory and
+--              implements the program counter. When the signal 'branch'
+--              is '1', the program counter is loaded with the 'branch_target',
+--              and streaming will continue from there.
+--------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
@@ -35,11 +27,11 @@ port
 (
     fetch_o : out t_fetch_out;
     fetch_i : in  t_fetch_in;
-    imem_o  : out imem_out_type;
-    imem_i  : in  imem_in_type;
-    rst_i   : in std_logic;
+    imem_o  : out t_imem_req;
+    imem_i  : in  t_imem_resp;
+    reset   : in std_logic;
     rdy_i   : in std_logic;
-    clk_i   : in std_logic
+    clock   : in std_logic
 );
 end fetch;
 
@@ -69,10 +61,10 @@ begin
         end if;
     end process;
 
-    fetch_seq: process(clk_i)
+    fetch_seq: process(clock)
     begin
-        if rising_edge(clk_i) then
-            rst_d <= rst_i;
+        if rising_edge(clock) then
+            rst_d <= reset;
             if rst_d = '1' then
                 pc <= g_start_addr;
                 possibly_valid <= '0';
@@ -90,10 +82,10 @@ begin
 
 -- synthesis translate_off
 -- synopsis translate_off
-    p_debug: process(clk_i)
+    p_debug: process(clock)
         variable s : line;
     begin
-        if rising_edge(clk_i) then
+        if rising_edge(clock) then
             if rdy_i='1' and possibly_valid = '1' and imem_i.ena_i = '1' and false then
                 write(s, "PC: " & hstr(pc) & " INST: " & hstr(imem_i.dat_i));
                 writeline(output, s);

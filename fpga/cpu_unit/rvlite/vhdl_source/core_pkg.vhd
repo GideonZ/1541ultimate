@@ -1,8 +1,12 @@
+--------------------------------------------------------------------------------
+-- Gideon's Logic B.V. - Copyright 2023
+--
+-- Description: Package with constants and type definitions used in this RiscV
+--              implementation.
+--------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
-
--- use work.alu_pkg.all;
 
 package core_pkg is
 
@@ -18,7 +22,6 @@ package core_pkg is
     type t_instruction_type is (Rtype, Itype, Stype, Btype, Utype, Jtype);
     type t_alu_operation    is (ALU_ADDSUB, ALU_SH_LEFT, ALU_LESSTHAN, ALU_LESSTHAN_U, ALU_XOR, ALU_SH_RIGHT, ALU_OR, ALU_AND );
     type t_branch_condition is (BEQ, BNE, NOP, BRA, BLT, BGE, BLTU, BGEU);
-    --type t_src_type_a       is (ALU_SRC_REGA, ALU_SRC_PC );
     type t_src_type_b       is (ALU_SRC_REGB, ALU_SRC_IMM );
     type t_reg_write_sel    is (WB_MEM, WB_ALU, WB_PC4, WB_CSR, WB_REL );
     type t_flow_ctrl        is (FL_NEXT, FL_JUMP, FL_COND);
@@ -38,7 +41,7 @@ package core_pkg is
         inst_valid      : std_logic;
     end record;
 
-    type t_decoded_instruction is record
+    type t_decode_out is record
         valid               : std_logic;
         program_counter     : std_logic_vector(31 downto 0);
         instruction_type    : t_instruction_type;
@@ -71,7 +74,7 @@ package core_pkg is
         imm_value           : std_logic_vector(31 downto 0);
     end record;
 
-    constant c_decoded_nop : t_decoded_instruction := (
+    constant c_decoded_nop : t_decode_out := (
         valid               => '0',
         program_counter     => X"00000000",
         instruction_type    => Itype,
@@ -139,7 +142,7 @@ package core_pkg is
         program_counter     : std_logic_vector(31 downto 0);
     end record;
 
-    type t_csr_in is record
+    type t_csr_req is record
         address     : std_logic_vector(11 downto 0);
         wdata       : std_logic_vector(31 downto 0);
         oper        : t_csr_action;
@@ -148,30 +151,20 @@ package core_pkg is
         inhibit_irq : std_logic;
     end record;
 
-    type t_csr_out is record
+    type t_csr_resp is record
         rdata       : std_logic_vector(31 downto 0);
         mtvec       : std_logic_vector(31 downto 0);
         mepc        : std_logic_vector(31 downto 0);
         irq         : std_logic;
     end record;
 
-    type ctrl_memory_writeback_type is record
-        mem_read      : std_logic;
-        transfer_size : t_transfer_size;
-    end record;
-
-    type forward_type is record
-        reg_d     : std_logic_vector(4 downto 0);
-        reg_write : std_logic;
-    end record;
-
-    type t_gprf_in is record
+    type t_gprf_req is record
         read_en : std_logic;
         adr_a_i : std_logic_vector(4 downto 0);
         adr_b_i : std_logic_vector(4 downto 0);
     end record;
 
-    type t_gprf_out is record
+    type t_gprf_resp is record
         dat_a_o : std_logic_vector(31 downto 0);
         dat_b_o : std_logic_vector(31 downto 0);
     end record;
@@ -182,27 +175,27 @@ package core_pkg is
         write   : std_logic;
     end record;
 
-    type imem_in_type is record
-        dat_i : std_logic_vector(31 downto 0);
-        ena_i : std_logic;
-    end record;
-
-    type imem_out_type is record
+    type t_imem_req is record
         adr_o : std_logic_vector(31 downto 0);
         ena_o : std_logic;
     end record;
 
-    type dmem_in_type is record
+    type t_imem_resp is record
         dat_i : std_logic_vector(31 downto 0);
         ena_i : std_logic;
     end record;
 
-    type dmem_out_type is record
+    type t_dmem_req is record
         dat_o : std_logic_vector(31 downto 0);
         adr_o : std_logic_vector(31 downto 0);
         sel_o : std_logic_vector(3 downto 0);
         we_o  : std_logic;
         ena_o : std_logic;
+    end record;
+
+    type t_dmem_resp is record
+        dat_i : std_logic_vector(31 downto 0);
+        ena_i : std_logic;
     end record;
 
     ----------------------------------------------------------------------------------------------

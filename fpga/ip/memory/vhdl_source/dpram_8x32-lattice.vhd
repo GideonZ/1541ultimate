@@ -6,8 +6,8 @@ architecture lattice of dpram_8x32 is
     signal delayed_reset_a  : std_logic;
     signal delayed_reset_b  : std_logic;
 begin
-    delayed_reset_a <= SSRA when falling_edge(CLKA);
-    delayed_reset_b <= SSRB when falling_edge(CLKB);
+    delayed_reset_a <= '0'; -- SSRA when falling_edge(CLKA);
+    delayed_reset_b <= '0'; -- SSRB when falling_edge(CLKB);
         
     true_dpram8x32_0_0_1: DP16KD
         generic map (

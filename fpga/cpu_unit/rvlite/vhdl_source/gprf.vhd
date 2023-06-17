@@ -1,45 +1,36 @@
-----------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- Gideon's Logic B.V. - Copyright 2023
 --
---      Input file         : gprf.vhd
---      Design name        : gprf
---      Author             : Tamar Kranenburg
---      Company            : Delft University of Technology
---                         : Faculty EEMCS, Department ME&CE
---                         : Systems and Circuits group
---
---      Description        : The general purpose register infers memory blocks to implement
---                           the register file. All outputs are registered, possibly by using
---                           registered memory elements.
---
-----------------------------------------------------------------------------------------------
-
+-- Description: The 'gprf' implements the General Purpose Register File, with
+--              two read ports and one write port. This is implemented by
+--              two RAMs in parallel that are both written with the same data.
+--------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
-
 use work.core_pkg.all;
 
-entity gprf is port
-(
-    gprf_o : out t_gprf_out;
-    gprf_i : in t_gprf_in;
+entity gprf is
+generic (
+    g_ram_style : string := "distributed"
+);
+port (
+    gprf_o : out t_gprf_resp;
+    gprf_i : in t_gprf_req;
     wb_i   : in t_writeback;
-    clk_i  : in std_logic
+    clock  : in std_logic
 );
 end entity;
 
--- This architecture is the default implementation. It
--- consists of two dual port memories. Other
--- architectures can be added while configurations can
--- control the implemented architecture.
+
 architecture arch of gprf is
 begin
     
     a : entity work.dsram
     generic map
     (
-        WIDTH => 32,
-        SIZE  => 5
+        g_ram_style => g_ram_style,
+        g_width => 32,
+        g_depth => 5
     )
     port map
     (
@@ -49,14 +40,15 @@ begin
         dat_w_i => wb_i.data,
         adr_w_i => wb_i.reg,
         wre_i   => wb_i.write,
-        clk_i   => clk_i
+        clock   => clock
     );
 
     b : entity work.dsram
     generic map
     (
-        WIDTH => 32,
-        SIZE  => 5
+        g_ram_style => g_ram_style,
+        g_width => 32,
+        g_depth => 5
     )
     port map
     (
@@ -66,7 +58,7 @@ begin
         dat_w_i => wb_i.data,
         adr_w_i => wb_i.reg,
         wre_i   => wb_i.write,
-        clk_i   => clk_i
+        clock   => clock
     );
 
 end architecture;

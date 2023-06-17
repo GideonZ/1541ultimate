@@ -8,23 +8,23 @@ use work.core_pkg.all;
 entity decode is
 port
 (
-    decode_o    : out t_decoded_instruction;
-    gprf_o      : out t_gprf_in;
+    decode_o    : out t_decode_out;
+    gprf_o      : out t_gprf_req;
     decode_i    : in  t_fetch_out;
     flush       : in  std_logic;
     hazard      : in  std_logic;
     irq_i       : in  std_logic := '0';
     rdy_i       : in  std_logic;
     rdy_o       : out std_logic;
-    rst_i       : in  std_logic;
-    clk_i       : in  std_logic
+    reset       : in  std_logic;
+    clock       : in  std_logic
 );
 end entity;
 
 architecture arch of decode is
     signal instruction  : std_logic_vector(31 downto 0);
-    signal decoded_c    : t_decoded_instruction;
-    signal decoded_r    : t_decoded_instruction := c_decoded_nop;
+    signal decoded_c    : t_decode_out;
+    signal decoded_r    : t_decode_out := c_decoded_nop;
     signal rdy_o_i      : std_logic;
     signal illegal_inst : std_logic;
     signal illegal      : std_logic;
@@ -46,13 +46,13 @@ begin
     illegal <= illegal_inst and decode_i.inst_valid;
     valid <= decode_i.inst_valid;
 
-    process(clk_i)
+    process(clock)
     begin
-        if rising_edge(clk_i) then
+        if rising_edge(clock) then
             if rdy_o_i = '1' then
                 decoded_r <= decoded_c;
             end if;
-            if flush = '1' or rst_i = '1' then
+            if flush = '1' or reset = '1' then
                 -- when the pipeline needs to be flushed, we simply
                 -- tell exec that the instruction is not valid. This
                 -- will turn off memory accesses and register writeback.

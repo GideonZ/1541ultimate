@@ -1,8 +1,4 @@
-RVL_ALIAS "sys_clock" "i_riscv/i_core/clk_i"; 
-RVL_ALIAS "ulpi_clock" "ulpi_clock"; 
-RVL_ALIAS "ctrl_clock" "i_double_freq_bridge/clock_2x"; 
-RVL_ALIAS "sys_clock" "sys_clock"; 
-BLOCK RESETPATHS ;
+# BLOCK RESETPATHS ;
 FREQUENCY PORT "ULPI_CLOCK" 60.000000 MHz CLOCK_JITTER 0.200000 ns ;
 INPUT_SETUP PORT "ULPI_NXT" 11.500000 ns HOLD 1.500000 ns CLKPORT "ULPI_CLOCK" ;
 INPUT_SETUP PORT "ULPI_DIR" 11.500000 ns HOLD 1.500000 ns CLKPORT "ULPI_CLOCK" ;
@@ -333,453 +329,13 @@ IOBUF GROUP "Misc3V3" IO_TYPE=LVCMOS33 ;
 IOBUF GROUP "Misc1V8" IO_TYPE=LVCMOS18 ;
 IOBUF GROUP "Ulpi" IO_TYPE=LVCMOS18 ;
 IOBUF GROUP "Undecided" IO_TYPE=LVCMOS18 ;
-DEFINE CELL GROUP "TigSrc8" "b_audio.i_ultfilt8/i_sync/tx_tig_src" 
-"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[0]" 
-"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[1]" 
-"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[2]" 
-"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[3]" 
-"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[4]" 
-"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[5]" 
-"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[6]" 
-"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[7]" 
-"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[8]" 
-"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[9]" 
-"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[10]" 
-"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[11]" 
-"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[12]" 
-"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[13]" 
-"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[14]" 
-"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[15]" 
-"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[16]" 
-"b_audio.i_ultfilt8/i_sync/tx_data_tig_src[17]" 
-"b_audio.i_ultfilt8/i_sync/rx_tig_src" ;
-DEFINE CELL GROUP "TigSrc7" "b_audio.i_ultfilt7/i_sync/tx_tig_src" 
-"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[0]" 
-"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[1]" 
-"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[2]" 
-"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[3]" 
-"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[4]" 
-"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[5]" 
-"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[6]" 
-"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[7]" 
-"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[8]" 
-"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[9]" 
-"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[10]" 
-"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[11]" 
-"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[12]" 
-"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[13]" 
-"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[14]" 
-"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[15]" 
-"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[16]" 
-"b_audio.i_ultfilt7/i_sync/tx_data_tig_src[17]" 
-"b_audio.i_ultfilt7/i_sync/rx_tig_src" ;
-DEFINE CELL GROUP "TigSrc6" "b_audio.i_ultfilt6/i_sync/tx_tig_src" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[0]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[1]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[2]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[3]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[4]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[5]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[6]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[7]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[8]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[9]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[10]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[11]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[12]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[13]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[14]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[15]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[16]" 
-"b_audio.i_ultfilt6/i_sync/tx_data_tig_src[17]" 
-"b_audio.i_ultfilt6/i_sync/rx_tig_src" ;
-DEFINE CELL GROUP "TigSrc5" "b_audio.i_ultfilt5/i_sync/tx_tig_src" 
-"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[0]" 
-"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[1]" 
-"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[2]" 
-"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[3]" 
-"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[4]" 
-"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[5]" 
-"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[6]" 
-"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[7]" 
-"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[8]" 
-"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[9]" 
-"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[10]" 
-"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[11]" 
-"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[12]" 
-"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[13]" 
-"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[14]" 
-"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[15]" 
-"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[16]" 
-"b_audio.i_ultfilt5/i_sync/tx_data_tig_src[17]" 
-"b_audio.i_ultfilt5/i_sync/rx_tig_src" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[0]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[0]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[1]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[1]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[2]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[2]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[3]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[3]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[4]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[4]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[5]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[5]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[6]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[6]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[7]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[7]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[8]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[8]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[9]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[9]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[10]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[10]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[11]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[11]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[12]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[12]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[13]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[13]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[14]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[14]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[15]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[15]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[16]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[16]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[17]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[17]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_tig_src" TO CELL "b_audio.i_ultfilt4/i_sync/rx_tig_dst" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[14]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[6]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt4/i_sync/tx_data_tig_src[10]" TO CELL "b_audio.i_ultfilt4/i_sync/rx_data_tig_dst[5]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[0]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[0]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[1]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[1]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[2]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[2]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[3]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[3]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[4]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[4]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[5]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[5]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[6]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[6]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[7]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[7]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[8]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[8]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[9]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[9]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[10]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[10]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[11]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[11]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[12]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[12]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[13]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[13]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[14]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[14]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[15]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[15]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[16]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[16]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[17]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[17]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[14]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[6]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_data_tig_src[10]" TO CELL "b_audio.i_ultfilt3/i_sync/rx_data_tig_dst[5]" ;
-BLOCK PATH FROM CELL "b_audio.i_ultfilt3/i_sync/tx_tig_src" TO CELL "b_audio.i_ultfilt3/i_sync/rx_tig_dst" ;
-DEFINE CELL GROUP "TigSrc2" "b_audio.i_ultfilt2/i_sync/tx_tig_src" 
-"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[0]" 
-"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[1]" 
-"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[2]" 
-"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[3]" 
-"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[4]" 
-"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[5]" 
-"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[6]" 
-"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[7]" 
-"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[8]" 
-"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[9]" 
-"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[10]" 
-"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[11]" 
-"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[12]" 
-"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[13]" 
-"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[14]" 
-"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[15]" 
-"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[16]" 
-"b_audio.i_ultfilt2/i_sync/tx_data_tig_src[17]" 
-"b_audio.i_ultfilt2/i_sync/rx_tig_src" ;
-DEFINE CELL GROUP "TigSrc1" "b_audio.i_ultfilt1/i_sync/tx_tig_src" 
-"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[0]" 
-"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[1]" 
-"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[2]" 
-"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[3]" 
-"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[4]" 
-"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[5]" 
-"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[6]" 
-"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[7]" 
-"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[8]" 
-"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[9]" 
-"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[10]" 
-"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[11]" 
-"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[12]" 
-"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[13]" 
-"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[14]" 
-"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[15]" 
-"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[16]" 
-"b_audio.i_ultfilt1/i_sync/tx_data_tig_src[17]" 
-"b_audio.i_ultfilt1/i_sync/rx_tig_src" ;
-DEFINE CELL GROUP "TigSrcUsb" "i_logic/r_usb2.i_usb2/i_bridge_to_mem_ctrl/i_cmd_fifo/wr_head_gray_tig_src[0]" 
-"i_logic/r_usb2.i_usb2/i_bridge_to_mem_ctrl/i_cmd_fifo/wr_head_gray_tig_src[1]" 
-"i_logic/r_usb2.i_usb2/i_bridge_to_mem_ctrl/i_cmd_fifo/wr_head_gray_tig_src[2]" 
-"i_logic/r_usb2.i_usb2/i_bridge_to_mem_ctrl/i_cmd_fifo/rd_tail_gray_tig_src[0]" 
-"i_logic/r_usb2.i_usb2/i_bridge_to_mem_ctrl/i_cmd_fifo/rd_tail_gray_tig_src[1]" 
-"i_logic/r_usb2.i_usb2/i_bridge_to_mem_ctrl/i_cmd_fifo/rd_tail_gray_tig_src[2]" ;
-DEFINE CELL GROUP "TigSrcRmii" "i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_head_gray_tig_src[0]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_head_gray_tig_src[1]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_head_gray_tig_src[2]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_head_gray_tig_src[3]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_head_gray_tig_src[4]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_head_gray_tig_src[5]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_head_gray_tig_src[6]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_head_gray_tig_src[7]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_head_gray_tig_src[8]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_head_gray_tig_src[9]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_tail_gray_tig_src[0]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_tail_gray_tig_src[1]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_tail_gray_tig_src[2]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_tail_gray_tig_src[3]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_tail_gray_tig_src[4]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_tail_gray_tig_src[5]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_tail_gray_tig_src[6]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_tail_gray_tig_src[7]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_tail_gray_tig_src[8]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_tail_gray_tig_src[9]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_head_gray_tig_src[0]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_head_gray_tig_src[1]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_head_gray_tig_src[2]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_head_gray_tig_src[3]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_head_gray_tig_src[4]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_head_gray_tig_src[5]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_head_gray_tig_src[6]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_head_gray_tig_src[7]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_head_gray_tig_src[8]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_tail_gray_tig_src[0]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_tail_gray_tig_src[1]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_tail_gray_tig_src[2]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_tail_gray_tig_src[3]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_tail_gray_tig_src[4]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_tail_gray_tig_src[5]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_tail_gray_tig_src[6]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_tail_gray_tig_src[7]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_tail_gray_tig_src[8]" ;
-DEFINE CELL GROUP "TigSrcMem" "i_memctrl/i_bridge/i_terug/tx_tig_src" 
-"i_memctrl/i_bridge/i_terug/tx_data_tig_src[0]" 
-"i_memctrl/i_bridge/i_terug/tx_data_tig_src[1]" 
-"i_memctrl/i_bridge/i_terug/tx_data_tig_src[2]" 
-"i_memctrl/i_bridge/i_terug/tx_data_tig_src[3]" 
-"i_memctrl/i_bridge/i_terug/tx_data_tig_src[4]" 
-"i_memctrl/i_bridge/i_terug/tx_data_tig_src[5]" 
-"i_memctrl/i_bridge/i_terug/tx_data_tig_src[6]" 
-"i_memctrl/i_bridge/i_terug/rx_tig_src" 
-"i_memctrl/i_bridge/i_heen/tx_tig_src" 
-"i_memctrl/i_bridge/i_heen/tx_data_tig_src[0]" 
-"i_memctrl/i_bridge/i_heen/tx_data_tig_src[1]" 
-"i_memctrl/i_bridge/i_heen/tx_data_tig_src[2]" 
-"i_memctrl/i_bridge/i_heen/tx_data_tig_src[3]" 
-"i_memctrl/i_bridge/i_heen/tx_data_tig_src[4]" 
-"i_memctrl/i_bridge/i_heen/tx_data_tig_src[5]" 
-"i_memctrl/i_bridge/i_heen/tx_data_tig_src[6]" 
-"i_memctrl/i_bridge/i_heen/tx_data_tig_src[7]" 
-"i_memctrl/i_bridge/i_heen/tx_data_tig_src[8]" 
-"i_memctrl/i_bridge/i_heen/tx_data_tig_src[9]" 
-"i_memctrl/i_bridge/i_heen/tx_data_tig_src[10]" 
-"i_memctrl/i_bridge/i_heen/tx_data_tig_src[11]" 
-"i_memctrl/i_bridge/i_heen/tx_data_tig_src[12]" 
-"i_memctrl/i_bridge/i_heen/tx_data_tig_src[13]" 
-"i_memctrl/i_bridge/i_heen/rx_tig_src" ;
-DEFINE CELL GROUP "TigDst8" "b_audio.i_ultfilt8/i_sync/tx_tig_dst" 
-"b_audio.i_ultfilt8/i_sync/rx_tig_dst" 
-"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[0]" 
-"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[1]" 
-"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[2]" 
-"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[3]" 
-"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[4]" 
-"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[5]" 
-"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[6]" 
-"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[7]" 
-"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[8]" 
-"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[9]" 
-"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[10]" 
-"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[11]" 
-"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[12]" 
-"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[13]" 
-"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[14]" 
-"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[15]" 
-"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[16]" 
-"b_audio.i_ultfilt8/i_sync/rx_data_tig_dst[17]" ;
-DEFINE CELL GROUP "TigDst7" "b_audio.i_ultfilt7/i_sync/tx_tig_dst" 
-"b_audio.i_ultfilt7/i_sync/rx_tig_dst" 
-"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[0]" 
-"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[1]" 
-"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[2]" 
-"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[3]" 
-"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[4]" 
-"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[5]" 
-"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[6]" 
-"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[7]" 
-"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[8]" 
-"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[9]" 
-"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[10]" 
-"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[11]" 
-"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[12]" 
-"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[13]" 
-"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[14]" 
-"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[15]" 
-"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[16]" 
-"b_audio.i_ultfilt7/i_sync/rx_data_tig_dst[17]" ;
-DEFINE CELL GROUP "TigDst6" "b_audio.i_ultfilt6/i_sync/tx_tig_dst" 
-"b_audio.i_ultfilt6/i_sync/rx_tig_dst" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[0]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[1]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[2]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[3]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[4]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[5]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[6]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[7]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[8]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[9]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[10]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[11]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[12]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[13]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[14]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[15]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[16]" 
-"b_audio.i_ultfilt6/i_sync/rx_data_tig_dst[17]" ;
-DEFINE CELL GROUP "TigDst5" "b_audio.i_ultfilt5/i_sync/tx_tig_dst" 
-"b_audio.i_ultfilt5/i_sync/rx_tig_dst" 
-"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[0]" 
-"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[1]" 
-"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[2]" 
-"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[3]" 
-"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[4]" 
-"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[5]" 
-"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[6]" 
-"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[7]" 
-"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[8]" 
-"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[9]" 
-"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[10]" 
-"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[11]" 
-"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[12]" 
-"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[13]" 
-"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[14]" 
-"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[15]" 
-"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[16]" 
-"b_audio.i_ultfilt5/i_sync/rx_data_tig_dst[17]" ;
-DEFINE CELL GROUP "TigDst2" "b_audio.i_ultfilt2/i_sync/tx_tig_dst" 
-"b_audio.i_ultfilt2/i_sync/rx_tig_dst" 
-"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[0]" 
-"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[1]" 
-"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[2]" 
-"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[3]" 
-"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[4]" 
-"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[5]" 
-"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[6]" 
-"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[7]" 
-"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[8]" 
-"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[9]" 
-"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[10]" 
-"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[11]" 
-"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[12]" 
-"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[13]" 
-"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[14]" 
-"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[15]" 
-"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[16]" 
-"b_audio.i_ultfilt2/i_sync/rx_data_tig_dst[17]" ;
-DEFINE CELL GROUP "TigDst1" "b_audio.i_ultfilt1/i_sync/tx_tig_dst" 
-"b_audio.i_ultfilt1/i_sync/rx_tig_dst" 
-"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[0]" 
-"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[1]" 
-"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[2]" 
-"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[3]" 
-"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[4]" 
-"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[5]" 
-"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[6]" 
-"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[7]" 
-"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[8]" 
-"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[9]" 
-"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[10]" 
-"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[11]" 
-"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[12]" 
-"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[13]" 
-"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[14]" 
-"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[15]" 
-"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[16]" 
-"b_audio.i_ultfilt1/i_sync/rx_data_tig_dst[17]" ;
-DEFINE CELL GROUP "TigDstUsb" "i_logic/r_usb2.i_usb2/i_bridge_to_mem_ctrl/i_cmd_fifo/wr_tail_gray_tig_dst[0]" 
-"i_logic/r_usb2.i_usb2/i_bridge_to_mem_ctrl/i_cmd_fifo/wr_tail_gray_tig_dst[1]" 
-"i_logic/r_usb2.i_usb2/i_bridge_to_mem_ctrl/i_cmd_fifo/wr_tail_gray_tig_dst[2]" 
-"i_logic/r_usb2.i_usb2/i_bridge_to_mem_ctrl/i_cmd_fifo/rd_head_gray_tig_dst[0]" 
-"i_logic/r_usb2.i_usb2/i_bridge_to_mem_ctrl/i_cmd_fifo/rd_head_gray_tig_dst[1]" 
-"i_logic/r_usb2.i_usb2/i_bridge_to_mem_ctrl/i_cmd_fifo/rd_head_gray_tig_dst[2]" ;
-DEFINE CELL GROUP "TigDstRmii" "i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_tail_gray_tig_dst[0]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_tail_gray_tig_dst[1]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_tail_gray_tig_dst[2]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_tail_gray_tig_dst[3]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_tail_gray_tig_dst[4]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_tail_gray_tig_dst[5]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_tail_gray_tig_dst[6]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_tail_gray_tig_dst[7]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_tail_gray_tig_dst[8]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/wr_tail_gray_tig_dst[9]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_head_gray_tig_dst[0]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_head_gray_tig_dst[1]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_head_gray_tig_dst[2]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_head_gray_tig_dst[3]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_head_gray_tig_dst[4]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_head_gray_tig_dst[5]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_head_gray_tig_dst[6]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_head_gray_tig_dst[7]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_head_gray_tig_dst[8]" 
-"i_logic/r_rmii.i_rmii/i_tx/i_fifo/rd_head_gray_tig_dst[9]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_tail_gray_tig_dst[0]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_tail_gray_tig_dst[1]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_tail_gray_tig_dst[2]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_tail_gray_tig_dst[3]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_tail_gray_tig_dst[4]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_tail_gray_tig_dst[5]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_tail_gray_tig_dst[6]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_tail_gray_tig_dst[7]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/wr_tail_gray_tig_dst[8]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_head_gray_tig_dst[0]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_head_gray_tig_dst[1]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_head_gray_tig_dst[2]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_head_gray_tig_dst[3]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_head_gray_tig_dst[4]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_head_gray_tig_dst[5]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_head_gray_tig_dst[6]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_head_gray_tig_dst[7]" 
-"i_logic/r_rmii.i_rmii/i_rx/i_fifo/rd_head_gray_tig_dst[8]" ;
-DEFINE CELL GROUP "TigDstMem" "i_memctrl/i_bridge/i_terug/tx_tig_dst" 
-"i_memctrl/i_bridge/i_terug/rx_tig_dst" 
-"i_memctrl/i_bridge/i_terug/rx_data_tig_dst[0]" 
-"i_memctrl/i_bridge/i_terug/rx_data_tig_dst[1]" 
-"i_memctrl/i_bridge/i_terug/rx_data_tig_dst[2]" 
-"i_memctrl/i_bridge/i_terug/rx_data_tig_dst[3]" 
-"i_memctrl/i_bridge/i_terug/rx_data_tig_dst[4]" 
-"i_memctrl/i_bridge/i_terug/rx_data_tig_dst[5]" 
-"i_memctrl/i_bridge/i_terug/rx_data_tig_dst[6]" 
-"i_memctrl/i_bridge/i_heen/tx_tig_dst" 
-"i_memctrl/i_bridge/i_heen/rx_tig_dst" 
-"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[0]" 
-"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[1]" 
-"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[2]" 
-"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[3]" 
-"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[4]" 
-"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[5]" 
-"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[6]" 
-"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[7]" 
-"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[8]" 
-"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[9]" 
-"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[10]" 
-"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[11]" 
-"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[12]" 
-"i_memctrl/i_bridge/i_heen/rx_data_tig_dst[13]" ;
-BLOCK PATH FROM GROUP "TigSrc1" TO GROUP "TigDst1" ;
-BLOCK PATH FROM GROUP "TigSrc2" TO GROUP "TigDst2" ;
-BLOCK PATH FROM GROUP "TigSrc5" TO GROUP "TigDst5" ;
-BLOCK PATH FROM GROUP "TigSrc6" TO GROUP "TigDst6" ;
-BLOCK PATH FROM GROUP "TigSrc7" TO GROUP "TigDst7" ;
-BLOCK PATH FROM GROUP "TigSrc8" TO GROUP "TigDst8" ;
-BLOCK PATH FROM GROUP "TigSrcUsb" TO GROUP "TigDstUsb" ;
-BLOCK PATH FROM GROUP "TigSrcRmii" TO GROUP "TigDstRmii" ;
-BLOCK PATH FROM GROUP "TigSrcMem" TO GROUP "TigDstMem" ;
+BLOCK PATH FROM CLKNET "sys_clock" TO CLKNET "AUDIO_MCLK_c" ;
+BLOCK PATH FROM CLKNET "AUDIO_MCLK_c" TO CLKNET "sys_clock" ;
+BLOCK PATH FROM CLKNET "sys_clock" TO CLKNET "RMII_REFCLK_c" ;
+BLOCK PATH FROM CLKNET "RMII_REFCLK_c" TO CLKNET "sys_clock" ;
+BLOCK PATH FROM CLKNET "sys_clock" TO CLKNET "ULPI_CLOCK_c" ;
+BLOCK PATH FROM CLKNET "ULPI_CLOCK_c" TO CLKNET "sys_clock" ;
 BLOCK PATH FROM ASIC "i_memctrl/i_phy/i_sclk" PIN "CDIVX" TO CELL "i_memctrl/b_phase_measurement.testclk1_c" ;
-BLOCK PATH FROM CELL "b_audio.i_sync_get/in_toggle" TO CELL "b_audio.i_sync_get/sync1" ;
-BLOCK PATH FROM CELL "i_startup/i_sys_reset_sync/sync2" TO CELL "i_logic/r_rmii.i_rmii/i_rx/i_fifo/aclr_wr[1]" ;
-BLOCK PATH FROM CELL "i_startup/i_sys_reset_sync/sync2" TO CELL "i_logic/r_rmii.i_rmii/i_rx/i_fifo/aclr_wr[2]" ;
-BLOCK PATH FROM CELL "i_startup/i_sys_reset_sync/sync2" TO CELL "i_logic/r_rmii.i_rmii/i_tx/i_fifo/aclr_rd[1]" ;
-BLOCK PATH FROM CELL "i_startup/i_sys_reset_sync/sync2" TO CELL "i_logic/r_rmii.i_rmii/i_tx/i_fifo/aclr_rd[2]" ;
-BLOCK PATH FROM CELL "i_startup/i_sys_reset_sync/sync2" TO CELL "i_eth_reset/sync1" ;
-BLOCK PATH FROM CELL "i_logic/r_rmii.i_rmii/i_rx/rx_enable" TO CELL "i_logic/r_rmii.i_rmii/i_rx/i_fifo/aclr_wr[1]" ;
-BLOCK PATH FROM CELL "i_logic/r_rmii.i_rmii/i_rx/rx_enable" TO CELL "i_logic/r_rmii.i_rmii/i_rx/i_fifo/aclr_wr[2]" ;
-BLOCK PATH FROM CELL "i_logic/r_rmii.i_rmii/i_rx/rx_enable" TO CELL "i_logic/r_rmii.i_rmii/i_rx/i_sync_enable/sync1" ;
-BLOCK PATH FROM CELL "i_logic/r_rmii.i_rmii/i_tx/i_sync/in_toggle" TO CELL "i_logic/r_rmii.i_rmii/i_tx/i_sync/sync1" ;
-BLOCK PATH FROM CELL "i_startup/i_reset_sync/in_toggle" TO CELL "i_startup/i_reset_sync/sync1" ;
-BLOCK PATH FROM CELL "i_startup/i_mem_sync/cs_memsync[0]" TO CELL "i_startup/i_mem_ready_sync/sync1" ;
-BLOCK PATH FROM CELL "i_startup/i_sys_reset_sync/sync2" TO CELL "i_startup/i_audio_reset/sync1" ;
-BLOCK PATH FROM CELL "i_startup/i_sys_reset_sync/sync2" TO CELL "i_startup/i_eth_reset/sync1" ;
-BLOCK PATH FROM CELL "i_startup/i_sys_reset_sync/sync2" TO CELL "i_startup/ctrl_reset_c" ;
-BLOCK PATH FROM CELL "i_memctrl/i_update_sync/in_toggle" TO CELL "i_memctrl/i_update_sync/sync1" ;
-BLOCK PATH FROM CELL "i_memctrl/i_reset_sync/in_toggle" TO CELL "i_memctrl/i_reset_sync/sync1" ;
 IOBUF PORT "RMII_REFCLK" IO_TYPE=LVCMOS18 PULLMODE=DOWN ;
 IOBUF PORT "CLOCK_50" IO_TYPE=LVCMOS18 PULLMODE=DOWN ;
 IOBUF PORT "ULPI_CLOCK" IO_TYPE=LVCMOS18 ;
@@ -843,40 +399,34 @@ IOBUF PORT "BOARD_REVn[4]" PULLMODE=UP IO_TYPE=LVCMOS18 ;
 IOBUF PORT "BUTTON[0]" PULLMODE=UP IO_TYPE=LVCMOS18 ;
 IOBUF PORT "BUTTON[1]" PULLMODE=UP IO_TYPE=LVCMOS18 ;
 IOBUF PORT "BUTTON[2]" PULLMODE=UP IO_TYPE=LVCMOS18 ;
-USE PRIMARY NET "half_clock" QUADRANT_TR QUADRANT_BR ;
-PROHIBIT PRIMARY NET "i_logic/r_drive1.r_mm1.i_drive1/drv_reset" ;
-USE PRIMARY NET "i_logic/r_drive_2.r_mm.i_drive/drv_reset" QUADRANT_TL ;
-PROHIBIT PRIMARY NET "i_mem_bus_reg.req_c.request2_fc" ;
-PROHIBIT PRIMARY NET "req_c.request2" ;
 IOBUF PORT "MDIO_DATA" PULLMODE=UP IO_TYPE=LVCMOS18 ;
-PROHIBIT PRIMARY NET "i_double_freq_bridge/un1_mem_resp_2x_4_i" ;
-PROHIBIT PRIMARY NET "i_double_freq_bridge/toggle_r_1x" ;
-PROHIBIT PRIMARY NET "i_double_freq_bridge/read_writen_0_sqmuxa" ;
-PROHIBIT PRIMARY NET "i_double_freq_bridge/rack_1_sqmuxa_i" ;
-PROHIBIT PRIMARY NET "i_double_freq_bridge/dack_tag_1_sqmuxa_i" ;
-PROHIBIT PRIMARY NET "i_double_freq_bridge.busy" ;
-PROHIBIT PRIMARY NET "i_double_freq_bridge/dack_tag_2x_1_sqmuxa_i" ;
-PROHIBIT PRIMARY NET "i_double_freq_bridge/un1_mem_resp_2x_1_i" ;
-PROHIBIT PRIMARY NET "i_riscv/i_core/ex_ready" ;
-PROHIBIT PRIMARY NET "i_riscv/ena_o_0" ;
-PROHIBIT PRIMARY NET "i_riscv/i_dmem/un1_state_6_i_0_0_a2" ;
-PROHIBIT PRIMARY NET "i_riscv/r_icache.i_cache/ena_o_RNO_0" ;
-PROHIBIT PRIMARY NET "i_riscv/r_icache.i_cache/ena_o_o" ;
-PROHIBIT PRIMARY NET "i_riscv/r_icache.i_cache/outsel_RNO[0]" ;
-PROHIBIT PRIMARY NET "i_riscv/r_icache.i_cache/state_RNI0IQ11[0]" ;
-PROHIBIT PRIMARY NET "i_riscv/r_boot.i_boot/N_457_i" ;
-PROHIBIT PRIMARY NET "i_riscv/r_icache.i_cache/dat_i_0_sqmuxa" ;
-PROHIBIT PRIMARY NET "i_riscv/i_imem/read_writen_0_sqmuxa" ;
+#
+# In the past this solved the memory controller sometimes failing to calibrate. Is this still relevant?
+# USE PRIMARY NET "half_clock" QUADRANT_TR QUADRANT_BR ; 
+#
+# Using primary nets inside of the RiscV => FPGA doesn't boot!
+PROHIBIT PRIMARY NET "i_riscv/ena_o_o" ;
+PROHIBIT PRIMARY NET "i_riscv/i_core/i_csr/mscratch_1_sqmuxa" ;
+PROHIBIT PRIMARY NET "i_riscv/i_core/i_csr/mstatus_0_sqmuxa" ;
+PROHIBIT PRIMARY NET "i_riscv/i_core/i_csr/mtvec_1_sqmuxa" ;
 PROHIBIT PRIMARY NET "i_riscv/i_core/i_csr/un1_mstatus46_1_i" ;
-PROHIBIT PRIMARY NET "i_riscv/i_core/i_fetch/pc3" ;
-PROHIBIT PRIMARY NET "i_riscv/i_core/i_fetch/rst_d_RNI10FU" ;
+PROHIBIT PRIMARY NET "i_riscv/i_core/i_decode/N_286_i_0" ;
+PROHIBIT PRIMARY NET "i_riscv/i_core/i_decode/csr_access_1_i_0_a2_RNICEQU2" ;
+PROHIBIT PRIMARY NET "i_riscv/i_core/i_exec/N_1080_i" ;
+PROHIBIT PRIMARY NET "i_riscv/i_core/i_fetch/N_1044_i" ;
+PROHIBIT PRIMARY NET "i_riscv/i_core/i_fetch/rst_d_RNICP9S" ;
 PROHIBIT PRIMARY NET "i_riscv/i_core/i_gprf/a/dat_o_ret_63s_i" ;
 PROHIBIT PRIMARY NET "i_riscv/i_core/read_en_o" ;
-PROHIBIT PRIMARY NET "i_riscv/i_dmem/N_3005_i" ;
-PROHIBIT PRIMARY NET "i_riscv/i_dmem/state_RNIMS641[1]" ;
-PROHIBIT PRIMARY NET "i_riscv/i_dmem/un1_state_2_1_i" ;
-PROHIBIT PRIMARY NET "i_riscv/i_dmem/un1_state_6_i" ;
-PROHIBIT PRIMARY NET "i_riscv/i_imem/N_547_2" ;
-PROHIBIT PRIMARY NET "i_riscv/rst_d" ;
-PROHIBIT PRIMARY NET "i_riscv/i_core/i_decode/N_286_i_0" ;
+PROHIBIT PRIMARY NET "i_riscv/i_dmem/addr_ice[2]" ;
 PROHIBIT PRIMARY NET "i_riscv/i_dmem/read_writen_0_sqmuxa" ;
+PROHIBIT PRIMARY NET "i_riscv/i_dmem/un1_state_3_1_i" ;
+PROHIBIT PRIMARY NET "i_riscv/i_dmem/un1_state_6_i" ;
+PROHIBIT PRIMARY NET "i_riscv/i_imem/dat_i_0_sqmuxa" ;
+PROHIBIT PRIMARY NET "i_riscv/i_imem/read_writen_0_sqmuxa" ;
+PROHIBIT PRIMARY NET "i_riscv/r_boot.i_boot/fb" ;
+PROHIBIT PRIMARY NET "i_riscv/r_icache.i_cache/dat_i_0_sqmuxa" ;
+PROHIBIT PRIMARY NET "i_riscv/r_icache.i_cache/ena_o_RNO_0" ;
+PROHIBIT PRIMARY NET "i_riscv/r_icache.i_cache/outsel_RNO[0]" ;
+PROHIBIT PRIMARY NET "i_riscv/r_icache.i_cache/d_miss_1_0_a3_1_RNIK0FU" ;
+PROHIBIT PRIMARY NET "i_riscv/rst_d" ;
+PROHIBIT PRIMARY NET "i_riscv/i_dmem/un3_remain_m_1[0]" ;

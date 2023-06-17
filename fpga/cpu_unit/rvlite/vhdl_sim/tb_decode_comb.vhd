@@ -73,13 +73,15 @@ x"34102473",
 x"00041483",
 x"0034f493" );
     
-    signal decoded_c    : t_decoded_instruction;
-    signal instruction  : std_logic_vector(31 downto 0);
-    signal inst_valid   : std_logic;
+    signal decoded_c       : t_decode_out;
+    signal instruction     : std_logic_vector(31 downto 0);
+    signal program_counter : std_logic_vector(31 downto 0);
+    signal inst_valid      : std_logic;
 begin
     process
     begin
         for i in c_test_vector'range loop
+            program_counter <= std_logic_vector(to_unsigned(4 * i, 32));
             instruction <= c_test_vector(i);
             inst_valid  <= '1';
             wait for 10 ns;
@@ -90,6 +92,8 @@ begin
 
     i_decode_comb: entity work.decode_comb
     port map (
+        program_counter => program_counter,
+        interrupt       => '0',
         instruction     => instruction,
         inst_valid      => inst_valid,
         decoded         => decoded_c

@@ -27,8 +27,8 @@ entity bus_converter is
         clock       : in  std_logic;
         reset       : in  std_logic;
         
-        dmem_i      : out dmem_in_type;
-        dmem_o      : in  dmem_out_type;
+        dmem_req    : in  t_dmem_req;
+        dmem_resp   : out t_dmem_resp;
         
         mem_req     : out t_mem_req_32;
         mem_resp    : in  t_mem_resp_32;
@@ -53,18 +53,18 @@ architecture arch of bus_converter is
 begin
     process(state, mem_resp)
     begin
-        dmem_i.ena_i <= '0';
+        dmem_resp.ena_i <= '0';
         case state is
         when idle =>
-            dmem_i.ena_i <= '1';
+            dmem_resp.ena_i <= '1';
         when mem_read | io_access =>
-            dmem_i.ena_i <= '0';
+            dmem_resp.ena_i <= '0';
         when mem_write =>
 --            if mem_resp.rack = '1' then
---                dmem_i.ena_i <= '1';
+--                dmem_resp.ena_i <= '1';
 --            end if;
         when others =>
-            dmem_i.ena_i <= '0';
+            dmem_resp.ena_i <= '0';
         end case;
     end process;
 
@@ -100,24 +100,24 @@ begin
             
             case state is
             when idle =>
-                if dmem_o.ena_o = '1' then
-                    dmem_i.dat_i <= (others => '0');
-                    addr_i <= unsigned(dmem_o.adr_o(mem_req_i.address'range));
-                    mem_req_i.byte_en <= dmem_o.sel_o;
-                    mem_req_i.data <= dmem_o.dat_o;
-                    mem_req_i.read_writen <= not dmem_o.we_o;
+                if dmem_req.ena_o = '1' then
+                    dmem_resp.dat_i <= (others => '0');
+                    addr_i <= unsigned(dmem_req.adr_o(mem_req_i.address'range));
+                    mem_req_i.byte_en <= dmem_req.sel_o;
+                    mem_req_i.data <= dmem_req.dat_o;
+                    mem_req_i.read_writen <= not dmem_req.we_o;
                     mem_req_i.tag <= g_tag;
-                    remain <= c_remain(to_integer(unsigned(dmem_o.sel_o)));
+                    remain <= c_remain(to_integer(unsigned(dmem_req.sel_o)));
                     
-                    if dmem_o.adr_o(g_io_bit) = '0' or not g_support_io then
+                    if dmem_req.adr_o(g_io_bit) = '0' or not g_support_io then
                         mem_req_i.request <= '1';
-                        if dmem_o.we_o = '1' then
+                        if dmem_req.we_o = '1' then
                             state <= mem_write;
                         else
                             state <= mem_read;
                         end if;
                     else -- I/O
-                        if dmem_o.we_o = '1' then
+                        if dmem_req.we_o = '1' then
                             io_req_i.write <= '1';
                         else
                             io_req_i.read <= '1';
@@ -131,7 +131,7 @@ begin
                     mem_req_i.request <= '0';
                 end if;
                 if mem_resp.dack_tag = g_tag then
-                    dmem_i.dat_i <= mem_resp.data;
+                    dmem_resp.dat_i <= mem_resp.data;
                     state <= idle;
                 end if;
                 
@@ -144,13 +144,13 @@ begin
             when io_access =>
                 case addr_i(1 downto 0) is
                 when "11" =>
-                    dmem_i.dat_i(31 downto 24) <= io_resp.data;
+                    dmem_resp.dat_i(31 downto 24) <= io_resp.data;
                 when "10" =>
-                    dmem_i.dat_i(23 downto 16) <= io_resp.data;
+                    dmem_resp.dat_i(23 downto 16) <= io_resp.data;
                 when "01" =>
-                    dmem_i.dat_i(15 downto 8) <= io_resp.data;
+                    dmem_resp.dat_i(15 downto 8) <= io_resp.data;
                 when "00" =>
-                    dmem_i.dat_i(7 downto 0) <= io_resp.data;
+                    dmem_resp.dat_i(7 downto 0) <= io_resp.data;
                 when others =>
                     null;
                 end case;
