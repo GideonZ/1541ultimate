@@ -191,7 +191,7 @@ void C64 :: init(void)
     if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
         init_system_roms();
         init_cartridge();
-    } else if (strlen(cfg->get_string(CFG_C64_CART_CRT)) || strlen(cfg->get_string(CFG_C64_KERNFILE)) || cfg->get_value(CFG_C64_REU_EN) == 2) {
+    } else if (strlen(cfg->get_string(CFG_C64_CART_CRT)) || strlen(cfg->get_string(CFG_C64_KERNFILE)) || cfg->get_value(CFG_C64_REU_EN) == 2 || is_in_reset()) {
         init_cartridge();
     }
     available = true;
@@ -586,6 +586,11 @@ void C64::reset(void)
     while (ioRead8(ITU_TIMER))
         ;
     C64_MODE = C64_MODE_UNRESET;
+}
+
+bool C64::is_in_reset(void)
+{
+    return (C64_MODE & C64_MODE_RESET);
 }
 
 /*

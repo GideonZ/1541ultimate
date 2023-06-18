@@ -597,6 +597,7 @@ begin
         g_c2n_streamer  => true,
         g_c2n_recorder  => true,
         g_cartridge     => true,
+        g_cartreset_init => '1',
         g_register_addr => true, -- to meet timing. Causes address to be sampled one clock BEFORE do_sample_addr!
         g_command_intf  => true,
         g_drive_sound   => true,
