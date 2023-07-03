@@ -430,7 +430,7 @@ void UserInterface :: run_hex_editor(const char *text_buf, int max_len)
         // data
         unsigned char c = text_buf[i];
         add_hex_byte(hex_buf, row_offset + HEX_COL_START + (3 * col), c);
-        hex_buf[row_offset + TXT_COL_START + col] = (char) ((c >= 32 && c <= 126) ? c : '.');
+        hex_buf[row_offset + TXT_COL_START + col] = (char) ((c >= 0x20 && c <= 0x7f) || c >= 0xa0 ? c : '.');
     }
     run_editor(hex_buf, hex_len);
 }
