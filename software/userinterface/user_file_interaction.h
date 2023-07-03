@@ -26,6 +26,7 @@ public:
 	static int S_rename(SubsysCommand *cmd);
 	static int S_delete(SubsysCommand *cmd);
 	static int S_view(SubsysCommand *cmd);
+	static int S_hex_view(SubsysCommand *cmd);
 	static int S_createDir(SubsysCommand *cmd);
 	static int S_runApp(SubsysCommand *cmd);
 

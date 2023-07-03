@@ -28,6 +28,9 @@
 #define CFG_USERIF_ULTICOPY_NAME 0x0B
 #define CFG_USERIF_FILENAME_OVERFLOW_SQUEEZE 0x0C
 
+#define BYTES_PER_HEX_ROW 8
+#define CHARS_PER_HEX_ROW 38
+
 class UserInterface : public ConfigurableObject, public HostClient
 {
 private:
@@ -83,6 +86,7 @@ public:
     int  getPreferredType(void);
 
     void run_editor(const char *, int);
+    void run_hex_editor(const char *, int);
     void swapDisk(void);
 
     UIObject *get_root_object(void) { return ui_objects[0]; }
