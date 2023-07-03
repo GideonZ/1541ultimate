@@ -430,7 +430,8 @@ void UserInterface :: run_hex_editor(const char *text_buf, int max_len)
         // data
         unsigned char c = text_buf[i];
         add_hex_byte(hex_buf, row_offset + HEX_COL_START + (3 * col), c);
-        hex_buf[row_offset + TXT_COL_START + col] = (char) ((c >= 0x20 && c <= 0x7f) || c >= 0xa0 ? c : '.');
+        // represent all non-printable characters as '.' based on the character set used by firmware version 3.10j
+        hex_buf[row_offset + TXT_COL_START + col] = (char) ((c == 0 || c == 8 || c == 10 || c == 13 || (c >=20 && c <= 31) || (c >= 144 && c <= 159)) ? '.' : c);
     }
     run_editor(hex_buf, hex_len);
 }
