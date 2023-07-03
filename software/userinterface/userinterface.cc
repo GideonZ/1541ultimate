@@ -394,6 +394,47 @@ void UserInterface :: run_editor(const char *text_buf, int max_len)
     edit->deinit();
 }
 
+void add_hex_byte(char *buf, int offset, uint8_t byte)
+{
+    char hex_chars[] = "0123456789ABCDEF";
+    buf[offset] = hex_chars[(byte >> 4) & 0x0F];
+    buf[offset + 1] = hex_chars[byte & 0x0F];
+}
+
+void add_hex_word(char *buf, int offset, uint16_t word)
+{
+    add_hex_byte(buf, offset, (word >> 8) & 0xFF);
+    add_hex_byte(buf, offset + 2, word & 0xFF);
+}
+
+void UserInterface :: run_hex_editor(const char *text_buf, int max_len)
+{
+    #define HEX_COL_START 5
+    #define TXT_COL_START (HEX_COL_START + (3 * BYTES_PER_HEX_ROW))
+    int hex_len = CHARS_PER_HEX_ROW * (max_len / BYTES_PER_HEX_ROW + 1);
+    char hex_buf[hex_len + 1];
+    for (int i = 0; i < hex_len; i++) {
+        hex_buf[i] = ' ';
+    }
+    int row_offset = 0;
+    for (int i = 0; i < max_len; i++) {
+        int col = i % BYTES_PER_HEX_ROW;
+        // offset and line break
+        if (col == 0) {
+            if (i > 0) {
+                hex_buf[row_offset + CHARS_PER_HEX_ROW - 1] = '\n';
+                row_offset += CHARS_PER_HEX_ROW;
+            }
+            add_hex_word(hex_buf, row_offset, i);
+        }
+        // data
+        unsigned char c = text_buf[i];
+        add_hex_byte(hex_buf, row_offset + HEX_COL_START + (3 * col), c);
+        hex_buf[row_offset + TXT_COL_START + col] = (char) ((c >= 32 && c <= 126) ? c : '.');
+    }
+    run_editor(hex_buf, hex_len);
+}
+
 int UserInterface :: enterSelection()
 {
 #ifndef NO_FILE_ACCESS
