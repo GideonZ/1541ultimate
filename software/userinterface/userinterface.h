@@ -29,8 +29,10 @@
 #define CFG_USERIF_FILENAME_OVERFLOW_SQUEEZE 0x0C
 
 #define BYTES_PER_HEX_ROW 8
-#define CHARS_PER_HEX_ROW 38
+#define CHARS_PER_HEX_ROW 37
 
+class Editor;
+class HexEditor;
 class UserInterface : public ConfigurableObject, public HostClient
 {
 private:
@@ -48,6 +50,8 @@ private:
     void set_screen_title(void);
     bool pollFocussed(void);
     bool buttonDownFor(uint32_t ms);
+    void run_editor(Editor *);
+
     UIStatusBox *status_box;
 public:
     int color_border, color_bg, color_fg, color_sel, color_sel_bg, config_save, filename_overflow_squeeze;
