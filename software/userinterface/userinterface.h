@@ -45,6 +45,9 @@ typedef enum {
 } keymap_options_t;
 
 
+#define BYTES_PER_HEX_ROW 8
+#define CHARS_PER_HEX_ROW 38
+
 class UserInterface : public ConfigurableObject, public HostClient
 {
 private:
@@ -107,6 +110,7 @@ public:
     int  getPreferredType(void);
     void help();
     void run_editor(const char *, int);
+    void run_hex_editor(const char *, int);
     void swapDisk(void);
     void send_keystroke(int key);
 

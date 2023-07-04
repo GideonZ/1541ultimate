@@ -26,6 +26,7 @@ public:
 	static SubsysResultCode_e S_rename(SubsysCommand *cmd);
 	static SubsysResultCode_e S_delete(SubsysCommand *cmd);
 	static SubsysResultCode_e S_view(SubsysCommand *cmd);
+	static SubsysResultCode_e S_hex_view(SubsysCommand *cmd);
 	static SubsysResultCode_e S_createDir(SubsysCommand *cmd);
 	static SubsysResultCode_e S_runApp(SubsysCommand *cmd);
 
