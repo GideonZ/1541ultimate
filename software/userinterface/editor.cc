@@ -188,7 +188,7 @@ int Editor :: handle_key(uint8_t c)
                 draw();
             }
             break;
-        case KEY_F1: // F1 -> page up
+        case KEY_F1: // page up
         case KEY_PAGEUP:
 			first_line -= height + 1;
 			if (first_line < 0) {
@@ -196,7 +196,12 @@ int Editor :: handle_key(uint8_t c)
 			}
 			draw();
 			break;
-        case KEY_F7: // F7 -> page down
+        case KEY_F2: // start
+        case KEY_HOME:
+			first_line = 0;
+			draw();
+			break;
+        case KEY_F7: // page down
         case KEY_PAGEDOWN:
         	first_line += height - 1;
 			if (first_line >= linecount - height) {
@@ -204,6 +209,11 @@ int Editor :: handle_key(uint8_t c)
 				if (first_line < 0)
 					first_line = 0;
 			}
+			draw();
+			break;
+        case KEY_F8: // end
+        case KEY_END:
+        	first_line = linecount - height;
 			draw();
 			break;
         case KEY_BACK: // backspace
