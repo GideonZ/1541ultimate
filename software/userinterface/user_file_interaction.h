@@ -13,6 +13,8 @@
 #include "subsys.h"
 #include "filemanager.h"
 
+enum EditorType { TEXT_EDITOR, HEX_EDITOR};
+
 class Path;
 class Action;
 class BrowsableDirEntry;
