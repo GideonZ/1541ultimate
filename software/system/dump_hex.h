@@ -33,6 +33,8 @@ void dump_hex_relative(void *pp, int len);
 void dump_hex_actual(void *pp, int len, int relative);
 void dump_hex_dirty(void *p, int len, uint8_t ptrn);
 void dump_hex_verify(void *pp1, void *pp2, int len);
+void dump_hex_byte(char *buf, int offset, uint8_t byte);
+void dump_hex_word(char *buf, int offset, uint16_t word);
 
 #ifdef __cplusplus
 }

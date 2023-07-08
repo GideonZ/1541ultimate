@@ -27,6 +27,8 @@
 #define DUMP_BYTES 16
 #endif
 
+static const char hex_chars[] = "0123456789ABCDEF";
+
 void dump_hex_actual(void *pp, int len, int relative)
 {
     int w,t;
@@ -123,4 +125,16 @@ void dump_hex_verify(void *pp1, void *pp2, int len)
             lines--;
 		}
 	}
+}
+
+void dump_hex_byte(char *buf, int offset, uint8_t byte)
+{
+	buf[offset] = hex_chars[(byte >> 4) & 0x0F];
+	buf[offset + 1] = hex_chars[byte & 0x0F];
+}
+
+void dump_hex_word(char *buf, int offset, uint16_t word)
+{
+	dump_hex_byte(buf, offset, (word >> 8) & 0xFF);
+	dump_hex_byte(buf, offset + 2, word & 0xFF);
 }

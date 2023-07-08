@@ -128,8 +128,11 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_BADLINES_EN       0x53
 #define CFG_SUPERCPU_DET      0x54
 
+#define CFG_MONITOR           0x60
+
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
+
 
 uint8_t C64_EMUSID1_BASE_BAK;
 uint8_t C64_EMUSID2_BASE_BAK;
@@ -1050,11 +1053,15 @@ int U64Config :: setSidEmuParams(ConfigItem *it)
 #define MENU_U64_WIFI_ENABLE 4
 #define MENU_U64_WIFI_BOOT 5
 #define MENU_U64_DETECT_SIDS 6
-#define MENU_U64_POKE 7
+#define MENU_U64_PEEK 7
+#define MENU_U64_PEEK_RANGE 8
+#define MENU_U64_POKE 9
 
 void U64Config :: create_task_items(void)
 {
     TaskCategory *dev = TasksCollection :: getCategory("Developer", SORT_ORDER_DEVELOPER);
+    myActions.peek      = new Action("Peek", SUBSYSID_U64, MENU_U64_PEEK);
+    myActions.peekrange = new Action("Peek Range", SUBSYSID_U64, MENU_U64_PEEK_RANGE);
     myActions.poke      = new Action("Poke", SUBSYSID_U64, MENU_U64_POKE);
     myActions.saveedid  = new Action("Save EDID to file", SUBSYSID_U64, MENU_U64_SAVEEDID);
     myActions.siddetect = new Action("Detect SIDs", SUBSYSID_U64, MENU_U64_DETECT_SIDS);
@@ -1062,9 +1069,11 @@ void U64Config :: create_task_items(void)
     myActions.wifion    = new Action("Enable WiFi",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE);
     myActions.wifiboot  = new Action("Enable WiFi Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT);
 
-    dev->append(myActions.saveedid );
+    dev->append(myActions.saveedid);
+    dev->append(myActions.peek);
+    dev->append(myActions.peekrange);
+    dev->append(myActions.poke);
 #if DEVELOPER > 0
-    dev->append(myActions.poke     );
     dev->append(myActions.siddetect);
     dev->append(myActions.wifioff  );
     dev->append(myActions.wifion   );
@@ -1076,6 +1085,24 @@ void U64Config :: update_task_items(bool writablePath, Path *p)
 {
     myActions.saveedid->setDisabled(!writablePath);
 }
+
+bool U64Config :: stop_c64() {
+    portENTER_CRITICAL();
+    bool running = !(C64_STOP & C64_HAS_STOPPED);
+    if (running) {
+        C64 *machine = C64 :: getMachine();
+        machine->stop(false);
+    }
+    return running;
+}
+
+void U64Config :: resume_c64(bool stopped) {
+    if (stopped) {
+        C64 *machine = C64 :: getMachine();
+        machine->start();
+    }
+    portEXIT_CRITICAL();
+}           
 
 int U64Config :: executeCommand(SubsysCommand *cmd)
 {
@@ -1091,7 +1118,9 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
 	C64 *machine;
 	I2C_Driver i2c;
 	static char poke_buffer[16];
-	uint32_t addr, value;
+	static char peek_buffer[16];
+	static char peek_range_buffer[16];
+	uint32_t addr, end_addr, value;
 
 	switch(cmd->functionID) {
     case MENU_U64_SAVEEDID:
@@ -1153,24 +1182,66 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
         U64_WIFI_CONTROL = 7;
         break;
 
+    case MENU_U64_PEEK:
+        if (cmd->user_interface->string_box("Peek AAAA", peek_buffer, 16)) {
+            sscanf(peek_buffer, "%x", &addr);
+
+            bool stopped = stop_c64();
+            value = C64_PEEK(addr);
+            resume_c64(stopped);
+
+            char msg[20];
+            sprintf(msg, "Peek(%4x)=%2x", addr, value);
+            cmd->user_interface->popup(msg, BUTTON_OK);
+        }
+        break;
+
+    // TODO This functionality could evolve into a machine code monitor
+    case MENU_U64_PEEK_RANGE:
+        if (cmd->user_interface->string_box("Peek AAAA,BBBB", peek_range_buffer, 16)) {
+            sscanf(peek_range_buffer, "%x,%x", &addr, &end_addr);
+            int len = end_addr - addr;
+            if (len > 128) {
+                cmd->user_interface->popup("Max supported range is 128 bytes", BUTTON_OK);
+                return 0;
+            }
+
+            char msg[700];
+            memset(msg, ' ', 699);
+            int src_offset = 0;
+            int dst_offset = 0;
+            bool stopped = stop_c64();
+            for (int src_offset = 0; src_offset < len; src_offset++) {
+                int a = addr + src_offset;
+                int src_offset_in_current_line = src_offset % 8;
+                if (src_offset_in_current_line == 0) {
+                    if (src_offset > 0) {
+                        msg[dst_offset + 37] = '\n';
+                        dst_offset += 38;
+                    }
+                    dump_hex_word(msg, dst_offset, a);
+                }
+                uint8_t c = (uint8_t) C64_PEEK(a);
+                dump_hex_byte(msg, dst_offset + 5 + (3 * src_offset_in_current_line), c);
+                msg[dst_offset + 32] = (char) ((c == 0 || c == 8 || c == 10 || c == 13 || (c >=20 && c <= 31) || (c >= 144 && c <= 159)) ? '.' : c);
+            }
+            resume_c64(stopped);
+
+            cmd->user_interface->popup(msg, BUTTON_OK);
+        }
+        break;
+
     case MENU_U64_POKE:
         if (cmd->user_interface->string_box("Poke AAAA,DD", poke_buffer, 16)) {
-
             sscanf(poke_buffer, "%x,%x", &addr, &value);
 
-            C64 *machine = C64 :: getMachine();
-            portENTER_CRITICAL();
+            bool stopped = stop_c64();
+            C64_POKE(addr, value);
+            resume_c64(stopped);
 
-            if (!(C64_STOP & C64_HAS_STOPPED)) {
-                machine->stop(false);
-
-                C64_POKE(addr, value);
-
-                machine->resume();
-            } else {
-                C64_POKE(addr, value);
-            }
-            portEXIT_CRITICAL();
+            char msg[20];
+            sprintf(msg, "Poke(%4x,%2x)", addr, value);
+            cmd->user_interface->popup(msg, BUTTON_OK);
         }
         break;
 
@@ -1193,7 +1264,6 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
     }
     return 0;
 }
-
 
 uint8_t U64Config :: GetSidType(int slot)
 {

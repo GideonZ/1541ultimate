@@ -48,4 +48,13 @@ public:
     HexEditor(UserInterface *ui, const char *text_buffer, int max_len);
 };
 
+class AssEditor : public Editor
+{
+	UserInterface *user_interface;
+	void line_breakdown(const char *text_buffer, int buffer_size);
+    void draw(int line_idx, Line *line);
+public:
+    AssEditor(UserInterface *ui, const char *text_buffer, int max_len);
+};
+
 #endif
