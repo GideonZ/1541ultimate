@@ -1054,15 +1054,15 @@ int U64Config :: setSidEmuParams(ConfigItem *it)
 #define MENU_U64_WIFI_BOOT 5
 #define MENU_U64_DETECT_SIDS 6
 #define MENU_U64_PEEK 7
-#define MENU_U64_PEEK_RANGE 8
-#define MENU_U64_POKE 9
+#define MENU_U64_POKE 8
+#define MENU_U64_MONITOR 9
 
 void U64Config :: create_task_items(void)
 {
     TaskCategory *dev = TasksCollection :: getCategory("Developer", SORT_ORDER_DEVELOPER);
     myActions.peek      = new Action("Peek", SUBSYSID_U64, MENU_U64_PEEK);
-    myActions.peekrange = new Action("Peek Range", SUBSYSID_U64, MENU_U64_PEEK_RANGE);
     myActions.poke      = new Action("Poke", SUBSYSID_U64, MENU_U64_POKE);
+    myActions.monitor = new Action("Monitor", SUBSYSID_U64, MENU_U64_MONITOR);
     myActions.saveedid  = new Action("Save EDID to file", SUBSYSID_U64, MENU_U64_SAVEEDID);
     myActions.siddetect = new Action("Detect SIDs", SUBSYSID_U64, MENU_U64_DETECT_SIDS);
     myActions.wifioff   = new Action("Disable WiFi", SUBSYSID_U64, MENU_U64_WIFI_DISABLE);
@@ -1071,8 +1071,8 @@ void U64Config :: create_task_items(void)
 
     dev->append(myActions.saveedid);
     dev->append(myActions.peek);
-    dev->append(myActions.peekrange);
     dev->append(myActions.poke);
+    dev->append(myActions.monitor);
 #if DEVELOPER > 0
     dev->append(myActions.siddetect);
     dev->append(myActions.wifioff  );
@@ -1185,48 +1185,9 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
     case MENU_U64_PEEK:
         if (cmd->user_interface->string_box("Peek AAAA", peek_buffer, 16)) {
             sscanf(peek_buffer, "%x", &addr);
-
-            bool stopped = stop_c64();
             value = C64_PEEK(addr);
-            resume_c64(stopped);
-
             char msg[20];
             sprintf(msg, "Peek(%4x)=%2x", addr, value);
-            cmd->user_interface->popup(msg, BUTTON_OK);
-        }
-        break;
-
-    // TODO This functionality could evolve into a machine code monitor
-    case MENU_U64_PEEK_RANGE:
-        if (cmd->user_interface->string_box("Peek AAAA,BBBB", peek_range_buffer, 16)) {
-            sscanf(peek_range_buffer, "%x,%x", &addr, &end_addr);
-            int len = end_addr - addr;
-            if (len > 128) {
-                cmd->user_interface->popup("Max supported range is 128 bytes", BUTTON_OK);
-                return 0;
-            }
-
-            char msg[700];
-            memset(msg, ' ', 699);
-            int src_offset = 0;
-            int dst_offset = 0;
-            bool stopped = stop_c64();
-            for (int src_offset = 0; src_offset < len; src_offset++) {
-                int a = addr + src_offset;
-                int src_offset_in_current_line = src_offset % 8;
-                if (src_offset_in_current_line == 0) {
-                    if (src_offset > 0) {
-                        msg[dst_offset + 37] = '\n';
-                        dst_offset += 38;
-                    }
-                    dump_hex_word(msg, dst_offset, a);
-                }
-                uint8_t c = (uint8_t) C64_PEEK(a);
-                dump_hex_byte(msg, dst_offset + 5 + (3 * src_offset_in_current_line), c);
-                msg[dst_offset + 32] = (char) ((c == 0 || c == 8 || c == 10 || c == 13 || (c >=20 && c <= 31) || (c >= 144 && c <= 159)) ? '.' : c);
-            }
-            resume_c64(stopped);
-
             cmd->user_interface->popup(msg, BUTTON_OK);
         }
         break;
@@ -1243,6 +1204,10 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
             sprintf(msg, "Poke(%4x,%2x)", addr, value);
             cmd->user_interface->popup(msg, BUTTON_OK);
         }
+        break;
+
+    case MENU_U64_MONITOR:
+        cmd->user_interface->run_hex_editor((const char *) C64_MEMORY_BASE, 0x10000);   
         break;
 
     case MENU_U64_DETECT_SIDS:

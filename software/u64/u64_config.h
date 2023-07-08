@@ -26,8 +26,8 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
 {
     struct {
         Action *peek;
-        Action *peekrange;
         Action *poke;
+        Action *monitor;
         Action *saveedid;
         Action *siddetect;
         Action *wifioff;
