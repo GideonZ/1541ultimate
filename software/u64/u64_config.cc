@@ -1070,11 +1070,13 @@ void U64Config :: create_task_items(void)
     myActions.wifiboot  = new Action("Enable WiFi Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT);
 
     dev->append(myActions.saveedid);
-    #if U64
+
+#if U64
     dev->append(myActions.peek);
     dev->append(myActions.poke);
     dev->append(myActions.monitor);
-    #endif
+#endif
+
 #if DEVELOPER > 0
     dev->append(myActions.siddetect);
     dev->append(myActions.wifioff  );
@@ -1184,28 +1186,27 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
         U64_WIFI_CONTROL = 7;
         break;
 
-    // TODO Only works in "Config / User Interface / HDMI overlay mode"; ensure it also works in "Freeze mode"
     case MENU_U64_PEEK:
         if (cmd->user_interface->string_box("Peek AAAA", peek_buffer, 16)) {
             sscanf(peek_buffer, "%x", &addr);
-            value = C64_PEEK(addr);
+            
+            value = C64 :: getMachine()->peek(addr);
+
             char msg[20];
             sprintf(msg, "Peek(%4x)=%2x", addr, value);
             cmd->user_interface->popup(msg, BUTTON_OK);
         }
         break;
 
-    // TODO Only works in "Config / User Interface / HDMI overlay mode"; ensure it also works in "Freeze mode"
     case MENU_U64_POKE:
         if (cmd->user_interface->string_box("Poke AAAA,DD", poke_buffer, 16)) {
             sscanf(poke_buffer, "%x,%x", &addr, &value);
 
-            bool stopped = stop_c64();
-            C64_POKE(addr, value);
-            resume_c64(stopped);
+            C64 :: getMachine()->poke(addr, (uint8_t) value);
+            uint8_t verified_value = C64 :: getMachine()->peek(addr);
 
             char msg[20];
-            sprintf(msg, "Poke(%4x,%2x)", addr, value);
+            sprintf(msg, "Poke(%4x,%2x)=%2x", addr, value, verified_value);
             cmd->user_interface->popup(msg, BUTTON_OK);
         }
         break;
@@ -1213,7 +1214,9 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
     case MENU_U64_MONITOR:
         int ram_size = 64 * 1024;
         uint8_t *pb = new uint8_t[ram_size];
+        
         C64 :: getMachine()->get_all_memory(pb);
+        
         cmd->user_interface->run_hex_editor((const char *) pb, ram_size);   
         delete[] pb;
         break;

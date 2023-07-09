@@ -304,7 +304,10 @@ class C64 : public GenericHost, ConfigurableObject
     static void hard_stop(void);
     void resume(void);
     void freeze(void);
-    virtual void get_all_memory(uint8_t *) { /* NOT YET IMPLEMENTED */ };
+    
+    virtual void get_all_memory(uint8_t *) { /* NOT YET IMPLEMENTED EXCEPT FOR U64*/ };
+    virtual uint8_t peek(uint32_t) { /* NOT YET IMPLEMENTED EXCEPT FOR U64*/ };
+    virtual void poke(uint32_t, uint8_t) { /* NOT YET IMPLEMENTED EXCEPT FOR U64*/ };
     
     static uint8_t get_exrom_game(void) {
         return (C64_CLOCK_DETECT & 0x0C) >> 2;
