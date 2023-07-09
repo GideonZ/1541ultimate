@@ -1062,7 +1062,7 @@ void U64Config :: create_task_items(void)
     TaskCategory *dev = TasksCollection :: getCategory("Developer", SORT_ORDER_DEVELOPER);
     myActions.peek      = new Action("Peek", SUBSYSID_U64, MENU_U64_PEEK);
     myActions.poke      = new Action("Poke", SUBSYSID_U64, MENU_U64_POKE);
-    myActions.monitor = new Action("Monitor", SUBSYSID_U64, MENU_U64_MONITOR);
+    myActions.monitor   = new Action("Monitor", SUBSYSID_U64, MENU_U64_MONITOR);
     myActions.saveedid  = new Action("Save EDID to file", SUBSYSID_U64, MENU_U64_SAVEEDID);
     myActions.siddetect = new Action("Detect SIDs", SUBSYSID_U64, MENU_U64_DETECT_SIDS);
     myActions.wifioff   = new Action("Disable WiFi", SUBSYSID_U64, MENU_U64_WIFI_DISABLE);
@@ -1070,9 +1070,11 @@ void U64Config :: create_task_items(void)
     myActions.wifiboot  = new Action("Enable WiFi Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT);
 
     dev->append(myActions.saveedid);
+    #if U64
     dev->append(myActions.peek);
     dev->append(myActions.poke);
     dev->append(myActions.monitor);
+    #endif
 #if DEVELOPER > 0
     dev->append(myActions.siddetect);
     dev->append(myActions.wifioff  );
@@ -1182,6 +1184,7 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
         U64_WIFI_CONTROL = 7;
         break;
 
+    // TODO Only works in "Config / User Interface / HDMI overlay mode"; ensure it also works in "Freeze mode"
     case MENU_U64_PEEK:
         if (cmd->user_interface->string_box("Peek AAAA", peek_buffer, 16)) {
             sscanf(peek_buffer, "%x", &addr);
@@ -1192,6 +1195,7 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
         }
         break;
 
+    // TODO Only works in "Config / User Interface / HDMI overlay mode"; ensure it also works in "Freeze mode"
     case MENU_U64_POKE:
         if (cmd->user_interface->string_box("Poke AAAA,DD", poke_buffer, 16)) {
             sscanf(poke_buffer, "%x,%x", &addr, &value);
@@ -1207,7 +1211,11 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
         break;
 
     case MENU_U64_MONITOR:
-        cmd->user_interface->run_hex_editor((const char *) C64_MEMORY_BASE, 0x10000);   
+        int ram_size = 64 * 1024;
+        uint8_t *pb = new uint8_t[ram_size];
+        C64 :: getMachine()->get_all_memory(pb);
+        cmd->user_interface->run_hex_editor((const char *) pb, ram_size);   
+        delete[] pb;
         break;
 
     case MENU_U64_DETECT_SIDS:
