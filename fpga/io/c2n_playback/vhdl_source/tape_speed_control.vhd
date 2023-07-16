@@ -23,7 +23,7 @@ port (
 end entity;
 
 architecture arch of tape_speed_control is
-    constant c_pdm_target_pal       : natural := ( 985250 * 512) / (g_clock_freq / 128);  
+    constant c_pdm_target_pal       : natural := ( 985248 * 512) / (g_clock_freq / 128);  
     constant c_pdm_target_avg       : natural := (1000000 * 512) / (g_clock_freq / 128);  
     constant c_pdm_target_ntsc      : natural := (1022727 * 512) / (g_clock_freq / 128);  
     constant c_slowdown_ticks       : natural := 300 * (g_clock_freq / 1000); 
