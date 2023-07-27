@@ -164,9 +164,14 @@ void SystemInfo :: generate(UserInterface *ui)
     if(getFpgaCapabilities() & CAPAB_ULTIMATE64) {
         buffer.format("C64 FPGA version:   V1.%02X\n", C64_CORE_VERSION);
     }
-    buffer.format("Git tag:  " APP_VERSION_TAG "\n");
-    buffer.format("Git hash: " APP_VERSION_HASH "\n");
-    buffer.format("Git date: " APP_VERSION_DATE "\n\n");
+    Flash *flash = get_flash();
+    if (flash) {
+        buffer.format("Flash Type: %s\n", flash->get_type_string());
+    }
+    buffer.format("Git tag:    " APP_VERSION_TAG "\n");
+    buffer.format("Git branch: " APP_VERSION_BRANCH "\n");
+    buffer.format("Git hash:   " APP_VERSION_HASH "\n");
+    buffer.format("Git date:   " APP_VERSION_DATE "\n\n");
     
     buffer.format("Drive Status:\n");
     buffer.format("=============\n");

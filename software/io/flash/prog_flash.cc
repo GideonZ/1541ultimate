@@ -58,11 +58,17 @@ bool flash_buffer_at(Flash *flash, Screen *screen, int address, bool header, voi
     if(header) {
         console_print(screen, "Flashing  \033\027%s\033\037,\n  version \033\027%s\033\037..\n", descr, version);
         uint8_t *bin = new uint8_t[length+16];
-        uint32_t *pul;
-        pul = (uint32_t *)bin;
-        *(pul++) = (uint32_t)length;
-        memset(pul, 0, 12);
-        strcpy((char*)pul, version);
+
+        // For backward compatibility reasons, the length is always stored as BIG ENDIAN
+        // The bootloader should deal with this, regardless of the endianness of the CPU.
+        uint32_t ul = (uint32_t)length;
+        bin[0] = ul >> 24;
+        bin[1] = (ul >> 16) & 0xFF;
+        bin[2] = (ul >> 8) & 0xFF;
+        bin[3] = ul & 0xFF;
+
+        memset(bin+4, 0, 12);
+        strcpy((char*)bin+4, version);
         memcpy(bin+16, buffer, length);
         length+=16;
         p = (char *)bin;

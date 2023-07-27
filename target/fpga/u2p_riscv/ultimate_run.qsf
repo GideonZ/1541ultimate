@@ -434,6 +434,26 @@ set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to SDRAM_DQ
 #set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/network/udp_header.vhd
 #set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/network/eth_debug_stream.vhd
 
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/ddr2_ctrl_logic.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/ddr2_ctrl_fast.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/rvlite/vhdl_source/csr.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/rvlite/vhdl_source/core_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/rvlite/vhdl_source/core.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/rvlite/vhdl_source/bus_converter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/rvlite/vhdl_source/bootrom_pkg_u2p.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/rvlite/vhdl_source/bootrom.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/rvlite/vhdl_source/alu_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/rvlite/vhdl_source/alu_logical.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/rvlite/vhdl_source/alu_branch.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/rvlite/vhdl_source/writeback.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/rvlite/vhdl_source/rvlite_wrapper.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/rvlite/vhdl_source/icache.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/rvlite/vhdl_source/gprf.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/rvlite/vhdl_source/fetch.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/rvlite/vhdl_source/execute.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/rvlite/vhdl_source/dsram.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/rvlite/vhdl_source/decode_comb.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/rvlite/vhdl_source/decode.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/icap/vhdl_source/icap_pkg.vhd
 set_global_assignment -name VHDL_FILE "../../../fpga/io/icap/vhdl_source/icap-dummy.vhd"
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/pseudo_dpram_8x32.vhd
@@ -512,7 +532,6 @@ set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/sine_osc.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/distributed_stack.vhd
 set_global_assignment -name VHDL_FILE "../../../fpga/altera/srl_fifo-altera.vhd"
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/dpram.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/std/dsram.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/dpram_sc.vhd
 set_global_assignment -name VHDL_FILE ../../../target/simulation/packages/vhdl_source/tl_vector_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../target/simulation/packages/vhdl_source/tl_string_util_pkg.vhd

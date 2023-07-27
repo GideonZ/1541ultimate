@@ -35,6 +35,7 @@
 #endif
 
 #define RAM_TEST_REPORT 20
+#define TEST_WORD_COUNT 20
 
 const uint8_t hexchars[] = "0123456789ABCDEF";
 
@@ -151,7 +152,7 @@ static void move_sys_clock()
     uint8_t prev,cur = 0x80;
     for(int i=0;i<96;i++) {
         prev = cur;
-        for(int j=0;j<200;j++) {
+        for(int j=0;j<1000;j++) {
             __asm__("nop");
         }
         cur = LATTICE_PLL_MEASURE2;
@@ -163,8 +164,10 @@ static void move_sys_clock()
     LATTICE_PLL_SELECT = 5; // reverse CLKOS2 (sys clock)
     LATTICE_PLL_PULSE = 1;
     LATTICE_PLL_PULSE = 1;
+    for(int j=0;j<1000;j++) {
+        __asm__("nop");
+    }
 }
-
 
 #define DRIVE1IRQ (*(volatile uint8_t *)(DRIVE_A_BASE + 0x1806))
 #define DRIVE2IRQ (*(volatile uint8_t *)(DRIVE_B_BASE + 0x1806))
@@ -176,6 +179,13 @@ void ddr2_calibrate()
     hexbyte(DRIVE2IRQ);
     outbyte('^');
 
+    // if(ram_test(5)) {
+    //     my_puts("\nReady to rumble!\n");
+    // } else {
+    //     my_puts("\nBoo!!\n");
+    // }
+    // return;
+
     // Turn on clock and let DDR stabilize
     LATTICE_DDR2_ENABLE    = CLOCKPIN;
     for (int i=0;i<5000;i++) {
@@ -186,15 +196,7 @@ void ddr2_calibrate()
     for(int i=0; i<3; i++) {
         move_sys_clock();
         if (coarse_calibration()) {
-            reset_toggle();
-            if(ram_test()) {
-                my_puts("\nReady to rumble!\n");
-#if !NO_BOOT
-                return;
-#endif
-            } else {
-                my_puts("\nBoo!!\n");
-            }
+            break;
         } else {
         	uint8_t buttons = ioRead8(ITU_BUTTON_REG) & ITU_BUTTONS;
         	if ((buttons & ITU_BUTTON2) == 0) {  // right button not pressed
@@ -205,6 +207,19 @@ void ddr2_calibrate()
             }
         }
     }
+    reset_toggle();
+    if(ram_test()) {
+        my_puts("\nReady to rumble!\n");
+#if !NO_BOOT
+        return;
+#endif
+    } else {
+        my_puts("\nBoo!!\n");
+    }
+
+#if NO_EXPLORE
+    return;
+#endif
 
     volatile uint32_t *mem32 = (uint32_t *)0x10000;
 
@@ -305,23 +320,28 @@ int ram_test(void)
 #else
     const int run = 0;
 #endif
+    // uint16_t *pw = (uint16_t *)0x400;
+    // hex16(pw[0], "\n");
+    // hex16(pw[1], "\n");
 
-    //my_puts("Write..");
+    // my_puts("Write..");
     uint16_t *mem16 = (uint16_t *)0x10000;
-    uint16_t modifier = (run & 1) ? 0xFFFF : 0x0000;
+    uint16_t modifier = (run & 1) ? 0xFFFF : 0x55AA;
     uint32_t i;
-    for(i=0;i<65536;i++) {
+    for(i=0;i<TEST_WORD_COUNT;i++) {
         mem16[i] = (uint16_t)(i ^ modifier);
     }
+
     //my_puts("Read..");
     // LATTICE_DDR2_VALIDCNT = 0;
-    for(i=0;i<65536;i++) {
+    for(i=0;i<TEST_WORD_COUNT;i++) {
         uint16_t expected = (uint16_t)(i ^ modifier);
-        if (mem16[i] != expected) {
+        uint16_t read = mem16[i];
+        if (read != expected) {
             if (errors < RAM_TEST_REPORT) {
                 hex16(errors,":");
                 hex16(expected, " != ");
-                hex16(mem16[i], "\n");
+                hex16(read, "\n");
             }
             errors++;
         }

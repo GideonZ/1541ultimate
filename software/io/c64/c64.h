@@ -378,6 +378,7 @@ public:
     void init_cartridge(void);
     void reset(void);
     void start(void);
+    bool is_in_reset(void);
 
     static void clear_cart_definition(cart_def *def) {
         def->custom_addr = 0;

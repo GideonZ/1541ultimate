@@ -13,6 +13,12 @@
 #define DEBUG_RAW_PKT 0
 #define DEBUG_INVALID_PKT 0
 
+#if DATACACHE
+#define BIT31 0x80000000
+#else
+#define BIT31 0
+#endif
+
 uint8_t c_req_phy_access[]    = { 0x40, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 uint8_t c_read_phy_reg[8]     = { 0xC0, 0x07, 0x10, 0x00, 0xFF, 0x00, 0x02, 0x00 };
 uint8_t c_write_phy_reg[8]    = { 0x40, 0x08, 0x10, 0x00, 0xFF, 0x00, 0x02, 0x00 };
@@ -98,7 +104,7 @@ UsbAx88772Driver :: UsbAx88772Driver(UsbInterface *intf, uint16_t prodID) : UsbD
     dataBuffersBlock = new uint8_t[1536 * NUM_BUFFERS];
 
     for (int i=0; i < NUM_BUFFERS; i++) {
-        freeBuffers.push(&dataBuffersBlock[0x80000000 + 1536 * i]); // set bit 31, so that it is non-cacheable
+        freeBuffers.push(&dataBuffersBlock[BIT31 + 1536 * i]); // set bit 31, so that it is non-cacheable
     }
 }
 

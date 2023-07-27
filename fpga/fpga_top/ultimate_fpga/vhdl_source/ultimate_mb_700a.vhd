@@ -146,6 +146,7 @@ architecture structural of ultimate_mb_700a is
     signal cpu_mem_req      : t_mem_req_32;
     signal cpu_mem_resp     : t_mem_resp_32;
     signal misc_io          : std_logic_vector(7 downto 0);
+    signal guru_irq         : std_logic := '0';
     signal io_req           : t_io_req;
     signal io_resp          : t_io_resp;
     signal io_irq           : std_logic;
@@ -231,9 +232,25 @@ begin
     inv_addr(31 downto 26) <= (others => '0');
     inv_addr(25 downto 0) <= std_logic_vector(mem_req.address);
 
+    -- Detecting writes in program area that corrupt the application
+    process(sys_clock)
+    begin
+        if rising_edge(sys_clock) then
+            if sys_reset = '1' then
+                guru_irq <= '0';
+            elsif misc_io(7) = '1' then
+                if cpu_mem_req.request = '1' and cpu_mem_req.read_writen = '0' and
+                   cpu_mem_req.address(24 downto 20) = 0 then
+                    guru_irq <= '1';
+                end if;
+            end if;
+        end if;
+    end process;
+
     i_logic: entity work.ultimate_logic_32
     generic map (
         g_simulation    => false,
+        g_big_endian    => true,
         g_clock_freq    => 50_000_000,
         g_baud_rate     => 115_200,
         g_icap          => true,
@@ -308,6 +325,7 @@ begin
         ext_mem_req => cpu_mem_req,
         ext_mem_resp=> cpu_mem_resp,
         cpu_irq     => io_irq,
+        guru_irq    => guru_irq,
 
         -- local bus side
         mem_refr_inhibit => memctrl_inhibit,

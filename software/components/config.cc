@@ -38,13 +38,23 @@ ConfigManager :: ConfigManager() : stores(16, NULL), pages(16, NULL)
     	printf("ConfigManager opened flash: %p\n", flash);
     }
 	safeMode = false;
+
 #if U64
-	if (U64_RESTORE_REG == 1) {
-	    safeMode = true;
-	}
+    if (U64_RESTORE_REG == 1) {
+        safeMode = true;
+    }
 #elif SAFEMODE
     safeMode = true;
+#else
+    // If the reset button is pressed during boot, and it's not U64, then
+    // safe mode is enabled.
+    if ((ioRead8(ITU_BUTTON_REG) & ITU_BUTTON0) != 0) {
+        safeMode = true;
+    }
 #endif
+    if (safeMode) {
+        printf("SAFE MODE ENABLED. Loading defaults...\n");
+    }
 	//    root.add_child(this); // make ourselves visible in the browser
 }
 

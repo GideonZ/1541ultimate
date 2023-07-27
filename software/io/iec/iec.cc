@@ -408,9 +408,14 @@ void IecInterface :: poll()
     	        delete[] pathstring;
     	    }
     	}
-		uint8_t a;
-		while (!((a = HW_IEC_RX_FIFO_STATUS) & IEC_FIFO_EMPTY)) {
-			data = HW_IEC_RX_DATA;
+        uint8_t a;
+        for (int loopcnt = 0; loopcnt < 500; loopcnt++) {
+            a = HW_IEC_RX_FIFO_STATUS;
+            if (a & IEC_FIFO_EMPTY) {
+                break;
+            }
+
+            data = HW_IEC_RX_DATA;
 			if(a & IEC_FIFO_CTRL) {
 
 #if IECDEBUG > 2
@@ -492,9 +497,9 @@ void IecInterface :: poll()
 			if (wait_irq) {
 				break;
 			}
-		}
+        }
 
-		int st;
+        int st;
 		if(talking) {
 		    while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)) {
 				st = channels[current_channel]->prefetch_data(data);

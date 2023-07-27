@@ -45,9 +45,11 @@ void do_update(void)
 {
     setup("\033\025** Ultimate II+L Updater **\n\033\037");
 
+    Flash *flash2 = get_flash();
+    flash2->protect_disable();
     check_flash_disk();
 
-    if(user_interface->popup("Flash Runtime?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+    if(user_interface->popup("Flash " APPL_VERSION "?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
         clear_field();
         create_dir(ROMS_DIRECTORY);
         create_dir(CARTS_DIRECTORY);
@@ -60,13 +62,12 @@ void do_update(void)
         write_flash_file("snds1581.bin", &_snds1581_bin_start, 0xC000);
         write_html_file("index.html", sample_html, strlen(sample_html));
 
-        Flash *flash2 = get_flash();
-        flash2->protect_disable();
         flash_buffer(flash2, screen, FLASH_ID_BOOTFPGA, &_u2p_ecp5_impl1_bit_start, &_u2p_ecp5_impl1_bit_end, "", "Runtime FPGA");
         flash_buffer(flash2, screen, FLASH_ID_APPL,     &_ultimate_app_start,     &_ultimate_app_end,  APPL_VERSION, "Ultimate Application");
 
         write_protect(flash2);
     }
+    reset_config(flash2);
     turn_off();
 }
 

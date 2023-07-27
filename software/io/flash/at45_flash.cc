@@ -116,6 +116,19 @@ AT45_Flash *AT45_Flash :: tester()
 	return NULL;
 }
 
+const char *AT45_Flash ::get_type_string(void)
+{
+    switch (total_size) {
+    case 4096:
+        return "Atmel AT45DB161";
+    case 8192:
+        return "Atmel AT45DB321";
+    default:
+        return "Atmel";
+    }
+}
+
+
 int AT45_Flash :: get_page_size(void)
 {
     return page_size;
@@ -321,8 +334,17 @@ bool AT45_Flash :: write_page(int page, const void *buffer)
     SPI_FLASH_DATA = uint8_t(device_addr >> 16);
     SPI_FLASH_DATA = uint8_t(device_addr >> 8);
     SPI_FLASH_DATA = uint8_t(device_addr);
-    for(int i=0;i<len;i++) {
-        SPI_FLASH_DATA_32 = *(buf++);
+    uint32_t buf_addr = (uint32_t)buffer;
+    if (buf_addr & 3) { // not aligned
+        len *= 4;
+        uint8_t *buf8 = (uint8_t *)buffer;
+        for (int i = 0; i < len; i++) {
+            SPI_FLASH_DATA = *(buf8++);
+        }
+    } else {
+        for (int i = 0; i < len; i++) {
+            SPI_FLASH_DATA_32 = *(buf++);
+        }
     }
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
     bool ret = wait_ready(500); // datasheet: 40, including erase
@@ -399,48 +421,54 @@ void AT45_Flash :: reboot(int addr)
     error(("You should never see this!\n"));
 }
 
-bool AT45_Flash :: protect_configure(void)
+bool AT45_Flash ::protect_configure(void)
 {
-	portENTER_CRITICAL();
-	// erase sector protection regsiter
+    portENTER_CRITICAL();
+    // erase sector protection regsiter
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
-	SPI_FLASH_DATA_32 = 0x3D2A7FCF;
+    SPI_FLASH_DATA = 0x3D;
+    SPI_FLASH_DATA = 0x2A;
+    SPI_FLASH_DATA = 0x7F;
+    SPI_FLASH_DATA = 0xCF;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
-	if(!wait_ready(100)) { // datasheet doesn't specify
-	    portEXIT_CRITICAL();
-		return false;
-	}
+    if (!wait_ready(100)) {                       // datasheet doesn't specify
+        portEXIT_CRITICAL();
+        return false;
+    }
 
-	// program sector protection regsiter
+    // program sector protection regsiter
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
-	SPI_FLASH_DATA_32 = 0x3D2A7FFC;
+    SPI_FLASH_DATA = 0x3D;
+    SPI_FLASH_DATA = 0x2A;
+    SPI_FLASH_DATA = 0x7F;
+    SPI_FLASH_DATA = 0xFC;
 
-	// by default, protect 1/2 of the device and leave 1/2 unprotected, which is the flash disk
-	int prot = 2 * (sector_count >> 2);
-	for(int i=0;i<prot;i++) {
-		SPI_FLASH_DATA = 0xFF;
-	}
-	for(int i=prot;i<sector_count;i++) {
-		SPI_FLASH_DATA = 0x00;
-	}
+    // by default, protect 1/2 of the device and leave 1/2 unprotected, which is the flash disk
+    int prot = 2 * (sector_count >> 2);
+    for (int i = 0; i < prot; i++) {
+        SPI_FLASH_DATA = 0xFF;
+    }
+    for (int i = prot; i < sector_count; i++) {
+        SPI_FLASH_DATA = 0x00;
+    }
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
     portEXIT_CRITICAL();
 
-	if(!wait_ready(100))
-		return false;
+    if (!wait_ready(100))
+        return false;
 
-	return true;
+    return true;
 }
 
-void AT45_Flash :: protect_show_status(void)
+void AT45_Flash ::protect_show_status(void)
 {
     uint8_t *buffer = new uint8_t[sector_count];
 
-	portENTER_CRITICAL();
+    portENTER_CRITICAL();
 
-	SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
-	SPI_FLASH_DATA_32 = 0x32323232;
-    for(int i=0;i<sector_count;i++) {
+    SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
+    SPI_FLASH_DATA_32 = 0x32323232;
+    for (int i = 0; i < sector_count; i++) {
         buffer[i] = SPI_FLASH_DATA;
     }
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
@@ -448,10 +476,10 @@ void AT45_Flash :: protect_show_status(void)
 
     dump_hex_relative(buffer, sector_count);
 
-	portENTER_CRITICAL();
+    portENTER_CRITICAL();
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
-	SPI_FLASH_DATA_32 = 0x35353535;
-    for(int i=0;i<sector_count;i++) {
+    SPI_FLASH_DATA_32 = 0x35353535;
+    for (int i = 0; i < sector_count; i++) {
         buffer[i] = SPI_FLASH_DATA;
     }
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
@@ -461,22 +489,27 @@ void AT45_Flash :: protect_show_status(void)
 
     delete[] buffer;
 }
-    
 
-void AT45_Flash :: protect_disable(void)
+void AT45_Flash ::protect_disable(void)
 {
-	portENTER_CRITICAL();
+    portENTER_CRITICAL();
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
-	SPI_FLASH_DATA_32 = 0x3D2A7F9A;
+    SPI_FLASH_DATA = 0x3D;
+    SPI_FLASH_DATA = 0x2A;
+    SPI_FLASH_DATA = 0x7F;
+    SPI_FLASH_DATA = 0x9A;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
-	portEXIT_CRITICAL();
+    portEXIT_CRITICAL();
 }
 
-void AT45_Flash :: protect_enable(void)
+void AT45_Flash ::protect_enable(void)
 {
-	portENTER_CRITICAL();
+    portENTER_CRITICAL();
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
-	SPI_FLASH_DATA_32 = 0x3D2A7FA9;
+    SPI_FLASH_DATA = 0x3D;
+    SPI_FLASH_DATA = 0x2A;
+    SPI_FLASH_DATA = 0x7F;
+    SPI_FLASH_DATA = 0xA9;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
-	portEXIT_CRITICAL();
+    portEXIT_CRITICAL();
 }

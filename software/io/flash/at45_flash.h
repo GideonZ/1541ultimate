@@ -63,6 +63,7 @@ public:
     ~AT45_Flash();
 
 	virtual AT45_Flash *tester(void);
+    virtual const char *get_type_string(void);
 
 	// Getting the serial number
     virtual void read_serial(void *buffer);

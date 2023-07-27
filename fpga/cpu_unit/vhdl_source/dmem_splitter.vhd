@@ -20,6 +20,7 @@ library mblite;
 entity dmem_splitter is
     generic (
         g_tag           : std_logic_vector(7 downto 0) := X"AE";
+        g_io_bit        : natural := 26;
         g_support_io    : boolean := true );
 	port  (
         clock       : in  std_logic;
@@ -106,7 +107,7 @@ begin
                     io_req_i.address <= unsigned(dmem_o.adr_o(io_req_i.address'range));
                     remain <= c_remain(to_integer(unsigned(dmem_o.sel_o)));
                     
-                    if dmem_o.adr_o(26) = '0' or not g_support_io then
+                    if dmem_o.adr_o(g_io_bit) = '0' or not g_support_io then
                         mem_req_i.request <= '1';
                         if dmem_o.we_o = '1' then
                             state <= mem_write;
