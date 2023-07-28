@@ -366,31 +366,43 @@ begin
     );
     
 
-    i_riscv: entity work.neorv32_wrapper
-    generic map (
-        g_jtag_debug=> g_jtag_debug,
-        g_frequency => 50_000_000,
-        g_tag       => X"20"
-    )
+    -- i_riscv: entity work.neorv32_wrapper
+    -- generic map (
+    --     g_jtag_debug=> g_jtag_debug,
+    --     g_frequency => 50_000_000,
+    --     g_tag       => X"20"
+    -- )
+    -- port map (
+    --     clock       => sys_clock,
+    --     reset       => sys_reset,
+    --     cpu_reset   => '0',
+    --     jtag_trst_i => DEBUG_TRSTn,
+    --     jtag_tck_i  => DEBUG_TCK,
+    --     jtag_tdi_i  => DEBUG_TDI,
+    --     jtag_tdo_o  => DEBUG_TDO,
+    --     jtag_tms_i  => DEBUG_TMS,
+    --     timeout     => open,--LED_SDACTn,
+    --     irq_i       => io_irq,
+    --     irq_o       => open,
+    --     io_req      => io_req_riscv,
+    --     io_resp     => io_resp_riscv,
+    --     io_busy     => open,
+    --     mem_req     => cpu_mem_req,
+    --     mem_resp    => cpu_mem_resp
+    -- );
+    
+    i_riscv: entity work.rvlite_wrapper
     port map (
         clock       => sys_clock,
         reset       => sys_reset,
-        cpu_reset   => '0',
-        jtag_trst_i => DEBUG_TRSTn,
-        jtag_tck_i  => DEBUG_TCK,
-        jtag_tdi_i  => DEBUG_TDI,
-        jtag_tdo_o  => DEBUG_TDO,
-        jtag_tms_i  => DEBUG_TMS,
-        timeout     => open,--LED_SDACTn,
         irq_i       => io_irq,
-        irq_o       => open,
         io_req      => io_req_riscv,
         io_resp     => io_resp_riscv,
         io_busy     => open,
         mem_req     => cpu_mem_req,
         mem_resp    => cpu_mem_resp
     );
-    
+
     i_u2p_io_split: entity work.io_bus_splitter
     generic map (
         g_range_lo => 20,
@@ -457,7 +469,7 @@ begin
         resps(1)   => io_resp_debug
     );
 
-    i_double_freq_bridge: entity work.memreq_halfrate
+    i_double_freq_bridge: entity work.memreq_halfrate2
     port map(
         phase_out   => toggle_check,
         toggle_r_2x => toggle_reset,
@@ -572,7 +584,7 @@ begin
         g_big_endian    => false,
         g_icap          => false,
         g_uart          => true,
-        g_uart_rx       => true,
+        g_uart_rx       => false,
         g_drive_1541    => true,
         g_drive_1541_2  => g_dual_drive,
         g_mm_drive      => true,
@@ -585,6 +597,7 @@ begin
         g_c2n_streamer  => true,
         g_c2n_recorder  => true,
         g_cartridge     => true,
+        g_cartreset_init => '1',
         g_register_addr => true, -- to meet timing. Causes address to be sampled one clock BEFORE do_sample_addr!
         g_command_intf  => true,
         g_drive_sound   => true,
@@ -889,8 +902,8 @@ begin
 
         i_ultfilt1: entity work.sys_to_aud port map(sys_clock, sys_reset, sys_get_sample, ult_drive1, audio_clock, aud_drive1 );
         i_ultfilt2: entity work.sys_to_aud port map(sys_clock, sys_reset, sys_get_sample, ult_drive2, audio_clock, aud_drive2 );
-        i_ultfilt3: entity work.sys_to_aud port map(sys_clock, sys_reset, sys_get_sample, ult_tape_r, audio_clock, aud_tape_r );
-        i_ultfilt4: entity work.sys_to_aud port map(sys_clock, sys_reset, sys_get_sample, ult_tape_w, audio_clock, aud_tape_w );
+        i_ultfilt3: entity work.sys_to_aud generic map (false) port map(sys_clock, sys_reset, sys_get_sample, ult_tape_r, audio_clock, aud_tape_r );
+        i_ultfilt4: entity work.sys_to_aud generic map (false) port map(sys_clock, sys_reset, sys_get_sample, ult_tape_w, audio_clock, aud_tape_w );
         i_ultfilt5: entity work.sys_to_aud port map(sys_clock, sys_reset, sys_get_sample, ult_samp_l, audio_clock, aud_samp_l );
         i_ultfilt6: entity work.sys_to_aud port map(sys_clock, sys_reset, sys_get_sample, ult_samp_r, audio_clock, aud_samp_r );
         i_ultfilt7: entity work.sys_to_aud port map(sys_clock, sys_reset, sys_get_sample, ult_sid_1,  audio_clock, aud_sid_1 );

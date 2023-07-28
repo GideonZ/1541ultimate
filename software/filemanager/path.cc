@@ -46,6 +46,13 @@ Path :: Path(Path *p, int start, int stop) : full_path("/"), elements(stop-start
     regenerateFullPath();
 }
 
+Path :: Path(const char *p) : full_path("/"), elements(8, NULL)
+{
+    owner = "Unknown";
+    depth = 0;
+    cd(p);
+}
+
 void Path :: update(const char *p)
 {
 	if (full_path == p)

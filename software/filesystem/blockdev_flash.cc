@@ -157,8 +157,7 @@ static void init_flash_disk(void *obj, void *param)
         return;
     }
 #else
-    if (C64 :: c64_get_nmi_state()) {
-        printf("NMI State - not adding Flash\n");
+    if ((ioRead8(ITU_BUTTON_REG) & ITU_BUTTON0) != 0) {
         return;
     }
 #endif

@@ -67,6 +67,7 @@ public:
     virtual void run_remote();
     virtual int  pollInactive();
     virtual int  popup(const char *msg, uint8_t flags); // blocking
+    virtual int  popup(const char *msg, int count, const char **names, const char *keys); // blocking, custom
     virtual int  string_box(const char *msg, char *buffer, int maxlen); // blocking
 
     virtual void show_progress(const char *msg, int steps); // not blocking

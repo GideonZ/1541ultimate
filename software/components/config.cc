@@ -38,13 +38,23 @@ ConfigManager :: ConfigManager() : stores(16, NULL), pages(16, NULL)
     	printf("ConfigManager opened flash: %p\n", flash);
     }
 	safeMode = false;
+
 #if U64
-	if (U64_RESTORE_REG == 1) {
-	    safeMode = true;
-	}
+    if (U64_RESTORE_REG == 1) {
+        safeMode = true;
+    }
 #elif SAFEMODE
     safeMode = true;
+#else
+    // If the reset button is pressed during boot, and it's not U64, then
+    // safe mode is enabled.
+    if ((ioRead8(ITU_BUTTON_REG) & ITU_BUTTON0) != 0) {
+        safeMode = true;
+    }
 #endif
+    if (safeMode) {
+        printf("SAFE MODE ENABLED. Loading defaults...\n");
+    }
 	//    root.add_child(this); // make ourselves visible in the browser
 }
 
@@ -157,6 +167,17 @@ void ConfigManager :: remove_store(ConfigStore *cfg)
     stores.remove(cfg);
 }
 
+ConfigStore *ConfigManager :: find_store(const char *storename)
+{
+    for(int i=0; i < stores.get_elements(); i++) {
+        ConfigStore *st = stores[i];
+        if (strcasecmp(st->get_store_name(), storename) == 0) {
+            return st;
+        }
+    }
+    return NULL;
+}
+
 //   ===================
 /*** CONFIGURATION STORE ***/
 //   ===================
@@ -255,7 +276,15 @@ int ConfigStore :: pack(uint8_t *b, int remain)
 
 void ConfigStore :: effectuate()
 {
-    printf("Calling Effectuate for %d objects.\n", objects.get_elements());
+    if (objects.get_elements() == 0) {
+        staleEffect = false;
+        return;
+    }
+    if (!staleEffect) {
+        printf("Effectuate for %s not needed; not stale.\n", get_store_name());
+        return;
+    }
+    printf("Calling Effectuate on %s for %d objects.\n", get_store_name(), objects.get_elements());
     for(int i=0; i<objects.get_elements(); i++) {
         ConfigurableObject *obj = objects[i];
         if(obj) {
@@ -341,6 +370,18 @@ ConfigItem *ConfigStore :: find_item(uint8_t id)
     for(int n = 0;n < items.get_elements(); n++) {
     	i = items[n];
         if(i->definition->id == id) {
+            return i;
+        }
+    }
+    return NULL;
+}
+
+ConfigItem *ConfigStore :: find_item(const char *str)
+{
+    ConfigItem *i;
+    for(int n = 0;n < items.get_elements(); n++) {
+    	i = items[n];
+        if(strcasecmp(i->definition->item_text, str) == 0) {
             return i;
         }
     }

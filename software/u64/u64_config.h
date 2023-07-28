@@ -104,7 +104,7 @@ public:
     void ResetHandler();
     void create_task_items(void);
     void update_task_items(bool writablePath, Path *p);
-    int executeCommand(SubsysCommand *cmd);
+    SubsysResultCode_t executeCommand(SubsysCommand *cmd);
     void effectuate_settings();
 
     static int setPllOffset(ConfigItem *it);

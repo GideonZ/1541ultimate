@@ -142,7 +142,7 @@ int FileTypeUpdate :: execute(SubsysCommand *cmd)
 		file = NULL;
 #if U64
 #ifndef RISCV
-		wifi.Disable();
+		wifi.Quit();
 #endif
 #endif
 #ifndef RECOVERYAPP

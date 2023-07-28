@@ -144,7 +144,7 @@ void C64_Subsys :: restoreCart(void)
 }
 
 
-int C64_Subsys::executeCommand(SubsysCommand *cmd)
+SubsysResultCode_t C64_Subsys::executeCommand(SubsysCommand *cmd)
 {
     File *f = 0;
     FRESULT res;
@@ -153,6 +153,7 @@ int C64_Subsys::executeCommand(SubsysCommand *cmd)
     int ram_size;
     char buffer[64] = "memory";
     uint8_t *pb;
+    SubsysResultCode_t result = SSRET_OK;
 
     switch (cmd->functionID) {
         case C64_PUSH_BUTTON:
@@ -183,10 +184,14 @@ int C64_Subsys::executeCommand(SubsysCommand *cmd)
             break;
 
         case MENU_C64_POWEROFF:
+#if U64
             U64_POWER_REG = 0x2B;
             U64_POWER_REG = 0xB2;
             U64_POWER_REG = 0x2B;
             U64_POWER_REG = 0xB2;
+#else
+            result = SSRET_NOT_IMPLEMENTED;
+#endif
             break;
 
         case MENU_C64_REBOOT:
@@ -322,6 +327,8 @@ int C64_Subsys::executeCommand(SubsysCommand *cmd)
             if (res == FR_OK) {
                 dma_load(f, NULL, 0, cmd->filename.c_str(), cmd->mode, c64->cfg->get_value(CFG_C64_DMA_ID));
                 fm->fclose(f);
+            } else {
+                result = SSRET_CANNOT_OPEN_FILE;
             }
             break;
 
@@ -331,6 +338,8 @@ int C64_Subsys::executeCommand(SubsysCommand *cmd)
             if (res == FR_OK) {
                 dma_load(f, NULL, 0, cmd->filename.c_str(), cmd->mode, c1541_A->get_current_iec_address());
                 fm->fclose(f);
+            } else {
+                result = SSRET_CANNOT_OPEN_FILE;
             }
             break;
 #endif
@@ -339,6 +348,8 @@ int C64_Subsys::executeCommand(SubsysCommand *cmd)
             if (res == FR_OK) {
                 dma_load_raw(f);
                 fm->fclose(f);
+            } else {
+                result = SSRET_CANNOT_OPEN_FILE;
             }
             break;
         case C64_DRIVE_LOAD:
@@ -348,8 +359,11 @@ int C64_Subsys::executeCommand(SubsysCommand *cmd)
             dma_load(0, (const uint8_t *)cmd->buffer, cmd->bufferSize, cmd->filename.c_str(), cmd->mode,
                     c64->cfg->get_value(CFG_C64_DMA_ID));
             break;
-        case C64_DMA_RAW:
-            dma_load_raw_buffer((uint16_t)cmd->mode, (const uint8_t *)cmd->buffer, cmd->bufferSize);
+        case C64_DMA_RAW_WRITE:
+            dma_load_raw_buffer((uint16_t)cmd->mode, (uint8_t *)cmd->buffer, cmd->bufferSize, 0);
+            break;
+        case C64_DMA_RAW_READ:
+            dma_load_raw_buffer((uint16_t)cmd->mode, (uint8_t *)cmd->buffer, cmd->bufferSize, 1);
             break;
         case C64_STOP_COMMAND:
             c64->stop(false);
@@ -439,7 +453,7 @@ int C64_Subsys::executeCommand(SubsysCommand *cmd)
             break;
     }
 
-    return 0;
+    return result;
 }
 
 int C64_Subsys :: dma_load_raw(File *f)
@@ -462,7 +476,7 @@ int C64_Subsys :: dma_load_raw(File *f)
 	return bytes;
 }
 
-int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, const uint8_t *buffer, int length)
+int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, uint8_t *buffer, int length, int rw)
 {
 	bool i_stopped_it = false;
 	if (c64->client) {
@@ -476,7 +490,11 @@ int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, const uint8_t *buffer, in
 
 	volatile uint8_t *dest = (volatile uint8_t *)(C64_MEMORY_BASE + offset);
 
-	memcpy((void *)dest, buffer, length);
+    if (rw) {
+	    memcpy(buffer, (void *)dest, length);
+    } else {
+	    memcpy((void *)dest, buffer, length);
+    }
 
 	if (i_stopped_it) {
 		c64->resume();

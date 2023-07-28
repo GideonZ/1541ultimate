@@ -1,5 +1,6 @@
 #include "c64_crt.h"
 #include "dump_hex.h"
+#include "subsys.h"
 
 extern uint8_t _eapi_65_start;
 
@@ -77,7 +78,7 @@ const struct C64_CRT::t_cart C64_CRT::c_recognized_c64_carts[] = {
     { 68, 0xFF, CART_NOT_IMPL,  "BIS-Plus" },
     { 69, 0xFF, CART_NOT_IMPL,  "SD-BOX" },
     { 70, 0xFF, CART_NOT_IMPL,  "MultiMAX" },
-    { 71, 0xFF, CART_NOT_IMPL,  "Blackbox V9" },
+    { 71, 0xFF, CART_BLACKBOX9, "Blackbox V9" },
     { 72, 0xFF, CART_NOT_IMPL,  "Lt. Kernal Host Adaptor" },
     { 73, 0xFF, CART_NOT_IMPL,  "RAMLink" },
     { 74, 0xFF, CART_NOT_IMPL,  "H.E.R.O." },
@@ -219,7 +220,7 @@ int C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
         return 1; // stop, no error
     }
     if (strncmp((char*)chip_header, "CHIP", 4)) {
-        return 1; // stop, no error
+        return -(int)SSRET_ERROR_IN_FILE_FORMAT; // stop, error
     }
 
     uint32_t total_length = get_dword(chip_header + CRTCHP_PKTLEN);
@@ -238,11 +239,11 @@ int C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
         printf("Reading EEPROM data, size $%4x.\n", size);
         if (size > 0x800) {
             printf("EEPROM too large!\n");
-            return -5;
+            return -(int)SSRET_EEPROM_TOO_LARGE;
         }
         if (eeprom_buffer) { //
             printf("EEPROM already read!\n");
-            return -5;
+            return -(int)SSRET_EEPROM_ALREADY_DEFINED;
         }
         eeprom_buffer = new uint8_t[size];
         eeprom_size = size;
@@ -255,7 +256,7 @@ int C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
         }
 
         if (res != FR_OK) {
-            return -5;
+            return -(int)SSRET_FILE_READ_FAILED;
         } else {
             return 0; // OK
         }
@@ -273,7 +274,7 @@ int C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
     uint32_t offset = uint32_t(bank) * bank_multiplier;
     offset += (load & 0x2000); // switch between 8000 and A000
     if (offset > 0x1000000) { // max 1 MB
-        return -5;
+        return -(int)SSRET_ROM_IMAGE_TOO_LARGE;
     }
 
     // Valid for ROM only
@@ -287,7 +288,7 @@ int C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
         total_read += bytes_read;
         if (bytes_read != size) {
             printf("Just read %4x bytes\n", bytes_read);
-            return -5;
+            return -(int)SSRET_FILE_READ_FAILED;
         }
         if (bytes_read < 8192) {
             // round up to the nearest multiple of 2, minimum 256 bytes
@@ -373,13 +374,13 @@ void C64_CRT::unpatch_easyflash_eapi()
     printf("EAPI successfully un-patched!\n");
 }
 
-int C64_CRT::read_crt(File *file, cart_def *def)
+SubsysResultCode_t C64_CRT::read_crt(File *file, cart_def *def)
 {
     clear_cart_mem();
 
     int retval = check_header(file, def); // pointer is now at 0x20
     if (retval) { // something went wrong
-        return retval;
+        return SSRET_ERROR_IN_FILE_FORMAT;
     }
     uint32_t dw = get_dword(crt_header + CRTHDR_HDRSIZE);
     if (dw < 0x40) {
@@ -389,7 +390,7 @@ int C64_CRT::read_crt(File *file, cart_def *def)
     printf("Header OK. Now reading chip packets starting from %6x.\n", dw);
     FRESULT fres = file->seek(dw);
     if (fres != FR_OK) {
-        return -5;
+        return SSRET_FILE_SEEK_FAILED;
     }
 
     do {
@@ -403,14 +404,16 @@ int C64_CRT::read_crt(File *file, cart_def *def)
         }
 
     } while (!retval);
+
     if (retval < 0) {
-        return retval;
+        return (SubsysResultCode_t)(-retval);
     }
 
     patch_easyflash_eapi();
     regenerate_easyflash_chunks();
     configure_cart(def);
-    return 0;
+
+    return SSRET_OK;
 }
 
 void C64_CRT::configure_cart(cart_def *def)
@@ -550,6 +553,10 @@ void C64_CRT::configure_cart(cart_def *def)
             cart_type = CART_TYPE_BLACKBOX_V8;
             prohibit = CART_PROHIBIT_DFXX;
             break;
+        case CART_BLACKBOX9:
+            cart_type = CART_TYPE_BLACKBOX_V9;
+            prohibit = CART_PROHIBIT_DEXX;
+            break;
         case CART_GMOD2:
             prohibit = CART_PROHIBIT_DEXX;
             cart_type = CART_TYPE_GMOD2;
@@ -587,7 +594,7 @@ void C64_CRT::configure_cart(cart_def *def)
     def->require = require;
 }
 
-int C64_CRT::load_crt(const char *path, const char *filename, cart_def *def, uint8_t *mem)
+SubsysResultCode_t C64_CRT::load_crt(const char *path, const char *filename, cart_def *def, uint8_t *mem)
 {
     File *file = 0;
     FileInfo *inf;
@@ -598,15 +605,15 @@ int C64_CRT::load_crt(const char *path, const char *filename, cart_def *def, uin
 
     FRESULT fres = fm->fopen(path, filename, FA_READ, &file);
     if (fres != FR_OK) {
-        return -1; // cannot read file
+        return SSRET_CANNOT_OPEN_FILE;
     }
 
     C64_CRT *work = get_instance(); // Singleton.
     work->initialize(mem); // Clear previous definitions
-    int retval = work->read_crt(file, def);
+    SubsysResultCode_t retval = work->read_crt(file, def);
     fm->fclose(file);
 
-    if (retval) {
+    if (retval != SSRET_OK) {
         work->initialize(NULL); // clear remaining stuff if not successful
     }
     return retval;

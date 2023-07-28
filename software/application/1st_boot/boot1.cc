@@ -46,7 +46,9 @@ void uart_write_hex_long(uint32_t hex)
 
 int main(int argc, char **argv)
 {
-    if (getFpgaCapabilities() & CAPAB_SIMULATION) {
+    uint32_t capab = getFpgaCapabilities();
+    uart_write_hex_long(capab);
+    if (capab & CAPAB_SIMULATION) {
         UART_DATA = uint8_t('*');
         jump_run(APPL_RUN_ADDR);
     }

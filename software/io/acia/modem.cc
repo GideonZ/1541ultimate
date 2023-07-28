@@ -486,7 +486,7 @@ void Modem :: Caller()
         if(portString) {
             sscanf(portString, "%d", &portno);
         }
-        bzero((char *) &serv_addr, sizeof(serv_addr));
+        memset((char *) &serv_addr, 0, sizeof(serv_addr));
         serv_addr.sin_family = AF_INET;
         memcpy(&serv_addr.sin_addr.s_addr, ret_host->h_addr, ret_host->h_length);
         serv_addr.sin_port = htons(portno);

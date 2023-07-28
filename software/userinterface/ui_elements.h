@@ -13,8 +13,6 @@
 #include "keyboard.h"
 #include "mystring.h"
 
-#define NUM_BUTTONS 5
-
 #define BUTTON_OK     0x01
 #define BUTTON_YES    0x02
 #define BUTTON_NO     0x04
@@ -46,17 +44,20 @@ private:
     mstring   message;
     uint8_t buttons;
 
-    uint8_t button_key[NUM_BUTTONS];
+    uint8_t button_key[8];
     int  btns_active;
     int  active_button;
     int  button_start_x;
     Window  *window;
     Keyboard *keyboard;
+    const char **button_names;
+    const char *button_keys;
+    const int button_count; 
 
     void draw_buttons();
 
 public:
-    UIPopup(const char *msg, uint8_t flags);
+    UIPopup(const char *msg, uint8_t flags, int count, const char **names, const char *keys);
     ~UIPopup() { }
 
     void init(Screen *screen, Keyboard *keyb);

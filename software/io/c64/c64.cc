@@ -61,8 +61,8 @@ extern bool connectedToU64;
 static const char *reu_size[] = { "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };
 static const char *reu_offset[] = { "0 KB", "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };
 static const char *buttons[] = { "Reset|Menu|Freezer", "Freezer|Menu|Reset" };
-static const char *timing1[] = { "20ns", "40ns", "60ns", "80ns", "100ns", "120ns", "140ns", "160ns" };
-static const char *timing2[] = { "16ns", "32ns", "48ns", "64ns", "80ns", "96ns", "112ns", "128ns" };
+static const char *timing1[] = { "20ns", "40ns", "60ns", "80ns", "100ns", "120ns", "140ns", "160ns", "180ns", "200ns", "220ns", "240ns", "260ns", "280ns", "300ns", "320ns" };
+static const char *timing2[] = { "16ns", "32ns", "48ns", "64ns",  "80ns",  "96ns", "112ns", "128ns", "144ns", "160ns", "176ns", "192ns", "208ns", "224ns", "240ns", "256ns" };
 static const char *timing3[] = { "15ns", "30ns", "45ns", "60ns", "75ns", "90ns", "105ns", "120ns" };
 static const char *cartmodes[] = { "Auto", "Internal", "External", "Manual" };
 static const char *bus_modes[] = { "Quiet", "Writes", "Dynamic", "Dyn. & Writes" };
@@ -99,10 +99,18 @@ struct t_cfg_definition c64_config[] = {
     { CFG_C64_SWAP_BTN, CFG_TYPE_ENUM,   "Button order",                 "%s", buttons,    0,  1, 1 },
 #endif
 #if CLOCK_FREQ == 62500000
-    { CFG_C64_TIMING,   CFG_TYPE_ENUM,   "CPU Addr valid after PHI2",    "%s", timing2,    0,  7, 5 },
+    { CFG_C64_TIMING,   CFG_TYPE_ENUM,   "CPU Addr valid after PHI2",    "%s", timing2,    0,  15, 6 },
+    { CFG_C64_TIMING1,  CFG_TYPE_ENUM,   "CPU Addr valid after PHI1",    "%s", timing2,    0,  15, 6 },
+    { CFG_SERVE_PHI1,   CFG_TYPE_ENUM,   "Force 2 MHz support",          "%s", en_dis,     0,  1, 0 },
+//    { CFG_MEASURE_MODE, CFG_TYPE_ENUM,   "Enable timing measurement",    "%s", en_dis,     0,  1, 0 },
+    { CFG_KERNAL_SHADOW,CFG_TYPE_ENUM,   "Kernal Shadow RAM",            "%s", en_dis,     0,  1, 1 },
     { CFG_C64_PHI2_REC, CFG_TYPE_ENUM,   "PHI2 edge recovery",           "%s", en_dis,     0,  1, 0 },
 #elif CLOCK_FREQ == 50000000
-    { CFG_C64_TIMING,   CFG_TYPE_ENUM,   "CPU Addr valid after PHI2",    "%s", timing1,    0,  7, 3 },
+    { CFG_C64_TIMING,   CFG_TYPE_ENUM,   "CPU Addr valid after PHI2",    "%s", timing1,    0,  15, 4 },
+    { CFG_C64_TIMING1,  CFG_TYPE_ENUM,   "CPU Addr valid after PHI1",    "%s", timing1,    0,  15, 4 },
+    { CFG_SERVE_PHI1,   CFG_TYPE_ENUM,   "Force 2 MHz support",          "%s", en_dis,     0,  1, 0 },
+//    { CFG_MEASURE_MODE, CFG_TYPE_ENUM,   "Enable timing measurement",    "%s", en_dis,     0,  1, 0 },
+    { CFG_KERNAL_SHADOW,CFG_TYPE_ENUM,   "Kernal Shadow RAM",            "%s", en_dis,     0,  1, 1 },
     { CFG_C64_PHI2_REC, CFG_TYPE_ENUM,   "PHI2 edge recovery",           "%s", en_dis,     0,  1, 0 },
 #endif
     { CFG_CMD_ENABLE,   CFG_TYPE_ENUM,   "Command Interface",            "%s", en_dis,     0,  1, 0 },
@@ -183,7 +191,7 @@ void C64 :: init(void)
     if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
         init_system_roms();
         init_cartridge();
-    } else if (strlen(cfg->get_string(CFG_C64_CART_CRT)) || strlen(cfg->get_string(CFG_C64_KERNFILE)) || cfg->get_value(CFG_C64_REU_EN) == 2) {
+    } else if (strlen(cfg->get_string(CFG_C64_CART_CRT)) || strlen(cfg->get_string(CFG_C64_KERNFILE)) || cfg->get_value(CFG_C64_REU_EN) == 2 || is_in_reset()) {
         init_cartridge();
     }
     available = true;
@@ -305,16 +313,24 @@ void C64::set_emulation_flags(void)
         choice = cfg->get_value(CFG_CMD_ALLOW_WRITE);
         allowUltimateDosDateSet = choice;
     }
-    C64_ETHERNET_ENABLE = 0;
 
     int recovery = cfg->get_value(CFG_C64_PHI2_REC);
     if (recovery >= 0) {
-        C64_PHI2_EDGE_RECOVER = cfg->get_value(CFG_C64_PHI2_REC);
-        C64_TIMING_ADDR_VALID = cfg->get_value(CFG_C64_TIMING);
+        uint8_t edge = cfg->get_value(CFG_C64_PHI2_REC) | (cfg->get_value(CFG_SERVE_PHI1) << 2); // | (cfg->get_value(CFG_MEASURE_MODE) << 1) | 
+        C64_PHI2_EDGE_RECOVER = edge;
+        if (cfg->get_value(CFG_C64_TIMING1) >= 0) {
+            uint8_t byte = cfg->get_value(CFG_C64_TIMING) | (cfg->get_value(CFG_C64_TIMING1) << 4);
+            printf("Writing %b to timing register. %d/%d/%d\n", byte, cfg->get_value(CFG_C64_TIMING), cfg->get_value(CFG_C64_TIMING1), cfg->get_value(CFG_SERVE_PHI1));
+            C64_TIMING_ADDR_VALID = byte;
+        } else {
+            C64_TIMING_ADDR_VALID = cfg->get_value(CFG_C64_TIMING);
+        }
     } else { // U64
         C64_PHI2_EDGE_RECOVER = 0;
         C64_TIMING_ADDR_VALID = 5;
     }
+    printf("Cartridge registers:\n");
+    dump_hex(((uint8_t *)(C64_CARTREGS_BASE + 0x0)), 16);
 }
 
 bool C64::exists(void)
@@ -570,6 +586,11 @@ void C64::reset(void)
     while (ioRead8(ITU_TIMER))
         ;
     C64_MODE = C64_MODE_UNRESET;
+}
+
+bool C64::is_in_reset(void)
+{
+    return (C64_MODE & C64_MODE_RESET);
 }
 
 /*
@@ -924,7 +945,7 @@ void C64::set_cartridge(cart_def *cart)
         } else if (cfg->get_value(CFG_C64_REU_EN) == 2) { // GeoRAM
             current_cart_def.type = CART_TYPE_GEORAM;
             current_cart_def.name = "GeoRAM Cartridge";
-            current_cart_def.prohibit = CART_PROHIBIT_IO;
+            current_cart_def.prohibit = CART_PROHIBIT_ALL_BUT_REU;
         }
 #endif
     } else {
@@ -1078,7 +1099,18 @@ void C64::enable_kernal(uint8_t *rom)
             dst += 4;
         }
     }
-    C64_KERNAL_ENABLE = 1;
+
+    // For testing purposes, we write an ident string in the kernal replacement RAM
+    char *kern = (char *)&__kernal_area;
+    const char *ident = "KERNAL REPLACEMENT SHADOW RAM!\0\0\0\0";
+    for(; *ident; ident += 4, kern += 4) {
+        kern[    0] = ident[0];
+        kern[ 8192] = ident[1];
+        kern[16384] = ident[2];
+        kern[24576] = ident[3];
+    }
+
+    C64_KERNAL_ENABLE = 1 | (cfg->get_value(CFG_KERNAL_SHADOW) << 2);
 #endif
 }
 
@@ -1117,8 +1149,10 @@ void C64::init_cartridge()
     set_cartridge(NULL);
 
     // This forces the cartridge ON on U64, (in Carts V4)
-    // C64_CARTRIDGE_TYPE = 0x80 | (uint8_t) current_cart_def.type;
     // For carts V5, we need to do this:
+    C64_CARTRIDGE_KILL = 2; // Force update
+    // And a second time, because if carttype WAS none, then
+    // Cart enable gets cleared again in the cycle after it was set.
     C64_CARTRIDGE_KILL = 2; // Force update
 
     C64_MODE = C64_MODE_UNRESET;

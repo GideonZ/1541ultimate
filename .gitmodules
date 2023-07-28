@@ -4,3 +4,6 @@
 [submodule "tools/ecpprog"]
 	path = tools/ecpprog
 	url = https://github.com/GideonZ/ecpprog
+[submodule "software/httpd"]
+	path = software/httpd
+	url = http://github.com/GideonZ/MicroHttpServer

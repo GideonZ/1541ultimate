@@ -1,6 +1,7 @@
 #include "control_target.h"
 #include "disk_image.h"
 #include <string.h>
+#include <ctype.h>
 #include "c64.h"
 #include "tape_recorder.h"
 #include "reu_preloader.h"
@@ -25,6 +26,14 @@ static Message c_status_no_data             = { 19, true, (uint8_t *)"83,NOT IN 
 static Message c_status_reu_disabled        = { 18, true, (uint8_t *)"84,REU NOT ENABLED" };
 static Message c_status_cannot_open_file    = { 28, true, (uint8_t *)"85,REU FILE CANNOT BE OPENED" };
 static Message c_status_reu_not_saved       = { 31, true, (uint8_t *)"86,REU OFFSET > SIZE. NOT SAVED" };
+
+char *struprt(char *str)
+{
+    char *next = str;
+    while (*str != '\0')
+        *str = toupper((unsigned char)*str);
+    return str;
+}
 
 ControlTarget :: ControlTarget(int id)
 {
@@ -206,6 +215,9 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
             break;
         }
         case CTRL_CMD_GET_DRVINFO: {
+            int effectiveOD = 1;
+            if (command->length > 2)
+               effectiveOD = command->message[2];
             data_message.length = 1;
             data_message.message[0] = 0;
             data_message.last_part = true;
@@ -215,28 +227,34 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
             if (c1541_A) {
                 data_message.message[0]++;
                 data_message.message[offs++] = (uint8_t)c1541_A->get_drive_type();
-                data_message.message[offs++] = (uint8_t)c1541_A->get_current_iec_address();
+                if (effectiveOD)
+                    data_message.message[offs++] = (uint8_t)c1541_A->get_effective_iec_address();
+                else
+                    data_message.message[offs++] = (uint8_t)c1541_A->get_current_iec_address();
                 data_message.message[offs++] = c1541_A->get_drive_power() ? 1 : 0;
                 data_message.length += 3;
             }
             if (c1541_B) {
                 data_message.message[0]++;
                 data_message.message[offs++] = (uint8_t)c1541_B->get_drive_type();
-                data_message.message[offs++] = (uint8_t)c1541_B->get_current_iec_address();
+                if (effectiveOD)
+                    data_message.message[offs++] = (uint8_t)c1541_B->get_effective_iec_address();
+                else
+                    data_message.message[offs++] = (uint8_t)c1541_B->get_current_iec_address();
                 data_message.message[offs++] = c1541_B->get_drive_power() ? 1 : 0;
                 data_message.length += 3;
             }
-            if (true) { // seems to be always available
+            if (iec_if) { // seems to be always available
                 data_message.message[0]++;
                 data_message.message[offs++] = 0x0F;
-                data_message.message[offs++] = (uint8_t)iec_if.get_current_iec_address();
-                data_message.message[offs++] = iec_if.iec_enable;
+                data_message.message[offs++] = (uint8_t)iec_if->get_current_iec_address();
+                data_message.message[offs++] = iec_if->iec_enable;
                 data_message.length += 3;
 
                 data_message.message[0]++;
                 data_message.message[offs++] = 0x50;
-                data_message.message[offs++] = (uint8_t)iec_if.get_current_printer_address();
-                data_message.message[offs++] = iec_if.iec_enable;
+                data_message.message[offs++] = (uint8_t)iec_if->get_current_printer_address();
+                data_message.message[offs++] = iec_if->iec_enable;
                 data_message.length += 3;
             }
             break;
@@ -311,7 +329,7 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
             pul = (uint32_t *)data_message.message;
             data_message.last_part = true;
             *pul = cpu_to_32le(retVal);
-            strupr((char *)data_message.message + 4);
+            struprt((char *)data_message.message + 4);
             data_message.length = 4 + strlen((char *)data_message.message + 4);
 
             if (retVal == -3) {
@@ -449,8 +467,37 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
 #endif
             }
             break;
+
+        case CTRL_CMD_GET_RAMDISKINFO: {
+                data_message.length = 8;
+                unsigned char* data = (unsigned char*) data_message.message;
+                for (int i=0; i<4; i++)
+                {
+                    int typ = C64 :: isMP3RamDrive(i);
+                    unsigned char ty = 0;
+                    unsigned char si = 0;
+                    if (typ == 0) ty = 0;
+                    else if (typ == 1541) ty = 0x41;
+                    else if (typ == 1571) ty = 0x71;
+                    else if (typ == 1581) ty = 0x81;
+                    else if (typ == DRVTYPE_MP3_DNP)
+                    {
+                        ty = 0xDD;
+                        si = (unsigned char)(C64 :: getSizeOfMP3NativeRamdrive(i) >> 16);
+                    }
+                    else
+                       ty = si = 0;
+                       
+                    data[2*i] = ty;
+                    data[2*i+1] = si;
+                    
+                }
+                *status = &c_status_ok;
+                data_message.last_part = true;
+                *reply = &data_message;
+            }
+            break;
         }
-    
     }
 }
 

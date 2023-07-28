@@ -143,14 +143,17 @@ int try_flash(void)
 	t_flash_address image_addr;
     
     static uint32_t length;
-    static char version[16];
-    
+    static uint8_t version[16];
+
 	flash->get_image_addresses(FLASH_ID_APPL, &image_addr);
-	flash->read_dev_addr(image_addr.device_addr+0,  4, &length); // could come from image_addr, too, if we fix it in the interface
-    printf("Length: %08x\n", length);
-    flash->read_dev_addr(image_addr.device_addr+4, 12, version); // we should create a flash call for this on the interface
-    
-    printf("Application length = %08x, version %s\n", length, version);
+    flash->read_dev_addr(image_addr.device_addr+0, 16, version); // we should create a flash call for this on the interface
+
+    // Length is encoded as big-endian, for backwards compatibility reasons
+    length =  ((uint32_t)version[0]) << 24;
+    length |= ((uint32_t)version[1]) << 16;
+    length |= ((uint32_t)version[2]) << 8;
+    length |= ((uint32_t)version[3]);
+    printf("Application length = %08x, version %s\n", length, (char *)version+4);
     if(length != 0xFFFFFFFF) {
         flash->read_dev_addr(image_addr.device_addr+16, length, (void *)APPLICATION_RUN_ADDRESS); // we should use flash->read_image here
 
@@ -184,9 +187,6 @@ int main(int argc, char *argv[])
 	printf("*** 1541 Ultimate-II - Bootloader %s - FPGA Version: %2x ***\n\n",
             BOOT_VERSION, getFpgaVersion());
 
-	dump_hex(0, 16);
-	// set(0, 0xB0000000);
-
 	if (getFpgaCapabilities() & CAPAB_SIMULATION) {
         ioWrite8(UART_DATA, '*');
         jump_run(APPLICATION_RUN_ADDRESS);
@@ -199,7 +199,11 @@ int main(int argc, char *argv[])
 	file_system_err = init_fat_on_sd();
 
     if(!file_system_err) { // will return error code, 0 = ok
+#ifdef RISCV
+        res = try_loading("update.u2r", UPDATER_RUN_ADDRESS);
+#else
         res = try_loading("recover.u2u", UPDATER_RUN_ADDRESS);
+#endif
         res = try_loading("ultimate.bin", APPLICATION_RUN_ADDRESS);
         //delete prt;
         //delete dsk;

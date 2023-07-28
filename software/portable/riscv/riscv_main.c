@@ -133,6 +133,7 @@ void codec_init();
 void USB2513Init();
 void USB2503Init();
 
+#ifndef U2	
 static void test_i2c_mdio(void)
 {
 	// mdio_reset();
@@ -156,7 +157,8 @@ static void test_i2c_mdio(void)
 
 	// enable buffer
 	U2PIO_ULPI_RESET = U2PIO_UR_BUFFER_ENABLE;
- }
+}
+#endif
 
 #ifndef CLOCK_FREQ
 #define CLOCK_FREQ 50000000
@@ -171,8 +173,9 @@ int main(int argc, char *argv[])
 
 	ioWrite8(UART_DATA, 0x34);
 
+#ifndef U2	
 	test_i2c_mdio();
-
+#endif
 	// Finally start the scheduler.
 	vTaskStartScheduler();
 
@@ -206,4 +209,45 @@ void C_exception_handler(uint32_t cause, uint32_t addr, uint32_t status, uint32_
 	printf("\n** GURU MEDITATION:\n   Address: %08x\n   Cause:   %08x\n   Value:   %08x\n", addr, cause, value);
 	while(1)
 		;
+}
+
+void _exit(int exit_status)
+{
+    // jump to crt0's shutdown code
+    asm volatile ("la t0, __crt0_main_exit \n"
+                  "jr t0                   \n");
+
+    while(1); // will never be reached
+}
+
+extern char __heap_start[];
+extern char __heap_end[];
+static char *brk = &__heap_start[0];
+
+int _brk(void *addr)
+{
+    brk = addr;
+    return 0;
+}
+
+void *_sbrk(ptrdiff_t incr)
+{
+    char *old_brk = brk;
+
+    if (&__heap_start[0] == &__heap_end[0]) {
+        return NULL;
+    }
+
+    if ((brk += incr) < &__heap_end[0]) {
+        brk += incr;
+    } else {
+        brk = &__heap_end[0];
+    }
+    return old_brk;
+}
+
+int isatty(int);
+int _isatty(int fd)
+{
+    return isatty(fd);
 }

@@ -4,6 +4,7 @@
 #include "endianness.h"
 #include "rtc.h"
 #include <string.h>
+#include "c64.h"
 
 static const char* wdnames[7] = { "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT" };
 
@@ -70,10 +71,10 @@ C1541* Dos::getDriveByID(uint8_t id) {
     C1541* drive = NULL;
 
     if (id) {
-        if (c1541_A != NULL && c1541_A->get_current_iec_address() == id) {
+        if (c1541_A != NULL && c1541_A->get_drive_power() && c1541_A->get_effective_iec_address() == id) {
             drive = c1541_A;
-        } else if (c1541_B != NULL
-                && c1541_B->get_current_iec_address() == id) {
+        } else if (c1541_B != NULL && c1541_B->get_drive_power() 
+                && c1541_B->get_effective_iec_address() == id) {
             drive = c1541_B;
         }
     } else {
@@ -574,6 +575,187 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
         }
         break;
     }
+        case CTRL_CMD_LOAD_INTO_RAMDISK: {
+               *reply = &c_message_empty;
+               *status = &c_status_ok;
+               command->message[command->length] = 0;
+               
+               int drvNo = command->message[2];
+               bool whatIfMode = false;
+               if (drvNo & 0x80)
+               {
+                  drvNo &= 0x7F;
+                  whatIfMode = true;
+               }
+               
+               char* filename = (char *) &command->message[3];
+               FileInfo* ffi = new FileInfo(INFO_SIZE);
+               FileManager *fm = FileManager :: getFileManager();
+               FRESULT res = fm->fstat(path, filename, *ffi);
+               if (res != FR_OK) {
+                   *status = &c_status_file_not_found;
+                   delete ffi;
+                   break;
+               }
+               uint8_t* reu = (uint8_t *)(REU_MEMORY_BASE);
+               uint8_t ramBase = reu[0x7dc7 + drvNo];
+               
+               int ftype = C64 :: isMP3RamDrive(drvNo);
+               // TPDO: Check extension
+               
+               int actType = 0;
+               printf("DEBUG: Extension: %s\n", ffi->extension);
+               if(strcmp(ffi->extension, "D64")==0) actType = 1541;
+               if(strcmp(ffi->extension, "D71")==0) actType = 1571;
+               if(strcmp(ffi->extension, "D81")==0) actType = 1581;
+               if(strcmp(ffi->extension, "DNP")==0) actType = DRVTYPE_MP3_DNP;
+               
+               bool ok = actType == ftype;
+               if (!ok)
+                {
+                   printf("DEBUG1: Wrong type, actual = %i, exüectted = %i\n", actType, ftype);
+                   *status = &c_status_incompatible_image;
+                   delete ffi;
+                   break;
+               }
+               
+               int expSize = 1;
+               if (ftype == 1541) expSize = 174848;
+               if (ftype == 1571) expSize = 2*174848;
+               if (ftype == 1581) expSize = 819200;
+               if (ftype == DRVTYPE_MP3_DNP)  expSize = C64 :: getSizeOfMP3NativeRamdrive(drvNo);
+               int actSize = ffi->size;
+               if ((expSize != actSize) && (ftype == DRVTYPE_MP3_DNP)) 
+               {
+                   printf("DEBUG1: Expected Size: %i, Actual Size: %i\n", expSize, actSize);
+                   *status = &c_status_incompatible_image;
+                   delete ffi;
+                   break;
+               }
+               if (expSize > 12*1024*1024)
+                {
+                   printf("DEBUG1: Expected Size: %i too large\n", expSize);
+                   *status = &c_status_incompatible_image;
+                   delete ffi;
+                   break;
+               }
+
+               if (ramBase > 0x40)
+                {
+                   *status = &c_status_incompatible_image;
+                   delete ffi;
+                   break;
+               }
+               
+               if (whatIfMode)
+                   break;
+               
+               uint8_t* dstAddr = reu+(((uint32_t) ramBase) << 16);
+               // FileManager *fm = FileManager::getFileManager();
+               FileInfo info(32);
+               File *file = 0;
+               FRESULT fres = fm->fopen(path,filename, FA_READ, &file);
+               if (file) {
+                  uint32_t bytes_read;
+                  // total_bytes_read = 0;
+                  if (ftype == 1571) {
+                     file->read(dstAddr, expSize / 2, &bytes_read);
+                     // total_bytes_read += bytes_read;
+                     file->read(dstAddr + 700 * 256, expSize / 2, &bytes_read);
+                  } else {
+                     file->read(dstAddr, expSize, &bytes_read);
+                  }
+                  // total_bytes_read += bytes_read;
+                  fm->fclose(file);
+               }
+               else
+               {
+                   *status = &c_status_internal_error;
+                   delete ffi;
+                   break;
+               }
+               
+            }
+            break;
+
+        case CTRL_CMD_SAVE_RAMDISK: {
+               *reply = &c_message_empty;
+               *status = &c_status_ok;
+               command->message[command->length] = 0;
+               
+               int drvNo = command->message[2];
+
+               char* filename = (char *) &command->message[3];
+               FileManager *fm = FileManager :: getFileManager();
+               char extension[3];
+               get_extension(filename, extension);
+               
+               int actType = 1;
+               printf("DEBUG: Extension: %s\n", extension);
+               if(strcmp(extension, "D64")==0) actType = 1541;
+               if(strcmp(extension, "D71")==0) actType = 1571;
+               if(strcmp(extension, "D81")==0) actType = 1581;
+               if(strcmp(extension, "DNP")==0) actType = DRVTYPE_MP3_DNP;
+
+               uint8_t* reu = (uint8_t *)(REU_MEMORY_BASE);
+               uint8_t ramBase = reu[0x7dc7 + drvNo];
+               
+               int ftype = C64 :: isMP3RamDrive(drvNo);
+               
+               bool ok = actType == ftype;
+               if (!ok)
+                {
+                   printf("DEBUG1: Wrong type, actual = %i, exüectted = %i\n", actType, ftype);
+                   *status = &c_status_incompatible_image;
+                   delete ffi;
+                   break;
+               }
+
+               int expSize = 1;
+               if (ftype == 1541) expSize = 174848;
+               if (ftype == 1571) expSize = 2*174848;
+               if (ftype == 1581) expSize = 819200;
+               if (ftype == DRVTYPE_MP3_DNP)  expSize = C64 :: getSizeOfMP3NativeRamdrive(drvNo);
+
+               if (expSize > 12*1024*1024)
+                {
+                   printf("DEBUG1: Expected Size: %i too large\n", expSize);
+                   *status = &c_status_incompatible_image;
+                   // delete ffi;
+                   break;
+               }
+
+               if (ramBase > 0x40)
+                {
+                   *status = &c_status_incompatible_image;
+                   // delete ffi;
+                   break;
+               }
+               
+               uint8_t* dstAddr = reu+(((uint32_t) ramBase) << 16);
+               File *file = 0;
+               FRESULT fres = fm->fopen(path,filename, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &file);
+               if (file) {
+                  uint32_t bytes_written;
+                  if (ftype == 1571) {
+                     file->write(dstAddr, expSize / 2, &bytes_written);
+                     // total_bytes_read += bytes_read;
+                     file->write(dstAddr + 700 * 256, expSize / 2, &bytes_written);
+                  } else {
+                     file->write(dstAddr, expSize, &bytes_written);
+                  }
+                  // total_bytes_read += bytes_read;
+                  fm->fclose(file);
+               }
+               else
+               {
+                   *status = &c_status_internal_error;
+                   // delete ffi;
+                   break;
+               }
+            }
+            break;
+
     default:
         *reply = &c_message_empty;
         *status = &c_status_unknown_command;
@@ -640,6 +822,7 @@ void Dos::get_more_data(Message **reply, Message **status) {
             *reply = &data_message;
         }
         break;
+
     default:
         printf("DOS: Illegal state\n");
         dos_state = e_dos_idle;

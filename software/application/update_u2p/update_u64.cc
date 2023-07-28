@@ -3,6 +3,8 @@
  *
  *      Author: gideon
  */
+#define HTML_DIRECTORY "/flash/html"
+
 #include "update_common.h"
 #include "checksums.h"
 
@@ -19,6 +21,25 @@ extern uint8_t _snds1541_bin_start;
 extern uint8_t _snds1571_bin_start;
 extern uint8_t _snds1581_bin_start;
 
+const char *sample_html = 
+"<html>\n"
+"<head>\n"
+"<meta http-equiv=\"content-type\" content=\"text/html; charset=UTF-8\">\n"
+"</head>\n"
+"<body>\n"
+"<h1>Welcome to your Ultimate 64!</h1>\n"
+"<p>This is a sample page to show the operation of the built-in web server.</p>\n"
+"<p>This web server can serve files, but also provides an API, through the route <tt>/v1</tt>.</p>\n"
+"<p>More information about this API can be found in the <a href=\"https://1541u-documentation.readthedocs.io/en/latest/\">documentation</a>.</p>\n"
+"<p>Try here to load a SID file through this simple form:</p>\n"
+"<form action=\"/v1/runners:sidplay\" method=\"POST\" enctype=\"multipart/form-data\">\n"
+"    <input type=\"file\" id=\"myFile2\" name=\"bestand\" multiple>\n"
+"    <input type=\"submit\" value=\"Send SID file to API\">\n"
+"</form>\n"
+"\n"
+"</body>\n"
+"</html>\n"
+;
 
 const char *getBoardRevision(void)
 {
@@ -72,11 +93,12 @@ void do_update(void)
 
     check_flash_disk();
 
-    if(user_interface->popup("About to flash. Continue?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+    if(user_interface->popup("About to update. Continue?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
 
         clear_field();
         create_dir(ROMS_DIRECTORY);
         create_dir(CARTS_DIRECTORY);
+        create_dir(HTML_DIRECTORY);
 
         if(original_kernal_found(flash2, 0x488000)) {
             copy_flash_binary(flash2, 0x488000, 0x2000, "kernal.bin");
@@ -94,6 +116,8 @@ void do_update(void)
         write_flash_file("snds1541.bin", &_snds1541_bin_start, 0xC000);
         write_flash_file("snds1571.bin", &_snds1571_bin_start, 0xC000);
         write_flash_file("snds1581.bin", &_snds1581_bin_start, 0xC000);
+
+        write_html_file("index.html", sample_html, strlen(sample_html));
 
         flash2->protect_disable();
         flash_buffer_at(flash2, screen, 0x000000, false, &_u64_rbf_start, &_u64_rbf_end,   "V1.0", "Runtime FPGA");

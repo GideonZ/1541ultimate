@@ -17,6 +17,7 @@ countClock      dec frameCounter
                 bpl ++
                 lda framesPerSec
                 sta frameCounter
+
                 dec adjustCounter
                 bpl +
 
@@ -101,10 +102,10 @@ resetClock      lda #$00
 
                 .section data
 clockAdjustValues
-                .byte 7   ;PAL      312*63 / (0985248,611 - 312*63*50) - 1
-                .byte 4   ;NTSC NEW 263*65 / (1022727,143 - 263*65*60) - 1
-                .byte 0   ;NTSC OLD 262*64 / (1022727,143 - 262*64*60) - 1
-                .byte 1   ;DREAN    312*65 / (1023444,571 - 312*65*50) - 1
+                .byte 7   ;PAL      312*63 / (0985248.611 - 312*63*50) - 1
+                .byte 5   ;NTSC NEW 263*65 / (1022727.143 - 263*65*60) + 1
+                .byte 0   ;NTSC OLD 262*64 / (1022727.143 - 262*64*60) - 1
+                .byte 1   ;DREAN    312*65 / (1023444.571 - 312*65*50) - 1
 
 clockAdjust     .word 7
 adjustCounter   .word 0

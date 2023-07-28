@@ -48,7 +48,7 @@ TapeRecorder :: ~TapeRecorder()
     delete[] cache;
 }
 	
-int TapeRecorder :: executeCommand(SubsysCommand *cmd)
+SubsysResultCode_t TapeRecorder :: executeCommand(SubsysCommand *cmd)
 {
 	if (cmd->user_interface) {
 		last_user_interface = cmd->user_interface;
@@ -93,7 +93,7 @@ int TapeRecorder :: executeCommand(SubsysCommand *cmd)
 		default:
 			break;
 	}
-	return 0;
+	return SSRET_OK;
 }
 
 void TapeRecorder :: create_task_items(void)

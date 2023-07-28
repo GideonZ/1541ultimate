@@ -1,3 +1,45 @@
+Changes in 3.10i, compared to 3.10a
+-----------------------------------
+
+Background:
+    If you would take some time to check the commit history of the repository
+    at GitHub, you may find over 500 commits since the last released version, 3.10a.
+    This is a lotttt more than it usually takes to release a next firmware version.
+    The version is still 3.10, so there are not many functional changes. Yet, files
+    have been touched, updated, or just made compatible with the new Ultimate-II+L
+    hardware. It was more difficult than expected to get the Lattice FPGA to work
+    correctly and keep compatibility with the existing hardware platforms.
+
+    On top of the new introduction of the Ultimate-II+L, there is still a need to
+    support the "good old" 1541 Ultimate-II (or simply: U2). There have always
+    been issues with the Microblaze processor and the compiler from Xilinx. Every
+    version of the Xilinx compiler had different bugs that caused the Microblaze
+    based firmware to be broken in one way or another. Since the U2+L runs well
+    on the Risc-V, it was decided to upgrade the CPU inside of the U2 and ditch
+    the Microblaze forever. Unfortunately, the CPU that was chosen to run inside
+    of the U2+L did not fit in the same space as the Microblaze clone, so I
+    decided to write my own Risc-V compatible CPU. This is the CPU that will be
+    used from now on in the 1541 Ultimate-II.
+
+Fixes:
+    [Important] Fixed ExFAT filesystems with 128kB clusters
+                (Fixes failing D64 mounts from some ExFAT thumbdrives)
+    [Facebook Discussion] EasyFlash save function now saves all chip chunks to
+                support incomplete CRT files
+    [Issue-271] GEORAM at boot (MarkusC64)
+    [Issue-279] Support for 2 MHz operation for any cartridge, including EasyFlash
+    Minor fixes in the modem emulation layer from Scott Hutter (xlar54)
+    U64 only: Multicolor graphics side border bug (core version V1.41 => V1.42)
+
+Additions:
+    Firmware target added: Ultimate-II+L; the Lattice version!
+    System Information page now shows elaborate version info.
+    GEOS support functions from MarkusC64
+
+Cartridge Support:
+    [Issue-314] Added support for Blackbox V9.
+
+
 Changes in 3.10a, compared to 3.10
 ----------------------------------
 

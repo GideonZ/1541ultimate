@@ -152,7 +152,7 @@ int FileTypePRG :: execute_st(SubsysCommand *cmd)
     	run_code = 0;
     	break;
     default:
-        return -1;
+        return SSRET_UNDEFINED_COMMAND;
     }
 
     const char *name = cmd->filename.c_str();
@@ -185,7 +185,14 @@ int FileTypePRG :: execute_st(SubsysCommand *cmd)
         }
     } else {
         printf("Error opening file. %s\n", FileSystem::get_error_string(fres));
-        return -2;
+        return SSRET_CANNOT_OPEN_FILE;
     }
     return 0;
+}
+
+SubsysResultCode_t FileTypePRG :: start_prg(const char *filename, bool run)
+{
+    int func = run ? RUNCODE_DMALOAD_RUN : RUNCODE_DMALOAD;
+    SubsysCommand *c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_LOAD, func, "", filename);
+    return c64_command->execute();
 }

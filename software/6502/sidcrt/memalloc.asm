@@ -46,27 +46,34 @@ ZERO_PAGE_ADDRESSES_MEMALLOC = [
 ; =========== PLAYER, SCREEN AND CHARROM LOCATION CALCULATION ==================
 
 calcPlayerLocations
+                jsr readLoadAddresses
+
                 jsr isRsid
                 bne noBasic
                 jsr isBasic
                 bne noBasic
 
-                ; always map BASIC screen to avoid BASIC programs to do screen writes
-                lda #$ce            ; player
-                ldx #$fc            ; screen
+                lda LOAD_END_ADDRESS
+                cmp #$ce
+                beq +
+                bcs ++
+                ; load end address is lower or equal to $CE00
++               lda #$ce            ; player
+                jmp ++
+
++               lda #$04            ; player
++               ldx #$fc            ; screen    ; always map BASIC screen to avoid BASIC programs doing screen writes
                 ldy #$f8            ; charrom
                 jmp setLocations
 
-noBasic         jsr readLoadAddresses
-
-                ; first check areas where default charrom can be used
+noBasic         ; first check areas where default charrom can be used
                 ldy #$10            ; charrom ($10 = default location)
 
                 lda LOAD_END_ADDRESS
                 cmp #$80
                 beq +
                 bcs ++
-                ; load address is lower or equal to $8000
+                ; load end address is lower or equal to $8000
 +               lda #$9e            ; player
                 ldx #$8c            ; screen
                 jmp setLocations
@@ -74,7 +81,7 @@ noBasic         jsr readLoadAddresses
                 cmp #$3a
                 beq +
                 bcs ++
-                ; load address is lower or equal to $3a00
+                ; load end address is lower or equal to $3a00
 +               lda #$3a            ; player
                 ldx #$3c            ; screen
                 jmp setLocations
@@ -82,7 +89,7 @@ noBasic         jsr readLoadAddresses
                 cmp #$ba
                 beq +
                 bcs ++
-                ; load address is lower or equal to $ba00
+                ; load end address is lower or equal to $ba00
 +               lda #$c0            ; player
                 ldx #$bc            ; screen
                 jmp setLocations

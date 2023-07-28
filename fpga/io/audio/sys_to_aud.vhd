@@ -10,6 +10,9 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
 entity sys_to_aud is
+generic (
+    g_apply_filter  : boolean := true
+);
 port (
     sys_clock       : in  std_logic;
     sys_reset       : in  std_logic;
@@ -24,13 +27,18 @@ architecture arch of sys_to_aud is
     signal sys_filtered : signed(17 downto 0);
     signal audio_data_i : std_logic_vector(17 downto 0);
 begin
-    i_filt: entity work.lp_filter
-    port map (
-        clock     => sys_clock,
-        reset     => sys_reset,
-        signal_in => sys_data,
-        low_pass  => sys_filtered );
-    
+    r_filt: if g_apply_filter generate
+        i_filt: entity work.lp_filter
+        port map (
+            clock     => sys_clock,
+            reset     => sys_reset,
+            signal_in => sys_data,
+            low_pass  => sys_filtered );
+    end generate;
+    r_no_filt: if not g_apply_filter generate
+        sys_filtered <= sys_data;
+    end generate;    
+
     i_sync: entity work.synchronizer_gzw
     generic map (
         g_width     => 18,

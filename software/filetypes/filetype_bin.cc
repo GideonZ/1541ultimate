@@ -239,36 +239,6 @@ int FileTypeBin :: load_kernal(SubsysCommand *cmd)
 
 int FileTypeBin :: load_dos(SubsysCommand *cmd)
 {
-    FileManager *fm = FileManager :: getFileManager();
-    uint32_t size = 32768;
-    uint32_t transferred = 0;
-    uint8_t *buffer = new uint8_t[size];
-
-    printf("Binary Load.. %s\n", cmd->filename.c_str());
-    FRESULT fres = fm->load_file(cmd->path.c_str(), cmd->filename.c_str(), buffer, size, &transferred);
-
-    if(fres == FR_OK) {
-    	if ((size == 32768) && (transferred == 16384)) {
-    		memcpy(buffer + 16384, buffer, 16384);
-    	}
-        SubsysCommand *c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, FLOPPY_LOAD_DOS, 0, buffer, size);
-        c64_command->execute();
-        c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, MENU_1541_RESET, 0, 0, 0);
-        c64_command->execute();
-    }
-    delete[] buffer;
-    return fres;
+    SubsysCommand *drv_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, FLOPPY_LOAD_DOS, 0, cmd->path.c_str(), cmd->filename.c_str());
+    return drv_command->execute();
 }
-
-#if 0
-        if (cmd->functionID == CMD_WRITE_EEPROM) {
-            for(int i=0;i<256;i++) {
-                ext_i2c_write_byte(0xA0, i, buffer[i]);
-                for(int j=0;j<10000;j++)
-                    ;
-            }
-            cmd->user_interface->popup("EEPROM written", BUTTON_OK);
-            delete buffer;
-            return 0;
-        }
-#endif

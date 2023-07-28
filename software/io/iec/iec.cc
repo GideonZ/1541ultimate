@@ -13,6 +13,8 @@ extern "C" {
 #include "pattern.h"
 #include "command_intf.h"
 #include "endianness.h"
+#include "init_function.h"
+#include "json.h"
 
 #define MENU_IEC_ON          0xCA0E
 #define MENU_IEC_OFF         0xCA0F
@@ -79,7 +81,15 @@ static struct t_cfg_definition iec_config[] = {
 };
 
 // this global will cause us to run!
-IecInterface iec_if;
+InitFunction iec_init(init_software_iec, NULL, NULL);
+void init_software_iec(void *_a, void *_b)
+{
+    iec_if = new IecInterface();
+    if (iec_if->get_current_iec_address() == 0) {
+        delete iec_if;
+        iec_if = NULL;
+    }
+}
 
 // Errors 
 
@@ -182,7 +192,9 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
 {
 	fm = FileManager :: getFileManager();
 	ui_window = NULL;
-    
+    last_addr = 0;
+    //return; // !!
+
     if(!(getFpgaCapabilities() & CAPAB_HARDWARE_IEC))
         return;
 
@@ -396,9 +408,14 @@ void IecInterface :: poll()
     	        delete[] pathstring;
     	    }
     	}
-		uint8_t a;
-		while (!((a = HW_IEC_RX_FIFO_STATUS) & IEC_FIFO_EMPTY)) {
-			data = HW_IEC_RX_DATA;
+        uint8_t a;
+        for (int loopcnt = 0; loopcnt < 500; loopcnt++) {
+            a = HW_IEC_RX_FIFO_STATUS;
+            if (a & IEC_FIFO_EMPTY) {
+                break;
+            }
+
+            data = HW_IEC_RX_DATA;
 			if(a & IEC_FIFO_CTRL) {
 
 #if IECDEBUG > 2
@@ -480,9 +497,9 @@ void IecInterface :: poll()
 			if (wait_irq) {
 				break;
 			}
-		}
+        }
 
-		int st;
+        int st;
 		if(talking) {
 		    while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)) {
 				st = channels[current_channel]->prefetch_data(data);
@@ -515,7 +532,7 @@ void IecInterface :: poll()
 }
 
 // called from GUI task
-int IecInterface :: executeCommand(SubsysCommand *cmd)
+SubsysResultCode_t IecInterface :: executeCommand(SubsysCommand *cmd)
 {
 	File *f = 0;
 	uint32_t transferred;
@@ -587,7 +604,7 @@ int IecInterface :: executeCommand(SubsysCommand *cmd)
 		default:
 			break;
     }
-    return 0;
+    return SSRET_OK;
 }
 
 void IecInterface :: reset(void)
@@ -877,16 +894,16 @@ void IecInterface :: set_error_fres(FRESULT fres)
     set_error(err, tr, sec);
 }
 
-
-int IecInterface :: get_error_string(char *buffer)
+int IecInterface ::get_error_string(char *buffer)
 {
-	int len;
-	for(int i = 0; i < NR_OF_EL(last_error_msgs); i++) {
-		if(last_error_code == last_error_msgs[i].nr) {
-			return sprintf(buffer,"%02d,%s,%02d,%02d\015", last_error_code, last_error_msgs[i].msg, last_error_track, last_error_sector);
-		}
-	}
-    return sprintf(buffer,"99,UNKNOWN,00,00\015");
+    int len;
+    for (int i = 0; i < NR_OF_EL(last_error_msgs); i++) {
+        if (last_error_code == last_error_msgs[i].nr) {
+            return sprintf(buffer, "%02d,%s,%02d,%02d\015", last_error_code, last_error_msgs[i].msg,
+                            last_error_track, last_error_sector);
+        }
+    }
+    return sprintf(buffer, "99,UNKNOWN,00,00\015");
 }
 
 void IecInterface :: master_open_file(int device, int channel, const char *filename, bool write)
@@ -1097,6 +1114,51 @@ void UltiCopy :: close(void)
     return_code = 1;
 }
     
+void iec_info(StreamTextLog &b)
+{
+    char buffer[64];
+    if (!iec_if) {
+        return;
+    }
+    b.format("SoftwareIEC:  %s\n", iec_if->iec_enable ? "Enabled" : "Disabled");
+    if (iec_if->iec_enable) {
+        b.format("Drive Bus ID: %d\n", iec_if->get_current_iec_address());
+        iec_if->get_error_string(buffer);
+        b.format("Error string: %s\n", buffer);
+        for (int i=0; i < MAX_PARTITIONS; i++) {
+            const char *p = iec_if->get_partition_dir(i);
+            if (p) {
+                b.format("Partition%3d: %s\n", i, p);
+            }
+        }
+    }
+    b.format("\n");
+}
+
+void iec_info(JSON_List *obj)
+{
+    char buffer[64];
+    if (!iec_if) {
+        return;
+    }
+    iec_if->get_error_string(buffer);
+    
+    JSON_List *partitions = JSON::List();
+    for (int i=0; i < MAX_PARTITIONS; i++) {
+        const char *p = iec_if->get_partition_dir(i);
+        if (p) {
+            partitions->add(JSON::Obj()->add("id", i)->add("path", p));
+        }
+    }
+
+    obj->add(JSON::Obj()->add("softiec", JSON::Obj()
+        ->add("enabled", (bool)iec_if->iec_enable)
+        ->add("bus_id", iec_if->get_current_iec_address())
+        ->add("type", "DOS emulation")
+        ->add("last_error", buffer)
+        ->add("partitions", partitions)));
+}
+
 
 /*********************************************************************/
 /* IEC File Browser Handling                                         */

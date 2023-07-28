@@ -10,13 +10,32 @@ mstring :: mstring()
     cp = NULL;
 }
 
+mstring :: mstring(int space)
+{
+    alloc = space;
+    cp = new char[alloc];
+    cp[0] = 0;
+}
+
 mstring :: mstring(const char *k)
 {
-//    printf("Create mstring from char*. Source = %s\n", k);
     if (k) {
         alloc = 1+strlen(k);
         cp = new char[alloc];
         strcpy(cp, k);
+    } else {
+        alloc = 0;
+        cp = NULL;
+    }
+}
+
+mstring :: mstring(const char *k, int from, int to)
+{
+    if (k) {
+        alloc = 2 + to - from;
+        cp = new char[alloc];
+        strncpy(cp, k+from, 1+to-from);
+        cp[alloc-1] = 0;
     } else {
         alloc = 0;
         cp = NULL;

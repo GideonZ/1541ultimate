@@ -55,6 +55,9 @@ port (
     serve_io1       : in  std_logic := '0'; -- IO1n
     serve_io2       : in  std_logic := '0'; -- IO2n
     allow_write     : in  std_logic := '0';
+    measure         : in  std_logic := '0'; -- Timing measurement mode
+    measure_data    : in  std_logic_vector(7 downto 0) := X"55";
+    kernal_shadow   : in  std_logic := '1';
     kernal_enable   : in  std_logic := '0';
     kernal_probe    : out std_logic := '0';
     kernal_area     : out std_logic := '0';
@@ -83,8 +86,6 @@ architecture gideon of slot_slave is
     signal io_write_cond: std_logic;
     signal late_write_cond  : std_logic;
     signal ultimax      : std_logic;
-    signal ultimax_d    : std_logic := '0';
-    signal ultimax_d2   : std_logic := '0';
     signal mem_wdata_i  : std_logic_vector(7 downto 0);
     signal kernal_probe_i   : std_logic;
     signal kernal_area_i    : std_logic;
@@ -105,8 +106,8 @@ begin
     slot_req.io_read       <= do_io_event and io_read_cond;
     slot_req.late_write    <= do_io_event and late_write_cond;
     -- TODO: Do we still need io_read_early? If so, should we not check for PHI2 here? Or will we serve I/O data to the VIC?
-    slot_req.io_read_early <= '1' when (addr_is_io and RWn='1' and do_sample_addr='1') else '0';
-    slot_req.sample_io     <= do_sample_io;
+    slot_req.io_read_early <= '1' when (addr_is_io and RWn='1' and PHI2='1' and do_sample_addr='1') else '0';
+    slot_req.sample_io     <= do_sample_io and PHI2;
 
     kernal_area_i <= kernal_enable and not ultimax and addr_is_kernal and PHI2 and (BA or not RWn);
 
@@ -115,8 +116,6 @@ begin
     begin
         if rising_edge(clock) then
             reset_out <= reset or (not RSTn and VCC);
-            ultimax_d <= ultimax;
-            ultimax_d2 <= ultimax_d;
             
             -- 470 nF / 3.3K pup / Vih = 2V, but might be lower
             -- Voh buffer = 0.3V, so let's take a threshold of 1.2V => 400 cycles
@@ -133,7 +132,7 @@ begin
             end if;
 
             slot_req.bus_write <= '0';
-            if do_sample_io='1' then
+            if do_sample_io='1' and PHI2 = '1' then
                 cpu_write  <= not RWn;
 
                 slot_req.bus_write  <= not RWn;
@@ -148,9 +147,13 @@ begin
 
             if do_probe_end='1' then
                 data_mux <= kernal_probe_i and not ROMHn;
-                force_ultimax <= kernal_probe_i;
-                kernal_ready <= '1';
                 kernal_probe_i <= '0';
+                -- if ROMHn = 0 then it is a ROM area; we need to serve if kernal_probe_i was 1.
+                -- if ROMHn = 1 then it is a RAM area; we will serve only when kernal shadow ram is enabled (should be off for C128)
+                if ROMHn = '0' or kernal_shadow = '1' then
+                    force_ultimax <= kernal_probe_i;
+                    kernal_ready <= '1';
+                end if;
             elsif do_io_event='1' then
                 force_ultimax <= '0';
                 kernal_ready <= '0';
@@ -161,7 +164,7 @@ begin
             case state is
 
             when idle =>
-                if do_sample_addr='1' and RWn = '1' then -- early read
+                if do_sample_addr='1' and (RWn = '1' or PHI2 = '0') then -- early read
                     if allow_serve='1' and servicable='1' then
                         -- memory read
                         clear_inhibit <= '1';
@@ -179,7 +182,7 @@ begin
                 elsif do_sample_io='1' then
                     -- last moment to clear the inhibit, always regardless whether we do an access or not
                     clear_inhibit <= '1';
-                    if RWn = '0' then -- Memory write?
+                    if RWn = '0' and PHI2 = '1' then -- Memory write?
                         if addr_is_io and allow_write='1' then -- cartridge allows writing to I/O mapped memory
                             if IO1n='0' or IO2n='0' then -- check if I/O selects are asserted
                                 mem_req_ff <= '1';
@@ -250,10 +253,10 @@ begin
     addr_is_io <= (ADDRESS(15 downto 9)="1101111"); -- DE/DF
     addr_is_kernal <= '1' when (ADDRESS(15 downto 13)="111") else '0';
 
-    process(RWn, ADDRESS, addr_is_io, ROMLn, ROMHn, serve_128, serve_rom, serve_io1, serve_io2, ultimax, kernal_enable, BA)
+    process(RWn, PHI2, ADDRESS, addr_is_io, ROMLn, ROMHn, serve_128, serve_rom, serve_io1, serve_io2, ultimax, kernal_enable, BA)
     begin
         servicable <= '0';
-        if RWn='1' then
+        if RWn='1' or PHI2 = '0' then
             if addr_is_io and (serve_io1='1' or serve_io2='1') then
                 servicable <= '1';
             end if;
@@ -272,14 +275,14 @@ begin
         end if;
     end process;
 
-    process(RWn, IO1n, IO2n, ROMLn, ROMHn, kernal_read, kernal_ready, data_mux,
-            mem_data_0, mem_data_1, dav, slot_resp, ultimax_d2, serve_io1, serve_io2)
+    process(RWn, PHI2, IO1n, IO2n, ROMLn, ROMHn, kernal_read, kernal_ready, data_mux, measure, measure_data,
+            mem_data_0, mem_data_1, dav, slot_resp, serve_io1, serve_io2)
     begin
         DATA_tri <= '0';
         DATA_out <= X"FF";
-        if RWn = '1' then -- if current cycle is a read
+        if RWn = '1' or PHI2 = '0' then -- if current cycle is a read
             if kernal_read='1' then -- we did a kernal fetch; could be mirrored ram or rom
-                DATA_tri <= dav and kernal_ready and not ROMHn;-- and ultimax_d2;
+                DATA_tri <= dav and kernal_ready and not ROMHn;
                 if data_mux = '0' then
                     DATA_out <= mem_data_0;
                 else
@@ -296,8 +299,15 @@ begin
                 elsif serve_io2 = '1' and dav = '1' and IO2n = '0' then -- read of I/O2
                     DATA_tri <= '1';
                     DATA_out <= mem_data_0;
+                elsif measure = '1' and ADDRESS(7) = '1' then -- DE80 - DEFF and DF80 - DFFF
+                    DATA_tri <= '1';
+                    DATA_out <= measure_data;
                 end if;
             
+            elsif (ROMLn='0' or ROMHn='0') and measure='1' and ADDRESS(11) = '0' then -- 8000-87FF, 9000-97FF, E000-E7FF and F000-F7FF
+                DATA_tri <= '1';
+                DATA_out <= measure_data;
+
             elsif (ROMLn='0' or ROMHn='0') and dav='1' then -- ROM reads
                 DATA_tri <= '1';
                 DATA_out <= mem_data_0;

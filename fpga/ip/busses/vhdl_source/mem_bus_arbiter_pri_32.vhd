@@ -34,10 +34,14 @@ begin
                 req_i <= reqs(i);
                 exit;
             end if;
+            -- with inhibit true, only port 0 may do requests.
+            if inhibit = '1' and i = 0 then
+                exit;
+            end if;
         end loop;
-        if inhibit = '1' then
-            req_i.request <= '0';
-        end if;
+--        if inhibit = '1' then
+--            req_i.request <= '0';
+--        end if;
     end process;
 
     -- send the reply to everyone (including tag)

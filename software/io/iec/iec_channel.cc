@@ -537,7 +537,7 @@ bool IecChannel::hasIllegalChars(const char *name)
     return false;
 }
 
-bool IecChannel::parse_filename(char *buffer, name_t *name, int default_drive, bool doFlags)
+bool IecChannel::parse_filename(int channel, char *buffer, name_t *name, int default_drive, bool doFlags)
 {
 #if IECDEBUG
     printf("Parsing filename: '%s' (Default drive: %d, Do flags: %d)\n", buffer, default_drive, doFlags);
@@ -833,7 +833,7 @@ int IecChannel::open_file(void)  // name should be in buffer
     fs_filename[0] = 0;
     uint32_t tr = 0;
 
-    parse_filename((char *) buffer, &name, -1, true);
+    parse_filename(channel, (char *) buffer, &name, -1, true);
 
     dirPartition = interface->vfs->GetPartition(name.drive);
     recordSize = 0;
@@ -1320,8 +1320,8 @@ void IecCommandChannel::renam(command_t& cmd)
 
     split_string('=', cmd.remaining, leftright, 2);
     if (leftright[1]) {
-        parse_filename(leftright[0], &destination, cmd.digits, true);
-        parse_filename(leftright[1], &source, cmd.digits, true);
+        parse_filename(channel, leftright[0], &destination, cmd.digits, true);
+        parse_filename(channel, leftright[1], &source, cmd.digits, true);
     } else {
         // there is no = token
         set_error(ERR_SYNTAX_ERROR_CMD);
@@ -1384,7 +1384,7 @@ void IecCommandChannel::copy(command_t& cmd)
     split_string('=', cmd.remaining, leftright, 2);
     if (leftright[1]) {
         split_string(',', leftright[1], files, 4);
-        parse_filename(leftright[0], &destination, cmd.digits, true);
+        parse_filename(channel, leftright[0], &destination, cmd.digits, true);
     } else {
         // there is no = token
         set_error(ERR_SYNTAX_ERROR_CMD);
@@ -1399,7 +1399,7 @@ void IecCommandChannel::copy(command_t& cmd)
         if (!files[i]) {
             break;
         }
-        parse_filename(files[i], &names[i], cmd.digits, false);
+        parse_filename(channel, files[i], &names[i], cmd.digits, false);
         if ((names[i].directory || names[i].mode == e_replace)) {
             set_error(ERR_SYNTAX_ERROR_CMD, i + 1);
             return;

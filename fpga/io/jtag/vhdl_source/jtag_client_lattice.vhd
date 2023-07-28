@@ -29,6 +29,9 @@ port (
 
     console_data    : in  std_logic_vector(7 downto 0) := X"00";
     console_valid   : in  std_logic := '0';
+    console2_data   : in  std_logic_vector(7 downto 0) := X"00";
+    console2_valid  : in  std_logic := '0';
+    console2_clear  : in  std_logic := '0';
     sample_vector   : in  std_logic_vector(g_sample_width-1 downto 0) := (others => '0');
     write_vector    : out std_logic_vector(g_write_width-1 downto 0)
 );
@@ -94,6 +97,12 @@ architecture arch of jtag_client_lattice is
     signal console_fifo_data    : std_logic_vector(7 downto 0);
     signal shiftreg_console     : std_logic_vector(7 downto 0);
     signal console_fifo_count   : unsigned(10 downto 0);
+
+    signal console2_flush       : std_logic;
+    signal console2_fifo_get    : std_logic;
+    signal console2_fifo_data   : std_logic_vector(7 downto 0);
+    signal shiftreg_console2    : std_logic_vector(7 downto 0);
+    signal console2_fifo_count  : unsigned(10 downto 0);
 
     signal tck_c, tck_d, tck_d2         : std_logic;
     signal tdi_c, tdi_d, tdi_d2, tdi_in : std_logic;
@@ -188,6 +197,7 @@ begin
     begin
         if rising_edge(shift_clock) then
             console_fifo_get <= '0';
+            console2_fifo_get <= '0';
             read_fifo_get <= '0';
             write_fifo_put <= '0';
             if write_fifo_put = '1' then
@@ -235,6 +245,13 @@ begin
                     else
                         shiftreg_console <= '0' & shiftreg_console(shiftreg_console'high downto 1);
                     end if;
+                elsif ir_in = X"B" then
+                    if bit_count(2 downto 0) = "111" then
+                        shiftreg_console2 <= console2_fifo_data;
+                        console2_fifo_get <= not tdi_in;
+                    else
+                        shiftreg_console2 <= '0' & shiftreg_console2(shiftreg_console2'high downto 1);
+                    end if;
                 end if;
             end if;
 
@@ -250,6 +267,11 @@ begin
                     shiftreg_console <= X"FF";
                 else
                     shiftreg_console <= std_logic_vector(console_fifo_count(7 downto 0));
+                end if;
+                if console2_fifo_count >= 256 then
+                    shiftreg_console2 <= X"FF";
+                else
+                    shiftreg_console2 <= std_logic_vector(console2_fifo_count(7 downto 0));
                 end if;
                 shiftreg_debug <= std_logic_vector(read_fifo_count) & debug_bits & last_command & std_logic_vector(cmd_count);
             end if;
@@ -270,7 +292,8 @@ begin
     -- tdo2 <= data(to_integer(bit_count));
     -- read_vec <= X"BABE" & ir_in & ir_shift & ir_shift & ir_shift;
 
-    process(ir_in, rbit_select, bit_count, shiftreg_sample, shiftreg_write, bypass_reg, shiftreg_fifo, shiftreg_debug)
+    process(ir_in, rbit_select, bit_count, shiftreg_sample, shiftreg_write, bypass_reg, shiftreg_fifo,
+            shiftreg_debug, shiftreg_console, shiftreg_console2)
     begin
         case ir_in is
         when X"0" =>
@@ -285,6 +308,8 @@ begin
             tdo2 <= shiftreg_fifo(0);
         when X"A" =>
             tdo2 <= shiftreg_console(0);
+        when X"B" =>
+            tdo2 <= shiftreg_console2(0);
         when others =>
             tdo2 <= bypass_reg;
         end case;            
@@ -367,15 +392,35 @@ begin
         rd_count     => console_fifo_count
     );
 
+    console2_flush <= sys_reset or console2_clear;
+    i_console2_fifo: entity work.async_fifo_ft
+    generic map(
+        g_data_width => 8,
+        g_depth_bits => 10 )
+    port map(
+        wr_clock     => sys_clock,
+        wr_reset     => console2_flush,
+        wr_en        => console2_valid,
+        wr_din       => console2_data,
+        wr_full      => open,
+
+        rd_clock     => shift_clock,
+        rd_reset     => '0',
+        rd_next      => console2_fifo_get,
+        rd_dout      => console2_fifo_data,
+        rd_valid     => open,
+        rd_count     => console2_fifo_count
+    );
+
     process(sys_clock)
         variable v_cmd  : std_logic_vector(3 downto 0);
     begin
         if rising_edge(sys_clock) then
+            io_read <= '0';
+            io_write <= '0';
             case state is
             when idle =>
                 avm_rfifo_put <= '0';
-                io_read <= '0';
-                io_write <= '0';
                 if avm_wfifo_valid = '1' then -- command?
                     avm_exec_count <= avm_exec_count + 1;
                     v_cmd := avm_wfifo_dout(11 downto 8);

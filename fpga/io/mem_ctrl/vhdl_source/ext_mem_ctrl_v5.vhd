@@ -18,6 +18,7 @@ library work;
 
 entity ext_mem_ctrl_v5 is
 generic (
+    g_big_endian       : boolean := true;
     g_simulation       : boolean := false;
     SDRAM_WakeupTime   : integer := 40;     -- refresh periods
     SDRAM_Refr_period  : integer := 375 );
@@ -167,7 +168,8 @@ architecture Gideon of ext_mem_ctrl_v5 is
 begin
     is_idle <= '1' when cur.state = idle else '0';
 
-    resp.data     <= rdata & rdata_hi & rdata_lo;
+    resp.data     <= rdata & rdata_hi & rdata_lo when g_big_endian else
+                     rdata_lo & rdata_hi & rdata;
     resp.rack     <= cur.rack;
     resp.rack_tag <= cur.rack_tag;
     resp.dack_tag <= cur.dack_tag;
@@ -287,21 +289,36 @@ begin
             outp.sdram_a(10) <= '1'; -- auto precharge
             outp.sdram_a(9 downto 0) <= cur.col_addr;
             outp.sdram_cmd <= c_cmd_write;
-            outp.wdata_16 <= cur.wdata(31 downto 24) & "XXXXXXXX";
-            outp.wmask_16 <= cur.wmask(3) & "0";
+            if g_big_endian then
+                outp.wdata_16 <= cur.wdata(31 downto 24) & "XXXXXXXX";
+                outp.wmask_16 <= cur.wmask(3) & "0";
+            else
+                outp.wdata_16 <= cur.wdata(7 downto 0) & "XXXXXXXX";
+                outp.wmask_16 <= cur.wmask(0) & "0";
+            end if;
             outp.tri      <= "01";
             nxt.state <= sd_write_2;
 
         when sd_write_2 =>
             outp.tri  <= "00";
-            outp.wdata_16 <= cur.wdata(15 downto 8) & cur.wdata(23 downto 16);
-            outp.wmask_16 <= cur.wmask(1) & cur.wmask(2);
+            if g_big_endian then
+                outp.wdata_16 <= cur.wdata(15 downto 8) & cur.wdata(23 downto 16);
+                outp.wmask_16 <= cur.wmask(1) & cur.wmask(2);
+            else
+                outp.wdata_16 <= cur.wdata(23 downto 16) & cur.wdata(15 downto 8);
+                outp.wmask_16 <= cur.wmask(2) & cur.wmask(1);
+            end if;
             nxt.state <= sd_write_3;
                             
         when sd_write_3 =>
             outp.tri      <= "10";
-            outp.wdata_16 <= "XXXXXXXX" & cur.wdata(7 downto 0);
-            outp.wmask_16 <= "0" & cur.wmask(0);
+            if g_big_endian then
+                outp.wdata_16 <= "XXXXXXXX" & cur.wdata(7 downto 0);
+                outp.wmask_16 <= "0" & cur.wmask(0);
+            else
+                outp.wdata_16 <= "XXXXXXXX" & cur.wdata(31 downto 24);
+                outp.wmask_16 <= "0" & cur.wmask(3);
+            end if;
             nxt.state <= idle;
 
         when others =>
@@ -328,7 +345,11 @@ begin
             SDRAM_CASn <= outp.sdram_cmd(1);
             SDRAM_WEn  <= outp.sdram_cmd(0);
             SDRAM_CKE  <= cur.enable_sdram;
-            rdata      <= rdata_hi & rdata_lo;
+            if g_big_endian then
+                rdata  <= rdata_hi & rdata_lo;
+            else
+                rdata  <= rdata_lo & rdata_hi;
+            end if;
 
             if reset='1' then
                 cur.state        <= boot;

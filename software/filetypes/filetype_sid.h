@@ -7,8 +7,10 @@
 class FileTypeSID : public FileType
 {
 	FileManager *fm;
-	BrowsableDirEntry *node;
 	SubsysCommand *cmd;
+	mstring path_string;
+	mstring file_string;
+	mstring ssl_filename;
 
 	File *file;
 	uint8_t sid_header[0x80];
@@ -40,10 +42,14 @@ class FileTypeSID : public FileType
     bool ConfigSIDs(void);
 public:
     FileTypeSID(BrowsableDirEntry *n);
+	FileTypeSID(const char *filename, const char *sslfile, bool mus);
+
     ~FileTypeSID();
 
     int fetch_context_items(IndexedList<Action *> &list);
     static FileType *test_type(BrowsableDirEntry *obj);
+	static int play_file(const char *filename, const char *sslfile, int song);
+	static const char *get_error(int);
 };
 
 #endif

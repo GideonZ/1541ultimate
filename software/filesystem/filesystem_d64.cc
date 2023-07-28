@@ -479,12 +479,36 @@ FRESULT FileSystemCBM::file_open(const char *pathname, uint8_t flags, File **fil
 
 FRESULT FileSystemCBM::file_rename(const char *old_name, const char *new_name)
 {
+    PathInfo pi(this);
+    pi.init(old_name);
+    PathStatus_t pres = walk_path(pi);
+    if (pres == e_DirNotFound) {
+        return FR_NO_PATH;
+    }
+    if (pres != e_EntryFound) {
+        return FR_NO_FILE;
+    }
+    const char *filename = pi.getFileName();
+
+    DirInCBM *dd = new DirInCBM(this, pi.getParentInfo()->cluster);
+    FileInfo info(20);
+    FRESULT res = find_file(filename, dd, &info);
+
+/*
     FileInfo info(20);
     DirInCBM *dd = new DirInCBM(this);
     FRESULT res = find_file(old_name, dd, &info);
+*/
 
-    if (new_name[0] == '/')
-        new_name++;
+    {
+        const char *p = new_name;
+        while (*p)
+        {
+            if (*p == '/')
+                new_name = p + 1;
+            p++;
+        }
+    }
 
     CbmFileName cbm;
 
@@ -851,7 +875,7 @@ FRESULT FileSystemDNP::format(const char *name)
     bam_buffer[4] = root_buffer[22];
     bam_buffer[5] = root_buffer[23];
     bam_buffer[6] = 0xC0; // verify on
-    bam_buffer[7] = (uint8_t )((num_sectors + 255) / 256); // num tracks
+    bam_buffer[8] = (uint8_t )((num_sectors + 255) / 256); // num tracks
 
     int bam_bytes = num_sectors / 8;
     bam_buffer[36] = 0x1F; // in total 32+3 blocks in use after format
@@ -1603,14 +1627,14 @@ FRESULT FileInCBM::open(uint8_t flags)
             // CVT
             state = ST_HEADER;
             header.data = new uint8_t[4*254];
-            bzero(header.data, 4*254);
+            memset(header.data, 0, 4*254);
             header.size = create_cvt_header();
             header.pos = 0;
         }
     } else if ((tp == 7) && (flags & FA_CREATE_ANY)) { // creating a new CVT file; see hack in the 'create' function of DirInCBM.
     	state = ST_HEADER;
         header.data = new uint8_t[254];
-        bzero(header.data, 254);
+        memset(header.data, 0, 254);
         header.size = 254;
         header.pos = 0;
 
@@ -1886,7 +1910,7 @@ FRESULT FileInCBM::fixup_cvt(void)
 	track = fs->sect_buffer[0];
 	sector = fs->sect_buffer[1];
 
-	bzero(cvt->sections, sizeof(cvt->sections));
+	memset(cvt->sections, 0, sizeof(cvt->sections));
 	uint8_t *vlir = fs->sect_buffer + 2;
 
 	cvt->records = 127;

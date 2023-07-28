@@ -12,11 +12,14 @@
 #include "iec_channel.h"
 #include "command_intf.h"
 #include "acia.h"
+#include "versions.h"
+#include "gitinfo.h"
+#include "u64.h"
 
 extern C1541 *c1541_A;
 extern C1541 *c1541_B;
-/*
 
+/*
 Drive Status information:
 
 Drive A:      Enabled
@@ -47,22 +50,11 @@ void SystemInfo :: drive_info(StreamTextLog &b, C1541 *drive, char letter)
     b.format("\n");
 }
 
-void SystemInfo :: iec_info(StreamTextLog &b)
+void iec_info(StreamTextLog &b) __attribute__((weak));
+
+void iec_info(StreamTextLog &b)
 {
-    char buffer[64];
-    b.format("SoftwareIEC:  %s\n", iec_if.iec_enable ? "Enabled" : "Disabled");
-    if (iec_if.iec_enable) {
-        b.format("Drive Bus ID: %d\n", iec_if.get_current_iec_address());
-        iec_if.get_error_string(buffer);
-        b.format("Error string: %s\n", buffer);
-        for (int i=0; i < MAX_PARTITIONS; i++) {
-            const char *p = iec_if.get_partition_dir(i);
-            if (p) {
-                b.format("Partition%3d: %s\n", i, p);
-            }
-        }
-    }
-    b.format("\n");
+
 }
 
 void SystemInfo :: hw_modules(StreamTextLog &b, uint16_t bits, const char *msg)
@@ -163,6 +155,24 @@ void SystemInfo :: generate(UserInterface *ui)
 {
     StreamTextLog buffer(4096);
 
+    buffer.format("Version Information:\n");
+    buffer.format("====================\n");
+    buffer.format("Software version:   " APPL_VERSION "\n");
+    buffer.format("   Build date:      " APP_BUILD_DATE "\n");
+    buffer.format("   Build machine:   " APP_BUILD_MACHINE "\n");
+    buffer.format("Ultimate FPGA core: 1%02X\n", getFpgaVersion());
+    if(getFpgaCapabilities() & CAPAB_ULTIMATE64) {
+        buffer.format("C64 FPGA version:   V1.%02X\n", C64_CORE_VERSION);
+    }
+    Flash *flash = get_flash();
+    if (flash) {
+        buffer.format("Flash Type: %s\n", flash->get_type_string());
+    }
+    buffer.format("Git tag:    " APP_VERSION_TAG "\n");
+    buffer.format("Git branch: " APP_VERSION_BRANCH "\n");
+    buffer.format("Git hash:   " APP_VERSION_HASH "\n");
+    buffer.format("Git date:   " APP_VERSION_DATE "\n\n");
+    
     buffer.format("Drive Status:\n");
     buffer.format("=============\n");
     if (c1541_A) {
