@@ -115,7 +115,7 @@ public:
                 }
                 printf("Uploaded files:\n");
                 for (int i=0;i<filenames.get_elements();i++) {
-                    printf("  '%s' (%d)\n", filenames[i], filesizes[i]);
+                    printf("  '%s' (%d)\n", filenames[i], (int)filesizes[i]);
                 }
                 // The actual function should now be called to do something with these files
                 if (func) {

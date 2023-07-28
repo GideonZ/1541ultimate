@@ -29,9 +29,13 @@ SRCS_C   =	itu.c \
 			time.c \
 			sid_coeff.c \
 			riscv_main.c \
-			syscalls.c \
 			do_ctors.c \
 			malloc_lock.c \
+            server.c \
+            http_protocol.c \
+            middleware.c \
+            multipart.c \
+            url.c \
 
 SRCS_CC	 =	small_printf.cc \
 			stream.cc \
@@ -147,6 +151,15 @@ SRCS_CC	 =	small_printf.cc \
 			listener_socket.cc \
 			ramdisk.cc \
 			system_info.cc \
+			ult_syscalls.cc \
+			httpd.cc \
+			json.cc \
+			routes.cc \
+			route_files.cc \
+			route_drives.cc \
+			route_runners.cc \
+			route_configs.cc \
+			route_machine.cc \
 			$(PRJ).cc
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/risc-v

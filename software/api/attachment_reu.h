@@ -73,7 +73,7 @@ public:
             case eDataEnd:
                 break;
             case eTerminate:
-                printf("Uploaded data to REU has size %d:\n", file_size);
+                printf("Uploaded data to REU has size %d:\n", (int)file_size);
 
                 // The actual function should now be called to do something with these files
                 if (func) {
