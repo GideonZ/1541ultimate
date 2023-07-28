@@ -21,9 +21,8 @@ architecture arch of tb_ctrl_logic is
     signal reset              : std_logic;
     signal clock              : std_logic := '0';
 
-    signal addr_first         : std_logic_vector(21 downto 0);
-    signal addr_second        : std_logic_vector(21 downto 0);
-    signal csn                : std_logic_vector(1 downto 0);
+    signal addr_first         : std_logic_vector(23 downto 0);
+    signal addr_second        : std_logic_vector(23 downto 0);
     signal wdata              : std_logic_vector(31 downto 0);
     signal wdata_t            : std_logic_vector(1 downto 0);
     signal wdata_m            : std_logic_vector(3 downto 0);
@@ -52,7 +51,6 @@ begin
         resp              => resp,
         addr_first        => addr_first,
         addr_second       => addr_second,
-        csn               => csn,
         wdata             => wdata,
         wdata_t           => wdata_t,
         wdata_m           => wdata_m,
