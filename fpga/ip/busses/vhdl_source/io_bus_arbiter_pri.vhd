@@ -20,20 +20,50 @@ port (
 end entity;
 
 architecture rtl of io_bus_arbiter_pri is
+    signal ext_read : std_logic_vector(0 to g_ports-1);
+    signal ext_write: std_logic_vector(0 to g_ports-1);
     signal req_i    : t_io_req;
     signal select_i : integer range 0 to g_ports-1;
     signal select_c : integer range 0 to g_ports-1;
     type t_state is (idle, busy);
     signal state    : t_state;
 begin
+    -- extend the requests first, in order to make sure they won't get lost when more than one arrives at the same time
+    -- This is only necessary for read and write pulses
+    p_extend: process(clock)
+    begin
+        if rising_edge(clock) then
+            for i in reqs'range loop
+                -- clear has precedence
+                if select_c = i and state = busy then
+                    ext_read(i) <= '0';
+                    ext_write(i) <= '0';
+                else
+                    if reqs(i).read = '1' then
+                        ext_read(i) <= '1';
+                    end if;
+                    if reqs(i).write = '1' then
+                        ext_write(i) <= '1';
+                    end if;
+                end if;
+            end loop;
+            if reset = '1' then
+                ext_read <= (others => '0');
+                ext_write <= (others => '0');
+            end if;
+        end if;
+    end process;
+
     -- prioritize the first request found onto output
-    process(reqs)
+    process(reqs, ext_read, ext_write)
     begin
         req_i <= c_io_req_init;
         select_i <= 0;
         for i in reqs'range loop
-            if reqs(i).read='1' or reqs(i).write='1' then
+            if reqs(i).read='1' or reqs(i).write='1' or ext_read(i) = '1' or ext_write(i) = '1' then
                 req_i    <= reqs(i);
+                req_i.read <= reqs(i).read or ext_read(i);
+                req_i.write <= reqs(i).write or ext_write(i);
                 select_i <= i;
                 exit;
             end if;

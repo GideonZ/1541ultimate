@@ -17,6 +17,7 @@
 #include "i2c_drv.h"
 #include "rtc_only.h"
 #include "usb_base.h"
+#include "flash.h"
 
 extern "C" {
 #include "ethernet_test.h"
@@ -33,6 +34,10 @@ uint32_t getFpgaCapabilities()
 }
 int getNetworkPacket(uint8_t **payload, int *length);
 
+#define PROG_BUFFER      ((uint8_t *)(0x1000000))
+#define PROG_PROGRESS    (*(volatile int *)(0x0088))
+#define PROG_LENGTH      (*(volatile int *)(0x008C))
+#define PROG_LOCATION    (*(volatile int *)(0x0090))
 #define DUT_TO_TESTER    (*(volatile uint32_t *)(0x0094))
 #define TESTER_TO_DUT	 (*(volatile uint32_t *)(0x0098))
 #define TEST_STATUS		 (*(volatile int *)(0x009C))
@@ -235,6 +240,108 @@ int writeRtc()
 	return result;
 }
 
+static bool my_memcmp(void *a, void *b, int len)
+{
+    uint32_t *pula = (uint32_t *)a;
+    uint32_t *pulb = (uint32_t *)b;
+    len >>= 2;
+    while (len--) {
+        if (*pula != *pulb) {
+            printf("ERR: %p: %8x, %p %8x.\n", pula, *pula, pulb, *pulb);
+            return false;
+        }
+        pula++;
+        pulb++;
+    }
+    return true;
+}
+
+bool flash_buffer_at(int address, void *buffer, int length)
+{
+	Flash *flash = get_flash();
+    flash->protect_disable();
+
+    static int last_sector = -1;
+    if (length > 9000000) {
+        return false;
+    }
+    int page_size = flash->get_page_size();
+    int page = address / page_size;
+    char *p;
+    char *verify_buffer = new char[page_size]; // is never freed, but the hell we care!
+
+	p = (char *)buffer;
+
+    bool do_erase = flash->need_erase();
+    int sector;
+    while (length > 0) {
+        if (do_erase) {
+            sector = flash->page_to_sector(page);
+            if (sector != last_sector) {
+                last_sector = sector;
+                if (!flash->erase_sector(sector)) {
+                    printf("Erase failed...\n");
+                    last_sector = -1;
+                    return false;
+                }
+            }
+        }
+        int retry = 3;
+        while (retry > 0) {
+            retry--;
+            if (!flash->write_page(page, p)) {
+                printf("Programming error on page %d.\n", page);
+                continue;
+            }
+            PROG_PROGRESS++;
+            if (do_erase) { // HACK: For AT45, which does not need to erase, we do not verify either; because write page
+                            // size = 528 and read page size = 512. ;-)
+                flash->read_page(page, verify_buffer);
+                if (!my_memcmp(verify_buffer, p, page_size)) {
+                    printf("Verify failed on page %d.\n", page, retry);
+                    dump_hex_verify(p, verify_buffer, page_size);
+                    continue;
+                }
+            }
+            retry = -2;
+        }
+        if (retry != -2) {
+            last_sector = -1;
+            printf("Programming failed...\n");
+            return false;
+        }
+        page++;
+        p += page_size;
+        length -= page_size;
+    }
+    flash->protect_configure();
+    flash->protect_enable();
+	return true;
+}
+
+int programFlash()
+{
+	PROG_PROGRESS = 0;
+
+	if (PROG_LENGTH > 0x200000) {
+		printf("Flash buffer too big (%d)\n", PROG_LENGTH);
+		return -2;
+	}
+	if (PROG_LENGTH < 0) {
+		printf("Flash length < 0 (%d)\n", PROG_LENGTH);
+		return -3;
+	}
+	if ((PROG_LOCATION < 0) || (PROG_LOCATION > 16*1024*1024)) {
+		printf("Illegal flash address %08x\n", PROG_LOCATION);
+		return -4;
+	}
+	if (flash_buffer_at(PROG_LOCATION, PROG_BUFFER, PROG_LENGTH)) {
+		return 0;
+	} else {
+		return -1;
+	}
+}
+
 extern "C" {
 void ultimate_main(void *context)
 {
@@ -288,6 +395,9 @@ void ultimate_main(void *context)
 			break;
 		case 11:
 			initializeUsb();
+			break;
+		case 12:
+			result = programFlash();
 			break;
 		case 13:
 			result = testRtcAccess();
