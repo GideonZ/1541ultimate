@@ -26,7 +26,7 @@ extern "C" {
 const uint8_t gcr_table[] = { 0x0A, 0x0B, 0x12, 0x13, 0x0E, 0x0F, 0x16, 0x17,
                            0x09, 0x19, 0x1A, 0x1B, 0x0D, 0x1D, 0x1E, 0x15 };
 
-const int track_lengths[] =      { 0x1E00, 0x1BE0, 0x1A00, 0x1860, 0x1E00, 0x1BE0, 0x1A00, 0x1860 };
+const int track_lengths[] =      { 0X1E0C, 0x1BE6, 0x1A0A, 0x186A, 0X1E0C, 0x1BE6, 0x1A0A, 0x186A };
 const int sectors_per_track [] = { 21, 19, 18, 17, 21, 19, 18, 17 };
 const int region_end[] =         { 17, 24, 30, 35, 52, 59, 65, 70 };
 const int sector_gap_lengths[] = {  9, 19, 13, 10,  9, 19, 13, 10 };
@@ -622,7 +622,7 @@ bool GcrImage :: load(File *f)
     uint32_t bytes_read;
     uint32_t *pul, offset;
     uint8_t *tr;
-    uint16_t w = 0x1E00;
+    uint16_t w = 0x1E0C;
 
     invalidate();
     FRESULT res = f->read(gcr_data, GCRIMAGE_MAXSIZE, &bytes_read);
