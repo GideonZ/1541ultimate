@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <string.h>
 
 #ifndef uchar
 #define uchar unsigned char

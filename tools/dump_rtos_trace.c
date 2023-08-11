@@ -61,7 +61,7 @@ void dump_trace(FILE *fi)
 
         if(i!=0)
             time += (d.stamp & 0x7FFF) + 1;
-        printf("#%ld\n", time);
+        printf("#%d\n", time);
         current = d.data;
         change = current ^ prev;
         for(b=0;b<16;b++) {
