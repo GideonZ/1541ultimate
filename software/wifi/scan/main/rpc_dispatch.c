@@ -15,6 +15,10 @@
 #include "rpc_dispatch.h"
 #include "my_uart.h"
 
+// not officially supported
+#include "esp_netif_lwip_internal.h"
+#include "esp_netif_net_stack.h"
+
 #define UART_CHAN UART_NUM_1
 
 void cmd_echo(command_buf_t *buf)
@@ -104,6 +108,18 @@ void cmd_wifi_disconnect(command_buf_t *buf)
     resp->esp_err = esp_wifi_disconnect();
     buf->size = sizeof(rpc_espcmd_resp);
     my_uart_transmit_packet(UART_CHAN, buf);
+}
+
+extern esp_netif_t *my_sta_netif;
+
+void cmd_send_eth_packet(command_buf_t *buf)
+{
+    rpc_send_eth_req *param = (rpc_send_eth_req *)buf->data;
+//    rpc_send_eth_resp *resp = (rpc_send_eth_resp *)buf->data;
+    err_t err = esp_netif_transmit(my_sta_netif, &param->data, param->length);
+    my_uart_free_buffer(UART_CHAN, buf);
+    //buf->size = sizeof(rpc_header_t);
+    //my_uart_transmit_packet(UART_CHAN, buf);
 }
 
 void cmd_socket(command_buf_t *buf)
@@ -353,6 +369,9 @@ void dispatch(void *ct)
 #endif
         hdr = (rpc_header_t *)(pbuffer->data);
         switch(hdr->command) {
+        case CMD_SEND_PACKET:
+            cmd_send_eth_packet(pbuffer);
+            break;
         case CMD_ECHO:
             cmd_echo(pbuffer);
             break;
@@ -435,6 +454,7 @@ void dispatch(void *ct)
     }
 }
 
+#if MULTITHREADED
 void create_dispatchers(int stacksize, command_buf_context_t *bufs)
 {
     static dispatcher_t dispatchers[NUM_BUFFERS];
@@ -444,3 +464,4 @@ void create_dispatchers(int stacksize, command_buf_context_t *bufs)
         bufs->bufs[i].object = &dispatchers[i];
     }
 }
+#endif

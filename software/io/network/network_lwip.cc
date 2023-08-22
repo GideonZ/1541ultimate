@@ -22,13 +22,10 @@ struct t_cfg_definition net_config[] = {
 	{ CFG_NET_GATEWAY, CFG_TYPE_STRING, "Static Gateway",				 "%s", NULL,       7, 16, (int)"192.168.2.1" },
 #ifdef U64
 	{ CFG_NET_HOSTNAME,CFG_TYPE_STRING, "Host Name", 					 "%s", NULL,       3, 18, (int)"Ultimate-64" },
-#else
-
-#if FREQUENCY == 62500000
+#elif FREQUENCY == 62500000
     { CFG_NET_HOSTNAME,CFG_TYPE_STRING, "Host Name",                     "%s", NULL,       3, 18, (int)"Ultimate-II-Plus" },
 #else
     { CFG_NET_HOSTNAME,CFG_TYPE_STRING, "Host Name",                     "%s", NULL,       3, 18, (int)"Ultimate-II" },
-#endif
 #endif
 	{ CFG_TYPE_END,    CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
@@ -253,7 +250,7 @@ void NetworkLWIP :: init_callback( )
 }
 
 
-bool NetworkLWIP :: input(uint8_t *raw_buffer, uint8_t *payload, int pkt_size)
+bool NetworkLWIP :: input(void *raw_buffer, uint8_t *payload, int pkt_size)
 {
 	//dump_hex(payload, pkt_size);
 

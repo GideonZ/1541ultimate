@@ -40,8 +40,8 @@ public:
     	memcpy(mac_address, mac, 6);
     }
 
-    virtual bool input(uint8_t *raw_buffer, uint8_t *payload, int pkt_size) { return false; }
-    virtual bool output(uint8_t *raw_buffer, int pkt_size) { return false; }
+    virtual bool input(void *raw_buffer, uint8_t *payload, int pkt_size) { return false; }
+    virtual bool output(void *raw_buffer, int pkt_size) { return false; }
     virtual void effectuate_settings(void) { }
 
 	virtual void getIpAddr(uint8_t *a)  { memset(a, 0, 12); }

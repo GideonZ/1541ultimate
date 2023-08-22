@@ -17,7 +17,10 @@ int wifi_getmac(uint8_t *mac);
 int wifi_scan(void *);
 int wifi_wifi_connect(char *ssid, char *password, uint8_t auth);
 int wifi_wifi_disconnect();
-
+uint8_t wifi_tx_packet(void *driver, void *buffer, int length);
+void wifi_free(void *driver, void *buffer);
+void wifi_rx_packet();
+/*
 extern "C" {
 #include "cmd_buffer.h"
 int wifi_socket(int domain, int type, int protocol);
@@ -45,7 +48,6 @@ int wifi_gethostbyname_r(const char *name, struct hostent *ret, char *buf, size_
 //int lwip_select(int maxfdp1, fd_set *readset, fd_set *writeset, fd_set *exceptset,
 //                struct timeval *timeout);
 
-
-
+*/
 
 #endif /* SOFTWARE_IO_NETWORK_NETWORK_ESP32_H_ */

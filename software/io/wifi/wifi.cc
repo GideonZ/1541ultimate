@@ -70,12 +70,13 @@ WiFi :: WiFi()
     doClose = false;
     programError = false;
     runModeTask = NULL;
-    state = eWifi_NotDetected;\
+    state = eWifi_NotDetected;
 
     bzero(my_mac, 6);
     my_ip = 0;
     my_gateway = 0;
     my_netmask = 0;
+    netstack = NULL;
 }
 
 
@@ -463,6 +464,7 @@ void WiFi::CommandThread()
             break;
         case WIFI_DOWNLOAD:
             uart->EnableSlip(false); // first receive boot message
+            uart->txDebug = false; // disable debug
             Boot();
             a = Download((const uint8_t *)command.data, command.address, command.length);
             if (a) {
@@ -595,8 +597,9 @@ void WiFi :: RunModeThread()
 
     while(1) {
         cmd_buffer_received(packets, &buf, portMAX_DELAY);
-        dump_hex_relative(buf->data, buf->size);
+        //dump_hex_relative(buf->data, buf->size);
         hdr = (rpc_header_t *)(buf->data);
+        printf("Pkt %d. Ev %b. Sz %d. Seq: %d\n", buf->bufnr, hdr->command, buf->size, hdr->sequence);
         switch(hdr->command) {
         case EVENT_GOTIP:
             ev = (event_pkt_got_ip *)buf->data;
@@ -605,6 +608,18 @@ void WiFi :: RunModeThread()
             my_netmask = ev->netmask;
             state = eWifi_Connected;
             FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
+            cmd_buffer_free(packets, buf);
+            break;
+        case EVENT_CONNECTED:
+            printf("Connected Event processed in RunThread\n");
+            state = eWifi_Connected;
+            cmd_buffer_free(packets, buf);
+
+            netstack = getNetworkStack(this, wifi_tx_packet, wifi_free);
+            netstack->set_mac_address(my_mac);
+            netstack->start();
+            netstack->link_up();
+            FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
             break;
         case EVENT_DISCONNECTED:
             if (state == eWifi_Connected) {
@@ -612,16 +627,47 @@ void WiFi :: RunModeThread()
             } else {
                 state = eWifi_Failed;
             }
+            if(netstack) {
+                netstack->link_down();
+                releaseNetworkStack(netstack);
+            }
             FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
+            cmd_buffer_free(packets, buf);
+            break;
+        case EVENT_RECV_PACKET:
+            if (netstack) {
+                rpc_rx_pkt *pkt = (rpc_rx_pkt *)buf->data;
+                netstack->input(buf, (uint8_t*)&pkt->data, pkt->len);
+            } else {
+                puts("Packet received, but no net stack!");
+                cmd_buffer_free(packets, buf);
+            }
+            // no free, as the packet needs to live on in the network stack
             break;
         default:
+            cmd_buffer_free(packets, buf);
             break;
         }
-        cmd_buffer_free(packets, buf);
     }
 
     // Wait forever
     vTaskDelay(portMAX_DELAY);
+}
+
+void WiFi :: sendEvent(uint8_t code)
+{
+    command_buf_t *buf;
+    cmd_buffer_get(packets, &buf, portMAX_DELAY);
+    rpc_header_t *hdr = (rpc_header_t *)(buf->data);
+    hdr->command = code;
+    hdr->sequence = 0;
+    hdr->thread = 0;
+    cmd_buffer_loopback(packets, buf); // internal event
+}
+
+void WiFi :: freeBuffer(command_buf_t *buf)
+{
+    cmd_buffer_free(packets, buf);
 }
 
 IndexedList<Browsable *> * BrowsableWifi :: getSubItems(int &error)
@@ -680,5 +726,8 @@ int BrowsableWifiAP :: connect_ap(SubsysCommand *cmd)
     }
     int result = wifi_wifi_connect(bap->ssid, password, bap->auth);
     printf("Connect result: %d\n", result);
+    if (result == 0) {
+        wifi.sendEvent(EVENT_CONNECTED);
+    }
     return 0;
 }

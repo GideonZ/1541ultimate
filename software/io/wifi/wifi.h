@@ -15,6 +15,8 @@
 #include "browsable.h"
 #include "size_str.h"
 
+#include "network_interface.h"
+
 extern "C" {
     #include "cmd_buffer.h"
 }
@@ -37,6 +39,7 @@ class WiFi
     QueueHandle_t commandQueue;
     TaskHandle_t runModeTask;
     command_buf_context_t *packets;
+    NetworkInterface *netstack;
 
     WifiState_t state;
     char    moduleName[34];
@@ -56,6 +59,7 @@ class WiFi
     bool Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data, uint8_t *receiveBuffer, int timeout);
     bool UartEcho(void);
     bool RequestEcho(void);
+    void RxPacket(command_buf_t *);
 
     static void CommandTaskStart(void *context);
     static void RunModeTaskStart(void *context);
@@ -78,6 +82,8 @@ public:
     WifiState_t getState(void) { return state; }
     void  getMacAddr(uint8_t *target) { memcpy(target, my_mac, 6); }
     char *getIpAddrString(char *buf, int max) { sprintf(buf, "%d.%d.%d.%d", (my_ip >> 0) & 0xff, (my_ip >> 8) & 0xff, (my_ip >> 16) & 0xff, (my_ip >> 24) & 0xff); return buf; }
+    void sendEvent(uint8_t code);
+    void freeBuffer(command_buf_t *buf);
 
     friend class BrowsableWifi;
 };

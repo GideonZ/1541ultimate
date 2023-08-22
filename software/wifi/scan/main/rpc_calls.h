@@ -77,6 +77,24 @@ typedef struct {
     ultimate_ap_records_t rec;
 } rpc_scan_resp;
 
+typedef struct {
+    rpc_header_t hdr;
+    u16_t len;
+    char data;
+} rpc_rx_pkt;
+
+//----------------------------------
+// send raw packet
+typedef struct {
+    rpc_header_t hdr;
+    uint32_t length;
+    char data;
+} rpc_send_eth_req;
+
+typedef struct { // this response might be deprecated soon
+    rpc_header_t hdr;
+} rpc_send_eth_resp;
+
 //----------------------------------
 // socket
 typedef struct {
@@ -352,6 +370,7 @@ typedef struct {
 #define CMD_WIFI_CONNECT    0x05
 #define CMD_WIFI_DISCONNECT 0x06
 #define CMD_WIFI_GETMAC     0x07
+#define CMD_SEND_PACKET     0x08
 #define CMD_SOCKET          0x11
 #define CMD_CONNECT         0x12
 #define CMD_ACCEPT          0x13
@@ -373,8 +392,10 @@ typedef struct {
 #define CMD_IOCTL           0x28
 #define CMD_FCNTL           0x29
 
+#define EVENT_CONNECTED     0x40
 #define EVENT_GOTIP         0x41
 #define EVENT_DISCONNECTED  0x42
+#define EVENT_RECV_PACKET   0x43
 
 // int socket(int domain, int type, int protocol);
 // int connect(int s, const struct sockaddr *name, socklen_t namelen);

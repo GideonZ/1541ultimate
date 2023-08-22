@@ -26,7 +26,7 @@ void dispatch(void *ct);
 #define IDENT_MINOR   7
 #define UART_DEBUG    0
 #define U64BUILD      1
-#define MULTITHREADED 1
+#define MULTITHREADED 0
 #define DISPATCHER_STACK 2000
 
 #endif /* SOFTWARE_WIFI_SCAN_MAIN_RPC_DISPATCH_H_ */

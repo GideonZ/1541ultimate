@@ -10,7 +10,9 @@
 
 #include <stdint.h>
 
-#define CMD_BUF_SIZE 1536
+#define CMD_BUF_PAYLOAD 1536
+#define CMD_BUF_HEADER  16
+#define CMD_BUF_SIZE (CMD_BUF_PAYLOAD + CMD_BUF_HEADER)
 #define NUM_BUFFERS 16
 
 #if NIOS
@@ -42,6 +44,7 @@ void cmd_buffer_reset(command_buf_context_t *context);
 BaseType_t cmd_buffer_free(command_buf_context_t *context, command_buf_t *b);
 BaseType_t cmd_buffer_get(command_buf_context_t *context, command_buf_t **b, TickType_t t);
 BaseType_t cmd_buffer_transmit(command_buf_context_t *context, command_buf_t *b);
+BaseType_t cmd_buffer_loopback(command_buf_context_t *context, command_buf_t *b);
 BaseType_t cmd_buffer_received(command_buf_context_t *context, command_buf_t **b, TickType_t t);
 BaseType_t cmd_buffer_get_tx_isr(command_buf_context_t *context, command_buf_t **b, BaseType_t *w);
 BaseType_t cmd_buffer_free_isr(command_buf_context_t *context, command_buf_t *b, BaseType_t *w);

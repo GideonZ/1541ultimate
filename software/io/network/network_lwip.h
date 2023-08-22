@@ -70,7 +70,7 @@ public:
     void link_down();
     bool is_link_up() { return if_up; }
     void set_mac_address(uint8_t *mac);
-    bool input(uint8_t *raw_buffer, uint8_t *payload, int pkt_size);
+    bool input(void *raw_buffer, uint8_t *payload, int pkt_size);
 
     virtual void init_callback();
     virtual uint8_t output_callback(struct netif *, struct pbuf *) {

@@ -50,6 +50,10 @@ INL BaseType_t cmd_buffer_transmit(command_buf_context_t *context, command_buf_t
     return xQueueSend(context->transmitQueue, &b, 0);
 }
 
+INL BaseType_t cmd_buffer_loopback(command_buf_context_t *context, command_buf_t *b) {
+    return xQueueSend(context->receivedQueue, &b, 100);
+}
+
 // application waits for command
 INL BaseType_t cmd_buffer_received(command_buf_context_t *context, command_buf_t **b, TickType_t t) {
     return xQueueReceive(context->receivedQueue, b, t);

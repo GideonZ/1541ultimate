@@ -43,8 +43,8 @@ TaskHandle_t tasksWaitingForReply[NUM_BUFFERS];
 
 #define TRANSMIT(x)         wifi.uart->TransmitPacket(buf); \
                             xTaskNotifyWait(0, 0, (uint32_t *)&buf, portMAX_DELAY); \
-                            printf("Received buffer %d:\n", buf->bufnr); \
-                            dump_hex_relative(buf->data, buf->size); \
+                            printf("Received buffer %d, size %d:\n", buf->bufnr, buf->size); \
+                            dump_hex_relative(buf->data, buf->size > 32 ? 32 : buf->size); \
                             rpc_ ## x ## _resp *result = (rpc_ ## x ## _resp *)buf->data; \
                             tasksWaitingForReply[result->hdr.thread] = NULL;
 
@@ -180,6 +180,32 @@ int wifi_wifi_disconnect()
     RETURN_ESP;
 }
 
+uint8_t wifi_tx_packet(void *driver, void *buffer, int length)
+{
+    BUFARGS(send_eth, CMD_SEND_PACKET);
+
+    uint32_t chunkSize = length;
+    if (chunkSize > CMD_BUF_PAYLOAD) {
+        chunkSize = CMD_BUF_PAYLOAD;
+    }
+    args->length = chunkSize;
+    memcpy(&args->data, buffer, chunkSize);
+    buf->size += (chunkSize - 4);
+
+    wifi.uart->TransmitPacket(buf);
+    //TRANSMIT(espcmd);
+    //RETURN_ESP;
+}
+
+void wifi_free(void *driver, void *buffer)
+{
+    // driver points to the WiFi object
+    // buffer points to the cmd_buffer_t object
+    WiFi *w = (WiFi *)driver;
+    w->freeBuffer((command_buf_t *)buffer);
+}
+
+/*
 int wifi_socket(int domain, int type, int protocol)
 {
     while(wifi.getState() < eWifi_NotConnected) {
@@ -368,12 +394,10 @@ int wifi_sendto(int s, const void *dataptr, size_t size, int flags, const struct
     RETURN_STD;
 }
 
-/*
 int wifi_gethostbyname()
 {
 
 }
-*/
 
 int wifi_gethostbyname_r(const char *name, struct hostent *ret, char *client_buf, size_t buflen, struct hostent **client_result, int *h_errnop)
 {
@@ -462,4 +486,5 @@ int wifi_fcntl(int s, int cmd, int val)
 {
     return -1;
 }
+*/
 
