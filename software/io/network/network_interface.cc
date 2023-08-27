@@ -128,7 +128,7 @@ NetworkInterface :: NetworkInterface(void *driver,
 		pbuf_fifo.push(&pbuf_array[i]);
 	}
 	dhcp_enable = false;
-
+	reset();
     NetworkInterface :: registerNetworkInterface(this);
 
 	// quick hack to perform update on the browser
@@ -186,6 +186,13 @@ void NetworkInterface :: statusUpdate(void)
 	FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
 }
 
+
+void NetworkInterface :: reset()
+{
+	my_net_if.state = NULL;
+	my_net_if.next = NULL;
+}
+
 void NetworkInterface :: init_callback( )
 {
 	/* initialization of IP addresses */
@@ -194,8 +201,7 @@ void NetworkInterface :: init_callback( )
 //    IP4_ADDR(&my_gateway, 192, 168, 2, 1);
 
 	/* reset */
-	my_net_if.state = NULL;
-	my_net_if.next = NULL;
+	reset();
 
 	effectuate_settings();
 

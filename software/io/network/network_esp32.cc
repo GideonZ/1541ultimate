@@ -101,13 +101,32 @@ void NetworkLWIP_WiFi :: getSubItems(Browsable *parent, IndexedList<Browsable *>
 
 void NetworkLWIP_WiFi :: attach_config()
 {
-	register_store(0x57494649, "WiFi settings", wifi_config);	
+	register_store(0x57494649, "WiFi settings", wifi_config);
 }
 
 // from ConfigurableObject
 void NetworkLWIP_WiFi :: effectuate_settings(void)
 {
     NetworkInterface :: effectuate_settings();
+    wifi.setSsidPass(cfg->get_string(CFG_WIFI_SSID), cfg->get_string(CFG_WIFI_PASSW));
+    if (wifi.getState() == eWifi_Off && cfg->get_value(CFG_WIFI_ENABLE)) {
+        wifi.doStart();
+    } else if (wifi.getState() != eWifi_Off && !cfg->get_value(CFG_WIFI_ENABLE)) {
+        wifi.doDisable();
+    }
+}
+
+// called from wifi driver when a manual connect occurs
+void NetworkLWIP_WiFi :: saveSsidPass(const char *ssid, const char *pass)
+{
+    char ssid_mut[36];
+    char pass_mut[68];
+    bzero(ssid_mut, 36);
+    bzero(pass_mut, 68);
+    strncpy(ssid_mut, ssid, 32);
+    strncpy(pass_mut, pass, 64);
+    cfg->set_string(CFG_WIFI_SSID, ssid_mut);
+    cfg->set_string(CFG_WIFI_PASSW, pass_mut);
 }
 
 void NetworkLWIP_WiFi :: fetch_context_items(IndexedList<Action *>&items)

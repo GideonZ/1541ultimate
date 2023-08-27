@@ -40,6 +40,9 @@ public:
 
     // from ConfigurableObject
     void effectuate_settings(void);
+
+    // from Wifi Driver
+    void saveSsidPass(const char *ssid, const char *pass);
 };
 
 

@@ -80,6 +80,7 @@ WiFi :: WiFi()
     my_netmask = 0;
     netstack = new NetworkLWIP_WiFi(this, wifi_tx_packet, wifi_free);
     netstack->attach_config();
+    netstack->effectuate_settings(); // might already turn this thing on!
 }
 
 void WiFi :: RefreshRoot()
@@ -593,6 +594,7 @@ void WiFi :: RunModeThread()
     BaseType_t suc = pdFALSE;
     command_buf_t *buf;
     rpc_header_t *hdr;
+    rpc_wifi_connect_req *conn_req;
     event_pkt_got_ip *ev;
     int result;
 
@@ -600,7 +602,6 @@ void WiFi :: RunModeThread()
     RefreshRoot();
 
     while(1) {
-        printf("WiFiState: %d\n", state);
         switch(state) {
         case eWifi_NotDetected:
             uart->txDebug = true;
@@ -611,7 +612,6 @@ void WiFi :: RunModeThread()
             break;
 
         case eWifi_Detected:
-            printf("Going to do setbaud..\n");
             uart->txDebug = true;
             result = wifi_setbaud(6666666, 1);
             printf("Result of setbaud: %d\n", result);
@@ -621,14 +621,24 @@ void WiFi :: RunModeThread()
             wifi_scan(&wifi_aps);
 
             state = eWifi_NotConnected;
+
+            printf("Auto connect to %s with pass %s\n", cfg_ssid.c_str(), cfg_pass.c_str());
+            if(cfg_ssid.length() > 0) {
+                if (wifi_wifi_connect_known_ssid(cfg_ssid.c_str(), cfg_pass.c_str()) == ERR_OK) {
+                    state = eWifi_Connected;
+                    uart->txDebug = false;
+                    netstack->start();
+                    netstack->link_up();
+                } else {
+                    printf("Unsuccessful auto connect.\n");
+                }
+            }
             RefreshRoot();
             break;
 
         case eWifi_NotConnected:
         case eWifi_Failed:
-            outbyte('[');
             cmd_buffer_received(packets, &buf, portMAX_DELAY);
-            outbyte(']');
             hdr = (rpc_header_t *)(buf->data);
 #if DEBUG_INPUT
             printf("Pkt %d. Ev %b. Sz %d. Seq: %d\n", buf->bufnr, hdr->command, buf->size, hdr->sequence);
@@ -641,18 +651,20 @@ void WiFi :: RunModeThread()
                 break;
 
             case EVENT_CONNECTED:
+                // Obtain the password from the event to write it to the network interface
+                // in order to have it saved to the config. Very inconvenient, but that's
+                // how queues work.
+                conn_req = (rpc_wifi_connect_req *)buf->data;
+                netstack->saveSsidPass(conn_req->ssid, conn_req->password);
                 cmd_buffer_free(packets, buf);
-                printf("Connected Event processed in RunThread\n");
                 if (state == eWifi_Connected) { // already connected!
                     netstack->link_down();
                 }
                 state = eWifi_Connected;
                 uart->txDebug = false;
+                netstack->start();
+                netstack->link_up();
 
-                if(netstack) {
-                    netstack->start();
-                    netstack->link_up();
-                }
                 RefreshRoot();
                 break;
 
@@ -674,9 +686,7 @@ void WiFi :: RunModeThread()
             break;
 
         case eWifi_Connected:
-            outbyte('{');
             cmd_buffer_received(packets, &buf, portMAX_DELAY);
-            outbyte('}');
             hdr = (rpc_header_t *)(buf->data);
 #if DEBUG_INPUT
             printf("Pkt %d. Ev %b. Sz %d. Seq: %d\n", buf->bufnr, hdr->command, buf->size, hdr->sequence);
@@ -736,7 +746,25 @@ void WiFi :: sendEvent(uint8_t code)
     rpc_header_t *hdr = (rpc_header_t *)(buf->data);
     hdr->command = code;
     hdr->sequence = 0;
-    hdr->thread = 0;
+    hdr->thread = 0xFF;
+    cmd_buffer_loopback(packets, buf); // internal event
+}
+
+// This event also updates the configuration.
+void WiFi :: sendConnectEvent(const char *ssid, const char *pass, uint8_t auth)
+{
+    command_buf_t *buf;
+    cmd_buffer_get(packets, &buf, portMAX_DELAY);
+    // reuse of the rpc structure; but of course it is not sent to the module
+    rpc_wifi_connect_req *args = (rpc_wifi_connect_req *)(buf->data);
+    args->hdr.command = EVENT_CONNECTED;
+    args->hdr.sequence = 0;
+    args->hdr.thread = 0xFF;
+    bzero(args->ssid, 32);
+    bzero(args->password, 64);
+    strncpy(args->ssid, ssid, 32);
+    strncpy(args->password, pass, 64);
+    args->auth_mode = auth;
     cmd_buffer_loopback(packets, buf); // internal event
 }
 
@@ -886,7 +914,7 @@ int wifi_scan(void *a)
     RETURN_ESP;
 }
 
-int wifi_wifi_connect(char *ssid, char *password, uint8_t auth)
+int wifi_wifi_connect(const char *ssid, const char *password, uint8_t auth)
 {
     BUFARGS(wifi_connect, CMD_WIFI_CONNECT);
 
@@ -898,6 +926,17 @@ int wifi_wifi_connect(char *ssid, char *password, uint8_t auth)
 
     TRANSMIT(scan);
     RETURN_ESP;
+}
+
+int wifi_wifi_connect_known_ssid(const char *ssid, const char *password)
+{
+    for(int i=0; i < wifi_aps.num_records; i++) {
+        if (strncmp((char *)wifi_aps.aps[i].ssid, ssid, 32) == 0) {
+            return wifi_wifi_connect(ssid, password, wifi_aps.aps[i].authmode);
+        }
+    }
+    // not found
+    return 1;
 }
 
 int wifi_wifi_disconnect()
@@ -951,7 +990,8 @@ int BrowsableWifiAP :: connect_ap(SubsysCommand *cmd)
     int result = wifi_wifi_connect(bap->ssid, password, bap->auth);
     printf("Connect result: %d\n", result);
     if (result == 0) {
-        wifi.sendEvent(EVENT_CONNECTED);
+        //wifi.sendEvent(EVENT_CONNECTED);
+        wifi.sendConnectEvent(bap->ssid, password, bap->auth);
     }
     return 0;
 }
