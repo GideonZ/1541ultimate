@@ -339,7 +339,7 @@ void TreeBrowserState :: level_up(void)
     delete this;
 }
 
-void TreeBrowserState :: select(void)
+void TreeBrowserState :: select_one(void)
 {
 	if(!under_cursor)
 		return;

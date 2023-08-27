@@ -179,7 +179,7 @@ public:
 
 
 
-#define ERR_OK							00
+#define ERR_ALL_OK						00
 #define ERR_FILES_SCRATCHED				01
 #define ERR_PARTITION_OK                02
 #define ERR_READ_ERROR					20

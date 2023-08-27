@@ -73,22 +73,36 @@ static err_t hacked_recv(struct pbuf *p, struct netif *inp)
 {
     static uint16_t seq = 0;
     command_buf_t *reply;
-    if (my_uart_get_buffer(UART_NUM_1, &reply, 100)) {
-        rpc_rx_pkt *pkt = (rpc_rx_pkt *)reply->data;
-        pkt->hdr.command = EVENT_RECV_PACKET;
-        pkt->hdr.thread = 0xFF;
-        pkt->hdr.sequence = seq++;
-        pkt->len = p->len;
-        memcpy(&pkt->data, p->payload, p->len);
-        reply->size = sizeof(rpc_rx_pkt) + p->len - 1;
+    if ((memcmp(p->payload, inp->hwaddr, 6) == 0) || 
+        (memcmp(p->payload, "\xff\xff\xff\xff\xff\xff", 6) == 0)) {
+
+        if (my_uart_get_buffer(UART_NUM_1, &reply, 100)) {
+            rpc_rx_pkt *pkt = (rpc_rx_pkt *)reply->data;
+            pkt->hdr.command = EVENT_RECV_PACKET;
+            pkt->hdr.thread = 0xFF;
+            pkt->hdr.sequence = seq++;
+            pkt->len = p->len;
+            memcpy(&pkt->data, p->payload, p->len);
+            reply->size = sizeof(rpc_rx_pkt) + p->len - 1;
+            pbuf_free(p);
+            my_uart_transmit_packet(UART_NUM_1, reply);
+            return ERR_OK;
+        } else {
+            ESP_LOGW(TAG, "No buffer to send packet.");
+            return ERR_BUF;
+        }
+    } else { // dropped, wrong mac and no broadcast
         pbuf_free(p);
-        my_uart_transmit_packet(UART_NUM_1, reply);
         return ERR_OK;
-    } else {
-        ESP_LOGW(TAG, "No buffer to send packet.");
-        return ERR_BUF;
     }
 }
+
+static err_t hacked_tx(struct netif *netif, struct pbuf *pbuf)
+{
+    //pbuf_free(pbuf);
+    return ERR_OK;
+}
+
 
 static void got_ip_event_handler(void *esp_netif, esp_event_base_t base, int32_t event_id, void *data)
 {
@@ -130,6 +144,7 @@ static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t e
     }
     struct netif *lw = ((struct esp_netif_obj *)my_sta_netif)->lwip_netif;
     lw->input = hacked_recv;
+    lw->linkoutput = hacked_tx;
 
     if (evcode) {
         command_buf_t *reply;
@@ -159,62 +174,6 @@ static void wifi_init()
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-/*
-struct esp_netif_obj {
-    // default interface addresses
-    uint8_t mac[NETIF_MAX_HWADDR_LEN];
-    esp_netif_ip_info_t* ip_info;
-    esp_netif_ip_info_t* ip_info_old;
-
-    // io driver related
-    void* driver_handle;
-    esp_err_t (*driver_transmit)(void *h, void *buffer, size_t len);
-    void (*driver_free_rx_buffer)(void *h, void* buffer);
-
-    // misc flags, types, keys, priority
-    esp_netif_flags_t flags;
-    char * hostname;
-    char * if_key;
-    char * if_desc;
-    int route_prio;
-};
-
-struct esp_netif_obj {
-    // default interface addresses
-    uint8_t mac[NETIF_MAX_HWADDR_LEN];
-    esp_netif_ip_info_t* ip_info;
-    esp_netif_ip_info_t* ip_info_old;
-
-    // lwip netif related
-    struct netif *lwip_netif;
-    err_t (*lwip_init_fn)(struct netif*);
-    void (*lwip_input_fn)(void *input_netif_handle, void *buffer, size_t len, void *eb);
-    void * netif_handle;    // netif impl context (either vanilla lwip-netif or ppp_pcb)
-    netif_related_data_t *related_data; // holds additional data for specific netifs
-
-    // io driver related
-    void* driver_handle;
-    esp_err_t (*driver_transmit)(void *h, void *buffer, size_t len);
-    esp_err_t (*driver_transmit_wrap)(void *h, void *buffer, size_t len, void *pbuf);
-    void (*driver_free_rx_buffer)(void *h, void* buffer);
-
-    // dhcp related
-    esp_netif_dhcp_status_t dhcpc_status;
-    esp_netif_dhcp_status_t dhcps_status;
-    bool timer_running;
-
-    // event translation
-    ip_event_t get_ip_event;
-    ip_event_t lost_ip_event;
-
-    // misc flags, types, keys, priority
-    esp_netif_flags_t flags;
-    char * hostname;
-    char * if_key;
-    char * if_desc;
-    int route_prio;
-};
-*/
     struct netif *lw = ((struct esp_netif_obj *)my_sta_netif)->lwip_netif;
     lw->input = hacked_recv;
 
@@ -271,65 +230,6 @@ esp_err_t wifi_scan(ultimate_ap_records_t *ult_records)
     ult_records->num_records = (uint8_t)ap_count;
     return ESP_OK;
 }
-
-
-/*
-#include "soc/uart_periph.h"
-void uart_task(void *a)
-{
-    int fd = *((int *)a);
-    ESP_LOGI("UartTask", "FD = %d", fd);
-
-    uint64_t my_event = 1;
-
-    command_buf_t *b;
-    //uint32_t debug_uart = UART_FIFO_AHB_REG(0);
-    while(1) {
-        my_uart_receive_packet(UART_NUM_1, &b, portMAX_DELAY);
-        int wr = write(fd, &my_event, sizeof(uint64_t)); // :-)
-        printf("UartEvent: Core %d, BUF #%d, SZ:%d, DR:%d, WR:%d\n", xPortGetCoreID(), b->bufnr, b->size, b->dropped, wr);
-        dump_hex_relative(b->data, b->size);
-        parse_command(b);
-    }
-}
-
-
-void select_task(void *a)
-{
-    int fd = *((int *)a);
-    ESP_LOGI("SelectTask", "FD = %d", fd);
-    ESP_LOGI("SelectTask", "Free Heap: %d Bytes", esp_get_free_heap_size());
-
-    fd_set rfds;
-    struct timeval tv;  //for select()
-    int retval;
-    uint64_t the_event;
-
-    //Wait up to 10 seconds
-    tv.tv_sec = 10;
-    tv.tv_usec = 0;
-
-    FD_ZERO(&rfds);
-
-    while(1) {
-        FD_SET(fd, &rfds);
-        retval = select(FD_SETSIZE, &rfds, NULL, NULL, &tv);
-        ESP_LOGI("SelectTask", "Select returned with %d. %d", retval, (int)FD_ISSET(fd, &rfds));
-        if (FD_ISSET(fd, &rfds)) {
-            int a = read(fd, &the_event, sizeof(uint64_t));
-            ESP_LOGI("SelectTask", "Reading from eventfd resulted in: %d. Got %d", a, (int)the_event);
-        }
-    }
-}
-*/
-
-/*
-    esp_vfs_eventfd_config_t eventfd_config = { .max_fds = 2 };
-
-    ESP_ERROR_CHECK(esp_vfs_eventfd_register(&eventfd_config));
-    int fd = eventfd(0, 0);
-    ESP_LOGI(TAG, "Fd = %d", fd);
-*/
 
 void app_main()
 {

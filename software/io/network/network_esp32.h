@@ -10,44 +10,39 @@
 
 #include <socket.h>
 #include <FreeRTOS.h>
+#include "network_interface.h"
 
-int wifi_setbaud(int baudrate, uint8_t flowctrl);
-BaseType_t wifi_detect(uint16_t *major, uint16_t *minor, char *str, int maxlen);
-int wifi_getmac(uint8_t *mac);
-int wifi_scan(void *);
-int wifi_wifi_connect(char *ssid, char *password, uint8_t auth);
-int wifi_wifi_disconnect();
-uint8_t wifi_tx_packet(void *driver, void *buffer, int length);
-void wifi_free(void *driver, void *buffer);
-void wifi_rx_packet();
-/*
-extern "C" {
-#include "cmd_buffer.h"
-int wifi_socket(int domain, int type, int protocol);
-int wifi_connect(int s, const struct sockaddr *name, socklen_t namelen);
-int wifi_accept(int s, struct sockaddr *addr, socklen_t *addrlen);
-int wifi_bind(int s, const struct sockaddr *name, socklen_t namelen);
-int wifi_shutdown(int s, int how);
-int wifi_close(int s);
-int wifi_listen(int s, int backlog);
-int wifi_read(int s, void *mem, size_t len);
-int wifi_recv(int s, void *mem, size_t len, int flags);
-int wifi_recvfrom(int s, void *mem, size_t len, int flags, struct sockaddr *from, socklen_t *fromlen);
-int wifi_write(int s, const void *dataptr, size_t size);
-int wifi_send(int s, const void *dataptr, size_t size, int flags);
-int wifi_sendto(int s, const void *dataptr, size_t size, int flags, const struct sockaddr *to, socklen_t tolen);
-int wifi_getpeername (int s, struct sockaddr *name, socklen_t *namelen);
-int wifi_getsockname (int s, struct sockaddr *name, socklen_t *namelen);
-int wifi_getsockopt (int s, int level, int optname, void *optval, socklen_t *optlen);
-int wifi_setsockopt (int s, int level, int optname, const void *optval, socklen_t optlen);
-int wifi_ioctl(int s, long cmd, void *argp);
-int wifi_fcntl(int s, int cmd, int val);
-int wifi_gethostbyname_r(const char *name, struct hostent *ret, char *buf, size_t buflen, struct hostent **result, int *h_errnop);
 
-}
-//int lwip_select(int maxfdp1, fd_set *readset, fd_set *writeset, fd_set *exceptset,
-//                struct timeval *timeout);
+#define CFG_WIFI_ENABLE 0xB1
+#define CFG_WIFI_SSID   0xB2
+#define CFG_WIFI_PASSW  0xB3
 
-*/
+class NetworkLWIP_WiFi : public NetworkInterface
+{
+public:
+    NetworkLWIP_WiFi(void *driver,
+                driver_output_function_t out,
+				driver_free_function_t free);
+    virtual ~NetworkLWIP_WiFi();
+
+    const char *identify() { return "NetworkLWIP_WiFi"; }
+    void attach_config();
+
+    // User Interface
+    void getDisplayString(int index, char *buffer, int width);
+    void getSubItems(Browsable *parent, IndexedList<Browsable *> &list, int &error);
+    void fetch_context_items(IndexedList<Action *>&items);
+    static int list_aps(SubsysCommand *cmd);
+    static int disconnect(SubsysCommand *cmd);
+    static int rescan(SubsysCommand *cmd);
+    static int enable(SubsysCommand *cmd);
+    static int disable(SubsysCommand *cmd);
+
+    // from ConfigurableObject
+    void effectuate_settings(void);
+};
+
+
+
 
 #endif /* SOFTWARE_IO_NETWORK_NETWORK_ESP32_H_ */

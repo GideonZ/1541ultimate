@@ -396,6 +396,7 @@ typedef struct {
 #define EVENT_GOTIP         0x41
 #define EVENT_DISCONNECTED  0x42
 #define EVENT_RECV_PACKET   0x43
+#define EVENT_RESCAN        0x44
 
 // int socket(int domain, int type, int protocol);
 // int connect(int s, const struct sockaddr *name, socklen_t namelen);

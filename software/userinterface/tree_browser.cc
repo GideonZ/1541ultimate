@@ -434,7 +434,7 @@ int TreeBrowser :: handle_key(int c)
             }
             break;
         case KEY_SPACE: // space = select
-        	state->select();
+        	state->select_one();
         	break;
         case KEY_CTRL_A: // select all
         	state->select_all(true);

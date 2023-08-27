@@ -1146,7 +1146,7 @@ SubsysResultCode_t U64Config :: executeCommand(SubsysCommand *cmd)
 #endif
 
     case MENU_U64_WIFI_DISABLE:
-        U64_WIFI_CONTROL = 0;
+        wifi.doDisable();
         break;
 
     case MENU_U64_WIFI_ENABLE:

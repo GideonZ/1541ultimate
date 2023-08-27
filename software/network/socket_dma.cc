@@ -18,7 +18,7 @@
 #include "c1541.h"
 #include "data_streamer.h"
 #include "filetype_crt.h"
-#include "network_lwip.h"
+#include "network_interface.h"
 
 // "Ok ok, use them then..."
 #define SOCKET_CMD_DMA         0xFF01

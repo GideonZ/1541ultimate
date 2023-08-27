@@ -49,6 +49,7 @@ int FastUART::ReadImpl(rxBuffer_t *b, uint8_t *buffer, int bufferSize)
 
 void FastUART::EnableIRQ(bool enable)
 {
+    printf("Uart IRQ %sable!\n", enable ? "en" : "dis");
     if (enable) {
         uart->ictrl |= FUART_RxIRQ_EN;
     } else {

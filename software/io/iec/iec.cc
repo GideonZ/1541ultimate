@@ -842,7 +842,7 @@ void IecInterface :: set_error_fres(FRESULT fres)
     int tr=0, sec=0, err = 0;
 
     switch (fres) {
-    case FR_OK:                  err = ERR_OK;                /* (0) Succeeded */
+    case FR_OK:                  err = ERR_ALL_OK;            /* (0) Succeeded */
         break;
     case FR_DISK_ERR:            err = ERR_DRIVE_NOT_READY;   /* (1) A hard error occurred in the low level disk I/O layer */
         break;
