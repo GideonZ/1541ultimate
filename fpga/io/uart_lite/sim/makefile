@@ -77,6 +77,8 @@ AUTO_DEP_PATHS += ../vhdl_sim
 AUTO_DEP_PATHS += ../../../ip/busses/vhdl_source
 AUTO_DEP_PATHS += ../../../ip/busses/vhdl_bfm
 AUTO_DEP_PATHS += ../../../ip/sync_fifo/vhdl_source
+AUTO_DEP_PATHS += ../../../../target/simulation/packages/vhdl_source
+AUTO_DEP_PATHS += ../../../../target/simulation/packages/vhdl_bfm
 
 MODELSIM_NO_WARNINGS := set NumericStdNoWarnings 1
 
@@ -118,6 +120,14 @@ $(TESTBENCH)_DO_GUI_BEFORE      :=
 $(TESTBENCH)_DO_GUI_AFTER       :=
 $(TESTBENCH)_DO_GUI_OVERRIDE    :=
 
+TESTBENCH                       := tb_dma
+TESTBENCHES                     := $(TESTBENCHES) $(TESTBENCH)
+$(TESTBENCH)_SRC                := $(TESTBENCH).vhd
+$(TESTBENCH)_ENTITY             := $(TESTBENCH)
+$(TESTBENCH)_TIME               := 100 us
+$(TESTBENCH)_DO_GUI_BEFORE      :=
+$(TESTBENCH)_DO_GUI_AFTER       :=
+$(TESTBENCH)_DO_GUI_OVERRIDE    :=
 
 
 ###############################################################################
