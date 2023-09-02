@@ -460,52 +460,54 @@ void SocketDMA::identThread(void *_a)
     if (sockfd < 0)
 	{
     	puts("ERROR identThread opening socket");
-    	return;
+    	vTaskDelete(NULL);
 	}
 
-    printf("Ident Thread Sockfd = %8x\n", sockfd);
-
-    /* Initialize socket structure */
-    memset((char *) &serv_addr, 0, sizeof(serv_addr));
-    portno = 64;
-
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_addr.s_addr = INADDR_ANY;
-    serv_addr.sin_port = htons(portno);
-
-    /* Now bind the host address using bind() call.*/
-    if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
-    {
- 	    puts("identThread ERROR on binding");
-	    return;
-    }
     while(1) {
-        // Receive client's message:
-        int n = recvfrom(sockfd, client_message, sizeof(client_message), 0,
-            (struct sockaddr*)&cli_addr, &client_struct_length);
-        if (n < 0) {
-            printf("Couldn't receive\n");
-            return;
-        }
-        printf("Received Ident Request from IP: %s and port: %i\n",
-            inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
-        
-        // Respond to client:
-        if (n > 32) {
-            n = 32;
-        }
+        /* Initialize socket structure */
+        memset((char *) &serv_addr, 0, sizeof(serv_addr));
+        portno = 64;
 
-        ConfigStore *cs = ConfigManager::getConfigManager()->find_store("Network settings");
-        const char *hostname = "Unknown";
-        if (cs) {
-            hostname = cs->get_string(CFG_NET_HOSTNAME);
-        }
-        sprintf(client_message + n, ",%s,%s", hostname, menu_header);
+        serv_addr.sin_family = AF_INET;
+        serv_addr.sin_addr.s_addr = INADDR_ANY;
+        serv_addr.sin_port = htons(portno);
 
-        if (sendto(sockfd, client_message, strlen(client_message), 0, (struct sockaddr *)&cli_addr,
-                   client_struct_length) < 0) {
-            printf("Can't send\n");
-            return;
+        /* Now bind the host address using bind() call.*/
+        if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
+        {
+            puts("identThread ERROR on binding");
+            vTaskDelay(500); // some seconds
+            continue; // try again
+        }
+        while(1) {
+            // Receive client's message:
+            int n = recvfrom(sockfd, client_message, sizeof(client_message), 0,
+                (struct sockaddr*)&cli_addr, &client_struct_length);
+            if (n < 0) {
+                printf("Couldn't receive: %d\n", n);
+                vTaskDelay(500); // some seconds
+                continue; // try again
+            }
+            printf("Received Ident Request from IP: %s and port: %i\n",
+                inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
+            
+            // Respond to client:
+            if (n > 32) {
+                n = 32;
+            }
+
+            ConfigStore *cs = ConfigManager::getConfigManager()->find_store("Network settings");
+            const char *hostname = "Unknown";
+            if (cs) {
+                hostname = cs->get_string(CFG_NET_HOSTNAME);
+            }
+            sprintf(client_message + n, ",%s,%s", hostname, menu_header);
+
+            n = sendto(sockfd, client_message, strlen(client_message), 0, (struct sockaddr *)&cli_addr,
+                    client_struct_length);
+            if (n < 0) {
+                printf("Can't send, reason: %d\n", n);
+            }
         }
     }
     // this will never happen

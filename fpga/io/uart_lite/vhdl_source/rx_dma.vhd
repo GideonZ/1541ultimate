@@ -24,7 +24,7 @@ port (
     reset           : in  std_logic;
         
     -- AXI Address Stream (in)
-    addr_data       : in  std_logic_vector(31 downto 0);
+    addr_data       : in  std_logic_vector(27 downto 0);
     addr_valid      : in  std_logic;
     addr_ready      : out std_logic;
 
@@ -101,6 +101,7 @@ begin
 
             when write_mem =>
                 if mem_resp.rack = '1' and mem_resp.rack_tag = g_mem_tag then
+                    mem_be <= "0000";
                     write_req <= '0';
                     mem_addr <= mem_addr + 1;
                     state <= collect;
@@ -108,6 +109,7 @@ begin
 
             when write_last =>
                 if mem_resp.rack = '1' and mem_resp.rack_tag = g_mem_tag then
+                    mem_be <= "0000";
                     write_req <= '0';
                     state <= report_len;
                 end if;

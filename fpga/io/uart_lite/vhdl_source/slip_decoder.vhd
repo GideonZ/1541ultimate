@@ -20,6 +20,7 @@ port (
     slip_enable : in  std_logic;
 
     in_data     : in  std_logic_vector(7 downto 0);
+    in_last     : in  std_logic := '0';
     in_valid    : in  std_logic;
     in_ready    : out std_logic;
 
@@ -55,7 +56,7 @@ begin
                 elsif transfer = '1' then
                     out_data <= in_data;
                     out_valid_i <= '1';
-                    if in_data = X"0A" then
+                    if in_data = X"0A" or in_last = '1' then
                         out_last <= '1';
                     end if;
                 end if;

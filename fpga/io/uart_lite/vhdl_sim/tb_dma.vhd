@@ -34,15 +34,20 @@ architecture testcase of tb_dma is
     signal mem_req            : t_mem_req_32;
     signal mem_resp           : t_mem_resp_32 := c_mem_resp_32_init;
 
-    signal tx_addr_data       : std_logic_vector(31 downto 0) := (others => '0');
+    signal tx_addr_data       : std_logic_vector(27 downto 0) := (others => '0');
     signal tx_addr_user       : std_logic_vector(15 downto 0) := (others => '0'); -- Length
     signal tx_addr_valid      : std_logic := '0';
     signal tx_addr_ready      : std_logic;
     signal out_data           : std_logic_vector(7 downto 0) := X"00";
     signal out_valid          : std_logic;
     signal out_last           : std_logic;
+    signal out_full           : std_logic;
     signal out_ready          : std_logic;
-    signal rx_addr_data       : std_logic_vector(31 downto 0) := (others => '0');
+    signal in_data            : std_logic_vector(7 downto 0) := X"00";
+    signal in_valid           : std_logic;
+    signal in_last            : std_logic;
+    signal in_ready           : std_logic;
+    signal rx_addr_data       : std_logic_vector(27 downto 0) := (others => '0');
     signal rx_addr_valid      : std_logic := '0';
     signal rx_addr_ready      : std_logic;
     signal rx_len_data        : std_logic_vector(15 downto 0);
@@ -117,6 +122,28 @@ begin
             out_ready  => out_ready
         );
 
+    sync_fifo_inst: entity work.sync_fifo
+        generic map (
+            g_depth        => 15,
+            g_data_width   => 9,
+            g_threshold    => 8,
+            g_fall_through => true
+        )
+        port map (
+            clock       => clock,
+            reset       => reset,
+            din(7 downto 0)  => out_data,
+            din(8)           => out_last,
+            wr_en       => out_valid,
+            full        => out_full,
+
+            dout(7 downto 0) => in_data,
+            dout(8)          => in_last,
+            rd_en       => in_ready,
+            valid       => in_valid
+        );
+    out_ready <= not out_full;
+
     rx_addr_source: entity work.stream_source_bfm
         generic map (
             g_name       => "rx_addr",
@@ -146,10 +173,10 @@ begin
             len_ready  => rx_len_ready,
             mem_req    => rx_mem_req,
             mem_resp   => rx_mem_resp,
-            in_data    => out_data,
-            in_valid   => out_valid,
-            in_last    => out_last,
-            in_ready   => out_ready
+            in_data    => in_data,
+            in_valid   => in_valid,
+            in_last    => in_last,
+            in_ready   => in_ready
         );
 
     test: process
@@ -161,10 +188,10 @@ begin
         bind_stream_source("rx_addr", rx);
         bind_mem_model("my_memory", mm);
         load_memory("makefile", mm, X"00000000");
-        put(rx, X"00010000");
-        put(rx, X"00020000");
-        put(tx, X"00001001", X"0010");
-        put(tx, X"00002002", X"0012");
+        put(rx, X"0010000");
+        put(rx, X"0020000");
+        put(tx, X"0001001", X"0010");
+        put(tx, X"0002002", X"0012");
         wait;
     end process;
 
@@ -210,10 +237,10 @@ begin
             clock   => clock,
             reset   => reset,
             inhibit => '0',
-            reqs(0) => tx_mem_req,
-            reqs(1) => rx_mem_req,
-            resps(0) => tx_mem_resp,
-            resps(1) => rx_mem_resp,
+            reqs(1) => tx_mem_req,
+            reqs(0) => rx_mem_req,
+            resps(1) => tx_mem_resp,
+            resps(0) => rx_mem_resp,
             req     => mem_req,
             resp    => mem_resp
         );
@@ -221,7 +248,7 @@ begin
     mem_bus_32_slave_bfm_inst: entity work.mem_bus_32_slave_bfm
         generic map (
             g_name        => "my_memory",
-            g_time_to_ack => 2,
+            g_time_to_ack => 0,
             g_latency     => 5
         )
         port map (

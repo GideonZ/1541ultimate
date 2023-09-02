@@ -961,6 +961,7 @@ uint8_t wifi_tx_packet(void *driver, void *buffer, int length)
     wifi.uart->TransmitPacket(buf);
     //TRANSMIT(espcmd);
     //RETURN_ESP;
+    return ERR_OK;
 }
 
 void wifi_free(void *driver, void *buffer)

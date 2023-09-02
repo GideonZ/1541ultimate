@@ -209,10 +209,3 @@ uint8_t RmiiInterface :: output_packet(uint8_t *buffer, int pkt_len)
 
 	return 0;
 }
-
-/*
-uint8_t rmiiTransmit(uint8_t *buffer, int pkt_len)
-{
-	return rmii_interface.output_packet(buffer, pkt_len);
-}
-*/

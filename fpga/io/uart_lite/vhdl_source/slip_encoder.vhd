@@ -44,8 +44,8 @@ begin
 
     with state select in_ready <=
         '0' when start,
-        '0' when escape,
         '0' when close,
+        '0' when escape,
         out_ready or not out_valid_i when others;
 
     process(clock)
@@ -75,23 +75,25 @@ begin
             when packet =>
                 if slip_enable = '0' then
                     state <= close;
-                elsif in_data = X"C0" then
-                    out_data <= X"DB";
-                    out_valid_i <= '1';
-                    esc_flag <= '0';
-                    last_reg <= in_last;
-                    state <= escape;
-                elsif in_data = X"DB" then
-                    out_data <= X"DB";
-                    out_valid_i <= '1';
-                    esc_flag <= '1';
-                    last_reg <= in_last;
-                    state <= escape;
-                else
-                    out_data <= in_data;
-                    out_valid_i <= '1';
-                    if in_last = '1' then
-                        state <= close;
+                elsif out_ready = '1' or out_valid_i = '0' then
+                    if in_data = X"C0" then
+                        out_data <= X"DB";
+                        out_valid_i <= '1';
+                        esc_flag <= '0';
+                        last_reg <= in_last;
+                        state <= escape;
+                    elsif in_data = X"DB" then
+                        out_data <= X"DB";
+                        out_valid_i <= '1';
+                        esc_flag <= '1';
+                        last_reg <= in_last;
+                        state <= escape;
+                    else
+                        out_data <= in_data;
+                        out_valid_i <= '1';
+                        if in_last = '1' then
+                            state <= close;
+                        end if;
                     end if;
                 end if;
 
