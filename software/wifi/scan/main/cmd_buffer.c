@@ -47,7 +47,7 @@ INL BaseType_t cmd_buffer_get(command_buf_context_t *context, command_buf_t **b,
 
 // application has written data into transmit buffer and presents it to the link. Should be followed by enabling TX interrupt
 INL BaseType_t cmd_buffer_transmit(command_buf_context_t *context, command_buf_t *b) {
-    return xQueueSend(context->transmitQueue, &b, 0);
+    return xQueueSend(context->transmitQueue, &b, 200); // one second
 }
 
 INL BaseType_t cmd_buffer_loopback(command_buf_context_t *context, command_buf_t *b) {

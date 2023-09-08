@@ -38,6 +38,7 @@ architecture gideon of uart_dma is
     signal rx_timeout   : std_logic := '0';
     signal rx_interrupt : std_logic := '0';
     signal tx_interrupt : std_logic := '0';
+    signal buf_interrupt: std_logic := '0';
 	signal overflow		: std_logic := '0';
 
     signal rxfifo_ready : std_logic;
@@ -57,6 +58,7 @@ architecture gideon of uart_dma is
     signal slip_enable    : std_logic;
     signal rx_irq_enable  : std_logic;
     signal tx_irq_enable  : std_logic;
+    signal buf_irq_enable : std_logic;
 
     signal tx_data        : std_logic_vector(7 downto 0) := X"00";
     signal tx_valid       : std_logic;
@@ -283,9 +285,11 @@ begin
                     if io_req.data(7) = '1' then
                         rx_irq_enable <= rx_irq_enable or io_req.data(0);
                         tx_irq_enable <= tx_irq_enable or io_req.data(1);
+                        buf_irq_enable <= buf_irq_enable or io_req.data(2);
                     else
                         rx_irq_enable <= rx_irq_enable and not io_req.data(0);
                         tx_irq_enable <= tx_irq_enable and not io_req.data(1);
+                        buf_irq_enable <= buf_irq_enable and not io_req.data(2);
                     end if;
                     if io_req.data(3) = '1' then
                         overflow <= '0';
@@ -347,11 +351,12 @@ begin
                 when c_uart_divisor_h =>
                     io_resp.data(1 downto 0) <= divisor(9 downto 8);
 
-                when c_uart_imask =>
-                    io_resp.data(0) <= rx_len_valid;
-                    io_resp.data(1) <= tx_addr_ready;
-                    io_resp.data(2) <= cts_c;
+                when c_uart_status =>
+                    io_resp.data(0) <= rx_len_valid;  -- Packet received
+                    io_resp.data(1) <= tx_addr_ready; -- Ready for new transmit
+                    io_resp.data(2) <= not rx_addr_valid; -- Need Address
                     io_resp.data(3) <= overflow;
+                    io_resp.data(4) <= cts_c;
 
                 when c_uart_flowctrl =>
                     io_resp.data(0) <= cts_enable;
@@ -381,13 +386,15 @@ begin
 				overflow <= '0';
                 rx_irq_enable <= '0';
                 tx_irq_enable <= '0';
+                buf_irq_enable <= '0';
 				divisor  <= std_logic_vector(to_unsigned(g_divisor-1, divisor'length));
 			end if;
 		end if;
 	end process;
 
     rx_interrupt <= rx_irq_enable and rx_len_valid;
+    buf_interrupt <= buf_irq_enable and not rx_addr_valid;
     tx_interrupt <= tx_irq_enable and tx_addr_ready;
-    irq <= rx_interrupt or tx_interrupt;
+    irq <= rx_interrupt or tx_interrupt or buf_interrupt;
 	
 end gideon;

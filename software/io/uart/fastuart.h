@@ -91,11 +91,6 @@ public:
     // never blocking
     int Read(uint8_t *buffer, int bufferSize);
 
-/*    int GetSlipPacket(uint8_t *buffer, int bufferSize, uint32_t timeout);
-    void SendSlipData(const uint8_t *buffer, int length);
-    void SendSlipOpen(void);
-    void SendSlipClose(void);
-*/
     int GetRxCount();
     BaseType_t SendSlipPacket(const uint8_t *buffer, int length);
     BaseType_t TransmitPacket(command_buf_t *buf, uint16_t *ms = NULL);
