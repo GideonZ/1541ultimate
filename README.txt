@@ -104,3 +104,6 @@ export PATH=$PATH:/opt/altera_lite/18.1/nios2eds/sdk2/bin
 export PATH=$PATH:/opt/altera_lite/18.1/nios2eds/bin/gnu/H-x86_64-pc-linux-gnu/bin
 export PATH=$PATH:/opt/altera_lite/18.1/quartus/sopc_builder/bin
 
+Additionally some users report NIOS Build Tools for Eclipse failing to load (Quartus 18.1).  If this happens to you, add the following export along with the above to your .bashrc file:
+
+export SWT_GTK3=0
