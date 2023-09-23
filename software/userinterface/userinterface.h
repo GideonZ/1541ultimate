@@ -28,6 +28,11 @@
 #define CFG_USERIF_ULTICOPY_NAME 0x0B
 #define CFG_USERIF_FILENAME_OVERFLOW_SQUEEZE 0x0C
 
+#define BYTES_PER_HEX_ROW 8
+#define CHARS_PER_HEX_ROW 37
+
+class Editor;
+class HexEditor;
 class UserInterface : public ConfigurableObject, public HostClient
 {
 private:
@@ -45,6 +50,8 @@ private:
     void set_screen_title(void);
     bool pollFocussed(void);
     bool buttonDownFor(uint32_t ms);
+    void run_editor(Editor *);
+
     UIStatusBox *status_box;
 public:
     int color_border, color_bg, color_fg, color_sel, color_sel_bg, config_save, filename_overflow_squeeze;
@@ -83,6 +90,7 @@ public:
     int  getPreferredType(void);
 
     void run_editor(const char *, int);
+    void run_hex_editor(const char *, int);
     void swapDisk(void);
 
     UIObject *get_root_object(void) { return ui_objects[0]; }

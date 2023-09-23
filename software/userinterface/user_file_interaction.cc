@@ -13,6 +13,9 @@
 
 #include "home_directory.h"
 #include "subsys.h"
+#include "editor.h"
+
+#define MAX_FILE_SIZE_TO_VIEW 262144
 
 // member
 int UserFileInteraction::fetch_context_items(BrowsableDirEntry *br, IndexedList<Action *> &list)
@@ -30,9 +33,10 @@ int UserFileInteraction::fetch_context_items(BrowsableDirEntry *br, IndexedList<
         list.append(new Action("Enter", UserFileInteraction::S_enter, 0));
         count++;
     }
-    if ((info->size <= 262144) && (!(info->attrib & AM_DIR))) {
+    if ((info->size <= MAX_FILE_SIZE_TO_VIEW) && (!(info->attrib & AM_DIR))) {
         list.append(new Action("View", UserFileInteraction::S_view, 0));
-        count++;
+        list.append(new Action("Hex View", UserFileInteraction::S_hex_view, 0));
+        count += 2;
     }
     if (info->is_writable()) {
         list.append(new Action("Rename", UserFileInteraction::S_rename, 0));
@@ -131,7 +135,7 @@ int UserFileInteraction::S_delete(SubsysCommand *cmd)
     return 0;
 }
 
-int UserFileInteraction::S_view(SubsysCommand *cmd)
+int _view(SubsysCommand *cmd, EditorType editor_type)
 {
     FileManager *fm = FileManager::getFileManager();
     File *f = 0;
@@ -141,12 +145,29 @@ int UserFileInteraction::S_view(SubsysCommand *cmd)
         uint32_t size = f->get_size();
         char *text_buf = new char[size + 1];
         FRESULT fres = f->read(text_buf, size, &transferred);
-        printf("Res = %d. Read text buffer: %d bytes\n", fres, transferred);
+        printf("Res = %d. Read text buffer: %d bytes. File size: %d bytes\n", fres, transferred, size);
         text_buf[transferred] = 0;
-        cmd->user_interface->run_editor(text_buf, transferred);
+        switch (editor_type) {
+            case HEX_EDITOR:
+                cmd->user_interface->run_hex_editor(text_buf, transferred);
+                break;
+            default:
+                cmd->user_interface->run_editor(text_buf, transferred);
+                break;
+        }
         delete text_buf;
     }
     return 0;
+}
+
+int UserFileInteraction::S_view(SubsysCommand *cmd)
+{
+    return _view(cmd, TEXT_EDITOR);
+}
+
+int UserFileInteraction::S_hex_view(SubsysCommand *cmd)
+{
+    return _view(cmd, HEX_EDITOR);
 }
 
 int UserFileInteraction::S_createDir(SubsysCommand *cmd)

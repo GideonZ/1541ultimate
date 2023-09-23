@@ -128,8 +128,11 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_BADLINES_EN       0x53
 #define CFG_SUPERCPU_DET      0x54
 
+#define CFG_MONITOR           0x60
+
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
+
 
 uint8_t C64_EMUSID1_BASE_BAK;
 uint8_t C64_EMUSID2_BASE_BAK;
@@ -1050,21 +1053,31 @@ int U64Config :: setSidEmuParams(ConfigItem *it)
 #define MENU_U64_WIFI_ENABLE 4
 #define MENU_U64_WIFI_BOOT 5
 #define MENU_U64_DETECT_SIDS 6
-#define MENU_U64_POKE 7
+#define MENU_U64_PEEK 7
+#define MENU_U64_POKE 8
+#define MENU_U64_MONITOR 9
 
 void U64Config :: create_task_items(void)
 {
     TaskCategory *dev = TasksCollection :: getCategory("Developer", SORT_ORDER_DEVELOPER);
+    myActions.peek      = new Action("Peek", SUBSYSID_U64, MENU_U64_PEEK);
     myActions.poke      = new Action("Poke", SUBSYSID_U64, MENU_U64_POKE);
+    myActions.monitor   = new Action("Monitor", SUBSYSID_U64, MENU_U64_MONITOR);
     myActions.saveedid  = new Action("Save EDID to file", SUBSYSID_U64, MENU_U64_SAVEEDID);
     myActions.siddetect = new Action("Detect SIDs", SUBSYSID_U64, MENU_U64_DETECT_SIDS);
     myActions.wifioff   = new Action("Disable WiFi", SUBSYSID_U64, MENU_U64_WIFI_DISABLE);
     myActions.wifion    = new Action("Enable WiFi",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE);
     myActions.wifiboot  = new Action("Enable WiFi Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT);
 
-    dev->append(myActions.saveedid );
+    dev->append(myActions.saveedid);
+
+#if U64
+    dev->append(myActions.peek);
+    dev->append(myActions.poke);
+    dev->append(myActions.monitor);
+#endif
+
 #if DEVELOPER > 0
-    dev->append(myActions.poke     );
     dev->append(myActions.siddetect);
     dev->append(myActions.wifioff  );
     dev->append(myActions.wifion   );
@@ -1076,6 +1089,24 @@ void U64Config :: update_task_items(bool writablePath, Path *p)
 {
     myActions.saveedid->setDisabled(!writablePath);
 }
+
+bool U64Config :: stop_c64() {
+    portENTER_CRITICAL();
+    bool running = !(C64_STOP & C64_HAS_STOPPED);
+    if (running) {
+        C64 *machine = C64 :: getMachine();
+        machine->stop(false);
+    }
+    return running;
+}
+
+void U64Config :: resume_c64(bool stopped) {
+    if (stopped) {
+        C64 *machine = C64 :: getMachine();
+        machine->start();
+    }
+    portEXIT_CRITICAL();
+}           
 
 int U64Config :: executeCommand(SubsysCommand *cmd)
 {
@@ -1091,7 +1122,9 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
 	C64 *machine;
 	I2C_Driver i2c;
 	static char poke_buffer[16];
-	uint32_t addr, value;
+	static char peek_buffer[16];
+	static char peek_range_buffer[16];
+	uint32_t addr, end_addr, value;
 
 	switch(cmd->functionID) {
     case MENU_U64_SAVEEDID:
@@ -1153,25 +1186,39 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
         U64_WIFI_CONTROL = 7;
         break;
 
+    case MENU_U64_PEEK:
+        if (cmd->user_interface->string_box("Peek AAAA", peek_buffer, 16)) {
+            sscanf(peek_buffer, "%x", &addr);
+            
+            value = C64 :: getMachine()->peek(addr);
+
+            char msg[20];
+            sprintf(msg, "Peek(%4x)=%2x", addr, value);
+            cmd->user_interface->popup(msg, BUTTON_OK);
+        }
+        break;
+
     case MENU_U64_POKE:
         if (cmd->user_interface->string_box("Poke AAAA,DD", poke_buffer, 16)) {
-
             sscanf(poke_buffer, "%x,%x", &addr, &value);
 
-            C64 *machine = C64 :: getMachine();
-            portENTER_CRITICAL();
+            C64 :: getMachine()->poke(addr, (uint8_t) value);
+            uint8_t verified_value = C64 :: getMachine()->peek(addr);
 
-            if (!(C64_STOP & C64_HAS_STOPPED)) {
-                machine->stop(false);
-
-                C64_POKE(addr, value);
-
-                machine->resume();
-            } else {
-                C64_POKE(addr, value);
-            }
-            portEXIT_CRITICAL();
+            char msg[20];
+            sprintf(msg, "Poke(%4x,%2x)=%2x", addr, value, verified_value);
+            cmd->user_interface->popup(msg, BUTTON_OK);
         }
+        break;
+
+    case MENU_U64_MONITOR:
+        int ram_size = 64 * 1024;
+        uint8_t *pb = new uint8_t[ram_size];
+        
+        C64 :: getMachine()->get_all_memory(pb);
+        
+        cmd->user_interface->run_hex_editor((const char *) pb, ram_size);   
+        delete[] pb;
         break;
 
     case MENU_U64_DETECT_SIDS:
@@ -1193,7 +1240,6 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
     }
     return 0;
 }
-
 
 uint8_t U64Config :: GetSidType(int slot)
 {

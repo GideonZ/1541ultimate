@@ -60,7 +60,7 @@ void Editor :: line_breakdown(const char *text_buffer, int buffer_size)
 
 	// printf("Line length = %d\n", line_length);
 	text->clear_list();
-    while(text_buffer[pos] && pos < buffer_size) {
+    while(pos < buffer_size) {
         current.buffer = &text_buffer[pos];
         current.length = -1;
         last_space = -1;
@@ -68,13 +68,11 @@ void Editor :: line_breakdown(const char *text_buffer, int buffer_size)
         int max_line_length = (line_length > (buffer_size - pos)) ? buffer_size - pos : line_length;
         for(int i=0;i<max_line_length;i++) {
             last = c[i];
-            if((last == 0x0a)||(last == 0x0d)||(last == 0)) {
+            if((last == 0x0a)||(last == 0x0d)) {
                 current.length = i;
                 //printf("adding returned line = %d '%#s'\n", current.length, (current.length ? current.length : 1), current.buffer);
                 text->append(current);
 				linecount++;
-                if(last == 0)
-                    return;
                 i++;
                 if((c[i] == 0x0a)&&(last == 0x0d))
                     i++;
@@ -124,18 +122,24 @@ void Editor :: init(Screen *scr, Keyboard *key)
     
 void Editor :: draw(void)
 {
-    struct Line line;
+    struct Line line, *line_ptr;
     int width = window->get_size_x();
     for(int i=0;i<height;i++) {
         window->move_cursor(0, i);
-        line = (*text)[i + first_line];
+        int line_idx = i + first_line;
+        line = (*text)[line_idx];
         if (line.buffer) {
-        	window->output_length(line.buffer, line.length);
-        	window->repeat(' ', width - line.length);
+            draw(line_idx, &line);
         } else {
             window->repeat(' ', width);
     	}
     }
+}
+
+void Editor :: draw(int line_idx, Line *line) 
+{
+    window->output_length(line->buffer, line->length);
+    window->repeat(' ', window->get_size_x() - line->length);
 }
 
 void Editor :: deinit()
@@ -182,7 +186,7 @@ int Editor :: handle_key(uint8_t c)
                 draw();
             }
             break;
-        case KEY_F1: // F1 -> page up
+        case KEY_F1: // page up
         case KEY_PAGEUP:
 			first_line -= height + 1;
 			if (first_line < 0) {
@@ -190,7 +194,12 @@ int Editor :: handle_key(uint8_t c)
 			}
 			draw();
 			break;
-        case KEY_F7: // F7 -> page down
+        case KEY_F2: // start
+        case KEY_HOME:
+			first_line = 0;
+			draw();
+			break;
+        case KEY_F7: // page down
         case KEY_PAGEDOWN:
         	first_line += height - 1;
 			if (first_line >= linecount - height) {
@@ -198,6 +207,11 @@ int Editor :: handle_key(uint8_t c)
 				if (first_line < 0)
 					first_line = 0;
 			}
+			draw();
+			break;
+        case KEY_F8: // end
+        case KEY_END:
+        	first_line = linecount - height;
 			draw();
 			break;
         case KEY_BACK: // backspace
