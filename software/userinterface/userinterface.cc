@@ -383,15 +383,24 @@ void UserInterface :: hide_progress(void)
     delete status_box;
 }
 
-void UserInterface :: run_editor(const char *text_buf, int max_len)
+void UserInterface :: run_editor(Editor *editor)
 {
-    Editor *edit = new Editor(this, text_buf, max_len);
-    edit->init(screen, keyboard);
+    editor->init(screen, keyboard);
     int ret;
     do {
-        ret = edit->poll(0);
+        ret = editor->poll(0);
     } while(!ret);
-    edit->deinit();
+    editor->deinit();
+}
+
+void UserInterface :: run_editor(const char *text_buf, int max_len)
+{
+    run_editor(new Editor(this, text_buf, max_len));
+}
+
+void UserInterface :: run_hex_editor(const char *text_buf, int max_len)
+{
+    run_editor(new HexEditor(this, text_buf, max_len));
 }
 
 int UserInterface :: enterSelection()

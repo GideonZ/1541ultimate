@@ -13,8 +13,6 @@ class UserInterface;
 class Editor : public UIObject
 {
 	UserInterface *user_interface;
-	void line_breakdown(const char *text_buffer, int buffer_size);
-    void draw();
 public:
     int line_length;
     int height;
@@ -34,8 +32,20 @@ public:
     virtual void init(Screen *win, Keyboard *k);
     virtual void deinit(void);
 
+	virtual void line_breakdown(const char *text_buffer, int buffer_size);
+    virtual void draw();
+    virtual void draw(int line_idx, Line *line);
     virtual int poll(int);
     virtual int handle_key(uint8_t);
+};
+
+class HexEditor : public Editor
+{
+	UserInterface *user_interface;
+	void line_breakdown(const char *text_buffer, int buffer_size);
+    void draw(int line_idx, Line *line);
+public:
+    HexEditor(UserInterface *ui, const char *text_buffer, int max_len);
 };
 
 #endif
