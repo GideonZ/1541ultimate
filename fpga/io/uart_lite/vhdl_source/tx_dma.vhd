@@ -23,7 +23,8 @@ generic (
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
-        
+    flush           : in  std_logic := '0';
+
     -- AXI stream with packet address information
     addr_data       : in  std_logic_vector(27 downto 0);
     addr_user       : in  std_logic_vector(15 downto 0); -- Length
@@ -107,7 +108,7 @@ begin
                 end if;
             end case;             
 
-            if reset = '1' then
+            if reset = '1' or flush = '1' then
                 out_valid_i <= '0';
                 out_last_i <= '0';
                 read_req <= '0';
@@ -147,7 +148,7 @@ begin
             port map (
                 clock               => clock,
                 reset               => reset,
-                flush               => '0',
+                flush               => flush,
 
                 wr_en               => out_valid_i,
                 din(7 downto 0)     => out_data_i,

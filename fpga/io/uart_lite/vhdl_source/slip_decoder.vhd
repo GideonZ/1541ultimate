@@ -13,6 +13,8 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
 entity slip_decoder is
+generic (
+    g_max_size  : natural := 1536 );
 port (
     clock       : in  std_logic;
     reset       : in  std_logic;
@@ -32,11 +34,12 @@ port (
 end entity;
 
 architecture rtl of slip_decoder is
-    type t_state is (ascii, sync, start, packet, escape);
+    type t_state is (ascii, sync, start, packet, escape, switch_ascii);
     signal state        : t_state;
     signal out_valid_i  : std_logic;
     signal transfer     : std_logic;
     signal data_reg     : std_logic_vector(7 downto 0) := X"00";
+    signal byte_count   : natural range 0 to g_max_size;
 begin
     out_valid <= out_valid_i;
     transfer  <= in_valid and (out_ready or not out_valid_i);
@@ -52,25 +55,37 @@ begin
             case state is
             when ascii =>
                 if slip_enable = '1' then
-                    state <= sync;
+                    if byte_count = 0 then
+                        state <= sync;
+                    elsif out_ready = '1' or out_valid_i = '0' then
+                        out_data <= X"0A";
+                        out_valid_i <= '1';
+                        out_last <= '1';
+                        state <= sync;
+                        byte_count <= 0;
+                    end if;
                 elsif transfer = '1' then
                     out_data <= in_data;
                     out_valid_i <= '1';
-                    if in_data = X"0A" or in_last = '1' then
+                    if byte_count = g_max_size - 1 then
+                        byte_count <= 0;
                         out_last <= '1';
+                    else
+                        byte_count <= byte_count + 1;
                     end if;
                 end if;
 
             when sync =>
                 if slip_enable = '0' then
-                    state <= ascii;
+                    state <= switch_ascii;
                 elsif transfer = '1' and in_data = X"C0" then
                     state <= start;
+                    byte_count <= 0;
                 end if;
 
             when start =>
                 if slip_enable = '0' then
-                    state <= ascii;
+                    state <= switch_ascii;
                 elsif transfer = '1' then
                     data_reg <= in_data;
                     if in_data = X"C0" then
@@ -84,14 +99,21 @@ begin
 
             when packet =>
                 if slip_enable = '0' then
-                    state <= ascii;
+                    state <= switch_ascii;
                 elsif transfer = '1' then
                     out_data    <= data_reg;
                     out_valid_i <= '1';
+                    if byte_count = g_max_size - 1 then
+                        out_last <= '1'; -- Overflow!
+                        byte_count <= 0;
+                    else
+                        byte_count <= byte_count + 1;
+                    end if;
                     data_reg    <= in_data;
 
                     if in_data = X"C0" then
                         out_last <= '1';
+                        byte_count <= 0;
                         state <= start;
                     elsif in_data = X"DB" then
                         state <= escape;
@@ -100,7 +122,7 @@ begin
 
             when escape =>
                 if slip_enable = '0' then
-                    state <= ascii;
+                    state <= switch_ascii;
                 elsif transfer = '1' then
                     state <= packet;
                     if in_data = X"DC" then
@@ -112,11 +134,23 @@ begin
                     end if;
                 end if;
 
+            when switch_ascii =>
+                if byte_count = 0 then
+                    state <= ascii;
+                elsif out_ready = '1' or out_valid_i = '0' then
+                    out_data <= X"C0";
+                    out_valid_i <= '1';
+                    out_last <= '1';
+                    state <= ascii;
+                    byte_count <= 0;
+                end if;
+
             when others =>
                 null;
             end case;
 
             if reset = '1' then
+                byte_count <= 0;
                 state <= ascii;
                 out_valid_i <= '0';
                 out_last <= '0';

@@ -22,7 +22,8 @@ generic (
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
-        
+    flush           : in  std_logic := '0';
+
     -- AXI Address Stream (in)
     addr_data       : in  std_logic_vector(27 downto 0);
     addr_valid      : in  std_logic;
@@ -123,7 +124,7 @@ begin
 
             end case;             
 
-            if reset = '1' then
+            if reset = '1' or flush = '1' then
                 len_valid_i <= '0';
                 write_req <= '0';
                 state <= idle;

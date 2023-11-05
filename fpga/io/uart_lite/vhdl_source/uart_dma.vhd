@@ -44,7 +44,7 @@ architecture gideon of uart_dma is
     signal rxfifo_ready : std_logic;
     signal rxfifo_valid : std_logic;
     signal rxfifo_data  : std_logic_vector(7 downto 0);
-    signal rxfifo_last  : std_logic;
+    --signal rxfifo_last  : std_logic;
     signal rxfifo_full  : std_logic := '0';
     signal rxfifo_afull : std_logic := '0';
 	signal txchar		: std_logic_vector(7 downto 0);
@@ -87,6 +87,8 @@ architecture gideon of uart_dma is
     signal tx_addr_valid    : std_logic;
     signal tx_addr_ready    : std_logic;
 
+    signal soft_reset       : std_logic;
+
     constant c_uart_divisor_l   : unsigned(3 downto 0) := "0000";
     constant c_uart_divisor_h   : unsigned(3 downto 0) := "0001";
     constant c_uart_imask       : unsigned(3 downto 0) := "0010";
@@ -116,6 +118,7 @@ begin
     port map (
         clock      => clock,
         reset      => reset,
+        flush      => soft_reset,
         addr_data  => tx_addr_data,
         addr_user  => tx_addr_user,
         addr_valid => tx_addr_valid,
@@ -176,7 +179,7 @@ begin
     i_rxfifo: entity work.sync_fifo
     generic map(
         g_depth        => 511,
-        g_data_width   => 9,
+        g_data_width   => 8,
         g_threshold    => 500,
         g_fall_through => true
     )
@@ -184,14 +187,12 @@ begin
         clock          => clock,
         reset          => reset,
         wr_en          => rx_push,
-        din(7 downto 0) => rxchar,
-        din(8)          => rx_timeout,
+        din            => rxchar,
         full           => rxfifo_full,
         almost_full    => rxfifo_afull,
-        flush          => '0',
+        flush          => soft_reset,
 
-        dout(7 downto 0) => rxfifo_data,
-        dout(8)          => rxfifo_last,
+        dout           => rxfifo_data,
         rd_en          => rxfifo_ready,
         valid          => rxfifo_valid
     );
@@ -202,7 +203,7 @@ begin
         reset       => reset,
         slip_enable => slip_enable,
         in_data     => rxfifo_data,
-        in_last     => rxfifo_last,
+        in_last     => '0',
         in_valid    => rxfifo_valid,
         in_ready    => rxfifo_ready,
         out_data    => rx_data,
@@ -218,6 +219,7 @@ begin
     port map (
         clock      => clock,
         reset      => reset,
+        flush      => soft_reset,
         addr_data  => rx_addr_data,
         addr_valid => rx_addr_valid,
         addr_ready => rx_addr_ready,
@@ -262,12 +264,13 @@ begin
 		if rising_edge(clock) then
             io_resp    <= c_io_resp_init;
             cts_c      <= cts_i or not cts_enable;
+            soft_reset <= '0';
 
             -- stream logic
-            if tx_addr_ready = '1' then
+            if tx_addr_ready = '1' or soft_reset = '1' then
                 tx_addr_valid <= '0';
             end if;
-            if rx_addr_ready = '1' then
+            if rx_addr_ready = '1' or soft_reset = '1' then
                 rx_addr_valid <= '0';
             end if;
             rx_len_ready <= '0';
@@ -299,6 +302,12 @@ begin
                     cts_enable  <= io_req.data(0);
                     loopback    <= io_req.data(1);
                     slip_enable <= io_req.data(2);
+                    soft_reset  <= io_req.data(7);
+                    if io_req.data(7) = '1' then
+                        rx_irq_enable <= '0';
+                        tx_irq_enable <= '0';
+                        buf_irq_enable <= '0';
+                    end if;
 
                 when c_uart_tx_addr_l =>
                     tx_addr_data(7 downto 0) <= io_req.data;
@@ -352,11 +361,14 @@ begin
                     io_resp.data(1 downto 0) <= divisor(9 downto 8);
 
                 when c_uart_status =>
-                    io_resp.data(0) <= rx_len_valid;  -- Packet received
-                    io_resp.data(1) <= tx_addr_ready; -- Ready for new transmit
-                    io_resp.data(2) <= not rx_addr_valid; -- Need Address
+                    io_resp.data(0) <= rx_interrupt; -- rx_len_valid;  -- Packet received
+                    io_resp.data(1) <= tx_interrupt; -- tx_addr_ready; -- Ready for new transmit
+                    io_resp.data(2) <= buf_interrupt; -- not rx_addr_valid; -- Need Address
                     io_resp.data(3) <= overflow;
                     io_resp.data(4) <= cts_c;
+                    io_resp.data(5) <= rx_len_valid;  -- Packet received
+                    io_resp.data(6) <= tx_addr_ready; -- Ready for new transmit
+                    io_resp.data(7) <= not rx_addr_valid; -- Need Address
 
                 when c_uart_flowctrl =>
                     io_resp.data(0) <= cts_enable;
