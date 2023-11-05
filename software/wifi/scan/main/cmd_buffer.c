@@ -6,6 +6,7 @@
  */
 
 #include "cmd_buffer.h"
+#include <string.h>
 
 void cmd_buffer_init(command_buf_context_t *context)
 {
