@@ -138,6 +138,15 @@ $(TESTBENCH)_DO_GUI_BEFORE      :=
 $(TESTBENCH)_DO_GUI_AFTER       :=
 $(TESTBENCH)_DO_GUI_OVERRIDE    :=
 
+TESTBENCH                       := tb_uart_dma_irq
+TESTBENCHES                     := $(TESTBENCHES) $(TESTBENCH)
+$(TESTBENCH)_SRC                := $(TESTBENCH).vhd
+$(TESTBENCH)_ENTITY             := $(TESTBENCH)
+$(TESTBENCH)_TIME               := 100 us
+$(TESTBENCH)_DO_GUI_BEFORE      :=
+$(TESTBENCH)_DO_GUI_AFTER       :=
+$(TESTBENCH)_DO_GUI_OVERRIDE    :=
+
 ###############################################################################
 #### Testcases
 ###############################################################################

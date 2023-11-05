@@ -15,7 +15,7 @@ generic (
     g_denominator   : natural := 200 );
 port (
     clock       : in  std_logic;
-    tick        : out std_logic; -- this should yield a 16 MHz tick
+    tick        : out std_logic := '0'; -- this should yield a 16 MHz tick
     tick_by_4   : out std_logic; -- this should yield a 4 MHz tick (for drive logic)
     tick_by_16  : out std_logic; -- this should yield an 1 MHz tick (i.e. for IEC processor)
     one_16000   : out std_logic ); -- and thus, this should yield a 1 ms tick

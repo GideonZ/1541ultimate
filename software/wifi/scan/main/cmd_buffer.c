@@ -24,6 +24,7 @@ void cmd_buffer_reset(command_buf_context_t *context)
 
     for(int i=0; i<NUM_BUFFERS; i++) {
         command_buf_t *buf = &(context->bufs[i]);
+        memset(context->bufs[i].data, 0x44, 8);
         xQueueSend(context->freeQueue, &buf, 0);
         context->bufs[i].bufnr = i;
         context->bufs[i].size = 0;
@@ -50,11 +51,12 @@ INL BaseType_t cmd_buffer_transmit(command_buf_context_t *context, command_buf_t
     return xQueueSend(context->transmitQueue, &b, 200); // one second
 }
 
+// application sends a message to itself, e.g. from one thread to be processed by another
 INL BaseType_t cmd_buffer_loopback(command_buf_context_t *context, command_buf_t *b) {
     return xQueueSend(context->receivedQueue, &b, 100);
 }
 
-// application waits for command
+// slave application waits for command, or master application reads the response
 INL BaseType_t cmd_buffer_received(command_buf_context_t *context, command_buf_t **b, TickType_t t) {
     return xQueueReceive(context->receivedQueue, b, t);
 }
