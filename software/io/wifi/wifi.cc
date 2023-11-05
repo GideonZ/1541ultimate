@@ -15,7 +15,7 @@
 #include "network_esp32.h"
 #include "filemanager.h"
 
-#define DEBUG_INPUT  1
+#define DEBUG_INPUT  0
 #define EVENT_START  0xF1
 #define EVENT_TERM   0xF2
 
@@ -132,10 +132,7 @@ bool WiFi::RequestEcho(void)
                     dump_hex_relative(buf->data, buf->size);
                 }
                 uart->FreeBuffer(buf);
-                //dump_hex_relative(buf->data, buf->size);
             }
-            //printf("End of packets. Aux data:\n");
-            //uart->PrintRxMessage();
         }
     }
     uart->txDebug = false;
@@ -165,27 +162,13 @@ void WiFi :: RunModeThread()
 
     while(1) {
         switch(state) {
-        // case eWifi_Off:
-        //     if (cmd_buffer_received(packets, &buf, 200) == pdTRUE) {
-        //         hdr = (rpc_header_t *)(buf->data);
-        //         if (hdr->command == EVENT_START) {
-        //             printf("Starting Wifi!\n");
-        //             state = eWifi_NotDetected;
-        //         } else {
-        //             printf("In off state only the START event is recognized, got: %02x!", hdr->command);
-        //         }
-        //     } else {
-        //         printf("RunMode Thread running, but state is off...\n");
-        //     }
-        //     break;
-
         case eWifi_Off:
             printf("RunMode Thread running, but state is off...\n");
             vTaskDelay(200);
             break;
 
         case eWifi_NotDetected:
-            uart->txDebug = true;
+            uart->txDebug = false;
             if (wifi_detect(&major, &minor, moduleName, 32)) {
                 state = eWifi_Detected;
                 RefreshRoot();
@@ -193,16 +176,17 @@ void WiFi :: RunModeThread()
             break;
 
         case eWifi_Detected:
-            uart->txDebug = true;
+            uart->txDebug = false;
             result = wifi_setbaud(6666666, 1);
             printf("Result of setbaud: %d\n", result);
 
             wifi_getmac(my_mac);
             netstack->set_mac_address(my_mac);
             netstack->start();
+            state = eWifi_Scanning;
+            RefreshRoot();
 
             wifi_scan(&wifi_aps);
-
             state = eWifi_NotConnected;
 
             printf("Auto connect to %s with pass %s\n", cfg_ssid.c_str(), cfg_pass.c_str());
@@ -218,6 +202,12 @@ void WiFi :: RunModeThread()
             RefreshRoot();
             break;
 
+        case eWifi_Scanning:
+            wifi_scan(&wifi_aps);
+            state = eWifi_NotConnected;
+            RefreshRoot();
+            break;
+
         case eWifi_NotConnected:
         case eWifi_Failed:
             cmd_buffer_received(packets, &buf, portMAX_DELAY);
@@ -228,7 +218,7 @@ void WiFi :: RunModeThread()
             switch(hdr->command) {
             case EVENT_RESCAN:
                 cmd_buffer_free(packets, buf);
-                state = eWifi_Detected;
+                state = eWifi_Scanning;
                 RefreshRoot();
                 break;
 
@@ -378,8 +368,6 @@ TaskHandle_t tasksWaitingForReply[NUM_BUFFERS];
 
 #define TRANSMIT(x)         wifi.uart->TransmitPacket(buf); \
                             xTaskNotifyWait(0, 0, (uint32_t *)&buf, portMAX_DELAY); \
-                            printf("Received buffer %d, size %d:\n", buf->bufnr, buf->size); \
-                            dump_hex_relative(buf->data, buf->size > 32 ? 32 : buf->size); \
                             rpc_ ## x ## _resp *result = (rpc_ ## x ## _resp *)buf->data; \
                             tasksWaitingForReply[result->hdr.thread] = NULL;
 
@@ -405,8 +393,8 @@ BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseT
     rpc_header_t *hdr = (rpc_header_t *)buf->data;
     BaseType_t res;
 
-    hex(hdr->thread);
-    ioWrite8(UART_DATA, '-');
+//    hex(hdr->thread);
+//    ioWrite8(UART_DATA, '-');
 //    uint32_t th = (uint32_t)tasksWaitingForReply[hdr->thread];
 //    hex((uint8_t)(th >> 16));
 //    hex((uint8_t)(th >> 8));
@@ -416,10 +404,10 @@ BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseT
     if ((hdr->thread < NUM_BUFFERS) && (tasksWaitingForReply[hdr->thread])) {
         TaskHandle_t thread = tasksWaitingForReply[hdr->thread];
         tasksWaitingForReply[hdr->thread] = NULL;
-        ioWrite8(UART_DATA, 'N');
+//        ioWrite8(UART_DATA, 'N');
         res = xTaskNotifyFromISR(thread, (uint32_t)buf, eSetValueWithOverwrite, w);
     } else {
-        ioWrite8(UART_DATA, '~');
+//        ioWrite8(UART_DATA, '~');
         res = cmd_buffer_received_isr(context, buf, w);
     }
     return res;

@@ -48,11 +48,9 @@ class DmaUART
     isr_receive_callback_t isr_rx_callback;
     // slip administration
     command_buf_context_t *packets;
-    //command_buf_t *current_rx_buf;
     command_buf_t *current_tx_buf;
 
     BaseType_t RxInterrupt();
-    // int ReadImpl(rxBuffer_t *b, uint8_t *buffer, int bufferSize);
     QueueHandle_t rx_bufs;
 public:
     static void DmaUartInterrupt(void *context);
@@ -79,7 +77,6 @@ public:
     void FlowControl(bool enable);
     void EnableIRQ(bool);
     void ClearRxBuffer(void);
-    void PrintRxMessage(void);
     void SetBaudRate(int bps);
     void SetReceiveCallback(isr_receive_callback_t cb);
     void ResetReceiveCallback(void);

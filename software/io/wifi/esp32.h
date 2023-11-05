@@ -60,7 +60,9 @@ public:
     BaseType_t doDownloadWrap(bool start);
     BaseType_t doUartEcho(void);
     void AttachApplication(Esp32Application *app);
+
     DmaUART *uart;
+    void ReadRxMessage(void);
 };
 
 extern Esp32 esp32;

@@ -41,6 +41,7 @@ typedef enum {
     eWifi_Download,
     eWifi_NotDetected,
     eWifi_Detected,
+    eWifi_Scanning,
     eWifi_NotConnected,
     eWifi_Connected,
     eWifi_Failed,

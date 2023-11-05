@@ -110,7 +110,7 @@ void Esp32 :: Enable(bool startTask)
     U64_WIFI_CONTROL = 1; // 5 for watching the UART output directly, 1 = own uart
     vTaskDelay(500);
 
-    uart->PrintRxMessage();
+    ReadRxMessage();
     uart->EnableSlip(true);
     // Start Application
     // TODO: Make it configurable what application starts.. Now, it's just a single one
@@ -134,7 +134,7 @@ void Esp32 :: Boot()
     uart->EnableSlip(true);
     uart->EnableIRQ(true);
     U64_WIFI_CONTROL = 3;
-    //uart->PrintRxMessage(); Do not print message, because Download routine expects a message and verifies it
+    //ReadRxMessage(); Do not print message, because Download routine expects a message and verifies it
 }
 
 void Esp32::PackParams(uint8_t *buffer, int numparams, ...)
@@ -376,6 +376,44 @@ int Esp32 :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
     return 0;
 }
 
+#define PRINT_BOOT_MSG 0
+void Esp32 :: ReadRxMessage(void)
+{
+    static uint8_t buffertje[1540];
+
+    int rx, to = 5;
+    do {
+        rx = uart->Read(buffertje, 1536);
+        buffertje[rx] = 0;
+        if (rx) {
+            to = 3;
+#if PRINT_BOOT_MSG
+            printf((char *)buffertje);
+#endif
+        } else {
+            vTaskDelay(25);
+            to --;
+            if (to == 0) {
+                uart->EnableSlip(true);
+                vTaskDelay(1);
+                rx = uart->Read(buffertje, 1536);
+                buffertje[rx] = 0;
+#if PRINT_BOOT_MSG
+                if (rx) {
+                    printf("Last (%d): \n", rx);
+                    printf((char *)buffertje);
+                }
+#endif
+                break;
+            }
+        }
+    } while(true);
+
+#if PRINT_BOOT_MSG
+    printf("\e[0m -> End of boot message <- \n");
+#endif
+}
+
 void Esp32::CommandTaskStart(void *context)
 {
     Esp32 *w = (Esp32 *) context;
@@ -407,8 +445,8 @@ void Esp32::CommandThread()
             break;
         case WIFI_START:
             //uart->EnableSlip(true);
-            printf("Go, Wifi in 5, 4, 3, 2,...!\n");
-            vTaskDelay(1000);
+            //printf("Go, Wifi in 5, 4, 3, 2,...!\n");
+            //vTaskDelay(1000);
             printf("Go, Wifi!\n");
             Enable(true);
             break;

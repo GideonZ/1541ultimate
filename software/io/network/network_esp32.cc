@@ -74,6 +74,7 @@ void NetworkLWIP_WiFi :: getDisplayString(int index, char *buffer, int width)
         sprintf(buffer, "WiFi    %#s\eJNo Module", width - 17, "");
         break;
     case eWifi_Detected:               
+    case eWifi_Scanning:
         sprintf(buffer, "WiFi    %#s\eGScanning", width - 17, wifi.getModuleName());
         break;
     case eWifi_Failed:

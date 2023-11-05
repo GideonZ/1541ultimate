@@ -126,49 +126,6 @@ int DmaUART::Read(uint8_t *buffer, int bufsize)
     return 0;
 }
 
-void DmaUART::PrintRxMessage(void)
-{
-    static uint8_t buffertje[1540];
-
-    printf("\e[0m -> Start of boot message <- \n");
-/*
-    printf("Free Queue: %d\n", uxQueueMessagesWaiting(packets->freeQueue));
-    printf("TxQueue: %d\n", uxQueueMessagesWaiting(packets->transmitQueue));
-    printf("RxQueue: %d\n", uxQueueMessagesWaiting(packets->receivedQueue));
-*/
-    int rx, to = 5;
-    do {
-        rx = Read(buffertje, 1536);
-        buffertje[rx] = 0;
-        if (rx) {
-            printf((char *)buffertje);
-            to = 5;
-        } else {
-            vTaskDelay(25);
-            to --;
-            if (to == 0) {
-                EnableSlip(true);
-                vTaskDelay(1);
-                rx = Read(buffertje, 1536);
-                buffertje[rx] = 0;
-                if (rx) {
-                    printf("Last (%d): \n", rx);
-                    printf((char *)buffertje);
-                }
-                break;
-            }
-        }
-    } while(true);
-    //EnableSlip(false);
-    printf("\e[0m -> End of boot message <- \n");
-/*
-    printf("Free Queue: %d\n", uxQueueMessagesWaiting(packets->freeQueue));
-    printf("TxQueue: %d\n", uxQueueMessagesWaiting(packets->transmitQueue));
-    printf("RxQueue: %d\n", uxQueueMessagesWaiting(packets->receivedQueue));
-    printf("Uart Status: %02X\n", uart->status);
-*/
-}
-
 void DmaUART::SetBaudRate(int bps)
 {
 	int twice = (CLOCK_FREQ * 2) / bps;
