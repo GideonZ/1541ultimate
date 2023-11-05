@@ -28,9 +28,9 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
         Action *poke;
         Action *saveedid;
         Action *siddetect;
-        Action *wifioff;
-        Action *wifion;
-        Action *wifiboot;
+        Action *esp32off;
+        Action *esp32on;
+        Action *esp32boot;
         Action *uartecho;
         Action *wifiecho;
     } myActions;

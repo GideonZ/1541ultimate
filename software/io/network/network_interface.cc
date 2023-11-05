@@ -128,7 +128,7 @@ NetworkInterface :: NetworkInterface(void *driver,
 		pbuf_fifo.push(&pbuf_array[i]);
 	}
 	dhcp_enable = false;
-	reset();
+	memset(&my_net_if, 0, sizeof(my_net_if)); // clear the whole thing
     NetworkInterface :: registerNetworkInterface(this);
 
 	// quick hack to perform update on the browser
@@ -158,7 +158,7 @@ void ethernet_init_inside_thread(void *classPointer)
 
 bool NetworkInterface :: start()
 {
-	memset(&my_net_if, 0, sizeof(my_net_if));
+	memset(&my_net_if, 0, sizeof(my_net_if)); // clear the whole thing
 	init_callback();
     if_up = false;
     return true;
@@ -166,9 +166,9 @@ bool NetworkInterface :: start()
 
 void NetworkInterface :: stop()
 {
-    //if_up = false;
+	link_down();
+	netifapi_netif_remove(&my_net_if);
 }
-
 
 void NetworkInterface :: statusCallback(struct netif *net)
 {
@@ -187,12 +187,6 @@ void NetworkInterface :: statusUpdate(void)
 }
 
 
-void NetworkInterface :: reset()
-{
-	my_net_if.state = NULL;
-	my_net_if.next = NULL;
-}
-
 void NetworkInterface :: init_callback( )
 {
 	/* initialization of IP addresses */
@@ -200,14 +194,11 @@ void NetworkInterface :: init_callback( )
 //    IP4_ADDR(&my_netmask, 255, 255, 255, 0);
 //    IP4_ADDR(&my_gateway, 192, 168, 2, 1);
 
-	/* reset */
-	reset();
-
-	effectuate_settings();
-
 	/* set name */
 	my_net_if.name[0] = 'U';
 	my_net_if.name[1] = '2';
+
+	effectuate_settings();
 
 	/* set MAC hardware address length */
 	my_net_if.hwaddr_len = ETHARP_HWADDR_LEN;

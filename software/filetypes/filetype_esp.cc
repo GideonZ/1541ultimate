@@ -33,7 +33,7 @@ extern "C" {
 	#include "dump_hex.h"
 }
 
-#include "wifi.h"
+#include "esp32.h"
 
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_esp(FileType :: getFileTypeFactory(), FileTypeESP :: test_type);
@@ -104,7 +104,7 @@ int FileTypeESP::execute(SubsysCommand *cmd)
         total_bytes_read = 0;
         cmd->user_interface->popup("ESP Programming now starts.", BUTTON_OK);
 
-        wifi.doDownloadWrap(true);
+        esp32.doDownloadWrap(true);
         while (remain) {
             file->read(&header, 12, &bytes_read);
             remain -= bytes_read;
@@ -125,9 +125,9 @@ int FileTypeESP::execute(SubsysCommand *cmd)
             file->read(dest, header.length, &bytes_read);
             remain -= bytes_read;
             total_bytes_read += bytes_read;
-            wifi.doDownload(dest, header.address, header.length, true);
+            esp32.doDownload(dest, header.address, header.length, true);
         }
-        wifi.doDownloadWrap(false);
+        esp32.doDownloadWrap(false);
         fm->fclose(file);
     } else {
         printf("Error opening file.\n");

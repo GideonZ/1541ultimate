@@ -141,7 +141,8 @@ SRCS_CC	 =  u2p_init.cc \
 			home_directory.cc \
 			reu_preloader.cc \
 			fpll.cc \
-			fastuart.cc \
+			dma_uart.cc \
+			esp32.cc \
 			wifi.cc \
 			acia.cc \
 			modem.cc \

@@ -8,7 +8,8 @@
 #ifndef WIFI_H_
 #define WIFI_H_
 
-#include "fastuart.h"
+#include "dma_uart.h"
+#include "esp32.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
@@ -45,10 +46,8 @@ typedef enum {
     eWifi_Failed,
 } WifiState_t;
 
-class WiFi
+class WiFi : public Esp32Application
 {
-    SemaphoreHandle_t rxSemaphore;
-    QueueHandle_t commandQueue;
     TaskHandle_t runModeTask;
     command_buf_context_t *packets;
     NetworkLWIP_WiFi *netstack;
@@ -63,49 +62,38 @@ class WiFi
     mstring cfg_ssid;
     mstring cfg_pass;
 
-    bool doClose;
-    bool programError;
-
-    void Enable(bool);
-    void Disable();
-    void Boot();
-    void RefreshRoot();
-    int  Download(const uint8_t *binary, uint32_t address, uint32_t length);
-    void PackParams(uint8_t *buffer, int numparams, ...);
-    bool Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data, uint8_t *receiveBuffer, int timeout);
-    bool UartEcho(void);
     bool RequestEcho(void);
     void RxPacket(command_buf_t *);
 
-    static void CommandTaskStart(void *context);
     static void RunModeTaskStart(void *context);
-
-    void CommandThread();
     void RunModeThread();
+    void RefreshRoot();
 public:
     WiFi();
-    void Quit();
 
-    BaseType_t doBootMode();
-    BaseType_t doDisable();
-    BaseType_t doStart();
-    BaseType_t doDownload(uint8_t *binary, uint32_t address, uint32_t length, bool doFree);
-    BaseType_t doDownloadWrap(bool start);
     BaseType_t doRequestEcho(void);
-    BaseType_t doUartEcho(void);
 
-    FastUART *uart;
+    DmaUART *uart;
 
     WifiState_t getState(void) { return state; }
     void setSsidPass(const char *ssid, const char *pass) { cfg_ssid = ssid; cfg_pass = pass; }
     const char *getModuleName(void) { return moduleName; }
     void  getMacAddr(uint8_t *target) { memcpy(target, my_mac, 6); }
     char *getIpAddrString(char *buf, int max) { sprintf(buf, "%d.%d.%d.%d", (my_ip >> 0) & 0xff, (my_ip >> 8) & 0xff, (my_ip >> 16) & 0xff, (my_ip >> 24) & 0xff); return buf; }
+
     void sendEvent(uint8_t code);
     void sendConnectEvent(const char *ssid, const char *pass, uint8_t auth);
     void freeBuffer(command_buf_t *buf);
-
     void getAccessPointItems(Browsable *parent, IndexedList<Browsable *> &list);
+
+    // User Interface functions
+    void Disable(void);
+    void Enable(void);
+
+    // From Esp32Application
+    void Init(DmaUART *uart, command_buf_context_t *packets);
+    void Start();
+    void Terminate();
 };
 
 extern WiFi wifi;
@@ -130,7 +118,6 @@ public:
 
     void fetch_context_items(IndexedList<Action *>&items);
     static int connect_ap(SubsysCommand *cmd);
-
 };
 
 #endif /* WIFI_H_ */

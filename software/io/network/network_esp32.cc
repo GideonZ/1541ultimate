@@ -108,12 +108,19 @@ void NetworkLWIP_WiFi :: attach_config()
 void NetworkLWIP_WiFi :: effectuate_settings(void)
 {
     NetworkInterface :: effectuate_settings();
+
+	my_net_if.name[0] = 'W';
+	my_net_if.name[1] = 'I';
+
     wifi.setSsidPass(cfg->get_string(CFG_WIFI_SSID), cfg->get_string(CFG_WIFI_PASSW));
+
     if (wifi.getState() == eWifi_Off && cfg->get_value(CFG_WIFI_ENABLE)) {
-        wifi.doStart();
-    } else if (wifi.getState() != eWifi_Off && !cfg->get_value(CFG_WIFI_ENABLE)) {
-        wifi.doDisable();
+        wifi.Enable();
     }
+//  For now, we don't disable the Wifi here, because effectuate_settings is also called when the init callback of the network stack occurs, OWWW
+//    else if (wifi.getState() != eWifi_Off && !cfg->get_value(CFG_WIFI_ENABLE)) {
+//        wifi.Disable();
+//    }
 }
 
 // called from wifi driver when a manual connect occurs
@@ -165,12 +172,12 @@ int NetworkLWIP_WiFi :: rescan(SubsysCommand *cmd)
 
 int NetworkLWIP_WiFi :: disable(SubsysCommand *cmd)
 {
-    wifi.doDisable();
+    wifi.Disable();
     return 0;
 }
 
 int NetworkLWIP_WiFi :: enable(SubsysCommand *cmd)
 {
-    wifi.doStart();
+    wifi.Enable();
     return 0;
 }

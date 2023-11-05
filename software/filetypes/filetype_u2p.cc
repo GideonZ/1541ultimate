@@ -35,7 +35,7 @@ extern "C" {
 
 #ifdef U64
 #ifndef RISCV
-#include "wifi.h"
+#include "esp32.h"
 #endif
 #endif
 #include "acia.h"
@@ -142,7 +142,7 @@ int FileTypeUpdate :: execute(SubsysCommand *cmd)
 		file = NULL;
 #if U64
 #ifndef RISCV
-		wifi.Quit();
+		esp32.Quit();
 #endif
 #endif
 #ifndef RECOVERYAPP

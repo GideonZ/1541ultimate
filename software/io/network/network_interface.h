@@ -88,7 +88,6 @@ public:
     virtual void attach_config();
     virtual const char *identify() { return "NetworkLWIP"; }
 
-    void reset();
 	bool start();
     void stop();
     void link_up();

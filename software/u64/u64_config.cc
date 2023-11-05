@@ -23,7 +23,7 @@ extern "C" {
 #include "u2p.h"
 //#include "sys/alt_irq.h"
 #include "c64.h"
-#include "wifi.h"
+#include "esp32.h"
 #include "sid_editor.h"
 #include "sid_device_fpgasid.h"
 #include "sid_device_swinsid.h"
@@ -1062,21 +1062,21 @@ void U64Config :: create_task_items(void)
     myActions.poke      = new Action("Poke", SUBSYSID_U64, MENU_U64_POKE);
     myActions.saveedid  = new Action("Save EDID to file", SUBSYSID_U64, MENU_U64_SAVEEDID);
     myActions.siddetect = new Action("Detect SIDs", SUBSYSID_U64, MENU_U64_DETECT_SIDS);
-    myActions.wifioff   = new Action("Disable WiFi", SUBSYSID_U64, MENU_U64_WIFI_DISABLE);
-    myActions.wifion    = new Action("Enable WiFi",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE);
-    myActions.wifiboot  = new Action("Enable WiFi Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT);
+    myActions.esp32off  = new Action("Disable ESP32", SUBSYSID_U64, MENU_U64_WIFI_DISABLE);
+    myActions.esp32on   = new Action("Enable ESP32",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE);
+    myActions.esp32boot = new Action("Enable ESP32 Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT);
     myActions.uartecho  = new Action("UART Echo", SUBSYSID_U64, MENU_U64_UART_ECHO);
     myActions.wifiecho  = new Action("WiFi Echo", SUBSYSID_U64, MENU_U64_WIFI_ECHO);
 
     dev->append(myActions.saveedid );
 #if DEVELOPER > 0
-    dev->append(myActions.poke     );
-    dev->append(myActions.siddetect);
-    dev->append(myActions.wifioff  );
-    dev->append(myActions.wifion   );
-    dev->append(myActions.wifiboot );
-    dev->append(myActions.wifiecho );
-    dev->append(myActions.uartecho );
+    dev->append(myActions.poke      );
+    dev->append(myActions.siddetect );
+    dev->append(myActions.esp32off  );
+    dev->append(myActions.esp32on   );
+    dev->append(myActions.esp32boot );
+    dev->append(myActions.uartecho  );
+    dev->append(myActions.wifiecho  );
 #endif
 }
 
@@ -1146,27 +1146,27 @@ SubsysResultCode_t U64Config :: executeCommand(SubsysCommand *cmd)
 #endif
 
     case MENU_U64_WIFI_DISABLE:
-        wifi.doDisable();
+        esp32.doDisable();
         break;
 
     case MENU_U64_WIFI_ENABLE:
-        wifi.doStart();
+        esp32.doStart();
         break;
 
     case MENU_U64_WIFI_BOOT:
-        wifi.doBootMode();
+        esp32.doBootMode();
         break;
 
     case MENU_U64_WIFI_ECHO:
-        wifi.doRequestEcho();
+        //esp32.doRequestEcho();
         break;
 
     case MENU_U64_UART_ECHO:
-        wifi.doUartEcho();
+        esp32.doUartEcho();
         break;
 
     case MENU_U64_WIFI_DOWNLOAD:
-        wifi.doDownload(NULL, 0, 0, false);
+        esp32.doDownload(NULL, 0, 0, false);
         break;
 
     case MENU_U64_POKE:
