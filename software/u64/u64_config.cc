@@ -1085,7 +1085,7 @@ void U64Config :: update_task_items(bool writablePath, Path *p)
     myActions.saveedid->setDisabled(!writablePath);
 }
 
-SubsysResultCode_t U64Config :: executeCommand(SubsysCommand *cmd)
+SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
 {
 	File *f = 0;
 	FRESULT res;
@@ -1206,6 +1206,7 @@ SubsysResultCode_t U64Config :: executeCommand(SubsysCommand *cmd)
 
     default:
     	printf("U64 does not know this command\n");
+        return SSRET_NOT_IMPLEMENTED;
     }
     return SSRET_OK;
 }

@@ -27,12 +27,12 @@ class FileTypeSID : public FileType
 	bool mus_file;
 	bool sid_file;
 
-	int prepare(bool);
+	SubsysResultCode_e prepare(bool);
 	void load(void);
 	int loadFile(File *file, int offset);
 	bool tryLoadStereoMus(int offset);
-    int execute(SubsysCommand *cmd);
-    static int execute_st(SubsysCommand *cmd);
+    SubsysResultCode_e execute(SubsysCommand *cmd);
+    static SubsysResultCode_e execute_st(SubsysCommand *cmd);
     int readHeader(void);
 	void processHeader(void);
 	int createMusHeader(void);
@@ -48,8 +48,7 @@ public:
 
     int fetch_context_items(IndexedList<Action *> &list);
     static FileType *test_type(BrowsableDirEntry *obj);
-	static int play_file(const char *filename, const char *sslfile, int song);
-	static const char *get_error(int);
+	static SubsysResultCode_e play_file(const char *filename, const char *sslfile, int song);
 };
 
 #endif

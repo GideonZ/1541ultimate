@@ -32,11 +32,11 @@ public:
     void getDisplayString(int index, char *buffer, int width);
     void getSubItems(Browsable *parent, IndexedList<Browsable *> &list, int &error);
     void fetch_context_items(IndexedList<Action *>&items);
-    static int list_aps(SubsysCommand *cmd);
-    static int disconnect(SubsysCommand *cmd);
-    static int rescan(SubsysCommand *cmd);
-    static int enable(SubsysCommand *cmd);
-    static int disable(SubsysCommand *cmd);
+    static SubsysResultCode_e list_aps(SubsysCommand *cmd);
+    static SubsysResultCode_e disconnect(SubsysCommand *cmd);
+    static SubsysResultCode_e rescan(SubsysCommand *cmd);
+    static SubsysResultCode_e enable(SubsysCommand *cmd);
+    static SubsysResultCode_e disable(SubsysCommand *cmd);
 
     // from ConfigurableObject
     void effectuate_settings(void);

@@ -36,6 +36,7 @@ SRCS_CC	 =  small_printf.cc \
 			w25q_flash.cc \
 			s25fl_flash.cc \
 			config.cc \
+			subsys.cc \
 			filemanager.cc \
 			file_device.cc \
 			file_partition.cc \
@@ -104,7 +105,6 @@ SRCS_CC	 =  small_printf.cc \
 			usb_hid.cc \
 			keyboard_usb.cc \
 			network_interface.cc \
-			network_lwip.cc \
 			vfs.cc \
 			ftpd.cc \
 			tape_controller.cc \
@@ -164,7 +164,7 @@ SRCS_NANO = nano_minimal.nan
 PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -g -ffunction-sections -nostartfiles -mcpu=v5.00.a -Os -DOS -DU2 -DDATACACHE=1 -DCLOCK_FREQ=50000000 -DBYTE_ORDER=BIG_ENDIAN
 COPTIONS = $(OPTIONS) -std=c99
-CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics
+CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics
 LINK 	 = ./mb_app.lds
 LIBS     = ../mb_lwip/result/liblwip.a
 LFLAGS   = --gc-sections  --relax

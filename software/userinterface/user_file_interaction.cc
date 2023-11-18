@@ -79,15 +79,16 @@ void UserFileInteraction::update_task_items(bool writablePath, Path *path)
     }
 }
 
-int UserFileInteraction::S_enter(SubsysCommand *cmd)
+SubsysResultCode_e UserFileInteraction::S_enter(SubsysCommand *cmd)
 {
     if (cmd->user_interface) {
-        return cmd->user_interface->enterSelection();
+        int retval = cmd->user_interface->enterSelection();
+        return SSRET_OK; // FIXME
     }
-    return -1;
+    return SSRET_NO_USER_INTERFACE;
 }
 
-int UserFileInteraction::S_rename(SubsysCommand *cmd)
+SubsysResultCode_e UserFileInteraction::S_rename(SubsysCommand *cmd)
 {
     int res;
     char buffer[64];
@@ -110,10 +111,10 @@ int UserFileInteraction::S_rename(SubsysCommand *cmd)
         }
     }
     fm->release_path(p);
-    return 0;
+    return SSRET_OK;
 }
 
-int UserFileInteraction::S_delete(SubsysCommand *cmd)
+SubsysResultCode_e UserFileInteraction::S_delete(SubsysCommand *cmd)
 {
     char buffer[64];
     FileManager *fm = FileManager::getFileManager();
@@ -128,10 +129,10 @@ int UserFileInteraction::S_delete(SubsysCommand *cmd)
         }
     }
     fm->release_path(p);
-    return 0;
+    return SSRET_OK;
 }
 
-int UserFileInteraction::S_view(SubsysCommand *cmd)
+SubsysResultCode_e UserFileInteraction::S_view(SubsysCommand *cmd)
 {
     FileManager *fm = FileManager::getFileManager();
     File *f = 0;
@@ -146,10 +147,10 @@ int UserFileInteraction::S_view(SubsysCommand *cmd)
         cmd->user_interface->run_editor(text_buf, transferred);
         delete text_buf;
     }
-    return 0;
+    return SSRET_OK;
 }
 
-int UserFileInteraction::S_createDir(SubsysCommand *cmd)
+SubsysResultCode_e UserFileInteraction::S_createDir(SubsysCommand *cmd)
 {
     char buffer[64];
     buffer[0] = 0;
@@ -167,10 +168,10 @@ int UserFileInteraction::S_createDir(SubsysCommand *cmd)
         }
     }
     fm->release_path(path);
-    return 0;
+    return SSRET_OK;
 }
 
-int UserFileInteraction::S_runApp(SubsysCommand *cmd)
+SubsysResultCode_e UserFileInteraction::S_runApp(SubsysCommand *cmd)
 {
 #ifndef RECOVERYAPP
     printf("REU Select: %4x\n", cmd->functionID);
@@ -253,10 +254,10 @@ int UserFileInteraction::S_runApp(SubsysCommand *cmd)
     } else {
         printf("Error opening file.\n");
         cmd->user_interface->popup(FileSystem::get_error_string(fres), BUTTON_OK);
-        return -2;
+        return SSRET_DISK_ERROR;
     }
 #endif
-    return 0;
+    return SSRET_OK;
 }
 
 // TODO: Use these functions in other user-interface based subsystem calls

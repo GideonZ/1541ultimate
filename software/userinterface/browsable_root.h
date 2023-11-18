@@ -14,7 +14,6 @@
 #include "size_str.h"
 #include "user_file_interaction.h"
 #include "network_interface.h"
-#include "wifi.h"
 
 class BrowsableNetwork : public Browsable
 {

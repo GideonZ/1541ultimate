@@ -60,7 +60,7 @@ FileType *FileTypeREU :: test_type(BrowsableDirEntry *obj)
     return NULL;
 }
 
-int FileTypeREU :: execute_st(SubsysCommand *cmd)
+SubsysResultCode_e FileTypeREU :: execute_st(SubsysCommand *cmd)
 {
 	printf("REU Select: %4x\n", cmd->functionID);
 	File *file = 0;
@@ -85,7 +85,7 @@ int FileTypeREU :: execute_st(SubsysCommand *cmd)
         machine->cfg->set_string(CFG_C64_REU_IMG, path);
         //c64->cfg->write();
         cmd->user_interface->popup("Set as REU Preload Image", BUTTON_OK);
-        return 0;
+        return SSRET_OK;
     }
     
     if (cmd->functionID == REUFILE_PLAYMOD) {
@@ -136,9 +136,9 @@ int FileTypeREU :: execute_st(SubsysCommand *cmd)
 	} else {
 		printf("Error opening file.\n");
         cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
-		return -2;
+		return SSRET_CANNOT_OPEN_FILE;
 	}
-	return 0;
+	return SSRET_OK;
 }
 
 void FileTypeREU ::start_modplayer()

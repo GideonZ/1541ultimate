@@ -67,10 +67,10 @@ void api_mount(ResponseWrapper *resp, const char *fn, const char *drive, const c
     resp->json->add("Subsys", subsys_id)->add("Ftype", ftype)->add("command", command)->add("file", fn);
     SubsysCommand *cmd = new SubsysCommand(NULL, subsys_id, command, ftype, "", fn);
     SubsysResultCode_t retval = cmd->execute();
-    if (retval != SSRET_OK) {
-        resp->error(SubsysCommand::error_string(retval));
+    if (retval.status != SSRET_OK) {
+        resp->error(SubsysCommand::error_string(retval.status));
     }
-    resp->json_response(SubsysCommand::http_response_map(retval));
+    resp->json_response(SubsysCommand::http_response_map(retval.status));
 }
 
 API_CALL(PUT, drives, mount, NULL, ARRAY({{ "image", P_REQUIRED }, { "type", P_OPTIONAL }, { "mode", P_OPTIONAL } }))
@@ -116,10 +116,10 @@ static void simple_drive_command(ArgsURI& args, ResponseWrapper *resp, int comma
 
     SubsysCommand *cmd = new SubsysCommand(NULL, subsys_id, command, 0, "", args.get_or("file", ""));
     SubsysResultCode_t retval = cmd->execute();
-    if (retval != SSRET_OK) {
-        resp->error(SubsysCommand::error_string(retval));
+    if (retval.status != SSRET_OK) {
+        resp->error(SubsysCommand::error_string(retval.status));
     }
-    resp->json_response(SubsysCommand::http_response_map(retval));
+    resp->json_response(SubsysCommand::http_response_map(retval.status));
 }
 
 API_CALL(PUT, drives, reset, NULL, ARRAY({ }))
@@ -183,8 +183,8 @@ API_CALL(PUT, drives, set_mode, NULL, ARRAY({{ "mode", P_REQUIRED }}))
     resp->json->add("mode", args["mode"]);
     SubsysCommand *cmd = new SubsysCommand(NULL, subsys_id, MENU_1541_SET_MODE, mode, "", "");
     SubsysResultCode_t retval = cmd->execute();
-    if (retval != SSRET_OK) {
-        resp->error(SubsysCommand::error_string(retval));
+    if (retval.status != SSRET_OK) {
+        resp->error(SubsysCommand::error_string(retval.status));
     }
-    resp->json_response(SubsysCommand::http_response_map(retval));
+    resp->json_response(SubsysCommand::http_response_map(retval.status));
 }

@@ -53,6 +53,7 @@ SRCS_CC	 =  u2p_init.cc \
 			s25fl_l_flash.cc \
 			prog_flash.cc \
 			config.cc \
+			subsys.cc \
 			filemanager.cc \
 			file_device.cc \
 			file_partition.cc \
@@ -124,6 +125,7 @@ SRCS_CC	 =  u2p_init.cc \
 			usb_ms_cbi.cc \
 			keyboard_usb.cc \
 			network_interface.cc \
+			rmii_interface.cc \
 			network_esp32.cc \
 			vfs.cc \
 			ftpd.cc \
@@ -137,7 +139,6 @@ SRCS_CC	 =  u2p_init.cc \
 			socket_stream.cc \
 			socket_gui.cc \
 			socket_dma.cc \
-			rmii_interface.cc \
 			home_directory.cc \
 			reu_preloader.cc \
 			fpll.cc \

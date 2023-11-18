@@ -139,20 +139,20 @@ FileType *FileTypeBin :: test_type(BrowsableDirEntry *obj)
 }
 
 // static member
-int FileTypeBin :: execute_st(SubsysCommand *cmd)
+SubsysResultCode_e FileTypeBin :: execute_st(SubsysCommand *cmd)
 {
 	return ((FileTypeBin *)cmd->mode)->execute(cmd);
 }
 
 // non-static member
-int FileTypeBin :: execute(SubsysCommand *cmd)
+SubsysResultCode_e FileTypeBin :: execute(SubsysCommand *cmd)
 {
     FileManager *fm = FileManager :: getFileManager();
     uint32_t rom[4];
     FRESULT fres = fm->load_file(cmd->path.c_str(), cmd->filename.c_str(), (uint8_t *)rom, 16, NULL);
     if (fres != FR_OK) {
         cmd->user_interface->popup("Unable to read file.", BUTTON_OK);
-        return 0;
+        return SSRET_CANNOT_OPEN_FILE;
     }
     
     char fnbuf[32];
@@ -215,10 +215,10 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
         }
         break;
     }  
-    return 0;
+    return SSRET_OK;
 }
 
-int FileTypeBin :: load_kernal(SubsysCommand *cmd)
+SubsysResultCode_e FileTypeBin :: load_kernal(SubsysCommand *cmd)
 {
     FileManager *fm = FileManager :: getFileManager();
     uint32_t size = 8192;
@@ -234,11 +234,12 @@ int FileTypeBin :: load_kernal(SubsysCommand *cmd)
         c64_command->execute();
     }
     delete[] buffer;
-    return fres;
+    return (fres == FR_OK) ? SSRET_OK : SSRET_DISK_ERROR;
 }
 
-int FileTypeBin :: load_dos(SubsysCommand *cmd)
+SubsysResultCode_e FileTypeBin :: load_dos(SubsysCommand *cmd)
 {
     SubsysCommand *drv_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, FLOPPY_LOAD_DOS, 0, cmd->path.c_str(), cmd->filename.c_str());
-    return drv_command->execute();
+    SubsysResultCode_t result = drv_command->execute();
+    return result.status;
 }

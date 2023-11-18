@@ -158,10 +158,10 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     void swap_disk(SubsysCommand *cmd);
     void wait_for_writeback(void);
     static void mfm_update_callback(void *obj, int pt, int ps, MfmTrack *tr);
-    SubsysResultCode_t save_disk_to_file(SubsysCommand *cmd);
-    SubsysResultCode_t set_drive_type(t_drive_type drv);
-    SubsysResultCode_t change_drive_type(t_drive_type drv,  UserInterface *ui);
-    SubsysResultCode_t load_dos_from_file(const char *path, const char *filename);
+    SubsysResultCode_e save_disk_to_file(SubsysCommand *cmd);
+    SubsysResultCode_e set_drive_type(t_drive_type drv);
+    SubsysResultCode_e change_drive_type(t_drive_type drv,  UserInterface *ui);
+    SubsysResultCode_e load_dos_from_file(const char *path, const char *filename);
 public:
     C1541(volatile uint8_t *regs, char letter);
     ~C1541();
@@ -178,7 +178,7 @@ public:
 
     // subsys
     const char *identify(void) { return drive_name.c_str(); }
-    SubsysResultCode_t executeCommand(SubsysCommand *cmd);
+    SubsysResultCode_e executeCommand(SubsysCommand *cmd);
 
     // called from IEC (UltiCopy)
     int  get_current_iec_address(void);    

@@ -50,6 +50,7 @@ SRCS_CC	 =  u2p_init.cc \
 			s25fl_flash.cc \
 			prog_flash.cc \
 			config.cc \
+			subsys.cc \
 			filemanager.cc \
 			file_device.cc \
 			file_partition.cc \
@@ -118,7 +119,6 @@ SRCS_CC	 =  u2p_init.cc \
 			usb_ms_cbi.cc \
 			keyboard_usb.cc \
 			network_interface.cc \
-			network_lwip.cc \
 			debug_streamer_u2p.cc \
 			vfs.cc \
 			ftpd.cc \
@@ -193,7 +193,7 @@ PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -g -ffunction-sections -Os -DOS -DNIOS=1 -DCLOCK_FREQ=62500000 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
 # OPTIONS  = -g -ffunction-sections -O0 -DOS -DNIOS=1 -DCLOCK_FREQ=62500000 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
 COPTIONS = $(OPTIONS) -std=gnu99
-CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
+CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 BSP      = $(PATH_SW)/nios_appl_bsp
 LINK 	 = $(BSP)/linker.x
 LIBS2    = $(BSP)/libhal_bsp.a ../../../libs/nios2/lwip/result/liblwip.a

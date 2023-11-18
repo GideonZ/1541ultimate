@@ -180,7 +180,7 @@ void C1541 :: effectuate_settings(void)
 
     current_drive_type = e_dt_unset;
     uint8_t dt = cfg->get_value(CFG_C1541_DRIVETYPE);
-    int res = set_drive_type((t_drive_type) dt);
+    SubsysResultCode_e res = set_drive_type((t_drive_type) dt);
 
     if(registers[C1541_POWER] != cfg->get_value(CFG_C1541_POWERED)) {
         drive_power(cfg->get_value(CFG_C1541_POWERED) != 0);
@@ -874,7 +874,7 @@ bool C1541 :: are_mfm_dirty_bits_set()
     return (orred != 0);
 }
 
-SubsysResultCode_t C1541 :: set_drive_type(t_drive_type drv)
+SubsysResultCode_e C1541 :: set_drive_type(t_drive_type drv)
 {
     // Force 1541 mode, when the target is not multi-mode
     if (!multi_mode && (drv != e_dt_1541)) {
@@ -918,7 +918,7 @@ SubsysResultCode_t C1541 :: set_drive_type(t_drive_type drv)
     return SSRET_OK;
 }
 
-SubsysResultCode_t C1541 :: change_drive_type(t_drive_type drv,  UserInterface *ui)
+SubsysResultCode_e C1541 :: change_drive_type(t_drive_type drv,  UserInterface *ui)
 {
     if (!multi_mode && drv != e_dt_1541) {
         return SSRET_ONLY_1541;
@@ -936,7 +936,7 @@ SubsysResultCode_t C1541 :: change_drive_type(t_drive_type drv,  UserInterface *
     return set_drive_type(drv);
 }
 
-SubsysResultCode_t C1541 :: executeCommand(SubsysCommand *cmd)
+SubsysResultCode_e C1541 :: executeCommand(SubsysCommand *cmd)
 {
 	bool g64;
 	bool protect;
@@ -944,7 +944,7 @@ SubsysResultCode_t C1541 :: executeCommand(SubsysCommand *cmd)
 	File *newFile = 0;
 	FRESULT res;
 	FileInfo info(32);
-	SubsysResultCode_t returnValue = SSRET_OK;
+	SubsysResultCode_e returnValue = SSRET_OK;
 
     fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
 
@@ -1008,10 +1008,10 @@ SubsysResultCode_t C1541 :: executeCommand(SubsysCommand *cmd)
                 mount_file_name = cmd->filename;
                 mount_function_id = cmd->functionID;
                 mount_mode = cmd->mode;
-                // FIXME!!
-                //if (cfg->get_value(CFG_C1541_EXITMOUNT)) {
-                //    returnValue = -1;
-                //}
+
+                if ((cmd->user_interface) && (cfg->get_value(CFG_C1541_EXITMOUNT))) {
+                    cmd->user_interface->command_flags = MENU_HIDE;
+                }
             } else {
                 returnValue = SSRET_CANNOT_OPEN_FILE;
                 if (cmd->user_interface) {
@@ -1079,7 +1079,7 @@ SubsysResultCode_t C1541 :: executeCommand(SubsysCommand *cmd)
 	return returnValue;
 }
 
-SubsysResultCode_t C1541 :: load_dos_from_file(const char *path, const char *filename)
+SubsysResultCode_e C1541 :: load_dos_from_file(const char *path, const char *filename)
 {
     FileManager *fm = FileManager :: getFileManager();
     uint32_t size = 32768;
@@ -1115,7 +1115,7 @@ void C1541 :: unlink(void)
 	mfm_controller->set_file(NULL);
 }
 
-SubsysResultCode_t C1541 :: save_disk_to_file(SubsysCommand *cmd)
+SubsysResultCode_e C1541 :: save_disk_to_file(SubsysCommand *cmd)
 {
     static char buffer[32] = {0};
     char errstr[40];

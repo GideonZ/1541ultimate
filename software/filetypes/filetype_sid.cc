@@ -12,16 +12,6 @@
 #include "userinterface.h"
 #include <stdio.h>
 
-#define SIDERR_OPEN_FAILED 1
-#define SIDERR_SEEK_FAILED 2
-#define SIDERR_READ_FAILED 3
-#define SIDERR_MAGIC_FAILED 4
-#define SIDERR_INTERNAL 5
-#define SIDERR_NO_MEM 6
-#define SIDERR_ROLLOVER 7
-#define SIDERR_SONGNR 8
-#define SIDERR_UNKNOWN 9
-
 extern uint8_t _sidcrt_bin_start;
 extern uint8_t _sidcrt_bin_end;
 extern uint8_t _muscrt_bin_start;
@@ -205,13 +195,13 @@ int FileTypeSID ::readHeader(void)
 
         if (fres != FR_OK) {
             printf("opening file was not successful. %s\n", FileSystem ::get_error_string(fres));
-            return SIDERR_OPEN_FAILED;
+            return SSRET_CANNOT_OPEN_FILE;
         }
     } else {
         if (file->seek(0) != FR_OK) {
             fm->fclose(file);
             file = NULL;
-            return SIDERR_SEEK_FAILED;
+            return SSRET_FILE_SEEK_FAILED;
         }
     }
 
@@ -219,7 +209,7 @@ int FileTypeSID ::readHeader(void)
     if (fres != FR_OK) {
         fm->fclose(file);
         file = NULL;
-        return SIDERR_READ_FAILED;
+        return SSRET_FILE_READ_FAILED;
     }
 
     // header checks
@@ -228,7 +218,7 @@ int FileTypeSID ::readHeader(void)
         printf("Filetype not as expected. (%08x)\n", *magic);
         fm->fclose(file);
         file = NULL;
-        return SIDERR_MAGIC_FAILED;
+        return SSRET_ERROR_IN_FILE_FORMAT;
     }
 
     fm->fclose(file);
@@ -435,12 +425,13 @@ FileType *FileTypeSID ::test_type(BrowsableDirEntry *obj)
     return NULL;
 }
 
-int FileTypeSID ::execute_st(SubsysCommand *cmd)
+SubsysResultCode_e FileTypeSID ::execute_st(SubsysCommand *cmd)
 {
     printf("FileTypeSID :: execute_st: Mode = %p\n", cmd->mode);
     return ((FileTypeSID *)cmd->mode)->execute(cmd);
 }
 
+/*
 const char *FileTypeSID ::get_error(int err)
 {
     const char *errors[] = {"",
@@ -456,10 +447,11 @@ const char *FileTypeSID ::get_error(int err)
 
     return errors[err];
 }
+*/
 
-int FileTypeSID ::execute(SubsysCommand *cmd)
+SubsysResultCode_e FileTypeSID ::execute(SubsysCommand *cmd)
 {
-    int error = 0;
+    SubsysResultCode_e error = SSRET_OK;
 
     int selection = cmd->functionID;
     this->cmd = cmd;
@@ -473,23 +465,21 @@ int FileTypeSID ::execute(SubsysCommand *cmd)
         error = prepare(false);
     } else {
         this->cmd = 0;
-        return SIDERR_UNKNOWN;
+        return SSRET_UNDEFINED_COMMAND;
     }
-    if (error) {
+    if (error != SSRET_OK) {
         if (cmd->user_interface) {
-            cmd->user_interface->popup(get_error(error), BUTTON_OK);
+            cmd->user_interface->popup(SubsysCommand::error_string(error), BUTTON_OK);
         } else {
-            printf("Error: %s\n", get_error(error));
+            printf("Error: %s\n", SubsysCommand::error_string(error));
         }
         if (file) {
             fm->fclose(file);
             file = NULL;
         }
-        this->cmd = 0;
-        return error;
     }
     this->cmd = 0;
-    return 0;
+    return error;
 }
 
 void FileTypeSID ::readSongLengths(void)
@@ -578,7 +568,7 @@ bool FileTypeSID ::tryLoadStereoMus(int offset)
     return false;
 }
 
-int FileTypeSID ::prepare(bool use_default)
+SubsysResultCode_e FileTypeSID ::prepare(bool use_default)
 {
     if (use_default) {
         printf("PREPARE DEFAULT SONG in %s.\n", file_string.c_str());
@@ -606,11 +596,11 @@ int FileTypeSID ::prepare(bool use_default)
         printf("Open: '%s' / '%s'\n", path_string.c_str(), filename);
         if (fm->fopen(path_string.c_str(), filename, FA_READ, &file) != FR_OK) {
             file = NULL;
-            return SIDERR_OPEN_FAILED;
+            return SSRET_CANNOT_OPEN_FILE;
         }
     }
     if (file->seek(0) != FR_OK) {
-        return SIDERR_SEEK_FAILED;
+        return SSRET_FILE_SEEK_FAILED;
     }
 
     int bytesToSkip = 0;
@@ -623,15 +613,15 @@ int FileTypeSID ::prepare(bool use_default)
         bytesToSkip = 2;
 
         if (file->seek(data_offset + bytesToSkip) != FR_OK) {
-            return SIDERR_SEEK_FAILED;
+            return SSRET_FILE_SEEK_FAILED;
         }
     } else {
         if (file->read(sid_header, 0x7E, &bytes_read) != FR_OK) {
-            return SIDERR_READ_FAILED;
+            return SSRET_FILE_READ_FAILED;
         }
         if ((*magic != magic_rsid) && (*magic != magic_psid)) {
             printf("Filetype not as expected. (%08x)\n", *magic);
-            return SIDERR_MAGIC_FAILED;
+            return SSRET_ERROR_IN_FILE_FORMAT;
         }
 
         processHeader();
@@ -641,18 +631,18 @@ int FileTypeSID ::prepare(bool use_default)
             bytesToSkip = 2;
 
             if (file->seek(data_offset + bytesToSkip) != FR_OK) {
-                return SIDERR_SEEK_FAILED;
+                return SSRET_FILE_SEEK_FAILED;
             }
         } else {
             if (file->seek(data_offset) != FR_OK) {
-                return SIDERR_SEEK_FAILED;
+                return SSRET_FILE_SEEK_FAILED;
             }
             start = uint16_t(sid_header[0x08]) << 8;
             start |= sid_header[0x09];
 
             if (start == 0) {
                 if (file->read(&start, 2, &bytes_read) != FR_OK) {
-                    return SIDERR_READ_FAILED;
+                    return SSRET_FILE_READ_FAILED;
                 }
             }
             bytesToSkip = 2;
@@ -668,7 +658,7 @@ int FileTypeSID ::prepare(bool use_default)
 
     if (end < start) {
         printf("Wrap around $0000!\n");
-        return SIDERR_ROLLOVER;
+        return SSRET_SID_ROLLOVER;
     }
 
     if (start >= 0x03c0) {
@@ -677,7 +667,7 @@ int FileTypeSID ::prepare(bool use_default)
         header_location = 0xff70;
     } else {
         printf("Space for header too small.\n");
-        return SIDERR_NO_MEM;
+        return SSRET_OUT_OF_MEMORY; // FIXME
     }
 
     printf("SID header address: %04x.\n", header_location);
@@ -695,7 +685,7 @@ int FileTypeSID ::prepare(bool use_default)
     }
 
     if (song > number_of_songs) {
-        return SIDERR_SONGNR;
+        return SSRET_INVALID_SONGNR;
     }
 
     // write back the default song, for some players that only look here
@@ -737,7 +727,7 @@ int FileTypeSID ::prepare(bool use_default)
     c64_command->execute();
 
     load();
-    return 0;
+    return SSRET_OK;
 }
 
 /******************************************************
@@ -906,7 +896,7 @@ void FileTypeSID ::configureMusEnv(int offsetLoadEnd)
     }
 }
 
-int FileTypeSID ::play_file(const char *filename, const char *ssl_file, int song)
+SubsysResultCode_e FileTypeSID ::play_file(const char *filename, const char *ssl_file, int song)
 {
     char ext[4];
     get_extension(filename, ext);
@@ -930,7 +920,7 @@ int FileTypeSID ::play_file(const char *filename, const char *ssl_file, int song
         song = SIDFILE_PLAY_MAIN;
     }
     SubsysCommand *cmd = new SubsysCommand(NULL, -1, song, 0, "", "");
-    int retval = sid->execute(cmd);
+    SubsysResultCode_e retval = sid->execute(cmd);
     delete cmd;
     delete sid;
     if (ssl_path) {

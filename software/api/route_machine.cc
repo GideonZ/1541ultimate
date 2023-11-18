@@ -19,45 +19,44 @@ static uint8_t chartohex(const char a)
     return 0xff;
 }
 
-
 API_CALL(PUT, machine, reset, NULL, ARRAY( {  }))
 {
     SubsysCommand *cmd = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_RESET, 0);
     SubsysResultCode_t retval = cmd->execute();
-    resp->error(SubsysCommand::error_string(retval));
-    resp->json_response(SubsysCommand::http_response_map(retval));
+    resp->error(SubsysCommand::error_string(retval.status));
+    resp->json_response(SubsysCommand::http_response_map(retval.status));
 }
 
 API_CALL(PUT, machine, reboot, NULL, ARRAY( {  }))
 {
     SubsysCommand *cmd = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_REBOOT, 0);
     SubsysResultCode_t retval = cmd->execute();
-    resp->error(SubsysCommand::error_string(retval));
-    resp->json_response(SubsysCommand::http_response_map(retval));
+    resp->error(SubsysCommand::error_string(retval.status));
+    resp->json_response(SubsysCommand::http_response_map(retval.status));
 }
 
 API_CALL(PUT, machine, pause, NULL, ARRAY( {  }))
 {
     SubsysCommand *cmd = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_PAUSE, 0);
     SubsysResultCode_t retval = cmd->execute();
-    resp->error(SubsysCommand::error_string(retval));
-    resp->json_response(SubsysCommand::http_response_map(retval));
+    resp->error(SubsysCommand::error_string(retval.status));
+    resp->json_response(SubsysCommand::http_response_map(retval.status));
 }
 
 API_CALL(PUT, machine, resume, NULL, ARRAY( {  }))
 {
     SubsysCommand *cmd = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_RESUME, 0);
     SubsysResultCode_t retval = cmd->execute();
-    resp->error(SubsysCommand::error_string(retval));
-    resp->json_response(SubsysCommand::http_response_map(retval));
+    resp->error(SubsysCommand::error_string(retval.status));
+    resp->json_response(SubsysCommand::http_response_map(retval.status));
 }
 
 API_CALL(PUT, machine, poweroff, NULL, ARRAY( {  }))
 {
     SubsysCommand *cmd = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_POWEROFF, 0);
     SubsysResultCode_t retval = cmd->execute();
-    resp->error(SubsysCommand::error_string(retval));
-    resp->json_response(SubsysCommand::http_response_map(retval));
+    resp->error(SubsysCommand::error_string(retval.status));
+    resp->json_response(SubsysCommand::http_response_map(retval.status));
 }
 
 API_CALL(PUT, machine, writemem, NULL, ARRAY( { {"address", P_REQUIRED}, {"data", P_REQUIRED} }))
@@ -111,8 +110,8 @@ API_CALL(PUT, machine, writemem, NULL, ARRAY( { {"address", P_REQUIRED}, {"data"
 
     SubsysCommand *cmd = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW_WRITE, address, buf, datalen);
     SubsysResultCode_t retval = cmd->execute();
-    resp->error(SubsysCommand::error_string(retval));
-    resp->json_response(SubsysCommand::http_response_map(retval));
+    resp->error(SubsysCommand::error_string(retval.status));
+    resp->json_response(SubsysCommand::http_response_map(retval.status));
 }
 
 API_CALL(POST, machine, writemem, &attachment_writer, ARRAY( { {"address", P_REQUIRED} }))
@@ -148,8 +147,8 @@ API_CALL(POST, machine, writemem, &attachment_writer, ARRAY( { {"address", P_REQ
     SubsysCommand *cmd = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW_WRITE, address, buffer, datalen);
     SubsysResultCode_t retval = cmd->execute();
     delete[] buffer;
-    resp->error(SubsysCommand::error_string(retval));
-    resp->json_response(SubsysCommand::http_response_map(retval));
+    resp->error(SubsysCommand::error_string(retval.status));
+    resp->json_response(SubsysCommand::http_response_map(retval.status));
 }
 
 API_CALL(GET, machine, readmem, NULL, ARRAY( { {"address", P_REQUIRED}, {"length", P_OPTIONAL} }))
@@ -178,15 +177,15 @@ API_CALL(GET, machine, readmem, NULL, ARRAY( { {"address", P_REQUIRED}, {"length
     uint8_t *buffer = new uint8_t[datalen];
     SubsysCommand *cmd = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW_READ, address, buffer, datalen);
     SubsysResultCode_t retval = cmd->execute();
-    if (retval == SSRET_OK) {
+    if (retval.status == SSRET_OK) {
         // output result in JSON format
         StreamRamFile *rf = resp->add_attachment();
         rf->write(buffer, datalen);
         delete[] buffer;
         resp->binary_response();
     } else {
-        resp->error(SubsysCommand::error_string(retval));
-        resp->json_response(SubsysCommand::http_response_map(retval));
+        resp->error(SubsysCommand::error_string(retval.status));
+        resp->json_response(SubsysCommand::http_response_map(retval.status));
         delete[] buffer;
     }
 }

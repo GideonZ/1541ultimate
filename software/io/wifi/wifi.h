@@ -118,7 +118,7 @@ public:
     }
 
     void fetch_context_items(IndexedList<Action *>&items);
-    static int connect_ap(SubsysCommand *cmd);
+    static SubsysResultCode_e connect_ap(SubsysCommand *cmd);
 };
 
 #endif /* WIFI_H_ */

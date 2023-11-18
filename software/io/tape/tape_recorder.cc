@@ -48,7 +48,7 @@ TapeRecorder :: ~TapeRecorder()
     delete[] cache;
 }
 	
-SubsysResultCode_t TapeRecorder :: executeCommand(SubsysCommand *cmd)
+SubsysResultCode_e TapeRecorder :: executeCommand(SubsysCommand *cmd)
 {
 	if (cmd->user_interface) {
 		last_user_interface = cmd->user_interface;

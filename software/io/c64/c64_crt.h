@@ -55,6 +55,7 @@ class C64_CRT
         uint8_t header[0x10];
         uint8_t *ram_location;
         bool mandatory; // if true, then it is saved always - even when empty. Required for GMOD2, used for everything non easyflash.
+        bool last;
     };
 
     const static struct t_cart c_recognized_c64_carts[];
@@ -84,22 +85,21 @@ class C64_CRT
     void initialize(uint8_t *mem);
     void cleanup(void);
 
-    int check_header(File *f, cart_def *def);
-    int read_chip_packet(File *f, t_crt_chip_chunk *chunk);
+    SubsysResultCode_e check_header(File *f, cart_def *def);
+    SubsysResultCode_e read_chip_packet(File *f, t_crt_chip_chunk *chunk);
     void clear_cart_mem(void);
     void patch_easyflash_eapi();
     void unpatch_easyflash_eapi();
     void regenerate_easyflash_chunks();
-    SubsysResultCode_t read_crt(File *file, cart_def *def);
+    SubsysResultCode_e read_crt(File *file, cart_def *def);
     void configure_cart(cart_def *def);
     void find_eeprom(void);
 public:
-    static SubsysResultCode_t load_crt(const char *path, const char *filename, cart_def *def, uint8_t *mem);
-    static int save_crt(File *f);
+    static SubsysResultCode_e load_crt(const char *path, const char *filename, cart_def *def, uint8_t *mem);
+    static SubsysResultCode_e save_crt(File *f);
     static int clear_crt(void);
     static bool is_valid(void);
 
-    static const char *get_error_string(int retval);
     static void clear_definition(cart_def *def);
 };
 

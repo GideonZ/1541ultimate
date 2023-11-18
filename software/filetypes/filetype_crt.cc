@@ -60,24 +60,25 @@ FileType *FileTypeCRT::test_type(BrowsableDirEntry *obj)
 }
 
 // static member
-int FileTypeCRT::execute_st(SubsysCommand *cmd)
+SubsysResultCode_e FileTypeCRT::execute_st(SubsysCommand *cmd)
 {
     printf("Cartridge Load.. %s\n", cmd->filename.c_str());
 
     cart_def def;
-    int retval = C64_CRT :: load_crt(cmd->path.c_str(), cmd->filename.c_str(), &def, C64 :: get_cartridge_rom_addr());
+    SubsysResultCode_e retval = C64_CRT :: load_crt(cmd->path.c_str(), cmd->filename.c_str(), &def, C64 :: get_cartridge_rom_addr());
 
-    if (retval == 0) {
+    if (retval == SSRET_OK) {
         SubsysCommand *c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_START_CART, (int)&def, "", "");
-        c64_command->execute();
+        SubsysResultCode_t start_result = c64_command->execute();
+        retval = start_result.status;
     } else if (cmd->user_interface) {
-        cmd->user_interface->popup(C64_CRT :: get_error_string(retval), BUTTON_OK);
+        cmd->user_interface->popup(SubsysCommand::error_string(retval), BUTTON_OK);
     }
-    return 0;
+    return retval;
 }
 
 // static member
-int FileTypeCRT::executeFlash_st(SubsysCommand *cmd)
+SubsysResultCode_e FileTypeCRT::executeFlash_st(SubsysCommand *cmd)
 {
     FileManager *fm = FileManager::getFileManager();
 
@@ -87,9 +88,9 @@ int FileTypeCRT::executeFlash_st(SubsysCommand *cmd)
     FRESULT fres = fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), CARTS_DIRECTORY, fnbuf, true);
     if (fres != FR_OK) {
         cmd->user_interface->popup(FileSystem::get_error_string(fres), BUTTON_OK);
-        return 0;
+        return SSRET_DISK_ERROR;
     }
     C64 :: getMachine() -> set_rom_config(3, fnbuf);
 
-    return 0;
+    return SSRET_OK;
 }

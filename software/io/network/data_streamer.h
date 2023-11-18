@@ -48,8 +48,8 @@ class DataStreamer : public ObjectWithMenu
     TimerHandle_t timers[4];
 
     static void S_timer(TimerHandle_t a);
-    int startStream(SubsysCommand *cmd);
-    int stopStream(SubsysCommand *cmd);
+    SubsysResultCode_e startStream(SubsysCommand *cmd);
+    SubsysResultCode_e stopStream(SubsysCommand *cmd);
 
     void calculate_udp_headers(int id);
     void send_udp_packet(uint32_t ip, uint16_t port);
@@ -57,8 +57,8 @@ public:
     DataStreamer();
     virtual ~DataStreamer();
 
-    static int  S_startStream(SubsysCommand *cmd);
-    static int  S_stopStream(SubsysCommand *cmd);
+    static SubsysResultCode_e S_startStream(SubsysCommand *cmd);
+    static SubsysResultCode_e S_stopStream(SubsysCommand *cmd);
 
     // from ObjectWithMenu
     void create_task_items(void);

@@ -144,7 +144,7 @@ void C64_Subsys :: restoreCart(void)
 }
 
 
-SubsysResultCode_t C64_Subsys::executeCommand(SubsysCommand *cmd)
+SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
 {
     File *f = 0;
     FRESULT res;
@@ -153,7 +153,7 @@ SubsysResultCode_t C64_Subsys::executeCommand(SubsysCommand *cmd)
     int ram_size;
     char buffer[64] = "memory";
     uint8_t *pb;
-    SubsysResultCode_t result = SSRET_OK;
+    SubsysResultCode_e result = SSRET_OK;
 
     switch (cmd->functionID) {
         case C64_PUSH_BUTTON:
@@ -295,10 +295,10 @@ SubsysResultCode_t C64_Subsys::executeCommand(SubsysCommand *cmd)
 
                 res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), buffer, &f);
                 if (res == FR_OK) {
-                    int retval = C64_CRT::save_crt(f);
+                    SubsysResultCode_e retval = C64_CRT::save_crt(f);
                     fm->fclose(f);
-                    if (retval) {
-                        cmd->user_interface->popup(C64_CRT::get_error_string(retval), BUTTON_OK);
+                    if (retval != SSRET_OK) {
+                        cmd->user_interface->popup(SubsysCommand::error_string(retval), BUTTON_OK);
                     }
                 }
             }

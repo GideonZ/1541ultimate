@@ -557,7 +557,7 @@ void BrowsableWifiAP :: fetch_context_items(IndexedList<Action *>&items)
     items.append(new Action("Connect", BrowsableWifiAP :: connect_ap, (int)this, 0));
 }
 
-int BrowsableWifiAP :: connect_ap(SubsysCommand *cmd)
+SubsysResultCode_e BrowsableWifiAP :: connect_ap(SubsysCommand *cmd)
 {
     char password[64] = { 0 };
     BrowsableWifiAP *bap = (BrowsableWifiAP *)cmd->functionID;
@@ -572,5 +572,5 @@ int BrowsableWifiAP :: connect_ap(SubsysCommand *cmd)
         //wifi.sendEvent(EVENT_CONNECTED);
         wifi.sendConnectEvent(bap->ssid, password, bap->auth);
     }
-    return 0;
+    return SSRET_OK;
 }

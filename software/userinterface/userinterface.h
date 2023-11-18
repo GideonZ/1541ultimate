@@ -13,6 +13,12 @@
 #include "ui_elements.h"
 #include "editor.h"
 
+typedef enum {
+    MENU_NOP = 0,
+    MENU_HIDE = -1,
+    MENU_EXIT = -2,
+} MenuAction_t;
+
 #define MAX_UI_OBJECTS  8
 
 #define CFG_USERIF_BACKGROUND  0x01
@@ -37,15 +43,13 @@ private:
     bool initialized;
     bool doBreak;
     bool available;
-
     mstring title;
-
     UIObject *ui_objects[MAX_UI_OBJECTS];
+    UIStatusBox *status_box;
     
     void set_screen_title(void);
-    bool pollFocussed(void);
+    MenuAction_t pollFocussed(void);
     bool buttonDownFor(uint32_t ms);
-    UIStatusBox *status_box;
 public:
     int color_border, color_bg, color_fg, color_sel, color_sel_bg, config_save, filename_overflow_squeeze;
 
@@ -54,6 +58,7 @@ public:
     Keyboard *alt_keyboard;
     Screen *screen;
     int     focus;
+    MenuAction_t command_flags;
 
     UserInterface(const char *title);
     virtual ~UserInterface();
@@ -81,7 +86,6 @@ public:
     void set_screen(Screen *s); /* Only used in updater */
     int  activate_uiobject(UIObject *obj);
     int  getPreferredType(void);
-
     void run_editor(const char *, int);
     void swapDisk(void);
 

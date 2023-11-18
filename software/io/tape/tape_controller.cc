@@ -223,7 +223,7 @@ void TapeController :: poll()
 	}
 }
 	
-SubsysResultCode_t TapeController :: executeCommand(SubsysCommand *cmd)
+SubsysResultCode_e TapeController :: executeCommand(SubsysCommand *cmd)
 {
 	switch(cmd->functionID) {
 		case MENU_C2N_PAUSE:

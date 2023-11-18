@@ -11,7 +11,7 @@ class FileTypePRG : public FileType
 	BrowsableDirEntry *node;
 	bool    has_header;
     static bool check_header(File *f, bool has_header);
-    static int  execute_st(SubsysCommand *);
+    static SubsysResultCode_e execute_st(SubsysCommand *);
 public:
     FileTypePRG(BrowsableDirEntry *n, bool header);
     ~FileTypePRG();

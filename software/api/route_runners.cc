@@ -12,10 +12,10 @@
  */
 API_CALL(PUT, runners, sidplay, NULL, ARRAY( { { "file", P_REQUIRED }, { "songnr", P_OPTIONAL } }))
 {
-    int result = FileTypeSID :: play_file(args["file"], NULL, args.get_int("songnr", 0));
-    if (result) {
-        resp->error(FileTypeSID :: get_error(result));
-        resp->json_response(HTTP_BAD_REQUEST);
+    SubsysResultCode_e result = FileTypeSID :: play_file(args["file"], NULL, args.get_int("songnr", 0));
+    if (result != SSRET_OK) {
+        resp->error(SubsysCommand :: error_string(result));
+        resp->json_response(SubsysCommand :: http_response_map(result));
         return;
     }
     resp->json_response(HTTP_OK);
@@ -31,10 +31,10 @@ API_CALL(POST, runners, sidplay, &attachment_writer, ARRAY( { { "songnr", P_OPTI
         resp->json_response(HTTP_BAD_REQUEST);
         return;
     }
-    int result = FileTypeSID :: play_file(fn1, fn2, args.get_int("songnr", 0));
-    if (result) {
-        resp->error(FileTypeSID :: get_error(result));
-        resp->json_response(HTTP_BAD_REQUEST);
+    SubsysResultCode_e result = FileTypeSID :: play_file(fn1, fn2, args.get_int("songnr", 0));
+    if (result != SSRET_OK) {
+        resp->error(SubsysCommand :: error_string(result));
+        resp->json_response(SubsysCommand :: http_response_map(result));
         return;
     }
     resp->json_response(HTTP_OK);
@@ -46,31 +46,31 @@ API_CALL(POST, runners, sidplay, &attachment_writer, ARRAY( { { "songnr", P_OPTI
 API_CALL(PUT, runners, load_prg, NULL, ARRAY( { { "file", P_REQUIRED } }))
 {
     SubsysResultCode_t retval = FileTypePRG :: start_prg(args["file"], false);
-    resp->error(SubsysCommand::error_string(retval));
-    resp->json_response(SubsysCommand::http_response_map(retval));
+    resp->error(SubsysCommand::error_string(retval.status));
+    resp->json_response(SubsysCommand::http_response_map(retval.status));
 }
 
 API_CALL(PUT, runners, run_prg, NULL, ARRAY( { { "file", P_REQUIRED } }))
 {
     SubsysResultCode_t retval = FileTypePRG :: start_prg(args["file"], true);
-    resp->error(SubsysCommand::error_string(retval));
-    resp->json_response(SubsysCommand::http_response_map(retval));
+    resp->error(SubsysCommand::error_string(retval.status));
+    resp->json_response(SubsysCommand::http_response_map(retval.status));
 }
 
 API_CALL(POST, runners, load_prg, &attachment_writer, ARRAY( { }))
 {
     TempfileWriter *handler = (TempfileWriter *)body;
     SubsysResultCode_t retval = FileTypePRG :: start_prg(handler->get_filename(0), false);
-    resp->error(SubsysCommand::error_string(retval));
-    resp->json_response(SubsysCommand::http_response_map(retval));
+    resp->error(SubsysCommand::error_string(retval.status));
+    resp->json_response(SubsysCommand::http_response_map(retval.status));
 }
 
 API_CALL(POST, runners, run_prg, &attachment_writer, ARRAY( { }))
 {
     TempfileWriter *handler = (TempfileWriter *)body;
     SubsysResultCode_t retval = FileTypePRG :: start_prg(handler->get_filename(0), true);
-    resp->error(SubsysCommand::error_string(retval));
-    resp->json_response(SubsysCommand::http_response_map(retval));
+    resp->error(SubsysCommand::error_string(retval.status));
+    resp->json_response(SubsysCommand::http_response_map(retval.status));
 }
 
 /*
@@ -79,26 +79,26 @@ API_CALL(POST, runners, run_prg, &attachment_writer, ARRAY( { }))
 API_CALL(PUT, runners, run_crt, NULL, ARRAY( { { "file", P_REQUIRED } }))
 {
     cart_def def;
-    SubsysResultCode_t retval = C64_CRT :: load_crt("", args["file"], &def, C64 :: get_cartridge_rom_addr());
-    if (retval == SSRET_OK) {
+    SubsysResultCode_t result = { C64_CRT :: load_crt("", args["file"], &def, C64 :: get_cartridge_rom_addr()) }; // eek
+    if (result.status == SSRET_OK) {
         SubsysCommand *c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_START_CART, (int)&def, "", "");
-        retval = c64_command->execute();
+        result = c64_command->execute();
     }
-    resp->error(SubsysCommand::error_string(retval));
-    resp->json_response(SubsysCommand::http_response_map(retval));
+    resp->error(SubsysCommand::error_string(result.status));
+    resp->json_response(SubsysCommand::http_response_map(result.status));
 }
 
 API_CALL(POST, runners, run_crt, &attachment_writer, ARRAY( { }))
 {
     TempfileWriter *handler = (TempfileWriter *)body;
     cart_def def;
-    SubsysResultCode_t retval = C64_CRT :: load_crt("", handler->get_filename(0), &def, C64 :: get_cartridge_rom_addr());
-    if (retval == SSRET_OK) {
+    SubsysResultCode_t retval = { C64_CRT :: load_crt("", handler->get_filename(0), &def, C64 :: get_cartridge_rom_addr()) }; // eek
+    if (retval.status == SSRET_OK) {
         SubsysCommand *c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_START_CART, (int)&def, "", "");
         retval = c64_command->execute();
     }
-    resp->error(SubsysCommand::error_string(retval));
-    resp->json_response(SubsysCommand::http_response_map(retval));
+    resp->error(SubsysCommand::error_string(retval.status));
+    resp->json_response(SubsysCommand::http_response_map(retval.status));
 }
 
 /*

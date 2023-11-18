@@ -153,10 +153,10 @@ public:
 	}
 	~ImageCreator() { }
 
-	static int S_createD64(SubsysCommand *cmd);
-    static int S_createD71(SubsysCommand *cmd);
-    static int S_createD81(SubsysCommand *cmd);
-    static int S_createDNP(SubsysCommand *cmd);
+	static SubsysResultCode_e S_createD64(SubsysCommand *cmd);
+    static SubsysResultCode_e S_createD71(SubsysCommand *cmd);
+    static SubsysResultCode_e S_createD81(SubsysCommand *cmd);
+    static SubsysResultCode_e S_createDNP(SubsysCommand *cmd);
 
 	// object with menu
     void create_task_items(void)

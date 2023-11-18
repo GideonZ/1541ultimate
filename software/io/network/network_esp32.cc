@@ -151,34 +151,35 @@ void NetworkLWIP_WiFi :: fetch_context_items(IndexedList<Action *>&items)
     }
 }
 
-int NetworkLWIP_WiFi :: disconnect(SubsysCommand *cmd)
+SubsysResultCode_e NetworkLWIP_WiFi :: disconnect(SubsysCommand *cmd)
 {
     wifi_wifi_disconnect();
-    return 0;
+    return SSRET_OK;
 }
 
-int NetworkLWIP_WiFi :: list_aps(SubsysCommand *cmd)
+SubsysResultCode_e NetworkLWIP_WiFi :: list_aps(SubsysCommand *cmd)
 {
     if(cmd->user_interface) {
-        return cmd->user_interface->enterSelection();
+        cmd->user_interface->enterSelection(); // ignore result, as it is just sending a signal
+        return SSRET_OK;
     }
-    return 0;
+    return SSRET_NO_USER_INTERFACE;
 }
 
-int NetworkLWIP_WiFi :: rescan(SubsysCommand *cmd)
+SubsysResultCode_e NetworkLWIP_WiFi :: rescan(SubsysCommand *cmd)
 {
     wifi.sendEvent(EVENT_RESCAN);
-    return 0;
+    return SSRET_OK;
 }
 
-int NetworkLWIP_WiFi :: disable(SubsysCommand *cmd)
+SubsysResultCode_e NetworkLWIP_WiFi :: disable(SubsysCommand *cmd)
 {
     wifi.Disable();
-    return 0;
+    return SSRET_OK;
 }
 
-int NetworkLWIP_WiFi :: enable(SubsysCommand *cmd)
+SubsysResultCode_e NetworkLWIP_WiFi :: enable(SubsysCommand *cmd)
 {
     wifi.Enable();
-    return 0;
+    return SSRET_OK;
 }

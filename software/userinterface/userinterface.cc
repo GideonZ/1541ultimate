@@ -55,6 +55,7 @@ UserInterface :: UserInterface(const char *title) : title(title)
     available = false;
     color_sel_bg = 0;
     filename_overflow_squeeze = 0;
+    command_flags = MENU_NOP;
     register_store(0x47454E2E, "User Interface Settings", user_if_config);
     effectuate_settings();
 }
@@ -117,7 +118,7 @@ void UserInterface :: run_remote(void)
     appear();
     available = true;
     while(1) {
-        if (!pollFocussed()) {
+        if (pollFocussed() == MENU_EXIT) {
             available = false;
             host->releaseScreen();
             break;
@@ -178,7 +179,7 @@ void UserInterface :: run_once(void)
             }
             host->release_ownership();
             break;
-        } else if (!pollFocussed()) {
+        } else if (pollFocussed() != MENU_NOP) { // both hide and exit
             available = false;
             host->releaseScreen();
             host->release_ownership();
@@ -241,19 +242,21 @@ int UserInterface :: pollInactive(void)
     return ui_objects[focus]->poll_inactive();
 }
 
-bool UserInterface :: pollFocussed(void)
+MenuAction_t UserInterface :: pollFocussed(void)
 {
 	int ret = 0;
     do {
         ret = ui_objects[focus]->poll(ret); // param pass chain
-        if(!ret) // return value of 0 keeps us in the same state
+        if(ret == 0)
             break;
-        printf("Object level %d returned %d.\n", focus, ret);
+        printf("Object level %d returned %d.\n", focus, (int)ret);
 
         if (host->is_permanent() && (!focus)) {
-            return false;
+            return MENU_HIDE; // We never exit
         }
         ui_objects[focus]->deinit();
+
+        // GZW: Should this be done here, or should this be done in the level above, on exit?
         if (ret == -2) {
             delete ui_objects[focus];
             ui_objects[focus] = NULL;
@@ -261,10 +264,15 @@ bool UserInterface :: pollFocussed(void)
         if(focus) {
             focus--;
         } else {
-        	return false;
+        	break;
         }
     } while(1);
-    return true;
+    
+    switch(ret) {
+        case -1: return MENU_HIDE;
+        case -2: return MENU_EXIT;
+    }
+    return MENU_NOP;
 }
 
 void UserInterface :: appear(void)

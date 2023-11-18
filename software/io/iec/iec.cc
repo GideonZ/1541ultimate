@@ -532,7 +532,7 @@ void IecInterface :: poll()
 }
 
 // called from GUI task
-SubsysResultCode_t IecInterface :: executeCommand(SubsysCommand *cmd)
+SubsysResultCode_e IecInterface :: executeCommand(SubsysCommand *cmd)
 {
 	File *f = 0;
 	uint32_t transferred;

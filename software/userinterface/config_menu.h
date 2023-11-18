@@ -38,14 +38,14 @@ class BrowsableConfigItem: public Browsable
 {
     ConfigItem *item;
 
-    static int updateItem(SubsysCommand *cmd)
+    static SubsysResultCode_e updateItem(SubsysCommand *cmd)
     {
         ConfigItem *item = (ConfigItem *)(cmd->functionID);
         item->execute(cmd->mode);
-        return 0;
+        return SSRET_OK;
     }
 
-    static int updateString(SubsysCommand *cmd)
+    static SubsysResultCode_e updateString(SubsysCommand *cmd)
     {
         ConfigItem *item = (ConfigItem *)(cmd->functionID);
         printf("Update String: %s\n", cmd->actionName.c_str());
@@ -55,10 +55,10 @@ class BrowsableConfigItem: public Browsable
         } else {
             item->setString(actionString);
         }
-        return 0;
+        return SSRET_OK;
     }
 
-    static int requestString(SubsysCommand *cmd)
+    static SubsysResultCode_e requestString(SubsysCommand *cmd)
     {
         ConfigItem *item = (ConfigItem *)(cmd->functionID);
         char buffer[36];
@@ -70,7 +70,7 @@ class BrowsableConfigItem: public Browsable
                 item->setString(buffer);
             }
         }
-        return 0;
+        return SSRET_OK;
     }
 public:
     BrowsableConfigItem(ConfigItem *i)

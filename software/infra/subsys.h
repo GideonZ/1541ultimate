@@ -43,31 +43,6 @@ class UserInterface;
 #define SORT_ORDER_CONFIG  70
 #define SORT_ORDER_DEVELOPER 999
 
-typedef enum {
-	SSRET_OK = 0,
-	SSRET_GENERIC_ERROR,
-	SSRET_SUBSYS_NOT_PRESENT,
-	SSRET_SUBSYS_NO_EXEC,
-	SSRET_NO_LOCK,
-	SSRET_DISK_MODIFIED,
-	SSRET_NO_DRIVE_ROM,
-	SSRET_INVALID_DRIVE_ROM,
-	SSRET_ONLY_1541,
-	SSRET_WRONG_DRIVE_TYPE,
-	SSRET_CANNOT_OPEN_FILE,
-	SSRET_FILE_SEEK_FAILED,
-	SSRET_FILE_READ_FAILED,
-	SSRET_WRONG_MOUNT_MODE,
-	SSRET_UNDEFINED_COMMAND,
-	SSRET_ABORTED_BY_USER,
-	SSRET_SAVE_FAILED,
-	SSRET_EEPROM_TOO_LARGE,
-	SSRET_EEPROM_ALREADY_DEFINED,
-	SSRET_ROM_IMAGE_TOO_LARGE,
-	SSRET_ERROR_IN_FILE_FORMAT,
-	SSRET_NOT_IMPLEMENTED,
-} SubsysResultCode_t;
-
 
 class SubSystem  // implements function "executeCommand"
 {
@@ -75,7 +50,7 @@ class SubSystem  // implements function "executeCommand"
 	SemaphoreHandle_t myMutex;
 	friend class SubsysCommand;
 
-	virtual SubsysResultCode_t executeCommand(SubsysCommand *cmd) { return SSRET_SUBSYS_NO_EXEC; }
+	virtual SubsysResultCode_e executeCommand(SubsysCommand *cmd) { return SSRET_SUBSYS_NO_EXEC; }
 public:
 	SubSystem(int id) {
 		myID = id;
@@ -108,12 +83,12 @@ public:
 	int getID() { return myID; }
 };
 
-struct SubsysResult
-{
-	int      resultCode;
-	int		 resultDataSize;
-	uint8_t *resultData;
-};
+// struct SubsysResult
+// {
+// 	int      resultCode;
+// 	int		 resultDataSize;
+// 	uint8_t *resultData;
+// };
 
 class SubsysCommand
 {
@@ -157,30 +132,8 @@ public:
 		bufferSize(bufferSize) {
 	}
 
-	SubsysResultCode_t execute(void) {
-		SubsysResultCode_t retval = SSRET_SUBSYS_NOT_PRESENT;
-		if(direct_call) {
-			retval = (SubsysResultCode_t)direct_call(this);
-		} else {
-		    SubSystem *subsys;    // filled in by factory
-			subsys = (*SubSystem :: getSubSystems())[subsysID];
-			if (subsys) {
-				printf("About to execute a command in subsys %s (%p)\n", subsys->identify(), subsys->myMutex);
-				if (xSemaphoreTake(subsys->myMutex, 1000)) {
-					retval = subsys->executeCommand(this);
-					//puts("before give");
-					xSemaphoreGive(subsys->myMutex);
-					//puts("after give");
-				} else {
-					printf("Could not get lock on %s. Command not executed.\n", subsys->identify());
-					retval = SSRET_NO_LOCK;
-				}
-			}
-		}
-		delete this;
-		return retval;
-	}
-
+    SubsysResultCode_t execute(void);
+    
 	void print(void) {
 		printf("SubsysCommand for system %d:\n", subsysID);
 		printf("  Function ID: %d\n", functionID);
@@ -190,11 +143,14 @@ public:
 		printf("  Buffer = %p (size: %d)\n", buffer, bufferSize);
 	}
 
-    static const char *error_string(SubsysResultCode_t resultCode)
+    static const char *error_string(SubsysResultCode_e resultCode)
     {
         static const char *error_strings[] = {
             NULL,        
-            "Generic Error",    
+            "Generic Error",
+            "Invalid Parameter",
+            "Call requires user interaction, but no user interface object exists",
+            "Disk Error",
             "SubSystem does not exist", 
             "SubSystem does not implement command executer",
             "Could not obtain lock of subsystem",   
@@ -213,14 +169,25 @@ public:
 			"ROM image is too large",
 			"Error detected in file format",
 			"This command is not supported on this architecture",
+            "Out of memory",
+            "MegaPatch3: Invalid image size",
+            "MegaPatch3: DNP Image too large",
+            "Internal Error",
+            "SID File Memory Rollover",
+            "Invalid Song Number Requested",
+            "No Operational Network Interface",
+            "Network Host Resolve Error",
         };
         return error_strings[(int)resultCode];
     }
 
-    static int http_response_map(SubsysResultCode_t resultCode)
+    static int http_response_map(SubsysResultCode_e resultCode)
     {
         static const int codes[] = {
-            HTTP_OK, // "All Okay",        
+            HTTP_OK, // "All Okay",
+            HTTP_BAD_REQUEST, // SSRET_INVALID_PARAMETER
+            HTTP_SERVICE_UNAVAILABLE, // SSRET_NO_USER_INTERFACE
+            HTTP_INTERNAL_SERVER_ERROR, // "Disk Error (Unspecified!)",    
             HTTP_INTERNAL_SERVER_ERROR, // "Generic Error (Unspecified!)",    
             HTTP_SERVICE_UNAVAILABLE, // "SubSystem does not exist", 
             HTTP_METHOD_NOT_ALLOWED, // "SubSystem does not implement command executer",
@@ -240,6 +207,12 @@ public:
 			HTTP_PRECONDITION_FAILED, // ROM Image is too large
 			HTTP_UNSUPPORTED_MEDIA_TYPE, // Error detected in file format
 			HTTP_NOT_IMPLEMENTED, // This command is not supported on this architecture.
+            HTTP_INSUFFICIENT_STORAGE, // Internal out of memory error
+            HTTP_INTERNAL_SERVER_ERROR, //    SSRET_INTERNAL_ERROR,
+            HTTP_UNSUPPORTED_MEDIA_TYPE, // SSRET_SID_ROLLOVER,
+            HTTP_BAD_REQUEST, //  SSRET_INVALID_SONGNR,
+            HTTP_INTERNAL_SERVER_ERROR, // NO NETWORK (should never happen)
+            HTTP_NOT_FOUND, // NETWORK RESOLVE ERROR
         }; 
         return codes[(int)resultCode];
     }

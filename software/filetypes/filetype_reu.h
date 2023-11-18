@@ -15,7 +15,7 @@ public:
     int   fetch_context_items(IndexedList<Action *> &list);
     static FileType *test_type(BrowsableDirEntry *obj);
 
-    static int execute_st(SubsysCommand *cmd);
+    static SubsysResultCode_e execute_st(SubsysCommand *cmd);
     static void start_modplayer();
 };
 

@@ -47,6 +47,7 @@ SRCS_CC	 =	small_printf.cc \
 			w25q_flash.cc \
 			s25fl_flash.cc \
 			config.cc \
+			subsys.cc \
 			filemanager.cc \
 			file_device.cc \
 			file_partition.cc \
@@ -118,7 +119,6 @@ SRCS_CC	 =	small_printf.cc \
 			usb_ms_cbi.cc \
 			keyboard_usb.cc \
 			network_interface.cc \
-			network_lwip.cc \
 			vfs.cc \
 			ftpd.cc \
 			tape_controller.cc \
@@ -187,7 +187,7 @@ PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -march=$(MARCH) -mabi=$(MABI) $(EFFORT) -ffunction-sections -fdata-sections -nostartfiles -mno-fdiv
 OPTIONS += -gdwarf-2 -Os -DRISCV -DU2 -DOS -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=50000000 -Wno-write-strings
 COPTIONS = $(OPTIONS) -std=gnu99
-CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
+CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = linker.x
 LIBS    = ../../../libs/riscv/lwip/result/liblwip.a
 #LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o

@@ -71,7 +71,7 @@ FileType *FileTypeESP :: test_type(BrowsableDirEntry *br)
     return NULL;
 }
 
-int FileTypeESP::execute(SubsysCommand *cmd)
+SubsysResultCode_e FileTypeESP::execute(SubsysCommand *cmd)
 {
     File *file = 0;
     uint32_t bytes_read;
@@ -132,7 +132,7 @@ int FileTypeESP::execute(SubsysCommand *cmd)
     } else {
         printf("Error opening file.\n");
         cmd->user_interface->popup(FileSystem::get_error_string(fres), BUTTON_OK);
-        return -1;
+        return SSRET_CANNOT_OPEN_FILE;
     }
-    return 0;
+    return SSRET_OK;
 }
