@@ -131,7 +131,7 @@ void Esp32 :: Boot()
     uart->EnableLoopback(false);
     uart->FlowControl(false);
     uart->ClearRxBuffer();
-    uart->EnableSlip(true);
+    uart->EnableSlip(false);
     uart->EnableIRQ(true);
     U64_WIFI_CONTROL = 3;
     //ReadRxMessage(); Do not print message, because Download routine expects a message and verifies it
@@ -260,6 +260,9 @@ int Esp32 :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
 
     vTaskDelay(100); // wait for the boot message to appear
     bzero(receiveBuffer, 512);
+    // Force current data to be output as a packet
+    uart->EnableSlip(true);
+    uart->EnableSlip(false); 
     if (uart->Read(receiveBuffer, 512) > 0) {
         printf("Boot message:\n%s\n", receiveBuffer);
     } else {
