@@ -38,11 +38,11 @@
 /*******************************  Constants  ****************************/
 
 #define MPS_PRINTER_PAGE_WIDTH              1984
-#define MPS_PRINTER_PAGE_HEIGHT             2580
+#define MPS_PRINTER_PAGE_HEIGHT             2520
 #define MPS_PRINTER_PAGE_DEPTH              2
 #define MPS_PRINTER_PAGE_DEPTH_COLOR        8
 #define MPS_PRINTER_PAGE_OFFSET_LEFT        32
-#define MPS_PRINTER_PAGE_OFFSET_TOP         210
+#define MPS_PRINTER_PAGE_OFFSET_TOP         180
 #define MPS_PRINTER_PAGE_PRINTABLE_WIDTH    1920
 #define MPS_PRINTER_PAGE_PRINTABLE_HEIGHT   2160
 #define MPS_PRINTER_HEAD_HEIGHT             27

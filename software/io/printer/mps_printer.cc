@@ -556,9 +556,9 @@ MpsPrinter::setColorMode(bool mode, bool init)
         lodepng_state.info_png.color.bitdepth   = MPS_PRINTER_PAGE_DEPTH;
     }
 
-    /* Physical page description (A4 240x216 dpi) */
-    lodepng_state.info_png.phys_x           = 9448;
-    lodepng_state.info_png.phys_y           = 8687;
+    /* Physical page description (A4 240x216 dpi) pixels in one meter */
+    lodepng_state.info_png.phys_x           = 9449;
+    lodepng_state.info_png.phys_y           = 8503;
     lodepng_state.info_png.phys_unit        = 1;
 
     /* I rule, you don't */
