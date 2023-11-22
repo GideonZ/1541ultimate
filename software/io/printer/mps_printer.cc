@@ -30,7 +30,6 @@
 #include <unistd.h>
 #ifdef NOT_ULTIMATE
 #include <strings.h>
-#include "itu.h"
 #endif
 #include "mps_printer.h"
 #include "mps_png.h"
