@@ -47,6 +47,12 @@
 #define IEC_PRINTER_BUFFERSIZE  256
 #define IEC_PRINTER_EVENT_CMD   0
 
+/* Max text lines in a page */
+#define IEC_PRINTER_PAGE_LINES	70
+
+/* Height of a line of text in pixels */
+#define IEC_PRINTER_PIXLINE     36
+
 /*********************************  Types  ******************************/
 
 enum t_printer_output_type {
@@ -170,6 +176,8 @@ class IecPrinter : public SubSystem, ObjectWithMenu, ConfigurableObject
         int set_epson_charset(int d);
         int set_ibm_charset(int d);
         int set_output_type(int t);
+        int set_page_top(int d);
+        int set_page_height(int d);
 
         /* =======  Getters */
         int get_current_printer_address(void) { return last_printer_addr; }

@@ -42,9 +42,9 @@
 #define MPS_PRINTER_PAGE_DEPTH              2
 #define MPS_PRINTER_PAGE_DEPTH_COLOR        8
 #define MPS_PRINTER_PAGE_OFFSET_LEFT        32
-#define MPS_PRINTER_PAGE_OFFSET_TOP         180
+#define MPS_PRINTER_PAGE_OFFSET_TOP         conf_top
 #define MPS_PRINTER_PAGE_PRINTABLE_WIDTH    1920
-#define MPS_PRINTER_PAGE_PRINTABLE_HEIGHT   2160
+#define MPS_PRINTER_PAGE_PRINTABLE_HEIGHT   conf_height
 #define MPS_PRINTER_HEAD_HEIGHT             27
 
 #define MPS_PRINTER_MAX_HTABULATIONS        32
@@ -208,7 +208,11 @@ class MpsPrinter
         uint16_t interline;
         uint16_t next_interline;
 
-        /* Margins */
+        /* Configured printable page size */
+        uint16_t conf_top;
+        uint16_t conf_height;
+
+        /* Runtime margins */
         uint16_t margin_right;
         uint16_t margin_left;
         uint16_t margin_top;
@@ -289,6 +293,8 @@ class MpsPrinter
         void setEpsonCharset(uint8_t in);
         void setIBMCharset(uint8_t in);
         void setColorMode(bool in, bool init=false);
+        void setTopMargin(uint16_t in);
+        void setPrintableHeight(uint16_t in);
 
         /* =======  Feed interpreter */
         void Interpreter(const uint8_t * input, uint32_t size);

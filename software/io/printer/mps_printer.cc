@@ -197,6 +197,8 @@ MpsPrinter::MpsPrinter(char * filename)
     interpreter = MPS_PRINTER_INTERPRETER_CBM;
     epson_charset = cbm_charset = charset = 0;
     ibm_charset = 1;
+    conf_top = 5*36;        /* 5 text lines of 36 pixels each */
+    conf_height = 60*36;    /* 60 text lines of 36 pixels each */
 
     /* =======  Reset printer attributes */
     Reset();
@@ -346,6 +348,65 @@ MpsPrinter::setInterpreter(mps_printer_interpreter_t in)
         /* Default interpreter state */
         Init();
     }
+}
+
+/************************************************************************
+*                       MpsPrinter::setTopMargin(in)            Public  *
+*                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~                    *
+* Function : Set top page margin in pixels                              *
+*-----------------------------------------------------------------------*
+* Inputs:                                                               *
+*                                                                       *
+*    in : (uint16_t) margin from top in pixels                          *
+*                                                                       *
+*-----------------------------------------------------------------------*
+* Outputs:                                                              *
+*                                                                       *
+*    none                                                               *
+*                                                                       *
+************************************************************************/
+
+void
+MpsPrinter::setTopMargin(uint16_t in)
+{
+    DBGMSGV("Top margin set to %d", in);
+
+    /* Move head to new top margin if page is blank */
+    if ((conf_top != in) && clean)
+    {
+        conf_top = in;
+        head_y = margin_top;
+    }
+    else
+    {
+        conf_top = in;
+    }
+
+    margin_bottom   = MPS_PRINTER_MAX_MARGIN_BOTTOM;
+}
+
+/************************************************************************
+*                   MpsPrinter::setPrintableHeight(in)          Public  *
+*                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                  *
+* Function : Set page printable area height in pixels                   *
+*-----------------------------------------------------------------------*
+* Inputs:                                                               *
+*                                                                       *
+*    in : (uint16_t) printable area height in pixels                    *
+*                                                                       *
+*-----------------------------------------------------------------------*
+* Outputs:                                                              *
+*                                                                       *
+*    none                                                               *
+*                                                                       *
+************************************************************************/
+
+void
+MpsPrinter::setPrintableHeight(uint16_t in)
+{
+    DBGMSGV("Printable page height set to %d", in);
+    conf_height = in;
+    margin_bottom   = MPS_PRINTER_MAX_MARGIN_BOTTOM;
 }
 
 /************************************************************************
@@ -558,7 +619,7 @@ MpsPrinter::setColorMode(bool mode, bool init)
 
     /* Physical page description (A4 240x216 dpi) pixels in one meter */
     lodepng_state.info_png.phys_x           = 9449;
-    lodepng_state.info_png.phys_y           = 8503;
+    lodepng_state.info_png.phys_y           = 8504;
     lodepng_state.info_png.phys_unit        = 1;
 
     /* I rule, you don't */
@@ -983,6 +1044,9 @@ MpsPrinter::Ink(uint16_t x, uint16_t y, uint8_t c)
     uint16_t tx=x+MPS_PRINTER_PAGE_OFFSET_LEFT;
     uint16_t ty=y+MPS_PRINTER_PAGE_OFFSET_TOP;
     uint8_t current;
+
+    if (ty < 0 || ty >= MPS_PRINTER_PAGE_HEIGHT)
+        return;
 
     if (color_mode)
     {
