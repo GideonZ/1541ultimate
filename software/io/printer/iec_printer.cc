@@ -38,6 +38,8 @@
 #define CFG_PRINTER_EPSON_CHAR 0x36
 #define CFG_PRINTER_IBM_CHAR   0x37
 #define CFG_PRINTER_ENABLE     0x38
+#define CFG_PRINTER_PAGETOP    0x39
+#define CFG_PRINTER_PAGEHEIGHT 0x3A
 
 #define MENU_PRINTER_ON        0x1230
 #define MENU_PRINTER_OFF       0x1231
@@ -87,6 +89,8 @@ static struct t_cfg_definition iec_printer_config[] = {
     { CFG_PRINTER_FILENAME,   CFG_TYPE_STRING, "Output file",       "%s", NULL,   1, 31, (int) FS_ROOT "printer" },
     { CFG_PRINTER_TYPE,       CFG_TYPE_ENUM,   "Output type",       "%s", pr_typ, 0,  3, 2 },
     { CFG_PRINTER_DENSITY,    CFG_TYPE_ENUM,   "Ink density",       "%s", pr_ink, 0,  3, 1 },
+    { CFG_PRINTER_PAGETOP,    CFG_TYPE_VALUE,  "Page top margin (default is 5)", "%d", NULL, 0, IEC_PRINTER_PAGE_LINES-1, 5 },
+    { CFG_PRINTER_PAGEHEIGHT, CFG_TYPE_VALUE,  "Page height (default is 60)",    "%d", NULL, 1, IEC_PRINTER_PAGE_LINES+1, 60 },
     { CFG_PRINTER_EMULATION,  CFG_TYPE_ENUM,   "Emulation",         "%s", pr_emu, 0,  3, 0 },
     { CFG_PRINTER_CBM_CHAR,   CFG_TYPE_ENUM,   "Commodore charset", "%s", pr_cch, 0,  6, 0 },
     { CFG_PRINTER_EPSON_CHAR, CFG_TYPE_ENUM,   "Epson charset",     "%s", pr_ech, 0, 11, 0 },
@@ -118,6 +122,9 @@ void IecPrinter::effectuate_settings(void)
     /* IEC CPU machine code for printer device detection on IEC */
     uint32_t was_printer_listen = 0x18800020 + 4;
 
+    /* Page top margin and printable height are configurable */
+    uint8_t page_top, page_height;
+
     /* Printer ID on IEC from nvram */
     int bus_id = cfg->get_value(CFG_PRINTER_ID);
 
@@ -129,6 +136,20 @@ void IecPrinter::effectuate_settings(void)
     set_cbm_charset(cfg->get_value(CFG_PRINTER_CBM_CHAR));
     set_epson_charset(cfg->get_value(CFG_PRINTER_EPSON_CHAR));
     set_ibm_charset(cfg->get_value(CFG_PRINTER_IBM_CHAR));
+
+    /* Configure printable area according to user settings */
+    page_top = cfg->get_value(CFG_PRINTER_PAGETOP);
+    page_height = cfg->get_value(CFG_PRINTER_PAGEHEIGHT);
+
+    /* If printable area is bigger than page, reduce it */
+    if ((page_top+page_height) > IEC_PRINTER_PAGE_LINES+1)
+    {
+        page_height = IEC_PRINTER_PAGE_LINES + 1 - page_top;
+        cfg->set_value(CFG_PRINTER_PAGEHEIGHT, page_height);
+    }
+
+    set_page_top(page_top);
+    set_page_height(page_height);
 
     /* Enable printer if requested */
     printer_enable = uint8_t(cfg->get_value(CFG_PRINTER_ENABLE));
@@ -696,6 +717,52 @@ int IecPrinter::set_filename(const char *file)
 {
     output_filename = file;
     mps->setFilename((char *)output_filename);
+
+    return IEC_OK;
+}
+
+/************************************************************************
+*                       IecPrinter::set_page_top(d)             Pubic   *
+*                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~                     *
+* Function : Set printer page top margin (in text lines)                *
+*-----------------------------------------------------------------------*
+* Inputs:                                                               *
+*                                                                       *
+*    d: (int) from 0 to 69                                              *
+*                                                                       *
+*-----------------------------------------------------------------------*
+* Outputs:                                                              *
+*                                                                       *
+*    IEC_OK if accepted, IEC_ERROR if rejected                          *
+*                                                                       *
+************************************************************************/
+
+int IecPrinter::set_page_top(int d)
+{
+    mps->setTopMargin(d * IEC_PRINTER_PIXLINE);
+
+    return IEC_OK;
+}
+
+/************************************************************************
+*                      IecPrinter::set_page_height(d)           Pubic   *
+*                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                   *
+* Function : Set printable page height (in text lines)                  *
+*-----------------------------------------------------------------------*
+* Inputs:                                                               *
+*                                                                       *
+*    d: (int) from 1 to 70                                              *
+*                                                                       *
+*-----------------------------------------------------------------------*
+* Outputs:                                                              *
+*                                                                       *
+*    IEC_OK if accepted, IEC_ERROR if rejected                          *
+*                                                                       *
+************************************************************************/
+
+int IecPrinter::set_page_height(int d)
+{
+    mps->setPrintableHeight(d * IEC_PRINTER_PIXLINE);
 
     return IEC_OK;
 }
