@@ -74,7 +74,7 @@ uint8_t IecPrinter::ascii_lut[256] =
 /* =======  User interface menu items */
 
 static const char *pr_typ[] = { "RAW", "ASCII", "PNG B&W", "PNG COLOR" };
-static const char *pr_ink[] = { "Low", "Medium", "High" };
+static const char *pr_ink[] = { "Low", "Medium", "High", "Squares" };
 static const char *pr_emu[] = { "Commodore MPS", "Epson FX-80/JX-80", "IBM Graphics Printer", "IBM Proprinter" };
 static const char *pr_cch[] = { "USA/UK", "Denmark", "France/Italy", "Germany", "Spain", "Sweden", "Switzerland" };
 static const char *pr_ech[] = { "Basic", "USA", "France", "Germany", "UK", "Denmark I",
@@ -86,7 +86,7 @@ static struct t_cfg_definition iec_printer_config[] = {
     { CFG_PRINTER_ID,         CFG_TYPE_VALUE,  "Bus ID",            "%d", NULL,   4,  5, 4 },
     { CFG_PRINTER_FILENAME,   CFG_TYPE_STRING, "Output file",       "%s", NULL,   1, 31, (int) FS_ROOT "printer" },
     { CFG_PRINTER_TYPE,       CFG_TYPE_ENUM,   "Output type",       "%s", pr_typ, 0,  3, 2 },
-    { CFG_PRINTER_DENSITY,    CFG_TYPE_ENUM,   "Ink density",       "%s", pr_ink, 0,  2, 1 },
+    { CFG_PRINTER_DENSITY,    CFG_TYPE_ENUM,   "Ink density",       "%s", pr_ink, 0,  3, 1 },
     { CFG_PRINTER_EMULATION,  CFG_TYPE_ENUM,   "Emulation",         "%s", pr_emu, 0,  3, 0 },
     { CFG_PRINTER_CBM_CHAR,   CFG_TYPE_ENUM,   "Commodore charset", "%s", pr_cch, 0,  6, 0 },
     { CFG_PRINTER_EPSON_CHAR, CFG_TYPE_ENUM,   "Epson charset",     "%s", pr_ech, 0, 11, 0 },

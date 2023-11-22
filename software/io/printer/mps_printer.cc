@@ -294,9 +294,10 @@ MpsPrinter::setFilename(char * filename)
 * Inputs:                                                               *
 *                                                                       *
 *    ds : (uint8_t) New dot size                                        *
-*               0 - 1 pixe diameter like                                *
+*               0 - 1 pixel diameter like                               *
 *               1 - 2 pixels diameter like                              *
 *               2 - 3 pixels diameter like                              *
+*               3 - 3x3 big ugly square pixel                           *
 *                                                                       *
 *-----------------------------------------------------------------------*
 * Outputs:                                                              *
@@ -308,7 +309,7 @@ MpsPrinter::setFilename(char * filename)
 void
 MpsPrinter::setDotSize(uint8_t ds)
 {
-    if (ds >2) ds = 2;
+    if (ds >3) ds = 3;
     dot_size = ds;
     DBGMSGV("dotsize changed to %d", ds);
 }
@@ -923,8 +924,21 @@ MpsPrinter::Dot(uint16_t x, uint16_t y, bool b)
             Ink(x,y+2,2);
             Ink(x+1,y+2,2);
             break;
-    }
 
+        case 3:     // Density 3 : bloc of 3x3 full color points (ugly square)
+            Ink(x-1,y);
+            Ink(x,y);
+            Ink(x+1,y);
+
+            Ink(x-1,y+1);
+            Ink(x,y+1);
+            Ink(x+1,y+1);
+
+            Ink(x-1,y+2);
+            Ink(x,y+2);
+            Ink(x+1,y+2);
+            break;
+    }
 
     if (!b)   /* This is not BIM related, we can double strike and bold */
     {
