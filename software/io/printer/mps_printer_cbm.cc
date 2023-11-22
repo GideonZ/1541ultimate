@@ -114,15 +114,13 @@ MpsPrinter::setCharsetVariant(uint8_t cs)
 }
 
 /************************************************************************
-*                       MpsPrinter::CBMBim(c,x,y)               Private *
-*                       ~~~~~~~~~~~~~~~~~~~~~~~~~                       *
+*                          MpsPrinter::CBMBim(c)                Private *
+*                          ~~~~~~~~~~~~~~~~~~~~~                        *
 * Function : Print a single bitmap image record (commodore standard)    *
 *-----------------------------------------------------------------------*
 * Inputs:                                                               *
 *                                                                       *
 *    c : (uint16_t) record to print                                     *
-*    x : (uint16_t) first pixel position from left of printable area    *
-*    y : (uint16_t) first pixel position from top of printable area     *
 *                                                                       *
 *-----------------------------------------------------------------------*
 * Outputs:                                                              *
