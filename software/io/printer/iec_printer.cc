@@ -733,12 +733,18 @@ int IecPrinter::set_filename(const char *file)
 *-----------------------------------------------------------------------*
 * Outputs:                                                              *
 *                                                                       *
-*    IEC_OK if accepted, IEC_ERROR if rejected                          *
+*    Always IEC_OK                                                      *
 *                                                                       *
 ************************************************************************/
 
 int IecPrinter::set_page_top(int d)
 {
+    if (output_type == PRINTER_PNG_OUTPUT && buffer_pointer)
+    {
+        mps->Interpreter(buffer,buffer_pointer);
+        buffer_pointer=0;
+    }
+
     mps->setTopMargin(d * IEC_PRINTER_PIXLINE);
 
     return IEC_OK;
@@ -756,12 +762,18 @@ int IecPrinter::set_page_top(int d)
 *-----------------------------------------------------------------------*
 * Outputs:                                                              *
 *                                                                       *
-*    IEC_OK if accepted, IEC_ERROR if rejected                          *
+*    Always IEC_OK                                                      *
 *                                                                       *
 ************************************************************************/
 
 int IecPrinter::set_page_height(int d)
 {
+    if (output_type == PRINTER_PNG_OUTPUT && buffer_pointer)
+    {
+        mps->Interpreter(buffer,buffer_pointer);
+        buffer_pointer=0;
+    }
+
     mps->setPrintableHeight(d * IEC_PRINTER_PIXLINE);
 
     return IEC_OK;
