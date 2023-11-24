@@ -59,7 +59,7 @@ AUTO_DEP_PATHS += $(wildcard ../../*/*/vhdl_sim/)
 AUTO_DEP_PATHS += $(wildcard ../../*/vhdl_bfm/)
 AUTO_DEP_PATHS += $(wildcard ../../*/*/vhdl_bfm/)
 AUTO_DEP_PATHS += $(wildcard ../../altera/xilinx_primitives/)
-AUTO_DEP_PATHS += $(wildcard ../../../../ult64/proglogic/c64/)
+#AUTO_DEP_PATHS += $(wildcard ../../../../ult64/proglogic/c64/)
 
 
 ###############################################################################
@@ -134,6 +134,13 @@ $(TESTCASE)_ENTITY			:= $(TESTCASE)
 $(TESTCASE)_TIME			:= 20 us;
 $(TESTCASE)_DO_GUI_BEFORE	:= 
 
+TESTCASE 					:= mm_1541_sync_tc
+TESTCASES					:= $(TESTCASES) $(TESTCASE)
+$(TESTCASE)_SRC				:= $(TESTCASE).vhd
+$(TESTCASE)_ENTITY			:= $(TESTCASE)
+$(TESTCASE)_TIME			:= 20 us;
+$(TESTCASE)_DO_GUI_BEFORE	:= 
+
 TESTCASE 					:= mm_startup_1571_tc
 TESTCASES					:= $(TESTCASES) $(TESTCASE)
 $(TESTCASE)_SRC				:= $(TESTCASE).vhd
@@ -162,6 +169,10 @@ $(REGTEST)_TESTCASES	:= $(TESTCASES)
 
 all:	$(REGTESTS)												# default target may be changed
 
+mm_drive.vc: pseudo_dpram_8x32-model.vc
+mm_1541_sync_tc.vc: run.bin
+run.bin: ../6502/run_drive_read.tas
+	../../../tools/64tass/64tass $< -b -o $@
 
 info: vsim-info
 

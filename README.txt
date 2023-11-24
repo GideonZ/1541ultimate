@@ -104,3 +104,14 @@ export PATH=$PATH:/opt/altera_lite/18.1/nios2eds/sdk2/bin
 export PATH=$PATH:/opt/altera_lite/18.1/nios2eds/bin/gnu/H-x86_64-pc-linux-gnu/bin
 export PATH=$PATH:/opt/altera_lite/18.1/quartus/sopc_builder/bin
 
+Additional issues
+=================
+1) Some users report Nios Build Tools for Eclipse fails to load. If this occurs, try adding this line to you .bashrc file:
+export SWT_GTK3=0
+
+2) Ubuntu users may need to install an older deprecated version of libpng for Quartus 18.1 to open.  Unfortunately this is difficult to find online. Below is a reliable source as of this writing:
+
+wget -q -O /tmp/libpng12.deb http://mirrors.kernel.org/ubuntu/pool/main/libp/libpng/libpng12-0_1.2.54-1ubuntu1_amd64.deb \
+>   && dpkg -i /tmp/libpng12.deb \
+>   && rm /tmp/libpng12.deb
+
