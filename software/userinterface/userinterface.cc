@@ -120,7 +120,6 @@ void UserInterface :: run_remote(void)
     while(1) {
         if (pollFocussed() == MENU_EXIT) {
             available = false;
-            host->releaseScreen();
             break;
         }
         vTaskDelay(3);
@@ -181,7 +180,6 @@ void UserInterface :: run_once(void)
             break;
         } else if (pollFocussed() != MENU_NOP) { // both hide and exit
             available = false;
-            host->releaseScreen();
             host->release_ownership();
             break;
         }
@@ -248,30 +246,37 @@ MenuAction_t UserInterface :: pollFocussed(void)
     do {
         ret = ui_objects[focus]->poll(ret); // param pass chain
         if(ret == 0)
-            break;
+            return MENU_NOP;
         printf("Object level %d returned %d.\n", focus, (int)ret);
 
         if (host->is_permanent() && (!focus)) {
-            return MENU_HIDE; // We never exit
+            return MENU_HIDE; // We never exit, and never destroy the root
         }
-        ui_objects[focus]->deinit();
 
-        // GZW: Should this be done here, or should this be done in the level above, on exit?
-        if (ret == -2) {
-            delete ui_objects[focus];
-            ui_objects[focus] = NULL;
-        }
+        // Ret = -1: clean up current and hide.
+        // Ret = -2: clean up current and terminate. For termination, we need to clean up
+        //           everything, and therefore we continue to pass the -2 as a parameter
+        //           to the subsequent poll calls.
+
+        // Roll back focus one step if possible.
         if(focus) {
+            // UI objects are responsible for cleaning up their offspring.
+            // We only keep the root object in our array.
+            ui_objects[focus]->deinit();
+            ui_objects[focus] = NULL;
             focus--;
-        } else {
-        	break;
+            continue; // pass the return code, which could be a selection index(!) to the level above.
+            // Note that the object itself still exists, and needs to be cleaned up by the one who created
+            // it.
+        }
+        // If we are already in the root, then we simply return the exit code. Caller cleans up, if necessary.
+        else {
+            if (ret == -2) {
+                return MENU_EXIT;
+            }
+        	return MENU_HIDE;
         }
     } while(1);
-    
-    switch(ret) {
-        case -1: return MENU_HIDE;
-        case -2: return MENU_EXIT;
-    }
     return MENU_NOP;
 }
 
@@ -291,7 +296,6 @@ void UserInterface :: release_host(void)
     for(int i=focus;i>=0;i--) {  // tear down
         ui_objects[i]->deinit();
     }
-    host->releaseScreen();
 
     if (!host->is_permanent()) {
         doBreak = true;

@@ -908,16 +908,6 @@ Screen *C64::getScreen(void)
     return screen;
 }
 
-void C64::releaseScreen()
-{
-    /*
-     if(screen) {
-     delete screen;
-     screen = 0;
-     }
-     */
-}
-
 bool C64::is_accessible(void)
 {
     return isFrozen;

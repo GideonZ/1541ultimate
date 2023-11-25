@@ -360,7 +360,6 @@ public:
 
     void set_colors(int background, int border);
     Screen *getScreen(void);
-    void    releaseScreen(void);
     Keyboard *getKeyboard(void);
 
     int  get_cfg_value(uint8_t id)

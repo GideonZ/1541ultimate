@@ -35,7 +35,6 @@ public:
     bool is_accessible(void) { return true; }
     
     Screen   *getScreen(void);
-    void releaseScreen(void);
     Keyboard *getKeyboard(void);
 };
 

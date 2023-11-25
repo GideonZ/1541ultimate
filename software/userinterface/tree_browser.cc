@@ -213,8 +213,8 @@ int TreeBrowser :: poll(int sub_returned)
                 if (cmd_ret.status != SSRET_OK) {
                     user_interface->popup(SubsysCommand::error_string(cmd_ret.status), BUTTON_OK);
                 }
-                // FIXME: Obtain user_interface response from object to cause browser state change
                 ret = (int)(user_interface->command_flags);
+                printf("Action returned: %d\n", ret);
             } else {
                 printf("Action was not set in context menu!\n");
             }
@@ -381,7 +381,7 @@ int TreeBrowser :: handle_key(int c)
             ret = -1;
             break;
         case KEY_F8: // exit (F8)
-            ret = -1;
+            ret = -2;
             break;
         case KEY_DOWN: // down
         	reset_quick_seek();
