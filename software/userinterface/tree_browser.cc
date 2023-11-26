@@ -182,12 +182,6 @@ int TreeBrowser :: poll(int sub_returned)
 	int c;
     int ret = 0;
 
-    mstring *msg = this->user_interface->getMessage();
-    if (msg) {
-        user_interface->popup(msg->c_str(), BUTTON_OK);
-        delete msg;
-    }
-
     if(contextMenu) {
         if(sub_returned < 0) {
         	delete contextMenu;
@@ -210,11 +204,10 @@ int TreeBrowser :: poll(int sub_returned)
                 const char *filename = (b)?(b->getName()):"";
                 SubsysCommand *cmd = new SubsysCommand(user_interface, act, p, filename);
                 SubsysResultCode_t cmd_ret = cmd->execute();
-                if (cmd_ret.status != SSRET_OK) {
-                    user_interface->popup(SubsysCommand::error_string(cmd_ret.status), BUTTON_OK);
-                }
+                // if (cmd_ret.status != SSRET_OK) {
+                //     user_interface->popup(SubsysCommand::error_string(cmd_ret.status), BUTTON_OK);
+                // }
                 ret = (int)(user_interface->command_flags);
-                printf("Action returned: %d\n", ret);
             } else {
                 printf("Action was not set in context menu!\n");
             }
@@ -223,6 +216,12 @@ int TreeBrowser :: poll(int sub_returned)
             state->draw();
         }
         return ret;
+    }
+
+    mstring *msg = this->user_interface->getMessage();
+    if (msg) {
+        user_interface->popup(msg->c_str(), BUTTON_OK);
+        delete msg;
     }
 
     checkFileManagerEvent();
