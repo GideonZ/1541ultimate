@@ -189,3 +189,25 @@ API_CALL(GET, machine, readmem, NULL, ARRAY( { {"address", P_REQUIRED}, {"length
         delete[] buffer;
     }
 }
+
+#if U64
+#include "u64.h"
+API_CALL(GET, machine, debugreg, NULL, ARRAY( {  }))
+{
+    char buf[4];
+    sprintf(buf, "%02X", U64_DEBUG_REGISTER);
+    resp->json->add("value", buf);
+    resp->json_response(HTTP_OK);
+}
+
+API_CALL(PUT, machine, debugreg, NULL, ARRAY( { { "value", P_REQUIRED } }))
+{
+    int value = strtol(args["value"], NULL, 16);
+    U64_DEBUG_REGISTER = (uint8_t)value;
+
+    char buf[4];
+    sprintf(buf, "%02X", U64_DEBUG_REGISTER);
+    resp->json->add("value", buf);
+    resp->json_response(HTTP_OK);
+}
+#endif
