@@ -28,7 +28,7 @@ BaseType_t wifi_detect(uint16_t *major, uint16_t *minor, char *str, int maxlen);
 int wifi_getmac(uint8_t *mac);
 int wifi_scan(void *);
 int wifi_wifi_connect(const char *ssid, const char *password, uint8_t auth);
-int wifi_wifi_connect_known_ssid(const char *ssid, const char *password);
+int wifi_wifi_connect_known_ssid(const char *ssid, const char *password, uint8_t auth);
 int wifi_wifi_disconnect();
 uint8_t wifi_tx_packet(void *driver, void *buffer, int length);
 void wifi_free(void *driver, void *buffer);
@@ -62,6 +62,7 @@ class WiFi : public Esp32Application
 
     mstring cfg_ssid;
     mstring cfg_pass;
+    int cfg_authmode;
 
     bool RequestEcho(void);
     void RxPacket(command_buf_t *);
@@ -77,7 +78,7 @@ public:
     DmaUART *uart;
 
     WifiState_t getState(void) { return state; }
-    void setSsidPass(const char *ssid, const char *pass) { cfg_ssid = ssid; cfg_pass = pass; }
+    void setSsidPass(const char *ssid, const char *pass, int mode) { cfg_ssid = ssid; cfg_pass = pass; cfg_authmode = mode; }
     const char *getModuleName(void) { return moduleName; }
     void  getMacAddr(uint8_t *target) { memcpy(target, my_mac, 6); }
     char *getIpAddrString(char *buf, int max) { sprintf(buf, "%d.%d.%d.%d", (my_ip >> 0) & 0xff, (my_ip >> 8) & 0xff, (my_ip >> 16) & 0xff, (my_ip >> 24) & 0xff); return buf; }

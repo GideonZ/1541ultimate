@@ -28,11 +28,14 @@
 #include "wifi.h"
 #include "itu.h"
 
+const char *authmodes[] = { "Open", "WEP", "WPA PSK", "WPA2 PSK", "WPA/WPA2 PSK", "WPA2 Enterprise", "WPA3 PSK", "WPA2/WPA3 PSK", "WAPI PSK" };
+
 //-----------------------------------
 struct t_cfg_definition wifi_config[] = {
     { CFG_WIFI_ENABLE, CFG_TYPE_ENUM,   "WiFi Enabled",                  "%s", en_dis,     0,  1, 1 },
     { CFG_WIFI_SSID,   CFG_TYPE_STRING, "Default SSID",                  "%s", NULL,       3, 22, (int)"" },
     { CFG_WIFI_PASSW,  CFG_TYPE_STRING, "Password",                      "%s", NULL,       3, 22, (int)"" },
+    { CFG_WIFI_AUTH,   CFG_TYPE_ENUM,   "Authentication Mode",           "%s", authmodes,  0,  8, 0 },
     { CFG_NET_DHCP_EN, CFG_TYPE_ENUM,   "Use DHCP",                      "%s", en_dis,     0,  1, 1 },
 	{ CFG_NET_IP,      CFG_TYPE_STRING, "Static IP",					 "%s", NULL,       7, 16, (int)"192.168.2.64" },
 	{ CFG_NET_NETMASK, CFG_TYPE_STRING, "Static Netmask",				 "%s", NULL,       7, 16, (int)"255.255.255.0" },
@@ -113,7 +116,7 @@ void NetworkLWIP_WiFi :: effectuate_settings(void)
 	my_net_if.name[0] = 'W';
 	my_net_if.name[1] = 'I';
 
-    wifi.setSsidPass(cfg->get_string(CFG_WIFI_SSID), cfg->get_string(CFG_WIFI_PASSW));
+    wifi.setSsidPass(cfg->get_string(CFG_WIFI_SSID), cfg->get_string(CFG_WIFI_PASSW), cfg->get_value(CFG_WIFI_AUTH));
 
     if (wifi.getState() == eWifi_Off && cfg->get_value(CFG_WIFI_ENABLE)) {
         wifi.Enable();
@@ -125,7 +128,7 @@ void NetworkLWIP_WiFi :: effectuate_settings(void)
 }
 
 // called from wifi driver when a manual connect occurs
-void NetworkLWIP_WiFi :: saveSsidPass(const char *ssid, const char *pass)
+void NetworkLWIP_WiFi :: saveSsidPass(const char *ssid, const char *pass, int mode)
 {
     char ssid_mut[36];
     char pass_mut[68];
@@ -135,6 +138,7 @@ void NetworkLWIP_WiFi :: saveSsidPass(const char *ssid, const char *pass)
     strncpy(pass_mut, pass, 64);
     cfg->set_string(CFG_WIFI_SSID, ssid_mut);
     cfg->set_string(CFG_WIFI_PASSW, pass_mut);
+    cfg->set_value(CFG_WIFI_AUTH, mode);
 }
 
 void NetworkLWIP_WiFi :: fetch_context_items(IndexedList<Action *>&items)

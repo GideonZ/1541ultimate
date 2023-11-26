@@ -16,6 +16,7 @@
 #define CFG_WIFI_ENABLE 0xB1
 #define CFG_WIFI_SSID   0xB2
 #define CFG_WIFI_PASSW  0xB3
+#define CFG_WIFI_AUTH   0xB4
 
 class NetworkLWIP_WiFi : public NetworkInterface
 {
@@ -42,7 +43,7 @@ public:
     void effectuate_settings(void);
 
     // from Wifi Driver
-    void saveSsidPass(const char *ssid, const char *pass);
+    void saveSsidPass(const char *ssid, const char *pass, int mode);
 };
 
 

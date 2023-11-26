@@ -28,6 +28,7 @@ WiFi :: WiFi()
     my_ip = 0;
     my_gateway = 0;
     my_netmask = 0;
+    cfg_authmode = 0;
     netstack = new NetworkLWIP_WiFi(this, wifi_tx_packet, wifi_free);
     netstack->attach_config();
     netstack->effectuate_settings(); // might already turn this thing on!
@@ -189,9 +190,9 @@ void WiFi :: RunModeThread()
             wifi_scan(&wifi_aps);
             state = eWifi_NotConnected;
 
-            printf("Auto connect to %s with pass %s\n", cfg_ssid.c_str(), cfg_pass.c_str());
+            printf("Auto connect to %s with pass %s (mode=%d)\n", cfg_ssid.c_str(), cfg_pass.c_str(), cfg_authmode);
             if(cfg_ssid.length() > 0) {
-                if (wifi_wifi_connect_known_ssid(cfg_ssid.c_str(), cfg_pass.c_str()) == ERR_OK) {
+                if (wifi_wifi_connect_known_ssid(cfg_ssid.c_str(), cfg_pass.c_str(), (uint8_t)cfg_authmode) == ERR_OK) {
                     state = eWifi_Connected;
                     uart->txDebug = false;
                     netstack->link_up();
@@ -227,7 +228,7 @@ void WiFi :: RunModeThread()
                 // in order to have it saved to the config. Very inconvenient, but that's
                 // how queues work.
                 conn_req = (rpc_wifi_connect_req *)buf->data;
-                netstack->saveSsidPass(conn_req->ssid, conn_req->password);
+                netstack->saveSsidPass(conn_req->ssid, conn_req->password, conn_req->auth_mode);
                 cmd_buffer_free(packets, buf);
                 if (state == eWifi_Connected) { // already connected!
                     netstack->link_down();
@@ -506,7 +507,9 @@ int wifi_wifi_connect(const char *ssid, const char *password, uint8_t auth)
     RETURN_ESP;
 }
 
-int wifi_wifi_connect_known_ssid(const char *ssid, const char *password)
+// Useful in case the authentication method is not known (e.g. by a wrong config)
+// But when the SSID is not listed, it can still use the pre-programmed auth mode
+int wifi_wifi_connect_known_ssid(const char *ssid, const char *password, uint8_t authmode)
 {
     for(int i=0; i < wifi_aps.num_records; i++) {
         if (strncmp((char *)wifi_aps.aps[i].ssid, ssid, 32) == 0) {
@@ -514,7 +517,7 @@ int wifi_wifi_connect_known_ssid(const char *ssid, const char *password)
         }
     }
     // not found
-    return 1;
+    return wifi_wifi_connect(ssid, password, authmode);
 }
 
 int wifi_wifi_disconnect()
