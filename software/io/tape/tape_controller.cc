@@ -223,7 +223,7 @@ void TapeController :: poll()
 	}
 }
 	
-int TapeController :: executeCommand(SubsysCommand *cmd)
+SubsysResultCode_e TapeController :: executeCommand(SubsysCommand *cmd)
 {
 	switch(cmd->functionID) {
 		case MENU_C2N_PAUSE:
@@ -244,7 +244,7 @@ int TapeController :: executeCommand(SubsysCommand *cmd)
 		default:
 			break;
 	}
-	return 0;
+	return SSRET_OK;
 }
 
 void TapeController :: set_file(File *f, uint32_t len, int m, int offset)

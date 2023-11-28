@@ -126,7 +126,7 @@ bool FileTypePRG :: check_header(File *f, bool has_header)
     return true;        
 }
 
-int FileTypePRG :: execute_st(SubsysCommand *cmd)
+SubsysResultCode_e FileTypePRG :: execute_st(SubsysCommand *cmd)
 {
 	printf("PRG Select: %4x\n", cmd->functionID);
 	File *file = 0, *d64;
@@ -135,6 +135,8 @@ int FileTypePRG :: execute_st(SubsysCommand *cmd)
 	SubsysCommand *c64_command;
 	
     int run_code = -1;
+    MenuAction_t menu_action = MENU_HIDE;
+
 	switch(cmd->functionID) {
 	case PRGFILE_RUN:
         run_code = RUNCODE_DMALOAD_RUN;
@@ -150,9 +152,10 @@ int FileTypePRG :: execute_st(SubsysCommand *cmd)
         break;
     case PRGFILE_DMAONLY:
     	run_code = 0;
+        menu_action = MENU_NOP;
     	break;
     default:
-        return -1;
+        return SSRET_UNDEFINED_COMMAND;
     }
 
     const char *name = cmd->filename.c_str();
@@ -178,14 +181,23 @@ int FileTypePRG :: execute_st(SubsysCommand *cmd)
                 c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DMA_LOAD_RAW, run_code, cmd->path.c_str(), cmd->filename.c_str());
             }
             c64_command->execute();
-
+            if (cmd->user_interface) {
+                cmd->user_interface->command_flags = menu_action;
+            }
         } else {
             printf("Header of P00 file not correct.\n");
             fm->fclose(file);
         }
     } else {
         printf("Error opening file. %s\n", FileSystem::get_error_string(fres));
-        return -2;
+        return SSRET_CANNOT_OPEN_FILE;
     }
-    return 0;
+    return SSRET_OK;
+}
+
+SubsysResultCode_t FileTypePRG :: start_prg(const char *filename, bool run)
+{
+    int func = run ? RUNCODE_DMALOAD_RUN : RUNCODE_DMALOAD;
+    SubsysCommand *c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_LOAD, func, "", filename);
+    return c64_command->execute(); 
 }

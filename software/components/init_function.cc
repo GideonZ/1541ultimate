@@ -46,3 +46,9 @@ int InitFunction::compare(IndexedList<InitFunction *> *list, int a, int b)
 
     return obj_a->ordering - obj_b->ordering;
 }
+
+extern "C" {
+	void execute_init_functions(void) {
+		InitFunction::executeAll();
+	}
+}

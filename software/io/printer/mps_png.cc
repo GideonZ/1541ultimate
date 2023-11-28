@@ -1867,7 +1867,7 @@ static unsigned lodepng_deflatev(ucvector* out, const unsigned char* in, size_t 
 
             error = deflateDynamic(&writer, &hash, in, start, end, settings, final);
 #ifndef NOT_ULTIMATE
-            iec_printer.updateFlushProgressBar();
+            iec_printer->updateFlushProgressBar();
 #endif /* NOT_ULTIMATE */
         }
     }

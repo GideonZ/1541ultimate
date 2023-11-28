@@ -18,6 +18,8 @@
 #include "semphr.h"
 #include <stdio.h>
 
+#include "http_codes.h"
+
 class SubsysCommand;
 class UserInterface;
 
@@ -33,7 +35,6 @@ class UserInterface;
 #define SUBSYSID_U64			 9
 #define SUBSYSID_PRINTER         10
 
-
 #define SORT_ORDER_CREATE  10
 #define SORT_ORDER_C64     20
 #define SORT_ORDER_DRIVES  30
@@ -43,13 +44,14 @@ class UserInterface;
 #define SORT_ORDER_CONFIG  70
 #define SORT_ORDER_DEVELOPER 999
 
+
 class SubSystem  // implements function "executeCommand"
 {
 	int myID;
 	SemaphoreHandle_t myMutex;
 	friend class SubsysCommand;
 
-	virtual int executeCommand(SubsysCommand *cmd) { return -2; }
+	virtual SubsysResultCode_e executeCommand(SubsysCommand *cmd) { return SSRET_SUBSYS_NO_EXEC; }
 public:
 	SubSystem(int id) {
 		myID = id;
@@ -82,12 +84,12 @@ public:
 	int getID() { return myID; }
 };
 
-struct SubsysResult
-{
-	int      resultCode;
-	int		 resultDataSize;
-	uint8_t *resultData;
-};
+// struct SubsysResult
+// {
+// 	int      resultCode;
+// 	int		 resultDataSize;
+// 	uint8_t *resultData;
+// };
 
 class SubsysCommand
 {
@@ -106,7 +108,7 @@ public:
 	}
 
 	// The most common form of Subsys command; one that is called just about anywhere; with a reference to a path and file
-	SubsysCommand(UserInterface *ui, int subID, int funcID, int mode, const char *p, const char *fn) :
+	SubsysCommand(UserInterface *ui, int subID, int funcID, int mode, const char *p = NULL, const char *fn = NULL) :
 		user_interface(ui),
 		subsysID(subID),
 		functionID(funcID),
@@ -131,29 +133,8 @@ public:
 		bufferSize(bufferSize) {
 	}
 
-	int execute(void) {
-		int retval = -5;
-		if(direct_call) {
-			retval = direct_call(this);
-		} else {
-		    SubSystem *subsys;    // filled in by factory
-			subsys = (*SubSystem :: getSubSystems())[subsysID];
-			if (subsys) {
-				printf("About to execute a command in subsys %s (%p)\n", subsys->identify(), subsys->myMutex);
-				if (xSemaphoreTake(subsys->myMutex, 1000)) {
-					retval = subsys->executeCommand(this);
-					//puts("before give");
-					xSemaphoreGive(subsys->myMutex);
-					//puts("after give");
-				} else {
-					printf("Could not get lock on %s. Command not executed.\n", subsys->identify());
-				}
-			}
-		}
-		delete this;
-		return retval;
-	}
-
+    SubsysResultCode_t execute(void);
+    
 	void print(void) {
 		printf("SubsysCommand for system %d:\n", subsysID);
 		printf("  Function ID: %d\n", functionID);
@@ -163,7 +144,81 @@ public:
 		printf("  Buffer = %p (size: %d)\n", buffer, bufferSize);
 	}
 
-	UserInterface *user_interface;
+    static const char *error_string(SubsysResultCode_e resultCode)
+    {
+        static const char *error_strings[] = {
+            NULL,        
+            "Generic Error",
+            "Invalid Parameter",
+            "Call requires user interaction, but no user interface object exists",
+            "Disk Error",
+            "SubSystem does not exist", 
+            "SubSystem does not implement command executer",
+            "Could not obtain lock of subsystem",   
+            "Disk has been modified, save first",    
+            "Drive ROM not found",       
+            "Drive ROM is invalid",
+            "This hardware only supports 1541", 
+            "Drive is in the wrong mode",
+            "Cannot open file",
+			"Seek operation on file failed",
+			"Read operation on file failed",
+            "Illegal mount mode / drive type",
+            "Undefined subsystem command",
+			"Operation aborted by user",
+			"Save failed",
+			"ROM image is too large",
+			"Error detected in file format",
+			"This command is not supported on this architecture",
+            "Out of memory",
+            "MegaPatch3: Invalid image size",
+            "MegaPatch3: DNP Image too large",
+            "Internal Error",
+            "SID File Memory Rollover",
+            "Invalid Song Number Requested",
+            "No Operational Network Interface",
+            "Network Host Resolve Error",
+        };
+        return error_strings[(int)resultCode];
+    }
+
+    static int http_response_map(SubsysResultCode_e resultCode)
+    {
+        static const int codes[] = {
+            HTTP_OK, // "All Okay",
+            HTTP_BAD_REQUEST, // SSRET_INVALID_PARAMETER
+            HTTP_SERVICE_UNAVAILABLE, // SSRET_NO_USER_INTERFACE
+            HTTP_INTERNAL_SERVER_ERROR, // "Disk Error (Unspecified!)",    
+            HTTP_INTERNAL_SERVER_ERROR, // "Generic Error (Unspecified!)",    
+            HTTP_SERVICE_UNAVAILABLE, // "SubSystem does not exist", 
+            HTTP_METHOD_NOT_ALLOWED, // "SubSystem does not implement command executer",
+            HTTP_LOCKED, // "Could not obtain lock of subsystem",   
+            HTTP_FORBIDDEN, // "Disk has been modified, save first",    
+            HTTP_PRECONDITION_FAILED, // "Drive ROM not found",       
+            HTTP_PRECONDITION_FAILED, // "Drive ROM is invalid",
+            HTTP_METHOD_NOT_ALLOWED, // "This hardware only supports 1541", 
+            HTTP_UNSUPPORTED_MEDIA_TYPE, // "Drive is in the wrong mode",
+            HTTP_NOT_FOUND, // "Cannot open file",
+			HTTP_INTERNAL_SERVER_ERROR, // "File seek failed"
+			HTTP_INTERNAL_SERVER_ERROR, // "File read failed"
+            HTTP_INTERNAL_SERVER_ERROR, // "Illegal mount mode / drive type",
+            HTTP_INTERNAL_SERVER_ERROR, // "Undefined subsystem command",
+			HTTP_INTERNAL_SERVER_ERROR, // "Aborted by user" <-- should not happen from HTTP
+			HTTP_FAILED_DEPENDENCY, // "Save failed", not sure what went wrong, but the save was unsuccessful
+			HTTP_PRECONDITION_FAILED, // ROM Image is too large
+			HTTP_UNSUPPORTED_MEDIA_TYPE, // Error detected in file format
+			HTTP_NOT_IMPLEMENTED, // This command is not supported on this architecture.
+            HTTP_INSUFFICIENT_STORAGE, // Internal out of memory error
+            HTTP_INTERNAL_SERVER_ERROR, //    SSRET_INTERNAL_ERROR,
+            HTTP_UNSUPPORTED_MEDIA_TYPE, // SSRET_SID_ROLLOVER,
+            HTTP_BAD_REQUEST, //  SSRET_INVALID_SONGNR,
+            HTTP_INTERNAL_SERVER_ERROR, // NO NETWORK (should never happen)
+            HTTP_NOT_FOUND, // NETWORK RESOLVE ERROR
+        }; 
+        return codes[(int)resultCode];
+    }
+
+    UserInterface *user_interface;
 	int            subsysID;
 	int			   functionID;
 	int 		   mode;

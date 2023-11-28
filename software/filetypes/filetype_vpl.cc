@@ -135,17 +135,18 @@ bool FileTypePalette :: parseVplFile(File *f, uint8_t rgb[16][3])
     return (idx == 16);
 }
 
-int FileTypePalette :: execute(SubsysCommand *cmd)
+SubsysResultCode_e FileTypePalette :: execute(SubsysCommand *cmd)
 {
     if (!U64Config :: load_palette_vpl(cmd->path.c_str(), cmd->filename.c_str())) {
         if (cmd->user_interface) {
             cmd->user_interface->popup("Invalid palette file.", BUTTON_OK);
+            return SSRET_ERROR_IN_FILE_FORMAT;
         }
     }
-    return 0;
+    return SSRET_OK;
 }
 
-int FileTypePalette :: executeFlash(SubsysCommand *cmd)
+SubsysResultCode_e FileTypePalette :: executeFlash(SubsysCommand *cmd)
 {
     FileManager *fm = FileManager::getFileManager();
 
@@ -155,8 +156,8 @@ int FileTypePalette :: executeFlash(SubsysCommand *cmd)
     FRESULT fres = fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), DATA_DIRECTORY, fnbuf, true);
     if (fres != FR_OK) {
         cmd->user_interface->popup(FileSystem::get_error_string(fres), BUTTON_OK);
-        return 0;
+        return SSRET_DISK_ERROR;
     }
     U64Config :: getConfigurator() -> set_palette_filename(fnbuf);
-    return 0;
+    return SSRET_OK;
 }

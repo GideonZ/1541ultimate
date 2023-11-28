@@ -55,6 +55,7 @@ UserInterface :: UserInterface(const char *title) : title(title)
     available = false;
     color_sel_bg = 0;
     filename_overflow_squeeze = 0;
+    command_flags = MENU_NOP;
     register_store(0x47454E2E, "User Interface Settings", user_if_config);
     effectuate_settings();
 }
@@ -117,9 +118,8 @@ void UserInterface :: run_remote(void)
     appear();
     available = true;
     while(1) {
-        if (!pollFocussed()) {
+        if (pollFocussed() == MENU_EXIT) {
             available = false;
-            host->releaseScreen();
             break;
         }
         vTaskDelay(3);
@@ -178,9 +178,8 @@ void UserInterface :: run_once(void)
             }
             host->release_ownership();
             break;
-        } else if (!pollFocussed()) {
+        } else if (pollFocussed() != MENU_NOP) { // both hide and exit
             available = false;
-            host->releaseScreen();
             host->release_ownership();
             break;
         }
@@ -241,30 +240,44 @@ int UserInterface :: pollInactive(void)
     return ui_objects[focus]->poll_inactive();
 }
 
-bool UserInterface :: pollFocussed(void)
+MenuAction_t UserInterface :: pollFocussed(void)
 {
 	int ret = 0;
     do {
         ret = ui_objects[focus]->poll(ret); // param pass chain
-        if(!ret) // return value of 0 keeps us in the same state
-            break;
-        printf("Object level %d returned %d.\n", focus, ret);
+        if(ret == 0)
+            return MENU_NOP;
+        printf("Object level %d returned %d.\n", focus, (int)ret);
 
         if (host->is_permanent() && (!focus)) {
-            return false;
+            return MENU_HIDE; // We never exit, and never destroy the root
         }
-        ui_objects[focus]->deinit();
-        if (ret == -2) {
-            delete ui_objects[focus];
-            ui_objects[focus] = NULL;
-        }
+
+        // Ret = -1: clean up current and hide.
+        // Ret = -2: clean up current and terminate. For termination, we need to clean up
+        //           everything, and therefore we continue to pass the -2 as a parameter
+        //           to the subsequent poll calls.
+
+        // Roll back focus one step if possible.
         if(focus) {
+            // UI objects are responsible for cleaning up their offspring.
+            // We only keep the root object in our array.
+            ui_objects[focus]->deinit();
+            ui_objects[focus] = NULL;
             focus--;
-        } else {
-        	return false;
+            continue; // pass the return code, which could be a selection index(!) to the level above.
+            // Note that the object itself still exists, and needs to be cleaned up by the one who created
+            // it.
+        }
+        // If we are already in the root, then we simply return the exit code. Caller cleans up, if necessary.
+        else {
+            if (ret == -2) {
+                return MENU_EXIT;
+            }
+        	return MENU_HIDE;
         }
     } while(1);
-    return true;
+    return MENU_NOP;
 }
 
 void UserInterface :: appear(void)
@@ -283,7 +296,6 @@ void UserInterface :: release_host(void)
     for(int i=focus;i>=0;i--) {  // tear down
         ui_objects[i]->deinit();
     }
-    host->releaseScreen();
 
     if (!host->is_permanent()) {
         doBreak = true;
@@ -316,7 +328,9 @@ void UserInterface :: set_screen_title()
 
     screen->clear();
     screen->move_cursor(hpos, 0);
+    screen->output("\eA");
     screen->output(title.c_str());
+    screen->output("\eO");
     screen->move_cursor(0, 1);
 	screen->repeat('\002', width);
     screen->move_cursor(0, height-1);

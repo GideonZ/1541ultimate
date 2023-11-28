@@ -537,7 +537,7 @@ bool IecChannel::hasIllegalChars(const char *name)
     return false;
 }
 
-bool IecChannel::parse_filename(char *buffer, name_t *name, int default_drive, bool doFlags)
+bool IecChannel::parse_filename(int channel, char *buffer, name_t *name, int default_drive, bool doFlags)
 {
 #if IECDEBUG
     printf("Parsing filename: '%s' (Default drive: %d, Do flags: %d)\n", buffer, default_drive, doFlags);
@@ -681,7 +681,7 @@ int IecChannel::setup_directory_read(name_t& name)
     }
 
     dirPartition->get_free(dir_free);
-    interface->get_command_channel()->set_error(ERR_OK, 0, 0);
+    interface->get_command_channel()->set_error(ERR_ALL_OK, 0, 0);
     dir_last = dirPartition->GetDirItemCount();
     state = e_dir;
     pointer = 0;
@@ -833,7 +833,7 @@ int IecChannel::open_file(void)  // name should be in buffer
     fs_filename[0] = 0;
     uint32_t tr = 0;
 
-    parse_filename((char *) buffer, &name, -1, true);
+    parse_filename(channel, (char *) buffer, &name, -1, true);
 
     dirPartition = interface->vfs->GetPartition(name.drive);
     recordSize = 0;
@@ -844,7 +844,7 @@ int IecChannel::open_file(void)  // name should be in buffer
         return setup_buffer_access();
     }
 
-    interface->get_command_channel()->set_error(ERR_OK, 0, 0);
+    interface->get_command_channel()->set_error(ERR_ALL_OK, 0, 0);
     if (!setup_file_access(name)) {
         interface->get_error_string(fs_filename); // abusing this buffer to store temporary error
         printf("Setup file access failed for file '%d:%s%s': %s\n", name.drive, name.name, name.extension, fs_filename);
@@ -939,7 +939,7 @@ void IecChannel::seek_record(const uint8_t *cmd)
         interface->get_command_channel()->set_error(ERR_FILE_TYPE_MISMATCH, 0, 0);
         return;
     }
-    interface->get_command_channel()->set_error(ERR_OK, 0, 0);
+    interface->get_command_channel()->set_error(ERR_ALL_OK, 0, 0);
 
     uint32_t minimumFileSize = c_header + (recordNumber + 1) * recordSize; // reserve 2 bytes in the beginning
     uint32_t currentSize = f->get_size();
@@ -1156,7 +1156,7 @@ void IecCommandChannel::exec_command(command_t &command)
         if (isEmptyString(command.remaining)) {
             set_error(ERR_SYNTAX_ERROR_CMD);
         } else if (p->cd(command.remaining)) {
-            set_error(ERR_OK);
+            set_error(ERR_ALL_OK);
         } else {
             set_error(ERR_DIRECTORY_ERROR);
         }
@@ -1183,7 +1183,7 @@ void IecCommandChannel::exec_command(command_t &command)
         } else if (hasIllegalChars(command.remaining)) {
             set_error(ERR_SYNTAX_ERROR_CMD);
         } else if (p->MakeDirectory(command.remaining) == FR_OK) {
-            set_error(ERR_OK);
+            set_error(ERR_ALL_OK);
         } else {
             set_error(ERR_DIRECTORY_ERROR);
         }
@@ -1208,7 +1208,7 @@ void IecCommandChannel::exec_command(command_t &command)
     } else if (strncmp(command.cmd, "COPY", strlen(command.cmd)) == 0) {
         copy(command);
     } else if (strncmp(command.cmd, "INITIALIZE", strlen(command.cmd)) == 0) {
-        set_error(ERR_OK);
+        set_error(ERR_ALL_OK);
     } else if (strcmp(command.cmd, "UI") == 0) {
         set_error(ERR_DOS);
     } else { // unknown command
@@ -1251,7 +1251,7 @@ void IecCommandChannel::block_command(command_t& cmd)
             channel = interface->get_data_channel(ch);
             channel->pointer = dr;
             channel->reset_prefetch();
-            set_error(ERR_OK);
+            set_error(ERR_ALL_OK);
             return;
         default:
             set_error(ERR_SYNTAX_ERROR_CMD);
@@ -1320,8 +1320,8 @@ void IecCommandChannel::renam(command_t& cmd)
 
     split_string('=', cmd.remaining, leftright, 2);
     if (leftright[1]) {
-        parse_filename(leftright[0], &destination, cmd.digits, true);
-        parse_filename(leftright[1], &source, cmd.digits, true);
+        parse_filename(channel, leftright[0], &destination, cmd.digits, true);
+        parse_filename(channel, leftright[1], &source, cmd.digits, true);
     } else {
         // there is no = token
         set_error(ERR_SYNTAX_ERROR_CMD);
@@ -1363,7 +1363,7 @@ void IecCommandChannel::renam(command_t& cmd)
     // Just try the actual rename by the filesystem
     FRESULT fres = fm->rename(partitionFrom->GetPath(), fromInfo->lfname, partitionTo->GetPath(), toName);
     if (fres == FR_OK) {
-        set_error(ERR_OK, 0);
+        set_error(ERR_ALL_OK, 0);
         return;
     } else if (fres == FR_EXIST) {
         set_error(ERR_FILE_EXISTS, 0);
@@ -1384,7 +1384,7 @@ void IecCommandChannel::copy(command_t& cmd)
     split_string('=', cmd.remaining, leftright, 2);
     if (leftright[1]) {
         split_string(',', leftright[1], files, 4);
-        parse_filename(leftright[0], &destination, cmd.digits, true);
+        parse_filename(channel, leftright[0], &destination, cmd.digits, true);
     } else {
         // there is no = token
         set_error(ERR_SYNTAX_ERROR_CMD);
@@ -1399,7 +1399,7 @@ void IecCommandChannel::copy(command_t& cmd)
         if (!files[i]) {
             break;
         }
-        parse_filename(files[i], &names[i], cmd.digits, false);
+        parse_filename(channel, files[i], &names[i], cmd.digits, false);
         if ((names[i].directory || names[i].mode == e_replace)) {
             set_error(ERR_SYNTAX_ERROR_CMD, i + 1);
             return;
@@ -1477,7 +1477,7 @@ void IecCommandChannel::copy(command_t& cmd)
         }
         fm->fclose(fo);
     }
-    set_error(ERR_OK, 0, blocks);
+    set_error(ERR_ALL_OK, 0, blocks);
 }
 
 int IecCommandChannel::ext_open_file(const char *filenameOrCommand)

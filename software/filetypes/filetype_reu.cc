@@ -60,7 +60,7 @@ FileType *FileTypeREU :: test_type(BrowsableDirEntry *obj)
     return NULL;
 }
 
-int FileTypeREU :: execute_st(SubsysCommand *cmd)
+SubsysResultCode_e FileTypeREU :: execute_st(SubsysCommand *cmd)
 {
 	printf("REU Select: %4x\n", cmd->functionID);
 	File *file = 0;
@@ -85,7 +85,7 @@ int FileTypeREU :: execute_st(SubsysCommand *cmd)
         machine->cfg->set_string(CFG_C64_REU_IMG, path);
         //c64->cfg->write();
         cmd->user_interface->popup("Set as REU Preload Image", BUTTON_OK);
-        return 0;
+        return SSRET_OK;
     }
     
     if (cmd->functionID == REUFILE_PLAYMOD) {
@@ -131,21 +131,25 @@ int FileTypeREU :: execute_st(SubsysCommand *cmd)
 			sprintf(buffer, "Bytes loaded: %d ($%8x)", total_bytes_read, total_bytes_read);
 			cmd->user_interface->popup(buffer, BUTTON_OK);
 		} else {
-			mod_cart.custom_addr = (void *)&_module_bin_start;
-			mod_cart.name = "MOD Player Cartridge";
-			mod_cart.length = 0x4000;
-			mod_cart.require = CART_MAXREU | CART_SAMPLER | CART_UCI;
-			mod_cart.type = CART_TYPE_16K;
-
-			AudioConfig :: set_sampler_output();
-
-    		SubsysCommand *c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_START_CART, (int)&mod_cart, "", "");
-			c64_command->execute();
+			start_modplayer();
 		}
 	} else {
 		printf("Error opening file.\n");
         cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
-		return -2;
+		return SSRET_CANNOT_OPEN_FILE;
 	}
-	return 0;
+	return SSRET_OK;
+}
+
+void FileTypeREU ::start_modplayer()
+{
+    mod_cart.custom_addr = (void *)&_module_bin_start;
+    mod_cart.name = "MOD Player Cartridge";
+    mod_cart.length = 0x4000;
+    mod_cart.require = CART_MAXREU | CART_SAMPLER | CART_UCI;
+    mod_cart.type = CART_TYPE_16K;
+    AudioConfig ::set_sampler_output();
+    SubsysCommand *c64_command =
+        new SubsysCommand(NULL, SUBSYSID_C64, C64_START_CART, (int)&mod_cart, "", "");
+    c64_command->execute();
 }

@@ -360,8 +360,7 @@ uint16_t UsbAx88772Driver :: read_phy_register(uint8_t reg) {
 
 void UsbAx88772Driver :: poll(void)
 {
-	if(netstack)
-		netstack->poll();
+
 }
 
 void UsbAx88772Driver :: interrupt_handler()

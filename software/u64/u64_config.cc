@@ -23,6 +23,7 @@ extern "C" {
 #include "u2p.h"
 //#include "sys/alt_irq.h"
 #include "c64.h"
+#include "esp32.h"
 #include "sid_editor.h"
 #include "sid_device_fpgasid.h"
 #include "sid_device_swinsid.h"
@@ -1050,7 +1051,10 @@ int U64Config :: setSidEmuParams(ConfigItem *it)
 #define MENU_U64_WIFI_ENABLE 4
 #define MENU_U64_WIFI_BOOT 5
 #define MENU_U64_DETECT_SIDS 6
-#define MENU_U64_POKE 7
+#define MENU_U64_WIFI_DOWNLOAD 7
+#define MENU_U64_POKE 8
+#define MENU_U64_WIFI_ECHO 9
+#define MENU_U64_UART_ECHO 10
 
 void U64Config :: create_task_items(void)
 {
@@ -1058,17 +1062,21 @@ void U64Config :: create_task_items(void)
     myActions.poke      = new Action("Poke", SUBSYSID_U64, MENU_U64_POKE);
     myActions.saveedid  = new Action("Save EDID to file", SUBSYSID_U64, MENU_U64_SAVEEDID);
     myActions.siddetect = new Action("Detect SIDs", SUBSYSID_U64, MENU_U64_DETECT_SIDS);
-    myActions.wifioff   = new Action("Disable WiFi", SUBSYSID_U64, MENU_U64_WIFI_DISABLE);
-    myActions.wifion    = new Action("Enable WiFi",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE);
-    myActions.wifiboot  = new Action("Enable WiFi Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT);
+    myActions.esp32off  = new Action("Disable ESP32", SUBSYSID_U64, MENU_U64_WIFI_DISABLE);
+    myActions.esp32on   = new Action("Enable ESP32",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE);
+    myActions.esp32boot = new Action("Enable ESP32 Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT);
+    myActions.uartecho  = new Action("UART Echo", SUBSYSID_U64, MENU_U64_UART_ECHO);
+    myActions.wifiecho  = new Action("WiFi Echo", SUBSYSID_U64, MENU_U64_WIFI_ECHO);
 
     dev->append(myActions.saveedid );
 #if DEVELOPER > 0
-    dev->append(myActions.poke     );
-    dev->append(myActions.siddetect);
-    dev->append(myActions.wifioff  );
-    dev->append(myActions.wifion   );
-    dev->append(myActions.wifiboot );
+    dev->append(myActions.poke      );
+    dev->append(myActions.siddetect );
+    dev->append(myActions.esp32off  );
+    dev->append(myActions.esp32on   );
+    dev->append(myActions.esp32boot );
+    dev->append(myActions.uartecho  );
+    dev->append(myActions.wifiecho  );
 #endif
 }
 
@@ -1077,7 +1085,7 @@ void U64Config :: update_task_items(bool writablePath, Path *p)
     myActions.saveedid->setDisabled(!writablePath);
 }
 
-int U64Config :: executeCommand(SubsysCommand *cmd)
+SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
 {
 	File *f = 0;
 	FRESULT res;
@@ -1138,19 +1146,27 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
 #endif
 
     case MENU_U64_WIFI_DISABLE:
-        U64_WIFI_CONTROL = 0;
+        esp32.doDisable();
         break;
 
     case MENU_U64_WIFI_ENABLE:
-        U64_WIFI_CONTROL = 0;
-        vTaskDelay(50);
-        U64_WIFI_CONTROL = 5;
+        esp32.doStart();
         break;
 
     case MENU_U64_WIFI_BOOT:
-        U64_WIFI_CONTROL = 2;
-        vTaskDelay(150);
-        U64_WIFI_CONTROL = 7;
+        esp32.doBootMode();
+        break;
+
+    case MENU_U64_WIFI_ECHO:
+        //esp32.doRequestEcho();
+        break;
+
+    case MENU_U64_UART_ECHO:
+        esp32.doUartEcho();
+        break;
+
+    case MENU_U64_WIFI_DOWNLOAD:
+        esp32.doDownload(NULL, 0, 0, false);
         break;
 
     case MENU_U64_POKE:
@@ -1190,8 +1206,9 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
 
     default:
     	printf("U64 does not know this command\n");
+        return SSRET_NOT_IMPLEMENTED;
     }
-    return 0;
+    return SSRET_OK;
 }
 
 

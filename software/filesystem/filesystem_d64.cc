@@ -1627,14 +1627,14 @@ FRESULT FileInCBM::open(uint8_t flags)
             // CVT
             state = ST_HEADER;
             header.data = new uint8_t[4*254];
-            bzero(header.data, 4*254);
+            memset(header.data, 0, 4*254);
             header.size = create_cvt_header();
             header.pos = 0;
         }
     } else if ((tp == 7) && (flags & FA_CREATE_ANY)) { // creating a new CVT file; see hack in the 'create' function of DirInCBM.
     	state = ST_HEADER;
         header.data = new uint8_t[254];
-        bzero(header.data, 254);
+        memset(header.data, 0, 254);
         header.size = 254;
         header.pos = 0;
 
@@ -1910,7 +1910,7 @@ FRESULT FileInCBM::fixup_cvt(void)
 	track = fs->sect_buffer[0];
 	sector = fs->sect_buffer[1];
 
-	bzero(cvt->sections, sizeof(cvt->sections));
+	memset(cvt->sections, 0, sizeof(cvt->sections));
 	uint8_t *vlir = fs->sect_buffer + 2;
 
 	cvt->records = 127;

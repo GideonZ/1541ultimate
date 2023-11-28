@@ -17,8 +17,8 @@ public:
 
     static FileType *test_type(BrowsableDirEntry *obj);
 
-    static int loadMP3_st(SubsysCommand *cmd);
-    static int runDisk_st(SubsysCommand *cmd);
+    static SubsysResultCode_e loadMP3_st(SubsysCommand *cmd);
+    static SubsysResultCode_e runDisk_st(SubsysCommand *cmd);
 };
 
 #endif

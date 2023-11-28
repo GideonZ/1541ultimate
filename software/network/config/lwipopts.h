@@ -71,7 +71,7 @@
  */
 #include "profiler.h"
 
-#define MEMCPY(dst,src,len)             profiled_memcpy(dst,src,len)
+#define MEMCPY(dst,src,len)             memcpy(dst,src,len)
 
 /**
  * SMEMCPY: override this with care! Some compilers (e.g. gcc) can inline a
@@ -193,7 +193,7 @@
  * per active UDP "connection".
  * (requires the LWIP_UDP option)
  */
-#define MEMP_NUM_UDP_PCB                4
+#define MEMP_NUM_UDP_PCB                8
 
 /**
  * MEMP_NUM_TCP_PCB: the number of simultaneously active TCP connections.
@@ -245,7 +245,7 @@
  * MEMP_NUM_NETBUF: the number of struct netbufs.
  * (only needed if you use the sequential API, like api_lib.c)
  */
-#define MEMP_NUM_NETBUF                 4
+#define MEMP_NUM_NETBUF                 8
 
 /**
  * MEMP_NUM_NETCONN: the number of struct netconns.
@@ -258,7 +258,7 @@
  * for callback/timeout API communication. 
  * (only needed if you use tcpip.c)
  */
-#define MEMP_NUM_TCPIP_MSG_API          8
+#define MEMP_NUM_TCPIP_MSG_API          12
 
 /**
  * MEMP_NUM_TCPIP_MSG_INPKT: the number of struct tcpip_msg, which are used
@@ -965,7 +965,7 @@
  * Disable this option if you use a POSIX operating system that uses the same
  * names (read, write & close). (only used if you use sockets.c)
  */
-#define LWIP_POSIX_SOCKETS_IO_NAMES     0
+#define LWIP_POSIX_SOCKETS_IO_NAMES     1
 
 /**
  * LWIP_TCP_KEEPALIVE==1: Enable TCP_KEEPIDLE, TCP_KEEPINTVL and TCP_KEEPCNT

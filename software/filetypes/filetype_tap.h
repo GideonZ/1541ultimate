@@ -25,9 +25,9 @@ public:
 
     int   fetch_context_items(IndexedList<Action *> &list);
     static FileType *test_type(BrowsableDirEntry *obj);
-    static int execute_st(SubsysCommand *cmd);
-    static int enter_st(SubsysCommand *cmd);
-    int execute(SubsysCommand *cmd);
+    static SubsysResultCode_e execute_st(SubsysCommand *cmd);
+    static SubsysResultCode_e enter_st(SubsysCommand *cmd);
+    SubsysResultCode_e execute(SubsysCommand *cmd);
 
     int getCustomBrowsables(Browsable *, IndexedList<Browsable *> &list);
 };

@@ -86,6 +86,7 @@ VPATH +=	$(PATH_SW)/nios_appl_bsp/HAL/inc
 VPATH +=	$(PATH_SW)/nios_appl_bsp/drivers/inc
 VPATH +=    $(PATH_SW)/application/update_u2p
 VPATH +=    $(PATH_SW)/u64
+VPATH +=	$(PATH_SW)/wifi/scan/main
 VPATH +=    $(FPGA_PATH)
 VPATH +=    ../ultimate/result
 
@@ -102,7 +103,7 @@ SRCS_IEC =
 SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -O0 -DOS -DNIOS=1 -DSAFEMODE=1 -DU64=1 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx -DRECOVERYAPP=1
+OPTIONS  = -g -ffunction-sections -O0 -DOS -DNIOS=1 -DSAFEMODE=1 -DCLOCK_FREQ=66666667 -DU64=1 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx -DRECOVERYAPP=1
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 BSP      = $(PATH_SW)/nios_appl_bsp

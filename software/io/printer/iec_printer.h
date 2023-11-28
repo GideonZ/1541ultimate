@@ -27,7 +27,7 @@
 #ifndef IEC_PRINTER_H
 #define IEC_PRINTER_H
 
-#include "integer.h"
+#include <stdint.h>
 #include "menu.h"
 #include "config.h"
 #include "userinterface.h"
@@ -164,7 +164,7 @@ class IecPrinter : public SubSystem, ObjectWithMenu, ConfigurableObject
         void create_task_items();
         void update_task_items(bool writablePath, Path *path);
         void effectuate_settings(void); // from ConfigurableObject
-        int executeCommand(SubsysCommand *cmd); // from SubSystem
+        SubsysResultCode_e executeCommand(SubsysCommand *cmd); // from SubSystem
         const char *identify(void) { return "Virtual Printer"; }
         void updateFlushProgressBar(void);
 
@@ -181,6 +181,7 @@ class IecPrinter : public SubSystem, ObjectWithMenu, ConfigurableObject
 
         /* =======  Getters */
         int get_current_printer_address(void) { return last_printer_addr; }
+        bool is_enabled(void) { return printer_enable; }
 
     private:
         /* =======  Output file management */
@@ -188,7 +189,7 @@ class IecPrinter : public SubSystem, ObjectWithMenu, ConfigurableObject
         int close_file(void);
 };
 
-extern IecPrinter iec_printer;
+extern IecPrinter *iec_printer;
 
 #endif /* IEC_PRINTER_H */
 

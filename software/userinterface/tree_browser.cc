@@ -182,12 +182,6 @@ int TreeBrowser :: poll(int sub_returned)
 	int c;
     int ret = 0;
 
-    mstring *msg = this->user_interface->getMessage();
-    if (msg) {
-        user_interface->popup(msg->c_str(), BUTTON_OK);
-        delete msg;
-    }
-
     if(contextMenu) {
         if(sub_returned < 0) {
         	delete contextMenu;
@@ -209,7 +203,11 @@ int TreeBrowser :: poll(int sub_returned)
                 const char *p = state->browser->getPath();
                 const char *filename = (b)?(b->getName()):"";
                 SubsysCommand *cmd = new SubsysCommand(user_interface, act, p, filename);
-                ret = cmd->execute();
+                SubsysResultCode_t cmd_ret = cmd->execute();
+                // if (cmd_ret.status != SSRET_OK) {
+                //     user_interface->popup(SubsysCommand::error_string(cmd_ret.status), BUTTON_OK);
+                // }
+                ret = (int)(user_interface->command_flags);
             } else {
                 printf("Action was not set in context menu!\n");
             }
@@ -218,6 +216,12 @@ int TreeBrowser :: poll(int sub_returned)
             state->draw();
         }
         return ret;
+    }
+
+    mstring *msg = this->user_interface->getMessage();
+    if (msg) {
+        user_interface->popup(msg->c_str(), BUTTON_OK);
+        delete msg;
     }
 
     checkFileManagerEvent();
@@ -376,7 +380,7 @@ int TreeBrowser :: handle_key(int c)
             ret = -1;
             break;
         case KEY_F8: // exit (F8)
-            ret = -1;
+            ret = -2;
             break;
         case KEY_DOWN: // down
         	reset_quick_seek();
@@ -434,7 +438,7 @@ int TreeBrowser :: handle_key(int c)
             }
             break;
         case KEY_SPACE: // space = select
-        	state->select();
+        	state->select_one();
         	break;
         case KEY_CTRL_A: // select all
         	state->select_all(true);

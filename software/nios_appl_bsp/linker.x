@@ -212,6 +212,10 @@ SECTIONS
     {
         PROVIDE (__ram_rodata_start = ABSOLUTE(.));
         . = ALIGN(4);
+        *(.rodata.*.b)
+        . = ALIGN(4);
+        *(.rodata.*.65)
+        . = ALIGN(4);
         *(.rodata .rodata.* .gnu.linkonce.r.*)
         *(.rodata1)
         . = ALIGN(4);

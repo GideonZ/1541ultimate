@@ -18,6 +18,7 @@
 #include "c1541.h"
 #include "data_streamer.h"
 #include "filetype_crt.h"
+#include "network_interface.h"
 
 // "Ok ok, use them then..."
 #define SOCKET_CMD_DMA         0xFF01
@@ -33,6 +34,7 @@
 #define SOCKET_CMD_RUN_IMG     0xFF0B
 #define SOCKET_CMD_POWEROFF    0xFF0C
 #define SOCKET_CMD_RUN_CRT     0xFF0D
+#define SOCKET_CMD_IDENTIFY    0xFF0E
 
 // Only available on U64
 #define SOCKET_CMD_VICSTREAM_ON    0xFF20
@@ -58,11 +60,14 @@ SocketDMA::SocketDMA() {
 	if (load_buffer) {
 	    xTaskCreate( dmaThread, "DMA Load Task", configMINIMAL_STACK_SIZE, (void *)load_buffer, tskIDLE_PRIORITY + 1, NULL );
 	}
+    xTaskCreate(identThread, "UDP Ident Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL );
 }
 
 SocketDMA::~SocketDMA() {
     delete[] load_buffer;
 }
+
+const char *getVersionString(char *title);
 
 void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint16_t cmd, uint32_t len, struct in_addr *client_ip)
 {
@@ -74,9 +79,15 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
     uint16_t i;
     uint16_t size;
     const char *name = "";
+    char title[52];
     // TODO: check len > remaining
 
     switch(cmd) {
+    case SOCKET_CMD_IDENTIFY:
+        getVersionString(title+1);
+        title[0] = (char)strlen(title+1);
+        writeSocket(socket, title, 1+title[0]);
+        break;
     case SOCKET_CMD_DMA:
         sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_BUFFER, RUNCODE_DMALOAD, buf, len);
         sys_command->execute();
@@ -91,14 +102,14 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         break;
     case SOCKET_CMD_DMAWRITE:
         offs = (uint16_t)buf[0] | (((uint16_t)buf[1]) << 8);
-        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW, offs, buf + 2, len - 2);
+        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW_WRITE, offs, buf + 2, len - 2);
         sys_command->execute();
         break;
     case SOCKET_CMD_KEYB:
-        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW, 0x0277, buf, len);
+        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW_WRITE, 0x0277, buf, len);
         sys_command->execute();
         buf[0] = len;
-        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW, 0x00C6, buf, 1);
+        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW_WRITE, 0x00C6, buf, 1);
         sys_command->execute();
         break;
     case SOCKET_CMD_RESET:
@@ -345,7 +356,7 @@ void SocketDMA::dmaThread(void *load_buffer)
     printf("DMA Thread Sockfd = %8x\n", sockfd);
 
     /* Initialize socket structure */
-    bzero((char *) &serv_addr, sizeof(serv_addr));
+    memset((char *) &serv_addr, 0, sizeof(serv_addr));
     portno = 64;
 
     serv_addr.sin_family = AF_INET;
@@ -425,7 +436,79 @@ void SocketDMA::dmaThread(void *load_buffer)
             performCommand(newsockfd, load_buffer, n, cmd, len32, &cli_addr.sin_addr);
 		}
         puts("ERROR reading from socket");
-        lwip_close(newsockfd);
+        __close(newsockfd);
+    }
+    // this will never happen
+    __close(sockfd);
+}
+
+void SocketDMA::identThread(void *_a)
+{
+	int sockfd, newsockfd, portno;
+	unsigned long int clilen;
+    struct sockaddr_in serv_addr, cli_addr;
+    socklen_t client_struct_length = sizeof(cli_addr);
+    int  n;
+    char client_message[256];
+    char menu_header[64];
+
+    getVersionString(menu_header);
+
+    /* First call to socket() function */
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+
+    if (sockfd < 0)
+	{
+    	puts("ERROR identThread opening socket");
+    	vTaskDelete(NULL);
+	}
+
+    while(1) {
+        /* Initialize socket structure */
+        memset((char *) &serv_addr, 0, sizeof(serv_addr));
+        portno = 64;
+
+        serv_addr.sin_family = AF_INET;
+        serv_addr.sin_addr.s_addr = INADDR_ANY;
+        serv_addr.sin_port = htons(portno);
+
+        /* Now bind the host address using bind() call.*/
+        if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
+        {
+            puts("identThread ERROR on binding");
+            vTaskDelay(500); // some seconds
+            continue; // try again
+        }
+        while(1) {
+            // Receive client's message:
+            int n = recvfrom(sockfd, client_message, sizeof(client_message), 0,
+                (struct sockaddr*)&cli_addr, &client_struct_length);
+            if (n < 0) {
+                printf("Couldn't receive: %d\n", n);
+                vTaskDelay(500); // some seconds
+                continue; // try again
+            }
+            printf("Received Ident Request from IP: %s and port: %i\n",
+                inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
+            
+            // Respond to client:
+            if (n > 32) {
+                n = 32;
+            }
+
+            ConfigStore *cs = ConfigManager::getConfigManager()->find_store("Network settings");
+            const char *hostname = "Unknown";
+            if (cs) {
+                hostname = cs->get_string(CFG_NET_HOSTNAME);
+            }
+            sprintf(client_message + n, ",%s,%s", hostname, menu_header);
+
+            n = sendto(sockfd, client_message, strlen(client_message), 0, (struct sockaddr *)&cli_addr,
+                    client_struct_length);
+            if (n < 0) {
+                printf("Can't send, reason: %d\n", n);
+            }
+        }
     }
     // this will never happen
     lwip_close(sockfd);

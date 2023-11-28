@@ -77,7 +77,7 @@ public:
 
     void create_task_items(void);
     void update_task_items(bool writablePath, Path *path);
-	int executeCommand(SubsysCommand *cmd);
+	SubsysResultCode_e executeCommand(SubsysCommand *cmd);
     const char *identify(void) { return "Tape Recorder"; }
 	
     void flush();

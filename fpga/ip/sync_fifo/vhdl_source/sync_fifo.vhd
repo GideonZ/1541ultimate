@@ -5,7 +5,8 @@ entity sync_fifo is
     generic (
         g_depth        : integer := 512;        -- Actual depth. 
         g_data_width   : integer := 32;
-        g_threshold    : integer := 13;
+        g_threshold    : integer := 10;
+        g_threshold_low: integer := 2;
         g_storage      : string  := "auto";     -- can also be "blockram" or "distributed"
         g_storage_lat  : string  := "block_ram"; -- can also be "distrubuted" or "registers" even
         g_fall_through : boolean := false);
@@ -24,6 +25,7 @@ entity sync_fifo is
         full        : out std_logic;
         almost_full : out std_logic;
         empty       : out std_logic;
+        almost_empty: out std_logic;
         valid       : out std_logic;
         count       : out integer range 0 to g_depth
     );
@@ -61,6 +63,7 @@ begin
 
     -- Check generic values (also for synthesis)
     assert(g_threshold <= g_depth) report "Invalid parameter 'g_threshold'" severity failure;
+    assert(g_threshold_low <= g_depth) report "Invalid parameter 'g_threshold_low'" severity failure;
 
     -- Filter fifo read/write enables for full/empty conditions
     rd_en_flt <= '1' when (empty_i = '0') and (rd_en='1') else '0';    
@@ -127,6 +130,11 @@ begin
             almost_full <= '0';
             if (v_new_cnt >= g_threshold) then
                 almost_full <= '1';
+            end if;
+
+            almost_empty <= '0';
+            if (v_new_cnt < g_threshold_low) then
+                almost_empty <= '1';
             end if;
 
             empty_i <= '0';

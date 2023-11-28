@@ -133,7 +133,7 @@ void Modem :: listenerTask(void *a)
 
     modem.IncomingConnection(socketNumber);
 
-    lwip_close(socketNumber);
+    __close(socketNumber);
     vTaskDelete(NULL);
 }
 
@@ -486,7 +486,7 @@ void Modem :: Caller()
         if(portString) {
             sscanf(portString, "%d", &portno);
         }
-        bzero((char *) &serv_addr, sizeof(serv_addr));
+        memset((char *) &serv_addr, 0, sizeof(serv_addr));
         serv_addr.sin_family = AF_INET;
         memcpy(&serv_addr.sin_addr.s_addr, ret_host->h_addr, ret_host->h_length);
         serv_addr.sin_port = htons(portno);
@@ -507,7 +507,7 @@ void Modem :: Caller()
 		acia.SendToRx((uint8_t *)responseString, responseLen);
         keepConnection = true;
         RunRelay(sock_fd);
-        lwip_close(sock_fd);
+        __close(sock_fd);
         responseString = (verbose==TRUE ? responseText[RESP_NO_CARRIER] : responseCode[RESP_NO_CARRIER]);
         responseLen=strlen(responseString);
         acia.SendToRx((uint8_t *)responseString, responseLen);

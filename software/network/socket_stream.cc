@@ -13,13 +13,6 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#if RUNS_ON_PC
-	#include <netinet/in.h>
-#else
-//	#define fcntl(a,b,c)          lwip_fcntl(a,b,c)
-#endif
-
-#include <sys/fcntl.h>
 #include <errno.h>
 #include <unistd.h>
 
@@ -112,6 +105,6 @@ void SocketStream :: close()
 {
 	if(actual_socket > 0) {
 		shutdown(actual_socket, 2);
-		//close(actual_socket);
+		lwip_close(actual_socket);
 	}
 }

@@ -17,35 +17,44 @@
 
 class BrowsableNetwork : public Browsable
 {
-	Browsable *parent;
-	int index;
-public:
-	BrowsableNetwork(Browsable *parent, int index) {
-		this->parent = parent;
-		this->index = index;
-	}
+    Browsable *parent;
+    int index;
 
-	void getDisplayString(char *buffer, int width) {
-		uint8_t mac[6];
-		char ip[16];
+  public:
+    BrowsableNetwork(Browsable *parent, int index)
+    {
+        this->parent = parent;
+        this->index = index;
+    }
 
-		NetworkInterface *ni = NetworkInterface :: getInterface(index);
-		if (!ni) {
-			sprintf(buffer, "Net%d%#s\eJRemoved", index, width-17, "");
-			return;
-		}
-		ni->getMacAddr(mac);
-		if (ni->is_link_up()) {
-			sprintf(buffer, "Net%d    IP: %#s\eELink Up", index, width-21, ni->getIpAddrString(ip, 16));
-		} else {
-			sprintf(buffer, "Net%d    MAC %b:%b:%b:%b:%b:%b%#s\eJLink Down", index, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], width-38, "");
-		}
-	}
+    void getDisplayString(char *buffer, int width)
+    {
+        NetworkInterface *ni = NetworkInterface ::getInterface(index);
+        if (!ni) {
+            sprintf(buffer, "Net%d%#s\eJRemoved", index, width - 17, "");
+            return;
+        }
+        ni->getDisplayString(index, buffer, width);
+    }
 
-	IndexedList<Browsable *> *getSubItems(int &error) {
-		error = -1;
-		return &children;
-	}
+    IndexedList<Browsable *> *getSubItems(int &error)
+    {
+        NetworkInterface *ni = NetworkInterface ::getInterface(index);
+        if (!ni) {
+            error = -1;
+            return &children;
+        }
+        ni->getSubItems(this, children, error);
+        return &children;
+    }
+
+    void fetch_context_items(IndexedList<Action *> &items)
+    {
+        NetworkInterface *ni = NetworkInterface ::getInterface(index);
+        if (ni) {
+            ni->fetch_context_items(items);
+        }
+    }
 };
 
 class BrowsableDirEntry : public Browsable

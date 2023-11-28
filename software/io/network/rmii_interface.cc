@@ -31,7 +31,8 @@ extern "C" {
 RmiiInterface :: RmiiInterface()
 {
     if(getFpgaCapabilities() & CAPAB_ETH_RMII) {
-		netstack = NULL;
+    	netstack = getNetworkStack(this, RmiiInterface_output, RmiiInterface_free_buffer);
+
 		link_up = false;
 		ram_buffer = new uint8_t[(128 * 1536) + 256];
 		ram_base = (uint8_t *) (((uint32_t)ram_buffer + 255) & 0xFFFFFF00);
@@ -76,8 +77,6 @@ void RmiiInterface :: deinitRx(void)
 
 void RmiiInterface :: rmiiTask(void)
 {
-	netstack = getNetworkStack(this, RmiiInterface_output, RmiiInterface_free_buffer);
-
 	uint8_t flash_serial[8];
 	Flash *flash = get_flash();
 	flash->read_serial(flash_serial);
@@ -209,10 +208,3 @@ uint8_t RmiiInterface :: output_packet(uint8_t *buffer, int pkt_len)
 
 	return 0;
 }
-
-/*
-uint8_t rmiiTransmit(uint8_t *buffer, int pkt_len)
-{
-	return rmii_interface.output_packet(buffer, pkt_len);
-}
-*/

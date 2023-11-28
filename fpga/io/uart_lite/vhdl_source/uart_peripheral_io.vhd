@@ -52,10 +52,12 @@ architecture gideon of uart_peripheral_io is
     constant c_uart_get     : unsigned(1 downto 0) := "01";
     constant c_uart_flags   : unsigned(1 downto 0) := "10";
     constant c_uart_imask   : unsigned(1 downto 0) := "11";
+    constant c_divisor  : std_logic_vector(9 downto 0) := std_logic_vector(to_unsigned(g_divisor - 1, 10));
 begin
     my_tx: entity work.tx 
-    generic map (g_divisor)
     port map (
+        divisor => c_divisor,
+
         clk     => clock,
         reset   => reset,
         tick    => tick,
@@ -69,8 +71,9 @@ begin
 
     r_rx: if g_impl_rx generate
         my_rx: entity work.rx 
-        generic map (g_divisor)
         port map (
+            divisor => c_divisor,
+
             clk     => clock,
             reset   => reset,
             tick    => tick,
@@ -98,21 +101,45 @@ begin
     end generate;
 
     gentx: if g_tx_fifo generate
-    	my_txfifo: entity work.srl_fifo
-    	generic map (
-    		Width     => 8,
-            Threshold => 12 )
-    	port map (
-    	    clock       => clock,
-    	    reset       => reset,
-    	    GetElement  => txfifo_get,
-    	    PutElement  => txfifo_put,
-    	    FlushFifo   => '0',
-    	    DataIn      => io_req.data,
-    	    DataOut     => txfifo_dout,
-    	    SpaceInFifo => open,
-    	    AlmostFull  => txfifo_full,
-    	    DataInFifo  => txfifo_dav );
+		i_tx_fifo: entity work.sync_fifo
+			generic map (
+				g_depth        => 511,
+				g_data_width   => 8,
+				g_threshold    => 256,
+				g_storage      => "auto",
+				g_fall_through => true
+			)
+			port map (
+				clock        => clock,
+				reset        => reset,
+				rd_en        => txfifo_get,
+				wr_en        => txfifo_put,
+				din          => io_req.data,
+				dout         => txfifo_dout,
+				flush        => '0',
+				full         => open,
+				almost_full  => txfifo_full,
+				empty        => open,
+				almost_empty => open,
+				valid        => txfifo_dav,
+				count        => open
+			);
+
+    	-- my_txfifo: entity work.srl_fifo
+    	-- generic map (
+    	-- 	Width     => 8,
+        --     Threshold => 12 )
+    	-- port map (
+    	--     clock       => clock,
+    	--     reset       => reset,
+    	--     GetElement  => txfifo_get,
+    	--     PutElement  => txfifo_put,
+    	--     FlushFifo   => '0',
+    	--     DataIn      => io_req.data,
+    	--     DataOut     => txfifo_dout,
+    	--     SpaceInFifo => open,
+    	--     AlmostFull  => txfifo_full,
+    	--     DataInFifo  => txfifo_dav );
     end generate;
 
 	process(clock)

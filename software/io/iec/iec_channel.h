@@ -387,7 +387,7 @@ class IecChannel {
     char fs_filename[64];
 
 private:
-    bool parse_filename(char *buffer, name_t *name, int default_drive, bool doFlags);
+    static bool parse_filename(int channel, char *buffer, name_t *name, int default_drive, bool doFlags);
     int setup_directory_read(name_t& name);
     int setup_file_access(name_t &name);
     int setup_buffer_access(void);

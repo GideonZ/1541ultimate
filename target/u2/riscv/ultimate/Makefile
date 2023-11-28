@@ -29,9 +29,13 @@ SRCS_C   =	itu.c \
 			time.c \
 			sid_coeff.c \
 			riscv_main.c \
-			syscalls.c \
 			do_ctors.c \
 			malloc_lock.c \
+            server.c \
+            http_protocol.c \
+            middleware.c \
+            multipart.c \
+            url.c \
 
 SRCS_CC	 =	small_printf.cc \
 			stream.cc \
@@ -43,6 +47,7 @@ SRCS_CC	 =	small_printf.cc \
 			w25q_flash.cc \
 			s25fl_flash.cc \
 			config.cc \
+			subsys.cc \
 			filemanager.cc \
 			file_device.cc \
 			file_partition.cc \
@@ -114,7 +119,6 @@ SRCS_CC	 =	small_printf.cc \
 			usb_ms_cbi.cc \
 			keyboard_usb.cc \
 			network_interface.cc \
-			network_lwip.cc \
 			vfs.cc \
 			ftpd.cc \
 			tape_controller.cc \
@@ -147,6 +151,15 @@ SRCS_CC	 =	small_printf.cc \
 			listener_socket.cc \
 			ramdisk.cc \
 			system_info.cc \
+			ult_syscalls.cc \
+			httpd.cc \
+			json.cc \
+			routes.cc \
+			route_files.cc \
+			route_drives.cc \
+			route_runners.cc \
+			route_configs.cc \
+			route_machine.cc \
 			$(PRJ).cc
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/risc-v
@@ -174,7 +187,7 @@ PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -march=$(MARCH) -mabi=$(MABI) $(EFFORT) -ffunction-sections -fdata-sections -nostartfiles -mno-fdiv
 OPTIONS += -gdwarf-2 -Os -DRISCV -DU2 -DOS -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=50000000 -Wno-write-strings
 COPTIONS = $(OPTIONS) -std=gnu99
-CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
+CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = linker.x
 LIBS    = ../../../libs/riscv/lwip/result/liblwip.a
 #LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o

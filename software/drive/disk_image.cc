@@ -7,6 +7,7 @@
 #include "disk_image.h"
 #include "file_system.h"
 #include "filemanager.h"
+#include "return_codes.h"
 
 #include <ctype.h>
 #include <string.h>
@@ -1267,16 +1268,19 @@ void BinImage :: get_sensible_name(char *buffer)
 
 //BinImage static_bin_image("Static Binary Image"); // for general use
 
-int ImageCreator :: S_createD71(SubsysCommand *cmd)
+SubsysResultCode_e ImageCreator :: S_createD71(SubsysCommand *cmd)
 {
     FileManager *fm = FileManager :: getFileManager();
     File *f = 0;
     uint32_t written;
     char name_buffer[32];
     name_buffer[0] = 0;
+    SubsysResultCode_e result = SSRET_OK;
     FRESULT fres = create_user_file(cmd->user_interface, "Give name for new disk..", ".d71", cmd->path.c_str(), &f, name_buffer);
     if (fres == FR_OK) {
         fres = write_zeros(f, 256*683*2, written);
+    } else {
+        result = SSRET_CANNOT_OPEN_FILE;
     }
     if (fres == FR_OK) {
         fres = f->seek(0);
@@ -1293,10 +1297,10 @@ int ImageCreator :: S_createD71(SubsysCommand *cmd)
     if (f) {
         fm->fclose(f);
     }
-    return fres;
+    return (fres == FR_OK) ? SSRET_OK : SSRET_DISK_ERROR;
 }
 
-int ImageCreator :: S_createD81(SubsysCommand *cmd)
+SubsysResultCode_e ImageCreator :: S_createD81(SubsysCommand *cmd)
 {
     FileManager *fm = FileManager :: getFileManager();
     File *f = 0;
@@ -1322,10 +1326,10 @@ int ImageCreator :: S_createD81(SubsysCommand *cmd)
     if (f) {
         fm->fclose(f);
     }
-    return fres;
+    return (fres == FR_OK) ? SSRET_OK : SSRET_DISK_ERROR;
 }
 
-int ImageCreator :: S_createDNP(SubsysCommand *cmd)
+SubsysResultCode_e ImageCreator :: S_createDNP(SubsysCommand *cmd)
 {
     FileManager *fm = FileManager :: getFileManager();
     File *f = 0;
@@ -1338,16 +1342,16 @@ int ImageCreator :: S_createDNP(SubsysCommand *cmd)
     FRESULT fres = create_user_file(cmd->user_interface, "Give name for disk image..", ".dnp", cmd->path.c_str(), &f, name_buffer);
     if (fres == FR_OK) {
         if (cmd->user_interface->string_box("Give size in tracks..", size_buffer, 16) <= 0) {
-            return -1;
+            return SSRET_INVALID_PARAMETER;
         }
         sscanf(size_buffer, "%d", &tracks);
         if (tracks < 1) {
             cmd->user_interface->popup("Should be at least 1 track", BUTTON_OK);
-            return -1;
+            return SSRET_INVALID_PARAMETER;
         }
         if (tracks >= 256) {
             cmd->user_interface->popup("Should be less than 256 tracks", BUTTON_OK);
-            return -1;
+            return SSRET_INVALID_PARAMETER;
         }
     }
     if (fres == FR_OK) {
@@ -1368,10 +1372,10 @@ int ImageCreator :: S_createDNP(SubsysCommand *cmd)
     if (f) {
         fm->fclose(f);
     }
-    return fres;
+    return (fres == FR_OK) ? SSRET_OK : SSRET_DISK_ERROR;
 }
 
-int ImageCreator :: S_createD64(SubsysCommand *cmd)
+SubsysResultCode_e ImageCreator :: S_createD64(SubsysCommand *cmd)
 {
 	int doGCR = (cmd->mode & 1);
 	int doDS  = (cmd->mode & 2);
@@ -1386,7 +1390,7 @@ int ImageCreator :: S_createD64(SubsysCommand *cmd)
 	GcrImage *gcr;
 	FileManager *fm = FileManager :: getFileManager();
 	bool save_result;
-	int retval = 0;
+	SubsysResultCode_e retval = SSRET_OK;
 
 	res = cmd->user_interface->string_box("Give name for new disk..", buffer, 22);
 	if(res > 0) {
@@ -1409,7 +1413,7 @@ int ImageCreator :: S_createD64(SubsysCommand *cmd)
                         delete gcr;
                     } else {
                         printf("No memory to create gcr image.\n");
-                        retval = -3;
+                        retval = SSRET_OUT_OF_MEMORY;
                     }
                 } else {
                     cmd->user_interface->show_progress("Creating...", 100);
@@ -1421,12 +1425,12 @@ int ImageCreator :: S_createD64(SubsysCommand *cmd)
 			} else {
 				printf("Can't create file '%s'\n", buffer);
 				cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
-				retval = -2;
+				retval = SSRET_SAVE_FAILED;
 			}
 			delete bin;
 		} else {
 			printf("No memory to create bin.\n");
-			retval = -1;
+			retval = SSRET_OUT_OF_MEMORY;
 		}
 	}
 	return retval;

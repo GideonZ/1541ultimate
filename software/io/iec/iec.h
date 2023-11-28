@@ -14,6 +14,7 @@
 #endif
 #include "fs_errors_flags.h"
 #include "disk_image.h"
+#include "stream_textlog.h"
 
 #define IECDEBUG 0
 
@@ -143,7 +144,7 @@ public:
     IecInterface();
     ~IecInterface();
     
-    int executeCommand(SubsysCommand *cmd); // from SubSystem
+    SubsysResultCode_e executeCommand(SubsysCommand *cmd); // from SubSystem
     const char *identify(void) { return "IEC"; }
     int get_current_iec_address(void) { return last_addr; }
 
@@ -165,8 +166,10 @@ public:
     friend class IecPrinter;
 };
 
-extern IecInterface iec_if;
- 
+extern IecInterface *iec_if;
+void init_software_iec(void*, void*);
+void iec_info(StreamTextLog &b);
+
 class UltiCopy : public UIObject
 {
 public:
@@ -190,7 +193,7 @@ public:
 
 
 
-#define ERR_OK							00
+#define ERR_ALL_OK						00
 #define ERR_FILES_SCRATCHED				01
 #define ERR_PARTITION_OK                02
 #define ERR_READ_ERROR					20

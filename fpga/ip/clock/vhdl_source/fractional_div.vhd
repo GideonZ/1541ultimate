@@ -15,7 +15,7 @@ generic (
     g_denominator   : natural := 200 );
 port (
     clock       : in  std_logic;
-    tick        : out std_logic; -- this should yield a 16 MHz tick
+    tick        : out std_logic := '0'; -- this should yield a 16 MHz tick
     tick_by_4   : out std_logic; -- this should yield a 4 MHz tick (for drive logic)
     tick_by_16  : out std_logic; -- this should yield an 1 MHz tick (i.e. for IEC processor)
     one_16000   : out std_logic ); -- and thus, this should yield a 1 ms tick
@@ -53,16 +53,17 @@ architecture arch of fractional_div is
         return res;
     end function;
     
-    signal c_bits_min   : integer := 1 + log2_ceil(-c_min - 1);
-    signal c_bits_max   : integer := 1 + log2_ceil(c_max);
-
-    signal accu      : signed(7 downto 0) := (others => '0'); 
+    constant c_bits_min    : integer := 1 + log2_ceil(-c_min - 1);
+    constant c_bits_max    : integer := 1 + log2_ceil(c_max);
+    constant c_bits_needed : integer := maxof2(c_bits_min, c_bits_max);
+    signal accu      : signed(8 downto 0) := (others => '0'); 
     signal div16000  : unsigned(13 downto 0) := to_unsigned(128, 14);
     
 begin
-    assert c_bits_max <= 8 report "Need more bits for accu (max:"&integer'image(c_max)&", but Xilinx doesn't let me define this dynamically:" & integer'image(c_bits_max) severity error;
-    assert c_bits_min <= 8 report "Need more bits for accu (max:"&integer'image(c_min)&", but Xilinx doesn't let me define this dynamically:" & integer'image(c_bits_min) severity error;
-    
+    assert c_bits_max <= accu'length report "Need more bits for accu (max:"&integer'image(c_max)&", but Xilinx doesn't let me define this dynamically:" & integer'image(c_bits_max) severity error;
+    assert c_bits_min <= accu'length report "Need more bits for accu (min:"&integer'image(c_min)&", but Xilinx doesn't let me define this dynamically:" & integer'image(c_bits_min) severity error;
+    assert c_bits_needed <= accu'length report "Need more bits for accu ("&integer'image(c_bits_needed)&"/"&integer'image(accu'length)&", but Xilinx doesn't let me define this dynamically" severity error;
+
     process(clock)
     begin
         if rising_edge(clock) then

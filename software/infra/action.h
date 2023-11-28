@@ -11,10 +11,11 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
+#include "return_codes.h"
 
 class SubsysCommand;
 
-typedef int (*actionFunction_t)(SubsysCommand *cmd);
+typedef SubsysResultCode_e (*actionFunction_t)(SubsysCommand *cmd);
 
 class Action
 {

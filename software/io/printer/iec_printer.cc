@@ -26,6 +26,7 @@
 
 #include "iec_printer.h"
 #include "endianness.h"
+#include "init_function.h"
 
 /******************************  Definitions  ***************************/
 
@@ -99,7 +100,19 @@ static struct t_cfg_definition iec_printer_config[] = {
 };
 
 /* This is where the virtual printer is created */
-IecPrinter iec_printer;
+IecPrinter *iec_printer;
+
+// this global will cause us to run!
+static void init_printer(void *_a, void *_b)
+{
+    iec_printer = new IecPrinter();
+    if (iec_printer->get_current_printer_address() == 0) {
+        delete iec_printer;
+        iec_printer = NULL;
+    }
+}
+InitFunction iec_printer_init(init_printer, NULL, NULL);
+
 
 /************************************************************************
 *                  IecPrinter::effectuate_settings()            Public  *
@@ -154,7 +167,7 @@ void IecPrinter::effectuate_settings(void)
     /* Enable printer if requested */
     printer_enable = uint8_t(cfg->get_value(CFG_PRINTER_ENABLE));
 
-    iec_if.iec_printer_enable(printer_enable, bus_id);
+    iec_if->iec_printer_enable(printer_enable, bus_id);
 }
 
 /************************************************************************
@@ -238,7 +251,7 @@ void IecPrinter::update_task_items(bool writablePath, Path *path)
 *                                                                       *
 ************************************************************************/
 
-int IecPrinter::executeCommand(SubsysCommand *cmd)
+SubsysResultCode_e IecPrinter::executeCommand(SubsysCommand *cmd)
 {
     PrinterEvent_t printerEvent;  // event to send to printer task
 
@@ -250,12 +263,12 @@ int IecPrinter::executeCommand(SubsysCommand *cmd)
         case MENU_PRINTER_ON:
             reset();
             printer_enable = 1;
-            iec_if.iec_printer_enable(printer_enable);
+            iec_if->iec_printer_enable(printer_enable);
             break;
 
         case MENU_PRINTER_OFF:
             printer_enable = 0;
-            iec_if.iec_printer_enable(printer_enable);
+            iec_if->iec_printer_enable(printer_enable);
             break;
 
         case MENU_PRINTER_FLUSH:
@@ -288,7 +301,7 @@ int IecPrinter::executeCommand(SubsysCommand *cmd)
 
     cmd_ui = NULL;
 
-    return 0;
+    return SSRET_OK;
 }
 
 /************************************************************************
@@ -683,7 +696,7 @@ void IecPrinter::task(IecPrinter *p)
                         case PRINTER_USERCMD_RESET:
                             HW_IEC_RESET_ENABLE = 0;
                             p->reset();
-                            iec_if.iec_printer_enable(p->printer_enable);
+                            iec_if->iec_printer_enable(p->printer_enable);
                             break;
 
                         case PRINTER_USERCMD_FLUSH:

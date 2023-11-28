@@ -5,7 +5,7 @@
  *      Author: Gideon
  */
 
-#include "socket.h"
+#include <sys/socket.h>
 #include "socket_gui.h"
 #include "socket_stream.h"
 
@@ -118,8 +118,8 @@ int SocketGui :: listenTask(void)
 		}
 
 		struct timeval tv;
-		tv.tv_sec = 20; // bug in lwip; this is just used directly as tick value
-		tv.tv_usec = 20;
+		tv.tv_sec = 23; // bug in lwip; this is just used directly as tick value
+		tv.tv_usec = 27;
 		setsockopt(actual_socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
 
 		SocketStream *stream = new SocketStream(actual_socket);
