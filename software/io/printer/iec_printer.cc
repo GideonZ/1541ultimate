@@ -99,20 +99,33 @@ static struct t_cfg_definition iec_printer_config[] = {
     { 0xFF,                   CFG_TYPE_END,    "",                  "",   NULL,   0,  0, 0 }
 };
 
-/* This is where the virtual printer is created */
-IecPrinter *iec_printer;
+/* =======  Subsystem creation and registration */
 
-// this global will cause us to run!
+/* This is the pointer to the virtual printer */
+IecPrinter *iec_printer = NULL;
+
+/* This will create the IecPrinter object */
 static void init_printer(void *_a, void *_b)
 {
     iec_printer = new IecPrinter();
-    if (iec_printer->get_current_printer_address() == 0) {
+
+    if (iec_printer->get_current_printer_address() == 0)
+    {
         delete iec_printer;
         iec_printer = NULL;
     }
 }
-InitFunction iec_printer_init(init_printer, NULL, NULL);
 
+/*-
+ *
+ *  This global will cause us to run!
+ *
+ *  Order=10 to be sure the IEC is already created when the Printer object
+ *  is initialized, the printer will need to register with the IEC, so the
+ *  IEC must exist
+ *
+-*/
+InitFunction iec_printer_init(init_printer, NULL, NULL, 10);
 
 /************************************************************************
 *                  IecPrinter::effectuate_settings()            Public  *
