@@ -360,8 +360,7 @@ IecPrinter::IecPrinter() : SubSystem(SUBSYSID_PRINTER)
     last_printer_addr = 4;
     mps = MpsPrinter::getMpsPrinter();
     buffer_pointer = 0;
-    output_type = PRINTER_PNG_OUTPUT;
-    init = true;
+    output_type = PRINTER_UNSET_OUTPUT;
     cmd_ui = 0;
     is_color = false;
 
@@ -602,30 +601,6 @@ int IecPrinter::flush(void)
         open_file();
 
     close_file();
-
-    return IEC_OK;
-}
-
-/************************************************************************
-*                           IecPrinter::init_done()             Pubic   *
-*                           ~~~~~~~~~~~~~~~~~~~~~~~                     *
-* Function : Tell IecPrinter that system init is done                   *
-*            printer is disabled while system init                      *
-*-----------------------------------------------------------------------*
-* Inputs:                                                               *
-*                                                                       *
-*    none                                                               *
-*                                                                       *
-*-----------------------------------------------------------------------*
-* Outputs:                                                              *
-*                                                                       *
-*    IEC_OK always                                                      *
-*                                                                       *
-************************************************************************/
-
-int IecPrinter::init_done(void)
-{
-    init = false;
 
     return IEC_OK;
 }
@@ -1013,7 +988,8 @@ int IecPrinter::set_output_type(int t)
             break;
     }
 
-    if (!init && new_output_type != output_type)
+    // Don't close file on first selection (from nvram or default)
+    if ((output_type != PRINTER_UNSET_OUTPUT) && (new_output_type != output_type))
         close_file();
 
     output_type = new_output_type;

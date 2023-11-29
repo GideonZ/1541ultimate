@@ -299,9 +299,7 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
         channels[i] = new IecChannel(this, i);
     }
     channels[15] = new IecCommandChannel(this, 15);
-    
-    iec_printer->init_done();
-
+ 
     ulticopyBusy = xSemaphoreCreateBinary();
     ulticopyMutex = xSemaphoreCreateMutex();
     queueGuiToIec = xQueueCreate(2, sizeof(char *));
