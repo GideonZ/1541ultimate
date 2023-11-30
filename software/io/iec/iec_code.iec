@@ -10,11 +10,118 @@ Tne = 40
 Tye = 1000
 Tbb = 90
 
-start
-            JUMP reset_vec
+; Control codes sent to software via FIFO
+; $41 : Start of ATN
+; $42 : End of ATN
+; $43 : Ready to send (software can now push data to be sent in FIFO)
+; $44 : Ready to receive (not sent to software)
+; $45 : End of reception (OEI)
+; $46 : Start of printer data
+; $47 : Byte transmitted  (we need to know this, because our fifo can get flushed by ATN)
 
-# IRQ is at address 1
-ATN_IRQ
+CTRL_ATN_BEGIN     = $41
+CTRL_ATN_END       = $42
+CTRL_READY_FOR_TX  = $43
+CTRL_READY_FOR_RX  = $44
+CTRL_EOI           = $45
+CTRL_BYTE_TXED     = $47
+CTRL_TX_DONE       = $5a
+CTRL_RX_DONE       = $5b
+
+CTRL_DEV1          = $81
+CTRL_DEV2          = $82
+CTRL_DEV3          = $83
+
+; $57 : Acknowledge WARP mode enabled
+; $AD : End of WARP bloc reception (328 bytes)
+; $AE : Timeout on WARP (never sent because subroutine never called)
+; $DA : Start of WARP reception
+; $DE : WARP reception failure
+
+WARP_ACK           = $57
+WARP_BLOCK_END     = $AD
+WARP_TIMEOUT       = $AE
+WARP_START_RX      = $DA
+WARP_RX_ERROR      = $DE
+
+; $E5 : Invalid control code received from software
+; $E6 : No device, we are alone on IEC bus
+
+ERROR_BAD_CTRLCODE = $E5
+ERROR_NO_DEVICE    = $E6
+ERROR_RX_TIMEOUT   = $E9
+
+; Control codes received from software via FIFO
+; $57 : Switch to WARP mode (from initial waiting state)
+; $1D : Switch to MASTER mode to send ATN commands (from initial waiting state)
+
+CMD_GO_WARP         = $57
+CMD_TX_END          = $10
+CMD_MASTER_TURNARND = $1A
+CMD_MASTER_RELEASE  = $1B
+CMD_MASTER_TX       = $1C
+CMD_MASTER_START    = $1D
+
+start
+            JUMP reset_vec   # Must be at address 0
+            JUMP atn_irq_vec # Must be at address 1
+
+CHECK_ATN_BYTE
+            IF NOT DATABYTE IS $5F THEN _dont_untalk
+            SET TALKER=0
+            RET
+_dont_untalk
+            IF NOT DATABYTE IS $3F THEN _dont_unlisten
+            SET LISTENER=0
+            RET
+_dont_unlisten
+_check_slot1
+            IF NOT DATABYTE IS $F0 THEN _dont_talk1   # Replace for device ID #1 + $40, or RET, if no device.
+            LOAD CTRL_DEV1
+            PUSHC
+            SET TALKER=1
+            SET LISTENER=0
+            RET
+_dont_talk1
+            IF NOT DATABYTE IS $F8 THEN _dont_listen1 # Replace for device ID #1 + $20, or RET, if no device.
+            LOAD CTRL_DEV1
+            PUSHC
+            SET LISTENER=1
+            SET TALKER=0
+            RET
+_dont_listen1
+_check_slot2
+            IF NOT DATABYTE IS $F1 THEN _dont_talk2   # Replace for device ID #2 + $40, or RET, if no device.
+            LOAD CTRL_DEV2
+            PUSHC
+            SET TALKER=1
+            SET LISTENER=0
+            RET
+_dont_talk2
+            IF NOT DATABYTE IS $F9 THEN _dont_listen2 # Replace for device ID #2 + $20, or RET, if no device.
+            LOAD CTRL_DEV2
+            PUSHC
+            SET LISTENER=1
+            SET TALKER=0
+            RET
+_dont_listen2
+_check_slot3
+            IF NOT DATABYTE IS $F2 THEN _dont_talk3   # Replace for device ID #3 + $40, or RET, if no device.
+            LOAD CTRL_DEV3
+            PUSHC
+            SET TALKER=1
+            SET LISTENER=0
+            RET
+_dont_talk3
+            IF NOT DATABYTE IS $FA THEN _dont_listen3 # Replace for device ID #3 + $20, or RET, if no device.
+            LOAD CTRL_DEV3
+            PUSHC
+            SET LISTENER=1
+            SET TALKER=0
+_dont_listen3
+            RET
+
+atn_irq_vec
             CLRST
             SET DATA=0 # not ready to receive
             SET CLK=1  # release clock
@@ -23,7 +130,7 @@ ATN_IRQ
 
 # We are now able to release data, unless we are not ready to receive data
 # So we have to check our FIFO and see if it has room for a new byte.
-            LOAD $41
+            LOAD CTRL_ATN_BEGIN
             PUSHC
 
             WAIT UNTIL CLK=1
@@ -46,7 +153,7 @@ _no_push2
             WAIT FOR 70 us
             SET DATA=1
             WAIT UNTIL NOT ATN=0        # ATN is not for us, wait end of ATN
-            LOAD $42
+            LOAD CTRL_ATN_END
             PUSHC
             JUMP RELEASE
 _keep_data
@@ -60,7 +167,7 @@ _check_after_atn_byte
             WAIT UNTIL NOT CLK=0,ATN=0
 
             IF NOT ATN THEN _atn_loop  #CLK might still be 0
-            LOAD $42  # Tell to the software that ATN is now released
+            LOAD CTRL_ATN_END  # Tell to the software that ATN is now released
             PUSHC
 
             IF TALKER THEN ATN_TURNAROUND # We'll talk?
@@ -71,7 +178,7 @@ _check_after_atn_byte
             IF NOT LISTENER THEN RELEASE
 
             # We need to listen!
-#            LOAD $44
+#            LOAD CTRL_READY_FOR_RX
 #            PUSHC
 
 _listen_normally
@@ -81,7 +188,7 @@ _listen_normally
             IF NOT EOI THEN _listen_normally
             SET LISTENER=0
             WAIT FOR 70 us
-            LOAD $5b
+            LOAD CTRL_RX_DONE
             PUSHC
             JUMP RELEASE
 
@@ -91,11 +198,11 @@ ATN_TURNAROUND
             SET CLK=0
             SET DATA=1
             WAIT FOR Tda
-            LOAD $43  # Tell to the software that it should push data
+            LOAD CTRL_READY_FOR_TX  # Tell to the software that it should push data
             PUSHC
             SET EOI=0
             SUB TRANSMIT
-            LOAD $5a
+            LOAD CTRL_TX_DONE
             PUSHC
             JUMP RELEASE
 
@@ -105,8 +212,8 @@ TRANSMIT
 
             # A control byte is now on the fifo output
             POPB  # now actually consume the control byte
-            IF DATABYTE IS $10 THEN _tx_done
-            LOAD $EF
+            IF DATABYTE IS CMD_TX_END THEN _tx_done
+            LOAD ERROR_BAD_CTRLCODE
             PUSHC
             RET
 
@@ -173,7 +280,7 @@ _no_tx_eoi
             WAIT UNTIL DATA=0 FOR 1000 us
             IF TIMEOUT THEN _error
             POPB  # the byte was read into the register using READ. Now we actually POP the byte, because it has been acknowledged by the initiator
-            LOAD $47
+            LOAD CTRL_BYTE_TXED
             PUSHC
             WAIT FOR Tbb
             RET
@@ -264,35 +371,9 @@ PUSH_BYTE
             PUSHD # Push received byte to software
             IF NOT EOI THEN _noeoi
             # If end flag was received, push end marker to software
-            LOAD $45
+            LOAD CTRL_EOI
             PUSHC
 _noeoi
-            RET
-
-CHECK_ATN_BYTE
-            IF NOT DATABYTE IS $5F THEN _dont_untalk
-            SET TALKER=0
-            RET
-_dont_untalk
-            IF NOT DATABYTE IS $4A THEN _dont_talk
-            SET TALKER=1
-            SET LISTENER=0
-            RET
-_dont_talk
-            IF NOT DATABYTE IS $3F THEN _dont_unlisten
-            SET LISTENER=0
-            RET
-_dont_unlisten
-            IF NOT DATABYTE IS $2A THEN _dont_listen
-            SET LISTENER=1
-            SET TALKER=0
-_dont_listen
-            IF NOT DATABYTE IS $24 THEN _dont_print
-            LOAD $46
-            PUSHC
-            SET LISTENER=1
-            SET TALKER=0
-_dont_print
             RET
 
 # Below are some different error codes for debug
@@ -307,7 +388,7 @@ _error1
             JUMP RELEASE
 
 _error2
-            LOAD $E9
+            LOAD ERROR_RX_TIMEOUT
             PUSHC
             JUMP RELEASE
 
@@ -316,8 +397,8 @@ reset_vec
             SET IRQ_EN=1
             POPB ; hang
             IF NOT CTRL THEN reset_vec
-            IF DATABYTE IS $57 THEN WARP_START
-            IF DATABYTE IS $1D THEN MASTER_START
+            IF DATABYTE IS CMD_GO_WARP THEN WARP_START
+            IF DATABYTE IS CMD_MASTER_START THEN MASTER_START
             JUMP reset_vec
 
 MASTER_START
@@ -336,11 +417,11 @@ _atn_send
             JUMP _atn_send
 _master_test
             POPB
-            IF DATABYTE IS $1D THEN MASTER_START
-            IF DATABYTE IS $1C THEN _release_atn_and_tx
-            IF DATABYTE IS $1B THEN RELEASE
-            IF DATABYTE IS $1A THEN _release_and_turnaround
-            LOAD $E5
+            IF DATABYTE IS CMD_MASTER_START THEN MASTER_START
+            IF DATABYTE IS CMD_MASTER_TX THEN _release_atn_and_tx
+            IF DATABYTE IS CMD_MASTER_RELEASE THEN RELEASE
+            IF DATABYTE IS CMD_MASTER_TURNARND THEN _release_and_turnaround
+            LOAD ERROR_BAD_CTRLCODE
             PUSHC
 _release_atn_and_tx
             SET ATN=1
@@ -360,7 +441,7 @@ _release_and_turnaround
             JUMP _listen_normally
 
 no_device
-            LOAD $E6
+            LOAD ERROR_NO_DEVICE
             PUSHC
             JUMP RELEASE
 
@@ -371,7 +452,7 @@ warp_continue
             WAIT UNTIL NOT CLK=1,DATA=1
             IF NOT CLK THEN warp_error
 warp_data
-            LOAD $DA
+            LOAD WARP_START_RX
             PUSHC
             POPB ; handshake
             LOAD $55 # Push missing $55
@@ -386,7 +467,7 @@ warp_data
             SUB get_128
             SUB warp_sync
             SUB get_68
-            LOAD $AD
+            LOAD WARP_BLOCK_END
             PUSHC
             WAIT FOR 5 us
             WAIT UNTIL CLK=1,DATA=1
@@ -394,7 +475,7 @@ warp_data
             JUMP warp_continue
 
 warp_error
-            LOAD $DE
+            LOAD WARP_RX_ERROR
             PUSHC
             SET DATA=0
             WAIT UNTIL CLK=1
@@ -414,7 +495,7 @@ warp_sync
             RET
 
 warp_timeout
-            LOAD $AE
+            LOAD WARP_TIMEOUT
             PUSHC
             IRQ
             WAIT UNTIL CLK=1,DATA=1
@@ -468,27 +549,3 @@ get_68
             SUB get_32
             SUB get_4
             RET
-
-
-; Control codes sent to software via FIFO
-; $41 : Start of ATN
-; $42 : End of ATN
-; $43 : Ready to send (software can now push data to be sent in FIFO)
-; $44 : Ready to receive (not sent to software)
-; $45 : End of reception (OEI)
-; $46 : Start of printer data
-; $47 : Byte transmitted  (we need to know this, because our fifo can get flushed by ATN)
-
-; $57 : Acknowledge WARP mode enabled
-; $AD : End of WARP bloc reception (328 bytes)
-; $AE : Timeout on WARP (never sent because subroutine never called)
-; $DA : Start of WARP reception
-; $DE : WARP reception failure
-
-; $E5 : Invalid control code received from software
-; $E6 : No device, we are alone on IEC bus
-
-
-; Control codes received from software via FIFO
-; $57 : Switch to WARP mode (from initial waiting state)
-; $1D : Switch to MASTER mode to send ATN commands (from initial waiting state)

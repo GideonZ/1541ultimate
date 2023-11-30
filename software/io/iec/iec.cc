@@ -162,82 +162,81 @@ void IecInterface :: iec_task(void *a)
 	iec->poll();
 }
 
-void IecInterface :: iec_processor_configure(void)
+void IecInterface :: program_processor(void)
 {
-    int size;
-    uint8_t *src;
+    printf("IEC Processor found: Version = %b. Loading code...", HW_IEC_VERSION);
+    HW_IEC_RESET_ENABLE = 0; // disable while programming
+    int size = (int)&_iec_code_b_size;
+    uint8_t *src = &_iec_code_b_start;
+    uint8_t *dst = (uint8_t *)HW_IEC_CODE;
+    for(int i=0; i<size; i++) {
+        *(dst++) = *(src++);
+    }
+}
 
-    int current_config = (iec_drive_enabled ? 0x01 : 0x00) | (iec_printer_enabled ? 0x02 : 0x00);
+void IecInterface :: get_patch_locations(void)
+{
+    int size = (int)&_iec_code_b_size;
+    uint8_t *src = &_iec_code_b_start;
 
-    switch (current_config)
-    {
-        case 0x00:  /* No IEC device enabled, disable IEC processor */
-            printf("Disable IEC processor\n");
-            HW_IEC_RESET_ENABLE = 0; // disable
-            return;
-
-        case 0x01:  /* IEC drive enabled, IEC printed disabled */
-            printf("Enable IEC for drive only\n");
-            size = (int)&_iec_code_dr_b_size;
-            src = &_iec_code_dr_b_start;
-            break;
-
-        case 0x02:  /* IEC drive disabled, IEC printer enabled */
-            printf("Enable IEC for printer only\n");
-            size = (int)&_iec_code_pr_b_size;
-            src = &_iec_code_pr_b_start;
-            break;
-
-        case 0x03:  /* IEC drive enabled, IEC printer enabled */
-            printf("Enable IEC for drive and printer\n");
-            size = (int)&_iec_code_dr_pr_b_size;
-            src = &_iec_code_dr_pr_b_start;
-            break;
+    int found = 0;
+    for(int i=0; i<MAX_SLOTS; i++) {
+        talker_loc[i] = -1;
+        listener_loc[i] = -1;
     }
 
-    HW_IEC_RESET_ENABLE = 0; // disable while loading code
-
-    printf("IEC Processor found: Version = %b. Loading code...", HW_IEC_VERSION);
-    uint8_t *dst = (uint8_t *)HW_IEC_CODE;
-
-    /* In stock IEC program, drive is id=10 and printer is id=4 */
-    uint32_t was_drive_talk     = 0x18800040 + 10; // compare instruction
-    uint32_t was_drive_listen   = 0x18800020 + 10;
-    uint32_t was_printer_listen = 0x18800020 + 4;
-
-    printf("Setting IEC bus ID to %d for drive and %d for printer.\n", iec_drive_id, iec_printer_id);
-    int replaced = 0;
-
-    for(int i=0;i<size;i+=4)
-    {
-        /* Each instruction is a 32 bit word */
+    for(int i=0; i<size; i+=4) {
+        // Each instruction is a 32 bit word 
         uint32_t word_read = cpu_to_32le(src[i] | src[i+1]<<8 | src[i+2]<<16 | src[i+3]<<24);
 
-        if (i<16) printf("%03x: 0x%08x\n", i, word_read);
-
-        /* Replace device ID in LSByte */
-        if ((word_read & 0x1F8000FF) == was_drive_listen) {
-            word_read = (word_read & 0xFFFFFFE0) + iec_drive_id;
-            replaced ++;
-        } else if ((word_read & 0x1F8000FF) == was_drive_talk) {
-            word_read = (word_read & 0xFFFFFFE0) + iec_drive_id;
-            replaced ++;
-        } else if ((word_read & 0x1F8000FF) == was_printer_listen) {
-            word_read = (word_read & 0xFFFFFFE0) + iec_printer_id;
-            replaced ++;
+        int slot_id = word_read & 7;
+        // Find replacer words
+        if ((word_read & 0x1F8000F8) == 0x188000F0) {
+            if (slot_id < MAX_SLOTS) {
+                talker_loc[slot_id] = i;
+                // printf("Talker %d @ %d\n", slot_id, i / 4);
+                found++;
+            }
         }
+        if ((word_read & 0x1F8000F8) == 0x188000F8) {
+            if (slot_id < MAX_SLOTS) {
+                listener_loc[slot_id] = i;
+                // printf("Listener %d @ %d\n", slot_id, i / 4);
+                found++;
+            }
+        }
+        if (found >= 2*MAX_SLOTS) {
+            break;
+        }
+    }
+    available_slots = found / 2;
+}
 
-        word_read = cpu_to_32le(word_read);
+void IecInterface :: iec_processor_configure(void)
+{
+    uint8_t drive_id = iec_drive_enabled ? iec_drive_id : 0x1f;
+    uint8_t printer_id = iec_printer_enabled ? iec_printer_id : 0x1f;
 
-        dst[i] = (uint8_t) (word_read & 0xFF);
-        dst[i+1] = (uint8_t) ((word_read >> 8) & 0xFF);
-        dst[i+2] = (uint8_t) ((word_read >> 16) & 0xFF);
-        dst[i+3] = (uint8_t) ((word_read >> 24) & 0xFF);
+    HW_IEC_RESET_ENABLE = 0; // disable
+    if (!iec_drive_enabled && !iec_printer_enabled) {
+        printf("Disable IEC processor\n");
+        return;
     }
 
-    printf("%d bytes loaded with %d replaced bytes.\n", size, replaced);
+    printf("Setting IEC bus ID to %d for drive and %d for printer.\n", iec_drive_id, iec_printer_id);
+
+    set_slot_devnum(0, drive_id);
+    set_slot_devnum(1, printer_id);
+    set_slot_devnum(2, 0x1f); // disable for now
 
     HW_IEC_RESET_ENABLE = 1; // enable
+}
+
+void IecInterface :: set_slot_devnum(int slot, uint8_t dev)
+{
+    uint8_t *dst = (uint8_t *)HW_IEC_CODE;
+    dst[listener_loc[slot]] = dev | 0x20;
+    dst[talker_loc[slot]] = dev | 0x40;
 }
 
 void IecInterface :: iec_drive_enable(bool b, uint8_t id)
@@ -268,12 +267,13 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
 
     register_store(0x49454300, "Software IEC Settings", iec_config);
 
+    get_patch_locations();
+    program_processor();
+
     iec_drive_enabled = 0;
     iec_printer_enabled = 0;
     iec_drive_id = 10;
     iec_printer_id = 4;
-
-    HW_IEC_RESET_ENABLE = 0; // disable
 
     atn = false;
     cmd_path = fm->get_new_path("IEC Gui Path");
@@ -431,34 +431,34 @@ void IecInterface :: poll()
 
             if(a & IEC_FIFO_CTRL) {
                 switch(data) {
-                    case 0xDA:
+                    case WARP_START_RX:
                         DBGIEC("[WARP:START.");
                         HW_IEC_TX_DATA = 0x00; // handshake and wait for IRQ
                         wait_irq = true;
                         break;
 
-                    case 0xAD:
+                    case WARP_BLOCK_END:
                         DBGIEC(".WARP:OK]");
                         ioWrite8(UART_DATA, 0x23); // printf("{warp_end}");
                         break;
 
-                    case 0xDE:
+                    case WARP_RX_ERROR:
                         DBGIEC(".WARP:ERR]");
                         get_warp_error();
                         break;
 
-                    case 0x57:
+                    case WARP_ACK:
                         DBGIEC(".WARP:ACK.");
                         break;
 
-                    case 0x43:
+                    case CTRL_READY_FOR_TX:
                         DBGIEC(".RTS.");
                         channels[current_channel]->talk();
                         HW_IEC_TX_FIFO_RELEASE = 1;
                         talking = true;
                         break;
 
-                    case 0x45:
+                    case CTRL_EOI:
                         DBGIEC(".EOI]\n");
                         if (printer) {
                             iec_printer->push_command(0xFF);
@@ -468,26 +468,26 @@ void IecInterface :: poll()
                         }
                         break;
 
-                    case 0x41:
+                    case CTRL_ATN_BEGIN:
                         DBGIEC("\n[ATN.");
                         atn = true;
                         talking = false;
                         printer = false;
                         break;
 
-                    case 0x42:
+                    case CTRL_ATN_END:
                         DBGIEC(".ATN>");
                         atn = false;
                         break;
 
-                    case 0x47:
+                    case CTRL_BYTE_TXED:
                         DBGIEC("o");
                         if (!printer) {
                             channels[current_channel]->pop_data();
                         }
                         break;
 
-                    case 0x46:
+                    case CTRL_DEV2:
                         DBGIEC(".PRINTER.");
                         printer = true;
                         iec_printer->push_command(0xFE);
@@ -549,7 +549,7 @@ void IecInterface :: poll()
                     break;
                 } else {
                     printf("Talk Error = %d\n", st);
-                    HW_IEC_TX_CTRL = 0x10;
+                    HW_IEC_TX_CTRL = IEC_CMD_TX_TERM;
                     talking = false;
                     break;
                 }

@@ -53,6 +53,30 @@
 #define IEC_CMD_ATN_TO_TX   0x1C
 #define IEC_CMD_ATN_RELEASE 0x1B
 #define IEC_CMD_ATN_TO_RX   0x1A
+#define IEC_CMD_TX_TERM     0x10
+
+#define CTRL_ATN_BEGIN     0x41
+#define CTRL_ATN_END       0x42
+#define CTRL_READY_FOR_TX  0x43
+#define CTRL_READY_FOR_RX  0x44
+#define CTRL_EOI           0x45
+#define CTRL_BYTE_TXED     0x47
+#define CTRL_TX_DONE       0x5a
+#define CTRL_RX_DONE       0x5b
+#define CTRL_DEV1          0x81
+#define CTRL_DEV2          0x82
+#define CTRL_DEV3          0x83
+
+#define WARP_ACK           0x57
+#define WARP_BLOCK_END     0xAD
+#define WARP_TIMEOUT       0xAE
+#define WARP_START_RX      0xDA
+#define WARP_RX_ERROR      0xDE
+
+#define ERROR_BAD_CTRLCODE 0xE5
+#define ERROR_NO_DEVICE    0xE6
+#define ERROR_RX_TIMEOUT   0xE9
+
 
 #define IEC_FIFO_EMPTY 0x01
 #define IEC_FIFO_FULL  0x02
@@ -73,8 +97,14 @@ class UltiCopy;
 class IecFileSystem;
 class FileManager;
 
+#define MAX_SLOTS 4
+
 class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
 {
+    int talker_loc[MAX_SLOTS];
+    int listener_loc[MAX_SLOTS];
+    int available_slots;
+
     TaskHandle_t taskHandle;
     UserInterface *cmd_ui;
     SemaphoreHandle_t ulticopyBusy;
@@ -106,6 +136,10 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
     uint8_t iec_printer_id;
 
     BinImage *ulticopy_bin_image;
+
+    void get_patch_locations(void);
+    void program_processor(void);
+    void set_slot_devnum(int slot, uint8_t dev);
 
     void reset(void);
     void poll(void);
@@ -233,15 +267,7 @@ typedef struct {
 /* -------  IEC processor code location and size */
 
 /* Code for drive and printer */
-extern uint8_t  _iec_code_dr_pr_b_start;
-extern uint32_t _iec_code_dr_pr_b_size;
-
-/* Code for drive only */
-extern uint8_t  _iec_code_dr_b_start;
-extern uint32_t _iec_code_dr_b_size;
-
-/* Code for printer only */
-extern uint8_t  _iec_code_pr_b_start;
-extern uint32_t _iec_code_pr_b_size;
+extern uint8_t  _iec_code_b_start;
+extern uint32_t _iec_code_b_size;
 
 #endif
