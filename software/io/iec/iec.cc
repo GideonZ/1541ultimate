@@ -576,10 +576,12 @@ SubsysResultCode_e IecInterface :: executeCommand(SubsysCommand *cmd)
 	switch(cmd->functionID) {
 		case MENU_IEC_ON:
 			iec_enable = 1;
+			cfg->set_value(CFG_IEC_ENABLE, iec_enable);
                         iec_drive_enable(iec_enable);
 			break;
 		case MENU_IEC_OFF:
 			iec_enable = 0;
+			cfg->set_value(CFG_IEC_ENABLE, iec_enable);
 			iec_drive_enable(iec_enable);
 			break;
 		case MENU_IEC_RESET:

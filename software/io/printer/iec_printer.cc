@@ -276,11 +276,13 @@ SubsysResultCode_e IecPrinter::executeCommand(SubsysCommand *cmd)
         case MENU_PRINTER_ON:
             reset();
             printer_enable = 1;
+            cfg->set_value(CFG_PRINTER_ENABLE, printer_enable);
             iec_if->iec_printer_enable(printer_enable);
             break;
 
         case MENU_PRINTER_OFF:
             printer_enable = 0;
+            cfg->set_value(CFG_PRINTER_ENABLE, printer_enable);
             iec_if->iec_printer_enable(printer_enable);
             break;
 
