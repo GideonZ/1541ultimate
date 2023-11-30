@@ -56,7 +56,8 @@
 /*********************************  Types  ******************************/
 
 enum t_printer_output_type {
-    PRINTER_PNG_OUTPUT=0,
+    PRINTER_UNSET_OUTPUT=0,
+    PRINTER_PNG_OUTPUT,
     PRINTER_RAW_OUTPUT,
     PRINTER_ASCII_OUTPUT
 };
@@ -118,9 +119,6 @@ class IecPrinter : public SubSystem, ObjectWithMenu, ConfigurableObject
         /* Printer is color (only used for progress bar) */
         bool is_color;
 
-        /* Flag set to true while in Ultimate init sequence */
-        bool init;
-
         /* User interface descriptor */
         UserInterface *cmd_ui;
 
@@ -157,7 +155,6 @@ class IecPrinter : public SubSystem, ObjectWithMenu, ConfigurableObject
         int push_data(uint8_t b);
         int push_command(uint8_t b);
         int flush(void);
-        int init_done(void);
         int reset(void);
 
         /* =======  Interface menu */

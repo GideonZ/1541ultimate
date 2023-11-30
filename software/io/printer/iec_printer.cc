@@ -99,20 +99,33 @@ static struct t_cfg_definition iec_printer_config[] = {
     { 0xFF,                   CFG_TYPE_END,    "",                  "",   NULL,   0,  0, 0 }
 };
 
-/* This is where the virtual printer is created */
-IecPrinter *iec_printer;
+/* =======  Subsystem creation and registration */
 
-// this global will cause us to run!
+/* This is the pointer to the virtual printer */
+IecPrinter *iec_printer = NULL;
+
+/* This will create the IecPrinter object */
 static void init_printer(void *_a, void *_b)
 {
     iec_printer = new IecPrinter();
-    if (iec_printer->get_current_printer_address() == 0) {
+
+    if (iec_printer->get_current_printer_address() == 0)
+    {
         delete iec_printer;
         iec_printer = NULL;
     }
 }
-InitFunction iec_printer_init(init_printer, NULL, NULL);
 
+/*-
+ *
+ *  This global will cause us to run!
+ *
+ *  Order=10 to be sure the IEC is already created when the Printer object
+ *  is initialized, the printer will need to register with the IEC, so the
+ *  IEC must exist
+ *
+-*/
+InitFunction iec_printer_init(init_printer, NULL, NULL, 10);
 
 /************************************************************************
 *                  IecPrinter::effectuate_settings()            Public  *
@@ -263,11 +276,13 @@ SubsysResultCode_e IecPrinter::executeCommand(SubsysCommand *cmd)
         case MENU_PRINTER_ON:
             reset();
             printer_enable = 1;
+            cfg->set_value(CFG_PRINTER_ENABLE, printer_enable);
             iec_if->iec_printer_enable(printer_enable);
             break;
 
         case MENU_PRINTER_OFF:
             printer_enable = 0;
+            cfg->set_value(CFG_PRINTER_ENABLE, printer_enable);
             iec_if->iec_printer_enable(printer_enable);
             break;
 
@@ -360,8 +375,7 @@ IecPrinter::IecPrinter() : SubSystem(SUBSYSID_PRINTER)
     last_printer_addr = 4;
     mps = MpsPrinter::getMpsPrinter();
     buffer_pointer = 0;
-    output_type = PRINTER_PNG_OUTPUT;
-    init = true;
+    output_type = PRINTER_UNSET_OUTPUT;
     cmd_ui = 0;
     is_color = false;
 
@@ -602,30 +616,6 @@ int IecPrinter::flush(void)
         open_file();
 
     close_file();
-
-    return IEC_OK;
-}
-
-/************************************************************************
-*                           IecPrinter::init_done()             Pubic   *
-*                           ~~~~~~~~~~~~~~~~~~~~~~~                     *
-* Function : Tell IecPrinter that system init is done                   *
-*            printer is disabled while system init                      *
-*-----------------------------------------------------------------------*
-* Inputs:                                                               *
-*                                                                       *
-*    none                                                               *
-*                                                                       *
-*-----------------------------------------------------------------------*
-* Outputs:                                                              *
-*                                                                       *
-*    IEC_OK always                                                      *
-*                                                                       *
-************************************************************************/
-
-int IecPrinter::init_done(void)
-{
-    init = false;
 
     return IEC_OK;
 }
@@ -1013,7 +1003,8 @@ int IecPrinter::set_output_type(int t)
             break;
     }
 
-    if (!init && new_output_type != output_type)
+    // Don't close file on first selection (from nvram or default)
+    if ((output_type != PRINTER_UNSET_OUTPUT) && (new_output_type != output_type))
         close_file();
 
     output_type = new_output_type;

@@ -299,9 +299,7 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
         channels[i] = new IecChannel(this, i);
     }
     channels[15] = new IecCommandChannel(this, 15);
-    
-    iec_printer->init_done();
-
+ 
     ulticopyBusy = xSemaphoreCreateBinary();
     ulticopyMutex = xSemaphoreCreateMutex();
     queueGuiToIec = xQueueCreate(2, sizeof(char *));
@@ -578,10 +576,12 @@ SubsysResultCode_e IecInterface :: executeCommand(SubsysCommand *cmd)
 	switch(cmd->functionID) {
 		case MENU_IEC_ON:
 			iec_enable = 1;
+			cfg->set_value(CFG_IEC_ENABLE, iec_enable);
                         iec_drive_enable(iec_enable);
 			break;
 		case MENU_IEC_OFF:
 			iec_enable = 0;
+			cfg->set_value(CFG_IEC_ENABLE, iec_enable);
 			iec_drive_enable(iec_enable);
 			break;
 		case MENU_IEC_RESET:
