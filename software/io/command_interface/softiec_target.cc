@@ -44,7 +44,7 @@ void SoftIECTarget :: parse_command(Message *command, Message **reply, Message *
     *reply  = &c_message_empty;
     *status = &c_status_unknown_cmd_local;
 
-    if (!iec_if) {
+    if (!iec_drive) {
         *status = &c_iec_module_not_loaded;
         return;
     }
@@ -127,7 +127,7 @@ void SoftIECTarget :: cmd_load_su(Message *command, Message **reply, Message **s
     IecChannel *channel;
 
     command->message[command->length] = 0; // make it a null-terminated string
-    channel = iec_if->get_data_channel(0); // corresponds to ATN byte $60
+    channel = iec_drive->get_data_channel(0); // corresponds to ATN byte $60
 
     data_message.length = 0;
     int result = channel->ext_open_file((const char *)&command->message[8]);
@@ -156,7 +156,7 @@ void SoftIECTarget :: cmd_load_ex(Message *command, Message **reply, Message **s
 
     IecChannel *channel;
 
-    channel = iec_if->get_data_channel(0); // corresponds to ATN byte $60
+    channel = iec_drive->get_data_channel(0); // corresponds to ATN byte $60
 
     status_message.length = 1;
     status_message.message[0] = 0;
@@ -188,7 +188,7 @@ void SoftIECTarget :: cmd_save(Message *command, Message **reply, Message **stat
     IecChannel *channel;
 
     command->message[command->length] = 0; // make it a null-terminated string
-    channel = iec_if->get_data_channel(1); // corresponds to ATN byte $61
+    channel = iec_drive->get_data_channel(1); // corresponds to ATN byte $61
 
     int result = channel->ext_open_file((const char *)&command->message[8]);
     if (result) {
@@ -214,7 +214,7 @@ void SoftIECTarget :: cmd_open(Message *command, Message **reply, Message **stat
     IecChannel *channel;
 
     command->message[command->length] = 0; // make it a null-terminated string
-    channel = iec_if->get_data_channel((int)command->message[2]); // also works for command channel ;-)
+    channel = iec_drive->get_data_channel((int)command->message[2]); // also works for command channel ;-)
 
     channel->ext_open_file((const char *)&command->message[4]);
 
@@ -228,7 +228,7 @@ void SoftIECTarget :: cmd_chkin(Message *command, Message **reply, Message **sta
     // 3: secondary address
     *status = &c_message_empty;
 
-    input_channel = iec_if->get_data_channel((int)command->message[2]); // also works for command channel ;-)
+    input_channel = iec_drive->get_data_channel((int)command->message[2]); // also works for command channel ;-)
     input_channel->talk();
     total_prepared = 0;
     prepare_data(32); // we don't know yet how serious the client is about reading, so let's give him a little
@@ -297,7 +297,7 @@ void SoftIECTarget :: cmd_chkout(Message *command, Message **reply, Message **st
 
     input_channel = NULL;
 
-    IecChannel *channel = iec_if->get_data_channel((int)command->message[2]); // also works for command channel ;-)
+    IecChannel *channel = iec_drive->get_data_channel((int)command->message[2]); // also works for command channel ;-)
     switch(command->message[2] & 0xF0) {
     case 0xF0: // open
         command->message[command->length] = 0; // make it a null-terminated string
@@ -323,7 +323,7 @@ void SoftIECTarget :: cmd_close(Message *command, Message **reply, Message **sta
     *reply  = &c_message_empty;
     *status = &c_status_ok;
 
-    IecChannel *channel = iec_if->get_data_channel((int)command->message[2]); // also works for command channel ;-)
+    IecChannel *channel = iec_drive->get_data_channel((int)command->message[2]); // also works for command channel ;-)
     channel->ext_close_file();
 }
 

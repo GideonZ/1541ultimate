@@ -180,9 +180,8 @@ SRCS_CC +=  iec_interface.cc \
 			mps_printer_ibmpp.cc \
 			mps_chargen.cc \
 			mps_charset.cc \
-			mps_png.cc
-
-#			softiec_target.cc
+			mps_png.cc \
+			softiec_target.cc
 
 #			usb_em1010.cc \
 
