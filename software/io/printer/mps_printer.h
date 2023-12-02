@@ -35,6 +35,10 @@
 #include <stdio.h>
 #include "mps_png.h"
 
+#ifndef FS_ROOT
+#define FS_ROOT "/Usb0/"
+#endif
+
 /*******************************  Constants  ****************************/
 
 #define MPS_PRINTER_PAGE_WIDTH              1984
@@ -66,10 +70,6 @@
 
 /* Define this for computed RGB palette but not realistic */
 //#define TRUE_CMYK
-
-#ifndef FS_ROOT
-#define FS_ROOT "/Usb0/"
-#endif
 
 /******************************  Debug macros  **************************/
 

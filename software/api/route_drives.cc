@@ -2,8 +2,7 @@
 #include "filemanager.h"
 #include "json.h"
 #include "c1541.h"
-#include "iec.h"
-#include "iec_channel.h"
+#include "iec_interface.h"
 #include "attachment_writer.h"
 #include "route_drives.h"
 
@@ -30,11 +29,6 @@ static void drive_info(JSON_List *obj, C1541 *drive, const char *letter)
         ->add("image_path", path.c_str())));
 }
 
-void iec_info(JSON_List *obj) __attribute__((weak));
-void iec_info(JSON_List *obj)
-{
-}
-
 // List all the available drives
 API_CALL(GET, drives, none, NULL, ARRAY({ }))
 {
@@ -42,7 +36,7 @@ API_CALL(GET, drives, none, NULL, ARRAY({ }))
     resp->json->add("drives", drives);
     if (c1541_A) drive_info(drives, c1541_A, "a");
     if (c1541_B) drive_info(drives, c1541_B, "b");
-    if (iec_if) iec_info(drives);
+    IecInterface :: info(drives);
     resp->json_response(HTTP_OK);
 }
 

@@ -108,21 +108,11 @@ IecPrinter *iec_printer = NULL;
 static void init_printer(void *_a, void *_b)
 {
     iec_printer = new IecPrinter();
-
-    if (iec_printer->get_current_printer_address() == 0)
-    {
-        delete iec_printer;
-        iec_printer = NULL;
-    }
 }
 
 /*-
  *
  *  This global will cause us to run!
- *
- *  Order=10 to be sure the IEC is already created when the Printer object
- *  is initialized, the printer will need to register with the IEC, so the
- *  IEC must exist
  *
 -*/
 InitFunction iec_printer_init(init_printer, NULL, NULL, 10);
@@ -145,9 +135,6 @@ InitFunction iec_printer_init(init_printer, NULL, NULL, 10);
 
 void IecPrinter::effectuate_settings(void)
 {
-    /* IEC CPU machine code for printer device detection on IEC */
-    uint32_t was_printer_listen = 0x18800020 + 4;
-
     /* Page top margin and printable height are configurable */
     uint8_t page_top, page_height;
 
@@ -179,8 +166,6 @@ void IecPrinter::effectuate_settings(void)
 
     /* Enable printer if requested */
     printer_enable = uint8_t(cfg->get_value(CFG_PRINTER_ENABLE));
-
-    iec_if->iec_printer_enable(printer_enable, bus_id);
 }
 
 /************************************************************************
@@ -277,13 +262,13 @@ SubsysResultCode_e IecPrinter::executeCommand(SubsysCommand *cmd)
             reset();
             printer_enable = 1;
             cfg->set_value(CFG_PRINTER_ENABLE, printer_enable);
-            iec_if->iec_printer_enable(printer_enable);
+            iec_if->configure();
             break;
 
         case MENU_PRINTER_OFF:
             printer_enable = 0;
             cfg->set_value(CFG_PRINTER_ENABLE, printer_enable);
-            iec_if->iec_printer_enable(printer_enable);
+            iec_if->configure();
             break;
 
         case MENU_PRINTER_FLUSH:
@@ -382,6 +367,11 @@ IecPrinter::IecPrinter() : SubSystem(SUBSYSID_PRINTER)
     /* Read configuration from nvram if it exists */
     effectuate_settings();
 
+    /* Register printer with the interface */
+    IecInterface *interface = IecInterface :: get_iec_interface();
+    slot_id = interface->register_slave(this);
+    interface->configure();
+
     /* Initially, no caller task */
     xCallerSemaphore = xSemaphoreCreateBinary();
 
@@ -440,7 +430,7 @@ IecPrinter::~IecPrinter()
 *                                                                       *
 ************************************************************************/
 
-int IecPrinter::push_data(uint8_t b)
+t_channel_retval IecPrinter::push_data(uint8_t b)
 {
     PrinterEvent_t printerEvent;
 
@@ -468,7 +458,7 @@ int IecPrinter::push_data(uint8_t b)
 *                                                                       *
 ************************************************************************/
 
-int IecPrinter::_push_data(uint8_t b)
+t_channel_retval IecPrinter::_push_data(uint8_t b)
 {
     if (output_type == PRINTER_ASCII_OUTPUT)
     {
@@ -529,12 +519,21 @@ int IecPrinter::_push_data(uint8_t b)
 *                                                                       *
 ************************************************************************/
 
-int IecPrinter::push_command(uint8_t b)
+t_channel_retval IecPrinter::push_ctrl(uint16_t b)
 {
     PrinterEvent_t printerEvent;
 
     printerEvent.type = PRINTER_EVENT_CMD;
-    printerEvent.value = b;
+    switch(b) {
+        case SLAVE_CMD_EOI:
+            printerEvent.value = 0xFF;
+            break;
+        case SLAVE_CMD_ATN:
+            printerEvent.value = 0xFE;
+            break;
+        default:
+            printerEvent.value = (uint8_t)(b & 7);
+    }
 
     while( xQueueSend( queueHandle, (void *) &printerEvent, portMAX_DELAY) != pdTRUE);
 
@@ -557,7 +556,7 @@ int IecPrinter::push_command(uint8_t b)
 *                                                                       *
 ************************************************************************/
 
-int IecPrinter::_push_command(uint8_t b)
+t_channel_retval IecPrinter::_push_command(uint8_t b)
 {
     switch(b) {
         case 0xFE: // Received printer OPEN
@@ -636,7 +635,7 @@ int IecPrinter::flush(void)
 *                                                                       *
 ************************************************************************/
 
-int IecPrinter::reset(void)
+int IecPrinter::_reset(void)
 {
     buffer_pointer = 0;
     mps->Reset();
@@ -684,9 +683,8 @@ void IecPrinter::task(IecPrinter *p)
                     switch (printerEvent.value)
                     {
                         case PRINTER_USERCMD_RESET:
-                            HW_IEC_RESET_ENABLE = 0;
-                            p->reset();
-                            iec_if->iec_printer_enable(p->printer_enable);
+                            p->_reset();
+                            iec_if->configure();
                             break;
 
                         case PRINTER_USERCMD_FLUSH:
@@ -1113,6 +1111,40 @@ int IecPrinter::close_file(void) // file should be open
     }
 
     return 0;
+}
+
+/************************************************************************
+*                       IecPrinter::info(JSON_Object *)        Public   *
+*                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                 *
+* Function: Provide information about the printer in JSON format        * 
+*-----------------------------------------------------------------------*
+* Inputs:                                                               *
+*                                                                       *
+*    j : JSON Object. This is the entry that belongs to the device on   *
+*        the bus. We can add custom properties here.                    *
+*                                                                       *
+************************************************************************/
+void IecPrinter :: info(JSON_Object *j)
+{
+    // Add JSON entries to the object
+    j->add("test", false);
+}
+
+/************************************************************************
+*                       IecPrinter::info(StreamTextLog&)       Public   *
+*                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                *
+* Function: Provide information about the printer for SystemInfo screen * 
+*-----------------------------------------------------------------------*
+* Inputs:                                                               *
+*                                                                       *
+*    log : Log Object to which we can add text in ASCII format          *
+*          Indent should be 4.                                          *
+*                                                                       *
+************************************************************************/
+void IecPrinter :: info(StreamTextLog& log)
+{
+    // BusID and Enable have already been printed, so we can simply print more info about charset etc.
+    log.format("    TestInfo from Printer.\n");
 }
 
 /****************************  END OF FILE  ****************************/

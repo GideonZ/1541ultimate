@@ -169,7 +169,8 @@ SRCS_CC	 =  u2p_init.cc \
 			route_machine.cc \
 			$(PRJ).cc
 
-SRCS_CC +=  iec.cc \
+SRCS_CC +=  iec_interface.cc \
+			iec_drive.cc \
 			iec_channel.cc \
 			iec_printer.cc \
 			mps_printer.cc \
@@ -179,8 +180,9 @@ SRCS_CC +=  iec.cc \
 			mps_printer_ibmpp.cc \
 			mps_chargen.cc \
 			mps_charset.cc \
-			mps_png.cc \
-			softiec_target.cc
+			mps_png.cc
+
+#			softiec_target.cc
 
 #			usb_em1010.cc \
 

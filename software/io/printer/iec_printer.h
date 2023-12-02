@@ -22,22 +22,21 @@
          *
         -*/
 
-/******************************  Inclusions  ****************************/
+/******************************  Includes  ****************************/
 
 #ifndef IEC_PRINTER_H
 #define IEC_PRINTER_H
 
 #include <stdint.h>
-#include "menu.h"
-#include "config.h"
-#include "userinterface.h"
-#include "iec.h"
-#include "subsys.h"
-#include "dump_hex.h"
-#include "iec_channel.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
+#include "menu.h"
+#include "config.h"
+#include "userinterface.h"
+#include "iec_interface.h"
+#include "subsys.h"
+#include "dump_hex.h"
 #include "filemanager.h"
 #include "mystring.h"
 #include "mps_printer.h"
@@ -82,9 +81,12 @@ typedef struct PrinterEvent {
 /* Class IecPrinter                                                     */
 /*======================================================================*/
 
-class IecPrinter : public SubSystem, ObjectWithMenu, ConfigurableObject
+class IecPrinter : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObject
 {
     private:
+        /* Slot ID at registration with the interface */
+        int slot_id;
+
         /* PETASCII to ASCII lookup table */
         static uint8_t ascii_lut[256];
 
@@ -137,8 +139,9 @@ class IecPrinter : public SubSystem, ObjectWithMenu, ConfigurableObject
 
         /* =======  Printter task related methods */
         static void task(IecPrinter *iecPrinter);
-        int _push_data(uint8_t b);
-        int _push_command(uint8_t b);
+        t_channel_retval _push_data(uint8_t b);
+        t_channel_retval _push_command(uint8_t b);
+        int _reset(void);
 
         /* -------  User action menu */
         struct {
@@ -152,11 +155,18 @@ class IecPrinter : public SubSystem, ObjectWithMenu, ConfigurableObject
         IecPrinter(void);
         ~IecPrinter(void);
 
-        int push_data(uint8_t b);
-        int push_command(uint8_t b);
-        int flush(void);
-        int reset(void);
+        /* ====== IecSlave functions */
+        // void reset(void); // FIXME
+        t_channel_retval push_data(uint8_t b);
+        t_channel_retval push_ctrl(uint16_t b);
+        bool is_enabled(void) { return printer_enable; }
+        uint8_t get_address(void) { return (uint8_t) last_printer_addr; }
+        uint8_t get_type(void) { return 0x50; }
+        const char *iec_identify(void) { return "Printer Emulation"; }
+        void info(JSON_Object *);
+        void info(StreamTextLog&);
 
+        int flush(void);
         /* =======  Interface menu */
         void create_task_items();
         void update_task_items(bool writablePath, Path *path);
@@ -175,10 +185,6 @@ class IecPrinter : public SubSystem, ObjectWithMenu, ConfigurableObject
         int set_output_type(int t);
         int set_page_top(int d);
         int set_page_height(int d);
-
-        /* =======  Getters */
-        int get_current_printer_address(void) { return last_printer_addr; }
-        bool is_enabled(void) { return printer_enable; }
 
     private:
         /* =======  Output file management */

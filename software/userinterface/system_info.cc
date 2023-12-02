@@ -8,8 +8,7 @@
 #include "system_info.h"
 #include "c1541.h"
 #include "c64.h"
-#include "iec.h"
-#include "iec_channel.h"
+#include "iec_interface.h"
 #include "command_intf.h"
 #include "acia.h"
 #include "versions.h"
@@ -181,7 +180,7 @@ void SystemInfo :: generate(UserInterface *ui)
     if (c1541_B) {
         drive_info(buffer, c1541_B, 'B');
     }
-    iec_info(buffer);
+    IecInterface::info(buffer);
 
     buffer.format("Cartridge Information:\n");
     buffer.format("======================\n");

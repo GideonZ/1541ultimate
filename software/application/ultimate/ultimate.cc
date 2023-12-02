@@ -9,7 +9,7 @@
 #include "c64.h"
 #include "c64_subsys.h"
 #include "c1541.h"
-#include "iec.h"
+#include "iec_interface.h"
 #include "screen.h"
 #include "keyboard.h"
 #include "userinterface.h"
@@ -53,7 +53,6 @@ bool connectedToU64 = false;
 
 C1541 *c1541_A;
 C1541 *c1541_B;
-IecInterface *iec_if;
 
 TreeBrowser *root_tree_browser;
 StreamMenu *root_menu;
