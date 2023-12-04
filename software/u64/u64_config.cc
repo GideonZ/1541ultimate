@@ -124,6 +124,7 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_SPEED_REGS        0x4C
 #define CFG_IEC_BURST_EN      0x4D
 #define CFG_PALETTE           0x4E
+#define CFG_IEC_BUS_MODE      0x4F
 
 #define CFG_SPEED_PREF        0x52
 #define CFG_BADLINES_EN       0x53
@@ -201,6 +202,7 @@ const char *scan_modes[] = {
 const char *stereo_addr[] = { "Off", "A5", "A6", "A7", "A8", "A9" };
 const char *sid_split[] = { "Off", "1/2 (A5)", "1/2 (A6)", "1/2 (A7)", "1/2 (A8)", "1/4 (A5,A6)", "1/4 (A5,A8)", "1/4 (A7,A8)" };
 
+static const char *iec_modes[] = { "All Connected", "C64<->Ultimate", "DIN<->Ultimate", "C64<->DIN" };
 static const char *joyswaps[] = { "Normal", "Swapped" };
 static const char *en_dis5[] = { "Disabled", "Enabled", "Transp. Border" };
 static const char *digi_levels[] = { "Off", "Low", "Medium", "High" };
@@ -272,6 +274,7 @@ struct t_cfg_definition u64_cfg[] = {
 //    { CFG_CHROMA_DELAY,         CFG_TYPE_VALUE, "Chroma Delay",                "%d", NULL,        -3,  3, 0 },
     { CFG_HDMI_ENABLE,          CFG_TYPE_ENUM, "Digital Video Mode",           "%s", dvi_hdmi,     0,  2, 0 },
     { CFG_SCANLINES,            CFG_TYPE_ENUM, "HDMI Scan lines",              "%s", en_dis,       0,  1, 0 },
+    { CFG_IEC_BUS_MODE,         CFG_TYPE_ENUM, "Serial Bus Mode",              "%s", iec_modes,    0,  3, 0 },
     { CFG_PARCABLE_ENABLE,      CFG_TYPE_ENUM, "SpeedDOS Parallel Cable",      "%s", en_dis,       0,  1, 0 },
     { CFG_IEC_BURST_EN,         CFG_TYPE_ENUM, "Burst Mode Patch",             "%s", burst_modes,  0,  2, 0 },
     { CFG_LED_SELECT_0,         CFG_TYPE_ENUM, "LED Select Top",               "%s", ledselects,   0, 15, 0 },
@@ -822,7 +825,10 @@ void U64Config :: effectuate_settings()
         U64_HDMI_ENABLE = (hdmiSetting == 1) ? 1 : 0; // 1 = HDMI, 2 = DVI
     }
 
-    U64_INT_CONNECTORS = cfg->get_value(CFG_PARCABLE_ENABLE) | (cfg->get_value(CFG_IEC_BURST_EN) << 1);
+    // "All Connected", "C64<->Ultimate", "DIN<->Ultimate", "C64<->DIN"
+    const uint8_t c_iec_connectors[] = { 0x70, 0x60, 0x30, 0x50 }; // 4: ext, 5: ult, 6: cia
+    uint8_t iec_connections = c_iec_connectors[cfg->get_value(CFG_IEC_BUS_MODE)];
+    U64_INT_CONNECTORS = cfg->get_value(CFG_PARCABLE_ENABLE) | (cfg->get_value(CFG_IEC_BURST_EN) << 1) | iec_connections;
 
     uint8_t format = 0;
     if (cfg->get_value(CFG_ANALOG_OUT_SELECT)) {
