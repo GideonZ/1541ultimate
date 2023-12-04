@@ -133,6 +133,7 @@ port (
 
     -- IEC bus
     -- actual levels of the pins --
+    iec_connect : in    std_logic := '1';
     iec_reset_i : in    std_logic := '1';
     iec_atn_i   : in    std_logic := '1';
     iec_data_i  : in    std_logic := '1';
@@ -1393,20 +1394,20 @@ begin
         end if;  
     end process;
 
-    iec_atn_o    <= '0' when atn_o='0'  or atn_o_2='0'  or hw_atn_o='0'  else '1';
-    iec_clock_o  <= '0' when clk_o='0'  or clk_o_2='0'  or hw_clk_o='0'  else '1';
-    iec_data_o   <= '0' when data_o='0' or data_o_2='0' or hw_data_o='0' else '1';
-    iec_srq_o    <= '0' when srq_o='0'  or srq_o_2='0'  or hw_srq_o='0'  else '1';
+    iec_atn_o    <= '0' when iec_connect = '1' and (atn_o='0'  or atn_o_2='0'  or hw_atn_o='0' ) else '1';
+    iec_clock_o  <= '0' when iec_connect = '1' and (clk_o='0'  or clk_o_2='0'  or hw_clk_o='0' ) else '1';
+    iec_data_o   <= '0' when iec_connect = '1' and (data_o='0' or data_o_2='0' or hw_data_o='0') else '1';
+    iec_srq_o    <= '0' when iec_connect = '1' and (srq_o='0'  or srq_o_2='0'  or hw_srq_o='0' ) else '1';
         
     MOTOR_LEDn  <= motor_led_n;
 	DISK_ACTn   <= disk_led_n;
     CART_LEDn   <= cart_led_n;
 	SDACT_LEDn  <= (dirty_led_1_n and dirty_led_2_n and not (sd_act_stretched or busy_led));
 
-    filt1: entity work.spike_filter generic map (10) port map(sys_clock, iec_atn_i,    atn_i);
-    filt2: entity work.spike_filter generic map (10) port map(sys_clock, iec_clock_i,  clk_i);
-    filt3: entity work.spike_filter generic map (10) port map(sys_clock, iec_data_i,   data_i);
-    filt4: entity work.spike_filter generic map (10) port map(sys_clock, iec_srq_i,    srq_i);
+    filt1: entity work.spike_filter generic map (10) port map(sys_clock, iec_atn_i or not iec_connect,   atn_i);
+    filt2: entity work.spike_filter generic map (10) port map(sys_clock, iec_clock_i or not iec_connect, clk_i);
+    filt3: entity work.spike_filter generic map (10) port map(sys_clock, iec_data_i or not iec_connect,  data_i);
+    filt4: entity work.spike_filter generic map (10) port map(sys_clock, iec_srq_i or not iec_connect,   srq_i);
     filt5: entity work.spike_filter port map(sys_clock, irqn_i, c64_irq_n);
     filt6: entity work.spike_filter port map(sys_clock, rstn_i, c64_reset_in_n );
     c64_irq <= not c64_irq_n;
