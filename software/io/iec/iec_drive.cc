@@ -221,11 +221,9 @@ void IecDrive :: update_task_items(bool writablePath, Path *path)
 // called from GUI task
 SubsysResultCode_e IecDrive :: executeCommand(SubsysCommand *cmd)
 {
-	File *f = 0;
-	uint32_t transferred;
-    char buffer[24];
-    int res;
-    FRESULT fres;
+    const char *path;
+    char *pathcopy;
+    iec_closure_t cb;
 
     cmd_path->cd(cmd->path.c_str());
 
@@ -244,8 +242,12 @@ SubsysResultCode_e IecDrive :: executeCommand(SubsysCommand *cmd)
             reset();
 			break;
 		case MENU_IEC_SET_DIR:
-		    set_iec_dir(cmd->path.c_str());
-		    break;
+            path = cmd->path.c_str();
+            pathcopy = new char[strlen(path) + 1];
+            strcpy(pathcopy, path);
+            cb = { this, set_iec_dir, pathcopy };
+            intf->run_from_iec(&cb);
+    	    break;
 		default:
 			break;
     }
@@ -302,12 +304,14 @@ void IecDrive :: talk(void)
     channels[current_channel]->talk();
 }
 
-// called from GUI task
-void IecDrive :: set_iec_dir(const char *path)
+// called from IEC task, statically
+void IecDrive :: set_iec_dir(IecSlave *sl, void *data)
 {
-    char *pathcopy = new char[strlen(path) + 1];
-    strcpy(pathcopy, path);
-    // xQueueSend(queueGuiToIec, &pathcopy, 0); // write into command queue
+    IecDrive *drive = (IecDrive *)sl;
+    const char *pathstring = (const char *)data;
+    IecPartition *p = drive->vfs->GetPartition(0);
+    p->cd(pathstring);
+    delete[] pathstring;
 }
 
 // called from critical section

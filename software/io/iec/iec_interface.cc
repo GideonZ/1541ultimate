@@ -1,5 +1,6 @@
 #include "iec_interface.h"
 #include "json.h"
+#include "dump_hex.h"
 
 IecInterface *iec_if;
 
@@ -19,16 +20,19 @@ IecInterface :: IecInterface()
     if(!(getFpgaCapabilities() & CAPAB_HARDWARE_IEC))
         return;
 
+    for(int i=0;i<MAX_SLOTS;i++) {
+        slaves[i] = NULL;
+    }
+    available_slots = 0;
+
     get_patch_locations();
     program_processor();
 
     addressed_slave = NULL;
     atn = false;
     talking = false;
-    wait_irq = false;
     enable = false;
-
-    queueGuiToIec = xQueueCreate(2, sizeof(char *));
+    queueToIec = xQueueCreate(2, sizeof(iec_closure_t));
 
     xTaskCreate( IecInterface :: start_task, "IEC Server", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 2, &taskHandle );
 }
@@ -159,30 +163,19 @@ void IecInterface :: start_task(void *a)
 void IecInterface :: task()
 {
     uint8_t data;
-    char *pathstring;
+    iec_closure_t closure;
     BaseType_t gotSomething;
 
     while(1) {
-        if(wait_irq) {
-            if (HW_IEC_IRQ & 0x01) {
-                // get_warp_data();
-            }
-            continue;
-        }
 
-        gotSomething = xQueueReceive(queueGuiToIec, &pathstring, 2); // here is the vTaskDelay(2) that used to be here
+        gotSomething = xQueueReceive(queueToIec, &closure, 2); // here is the vTaskDelay(2) that used to be here
 
-/*
         if (gotSomething == pdTRUE) {
-            if (!pathstring) {
-                start_warp_iec();
-            } else {
-                IecPartition *p = vfs->GetPartition(0);
-                p->cd(pathstring);
-                delete[] pathstring;
+            if (closure.func) {
+                closure.func(closure.obj, closure.data);
             }
         }
-*/
+
         uint8_t a;
         for (int loopcnt = 0; loopcnt < 500; loopcnt++) {
             a = HW_IEC_RX_FIFO_STATUS;
@@ -194,25 +187,6 @@ void IecInterface :: task()
 
             if(a & IEC_FIFO_CTRL) {
                 switch(data) {
-                    case WARP_START_RX:
-                        DBGIEC("[WARP:START.");
-                        HW_IEC_TX_DATA = 0x00; // handshake and wait for IRQ
-                        wait_irq = true;
-                        break;
-
-                    case WARP_BLOCK_END:
-                        DBGIEC(".WARP:OK]");
-                        break;
-
-                    case WARP_RX_ERROR:
-                        DBGIEC(".WARP:ERR]");
-                        // get_warp_error();
-                        break;
-
-                    case WARP_ACK:
-                        DBGIEC(".WARP:ACK.");
-                        break;
-
                     case CTRL_READY_FOR_TX:
                         DBGIEC(".RTS.");
                         if (addressed_slave) {
@@ -285,9 +259,7 @@ void IecInterface :: task()
                     if(data >= 0x60) {  // workaround for passing of wrong atn codes talk/untalk
                         if (addressed_slave) {
                             DBGIECV(".CMD(%b).", data);
-                            addressed_slave->push_ctrl(data); // FIXME: Printer should and with 0x7
-                            // FIXME: Drive should choose channel from lower nybble and forward
-                            // upper 4 bits of command to channel
+                            addressed_slave->push_ctrl(data);
                         }
                     }
                 } else {
@@ -296,10 +268,6 @@ void IecInterface :: task()
                         addressed_slave->push_data(data);
                     }
                 }
-            }
-
-            if (wait_irq) {
-                break;
             }
         }
 
@@ -340,6 +308,12 @@ void IecInterface :: task()
         }
     }
 }
+
+void IecInterface :: run_from_iec(iec_closure_t *c)
+{
+    xQueueSend(queueToIec, c, 2000);
+}
+
 
 void IecInterface :: info(StreamTextLog &b)
 {
@@ -394,4 +368,139 @@ void IecInterface :: info(Message& msg, int& offs)
             offs+= 3;
         }            
     }
+}
+
+void IecInterface :: master_open_file(int device, int channel, const char *filename, bool write)
+{
+    printf("Open '%s' on device '%d', channel %d\n", filename, device, channel);
+	HW_IEC_TX_FIFO_RELEASE = 1;
+    HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
+    HW_IEC_TX_DATA = 0x20 | (((uint8_t)device) & 0x1F); // listen!
+    HW_IEC_TX_DATA = 0xF0 | (((uint8_t)channel) & 0x0F); // open on channel x
+    HW_IEC_TX_CTRL = IEC_CMD_ATN_TO_TX;
+
+    int len = strlen(filename);
+    for (int i=0;i<len;i++) {
+        while(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)
+            vTaskDelay(2);
+        if (i == (len-1)) {
+            HW_IEC_TX_LAST = (uint8_t)filename[i]; // EOI
+        } else {
+        	HW_IEC_TX_DATA = (uint8_t)filename[i];
+        }
+    }
+    if(!write) {
+        while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_EMPTY))
+            vTaskDelay(2);
+        HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
+        HW_IEC_TX_DATA = 0x3F; // unlisten
+        HW_IEC_TX_CTRL = IEC_CMD_ATN_RELEASE;
+        // and talk!
+        HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
+        HW_IEC_TX_DATA = 0x40 | (((uint8_t)device) & 0x1F); // talk
+        HW_IEC_TX_DATA = 0x60 | (((uint8_t)channel) & 0x0F); // open channel
+        HW_IEC_TX_CTRL = IEC_CMD_ATN_TO_RX;
+    }
+}        
+
+void flush_rx(void)
+{
+    uint8_t a;
+    do {
+        a = HW_IEC_RX_FIFO_STATUS;
+        if (a & IEC_FIFO_EMPTY) {
+            break;
+        }
+        uint8_t data = HW_IEC_RX_DATA;
+        if (a & IEC_FIFO_CTRL) {
+            printf("<%02x>", data);
+        } else {
+            printf("[%02x]", data);
+        }
+    }
+    while(1);
+}
+
+bool IecInterface :: master_send_cmd(int device, uint8_t *cmd, int length)
+{
+    //printf("Send command on device '%d' [%s]\n", device, cmd);
+    dump_hex_relative(cmd, length);
+    
+	HW_IEC_TX_FIFO_RELEASE = 1;
+    HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
+    HW_IEC_TX_DATA = 0x20 | (((uint8_t)device) & 0x1F); // listen!
+    HW_IEC_TX_DATA = 0x6F;
+    HW_IEC_TX_CTRL = IEC_CMD_ATN_TO_TX;
+
+    for (int i=0;i<length;i++) {
+        while(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL) 
+            vTaskDelay(2);
+        if (i == (length-1)) {
+            HW_IEC_TX_LAST = cmd[i];
+        } else {
+            HW_IEC_TX_DATA = cmd[i];
+        }
+    }
+    flush_rx();
+    while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_EMPTY))
+        vTaskDelay(2);
+
+    HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
+    HW_IEC_TX_DATA = 0x3F; // unlisten
+    HW_IEC_TX_CTRL = IEC_CMD_ATN_RELEASE;
+
+    flush_rx();
+    while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_EMPTY))
+        vTaskDelay(2);
+
+    uint8_t st,code;
+    st = HW_IEC_RX_FIFO_STATUS;
+    if(!(st & IEC_FIFO_EMPTY)) {
+        code = HW_IEC_RX_DATA;
+        if(st & IEC_FIFO_CTRL) {
+            printf("Return code: %b\n", code);
+            if((code & 0xF0) == 0xE0)
+                return false;
+        } else {
+            printf("Huh? Didn't expect data: %b\n", code);
+        }        
+    }
+    return true;
+}
+
+void IecInterface :: master_read_status(int device)
+{
+    printf("Reading status channel from device %d\n", device);
+	HW_IEC_TX_FIFO_RELEASE = 1;
+    HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
+    HW_IEC_TX_DATA = 0x40 | (((uint8_t)device) & 0x1F); // listen!
+    HW_IEC_TX_DATA = 0x6F; // channel 15
+    HW_IEC_TX_CTRL = IEC_CMD_ATN_TO_RX;
+}
+
+bool IecInterface :: run_drive_code(int device, uint16_t addr, uint8_t *code, int length)
+{
+    printf("Load drive code. Length = %d\n", length);
+    uint8_t buffer[40];
+    uint16_t address = addr;
+    int size;
+    strcpy((char*)buffer, "M-W");
+    while(length > 0) {
+        size = (length > 32)?32:length;
+        buffer[3] = (uint8_t)(address & 0xFF);
+        buffer[4] = (uint8_t)(address >> 8);
+        buffer[5] = (uint8_t)(size);
+        for(int i=0;i<size;i++) {
+            buffer[6+i] = *(code++);
+        }
+        printf(".");
+        if(!master_send_cmd(device, buffer, size+6))
+            return false;
+        length -= size;
+        address += size;
+    }
+    strcpy((char*)buffer, "M-E");
+    buffer[3] = (uint8_t)(addr & 0xFF);
+    buffer[4] = (uint8_t)(addr >> 8);
+    return master_send_cmd(device, buffer, 5);
 }

@@ -17,6 +17,7 @@ class IecChannel;
 class IecCommandChannel;
 class IecFileSystem;
 class FileManager;
+class IecDrive;
 
 class IecDrive : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObject
 {
@@ -39,7 +40,7 @@ class IecDrive : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObject
     IecFileSystem *vfs;
     const char *rootPath;
  
-    void set_iec_dir(const char *path);
+    static void set_iec_dir(IecSlave *obj, void *path);
 
     struct {
         Action *turn_on;

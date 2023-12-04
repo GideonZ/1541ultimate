@@ -32,6 +32,11 @@ architecture structural of iec_processor_io is
     signal proc_reset      : std_logic;
     signal enable          : std_logic;
 
+    signal clk_o_i         : std_logic;
+    signal data_o_i        : std_logic;
+    signal atn_o_i         : std_logic;
+    signal srq_o_i         : std_logic;
+
     -- irq
     signal irq_event       : std_logic;
     signal irq_enable      : std_logic;
@@ -89,14 +94,19 @@ begin
         
         irq_event       => irq_event,
 
-        clk_o           => clk_o,
+        clk_o           => clk_o_i,
         clk_i           => clk_i,
-        data_o          => data_o,
+        data_o          => data_o_i,
         data_i          => data_i,
-        atn_o           => atn_o,
+        atn_o           => atn_o_i,
         atn_i           => atn_i,
-        srq_o           => srq_o,
+        srq_o           => srq_o_i,
         srq_i           => srq_i );
+
+    clk_o <= clk_o_i;
+    data_o <= data_o_i;
+    atn_o <= atn_o_i;
+    srq_o <= srq_o_i;
 
     i_ram: entity work.pseudo_dpram_8x32 -- little endian definition
     port map (
@@ -186,6 +196,15 @@ begin
                         
                     when X"C" =>
                         reg_rdata <= "0000000" & irq_status;
+
+                    when X"D" =>
+                        reg_rdata <= srq_i & atn_i & data_i & clk_i & srq_o_i & atn_o_i & data_o_i & clk_o_i;
+
+                    when X"E" =>
+                        reg_rdata <= "0000000" & instr_addr(8);
+                    
+                    when X"F" =>
+                        reg_rdata <= std_logic_vector(instr_addr(7 downto 0));
 
                     when others => null;
                 end case;

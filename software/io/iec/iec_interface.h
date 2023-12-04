@@ -12,7 +12,7 @@
 #include "stream_textlog.h"
 #include "command_intf.h"
 
-#define IECDEBUG 2
+#define IECDEBUG 0
 
 #if (IECDEBUG>1)
 #define DBGIEC(x) printf(x)
@@ -116,6 +116,13 @@ public:
     virtual void talk(void) { }
 };
 
+typedef void (*iec_callback_t)(IecSlave *obj, void *data);
+typedef struct {
+    IecSlave *obj;
+    iec_callback_t func;
+    void *data;
+} iec_closure_t;
+
 #define MAX_SLOTS 4
 
 class IecInterface
@@ -127,9 +134,8 @@ class IecInterface
     IecSlave *addressed_slave;
 
     TaskHandle_t taskHandle;
-    QueueHandle_t queueGuiToIec;
+    QueueHandle_t queueToIec;
 
-    bool wait_irq;
     bool atn;
     bool talking;
     bool enable;
@@ -140,26 +146,29 @@ class IecInterface
     void task(void);
     static void start_task(void *a);
 
-/*
-    void test_master(int);
-    void master_open_file(int device, int channel, const char *filename, bool write);
-    bool master_send_cmd(int device, uint8_t *cmd, int length);
-    void master_read_status(int device);
-    bool run_drive_code(int device, uint16_t addr, uint8_t *code, int length);
-*/
     IecInterface();
 public:
     ~IecInterface();
 
     static IecInterface *get_iec_interface(void);
+    void run_from_iec(iec_closure_t *c);
+
+    // Slave management
     int register_slave(IecSlave *slave);
     void unregister_slave(int slot);
     void configure(void);
     void reset(void);
 
+    // Slave Info
     static void info(StreamTextLog &b);
     static void info(JSON_List *obj);
     static void info(Message& msg, int& offs);
+
+    // Master Interface
+    void master_open_file(int device, int channel, const char *filename, bool write);
+    bool master_send_cmd(int device, uint8_t *cmd, int length);
+    void master_read_status(int device);
+    bool run_drive_code(int device, uint16_t addr, uint8_t *code, int length);
 };
 
 extern IecInterface *iec_if;

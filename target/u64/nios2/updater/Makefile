@@ -77,7 +77,6 @@ SRCS_CC	 =  memory.cc \
 			filesystem_fat.cc \
 			update_u64.cc
 
-
 VPATH +=	.
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
 VPATH +=	$(PATH_SW)/portable/nios

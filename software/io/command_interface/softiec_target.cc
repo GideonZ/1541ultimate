@@ -26,7 +26,6 @@ SoftIECTarget :: SoftIECTarget(int id)
     startaddr = 0;
     total_prepared = 0;
 }
-   
 
 SoftIECTarget :: ~SoftIECTarget()
 {
