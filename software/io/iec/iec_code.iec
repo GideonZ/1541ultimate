@@ -221,6 +221,8 @@ _tx_data
             SUB TX_BYTE
             IF NOT EOI THEN TRANSMIT  # loop until everything was transmitted
 _tx_done
+            SET CLK=1 # After EOI, clock is released
+            WAIT UNTIL DATA=1 FOR 1000 us
             RET
 
 TX_BYTE
