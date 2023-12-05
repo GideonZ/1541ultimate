@@ -107,24 +107,13 @@ SRCS_CC	 =  small_printf.cc \
 			network_interface.cc \
 			vfs.cc \
 			ftpd.cc \
+			json.cc \
 			tape_controller.cc \
 			tape_recorder.cc \
 			command_intf.cc \
 			dos.cc \
 			network_target.cc \
 			control_target.cc \
-			softiec_target.cc \
-			iec.cc \
-			iec_channel.cc \
-			iec_printer.cc \
-			mps_printer.cc \
-			mps_printer_cbm.cc \
-			mps_printer_epson.cc \
-			mps_printer_ibmgp.cc \
-			mps_printer_ibmpp.cc \
-			mps_chargen.cc \
-			mps_charset.cc \
-			mps_png.cc \
 			filetype_tap.cc \
             socket_stream.cc \
             socket_gui.cc \
@@ -138,6 +127,21 @@ SRCS_CC	 =  small_printf.cc \
             modem.cc \
             system_info.cc \
             $(PRJ).cc
+
+SRCS_CC +=  iec_interface.cc \
+			iec_drive.cc \
+			iec_channel.cc \
+			iec_printer.cc \
+			mps_printer.cc \
+			mps_printer_cbm.cc \
+			mps_printer_epson.cc \
+			mps_printer_ibmgp.cc \
+			mps_printer_ibmpp.cc \
+			mps_chargen.cc \
+			mps_charset.cc \
+			mps_png.cc \
+			iec_ulticopy.cc \
+			softiec_target.cc
 
 #            sock_echo.c \
 #			sys_calls.cc \
@@ -155,7 +159,7 @@ SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas eapi.tas
 
 SRCS_BIN =  basic.bin chars.bin module.bin sidcrt.bin muscrt.bin musplayer.bin
 
-SRCS_IEC = iec_code_pr.iec iec_code_dr_pr.iec iec_code_dr.iec
+SRCS_IEC = iec_code.iec
 
 SRCS_NANO = nano_minimal.nan
 

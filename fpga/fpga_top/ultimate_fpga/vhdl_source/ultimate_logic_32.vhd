@@ -409,6 +409,10 @@ architecture logic of ultimate_logic_32 is
     signal clk_o, clk_i     : std_logic := '1';
     signal data_o, data_i   : std_logic := '1';
     signal srq_o, srq_i     : std_logic := '1';
+    signal iec_atn_m        : std_logic := '1';
+    signal iec_data_m       : std_logic := '1';
+    signal iec_clock_m      : std_logic := '1';
+    signal iec_srq_m        : std_logic := '1';
 
     signal atn_o_2          : std_logic := '1';
     signal clk_o_2          : std_logic := '1';
@@ -1404,10 +1408,15 @@ begin
     CART_LEDn   <= cart_led_n;
 	SDACT_LEDn  <= (dirty_led_1_n and dirty_led_2_n and not (sd_act_stretched or busy_led));
 
-    filt1: entity work.spike_filter generic map (10) port map(sys_clock, iec_atn_i or not iec_connect,   atn_i);
-    filt2: entity work.spike_filter generic map (10) port map(sys_clock, iec_clock_i or not iec_connect, clk_i);
-    filt3: entity work.spike_filter generic map (10) port map(sys_clock, iec_data_i or not iec_connect,  data_i);
-    filt4: entity work.spike_filter generic map (10) port map(sys_clock, iec_srq_i or not iec_connect,   srq_i);
+    iec_atn_m <= iec_atn_i or not iec_connect;
+    iec_clock_m <= iec_clock_i or not iec_connect;
+    iec_data_m <= iec_data_i or not iec_connect;
+    iec_srq_m <= iec_srq_i or not iec_connect;
+
+    filt1: entity work.spike_filter generic map (10) port map(sys_clock, iec_atn_m,   atn_i);
+    filt2: entity work.spike_filter generic map (10) port map(sys_clock, iec_clock_m, clk_i);
+    filt3: entity work.spike_filter generic map (10) port map(sys_clock, iec_data_m,  data_i);
+    filt4: entity work.spike_filter generic map (10) port map(sys_clock, iec_srq_m,   srq_i);
     filt5: entity work.spike_filter port map(sys_clock, irqn_i, c64_irq_n);
     filt6: entity work.spike_filter port map(sys_clock, rstn_i, c64_reset_in_n );
     c64_irq <= not c64_irq_n;

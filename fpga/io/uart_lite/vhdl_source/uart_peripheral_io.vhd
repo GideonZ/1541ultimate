@@ -101,45 +101,45 @@ begin
     end generate;
 
     gentx: if g_tx_fifo generate
-		i_tx_fifo: entity work.sync_fifo
-			generic map (
-				g_depth        => 511,
-				g_data_width   => 8,
-				g_threshold    => 256,
-				g_storage      => "auto",
-				g_fall_through => true
-			)
-			port map (
-				clock        => clock,
-				reset        => reset,
-				rd_en        => txfifo_get,
-				wr_en        => txfifo_put,
-				din          => io_req.data,
-				dout         => txfifo_dout,
-				flush        => '0',
-				full         => open,
-				almost_full  => txfifo_full,
-				empty        => open,
-				almost_empty => open,
-				valid        => txfifo_dav,
-				count        => open
-			);
+		-- i_tx_fifo: entity work.sync_fifo
+		-- 	generic map (
+		-- 		g_depth        => 511,
+		-- 		g_data_width   => 8,
+		-- 		g_threshold    => 256,
+		-- 		g_storage      => "auto",
+		-- 		g_fall_through => true
+		-- 	)
+		-- 	port map (
+		-- 		clock        => clock,
+		-- 		reset        => reset,
+		-- 		rd_en        => txfifo_get,
+		-- 		wr_en        => txfifo_put,
+		-- 		din          => io_req.data,
+		-- 		dout         => txfifo_dout,
+		-- 		flush        => '0',
+		-- 		full         => open,
+		-- 		almost_full  => txfifo_full,
+		-- 		empty        => open,
+		-- 		almost_empty => open,
+		-- 		valid        => txfifo_dav,
+		-- 		count        => open
+		-- 	);
 
-    	-- my_txfifo: entity work.srl_fifo
-    	-- generic map (
-    	-- 	Width     => 8,
-        --     Threshold => 12 )
-    	-- port map (
-    	--     clock       => clock,
-    	--     reset       => reset,
-    	--     GetElement  => txfifo_get,
-    	--     PutElement  => txfifo_put,
-    	--     FlushFifo   => '0',
-    	--     DataIn      => io_req.data,
-    	--     DataOut     => txfifo_dout,
-    	--     SpaceInFifo => open,
-    	--     AlmostFull  => txfifo_full,
-    	--     DataInFifo  => txfifo_dav );
+    	my_txfifo: entity work.srl_fifo
+    	generic map (
+    		Width     => 8,
+            Threshold => 12 )
+    	port map (
+    	    clock       => clock,
+    	    reset       => reset,
+    	    GetElement  => txfifo_get,
+    	    PutElement  => txfifo_put,
+    	    FlushFifo   => '0',
+    	    DataIn      => io_req.data,
+    	    DataOut     => txfifo_dout,
+    	    SpaceInFifo => open,
+    	    AlmostFull  => txfifo_full,
+    	    DataInFifo  => txfifo_dav );
     end generate;
 
 	process(clock)

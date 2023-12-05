@@ -2,8 +2,6 @@
 #include "json.h"
 #include "dump_hex.h"
 
-IecInterface *iec_if;
-
 IecInterface *IecInterface :: get_iec_interface(void)
 {
     if (!iec_if) {

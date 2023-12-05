@@ -128,18 +128,6 @@ SRCS_CC	 =  u2p_init.cc \
 			dos.cc \
 			network_target.cc \
 			control_target.cc \
-			softiec_target.cc \
-			iec.cc \
-			iec_channel.cc \
-			iec_printer.cc \
-			mps_printer.cc \
-			mps_printer_cbm.cc \
-			mps_printer_epson.cc \
-			mps_printer_ibmgp.cc \
-			mps_printer_ibmpp.cc \
-			mps_chargen.cc \
-			mps_charset.cc \
-			mps_png.cc \
 			filetype_tap.cc \
 			socket_stream.cc \
 			socket_gui.cc \
@@ -164,6 +152,21 @@ SRCS_CC	 =  u2p_init.cc \
 			route_machine.cc \
 			$(PRJ).cc
 
+SRCS_CC +=  iec_interface.cc \
+			iec_drive.cc \
+			iec_channel.cc \
+			iec_printer.cc \
+			mps_printer.cc \
+			mps_printer_cbm.cc \
+			mps_printer_epson.cc \
+			mps_printer_ibmgp.cc \
+			mps_printer_ibmpp.cc \
+			mps_chargen.cc \
+			mps_charset.cc \
+			mps_png.cc \
+			iec_ulticopy.cc \
+			softiec_target.cc
+
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
 VPATH +=	$(PATH_SW)/portable/nios
 VPATH +=	$(PATH_SW)/nios_appl_bsp
@@ -185,7 +188,7 @@ SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas eapi.tas
 
 SRCS_BIN =  basic.bin chars.bin module.bin sidcrt.bin muscrt.bin musplayer.bin
 
-SRCS_IEC = iec_code_pr.iec iec_code_dr_pr.iec iec_code_dr.iec
+SRCS_IEC = iec_code.iec
 
 SRCS_NANO = nano_minimal.nan
 

@@ -197,14 +197,14 @@ begin
                     when X"C" =>
                         reg_rdata <= "0000000" & irq_status;
 
-                    when X"D" =>
-                        reg_rdata <= srq_i & atn_i & data_i & clk_i & srq_o_i & atn_o_i & data_o_i & clk_o_i;
-
-                    when X"E" =>
-                        reg_rdata <= "0000000" & instr_addr(8);
-                    
-                    when X"F" =>
-                        reg_rdata <= std_logic_vector(instr_addr(7 downto 0));
+--                    when X"D" =>
+--                        reg_rdata <= srq_i & atn_i & data_i & clk_i & srq_o_i & atn_o_i & data_o_i & clk_o_i;
+--
+--                    when X"E" =>
+--                        reg_rdata <= "0000000" & instr_addr(8);
+--                    
+--                    when X"F" =>
+--                        reg_rdata <= std_logic_vector(instr_addr(7 downto 0));
 
                     when others => null;
                 end case;

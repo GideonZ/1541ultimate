@@ -53,7 +53,7 @@ bool connectedToU64 = false;
 
 C1541 *c1541_A;
 C1541 *c1541_B;
-
+IecInterface *iec_if;
 TreeBrowser *root_tree_browser;
 StreamMenu *root_menu;
 Overlay *overlay;
