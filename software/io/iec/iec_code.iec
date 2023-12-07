@@ -67,6 +67,7 @@ start
             JUMP atn_irq_vec # Must be at address 1
 
 CHECK_ATN_BYTE
+            SET ADDRESSED=0
             IF NOT DATABYTE IS $5F THEN _dont_untalk
             SET TALKER=0
             RET
@@ -79,6 +80,7 @@ _check_slot1
             IF NOT DATABYTE IS $F0 THEN _dont_talk1   # Replace for device ID #1 + $40, or RET, if no device.
             LOAD CTRL_DEV1
             PUSHC
+            SET ADDRESSED=1
             SET TALKER=1
             SET LISTENER=0
             RET
@@ -86,6 +88,7 @@ _dont_talk1
             IF NOT DATABYTE IS $F8 THEN _dont_listen1 # Replace for device ID #1 + $20, or RET, if no device.
             LOAD CTRL_DEV1
             PUSHC
+            SET ADDRESSED=1
             SET LISTENER=1
             SET TALKER=0
             RET
@@ -94,6 +97,7 @@ _check_slot2
             IF NOT DATABYTE IS $F1 THEN _dont_talk2   # Replace for device ID #2 + $40, or RET, if no device.
             LOAD CTRL_DEV2
             PUSHC
+            SET ADDRESSED=1
             SET TALKER=1
             SET LISTENER=0
             RET
@@ -101,6 +105,7 @@ _dont_talk2
             IF NOT DATABYTE IS $F9 THEN _dont_listen2 # Replace for device ID #2 + $20, or RET, if no device.
             LOAD CTRL_DEV2
             PUSHC
+            SET ADDRESSED=1
             SET LISTENER=1
             SET TALKER=0
             RET
@@ -109,6 +114,7 @@ _check_slot3
             IF NOT DATABYTE IS $F2 THEN _dont_talk3   # Replace for device ID #3 + $40, or RET, if no device.
             LOAD CTRL_DEV3
             PUSHC
+            SET ADDRESSED=1
             SET TALKER=1
             SET LISTENER=0
             RET
@@ -116,6 +122,7 @@ _dont_talk3
             IF NOT DATABYTE IS $FA THEN _dont_listen3 # Replace for device ID #3 + $20, or RET, if no device.
             LOAD CTRL_DEV3
             PUSHC
+            SET ADDRESSED=1
             SET LISTENER=1
             SET TALKER=0
 _dont_listen3
@@ -123,6 +130,7 @@ _dont_listen3
 
 atn_irq_vec
             CLRST
+            SET IRQ_EN=1
             SET DATA=0 # not ready to receive
             SET CLK=1  # release clock
             WAIT FOR 20 us
@@ -133,43 +141,29 @@ atn_irq_vec
             LOAD CTRL_ATN_BEGIN
             PUSHC
 
-            WAIT UNTIL CLK=1
-            SUB RECEIVE_ATN_BYTE
-            WAIT FOR 10 us
-            JUMP _no_push2
 _atn_loop
-            WAIT UNTIL CLK=1
-            SUB RECEIVE_BYTE
-            IF NOT TALKER THEN _no_push1
-            SUB PUSH_BYTE
-            JUMP _no_push2
-_no_push1
-            IF NOT LISTENER THEN _no_push2
-            SUB PUSH_BYTE
-_no_push2
-            SUB CHECK_ATN_BYTE
-            IF LISTENER THEN _keep_data
-            IF TALKER THEN _keep_data
-            WAIT FOR 70 us
-            SET DATA=1
-            WAIT UNTIL NOT ATN=0        # ATN is not for us, wait end of ATN
+            WAIT UNTIL NOT CLK=0,ATN=0
+            IF ATN THEN _atn_end
+            SUB RECEIVE_ATN_BYTE
+            PUSHD
+            JUMP _atn_loop
+
+_atn_end
             LOAD CTRL_ATN_END
             PUSHC
+            IF LISTENER THEN _keep_data
+            IF TALKER THEN _keep_data
+            # We're neither talker, nor listener
             JUMP RELEASE
-_keep_data
+
             # at some time, the computer will either
             # 1) want us to talk
             # 2) it wants to send another byte to us under attention
             # 3) it wants to send another byte without attention
             # In all cases, it will release the clock line
 
+_keep_data
 _check_after_atn_byte
-            WAIT UNTIL NOT CLK=0,ATN=0
-
-            IF NOT ATN THEN _atn_loop  #CLK might still be 0
-            LOAD CTRL_ATN_END  # Tell to the software that ATN is now released
-            PUSHC
-
             IF TALKER THEN ATN_TURNAROUND # We'll talk?
 
             # ATN is released, we are not going to talk, so we might need to listen
@@ -177,19 +171,16 @@ _check_after_atn_byte
 
             IF NOT LISTENER THEN RELEASE
 
-            # We need to listen!
-#            LOAD CTRL_READY_FOR_RX
-#            PUSHC
-
 _listen_normally
-            WAIT UNTIL CLK=1
             SUB RECEIVE_BYTE
-            SUB PUSH_BYTE
+            PUSHD
             IF NOT EOI THEN _listen_normally
+_end_of_rx
+            # If end flag was received, push end marker to software
+            LOAD CTRL_EOI
+            PUSHC
             SET LISTENER=0
             WAIT FOR 70 us
-            LOAD CTRL_RX_DONE
-            PUSHC
             JUMP RELEASE
 
 ATN_TURNAROUND
@@ -226,6 +217,7 @@ _tx_done
             RET
 
 TX_BYTE
+            IF JIFFYDOS THEN JIFFY_TX
             SET CLK=1
             WAIT UNTIL DATA=1  # forever possibly!
             IF NOT EOI THEN _no_tx_eoi
@@ -287,21 +279,94 @@ _no_tx_eoi
             WAIT FOR Tbb
             RET
 
+JIFFY_TX
+            SET DATA=1
+            SET CLK=1
+            WAIT UNTIL DATA=1,CLK=1
+            WAIT FOR 10 us # average 7-13 cycles
+            SET CLK=REGBIT0
+            SET DATA=REGBIT1
+            WAIT FOR 10 us
+            SET CLK=REGBIT2
+            SET DATA=REGBIT3
+            WAIT FOR 11 us
+            SET CLK=REGBIT4
+            SET DATA=REGBIT5
+            WAIT FOR 10 us
+            SET CLK=REGBIT6
+            SET DATA=REGBIT7
+            WAIT FOR 11 us
+            IF EOI THEN _jiffy_tx_eoi
+            SET DATA=1
+            SET CLK=0
+            WAIT FOR 2 us
+            WAIT UNTIL DATA=0 # ATN could break this cycle
+_jiffy_tx_done
+            POPB  # the byte was read into the register using READ. Now we actually POP the byte, because it has been acknowledged by the initiator
+            LOAD CTRL_BYTE_TXED
+            PUSHC
+            WAIT FOR 40 us
+            RET
+_jiffy_tx_eoi
+            SET CLK=1
+            SET DATA=0
+            WAIT FOR 2 us
+            WAIT UNTIL CLK=0 # ATN could break this cycle
+            JUMP _jiffy_tx_done
+
 RELEASE
             # Release from bus and die
             SET ATN=1
             SET CLK=1
             SET DATA=1
-            WAIT FOR 100 us
+            WAIT FOR 100 us #Why!?
             JUMP reset_vec
 
-RECEIVE_BYTE
-# initial state: DATA is low, CLK=1
+JIFFY_RX
+            SET IRQ_EN=0
+_wait2
+            IF UPFIFOFULL THEN _wait2
+            SET DATA=1
+            WAIT UNTIL NOT CLK=0,ATN=1 # Possibly for a long time
+            IF NOT ATN THEN _jiffy_rx_end
 
+            # clk(3)data(1) => !bit4 & !Bit5
+            # clk(2)data(0) => !bit6 & !bit7
+            # clk(3)data(1) => !bit3 & !bit1
+            # clk(2)data(0) => !bit2 & !bit0
+
+            WAIT FOR 17 us
+            IN DATABIT4=!CLK
+            IN DATABIT5=!DATA
+            WAIT FOR 13 us
+            IN DATABIT6=!CLK
+            IN DATABIT7=!DATA
+            WAIT FOR 11 us
+            IN DATABIT3=!CLK
+            IN DATABIT1=!DATA
+            WAIT FOR 13 us
+            IN DATABIT2=!CLK
+            IN DATABIT0=!DATA
+            WAIT FOR 19 us
+            SET DATA=0
+            WAIT FOR 100 us
+            PUSHD
+            SET DATA=1
+            JUMP JIFFY_RX
+
+_jiffy_rx_end
+            LOAD CTRL_EOI
+            PUSHC
+            JUMP _end_of_rx
+
+RECEIVE_BYTE
+# initial state: DATA is low, CLK has to become 1
+            IF JIFFYDOS THEN JIFFY_RX
+            WAIT UNTIL CLK=1
 _wait1
             IF UPFIFOFULL THEN _wait1
-            SET DATA=1
 
+            SET DATA=1
             WAIT UNTIL CLK=0 FOR Tv
             SET EOI=TIMEOUT  # If there was a timeout, set the EOI flag
             IF NOT EOI THEN _recv0
@@ -324,6 +389,8 @@ RECEIVE_ATN_BYTE
             SET DATA=1
             WAIT UNTIL CLK=0    # Possibly forever!
             IF TIMEOUT THEN _error1
+            # Pre-clear data bit for JD detection
+            SET DATABIT7=0
 
 _recv8bits
             WAIT UNTIL CLK=1 FOR Ts
@@ -361,6 +428,17 @@ _recv8bits
             IF TIMEOUT THEN _error2
             WAIT UNTIL CLK=0 FOR Tv
 
+            IF ATN THEN _normal_data
+
+            # ATN is true, so we check the jiffydos signal
+            # but only when we get addressed            
+            SUB CHECK_ATN_BYTE # Check based on first 7 bits only!
+            IF NOT ADDRESSED THEN _normal_data
+
+            WAIT UNTIL CLK=1 FOR 275 us
+            IF TIMEOUT THEN _jiffy
+            SET JIFFYDOS=0
+_normal_data
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT7=DATA
             IF TIMEOUT THEN _error2
@@ -368,15 +446,13 @@ _recv8bits
             WAIT FOR 20 us
             SET DATA=0
             RET
-
-PUSH_BYTE
-            PUSHD # Push received byte to software
-            IF NOT EOI THEN _noeoi
-            # If end flag was received, push end marker to software
-            LOAD CTRL_EOI
-            PUSHC
-_noeoi
-            RET
+_jiffy
+            # Signal JD acknowledge
+            SET JIFFYDOS=1            
+            SET DATA=0
+            WAIT FOR 100 us
+            SET DATA=1
+            JUMP _normal_data
 
 # Below are some different error codes for debug
 _error
@@ -398,7 +474,7 @@ reset_vec
             CLRST
             SET IRQ_EN=1
             POPB ; hang
-            IF NOT CTRL THEN reset_vec
+            IF NOT CTRL THEN reset_vec # Ignore all data bytes
             IF DATABYTE IS CMD_GO_WARP THEN WARP_START
             IF DATABYTE IS CMD_MASTER_START THEN MASTER_START
             JUMP reset_vec
