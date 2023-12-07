@@ -128,7 +128,7 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
 {
     intf = IecInterface :: get_iec_interface();
 	fm = FileManager :: getFileManager();
-    last_addr = 0;
+    my_bus_id = 0;
 
     register_store(0x49454300, "SoftIEC Drive Settings", iec_config);
 
@@ -139,7 +139,7 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
     last_error_track = 0;
     last_error_sector = 0;
     current_channel = 0;
-    last_addr = 10;
+    my_bus_id = 10;
 
     effectuate_settings();
 
@@ -178,8 +178,8 @@ IecCommandChannel *IecDrive :: get_data_channel(int chan)
 void IecDrive :: effectuate_settings(void)
 {
     
-    int bus_id = cfg->get_value(CFG_IEC_BUS_ID);
-    cmd_if.set_kernal_device_id(bus_id);
+    my_bus_id = cfg->get_value(CFG_IEC_BUS_ID);
+    cmd_if.set_kernal_device_id(my_bus_id);
     
     rootPath = cfg->get_string(CFG_IEC_PATH);
     enable = uint8_t(cfg->get_value(CFG_IEC_ENABLE));

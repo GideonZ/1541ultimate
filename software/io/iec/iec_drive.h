@@ -24,7 +24,7 @@ class IecDrive : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObject
     IecInterface *intf;
     int slot_id;
 
-    int last_addr;
+    int my_bus_id;
     bool enable;
 
     FileManager *fm;
@@ -65,7 +65,7 @@ public:
 
     // From IecSlave
     bool is_enabled(void) { return enable; }
-    uint8_t get_address(void) { return (uint8_t)last_addr; }
+    uint8_t get_address(void) { return (uint8_t)my_bus_id; }
     uint8_t get_type(void) { return 0x0F; }
     const char *iec_identify(void) { return "IEC Drive"; }
     void info(JSON_Object *);
