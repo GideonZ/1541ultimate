@@ -134,25 +134,41 @@ atn_irq_vec
             SET DATA=0 # not ready to receive
             SET CLK=1  # release clock
             WAIT FOR 20 us
-            WAIT UNTIL CLK=0
-
-# We are now able to release data, unless we are not ready to receive data
-# So we have to check our FIFO and see if it has room for a new byte.
+            WAIT UNTIL CLK=0  
             LOAD CTRL_ATN_BEGIN
             PUSHC
 
-_atn_loop
-            WAIT UNTIL NOT CLK=0,ATN=0
-            IF ATN THEN _atn_end
-            SUB RECEIVE_ATN_BYTE
-            PUSHD
-            JUMP _atn_loop
+_atn_first
+            WAIT UNTIL NOT CLK=0,ATN=0  # Possibly forever!
+            IF ATN THEN _atn_end # Apparently there was no byte coming.
+            SUB RECEIVE_ATN_BYTE # Releases data as soon as there is room in FIFO
+            # PUSHD # Addressing byte is not required, as the check function already sends a slave select
+            IF NOT ADDRESSED THEN _not_for_me
 
+_atn_second
+            WAIT UNTIL NOT CLK=0,ATN=0  # Possibly forever!
+            IF ATN THEN _atn_end # Apparently there was no byte coming.
+            SET JIFFYLOAD=0
+            SUB RECEIVE_ATN_BYTE 
+            IF NOT DATABYTE IS $61 THEN _no_jd_load
+            IF NOT TALKER THEN _no_jd_load
+            SET DATABIT0=0 # Reset to $60
+            SET JIFFYLOAD=1
+_no_jd_load
+            PUSHD
+            # Ignore all other ATN stuff
+            WAIT UNTIL ATN=1
+            JUMP _atn_end
+
+_not_for_me
+            SET DATA=1
+            SET CLK=1
+            WAIT UNTIL ATN=1
 _atn_end
             LOAD CTRL_ATN_END
             PUSHC
-            IF LISTENER THEN _keep_data
-            IF TALKER THEN _keep_data
+            IF TALKER THEN ATN_TURNAROUND
+            IF LISTENER THEN DO_LISTEN
             # We're neither talker, nor listener
             JUMP RELEASE
 
@@ -162,19 +178,11 @@ _atn_end
             # 3) it wants to send another byte without attention
             # In all cases, it will release the clock line
 
-_keep_data
-_check_after_atn_byte
-            IF TALKER THEN ATN_TURNAROUND # We'll talk?
 
-            # ATN is released, we are not going to talk, so we might need to listen
-            # But if we don't need to listen, just get off the bus and die
-
-            IF NOT LISTENER THEN RELEASE
-
-_listen_normally
+DO_LISTEN
             SUB RECEIVE_BYTE
             PUSHD
-            IF NOT EOI THEN _listen_normally
+            IF NOT EOI THEN DO_LISTEN
 _end_of_rx
             # If end flag was received, push end marker to software
             LOAD CTRL_EOI
@@ -387,10 +395,10 @@ _recv0
 
 RECEIVE_ATN_BYTE
             SET DATA=1
-            WAIT UNTIL CLK=0    # Possibly forever!
-            IF TIMEOUT THEN _error1
             # Pre-clear data bit for JD detection
             SET DATABIT7=0
+
+            WAIT UNTIL CLK=0 # Possibly forever
 
 _recv8bits
             WAIT UNTIL CLK=1 FOR Ts
@@ -516,7 +524,7 @@ _release_and_turnaround
             WAIT UNTIL CLK=0 FOR 1000 us
             IF TIMEOUT THEN no_device
             SET EOI=0
-            JUMP _listen_normally
+            JUMP DO_LISTEN
 
 no_device
             LOAD ERROR_NO_DEVICE
