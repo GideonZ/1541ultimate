@@ -56,6 +56,7 @@
 #define CTRL_READY_FOR_TX  0x43
 #define CTRL_READY_FOR_RX  0x44
 #define CTRL_EOI           0x45
+#define CTRL_JIFFYLOAD     0x46
 #define CTRL_BYTE_TXED     0x47
 #define CTRL_TX_DONE       0x5a
 #define CTRL_RX_DONE       0x5b
@@ -139,6 +140,8 @@ class IecInterface
     bool atn;
     bool talking;
     bool enable;
+    bool jiffy_load;
+    int  jiffy_transfer;
 
     void get_patch_locations(void);
     void program_processor(void);

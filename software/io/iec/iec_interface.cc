@@ -30,6 +30,8 @@ IecInterface :: IecInterface()
     atn = false;
     talking = false;
     enable = false;
+    jiffy_load = false;
+    jiffy_transfer = 0;
     queueToIec = xQueueCreate(2, sizeof(iec_closure_t));
 
     xTaskCreate( IecInterface :: start_task, "IEC Server", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 2, &taskHandle );
@@ -186,7 +188,9 @@ void IecInterface :: task()
             if(a & IEC_FIFO_CTRL) {
                 switch(data) {
                     case CTRL_READY_FOR_TX:
+                    case CTRL_JIFFYLOAD:
                         DBGIEC(".RTS.");
+                        jiffy_load = (data == CTRL_JIFFYLOAD);
                         if (addressed_slave) {
                             addressed_slave->talk();
                             HW_IEC_TX_FIFO_RELEASE = 1;
@@ -271,8 +275,19 @@ void IecInterface :: task()
 
         t_channel_retval st;
 
+        jiffy_transfer = 0;
         if(talking) {
-            while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)) {
+            while(1) {
+                if (jiffy_load) {
+                    // Simply spin while fifo is full
+                    while(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)
+                        ;
+                } else {
+                    // Exit loop when fifo is full
+                    if(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)
+                        break;
+                }
+
                 if (addressed_slave) {
                     st = addressed_slave->prefetch_data(data);
                 } else {
@@ -281,13 +296,16 @@ void IecInterface :: task()
 
                 if(st == IEC_OK) {
                     HW_IEC_TX_DATA = data;
+                    jiffy_transfer++;
 #if IECDEBUG > 2
                     outbyte(data < 0x20?'.':data);
 #endif
                 } else if(st == IEC_LAST) {
                     HW_IEC_TX_LAST = data;
+                    jiffy_transfer++;
 #if IECDEBUG > 2
                     outbyte(data < 0x20?'.':data);
+                    DBGIEC("[LAST]");
 #endif
                     talking = false;
                     break;
@@ -303,6 +321,13 @@ void IecInterface :: task()
 #if IECDEBUG > 2
             outbyte('\'');
 #endif
+        }
+        if (jiffy_load) {
+            if (addressed_slave) {
+                addressed_slave->pop_more(jiffy_transfer);
+            } else {
+                jiffy_load = false;
+            }
         }
     }
 }

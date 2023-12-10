@@ -24,6 +24,7 @@ CTRL_ATN_END       = $42
 CTRL_READY_FOR_TX  = $43
 CTRL_READY_FOR_RX  = $44
 CTRL_EOI           = $45
+CTRL_JIFFYLOAD     = $46
 CTRL_BYTE_TXED     = $47
 CTRL_TX_DONE       = $5a
 CTRL_RX_DONE       = $5b
@@ -197,13 +198,59 @@ ATN_TURNAROUND
             SET CLK=0
             SET DATA=1
             WAIT FOR Tda
+            SET EOI=0
+            IF JIFFYLOAD THEN DO_JIFFY_LOAD
             LOAD CTRL_READY_FOR_TX  # Tell to the software that it should push data
             PUSHC
-            SET EOI=0
             SUB TRANSMIT
+_transmit_done
             LOAD CTRL_TX_DONE
             PUSHC
             JUMP RELEASE
+
+DO_JIFFY_LOAD
+            LOAD CTRL_JIFFYLOAD
+            PUSHC
+_jiffy_outer
+            WAIT UNTIL DATA=1 # Host ready
+            IF EOI THEN _jiffy_load_eoi
+            READB # wait for data, also sets eoi if last
+            IF EOI THEN _jiffy_load_eoi
+            IF CTRL THEN _jiffy_load_eoi
+            SET DATA=0
+            WAIT FOR 12 us
+            SET CLK=1
+            WAIT FOR 77 us
+_jiffy_inner
+            POPB # Read byte is now popped from fifo
+            SET DATA=1
+            WAIT FOR 2 us # Rise time
+            WAIT UNTIL DATA=0
+            SUB _jiffy_tx_byte
+# now, if EOI is set or there is no data in the fifo, we need to do inner loop end
+            IF EOI THEN _jiffy_inner_end
+            READ # see if there is a new byte in fifo
+            IF NOT VALID THEN _jiffy_inner_end
+            WAIT FOR 18 us # Test
+            SET DATA=1
+            SET CLK=1
+            JUMP _jiffy_inner
+_jiffy_inner_end
+            SET CLK=0
+            SET DATA=1
+            WAIT FOR 35 us
+            WAIT UNTIL DATA=0 # Host ack inner end
+            JUMP _jiffy_outer
+
+_jiffy_load_eoi
+            WAIT FOR 80 us
+            SET CLK=1
+            WAIT FOR 150 us
+            SET CLK=0
+            LOAD CTRL_TX_DONE
+            PUSHC
+            WAIT UNTIL ATN=0
+            JUMP RELEASE # Shouldn't happen due to interrupt
 
 TRANSMIT
             READB
@@ -291,19 +338,7 @@ JIFFY_TX
             SET DATA=1
             SET CLK=1
             WAIT UNTIL DATA=1,CLK=1
-            WAIT FOR 10 us # average 7-13 cycles
-            SET CLK=REGBIT0
-            SET DATA=REGBIT1
-            WAIT FOR 10 us
-            SET CLK=REGBIT2
-            SET DATA=REGBIT3
-            WAIT FOR 11 us
-            SET CLK=REGBIT4
-            SET DATA=REGBIT5
-            WAIT FOR 10 us
-            SET CLK=REGBIT6
-            SET DATA=REGBIT7
-            WAIT FOR 11 us
+            SUB _jiffy_tx_byte # including initial 10 us and final 11 us delays
             IF EOI THEN _jiffy_tx_eoi
             SET DATA=1
             SET CLK=0
@@ -321,6 +356,22 @@ _jiffy_tx_eoi
             WAIT FOR 2 us
             WAIT UNTIL CLK=0 # ATN could break this cycle
             JUMP _jiffy_tx_done
+
+_jiffy_tx_byte
+            WAIT FOR 10 us # average 7-13 cycles
+            SET CLK=REGBIT0
+            SET DATA=REGBIT1
+            WAIT FOR 10 us
+            SET CLK=REGBIT2
+            SET DATA=REGBIT3
+            WAIT FOR 11 us
+            SET CLK=REGBIT4
+            SET DATA=REGBIT5
+            WAIT FOR 10 us
+            SET CLK=REGBIT6
+            SET DATA=REGBIT7
+            WAIT FOR 11 us
+            RET
 
 RELEASE
             # Release from bus and die
