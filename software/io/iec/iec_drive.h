@@ -6,9 +6,6 @@
 #include "config.h"
 #include "userinterface.h"
 #include "subsys.h"
-#include "FreeRTOS.h"
-#include "task.h"
-#include "semphr.h"
 #include "fs_errors_flags.h"
 #include "disk_image.h"
 #include "iec_interface.h"
@@ -73,7 +70,9 @@ public:
 
     void reset(void);
     void talk(void);
+
     t_channel_retval prefetch_data(uint8_t&);
+    t_channel_retval prefetch_more(int, uint8_t*&, int &);
     t_channel_retval push_ctrl(uint16_t);
     t_channel_retval push_data(uint8_t);
     t_channel_retval pop_data(void);

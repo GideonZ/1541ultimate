@@ -24,7 +24,9 @@ extern "C" {
 }
 #include "config.h"
 #include <string.h>
+#if U64
 #include "u64.h"
+#endif
 
 /*** CONFIGURATION MANAGER ***/
 ConfigManager :: ConfigManager() : stores(16, NULL), pages(16, NULL)
@@ -69,7 +71,7 @@ ConfigManager :: ~ConfigManager()
     stores.clear_list();
 
     ConfigPage *p;
-    for(int n = 0; n < stores.get_elements();n++) {
+    for(int n = 0; n < pages.get_elements();n++) {
         p = (ConfigPage *)pages[n];
         delete p;
     }
@@ -520,10 +522,10 @@ ConfigItem :: ~ConfigItem()
 void ConfigItem :: reset(void)
 {
     if ((definition->type == CFG_TYPE_STRING) || (definition->type == CFG_TYPE_STRFUNC)) {
-        strncpy(string, (char *)definition->def, definition->max);
+        strncpy(string, (const char *)definition->def, definition->max);
         value = 0;
     } else {
-        value = definition->def;
+        value = (int)definition->def;
     }
 }
 

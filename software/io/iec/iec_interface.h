@@ -3,9 +3,14 @@
 
 #include <stdint.h>
 #include "iomap.h"
+#ifndef RUNS_ON_PC
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
+#else
+typedef void *TaskHandle_t;
+typedef void *QueueHandle_t;
+#endif
 
 // For Info functions
 #include "json.h"
@@ -87,13 +92,13 @@
 #define LOGGER_CMD_START       0x33
 #define LOGGER_CMD_STOP        0x44
 
+#define SLAVE_CMD_ATN 0x100 // May reset the secondary address
+#define SLAVE_CMD_EOI 0x101 
+
 enum t_channel_retval {
     IEC_OK=0, IEC_LAST=1, IEC_NO_DATA=-1, IEC_FILE_NOT_FOUND=-2, IEC_NO_FILE=-3,
     IEC_READ_ERROR=-4, IEC_WRITE_ERROR=-5, IEC_BYTE_LOST=-6, IEC_BUFFER_END=-7
 };
-
-#define SLAVE_CMD_ATN 0x100 // May reset the secondary address
-#define SLAVE_CMD_EOI 0x101 
 
 class IecSlave
 {
@@ -110,6 +115,7 @@ public:
     virtual void reset(void) { }
 
     virtual t_channel_retval prefetch_data(uint8_t&) { return IEC_READ_ERROR; }
+    virtual t_channel_retval prefetch_more(int, uint8_t*&, int &) { return IEC_READ_ERROR; }
     virtual t_channel_retval push_ctrl(uint16_t) { return IEC_OK; }
     virtual t_channel_retval push_data(uint8_t) { return IEC_WRITE_ERROR; }
     virtual t_channel_retval pop_data(void) { return IEC_OK; }

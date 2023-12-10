@@ -73,6 +73,13 @@ public:
         SetInitialPath(); // constructs root path string
     }
 
+    ~IecPartition()
+    {
+        delete dirlist;
+        delete iecNames;
+        fm->release_path(path);
+    }
+
     int GetPartitionNumber(void)
     {
         return partitionNumber;
@@ -310,6 +317,15 @@ public:
         }
         currentPartition = 0;
         partitions[0] = new IecPartition(this, 0);
+    }
+
+    ~IecFileSystem() 
+    {
+        for (int i = 0; i < MAX_PARTITIONS; i++) {
+            if (partitions[i]) {
+                delete partitions[i];
+            }
+        }
     }
 
     const char *GetRootPath()

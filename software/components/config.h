@@ -21,7 +21,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include "integer.h"
+#include <stdint.h>
 #include "flash.h"
 #include "indexed_list.h"
 #include "mystring.h"
@@ -45,7 +45,7 @@ struct t_cfg_definition
     const char *item_format;
     const char **items;
     int  min, max;
-    int  def;
+    long int def; // also used as pointer to default string. For 64 bit systems it needs to be a long!
 };
 
 class ConfigPage;

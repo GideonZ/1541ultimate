@@ -23,7 +23,7 @@
 static struct t_cfg_definition iec_config[] = {
     { CFG_IEC_ENABLE,    CFG_TYPE_ENUM,   "IEC Drive",         "%s", en_dis, 0,  1, 0 },
     { CFG_IEC_BUS_ID,    CFG_TYPE_VALUE,  "Soft Drive Bus ID", "%d", NULL,   8, 30, 11 },
-    { CFG_IEC_PATH,      CFG_TYPE_STRING, "Default Path",      "%s", NULL,   0, 30, (int) FS_ROOT },
+    { CFG_IEC_PATH,      CFG_TYPE_STRING, "Default Path",      "%s", NULL,   0, 30, (long int)FS_ROOT },
     { 0xFF, CFG_TYPE_END, "", "", NULL, 0, 0, 0 }
 };
 
@@ -264,6 +264,11 @@ void IecDrive :: reset(void)
 t_channel_retval IecDrive :: prefetch_data(uint8_t& data)
 {
     return channels[current_channel]->prefetch_data(data);
+}
+
+t_channel_retval IecDrive :: prefetch_more(int bufsize, uint8_t*&pointer, int &available)
+{
+    return channels[current_channel]->prefetch_more(bufsize, pointer, available);
 }
 
 t_channel_retval IecDrive :: push_ctrl(uint16_t ctrl)

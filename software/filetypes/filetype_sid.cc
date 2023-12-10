@@ -12,13 +12,13 @@
 #include "userinterface.h"
 #include <stdio.h>
 
-extern uint8_t _sidcrt_bin_start;
+extern uint8_t _sidcrt_bin_start[8192];
 extern uint8_t _sidcrt_bin_end;
-extern uint8_t _muscrt_bin_start;
+extern uint8_t _muscrt_bin_start[8192];
 extern uint8_t _muscrt_bin_end;
-extern uint8_t _musplayer_bin_start;
+extern uint8_t _musplayer_bin_start[8192];
 extern uint8_t _musplayer_bin_end;
-extern uint8_t _basic_bin_start;
+extern uint8_t _basic_bin_start[8192];
 
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_sid(FileType ::getFileTypeFactory(),
@@ -64,7 +64,7 @@ cart_def mus_cart; // = { ID_SIDCART, (void *)0, 0x4000, CART_TYPE_16K | CART_RA
 
 static void initSidCart(void *object, void *param)
 {
-    int size = (int)&_sidcrt_bin_end - (int)&_sidcrt_bin_start;
+    int size = (int)&_sidcrt_bin_end - (int)_sidcrt_bin_start;
     uint8_t *sid_rom_area = new uint8_t[16384];
     sid_cart.name = "SID Player Cartridge";
     sid_cart.custom_addr = sid_rom_area;
@@ -72,11 +72,11 @@ static void initSidCart(void *object, void *param)
     sid_cart.type = CART_TYPE_16K;
     sid_cart.require = CART_UCI_DFFC;
 
-    memcpy(sid_rom_area, &_sidcrt_bin_start, size);
+    memcpy(sid_rom_area, _sidcrt_bin_start, size);
     printf("%d bytes copied into sid_cart.\n", size);
-    memcpy(sid_rom_area + 0x2000, &_basic_bin_start, 8192);
+    memcpy(sid_rom_area + 0x2000, _basic_bin_start, 8192);
 
-    int mus_crt_size = (int)&_muscrt_bin_end - (int)&_muscrt_bin_start;
+    int mus_crt_size = (int)&_muscrt_bin_end - (int)_muscrt_bin_start;
     uint8_t *mus_rom_area = new uint8_t[16384];
     mus_cart.name = "MUS Player Cartridge";
     mus_cart.custom_addr = mus_rom_area;
@@ -84,9 +84,9 @@ static void initSidCart(void *object, void *param)
     mus_cart.type = CART_TYPE_16K;
     mus_cart.require = CART_UCI_DFFC;
 
-    memcpy(mus_rom_area, &_muscrt_bin_start, mus_crt_size);
+    memcpy(mus_rom_area, _muscrt_bin_start, mus_crt_size);
     printf("%d bytes copied into mus_cart.\n", mus_crt_size);
-    memcpy(mus_rom_area + 0x2000, &_basic_bin_start, 8192);
+    memcpy(mus_rom_area + 0x2000, _basic_bin_start, 8192);
 }
 InitFunction sidCart_initializer(initSidCart, NULL, NULL);
 
@@ -871,8 +871,8 @@ void FileTypeSID ::configureMusEnv(int offsetLoadEnd)
     }
 
     // install mus player
-    int mus_player_size = (int)&_musplayer_bin_end - (int)&_musplayer_bin_start;
-    memcpy(&dest[0xe000], &_musplayer_bin_start, mus_player_size);
+    int mus_player_size = (int)&_musplayer_bin_end - (int)_musplayer_bin_start;
+    memcpy(&dest[0xe000], _musplayer_bin_start, mus_player_size);
 
     C64_POKE(0xEC6E, start);
     C64_POKE(0xEC70, start >> 8); // sidplayer data location
