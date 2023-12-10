@@ -44,6 +44,22 @@ void get_status(IecDrive *dr)
     dr->pop_more(data_size);
 }
 
+void get_status2(IecDrive *dr)
+{
+    uint8_t byte;
+    t_channel_retval ret1, ret2;
+
+    dr->push_ctrl(SLAVE_CMD_ATN);
+    dr->push_ctrl(0x6f); // channel 15
+    dr->talk();
+    do {
+        ret1 = dr->prefetch_data(byte);
+        ret2 = dr->pop_data();
+        printf("(%d) %02x (%d)\n", ret1, byte, ret2);
+    } while(ret1 == IEC_OK);
+    printf(".\n");
+}
+
 void send_command(IecDrive *dr, const char *cmd)
 {
     dr->push_ctrl(SLAVE_CMD_ATN);
@@ -75,8 +91,8 @@ int main(int argc, const char **argv)
     }
 
     get_status(dr);
-    get_status(dr);
-    get_status(dr);
+    get_status2(dr);
+    get_status2(dr);
     send_command(dr, "CD:/Temp");
 
     dr->push_ctrl(SLAVE_CMD_ATN);

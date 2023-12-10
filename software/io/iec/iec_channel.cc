@@ -56,7 +56,7 @@ void IecChannel::reset(void)
 void IecChannel::reset_prefetch(void)
 {
 #if IECDEBUG > 2
-    printf("(R)");
+    printf("(R%d)", channel);
 #endif
     prefetch = pointer;
 }
