@@ -3,6 +3,8 @@
 #include <string.h>
 #include "mystring.h" // my string class
 #include "assembly_search.h"
+#include <sys/socket.h>
+#include "netdb.h"
 
 /****************************/
 /* AssemblySearch UI Object */
@@ -31,6 +33,49 @@
  *      reference must be set to the cache for the commands to work. 
  */
 Assembly assembly;
+
+int Assembly :: connect_to_server(void)
+{
+    int error;
+    struct hostent my_host, *ret_host;
+    struct sockaddr_in serv_addr;
+    char buffer[1024];
+
+    this->socket = 0;
+
+    // setup the connection
+    int result = gethostbyname_r(HOSTNAME, &my_host, buffer, 1024, &ret_host, &error);
+    printf("Result Get HostName: %d\n", result);
+
+    if (!ret_host) {
+        printf("Could not resolve host '%s'.\n", HOSTNAME);
+        return -1;
+    }
+
+    int sock_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock_fd < 0) {
+        printf("NO socket\n");
+        return sock_fd;
+    }
+
+    memset((char *) &serv_addr, 0, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    memcpy(&serv_addr.sin_addr.s_addr, ret_host->h_addr, ret_host->h_length);
+    serv_addr.sin_port = htons(HOSTPORT);
+
+    if (connect(sock_fd, (struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0) {
+        printf("Connection failed.\n");
+        return -1;
+    }
+    printf("Connection succeeded.\n");
+    this->socket = sock_fd;
+    return sock_fd;
+}
+
+JSON *Assembly :: send_query(const char *query)
+{
+
+}
 
 AssemblySearch :: AssemblySearch(UserInterface *ui, Browsable *root) : TreeBrowser(ui, root)
 {
@@ -131,6 +176,66 @@ AssemblySearchState :: ~AssemblySearchState()
 
 }
 
+void url_encode(const char *src, mstring &dest)
+{
+    int len = strlen(src);
+    char pct[4] = {0};
+
+    for(int i=0; i<len; i++) {
+        if (src[i] == ' ') {
+            dest += '+';
+        } else if(src[i] >= 'a' && src[i] <= 'z') {
+            dest += src[i];
+        } else if(src[i] >= 'A' && src[i] <= 'Z') {
+            dest += src[i];
+        } else if(src[i] >= '0' && src[i] <= '9') {
+            dest += src[i];
+        } else {
+            sprintf(pct, "%c%02x", '%', src[i]);
+            dest += pct;
+        }
+    }
+}
+
+void AssemblySearchState :: send_query(void)
+{
+    mstring query;
+    for(int i=0;i<children->get_elements();i++) {
+        Browsable *b = (*children)[i];
+        if (b->isSelectable()) {
+            BrowsableQueryField *field = (BrowsableQueryField *)b;
+            const char *name = field->getName();
+            const char *value = field->getStringValue();
+            if (strlen(value) == 0) {
+                continue;
+            }
+            if (name[0] == '$') {
+                continue;
+            }
+            if (query.length() > 0) {
+                query += " & ";
+            }
+            query += "(";
+            query += field->getName();
+            query += " : ";
+            if (!field->isDropDown()) {
+                query += "\"";
+            }
+            query += value;
+            if (!field->isDropDown()) {
+                query += "\"";
+            }
+            query += ")";
+        }
+    }
+    printf("Query:\n%s\n", query.c_str());
+    mstring encoded;
+    url_encode(query.c_str(), encoded);
+    printf("Encoded:\n%s\n", encoded.c_str());
+
+
+}
+
 void AssemblySearchState :: change(void)
 {
 	if(!under_cursor)
@@ -139,7 +244,9 @@ void AssemblySearchState :: change(void)
     BrowsableQueryField *field = (BrowsableQueryField *)under_cursor;
 
     char buffer[32];
-    if (field->isDropDown()) {
+    if ((field->getName())[0] == '$') {  // The dirtiest trick ever!
+        send_query();
+    } else if (field->isDropDown()) {
         browser->context(0);
         // refresh will take place, because the context menu disappears and refresh flag is set
     } else {

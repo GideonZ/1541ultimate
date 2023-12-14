@@ -7,8 +7,16 @@
 #include "subsys.h"
 #include "json.h"
 
+#define HOSTNAME      "hackerswithstyle.se"
+#define HOSTPORT      80
+#define URL_SEARCH    "/leet/search/aql?query="
+#define URL_PATTERNS  "/leet/search/aql/presets"
+#define URL_ENTRIES   "/leet/search/entries"
+#define URL_DOWNLOAD  "/leet/search/bin"
+
 class AssemblySearchState: public TreeBrowserState
 {
+    void send_query(void);
 public:
     AssemblySearchState(Browsable *node, TreeBrowser *tb, int level);
     ~AssemblySearchState();
@@ -18,6 +26,7 @@ public:
     void change(void);
     void increase(void);
     void decrease(void);
+
 };
 
 class AssemblySearch: public TreeBrowser
@@ -121,6 +130,11 @@ public:
             return;
         }
 
+        if (field[0] == '$') {
+            sprintf(buffer, "           \eR <<  Search  >> \er");
+            return;
+        }
+
         sprintf(buffer, "%s:", field);
         buffer[strlen(buffer)] = ' ';
         if (width < 16) {
@@ -131,9 +145,10 @@ public:
             // position 10
             sprintf(buffer+10, "\eg%#s", width-11, value.c_str());
         } else {
-            sprintf(buffer+10, "\ek%#s", width-11, "________________");
+            sprintf(buffer+10, "\ek%#s", width-11, "__________________");
         }
-        buffer[0] &= 0xDF; // Capitalize ;-)
+        if (buffer[0] > 0x60)
+            buffer[0] &= 0xDF; // Capitalize ;-)
     }
 
     void fetch_context_items(IndexedList<Action *>&actions)
@@ -222,12 +237,15 @@ class Assembly
         "easyflash\"},{\"id\":6,\"aqlKey\":\"bbs\",\"name\":\"CSDB bbs\"}]}]";
 
     JSON *presets;
+    int socket;
 public:
     Assembly() {
         presets = NULL;
         convert_text_to_json_objects(assembly_presets, strlen(assembly_presets), 1000, &presets);
     }
     JSON *get_presets(void) { return presets; }
+    int   connect_to_server(void);
+    JSON *send_query(const char *query);
 };
 
 extern Assembly assembly;
@@ -244,7 +262,6 @@ class BrowsableAssemblyRoot: public Browsable
         AssemblySearch *searchBrowser = new AssemblySearch(cmd->user_interface, root);
         searchBrowser->init(cmd->user_interface->screen, cmd->user_interface->keyboard);
         cmd->user_interface->activate_uiobject(searchBrowser);
-
         // from this moment on, we loose focus.. polls will go directly to config menu!
     }
 public:
@@ -261,6 +278,8 @@ public:
     {
         // name, group, handle, event, date*, category*, subcat*, rating*, type*, repo*, latest, sort, order
         if (children.get_elements() == 0) {
+            children.append(new BrowsableStatic("\em  Assembly 64 Query Form"));
+            children.append(new BrowsableStatic(""));
             children.append(new BrowsableQueryField("Name", NULL));
             children.append(new BrowsableQueryField("Group", NULL));
             children.append(new BrowsableQueryField("Handle", NULL));
@@ -276,6 +295,9 @@ public:
                     }
                 }
             }
+            children.append(new BrowsableStatic(""));
+            children.append(new BrowsableStatic(""));
+            children.append(new BrowsableQueryField("$", NULL));
         }
         return &children;
     }
