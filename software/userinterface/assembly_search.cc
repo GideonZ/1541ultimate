@@ -144,6 +144,7 @@ void AssemblySearchState :: change(void)
         // refresh will take place, because the context menu disappears and refresh flag is set
     } else {
         strcpy(buffer, field->getStringValue());
+        browser->window->set_color(1);
         browser->user_interface->string_edit(buffer, 26, browser->window, 10, this->cursor_pos);
         field->setStringValue(buffer);
         // explicit refresh
@@ -151,6 +152,27 @@ void AssemblySearchState :: change(void)
         down(1);
     }
 }
+
+void AssemblySearchState :: increase(void)
+{
+    if(!under_cursor)
+        return;
+
+    BrowsableQueryField *field = (BrowsableQueryField *)under_cursor;
+    field->updown(1);
+    update_selected();
+}
+
+void AssemblySearchState :: decrease(void)
+{
+    if(!under_cursor)
+        return;
+
+    BrowsableQueryField *field = (BrowsableQueryField *)under_cursor;
+    field->updown(-1);
+    update_selected();
+}
+
 
 
 /*

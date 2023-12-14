@@ -16,8 +16,8 @@ public:
     void into(void) { printf("Assembly Into"); }
     void level_up(void) { printf("Assembly Up"); };
     void change(void);
-    void increase(void) { printf("Assembly Increase"); };
-    void decrease(void) { printf("Assembly Decrease"); };
+    void increase(void);
+    void decrease(void);
 };
 
 class AssemblySearch: public TreeBrowser
@@ -38,15 +38,19 @@ class BrowsableQueryField: public Browsable
     const char *field;
     JSON_List *presets; // When NULL, use a string edit.     
     mstring value;
+    int current_preset;
 
     static SubsysResultCode_e update(SubsysCommand *cmd)
     {
         BrowsableQueryField *field = (BrowsableQueryField *)cmd->functionID;
-        field->value = cmd->actionName;
+        // field->value = cmd->actionName;
+        field->current_preset = cmd->mode;
+        field->setPreset();
     }
 public:
     BrowsableQueryField(const char *field, JSON_List *presets) : field(field), presets(presets)
     {
+        current_preset = 0;
     }
 
     ~BrowsableQueryField()
@@ -71,6 +75,37 @@ public:
     bool isDropDown(void)
     {
         return (presets != NULL);
+    }
+
+    void updown(int offset)
+    {
+        if (!presets)
+            return;
+
+        current_preset += offset;
+        if (current_preset < 0)
+            current_preset = 0;
+        if (current_preset >= presets->get_num_elements()) {
+            current_preset = presets->get_num_elements() - 1;
+        }
+        setPreset();
+    }
+
+    void setPreset()
+    {
+        JSON *el = (*presets)[current_preset];
+        if (el->type() != eObject) {
+            return;
+        }
+        JSON_Object *obj = (JSON_Object *)el;
+        JSON *value = obj->get("name");
+        if (!value) {
+            value = obj->get("aqlKey");
+        }
+        if (value->type() != eString) {
+            return;
+        }
+        setStringValue(((JSON_String *)value)->get_string());
     }
 
     void getDisplayString(char *buffer, int width)
