@@ -110,7 +110,7 @@ void TaskMenu :: init(Window *pwin, Keyboard *key)
     draw();
 }
 
-int TaskMenu :: select(void)
+int TaskMenu :: select_item(void)
 {
     Action *a = actions[item_index];
     TaskCategory *cat = (TaskCategory *)a->getObject();

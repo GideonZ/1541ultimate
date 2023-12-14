@@ -139,6 +139,15 @@ public:
         s->charout('}');
     }
 
+    JSON * get(const char *key) {
+        for (int i=0;i<keys.get_elements();i++) {
+            if (stricmp(key, keys[i]) == 0) {
+                return values[i];
+            }
+        }
+        return NULL;
+    }
+
     IndexedList<const char *> *get_keys() {
         return &keys;
     }
@@ -160,6 +169,13 @@ public:
         for (int i=0;i<members.get_elements();i++) {
             delete members[i];
         }
+    }
+
+    int get_num_elements() {
+        return members.get_elements();
+    }
+    JSON * operator[] (int i) {
+        return members[i];
     }
 
     JSON_List *add(JSON *value) {

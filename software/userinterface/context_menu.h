@@ -60,7 +60,7 @@ public:
     virtual int poll(int);
     virtual void draw();
     void redraw(void);
-    virtual int select(void);
+    virtual int select_item(void);
     friend class TaskMenu;
 };
 
