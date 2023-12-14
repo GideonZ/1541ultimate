@@ -263,11 +263,14 @@ MenuAction_t UserInterface :: pollFocussed(void)
             // UI objects are responsible for cleaning up their offspring.
             // We only keep the root object in our array.
             ui_objects[focus]->deinit();
+            // Note that the object itself still exists, and needs to be cleaned up by the one who created
+            // it, unless the auto cleanup flag is set
+            if (ui_objects[focus]->needCleanup()) {
+                delete ui_objects[focus];
+            }
             ui_objects[focus] = NULL;
             focus--;
             continue; // pass the return code, which could be a selection index(!) to the level above.
-            // Note that the object itself still exists, and needs to be cleaned up by the one who created
-            // it.
         }
         // If we are already in the root, then we simply return the exit code. Caller cleans up, if necessary.
         else {
@@ -318,6 +321,11 @@ int UserInterface :: activate_uiobject(UIObject *obj)
     return -1;
 }
 
+bool UserInterface :: has_focus(UIObject *obj)
+{
+    return (ui_objects[focus] == obj);
+}
+
 void UserInterface :: set_screen_title()
 {
     int width = screen->get_size_x();
@@ -363,6 +371,7 @@ int  UserInterface :: popup(const char *msg, int count, const char **names, cons
         ret = pop->poll(0);
     } while(!ret);
     pop->deinit();
+    delete pop;
     return ret;
 }
 
@@ -377,6 +386,21 @@ int UserInterface :: string_box(const char *msg, char *buffer, int maxlen)
     } while(!ret);
     screen->cursor_visible(0);
     box->deinit();
+    delete box;
+    return ret;
+}
+
+int UserInterface :: string_edit(char *buffer, int maxlen, Window *w, int x, int y)
+{
+    UIStringEdit *edit = new UIStringEdit(buffer, maxlen);
+    edit->init(w, keyboard, x, y, maxlen); // maybe the max len should be limited by the window!
+    screen->cursor_visible(1);
+    int ret;
+    do {
+        ret = edit->poll(0);
+    } while(!ret);
+    screen->cursor_visible(0);
+    delete edit;
     return ret;
 }
 
@@ -406,6 +430,7 @@ void UserInterface :: run_editor(const char *text_buf, int max_len)
         ret = edit->poll(0);
     } while(!ret);
     edit->deinit();
+    delete edit;
 }
 
 int UserInterface :: enterSelection()

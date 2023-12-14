@@ -34,12 +34,12 @@ Assembly assembly;
 
 AssemblySearch :: AssemblySearch(UserInterface *ui, Browsable *root) : TreeBrowser(ui, root)
 {
-
+    setCleanup();
 }
 
 AssemblySearch :: ~AssemblySearch()
 {
-
+    printf("And there goes our Assembly browser!"); 
 }
 
 void AssemblySearch :: init(Screen *screen, Keyboard *k) // call on root!
@@ -87,20 +87,24 @@ int AssemblySearch :: handle_key(int c)
             break;
         case KEY_SPACE: // space = select
         case KEY_RETURN: // CR = select
-            if(state->level==0)
+            if(state->level!=0)
                 state->into();
             else
                 state->change();
             break;
         case KEY_RIGHT: // right
-            if(state->level==0)
+            if(state->level!=0)
                 state->into();
             else
                 state->increase();
             break;
         case '+':
-            if(state->level!=0)
+            if(state->level==0)
                 state->increase();
+            break;
+        case '-':
+            if(state->level==0)
+                state->decrease();
             break;
         case KEY_LEFT: // left
 		case KEY_BACK: // del
@@ -109,10 +113,6 @@ int AssemblySearch :: handle_key(int c)
             } else {
                 state->level_up();
             }
-            break;
-        case '-':
-            if(state->level!=0)
-                state->decrease();
             break;
         default:
             printf("Unhandled key: %b\n", c);
@@ -130,6 +130,28 @@ AssemblySearchState :: ~AssemblySearchState()
 {
 
 }
+
+void AssemblySearchState :: change(void)
+{
+	if(!under_cursor)
+		return;
+
+    BrowsableQueryField *field = (BrowsableQueryField *)under_cursor;
+
+    char buffer[32];
+    if (field->isDropDown()) {
+        browser->context(0);
+        // refresh will take place, because the context menu disappears and refresh flag is set
+    } else {
+        strcpy(buffer, field->getStringValue());
+        browser->user_interface->string_edit(buffer, 26, browser->window, 10, this->cursor_pos);
+        field->setStringValue(buffer);
+        // explicit refresh
+        refresh = true;
+        down(1);
+    }
+}
+
 
 /*
 void AssemblySearchState :: into(void)
@@ -163,48 +185,6 @@ void AssemblySearchState :: level_up(void)
     delete this;
 }
            
-void AssemblySearchState :: change(void)
-{
-    ConfigItem *it = ((BrowsableConfigItem *)under_cursor)->getItem();
-    char buffer[80];
-    int max;
-    t_cfg_func func;
-
-    if (!it->isEnabled()) {
-        return;
-    }
-
-    switch(it->definition->type) {
-        case CFG_TYPE_ENUM:
-            browser->context(it->getValue() - it->definition->min);
-            break;
-        case CFG_TYPE_STRFUNC:
-            browser->context(0);
-            break;
-        case CFG_TYPE_VALUE:
-        	if ((it->definition->max - it->definition->min) < 40) { // was 30, but days of the month then becomes an exception.. :-/
-                browser->context(it->getValue() - it->definition->min);
-        	}
-            break;
-        case CFG_TYPE_STRING:
-            max = it->definition->max;
-            if (max > 79)
-                max = 79;
-            strncpy(buffer, it->getString(), max);
-            if(browser->user_interface->string_box(it->get_item_name(), buffer, max)) {
-                it->setString(buffer);
-                update_selected();
-            }
-            break;
-        case CFG_TYPE_FUNC:
-            refresh = true;
-            func = (t_cfg_func)(it->definition->items);
-            func(browser->user_interface, it);
-            break;
-        default:
-            break;
-    }
-}
 
 void AssemblySearchState :: increase(void)
 {

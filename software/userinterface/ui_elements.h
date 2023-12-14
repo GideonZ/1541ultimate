@@ -21,8 +21,12 @@
 
 class UIObject
 {
+    bool autoCleanup;
 public:
-    UIObject() { }
+    UIObject() { autoCleanup = false; }
+    void setCleanup() { autoCleanup = true; }
+    bool needCleanup() { return autoCleanup; }
+
     virtual ~UIObject() { }
 
     virtual void init(Screen *scr, Keyboard *key) { }
@@ -84,7 +88,7 @@ public:
     UIStringEdit(char *buf, int max);
     ~UIStringEdit() { }
 
-    void init(Window *win, Keyboard *keyb, int x_offs, int y_offs, int max_ch);
+    void init(Window *win, Keyboard *keyb, int x_offs, int y_offs, int max_chars);
     int  poll(int);
     int  get_max_len() { return max_len; }
 };

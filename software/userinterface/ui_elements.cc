@@ -136,6 +136,8 @@ UIStringEdit :: UIStringEdit(char *buf, int max)
     window = 0;
     keyboard = 0;
     cur = len = 0;
+    win_xoffs = 0;
+    win_yoffs = 0;
 }
 
 void UIStringBox :: init(Screen *screen, Keyboard *keyb)
@@ -171,9 +173,11 @@ void UIStringEdit :: init(Window *win, Keyboard *kb, int xo, int yo, int max_c)
     win_xoffs = xo;
     win_yoffs = yo;
     keyboard = kb;
+    window = win;
+    max_chars = max_c;
+
     window->move_cursor(xo, yo);
     keyboard->wait_free();
-    max_chars = max_c;
 
     /// Now prefill the box...
     len = 0;
@@ -219,7 +223,7 @@ int UIStringEdit :: poll(int dummy)
                 if (edit_offs < 0)
                     edit_offs = 0;
                 window->move_cursor(win_xoffs, win_yoffs);
-                window->output_line(buffer+edit_offs);
+                window->output_length(buffer+edit_offs, max_chars);
             }
             window->move_cursor(win_xoffs + cur-edit_offs, win_yoffs);
         }
@@ -230,7 +234,7 @@ int UIStringEdit :: poll(int dummy)
             if ((cur-edit_offs) > (max_chars-1)) {
                 edit_offs++;
                 window->move_cursor(win_xoffs, win_yoffs);
-                window->output_line(buffer+edit_offs);
+                window->output_length(buffer+edit_offs,max_chars);
             }
         	window->move_cursor(win_xoffs + cur-edit_offs, win_yoffs);
         }
@@ -248,7 +252,7 @@ int UIStringEdit :: poll(int dummy)
                 if (edit_offs < 0)
                     edit_offs = 0;
                 window->move_cursor(win_xoffs, win_yoffs);
-                window->output_line(buffer+edit_offs);
+                window->output_length(buffer+edit_offs, max_chars);
                 window->move_cursor(win_xoffs+cur-edit_offs, win_yoffs);
             } else { // no scroll left, just redraw from cursor position
                 window->move_cursor(win_xoffs+cur-edit_offs, win_yoffs);
@@ -263,7 +267,7 @@ int UIStringEdit :: poll(int dummy)
         cur = 0;
         edit_offs = 0;
         window->move_cursor(win_xoffs, win_yoffs);
-        window->output_line("");
+        window->output_length(buffer+cur, max_chars+edit_offs-cur);
         window->move_cursor(win_xoffs, win_yoffs);
         break;
     case KEY_DELETE: // del
@@ -283,7 +287,7 @@ int UIStringEdit :: poll(int dummy)
         if (edit_offs) { // scroll to the  beginning?
             edit_offs = 0;
             window->move_cursor(win_xoffs, win_yoffs);
-            window->output_length(buffer, (len < max_chars)?len : max_chars);
+            window->output_length(buffer, max_chars);
         }
         window->move_cursor(win_xoffs + cur, win_yoffs);
         break;
@@ -294,7 +298,7 @@ int UIStringEdit :: poll(int dummy)
             if (cur >= (max_chars-1)) {
                 edit_offs = 1 + cur - max_chars;
                 window->move_cursor(win_xoffs, win_yoffs);
-                window->output_line(buffer+edit_offs);
+                window->output_length(buffer+edit_offs, max_chars);
             }
             window->move_cursor(win_xoffs + cur-edit_offs, win_yoffs);
         }
@@ -324,7 +328,7 @@ int UIStringEdit :: poll(int dummy)
             } else {
                 edit_offs++;
                 window->move_cursor(win_xoffs, win_yoffs);
-                window->output_line(buffer+edit_offs);
+                window->output_length(buffer+edit_offs, max_chars);
                 window->move_cursor(win_xoffs+cur-edit_offs, win_yoffs);
             }
         }

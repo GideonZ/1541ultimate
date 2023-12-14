@@ -14,6 +14,7 @@ extern "C" {
 ConfigBrowser :: ConfigBrowser(UserInterface *ui, Browsable *root) : TreeBrowser(ui, root)
 {
     printf("Constructor config browser\n");
+    setCleanup();
 }
 
 ConfigBrowser :: ~ConfigBrowser()

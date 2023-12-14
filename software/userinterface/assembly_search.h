@@ -15,14 +15,14 @@ public:
 
     void into(void) { printf("Assembly Into"); }
     void level_up(void) { printf("Assembly Up"); };
-    void change(void) { printf("Assembly Change"); };
+    void change(void);
     void increase(void) { printf("Assembly Increase"); };
     void decrease(void) { printf("Assembly Decrease"); };
 };
 
 class AssemblySearch: public TreeBrowser
 {
-//    void on_exit(void);
+public:
     AssemblySearch(UserInterface *ui, Browsable *);
     virtual ~AssemblySearch();
 
@@ -39,7 +39,8 @@ class BrowsableQueryField: public Browsable
     JSON_List *presets; // When NULL, use a string edit.     
     mstring value;
 
-    static SubsysResultCode_e update(SubsysCommand *cmd) {
+    static SubsysResultCode_e update(SubsysCommand *cmd)
+    {
         BrowsableQueryField *field = (BrowsableQueryField *)cmd->functionID;
         field->value = cmd->actionName;
     }
@@ -55,6 +56,21 @@ public:
     const char *getName()
     {
         return field;
+    }
+
+    const char *getStringValue()
+    {
+        return value.c_str();
+    }
+
+    void setStringValue(const char *s)
+    {
+        value = s;
+    }
+
+    bool isDropDown(void)
+    {
+        return (presets != NULL);
     }
 
     void getDisplayString(char *buffer, int width)
@@ -82,6 +98,7 @@ public:
         } else {
             sprintf(buffer+10, "\ek%#s", width-11, "________________");
         }
+        buffer[0] &= 0xDF; // Capitalize ;-)
     }
 
     void fetch_context_items(IndexedList<Action *>&actions)
@@ -182,14 +199,18 @@ extern Assembly assembly;
 
 class BrowsableAssemblyRoot: public Browsable
 {
-
     JSON *presets;
-    static SubsysResultCode_e new_search(SubsysCommand *cmd) {
-        if(cmd->user_interface) {
-            cmd->user_interface->enterSelection(); // ignore result, as it is just sending a signal
-            return SSRET_OK;
-        }
-        return SSRET_NO_USER_INTERFACE;
+
+    static SubsysResultCode_e new_search(SubsysCommand *cmd)
+    {
+        printf("Creating search menu...\n");
+            
+        Browsable *root = (Browsable *)cmd->functionID;
+        AssemblySearch *searchBrowser = new AssemblySearch(cmd->user_interface, root);
+        searchBrowser->init(cmd->user_interface->screen, cmd->user_interface->keyboard);
+        cmd->user_interface->activate_uiobject(searchBrowser);
+
+        // from this moment on, we loose focus.. polls will go directly to config menu!
     }
 public:
     BrowsableAssemblyRoot()
@@ -229,12 +250,12 @@ public:
     }
 
 	void fetch_context_items(IndexedList<Action *>&items) {
-        items.append(new Action("New Search..", new_search, 0, 0));
+        items.append(new Action("New Search..", new_search, (int)this, 0));
     }
 
     const char *getName()
     {
-        return "Browsable Assembly Root";
+        return "Assembly 64 Search";
     }
 };
 

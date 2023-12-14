@@ -213,7 +213,12 @@ int TreeBrowser :: poll(int sub_returned)
             }
             delete contextMenu;
             contextMenu = NULL;
-            state->draw();
+            if (user_interface->has_focus(this)) {
+                state->draw();
+            } else {
+                // we lost focus, apparently a new UI element is active
+                state->refresh = true; // refresh as soon as we come back
+            }
         }
         return ret;
     }
