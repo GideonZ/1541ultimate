@@ -100,13 +100,7 @@ public:
     JSON *request_entries(const char *id, int cat);
     void  request_binary(const char *id, int cat, int idx);
     int   connect_to_server(void);
-    void  close_connection(void)
-    {
-        if(socket_fd) {
-            close(socket_fd);
-        }
-        socket_fd = 0;
-    }
+    void  close_connection(void);
 };
 
 extern Assembly assembly;

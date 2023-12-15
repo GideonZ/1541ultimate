@@ -131,6 +131,14 @@ int Assembly :: connect_to_server(void)
     return sock_fd;
 }
 
+void Assembly :: close_connection(void)
+{
+    if(socket_fd) {
+        close(socket_fd);
+    }
+    socket_fd = 0;
+}
+
 JSON *Assembly :: send_query(const char *query)
 {
     mstring encoded;
