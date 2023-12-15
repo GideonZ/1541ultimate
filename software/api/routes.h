@@ -396,4 +396,8 @@ public:
 
 void build_response(HTTPRespMessage *resp, int code, const char *fmt, ...);
 
+class TempfileWriter;
+TempfileWriter *attachment_writer(HTTPReqMessage *req, HTTPRespMessage *resp, const ApiCall_t *func, ArgsURI *args);
+
+
 #endif // ROUTES_H

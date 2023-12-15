@@ -10,7 +10,7 @@ JSON_List *JSON::List() { return new JSON_List(); }
 
 JSON_Object *JSON::Obj() { return new JSON_Object(); }
 
-static const char *types[] = { "???", "OBJ", "LST", "STR", "PRM", "KEY" };
+// static const char *types[] = { "???", "OBJ", "LST", "STR", "PRM", "KEY" };
 
 static int parse_json(char *text, size_t text_size, jsmntok_t *tokens, size_t token_count)
 {
@@ -26,7 +26,7 @@ static JSON *convert(char *text, jsmntok_t *tokens, size_t num_tokens)
     memset(objects, 0, num_tokens * sizeof(JSON *));
     bool invalidJson = false;
 
-    for (int i = 0; i < num_tokens; i++) {
+    for (unsigned int i = 0; i < num_tokens; i++) {
         jsmntok_t *current = &(tokens[i]);
         text[current->end] = 0;
         jsmntok_t *parent = current->parent < 0 ? NULL : (&tokens[current->parent]);

@@ -13,11 +13,25 @@ Dict<const char *, IndexedList<const ApiCall_t *> *> *getRoutesList(void)
 }
 
 /* File Writer */
+void writer_complete(TempfileWriter *writer, const void *context1, void *context2)
+{
+    const ApiCall_t *func = (const ApiCall_t *)context1;
+    ArgsURI *args = (ArgsURI *)context2;
+    if (func) {
+        ResponseWrapper respw(writer->get_response());
+        if (args->Validate(*func, &respw) != 0) {
+            respw.json_response(HTTP_BAD_REQUEST);
+        } else {
+            func->proc(*args, writer->get_request(), &respw, writer);
+        }
+        delete args;
+    }
+}
+
 TempfileWriter *attachment_writer(HTTPReqMessage *req, HTTPRespMessage *resp, const ApiCall_t *func, ArgsURI *args)
 {
     if (req->bodyType != eNoBody) {
-        TempfileWriter *writer = new TempfileWriter();
-        writer->create_callback(req, resp, args, (const ApiCall_t *)func);
+        TempfileWriter *writer = new TempfileWriter(req, resp, writer_complete, func, args);
         setup_multipart(req, &TempfileWriter::collect_wrapper, writer);
         return writer;
     }

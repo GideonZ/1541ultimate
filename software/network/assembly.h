@@ -74,21 +74,39 @@ class Assembly
         "reu\"},{\"id\":10,\"aqlKey\":\"easyflash\",\"name\":\"CSDB "
         "easyflash\"},{\"id\":6,\"aqlKey\":\"bbs\",\"name\":\"CSDB bbs\"}]}]";
 
+    char *presets_text;
     JSON *presets;
-    int socket;
+    int socket_fd;
     HTTPReqMessage response;
 
     int read_socket(void);
+    void  get_response(HTTPREQ_CALLBACK callback);
+    JSON *convert_buffer_to_json(t_BufferedBody *body);
 public:
     Assembly() {
         presets = NULL;
-        convert_text_to_json_objects(assembly_presets, strlen(assembly_presets), 1000, &presets);
+        presets_text = new char[1+strlen(assembly_presets)];
+        strcpy(presets_text, assembly_presets);
+        convert_text_to_json_objects(presets_text, strlen(presets_text), 1000, &presets);
     }
+    ~Assembly() {
+        delete[] presets_text;
+        if (presets)
+            delete presets;
+    }
+    void *get_user_context() { return response.userContext; }
     JSON *get_presets(void) { return presets; }
-    int   connect_to_server(void);
     JSON *send_query(const char *query);
-    void  get_response(HTTPREQ_CALLBACK callback);
-    JSON *convert_buffer_to_json(t_BufferedBody *body);
+    JSON *request_entries(const char *id, int cat);
+    void  request_binary(const char *id, int cat, int idx);
+    int   connect_to_server(void);
+    void  close_connection(void)
+    {
+        if(socket_fd) {
+            close(socket_fd);
+        }
+        socket_fd = 0;
+    }
 };
 
 extern Assembly assembly;

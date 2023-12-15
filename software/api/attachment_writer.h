@@ -1,11 +1,22 @@
 #ifndef ATTACHMENT_WRITER
 #define ATTACHMENT_WRITER
 
+#include <string.h>
+#include <stdlib.h>
+#include "indexed_list.h"
+#include "pattern.h"
+
 extern "C" {
     #include "multipart.h"
 }
 
-#define FILE_PATH "/Temp/"
+#ifndef TEMP_FILE_PATH
+#define TEMP_FILE_PATH "/Temp/"
+#endif
+
+class TempfileWriter;
+
+typedef void (*WriterCallback_t)(TempfileWriter *, const void *context1, void *context2);
 
 class TempfileWriter
 {
@@ -17,15 +28,18 @@ class TempfileWriter
     size_t file_size;    
     HTTPReqMessage *req;
     HTTPRespMessage *resp;
-    ArgsURI *args;
-    const ApiCall_t *func;
+    WriterCallback_t callback;
+    const void *context1;
+    void *context2;
 public:
-    TempfileWriter() : filenames(4, NULL), filesizes(4, 0), filebuffers(4, NULL) {
+    TempfileWriter(HTTPReqMessage *req, HTTPRespMessage *resp, WriterCallback_t cb, const void *c1, void *c2)
+        : filenames(4, NULL), filesizes(4, 0), filebuffers(4, NULL) {
         fo = NULL;
-        req = NULL;
-        resp = NULL;
-        args = NULL;
-        func = NULL;
+        this->req = req;
+        this->resp = resp;
+        callback = cb;
+        context1 = c1;
+        context2 = c2;
     }
 
     ~TempfileWriter()
@@ -39,12 +53,14 @@ public:
         }
     }
 
-    void create_callback(HTTPReqMessage *req, HTTPRespMessage *resp, ArgsURI *args, const ApiCall_t *func)
+    HTTPReqMessage *get_request()
     {
-        this->req = req;
-        this->resp = resp;
-        this->args = args;
-        this->func = func;
+        return req;
+    }
+
+    HTTPRespMessage *get_response()
+    {
+        return resp;
     }
 
     static void collect_wrapper(BodyDataBlock_t *block)
@@ -56,7 +72,8 @@ public:
     void collect(BodyDataBlock_t *block)
     {
         char filename[128];
-        char *fn;
+        char tempstring[128];
+
         HTTPHeaderField *f;
 
         switch(block->type) {
@@ -64,18 +81,19 @@ public:
                 fo = NULL;
                 break;
             case eDataStart:
-                sprintf(filename, FILE_PATH "temp%04x", temp_count++);
+                sprintf(filename, TEMP_FILE_PATH "temp%04x", temp_count++);
                 filenames.append(strdup(filename));
                 fo = fopen(filename, "wb");
                 file_size = 0;
                 break;
             case eSubHeader:
-                sprintf(filename, FILE_PATH "temp%04x", temp_count++);
+                sprintf(filename, TEMP_FILE_PATH "temp%04x", temp_count++);
                 f = (HTTPHeaderField *)block->data;
                 for(int i=0; i < block->length; i++) {
                     if (strcasecmp(f[i].key, "Content-Disposition") == 0) {
                         // extract filename from value string, e.g. 'form-data; name="bestand"; filename="sample.html"'
-                        char *sub = strstr(f[i].value, "filename=\"");
+                        strncpy(tempstring, f[i].value, 127); tempstring[127] = 0;
+                        char *sub = strstr(tempstring, "filename=\"");
                         if (sub) {
                             sub += 10; // remove the 'filename="' part
                             char *quote = strstr(sub, "\"");
@@ -86,7 +104,7 @@ public:
                                 sub++;
                             }
                             fix_filename(sub);
-                            strncpy(filename + strlen(FILE_PATH), sub, 127-strlen(FILE_PATH) );
+                            strncpy(filename + strlen(TEMP_FILE_PATH), sub, 127-strlen(TEMP_FILE_PATH) );
                             filename[127] = 0;
                         }
                     }
@@ -118,14 +136,10 @@ public:
                     printf("  '%s' (%d)\n", filenames[i], (int)filesizes[i]);
                 }
                 // The actual function should now be called to do something with these files
-                if (func) {
-                    ResponseWrapper respw(resp);
-                    if (args->Validate(*func, &respw) != 0) {
-                        respw.json_response(HTTP_BAD_REQUEST);
-                    } else {
-                        func->proc(*args, req, &respw, this); // this = body (attachment writer object)
-                    }
-                    delete args;
+                // but since we don't know the context in which this writer is used,
+                // we simply call the callback with the context.
+                if (callback) {
+                    callback(this, context1, context2);
                 }
                 break;
         }
@@ -169,7 +183,5 @@ public:
         return -3; // no mem
     }
 };
-
-TempfileWriter *attachment_writer(HTTPReqMessage *req, HTTPRespMessage *resp, const ApiCall_t *func, ArgsURI *args);
 
 #endif

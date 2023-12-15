@@ -141,7 +141,7 @@ public:
 
     JSON * get(const char *key) {
         for (int i=0;i<keys.get_elements();i++) {
-            if (stricmp(key, keys[i]) == 0) {
+            if (strcasecmp(key, keys[i]) == 0) {
                 return values[i];
             }
         }
