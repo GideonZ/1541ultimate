@@ -3,6 +3,7 @@
 #include <string.h>
 #include "mystring.h" // my string class
 #include "assembly_search.h"
+#include "assembly_entry.h"
 #include "assembly.h"
 
 /****************************/
@@ -170,13 +171,23 @@ void AssemblySearchForm :: send_query(void)
     if (response) {
         puts(response->render());
     }
-    if (response && response->type() == eList) {
-        printf("Creating results view...\n");
-        BrowsableQueryResults *rb = new BrowsableQueryResults((JSON_List *)response);
-        deeper = new AssemblyResultsView(rb, browser, 1);
-        deeper->previous = this;
-        browser->state = deeper;
+    if (response) {
+        if (response->type() == eList) {
+            printf("Creating results view...\n");
+            BrowsableQueryResults *rb = new BrowsableQueryResults((JSON_List *)response);
+            deeper = new AssemblyResultsView(rb, browser, 1);
+            deeper->previous = this;
+            int error;
+        	deeper->children = rb->getSubItems(error);
+        	int child_count = deeper->children->get_elements();
+            printf("Number of results: %d.\n", child_count);
+            browser->state = deeper;
+        }
+        delete response;
     }
+    t_BufferedBody *body = (t_BufferedBody *)assembly.get_user_context();
+    if (body)
+        delete body;
 }
 
 void AssemblySearchForm :: change(void)
@@ -233,6 +244,25 @@ AssemblyResultsView :: ~AssemblyResultsView()
 
 }
 
+void AssemblyResultsView :: into()
+{
+    BrowsableQueryResult *item = (BrowsableQueryResult *)under_cursor;
+    if (!item)
+        return;
+
+    deeper = new TreeBrowserState(item, browser, 2);
+    deeper->previous = this;
+    int error;
+    deeper->children = item->getSubItems(error);
+    browser->state = deeper;
+    int child_count = deeper->children->get_elements();
+    printf("Number of entries: %d.\n", child_count);
+}
+
+void AssemblyResultsView :: get_entries()
+{
+
+}
 
 BrowsableAssemblyRoot :: BrowsableAssemblyRoot()
 {
@@ -252,8 +282,9 @@ IndexedList<Browsable *> *BrowsableQueryResult :: getSubItems(int &error)
                 JSON_List *list = (JSON_List *)content;
                 for(int i=0; i < list->get_num_elements(); i++) {
                     JSON *el = (*list)[i];
-                    puts(el->render());
-                    // children.append(new BrowsableDirEntryAssembly(list[i]));
+                    if (el->type() == eObject) {
+                        children.append(new BrowsableDirEntryAssembly(this, (JSON_Object *)el, id.c_str(), category));
+                    }
                 }
             }
         } else {

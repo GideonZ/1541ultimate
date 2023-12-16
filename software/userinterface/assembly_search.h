@@ -23,13 +23,13 @@ public:
 
 class AssemblyResultsView: public TreeBrowserState
 {
-    void get_entries(void) { }
+    void get_entries(void);
 public:
     AssemblyResultsView(Browsable *node, TreeBrowser *tb, int level);
     ~AssemblyResultsView();
 
-    void into(void) { printf("Results Into\n"); }
-    void level_up(void) { printf("Results Up\n"); };
+    void into(void);
+//    void level_up(void) { printf("Results Up\n"); };
 };
 
 class AssemblySearch: public TreeBrowser
@@ -253,23 +253,23 @@ public:
     BrowsableQueryResult(JSON_Object *result)
     {
         JSON *j;
-        const char *year = "";
+        int year = 0;
 
         j = result->get("name");
         if (j && j->type() == eString) {
             summary = ((JSON_String *)j)->get_string();
         }
         j = result->get("year");
-        if (j && j->type() == eString) {
-            year = ((JSON_String *)j)->get_string();
+        if (j && j->type() == eInteger) {
+            year = ((JSON_Integer *)j)->get_value();
         }
         j = result->get("group");
         if (j && j->type() == eString) {
-            summary += "(";
+            summary += " (";
             summary += ((JSON_String *)j)->get_string();
             if (year) {
                 summary += ", ";
-                summary += year;
+                summary += int_to_mstring(year);
             }
             summary += ")";
         }
@@ -287,6 +287,9 @@ public:
     ~BrowsableQueryResult()
     {
     }
+
+    const char *getId() { return id.c_str(); }
+    int getCategory() { return category; }
 
     const char *getName()
     {
@@ -307,14 +310,15 @@ public:
 
 class BrowsableQueryResults : public Browsable // Root of results screen
 {
+    IndexedList<Browsable *>items; // Override from Browsable
 public:
-    BrowsableQueryResults(JSON_List *results)
+    BrowsableQueryResults(JSON_List *results) : items(16, NULL)
     {
         for(int i=0; i<results->get_num_elements(); i++) {
             JSON *j = (*results)[i];
             if (j && j->type() == eObject) {
                 JSON_Object *obj = (JSON_Object *)j;
-                children.append(new BrowsableQueryResult(obj));
+                items.append(new BrowsableQueryResult(obj));
             }
         }
     }
@@ -322,7 +326,7 @@ public:
 
     IndexedList<Browsable *> *getSubItems(int &error)
     {
-        return &children;
+        return &items;
     }
 
 };
