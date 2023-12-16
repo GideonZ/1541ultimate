@@ -131,12 +131,14 @@ API_CALL(POST, machine, writemem, &attachment_writer, ARRAY( { {"address", P_REQ
     if (fres != FR_OK) {
         resp->error("Could not read data from attachment");
         resp->json_response(HTTP_NOT_FOUND);
+        delete[] buffer;
         return;
     }
 
     if (address + datalen > 65536) {
         resp->error("Memory write exceeds location $FFFF");
         resp->json_response(HTTP_BAD_REQUEST);
+        delete[] buffer;
         return;
     }
 
