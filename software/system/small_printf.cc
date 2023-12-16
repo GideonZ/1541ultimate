@@ -97,9 +97,9 @@ _my_vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, v
             width = 0;
             prepad = 0;
             postpad = 0;
-            bool nega = false;
+            // bool _nega = false;
             if (c == '-') {
-            	nega = true;
+            	// _nega = true;
             	c = *fmt++;
             }
             if (c == '.') { // no FP support

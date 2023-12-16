@@ -42,22 +42,22 @@ void attachment_to_buffer(BodyDataBlock_t *block)
 
     switch(block->type) {
         case eStart:
-            printf("--- Start of Body --- (Type: %s)\n", block->data);
+            // printf("--- Start of Body --- (Type: %s)\n", block->data);
             break;
         case eDataStart:
-            printf("--- Raw Data Start ---\n");
+            // printf("--- Raw Data Start ---\n");
             body->offset = 0;
             body->size = 0;
             break;
         case eSubHeader:
-            printf("--- SubHeader ---\n");
+            // printf("--- SubHeader ---\n");
             f = (HTTPHeaderField *)block->data;
             for(int i=0; i < block->length; i++) {
                 printf("%s => '%s'\n", f[i].key, f[i].value);
             }
             break;
         case eDataBlock:
-            printf("--- Data (%d bytes)\n", block->length);
+            // printf("--- Data (%d bytes)\n", block->length);
             if (block->length < (16384 - body->offset)) {
                 memcpy(body->buffer + body->offset, block->data, block->length);
                 body->offset += block->length;
@@ -67,10 +67,10 @@ void attachment_to_buffer(BodyDataBlock_t *block)
             }
             break;
         case eDataEnd:
-            printf("--- End of Data ---\n");
+            // printf("--- End of Data ---\n");
             break;
         case eTerminate:
-            printf("--- End of Body ---\n");
+            printf("--- End of Body --- ");
             printf("Total size: %d\n", body->size);
             break;
     }
@@ -104,7 +104,9 @@ int Assembly :: connect_to_server(void)
 
     // setup the connection
     int result = gethostbyname_r(HOSTNAME, &my_host, buffer, 1024, &ret_host, &error);
-    printf("Result Get HostName: %d\n", result);
+    if (result) {
+        printf("Result Get HostName: %d\n", result);
+    }
 
     if (!ret_host) {
         printf("Could not resolve host '%s'.\n", HOSTNAME);
@@ -126,7 +128,7 @@ int Assembly :: connect_to_server(void)
         printf("Connection failed.\n");
         return -1;
     }
-    printf("Connection succeeded.\n");
+    // printf("Connection succeeded.\n");
     this->socket_fd = sock_fd;
     return sock_fd;
 }
@@ -153,14 +155,41 @@ JSON *Assembly :: send_query(const char *query)
         "Connection: close\r\n"
         "\r\n";
 
-    int n = send(this->socket_fd, request.c_str(), request.length(), MSG_DONTWAIT);
-    get_response(collect_in_buffer);
-    
-    t_BufferedBody *body = (t_BufferedBody *) response.userContext;
-    JSON *json = convert_buffer_to_json(body);
-//    delete body;    
-    return json;
+    if (connect_to_server() > 0) {
+        send(this->socket_fd, request.c_str(), request.length(), MSG_DONTWAIT);
+        get_response(collect_in_buffer);
+        close_connection();
+
+        t_BufferedBody *body = (t_BufferedBody *) response.userContext;
+        JSON *json = convert_buffer_to_json(body);
+        return json;
+    }
+    return NULL;
 }
+
+/* Example result from query:
+[ 
+{   "name" : "Jumpman Junior",  "id" : "237033",  "category" : 0,  "siteCategory" : 20,  "siteRating" : 0,  "group" : "Wattenscheider Cracking Service",  "year" : 0,  "rating" : 0,  "updated" : "2023-11-21"}, 
+{   "name" : "Jumpman Junior",  "id" : "232391",  "category" : 0,  "siteCategory" : 20,  "siteRating" : 0,  "group" : "N.O.W.S.E",  "year" : 1989,  "rating" : 0,  "updated" : "2023-05-11",  "released" : "1989-01-01"}, 
+{   "name" : "Jumpman +",  "id" : "209120",  "category" : 0,  "siteCategory" : 20,  "siteRating" : 0,  "group" : "Cracker Force Nijmegen",  "year" : 0,  "rating" : 0,  "updated" : "2021-09-22"}, 
+{   "name" : "Jumpman Junior +",  "id" : "208821",  "category" : 0,  "siteCategory" : 20,  "siteRating" : 0,  "group" : "Cracker Force Nijmegen",  "year" : 0,  "rating" : 0,  "updated" : "2021-09-20"}, 
+{   "name" : "Jumpman Junior +",  "id" : "204685",  "category" : 7,  "siteCategory" : 17,  "siteRating" : 0,  "group" : "The Sir",  "year" : 0,  "rating" : 0,  "updated" : "2021-05-25"}, 
+{   "name" : "Jumpman Junior +",  "id" : "200855",  "category" : 0,  "siteCategory" : 20,  "siteRating" : 0,  "group" : "Lion Heart",  "year" : 1985,  "rating" : 0,  "updated" : "2021-03-06",  "released" : "1985-01-01"}, 
+{   "name" : "Jumpman Junior +",  "id" : "200276",  "category" : 0,  "siteCategory" : 20,  "siteRating" : 0,  "group" : "RCS International",  "year" : 1987,  "handle" : "Tasco",  "rating" : 0,  "updated" : "2021-02-20",  "released" : "1987-06-16"}, 
+{   "name" : "Jumpman Junior +",  "id" : "199939",  "category" : 0,  "siteCategory" : 20,  "siteRating" : 0,  "group" : "The Ultimate Mayas",  "year" : 0,  "handle" : "Chico",  "rating" : 0,  "updated" : "2021-02-14"}, 
+{   "name" : "Jumpman Junior",  "id" : "194399",  "category" : 0,  "siteCategory" : 20,  "siteRating" : 0,  "group" : "Feuerteufel",  "year" : 0,  "rating" : 0,  "updated" : "2020-08-10"}, 
+{   "name" : "Jumpman Junior",  "id" : "193761",  "category" : 0,  "siteCategory" : 20,  "siteRating" : 0,  "group" : "Mr. 99",  "year" : 1984,  "rating" : 0,  "updated" : "2020-07-25",  "released" : "1984-01-01"}, 
+{   "name" : "Jumpman Junior",  "id" : "193188",  "category" : 0,  "siteCategory" : 20,  "siteRating" : 0,  "year" : 1984,  "rating" : 0,  "updated" : "2020-07-06",  "released" : "1984-01-01"}, 
+{   "name" : "Jumpman +",  "id" : "185672",  "category" : 0,  "siteCategory" : 20,  "siteRating" : 0,  "group" : "Hulkamania",  "year" : 0,  "handle" : "Hibisch",  "rating" : 0,  "updated" : "2020-01-01"}, 
+{   "name" : "Jumpman Junior +",  "id" : "173866",  "category" : 0,  "siteCategory" : 20,  "siteRating" : 0,  "group" : "Greg",  "year" : 0,  "rating" : 0,  "updated" : "2019-01-12"}, 
+{   "name" : "Jumpman Junior Extended",  "id" : "168857",  "category" : 0,  "siteCategory" : 20,  "siteRating" : 0,  "group" : "Oleander",  "year" : 1984,  "rating" : 0,  "updated" : "2018-09-25",  "released" : "1984-01-01"}, 
+{   "name" : "Jump Man BASIC",  "id" : "27487",  "category" : 16,  "siteCategory" : 0,  "siteRating" : 0,  "year" : 0,  "rating" : 0,  "updated" : "2018-09-08"}, 
+{   "name" : "Jumpman",  "id" : "4000",  "category" : 16,  "siteCategory" : 0,  "siteRating" : 0,  "year" : 0,  "rating" : 0,  "updated" : "2018-09-08"}, 
+{   "name" : "Jumpman Junior",  "id" : "4002",  "category" : 16,  "siteCategory" : 0,  "siteRating" : 0,  "year" : 0,  "rating" : 0,  "updated" : "2018-09-08"}, 
+{   "name" : "Jumpman II",  "id" : "17360",  "category" : 16,  "siteCategory" : 0,  "siteRating" : 0,  "year" : 0,  "rating" : 0,  "updated" : "2018-09-08"}, 
+{   "name" : "jumpman",  "id" : "1293",  "category" : 15,  "siteCategory" : 0,  "siteRating" : 0,  "group" : "epyx",  "year" : 0,  "rating" : 0,  "updated" : "2017-09-13"}, 
+{   "name" : "jumpman junior",  "id" : "1294",  "category" : 15,  "siteCategory" : 0,  "siteRating" : 0,  "group" : "epyx",  "year" : 0,  "rating" : 0,  "updated" : "2017-09-13"} ]
+*/
 
 JSON *Assembly :: request_entries(const char *id, int cat)
 {
@@ -177,15 +206,29 @@ JSON *Assembly :: request_entries(const char *id, int cat)
         "Connection: close\r\n"
         "\r\n";
 
-    int n = send(this->socket_fd, request.c_str(), request.length(), MSG_DONTWAIT);
-    get_response(collect_in_buffer);
+    if (connect_to_server() > 0) {
+        send(this->socket_fd, request.c_str(), request.length(), MSG_DONTWAIT);
+        get_response(collect_in_buffer);
+        close_connection();
 
-    t_BufferedBody *body = (t_BufferedBody *) response.userContext;
-    JSON *json = convert_buffer_to_json(body);
-//    delete body;    
-    return json;
+        t_BufferedBody *body = (t_BufferedBody *) response.userContext;
+        JSON *json = convert_buffer_to_json(body);
+        return json;
+    }
+    return NULL;
 }
 
+/* Example result: entries (object)
+
+{ 
+  "contentEntry" : [ { 
+  "path" : "jumpmanjunior-wcs.d64",
+  "id" : 0
+} ],
+  "isContentByItself" : false
+}
+
+*/
 void Assembly :: request_binary(const char *id, int cat, int idx)
 {
     mstring enc_id;
@@ -201,8 +244,11 @@ void Assembly :: request_binary(const char *id, int cat, int idx)
         "Connection: close\r\n"
         "\r\n";
 
-    int n = send(this->socket_fd, request.c_str(), request.length(), MSG_DONTWAIT);
-    get_response(write_to_temp);
+    if (connect_to_server() > 0) { // resets userContext to NULL
+        send(this->socket_fd, request.c_str(), request.length(), MSG_DONTWAIT);
+        get_response(write_to_temp);
+        close_connection();
+    }
  }
 
 int Assembly :: read_socket(void)
@@ -235,6 +281,12 @@ JSON *Assembly :: convert_buffer_to_json(t_BufferedBody *body)
     body->buffer[body->size] = 0;
     JSON *json = NULL;
     int j = convert_text_to_json_objects((char *)body->buffer, body->size, 1000, &json);
+    if (j < 0) {
+        if (json) {
+            delete json;
+            return NULL;
+        }
+    }
     return json;
 }
 
@@ -247,23 +299,51 @@ extern "C" {
 
 int main(int argc, char **argv)
 {
-
-    int sock = assembly.connect_to_server();
-    if (sock >= 0) {
-        JSON *json = assembly.request_entries("237033", 0);
-        assembly.close_connection();
-        puts(json->render());
-        t_BufferedBody *body = (t_BufferedBody *) assembly.get_user_context();
-        delete body;
-        delete json;
+    JSON *results = assembly.send_query("(name:\"jumpman\") & (type:prg)");
+    if (results) {
+        puts(results->render());
+        delete results;
     }
 
-    int sock2 = assembly.connect_to_server();
-    if (sock2 >= 0) {
-        assembly.request_binary("237033", 0, 0);
-        assembly.close_connection();
-        TempfileWriter *writer = (TempfileWriter *) assembly.get_user_context();
+    t_BufferedBody *body2 = (t_BufferedBody *) assembly.get_user_context();
+    if (body2) {
+        delete body2;
+    }
+
+    JSON *json = assembly.request_entries("237033", 0);
+    if (json) {
+        puts(json->render());
+        delete json;
+    }
+    t_BufferedBody *body = (t_BufferedBody *) assembly.get_user_context();
+    if (body) {
+        delete body;
+    }
+
+    JSON *json3 = assembly.request_entries("145050", 3);
+    if (json3) {
+        puts(json3->render());
+        delete json3;
+    }
+    t_BufferedBody *body3 = (t_BufferedBody *) assembly.get_user_context();
+    if (body3) {
+        delete body3;
+    }
+
+    assembly.request_binary("237033", 0, 0);
+
+    TempfileWriter *writer = (TempfileWriter *) assembly.get_user_context();
+    if (writer) {
+        printf("Writer file: %s\n", writer->get_filename(0));
         delete writer;
+    }
+
+    assembly.request_binary("145050", 3, 0);
+
+    TempfileWriter *writer2 = (TempfileWriter *) assembly.get_user_context();
+    if (writer2) {
+        printf("Writer file: %s\n", writer2->get_filename(0));
+        delete writer2;
     }
 }
 #endif

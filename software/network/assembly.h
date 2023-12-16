@@ -15,7 +15,7 @@ typedef struct {
 
 class Assembly
 {
-    char *assembly_presets =
+    const char *assembly_presets =
         "[{\"type\":\"date\",\"values\":[{\"aqlKey\":\"1980\"},{\"aqlKey\":\"1981\"},{\"aqlKey\":\"1982\"},{\"aqlKey\":"
         "\"1983\"},{\"aqlKey\":\"1984\"},{\"aqlKey\":\"1985\"},{\"aqlKey\":\"1986\"},{\"aqlKey\":\"1987\"},{\"aqlKey\":"
         "\"1988\"},{\"aqlKey\":\"1989\"},{\"aqlKey\":\"1990\"},{\"aqlKey\":\"1991\"},{\"aqlKey\":\"1992\"},{\"aqlKey\":"
@@ -79,9 +79,11 @@ class Assembly
     int socket_fd;
     HTTPReqMessage response;
 
+    int   connect_to_server(void);
     int read_socket(void);
     void  get_response(HTTPREQ_CALLBACK callback);
     JSON *convert_buffer_to_json(t_BufferedBody *body);
+    void  close_connection(void);
 public:
     Assembly() {
         presets = NULL;
@@ -99,8 +101,6 @@ public:
     JSON *send_query(const char *query);
     JSON *request_entries(const char *id, int cat);
     void  request_binary(const char *id, int cat, int idx);
-    int   connect_to_server(void);
-    void  close_connection(void);
 };
 
 extern Assembly assembly;

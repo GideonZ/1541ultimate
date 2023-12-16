@@ -49,7 +49,7 @@ void AssemblySearch :: init(Screen *screen, Keyboard *k) // call on root!
 	window = new Window(screen, (screen->get_size_x() - 40) >> 1, 2, 40, screen->get_size_y()-3);
 	window->draw_border();
 	keyb = k;
-    state = new AssemblySearchState(root, this, 0);
+    state = new AssemblySearchForm(root, this, 0);
     state->reload();
 	state->do_refresh();
 }
@@ -122,18 +122,18 @@ int AssemblySearch :: handle_key(int c)
 }
 
 
-AssemblySearchState :: AssemblySearchState(Browsable *node, TreeBrowser *tb, int level) : TreeBrowserState(node, tb, level)
+AssemblySearchForm :: AssemblySearchForm(Browsable *node, TreeBrowser *tb, int level) : TreeBrowserState(node, tb, level)
 {
     //default_color = 7;
 }
 
-AssemblySearchState :: ~AssemblySearchState()
+AssemblySearchForm :: ~AssemblySearchForm()
 {
 
 }
 
 
-void AssemblySearchState :: send_query(void)
+void AssemblySearchForm :: send_query(void)
 {
     mstring query;
     for(int i=0;i<children->get_elements();i++) {
@@ -167,9 +167,16 @@ void AssemblySearchState :: send_query(void)
     printf("Query:\n%s\n", query.c_str());
 
     JSON *response = assembly.send_query(query.c_str());
+    if (response && response->type() == eList) {
+        printf("Creating results view...\n");
+        BrowsableQueryResults *rb = new BrowsableQueryResults((JSON_List *)response);
+        deeper = new AssemblyResultsView(rb, browser, 1);
+        deeper->previous = this;
+        browser->state = deeper;
+    }
 }
 
-void AssemblySearchState :: change(void)
+void AssemblySearchForm :: change(void)
 {
 	if(!under_cursor)
 		return;
@@ -193,7 +200,7 @@ void AssemblySearchState :: change(void)
     }
 }
 
-void AssemblySearchState :: increase(void)
+void AssemblySearchForm :: increase(void)
 {
     if(!under_cursor)
         return;
@@ -203,7 +210,7 @@ void AssemblySearchState :: increase(void)
     update_selected();
 }
 
-void AssemblySearchState :: decrease(void)
+void AssemblySearchForm :: decrease(void)
 {
     if(!under_cursor)
         return;
@@ -213,69 +220,42 @@ void AssemblySearchState :: decrease(void)
     update_selected();
 }
 
+AssemblyResultsView :: AssemblyResultsView(Browsable *node, TreeBrowser *tb, int level) : TreeBrowserState(node, tb, level)
+{
+    //default_color = 7;
+}
+
+AssemblyResultsView :: ~AssemblyResultsView()
+{
+
+}
+
+
 BrowsableAssemblyRoot :: BrowsableAssemblyRoot()
 {
     presets = assembly.get_presets();
 }
 
-
-/*
-void AssemblySearchState :: into(void)
+#include "browsable_root.h"
+IndexedList<Browsable *> *BrowsableQueryResult :: getSubItems(int &error)
 {
-	if(!under_cursor)
-		return;
-
-	deeper = new AssemblySearchState(under_cursor, browser, level+1);
-    browser->state = deeper;
-    deeper->previous = this;
-
-    int error;
-    // printf("Going deeper into = %s\n", under_cursor->getName());
-	deeper->children = under_cursor->getSubItems(error);
-	int child_count = deeper->children->get_elements();
-    if(child_count < 1) {
-    	browser->state = this;
-    	delete deeper;
+    // name, group, handle, event, date*, category*, subcat*, rating*, type*, repo*, latest, sort, order
+    error = 0;
+    if (children.get_elements() == 0) {
+        JSON *j = assembly.request_entries(id.c_str(), category);
+        if (j && j->type() == eObject) {
+            JSON *content = ((JSON_Object *)j)->get("contentEntry");
+            if (content && content->type() == eList) {
+                JSON_List *list = (JSON_List *)content;
+                for(int i=0; i < list->get_num_elements(); i++) {
+                    JSON *el = (*list)[i];
+                    puts(el->render());
+                    // children.append(new BrowsableDirEntryAssembly(list[i]));
+                }
+            }
+        } else {
+            error = 1;
+        }
     }
+    return &children;
 }
-
-void AssemblySearchState :: level_up(void)
-{
-    if (level == 1) { // going to level 0, we need to store in flash
-        ConfigStore *st = ((BrowsableConfigStore *) (previous->under_cursor))->getStore();
-        st->at_close_config();
-    }
-    browser->state = previous;
-    previous->refresh = true;
-    previous = NULL; // unlink;
-    delete this;
-}
-           
-
-void AssemblySearchState :: increase(void)
-{
-    ConfigItem *it = ((BrowsableConfigItem *)under_cursor)->getItem();
-    if (!it->isEnabled()) {
-        return;
-    }
-    if (it->next(1)) {
-        refresh = true;
-    } else {
-        update_selected();
-    }
-}
-    
-void AssemblySearchState :: decrease(void)
-{
-    ConfigItem *it = ((BrowsableConfigItem *)under_cursor)->getItem();
-    if (!it->isEnabled()) {
-        return;
-    }
-    if (it->previous(1)) {
-        refresh = true;
-    } else {
-        update_selected();
-    }
-}
-*/
-

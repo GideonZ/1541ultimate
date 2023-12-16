@@ -64,6 +64,12 @@ static JSON *convert(char *text, jsmntok_t *tokens, size_t num_tokens)
             objects[i] = JSON::Obj();
             // printf("OBJ\n");
             break;
+        case JSMN_KEY:
+            printf("Warning! JSON Key encountered at %d\n", current->start);
+            break;
+        case JSMN_UNDEFINED:
+            printf("Warning! JSON UNDEFINED encountered at %d\n", current->start);
+            break;
         }
 
         // {

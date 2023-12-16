@@ -61,6 +61,7 @@ public:
         return work;
     }
     void render(StreamRamFile *s) { s->format("%d", value); }
+    int get_value() { return value; }
 };
 
 class JSON_Bool : public JSON

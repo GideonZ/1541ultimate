@@ -7,19 +7,29 @@
 #include "subsys.h"
 #include "json.h"
 
-class AssemblySearchState: public TreeBrowserState
+class AssemblySearchForm: public TreeBrowserState
 {
     void send_query(void);
 public:
-    AssemblySearchState(Browsable *node, TreeBrowser *tb, int level);
-    ~AssemblySearchState();
+    AssemblySearchForm(Browsable *node, TreeBrowser *tb, int level);
+    ~AssemblySearchForm();
 
-    void into(void) { printf("Assembly Into"); }
-    void level_up(void) { printf("Assembly Up"); };
+    void into(void) { printf("Seach Form Into\n"); }
+    void level_up(void) { printf("Search Form Up\n"); };
     void change(void);
     void increase(void);
     void decrease(void);
+};
 
+class AssemblyResultsView: public TreeBrowserState
+{
+    void get_entries(void) { }
+public:
+    AssemblyResultsView(Browsable *node, TreeBrowser *tb, int level);
+    ~AssemblyResultsView();
+
+    void into(void) { printf("Results Into\n"); }
+    void level_up(void) { printf("Results Up\n"); };
 };
 
 class AssemblySearch: public TreeBrowser
@@ -229,6 +239,86 @@ public:
     {
         return "Assembly 64 Search";
     }
+};
+
+class BrowsableQueryResult: public Browsable
+{
+    mstring summary;
+    //mstring name;
+    //mstring group;
+    //mstring year;
+    mstring id;
+    int category;
+public:
+    BrowsableQueryResult(JSON_Object *result)
+    {
+        JSON *j;
+        const char *year = "";
+
+        j = result->get("name");
+        if (j && j->type() == eString) {
+            summary = ((JSON_String *)j)->get_string();
+        }
+        j = result->get("year");
+        if (j && j->type() == eString) {
+            year = ((JSON_String *)j)->get_string();
+        }
+        j = result->get("group");
+        if (j && j->type() == eString) {
+            summary += "(";
+            summary += ((JSON_String *)j)->get_string();
+            if (year) {
+                summary += ", ";
+                summary += year;
+            }
+            summary += ")";
+        }
+        category = 0;
+        j = result->get("category");
+        if (j && j->type() == eInteger) {
+            category = ((JSON_Integer *)j)->get_value();
+        }
+        j = result->get("id");
+        if (j && j->type() == eString) {
+            id = ((JSON_String *)j)->get_string();
+        }
+    }
+
+    ~BrowsableQueryResult()
+    {
+    }
+
+    const char *getName()
+    {
+        return summary.c_str();
+    }
+
+    void getDisplayString(char *buffer, int width)
+    {
+        memset(buffer, ' ', width+2);
+        buffer[width+2] = '\0';
+
+        strncpy(buffer, summary.c_str(), width);
+    }
+
+    IndexedList<Browsable *> *getSubItems(int &error);
+
+};
+
+class BrowsableQueryResults : public Browsable // Root of results screen
+{
+public:
+    BrowsableQueryResults(JSON_List *results)
+    {
+        for(int i=0; i<results->get_num_elements(); i++) {
+            JSON *j = (*results)[i];
+            if (j && j->type() == eObject) {
+                JSON_Object *obj = (JSON_Object *)j;
+                children.append(new BrowsableQueryResult(obj));
+            }
+        }
+    }
+    ~BrowsableQueryResults() { }
 };
 
 #endif
