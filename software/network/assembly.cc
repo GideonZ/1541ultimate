@@ -235,7 +235,14 @@ void Assembly :: request_binary(const char *id, int cat, int idx)
     url_encode(id, enc_id);
 
     char buffer[64];
-    sprintf(buffer, "GET " URL_DOWNLOAD "/%s/%d/%d", enc_id.c_str(), cat, idx);
+    sprintf(buffer, "%s/%d/%d", enc_id.c_str(), cat, idx);
+    request_binary(buffer);
+}
+
+void Assembly :: request_binary(const char *path)
+{
+    char buffer[64];
+    sprintf(buffer, "GET " URL_DOWNLOAD "/%s", path);
     mstring request(buffer);
     request += " HTTP/1.1\r\n"
         "Accept-encoding: identity\r\n"

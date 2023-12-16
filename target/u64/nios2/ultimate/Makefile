@@ -169,6 +169,7 @@ SRCS_CC	 =  u2p_init.cc \
 			route_machine.cc \
 			assembly_search.cc \
 			assembly.cc \
+			filesystem_a64.cc \
 			$(PRJ).cc
 
 SRCS_CC +=  iec_interface.cc 

@@ -48,6 +48,7 @@ void AssemblySearch :: init(Screen *screen, Keyboard *k) // call on root!
 {
 	this->screen = screen;
 	window = new Window(screen, (screen->get_size_x() - 40) >> 1, 2, 40, screen->get_size_y()-3);
+    cd("/a64");
 	window->draw_border();
 	keyb = k;
     state = new AssemblySearchForm(root, this, 0);
@@ -62,6 +63,9 @@ int AssemblySearch :: handle_key(int c)
 {
     int ret = 0;
     
+    if (state->level >= 2) {
+        return TreeBrowser :: handle_key(c);
+    }
     switch(c) {
         case KEY_F8: // exit
         case KEY_BREAK: // runstop
@@ -255,8 +259,13 @@ void AssemblyResultsView :: into()
     int error;
     deeper->children = item->getSubItems(error);
     browser->state = deeper;
+    char cat[16];
+    browser->path->cd("/a64");
+    browser->path->cd(item->getId());
+    sprintf(cat, "%d", item->getCategory());
+    browser->path->cd(cat);
     int child_count = deeper->children->get_elements();
-    printf("Number of entries: %d.\n", child_count);
+    printf("Number of entries: %d. Path = %s\n", child_count, browser->getPath());
 }
 
 void AssemblyResultsView :: get_entries()

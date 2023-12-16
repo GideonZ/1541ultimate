@@ -3,6 +3,7 @@
 
 #include "browsable_root.h"
 #include "json.h"
+#include <ctype.h>
 
 class BrowsableDirEntryAssembly : public Browsable
 {
@@ -11,6 +12,7 @@ class BrowsableDirEntryAssembly : public Browsable
     int index;
     int size;
     mstring filename;
+    mstring indexstr;
     BrowsableDirEntry *wrappedEntry;
     FileType *filetype;
 public:
@@ -20,6 +22,7 @@ public:
         this->category = cat;
         filetype = NULL;
         index = 0;
+        indexstr = "0";
         size = 65536;
         JSON *j = obj->get("path");
         if (j && j->type() == eString) {
@@ -28,6 +31,7 @@ public:
         j = obj->get("id");
         if (j && j->type() == eInteger) {
             index = ((JSON_Integer *)j)->get_value();
+            indexstr = int_to_mstring(index);
         }
         j = obj->get("size");
         if (j && j->type() == eInteger) {
@@ -36,6 +40,12 @@ public:
         FileInfo *info = new FileInfo(filename.c_str());
         info->size = size;
         get_extension(filename.c_str(), info->extension);
+        for(int i=0;i<3;i++) {
+            if (!info->extension[i])
+                break;
+            info->extension[i] = toupper(info->extension[i]);
+        }
+        
         wrappedEntry = new BrowsableDirEntry(NULL, parent, info, true);
     }
 
@@ -44,7 +54,7 @@ public:
     }
 
     const char *getName() {
-        return filename.c_str();
+        return indexstr.c_str();
     }
 
     void getDisplayString(char *buffer, int width) {

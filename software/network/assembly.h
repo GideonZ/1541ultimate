@@ -101,6 +101,7 @@ public:
     JSON *send_query(const char *query);
     JSON *request_entries(const char *id, int cat);
     void  request_binary(const char *id, int cat, int idx);
+    void  request_binary(const char *path);
 };
 
 extern Assembly assembly;
