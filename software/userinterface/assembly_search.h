@@ -205,10 +205,10 @@ public:
         if (children.get_elements() == 0) {
             children.append(new BrowsableStatic("\em  Assembly 64 Query Form"));
             children.append(new BrowsableStatic(""));
-            children.append(new BrowsableQueryField("Name", NULL));
-            children.append(new BrowsableQueryField("Group", NULL));
-            children.append(new BrowsableQueryField("Handle", NULL));
-            children.append(new BrowsableQueryField("Event", NULL));
+            children.append(new BrowsableQueryField("name", NULL));
+            children.append(new BrowsableQueryField("group", NULL));
+            children.append(new BrowsableQueryField("handle", NULL));
+            children.append(new BrowsableQueryField("event", NULL));
             if (presets && (presets->type() == eList)) {
                 JSON_List *list = (JSON_List *)presets;
                 for (int i = 0; i < list->get_num_elements(); i++) {
@@ -319,6 +319,12 @@ public:
         }
     }
     ~BrowsableQueryResults() { }
+
+    IndexedList<Browsable *> *getSubItems(int &error)
+    {
+        return &children;
+    }
+
 };
 
 #endif

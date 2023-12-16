@@ -153,7 +153,7 @@ void AssemblySearchForm :: send_query(void)
             }
             query += "(";
             query += field->getName();
-            query += " : ";
+            query += ":";
             if (!field->isDropDown()) {
                 query += "\"";
             }
@@ -167,6 +167,9 @@ void AssemblySearchForm :: send_query(void)
     printf("Query:\n%s\n", query.c_str());
 
     JSON *response = assembly.send_query(query.c_str());
+    if (response) {
+        puts(response->render());
+    }
     if (response && response->type() == eList) {
         printf("Creating results view...\n");
         BrowsableQueryResults *rb = new BrowsableQueryResults((JSON_List *)response);
