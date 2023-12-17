@@ -432,6 +432,8 @@ int TreeBrowser :: handle_key(int c)
         	break;
 
         case KEY_F6:
+        	reset_quick_seek();
+        	state->refresh = true;
             AssemblyInGui :: S_OpenSearch(user_interface);
             break;
 

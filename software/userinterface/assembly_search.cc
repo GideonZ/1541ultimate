@@ -154,7 +154,7 @@ void AssemblySearchForm :: send_query(void)
         if (b->isSelectable()) {
             BrowsableQueryField *field = (BrowsableQueryField *)b;
             const char *name = field->getName();
-            const char *value = field->getStringValue();
+            const char *value = field->getAqlString();
             if (strlen(value) == 0) {
                 continue;
             }
@@ -179,16 +179,16 @@ void AssemblySearchForm :: send_query(void)
     }
     printf("Query:\n%s\n", query.c_str());
 
-    // Let the user know
+    // Let the user know we are busy
     browser->window->set_color(12);
     browser->window->set_background(0);
     browser->window->getScreen()->move_cursor(0, browser->window->getScreen()->get_size_y()-1);
     browser->window->getScreen()->output_fixed_length("Sending query...", 0, browser->window->getScreen()->get_size_x()-9);
 
     JSON *response = assembly.send_query(query.c_str());
-    if (response) {
-        puts(response->render());
-    }
+    // if (response) {
+    //     puts(response->render());
+    // }
     if (response) {
         if (response->type() == eList) {
             printf("Creating results view...\n");

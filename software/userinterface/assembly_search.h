@@ -64,7 +64,7 @@ class BrowsableQueryField: public Browsable
 public:
     BrowsableQueryField(const char *field, JSON_List *presets) : field(field), presets(presets)
     {
-        current_preset = 0;
+        current_preset = -1;
     }
 
     ~BrowsableQueryField()
@@ -74,6 +74,21 @@ public:
     const char *getName()
     {
         return field;
+    }
+
+    const char *getAqlString()
+    {
+        if (presets) {
+            if (current_preset == -1) {
+                return "";
+            }
+            JSON_Object *obj = (JSON_Object *)(*presets)[current_preset];
+            JSON_String *aql = (JSON_String *)obj->get("aqlKey");
+            if (aql) {
+                return aql->get_string();
+            }
+        }
+        return value.c_str();
     }
 
     const char *getStringValue()
@@ -272,7 +287,7 @@ public:
             summary += ((JSON_String *)j)->get_string();
             if (year) {
                 summary += ", ";
-                summary += int_to_mstring(year);
+                summary += year;
             }
             summary += ")";
         }
@@ -286,7 +301,9 @@ public:
             id = ((JSON_String *)j)->get_string();
         }
         path.cd(id.c_str());
-        //path.cd()
+        char catstr[8];
+        sprintf(catstr, "%d", category);
+        path.cd(catstr);
     }
 
     ~BrowsableQueryResult()
@@ -305,7 +322,7 @@ public:
     {
         return &path;
     }
-    
+
     void getDisplayString(char *buffer, int width)
     {
         memset(buffer, ' ', width+2);

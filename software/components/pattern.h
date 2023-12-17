@@ -8,7 +8,7 @@ bool isEmptyString(const char *c);
 
 void set_extension(char *buffer, const char *ext, int buf_size);
 void add_extension(char *buffer, const char *ext, int buf_size);
-int  get_extension(const char *name, char *ext);
+int  get_extension(const char *name, char *ext, bool caps=false);
 void truncate_filename(const char *orig, char *buf, int buf_size);
 int  fix_filename(char *buffer);
 void petscii_to_fat(const char *pet, char *fat, int maxlen);

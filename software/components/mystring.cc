@@ -191,6 +191,13 @@ mstring& mstring :: operator+=(const mstring &rhs)
     return *this;
 }
 
+mstring& mstring :: operator+=(const int i)
+{
+    char temp[16];
+    sprintf(temp, "%d", i);
+    return (*this) += temp;
+}
+
 bool mstring :: operator==(const mstring &rhs)
 {
     if(!cp && !rhs.cp)
@@ -269,14 +276,6 @@ int strinscmp(mstring &a, mstring &b)
     if(!b.cp)
         return 1;
     return strcasecmp(a.cp, b.cp);
-}
-
-mstring& int_to_mstring(int i)
-{
-    char temp[16];
-    sprintf(temp, "%d", i);
-    mstring *result = new mstring(temp);
-    return *result;
 }
 
 

@@ -101,6 +101,7 @@ int Assembly :: connect_to_server(void)
 
     this->socket_fd = 0;
     InitReqMessage(&this->response);
+    this->response.usedAsResponseFromServer = 1;
 
     // setup the connection
     int result = gethostbyname_r(HOSTNAME, &my_host, buffer, 1024, &ret_host, &error);

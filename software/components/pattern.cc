@@ -331,7 +331,7 @@ int fix_filename(char *buffer)
     return replacements;
 }
 
-int get_extension(const char *name, char *ext)
+int get_extension(const char *name, char *ext, bool caps)
 {
     int len = strlen(name);
     ext[0] = 0;
@@ -343,7 +343,11 @@ int get_extension(const char *name, char *ext)
                 ext[j+1] = 0; // the char after the current is always end
                 if (!name[i+1+j])
                     break;
-                ext[j] = name[i+1+j];
+                if(caps) {
+                    ext[j] = toupper(name[i+1+j]);
+                } else {
+                    ext[j] = name[i+1+j];
+                }
             }
             break;
         }

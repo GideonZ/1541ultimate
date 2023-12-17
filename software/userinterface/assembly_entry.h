@@ -31,7 +31,8 @@ public:
         j = obj->get("id");
         if (j && j->type() == eInteger) {
             index = ((JSON_Integer *)j)->get_value();
-            indexstr = int_to_mstring(index);
+            indexstr = "";
+            indexstr += index;
         }
         j = obj->get("size");
         if (j && j->type() == eInteger) {

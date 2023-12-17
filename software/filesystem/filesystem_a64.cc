@@ -65,6 +65,12 @@ PathStatus_t FileSystemA64 :: walk_path(PathInfo& pathInfo)
     if (elements < 3) {
         return e_DirNotFound; // or entry not found, doesn't matter
     }
+    FileInfo *inf = pathInfo.getNewInfoPointer();
+    strncpy(inf->lfname, pathInfo.getFileName(), inf->lfsize);
+    inf->attrib = 0; // just a file!
+    inf->fs = this;
+    get_extension(pathInfo.getFileName(), inf->extension, true);
+
     // Check for overcomplete path
     if (pathInfo.hasMore()) {
         return e_TerminatedOnFile;
