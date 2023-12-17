@@ -21,5 +21,7 @@ if __name__ == "__main__":
     s = mysocket()
     s.bind(10000)
     s.broadcast(b"Any Ultimates around?!", 64)
-    time.sleep(0.2)
+    time.sleep(0.2) 
+    # Better to use a timeout on the socket than just waiting, but I was lazy
+    # With a timeout, you can find more than just one ultimate.
     print(s.receive())

@@ -6,6 +6,8 @@
 #include "context_menu.h"
 #include "subsys.h"
 #include "json.h"
+#include "menu.h"
+#include "action.h"
 
 class AssemblySearchForm: public TreeBrowserState
 {
@@ -329,6 +331,43 @@ public:
         return &items;
     }
 
+};
+
+class AssemblyInGui;
+extern AssemblyInGui assembly_gui;
+
+class AssemblyInGui : public ObjectWithMenu
+{
+    TaskCategory *taskItemCategory;
+    BrowsableAssemblyRoot * root;
+
+    static SubsysResultCode_e S_OpenSearch(SubsysCommand *cmd) {
+        UserInterface *cmd_ui = cmd->user_interface;
+        AssemblySearch *search_window = new AssemblySearch(cmd_ui, assembly_gui.getRoot());
+        search_window->init(cmd_ui->screen, cmd_ui->keyboard);
+        cmd_ui->activate_uiobject(search_window); // now we have focus
+        // TODO: cleanup when done
+    }
+public:
+    AssemblyInGui() {
+        root = NULL;
+        taskItemCategory = TasksCollection :: getCategory("Assembly 64", SORT_ORDER_ASSEMBLY);
+    }
+
+    ~AssemblyInGui() {
+        // unregister taskItemCategory
+    }
+
+    BrowsableAssemblyRoot *getRoot() {
+        if (!root) {
+            root = new BrowsableAssemblyRoot();
+        }            
+        return root;
+    }
+
+    void create_task_items(void) {
+        taskItemCategory->append(new Action("New Search", S_OpenSearch, 0, 0));
+    }
 };
 
 #endif

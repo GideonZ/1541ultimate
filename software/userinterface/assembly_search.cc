@@ -245,7 +245,6 @@ AssemblyResultsView :: AssemblyResultsView(Browsable *node, TreeBrowser *tb, int
 
 AssemblyResultsView :: ~AssemblyResultsView()
 {
-
 }
 
 void AssemblyResultsView :: into()
@@ -302,3 +301,5 @@ IndexedList<Browsable *> *BrowsableQueryResult :: getSubItems(int &error)
     }
     return &children;
 }
+
+AssemblyInGui assembly_gui;

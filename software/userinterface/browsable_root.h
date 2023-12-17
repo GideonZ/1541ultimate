@@ -251,7 +251,6 @@ public:
 			for(int i=0; i < NetworkInterface :: getNumberOfInterfaces(); i++) {
 				children.append(new BrowsableNetwork(this, i));
 			}
-			children.append(new BrowsableAssemblyRoot());
 		}
 		error = 0;
 		return &children;

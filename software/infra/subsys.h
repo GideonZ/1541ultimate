@@ -36,6 +36,7 @@ class UserInterface;
 #define SUBSYSID_PRINTER         10
 #define SUBSYSID_ULTICOPY        11
 
+#define SORT_ORDER_ASSEMBLY 5
 #define SORT_ORDER_CREATE  10
 #define SORT_ORDER_C64     20
 #define SORT_ORDER_DRIVES  30

@@ -36,7 +36,6 @@ FRESULT FileSystemA64 :: file_open(const char *filename, uint8_t flags, File **f
     assembly.request_binary(filename);
     TempfileWriter *writer = (TempfileWriter *)assembly.get_user_context();
     if (writer) {
-        mstring tempfile(TEMP_FILE_PATH);
         FileManager *fm = FileManager::getFileManager();
         FRESULT fres = fm->fopen(writer->get_filename(0), flags, file);
         delete writer;
@@ -49,9 +48,26 @@ FRESULT FileSystemA64 :: file_open(const char *filename, uint8_t flags, File **f
 PathStatus_t FileSystemA64 :: walk_path(PathInfo& pathInfo)
 {
     // Totally fake it! We just assume the whole path exists!
-    // TODO: If hasMore is true when index = 3; we should return e_TerminateOnFile
-    while (pathInfo.hasMore()) {
-        pathInfo.index++;
+    // In Assembly64, the path always exists of 3 items: id, category, item
+    // If hasMore is true when index = 3; we should return e_TerminateOnFile
+    // This allows for the filesystem to create a mount point for items 
+    // inside the temporary file.
+    int elements = 0;
+    for (int i=0; i<3; i++) {
+        if (pathInfo.hasMore()) {
+            pathInfo.index++;
+            elements++;
+        } else {
+            break;
+        }
+    }
+    // Check for incomplete path
+    if (elements < 3) {
+        return e_DirNotFound; // or entry not found, doesn't matter
+    }
+    // Check for overcomplete path
+    if (pathInfo.hasMore()) {
+        return e_TerminatedOnFile;
     }
     return e_EntryFound;
 }
@@ -59,7 +75,7 @@ PathStatus_t FileSystemA64 :: walk_path(PathInfo& pathInfo)
 void add_a64_to_root(void *_context, void *_param)
 {
     FileSystemA64 *a64 = new FileSystemA64();
-    Node_DirectFS *node = new Node_DirectFS(a64, "a64");
+    Node_DirectFS *node = new Node_DirectFS(a64, "a64", AM_DIR | AM_HID);
     FileManager :: getFileManager()->add_root_entry(node);
 }
 InitFunction init_a64(add_a64_to_root, NULL, NULL, 30);
