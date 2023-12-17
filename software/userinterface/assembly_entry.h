@@ -16,7 +16,7 @@ class BrowsableDirEntryAssembly : public Browsable
     BrowsableDirEntry *wrappedEntry;
     FileType *filetype;
 public:
-    BrowsableDirEntryAssembly(Browsable *parent, JSON_Object *obj, const char *id, int cat)
+    BrowsableDirEntryAssembly(BrowsableQueryResult *parent, JSON_Object *obj, const char *id, int cat)
     {
         this->id = id;
         this->category = cat;
@@ -45,8 +45,7 @@ public:
                 break;
             info->extension[i] = toupper(info->extension[i]);
         }
-        
-        wrappedEntry = new BrowsableDirEntry(NULL, parent, info, true);
+        wrappedEntry = new BrowsableDirEntry(parent->getPath(), parent, info, true);
     }
 
     ~BrowsableDirEntryAssembly() { 
@@ -69,5 +68,8 @@ public:
 		}
 	}
 
+    IndexedList<Browsable *> *getSubItems(int &error) {
+        return wrappedEntry->getSubItems(error);
+    }
 };
 #endif

@@ -251,8 +251,9 @@ class BrowsableQueryResult: public Browsable
     //mstring year;
     mstring id;
     int category;
+    Path path;
 public:
-    BrowsableQueryResult(JSON_Object *result)
+    BrowsableQueryResult(JSON_Object *result) : path("/a64")
     {
         JSON *j;
         int year = 0;
@@ -284,6 +285,8 @@ public:
         if (j && j->type() == eString) {
             id = ((JSON_String *)j)->get_string();
         }
+        path.cd(id.c_str());
+        //path.cd()
     }
 
     ~BrowsableQueryResult()
@@ -298,6 +301,11 @@ public:
         return summary.c_str();
     }
 
+    Path *getPath()
+    {
+        return &path;
+    }
+    
     void getDisplayString(char *buffer, int width)
     {
         memset(buffer, ' ', width+2);
