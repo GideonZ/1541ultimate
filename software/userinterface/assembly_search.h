@@ -343,11 +343,10 @@ class AssemblyInGui : public ObjectWithMenu
 
     static SubsysResultCode_e S_OpenSearch(SubsysCommand *cmd) {
         UserInterface *cmd_ui = cmd->user_interface;
-        AssemblySearch *search_window = new AssemblySearch(cmd_ui, assembly_gui.getRoot());
-        search_window->init(cmd_ui->screen, cmd_ui->keyboard);
-        cmd_ui->activate_uiobject(search_window); // now we have focus
-        // TODO: cleanup when done
+        S_OpenSearch(cmd_ui);
+        return SSRET_OK;
     }
+   
 public:
     AssemblyInGui() {
         root = NULL;
@@ -356,6 +355,13 @@ public:
 
     ~AssemblyInGui() {
         // unregister taskItemCategory
+    }
+
+    static void S_OpenSearch(UserInterface *cmd_ui) {
+        AssemblySearch *search_window = new AssemblySearch(cmd_ui, assembly_gui.getRoot());
+        search_window->init(cmd_ui->screen, cmd_ui->keyboard);
+        search_window->setCleanup();
+        cmd_ui->activate_uiobject(search_window); // now we have focus
     }
 
     BrowsableAssemblyRoot *getRoot() {

@@ -23,7 +23,12 @@ int Keyboard_VT100 :: getch()
 
 	switch(escape_state) {
 	case e_esc_idle:
-		charin = stream->get_char();
+        if (pending_char) {
+            charin = pending_char;
+            pending_char = 0;
+        } else {
+		    charin = stream->get_char();
+        }
 		if (charin == '\e')
 			escape_state = e_esc_escape;
 		else  // -1 is also else
@@ -81,6 +86,10 @@ int Keyboard_VT100 :: getch()
 	return ret;
 }
 
+void Keyboard_VT100 :: push_head(int c)
+{
+    pending_char = c;
+}
 
 void Keyboard_VT100 :: wait_free(void)
 {

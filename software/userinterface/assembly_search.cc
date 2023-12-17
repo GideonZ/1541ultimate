@@ -121,7 +121,15 @@ int AssemblySearch :: handle_key(int c)
             }
             break;
         default:
-            printf("Unhandled key: %b\n", c);
+            if ((state->level == 0) && (
+                (c >= 'a' && c <= 'z') ||
+                (c >= 'A' && c <= 'Z') ||
+                (c >= '0' && c <= '9'))) {
+                keyb->push_head(c);
+                state->change();
+            } else {
+                printf("Unhandled key: %b\n", c);
+            }
     }    
     return ret;
 }
@@ -170,6 +178,12 @@ void AssemblySearchForm :: send_query(void)
         }
     }
     printf("Query:\n%s\n", query.c_str());
+
+    // Let the user know
+    browser->window->set_color(12);
+    browser->window->set_background(0);
+    browser->window->getScreen()->move_cursor(0, browser->window->getScreen()->get_size_y()-1);
+    browser->window->getScreen()->output_fixed_length("Sending query...", 0, browser->window->getScreen()->get_size_x()-9);
 
     JSON *response = assembly.send_query(query.c_str());
     if (response) {

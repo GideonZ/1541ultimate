@@ -32,6 +32,7 @@ public:
     void scan(void);
     void set_delays(int, int);
     int  getch(void);
+    void push_head(int);
     void wait_free(void);
     void clear_buffer(void);
 };

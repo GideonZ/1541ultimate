@@ -16,6 +16,7 @@
 #include "keyboard_usb.h"
 #include "home_directory.h"
 #include "system_info.h"
+#include "assembly_search.h"
 
 const char *helptext=
 		"CRSR UP/DN: Selection up/down\n"
@@ -31,6 +32,7 @@ const char *helptext=
 		"\n"
 		"F2:         Enter the setup menu\n"
 		"F5:         Action menu\n"
+        "F6:         Search Assembly64 Database\n"
 		"\n"
 		"SPACE:      Select file / directory\n"
 		"C=-A        Select all\n"
@@ -51,7 +53,7 @@ const char *helptext=
 #ifndef RECOVERYAPP
         "F4:         Show System Information\n"
 #endif
-        "F6:         Show debug log\n"
+        "C=-L:       Show debug log\n"
 		"\nRUN/STOP to close this window.";
 
 #include "stream_textlog.h"
@@ -429,8 +431,12 @@ int TreeBrowser :: handle_key(int c)
         	ret = -1;
         	break;
 
+        case KEY_F6:
+            AssemblyInGui :: S_OpenSearch(user_interface);
+            break;
+
 #ifndef RECOVERYAPP
-        case KEY_F6: // F6 -> show log
+        case KEY_CTRL_L: // show log
         	reset_quick_seek();
         	state->refresh = true;
         	user_interface->run_editor(textLog.getText(), textLog.getLength());

@@ -227,6 +227,18 @@ int Keyboard_C64 :: getch(void)
     return (int)key;
 }
 
+void Keyboard_C64 :: push_head(int c)
+{
+    uint8_t uc = (uint8_t)c;
+
+    // For now, we only support push tail, alas
+    int next_head = (key_head + 1) % KEY_BUFFER_SIZE;
+    if(next_head != key_tail) {
+        key_buffer[key_head] = uc;
+        key_head = next_head;
+    }
+}
+
 void Keyboard_C64 :: wait_free(void)
 {
     if(!host) {
