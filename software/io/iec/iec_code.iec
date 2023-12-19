@@ -408,9 +408,8 @@ _wait2
             IN DATABIT0=!DATA
             WAIT FOR 19 us
             SET DATA=0
-            WAIT FOR 100 us
+            WAIT FOR 70 us
             PUSHD
-            SET DATA=1
             JUMP JIFFY_RX
 
 _jiffy_rx_end
