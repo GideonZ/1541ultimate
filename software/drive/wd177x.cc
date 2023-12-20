@@ -517,9 +517,9 @@ int WD177x :: decode_write_track(uint8_t *inbuf, uint8_t *outbuf, MfmTrack& newT
 	return 0; // OK
 }
 
-void WD177x :: format_d81(void)
+void WD177x :: format_d81(int tracks)
 {
-    disk.init(fmt_D81);
+    disk.init(fmt_D81, tracks);
 }
 
 void WD177x :: set_file(File *f)
