@@ -1300,6 +1300,35 @@ SubsysResultCode_e ImageCreator :: S_createD71(SubsysCommand *cmd)
     return (fres == FR_OK) ? SSRET_OK : SSRET_DISK_ERROR;
 }
 
+SubsysResultCode_e ImageCreator :: S_createD81_81(SubsysCommand *cmd)
+{
+    FileManager *fm = FileManager :: getFileManager();
+    File *f = 0;
+    uint32_t written;
+    char name_buffer[32];
+    name_buffer[0] = 0;
+    FRESULT fres = create_user_file(cmd->user_interface, "Give name for new disk..", ".d81", cmd->path.c_str(), &f, name_buffer);
+    if (fres == FR_OK) {
+        fres = write_zeros(f, 81*10240, written);
+    }
+    if (fres == FR_OK) {
+        fres = f->seek(0);
+    }
+    if (fres == FR_OK) {
+        BlockDevice_File blk(f, 256);
+        Partition prt(&blk, 0, 0, 0);
+        FileSystemD81 fs(&prt, true);
+        fs.format(name_buffer);
+    }
+    if (fres != FR_OK) {
+        cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
+    }
+    if (f) {
+        fm->fclose(f);
+    }
+    return (fres == FR_OK) ? SSRET_OK : SSRET_DISK_ERROR;
+}
+
 SubsysResultCode_e ImageCreator :: S_createD81(SubsysCommand *cmd)
 {
     FileManager *fm = FileManager :: getFileManager();
