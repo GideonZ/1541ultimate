@@ -15,6 +15,7 @@ ConfigBrowser :: ConfigBrowser(UserInterface *ui, Browsable *root) : TreeBrowser
 {
     printf("Constructor config browser\n");
     setCleanup();
+    state = new ConfigBrowserState(root, this, 0);
 }
 
 ConfigBrowser :: ~ConfigBrowser()
@@ -28,7 +29,6 @@ void ConfigBrowser :: init(Screen *screen, Keyboard *k) // call on root!
 	window = new Window(screen, (screen->get_size_x() - 40) >> 1, 2, 40, screen->get_size_y()-3);
 	window->draw_border();
 	keyb = k;
-    state = new ConfigBrowserState(root, this, 0);
     state->reload();
 	state->do_refresh();
 }
@@ -195,7 +195,7 @@ int ConfigBrowser :: handle_key(int c)
             if(state->level!=0)
             // check if we need to save to flash
             on_exit();
-            ret = -2;
+            ret = MENU_CLOSE;
             break;
         case KEY_DOWN: // down
             state->down(1);
@@ -237,7 +237,7 @@ int ConfigBrowser :: handle_key(int c)
 		case KEY_BACK: // del
             if(state->level==0) {
                 on_exit();
-                ret = -2; // leave
+                ret = MENU_CLOSE; // leave
             } else {
                 state->level_up();
             }

@@ -37,6 +37,8 @@
 AssemblySearch :: AssemblySearch(UserInterface *ui, Browsable *root) : TreeBrowser(ui, root)
 {
     setCleanup();
+    state = new AssemblySearchForm(root, this, 0);
+    cd("/a64");
 }
 
 AssemblySearch :: ~AssemblySearch()
@@ -48,13 +50,13 @@ void AssemblySearch :: init(Screen *screen, Keyboard *k) // call on root!
 {
 	this->screen = screen;
 	window = new Window(screen, (screen->get_size_x() - 40) >> 1, 2, 40, screen->get_size_y()-3);
-    cd("/a64");
 	window->draw_border();
 	keyb = k;
-    state = new AssemblySearchForm(root, this, 0);
     state->reload();
 	state->do_refresh();
 }
+
+// Using the base class function deinit, which destroys the window.
 
 static const char *queryhelp = 
 "Help!";
@@ -68,9 +70,11 @@ int AssemblySearch :: handle_key(int c)
     }
     switch(c) {
         case KEY_F8: // exit
+            ret = MENU_EXIT;
+            break;
         case KEY_BREAK: // runstop
         case KEY_ESCAPE:
-            ret = -2;
+            ret = MENU_CLOSE;
             break;
         case KEY_DOWN: // down
             state->down(1);
@@ -115,7 +119,7 @@ int AssemblySearch :: handle_key(int c)
         case KEY_LEFT: // left
 		case KEY_BACK: // del
             if(state->level==0) {
-                ret = -2; // leave
+                ret = MENU_CLOSE; // leave
             } else {
                 state->level_up();
             }

@@ -135,7 +135,7 @@ SubsysResultCode_e FileTypePRG :: execute_st(SubsysCommand *cmd)
 	SubsysCommand *c64_command;
 	
     int run_code = -1;
-    MenuAction_t menu_action = MENU_HIDE;
+    int menu_action = MENU_HIDE;
 
 	switch(cmd->functionID) {
 	case PRGFILE_RUN:
@@ -182,7 +182,7 @@ SubsysResultCode_e FileTypePRG :: execute_st(SubsysCommand *cmd)
             }
             c64_command->execute();
             if (cmd->user_interface) {
-                cmd->user_interface->command_flags = menu_action;
+                cmd->user_interface->menu_response_to_action = menu_action;
             }
         } else {
             printf("Header of P00 file not correct.\n");

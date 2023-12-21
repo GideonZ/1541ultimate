@@ -55,7 +55,7 @@ UserInterface :: UserInterface(const char *title) : title(title)
     available = false;
     color_sel_bg = 0;
     filename_overflow_squeeze = 0;
-    command_flags = MENU_NOP;
+    menu_response_to_action = MENU_NOP;
     register_store(0x47454E2E, "User Interface Settings", user_if_config);
     effectuate_settings();
 }
@@ -178,10 +178,24 @@ void UserInterface :: run_once(void)
             }
             host->release_ownership();
             break;
-        } else if (pollFocussed() != MENU_NOP) { // both hide and exit
-            available = false;
-            host->release_ownership();
-            break;
+        } else {
+            int ret = pollFocussed();
+            if (ret != 0)
+                printf("Poll Focussed returned %d. DoBreak = %d.\n", ret, doBreak);
+            switch(ret) {
+            case MENU_NOP:
+                break;
+            case MENU_HIDE:
+            case MENU_EXIT:
+                available = false;
+                if (!host->is_permanent()) {
+                    release_host();
+                }
+                host->release_ownership();
+                break;
+            default:
+                break;
+            }
         }
         vTaskDelay(3);
     }
@@ -240,47 +254,63 @@ int UserInterface :: pollInactive(void)
     return ui_objects[focus]->poll_inactive();
 }
 
-MenuAction_t UserInterface :: pollFocussed(void)
+void UserInterface :: peel_off(void)
+{
+    // Peel off will always keep the first object
+    if (!focus) {
+        return;
+    }
+    // The underlying object gets focus. If the top object has the cleanup
+    // flag set, we destoy it here and it can not be referenced in the
+    // calling object.
+    ui_objects[focus]->deinit();
+    // Note that the object itself still exists, and needs to be cleaned up by the one who created
+    // it, unless the auto cleanup flag is set
+    if (ui_objects[focus]->needCleanup()) {
+        delete ui_objects[focus];
+    }
+    ui_objects[focus] = NULL;
+    focus--;
+}
+
+int UserInterface :: pollFocussed(void)
 {
 	int ret = 0;
     do {
         ret = ui_objects[focus]->poll(ret); // param pass chain
+
+        // Stay in the current window configuration
         if(ret == 0)
-            return MENU_NOP;
+            break;
+
         printf("Object level %d returned %d.\n", focus, (int)ret);
 
-        if (host->is_permanent() && (!focus)) {
-            return MENU_HIDE; // We never exit, and never destroy the root
+        // Pass non-root positive results to underlying object
+        if ((ret > 0) && (focus)) {
+            peel_off();
+            continue; // pass result
         }
 
-        // Ret = -1: clean up current and hide.
-        // Ret = -2: clean up current and terminate. For termination, we need to clean up
-        //           everything, and therefore we continue to pass the -2 as a parameter
-        //           to the subsequent poll calls.
+        switch (ret) {
+        case MENU_CLOSE:
+            // close single layer window and pass to caller (might be cancel code)
+            peel_off();
+            continue; //  pass to upper layer
 
-        // Roll back focus one step if possible.
-        if(focus) {
-            // UI objects are responsible for cleaning up their offspring.
-            // We only keep the root object in our array.
-            ui_objects[focus]->deinit();
-            // Note that the object itself still exists, and needs to be cleaned up by the one who created
-            // it, unless the auto cleanup flag is set
-            if (ui_objects[focus]->needCleanup()) {
-                delete ui_objects[focus];
-            }
-            ui_objects[focus] = NULL;
-            focus--;
-            continue; // pass the return code, which could be a selection index(!) to the level above.
+        case MENU_HIDE:
+        case MENU_EXIT:
+            printf("MENU HIDE / EXIT.\n");
+            // deinitialize everything, and roll back. Caller solves this, as what happens depends on type of UI.
+            return ret;
+            
+        default:
+            printf("ERROR: Return code %d not expected here.\n", ret); // could happen for root
+            ret = 0;
+            break;
         }
-        // If we are already in the root, then we simply return the exit code. Caller cleans up, if necessary.
-        else {
-            if (ret == -2) {
-                return MENU_EXIT;
-            }
-        	return MENU_HIDE;
-        }
+
     } while(1);
-    return MENU_NOP;
+    return ret;
 }
 
 void UserInterface :: appear(void)

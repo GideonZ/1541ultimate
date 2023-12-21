@@ -6,7 +6,7 @@ SubsysResultCode_t SubsysCommand :: execute(void)
     SubsysResultCode_t retval = { SSRET_SUBSYS_NOT_PRESENT };
     SubsysResultCode_e retcode;
     if(user_interface) {
-        user_interface->command_flags = MENU_NOP;
+        user_interface->menu_response_to_action = MENU_NOP;
     }
     if(direct_call) {
         retcode = direct_call(this);

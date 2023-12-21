@@ -13,11 +13,14 @@
 #include "ui_elements.h"
 #include "editor.h"
 
-typedef enum {
-    MENU_NOP = 0,
-    MENU_HIDE = -1,
-    MENU_EXIT = -2,
-} MenuAction_t;
+                        // Values > 0 are valid choices from the user and need to be passed to the
+                        // underlying object.
+#define MENU_NOP     0  // Stay in current window
+#define MENU_CLOSE  -1  // Window operation is complete and can be closed
+#define MENU_HIDE   -2  // The selected action requests the menu to hide. (No effect for remote connection)
+#define MENU_EXIT   -3  // The selected action requests the menu to exit and be destroyed.
+                        // For hosted menus this means back to level 0 and hidden
+                        // For the remote connection it means close connection
 
 #define MAX_UI_OBJECTS  8
 
@@ -48,7 +51,8 @@ private:
     UIStatusBox *status_box;
     
     void set_screen_title(void);
-    MenuAction_t pollFocussed(void);
+    int  pollFocussed(void);
+    void peel_off(void);
     bool buttonDownFor(uint32_t ms);
 public:
     int color_border, color_bg, color_fg, color_sel, color_sel_bg, config_save, filename_overflow_squeeze;
@@ -58,7 +62,7 @@ public:
     Keyboard *alt_keyboard;
     Screen *screen;
     int     focus;
-    MenuAction_t command_flags;
+    int     menu_response_to_action;
 
     UserInterface(const char *title);
     virtual ~UserInterface();

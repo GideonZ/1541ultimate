@@ -41,11 +41,10 @@ TreeBrowserState :: TreeBrowserState(Browsable *n, TreeBrowser *b, int lev)
 
 TreeBrowserState :: ~TreeBrowserState()
 {
-	printf("Deleting TBS %s ", node->getName());
+	printf("Deleting TBS Level %d (%s)\n", level, node->getName());
 	cleanup();
 	if(previous)
 		delete previous;
-	printf("done.\n");
 }
 
 void TreeBrowserState :: cleanup()

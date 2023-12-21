@@ -209,7 +209,7 @@ int TreeBrowser :: poll(int sub_returned)
                 // if (cmd_ret.status != SSRET_OK) {
                 //     user_interface->popup(SubsysCommand::error_string(cmd_ret.status), BUTTON_OK);
                 // }
-                ret = (int)(user_interface->command_flags);
+                ret = (int)(user_interface->menu_response_to_action);
             } else {
                 printf("Action was not set in context menu!\n");
             }
@@ -384,10 +384,10 @@ int TreeBrowser :: handle_key(int c)
     
     switch(c) {
         case KEY_BREAK: // runstop
-            ret = -1;
+            ret = MENU_HIDE;
             break;
         case KEY_F8: // exit (F8)
-            ret = -2;
+            ret = MENU_EXIT;
             break;
         case KEY_DOWN: // down
         	reset_quick_seek();
@@ -428,7 +428,7 @@ int TreeBrowser :: handle_key(int c)
         case KEY_SCRLOCK:
         case KEY_F10:
         case KEY_ESCAPE:
-        	ret = -1;
+        	ret = MENU_HIDE;
         	break;
 
         case KEY_F6:

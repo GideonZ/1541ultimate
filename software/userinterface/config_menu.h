@@ -23,7 +23,7 @@ public:
 class ConfigBrowser: public TreeBrowser
 {
     void on_exit(void);
-    public:
+public:
     ConfigBrowser(UserInterface *ui, Browsable *);
     virtual ~ConfigBrowser();
 

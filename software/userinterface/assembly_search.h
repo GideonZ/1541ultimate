@@ -60,6 +60,7 @@ class BrowsableQueryField: public Browsable
         // field->value = cmd->actionName;
         field->current_preset = cmd->mode;
         field->setPreset();
+        return SSRET_OK;
     }
 public:
     BrowsableQueryField(const char *field, JSON_List *presets) : field(field), presets(presets)
@@ -208,6 +209,7 @@ class BrowsableAssemblyRoot: public Browsable
         searchBrowser->init(cmd->user_interface->screen, cmd->user_interface->keyboard);
         cmd->user_interface->activate_uiobject(searchBrowser);
         // from this moment on, we loose focus.. polls will go directly to config menu!
+        return SSRET_OK;
     }
 public:
     BrowsableAssemblyRoot();

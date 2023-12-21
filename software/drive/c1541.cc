@@ -1010,7 +1010,7 @@ SubsysResultCode_e C1541 :: executeCommand(SubsysCommand *cmd)
                 mount_mode = cmd->mode;
 
                 if ((cmd->user_interface) && (cfg->get_value(CFG_C1541_EXITMOUNT))) {
-                    cmd->user_interface->command_flags = MENU_HIDE;
+                    cmd->user_interface->menu_response_to_action = MENU_HIDE;
                 }
             } else {
                 returnValue = SSRET_CANNOT_OPEN_FILE;
