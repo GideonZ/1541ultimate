@@ -378,7 +378,7 @@ RELEASE
             SET ATN=1
             SET CLK=1
             SET DATA=1
-            WAIT FOR 100 us #Why!?
+            WAIT FOR 10 us # Allow for rise time
             JUMP reset_vec
 
 JIFFY_RX
@@ -387,7 +387,7 @@ _wait2
             IF UPFIFOFULL THEN _wait2
             SET DATA=1
             WAIT UNTIL NOT CLK=0,ATN=1 # Possibly for a long time
-            IF NOT ATN THEN _jiffy_rx_end
+            IF NOT ATN THEN _end_of_rx
 
             # clk(3)data(1) => !bit4 & !Bit5
             # clk(2)data(0) => !bit6 & !bit7
@@ -411,11 +411,6 @@ _wait2
             WAIT FOR 70 us
             PUSHD
             JUMP JIFFY_RX
-
-_jiffy_rx_end
-            LOAD CTRL_EOI
-            PUSHC
-            JUMP _end_of_rx
 
 RECEIVE_BYTE
 # initial state: DATA is low, CLK has to become 1
