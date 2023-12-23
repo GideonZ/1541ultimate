@@ -19,7 +19,7 @@ class mysocket:
 
 if __name__ == "__main__":
     s = mysocket()
-    s.bind(10000)
+    s.bind(0)
     s.broadcast(b"Any Ultimates around?!", 64)
     time.sleep(0.2) 
     # Better to use a timeout on the socket than just waiting, but I was lazy

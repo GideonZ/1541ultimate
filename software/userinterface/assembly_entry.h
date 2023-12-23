@@ -2,6 +2,7 @@
 #define ASSEMBLY_ENTRY
 
 #include "browsable_root.h"
+#include "assembly.h"
 #include "json.h"
 #include <ctype.h>
 
@@ -26,7 +27,7 @@ public:
         size = 65536;
         JSON *j = obj->get("path");
         if (j && j->type() == eString) {
-            filename = ((JSON_String *)j)->get_string();
+            url_encode(((JSON_String *)j)->get_string(), filename);
         }
         j = obj->get("id");
         if (j && j->type() == eInteger) {
@@ -54,7 +55,7 @@ public:
     }
 
     const char *getName() {
-        return indexstr.c_str();
+        return filename.c_str();
     }
 
     void getDisplayString(char *buffer, int width) {

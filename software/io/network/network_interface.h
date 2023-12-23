@@ -55,6 +55,23 @@ public:
 	static NetworkInterface *getInterface(int i) {
 	    return netInterfaces[i];
 	}
+    static bool DoWeHaveLink(void) {
+        union {
+            uint32_t ipaddr32[3];
+            uint8_t ipaddr[12];
+        } ip;
+
+        int n = netInterfaces.get_elements();
+        for(int i=0; i<n; i++) {
+            NetworkInterface *intf = netInterfaces[i];
+            intf->getIpAddr(ip.ipaddr);
+            uint32_t my_ip = ip.ipaddr32[0];
+            if (intf && intf->is_link_up() && my_ip != 0) {
+                return true;
+            }
+        }
+        return false;
+    }
 
 protected:
 	struct pbuf_custom pbuf_array[PBUF_FIFO_SIZE];

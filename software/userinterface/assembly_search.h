@@ -8,6 +8,7 @@
 #include "json.h"
 #include "menu.h"
 #include "action.h"
+#include "network_interface.h"
 
 class AssemblySearchForm: public TreeBrowserState
 {
@@ -21,6 +22,7 @@ public:
     void change(void);
     void increase(void);
     void decrease(void);
+    void clear_entry(void);
 };
 
 class AssemblyResultsView: public TreeBrowserState
@@ -75,6 +77,12 @@ public:
     const char *getName()
     {
         return field;
+    }
+
+    void reset()
+    {
+        current_preset = -1;
+        value = "";
     }
 
     const char *getAqlString()
@@ -385,6 +393,13 @@ public:
     }
 
     static void S_OpenSearch(UserInterface *cmd_ui) {
+
+        if (!NetworkInterface :: DoWeHaveLink()) {
+            if (cmd_ui)
+                cmd_ui->popup("No Valid Network Link", BUTTON_OK);
+            return;
+        }
+
         AssemblySearch *search_window = new AssemblySearch(cmd_ui, assembly_gui.getRoot());
         search_window->init(cmd_ui->screen, cmd_ui->keyboard);
         search_window->setCleanup();

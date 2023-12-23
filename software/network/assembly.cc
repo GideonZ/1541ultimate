@@ -152,7 +152,8 @@ JSON *Assembly :: send_query(const char *query)
     request += " HTTP/1.1\r\n"
         "Accept-encoding: identity\r\n"
         "Host: " HOSTNAME "\r\n"
-        "User-Agent: Ultimate\r\n"
+        "User-Agent: Assembly Query\r\n"
+        "Client-Id: Ultimate\r\n"
         "Connection: close\r\n"
         "\r\n";
 
@@ -203,7 +204,8 @@ JSON *Assembly :: request_entries(const char *id, int cat)
     request += " HTTP/1.1\r\n"
         "Accept-encoding: identity\r\n"
         "Host: " HOSTNAME "\r\n"
-        "User-Agent: Ultimate\r\n"
+        "User-Agent: Assembly Query\r\n"
+        "Client-Id: Ultimate\r\n"
         "Connection: close\r\n"
         "\r\n";
 
@@ -248,7 +250,8 @@ void Assembly :: request_binary(const char *path)
     request += " HTTP/1.1\r\n"
         "Accept-encoding: identity\r\n"
         "Host: " HOSTNAME "\r\n"
-        "User-Agent: Ultimate\r\n"
+        "User-Agent: Assembly Query\r\n"
+        "Client-Id: Ultimate\r\n"
         "Connection: close\r\n"
         "\r\n";
 

@@ -38,6 +38,7 @@ AssemblySearch :: AssemblySearch(UserInterface *ui, Browsable *root) : TreeBrows
 {
     setCleanup();
     state = new AssemblySearchForm(root, this, 0);
+    state->reload();
     cd("/a64");
 }
 
@@ -52,14 +53,36 @@ void AssemblySearch :: init(Screen *screen, Keyboard *k) // call on root!
 	window = new Window(screen, (screen->get_size_x() - 40) >> 1, 2, 40, screen->get_size_y()-3);
 	window->draw_border();
 	keyb = k;
-    state->reload();
 	state->do_refresh();
 }
 
 // Using the base class function deinit, which destroys the window.
 
 static const char *queryhelp = 
-"Help!";
+        "1. Query Screen:\n"
+        "\n"
+		"CRSR UP/DN: Select field\n"
+		"CLEAR:      Clear all fields\n"
+        "DEL:        Clear selected field\n"
+        "RETURN:     Field: Edit\n"
+        "            Search: Send Query\n"
+        "+/-:        Change preset option.\n"
+        "RUN/STOP:   Close Search\n"
+        "CRSR LEFT:  Close Search\n"
+        "\n"
+		"Quick type: Use the keyboard to type\n"
+		"            directly in current field.\n"
+        "\n"
+        "2. Query Result Screen:\n"
+		"CRSR UP/DN: Select title\n"
+        "RETURN/->:  View Result entries\n"
+        "CRSR LEFT:  Return to Query screen\n"
+        "\n"
+        "3. Result Entries:\n"
+        "\nWorks like any directory. Please\n"
+        "note that accessing disks or files\n"
+        "introduces a delay as the data needs\n"
+        "to be downloaded form the internet.";
 
 int AssemblySearch :: handle_key(int c)
 {
@@ -94,6 +117,15 @@ int AssemblySearch :: handle_key(int c)
             reset_quick_seek();
             state->refresh = true;
             user_interface->run_editor(queryhelp, strlen(queryhelp));
+            break;
+        case KEY_CLEAR: //
+            if(state->level == 0) {
+                state->reload();
+                state->do_refresh();
+            }
+            break;
+        case KEY_HOME: // clear entry
+            ((AssemblySearchForm *)state)->clear_entry();
             break;
         case KEY_SPACE: // space = select
         case KEY_RETURN: // CR = select
@@ -181,6 +213,10 @@ void AssemblySearchForm :: send_query(void)
             query += ")";
         }
     }
+    if (!query.length()) {
+        browser->user_interface->popup("Queries cannot be empty!", BUTTON_OK);
+        return;
+    }
     printf("Query:\n%s\n", query.c_str());
 
     // Let the user know we are busy
@@ -253,6 +289,16 @@ void AssemblySearchForm :: decrease(void)
 
     BrowsableQueryField *field = (BrowsableQueryField *)under_cursor;
     field->updown(-1);
+    update_selected();
+}
+
+void AssemblySearchForm :: clear_entry(void)
+{
+    if(!under_cursor)
+        return;
+
+    BrowsableQueryField *field = (BrowsableQueryField *)under_cursor;
+    field->reset();
     update_selected();
 }
 

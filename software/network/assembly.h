@@ -13,6 +13,8 @@ typedef struct {
     uint8_t buffer[16384];
 } t_BufferedBody;
 
+void url_encode(const char *src, mstring &dest);
+
 class Assembly
 {
     const char *assembly_presets =
