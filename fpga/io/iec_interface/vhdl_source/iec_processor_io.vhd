@@ -54,6 +54,7 @@ architecture structural of iec_processor_io is
     signal up_fifo_dout    : std_logic_vector(8 downto 0);
     signal up_fifo_empty   : std_logic;
     signal up_fifo_full    : std_logic;
+    signal up_fifo_afull   : std_logic;
     signal up_fifo_count   : integer range 0 to 2048;
     signal down_fifo_flush : std_logic;
     signal down_fifo_empty : std_logic;
@@ -84,6 +85,7 @@ begin
         -- software fifo interface
         up_fifo_put     => up_fifo_put,
         up_fifo_din     => up_fifo_din,
+        up_fifo_afull   => up_fifo_afull,
         up_fifo_full    => up_fifo_full,
         
         down_fifo_empty => down_fifo_empty,
@@ -125,7 +127,7 @@ begin
         generic map (
             g_depth        => 2048,
             g_data_width   => 9,
-            g_threshold    => 500,
+            g_threshold    => 1535, -- at least 512 bytes free when up_fifo_afull is zero
             g_storage      => "blockram",     -- can also be "blockram" or "distributed"
             g_fall_through => true )
         port map (
@@ -141,7 +143,7 @@ begin
             flush       => proc_reset,
     
             full        => up_fifo_full,
-            almost_full => open,
+            almost_full => up_fifo_afull,
             empty       => up_fifo_empty,
             count       => up_fifo_count  );
 

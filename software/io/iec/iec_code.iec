@@ -189,7 +189,7 @@ _end_of_rx
             LOAD CTRL_EOI
             PUSHC
             SET LISTENER=0
-            WAIT FOR 70 us
+            WAIT FOR 40 us
             JUMP RELEASE
 
 ATN_TURNAROUND
@@ -378,7 +378,7 @@ RELEASE
             SET ATN=1
             SET CLK=1
             SET DATA=1
-            WAIT FOR 10 us # Allow for rise time
+            WAIT FOR 2 us # Allow for rise time
             JUMP reset_vec
 
 JIFFY_RX

@@ -16,6 +16,7 @@ port (
 
     -- software fifo interface
     up_fifo_full    : in  std_logic;
+    up_fifo_afull   : in  std_logic;
     up_fifo_put     : out std_logic;
     up_fifo_din     : out std_logic_vector(8 downto 0);
     
@@ -108,7 +109,7 @@ begin
     input_vector(29)           <= ctrl_reg;
     input_vector(28)           <= valid_reg;
     input_vector(27)           <= timeout_reg;
-    input_vector(26)           <= up_fifo_full;
+    input_vector(26)           <= up_fifo_afull;
     input_vector(25)           <= '1' when (inputs and a_mask) = a_value else '0';
     input_vector(24)           <= '1' when (a_data_reg = a_databyte) else '0';
     input_vector(23 downto 20) <= inputs;
