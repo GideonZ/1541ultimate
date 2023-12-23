@@ -32,7 +32,9 @@ const char *helptext=
 		"\n"
 		"F2:         Enter the setup menu\n"
 		"F5:         Action menu\n"
+#ifndef RECOVERYAPP
         "F6:         Search Assembly64 Database\n"
+#endif
 		"\n"
 		"SPACE:      Select file / directory\n"
 		"C=-A        Select all\n"
@@ -431,13 +433,13 @@ int TreeBrowser :: handle_key(int c)
         	ret = MENU_HIDE;
         	break;
 
+#ifndef RECOVERYAPP
         case KEY_F6:
         	reset_quick_seek();
         	state->refresh = true;
             AssemblyInGui :: S_OpenSearch(user_interface);
             break;
 
-#ifndef RECOVERYAPP
         case KEY_CTRL_L: // show log
         	reset_quick_seek();
         	state->refresh = true;
