@@ -150,9 +150,9 @@ public:
     {
         static const char *error_strings[] = {
             NULL,        
-            "Generic Error",
             "Invalid Parameter",
             "Call requires user interaction, but no user interface object exists",
+            "Generic Error",
             "Disk Error",
             "SubSystem does not exist", 
             "SubSystem does not implement command executer",
@@ -163,15 +163,17 @@ public:
             "This hardware only supports 1541", 
             "Drive is in the wrong mode",
             "Cannot open file",
-			"Seek operation on file failed",
-			"Read operation on file failed",
+            "Seek operation on file failed",
+            "Read operation on file failed",
             "Illegal mount mode / drive type",
             "Undefined subsystem command",
-			"Operation aborted by user",
-			"Save failed",
-			"ROM image is too large",
-			"Error detected in file format",
-			"This command is not supported on this architecture",
+            "Operation aborted by user",
+            "Save failed",
+            "EEPROM data is too large",
+            "EEPROM defined more than once",
+            "ROM image is too large",
+            "Error detected in file format",
+            "This command is not supported on this architecture",
             "Out of memory",
             "MegaPatch3: Invalid image size",
             "MegaPatch3: DNP Image too large",
@@ -201,16 +203,20 @@ public:
             HTTP_METHOD_NOT_ALLOWED, // "This hardware only supports 1541", 
             HTTP_UNSUPPORTED_MEDIA_TYPE, // "Drive is in the wrong mode",
             HTTP_NOT_FOUND, // "Cannot open file",
-			HTTP_INTERNAL_SERVER_ERROR, // "File seek failed"
-			HTTP_INTERNAL_SERVER_ERROR, // "File read failed"
+            HTTP_INTERNAL_SERVER_ERROR, // "File seek failed"
+            HTTP_INTERNAL_SERVER_ERROR, // "File read failed"
             HTTP_INTERNAL_SERVER_ERROR, // "Illegal mount mode / drive type",
             HTTP_INTERNAL_SERVER_ERROR, // "Undefined subsystem command",
-			HTTP_INTERNAL_SERVER_ERROR, // "Aborted by user" <-- should not happen from HTTP
-			HTTP_FAILED_DEPENDENCY, // "Save failed", not sure what went wrong, but the save was unsuccessful
-			HTTP_PRECONDITION_FAILED, // ROM Image is too large
-			HTTP_UNSUPPORTED_MEDIA_TYPE, // Error detected in file format
-			HTTP_NOT_IMPLEMENTED, // This command is not supported on this architecture.
+            HTTP_INTERNAL_SERVER_ERROR, // "Aborted by user" <-- should not happen from HTTP
+            HTTP_FAILED_DEPENDENCY, // "Save failed", not sure what went wrong, but the save was unsuccessful
+            HTTP_PRECONDITION_FAILED, // EEPROM too large
+            HTTP_PRECONDITION_FAILED, // EEPROM already defined
+            HTTP_PRECONDITION_FAILED, // ROM Image is too large
+            HTTP_UNSUPPORTED_MEDIA_TYPE, // Error detected in file format
+            HTTP_NOT_IMPLEMENTED, // This command is not supported on this architecture.
             HTTP_INSUFFICIENT_STORAGE, // Internal out of memory error
+            HTTP_BAD_REQUEST, // MP3 invalid size
+            HTTP_BAD_REQUEST, // MP3 dnp too large
             HTTP_INTERNAL_SERVER_ERROR, //    SSRET_INTERNAL_ERROR,
             HTTP_UNSUPPORTED_MEDIA_TYPE, // SSRET_SID_ROLLOVER,
             HTTP_BAD_REQUEST, //  SSRET_INVALID_SONGNR,
