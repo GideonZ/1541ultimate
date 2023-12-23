@@ -138,6 +138,13 @@ void NetworkLWIP_WiFi :: saveSsidPass(const char *ssid, const char *pass, int mo
     strncpy(pass_mut, pass, 64);
     cfg->set_string(CFG_WIFI_SSID, ssid_mut);
     cfg->set_string(CFG_WIFI_PASSW, pass_mut);
+    if (mode < 0) {
+        printf("Warning: PASSWORD MODE = %d, should be 0-8\n");
+        mode = 0;
+    } else if(mode > 8) {
+        printf("Warning: PASSWORD MODE = %d, should be 0-8\n");
+        mode = 8;
+    }
     cfg->set_value(CFG_WIFI_AUTH, mode);
 }
 
