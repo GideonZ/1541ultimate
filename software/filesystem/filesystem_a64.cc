@@ -18,6 +18,7 @@
 /*************************************************************/
 /* T64 File System implementation                            */
 /*************************************************************/
+uint32_t FileOnA64::node_count = 0;
 
 FileSystemA64 :: FileSystemA64() : FileSystem(0)
 {
@@ -32,17 +33,41 @@ FileSystemA64 :: ~FileSystemA64()
 // Opens file (creates file object)
 FRESULT FileSystemA64 :: file_open(const char *filename, uint8_t flags, File **file)
 {
+    Path temp(filename);
     printf("A64 filesystem, trying to open: '%s'\n", filename);
-    assembly.request_binary(filename);
-    TempfileWriter *writer = (TempfileWriter *)assembly.get_user_context();
-    if (writer) {
-        FileManager *fm = FileManager::getFileManager();
-        FRESULT fres = fm->fopen(writer->get_filename(0), flags, file);
-        delete writer;
-        return fres;
-    } else {
-        return FR_NO_FILE;
+    char *fixed = new char[1+strlen(filename)];
+    strcpy(fixed, filename);
+    fix_filename(fixed);
+    printf("Fixed filename: %s\n", fixed);
+    FileManager *fm = FileManager::getFileManager();
+
+    // Let's see if cached copy exists
+    FileInfo inf(128);
+    mstring fixed_temp_path("/Temp/");
+    fixed_temp_path += fixed;
+    delete[] fixed;
+    FRESULT fres = fm->fstat(fixed_temp_path.c_str(), inf);
+
+    // File was not found on the temp disk, let's download it
+    if (fres == FR_NO_FILE) {
+        assembly.request_binary(filename);
+        TempfileWriter *writer = (TempfileWriter *)assembly.get_user_context();
+        if (writer) {
+            fres = fm->rename(writer->get_filename(0), fixed_temp_path.c_str());
+            printf("Rename from %s to %s gave: %d\n", writer->get_filename(0), fixed_temp_path.c_str(), fres);
+            delete writer;
+        }
     }
+
+    if (fres == FR_OK) {
+        File *temp = NULL;
+        fres = fm->fopen(fixed_temp_path.c_str(), flags, &temp);
+        if (temp) {
+            FileOnA64 *wrapper = new FileOnA64(this, temp);
+            *file = wrapper;
+        }
+    }
+    return fres;
 }
 
 PathStatus_t FileSystemA64 :: walk_path(PathInfo& pathInfo)
@@ -65,16 +90,23 @@ PathStatus_t FileSystemA64 :: walk_path(PathInfo& pathInfo)
     if (elements < 3) {
         return e_DirNotFound; // or entry not found, doesn't matter
     }
+
+    // Check for overcomplete path
+    if (pathInfo.hasMore()) {
+        FileInfo *inf = pathInfo.getNewInfoPointer();
+        strncpy(inf->lfname, pathInfo.getPathFromLastFS(), inf->lfsize);
+        inf->attrib = 0; // just a file!
+        inf->fs = this;
+        get_extension(pathInfo.getPathFromLastFS(), inf->extension, true);
+        return e_TerminatedOnFile;
+    }
+
     FileInfo *inf = pathInfo.getNewInfoPointer();
     strncpy(inf->lfname, pathInfo.getFileName(), inf->lfsize);
     inf->attrib = 0; // just a file!
     inf->fs = this;
     get_extension(pathInfo.getFileName(), inf->extension, true);
 
-    // Check for overcomplete path
-    if (pathInfo.hasMore()) {
-        return e_TerminatedOnFile;
-    }
     return e_EntryFound;
 }
 

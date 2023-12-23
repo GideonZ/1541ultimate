@@ -14,6 +14,10 @@ extern "C" {
 #define TEMP_FILE_PATH "/Temp/"
 #endif
 
+#ifdef USE_FILEMANAGER
+#include "filemanager.h"
+#endif
+
 class TempfileWriter;
 
 typedef void (*WriterCallback_t)(TempfileWriter *, const void *context1, void *context2);
@@ -24,7 +28,11 @@ class TempfileWriter
     IndexedList<size_t> filesizes;
     IndexedList<uint8_t *>filebuffers;
     static int temp_count;
+#ifdef USE_FILEMANAGER
+    File *fo;
+#else
     FILE *fo;
+#endif
     size_t file_size;    
     HTTPReqMessage *req;
     HTTPRespMessage *resp;
@@ -73,6 +81,7 @@ public:
     {
         char filename[128];
         char tempstring[128];
+        uint32_t dummy;
 
         HTTPHeaderField *f;
 
@@ -83,7 +92,11 @@ public:
             case eDataStart:
                 sprintf(filename, TEMP_FILE_PATH "temp%04x", temp_count++);
                 filenames.append(strdup(filename));
+#ifdef USE_FILEMANAGER
+                FileManager::getFileManager()->fopen(filename, FA_WRITE | FA_CREATE_ALWAYS, &fo);
+#else
                 fo = fopen(filename, "wb");
+#endif
                 file_size = 0;
                 break;
             case eSubHeader:
@@ -110,25 +123,41 @@ public:
                     }
                 }
                 filenames.append(strdup(filename));
+#ifdef USE_FILEMANAGER
+                FileManager::getFileManager()->fopen(filename, FA_WRITE | FA_CREATE_ALWAYS, &fo);
+#else
                 fo = fopen(filename, "wb");
+#endif
                 file_size = 0;
                 break;
             case eDataBlock:
                 if (fo) {
+#ifdef USE_FILEMANAGER
+                    fo->write(block->data, block->length, &dummy);
+#else
                     fwrite(block->data, 1, block->length, fo);
+#endif
                     file_size += block->length;
                 }
                 break;
             case eDataEnd:
                 if (fo) {
                     filesizes.append(file_size);
+#ifdef USE_FILEMANAGER
+                    FileManager::getFileManager()->fclose(fo);
+#else
                     fclose(fo);
+#endif
                     fo = NULL;
                 }
                 break;
             case eTerminate:
                 if (fo) {
+#ifdef USE_FILEMANAGER
+                    FileManager::getFileManager()->fclose(fo);
+#else
                     fclose(fo);
+#endif
                     fo = NULL;
                 }
                 printf("Uploaded files:\n");
