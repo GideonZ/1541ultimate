@@ -38,7 +38,6 @@ FRESULT FileSystemA64 :: file_open(const char *filename, uint8_t flags, File **f
     char *fixed = new char[1+strlen(filename)];
     strcpy(fixed, filename);
     fix_filename(fixed);
-    printf("Fixed filename: %s\n", fixed);
     FileManager *fm = FileManager::getFileManager();
 
     // Let's see if cached copy exists
@@ -50,7 +49,9 @@ FRESULT FileSystemA64 :: file_open(const char *filename, uint8_t flags, File **f
 
     // File was not found on the temp disk, let's download it
     if (fres == FR_NO_FILE) {
-        assembly.request_binary(filename);
+        mstring work1, work2;
+        const char *remain = temp.getTail(2, work2); // starts with slash, so we do +1
+        assembly.request_binary(temp.getSub(0, 2, work1), remain+1);
         TempfileWriter *writer = (TempfileWriter *)assembly.get_user_context();
         if (writer) {
             fres = fm->rename(writer->get_filename(0), fixed_temp_path.c_str());

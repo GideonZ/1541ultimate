@@ -142,6 +142,32 @@ void Assembly :: close_connection(void)
     socket_fd = 0;
 }
 
+JSON *Assembly :: get_presets(void)
+{
+    static const char request[] = 
+        "GET " URL_PATTERNS " HTTP/1.1\r\n"
+        "Accept-encoding: identity\r\n"
+        "Host: " HOSTNAME "\r\n"
+        "User-Agent: Assembly Query\r\n"
+        "Client-Id: Ultimate\r\n"
+        "Connection: close\r\n"
+        "\r\n";
+
+    if (presets) {
+        return presets;
+    }
+    if (connect_to_server() > 0) {
+        send(this->socket_fd, request, strlen(request), MSG_DONTWAIT);
+        get_response(collect_in_buffer);
+        close_connection();
+
+        body = (t_BufferedBody *) response.userContext;
+        presets = convert_buffer_to_json(body);
+        return presets;
+    }
+    return NULL;
+}
+
 JSON *Assembly :: send_query(const char *query)
 {
     mstring encoded;
@@ -238,15 +264,18 @@ void Assembly :: request_binary(const char *id, int cat, int idx)
     url_encode(id, enc_id);
 
     char buffer[64];
-    sprintf(buffer, "%s/%d/%d", enc_id.c_str(), cat, idx);
-    request_binary(buffer);
+    sprintf(buffer, "/%s/%d/%d", enc_id.c_str(), cat, idx);
+    request_binary(buffer, NULL);
 }
 
-void Assembly :: request_binary(const char *path)
+void Assembly :: request_binary(const char *path, const char *filename)
 {
-    char buffer[64];
-    sprintf(buffer, "GET " URL_DOWNLOAD "/%s", path);
-    mstring request(buffer);
+    mstring request("GET " URL_DOWNLOAD);
+    request += path;
+    if(filename) {
+        request += "/";
+        url_encode(filename, request);
+    }
     request += " HTTP/1.1\r\n"
         "Accept-encoding: identity\r\n"
         "Host: " HOSTNAME "\r\n"
