@@ -442,6 +442,12 @@ void SocketDMA::dmaThread(void *load_buffer)
     __close(sockfd);
 }
 
+bool isEliteBoard(void) __attribute__((weak));
+bool isEliteBoard(void)
+{
+    return false;
+}
+
 void SocketDMA::identThread(void *_a)
 {
 	int sockfd, newsockfd, portno;
@@ -490,21 +496,66 @@ void SocketDMA::identThread(void *_a)
             }
             printf("Received Ident Request from IP: %s and port: %i\n",
                 inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
-            
-            // Respond to client:
-            if (n > 32) {
-                n = 32;
+            if (n > 0) {
+                client_message[n] = 0;
             }
-
             ConfigStore *cs = ConfigManager::getConfigManager()->find_store("Network settings");
             const char *hostname = "Unknown";
             if (cs) {
                 hostname = cs->get_string(CFG_NET_HOSTNAME);
             }
-            sprintf(client_message + n, ",%s,%s", hostname, menu_header);
 
-            n = sendto(sockfd, client_message, strlen(client_message), 0, (struct sockaddr *)&cli_addr,
-                    client_struct_length);
+            const char *product = "?";
+            uint32_t capabilities = getFpgaCapabilities();
+            char fpga_version[8];
+
+            if(capabilities & CAPAB_ULTIMATE64) {
+                if (isEliteBoard()) {
+                    product = "Ultimate 64 Elite";
+                } else {
+                    product = "Ultimate 64";
+                }
+            } else if(capabilities & CAPAB_ULTIMATE2PLUS) {
+                if (capabilities & CAPAB_FPGA_TYPE) {
+                    product = "Ultimate-II+L";
+                } else {
+                    product = "Ultimate-II+";
+                }
+            } else {
+                product = "1541 Ultimate-II";
+            }
+            sprintf(fpga_version, "1%02x", getFpgaVersion());
+#ifdef U64
+            char core_version[8];
+            sprintf(core_version, "1.%02x", C64_CORE_VERSION);
+#endif
+            if (strncmp(client_message, "json", 4) == 0) {
+                client_message[36] = 0;
+                JSON *obj = JSON::Obj()
+                    ->add("product", product)
+                    ->add("firmware_version", APPL_VERSION)
+                    ->add("fpga_version", fpga_version)
+#ifdef U64
+                    ->add("core_version", core_version)
+#endif
+                    ->add("hostname", hostname)
+                    ->add("menu_header", menu_header)
+                    ->add("your_string", client_message+4);
+
+                const char *msg = obj->render();
+                n = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&cli_addr,
+                        client_struct_length);
+
+            } else {
+                // Respond to client:
+                if (n > 32) {
+                    n = 32;
+                }
+                sprintf(client_message + n, ",%s,%s", hostname, menu_header);
+
+                n = sendto(sockfd, client_message, strlen(client_message), 0, (struct sockaddr *)&cli_addr,
+                        client_struct_length);
+            }
             if (n < 0) {
                 printf("Can't send, reason: %d\n", n);
             }

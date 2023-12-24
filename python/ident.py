@@ -20,8 +20,16 @@ class mysocket:
 if __name__ == "__main__":
     s = mysocket()
     s.bind(0)
-    s.broadcast(b"Any Ultimates around?!", 64)
+#    s.broadcast(b"Any Ultimates around?!", 64)
+#    time.sleep(0.2) 
+#    # Better to use a timeout on the socket than just waiting, but I was lazy
+#    # With a timeout, you can find more than just one ultimate.
+#    print(s.receive())
+#    time.sleep(0.2) 
+
+    s.broadcast(b"jsonI am the beast!", 64)
     time.sleep(0.2) 
     # Better to use a timeout on the socket than just waiting, but I was lazy
     # With a timeout, you can find more than just one ultimate.
+    print(s.receive())
     print(s.receive())
