@@ -145,14 +145,14 @@ clean:
 	@rm -rf target/fpga/_xm*
 	@rm -rf target/fpga/x*
 	@rm -rf target/fpga/*.x*
-	@rm -rf `find target/software -name result`
-	@rm -rf `find target/software -name output`
+	@rm -rf `find target -name result`
+	@rm -rf `find target -name output`
 
 sw_clean:
 	@rm -f ./update*.u2*
 	@rm -f ./update.u64
-	@rm -rf `find target/software -name result`
-	@rm -rf `find target/software -name output`
+	@rm -rf `find target -name result`
+	@rm -rf `find target -name output`
 
 mb_clean:
 	@rm -f ./update*.u2u
