@@ -433,11 +433,13 @@ int TreeBrowser :: handle_key(int c)
         	break;
 
 #ifndef RECOVERYAPP
+#ifndef U2
         case KEY_F6:
         	reset_quick_seek();
         	state->refresh = true;
             AssemblyInGui :: S_OpenSearch(user_interface);
             break;
+#endif
 
         case KEY_CTRL_L: // show log
         	reset_quick_seek();
