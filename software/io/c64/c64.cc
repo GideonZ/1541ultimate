@@ -319,21 +319,20 @@ void C64::set_emulation_flags(void)
         allowUltimateDosDateSet = choice;
     }
 
-    int recovery = cfg->get_value(CFG_C64_PHI2_REC);
-    if (recovery >= 0) {
-        uint8_t edge = cfg->get_value(CFG_C64_PHI2_REC) | (cfg->get_value(CFG_SERVE_PHI1) << 2); // | (cfg->get_value(CFG_MEASURE_MODE) << 1) | 
-        C64_PHI2_EDGE_RECOVER = edge;
-        if (cfg->get_value(CFG_C64_TIMING1) >= 0) {
-            uint8_t byte = cfg->get_value(CFG_C64_TIMING) | (cfg->get_value(CFG_C64_TIMING1) << 4);
-            printf("Writing %b to timing register. %d/%d/%d\n", byte, cfg->get_value(CFG_C64_TIMING), cfg->get_value(CFG_C64_TIMING1), cfg->get_value(CFG_SERVE_PHI1));
-            C64_TIMING_ADDR_VALID = byte;
-        } else {
-            C64_TIMING_ADDR_VALID = cfg->get_value(CFG_C64_TIMING);
-        }
-    } else { // U64
-        C64_PHI2_EDGE_RECOVER = 0;
-        C64_TIMING_ADDR_VALID = 5;
+#if U64
+    C64_PHI2_EDGE_RECOVER = 0;
+    C64_TIMING_ADDR_VALID = 0xBB;
+#else
+    uint8_t edge = cfg->get_value(CFG_C64_PHI2_REC) | (cfg->get_value(CFG_SERVE_PHI1) << 2); // | (cfg->get_value(CFG_MEASURE_MODE) << 1) | 
+    C64_PHI2_EDGE_RECOVER = edge;
+    if (cfg->get_value(CFG_C64_TIMING1) >= 0) {
+        uint8_t byte = cfg->get_value(CFG_C64_TIMING) | (cfg->get_value(CFG_C64_TIMING1) << 4);
+        printf("Writing %b to timing register. %d/%d/%d\n", byte, cfg->get_value(CFG_C64_TIMING), cfg->get_value(CFG_C64_TIMING1), cfg->get_value(CFG_SERVE_PHI1));
+        C64_TIMING_ADDR_VALID = byte;
+    } else {
+        C64_TIMING_ADDR_VALID = cfg->get_value(CFG_C64_TIMING);
     }
+#endif
     printf("Cartridge registers:\n");
     dump_hex(((uint8_t *)(C64_CARTREGS_BASE + 0x0)), 16);
 }
