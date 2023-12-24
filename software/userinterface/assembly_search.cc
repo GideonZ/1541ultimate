@@ -206,7 +206,7 @@ void AssemblySearchForm :: send_query(void)
             if (!field->isDropDown()) {
                 query += "\"";
             }
-            if (strcasecmp(name, "rating") == 0) {
+            if ((strcasecmp(name, "rating") == 0) && (value[0] != '>')) {
                 query += ">=";
             }
             query += value;

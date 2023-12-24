@@ -241,8 +241,7 @@ int TreeBrowser :: poll(int sub_returned)
 
     c = keyb->getch();
     if(c == -2) { // error
-        printf("Keyboard returned -2\n");
-        return -2;
+        return MENU_EXIT;
     }
     if(c >= 0) {
     	ret = handle_key(c);

@@ -143,7 +143,7 @@ C64::C64()
 
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_MODE = MODE_NORMAL;
-    isFrozen = false; // ((C64_STOP & C64_HAS_STOPPED) == C64_HAS_STOPPED); Freeze is not the same as stop
+    isFrozen = false;
     backupIsValid = false;
     buttonPushSeen = false;
     client = 0;
@@ -195,6 +195,11 @@ void C64 :: init(void)
         init_cartridge();
     }
     available = true;
+}
+
+bool C64 :: is_stopped(void)
+{
+    return ((C64_STOP & C64_HAS_STOPPED) == C64_HAS_STOPPED);
 }
 
 void C64 :: start(void)
@@ -500,7 +505,6 @@ void C64::stop(bool do_raster)
             printf("Internal error. Should be one of the cases.\n");
         }
     }
-    //printf("@");
 }
 
 void C64::resume(void)
@@ -567,7 +571,7 @@ void C64::resume(void)
         // un-stop the c-64
         C64_STOP = 0;
 
-        printf("Resumed on Bad line. Raster = %02x. VIC Irq Enable: %02x. Vic IRQ: %02x\n", raster, vic_irq_en, vic_irq);
+        // printf("Resumed on Bad line. Raster = %02x. VIC Irq Enable: %02x. Vic IRQ: %02x\n", raster, vic_irq_en, vic_irq);
     } else {
         C64_STOP_MODE = STOP_COND_FORCE;
         // un-stop the c-64

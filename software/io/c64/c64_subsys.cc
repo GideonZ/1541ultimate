@@ -354,6 +354,9 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
             break;
         case C64_DRIVE_LOAD:
             dma_load(0, NULL, 0, cmd->filename.c_str(), cmd->mode, cmd->path.c_str()[0] & 0x1F);
+            if (cmd->user_interface) {
+                cmd->user_interface->menu_response_to_action = MENU_HIDE;
+            }
             break;
         case C64_DMA_BUFFER:
             dma_load(0, (const uint8_t *)cmd->buffer, cmd->bufferSize, cmd->filename.c_str(), cmd->mode,
@@ -483,7 +486,7 @@ int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, uint8_t *buffer, int leng
     	c64->client->release_host(); // disconnect from user interface
     	c64->release_ownership();
 	}
-	if(!c64->isFrozen) {
+	if(!c64->is_stopped()) {
 		c64->stop(false);
 		i_stopped_it = true;
 	}

@@ -357,7 +357,8 @@ public:
 
     bool exists(void);
     bool is_accessible(void);
-
+    bool is_stopped(void);
+    
     void set_colors(int background, int border);
     Screen *getScreen(void);
     Keyboard *getKeyboard(void);

@@ -188,6 +188,7 @@ void UserInterface :: run_once(void)
             case MENU_HIDE:
             case MENU_EXIT:
                 available = false;
+                doBreak = true;
                 if (!host->is_permanent()) {
                     release_host();
                 }
@@ -328,10 +329,6 @@ void UserInterface :: release_host(void)
 {
     for(int i=focus;i>=0;i--) {  // tear down
         ui_objects[i]->deinit();
-    }
-
-    if (!host->is_permanent()) {
-        doBreak = true;
     }
 }
 

@@ -27,7 +27,7 @@ public:
         size = 65536;
         JSON *j = obj->get("path");
         if (j && j->type() == eString) {
-            url_encode(((JSON_String *)j)->get_string(), filename);
+            filename = ((JSON_String *)j)->get_string();
         }
         j = obj->get("id");
         if (j && j->type() == eInteger) {
