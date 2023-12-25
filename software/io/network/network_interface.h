@@ -37,7 +37,7 @@ extern "C" {
 #define PBUF_FIFO_SIZE 70
 
 typedef void (*driver_free_function_t)(void *driver, void *buffer);
-typedef uint8_t (*driver_output_function_t)(void *driver, void *buffer, int length);
+typedef err_t (*driver_output_function_t)(void *driver, void *buffer, int length);
 
 class NetworkInterface : protected ConfigurableObject
 {
@@ -90,7 +90,7 @@ protected:
 
     void *driver;
     void (*driver_free_function)(void *driver, void *buffer);
-    uint8_t (*driver_output_function)(void *driver, void *buffer, int pkt_len);
+    err_t (*driver_output_function)(void *driver, void *buffer, int pkt_len);
     
     // callbacks
     static err_t lwip_output_callback(struct netif *netif, struct pbuf *pbuf);

@@ -81,7 +81,7 @@ void UsbAx88772Driver_free_buffer(void *drv, void *b) {
 }
 
 // entry point for output packet callback
-uint8_t UsbAx88772Driver_output(void *drv, void *b, int len) {
+err_t UsbAx88772Driver_output(void *drv, void *b, int len) {
 	return ((UsbAx88772Driver *)drv)->output_packet((uint8_t *)b, len);
 }
 
@@ -597,11 +597,11 @@ void UsbAx88772Driver :: pipe_error(int pipe) // called from IRQ!
 }
 
 
-uint8_t UsbAx88772Driver :: output_packet(uint8_t *buffer, int pkt_len)
+err_t UsbAx88772Driver :: output_packet(uint8_t *buffer, int pkt_len)
 {
 	//printf("OUTPUT: payload = %p. Size = %d\n", buffer, pkt_len);
 	if (!link_up)
-		return 0;
+		return ERR_CONN;
 	//dump_hex(buffer, 32);
 
 	uint8_t *size = buffer - 4;
@@ -612,7 +612,7 @@ uint8_t UsbAx88772Driver :: output_packet(uint8_t *buffer, int pkt_len)
 
 	host->bulk_out(&bulk_out_pipe, size, pkt_len + 4);
 
-	return 0;
+	return ERR_OK;
 }
 
 uint8_t *UsbAx88772Driver :: getBuffer()

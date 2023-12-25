@@ -30,7 +30,7 @@ int wifi_scan(void *);
 int wifi_wifi_connect(const char *ssid, const char *password, uint8_t auth);
 int wifi_wifi_connect_known_ssid(const char *ssid, const char *password, uint8_t auth);
 int wifi_wifi_disconnect();
-uint8_t wifi_tx_packet(void *driver, void *buffer, int length);
+err_t wifi_tx_packet(void *driver, void *buffer, int length);
 void wifi_free(void *driver, void *buffer);
 void wifi_rx_packet();
 

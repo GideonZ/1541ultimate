@@ -527,8 +527,12 @@ int wifi_wifi_disconnect()
     RETURN_ESP;
 }
 
-uint8_t wifi_tx_packet(void *driver, void *buffer, int length)
+err_t wifi_tx_packet(void *driver, void *buffer, int length)
 {
+    if (wifi.getState() != eWifi_Connected) {
+        return ERR_CONN;
+    }
+    
     BUFARGS(send_eth, CMD_SEND_PACKET);
 
     uint32_t chunkSize = length;

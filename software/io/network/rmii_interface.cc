@@ -17,7 +17,7 @@ void RmiiInterface_free_buffer(void *drv, void *b) {
 }
 
 // entry point for output packet callback
-uint8_t RmiiInterface_output(void *drv, void *b, int len) {
+err_t RmiiInterface_output(void *drv, void *b, int len) {
 	return ((RmiiInterface *)drv)->output_packet((uint8_t *)b, len);
 }
 
@@ -191,14 +191,14 @@ void RmiiInterface :: free_buffer(uint8_t *buffer)
 	RMII_FREE_PUT = id;
 }
 
-uint8_t RmiiInterface :: output_packet(uint8_t *buffer, int pkt_len)
+err_t RmiiInterface :: output_packet(uint8_t *buffer, int pkt_len)
 {
 	if (!link_up)
-		return 0;
+		return ERR_CONN;
 
 	if (RMII_TX_BUSY) {
 		printf("Oops.. tx is busy!\n");
-		return 1;
+		return ERR_INPROGRESS;
 	}
 	//printf("Rmii Out Packet: %p %4x\n", buffer, pkt_len);
 	//dump_hex_relative(buffer, (pkt_len > 64)?64:pkt_len);
@@ -206,5 +206,5 @@ uint8_t RmiiInterface :: output_packet(uint8_t *buffer, int pkt_len)
 	RMII_TX_LENGTH  = (uint16_t)((pkt_len < 60)?60:pkt_len);
 	RMII_TX_START   = 1;
 
-	return 0;
+	return ERR_OK;
 }
