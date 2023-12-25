@@ -330,6 +330,7 @@ void UserInterface :: release_host(void)
     for(int i=focus;i>=0;i--) {  // tear down
         ui_objects[i]->deinit();
     }
+    doBreak = true;
 }
 
 bool UserInterface :: is_available(void)
