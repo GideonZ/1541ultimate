@@ -359,7 +359,7 @@ void UserInterface :: set_screen_title()
     int width = screen->get_size_x();
     int height = screen->get_size_y();
 
-    int len = title.length()-4;
+    int len = title.length();
     int hpos = (width - len) / 2;
 
     screen->clear();
