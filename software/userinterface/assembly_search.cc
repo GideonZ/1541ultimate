@@ -344,7 +344,7 @@ void AssemblyResultsView :: get_entries()
 
 }
 
-BrowsableAssemblyRoot :: BrowsableAssemblyRoot()
+void BrowsableAssemblyRoot :: fetchPresets(void)
 {
     presets = assembly.get_presets();
 }

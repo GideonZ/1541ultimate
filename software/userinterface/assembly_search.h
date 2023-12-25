@@ -220,10 +220,19 @@ class BrowsableAssemblyRoot: public Browsable
         return SSRET_OK;
     }
 public:
-    BrowsableAssemblyRoot();
+    BrowsableAssemblyRoot()
+    {
+        presets = NULL;
+    }
 
     ~BrowsableAssemblyRoot()
     {
+    }
+
+    void fetchPresets(void);
+    bool isInitialized(void)
+    {
+        return (presets != NULL);
     }
 
     IndexedList<Browsable *> *getSubItems(int &error)
@@ -399,6 +408,12 @@ public:
                 cmd_ui->popup("No Valid Network Link", BUTTON_OK);
             return;
         }
+        BrowsableAssemblyRoot *root = assembly_gui.getRoot();
+        if (!root->isInitialized()) {
+            if (cmd_ui)
+                cmd_ui->popup("Could not connect.", BUTTON_OK);
+            return;
+        }
 
         AssemblySearch *search_window = new AssemblySearch(cmd_ui, assembly_gui.getRoot());
         search_window->init(cmd_ui->screen, cmd_ui->keyboard);
@@ -406,10 +421,14 @@ public:
         cmd_ui->activate_uiobject(search_window); // now we have focus
     }
 
-    BrowsableAssemblyRoot *getRoot() {
+    BrowsableAssemblyRoot *getRoot()
+    {
         if (!root) {
             root = new BrowsableAssemblyRoot();
-        }            
+        }
+        if (!root->isInitialized()) {
+            root->fetchPresets();
+        }
         return root;
     }
 
