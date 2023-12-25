@@ -459,12 +459,12 @@ BaseType_t wifi_detect(uint16_t *major, uint16_t *minor, char *str, int maxlen)
         // 'buf' still points to the transmit buffer.
         // It is freed by the TxIRQ, so the content is invalid
         // Let's try to get messages from the receive buffer to see what has been received.
-        printf("Receive queue:\n");
+        // printf("Receive queue:\n");
         while (wifi.uart->ReceivePacket(&buf, 0) == pdTRUE) {
             printf("Buf %02x. Size: %4d. Data:\n", buf->bufnr, buf->size);
             dump_hex(buf->data, buf->size > 64 ? 64 : buf->size);
         }
-        printf("/end of Receive queue\n");
+        // printf("/end of Receive queue\n");
     }
     return success;
 }
