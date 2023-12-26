@@ -143,7 +143,7 @@ C64::C64()
 
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_MODE = MODE_NORMAL;
-    isFrozen = false; // ((C64_STOP & C64_HAS_STOPPED) == C64_HAS_STOPPED); Freeze is not the same as stop
+    isFrozen = false;
     backupIsValid = false;
     buttonPushSeen = false;
     client = 0;
@@ -195,6 +195,11 @@ void C64 :: init(void)
         init_cartridge();
     }
     available = true;
+}
+
+bool C64 :: is_stopped(void)
+{
+    return ((C64_STOP & C64_HAS_STOPPED) == C64_HAS_STOPPED);
 }
 
 void C64 :: start(void)
@@ -314,21 +319,20 @@ void C64::set_emulation_flags(void)
         allowUltimateDosDateSet = choice;
     }
 
-    int recovery = cfg->get_value(CFG_C64_PHI2_REC);
-    if (recovery >= 0) {
-        uint8_t edge = cfg->get_value(CFG_C64_PHI2_REC) | (cfg->get_value(CFG_SERVE_PHI1) << 2); // | (cfg->get_value(CFG_MEASURE_MODE) << 1) | 
-        C64_PHI2_EDGE_RECOVER = edge;
-        if (cfg->get_value(CFG_C64_TIMING1) >= 0) {
-            uint8_t byte = cfg->get_value(CFG_C64_TIMING) | (cfg->get_value(CFG_C64_TIMING1) << 4);
-            printf("Writing %b to timing register. %d/%d/%d\n", byte, cfg->get_value(CFG_C64_TIMING), cfg->get_value(CFG_C64_TIMING1), cfg->get_value(CFG_SERVE_PHI1));
-            C64_TIMING_ADDR_VALID = byte;
-        } else {
-            C64_TIMING_ADDR_VALID = cfg->get_value(CFG_C64_TIMING);
-        }
-    } else { // U64
-        C64_PHI2_EDGE_RECOVER = 0;
-        C64_TIMING_ADDR_VALID = 5;
+#if U64
+    C64_PHI2_EDGE_RECOVER = 0;
+    C64_TIMING_ADDR_VALID = 0xBB;
+#else
+    uint8_t edge = cfg->get_value(CFG_C64_PHI2_REC) | (cfg->get_value(CFG_SERVE_PHI1) << 2); // | (cfg->get_value(CFG_MEASURE_MODE) << 1) | 
+    C64_PHI2_EDGE_RECOVER = edge;
+    if (cfg->get_value(CFG_C64_TIMING1) >= 0) {
+        uint8_t byte = cfg->get_value(CFG_C64_TIMING) | (cfg->get_value(CFG_C64_TIMING1) << 4);
+        printf("Writing %b to timing register. %d/%d/%d\n", byte, cfg->get_value(CFG_C64_TIMING), cfg->get_value(CFG_C64_TIMING1), cfg->get_value(CFG_SERVE_PHI1));
+        C64_TIMING_ADDR_VALID = byte;
+    } else {
+        C64_TIMING_ADDR_VALID = cfg->get_value(CFG_C64_TIMING);
     }
+#endif
     printf("Cartridge registers:\n");
     dump_hex(((uint8_t *)(C64_CARTREGS_BASE + 0x0)), 16);
 }
@@ -500,7 +504,6 @@ void C64::stop(bool do_raster)
             printf("Internal error. Should be one of the cases.\n");
         }
     }
-    //printf("@");
 }
 
 void C64::resume(void)
@@ -567,7 +570,7 @@ void C64::resume(void)
         // un-stop the c-64
         C64_STOP = 0;
 
-        printf("Resumed on Bad line. Raster = %02x. VIC Irq Enable: %02x. Vic IRQ: %02x\n", raster, vic_irq_en, vic_irq);
+        // printf("Resumed on Bad line. Raster = %02x. VIC Irq Enable: %02x. Vic IRQ: %02x\n", raster, vic_irq_en, vic_irq);
     } else {
         C64_STOP_MODE = STOP_COND_FORCE;
         // un-stop the c-64
@@ -906,16 +909,6 @@ Screen *C64::getScreen(void)
 {
     //screen->clear();
     return screen;
-}
-
-void C64::releaseScreen()
-{
-    /*
-     if(screen) {
-     delete screen;
-     screen = 0;
-     }
-     */
 }
 
 bool C64::is_accessible(void)

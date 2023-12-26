@@ -16,11 +16,19 @@
 #include "file_device.h"
 #include "disk.h"
 #include "dump_hex.h"
+#include "attachment_writer.h"
+#include "init_function.h"
+
+extern "C" {
+    void outbyte(int c) {
+        putc(c, stdout);
+    }
+}
 
 FRESULT copy_from(const char *from, const char *to)
 {
     printf("Copying %s to %s.\n", from, to);
-    File *fi;
+    File *fi = NULL;
     FileManager *fm = FileManager :: getFileManager();
     FRESULT fres = fm->fopen(from, FA_READ, &fi);
     uint8_t buffer[1024];
@@ -159,7 +167,9 @@ int ma_in()
     return 0;
 }
 
-int main()
+int TempfileWriter::temp_count;
+
+int ma___in()
 {
     FileManager *fm = FileManager :: getFileManager();
 
@@ -188,5 +198,27 @@ int main()
         delete fs;
         delete fatnode;
     }        
+    return 0;
+}
+
+
+int main(int argc, char **argv)
+{
+    InitFunction::executeAll();
+    FileManager *fm = FileManager :: getFileManager();
+
+    // fm->print_directory("/");
+
+    // copy_from("/a64/29242/16/JUMP-MA2.T64", "file.t64");
+
+    // fm->print_directory("/Temp");
+    // fm->dump();
+
+    copy_from("/a64/29242/16/JUMP-MA2.T64/JUMP-MAN", "inside.prg");
+//    copy_to("file.t64", "/Temp/_29242_16_JUMP-MA2.T64");
+//    copy_from("/Temp/_29242_16_JUMP-MA2.T64/JUMP-MAN", "inside2.prg");
+
+    fm->dump();
+    
     return 0;
 }

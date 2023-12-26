@@ -9,6 +9,7 @@ public:
     virtual ~Keyboard() { }
     
     virtual int  getch(void) { return -1; }
+    virtual void push_head(int) { }
     virtual void wait_free(void) { }
     virtual void clear_buffer(void) { }
 };
@@ -31,6 +32,7 @@ public:
 #define KEY_CTRL_N 0x0E
 #define KEY_CTRL_V 0x16
 #define KEY_CTRL_J 0x0A
+#define KEY_CTRL_L 0x0C
 
 #define KEY_F1     0x85
 #define KEY_F3     0x86

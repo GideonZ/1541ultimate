@@ -1,5 +1,6 @@
 #include "c64_crt.h"
 #include "dump_hex.h"
+#include "subsys.h"
 
 extern uint8_t _eapi_65_start;
 
@@ -161,12 +162,12 @@ void C64_CRT::clear_definition(cart_def *def)
     def->name = "None";
 }
 
-int C64_CRT::check_header(File *f, cart_def *def)
+SubsysResultCode_e C64_CRT::check_header(File *f, cart_def *def)
 {
     uint32_t bytes_read = 0;
     FRESULT res = f->read(crt_header, 0x40, &bytes_read);
     if (bytes_read != 0x40) {
-        return -2; // unable to read file header
+        return SSRET_FILE_READ_FAILED; // unable to read file header
     }
     machine = 0;
     const struct t_cart *cart_list;
@@ -177,7 +178,7 @@ int C64_CRT::check_header(File *f, cart_def *def)
         machine = 128;
         cart_list = c_recognized_c128_carts;
     } else {
-        return -3; // unrecognized file header
+        return SSRET_ERROR_IN_FILE_FORMAT; // unrecognized file header
     }
 
     uint16_t hw_type = get_word(crt_header + CRTHDR_TYPE);
@@ -191,35 +192,37 @@ int C64_CRT::check_header(File *f, cart_def *def)
             max_bank = cart_list->max_bank;
             if (local_type == CART_NOT_IMPL) {
                 printf("%s - Not implemented\n", cart_list->cart_name);
-                return -4;
+                return SSRET_NOT_IMPLEMENTED;
             }
             if (local_type == CART_GMOD2) {
                 if (!(getFpgaCapabilities() & CAPAB_EEPROM)) {
                     printf("GMOD2 EEPROM Not implemented.\n", cart_list->cart_name);
-                    return -4;
+                    return SSRET_NOT_IMPLEMENTED;
                 }
             }
-            return 0;
+            return SSRET_OK;
         }
         cart_list++;
     }
-    return -4;
+    return SSRET_NOT_IMPLEMENTED;
 }
 
-int C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
+SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
 {
     uint8_t *chip_header = chunk->header;
     chunk->ram_location = NULL;
     chunk->mandatory = true;
+    chunk->last = false;
 
     uint32_t bytes_read;
     FRESULT res = f->read(chip_header, 0x10, &bytes_read);
     // dump_hex_relative(chip_header, 0x10);
     if ((res != FR_OK) || (bytes_read != 0x10)) {
-        return 1; // stop, no error
+        chunk->last = true;
+        return SSRET_OK; // stop, no error
     }
     if (strncmp((char*)chip_header, "CHIP", 4)) {
-        return 1; // stop, no error
+        return SSRET_ERROR_IN_FILE_FORMAT; // stop, error
     }
 
     uint32_t total_length = get_dword(chip_header + CRTCHP_PKTLEN);
@@ -238,11 +241,11 @@ int C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
         printf("Reading EEPROM data, size $%4x.\n", size);
         if (size > 0x800) {
             printf("EEPROM too large!\n");
-            return -5;
+            return SSRET_EEPROM_TOO_LARGE;
         }
         if (eeprom_buffer) { //
             printf("EEPROM already read!\n");
-            return -5;
+            return SSRET_EEPROM_ALREADY_DEFINED;
         }
         eeprom_buffer = new uint8_t[size];
         eeprom_size = size;
@@ -255,9 +258,9 @@ int C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
         }
 
         if (res != FR_OK) {
-            return -5;
+            return SSRET_FILE_READ_FAILED;
         } else {
-            return 0; // OK
+            return SSRET_OK; // OK
         }
     }
 
@@ -273,7 +276,7 @@ int C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
     uint32_t offset = uint32_t(bank) * bank_multiplier;
     offset += (load & 0x2000); // switch between 8000 and A000
     if (offset > 0x1000000) { // max 1 MB
-        return -5;
+        return SSRET_ROM_IMAGE_TOO_LARGE;
     }
 
     // Valid for ROM only
@@ -287,7 +290,7 @@ int C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
         total_read += bytes_read;
         if (bytes_read != size) {
             printf("Just read %4x bytes\n", bytes_read);
-            return -5;
+            return SSRET_FILE_READ_FAILED;
         }
         if (bytes_read < 8192) {
             // round up to the nearest multiple of 2, minimum 256 bytes
@@ -307,7 +310,7 @@ int C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
     } else {
         printf("Skipping Chip packet Type %d with size %4x.\n", type, size);
     }
-    return 0;
+    return SSRET_OK;
 }
 
 void C64_CRT::clear_cart_mem(void)
@@ -373,12 +376,12 @@ void C64_CRT::unpatch_easyflash_eapi()
     printf("EAPI successfully un-patched!\n");
 }
 
-int C64_CRT::read_crt(File *file, cart_def *def)
+SubsysResultCode_e C64_CRT::read_crt(File *file, cart_def *def)
 {
     clear_cart_mem();
 
-    int retval = check_header(file, def); // pointer is now at 0x20
-    if (retval) { // something went wrong
+    SubsysResultCode_e retval = check_header(file, def); // pointer is now at 0x20
+    if (retval != SSRET_OK) { // something went wrong
         return retval;
     }
     uint32_t dw = get_dword(crt_header + CRTHDR_HDRSIZE);
@@ -389,28 +392,34 @@ int C64_CRT::read_crt(File *file, cart_def *def)
     printf("Header OK. Now reading chip packets starting from %6x.\n", dw);
     FRESULT fres = file->seek(dw);
     if (fres != FR_OK) {
-        return -5;
+        return SSRET_FILE_SEEK_FAILED;
     }
 
     do {
         t_crt_chip_chunk *chunk = new t_crt_chip_chunk;
         retval = read_chip_packet(file, chunk);
 
-        if (retval == 0) {
+        if (retval == SSRET_OK) {
             chip_chunks.append(chunk);
+            if (chunk->last) {
+                break;
+            }
         } else {
             delete chunk;
+            break;
         }
 
-    } while (!retval);
-    if (retval < 0) {
+    } while (1);
+
+    if (retval != SSRET_OK) {
         return retval;
     }
 
     patch_easyflash_eapi();
     regenerate_easyflash_chunks();
     configure_cart(def);
-    return 0;
+
+    return SSRET_OK;
 }
 
 void C64_CRT::configure_cart(cart_def *def)
@@ -591,7 +600,7 @@ void C64_CRT::configure_cart(cart_def *def)
     def->require = require;
 }
 
-int C64_CRT::load_crt(const char *path, const char *filename, cart_def *def, uint8_t *mem)
+SubsysResultCode_e C64_CRT::load_crt(const char *path, const char *filename, cart_def *def, uint8_t *mem)
 {
     File *file = 0;
     FileInfo *inf;
@@ -602,33 +611,33 @@ int C64_CRT::load_crt(const char *path, const char *filename, cart_def *def, uin
 
     FRESULT fres = fm->fopen(path, filename, FA_READ, &file);
     if (fres != FR_OK) {
-        return -1; // cannot read file
+        return { SSRET_CANNOT_OPEN_FILE };
     }
 
     C64_CRT *work = get_instance(); // Singleton.
     work->initialize(mem); // Clear previous definitions
-    int retval = work->read_crt(file, def);
+    SubsysResultCode_e retval = work->read_crt(file, def);
     fm->fclose(file);
 
-    if (retval) {
+    if (retval != SSRET_OK) {
         work->initialize(NULL); // clear remaining stuff if not successful
     }
-    return retval;
+    return { retval };
 }
 
-int C64_CRT::save_crt(File *fo)
+SubsysResultCode_e C64_CRT::save_crt(File *fo)
 {
     C64_CRT *crt = get_instance();
 
     if (!crt->machine) {
-        return -6; // nothing to save
+        return SSRET_SUBSYS_NOT_PRESENT;
     }
 
     uint32_t written;
 
     FRESULT res = fo->write(crt->crt_header, 0x40, &written);
     if (res != FR_OK) {
-        return -7;
+        return SSRET_DISK_ERROR;
     }
 
     crt->unpatch_easyflash_eapi();
@@ -675,9 +684,9 @@ int C64_CRT::save_crt(File *fo)
     crt->patch_easyflash_eapi();
 
     if (res == FR_OK) {
-        return 0;
+        return SSRET_OK;
     } else {
-        return -7;
+        return SSRET_DISK_ERROR;
     }
 }
 
@@ -736,11 +745,4 @@ bool C64_CRT :: is_valid(void)
 {
     C64_CRT *crt = get_instance(); // Singleton.
     return (crt->machine != 0);
-}
-
-const char *C64_CRT::get_error_string(int retval)
-{
-    const char *errors[] = { "", "Unable to open file", "Unable to read header", "Unrecognized header",
-            "Not Implemented", "Error reading chip packet", "Nothing to save", "Write Error" };
-    return errors[-retval];
 }

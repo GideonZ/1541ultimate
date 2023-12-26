@@ -28,9 +28,11 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
         Action *poke;
         Action *saveedid;
         Action *siddetect;
-        Action *wifioff;
-        Action *wifion;
-        Action *wifiboot;
+        Action *esp32off;
+        Action *esp32on;
+        Action *esp32boot;
+        Action *uartecho;
+        Action *wifiecho;
     } myActions;
 
     t_video_mode systemMode;
@@ -102,7 +104,7 @@ public:
     void ResetHandler();
     void create_task_items(void);
     void update_task_items(bool writablePath, Path *p);
-    int executeCommand(SubsysCommand *cmd);
+    SubsysResultCode_e executeCommand(SubsysCommand *cmd);
     void effectuate_settings();
 
     static int setPllOffset(ConfigItem *it);

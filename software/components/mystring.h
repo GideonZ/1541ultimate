@@ -12,7 +12,9 @@ private:
     char *cp;
 public:
     mstring();
+    mstring(int space);
     mstring(const char *k);
+    mstring(const char *k, int from, int to);
     mstring(mstring &k);
     ~mstring();
     
@@ -28,6 +30,8 @@ public:
     mstring& operator+=(const char rhs);
     mstring& operator+=(const char *rhs);
     mstring& operator+=(const mstring &rhs);
+    mstring& operator+=(const int i);
+
     bool operator==(const mstring &rhs);
     bool operator==(const char *rhs);
 
@@ -35,7 +39,6 @@ public:
     mstring operator+(const char *);
     friend int strcmp(mstring &a, mstring &b);
     friend int strinscmp(mstring &a, mstring &b);
-    friend mstring& int_to_mstring(int i);
 };
 
 int strcmp(mstring &a, mstring &b);

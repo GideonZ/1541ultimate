@@ -17,12 +17,6 @@ Screen   *HostStream :: getScreen(void)
 	return screen;
 }
 
-void HostStream :: releaseScreen(void)
-{
-	delete screen;
-	screen = 0;
-}
-
 Keyboard *HostStream :: getKeyboard(void)
 {
 	if (!keyboard) {

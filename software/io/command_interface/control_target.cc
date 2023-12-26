@@ -1,11 +1,11 @@
 #include "control_target.h"
 #include "disk_image.h"
 #include <string.h>
+#include <ctype.h>
 #include "c64.h"
 #include "tape_recorder.h"
 #include "reu_preloader.h"
-#include "iec.h"
-#include "iec_printer.h"
+#include "iec_interface.h"
 #if U64
 #include "u64_config.h"
 #include "u64.h"
@@ -26,6 +26,14 @@ static Message c_status_no_data             = { 19, true, (uint8_t *)"83,NOT IN 
 static Message c_status_reu_disabled        = { 18, true, (uint8_t *)"84,REU NOT ENABLED" };
 static Message c_status_cannot_open_file    = { 28, true, (uint8_t *)"85,REU FILE CANNOT BE OPENED" };
 static Message c_status_reu_not_saved       = { 31, true, (uint8_t *)"86,REU OFFSET > SIZE. NOT SAVED" };
+
+char *struprt(char *str)
+{
+    char *next = str;
+    while (*str != '\0')
+        *str = toupper((unsigned char)*str);
+    return str;
+}
 
 ControlTarget :: ControlTarget(int id)
 {
@@ -236,19 +244,7 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
                 data_message.message[offs++] = c1541_B->get_drive_power() ? 1 : 0;
                 data_message.length += 3;
             }
-            if (true) { // seems to be always available
-                data_message.message[0]++;
-                data_message.message[offs++] = 0x0F;
-                data_message.message[offs++] = (uint8_t)iec_if.get_current_iec_address();
-                data_message.message[offs++] = iec_if.iec_enable;
-                data_message.length += 3;
-
-                data_message.message[0]++;
-                data_message.message[offs++] = 0x50;
-                data_message.message[offs++] = (uint8_t)iec_printer.get_current_printer_address();
-                data_message.message[offs++] = iec_if.iec_enable;
-                data_message.length += 3;
-            }
+            IecInterface::info(data_message, offs);
             break;
         }
 
@@ -321,7 +317,7 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
             pul = (uint32_t *)data_message.message;
             data_message.last_part = true;
             *pul = cpu_to_32le(retVal);
-            strupr((char *)data_message.message + 4);
+            struprt((char *)data_message.message + 4);
             data_message.length = 4 + strlen((char *)data_message.message + 4);
 
             if (retVal == -3) {

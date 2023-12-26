@@ -1,0 +1,83 @@
+{
+    "SID Sockets Configuration": {
+        "SID Socket 1": {
+            "current": "Disabled",
+            "values": [
+                "Disabled",
+                "Enabled"
+            ],
+            "default": "Disabled"
+        },
+        "SID Socket 2": {
+            "current": "Disabled",
+            "values": [
+                "Disabled",
+                "Enabled"
+            ],
+            "default": "Disabled"
+        },
+        "SID Detected Socket 1": {
+            "current": 2,
+            "values": [
+                true,
+                1,
+                2,
+                "FPGASID",
+                "SwinSID Ultimate",
+                "ARMSID",
+                "ARM2SID",
+                "SidFx",
+                "FPGASID Dukestah"
+            ],
+            "default": "None"
+        },
+        "SID Detected Socket 2": {
+            "current": "None",
+            "values": [
+                "None",
+                "6581",
+                "8580",
+                "FPGASID",
+                "SwinSID Ultimate",
+                "ARMSID",
+                "ARM2SID",
+                "SidFx",
+                "FPGASID Dukestah"
+            ],
+            "default": "None"
+        },
+        "SID Socket 1 1K Ohm Resistor": {
+            "current": "Off",
+            "values": [
+                "Off",
+                "On"
+            ],
+            "default": "Off"
+        },
+        "SID Socket 2 1K Ohm Resistor": {
+            "current": "Off",
+            "values": [
+                "Off",
+                "On"
+            ],
+            "default": "Off"
+        },
+        "SID Socket 1 Capacitors": {
+            "current": "470 pF",
+            "values": [
+                "470 pF",
+                "22 nF"
+            ],
+            "default": "470 pF"
+        },
+        "SID Socket 2 Capacitors": {
+            "current": "470 pF",
+            "values": [
+                "470 pF",
+                "22 nF"
+            ],
+            "default": "470 pF"
+        }
+    }
+}
+

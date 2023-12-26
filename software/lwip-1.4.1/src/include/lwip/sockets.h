@@ -364,10 +364,10 @@ int lwip_fcntl(int s, int cmd, int val);
 #define ioctlsocket(a,b,c)    lwip_ioctl(a,b,c)
 
 #if LWIP_POSIX_SOCKETS_IO_NAMES
-#define read(a,b,c)           lwip_read(a,b,c)
-#define write(a,b,c)          lwip_write(a,b,c)
-#define close(s)              lwip_close(s)
-#define fcntl(a,b,c)          lwip_fcntl(a,b,c)
+#define __read(a,b,c)           lwip_read(a,b,c)
+#define __write(a,b,c)          lwip_write(a,b,c)
+#define __close(s)              lwip_close(s)
+#define __fcntl(a,b,c)          lwip_fcntl(a,b,c)
 #endif /* LWIP_POSIX_SOCKETS_IO_NAMES */
 
 #endif /* LWIP_COMPAT_SOCKETS */

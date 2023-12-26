@@ -180,12 +180,12 @@ void C1541 :: effectuate_settings(void)
 
     current_drive_type = e_dt_unset;
     uint8_t dt = cfg->get_value(CFG_C1541_DRIVETYPE);
-    FRESULT res = set_drive_type((t_drive_type) dt);
+    SubsysResultCode_e res = set_drive_type((t_drive_type) dt);
 
     if(registers[C1541_POWER] != cfg->get_value(CFG_C1541_POWERED)) {
         drive_power(cfg->get_value(CFG_C1541_POWERED) != 0);
     }
-    if (res != FR_OK) {
+    if (res != SSRET_OK) {
         drive_power(false);
     }
 
@@ -374,12 +374,11 @@ int  C1541 :: get_effective_iec_address(void)
 	return iec_address;
 }
 
-bool C1541 :: check_if_save_needed(SubsysCommand *cmd)
+bool C1541 :: check_if_save_needed(void)
 {
     if ((disk_state == e_gcr_disk) && (!gcr_image_up_to_date)) {
-        return (cmd->user_interface->popup("Not all tracks were saved. Save disk?", BUTTON_YES|BUTTON_NO) == BUTTON_YES);
+        return true; 
     }
-
     printf("## Checking if disk change is needed: %c %d %d\n", drive_letter, registers[C1541_DIRTYFLAGS], disk_state);
     if(!((registers[C1541_DIRTYFLAGS] & 0x80)||(write_skip)||(are_mfm_dirty_bits_set()))) {
         return false;
@@ -387,18 +386,15 @@ bool C1541 :: check_if_save_needed(SubsysCommand *cmd)
     if(disk_state == e_no_disk) {
         return false;
     }
-    if(cmd->user_interface == NULL || !cmd->user_interface->is_available()) {
-        return false;
-    }
-	if(cmd->user_interface->popup("About to remove a changed disk. Save?", BUTTON_YES|BUTTON_NO) == BUTTON_NO) {
-	    return false;
-    }
 	return true;
 }
 
 bool C1541 :: save_if_needed(SubsysCommand *cmd)
 {
-    if (check_if_save_needed(cmd)) {
+    if (check_if_save_needed()) {
+        if(cmd->user_interface->popup("About to remove a changed disk. Save?", BUTTON_YES|BUTTON_NO) == BUTTON_NO) {
+            return true; // user decides not to, so OK
+        }
         cmd->mode = (disk_state == e_gcr_disk) ? 1 : 0;
         if (are_mfm_dirty_bits_set()) {
             cmd->mode = 1; // force GCR save when MFM tracks have been written
@@ -878,15 +874,15 @@ bool C1541 :: are_mfm_dirty_bits_set()
     return (orred != 0);
 }
 
-FRESULT C1541 :: set_drive_type(t_drive_type drv)
+SubsysResultCode_e C1541 :: set_drive_type(t_drive_type drv)
 {
     // Force 1541 mode, when the target is not multi-mode
     if (!multi_mode && (drv != e_dt_1541)) {
-        return FR_INVALID_PARAMETER;
+        return SSRET_ONLY_1541;
     }
 
     if (current_drive_type == drv) {
-        return FR_OK; // do nothing, so success
+        return SSRET_OK; // do nothing, so success
     }
 
     registers[C1541_DRIVETYPE] = (uint8_t)drv;
@@ -906,44 +902,41 @@ FRESULT C1541 :: set_drive_type(t_drive_type drv)
         current_drive_rom = cfg->get_string(cfg_id_file);
     } else {
         current_drive_rom = "Unable to load!";
+        current_drive_type = e_dt_unset;
+        return SSRET_NO_DRIVE_ROM;
     }
     if (transferred == 0x4000) {
         memcpy((void *)(memory_map + 0xC000), (const void *)(memory_map + 0x8000), 0x4000); // copy 16K if the file was 16K
         transferred <<= 1;
     }
+    if (transferred != 0x8000) {
+        return SSRET_INVALID_DRIVE_ROM;
+    }
 
     drive_reset(1);
     current_drive_type = drv;
-    if (res == FR_OK) {
-        if (transferred != 0x8000) {
-            res = FR_INVALID_PARAMETER;
-        }
-    }
-    return res;
+    return SSRET_OK;
 }
 
-FRESULT C1541 :: change_drive_type(t_drive_type drv,  UserInterface *ui)
+SubsysResultCode_e C1541 :: change_drive_type(t_drive_type drv,  UserInterface *ui)
 {
-    if (!multi_mode) {
-        return FR_DENIED;
+    if (!multi_mode && drv != e_dt_1541) {
+        return SSRET_ONLY_1541;
     }
-    bool change = true;
+//    if (!ui) {
+//        return SSRET_WRONG_DRIVE_TYPE;
+//    }
     if (ui) {
         char buf[40];
         sprintf(buf, "Change drive type to %s?", drive_types[(int)drv]);
-        int res = ui->popup(buf, BUTTON_CANCEL | BUTTON_OK);
-        if (res != BUTTON_OK) {
-            change = false;
+        if (ui->popup(buf, BUTTON_CANCEL | BUTTON_OK) != BUTTON_OK) {
+            return SSRET_WRONG_DRIVE_TYPE;
         }
     }
-    FRESULT res = FR_DENIED;
-    if (change) {
-        res = set_drive_type(drv);
-    }
-    return res;
+    return set_drive_type(drv);
 }
 
-int C1541 :: executeCommand(SubsysCommand *cmd)
+SubsysResultCode_e C1541 :: executeCommand(SubsysCommand *cmd)
 {
 	bool g64;
 	bool protect;
@@ -951,7 +944,7 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 	File *newFile = 0;
 	FRESULT res;
 	FileInfo info(32);
-	int returnValue = 0;
+	SubsysResultCode_e returnValue = SSRET_OK;
 
     fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
 
@@ -973,35 +966,37 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 	switch(cmdCode) {
 	case MENU_1541_MOUNT_D64:
     case MENU_1541_MOUNT_G64:
-        if (!save_if_needed(cmd)) {
-            if(cmd->user_interface) {
+        if (cmd->user_interface) {
+            if (!save_if_needed(cmd)) {
                 if (cmd->user_interface->popup("Disk could not be saved. Continue?", BUTTON_YES|BUTTON_NO) == BUTTON_NO) {
                     break;
                 }
-            } // else: No user interface: we just do it! Oops?
+            }
+        } else if(check_if_save_needed()) { // no user interface available
+            returnValue = SSRET_DISK_MODIFIED;
+            break;
         }
-	    res = FR_OK;
 	    switch(cmd->mode) {
 	        case 1541:
 	            if ((current_drive_type != e_dt_1541) && (current_drive_type != e_dt_1571)) {
-	                res = change_drive_type(e_dt_1541, cmd->user_interface);
+	                returnValue = change_drive_type(e_dt_1541, cmd->user_interface);
 	            }
 	            break;
 	        case 1571:
 	            if (current_drive_type != e_dt_1571) {
-	                res = change_drive_type(e_dt_1571, cmd->user_interface);
+	                returnValue = change_drive_type(e_dt_1571, cmd->user_interface);
 	            }
 	            break;
 	        case 1581:
 	            if (current_drive_type != e_dt_1581) {
-	                res = change_drive_type(e_dt_1581, cmd->user_interface);
+	                returnValue = change_drive_type(e_dt_1581, cmd->user_interface);
 	            }
 	            break;
 	        default:
 	            printf("-> INTERNAL ERROR: Mount mode should be 1541, 1571 or 1581.\n");
-	            res = FR_DENIED;
+	            returnValue = SSRET_WRONG_MOUNT_MODE;
 	    }
-	    if (res == FR_OK) {
+	    if (returnValue == SSRET_OK) {
             res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), flags, &newFile);
             if (res == FR_OK) {
                 if(cmdCode == MENU_1541_MOUNT_G64) {
@@ -1013,10 +1008,12 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
                 mount_file_name = cmd->filename;
                 mount_function_id = cmd->functionID;
                 mount_mode = cmd->mode;
-                if (cfg->get_value(CFG_C1541_EXITMOUNT)) {
-                    returnValue = -1;
+
+                if ((cmd->user_interface) && (cfg->get_value(CFG_C1541_EXITMOUNT))) {
+                    cmd->user_interface->menu_response_to_action = MENU_HIDE;
                 }
             } else {
+                returnValue = SSRET_CANNOT_OPEN_FILE;
                 if (cmd->user_interface) {
                     cmd->user_interface->popup("Opening disk file failed.", BUTTON_OK);
                 }
@@ -1041,41 +1038,71 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
         drive_power(0);
 	    break;
 	case MENU_1541_SET_MODE:
-	    set_drive_type((t_drive_type) cmd->mode);
+	    returnValue = set_drive_type((t_drive_type) cmd->mode);
 	    break;
 	case MENU_1541_REMOVE:
-        if (!save_if_needed(cmd)) {
-            if(cmd->user_interface) {
+        if (cmd->user_interface) {
+            if (!save_if_needed(cmd)) {
                 if (cmd->user_interface->popup("Disk could not be saved. Continue?", BUTTON_YES|BUTTON_NO) == BUTTON_NO) {
                     break;
                 }
-            } // else: No user interface: we just do it! Oops?
+            }
+        } else if(check_if_save_needed()) { // no user interface available
+            returnValue = SSRET_DISK_MODIFIED;
+            break;
         }
 		remove_disk();
 		break;
     case MENU_1541_BLANK:
         mount_blank();
-        if (cfg->get_value(CFG_C1541_EXITMOUNT)) {
-            returnValue = -1;
-        }
+        // FIXME
+        //if (cfg->get_value(CFG_C1541_EXITMOUNT)) {
+        //    returnValue = -1;
+        //}
         break;
     case MENU_1541_SAVED64:
     	cmd->mode = 0;
-    	save_disk_to_file(cmd);
+    	returnValue = save_disk_to_file(cmd);
         break;
     case MENU_1541_SAVEG64:
     	cmd->mode = 1;
-        save_disk_to_file(cmd);
+        returnValue = save_disk_to_file(cmd);
         break;
     case FLOPPY_LOAD_DOS:
-    	memcpy((void *)&memory_map[0x8000], (void*) cmd->buffer, 0x8000);
+        returnValue = load_dos_from_file(cmd->path.c_str(), cmd->filename.c_str());
         break;
     	
 	default:
 		printf("Unhandled menu item for C1541.\n");
-		return -1;
+		return SSRET_UNDEFINED_COMMAND;
 	}
 	return returnValue;
+}
+
+SubsysResultCode_e C1541 :: load_dos_from_file(const char *path, const char *filename)
+{
+    FileManager *fm = FileManager :: getFileManager();
+    uint32_t size = 32768;
+    uint32_t transferred = 0;
+    uint8_t *buffer = (uint8_t *)&memory_map[0x8000];
+
+    printf("Binary Load.. %s\n", filename);
+    FRESULT fres = fm->load_file(path, filename, buffer, size, &transferred);
+
+    if(fres == FR_OK) {
+    	if ((size == 32768) && (transferred == 16384)) {
+    		memcpy(buffer + 16384, buffer, 16384);
+    	}
+    } else {
+        return SSRET_CANNOT_OPEN_FILE;
+    }
+    if (transferred) {
+        drive_reset(1);
+    }
+    if ((transferred == 16384) || (transferred == 32768)) {
+        return SSRET_OK;
+    }
+    return SSRET_INVALID_DRIVE_ROM;
 }
 
 void C1541 :: unlink(void)
@@ -1088,7 +1115,7 @@ void C1541 :: unlink(void)
 	mfm_controller->set_file(NULL);
 }
 
-bool C1541 :: save_disk_to_file(SubsysCommand *cmd)
+SubsysResultCode_e C1541 :: save_disk_to_file(SubsysCommand *cmd)
 {
     static char buffer[32] = {0};
     char errstr[40];
@@ -1097,6 +1124,11 @@ bool C1541 :: save_disk_to_file(SubsysCommand *cmd)
 	int res;
 	bool success = true;
 	const char *ext;
+
+    if ((current_drive_type != e_dt_1541) && (current_drive_type != e_dt_1571)) {
+        cmd->user_interface->popup("Only valid for 1541 or 1571.", BUTTON_OK);
+        return SSRET_WRONG_DRIVE_TYPE;
+    }
 
 	// Note that when we get here, the GCR disk is leading. The BIN image is only used to store
 	// the binary data that is converted FROM the GCR image. For this reason, whether the disk
@@ -1133,12 +1165,12 @@ bool C1541 :: save_disk_to_file(SubsysCommand *cmd)
 				cmd->user_interface->hide_progress();
 			}
 			fm->fclose(file);
-			return success;
+			return success ? SSRET_OK : SSRET_SAVE_FAILED;
 		} else {
 			cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
 		}
 	}
-    return false;
+    return SSRET_ABORTED_BY_USER;
 }
 
 void C1541 :: set_rom_config(int idx, const char *fname)

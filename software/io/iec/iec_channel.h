@@ -1,11 +1,10 @@
 #ifndef IEC_CHANNEL_H
 #define IEC_CHANNEL_H
 
-#include "integer.h"
-#include "iec.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
+#include "iec_drive.h"
 #include "filemanager.h"
 #include "mystring.h"
 
@@ -13,11 +12,6 @@ typedef enum _t_channel_state {
     e_idle, e_filename, e_file, e_dir, e_record, e_buffer, e_complete, e_error, e_status
     
 } t_channel_state;
-
-enum t_channel_retval {
-    IEC_OK=0, IEC_LAST=1, IEC_NO_DATA=-1, IEC_FILE_NOT_FOUND=-2, IEC_NO_FILE=-3,
-    IEC_READ_ERROR=-4, IEC_WRITE_ERROR=-5, IEC_BYTE_LOST=-6, IEC_BUFFER_END=-7
-};
 
 static uint8_t c_header[32] = { 1,  1,  4,  1,  0,  0, 18, 34,
                             32, 32, 32, 32, 32, 32, 32, 32,
@@ -77,6 +71,13 @@ public:
         iecNames = new IndexedList<char *>(8, NULL);
 
         SetInitialPath(); // constructs root path string
+    }
+
+    ~IecPartition()
+    {
+        delete dirlist;
+        delete iecNames;
+        fm->release_path(path);
     }
 
     int GetPartitionNumber(void)
@@ -305,11 +306,11 @@ class IecFileSystem {
     FileManager *fm;
     int currentPartition;
     IecPartition *partitions[MAX_PARTITIONS];
-    IecInterface *interface;
+    IecDrive *drive;
 public:
-    IecFileSystem(IecInterface *intf)
+    IecFileSystem(IecDrive *dr)
     {
-        interface = intf;
+        drive = dr;
         fm = FileManager::getFileManager();
         for (int i = 0; i < MAX_PARTITIONS; i++) {
             partitions[i] = 0;
@@ -318,9 +319,18 @@ public:
         partitions[0] = new IecPartition(this, 0);
     }
 
+    ~IecFileSystem() 
+    {
+        for (int i = 0; i < MAX_PARTITIONS; i++) {
+            if (partitions[i]) {
+                delete partitions[i];
+            }
+        }
+    }
+
     const char *GetRootPath()
     {
-        return interface->get_root_path();
+        return drive->get_root_path();
     }
 
     const char *GetPartitionPath(int index)
@@ -354,7 +364,7 @@ typedef struct {
 } bufblk_t;
 
 class IecChannel {
-    IecInterface *interface;
+    IecDrive *drive;
     FileManager *fm;
 
     int channel;
@@ -387,7 +397,7 @@ class IecChannel {
     char fs_filename[64];
 
 private:
-    bool parse_filename(char *buffer, name_t *name, int default_drive, bool doFlags);
+    static bool parse_filename(int channel, char *buffer, name_t *name, int default_drive, bool doFlags);
     int setup_directory_read(name_t& name);
     int setup_file_access(name_t &name);
     int setup_buffer_access(void);
@@ -398,14 +408,14 @@ private:
     int read_dir_entry(void);
     void swap_buffers(void);
     int read_block(void);
-    int read_record(int offset);
-    int write_record(void);
+    t_channel_retval read_record(int offset);
+    t_channel_retval write_record(void);
 
     void dump_command(command_t& cmd);
-    void dump_name(name_t& name, const char *id);
+    static void dump_name(name_t& name, const char *id);
     bool hasIllegalChars(const char *name);
 public:
-    IecChannel(IecInterface *intf, int ch);
+    IecChannel(IecDrive *dr, int ch);
     virtual ~IecChannel();
     virtual void reset(void);
     virtual void talk(void)
@@ -413,13 +423,13 @@ public:
     }
 
     void reset_prefetch(void);
-    int prefetch_data(uint8_t& data);
-    int prefetch_more(int, uint8_t*&, int &);
 
-    virtual int pop_data(void);
-    virtual int pop_more(int);
-    virtual int push_data(uint8_t b);
-    virtual int push_command(uint8_t b);
+    t_channel_retval prefetch_data(uint8_t& data);
+    t_channel_retval prefetch_more(int, uint8_t*&, int &);
+    virtual t_channel_retval pop_data(void);
+    virtual t_channel_retval pop_more(int);
+    virtual t_channel_retval push_data(uint8_t b);
+    virtual t_channel_retval push_command(uint8_t b);
 
     virtual int ext_open_file(const char *name);
     virtual int ext_close_file(void);
@@ -441,15 +451,15 @@ class IecCommandChannel: public IecChannel {
     void get_error_string(void);
     bool parse_command(char *buffer, int length, command_t *command);
 public:
-    IecCommandChannel(IecInterface *intf, int ch);
+    IecCommandChannel(IecDrive *dr, int ch);
     virtual ~IecCommandChannel();
     void set_error(int err = -1, int track = 0, int sector = 0);
     void reset(void);
     void talk(void);
-    int pop_data(void);
-    int pop_more(int);
-    int push_data(uint8_t b);
-    int push_command(uint8_t b);
+    t_channel_retval pop_data(void);
+    t_channel_retval pop_more(int);
+    t_channel_retval push_data(uint8_t b);
+    t_channel_retval push_command(uint8_t b);
     int ext_open_file(const char *name);
     int ext_close_file(void);
 };

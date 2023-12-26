@@ -23,6 +23,7 @@ extern "C" {
 #include "u2p.h"
 //#include "sys/alt_irq.h"
 #include "c64.h"
+#include "esp32.h"
 #include "sid_editor.h"
 #include "sid_device_fpgasid.h"
 #include "sid_device_swinsid.h"
@@ -123,6 +124,7 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_SPEED_REGS        0x4C
 #define CFG_IEC_BURST_EN      0x4D
 #define CFG_PALETTE           0x4E
+#define CFG_IEC_BUS_MODE      0x4F
 
 #define CFG_SPEED_PREF        0x52
 #define CFG_BADLINES_EN       0x53
@@ -200,6 +202,7 @@ const char *scan_modes[] = {
 const char *stereo_addr[] = { "Off", "A5", "A6", "A7", "A8", "A9" };
 const char *sid_split[] = { "Off", "1/2 (A5)", "1/2 (A6)", "1/2 (A7)", "1/2 (A8)", "1/4 (A5,A6)", "1/4 (A5,A8)", "1/4 (A7,A8)" };
 
+static const char *iec_modes[] = { "All Connected", "C64<->Ultimate", "DIN<->Ultimate", "C64<->DIN" };
 static const char *joyswaps[] = { "Normal", "Swapped" };
 static const char *en_dis5[] = { "Disabled", "Enabled", "Transp. Border" };
 static const char *digi_levels[] = { "Off", "Low", "Medium", "High" };
@@ -271,6 +274,7 @@ struct t_cfg_definition u64_cfg[] = {
 //    { CFG_CHROMA_DELAY,         CFG_TYPE_VALUE, "Chroma Delay",                "%d", NULL,        -3,  3, 0 },
     { CFG_HDMI_ENABLE,          CFG_TYPE_ENUM, "Digital Video Mode",           "%s", dvi_hdmi,     0,  2, 0 },
     { CFG_SCANLINES,            CFG_TYPE_ENUM, "HDMI Scan lines",              "%s", en_dis,       0,  1, 0 },
+    { CFG_IEC_BUS_MODE,         CFG_TYPE_ENUM, "Serial Bus Mode",              "%s", iec_modes,    0,  3, 0 },
     { CFG_PARCABLE_ENABLE,      CFG_TYPE_ENUM, "SpeedDOS Parallel Cable",      "%s", en_dis,       0,  1, 0 },
     { CFG_IEC_BURST_EN,         CFG_TYPE_ENUM, "Burst Mode Patch",             "%s", burst_modes,  0,  2, 0 },
     { CFG_LED_SELECT_0,         CFG_TYPE_ENUM, "LED Select Top",               "%s", ledselects,   0, 15, 0 },
@@ -821,7 +825,10 @@ void U64Config :: effectuate_settings()
         U64_HDMI_ENABLE = (hdmiSetting == 1) ? 1 : 0; // 1 = HDMI, 2 = DVI
     }
 
-    U64_INT_CONNECTORS = cfg->get_value(CFG_PARCABLE_ENABLE) | (cfg->get_value(CFG_IEC_BURST_EN) << 1);
+    // "All Connected", "C64<->Ultimate", "DIN<->Ultimate", "C64<->DIN"
+    const uint8_t c_iec_connectors[] = { 0x70, 0x60, 0x30, 0x50 }; // 4: ext, 5: ult, 6: cia
+    uint8_t iec_connections = c_iec_connectors[cfg->get_value(CFG_IEC_BUS_MODE)];
+    U64_INT_CONNECTORS = cfg->get_value(CFG_PARCABLE_ENABLE) | (cfg->get_value(CFG_IEC_BURST_EN) << 1) | iec_connections;
 
     uint8_t format = 0;
     if (cfg->get_value(CFG_ANALOG_OUT_SELECT)) {
@@ -1050,7 +1057,10 @@ int U64Config :: setSidEmuParams(ConfigItem *it)
 #define MENU_U64_WIFI_ENABLE 4
 #define MENU_U64_WIFI_BOOT 5
 #define MENU_U64_DETECT_SIDS 6
-#define MENU_U64_POKE 7
+#define MENU_U64_WIFI_DOWNLOAD 7
+#define MENU_U64_POKE 8
+#define MENU_U64_WIFI_ECHO 9
+#define MENU_U64_UART_ECHO 10
 
 void U64Config :: create_task_items(void)
 {
@@ -1058,17 +1068,21 @@ void U64Config :: create_task_items(void)
     myActions.poke      = new Action("Poke", SUBSYSID_U64, MENU_U64_POKE);
     myActions.saveedid  = new Action("Save EDID to file", SUBSYSID_U64, MENU_U64_SAVEEDID);
     myActions.siddetect = new Action("Detect SIDs", SUBSYSID_U64, MENU_U64_DETECT_SIDS);
-    myActions.wifioff   = new Action("Disable WiFi", SUBSYSID_U64, MENU_U64_WIFI_DISABLE);
-    myActions.wifion    = new Action("Enable WiFi",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE);
-    myActions.wifiboot  = new Action("Enable WiFi Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT);
+    myActions.esp32off  = new Action("Disable ESP32", SUBSYSID_U64, MENU_U64_WIFI_DISABLE);
+    myActions.esp32on   = new Action("Enable ESP32",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE);
+    myActions.esp32boot = new Action("Enable ESP32 Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT);
+    myActions.uartecho  = new Action("UART Echo", SUBSYSID_U64, MENU_U64_UART_ECHO);
+    myActions.wifiecho  = new Action("WiFi Echo", SUBSYSID_U64, MENU_U64_WIFI_ECHO);
 
     dev->append(myActions.saveedid );
 #if DEVELOPER > 0
-    dev->append(myActions.poke     );
-    dev->append(myActions.siddetect);
-    dev->append(myActions.wifioff  );
-    dev->append(myActions.wifion   );
-    dev->append(myActions.wifiboot );
+    dev->append(myActions.poke      );
+    dev->append(myActions.siddetect );
+    dev->append(myActions.esp32off  );
+    dev->append(myActions.esp32on   );
+    dev->append(myActions.esp32boot );
+    dev->append(myActions.uartecho  );
+    dev->append(myActions.wifiecho  );
 #endif
 }
 
@@ -1077,7 +1091,7 @@ void U64Config :: update_task_items(bool writablePath, Path *p)
     myActions.saveedid->setDisabled(!writablePath);
 }
 
-int U64Config :: executeCommand(SubsysCommand *cmd)
+SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
 {
 	File *f = 0;
 	FRESULT res;
@@ -1138,19 +1152,27 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
 #endif
 
     case MENU_U64_WIFI_DISABLE:
-        U64_WIFI_CONTROL = 0;
+        esp32.doDisable();
         break;
 
     case MENU_U64_WIFI_ENABLE:
-        U64_WIFI_CONTROL = 0;
-        vTaskDelay(50);
-        U64_WIFI_CONTROL = 5;
+        esp32.doStart();
         break;
 
     case MENU_U64_WIFI_BOOT:
-        U64_WIFI_CONTROL = 2;
-        vTaskDelay(150);
-        U64_WIFI_CONTROL = 7;
+        esp32.doBootMode();
+        break;
+
+    case MENU_U64_WIFI_ECHO:
+        //esp32.doRequestEcho();
+        break;
+
+    case MENU_U64_UART_ECHO:
+        esp32.doUartEcho();
+        break;
+
+    case MENU_U64_WIFI_DOWNLOAD:
+        esp32.doDownload(NULL, 0, 0, false);
         break;
 
     case MENU_U64_POKE:
@@ -1190,8 +1212,9 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
 
     default:
     	printf("U64 does not know this command\n");
+        return SSRET_NOT_IMPLEMENTED;
     }
-    return 0;
+    return SSRET_OK;
 }
 
 

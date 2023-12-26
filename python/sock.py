@@ -32,7 +32,7 @@ class mysocket:
             chunk = self.sock.recv(min(maxlen - bytes_recd, 2048))
             bytes_recd = bytes_recd + len(chunk)
             if chunk == '':
-                print "Number of chunks received so far:", len(chunks), bytes_recd
+                print ("Number of chunks received so far:", len(chunks), bytes_recd)
                 break            
                 #raise RuntimeError("socket connection broken")
             chunks.append(chunk)
@@ -42,7 +42,7 @@ class mysocket:
         self.sock.bind(('', port))
         self.sock.listen(2)
         conn, addr = self.sock.accept()
-        print conn, addr
+        print (conn, addr)
         self.conn = conn
         
 if __name__ == "__main__":
@@ -103,7 +103,7 @@ if __name__ == "__main__":
         bytes = s.myreceive(1)
         s.sock.shutdown(0)
         s.sock.close()
-        print ":".join("{:02x}".format(ord(c)) for c in bytes)
+        print (":".join("{:02x}".format(ord(c)) for c in bytes))
 
     elif (sys.argv[1] == 'u'):
         with open(sys.argv[2], "rb") as f:
@@ -228,7 +228,7 @@ if __name__ == "__main__":
         s = mysocket()
         s.serve(5001)
         msg = s.myreceive(1024*1024)
-        print "Received: ", len(msg), "bytes"
+        print ("Received: ", len(msg), "bytes")
         s.sock.shutdown(0)
         s.sock.close()
         

@@ -127,6 +127,7 @@ void LedStrip :: effectuate_settings(void)
 
 int LedStrip :: hot_effectuate(ConfigItem *item)
 {
+    item->store->set_need_effectuate();
     item->store->effectuate();
     return 0;
 }

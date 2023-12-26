@@ -271,7 +271,7 @@ begin
     end process;
 
     mem_req.request <= read_req;
-    mem_req.data    <= mem_data;
+    mem_req.data    <= X"00000000";
     mem_req.address <= mem_addr & "00";
     mem_req.read_writen <= '1';
     mem_req.byte_en <= (others => '1');

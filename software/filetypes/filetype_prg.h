@@ -11,13 +11,14 @@ class FileTypePRG : public FileType
 	BrowsableDirEntry *node;
 	bool    has_header;
     static bool check_header(File *f, bool has_header);
-    static int  execute_st(SubsysCommand *);
+    static SubsysResultCode_e execute_st(SubsysCommand *);
 public:
     FileTypePRG(BrowsableDirEntry *n, bool header);
     ~FileTypePRG();
 
     int   fetch_context_items(IndexedList<Action *> &list);
     static FileType *test_type(BrowsableDirEntry *obj);
+    static SubsysResultCode_t start_prg(const char *filename, bool run);
 };
 
 

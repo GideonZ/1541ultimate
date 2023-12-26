@@ -56,7 +56,7 @@ public:
 	void pipe_error(int pipe);
 
     //BYTE output_callback(struct netif *, struct pbuf *);
-    uint8_t output_packet(uint8_t *buffer, int pkt_len);
+    err_t output_packet(uint8_t *buffer, int pkt_len);
 
     void interrupt_handler();
     void bulk_handler();

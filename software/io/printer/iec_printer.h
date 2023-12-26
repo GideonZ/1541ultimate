@@ -22,22 +22,21 @@
          *
         -*/
 
-/******************************  Inclusions  ****************************/
+/******************************  Includes  ****************************/
 
 #ifndef IEC_PRINTER_H
 #define IEC_PRINTER_H
 
-#include "integer.h"
-#include "menu.h"
-#include "config.h"
-#include "userinterface.h"
-#include "iec.h"
-#include "subsys.h"
-#include "dump_hex.h"
-#include "iec_channel.h"
+#include <stdint.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
+#include "menu.h"
+#include "config.h"
+#include "userinterface.h"
+#include "iec_interface.h"
+#include "subsys.h"
+#include "dump_hex.h"
 #include "filemanager.h"
 #include "mystring.h"
 #include "mps_printer.h"
@@ -56,7 +55,8 @@
 /*********************************  Types  ******************************/
 
 enum t_printer_output_type {
-    PRINTER_PNG_OUTPUT=0,
+    PRINTER_UNSET_OUTPUT=0,
+    PRINTER_PNG_OUTPUT,
     PRINTER_RAW_OUTPUT,
     PRINTER_ASCII_OUTPUT
 };
@@ -81,9 +81,12 @@ typedef struct PrinterEvent {
 /* Class IecPrinter                                                     */
 /*======================================================================*/
 
-class IecPrinter : public SubSystem, ObjectWithMenu, ConfigurableObject
+class IecPrinter : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObject
 {
     private:
+        /* Slot ID at registration with the interface */
+        int slot_id;
+
         /* PETASCII to ASCII lookup table */
         static uint8_t ascii_lut[256];
 
@@ -118,9 +121,6 @@ class IecPrinter : public SubSystem, ObjectWithMenu, ConfigurableObject
         /* Printer is color (only used for progress bar) */
         bool is_color;
 
-        /* Flag set to true while in Ultimate init sequence */
-        bool init;
-
         /* User interface descriptor */
         UserInterface *cmd_ui;
 
@@ -139,8 +139,9 @@ class IecPrinter : public SubSystem, ObjectWithMenu, ConfigurableObject
 
         /* =======  Printter task related methods */
         static void task(IecPrinter *iecPrinter);
-        int _push_data(uint8_t b);
-        int _push_command(uint8_t b);
+        t_channel_retval _push_data(uint8_t b);
+        t_channel_retval _push_command(uint8_t b);
+        int _reset(void);
 
         /* -------  User action menu */
         struct {
@@ -154,17 +155,23 @@ class IecPrinter : public SubSystem, ObjectWithMenu, ConfigurableObject
         IecPrinter(void);
         ~IecPrinter(void);
 
-        int push_data(uint8_t b);
-        int push_command(uint8_t b);
-        int flush(void);
-        int init_done(void);
-        int reset(void);
+        /* ====== IecSlave functions */
+        // void reset(void); // FIXME
+        t_channel_retval push_data(uint8_t b);
+        t_channel_retval push_ctrl(uint16_t b);
+        bool is_enabled(void) { return printer_enable; }
+        uint8_t get_address(void) { return (uint8_t) last_printer_addr; }
+        uint8_t get_type(void) { return 0x50; }
+        const char *iec_identify(void) { return "Printer Emulation"; }
+        void info(JSON_Object *);
+        void info(StreamTextLog&);
 
+        int flush(void);
         /* =======  Interface menu */
         void create_task_items();
         void update_task_items(bool writablePath, Path *path);
         void effectuate_settings(void); // from ConfigurableObject
-        int executeCommand(SubsysCommand *cmd); // from SubSystem
+        SubsysResultCode_e executeCommand(SubsysCommand *cmd); // from SubSystem
         const char *identify(void) { return "Virtual Printer"; }
         void updateFlushProgressBar(void);
 
@@ -179,16 +186,13 @@ class IecPrinter : public SubSystem, ObjectWithMenu, ConfigurableObject
         int set_page_top(int d);
         int set_page_height(int d);
 
-        /* =======  Getters */
-        int get_current_printer_address(void) { return last_printer_addr; }
-
     private:
         /* =======  Output file management */
         int open_file(void);
         int close_file(void);
 };
 
-extern IecPrinter iec_printer;
+extern IecPrinter *iec_printer;
 
 #endif /* IEC_PRINTER_H */
 

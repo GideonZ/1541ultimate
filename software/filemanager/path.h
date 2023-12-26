@@ -21,6 +21,7 @@ public:
     Path();
     Path(Path *); // make a copy
     Path(Path *, int start, int stop);
+    Path(const char *p);
     ~Path();
     const char *owner;
 

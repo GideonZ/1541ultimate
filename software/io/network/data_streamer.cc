@@ -54,13 +54,13 @@ DataStreamer :: ~DataStreamer()
 
 DataStreamer dataStreamer;
 
-int DataStreamer :: S_startStream(SubsysCommand *cmd)
+SubsysResultCode_e DataStreamer :: S_startStream(SubsysCommand *cmd)
 {
     DataStreamer *str = (DataStreamer *)cmd->functionID;
     return str->startStream(cmd);
 }
 
-int DataStreamer :: S_stopStream(SubsysCommand *cmd)
+SubsysResultCode_e DataStreamer :: S_stopStream(SubsysCommand *cmd)
 {
     DataStreamer *str = (DataStreamer *)cmd->functionID;
     return str->stopStream(cmd);
@@ -77,22 +77,22 @@ void DataStreamer :: S_timer(TimerHandle_t a)
     }
 }
 
-int DataStreamer :: startStream(SubsysCommand *cmd)
+SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
 {
     if(NetworkInterface :: getNumberOfInterfaces() < 1) {
         if (cmd->user_interface) cmd->user_interface->popup("No Network Interface", BUTTON_OK);
-        return -2;
+        return SSRET_NO_NETWORK;
     }
     NetworkInterface *intf = NetworkInterface :: getInterface(0);
 
     if (!intf) {
-        return -3; // shouldn't happen
+        return SSRET_NO_NETWORK; // shouldn't happen
     }
 
     int streamID = cmd->mode;
     if ((streamID < 0) || (streamID > 3)) {
         if (cmd->user_interface) cmd->user_interface->popup("Invalid Stream ID", BUTTON_OK);
-        return -10;
+        return SSRET_INVALID_PARAMETER;
     }
     stream_config_t *stream = &streams[streamID];
 
@@ -102,14 +102,14 @@ int DataStreamer :: startStream(SubsysCommand *cmd)
     } ip;
 
     uint8_t his_mac[6];
-    bzero(his_mac, 6);
+    memset(his_mac, 0, 6);
     intf->getIpAddr(ip.ipaddr);
     intf->getMacAddr(my_mac);
     my_ip = ip.ipaddr32[0];
 
     if (!(intf->is_link_up()) || (my_ip == 0)) {
         if (cmd->user_interface) cmd->user_interface->popup("No (valid) link", BUTTON_OK);
-        return -4;
+        return SSRET_NO_NETWORK;
     }
 
 /*
@@ -128,7 +128,7 @@ int DataStreamer :: startStream(SubsysCommand *cmd)
         }
         if (cmd->user_interface) {
             if (cmd->user_interface->string_box("Send to...", dest_host, 36) < 0) {
-                return -5;
+                return SSRET_ABORTED_BY_USER;
             }
             cfg->set_string(CFG_STREAM_DEST0 + streamID, dest_host);
             cfg->write();
@@ -137,7 +137,7 @@ int DataStreamer :: startStream(SubsysCommand *cmd)
 
     int len = strlen(dest_host);
     if (!len) {
-        return -6;
+        return SSRET_INVALID_PARAMETER;
     }
 
     char *behind_colon = NULL;
@@ -157,7 +157,7 @@ int DataStreamer :: startStream(SubsysCommand *cmd)
     if (!ret_host) {
         if (cmd->user_interface) cmd->user_interface->popup("Host could not be resolved.", BUTTON_OK);
         else printf("Host '%s' could not be resolved.", dest_host);
-        return -9;
+        return SSRET_NETWORK_RESOLVE_ERROR;
     }
     uint32_t *addrs = (uint32_t *)*(ret_host->h_addr_list);
 
@@ -181,7 +181,7 @@ int DataStreamer :: startStream(SubsysCommand *cmd)
     }
     if (!stream->dest_port) {
         if (cmd->user_interface) cmd->user_interface->popup("Destination Port cannot be 0.", BUTTON_OK);
-        return -7;
+        return SSRET_INVALID_PARAMETER;
     }
 
     // destination mac
@@ -204,7 +204,7 @@ int DataStreamer :: startStream(SubsysCommand *cmd)
                     stream->dest_mac[3], stream->dest_mac[4], stream->dest_mac[5]);
         } else {
             if (cmd->user_interface) cmd->user_interface->popup("Cannot find MAC of specified host.", BUTTON_OK);
-            return -8;
+            return SSRET_NETWORK_RESOLVE_ERROR;
         }
     }
     stream->enable = 1;
@@ -218,26 +218,26 @@ int DataStreamer :: startStream(SubsysCommand *cmd)
 
         if (xTimerChangePeriod(timers[streamID], stopAfter, 50) == pdTRUE) {
             if (xTimerStart(timers[streamID], 50) != pdTRUE) {
-                return -12;
+                return SSRET_INTERNAL_ERROR;
             }
             printf("Timer started to stop stream %d after %d ticks.\n", streamID, stopAfter);
 
         }
     }
 
-    return 0;
+    return SSRET_OK;
 }
 
-int DataStreamer :: stopStream(SubsysCommand *cmd)
+SubsysResultCode_e DataStreamer :: stopStream(SubsysCommand *cmd)
 {
     int streamID = cmd->mode;
     if ((streamID < 0) || (streamID > 3)) {
-        return -10;
+        return SSRET_INVALID_PARAMETER;
     }
     stream_config_t *stream = &streams[streamID];
     stream->enable = 0;
     calculate_udp_headers(streamID);
-    return 0;
+    return SSRET_OK;
 }
 
 void DataStreamer :: create_task_items()
@@ -282,7 +282,7 @@ void DataStreamer :: send_udp_packet(uint32_t ip, uint16_t port)
         return;
     }
 
-    bzero((char*)&server, sizeof(server));
+    memset((char*)&server, 0, sizeof(server));
     server.sin_family = AF_INET;
     server.sin_addr.s_addr = ip;
     server.sin_port = htons(port);

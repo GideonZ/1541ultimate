@@ -24,6 +24,10 @@
 static Screen *screen;
 static UserInterface *user_interface;
 
+#ifndef HTML_DIRECTORY
+#define HTML_DIRECTORY "/flash/html"
+#endif
+
 int calc_checksum(uint8_t *buffer, uint8_t *buffer_end)
 {
     int check = 0;
@@ -100,6 +104,20 @@ static FRESULT write_flash_file(const char *name, uint8_t *data, int length)
     if (fres != FR_OK) {
         user_interface->popup("Failed to write essentials. Abort!", BUTTON_OK);
         turn_off();
+    }
+    return fres;
+}
+
+static FRESULT write_html_file(const char *name, const char *data, int length)
+{
+    File *f;
+    uint32_t dummy;
+    FileManager *fm = FileManager :: getFileManager();
+    FRESULT fres = fm->fopen(HTML_DIRECTORY, name, FA_CREATE_NEW | FA_WRITE, &f);
+    if (fres == FR_OK) {
+        fres = f->write(data, length, &dummy);
+        console_print(screen, "Writing %s to /flash: %s\n", name, FileSystem :: get_error_string(fres));
+        fm->fclose(f);
     }
     return fres;
 }

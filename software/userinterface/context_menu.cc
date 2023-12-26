@@ -218,14 +218,14 @@ int ContextMenu :: handle_key(int c)
             break;
         case KEY_SPACE: // space
         case KEY_RETURN: // return
-            ret = select();
+            ret = select_item();
             break;
             
         case KEY_RIGHT: // cursor
             a = actions[item_index];
             // only select if it has a submenu, otherwise require enter / space
             if (a && a->getObject()) {
-                select();
+                select_item();
             }
             break;
 
@@ -318,7 +318,7 @@ void ContextMenu :: draw()
 	}
 }
 
-int ContextMenu :: select(void)
+int ContextMenu :: select_item(void)
 {
     selectedAction = actions[item_index];
     return 1;

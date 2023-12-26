@@ -16,6 +16,7 @@
 #include "keyboard_usb.h"
 #include "home_directory.h"
 #include "system_info.h"
+#include "assembly_search.h"
 
 const char *helptext=
 		"CRSR UP/DN: Selection up/down\n"
@@ -31,6 +32,9 @@ const char *helptext=
 		"\n"
 		"F2:         Enter the setup menu\n"
 		"F5:         Action menu\n"
+#ifndef RECOVERYAPP
+        "F6:         Search Assembly64 Database\n"
+#endif
 		"\n"
 		"SPACE:      Select file / directory\n"
 		"C=-A        Select all\n"
@@ -51,7 +55,7 @@ const char *helptext=
 #ifndef RECOVERYAPP
         "F4:         Show System Information\n"
 #endif
-        "F6:         Show debug log\n"
+        "C=-L:       Show debug log\n"
 		"\nRUN/STOP to close this window.";
 
 #include "stream_textlog.h"
@@ -182,12 +186,6 @@ int TreeBrowser :: poll(int sub_returned)
 	int c;
     int ret = 0;
 
-    mstring *msg = this->user_interface->getMessage();
-    if (msg) {
-        user_interface->popup(msg->c_str(), BUTTON_OK);
-        delete msg;
-    }
-
     if(contextMenu) {
         if(sub_returned < 0) {
         	delete contextMenu;
@@ -209,15 +207,30 @@ int TreeBrowser :: poll(int sub_returned)
                 const char *p = state->browser->getPath();
                 const char *filename = (b)?(b->getName()):"";
                 SubsysCommand *cmd = new SubsysCommand(user_interface, act, p, filename);
-                ret = cmd->execute();
+                SubsysResultCode_t cmd_ret = cmd->execute();
+                // if (cmd_ret.status != SSRET_OK) {
+                //     user_interface->popup(SubsysCommand::error_string(cmd_ret.status), BUTTON_OK);
+                // }
+                ret = (int)(user_interface->menu_response_to_action);
             } else {
                 printf("Action was not set in context menu!\n");
             }
             delete contextMenu;
             contextMenu = NULL;
-            state->draw();
+            if (user_interface->has_focus(this)) {
+                state->draw();
+            } else {
+                // we lost focus, apparently a new UI element is active
+                state->refresh = true; // refresh as soon as we come back
+            }
         }
         return ret;
+    }
+
+    mstring *msg = this->user_interface->getMessage();
+    if (msg) {
+        user_interface->popup(msg->c_str(), BUTTON_OK);
+        delete msg;
     }
 
     checkFileManagerEvent();
@@ -228,8 +241,7 @@ int TreeBrowser :: poll(int sub_returned)
 
     c = keyb->getch();
     if(c == -2) { // error
-        printf("Keyboard returned -2\n");
-        return -2;
+        return MENU_EXIT;
     }
     if(c >= 0) {
     	ret = handle_key(c);
@@ -373,10 +385,10 @@ int TreeBrowser :: handle_key(int c)
     
     switch(c) {
         case KEY_BREAK: // runstop
-            ret = -1;
+            ret = MENU_HIDE;
             break;
         case KEY_F8: // exit (F8)
-            ret = -1;
+            ret = MENU_EXIT;
             break;
         case KEY_DOWN: // down
         	reset_quick_seek();
@@ -417,11 +429,19 @@ int TreeBrowser :: handle_key(int c)
         case KEY_SCRLOCK:
         case KEY_F10:
         case KEY_ESCAPE:
-        	ret = -1;
+        	ret = MENU_HIDE;
         	break;
 
 #ifndef RECOVERYAPP
-        case KEY_F6: // F6 -> show log
+#ifndef U2
+        case KEY_F6:
+        	reset_quick_seek();
+        	state->refresh = true;
+            AssemblyInGui :: S_OpenSearch(user_interface);
+            break;
+#endif
+
+        case KEY_CTRL_L: // show log
         	reset_quick_seek();
         	state->refresh = true;
         	user_interface->run_editor(textLog.getText(), textLog.getLength());
@@ -434,7 +454,7 @@ int TreeBrowser :: handle_key(int c)
             }
             break;
         case KEY_SPACE: // space = select
-        	state->select();
+        	state->select_one();
         	break;
         case KEY_CTRL_A: // select all
         	state->select_all(true);

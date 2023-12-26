@@ -1,9 +1,9 @@
 ;-----------------------------------------------------------------------
-; Ultimate MUS Player V1.0 - Sidplayer for the Ultimate hardware
+; Ultimate MUS Player V1.0b - Sidplayer for the Ultimate hardware
 ;
 ; Written by Wilfred Bos - April 2019
 ;
-; Copyright (c) 2019 Wilfred Bos / Gideon Zweijtzer
+; Copyright (c) 2019-2023 Wilfred Bos / Gideon Zweijtzer
 ;
 ; Info:
 ;  Editing the source code should be done in a text editor which supports UTF-8.
@@ -62,7 +62,7 @@ ZERO_PAGE_ADDRESSES_MUS = [
                 .byte >baseCrt.startNMI
                 .byte 'C' + $80, 'B' + $80, 'M' + $80, '8', '0'   ; CBM80
 
-                .text 0, 'Ultimate MUS Player Cartridge V1.0 - Copyright (c) 2019 Wilfred Bos / Gideon Zweijtzer', 0
+                .text 0, 'Ultimate MUS Player Cartridge V1.0b - Copyright (c) 2019-2023 Wilfred Bos / Gideon Zweijtzer', 0
 
 baseCrt         .binclude 'basecrt.asm'
 
@@ -258,13 +258,14 @@ infoLoop        lda (MUS_INFO_LOCATION_LO),y
                 bcc ++
                 cmp #$c0
                 bcs ++
-                ; char is >= $60 and < $80
+                ; char is >= $80 and < $c0
 +               sec
                 sbc #$40
 +
 storeChar       and #$7f
                 ora MUS_INFO_INVERSE
                 sta (MUS_INFO_CONV_LOC_LO),y    ; store char
+
                 lda MUS_CURRENT_COLOR
                 sta (MUS_INFO_COLOR_LO),y       ; store color
 
@@ -354,6 +355,9 @@ handleNextLine  cmp #$0d                        ; next line
                 sta MUS_INFO_COLOR_LO
                 lda #$00
                 sta MUS_INFO_CONV_LOC_LO
+
+                lda #$00
+                sta MUS_INFO_INVERSE
 +               rts
 
 handleColorChar

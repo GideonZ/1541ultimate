@@ -83,7 +83,7 @@ void FileTypeTap :: readIndexFile(void)
         parseIndexFile(idxFile);
         fm->fclose(idxFile);
     } else {
-        printf("Cannot open file with song lengths.\n");
+        printf("Cannot open index file.\n");
     }
 }
 
@@ -233,19 +233,19 @@ int FileTypeTap :: getCustomBrowsables(Browsable *parentBrowsable, IndexedList<B
     return -1;
 }
 
-int FileTypeTap :: enter_st(SubsysCommand *cmd)
+SubsysResultCode_e FileTypeTap :: enter_st(SubsysCommand *cmd)
 {
     if (cmd->user_interface) {
         int ret = cmd->user_interface->enterSelection();
         if (ret < 0) {
             cmd->user_interface->popup("No Index file found", BUTTON_OK);
         }
-        return ret;
+        return SSRET_OK;
     }
-    return -1;
+    return SSRET_NO_USER_INTERFACE;
 }
 
-int FileTypeTap :: execute_st(SubsysCommand *cmd)
+SubsysResultCode_e FileTypeTap :: execute_st(SubsysCommand *cmd)
 {
 	FRESULT fres;
 	uint8_t read_buf[20];
@@ -268,16 +268,16 @@ int FileTypeTap :: execute_st(SubsysCommand *cmd)
 	fres = FileManager :: getFileManager() -> fopen(cmd->path.c_str(), fn, FA_READ, &file);
 	if(!file) {
 		cmd->user_interface->popup("Can't open TAP file.", BUTTON_OK);
-		return -1;
+		return SSRET_CANNOT_OPEN_FILE;
 	}
 	fres = file->read(read_buf, 20, &bytes_read);
 	if(fres != FR_OK) {
 		cmd->user_interface->popup("Error reading TAP file header.", BUTTON_OK);
-		return -2;
+		return SSRET_FILE_READ_FAILED;
 	}
 	if((bytes_read != 20) || (memcmp(read_buf, signature, 12))) {
 		cmd->user_interface->popup("TAP file: invalid signature.", BUTTON_OK);
-		return -3;
+		return SSRET_ERROR_IN_FILE_FORMAT;
 	}
 	pul = (uint32_t *)&read_buf[16];
 	tape_controller->set_file(file, le_to_cpu_32(*pul), int(read_buf[12]), cmd->mode); // the mode parameter holds the offset in the file
@@ -294,8 +294,6 @@ int FileTypeTap :: execute_st(SubsysCommand *cmd)
         printf("Tape emulation started.\n");
 		break;
 	case TAPFILE_RUN:
-//		c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_START_CART, (int)&sid_cart, "", "");
-//      c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DMA_LOAD, run_code, cmd->path.c_str(), cmd->filename.c_str());
         c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DRIVE_LOAD, RUNCODE_TAPE_LOAD_RUN, "A", "");
         c64_command->execute();
 		tape_controller->start(1);
@@ -313,5 +311,5 @@ int FileTypeTap :: execute_st(SubsysCommand *cmd)
     default:
 		break;
 	}
-	return 0;
+	return SSRET_OK;
 }

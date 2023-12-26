@@ -29,7 +29,6 @@ SRCS_C   =	itu.c \
             time.c \
             mdio.c \
 			riscv_main.c \
-			syscalls.c \
 			do_ctors.c \
 			malloc_lock.c \
                         

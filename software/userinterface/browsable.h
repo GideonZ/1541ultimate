@@ -10,7 +10,7 @@
 
 #include "mystring.h"
 #include "action.h"
-
+#include "small_printf.h"
 #include "indexed_list.h"
 #include "action.h"
 
@@ -62,6 +62,7 @@ public:
 	void setSelection(bool s) { selected = s; }
 	bool getSelection() { return selected; }
 	bool isSelectable() { return selectable; }
+    void allowSelectable(bool b) { selectable = b; }
 
 	virtual void fetch_context_items(IndexedList<Action *>&items) { }
 	virtual IndexedList<Browsable *> *getSubItems(int &error) { error = 0; return &children; }
@@ -71,5 +72,21 @@ public:
 	virtual void getDisplayString(char *buffer, int width, int squeeze_option) { getDisplayString(buffer, width); }
 };
 
+class BrowsableStatic : public Browsable
+{
+    const char *message;
+public:
+    BrowsableStatic(const char *msg) : message(msg) { selectable = false; }
+    ~BrowsableStatic() { }
+    const char *getName() { return message; }
+    void getDisplayString(char *buffer, int width) {
+        int len = strlen(message);
+        if (len > width) {
+            len = width;
+        }
+        int offs = (width - len) / 2;
+        sprintf(buffer, "%#s%#s", offs, "", len, message);
+    }
+};
 
 #endif /* USERINTERFACE_BROWSABLE_H_ */

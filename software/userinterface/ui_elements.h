@@ -21,8 +21,12 @@
 
 class UIObject
 {
+    bool autoCleanup;
 public:
-    UIObject() { }
+    UIObject() { autoCleanup = false; }
+    void setCleanup() { autoCleanup = true; }
+    bool needCleanup() { return autoCleanup; }
+
     virtual ~UIObject() { }
 
     virtual void init(Screen *scr, Keyboard *key) { }
@@ -65,12 +69,12 @@ public:
     int  poll(int);
 };
 
-class UIStringBox : public UIObject
+class UIStringEdit
 {
 private:
-    mstring   message;
     Window   *window;
     Keyboard *keyboard;
+    int   win_xoffs, win_yoffs;
 
     int   cur;
     int   len;
@@ -81,12 +85,27 @@ private:
     int   max_len;
     char *buffer;
 public:
+    UIStringEdit(char *buf, int max);
+    ~UIStringEdit() { }
+
+    void init(Window *win, Keyboard *keyb, int x_offs, int y_offs, int max_chars);
+    int  poll(int);
+    int  get_max_len() { return max_len; }
+};
+
+class UIStringBox : public UIObject
+{
+private:
+    mstring message;
+    UIStringEdit edit;
+    Window *window;
+public:
     UIStringBox(const char *msg, char *buf, int max);
     ~UIStringBox() { }
 
     void init(Screen *screen, Keyboard *keyb);
     void deinit(void);
-    int  poll(int);
+    int  poll(int a) { return edit.poll(a); }
 };
 
 class UIStatusBox : public UIObject

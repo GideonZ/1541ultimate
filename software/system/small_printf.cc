@@ -97,12 +97,15 @@ _my_vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, v
             width = 0;
             prepad = 0;
             postpad = 0;
-            bool nega = false;
+            // bool _nega = false;
             if (c == '-') {
-            	nega = true;
+            	// _nega = true;
             	c = *fmt++;
             }
-            if (c == '#') {
+            if (c == '.') { // no FP support
+            	c = *fmt++;
+            }
+            if ((c == '#') || (c == '*')) { // I thought I was smart to invent the # vor variable width... * already existed for this! haha!
             	width = va_arg(ap, int); // take width parameter from stack
 				c = *fmt++;
             } else {

@@ -148,7 +148,7 @@ void mask_refresh(struct data_entry *entries, int max, struct format *fmt)
 
 void dump_trace(struct data_entry *entries, int size, int lines, int text_mode, int trigger, int skip_frames, int drive_mode)
 {
-    uint32_t time = 0, drive_time = 0, cpu_time = 0;
+    uint64_t time = 0, drive_time = 0, cpu_time = 0;
 
     int   r,i,z;
     
@@ -270,7 +270,7 @@ void dump_trace(struct data_entry *entries, int size, int lines, int text_mode, 
             } else { // CPU
                 cpu_time += 1014; // PAL assumed for now
                 if (cpu_time < time+1) {
-                    fprintf(stderr, "Adjusting cpu time from %d to %d (%d)\n", cpu_time, time + 1, time - cpu_time);
+                    fprintf(stderr, "Adjusting cpu time from %ld to %ld (%ld)\n", cpu_time, time + 1, time - cpu_time);
                     cpu_time = time + 1;
                 }
                 time = cpu_time;
@@ -283,12 +283,12 @@ void dump_trace(struct data_entry *entries, int size, int lines, int text_mode, 
 
         if ((d->flags & 0x91) == 0x91) { // cpu read cycle
             if (d->addr == 0x967E) {
-                fprintf(stderr, "Read 967E at %d\n", time);
+                fprintf(stderr, "Read 967E at %ld\n", time);
             }
         }
         if ((d->flags & 0x81) == 0x80) { // cpu write cycle
             if (d->addr == 0x02B1) {
-                fprintf(stderr, "Write 02B1 at %d\n", time);
+                fprintf(stderr, "Write 02B1 at %ld\n", time);
             }
         }
 
@@ -299,7 +299,7 @@ void dump_trace(struct data_entry *entries, int size, int lines, int text_mode, 
                     break_writes++;
                     if (break_writes == 3) {
                         brk = 1;
-                        fprintf(stderr, "BREAK detected at %d\n", time);
+                        fprintf(stderr, "BREAK detected at %ld\n", time);
                     }
                 }
             }
@@ -336,7 +336,7 @@ void dump_trace(struct data_entry *entries, int size, int lines, int text_mode, 
             }
             d++;
         } else {
-            printf("#%u\n", time);
+            printf("#%lu\n", time);
             if (brk_d != brk) {
                 printf("%d&\n", brk);
                 brk_d = brk;

@@ -33,8 +33,9 @@
 #define C64_DRIVE_LOAD	    0x6465
 #define C64_DMA_LOAD_RAW	0x6466
 #define C64_DMA_BUFFER	    0x6467
-#define C64_DMA_RAW         0x6468
-#define C64_DMA_LOAD_MNT    0x6469
+#define C64_DMA_RAW_WRITE   0x6468
+#define C64_DMA_RAW_READ    0x6469
+#define C64_DMA_LOAD_MNT    0x646A
 #define C64_PUSH_BUTTON     0x6476
 #define C64_EVENT_MAX_REU   0x6477
 #define C64_EVENT_AUDIO_ON  0x6478
@@ -356,10 +357,10 @@ public:
 
     bool exists(void);
     bool is_accessible(void);
-
+    bool is_stopped(void);
+    
     void set_colors(int background, int border);
     Screen *getScreen(void);
-    void    releaseScreen(void);
     Keyboard *getKeyboard(void);
 
     int  get_cfg_value(uint8_t id)

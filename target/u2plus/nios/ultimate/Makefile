@@ -28,7 +28,13 @@ SRCS_C   =	itu.c \
             sid_coeff.c \
             nios_main.c \
             alt_malloc_lock.c \
-            alt_do_ctors.c
+            alt_do_ctors.c \
+            server.c \
+            http_protocol.c \
+            middleware.c \
+            multipart.c \
+            url.c \
+
 
 SRCS_CC	 =  u2p_init.cc \
             i2c_drv.cc \
@@ -44,6 +50,7 @@ SRCS_CC	 =  u2p_init.cc \
 			s25fl_flash.cc \
 			prog_flash.cc \
 			config.cc \
+			subsys.cc \
 			filemanager.cc \
 			file_device.cc \
 			file_partition.cc \
@@ -112,7 +119,6 @@ SRCS_CC	 =  u2p_init.cc \
 			usb_ms_cbi.cc \
 			keyboard_usb.cc \
 			network_interface.cc \
-			network_lwip.cc \
 			debug_streamer_u2p.cc \
 			vfs.cc \
 			ftpd.cc \
@@ -122,18 +128,6 @@ SRCS_CC	 =  u2p_init.cc \
 			dos.cc \
 			network_target.cc \
 			control_target.cc \
-			softiec_target.cc \
-			iec.cc \
-			iec_channel.cc \
-			iec_printer.cc \
-			mps_printer.cc \
-			mps_printer_cbm.cc \
-			mps_printer_epson.cc \
-			mps_printer_ibmgp.cc \
-			mps_printer_ibmpp.cc \
-			mps_chargen.cc \
-			mps_charset.cc \
-			mps_png.cc \
 			filetype_tap.cc \
 			socket_stream.cc \
 			socket_gui.cc \
@@ -147,7 +141,34 @@ SRCS_CC	 =  u2p_init.cc \
 			listener_socket.cc \
 			ramdisk.cc \
 			system_info.cc \
+			ult_syscalls.cc \
+			httpd.cc \
+			json.cc \
+			routes.cc \
+			route_files.cc \
+			route_drives.cc \
+			route_runners.cc \
+			route_configs.cc \
+			route_machine.cc \
+			assembly_search.cc \
+			assembly.cc \
+			filesystem_a64.cc \
 			$(PRJ).cc
+
+SRCS_CC +=  iec_interface.cc \
+			iec_drive.cc \
+			iec_channel.cc \
+			iec_printer.cc \
+			mps_printer.cc \
+			mps_printer_cbm.cc \
+			mps_printer_epson.cc \
+			mps_printer_ibmgp.cc \
+			mps_printer_ibmpp.cc \
+			mps_chargen.cc \
+			mps_charset.cc \
+			mps_png.cc \
+			iec_ulticopy.cc \
+			softiec_target.cc
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
 VPATH +=	$(PATH_SW)/portable/nios
@@ -170,7 +191,7 @@ SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas eapi.tas
 
 SRCS_BIN =  basic.bin chars.bin module.bin sidcrt.bin muscrt.bin musplayer.bin
 
-SRCS_IEC = iec_code_pr.iec iec_code_dr_pr.iec iec_code_dr.iec
+SRCS_IEC = iec_code.iec
 
 SRCS_NANO = nano_minimal.nan
 
@@ -178,7 +199,7 @@ PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -g -ffunction-sections -Os -DOS -DNIOS=1 -DCLOCK_FREQ=62500000 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
 # OPTIONS  = -g -ffunction-sections -O0 -DOS -DNIOS=1 -DCLOCK_FREQ=62500000 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
 COPTIONS = $(OPTIONS) -std=gnu99
-CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
+CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 BSP      = $(PATH_SW)/nios_appl_bsp
 LINK 	 = $(BSP)/linker.x
 LIBS2    = $(BSP)/libhal_bsp.a ../../../libs/nios2/lwip/result/liblwip.a

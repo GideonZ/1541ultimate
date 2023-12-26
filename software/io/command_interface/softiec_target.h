@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 #include "command_intf.h"
-#include "iec.h"
+#include "iec_interface.h"
 #include "iec_channel.h"
 
 #define SOFTIEC_CMD_IDENTIFY       0x01

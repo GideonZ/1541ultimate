@@ -432,11 +432,11 @@ MpsPrinter::Clear(void)
 
     if (color_mode)
     {
-        bzero (bitmap,MPS_PRINTER_BITMAP_SIZE_COLOR);
+        memset (bitmap, 0, MPS_PRINTER_BITMAP_SIZE_COLOR);
     }
     else
     {
-        bzero (bitmap,MPS_PRINTER_BITMAP_SIZE_BW);
+        memset (bitmap, 0, MPS_PRINTER_BITMAP_SIZE_BW);
     }
 
     head_x = margin_left;

@@ -32,6 +32,11 @@ architecture structural of iec_processor_io is
     signal proc_reset      : std_logic;
     signal enable          : std_logic;
 
+    signal clk_o_i         : std_logic;
+    signal data_o_i        : std_logic;
+    signal atn_o_i         : std_logic;
+    signal srq_o_i         : std_logic;
+
     -- irq
     signal irq_event       : std_logic;
     signal irq_enable      : std_logic;
@@ -49,6 +54,7 @@ architecture structural of iec_processor_io is
     signal up_fifo_dout    : std_logic_vector(8 downto 0);
     signal up_fifo_empty   : std_logic;
     signal up_fifo_full    : std_logic;
+    signal up_fifo_afull   : std_logic;
     signal up_fifo_count   : integer range 0 to 2048;
     signal down_fifo_flush : std_logic;
     signal down_fifo_empty : std_logic;
@@ -79,6 +85,7 @@ begin
         -- software fifo interface
         up_fifo_put     => up_fifo_put,
         up_fifo_din     => up_fifo_din,
+        up_fifo_afull   => up_fifo_afull,
         up_fifo_full    => up_fifo_full,
         
         down_fifo_empty => down_fifo_empty,
@@ -89,14 +96,19 @@ begin
         
         irq_event       => irq_event,
 
-        clk_o           => clk_o,
+        clk_o           => clk_o_i,
         clk_i           => clk_i,
-        data_o          => data_o,
+        data_o          => data_o_i,
         data_i          => data_i,
-        atn_o           => atn_o,
+        atn_o           => atn_o_i,
         atn_i           => atn_i,
-        srq_o           => srq_o,
+        srq_o           => srq_o_i,
         srq_i           => srq_i );
+
+    clk_o <= clk_o_i;
+    data_o <= data_o_i;
+    atn_o <= atn_o_i;
+    srq_o <= srq_o_i;
 
     i_ram: entity work.pseudo_dpram_8x32 -- little endian definition
     port map (
@@ -115,7 +127,7 @@ begin
         generic map (
             g_depth        => 2048,
             g_data_width   => 9,
-            g_threshold    => 500,
+            g_threshold    => 1535, -- at least 512 bytes free when up_fifo_afull is zero
             g_storage      => "blockram",     -- can also be "blockram" or "distributed"
             g_fall_through => true )
         port map (
@@ -131,7 +143,7 @@ begin
             flush       => proc_reset,
     
             full        => up_fifo_full,
-            almost_full => open,
+            almost_full => up_fifo_afull,
             empty       => up_fifo_empty,
             count       => up_fifo_count  );
 
@@ -186,6 +198,15 @@ begin
                         
                     when X"C" =>
                         reg_rdata <= "0000000" & irq_status;
+
+--                    when X"D" =>
+--                        reg_rdata <= srq_i & atn_i & data_i & clk_i & srq_o_i & atn_o_i & data_o_i & clk_o_i;
+--
+--                    when X"E" =>
+--                        reg_rdata <= "0000000" & instr_addr(8);
+--                    
+--                    when X"F" =>
+--                        reg_rdata <= std_logic_vector(instr_addr(7 downto 0));
 
                     when others => null;
                 end case;

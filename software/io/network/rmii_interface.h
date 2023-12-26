@@ -53,7 +53,7 @@ public:
 	~RmiiInterface();
 
 	void    input_packet(struct EthPacket *pkt);
-	uint8_t output_packet(uint8_t *buffer, int pkt_len);
+	err_t output_packet(uint8_t *buffer, int pkt_len);
     void free_buffer(uint8_t *b);
     void rx_interrupt_handler(void);
 };

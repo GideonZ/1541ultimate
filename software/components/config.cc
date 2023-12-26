@@ -24,7 +24,9 @@ extern "C" {
 }
 #include "config.h"
 #include <string.h>
+#if U64
 #include "u64.h"
+#endif
 
 /*** CONFIGURATION MANAGER ***/
 ConfigManager :: ConfigManager() : stores(16, NULL), pages(16, NULL)
@@ -69,7 +71,7 @@ ConfigManager :: ~ConfigManager()
     stores.clear_list();
 
     ConfigPage *p;
-    for(int n = 0; n < stores.get_elements();n++) {
+    for(int n = 0; n < pages.get_elements();n++) {
         p = (ConfigPage *)pages[n];
         delete p;
     }
@@ -165,6 +167,17 @@ void ConfigManager :: add_custom_store(ConfigStore *cfg)
 void ConfigManager :: remove_store(ConfigStore *cfg)
 {
     stores.remove(cfg);
+}
+
+ConfigStore *ConfigManager :: find_store(const char *storename)
+{
+    for(int i=0; i < stores.get_elements(); i++) {
+        ConfigStore *st = stores[i];
+        if (strcasecmp(st->get_store_name(), storename) == 0) {
+            return st;
+        }
+    }
+    return NULL;
 }
 
 //   ===================
@@ -265,7 +278,15 @@ int ConfigStore :: pack(uint8_t *b, int remain)
 
 void ConfigStore :: effectuate()
 {
-    printf("Calling Effectuate for %d objects.\n", objects.get_elements());
+    if (objects.get_elements() == 0) {
+        staleEffect = false;
+        return;
+    }
+    if (!staleEffect) {
+        printf("Effectuate for %s not needed; not stale.\n", get_store_name());
+        return;
+    }
+    printf("Calling Effectuate on %s for %d objects.\n", get_store_name(), objects.get_elements());
     for(int i=0; i<objects.get_elements(); i++) {
         ConfigurableObject *obj = objects[i];
         if(obj) {
@@ -351,6 +372,18 @@ ConfigItem *ConfigStore :: find_item(uint8_t id)
     for(int n = 0;n < items.get_elements(); n++) {
     	i = items[n];
         if(i->definition->id == id) {
+            return i;
+        }
+    }
+    return NULL;
+}
+
+ConfigItem *ConfigStore :: find_item(const char *str)
+{
+    ConfigItem *i;
+    for(int n = 0;n < items.get_elements(); n++) {
+    	i = items[n];
+        if(strcasecmp(i->definition->item_text, str) == 0) {
             return i;
         }
     }
@@ -489,10 +522,10 @@ ConfigItem :: ~ConfigItem()
 void ConfigItem :: reset(void)
 {
     if ((definition->type == CFG_TYPE_STRING) || (definition->type == CFG_TYPE_STRFUNC)) {
-        strncpy(string, (char *)definition->def, definition->max);
+        strncpy(string, (const char *)definition->def, definition->max);
         value = 0;
     } else {
-        value = definition->def;
+        value = (int)definition->def;
     }
 }
 

@@ -35,7 +35,7 @@ extern "C" {
 
 #ifdef U64
 #ifndef RISCV
-#include "wifi.h"
+#include "esp32.h"
 #endif
 #endif
 #include "acia.h"
@@ -92,7 +92,7 @@ void jump_run(uint32_t a)
     	;
 }
 
-int FileTypeUpdate :: execute(SubsysCommand *cmd)
+SubsysResultCode_e FileTypeUpdate :: execute(SubsysCommand *cmd)
 {
 	File *file = 0;
 	uint32_t bytes_read;
@@ -142,7 +142,7 @@ int FileTypeUpdate :: execute(SubsysCommand *cmd)
 		file = NULL;
 #if U64
 #ifndef RISCV
-		wifi.Disable();
+		esp32.Quit();
 #endif
 #endif
 #ifndef RECOVERYAPP
@@ -152,7 +152,7 @@ int FileTypeUpdate :: execute(SubsysCommand *cmd)
 	} else {
 		printf("Error opening file.\n");
         cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
-		return -1;
+		return SSRET_CANNOT_OPEN_FILE;
 	}
-	return 0;
+	return SSRET_OK;
 }
