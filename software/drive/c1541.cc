@@ -1033,12 +1033,15 @@ SubsysResultCode_e C1541 :: executeCommand(SubsysCommand *cmd)
 		break;
 	case MENU_1541_TURNON:
 	    drive_power(1);
+        cfg->set_value(CFG_C1541_POWERED, 1);
 	    break;
 	case MENU_1541_TURNOFF:
         drive_power(0);
+        cfg->set_value(CFG_C1541_POWERED, 0);
 	    break;
 	case MENU_1541_SET_MODE:
 	    returnValue = set_drive_type((t_drive_type) cmd->mode);
+        cfg->set_value(CFG_C1541_DRIVETYPE, cmd->mode % 3);
 	    break;
 	case MENU_1541_REMOVE:
         if (cmd->user_interface) {

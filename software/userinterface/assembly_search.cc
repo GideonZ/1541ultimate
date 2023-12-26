@@ -88,16 +88,16 @@ int AssemblySearch :: handle_key(int c)
 {
     int ret = 0;
     
+    if ((c == KEY_BREAK) || (c == KEY_ESCAPE)) {
+        return MENU_CLOSE; // independent of level, it closes the search.
+        // if we'd have this handled by the tree browser, it would cause a HIDE instead
+    }
     if (state->level >= 2) {
         return TreeBrowser :: handle_key(c);
     }
     switch(c) {
         case KEY_F8: // exit
             ret = MENU_EXIT;
-            break;
-        case KEY_BREAK: // runstop
-        case KEY_ESCAPE:
-            ret = MENU_CLOSE;
             break;
         case KEY_DOWN: // down
             state->down(1);
