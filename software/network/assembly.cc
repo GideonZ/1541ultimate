@@ -18,9 +18,7 @@ void url_encode(const char *src, mstring &dest)
     char pct[4] = {0};
 
     for(int i=0; i<len; i++) {
-        if (src[i] == ' ') {
-            dest += '+';
-        } else if(src[i] == '_' || src[i] == '-' || src[i] == '.' || src[i] == '*') {
+        if(src[i] == '_' || src[i] == '-' || src[i] == '.' || src[i] == '*') {
             dest += src[i];
         } else if(src[i] >= 'a' && src[i] <= 'z') {
             dest += src[i];
