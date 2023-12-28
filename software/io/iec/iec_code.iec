@@ -1,4 +1,4 @@
-# IEC processor code used when both IEC Drive and IEC Printer are enabled
+# IEC processor code
 
 Tv = 1475
 Ts = 1475
@@ -68,12 +68,13 @@ start
             JUMP atn_irq_vec # Must be at address 1
 
 CHECK_ATN_BYTE
-            SET ADDRESSED=0
             IF NOT DATABYTE IS $5F THEN _dont_untalk
+            SET ADDRESSED=1
             SET TALKER=0
             RET
 _dont_untalk
             IF NOT DATABYTE IS $3F THEN _dont_unlisten
+            SET ADDRESSED=1
             SET LISTENER=0
             RET
 _dont_unlisten
@@ -134,6 +135,8 @@ atn_irq_vec
             SET IRQ_EN=1
             SET DATA=0 # not ready to receive
             SET CLK=1  # release clock
+            SET JIFFYDOS=0      # JiffyDOS detection has to be done on each ATN
+            SET ADDRESSED=0     # no one is addressed anymore on new ATN
             WAIT FOR 20 us
             WAIT UNTIL CLK=0  
             LOAD CTRL_ATN_BEGIN
@@ -146,8 +149,8 @@ _atn_first
             # PUSHD # Addressing byte is not required, as the check function already sends a slave select
             IF NOT ADDRESSED THEN _not_for_me
 
-_atn_second
-            WAIT UNTIL NOT CLK=0,ATN=0  # Possibly forever!
+_atn_loop
+            WAIT UNTIL NOT CLK=0,ATN=0  # Incomming byte or atn end
             IF ATN THEN _atn_end # Apparently there was no byte coming.
             SET JIFFYLOAD=0
             SUB RECEIVE_ATN_BYTE 
@@ -157,9 +160,7 @@ _atn_second
             SET JIFFYLOAD=1
 _no_jd_load
             PUSHD
-            # Ignore all other ATN stuff
-            WAIT UNTIL ATN=1
-            JUMP _atn_end
+            JUMP _atn_loop
 
 _not_for_me
             SET DATA=1
@@ -482,15 +483,16 @@ _recv8bits
             WAIT UNTIL CLK=0 FOR Tv
 
             IF ATN THEN _normal_data
+            IF ADDRESSED THEN _check_jiffy	# first ATN byte already checked, don't CHECK_ATN_BYTE again
 
             # ATN is true, so we check the jiffydos signal
             # but only when we get addressed            
             SUB CHECK_ATN_BYTE # Check based on first 7 bits only!
             IF NOT ADDRESSED THEN _normal_data
 
+_check_jiffy
             WAIT UNTIL CLK=1 FOR 275 us
             IF TIMEOUT THEN _jiffy
-            SET JIFFYDOS=0
 _normal_data
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT7=DATA
