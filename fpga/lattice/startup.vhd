@@ -117,8 +117,8 @@ begin
             case state is
             when wait_ref_stable =>
                 pll_reset <= '0';
-                ref_start_reset <= '1';
-                ref_sys_reset <= '1';
+                ref_start_reset <= '0';
+                ref_sys_reset <= '0';
                 enable_clocks <= '0';
                 
                 if count(7 downto 0) = X"FF" then
@@ -127,8 +127,8 @@ begin
 
             when do_pll_reset =>
                 pll_reset <= '1';
-                ref_start_reset <= '1';
-                ref_sys_reset <= '1';
+                ref_start_reset <= '0';
+                ref_sys_reset <= '0';
                 enable_clocks <= '0';
 
                 if ((count = X"FFFFF" and not g_simulation) or 
@@ -138,8 +138,8 @@ begin
 
             when wait_pll_lock =>
                 pll_reset <= '0';
-                ref_start_reset <= '1';
-                ref_sys_reset <= '1';
+                ref_start_reset <= '0';
+                ref_sys_reset <= '0';
                 enable_clocks <= '0';
                 count <= (others => '0');
                 
@@ -149,13 +149,14 @@ begin
             
             when pll_locked_delay =>
                 pll_reset <= '0';
-                ref_start_reset <= '1';
-                ref_sys_reset <= '1';
+                ref_start_reset <= '0';
+                ref_sys_reset <= '0';
                 enable_clocks <= '0';
 
                 if ((count = X"07FFF" and not g_simulation) or
                     (count = X"0007F" and g_simulation)) then
                     state <= start_clocks;
+                    count <= (others => '0');
                 end if;
             
             when start_clocks =>
@@ -299,4 +300,3 @@ begin
 
 
 end architecture;
-    

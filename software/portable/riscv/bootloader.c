@@ -36,6 +36,12 @@ void my_puts(const char *str)
 }
 
 #define MAX_APPL_SIZE 0x140000
+#define C1541_IO_LOC_DRIVE_1 ((volatile uint8_t *)DRIVE_A_BASE)
+#define C1541_IO_LOC_DRIVE_2 ((volatile uint8_t *)DRIVE_B_BASE)
+#define DRIVE1IRQ (*(volatile uint8_t *)(DRIVE_A_BASE + 0x1806))
+#define DRIVE2IRQ (*(volatile uint8_t *)(DRIVE_B_BASE + 0x1806))
+#define C1541_POWER       0
+#define C1541_RESET       1
 
 int main()
 {
@@ -45,6 +51,25 @@ int main()
 	if (capabilities & CAPAB_SIMULATION) {
 		jump_run(0x30000);
 	}
+
+    // It is REQUIRED to pull the drive resets to zero for a moment
+    // because the primary net is buggy.
+    hexbyte(C1541_IO_LOC_DRIVE_1[C1541_RESET]);
+    hexbyte(C1541_IO_LOC_DRIVE_2[C1541_RESET]);
+    outbyte(':');
+    hexbyte(DRIVE1IRQ);
+    hexbyte(DRIVE2IRQ);
+    outbyte('^');
+    C1541_IO_LOC_DRIVE_1[C1541_RESET] = 0;
+    C1541_IO_LOC_DRIVE_2[C1541_RESET] = 0;
+    hexbyte(DRIVE1IRQ);
+    hexbyte(DRIVE2IRQ);
+    outbyte('^');
+    C1541_IO_LOC_DRIVE_1[C1541_RESET] = 7;
+    C1541_IO_LOC_DRIVE_2[C1541_RESET] = 7;
+    hexbyte(DRIVE1IRQ);
+    hexbyte(DRIVE2IRQ);
+    outbyte('^');
 
     if(capabilities) { // only TESTER has zero as capabilities. Tester doesn't have DDR2
         outbyte('#');
