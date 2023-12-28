@@ -1,0 +1,1338 @@
+<html>
+<head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<script src="https://cdn.jsdelivr.net/npm/jquery"></script>
+<script src="https://cdn.jsdelivr.net/npm/jquery.terminal/js/jquery.terminal.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jquery.terminal/css/jquery.terminal.min.css"/>
+
+<script>
+
+var serverIP = window.location.hostname;
+
+$(document).ready(function () {
+
+    $('#doreset').click(function(event){
+        event.preventDefault(); // Prevents the default action of the anchor tag
+        doReset();
+    });
+
+    async function doReset() {
+        let params = {};
+        let [status_code, content] = await make_put_request("http://" + serverIP + "/v1/machine:reset", params);
+    };
+
+    $('#doreboot').click(function(event){
+        event.preventDefault(); // Prevents the default action of the anchor tag
+        doReboot();
+    });
+
+    async function doReboot() {
+        let params = {};
+        let [status_code, content] = await make_put_request("http://" + serverIP + "/v1/machine:reboot", params);
+    };
+
+    $('#showterminal').click(function(event){
+            event.preventDefault(); // Prevents the default action of the anchor tag
+            $('#livemon').show(); // Shows the hidden div
+            $('#welcome').hide();
+            $('#sidplay').hide();
+            $("#runner").hide();
+            $("#tokenizer").hide();
+    });
+
+    $('#showwelcome').click(function(event){
+            event.preventDefault(); // Prevents the default action of the anchor tag
+            $('#livemon').hide(); // Shows the hidden div
+            $('#welcome').show();
+            $('#sidplay').hide();
+            $("#runner").hide();
+            $("#tokenizer").hide();
+    });
+
+    $('#showsidplay').click(function(event){
+            event.preventDefault(); // Prevents the default action of the anchor tag
+            $('#livemon').hide(); // Shows the hidden div
+            $('#welcome').hide();
+            $('#sidplay').show();
+            $("#runner").hide();
+            $("#tokenizer").hide();
+    });
+
+     $('#submitForm').click(function(e) {
+            e.preventDefault();
+            submitSidPlayer();
+    });
+
+    $('#showrunner').click(function(event){
+            event.preventDefault(); // Prevents the default action of the anchor tag
+            $('#livemon').hide(); // Shows the hidden div
+            $('#welcome').hide();
+            $('#sidplay').hide();
+            $("#runner").show();
+            $("#tokenizer").hide();
+    });
+
+     $('#submitRunnerForm').click(function(e) {
+            e.preventDefault();
+            submitRunner();
+    });
+
+    $('#showtokenizer').click(function(event){
+            event.preventDefault(); // Prevents the default action of the anchor tag
+            $('#livemon').hide(); // Shows the hidden div
+            $('#welcome').hide();
+            $('#sidplay').hide();
+            $("#runner").hide();
+            $("#tokenizer").show();
+    });
+
+    async function submitSidPlayer() {
+        let body = $('#file')[0].files[0];
+        let params = {};
+        let [status_code, content] = await make_post_request("http://" + serverIP + "/v1/runners:sidplay", params, body);
+
+        if(status_code !== 200) {
+            $("#sidmsg").show();
+        }
+        else
+        {
+            $("#sidmsg").hide();
+        }
+    }
+
+    async function submitRunner() {
+        let body = $('#runnerfile')[0].files[0];
+        let filename = $('#runnerfile')[0].files[0].name;
+        let parts = filename.split('.');
+        let extension = parts.length > 1 ? parts[parts.length - 1] : '';
+        extension = extension.toUpperCase();
+            console.log(extension);
+        let params = {};
+
+        if (extension === "PRG") {
+            let [status_code, content] = await make_post_request("http://" + serverIP + "/v1/runners:run_prg", params, body);
+
+            if(status_code !== 200) {
+                $("#runmsg").show();
+            }
+            else
+            {
+                $("#runmsg").hide();
+            }
+        }
+
+        if (extension === "CRT") {
+            let [status_code, content] = await make_post_request("http://" + serverIP + "/v1/runners:run_crt", params, body);
+
+            if(status_code !== 200) {
+                $("#runmsg").show();
+            }
+            else
+            {
+                $("#runmsg").hide();
+            }
+        }
+    }
+
+    $('#submitBASIC').click(function(event){
+        event.preventDefault(); // Prevents the default action of the anchor tag
+        parseBASIC();
+    });
+
+    async function parseBASIC() {
+        var textarea = $("#basiceditor").val();
+
+        // Split into lines, remove blank lines, convert to lowercase, and join back
+        var temp = textarea.split('\n')
+                                .map(line => line.trim().toLowerCase())
+                                .filter(line => line.trim().length > 0) 
+                                .join('\n');
+
+        $("#basiceditor").val(temp);
+        var lines = temp.split('\n');
+
+        const tokenized_lines = [];
+        let addr = 2049;
+
+        // Process each line
+        for(let x=0; x<lines.length; x++) {
+
+            const tokenizedLine = new TokenizedLine(lines[x].trim(), addr);
+            addr += tokenizedLine.length();
+            tokenized_lines.push(tokenizedLine)
+        }
+
+        let i = 1
+        while (i < tokenized_lines.length)
+        {
+            tokenized_lines[i - 1].next_addr = tokenized_lines[i].addr
+            i += 1;
+        }
+
+        tokenized_lines[i-1].next_addr = tokenized_lines[i-1].addr + tokenized_lines[i-1].bytes.length + 5;
+
+
+        var data = convertData(tokenized_lines);
+
+        if(basic_error !== "") {
+            $("#basicmsg").text(basic_error);
+            $("#basicmsg").show();
+        }
+        else {
+            $("#basicmsg").hide();
+
+            let params = {"address":"0801"};
+            let [status_code, content] = await make_post_request("http://" + serverIP + "/v1/machine:writemem", params, data);
+        
+            let varptr = toHex16(tokenized_lines[i-1].next_addr + 2);
+            varptr = varptr.substring(2, 4) + varptr.substring(0, 2);
+
+            params = {"address":"002d", "data": varptr };
+            [status_code, content] = await make_put_request("http://" + serverIP + "/v1/machine:writemem", params);
+        }
+
+        basic_error = "";
+    }
+
+    function getAsciiValues(str) {
+        var asciiValues = [];
+        for (var i = 0; i < str.length; i++) {
+            asciiValues.push(str.charCodeAt(i));
+        }
+        return asciiValues;
+    }
+
+    var basic_error = "";
+
+    const TOKENS = [
+        ['restore', 140],
+        ['input#', 132],
+        ['return', 142],
+        ['verify', 149],
+        ['print#', 152],
+        ['right$', 201],
+        ['input', 133],
+        ['gosub', 141],
+        ['print', 153],
+        ['close', 160],
+        ['left$', 200],
+        ['next', 130],
+        ['data', 131],
+        ['read', 135],
+        ['goto', 137],
+        ['stop', 144],
+        ['wait', 146],
+        ['load', 147],
+        ['save', 148],
+        ['poke', 151],
+        ['cont', 154],
+        ['list', 155],
+        ['open', 159],
+        ['tab(', 163],
+        ['spc(', 166],
+        ['then', 167],
+        ['step', 169],
+        ['peek', 194],
+        ['str$', 196],
+        ['chr$', 199],
+        ['mid$', 202],
+        ['end', 128],
+        ['for', 129],
+        ['dim', 134],
+        ['let', 136],
+        ['run', 138],
+        ['rem', 143],
+        ['def', 150],
+        ['clr', 156],
+        ['cmd', 157],
+        ['sys', 158],
+        ['get', 161],
+        ['new', 162],
+        ['not', 168],
+        ['and', 175],
+        ['sgn', 180],
+        ['int', 181],
+        ['abs', 182],
+        ['usr', 183],
+        ['fre', 184],
+        ['pos', 185],
+        ['sqr', 186],
+        ['rnd', 187],
+        ['log', 188],
+        ['exp', 189],
+        ['cos', 190],
+        ['sin', 191],
+        ['tan', 192],
+        ['atn', 193],
+        ['len', 195],
+        ['val', 197],
+        ['asc', 198],
+        ['if', 139],
+        ['on', 145],
+        ['to', 164],
+        ['fn', 165],
+        ['or', 176],
+        ['go', 203],
+        ['+', 170],
+        ['-', 171],
+        ['*', 172],
+        ['/', 173],
+        ['^', 174],
+        ['>', 177],
+        ['=', 178],
+        ['<', 179]
+    ];
+
+    const TOKENS_UPPERCASE = TOKENS.map(token => [token[0].toUpperCase(), token[1]]);
+
+
+    const SPECIAL = [
+        ['{rvs off}',  0x92],
+        ['{rvs on}',   0x12],
+        ['{up}',       0x91],
+        ['{down}',     0x11],
+        ['{left}',     0x9d],
+        ['{rght}',     0x1d],
+        ['{clr}',      0x93],
+        ['{clear}',    0x93],
+        ['{home}',     0x13],
+        
+        ['{blk}',      0x90],
+        ['{wht}',      0x05],
+        ['{red}',      0x1c],
+        ['{cyn}',      0x9f],
+        ['{pur}',      0x9c],
+        ['{grn}',      0x1e],
+        ['{blu}',      0x1f],
+        ['{yel}',      0x9e],
+        ['{org}',      0x81],
+        ['{brn}',      0x95],
+        ['{lred}',     0x96],
+        ['{dgry}',     0x97],
+        ['{mgry}',     0x98],
+        ['{lgrn}',     0x99],
+        ['{lblu}',     0x9a],
+        ['{lgry}',     0x9b]
+        
+        
+    ];
+
+    function asciiToPetscii(o) {
+        // Check if character code is less than or equal to '@' or is '[' or ']'
+        if (o <= '@'.charCodeAt(0) || o === '['.charCodeAt(0) || o === ']'.charCodeAt(0)) {
+            return o;
+        }
+        // Check if character code is between 'a' and 'z'
+        if (o >= 'a'.charCodeAt(0) && o <= 'z'.charCodeAt(0)) {
+            return o - 'a'.charCodeAt(0) + 0x41;
+        }
+        // Check if character code is between 'A' and 'Z'
+        if (o >= 'A'.charCodeAt(0) && o <= 'Z'.charCodeAt(0)) {
+            return o - 'A'.charCodeAt(0) + 0x61 + 0x60;
+        }
+
+        basic_error = "Error -> ..." + o + " \nUnable to convert to PETSCII value.";
+        
+    }
+
+    function scan(s, tokenize = true) {
+        if (tokenize) {
+            for (let i = 0; i < TOKENS.length; i++) {
+                let [token, value] = TOKENS[i];
+                if (s.startsWith(token)) {
+                    return [value, s.substring(token.length)];
+                }
+            }
+        }
+        if (s[0] === '{') {
+            for (let i = 0; i < SPECIAL.length; i++) {
+                let [token, value] = SPECIAL[i];
+                if (s.startsWith(token)) {
+                    return [value, s.substring(token.length)];
+                }
+            }
+            basic_error = "Error -> ..." + s + " \nInvalid code.";
+        }
+        return [asciiToPetscii(s.charCodeAt(0)), s.substring(1)];
+    }
+
+    function scanLineNumber(s) {
+        s = s.trimStart();
+        let acc = [];
+        while (s && s[0].match(/\d/)) {
+            acc.push(s[0]);
+            s = s.substring(1);
+        }
+        return [parseInt(acc.join(''), 10), s.trimStart()];
+    }
+
+    function tokenize(s) {
+        let [lineNumber, remainingString] = scanLineNumber(s);
+        let bytes = [];
+        let inQuotes = false;
+        let inRemark = false;
+
+        while (remainingString) {
+            let [byte, newString] = scan(remainingString, !(inQuotes || inRemark));
+            bytes.push(byte);
+            remainingString = newString;
+
+            if (byte === '"'.charCodeAt(0)) {
+                inQuotes = !inQuotes;
+            }
+            if (byte === 143) {
+                inRemark = true;
+            }
+        }
+
+        return [lineNumber, bytes];
+    }
+
+
+
+    class TokenizedLine {
+        constructor(s, addr) {
+            let [lineNumber, bytes] = tokenize(s); // Ensure tokenize function is defined
+            this.lineNumber = lineNumber;
+            this.bytes = bytes;
+            this.addr = addr;
+            //this.nextAddr = null;
+        }
+
+        toString() {
+            return `${this.lineNumber} @${this.addr}: ${this.bytes}`;
+        }
+
+        length() {
+            return this.bytes.length + 5;
+        }
+
+
+    }
+
+
+    function convertData(dataArray) {
+        let result = [];
+
+        dataArray.forEach(item => {
+            // Extract low and high bytes of the next address and line number
+            let nextAddrLowByte = item.next_addr & 0xFF;
+            let nextAddrHighByte = (item.next_addr >> 8) & 0xFF;
+            let lineNumberLowByte = item.lineNumber & 0xFF;
+            let lineNumberHighByte = (item.lineNumber >> 8) & 0xFF;
+
+            // Append to the result
+            result.push(nextAddrLowByte, nextAddrHighByte, lineNumberLowByte, lineNumberHighByte);
+            result.push(...item.bytes);
+            result.push(0); // Terminator
+        });
+            result.push(0);
+        result.push(0);
+        
+        return new Uint8Array(result);
+    }
+
+
+    $('#basiceditor').on('keypress', function(e) {
+            var lines = $(this).val().split('\n');
+            var cursorPosition = this.selectionStart;
+            var currentLine = 0;
+            var currentLineLength = 0;
+
+            for (var i = 0; i < lines.length; i++) {
+                currentLineLength += lines[i].length + 1; // +1 for the newline character
+                if (cursorPosition <= currentLineLength) {
+                    currentLine = i;
+                    break;
+                }
+            }
+
+            if (lines[currentLine].length >= 160 && e.which !== 8 && e.which !== 13) {
+                e.preventDefault();
+            }
+    });
+
+    function createTable() {
+            let $table = $('<table border="0"></table>');
+            
+            // Calculate the number of rows needed for 10 columns
+            let numRows = Math.ceil(SPECIAL.length / 10);
+
+            for (let row = 0; row < numRows; row++) {
+                let $row = $('<tr></tr>');
+                for (let col = 0; col < 10; col++) {
+                    let cellIndex = row * 10 + col;
+                    if (cellIndex < SPECIAL.length) {
+                        let [symbol, code] = SPECIAL[cellIndex];
+                        $row.append(`<td>${symbol}</td>`);
+                    } else {
+                        $row.append('<td></td>'); // Empty cell if no more data
+                    }
+                }
+                $table.append($row);
+            }
+
+            return $table;
+        }
+
+        $('#tableContainer').append(createTable());
+
+
+
+
+
+
+
+    $('.body').terminal({
+        help: async function() {
+
+            this.echo("Available commands (with examples):");
+            this.echo(" m - memory view ( m c000 c100 )");
+            this.echo(" h - hunt memory ( h c000 c100 4a 30 00 )");
+            this.echo(" f - fill memory ( f c000 c100 00 )");
+            this.echo(" d - disassemble ( d c000 c100 )");
+
+        },
+        m: async function(address) {
+
+            hex_num = address;
+            if (isHexadecimal(hex_num)) {
+                for (let i = 0; i < 16; i++) {
+                    let params = { 'address': hex_num, 'length': '16' };
+                    let [status_code, content] = await make_get_request("http://" + serverIP + "/v1/machine:readmem", params);
+                    
+                    if (status_code === 200) {
+                        let [hex_content, ascii_content] = format_bytes_as_hex_and_ascii(content);
+                        this.echo(`${hex_num}: ${hex_content} | ${ascii_content}`);
+                    } else {
+                        this.echo("Failed to read memory or invalid response length");
+                    }
+                    hex_num = hex_increment(hex_num, 16);
+                }
+            } else {
+                this.echo("Invalid hexadecimal number. Please enter a 16-bit hexadecimal number.");
+            }
+        },
+
+        h: async function(start, end, ...hunt) {
+
+            if(isHexadecimal(start) && isHexadecimal(end)) {
+
+                let result = areAllValuesInRange(hunt);
+                let startInt = hexToInt(start);
+                let endInt = hexToInt(end);
+
+                if(result == true) {
+                    
+                    let params = { 'address': '0', 'length': '65535' };
+                    let [status_code, content] = await make_get_request("http://" + serverIP + "/v1/machine:readmem", params);
+
+                    if (status_code === 200) {
+                        hunt = hunt.map(hex => parseInt(hex, 16));
+                        let indices = findConsecutiveValues(content, hunt, startInt, endInt)
+                        for(let x=0; x<indices.length; x++)
+                            this.echo(`${toHex16(indices[x])}`);
+                    } else {
+                        this.echo("Failed to read memory or invalid response length");
+                    }
+
+                }
+                else {
+                    this.echo("Invalid values.")
+                }
+            }
+            else {
+                this.echo("Usage: h <start addr> <end addr> <xx xx ...>");
+            }
+                
+        },
+        f: async function(start, end, byte) {
+
+            if(isHexadecimal(start) && isHexadecimal(end)) {
+
+                let startInt = hexToInt(start);
+                let endInt = hexToInt(end);
+                let hbyte = hexToInt(byte);
+                let size = (endInt - startInt) + 1;
+                
+                let body = new Uint8Array(size);
+                body.fill(hbyte);
+                    
+                let params = { 'address': start};
+                let [status_code, content] = await make_post_request("http://" + serverIP + "/v1/machine:writemem", params, body);
+
+                if (status_code !== 200) {
+                    
+                    this.echo("Failed to update memory");
+                }
+
+
+            }
+            else {
+                this.echo("Usage: f <start addr> <end addr> <xx>");
+            }
+                
+        },
+        d: async function(start, end) {
+
+            if(isHexadecimal(start) && isHexadecimal(end)) {
+
+                let size = hexToInt(end) - hexToInt(start);
+
+                let params = { 'address': start, 'length': size };
+                let [status_code, content] = await make_get_request("http://" + serverIP + "/v1/machine:readmem", params);
+
+                if (status_code === 200) {
+                        let result = disassembler(hexToInt(start), content);
+                        this.echo(result);
+                }
+
+
+            }
+            else {
+                this.echo("Usage: d <start addr> <end addr>");
+            }
+        }
+
+    }, {
+        checkArity: false,
+        greetings: 'Ultimate 64 / II+ Remote Monitor\nhelp = list of commands\n'
+    });
+
+});
+
+function isHexadecimal(str)
+{
+    hexval = false;
+    regexp = /^[0-9a-fA-F]+$/;
+  
+    if (regexp.test(str))
+        return true;
+    else
+        return false;
+
+}
+
+function toHex16(num) {
+    return num.toString(16).padStart(4, '0').toUpperCase();
+}
+
+function toHex8(num) {
+    return num.toString(16).padStart(2, '0').toUpperCase();
+}
+
+function hexToInt(hexString) {
+    return parseInt(hexString, 16);
+}
+
+function areAllValuesInRange(hexArray) {
+    for (let hex of hexArray) {
+        let value = parseInt(hex, 16); // Convert hex to decimal
+        if (value < 0 || value > 255) {
+            return false; // Value is out of range
+        }
+    }
+    return true; // All values are in range
+}
+
+function hex_increment(hex_str, increment=8) {
+    return (parseInt(hex_str, 16) + increment).toString(16).padStart(4, '0');
+}
+
+function format_bytes_as_hex_and_ascii(byteData) {
+    const hexContent = [];
+    const asciiContent = [];
+
+    for (const byte of byteData) {
+        hexContent.push(byte.toString(16).padStart(2, '0'));
+
+        // Printable ASCII characters are in the range 32 to 126
+        if (byte >= 32 && byte <= 126) {
+            asciiContent.push(String.fromCharCode(byte));
+        } else {
+            asciiContent.push('.');
+        }
+    }
+
+    return [hexContent.join(' '), asciiContent.join('')];
+}
+
+
+function findConsecutiveValues(byteArray, valuesToFind, startIndex, endIndex) {
+    const indices = [];
+    const sequenceLength = valuesToFind.length;
+
+    // Ensure start and end indices are within the array bounds
+    startIndex = Math.max(startIndex, 0);
+    endIndex = Math.min(endIndex, byteArray.length - sequenceLength);
+
+    for (let i = startIndex; i <= endIndex; i++) {
+        let match = true;
+        for (let j = 0; j < sequenceLength; j++) {
+            if (byteArray[i + j] !== valuesToFind[j]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            indices.push(i);
+        }
+    }
+
+    return indices;
+}
+
+$.ajaxTransport("+binary", function (options, originalOptions, jqXHR) {
+    // check for conditions and support for blob / arraybuffer response type
+    if (window.FormData && ((options.dataType && (options.dataType == 'binary')) ||
+         (options.data && ((window.ArrayBuffer && options.data instanceof ArrayBuffer) || 
+            (window.Blob && options.data instanceof Blob))))) {
+        return {
+            // create new XMLHttpRequest
+            send: function (headers, callback) {
+                // setup all variables
+                var xhr = new XMLHttpRequest(),
+                    url = options.url,
+                    type = options.type,
+                    async = options.async || true,
+                    // blob or arraybuffer. Default is blob
+                    dataType = options.responseType || "blob",
+                    data = options.data || null,
+                    username = options.username || null,
+                    password = options.password || null;
+
+                xhr.addEventListener('load', function () {
+                    var data = {};
+                    data[options.dataType] = xhr.response;
+                    // make callback and send data
+                    callback(xhr.status, xhr.statusText, data, xhr.getAllResponseHeaders());
+                });
+
+                xhr.open(type, url, async, username, password);
+
+                // setup custom headers
+                for (var i in headers) {
+                    xhr.setRequestHeader(i, headers[i]);
+                }
+
+                xhr.responseType = dataType;
+                xhr.send(data);
+            },
+            abort: function () {
+                jqXHR.abort();
+            }
+        };
+    }
+});
+
+
+async function make_get_request(url, params) {
+    const queryString = Object.entries(params).map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`).join('&');
+    const fullUrl = `${url}?${queryString}`;
+
+    console.log('Requesting URL:', fullUrl);
+
+    try {
+        const response = await $.ajax({
+            url: fullUrl,
+            method: 'GET',
+            dataType: 'binary',
+            responseType: 'arraybuffer',
+            processData: false
+        });
+
+       var data = new Uint8Array(response);
+
+        return [200, data];
+    } catch (error) {
+        console.error("Error fetching data:", error);
+        console.log('Error details:', {
+            textStatus: error.statusText,
+            status: error.status,
+            responseText: error.responseText
+        });
+
+        const statusCode = error && error.status ? error.status : 500;
+        return [statusCode, new Uint8Array()];
+    }
+}
+
+async function make_post_request(url, params, body) {
+    const queryString = Object.entries(params).map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`).join('&');
+    const fullUrl = `${url}?${queryString}`;
+
+    try {
+        const response = await $.ajax({
+            url: fullUrl,
+            method: 'POST',
+            contentType: 'application/octet-stream',
+            data: body,
+            processData: false
+        });
+
+        return [200, response];
+    } catch (error) {
+        console.error("Error fetching data:", error);
+        console.log('Error details:', {
+            textStatus: error.statusText,
+            status: error.status,
+            responseText: error.responseText
+        });
+        return [error.status, error.responseText];
+        //const statusCode = error && error.status ? error.status : 500;
+        //return [statusCode, response];
+    }
+}
+
+async function make_put_request(url, params) {
+    const queryString = Object.entries(params).map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`).join('&');
+    const fullUrl = `${url}?${queryString}`;
+
+    try {
+        const response = await $.ajax({
+            url: fullUrl,
+            method: 'PUT',
+            contentType: 'application/octet-stream',
+            processData: false
+        });
+
+        return [200, response];
+    } catch (error) {
+        console.error("Error fetching data:", error);
+        console.log('Error details:', {
+            textStatus: error.statusText,
+            status: error.status,
+            responseText: error.responseText
+        });
+        return [error.status, error.responseText];
+        //const statusCode = error && error.status ? error.status : 500;
+        //return [statusCode, response];
+    }
+}
+
+const opcodes = {
+	"00": {"code": "BRK", "len": 0, "addr": 0},
+	"01": {"code": "ORA", "len": 1, "addr": 11},
+	"05": {"code": "ORA", "len": 1, "addr": 3},
+	"06": {"code": "ASL", "len": 1, "addr": 3},
+	"08": {"code": "PHP", "len": 0, "addr": 0},
+	"09": {"code": "ORA", "len": 1, "addr": 2},
+	"0a": {"code": "ASL", "len": 0, "addr": 1},
+	"0d": {"code": "ORA", "len": 2, "addr": 7},
+	"0e": {"code": "ASL", "len": 2, "addr": 7},
+	"10": {"code": "BPL", "len": 1, "addr": 6},
+	"11": {"code": "ORA", "len": 1, "addr": 12},
+	"15": {"code": "ORA", "len": 1, "addr": 4},
+	"16": {"code": "ASL", "len": 1, "addr": 4},
+	"18": {"code": "CLC", "len": 0, "addr": 0},
+	"19": {"code": "ORA", "len": 2, "addr": 9},
+	"1d": {"code": "ORA", "len": 2, "addr": 8},
+	"1e": {"code": "ASL", "len": 2, "addr": 8},
+	"20": {"code": "JSR", "len": 2, "addr": 7},
+	"21": {"code": "AND", "len": 1, "addr": 11},
+	"24": {"code": "BIT", "len": 1, "addr": 3},
+	"25": {"code": "AND", "len": 1, "addr": 3},
+	"26": {"code": "ROL", "len": 1, "addr": 3},
+	"28": {"code": "PLP", "len": 0, "addr": 0},
+	"29": {"code": "AND", "len": 1, "addr": 2},
+	"2a": {"code": "ROL", "len": 0, "addr": 1},
+	"2c": {"code": "BIT", "len": 2, "addr": 7},
+	"2d": {"code": "AND", "len": 2, "addr": 7},
+	"2e": {"code": "ROL", "len": 2, "addr": 7},
+	"30": {"code": "BMI", "len": 1, "addr": 6},
+	"31": {"code": "AND", "len": 1, "addr": 12},
+	"35": {"code": "AND", "len": 1, "addr": 4},
+	"36": {"code": "ROL", "len": 1, "addr": 4},
+	"38": {"code": "SEC", "len": 0, "addr": 0},
+	"39": {"code": "AND", "len": 2, "addr": 9},
+	"3d": {"code": "AND", "len": 2, "addr": 8},
+	"3e": {"code": "ROL", "len": 2, "addr": 8},
+	"40": {"code": "RTI", "len": 0, "addr": 0},
+	"41": {"code": "EOR", "len": 1, "addr": 11},
+	"45": {"code": "EOR", "len": 1, "addr": 3},
+	"46": {"code": "LSR", "len": 1, "addr": 3},
+	"48": {"code": "PHA", "len": 0, "addr": 0},
+	"49": {"code": "EOR", "len": 1, "addr": 2},
+	"4a": {"code": "LSR", "len": 0, "addr": 1},
+	"4c": {"code": "JMP", "len": 2, "addr": 7},
+	"4d": {"code": "EOR", "len": 2, "addr": 7},
+	"4e": {"code": "LSR", "len": 2, "addr": 7},
+	"50": {"code": "BVC", "len": 1, "addr": 6},
+	"51": {"code": "EOR", "len": 1, "addr": 12},
+	"54": {"code": "EOR", "len": 1, "addr": 4},
+	"55": {"code": "LSR", "len": 1, "addr": 4},
+	"58": {"code": "CLI", "len": 0, "addr": 0},
+	"59": {"code": "EOR", "len": 2, "addr": 9},
+	"5d": {"code": "EOR", "len": 2, "addr": 8},
+	"5e": {"code": "LSR", "len": 2, "addr": 8},
+	"60": {"code": "RTS", "len": 0, "addr": 0},
+	"61": {"code": "ADC", "len": 1, "addr": 11},
+	"65": {"code": "ADC", "len": 1, "addr": 3},
+	"66": {"code": "ROR", "len": 1, "addr": 3},
+	"68": {"code": "PLA", "len": 0, "addr": 0},
+	"69": {"code": "ADC", "len": 1, "addr": 2},
+	"6a": {"code": "ROR", "len": 0, "addr": 1},
+	"6c": {"code": "JMP", "len": 2, "addr": 10},
+	"6d": {"code": "ADC", "len": 2, "addr": 7},
+	"6e": {"code": "ROR", "len": 2, "addr": 7},
+	"70": {"code": "BVS", "len": 1, "addr": 6},
+	"71": {"code": "ADC", "len": 1, "addr": 12},
+	"75": {"code": "ADC", "len": 1, "addr": 4},
+	"76": {"code": "ROR", "len": 1, "addr": 4},
+	"78": {"code": "SEI", "len": 0, "addr": 0},
+	"79": {"code": "ADC", "len": 2, "addr": 9},
+	"7d": {"code": "ADC", "len": 2, "addr": 8},
+	"7e": {"code": "ROR", "len": 2, "addr": 8},
+	"81": {"code": "STA", "len": 1, "addr": 11},
+	"84": {"code": "STY", "len": 1, "addr": 3},
+	"85": {"code": "STA", "len": 1, "addr": 3},
+	"86": {"code": "STX", "len": 1, "addr": 3},
+	"88": {"code": "DEY", "len": 0, "addr": 0},
+	"8a": {"code": "TXA", "len": 0, "addr": 0},
+	"8c": {"code": "STY", "len": 2, "addr": 7},
+	"8d": {"code": "STA", "len": 2, "addr": 7},
+	"8e": {"code": "STX", "len": 2, "addr": 7},
+	"90": {"code": "BCC", "len": 1, "addr": 6},
+	"91": {"code": "STA", "len": 1, "addr": 12},
+	"94": {"code": "STY", "len": 1, "addr": 4},
+	"95": {"code": "STA", "len": 1, "addr": 4},
+	"96": {"code": "STX", "len": 1, "addr": 5},
+	"98": {"code": "TYA", "len": 0, "addr": 0},
+	"99": {"code": "STA", "len": 2, "addr": 9},
+	"9a": {"code": "TXS", "len": 0, "addr": 0},
+	"9d": {"code": "STA", "len": 2, "addr": 8},
+	"a0": {"code": "LDY", "len": 1, "addr": 2},
+	"a1": {"code": "LDA", "len": 1, "addr": 11},
+	"a2": {"code": "LDX", "len": 1, "addr": 2},
+	"a4": {"code": "LDY", "len": 1, "addr": 3},
+	"a5": {"code": "LDA", "len": 1, "addr": 3},
+	"a6": {"code": "LDX", "len": 1, "addr": 3},
+	"a8": {"code": "TAY", "len": 0, "addr": 0},
+	"a9": {"code": "LDA", "len": 1, "addr": 2},
+	"aa": {"code": "TAX", "len": 0, "addr": 0},
+	"ac": {"code": "LDY", "len": 2, "addr": 7},
+	"ad": {"code": "LDA", "len": 2, "addr": 7},
+	"ae": {"code": "LDX", "len": 2, "addr": 7},
+	"b0": {"code": "BCS", "len": 1, "addr": 6},
+	"b1": {"code": "LDA", "len": 1, "addr": 12},
+	"b4": {"code": "LDY", "len": 1, "addr": 4},
+	"b5": {"code": "LDA", "len": 1, "addr": 4},
+	"b6": {"code": "LDX", "len": 1, "addr": 5},
+	"b8": {"code": "CLV", "len": 0, "addr": 0},
+	"b9": {"code": "LDA", "len": 2, "addr": 9},
+	"ba": {"code": "TSX", "len": 0, "addr": 0},
+	"bc": {"code": "LDY", "len": 2, "addr": 8},
+	"bd": {"code": "LDA", "len": 2, "addr": 8},
+	"be": {"code": "LDX", "len": 2, "addr": 9},
+	"c0": {"code": "CPY", "len": 1, "addr": 2},
+	"c1": {"code": "CMP", "len": 1, "addr": 11},
+	"c4": {"code": "CPY", "len": 1, "addr": 3},
+	"c5": {"code": "CMP", "len": 1, "addr": 3},
+	"c6": {"code": "DEC", "len": 1, "addr": 3},
+	"c8": {"code": "INY", "len": 0, "addr": 0},
+	"c9": {"code": "CMP", "len": 1, "addr": 2},
+	"ca": {"code": "DEX", "len": 0, "addr": 0},
+	"cc": {"code": "CPY", "len": 2, "addr": 7},
+	"cd": {"code": "CMP", "len": 2, "addr": 7},
+	"ce": {"code": "DEC", "len": 2, "addr": 7},
+	"d0": {"code": "BNE", "len": 1, "addr": 6},
+	"d1": {"code": "CMP", "len": 1, "addr": 12},
+	"d5": {"code": "CMP", "len": 1, "addr": 4},
+	"d6": {"code": "DEC", "len": 1, "addr": 4},
+	"d8": {"code": "CLD", "len": 0, "addr": 0},
+	"d9": {"code": "CMP", "len": 2, "addr": 9},
+	"dd": {"code": "CMP", "len": 2, "addr": 8},
+	"de": {"code": "DEC", "len": 2, "addr": 8},
+	"e0": {"code": "CPX", "len": 1, "addr": 2},
+	"e1": {"code": "SBC", "len": 1, "addr": 11},
+	"e4": {"code": "CPX", "len": 1, "addr": 3},
+	"e5": {"code": "SBC", "len": 1, "addr": 3},
+	"e6": {"code": "INC", "len": 1, "addr": 3},
+	"e8": {"code": "INX", "len": 0, "addr": 0},
+	"e9": {"code": "SBC", "len": 1, "addr": 2},
+	"ea": {"code": "NOP", "len": 0, "addr": 0},
+	"ec": {"code": "CPX", "len": 2, "addr": 7},
+	"ed": {"code": "SBC", "len": 2, "addr": 7},
+	"ee": {"code": "INC", "len": 2, "addr": 7},
+	"f0": {"code": "BEQ", "len": 1, "addr": 6},
+	"f1": {"code": "SBC", "len": 1, "addr": 12},
+	"f5": {"code": "SBC", "len": 1, "addr": 4},
+	"f6": {"code": "INC", "len": 1, "addr": 4},
+	"f8": {"code": "SED", "len": 0, "addr": 0},
+	"f9": {"code": "SBC", "len": 2, "addr": 9},
+	"fd": {"code": "SBC", "len": 2, "addr": 8},
+	"fe": {"code": "INC", "len": 2, "addr": 8},
+};
+
+
+function disassembler(startInt, byteArray) {
+	var result = "";
+	var instruction = "";
+	var operand = "";
+	
+	var address;
+	var instructionBytes;
+	var syntax;
+	
+	var startingAddr = 0;
+
+    hexString = Array.from(byteArray, byte => byte.toString(16).padStart(2, '0')).join('');
+	
+	for(pc = 0; pc < hexString.length;pc+=2){
+		operand = "";
+		address = "";
+		instructionBytes = "";
+		syntax = "";
+		
+		address = (pc/2).toString(16);
+		startingAddr = pc;
+		
+		if(!opcodes.hasOwnProperty(hexString.substring(pc,pc+2))){
+			instruction = {"code": "???", "len": 0, "addr": 0};
+		} else{
+			instruction = opcodes[hexString.substring(pc,pc+2)];
+		}
+		
+		//Retrieve operands (if there are any); Note: 6502 is little-endian
+		if(instruction.len > 0){
+			for(i = 0; i < instruction.len; i++){
+				pc+=2;
+				operand =  hexString.substring(pc,pc+2) + operand;
+			}
+		} else {
+			operand = hexString.substring(pc,pc+2);
+		}
+		
+		syntax += instruction.code;
+		
+		switch(instruction.addr){
+			case 0: //If Implict
+				break;
+			case 1: //If Accumulator
+				syntax += " A";
+				break;
+			case 2: //If Immediate
+				syntax += " #$" + operand;
+				break;
+			case 3: //If Zero Page
+				syntax += " $" + operand;
+				break;
+			case 4: //If Zero Page,X
+				syntax += " $" + operand + ",X";
+				break;
+			case 5: //If Zero Page,Y
+				syntax += " $" + operand + ",Y";
+				break;
+			case 6: //If Relative
+				syntax += " $" + operand;
+				break;
+			case 7: //If Absolute
+				syntax += " $" + operand;
+				break;
+			case 8: //If Absolute,X
+				syntax += " $" + operand + ",X";
+				break;
+			case 9: //If Absolute,Y
+				syntax += " $" + operand + ",Y";
+				break;
+			case 10: //If Indirect
+				syntax += " ($" + operand + ")";
+				break;
+			case 11: //If Indexed Indirect
+				syntax += " ($" + operand + ",X)";
+				break;
+			case 12: //If Indirect Indexed
+				syntax += " ($" + operand + "),Y";
+				break;
+		}
+		
+		//Pad out address to 4 bytes
+		while(address.length < 8){
+			address = "0" + address;
+		}
+		
+		//Set hexstring from for full instruction
+		instructionBytes = hexString.substring(startingAddr,pc+2);
+		
+		const paddedString = instructionBytes.padEnd(6, ' ');
+
+        // Insert spaces after every second character
+        const formattedBytes = paddedString.match(/.{1,2}/g).join(' ');
+        
+
+		result += "\n" + toHex16(hexToInt(address) + startInt) + ":" + formattedBytes + "  " + syntax
+		
+	}
+	
+	return result;
+};
+
+</script>
+
+<style>
+
+    body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+    }
+    #banner {
+        background: linear-gradient(to bottom, #0000FF, #0195c7); /* Dark blue to light blue */
+        color: white;
+        text-align: left;
+        padding: 10px;
+        font-size: 24px;
+    }
+    #content {
+        display: flex;
+        flex: 1;
+    }
+    #left-nav {
+        width: 200px;
+        background-color: #f2f2f2;
+        padding: 20px;
+    }
+    #welcome {
+        padding: 20px;
+        width: 800px;
+    }
+
+    #livemon {
+        flex-grow: 1;
+        padding: 20px;
+        display:none;
+    }
+
+    #sidplay {
+        flex-grow: 1;
+        padding: 20px;
+        display:none;
+    }
+
+    #runner {
+        flex-grow: 1;
+        padding: 20px;
+        display:none;
+    }
+
+    #tokenizer {
+        flex-grow: 1;
+        padding: 20px;
+        display:none;
+    }
+
+    #sidmsg {
+        flex-grow: 1;
+        padding: 20px;
+        display:none;
+        background-color: red;
+        color: white;
+        width: 400px;
+    }
+    #runmsg {
+        flex-grow: 1;
+        padding: 20px;
+        display:none;
+        background-color: red;
+        color: white;
+        width: 400px;
+    }
+    #basicmsg {
+        flex-grow: 1;
+        padding: 20px;
+        display:none;
+        background-color: red;
+        color: white;
+        width: 400px;
+    }
+
+    @font-face {
+            font-family: 'C64';
+            src: url('C64_Pro-STYLE.woff') format('woff'); /* Path to your C64 font file */
+        }
+
+        .c64-textarea {
+            font-family: monospace;
+            background-color: #1966be; /* Commodore 64 screen color */
+            color: #68bee6; /* Light blue text color */
+            border: none;
+            border-radius: 0;
+            padding: 10px;
+            font-size: 16px;
+            line-height: 1.5;
+            width: 900px;
+            height: 400px;
+            resize: none;
+
+        }
+
+.trinity-dialog {
+    --size: 1.4;
+    --background: black;
+    --color: rgba(160, 182, 247, 0.877);
+    border: 2px solid var(--color);
+    background: var(--background);
+    width: 800px;
+    height: 400px;
+    min-height: 100px;
+    min-width: 250px;
+    max-width: calc(100vw - 40px);
+    max-height: calc(100vh - 40px);
+    z-index: 100;
+    resize: both;
+    overflow: auto;
+}
+.trinity-dialog .body {
+    width: 100%;
+    height: calc(100% - 28px);
+}
+.trinity-dialog, .trinity-dialog header .title {
+    position: relative;
+    left: 420px;
+    top: 200px;
+    transform: translate(-50%, -50%);
+}
+.trinity-dialog header .title {
+    margin-top: -2px;
+    background: var(--color);
+    padding: 1px 10px;
+}
+.trinity-dialog header {
+    background: var(--color);
+    position: relative;
+}
+.trinity-dialog header::before {
+    content: "";
+    display: block;
+    position: absolute;
+    left: 55px;
+    top: 5px;
+    right: 10px;
+    width: calc(100% - 55px - 5px);
+    height: 15px;
+    background: #251180;
+}
+.trinity-dialog header .title::before {
+    content: "[ ";
+}
+.trinity-dialog header .title::after {
+    content: " ]";
+}
+.trinity-dialog header ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: inline-block;
+}
+.trinity-dialog header li {
+    display: inline-block;
+    margin: 3px;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--background);
+}
+
+</style>
+
+
+
+</head>
+<body>
+    <div id="banner">Ultimate 64 HTTP Server</div>
+
+    <div id="content">
+        <div id="left-nav">
+            <ul>
+                <li><a id="showwelcome" href="#">Home</a></li>
+                <li><a id="showsidplay" href="#">SidPlayer</a></li>
+                <li><a id="showrunner" href="#">Execute PRG / CRT</a></li>
+                <li><a id="showterminal"  href="#">Live Monitor</a></li>
+                <li><a id="showtokenizer"  href="#">BASIC Editor</a></li>
+            </ul>
+            <ul>
+                <li><a id="doreset" href="#">Reset Machine</a></li>
+                <li><a id="doreboot" href="#">Reboot Machine</a></li>
+            </ul>
+            <ul>
+                <li><a href="https://1541u-documentation.readthedocs.io/en/latest/api/api_calls.html" target="_blank">API Documentation</a></li>
+                <li><a href="https://ultimate64.com/Firmware" target="_blank">Firmware Releases</a></li>
+            </ul>
+        </div>
+        <div id="welcome">
+            <h1>Welcome to your Ultimate 64!</h1>
+            <p>This site serves as the dedicated web server 
+                for the Ultimate 64 and Ultimate cartridge systems. It offers a comprehensive suite of APIs, designed to 
+                enable the development of advanced integrations and remote access to your system.</p>
+            <p>You can find out more by visiting the official <a href="https://ultimate64.com/" target="_blank"> Ultimate 64 website</a>,
+                or by joining our <a href="https://www.facebook.com/groups/ultimate64" target="_blank">Facebook group</a>.
+            </p>
+            <p>
+                Thank you for joining and contributing to the Ultimate family of products.
+            </p>
+            <p>Gideon Z.</p>
+        </div>
+
+        <div id="sidplay">
+            <h1>Sidplayer</h1>
+            <p>Use the form below to select and remotely play a sid file.</p>
+
+            <input type="file" id="file" name="file">
+            <br />
+            <br />
+            <input type="button" id="submitForm" value="Play!">
+
+            <div id="sidmsg">An error has occurred when playing the selected file.</div>
+
+        </div>
+
+        <div id="runner">
+            <h1>PRG / CRT Executor</h1>
+            <p>Use the form below to select a PRG or CRT file.</p>
+
+            <input type="file" id="runnerfile" name="file">
+            <br />
+            <br />
+            <input type="button" id="submitRunnerForm" value="RUN!">
+
+            <div id="runmsg">An error has occurred when loading the selected file.</div>
+
+        </div>
+
+        <div id="livemon">
+            <h1>Live Monitor</h1>
+            <p>Below is a simple 6510 monitor attached to your U64 or UII+.</p>
+            <div id="terminal" class="trinity-dialog">
+                <header>
+                    <ul>
+                        <li><a href="#"></a></li>
+                        <li><a href="#"></a></li>
+                    </ul>
+                    <span class="title">Ultimate 64</span>
+                </header>
+                <div class="body"></div>
+            </div>
+        </div>
+
+        <div id="tokenizer">
+            <h1>BASIC Tokenizer / Editor</h1>
+            <p>Here, you may enter a BASIC program, and upload it directly to your machine.</p>
+            <p><b>Special characters:</b></p>
+            <div id="tableContainer"></div>
+
+            <textarea id="basiceditor" class="c64-textarea" cols="80">
+10 print "hello world"
+20 goto 10
+            </textarea>
+            <p><input type="button" id="submitBASIC" value="Upload"></p>
+
+            <div id="basicmsg">An error has occurred. Check for valid codes.</div>
+            
+
+        </div>
+
+        
+</body>
+</html>
