@@ -25,6 +25,8 @@ extern uint8_t _1581_bin_start;
 extern uint8_t _snds1541_bin_start;
 extern uint8_t _snds1571_bin_start;
 extern uint8_t _snds1581_bin_start;
+extern const char _index_html_start[];
+extern const char _index_html_end[1];
 
 void do_update(void)
 {
@@ -59,12 +61,14 @@ void do_update(void)
         clear_field();
         create_dir(ROMS_DIRECTORY);
         create_dir(CARTS_DIRECTORY);
+        create_dir(HTML_DIRECTORY);
         write_flash_file("1581.rom", &_1581_bin_start, 0x8000);
         write_flash_file("1571.rom", &_1571_bin_start, 0x8000);
         write_flash_file("1541.rom", &_1541_bin_start, 0x4000);
         write_flash_file("snds1541.bin", &_snds1541_bin_start, 0xC000);
         write_flash_file("snds1571.bin", &_snds1571_bin_start, 0xC000);
         write_flash_file("snds1581.bin", &_snds1581_bin_start, 0xC000);
+        write_html_file("index.html", _index_html_start, (int)_index_html_end - (int)_index_html_start);
 
         Flash *flash2 = get_flash();
         flash2->protect_disable();

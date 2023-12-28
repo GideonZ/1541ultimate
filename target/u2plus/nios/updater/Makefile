@@ -78,6 +78,7 @@ VPATH +=	$(PATH_SW)/nios_appl_bsp
 VPATH +=	$(PATH_SW)/nios_appl_bsp/HAL/inc
 VPATH +=	$(PATH_SW)/nios_appl_bsp/drivers/inc
 VPATH +=    $(PATH_SW)/application/update_u2p
+VPATH +=    $(PATH_SW)/../html
 VPATH +=    ../../../fpga/u2plus_recovery/output_files
 VPATH +=    ../../../fpga/u2plus_run/output_files
 VPATH +=    ../recovery/result
@@ -90,6 +91,8 @@ SRCS_ASMS = port_asm.S
 SRCS_6502 = 
 
 SRCS_BIN =  chars.bin 1541.bin 1571.bin 1581.bin snds1541.bin snds1571.bin snds1581.bin
+
+SRCS_HTML = index.html
 
 SRCS_IEC = 
 
