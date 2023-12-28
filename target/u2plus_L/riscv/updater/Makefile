@@ -82,6 +82,7 @@ VPATH +=	$(PATH_SW)/../neorv32/sw/common
 VPATH +=	$(PATH_SW)/../neorv32/sw/lib/include
 VPATH +=	$(PATH_SW)/../neorv32/sw/lib/source
 VPATH +=    $(PATH_SW)/application/update_u2pl
+VPATH +=    $(PATH_SW)/../html
 VPATH +=    ../../../fpga/u2plus_ecp5/impl1
 VPATH +=    ../ultimate/result
 
@@ -92,6 +93,8 @@ SRCS_ASMS = crt0.S port_asm.S
 SRCS_6502 = 
 
 SRCS_BIN =  chars.bin 1541.bin 1571.bin 1581.bin snds1541.bin snds1571.bin snds1581.bin
+
+SRCS_HTML = index.html
 
 SRCS_IEC = 
 
