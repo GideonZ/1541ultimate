@@ -60,8 +60,6 @@ private:
     void peel_off(void);
     bool buttonDownFor(uint32_t ms);
     void run_editor(Editor *);
-
-    UIStatusBox *status_box;
 public:
     int color_border, color_bg, color_fg, color_sel, color_sel_bg, config_save, filename_overflow_squeeze;
 

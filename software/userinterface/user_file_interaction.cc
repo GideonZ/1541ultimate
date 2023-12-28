@@ -171,7 +171,7 @@ SubsysResultCode_e UserFileInteraction::S_hex_view(SubsysCommand *cmd)
     return _view(cmd, HEX_EDITOR);
 }
 
-int UserFileInteraction::S_createDir(SubsysCommand *cmd)
+SubsysResultCode_e UserFileInteraction::S_createDir(SubsysCommand *cmd)
 {
     char buffer[64];
     buffer[0] = 0;
