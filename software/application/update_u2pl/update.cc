@@ -20,26 +20,8 @@ extern uint8_t _1581_bin_start;
 extern uint8_t _snds1541_bin_start;
 extern uint8_t _snds1571_bin_start;
 extern uint8_t _snds1581_bin_start;
-
-const char *sample_html = 
-"<html>\n"
-"<head>\n"
-"<meta http-equiv=\"content-type\" content=\"text/html; charset=UTF-8\">\n"
-"</head>\n"
-"<body>\n"
-"<h1>Welcome to your Ultimate 64!</h1>\n"
-"<p>This is a sample page to show the operation of the built-in web server.</p>\n"
-"<p>This web server can serve files, but also provides an API, through the route <tt>/v1</tt>.</p>\n"
-"<p>More information about this API can be found in the <a href=\"https://1541u-documentation.readthedocs.io/en/latest/\">documentation</a>.</p>\n"
-"<p>Try here to load a SID file through this simple form:</p>\n"
-"<form action=\"/v1/runners:sidplay\" method=\"POST\" enctype=\"multipart/form-data\">\n"
-"    <input type=\"file\" id=\"myFile2\" name=\"bestand\" multiple>\n"
-"    <input type=\"submit\" value=\"Send SID file to API\">\n"
-"</form>\n"
-"\n"
-"</body>\n"
-"</html>\n"
-;
+extern const char _index_html_start[];
+extern const char _index_html_end[1];
 
 void do_update(void)
 {
@@ -60,7 +42,7 @@ void do_update(void)
         write_flash_file("snds1541.bin", &_snds1541_bin_start, 0xC000);
         write_flash_file("snds1571.bin", &_snds1571_bin_start, 0xC000);
         write_flash_file("snds1581.bin", &_snds1581_bin_start, 0xC000);
-        write_html_file("index.html", sample_html, strlen(sample_html));
+        write_html_file("index.html", _index_html_start, (int)_index_html_end - (int)_index_html_start);
 
         flash_buffer(flash2, screen, FLASH_ID_BOOTFPGA, &_u2p_ecp5_impl1_bit_start, &_u2p_ecp5_impl1_bit_end, "", "Runtime FPGA");
         flash_buffer(flash2, screen, FLASH_ID_APPL,     &_ultimate_app_start,     &_ultimate_app_end,  APPL_VERSION, "Ultimate Application");

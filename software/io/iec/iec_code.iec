@@ -163,6 +163,9 @@ _no_jd_load
             JUMP _atn_loop
 
 _not_for_me
+            # Data was set to 0, to ack the byte. The ack is valid,
+            # so we need to wait for minimum pulse width for the ack.
+            WAIT FOR 100 us
             SET DATA=1
             SET CLK=1
             WAIT UNTIL ATN=1

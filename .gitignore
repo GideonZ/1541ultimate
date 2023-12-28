@@ -6,6 +6,8 @@
 **/*.u64
 **/*.u2u
 **/*.u2p
+**/*.u2r
+**/*.u2l
 **/*.pyc
 **/*.xrpt
 **/_xmsgs
@@ -67,7 +69,7 @@ target/fpga/**/*.rv*
 target/fpga/**/readback
 target/fpga/boot400
 target/fpga/boot700
-target/fpga/rv700/rv700dd
+target/fpga/rv700dd/rv700dd
 target/fpga/lx16
 target/fpga/testdut/*.hex
 target/fpga/testdut/*.sopcinfo
@@ -277,4 +279,6 @@ tools/64tass/*.o
 .vscode
 .idea
 python/grab*
+fpga/cpu_unit/rvlite/vhdl_source/bootrom_pkg_u2.vhd
+fpga/cpu_unit/rvlite/vhdl_source/bootrom_pkg_u2_loader.vhd
 

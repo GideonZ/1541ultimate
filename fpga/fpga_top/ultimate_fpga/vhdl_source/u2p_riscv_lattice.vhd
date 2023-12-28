@@ -70,8 +70,8 @@ port (
 
     -- JTAG on-chip debugger interface (available if ON_CHIP_DEBUGGER_EN = true) --
     DEBUG_TRSTn : in    std_ulogic := '0'; -- low-active TAP reset (optional)
-    DEBUG_TCK   : in    std_ulogic := '0'; -- serial clock
-    DEBUG_TMS   : in    std_ulogic := '1'; -- mode select
+    DEBUG_TCK   : out   std_ulogic;-- := '0'; -- serial clock
+    DEBUG_TMS   : out   std_ulogic;-- := '1'; -- mode select
     DEBUG_TDI   : in    std_ulogic := '1'; -- serial data input
     DEBUG_TDO   : out   std_ulogic;        -- serial data output
     DEBUG_SPARE : out   std_ulogic := '0';
@@ -1015,9 +1015,13 @@ begin
     -- SLOT_DATA_OEn    <= '1';
     -- SLOT_DATA_DIR    <= '1';
     SLOT_ADDR_OEn    <= toggle;
-    SLOT_ADDR_DIR    <= DEBUG_TRSTn and DEBUG_TDI and DEBUG_TMS and DEBUG_TCK and RMII_RX_ER and UART_RXD and SLOT_DOTCLK and IEC_RESET_I and CAS_SENSE and CAS_MOTOR when rising_edge(CLOCK_50);
+    SLOT_ADDR_DIR    <= DEBUG_TRSTn and DEBUG_TDI and RMII_RX_ER and UART_RXD and SLOT_DOTCLK and IEC_RESET_I and CAS_SENSE and CAS_MOTOR when rising_edge(CLOCK_50);
     toggle <= not toggle when rising_edge(sys_clock);
-    DEBUG_SPARE      <= '0';
-    flash_sck_t      <= sys_reset; -- 0 when not in reset = enabled
+    DEBUG_SPARE      <= sys_reset when rising_edge(sys_clock);
+    flash_sck_t      <= audio_reset; -- sys_reset when falling_edge(sys_clock); -- 0 when not in reset = enabled
 
+    -- Convenient debug pins
+    DEBUG_TDO <= '0';
+    DEBUG_TMS <= '0';
+    DEBUG_TCK <= '0';
 end architecture;

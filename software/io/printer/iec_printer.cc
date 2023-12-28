@@ -1124,10 +1124,10 @@ int IecPrinter::close_file(void) // file should be open
 *        the bus. We can add custom properties here.                    *
 *                                                                       *
 ************************************************************************/
-void IecPrinter :: info(JSON_Object *j)
+void IecPrinter :: info(JSON_Object *_j)
 {
     // Add JSON entries to the object
-    j->add("test", false);
+    // j->add("test", false);
 }
 
 /************************************************************************
@@ -1141,10 +1141,10 @@ void IecPrinter :: info(JSON_Object *j)
 *          Indent should be 4.                                          *
 *                                                                       *
 ************************************************************************/
-void IecPrinter :: info(StreamTextLog& log)
+void IecPrinter :: info(StreamTextLog& _log)
 {
     // BusID and Enable have already been printed, so we can simply print more info about charset etc.
-    log.format("    TestInfo from Printer.\n");
+    // log.format("    TestInfo from Printer.\n");
 }
 
 /****************************  END OF FILE  ****************************/
