@@ -1792,7 +1792,7 @@ int U64Config :: S_SidDetector(int &sid1, int &sid2)
 int swap_joystick()
 {
     if (!isEliteBoard()) {
-        return 0;
+        return MENU_NOP;
     }
 
     ConfigItem *item = u64_configurator.cfg->find_item(CFG_JOYSWAP);
@@ -1805,7 +1805,7 @@ int swap_joystick()
     printf("*S%d*", swap);
 
     // swap performed, now exit menu
-    return -1;
+    return MENU_HIDE;
 }
 
 bool isEliteBoard(void)
