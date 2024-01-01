@@ -178,12 +178,12 @@ void UltiCopy :: start_warp(int drive)
     printf("Starting IEC Warp Mode.\n");
     C64_POKE(0xDD00,0x07); // make sure the C64 that might be connected does not interfere
     // make sure that our local drives are turned off as well
-    // if (c1541_A) {
-    //     c1541_A->drive_power(false);
-    // }
-    // if (c1541_B) {
-    //     c1541_B->drive_power(false);
-    // }
+    if (c1541_A) {
+        c1541_A->drive_power(false);
+    }
+    if (c1541_B) {
+        c1541_B->drive_power(false);
+    }
 
     ui_window = new UltiCopyWindow();
     ui_window->init(cmd_ui->screen, cmd_ui->keyboard);
