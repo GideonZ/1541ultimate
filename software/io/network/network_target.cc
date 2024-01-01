@@ -27,8 +27,8 @@ Message c_status_internal_error      = { 17, true, (uint8_t *)"86,INTERNAL ERROR
 NetworkTarget::NetworkTarget(int id)
 {
     command_targets[id] = this;
-    data_message.message = new uint8_t[512];
-    status_message.message = new uint8_t[80];
+    data_message.message = new uint8_t[CMD_MAX_REPLY_LEN];
+    status_message.message = new uint8_t[CMD_MAX_STATUS_LEN];
 }
 
 NetworkTarget::~NetworkTarget()
@@ -236,6 +236,12 @@ void NetworkTarget :: read_socket(Message *command, Message **reply, Message **s
 {
 	uint8_t socketnr = command->message[2];
 	uint32_t length = ((uint32_t)command->message[3]) | (((uint32_t)command->message[4]) << 8);
+
+    if (length > (CMD_MAX_REPLY_LEN-2)) {
+        *status = &c_status_param_out_of_range;
+        *reply = &c_message_empty;
+        return;
+    }
 
     *reply = &data_message;
 	int ret = lwip_recv(socketnr, &data_message.message[2], length, 0);
