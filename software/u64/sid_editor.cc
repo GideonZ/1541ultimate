@@ -66,7 +66,7 @@ int SidEditor :: poll(int)
     int c = keyb->getch();
 
     if(c == -2) { // error
-        return -2;
+        return MENU_EXIT;
     }
     if(c >= 0) {
         ret = handle_key(c);
@@ -308,7 +308,7 @@ int SidEditor :: handle_key(int c)
     case KEY_F8:
     case KEY_BREAK:
     case KEY_BACK:
-        return -2;
+        return MENU_CLOSE;
 
     default:
         break;
