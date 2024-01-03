@@ -30,6 +30,7 @@
 
 #ifndef NOT_ULTIMATE
 #include "iec_printer.h"    /* Only to handle progression bar while printing */
+#include "FreeRTOS.h"
 #endif /* NOT_ULTIMATE */
 
 /*******************************  Constants  ****************************/
@@ -1868,6 +1869,7 @@ static unsigned lodepng_deflatev(ucvector* out, const unsigned char* in, size_t 
             error = deflateDynamic(&writer, &hash, in, start, end, settings, final);
 #ifndef NOT_ULTIMATE
             iec_printer->updateFlushProgressBar();
+            vTaskDelay(2);    // Force task switch and prevent holding CPU for too long
 #endif /* NOT_ULTIMATE */
         }
     }
