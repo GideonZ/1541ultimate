@@ -191,6 +191,7 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/cart_slot_registers.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/slot_timing.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/slot_slave.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/slot_trace.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/slot_master_v4.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/slot_server_v4.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/freezer.vhd \

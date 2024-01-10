@@ -52,6 +52,7 @@ generic (
     g_usb_host2     : boolean := true;
     g_spi_flash     : boolean := true;
     g_vic_copper    : boolean := false;
+    g_measure_timing: boolean := true;
     g_sampler       : boolean := true;
     g_rmii          : boolean := false;
     g_sdcard        : boolean := false;
@@ -284,7 +285,7 @@ architecture logic of ultimate_logic_32 is
         cap(03) := to_std(g_drive_sound);
         cap(04) := to_std(g_hardware_gcr);
         cap(05) := to_std(g_hardware_iec);
-        cap(06) := '0'; -- unused
+        cap(06) := to_std(g_measure_timing);
         cap(07) := to_std(g_c2n_streamer);
         cap(08) := to_std(g_c2n_recorder);
         cap(09) := to_std(g_cartridge);
@@ -845,6 +846,7 @@ begin
             g_implement_sid => g_stereo_sid,
             g_sid_voices    => 16,
             g_8voices       => g_8voices,
+            g_measure_timing=> g_measure_timing,
             g_vic_copper    => g_vic_copper )
         port map (
             clock           => sys_clock,
@@ -854,7 +856,7 @@ begin
             VCC             => VCC,
 
             phi2_i          => phi2_i,
-
+            dotclk_i        => dotclk_i,
             rstn_i          => rstn_i,
             rstn_o          => rstn_o,
                        

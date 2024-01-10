@@ -491,6 +491,7 @@ set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/reu.vh
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_master_v4.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_server_v4.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_slave.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_trace.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_timing.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_measure.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/devices/vhdl_source/microwire_eeprom.vhd

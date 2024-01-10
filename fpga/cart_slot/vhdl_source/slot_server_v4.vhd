@@ -36,6 +36,7 @@ generic (
     g_implement_sid : boolean := true;
     g_sid_voices    : natural := 3;
     g_8voices       : boolean := false;
+    g_measure_timing: boolean := false;
     g_vic_copper    : boolean := false );
 
 port (
@@ -45,6 +46,7 @@ port (
     -- Cartridge pins
     VCC             : in    std_logic := '1';
 
+    dotclk_i        : in    std_logic;
     phi2_i          : in    std_logic;
     io1n_i          : in    std_logic;
     io2n_i          : in    std_logic;
@@ -127,6 +129,7 @@ end slot_server_v4;
 
 architecture structural of slot_server_v4 is
     -- Synchronized input signals
+    signal dotclk_c        : std_logic;
     signal phi2_c          : std_logic;
     signal io1n_c          : std_logic;
     signal io2n_c          : std_logic;
@@ -144,6 +147,7 @@ architecture structural of slot_server_v4 is
 
     -- Xilinx attributes
     attribute register_duplication : string;
+    attribute register_duplication of dotclk_c    : signal is "no";
     attribute register_duplication of phi2_c      : signal is "no";
     attribute register_duplication of io1n_c      : signal is "no";
     attribute register_duplication of io2n_c      : signal is "no";
@@ -161,6 +165,7 @@ architecture structural of slot_server_v4 is
 
     -- Lattice attributes
     attribute syn_replicate                     : boolean;
+    attribute syn_replicate of dotclk_c         : signal is false;
     attribute syn_replicate of phi2_c           : signal is false;
     attribute syn_replicate of io1n_c           : signal is false;
     attribute syn_replicate of io2n_c           : signal is false;
@@ -178,6 +183,7 @@ architecture structural of slot_server_v4 is
 
     -- Altera attributes
     attribute dont_replicate                    : boolean;
+    attribute dont_replicate of dotclk_c        : signal is true;
     attribute dont_replicate of phi2_c          : signal is true;
     attribute dont_replicate of io1n_c          : signal is true;
     attribute dont_replicate of io2n_c          : signal is true;
@@ -234,6 +240,8 @@ architecture structural of slot_server_v4 is
 
     -- timing measurement
     signal measure_data    : std_logic_vector(7 downto 0) := X"FF";
+    signal timing_data     : std_logic_vector(31 downto 0);
+    signal timing_trigger  : std_logic;
 
     -- kernal replacement logic
     signal kernal_area     : std_logic := '0';
@@ -319,6 +327,7 @@ architecture structural of slot_server_v4 is
     signal phi2_tick_avail  : std_logic;
 begin
     b_sync: block
+        signal dotclk_f        : std_logic;
         signal phi2_f          : std_logic;
         signal io1n_f          : std_logic;
         signal io2n_f          : std_logic;
@@ -335,6 +344,7 @@ begin
         signal nmin_f          : std_logic := '1';
 
         -- Xilinx attributes
+        attribute register_duplication of dotclk_f    : signal is "no";
         attribute register_duplication of phi2_f      : signal is "no";
         attribute register_duplication of io1n_f      : signal is "no";
         attribute register_duplication of io2n_f      : signal is "no";
@@ -351,6 +361,7 @@ begin
         attribute register_duplication of nmin_f      : signal is "no";
 
         -- Lattice attributes
+        attribute syn_replicate of dotclk_f         : signal is false;
         attribute syn_replicate of phi2_f           : signal is false;
         attribute syn_replicate of io1n_f           : signal is false;
         attribute syn_replicate of io2n_f           : signal is false;
@@ -367,6 +378,7 @@ begin
         attribute syn_replicate of nmin_f           : signal is false;
 
         -- Altera attributes
+        attribute dont_replicate of dotclk_f        : signal is true;
         attribute dont_replicate of phi2_f          : signal is true;
         attribute dont_replicate of io1n_f          : signal is true;
         attribute dont_replicate of io2n_f          : signal is true;
@@ -386,6 +398,7 @@ begin
         process(clock)
         begin
             if falling_edge(clock) then
+                dotclk_f    <= dotclk_i;
                 phi2_f      <= phi2_i;
                 io1n_f      <= io1n_i;
                 io2n_f      <= io2n_i;
@@ -403,6 +416,7 @@ begin
             end if;
 
             if rising_edge(clock) then
+                dotclk_c    <= dotclk_f;
                 phi2_c      <= phi2_f;
                 io1n_c      <= io1n_f;
                 io2n_c      <= io2n_f;
@@ -546,6 +560,17 @@ begin
     mem_req_32_slot.byte_en <= "1000" when g_big_endian else "0001";
     mem_rack_slot <= '1' when mem_resp_32_slot.rack_tag = g_tag_slot else '0';
     mem_dack_slot <= '1' when mem_resp_32_slot.dack_tag = g_tag_slot else '0';
+
+    timing_data(31) <= dotclk_c;
+    timing_data(30) <= phi2_c;
+    timing_data(29) <= phi2_recovered;
+    timing_data(28) <= dma_data_out;
+    timing_data(27) <= slave_dtri or master_dtri;
+    timing_data(26) <= address_tri_l; 
+    timing_data(25) <= address_tri_h;
+    timing_data(24) <= rwn_c;
+    timing_data(23 downto 16) <= slot_data_c;
+    timing_data(15 downto 0)  <= std_logic_vector(slot_addr_c);
 
     i_slave: entity work.slot_slave
     generic map (
@@ -877,6 +902,31 @@ begin
             slot_req    => slot_req,
             slot_resp   => open ); -- never required, just snoop!
 
+    end generate;
+
+    r_timing_measure: if g_measure_timing generate
+        i_trace: entity work.slot_trace
+        port map (
+            clock   => clock,
+            reset   => reset,
+            data_in => timing_data,
+            trigger => control.timing_trigger,
+            io_req  => io_req_copper,
+            io_resp => io_resp_copper
+        );
+    end generate;
+
+    assert not (g_measure_timing and g_vic_copper)
+        report "Timing measure module and copper cannot be enabled at the same time"
+        severity failure;
+
+    r_neither: if not g_measure_timing and not g_vic_copper generate
+        io_dummy_inst: entity work.io_dummy
+        port map (
+            clock   => clock,
+            io_req  => io_req_copper,
+            io_resp => io_resp_copper
+        );
     end generate;
 
     r_sampler: if g_sampler generate

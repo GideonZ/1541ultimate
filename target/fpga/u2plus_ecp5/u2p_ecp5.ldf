@@ -278,6 +278,9 @@
         <Source name="../../../fpga/cart_slot/vhdl_source/slot_slave.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
+        <Source name="../../../fpga/cart_slot/vhdl_source/slot_trace.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
         <Source name="../../../fpga/cart_slot/vhdl_source/slot_timing.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
