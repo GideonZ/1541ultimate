@@ -485,14 +485,12 @@ _recv8bits
             WAIT UNTIL CLK=0 FOR Tv
 
             IF ATN THEN _normal_data
-            IF ADDRESSED THEN _normal_data	# first ATN byte already checked, don't CHECK_ATN_BYTE or _check_jiffy again
+            IF ADDRESSED THEN _normal_data	# first ATN byte already checked, don't CHECK_ATN_BYTE or ack jiffy again
 
             # ATN is true, so we check the jiffydos signal
             # but only when we get addressed            
             SUB CHECK_ATN_BYTE # Check based on first 7 bits only!
             IF NOT ADDRESSED THEN _normal_data
-
-_check_jiffy
             WAIT UNTIL CLK=1 FOR 218 us
             IF TIMEOUT THEN _jiffy
 _normal_data
