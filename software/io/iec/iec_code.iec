@@ -163,9 +163,6 @@ _no_jd_load
             JUMP _atn_loop
 
 _not_for_me
-            # Data was set to 0, to ack the byte. The ack is valid,
-            # so we need to wait for minimum pulse width for the ack.
-            WAIT FOR 100 us
             SET DATA=1
             SET CLK=1
             WAIT UNTIL ATN=1
@@ -386,17 +383,15 @@ RELEASE
             JUMP reset_vec
 
 JIFFY_RX
-            SET IRQ_EN=0
-_wait2
-            IF UPFIFOFULL THEN _wait2
-            SET DATA=1
-            WAIT UNTIL NOT CLK=0,ATN=1 # Possibly for a long time
-            IF NOT ATN THEN _end_of_rx
+            IF UPFIFOFULL THEN JIFFY_RX
+            SET DATA=1                  # Ready to receive
+            WAIT UNTIL CLK=1 # Possibly for a long time
 
             # clk(3)data(1) => !bit4 & !Bit5
             # clk(2)data(0) => !bit6 & !bit7
             # clk(3)data(1) => !bit3 & !bit1
             # clk(2)data(0) => !bit2 & !bit0
+            # clk(3)data(1) => EOI & STATUS
 
             WAIT FOR 17 us
             IN DATABIT4=!CLK
@@ -410,10 +405,14 @@ _wait2
             WAIT FOR 13 us
             IN DATABIT2=!CLK
             IN DATABIT0=!DATA
-            WAIT FOR 19 us
+            WAIT FOR 13 us
+            IN EOI=CLK
+            IF NOT DATA THEN _error
+            WAIT FOR 6 us
             SET DATA=0
             WAIT FOR 70 us
             PUSHD
+            IF EOI THEN _end_of_rx
             JUMP JIFFY_RX
 
 RECEIVE_BYTE
@@ -486,7 +485,7 @@ _recv8bits
             WAIT UNTIL CLK=0 FOR Tv
 
             IF ATN THEN _normal_data
-            IF ADDRESSED THEN _check_jiffy	# first ATN byte already checked, don't CHECK_ATN_BYTE again
+            IF ADDRESSED THEN _normal_data	# first ATN byte already checked, don't CHECK_ATN_BYTE or _check_jiffy again
 
             # ATN is true, so we check the jiffydos signal
             # but only when we get addressed            
@@ -494,15 +493,16 @@ _recv8bits
             IF NOT ADDRESSED THEN _normal_data
 
 _check_jiffy
-            WAIT UNTIL CLK=1 FOR 275 us
+            WAIT UNTIL CLK=1 FOR 218 us
             IF TIMEOUT THEN _jiffy
 _normal_data
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT7=DATA
             IF TIMEOUT THEN _error2
             WAIT UNTIL CLK=0 FOR Tv
-            WAIT FOR 20 us
+            WAIT FOR 5 us
             SET DATA=0
+            WAIT FOR 50 us
             RET
 _jiffy
             # Signal JD acknowledge
