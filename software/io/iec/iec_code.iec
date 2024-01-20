@@ -219,9 +219,8 @@ _jiffy_outer
             IF EOI THEN _jiffy_load_eoi
             IF CTRL THEN _jiffy_load_eoi
             SET DATA=0
-            WAIT FOR 12 us
             SET CLK=1
-            WAIT FOR 77 us
+            WAIT FOR 50 us
 _jiffy_inner
             POPB # Read byte is now popped from fifo
             SET DATA=1
@@ -232,21 +231,20 @@ _jiffy_inner
             IF EOI THEN _jiffy_inner_end
             READ # see if there is a new byte in fifo
             IF NOT VALID THEN _jiffy_inner_end
-            WAIT FOR 18 us # Test
             SET DATA=1
             SET CLK=1
             JUMP _jiffy_inner
 _jiffy_inner_end
             SET CLK=0
             SET DATA=1
-            WAIT FOR 35 us
+            WAIT FOR 10 us
             WAIT UNTIL DATA=0 # Host ack inner end
             JUMP _jiffy_outer
 
 _jiffy_load_eoi
-            WAIT FOR 80 us
+            WAIT FOR 100 us
             SET CLK=1
-            WAIT FOR 150 us
+            WAIT FOR 100 us
             SET CLK=0
             LOAD CTRL_TX_DONE
             PUSHC
