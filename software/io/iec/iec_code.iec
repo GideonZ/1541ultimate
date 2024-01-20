@@ -410,7 +410,7 @@ JIFFY_RX
             IF NOT DATA THEN _error
             WAIT FOR 6 us
             SET DATA=0
-            WAIT FOR 70 us
+            WAIT FOR 10 us
             PUSHD
             IF EOI THEN _end_of_rx
             JUMP JIFFY_RX
