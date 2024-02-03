@@ -126,7 +126,7 @@ public:
     {
         const char *return_str = return_codestr(code);
         StreamRamFile *log = new StreamRamFile(HTTP_BUFFER_SIZE);
-        log->format("HTTP/1.1 %d %s\r\nConnection: close\r\nContent-Type: text_html\r\n\r\n", code, return_str);
+        log->format("HTTP/1.1 %d %s\r\nConnection: close\r\nContent-Type: text/html\r\n\r\n", code, return_str);
 
         va_list ap;
         log->format("<html><body><h1>%s</h1>\n<p>", title);
@@ -138,6 +138,15 @@ public:
         // resp->_index = (size_t)log.getLength();
         resp->BodyContext = log;
         resp->BodyCB = &stream_body;
+    }
+
+    StreamRamFile *raw_response(int code, const char *content_type)
+    {
+        StreamRamFile *log = new StreamRamFile(HTTP_BUFFER_SIZE);
+        log->format("HTTP/1.1 %d %s\r\nConnection: close\r\nContent-Type: %s\r\n\r\n", code, content_type);
+        resp->BodyContext = log;
+        resp->BodyCB = &stream_body;
+        return log;
     }
 
     void error(const char *fmt, ...)

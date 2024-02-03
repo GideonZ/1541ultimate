@@ -213,3 +213,83 @@ API_CALL(PUT, machine, debugreg, NULL, ARRAY( { { "value", P_REQUIRED } }))
     resp->json_response(HTTP_OK);
 }
 #endif
+
+#include "i2c_drv.h"
+
+API_CALL(GET, i2c, scan, NULL, ARRAY({}))
+{
+    StreamRamFile *log = resp->raw_response(200, "text/html");
+
+    log->format("<html><body><h1>I2C Address Probe Map</h1>\n<p>");
+    I2C_Driver i2c;
+
+    for (int i = 0; i < 255; i += 1) {
+        i2c.i2c_start();
+        int res = i2c.i2c_send_byte((uint8_t)i);
+        log->format("[%2x:%c] ", i, (res < 0) ? '-' : 'X');
+        i2c.i2c_stop();
+        i2c.i2c_start();
+        i2c.i2c_stop();
+        if (i % 16 == 15) {
+            log->format("<br>\n");
+        }
+    }
+    log->format("</p></body></html>\r\n\r\n");
+}
+
+API_CALL(GET, i2c, dump, NULL, ARRAY({  {"dev", P_REQUIRED} }))
+{
+    int dev  = strtol(args["dev"],  NULL, 16);
+
+    I2C_Driver i2c;
+    uint8_t buf[256];
+    int ret = i2c.i2c_read_block(dev, 0, buf, 256);
+    const char *style = "<style> table, th, td { border: 1px solid black; border-collapse: collapse; } </style>\n";
+
+    if (!ret) {
+        StreamRamFile *log = resp->raw_response(200, "text/html");
+        log->format("<html>%s<body><h1>I2C Dump of Device %02x</h1>\n<p>", style, dev);
+        log->format("<table>\n");
+        log->format("<tr><th/>");
+        for (int i=0;i<16;i++) {
+            log->format("<th>0x%x</th>", i);
+        } log->format("</tr>\n");
+        for (int y=0;y<16;y++) {
+            log->format("<tr><th>0x%x</th>", 16*y);
+            for (int x=0;x<16;x++) {
+                log->format("<td>%02x</td>", buf[16*y+x]);
+            }
+            log->format("</tr>\n");
+        }
+        log->format("</table>");
+        log->format("</body></html>\r\n\r\n");
+    } else {
+        resp->json->add("return_code", ret);
+        resp->json_response(200);
+    }
+}
+
+API_CALL(GET, i2c, write, NULL, ARRAY({  {"dev", P_REQUIRED}, {"addr", P_REQUIRED}, {"data", P_REQUIRED } }))
+{
+    int dev  = strtol(args["dev"],  NULL, 16);
+    int addr = strtol(args["addr"], NULL, 16);
+    int data = strtol(args["data"], NULL, 16);
+
+    I2C_Driver i2c;
+    int ret = i2c.i2c_write_byte(dev, addr, data);
+    resp->json->add("return_code", ret);
+    resp->json_response(200);
+}
+
+API_CALL(GET, i2c, read, NULL, ARRAY({  {"dev", P_REQUIRED}, {"addr", P_REQUIRED} }))
+{
+    int dev  = strtol(args["dev"],  NULL, 16);
+    int addr = strtol(args["addr"], NULL, 16);
+
+    I2C_Driver i2c;
+    int ret;
+    uint8_t value = i2c.i2c_read_byte(dev, addr, &ret);
+    resp->json->add("return_code", ret);
+    resp->json->add("data", ret);
+    resp->json_response(200);
+}
