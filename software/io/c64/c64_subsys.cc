@@ -71,6 +71,7 @@ void C64_Subsys :: create_task_items(void)
     myActions.savemp3b = new Action("Save MP3 Drv B", SUBSYSID_C64, MENU_C64_SAVE_MP3_DRV_B);
     myActions.savemp3c = new Action("Save MP3 Drv C", SUBSYSID_C64, MENU_C64_SAVE_MP3_DRV_C);
     myActions.savemp3d = new Action("Save MP3 Drv D", SUBSYSID_C64, MENU_C64_SAVE_MP3_DRV_D);
+    myActions.measure  = new Action("Measure Cart Bus", SUBSYSID_C64, MENU_MEASURE_TIMING);
 
     taskCategory->append(myActions.reset);
     taskCategory->append(myActions.reboot);
@@ -90,6 +91,7 @@ void C64_Subsys :: create_task_items(void)
     taskCategory->append(myActions.savemp3b);
     taskCategory->append(myActions.savemp3c);
     taskCategory->append(myActions.savemp3d);
+    taskCategory->append(myActions.measure);
 }
 
 void C64_Subsys :: update_task_items(bool writablePath, Path *p)
@@ -322,6 +324,14 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
             }
             break;
 
+        case MENU_MEASURE_TIMING:
+            measure_timing(cmd->path.c_str());
+            break;
+
+        case MENU_MEASURE_TIMING_API:
+            c64->measure_timing((uint8_t *)cmd->buffer);
+            break;
+
         case C64_DMA_LOAD:
             res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
             if (res == FR_OK) {
@@ -481,27 +491,27 @@ int C64_Subsys :: dma_load_raw(File *f)
 
 int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, uint8_t *buffer, int length, int rw)
 {
-	bool i_stopped_it = false;
-	if (c64->client) {
-    	c64->client->release_host(); // disconnect from user interface
-    	c64->release_ownership();
-	}
-	if(!c64->is_stopped()) {
-		c64->stop(false);
-		i_stopped_it = true;
-	}
-
-	volatile uint8_t *dest = (volatile uint8_t *)(C64_MEMORY_BASE + offset);
-
-    if (rw) {
-	    memcpy(buffer, (void *)dest, length);
-    } else {
-	    memcpy((void *)dest, buffer, length);
+    bool i_stopped_it = false;
+    if (c64->client) {
+        c64->client->release_host(); // disconnect from user interface
+        c64->release_ownership();
+    }
+    if(!c64->is_stopped()) {
+        c64->stop(false);
+        i_stopped_it = true;
     }
 
-	if (i_stopped_it) {
-		c64->resume();
-	}
+    volatile uint8_t *dest = (volatile uint8_t *)(C64_MEMORY_BASE + offset);
+
+    if (rw) {
+        memcpy(buffer, (void *)dest, length);
+    } else {
+        memcpy((void *)dest, buffer, length);
+    }
+
+    if (i_stopped_it) {
+        c64->resume();
+    }
 	return length;
 }
 
@@ -708,4 +718,25 @@ bool C64_Subsys :: write_vic_state(File *f)
 
     C64_MODE = mode;
     return true;
+}
+
+void C64_Subsys :: measure_timing(const char *path)
+{
+    uint8_t *buffer = new uint8_t[64 * 1024];
+
+    c64->measure_timing(buffer);
+
+    // write file
+    mstring fn(path);
+    fn += "bus_measurement.bin";
+    FILE *fo = fopen(fn.c_str(), "wb");
+    if (fo) {
+        int t = fwrite(buffer, 2048, 32, fo);
+        printf("%d blocks written.\n", t);
+        fclose(fo);
+    } else {
+        printf("Couldn't open file %s\n", fn.c_str());
+    }
+
+    delete[] buffer;
 }

@@ -109,7 +109,12 @@ public:
         if (attachment) {
             hdr->format("HTTP/1.1 200 OK\r\n");
             hdr->format("Content-Type: application/octet-stream\r\n");
-            hdr->format("Content-Disposition: attachment\r\n");
+            const char *fn = attachment->getFileName();
+            if (fn) {
+                hdr->format("Content-Disposition: attachment; filename=\"%s\"\r\n", fn);
+            } else {
+                hdr->format("Content-Disposition: attachment\r\n");
+            }
             hdr->format("Content-Length: %d\r\n", attachment->getLength());
             resp->BodyContext = attachment;
             resp->BodyCB = &stream_body;

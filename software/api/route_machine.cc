@@ -213,3 +213,101 @@ API_CALL(PUT, machine, debugreg, NULL, ARRAY( { { "value", P_REQUIRED } }))
     resp->json_response(HTTP_OK);
 }
 #endif
+
+#define NUM_SIGNALS 10
+
+static char *bin(uint64_t val, int bits, char *buffer)
+{
+    int bit;
+    int leading = 1;
+    int i = 0;
+    while (--bits >= 0) {
+        bit = ((val & (1LL << bits)) != 0LL);
+        if (leading && (bits != 0) && !bit)
+            continue;
+        leading = 0;
+        buffer[i++] = '0' + bit;
+    }
+    buffer[i] = 0;
+    return buffer;
+}
+
+static void make_vcd(StreamRamFile *d, uint32_t *values, int count, const char *step)
+{
+    typedef struct {
+        const char *name;
+        int shift;
+        int width;
+    } t_signals;
+
+    const t_signals signals[NUM_SIGNALS] = {
+        { "DotClk", 31, 1 },
+        { "PHI2", 30, 1 },
+        { "PHI2_recovered", 29, 1 },
+        { "DMA_Data_Out", 28, 1 },
+        { "Drive_Data", 27, 1 },
+        { "Addr_Tri_L", 26, 1 },
+        { "Addr_Tri_H", 25, 1 },
+        { "Addr", 0, 16 },
+        { "Data", 16, 8 },
+        { "R_Wn", 24, 1 },
+    };
+
+    const char vcd_header[] = "$timescale\n %s\n$end\n\n";
+    const char vcd_middle[] = "\n$enddefinitions $end\n\n#0\n$dumpvars\n";
+
+    d->format(vcd_header, step);
+    for(int n=0; n<NUM_SIGNALS; n++) {
+        d->format("$var wire %d %c %s $end\n", signals[n].width, 97+n, signals[n].name);
+    }
+    d->format(vcd_middle);
+
+    uint32_t prev = values[0] ^ 0xFFFFFFFF; // inverse of first value
+    char binbuf[36];
+    for(int i=0;i<count;i++) {
+        if (prev == values[i]) {
+            continue;
+        }
+        d->format("#%d\n", i);
+        for(int n=0; n<NUM_SIGNALS; n++) {
+            // isolate value
+            uint32_t mask = (1 << signals[n].width)-1;
+            uint32_t pr = (prev >> signals[n].shift) & mask;
+            uint32_t cur = (values[i] >> signals[n].shift) & mask;
+            if (pr != cur) {
+                if (signals[n].width == 1) {
+                    d->format("%d%c\n", cur, 97+n);
+                } else {
+                    d->format("b%s %c\n", bin(cur, signals[n].width, binbuf), 97+n);
+                }
+            }
+        }
+        prev = values[i];
+    }
+}
+
+API_CALL(GET, machine, measure, NULL, ARRAY( {  }))
+{
+    uint8_t *buffer = new uint8_t[64*1024];
+    SubsysCommand *cmd = new SubsysCommand(NULL, SUBSYSID_C64, MENU_MEASURE_TIMING_API, 0, buffer, 64*1024);
+    SubsysResultCode_t retval = cmd->execute();
+
+    if (retval.status == SSRET_OK) {
+        StreamRamFile *rf = resp->add_attachment();
+        rf->setFileName("bus_measurement.vcd");
+        //rf->write(buffer, 48*1024);
+#if CLOCK_FREQ == 50000000        
+        make_vcd(rf, (uint32_t*)buffer, 64*256, "20 ns");
+#elif CLOCK_FREQ == 62500000
+        make_vcd(rf, (uint32_t*)buffer, 64*256, "16 ns");
+#else
+        make_vcd(rf, (uint32_t*)buffer, 64*256, "15 ns");
+#endif
+        delete[] buffer;
+        resp->binary_response();
+    } else {
+        resp->error(SubsysCommand::error_string(retval.status));
+        resp->json_response(SubsysCommand::http_response_map(retval.status));
+        delete[] buffer;
+    }
+}

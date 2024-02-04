@@ -1441,3 +1441,85 @@ void C64 :: list_chars(ConfigItem *it, IndexedList<char *>& strings)
     }
 #endif
 }
+
+void C64 :: measure_timing(uint8_t *buffer)
+{
+    uint8_t *wp = buffer;
+
+    bool i_stopped_it = false;
+    if(!is_stopped()) {
+        stop(false);
+        i_stopped_it = true;
+    }
+
+    C64_POKE(0xD011, 0x0B);
+    wait_ms(20);
+
+    volatile uint8_t *measurement = (volatile uint8_t *)(CART_TIMING_BASE);
+    volatile uint32_t *screen = (volatile uint32_t *)(C64_MEMORY_BASE + 0x400);
+    volatile uint32_t *vic = (volatile uint32_t *)(C64_MEMORY_BASE + 0xD000);
+    uint32_t old, newval;
+    for (uint8_t edge=0x08; edge <= 0x0B; edge++) {
+        // Test 0
+        C64_PHI2_EDGE_RECOVER = edge; // trigger
+        old = *screen;
+        for(int j=0;j<2048;j++) {
+            *(wp++) = measurement[j];
+        }
+
+        // Test 1
+        C64_PHI2_EDGE_RECOVER = edge; // trigger
+        *screen = 0x12345678;
+        for(int j=0;j<2048;j++) {
+            *(wp++) = measurement[j];
+        }
+
+        // Test 2
+        C64_PHI2_EDGE_RECOVER = edge; // trigger
+        newval = *screen;
+        for(int j=0;j<2048;j++) {
+            *(wp++) = measurement[j];
+        }
+
+        // Test 3
+        C64_PHI2_EDGE_RECOVER = edge; // trigger
+        *screen = old;
+        for(int j=0;j<2048;j++) {
+            *(wp++) = measurement[j];
+        }
+
+        // Test 4
+        C64_PHI2_EDGE_RECOVER = edge; // trigger
+        old = *vic;
+        for(int j=0;j<2048;j++) {
+            *(wp++) = measurement[j];
+        }
+
+        // Test 5
+        C64_PHI2_EDGE_RECOVER = edge; // trigger
+        *vic = 0x98765432;
+        for(int j=0;j<2048;j++) {
+            *(wp++) = measurement[j];
+        }
+
+        // Test 6
+        C64_PHI2_EDGE_RECOVER = edge; // trigger
+        newval = *vic;
+        for(int j=0;j<2048;j++) {
+            *(wp++) = measurement[j];
+        }
+
+        // Test 7
+        C64_PHI2_EDGE_RECOVER = edge; // trigger
+        *vic = old;
+        for(int j=0;j<2048;j++) {
+            *(wp++) = measurement[j];
+        }
+    }
+
+    C64_POKE(0xD011, 0x1B);
+
+    if (i_stopped_it) {
+        resume();
+    }
+}

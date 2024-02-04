@@ -29,6 +29,7 @@ class StreamRamFile
     char *read_block;
     int read_offset;
     int read_index;
+    mstring filename;
 public:
     StreamRamFile(int blocksize) : blocks(4, NULL) {
         write_block = new char[blocksize];
@@ -44,6 +45,19 @@ public:
         for(int i=0;i<blocks.get_elements();i++) {
             delete[] blocks[i];
         }
+    }
+
+    void setFileName(const char *fn)
+    {
+        filename = fn;
+    }
+
+    const char *getFileName(void)
+    {
+        if (filename.length()) {
+            return filename.c_str();
+        }
+        return NULL;
     }
 
     int getLength(void) {
