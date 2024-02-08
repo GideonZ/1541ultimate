@@ -126,7 +126,7 @@ begin
             when stopped =>
                 dma_ack_i <= '0';
                 rwn_out_i <= '1';
-                addr_out(15 downto 14) <= "00"; -- always in a safe area
+                addr_out <= X"FFFF"; --(15 downto 14) <= "00"; -- always in a safe area
                 -- is the dma request active and are we at the right time?
                 if dma_req.request='1' and dma_ack_i='0' and phi2_tick='1' and BA='1' then
                     dma_rack  <= '1';
@@ -162,6 +162,9 @@ begin
 
             end case;
 
+            drive_al <= not dma_n_i and phi2_recovered and not vic_cycle;
+            drive_ah <= drive_al and phi2_recovered;
+
             if reset='1' then
                 reu_active <= '0';
                 cmd_if_active <= '0';
@@ -189,9 +192,6 @@ begin
     DATA_tri      <= '1' when (dma_n_i='0' and dma_data_out='1' and
                                vic_cycle='0' and rwn_out_i='0') else '0';
                                
-    drive_ah <= drive_al when rising_edge(clock); -- one cycle later on (SSO)
-    drive_al <= not dma_n_i and phi2_recovered and not vic_cycle;
-
     ADDRESS_out   <= addr_out;
     ADDRESS_tri_h <= drive_ah and drive_al;
     ADDRESS_tri_l <= drive_al;

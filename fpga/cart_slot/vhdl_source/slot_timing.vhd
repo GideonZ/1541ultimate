@@ -60,6 +60,7 @@ architecture gideon of slot_timing is
     signal phi2_tick_i  : std_logic;
     signal serve_en_i   : std_logic := '0';
     signal dma_data_out_i : std_logic;
+    signal dma_data_out_d : std_logic;
     signal off_cnt      : integer range 0 to 7;
     --constant c_sample_vic  : integer := 9; -- 200 ns after PHI2 (!)
     signal reqs_inhibit_i : std_logic;
@@ -173,7 +174,8 @@ begin
                 do_sample_io <= '1';
             end if;
 
-            dma_data_out <= dma_data_out_i; -- one cycle later to provide a bit of hold time
+            dma_data_out_d <= dma_data_out_i; -- one cycle later to provide a bit of hold time
+            dma_data_out <= dma_data_out_d; -- another cycle delay
 
             if reset='1' then
                 dma_data_out_i <= '0';

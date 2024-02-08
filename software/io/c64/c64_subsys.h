@@ -36,6 +36,7 @@ class C64_Subsys : public SubSystem, ObjectWithMenu
         Action *savemp3b;
         Action *savemp3c;
         Action *savemp3d;
+        Action *measure;
     } myActions;
 
     static void poll(void *a);
@@ -59,7 +60,7 @@ class C64_Subsys : public SubSystem, ObjectWithMenu
     int  load_buffer_dma(const uint8_t *buffer, const int bufferSize, uint16_t reloc);
     bool write_vic_state(File *f);
     void restoreCart(void);
-
+    void measure_timing(const char *path);
 public:
 	C64_Subsys(C64 *machine);
 	virtual ~C64_Subsys();

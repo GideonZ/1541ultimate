@@ -431,3 +431,4 @@ PROHIBIT PRIMARY NET "i_double_freq_bridge.busy" ;
 PROHIBIT PRIMARY NET "i_double_freq_bridge/dack_tag_2x_1_sqmuxa_i" ;
 PROHIBIT PRIMARY NET "i_double_freq_bridge/toggle_r_1x" ;
 PROHIBIT PRIMARY NET "i_double_freq_bridge/un1_mem_resp_2x_1_i" ;
+IOBUF PORT "DEBUG_TDO" PULLMODE=UP IO_TYPE=LVCMOS18 ;

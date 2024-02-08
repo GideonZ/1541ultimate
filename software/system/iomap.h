@@ -15,6 +15,7 @@
 #define SID_BASE           (IOBASE + 0x42000)
 #define CMD_IF_BASE        (IOBASE + 0x44000)
 #define COPPER_BASE        (IOBASE + 0x46000)
+#define CART_TIMING_BASE   (IOBASE + 0x46000)
 #define SAMPLER_BASE       (IOBASE + 0x48000)
 #define ACIA_BASE          (IOBASE + 0x4A000)
 #define EEPROM_BASE        (IOBASE + 0x4C000)

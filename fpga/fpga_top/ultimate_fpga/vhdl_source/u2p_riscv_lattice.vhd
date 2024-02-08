@@ -68,13 +68,29 @@ port (
     AUDIO_SDO   : out   std_logic := '0';
     AUDIO_SDI   : in    std_logic;
 
+    -- Pin  1: GND    | 1.8V     Pin  2
+    -- Pin  3: TMS    | DBG_TRST Pin  4
+    -- Pin  5: TDI    | DBG_TDO  Pin  6
+    -- Pin  7: TCK    | DBG_TDI  Pin  8
+    -- Pin  9: TDO    | DBG_TCK  Pin 10
+    -- Pin 11: SPARE  | DBG_TMS  Pin 12
+    -- Pin 13: +3.3V  | GND      Pin 14
+
+    -- Clock Module:
+    -- RESON_OUT -> pin 11 -> SPARE
+    -- JITTERY   -> pin 12 -> DBG_TMS
+    -- CLKOUT1   -> pin  8 -> DBG_TDI
+    -- SDA       -> pin  6 -> DBG_TDO
+    -- SCL       -> pin  4 -> DBG_TRST
+
     -- JTAG on-chip debugger interface (available if ON_CHIP_DEBUGGER_EN = true) --
-    DEBUG_TRSTn : in    std_ulogic := '0'; -- low-active TAP reset (optional)
-    DEBUG_TCK   : out   std_ulogic;-- := '0'; -- serial clock
-    DEBUG_TMS   : out   std_ulogic;-- := '1'; -- mode select
-    DEBUG_TDI   : in    std_ulogic := '1'; -- serial data input
-    DEBUG_TDO   : out   std_ulogic;        -- serial data output
-    DEBUG_SPARE : out   std_ulogic := '0';
+    DEBUG_TRSTn : inout std_logic;        -- Header PIN 4
+    DEBUG_TDO   : inout std_logic;        -- Header PIN 6
+    DEBUG_TDI   : in    std_logic := '1'; -- Header PIN 8
+    DEBUG_TCK   : out   std_logic := '1'; -- Header PIN 10
+    DEBUG_TMS   : out   std_logic := '1'; -- Header PIN 12
+    DEBUG_SPARE : out   std_logic := '1'; -- Header PIN 11
+
     UNUSED_G12  : out   std_logic; -- not on test pad
     UNUSED_H3   : out   std_logic;
     UNUSED_F4   : out   std_logic;
@@ -563,12 +579,15 @@ begin
         buffer_en  => buffer_en
     );
 
-    i2c_scl_i   <= I2C_SCL and I2C_SCL_18;
-    i2c_sda_i   <= I2C_SDA and I2C_SDA_18;
+    i2c_scl_i   <= I2C_SCL and I2C_SCL_18 and DEBUG_TRSTn;
+    i2c_sda_i   <= I2C_SDA and I2C_SDA_18 and DEBUG_TDO;
     I2C_SCL     <= '0' when i2c_scl_o = '0' else 'Z';
     I2C_SDA     <= '0' when i2c_sda_o = '0' else 'Z';
     I2C_SCL_18  <= '0' when i2c_scl_o = '0' else 'Z';
     I2C_SDA_18  <= '0' when i2c_sda_o = '0' else 'Z';
+    DEBUG_TRSTn <= '0' when i2c_scl_o = '0' else 'Z';
+    DEBUG_TDO   <= '0' when i2c_sda_o = '0' else 'Z';
+
     MDIO_DATA   <= '0' when mdio_o = '0' else 'Z';
 
     i_logic: entity work.ultimate_logic_32
@@ -1014,14 +1033,43 @@ begin
 
     -- SLOT_DATA_OEn    <= '1';
     -- SLOT_DATA_DIR    <= '1';
-    SLOT_ADDR_OEn    <= toggle;
-    SLOT_ADDR_DIR    <= DEBUG_TRSTn and DEBUG_TDI and RMII_RX_ER and UART_RXD and IEC_RESET_I and CAS_SENSE and CAS_MOTOR when rising_edge(CLOCK_50);
     toggle <= not toggle when rising_edge(sys_clock);
-    DEBUG_SPARE      <= sys_reset when rising_edge(sys_clock);
+    SLOT_ADDR_OEn    <= toggle;
+    SLOT_ADDR_DIR    <= RMII_RX_ER and UART_RXD and IEC_RESET_I and CAS_SENSE and CAS_MOTOR when rising_edge(CLOCK_50);
     flash_sck_t      <= audio_reset; -- sys_reset when falling_edge(sys_clock); -- 0 when not in reset = enabled
 
+    -- DEBUG_SPARE      <= sys_reset when rising_edge(sys_clock);
     -- Convenient debug pins
-    DEBUG_TDO <= '0';
-    DEBUG_TMS <= '0';
-    DEBUG_TCK <= '0';
+    -- DEBUG_TDO <= '0';
+    -- DEBUG_TMS <= '0';
+    -- DEBUG_TCK <= '0';
+
+    b_jitter: block
+        signal jittery          : std_logic;
+        signal jittery_toggle   : std_logic;
+    begin
+        i_jittery: entity work.fractional_div
+        generic map (
+            g_accu_bits   =>  28,
+            g_numerator   =>  31_527_929,
+            g_denominator => 100_000_000
+        )
+        port map (
+            clock      => ctrl_clock,
+            tick       => jittery
+        );
+        process(ctrl_clock)
+        begin
+            if rising_edge(ctrl_clock) then
+                if ctrl_reset = '1' then
+                    jittery_toggle <= '0';
+                elsif jittery = '1' then
+                    jittery_toggle <= not jittery_toggle;
+                end if;
+            end if;
+        end process;
+        DEBUG_SPARE <= jittery_toggle;
+        DEBUG_TMS   <= jittery_toggle;
+    end block;
+
 end architecture;
