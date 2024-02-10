@@ -13,7 +13,7 @@
 
 #define U64_IO_BASE     (U2P_IO_BASE + 0x0400)
 #define U64_AUDIO_MIXER (U2P_IO_BASE + 0x0500)
-#define U64_WIFI_UART   (U2P_IO_BASE + 0x0600)
+//#define U64_WIFI_UART   (U2P_IO_BASE + 0x0600)
 #define U64_RESAMPLER   (U2P_IO_BASE + 0x0700)
 
 #define VID_IO_BASE  (U2P_IO_BASE + 0x40000)
@@ -43,7 +43,7 @@
 #define U64_POWER_REG      (*(volatile uint8_t *)(U64_IO_BASE + 0x01))
 #define U64_RESTORE_REG    (*(volatile uint8_t *)(U64_IO_BASE + 0x02))
 #define U64_HDMI_PLL_RESET (*(volatile uint8_t *)(U64_IO_BASE + 0x04))
-#define U64_WIFI_CONTROL   (*(volatile uint8_t *)(U64_IO_BASE + 0x05))
+//#define U64_WIFI_CONTROL   (*(volatile uint8_t *)(U64_IO_BASE + 0x05))
 #define U64_EXT_I2C_SCL    (*(volatile uint8_t *)(U64_IO_BASE + 0x06))
 #define U64_EXT_I2C_SDA    (*(volatile uint8_t *)(U64_IO_BASE + 0x07))
 #define U64_HDMI_ENABLE    (*(volatile uint8_t *)(U64_IO_BASE + 0x08))

@@ -137,6 +137,7 @@ bool WiFi::RequestEcho(void)
         }
     }
     uart->txDebug = false;
+    return true;
 }
 
 void WiFi::RunModeTaskStart(void *context)

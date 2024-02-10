@@ -101,7 +101,7 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
     gcr_image = new GcrImage();
     gcr_image_up_to_date = true;
     bin_image = new BinImage(drive_name.c_str(), 70); // Maximum size for .d71
-    mfm_controller = new WD177x(regs + C1541_WD177X, regs, 1 + (letter - 'A'));
+    mfm_controller = new WD177x(regs + C1541_WD177X, regs, ITU_IRQHIGH_DRIVEA + (letter - 'A'));
     gcr_ram_file = new FileRAM(gcr_image->gcr_data, GCRIMAGE_MAXSIZE, false); // How cool is this?!
     write_skip = 0;
     

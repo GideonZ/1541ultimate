@@ -16,7 +16,7 @@
  */
 
 #include "esp32.h"
-#include "u64.h"
+#include "iomap.h"
 #include "dump_hex.h"
 #include <stdarg.h>
 #include "userinterface.h"
@@ -67,11 +67,7 @@ Esp32 :: Esp32()
     packets = new command_buf_context_t;
     cmd_buffer_init(packets); // C functions, so no constructor
 
-    uart = new DmaUART((void *)U64_WIFI_UART, rxSemaphore, packets);
-
-    if (-EINVAL == alt_irq_register(1, (int)uart, DmaUART :: DmaUartInterrupt)) {
-        puts("Failed to install WifiUART IRQ handler.");
-    }
+    uart = new DmaUART((void *)WIFI_UART_BASE, rxSemaphore, packets);
 
     commandQueue = xQueueCreate(8, sizeof(espCommand_t));
     xTaskCreate( Esp32 :: CommandTaskStart, "Esp32 Command Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
@@ -87,7 +83,7 @@ void Esp32 :: AttachApplication(Esp32Application *app)
 void Esp32 :: Disable()
 {
     // stop running the run-mode task
-    U64_WIFI_CONTROL = 0;
+    uart->ModuleCtrl(0);
     uart->ClearRxBuffer(); // disables interrupts as well
 
     if (application) {
@@ -107,7 +103,7 @@ void Esp32 :: Enable(bool startTask)
     uart->EnableSlip(false);
     uart->EnableIRQ(true);
 
-    U64_WIFI_CONTROL = 1; // 5 for watching the UART output directly, 1 = own uart
+    uart->ModuleCtrl(1); // 5 for watching the UART output directly, 1 = own uart
     vTaskDelay(500);
 
     ReadRxMessage();
@@ -125,7 +121,7 @@ void Esp32 :: Boot()
 {
     Disable();
 
-    U64_WIFI_CONTROL = 2;
+    uart->ModuleCtrl(2);
     vTaskDelay(150);
     uart->SetBaudRate(115200);
     uart->EnableLoopback(false);
@@ -133,7 +129,7 @@ void Esp32 :: Boot()
     uart->ClearRxBuffer();
     uart->EnableSlip(false);
     uart->EnableIRQ(true);
-    U64_WIFI_CONTROL = 3;
+    uart->ModuleCtrl(3);
     //ReadRxMessage(); Do not print message, because Download routine expects a message and verifies it
 }
 
@@ -196,6 +192,7 @@ bool Esp32::UartEcho(void)
         }
     }
     uart->EnableLoopback(false);
+    return true;
 }
 
 bool Esp32::Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data,

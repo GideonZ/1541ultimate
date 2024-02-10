@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include "FreeRTOS.h"
 #include "queue.h"
+#include "itu.h"
 
 extern "C" {
     #include "cmd_buffer.h"
@@ -52,8 +53,8 @@ class DmaUART
 
     BaseType_t RxInterrupt();
     QueueHandle_t rx_bufs;
+    static uint8_t DmaUartInterrupt(void *context);
 public:
-    static void DmaUartInterrupt(void *context);
     bool txDebug;
 
     DmaUART(void *registers, void *sem, command_buf_context_t *pkts)
@@ -70,6 +71,7 @@ public:
         uart->flowctrl = DMAUART_RESET;
         rx_bufs = xQueueCreate(16, sizeof(command_buf_t *));
         ResetReceiveCallback();
+        install_high_irq(ITU_IRQHIGH_WIFI, DmaUART :: DmaUartInterrupt, this);
     }
 
     void EnableSlip(bool enabled);
@@ -80,6 +82,7 @@ public:
     void SetBaudRate(int bps);
     void SetReceiveCallback(isr_receive_callback_t cb);
     void ResetReceiveCallback(void);
+    void ModuleCtrl(uint8_t mode);
 
     // never blocking
     int Read(uint8_t *buffer, int bufferSize);

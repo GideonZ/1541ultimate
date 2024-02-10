@@ -103,6 +103,11 @@ void DmaUART::EnableSlip(bool enable)
     }
 }
 
+void DmaUART::ModuleCtrl(uint8_t mode)
+{
+    uart->flowctrl = (uart->flowctrl & 0xCF) | mode;
+}
+
 void DmaUART::ClearRxBuffer(void)
 {
     // uart->ictrl = DMAUART_RxIRQ_DIS | DMAUART_TxIRQ_DIS |DMAUART_BufReq_DIS; // disable interrupts
@@ -137,7 +142,7 @@ void DmaUART::SetBaudRate(int bps)
 
 void hex(uint8_t h);
 
-void DmaUART::DmaUartInterrupt(void *context)
+uint8_t DmaUART::DmaUartInterrupt(void *context)
 {
     DmaUART *u = (DmaUART *) context;
     uint8_t uart_intr_status = 0;
@@ -217,9 +222,7 @@ void DmaUART::DmaUartInterrupt(void *context)
             u->uart->rx_pop = 1;
         }
     }
-    if (HPTaskAwoken == pdTRUE) {
-        vTaskSwitchContext(); // TODO: This should not be here, but right now, the UART is the only client on this IRQ number
-    }
+    return HPTaskAwoken;
 }
 
 void DmaUART :: SetReceiveCallback(isr_receive_callback_t cb)

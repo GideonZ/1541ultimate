@@ -29,6 +29,7 @@ SRCS_C   =	itu.c \
 			time.c \
 			mdio.c \
 			sid_coeff.c \
+            cmd_buffer.c \
 			riscv_main.c \
 			do_ctors.c \
 			malloc_lock.c \
@@ -154,6 +155,10 @@ SRCS_CC	 =  u2p_init.cc \
 			assembly_search.cc \
 			assembly.cc \
 			filesystem_a64.cc \
+			dma_uart.cc \
+			network_esp32.cc \
+			esp32.cc \
+			wifi.cc \
 			$(PRJ).cc
 
 SRCS_CC +=  iec_interface.cc \
@@ -178,6 +183,7 @@ VPATH +=	$(PATH_SW)/6502/sidcrt/target
 VPATH +=	$(PATH_SW)/../neorv32/sw/common
 VPATH +=	$(PATH_SW)/../neorv32/sw/lib/include
 VPATH +=	$(PATH_SW)/../neorv32/sw/lib/source
+VPATH +=	$(PATH_SW)/wifi/scan/main
 
 
 SRCS_ASM =
@@ -194,7 +200,7 @@ SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -march=$(MARCH) -mabi=$(MABI) $(EFFORT) -ffunction-sections -fdata-sections -nostartfiles -mno-fdiv
-OPTIONS += -gdwarf-2 -Os -DRISCV -DUSB2503 -DOS -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=50000000 -Wno-write-strings
+OPTIONS += -gdwarf-2 -Os -DRISCV=1 -DUSB2503 -DOS -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=50000000 -Wno-write-strings
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = linker.x

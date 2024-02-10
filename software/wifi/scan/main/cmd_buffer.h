@@ -15,7 +15,7 @@
 #define CMD_BUF_SIZE (CMD_BUF_PAYLOAD + CMD_BUF_HEADER)
 #define NUM_BUFFERS 16
 
-#if NIOS
+#if (NIOS || RISCV)
     #include "FreeRTOS.h"
     #include "queue.h"
 #else

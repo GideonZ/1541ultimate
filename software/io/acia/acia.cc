@@ -64,15 +64,14 @@ int Acia :: init(uint16_t base, bool useNMI, QueueHandle_t controlQueue, QueueHa
     //regs->tx_tail = regs->tx_head; // clear upstream buffer
     //regs->rx_head = regs->rx_tail; // clear downstream buffer
     regs->enable = enable;
-    install_high_irq(0, acia_irq, this);
+    install_high_irq(ITU_IRQHIGH_ACIA, acia_irq, this);
 
     return 0;
 }
 
 void Acia :: deinit(void)
 {
-    deinstall_high_irq(0);
-    ioWrite8(ITU_IRQ_HIGH_EN, ioRead8(ITU_IRQ_HIGH_EN) & ~1);
+    deinstall_high_irq(ITU_IRQHIGH_ACIA);
     if (!(getFpgaCapabilities() & CAPAB_ACIA)) {
         return;
     }

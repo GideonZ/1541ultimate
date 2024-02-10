@@ -56,6 +56,7 @@ generic (
     g_sampler       : boolean := true;
     g_rmii          : boolean := false;
     g_sdcard        : boolean := false;
+    g_wifi_uart     : boolean := false;
     g_kernal_repl   : boolean := true );
 port (
     -- globals
@@ -182,6 +183,14 @@ port (
 	UART_TXD	: out   std_logic;
 	UART_RXD	: in    std_logic := '1';
 	
+    -- WiFi UART
+    WIFI_BOOT   : out   std_logic;
+    WIFI_ENABLE : out   std_logic;
+    WIFI_TXD    : out   std_logic;
+    WIFI_RXD    : in    std_logic := '1';
+    WIFI_RTS    : out   std_logic;
+    WIFI_CTS    : in    std_logic := '1';
+
     -- SD Card Interface
     SD_SSn      : out   std_logic;
     SD_CLK      : out   std_logic;
@@ -298,7 +307,7 @@ architecture logic of ultimate_logic_32 is
         cap(16) := to_std(g_extended_reu);
         cap(17) := to_std(g_stereo_sid);
         cap(18) := to_std(g_command_intf);
-        cap(19) := to_std(g_vic_copper);
+        cap(19) := to_std(g_wifi_uart);
         cap(20) := to_std(g_video_overlay);
         cap(21) := to_std(g_sampler);
         cap(22) := to_std(g_eeprom); 
@@ -331,6 +340,8 @@ architecture logic of ultimate_logic_32 is
     constant c_tag_cpu_i         : std_logic_vector(7 downto 0) := X"0C";
     constant c_tag_cpu_d         : std_logic_vector(7 downto 0) := X"0D";
     constant c_tag_rmii          : std_logic_vector(7 downto 0) := X"0E"; -- and 0F
+    constant c_tag_wifi_tx       : std_logic_vector(7 downto 0) := X"1E";
+    constant c_tag_wifi_rx       : std_logic_vector(7 downto 0) := X"1F";
 
     -- Timing
     signal tick_16MHz       : std_logic;
@@ -349,6 +360,8 @@ architecture logic of ultimate_logic_32 is
     signal mem_resp_32_usb       : t_mem_resp_32 := c_mem_resp_32_init;
     signal mem_req_32_rmii       : t_mem_req_32 := c_mem_req_32_init;
     signal mem_resp_32_rmii      : t_mem_resp_32 := c_mem_resp_32_init;
+    signal mem_req_32_wifi       : t_mem_req_32 := c_mem_req_32_init;
+    signal mem_resp_32_wifi      : t_mem_resp_32 := c_mem_resp_32_init;
     signal mem_reqs_inhibit      : std_logic;
     
     -- IO Bus
@@ -390,6 +403,8 @@ architecture logic of ultimate_logic_32 is
     signal io_resp_aud_sel  : t_io_resp := c_io_resp_init;
     signal io_req_rmii      : t_io_req;
     signal io_resp_rmii     : t_io_resp := c_io_resp_init;
+    signal io_req_wifi      : t_io_req;
+    signal io_resp_wifi     : t_io_resp := c_io_resp_init;
     signal io_req_debug     : t_io_req;
     signal io_resp_debug    : t_io_resp := c_io_resp_init;
     signal io_irq           : std_logic;
@@ -461,6 +476,7 @@ architecture logic of ultimate_logic_32 is
     signal sys_irq_iec      : std_logic := '0';
     signal sys_irq_cmdif    : std_logic := '0';
     signal sys_irq_acia     : std_logic := '0';
+    signal sys_irq_wifi     : std_logic := '0';
     signal sys_irq_eth_tx   : std_logic := '0';
     signal sys_irq_eth_rx   : std_logic := '0';
     signal sys_irq_1541_1   : std_logic := '0';
@@ -509,7 +525,8 @@ begin
         irq_high(0) => sys_irq_acia,
         irq_high(1) => sys_irq_1541_1,
         irq_high(2) => sys_irq_1541_2,
-        irq_high(6 downto 3) => "0000",
+        irq_high(3) => sys_irq_wifi,
+        irq_high(6 downto 4) => "000",
         irq_high(7) => guru_irq,
         irq_in(7)   => c64_reset_in,
         irq_in(6)   => sys_irq_eth_tx,
@@ -988,7 +1005,7 @@ begin
     generic map (
         g_range_lo  => 8,
         g_range_hi  => 11,
-        g_ports     => 9 )
+        g_ports     => 10 )
     port map (
         clock    => sys_clock,
         
@@ -1004,6 +1021,7 @@ begin
         reqs(6)  => io_req_icap,     -- 4060600
         reqs(7)  => io_req_aud_sel,  -- 4060700
         reqs(8)  => io_req_rmii,     -- 4060800
+        reqs(9)  => io_req_wifi,     -- 4060900
 
         resps(0) => io_resp_sd,
         resps(1) => io_resp_rtc,
@@ -1013,7 +1031,8 @@ begin
         resps(5) => io_resp_gcr_dec,
         resps(6) => io_resp_icap,
         resps(7) => io_resp_aud_sel,
-        resps(8) => io_resp_rmii );
+        resps(8) => io_resp_rmii,
+        resps(9) => io_resp_wifi );
 
     r_usb2: if g_usb_host2 generate
         i_usb2: entity work.usb_host_nano
@@ -1295,9 +1314,46 @@ begin
         
     end generate;
 
+    r_wifi_uart: if g_wifi_uart generate
+        i_wifi_uart_dma: entity work.uart_dma
+        generic map (
+            g_rx_tag  => c_tag_wifi_rx,
+            g_tx_tag  => c_tag_wifi_tx,
+            g_divisor => (g_clock_freq / g_baud_rate)
+        )
+        port map (
+            clock    => sys_clock,
+            reset    => sys_reset,
+
+            io_req   => io_req_wifi,
+            io_resp  => io_resp_wifi,
+            irq      => sys_irq_wifi,
+
+            mem_req  => mem_req_32_wifi,
+            mem_resp => mem_resp_32_wifi,
+
+            boot     => WIFI_BOOT,
+            enable   => WIFI_ENABLE,
+            txd      => WIFI_TXD,
+            rxd      => WIFI_RXD,
+            rts      => WIFI_RTS,
+            cts      => WIFI_CTS );
+
+    end generate;
+
+    r_no_wifi: if not g_wifi_uart generate
+        i_wifi_dummy: entity work.io_dummy
+        port map (
+            clock   => sys_clock,
+            io_req  => io_req_wifi,
+            io_resp => io_resp_wifi
+        );
+    end generate;
+
+
     i_mem_arb: entity work.mem_bus_arbiter_pri_32
     generic map (
-        g_ports      => 6,
+        g_ports      => 7,
         g_registered => false ) -- Must be false to make sure cart requests go first and no pending request from other enties exist
     port map (
         clock       => sys_clock,
@@ -1310,14 +1366,16 @@ begin
         reqs(2)     => mem_req_32_1541_2,
         reqs(3)     => mem_req_32_rmii,
         reqs(4)     => mem_req_32_usb,
-        reqs(5)     => ext_mem_req,
+        reqs(5)     => mem_req_32_wifi,
+        reqs(6)     => ext_mem_req,
         
         resps(0)    => mem_resp_32_cart,
         resps(1)    => mem_resp_32_1541,
         resps(2)    => mem_resp_32_1541_2,
         resps(3)    => mem_resp_32_rmii,
         resps(4)    => mem_resp_32_usb,
-        resps(5)    => ext_mem_resp,
+        resps(5)    => mem_resp_32_wifi,
+        resps(6)    => ext_mem_resp,
         
         req         => mem_req,
         resp        => mem_resp );        

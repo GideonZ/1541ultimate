@@ -22,6 +22,8 @@ port (
     mem_req     : out t_mem_req_32;
     mem_resp    : in  t_mem_resp_32;
 
+    boot        : out std_logic;
+    enable      : out std_logic;
 	txd			: out std_logic;
 	rxd			: in  std_logic := '1';
 	rts         : out std_logic;
@@ -29,6 +31,9 @@ port (
 end entity;
 
 architecture gideon of uart_dma is
+    signal boot_i       : std_logic;
+    signal enable_i     : std_logic;
+
     signal divisor      : std_logic_vector(9 downto 0);
 	signal dotx			: std_logic;
 	signal done			: std_logic;
@@ -302,6 +307,8 @@ begin
                     cts_enable  <= io_req.data(0);
                     loopback    <= io_req.data(1);
                     slip_enable <= io_req.data(2);
+                    boot_i      <= io_req.data(4);
+                    enable_i    <= io_req.data(5);
                     soft_reset  <= io_req.data(7);
                     if io_req.data(7) = '1' then
                         rx_irq_enable <= '0';
@@ -374,6 +381,8 @@ begin
                     io_resp.data(0) <= cts_enable;
                     io_resp.data(1) <= loopback;
                     io_resp.data(2) <= slip_enable;
+                    io_resp.data(4) <= boot_i;
+                    io_resp.data(5) <= enable_i;
 
                 when c_uart_len_l =>
                     io_resp.data <= rx_len_data(7 downto 0);
@@ -392,6 +401,8 @@ begin
             end if;
 
 			if reset='1' then
+                boot_i <= '1';
+                enable_i <= '0';
                 loopback <= '0';
                 cts_enable <= '0';
                 slip_enable <= '0';
@@ -403,6 +414,9 @@ begin
 			end if;
 		end if;
 	end process;
+
+    boot <= boot_i;
+    enable <= enable_i;
 
     rx_interrupt <= rx_irq_enable and rx_len_valid;
     buf_interrupt <= buf_irq_enable and not rx_addr_valid;
