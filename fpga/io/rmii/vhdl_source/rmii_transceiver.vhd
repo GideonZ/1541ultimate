@@ -184,7 +184,7 @@ begin
 
                 if eth_tx_valid = '1' then
                     tx_state <= preamble;
-                    tx_count <= 13;
+                    tx_count <= 31;
                 end if; 
 
             when preamble =>
