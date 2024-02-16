@@ -395,7 +395,7 @@ _ck11       cmp #3
 _ck30       jmp ck30
 
 _my_chkout  sta dflto
-            lda #0
+do_chkout   lda #0
             sta MY_OUTLEN
             ldx #UCI_CMD_CHKOUT
             jsr uci_setup_cmd ; do not execute command, because we are waiting for data now
