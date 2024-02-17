@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include "FreeRTOS.h"
 #include "queue.h"
+#include "itu.h"
 
 extern "C" {
     #include "cmd_buffer.h"
@@ -56,7 +57,7 @@ class DmaUART
     BaseType_t RxInterrupt();
     QueueHandle_t rx_bufs;
 public:
-    static void DmaUartInterrupt(void *context);
+    static uint8_t DmaUartInterrupt(void *context);
     bool txDebug;
 
     DmaUART(void *registers, int irq, void *sem, command_buf_context_t *pkts)
@@ -77,6 +78,7 @@ public:
         install_high_irq(irq, DmaUART :: DmaUartInterrupt, this);
     }
 
+    void ModuleCtrl(uint8_t mode);
     void EnableSlip(bool enabled);
     void EnableLoopback(bool enable);
     void FlowControl(bool enable);

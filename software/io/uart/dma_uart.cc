@@ -145,7 +145,7 @@ void DmaUART::SetBaudRate(int bps)
 
 void hex(uint8_t h);
 
-void DmaUART::DmaUartInterrupt(void *context)
+uint8_t DmaUART::DmaUartInterrupt(void *context)
 {
     DmaUART *u = (DmaUART *) context;
     uint8_t uart_intr_status = 0;
