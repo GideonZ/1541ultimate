@@ -178,7 +178,14 @@ void WiFi :: RunModeThread()
 
         case eWifi_Detected:
             uart->txDebug = false;
+
+#if (CLOCK_FREQ == 66666667)
             result = wifi_setbaud(6666666, 1);
+#elif (CLOCK_FREQ == 50000000)
+            result = wifi_setbaud(5000000, 1);
+#else
+#error "Expected 66 or 50 MHz as clock rate."
+#endif
             printf("Result of setbaud: %d\n", result);
 
             wifi_getmac(my_mac);

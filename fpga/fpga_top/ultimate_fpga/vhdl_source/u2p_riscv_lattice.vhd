@@ -68,13 +68,37 @@ port (
     AUDIO_SDO   : out   std_logic := '0';
     AUDIO_SDI   : in    std_logic;
 
-    -- JTAG on-chip debugger interface (available if ON_CHIP_DEBUGGER_EN = true) --
-    DEBUG_TRSTn : in    std_ulogic := '0'; -- low-active TAP reset (optional)
-    DEBUG_TCK   : out   std_ulogic;-- := '0'; -- serial clock
-    DEBUG_TMS   : out   std_ulogic;-- := '1'; -- mode select
-    DEBUG_TDI   : in    std_ulogic := '1'; -- serial data input
-    DEBUG_TDO   : out   std_ulogic;        -- serial data output
-    DEBUG_SPARE : out   std_ulogic := '0';
+    -- Pin  1: GND    | 1.8V     Pin  2
+    -- Pin  3: TMS    | DBG_TRST Pin  4
+    -- Pin  5: TDI    | DBG_TDO  Pin  6
+    -- Pin  7: TCK    | DBG_TDI  Pin  8
+    -- Pin  9: TDO    | DBG_TCK  Pin 10
+    -- Pin 11: SPARE  | DBG_TMS  Pin 12
+    -- Pin 13: +3.3V  | GND      Pin 14
+
+    -- Clock Module:
+    -- RESON_OUT -> pin 11 -> SPARE
+    -- JITTERY   -> pin 12 -> DBG_TMS
+    -- CLKOUT1   -> pin  8 -> DBG_TDI
+    -- SDA       -> pin  6 -> DBG_TDO
+    -- SCL       -> pin  4 -> DBG_TRST
+
+    -- Clock module
+    -- DEBUG_TRSTn : inout std_logic;        -- Header PIN 4
+    -- DEBUG_TDO   : inout std_logic;        -- Header PIN 6
+    -- DEBUG_SPARE : out   std_logic := '1'; -- Header PIN 11
+    -- DEBUG_TDI   : in    std_logic := '1'; -- Header PIN 8
+    -- DEBUG_TCK   : out   std_logic := '1'; -- Header PIN 10
+    -- DEBUG_TMS   : out   std_logic := '1'; -- Header PIN 12
+
+    -- WiFi module
+    DEBUG_SPARE : out   std_logic; -- Header PIN 11
+    DEBUG_TRSTn : out   std_logic; -- Header PIN 4
+    DEBUG_TDI   : out   std_logic; -- Header PIN 8
+    DEBUG_TDO   : in    std_logic := '1'; -- Header PIN 6
+    DEBUG_TCK   : out   std_logic; -- Header PIN 10
+    DEBUG_TMS   : in    std_logic := '1'; -- Header PIN 12
+
     UNUSED_G12  : out   std_logic; -- not on test pad
     UNUSED_H3   : out   std_logic;
     UNUSED_F4   : out   std_logic;
@@ -214,7 +238,6 @@ architecture rtl of u2p_riscv_lattice is
     signal mem_req_2x       : t_mem_req_32;
     signal mem_resp_2x      : t_mem_resp_32;
 
-    signal uart_txd_from_logic  : std_logic;
     signal i2c_sda_i   : std_logic;
     signal i2c_sda_o   : std_logic;
     signal i2c_scl_i   : std_logic;
@@ -328,6 +351,8 @@ architecture rtl of u2p_riscv_lattice is
     signal phase_loadreg : std_logic;
     signal all_buttons   : std_logic;
     signal ctrl_reset_pulse : std_logic;
+    signal wifi_boot        : std_logic;
+    signal wifi_enable      : std_logic;
 begin
     ctrl_clock  <= half_clock;
     HUB_CLOCK   <= clock_24;
@@ -607,7 +632,8 @@ begin
         g_spi_flash     => true,
         g_vic_copper    => false,
         g_video_overlay => false,
-        g_sampler       => true,
+        g_wifi_uart     => true,
+        g_sampler       => false,
         g_acia          => true,
         g_rmii          => true )
     port map (
@@ -706,9 +732,17 @@ begin
         drv_via1_cb1_t      => drv_via1_cb1_t,
 
         -- Debug UART
-        UART_TXD    => uart_txd_from_logic,
+        UART_TXD    => UART_TXD,
         UART_RXD    => UART_RXD,
         
+        -- WiFi UART
+        WIFI_BOOT     => wifi_boot,   -- DEBUG_SPARE, -- pin 11
+        WIFI_ENABLE   => wifi_enable, -- DEBUG_TRSTn, -- pin 4
+        WIFI_TXD      => DEBUG_TDI,   -- pin 8
+        WIFI_RXD      => DEBUG_TDO,   -- pin 6
+        WIFI_RTS      => DEBUG_TCK,   -- pin 10
+        WIFI_CTS      => DEBUG_TMS,   -- pin 12
+
         -- Debug buses
         drv_debug_data   => drv_debug_data,
         drv_debug_valid  => drv_debug_valid,
@@ -772,6 +806,9 @@ begin
         sw_trigger  => sw_trigger,
         BUTTON      => button_i );
 
+    DEBUG_SPARE <= '0' when wifi_boot = '0' else 'Z';
+    DEBUG_TRSTn <= '0' when wifi_enable = '0' else 'Z';
+
     IEC_ATN_O   <= not ult_atn_o;
     IEC_DATA_O  <= not ult_data_o;
     IEC_CLOCK_O <= not ult_clock_o;
@@ -832,7 +869,6 @@ begin
     button_i <= not BUTTON;
 
     ULPI_RESET <= not sys_reset; --por_n;
-    UART_TXD <= uart_txd_from_logic; -- and uart_txd_from_qsys;
 
     -- Tape
     c2n_motor_in <= CAS_MOTOR;

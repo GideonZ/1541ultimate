@@ -29,6 +29,7 @@
 #define ICAP_BASE          (IOBASE + 0x60600)
 #define AUDIO_SEL_BASE     (IOBASE + 0x60700)
 #define RMII_BASE          (IOBASE + 0x60800)
+#define WIFI_UART_BASE     (IOBASE + 0x60900)
 #define USB_BASE           (IOBASE + 0x80000)
 #define C2N_PLAY_BASE      (IOBASE + 0xA0000)
 #define C2N_RECORD_BASE    (IOBASE + 0xC0000)

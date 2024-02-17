@@ -38,8 +38,9 @@ extern "C" {
 #define ITU_INTERRUPT_RMIIRX 0x20
 #define ITU_INTERRUPT_RMIITX 0x40
 #define ITU_INTERRUPT_RESET  0x80
-#define ITU_IRQHIGH_ACIA     0x01
-#define ITU_IRQHIGH_1581     0x02
+#define ITU_IRQHIGH_ACIA     0
+#define ITU_IRQHIGH_1581     1
+#define ITU_IRQHIGH_WIFI     3
 
 #define CAPAB_UART          0x00000001
 #define CAPAB_DRIVE_1541_1  0x00000002

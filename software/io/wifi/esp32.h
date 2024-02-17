@@ -12,9 +12,17 @@
 #include "task.h"
 #include "semphr.h"
 
+#include "menu.h"
+
 extern "C" {
     #include "cmd_buffer.h"
 }
+
+#define ESP_MODE_OFF       0
+#define ESP_MODE_RUN       3
+#define ESP_MODE_BOOT      2
+#define ESP_MODE_RUN_UART  7
+#define ESP_MODE_BOOT_UART 6
 
 class Esp32Application
 {
@@ -26,20 +34,20 @@ public:
     virtual void Terminate() {}
 };
 
-class Esp32
+class Esp32 : public ObjectWithMenu
 {
     SemaphoreHandle_t rxSemaphore;
     QueueHandle_t commandQueue;
     command_buf_context_t *packets;
     Esp32Application *registered_app;
     Esp32Application *application;
+    TaskCategory *taskCategory;
     bool doClose;
     bool programError;
 
     void Enable(bool);
     void Disable();
     void Boot();
-    void RefreshRoot();
     int  Download(const uint8_t *binary, uint32_t address, uint32_t length);
     void PackParams(uint8_t *buffer, int numparams, ...);
     bool Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data, uint8_t *receiveBuffer, int timeout);
@@ -49,6 +57,8 @@ class Esp32
 
     static void CommandTaskStart(void *context);
     void CommandThread();
+    void create_task_items(void);
+    static SubsysResultCode_e S_mode(SubsysCommand *cmd);
 public:
     Esp32();
     void Quit();

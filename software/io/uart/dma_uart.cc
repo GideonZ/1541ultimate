@@ -70,6 +70,7 @@ void DmaUART::EnableIRQ(bool enable)
     printf("Uart IRQ %sable!\n", enable ? "en" : "dis");
     if (enable) {
         uart->ictrl = ( DMAUART_RxIRQ_EN | DMAUART_BufReq_EN );
+        ioWrite8(ITU_IRQ_HIGH_EN, ioRead8(ITU_IRQ_HIGH_EN) | (1 << my_irq));
     } else {
         uart->ictrl = ( DMAUART_RxIRQ_DIS | DMAUART_BufReq_DIS );
     }
@@ -101,6 +102,13 @@ void DmaUART::EnableSlip(bool enable)
     } else {
         uart->flowctrl &= ~DMAUART_SLIPENABLE;
     }
+}
+
+void DmaUART::ModuleCtrl(uint8_t mode)
+{
+    printf("Setting module control to (%b) %d ", uart->flowctrl, mode);
+    uart->flowctrl = (uart->flowctrl & 0x8F) | (mode << 4);
+    printf("%b\n", uart->flowctrl);
 }
 
 void DmaUART::ClearRxBuffer(void)
@@ -137,12 +145,13 @@ void DmaUART::SetBaudRate(int bps)
 
 void hex(uint8_t h);
 
-void DmaUART::DmaUartInterrupt(void *context)
+uint8_t DmaUART::DmaUartInterrupt(void *context)
 {
     DmaUART *u = (DmaUART *) context;
     uint8_t uart_intr_status = 0;
 
     BaseType_t HPTaskAwoken = pdFALSE;
+//    ioWrite8(UART_DATA, '[');
 
     while (1) {
         // The `continue statement` may cause the interrupt to loop infinitely
@@ -161,8 +170,8 @@ void DmaUART::DmaUartInterrupt(void *context)
             if (cmd_buffer_get_free_isr(u->packets, &rxb, &HPTaskAwoken) == pdTRUE) {
                 // receive here. Writing to these registers should trigger the receive unit
                 xQueueSendFromISR(u->rx_bufs, &rxb, &HPTaskAwoken);
-                // ioWrite8(UART_DATA, '~');
-                // hex(rxb->bufnr);
+//                ioWrite8(UART_DATA, '~');
+//                hex(rxb->bufnr);
                 u->uart->rx_addr = rxb->data; // pbufs will be attached in the receive thread
                 u->uart->ictrl = DMAUART_RxIRQ_EN;
             } else {
@@ -217,9 +226,8 @@ void DmaUART::DmaUartInterrupt(void *context)
             u->uart->rx_pop = 1;
         }
     }
-    if (HPTaskAwoken == pdTRUE) {
-        vTaskSwitchContext(); // TODO: This should not be here, but right now, the UART is the only client on this IRQ number
-    }
+    //ioWrite8(UART_DATA, ']');
+    return HPTaskAwoken;
 }
 
 void DmaUART :: SetReceiveCallback(isr_receive_callback_t cb)

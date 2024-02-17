@@ -1,3 +1,39 @@
+Changes in 3.11, compared to 3.10i/j
+
+Additions:
+    1. This version adds WiFi support for the Ultimate 64 and Ultimate 64 Elite.
+       Please read the manual on how to set up the ESP32 module.
+       https://1541u-documentation.readthedocs.io/en/latest/howto/wifi.html
+
+    2. JiffyDOS support for the built-in SoftwareIEC drive. This is a first step
+       to make the internal drive more usable. More effort needs to be done to
+       make the command set more compatible with CMD.
+
+    3. Assembly 64 integration. Many users use the offline version of the
+       great Assembly 64 online database, by running Fredrik's tool to copy
+       the content into folders onto a USB stick. Now, the Ultimate is the first
+       embedded ever system that integrates access to this online database! You
+       can now simply download and play titles directly from the internet on your
+       Ultimate device. Please read the manual about this here:
+       https://1541u-documentation.readthedocs.io/en/latest/howto/assembly.html
+
+    4. The Ultimate now supports a basic http daemon; also known as webserver.
+       This allows some simple files to be served from the Ultimate. This server
+       also implements a ReSTful API, which allows an external device to control the
+       Ultimate with standard web URLs. Read up on the API here:
+       https://1541u-documentation.readthedocs.io/en/latest/api/api_calls.html
+
+    5. On the Ultimate 64 it is now possible to isolate the serial bus from the
+       computer, which allows the Ultimate 64 to be used as external drives.
+       Look for "Serial Bus Mode" in the "Ultimate 64 Specific Settings".
+
+Fixes:
+    Various small fixes, such as the telnet session closing upon mount, configuration
+    of the cartrdiges that serve VIC data from external ROM, quite a few fixes in 
+    the emulated printer, configurable page margins, ... and so on.
+
+
+
 Changes in 3.10i, compared to 3.10a
 -----------------------------------
 

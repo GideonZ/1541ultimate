@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include "FreeRTOS.h"
 #include "queue.h"
+#include "itu.h"
 
 extern "C" {
     #include "cmd_buffer.h"
@@ -36,6 +37,8 @@ typedef struct _dma_uart_t
 #define DMAUART_HWFLOWCTRL  0x01
 #define DMAUART_LOOPBACK    0x02
 #define DMAUART_SLIPENABLE  0x04
+#define DMAUART_MOD_BOOT    0x10
+#define DMAUART_MOD_ENABLE  0x20
 #define DMAUART_RESET       0x80
 
 typedef BaseType_t (*isr_receive_callback_t)(command_buf_context_t *context, command_buf_t *b, BaseType_t *w);
@@ -43,6 +46,7 @@ typedef BaseType_t (*isr_receive_callback_t)(command_buf_context_t *context, com
 class DmaUART
 {
     volatile dma_uart_t *uart;
+    int my_irq;
     void *rxSemaphore;
     bool slipMode;
     isr_receive_callback_t isr_rx_callback;
@@ -53,12 +57,13 @@ class DmaUART
     BaseType_t RxInterrupt();
     QueueHandle_t rx_bufs;
 public:
-    static void DmaUartInterrupt(void *context);
+    static uint8_t DmaUartInterrupt(void *context);
     bool txDebug;
 
-    DmaUART(void *registers, void *sem, command_buf_context_t *pkts)
+    DmaUART(void *registers, int irq, void *sem, command_buf_context_t *pkts)
     {
         uart = (volatile dma_uart_t *) registers;
+        my_irq = irq;
         packets = pkts;
         rxSemaphore = sem;
         slipMode = false;
@@ -70,8 +75,10 @@ public:
         uart->flowctrl = DMAUART_RESET;
         rx_bufs = xQueueCreate(16, sizeof(command_buf_t *));
         ResetReceiveCallback();
+        install_high_irq(irq, DmaUART :: DmaUartInterrupt, this);
     }
 
+    void ModuleCtrl(uint8_t mode);
     void EnableSlip(bool enabled);
     void EnableLoopback(bool enable);
     void FlowControl(bool enable);
