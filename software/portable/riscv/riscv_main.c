@@ -24,7 +24,7 @@ typedef struct{
     void *context;
 } IrqHandler_t;
 
-#define HIGH_IRQS 3
+#define HIGH_IRQS 4
 static IrqHandler_t high_irqs[HIGH_IRQS];
 
 void install_high_irq(int irqNr, irq_function_t func, void *context)

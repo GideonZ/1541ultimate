@@ -425,6 +425,10 @@ architecture logic of ultimate_logic_32 is
 	signal hw_data_o		: std_logic := '1';
     signal hw_srq_o         : std_logic := '1';
 
+    -- Serial port routing
+    signal itu_uart_txd     : std_logic;
+    signal itu_uart_rxd     : std_logic;
+
     -- Cassette
     signal c2n_play_sense_out   : std_logic := '0';
     signal c2n_play_motor_out   : std_logic := '0';
@@ -523,8 +527,8 @@ begin
         busy_led    => busy_led,
         misc_io     => misc_io,
 
-        uart_txd    => UART_TXD,
-        uart_rxd    => UART_RXD );
+        uart_txd    => itu_uart_txd,
+        uart_rxd    => itu_uart_rxd );
 
     r_drive1: if g_drive_1541 generate
     begin
@@ -1293,6 +1297,59 @@ begin
             pixel_opaque    => vid_opaque,
             pixel_data      => vid_data );
         
+    end generate;
+
+    r_wifi_uart: if g_wifi_uart generate
+        signal wifi_route       : std_logic;
+        signal wifi_uart_txd    : std_logic;
+        signal wifi_uart_rxd    : std_logic;
+    begin
+        i_wifi_uart_dma: entity work.uart_dma
+        generic map (
+            g_rx_tag  => c_tag_wifi_rx,
+            g_tx_tag  => c_tag_wifi_tx,
+            g_divisor => (g_clock_freq / g_baud_rate)
+        )
+        port map (
+            clock    => sys_clock,
+            reset    => sys_reset,
+
+            io_req   => io_req_wifi,
+            io_resp  => io_resp_wifi,
+            irq      => sys_irq_wifi,
+
+            mem_req  => mem_req_32_wifi,
+            mem_resp => mem_resp_32_wifi,
+
+            boot     => WIFI_BOOT,
+            enable   => WIFI_ENABLE,
+            route    => wifi_route,
+            txd      => wifi_uart_txd,
+            rxd      => wifi_uart_rxd,
+            rts      => WIFI_RTS,
+            cts      => WIFI_CTS );
+
+        UART_TXD <= itu_uart_txd  when wifi_route = '0' else WIFI_RXD;
+        WIFI_TXD <= wifi_uart_txd when wifi_route = '0' else UART_RXD;
+        itu_uart_rxd  <= UART_RXD when wifi_route = '0' else '1';
+        wifi_uart_rxd <= WIFI_RXD when wifi_route = '0' else '1';
+
+    end generate;
+
+    r_no_wifi: if not g_wifi_uart generate
+
+        UART_TXD <= itu_uart_txd;
+        itu_uart_rxd <= UART_RXD;
+
+        WIFI_TXD <= '1';
+        WIFI_RTS <= '1';
+        
+        i_wifi_dummy: entity work.io_dummy
+        port map (
+            clock   => sys_clock,
+            io_req  => io_req_wifi,
+            io_resp => io_resp_wifi
+        );
     end generate;
 
     i_mem_arb: entity work.mem_bus_arbiter_pri_32

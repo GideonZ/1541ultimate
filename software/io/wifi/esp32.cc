@@ -20,6 +20,7 @@
 #include "dump_hex.h"
 #include <stdarg.h>
 #include "userinterface.h"
+#include "subsys.h"
 
 #define DEBUG_INPUT 0
 
@@ -67,16 +68,31 @@ Esp32 :: Esp32()
     packets = new command_buf_context_t;
     cmd_buffer_init(packets); // C functions, so no constructor
 
-    uart = new DmaUART((void *)U64_WIFI_UART, rxSemaphore, packets);
-
-    if (-EINVAL == alt_irq_register(1, (int)uart, DmaUART :: DmaUartInterrupt)) {
-        puts("Failed to install WifiUART IRQ handler.");
-    }
+    uart = new DmaUART((void *)WIFI_UART_BASE, ITU_IRQHIGH_WIFI, rxSemaphore, packets);
 
     commandQueue = xQueueCreate(8, sizeof(espCommand_t));
     xTaskCreate( Esp32 :: CommandTaskStart, "Esp32 Command Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
     doClose = false;
     programError = false;
+
+    taskCategory = TasksCollection :: getCategory("ESP32", 26); // random position ;)
+}
+
+void Esp32 :: create_task_items(void)
+{
+    taskCategory->append(new Action("Off", S_mode, 0, ESP_MODE_OFF));
+    taskCategory->append(new Action("Run", S_mode, 0, ESP_MODE_RUN));
+    taskCategory->append(new Action("Boot", S_mode, 0, ESP_MODE_BOOT));
+    taskCategory->append(new Action("Run Uart", S_mode, 0, ESP_MODE_RUN_UART));
+    taskCategory->append(new Action("Boot Uart", S_mode, 0, ESP_MODE_BOOT_UART));
+}
+
+SubsysResultCode_e Esp32 :: S_mode(SubsysCommand *cmd)
+{
+    esp32.uart->ModuleCtrl(ESP_MODE_OFF);
+    vTaskDelay(100);
+    esp32.uart->ModuleCtrl(cmd->mode);
+    return SSRET_OK;
 }
 
 void Esp32 :: AttachApplication(Esp32Application *app)
@@ -87,7 +103,7 @@ void Esp32 :: AttachApplication(Esp32Application *app)
 void Esp32 :: Disable()
 {
     // stop running the run-mode task
-    U64_WIFI_CONTROL = 0;
+    uart->ModuleCtrl(ESP_MODE_OFF);
     uart->ClearRxBuffer(); // disables interrupts as well
 
     if (application) {
@@ -107,7 +123,7 @@ void Esp32 :: Enable(bool startTask)
     uart->EnableSlip(false);
     uart->EnableIRQ(true);
 
-    U64_WIFI_CONTROL = 1; // 5 for watching the UART output directly, 1 = own uart
+    uart->ModuleCtrl(ESP_MODE_RUN);
     vTaskDelay(500);
 
     ReadRxMessage();
@@ -124,8 +140,6 @@ void Esp32 :: Enable(bool startTask)
 void Esp32 :: Boot()
 {
     Disable();
-
-    U64_WIFI_CONTROL = 2;
     vTaskDelay(150);
     uart->SetBaudRate(115200);
     uart->EnableLoopback(false);
@@ -133,7 +147,7 @@ void Esp32 :: Boot()
     uart->ClearRxBuffer();
     uart->EnableSlip(false);
     uart->EnableIRQ(true);
-    U64_WIFI_CONTROL = 3;
+    uart->ModuleCtrl(ESP_MODE_BOOT);
     //ReadRxMessage(); Do not print message, because Download routine expects a message and verifies it
 }
 
@@ -271,7 +285,7 @@ int Esp32 :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
     }
     bool downloadStringFound = false;
     for (int i=0;i<100;i++) {
-    	if (strncmp((char *)(receiveBuffer + i), "DOWNLOAD_BOOT", 13) == 0) {
+    	if (strncmp((char *)(receiveBuffer + i), "DOWNLOAD", 8) == 0) {
     		downloadStringFound = true;
     		break;
     	}
