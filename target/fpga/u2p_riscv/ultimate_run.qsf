@@ -434,6 +434,11 @@ set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to SDRAM_DQ
 #set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/network/udp_header.vhd
 #set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/network/eth_debug_stream.vhd
 
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/uart_dma.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/tx_dma.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/slip_encoder.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/slip_decoder.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/rx_dma.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/ddr2_ctrl_logic.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/ddr2_ctrl_fast.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/rvlite/vhdl_source/csr.vhd
