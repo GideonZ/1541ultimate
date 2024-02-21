@@ -21,19 +21,18 @@ struct format {
 
 static char *bin(uint64_t val, int bits, char *buffer)
 {
-  int bit;
-  int leading = 1;
-  int i = 0;
-  while (--bits >= 0)
-    {
-      bit = ((val & (1LL << bits)) != 0LL);
-      if (leading && (bits != 0) && ! bit)
-	continue;
-      leading = 0;
-      buffer[i++] = '0' + bit;
+    int bit;
+    int leading = 1;
+    int i = 0;
+    while (--bits >= 0) {
+        bit = ((val & (1LL << bits)) != 0LL);
+        if (leading && (bits != 0) && !bit)
+            continue;
+        leading = 0;
+        buffer[i++] = '0' + bit;
     }
-  buffer[i] = 0;
-  return buffer;
+    buffer[i] = 0;
+    return buffer;
 }
 
 static int find_string(const char *what, const char *in)

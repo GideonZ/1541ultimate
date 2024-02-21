@@ -52,7 +52,7 @@ generic (
     g_usb_host2     : boolean := true;
     g_spi_flash     : boolean := true;
     g_vic_copper    : boolean := false;
-    g_measure_timing: boolean := true;
+    g_measure_timing: boolean := false;
     g_sampler       : boolean := true;
     g_rmii          : boolean := false;
     g_sdcard        : boolean := false;
