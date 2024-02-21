@@ -289,6 +289,13 @@ static void make_vcd(StreamRamFile *d, uint32_t *values, int count, const char *
 API_CALL(GET, machine, measure, NULL, ARRAY( {  }))
 {
     uint8_t *buffer = new uint8_t[64*1024];
+
+    if (!(getFpgaCapabilities() & CAPAB_BUS_MEASURE)) {
+        resp->error("The current FPGA build does not support timing measurement of the cartridge bus.");
+        resp->json_response(HTTP_NOT_IMPLEMENTED);
+        return;
+    }
+
     SubsysCommand *cmd = new SubsysCommand(NULL, SUBSYSID_C64, MENU_MEASURE_TIMING_API, 0, buffer, 64*1024);
     SubsysResultCode_t retval = cmd->execute();
 
