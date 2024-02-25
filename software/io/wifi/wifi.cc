@@ -137,6 +137,7 @@ bool WiFi::RequestEcho(void)
         }
     }
     uart->txDebug = false;
+    return true;
 }
 
 void WiFi::RunModeTaskStart(void *context)
@@ -160,6 +161,8 @@ void WiFi :: RunModeThread()
 
     state = eWifi_NotDetected;
     RefreshRoot();
+    static char boot_message[256];
+    int len;
 
     while(1) {
         switch(state) {
@@ -169,14 +172,38 @@ void WiFi :: RunModeThread()
             break;
 
         case eWifi_NotDetected:
+            len = esp32.DetectModule(boot_message, 256);
+            if(len) {
+                if (strncmp(boot_message, "ESP-ROM:", 8) == 0) {
+                    for(int i=8;i<32;i++) {
+                        if (boot_message[i] == '-') {
+                            moduleType[i-8] = 0;
+                            break;
+                        } else {
+                            moduleType[i-8] = boot_message[i];
+                        }
+                    }
+                } else {
+                    strcpy(moduleType, "esp32-wroom?");
+                }
+                dump_hex(boot_message, len);
+                state = eWifi_ModuleDetected;
+                RefreshRoot();
+                esp32.EnableRunMode();
+            } else {
+                printf("No Boot message.\n");
+                vTaskDelay(portMAX_DELAY); // basically stall
+            }
+
+        case eWifi_ModuleDetected:
             uart->txDebug = false;
             if (wifi_detect(&major, &minor, moduleName, 32)) {
-                state = eWifi_Detected;
+                state = eWifi_AppDetected;
                 RefreshRoot();
             }
             break;
 
-        case eWifi_Detected:
+        case eWifi_AppDetected:
             uart->txDebug = false;
 
 #if (CLOCK_FREQ == 66666667)

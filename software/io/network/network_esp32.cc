@@ -76,7 +76,10 @@ void NetworkLWIP_WiFi :: getDisplayString(int index, char *buffer, int width)
     case eWifi_NotDetected:
         sprintf(buffer, "WiFi    %#s\eJNo Module", width - 17, "");
         break;
-    case eWifi_Detected:               
+    case eWifi_ModuleDetected:
+        sprintf(buffer, "WiFi    %#s\eEFound!", width - 17, wifi.getModuleType());
+        break;
+    case eWifi_AppDetected:               
     case eWifi_Scanning:
         sprintf(buffer, "WiFi    %#s\eGScanning", width - 17, wifi.getModuleName());
         break;
@@ -159,6 +162,8 @@ void NetworkLWIP_WiFi :: fetch_context_items(IndexedList<Action *>&items)
         items.append(new Action("Disable", NetworkLWIP_WiFi :: disable, 0, 0));
     } else if (wifi.getState() == eWifi_Off) {
         items.append(new Action("Enable", NetworkLWIP_WiFi :: enable, 0, 0));
+    } else if (wifi.getState() == eWifi_NotDetected) {
+        items.append(new Action("Disable", NetworkLWIP_WiFi :: disable, 0, 0));
     }
 }
 

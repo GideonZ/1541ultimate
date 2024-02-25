@@ -45,7 +45,7 @@ class Esp32 : public ObjectWithMenu
     bool doClose;
     bool programError;
 
-    void Enable(bool);
+    void StartApp();
     void Disable();
     void Boot();
     int  Download(const uint8_t *binary, uint32_t address, uint32_t length);
@@ -73,6 +73,8 @@ public:
 
     DmaUART *uart;
     void ReadRxMessage(void);
+    int  DetectModule(void *buffer, int buffer_len);
+    void EnableRunMode();
 };
 
 extern Esp32 esp32;

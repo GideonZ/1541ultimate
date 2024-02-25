@@ -112,9 +112,11 @@ void Esp32 :: Disable()
     }
 }
 
-void Esp32 :: Enable(bool startTask)
+void Esp32 :: StartApp()
 {
     Disable();
+
+/*
     vTaskDelay(50);
     uart->SetBaudRate(115200);
     uart->EnableLoopback(false);
@@ -124,10 +126,16 @@ void Esp32 :: Enable(bool startTask)
     uart->EnableIRQ(true);
 
     uart->ModuleCtrl(ESP_MODE_RUN);
-    vTaskDelay(500);
+    vTaskDelay(300); // 1.5 seconds
 
     ReadRxMessage();
     uart->EnableSlip(true);
+*/
+
+    // Note that with the above change, the application will start with the module in the off state.
+    // The application becomes responsible for turning the module on. This enables the application to
+    // detect the ESP32 module and display UI messages accordingly
+
     // Start Application
     // TODO: Make it configurable what application starts.. Now, it's just a single one
     if (registered_app) {
@@ -135,6 +143,40 @@ void Esp32 :: Enable(bool startTask)
         application->Init(uart, packets);
         application->Start();
     }
+}
+
+int Esp32 :: DetectModule(void *buffer, int buffer_len)
+{
+    uart->ModuleCtrl(ESP_MODE_OFF);
+    uart->ClearRxBuffer(); // disables interrupts as well
+    vTaskDelay(50);
+    uart->SetBaudRate(115200);
+    uart->EnableLoopback(false);
+    uart->FlowControl(false);
+    uart->ClearRxBuffer();
+    uart->EnableSlip(false);
+    uart->EnableIRQ(true);
+    uart->ModuleCtrl(ESP_MODE_BOOT);
+    vTaskDelay(100); // 0.5 seconds
+    uart->EnableSlip(true);
+    return uart->Read((uint8_t*)buffer, buffer_len);
+}
+
+void Esp32 :: EnableRunMode()
+{
+    uart->ModuleCtrl(ESP_MODE_OFF);
+    uart->ClearRxBuffer(); // disables interrupts as well
+    vTaskDelay(50);
+    uart->SetBaudRate(115200);
+    uart->EnableLoopback(false);
+    uart->FlowControl(false);
+    uart->ClearRxBuffer();
+    uart->EnableSlip(false);
+    uart->EnableIRQ(true);
+    uart->ModuleCtrl(ESP_MODE_RUN);
+    vTaskDelay(300); // 1.5 seconds
+    ReadRxMessage();
+    uart->EnableSlip(true);
 }
 
 void Esp32 :: Boot()
@@ -210,6 +252,7 @@ bool Esp32::UartEcho(void)
         }
     }
     uart->EnableLoopback(false);
+    return true;
 }
 
 bool Esp32::Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data,
@@ -461,18 +504,15 @@ void Esp32::CommandThread()
             Boot();
             break;
         case WIFI_START:
-            //uart->EnableSlip(true);
-            //printf("Go, Wifi in 5, 4, 3, 2,...!\n");
-            //vTaskDelay(1000);
             printf("Go, Wifi!\n");
-            Enable(true);
+            StartApp();
             break;
         case WIFI_DOWNLOAD:
             uart->EnableSlip(false); // first receive boot message
             uart->EnableLoopback(false);
             uart->FlowControl(false);
             uart->txDebug = false; // disable debug
-            Boot();
+            Boot(); // also does disable, so this should stop the application
             a = Download((const uint8_t *)command.data, command.address, command.length);
             if (a) {
                 programError = true;

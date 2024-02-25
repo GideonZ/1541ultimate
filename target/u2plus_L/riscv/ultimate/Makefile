@@ -36,6 +36,7 @@ SRCS_C   =	itu.c \
 			http_protocol.c \
 			middleware.c \
 			multipart.c \
+			cmd_buffer.c \
 			url.c \
 
 SRCS_CC	 =  u2p_init.cc \
@@ -154,6 +155,10 @@ SRCS_CC	 =  u2p_init.cc \
 			assembly_search.cc \
 			assembly.cc \
 			filesystem_a64.cc \
+			dma_uart.cc \
+			esp32.cc \
+			wifi.cc \
+			network_esp32.cc \
 			$(PRJ).cc
 
 SRCS_CC +=  iec_interface.cc \
@@ -178,6 +183,7 @@ VPATH +=	$(PATH_SW)/6502/sidcrt/target
 VPATH +=	$(PATH_SW)/../neorv32/sw/common
 VPATH +=	$(PATH_SW)/../neorv32/sw/lib/include
 VPATH +=	$(PATH_SW)/../neorv32/sw/lib/source
+VPATH +=	$(PATH_SW)/wifi/raw_c3/main
 
 
 SRCS_ASM =

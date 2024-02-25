@@ -40,7 +40,8 @@ typedef enum {
     eWifi_Off,
     eWifi_Download,
     eWifi_NotDetected,
-    eWifi_Detected,
+    eWifi_ModuleDetected,
+    eWifi_AppDetected,
     eWifi_Scanning,
     eWifi_NotConnected,
     eWifi_Connected,
@@ -55,6 +56,7 @@ class WiFi : public Esp32Application
 
     WifiState_t state;
     char    moduleName[34];
+    char    moduleType[24];
     uint8_t my_mac[6];
     uint32_t my_ip;
     uint32_t my_gateway;
@@ -80,6 +82,7 @@ public:
     WifiState_t getState(void) { return state; }
     void setSsidPass(const char *ssid, const char *pass, int mode) { cfg_ssid = ssid; cfg_pass = pass; cfg_authmode = mode; }
     const char *getModuleName(void) { return moduleName; }
+    const char *getModuleType(void) { return moduleType; }
     void  getMacAddr(uint8_t *target) { memcpy(target, my_mac, 6); }
     char *getIpAddrString(char *buf, int max) { sprintf(buf, "%d.%d.%d.%d", (my_ip >> 0) & 0xff, (my_ip >> 8) & 0xff, (my_ip >> 16) & 0xff, (my_ip >> 24) & 0xff); return buf; }
 
