@@ -202,6 +202,7 @@ architecture structural of slot_server_v4 is
     signal phi2_tick_i     : std_logic;
     signal phi2_fall       : std_logic;
     signal phi2_recovered  : std_logic;
+    signal prepare_dma     : std_logic;
     signal vic_cycle       : std_logic;
     signal dma_data_out    : std_logic;
     signal do_sample_addr  : std_logic;
@@ -546,7 +547,8 @@ begin
         dma_data_out    => dma_data_out,
         clock_det       => status.clock_detect,
         vic_cycle       => vic_cycle,    
-    
+        prepare_dma     => prepare_dma,
+
         refr_inhibit    => mem_refr_inhibit,
         reqs_inhibit    => reqs_inhibit,
         clear_inhibit   => clear_inhibit,
@@ -683,6 +685,7 @@ begin
             -- timing inputs
             vic_cycle       => vic_cycle,    
             dma_data_out    => dma_data_out,
+            prepare_dma     => prepare_dma,
             phi2_recovered  => phi2_recovered,
             phi2_tick       => phi2_tick_i,
             do_sample_addr  => do_sample_addr,

@@ -32,6 +32,7 @@ port (
     dma_data_out    : out std_logic;
     clock_det       : out std_logic;
     vic_cycle       : out std_logic;    
+    prepare_dma     : out std_logic;
 
     refr_inhibit    : out std_logic;
     reqs_inhibit    : out std_logic;
@@ -166,6 +167,11 @@ begin
                 refr_inhibit <= '0';
             end if;   
 
+            prepare_dma <= '0';
+            if phase_l = c_400ns then
+                prepare_dma <= '1';
+            end if;
+
             if phase_h = c_80ns then
                 dma_data_out_i <= '1';
             end if;
@@ -174,8 +180,8 @@ begin
                 do_sample_io <= '1';
             end if;
 
-            dma_data_out_d <= dma_data_out_i; -- one cycle later to provide a bit of hold time
-            dma_data_out <= dma_data_out_d; -- another cycle delay
+            dma_data_out <= dma_data_out_i; -- one cycle later to provide a bit of hold time
+            --dma_data_out <= dma_data_out_d; -- another cycle delay
 
             if reset='1' then
                 dma_data_out_i <= '0';

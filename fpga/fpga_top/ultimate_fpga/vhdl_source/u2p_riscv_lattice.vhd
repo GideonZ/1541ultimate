@@ -219,7 +219,8 @@ architecture rtl of u2p_riscv_lattice is
     signal button_i     : std_logic_vector(2 downto 0);
     signal buffer_en    : std_logic;
     signal toggle       : std_logic;
-        
+    signal slot_dot_clock_f : std_logic;
+
     -- miscellaneous interconnect
     signal ulpi_reset_i     : std_logic;
     signal ulpi_data_o      : std_logic_vector(7 downto 0);
@@ -1050,14 +1051,10 @@ begin
 
     -- SLOT_DATA_OEn    <= '1';
     -- SLOT_DATA_DIR    <= '1';
-    SLOT_ADDR_OEn    <= toggle;
-    SLOT_ADDR_DIR    <= DEBUG_TRSTn and DEBUG_TDI and RMII_RX_ER and UART_RXD and IEC_RESET_I and CAS_SENSE and CAS_MOTOR when rising_edge(CLOCK_50);
+    SLOT_ADDR_OEn    <= toggle and slot_dot_clock_f;
+    SLOT_ADDR_DIR    <= RMII_RX_ER and UART_RXD and IEC_RESET_I and CAS_SENSE and CAS_MOTOR when rising_edge(CLOCK_50);
     toggle <= not toggle when rising_edge(sys_clock);
-    DEBUG_SPARE      <= sys_reset when rising_edge(sys_clock);
+    slot_dot_clock_f <= SLOT_DOTCLK when falling_edge(sys_clock);
     flash_sck_t      <= audio_reset; -- sys_reset when falling_edge(sys_clock); -- 0 when not in reset = enabled
 
-    -- Convenient debug pins
-    DEBUG_TDO <= '0';
-    DEBUG_TMS <= '0';
-    DEBUG_TCK <= '0';
 end architecture;

@@ -32,6 +32,7 @@ port (
     dma_data_out    : in  std_logic;
     phi2_recovered  : in  std_logic;
     phi2_tick       : in  std_logic;
+    prepare_dma     : in  std_logic;
     do_sample_addr  : in  std_logic;
     do_io_event     : in  std_logic;
     reu_dma_n       : in  std_logic := '1';
@@ -67,7 +68,7 @@ architecture gideon of slot_master_v4 is
     attribute keep : string;
     attribute keep of rwn_hist : signal is "true";
 
-    type   t_state is (idle, stopped, do_dma );
+    type   t_state is (idle, stopped, check_dma, do_dma );
     signal state     : t_state;
     
     signal dma_rack     : std_logic;
@@ -128,12 +129,12 @@ begin
                 rwn_out_i <= '1';
                 addr_out <= X"FFFF"; --(15 downto 14) <= "00"; -- always in a safe area
                 -- is the dma request active and are we at the right time?
-                if dma_req.request='1' and dma_ack_i='0' and phi2_tick='1' and BA='1' then
+                if dma_req.request='1' and dma_ack_i='0' and prepare_dma='1' then
                     dma_rack  <= '1';
                     DATA_out  <= dma_req.data;
                     addr_out  <= std_logic_vector(dma_req.address);
                     rwn_out_i <= dma_req.read_writen;
-                    state     <= do_dma;
+                    state     <= check_dma;
                 elsif reu_active='1' and reu_dma_n='1' and do_io_event='1' then
                     dma_n_i  <= '1';
                     reu_active <= '0';
@@ -150,9 +151,13 @@ begin
                     end if;
                 end if;
           
+            when check_dma =>
+                if do_sample_addr = '1' and phi2_recovered = '1' and BA = '1' then
+                    state <= do_dma;
+                end if;
+
             when do_dma =>
                 if phi2_recovered='0' then -- end of CPU cycle
-                --if do_io_event='1' then
                     dma_ack_i <= '1';
                     state <= stopped;
                 end if;
@@ -161,9 +166,6 @@ begin
                 null;                    
 
             end case;
-
-            drive_al <= not dma_n_i and phi2_recovered and not vic_cycle;
-            drive_ah <= drive_al and phi2_recovered;
 
             if reset='1' then
                 reu_active <= '0';
@@ -183,6 +185,9 @@ begin
         end if;
     end process;
     
+    drive_al <= not dma_n_i and phi2_recovered and not vic_cycle;
+    drive_ah <= drive_al;
+
     c64_stopped   <= c64_stopped_i;
 
     dma_resp.dack <= dma_ack_i and rwn_out_i; -- only data-acknowledge reads
@@ -193,7 +198,7 @@ begin
                                vic_cycle='0' and rwn_out_i='0') else '0';
                                
     ADDRESS_out   <= addr_out;
-    ADDRESS_tri_h <= drive_ah and drive_al;
+    ADDRESS_tri_h <= drive_ah;
     ADDRESS_tri_l <= drive_al;
     RWn_tri       <= drive_al;
     RWn_out       <= rwn_out_i;
