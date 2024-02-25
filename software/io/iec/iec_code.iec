@@ -1,4 +1,4 @@
-# IEC processor code used when both IEC Drive and IEC Printer are enabled
+# IEC processor code
 
 Tv = 1475
 Ts = 1475
@@ -68,12 +68,13 @@ start
             JUMP atn_irq_vec # Must be at address 1
 
 CHECK_ATN_BYTE
-            SET ADDRESSED=0
             IF NOT DATABYTE IS $5F THEN _dont_untalk
+            SET ADDRESSED=1
             SET TALKER=0
             RET
 _dont_untalk
             IF NOT DATABYTE IS $3F THEN _dont_unlisten
+            SET ADDRESSED=1
             SET LISTENER=0
             RET
 _dont_unlisten
@@ -134,6 +135,8 @@ atn_irq_vec
             SET IRQ_EN=1
             SET DATA=0 # not ready to receive
             SET CLK=1  # release clock
+            SET JIFFYDOS=0      # JiffyDOS detection has to be done on each ATN
+            SET ADDRESSED=0     # no one is addressed anymore on new ATN
             WAIT FOR 20 us
             WAIT UNTIL CLK=0  
             LOAD CTRL_ATN_BEGIN
@@ -146,8 +149,8 @@ _atn_first
             # PUSHD # Addressing byte is not required, as the check function already sends a slave select
             IF NOT ADDRESSED THEN _not_for_me
 
-_atn_second
-            WAIT UNTIL NOT CLK=0,ATN=0  # Possibly forever!
+_atn_loop
+            WAIT UNTIL NOT CLK=0,ATN=0  # Incomming byte or atn end
             IF ATN THEN _atn_end # Apparently there was no byte coming.
             SET JIFFYLOAD=0
             SUB RECEIVE_ATN_BYTE 
@@ -157,14 +160,9 @@ _atn_second
             SET JIFFYLOAD=1
 _no_jd_load
             PUSHD
-            # Ignore all other ATN stuff
-            WAIT UNTIL ATN=1
-            JUMP _atn_end
+            JUMP _atn_loop
 
 _not_for_me
-            # Data was set to 0, to ack the byte. The ack is valid,
-            # so we need to wait for minimum pulse width for the ack.
-            WAIT FOR 100 us
             SET DATA=1
             SET CLK=1
             WAIT UNTIL ATN=1
@@ -221,9 +219,8 @@ _jiffy_outer
             IF EOI THEN _jiffy_load_eoi
             IF CTRL THEN _jiffy_load_eoi
             SET DATA=0
-            WAIT FOR 12 us
             SET CLK=1
-            WAIT FOR 77 us
+            WAIT FOR 50 us
 _jiffy_inner
             POPB # Read byte is now popped from fifo
             SET DATA=1
@@ -234,21 +231,20 @@ _jiffy_inner
             IF EOI THEN _jiffy_inner_end
             READ # see if there is a new byte in fifo
             IF NOT VALID THEN _jiffy_inner_end
-            WAIT FOR 18 us # Test
             SET DATA=1
             SET CLK=1
             JUMP _jiffy_inner
 _jiffy_inner_end
             SET CLK=0
             SET DATA=1
-            WAIT FOR 35 us
+            WAIT FOR 10 us
             WAIT UNTIL DATA=0 # Host ack inner end
             JUMP _jiffy_outer
 
 _jiffy_load_eoi
-            WAIT FOR 80 us
+            WAIT FOR 100 us
             SET CLK=1
-            WAIT FOR 150 us
+            WAIT FOR 100 us
             SET CLK=0
             LOAD CTRL_TX_DONE
             PUSHC
@@ -385,17 +381,15 @@ RELEASE
             JUMP reset_vec
 
 JIFFY_RX
-            SET IRQ_EN=0
-_wait2
-            IF UPFIFOFULL THEN _wait2
-            SET DATA=1
-            WAIT UNTIL NOT CLK=0,ATN=1 # Possibly for a long time
-            IF NOT ATN THEN _end_of_rx
+            IF UPFIFOFULL THEN JIFFY_RX
+            SET DATA=1                  # Ready to receive
+            WAIT UNTIL CLK=1 # Possibly for a long time
 
             # clk(3)data(1) => !bit4 & !Bit5
             # clk(2)data(0) => !bit6 & !bit7
             # clk(3)data(1) => !bit3 & !bit1
             # clk(2)data(0) => !bit2 & !bit0
+            # clk(3)data(1) => EOI & STATUS
 
             WAIT FOR 17 us
             IN DATABIT4=!CLK
@@ -409,10 +403,14 @@ _wait2
             WAIT FOR 13 us
             IN DATABIT2=!CLK
             IN DATABIT0=!DATA
-            WAIT FOR 19 us
+            WAIT FOR 13 us
+            IN EOI=CLK
+            IF NOT DATA THEN _error
+            WAIT FOR 6 us
             SET DATA=0
-            WAIT FOR 70 us
+            WAIT FOR 10 us
             PUSHD
+            IF EOI THEN _end_of_rx
             JUMP JIFFY_RX
 
 RECEIVE_BYTE
@@ -485,22 +483,22 @@ _recv8bits
             WAIT UNTIL CLK=0 FOR Tv
 
             IF ATN THEN _normal_data
+            IF ADDRESSED THEN _normal_data	# first ATN byte already checked, don't CHECK_ATN_BYTE or ack jiffy again
 
             # ATN is true, so we check the jiffydos signal
             # but only when we get addressed            
             SUB CHECK_ATN_BYTE # Check based on first 7 bits only!
             IF NOT ADDRESSED THEN _normal_data
-
-            WAIT UNTIL CLK=1 FOR 275 us
+            WAIT UNTIL CLK=1 FOR 218 us
             IF TIMEOUT THEN _jiffy
-            SET JIFFYDOS=0
 _normal_data
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT7=DATA
             IF TIMEOUT THEN _error2
             WAIT UNTIL CLK=0 FOR Tv
-            WAIT FOR 20 us
+            WAIT FOR 5 us
             SET DATA=0
+            WAIT FOR 50 us
             RET
 _jiffy
             # Signal JD acknowledge
