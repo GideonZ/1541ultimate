@@ -174,17 +174,23 @@ void WiFi :: RunModeThread()
         case eWifi_NotDetected:
             len = esp32.DetectModule(boot_message, 256);
             if(len) {
-                if (strncmp(boot_message, "ESP-ROM:", 8) == 0) {
+                const char *bm = boot_message;
+                for(int i=0;i<3;i++) {
+                    if (*bm != 'E') {
+                        bm++;
+                    }
+                }
+                if (strncmp(bm, "ESP-ROM:", 8) == 0) {
                     for(int i=8;i<32;i++) {
-                        if (boot_message[i] == '-') {
+                        if (bm[i] == '-') {
                             moduleType[i-8] = 0;
                             break;
                         } else {
-                            moduleType[i-8] = boot_message[i];
+                            moduleType[i-8] = bm[i];
                         }
                     }
                 } else {
-                    strcpy(moduleType, "esp32-wroom?");
+                    strcpy(moduleType, "esp32-wroom");
                 }
                 dump_hex(boot_message, len);
                 state = eWifi_ModuleDetected;
