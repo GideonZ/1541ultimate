@@ -376,8 +376,10 @@ int Esp32 :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
 
     // Attach SPI Flash
     PackParams(parambuf, 2, 0, 0); // Default Flash
-    if (!Command(ESP_ATTACH_SPI, 8, 0, parambuf, receiveBuffer, 500))
+    if (!Command(ESP_ATTACH_SPI, 8, 0, parambuf, receiveBuffer, 500)) {
+        printf("Command Error ESP_ATTACH_SPI\n");
         return -2;
+    }
 
     // Set SPI Flash Parameters
     PackParams(parambuf, 6, 0, // FlashID
@@ -386,8 +388,10 @@ int Esp32 :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
                       0x1000, // 4 KB sector size
                        0x100, // 256 byte page size
                      0xFFFF); // Status mask
-    if (!Command(ESP_SET_FLASH_PARAMS, 24, 0, parambuf, receiveBuffer, 200))
+    if (!Command(ESP_SET_FLASH_PARAMS, 24, 0, parambuf, receiveBuffer, 200)) {
+        printf("Command Error ESP_SET_FLASH_PARAMS\n");
         return -3;
+    }
 
     uint32_t block_size = FLASH_TRANSFER_SIZE;
     uint32_t blocks = (length + block_size - 1) / block_size;
@@ -396,8 +400,12 @@ int Esp32 :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
     // Now start Flashing
     PackParams(parambuf, 4, total_length, blocks, block_size, address);
     if (!Command(ESP_FLASH_BEGIN, 16, 0, parambuf, receiveBuffer, 15 * 200)) {
-    	printf("Command Error ESP_FLASH_BEGIN.\n");
-    	return -4;
+    	printf("Command Error ESP_FLASH_BEGIN. Let's try adding an extra 0 for ESP32-C3\n");
+        PackParams(parambuf, 5, total_length, blocks, block_size, address, 0);
+        if (!Command(ESP_FLASH_BEGIN, 20, 0, parambuf, receiveBuffer, 15 * 200)) {
+        	printf("Command Error ESP_FLASH_BEGIN with extra zero\n");
+    	    return -4;
+        }
     }
 
     // Flash Blocks
