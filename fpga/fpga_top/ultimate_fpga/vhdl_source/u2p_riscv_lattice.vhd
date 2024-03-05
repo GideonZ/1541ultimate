@@ -653,7 +653,7 @@ begin
         
         -- slot side
         BUFFER_ENn  => open,
-        VCC         => SLOT_VCC,
+        VCCDET      => SLOT_VCC,
 
         phi2_i      => not SLOT_PHI2, -- 74LV14
         dotclk_i    => SLOT_DOTCLK,

@@ -106,7 +106,7 @@ port (
     io1n_i      : in    std_logic := '1';
     io2n_i      : in    std_logic := '1';
 
-    VCC         : in    std_logic := '1';
+    VCCDET      : in    std_logic := '1';
     freeze_activate : in  std_logic := '0';
 
     -- local bus side
@@ -197,12 +197,7 @@ port (
     SD_MOSI     : out   std_logic;
     SD_MISO     : in    std_logic := '1';
     SD_CARDDETn : in    std_logic := '1';
-    SD_DATA     : inout std_logic_vector(2 downto 1);
     
-    -- LED interface
-    LED_CLK     : out   std_logic;
-    LED_DATA    : out   std_logic;
-
     -- RTC Interface
     RTC_CS      : out   std_logic;
     RTC_SCK     : out   std_logic;
@@ -874,7 +869,7 @@ begin
             reset           => sys_reset,
             
             -- Cartridge pins
-            VCC             => VCC,
+            VCCDET          => VCCDET,
 
             phi2_i          => phi2_i,
             dotclk_i        => dotclk_i,
@@ -1111,9 +1106,6 @@ begin
 
     end generate;    
 
-    LED_CLK <= 'Z';
-    LED_DATA <= 'Z';
-
     r_spi_flash: if g_spi_flash generate
         i_spi_flash: entity work.spi_peripheral_io
         generic map (
@@ -1280,13 +1272,9 @@ begin
     c2n_sense_out <= c2n_play_sense_out or c2n_rec_sense_out;
     c2n_motor_out <= c2n_play_motor_out or c2n_rec_motor_out;
 
-    i_icap: entity work.icap
-    generic map (
-        g_enable        => g_icap )
+    i_icap: entity work.io_dummy
     port map (
         clock           => sys_clock,
-        reset           => sys_reset,
-    
         io_req          => io_req_icap,
         io_resp         => io_resp_icap );
 
@@ -1501,9 +1489,6 @@ begin
     filt6: entity work.spike_filter port map(sys_clock, rstn_i, c64_reset_in_n );
     c64_irq <= not c64_irq_n;
 
-    -- dummy
-    SD_DATA     <= "ZZ";
-    
     i_debug_dummy: entity work.io_dummy
     port map (
         clock       => sys_clock,

@@ -24,7 +24,7 @@ generic (
     g_ext_freeze_act: boolean := false;
     g_cartreset_init: std_logic := '0';
     g_boot_stop     : boolean := false;
-    g_big_endian    : boolean;
+    g_big_endian    : boolean := false;
     g_kernal_repl   : boolean := true;
     g_control_read  : boolean := true;
     g_command_intf  : boolean := true;
@@ -44,7 +44,7 @@ port (
     reset           : in  std_logic;
 
     -- Cartridge pins
-    VCC             : in    std_logic := '1';
+    VCCDET          : in    std_logic := '1';
 
     dotclk_i        : in    std_logic;
     phi2_i          : in    std_logic;
@@ -582,7 +582,7 @@ begin
         reset           => reset,
         
         -- Cartridge pins
-        VCC             => VCC,
+        VCCDET          => VCCDET,
         PHI2            => phi2_c,
         RSTn            => rstn_c,
         IO1n            => io1n_c,
@@ -1152,7 +1152,7 @@ begin
     process(clock)
     begin
         if rising_edge(clock) then
-            status.c64_vcc <= VCC;            
+            status.c64_vcc <= VCCDET;            
         end if;
     end process;
     status.exrom    <= not exromn_c;
