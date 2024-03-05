@@ -651,7 +651,6 @@ begin
         SD_MOSI     => open,
         SD_MISO     => '1',
         SD_CARDDETn => '1',
-        SD_DATA     => open,
         
         -- RTC Interface
         RTC_CS      => open,

@@ -75,8 +75,8 @@ port (
     SD_DATA     : inout std_logic_vector(2 downto 1);
     
     -- LED Interface
-    LED_CLK     : out   std_logic;
-    LED_DATA    : out   std_logic;
+    LED_CLK     : out   std_logic := '0';
+    LED_DATA    : out   std_logic := '0';
 
     -- RTC Interface
     RTC_CS      : out   std_logic;
@@ -182,6 +182,7 @@ architecture structural of u2_loader_riscv is
 begin
     reset_in <= '1' when BUTTON="000" else '0'; -- all 3 buttons pressed
     button_i <= not BUTTON;
+    SD_DATA <= "ZZ";
 
     i_clkgen: entity work.s3a_clockgen
     port map (
@@ -339,11 +340,6 @@ begin
         SD_MOSI     => SD_MOSI,
         SD_MISO     => SD_MISO,
         SD_CARDDETn => SD_CARDDETn,
-        SD_DATA     => SD_DATA,
-        
-        -- LED interface
-        LED_CLK     => LED_CLK,
-        LED_DATA    => LED_DATA,
         
         -- RTC Interface
         RTC_CS      => RTC_CS,
