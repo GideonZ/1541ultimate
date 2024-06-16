@@ -182,6 +182,8 @@ port (
 	-- Debug UART
 	UART_TXD	: out   std_logic;
 	UART_RXD	: in    std_logic := '1';
+    UART_CTS    : in    std_logic := '1';
+    UART_RTS    : out   std_logic := '1';
 	
     -- WiFi UART
     WIFI_BOOT   : out   std_logic;
@@ -540,7 +542,9 @@ begin
         misc_io     => misc_io,
 
         uart_txd    => itu_uart_txd,
-        uart_rxd    => itu_uart_rxd );
+        uart_rxd    => itu_uart_rxd,
+        uart_rts    => UART_RTS,
+        uart_cts    => UART_CTS );
 
     r_drive1: if g_drive_1541 generate
     begin
