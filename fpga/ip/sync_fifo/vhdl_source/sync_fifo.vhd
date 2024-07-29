@@ -9,6 +9,7 @@ entity sync_fifo is
         g_threshold_low: integer := 2;
         g_storage      : string  := "auto";     -- can also be "blockram" or "distributed"
         g_storage_lat  : string  := "block_ram"; -- can also be "distrubuted" or "registers" even
+        g_storage_xil  : string  := "auto";   
         g_fall_through : boolean := false);
     port (
         clock       : in  std_logic;
@@ -39,8 +40,10 @@ architecture  rtl  of  sync_fifo  is
 
     signal data_array   : t_data_array;   
 
+    -- Xilinx Attribute
     attribute ram_style        : string;
-    attribute ram_style of data_array : signal is g_storage;
+    attribute ram_style of data_array : signal is g_storage_xil;
+    -- Altera Attribute
     attribute ramstyle        : string;
     attribute ramstyle of data_array : signal is g_storage;
     -- Lattice Attribute

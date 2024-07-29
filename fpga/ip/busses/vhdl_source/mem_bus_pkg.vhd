@@ -73,6 +73,40 @@ package mem_bus_pkg is
     type t_mem_req_32_array is array(natural range <>) of t_mem_req_32;
     type t_mem_resp_32_array is array(natural range <>) of t_mem_resp_32;
 
+    ----
+    type t_mem_req_64 is record
+        tag         : std_logic_vector(8 downto 0);
+        request     : std_logic;
+        read_writen : std_logic;
+        address     : unsigned(26 downto 0); -- 128 MB
+        byte_en     : std_logic_vector(7 downto 0);
+        data        : std_logic_vector(63 downto 0);
+    end record;
+    
+    type t_mem_resp_64 is record
+        data        : std_logic_vector(63 downto 0);
+        rack        : std_logic;
+        rack_tag    : std_logic_vector(8 downto 0);
+        dack_tag    : std_logic_vector(8 downto 0);
+    end record;
+
+    constant c_mem_req_64_init : t_mem_req_64 := (
+        tag         => "000000000",
+        request     => '0',
+        read_writen => '1',
+        address     => (others => '0'),
+        data        => X"0000000000000000",
+        byte_en     => "00000000" );
+     
+    constant c_mem_resp_64_init : t_mem_resp_64 := (
+        data        => X"0000000000000000",
+        rack        => '0',
+        rack_tag    => "000000000",
+        dack_tag    => "000000000" );
+        
+    type t_mem_req_64_array is array(natural range <>) of t_mem_req_64;
+    type t_mem_resp_64_array is array(natural range <>) of t_mem_resp_64;
+
     constant c_mem_bus_req_width    : natural := 71;
     function to_std_logic_vector(a: t_mem_req_32) return std_logic_vector;
     function to_mem_req(a: std_logic_vector(c_mem_bus_req_width-1 downto 0); valid: std_logic) return t_mem_req_32;
