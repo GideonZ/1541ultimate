@@ -19,7 +19,6 @@ library ieee;
 
 entity input_synchronizer is
     generic (
-        g_width     : positive  := 1;
         g_reset_val : std_logic := '0'
     );
     port (
