@@ -79,8 +79,8 @@ architecture gideon of ulpi_bus is
     attribute iob of ulpi_data_in  : signal is "true";
     attribute iob of ulpi_dir_d1   : signal is "true";
     attribute iob of ulpi_nxt_d1   : signal is "true";
-    attribute iob of ulpi_data_out : signal is "true";
-    attribute iob of ULPI_STP      : signal is "true";
+    attribute iob of ulpi_data_out : signal is "false";
+    attribute iob of ULPI_STP      : signal is "false";
 begin
     -- Marking incoming data based on next/dir pattern
     rx_data      <= ulpi_data_in;
