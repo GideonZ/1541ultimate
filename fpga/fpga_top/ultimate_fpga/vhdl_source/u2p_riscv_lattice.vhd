@@ -18,7 +18,8 @@ use ECP5U.components.all;
 
 entity u2p_riscv_lattice is
 generic (
-    g_jtag_debug     : boolean := false;
+    g_sampler        : boolean := true;
+    g_sid            : boolean := false;
     g_dual_drive     : boolean := true );
 port (
     -- (Optional) Oscillator
@@ -617,7 +618,7 @@ begin
         g_hardware_gcr  => true,
         g_ram_expansion => true,
         g_extended_reu  => false,
-        g_stereo_sid    => true,
+        g_stereo_sid    => g_sid,
         g_8voices       => false,
         g_hardware_iec  => true,
         g_c2n_streamer  => true,
@@ -634,7 +635,7 @@ begin
         g_vic_copper    => false,
         g_video_overlay => false,
         g_wifi_uart     => true,
-        g_sampler       => false,
+        g_sampler       => g_sampler,
         g_acia          => true,
         g_rmii          => true )
     port map (
