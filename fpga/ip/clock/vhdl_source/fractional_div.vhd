@@ -11,6 +11,7 @@ use ieee.numeric_std.all;
 
 entity fractional_div is
 generic (
+    g_accu_bits     : natural :=   8;
     g_numerator     : natural :=   3;
     g_denominator   : natural := 200 );
 port (
@@ -56,7 +57,7 @@ architecture arch of fractional_div is
     constant c_bits_min    : integer := 1 + log2_ceil(-c_min - 1);
     constant c_bits_max    : integer := 1 + log2_ceil(c_max);
     constant c_bits_needed : integer := maxof2(c_bits_min, c_bits_max);
-    signal accu      : signed(8 downto 0) := (others => '0'); 
+    signal accu      : signed(g_accu_bits downto 0) := (others => '0'); 
     signal div16000  : unsigned(13 downto 0) := to_unsigned(128, 14);
     
 begin
