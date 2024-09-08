@@ -16,6 +16,8 @@ library work;
 
 entity rvlite_wrapper is
 generic (
+    g_gprf_ram      : string := "auto";
+    g_start_addr    : std_logic_vector(31 downto 0) := X"80000000";
     g_bootrom       : boolean := true;
     g_icache        : boolean := true;
     g_tag_i         : std_logic_vector(7 downto 0) := X"20";
@@ -48,11 +50,16 @@ architecture arch of rvlite_wrapper is
     signal dmem_resp   : t_mem_resp_32;
     signal imem_req    : t_mem_req_32;
     signal imem_resp   : t_mem_resp_32;
-    signal mem_req_i   : t_mem_req_32;
-    signal mem_resp_i  : t_mem_resp_32;
-begin
 
+    signal ibram_req   : t_bram_req;
+    signal ibram_resp  : t_bram_resp;
+    signal dbram_req   : t_bram_req;
+    signal dbram_resp  : t_bram_resp;
+begin
     i_core: entity work.core
+    generic map (
+        g_gprf_ram   => g_gprf_ram,
+        g_start_addr => g_start_addr )
     port map (
         clock     => clock,
         reset     => reset,
@@ -92,6 +99,8 @@ begin
     i_imem: entity work.bus_converter
     generic map (
         g_tag        => g_tag_i,
+        g_bootrom    => g_bootrom,
+        g_bootaddr   => g_start_addr(31 downto 16), 
         g_support_io => false )
     port map (
         clock        => clock,
@@ -100,6 +109,8 @@ begin
         dmem_resp    => imem_i,
         mem_req      => imem_req,
         mem_resp     => imem_resp,
+        bram_req     => ibram_req,
+        bram_resp    => ibram_resp,
         io_req       => open,
         io_resp      => c_io_resp_init );
     
@@ -107,6 +118,8 @@ begin
     generic map (
         g_tag        => g_tag_d,
         g_io_bit     => 28,
+        g_bootrom    => g_bootrom,
+        g_bootaddr   => g_start_addr(31 downto 16), 
         g_support_io => true )
     port map (
         clock        => clock,
@@ -115,6 +128,8 @@ begin
         dmem_resp    => dmem_i,
         mem_req      => dmem_req,
         mem_resp     => dmem_resp,
+        bram_req     => dbram_req,
+        bram_resp    => dbram_resp,
         io_busy      => io_busy,
         io_req       => io_req,
         io_resp      => io_resp );
@@ -130,24 +145,19 @@ begin
         reqs(1)      => imem_req,
         resps(0)     => dmem_resp,
         resps(1)     => imem_resp,
-        req          => mem_req_i,
-        resp         => mem_resp_i );
-    
-    r_no_boot: if not g_bootrom generate
-        mem_req    <= mem_req_i;
-        mem_resp_i <= mem_resp;
-    end generate;
+        req          => mem_req,
+        resp         => mem_resp );
     
     r_boot: if g_bootrom generate
-        i_boot: entity work.bootrom
+        i_bootrom: entity work.bootrom
         port map (
-            clock   => clock,
-            reset   => reset,
-            ireq    => mem_req_i,
-            iresp   => mem_resp_i,
-            oreq    => mem_req,
-            oresp   => mem_resp 
-        );
+            clock    => clock,
+            reset    => reset,
+            ireq     => ibram_req,
+            iresp    => ibram_resp,
+            dreq     => dbram_req,
+            dresp    => dbram_resp
+        );        
     end generate;
 
 end architecture;

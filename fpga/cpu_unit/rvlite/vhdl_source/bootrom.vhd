@@ -11,71 +11,73 @@ port
 (
     clock       : in  std_logic;
     reset       : in  std_logic;
-    ireq        : in  t_mem_req_32;
-    iresp       : out t_mem_resp_32;
-    oreq        : out t_mem_req_32;
-    oresp       : in  t_mem_resp_32
+    ireq        : in  t_bram_req;
+    iresp       : out t_bram_resp;
+    dreq        : in  t_bram_req;
+    dresp       : out t_bram_resp
 );
 end entity;
 
 architecture arch of bootrom is
-    signal boot_cs      : std_logic;
-    signal boot_valid   : std_logic;
-    signal boot_write   : std_logic;
-    signal boot_tag     : std_logic_vector(7 downto 0) := X"20";
-    signal boot_data    : std_logic_vector(31 downto 0);
-    signal boot_ram     : t_boot_data(0 to 1023) := c_bootrom;
+    constant g_width_bits   : positive := 32;
+    constant g_depth_bits   : positive := 10; -- 4K
+    constant g_read_first_a : boolean := false;
+    constant g_read_first_b : boolean := false;
+
+    shared variable ram : t_boot_data(0 to 2**g_depth_bits-1) := c_bootrom;
+
+    -- Xilinx and Altera attributes
+    attribute ram_style        : string;
+    attribute ram_style of ram : variable is "auto";
+    -- Altera Attribute
+    attribute ramstyle         : string;
+    attribute ramstyle of ram  : variable is "auto";
+    -- Lattice Attribute
+    attribute syn_ramstyle     : string;
+    attribute syn_ramstyle of ram : variable is "auto";
+
 begin
-    process(ireq, oresp, boot_cs, boot_valid)
-    begin
-        oreq <= ireq;
-        iresp <= oresp;
-        if boot_cs = '1' then
-            oreq.request <= '0';
-            iresp.rack <= '1';
-            iresp.rack_tag <= ireq.tag;
-        end if;
-        if boot_valid = '1' and oresp.dack_tag = X"00" then
-            iresp.dack_tag <= boot_tag;
-            iresp.data <= boot_data;
-        end if;
-    end process;
-    boot_cs <= '1' when ireq.address(ireq.address'high downto 12) = 0 and ireq.request = '1' else '0';
-
-    process(clock)
+    -----------------------------------------------------------------------
+    -- PORT A
+    -----------------------------------------------------------------------
+    p_port_a: process(clock)
     begin
         if rising_edge(clock) then
-            if oresp.dack_tag = X"00" then
-                boot_valid <= '0';
-            end if;
-            if boot_cs = '1' then
-                boot_valid <= '1';
-                boot_tag <= ireq.tag;
-            end if;
-            if boot_cs = '1' and ireq.read_writen = '0' and ireq.byte_en /= X"F" then
-                report "Unsupported write to bootram"
-                severity error;
-            end if;
-            if boot_cs = '1' and ireq.read_writen = '0' and ireq.address(11 downto 8) < 14 then
-                report "Write to bootrom code!!!"
-                severity failure;
-            end if;
-            if reset = '1' then
-                boot_tag <= X"20";
-            end if;
-        end if;
-    end process;
-
-    boot_write <= '1' when ireq.read_writen = '0' and ireq.address(11 downto 9) = "111" else '0';
-    process(clock)
-    begin
-        if rising_edge(clock) then
-            if boot_cs = '1' then
-                if boot_write = '1' then
-                    boot_ram(to_integer(ireq.address(11 downto 2))) <= ireq.data;
+            if ireq.ena = '1' then
+                if g_read_first_a then
+                    iresp.data <= ram(to_integer(ireq.address(g_depth_bits+1 downto 2)));
                 end if;
-                boot_data <= boot_ram(to_integer(ireq.address(11 downto 2)));
+                
+                if ireq.wen = '1' then
+                    ram(to_integer(ireq.address(g_depth_bits+1 downto 2))) := ireq.data;
+                end if;
+
+                if not g_read_first_a then
+                    iresp.data <= ram(to_integer(ireq.address(g_depth_bits+1 downto 2)));
+                end if;
             end if;
         end if;
-    end process;    
+    end process;
+
+    -----------------------------------------------------------------------
+    -- PORT B
+    -----------------------------------------------------------------------
+    p_port_b: process(clock)
+    begin
+        if rising_edge(clock) then
+            if dreq.ena = '1' then
+                if g_read_first_b then
+                    dresp.data <= ram(to_integer(dreq.address(g_depth_bits+1 downto 2)));
+                end if;
+
+                if dreq.wen = '1' then
+                    ram(to_integer(dreq.address(g_depth_bits+1 downto 2))) := dreq.data;
+                end if;
+
+                if not g_read_first_b then
+                    dresp.data <= ram(to_integer(dreq.address(g_depth_bits+1 downto 2)));
+                end if;
+            end if;
+        end if;
+    end process;
 end architecture;
