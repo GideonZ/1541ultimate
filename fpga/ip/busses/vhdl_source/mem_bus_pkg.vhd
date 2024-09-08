@@ -78,7 +78,7 @@ package mem_bus_pkg is
         tag         : std_logic_vector(8 downto 0);
         request     : std_logic;
         read_writen : std_logic;
-        address     : unsigned(26 downto 0); -- 128 MB
+        address     : unsigned(27 downto 1); -- 256 MB (prepared for 2 Gbit parts)
         byte_en     : std_logic_vector(7 downto 0);
         data        : std_logic_vector(63 downto 0);
     end record;
@@ -106,6 +106,17 @@ package mem_bus_pkg is
         
     type t_mem_req_64_array is array(natural range <>) of t_mem_req_64;
     type t_mem_resp_64_array is array(natural range <>) of t_mem_resp_64;
+
+    type t_bram_req is record
+        ena     : std_logic;
+        wen     : std_logic;
+        address : unsigned(15 downto 2);
+        data    : std_logic_vector(31 downto 0);
+    end record;
+
+    type t_bram_resp is record
+        data    : std_logic_vector(31 downto 0);
+    end record;
 
     constant c_mem_bus_req_width    : natural := 71;
     function to_std_logic_vector(a: t_mem_req_32) return std_logic_vector;
