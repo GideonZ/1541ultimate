@@ -19,8 +19,10 @@
 #include "tree_browser.h"
 #include "versions.h"
 #include "home_directory.h"
+#include "init_function.h"
 
-SocketGui socket_gui; // global that causes us to exist
+SocketGui *socket_gui = NULL;
+InitFunction init_socket_gui([](void *_obj, void *_param) { socket_gui = new SocketGui(); }, NULL, NULL, 100); // global that causes us to exist
 
 static void socket_gui_listen_task(void *a)
 {
@@ -32,6 +34,7 @@ static void socket_gui_listen_task(void *a)
 
 SocketGui :: SocketGui()
 {
+    printf("Starting Telnet Server\n");
 	xTaskCreate( socket_gui_listen_task, "Socket Gui Listener", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &listenTaskHandle );
 }
 

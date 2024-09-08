@@ -62,6 +62,7 @@ class Modem : public ConfigurableObject
     uint8_t registerValues[MODEM_NUM_REGS];
 public:
     Modem();
+    void start();
     void effectuate_settings();
     void reinit_acia(uint16_t base);
     bool prohibit_acia(uint16_t base);

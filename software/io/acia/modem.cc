@@ -91,9 +91,6 @@ Modem :: Modem()
     connectQueue = xQueueCreate(2, sizeof(ModemCommand_t));
 
     connectionLock = xSemaphoreCreateMutex();
-    xTaskCreate( Modem :: task, "Modem Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
-    xTaskCreate( Modem :: callerTask, "Outgoing Caller", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
-    listenerSocket = new ListenerSocket("Modem Listener", Modem :: listenerTask, "Modem External Connection");
     keepConnection = false;
     busyMode = false;
     commandMode = true;
@@ -102,7 +99,15 @@ Modem :: Modem()
     lastHandshake = 0;
     verbose = true;
     current_iobase = 0;
+    listenerSocket = NULL;
     ResetRegisters();
+}
+
+void Modem :: start()
+{
+    xTaskCreate( Modem :: task, "Modem Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
+    xTaskCreate( Modem :: callerTask, "Outgoing Caller", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
+    listenerSocket = new ListenerSocket("Modem Listener", Modem :: listenerTask, "Modem External Connection");
 }
 
 /*
@@ -847,4 +852,6 @@ bool Modem :: prohibit_acia(uint16_t base)
     return false;
 }
 
+#include "init_function.h"
 Modem modem;
+InitFunction init_modem([](void *obj, void *_param) { Modem *modem = (Modem *)obj; modem->start(); }, &modem, NULL, 105); // global that causes us to exist

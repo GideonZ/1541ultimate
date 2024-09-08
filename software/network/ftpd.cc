@@ -140,7 +140,7 @@ static int EndsWith(const char *str, const char *suffix)
         return 0;
     return strncmp(str + lenstr - lensuffix, suffix, lensuffix) == 0;
 }
-FTPDaemon ftpd; // the class that causes us to exist
+FTPDaemon *ftpd = NULL; 
 
 FTPDaemon::FTPDaemon()
 {
@@ -1003,3 +1003,6 @@ bool FTPDataConnection::receivefile(vfs_file_t *file)
     vfs_close(file);
     return ret;
 }
+
+#include "init_function.h"
+InitFunction init_ftpd([](void *_obj, void *_param) { ftpd = new FTPDaemon(); }, NULL, NULL, 101); // global that causes us to exist

@@ -50,7 +50,7 @@
 #define SOCKET_CMD_READFLASH    0xFF75
 #define SOCKET_CMD_DEBUG_REG    0xFF76
 
-SocketDMA socket_dma; // global that causes the object to exist
+SocketDMA *socket_dma = NULL;
 
 extern cart_def sid_cart;
 extern cart_def boot_cart;
@@ -564,3 +564,6 @@ void SocketDMA::identThread(void *_a)
     // this will never happen
     lwip_close(sockfd);
 }
+
+#include "init_function.h"
+InitFunction init_socket64([](void *_obj, void *_param) { socket_dma = new SocketDMA(); }, NULL, NULL, 102); // global that causes us to exist

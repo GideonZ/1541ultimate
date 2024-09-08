@@ -50,7 +50,7 @@ void initLwip(void *a, void *b)
 }
 
 
-InitFunction lwIP_initializer(initLwip, NULL, NULL);
+InitFunction lwIP_initializer(initLwip, NULL, NULL, 200);
 IndexedList<NetworkInterface *> NetworkInterface :: netInterfaces(4, NULL);
 /**
  * Callbacks
