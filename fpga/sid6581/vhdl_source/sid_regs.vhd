@@ -51,7 +51,7 @@ port (
     attack        : out std_logic_vector(3 downto 0);
     decay         : out std_logic_vector(3 downto 0);
     sustain       : out std_logic_vector(3 downto 0);
-    release       : out std_logic_vector(3 downto 0);
+    releese       : out std_logic_vector(3 downto 0);
 
     -- mixer 1 parameters
     filter_en     : out std_logic;
@@ -233,7 +233,7 @@ begin
     attack      <= att_dec(to_integer(voice_adsr))(7 downto 4);
     decay       <= att_dec(to_integer(voice_adsr))(3 downto 0);
     sustain     <= sust_rel(to_integer(voice_adsr))(7 downto 4);
-    release     <= sust_rel(to_integer(voice_adsr))(3 downto 0);
+    releese     <= sust_rel(to_integer(voice_adsr))(3 downto 0);
 
     -- Mixer 1 parameters
     filter_en   <= filt_en_i(to_integer(voice_mul));

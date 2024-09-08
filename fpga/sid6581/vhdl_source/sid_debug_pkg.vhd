@@ -27,7 +27,7 @@ package sid_debug_pkg is
         attack          : std_logic_vector(3 downto 0);
         decay           : std_logic_vector(3 downto 0);
         sustain         : std_logic_vector(3 downto 0);
-        release         : std_logic_vector(3 downto 0);
+        releese         : std_logic_vector(3 downto 0);
     end record;
 
     type t_voice_debug_array is array(natural range <>) of t_voice_debug;

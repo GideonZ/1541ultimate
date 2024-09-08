@@ -72,7 +72,7 @@ architecture structural of sid_top is
     signal attack      : std_logic_vector(3 downto 0);
     signal decay       : std_logic_vector(3 downto 0);
     signal sustain     : std_logic_vector(3 downto 0);
-    signal release     : std_logic_vector(3 downto 0);
+    signal releese     : std_logic_vector(3 downto 0);
 
     -- Filter enable
     signal filter_en   : std_logic;
@@ -163,7 +163,7 @@ begin
         attack      => attack,
         decay       => decay,
         sustain     => sustain,
-        release     => release,
+        releese     => releese,
     
         -- mixer parameters
         filter_en   => filter_en,
@@ -266,7 +266,7 @@ begin
         attack   => attack,
         decay    => decay,
         sustain  => sustain,
-        release  => release,
+        releese  => releese,
         
         env_state=> open, -- for testing only
         env_out  => enveloppe );
