@@ -10,6 +10,7 @@
 #include "u64.h"
 #include "fpll.h"
 #include "itu.h"
+#include "color_timings.h"
 
 #define RECONFIG_LITE
 
@@ -19,32 +20,6 @@
 #define FPLL_MIN_VCO_FREQ       600
 #define FPLL_MAX_VCO_FREQ       1300
 #define FPLL_MFRAC_BITS         32
-
-#define TABLE_504 0x00
-#define TABLE_520 0x80
-
-const t_video_color_timing c_pal_50_283_5   = { 0xEAB1A83C, 18, 77, 0x37 | TABLE_504, 24, VIDEO_FMT_CYCLES_63, 81247 };
-const t_video_color_timing c_ntsc_60_227_5  = { 0xA2E8BA2E, 19, 80, 0x07 | TABLE_520, 32, VIDEO_FMT_CYCLES_65 | VIDEO_FMT_NTSC_ENCODING | VIDEO_FMT_NTSC_FREQ | VIDEO_FMT_60_HZ, 84338 };
-const t_video_color_timing c_pal_60_free    = { 0xA4F3912B, 19, 80, 0x22 | TABLE_504, 24, VIDEO_FMT_CYCLES_65 |                           VIDEO_FMT_NTSC_FREQ | VIDEO_FMT_60_HZ, 84372 };
-const t_video_color_timing c_pal_60_281_5   = { 0xA7EDCCD2, 19, 80, 0x33 | TABLE_520, 24, VIDEO_FMT_CYCLES_65 |                           VIDEO_FMT_NTSC_FREQ | VIDEO_FMT_60_HZ, 84422 };
-const t_video_color_timing c_ntsc_50_free   = { 0xEDDAEBE2, 18, 77, 0x18 | TABLE_520, 32, VIDEO_FMT_CYCLES_63 | VIDEO_FMT_NTSC_ENCODING, 81300 };
-const t_video_color_timing c_ntsc_50_228_5  = { 0xF2E98AC5, 18, 77, 0x09 | TABLE_504, 32, VIDEO_FMT_CYCLES_63 | VIDEO_FMT_NTSC_ENCODING, 81385 };
-
-//const t_video_color_timing c_pal_60_282_5   = { 0x961DE490, 19, 80, 0x35 | TABLE_520, 24, VIDEO_FMT_CYCLES_65 |                           VIDEO_FMT_NTSC_FREQ | VIDEO_FMT_60_HZ, 84338 };
-//const t_video_color_timing c_pal_60_283_5   = { 0x846E277B, 19, 80, 0x37 | TABLE_520, 24, VIDEO_FMT_CYCLES_65 |                           VIDEO_FMT_NTSC_FREQ | VIDEO_FMT_60_HZ, 84338 };
-//const t_video_color_timing c_ntsc_50_229_0  = { 0xE8521D78, 18, 77, 0x0A | TABLE_504, 32, VIDEO_FMT_CYCLES_63 | VIDEO_FMT_NTSC_ENCODING, 81429 };
-//const t_video_color_timing c_ntsc_50_227_5  = { 0x083C26AB, 19, 77, 0x07 | TABLE_504, 32, VIDEO_FMT_CYCLES_63 | VIDEO_FMT_NTSC_ENCODING, 81429 };
-//const t_video_color_timing c_ntsc_50_228_5r = { 0xF2E98AC5, 18, 77, 0x09 | TABLE_504, 32, VIDEO_FMT_CYCLES_63 | VIDEO_FMT_NTSC_ENCODING | VIDEO_FMT_RESET_BURST, 81429 };
-//const t_video_color_timing c_ntsc_50_227_5r = { 0x083C26AB, 19, 77, 0x07 | TABLE_504, 32, VIDEO_FMT_CYCLES_63 | VIDEO_FMT_NTSC_ENCODING | VIDEO_FMT_RESET_BURST, 81429 };
-
-const t_video_color_timing *color_timings[] = {
-        &c_pal_50_283_5,
-        &c_ntsc_60_227_5,
-        &c_pal_60_free,
-        &c_ntsc_50_free,
-        &c_pal_60_281_5,  // best timing match to original C64
-        &c_ntsc_50_228_5, //  best timing match to original C64
-};
 
 // Normal setting PAL  = 12.EAB16BF3 = 81246907379 / 1000000 = 81246,907379 ==> PPM = 81247  (31.5279555556 MHz Analog clock)  (72/512)
 // Normal setting NTSC = 13.A2E89059 = 84337528921 / 1000000 = 84337,528921 ==> PPM = 84338  (32.7272727272 MHz Analog clock)  (56/512)
@@ -454,41 +429,6 @@ extern "C" void pllOffsetPpm(int ppm)
 }
 
 #endif // Reconfig Lite
-
-
-extern "C" void SetScanModeRegisters(volatile t_video_timing_regs *regs, const TVideoMode *mode)
-{
-    regs->VID_HSYNCPOL     = mode->hsyncpol;
-    regs->VID_HSYNCTIME    = mode->hsync >> 1;
-    regs->VID_HBACKPORCH   = mode->hbackporch >> 1;
-    regs->VID_HACTIVE      = mode->hactive >> 3;
-    regs->VID_HFRONTPORCH  = mode->hfrontporch >> 1;
-    regs->VID_HREPETITION  = 0;
-    regs->VID_VSYNCPOL     = mode->vsyncpol;
-    regs->VID_VSYNCTIME    = mode->vsync;
-    regs->VID_VBACKPORCH   = mode->vbackporch;
-    regs->VID_VACTIVE      = mode->vactive >> 3;
-    regs->VID_VFRONTPORCH  = mode->vfrontporch;
-    regs->VID_VIC          = mode->vic;
-    regs->VID_REPCN        = mode->pixel_repetition - 1;
-    regs->VID_Y            = mode->color_mode;
-}
-
-extern "C" void SetVideoMode(t_video_mode mode)
-{
-    volatile t_video_timing_regs *regs = (volatile t_video_timing_regs *)VID_IO_BASE;
-
-    const TVideoMode pal  =  { 17, 27023962,  720, 12,  64,  68, 0,   576,  4, 5, 39, 0, 1, 0 };  // VIC 17/18 720x576 @ 50.12Hz (624 lines) (!) // detuned + one line less
-    const TVideoMode ntsc =  { 03, 27000000,  720, 16,  62,  60, 0,   480,  9, 6, 31, 0, 1, 0 };  // VIC 2/3 720x480 @ 60Hz
-
-
-    const t_video_color_timing *ct = color_timings[(int)mode];
-    if (ct->audio_div == 77) {
-        SetScanModeRegisters(regs, &pal);
-    } else {
-        SetScanModeRegisters(regs, &ntsc);
-    }
-}
 
 extern "C" void ResetHdmiPll(void)
 {

@@ -39,6 +39,7 @@ SRCS_C   =	itu.c \
 			url.c
 
 SRCS_CC	 =  u2p_init.cc \
+			usb_hwinit.cc \
 			i2c_drv.cc \
 			codec.cc \
 			small_printf.cc \
@@ -141,6 +142,8 @@ SRCS_CC	 =  u2p_init.cc \
 			socket_dma.cc \
 			home_directory.cc \
 			reu_preloader.cc \
+			color_timings.cc \
+			hdmi_scan.cc \
 			fpll.cc \
 			dma_uart.cc \
 			esp32.cc \

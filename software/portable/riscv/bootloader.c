@@ -126,6 +126,7 @@ int main()
                 __asm__("nop");
             }
         }
+    #endif
     } else if(BOOT_MAGIC_LOCATION == BOOT_MAGIC_VALUE) {
         my_puts("Magic!\n");
         BOOT_MAGIC_LOCATION = 0;
@@ -138,5 +139,4 @@ int main()
         __asm__("nop");
     }
     return 0;
-#endif
 }

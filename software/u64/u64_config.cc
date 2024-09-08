@@ -29,6 +29,8 @@ extern "C" {
 #include "sid_device_swinsid.h"
 #include "sid_device_armsid.h"
 #include "init_function.h"
+#include "color_timings.h"
+#include "hdmi_scan.h"
 
 const uint8_t default_colors[16][3] = {
     { 0x00, 0x00, 0x00 },
@@ -1103,20 +1105,20 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
 	int sid1, sid2;
 	char sidString[40];
 	C64 *machine;
-	I2C_Driver i2c;
 	static char poke_buffer[16];
 	uint32_t addr, value;
 
 	switch(cmd->functionID) {
     case MENU_U64_SAVEEDID:
     	// Try to read EDID, just a hardware test
-    	if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
+    	if ((getFpgaCapabilities() & CAPAB_ULTIMATE64) && (i2c)) {
     		U64_HDMI_REG = U64_HDMI_HPD_RESET;
 
     		if (U64_HDMI_REG & U64_HDMI_HPD_CURRENT) {
     			U64_HDMI_REG = U64_HDMI_DDC_ENABLE;
     			printf("Monitor detected, now reading EDID.\n");
-    			if (i2c.i2c_read_block(0xA0, 0x00, edid, 256) == 0) {
+                i2c->set_channel(I2C_CHANNEL_HDMI);
+    			if (i2c->i2c_read_block(0xA0, 0x00, edid, 256) == 0) {
     				if (cmd->user_interface->string_box("Reading EDID OK. Save to:", name, 31) > 0) {
     					set_extension(name, ".bin", 32);
     			        fres = fm->fopen(cmd->path.c_str(), name, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
@@ -1994,20 +1996,26 @@ bool U64Config :: IsMonitorHDMI()
     const uint8_t header_expected[8] = { 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00 };
     uint8_t header[8];
     uint8_t extension[8];
-    I2C_Driver i2c;
+
 
     if ((U64_HDMI_REG & U64_HDMI_HPD_CURRENT) == 0) {
         printf("No HPD - no digital monitor attached.\n");
         return false;
     }
 
+    if(!i2c) {
+        printf("No I2C interface available.\n");
+        return false;
+    }
+
     U64_HDMI_REG = U64_HDMI_DDC_ENABLE;
-    if (i2c.i2c_read_block(0xA0, 0x00, header, 8) != 0) {
+    i2c->set_channel(I2C_CHANNEL_HDMI);
+    if (i2c->i2c_read_block(0xA0, 0x00, header, 8) != 0) {
         printf("EDID Read FAILED.\n");
         U64_HDMI_REG = U64_HDMI_DDC_DISABLE;
         return false;
     }
-    if (i2c.i2c_read_block(0xA0, 0x80, extension, 8) != 0) {
+    if (i2c->i2c_read_block(0xA0, 0x80, extension, 8) != 0) {
         printf("EDID Read FAILED.\n");
         U64_HDMI_REG = U64_HDMI_DDC_DISABLE;
         return false;

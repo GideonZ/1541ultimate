@@ -95,6 +95,11 @@ const char *getVersionString(char *title)
     return title;
 }
 
+extern "C" {
+    void codec_init();
+}
+void initialize_usb_hub();
+
 extern "C" void ultimate_main(void *a)
 {
     char time_buffer[32];
@@ -103,9 +108,9 @@ extern "C" void ultimate_main(void *a)
 
 	printf("*** Ultimate-II V3.x ***\n");
     printf("*** FPGA Capabilities: %8x ***\n\n", capabilities);
-    
-	printf("%s ", rtc.get_long_date(time_buffer, 32));
-	printf("%s\n", rtc.get_time_string(time_buffer, 32));
+
+    printf("%s ", rtc.get_long_date(time_buffer, 32));
+    printf("%s\n", rtc.get_time_string(time_buffer, 32));
 
 	puts("Executing init functions.");
 	InitFunction :: executeAll();

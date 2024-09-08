@@ -69,43 +69,13 @@ public:
     void execute(void);
 };
 
-
-typedef struct {
-    int vic;
-    int frequency;
-    int hactive;
-    int hfrontporch;
-    int hsync;
-    int hbackporch;
-    int hsyncpol;
-    int vactive;
-    int vfrontporch;
-    int vsync;
-    int vbackporch;
-    int vsyncpol;
-    int pixel_repetition;
-    int color_mode;
-} TVideoMode;
-
-typedef struct {
-    uint32_t frac;
-    uint8_t  m;
-    uint8_t  audio_div;
-    uint8_t  phase_inc;
-    uint8_t  burst_phase;
-    uint8_t  mode_bits;
-    int      ppm;
-} t_video_color_timing;
-
-extern const t_video_color_timing *color_timings[];
-
-extern "C" void SetScanModeRegisters(volatile t_video_timing_regs *regs, const TVideoMode *mode);
+//extern "C" void SetScanModeRegisters(volatile t_video_timing_regs *regs, const TVideoMode *mode);
+//extern "C" void SetVideoMode(t_video_mode mode);
 extern "C" void SetScanMode(int modeIndex);
 extern "C" void pllOffsetHz(int Hz);
 extern "C" void pllOffsetPpm(int ppm);
 extern "C" void SetVideoPll(t_video_mode mode);
 extern "C" void SetHdmiPll(t_video_mode mode);
-extern "C" void SetVideoMode(t_video_mode mode);
 extern "C" void ResetHdmiPll(void);
 
 #endif /* FPLL_H_ */
