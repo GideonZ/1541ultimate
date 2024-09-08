@@ -15,7 +15,7 @@ use ieee.numeric_std.all;
 entity rx is
 --generic (clks_per_bit : integer := 434); -- 115k2 @ 50 MHz
 port (
-    divisor : in  std_logic_vector(9 downto 0);
+    divisor : in  std_logic_vector(10 downto 0);
     clk     : in  std_logic;
     reset   : in  std_logic;
     tick    : in  std_logic;
@@ -29,7 +29,7 @@ end rx;
 architecture gideon of rx is
     signal bitcnt : integer range 0 to 15;
     signal bitvec : std_logic_vector(8 downto 0);
-    signal timer  : unsigned(9 downto 0);
+    signal timer  : unsigned(10 downto 0);
     type state_t is (Idle, StartBit, Receiving);
     signal state  : state_t;
     signal rxd_s  : std_logic;
@@ -63,7 +63,7 @@ begin
                 when Idle =>
                     if rxd_d = '1' and rxd_c = '0' then -- falling edge
                         timeout <= '0';
-                        timer <= '0' & unsigned(divisor(9 downto 1)); --(clks_per_bit / 2) - 1;
+                        timer <= '0' & unsigned(divisor(10 downto 1)); --(clks_per_bit / 2) - 1;
                         state <= startbit;
                     elsif timer = 0 and bitcnt = 0 then
                         timeout <= trigger;

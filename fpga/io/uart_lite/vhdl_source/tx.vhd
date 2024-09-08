@@ -17,7 +17,7 @@ use ieee.numeric_std.all;
 entity tx is
 --generic (clks_per_bit : integer := 434); -- 115k2 @ 50 MHz
 port (
-    divisor : in  std_logic_vector(9 downto 0);
+    divisor : in  std_logic_vector(10 downto 0);
 
     clk     : in  std_logic;
     reset   : in  std_logic;
@@ -33,7 +33,7 @@ end tx;
 architecture gideon of tx is
     signal bitcnt : integer range 0 to 9;
     signal bitvec : std_logic_vector(8 downto 0);
-    signal timer  : integer range 0 to 1023;
+    signal timer  : integer range 0 to 2047;
     type state_t is (Idle, Waiting, Transmitting);
     signal state  : state_t;
     signal cts_c  : std_logic := '1';

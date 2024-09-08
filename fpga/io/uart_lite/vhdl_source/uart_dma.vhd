@@ -36,7 +36,7 @@ architecture gideon of uart_dma is
     signal enable_i     : std_logic;
     signal route_i      : std_logic;
 
-    signal divisor      : std_logic_vector(9 downto 0);
+    signal divisor      : std_logic_vector(10 downto 0);
 	signal dotx			: std_logic;
 	signal done			: std_logic;
 	signal rxchar		: std_logic_vector(7 downto 0);
@@ -289,7 +289,7 @@ begin
                     divisor(7 downto 0) <= io_req.data;
                     
                 when c_uart_divisor_h =>
-                    divisor(9 downto 8) <= io_req.data(1 downto 0);
+                    divisor(10 downto 8) <= io_req.data(2 downto 0);
 
                 when c_uart_imask =>
                     if io_req.data(7) = '1' then

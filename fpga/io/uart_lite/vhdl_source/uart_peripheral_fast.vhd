@@ -23,7 +23,7 @@ port (
 end uart_peripheral_fast;
 
 architecture gideon of uart_peripheral_fast is
-    signal divisor      : std_logic_vector(9 downto 0);
+    signal divisor      : std_logic_vector(10 downto 0);
 	signal dotx			: std_logic;
 	signal done			: std_logic;
 	signal rxchar		: std_logic_vector(7 downto 0);
@@ -181,7 +181,7 @@ begin
                     divisor(7 downto 0) <= io_req.data;
                     
                 when c_uart_divisor_h =>
-                    divisor(9 downto 8) <= io_req.data(1 downto 0);
+                    divisor(10 downto 8) <= io_req.data(2 downto 0);
 
                 when c_uart_flowctrl =>
                     cts_enable <= io_req.data(0);
@@ -243,7 +243,7 @@ begin
 		flags                                      when c_uart_flags,
 		"000000" & imask                           when c_uart_imask,
 		divisor(7 downto 0)                        when c_uart_divisor_l,
-		"000000" & divisor(9 downto 8)             when c_uart_divisor_h,
+		"00000" & divisor(10 downto 8)             when c_uart_divisor_h,
         "000000" & loopback & cts_enable           when c_uart_flowctrl,
         std_logic_vector(to_unsigned(tx_count, 8)) when c_uart_tx_count,
         std_logic_vector(to_unsigned(rx_count, 8)) when c_uart_rx_count,
