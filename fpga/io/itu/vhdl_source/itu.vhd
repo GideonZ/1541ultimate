@@ -23,10 +23,10 @@ port (
     io_resp         : out t_io_resp;
     irq_out         : out std_logic;
     
-    tick_4MHz       : in  std_logic;
-    tick_1us        : in  std_logic;
-    tick_1ms        : in  std_logic;
-    buttons         : in  std_logic_vector(2 downto 0);
+    tick_4MHz       : in  std_logic := '1';
+    tick_1us        : in  std_logic := '0';
+    tick_1ms        : in  std_logic := '0';
+    buttons         : in  std_logic_vector(2 downto 0) := "000";
     
     irq_timer_tick  : in  std_logic := '0';
     irq_in          : in  std_logic_vector(7 downto 2) := (others => '0');
