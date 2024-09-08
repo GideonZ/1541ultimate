@@ -6,7 +6,7 @@ use work.io_bus_pkg.all;
 
 entity i2c_master is
     generic (
-        g_divisor       : natural := 50_000_000 / 400_000
+        g_frequency         : natural := 50_000_000
     );
     port (
         clock               : in  std_logic;
@@ -15,19 +15,20 @@ entity i2c_master is
         io_req              : in  t_io_req;
         io_resp             : out t_io_resp;
 
-        scl_o               : out std_logic;
-        scl_i               : in  std_logic;
-        sda_o               : out std_logic;
-        sda_i               : in  std_logic
+        scl_o               : out std_logic_vector(0 to 3);
+        scl_i               : in  std_logic_vector(0 to 3);
+        sda_o               : out std_logic_vector(0 to 3);
+        sda_i               : in  std_logic_vector(0 to 3)
     );
 end entity;
 
 architecture behavioral of i2c_master is
-    constant c_filter_length    : natural := 7;
-    
+    constant c_divisor      : natural := g_frequency / 400_000;
+
     type t_state is (idle, startcond, tx_byte, rx_byte, check_ack, ack_rx, stop, repeated_start);
     signal data_out         : std_logic_vector(7 downto 0);
     signal state            : t_state;
+    signal channel          : natural range 0 to 3;
     signal scl_o_i          : std_logic;
     signal sda_o_i          : std_logic;
     signal stretch          : std_logic;
@@ -36,14 +37,10 @@ architecture behavioral of i2c_master is
     signal do_ack           : std_logic;
     signal bit_count        : integer range 0 to 7;
     signal tick             : std_logic;
-    signal divisor          : integer range 0 to g_divisor;
+    signal divisor          : integer range 0 to c_divisor;
        
-    signal scl_count        : integer range 0 to c_filter_length-1;
-    signal sda_count        : integer range 0 to c_filter_length-1;
     signal scl_in           : std_logic;
-    signal scl_in_d         : std_logic;
     signal sda_in           : std_logic;
-    signal sda_in_d         : std_logic;
     signal sda_c            : std_logic;
     signal scl_c            : std_logic;
     
@@ -74,9 +71,9 @@ begin
         if rising_edge(clock) then
             tick <= '0';
             if stretch = '1' then
-                divisor <= g_divisor;
+                divisor <= c_divisor;
             elsif divisor = 0 then
-                divisor <= g_divisor;
+                divisor <= c_divisor;
                 tick <= '1';
             else
                 divisor <= divisor - 1;
@@ -92,48 +89,14 @@ begin
     begin
         if rising_edge(clock) then
             -- dual flipflop for synchronization
-            sda_in <= to_x01(sda_i);
-            scl_in <= to_x01(scl_i);
-            sda_in_d <= sda_in;
-            scl_in_d <= scl_in;
-
-            -- filtering SCL
-            if scl_in_d = '0' then
-                if scl_count = 0 then
-                    scl_c <= '0';
-                else
-                    scl_count <= scl_count - 1;
-                end if;
-            else
-                if scl_count = c_filter_length-1 then
-                    scl_c <= '1';
-                else
-                    scl_count <= scl_count + 1;
-                end if;
-            end if;
-
-            -- filtering SDA
-            if sda_in_d = '0' then
-                if sda_count = 0 then
-                    sda_c <= '0';
-                else
-                    sda_count <= sda_count - 1;
-                end if;
-            else
-                if sda_count = c_filter_length-1 then
-                    sda_c <= '1';
-                else
-                    sda_count <= sda_count + 1;
-                end if;
-            end if;
+            sda_in <= to_x01(sda_i(channel));
+            scl_in <= to_x01(scl_i(channel));
+            sda_c <= sda_in;
+            scl_c <= scl_in;
 
             if reset = '1' then
                 sda_in <= '1';
                 scl_in <= '1';
-                sda_in_d <= '1';
-                scl_in_d <= '1';
-                sda_count <= 4;
-                scl_count <= 4;
                 sda_c <= '1';
                 scl_c <= '1';
             end if;            
@@ -179,7 +142,7 @@ begin
         variable v_addr : unsigned(3 downto 0);
     begin
         if rising_edge(clock) then
-            v_addr := c_io_req_init.address(3 downto 0);
+            v_addr := io_req.address(3 downto 0);
             do_seq <= '0';
             soft_reset <= '0';
             io_resp <= c_io_resp_init;
@@ -210,12 +173,17 @@ begin
                         state <= stop;
 
                     when X"4" =>
+                        bit_count <= 7; 
                         state <= rx_byte;
                         do_ack <= '0';
                     
                     when X"5" =>
+                        bit_count <= 7; 
                         state <= rx_byte;
                         do_ack <= '1';
+
+                    when X"6" =>
+                        channel <= to_integer(unsigned(io_req.data(1 downto 0)));
 
                     when X"7" =>
                         soft_reset <= io_req.data(0);
@@ -247,11 +215,9 @@ begin
 
             when check_ack =>
                 if seq_done = '1' then
+                    state <= idle;
                     if sampled = '1' then -- not acknowledged
                         error <= '1';
-                        state <= stop;
-                    else
-                        state <= idle;
                     end if;
                 elsif seq_busy = '0' and do_seq = '0' then
                     do_seq <= '1';
@@ -327,6 +293,11 @@ begin
                     else
                         io_resp.data(7) <= '1'; -- busy!
                     end if;
+                when X"6" =>
+                    io_resp.data(1 downto 0) <= std_logic_vector(to_unsigned(channel, 2));
+                when X"7" =>
+                    io_resp.data <= X"5B";
+
                 when others =>
                     null;
                 end case;
@@ -337,11 +308,16 @@ begin
                 missed_write <= '0';
                 started <= '0';
                 state <= idle;
+                channel <= 0;
             end if;
         end if;
     end process;
 
-    scl_o <= scl_o_i;
-    sda_o <= sda_o_i;
+    process(channel, scl_o_i, sda_o_i)
+    begin
+        scl_o <= (others => '1');
+        sda_o <= (others => '1');
+        scl_o(channel) <= scl_o_i;
+        sda_o(channel) <= sda_o_i;
+    end process;
 end architecture;
-
