@@ -5,8 +5,8 @@
 MEMORY
 {
     memory  : ORIGIN = 0x00001000, LENGTH = 0xE9F000
-    bootrom : ORIGIN = 0x00000000, LENGTH = 3584
-    ram     : ORIGIN = 0x00000E00, LENGTH = 512
+    bootrom : ORIGIN = 0x80000000, LENGTH = 0xE00
+    ram     : ORIGIN = 0x80000E00, LENGTH = 0x200
 }
 
 OUTPUT_FORMAT( "elf32-littleriscv",
