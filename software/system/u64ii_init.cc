@@ -108,13 +108,14 @@ void custom_hardware_init()
 {
     i2c = new Hw_I2C_Driver((volatile t_hw_i2c *)U64II_HW_I2C_BASE);
 
+    // We are not yet running under FreeRTOS, so we cannot use mutexes here.
+
     // Initialize Audio codec
     nau8822_init(I2C_CHANNEL_1V8);
 
     // Initialize USB hub
     initialize_usb_hub();
 
-    U64_CLOCK_SEL = 0x00; // PAL reference frequency
     U64_HDMI_ENABLE = 0;
 
     printf("C64 PLL\n");
@@ -127,5 +128,17 @@ void custom_hardware_init()
 
     SetVideoMode1080p(e_PAL_50);
     U64_HDMI_REG = U64_HDMI_DDC_ENABLE;
+
+    i2c->set_channel(1);
+    i2c->i2c_write_byte(0x40, 0x01, 0x00); // Output Port
+    i2c->i2c_write_byte(0x40, 0x03, 0x00); // All pins output
+    i2c->i2c_write_byte(0x40, 0x02, 0x00); // No polarity inversion
+
+    // Column is A  (drive), Row is B  (read)
+    // Port 0,               Port 1
+    i2c->i2c_write_byte(0x42, 0x06, 0x00); // All pins output on port 0
+    i2c->i2c_write_byte(0x42, 0x07, 0xFF); // All pins input on port 1
+    i2c->i2c_write_byte(0x42, 0x02, 0x00); // Output Port, all columns selected
+
 }
 }

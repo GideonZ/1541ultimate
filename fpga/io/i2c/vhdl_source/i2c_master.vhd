@@ -14,6 +14,8 @@ entity i2c_master is
 
         io_req              : in  t_io_req;
         io_resp             : out t_io_resp;
+        is_idle             : out std_logic;
+        scan_en             : out std_logic;
 
         scl_o               : out std_logic_vector(0 to 3);
         scl_i               : in  std_logic_vector(0 to 3);
@@ -188,6 +190,9 @@ begin
                     when X"7" =>
                         soft_reset <= io_req.data(0);
 
+                    when X"8" =>
+                        scan_en <= io_req.data(0);
+
                     when others =>
                         null;
                     end case;
@@ -295,8 +300,8 @@ begin
                     end if;
                 when X"6" =>
                     io_resp.data(1 downto 0) <= std_logic_vector(to_unsigned(channel, 2));
-                when X"7" =>
-                    io_resp.data <= X"5B";
+                --when X"7" =>
+                --    io_resp.data <= X"5B";
 
                 when others =>
                     null;
@@ -309,9 +314,12 @@ begin
                 started <= '0';
                 state <= idle;
                 channel <= 0;
+                scan_en <= '0';
             end if;
         end if;
     end process;
+
+    is_idle <= '1' when state = idle else '0';
 
     process(channel, scl_o_i, sda_o_i)
     begin

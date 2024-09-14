@@ -10,10 +10,14 @@
 
 #include <stdint.h>
 #include "u2p.h"
+#include "FreeRTOS.h"
+#include "semphr.h"
 
 class I2C_Driver
 {
     volatile uint8_t *scl, *sda;
+    SemaphoreHandle_t mutex;
+
     void _wait(void);
     void SET_SCL_LOW()  { *scl = 0; }
     void SET_SCL_HIGH() { *scl = 1; }
@@ -27,6 +31,7 @@ public:
     {
         scl = &U2PIO_SCL;
         sda = &U2PIO_SDA;
+        mutex = xSemaphoreCreateMutex();
     }
 
     virtual void set_channel(int channel) {}
@@ -35,7 +40,23 @@ public:
     virtual void i2c_stop();
     virtual int i2c_send_byte(const uint8_t byte);
     virtual uint8_t i2c_receive_byte(int ack);
-    
+    virtual bool enable_scan(bool enable, bool automatic) { return false; }
+
+    bool i2c_lock(void)
+    {
+        BaseType_t gotLock = xSemaphoreTake(mutex, 5000);
+        if (gotLock) {
+            enable_scan(false, true);
+        }        
+        return gotLock == pdTRUE;
+    }
+
+    void i2c_unlock(void)
+    {
+        enable_scan(true, true);
+        xSemaphoreGive(mutex);
+    }
+
     bool i2c_probe(const uint8_t devaddr);
     void i2c_scan_bus(void);
     uint8_t i2c_read_byte(const uint8_t devaddr, const uint8_t regaddr, int *res);

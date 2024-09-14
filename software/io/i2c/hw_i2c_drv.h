@@ -8,11 +8,14 @@ class Hw_I2C_Driver : public I2C_Driver
 {
     int channel;
     volatile t_hw_i2c *i2c_regs;
+    bool scanning;
+
 public:
     Hw_I2C_Driver(volatile t_hw_i2c *regs)
     {
         channel = 0;
         i2c_regs = regs;
+        scanning = false;
     }
 
     void set_channel(int channel);
@@ -21,6 +24,7 @@ public:
     void i2c_stop();
     int i2c_send_byte(const uint8_t byte);
     uint8_t i2c_receive_byte(int ack);
+    bool enable_scan(bool enable, bool automatic);
 };
 
 #endif /* HW_I2C_DRV_H_ */

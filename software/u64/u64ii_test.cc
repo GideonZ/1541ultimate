@@ -107,6 +107,7 @@ void ultimate_main(void *context)
     console_print(screen, "Hello world!\n");
 
     int res;
+    i2c->i2c_lock();
     i2c->set_channel(1);
     i2c->i2c_write_byte(0x40, 0x03, 0x00); // All pins output
     i2c->i2c_write_byte(0x40, 0x01, 0xF0); // Output Port
@@ -117,14 +118,15 @@ void ultimate_main(void *context)
     i2c->i2c_write_byte(0x42, 0x06, 0x00); // All pins output on port 0
     i2c->i2c_write_byte(0x42, 0x07, 0xFF); // All pins input on port 1
     i2c->i2c_write_byte(0x42, 0x02, 0x00); // Output Port, all columns selected
+    i2c->i2c_unlock();
+
+    i2c->enable_scan(true, false);
 
     while(true) {
-        vTaskDelay(400);
+        vTaskDelay(1000);
         U64II_CHARGEN_REGS->TRANSPARENCY     = 0x80;    
-        scan();
-        vTaskDelay(400);
+        vTaskDelay(1000);
         U64II_CHARGEN_REGS->TRANSPARENCY     = 0x00;    
-        scan();
     }
 
     vTaskDelay(100000);

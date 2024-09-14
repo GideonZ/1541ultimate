@@ -46,3 +46,22 @@ uint8_t Hw_I2C_Driver :: i2c_receive_byte(int ack)
     _wait_busy();
     return i2c_regs->data_out;
 }
+
+bool Hw_I2C_Driver :: enable_scan(bool enable, bool automatic)
+{
+    if (automatic) {
+        if (scanning) { // was it manually enabled?
+            i2c_regs->scan_enable = enable ? 1 : 0;
+            if (!enable) {
+                vTaskDelay(2);
+            }
+        }
+    } else { // manual call to this function
+        i2c_regs->scan_enable = enable ? 1 : 0;
+        scanning = enable;
+        if (!enable) {
+            vTaskDelay(2);
+        }
+    }
+    return true;
+}

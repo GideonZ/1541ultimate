@@ -11,6 +11,7 @@ typedef struct {
     uint8_t receive_ack;
     uint8_t channel;
     uint8_t soft_reset;
+    uint8_t scan_enable;
 } t_hw_i2c;
 
 #define I2C_STATUS_BUSY         0x80
