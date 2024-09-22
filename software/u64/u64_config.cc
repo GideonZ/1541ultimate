@@ -127,6 +127,7 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_IEC_BURST_EN      0x4D
 #define CFG_PALETTE           0x4E
 #define CFG_IEC_BUS_MODE      0x4F
+#define CFG_USERPORT_EN       0x50
 
 #define CFG_SPEED_PREF        0x52
 #define CFG_BADLINES_EN       0x53
@@ -269,6 +270,7 @@ dc 0c 11 00 00 9e 01 1d  00 72 51 d0 1e 20 6e 28
 struct t_cfg_definition u64_cfg[] = {
     { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  5, 0 },
     { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  1, 0 },
+    { CFG_USERPORT_EN,          CFG_TYPE_ENUM, "UserPort Power Enable",        "%s", en_dis,       0,  1, 1 },
 //    { CFG_CART_PREFERENCE,      CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,    0,  2, 0 }, // moved to C64 for user consistency
     { CFG_PALETTE,              CFG_TYPE_STRFUNC, "Palette Definition",        "%s", (const char **)U64Config :: list_palettes, 0, 30, (int)"" },
     { CFG_COLOR_CLOCK_ADJ,      CFG_TYPE_VALUE, "Adjust Color Clock",      "%d ppm", NULL,      -100,100, 0 },
@@ -810,7 +812,9 @@ void U64Config :: effectuate_settings()
     C64_PADDLE_EN    = cfg->get_value(CFG_PADDLE_EN);
     C64_PLD_JOYCTRL  = cfg->get_value(CFG_JOYSWAP) ^ 1;
     C64_PADDLE_SWAP  = cfg->get_value(CFG_JOYSWAP);
-
+    U64_USERPORT_EN  = cfg->get_value(CFG_USERPORT_EN) ? 3 : 0;
+    printf("USERPORT_EN = %d\n", U64_USERPORT_EN);
+    
     //C64_TURBOREGS_EN = 0;
     //C64_SPEED_PREFER = 0;
 
