@@ -61,7 +61,6 @@ port (
     -- globals
     sys_clock   : in    std_logic;
     sys_reset   : in    std_logic;
-    mb_reset    : in    std_logic := '0';
     
     ulpi_clock  : in    std_logic;
     ulpi_reset  : in    std_logic;
