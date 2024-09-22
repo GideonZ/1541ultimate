@@ -602,6 +602,8 @@ void U64Config :: U64SidSockets :: detect(void)
 
 void U64Config :: U64SidSockets :: effectuate_settings()
 {
+    uint8_t sid_ctrl_value = 0;
+
     //printf("U64Sockets :: effectuate_settings()\n");
     {
         uint8_t typ = cfg->get_value(CFG_SID1_TYPE); // 0 = none, 1 = 6581, 2 = 8580
@@ -620,7 +622,10 @@ void U64Config :: U64SidSockets :: effectuate_settings()
         // bit 2 = shunt
         // bit 3 = caps
         uint8_t value = reg | (shu << 2) | (cap << 3);
+        sid_ctrl_value = value;
+#if U64 == 1
         C64_PLD_SIDCTRL1 = value | 0x50;
+#endif
     }
 
     {
@@ -640,8 +645,22 @@ void U64Config :: U64SidSockets :: effectuate_settings()
         // bit 2 = shunt
         // bit 3 = caps
         uint8_t value = reg | (shu << 2) | (cap << 3);
+        sid_ctrl_value |= (value << 4);
+#if U64 == 1
         C64_PLD_SIDCTRL2 = value | 0xB0;
+#endif
     }
+
+#if U64 == 2
+    if(i2c) {
+        i2c->i2c_lock("SID Configuration");
+        i2c->set_channel(I2C_CHANNEL_1V8);
+        i2c->i2c_write_byte(0x40, 0x01, sid_ctrl_value);
+        i2c->i2c_write_byte(0x40, 0x03, 0x00);
+        i2c->i2c_unlock();
+        printf("Written %02X to I2C\n", sid_ctrl_value);
+    }
+#endif
 
     C64_SID1_EN_BAK  = cfg->get_value(CFG_SOCKET1_ENABLE);
     C64_SID2_EN_BAK  = cfg->get_value(CFG_SOCKET2_ENABLE);
@@ -825,7 +844,6 @@ void U64Config :: effectuate_settings()
 
     U2PIO_SPEAKER_EN = sp_vol ? (sp_vol << 1) | 0x01 : 0;
     C64_SCANLINES    = cfg->get_value(CFG_SCANLINES);
-
     uint8_t hdmiSetting = cfg->get_value(CFG_HDMI_ENABLE);
 
     if (!hdmiSetting) { // Auto = 0
