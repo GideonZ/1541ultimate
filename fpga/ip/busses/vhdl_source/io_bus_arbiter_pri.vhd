@@ -97,15 +97,38 @@ begin
         end if;
     end process;
 
-    -- send the reply to everyone, but mask the acks to non-active clients
-    process(resp, select_c)
-    begin
-        for i in resps'range loop
-            resps(i) <= resp;
-            if i /= select_c then
-                resps(i).ack <= '0';
-            end if;
-        end loop;
-    end process;
+    -- send the reply
+    -- process(resp, select_c)
+    -- begin
+    --     for i in resps'range loop
+    --         resps(i) <= resp;
+    --         if i /= select_c then
+    --             resps(i).ack <= '0';
+    --         end if;
+    --     end loop;
+    -- end process;
 
+    -- process(resp, select_c)
+    -- begin
+    --     for i in resps'range loop
+    --         if i = select_c then
+    --             resps(i) <= resp;
+    --         else
+    --             resps(i) <= c_io_resp_init;
+    --         end if;
+    --     end loop;
+    -- end process;
+
+    process(clock)
+    begin
+        if rising_edge(clock) then
+            for i in resps'range loop
+                if i = select_c then
+                    resps(i) <= resp;
+                else
+                    resps(i) <= c_io_resp_init;
+                end if;
+            end loop;
+        end if;
+    end process;
 end architecture;
