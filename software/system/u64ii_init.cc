@@ -5,6 +5,8 @@
 #include "hw_i2c_drv.h"
 #include "hdmi_scan.h"
 #include "dump_hex.h"
+#include "color_timings.h" // FIXME: Doesn't belong here
+#include "itu.h"
 
 #define PLL1 0xC8
 #define HUB  0x58
@@ -22,7 +24,7 @@ typedef struct {
 
 #define min(a,b) ((a > b)?b:a)
 //#define max(a,b) ((a > b)?a:b)
-void calc_pll(const float ref, const float target, const uint8_t addr, const int channel)
+void calc_pll(const float ref, const float target, uint8_t *bytes)
 {
     const float Fvco_min = 80.0f;
     const float Fvco_max = 201.0f;
@@ -82,19 +84,16 @@ void calc_pll(const float ref, const float target, const uint8_t addr, const int
                (setting.vco < 175.0f)? 2 : 3;
 
     // Create a byte array of the bytes to be written to the device
-    uint8_t b[16] = { 0 };
-    b[4] = 0x57;  // 0 1 01 01 11 
-    b[6] = setting.p;
-    b[7] = setting.p;
-    b[8] = setting.n >> 4;
-    b[9] = ((setting.n & 15) << 4) | ((r >> 5) & 15);
-    b[10] = ((r & 31) << 3) | ((q >> 3) & 7);
-    b[11] = ((q & 7) << 5) | (np << 2) | rnge;
+    memset(bytes, 0, 16);
+    bytes[4] = 0x57;  // 0 1 01 01 11 
+    bytes[6] = setting.p;
+    bytes[7] = setting.p;
+    bytes[8] = setting.n >> 4;
+    bytes[9] = ((setting.n & 15) << 4) | ((r >> 5) & 15);
+    bytes[10] = ((r & 31) << 3) | ((q >> 3) & 7);
+    bytes[11] = ((q & 7) << 5) | (np << 2) | rnge;
 
-    dump_hex_relative(b, 16);
-
-    i2c->set_channel(channel);
-    i2c->i2c_write_block(addr, 0x14, b+4, 8);
+    dump_hex_relative(bytes, 16);
 }
 
 // PAL Color from 24 MHz: 57000505cf54534a
@@ -102,6 +101,13 @@ void calc_pll(const float ref, const float target, const uint8_t addr, const int
 
 void initialize_usb_hub();
 void nau8822_init(int channel);
+extern "C" void ResetHdmiPll(void)
+{
+    U64_HDMI_PLL_RESET = 3;
+    U64_HDMI_PLL_RESET = 0;
+}
+extern "C" void SetHdmiPll(t_video_mode mode, uint8_t _mode_bits);
+extern "C" void SetVideoPll(t_video_mode mode);
 
 extern "C" {
 void custom_hardware_init()
@@ -116,19 +122,33 @@ void custom_hardware_init()
     // Initialize USB hub
     initialize_usb_hub();
 
+/*
     U64_HDMI_ENABLE = 0;
-
+    uint8_t bytes[16];
     printf("C64 PLL\n");
-    calc_pll(24.0f, 31.527928889f, PLL1, 0); // should result in 3317/505, P=5
-
+    calc_pll(24.0f, 31.527928889f, bytes); // should result in 3317/505, P=5
     printf("HDMI PLL\n");
-    calc_pll(54.18867f, 148.8699824f, PLL1, 1); // should result in a multiplication of 250/91.
+    calc_pll(54.18867f, 148.8699824f, bytes); // should result in a multiplication of 250/91.
+    //t_video_mode systemMode = e_PAL_50;
+    t_video_mode systemMode = e_NTSC_60;
+    const t_video_color_timing *ct = color_timings[(int)systemMode];
 
-    C64_VIDEOFORMAT = 0x00; // PAL
+    printf("HDMI clock 1: %08x\n", U64_CLOCK_FREQ);
+    SetVideoPll(systemMode);
+    SetHdmiPll(systemMode, ct->mode_bits);
+    C64_VIDEOFORMAT = ct->mode_bits;
+    printf("Mode bits: %b\n", ct->mode_bits);
+    ResetHdmiPll();
+    wait_ms(300);
+    printf("HDMI clock 2: %08x\n", U64_CLOCK_FREQ);
+    wait_ms(300);
+    printf("HDMI clock 3: %08x\n", U64_CLOCK_FREQ);
+    SetVideoMode1080p(systemMode);
+    wait_ms(300);
+    printf("HDMI clock 4: %08x\n", U64_CLOCK_FREQ);
+*/
 
-    SetVideoMode1080p(e_PAL_50);
     U64_HDMI_REG = U64_HDMI_DDC_ENABLE;
-
     i2c->set_channel(1);
     i2c->i2c_write_byte(0x40, 0x01, 0x00); // Output Port
     i2c->i2c_write_byte(0x40, 0x03, 0x00); // All pins output
@@ -142,3 +162,39 @@ void custom_hardware_init()
 
 }
 }
+
+extern "C" void SetVideoPll(t_video_mode mode)
+{
+    const t_video_color_timing *ct = color_timings[(int)mode];
+
+    float m = ct->m + (ct->frac / (65536.0f * 65536.0f));
+    m *= 50.0f;
+    m /= 30.0f;
+
+    printf("--> Requested video frequency = %.3f\n", m);
+
+    uint8_t bytes[16];
+    calc_pll(24.0f, m, bytes);
+    i2c->i2c_lock("SetVideoPll");
+    i2c->set_channel(0); // on prototype boards, otherwise 1
+    i2c->i2c_write_block(PLL1, 0x14, bytes+4, 8);
+    i2c->i2c_unlock();
+}
+
+extern "C" void SetHdmiPll(t_video_mode mode, uint8_t mode_bits)
+{
+    const t_video_color_timing *ct = color_timings[(int)mode];
+    printf("--> Requested HDMI frequency mode = %d (%d Hz)\n", mode, ct->mode_bits & VIDEO_FMT_60_HZ ? 60 : 50);
+    const uint8_t init_hdmi_50[] = { 0x57, 0x00, 0x01, 0x01, 0x0F, 0xA2, 0xCA, 0xAD };
+    const uint8_t init_hdmi_60[] = { 0x57, 0x00, 0x01, 0x01, 0x55, 0xf7, 0x82, 0x89 };
+
+    C64_VIDEOFORMAT = VIDEO_FMT_60_HZ;
+    i2c->i2c_lock("SetHdmiPll");
+    i2c->set_channel(1); // on prototype boards, otherwise 0
+    i2c->i2c_write_byte(PLL1, 0x81, 0x18); // LVCMOS input, powerdown
+    i2c->i2c_write_block(PLL1, 0x14, (ct->mode_bits & VIDEO_FMT_60_HZ) ? init_hdmi_60 : init_hdmi_50, 8);
+    C64_VIDEOFORMAT = mode_bits;
+    i2c->i2c_write_byte(PLL1, 0x81, 0x08); // LVCMOS input, powerup
+    i2c->i2c_unlock();
+}
+

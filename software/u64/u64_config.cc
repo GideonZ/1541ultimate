@@ -721,14 +721,18 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 {
     systemMode = e_NOT_SET;
     U64_ETHSTREAM_ENA = 0;
+	skipReset = false;
 
-    C64 *machine = C64 :: getMachine();
+    fm = FileManager::getFileManager();
+    resetSemaphore = xSemaphoreCreateBinary();
+
     if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
 		struct t_cfg_definition *def = u64_cfg;
 		register_store(STORE_PAGE_ID, "U64 Specific Settings", def);
 
 		// Tweak: This has to be done first in order to make sure that the correct cart is started
 		// at cold boot.
+        C64 *machine = C64 :: getMachine();
 		machine->ConfigureU64SystemBus();
 		if (!(machine-> is_accessible())) {
 		    printf("*** WARNING: The C64 should be stopped at this time for the SID Detection to work!\n");
@@ -738,10 +742,6 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 		sidDevice[0] = NULL;
         sidDevice[1] = NULL;
 
-        sockets.detect();
-
-        hdmiMonitor = IsMonitorHDMI();
-
         cfg->set_change_hook(CFG_SCAN_MODE_TEST, U64Config::setScanMode);
         cfg->set_change_hook(CFG_COLOR_CLOCK_ADJ, U64Config::setPllOffset);
         cfg->set_change_hook(CFG_LED_SELECT_0, U64Config::setLedSelector);
@@ -750,21 +750,24 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
         cfg->set_change_hook(CFG_SPEED_PREF, U64Config::setCpuSpeed);
         cfg->set_change_hook(CFG_BADLINES_EN, U64Config::setCpuSpeed);
         cfg->set_change_hook(CFG_SUPERCPU_DET, U64Config::setCpuSpeed);
-        effectuate_settings();
-        sockets.effectuate_settings();
-        mixercfg.effectuate_settings();
-        ultisids.effectuate_settings();
-        sidaddressing.effectuate_settings();
 
         if (!isEliteBoard()) {
             cfg->disable(CFG_JOYSWAP);
         }
-    }
-    fm = FileManager::getFileManager();
 
-	skipReset = false;
-    xTaskCreate( U64Config :: reset_task, "U64 Reset Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, &resetTaskHandle );
-    resetSemaphore = xSemaphoreCreateBinary();
+        InitFunction *init_u64 = new InitFunction([](void *obj, void *_param) {
+            printf("*** Init U64 Configurator\n");
+            u64_configurator.sockets.detect();
+            u64_configurator.hdmiMonitor = u64_configurator.IsMonitorHDMI(); // requires I2C
+            u64_configurator.effectuate_settings(); // requires I2C
+            u64_configurator.sockets.effectuate_settings();
+            u64_configurator.mixercfg.effectuate_settings();
+            u64_configurator.ultisids.effectuate_settings();
+            u64_configurator.sidaddressing.effectuate_settings();
+            xTaskCreate( U64Config :: reset_task, "U64 Reset Task", configMINIMAL_STACK_SIZE, &u64_configurator, tskIDLE_PRIORITY + 3, &u64_configurator.resetTaskHandle );
+            printf("*** U64 Configurator Done\n");
+        }, NULL, NULL, 3); // early
+    }
 }
 
 void U64Config :: ResetHandler()
@@ -843,10 +846,6 @@ void U64Config :: effectuate_settings()
         doPll = true;
     }
 
-    const t_video_color_timing *ct = color_timings[(int)systemMode];
-    C64_PHASE_INCR  = ct->phase_inc;
-    C64_VIDEOFORMAT = ct->mode_bits | format;
-
     const char *palette = cfg->get_string(CFG_PALETTE);
     if (strlen(palette)) {
         load_palette_vpl(DATA_DIRECTORY, palette);
@@ -854,14 +853,31 @@ void U64Config :: effectuate_settings()
         set_palette_rgb(default_colors);
     }
 
+    const t_video_color_timing *ct = color_timings[(int)systemMode];
+    C64_PHASE_INCR  = ct->phase_inc;
+#if U64 == 2
+//    printf("config waiting...\n");
+//    vTaskDelay(4000);
     if (doPll) {
+        printf("config doing plls...\n");
         SetVideoPll(systemMode);
-        SetHdmiPll(systemMode);
+        SetHdmiPll(systemMode, ct->mode_bits | format);
+        SetVideoMode1080p(systemMode);
+        ResetHdmiPll();
+        SetResampleFilter(systemMode);
+        overlay->initRegs();
+    }
+#else
+    if (doPll) {
+        C64_VIDEOFORMAT = ct->mode_bits | format;
+        SetVideoPll(systemMode);
+        SetHdmiPll(systemMode, ct->mode_bits | format);
         SetVideoMode(systemMode);
         ResetHdmiPll();
         SetResampleFilter(systemMode);
         overlay->initRegs();
     }
+#endif
 
 #if DEVELOPER
     C64_VIC_TEST = cfg->get_value(CFG_VIC_TEST);
@@ -1117,6 +1133,7 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
     		if (U64_HDMI_REG & U64_HDMI_HPD_CURRENT) {
     			U64_HDMI_REG = U64_HDMI_DDC_ENABLE;
     			printf("Monitor detected, now reading EDID.\n");
+                i2c->i2c_lock("EDID Read");
                 i2c->set_channel(I2C_CHANNEL_HDMI);
     			if (i2c->i2c_read_block(0xA0, 0x00, edid, 256) == 0) {
     				if (cmd->user_interface->string_box("Reading EDID OK. Save to:", name, 31) > 0) {
@@ -1131,6 +1148,7 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
     			    cmd->user_interface->popup("Failed to read EDID", BUTTON_OK);
     			}
     			U64_HDMI_REG = U64_HDMI_DDC_DISABLE;
+                i2c->i2c_unlock();
     		}
     	}
     	break;
@@ -2009,18 +2027,24 @@ bool U64Config :: IsMonitorHDMI()
     }
 
     U64_HDMI_REG = U64_HDMI_DDC_ENABLE;
+
+    i2c->i2c_lock("HDMI check");
     i2c->set_channel(I2C_CHANNEL_HDMI);
     if (i2c->i2c_read_block(0xA0, 0x00, header, 8) != 0) {
         printf("EDID Read FAILED.\n");
         U64_HDMI_REG = U64_HDMI_DDC_DISABLE;
+        i2c->i2c_unlock();
         return false;
     }
     if (i2c->i2c_read_block(0xA0, 0x80, extension, 8) != 0) {
         printf("EDID Read FAILED.\n");
         U64_HDMI_REG = U64_HDMI_DDC_DISABLE;
+        i2c->i2c_unlock();
         return false;
     }
     U64_HDMI_REG = U64_HDMI_DDC_DISABLE;
+    i2c->i2c_unlock();
+
     if (memcmp(header, header_expected, 8) != 0) {
         printf("EDID Header incorrect.\n");
         return false;

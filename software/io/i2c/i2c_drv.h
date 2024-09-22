@@ -9,6 +9,7 @@
 #define I2CDRV_H_
 
 #include <stdint.h>
+#include <stdio.h>
 #include "u2p.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
@@ -42,12 +43,16 @@ public:
     virtual uint8_t i2c_receive_byte(int ack);
     virtual bool enable_scan(bool enable, bool automatic) { return false; }
 
-    bool i2c_lock(void)
+    bool i2c_lock(const char *caller)
     {
+        static const char *locker = "none";
         BaseType_t gotLock = xSemaphoreTake(mutex, 5000);
         if (gotLock) {
             enable_scan(false, true);
-        }        
+        } else {
+            printf("========= i2c_lock: failed to get lock. Requester: %s, Current Lock: %s\n", caller, locker);
+        }      
+        locker = caller;
         return gotLock == pdTRUE;
     }
 

@@ -39,6 +39,7 @@
 #include "u2p.h"
 #include "u64.h"
 #include "keyboard_usb.h"
+#include "i2c_drv.h"
 
 // these should move to main_loop.h
 extern "C" void main_loop(void *a);
@@ -137,10 +138,13 @@ extern "C" void ultimate_main(void *a)
     overlay = NULL;
 
     UserInterface *overlayUserInterface = NULL;
-    if ((capabilities & CAPAB_OVERLAY) && (capabilities & CAPAB_ULTIMATE64)) {
-        overlay = new Overlay(false);
-        Keyboard *kb = new Keyboard_C64(overlay, C64_PLD_PORTB, C64_PLD_PORTA);
+    if (capabilities & CAPAB_ULTIMATE64) {
+        // overlay = new Overlay(false, 11, OVERLAY_BASE);
+        // Keyboard *kb = new Keyboard_C64(overlay, C64_PLD_PORTB, C64_PLD_PORTA);
+        overlay = new Overlay(false, 12, U64II_OVERLAY_BASE);
+        Keyboard *kb = new Keyboard_C64(overlay, &U64II_KEYB_ROW, &U64II_KEYB_COL);
         overlay->setKeyboard(kb);
+        i2c->enable_scan(true, false);
         overlayUserInterface = new UserInterface(title);
         Browsable *root = new BrowsableRoot();
         root_tree_browser = new TreeBrowser(overlayUserInterface, root);

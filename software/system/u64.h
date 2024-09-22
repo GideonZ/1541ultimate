@@ -11,22 +11,32 @@
 #include <stdint.h>
 #include "u2p.h"
 
+#define U64_CLOCKMEAS   (U2P_IO_BASE + 0x0200)
 #define U64_IO_BASE     (U2P_IO_BASE + 0x0400)
-#define U64_AUDIO_MIXER (U2P_IO_BASE + 0x0500)
-#define U64_RESAMPLER   (U2P_IO_BASE + 0x0600)
+#define U64_AUDIO_MIXER (U2P_IO_BASE + 0x0500) // Mixer cannot be at 0x80; as address 7 is still passed to memory address! Be aware!
+#define U64_RESAMPLER   (U2P_IO_BASE + 0x0580)
+#define C64_IO_LED      (U2P_IO_BASE + 0x0600)
 
 #define VID_IO_BASE  (U2P_IO_BASE + 0x40000)
 
+// U64-II
+#define U64II_OVERLAY_BASE (VID_IO_BASE + 0x0000)
+#define U64II_HDMI_REGS    (VID_IO_BASE + 0x4000)
+#define U64II_HDMI_PALETTE (VID_IO_BASE + 0x5000)
+#define U64II_CROPPER_BASE (VID_IO_BASE + 0x8000)
+
+#define U64II_CHARGEN_REGS          ((volatile t_chargen_registers *)(U64II_OVERLAY_BASE + 0x0000))
+#define U64II_CHARGEN_SCREEN_RAM    (U64II_OVERLAY_BASE + 0x1000)
+#define U64II_CHARGEN_COLOR_RAM     (U64II_OVERLAY_BASE + 0x2000)
+
+#define U64II_HW_I2C_BASE (U2P_IO_BASE + 0x0700)
+
+// end U64-II
+
 #define C64_IO_BASE  (U2P_IO_BASE + 0x80000)
 #define C64_PALETTE  (U2P_IO_BASE + 0x80800)
-#define C64_IO_LED   (U2P_IO_BASE + 0x81000)
-#define C64_PLD_ACC  (U2P_IO_BASE + 0x81800)
-#define C64_IO_DEBUG (U2P_IO_BASE + 0x82000)
-
-#define LEDSTRIP_DATA ( (volatile uint8_t *)(C64_IO_LED))
-#define LEDSTRIP_FROM (*(volatile uint8_t *)(C64_IO_LED + 0x1FE))
-#define LEDSTRIP_LEN  (*(volatile uint8_t *)(C64_IO_LED + 0x1FF))
-#define U64_DEBUG_REGISTER (*(volatile uint8_t *)C64_IO_DEBUG)
+#define C64_PLD_ACC  (U2P_IO_BASE + 0x81000)
+#define C64_IO_DEBUG (U2P_IO_BASE + 0x81800)
 
 #define C64_SID_BASE     (U2P_IO_BASE + 0x84000)
 #define U64_ROMS_BASE    (U2P_IO_BASE + 0x88000)
@@ -41,14 +51,15 @@
 #define U64_HDMI_REG       (*(volatile uint8_t *)(U64_IO_BASE + 0x00))
 #define U64_POWER_REG      (*(volatile uint8_t *)(U64_IO_BASE + 0x01))
 #define U64_RESTORE_REG    (*(volatile uint8_t *)(U64_IO_BASE + 0x02))
+#define U64_CART_DETECT    (*(volatile uint8_t *)(U64_IO_BASE + 0x03)) // Inputs Game (bit 0) and Exrom (bit 1) lines
 #define U64_HDMI_PLL_RESET (*(volatile uint8_t *)(U64_IO_BASE + 0x04))
-#define U64_WIFI_CONTROL   (*(volatile uint8_t *)(U64_IO_BASE + 0x05))
+#define U64_USERPORT_EN    (*(volatile uint8_t *)(U64_IO_BASE + 0x05))
 #define U64_EXT_I2C_SCL    (*(volatile uint8_t *)(U64_IO_BASE + 0x06))
 #define U64_EXT_I2C_SDA    (*(volatile uint8_t *)(U64_IO_BASE + 0x07))
 #define U64_HDMI_ENABLE    (*(volatile uint8_t *)(U64_IO_BASE + 0x08))
 #define U64_INT_CONNECTORS (*(volatile uint8_t *)(U64_IO_BASE + 0x09))
-#define U64_CART_DETECT    (*(volatile uint8_t *)(U64_IO_BASE + 0x0A)) // Inputs Game (bit 0) and Exrom (bit 1) lines
-#define U64_MB_RESET       (*(volatile uint8_t *)(U64_IO_BASE + 0x0B)) // Write a 0 to start the microblaze, if available
+#define U64II_KEYB_COL     (*(volatile uint8_t *)(U64_IO_BASE + 0x0A))
+#define U64II_KEYB_ROW     (*(volatile uint8_t *)(U64_IO_BASE + 0x0B))
 #define U64_LEDSTRIP_EN    (*(volatile uint8_t *)(U64_IO_BASE + 0x0C)) // Write a 1 to make CIA_PWM pins become LED strip control pins
 #define U64_PWM_DUTY       (*(volatile uint8_t *)(U64_IO_BASE + 0x0D)) // any value between 00 (off) and FF (nearly full phase)
 #define U64_CASELED_SELECT (*(volatile uint8_t *)(U64_IO_BASE + 0x0E)) // Two nibbles with selectors
@@ -58,6 +69,8 @@
 #define U64_RESAMPLE_LABOR (*(volatile uint8_t *)(U64_RESAMPLER + 0x08))
 #define U64_RESAMPLE_FLUSH (*(volatile uint8_t *)(U64_RESAMPLER + 0x09))
 #define U64_RESAMPLE_DATA  (*(volatile uint32_t *)(U64_RESAMPLER + 0x00))
+
+#define U64_CLOCK_FREQ     (*(volatile uint32_t *)(U64_CLOCKMEAS + 0x00))
 
 #define U64_CARTRIDGE_AUTO     0
 #define U64_CARTRIDGE_INTERNAL 1
@@ -72,8 +85,13 @@
 #define U64_POWER_OFF_1			0x2B
 #define U64_POWER_OFF_2			0xB2
 
+#define LEDSTRIP_DATA ( (volatile uint8_t *)(C64_IO_LED))
+#define LEDSTRIP_FROM (*(volatile uint8_t *)(C64_IO_LED + 0x1FE))
+#define LEDSTRIP_LEN  (*(volatile uint8_t *)(C64_IO_LED + 0x1FF))
+#define U64_DEBUG_REGISTER (*(volatile uint8_t *)C64_IO_DEBUG)
+
 #define C64_SCANLINES    (*(volatile uint8_t *)(C64_IO_BASE + 0x00))
-#define C64_VIDEOFORMAT  (*(volatile uint8_t *)(C64_IO_BASE + 0x01))
+#define C64_VIDEOFORMAT  (*(volatile uint8_t *)(C64_IO_BASE + 0x01)) // bit 3 selects NTSC clock ref, bit 2 selects RGB, bit 1 selects 60 Hz mode, bit 0 selects NTSC color encoding
 #define C64_TURBOREGS_EN (*(volatile uint8_t *)(C64_IO_BASE + 0x02))
 #define C64_DMA_MEMONLY  (*(volatile uint8_t *)(C64_IO_BASE + 0x03))
 #define C64_PHASE_INCR   (*(volatile uint8_t *)(C64_IO_BASE + 0x05))
@@ -141,7 +159,7 @@ typedef struct {
     uint8_t VID_HACTIVE;
     uint8_t VID_HFRONTPORCH;
     uint8_t VID_HREPETITION;
-    uint8_t padding; // 6
+    uint8_t scaler_vstretch;
     uint8_t VID_Y;
     uint8_t VID_VSYNCPOL;
     uint8_t VID_VSYNCTIME;
