@@ -89,7 +89,10 @@ _my_vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, v
     int res = 0, length, width;
     int prepad, postpad, leading_zeros;
     int addr;
-    
+    int prec = 3;
+#ifdef FP_SUPPORT
+    float fval, rem;
+#endif
     while ((c = *fmt++) != '\0') {
         if (c == '%') {
             c = *fmt++;
@@ -102,10 +105,14 @@ _my_vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, v
             	// _nega = true;
             	c = *fmt++;
             }
-            if (c == '.') { // no FP support
+#ifdef FP_SUPPORT
+            if (c == '.') { // only very simple FP support
             	c = *fmt++;
+                prec = (int)(c-'0');
+                c = *fmt++;
             }
-            if ((c == '#') || (c == '*')) { // I thought I was smart to invent the # vor variable width... * already existed for this! haha!
+#endif
+            if ((c == '#') || (c == '*')) { // I thought I was smart to invent the # for variable width... * already existed for this! haha!
             	width = va_arg(ap, int); // take width parameter from stack
 				c = *fmt++;
             } else {
@@ -125,6 +132,24 @@ _my_vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, v
                     prepad = width - length;
                 cp = buf;
                 break;
+#ifdef FP_SUPPORT
+            case 'f': // simple FP support
+                fval = (float)va_arg(ap, double);
+                val = (int)fval;
+                rem = fval - val;
+                for(int i=0;i<prec;i++)
+                    rem *= 10.0f;
+                length  = _cvt(val, buf, 10, hexchar, leading_zeros, width-prec-1, true);
+                buf[length++] = '.';
+                if (rem < 0.0f) {
+                    rem = -rem;
+                }
+                length += _cvt(int(rem+0.5), buf+length, 10, hexchar, true, prec, true);
+                if(length < width)
+                    prepad = width - length;
+                cp = buf;
+                break;
+#endif
             case 's':
                 cp = va_arg(ap, char *);
                 length = 0;
