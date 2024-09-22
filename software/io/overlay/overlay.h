@@ -13,47 +13,48 @@ extern "C" {
 #include "chargen.h"
 #include "u64.h"
 
-#define OVERLAY_REGS              ((volatile t_chargen_registers *)OVERLAY_BASE)
-
-#define CHARGEN_SCREEN_RAM       (OVERLAY_BASE + 0x0800)
-#define CHARGEN_COLOR_RAM        (OVERLAY_BASE + 0x1000)
-
 // This is a temporary fix, until there is a better build-up
 // of objects. In fact the overlay unit should be a variant of
 // an output device, but at this point there is no such base.
 
 class Overlay : public GenericHost
 {
+    volatile t_chargen_registers *overlay_regs;
+    char *charmap, *colormap;
     Keyboard *keyb;
     Screen *screen;
     bool enabled;
     bool buttonPushSeen;
-//    uint8_t backgroundColor;
     int activeX;
     int activeY;
     int X_on;
     int Y_on; //346
 
 public:
-    Overlay(bool active) {
+    Overlay(bool active, int addrbits, uint32_t base) {
+        overlay_regs = (volatile t_chargen_registers *)base;
+        charmap = (char *)(base + (1 << addrbits));
+        colormap = (char *)(base + (2 << addrbits));
         keyb = NULL;
         enabled = active;
         buttonPushSeen = false;
         
         activeX = 40;
         activeY = 25;
+#if U64 == 2
+        X_on = 1520;
+#else
         X_on = 366;
+#endif    
         Y_on = 314-40; //346
 
-        if(getFpgaCapabilities() & CAPAB_OVERLAY) {
-            initRegs();
-            screen = new Screen_MemMappedCharMatrix((char *)CHARGEN_SCREEN_RAM, (char *)CHARGEN_COLOR_RAM, activeX, activeY);
+        initRegs();
+        screen = new Screen_MemMappedCharMatrix(charmap, colormap, activeX, activeY);
 
-            if (enabled) {
-            	take_ownership(0);
-            } else {
-            	release_ownership();
-            }
+        if (enabled) {
+            take_ownership(0);
+        } else {
+            release_ownership();
         }
     }
     ~Overlay() {
@@ -68,11 +69,7 @@ public:
 */
 
     bool exists(void) {
-        if(getFpgaCapabilities() & CAPAB_OVERLAY) {
-            return true;
-        } else {
-            return false;
-        }
+        return true;
     }
     
     bool is_accessible(void) {
@@ -84,13 +81,13 @@ public:
     }
     
     void take_ownership(HostClient *h) {
-        OVERLAY_REGS->TRANSPARENCY = 0x80;
+        overlay_regs->TRANSPARENCY = 0x80;
         enabled = true;
         //system_usb_keyboard.enableMatrix(false);
     }
 
     void release_ownership() {
-        OVERLAY_REGS->TRANSPARENCY = 0x00;
+        overlay_regs->TRANSPARENCY = 0x00;
         // THIS IS A HACK... This is not part of the overlay function, but it is the best place to perform this function
         // to make the 'gap' the smallest possible between a write to the CIA and one from the system CPU.
         *C64_PLD_PORTA = C64_PLD_STATE0;
@@ -139,17 +136,21 @@ public:
     }
 
     void initRegs(void) {
-        OVERLAY_REGS->CHAR_WIDTH       = 8;
-        OVERLAY_REGS->CHAR_HEIGHT      = 9;
-        OVERLAY_REGS->CHARS_PER_LINE   = activeX;
-        OVERLAY_REGS->ACTIVE_LINES     = activeY;
-        OVERLAY_REGS->X_ON_HI          = X_on >> 8;
-        OVERLAY_REGS->X_ON_LO          = X_on & 0xFF;
-        OVERLAY_REGS->Y_ON_HI          = Y_on >> 8;
-        OVERLAY_REGS->Y_ON_LO          = Y_on & 0xFF;
-        OVERLAY_REGS->POINTER_HI       = 0;
-        OVERLAY_REGS->POINTER_LO       = 0;
-        OVERLAY_REGS->PERFORM_SYNC     = 0;
+        overlay_regs->CHAR_WIDTH       = 8;
+#if U64 == 2
+        overlay_regs->CHAR_HEIGHT      = 0x80 | 16;
+#else
+        overlay_regs->CHAR_HEIGHT      = 9;
+#endif
+        overlay_regs->CHARS_PER_LINE   = activeX;
+        overlay_regs->ACTIVE_LINES     = activeY;
+        overlay_regs->X_ON_HI          = X_on >> 8;
+        overlay_regs->X_ON_LO          = X_on & 0xFF;
+        overlay_regs->Y_ON_HI          = Y_on >> 8;
+        overlay_regs->Y_ON_LO          = Y_on & 0xFF;
+        overlay_regs->POINTER_HI       = 0;
+        overlay_regs->POINTER_LO       = 0;
+        overlay_regs->PERFORM_SYNC     = 0;
     }
 };
 

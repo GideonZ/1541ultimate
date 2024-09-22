@@ -30,8 +30,6 @@ port (
     io_resp         : out t_io_resp;
     overlay_on      : out std_logic;
 
-    keyb_row        : in  std_logic_vector(7 downto 0) := (others => '0');
-    keyb_col        : out std_logic_vector(7 downto 0) := (others => '0');
     pix_clock       : in  std_logic;
     pix_reset       : in  std_logic;
     data_enable     : in  std_logic := '1';
@@ -109,9 +107,6 @@ begin
         io_req          => io_req_regs_p,
         io_resp         => io_resp_regs_p,
         
-        keyb_row        => keyb_row,
-        keyb_col        => keyb_col,
-
         control         => control );
 
     i_timing: entity work.char_generator_slave

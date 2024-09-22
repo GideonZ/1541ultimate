@@ -26,7 +26,6 @@ generic (
     g_ext_freeze_act: boolean := false;
     g_big_endian    : boolean := false;
     g_boot_rom      : boolean := false;
-    g_video_overlay : boolean := false;
     g_icap          : boolean := false;
     g_uart          : boolean := true;
     g_uart_rx       : boolean := false;
@@ -244,18 +243,6 @@ port (
     eth_rx_eof      : in  std_logic := '0';
     eth_rx_valid    : in  std_logic := '0';
 
-    -- Interface to other graphical output (Full HD of course and in 3D!) ;-)
-    vid_clock   : in    std_logic := '0';
-    vid_reset   : in    std_logic := '0';
-    vid_h_count : in    unsigned(11 downto 0) := (others => '0');
-    vid_v_count : in    unsigned(11 downto 0) := (others => '0');
-    vid_active  : out   std_logic;
-    vid_opaque  : out   std_logic;
-    vid_data    : out   unsigned(3 downto 0);
-    overlay_on  : out   std_logic;
-    keyb_row    : in    std_logic_vector(7 downto 0) := (others => '1');
-    keyb_col    : out   std_logic_vector(7 downto 0) := (others => '1');
-
     -- CPU / Simulation port
     misc_io     : out std_logic_vector(7 downto 0); -- switches to control caches
     ext_io_req  : in  t_io_req := c_io_req_init;
@@ -305,7 +292,7 @@ architecture logic of ultimate_logic_32 is
         cap(17) := to_std(g_stereo_sid);
         cap(18) := to_std(g_command_intf);
         cap(19) := to_std(g_wifi_uart);
-        cap(20) := to_std(g_video_overlay);
+        cap(20) := '0';
         cap(21) := to_std(g_sampler);
         cap(22) := to_std(g_eeprom); 
         cap(23) := to_std(g_usb_host2);
@@ -374,8 +361,6 @@ architecture logic of ultimate_logic_32 is
     signal io_resp_cart     : t_io_resp := c_io_resp_init;
     signal io_req_io        : t_io_req;
     signal io_resp_io       : t_io_resp := c_io_resp_init;
-    signal io_req_big_io    : t_io_req;
-    signal io_resp_big_io   : t_io_resp := c_io_resp_init;
     signal io_req_sd        : t_io_req;
     signal io_resp_sd       : t_io_resp := c_io_resp_init;
     signal io_req_rtc       : t_io_req;
@@ -959,7 +944,7 @@ begin
     generic map (
         g_range_lo  => 17,
         g_range_hi  => 19,
-        g_ports     => 8 )
+        g_ports     => 7 )
     port map (
         clock    => sys_clock,
         
@@ -973,7 +958,6 @@ begin
         reqs(4)  => io_req_usb,     -- 4080000 (  8K... 4081FFF)
         reqs(5)  => io_req_c2n,     -- 40A0000 (  4K... 40A0FFF)
         reqs(6)  => io_req_c2n_rec, -- 40C0000 (  4K... 40C0FFF)
-        reqs(7)  => io_req_big_io,  -- 40E0000 (128K... 40FFFFF)
 
         resps(0) => io_resp_itu,
         resps(1) => io_resp_1541,
@@ -981,9 +965,7 @@ begin
         resps(3) => io_resp_io,
         resps(4) => io_resp_usb,
         resps(5) => io_resp_c2n,
-        resps(6) => io_resp_c2n_rec,
-        resps(7) => io_resp_big_io );
-
+        resps(6) => io_resp_c2n_rec );
 
     i_split2: entity work.io_bus_splitter
     generic map (
@@ -1281,34 +1263,6 @@ begin
         clock           => sys_clock,
         io_req          => io_req_icap,
         io_resp         => io_resp_icap );
-
-    r_overlay: if g_video_overlay generate
-        i_overlay: entity work.char_generator_peripheral
-        generic map (
-            g_screen_size   => 11,
-            g_color_ram     => true )
-        port map (
-            clock           => sys_clock,
-            reset           => sys_reset,
-            io_req          => io_req_big_io,  -- to be split later
-            io_resp         => io_resp_big_io,
-
-            keyb_col        => keyb_col,
-            keyb_row        => keyb_row,
-            
-            overlay_on      => overlay_on,
-            
-            pix_clock       => vid_clock,
-            pix_reset       => vid_reset,
-
-            h_count         => vid_h_count,
-            v_count         => vid_v_count,
-            
-            pixel_active    => vid_active,
-            pixel_opaque    => vid_opaque,
-            pixel_data      => vid_data );
-        
-    end generate;
 
     r_wifi_uart: if g_wifi_uart generate
         signal wifi_route       : std_logic;
