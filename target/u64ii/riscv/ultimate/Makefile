@@ -95,6 +95,9 @@ SRCS_CC	 =  u64ii_init.cc \
 			filesystem_d64.cc \
 			filesystem_t64.cc \
 			filesystem_fat.cc \
+			sd_card.cc \
+			sdio.cc \
+			sdcard_manager.cc \
 			size_str.cc \
 			userinterface.cc \
 			ui_elements.cc \
@@ -212,7 +215,7 @@ SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -march=$(MARCH) -mabi=$(MABI) $(EFFORT) -ffunction-sections -fdata-sections -nostartfiles -mno-fdiv
-OPTIONS += -gdwarf-2 -Os -DRISCV -DU64=1 -DUSB2513 -DOS -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=125000000 -Wno-write-strings
+OPTIONS += -gdwarf-2 -Os -DRISCV -DU64=2 -DUSB2513 -DOS -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=100000000 -Wno-write-strings -DFP_SUPPORT=1
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = linker.x

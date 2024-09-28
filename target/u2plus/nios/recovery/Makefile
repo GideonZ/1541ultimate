@@ -30,6 +30,7 @@ SRCS_C   =	itu.c \
             alt_do_ctors.c
                         
 SRCS_CC	 =  u2p_init.cc \
+			usb_hwinit.cc \
             i2c_drv.cc \
             codec.cc \
 			small_printf.cc \
