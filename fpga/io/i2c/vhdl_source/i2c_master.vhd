@@ -187,12 +187,6 @@ begin
                     when X"6" =>
                         channel <= to_integer(unsigned(io_req.data(1 downto 0)));
 
-                    when X"7" =>
-                        soft_reset <= io_req.data(0);
-
-                    when X"8" =>
-                        scan_en <= io_req.data(0);
-
                     when others =>
                         null;
                     end case;
@@ -275,11 +269,23 @@ begin
 
             end case;
 
-            if state /= idle then
-                if io_req.write = '1' then
-                    io_resp.ack <= '1';
-                    missed_write <= '1';
-                end if;
+            -- writes that always work
+            if io_req.write = '1' then
+                io_resp.ack <= '1';
+                case v_addr is
+                when X"7" =>
+                    soft_reset <= io_req.data(0);
+
+                when X"8" =>
+                    scan_en <= io_req.data(0);
+
+                when X"0"|X"2"|X"3"|X"4"|X"5"|X"6" => -- commands
+                    if state /= idle then
+                        missed_write <= '1';
+                    end if;
+                when others =>
+                    null;
+                end case;
             end if;
 
             if io_req.read = '1' then
