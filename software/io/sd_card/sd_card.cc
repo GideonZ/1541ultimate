@@ -32,7 +32,12 @@ extern "C" {
 #define TXT printf
 #define DBG(x) x
 
+#if CLOCK_FREQ > 50000000
+#define RW_SPEED  1
+#else
 #define RW_SPEED  0
+#endif
+
 
 /* Constructor */
 SdCard :: SdCard(void) : BlockDevice()
