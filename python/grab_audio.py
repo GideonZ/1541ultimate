@@ -40,8 +40,8 @@ with open("audio.wav", "wb") as outfile:
             print ('.', end = '')
 
         sys.stdout.flush()
-        outfile.write(data[4:])
-        total_length += len(data) - 4
+        outfile.write(data[2:])
+        total_length += len(data) - 2
         previous = number
     
     header  = struct.pack(">L", 0x52494646) # "RIFF"
