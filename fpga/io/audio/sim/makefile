@@ -101,6 +101,14 @@ $(TESTBENCH)_DO_GUI_BEFORE	:= add wave /$($(TESTBENCH)_ENTITY)/*
 $(TESTBENCH)_DO_GUI_AFTER	:= 
 $(TESTBENCH)_DO_GUI_OVERRIDE :=
 
+TESTBENCH 			:= spdif_tb 
+TESTBENCHES			:= $(TESTBENCHES) $(TESTBENCH)
+$(TESTBENCH)_SRC		:= $(TESTBENCH).vhd
+$(TESTBENCH)_ENTITY		:= $(TESTBENCH)
+$(TESTBENCH)_TIME		:= 10 us
+$(TESTBENCH)_DO_GUI_BEFORE	:= add wave /$($(TESTBENCH)_ENTITY)/*
+$(TESTBENCH)_DO_GUI_AFTER	:= 
+$(TESTBENCH)_DO_GUI_OVERRIDE :=
 
 ###############################################################################
 #### Testcases
