@@ -101,6 +101,7 @@ Modem :: Modem()
     dropOnDTR = true;
     lastHandshake = 0;
     verbose = true;
+    echo = true;
     current_iobase = 0;
     ResetRegisters();
 }
