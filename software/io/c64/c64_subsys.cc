@@ -14,6 +14,9 @@
 #include "u64.h"
 #include "c1541.h"
 #include "endianness.h"
+#if U64 == 2
+#include "wifi.h"
+#endif
 
 #define C64_BOOTCRT_DOSYNC    0x014F
 #define C64_BOOTCRT_RUNCODE   0x0172
@@ -186,7 +189,9 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
             break;
 
         case MENU_C64_POWEROFF:
-#if U64
+#if U64 == 2
+            wifi_machine_off();
+#elif U64 == 1
             U64_POWER_REG = 0x2B;
             U64_POWER_REG = 0xB2;
             U64_POWER_REG = 0x2B;

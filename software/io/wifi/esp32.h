@@ -18,11 +18,19 @@ extern "C" {
     #include "cmd_buffer.h"
 }
 
-#define ESP_MODE_OFF       0
-#define ESP_MODE_RUN       3
-#define ESP_MODE_BOOT      2
-#define ESP_MODE_RUN_UART  7
-#define ESP_MODE_BOOT_UART 6
+#if U64 == 2
+#   define ESP_MODE_OFF       3
+#   define ESP_MODE_RUN       0
+#   define ESP_MODE_BOOT      1
+#   define ESP_MODE_RUN_UART  4
+#   define ESP_MODE_BOOT_UART 5
+#else
+#   define ESP_MODE_OFF       0
+#   define ESP_MODE_RUN       3
+#   define ESP_MODE_BOOT      2
+#   define ESP_MODE_RUN_UART  7
+#   define ESP_MODE_BOOT_UART 6
+#endif
 
 class Esp32Application
 {

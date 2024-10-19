@@ -549,7 +549,6 @@ void U64Config :: U64SidSockets :: detect(void)
 
     printf("$$ SID1 = %d. SID2 = %d\n", sid1, sid2);
 
-
     // Configuration has changed? Then disable the sockets until the user
     // has approved the detection. We only do this for 12V. We simply enable
     // for 9V supply.

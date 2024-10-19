@@ -23,6 +23,7 @@ WiFi :: WiFi()
 {
     runModeTask = NULL;
     state = eWifi_Off;
+    esp32.AttachApplication(this);
 
     bzero(my_mac, 6);
     my_ip = 0;
@@ -32,7 +33,6 @@ WiFi :: WiFi()
     netstack = new NetworkLWIP_WiFi(this, wifi_tx_packet, wifi_free);
     netstack->attach_config();
     netstack->effectuate_settings(); // might already turn this thing on!
-    esp32.AttachApplication(this);
 }
 
 void WiFi :: RefreshRoot()
@@ -43,12 +43,20 @@ void WiFi :: RefreshRoot()
 
 void WiFi :: Enable()
 {
+#if U64 == 3
+    wifi_enable();
+#else
     esp32.doStart();
+#endif
 }
 
 void WiFi :: Disable()
 {
+#if U64 == 2
+    wifi_disable();
+#else
     esp32.doDisable();
+#endif
 }
 
 BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseType_t *w);
@@ -158,11 +166,12 @@ void WiFi :: RunModeThread()
     rpc_wifi_connect_req *conn_req;
     event_pkt_got_ip *ev;
     int result;
-
     state = eWifi_NotDetected;
+
     RefreshRoot();
     static char boot_message[256];
     int len;
+    voltages_t voltages;
 
     while(1) {
         switch(state) {
@@ -205,6 +214,15 @@ void WiFi :: RunModeThread()
             uart->txDebug = false;
             if (wifi_detect(&major, &minor, moduleName, 32)) {
                 state = eWifi_AppDetected;
+
+#if U64 == 2
+                memset(&voltages, 0, sizeof(voltages));
+                result = wifi_get_voltages(&voltages);
+                printf("Result get voltages: %d %d %d %d %d %d %d %d\n", result, voltages.vbus, voltages.vaux, voltages.v50, voltages.v33, voltages.v18, voltages.v10, voltages.vusb);
+                if (voltages.vbus < 9000) {
+                    UserInterface :: postMessage("Low input voltage. Use USB-C PD");
+                }
+#endif
                 RefreshRoot();
             }
             break;
@@ -216,6 +234,8 @@ void WiFi :: RunModeThread()
             result = wifi_setbaud(6666666, 1);
 #elif (CLOCK_FREQ == 50000000)
             result = wifi_setbaud(5000000, 1);
+#elif (CLOCK_FREQ == 100000000)
+            result = wifi_setbaud(5000000, 1);
 #else
 #error "Expected 66 or 50 MHz as clock rate."
 #endif
@@ -225,9 +245,13 @@ void WiFi :: RunModeThread()
             netstack->set_mac_address(my_mac);
             netstack->start();
             state = eWifi_Scanning;
+            // state = eWifi_Failed;
             RefreshRoot();
+//            break;
 
-            wifi_scan(&wifi_aps);
+            result = wifi_scan(&wifi_aps);
+            printf("Result of wifi_scan: %d\n", result);
+
             state = eWifi_NotConnected;
 
             printf("Auto connect to %s with pass %s (mode=%d)\n", cfg_ssid.c_str(), cfg_pass.c_str(), cfg_authmode);
@@ -337,7 +361,7 @@ void WiFi :: RunModeThread()
                 break;
 
             default:
-                printf("Unexpected Event type in Connected: Pkt %d. Ev %b. Sz %d. Seq: %d\n", buf->bufnr, hdr->command, buf->size, hdr->sequence);
+                printf("Unexpected Event type in Connected: Pkt %d. Ev %b. Sz %d. Seq: %d. Thread: %d.\n", buf->bufnr, hdr->command, buf->size, hdr->sequence, hdr->thread);
                 cmd_buffer_free(packets, buf);
                 break;
             }
@@ -562,10 +586,47 @@ int wifi_wifi_connect_known_ssid(const char *ssid, const char *password, uint8_t
 
 int wifi_wifi_disconnect()
 {
-    BUFARGS(wifi_connect, CMD_WIFI_DISCONNECT);
+    BUFARGS(identify, CMD_WIFI_DISCONNECT);
     TRANSMIT(espcmd);
     RETURN_ESP;
 }
+
+int wifi_machine_off()
+{
+    BUFARGS(identify, CMD_MACHINE_OFF);
+    TRANSMIT(espcmd);
+    RETURN_ESP;
+}
+
+#if U64 == 2
+int wifi_enable()
+{
+    BUFARGS(identify, CMD_WIFI_ENABLE);
+    TRANSMIT(espcmd);
+    RETURN_ESP;
+}
+
+int wifi_disable()
+{
+    BUFARGS(identify, CMD_WIFI_DISABLE);
+    TRANSMIT(espcmd);
+    RETURN_ESP;
+}
+
+int wifi_get_voltages(voltages_t *voltages)
+{
+    BUFARGS(identify, CMD_GET_VOLTAGES);
+    TRANSMIT(get_voltages);
+    voltages->vbus = result->vbus;
+    voltages->vaux = result->vaux;
+    voltages->v50  = result->v50;
+    voltages->v33  = result->v33;
+    voltages->v18  = result->v18;
+    voltages->v10  = result->v10;
+    voltages->vusb = result->vusb;
+    RETURN_ESP;
+}
+#endif
 
 err_t wifi_tx_packet(void *driver, void *buffer, int length)
 {

@@ -172,6 +172,8 @@ SRCS_CC	 =  u64ii_init.cc \
 			filesystem_a64.cc \
 			dma_uart.cc \
 			esp32.cc \
+			network_esp32.cc \
+			wifi.cc \
 			$(PRJ).cc
 
 
@@ -198,7 +200,7 @@ VPATH +=	$(PATH_SW)/u64
 #VPATH +=	$(PATH_SW)/../neorv32/sw/common
 #VPATH +=	$(PATH_SW)/../neorv32/sw/lib/include
 #VPATH +=	$(PATH_SW)/../neorv32/sw/lib/source
-VPATH +=	$(PATH_SW)/wifi/raw_c3/main
+VPATH +=	$(PATH_SW)/u64ctrl/main
 
 
 SRCS_ASM =

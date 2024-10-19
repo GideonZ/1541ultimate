@@ -10,43 +10,19 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
+#include "driver/uart.h"
 #include "esp_log.h"
 #include "sdkconfig.h"
 #include "hal/adc_types.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_oneshot.h"
+#include "pinout.h"
+#include "esp_err.h"
+#include "rpc_dispatch.h"
+#include "button_handler.h"
+#include "jtag.h"
 
 static const char *TAG = "u64ctrl";
-
-#define IO_BOOT        0
-#define IO_SENSE_VBUS  1
-#define IO_SENSE_VAUX  2
-#define IO_SENSE_V50   3
-#define IO_SENSE_V33   4
-#define IO_SENSE_V18   5
-#define IO_SENSE_V10   6
-#define IO_SENSE_VUSB  7
-#define IO_FPGA_TMS    8
-#define IO_FPGA_TDI    9
-#define IO_FPGA_TDO    10
-#define IO_FPGA_TCK    11
-#define IO_5V_GOOD     12
-#define IO_BUTTON_UP   13
-#define IO_BUTTON_DOWN 14
-#define IO_UART_CTS    15
-#define IO_UART_RTS    16
-#define IO_ESP_LED     18
-#define IO_ENABLE_MOD  21
-#define IO_I2S_MCLK    33
-#define IO_I2S_BCLK    34
-#define IO_I2S_SDO     35
-#define IO_I2S_LRCLK   36
-#define IO_ENABLE_V50  37
-#define IO_USB_PWROK   38
-#define IO_TP16        39
-#define IO_TP17        40
-#define IO_TP18        41
-#define IO_TP19        42
 
 #define SCALE_VBUS  ((12000 + 2200) * 65536 / 2200)
 #define SCALE_VAUX  (( 2200 + 2200) * 65536 / 2200)
@@ -56,25 +32,25 @@ static const char *TAG = "u64ctrl";
 #define SCALE_V10   65536
 #define SCALE_VUSB  (( 3900 + 2200) * 65536 / 2200)
 
-/* Use project configuration menu (idf.py menuconfig) to choose the GPIO to blink,
-   or you can edit the following line and set a number here.
-*/
-#define BLINK_GPIO CONFIG_BLINK_GPIO
+/*---------------------------------------------------------------
+        LED Blink
+---------------------------------------------------------------*/
 
 static uint8_t s_led_state = 0;
 
+/*
 static void blink_led(void)
 {
-    /* Set the GPIO level according to the state (LOW or HIGH)*/
-    gpio_set_level(BLINK_GPIO, s_led_state);
+    // Set the GPIO level according to the state (LOW or HIGH)
+    gpio_set_level(IO_ESP_LED, s_led_state);
 }
-
+*/
 static void configure_led(void)
 {
     ESP_LOGI(TAG, "Example configured to blink GPIO LED!");
-    gpio_reset_pin(BLINK_GPIO);
+    gpio_reset_pin(IO_ESP_LED);
     /* Set the GPIO as a push/pull output */
-    gpio_set_direction(BLINK_GPIO, GPIO_MODE_OUTPUT);
+    gpio_set_direction(IO_ESP_LED, GPIO_MODE_OUTPUT);
 }
 
 /*---------------------------------------------------------------
@@ -143,7 +119,7 @@ static void configure_adc(void)
 
     static adc_oneshot_chan_cfg_t config = {
         .bitwidth = ADC_BITWIDTH_DEFAULT,
-        .atten = ADC_ATTEN_DB_11,
+        .atten = ADC_ATTEN_DB_12,
     };
 
     for(int i=0;i<7;i++) {
@@ -151,33 +127,84 @@ static void configure_adc(void)
     }
     //-------------ADC1 Calibration Init---------------//
     for(int i=0;i<7;i++) {
-        adc_calibration_init(ADC_UNIT_1, ADC_CHANNEL_0+i, ADC_ATTEN_DB_11, &adc1_cali_handle[i]);
+        adc_calibration_init(ADC_UNIT_1, ADC_CHANNEL_0+i, ADC_ATTEN_DB_12, &adc1_cali_handle[i]);
     }
 }
 
+const int adc_scale[7] = { SCALE_VBUS, SCALE_VAUX, SCALE_V50, SCALE_V33, SCALE_V18, SCALE_V10, SCALE_VUSB };
+
 static void read_adcs(void)
 {
-    const int scale[7] = { SCALE_VBUS, SCALE_VAUX, SCALE_V50, SCALE_V33, SCALE_V18, SCALE_V10, SCALE_VUSB };
     const char *names[] = { "Vbus", "Vaux", "5.0V", "3.3V", "1.8V", "1.0V", "Vusb" };
     int adc_raw, voltage;
     for(int i=0;i<7;i++) {
         ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, ADC_CHANNEL_0+i, &adc_raw));
         ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc1_cali_handle[i], adc_raw, &voltage));
-        ESP_LOGI(TAG, "ADC Channel %d, read: %d. Node %s: %d mV", i, adc_raw, names[i], (voltage * scale[i]) >> 16);
+        ESP_LOGI(TAG, "ADC Channel %d, read: %d. Node %s: %d mV", i, adc_raw, names[i], (voltage * adc_scale[i]) >> 16);
     }
+}
+
+esp_err_t read_adc_channels(uint16_t *adc_data)
+{
+    int adc_raw, voltage;
+    esp_err_t ret = ESP_OK;
+    for(int i=0;i<7;i++) {
+        ret = adc_oneshot_read(adc1_handle, ADC_CHANNEL_0+i, &adc_raw);
+        if (ret != ESP_OK) {
+            return ret;
+        }
+        ret = adc_cali_raw_to_voltage(adc1_cali_handle[i], adc_raw, &voltage);
+        if (ret != ESP_OK) {
+            return ret;
+        }
+        adc_data[i] = (voltage * adc_scale[i]) >> 16;
+    }
+    return ESP_OK;
+}
+
+void setup_modem();
+
+
+int check_fpga(void)
+{
+    gpio_config_t io_conf_uart_off = {
+        .intr_type = GPIO_INTR_DISABLE,
+        .mode = GPIO_MODE_INPUT,
+        .pin_bit_mask = (1ULL << IO_UART_RXD),
+        .pull_down_en = 1,
+        .pull_up_en = 0,
+    };
+    ESP_ERROR_CHECK( uart_set_pin(UART_NUM_0, -1, -1, -1, -1) );
+    ESP_ERROR_CHECK( gpio_config(&io_conf_uart_off) );
+    int rxd = gpio_get_level(IO_UART_RXD);
+    ESP_LOGW(TAG, "Current UART Status: RXD=%d", rxd);
+    return rxd;
 }
 
 void app_main(void)
 {
+    // Check whether the application FPGA was already loaded.
+    int initial_state = check_fpga();
+
     /* Configure the peripheral according to the LED type */
     configure_led();
     configure_adc();
+    setup_modem();
+    start_button_handler(initial_state);
+
+/*
+    jtag_start();
+    uint32_t id_code = jtag_get_id_code();
+    ESP_LOGI(TAG, "JTAG ID Code: 0x%08x", (unsigned int)id_code);
+    jtag_stop();
+*/
+
     while (1) {
-        ESP_LOGI(TAG, "LED goes %s!", s_led_state == true ? "ON" : "OFF");
-        blink_led();
-        read_adcs();
+        ESP_LOGI(TAG, "App Main Alive; 5V_GOOD: %d (Initial: %d)", gpio_get_level(IO_5V_GOOD), initial_state);
+        // blink_led();
+        // read_adcs();
         /* Toggle the LED state */
         s_led_state = !s_led_state;
-        vTaskDelay(CONFIG_BLINK_PERIOD / portTICK_PERIOD_MS);
+        vTaskDelay(10000 / portTICK_PERIOD_MS);
     }
 }

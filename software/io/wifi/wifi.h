@@ -30,10 +30,25 @@ int wifi_scan(void *);
 int wifi_wifi_connect(const char *ssid, const char *password, uint8_t auth);
 int wifi_wifi_connect_known_ssid(const char *ssid, const char *password, uint8_t auth);
 int wifi_wifi_disconnect();
+int wifi_machine_off();
 err_t wifi_tx_packet(void *driver, void *buffer, int length);
 void wifi_free(void *driver, void *buffer);
 void wifi_rx_packet();
 
+// U64-Elite-II only
+typedef struct {
+    uint16_t vbus;
+    uint16_t vaux;
+    uint16_t v50;
+    uint16_t v33;
+    uint16_t v18;
+    uint16_t v10;
+    uint16_t vusb;
+} voltages_t;
+
+int wifi_enable();
+int wifi_disable();
+int wifi_get_voltages(voltages_t *voltages);
 
 // This class provides an interface to the WiFi module, to manage and program it
 typedef enum {
