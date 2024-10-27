@@ -46,7 +46,7 @@ begin
                     when c_chargen_line_clocks_lo =>
                         control_i.clocks_per_line(7 downto 0) <= unsigned(io_req.data); 
                     when c_chargen_char_width =>
-                        control_i.char_width <= unsigned(io_req.data(2 downto 0));
+                        control_i.char_width <= unsigned(io_req.data(3 downto 0));
                     when c_chargen_char_height =>
                         control_i.char_height <= unsigned(io_req.data(4 downto 0));
                         control_i.stretch_y <= io_req.data(7);

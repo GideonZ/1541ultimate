@@ -19,7 +19,7 @@ package char_generator_pkg is
 
     type t_chargen_control is record
         clocks_per_line     : unsigned(11 downto 0);
-        char_width          : unsigned(2 downto 0);
+        char_width          : unsigned(3 downto 0);
         char_height         : unsigned(4 downto 0);
         chars_per_line      : unsigned(7 downto 0);
         active_lines        : unsigned(5 downto 0);
@@ -34,7 +34,7 @@ package char_generator_pkg is
 
     constant c_chargen_control_init : t_chargen_control := (
         clocks_per_line     => to_unsigned(672, 12),
-        char_width          => to_unsigned(0, 3),
+        char_width          => to_unsigned(0, 4),
         char_height         => to_unsigned(9, 5),
         chars_per_line      => to_unsigned(60, 8),
         active_lines        => to_unsigned(30, 6),

@@ -18,7 +18,7 @@ use ieee.numeric_std.all;
 library work;
 use work.char_generator_pkg.all;
 
-entity char_generator_slave is
+entity char_generator_slave12 is
 generic (
 	g_screen_size	: natural := 11 );
 port (
@@ -36,7 +36,7 @@ port (
 	color_data		: in  std_logic_vector(7 downto 0);
 	
     char_addr       : out unsigned(10 downto 0);
-    char_data       : in  std_logic_vector(7 downto 0);
+    char_data       : in  std_logic_vector(35 downto 0);
 
     pixel_active    : out std_logic;
     pixel_opaque    : out std_logic;
@@ -45,7 +45,7 @@ port (
 end entity;
 
 
-architecture gideon of char_generator_slave is
+architecture gideon of char_generator_slave12 is
     signal pointer          : unsigned(g_screen_size-1 downto 0) := (others => '0');
     signal char_x           : unsigned(6 downto 0)  := (others => '0');
     signal char_y           : unsigned(4 downto 0)  := (others => '0');
@@ -65,7 +65,7 @@ architecture gideon of char_generator_slave is
     
 begin
     process(clock)
-        variable v_char_data : std_logic_vector(7 downto 0);
+        variable v_char_data : std_logic_vector(11 downto 0);
     begin
         if rising_edge(clock) then
             active_d1 <= '0';
@@ -102,6 +102,8 @@ begin
                             pointer <= pointer + control.chars_per_line;
                             char_y <= (others => '0');
                             remaining_lines <= remaining_lines - 1;
+                        elsif char_y(1 downto 0) = "10" then -- count 0, 1, 2, 4, 5, 6, 8, 9 ...
+                            char_y <= char_y + 2;
                         else                        
                             char_y <= char_y + 1;
                         end if;
@@ -123,11 +125,15 @@ begin
             -- pixel output
             pixel_active <= active_d2;
 			if active_d2='1' then
-                v_char_data := char_data;
-                if char_data /= X"18" and char_y(3) = '1' and control.stretch_y = '0' then -- allow a vertical line to continue
-                    v_char_data := X"00";
+                if char_y(1 downto 0) = "00" then
+                    v_char_data := char_data(11 downto 0);
+                elsif char_y(1 downto 0) = "01" then
+                    v_char_data := char_data(23 downto 12);
+                else
+                    v_char_data := char_data(35 downto 24);
                 end if;
-				if v_char_data(to_integer(pixel_sel_d2))='1' then
+
+                if v_char_data(to_integer(pixel_sel_d2))='1' then
 		            pixel_data <= unsigned(color_data_d(3 downto 0));
                     if color_data_d(3 downto 0) = control.transparent then
                         pixel_opaque <= '0';
@@ -155,8 +161,6 @@ begin
     
     screen_addr <= pointer + char_x;
 
-    char_addr   <= unsigned(screen_data) & char_y_d(3 downto 1) when control.stretch_y = '1' else 
-                   unsigned(screen_data) & char_y_d(2 downto 0) when char_y_d(3)='0' else 
-                   unsigned(screen_data) & "111"; -- keep repeating the last line
+    char_addr   <= unsigned(screen_data) & char_y_d(4 downto 2);
     
 end architecture;
