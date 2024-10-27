@@ -30,12 +30,13 @@ port (
     v_count         : in  unsigned(11 downto 0);
     
     control         : in  t_chargen_control;
-
+    overlay_ena     : in  std_logic;
+    
     screen_addr     : out unsigned(g_screen_size-1 downto 0);
     screen_data     : in  std_logic_vector(7 downto 0);
 	color_data		: in  std_logic_vector(7 downto 0);
 	
-    char_addr       : out unsigned(10 downto 0);
+    char_addr       : out unsigned(9 downto 0);
     char_data       : in  std_logic_vector(35 downto 0);
 
     pixel_active    : out std_logic;
@@ -62,7 +63,7 @@ architecture gideon of char_generator_slave12 is
     signal pixel_sel_d1     : unsigned(3 downto 0);
     signal active_d2        : std_logic;
     signal pixel_sel_d2     : unsigned(3 downto 0);
-    
+    signal reverse          : std_logic;
 begin
     process(clock)
         variable v_char_data : std_logic_vector(11 downto 0);
@@ -77,7 +78,7 @@ begin
                 pointer <= control.pointer(pointer'range);
                 char_y  <= (others => '0');
                 remaining_lines <= control.active_lines;
-                if (v_count = control.y_on) and (control.overlay_on = '1') and (data_enable = '1') then
+                if (v_count = control.y_on) and (overlay_ena = '1') and (data_enable = '1') then
                     state <= active_line;
                 end if;
                 
@@ -133,7 +134,7 @@ begin
                     v_char_data := char_data(35 downto 24);
                 end if;
 
-                if v_char_data(to_integer(pixel_sel_d2))='1' then
+                if v_char_data(to_integer(pixel_sel_d2)) = not(reverse) then
 		            pixel_data <= unsigned(color_data_d(3 downto 0));
                     if color_data_d(3 downto 0) = control.transparent then
                         pixel_opaque <= '0';
@@ -161,6 +162,7 @@ begin
     
     screen_addr <= pointer + char_x;
 
-    char_addr   <= unsigned(screen_data) & char_y_d(4 downto 2);
-    
+    char_addr   <= unsigned(screen_data(6 downto 0)) & char_y_d(4 downto 2);
+    reverse     <= screen_data(7) when rising_edge(clock);
+
 end architecture;

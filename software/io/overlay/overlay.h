@@ -40,13 +40,15 @@ public:
         buttonPushSeen = false;
         
         activeX = 40;
-        activeY = 25;
 #if U64 == 2
-        X_on = 1520;
+        activeY = 45;
+        X_on = 1438; //1520;
+        Y_on = 0;
 #else
+        activeY = 25;
         X_on = 366;
-#endif    
         Y_on = 314-40; //346
+#endif    
 
         initRegs();
         screen = new Screen_MemMappedCharMatrix(charmap, colormap, activeX, activeY);
@@ -136,9 +138,9 @@ public:
     }
 
     void initRegs(void) {
-        overlay_regs->CHAR_WIDTH       = 8;
+        overlay_regs->CHAR_WIDTH       = 12;
 #if U64 == 2
-        overlay_regs->CHAR_HEIGHT      = 0x80 | 16;
+        overlay_regs->CHAR_HEIGHT      = 0x80 | 31;
 #else
         overlay_regs->CHAR_HEIGHT      = 9;
 #endif

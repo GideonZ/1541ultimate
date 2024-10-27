@@ -31,10 +31,51 @@ raster = []
 for line in bitmap:
     raster.append([c == 255 and 1 or 0 for c in [line[k+1] for k in range(0, size[0] * 3, 3)]])
 
+remap = [c for c in range(256)]
+# 1 = corner lower right
+# 2 = horizontal bar
+# 3 = corner lower left
+# 4 = vertical bar
+# 5 = corner upper right
+# 6 = corner upper left
+# 7 = rounded corner lower right
+# 8 = T
+# 9 = rounded corner lower left
+# A = |-
+# B = +
+# C = -|
+# D = rounded corner upper right
+# E = _|_
+# F = rounded corner upper left
+# 10 = alpha
+# 11 = beta
+# 12 = test grid
+# 13 = diamond
+#remap[1] = 0xda
+#remap[2] = 0xc4
+#remap[3] = 0xbf
+#remap[4] = 0xb3
+#remap[5] = 0xc0
+#remap[6] = 0xd9
+#remap[7] = 0xda
+#remap[8] = 0xc2
+#remap[9] = 0xbf
+#remap[10] = 0xc3
+#remap[11] = 0xc5
+#remap[12] = 0xb4
+#remap[13] = 0xc0
+#remap[14] = 0xc1
+#remap[15] = 0xd9
+#remap[16] = 0xe0
+#remap[17] = 0xe1
+#remap[18] = 0xb2
+#remap[19] = 0x04
+
 # array of character bitmaps; each bitmap is an array of lines, each line
 # consists of 1 - bit is set and 0 - bit is not set
 char_bitmaps = [] 
-for c in range(256): # for each character
+for ci in range(256): # for each character
+    c = remap[ci]
     char_bitmap = []
     raster_row = (c // 16) * char_size[1]
     offset = (c % 16) * char_size[0]

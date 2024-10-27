@@ -30,6 +30,7 @@ port (
     io_req          : in  t_io_req;
     io_resp         : out t_io_resp;
     overlay_on      : out std_logic;
+    overlay_ena     : in  std_logic;
 
     pix_clock       : in  std_logic;
     pix_reset       : in  std_logic;
@@ -48,7 +49,7 @@ architecture structural of char_generator_peripheral_12 is
     signal screen_addr     : unsigned(g_screen_size-1 downto 0);
     signal screen_data     : std_logic_vector(7 downto 0);
     signal color_data      : std_logic_vector(7 downto 0) := X"0F";
-    signal char_addr       : unsigned(10 downto 0);
+    signal char_addr       : unsigned(9 downto 0);
     signal char_data       : std_logic_vector(35 downto 0);
 
 	signal io_req_regs		: t_io_req  := c_io_req_init;
@@ -122,7 +123,8 @@ begin
         v_count         => v_count,
                                        
         control         => control,
-                                       
+        overlay_ena     => overlay_ena,
+                                               
         screen_addr     => screen_addr,
         screen_data     => screen_data,
 		color_data		=> color_data,
