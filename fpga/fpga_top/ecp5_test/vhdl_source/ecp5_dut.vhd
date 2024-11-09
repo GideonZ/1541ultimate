@@ -234,19 +234,9 @@ architecture rtl of ecp5_dut is
     signal rmii_crs_dv_d    : std_logic;
     signal rmii_rx_data_d   : std_logic_vector(1 downto 0);
 
-    signal eth_tx_data   : std_logic_vector(7 downto 0);
-    signal eth_tx_last   : std_logic;
-    signal eth_tx_valid  : std_logic;
-    signal eth_tx_ready  : std_logic := '1';
-
-    signal eth_rx_data   : std_logic_vector(7 downto 0);
-    signal eth_rx_sof    : std_logic;
-    signal eth_rx_eof    : std_logic;
-    signal eth_rx_valid  : std_logic;
-
     -- USB
     signal ulpi_data_o      : std_logic_vector(7 downto 0);
-    signal ulpi_data_t      : std_logic;
+    signal ulpi_data_t      : std_logic_vector(7 downto 0);
     signal ulpi_data_i      : std_logic_vector(7 downto 0);
     signal ulpi_nxt_i       : std_logic;
     signal ulpi_dir_i       : std_logic;
@@ -496,17 +486,33 @@ begin
 
             eth_clock    => eth_clock,
             eth_reset    => eth_reset,
-            eth_tx_data  => eth_tx_data,
-            eth_tx_eof   => eth_tx_last,
-            eth_tx_valid => eth_tx_valid,
-            eth_tx_ready => eth_tx_ready,
-            eth_rx_data  => eth_rx_data,
-            eth_rx_sof   => eth_rx_sof,
-            eth_rx_eof   => eth_rx_eof,
-            eth_rx_valid => eth_rx_valid,
+            RMII_CRS_DV  => rmii_crs_dv_d,
+            RMII_RX_ER   => RMII_RX_ER,
+            RMII_RX_DATA => rmii_rx_data_d,
+            RMII_TX_DATA => rmii_tx_data_i,
+            RMII_TX_EN   => rmii_tx_en_i,
+            -- FIXME
+            -- MDIO_CLK     => MDIO_CLK,
+            -- MDIO_DATA_O  => mdio_o,
+            -- MDIO_DATA_I  => MDIO_DATA,
 
             button       => button_i
         );
+
+    -- I/O Delays
+    i_delay_rmii_rxdv: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => RMII_CRS_DV,     Z => rmii_crs_dv_i);
+    i_delay_rmii_rxd0: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => RMII_RX_DATA(0), Z => rmii_rx_data_i(0));
+    i_delay_rmii_rxd1: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => RMII_RX_DATA(1), Z => rmii_rx_data_i(1));
+
+    process(eth_clock)
+    begin
+        if rising_edge(eth_clock) then
+            rmii_crs_dv_d  <= rmii_crs_dv_i;
+            rmii_rx_data_d <= rmii_rx_data_i;
+            RMII_TX_EN     <= rmii_tx_en_i;
+            RMII_TX_DATA   <= rmii_tx_data_i;
+        end if;
+    end process;
 
     i_double_freq_bridge: entity work.memreq_halfrate
     port map(
@@ -692,41 +698,6 @@ begin
         dac_in  => signed(left_out),
         dac_out => SPEAKER_DATA );
 
-    -- Ethernet Transceiver
-    i_rmii: entity work.rmii_transceiver
-    port map (
-        clock           => eth_clock,
-        reset           => eth_reset,
-        rmii_crs_dv     => rmii_crs_dv_d, 
-        rmii_rxd        => rmii_rx_data_d,
-        rmii_tx_en      => rmii_tx_en_i,
-        rmii_txd        => rmii_tx_data_i,
-        
-        eth_rx_data     => eth_rx_data,
-        eth_rx_sof      => eth_rx_sof,
-        eth_rx_eof      => eth_rx_eof,
-        eth_rx_valid    => eth_rx_valid,
-
-        eth_tx_data     => eth_tx_data,
-        eth_tx_eof      => eth_tx_last,
-        eth_tx_valid    => eth_tx_valid,
-        eth_tx_ready    => eth_tx_ready,
-        ten_meg_mode    => '0'   );
-
-    -- I/O Delays
-    i_delay_rmii_rxdv: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => RMII_CRS_DV,     Z => rmii_crs_dv_i);
-    i_delay_rmii_rxd0: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => RMII_RX_DATA(0), Z => rmii_rx_data_i(0));
-    i_delay_rmii_rxd1: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => RMII_RX_DATA(1), Z => rmii_rx_data_i(1));
-
-    process(eth_clock)
-    begin
-        if rising_edge(eth_clock) then
-            rmii_crs_dv_d  <= rmii_crs_dv_i;
-            rmii_rx_data_d <= rmii_rx_data_i;
-            RMII_TX_EN     <= rmii_tx_en_i;
-            RMII_TX_DATA   <= rmii_tx_data_i;
-        end if;
-    end process;
 
     flash_sck_t  <= sys_reset; -- 0 when not in reset = enabled
     u1: USRMCLK
@@ -775,7 +746,7 @@ begin
         end if;
     end process;
 
-    ULPI_DATA <= ulpi_data_o when ulpi_data_t = '1' else "ZZZZZZZZ";
+    ULPI_DATA <= ulpi_data_o when ulpi_data_t(0) = '1' else "ZZZZZZZZ";
     r: for i in ULPI_DATA'range generate
         i_delay: DELAYG generic map (DEL_MODE => "SCLK_ZEROHOLD") port map (A => ULPI_DATA(i), Z => ulpi_data_i(i));
         --i_delay: DELAYG generic map (DEL_VALUE => "DELAY5") port map (A => ULPI_DATA(i), Z => ulpi_data_delayed(i));
