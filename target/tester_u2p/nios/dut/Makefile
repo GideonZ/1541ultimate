@@ -30,13 +30,13 @@ SRCS_C   =	start_rtos.c \
             fix_fft.c
                         
 SRCS_CC	 =  dut_main.cc \
+			usb_hwinit.cc \
             i2c_drv.cc \
             codec.cc \
 			small_printf.cc \
 			flash.cc \
 			w25q_flash.cc \
 			flash_switch.cc \
-			network_interface.cc \
 			network_test.cc \
 			rmii_interface.cc \
 			ethernet_test.cc \
