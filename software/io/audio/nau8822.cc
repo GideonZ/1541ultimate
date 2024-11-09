@@ -43,3 +43,13 @@ void nau8822_init(int channel)
 
     printf("NAU8822 initialization complete.\n");
 }
+
+void nau8822_enable_hpout(int channel, int enable)
+{
+    i2c->set_channel(channel);
+    if (enable) {
+        i2c->i2c_write_nau(NAU8822_I2C_ADDRESS, 0x02, 0x1BF); // Enable headphone output
+    } else {
+        i2c->i2c_write_nau(NAU8822_I2C_ADDRESS, 0x02, 0x03F); // Disable headphone output
+    }
+}
