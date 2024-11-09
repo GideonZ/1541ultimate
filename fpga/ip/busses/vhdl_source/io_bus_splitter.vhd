@@ -51,6 +51,11 @@ begin
             if to_integer(req.address(g_range_hi downto g_range_lo)) >= g_ports then
                 dummy_resp.ack <= req.write or req.read;
             end if;
+            for i in resps'range loop
+                if resps(i).nc = '1' then
+                    dummy_resp.ack <= req.write or req.read;
+                end if;
+            end loop;
         end if;
     end process;
     

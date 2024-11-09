@@ -53,7 +53,7 @@ begin
     req_b.read    <= req_vector_b(1) and request_b;
     req_b.write   <= req_vector_b(0) and request_b;
 
-    terug_push <= resp_b.ack and not reset_b;
+    terug_push <= (resp_b.ack or (resp_b.nc and request_b)) and not reset_b;
 
     i_terug: entity work.synchronizer_gzw
     generic map(
