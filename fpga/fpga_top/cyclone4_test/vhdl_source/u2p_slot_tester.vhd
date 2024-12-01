@@ -130,6 +130,18 @@ architecture rtl of u2p_slot_tester is
     signal por_n        : std_logic;
     signal ref_reset    : std_logic;
     signal por_count    : unsigned(19 downto 0) := (others => '0');
+
+    signal IEC_SRQ_I    : std_logic;
+    signal IEC_RST_I    : std_logic;
+    signal IEC_CLK_I    : std_logic;
+    signal IEC_DATA_I   : std_logic;
+    signal IEC_ATN_I    : std_logic;
+    signal IEC_SRQ_O    : std_logic;
+    signal IEC_RST_O    : std_logic;
+    signal IEC_CLK_O    : std_logic;
+    signal IEC_DATA_O   : std_logic;
+    signal IEC_ATN_O    : std_logic;
+
 begin
     process(RMII_REFCLK)
     begin
@@ -147,9 +159,11 @@ begin
     i_tester: entity work.u64test_remote
     port map(
         arst      => ref_reset,
+        clock     => RMII_REFCLK,
         
         BUTTON    => BUTTON,
         
+        VCC       => SLOT_VCC,
         PHI2      => SLOT_PHI2,
         DOTCLK    => SLOT_DOTCLK,
         IO1n      => SLOT_IO1n,
@@ -172,17 +186,36 @@ begin
         LED_SDACTn => LED_SDACTn,
         LED_MOTORn => LED_MOTORn,
 
-        IEC_SRQ   => IEC_SRQ_IN,
-        IEC_RST   => IEC_RESET,
-        IEC_CLK   => IEC_CLOCK,
-        IEC_DATA  => IEC_DATA,
-        IEC_ATN   => IEC_ATN,
+        IEC_SRQ_I  => IEC_SRQ_I,
+        IEC_RST_I  => IEC_RST_I,
+        IEC_CLK_I  => IEC_CLK_I,
+        IEC_DATA_I => IEC_DATA_I,
+        IEC_ATN_I  => IEC_ATN_I,
+
+        IEC_SRQ_O  => IEC_SRQ_O,
+        IEC_RST_O  => IEC_RST_O,
+        IEC_CLK_O  => IEC_CLK_O,
+        IEC_DATA_O => IEC_DATA_O,
+        IEC_ATN_O  => IEC_ATN_O,
 
         CAS_READ  => CAS_READ,
         CAS_WRITE => CAS_WRITE,
         CAS_MOTOR => CAS_MOTOR,
         CAS_SENSE => CAS_SENSE
     );
+
+    -- Emulate
+    IEC_SRQ_I   <= not IEC_SRQ_IN;
+    IEC_RST_I   <= not IEC_RESET;
+    IEC_CLK_I   <= not IEC_CLOCK;
+    IEC_DATA_I  <= not IEC_DATA;
+    IEC_ATN_I   <= not IEC_ATN;
+
+    IEC_SRQ_IN  <= '0' when IEC_SRQ_O = '1' else 'Z';
+    IEC_RESET   <= '0' when IEC_RST_O = '1' else 'Z';
+    IEC_CLOCK   <= '0' when IEC_CLK_O = '1' else 'Z';
+    IEC_DATA    <= '0' when IEC_DATA_O = '1' else 'Z';
+    IEC_ATN     <= '0' when IEC_ATN_O = '1' else 'Z';
 
     SLOT_BUFFER_ENn <= '0';
 end architecture;
