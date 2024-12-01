@@ -3,6 +3,7 @@
 #include "iomap.h"
 #include <stdio.h>
 #include "u64.h"
+#include "u2p.h"
 #include "hw_i2c.h"
 
 #define W25Q_ContinuousArrayRead_LowFrequency       0x03
@@ -17,6 +18,11 @@
 #define BOOT_MAGIC_LOCATION *((volatile uint32_t*)0x0000FFFC)
 #define BOOT_MAGIC_JUMPADDR *((volatile uint32_t*)0x0000FFF8)
 #define BOOT_MAGIC_VALUE    (0x1571BABE)
+
+// Copy from i2c_drv.h, because we don't have C++ here
+#define I2C_CHANNEL_HDMI 0
+#define I2C_CHANNEL_1V8  1
+#define I2C_CHANNEL_3V3  2
 
 void jump_run(uint32_t a)
 {
@@ -74,7 +80,7 @@ static void test_access(const uint32_t addr, const uint32_t pattern)
     my_puts(".\n");
 }
 
-#define MAX_APPL_SIZE 0x140000
+#define MAX_APPL_SIZE 0x180000
 void initializeDDR2(void);
 
 static void init_ext_pll()
@@ -89,7 +95,9 @@ static void init_ext_pll()
     hexbyte(i2c_regs->soft_reset);
     outbyte('\n');
 
-    i2c_regs->channel = 0;
+    uint8_t hw_version = (U2PIO_BOARDREV >> 3);
+
+    i2c_regs->channel = (hw_version == 0x15) ? I2C_CHANNEL_HDMI : I2C_CHANNEL_1V8;
     i2c_regs->data_out = addr; // Auto start
     i2c_spin_busy(i2c_regs);
     i2c_regs->data_out = 0x14; // Address
@@ -103,7 +111,7 @@ static void init_ext_pll()
     i2c_regs->stop = 1;
     i2c_spin_busy(i2c_regs);
 
-    i2c_regs->channel = 1;
+    i2c_regs->channel = (hw_version == 0x15) ? I2C_CHANNEL_1V8 : I2C_CHANNEL_HDMI;
     i2c_regs->data_out = addr; // Auto start
     i2c_spin_busy(i2c_regs);
     i2c_regs->data_out = 0x14; // Address
@@ -121,8 +129,15 @@ static void init_ext_pll()
 int main()
 {
     puts("Hello world, U64-II!");
+    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
+    SPI_FLASH_DATA = 0xFF;
+    SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
+    SPI_FLASH_DATA = 0xFF;
+    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
 
     uint32_t capabilities = getFpgaCapabilities();
+    hexword(capabilities);
+    hexbyte(U2PIO_BOARDREV);
 
 	if (capabilities & CAPAB_SIMULATION) {
         init_ext_pll();
@@ -133,7 +148,7 @@ int main()
     initializeDDR2();
     init_ext_pll();
     
-    if (capabilities > 1) {
+    if (!(capabilities & CAPAB_BOOT_FPGA)) {
         uint32_t flash_addr = 0x220000; // 2176K from start. FPGA image is (uncompressed) 2141K
         
         SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
@@ -150,14 +165,6 @@ int main()
         hexword((uint32_t)length);
         hexword(run_address);
 
-    #if NO_BOOT == 1
-        my_puts("Waiting for JTAG download!\n\n");
-        while(1) {
-            ioWrite8(ITU_SD_BUSY, 1);
-            ioWrite8(ITU_SD_BUSY, 0);
-        }
-    //    uint32_t version = SPI_FLASH_DATA_32;
-    #else
         my_puts(APPL);
 
         if(length != -1) {
@@ -183,9 +190,8 @@ int main()
         BOOT_MAGIC_LOCATION = 0;
         jump_run(BOOT_MAGIC_JUMPADDR);
     }
+    my_puts("Empty; waiting for JTAG image to boot.\n");
 skip:
-    my_puts("Empty\n");
-
     while(1) {
         if(BOOT_MAGIC_LOCATION == BOOT_MAGIC_VALUE) {
             my_puts("Magic: ");
@@ -200,5 +206,4 @@ skip:
         }
     }
     return 0;
-#endif
 }

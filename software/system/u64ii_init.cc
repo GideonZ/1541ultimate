@@ -149,7 +149,7 @@ void custom_hardware_init()
 */
 
     U64_HDMI_REG = U64_HDMI_DDC_ENABLE;
-    i2c->set_channel(1);
+    i2c->set_channel(I2C_CHANNEL_1V8);
     i2c->i2c_write_byte(0x40, 0x01, 0x00); // Output Port
     i2c->i2c_write_byte(0x40, 0x03, 0x00); // All pins output
     i2c->i2c_write_byte(0x40, 0x02, 0x00); // No polarity inversion
@@ -172,11 +172,12 @@ extern "C" void SetVideoPll(t_video_mode mode)
     m /= 30.0f;
 
     printf("--> Requested video frequency = %.3f\n", m);
+    uint8_t hw_version = (U2PIO_BOARDREV >> 3);
 
     uint8_t bytes[16];
     calc_pll(24.0f, m, bytes);
     i2c->i2c_lock("SetVideoPll");
-    i2c->set_channel(0); // on prototype boards, otherwise 1
+    i2c->set_channel(hw_version == 0x15 ? I2C_CHANNEL_HDMI : I2C_CHANNEL_1V8);
     i2c->i2c_write_block(PLL1, 0x14, bytes+4, 8);
     i2c->i2c_unlock();
 }
@@ -188,9 +189,11 @@ extern "C" void SetHdmiPll(t_video_mode mode, uint8_t mode_bits)
     const uint8_t init_hdmi_50[] = { 0x57, 0x00, 0x01, 0x01, 0x0F, 0xA2, 0xCA, 0xAD };
     const uint8_t init_hdmi_60[] = { 0x57, 0x00, 0x01, 0x01, 0x55, 0xf7, 0x82, 0x89 };
 
+    uint8_t hw_version = (U2PIO_BOARDREV >> 3);
+
     C64_VIDEOFORMAT = VIDEO_FMT_60_HZ;
     i2c->i2c_lock("SetHdmiPll");
-    i2c->set_channel(1); // on prototype boards, otherwise 0
+    i2c->set_channel(hw_version == 0x15 ? I2C_CHANNEL_1V8 : I2C_CHANNEL_HDMI);
     i2c->i2c_write_byte(PLL1, 0x81, 0x18); // LVCMOS input, powerdown
     i2c->i2c_write_block(PLL1, 0x14, (ct->mode_bits & VIDEO_FMT_60_HZ) ? init_hdmi_60 : init_hdmi_50, 8);
     C64_VIDEOFORMAT = mode_bits;

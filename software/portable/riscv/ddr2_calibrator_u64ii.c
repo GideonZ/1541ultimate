@@ -237,8 +237,10 @@ void initializeDDR2(void)
     ddr2_command(0x0400, 0x1);
     ddr2_command(0x0400, 0x1);
 
-    // Prototype only
-    DDR_REGS->dqs_invert = 0x01;
+    if ((U2PIO_BOARDREV >> 3) == 0x15) {
+        // Prototype only
+        DDR_REGS->dqs_invert = 0x01;
+    }
 
     calibrateDQS();
 
