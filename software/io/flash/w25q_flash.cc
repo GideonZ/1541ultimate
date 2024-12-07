@@ -48,6 +48,13 @@ static const t_flash_address flash_addresses_u64[] = {
 	{ FLASH_ID_CONFIG,     0x00, 0x7E8000, 0x7E8000, 0x018000 },
 	{ FLASH_ID_LIST_END,   0x00, 0x7FE000, 0x7FE000, 0x001000 } };
 
+static const t_flash_address flash_addresses_u64ii[] = {
+	{ FLASH_ID_BOOTFPGA,   0x00, 0x000000, 0x000000, 0x220000 }, // 2172f9
+	{ FLASH_ID_APPL,       0x00, 0x220000, 0x220000, 0x1E0000 }, // Max 1.8 MB
+	{ FLASH_ID_FLASHDRIVE, 0x00, 0x400000, 0x400000, 0xBE8000 }, // ends at 0xFE8000  (free space: 12192 KB)
+	{ FLASH_ID_CONFIG,     0x00, 0xFE8000, 0xFE8000, 0x018000 },
+	{ FLASH_ID_LIST_END,   0x00, 0xFFE000, 0xFFE000, 0x001000 } };
+
 W25Q_Flash::W25Q_Flash()
 {
 	sector_size  = 16;			// in pages, default to W25Q16BV
@@ -64,6 +71,9 @@ W25Q_Flash::~W25Q_Flash()
 void W25Q_Flash :: get_image_addresses(int id, t_flash_address *addr)
 {
 	t_flash_address *a;
+#if U64 == 2
+    a = (t_flash_address *)flash_addresses_u64ii;
+#else    
 	if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
 		a = (t_flash_address *)flash_addresses_u64;
 	} else if (getFpgaCapabilities() & CAPAB_ULTIMATE2PLUS) {
@@ -75,6 +85,7 @@ void W25Q_Flash :: get_image_addresses(int id, t_flash_address *addr)
 	} else {
 		a = (t_flash_address *)flash_addresses;
 	}
+#endif
 	while(a->id != FLASH_ID_LIST_END) {
 		if(int(a->id) == id) {
 			*addr = *a; // copy
