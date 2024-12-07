@@ -12,7 +12,7 @@
 #include "FreeRTOS.h"
 #include "semphr.h"
 #else
-typedef void * SemaphoreHandle_t;
+//typedef void * SemaphoreHandle_t;
 #endif
 
 #define INFO_SIZE 128
@@ -74,8 +74,9 @@ public:
 
 class FileManager
 {
+#ifdef OS
     SemaphoreHandle_t serializer;
-
+#endif
 	IndexedList<MountPoint *>mount_points;
     IndexedList<File *>open_file_list;
 	//IndexedList<Path *>used_paths;
@@ -89,8 +90,6 @@ class FileManager
         rootfs = new FileSystem_Root(root);
 #ifdef OS
         serializer = xSemaphoreCreateRecursiveMutex();
-#else
-        serializer = 0;
 #endif
     }
 
