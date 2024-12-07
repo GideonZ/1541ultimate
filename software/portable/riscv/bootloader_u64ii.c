@@ -148,7 +148,11 @@ int main()
     initializeDDR2();
     init_ext_pll();
     
-    if (!(capabilities & CAPAB_BOOT_FPGA)) {
+    if(BOOT_MAGIC_LOCATION == BOOT_MAGIC_VALUE) {
+        my_puts("Magic!\n");
+        BOOT_MAGIC_LOCATION = 0;
+        jump_run(BOOT_MAGIC_JUMPADDR);
+    } else if (!(capabilities & CAPAB_BOOT_FPGA)) {
         uint32_t flash_addr = 0x220000; // 2176K from start. FPGA image is (uncompressed) 2141K
         
         SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
@@ -185,10 +189,6 @@ int main()
                 __asm__("nop");
             }
         }
-    } else if(BOOT_MAGIC_LOCATION == BOOT_MAGIC_VALUE) {
-        my_puts("Magic!\n");
-        BOOT_MAGIC_LOCATION = 0;
-        jump_run(BOOT_MAGIC_JUMPADDR);
     }
     my_puts("Empty; waiting for JTAG image to boot.\n");
 skip:
