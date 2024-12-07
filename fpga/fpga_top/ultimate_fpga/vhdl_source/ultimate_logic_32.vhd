@@ -18,7 +18,6 @@ generic (
     g_numerator     : natural := 8;
     g_denominator   : natural := 25;
     g_baud_rate     : natural := 115_200;
-    g_timer_rate    : natural := 200_000;
     g_fpga_type     : natural := 0;
     g_cartreset_init: std_logic := '0';
     g_boot_stop     : boolean := false;
@@ -156,8 +155,6 @@ port (
 	SDACT_LEDn	: out   std_logic;
     motor_led2n : out   std_logic;
     disk_act2n  : out   std_logic;
-    power_led3n : out   std_logic;
-    act_led3n   : out   std_logic;
     	
     -- Parallel cable pins
     drv_track_is_0      : out std_logic;
@@ -327,8 +324,6 @@ architecture logic of ultimate_logic_32 is
     constant c_tag_slot          : std_logic_vector(7 downto 0) := X"09";
     constant c_tag_reu           : std_logic_vector(7 downto 0) := X"0A";
     constant c_tag_usb2          : std_logic_vector(7 downto 0) := X"0B";
-    constant c_tag_cpu_i         : std_logic_vector(7 downto 0) := X"0C";
-    constant c_tag_cpu_d         : std_logic_vector(7 downto 0) := X"0D";
     constant c_tag_rmii          : std_logic_vector(7 downto 0) := X"0E"; -- and 0F
     constant c_tag_wifi_tx       : std_logic_vector(7 downto 0) := X"1E";
     constant c_tag_wifi_rx       : std_logic_vector(7 downto 0) := X"1F";
@@ -454,7 +449,6 @@ architecture logic of ultimate_logic_32 is
 	signal disk_led_n		: std_logic := '1';
 	signal motor_led_n		: std_logic := '1';
 	signal cart_led_n		: std_logic := '1';
-	signal c2n_pull_sense   : std_logic := '0';
     signal freezer_state    : std_logic_vector(1 downto 0);
     signal dirty_led_1_n    : std_logic := '1';
     signal dirty_led_2_n    : std_logic := '1';
