@@ -15,7 +15,7 @@
 #include "semphr.h"
 #include "browsable.h"
 #include "size_str.h"
-
+#include "rpc_calls.h"
 #include "network_esp32.h"
 
 extern "C" {
@@ -48,7 +48,10 @@ typedef struct {
 
 int wifi_enable();
 int wifi_disable();
+int wifi_modem_enable(bool);
 int wifi_get_voltages(voltages_t *voltages);
+int wifi_is_connected(uint8_t &status);
+int wifi_get_time(const char *timezone, esp_datetime_t *time);
 
 // This class provides an interface to the WiFi module, to manage and program it
 typedef enum {

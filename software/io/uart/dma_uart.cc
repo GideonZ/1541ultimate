@@ -138,7 +138,8 @@ void DmaUART::SetBaudRate(int bps)
 {
 	int twice = (CLOCK_FREQ * 2) / bps;
 	uint16_t rate = ((twice + 1) >> 1) - 1;
-	printf("SetBaudRate to %d bps => %d\n", bps, rate);
+    uint32_t actual = (CLOCK_FREQ * 2) / (2 * (rate + 1));
+	printf("SetBaudRate to %d bps => %d => actual = %d\n", bps, rate, actual);
 	uart->rate_h = rate >> 8;
 	uart->rate_l = rate & 0xFF;
 }
