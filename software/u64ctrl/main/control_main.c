@@ -21,6 +21,7 @@
 #include "rpc_dispatch.h"
 #include "button_handler.h"
 #include "jtag.h"
+#include "sntp.h"
 
 static const char *TAG = "u64ctrl";
 
@@ -32,19 +33,6 @@ static const char *TAG = "u64ctrl";
 #define SCALE_V10   65536
 #define SCALE_VUSB  (( 3900 + 2200) * 65536 / 2200)
 
-/*---------------------------------------------------------------
-        LED Blink
----------------------------------------------------------------*/
-
-static uint8_t s_led_state = 0;
-
-/*
-static void blink_led(void)
-{
-    // Set the GPIO level according to the state (LOW or HIGH)
-    gpio_set_level(IO_ESP_LED, s_led_state);
-}
-*/
 static void configure_led(void)
 {
     ESP_LOGI(TAG, "Example configured to blink GPIO LED!");
@@ -176,6 +164,7 @@ int check_fpga(void)
     };
     ESP_ERROR_CHECK( uart_set_pin(UART_NUM_0, -1, -1, -1, -1) );
     ESP_ERROR_CHECK( gpio_config(&io_conf_uart_off) );
+    vTaskDelay(100 / portTICK_PERIOD_MS); // Allow pull down to do its work.
     int rxd = gpio_get_level(IO_UART_RXD);
     ESP_LOGW(TAG, "Current UART Status: RXD=%d", rxd);
     return rxd;
@@ -186,25 +175,19 @@ void app_main(void)
     // Check whether the application FPGA was already loaded.
     int initial_state = check_fpga();
 
-    /* Configure the peripheral according to the LED type */
+    // Configure IOs
+    jtag_disable_io();
     configure_led();
     configure_adc();
     setup_modem();
     start_button_handler(initial_state);
 
-/*
-    jtag_start();
-    uint32_t id_code = jtag_get_id_code();
-    ESP_LOGI(TAG, "JTAG ID Code: 0x%08x", (unsigned int)id_code);
-    jtag_stop();
-*/
-
     while (1) {
         ESP_LOGI(TAG, "App Main Alive; 5V_GOOD: %d (Initial: %d)", gpio_get_level(IO_5V_GOOD), initial_state);
+        // print_time();
         // blink_led();
         // read_adcs();
-        /* Toggle the LED state */
-        s_led_state = !s_led_state;
         vTaskDelay(10000 / portTICK_PERIOD_MS);
+        print_all_zones();
     }
 }

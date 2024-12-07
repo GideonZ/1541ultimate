@@ -11,6 +11,7 @@
 
 #include <stdint.h>
 
+void jtag_disable_io();
 void jtag_start();
 void jtag_stop();
 

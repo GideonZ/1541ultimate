@@ -118,10 +118,8 @@ void jtag_start()
     jtag_reset_to_idle();
 }
 
-void jtag_stop()
+void jtag_disable_io()
 {
-    jtag_raw_tms(0x1F, 5); // 1, 1, 1, 1, 1  Go to reset state
-
     gpio_config_t io_conf_jtag_in = {
         .intr_type = GPIO_INTR_DISABLE,
         .mode = GPIO_MODE_INPUT,
@@ -131,6 +129,12 @@ void jtag_stop()
     };
 
     gpio_config(&io_conf_jtag_in);
+}
+
+void jtag_stop()
+{
+    jtag_raw_tms(0x1F, 5); // 1, 1, 1, 1, 1  Go to reset state
+    jtag_disable_io();
 }
 
 /*

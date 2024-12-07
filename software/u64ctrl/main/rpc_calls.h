@@ -56,6 +56,12 @@ typedef struct {
 
 typedef struct {
     rpc_header_t hdr;
+    int esp_err; // to be casted to esp_err_t
+    uint8_t status;
+} rpc_get_connection_resp;
+
+typedef struct {
+    rpc_header_t hdr;
     int baudrate;
     uint8_t flowctrl;
     uint8_t inversions;
@@ -95,6 +101,27 @@ typedef struct {
     char data;
 } rpc_rx_pkt;
 
+typedef struct {
+    rpc_header_t hdr;
+    char timezone[128];
+} rpc_get_time_req;
+
+typedef struct {
+    uint16_t year;
+    uint8_t month;
+    uint8_t day;
+    uint8_t weekday;
+    uint8_t hour;
+    uint8_t minute;
+    uint8_t second;
+} esp_datetime_t;
+
+typedef struct {
+    rpc_header_t hdr;
+    int esp_err;
+    esp_datetime_t datetime;
+} rpc_get_time_resp;
+
 //----------------------------------
 // send raw packet
 typedef struct {
@@ -107,266 +134,6 @@ typedef struct { // this response might be deprecated soon
     rpc_header_t hdr;
 } rpc_send_eth_resp;
 
-/*
-//----------------------------------
-// socket
-typedef struct {
-    rpc_header_t hdr;
-    int domain;
-    int type;
-    int protocol;
-} rpc_socket_req;
-
-typedef struct {
-    rpc_header_t hdr;
-    int retval;
-    int xerrno;
-} rpc_socket_resp;
-
-//----------------------------------
-// connect
-typedef struct {
-    rpc_header_t hdr;
-    int socket;
-    uint32_t namelen;
-    struct sockaddr name;
-} rpc_connect_req;
-
-typedef struct {
-    rpc_header_t hdr;
-    int retval;
-    int xerrno;
-} rpc_connect_resp;
-
-//----------------------------------
-// accept
-typedef struct {
-    rpc_header_t hdr;
-    int socket;
-    uint32_t namelen;
-} rpc_accept_req;
-
-typedef struct {
-    rpc_header_t hdr;
-    int retval;
-    int xerrno;
-    uint32_t namelen;
-    struct sockaddr name;
-} rpc_accept_resp;
-
-//----------------------------------
-// bind
-typedef struct {
-    rpc_header_t hdr;
-    int socket;
-    uint32_t namelen;
-    struct sockaddr_in name;
-} rpc_bind_req;
-
-typedef struct {
-    rpc_header_t hdr;
-    int retval;
-    int xerrno;
-} rpc_bind_resp;
-
-//----------------------------------
-// shutdown
-typedef struct {
-    rpc_header_t hdr;
-    int socket;
-    int how;
-} rpc_shutdown_req;
-
-typedef struct {
-    rpc_header_t hdr;
-    int retval;
-    int xerrno;
-} rpc_shutdown_resp;
-
-//----------------------------------
-// close
-typedef struct {
-    rpc_header_t hdr;
-    int socket;
-} rpc_close_req;
-
-typedef struct {
-    rpc_header_t hdr;
-    int retval;
-    int xerrno;
-} rpc_close_resp;
-
-//----------------------------------
-// listen
-typedef struct {
-    rpc_header_t hdr;
-    int socket;
-    int backlog;
-} rpc_listen_req;
-
-typedef struct {
-    rpc_header_t hdr;
-    int retval;
-    int xerrno;
-} rpc_listen_resp;
-
-//----------------------------------
-// read
-typedef struct {
-    rpc_header_t hdr;
-    int socket;
-    uint32_t length;
-} rpc_read_req;
-
-typedef struct {
-    rpc_header_t hdr;
-    int retval;
-    int xerrno;
-    char data;
-} rpc_read_resp;
-
-//----------------------------------
-// recv / recvfrom
-typedef struct {
-    rpc_header_t hdr;
-    int socket;
-    uint32_t length;
-    int flags;
-} rpc_recvfrom_req;
-
-typedef struct {
-    rpc_header_t hdr;
-    int retval;
-    int xerrno;
-    struct sockaddr from;
-    socklen_t fromlen;
-    char data;
-} rpc_recvfrom_resp;
-
-//----------------------------------
-// write
-typedef struct {
-    rpc_header_t hdr;
-    int socket;
-    uint32_t length;
-    char data;
-} rpc_write_req;
-
-typedef struct {
-    rpc_header_t hdr;
-    int retval;
-    int xerrno;
-} rpc_write_resp;
-
-//----------------------------------
-// send
-typedef struct {
-    rpc_header_t hdr;
-    int socket;
-    uint32_t length;
-    int flags;
-    char data;
-} rpc_send_req;
-
-typedef struct {
-    rpc_header_t hdr;
-    int retval;
-    int xerrno;
-} rpc_send_resp;
-
-//----------------------------------
-// sendto
-typedef struct {
-    rpc_header_t hdr;
-    int socket;
-    uint32_t length;
-    int flags;
-    struct sockaddr to;
-    socklen_t tolen;
-    char data;
-} rpc_sendto_req;
-
-typedef struct {
-    rpc_header_t hdr;
-    int retval;
-    int xerrno;
-} rpc_sendto_resp;
-
-//----------------------------------
-// gethostbyname
-typedef struct {
-    rpc_header_t hdr;
-    char name; // <null terminated string>
-} rpc_gethostbyname_req;
-
-typedef struct {
-    rpc_header_t hdr;
-    int retval;
-    int xerrno;
-    struct in_addr addr;
-} rpc_gethostbyname_resp;
-
-//----------------------------------
-// getsockname
-
-typedef struct {
-    rpc_header_t hdr;
-    int socket;
-    int namelen;
-} rpc_getsockname_req;
-
-typedef struct {
-    rpc_header_t hdr;
-    int retval;
-    int xerrno;
-    int namelen;
-    struct sockaddr name;
-} rpc_getsockname_resp;
-
-//----------------------------------
-// setsockopt
-
-typedef struct {
-    rpc_header_t hdr;
-    int socket;
-    int level;
-    int optname;
-    int optlen;
-    char optval;
-} rpc_setsockopt_req;
-
-typedef struct {
-    rpc_header_t hdr;
-    int retval;
-    int xerrno;
-} rpc_setsockopt_resp;
-
-//----------------------------------
-// getsockopt
-
-typedef struct {
-    rpc_header_t hdr;
-    int socket;
-    int level;
-    int optname;
-    int optlen;
-} rpc_getsockopt_req;
-
-typedef struct {
-    rpc_header_t hdr;
-    int retval;
-    int xerrno;
-    int optlen;
-    char optval;
-} rpc_getsockopt_resp;
-
-// ioctl
-// fcntl
-// getpeername
-
-// select
-*/
-
 // Events
 typedef struct {
     rpc_header_t hdr;
@@ -376,19 +143,23 @@ typedef struct {
     uint8_t changed;
 } event_pkt_got_ip;
 
-#define CMD_ECHO            0x01
-#define CMD_IDENTIFY        0x02
-#define CMD_SET_BAUD        0x03
-#define CMD_WIFI_SCAN       0x04
-#define CMD_WIFI_CONNECT    0x05
-#define CMD_WIFI_DISCONNECT 0x06
-#define CMD_WIFI_GETMAC     0x07
-#define CMD_SEND_PACKET     0x08
+#define CMD_ECHO              0x01
+#define CMD_IDENTIFY          0x02
+#define CMD_SET_BAUD          0x03
+#define CMD_WIFI_SCAN         0x04
+#define CMD_WIFI_CONNECT      0x05
+#define CMD_WIFI_DISCONNECT   0x06
+#define CMD_WIFI_GETMAC       0x07
+#define CMD_SEND_PACKET       0x08
+#define CMD_MODEM_ON          0x09
+#define CMD_MODEM_OFF         0x0A
+#define CMD_WIFI_IS_CONNECTED 0x0B
+#define CMD_GET_VOLTAGES      0x0C
+#define CMD_WIFI_ENABLE       0x0D
+#define CMD_WIFI_DISABLE      0x0E
+#define CMD_MACHINE_OFF       0x0F
+#define CMD_GET_TIME          0x10
 
-#define CMD_GET_VOLTAGES    0x0C
-#define CMD_WIFI_ENABLE     0x0D
-#define CMD_WIFI_DISABLE    0x0E
-#define CMD_MACHINE_OFF     0x0F
 /*
 #define CMD_SOCKET          0x11
 #define CMD_CONNECT         0x12

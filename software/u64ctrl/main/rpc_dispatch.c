@@ -17,6 +17,8 @@
 #include "driver/gpio.h"
 #include "pinout.h"
 #include "button_handler.h"
+#include "wifi_modem.h"
+#include "sntp.h"
 
 // not officially supported
 #include "../lwip/esp_netif_lwip_internal.h"
@@ -72,7 +74,6 @@ void cmd_setbaud(command_buf_t *buf)
     my_uart_transmit_packet(UART_CHAN, buf);
 }
 
-esp_err_t wifi_scan(ultimate_ap_records_t *ult_records);
 void cmd_scan(command_buf_t *buf)
 {
     rpc_scan_resp *resp = (rpc_scan_resp *)buf->data;
@@ -94,6 +95,8 @@ void cmd_wifi_connect(command_buf_t *buf)
     memcpy(&wifi_config.sta.password, param->password, 64);
     wifi_config.sta.pmf_cfg.capable = true;
     wifi_config.sta.pmf_cfg.required = false;
+
+    wifi_store_ap(param->ssid, param->password, param->auth_mode);
 
     if (buf->size < 98) {
         resp->esp_err = ESP_ERR_INVALID_ARG;
@@ -362,6 +365,24 @@ void cmd_off(command_buf_t *buf)
     extern_button_event(BUTTON_OFF);
 }
 
+void cmd_modem_on(command_buf_t *buf)
+{
+    rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
+    resp->esp_err = ESP_OK;
+    buf->size = sizeof(rpc_espcmd_resp);
+    my_uart_transmit_packet(UART_CHAN, buf);
+    enable_hook();
+}
+
+void cmd_modem_off(command_buf_t *buf)
+{
+    rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
+    resp->esp_err = ESP_OK;
+    buf->size = sizeof(rpc_espcmd_resp);
+    my_uart_transmit_packet(UART_CHAN, buf);
+    disable_hook();
+}
+
 void cmd_wifi_disable(command_buf_t *buf)
 {
     rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
@@ -386,6 +407,25 @@ void cmd_get_voltages(command_buf_t *buf)
     resp->esp_err = ESP_OK;
     read_adc_channels(&(resp->vbus));
     buf->size = sizeof(rpc_get_voltages_resp);
+    my_uart_transmit_packet(UART_CHAN, buf);
+}
+
+void cmd_get_connection(command_buf_t *buf)
+{
+    rpc_get_connection_resp *resp = (rpc_get_connection_resp *)buf->data;
+    resp->esp_err = ESP_OK;
+    resp->status = wifi_get_connection();
+    buf->size = sizeof(rpc_get_connection_resp);
+    my_uart_transmit_packet(UART_CHAN, buf);
+}
+
+void cmd_get_time(command_buf_t *buf)
+{
+    rpc_get_time_req *param = (rpc_get_time_req *)buf->data;
+    rpc_get_time_resp *resp = (rpc_get_time_resp *)buf->data;
+    sntp_get_time(param->timezone, &resp->datetime);
+    resp->esp_err = ESP_OK;
+    buf->size = sizeof(rpc_get_time_resp);
     my_uart_transmit_packet(UART_CHAN, buf);
 }
 
@@ -442,7 +482,7 @@ void dispatch(void *ct)
         led = 1 - led;
         gpio_set_level(IO_ESP_LED, led);
         if (received == pdFALSE) {
-            //send_keepalive();
+            wifi_check_connection();
             continue;
         }
 #if UART_DEBUG
@@ -477,6 +517,12 @@ void dispatch(void *ct)
         case CMD_MACHINE_OFF:
             cmd_off(pbuffer);
             break;
+        case CMD_MODEM_ON:
+            cmd_modem_on(pbuffer);
+            break;
+        case CMD_MODEM_OFF:
+            cmd_modem_off(pbuffer);
+            break;
         case CMD_WIFI_DISABLE:
             cmd_wifi_disable(pbuffer);
             break;
@@ -486,63 +532,12 @@ void dispatch(void *ct)
         case CMD_GET_VOLTAGES:
             cmd_get_voltages(pbuffer);
             break;
-
-/*
-        case CMD_SOCKET:
-            cmd_socket(pbuffer);
+        case CMD_WIFI_IS_CONNECTED:
+            cmd_get_connection(pbuffer);
             break;
-        case CMD_CONNECT:
-            cmd_connect(pbuffer);
+        case CMD_GET_TIME:
+            cmd_get_time(pbuffer);
             break;
-        case CMD_ACCEPT:
-            cmd_accept(pbuffer);
-            break;
-        case CMD_BIND:
-            cmd_bind(pbuffer);
-            break;
-        case CMD_SHUTDOWN:
-            cmd_shutdown(pbuffer);
-            break;
-        case CMD_CLOSE:
-            cmd_close(pbuffer);
-            break;
-        case CMD_LISTEN:
-            cmd_listen(pbuffer);
-            break;
-        case CMD_READ:
-            cmd_read(pbuffer);
-            break;
-        case CMD_RECV:
-            cmd_recv(pbuffer);
-            break;
-        case CMD_RECVFROM:
-            cmd_recvfrom(pbuffer);
-            break;
-        case CMD_WRITE:
-            cmd_write(pbuffer);
-            break;
-        case CMD_SEND:
-            cmd_send(pbuffer);
-            break;
-        case CMD_SENDTO:
-            cmd_sendto(pbuffer);
-            break;
-        case CMD_GETHOSTBYNAME:
-            cmd_gethostbyname(pbuffer);
-            break;
-        case CMD_GETSOCKNAME:
-            cmd_getsockname(pbuffer);
-            break;
-        case CMD_GETSOCKOPT:
-            cmd_getsockopt(pbuffer);
-            break;
-        case CMD_SETSOCKOPT:
-            cmd_setsockopt(pbuffer);
-            break;
-        case CMD_GETPEERNAME:
-        case CMD_IOCTL:
-        case CMD_FCNTL:
-*/
         default:
             cmd_not_implemented(pbuffer);
             break;

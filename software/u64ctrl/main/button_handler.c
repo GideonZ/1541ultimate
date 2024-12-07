@@ -37,14 +37,14 @@ static void regulator_enable(int enable)
     if (enable) {
         gpio_set_level(IO_ENABLE_V50, 1);
         ESP_LOGI(TAG, "5V regultor on");
-        vTaskDelay(100 / portTICK_PERIOD_MS);
+        //vTaskDelay(10 / portTICK_PERIOD_MS);
         gpio_set_level(IO_ENABLE_MOD, 1);
         ESP_LOGI(TAG, "mod regulators on");
         vTaskDelay(100 / portTICK_PERIOD_MS);
     } else {
         gpio_set_level(IO_ENABLE_MOD, 0);
         ESP_LOGI(TAG, "mod regulators off");
-        vTaskDelay(100 / portTICK_PERIOD_MS);
+        //vTaskDelay(10 / portTICK_PERIOD_MS);
         gpio_set_level(IO_ENABLE_V50, 0);
         ESP_LOGI(TAG, "5V regultor off");
         vTaskDelay(100 / portTICK_PERIOD_MS);
@@ -63,25 +63,12 @@ static void handle_button_event(int event)
     switch(event) {
         case BUTTON_UP_SHORT:
             ESP_LOGI(TAG, "Up Short");
-            jtag_start();
-            id_code = jtag_get_id_code();
-            ESP_LOGI(TAG, "JTAG ID Code: 0x%08x", (unsigned int)id_code);
-            jtag_stop();
             break;
         case BUTTON_UP_LONG:
             ESP_LOGI(TAG, "Up Long");
-            jtag_start();
-            jtag_configure_fpga();
-            id_code = vji_get_user_code();
-            ESP_LOGI(TAG, "User Code: 0x%08x", (unsigned int)id_code);
-            jtag_stop();
             break;
         case BUTTON_DOWN_SHORT:
             ESP_LOGI(TAG, "Down Short");
-            jtag_start();
-            id_code = vji_get_user_code();
-            ESP_LOGI(TAG, "User Code: 0x%08x", (unsigned int)id_code);
-            jtag_stop();
             break;
         case BUTTON_DOWN_LONG:
             ESP_LOGI(TAG, "Down Long");
