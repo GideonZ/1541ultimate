@@ -9,6 +9,7 @@ use work.io_bus_pkg.all;
 
 entity basic_io is
 generic (
+    g_bootfpga      : boolean;
 	g_version		: unsigned(7 downto 0) := X"77";
     g_numerator     : natural := 8;
     g_denominator   : natural := 25;
@@ -81,7 +82,18 @@ port (
 end entity;
 
 architecture logic of basic_io is
+    function capab(boot: boolean) return std_logic_vector is
+        variable ret : std_logic_vector(31 downto 0) := X"01804001"; -- Ethernet, USB, etc
+    begin
+        if boot then
+            ret(30) := '1';
+        end if;
+        return ret;
+    end function;
+
     constant c_clock_freq       : natural := (16_000_000 * g_denominator) / g_numerator;
+    constant c_capabilities     : std_logic_vector(31 downto 0) := capab(g_bootfpga);
+     -- Uart, Spi Flash, USB, Ethernet
 
     constant c_tag_usb2          : std_logic_vector(7 downto 0) := X"0B";
     constant c_tag_rmii          : std_logic_vector(7 downto 0) := X"0E"; -- and 0F
@@ -207,7 +219,7 @@ begin
     i_itu: entity work.itu
     generic map (
 		g_version	    => g_version,
-        g_capabilities  => X"01804001", -- Uart, Spi Flash, USB, Ethernet
+        g_capabilities  => c_capabilities,
         g_uart          => true,
         g_uart_rx       => true,
         g_edge_init     => "10000101",
