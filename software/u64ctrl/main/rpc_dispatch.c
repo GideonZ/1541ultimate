@@ -414,10 +414,11 @@ void send_keepalive()
 
 void send_button_event(uint8_t button)
 {
+    const uint8_t button_codes[] = { EVENT_BUTTON, EVENT_MENU, EVENT_RESET, EVENT_FREEZE, EVENT_BUTTON, EVENT_BUTTON, EVENT_BUTTON } ;
     command_buf_t *reply;
     if (my_uart_get_buffer(UART_NUM_1, &reply, 100)) {
         rpc_header_t *hdr = (rpc_header_t *)reply->data;
-        hdr->command = EVENT_BUTTON + button;
+        hdr->command = button_codes[button];
         hdr->thread = 0xFF;
         hdr->sequence = 0;
         reply->size = sizeof(rpc_header_t);

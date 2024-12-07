@@ -86,6 +86,8 @@ port (
     sense           : in    std_logic;
 
     buttons         : in    std_logic_vector(2 downto 0);
+    btn_freeze      : in    std_logic;
+    btn_reset       : in    std_logic;
     cart_led_n      : out   std_logic;
 
     trigger_1       : out   std_logic;
@@ -436,8 +438,8 @@ begin
         end process;
     end block b_sync;
 
-    reset_button  <= buttons(0) when control.swap_buttons='0' else buttons(2);
-    freeze_button <= buttons(2) when control.swap_buttons='0' else buttons(0);
+    reset_button  <= btn_reset or  (buttons(0) and not control.swap_buttons) or (buttons(2) and control.swap_buttons);
+    freeze_button <= btn_freeze or (buttons(2) and not control.swap_buttons) or (buttons(0) and control.swap_buttons);
 
     i_split_64K: entity work.io_bus_splitter
     generic map (

@@ -18,6 +18,7 @@ library work;
         
 entity rx_dma is
 generic (
+    g_events        : boolean := true;
     g_mem_tag       : std_logic_vector(7 downto 0) := X"14" );
 port (
     clock           : in  std_logic;
@@ -38,6 +39,10 @@ port (
     mem_req         : out t_mem_req_32;
     mem_resp        : in  t_mem_resp_32;
 
+    -- out event
+    out_event       : out std_logic_vector(7 downto 0);
+    out_event_valid : out std_logic;
+
     -- AXI byte stream to be written
     in_data         : in  std_logic_vector(7 downto 0) := X"00";
     in_valid        : in  std_logic;
@@ -48,7 +53,7 @@ end entity;
 
 architecture gideon of rx_dma is
 
-    type t_state is (idle, collect, write_mem, write_last, report_len);
+    type t_state is (idle, first, collect, write_mem, write_last, report_len, dropping);
     signal state    : t_state;
 
     signal mem_addr     : unsigned(25 downto 0) := (others => '0');
@@ -59,7 +64,7 @@ architecture gideon of rx_dma is
     signal len_valid_i  : std_logic;
 begin
     len_valid <= len_valid_i;
-    in_ready  <= '1' when state = collect else '0';
+    in_ready  <= '1' when (state = collect) or (state = dropping) else '0';
 
     process(clock)
     begin
@@ -68,16 +73,37 @@ begin
                 len_valid_i <= '0';
             end if;
 
+            out_event_valid <= '0';
             addr_ready <= '0';
             case state is
             when idle =>
                 bytecount <= (others => '0');
                 mem_be <= "0000";
                 write_req <= '0';
-                if addr_valid = '1' then
-                    addr_ready <= '1';
+                if g_events and in_valid = '1' and in_data(7) = '1' then
+                    out_event <= in_data;
+                    out_event_valid <= '1';
+                    state <= dropping;
+                elsif addr_valid = '1' then
                     mem_addr <= unsigned(addr_data(mem_addr'range));
-                    state <= collect;
+                    if g_events then
+                        state <= first;
+                    else
+                        state <= collect;
+                    end if;
+                end if;
+
+            when first =>
+                if in_valid = '1' then
+                    if in_data(7) = '1' then
+                        -- output
+                        out_event <= in_data;
+                        out_event_valid <= '1';
+                        state <= dropping;
+                    else
+                        addr_ready <= '1';
+                        state <= collect;
+                    end if;
                 end if;
 
             when collect =>
@@ -122,12 +148,18 @@ begin
                     state <= idle;
                 end if;
 
+            when dropping =>
+                if in_valid = '1' and in_last = '1' then
+                    state <= idle;
+                end if;
+
             end case;             
 
             if reset = '1' or flush = '1' then
                 len_valid_i <= '0';
                 write_req <= '0';
                 state <= idle;
+                out_event <= (others => '0');
             end if;
         end if;
     end process;

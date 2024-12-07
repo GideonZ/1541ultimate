@@ -56,6 +56,7 @@ generic (
     g_rmii          : boolean := false;
     g_sdcard        : boolean := false;
     g_wifi_uart     : boolean := false;
+    g_wifi_events   : boolean := false;
     g_kernal_repl   : boolean := true );
 port (
     -- globals
@@ -130,6 +131,9 @@ port (
     aud_samp_r       : out signed(17 downto 0); 
     aud_sid_1        : out signed(17 downto 0);
     aud_sid_2        : out signed(17 downto 0);
+
+    wifi_event       : out std_logic_vector(7 downto 0);
+    wifi_event_valid : out std_logic;
 
     -- IEC bus
     -- actual levels of the pins --
@@ -253,7 +257,10 @@ port (
     guru_irq    : in  std_logic := '0';
 
     -- Buttons
-    button      : in  std_logic_vector(2 downto 0) );
+    emulated_freeze : in  std_logic := '0';
+    emulated_menu   : in  std_logic := '0';
+    emulated_reset  : in  std_logic := '0';
+    button          : in  std_logic_vector(2 downto 0) );
 	
 end ultimate_logic_32;
 
@@ -506,7 +513,8 @@ begin
         tick_1us    => tick_1MHz,
         tick_1ms    => tick_1kHz,
         buttons     => button,
-
+        btn_menu    => emulated_menu,
+        
         irq_high(0) => sys_irq_acia,
         irq_high(1) => sys_irq_1541_1,
         irq_high(2) => sys_irq_1541_2,
@@ -898,6 +906,8 @@ begin
             BUFFER_ENn      => BUFFER_ENn,
             sense           => c2n_sense_in,        
 			buttons 		=> button,
+            btn_freeze      => emulated_freeze,
+            btn_reset       => emulated_reset,
             cart_led_n      => cart_led_n,
             
             -- audio
@@ -1272,6 +1282,7 @@ begin
         generic map (
             g_rx_tag  => c_tag_wifi_rx,
             g_tx_tag  => c_tag_wifi_tx,
+            g_events  => g_wifi_events,
             g_divisor => (g_clock_freq / g_baud_rate)
         )
         port map (
@@ -1281,6 +1292,9 @@ begin
             io_req   => io_req_wifi,
             io_resp  => io_resp_wifi,
             irq      => sys_irq_wifi,
+
+            event       => wifi_event,
+            event_valid => wifi_event_valid,
 
             mem_req  => mem_req_32_wifi,
             mem_resp => mem_resp_32_wifi,

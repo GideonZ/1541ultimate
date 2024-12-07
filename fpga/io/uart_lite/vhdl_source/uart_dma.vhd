@@ -10,6 +10,7 @@ entity uart_dma is
 generic (
     g_rx_tag    : std_logic_vector(7 downto 0) := X"14";
     g_tx_tag    : std_logic_vector(7 downto 0) := X"15";
+    g_events    : boolean := false;
 	g_divisor	: natural := 35 );
 port (
 	clock		: in  std_logic;
@@ -18,7 +19,10 @@ port (
     io_req      : in  t_io_req;
     io_resp     : out t_io_resp;
 	irq         : out std_logic;
-	
+
+    event       : out std_logic_vector(7 downto 0);
+    event_valid : out std_logic;
+
     mem_req     : out t_mem_req_32;
     mem_resp    : in  t_mem_resp_32;
 
@@ -221,6 +225,7 @@ begin
 
     rx_dma_inst: entity work.rx_dma
     generic map (
+        g_events   => g_events,
         g_mem_tag  => g_rx_tag
     )
     port map (
@@ -235,6 +240,8 @@ begin
         len_ready  => rx_len_ready,
         mem_req    => rx_mem_req,
         mem_resp   => rx_mem_resp,
+        out_event       => event,
+        out_event_valid => event_valid,
         in_data    => rx_data,
         in_valid   => rx_valid,
         in_last    => rx_last,

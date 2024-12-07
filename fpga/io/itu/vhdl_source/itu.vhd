@@ -27,7 +27,8 @@ port (
     tick_1us        : in  std_logic := '0';
     tick_1ms        : in  std_logic := '0';
     buttons         : in  std_logic_vector(2 downto 0) := "000";
-    
+    btn_menu        : in  std_logic := '0';
+
     irq_timer_tick  : in  std_logic := '0';
     irq_in          : in  std_logic_vector(7 downto 2) := (others => '0');
     irq_flags       : out std_logic_vector(7 downto 0);
@@ -188,6 +189,9 @@ begin
                     io_resp_it.data <= g_capabilities( 7 downto 0);
                 when c_itu_buttons =>
                     io_resp_it.data <= buttons & "00000";
+                    if btn_menu = '1' then
+                        io_resp_it.data(6) <= '1';
+                    end if;
                 when others =>
                     null;
                 end case;
