@@ -46,7 +46,7 @@ architecture arch of generic_mixer is
     signal state    : t_state;
     signal pointer  : natural range 0 to 2*g_num_sources;
 
-    signal ram_addr : unsigned(7 downto 0);
+    signal ram_addr : unsigned(5 downto 0);
     signal ram_rdata: std_logic_vector(7 downto 0);
     signal clear    : std_logic;
     signal a        : signed(17 downto 0);
@@ -67,12 +67,12 @@ architecture arch of generic_mixer is
     end function clip;
 begin
     b <= '0' & signed(ram_rdata);
-    ram_addr <= to_unsigned(pointer, 8);
+    ram_addr <= to_unsigned(pointer, 6);
     
     i_ram: entity work.dpram
     generic map (
         g_width_bits   => 8,
-        g_depth_bits   => 8
+        g_depth_bits   => 6  -- maximum of 32 inputs
     )
     port map(
         a_clock        => clock,
@@ -83,13 +83,13 @@ begin
         a_we           => '0',
         
         b_clock        => sys_clock,
-        b_address      => req.address(7 downto 0),
+        b_address      => req.address(5 downto 0),
         b_rdata        => open,
         b_wdata        => req.data,
         b_en           => req.write,
         b_we           => req.write
     );
-    
+
     resp.data <= X"00";
     resp.ack  <= req.write or req.read;
     

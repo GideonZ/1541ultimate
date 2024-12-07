@@ -19,17 +19,20 @@ port (
     i2s_in              : in  std_logic;
     i2s_bclk            : out std_logic;
     i2s_fs              : out std_logic;
-    
+    i2s_spk             : out std_logic;
+
     sample_pulse        : out std_logic;
     left_sample_out     : out std_logic_vector(23 downto 0);
     right_sample_out    : out std_logic_vector(23 downto 0);
     left_sample_in      : in  std_logic_vector(23 downto 0);
-    right_sample_in     : in  std_logic_vector(23 downto 0) );
+    right_sample_in     : in  std_logic_vector(23 downto 0);
+    speaker_sample_in   : in  std_logic_vector(23 downto 0) );
 end entity;
 
 architecture rtl of i2s_serializer is
     signal bit_count    : unsigned(7 downto 0);
     signal shift_reg    : std_logic_vector(31 downto 0) := (others => '0');
+    signal shift_spk    : std_logic_vector(31 downto 0) := (others => '0');
 begin
     -- mclk = 256*fs. bclk = 64*fs (32 bits per channel)
     process(clock)
@@ -42,8 +45,10 @@ begin
             
             if bit_count(1 downto 0) = "00" then
                 i2s_out <= shift_reg(shift_reg'left);
+                i2s_spk <= shift_spk(shift_spk'left);
             elsif bit_count(1 downto 0) = "10" then
                 shift_reg <= shift_reg(shift_reg'left-1 downto 0) & i2s_in;
+                shift_spk <= shift_spk(shift_spk'left-1 downto 0) & '0';
             end if;            
 
             case bit_count is
@@ -54,8 +59,10 @@ begin
                 sample_pulse <= '1';
             when X"02" =>
                 shift_reg <= left_sample_in & "0000000" & i2s_in;
+                shift_spk <= speaker_sample_in & "00000000";
             when X"82" =>
                 shift_reg <= right_sample_in & "0000000" & i2s_in;
+                shift_spk <= speaker_sample_in & "00000000";
             when others =>
                 null;            
             end case;

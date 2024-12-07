@@ -11,11 +11,12 @@
 #include <stdint.h>
 #include "u2p.h"
 
-#define U64_CLOCKMEAS   (U2P_IO_BASE + 0x0200)
-#define U64_IO_BASE     (U2P_IO_BASE + 0x0400)
-#define U64_AUDIO_MIXER (U2P_IO_BASE + 0x0500) // Mixer cannot be at 0x80; as address 7 is still passed to memory address! Be aware!
-#define U64_RESAMPLER   (U2P_IO_BASE + 0x0580)
-#define C64_IO_LED      (U2P_IO_BASE + 0x0600)
+#define U64_CLOCKMEAS     (U2P_IO_BASE + 0x0200)
+#define U64_IO_BASE       (U2P_IO_BASE + 0x0400)
+#define U64_AUDIO_MIXER   (U2P_IO_BASE + 0x0500)
+#define U64_SPEAKER_MIXER (U2P_IO_BASE + 0x0540)
+#define U64_RESAMPLER     (U2P_IO_BASE + 0x0580)
+#define C64_IO_LED        (U2P_IO_BASE + 0x0600)
 
 #define VID_IO_BASE  (U2P_IO_BASE + 0x40000)
 

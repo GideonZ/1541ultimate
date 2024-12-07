@@ -283,7 +283,9 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_IEC_BURST_EN,         CFG_TYPE_ENUM, "Burst Mode Patch",             "%s", burst_modes,  0,  2, 0 },
     { CFG_LED_SELECT_0,         CFG_TYPE_ENUM, "LED Select Top",               "%s", ledselects,   0, 15, 0 },
     { CFG_LED_SELECT_1,         CFG_TYPE_ENUM, "LED Select Bot",               "%s", ledselects,   0, 15, 4 },
+#if U64 != 2
     { CFG_SPEAKER_VOL,          CFG_TYPE_ENUM, "Speaker Volume (SpkDat)",      "%s", speaker_vol,  0, 10, 5 },
+#endif
     { CFG_PLAYER_AUTOCONFIG,    CFG_TYPE_ENUM, "SID Player Autoconfig",        "%s", en_dis,       0,  1, 1 },
     { CFG_ALLOW_EMUSID,         CFG_TYPE_ENUM, "Allow Autoconfig uses UltiSid","%s", yes_no,       0,  1, 1 },
 #if DEVELOPER
@@ -353,6 +355,18 @@ struct t_cfg_definition u64_mixer_cfg[] = {
     { CFG_MIXER9_PAN,           CFG_TYPE_ENUM, "Pan Tape Write",               "%s", pannings,     0, 10, 5 },
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
+struct t_cfg_definition u64_speaker_mixer_cfg[] = {
+    { CFG_MIXER0_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 1",                "%s", volumes,      0, 30, 7 },
+    { CFG_MIXER1_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 2",                "%s", volumes,      0, 30, 7 },
+    { CFG_MIXER2_VOL,           CFG_TYPE_ENUM, "Vol Socket 1",                 "%s", volumes,      0, 30, 7 },
+    { CFG_MIXER3_VOL,           CFG_TYPE_ENUM, "Vol Socket 2",                 "%s", volumes,      0, 30, 7 },
+    { CFG_MIXER4_VOL,           CFG_TYPE_ENUM, "Vol Sampler L",                "%s", volumes,      0, 30, 7 },
+    { CFG_MIXER5_VOL,           CFG_TYPE_ENUM, "Vol Sampler R",                "%s", volumes,      0, 30, 7 },
+    { CFG_MIXER6_VOL,           CFG_TYPE_ENUM, "Vol Drive 1",                  "%s", volumes,      0, 30, 11 },
+    { CFG_MIXER7_VOL,           CFG_TYPE_ENUM, "Vol Drive 2",                  "%s", volumes,      0, 30, 11 },
+    { CFG_MIXER8_VOL,           CFG_TYPE_ENUM, "Vol Tape Read",                "%s", volumes,      0, 30, 29 },
+    { CFG_MIXER9_VOL,           CFG_TYPE_ENUM, "Vol Tape Write",               "%s", volumes,      0, 30, 29 },
+    { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0,  0 } };
 
 extern Overlay *overlay;
 
@@ -362,7 +376,6 @@ extern Overlay *overlay;
 U64Config :: U64Mixer :: U64Mixer()
 {
     register_store(STORE_PAGE_ID, "Audio Mixer", u64_mixer_cfg);
-
     // enable "hot" updates for mixer
     for (uint8_t b = CFG_MIXER0_VOL; b <= CFG_MIXER9_VOL; b++) {
         cfg->set_change_hook(b, U64Config::setMixer);
@@ -377,6 +390,24 @@ void U64Config :: U64Mixer :: effectuate_settings()
     //printf("U64Mixer :: effectuate_settings()\n");
     setMixer(cfg->items[0]);
 }
+
+#if U64 == 2
+U64Config :: U64SpeakerMixer :: U64SpeakerMixer()
+{
+    register_store(STORE_PAGE_ID+1, "Speaker Mixer", u64_speaker_mixer_cfg);
+    for (uint8_t b = CFG_MIXER0_VOL; b <= CFG_MIXER9_VOL; b++) {
+        cfg->set_change_hook(b, U64Config::setSpeakerMixer);
+    }
+}
+
+void U64Config :: U64SpeakerMixer :: effectuate_settings()
+{
+    setSpeakerMixer(cfg->items[0]);
+}
+
+#endif    
+
+
 ////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////
 U64Config :: U64SidSockets :: U64SidSockets()
@@ -995,6 +1026,20 @@ int U64Config :: setMixer(ConfigItem *it)
         uint8_t vol_right = (panR * vol) >> 8;
         *(mixer++) = vol_right;
         *(mixer++) = vol_left;
+    }
+    return 0;
+}
+
+int U64Config :: setSpeakerMixer(ConfigItem *it)
+{
+    // Now, configure the mixer
+    volatile uint8_t *mixer = (volatile uint8_t *)U64_SPEAKER_MIXER;
+    ConfigStore *cfg = it->store;
+
+    for(int i=0; i<10; i++) {
+        uint8_t vol = volume_ctrl[cfg->get_value(CFG_MIXER0_VOL + i)];
+        *(mixer++) = vol;
+        *(mixer++) = vol;
     }
     return 0;
 }

@@ -50,6 +50,14 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
         void effectuate_settings();
     };
 
+#if U64 == 2
+    class U64SpeakerMixer : public ConfigurableObject
+    {
+    public:
+        U64SpeakerMixer();
+        void effectuate_settings();
+    };
+#endif
     class U64SidSockets : public ConfigurableObject
     {
     public:
@@ -73,6 +81,9 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
     };
 
     U64Mixer mixercfg;
+#if U64 == 2
+    U64SpeakerMixer speakercfg;
+#endif
     U64SidSockets sockets;
     U64UltiSids ultisids;
     U64SidAddressing sidaddressing;
@@ -110,6 +121,7 @@ public:
     static int setPllOffset(ConfigItem *it);
     static int setScanMode(ConfigItem *it);
     static int setMixer(ConfigItem *it);
+    static int setSpeakerMixer(ConfigItem *it);
     static int setFilter(ConfigItem *it);
     static int setSidEmuParams(ConfigItem *it);
     static int setLedSelector(ConfigItem *it);
