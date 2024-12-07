@@ -20,6 +20,9 @@
 #include "pattern.h"
 #include "wifi.h"
 #include "rpc_calls.h"
+#include "screen_logger.h"
+#include "usb_base.h"
+#include "usb_device.h"
 
 extern "C" {
     #include "audio_dma.h"
@@ -57,7 +60,6 @@ static void PrintPinNames(const char **names, uint8_t bits)
 static int PerformTest(const t_generic_vector *vec)
 {
     int errors = 0;
-    printf("\eO");
     for(int i=0; ; i++) {
         uint8_t before = 0;
         uint8_t after = 0;
@@ -101,8 +103,13 @@ const char *cia1_pa_pins[] = { "PA0", "PA1", "PA2", "PA3", "PA4", "PA5", "PA6", 
 const char *cia2_pb_pins[] = { "PB0", "PB1", "PB2", "PB3", "PB4", "PB5", "PB6 (CIA2)", "PB7 (CIA2)" };
 // const char *cia2_pa_pins[] = { "PA0", "PA1", "PA2", "PA3", "PA4", "PA5", "PA6", "PA7" };
 
+static const char *separator = "----------------------------------------";
+#define TEST_START(x) const char *testname = x; printf("%s\nTest: %s\n%s\n", separator, testname, separator);
+#define TEST_RESULT(x) result_message(x, testname); return x;
+
 int U64TestKeyboard()
 {
+    TEST_START("Keyboard test");
     int res, errors = 0;
     i2c->i2c_lock("keyboard");
     i2c->set_channel(1);
@@ -133,16 +140,13 @@ int U64TestKeyboard()
             errors++;
         }
     }
-    if (!errors) {
-        printf("\e5Keyboard test passed.\n");
-    } else {
-        printf("\e2Keyboard test FAILED.\n");
-    }
-    return errors;
+    TEST_RESULT(errors);
 }
 
 int U64TestUserPort()
 {
+    TEST_START("Userport test");
+
     // Make sure the buffer is enabled
     U64_USERPORT_EN = 1;
 
@@ -177,26 +181,25 @@ int U64TestUserPort()
     };
 
     int errors = PerformTest(vec);
-    if (!errors) {
-        printf("\e5Userport test passed.\n");
-    } else {
-        printf("\e2Userport test FAILED.\n");
-    }
-    return errors;
+    TEST_RESULT(errors);
 }
 
 int U64TestCartridge()
 {
+    TEST_START("Cartridge test");
+
     if (REMOTE_SIGNATURE != 0x99) {
-        printf("\e2Cartridge Test: Remote tester not found\n\eO");
+        fail_message("Cartridge Test: Remote tester not found");
         dump_hex((uint8_t *)U64TESTER_IO1_BASE, 8);
-        return 1;
+//        return 1;
     }
     int errors = 0;
+
+    volatile uint8_t *dest = (volatile uint8_t *)U64TESTER_IO2_BASE;
     // let's fill the RAM. We only fill 10 locations, but such that all address/data lines 0..7 are checked
     const uint8_t addr[] = { 0x00, 0x55, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80 };
     const uint8_t data[] = { 0x55, 0xAA, 0x80, 0x20, 0x08, 0x02, 0x40, 0x04, 0x10, 0x01 };
-    volatile uint8_t *dest = (volatile uint8_t *)U64TESTER_IO2_BASE;
+
     for (int i=0; i<10; i++) {
         dest[addr[i]] = data[i];
     }
@@ -212,6 +215,7 @@ int U64TestCartridge()
     }
     if (errors) {
         printf("FAIL\n");
+        dump_hex_relative((void *)dest, 144);
     }
 
     // Now check the remaining address lines 8 .. 15
@@ -236,13 +240,13 @@ int U64TestCartridge()
     const t_generic_vector vec[] = {
             { "Init",  &LOCAL_CART, 0x00, NULL, 0, 0, 0, NULL },
             { "Init",  &REMOTE_CART_OUT, 0x00, NULL, 0, 0, 0, NULL },
-            { "IRQ#",  &LOCAL_CART, 0x01, &REMOTE_CART_IN, 0xFF, 0x23, 0x22, remote_cart_pins },
-            { "NMI#",  &LOCAL_CART, 0x02, &REMOTE_CART_IN, 0xFF, 0x22, 0x21, remote_cart_pins },
-            { "ROML#", &LOCAL_CART, 0x04, &REMOTE_CART_IN, 0xFF, 0x21, 0x27, remote_cart_pins },
-            { "ROMH#", &LOCAL_CART, 0x08, &REMOTE_CART_IN, 0xFF, 0x27, 0x2B, remote_cart_pins },
-            { "DOTCK", &LOCAL_CART, 0x10, &REMOTE_CART_IN, 0xFF, 0x2B, 0x33, remote_cart_pins },
-            { "RST#",  &LOCAL_CART, 0x20, &REMOTE_CART_IN, 0xFF, 0x33, 0x03, remote_cart_pins },
-            { "BA",    &LOCAL_CART, 0x40, &REMOTE_CART_IN, 0xFF, 0x03, 0x63, remote_cart_pins },
+            { "IRQ#",  &LOCAL_CART, 0x01, &REMOTE_CART_IN, 0x7F, 0x23, 0x22, remote_cart_pins },
+            { "NMI#",  &LOCAL_CART, 0x02, &REMOTE_CART_IN, 0x7F, 0x22, 0x21, remote_cart_pins },
+            { "ROML#", &LOCAL_CART, 0x04, &REMOTE_CART_IN, 0x7F, 0x21, 0x27, remote_cart_pins },
+            { "ROMH#", &LOCAL_CART, 0x08, &REMOTE_CART_IN, 0x7F, 0x27, 0x2B, remote_cart_pins },
+            { "DOTCK", &LOCAL_CART, 0x10, &REMOTE_CART_IN, 0x7F, 0x2B, 0x33, remote_cart_pins },
+            { "RST#",  &LOCAL_CART, 0x20, &REMOTE_CART_IN, 0x7F, 0x33, 0x03, remote_cart_pins },
+            { "BA",    &LOCAL_CART, 0x40, &REMOTE_CART_IN, 0x7F, 0x03, 0x63, remote_cart_pins },
             { "End",   &LOCAL_CART, 0x00, NULL, 0, 0, 0, NULL },
             { "DMA#",  &REMOTE_CART_OUT, 0x10, &LOCAL_CART, 0xFF, 0x3F, 0x2F, local_cart_pins },
             { "GAME#", &REMOTE_CART_OUT, 0x04, &LOCAL_CART, 0xFF, 0x2F, 0x3B, local_cart_pins },
@@ -253,16 +257,13 @@ int U64TestCartridge()
     };
 
     errors += PerformTest(vec);
-    if (!errors) {
-        printf("\e5Cartridge test passed.\n");
-    } else {
-        printf("\e2Cartridge test FAILED.\n");
-    }
-    return errors;
+    TEST_RESULT(errors);
 }
 
 int U64TestIEC()
 {
+    TEST_START("Local IEC test");
+
     const char *iec_pins[] = { "ATN", "CLK", "DATA", "SRQ", "RESET", "??", "??", "??" };
     const t_generic_vector vec[] = {
             { "Init",     &LOCAL_IEC,  0x00, NULL, 0, 0, 0, NULL },
@@ -275,18 +276,15 @@ int U64TestIEC()
             { NULL, NULL, 0, NULL, 0, 0, 0 },
     };
     int errors = PerformTest(vec);
-    if (!errors) {
-        printf("\e5Local IEC test passed.\n");
-    } else {
-        printf("\e2Local IEC test FAILED.\n");
-    }
-    return errors;
+    TEST_RESULT(errors);
 }
 
 int U64TestCassette()
 {
+    TEST_START("Cassette test");
+
     if (REMOTE_SIGNATURE != 0x99) {
-        printf("\e2Cassette test: Remote tester not found\n\eO");
+        fail_message("Cassette test: Remote tester not found");
         return 1;
     }
     // Make sure the userport buffer is turned on
@@ -302,34 +300,31 @@ int U64TestCassette()
             { NULL, NULL, 0, NULL, 0, 0, 0 },
     };
     int errors = PerformTest(vec);
-    if (!errors) {
-        printf("\e5Cassette test passed.\n");
-    } else {
-        printf("\e2Cassette test FAILED.\n");
-    }
-    return errors;
+    TEST_RESULT(errors);
 }
 
 int U64TestJoystick()
 {
+    TEST_START("Joystick test");
     // with this test, the fire button is used as output to clock the counter.
     // then the counter reaches 15 for the second time, bit 0 to bit 3 have been tested.
     // In order to make sure that the keyboard test does not see the counter, the isolate
     // mode is turned on here.
 
-    LOCAL_JOY1 = 0xFF;
-    LOCAL_JOY2 = 0xFF;
+    LOCAL_JOY1 = 0x0F;
+    LOCAL_JOY2 = 0x0F;
 
     int ok1 = -1;
     int ok2 = -1;
+    int errors = 0;
     const char correct[20] = "@ABCDEFGHIJKLMNO";
     uint8_t buffer[32];
     memset(buffer, 0xAA, 32);
 
     for (int i=0; i<32; i++) {
-        LOCAL_JOY1 = 0xEF;
+        LOCAL_JOY1 = 0x0F;
         vTaskDelay(1);
-        LOCAL_JOY1 = 0xFF;
+        LOCAL_JOY1 = 0x1F;
         vTaskDelay(1);
         buffer[i] = (LOCAL_JOY1 & 0x0F) | 0x40;
         if ((buffer[i] == 0x4F) && (i >= 16)) {
@@ -338,16 +333,16 @@ int U64TestJoystick()
         }
     }
     if (ok1) {
-        printf("\e\022Joystick Port A:\n");
+        printf("Joystick Port A:\n");
         dump_hex_relative(buffer, 32);
-        printf("\e\037");
+        errors ++;
     }
 
     memset(buffer, 0xAA, 32);
     for (int i=0; i<32; i++) {
-        LOCAL_JOY2 = 0xEF;
+        LOCAL_JOY2 = 0x0F;
         vTaskDelay(1);
-        LOCAL_JOY2 = 0xFF;
+        LOCAL_JOY2 = 0x1F;
         vTaskDelay(1);
         buffer[i] = (LOCAL_JOY2 & 0x0F) | 0x40;
         if ((buffer[i] == 0x4F) && (i >= 16)) {
@@ -356,23 +351,17 @@ int U64TestJoystick()
         }
     }
     if (ok2) {
-        printf("\e\022Joystick Port B:\e\022\n");
+        printf("Joystick Port B:\n");
         dump_hex_relative(buffer, 32);
-        printf("\e\037");
+        errors ++;
     }
-
-    if (ok1) {
-        return -1;
-    }
-    if (ok2) {
-        return -2;
-    }
-    printf("\e\025Joystick Ports passed.\n");
-    return 0;
+    TEST_RESULT(errors);
 }
 
 int U64TestPaddle(void)
 {
+    TEST_START("Paddle test");
+
     LOCAL_PADDLESEL = 1;
     vTaskDelay(2);
     uint8_t x1 = LOCAL_PADDLE_X;
@@ -389,26 +378,24 @@ int U64TestPaddle(void)
     // X1: 5, Y1: 2, X2: 10, Y2: 3
 
     int errors = 0;
-    if ((x1 < 61) || (x1 > 82)) {
-        printf("\e\022Paddle X on Port 1 FAIL. Expected ~72, got %d\n", x1);
+    if ((x1 < 2) || (x1 > 6)) {
+        printf("Paddle X on Port 1 FAIL. Expected ~3, got %d\n", x1);
         errors++;
     }
-    if ((y1 < 11) || (y1 > 19)) {
-        printf("\e\022Paddle Y on Port 1 FAIL. Expected ~15, got: %d\n", y1);
+    if ((y1 < 7) || (y1 > 15)) {
+        printf("Paddle Y on Port 1 FAIL. Expected ~10, got: %d\n", y1);
         errors++;
     }
-    if ((x2 < 118) || (x2 > 159)) {
-        printf("\e\022Paddle X on Port 2 FAIL. Expected ~137, got: %d\n", x2);
+    if ((x2 < 40) || (x2 > 54)) {
+        printf("Paddle X on Port 2 FAIL. Expected ~47, got: %d\n", x2);
         errors++;
     }
-    if ((y2 < 12) || (y2 > 65)) {
-        printf("\e\022Paddle Y on Port 2 FAIL. Expected ~51, got: %d\n", y2);
+    if ((y2 < 17) || (y2 > 28)) {
+        printf("Paddle Y on Port 2 FAIL. Expected ~22, got: %d\n", y2);
         errors++;
     }
-    if (!errors) {
-        printf("\e\025Paddle test passed. (%d,%d,%d,%d)\n", x1, y1, x2, y2);
-    }
-    return errors;
+    printf("Paddle test %d, %d, %d, %d\n", x1, y1, x2, y2);
+    TEST_RESULT(errors);
 }
 
 static void config_socket(int socketnr, uint8_t ctrlbyte)
@@ -455,12 +442,12 @@ static int test_socket_voltages(I2C_Driver_SocketTest& skti2c, int socket_nr, ui
 
     // 4% range for VCC: 0.96*5000 < vcc < 1.04*5000
     if ((vcc < 4800) || (vcc > 5200)) {
-        printf("\e2VCC Out Of Range: %d mV  (should be 5V)\n", vcc);
+        printf("VCC Out Of Range: %d mV  (should be 5V)\n", vcc);
         error |= (1 << 0);
     }
 
     if ((vdd < low) || (vdd > high)) {
-        printf("\e2VDD Out Of Range: %d mV  (should be between %d and %d mV)\n", vdd, low, high);
+        printf("VDD Out Of Range: %d mV  (should be between %d and %d mV)\n", vdd, low, high);
         error |= (1 << 1);
     }
 
@@ -469,7 +456,7 @@ static int test_socket_voltages(I2C_Driver_SocketTest& skti2c, int socket_nr, ui
         vdd /= 100;
     }
     if (abs(mid * 2 - vdd) > 250) {
-        printf("\e2Mid level Out Of Range: %d (Expected %d mV)\n", mid, vdd / 2);
+        printf("Mid level Out Of Range: %d (Expected %d mV)\n", mid, vdd / 2);
         error |= (1 << 2);
     }
     return error;
@@ -484,24 +471,23 @@ static int test_socket_caps(volatile socket_tester_t *test, int socket_nr, uint8
     // should be in 22 nF mode now. 5-7% caps
     read_caps(test, cap1, cap2);
     if ((cap1 < low) || (cap1 > high)) {
-        printf("\e2CAP1 out of range: %d pF, expected (%d-%d-%d) pF\n", cap1, low, expected, high);
+        printf("CAP1 out of range: %d pF, expected (%d-%d-%d) pF\n", cap1, low, expected, high);
         error |= (1 << 0);
     }
     if ((cap2 < low) || (cap2 > high)) {
-        printf("\e2CAP2 out of range: %d pF, expected (%d-%d-%d) pF\n", cap2, low, expected, high);
+        printf("CAP2 out of range: %d pF, expected (%d-%d-%d) pF\n", cap2, low, expected, high);
         error |= (1 << 1);
     }
     return error;
 }
 
-int socket_test(volatile socket_tester_t *test, int socket_nr)
+static int socket_test(volatile socket_tester_t *test, int socket_nr)
 {
-//    PLD_WR_CTRL1 = 0xBF; // all on = 12V, 22 nF, 1K
-//    PLD_WR_CTRL2 = 0x5F; // all on = 12V, 22 nF, 1K
     int error = 0;
 
     if (test->id != 0x34) {
-        printf("\e2Socket Tester not found (0x%b != 0x34)\n", test->id);
+        printf("Socket Tester not found (0x%b != 0x34)\n", test->id);
+        fail_message("SID Socket Tester not found");
         return -1;
     }
 
@@ -517,7 +503,7 @@ int socket_test(volatile socket_tester_t *test, int socket_nr)
         printf("\e2Unable to access I2C ADC on tester\n");
         return -2;
     }
-    error |= test_socket_voltages(skti2c, socket_nr, 0,  4800,  5200, false);
+    error |= test_socket_voltages(skti2c, socket_nr, 0,  4700,  5200, false);
     error |= test_socket_voltages(skti2c, socket_nr, 2,  8640,  9560, false) << 3;
     error |= test_socket_voltages(skti2c, socket_nr, 3, 11600, 13000, false) << 6;
     error |= test_socket_voltages(skti2c, socket_nr, 7, 11600, 13000, true) << 9;
@@ -542,25 +528,28 @@ int U64TestSidSockets()
     vTaskDelay(10);
     LOCAL_CART = 0x00; // release reset for PLD. This should enable the oscillator
 
-    int error = 0;
-    if(socket_test(SOCKET1, 0) == 0) {
-        printf("\e5SID Socket 1 passed.\n");
-    } else {
-        printf("\e2SID Socket 1 FAILED!\n");
-        error = 1;
+    int error1 = 0;
+    int error2 = 0;
+
+    {
+        TEST_START("SID Socket 1 test");
+        error1 = socket_test(SOCKET1, 0);
+        result_message(error1, testname);
+    }
+    {
+        TEST_START("SID Socket 2 test");
+        error2 = socket_test(SOCKET2, 1);
+        result_message(error2, testname);
     }
 
-    if(socket_test(SOCKET2, 1) == 0) {
-        printf("\e5SID Socket 2 passed.\n");
-    } else {
-        printf("\e2SID Socket 2 FAILED!\n");
-        error = 1;
-    }
-    return error;
+    return error1 | error2;
 }
 
-int U64TestAudioCodec(void)
+void nau8822_set_input_level(uint16_t val);
+
+int U64TestAudioCodecSilence(void)
 {
+    TEST_START("Audio codec silence test");
     audio_dma_t *audio_dma = (audio_dma_t *)U64TESTER_AUDIO_BASE;
     audio_dma->out_ctrl = 0x00; // disable output
 
@@ -599,31 +588,22 @@ int U64TestAudioCodec(void)
     if (maxL > 10000) errors ++;
     if (maxR > 10000) errors ++;
     if (errors) {
-        printf("\e\022Audio codec silence level too high: %d %d\e\037\n", maxL, maxR);
-    } else {
-        printf("\e\025Audio codec silence test passed.\e\037\n");
+        printf("Audio codec silence level too high: %d %d\n", maxL, maxR);
     }
     delete samples;
+    TEST_RESULT(errors);
+}
 
-    // loopback test
+int U64TestAudioCodecPurity(void)
+{
+    TEST_START("Audio codec loopback test");
+
     nau8822_enable_hpout(1, 1);
-   	int aud = TestAudio(11, 7, 0);
-    errors += aud;
-	if (aud) {
-		printf("\e\022Audio analog loopback failed.\e\037\n");
-		return aud;
-	} else {
-        printf("\e\025Audio analog loopback passed.\e\037\n");
-    }
-
+    int errors = TestAudio(11, 7, 0);
     nau8822_enable_hpout(1, 0);
 
-    // play_audio(audio_dma, (int*)0x1100000, 192*2, 1);
-    // record_audio(audio_dma, (int*)0x1000000, 48000*2); // one second
-    // vTaskDelay(250);
-    // nau8822_enable_hpout(1, 0);
-    // record_audio(audio_dma, (int*)0x1200000, 48000*2); // one second
-    // printf("\e\026Audio recording done.\n");
+    TEST_RESULT(errors);
+}
 
 int U64TestSpeaker(void)
 {
@@ -663,9 +643,13 @@ BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseT
                             buf->size = sizeof(rpc_ ## x ## _req); \
                             tasksWaitingForReply[buf->bufnr] = xTaskGetCurrentTaskHandle();
 
+//ESP_ERR_TIMEOUT = 0x107
 #define TRANSMIT(x)         esp32.uart->TransmitPacket(buf); \
-                            xTaskNotifyWait(0, 0, (uint32_t *)&buf, portMAX_DELAY); \
+                            BaseType_t success = xTaskNotifyWait(0, 0, (uint32_t *)&buf, 400); \
                             rpc_ ## x ## _resp *result = (rpc_ ## x ## _resp *)buf->data; \
+                            if (success != pdTRUE) { \
+                                result->esp_err = 0x107; \
+                            } \
                             tasksWaitingForReply[result->hdr.thread] = NULL;
 
 #define RETURN_ESP          int retval = result->esp_err; \
@@ -718,22 +702,24 @@ int wifi_get_voltages(voltages_t *voltages)
 
 int U64TestWiFiComm(void)
 {
+    TEST_START("Wifi Module test");
+
     static char *detectBuffer[512];
     int n = esp32.DetectModule(detectBuffer, 511);
     if (n <= 0) {
-        printf("\e\022WiFi module not detected\n");
+        fail_message("WiFi module not detected");
         return 1;
     }
     detectBuffer[n] = 0;
     //printf("\e\025WiFi module detected: %s\n", detectBuffer);
     bool found = pattern_match("*esp32*", (const char *)detectBuffer, true);
     if (!found) {
-        printf("\e\022WiFi module not detected (esp32 string not in reply)\n");
+        fail_message("WiFi module not detected (esp32 string not in reply)");
         return 1;
     }
     found = pattern_match("*DOWNLOAD*", (const char *)detectBuffer);
     if (!found) {
-        printf("\e\022WiFi module not in boot mode (DOWNLOAD string not in reply)\n");
+        fail_message("WiFi module not in boot mode (DOWNLOAD string not in reply)");
         return 1;
     }
     esp32.EnableRunMode(); // cannot catch reply
@@ -744,23 +730,80 @@ int U64TestWiFiComm(void)
     uint16_t major=0, minor=0;
     BaseType_t f = wifi_detect(&major, &minor, versionString, 32);
     if (((major | minor) == 0) || (f != pdTRUE)) {
-        printf("\e\022WiFi module not responding to identify command\n");
+        fail_message("WiFi module not responding to identify command");
         return 1;
     }
-    printf("\e\025WiFi Module test passed. %s\n", versionString);
+    printf("%s passed. %s\n", testname, versionString);
+
+    TEST_RESULT(0);
     return 0;
 }
 
 // Precondition: WiFi module has been initialized
 int U64TestVoltages(void)
 {
+    TEST_START("Board Voltages test");
     voltages_t voltages;
     int res = wifi_get_voltages(&voltages);
     if (res != 0) {
-        printf("\e\022WiFi module not responding to voltage command\n");
+        printf("WiFi module not responding to voltage command\n");
+        fail_message(testname);
         return 1;
     }
-    printf("\e\025Voltages: VBUS: %d mV, VAUX: %d mV, V50: %d mV, V33: %d mV, V18: %d mV, V10: %d mV, VUSB: %d mV\n",
+    printf("Voltages: VBUS: %d mV, VAUX: %d mV, V50: %d mV, V33: %d mV, V18: %d mV, V10: %d mV, VUSB: %d mV\n",
             voltages.vbus, voltages.vaux, voltages.v50, voltages.v33, voltages.v18, voltages.v10, voltages.vusb);
-    return 0;
+
+    int errors = 0;
+    if ((voltages.vbus < 8500) || (voltages.vbus > 15500)) {
+        warn_message(testname, "VBUS out of range: %d mV", voltages.vbus);
+        errors++;
+    }
+    if ((voltages.vaux < 3150) || (voltages.vaux > 3500)) {
+        warn_message(testname, "VAUX out of range: %d mV", voltages.vaux);
+        errors++;
+    }
+    if ((voltages.v50 < 4700) || (voltages.v50 > 5200)) {
+        warn_message(testname, "+5.0V out of range: %d mV", voltages.v50);
+        errors++;
+    }
+    if ((voltages.v33 < 3150) || (voltages.v33 > 3450)) {
+        warn_message(testname, "+3.3V out of range: %d mV", voltages.v33);
+        errors++;
+    }
+    if ((voltages.v18 < 1710) || (voltages.v18 > 1890)) {
+        warn_message(testname, "+1.8V out of range: %d mV", voltages.v18);
+        errors++;
+    }
+    if ((voltages.v10 < 950) || (voltages.v10 > 1050)) {
+        warn_message(testname, "+1.0V out of range: %d mV", voltages.v10);
+        errors++;
+    }
+    if ((voltages.vusb < 4750) || (voltages.vusb > 5250)) {
+        warn_message(testname, "V_USB out of range: %d mV", voltages.vusb);
+        errors++;
+    }
+    TEST_RESULT(errors);
+}
+
+int U64TestUsbHub(void)
+{
+    TEST_START("USB Hub test");
+
+    UsbDevice *device = usb2.first_device();
+	if (!device) {
+		warn_message(testname, "No USB device was found on the USB PHY.");
+        fail_message(testname);
+		return 1;
+	}
+	if (device->vendorID != 0x0424) {
+		warn_message(testname, "Primary device is not from Microchip %04x.", device->vendorID);
+        fail_message(testname);
+		return 1;
+	}
+	if ((device->productID != 0x2513) && (device->productID != 0x2514)) {
+		warn_message(testname, "Primary device does not have the right product ID %04x.", device->productID);
+        fail_message(testname);
+		return 1;
+	}
+    TEST_RESULT(0);
 }

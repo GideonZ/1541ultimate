@@ -19,7 +19,14 @@
 #define U64TESTER_SID1_BASE  (U2P_IO_BASE + 0xA8000) // 10 101
 #define U64TESTER_SID2_BASE  (U2P_IO_BASE + 0xA8020) // 10 101
 #define U64TESTER_REG_BASE   (U2P_IO_BASE + 0xB0000) // 10 110
-#define U64TESTER_AUDIO_BASE (U2P_IO_BASE + 0xC0000)
+#define U64TESTER_VGA_BASE   (U2P_IO_BASE + 0xC0000)
+#define U64TESTER_AUDIO_BASE (U2P_IO_BASE + 0x00600)
+// #define U64II_HW_I2C_BASE    (U2P_IO_BASE + 0x00700)
+
+#define U64II_VGA_TIMING_REGS        (U64TESTER_VGA_BASE + 0x4000)
+#define U64II_VGA_CHARGEN_REGS       (U64TESTER_VGA_BASE + 0x0000)
+#define U64II_VGA_CHARGEN_SCREEN_RAM (U64TESTER_VGA_BASE + 0x0800)
+#define U64II_VGA_CHARGEN_COLOR_RAM  (U64TESTER_VGA_BASE + 0x1000)
 
 #define REMOTE_CART_OUT   (*(volatile uint8_t *)(U64TESTER_IO1_BASE + 0))
 #define REMOTE_CART_IN    (*(volatile uint8_t *)(U64TESTER_IO1_BASE + 1))
@@ -65,10 +72,13 @@ int U64TestIEC();
 int U64TestCassette();
 int U64TestJoystick();
 int U64TestPaddle();
-int U64TestAudioCodec();
+int U64TestAudioCodecSilence();
+int U64TestAudioCodecPurity();
 int U64TestSidSockets();
 int U64TestWiFiComm();
 int U64TestVoltages();
+int U64TestSpeaker();
+int U64TestUsbHub();
 
 #ifdef __cplusplus
 }

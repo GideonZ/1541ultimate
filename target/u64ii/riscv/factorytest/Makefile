@@ -90,6 +90,7 @@ SRCS_CC	 =  u64ii_init.cc \
 			dma_uart.cc \
 			esp32.cc \
 			userinterface.cc \
+			screen_logger.cc \
 			u64ii_programmer.cc
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/risc-v

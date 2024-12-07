@@ -38,10 +38,19 @@ void nau8822_init(int channel)
     // Volume (reg 0x0F and 0x10) are by default max (0xFF)
 
     // Analog audio path control
-    i2c->i2c_write_nau(NAU8822_I2C_ADDRESS, 0x2F, 0x007); // Enable input from LAUXIN to left ADC (+6 dB)
-    i2c->i2c_write_nau(NAU8822_I2C_ADDRESS, 0x30, 0x007); // Enable input from RAUXIN to right ADC (+6 dB)
+    i2c->i2c_write_nau(NAU8822_I2C_ADDRESS, 0x2F, 0x005); // Enable input from LAUXIN to left ADC (+0 dB)
+    i2c->i2c_write_nau(NAU8822_I2C_ADDRESS, 0x30, 0x005); // Enable input from RAUXIN to right ADC (+0 dB)
 
     printf("NAU8822 initialization complete.\n");
+}
+
+void nau8822_set_input_level(uint16_t val)
+{
+    i2c->i2c_lock("NAU8822");
+    i2c->set_channel(I2C_CHANNEL_1V8);
+    i2c->i2c_write_nau(NAU8822_I2C_ADDRESS, 0x2F, val);
+    i2c->i2c_write_nau(NAU8822_I2C_ADDRESS, 0x30, val);
+    i2c->i2c_unlock();
 }
 
 void nau8822_enable_hpout(int channel, int enable)

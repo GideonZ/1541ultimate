@@ -9,7 +9,7 @@
 #define I2CDRV_SOCKETTEST_H_
 
 #include "i2c_drv.h"
-#include "u64_tester.h"
+//#include "u64_tester.h"
 
 //#define SOCKET1_SCL *((volatile uint8_t *)(U64TESTER_SID1_BASE + 1))
 //#define SOCKET1_SDA *((volatile uint8_t *)(U64TESTER_SID1_BASE + 0))

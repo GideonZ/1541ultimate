@@ -134,7 +134,7 @@ void I2C_Driver :: i2c_scan_bus(void)
 	for(int i=0;i<255;i+=1) {
 		i2c_start();
 		int res = i2c_send_byte((uint8_t)i);
-		printf("[%2x:%c] ", i, (res < 0)?'-':'X');
+		printf("|%2x:%c", i, (res < 0)?'-':'X');
 		i2c_stop();
 		//i2c_start();
 		//i2c_stop();

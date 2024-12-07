@@ -20,12 +20,12 @@ class I2C_Driver
     SemaphoreHandle_t mutex;
 
     void _wait(void);
-    void SET_SCL_LOW()  { *scl = 0; }
-    void SET_SCL_HIGH() { *scl = 1; }
-    void SET_SDA_LOW()  { *sda = 0; }
-    void SET_SDA_HIGH() { *sda = 1; }
-    uint8_t GET_SCL()   { return *scl; }
-    uint8_t GET_SDA()   { return *sda; }
+    virtual void SET_SCL_LOW()  { *scl = 0; }
+    virtual void SET_SCL_HIGH() { *scl = 1; }
+    virtual void SET_SDA_LOW()  { *sda = 0; }
+    virtual void SET_SDA_HIGH() { *sda = 1; }
+    virtual uint8_t GET_SCL()   { return *scl; }
+    virtual uint8_t GET_SDA()   { return *sda; }
 
 public:
     I2C_Driver()
