@@ -8,7 +8,6 @@ use work.mem_bus_pkg.all;
 
 entity audio_dma is
 generic (
-    g_mono      : boolean := false;
     g_tag       : std_logic_vector(7 downto 0) := X"BA"
 );
 port (
@@ -22,6 +21,7 @@ port (
 
     sys_clock   : in  std_logic;
     sys_reset   : in  std_logic;
+    misc_io     : out std_logic_vector(7 downto 0);
     io_req      : in  t_io_req;
     io_resp     : out t_io_resp;
     mem_req     : out t_mem_req_32 := c_mem_req_32_init;
@@ -41,17 +41,27 @@ architecture gideon of audio_dma is
     signal sys_out_ready    : std_logic;
     signal sys_out_data     : std_logic_vector(47 downto 0);
 
+    signal misc_io_i        : std_logic_vector(7 downto 0);
+
+    signal in_toggle        : std_logic := '0';
     signal in_enable        : std_logic := '0';
     signal in_continuous    : std_logic := '0';
     signal in_address       : unsigned(mem_req.address'range);
     signal in_start         : unsigned(mem_req.address'range);
     signal in_end           : unsigned(mem_req.address'range);
+    signal in_mode          : std_logic_vector(1 downto 0);
+    alias  a_in_mode_16bit  : std_logic is in_mode(0);
+    alias  a_in_mode_mono   : std_logic is in_mode(1);
 
+    signal out_toggle       : std_logic := '0';
     signal out_enable       : std_logic := '0';
     signal out_continuous   : std_logic := '0';
     signal out_address      : unsigned(mem_req.address'range);
     signal out_start        : unsigned(mem_req.address'range);
     signal out_end          : unsigned(mem_req.address'range);
+    signal out_mode         : std_logic_vector(1 downto 0);
+    alias  a_out_mode_16bit : std_logic is out_mode(0);
+    alias  a_out_mode_mono  : std_logic is out_mode(1);
 begin
     -- Synchronize samples with sys clock domain
     i_out: entity work.async_fifo_ft
@@ -129,43 +139,59 @@ begin
 
             when do_access =>
                 if in_enable = '1' and sys_in_valid = '1' then
-                    mem_req.data <= sys_in_data(47 downto 24) & X"00";
                     mem_req.address <= in_address;
-                    mem_req.byte_en <= "1111";
                     mem_req.read_writen <= '0';
                     mem_req.request <= '1';
-                    state <= write2;
-                    in_address <= in_address + 4;
+                    if a_in_mode_16bit = '1' then
+                        sys_in_ready <= '1'; -- always possible to store entire sample, whether it is mono or not
+                        state <= write3;
+                        if a_in_mode_mono = '0' then -- if it is stereo, we store both left and right
+                            mem_req.data <= sys_in_data(47 downto 32) & sys_in_data(23 downto 8);
+                            mem_req.byte_en <= "1111";
+                            in_toggle <= '0';
+                            in_address <= in_address + 4;
+                        elsif in_toggle = '0' then -- mono 16 bit, store either in lower or upper half of the word
+                            mem_req.data <= X"0000" & sys_in_data(47 downto 32);
+                            mem_req.byte_en <= "0011";
+                            in_toggle <= '1';
+                        else
+                            mem_req.data <= sys_in_data(47 downto 32) & X"0000";
+                            mem_req.byte_en <= "1100";
+                            in_toggle <= '0';
+                            in_address <= in_address + 4;
+                        end if;
+                    else -- 32 bit, we might need two writes, first write left
+                        mem_req.data <= sys_in_data(47 downto 24) & X"00";
+                        mem_req.byte_en <= "1111";
+                        in_address <= in_address + 4;
+                        if a_in_mode_mono = '1' then
+                            sys_in_ready <= '1';  -- just one sample, we consumed it
+                            state <= write3;
+                        else
+                            state <= write2; -- extra write needed
+                        end if;
+                    end if;
+
                 elsif out_enable = '1' and sys_out_ready = '1' then
                     mem_req.data <= (others => 'X');
                     mem_req.address <= out_address;
                     mem_req.read_writen <= '1';
                     mem_req.request <= '1';
-                    if g_mono then
-                        state <= read3;
-                    else
-                        state <= read2;
-                    end if;
-                    out_address <= out_address + 4;
+                    state <= read2;
                 else
                     state <= idle;
                 end if;
             
-            when write2 =>
+            when write2 => -- write other channel
                 if mem_resp.rack = '1' and mem_resp.rack_tag = g_tag then -- write request accepted
-                    mem_req.request <= '0';
-                    sys_in_ready <= '1';                    
-                    if g_mono then
-                        state <= idle;
-                    else
-                        mem_req.data <= sys_in_data(23 downto 00) & X"00";
-                        mem_req.address <= in_address;
-                        mem_req.byte_en <= "1111";
-                        mem_req.read_writen <= '0';
-                        mem_req.request <= '1';
-                        state <= write3;
-                        in_address <= in_address + 4;
-                    end if;
+                    sys_in_ready <= '1'; -- sample consumed
+                    mem_req.request <= '1'; -- still 1
+                    mem_req.read_writen <= '0';
+                    mem_req.address <= in_address;
+                    mem_req.data    <= sys_in_data(23 downto 0) & X"00";
+                    mem_req.byte_en <= "1111";
+                    in_address <= in_address + 4;
+                    state <= write3;
                 end if;
 
             when write3 =>
@@ -175,27 +201,49 @@ begin
                 end if;
 
             when read2 =>
-                if mem_resp.rack = '1' and mem_resp.rack_tag = g_tag then -- read request accepted -- assume no data yet
-                    mem_req.address <= out_address; -- another access
-                    out_address <= out_address + 4;
-                    state <= read3;
-                end if ;
-
-            when read3 =>
                 if mem_resp.rack = '1' and mem_resp.rack_tag = g_tag then -- read request accepted -- turn off req
                     mem_req.request <= '0';
                 end if;
                 if mem_resp.dack_tag = g_tag then
-                    sys_out_data(47 downto 24) <= mem_resp.data(31 downto 8);
-                    if g_mono then
-                        state <= idle;
-                        sys_out_valid <= '1';
-                    else
-                        state <= read4;
+                    if a_out_mode_16bit = '1' then
+                        if a_out_mode_mono = '0' then -- both left and right
+                            sys_out_data <= mem_resp.data(31 downto 16) & X"00" & mem_resp.data(15 downto 0) & X"00";
+                            out_address <= out_address + 4;
+                            sys_out_valid <= '1';
+                            out_toggle <= '0';
+                            state <= idle;
+                        elsif out_toggle = '0' then -- mono
+                            out_toggle <= '1';
+                            sys_out_data <= mem_resp.data(15 downto 0) & X"00" & mem_resp.data(15 downto 0) & X"00";
+                            sys_out_valid <= '1';
+                            state <= idle;
+                        else -- mono, second sample
+                            out_address <= out_address + 4;
+                            out_toggle <= '0';
+                            sys_out_data <= mem_resp.data(31 downto 16) & X"00" & mem_resp.data(31 downto 16) & X"00";
+                            sys_out_valid <= '1';
+                            state <= idle;
+                        end if;
+                    else -- 32 bit audio
+                        sys_out_data <= mem_resp.data(31 downto 8) & mem_resp.data(31 downto 8);
+                        out_address <= out_address + 4;
+                        if a_out_mode_mono = '1' then
+                            sys_out_valid <= '1';
+                            state <= idle;
+                        else -- expecting second sample
+                            state <= read3;
+                        end if;
                     end if;
                 end if;
             
-            when read4 =>
+            when read3 =>
+                out_address <= out_address + 4;
+                mem_req.address <= out_address;
+                mem_req.read_writen <= '1';
+                mem_req.request <= '1';
+                state <= read4;
+
+            when read4 => -- 32 bit second read for right sample only
                 if mem_resp.rack = '1' and mem_resp.rack_tag = g_tag then -- read request accepted -- turn off req
                     mem_req.request <= '0';
                 end if;
@@ -234,6 +282,8 @@ begin
                 when 8 =>
                     io_resp.data(0) <= in_enable;
                     io_resp.data(1) <= in_continuous;
+                when 9 =>
+                    io_resp.data(1 downto 0) <= in_mode;
                 when 16 =>
                     io_resp.data <= std_logic_vector(out_address(7 downto 0));
                 when 17 =>
@@ -253,6 +303,11 @@ begin
                 when 24 =>
                     io_resp.data(0) <= out_enable;
                     io_resp.data(1) <= out_continuous;
+                when 25 =>
+                    io_resp.data(1 downto 0) <= out_mode;
+                when 31 =>
+                    io_resp.data <= misc_io_i;
+
                 when others =>
                     null;
                 end case;
@@ -281,6 +336,8 @@ begin
                     if io_req.data(0) = '1' then
                         in_address <= in_start;
                     end if;
+                when 9 =>
+                    in_mode <= io_req.data(1 downto 0);
                 when 16 =>
                     out_start(7 downto 0) <= unsigned(io_req.data);
                 when 17 =>
@@ -303,6 +360,10 @@ begin
                     if io_req.data(0) = '1' then
                         out_address <= out_start;
                     end if;
+                when 25 =>
+                    out_mode <= io_req.data(1 downto 0);
+                when 31 =>
+                    misc_io_i <= io_req.data;
                 when others =>
                     null;
                 end case;                    
@@ -321,8 +382,12 @@ begin
                 out_address <= (out_address'high => '1', others => '0');
                 out_start   <= (out_address'high => '1', others => '0');
                 out_end     <= (4 => '0', others => '1');
+                misc_io_i   <= (others => '0');
+                in_mode     <= "00";
+                out_mode    <= "00";
             end if;
         end if;
     end process;
+    misc_io <= misc_io_i;
 
 end gideon;

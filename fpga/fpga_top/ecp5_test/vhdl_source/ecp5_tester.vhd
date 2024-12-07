@@ -525,9 +525,6 @@ begin
 
         -- Audio DMA
         i_audio_dma: entity work.audio_dma
-        generic map (
-            g_mono      => true
-        )
         port map (
             audio_clock => sys_clock,
             audio_reset => sys_reset,

@@ -566,7 +566,7 @@ int U64TestAudioCodec(void)
 
     int *samples = new int[AUDIO_SAMPLE_COUNT*2];
     memset(samples, 0, AUDIO_SAMPLE_COUNT*2*4);
-    record_audio(audio_dma, samples, AUDIO_SAMPLE_COUNT*2);
+    record_audio(audio_dma, samples, AUDIO_SAMPLE_COUNT*2, e_32bit_stereo);
     vTaskDelay(5);
 
     // differentiate
@@ -625,7 +625,13 @@ int U64TestAudioCodec(void)
     // record_audio(audio_dma, (int*)0x1200000, 48000*2); // one second
     // printf("\e\026Audio recording done.\n");
 
-    return errors;
+int U64TestSpeaker(void)
+{
+    extern int _speaker_sample[];
+    extern uint32_t _speaker_sample_size;
+    audio_dma_t *audio_dma = (audio_dma_t *)U64TESTER_AUDIO_BASE;
+    play_audio_speaker(audio_dma, _speaker_sample, _speaker_sample_size, 0, e_16bit_mono);
+    return 0;
 }
 
 static uint16_t sequence_nr = 0;

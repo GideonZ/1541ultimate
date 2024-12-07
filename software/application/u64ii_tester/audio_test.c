@@ -78,9 +78,9 @@ int TestAudio(int peakLeft, int peakRight, int report)
     int right = 0;
 
     uint32_t *buffer = malloc(5000); // that is 1250 samples (left and right combined, thus 625 each)
-    play_audio((audio_dma_t *)U64TESTER_AUDIO_BASE, (int *)&_sine_stereo_start, 512*2, 1);
+    play_audio((audio_dma_t *)U64TESTER_AUDIO_BASE, (int *)&_sine_stereo_start, 512*2, 1, e_32bit_stereo);
     vTaskDelay(100);
-    record_audio((audio_dma_t *)U64TESTER_AUDIO_BASE, (int *)buffer, 1250);
+    record_audio((audio_dma_t *)U64TESTER_AUDIO_BASE, (int *)buffer, 1250, e_32bit_stereo);
     vTaskDelay(100);
     stop_audio((audio_dma_t *)U64TESTER_AUDIO_BASE);
     for (int x = 0; x < 1; x++) {
