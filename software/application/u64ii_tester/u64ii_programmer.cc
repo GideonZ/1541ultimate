@@ -187,8 +187,6 @@ bool flash_buffer_at(int address, void *buffer, int length)
         p += page_size;
         length -= page_size;
     }
-    flash->protect_configure();
-    flash->protect_enable();
     return true;
 }
 
@@ -268,9 +266,9 @@ void ultimate_main(void *context)
     errors += U64TestUsbHub();
 
     info_message("\nTest completed with %d errors.\n", errors);
+    errors = 0; // always flash
 
-    if(1) {
-    // if (errors == 0) {
+    if (errors == 0) {
         attempt_programming(0xFFFFF8, 0x1800000, 0x400000);
         attempt_programming(0xFFFFF4, 0x1400000, 0x220000);
         attempt_programming(0xFFFFF0, 0x1000000, 0x000000);
@@ -280,6 +278,8 @@ void ultimate_main(void *context)
         if(errors) {
             fail_message("Flashing Firmware, board not OK.");
         } else {
+            flash->protect_configure(4096);
+            flash->protect_enable();
             pass_message("Board OK!");
         }
     } else {

@@ -256,7 +256,13 @@ bool S25FLxxxL_Flash :: protect_configure(int kilobytes)
         case 65536: bp = kilobytes / 256; break;
         default: bp = kilobytes / 64; break;
     }
-    uint8_t bp_bits = 0x20 | (bp << 2);
+    uint8_t bp_bits = 0;
+    while(bp) {
+        bp_bits += 1;
+        bp >>= 1;
+    }
+    bp_bits <<= 2;
+    bp_bits |= 0x20;
 
     printf("Status register before locking: %b, requested: %b\n", status, bp_bits);
     if ((status & 0x7C) == bp_bits) { // already set

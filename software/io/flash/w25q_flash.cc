@@ -435,7 +435,13 @@ bool W25Q_Flash ::protect_configure(int kilobytes)
         case 65536: bp = kilobytes / 256; break;
         default: bp = kilobytes / 64; break;
     }
-    uint8_t bp_bits = 0x20 | (bp << 2);
+    uint8_t bp_bits = 0;
+    while(bp) {
+        bp_bits += 1;
+        bp >>= 1;
+    }
+    bp_bits <<= 2;
+    bp_bits |= 0x20;
 
     portENTER_CRITICAL();
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
@@ -444,6 +450,7 @@ bool W25Q_Flash ::protect_configure(int kilobytes)
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
     portEXIT_CRITICAL();
 
+    printf("Flash Protect Configure: %b -> %b\n", status, bp_bits);
     if ((status & 0x7C) != bp_bits) { // already set
         return true;
     }

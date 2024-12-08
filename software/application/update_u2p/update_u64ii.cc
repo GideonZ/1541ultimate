@@ -121,4 +121,5 @@ void do_update(void)
 extern "C" int ultimate_main(int argc, char *argv[])
 {
 	do_update();
+    return 0;
 }

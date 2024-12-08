@@ -39,10 +39,11 @@ SRCS_CC	 =  u64ii_init.cc \
 			hdmi_scan.cc \
 			usb_hwinit.cc \
 			memory.cc \
-            i2c_drv.cc \
+			i2c_drv.cc \
+			hw_i2c_drv.cc \
+			nau8822.cc \
 			small_printf.cc \
 			flash.cc \
-			at45_flash.cc \
 			w25q_flash.cc \
             s25fl_flash.cc \
             s25fl_l_flash.cc \
