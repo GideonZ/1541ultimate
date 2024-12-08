@@ -57,7 +57,6 @@ public:
 	// Protection functions
 	virtual void protect_disable(void);
 	virtual bool protect_configure(int kilobytes);
-	virtual void protect_enable(int kilobytes);
 };
 
 extern AT49_Flash at49_flash;

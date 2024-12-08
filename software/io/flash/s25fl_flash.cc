@@ -81,11 +81,11 @@ const char *S25FL_Flash ::get_type_string(void)
 {
     switch (total_size) {
     case 8192:
-        return "Spansion S25FL116K"; // reverse engineered; not 100% sure
+        return "Spansion S25FL116K";
     case 16384:
         return "Spansion S25FL132K";
     case 32768:
-        return "Spansion S25FL132K";
+        return "Spansion S25FL164K";
     default:
         return "Spansion";
     }
