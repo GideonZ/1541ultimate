@@ -72,9 +72,9 @@ public:
     virtual void reboot(int addr) { }
 
 	// Protection functions
-	virtual bool protect_configure(void) { return false; }
 	virtual void protect_disable(void) { }
-	virtual void protect_enable(void) { }
+	virtual bool protect_configure(int kilobytes) { return false; }
+	virtual void protect_enable() { }
     virtual void protect_show_status(void) { }
 
 };

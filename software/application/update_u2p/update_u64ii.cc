@@ -38,6 +38,12 @@ const char *getBoardRevision(void)
 	    return "U64 V1.3 (Elite)";
     case 0x14:
         return "U64 V1.4 (Std/Elite)";
+    case 0x15:
+        return "U64E V2.0 (Early Proto)";
+    case 0x16:
+        return "U64E V2.1 (Null Series)";
+    case 0x17:
+        return "U64E V2.2 (Mass Prod)";
 	}
 	return "Unknown";
 }
@@ -75,7 +81,7 @@ void do_update(void)
 
     check_flash_disk();
 
-//    if(user_interface->popup("About to update. Continue?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+    if(user_interface->popup("About to update. Continue?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
 
         clear_field();
         create_dir(ROMS_DIRECTORY);
@@ -103,10 +109,10 @@ void do_update(void)
 
         flash2->protect_disable();
         flash_buffer_at(flash2, screen, 0x000000, false, &_u64_rbf_start, &_u64_rbf_end,   "V1.0", "Runtime FPGA");
-        // flash_buffer_at(flash2, screen, 0x290000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
+        flash_buffer_at(flash2, screen, 0x290000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
 
-        // write_protect(flash2);
-    // }
+        write_protect(flash2, 4096);
+    }
 
     reset_config(flash2);
     turn_off();

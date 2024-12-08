@@ -98,13 +98,13 @@ const char *S25FLxxxL_Flash :: get_type_string(void)
 {
 	switch(total_size) {
 	case 32768:
-		return "Cypress S25FL064L";
+		return "Infineon S25FL064L";
 	case 65536:
-		return "Cypress S25FL128L";
+		return "Infineon S25FL128L";
 	case 131072:
-		return "Cypress S25FL256L";
+		return "Infineon S25FL256L";
 	default:
-		return "Cypress";
+		return "Infineon";
 	}
 }
 
@@ -192,14 +192,17 @@ bool S25FLxxxL_Flash :: erase_sector(int sector)
 
 void S25FLxxxL_Flash :: protect_disable(void)
 {
+    portENTER_CRITICAL();
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = S25FLL_ReadAnyRegister;
     SPI_FLASH_DATA = 0;
     SPI_FLASH_DATA = 0;
     SPI_FLASH_DATA = 0;
     SPI_FLASH_DATA = 0;
-    printf("Status register before unlocking: %b\n", SPI_FLASH_DATA);
+    uint8_t status = SPI_FLASH_DATA;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
+    portEXIT_CRITICAL();
+    printf("Status register before unlocking: %b\n", status);
 
     portENTER_CRITICAL();
     SPI_FLASH_CTRL = 0;
@@ -220,73 +223,52 @@ void S25FLxxxL_Flash :: protect_disable(void)
     SPI_FLASH_CTRL = 0;
     SPI_FLASH_DATA = 0x66;
     SPI_FLASH_DATA = 0x99;
-    portEXIT_CRITICAL();
-
-/*
-    for (int i=0; i<=5; i++) {
-        SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
-        SPI_FLASH_DATA = S25FLL_ReadAnyRegister;
-        SPI_FLASH_DATA = 0;
-        SPI_FLASH_DATA = 0;
-        SPI_FLASH_DATA = i;
-        printf("%d: %b %b %b %b %b\n", i, SPI_FLASH_DATA, SPI_FLASH_DATA, SPI_FLASH_DATA, SPI_FLASH_DATA, SPI_FLASH_DATA);
-        SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
-    }
-
-    SPI_FLASH_CTRL = 0;
-    SPI_FLASH_DATA = S25FLL_WriteEnable;
-    SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
-    SPI_FLASH_DATA = S25FLL_WriteRegisters;
-    SPI_FLASH_CTRL = 0x34;
-    SPI_FLASH_CTRL = 0x00;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
-    SPI_FLASH_CTRL = 0;
-    wait_ready(50); // datasheet: 5 ms
-    SPI_FLASH_DATA = S25FLL_WriteDisable;
-
-    for (int i=0; i<=64; i++) {
-        if (i == 5) i = 64;
-        SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
-        SPI_FLASH_DATA = S25FLL_ReadAnyRegister;
-        SPI_FLASH_DATA = 0x80;
-        SPI_FLASH_DATA = 0;
-        SPI_FLASH_DATA = i;
-        printf("%d: %b %b %b %b %b\n", i, SPI_FLASH_DATA, SPI_FLASH_DATA, SPI_FLASH_DATA, SPI_FLASH_DATA, SPI_FLASH_DATA);
-        SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
-    }
-*/
+    portEXIT_CRITICAL();
 }
 
-
-bool S25FLxxxL_Flash :: protect_configure(void)
+bool S25FLxxxL_Flash :: protect_configure(int kilobytes)
 {
-    return true;
-}
-
-void S25FLxxxL_Flash :: protect_enable(void)
-{
+    portENTER_CRITICAL();
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = S25FLL_ReadAnyRegister;
     SPI_FLASH_DATA = 0;
     SPI_FLASH_DATA = 0;
     SPI_FLASH_DATA = 0;
     SPI_FLASH_DATA = 0;
-    printf("Status register before locking: %b\n", SPI_FLASH_DATA);
+    uint8_t status = SPI_FLASH_DATA;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
+    portEXIT_CRITICAL();
 
-    // protect the LOWER HALF of the device:
+    // S25FL128L: BP[2:0] = { 0K, 256K, 512K,   1M,   2M, 4M, 8M, 16M } -- 65536
+    // S25FL064L: BP[2:0] = { 0K, 128K, 256K, 512K,   1M, 2M, 4M,  8M } -- 32768
+
+    // protect the LOWER PART of the device:
     // SEC = 0
     // TB = 1
-    // BP[2:0] = 101
+    // BP[2:0] = xxx
     // SRP0, SEC, TB, BP2, BP1, BP0, WEL, BUSY
-    //  0     0    1   1    1    0    0     0
+    //  0     0    x   x    x    0    0     0
+
+    int bp = 0;
+    switch(total_size) {
+        case 32768: bp = kilobytes / 128; break;
+        case 65536: bp = kilobytes / 256; break;
+        default: bp = kilobytes / 64; break;
+    }
+    uint8_t bp_bits = 0x20 | (bp << 2);
+
+    printf("Status register before locking: %b, requested: %b\n", status, bp_bits);
+    if ((status & 0x7C) == bp_bits) { // already set
+        return true;
+    }
 
     portENTER_CRITICAL();
     SPI_FLASH_CTRL = 0;
     SPI_FLASH_DATA = S25FLL_WriteEnable;
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = S25FLL_WriteRegisters;
-    SPI_FLASH_DATA = 0x38;
+    SPI_FLASH_DATA = bp_bits;
     SPI_FLASH_DATA = 0x00;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
 
@@ -295,5 +277,5 @@ void S25FLxxxL_Flash :: protect_enable(void)
     SPI_FLASH_CTRL = 0;
     SPI_FLASH_DATA = S25FLL_WriteDisable;
     portEXIT_CRITICAL();
-
+    return true;
 }

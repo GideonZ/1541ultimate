@@ -23,6 +23,31 @@
 #include "screen_logger.h"
 #include "flash.h"
 
+static const char *getBoardRevision(void)
+{
+	uint8_t rev = (U2PIO_BOARDREV >> 3);
+
+	switch (rev) {
+	case 0x10:
+		return "U64 Prototype";
+	case 0x11:
+		return "U64 V1.1 (Null Series)";
+	case 0x12:
+		return "U64 V1.2 (Mass Prod)";
+	case 0x13:
+	    return "U64 V1.3 (Elite)";
+    case 0x14:
+        return "U64 V1.4 (Std/Elite)";
+    case 0x15:
+        return "U64E V2.0 (Early Proto)";
+    case 0x16:
+        return "U64E V2.1 (Null Series)";
+    case 0x17:
+        return "U64E V2.2 (Mass Prod)";
+	}
+	return "Unknown";
+}
+
 Screen *screen;
 Screen *screen2;
 StreamTextLog textLog(96*1024);
@@ -218,6 +243,7 @@ void ultimate_main(void *context)
     screen->clear();
     screen->move_cursor(0,0);
     info_message("U64E-II Tester - 02.11.2024 - 11:48\n\n");
+    info_message("Board Revision: %s\n", getBoardRevision());
     uint8_t serial[8];
     flash->read_serial(serial);
     info_message("Flash Type: %s\n", flash->get_type_string());

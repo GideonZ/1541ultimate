@@ -136,25 +136,30 @@ extern "C" void ultimate_main(void *a)
     }
 
     overlay = NULL;
-
     UserInterface *overlayUserInterface = NULL;
-    if (capabilities & CAPAB_ULTIMATE64) {
-        // overlay = new Overlay(false, 11, OVERLAY_BASE);
-        // Keyboard *kb = new Keyboard_C64(overlay, C64_PLD_PORTB, C64_PLD_PORTA);
-        overlay = new Overlay(false, 12, U64II_OVERLAY_BASE);
-        Keyboard *kb = new Keyboard_C64(overlay, &U64II_KEYB_ROW, &U64II_KEYB_COL);
-        overlay->setKeyboard(kb);
-        i2c->enable_scan(true, false);
-        overlayUserInterface = new UserInterface(title);
-        Browsable *root = new BrowsableRoot();
-        root_tree_browser = new TreeBrowser(overlayUserInterface, root);
-        overlayUserInterface->activate_uiobject(root_tree_browser); // root of all evil!
-        overlayUserInterface->init(overlay);
-        if(overlayUserInterface->cfg->get_value(CFG_USERIF_START_HOME)) {
-            new HomeDirectory(overlayUserInterface, root_tree_browser);
-            // will clean itself up
-        }
+
+#if U64 == 2
+    i2c->enable_scan(true, false);
+    overlay = new Overlay(false, 12, U64II_OVERLAY_BASE);
+    Keyboard *kb = new Keyboard_C64(overlay, &U64II_KEYB_ROW, &U64II_KEYB_COL);
+    overlay->setKeyboard(kb);
+#elif U64 == 1
+    overlay = new Overlay(false, 11, OVERLAY_BASE);
+    Keyboard *kb = new Keyboard_C64(overlay, C64_PLD_PORTB, C64_PLD_PORTA);
+    overlay->setKeyboard(kb);
+#endif
+
+#if U64
+    overlayUserInterface = new UserInterface(title);
+    Browsable *root = new BrowsableRoot();
+    root_tree_browser = new TreeBrowser(overlayUserInterface, root);
+    overlayUserInterface->activate_uiobject(root_tree_browser); // root of all evil!
+    overlayUserInterface->init(overlay);
+    if(overlayUserInterface->cfg->get_value(CFG_USERIF_START_HOME)) {
+        new HomeDirectory(overlayUserInterface, root_tree_browser);
+        // will clean itself up
     }
+#endif
 
     UserInterface *c64UserInterface = NULL;
     if(c64) {

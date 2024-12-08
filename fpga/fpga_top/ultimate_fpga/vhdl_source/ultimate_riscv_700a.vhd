@@ -239,7 +239,6 @@ begin
         g_usb_host2     => true,
         g_spi_flash     => true,
         g_vic_copper    => false,
-        g_video_overlay => false,
         g_sdcard        => true,
         g_eeprom        => g_eeprom,
         g_sampler       => g_audio,

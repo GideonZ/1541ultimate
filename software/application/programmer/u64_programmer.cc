@@ -133,6 +133,12 @@ const char *getBoardRevision(void)
         return "U64 V1.3 (Elite)";
     case 0x14:
         return "U64 V1.4 (Std/Elite)";
+    case 0x15:
+        return "U64E V2.0 (Early Proto)";
+    case 0x16:
+        return "U64E V2.1 (Null Series)";
+    case 0x17:
+        return "U64E V2.2 (Mass Prod)";
     }
     return "Unknown";
 }

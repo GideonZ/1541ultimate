@@ -5,8 +5,7 @@
  *      Author: gideon
  */
 
-#define HTML_DIRECTORY "/flash/html"
-#include "update_common.h"
+#include "../update_u2p/update_common.h"
 
 extern uint32_t _u2p_ecp5_impl1_bit_start;
 extern uint32_t _u2p_ecp5_impl1_bit_end;
@@ -47,7 +46,7 @@ void do_update(void)
         flash_buffer(flash2, screen, FLASH_ID_BOOTFPGA, &_u2p_ecp5_impl1_bit_start, &_u2p_ecp5_impl1_bit_end, "", "Runtime FPGA");
         flash_buffer(flash2, screen, FLASH_ID_APPL,     &_ultimate_app_start,     &_ultimate_app_end,  APPL_VERSION, "Ultimate Application");
 
-        write_protect(flash2);
+        write_protect(flash2, 2048);
     }
     reset_config(flash2);
     turn_off();

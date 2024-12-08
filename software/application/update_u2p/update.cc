@@ -46,9 +46,7 @@ void do_update(void)
         flash1->protect_disable();
         flash_buffer_at(flash1, screen, 0x000000, false, &_ultimate_recovery_rbf_start,   &_ultimate_recovery_rbf_end,   "V1.0", "Recovery FPGA");
         flash_buffer_at(flash1, screen, 0x080000, false, &_recovery_app_start,  &_recovery_app_end,  "V1.0", "Recovery Application");
-
-    	console_print(screen, "\nConfiguring Flash write protection..\n");
-    	console_print(screen, "Done!                            \n");
+        write_protect(flash1, 1024);
     }
 */
     check_flash_disk();
@@ -75,7 +73,7 @@ void do_update(void)
         flash_buffer(flash2, screen, FLASH_ID_BOOTFPGA, &_ultimate_run_rbf_start, &_ultimate_run_rbf_end, "", "Runtime FPGA");
         flash_buffer(flash2, screen, FLASH_ID_APPL,     &_ultimate_app_start,     &_ultimate_app_end,  APPL_VERSION, "Ultimate Application");
 
-        write_protect(flash2);
+        write_protect(flash2, 2048);
     }
     turn_off();
 }

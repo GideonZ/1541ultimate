@@ -549,6 +549,7 @@ int wifi_is_connected(uint8_t &status)
     RETURN_ESP;
 }
 
+/*
 int wifi_get_time(const char *timezone, esp_datetime_t *time)
 {
     BUFARGS(get_time, CMD_GET_TIME);
@@ -566,7 +567,7 @@ int wifi_get_time(const char *timezone, esp_datetime_t *time)
     }
     RETURN_ESP;
 }
-
+*/
 typedef struct {
     const char *timezone;
     const char *utc;
@@ -695,6 +696,7 @@ int wifi_get_voltages(voltages_t *voltages)
     voltages->vusb = result->vusb;
     RETURN_ESP;
 }
+#endif
 
 int wifi_modem_enable(bool enable)
 {
@@ -702,8 +704,6 @@ int wifi_modem_enable(bool enable)
     TRANSMIT(espcmd);
     RETURN_ESP;
 }
-
-#endif
 
 err_t wifi_tx_packet(void *driver, void *buffer, int length)
 {

@@ -49,7 +49,7 @@ package char_generator_pkg is
     -- 640x225 (80x25 => 8x9 chars, in 45 C64 chars width)
     constant c_chargen_control_init_orig : t_chargen_control := (
         clocks_per_line     => to_unsigned(896, 12),
-        char_width          => to_unsigned(0, 3),
+        char_width          => to_unsigned(0, 4),
         char_height         => to_unsigned(8, 5),
         chars_per_line      => to_unsigned(80, 8),
         active_lines        => to_unsigned(25, 6),
@@ -64,7 +64,7 @@ package char_generator_pkg is
     -- 480x200 (80x25 => 6x8 chars, in 45 C64 chars width)
     constant c_chargen_control_init_480 : t_chargen_control := (
         clocks_per_line     => to_unsigned(672, 12),
-        char_width          => to_unsigned(6, 3),
+        char_width          => to_unsigned(6, 4),
         char_height         => to_unsigned(8, 5),
         chars_per_line      => to_unsigned(80, 8),
         active_lines        => to_unsigned(25, 6),

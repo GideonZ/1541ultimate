@@ -185,10 +185,6 @@ static void setup(const char *title)
     }
     screen = host->getScreen();
 
-    if (getFpgaCapabilities() & CAPAB_OVERLAY) {
-        OVERLAY_REGS->TRANSPARENCY = 0x00;
-    }
-
     user_interface = new UserInterface(title);
     user_interface->init(host);
     host->take_ownership(user_interface);
@@ -231,10 +227,10 @@ static void check_flash_disk()
     }
 }
 
-static void write_protect(Flash *flash)
+static void write_protect(Flash *flash, int kilobytes)
 {
     console_print(screen, "\nConfiguring Flash write protection..\n");
-    flash->protect_configure();
+    flash->protect_configure(kilobytes);
     flash->protect_enable();
     console_print(screen, "Done!                            \n");
 }

@@ -105,7 +105,7 @@ void do_update(void)
         flash_buffer_at(flash2, screen, 0x000000, false, &_u64_rbf_start, &_u64_rbf_end,   "V1.0", "Runtime FPGA");
         flash_buffer_at(flash2, screen, 0x290000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
 
-        write_protect(flash2);
+        write_protect(flash2, 4096);
     }
 
     reset_config(flash2);

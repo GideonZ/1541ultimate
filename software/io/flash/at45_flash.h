@@ -54,7 +54,8 @@ class AT45_Flash : public Flash
     int total_size;
     int page_shift;
     int config_start;
-
+    int prot_size;
+    
 	uint8_t last_status;
     bool wait_ready(int time_out);
 
@@ -98,8 +99,8 @@ public:
     
 	// Protection functions
 	virtual void protect_disable(void);
-	virtual bool protect_configure(void);
-	virtual void protect_enable(void);
+	virtual bool protect_configure(int kilobytes);
+	virtual void protect_enable();
     virtual void protect_show_status(void);
 };
 

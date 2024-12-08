@@ -26,7 +26,7 @@ port (
     right_sample_out    : out std_logic_vector(23 downto 0);
     left_sample_in      : in  std_logic_vector(23 downto 0);
     right_sample_in     : in  std_logic_vector(23 downto 0);
-    speaker_sample_in   : in  std_logic_vector(23 downto 0) );
+    speaker_sample_in   : in  std_logic_vector(23 downto 0) := (others => '0'));
 end entity;
 
 architecture rtl of i2s_serializer is

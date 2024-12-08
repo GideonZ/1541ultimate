@@ -414,38 +414,46 @@ void W25Q_Flash :: protect_disable(void)
     portEXIT_CRITICAL();
 }
 
-bool W25Q_Flash ::protect_configure(void)
+bool W25Q_Flash ::protect_configure(int kilobytes)
 {
-    // protect the LOWER QUARTER of the device:
+    // protect the LOWER PART of the device:
     // SEC = 0
     // TB = 1
-    // BP[2:0] = 101
+    // BP[2:0] = xxx
     // SRP0, SEC, TB, BP2, BP1, BP0, WEL, BUSY
-    //  0     0    1   1    0    1    0     0
+    //  0     0    1   x    x    x    0     0
 
-    // protect the LOWER HALF of the device:
-    // SEC = 0
-    // TB = 1
-    // BP[2:0] = 101
-    // SRP0, SEC, TB, BP2, BP1, BP0, WEL, BUSY
-    //  0     0    1   1    1    0    0     0
+    // W25Q128: BP[2:0] = { 0K, 256K, 512K,   1M,   2M, 4M, 8M, 16M } -- 65536
+    // W25Q64:  BP[2:0] = { 0K, 128K, 256K, 512K,   1M, 2M, 4M,  8M } -- 32768
+    // W25Q32:  BP[2:0] = { 0K,  64K, 128K, 256K, 512K, 1M, 2M,  4M } -- 16384
+    // W25Q16:  BP[2:0] = { 0K,  64K, 128K, 256K, 512K, 1M, 2M,  2M } -- 8192
+    // W25Q80:  BP[2:0] = { 0K,  64K, 128K, 256K, 512K, --, --,  1M } -- 4096
 
-    // W25Q16: Lower Half: 00110100 = 0x34 (1M), Lower Quarter (512KB): 00110000 = 0x30 (U2)  => 0x34: 1 MB locked
-    // W25Q32: Lower Half: 00111000 = 0x38 (2M), Lower Quarter (   1M): 00110100 = 0x34 (U2+) => 0x38: 2 MB locked
-    // W25Q64: Lower Half: 00111000 = 0x38 (4M), Lower Quarter (   2M): 00110100 = 0x34 (U64) => 0x38: 4 MB locked
+    int bp = 0;
+    switch(total_size) {
+        case 32768: bp = kilobytes / 128; break;
+        case 65536: bp = kilobytes / 256; break;
+        default: bp = kilobytes / 64; break;
+    }
+    uint8_t bp_bits = 0x20 | (bp << 2);
 
-    // program status register with value 0x34 for 8MB and 0x38 for 4MB devices
+    portENTER_CRITICAL();
+    SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
+    SPI_FLASH_DATA = W25Q_ReadStatusRegister1;
+    uint8_t status = SPI_FLASH_DATA;
+    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
+    portEXIT_CRITICAL();
+
+    if ((status & 0x7C) != bp_bits) { // already set
+        return true;
+    }
+
     portENTER_CRITICAL();
     SPI_FLASH_CTRL = 0;
     SPI_FLASH_DATA = W25Q_WriteEnable;
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = W25Q_WriteStatusRegister1;
-#if U64
-    SPI_FLASH_DATA = 0x38; // 4 MB locked
-#else
-    SPI_FLASH_DATA = (total_size == 16384) ? 0x38 : 0x34; // 4MB is used on U2+, which locks half of the device. U2+L uses 8MB, of which only 2 MB needs protection
-#endif
-
+    SPI_FLASH_DATA = bp_bits;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
     wait_ready(50);
 
@@ -461,19 +469,6 @@ bool W25Q_Flash ::protect_configure(void)
     SPI_FLASH_DATA = W25Q_WriteDisable;
     portEXIT_CRITICAL();
     return true;
-}
-
-void W25Q_Flash ::protect_enable(void)
-{
-    portENTER_CRITICAL();
-    SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
-    SPI_FLASH_DATA = W25Q_ReadStatusRegister1;
-    uint8_t status = SPI_FLASH_DATA;
-    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
-    portEXIT_CRITICAL();
-
-    if ((status & 0x70) != 0x30)
-        protect_configure();
 }
 
 bool W25Q_Flash :: wait_ready(int time_out)
