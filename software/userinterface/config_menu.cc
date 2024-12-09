@@ -98,6 +98,7 @@ void ConfigBrowserState :: change(void)
         	}
             break;
         case CFG_TYPE_STRING:
+        case CFG_TYPE_STRPASS:
             max = it->definition->max;
             if (max > 79)
                 max = 79;
