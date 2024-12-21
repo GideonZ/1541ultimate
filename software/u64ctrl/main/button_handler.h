@@ -11,6 +11,7 @@
 #define BUTTON_DOWN_LONG 4
 #define BUTTON_ON 5
 #define BUTTON_OFF 6
+#define BUTTON_ON2 7
 
 void start_button_handler(int initial);
 void extern_button_event(uint8_t button);

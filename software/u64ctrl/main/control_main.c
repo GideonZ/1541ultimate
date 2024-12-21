@@ -188,6 +188,6 @@ void app_main(void)
         // blink_led();
         // read_adcs();
         vTaskDelay(10000 / portTICK_PERIOD_MS);
-        print_all_zones();
+        print_time_for_zone("CEST-1CET,M3.2.0/2:00:00,M11.1.0/2:00:00");
     }
 }

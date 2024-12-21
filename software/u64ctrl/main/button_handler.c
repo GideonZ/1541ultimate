@@ -20,7 +20,7 @@ static const char *TAG = "btn_handler";
 int initial_power_state = 0;
 QueueHandle_t button_queue;
 
-static void regulator_enable(int enable)
+static void regulator_enable(int enable, int delay)
 {
     gpio_config_t io_conf_uart_off = {
         .intr_type = GPIO_INTR_DISABLE,
@@ -35,9 +35,11 @@ static void regulator_enable(int enable)
         ESP_LOGI(TAG, "UART OFF");
     }
     if (enable) {
-        gpio_set_level(IO_ENABLE_V50, 1);
         ESP_LOGI(TAG, "5V regultor on");
-        //vTaskDelay(10 / portTICK_PERIOD_MS);
+        gpio_set_level(IO_ENABLE_V50, 1);
+        if (delay) {
+            vTaskDelay(delay / portTICK_PERIOD_MS);
+        }        
         gpio_set_level(IO_ENABLE_MOD, 1);
         ESP_LOGI(TAG, "mod regulators on");
         vTaskDelay(100 / portTICK_PERIOD_MS);
@@ -75,11 +77,15 @@ static void handle_button_event(int event)
             break;
         case BUTTON_ON:
             ESP_LOGI(TAG, "** ON **");
-            regulator_enable(1);
+            regulator_enable(1, 0);
+            break;
+        case BUTTON_ON2:
+            ESP_LOGI(TAG, "** ON with delay **");
+            regulator_enable(1, 20);
             break;
         case BUTTON_OFF:
             ESP_LOGI(TAG, "** OFF **");
-            regulator_enable(0);
+            regulator_enable(0, 0);
             break;
     }
 }
@@ -102,7 +108,7 @@ static void button_handler(void *arg)
     gpio_set_direction(IO_ENABLE_V50, GPIO_MODE_OUTPUT);
     gpio_set_direction(IO_ENABLE_MOD, GPIO_MODE_OUTPUT);
     vTaskDelay(100 / portTICK_PERIOD_MS); // Allow pull up to do its work.
-    regulator_enable(initial_power_state); // turn off uart also
+    regulator_enable(initial_power_state, 0); // turn off uart also
 
     while (1) {
         up = gpio_get_level(IO_BUTTON_UP);
@@ -110,7 +116,11 @@ static void button_handler(void *arg)
 
         if (!machine_on) {
             if (up == 0 || down == 0) {
-                handle_button_event(BUTTON_ON);
+                if (up == 0)
+                    handle_button_event(BUTTON_ON);
+                else if (down == 0) {
+                    handle_button_event(BUTTON_ON2);
+                }
                 machine_on = 1;
                 do {
                     vTaskDelay(100 / portTICK_PERIOD_MS);
