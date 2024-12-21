@@ -176,8 +176,10 @@ _my_vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, v
             case 'x': // any hex length
             case 'X': // any hex length
                 addr = va_arg(ap, int); // up to dword
-                _hex(addr, buf, width);
                 length = width;
+                if(!length || length > 8)
+                    length = 8;
+                _hex(addr, buf, length);
                 cp = buf;
                 break;
             case 'b': // byte
