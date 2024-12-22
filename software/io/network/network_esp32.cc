@@ -154,9 +154,11 @@ void NetworkLWIP_WiFi :: saveSsidPass(const char *ssid, const char *pass, int mo
 void NetworkLWIP_WiFi :: fetch_context_items(IndexedList<Action *>&items)
 {
     if (wifi.getState() == eWifi_Connected) {
+        items.append(new Action("Forget APs", NetworkLWIP_WiFi :: clear_aps, 0, 0));
         items.append(new Action("Disconnect", NetworkLWIP_WiFi :: disconnect, 0, 0));
         items.append(new Action("Disable", NetworkLWIP_WiFi :: disable, 0, 0));
     } else if ((wifi.getState() == eWifi_NotConnected) || (wifi.getState() == eWifi_Failed)) {
+        items.append(new Action("Forget APs", NetworkLWIP_WiFi :: clear_aps, 0, 0));
         items.append(new Action("Show APs..", NetworkLWIP_WiFi :: list_aps, 0, 0));
         items.append(new Action("Rescan APs", NetworkLWIP_WiFi :: rescan, 0, 0));
         items.append(new Action("Disable", NetworkLWIP_WiFi :: disable, 0, 0));
@@ -170,6 +172,13 @@ void NetworkLWIP_WiFi :: fetch_context_items(IndexedList<Action *>&items)
 SubsysResultCode_e NetworkLWIP_WiFi :: disconnect(SubsysCommand *cmd)
 {
     wifi_wifi_disconnect();
+    return SSRET_OK;
+}
+
+SubsysResultCode_e NetworkLWIP_WiFi :: clear_aps(SubsysCommand *cmd)
+{
+    if (wifi_forget_aps() != 0)
+        return SSRET_GENERIC_ERROR;
     return SSRET_OK;
 }
 

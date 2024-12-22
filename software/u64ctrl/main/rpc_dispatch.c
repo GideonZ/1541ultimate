@@ -429,6 +429,14 @@ void cmd_get_time(command_buf_t *buf)
     my_uart_transmit_packet(UART_CHAN, buf);
 }
 
+void cmd_clear_aps(command_buf_t *buf)
+{
+    rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
+    buf->size = sizeof(rpc_espcmd_resp);
+    resp->esp_err = wifi_clear_aps();
+    my_uart_transmit_packet(UART_CHAN, buf);
+}
+
 void cmd_not_implemented(command_buf_t *buf)
 {
     rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
@@ -537,6 +545,9 @@ void dispatch(void *ct)
             break;
         case CMD_GET_TIME:
             cmd_get_time(pbuffer);
+            break;
+        case CMD_CLEAR_APS:
+            cmd_clear_aps(pbuffer);
             break;
         default:
             cmd_not_implemented(pbuffer);

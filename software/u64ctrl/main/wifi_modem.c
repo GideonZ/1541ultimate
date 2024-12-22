@@ -161,6 +161,22 @@ void disable_hook()
     }
 }
 
+esp_err_t wifi_clear_aps(void)
+{
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open("recent_aps", NVS_READWRITE, &handle);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = nvs_erase_all(handle);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = nvs_commit(handle);
+    nvs_close(handle);
+    return err;
+}
+
 // Initialize Wi-Fi as sta
 static void wifi_init()
 {
@@ -248,7 +264,7 @@ esp_err_t wifi_scan(ultimate_ap_records_t *ult_records)
     } else {
         ESP_LOGW(TAG, "No buffer to send scan results.");
         for (int i = 0; i < ap_count; i++) {
-            ESP_LOGI(TAG, "SSID: %s, RSSI: %d", ap_info[i].ssid, ap_info[i].rssi);
+            ESP_LOGI(TAG, "SSID: %s, RSSI: %d, AUTH: %d", ap_info[i].ssid, ap_info[i].rssi, ap_info[i].authmode);
         }
     }
     return ESP_OK;
@@ -268,6 +284,7 @@ static esp_err_t store_password(nvs_handle_t handle, char *key, const char *pass
         ESP_LOGE(TAG, "Failed to store authmode: %d", err);
         return err;
     }
+    err = nvs_commit(handle);
     return err;
 }
 

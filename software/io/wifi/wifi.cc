@@ -668,6 +668,14 @@ int wifi_machine_off()
     RETURN_ESP;
 }
 
+int wifi_forget_aps()
+{
+    BUFARGS(identify, CMD_CLEAR_APS);
+    TRANSMIT(espcmd);
+    RETURN_ESP;
+}
+
+
 #if U64 == 2
 int wifi_enable()
 {

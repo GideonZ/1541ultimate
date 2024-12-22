@@ -34,6 +34,7 @@ public:
     void getSubItems(Browsable *parent, IndexedList<Browsable *> &list, int &error);
     void fetch_context_items(IndexedList<Action *>&items);
     static SubsysResultCode_e list_aps(SubsysCommand *cmd);
+    static SubsysResultCode_e clear_aps(SubsysCommand *cmd);
     static SubsysResultCode_e disconnect(SubsysCommand *cmd);
     static SubsysResultCode_e rescan(SubsysCommand *cmd);
     static SubsysResultCode_e enable(SubsysCommand *cmd);
