@@ -9,6 +9,7 @@
 #include "button_handler.h"
 #include "rpc_dispatch.h"
 #include "jtag.h"
+#include "wifi_modem.h"
 
 #define SHORT_PRESS 100
 #define LONG_PRESS 1000
@@ -86,6 +87,7 @@ static void handle_button_event(int event)
         case BUTTON_OFF:
             ESP_LOGI(TAG, "** OFF **");
             regulator_enable(0, 0);
+            disable_hook();
             break;
     }
 }
