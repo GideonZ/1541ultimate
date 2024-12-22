@@ -29,7 +29,6 @@ WiFi :: WiFi()
     my_ip = 0;
     my_gateway = 0;
     my_netmask = 0;
-    cfg_authmode = 0;
     netstack = new NetworkLWIP_WiFi(this, wifi_tx_packet, wifi_free);
     netstack->attach_config();
     netstack->effectuate_settings(); // might already turn this thing on!
@@ -182,6 +181,7 @@ void WiFi :: RunModeThread()
             break;
 
         case eWifi_NotDetected:
+#ifndef U64 // wifi module is always present in U64, but not on the U2+L cartridge, so we detect it here
             len = esp32.DetectModule(boot_message, 256);
             if(len) {
                 const char *bm = boot_message;
@@ -210,6 +210,24 @@ void WiFi :: RunModeThread()
                 printf("No Boot message.\n");
                 vTaskDelay(portMAX_DELAY); // basically stall
             }
+#else // U64 
+            strcpy(moduleType, "ESP32 on U64");
+            state = eWifi_ModuleDetected;
+            RefreshRoot();
+
+    #if (CLOCK_FREQ == 66666667)
+            wifi.uart->SetBaudRate(6666666);
+    #else
+            wifi.uart->SetBaudRate(5000000);
+    #endif
+            wifi.uart->FlowControl(true);
+
+            // esp32.EnableRunMode(); on the U64, the machine should boot with the module in run mode
+            // on the U64, this should be enforced in the init of the esp32.cc code, and for the U64-II
+            // the module is already running before the FPGA even loads. So we're NOT calling EnableRunMode here.
+            state = eWifi_ModuleDetected;
+            RefreshRoot();
+#endif
 
         case eWifi_ModuleDetected:
             uart->txDebug = false;
@@ -231,30 +249,10 @@ void WiFi :: RunModeThread()
         case eWifi_AppDetected:
             uart->txDebug = false;
 
-#if (CLOCK_FREQ == 66666667)
-            result = wifi_setbaud(6666666, 1);
-#elif (CLOCK_FREQ == 50000000)
-            result = wifi_setbaud(5000000, 1);
-#elif (CLOCK_FREQ == 100000000)
-            result = wifi_setbaud(5000000, 1);
-#else
-#error "Expected 100, 66 or 50 MHz as clock rate."
-#endif
-            printf("Result of setbaud: %d\n", result);
-
             wifi_getmac(my_mac);
             netstack->set_mac_address(my_mac);
-            wifi_is_connected(conn);
-            if (conn) {
-                wifi_modem_enable(true);
-                netstack->start();
-                state = eWifi_Connected;
-            } else {
-                state = eWifi_Scanning;
-            }
-            // state = eWifi_Scanning;
-            // state = eWifi_Failed;
-            state = eWifi_Scanning;
+            netstack->start(); // always starts in link down state
+            state = eWifi_NotConnected;
             RefreshRoot();
             break;
 
@@ -265,51 +263,6 @@ void WiFi :: RunModeThread()
             break;
 
         case eWifi_NotConnected:
-        case eWifi_Failed:
-            cmd_buffer_received(packets, &buf, portMAX_DELAY);
-            hdr = (rpc_header_t *)(buf->data);
-#if DEBUG_INPUT
-            printf("Pkt %d. Ev %b. Sz %d. Seq: %d\n", buf->bufnr, hdr->command, buf->size, hdr->sequence);
-#endif
-            switch(hdr->command) {
-            case EVENT_RESCAN:
-                cmd_buffer_free(packets, buf);
-                state = eWifi_Scanning;
-                RefreshRoot();
-                break;
-
-            case EVENT_CONNECTED:
-                // Obtain the password from the event to write it to the network interface
-                // in order to have it saved to the config. Very inconvenient, but that's
-                // how queues work.
-                conn_req = (rpc_wifi_connect_req *)buf->data;
-                cmd_buffer_free(packets, buf);
-                if (state == eWifi_Connected) { // already connected!
-                    netstack->link_down();
-                }
-                state = eWifi_Connected;
-                uart->txDebug = false;
-                netstack->link_up();
-
-                RefreshRoot();
-                break;
-
-            case EVENT_DISCONNECTED:
-                cmd_buffer_free(packets, buf);
-                state = eWifi_Failed;
-                if(netstack) {
-                    netstack->link_down();
-                }
-                RefreshRoot();
-                break;
-
-            default:
-                printf("Unexpected Event type in state NotConnected or Failed: Pkt %d. Ev %b. Sz %d. Seq: %d\n", buf->bufnr, hdr->command, buf->size, hdr->sequence);
-                cmd_buffer_free(packets, buf);
-                break;
-            }
-            break;
-
         case eWifi_Connected:
             cmd_buffer_received(packets, &buf, portMAX_DELAY);
             hdr = (rpc_header_t *)(buf->data);
@@ -317,12 +270,24 @@ void WiFi :: RunModeThread()
             printf("Pkt %d. Ev %b. Sz %d. Seq: %d\n", buf->bufnr, hdr->command, buf->size, hdr->sequence);
 #endif
             switch(hdr->command) {
-            case EVENT_CONNECTED:
+            case EVENT_RESCAN: // requested from user interface
                 cmd_buffer_free(packets, buf);
                 netstack->link_down();
-                if(netstack) {
-                    netstack->link_up();
+                state = eWifi_Scanning;
+                RefreshRoot();
+                break;
+
+            case EVENT_CONNECTED:
+                // conn_req = (rpc_wifi_connect_req *)buf->data;
+                cmd_buffer_free(packets, buf);
+                if (state == eWifi_Connected) { // already connected!
+                    netstack->link_down();
                 }
+                wifi_modem_enable(true); // take control!
+                state = eWifi_Connected;
+                uart->txDebug = false;
+                netstack->link_up();
+
                 RefreshRoot();
                 break;
 
@@ -350,8 +315,15 @@ void WiFi :: RunModeThread()
                 // no free, as the packet needs to live on in the network stack
                 break;
 
+            case EVENT_GOTIP:
+                ev = (event_pkt_got_ip *)buf->data;
+                printf("-> ESP32 received IP from DHCP: %d.%d.%d.%d (changed: %d)\n", (ev->ip >> 24),
+                    (ev->ip >> 16) & 0xFF, (ev->ip >> 8) & 0xFF, ev->ip & 0xFF, ev->changed);
+                cmd_buffer_free(packets, buf);
+                break;
+
             default:
-                printf("Unexpected Event type in Connected: Pkt %d. Ev %b. Sz %d. Seq: %d. Thread: %d.\n", buf->bufnr, hdr->command, buf->size, hdr->sequence, hdr->thread);
+                printf("Unexpected Event type: Pkt %d. Ev %b. Sz %d. Seq: %d. Thread: %d.\n", buf->bufnr, hdr->command, buf->size, hdr->sequence, hdr->thread);
                 cmd_buffer_free(packets, buf);
                 break;
             }

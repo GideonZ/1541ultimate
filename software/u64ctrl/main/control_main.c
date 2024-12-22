@@ -35,9 +35,7 @@ static const char *TAG = "u64ctrl";
 
 static void configure_led(void)
 {
-    ESP_LOGI(TAG, "Example configured to blink GPIO LED!");
     gpio_reset_pin(IO_ESP_LED);
-    /* Set the GPIO as a push/pull output */
     gpio_set_direction(IO_ESP_LED, GPIO_MODE_OUTPUT);
 }
 
@@ -185,9 +183,8 @@ void app_main(void)
     while (1) {
         ESP_LOGI(TAG, "App Main Alive; 5V_GOOD: %d (Initial: %d)", gpio_get_level(IO_5V_GOOD), initial_state);
         // print_time();
-        // blink_led();
         // read_adcs();
         vTaskDelay(10000 / portTICK_PERIOD_MS);
-        print_time_for_zone("CEST-1CET,M3.2.0/2:00:00,M11.1.0/2:00:00");
+        // print_time_for_zone("CEST-1CET,M3.2.0/2:00:00,M11.1.0/2:00:00");
     }
 }

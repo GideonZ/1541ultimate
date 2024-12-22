@@ -124,5 +124,25 @@ public:
     void update(const char *msg, int steps);
 };
 
+class UIChoiceBox : public UIObject
+{
+private:
+    mstring  message;
+    const char **choices;
+    int      count;
+    int      current;
+    Window  *window;
+    Keyboard *keyboard;
+    int color_fg, color_bg, color_sel_fg, color_sel_bg;
+public:
+    UIChoiceBox(const char *msg, const char **choices, int count);
+    ~UIChoiceBox() { }
+
+    void init(Screen *screen, Keyboard *kb, int fg, int bg, int sel_fg, int sel_bg);
+    void deinit(void);
+    int  poll(int);
+    void redraw(void);
+};
+
 
 #endif /* USERINTERFACE_UI_ELEMENTS_H_ */

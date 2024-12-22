@@ -77,6 +77,7 @@ public:
     virtual int  pollInactive();
     virtual int  popup(const char *msg, uint8_t flags); // blocking
     virtual int  popup(const char *msg, int count, const char **names, const char *keys); // blocking, custom
+    virtual int  choice(const char *msg, const char **choices, int count);
     virtual int  string_box(const char *msg, char *buffer, int maxlen); // blocking
     virtual int  string_edit(char *buffer, int maxlen, Window *w, int x, int y);
     virtual void show_progress(const char *msg, int steps); // not blocking

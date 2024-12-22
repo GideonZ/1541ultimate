@@ -432,6 +432,19 @@ int UserInterface :: string_edit(char *buffer, int maxlen, Window *w, int x, int
     return ret;
 }
 
+int UserInterface :: choice(const char *msg, const char **choices, int count)
+{
+    UIChoiceBox *box = new UIChoiceBox(msg, choices, count);
+    box->init(screen, keyboard, color_fg, color_bg, color_sel, color_sel_bg); // clunky
+    screen->cursor_visible(0);
+    int ret;
+    do {
+        ret = box->poll(0);
+    } while(!ret);
+    delete box;
+    return ret;
+}
+
 void UserInterface :: show_progress(const char *msg, int steps)
 {
     status_box = new UIStatusBox(msg, steps);

@@ -345,6 +345,115 @@ void UIStringBox :: deinit(void)
 	}
 }
 
+/* Choice box */
+UIChoiceBox :: UIChoiceBox(const char *msg, const char **choices, int count) : message(msg)
+{
+    this->choices = choices;
+    this->count = count;
+    this->keyboard = NULL;
+    this->current = 0;
+    this->color_fg = 15;
+    this->color_bg = 0;
+    this->color_sel_fg = 1;
+    this->color_sel_bg = 6;
+}
+
+void UIChoiceBox :: init(Screen *screen, Keyboard *kb, int fg, int bg, int sel_fg, int sel_bg)
+{
+    this->color_fg = fg;
+    this->color_bg = bg;
+    this->color_sel_fg = sel_fg;
+    this->color_sel_bg = sel_bg;
+
+    int rows = 2 + count;
+	int max_len = message.length();
+    int len;
+    for(int i=0;i<count;i++) {
+        len = strlen(choices[i]);
+        if (len > max_len) {
+            max_len = len;
+        }
+    }
+    if (max_len > 25) {
+        max_len = 25;
+    }
+    keyboard = kb;
+
+    screen->backup();
+    int y_offs = (screen->get_size_y() - rows - 2) >> 1;
+    window = new Window(screen, (screen->get_size_x() - max_len - 2) >> 1, y_offs, max_len+2, rows);
+    window->set_color(color_fg);
+    window->draw_border();
+    redraw();
+}
+
+void UIChoiceBox :: redraw(void)
+{
+    window->move_cursor(0, 0);
+    window->set_color(color_fg);
+    window->set_background(color_bg);
+    window->output_line(message.c_str());
+    window->move_cursor(0, 1);
+    window->output_line("");
+    for(int i=0; i < count; i++) {
+        if(i == current) {
+            window->set_color(color_sel_fg);
+            window->set_background(color_sel_bg);
+        } else {
+            window->set_color(color_fg);
+            window->set_background(color_bg);
+        }
+        window->output_line(choices[i]);
+    }
+}
+
+void UIChoiceBox :: deinit(void)
+{
+    window->getScreen()->restore();
+    delete window;
+}
+
+int  UIChoiceBox :: poll(int)
+{
+    int ret = 0;
+    int c;
+        
+    if(!keyboard) {
+        printf("Choice picker: Keyboard not initialized.. exit.\n");
+        return -1;
+    }
+
+    c = keyboard->getch();
+
+    if (c == -1) // nothing pressed
+    	return 0;
+    if (c == -2) // error
+    	return -1;
+    switch(c) {
+        case -1: return 0; // nothing pressed
+        case -2: return -1; // error
+        case KEY_UP:
+            if (current > 0) {
+                current--;
+                redraw();
+            }
+            break;
+        case KEY_DOWN:
+            if (current < count-1) {
+                current++;
+                redraw();
+            }
+            break;
+        case KEY_SPACE:
+        case KEY_RETURN:
+            return current;
+        default:
+            break;
+    }
+    return 0; // busy
+}
+
+
 /* Status Box */
 UIStatusBox :: UIStatusBox(const char *msg, int steps) : message(msg)
 {

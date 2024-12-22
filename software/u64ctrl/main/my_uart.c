@@ -34,6 +34,7 @@
 #include "cmd_buffer.h"
 #include "rpc_dispatch.h"
 #include "dump_hex.h"
+#include "my_uart.h"
 
 #if CONFIG_IDF_TARGET_ESP32
 #include "esp32/clk.h"
@@ -399,11 +400,11 @@ esp_err_t my_uart_init(command_buf_context_t *buffers, uint8_t uart_num)
     };
 
     const uart_config_t uart_config = {
-        .baud_rate = 115200,
+        .baud_rate = UART_BAUDRATE_INIT,
         .data_bits = UART_DATA_8_BITS,
         .parity = UART_PARITY_DISABLE,
         .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE, // UART_HW_FLOWCTRL_CTS_RTS,
+        .flow_ctrl = UART_HW_FLOWCTRL_INIT,
         .rx_flow_ctrl_thresh = 122,
     };
 

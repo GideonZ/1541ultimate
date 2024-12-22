@@ -91,6 +91,11 @@ static void got_ip_event_handler(void *esp_netif, esp_event_base_t base, int32_t
              IP2STR(&event->ip_info.netmask),
              IP2STR(&event->ip_info.gw));
 
+    obtain_time();
+    print_time();
+
+    ESP_LOGI(TAG, "Time obtained; now reporting to ultimate that we got an IP.");
+
     command_buf_t *reply;
     if (my_uart_get_buffer(UART_NUM_1, &reply, 100)) {
         event_pkt_got_ip *ev = (event_pkt_got_ip *)reply->data;
@@ -106,8 +111,6 @@ static void got_ip_event_handler(void *esp_netif, esp_event_base_t base, int32_t
     } else {
         ESP_LOGW(TAG, "No buffer to send event.");
     }
-    obtain_time();
-    print_time();
 }
 
 static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t event_id, void *data)
@@ -221,15 +224,26 @@ uint8_t wifi_get_connection()
 // Initialize Wi-Fi issue scan command
 esp_err_t wifi_scan(ultimate_ap_records_t *ult_records)
 {
-    uint16_t number = DEFAULT_SCAN_LIST_SIZE;
-    memset(ap_info, 0, sizeof(ap_info));
-    ap_count = 0;
-
     if (ult_records) {
         ult_records->reserved = 0;
         ult_records->num_records = 0;
     }
+
     esp_err_t err;
+    if (connected_g) {
+        err = esp_wifi_disconnect();
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "SCAN requested while connected. Disconnect returned error %d", err);
+            return err;
+        }
+        vTaskDelay(100 / portTICK_PERIOD_MS); // disconnect event should be sent here
+        connected_g = 0; // no longer connected
+    }
+
+    uint16_t number = DEFAULT_SCAN_LIST_SIZE;
+    memset(ap_info, 0, sizeof(ap_info));
+    ap_count = 0;
+
     err = esp_wifi_scan_start(NULL, true);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to start scan: %d", err);
@@ -346,6 +360,10 @@ void attempt_connect(const char *ssid, const char *passwd, uint8_t authmode)
     wifi_config_t wifi_config_auto;
     memset(&wifi_config_auto, 0, sizeof(wifi_config_t));
 
+    if (authmode > 7) {
+        ESP_LOGW(TAG, "Auth mode incorrect %d; changed to 7.", authmode);
+        authmode = 7;
+    }
     wifi_config_auto.sta.threshold.authmode = authmode;
     memcpy(&wifi_config_auto.sta.ssid, ssid, 32);
     memcpy(&wifi_config_auto.sta.password, passwd, 64);
@@ -448,6 +466,7 @@ void setup_modem()
 
     ESP_LOGI(TAG, "wifi_init...");
     wifi_init();
+    wifi_scan(NULL);
 
 //    obtain_time();
 //    print_time();    

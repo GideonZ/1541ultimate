@@ -65,7 +65,6 @@ typedef enum {
     eWifi_Scanning,
     eWifi_NotConnected,
     eWifi_Connected,
-    eWifi_Failed,
 } WifiState_t;
 
 class WiFi : public Esp32Application
@@ -82,10 +81,6 @@ class WiFi : public Esp32Application
     uint32_t my_gateway;
     uint32_t my_netmask;
 
-    mstring cfg_ssid;
-    mstring cfg_pass;
-    int cfg_authmode;
-
     bool RequestEcho(void);
     void RxPacket(command_buf_t *);
 
@@ -100,7 +95,6 @@ public:
     DmaUART *uart;
 
     WifiState_t getState(void) { return state; }
-    void setSsidPass(const char *ssid, const char *pass, int mode) { cfg_ssid = ssid; cfg_pass = pass; cfg_authmode = mode; }
     const char *getModuleName(void) { return moduleName; }
     const char *getModuleType(void) { return moduleType; }
     void  getMacAddr(uint8_t *target) { memcpy(target, my_mac, 6); }

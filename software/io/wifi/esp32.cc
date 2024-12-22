@@ -114,27 +114,18 @@ void Esp32 :: Disable()
 
 void Esp32 :: StartApp()
 {
-    Disable();
+//    Disable();
 
-/*
-    vTaskDelay(50);
-    uart->SetBaudRate(115200);
-    uart->EnableLoopback(false);
-    uart->FlowControl(false);
-    uart->ClearRxBuffer();
-    uart->EnableSlip(false);
-    uart->EnableIRQ(true);
+    if (application) {
+         application->Terminate();
+         application = NULL;
+    }
 
-    uart->ModuleCtrl(ESP_MODE_RUN);
-    vTaskDelay(300); // 1.5 seconds
-
-    ReadRxMessage();
-    uart->EnableSlip(true);
-*/
-
-    // Note that with the above change, the application will start with the module in the off state.
-    // The application becomes responsible for turning the module on. This enables the application to
-    // detect the ESP32 module and display UI messages accordingly
+    // Note that the application will start with the module in the either on or off state.
+    // The application becomes responsible for turning the module on. When the application
+    // wants to detect the module, it should start it in boot mode. This enables the application to
+    // detect the ESP32 module and display UI messages accordingly. It doesn't need to do so,
+    // it can also assume that the application on the ESP is running and simply connect to it.
 
     // Start Application
     // TODO: Make it configurable what application starts.. Now, it's just a single one
