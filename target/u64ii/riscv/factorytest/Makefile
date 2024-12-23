@@ -126,4 +126,4 @@ LFLAGS   = --gc-sections
 LINKMETHOD = ld
 
 include ../../../common/rules.mk
-dut_binaries.o:   $(PATH_SW)/application/u64ii_tester/wave_10.bin   $(PATH_SW)/application/u64ii_tester/waves_11_7.bin
+dut_binaries.o:   $(PATH_SW)/application/u64ii_tester/chinese_mono_16.raw  $(PATH_SW)/application/u64ii_tester/waves_11_7.bin
