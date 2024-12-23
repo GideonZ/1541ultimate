@@ -212,7 +212,7 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
             // Use the buffer that we already have open, if any
             buf = p_uart->current_rx_buf;
 
-#if UART_DEBUG
+#if UART_DEBUG_IRQ
             WRITE_PERI_REG(UART_FIFO_AHB_REG(0), 'R');
             hex(rx_fifo_len);
 #endif
@@ -233,7 +233,7 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
                         if (buf->size) {
                             if (buf->object) { // Is there a dispatcher associated with the buffer? Use it.
                                 dispatcher_t *dispatcher = (dispatcher_t *)buf->object;
-#if UART_DEBUG
+#if UART_DEBUG_IRQ
                                 WRITE_PERI_REG(UART_FIFO_AHB_REG(0), ']');
                                 hex(buf->bufnr);
                                 WRITE_PERI_REG(UART_FIFO_AHB_REG(0), ':');
@@ -243,7 +243,7 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
 #endif
                                 xQueueSendFromISR(dispatcher->queue, &buf, &HPTaskAwoken);
                             } else {
-#if UART_DEBUG
+#if UART_DEBUG_IRQ
                                 WRITE_PERI_REG(UART_FIFO_AHB_REG(0), '>');
                                 hex(buf->bufnr);
 #endif
@@ -318,7 +318,7 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
 
 BaseType_t my_uart_transmit_packet(uint8_t uart_num, command_buf_t *buf)
 {
-#if UART_DEBUG
+#if UART_DEBUG_TX
     static int count = 0;
     printf("Transmit packet %d:\n", ++count);
     dump_hex_relative(buf->data, buf->size);

@@ -396,6 +396,7 @@ void UIChoiceBox :: redraw(void)
     window->move_cursor(0, 1);
     window->output_line("");
     for(int i=0; i < count; i++) {
+        window->move_cursor(0, i+2);
         if(i == current) {
             window->set_color(color_sel_fg);
             window->set_background(color_sel_bg);

@@ -19,6 +19,9 @@
 #define EVENT_START  0xF1
 #define EVENT_TERM   0xF2
 
+WiFi wifi;
+ultimate_ap_records_t wifi_aps;
+
 WiFi :: WiFi()
 {
     runModeTask = NULL;
@@ -26,6 +29,7 @@ WiFi :: WiFi()
     esp32.AttachApplication(this);
 
     bzero(my_mac, 6);
+    wifi_aps.num_records  = 0;
     my_ip = 0;
     my_gateway = 0;
     my_netmask = 0;
@@ -42,20 +46,12 @@ void WiFi :: RefreshRoot()
 
 void WiFi :: Enable()
 {
-#if U64 == 3
-    wifi_enable();
-#else
-    esp32.doStart();
-#endif
+    esp32.doStart(); 
 }
 
 void WiFi :: Disable()
 {
-#if U64 == 2
-    wifi_disable();
-#else
     esp32.doDisable();
-#endif
 }
 
 BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseType_t *w);
@@ -153,9 +149,6 @@ void WiFi::RunModeTaskStart(void *context)
     w->RunModeThread();
 }
 
-WiFi wifi;
-ultimate_ap_records_t wifi_aps;
-
 void WiFi :: RunModeThread()
 {
     uint16_t major, minor;
@@ -212,8 +205,6 @@ void WiFi :: RunModeThread()
             }
 #else // U64 
             strcpy(moduleType, "ESP32 on U64");
-            state = eWifi_ModuleDetected;
-            RefreshRoot();
 
     #if (CLOCK_FREQ == 66666667)
             wifi.uart->SetBaudRate(6666666);
@@ -221,6 +212,9 @@ void WiFi :: RunModeThread()
             wifi.uart->SetBaudRate(5000000);
     #endif
             wifi.uart->FlowControl(true);
+            wifi.uart->ClearRxBuffer();
+            wifi.uart->EnableSlip(true);
+            wifi.uart->EnableIRQ(true);
 
             // esp32.EnableRunMode(); on the U64, the machine should boot with the module in run mode
             // on the U64, this should be enforced in the init of the esp32.cc code, and for the U64-II
@@ -253,10 +247,19 @@ void WiFi :: RunModeThread()
             netstack->set_mac_address(my_mac);
             netstack->start(); // always starts in link down state
             state = eWifi_NotConnected;
+            if (wifi_is_connected(conn)) {
+                if (conn) {
+                    wifi_modem_enable(true); // take control!
+                    uart->txDebug = false;
+                    netstack->link_up();
+                    state = eWifi_Connected;
+                }
+            }
             RefreshRoot();
             break;
 
         case eWifi_Scanning:
+            wifi_aps.num_records = 0;
             wifi_scan(&wifi_aps);
             state = eWifi_NotConnected;
             RefreshRoot();
@@ -473,6 +476,7 @@ BaseType_t wifi_detect(uint16_t *major, uint16_t *minor, char *str, int maxlen)
 
     wifi.uart->TransmitPacket(buf);
     // now block thread for reply
+    printf("Get ident...");
     BaseType_t success = xTaskNotifyWait(0, 0, (uint32_t *)&buf, 100); // .5 seconds
     if (success == pdTRUE) {
         // From this moment on, "buf" points to the receive buffer!!
@@ -484,6 +488,7 @@ BaseType_t wifi_detect(uint16_t *major, uint16_t *minor, char *str, int maxlen)
         str[maxlen-1] = 0;
         printf("Identify: %s\n", str);
     } else {
+        printf("No reply...\n");
         // 'buf' still points to the transmit buffer.
         // It is freed by the TxIRQ, so the content is invalid
         // Let's try to get messages from the receive buffer to see what has been received.

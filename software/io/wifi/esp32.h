@@ -42,14 +42,15 @@ public:
     virtual void Terminate() {}
 };
 
-class Esp32 : public ObjectWithMenu
+class Esp32 //: public ObjectWithMenu
 {
+//    TaskCategory *taskCategory;
+//    void create_task_items(void);
     SemaphoreHandle_t rxSemaphore;
     QueueHandle_t commandQueue;
     command_buf_context_t *packets;
     Esp32Application *registered_app;
     Esp32Application *application;
-    TaskCategory *taskCategory;
     bool doClose;
     bool programError;
 
@@ -65,7 +66,6 @@ class Esp32 : public ObjectWithMenu
 
     static void CommandTaskStart(void *context);
     void CommandThread();
-    void create_task_items(void);
     static SubsysResultCode_e S_mode(SubsysCommand *cmd);
 public:
     Esp32();

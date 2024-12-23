@@ -117,6 +117,7 @@ void NetworkLWIP_WiFi :: effectuate_settings(void)
     if (wifi.getState() == eWifi_Off && cfg->get_value(CFG_WIFI_ENABLE)) {
         wifi.Enable();
     }
+
 //  For now, we don't disable the Wifi here, because effectuate_settings is also called when the init callback of the network stack occurs, OWWW
 //    else if (wifi.getState() != eWifi_Off && !cfg->get_value(CFG_WIFI_ENABLE)) {
 //        wifi.Disable();
@@ -152,6 +153,9 @@ SubsysResultCode_e NetworkLWIP_WiFi :: clear_aps(SubsysCommand *cmd)
 {
     if (wifi_forget_aps() != 0)
         return SSRET_GENERIC_ERROR;
+    if (cmd->user_interface) {
+        cmd->user_interface->popup("APs cleared and forgotten!", BUTTON_OK);
+    }
     return SSRET_OK;
 }
 
@@ -178,7 +182,7 @@ SubsysResultCode_e NetworkLWIP_WiFi :: manual_connect(SubsysCommand *cmd)
     if (ret < 0) { // either the picker or the password were aborted
         return SSRET_ABORTED_BY_USER;
     }
-    wifi_wifi_connect_known_ssid(ssid, password, authmode);
+    wifi_wifi_connect(ssid, password, authmode);
     return SSRET_OK;
 }
 

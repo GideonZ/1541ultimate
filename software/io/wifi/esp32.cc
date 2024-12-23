@@ -75,17 +75,17 @@ Esp32 :: Esp32()
     doClose = false;
     programError = false;
 
-    taskCategory = TasksCollection :: getCategory("ESP32", 26); // random position ;)
+//    taskCategory = TasksCollection :: getCategory("ESP32", 26); // random position ;)
 }
 
-void Esp32 :: create_task_items(void)
-{
-    taskCategory->append(new Action("Off", S_mode, 0, ESP_MODE_OFF));
-    taskCategory->append(new Action("Run", S_mode, 0, ESP_MODE_RUN));
-    taskCategory->append(new Action("Boot", S_mode, 0, ESP_MODE_BOOT));
-    taskCategory->append(new Action("Run Uart", S_mode, 0, ESP_MODE_RUN_UART));
-    taskCategory->append(new Action("Boot Uart", S_mode, 0, ESP_MODE_BOOT_UART));
-}
+// void Esp32 :: create_task_items(void)
+// {
+//     taskCategory->append(new Action("Off", S_mode, 0, ESP_MODE_OFF));
+//     taskCategory->append(new Action("Run", S_mode, 0, ESP_MODE_RUN));
+//     taskCategory->append(new Action("Boot", S_mode, 0, ESP_MODE_BOOT));
+//     taskCategory->append(new Action("Run Uart", S_mode, 0, ESP_MODE_RUN_UART));
+//     taskCategory->append(new Action("Boot Uart", S_mode, 0, ESP_MODE_BOOT_UART));
+// }
 
 SubsysResultCode_e Esp32 :: S_mode(SubsysCommand *cmd)
 {

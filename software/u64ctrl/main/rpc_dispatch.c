@@ -78,7 +78,7 @@ void cmd_scan(command_buf_t *buf)
 {
     rpc_scan_resp *resp = (rpc_scan_resp *)buf->data;
     resp->esp_err = wifi_scan(&resp->rec);
-    buf->size = sizeof(resp->hdr) + sizeof(resp->esp_err) + (resp->rec.num_records * sizeof(ultimate_ap_record_t));
+    buf->size = sizeof(resp->hdr) + sizeof(resp->esp_err) + 2 + (resp->rec.num_records * sizeof(ultimate_ap_record_t));
     my_uart_transmit_packet(UART_CHAN, buf);
 }
 
@@ -493,7 +493,7 @@ void dispatch(void *ct)
             wifi_check_connection();
             continue;
         }
-#if UART_DEBUG
+#if UART_DEBUG_RX
         printf("Received buffer %d with %d bytes.\n", pbuffer->bufnr, pbuffer->size);
 #endif
         hdr = (rpc_header_t *)(pbuffer->data);
