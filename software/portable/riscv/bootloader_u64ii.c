@@ -145,6 +145,9 @@ int main()
 		// jump_run(0x30000);
 	}
 
+    volatile t_hw_i2c *i2c_regs = (volatile t_hw_i2c *)(U64II_HW_I2C_BASE);
+    i2c_regs->scan_enable = 0; // Turn off kb scan
+    
     initializeDDR2();
     init_ext_pll();
     
