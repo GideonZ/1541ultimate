@@ -18,6 +18,16 @@ static char *product_name[] = {
     "Ultimate 64E2",
 };
 
+static char *product_hostname[] = {
+    "Ultimate",  // Default if unknown product
+    "Ultimate-II",
+    "Ultimate-IIp",
+    "Ultimate-IIpL",
+    "Ultimate-64",
+    "Ultimate-64E",
+    "Ultimate-64E2",
+};
+
 #if U64
 const char *getBoardRevision(void)
 {
@@ -135,6 +145,32 @@ char *getProductTitleString(char *buf, int sz)
     else if (space >= 6) format = "** %s **";
     else if (space >= 4) format = "* %s *";
     sprintf(buf, format, product_version);
+    return buf;
+}
+
+char *getProductDefaultHostname(char *buf, int sz) {
+    if (sz < 16 + 7 + 1) {   // Name-XXYYZZ<NULL>
+        return NULL;
+    }
+
+    // Base hostname
+    uint8_t product = getProductId();
+    if (product >= sizeof(product_hostname) / sizeof(char *))
+        product = 0;
+    char *hostname = product_hostname[product];
+    strcpy(buf, hostname);
+
+    // Try to make hostname unique by adding the last 3 octets of MAC to hostname (same algo used
+    // by RMII driver, based on flash chip unique id).
+    uint8_t serial[8];
+    Flash *flash = get_flash();
+    if (flash) {
+        flash->read_serial(serial);
+        uint8_t mac4 = serial[1] ^ serial[5];
+        uint8_t mac5 = serial[2] ^ serial[6];
+        uint8_t mac6 = serial[3] ^ serial[7];
+        sprintf(buf, "%s-%b%b%b", hostname, mac4, mac5, mac6);
+    }
     return buf;
 }
 

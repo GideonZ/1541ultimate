@@ -18,7 +18,7 @@
 #include "c1541.h"
 #include "data_streamer.h"
 #include "filetype_crt.h"
-#include "network_interface.h"
+#include "network_config.h"
 #include "product.h"
 
 // "Ok ok, use them then..."
@@ -492,11 +492,8 @@ void SocketDMA::identThread(void *_a)
             if (n > 0) {
                 client_message[n] = 0;
             }
-            ConfigStore *cs = ConfigManager::getConfigManager()->find_store("Network settings");
-            const char *hostname = "Unknown";
-            if (cs) {
-                hostname = cs->get_string(CFG_NET_HOSTNAME);
-            }
+
+            const char *hostname = networkConfig.cfg->get_string(CFG_NETWORK_HOSTNAME);
 
             char product[41];
             getProductVersionString(product, sizeof(product));

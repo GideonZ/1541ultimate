@@ -80,6 +80,7 @@ SRCS_CC	 =  u2p_init.cc \
 			usb_hub.cc \
 			usb_hid.cc \
 			keyboard_usb.cc \
+			network_config.cc \
 			network_interface.cc \
 			rmii_interface.cc \
 			$(PRJ).cc
