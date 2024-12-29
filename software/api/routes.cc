@@ -69,7 +69,13 @@ int execute_api_v1(HTTPReqMessage *req, HTTPRespMessage *resp)
     const ApiCall_t *func = args->ParseReqHeader(&req->Header);
 
     if (func) {
-        if (func->body_handler) {
+        if (func == (ApiCall_t *)-1) {  // Incorrect password
+            ResponseWrapper respw(resp);
+            respw.error("Forbidden.");
+            respw.json_response(HTTP_FORBIDDEN);
+            delete args;
+        }
+        else if (func->body_handler) {
             void *body = func->body_handler(req, resp, func, args);
             if (!body) {
                 ResponseWrapper respw(resp);
