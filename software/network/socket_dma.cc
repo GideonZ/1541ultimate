@@ -5,6 +5,8 @@
  *      Author: Gideon
  */
 
+#include <string.h>
+
 #include "itu.h"
 #include "filemanager.h"
 #include "socket_dma.h"
@@ -37,6 +39,8 @@
 #define SOCKET_CMD_RUN_CRT     0xFF0D
 #define SOCKET_CMD_IDENTIFY    0xFF0E
 
+#define SOCKET_CMD_AUTHENTICATE 0xFF1F
+
 // Only available on U64
 #define SOCKET_CMD_VICSTREAM_ON    0xFF20
 #define SOCKET_CMD_AUDIOSTREAM_ON  0xFF21
@@ -68,7 +72,7 @@ SocketDMA::~SocketDMA() {
     delete[] load_buffer;
 }
 
-void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint16_t cmd, uint32_t len, struct in_addr *client_ip)
+bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint16_t cmd, uint32_t len, struct in_addr *client_ip, bool &authenticated)
 {
 	uint8_t *buf = (uint8_t *)load_buffer;
 	SubsysCommand *sys_command;
@@ -79,9 +83,27 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
     uint16_t size;
     const char *name = "";
     char title[52];
+    bool ok = true;
     // TODO: check len > remaining
 
+    const char *password = NULL;
+    if (!authenticated && cmd != SOCKET_CMD_AUTHENTICATE) {
+        return false;  // If not authenticated we disconnect
+    }
     switch(cmd) {
+    case SOCKET_CMD_AUTHENTICATE:
+        password = networkConfig.cfg->get_string(CFG_NETWORK_PASSWORD);
+        if (*password || (strlen(password) == length && memcmp(password, load_buffer, length) == 0)) {
+            authenticated = true;
+            buf[0] = 1;
+        }
+        else {
+            ok = false;
+            buf[0] = 0;
+            vTaskDelay(1000 / portTICK_PERIOD_MS);  // Throttle failed password attempts
+        }
+        writeSocket(socket, buf, 1);
+        break;
     case SOCKET_CMD_IDENTIFY:
         getProductTitleString(title+1, sizeof(title)-1);
         title[0] = (char)strlen(title+1);
@@ -298,6 +320,7 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
            }
     	}
     }
+    return ok;
 }
 
 int SocketDMA::readSocket(int socket, void *buffer, int max_remain)
@@ -399,6 +422,10 @@ void SocketDMA::dmaThread(void *load_buffer)
 		uint8_t *mempntr = (uint8_t *)load_buffer;
 		uint8_t buf[16];
 
+		bool authenticated = false;
+		const char *password = networkConfig.cfg->get_string(CFG_NETWORK_PASSWORD);
+		if (!*password)
+	            authenticated = true;
 		while(1) {
 	        n = recv(newsockfd, buf, 2, 0);
 	        if (n <= 0) {
@@ -432,7 +459,9 @@ void SocketDMA::dmaThread(void *load_buffer)
 	        if (n <= 0) {
 	            break;
 	        }
-            performCommand(newsockfd, load_buffer, n, cmd, len32, &cli_addr.sin_addr);
+            if (!performCommand(newsockfd, load_buffer, n, cmd, len32, &cli_addr.sin_addr, authenticated)) {
+                break;
+            }
 		}
         puts("ERROR reading from socket");
         closesocket(newsockfd);
@@ -504,8 +533,11 @@ void SocketDMA::identThread(void *_a)
             char core_version[8];
             sprintf(core_version, "1.%02x", C64_CORE_VERSION);
 #endif
+            const char *password = networkConfig.cfg->get_string(CFG_NETWORK_PASSWORD);
+
             if (strncmp(client_message, "json", 4) == 0) {
                 client_message[36] = 0;
+                JSON_Bool password_protected(*password ? 1 : 0);
                 JSON *obj = JSON::Obj()
                     ->add("product", product)
                     ->add("firmware_version", APPL_VERSION)
@@ -517,6 +549,11 @@ void SocketDMA::identThread(void *_a)
                     ->add("menu_header", menu_header)
                     ->add("your_string", client_message+4);
 
+                // Current Assembly64 ignores responses with booleans so we only send this if passwords
+                // are active, in which case Assembly won't work anyway.
+                if (*password) {
+                    ((JSON_Object *)obj)->add("password_protected", &password_protected);
+                }
                 const char *msg = obj->render();
                 n = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&cli_addr,
                         client_struct_length);
