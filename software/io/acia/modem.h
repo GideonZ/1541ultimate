@@ -53,6 +53,7 @@ class Modem : public ConfigurableObject
     const char *responseString;
     uint8_t responseLen;
     bool verbose;
+    bool echo;
     bool keepConnection;
     bool commandMode;
     bool busyMode;
