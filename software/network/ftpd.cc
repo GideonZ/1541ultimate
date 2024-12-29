@@ -184,6 +184,7 @@ int FTPDaemon::listen_task()
         int actual_socket = accept(sockfd, (struct sockaddr * ) &cli_addr, &clilen);
         if (actual_socket < 0) {
             puts("FTPD: ERROR on accept");
+            continue;  // Remote probably closed, just wait for another connection
             // return -3;
         }
 
