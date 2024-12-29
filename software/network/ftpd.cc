@@ -11,6 +11,8 @@
 
 #include "vfs.h"
 #include "rtc.h"
+#include "network_config.h"
+#include "product.h"
 
 static int num_threads = 0;
 
@@ -265,8 +267,9 @@ int FTPDaemonThread::handle_connection()
         return -ENXIO;
     }
     //send_msg(msg220);
-    send_msg("220 Ultimate-II FTP: IP = %d.%d.%d.%d. Hello %d.%d.%d.%d:%d", my_ip[0], my_ip[1], my_ip[2], my_ip[3], your_ip[0],
+    send_msg("220 %s FTP: IP = %d.%d.%d.%d. Hello %d.%d.%d.%d:%d", getProductString(), my_ip[0], my_ip[1], my_ip[2], my_ip[3], your_ip[0],
             your_ip[1], your_ip[2], your_ip[3], your_port);
+    authenticated = 'n';
 
     int idx = 0;
     while (1) {
@@ -327,7 +330,16 @@ void FTPDaemonThread::cmd_user(const char *arg)
 
 void FTPDaemonThread::cmd_pass(const char *arg)
 {
-    send_msg(msg230);
+    const char *password = networkConfig.cfg->get_string(CFG_NETWORK_PASSWORD);
+    if(!*password || strcmp(arg, password) == 0) {
+	// Empty password configured or password matched, authenticated!
+        authenticated = 'y';
+        send_msg(msg230);
+    }
+    else {
+        vTaskDelay(1000 / portTICK_PERIOD_MS);  // Throttle failed password attempts
+        send_msg(msg530);
+    }
     state = FTPD_IDLE;
 }
 
@@ -731,11 +743,16 @@ struct ftpd_command {
     func_t func;
 };
 
+int ftpd_last_unauthenticated_command_index = 2;  // "QUIT" (USER, PASS and QUIT are always allowed)
+
 struct ftpd_command ftpd_commands[] = {
+        // Commands always allowed
         "USER", &FTPDaemonThread::cmd_user,
         "PASS", &FTPDaemonThread::cmd_pass,
-        "PORT", &FTPDaemonThread::cmd_port,
         "QUIT", &FTPDaemonThread::cmd_quit,
+
+        // Commands only allowed after successful login
+        "PORT", &FTPDaemonThread::cmd_port,
         "CWD",  &FTPDaemonThread::cmd_cwd,
         "CDUP", &FTPDaemonThread::cmd_cdup,
         "PWD",  &FTPDaemonThread::cmd_pwd,
@@ -778,9 +795,16 @@ void FTPDaemonThread::dispatch_command(char *text, int length)
     *pt = '\0';
 
     struct ftpd_command *ftpd_cmd;
+    int ftpd_cmd_index = 0;
     for (ftpd_cmd = ftpd_commands; ftpd_cmd->cmd != NULL; ftpd_cmd++) {
         if (!strcmp(ftpd_cmd->cmd, cmd))
             break;
+	++ftpd_cmd_index;
+    }
+
+    if(authenticated != 'y' && ftpd_cmd_index > ftpd_last_unauthenticated_command_index) {
+        send_msg(msg530);
+	return;
     }
 
     if (strlen(text) < (strlen(cmd) + 1))
