@@ -3,6 +3,10 @@
 #include "attachment_reu.h"
 #include "stream_uart.h"
 #include "dump_hex.h"
+#include "network_config.h"
+#include "product.h"
+#include "versions.h"
+#include "u64.h"
 #include <string.h>
 #include <strings.h>
 
@@ -108,5 +112,26 @@ int execute_api_v1(HTTPReqMessage *req, HTTPRespMessage *resp)
 API_CALL(GET, version, none, NULL, ARRAY( { }))
 {
     resp->json->add("version", "0.1");
+    resp->json_response(HTTP_OK);
+}
+
+API_CALL(GET, info, none, NULL, ARRAY( { }))
+{
+    char fpga_version[8];
+    sprintf(fpga_version, "1%02x", getFpgaVersion());
+#ifdef U64
+    char core_version[8];
+    sprintf(core_version, "1.%02x", C64_CORE_VERSION);
+#endif
+    const char *hostname = networkConfig.cfg->get_string(CFG_NETWORK_HOSTNAME);
+
+    resp->json->add("product", getProductString())
+        ->add("firmware_version", APPL_VERSION)
+        ->add("fpga_version", fpga_version)
+#ifdef U64
+        ->add("core_version", core_version)
+#endif
+        ->add("hostname", hostname);
+
     resp->json_response(HTTP_OK);
 }
