@@ -361,6 +361,11 @@ int SocketDMA::writeSocket(int socket, void *buffer, int length)
 
 void SocketDMA::dmaThread(void *load_buffer)
 {
+    while (networkConfig.cfg->get_value(CFG_NETWORK_ULTIMATE_DMA_SERVICE) == 0) {
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+    }
+    puts("Socket DMA server starting");
+
 	int sockfd, newsockfd, portno;
 	unsigned long int clilen;
     struct sockaddr_in serv_addr, cli_addr;
@@ -472,6 +477,11 @@ void SocketDMA::dmaThread(void *load_buffer)
 
 void SocketDMA::identThread(void *_a)
 {
+    while (networkConfig.cfg->get_value(CFG_NETWORK_ULTIMATE_IDENT_SERVICE) == 0) {
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+    }
+    puts("Socket ident server starting");
+
 	int sockfd, newsockfd, portno;
 	unsigned long int clilen;
     struct sockaddr_in serv_addr, cli_addr;

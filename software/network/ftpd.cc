@@ -159,6 +159,11 @@ void FTPDaemon::ftp_listen_task(void *a)
 
 int FTPDaemon::listen_task()
 {
+    while (networkConfig.cfg->get_value(CFG_NETWORK_FTP_SERVICE) == 0) {
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+    }
+    puts("FTP server starting");
+
     int sockfd, portno;
     socklen_t clilen;
     struct sockaddr_in serv_addr, cli_addr;

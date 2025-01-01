@@ -178,6 +178,11 @@ void socket_gui_task(void *a)
 
 int SocketGui :: listenTask(void)
 {
+    while (networkConfig.cfg->get_value(CFG_NETWORK_TELNET_SERVICE) == 0) {
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+    }
+    puts("Telnet server starting");
+
 	int sockfd, portno;
 	socklen_t clilen;
     struct sockaddr_in serv_addr, cli_addr;
