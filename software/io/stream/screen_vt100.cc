@@ -138,3 +138,9 @@ void Screen_VT100::sync(void)
 {
 	stream->sync();
 }
+
+void Screen_VT100::restore_terminal(void) {
+    stream->write("\ec\e[2J", 6);  // RIS (Reset Initial State) + ED2 (Clear entire screen)
+    move_cursor(0, 0);
+    sync();
+}
