@@ -36,6 +36,8 @@ public:
     
     Screen   *getScreen(void);
     Keyboard *getKeyboard(void);
+
+    void release_ownership(void);
 };
 
 #endif /* IO_STREAM_HOST_STREAM_H_ */

@@ -124,6 +124,7 @@ void UserInterface :: run_remote(void)
         }
         vTaskDelay(3);
     }
+    host->release_ownership();
 }
 
 void UserInterface :: run(void)

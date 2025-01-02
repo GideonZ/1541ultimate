@@ -24,3 +24,9 @@ Keyboard *HostStream :: getKeyboard(void)
 	}
 	return keyboard;
 }
+
+void HostStream :: release_ownership(void) {
+	if (screen) {
+		((Screen_VT100 *)screen)->restore_terminal();
+	}
+}
