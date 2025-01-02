@@ -16,9 +16,10 @@
 #include "init_function.h"
 
 /*************************************************************/
-/* T64 File System implementation                            */
+/* A64 File System implementation                            */
 /*************************************************************/
 uint32_t FileOnA64::node_count = 0;
+
 
 FileSystemA64 :: FileSystemA64() : FileSystem(0)
 {
@@ -42,13 +43,14 @@ FRESULT FileSystemA64 :: file_open(const char *filename, uint8_t flags, File **f
 
     // Let's see if cached copy exists
     FileInfo inf(128);
-    mstring fixed_temp_path("/Temp/");
+    mstring fixed_temp_path("/Temp/_a64");  // No trailing underscore since 'fixed' already starts with one
     fixed_temp_path += fixed;
     delete[] fixed;
     FRESULT fres = fm->fstat(fixed_temp_path.c_str(), inf);
 
     // File was not found on the temp disk, let's download it
     if (fres == FR_NO_FILE) {
+        fm->house_keeping_delete("/Temp/", "_a64_*");
         mstring work1, work2;
         const char *remain = temp.getTail(2, work2); // starts with slash, so we do +1
         assembly.request_binary(temp.getSub(0, 2, work1), remain+1);
