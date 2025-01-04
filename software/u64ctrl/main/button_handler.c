@@ -61,7 +61,6 @@ static void regulator_enable(int enable, int delay)
 
 static void handle_button_event(int event)
 {
-    uint32_t id_code;
     send_button_event(event);
     switch(event) {
         case BUTTON_UP_SHORT:

@@ -363,7 +363,7 @@ BaseType_t my_uart_get_buffer(uint8_t uart_num, command_buf_t **buf, TickType_t 
         (*buf)->size = 0;
         (*buf)->dropped = 0;
     }
-    ESP_LOGI(UART_TAG, "Cmd Buffer Get: %d: %p->%p (context=%p)", ret, buf, *buf, obj->buffer_context);
+    // ESP_LOGI(UART_TAG, "Cmd Buffer Get: %d: %p->%p (context=%p)", ret, buf, *buf, obj->buffer_context);
     return ret;
 }
 

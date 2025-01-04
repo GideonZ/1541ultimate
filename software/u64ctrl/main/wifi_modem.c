@@ -127,6 +127,7 @@ static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t e
 {
     ESP_LOGW(TAG, "WiFi Event %ld, data %p", event_id, data);
     ConnectEvent_t cev;
+    command_buf_t *reply;
 
     uint8_t evcode = 0;
     switch(event_id) {
@@ -149,13 +150,17 @@ static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t e
     }
 
     if (evcode) {
-        command_buf_t *reply;
         if (my_uart_get_buffer(UART_NUM_1, &reply, 100)) {
             rpc_header_t *ev = (rpc_header_t *)reply->data;
             ev->command = evcode;
             ev->thread = 0xFF;
             ev->sequence = 0;
             reply->size = sizeof(rpc_header_t);
+            if (evcode == EVENT_CONNECTED) {
+                event_pkt_connected *ev2 = (event_pkt_connected *)reply->data;
+                memcpy(ev2->ssid, last_connect.ssid, 32);
+                reply->size = sizeof(event_pkt_connected);
+            }
             my_uart_transmit_packet(UART_NUM_1, reply);
         } else {
             ESP_LOGW(TAG, "No buffer to send event.");
@@ -384,6 +389,20 @@ esp_err_t wifi_set_last_ap(int index)
 
 esp_err_t attempt_connect(const char *ssid, const char *passwd, uint8_t authmode)
 {
+    if (connected_g) {
+        esp_err_t err = esp_wifi_disconnect();
+        ESP_LOGW(TAG, "Connect request, but was connected. Waiting now for disconnect event.");
+        ConnectEvent_t ev;
+        xQueueReceive(connect_events, &ev, portMAX_DELAY);
+        if (ev.event_code != EVENT_DISCONNECTED) {
+            ESP_LOGE(TAG, "Would have expected disconnect event, %d", ev.event_code);
+        } else if (ev.event_code != EVENT_CONNECTED) {
+            ESP_LOGI(TAG, "Properly disconnected.");
+        } else {
+            ESP_LOGE(TAG, "Unreachable code");
+        }
+    }
+
     wifi_config_t wifi_config_auto;
     memset(&wifi_config_auto, 0, sizeof(wifi_config_t));
 
