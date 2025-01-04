@@ -553,6 +553,10 @@ int handle_connect_command(ConnectCommand_t *cmd)
                 if (err == ESP_OK) { // connect attempt was accepted by esp
                     xQueueReceive(connect_events, &connect_event, portMAX_DELAY);
                     if (connect_event.event_code == EVENT_CONNECTED) {
+                        err = wifi_store_ap(cmd);
+                        if (err == ESP_OK) {
+                            wifi_set_last_ap(cmd->list_index);
+                        }
                         return 1;
                     }
                 }
@@ -576,10 +580,14 @@ void connect_thread(void *a)
     while(1) {
         switch (state) {
             case LastAP:
-                wifi_connect_to_last();
-                xQueueReceive(connect_events, &connect_event, portMAX_DELAY);
-                if (connect_event.event_code == EVENT_CONNECTED) {
-                    state = Connected;
+                err = wifi_connect_to_last();
+                if (err == ESP_OK) {
+                    xQueueReceive(connect_events, &connect_event, portMAX_DELAY);
+                    if (connect_event.event_code == EVENT_CONNECTED) {
+                        state = Connected;
+                    } else {
+                        state = Scanning;
+                    }
                 } else {
                     state = Scanning;
                 }
@@ -622,6 +630,7 @@ void connect_thread(void *a)
                     if (err == ESP_OK) {
                         xQueueReceive(connect_events, &connect_event, portMAX_DELAY);
                         if (connect_event.event_code == EVENT_CONNECTED) {
+                            wifi_set_last_ap(i);
                             state = Connected;
                             break;
                         }

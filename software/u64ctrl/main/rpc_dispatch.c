@@ -94,7 +94,6 @@ void cmd_wifi_connect(command_buf_t *buf)
 {
     rpc_wifi_connect_req *param = (rpc_wifi_connect_req *)buf->data;
     rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
-    buf->size = sizeof(rpc_espcmd_resp);
 
     if (buf->size < 98) {
         resp->esp_err = ESP_ERR_INVALID_ARG;
@@ -102,6 +101,7 @@ void cmd_wifi_connect(command_buf_t *buf)
         return;
     }
 
+    buf->size = sizeof(rpc_espcmd_resp);
     ConnectCommand_t ev;
     ev.buf = buf;
     ev.command = CMD_WIFI_CONNECT;
