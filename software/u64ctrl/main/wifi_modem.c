@@ -552,6 +552,7 @@ int handle_connect_command(ConnectCommand_t *cmd)
 
                 if (err == ESP_OK) { // connect attempt was accepted by esp
                     xQueueReceive(connect_events, &connect_event, portMAX_DELAY);
+                    ESP_LOGI(TAG, "Connect Event %d when waiting connection to %s", connect_event.event_code, last_connect.ssid);
                     if (connect_event.event_code == EVENT_CONNECTED) {
                         err = wifi_store_ap(cmd);
                         if (err == ESP_OK) {
