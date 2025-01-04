@@ -20,13 +20,14 @@ typedef struct {
 
 void create_dispatchers(int stacksize, command_buf_context_t *bufs);
 void dispatch(void *ct);
+void start_dispatch(QueueHandle_t queue);
+void send_button_event(uint8_t button);
+void send_keepalive();
 
-#define IDENT_STRING "ESP32 WiFi Modem V1.0"
+#define IDENT_STRING "ESP32 WiFi Bridge V1.2"
 #define IDENT_MAJOR   1
-#define IDENT_MINOR   0
-#define UART_DEBUG    0
-#define U64BUILD      1
+#define IDENT_MINOR   2
 #define MULTITHREADED 0
-#define DISPATCHER_STACK 2000
+#define DISPATCHER_STACK 3072
 
 #endif /* SOFTWARE_WIFI_SCAN_MAIN_RPC_DISPATCH_H_ */

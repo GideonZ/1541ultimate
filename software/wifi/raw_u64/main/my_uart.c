@@ -28,15 +28,16 @@
 #include "driver/uart.h"
 #include "driver/gpio.h"
 #include "driver/uart_select.h"
-#include "driver/periph_ctrl.h"
+//#include "driver/periph_ctrl.h"
 #include "sdkconfig.h"
 #include "esp_rom_gpio.h"
 #include "cmd_buffer.h"
 #include "rpc_dispatch.h"
 #include "dump_hex.h"
+#include "my_uart.h"
 
 #if CONFIG_IDF_TARGET_ESP32
-#include "esp32/clk.h"
+//#include "esp32/clk.h"
 #elif CONFIG_IDF_TARGET_ESP32S2
 #include "esp32s2/clk.h"
 #elif CONFIG_IDF_TARGET_ESP32S3
@@ -211,7 +212,7 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
             // Use the buffer that we already have open, if any
             buf = p_uart->current_rx_buf;
 
-#if UART_DEBUG
+#if UART_DEBUG_IRQ
             WRITE_PERI_REG(UART_FIFO_AHB_REG(0), 'R');
             hex(rx_fifo_len);
 #endif
@@ -232,7 +233,7 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
                         if (buf->size) {
                             if (buf->object) { // Is there a dispatcher associated with the buffer? Use it.
                                 dispatcher_t *dispatcher = (dispatcher_t *)buf->object;
-#if UART_DEBUG
+#if UART_DEBUG_IRQ
                                 WRITE_PERI_REG(UART_FIFO_AHB_REG(0), ']');
                                 hex(buf->bufnr);
                                 WRITE_PERI_REG(UART_FIFO_AHB_REG(0), ':');
@@ -242,7 +243,7 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
 #endif
                                 xQueueSendFromISR(dispatcher->queue, &buf, &HPTaskAwoken);
                             } else {
-#if UART_DEBUG
+#if UART_DEBUG_IRQ
                                 WRITE_PERI_REG(UART_FIFO_AHB_REG(0), '>');
                                 hex(buf->bufnr);
 #endif
@@ -317,7 +318,7 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
 
 BaseType_t my_uart_transmit_packet(uint8_t uart_num, command_buf_t *buf)
 {
-#if UART_DEBUG
+#if UART_DEBUG_TX
     static int count = 0;
     printf("Transmit packet %d:\n", ++count);
     dump_hex_relative(buf->data, buf->size);
@@ -362,7 +363,18 @@ BaseType_t my_uart_get_buffer(uint8_t uart_num, command_buf_t **buf, TickType_t 
         (*buf)->size = 0;
         (*buf)->dropped = 0;
     }
-    ESP_LOGI(UART_TAG, "Cmd Buffer Get: %d: %p->%p (context=%p)", ret, buf, *buf, obj->buffer_context);
+    // ESP_LOGI(UART_TAG, "Cmd Buffer Get: %d: %p->%p (context=%p)", ret, buf, *buf, obj->buffer_context);
+    return ret;
+}
+
+#include "esp_check.h"
+esp_err_t uart_isr_register(uart_port_t uart_num, void (*fn)(void *), void *arg, int intr_alloc_flags,  uart_isr_handle_t *handle)
+{
+    int ret;
+    ESP_RETURN_ON_FALSE((uart_num < UART_NUM_MAX), ESP_FAIL, UART_TAG, "uart_num error");
+    UART_ENTER_CRITICAL(&(uart_context[uart_num].spinlock));
+    ret = esp_intr_alloc(uart_periph_signal[uart_num].irq, intr_alloc_flags, fn, arg, handle);
+    UART_EXIT_CRITICAL(&(uart_context[uart_num].spinlock));
     return ret;
 }
 
@@ -377,8 +389,8 @@ esp_err_t my_uart_init(command_buf_context_t *buffers, uint8_t uart_num)
     obj->buffer_context = buffers;
 
     // Enable the UART and reset it
-    periph_module_enable(uart_periph_signal[uart_num].module);
-    periph_module_reset(uart_periph_signal[uart_num].module);
+    //periph_module_enable(uart_periph_signal[uart_num].module);
+    //periph_module_reset(uart_periph_signal[uart_num].module);
 
     const uart_intr_config_t interrupt_config = {
             .intr_enable_mask  = UART_INTR_RXFIFO_TOUT | UART_INTR_RXFIFO_FULL,
@@ -388,11 +400,11 @@ esp_err_t my_uart_init(command_buf_context_t *buffers, uint8_t uart_num)
     };
 
     const uart_config_t uart_config = {
-        .baud_rate = 115200,
+        .baud_rate = UART_BAUDRATE_INIT,
         .data_bits = UART_DATA_8_BITS,
         .parity = UART_PARITY_DISABLE,
         .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE, // UART_HW_FLOWCTRL_CTS_RTS,
+        .flow_ctrl = UART_HW_FLOWCTRL_INIT,
         .rx_flow_ctrl_thresh = 122,
     };
 
@@ -400,6 +412,7 @@ esp_err_t my_uart_init(command_buf_context_t *buffers, uint8_t uart_num)
     esp_err_t ret = uart_param_config(uart_num, &uart_config);
     if (ret == ESP_OK) {
         // Register the interrupt routine
+        // ret = esp_intr_alloc(uart_periph_signal[uart_num].irq, 0, my_uart_intr_handler, obj, NULL);
         ret = uart_isr_register(uart_num, my_uart_intr_handler, obj, 0, NULL);
         if (ret == ESP_OK) {
             // Configure the interrupt parameters and enables
