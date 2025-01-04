@@ -33,29 +33,20 @@ $(document).ready(function () {
 
     $('#showterminal').click(function(event){
             event.preventDefault(); // Prevents the default action of the anchor tag
+            $(".page").hide();
             $('#livemon').show(); // Shows the hidden div
-            $('#welcome').hide();
-            $('#sidplay').hide();
-            $("#runner").hide();
-            $("#tokenizer").hide();
     });
 
     $('#showwelcome').click(function(event){
             event.preventDefault(); // Prevents the default action of the anchor tag
-            $('#livemon').hide(); // Shows the hidden div
+            $(".page").hide();
             $('#welcome').show();
-            $('#sidplay').hide();
-            $("#runner").hide();
-            $("#tokenizer").hide();
     });
 
     $('#showsidplay').click(function(event){
             event.preventDefault(); // Prevents the default action of the anchor tag
-            $('#livemon').hide(); // Shows the hidden div
-            $('#welcome').hide();
+            $(".page").hide();
             $('#sidplay').show();
-            $("#runner").hide();
-            $("#tokenizer").hide();
     });
 
      $('#submitForm').click(function(e) {
@@ -65,11 +56,8 @@ $(document).ready(function () {
 
     $('#showrunner').click(function(event){
             event.preventDefault(); // Prevents the default action of the anchor tag
-            $('#livemon').hide(); // Shows the hidden div
-            $('#welcome').hide();
-            $('#sidplay').hide();
+            $(".page").hide();
             $("#runner").show();
-            $("#tokenizer").hide();
     });
 
      $('#submitRunnerForm').click(function(e) {
@@ -79,10 +67,7 @@ $(document).ready(function () {
 
     $('#showtokenizer').click(function(event){
             event.preventDefault(); // Prevents the default action of the anchor tag
-            $('#livemon').hide(); // Shows the hidden div
-            $('#welcome').hide();
-            $('#sidplay').hide();
-            $("#runner").hide();
+            $(".page").hide();
             $("#tokenizer").show();
     });
 
@@ -388,8 +373,6 @@ $(document).ready(function () {
         return [lineNumber, bytes];
     }
 
-
-
     class TokenizedLine {
         constructor(s, addr) {
             let [lineNumber, bytes] = tokenize(s); // Ensure tokenize function is defined
@@ -409,7 +392,6 @@ $(document).ready(function () {
 
 
     }
-
 
     function convertData(dataArray) {
         let result = [];
@@ -473,15 +455,9 @@ $(document).ready(function () {
             }
 
             return $table;
-        }
+    }
 
-        $('#tableContainer').append(createTable());
-
-
-
-
-
-
+    $('#tableContainer').append(createTable());
 
     $('.body').terminal({
         help: async function() {
@@ -656,7 +632,6 @@ function format_bytes_as_hex_and_ascii(byteData) {
 
     return [hexContent.join(' '), asciiContent.join('')];
 }
-
 
 function findConsecutiveValues(byteArray, valuesToFind, startIndex, endIndex) {
     const indices = [];
@@ -964,7 +939,6 @@ const opcodes = {
 	"fe": {"code": "INC", "len": 2, "addr": 8},
 };
 
-
 function disassembler(startInt, byteArray) {
 	var result = "";
 	var instruction = "";
@@ -1099,31 +1073,26 @@ function disassembler(startInt, byteArray) {
         padding: 20px;
         width: 800px;
     }
-
     #livemon {
         flex-grow: 1;
         padding: 20px;
         display:none;
     }
-
     #sidplay {
         flex-grow: 1;
         padding: 20px;
         display:none;
     }
-
     #runner {
         flex-grow: 1;
         padding: 20px;
         display:none;
     }
-
     #tokenizer {
         flex-grow: 1;
         padding: 20px;
         display:none;
     }
-
     #sidmsg {
         flex-grow: 1;
         padding: 20px;
@@ -1261,7 +1230,8 @@ function disassembler(startInt, byteArray) {
                 <li><a href="https://ultimate64.com/Firmware" target="_blank">Firmware Releases</a></li>
             </ul>
         </div>
-        <div id="welcome">
+
+        <div id="welcome" class="page">
             <h1>Welcome to your Ultimate 64!</h1>
             <p>This site serves as the dedicated web server 
                 for the Ultimate 64 and Ultimate cartridge systems. It offers a comprehensive suite of APIs, designed to 
@@ -1275,7 +1245,7 @@ function disassembler(startInt, byteArray) {
             <p>Gideon Z.</p>
         </div>
 
-        <div id="sidplay">
+        <div id="sidplay" class="page">
             <h1>Sidplayer</h1>
             <p>Use the form below to select and remotely play a sid file.</p>
 
@@ -1288,7 +1258,7 @@ function disassembler(startInt, byteArray) {
 
         </div>
 
-        <div id="runner">
+        <div id="runner" class="page">
             <h1>PRG / CRT Executor</h1>
             <p>Use the form below to select a PRG or CRT file.</p>
 
@@ -1301,7 +1271,7 @@ function disassembler(startInt, byteArray) {
 
         </div>
 
-        <div id="livemon">
+        <div id="livemon" class="page">
             <h1>Live Monitor</h1>
             <p>Below is a simple 6510 monitor attached to your U64 or UII+.</p>
             <div id="terminal" class="trinity-dialog">
@@ -1316,7 +1286,7 @@ function disassembler(startInt, byteArray) {
             </div>
         </div>
 
-        <div id="tokenizer">
+        <div id="tokenizer" class="page">
             <h1>BASIC Tokenizer / Editor</h1>
             <p>Here, you may enter a BASIC program, and upload it directly to your machine.</p>
             <p><b>Special characters:</b></p>
@@ -1329,10 +1299,7 @@ function disassembler(startInt, byteArray) {
             <p><input type="button" id="submitBASIC" value="Upload"></p>
 
             <div id="basicmsg">An error has occurred. Check for valid codes.</div>
-            
 
         </div>
-
-        
 </body>
 </html>
