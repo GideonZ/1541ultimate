@@ -147,8 +147,9 @@ bool S25FL_Flash :: protect_configure(int kilobytes)
         bp_bits += 1;
         bp >>= 1;
     }
+    bp_bits <<= 2;
     bp_bits |= 0x20;
-    
+
     portENTER_CRITICAL();
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = S25FL_ReadStatusRegister1;
