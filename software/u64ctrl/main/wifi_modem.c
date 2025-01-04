@@ -27,6 +27,7 @@
 #include "sntp.h"
 #include "rpc_calls.h"
 #include "rpc_dispatch.h"
+#include "wifi_modem.h"
 #include "pinout.h"
 
 #define NET_CMD_BUFSIZE 512
@@ -44,6 +45,15 @@ uint16_t connected_g = 0;
 esp_netif_t *my_sta_netif = NULL;
 netif_input_fn default_input;
 netif_output_fn default_output;
+
+SemaphoreHandle_t connect_semaphore;
+QueueHandle_t connect_commands;
+QueueHandle_t connect_events;
+ConnectCommand_t last_connect;
+
+typedef enum {
+    LastAP, Scanning, ScannedAPs, StoredAPs, Connected, Disconnected,
+} ConnectState_t;
 
 // typedef err_t (*netif_input_fn)(struct pbuf *p, struct netif *inp);
 
@@ -116,15 +126,22 @@ static void got_ip_event_handler(void *esp_netif, esp_event_base_t base, int32_t
 static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t event_id, void *data)
 {
     ESP_LOGW(TAG, "WiFi Event %ld, data %p", event_id, data);
+    ConnectEvent_t cev;
 
     uint8_t evcode = 0;
     switch(event_id) {
         case WIFI_EVENT_STA_DISCONNECTED:
             evcode = EVENT_DISCONNECTED;
+            cev.event_code = evcode;
+            xQueueSend(connect_events, &cev, 10);
+            xSemaphoreGive(connect_semaphore);
             connected_g = 0;
             break;
         case WIFI_EVENT_STA_CONNECTED:
             evcode = EVENT_CONNECTED;
+            cev.event_code = evcode;
+            xQueueSend(connect_events, &cev, 10);
+            xSemaphoreGive(connect_semaphore);
             connected_g = 1;
             break;
         default:
@@ -213,7 +230,6 @@ static void wifi_init()
         default_input = lw->input;
         default_output = lw->output;
     }
-
 }
 
 uint8_t wifi_get_connection()
@@ -230,15 +246,6 @@ esp_err_t wifi_scan(ultimate_ap_records_t *ult_records)
     }
 
     esp_err_t err;
-    if (connected_g) {
-        err = esp_wifi_disconnect();
-        if (err != ESP_OK) {
-            ESP_LOGW(TAG, "SCAN requested while connected. Disconnect returned error %d", err);
-            return err;
-        }
-        vTaskDelay(100 / portTICK_PERIOD_MS); // disconnect event should be sent here
-        connected_g = 0; // no longer connected
-    }
 
     uint16_t number = DEFAULT_SCAN_LIST_SIZE;
     memset(ap_info, 0, sizeof(ap_info));
@@ -302,8 +309,12 @@ static esp_err_t store_password(nvs_handle_t handle, char *key, const char *pass
     return err;
 }
 
-esp_err_t wifi_store_ap(const char *ssid, const char *password, uint8_t auth_mode)
+esp_err_t wifi_store_ap(ConnectCommand_t *cmd)
 {
+    const char *ssid = (const char *)cmd->ssid;
+    const char *password = cmd->pw;
+    const uint8_t auth_mode = cmd->auth_mode;
+
     nvs_handle_t handle;
     esp_err_t err = nvs_open("recent_aps", NVS_READWRITE, &handle);
     if (err != ESP_OK) {
@@ -322,19 +333,21 @@ esp_err_t wifi_store_ap(const char *ssid, const char *password, uint8_t auth_mod
         // see if the ssid has been stored already
         err = nvs_get_str(handle, key, ssid_buf, &len);
         if (err != ESP_OK) { // nope, it doesn't exist
-            ESP_LOGE(TAG, "SSID does not exist yet: %d", err);
+            ESP_LOGI(TAG, "SSID does not exist yet: %d", err);
             err = nvs_set_str(handle, key, ssid);
             if (err != ESP_OK) {
                 ESP_LOGE(TAG, "Failed to store SSID: %d", err);
                 return err;
             }
             err = store_password(handle, key, password, auth_mode);
+            cmd->list_index = i;
             stored = 1;
             break;
         } else {
             if (strcmp(ssid_buf, ssid) == 0) {
                 ESP_LOGI(TAG, "SSID %s already stored, overwriting...", ssid);
                 err = store_password(handle, key, password, auth_mode);
+                cmd->list_index = i;
                 stored = 1;
                 break;
             }
@@ -349,13 +362,27 @@ esp_err_t wifi_store_ap(const char *ssid, const char *password, uint8_t auth_mod
             ESP_LOGE(TAG, "Failed to store SSID: %d", err);
             return err;
         }
+        cmd->list_index = 0;
         err = store_password(handle, key, password, auth_mode);
     }
     nvs_close(handle);
     return err;
 }
 
-void attempt_connect(const char *ssid, const char *passwd, uint8_t authmode)
+esp_err_t wifi_set_last_ap(int index)
+{
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open("recent_aps", NVS_READWRITE, &handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS: %d", err);
+        return err;
+    }
+    err = nvs_set_i8(handle, "last", (int8_t)index);
+    nvs_close(handle);
+    return err;
+}
+
+esp_err_t attempt_connect(const char *ssid, const char *passwd, uint8_t authmode)
 {
     wifi_config_t wifi_config_auto;
     memset(&wifi_config_auto, 0, sizeof(wifi_config_t));
@@ -374,68 +401,279 @@ void attempt_connect(const char *ssid, const char *passwd, uint8_t authmode)
     if (err == ESP_OK) {
         err = esp_wifi_connect();
     }
-    ESP_LOGI(TAG, "Connecting to %s, with password %s, mode %d", ssid, passwd, authmode);
+    ESP_LOGI(TAG, "Connecting to %s, with password %s, mode %d -> Err = %d", ssid, passwd, authmode, err);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to connect: %d", err);
     }
+    return err;
 }
 
-void attempt_auto_connect(void)
+esp_err_t wifi_find_password(const uint8_t *ssid, char *pw, size_t maxlen, int16_t *list_idx)
 {
     nvs_handle_t handle;
-    static int index = 0;
+    esp_err_t err = ESP_OK;
+    char key[4] = {0};
+    char ssid_entry[36];
+    size_t len;
+    err = nvs_open("recent_aps", NVS_READWRITE, &handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS: %d", err);
+        return err;
+    }
+    *list_idx = -1;
+    for(int16_t i=0;i<16;i++) {
+        key[0] = 's';
+        key[1] = 'a' + i;
+        len = 36;
+        err = nvs_get_str(handle, key, ssid_entry, &len);
+        if (err != ESP_OK) { // entry doesn't exist
+            err = ESP_ERR_NOT_FOUND;
+            break;
+        }
+        if (strcmp((const char *)ssid, ssid_entry) == 0) {
+            key[0] = 'p';
+            len = maxlen;
+            err = nvs_get_str(handle, key, ssid_entry, &len);
+            if (err == ESP_OK) {
+                *list_idx = i;
+                break;
+            }
+        }
+    }
+
+    nvs_close(handle);
+    return err;
+}
+
+esp_err_t wifi_connect_to_scanned(int index)
+{
+    esp_err_t err;
+
+    // now look up password
+    err = ESP_OK;
+    if (ap_info[index].authmode) {
+        err = wifi_find_password(ap_info[index].ssid, last_connect.pw, 64, &last_connect.list_index);
+    } else {
+        last_connect.pw[0] = 0; // clear password
+    }
+    if (err == ESP_OK) { // password found, or not required
+        strncpy(last_connect.ssid, (const char *)(ap_info[index].ssid), 32);
+        last_connect.auth_mode = ap_info[index].authmode;
+        return attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode);
+    }
+    return err;
+}
+
+esp_err_t wifi_connect_to_stored(int index)
+{
+    nvs_handle_t handle;
+    esp_err_t err = ESP_OK;
+    
+    if (index >= 16) {
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    err = nvs_open("recent_aps", NVS_READWRITE, &handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS: %d", err);
+        return err;
+    }
+
+    char key[4] = {0};
+    key[0] = 's';
+    key[1] = 'a' + index;
+    key[2] = '0'; // SSID sa, sb, sc, sd, ...
+
+    size_t len = 32;    
+    err = nvs_get_str(handle, key, last_connect.ssid, &len);
+    if (err == ESP_OK) {
+        key[0] = 'p'; // password pa, pb, pc, pd, ...
+        len = 64;
+        err = nvs_get_str(handle, key, last_connect.pw, &len);
+        if (err == ESP_OK) {
+            key[0] = 'm'; // authmode ma, mb, mc, md, ...
+            err = nvs_get_u8(handle, key, &last_connect.auth_mode);
+            if (err == ESP_OK) {
+                last_connect.list_index = index;
+                last_connect.buf = NULL;
+                err = attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode);
+            }
+        }
+    }
+    nvs_close(handle);
+    return err;
+}
+
+esp_err_t wifi_connect_to_last()
+{
+    nvs_handle_t handle;
     esp_err_t err = ESP_OK;
     
     err = nvs_open("recent_aps", NVS_READWRITE, &handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to open NVS: %d", err);
-        return;
+        return err;
     }
-
-    char key[4] = {0};
-    char passwd[64];
-    char ssid[64];
-    size_t len = 32;    
-    key[0] = 's';
-    key[1] = 'a' + index;
-    key[2] = '0'; // SSID sa, sb, sc, sd, ...
-
-    err = nvs_get_str(handle, key, ssid, &len);
-    if (err == ESP_OK) {
-        index ++;
-        key[0] = 'p'; // password pa, pb, pc, pd, ...
-        len = 64;
-        err = nvs_get_str(handle, key, passwd, &len);
-        if (err == ESP_OK) {
-            key[0] = 'm'; // authmode ma, mb, mc, md, ...
-            uint8_t authmode;
-            err = nvs_get_u8(handle, key, &authmode);
-            if (err == ESP_OK) {
-                attempt_connect(ssid, passwd, authmode);
-            }
-        }
-    } else {
-        index = 0;
-    }
+    int8_t idx = -1;
+    err = nvs_get_i8(handle, "last", &idx);
     nvs_close(handle);
+    if ((err == ESP_OK) && (idx >= 0)) {
+        ESP_LOGI(TAG, "Connecting To Last: %d", idx);
+        err = wifi_connect_to_stored(idx);
+    } else {
+        ESP_LOGW(TAG, "Last AP not set.");
+    }
+    return err;
 }
 
-void wifi_check_connection() // poll function, called every 2 seconds
+int handle_connect_command(ConnectCommand_t *cmd)
 {
-    static int scan_delay = 0;
+    ConnectEvent_t connect_event;
+    command_buf_t *buf = cmd->buf;
+    esp_err_t err;
 
-    if (!connected_g) {
-        if (scan_delay == 0) {
-            scan_delay = 5; // every 10 seconds
-            // wifi_scan(NULL); // store the results in ap_info
-            attempt_auto_connect();
+    switch(cmd->command) {
+        case CMD_WIFI_SCAN:
+            {
+                rpc_scan_resp *resp = (rpc_scan_resp *)buf->data;
+                resp->esp_err = wifi_scan(&resp->rec);
+                buf->size = sizeof(resp->hdr) + sizeof(resp->esp_err) + 2 + (resp->rec.num_records * sizeof(ultimate_ap_record_t));
+                my_uart_transmit_packet(UART_NUM_1, buf);
+            }
+            break;
+        case CMD_WIFI_CONNECT:
+            {
+                last_connect = *cmd;
+                last_connect.list_index = -1;
+                rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
+                err = attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode);
+                resp->esp_err = err;
+                my_uart_transmit_packet(UART_NUM_1, cmd->buf);
+
+                if (err == ESP_OK) { // connect attempt was accepted by esp
+                    xQueueReceive(connect_events, &connect_event, portMAX_DELAY);
+                    if (connect_event.event_code == EVENT_CONNECTED) {
+                        return 1;
+                    }
+                }
+            }
+            break;
+        default:
+            ESP_LOGW(TAG, "unknown external connect command %d", cmd->command);
+    }
+    return 0; // not connected
+}
+
+void connect_thread(void *a)
+{
+    ConnectEvent_t connect_event;
+    ConnectCommand_t connect_command;
+    ConnectState_t state = LastAP;
+    ConnectState_t prev = LastAP;
+    esp_err_t err;
+    static const char *states[] = { "LastAP", "Scanning", "ScannedAPs", "StoredAPs", "Connected", "Disconnected" }; 
+
+    while(1) {
+        switch (state) {
+            case LastAP:
+                wifi_connect_to_last();
+                xQueueReceive(connect_events, &connect_event, portMAX_DELAY);
+                if (connect_event.event_code == EVENT_CONNECTED) {
+                    state = Connected;
+                } else {
+                    state = Scanning;
+                }
+                break;
+            case Scanning:
+                wifi_scan(NULL);
+                state = ScannedAPs;
+                break;
+            case ScannedAPs:
+                for (int i=0; i < ap_count; i++) {
+                    if (xQueueReceive(connect_commands, &connect_command, 0) == pdTRUE) {
+                        if (handle_connect_command(&connect_command)) {
+                            state = Connected;
+                            break;
+                        }
+                    }
+                    err = wifi_connect_to_scanned(i);
+                    if (err == ESP_OK) {
+                        xQueueReceive(connect_events, &connect_event, portMAX_DELAY);
+                        if (connect_event.event_code == EVENT_CONNECTED) {
+                            state = Connected;
+                            break;
+                        }
+                    }
+                }
+                if (state != Connected) {
+                    state = StoredAPs;
+                }
+                break;
+
+            case StoredAPs:
+                for (int i=0; i < 16; i++) {
+                    if (xQueueReceive(connect_commands, &connect_command, 0) == pdTRUE) {
+                        if (handle_connect_command(&connect_command)) {
+                            state = Connected;
+                            break;
+                        }
+                    }
+                    err = wifi_connect_to_stored(i);
+                    if (err == ESP_OK) {
+                        xQueueReceive(connect_events, &connect_event, portMAX_DELAY);
+                        if (connect_event.event_code == EVENT_CONNECTED) {
+                            state = Connected;
+                            break;
+                        }
+                    }
+                }
+                if (state != Connected) {
+                    state = Disconnected;
+                }
+                break;
+            break;
+            case Disconnected:
+            case Connected:
+                // In this state we are just idling, so both commands can come in as well as
+                // events. Although - can we really get an event? In any case, polling both is silly
+                // so we just only poll when the semaphore is set. It could happen that the semaphore
+                // is set and there is nothing in the queue, because the semaphore was set before and
+                // we didn't take it. However, in this case we simply check two queues and are back in
+                // the waiting state afterwards; no harm done.
+                xSemaphoreTake(connect_semaphore, portMAX_DELAY);
+                if (xQueueReceive(connect_commands, &connect_command, 0) == pdTRUE) {
+                    if (handle_connect_command(&connect_command)) {
+                        state = Connected;
+                        break;
+                    }
+                }
+                if (xQueueReceive(connect_events, &connect_event, 0) == pdTRUE) {
+                    if (connect_event.event_code == EVENT_CONNECTED) {
+                        state = Connected;
+                        break;
+                    } else if (connect_event.event_code == EVENT_DISCONNECTED) {
+                        state = Disconnected;
+                        break;
+                    }
+                }
+                break;
+            default:
+                state = LastAP;                        
         }
-    } else { // connected, once we disconnect, try to scan after 10 seconds
-        scan_delay = 5;
+        if(prev != state) {
+            ESP_LOGI(TAG, "State Change '%s' -> '%s'", states[prev], states[state]);
+        }
+        prev = state;
     }
-    if (scan_delay > 0) {
-        scan_delay--;
-    }
+}
+
+static void start_connector()
+{
+    connect_events = xQueueCreate(4, sizeof(ConnectEvent_t));
+    connect_commands = xQueueCreate(4, sizeof(ConnectCommand_t));
+    connect_semaphore = xSemaphoreCreateBinary();
+
+    xTaskCreate(connect_thread, "Connector", 4096, NULL, tskIDLE_PRIORITY + 1, NULL);
 }
 
 void setup_modem()
@@ -466,10 +704,8 @@ void setup_modem()
 
     ESP_LOGI(TAG, "wifi_init...");
     wifi_init();
-    wifi_scan(NULL);
-
-//    obtain_time();
-//    print_time();    
+    ESP_LOGI(TAG, "start wifi connector...");
+    start_connector();
 
     ESP_LOGI(TAG, "dispatch... switching UART pins!");
     vTaskDelay(100 / portTICK_PERIOD_MS);

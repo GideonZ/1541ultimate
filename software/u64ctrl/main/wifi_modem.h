@@ -3,9 +3,23 @@
 
 #include "rpc_calls.h"
 
-void wifi_check_connection();
+extern QueueHandle_t connect_commands;
+extern SemaphoreHandle_t connect_semaphore;
+
+typedef struct {
+    char ssid[32];
+    char pw[68];
+    uint8_t auth_mode;
+    uint8_t command;
+    int16_t list_index;
+    command_buf_t *buf;
+} ConnectCommand_t;
+
+typedef struct {
+    uint8_t event_code;
+} ConnectEvent_t;
+
 esp_err_t wifi_scan(ultimate_ap_records_t *ult_records);
-esp_err_t wifi_store_ap(const char *ssid, const char *password, uint8_t auth_mode);
 esp_err_t wifi_clear_aps(void);
 void enable_hook();
 void disable_hook();

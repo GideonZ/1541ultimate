@@ -76,38 +76,46 @@ void cmd_setbaud(command_buf_t *buf)
 
 void cmd_scan(command_buf_t *buf)
 {
-    rpc_scan_resp *resp = (rpc_scan_resp *)buf->data;
-    resp->esp_err = wifi_scan(&resp->rec);
-    buf->size = sizeof(resp->hdr) + sizeof(resp->esp_err) + 2 + (resp->rec.num_records * sizeof(ultimate_ap_record_t));
-    my_uart_transmit_packet(UART_CHAN, buf);
+    rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
+    ConnectCommand_t cmd;
+    cmd.buf = buf;
+    cmd.command = CMD_WIFI_SCAN;
+
+    if (xQueueSend(connect_commands, &cmd, 1000) == pdFALSE) {
+        resp->esp_err = ESP_ERR_NO_MEM;
+        my_uart_transmit_packet(UART_CHAN, buf);
+        return;
+    }
+    xSemaphoreGive(connect_semaphore);
+    // command is now in the queue, so the connect handler will process it further
 }
 
 void cmd_wifi_connect(command_buf_t *buf)
 {
-    wifi_config_t wifi_config;
-    memset(&wifi_config, 0, sizeof(wifi_config_t));
-
     rpc_wifi_connect_req *param = (rpc_wifi_connect_req *)buf->data;
     rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
-
-    wifi_config.sta.threshold.authmode = param->auth_mode;
-    memcpy(&wifi_config.sta.ssid, param->ssid, 32);
-    memcpy(&wifi_config.sta.password, param->password, 64);
-    wifi_config.sta.pmf_cfg.capable = true;
-    wifi_config.sta.pmf_cfg.required = false;
-
-    wifi_store_ap(param->ssid, param->password, param->auth_mode);
+    buf->size = sizeof(rpc_espcmd_resp);
 
     if (buf->size < 98) {
         resp->esp_err = ESP_ERR_INVALID_ARG;
-    } else {
-        resp->esp_err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
-        if (resp->esp_err == ESP_OK) {
-            resp->esp_err = esp_wifi_connect();
-        }
+        my_uart_transmit_packet(UART_CHAN, buf);
+        return;
     }
-    buf->size = sizeof(rpc_espcmd_resp);
-    my_uart_transmit_packet(UART_CHAN, buf);
+
+    ConnectCommand_t ev;
+    ev.buf = buf;
+    ev.command = CMD_WIFI_CONNECT;
+    ev.auth_mode = param->auth_mode;
+    memcpy(&ev.ssid, param->ssid, 32);
+    memcpy(&ev.pw, param->password, 64);
+
+    if (xQueueSend(connect_commands, &ev, 1000) == pdFALSE) {
+        resp->esp_err = ESP_ERR_NO_MEM;
+        my_uart_transmit_packet(UART_CHAN, buf);
+        return;
+    }
+    xSemaphoreGive(connect_semaphore);
+    // command is now in the queue, so the connect handler will process it further
 }
 
 void cmd_wifi_disconnect(command_buf_t *buf)
@@ -123,238 +131,10 @@ extern esp_netif_t *my_sta_netif;
 void cmd_send_eth_packet(command_buf_t *buf)
 {
     rpc_send_eth_req *param = (rpc_send_eth_req *)buf->data;
-//    rpc_send_eth_resp *resp = (rpc_send_eth_resp *)buf->data;
     err_t _err = esp_netif_transmit(my_sta_netif, &param->data, param->length);
     my_uart_free_buffer(UART_CHAN, buf);
-    //buf->size = sizeof(rpc_header_t);
-    //my_uart_transmit_packet(UART_CHAN, buf);
 }
 
-/*
-void cmd_socket(command_buf_t *buf)
-{
-    rpc_socket_req *param = (rpc_socket_req *)buf->data;
-    rpc_socket_resp *resp = (rpc_socket_resp *)buf->data;
-    resp->retval = socket(param->domain, param->type, param->protocol);
-    resp->xerrno = errno;
-    buf->size = sizeof(rpc_socket_resp);
-    my_uart_transmit_packet(UART_CHAN, buf);
-}
-
-void cmd_connect(command_buf_t *buf)
-{
-    rpc_connect_req *param = (rpc_connect_req *)buf->data;
-    rpc_connect_resp *resp = (rpc_connect_resp *)buf->data;
-    resp->retval = connect(param->socket, &(param->name), param->namelen);
-    resp->xerrno = errno;
-    buf->size = sizeof(rpc_connect_resp);
-    my_uart_transmit_packet(UART_CHAN, buf);
-}
-
-void cmd_accept(command_buf_t *buf)
-{
-    rpc_accept_req *param = (rpc_accept_req *)buf->data;
-    rpc_accept_resp *resp = (rpc_accept_resp *)buf->data;
-    socklen_t namelen = (socklen_t)param->namelen;
-    namelen = (namelen > 100) ? 100 : namelen;
-    resp->retval = accept(param->socket, &resp->name, &namelen);
-    resp->xerrno = errno;
-    resp->namelen = (uint32_t)namelen;
-    buf->size = sizeof(rpc_accept_resp);
-    my_uart_transmit_packet(UART_CHAN, buf);
-}
-
-void cmd_bind(command_buf_t *buf)
-{
-    rpc_bind_req *param = (rpc_bind_req *)buf->data;
-    rpc_bind_resp *resp = (rpc_bind_resp *)buf->data;
-    resp->retval = bind(param->socket, (struct sockaddr *)&(param->name), param->namelen);
-    resp->xerrno = errno;
-    buf->size = sizeof(rpc_bind_resp);
-    my_uart_transmit_packet(UART_CHAN, buf);
-}
-
-void cmd_shutdown(command_buf_t *buf)
-{
-    rpc_shutdown_req *param = (rpc_shutdown_req *)buf->data;
-    rpc_shutdown_resp *resp = (rpc_shutdown_resp *)buf->data;
-    resp->retval = shutdown(param->socket, param->how);
-    resp->xerrno = errno;
-    buf->size = sizeof(rpc_shutdown_resp);
-    my_uart_transmit_packet(UART_CHAN, buf);
-}
-
-void cmd_close(command_buf_t *buf)
-{
-    rpc_close_req *param = (rpc_close_req *)buf->data;
-    rpc_close_resp *resp = (rpc_close_resp *)buf->data;
-    resp->retval = close(param->socket);
-    resp->xerrno = errno;
-    buf->size = sizeof(rpc_close_resp);
-    my_uart_transmit_packet(UART_CHAN, buf);
-}
-
-void cmd_listen(command_buf_t *buf)
-{
-    rpc_listen_req *param = (rpc_listen_req *)buf->data;
-    rpc_listen_resp *resp = (rpc_listen_resp *)buf->data;
-    resp->retval = listen(param->socket, param->backlog);
-    resp->xerrno = errno;
-    buf->size = sizeof(rpc_listen_resp);
-    my_uart_transmit_packet(UART_CHAN, buf);
-}
-
-void cmd_read(command_buf_t *buf)
-{
-    rpc_read_req *param = (rpc_read_req *)buf->data;
-    rpc_read_resp *resp = (rpc_read_resp *)buf->data;
-    // chip off the byte that was used as a placeholder
-    int return_size = sizeof(rpc_read_resp) - 1;
-    if (param->length > (CMD_BUF_SIZE - return_size)) {
-        param->length = CMD_BUF_SIZE - return_size;
-    }
-    resp->retval = read(param->socket, &resp->data, param->length);
-    resp->xerrno = errno;
-    buf->size = return_size;
-    // if data was returned; append it by setting the size to a bigger value
-    if (resp->retval > 0) {
-        buf->size += resp->retval;
-    }
-    my_uart_transmit_packet(UART_CHAN, buf);
-}
-
-void cmd_recv(command_buf_t *buf)
-{
-    rpc_recvfrom_req *param = (rpc_recvfrom_req *)buf->data;
-    rpc_read_resp *resp = (rpc_read_resp *)buf->data;
-    // chip off the byte that was used as a placeholder
-    int return_size = sizeof(rpc_read_resp) - 1;
-    if (param->length > (CMD_BUF_SIZE - return_size)) {
-        param->length = CMD_BUF_SIZE - return_size;
-    }
-    resp->retval = recv(param->socket, &resp->data, param->length, param->flags);
-    resp->xerrno = errno;
-    buf->size = return_size;
-    // if data was returned; append it by setting the size to a bigger value
-    if (resp->retval > 0) {
-        buf->size += resp->retval;
-    }
-    my_uart_transmit_packet(UART_CHAN, buf);
-}
-
-void cmd_recvfrom(command_buf_t *buf)
-{
-    rpc_recvfrom_req *param = (rpc_recvfrom_req *)buf->data;
-    rpc_recvfrom_resp *resp = (rpc_recvfrom_resp *)buf->data;
-    // chip off the byte that was used as a placeholder
-    int return_size = sizeof(rpc_recvfrom_resp) - 1;
-    if (param->length > (CMD_BUF_SIZE - return_size)) {
-        param->length = CMD_BUF_SIZE - return_size;
-    }
-    socklen_t fromlen = sizeof(struct sockaddr);
-    resp->retval = recvfrom(param->socket, &resp->data, param->length, param->flags, &resp->from, &fromlen);
-    resp->xerrno = errno;
-    resp->fromlen = (uint32_t)fromlen;
-    buf->size = return_size;
-    // if data was returned; append it by setting the size to a bigger value
-    if (resp->retval > 0) {
-        buf->size += resp->retval;
-    }
-    my_uart_transmit_packet(UART_CHAN, buf);
-}
-
-void cmd_write(command_buf_t *buf)
-{
-    rpc_write_req *param = (rpc_write_req *)buf->data;
-    rpc_write_resp *resp = (rpc_write_resp *)buf->data;
-    resp->retval = write(param->socket, &param->data, param->length);
-    resp->xerrno = errno;
-    buf->size = sizeof(rpc_write_resp);
-    my_uart_transmit_packet(UART_CHAN, buf);
-}
-
-void cmd_send(command_buf_t *buf)
-{
-    rpc_send_req *param = (rpc_send_req *)buf->data;
-    rpc_send_resp *resp = (rpc_send_resp *)buf->data;
-    resp->retval = send(param->socket, &param->data, param->length, param->flags);
-    resp->xerrno = errno;
-    buf->size = sizeof(rpc_send_resp);
-    my_uart_transmit_packet(UART_CHAN, buf);
-}
-
-void cmd_sendto(command_buf_t *buf)
-{
-    rpc_sendto_req *param = (rpc_sendto_req *)buf->data;
-    rpc_sendto_resp *resp = (rpc_sendto_resp *)buf->data;
-    resp->retval = sendto(param->socket, &param->data, param->length, param->flags, &param->to, param->tolen);
-    resp->xerrno = errno;
-    buf->size = sizeof(rpc_sendto_resp);
-    my_uart_transmit_packet(UART_CHAN, buf);
-}
-
-void cmd_gethostbyname(command_buf_t *buf)
-{
-    rpc_gethostbyname_req *param = (rpc_gethostbyname_req *)buf->data;
-    rpc_gethostbyname_resp *resp = (rpc_gethostbyname_resp *)buf->data;
-
-    struct hostent hent;
-    struct hostent *hent_result = NULL;
-    int h_errno;
-
-    const char *hostname = (const char *)&(param->name);
-    char *buffer = ((char *)buf->data) + (CMD_BUF_SIZE / 2);
-    ESP_LOGI(TAG, "Trying to resolve %s", hostname);
-    resp->retval = gethostbyname_r(hostname, &hent, buffer, CMD_BUF_SIZE / 2, &hent_result, &h_errno);
-    if (hent_result) {
-        struct in_addr *s = (struct in_addr *)hent_result->h_addr_list[0];
-        memcpy(&resp->addr, s, sizeof(struct in_addr));
-    }
-    resp->xerrno = h_errno;
-    buf->size = sizeof(rpc_gethostbyname_resp);
-    my_uart_transmit_packet(UART_CHAN, buf);
-}
-
-void cmd_getsockname(command_buf_t *buf)
-{
-    rpc_getsockname_req *param = (rpc_getsockname_req *)buf->data;
-    rpc_getsockname_resp *resp = (rpc_getsockname_resp *)buf->data;
-    socklen_t len = param->namelen;
-    socklen_t newlen = 0;
-    resp->retval = getsockname(param->socket, &resp->name, &newlen);
-    resp->xerrno = errno;
-    if (newlen > len) {
-        newlen = len;
-    }
-    buf->size = sizeof(rpc_getsockname_resp) + newlen - 1;
-    my_uart_transmit_packet(UART_CHAN, buf);
-}
-
-void cmd_getsockopt(command_buf_t *buf)
-{
-    rpc_getsockopt_req *param = (rpc_getsockopt_req *)buf->data;
-    rpc_getsockopt_resp *resp = (rpc_getsockopt_resp *)buf->data;
-    socklen_t len = param->optlen;
-    socklen_t newlen = 0;
-    resp->retval = getsockopt(param->socket, param->level, param->optname, &resp->optval, &newlen);
-    resp->xerrno = errno;
-    if (newlen > len) {
-        newlen = len;
-    }
-    buf->size = sizeof(rpc_getsockopt_resp) + newlen - 1;
-    my_uart_transmit_packet(UART_CHAN, buf);
-}
-
-void cmd_setsockopt(command_buf_t *buf)
-{
-    rpc_setsockopt_req *param = (rpc_setsockopt_req *)buf->data;
-    rpc_setsockopt_resp *resp = (rpc_setsockopt_resp *)buf->data;
-    resp->retval = setsockopt(param->socket, param->level, param->optname, &param->optval, param->optlen);
-    resp->xerrno = errno;
-    buf->size = sizeof(rpc_setsockopt_resp);
-    my_uart_transmit_packet(UART_CHAN, buf);
-}
-*/
 void cmd_off(command_buf_t *buf)
 {
     rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
@@ -490,7 +270,6 @@ void dispatch(void *ct)
         led = 1 - led;
         gpio_set_level(IO_ESP_LED, led);
         if (received == pdFALSE) {
-            wifi_check_connection();
             continue;
         }
 #if UART_DEBUG_RX
