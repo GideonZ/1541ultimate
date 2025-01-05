@@ -307,20 +307,27 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
 
         case CTRL_CMD_LOAD_REU:
         case CTRL_CMD_SAVE_REU:
-            *reply  = &data_message;
             *status = &c_status_ok;
-            if (command->message[1] == CTRL_CMD_LOAD_REU) {
-                retVal = reu_preloader->LoadREU((char *)data_message.message + 4);
+            *reply = &c_message_empty;
+            if (command->length >= 5) {
+                *reply  = &data_message;
+                if (command->message[1] == CTRL_CMD_LOAD_REU) {
+                    retVal = reu_preloader->LoadREU((char *)data_message.message + 4);
+                } else {
+                    retVal = reu_preloader->SaveREU((char *)data_message.message + 4);
+                }
+                pul = (uint32_t *)data_message.message;
+                data_message.last_part = true;
+                *pul = cpu_to_32le(retVal);
+                struprt((char *)data_message.message + 4);
+                data_message.length = 4 + strlen((char *)data_message.message + 4);
             } else {
-                retVal = reu_preloader->SaveREU((char *)data_message.message + 4);
+                retVal = -4;
             }
-            pul = (uint32_t *)data_message.message;
-            data_message.last_part = true;
-            *pul = cpu_to_32le(retVal);
-            struprt((char *)data_message.message + 4);
-            data_message.length = 4 + strlen((char *)data_message.message + 4);
 
-            if (retVal == -3) {
+            if (retVal == -4) {
+                *status = &c_status_invalid_params;
+            } else if (retVal == -3) {
                 *status = &c_status_reu_not_saved;
             } else if (retVal == -2) {
                 *status = &c_status_reu_disabled;
