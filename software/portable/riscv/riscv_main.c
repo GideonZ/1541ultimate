@@ -18,6 +18,8 @@
 #include "profiler.h"
 #include "usb_nano.h"
 
+void print_tasks(void);
+
 typedef uint8_t (*irq_function_t)(void *context);
 
 typedef struct{
