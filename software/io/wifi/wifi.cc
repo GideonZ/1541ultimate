@@ -204,6 +204,8 @@ void WiFi :: RunModeThread()
                 vTaskDelay(portMAX_DELAY); // basically stall
             }
 #else // U64 
+            // Make sure it is on, without turning it off (might have been off)
+            wifi.uart->ModuleCtrl(ESP_MODE_RUN);
             strcpy(moduleType, "ESP32 on U64");
 
     #if (CLOCK_FREQ == 66666667)
