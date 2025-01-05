@@ -649,8 +649,9 @@ BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseT
                             rpc_ ## x ## _resp *result = (rpc_ ## x ## _resp *)buf->data; \
                             if (success != pdTRUE) { \
                                 result->esp_err = 0x107; \
-                            } \
-                            tasksWaitingForReply[result->hdr.thread] = NULL;
+                            } else if(result->hdr.thread < 16) { \
+                                tasksWaitingForReply[result->hdr.thread] = NULL; \
+                            }
 
 #define RETURN_ESP          int retval = result->esp_err; \
                             esp32.uart->FreeBuffer(buf); \

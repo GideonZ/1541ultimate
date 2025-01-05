@@ -246,10 +246,11 @@ void ultimate_main(void *context)
     flash->read_serial(serial);
     info_message("Flash Type: %s\n", flash->get_type_string());
     info_message("Hardware Serial Number: %b%b:%b%b:%b%b:%b%b\n\n", serial[0], serial[1], serial[2], serial[3], serial[4], serial[5], serial[6], serial[7]);
-	InitFunction :: executeAll();
-    usb2.initHardware();
 
     int errors = 0;
+
+	InitFunction :: executeAll();
+    usb2.initHardware();
     errors += U64TestKeyboard();
     errors += U64TestIEC();
     //errors += U64TestUserPort();
