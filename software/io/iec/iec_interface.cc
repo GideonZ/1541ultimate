@@ -310,6 +310,7 @@ void IecInterface :: task()
                     talking = false;
                     break;
                 } else if(st == IEC_BUFFER_END) {
+                    DBGIEC("[BEND]");
                     break;
                 } else {
                     printf("Talk Error = %d\n", st);

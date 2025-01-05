@@ -66,11 +66,26 @@ t_channel_retval IecChannel::prefetch_data(uint8_t& data)
     if (state == e_error) {
         return IEC_NO_FILE;
     }
-    if ((last_byte >= 0) && (prefetch >= last_byte)) {
-        data = buffer[prefetch];
+
+    // When reading from the last block, last_byte is set to a value >= 0.
+    // Three cases; not the last byte -> IEC_OK; the last byte -> IEC_LAST, beyond the last byte -> IEC_NO_FILE
+    if (last_byte >= 0) {
+        t_channel_retval ret = IEC_OK;
+        if (prefetch == last_byte) {
+            ret = IEC_LAST;
+            data = buffer[prefetch];
+        } else if (prefetch > last_byte) {
+            ret = IEC_NO_FILE;
+        } else {
+            data = buffer[prefetch];
+        }
         prefetch++;
-        return IEC_LAST;
+        return ret;
     }
+
+    // When reading not from the last block, last byte is set to -1; prefetching goes all the way up to prefetch max
+    // which is likely set to 512.
+
     if (prefetch < prefetch_max) {
         data = buffer[prefetch];
         prefetch++;
@@ -81,6 +96,9 @@ t_channel_retval IecChannel::prefetch_data(uint8_t& data)
     }
     return IEC_BUFFER_END; // prefetch == prefetch_max, buffer needs refresh
 }
+
+
+
 
 t_channel_retval IecChannel::prefetch_more(int max_fetch, uint8_t*& datapointer, int &fetched)
 {
@@ -164,6 +182,7 @@ t_channel_retval IecChannel::pop_data(void)
     case e_file:
         if (pointer == last_byte) {
             state = e_complete;
+            pointer ++; // make sure it's beyond the last byte now
             return IEC_NO_FILE; // no more data?
         } else if (pointer == 511) {
             if (read_block())  // also resets pointer.
