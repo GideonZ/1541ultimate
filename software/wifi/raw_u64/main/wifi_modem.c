@@ -393,13 +393,17 @@ esp_err_t attempt_connect(const char *ssid, const char *passwd, uint8_t authmode
         esp_err_t err = esp_wifi_disconnect();
         ESP_LOGW(TAG, "Connect request, but was connected. Waiting now for disconnect event.");
         ConnectEvent_t ev;
-        xQueueReceive(connect_events, &ev, portMAX_DELAY);
-        if (ev.event_code != EVENT_DISCONNECTED) {
-            ESP_LOGE(TAG, "Would have expected disconnect event, %d", ev.event_code);
-        } else if (ev.event_code != EVENT_CONNECTED) {
-            ESP_LOGI(TAG, "Properly disconnected.");
+        if (err == ESP_OK) {
+            xQueueReceive(connect_events, &ev, portMAX_DELAY);
+            if (ev.event_code != EVENT_DISCONNECTED) {
+                ESP_LOGE(TAG, "Would have expected disconnect event, %d", ev.event_code);
+            } else if (ev.event_code != EVENT_CONNECTED) {
+                ESP_LOGI(TAG, "Properly disconnected.");
+            } else {
+                ESP_LOGE(TAG, "Unreachable code");
+            }
         } else {
-            ESP_LOGE(TAG, "Unreachable code");
+            ESP_LOGE(TAG, "Failed to disconnect: %d", err);
         }
     }
 
