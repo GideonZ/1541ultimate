@@ -98,6 +98,7 @@ Modem :: Modem()
     dropOnDTR = true;
     lastHandshake = 0;
     verbose = true;
+    echo = true;
     current_iobase = 0;
     listenerSocket = NULL;
     ResetRegisters();
@@ -640,6 +641,24 @@ int Modem :: ExecuteCommand(ModemCommand_t *cmd)
             }
             break;
         case 'E':
+            sscanf(cmd->command + i + 1, "%d", &temp);
+            while(i < cmd->length && (isdigit(cmd->command[i+1])))
+                i++;
+
+            if(temp>1)
+            {
+            	response = (verbose==TRUE ? responseText[RESP_ERROR] : responseCode[RESP_ERROR]);
+            }
+            else
+            {
+            	if(temp == 1)
+            		echo=TRUE;
+            	else
+            		echo=FALSE;
+
+            	response = (verbose==TRUE ? responseText[RESP_OK] : responseCode[RESP_OK]);
+            }
+            break;
         case 'M':
             sscanf(cmd->command + i + 1, "%d", &temp);
             while(i < cmd->length && (isdigit(cmd->command[i+1])))
@@ -765,7 +784,9 @@ void Modem :: ModemTask()
         case ACIA_MSG_TXDATA:
             if (commandMode) {
                 len = aciaTxBuffer->Get(txbuf, 30);
-                acia.SendToRx(txbuf, len); // local echo
+                if (echo) {
+                    acia.SendToRx(txbuf, len); // local echo
+                }
                 txbuf[len] = 0;
                 CollectCommand(&modemCommand, (char *)txbuf, len);
                 if (modemCommand.state == 3) {
