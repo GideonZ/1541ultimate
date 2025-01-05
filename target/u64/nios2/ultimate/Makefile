@@ -202,7 +202,7 @@ VPATH +=	$(BSP)
 VPATH +=	$(BSP)/HAL/inc
 VPATH +=	$(BSP)/drivers/inc
 VPATH +=	$(PATH_SW)/6502/sidcrt/target
-VPATH +=	$(PATH_SW)/wifi/scan/main
+VPATH +=	$(PATH_SW)/wifi/raw_u64/main
 
 #            sock_echo.c \
 #			sys_calls.cc \

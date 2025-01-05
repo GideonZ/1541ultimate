@@ -16,5 +16,5 @@
 #define IO_UART_RTS GPIO_WIFI_CLK
 #define IO_UART_CTS GPIO_WIFI_MOSI
 #define IO_ESP_LED GPIO_LED0
-
+#define IO_DEBUG_TX 16
 #endif

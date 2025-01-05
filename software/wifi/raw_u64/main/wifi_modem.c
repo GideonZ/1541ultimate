@@ -738,7 +738,6 @@ void setup_modem()
 
     ESP_LOGI(TAG, "dispatch... switching UART pins!");
     vTaskDelay(100 / portTICK_PERIOD_MS);
-    ESP_ERROR_CHECK( uart_set_pin(UART_NUM_0, 0, -1, -1, -1));
     ESP_ERROR_CHECK( uart_set_pin(UART_NUM_1, IO_UART_TXD, IO_UART_RXD, IO_UART_RTS, IO_UART_CTS));
     start_dispatch(work_buffers.receivedQueue);
 }

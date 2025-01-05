@@ -9,6 +9,6 @@ PROJECT_NAME := bridge
 
 $(PROJECT_NAME).esp: build/$(PROJECT_NAME).bin build/bootloader/bootloader.bin build/partition_table/partition-table.bin
 	@../../../tools/makeappl $(PROJECT_NAME).esp \
-	build/bootloader/bootloader.bin 0x0000 \
+	build/bootloader/bootloader.bin 0x1000 \
 	build/partition_table/partition-table.bin 0x8000 \
 	build/$(PROJECT_NAME).bin 0x10000

@@ -37,11 +37,15 @@
 #include "esp_vfs_eventfd.h"
 
 #include "wifi_modem.h"
+#include "pinout.h"
 
 static const char *TAG = "main";
 
 void app_main()
 {
+    ESP_ERROR_CHECK( uart_set_pin(UART_NUM_0, IO_DEBUG_TX, -1, -1, -1));
+    ESP_LOGI(TAG, "Application Start");
+    
     setup_modem();
 
     while (1) {
