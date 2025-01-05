@@ -1047,7 +1047,7 @@ int U64Config :: setSpeakerMixer(ConfigItem *it)
 int U64Config :: setPllOffset(ConfigItem *it)
 {
 	if(it) {
-		pllOffsetPpm(it->getValue()); // Set correct mfrac
+//		pllOffsetPpm(it->getValue()); // Set correct mfrac
 	}
     return 0;
 }
