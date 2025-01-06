@@ -29,6 +29,7 @@
 #include "c64.h"
 #include "browsable_root.h"
 #include "acia.h"
+#include "product.h"
 
 extern "C" {
 	#include "dump_hex.h"
@@ -65,13 +66,8 @@ int FileTypeUpdate :: fetch_context_items(IndexedList<Action *> &list)
 FileType *FileTypeUpdate :: test_type(BrowsableDirEntry *br)
 {
 	FileInfo *inf = br->getInfo();
-#ifdef RISCV
-	if(strcmp(inf->extension, "U2R")==0)
+    if(strcmp(inf->extension, getProductUpdateFileExtension())==0)
         return new FileTypeUpdate(br);
-#else
-	if(strcmp(inf->extension, "U2U")==0)
-        return new FileTypeUpdate(br);
-#endif
     return NULL;
 }
 

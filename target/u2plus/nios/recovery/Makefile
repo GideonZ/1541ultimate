@@ -39,6 +39,7 @@ SRCS_CC	 =  u2p_init.cc \
 			init_function.cc \
 			flash.cc \
 			w25q_flash.cc \
+			product.cc \
 			config.cc \
 			subsys.cc \
 			filemanager.cc \

@@ -14,6 +14,7 @@ extern "C" {
 }
 #include <string.h>
 #include "flash.h"
+#include "product.h"
 #include "userinterface.h"
 #include "u64_config.h"
 #include "audio_select.h"
@@ -1866,22 +1867,6 @@ int swap_joystick()
 
     // swap performed, now exit menu
     return MENU_HIDE;
-}
-
-bool isEliteBoard(void)
-{
-    uint8_t rev = (U2PIO_BOARDREV >> 3);
-    if ((rev == 0x13)||(rev == 0x15)||(rev == 0x16)) {
-        return true;
-    }
-    if (rev == 0x14) { // may be either!
-        uint8_t joyswap = C64_PLD_JOYCTRL;
-        if (joyswap & 0x80) {
-            return true;
-        }
-        return false;
-    }
-    return false;
 }
 
 void U64Config :: auto_mirror(uint8_t *base, uint8_t *mask, uint8_t *split, int count)

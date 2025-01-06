@@ -46,6 +46,7 @@ SRCS_CC	 =	small_printf.cc \
 			at45_flash.cc \
 			w25q_flash.cc \
 			s25fl_flash.cc \
+			product.cc \
 			config.cc \
 			subsys.cc \
 			filemanager.cc \

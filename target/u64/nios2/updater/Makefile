@@ -65,6 +65,7 @@ SRCS_CC	 =  memory.cc \
 			stream.cc \
 			host_stream.cc \
 			prog_flash.cc \
+			product.cc \
 			stream_uart.cc \
 			path.cc \
 			blockdev.cc \

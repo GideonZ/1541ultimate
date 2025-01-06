@@ -40,15 +40,10 @@
 #include "u64.h"
 #include "keyboard_usb.h"
 #include "i2c_drv.h"
+#include "product.h"
 
 // these should move to main_loop.h
 extern "C" void main_loop(void *a);
-
-bool isEliteBoard(void) __attribute__((weak));
-bool isEliteBoard(void)
-{
-    return false;
-}
 
 bool connectedToU64 = false;
 
@@ -75,27 +70,6 @@ void outbyte_log(int c)
 	textLog.charout(c);
 }
 
-const char *getVersionString(char *title)
-{
-    uint32_t capabilities = getFpgaCapabilities();
-    if(capabilities & CAPAB_ULTIMATE64) {
-        if (isEliteBoard()) {
-            sprintf(title, "** Ultimate 64 Elite V1.%b - %s **", C64_CORE_VERSION, APPL_VERSION);
-        } else {
-            sprintf(title, "*** Ultimate 64 V1.%b - %s ***", C64_CORE_VERSION, APPL_VERSION);
-        }
-    } else if(capabilities & CAPAB_ULTIMATE2PLUS) {
-        if (capabilities & CAPAB_FPGA_TYPE) {
-    	    sprintf(title, "*** Ultimate-II Plus-L %s (1%b) ***", APPL_VERSION, getFpgaVersion());
-        } else {
-    	    sprintf(title, "*** Ultimate-II Plus %s (1%b) ***", APPL_VERSION, getFpgaVersion());
-        }
-    } else {
-    	sprintf(title, "*** 1541 Ultimate-II %s (1%b) ***", APPL_VERSION, getFpgaVersion());
-    }
-    return title;
-}
-
 extern "C" {
     void codec_init();
 }
@@ -107,7 +81,8 @@ extern "C" void ultimate_main(void *a)
 
     uint32_t capabilities = getFpgaCapabilities();
 
-	printf("*** Ultimate-II V3.x ***\n");
+    char product_version[41];
+    printf("*** %s ***\n", getProductVersionString(product_version, sizeof(product_version)));
     printf("*** FPGA Capabilities: %8x ***\n\n", capabilities);
 
     printf("%s ", rtc.get_long_date(time_buffer, 32));
@@ -128,7 +103,7 @@ extern "C" void ultimate_main(void *a)
     usb2.initHardware();
 
     char title[48];
-    getVersionString(title);
+    getProductTitleString(title, sizeof(title));
 
     if(capabilities & CAPAB_ULTIMATE64) {
         system_usb_keyboard.setMatrix((volatile uint8_t *)MATRIX_KEYB);

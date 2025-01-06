@@ -53,6 +53,7 @@ SRCS_CC	 =  u2p_init.cc \
 			s25fl_flash.cc \
 			s25fl_l_flash.cc \
 			prog_flash.cc \
+			product.cc \
 			config.cc \
 			subsys.cc \
 			filemanager.cc \

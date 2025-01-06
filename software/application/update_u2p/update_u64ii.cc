@@ -9,6 +9,7 @@
 #include "checksums.h"
 #include "i2c_drv.h"
 #include "wifi_cmd.h"
+#include "product.h"
 
 extern uint32_t _u64_rbf_start;
 extern uint32_t _u64_rbf_end;
@@ -32,30 +33,6 @@ extern uint8_t _snds1581_bin_start;
 extern const char _index_html_start[];
 extern const char _index_html_end[1];
 
-const char *getBoardRevision(void)
-{
-	uint8_t rev = (U2PIO_BOARDREV >> 3);
-
-	switch (rev) {
-	case 0x10:
-		return "U64 Prototype";
-	case 0x11:
-		return "U64 V1.1 (Null Series)";
-	case 0x12:
-		return "U64 V1.2 (Mass Prod)";
-	case 0x13:
-	    return "U64 V1.3 (Elite)";
-    case 0x14:
-        return "U64 V1.4 (Std/Elite)";
-    case 0x15:
-        return "U64E V2.0 (Early Proto)";
-    case 0x16:
-        return "U64E V2.1 (Null Series)";
-    case 0x17:
-        return "U64E V2.2 (Mass Prod)";
-	}
-	return "Unknown";
-}
 
 static void status_callback(void *user)
 {
