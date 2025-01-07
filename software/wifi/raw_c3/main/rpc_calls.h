@@ -159,6 +159,7 @@ typedef struct {
 #define CMD_WIFI_DISABLE      0x0E
 #define CMD_MACHINE_OFF       0x0F
 #define CMD_GET_TIME          0x10
+#define CMD_CLEAR_APS         0x11
 
 /*
 #define CMD_SOCKET          0x11
