@@ -30,11 +30,11 @@ int UserFileInteraction::fetch_context_items(BrowsableDirEntry *br, IndexedList<
         list.append(new Action("Enter", UserFileInteraction::S_enter, 0));
         count++;
     }
-    if ((info->size <= 262144) && (!(info->attrib & AM_DIR))) {
+    if ((info->size <= 262144) && (!(info->attrib & (AM_DIR | AM_VOL)))) {
         list.append(new Action("View", UserFileInteraction::S_view, 0));
         count++;
     }
-    if (info->is_writable()) {
+    if (info->is_writable() && !(info->attrib & AM_VOL)) {
         list.append(new Action("Rename", UserFileInteraction::S_rename, 0));
         list.append(new Action("Delete", UserFileInteraction::S_delete, 0));
         count += 2;
