@@ -1,3 +1,4 @@
+#include <string.h>
 
 #include "disk.h"
     
@@ -35,8 +36,6 @@ int Disk::Init(bool isFloppy)
     bool fat = false;
 
     // if present, delete existing partition list
-    Partition *prt;
-    Partition **prt_list;
     uint32_t lba, start, size, next;
     uint8_t *tbl;
     
@@ -100,27 +99,67 @@ int Disk::Init(bool isFloppy)
 //    dump_hex(tbl, 66);
 
     for(int p=0;p<4;p++) {
-        if(tbl[4]) {
+        uint8_t parttype = tbl[4];
+        if (parttype) {
             start = LD_DWORD(&tbl[8]);
             size  = LD_DWORD(&tbl[12]);
-            printf("MBR Start: %d Size: %d Type: %d\n", start, size, tbl[4]);
-            if ((tbl[4] == 0x0F) || (tbl[4] == 0x05)) {
+            printf("MBR Start: %d Size: %d Type: %d\n", start, size, parttype);
+            if (parttype == 0xEE) {
+                printf("MBR Partition %d is of type Blocker (Protective MBR, disk likely uses GPT!), skipping\n", p);
+            }
+            else if ((parttype == 0x0F) || (parttype == 0x05)) {
                 printf("Result of EBR read: %d.\n", read_ebr(start));
             } else {
-                prt = new Partition(dev, lba + start, size, tbl[4]);
-                printf("Partition created! %p\n", prt);
-                if (last_partition) {
-                    last_partition->next_partition = prt;
-                } else {
-                    partition_list = prt;
-                }
-                last_partition = prt;
-
-                p_count ++;
+                register_partition(lba + start, size, parttype);
             }
         }
         tbl += 16;
-    }            
+    } 
+
+    // If we didn't find any MBR partitions we check for GPT
+    if(!p_count && dev->read(buf, 1L, 1) != RES_OK) {
+        return -2; // disk unreadable
+    }
+    if (!p_count && (memcmp(&buf[GPT_SIGNATURE], "EFI PART", 8) == 0 ||
+            memcmp(&buf[GPT_REVISION], "\0\0\x01\0", 4) == 0 ||
+            memcmp(&buf[GPT_PARTITION_ARRAY_LBA_HI], "\0\0\0\0", 4) == 0)) {  // Only supporting array on 32 bit LBA for now
+        printf("GPT disk found, reading partition table\n");
+        uint32_t sector = LD_WORD(&buf[GPT_PARTITION_ARRAY_LBA_LO]);
+        uint32_t num_entries = LD_WORD(&buf[GPT_PARTITION_ARRAY_COUNT]);
+        uint32_t entry_size = LD_WORD(&buf[GPT_PARTITION_ENTRY_SIZE]);
+        uint32_t pos = sector_size;
+        for (int part=0; part < num_entries; ++part) {
+            if (pos >= sector_size) {
+                if(dev->read(buf, sector, 1) != RES_OK) {
+                    printf("Unable to read next block for GPT Partition Array (%d), ignoring disk to be safe!\n", sector);
+                    return -2;
+                }
+                ++sector;
+                pos = 0;
+            }
+            const uint8_t *entry = &buf[pos];
+            pos += entry_size;
+            if (memcmp(&entry[GPT_ENTRY_TYPE_GUID], GUID_MICROSOFT_BASIC_DATA, 16) == 0) {
+                if(memcmp(&entry[GPT_ENTRY_FIRST_LBA_HI], "\0\0\0\0", 4) != 0 ||
+                        memcmp(&entry[GPT_ENTRY_LAST_LBA_HI], "\0\0\0\0", 4) != 0) {
+                    printf("GPT partition %d needs 64 bit LBA which is not yet supported, skipping!\n", part);
+                    continue;
+                }
+                uint8_t attributes7 = entry[GPT_ENTRY_ATTRIBUTES + 7];  // MSB, bit 56-63
+                if (attributes7 & (GPT_PARTITION_IGNORE_ATTRIBUTES)) {
+                    printf("GPT partition %d has attributes we do not support, skipping attributes 0x", part);
+                    for (int i=0; i < 16; ++i) {
+                        printf("%02x", entry[GPT_ENTRY_ATTRIBUTES + i]);
+                    }
+                    printf("\n");
+                    continue;
+                }
+                uint32_t first = LD_DWORD(&entry[GPT_ENTRY_FIRST_LBA_LO]);
+                uint32_t last = LD_DWORD(&entry[GPT_ENTRY_LAST_LBA_LO]);
+                register_partition(first, last - first + 1, /* parttype=*/ 0);  // Not looking up filesystem GUID, will be auto detected
+            }
+        }
+    }
     return p_count;        
 }
 
@@ -145,26 +184,32 @@ int Disk :: read_ebr(uint32_t lba)
     dump_hex_relative(tbl, 66);
 
     for(int p=0;p<4;p++) {
-        if(tbl[4]) {
+        uint8_t parttype = tbl[4];
+        if(parttype) {
             start = LD_DWORD(&tbl[8]);
             size  = LD_DWORD(&tbl[12]);
-            printf("EBR Start: %d Size: %d Type: %d\n", start, size, tbl[4]);
-            if ((tbl[4] == 0x0F) || (tbl[4] == 0x05)) {
+            printf("EBR Start: %d Size: %d Type: %d\n", start, size, parttype);
+            if ((parttype == 0x0F) || (parttype == 0x05)) {
                 read_ebr(lba + start);
             } else {
-                prt = new Partition(dev, lba + start, size, tbl[4]);
-
-                if (last_partition) {
-                    last_partition->next_partition = prt;
-                } else {
-                    partition_list = prt;
-                }
-                last_partition = prt;
-                p_count ++;
+                register_partition(lba + start, size, parttype);
             }
         }
         tbl += 16;
     }            
     delete local_buf;
     return 0;
+}
+
+void Disk::register_partition(uint32_t start, uint32_t size, uint8_t parttype)
+{
+    Partition *prt = new Partition(dev, start, size, parttype);
+    printf("Partition created! %p\n", prt);
+    if (last_partition) {
+        last_partition->next_partition = prt;
+    } else {
+        partition_list = prt;
+    }
+    last_partition = prt;
+    p_count ++;
 }
