@@ -494,7 +494,7 @@ void C1541 :: insert_disk(bool protect, GcrImage *image)
 void C1541 :: map_gcr_image_to_mfm(void)
 {
     MfmDisk *mfm = mfm_controller->get_disk();
-    mfm->init(fmt_Clear);
+    mfm->init(fmt_Clear, 80);
     clear_mfm_dirty_bits();
 
     for(int z=0; z < 2; z++) {
@@ -555,7 +555,14 @@ void C1541 :: mount_d64(bool protect, File *file, int mode)
 	    return;
 	}
 	if (mode == 1581) {
-	    mfm_controller->format_d81();
+      FileInfo ffi(INFO_SIZE);
+      int tracks = 80;
+      FRESULT res = fm->fstat(file->get_path(), ffi);
+      if (res == FR_OK) {
+         tracks = ffi.size / 10240;
+      }
+
+	    mfm_controller->format_d81(tracks);
 	    mfm_controller->set_file(mount_file);
 	    mfm_controller->set_track_update_callback(NULL, NULL);
 	    registers[C1541_SOUNDS] = 1; // play insert sound

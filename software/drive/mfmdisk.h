@@ -52,7 +52,7 @@ public:
     int AddDataSpace(int physTrack, int physSide, const uint32_t pos, const uint32_t size);
 
     // Predefined Formats. Returns the required data size
-    uint32_t init(MfmFormat_t type);
+    uint32_t init(MfmFormat_t type, int tracks);
 
     // Get track reference for external manipulation
     MfmTrack *GetTrack(int track, int side);
