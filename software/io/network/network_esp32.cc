@@ -168,6 +168,8 @@ SubsysResultCode_e NetworkLWIP_WiFi :: manual_connect(SubsysCommand *cmd)
     char password[64];
     int authmode = 0;
     int ret;
+    ssid[0] = 0;
+    password[0] = 0;
     ret = cmd->user_interface->string_box("Name of Access Point (SSID)", ssid, 32);
     if (ret < 1) {
         return SSRET_ABORTED_BY_USER;
