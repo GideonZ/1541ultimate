@@ -34,6 +34,8 @@
 extern "C" {
 #endif
 
+#include <errno.h>
+
 /*-----------------------------------------------------------
  * Port specific definitions.
  *

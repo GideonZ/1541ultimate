@@ -175,6 +175,7 @@ SRCS_CC	 =  u64ii_init.cc \
 			esp32.cc \
 			network_esp32.cc \
 			wifi.cc \
+			sntp_time.cc \
 			$(PRJ).cc
 
 
