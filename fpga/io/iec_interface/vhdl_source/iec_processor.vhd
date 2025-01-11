@@ -64,11 +64,11 @@ architecture mixed of iec_processor is
     signal inputs       : std_logic_vector(3 downto 0);
     signal inputs_raw   : std_logic_vector(3 downto 0);
 
-    signal timer        : unsigned(11 downto 0);
+    signal timer        : unsigned(11 downto 0) := (others => '1');
     signal pc           : unsigned(instr_addr'range);
     signal pc_ret_std   : std_logic_vector(instr_addr'range);
     signal pop, push    : std_logic;
-    signal timer_done   : std_logic;
+    signal timer_done   : std_logic := '0';
     signal atn_i_d      : std_logic;
     signal valid_reg    : std_logic := '0';
     signal ctrl_reg     : std_logic := '0';

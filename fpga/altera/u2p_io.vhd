@@ -43,7 +43,7 @@ architecture rtl of u2p_io is
     signal i2c_scl_out : std_logic;
     signal i2c_sda_out : std_logic;
     signal speaker_en_i : std_logic;
-    signal speaker_vol_i : std_logic_vector(3 downto 0);
+    signal speaker_vol_i : std_logic_vector(3 downto 0) := X"0";
     signal hub_reset_i  : std_logic;
     signal ulpi_reset_i : std_logic;
 begin
