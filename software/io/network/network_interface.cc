@@ -12,12 +12,12 @@ extern "C" {
 #include "FreeRTOSConfig.h"
 #include "task.h"
 #include "profiler.h"
-
-void start_sntp() __attribute__((weak));
-void start_sntp() { }
 }
 
 #include "sntp_time.h"
+
+void start_sntp() __attribute__((weak));
+void start_sntp() { }
 
 //-----------------------------------
 struct t_cfg_definition net_config[] = {
