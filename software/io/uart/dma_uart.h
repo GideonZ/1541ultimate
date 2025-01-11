@@ -41,6 +41,8 @@ typedef struct _dma_uart_t
 #define DMAUART_MOD_ENABLE  0x20
 #define DMAUART_RESET       0x80
 
+#define DMAUART_CLR_OVERFLOW 0x08 // clear overflow status
+
 typedef BaseType_t (*isr_receive_callback_t)(command_buf_context_t *context, command_buf_t *b, BaseType_t *w);
 
 class DmaUART
@@ -78,6 +80,10 @@ public:
         install_high_irq(irq, DmaUART :: DmaUartInterrupt, this);
     }
 
+    void SoftReset(void) {
+        uart->flowctrl = DMAUART_RESET;
+        uart->status = DMAUART_CLR_OVERFLOW;
+    }
     void ModuleCtrl(uint8_t mode);
     void EnableSlip(bool enabled);
     void EnableLoopback(bool enable);
@@ -87,6 +93,10 @@ public:
     void SetBaudRate(int bps);
     void SetReceiveCallback(isr_receive_callback_t cb);
     void ResetReceiveCallback(void);
+
+    void PrintStatus(void) {
+        printf("UART status: %b\n", uart->status);
+    }
 
     // never blocking
     int Read(uint8_t *buffer, int bufferSize);

@@ -401,7 +401,9 @@ TaskHandle_t tasksWaitingForReply[NUM_BUFFERS];
 #define TRANSMIT(x)         wifi.uart->TransmitPacket(buf); \
                             xTaskNotifyWait(0, 0, (uint32_t *)&buf, portMAX_DELAY); \
                             rpc_ ## x ## _resp *result = (rpc_ ## x ## _resp *)buf->data; \
-                            tasksWaitingForReply[result->hdr.thread] = NULL;
+                            if(result->hdr.thread < 16) { \
+                                tasksWaitingForReply[result->hdr.thread] = NULL; \
+                            }
 
 #define RETURN_STD          errno = result->xerrno; \
                             int retval = result->retval; \
@@ -424,14 +426,6 @@ BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseT
 {
     rpc_header_t *hdr = (rpc_header_t *)buf->data;
     BaseType_t res;
-
-//    hex(hdr->thread);
-//    ioWrite8(UART_DATA, '-');
-//    uint32_t th = (uint32_t)tasksWaitingForReply[hdr->thread];
-//    hex((uint8_t)(th >> 16));
-//    hex((uint8_t)(th >> 8));
-//    hex((uint8_t)(th >> 0));
-//    ioWrite8(UART_DATA, ';');
 
     if ((hdr->thread < NUM_BUFFERS) && (tasksWaitingForReply[hdr->thread])) {
         TaskHandle_t thread = tasksWaitingForReply[hdr->thread];

@@ -338,7 +338,7 @@ int Esp32 :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
         if (uart->ReceivePacket(&buf, 200) == pdTRUE) {
             dump_hex_relative(buf->data, buf->size);
         } else {
-            printf("No Reply.\n");
+            printf("No Reply. "); uart->PrintStatus();
             continue;
         }
         memset(buf->data + 4, 0xEE, 4);
