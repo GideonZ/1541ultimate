@@ -436,10 +436,10 @@ void SocketDMA::dmaThread(void *load_buffer)
             performCommand(newsockfd, load_buffer, n, cmd, len32, &cli_addr.sin_addr);
 		}
         puts("ERROR reading from socket");
-        __close(newsockfd);
+        closesocket(newsockfd);
     }
     // this will never happen
-    __close(sockfd);
+    closesocket(sockfd);
 }
 
 bool isEliteBoard(void) __attribute__((weak));

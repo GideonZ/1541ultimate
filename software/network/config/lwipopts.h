@@ -272,6 +272,10 @@
  */
 #define PBUF_POOL_SIZE                  64
 
+
+#define LWIP_PBUF_CUSTOM_DATA      void *custom_obj; \
+                                   void *buffer_start;
+
 /*
    ---------------------------------
    ---------- ARP options ----------
@@ -959,13 +963,14 @@
  * (only used if you use sockets.c)
  */
 #define LWIP_COMPAT_SOCKETS             1
+#define LWIP_SOCKET_POLL                0
 
 /**
  * LWIP_POSIX_SOCKETS_IO_NAMES==1: Enable POSIX-style sockets functions names.
  * Disable this option if you use a POSIX operating system that uses the same
  * names (read, write & close). (only used if you use sockets.c)
  */
-#define LWIP_POSIX_SOCKETS_IO_NAMES     1
+#define LWIP_POSIX_SOCKETS_IO_NAMES     0
 
 /**
  * LWIP_TCP_KEEPALIVE==1: Enable TCP_KEEPIDLE, TCP_KEEPINTVL and TCP_KEEPCNT

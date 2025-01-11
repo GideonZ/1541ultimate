@@ -74,8 +74,8 @@ public:
     }
 
 protected:
-	struct pbuf_custom pbuf_array[PBUF_FIFO_SIZE];
-	Fifo<struct pbuf_custom *> pbuf_fifo;
+	struct pbuf pbuf_array[PBUF_FIFO_SIZE];
+	Fifo<struct pbuf *> pbuf_fifo;
 
 	uint8_t mac_address[6];
 	char hostname[24];
@@ -84,9 +84,9 @@ protected:
     bool   if_up;
 
     // fields that are filled in by the configuration
-    struct ip_addr my_ip;
-    struct ip_addr my_netmask;
-    struct ip_addr my_gateway;
+    ip_addr_t my_ip;
+    ip_addr_t my_netmask;
+    ip_addr_t my_gateway;
 
     void *driver;
     void (*driver_free_function)(void *driver, void *buffer);
@@ -94,7 +94,7 @@ protected:
     
     // callbacks
     static err_t lwip_output_callback(struct netif *netif, struct pbuf *pbuf);
-    static void lwip_free_callback(void *p);
+    static void lwip_free_callback(struct pbuf *p);
 public:
 
     NetworkInterface(void *driver,
@@ -115,7 +115,7 @@ public:
 
     void init_callback();
 
-    void free_pbuf(struct pbuf_custom *pbuf);
+    void free_pbuf(struct pbuf *pbuf);
 
     // from ConfigurableObject
     virtual void effectuate_settings(void);

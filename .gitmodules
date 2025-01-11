@@ -7,3 +7,6 @@
 [submodule "software/httpd"]
 	path = software/httpd
 	url = http://github.com/GideonZ/MicroHttpServer
+[submodule "software/lwip"]
+	path = software/lwip
+	url = https://github.com/GideonZ/lwip

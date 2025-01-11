@@ -139,7 +139,7 @@ void Modem :: listenerTask(void *a)
 
     modem.IncomingConnection(socketNumber);
 
-    __close(socketNumber);
+    closesocket(socketNumber);
     vTaskDelete(NULL);
 }
 
@@ -513,7 +513,7 @@ void Modem :: Caller()
 		acia.SendToRx((uint8_t *)responseString, responseLen);
         keepConnection = true;
         RunRelay(sock_fd);
-        __close(sock_fd);
+        closesocket(sock_fd);
         responseString = (verbose==TRUE ? responseText[RESP_NO_CARRIER] : responseCode[RESP_NO_CARRIER]);
         responseLen=strlen(responseString);
         acia.SendToRx((uint8_t *)responseString, responseLen);

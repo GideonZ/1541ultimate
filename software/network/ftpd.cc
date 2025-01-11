@@ -237,7 +237,7 @@ void FTPDaemonThread::run(void *a)
 {
     FTPDaemonThread *thread = (FTPDaemonThread *) a;
     thread->handle_connection();
-    __close(thread->socket);
+    closesocket(thread->socket);
     delete thread;
     num_threads--;
     vTaskDelete(NULL);
@@ -308,7 +308,7 @@ void FTPDaemonThread::send_msg(const char *msg, ...)
     va_end(arg);
     strcat(buffer, "\r\n");
     len = strlen(buffer);
-    __write(socket, buffer, len);
+    send(socket, buffer, len, 0);
     dbg_printf("FTPD response: %s", buffer);
 }
 
@@ -845,12 +845,12 @@ int FTPDataConnection::setup_connection()
 void FTPDataConnection::close_connection()
 {
     if (actual_socket)
-        __close(actual_socket);
+        closesocket(actual_socket);
     if ((sockfd) && (actual_socket != sockfd))
-        __close(sockfd);
+        closesocket(sockfd);
 }
 
-int FTPDataConnection::connect_to(struct ip_addr ip, uint16_t port) // active mode
+int FTPDataConnection::connect_to(ip_addr_t ip, uint16_t port) // active mode
 {
     if (sockfd < 0)
         return -ENOTCONN;

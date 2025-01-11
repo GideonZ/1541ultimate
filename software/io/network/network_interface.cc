@@ -89,12 +89,11 @@ err_t NetworkInterface :: lwip_output_callback(struct netif *netif, struct pbuf 
     return ni->driver_output_function(ni->driver, temporary_out_buffer, total);
 }
 
-void NetworkInterface :: lwip_free_callback(void *p)
+void NetworkInterface :: lwip_free_callback(struct pbuf *p)
 {
-	struct pbuf_custom *pbuf = (struct pbuf_custom *)p;
-	NetworkInterface *ni = (NetworkInterface *)pbuf->custom_obj;
-    ni->driver_free_function(ni->driver, pbuf->buffer_start);
-    ni->free_pbuf(pbuf);
+	NetworkInterface *ni = (NetworkInterface *)p->custom_obj;
+    ni->driver_free_function(ni->driver, p->buffer_start);
+    ni->free_pbuf(p);
 }
 
 /**
@@ -226,7 +225,7 @@ void NetworkInterface :: init_callback( )
      * The last argument should be replaced with your link speed, in units
      * of bits per second.
      */
-    NETIF_INIT_SNMP(&my_net_if, snmp_ifType_ethernet_csmacd, 100000000);
+    // NETIF_INIT_SNMP(&my_net_if, snmp_ifType_ethernet_csmacd, 100000000); // FIXME
   
     /* We directly use etharp_output() here to save a function call.
      * You can instead declare your own function an call etharp_output()
@@ -270,7 +269,7 @@ bool NetworkInterface :: input(void *raw_buffer, uint8_t *payload, int pkt_size)
 	//dump_hex(payload, pkt_size);
 
 	PROFILER_SUB = 7;
-	struct pbuf_custom *pbuf = pbuf_fifo.pop();
+	struct pbuf *pbuf = pbuf_fifo.pop();
 
 	if (!pbuf) {
 		printf("No memory");
@@ -278,22 +277,19 @@ bool NetworkInterface :: input(void *raw_buffer, uint8_t *payload, int pkt_size)
 		return false;
 	}
 	pbuf->custom_obj = this;
-	pbuf->custom_free_function = NetworkInterface :: lwip_free_callback;
+	((struct pbuf_custom *)pbuf)->custom_free_function = NetworkInterface :: lwip_free_callback;
 	pbuf->buffer_start = raw_buffer;
 
-	struct pbuf *p = &(pbuf->pbuf);
-	p->flags |= PBUF_FLAG_IS_CUSTOM;
-	p->len = p->tot_len = pkt_size;
-	p->next = NULL;
-	p->payload = payload;
-	p->ref = 1;
-	p->type = PBUF_REF;
+	pbuf->flags |= PBUF_FLAG_IS_CUSTOM;
+	pbuf->len = pbuf->tot_len = pkt_size;
+	pbuf->next = NULL;
+	pbuf->payload = payload;
+	pbuf->ref = 1;
 
-	if (my_net_if.input(p, &my_net_if)!=ERR_OK) {
+	if (my_net_if.input(pbuf, &my_net_if)!=ERR_OK) {
 		LWIP_DEBUGF(NETIF_DEBUG, ("net_if_input: IP input error\n"));
 		printf("#");
 		pbuf_fifo.push(pbuf);
-//		pbuf_free(p);
 		return false;
 	}
 	PROFILER_SUB = 15;
@@ -322,7 +318,7 @@ void NetworkInterface :: set_mac_address(uint8_t *mac)
 	memcpy((void *)mac_address, (const void *)mac, 6);
 }
 
-void NetworkInterface :: free_pbuf(struct pbuf_custom *pbuf)
+void NetworkInterface :: free_pbuf(struct pbuf *pbuf)
 {
 	pbuf_fifo.push(pbuf);
 }
@@ -403,13 +399,13 @@ void NetworkInterface :: setIpAddr(uint8_t *buf)
 bool NetworkInterface :: peekArpTable(uint32_t ipToQuery, uint8_t *mac)
 {
     struct eth_addr *his_mac = 0;
-    struct ip_addr *his_ip = 0;
-    struct ip_addr query_ip;
+    ip_addr_t *his_ip = 0;
+    ip_addr_t query_ip;
 
     query_ip.addr = ipToQuery;
 
     portENTER_CRITICAL();
-    etharp_find_addr(&my_net_if, &query_ip, &his_mac, &his_ip);
+    etharp_find_addr(&my_net_if, (const ip4_addr_t *)&query_ip, &his_mac, (const ip4_addr_t **)&his_ip);
 
     bool ret = false;
     if (his_mac) {
