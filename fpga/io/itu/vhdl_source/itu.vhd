@@ -11,6 +11,8 @@ generic (
     g_version	    : unsigned(7 downto 0) := X"FE";
     g_uart          : boolean := true;
     g_uart_rx       : boolean := true;
+    g_uart_tx_fifo  : boolean := true;
+    g_uart_big_fifo : boolean := false;
     g_edge_init     : std_logic_vector(7 downto 0) := "00000001";
     g_capabilities  : std_logic_vector(31 downto 0) := X"5555AAAA";
     g_edge_write    : boolean := true;
@@ -293,6 +295,8 @@ begin
     r_uart: if g_uart generate
         uart: entity work.uart_peripheral_io
         generic map (
+            g_tx_fifo   => g_uart_tx_fifo,
+            g_big_fifo  => g_uart_big_fifo,
             g_impl_rx   => g_uart_rx,
             g_divisor   => c_baud_div )
         port map (

@@ -28,6 +28,7 @@ generic (
     g_icap          : boolean := false;
     g_uart          : boolean := true;
     g_uart_rx       : boolean := false;
+    g_uart_big_fifo : boolean := false;
     g_drive_1541    : boolean := true;
     g_drive_1541_2  : boolean := false;
     g_mm_drive      : boolean := true;
@@ -493,6 +494,7 @@ begin
         g_capabilities  => c_capabilities,
         g_uart          => g_uart,
         g_uart_rx       => g_uart_rx,
+        g_uart_big_fifo => g_uart_big_fifo,
         g_edge_init     => "10000101",
         g_edge_write    => false,
         g_baudrate      => g_baud_rate )
