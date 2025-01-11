@@ -151,6 +151,12 @@ SubsysResultCode_e NetworkLWIP_WiFi :: disconnect(SubsysCommand *cmd)
 
 SubsysResultCode_e NetworkLWIP_WiFi :: clear_aps(SubsysCommand *cmd)
 {
+    if (cmd->user_interface) {
+        if (cmd->user_interface->popup("Are you sure? Erase all stored APs?", BUTTON_OK|BUTTON_CANCEL) != BUTTON_OK) {
+            return SSRET_ABORTED_BY_USER;
+        }
+    }
+
     if (wifi_forget_aps() != 0)
         return SSRET_GENERIC_ERROR;
     if (cmd->user_interface) {
@@ -184,6 +190,7 @@ SubsysResultCode_e NetworkLWIP_WiFi :: manual_connect(SubsysCommand *cmd)
     if (ret < 0) { // either the picker or the password were aborted
         return SSRET_ABORTED_BY_USER;
     }
+    authmode = ret;
     wifi_wifi_connect(ssid, password, authmode);
     return SSRET_OK;
 }

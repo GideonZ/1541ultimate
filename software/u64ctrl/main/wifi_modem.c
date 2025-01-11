@@ -393,13 +393,17 @@ esp_err_t attempt_connect(const char *ssid, const char *passwd, uint8_t authmode
         esp_err_t err = esp_wifi_disconnect();
         ESP_LOGW(TAG, "Connect request, but was connected. Waiting now for disconnect event.");
         ConnectEvent_t ev;
-        xQueueReceive(connect_events, &ev, portMAX_DELAY);
-        if (ev.event_code != EVENT_DISCONNECTED) {
-            ESP_LOGE(TAG, "Would have expected disconnect event, %d", ev.event_code);
-        } else if (ev.event_code != EVENT_CONNECTED) {
-            ESP_LOGI(TAG, "Properly disconnected.");
+        if (err == ESP_OK) {
+            xQueueReceive(connect_events, &ev, portMAX_DELAY);
+            if (ev.event_code != EVENT_DISCONNECTED) {
+                ESP_LOGE(TAG, "Would have expected disconnect event, %d", ev.event_code);
+            } else if (ev.event_code != EVENT_CONNECTED) {
+                ESP_LOGI(TAG, "Properly disconnected.");
+            } else {
+                ESP_LOGE(TAG, "Unreachable code");
+            }
         } else {
-            ESP_LOGE(TAG, "Unreachable code");
+            ESP_LOGE(TAG, "Failed to disconnect: %d", err);
         }
     }
 
@@ -427,6 +431,41 @@ esp_err_t attempt_connect(const char *ssid, const char *passwd, uint8_t authmode
     return err;
 }
 
+void wifi_list_aps(void)
+{
+    nvs_handle_t handle;
+    esp_err_t err = ESP_OK;
+    char key[4] = {0};
+    char ssid_entry[36];
+    char pw_entry[68];
+    size_t len;
+    err = nvs_open("recent_aps", NVS_READWRITE, &handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS: %d", err);
+        return;
+    }
+    for(int16_t i=0;i<16;i++) {
+        key[0] = 's';
+        key[1] = 'a' + i;
+        key[2] = '0'; // SSID sa0, sb0, sc0, sd0, ...
+        len = 36;
+        err = nvs_get_str(handle, key, ssid_entry, &len);
+        if (err == ESP_OK) {
+            key[0] = 'p';
+            len = 68;
+            err = nvs_get_str(handle, key, pw_entry, &len);
+            if (err == ESP_OK) {
+                ESP_LOGI(TAG, "Stored AP %d: '%s' '%s'", i, ssid_entry, pw_entry);
+            } else {
+                ESP_LOGI(TAG, "Stored AP %d: Failed to get password: %d", i, err);
+            }
+        } else {
+            ESP_LOGI(TAG, "Stored AP %d: Failed to get SSID: %d", i, err);
+        }
+    }
+    nvs_close(handle);
+}
+
 esp_err_t wifi_find_password(const uint8_t *ssid, char *pw, size_t maxlen, int16_t *list_idx)
 {
     nvs_handle_t handle;
@@ -443,16 +482,15 @@ esp_err_t wifi_find_password(const uint8_t *ssid, char *pw, size_t maxlen, int16
     for(int16_t i=0;i<16;i++) {
         key[0] = 's';
         key[1] = 'a' + i;
+        key[2] = '0'; // SSID sa0, sb0, sc0, sd0, ...
         len = 36;
         err = nvs_get_str(handle, key, ssid_entry, &len);
         if (err != ESP_OK) { // entry doesn't exist
             err = ESP_ERR_NOT_FOUND;
-            break;
-        }
-        if (strcmp((const char *)ssid, ssid_entry) == 0) {
+        } else if (strcmp((const char *)ssid, ssid_entry) == 0) {
             key[0] = 'p';
             len = maxlen;
-            err = nvs_get_str(handle, key, ssid_entry, &len);
+            err = nvs_get_str(handle, key, pw, &len);
             if (err == ESP_OK) {
                 *list_idx = i;
                 break;
@@ -474,6 +512,7 @@ esp_err_t wifi_connect_to_scanned(int index)
         err = wifi_find_password(ap_info[index].ssid, last_connect.pw, 64, &last_connect.list_index);
     } else {
         last_connect.pw[0] = 0; // clear password
+        last_connect.list_index = -1;
     }
     if (err == ESP_OK) { // password found, or not required
         strncpy(last_connect.ssid, (const char *)(ap_info[index].ssid), 32);
@@ -617,6 +656,7 @@ void connect_thread(void *a)
                 state = ScannedAPs;
                 break;
             case ScannedAPs:
+                wifi_list_aps();
                 for (int i=0; i < ap_count; i++) {
                     if (xQueueReceive(connect_commands, &connect_command, 0) == pdTRUE) {
                         if (handle_connect_command(&connect_command)) {
@@ -628,6 +668,9 @@ void connect_thread(void *a)
                     if (err == ESP_OK) {
                         xQueueReceive(connect_events, &connect_event, portMAX_DELAY);
                         if (connect_event.event_code == EVENT_CONNECTED) {
+                            if (last_connect.list_index >= 0) {
+                                wifi_set_last_ap(last_connect.list_index);
+                            }
                             state = Connected;
                             break;
                         }
