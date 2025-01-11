@@ -452,7 +452,7 @@
  * DHCP_DOES_ARP_CHECK==1: Do an ARP check on the offered address.
  */
 #define LWIP_DHCP_DOES_ACD_CHECK        0
-
+#define DHCP_ADD_EXTRA_REQUEST_OPTIONS  ,100,101
 /*
    ------------------------------------
    ---------- AUTOIP options ----------
@@ -1427,5 +1427,41 @@
 
 
 #define LWIP_TIMEVAL_PRIVATE 0
+
+
+/**  
+ * SNTP options
+ */
+#define SNTP_SET_SYSTEM_TIME(sec)   sntp_time_received(sec)
+#define SNTP_MAX_SERVERS            5
+#define SNTP_GET_SERVERS_FROM_DHCP  1
+
+/** Set this to 1 to support DNS names (or IP address strings) to set sntp servers
+ * One server address/name can be defined as default if SNTP_SERVER_DNS == 1:
+ * \#define SNTP_SERVER_ADDRESS "pool.ntp.org"
+ */
+#define SNTP_SERVER_DNS             1
+
+#define SNTP_DEBUG                  LWIP_DBG_OFF
+
+/** Sanity check:
+ * Define this to
+ * - 0 to turn off sanity checks (default; smaller code)
+ * - >= 1 to check address and port of the response packet to ensure the
+ *        response comes from the server we sent the request to.
+ * - >= 2 to check returned Originate Timestamp against Transmit Timestamp
+ *        sent to the server (to ensure response to older request).
+ * - >= 3 @todo: discard reply if any of the VN, Stratum, or Transmit Timestamp
+ *        fields is 0 or the Mode field is not 4 (unicast) or 5 (broadcast).
+ * - >= 4 @todo: to check that the Root Delay and Root Dispersion fields are each
+ *        greater than or equal to 0 and less than infinity, where infinity is
+ *        currently a cozy number like one second. This check avoids using a
+ *        server whose synchronization source has expired for a very long time.
+ */
+#define SNTP_CHECK_RESPONSE         1
+#define SNTP_COMP_ROUNDTRIP         0
+#define SNTP_STARTUP_DELAY          0
+
+void sntp_time_received(u32_t sec);
 
 #endif /* __LWIPOPTS_H__ */

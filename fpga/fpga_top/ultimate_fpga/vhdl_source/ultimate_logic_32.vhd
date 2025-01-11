@@ -1161,17 +1161,15 @@ begin
 
     r_rtc_timer: if g_rtc_timer generate
         i_rtc_timer: entity work.real_time_clock
-        generic map (
-            g_freq      => g_clock_freq )
         port map (
             clock       => sys_clock,    
             reset       => sys_reset,
-            
+            tick_1kHz   => tick_1kHz,            
             req         => io_req_rtc_tmr,
             resp        => io_resp_rtc_tmr );
     end generate;
 
-    r_no_rtc_timer: if not g_rtc_chip generate
+    r_no_rtc_timer: if not g_rtc_timer generate
         i_rtc_timer_dummy: entity work.io_dummy
         port map (
             clock       => sys_clock,

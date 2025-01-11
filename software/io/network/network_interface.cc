@@ -12,6 +12,9 @@ extern "C" {
 #include "FreeRTOSConfig.h"
 #include "task.h"
 #include "profiler.h"
+}
+
+#include "sntp_time.h"
 
 //-----------------------------------
 struct t_cfg_definition net_config[] = {
@@ -31,8 +34,6 @@ struct t_cfg_definition net_config[] = {
 	{ CFG_TYPE_END,    CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
-void echo_task(void *a);
-}
 
 /**
  * Initialization
@@ -176,6 +177,8 @@ void NetworkInterface :: statusUpdate(void)
 
     // quick hack to perform update on the browser
 	FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
+
+    start_sntp();
 }
 
 

@@ -14,6 +14,7 @@
 #include "versions.h"
 #include "gitinfo.h"
 #include "u64.h"
+#include "rtc.h"
 
 extern C1541 *c1541_A;
 extern C1541 *c1541_B;
@@ -153,6 +154,12 @@ void SystemInfo :: storage_info(StreamTextLog& b)
 void SystemInfo :: generate(UserInterface *ui)
 {
     StreamTextLog buffer(4096);
+    char buf[40];
+
+    buffer.format("System Information\n");
+    buffer.format("==================\n");
+    buffer.format("Date: %s\n", rtc.get_long_date(buf, 40));
+    buffer.format("Time: %s\n\n", rtc.get_time_string(buf, 40));
 
     buffer.format("Version Information:\n");
     buffer.format("====================\n");

@@ -63,7 +63,7 @@ SRCS_CC	 =  u2p_init.cc \
 			embedded_iso.cc \
 			embedded_fat.cc \
 			u64_config.cc \
-			rtc_i2c.cc \
+			rtc_dummy.cc \
 			c64.cc \
 			c64_crt.cc \
 			u64_machine.cc \
@@ -174,6 +174,7 @@ SRCS_CC	 =  u2p_init.cc \
 			assembly_search.cc \
 			assembly.cc \
 			filesystem_a64.cc \
+			sntp_time.cc \
 			$(PRJ).cc
 
 SRCS_CC +=  iec_interface.cc 
