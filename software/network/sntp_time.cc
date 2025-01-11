@@ -3,12 +3,6 @@
 #include <stdio.h>
 #include <time.h>
 
-typedef struct {
-    const char *timezone;
-    const char *utc;
-    const char *location;
-    const char *posix;
-} timezone_entry_t;
 
 #define RTC_TIMER_SECONDS    *((volatile uint32_t *)RTC_TIMER_BASE)
 
@@ -38,6 +32,7 @@ extern "C" {
 
 void start_sntp(void)
 {
+    sntp_stop();
     sntp_setservername(0, "time.windows.com");
     sntp_setservername(1, "time.google.com");
     sntp_setservername(2, "pool.ntp.org");

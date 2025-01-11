@@ -161,6 +161,7 @@ SRCS_CC	 =  u2p_init.cc \
 			esp32.cc \
 			wifi.cc \
 			network_esp32.cc \
+			sntp_time.cc \
 			$(PRJ).cc
 
 SRCS_CC +=  iec_interface.cc \

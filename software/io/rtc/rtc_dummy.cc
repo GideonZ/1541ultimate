@@ -12,6 +12,13 @@ const char *month_strings_long[] = { "", "January", "February", "March", "April"
 
 const char *weekday_strings[] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
 
+typedef struct {
+    const char *timezone;
+    const char *utc;
+    const char *location;
+    const char *posix;
+} timezone_entry_t;
+
 const timezone_entry_t zones[] = {
     { "AoE",   "UTC -12",   "US Baker Island", "AOE12" },
     { "NUT",   "UTC -11",   "America Samoa",   "NUT11" },

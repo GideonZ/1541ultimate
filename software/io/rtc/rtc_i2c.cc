@@ -114,18 +114,6 @@ bool Rtc::is_valid(void)
 void Rtc::get_time_from_chip(void)
 {
     read_all();
-
-    if (getFpgaCapabilities() & CAPAB_RTC_TIMER) {
-        RTC_TIMER_LOCK = 1;
-        RTC_TIMER_SECONDS = bcd2bin(rtc_regs[RTC_ADDR_SECONDS]);
-        RTC_TIMER_MINUTES = bcd2bin(rtc_regs[RTC_ADDR_MINUTES]);
-        RTC_TIMER_HOURS = bcd2bin(rtc_regs[RTC_ADDR_HOURS]);
-        RTC_TIMER_WEEKDAYS = bcd2bin(rtc_regs[RTC_ADDR_WEEKDAYS]);
-        RTC_TIMER_DAYS = bcd2bin(rtc_regs[RTC_ADDR_DAYS]);
-        RTC_TIMER_MONTHS = bcd2bin(rtc_regs[RTC_ADDR_MONTHS]);
-        RTC_TIMER_YEARS = bcd2bin(rtc_regs[RTC_ADDR_YEARS]);
-        RTC_TIMER_LOCK = 0;
-    }
 }
 
 void Rtc::set_time_in_chip(int corr_ppm, int y, int M, int D, int wd, int h, int m, int s)
@@ -173,27 +161,16 @@ int Rtc::get_correction(void)
 
 void Rtc::get_time(int &y, int &M, int &D, int &wd, int &h, int &m, int &s)
 {
-    if (getFpgaCapabilities() & CAPAB_RTC_TIMER) {
-        RTC_TIMER_LOCK = 1;
-        y = (int) RTC_TIMER_YEARS;
-        M = (int) RTC_TIMER_MONTHS;
-        D = (int) RTC_TIMER_DAYS;
-        wd = (int) RTC_TIMER_WEEKDAYS;
-        h = (int) RTC_TIMER_HOURS;
-        m = (int) RTC_TIMER_MINUTES;
-        s = (int) RTC_TIMER_SECONDS;
-        RTC_TIMER_LOCK = 0;
-    } else {
-        read_all(); // read directly from chip
+    read_all(); // read directly from chip
 
-        s = (int) bcd2bin(rtc_regs[RTC_ADDR_SECONDS] & 0x7F);
-        m = (int) bcd2bin(rtc_regs[RTC_ADDR_MINUTES]);
-        h = (int) bcd2bin(rtc_regs[RTC_ADDR_HOURS]);
-        wd = (int) bcd2bin(rtc_regs[RTC_ADDR_WEEKDAYS]);
-        D = (int) bcd2bin(rtc_regs[RTC_ADDR_DAYS]);
-        M = (int) bcd2bin(rtc_regs[RTC_ADDR_MONTHS]);
-        y = (int) bcd2bin(rtc_regs[RTC_ADDR_YEARS]);
-    }
+    s = (int) bcd2bin(rtc_regs[RTC_ADDR_SECONDS] & 0x7F);
+    m = (int) bcd2bin(rtc_regs[RTC_ADDR_MINUTES]);
+    h = (int) bcd2bin(rtc_regs[RTC_ADDR_HOURS]);
+    wd = (int) bcd2bin(rtc_regs[RTC_ADDR_WEEKDAYS]);
+    D = (int) bcd2bin(rtc_regs[RTC_ADDR_DAYS]);
+    M = (int) bcd2bin(rtc_regs[RTC_ADDR_MONTHS]);
+    y = (int) bcd2bin(rtc_regs[RTC_ADDR_YEARS]);
+
     if (M < 1)
         M = 1;
     if (M > 12)
@@ -210,17 +187,7 @@ void Rtc::get_time(int &y, int &M, int &D, int &wd, int &h, int &m, int &s)
 
 void Rtc::set_time(int y, int M, int D, int wd, int h, int m, int s)
 {
-    if (getFpgaCapabilities() & CAPAB_RTC_TIMER) {
-        RTC_TIMER_LOCK = 1;
-        RTC_TIMER_YEARS = (uint8_t) y;
-        RTC_TIMER_MONTHS = (uint8_t) M;
-        RTC_TIMER_DAYS = (uint8_t) D;
-        RTC_TIMER_WEEKDAYS = (uint8_t) wd;
-        RTC_TIMER_HOURS = (uint8_t) h;
-        RTC_TIMER_MINUTES = (uint8_t) m;
-        RTC_TIMER_SECONDS = (uint8_t) s;
-        RTC_TIMER_LOCK = 0;
-    }
+
 }
 
 const char * Rtc::get_time_string(char *dest, int len)
@@ -258,17 +225,6 @@ uint32_t Rtc::get_fat_time(void)
 {
     if (!capable)
         return 0x42FF9877;
-    /*
-     33 << 25 = 0x42000000
-     7 << 21 = 0x00E00000
-     31 << 16 = 0x001F0000
-     19 << 11 = 0x00009800
-     03 <<  5 = 0x00000060
-     23 <<  0 = 0x00000017
-     */
-
-    if (getFpgaCapabilities() & CAPAB_RTC_TIMER)
-        return RTC_TIMER_FAT_TIME;
 
     int y, M, D, wd, h, m, s;
     get_time(y, M, D, wd, h, m, s);
