@@ -74,8 +74,8 @@ public:
     }
 
 protected:
-	struct pbuf pbuf_array[PBUF_FIFO_SIZE];
-	Fifo<struct pbuf *> pbuf_fifo;
+	struct pbuf_custom pbuf_array[PBUF_FIFO_SIZE];
+	Fifo<struct pbuf_custom *> pbuf_fifo;
 
 	uint8_t mac_address[6];
 	char hostname[24];

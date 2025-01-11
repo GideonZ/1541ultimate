@@ -44,6 +44,7 @@
 //  Altera TSE requires 2 byte padding for use with lwIP!
 #define ETH_PAD_SIZE        0
 
+//#define LWIP_DEBUG 1
 #include "lwip/debug.h"
 
 /*
@@ -450,7 +451,7 @@
 /**
  * DHCP_DOES_ARP_CHECK==1: Do an ARP check on the offered address.
  */
-#define DHCP_DOES_ARP_CHECK             ((LWIP_DHCP) && (LWIP_ARP))
+#define LWIP_DHCP_DOES_ACD_CHECK        0
 
 /*
    ------------------------------------
@@ -941,7 +942,7 @@
  * LWIP_TCPIP_CORE_LOCKING: (EXPERIMENTAL!)
  * Don't use it if you're not an active lwIP project member
  */
-#define LWIP_TCPIP_CORE_LOCKING         0
+#define LWIP_TCPIP_CORE_LOCKING         1
 
 /**
  * LWIP_NETCONN==1: Enable Netconn API (require to use api_lib.c)
@@ -1402,7 +1403,7 @@
 /**
  * DHCP_DEBUG: Enable debugging in dhcp.c.
  */
-#define DHCP_DEBUG                      LWIP_DBG_OFF
+#define DHCP_DEBUG                      (LWIP_DBG_ON | LWIP_DBG_TYPES_ON)
 
 /**
  * AUTOIP_DEBUG: Enable debugging in autoip.c.
