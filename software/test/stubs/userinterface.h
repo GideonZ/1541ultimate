@@ -53,7 +53,7 @@ public:
     int  popup(const char *msg, uint8_t flags)
     { // blocking 
         const char *c_button_names[] = { " Ok ", " Yes ", " No ", " All ", " Cancel " };
-        const char c_button_keys[] = { 'o', 'y', 'n', 'c', 'a' };
+        const char c_button_keys[] = { 'o', 'y', 'n', 'a', 'c' };
         return popup(msg, flags, 5, c_button_names, c_button_keys);
     }
 

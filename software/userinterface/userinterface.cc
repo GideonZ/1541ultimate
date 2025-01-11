@@ -379,7 +379,7 @@ void UserInterface :: set_screen_title()
 int  UserInterface :: popup(const char *msg, uint8_t flags)
 {
     const char *c_button_names[] = { " Ok ", " Yes ", " No ", " All ", " Cancel " };
-    const char c_button_keys[] = { 'o', 'y', 'n', 'c', 'a' };
+    const char c_button_keys[] = { 'o', 'y', 'n', 'a', 'c' };
 
     UIPopup *pop = new UIPopup(msg, flags, 5, c_button_names, c_button_keys);
     pop->init(screen, keyboard);
