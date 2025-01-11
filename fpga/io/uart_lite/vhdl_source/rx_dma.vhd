@@ -90,6 +90,7 @@ begin
                         state <= first;
                     else
                         state <= collect;
+                        addr_ready <= '1';
                     end if;
                 end if;
 
