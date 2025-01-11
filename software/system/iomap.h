@@ -33,7 +33,6 @@
 #define USB_BASE           (IOBASE + 0x80000)
 #define C2N_PLAY_BASE      (IOBASE + 0xA0000)
 #define C2N_RECORD_BASE    (IOBASE + 0xC0000)
-#define OVERLAY_BASE       (IOBASE + 0xE0000)
 
 #ifndef RUNS_ON_PC
 #define ioWrite8(x, y)  (*(volatile uint8_t *)(x)) = y

@@ -18,7 +18,8 @@
 #define U64_RESAMPLER     (U2P_IO_BASE + 0x0580)
 #define C64_IO_LED        (U2P_IO_BASE + 0x0600)
 
-#define VID_IO_BASE  (U2P_IO_BASE + 0x40000)
+#define VID_IO_BASE       (U2P_IO_BASE + 0x40000)
+#define U64_OVERLAY_BASE  (VID_IO_BASE + 0x04000)
 
 // U64-II
 #define U64II_OVERLAY_BASE (VID_IO_BASE + 0x0000)
@@ -33,6 +34,7 @@
 #define U64II_HW_I2C_BASE (U2P_IO_BASE + 0x0700)
 
 // end U64-II
+
 
 #define C64_IO_BASE  (U2P_IO_BASE + 0x80000)
 #define C64_PALETTE  (U2P_IO_BASE + 0x80800)

@@ -138,10 +138,11 @@ public:
     }
 
     void initRegs(void) {
-        overlay_regs->CHAR_WIDTH       = 12;
 #if U64 == 2
+        overlay_regs->CHAR_WIDTH       = 12;
         overlay_regs->CHAR_HEIGHT      = 0x80 | 31;
 #else
+        overlay_regs->CHAR_WIDTH       = 8;
         overlay_regs->CHAR_HEIGHT      = 9;
 #endif
         overlay_regs->CHARS_PER_LINE   = activeX;
