@@ -78,6 +78,16 @@ $(document).ready(async function () {
         let [status_code, content] = await make_put_request("http://" + serverIP + "/v1/machine:reboot", params);
     };
 
+    $('#domenubutton').click(function(event){
+        event.preventDefault(); // Prevents the default action of the anchor tag
+        doMenuButton();
+    });
+
+    async function doMenuButton() {
+        let params = {};
+        let [status_code, content] = await make_put_request("http://" + serverIP + "/v1/machine:menu_button", params);
+    };
+
     $('#showterminal').click(function(event){
             event.preventDefault(); // Prevents the default action of the anchor tag
             $(".page").hide();
@@ -1308,6 +1318,7 @@ function disassembler(startInt, byteArray) {
             <ul>
                 <li><a id="doreset" href="#">Reset Machine</a></li>
                 <li><a id="doreboot" href="#">Reboot Machine</a></li>
+                <li><a id="domenubutton" href="#">Menu Button</a></li>
             </ul>
             <ul>
                 <li><a href="https://1541u-documentation.readthedocs.io/en/latest/api/api_calls.html" target="_blank">API Documentation</a></li>
