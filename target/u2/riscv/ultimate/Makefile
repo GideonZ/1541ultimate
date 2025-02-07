@@ -133,6 +133,7 @@ SRCS_CC	 =	small_printf.cc \
 			socket_stream.cc \
 			socket_gui.cc \
 			socket_dma.cc \
+			syslog.cc \
 			home_directory.cc \
 			reu_preloader.cc \
 			configio.cc \

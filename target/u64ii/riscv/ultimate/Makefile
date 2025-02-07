@@ -160,6 +160,7 @@ SRCS_CC	 =  u64ii_init.cc \
 			modem.cc \
 			socket_gui.cc \
 			socket_dma.cc \
+			syslog.cc \
 			listener_socket.cc \
 			system_info.cc \
 			ult_syscalls.cc \

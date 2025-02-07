@@ -10,6 +10,7 @@
 #define CFG_NETWORK_TELNET_SERVICE         0x23
 #define CFG_NETWORK_FTP_SERVICE            0x24
 #define CFG_NETWORK_HTTP_SERVICE           0x25
+#define CFG_NETWORK_REMOTE_SYSLOG_SERVER   0x26
 
 
 class NetworkConfig : ConfigurableObject {

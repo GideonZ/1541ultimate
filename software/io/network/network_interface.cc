@@ -69,7 +69,13 @@ err_t NetworkInterface :: lwip_output_callback(struct netif *netif, struct pbuf 
     	return ERR_ARG;
     }
     while(pbuf) {
-    	printf("Concat %p->%p (%d)\n", pbuf->payload, temp, pbuf->len);
+        // Disabling the below debug message by default. It causes an infinite
+        // stream of messages when remote syslogging is enabled. This printf()
+        // will cause a syslog packet to be sent, and since THAT packet will
+        // trigger this callback, another syslog message will be sent, again
+        // causing.... ad infinitum.
+
+    	// printf("Concat %p->%p (%d)\n", pbuf->payload, temp, pbuf->len);
     	memcpy(temp, pbuf->payload, pbuf->len);
     	temp += pbuf->len;
     	if (pbuf->len == pbuf->tot_len)
