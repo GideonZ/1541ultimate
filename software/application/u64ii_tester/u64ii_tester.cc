@@ -23,6 +23,7 @@
 #include "screen_logger.h"
 #include "usb_base.h"
 #include "usb_device.h"
+#include "wifi_cmd.h"
 
 extern "C" {
     #include "audio_dma.h"
@@ -614,93 +615,6 @@ int U64TestSpeaker(void)
     return 0;
 }
 
-static uint16_t sequence_nr = 0;
-TaskHandle_t tasksWaitingForReply[NUM_BUFFERS];
-
-BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseType_t *w)
-{
-    rpc_header_t *hdr = (rpc_header_t *)buf->data;
-    BaseType_t res;
-
-    if ((hdr->thread < NUM_BUFFERS) && (tasksWaitingForReply[hdr->thread])) {
-        TaskHandle_t thread = tasksWaitingForReply[hdr->thread];
-        tasksWaitingForReply[hdr->thread] = NULL;
-        ioWrite8(UART_DATA, 'N');
-        res = xTaskNotifyFromISR(thread, (uint32_t)buf, eSetValueWithOverwrite, w);
-    } else {
-        ioWrite8(UART_DATA, '~');
-        res = cmd_buffer_received_isr(context, buf, w);
-    }
-    return res;
-}
-
-#define BUFARGS(x, cmd)     command_buf_t *buf; \
-                            esp32.uart->GetBuffer(&buf, portMAX_DELAY); \
-                            rpc_ ## x ## _req *args = (rpc_ ## x ## _req *)buf->data; \
-                            args->hdr.command = cmd; \
-                            args->hdr.sequence = sequence_nr++; \
-                            args->hdr.thread = (uint8_t)buf->bufnr; \
-                            buf->size = sizeof(rpc_ ## x ## _req); \
-                            tasksWaitingForReply[buf->bufnr] = xTaskGetCurrentTaskHandle();
-
-//ESP_ERR_TIMEOUT = 0x107
-#define TRANSMIT(x)         esp32.uart->TransmitPacket(buf); \
-                            BaseType_t success = xTaskNotifyWait(0, 0, (uint32_t *)&buf, 400); \
-                            rpc_ ## x ## _resp *result = (rpc_ ## x ## _resp *)buf->data; \
-                            if (success != pdTRUE) { \
-                                result->esp_err = 0x107; \
-                            } else if(result->hdr.thread < 16) { \
-                                tasksWaitingForReply[result->hdr.thread] = NULL; \
-                            }
-
-#define RETURN_ESP          int retval = result->esp_err; \
-                            esp32.uart->FreeBuffer(buf); \
-                            return retval;
-
-BaseType_t wifi_detect(uint16_t *major, uint16_t *minor, char *str, int maxlen)
-{
-    BUFARGS(identify, CMD_IDENTIFY);
-
-    esp32.uart->TransmitPacket(buf);
-    // now block thread for reply
-    BaseType_t success = xTaskNotifyWait(0, 0, (uint32_t *)&buf, 100); // .5 seconds
-    if (success == pdTRUE) {
-        // From this moment on, "buf" points to the receive buffer!!
-        // copy results
-        rpc_identify_resp *result = (rpc_identify_resp *)buf->data;
-        *major = result->major;
-        *minor = result->minor;
-        strncpy(str, &result->string, maxlen);
-        str[maxlen-1] = 0;
-        printf("Identify: %s\n", str);
-    } else {
-        // 'buf' still points to the transmit buffer.
-        // It is freed by the TxIRQ, so the content is invalid
-        // Let's try to get messages from the receive buffer to see what has been received.
-        // printf("Receive queue:\n");
-        while (esp32.uart->ReceivePacket(&buf, 0) == pdTRUE) {
-            printf("Buf %02x. Size: %4d. Data:\n", buf->bufnr, buf->size);
-            dump_hex(buf->data, buf->size > 64 ? 64 : buf->size);
-        }
-        // printf("/end of Receive queue\n");
-    }
-    return success;
-}
-
-int wifi_get_voltages(voltages_t *voltages)
-{
-    BUFARGS(identify, CMD_GET_VOLTAGES);
-    TRANSMIT(get_voltages);
-    voltages->vbus = result->vbus;
-    voltages->vaux = result->vaux;
-    voltages->v50  = result->v50;
-    voltages->v33  = result->v33;
-    voltages->v18  = result->v18;
-    voltages->v10  = result->v10;
-    voltages->vusb = result->vusb;
-    RETURN_ESP;
-}
-
 int U64TestWiFiComm(void)
 {
     TEST_START("Wifi Module test");
@@ -725,8 +639,7 @@ int U64TestWiFiComm(void)
     }
     esp32.EnableRunMode(); // cannot catch reply
     vTaskDelay(100); // Half a second delay
-    esp32.uart->SetReceiveCallback(wifi_rx_isr);
-
+    wifi_command_init();
     char versionString[32];
     uint16_t major=0, minor=0;
     BaseType_t f = wifi_detect(&major, &minor, versionString, 32);
