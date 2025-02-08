@@ -161,6 +161,7 @@ SRCS_CC	 =  u64ii_init.cc \
 			listener_socket.cc \
 			system_info.cc \
 			ult_syscalls.cc \
+			httpd.cc \
 			json.cc \
 			routes.cc \
 			route_files.cc \
