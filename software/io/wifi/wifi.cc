@@ -45,12 +45,12 @@ void WiFi :: RefreshRoot()
 
 void WiFi :: Enable()
 {
-    esp32.doStart(); 
+    esp32.StartApp(); 
 }
 
 void WiFi :: Disable()
 {
-    esp32.doDisable();
+    esp32.StopApp();
 }
 
 BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseType_t *w);
@@ -206,16 +206,7 @@ void WiFi :: RunModeThread()
             // Make sure it is on, without turning it off (might have been off)
             wifi.uart->ModuleCtrl(ESP_MODE_RUN);
             strcpy(moduleType, "ESP32 on U64");
-
-    #if (CLOCK_FREQ == 66666667)
-            wifi.uart->SetBaudRate(6666666);
-    #else
-            wifi.uart->SetBaudRate(5000000);
-    #endif
-            wifi.uart->FlowControl(true);
-            wifi.uart->ClearRxBuffer();
-            wifi.uart->EnableSlip(true);
-            wifi.uart->EnableIRQ(true);
+            wifi_command_init();
 
             // esp32.EnableRunMode(); on the U64, the machine should boot with the module in run mode
             // on the U64, this should be enforced in the init of the esp32.cc code, and for the U64-II
@@ -233,7 +224,7 @@ void WiFi :: RunModeThread()
                 memset(&voltages, 0, sizeof(voltages));
                 result = wifi_get_voltages(&voltages);
                 printf("Result get voltages: %d %d %d %d %d %d %d %d\n", result, voltages.vbus, voltages.vaux, voltages.v50, voltages.v33, voltages.v18, voltages.v10, voltages.vusb);
-                if (voltages.vbus < 9000) {
+                if (voltages.vbus < 8500) {
                     UserInterface :: postMessage("Low input voltage. Use USB-C PD");
                 }
 #endif

@@ -96,6 +96,9 @@ VPATH +=	$(PATH_SW)/u64
 VPATH +=    $(PATH_SW)/application/update_u2p
 VPATH +=    $(PATH_SW)/../html
 VPATH +=	$(PATH_SW)/u64ctrl/main
+VPATH +=	$(PATH_SW)/u64ctrl/build/bootloader
+VPATH +=	$(PATH_SW)/u64ctrl/build/partition_table
+VPATH +=	$(PATH_SW)/u64ctrl/build
 VPATH +=    $(FPGA_PATH)
 VPATH +=    ../ultimate/result
 
@@ -105,7 +108,7 @@ SRCS_ASMS = crt0.S port_asm.S
 
 SRCS_6502 = 
 
-SRCS_BIN =  chars.bin 1541.bin 1571.bin 1581.bin snds1541.bin snds1571.bin snds1581.bin
+SRCS_BIN =  chars.bin 1541.bin 1571.bin 1581.bin snds1541.bin snds1571.bin snds1581.bin bootloader.bin partition-table.bin u64ctrl.bin
 
 SRCS_HTML = index.html
 

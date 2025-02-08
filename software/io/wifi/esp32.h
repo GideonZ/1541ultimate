@@ -33,6 +33,7 @@ extern "C" {
 #   define ESP_MODE_RUN_UART  7
 #   define ESP_MODE_BOOT_UART 6
 #endif
+typedef void (*EspDownloadCallback_t)(void *context);
 
 class Esp32Application
 {
@@ -44,10 +45,8 @@ public:
     virtual void Terminate() {}
 };
 
-class Esp32 //: public ObjectWithMenu
+class Esp32
 {
-//    TaskCategory *taskCategory;
-//    void create_task_items(void);
     SemaphoreHandle_t rxSemaphore;
     QueueHandle_t commandQueue;
     command_buf_context_t *packets;
@@ -56,35 +55,23 @@ class Esp32 //: public ObjectWithMenu
     bool doClose;
     bool programError;
 
-    void StartApp();
     void Disable();
     void Boot();
-    int  Download(const uint8_t *binary, uint32_t address, uint32_t length);
     void PackParams(uint8_t *buffer, int numparams, ...);
     bool Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data, uint8_t *receiveBuffer, int timeout);
-    bool UartEcho(void);
-    //bool RequestEcho(void);
-    //void RxPacket(command_buf_t *);
-
-    static void CommandTaskStart(void *context);
-    void CommandThread();
-    static SubsysResultCode_e S_mode(SubsysCommand *cmd);
 public:
     Esp32();
     void Quit();
-
-    BaseType_t doBootMode();
-    BaseType_t doDisable();
-    BaseType_t doStart();
-    BaseType_t doDownload(uint8_t *binary, uint32_t address, uint32_t length, bool doFree);
-    BaseType_t doDownloadWrap(bool start);
-    BaseType_t doUartEcho(void);
+    int  Download(void); // Switch to download mode and setup flash
+    int  Flash(const uint8_t *binary, uint32_t address, uint32_t length, EspDownloadCallback_t callback, void *context);
     void AttachApplication(Esp32Application *app);
 
     DmaUART *uart;
     void ReadRxMessage(void);
     int  DetectModule(void *buffer, int buffer_len);
     void EnableRunMode();
+    void StartApp();
+    void StopApp();
 };
 
 extern Esp32 esp32;

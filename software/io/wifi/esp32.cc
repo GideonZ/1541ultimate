@@ -46,6 +46,7 @@ typedef struct
 #define ESP_FLASH_DATA		 0x03
 #define ESP_FLASH_END		 0x04
 #define ESP_SET_FLASH_PARAMS 0x0B
+#define ESP_CHANGE_BAUDRATE  0x0F
 #define ESP_ATTACH_SPI       0x0D
 #define FLASH_TRANSFER_SIZE  0x400
 
@@ -69,30 +70,6 @@ Esp32 :: Esp32()
     cmd_buffer_init(packets); // C functions, so no constructor
 
     uart = new DmaUART((void *)WIFI_UART_BASE, ITU_IRQHIGH_WIFI, rxSemaphore, packets);
-
-    commandQueue = xQueueCreate(8, sizeof(espCommand_t));
-    xTaskCreate( Esp32 :: CommandTaskStart, "Esp32 Command Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
-    doClose = false;
-    programError = false;
-
-//    taskCategory = TasksCollection :: getCategory("ESP32", 26); // random position ;)
-}
-
-// void Esp32 :: create_task_items(void)
-// {
-//     taskCategory->append(new Action("Off", S_mode, 0, ESP_MODE_OFF));
-//     taskCategory->append(new Action("Run", S_mode, 0, ESP_MODE_RUN));
-//     taskCategory->append(new Action("Boot", S_mode, 0, ESP_MODE_BOOT));
-//     taskCategory->append(new Action("Run Uart", S_mode, 0, ESP_MODE_RUN_UART));
-//     taskCategory->append(new Action("Boot Uart", S_mode, 0, ESP_MODE_BOOT_UART));
-// }
-
-SubsysResultCode_e Esp32 :: S_mode(SubsysCommand *cmd)
-{
-    esp32.uart->ModuleCtrl(ESP_MODE_OFF);
-    vTaskDelay(100);
-    esp32.uart->ModuleCtrl(cmd->mode);
-    return SSRET_OK;
 }
 
 void Esp32 :: AttachApplication(Esp32Application *app)
@@ -102,24 +79,18 @@ void Esp32 :: AttachApplication(Esp32Application *app)
 
 void Esp32 :: Disable()
 {
+    StopApp();
+
     // stop running the run-mode task
     uart->ModuleCtrl(ESP_MODE_OFF);
     uart->ClearRxBuffer(); // disables interrupts as well
-
-    if (application) {
-         application->Terminate();
-         application = NULL;
-    }
 }
 
 void Esp32 :: StartApp()
 {
 //    Disable();
 
-    if (application) {
-         application->Terminate();
-         application = NULL;
-    }
+    StopApp();
 
     // Note that the application will start with the module in the either on or off state.
     // The application becomes responsible for turning the module on. When the application
@@ -133,6 +104,14 @@ void Esp32 :: StartApp()
         application = registered_app;
         application->Init(uart, packets);
         application->Start();
+    }
+}
+
+void Esp32 :: StopApp()
+{
+    if (application) {
+        application->Terminate();
+        application = NULL;
     }
 }
 
@@ -202,50 +181,6 @@ void Esp32::PackParams(uint8_t *buffer, int numparams, ...)
     va_end(ap);
 }
 
-bool Esp32::UartEcho(void)
-{
-    uart->EnableLoopback(true);
-    uart->FlowControl(true);
-    uart->ClearRxBuffer();
-    uart->EnableSlip(true);
-    uart->EnableIRQ(true);
-    int br = 115200;
-    //uart->SetBaudRate(32*115200);
-    command_buf_t *buf;
-
-    for(int rate = 115200; rate < 8000000; rate *= 2) {
-        uart->SetBaudRate(rate);
-        for(int i=800; i<=1000;i+=50) {
-            uint16_t start, stop;
-            if (uart->GetBuffer(&buf, 100) != pdTRUE) {
-                return false;
-            }
-            memset(buf->data, 0x00, CMD_BUF_SIZE);
-            buf->data[0] = 1;
-            buf->data[i-1] = 2;
-            int txbuf = buf->bufnr;
-            buf->size = i;
-            uart->TransmitPacket(buf, &start);
-
-            if (uart->ReceivePacket(&buf, 100) == pdTRUE) {
-                stop = getMsTimer();
-                int t = 0;
-                for (int j=0;j<buf->size;j++) {
-                    t += (int)buf->data[j];
-                }
-                bool ok = (t == 3) && (buf->data[0] == 1) && (buf->data[i-1] == 2) && (buf->size == i);
-                printf("%d Bytes received from buffer %d in buffer %d after %d ms Verdict: %s\n", buf->size, txbuf, buf->bufnr, stop - start, ok ? "OK!" : "FAIL!");
-                uart->FreeBuffer(buf);
-                //dump_hex_relative(buf->data, buf->size);
-            } else {
-                printf("No packet.\n");
-            }
-        }
-    }
-    uart->EnableLoopback(false);
-    return true;
-}
-
 bool Esp32::Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data,
         uint8_t *receiveBuffer, int timeout)
 {
@@ -289,7 +224,8 @@ bool Esp32::Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data,
     return false;
 }
 
-int Esp32 :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
+static uint8_t receiveBuffer[512];
+int Esp32 :: Download(void)
 {
     const uint8_t syncFrame[] = { 0x00, 0x08, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00,
                                   0x07, 0x07, 0x12, 0x20,
@@ -301,36 +237,43 @@ int Esp32 :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
     const uint8_t syncResp[] = { 0x01, 0x08, 0x04, 0x00, 0xEE, 0xEE, 0xEE, 0xEE,
                                  0x00, 0x00, 0x00, 0x00 };
 
-    static uint8_t receiveBuffer[512];
-    static uint8_t flashBlock[16 + FLASH_TRANSFER_SIZE];
-
+    bool downloadStringFound = false;
     bool synced = false;
 
-    vTaskDelay(100); // wait for the boot message to appear
-    bzero(receiveBuffer, 512);
-    // Force current data to be output as a packet
-    uart->EnableSlip(true);
-    uart->EnableSlip(false); 
-    if (uart->Read(receiveBuffer, 512) > 0) {
-        printf("Boot message:\n%s\n", receiveBuffer);
-    } else {
-    	printf("No boot message.\n");
-    	return -7; // no response at all from ESP32
-    }
-    bool downloadStringFound = false;
-    for (int i=0;i<100;i++) {
-    	if (strncmp((char *)(receiveBuffer + i), "DOWNLOAD", 8) == 0) {
-    		downloadStringFound = true;
-    		break;
-    	}
+    for(int retries = 0; retries < 3; retries++) {
+        uart->EnableSlip(false); // first receive boot message
+        uart->EnableLoopback(false);
+        uart->FlowControl(false);
+        uart->txDebug = false; // disable debug
+        Boot(); // also does disable, so this should stop the application
+
+        vTaskDelay(100); // wait for the boot message to appear
+        bzero(receiveBuffer, 512);
+        // Force current data to be output as a packet
+        uart->EnableSlip(true);
+        uart->EnableSlip(false); 
+        if (uart->Read(receiveBuffer, 512) > 0) {
+            printf("Boot message:\n%s\n", receiveBuffer);
+        } else {
+            printf("No boot message.\n");
+        }
+        for (int i=0;i<100;i++) {
+            if (strncmp((char *)(receiveBuffer + i), "DOWNLOAD", 8) == 0) {
+                downloadStringFound = true;
+                break;
+            }
+        }
+        if (!downloadStringFound) {
+            printf("Download string not found.\n");
+        } else {
+            break;
+        }
     }
     if (!downloadStringFound) {
-    	printf("Download string not found.\n");
-    	return -8;
+        return -7;
     }
 
     uart->EnableSlip(true); // now communicate with packets
-    // uart->SetBaudRate(115200*2);
 
     command_buf_t *buf;
     for (int i = 0; i < 10; i++) {
@@ -372,6 +315,14 @@ int Esp32 :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
         return -2;
     }
 
+    // If a command succeeded, jerk up the baudrate
+    PackParams(parambuf, 2, 2000000, 0); 
+    if (!Command(ESP_CHANGE_BAUDRATE, 8, 0, parambuf, receiveBuffer, 200)) {
+        printf("Command Error ESP_CHANGE_BAUDRATE\n");
+        return -9;
+    }
+    uart->SetBaudRate(2000000);
+
     // Set SPI Flash Parameters
     PackParams(parambuf, 6, 0, // FlashID
                     0x200000, // 2 MB
@@ -383,10 +334,18 @@ int Esp32 :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
         printf("Command Error ESP_SET_FLASH_PARAMS\n");
         return -3;
     }
+    return 0;
+}
 
+int Esp32 :: Flash(const uint8_t *binary, uint32_t address, uint32_t length, EspDownloadCallback_t callback, void *context)
+{
     uint32_t block_size = FLASH_TRANSFER_SIZE;
     uint32_t blocks = (length + block_size - 1) / block_size;
     uint32_t total_length = blocks * block_size;
+    uint8_t parambuf[32]; // up to 8 ints
+    static uint8_t flashBlock[16 + FLASH_TRANSFER_SIZE];
+
+    printf("Number of blocks to program: %d (from %p) to %u\n", blocks, binary, address);
 
     // Now start Flashing
     PackParams(parambuf, 4, total_length, blocks, block_size, address);
@@ -402,8 +361,6 @@ int Esp32 :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
     // Flash Blocks
     const uint8_t *pb = binary;
     uint32_t remain = length;
-
-    printf("Number of blocks to program: %d\n", blocks);
 
     for (uint32_t i = 0; i < blocks; i++) {
         uint32_t now = (remain > block_size) ? block_size : remain;
@@ -421,16 +378,19 @@ int Esp32 :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
         	printf("Command Error ESP_FLASH_DATA.\n");
             return -5;
         }
+        if(callback) {
+            callback(context);
+        }
         remain -= now;
         pb += now;
     }
 
-    PackParams(parambuf, 1, 1); // Stay in the Loader
+/*  PackParams(parambuf, 1, 1); // Stay in the Loader
     if (!Command(ESP_FLASH_END, 4, 0, parambuf, receiveBuffer, 200)) {
     	printf("Command Error ESP_FLASH_END.\n");
         return -6;
     }
-
+*/
     printf("Programming ESP32 was a success!\n");
     return 0;
 }
@@ -473,134 +433,10 @@ void Esp32 :: ReadRxMessage(void)
 #endif
 }
 
-void Esp32::CommandTaskStart(void *context)
-{
-    Esp32 *w = (Esp32 *) context;
-    w->CommandThread();
-}
-
-void Esp32::CommandThread()
-{
-    // uart->EnableIRQ(true);
-
-    espCommand_t command;
-    bool run = true;
-    int a;
-
-    while (run) {
-        xQueueReceive(commandQueue, &command, portMAX_DELAY);
-
-        switch (command.commandCode) {
-        case WIFI_QUIT:
-            run = false;
-            break;
-        case WIFI_OFF:
-            Disable();
-            uart->EnableSlip(false);
-            break;
-        case WIFI_BOOTMODE:
-            uart->EnableSlip(true);
-            Boot();
-            break;
-        case WIFI_START:
-            printf("Go, Wifi!\n");
-            StartApp();
-            break;
-        case WIFI_DOWNLOAD:
-            uart->EnableSlip(false); // first receive boot message
-            uart->EnableLoopback(false);
-            uart->FlowControl(false);
-            uart->txDebug = false; // disable debug
-            Boot(); // also does disable, so this should stop the application
-            a = Download((const uint8_t *)command.data, command.address, command.length);
-            if (a) {
-                programError = true;
-            }
-            if (command.doFree) {
-                delete[] ((uint8_t *)command.data);
-            }
-            break;
-        case WIFI_DOWNLOAD_START:
-            programError = false;
-            break;
-        case WIFI_DOWNLOAD_MSG:
-            if (!programError) {
-                UserInterface :: postMessage("ESP32 Program Complete.");
-            } else {
-                UserInterface :: postMessage("ESP32 Program Failed.");
-            }
-            break;
-        case UART_ECHO:
-            Disable();
-            UartEcho();
-            break;
-        default:
-            break;
-        }
-    }
-
-    Disable();
-    uart->EnableIRQ(false);
-    vTaskDelete(NULL);
-}
-
 void Esp32::Quit()
 {
     uart->EnableIRQ(false);
     Disable();
-}
-
-BaseType_t Esp32::doDownload(uint8_t *data, uint32_t address, uint32_t length, bool doFree)
-{
-    espCommand_t command;
-    command.commandCode = WIFI_DOWNLOAD;
-    if (!data) {
-        command.data = partition_table;
-        command.address = 0x8000;
-        command.length = 144;
-        command.doFree = false;
-    } else {
-        command.data = data;
-        command.address = address;
-        command.length = length;
-        command.doFree = doFree;
-    }
-    return xQueueSend(commandQueue, &command, 200);
-}
-
-BaseType_t Esp32::doBootMode()
-{
-    espCommand_t command;
-    command.commandCode = WIFI_BOOTMODE;
-    return xQueueSend(commandQueue, &command, 200);
-}
-
-BaseType_t Esp32::doDisable()
-{
-    espCommand_t command;
-    command.commandCode = WIFI_OFF;
-    return xQueueSend(commandQueue, &command, 200);
-}
-
-BaseType_t Esp32::doStart()
-{
-    espCommand_t command;
-    command.commandCode = WIFI_START;
-    return xQueueSend(commandQueue, &command, 200);
-}
-
-BaseType_t Esp32::doDownloadWrap(bool start)
-{
-    espCommand_t command;
-    command.commandCode = (start) ? WIFI_DOWNLOAD_START : WIFI_DOWNLOAD_MSG;
-    return xQueueSend(commandQueue, &command, 200);
-}
-
-BaseType_t Esp32::doUartEcho()
-{
-    espCommand_t command;
-    command.commandCode = UART_ECHO;
-    return xQueueSend(commandQueue, &command, 200);
 }
 
 Esp32 esp32;

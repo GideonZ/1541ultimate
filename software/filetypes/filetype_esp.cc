@@ -71,6 +71,12 @@ FileType *FileTypeESP :: test_type(BrowsableDirEntry *br)
     return NULL;
 }
 
+static void status_callback(void *user)
+{
+    UserInterface *ui = (UserInterface *)user;
+    ui->update_progress(NULL, 1);
+}
+
 SubsysResultCode_e FileTypeESP::execute(SubsysCommand *cmd)
 {
     File *file = 0;
@@ -99,36 +105,61 @@ SubsysResultCode_e FileTypeESP::execute(SubsysCommand *cmd)
         uint32_t address;
     } header;
     uint32_t start = 0;
-
+    bool error = false;
     if (file) {
-        total_bytes_read = 0;
-        cmd->user_interface->popup("ESP Programming now starts.", BUTTON_OK);
+        uint32_t filesize = file->get_size();
+        esp32.StopApp();
+        int status = esp32.Download();
+        if (status != 0) {
+            cmd->user_interface->popup("Could not switch to download mode.", BUTTON_OK);
+            return SSRET_INTERNAL_ERROR;
+        }
 
-        esp32.doDownloadWrap(true);
+        cmd->user_interface->show_progress("Flashing ESP32 Application", filesize / 1024);
+        total_bytes_read = 0;
         while (remain) {
             file->read(&header, 12, &bytes_read);
             remain -= bytes_read;
             total_bytes_read += bytes_read;
             if (bytes_read != 12) {
+                cmd->user_interface->hide_progress();
                 cmd->user_interface->popup("Could not read header.", BUTTON_OK);
+                error = true;
                 break;
             }
             if (header.signature != 0x4d474553) {
+                cmd->user_interface->hide_progress();
                 cmd->user_interface->popup("Incorrect signature in file.", BUTTON_OK);
+                error = true;
                 break;
             }
             dest = new uint8_t[header.length];
             if (!dest) {
+                cmd->user_interface->hide_progress();
                 cmd->user_interface->popup("Couldn't alloc mem to load segment.", BUTTON_OK);
+                error = true;
                 break;
             }
             file->read(dest, header.length, &bytes_read);
             remain -= bytes_read;
             total_bytes_read += bytes_read;
-            esp32.doDownload(dest, header.address, header.length, true);
+            status = esp32.Flash(dest, header.address, header.length, status_callback, cmd->user_interface);
+            if (status != 0) {
+                char errmsg[32];
+                sprintf(errmsg, "Flashing Error %d", status);
+                cmd->user_interface->hide_progress();
+                cmd->user_interface->popup(errmsg, BUTTON_OK);
+                error = true;
+                break;
+            }
         }
-        esp32.doDownloadWrap(false);
         fm->fclose(file);
+        if (!error) {
+            cmd->user_interface->hide_progress();
+            cmd->user_interface->popup("Flashing ESP32 Success!", BUTTON_OK);
+        }
+        esp32.EnableRunMode();
+        esp32.StartApp();
     } else {
         printf("Error opening file.\n");
         cmd->user_interface->popup(FileSystem::get_error_string(fres), BUTTON_OK);

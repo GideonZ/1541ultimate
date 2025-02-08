@@ -31,7 +31,13 @@ BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseT
 
 void wifi_command_init(void)
 {
+#if (CLOCK_FREQ == 66666667)
+    esp32.uart->SetBaudRate(6666666);
+#else
     esp32.uart->SetBaudRate(5000000);
+#endif
+    esp32.uart->FlowControl(true);
+    esp32.uart->ClearRxBuffer();
     esp32.uart->EnableSlip(true);
     esp32.uart->SetReceiveCallback(wifi_rx_isr);
     esp32.uart->EnableIRQ(true);

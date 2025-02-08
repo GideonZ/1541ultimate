@@ -1158,8 +1158,6 @@ void U64Config :: create_task_items(void)
     myActions.esp32off  = new Action("Disable ESP32", SUBSYSID_U64, MENU_U64_WIFI_DISABLE);
     myActions.esp32on   = new Action("Enable ESP32",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE);
     myActions.esp32boot = new Action("Enable ESP32 Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT);
-    myActions.uartecho  = new Action("UART Echo", SUBSYSID_U64, MENU_U64_UART_ECHO);
-    myActions.wifiecho  = new Action("WiFi Echo", SUBSYSID_U64, MENU_U64_WIFI_ECHO);
 
     dev->append(myActions.saveedid );
 #if DEVELOPER > 0
@@ -1168,8 +1166,6 @@ void U64Config :: create_task_items(void)
     dev->append(myActions.esp32off  );
     dev->append(myActions.esp32on   );
     dev->append(myActions.esp32boot );
-    dev->append(myActions.uartecho  );
-    dev->append(myActions.wifiecho  );
 #endif
 }
 
@@ -1239,31 +1235,6 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
         }
         break;
 #endif
-
-    case MENU_U64_WIFI_DISABLE:
-        esp32.doDisable();
-        break;
-
-    case MENU_U64_WIFI_ENABLE:
-        esp32.doStart();
-        break;
-
-    case MENU_U64_WIFI_BOOT:
-        esp32.doBootMode();
-        break;
-
-    case MENU_U64_WIFI_ECHO:
-        //esp32.doRequestEcho();
-        break;
-
-    case MENU_U64_UART_ECHO:
-        esp32.doUartEcho();
-        break;
-
-    case MENU_U64_WIFI_DOWNLOAD:
-        esp32.doDownload(NULL, 0, 0, false);
-        break;
-
     case MENU_U64_POKE:
         if (cmd->user_interface->string_box("Poke AAAA,DD", poke_buffer, 16)) {
 
