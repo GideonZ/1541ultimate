@@ -20,6 +20,9 @@
 #include "filemanager.h"
 #include "init_function.h"
 #include "blockdev_flash.h"
+#if U64 == 2
+    #include "wifi_cmd.h"
+#endif
 
 static Screen *screen;
 static UserInterface *user_interface;
@@ -49,7 +52,7 @@ const uint8_t orig_kernal[] = {
 
 static void turn_off()
 {
-#if U64
+#if U64 == 1
     console_print(screen, "\n\033\022Turning OFF machine in 5 seconds....\n");
 
     wait_ms(5000);
@@ -57,6 +60,13 @@ static void turn_off()
     U64_POWER_REG = 0xB2;
     U64_POWER_REG = 0x2B;
     U64_POWER_REG = 0xB2;
+    console_print(screen, "You shouldn't see this!\n");
+#elif U64 == 2
+    console_print(screen, "\n\033\022Turning OFF machine in 5 seconds....\n");
+
+    wait_ms(5000);
+    wifi_machine_off();
+    wait_ms(1000);
     console_print(screen, "You shouldn't see this!\n");
 #else
     console_print(screen, "\nPLEASE TURN OFF YOUR MACHINE.\n");

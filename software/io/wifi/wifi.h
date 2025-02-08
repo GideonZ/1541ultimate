@@ -15,45 +15,8 @@
 #include "semphr.h"
 #include "browsable.h"
 #include "size_str.h"
-#include "rpc_calls.h"
 #include "network_esp32.h"
-
-extern "C" {
-    #include "cmd_buffer.h"
-}
-
-// These functions perform the communication with the WiFi Module
-int wifi_setbaud(int baudrate, uint8_t flowctrl);
-BaseType_t wifi_detect(uint16_t *major, uint16_t *minor, char *str, int maxlen);
-int wifi_getmac(uint8_t *mac);
-int wifi_scan(void *);
-int wifi_wifi_connect(const char *ssid, const char *password, uint8_t auth);
-int wifi_wifi_connect_known_ssid(const char *ssid, const char *password, uint8_t auth);
-int wifi_wifi_disconnect();
-int wifi_machine_off();
-err_t wifi_tx_packet(void *driver, void *buffer, int length);
-void wifi_free(void *driver, void *buffer);
-void wifi_rx_packet();
-
-// U64-Elite-II only
-typedef struct {
-    uint16_t vbus;
-    uint16_t vaux;
-    uint16_t v50;
-    uint16_t v33;
-    uint16_t v18;
-    uint16_t v10;
-    uint16_t vusb;
-} voltages_t;
-
-int wifi_enable();
-int wifi_disable();
-int wifi_modem_enable(bool);
-int wifi_get_voltages(voltages_t *voltages);
-int wifi_is_connected(uint8_t &status);
-int wifi_forget_aps();
-
-//int wifi_get_time(const char *timezone, esp_datetime_t *time);
+#include "wifi_cmd.h"
 
 // This class provides an interface to the WiFi module, to manage and program it
 typedef enum {
@@ -71,6 +34,7 @@ class WiFi : public Esp32Application
 {
     TaskHandle_t runModeTask;
     command_buf_context_t *packets;
+    DmaUART *uart;
     NetworkLWIP_WiFi *netstack;
 
     WifiState_t state;
@@ -92,8 +56,6 @@ public:
 
     BaseType_t doRequestEcho(void);
 
-    DmaUART *uart;
-
     WifiState_t getState(void) { return state; }
     const char *getModuleName(void) { return moduleName; }
     const char *getModuleType(void) { return moduleType; }
@@ -114,6 +76,9 @@ public:
     void Start();
     void Terminate();
 };
+
+err_t wifi_tx_packet(void *driver, void *buffer, int length);
+void wifi_free(void *driver, void *buffer);
 
 extern WiFi wifi;
 

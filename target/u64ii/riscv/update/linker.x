@@ -4,7 +4,7 @@
 
 MEMORY
 {
-    memory : ORIGIN = 0x00030000, LENGTH = 0xE60000
+    memory : ORIGIN = 0x03000000, LENGTH = 0x01000000
 }
 
 OUTPUT_FORMAT( "elf32-littleriscv",

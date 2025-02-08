@@ -7,6 +7,8 @@
 
 #include "update_common.h"
 #include "checksums.h"
+#include "i2c_drv.h"
+#include "wifi_cmd.h"
 
 extern uint32_t _u64_rbf_start;
 extern uint32_t _u64_rbf_end;
@@ -88,16 +90,6 @@ void do_update(void)
         create_dir(CARTS_DIRECTORY);
         create_dir(HTML_DIRECTORY);
 
-        if(original_kernal_found(flash2, 0x488000)) {
-            copy_flash_binary(flash2, 0x488000, 0x2000, "kernal.bin");
-            copy_flash_binary(flash2, 0x48A000, 0x2000, "basic.bin");
-            copy_flash_binary(flash2, 0x486000, 0x1000, "chars.bin");
-        } else if (original_kernal_found(flash2, 0x458000)) {
-            copy_flash_binary(flash2, 0x458000, 0x2000, "kernal.bin");
-            copy_flash_binary(flash2, 0x45A000, 0x2000, "basic.bin");
-            copy_flash_binary(flash2, 0x456000, 0x1000, "chars.bin");
-        }
-
         write_flash_file("1581.rom", &_1581_bin_start, 0x8000);
         write_flash_file("1571.rom", &_1571_bin_start, 0x8000);
         write_flash_file("1541.rom", &_1541_bin_start, 0x4000);
@@ -109,17 +101,44 @@ void do_update(void)
 
         flash2->protect_disable();
         flash_buffer_at(flash2, screen, 0x000000, false, &_u64_rbf_start, &_u64_rbf_end,   "V1.0", "Runtime FPGA");
-        flash_buffer_at(flash2, screen, 0x290000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
+        flash_buffer_at(flash2, screen, 0x220000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
 
         write_protect(flash2, 4096);
     }
 
     reset_config(flash2);
+
+    // assuming that the ESP32 is running still, we should be able to send a slip message to it
+    wifi_command_init();
     turn_off();
 }
 
 extern "C" int ultimate_main(int argc, char *argv[])
 {
+    i2c->enable_scan(true, false);
 	do_update();
     return 0;
+}
+
+extern "C" {
+int _close(int file)
+{
+    return -1;
+}
+
+ssize_t _write(int file, const void *ptr, size_t len)
+{
+    return (size_t)0; // nothing sent
+}
+
+ssize_t _read(int file, void *ptr, size_t len)
+{
+    return 0;
+}
+
+off_t _lseek(int file, off_t ptr, int dir)
+{
+    return 0;
+}
+
 }

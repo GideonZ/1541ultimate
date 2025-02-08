@@ -174,6 +174,7 @@ SRCS_CC	 =  u64ii_init.cc \
 			dma_uart.cc \
 			esp32.cc \
 			network_esp32.cc \
+			wifi_cmd.cc \
 			wifi.cc \
 			sntp_time.cc \
 			$(PRJ).cc
@@ -199,9 +200,6 @@ VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/risc-v/chip_specific_extensions/RV3
 VPATH +=	$(PATH_SW)/portable/riscv
 VPATH +=	$(PATH_SW)/6502/sidcrt/target
 VPATH +=	$(PATH_SW)/u64
-#VPATH +=	$(PATH_SW)/../neorv32/sw/common
-#VPATH +=	$(PATH_SW)/../neorv32/sw/lib/include
-#VPATH +=	$(PATH_SW)/../neorv32/sw/lib/source
 VPATH +=	$(PATH_SW)/u64ctrl/main
 
 

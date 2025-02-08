@@ -13,8 +13,9 @@ class Hw_I2C_Driver : public I2C_Driver
 public:
     Hw_I2C_Driver(volatile t_hw_i2c *regs)
     {
-        channel = 0;
         i2c_regs = regs;
+        i2c_regs->scan_enable = 0;
+        channel = 0;
         scanning = false;
     }
 

@@ -1,0 +1,80 @@
+/*
+ * wifi_cmd.h
+ *
+ *  Created on: Feb 8, 2025
+ *      Author: gideon
+ */
+
+#ifndef WIFI_CMD_H_
+#define WIFI_CMD_H_
+
+#include "dma_uart.h"
+#include "esp32.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+#include "rpc_calls.h"
+extern "C" {
+    #include "cmd_buffer.h"
+}
+
+// U64-Elite-II only
+typedef struct {
+    uint16_t vbus;
+    uint16_t vaux;
+    uint16_t v50;
+    uint16_t v33;
+    uint16_t v18;
+    uint16_t v10;
+    uint16_t vusb;
+} voltages_t;
+
+// These functions perform the communication with the WiFi Module
+void wifi_command_init(void); // Sets the callback for the ISR
+int wifi_setbaud(int baudrate, uint8_t flowctrl);
+BaseType_t wifi_detect(uint16_t *major, uint16_t *minor, char *str, int maxlen);
+int wifi_getmac(uint8_t *mac);
+int wifi_scan(void *);
+int wifi_wifi_connect(const char *ssid, const char *password, uint8_t auth);
+int wifi_wifi_connect_known_ssid(const char *ssid, const char *password, uint8_t auth);
+int wifi_wifi_disconnect();
+int wifi_machine_off();
+void wifi_rx_packet();
+
+int wifi_enable();
+int wifi_disable();
+int wifi_modem_enable(bool);
+int wifi_get_voltages(voltages_t *voltages);
+int wifi_is_connected(uint8_t &status);
+int wifi_forget_aps();
+
+extern uint16_t sequence_nr;
+extern TaskHandle_t tasksWaitingForReply[NUM_BUFFERS];
+
+#define BUFARGS(x, cmd)     command_buf_t *buf; \
+                            esp32.uart->GetBuffer(&buf, portMAX_DELAY); \
+                            rpc_ ## x ## _req *args = (rpc_ ## x ## _req *)buf->data; \
+                            args->hdr.command = cmd; \
+                            args->hdr.sequence = sequence_nr++; \
+                            args->hdr.thread = (uint8_t)buf->bufnr; \
+                            buf->size = sizeof(rpc_ ## x ## _req); \
+                            tasksWaitingForReply[buf->bufnr] = xTaskGetCurrentTaskHandle();
+
+
+#define TRANSMIT(x)         esp32.uart->TransmitPacket(buf); \
+                            xTaskNotifyWait(0, 0, (uint32_t *)&buf, portMAX_DELAY); \
+                            rpc_ ## x ## _resp *result = (rpc_ ## x ## _resp *)buf->data; \
+                            if(result->hdr.thread < 16) { \
+                                tasksWaitingForReply[result->hdr.thread] = NULL; \
+                            }
+
+#define RETURN_STD          errno = result->xerrno; \
+                            int retval = result->retval; \
+                            esp32.uart->FreeBuffer(buf); \
+                            return retval;
+
+#define RETURN_ESP          int retval = result->esp_err; \
+                            esp32.uart->FreeBuffer(buf); \
+                            return retval;
+
+#endif /* WIFI_CMD_H_ */

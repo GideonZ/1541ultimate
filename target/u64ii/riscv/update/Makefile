@@ -32,6 +32,7 @@ SRCS_C   =	itu.c \
             ffunicode.c \
             time.c \
             mdio.c \
+			cmd_buffer.c \
             riscv_main.c \
              
 SRCS_CC	 =  u64ii_init.cc \
@@ -81,6 +82,9 @@ SRCS_CC	 =  u64ii_init.cc \
 			directory.cc \
 			file.cc \
 			filesystem_fat.cc \
+			dma_uart.cc \
+			esp32.cc \
+			wifi_cmd.cc \
 			update_u64ii.cc
 
 VPATH +=	.
@@ -91,7 +95,7 @@ VPATH +=	$(PATH_SW)/6502/sidcrt/target
 VPATH +=	$(PATH_SW)/u64
 VPATH +=    $(PATH_SW)/application/update_u2p
 VPATH +=    $(PATH_SW)/../html
-VPATH +=	$(PATH_SW)/wifi/scan/main
+VPATH +=	$(PATH_SW)/u64ctrl/main
 VPATH +=    $(FPGA_PATH)
 VPATH +=    ../ultimate/result
 
@@ -110,11 +114,11 @@ SRCS_IEC =
 SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -Os -DOS -DUSB2513 -DRISC=1 -DSAFEMODE=1 -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=125000000 -DU64=1 -Wno-write-strings -fdata-sections -nostartfiles -mno-fdiv -DRECOVERYAPP=1
+OPTIONS  = -g -ffunction-sections -DRISCV -Os -DOS -DUSB2513 -DRISC=1 -DSAFEMODE=1 -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=100000000 -DU64=2 -Wno-write-strings -fdata-sections -nostartfiles -mno-fdiv -DRECOVERYAPP=1
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = linker.x
-LIBS    = ../../../libs/riscv/lwip/result/liblwip.a
+LIBS     = #../../../libs/riscv/lwip/result/liblwip.a
 #LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
 LFLAGS   = --gc-sections
 LINKMETHOD = ld

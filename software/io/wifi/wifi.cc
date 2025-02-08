@@ -12,7 +12,6 @@
 #include <stdarg.h>
 #include "userinterface.h"
 #include "rpc_calls.h"
-#include "network_esp32.h"
 #include "filemanager.h"
 
 #define DEBUG_INPUT  0
@@ -61,7 +60,7 @@ void WiFi :: Init(DmaUART *uart, command_buf_context_t *packets)
 {
     this->uart = uart;
     this->packets = packets;
-    uart->SetReceiveCallback(wifi_rx_isr);
+    wifi_command_init();
 }
 
 void WiFi :: Start()
@@ -383,164 +382,6 @@ void WiFi ::getAccessPointItems(Browsable *parent, IndexedList<Browsable *> &lis
     LEAVE_SAFE_SECTION;
 }
 
-/// C like functions to 'talk' with the WiFi Module
-static uint16_t sequence_nr = 0;
-extern WiFi wifi;
-TaskHandle_t tasksWaitingForReply[NUM_BUFFERS];
-
-#define BUFARGS(x, cmd)     command_buf_t *buf; \
-                            wifi.uart->GetBuffer(&buf, portMAX_DELAY); \
-                            rpc_ ## x ## _req *args = (rpc_ ## x ## _req *)buf->data; \
-                            args->hdr.command = cmd; \
-                            args->hdr.sequence = sequence_nr++; \
-                            args->hdr.thread = (uint8_t)buf->bufnr; \
-                            buf->size = sizeof(rpc_ ## x ## _req); \
-                            tasksWaitingForReply[buf->bufnr] = xTaskGetCurrentTaskHandle();
-
-
-#define TRANSMIT(x)         wifi.uart->TransmitPacket(buf); \
-                            xTaskNotifyWait(0, 0, (uint32_t *)&buf, portMAX_DELAY); \
-                            rpc_ ## x ## _resp *result = (rpc_ ## x ## _resp *)buf->data; \
-                            if(result->hdr.thread < 16) { \
-                                tasksWaitingForReply[result->hdr.thread] = NULL; \
-                            }
-
-#define RETURN_STD          errno = result->xerrno; \
-                            int retval = result->retval; \
-                            wifi.uart->FreeBuffer(buf); \
-                            return retval;
-
-#define RETURN_ESP          int retval = result->esp_err; \
-                            wifi.uart->FreeBuffer(buf); \
-                            return retval;
-
-
-void hex(uint8_t h)
-{
-    static const uint8_t hexchars[] = "0123456789ABCDEF";
-    ioWrite8(UART_DATA, hexchars[h >> 4]);
-    ioWrite8(UART_DATA, hexchars[h & 15]);
-}
-
-BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseType_t *w)
-{
-    rpc_header_t *hdr = (rpc_header_t *)buf->data;
-    BaseType_t res;
-
-    if ((hdr->thread < NUM_BUFFERS) && (tasksWaitingForReply[hdr->thread])) {
-        TaskHandle_t thread = tasksWaitingForReply[hdr->thread];
-        tasksWaitingForReply[hdr->thread] = NULL;
-        ioWrite8(UART_DATA, 'N');
-        res = xTaskNotifyFromISR(thread, (uint32_t)buf, eSetValueWithOverwrite, w);
-    } else {
-        ioWrite8(UART_DATA, '~');
-        res = cmd_buffer_received_isr(context, buf, w);
-    }
-    return res;
-}
-
-
-int wifi_setbaud(int baudrate, uint8_t flowctrl)
-{
-    BUFARGS(setbaud, CMD_SET_BAUD);
-
-    args->baudrate = baudrate;
-    args->flowctrl = flowctrl;
-    args->inversions = 0;
-
-    vTaskDelay(1000);
-
-    wifi.uart->TransmitPacket(buf);
-    vTaskDelay(100); // wait until transmission must have completed (no handshake!) (~ half second, remote side will send reply at new rate after one second)
-    wifi.uart->SetBaudRate(baudrate);
-    wifi.uart->FlowControl(flowctrl != 0);
-
-    BaseType_t success = xTaskNotifyWait(0, 0, (uint32_t *)&buf, 1000); // 5 seconds
-    if (success == pdTRUE) {
-        // copy results
-        rpc_espcmd_resp *result = (rpc_espcmd_resp *)buf->data;
-        wifi.uart->FreeBuffer(buf);
-        tasksWaitingForReply[result->hdr.thread] = NULL;
-        return result->esp_err;
-    }
-    return -1;
-}
-
-BaseType_t wifi_detect(uint16_t *major, uint16_t *minor, char *str, int maxlen)
-{
-    BUFARGS(identify, CMD_IDENTIFY);
-
-    wifi.uart->TransmitPacket(buf);
-    // now block thread for reply
-    printf("Get ident...");
-    BaseType_t success = xTaskNotifyWait(0, 0, (uint32_t *)&buf, 100); // .5 seconds
-    if (success == pdTRUE) {
-        // From this moment on, "buf" points to the receive buffer!!
-        // copy results
-        rpc_identify_resp *result = (rpc_identify_resp *)buf->data;
-        *major = result->major;
-        *minor = result->minor;
-        strncpy(str, &result->string, maxlen);
-        str[maxlen-1] = 0;
-        printf("Identify: %s\n", str);
-    } else {
-        printf("No reply...\n");
-        // 'buf' still points to the transmit buffer.
-        // It is freed by the TxIRQ, so the content is invalid
-        // Let's try to get messages from the receive buffer to see what has been received.
-        // printf("Receive queue:\n");
-        while (wifi.uart->ReceivePacket(&buf, 0) == pdTRUE) {
-            printf("Buf %02x. Size: %4d. Data:\n", buf->bufnr, buf->size);
-            dump_hex(buf->data, buf->size > 64 ? 64 : buf->size);
-        }
-        // printf("/end of Receive queue\n");
-    }
-    return success;
-}
-
-int wifi_getmac(uint8_t *mac)
-{
-    BUFARGS(identify, CMD_WIFI_GETMAC);
-    TRANSMIT(getmac);
-    if (result->esp_err == 0) {
-        memcpy(mac, result->mac, 6);
-    } else {
-        printf("Get MAC returned %d as error code.\n", result->esp_err);
-    }
-    RETURN_ESP;
-}
-
-int wifi_is_connected(uint8_t &status)
-{
-    BUFARGS(identify, CMD_WIFI_IS_CONNECTED);
-    TRANSMIT(get_connection);
-    if (result->esp_err == 0) {
-        status = result->status;
-    } else {
-        printf("Get connection status returned %d as error code.\n", result->esp_err);
-    }
-    RETURN_ESP;
-}
-
-/*
-int wifi_get_time(const char *timezone, esp_datetime_t *time)
-{
-    BUFARGS(get_time, CMD_GET_TIME);
-    TRANSMIT(get_time);
-    if (result->esp_err == 0) {
-        time->year = result->datetime.year;
-        time->month = result->datetime.month;
-        time->day = result->datetime.day;
-        time->hour = result->datetime.hour;
-        time->minute = result->datetime.minute;
-        time->second = result->datetime.second;
-        time->weekday = result->datetime.weekday;
-    } else {
-        printf("Get time returned %d as error code.\n", result->esp_err);
-    }
-    RETURN_ESP;
-}
-*/
 typedef struct {
     const char *timezone;
     const char *utc;
@@ -588,134 +429,6 @@ const timezone_entry_t zones[] = {
     { "LINT",  "UTC +14",   "Christmas Island", "LINT-14" },
 };
 
-int wifi_scan(void *a)
-{
-    ultimate_ap_records_t *aps = (ultimate_ap_records_t *)a;
-
-    BUFARGS(identify, CMD_WIFI_SCAN);
-    TRANSMIT(scan);
-    ENTER_SAFE_SECTION;
-    memcpy(aps, &(result->rec), sizeof(ultimate_ap_records_t));
-    LEAVE_SAFE_SECTION;
-    RETURN_ESP;
-}
-
-int wifi_wifi_connect(const char *ssid, const char *password, uint8_t auth)
-{
-    BUFARGS(wifi_connect, CMD_WIFI_CONNECT);
-
-    bzero(args->ssid, 32);
-    bzero(args->password, 64);
-    strncpy(args->ssid, ssid, 32);
-    strncpy(args->password, password, 64);
-    args->auth_mode = auth;
-
-    TRANSMIT(scan);
-    RETURN_ESP;
-}
-
-// Useful in case the authentication method is not known (e.g. by a wrong config)
-// But when the SSID is not listed, it can still use the pre-programmed auth mode
-int wifi_wifi_connect_known_ssid(const char *ssid, const char *password, uint8_t authmode)
-{
-    for(int i=0; i < wifi_aps.num_records; i++) {
-        if (strncmp((char *)wifi_aps.aps[i].ssid, ssid, 32) == 0) {
-            return wifi_wifi_connect(ssid, password, wifi_aps.aps[i].authmode);
-        }
-    }
-    // not found
-    return wifi_wifi_connect(ssid, password, authmode);
-}
-
-int wifi_wifi_disconnect()
-{
-    BUFARGS(identify, CMD_WIFI_DISCONNECT);
-    TRANSMIT(espcmd);
-    RETURN_ESP;
-}
-
-int wifi_machine_off()
-{
-    BUFARGS(identify, CMD_MACHINE_OFF);
-    TRANSMIT(espcmd);
-    RETURN_ESP;
-}
-
-int wifi_forget_aps()
-{
-    BUFARGS(identify, CMD_CLEAR_APS);
-    TRANSMIT(espcmd);
-    RETURN_ESP;
-}
-
-
-#if U64 == 2
-int wifi_enable()
-{
-    BUFARGS(identify, CMD_WIFI_ENABLE);
-    TRANSMIT(espcmd);
-    RETURN_ESP;
-}
-
-int wifi_disable()
-{
-    BUFARGS(identify, CMD_WIFI_DISABLE);
-    TRANSMIT(espcmd);
-    RETURN_ESP;
-}
-
-int wifi_get_voltages(voltages_t *voltages)
-{
-    BUFARGS(identify, CMD_GET_VOLTAGES);
-    TRANSMIT(get_voltages);
-    voltages->vbus = result->vbus;
-    voltages->vaux = result->vaux;
-    voltages->v50  = result->v50;
-    voltages->v33  = result->v33;
-    voltages->v18  = result->v18;
-    voltages->v10  = result->v10;
-    voltages->vusb = result->vusb;
-    RETURN_ESP;
-}
-#endif
-
-int wifi_modem_enable(bool enable)
-{
-    BUFARGS(identify, (enable) ? CMD_MODEM_ON : CMD_MODEM_OFF);
-    TRANSMIT(espcmd);
-    RETURN_ESP;
-}
-
-err_t wifi_tx_packet(void *driver, void *buffer, int length)
-{
-    if (wifi.getState() != eWifi_Connected) {
-        return ERR_CONN;
-    }
-    
-    BUFARGS(send_eth, CMD_SEND_PACKET);
-
-    uint32_t chunkSize = length;
-    if (chunkSize > CMD_BUF_PAYLOAD) {
-        chunkSize = CMD_BUF_PAYLOAD;
-    }
-    args->length = chunkSize;
-    memcpy(&args->data, buffer, chunkSize);
-    buf->size += (chunkSize - 4);
-
-    wifi.uart->TransmitPacket(buf);
-    //TRANSMIT(espcmd);
-    //RETURN_ESP;
-    return ERR_OK;
-}
-
-void wifi_free(void *driver, void *buffer)
-{
-    // driver points to the WiFi object
-    // buffer points to the cmd_buffer_t object
-    WiFi *w = (WiFi *)driver;
-    w->freeBuffer((command_buf_t *)buffer);
-}
-
 
 #include "subsys.h"
 void BrowsableWifiAP :: fetch_context_items(IndexedList<Action *>&items)
@@ -739,4 +452,34 @@ SubsysResultCode_e BrowsableWifiAP :: connect_ap(SubsysCommand *cmd)
         wifi.sendConnectEvent(bap->ssid, password, bap->auth);
     }
     return SSRET_OK;
+}
+
+err_t wifi_tx_packet(void *driver, void *buffer, int length)
+{
+    if (wifi.getState() != eWifi_Connected) {
+        return ERR_CONN;
+    }
+    
+    BUFARGS(send_eth, CMD_SEND_PACKET);
+
+    uint32_t chunkSize = length;
+    if (chunkSize > CMD_BUF_PAYLOAD) {
+        chunkSize = CMD_BUF_PAYLOAD;
+    }
+    args->length = chunkSize;
+    memcpy(&args->data, buffer, chunkSize);
+    buf->size += (chunkSize - 4);
+
+    esp32.uart->TransmitPacket(buf);
+    //TRANSMIT(espcmd);
+    //RETURN_ESP;
+    return ERR_OK;
+}
+
+void wifi_free(void *driver, void *buffer)
+{
+    // driver points to the WiFi object
+    // buffer points to the cmd_buffer_t object
+    WiFi *w = (WiFi *)driver;
+    w->freeBuffer((command_buf_t *)buffer);
 }
