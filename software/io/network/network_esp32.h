@@ -37,6 +37,7 @@ public:
     static SubsysResultCode_e enable(SubsysCommand *cmd);
     static SubsysResultCode_e disable(SubsysCommand *cmd);
     static SubsysResultCode_e manual_connect(SubsysCommand *cmd);
+    static SubsysResultCode_e auto_connect(SubsysCommand *cmd);
 
     // from ConfigurableObject
     void effectuate_settings(void);

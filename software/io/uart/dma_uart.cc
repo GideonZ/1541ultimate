@@ -170,7 +170,7 @@ uint8_t DmaUART::DmaUartInterrupt(void *context)
             // UART DMA is not able to receive, because it is not loaded with an address, We need a buffer!
             if (cmd_buffer_get_free_isr(u->packets, &rxb, &HPTaskAwoken) == pdTRUE) {
                 // receive here. Writing to these registers should trigger the receive unit
-                xQueueSendFromISR(u->rx_bufs, &rxb, &HPTaskAwoken);
+                xQueueSendFromISR(u->rx_bufs, &rxb, &HPTaskAwoken); // this has to be first, before writing rx_addr!
 //                ioWrite8(UART_DATA, '~');
 //                hex(rxb->bufnr);
                 u->uart->rx_addr = rxb->data; // pbufs will be attached in the receive thread
@@ -204,7 +204,7 @@ uint8_t DmaUART::DmaUartInterrupt(void *context)
         
         // Receive code!
         if (uart_intr_status & DMAUART_RxInterrupt) {
-            u->uart->ictrl = DMAUART_RxIRQ_DIS;
+            // u->uart->ictrl = DMAUART_RxIRQ_DIS; /// THIS IS SO BAD!
             command_buf_t *rxb = NULL;
 /*
             ioWrite8(UART_DATA, '<');

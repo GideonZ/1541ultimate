@@ -161,7 +161,10 @@ static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t e
                 memcpy(ev2->ssid, last_connect.ssid, 32);
                 reply->size = sizeof(event_pkt_connected);
             }
-            my_uart_transmit_packet(UART_NUM_1, reply);
+            ESP_LOGI(TAG, "Sending event %d to ultimate", evcode);
+            if(my_uart_transmit_packet(UART_NUM_1, reply) == pdFALSE) {
+                ESP_LOGW(TAG, "Failed to send event to ultimate");
+            }
         } else {
             ESP_LOGW(TAG, "No buffer to send event.");
         }
@@ -216,6 +219,7 @@ static void wifi_init()
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
     ESP_ERROR_CHECK(esp_wifi_start());
 
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
@@ -584,7 +588,7 @@ esp_err_t wifi_connect_to_last()
     return err;
 }
 
-int handle_connect_command(ConnectCommand_t *cmd)
+int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
 {
     ConnectEvent_t connect_event;
     command_buf_t *buf = cmd->buf;
@@ -599,6 +603,9 @@ int handle_connect_command(ConnectCommand_t *cmd)
                 my_uart_transmit_packet(UART_NUM_1, buf);
             }
             break;
+        case CMD_WIFI_AUTOCONNECT:
+            *state = LastAP;
+            return 1;
         case CMD_WIFI_CONNECT:
             {
                 last_connect = *cmd;
@@ -616,6 +623,7 @@ int handle_connect_command(ConnectCommand_t *cmd)
                         if (err == ESP_OK) {
                             wifi_set_last_ap(cmd->list_index);
                         }
+                        *state = Connected;
                         return 1;
                     }
                 }
@@ -659,8 +667,7 @@ void connect_thread(void *a)
                 wifi_list_aps();
                 for (int i=0; i < ap_count; i++) {
                     if (xQueueReceive(connect_commands, &connect_command, 0) == pdTRUE) {
-                        if (handle_connect_command(&connect_command)) {
-                            state = Connected;
+                        if (handle_connect_command(&connect_command, &state)) {
                             break;
                         }
                     }
@@ -684,8 +691,7 @@ void connect_thread(void *a)
             case StoredAPs:
                 for (int i=0; i < 16; i++) {
                     if (xQueueReceive(connect_commands, &connect_command, 0) == pdTRUE) {
-                        if (handle_connect_command(&connect_command)) {
-                            state = Connected;
+                        if (handle_connect_command(&connect_command, &state)) {
                             break;
                         }
                     }
@@ -714,8 +720,7 @@ void connect_thread(void *a)
                 // the waiting state afterwards; no harm done.
                 xSemaphoreTake(connect_semaphore, portMAX_DELAY);
                 if (xQueueReceive(connect_commands, &connect_command, 0) == pdTRUE) {
-                    if (handle_connect_command(&connect_command)) {
-                        state = Connected;
+                    if (handle_connect_command(&connect_command, &state)) {
                         break;
                     }
                 }

@@ -181,11 +181,11 @@ begin
     
         rxd     => rxd_i,
         
-        timeout => rx_timeout,
+        timeout => open,
         rxchar  => rxchar,
         rx_ack  => rx_ack );
 
-    rx_push <= rx_ack or (not slip_enable and rx_timeout);
+    rx_push <= rx_ack;
 
     i_rxfifo: entity work.sync_fifo
     generic map(
@@ -214,7 +214,6 @@ begin
         reset       => reset,
         slip_enable => slip_enable,
         in_data     => rxfifo_data,
-        in_last     => '0',
         in_valid    => rxfifo_valid,
         in_ready    => rxfifo_ready,
         out_data    => rx_data,

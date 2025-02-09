@@ -131,10 +131,11 @@ void NetworkLWIP_WiFi :: fetch_context_items(IndexedList<Action *>&items)
         items.append(new Action("Disconnect", NetworkLWIP_WiFi :: disconnect, 0, 0));
         items.append(new Action("Disable", NetworkLWIP_WiFi :: disable, 0, 0));
     } else if (wifi.getState() == eWifi_NotConnected) {
-        items.append(new Action("Forget APs", NetworkLWIP_WiFi :: clear_aps, 0, 0));
         items.append(new Action("Show APs..", NetworkLWIP_WiFi :: list_aps, 0, 0));
+        items.append(new Action("Connect", NetworkLWIP_WiFi :: auto_connect, 0, 0));
         items.append(new Action("Connect to..", NetworkLWIP_WiFi :: manual_connect, 0, 0));
         items.append(new Action("Rescan APs", NetworkLWIP_WiFi :: rescan, 0, 0));
+        items.append(new Action("Forget APs", NetworkLWIP_WiFi :: clear_aps, 0, 0));
         items.append(new Action("Disable", NetworkLWIP_WiFi :: disable, 0, 0));
     } else if (wifi.getState() == eWifi_Off) {
         items.append(new Action("Enable", NetworkLWIP_WiFi :: enable, 0, 0));
@@ -162,6 +163,12 @@ SubsysResultCode_e NetworkLWIP_WiFi :: clear_aps(SubsysCommand *cmd)
     if (cmd->user_interface) {
         cmd->user_interface->popup("APs cleared and forgotten!", BUTTON_OK);
     }
+    return SSRET_OK;
+}
+
+SubsysResultCode_e NetworkLWIP_WiFi :: auto_connect(SubsysCommand *cmd)
+{
+    wifi_wifi_autoconnect();
     return SSRET_OK;
 }
 

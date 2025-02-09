@@ -118,10 +118,33 @@ void cmd_wifi_connect(command_buf_t *buf)
     // command is now in the queue, so the connect handler will process it further
 }
 
+void cmd_wifi_autoconnect(command_buf_t *buf)
+{
+    rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
+
+    buf->size = sizeof(rpc_espcmd_resp);
+    ConnectCommand_t ev;
+    ev.buf = buf;
+    ev.command = CMD_WIFI_AUTOCONNECT;
+
+    if (xQueueSend(connect_commands, &ev, 1000) == pdFALSE) {
+        resp->esp_err = ESP_ERR_NO_MEM;
+        my_uart_transmit_packet(UART_CHAN, buf);
+        return;
+    } else {
+        resp->esp_err = ESP_OK;
+        my_uart_transmit_packet(UART_CHAN, buf);
+    }
+    xSemaphoreGive(connect_semaphore);
+    // command is now in the queue, so the connect handler will process it further
+}
+
 void cmd_wifi_disconnect(command_buf_t *buf)
 {
     rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
+    ESP_LOGI(TAG, "Disconnecting from WiFi.");
     resp->esp_err = esp_wifi_disconnect();
+    ESP_LOGI(TAG, "Disconnected from WiFi, sending response. (%d)", resp->esp_err);
     buf->size = sizeof(rpc_espcmd_resp);
     my_uart_transmit_packet(UART_CHAN, buf);
 }
@@ -297,6 +320,9 @@ void dispatch(void *ct)
             break;
         case CMD_WIFI_DISCONNECT:
             cmd_wifi_disconnect(pbuffer);
+            break;
+        case CMD_WIFI_AUTOCONNECT:
+            cmd_wifi_autoconnect(pbuffer);
             break;
         case CMD_WIFI_GETMAC:
             cmd_getmac(pbuffer);

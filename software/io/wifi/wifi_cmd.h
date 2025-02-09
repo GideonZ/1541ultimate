@@ -36,7 +36,7 @@ BaseType_t wifi_detect(uint16_t *major, uint16_t *minor, char *str, int maxlen);
 int wifi_getmac(uint8_t *mac);
 int wifi_scan(void *);
 int wifi_wifi_connect(const char *ssid, const char *password, uint8_t auth);
-int wifi_wifi_connect_known_ssid(const char *ssid, const char *password, uint8_t auth);
+int wifi_wifi_autoconnect();
 int wifi_wifi_disconnect();
 int wifi_machine_off();
 void wifi_rx_packet();
@@ -63,6 +63,15 @@ extern TaskHandle_t tasksWaitingForReply[NUM_BUFFERS];
 
 #define TRANSMIT(x)         esp32.uart->TransmitPacket(buf); \
                             xTaskNotifyWait(0, 0, (uint32_t *)&buf, portMAX_DELAY); \
+                            rpc_ ## x ## _resp *result = (rpc_ ## x ## _resp *)buf->data; \
+                            if(result->hdr.thread < 16) { \
+                                tasksWaitingForReply[result->hdr.thread] = NULL; \
+                            }
+
+#define TRANSMITDBG(x)      printf("Transmitting %b:\n", buf->bufnr); dump_hex_relative(buf->data, buf->size);\
+                            esp32.uart->TransmitPacket(buf); \
+                            xTaskNotifyWait(0, 0, (uint32_t *)&buf, portMAX_DELAY); \
+                            printf("Received %b:\n", buf->bufnr); dump_hex_relative(buf->data, buf->size);\
                             rpc_ ## x ## _resp *result = (rpc_ ## x ## _resp *)buf->data; \
                             if(result->hdr.thread < 16) { \
                                 tasksWaitingForReply[result->hdr.thread] = NULL; \

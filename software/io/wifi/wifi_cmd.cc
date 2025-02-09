@@ -96,6 +96,7 @@ BaseType_t wifi_detect(uint16_t *major, uint16_t *minor, char *str, int maxlen)
         while (esp32.uart->ReceivePacket(&buf, 0) == pdTRUE) {
             printf("Buf %02x. Size: %4d. Data:\n", buf->bufnr, buf->size);
             dump_hex(buf->data, buf->size > 64 ? 64 : buf->size);
+            esp32.uart->FreeBuffer(buf);
         }
         // printf("/end of Receive queue\n");
     }
@@ -168,6 +169,13 @@ int wifi_wifi_connect(const char *ssid, const char *password, uint8_t auth)
     args->auth_mode = auth;
 
     TRANSMIT(scan);
+    RETURN_ESP;
+}
+
+int wifi_wifi_autoconnect()
+{
+    BUFARGS(identify, CMD_WIFI_AUTOCONNECT);
+    TRANSMIT(espcmd);
     RETURN_ESP;
 }
 

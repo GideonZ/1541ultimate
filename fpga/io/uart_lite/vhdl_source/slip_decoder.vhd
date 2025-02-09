@@ -22,7 +22,6 @@ port (
     slip_enable : in  std_logic;
 
     in_data     : in  std_logic_vector(7 downto 0);
-    in_last     : in  std_logic := '0';
     in_valid    : in  std_logic;
     in_ready    : out std_logic;
 
@@ -34,7 +33,7 @@ port (
 end entity;
 
 architecture rtl of slip_decoder is
-    type t_state is (ascii, sync, start, packet, escape, switch_ascii);
+    type t_state is (ascii, sync, start, packet, escape);
     signal state        : t_state;
     signal out_valid_i  : std_logic;
     signal transfer     : std_logic;
@@ -77,7 +76,7 @@ begin
 
             when sync =>
                 if slip_enable = '0' then
-                    state <= switch_ascii;
+                    state <= ascii;
                 elsif transfer = '1' and in_data = X"C0" then
                     state <= start;
                     byte_count <= 0;
@@ -85,7 +84,7 @@ begin
 
             when start =>
                 if slip_enable = '0' then
-                    state <= switch_ascii;
+                    state <= ascii;
                 elsif transfer = '1' then
                     data_reg <= in_data;
                     if in_data = X"C0" then
@@ -99,7 +98,7 @@ begin
 
             when packet =>
                 if slip_enable = '0' then
-                    state <= switch_ascii;
+                    state <= ascii;
                 elsif transfer = '1' then
                     out_data    <= data_reg;
                     out_valid_i <= '1';
@@ -122,7 +121,7 @@ begin
 
             when escape =>
                 if slip_enable = '0' then
-                    state <= switch_ascii;
+                    state <= ascii;
                 elsif transfer = '1' then
                     state <= packet;
                     if in_data = X"DC" then
@@ -132,17 +131,6 @@ begin
                     else
                         data_reg <= in_data;
                     end if;
-                end if;
-
-            when switch_ascii =>
-                if byte_count = 0 then
-                    state <= ascii;
-                elsif out_ready = '1' or out_valid_i = '0' then
-                    out_data <= X"C0";
-                    out_valid_i <= '1';
-                    out_last <= '1';
-                    state <= ascii;
-                    byte_count <= 0;
                 end if;
 
             when others =>
