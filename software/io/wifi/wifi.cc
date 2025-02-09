@@ -198,6 +198,7 @@ void WiFi :: RunModeThread()
                 state = eWifi_ModuleDetected;
                 RefreshRoot();
                 esp32.EnableRunMode();
+                wifi_command_init();
             } else {
                 printf("No Boot message.\n");
                 vTaskDelay(portMAX_DELAY); // basically stall
