@@ -124,40 +124,47 @@ void do_update(void)
 
     reset_config(flash2);
 
+    esp32.EnableRunMode();
+    vTaskDelay(200);
     wifi_command_init();
     uint16_t major, minor;
     char moduleName[32];
     BaseType_t module_detected;
     module_detected = wifi_detect(&major, &minor, moduleName, 32);
     module_detected = wifi_detect(&major, &minor, moduleName, 32); // second time should pass
+    if (module_detected != pdTRUE) {
+        esp32.uart->SetBaudRate(115200); // maybe it's an old version?
+        module_detected = wifi_detect(&major, &minor, moduleName, 32);
+        module_detected = wifi_detect(&major, &minor, moduleName, 32); // second time should pass
+    }
+
     if (module_detected == pdTRUE) {
         console_print(screen, "WiFi module detected: %s\n", moduleName);
-        if(user_interface->popup("Want to update the WiFi Module?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
-            if (esp32.Download() == 0) {
-                uint32_t total_size = (uint32_t)&_bootloader_bin_size + (uint32_t)&_partition_table_bin_size + (uint32_t)&_bridge_bin_size;
-                user_interface->show_progress("Flashing ESP32", total_size / 1024);
-                int status = 0;
-                status = esp32.Flash((uint8_t *)&_bootloader_bin_start, 0x000000, (uint32_t)&_bootloader_bin_size, status_callback, user_interface);
-                if (status == 0) {
-                    status = esp32.Flash((uint8_t *)&_partition_table_bin_start, 0x008000, (uint32_t)&_partition_table_bin_size, status_callback, user_interface);
-                }
-                if (status == 0) {
-                    status = esp32.Flash((uint8_t *)&_bridge_bin_start, 0x010000, (uint32_t)&_bridge_bin_size, status_callback, user_interface);
-                }
-                user_interface->hide_progress();
-                printf("Flashing ESP32 Status: %d.\n", status);
-                if (status == 0) {
-                    user_interface->popup("Flashing ESP32 Success!", BUTTON_OK);
-                } else {
-                    user_interface->popup("Flashing ESP32 Failed!", BUTTON_OK);
-                }
-                esp32.EnableRunMode();
-            } else {
-                user_interface->popup("Could not switch to download mode.", BUTTON_OK);
+    }
+
+    if(user_interface->popup("Want to update the WiFi Module?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+        if (esp32.Download() == 0) {
+            uint32_t total_size = (uint32_t)&_bootloader_bin_size + (uint32_t)&_partition_table_bin_size + (uint32_t)&_bridge_bin_size;
+            user_interface->show_progress("Flashing ESP32", total_size / 1024);
+            int status = 0;
+            status = esp32.Flash((uint8_t *)&_bootloader_bin_start, 0x001000, (uint32_t)&_bootloader_bin_size, status_callback, user_interface);
+            if (status == 0) {
+                status = esp32.Flash((uint8_t *)&_partition_table_bin_start, 0x008000, (uint32_t)&_partition_table_bin_size, status_callback, user_interface);
             }
+            if (status == 0) {
+                status = esp32.Flash((uint8_t *)&_bridge_bin_start, 0x010000, (uint32_t)&_bridge_bin_size, status_callback, user_interface);
+            }
+            user_interface->hide_progress();
+            printf("Flashing ESP32 Status: %d.\n", status);
+            if (status == 0) {
+                user_interface->popup("Flashing ESP32 Success!", BUTTON_OK);
+            } else {
+                user_interface->popup("Flashing ESP32 Failed!", BUTTON_OK);
+            }
+            esp32.EnableRunMode();
+        } else {
+            user_interface->popup("Could not switch to download mode.", BUTTON_OK);
         }
-    } else {
-        console_print(screen, "WiFi module not detected.\n");
     }
 
     // assuming that the ESP32 is running still, we should be able to send a slip message to it

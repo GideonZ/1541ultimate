@@ -113,6 +113,7 @@ void Esp32 :: StopApp()
         application->Terminate();
         application = NULL;
     }
+    uart->ResetReceiveCallback();
 }
 
 int Esp32 :: DetectModule(void *buffer, int buffer_len)
@@ -316,12 +317,18 @@ int Esp32 :: Download(void)
     }
 
     // If a command succeeded, jerk up the baudrate
-    PackParams(parambuf, 2, 2000000, 0); 
+#if CLOCK_FREQ == 66666667
+    const uint32_t br = 666666;
+#else
+    const uint32_t br = 2000000;
+#endif
+
+    PackParams(parambuf, 2, br, 0); 
     if (!Command(ESP_CHANGE_BAUDRATE, 8, 0, parambuf, receiveBuffer, 200)) {
         printf("Command Error ESP_CHANGE_BAUDRATE\n");
         return -9;
     }
-    uart->SetBaudRate(2000000);
+    uart->SetBaudRate(br);
 
     // Set SPI Flash Parameters
     PackParams(parambuf, 6, 0, // FlashID
