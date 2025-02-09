@@ -3,7 +3,7 @@
 # project subdirectory.
 #
 
-PROJECT_NAME := scan
+PROJECT_NAME := bridge
 
 # include $(IDF_PATH)/make/project.mk
 

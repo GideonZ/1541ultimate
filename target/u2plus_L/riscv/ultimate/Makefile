@@ -159,6 +159,7 @@ SRCS_CC	 =  u2p_init.cc \
 			filesystem_a64.cc \
 			dma_uart.cc \
 			esp32.cc \
+			wifi_cmd.cc \
 			wifi.cc \
 			network_esp32.cc \
 			sntp_time.cc \

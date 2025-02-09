@@ -143,6 +143,11 @@ typedef struct {
     uint8_t changed;
 } event_pkt_got_ip;
 
+typedef struct {
+    rpc_header_t hdr;
+    uint8_t ssid[32];
+} event_pkt_connected;
+
 #define CMD_ECHO              0x01
 #define CMD_IDENTIFY          0x02
 #define CMD_SET_BAUD          0x03
@@ -160,6 +165,7 @@ typedef struct {
 #define CMD_MACHINE_OFF       0x0F
 #define CMD_GET_TIME          0x10
 #define CMD_CLEAR_APS         0x11
+#define CMD_WIFI_AUTOCONNECT  0x12
 
 /*
 #define CMD_SOCKET          0x11
