@@ -72,9 +72,16 @@ FileType *FileTypeUpdate :: test_type(BrowsableDirEntry *br)
 {
 	FileInfo *inf = br->getInfo();
 	uint32_t cap = getFpgaCapabilities();
-	const char *ext = (cap & CAPAB_ULTIMATE64) ? "U64" :
-			          (cap & CAPAB_FPGA_TYPE) ? "U2L" :
-			        		  "U2P";
+#if U64 == 2
+    const char *ext = "UE2";
+#elif U64 == 1
+    const char *ext = "U64";
+#elif U2P == 2
+    const char *ext = "U2L";
+#else
+    const char *ext = "U2P";
+#endif
+
 	if(strcmp(inf->extension, ext)==0)
         return new FileTypeUpdate(br);
     return NULL;
