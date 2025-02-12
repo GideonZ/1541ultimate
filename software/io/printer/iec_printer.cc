@@ -139,7 +139,8 @@ void IecPrinter::effectuate_settings(void)
     uint8_t page_top, page_height;
 
     /* Printer ID on IEC from nvram */
-    int bus_id = cfg->get_value(CFG_PRINTER_ID);
+    printer_iec_addr = cfg->get_value(CFG_PRINTER_ID);
+    iec_if->configure();
 
     /* Load and apply virtual printer configuration from nvram */
     set_filename(cfg->get_string(CFG_PRINTER_FILENAME));
@@ -357,7 +358,7 @@ IecPrinter::IecPrinter() : SubSystem(SUBSYSID_PRINTER)
     /* Initial values */
     output_filename = NULL;
     f = NULL;
-    last_printer_addr = 4;
+    printer_iec_addr = 4;
     mps = MpsPrinter::getMpsPrinter();
     buffer_pointer = 0;
     output_type = PRINTER_UNSET_OUTPUT;
