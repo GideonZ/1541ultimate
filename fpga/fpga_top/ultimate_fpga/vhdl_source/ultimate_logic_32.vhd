@@ -924,7 +924,8 @@ begin
             debug_select    => c64_debug_select,
             
             -- timing output
-			c64_stopped		=> c64_stopped,
+			tick_4MHz       => tick_4MHz,
+            c64_stopped		=> c64_stopped,
             phi2_tick       => phi2_tick,
 
             -- master on memory bus

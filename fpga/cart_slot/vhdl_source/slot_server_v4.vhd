@@ -108,7 +108,8 @@ port (
     samp_left        : out signed(17 downto 0);
     samp_right       : out signed(17 downto 0);
 
-    -- timing output
+    -- timing input / output
+    tick_4MHz       : in    std_logic;
     phi2_tick       : out   std_logic;
     c64_stopped     : out   std_logic;
 
@@ -1012,7 +1013,7 @@ begin
             clock     => clock,
             reset     => reset,
             c64_reset => actual_c64_reset,
-            slot_tick => phi2_tick_i,
+            tick      => tick_4MHz,
             slot_req  => slot_req,
             slot_resp => slot_resp_acia,
             io_req    => io_req_acia,
