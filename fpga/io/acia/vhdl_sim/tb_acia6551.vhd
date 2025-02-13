@@ -14,7 +14,7 @@ use work.io_bus_bfm_pkg.all;
 use work.slot_bus_pkg.all;
 use work.slot_bus_master_bfm_pkg.all;
 use work.acia6551_pkg.all;
-use work.tl_string_util_pkg.all;
+use work.strings_pkg.all;
 
 entity tb_acia6551 is
 
@@ -28,17 +28,26 @@ architecture testbench of tb_acia6551 is
     signal io_req          : t_io_req;
     signal io_resp         : t_io_resp;
     signal io_irq          : std_logic;
-
+    signal tick            : std_logic;
 begin
     clock <= not clock after 10 ns;
     reset <= '1', '0' after 100 ns;
-    
+
+    process -- a tick rate of 100 ns is 10 MHz. Observed rates will be 2.5 times faster than programmed
+    begin
+        tick <= '0';
+        wait for 80 ns;
+        tick <= '1';
+        wait for 20 ns;
+    end process;    
+
     i_acia: entity work.acia6551
     port map (
         clock     => clock,
         reset     => reset,
         slot_req  => slot_req,
         slot_resp => slot_resp,
+        tick      => tick,
         io_req    => io_req,
         io_resp   => io_resp,
         io_irq    => io_irq
@@ -119,20 +128,37 @@ begin
                 assert not exp report "There is no data, but you did expect some!" severity error;
             end if;
         end procedure;
+
+        procedure tx_byte_polling(d : std_logic_vector(7 downto 0)) is
+        begin
+            L1: while true loop
+                slot_io_read(slot, c_addr_status_register, data);
+                if data(4) = '1' then
+                    exit L1;
+                end if;
+            end loop;
+            slot_io_write(slot, c_addr_data_register, d);
+        end procedure;
+
+        variable st : time;
+        variable nsec : natural;
     begin
         bind_io_bus_bfm("io", io);
         bind_slot_bus_master_bfm("slot", slot);
         wait until reset = '0';
 
+        -- Section 1: Read from ACIA in poll loop
         check_io_irq('0');
         
-        -- Enable and pass four bytes to the RX of the Host
+        -- Enable and pass some bytes to the RX of the Host
         io_write(io, c_reg_enable, X"19" ); -- enable IRQ on DTR change and control write
-        io_write(io, X"900", X"47");
-        io_write(io, X"901", X"69");
-        io_write(io, X"902", X"64");
-        io_write(io, X"903", X"65");
-        io_write(io, c_reg_rx_head, X"04" );
+        io_write(io, X"A00", X"47");
+        io_write(io, X"A01", X"69");
+        io_write(io, X"A02", X"64");
+        io_write(io, X"A03", X"65");
+        io_write(io, X"A04", X"6F");
+        io_write(io, X"A05", X"6E");
+        io_write(io, c_reg_rx_head, X"06" );
 
         -- On the host side, read status. It should show no data, since DTR is not set
         read_status_and_data;
@@ -143,35 +169,64 @@ begin
         check_io_irq('0');
         
         -- set the virtual baud rate
-        slot_io_write(slot, c_addr_control_register, X"1A");
-        check_io_irq('1', X"0A");  -- Checks and clears IRQ
+        slot_io_write(slot, c_addr_control_register, X"1F"); -- 19200 baud (48000 with 5 MHz tick)
+        -- transferring 6 bytes should thus take about 6 / 4800 seconds = 1.25 ms
+        check_io_irq('1', X"0A");  -- Checks and clears IRQ (control write)
         check_io_irq('0');
         io_read(io, c_reg_control, status);
-        assert status = X"1A" report "Control read register is different from what we wrote earlier." severity error;
+        assert status = X"1F" report "Control read register is different from what we wrote earlier." severity error;
                 
         -- Now that DTR is set, reading the host status should show that there is data available
+
+        st := now;
         read_status_and_data(true, X"47");
         read_status_and_data(true, X"69");
         read_status_and_data(true, X"64");
         read_status_and_data(true, X"65");
-        read_status_and_data;
-
-        io_write(io, X"904", X"6f");
-        io_write(io, X"905", X"6e");
-        io_write(io, c_reg_rx_head, X"06" );
-
         read_status_and_data(true, X"6F");
         read_status_and_data(true, X"6E");
+        report "Read 6 bytes in " & time'image(now - st);
         read_status_and_data;
+
+        -- Section 2: Read from ACIA in interrupt
+        slot_io_write(slot, c_addr_command_register, X"01"); -- disable Rx IRQ off
+        io_write(io, X"A06", X"47");
+        io_write(io, X"A07", X"69");
+        io_write(io, X"A08", X"64");
+        io_write(io, X"A09", X"65");
+        io_write(io, X"A0A", X"6F");
+        io_write(io, X"A0B", X"6E");
+        io_write(io, c_reg_rx_head, X"0C" );
+        st := now;
+        wait until slot_resp.nmi = '1';
+        read_status_and_data(true, X"47");
+        wait until slot_resp.nmi = '1';
+        read_status_and_data(true, X"69");
+        wait until slot_resp.nmi = '1';
+        read_status_and_data(true, X"64");
+        wait until slot_resp.nmi = '1';
+        read_status_and_data(true, X"65");
+        wait until slot_resp.nmi = '1';
+        read_status_and_data(true, X"6F");
+        wait until slot_resp.nmi = '1';
+        read_status_and_data(true, X"6E");
+        report "Read 6 bytes in " & time'image(now - st);
+        st := now - st;
+        nsec := (st / 1 ns) / 6; -- ns per byte
+        nsec := (nsec * 5) / 20; -- factor 2.5, but 10 bits / byte
+        report "Bit rate: " & integer'image(1_000_000_000 / nsec);
+        read_status_and_data;
+
+        -- Section 3: Transmit data without interrupt
 
         io_write(io, c_reg_enable, X"05"); -- enable Tx Interrupt
         assert io_irq = '0' report "IO IRQ should be zero now." severity error;
 
         -- Now the other way around  (from Host to Appl)
-        slot_io_write(slot, c_addr_data_register, X"01");
-        slot_io_write(slot, c_addr_data_register, X"02");
-        slot_io_write(slot, c_addr_data_register, X"03");
-        slot_io_write(slot, c_addr_data_register, X"04");
+        tx_byte_polling(X"01");
+        tx_byte_polling(X"02");
+        tx_byte_polling(X"03");
+        tx_byte_polling(X"04");
 
         assert io_irq = '1' report "IO IRQ should be active now." severity error;
 
@@ -181,15 +236,46 @@ begin
         read_tx(true, X"04");
         read_tx;
 
-        for i in 0 to 260 loop
-            slot_io_write(slot, c_addr_data_register, std_logic_vector(to_unsigned((i + 6) mod 256, 8)));
-        end loop;    
+        assert io_irq = '0' report "IO IRQ should be zero now." severity error;
 
-        read_tx(true, X"06");
-        read_tx(true, X"07");
-        read_tx(true, X"08");
-        read_tx(true, X"09");
-        read_tx(true, X"0A");
+        -- Section 4: Transmit data with interrupt
+        slot_io_write(slot, c_addr_command_register, X"07"); -- disable Rx IRQ, but enable Tx IRQ
+
+        -- Start transmission by writing a data byte (We know that the tx_empty is 1)
+        slot_io_write(slot, c_addr_data_register, X"11");
+        wait until slot_resp.nmi = '1';
+        slot_io_read(slot, c_addr_status_register, data); -- should clear nmi, and show that tx empty is true
+        wait until clock = '1';
+        wait until clock = '1';
+        assert data(4) = '1' report "TxEmpty should be true." severity error;
+        assert slot_resp.nmi = '0' report "NMI should now be inactive!" severity error;
+        slot_io_write(slot, c_addr_data_register, X"12");
+        wait until slot_resp.nmi = '1';
+        slot_io_read(slot, c_addr_status_register, data); -- should clear nmi, and show that tx empty is true
+        wait until clock = '1';
+        wait until clock = '1';
+        assert data(4) = '1' report "TxEmpty should be true." severity error;
+        assert slot_resp.nmi = '0' report "NMI should now be inactive!" severity error;
+        slot_io_write(slot, c_addr_data_register, X"13");
+        wait until slot_resp.nmi = '1';
+        slot_io_read(slot, c_addr_status_register, data); -- should clear nmi, and show that tx empty is true
+        wait until clock = '1';
+        wait until clock = '1';
+        assert data(4) = '1' report "TxEmpty should be true." severity error;
+        assert slot_resp.nmi = '0' report "NMI should now be inactive!" severity error;
+        slot_io_write(slot, c_addr_data_register, X"14");
+        wait until slot_resp.nmi = '1';
+        slot_io_read(slot, c_addr_status_register, data); -- should clear nmi, and show that tx empty is true
+        wait until clock = '1';
+        wait until clock = '1';
+        assert data(4) = '1' report "TxEmpty should be true." severity error;
+        assert slot_resp.nmi = '0' report "NMI should now be inactive!" severity error;
+        slot_io_write(slot, c_addr_command_register, X"03"); -- disable Tx IRQ again
+
+        read_tx(true, X"11");
+        read_tx(true, X"12");
+        read_tx(true, X"13");
+        read_tx(true, X"14");
         wait;
     end process;
 end architecture;

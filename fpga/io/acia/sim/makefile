@@ -50,7 +50,7 @@ WORK_DIR		= work
 AUTO_DEP_PATHS  = $(wildcard ../../../ip/busses/vhdl_source/)
 AUTO_DEP_PATHS += $(wildcard ../../../ip/busses/vhdl_bfm/)
 AUTO_DEP_PATHS += $(wildcard ../../../ip/memory/vhdl_source/)
-AUTO_DEP_PATHS += $(wildcard ../../../../target/simulation/packages/vhdl_source/)
+AUTO_DEP_PATHS += $(wildcard ../../../ip//simpkg/)
 AUTO_DEP_PATHS += $(wildcard ../vhdl_source/)
 AUTO_DEP_PATHS += $(wildcard ../vhdl_sim/)
 

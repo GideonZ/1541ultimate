@@ -20,9 +20,9 @@ port (
     clock           : in  std_logic;
     reset           : in  std_logic;
     c64_reset       : in  std_logic := '0';
+    tick            : in  std_logic;
     
     -- C64 side interface
-    slot_tick       : in  std_logic;
     slot_req        : in  t_slot_req;
     slot_resp       : out t_slot_resp;
         
@@ -34,23 +34,35 @@ port (
 end entity;
 
 architecture arch of acia6551 is
+    type t_rate_array is array(natural range <>) of integer;
+    constant c_rates : t_rate_array(0 to 15) := (28800, 50, 75, 110, 135, 150, 300, 600, 1200, 1800, 2400, 3600, 4800, 7200, 9600, 19200);    
+
+    function rate_dividers(freq : natural) return t_rate_array is
+        variable ret : t_rate_array(0 to 15);
+    begin
+        for i in c_rates'range loop
+            ret(i) := ((10 * freq) / (7 * c_rates(i))) - 1; -- Assuming 8 'ticks' per byte, in order to use the same divider for Rx and Tx, and 10 bits per byte
+        end loop;
+        return ret;
+    end function;
+    constant c_rate_dividers    : t_rate_array(0 to 15) := rate_dividers(4_000_000);
+
+    signal rate_counter     : integer range 0 to 100000; -- only 5 chars per second!
+    signal rate_tick        : std_logic; -- 8x per byte
+    signal rx_presc         : unsigned(2 downto 0) := "100";
+    signal tx_presc         : unsigned(2 downto 0) := "100";
+
     signal slot_base        : unsigned(8 downto 2) := (others => '0');
-    signal rx_data          : std_logic_vector(7 downto 0);
-    signal status           : std_logic_vector(7 downto 0) := X"00";
+    signal rx_data          : std_logic_vector(7 downto 0) := X"FF";
+    signal status           : std_logic_vector(7 downto 0) := X"04";
     signal command          : std_logic_vector(7 downto 0);
     signal control          : std_logic_vector(7 downto 0);
 
     signal tx_data          : std_logic_vector(7 downto 0);
-    signal tx_data_push     : std_logic;
-    signal rx_data_valid    : std_logic;
+    signal tx_fifo_full     : std_logic;
     
-    signal nmi_counter      : natural range 0 to 16383 := 0;
-    signal nmi              : std_logic;
-    signal irq_d            : std_logic;
     signal dsr_d            : std_logic;
     signal dcd_d            : std_logic;
-    signal dcd_change       : std_logic := '0';
-    signal dsr_change       : std_logic := '0';
     alias irq               : std_logic is status(7);
     alias dsr_n             : std_logic is status(6);
     alias dcd_n             : std_logic is status(5);
@@ -60,7 +72,12 @@ architecture arch of acia6551 is
     alias framing_err       : std_logic is status(1);
     alias parity_err        : std_logic is status(0);
 
+    alias baud_index        : std_logic_vector(3 downto 0) is control(3 downto 0);
+
     alias dtr               : std_logic is command(0);
+    alias rx_irq_disable    : std_logic is command(1);
+    alias tx_mode           : std_logic_vector(1 downto 0) is command(3 downto 2);
+
     signal dtr_d            : std_logic;
     
     signal enable           : std_logic;
@@ -68,8 +85,6 @@ architecture arch of acia6551 is
     signal tx_irq_en        : std_logic;
     signal rx_irq_en        : std_logic;
     signal soft_reset       : std_logic;
-    signal rx_interrupt     : std_logic := '0';
-    signal tx_interrupt     : std_logic := '0';
     signal appl_tx_irq      : std_logic := '0';
     signal appl_rx_irq      : std_logic := '0';
     signal ctrl_irq_en      : std_logic;
@@ -82,10 +97,6 @@ architecture arch of acia6551 is
 
     signal rx_head, rx_tail : unsigned(7 downto 0);
     signal tx_head, tx_tail : unsigned(7 downto 0);
-
-    signal rx_rate          : unsigned(7 downto 0);
-    signal rx_rate_cnt      : unsigned(12 downto 0) := (others => '0');
-    signal rx_rate_expired  : std_logic := '1';
 
     signal b_address        : unsigned(8 downto 0);
     signal b_rdata          : std_logic_vector(7 downto 0);
@@ -110,18 +121,10 @@ begin
 
     slot_resp.reg_output <= enable when slot_req.bus_address(8 downto 2) = slot_base else '0';
     slot_resp.irq  <= irq and not nmi_selected;
-    slot_resp.nmi  <= nmi and nmi_selected;
+    slot_resp.nmi  <= irq and nmi_selected;
 
-    irq       <= enable and (rx_interrupt and not command(1));-- or (tx_interrupt and command(2) and not command(3)));
-    rts       <= command(2) or command(3);
+    rts       <= '0' when tx_mode = "00" else '1';
 
-    rx_full   <= rx_data_valid when rising_edge(clock); -- to have a register for the status word in signaltap
-    --tx_empty  <= '0' when (tx_head + 1) = tx_tail else '1';
-
-    -- IRQs to the Host (Slot side)
-    tx_interrupt <= tx_empty;
-    rx_interrupt <= rx_data_valid or dsr_change or dcd_change; -- and rts);
-    
     -- IRQs to the Application (IO side)
     appl_rx_irq  <= '0' when (rx_head + 1) = rx_tail else '1'; -- RX = Appl -> Host (room for data appl can write)
     appl_tx_irq  <= '1' when tx_head /= tx_tail else '0';      -- TX = Host -> Appl (data appl should read)
@@ -132,55 +135,54 @@ begin
     begin
         if rising_edge(clock) then
             soft_reset <= '0';
-            tx_data_push <= '0';
             dtr_d <= dtr;
-            irq_d <= irq;
             
             if tx_head + 1 = tx_tail then
-                tx_empty <= '0';
+                tx_fifo_full <= '1';
             else
-                tx_empty <= '1';
+                tx_fifo_full <= '0';
             end if;
-                 
+
+            rate_tick <= '0';
+            if tick = '1' then
+                if rate_counter = 0 then
+                    rate_tick <= '1';
+                    rate_counter <= c_rate_dividers(to_integer(unsigned(baud_index)));
+                else
+                    rate_counter <= rate_counter - 1;
+                end if;
+            end if;
+
+            if rate_tick = '1' and rx_presc /= 0 then
+                rx_presc <= rx_presc - 1;
+            end if;
+
+            if rate_tick = '1' and tx_presc /= 0 then
+                tx_presc <= tx_presc - 1;
+            end if;
+
             b_en <= '0';
             b_we <= '0';
             b_address <= (others => 'X');
             b_wdata <= (others => 'X');
 
-            -- generation of NMI
-            if (irq = '1' and irq_d = '0') or (irq = '1' and nmi_counter = 4095) then
-                nmi <= '1';
-                nmi_counter <= 0;
-            elsif slot_tick = '1' then
-                if nmi_counter = 127 then
-                    nmi <= '0';
-                end if;
-                if nmi_counter /= 16383 then
-                    nmi_counter <= nmi_counter + 1;
-                end if;
-            end if;
-
-            if slot_tick = '1' and rx_rate_expired = '0' then
-                if rx_rate_cnt = 0 then
-                    rx_rate_expired <= '1';
-                else
-                    rx_rate_cnt <= rx_rate_cnt - 1;
-                end if;
-            end if;
-
-            if tx_data_push = '1' and tx_empty = '1' and dtr = '1' then
+            if tx_empty = '0' and dtr = '1' and tx_fifo_full = '0' and (tx_presc = "000" or tx_mode /= "01") then
                 b_address <= '0' & tx_head;
                 b_wdata <= tx_data;
                 b_we <= '1';
                 b_en <= '1';
                 tx_head <= tx_head + 1;
-            elsif rx_data_valid = '0' and rx_head /= rx_tail and b_pending = '0' and rx_rate_expired = '1' and rts = '1' then
-                rx_rate_expired <= '0';
-                rx_rate_cnt <= rx_rate & "00011";
+                tx_presc <= "111";
+                tx_empty <= '1';
+                if tx_mode = "01" then
+                    irq <= '1';
+                end if;
+            elsif rx_full = '0' and rx_head /= rx_tail and b_pending = '0' and dtr = '1' and (rx_presc = "000" or rx_irq_disable = '1') then
                 b_address <= '1' & rx_tail;
                 b_en <= '1';
                 b_pending <= '1';
                 rx_tail <= rx_tail + 1;
+                rx_presc <= "111";
             end if;
 
             if (slot_req.io_address(8 downto 2) = slot_base) and (enable = '1') then
@@ -188,7 +190,7 @@ begin
                     case slot_req.io_address(1 downto 0) is
                     when c_addr_data_register =>
                         tx_data <= slot_req.data;
-                        tx_data_push <= '1';
+                        tx_empty <= '0';
                     when c_addr_status_register =>
                         soft_reset <= '1';
                     when c_addr_command_register =>
@@ -205,10 +207,9 @@ begin
                         parity_err <= '0';
                         framing_err <= '0';
                         overrun_err <= '0';
-                        rx_data_valid <= '0';
+                        rx_full <= '0';
                     when c_addr_status_register =>
-                        dcd_change <= '0';
-                        dsr_change <= '0';
+                        irq <= '0';  
                     when c_addr_command_register =>
                         null;
                     when c_addr_control_register =>
@@ -247,8 +248,6 @@ begin
                 when c_reg_slot_base =>
                     slot_base <= unsigned(io_req_regs.data(6 downto 0));
                     nmi_selected <= io_req_regs.data(7);
-                when c_reg_rx_rate =>
-                    rx_rate <= unsigned(io_req_regs.data);
 
                 when others =>
                     null;
@@ -290,8 +289,6 @@ begin
 --                when c_reg_slot_base =>
 --                    io_resp_regs.data(6 downto 0) <= std_logic_vector(slot_base);
 --                    io_resp_regs.data(7) <= nmi_selected;
---                when c_reg_rx_rate =>
---                    io_resp_regs.data <= std_logic_vector(rx_rate);
                 when others =>
                     null;
                 end case;
@@ -301,7 +298,10 @@ begin
             -- then b_en = 0 and b_pending is still = 1. In this cycle RAM result is available.
             if b_pending = '1' then
                 if b_en = '0' then
-                    rx_data_valid <= '1';
+                    rx_full <= '1';
+                    if rx_irq_disable = '0' then
+                        irq <= '1';
+                    end if;
                     rx_data <= b_rdata;
                     b_pending <= '0';
                 end if;
@@ -309,27 +309,30 @@ begin
 
             dsr_d <= dsr_n;
             if (dsr_d /= dsr_n) then
-                dsr_change <= '1';
+                if rx_irq_disable = '0' then
+                    irq <= '1';
+                end if;
             end if;
             dcd_d <= dcd_n;
             if (dcd_d /= dcd_n) then
-                dcd_change <= '1';
+                if rx_irq_disable = '0' then
+                    irq <= '1';
+                end if;
             end if;             
             if (dtr /= dtr_d) then
                 dtr_change <= '1';
             end if;
             
             if reset = '1' then
-                nmi <= '0';
                 command <= X"02";
                 control <= X"00";
                 rx_head <= X"00";
                 rx_tail <= X"00";
                 tx_head <= X"00";
                 tx_tail <= X"00";
+                tx_empty <= '1';
                 enable  <= '0';
                 b_pending <= '0';
-                rx_data_valid <= '0';
                 cts <= '0';
                 dsr_n <= '1';
                 dcd_n <= '1';
@@ -337,19 +340,17 @@ begin
                 rx_irq_en <= '0';
                 ctrl_irq_en <= '0';
                 hs_irq_en <= '0';
-                dsr_change <= '0';
-                dcd_change <= '0';
                 dtr_change <= '0';
                 control_change <= '0';
                 slot_base <= (others => '0');
-                rx_rate <= X"82";
+                nmi_selected <= '1';
+                irq <= '0';
             end if;
             if soft_reset = '1' or c64_reset = '1' then
                 command(4 downto 0) <= "00010";
             end if;
         end if;
     end process;
-            
 
     -- first we split our I/O bus in max 4 ranges, of 2K each.
     i_split: entity work.io_bus_splitter
