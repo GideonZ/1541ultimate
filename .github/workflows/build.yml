@@ -1,0 +1,17 @@
+name: Build
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: self-hosted  # This will run on your home server
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build inside Docker
+        run: |
+          docker run --rm \
+            -v /opt/build-tools:/mnt/build-tools:ro \  # Mount build tools (read-only)
+            -v $GITHUB_WORKSPACE:/mnt/project \        # Mount project files
+            my-build-image /bin/bash -c "cd /mnt/project && ./build_script.sh"
