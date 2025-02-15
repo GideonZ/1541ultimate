@@ -11,4 +11,4 @@ jobs:
 
       - name: Build inside Docker
         run: |
-          docker run --rm -v /opt/build-tools:/mnt/build-tools:ro -v $GITHUB_WORKSPACE:/mnt/project my_docker_image /bin/bash -c "cd /mnt/project && make u2pl_swonly"
+          docker run --rm -v /opt/build-tools:/mnt/build-tools:ro -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2pl_swonly"
