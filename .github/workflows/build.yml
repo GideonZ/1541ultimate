@@ -14,4 +14,4 @@ jobs:
           docker run --rm \
             -v /opt/build-tools:/mnt/build-tools:ro \  # Mount build tools (read-only)
             -v $GITHUB_WORKSPACE:/mnt/project \        # Mount project files
-            my-build-image /bin/bash -c "cd /mnt/project && ./build_script.sh"
+            my-docker-image /bin/bash -c "cd /mnt/project && make u2pl_swonly"
