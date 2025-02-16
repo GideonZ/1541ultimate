@@ -356,7 +356,7 @@
         <Source name="../../../fpga/io/sampler/vhdl_source/sampler_regs.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
-        <Source name="../../../fpga/io/sampler/vhdl_source/sampler.vhd" type="VHDL" type_short="VHDL">
+        <Source name="../../../fpga/io/sampler/vhdl_source/sampler2.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
         <Source name="../../../fpga/io/spi/vhdl_source/spi_peripheral_io.vhd" type="VHDL" type_short="VHDL">

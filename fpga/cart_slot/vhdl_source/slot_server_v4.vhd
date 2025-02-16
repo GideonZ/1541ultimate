@@ -31,6 +31,8 @@ generic (
     g_ram_expansion : boolean := true;
     g_extended_reu  : boolean := false;
     g_sampler       : boolean := false;
+    g_sampler_voices: natural := 8;
+    g_sampler_16bit : boolean := true;
     g_acia          : boolean := false;
     g_eeprom        : boolean := true;
     g_implement_sid : boolean := true;
@@ -979,7 +981,8 @@ begin
         i_sampler: entity work.sampler
         generic map (
             g_clock_freq    => g_clock_freq,
-            g_num_voices    => 8 )
+            g_support_16bit => g_sampler_16bit,
+            g_num_voices    => g_sampler_voices )
         port map (
             clock       => clock,
             reset       => actual_c64_reset,

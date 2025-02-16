@@ -53,6 +53,8 @@ generic (
     g_vic_copper    : boolean := false;
     g_measure_timing: boolean := false;
     g_sampler       : boolean := true;
+    g_sampler_voices: natural := 8;
+    g_sampler_16bit : boolean := true;
     g_rmii          : boolean := false;
     g_sdcard        : boolean := false;
     g_wifi_uart     : boolean := false;
@@ -851,6 +853,8 @@ begin
             g_acia          => g_acia,
             g_eeprom        => g_eeprom,
             g_sampler       => g_sampler,
+            g_sampler_voices=> g_sampler_voices,
+            g_sampler_16bit => g_sampler_16bit,
             g_implement_sid => g_stereo_sid,
             g_sid_voices    => 16,
             g_8voices       => g_8voices,

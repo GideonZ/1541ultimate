@@ -9,6 +9,7 @@ use work.sampler_pkg.all;
 entity sampler is
 generic (
     g_clock_freq    : natural := 50_000_000;
+    g_support_16bit : boolean := true;
     g_num_voices    : positive := 8 );
 port (
     clock       : in  std_logic;
@@ -38,7 +39,7 @@ architecture gideon of sampler is
     -- Ultimate-II running at 50 MHz
     -- Ultimate-II+ running at 62.5 MHz
     -- Ultimate-64 running at 66.66 MHz
-    -- Ultimate-64-II running 125 MHz.
+    -- Ultimate-64-II running 100 MHz.
     -- The ratios are: 1, 5/4, 4/3 and 5/2.  So we should divide by this value
     type t_fraction is record
         numerator   : positive;
@@ -83,6 +84,7 @@ architecture gideon of sampler is
 begin
     i_regs: entity work.sampler_regs
     generic map (
+        g_support_16bit => g_support_16bit,
         g_num_voices => g_num_voices )
     port map (
         clock       => clock,
@@ -170,10 +172,10 @@ begin
             when fetch1 =>
                 fetch_en <= '1';
                 fetch_addr <= current_control.start_addr + current_state.position;
-                if current_control.mode = mono8 then
+                if current_control.mode = mono8 or not g_support_16bit then
                     fetch_tag  <= "110" & std_logic_vector(to_unsigned(voice_i, 4)) & '1'; -- high
                     next_state.state := playing;
-                    if current_control.interleave then
+                    if current_control.interleave and g_support_16bit then
                         next_state.position := current_state.position + 2; -- this and the next byte
                     else
                         next_state.position := current_state.position + 1; -- this byte only
@@ -215,7 +217,9 @@ begin
             -- write port - sample data --
             if mem_resp.dack_tag(7 downto 5) = "110" then
                 v := to_integer(unsigned(mem_resp.dack_tag(4 downto 1)));
-                if mem_resp.dack_tag(0)='1' then
+                if not g_support_16bit then
+                    voice_sample_reg_h(v) <= signed(mem_resp.data);
+                elsif mem_resp.dack_tag(0)='1' then
                     voice_sample_reg_h(v) <= signed(mem_resp.data);
                 else
                     voice_sample_reg_l(v) <= signed(mem_resp.data);
