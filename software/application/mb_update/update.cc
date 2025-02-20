@@ -39,7 +39,7 @@ void do_update(void)
         flash_buffer(flash2, screen, FLASH_ID_BOOTAPP,  &_mb_boot2_bin_start,  &_mb_boot2_bin_end,  BOOT_VERSION, "Secondary bootloader");
         flash_buffer(flash2, screen, FLASH_ID_APPL,     &_ultimate_bin_start,  &_ultimate_bin_end,  APPL_VERSION, "Ultimate Application");
 
-        write_protect(flash2);
+        write_protect(flash2, 1024);
     }
     turn_off();
 }
