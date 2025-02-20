@@ -1,5 +1,10 @@
 
-all: u2 u2_rv u2_rv_revert u2plus u2pl u64
+all: esp32 u2_rv u2plus u2pl u64
+
+esp32:
+	@cd software/wifi/raw_u64 && idf.py build
+	@cd software/wifi/raw_c3 && idf.py build
+	@cd software/u64ctrl && idf.py build
 
 u2:
 	@$(MAKE) -C tools
@@ -217,9 +222,7 @@ u64_clean:
 
 u2pl:
 	@$(MAKE) -C tools
-	@$(MAKE) -C neorv32/sw/example all
 	@$(MAKE) -C target/libs/riscv/lwip
-	@$(MAKE) -C target/u2plus_L/riscv/bootloader
 	@$(MAKE) -C target/u2plus_L/rvlite/bootloader
 	@$(MAKE) -C target/fpga/u2plus_ecp5
 	@$(MAKE) -C target/u2plus_L/riscv/ultimate
