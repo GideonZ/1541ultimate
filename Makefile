@@ -34,11 +34,11 @@ u2_rv:
 	@$(MAKE) -C target/fpga/rv700dd
 	@$(MAKE) -C target/fpga/rv700au
 	@$(MAKE) -C target/fpga/rv700_loader
+	@$(MAKE) -C target/u2/riscv/updater
 	@cp target/u2/riscv/updater/result/update.u2r ./update.u2r
 
 u2_mb_to_rv:
 	@$(MAKE) u2_rv
-	@$(MAKE) -C target/u2/riscv/updater
 	@$(MAKE) -C target/u2/microblaze/mb_lwip
 	@$(MAKE) -C target/u2/microblaze/mb_update_to_rv
 	@cp target/u2/microblaze/mb_update_to_rv/result/update.u2u ./update_to_rv.u2u
