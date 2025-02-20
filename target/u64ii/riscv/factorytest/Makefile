@@ -121,7 +121,7 @@ OPTIONS += -gdwarf-2 -Os -DRISCV -DU64=2 -DUSB2513 -DOS -DIOBASE=0x10000000 -DU2
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = linker.x
-LIBS    = ../../../libs/riscv/lwip/result/liblwip.a
+#LIBS    = ../../../libs/riscv/lwip/result/liblwip.a
 #LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
 LFLAGS   = --gc-sections
 LINKMETHOD = ld

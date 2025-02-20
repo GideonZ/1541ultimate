@@ -539,7 +539,7 @@ set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/rmii_tra
 set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler_accu.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler_regs.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler2.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/my_math_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/noise_generator.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/sigma_delta_dac.vhd
