@@ -93,8 +93,11 @@ void UltiCopy :: warp_loop()
     while(!done) {
 
         if(wait_irq) {
+            ioWrite8(UART_DATA, '?');
             if (HW_IEC_IRQ & 0x01) {
+                ioWrite8(UART_DATA, '!');
                 get_warp_data();
+                ioWrite8(UART_DATA, '!');
             }
             vTaskDelay(1);
             continue;
@@ -102,6 +105,7 @@ void UltiCopy :: warp_loop()
 
         uint8_t a = HW_IEC_RX_FIFO_STATUS;
         if (!(a & IEC_FIFO_EMPTY)) {
+            ioWrite8(UART_DATA, '`');
 
             data = HW_IEC_RX_DATA;
 
@@ -130,6 +134,8 @@ void UltiCopy :: warp_loop()
                         DBGIECV(".<%b>.", data);
                         break;
                 }
+            } else {
+                printf("Unexpected data: %b", data);
             }
         }
     }
