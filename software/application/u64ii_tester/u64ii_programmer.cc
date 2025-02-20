@@ -23,6 +23,15 @@
 #include "screen_logger.h"
 #include "flash.h"
 
+// These defines are from the test concept that runs tests via jtag.
+#define PROG_BUFFER      ((uint8_t *)(0x1000000))
+#define PROG_PROGRESS    (*(volatile int *)(0x0088))
+#define PROG_LENGTH      (*(volatile int *)(0x008C))
+#define PROG_LOCATION    (*(volatile int *)(0x0090))
+#define DUT_TO_TESTER    (*(volatile uint32_t *)(0x0094))
+#define TESTER_TO_DUT	 (*(volatile uint32_t *)(0x0098))
+#define TEST_STATUS		 (*(volatile int *)(0x009C))
+
 static const char *getBoardRevision(void)
 {
 	uint8_t rev = (U2PIO_BOARDREV >> 3);
@@ -233,27 +242,36 @@ int attempt_programming(uint32_t size_addr, uint32_t src_addr, uint32_t dest_add
     }
 }
 
-void ultimate_main(void *context)
+int programFlash()
 {
-    Flash *flash = get_flash();
-    initVGAScreen();
-    initScreen();
-    screen->clear();
-    screen->move_cursor(0,0);
-    info_message("U64E-II Tester - 02.11.2024 - 11:48\n\n");
-    info_message("Board Revision: %s\n", getBoardRevision());
-    uint8_t serial[8];
-    flash->read_serial(serial);
-    info_message("Flash Type: %s\n", flash->get_type_string());
-    info_message("Hardware Serial Number: %b%b:%b%b:%b%b:%b%b\n\n", serial[0], serial[1], serial[2], serial[3], serial[4], serial[5], serial[6], serial[7]);
+	PROG_PROGRESS = 0;
 
+	if (PROG_LENGTH > 0x400000) {
+		warn_message("Flashing", "Flash buffer too big (%d)\n", PROG_LENGTH);
+		return -2;
+	}
+	if (PROG_LENGTH < 0) {
+		warn_message("Flashing", "Flash length < 0 (%d)\n", PROG_LENGTH);
+		return -3;
+	}
+	if ((PROG_LOCATION < 0) || (PROG_LOCATION > 16*1024*1024)) {
+		warn_message("Flashing", "Illegal flash address %08x\n", PROG_LOCATION);
+		return -4;
+	}
+	if (flash_buffer_at(PROG_LOCATION, PROG_BUFFER, PROG_LENGTH)) {
+		return 0;
+	} else {
+		return -1;
+	}
+}
+
+int test_all()
+{
     int errors = 0;
-
-	InitFunction :: executeAll();
     usb2.initHardware();
     errors += U64TestKeyboard();
     errors += U64TestIEC();
-    //errors += U64TestUserPort();
+    errors += U64TestUserPort();
     errors += U64TestCartridge();
     errors += U64TestCassette();
     errors += U64TestJoystick();
@@ -267,7 +285,109 @@ void ultimate_main(void *context)
     errors += U64TestUsbHub();
 
     info_message("\nTest completed with %d errors.\n", errors);
-    errors = 0; // always flash
+    return errors;
+}
+
+void test_loop()
+{
+    while (1) {
+        vTaskDelay(1);
+        if (!TESTER_TO_DUT)
+            continue;
+
+        int result = 0;
+
+        switch (TESTER_TO_DUT) {
+        case 1:
+            result = U64TestKeyboard();
+            break;
+        case 2:
+            result = U64TestIEC();
+            break;
+        case 3:
+            result = U64TestUserPort();
+            break;
+        case 4:
+            result = U64TestCartridge();
+            break;
+        case 5:
+            result = U64TestCassette();
+            break;
+        case 6:
+            result = U64TestJoystick();
+            break;
+        case 7:
+            result = U64TestPaddle();
+            break;
+        case 8:
+            result = U64TestSidSockets();
+            break;
+        case 9:
+            result = U64TestAudioCodecSilence();
+            break;
+        case 10:
+            result = U64TestAudioCodecPurity();
+            break;
+        case 11:
+            result = U64TestSpeaker();
+            break;
+        case 12:
+            result = U64TestWiFiComm();
+            break;
+        case 13:
+            result = U64TestVoltages();
+            break;
+        case 14:
+            result = U64TestUsbHub();
+            break;
+        case 15:
+            usb2.initHardware();
+            vTaskDelay(200);
+            break;
+        case 16:
+            result = U64TestOff();
+            break;
+        case 50:
+            result = programFlash();
+            break;
+        case 99:
+            printf("Alive V1.3!\n");
+            break;
+        case 101:
+            result = test_all();
+            break;
+        default:
+            result = -5;
+        }
+        TEST_STATUS = result;
+        TESTER_TO_DUT = 0;
+        DUT_TO_TESTER ++;
+    }
+}
+
+void ultimate_main(void *context)
+{
+    // Report ourselves to the tester.
+    printf("DUT Main..\n");
+	DUT_TO_TESTER = 1;
+	TEST_STATUS = 0;
+
+    Flash *flash = get_flash();
+    initVGAScreen();
+    initScreen();
+    screen->clear();
+    screen->move_cursor(0,0);
+    info_message("U64E-II Tester - 02.11.2024 - 11:48\n\n");
+    info_message("Board Revision: %s\n", getBoardRevision());
+    uint8_t serial[8];
+    flash->read_serial(serial);
+    info_message("Flash Type: %s\n", flash->get_type_string());
+    info_message("Hardware Serial Number: %b%b:%b%b:%b%b:%b%b\n\n", serial[0], serial[1], serial[2], serial[3], serial[4], serial[5], serial[6], serial[7]);
+	InitFunction :: executeAll();
+
+    test_loop();
+
+    int errors = 0; // always flash
 
     if (errors == 0) {
         attempt_programming(0xFFFFF8, 0x1800000, 0x400000);

@@ -653,6 +653,15 @@ int U64TestWiFiComm(void)
     return 0;
 }
 
+int U64TestOff(void)
+{
+    esp32.EnableRunMode(); // cannot catch reply
+    vTaskDelay(100); // Half a second delay
+    wifi_command_init();
+    wifi_machine_off();
+    return 0;
+}
+
 // Precondition: WiFi module has been initialized
 int U64TestVoltages(void)
 {

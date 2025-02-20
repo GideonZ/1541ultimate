@@ -79,6 +79,7 @@ int U64TestWiFiComm();
 int U64TestVoltages();
 int U64TestSpeaker();
 int U64TestUsbHub();
+int U64TestOff();
 
 #ifdef __cplusplus
 }
