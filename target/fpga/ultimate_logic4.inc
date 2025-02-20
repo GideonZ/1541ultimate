@@ -117,7 +117,7 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/io/sampler/vhdl_source/sampler_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/sampler/vhdl_source/sampler_accu.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/sampler/vhdl_source/sampler_regs.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/io/sampler/vhdl_source/sampler.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/sampler/vhdl_source/sampler2.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/sid6581/vhdl_source/sid_debug_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/sid6581/vhdl_source/sid_trace.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/sid6581/vhdl_source/Q_table.vhd \
