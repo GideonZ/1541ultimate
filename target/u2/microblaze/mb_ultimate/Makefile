@@ -35,6 +35,7 @@ SRCS_CC	 =  small_printf.cc \
 			at45_flash.cc \
 			w25q_flash.cc \
 			s25fl_flash.cc \
+			product.cc \
 			config.cc \
 			subsys.cc \
 			filemanager.cc \
@@ -104,6 +105,7 @@ SRCS_CC	 =  small_printf.cc \
 			usb_ax88772.cc \
 			usb_hid.cc \
 			keyboard_usb.cc \
+			network_config.cc \
 			network_interface.cc \
 			vfs.cc \
 			ftpd.cc \

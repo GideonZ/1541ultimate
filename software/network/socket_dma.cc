@@ -5,6 +5,8 @@
  *      Author: Gideon
  */
 
+#include <string.h>
+
 #include "itu.h"
 #include "filemanager.h"
 #include "socket_dma.h"
@@ -18,7 +20,8 @@
 #include "c1541.h"
 #include "data_streamer.h"
 #include "filetype_crt.h"
-#include "network_interface.h"
+#include "network_config.h"
+#include "product.h"
 
 // "Ok ok, use them then..."
 #define SOCKET_CMD_DMA         0xFF01
@@ -35,6 +38,8 @@
 #define SOCKET_CMD_POWEROFF    0xFF0C
 #define SOCKET_CMD_RUN_CRT     0xFF0D
 #define SOCKET_CMD_IDENTIFY    0xFF0E
+
+#define SOCKET_CMD_AUTHENTICATE 0xFF1F
 
 // Only available on U64
 #define SOCKET_CMD_VICSTREAM_ON    0xFF20
@@ -67,9 +72,7 @@ SocketDMA::~SocketDMA() {
     delete[] load_buffer;
 }
 
-const char *getVersionString(char *title);
-
-void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint16_t cmd, uint32_t len, struct in_addr *client_ip)
+bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint16_t cmd, uint32_t len, struct in_addr *client_ip, bool &authenticated)
 {
 	uint8_t *buf = (uint8_t *)load_buffer;
 	SubsysCommand *sys_command;
@@ -80,11 +83,29 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
     uint16_t size;
     const char *name = "";
     char title[52];
+    bool ok = true;
     // TODO: check len > remaining
 
+    const char *password = NULL;
+    if (!authenticated && cmd != SOCKET_CMD_AUTHENTICATE) {
+        return false;  // If not authenticated we disconnect
+    }
     switch(cmd) {
+    case SOCKET_CMD_AUTHENTICATE:
+        password = networkConfig.cfg->get_string(CFG_NETWORK_PASSWORD);
+        if (*password || (strlen(password) == length && memcmp(password, load_buffer, length) == 0)) {
+            authenticated = true;
+            buf[0] = 1;
+        }
+        else {
+            ok = false;
+            buf[0] = 0;
+            vTaskDelay(1000 / portTICK_PERIOD_MS);  // Throttle failed password attempts
+        }
+        writeSocket(socket, buf, 1);
+        break;
     case SOCKET_CMD_IDENTIFY:
-        getVersionString(title+1);
+        getProductTitleString(title+1, sizeof(title)-1);
         title[0] = (char)strlen(title+1);
         writeSocket(socket, title, 1+title[0]);
         break;
@@ -299,6 +320,7 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
            }
     	}
     }
+    return ok;
 }
 
 int SocketDMA::readSocket(int socket, void *buffer, int max_remain)
@@ -339,6 +361,11 @@ int SocketDMA::writeSocket(int socket, void *buffer, int length)
 
 void SocketDMA::dmaThread(void *load_buffer)
 {
+    while (networkConfig.cfg->get_value(CFG_NETWORK_ULTIMATE_DMA_SERVICE) == 0) {
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+    }
+    puts("Socket DMA server starting");
+
 	int sockfd, newsockfd, portno;
 	unsigned long int clilen;
     struct sockaddr_in serv_addr, cli_addr;
@@ -400,6 +427,10 @@ void SocketDMA::dmaThread(void *load_buffer)
 		uint8_t *mempntr = (uint8_t *)load_buffer;
 		uint8_t buf[16];
 
+		bool authenticated = false;
+		const char *password = networkConfig.cfg->get_string(CFG_NETWORK_PASSWORD);
+		if (!*password)
+	            authenticated = true;
 		while(1) {
 	        n = recv(newsockfd, buf, 2, 0);
 	        if (n <= 0) {
@@ -433,7 +464,9 @@ void SocketDMA::dmaThread(void *load_buffer)
 	        if (n <= 0) {
 	            break;
 	        }
-            performCommand(newsockfd, load_buffer, n, cmd, len32, &cli_addr.sin_addr);
+            if (!performCommand(newsockfd, load_buffer, n, cmd, len32, &cli_addr.sin_addr, authenticated)) {
+                break;
+            }
 		}
         puts("ERROR reading from socket");
         closesocket(newsockfd);
@@ -442,14 +475,13 @@ void SocketDMA::dmaThread(void *load_buffer)
     closesocket(sockfd);
 }
 
-bool isEliteBoard(void) __attribute__((weak));
-bool isEliteBoard(void)
-{
-    return false;
-}
-
 void SocketDMA::identThread(void *_a)
 {
+    while (networkConfig.cfg->get_value(CFG_NETWORK_ULTIMATE_IDENT_SERVICE) == 0) {
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+    }
+    puts("Socket ident server starting");
+
 	int sockfd, newsockfd, portno;
 	unsigned long int clilen;
     struct sockaddr_in serv_addr, cli_addr;
@@ -458,7 +490,7 @@ void SocketDMA::identThread(void *_a)
     char client_message[256];
     char menu_header[64];
 
-    getVersionString(menu_header);
+    getProductTitleString(menu_header, sizeof(menu_header));
 
     /* First call to socket() function */
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -499,38 +531,23 @@ void SocketDMA::identThread(void *_a)
             if (n > 0) {
                 client_message[n] = 0;
             }
-            ConfigStore *cs = ConfigManager::getConfigManager()->find_store("Network settings");
-            const char *hostname = "Unknown";
-            if (cs) {
-                hostname = cs->get_string(CFG_NET_HOSTNAME);
-            }
 
-            const char *product = "?";
-            uint32_t capabilities = getFpgaCapabilities();
+            const char *hostname = networkConfig.cfg->get_string(CFG_NETWORK_HOSTNAME);
+
+            char product[41];
+            getProductVersionString(product, sizeof(product));
+
             char fpga_version[8];
-
-            if(capabilities & CAPAB_ULTIMATE64) {
-                if (isEliteBoard()) {
-                    product = "Ultimate 64 Elite";
-                } else {
-                    product = "Ultimate 64";
-                }
-            } else if(capabilities & CAPAB_ULTIMATE2PLUS) {
-                if (capabilities & CAPAB_FPGA_TYPE) {
-                    product = "Ultimate-II+L";
-                } else {
-                    product = "Ultimate-II+";
-                }
-            } else {
-                product = "1541 Ultimate-II";
-            }
             sprintf(fpga_version, "1%02x", getFpgaVersion());
 #ifdef U64
             char core_version[8];
             sprintf(core_version, "1.%02x", C64_CORE_VERSION);
 #endif
+            const char *password = networkConfig.cfg->get_string(CFG_NETWORK_PASSWORD);
+
             if (strncmp(client_message, "json", 4) == 0) {
                 client_message[36] = 0;
+                JSON_Bool password_protected(*password ? 1 : 0);
                 JSON *obj = JSON::Obj()
                     ->add("product", product)
                     ->add("firmware_version", APPL_VERSION)
@@ -542,6 +559,11 @@ void SocketDMA::identThread(void *_a)
                     ->add("menu_header", menu_header)
                     ->add("your_string", client_message+4);
 
+                // Current Assembly64 ignores responses with booleans so we only send this if passwords
+                // are active, in which case Assembly won't work anyway.
+                if (*password) {
+                    ((JSON_Object *)obj)->add("password_protected", &password_protected);
+                }
                 const char *msg = obj->render();
                 n = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&cli_addr,
                         client_struct_length);

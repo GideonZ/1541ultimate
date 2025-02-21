@@ -1,3 +1,4 @@
+#include "network_config.h"
 #include "network_interface.h"
 #include "init_function.h"
 #include <stdlib.h>
@@ -25,15 +26,6 @@ struct t_cfg_definition net_config[] = {
 	{ CFG_NET_IP,      CFG_TYPE_STRING, "Static IP",					 "%s", NULL,       7, 16, (int)"192.168.2.64" },
 	{ CFG_NET_NETMASK, CFG_TYPE_STRING, "Static Netmask",				 "%s", NULL,       7, 16, (int)"255.255.255.0" },
 	{ CFG_NET_GATEWAY, CFG_TYPE_STRING, "Static Gateway",				 "%s", NULL,       7, 16, (int)"192.168.2.1" },
-#ifdef U64
-	{ CFG_NET_HOSTNAME,CFG_TYPE_STRING, "Host Name", 					 "%s", NULL,       3, 18, (int)"Ultimate-64" },
-#else
-	#ifdef U2P_IO_BASE
-    { CFG_NET_HOSTNAME,CFG_TYPE_STRING, "Host Name",                     "%s", NULL,       3, 18, (int)"Ultimate-II-Plus" },
-	#else
-    { CFG_NET_HOSTNAME,CFG_TYPE_STRING, "Host Name",                     "%s", NULL,       3, 18, (int)"Ultimate-II" },
-	#endif
-#endif
 	{ CFG_TYPE_END,    CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
@@ -147,7 +139,7 @@ NetworkInterface :: ~NetworkInterface()
 
 void NetworkInterface :: attach_config()
 {
-	register_store(0x4E657477, "Network settings", net_config);	
+	register_store(0x4E657477, "Ethernet Settings", net_config);
 }
 
 bool NetworkInterface :: start()
@@ -309,7 +301,7 @@ void NetworkInterface :: effectuate_settings(void)
         my_gateway.addr = 0L;
     }
 
-    const char *h = cfg->get_string(CFG_NET_HOSTNAME);
+    const char *h = networkConfig.cfg->get_string(CFG_NETWORK_HOSTNAME);
     const int len = strlen(h);
     int out = 0;
     for(int i=0; i < len; i++) {
@@ -320,7 +312,7 @@ void NetworkInterface :: effectuate_settings(void)
     hostname[out] = 0;
     // correct in configuration if invalid chars exist
     if (out != len) {
-        cfg->set_string(CFG_NET_HOSTNAME, hostname);
+        networkConfig.cfg->set_string(CFG_NETWORK_HOSTNAME, hostname);
     }
 
 

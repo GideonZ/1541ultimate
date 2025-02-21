@@ -46,6 +46,8 @@ SRCS_CC	 =  small_printf.cc \
 			flash_switch.cc \
 			flash.cc \
 			w25q_flash.cc \
+			product.cc \
+			network_config.cc \
 			network_interface.cc \
 			network_test.cc \
 			rmii_interface.cc \

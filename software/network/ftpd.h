@@ -69,6 +69,7 @@ typedef void (FTPDaemonThread::*func_t)(const char *args);
 class FTPDaemonThread
 {
 	int socket;
+	char authenticated;
 	uint8_t my_ip[4];
 	uint8_t your_ip[4];
 	uint16_t your_port;

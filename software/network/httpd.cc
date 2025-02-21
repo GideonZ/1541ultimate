@@ -3,6 +3,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include "pattern.h"
+#include "network_config.h"
 
 #include "httpd.h"
 
@@ -21,6 +22,10 @@ HTTPDaemon::HTTPDaemon()
 
 void HTTPDaemon::http_listen_task(void *a)
 {
+    while (networkConfig.cfg->get_value(CFG_NETWORK_HTTP_SERVICE) == 0) {
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+    }
+
 /* Running the MicroHTTPServer code */
     printf("Waiting to start HTTP Server.\n");
     vTaskDelay(2000); /// wait for 10 sec

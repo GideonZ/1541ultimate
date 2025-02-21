@@ -33,6 +33,7 @@
 #define CFG_TYPE_SEP     0x05
 #define CFG_TYPE_INFO    0x06
 #define CFG_TYPE_STRFUNC 0x07
+#define CFG_TYPE_STRPASS 0x08
 #define CFG_TYPE_END     0xFF
 
 class UserInterface;

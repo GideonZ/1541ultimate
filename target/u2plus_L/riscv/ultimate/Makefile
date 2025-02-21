@@ -52,6 +52,7 @@ SRCS_CC	 =  u2p_init.cc \
 			w25q_flash.cc \
 			s25fl_flash.cc \
 			prog_flash.cc \
+			product.cc \
 			config.cc \
 			subsys.cc \
 			filemanager.cc \
@@ -122,6 +123,7 @@ SRCS_CC	 =  u2p_init.cc \
 			usb_hid.cc \
 			usb_ms_cbi.cc \
 			keyboard_usb.cc \
+			network_config.cc \
 			network_interface.cc \
 			debug_streamer_u2p.cc \
 			vfs.cc \

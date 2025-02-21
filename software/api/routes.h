@@ -8,6 +8,7 @@
 #include "json.h"
 #include "http_codes.h"
 #include "pattern.h"
+#include "network_config.h"
 
 extern "C" {
     #include "url.h"
@@ -298,9 +299,21 @@ public:
             printf("%s, ", path_parts[i]);
         } printf("]\n");
 
-        return find_api_call(hdr->Method, comps.route, comps.command);
-    }
+        const ApiCall_t *call = find_api_call(hdr->Method, comps.route, comps.command);
 
+        // Validate password
+        const char *password = networkConfig.cfg->get_string(CFG_NETWORK_PASSWORD);
+        const char *supplied_password = NULL;
+        for(int h=0; h < hdr->FieldCount; ++h) {
+            if(strcasecmp(hdr->Fields[h].key, "X-Password") == 0) {
+                supplied_password = hdr->Fields[h].value;
+            }
+        }
+        if(call && (*password && strcmp(supplied_password, password) != 0))
+            return (ApiCall_t *)-1;  // Signal that endpoint exists but password is incorrect
+
+        return call;
+    }
 
     int get_path_depth(void)
     {
