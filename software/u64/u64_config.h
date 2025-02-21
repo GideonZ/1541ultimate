@@ -146,8 +146,6 @@ public:
     void access_socket_post(int socket);
 };
 
-bool isEliteBoard(void);
-
 extern uint8_t C64_EMUSID1_BASE_BAK;
 extern uint8_t C64_EMUSID2_BASE_BAK;
 extern uint8_t C64_SID1_BASE_BAK;

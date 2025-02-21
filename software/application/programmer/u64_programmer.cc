@@ -29,6 +29,7 @@
 #include "u64_tester.h"
 #include "i2c_drv_sockettest.h"
 #include "stream_textlog.h"
+#include "product.h"
 
 typedef struct {
 	const char *fileName;
@@ -116,31 +117,6 @@ void esp32_put_byte(uint8_t c)
     while(ioRead8(ESP_UART_FLAGS) & UART_TxFifoFull)
         ;
     ioWrite8(ESP_UART_DATA, c);
-}
-
-const char *getBoardRevision(void)
-{
-    uint8_t rev = (U2PIO_BOARDREV >> 3);
-
-    switch (rev) {
-    case 0x10:
-        return "U64 Prototype";
-    case 0x11:
-        return "U64 V1.1 (Null Series)";
-    case 0x12:
-        return "U64 V1.2 (Mass Prod)";
-    case 0x13:
-        return "U64 V1.3 (Elite)";
-    case 0x14:
-        return "U64 V1.4 (Std/Elite)";
-    case 0x15:
-        return "U64E V2.0 (Early Proto)";
-    case 0x16:
-        return "U64E V2.1 (Null Series)";
-    case 0x17:
-        return "U64E V2.2 (Mass Prod)";
-    }
-    return "Unknown";
 }
 
 int load_file(BinaryImage_t *flashFile)
@@ -668,22 +644,6 @@ void write_log(void)
 
 extern "C" {
     void codec_init(void);
-
-    bool isEliteBoard(void)
-    {
-        uint8_t rev = (U2PIO_BOARDREV >> 3);
-        if (rev == 0x13) {
-            return true;
-        }
-        if (rev == 0x14) { // may be either!
-            uint8_t joyswap = C64_PLD_JOYCTRL;
-            if (joyswap & 0x80) {
-                return true;
-            }
-            return false;
-        }
-        return false;
-    }
 
     void main_task(void *context)
 	{

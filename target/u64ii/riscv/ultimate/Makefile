@@ -56,6 +56,7 @@ SRCS_CC	 =  u64ii_init.cc \
 			s25fl_flash.cc \
 			s25fl_l_flash.cc \
 			prog_flash.cc \
+			product.cc \
 			config.cc \
 			subsys.cc \
 			filemanager.cc \
