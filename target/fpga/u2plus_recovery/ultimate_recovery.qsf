@@ -439,7 +439,6 @@ set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/ethernet
 set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/eth_filter.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/free_queue/vhdl_source/block_bus_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/free_queue/vhdl_source/free_queue.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/packet_generator.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/align_read_to_bram.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/async_fifo_ft.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/crc32.vhd
@@ -556,7 +555,6 @@ set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/pkg_6502_d
 set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/alu.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/bit_cpx_cpy.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/proc_control.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/pkg_6502_opcodes.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/proc_interrupt.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/pkg_6502_defs.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/proc_core.vhd
@@ -638,12 +636,6 @@ set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampl
 set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/itu/vhdl_source/itu_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/itu/vhdl_source/itu.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/video/vhdl_source/char_generator_pkg.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/video/vhdl_source/char_generator_rom_pkg.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/video/vhdl_source/char_generator_rom.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/video/vhdl_source/char_generator_regs.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/video/vhdl_source/char_generator_slave.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/video/vhdl_source/char_generator_peripheral.vhd
 set_global_assignment -name QIP_FILE ../../../fpga/altera/megafunctions/pll.qip
 set_global_assignment -name QIP_FILE ../../../fpga/altera/megafunctions/update/synthesis/update.qip
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/u2p_io.vhd

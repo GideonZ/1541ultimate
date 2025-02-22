@@ -37,12 +37,6 @@ ALL_ULTIMATE_LOGIC := \
                 vhdl,work,$(ULTIMATE_FPGA)/ip/memory/vhdl_source/dpram_8x16-xilinx.vhd \
                 vhdl,work,$(ULTIMATE_FPGA)/ip/memory/vhdl_source/dpram_8x32.vhd \
                 vhdl,work,$(ULTIMATE_FPGA)/ip/memory/vhdl_source/dpram_8x32-xilinx.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/ip/video/vhdl_source/char_generator_pkg.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/ip/video/vhdl_source/char_generator_rom_pkg.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/ip/video/vhdl_source/char_generator_rom.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/ip/video/vhdl_source/char_generator_regs.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/ip/video/vhdl_source/char_generator_slave.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/ip/video/vhdl_source/char_generator_peripheral.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/clock/vhdl_source/real_time_clock.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/clock/vhdl_source/fractional_div.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/nano_cpu/vhdl_source/nano_cpu_pkg.vhd \

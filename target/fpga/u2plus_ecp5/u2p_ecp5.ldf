@@ -11,9 +11,6 @@
         <Source name="../../../fpga/ip/busses/vhdl_source/io_bus_pkg.vhd" type="VHDL" type_short="VHDL">
             <Options lib="work"/>
         </Source>
-        <Source name="../../../fpga/cpu_unit/vhdl_source/wishbone2memio.vhd" type="VHDL" type_short="VHDL">
-            <Options lib="work"/>
-        </Source>
         <Source name="../../../fpga/lattice/primitives_pkg.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
@@ -42,9 +39,6 @@
             <Options/>
         </Source>
         <Source name="../../../fpga/6502n/vhdl_source/pkg_6502_defs.vhd" type="VHDL" type_short="VHDL">
-            <Options/>
-        </Source>
-        <Source name="../../../fpga/6502n/vhdl_source/pkg_6502_opcodes.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
         <Source name="../../../fpga/6502n/vhdl_source/proc_control.vhd" type="VHDL" type_short="VHDL">
@@ -338,12 +332,6 @@
         <Source name="../../../fpga/io/rmii/vhdl_source/ethernet_interface.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
-        <Source name="../../../fpga/io/rmii/vhdl_source/ethernet_rmii.vhd" type="VHDL" type_short="VHDL">
-            <Options/>
-        </Source>
-        <Source name="../../../fpga/io/rmii/vhdl_source/packet_generator.vhd" type="VHDL" type_short="VHDL">
-            <Options/>
-        </Source>
         <Source name="../../../fpga/io/rmii/vhdl_source/rmii_transceiver.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
@@ -410,9 +398,6 @@
         <Source name="../../../fpga/io/usb2/vhdl_source/ulpi_bus.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
-        <Source name="../../../fpga/io/usb2/vhdl_source/ulpi_pkg.vhd" type="VHDL" type_short="VHDL">
-            <Options/>
-        </Source>
         <Source name="../../../fpga/io/usb2/vhdl_source/ulpi_rx.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
@@ -458,21 +443,6 @@
         <Source name="../../../fpga/ip/synchroniser/vhdl_source/level_synchronizer.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
-        <Source name="../../../fpga/ip/video/vhdl_source/char_generator_rom.vhd" type="VHDL" type_short="VHDL">
-            <Options/>
-        </Source>
-        <Source name="../../../fpga/ip/video/vhdl_source/char_generator_rom_pkg.vhd" type="VHDL" type_short="VHDL">
-            <Options/>
-        </Source>
-        <Source name="../../../fpga/ip/video/vhdl_source/char_generator_regs.vhd" type="VHDL" type_short="VHDL">
-            <Options/>
-        </Source>
-        <Source name="../../../fpga/ip/video/vhdl_source/char_generator_pkg.vhd" type="VHDL" type_short="VHDL">
-            <Options/>
-        </Source>
-        <Source name="../../../fpga/ip/video/vhdl_source/char_generator_peripheral.vhd" type="VHDL" type_short="VHDL">
-            <Options/>
-        </Source>
         <Source name="../../../fpga/io/copper/vhdl_source/copper.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
@@ -483,9 +453,6 @@
             <Options/>
         </Source>
         <Source name="../../../fpga/io/copper/vhdl_source/copper_regs.vhd" type="VHDL" type_short="VHDL">
-            <Options/>
-        </Source>
-        <Source name="../../../fpga/ip/video/vhdl_source/char_generator_slave.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
         <Source name="../../../fpga/ip/free_queue/vhdl_source/block_bus_pkg.vhd" type="VHDL" type_short="VHDL">
@@ -549,12 +516,6 @@
             <Options/>
         </Source>
         <Source name="../../../fpga/lattice/pll2/pll2.vhd" type="VHDL" type_short="VHDL">
-            <Options/>
-        </Source>
-        <Source name="../../../fpga/io/icap/vhdl_source/icap-dummy.vhd" type="VHDL" type_short="VHDL">
-            <Options/>
-        </Source>
-        <Source name="../../../fpga/io/icap/vhdl_source/icap_pkg.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
         <Source name="../../../fpga/lattice/ddr2_ctrl_logic.vhd" type="VHDL" type_short="VHDL">
@@ -666,12 +627,6 @@
             <Options/>
         </Source>
         <Source name="../../../fpga/io/uart_lite/vhdl_source/uart_dma.vhd" type="VHDL" type_short="VHDL">
-            <Options/>
-        </Source>
-        <Source name="cart.rva" type="Reveal Analyzer Project File" type_short="RVA">
-            <Options/>
-        </Source>
-        <Source name="cart.rvl" type="Reveal" type_short="Reveal" excluded="TRUE">
             <Options/>
         </Source>
         <Source name="u2p_ecp5.lpf" type="Logic Preference" type_short="LPF">

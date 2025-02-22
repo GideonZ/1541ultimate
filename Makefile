@@ -24,16 +24,26 @@ u2:
 	@cp target/u2/microblaze/mb_update_dd/result/update.u2u ./update_dual_drive_acia.u2u
 	@cp target/u2/microblaze/mb_update_gm/result/update.u2u ./update_dual_drive_gmod2.u2u
 
+u2_rv_loader:
+	@$(MAKE) -C tools
+	@$(MAKE) -C target/u2/riscv/loader
+	@$(MAKE) -C target/fpga/rv700_loader
+
 u2_rv:
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/u2/riscv/boot1
 	@$(MAKE) -C target/u2/riscv/boot2
-	@$(MAKE) -C target/u2/riscv/loader
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u2/riscv/ultimate
 	@$(MAKE) -C target/fpga/rv700dd
 	@$(MAKE) -C target/fpga/rv700au
-	@$(MAKE) -C target/fpga/rv700_loader
+	@$(MAKE) -C target/u2/riscv/updater
+	@cp target/u2/riscv/updater/result/update.u2r ./update.u2r
+
+u2_rv_swonly:
+	@$(MAKE) -C tools
+	@$(MAKE) -C target/libs/riscv/lwip
+	@$(MAKE) -C target/u2/riscv/ultimate
 	@$(MAKE) -C target/u2/riscv/updater
 	@cp target/u2/riscv/updater/result/update.u2r ./update.u2r
 

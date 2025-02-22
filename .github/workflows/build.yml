@@ -12,11 +12,84 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      - name: Build inside Docker
+      - name: Determine FPGA dependencies
+        run:  target/fpga/depends/depends.sh
+
+      - name: Cache U2 FPGA
+        id: cache-u2
+        uses: actions/cache@v4
+        with:
+            path: |
+                target/fpga/rv700dd/7v700dd/rv700dd.bit
+                target/fpga/rv700au/work/rv700au.bit
+            key: ${{ runner.os }}-u2-${{ hashFiles('target/fpga/depends/u2.txt') }}
+
+      - name: Cache U2+ FPGA
+        id: cache-u2p
+        uses: actions/cache@v4
+        with:
+            path: |
+                target/fpga/u2plus_recovery/output_files/u2plus_recovery.rbf
+                target/fpga/u2plus_run/output_files/u2plus_run.rbf
+
+            key: ${{ runner.os }}-u2p-${{ hashFiles('target/fpga/depends/u2p.txt') }}
+
+      - name: Cache U2+L FPGA
+        id: cache-u2pl
+        uses: actions/cache@v4
+        with:
+            path: |
+                target/fpga/u2plus_ecp5/impl1/u2plus_ecp5_impl1.bit
+
+            key: ${{ runner.os }}-u2pl-${{ hashFiles('target/fpga/depends/u2pl.txt') }}
+
+      - if: steps.cache-u2.outputs.cache-hit != 'true'
+        name: Build U2 including FPGAs
         run: |
           docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2_rv"
+        
+      - if: steps.cache-u2.outputs.cache-hit == 'true'
+        name: Build U2 without FPGAs
+        run: |
+          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2_rv_swonly"
+
+      - if: steps.cache-u2p.outputs.cache-hit != 'true'
+        name: Build U2+ including FPGAs
+        run: |
+          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2plus"
+        
+      - if: steps.cache-u2p.outputs.cache-hit == 'true'
+        name: Build U2+ without FPGAs
+        run: |
+          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2plus_swonly"
+
+      - if: steps.cache-u2pl.outputs.cache-hit != 'true'
+        name: Build U2+L including FPGA
+        run: |
+          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2pl"
+        
+      - if: steps.cache-u2pl.outputs.cache-hit == 'true'
+        name: Build U2+L without FPGAs
+        run: |
+          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2pl_swonly"
+
+      - name: Build U64 Software
+        run: |
+          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64"
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
