@@ -4,13 +4,16 @@ on: [push, pull_request]
 
 jobs:
   build:
-    runs-on: self-hosted  # This will run on your home server
+    runs-on: self-hosted
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
           fetch-depth: 1
+
+      - name: Generate Version String
+        run: echo "GIT_VERSION=$(git describe --tags --always)" >>$GITHUB_ENV
 
       - name: Determine FPGA & ESP32 dependencies
         run: |
@@ -32,8 +35,8 @@ jobs:
         uses: actions/cache@v4
         with:
             path: |
-                target/fpga/u2plus_recovery/output_files/u2plus_recovery.rbf
-                target/fpga/u2plus_run/output_files/u2plus_run.rbf
+                target/fpga/u2plus_recovery/output_files/ultimate_recovery.rbf
+                target/fpga/u2plus_run/output_files/ultimate_run.rbf
 
             key: ${{ runner.os }}-u2p-${{ hashFiles('target/fpga/depends/u2p.txt') }}
 
@@ -42,7 +45,7 @@ jobs:
         uses: actions/cache@v4
         with:
             path: |
-                target/fpga/u2plus_ecp5/impl1/u2plus_ecp5_impl1.bit
+                target/fpga/u2plus_ecp5/impl1/u2p_ecp5_impl1.bit
 
             key: ${{ runner.os }}-u2pl-${{ hashFiles('target/fpga/depends/u2pl.txt') }}
 
@@ -113,7 +116,7 @@ jobs:
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: update_package
+          name: update_package_${{ env.GIT_VERSION }}
           path: |
             update.u2r
             update.u2p
