@@ -235,7 +235,6 @@ nios_bsps:
 	@$(MAKE) -C software/nios_appl_bsp
 
 u64:
-	@cd software/wifi/raw_u64 && idf.py build
 	@touch software/nios_solo_bsp/Makefile
 	@touch software/nios_solo_bsp/public.mk
 	@touch software/nios_appl_bsp/Makefile
@@ -254,7 +253,6 @@ u64_clean:
 
 u2pl:
 	@$(MAKE) -C tools
-	@cd software/wifi/raw_c3 && idf.py build
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u2plus_L/rvlite/bootloader
 	@$(MAKE) -C target/fpga/u2plus_ecp5
@@ -264,7 +262,6 @@ u2pl:
 
 u2pl_swonly:
 	@$(MAKE) -C tools
-	@cd software/wifi/raw_c3 && idf.py build
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u2plus_L/riscv/ultimate
 	@$(MAKE) -C target/u2plus_L/riscv/updater

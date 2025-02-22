@@ -65,6 +65,13 @@ jobs:
                 software/wifi/raw_u64/build/partition_table/partition-table.bin
             key: ${{ runner.os }}-u2pl-${{ hashFiles('software/esp_depends.txt') }}
 
+      - if: steps.cache-esp32.outputs.cache-hit != 'true'
+        name: Build ESP32 Software
+        run: |
+          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make esp32"
+
       - if: steps.cache-u2.outputs.cache-hit != 'true'
         name: Build U2 including FPGAs
         run: |
