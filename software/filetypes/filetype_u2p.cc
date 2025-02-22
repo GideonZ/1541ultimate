@@ -28,6 +28,7 @@
 #include "userinterface.h"
 #include "c64.h"
 #include "browsable_root.h"
+#include "product.h"
 
 extern "C" {
 	#include "dump_hex.h"
@@ -72,17 +73,8 @@ FileType *FileTypeUpdate :: test_type(BrowsableDirEntry *br)
 {
 	FileInfo *inf = br->getInfo();
 	uint32_t cap = getFpgaCapabilities();
-#if U64 == 2
-    const char *ext = "UE2";
-#elif U64 == 1
-    const char *ext = "U64";
-#elif U2P == 2
-    const char *ext = "U2L";
-#else
-    const char *ext = "U2P";
-#endif
 
-	if(strcmp(inf->extension, ext)==0)
+    if(strcmp(inf->extension, getProductUpdateFileExtension())==0)
         return new FileTypeUpdate(br);
     return NULL;
 }

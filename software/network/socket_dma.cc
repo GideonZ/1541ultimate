@@ -19,6 +19,7 @@
 #include "data_streamer.h"
 #include "filetype_crt.h"
 #include "network_interface.h"
+#include "product.h"
 
 // "Ok ok, use them then..."
 #define SOCKET_CMD_DMA         0xFF01
@@ -67,8 +68,6 @@ SocketDMA::~SocketDMA() {
     delete[] load_buffer;
 }
 
-const char *getVersionString(char *title);
-
 void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint16_t cmd, uint32_t len, struct in_addr *client_ip)
 {
 	uint8_t *buf = (uint8_t *)load_buffer;
@@ -84,7 +83,7 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
 
     switch(cmd) {
     case SOCKET_CMD_IDENTIFY:
-        getVersionString(title+1);
+        getProductTitleString(title+1, sizeof(title)-1);
         title[0] = (char)strlen(title+1);
         writeSocket(socket, title, 1+title[0]);
         break;
@@ -442,12 +441,6 @@ void SocketDMA::dmaThread(void *load_buffer)
     closesocket(sockfd);
 }
 
-bool isEliteBoard(void) __attribute__((weak));
-bool isEliteBoard(void)
-{
-    return false;
-}
-
 void SocketDMA::identThread(void *_a)
 {
 	int sockfd, newsockfd, portno;
@@ -458,7 +451,7 @@ void SocketDMA::identThread(void *_a)
     char client_message[256];
     char menu_header[64];
 
-    getVersionString(menu_header);
+    getProductTitleString(menu_header, sizeof(menu_header));
 
     /* First call to socket() function */
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -505,25 +498,10 @@ void SocketDMA::identThread(void *_a)
                 hostname = cs->get_string(CFG_NET_HOSTNAME);
             }
 
-            const char *product = "?";
-            uint32_t capabilities = getFpgaCapabilities();
-            char fpga_version[8];
+            char product[41];
+            getProductVersionString(product, sizeof(product));
 
-            if(capabilities & CAPAB_ULTIMATE64) {
-                if (isEliteBoard()) {
-                    product = "Ultimate 64 Elite";
-                } else {
-                    product = "Ultimate 64";
-                }
-            } else if(capabilities & CAPAB_ULTIMATE2PLUS) {
-                if (capabilities & CAPAB_FPGA_TYPE) {
-                    product = "Ultimate-II+L";
-                } else {
-                    product = "Ultimate-II+";
-                }
-            } else {
-                product = "1541 Ultimate-II";
-            }
+            char fpga_version[8];
             sprintf(fpga_version, "1%02x", getFpgaVersion());
 #ifdef U64
             char core_version[8];

@@ -66,6 +66,7 @@ SRCS_CC	 =  small_printf.cc \
 			memory.cc \
 			screen.cc \
 			rtc_i2c.cc \
+			product.cc \
 			config.cc \
 			prog_flash.cc \
 			flash.cc \
