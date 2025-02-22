@@ -13,7 +13,7 @@ jobs:
           fetch-depth: 1
 
       - name: Determine FPGA dependencies
-        run:  cd $GITHUB_WORKSPACE/target/fpga/depends && ./depends.sh
+        run:  cd $GITHUB_WORKSPACE/target/fpga/depends && ./make_depends.sh
 
       - name: Cache U2 FPGA
         id: cache-u2
