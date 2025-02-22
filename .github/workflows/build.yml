@@ -12,11 +12,11 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      - name: Determine FPGA dependencies
+      - name: Determine FPGA & ESP32 dependencies
         run: |
           docker run --rm \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make fpga_depends"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make fpga_depends && make esp_depends"
 
       - name: Cache U2 FPGA
         id: cache-u2
@@ -45,6 +45,22 @@ jobs:
                 target/fpga/u2plus_ecp5/impl1/u2plus_ecp5_impl1.bit
 
             key: ${{ runner.os }}-u2pl-${{ hashFiles('target/fpga/depends/u2pl.txt') }}
+
+      - name: Cache ESP32 Targets
+        id: cache-esp32
+        uses: actions/cache@v4
+        with:
+            path: |
+                software/u64ctrl/build/u64ctrl.bin
+                software/u64ctrl/build/bootloader/bootloader.bin
+                software/u64ctrl/build/partition_table/partition-table.bin
+                software/wifi/raw_c3/build/bridge.bin
+                software/wifi/raw_c3/build/bootloader/bootloader.bin
+                software/wifi/raw_c3/build/partition_table/partition-table.bin
+                software/wifi/raw_u64/build/bridge.bin
+                software/wifi/raw_u64/build/bootloader/bootloader.bin
+                software/wifi/raw_u64/build/partition_table/partition-table.bin
+            key: ${{ runner.os }}-u2pl-${{ hashFiles('software/esp_depends.txt') }}
 
       - if: steps.cache-u2.outputs.cache-hit != 'true'
         name: Build U2 including FPGAs
