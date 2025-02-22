@@ -29,6 +29,21 @@ u2_rv_loader:
 	@$(MAKE) -C target/u2/riscv/loader
 	@$(MAKE) -C target/fpga/rv700_loader
 
+fpga_depends::
+	@touch software/nios_solo_bsp/Makefile
+	@touch software/nios_solo_bsp/public.mk
+	@touch software/nios_appl_bsp/Makefile
+	@touch software/nios_appl_bsp/public.mk
+	@$(MAKE) -C tools
+	@$(MAKE) -C target/u2/riscv/boot1
+	@$(MAKE) -C target/u2/riscv/boot2
+	@$(MAKE) -C software/nios_solo_bsp
+	@$(MAKE) -C software/nios_appl_bsp
+	@$(MAKE) -C target/u2plus/nios/boot_recovery
+	@$(MAKE) -C target/u2plus/nios/boot_run
+	@$(MAKE) -C target/u2plus_L/rvlite/bootloader
+	@cd target/fpga/depends && ./make_depends.sh
+
 u2_rv:
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/u2/riscv/boot1

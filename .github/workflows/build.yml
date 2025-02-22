@@ -13,7 +13,10 @@ jobs:
           fetch-depth: 1
 
       - name: Determine FPGA dependencies
-        run:  cd $GITHUB_WORKSPACE/target/fpga/depends && ./make_depends.sh
+        run: |
+          docker run --rm \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make fpga_depends"
 
       - name: Cache U2 FPGA
         id: cache-u2
