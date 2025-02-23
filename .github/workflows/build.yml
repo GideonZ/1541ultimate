@@ -29,6 +29,8 @@ jobs:
                 target/fpga/rv700dd/rv700dd/rv700dd.bit
                 target/fpga/rv700au/work/rv700au.bit
             key: ${{ runner.os }}-u2-${{ hashFiles('target/fpga/depends/u2.txt') }}
+            restore-keys: |
+                ${{ runner.os }}-u2-${{ hashFiles('target/fpga/depends/u2.txt') }}
 
       - name: Cache U2+ FPGA
         id: cache-u2p
@@ -39,6 +41,8 @@ jobs:
                 target/fpga/u2plus_run/output_files/ultimate_run.rbf
 
             key: ${{ runner.os }}-u2p-${{ hashFiles('target/fpga/depends/u2p.txt') }}
+            restore-keys: |
+                ${{ runner.os }}-u2p-${{ hashFiles('target/fpga/depends/u2p.txt') }}
 
       - name: Cache U2+L FPGA
         id: cache-u2pl
@@ -48,6 +52,8 @@ jobs:
                 target/fpga/u2plus_ecp5/impl1/u2p_ecp5_impl1.bit
 
             key: ${{ runner.os }}-u2pl-${{ hashFiles('target/fpga/depends/u2pl.txt') }}
+            restore-keys: |
+                ${{ runner.os }}-u2pl-${{ hashFiles('target/fpga/depends/u2pl.txt') }}
 
       - name: Cache ESP32 Targets
         id: cache-esp32
@@ -63,7 +69,9 @@ jobs:
                 software/wifi/raw_u64/build/bridge.bin
                 software/wifi/raw_u64/build/bootloader/bootloader.bin
                 software/wifi/raw_u64/build/partition_table/partition-table.bin
-            key: ${{ runner.os }}-u2pl-${{ hashFiles('software/esp_depends.txt') }}
+            key: ${{ runner.os }}-esp32-${{ hashFiles('software/esp_depends.txt') }}
+            restore-keys: |
+                ${{ runner.os }}-esp32-${{ hashFiles('software/esp_depends.txt') }}
 
       - if: steps.cache-esp32.outputs.cache-hit != 'true'
         name: Build ESP32 Software
