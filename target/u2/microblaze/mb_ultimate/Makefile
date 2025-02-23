@@ -105,6 +105,7 @@ SRCS_CC	 =  small_printf.cc \
 			usb_ax88772.cc \
 			usb_hid.cc \
 			keyboard_usb.cc \
+			network_config.cc \
 			network_interface.cc \
 			vfs.cc \
 			ftpd.cc \

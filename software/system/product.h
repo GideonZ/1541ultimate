@@ -18,6 +18,7 @@ uint8_t getProductId();
 const char *getProductString();
 char *getProductVersionString(char *buf, int sz);
 char *getProductTitleString(char *buf, int sz);
+char *getProductDefaultHostname(char *buf, int sz);
 char *getProductUpdateFileExtension();
 
 #endif  // PRODUCT_H

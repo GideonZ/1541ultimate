@@ -28,7 +28,6 @@ extern "C" {
 #define CFG_NET_IP          0xE1
 #define CFG_NET_NETMASK		0xE2
 #define CFG_NET_GATEWAY		0xE3
-#define CFG_NET_HOSTNAME    0xE4
 #define CFG_VIC_UDP_IP      0xE8
 #define CFG_VIC_UDP_PORT    0xE9
 #define CFG_VIC_UDP_EN      0xEA

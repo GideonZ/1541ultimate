@@ -209,7 +209,7 @@ void ConfigIO :: S_write_store_to_file(ConfigStore *st, File *f)
     for(int n = 0; n < st->items.get_elements(); n++) {
         i = st->items[n];
         len = 0;
-        if ((i->definition->type == CFG_TYPE_STRING) || (i->definition->type == CFG_TYPE_STRFUNC)) {
+        if ((i->definition->type == CFG_TYPE_STRING) || (i->definition->type == CFG_TYPE_STRFUNC) || (i->definition->type == CFG_TYPE_STRPASS)) {
             len = sprintf(buffer, "%s=%s\n", i->definition->item_text, i->string);
         } else if(i->definition->type == CFG_TYPE_ENUM) {
             len = sprintf(buffer, "%s=%s\n", i->definition->item_text, i->definition->items[i->getValue()]);
@@ -320,7 +320,7 @@ bool ConfigIO :: S_read_store_element(ConfigStore *st, const char *line, int lin
             st->staleEffect = true;
             st->staleFlash = true;
         }
-    } else if ((item->definition->type == CFG_TYPE_STRING) || (item->definition->type == CFG_TYPE_STRFUNC)) {
+    } else if ((item->definition->type == CFG_TYPE_STRING) || (item->definition->type == CFG_TYPE_STRFUNC) || (item->definition->type == CFG_TYPE_STRPASS)) {
         if (strncmp(item->string, valuestr, item->definition->max) != 0) {
             strncpy(item->string, valuestr, item->definition->max);
             st->staleEffect = true;

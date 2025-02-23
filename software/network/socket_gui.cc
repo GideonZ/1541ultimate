@@ -20,6 +20,7 @@
 #include "versions.h"
 #include "home_directory.h"
 #include "init_function.h"
+#include "network_config.h"
 #include "product.h"
 
 SocketGui *socket_gui = NULL;
@@ -39,11 +40,102 @@ SocketGui :: SocketGui()
 	xTaskCreate( socket_gui_listen_task, "Socket Gui Listener", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &listenTaskHandle );
 }
 
+static void socket_ensure_authenticated(SocketStream *str) {
+    char buf[32 + 1];
+    char pos;
+    int failure_sleep = 1;
+    bool disconnect = false;
+    bool authenticated = false;
+    const char *password = networkConfig.cfg->get_string(CFG_NETWORK_PASSWORD);
+    if (!*password)
+        return;  // Empty password configured, all good
+
+    int attempts = 5;
+    int attempt_delay = 250;
+    while (!disconnect && !authenticated && attempts > 0) {
+        str->write("Password: ", 10);
+        str->write("\xff\xfb\x01", 3);  // Telnet: IAC WILL ECHO (Disable client local echo)
+        pos = 0;
+        while (true) {
+            int ch = str->get_char();
+            if (ch == -1) {  // No data yet
+                continue;
+            }
+            else if (ch == -2) {  // Socket was closed
+                disconnect = true;
+                break;
+            }
+            else if (ch == '\xff') {  // Telnet IAC: ignore commands (discard the next two bytes)
+                int ignore = 2;
+                while (!disconnect && ignore > 0) {
+                    int cmd = str->get_char();
+                    if (cmd == -2) {
+                        disconnect = true;
+                    }
+                    else if (cmd >= 0) {
+                        --ignore;
+                    }
+                }
+                if (disconnect)
+                    break;
+            }
+            else if (ch == '\r') {
+                continue;  // Ignore CR and wait for LF
+            }
+            else if (ch == '\0' || ch == '\n') {  // End of line (or NULL byte)
+                buf[pos] = 0;
+                str->write("\r\n", 2);
+                str->sync();
+                password = networkConfig.cfg->get_string(CFG_NETWORK_PASSWORD);
+                if (!*password || strcmp(buf, password) == 0) {
+                    printf("Telnet connection logged in\n");
+                    authenticated = true;
+                }
+                else {
+                    // Failed login, throttle and flush input
+                    printf("Telnet connection invalid password\n");
+                    vTaskDelay(attempt_delay / portTICK_PERIOD_MS);
+                    str->write("\r\nIncorrect password!\r\n", 4 + 19 + 4);
+                    --attempts;
+                    attempt_delay <<= 1;  // Exponential delay, 0.25 -> 4s delay (5 attempts)
+                    while (str->get_char() >= 0)
+                        ;
+                }
+                break;
+            }
+            else if (ch == '\b' || ch == '\x7f' || ch == '\x7e') {  // Backspace in some form
+                if (pos > 0) {
+                    str->write("\b \b", 3);
+                    --pos;
+                }
+            }
+            else {
+                if (pos < sizeof(buf) - 1) {   // Buffer
+                    buf[pos++] = (ch & 0xff);
+                    str->write("*", 1);
+                }
+            }
+        }
+        str->write("\xff\xfc\x01", 3);  // Telnet: IAC WONT ECHO (Enable client local echo)
+        str->write("\r\n", 2);
+    }
+    if (disconnect || !authenticated) {
+        printf("Telnet connection closed before successful authentication\n");
+        str->close();
+        delete(str);
+        vTaskSuspend(NULL);
+        puts("You shouldn't ever see this.");
+        while (1)
+            ;
+    }
+}
+
 // The code below runs once for every socket gui instance
 
 void socket_gui_task(void *a)
 {
 	SocketStream *str = (SocketStream *)a;
+	socket_ensure_authenticated(str);
 
 	char product[41];
 	char title[81];
@@ -86,6 +178,11 @@ void socket_gui_task(void *a)
 
 int SocketGui :: listenTask(void)
 {
+    while (networkConfig.cfg->get_value(CFG_NETWORK_TELNET_SERVICE) == 0) {
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+    }
+    puts("Telnet server starting");
+
 	int sockfd, portno;
 	socklen_t clilen;
     struct sockaddr_in serv_addr, cli_addr;

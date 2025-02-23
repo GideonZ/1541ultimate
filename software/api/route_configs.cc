@@ -14,7 +14,7 @@ void emit_store(ConfigStore *st, JSON_Object *pobj, ArgsURI &args)
         i = st->items[n];
         if ((args.get_path_depth() < 2) || (pattern_match(args.get_path(1), i->definition->item_text))) {
             JSON *obj;            
-            if ((i->definition->type == CFG_TYPE_STRING) || (i->definition->type == CFG_TYPE_STRFUNC)) {
+            if ((i->definition->type == CFG_TYPE_STRING) || (i->definition->type == CFG_TYPE_STRFUNC) || (i->definition->type == CFG_TYPE_STRPASS)) {
                 obj = new JSON_String(i->getString());
             } else if(i->definition->type == CFG_TYPE_ENUM) {
                 obj = new JSON_String(i->definition->items[i->getValue()]);
@@ -40,7 +40,7 @@ void emit_store(ConfigStore *st, JSON_Object *pobj, ArgsURI &args)
                     ob->add("max", i->definition->max);
                     ob->add("format", (const char *)i->definition->item_format);
                     ob->add("default", (int)i->definition->def);
-                } else if((i->definition->type == CFG_TYPE_STRING) || (i->definition->type == CFG_TYPE_STRFUNC)) {
+                } else if((i->definition->type == CFG_TYPE_STRING) || (i->definition->type == CFG_TYPE_STRFUNC) || (i->definition->type == CFG_TYPE_STRPASS)) {
                     ob->add("default", (const char *)i->definition->def);
                 }
             }
@@ -59,7 +59,7 @@ bool set_item(ResponseWrapper *resp, ConfigItem *item, const char *valuestr)
             return false;
         }
         item->setValue(value);
-    } else if ((item->definition->type == CFG_TYPE_STRING) || (item->definition->type == CFG_TYPE_STRFUNC)) {
+    } else if ((item->definition->type == CFG_TYPE_STRING) || (item->definition->type == CFG_TYPE_STRFUNC) || (item->definition->type == CFG_TYPE_STRPASS)) {
         item->setString(valuestr);
     } else if (item->definition->type == CFG_TYPE_ENUM) {
         // this is the most nasty one. Let's just iterate over the possibilities and compare the resulting strings

@@ -8,8 +8,55 @@
 <script>
 
 var serverIP = window.location.hostname;
+var apiPassword = "";
+var ultimateInfo = {};
 
-$(document).ready(function () {
+$(document).ready(async function () {
+
+    async function ensureLoggedIn() {
+        // This also works with older firmware that do not support password protection (will get a 404 for /v1/info)
+        let [status_code, content] = await make_get_request("http://" + serverIP + "/v1/info");
+        if (status_code == 401 || status_code == 403) {
+            $("#banner").html("&nbsp;");
+            $("#left-nav").css("visibility", "hidden");
+            $("#password").val("");
+            $(".page").hide();
+            $("#login").show();
+            $("#password").focus();
+        }
+        else {
+            if (content) {
+                ultimateInfo = content;
+            }
+            let product = ultimateInfo.product ? ultimateInfo.product : "Ultimate II/64";
+            if (apiPassword != "") {
+                $("#logoutmenuitem").show();
+            }
+            else {
+                $("#logoutmenuitem").hide();
+            }
+            $("#banner").html(product + " HTTP Server");
+            $("#left-nav").css("visibility", "visible");
+            $(".page").hide();
+            $("#welcome").show();
+        }
+    };
+
+    $('#loginbutton').click(async function(event){
+        apiPassword = $("#password").val();
+        await ensureLoggedIn();
+    });
+
+    $('#password').on("keypress", async function(event){
+        if(event.which == 13) {
+            await $("#loginbutton").click();
+        }
+    });
+
+    $('#logout').click(async function(event){
+        apiPassword = "";
+        await ensureLoggedIn();
+    });
 
     $('#doreset').click(function(event){
         event.preventDefault(); // Prevents the default action of the anchor tag
@@ -475,7 +522,7 @@ $(document).ready(function () {
             if (isHexadecimal(hex_num)) {
                 for (let i = 0; i < 16; i++) {
                     let params = { 'address': hex_num, 'length': '16' };
-                    let [status_code, content] = await make_get_request("http://" + serverIP + "/v1/machine:readmem", params);
+                    let [status_code, content] = await make_binary_get_request("http://" + serverIP + "/v1/machine:readmem", params);
                     
                     if (status_code === 200) {
                         let [hex_content, ascii_content] = format_bytes_as_hex_and_ascii(content);
@@ -501,7 +548,7 @@ $(document).ready(function () {
                 if(result == true) {
                     
                     let params = { 'address': '0', 'length': '65535' };
-                    let [status_code, content] = await make_get_request("http://" + serverIP + "/v1/machine:readmem", params);
+                    let [status_code, content] = await make_binary_get_request("http://" + serverIP + "/v1/machine:readmem", params);
 
                     if (status_code === 200) {
                         hunt = hunt.map(hex => parseInt(hex, 16));
@@ -556,7 +603,7 @@ $(document).ready(function () {
                 let size = hexToInt(end) - hexToInt(start);
 
                 let params = { 'address': start, 'length': size };
-                let [status_code, content] = await make_get_request("http://" + serverIP + "/v1/machine:readmem", params);
+                let [status_code, content] = await make_binary_get_request("http://" + serverIP + "/v1/machine:readmem", params);
 
                 if (status_code === 200) {
                         let result = disassembler(hexToInt(start), content);
@@ -575,6 +622,8 @@ $(document).ready(function () {
         greetings: 'Ultimate 64 / II+ Remote Monitor\nhelp = list of commands\n'
     });
 
+    // Kick off login/welcome screen as needed
+    await ensureLoggedIn();
 });
 
 function isHexadecimal(str)
@@ -700,8 +749,7 @@ $.ajaxTransport("+binary", function (options, originalOptions, jqXHR) {
     }
 });
 
-
-async function make_get_request(url, params) {
+async function make_binary_get_request(url, params) {
     const queryString = Object.entries(params).map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`).join('&');
     const fullUrl = `${url}?${queryString}`;
 
@@ -713,7 +761,8 @@ async function make_get_request(url, params) {
             method: 'GET',
             dataType: 'binary',
             responseType: 'arraybuffer',
-            processData: false
+            processData: false,
+            headers: {"X-Password": apiPassword}
         });
 
        var data = new Uint8Array(response);
@@ -732,6 +781,32 @@ async function make_get_request(url, params) {
     }
 }
 
+async function make_get_request(url, params) {
+    params = params || {};
+    const queryString = Object.entries(params).map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`).join('&');
+    const fullUrl = `${url}?${queryString}`;
+
+    console.log('Requesting URL:', fullUrl);
+
+    try {
+        const response = await $.ajax({
+            url: fullUrl,
+            method: 'GET',
+            processData: false,
+            headers: {"X-Password": apiPassword}
+        });
+        return [200, response];
+    } catch (error) {
+        console.error("Error fetching data:", error);
+        console.log('Error details:', {
+            textStatus: error.statusText,
+            status: error.status,
+            responseText: error.responseText
+        });
+        return [error.status, error.responseText];
+    }
+}
+
 async function make_post_request(url, params, body) {
     const queryString = Object.entries(params).map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`).join('&');
     const fullUrl = `${url}?${queryString}`;
@@ -742,7 +817,8 @@ async function make_post_request(url, params, body) {
             method: 'POST',
             contentType: 'application/octet-stream',
             data: body,
-            processData: false
+            processData: false,
+            headers: {"X-Password": apiPassword}
         });
 
         return [200, response];
@@ -768,7 +844,8 @@ async function make_put_request(url, params) {
             url: fullUrl,
             method: 'PUT',
             contentType: 'application/octet-stream',
-            processData: false
+            processData: false,
+            headers: {"X-Password": apiPassword}
         });
 
         return [200, response];
@@ -1068,10 +1145,17 @@ function disassembler(startInt, byteArray) {
         width: 200px;
         background-color: #f2f2f2;
         padding: 20px;
+        visibility: hidden;
+    }
+    #login {
+        padding: 20px;
+        width: 800px;
+        display: none;
     }
     #welcome {
         padding: 20px;
         width: 800px;
+        display: none;
     }
     #livemon {
         flex-grow: 1;
@@ -1210,7 +1294,7 @@ function disassembler(startInt, byteArray) {
 
 </head>
 <body>
-    <div id="banner">Ultimate 64 HTTP Server</div>
+    <div id="banner">&nbsp;</div>
 
     <div id="content">
         <div id="left-nav">
@@ -1229,10 +1313,19 @@ function disassembler(startInt, byteArray) {
                 <li><a href="https://1541u-documentation.readthedocs.io/en/latest/api/api_calls.html" target="_blank">API Documentation</a></li>
                 <li><a href="https://ultimate64.com/Firmware" target="_blank">Firmware Releases</a></li>
             </ul>
+            <ul id="logoutmenuitem">
+                <li><a id="logout" href="#">Logout</a></li>
+            </ul>
+        </div>
+
+        <div id="login" class="page">
+            <h2>Password required</h2>
+            <input id="password" type="password">
+            <button id="loginbutton" type="button">Login</button>
         </div>
 
         <div id="welcome" class="page">
-            <h1>Welcome to your Ultimate 64!</h1>
+            <h1>Welcome to your Ultimate product!</h1>
             <p>This site serves as the dedicated web server 
                 for the Ultimate 64 and Ultimate cartridge systems. It offers a comprehensive suite of APIs, designed to 
                 enable the development of advanced integrations and remote access to your system.</p>
