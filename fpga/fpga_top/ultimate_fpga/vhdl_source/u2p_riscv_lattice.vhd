@@ -354,7 +354,45 @@ architecture rtl of u2p_riscv_lattice is
     signal ctrl_reset_pulse : std_logic;
     signal wifi_boot        : std_logic;
     signal wifi_enable      : std_logic;
+
+    constant c_enter_menu_cycles : natural := integer(1.0 * 50.0e6);
+    signal   count_enter_menu    : natural range 0 to c_enter_menu_cycles - 1;
+    signal   enter_menu          : std_logic;
+
 begin
+
+    ----------------------------------------------------------------------------
+    -- proposed method to enter menu by holding RESTORE, for the purpose of
+    -- operating the U-II with a wireless C64 keyboard addon
+
+    button_i(0) <= not BUTTON(0);
+    button_i(1) <= (not BUTTON(1)) or enter_menu;
+    button_i(2) <= not BUTTON(2);
+
+    p_menu: process(sys_clock) is
+    begin
+        if rising_edge(sys_clock) then
+
+            if SLOT_NMIn then -- active low
+                count_enter_menu <= c_enter_menu_cycles - 1;
+                enter_menu       <= '0';
+            else
+                if count_enter_menu /= 0 then
+                    count_enter_menu <= count_enter_menu - 1;
+                else
+                    enter_menu <= '1';
+                end if;
+            end if;
+
+            if sys_reset then
+                count_enter_menu <= 0;
+                enter_menu       <= '0';
+            end if;
+        end if;
+    end process;
+
+    ----------------------------------------------------------------------------
+
     ctrl_clock  <= half_clock;
     HUB_CLOCK   <= clock_24;
     ULPI_REFCLK <= clock_24;
@@ -865,8 +903,6 @@ begin
 --    IEC_CLOCK  <= '0' when iec_clock_o = '0' or sw_iec_o(0) = '0' else 'Z';
 
     sw_iec_i <= IEC_SRQ_I & IEC_ATN_I & IEC_DATA_I & IEC_CLOCK_I;
-
-    button_i <= not BUTTON;
 
     ULPI_RESET <= not sys_reset; --por_n;
 
