@@ -885,7 +885,7 @@ int FTPDataConnection::connect_to(ip_addr_t ip, uint16_t port) // active mode
         return -ENOTCONN;
 
     struct sockaddr_in serv_addr;
-    memset(&serv_addr, '0', sizeof(serv_addr));
+    memset(&serv_addr, 0, sizeof(serv_addr));
 
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(port);
