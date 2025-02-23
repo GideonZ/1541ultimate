@@ -88,21 +88,24 @@ int UIPopup :: poll(int dummy)
     if (c == -2) // error
     	return -1;
 
-    for(int i=0;i<btns_active;i++) {
+    int i;
+    int selected_button = -1;
+    if ((c == KEY_RETURN) || (c == KEY_SPACE)) {
+        selected_button = active_button;
+    }
+    for (i=0; i < btns_active; i++) {
         if(c == button_key[i]) {
-            return (1 << i);
+            selected_button = i;
+	}
+    }
+    if (selected_button >= 0) {
+        for(i=0; i < button_count; i++) {
+            if (button_key[selected_button] == button_keys[i]) {
+                return (1 << i);
+            }
         }
     }
-    if((c == KEY_RETURN)||(c == KEY_SPACE)) {
-		for(int i=0,j=0;i < button_count;i++) {
-			if(buttons & (1 << i)) {
-				if(active_button == j)
-					return (1 << i);
-				j++;
-			}
-		}
-        return 0;
-    }
+
     if(c == KEY_RIGHT) {
         active_button ++;
         if(active_button >= btns_active)
