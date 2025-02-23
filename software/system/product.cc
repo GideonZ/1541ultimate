@@ -57,7 +57,7 @@ const char *getBoardRevision(void)
 bool isEliteBoard(void)
 {
     uint8_t rev = (U2PIO_BOARDREV >> 3);
-    if (rev == 0x13) {
+    if (rev == 0x13 || (rev >= 0x15 && rev <= 0x17)) {
         return true;
     }
     if (rev == 0x14) { // may be either!
