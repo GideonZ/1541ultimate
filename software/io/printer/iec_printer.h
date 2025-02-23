@@ -100,7 +100,7 @@ class IecPrinter : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObjec
         const char *output_filename;
 
         /* Printer IEC address */
-        int last_printer_addr;
+        int printer_iec_addr;
 
         /* Printer enabled or not */
         uint8_t printer_enable;
@@ -160,7 +160,7 @@ class IecPrinter : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObjec
         t_channel_retval push_data(uint8_t b);
         t_channel_retval push_ctrl(uint16_t b);
         bool is_enabled(void) { return printer_enable; }
-        uint8_t get_address(void) { return (uint8_t) last_printer_addr; }
+        uint8_t get_address(void) { return (uint8_t) printer_iec_addr; }
         uint8_t get_type(void) { return 0x50; }
         const char *iec_identify(void) { return "Printer Emulation"; }
         void info(JSON_Object *);
