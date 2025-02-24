@@ -36,6 +36,7 @@
 #define CFG_USERIF_CFG_SAVE    0x0A
 #define CFG_USERIF_ULTICOPY_NAME 0x0B
 #define CFG_USERIF_FILENAME_OVERFLOW_SQUEEZE 0x0C
+#define CFG_USERIF_STARTUP_STATE 0x0D
 
 class UserInterface : public ConfigurableObject, public HostClient
 {

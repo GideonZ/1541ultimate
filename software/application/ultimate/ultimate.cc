@@ -95,7 +95,6 @@ extern "C" void ultimate_main(void *a)
 		c64 = C64 :: getMachine();
 		c64_subsys = new C64_Subsys(c64);
 		c64->init();
-		c64->start();
 	} else {
 		c64 = NULL;
 	}
@@ -196,6 +195,16 @@ extern "C" void ultimate_main(void *a)
 #endif
 */
     custom_outbyte = outbyte_log;
+
+    if (c64) {
+        ConfigStore *cs = ConfigManager::getConfigManager()->find_store("User Interface Settings");
+        if (cs && cs->get_value(CFG_USERIF_STARTUP_STATE) == 1) {  // 1 == Start into Ultimate
+            c64->setButtonPushed();
+        }
+        else {
+            c64->start();
+        }
+    }
 
     while(c64) {
         int doIt = 0;

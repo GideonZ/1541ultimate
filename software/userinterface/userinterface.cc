@@ -22,6 +22,7 @@ static const char *colors[] = { "Black", "White", "Red", "Cyan", "Purple", "Gree
 static const char *filename_overflow_squeeze[] = { "None", "Beginning", "Middle", "End" };
 static const char *itype[]      = { "Freeze", "Overlay on HDMI" };
 static const char *cfg_save[]   = { "No", "Ask", "Yes" };
+static const char *startup_state[]   = { "C64", "Ultimate Menu" };
 
 struct t_cfg_definition user_if_config[] = {
 #if U64
@@ -35,6 +36,7 @@ struct t_cfg_definition user_if_config[] = {
     { CFG_USERIF_SELECTED_BG,CFG_TYPE_ENUM,   "Selected Backgr (Overlay)",  "%s", colors,  0, 15, 6 },
 #endif
 //    { CFG_USERIF_WORDWRAP,   CFG_TYPE_ENUM,   "Wordwrap text viewer", "%s", en_dis,  0,  1, 1 },
+    { CFG_USERIF_STARTUP_STATE, CFG_TYPE_ENUM, "Startup State",         "%s", startup_state, 0, 1, 0 },
     { CFG_USERIF_HOME_DIR,   CFG_TYPE_STRING, "Home Directory",        "%s", NULL, 0, 31, (int)"" },
     { CFG_USERIF_START_HOME, CFG_TYPE_ENUM,   "Enter Home on Startup", "%s", en_dis, 0,  1, 0 },
     { CFG_USERIF_CFG_SAVE,   CFG_TYPE_ENUM,   "Auto Save Config",      "%s", cfg_save, 0, 2, 1 },
