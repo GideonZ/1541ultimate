@@ -20,5 +20,6 @@ char *getProductVersionString(char *buf, int sz);
 char *getProductTitleString(char *buf, int sz);
 char *getProductDefaultHostname(char *buf, int sz);
 char *getProductUpdateFileExtension();
+char *getProductUniqueId();
 
 #endif  // PRODUCT_H
