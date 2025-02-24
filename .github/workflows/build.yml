@@ -74,7 +74,7 @@ jobs:
                 ${{ runner.os }}-esp32-${{ hashFiles('software/esp_depends.txt') }}
 
       - if: steps.cache-esp32.outputs.cache-hit != 'true'
-        name: Build ESP32 Software
+        name: Build ESP32 Software (skipped if available in cache)
         run: |
           docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
@@ -86,9 +86,9 @@ jobs:
           docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2_rv"
-        
+
       - if: steps.cache-u2.outputs.cache-hit == 'true'
-        name: Build U2 without FPGAs
+        name: Build U2 using cached FPGAs
         run: |
           docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
@@ -100,9 +100,9 @@ jobs:
           docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2plus"
-        
+
       - if: steps.cache-u2p.outputs.cache-hit == 'true'
-        name: Build U2+ without FPGAs
+        name: Build U2+ using cached FPGAs
         run: |
           docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
@@ -114,9 +114,9 @@ jobs:
           docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2pl"
-        
+
       - if: steps.cache-u2pl.outputs.cache-hit == 'true'
-        name: Build U2+L without FPGAs
+        name: Build U2+L using cached FPGAs
         run: |
           docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
