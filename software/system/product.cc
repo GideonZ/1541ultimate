@@ -195,3 +195,26 @@ char *getProductUpdateFileExtension() {
 #endif
     ;
 }
+
+char *getProductUniqueId()
+{
+    static char unique_id[17];
+    static bool initialized = false;
+
+    if (!initialized) {
+        // Generate a 24 bit unique number combining the same inputs as
+        // for the mac address, but in a slightly different way.
+        uint8_t serial[8];
+        memset(serial, 0, 8);
+        Flash *flash = get_flash();
+        flash->read_serial(serial);
+        serial[0] = serial[1] ^ serial[2];
+        serial[1] = serial[3] ^ serial[5];
+        serial[2] = serial[6] ^ serial[7];
+        for (int i=0; i < 3; ++i) {
+            sprintf(&unique_id[i*2], "%02x", serial[i]);
+        }
+        initialized = true;
+    }
+    return unique_id;
+}
