@@ -163,7 +163,7 @@ void SystemInfo :: generate(UserInterface *ui)
 
     buffer.format("Version Information:\n");
     buffer.format("====================\n");
-    buffer.format("Software version:   " APPL_VERSION "\n");
+    buffer.format("Software version:   " APPL_VERSION_ASCII "\n");
     buffer.format("   Build date:      " APP_BUILD_DATE "\n");
     buffer.format("   Build machine:   " APP_BUILD_MACHINE "\n");
     buffer.format("Ultimate FPGA core: 1%02X\n", getFpgaVersion());

@@ -105,7 +105,7 @@ bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         writeSocket(socket, buf, 1);
         break;
     case SOCKET_CMD_IDENTIFY:
-        getProductTitleString(title+1, sizeof(title)-1);
+        getProductTitleString(title+1, sizeof(title)-1, true);
         title[0] = (char)strlen(title+1);
         writeSocket(socket, title, 1+title[0]);
         break;
@@ -490,7 +490,7 @@ void SocketDMA::identThread(void *_a)
     char client_message[256];
     char menu_header[64];
 
-    getProductTitleString(menu_header, sizeof(menu_header));
+    getProductTitleString(menu_header, sizeof(menu_header), true);
 
     /* First call to socket() function */
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -534,8 +534,8 @@ void SocketDMA::identThread(void *_a)
 
             const char *hostname = networkConfig.cfg->get_string(CFG_NETWORK_HOSTNAME);
 
-            char product[41];
-            getProductVersionString(product, sizeof(product));
+            char product[64];
+            getProductVersionString(product, sizeof(product), true);
 
             char fpga_version[8];
             sprintf(fpga_version, "1%02x", getFpgaVersion());
@@ -550,7 +550,7 @@ void SocketDMA::identThread(void *_a)
                 JSON_Bool password_protected(*password ? 1 : 0);
                 JSON *obj = JSON::Obj()
                     ->add("product", product)
-                    ->add("firmware_version", APPL_VERSION)
+                    ->add("firmware_version", APPL_VERSION_ASCII)
                     ->add("fpga_version", fpga_version)
 #ifdef U64
                     ->add("core_version", core_version)

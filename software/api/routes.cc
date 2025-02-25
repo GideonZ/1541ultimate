@@ -126,7 +126,7 @@ API_CALL(GET, info, none, NULL, ARRAY( { }))
     const char *hostname = networkConfig.cfg->get_string(CFG_NETWORK_HOSTNAME);
 
     resp->json->add("product", getProductString())
-        ->add("firmware_version", APPL_VERSION)
+        ->add("firmware_version", APPL_VERSION_ASCII)
         ->add("fpga_version", fpga_version)
 #ifdef U64
         ->add("core_version", core_version)
