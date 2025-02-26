@@ -94,32 +94,33 @@ const char *getProductString() {
     return  product_name[product];
 }
 
-char *getProductVersionString(char *buf, int sz) {
+char *getProductVersionString(char *buf, int sz, bool ascii) {
     uint8_t fpga_version;
     const char *format;
 
     // Required size is max of all fields:
     //
-    //   7 fixed non-%-format-chars, 16 product, 2 fpga_version, 5 APPL_VERSION, 1 NULL-byte
-    if (sz < 7 + 16 + 2 + 5 + 1) {
+    //   7 fixed non-%-format-chars, 16 product, 2 fpga_version, 11 APPL_VERSION_ASCII, 1 NULL-byte
+    if (sz < 7 + 16 + 2 + 11 + 1) {
         return NULL;
     }
 
     // FIXME: Should order of APPL vs fpga version be unified across products?
+    const char *appl_version = ascii ? APPL_VERSION_ASCII : APPL_VERSION;
     switch(getProductId()) {
         case PRODUCT_ULTIMATE_II:
         case PRODUCT_ULTIMATE_II_PLUS:
         case PRODUCT_ULTIMATE_II_PLUS_L:
             format = "%s %s (1%b)";
             fpga_version = getFpgaVersion();
-            sprintf(buf, format, getProductString(), APPL_VERSION, fpga_version);
+            sprintf(buf, format, getProductString(), appl_version, fpga_version);
             break;
         case PRODUCT_ULTIMATE_64:
         case PRODUCT_ULTIMATE_64_ELITE:
         case PRODUCT_ULTIMATE_64_ELITE_II:
-            format = "%s (V1.%b) %s";
+            format = "%s (V1.%b) %s%s";
             fpga_version = C64_CORE_VERSION;
-            sprintf(buf, format, getProductString(), fpga_version, APPL_VERSION);
+            sprintf(buf, format, getProductString(), fpga_version, appl_version);
             break;
         default:
             strcpy(buf, "Unknown product");
@@ -127,13 +128,13 @@ char *getProductVersionString(char *buf, int sz) {
     return buf;
 }
 
-char *getProductTitleString(char *buf, int sz)
+char *getProductTitleString(char *buf, int sz, bool ascii)
 {
     char product_version[41];
 
     if (sz < 17)
         return NULL;
-    if (sz < sizeof(product_version) || !getProductVersionString(product_version, sizeof(product_version))) {
+    if (sz < sizeof(product_version) || !getProductVersionString(product_version, sizeof(product_version), ascii)) {
        strcpy(buf, "*** Ultimate ***");
        return buf;
     }

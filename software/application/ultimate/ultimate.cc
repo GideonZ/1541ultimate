@@ -81,8 +81,8 @@ extern "C" void ultimate_main(void *a)
 
     uint32_t capabilities = getFpgaCapabilities();
 
-    char product_version[41];
-    printf("*** %s ***\n", getProductVersionString(product_version, sizeof(product_version)));
+    char product_version[64];
+    printf("*** %s ***\n", getProductVersionString(product_version, sizeof(product_version), true));
     printf("*** FPGA Capabilities: %8x ***\n\n", capabilities);
 
     printf("%s ", rtc.get_long_date(time_buffer, 32));
@@ -103,7 +103,7 @@ extern "C" void ultimate_main(void *a)
     usb2.initHardware();
 
     char title[48];
-    getProductTitleString(title, sizeof(title));
+    getProductTitleString(title, sizeof(title), false);
 
     if(capabilities & CAPAB_ULTIMATE64) {
         system_usb_keyboard.setMatrix((volatile uint8_t *)MATRIX_KEYB);
