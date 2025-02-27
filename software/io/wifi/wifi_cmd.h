@@ -39,6 +39,7 @@ int wifi_wifi_connect(const char *ssid, const char *password, uint8_t auth);
 int wifi_wifi_autoconnect();
 int wifi_wifi_disconnect();
 int wifi_machine_off();
+int wifi_machine_reboot();
 void wifi_rx_packet();
 
 int wifi_enable();

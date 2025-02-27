@@ -23,15 +23,18 @@
 #include "screen_logger.h"
 #include "flash.h"
 #include "product.h"
+#include "wifi_cmd.h"
 
 // These defines are from the test concept that runs tests via jtag.
 #define PROG_BUFFER      ((uint8_t *)(0x1000000))
+#define TEST_PARAM		 (*(volatile int *)(0x0084))
 #define PROG_PROGRESS    (*(volatile int *)(0x0088))
 #define PROG_LENGTH      (*(volatile int *)(0x008C))
 #define PROG_LOCATION    (*(volatile int *)(0x0090))
 #define DUT_TO_TESTER    (*(volatile uint32_t *)(0x0094))
 #define TESTER_TO_DUT	 (*(volatile uint32_t *)(0x0098))
 #define TEST_STATUS		 (*(volatile int *)(0x009C))
+#define VOLTAGES         ((volatile voltages_t *)(0x00A0))
 
 Screen *screen;
 Screen *screen2;
@@ -111,7 +114,6 @@ static bool my_memcmp(void *a, void *b, int len)
     }
     return true;
 }
-#define PROG_PROGRESS    (*(volatile int *)(0x0088))
 
 bool flash_buffer_at(int address, void *buffer, int length)
 {
@@ -218,6 +220,28 @@ int attempt_programming(uint32_t size_addr, uint32_t src_addr, uint32_t dest_add
     }
 }
 
+void esp_cb(void *)
+{
+    PROG_PROGRESS++;
+}
+
+int programESP32()
+{
+    if (PROG_LENGTH > 0x200000) {
+        warn_message("Flashing", "Flash buffer too big (%d)\n", PROG_LENGTH);
+        return -2;
+    }
+    if (PROG_LENGTH < 0) {
+        warn_message("Flashing", "Flash length < 0 (%d)\n", PROG_LENGTH);
+        return -3;
+    }
+    if ((PROG_LOCATION < 0) || (PROG_LOCATION > 8*1024*1024)) {
+        warn_message("Flashing", "Illegal flash address %08x\n", PROG_LOCATION);
+        return -4;
+    }
+    return esp32.Flash(PROG_BUFFER, PROG_LOCATION, PROG_LENGTH, esp_cb, NULL);
+}
+
 int programFlash()
 {
 	PROG_PROGRESS = 0;
@@ -244,21 +268,24 @@ int programFlash()
 int test_all()
 {
     int errors = 0;
+    memset((void *)VOLTAGES, 0, sizeof(voltages_t));
+
     usb2.initHardware();
-    errors += U64TestKeyboard();
-    errors += U64TestIEC();
-    errors += U64TestUserPort();
-    errors += U64TestCartridge();
-    errors += U64TestCassette();
-    errors += U64TestJoystick();
-    errors += U64TestPaddle();
-    errors += U64TestSidSockets();
-    errors += U64TestAudioCodecSilence();
-    errors += U64TestAudioCodecPurity();
-    errors += U64TestSpeaker();
-    errors += U64TestWiFiComm();
-    errors += U64TestVoltages();
-    errors += U64TestUsbHub();
+    if (TEST_PARAM & 0x0001) errors += U64TestKeyboard();
+    if (TEST_PARAM & 0x0002) errors += U64TestIEC();
+    if (TEST_PARAM & 0x0004) errors += U64TestUserPort();
+    if (TEST_PARAM & 0x0008) errors += U64TestCartridge();
+    if (TEST_PARAM & 0x0010) errors += U64TestCassette();
+    if (TEST_PARAM & 0x0020) errors += U64TestJoystick();
+    if (TEST_PARAM & 0x0040) errors += U64TestPaddle();
+    if (TEST_PARAM & 0x0080) errors += U64TestSidSockets();
+    if (TEST_PARAM & 0x0100) errors += U64TestAudioCodecSilence();
+    if (TEST_PARAM & 0x0200) errors += U64TestAudioCodecPurity();
+    if (TEST_PARAM & 0x0400) errors += U64TestSpeaker();
+    if (TEST_PARAM & 0x0800) errors += U64TestWiFiComm();
+    if (TEST_PARAM & 0x1000) errors += U64TestVoltages();
+    if (TEST_PARAM & 0x2000) errors += U64TestUsbHub();
+    if (TEST_PARAM & 0x4000) errors += U64TestEthernet();
 
     info_message("\nTest completed with %d errors.\n", errors);
     return errors;
@@ -321,10 +348,27 @@ void test_loop()
             vTaskDelay(200);
             break;
         case 16:
+            result = U64TestEthernet();
+            break;
+        case 17:
             result = U64TestOff();
+            break;
+        case 18:
+            result = U64TestReboot();
             break;
         case 50:
             result = programFlash();
+            break;
+        case 51:
+            PROG_PROGRESS = 0;
+            result = esp32.Download();
+            break;
+        case 52:
+            result = programESP32();
+            break;
+        case 53:
+            esp32.EnableRunMode();
+            wifi_command_init();
             break;
         case 99:
             printf("Alive V1.3!\n");

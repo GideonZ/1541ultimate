@@ -128,44 +128,42 @@ static void button_handler(void *arg)
                 } while(gpio_get_level(IO_BUTTON_UP) == 0 || gpio_get_level(IO_BUTTON_DOWN) == 0);
                 vTaskDelay(IGNORE_PRESS / portTICK_PERIOD_MS);
             }
-            vTaskDelay(1);
-            continue;
-        }
-
-        if (up == 0) {
-            up_count++;
-        } else { // released
-            if (up_count > (LONG_PRESS / portTICK_PERIOD_MS)) {
-                handle_button_event(BUTTON_UP_LONG);
-                vTaskDelay(IGNORE_PRESS / portTICK_PERIOD_MS);
-            } else if (up_count > (SHORT_PRESS / portTICK_PERIOD_MS)) {
-                handle_button_event(BUTTON_UP_SHORT);
-                vTaskDelay(IGNORE_PRESS / portTICK_PERIOD_MS);
-            }
-            up_count = 0;
-        }
-
-        if (down == 0) {
-            down_count++;
-            if (down_count > (OFF_PRESS / portTICK_PERIOD_MS)) {
-                handle_button_event(BUTTON_OFF);
-                while(gpio_get_level(IO_BUTTON_DOWN) == 0) {
-                    vTaskDelay(100 / portTICK_PERIOD_MS);
+        } else { // machine is on!
+            if (up == 0) {
+                up_count++;
+            } else { // released
+                if (up_count > (LONG_PRESS / portTICK_PERIOD_MS)) {
+                    handle_button_event(BUTTON_UP_LONG);
+                    vTaskDelay(IGNORE_PRESS / portTICK_PERIOD_MS);
+                } else if (up_count > (SHORT_PRESS / portTICK_PERIOD_MS)) {
+                    handle_button_event(BUTTON_UP_SHORT);
+                    vTaskDelay(IGNORE_PRESS / portTICK_PERIOD_MS);
                 }
-                machine_on = 0;
+                up_count = 0;
+            }
+
+            if (down == 0) {
+                down_count++;
+                if (down_count > (OFF_PRESS / portTICK_PERIOD_MS)) {
+                    handle_button_event(BUTTON_OFF);
+                    while(gpio_get_level(IO_BUTTON_DOWN) == 0) {
+                        vTaskDelay(100 / portTICK_PERIOD_MS);
+                    }
+                    machine_on = 0;
+                    down_count = 0;
+                }
+            } else { // released
+                if (down_count > (LONG_PRESS / portTICK_PERIOD_MS)) {
+                    handle_button_event(BUTTON_DOWN_LONG);
+                    vTaskDelay(IGNORE_PRESS / portTICK_PERIOD_MS);
+                } else if (down_count > (SHORT_PRESS / portTICK_PERIOD_MS)) {
+                    handle_button_event(BUTTON_DOWN_SHORT);
+                    vTaskDelay(IGNORE_PRESS / portTICK_PERIOD_MS);
+                }
                 down_count = 0;
             }
-        } else { // released
-            if (down_count > (LONG_PRESS / portTICK_PERIOD_MS)) {
-                handle_button_event(BUTTON_DOWN_LONG);
-                vTaskDelay(IGNORE_PRESS / portTICK_PERIOD_MS);
-            } else if (down_count > (SHORT_PRESS / portTICK_PERIOD_MS)) {
-                handle_button_event(BUTTON_DOWN_SHORT);
-                vTaskDelay(IGNORE_PRESS / portTICK_PERIOD_MS);
-            }
-            down_count = 0;
         }
-
+        // always check for external events
         if (xQueueReceive(button_queue, &event, 1) == pdTRUE) {
             handle_button_event(event);
             if (event == BUTTON_OFF) {

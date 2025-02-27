@@ -168,6 +168,18 @@ void cmd_off(command_buf_t *buf)
     extern_button_event(BUTTON_OFF);
 }
 
+void cmd_reboot(command_buf_t *buf)
+{
+    rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
+    resp->esp_err = ESP_OK;
+    buf->size = sizeof(rpc_espcmd_resp);
+    my_uart_transmit_packet(UART_CHAN, buf);
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    extern_button_event(BUTTON_OFF);
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    extern_button_event(BUTTON_ON);
+}
+
 void cmd_modem_on(command_buf_t *buf)
 {
     rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
@@ -329,6 +341,9 @@ void dispatch(void *ct)
             break;
         case CMD_MACHINE_OFF:
             cmd_off(pbuffer);
+            break;
+        case CMD_MACHINE_REBOOT:
+            cmd_reboot(pbuffer);
             break;
         case CMD_MODEM_ON:
             cmd_modem_on(pbuffer);

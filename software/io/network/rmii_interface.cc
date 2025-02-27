@@ -32,7 +32,6 @@ RmiiInterface :: RmiiInterface()
 {
     if(getFpgaCapabilities() & CAPAB_ETH_RMII) {
     	netstack = getNetworkStack(this, RmiiInterface_output, RmiiInterface_free_buffer);
-
 		link_up = false;
 		ram_buffer = new uint8_t[(128 * 1536) + 256];
 		ram_base = (uint8_t *) (((uint32_t)ram_buffer + 255) & 0xFFFFFF00);

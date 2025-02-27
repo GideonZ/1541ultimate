@@ -13,6 +13,7 @@
 #include "userinterface.h"
 #include "rpc_calls.h"
 #include "filemanager.h"
+#include "network_esp32.h"
 
 #define DEBUG_INPUT  0
 #define EVENT_START  0xF1

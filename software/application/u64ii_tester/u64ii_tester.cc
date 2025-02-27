@@ -24,6 +24,10 @@
 #include "usb_base.h"
 #include "usb_device.h"
 #include "wifi_cmd.h"
+#include "network_test.h"
+
+// dirty to define it twice, but alas
+#define VOLTAGES         ((volatile voltages_t *)(0x00A0))
 
 extern "C" {
     #include "audio_dma.h"
@@ -662,6 +666,16 @@ int U64TestOff(void)
     return 0;
 }
 
+int U64TestReboot(void)
+{
+    esp32.EnableRunMode(); // cannot catch reply
+    vTaskDelay(100); // Half a second delay
+    wifi_command_init();
+    printf("Sending reboot command\n");
+    wifi_machine_reboot();
+    return 0;
+}
+
 // Precondition: WiFi module has been initialized
 int U64TestVoltages(void)
 {
@@ -675,6 +689,7 @@ int U64TestVoltages(void)
     }
     printf("Voltages: VBUS: %d mV, VAUX: %d mV, V50: %d mV, V33: %d mV, V18: %d mV, V10: %d mV, VUSB: %d mV\n",
             voltages.vbus, voltages.vaux, voltages.v50, voltages.v33, voltages.v18, voltages.v10, voltages.vusb);
+    *VOLTAGES = voltages; // memcpy
 
     int errors = 0;
     if ((voltages.vbus < 8500) || (voltages.vbus > 15500)) {
@@ -727,6 +742,50 @@ int U64TestUsbHub(void)
 		warn_message(testname, "Primary device does not have the right product ID %04x.", device->productID);
         fail_message(testname);
 		return 1;
+	}
+    TEST_RESULT(0);
+}
+
+int U64TestEthernet(void)
+{
+    TEST_START("Ethernet Test");
+
+    const int tx_len = 1000;
+    static uint8_t tx_packet[1000];
+
+    NetworkInterface *intf = NetworkInterface :: getInterface(0);
+    if (!intf) {
+        warn_message(testname, "No Network Interface available.");
+        fail_message(testname);
+        return 1;
+    }
+    if (!(intf->is_link_up())) {
+        warn_message(testname, "Network Interface is not up.");
+        fail_message(testname);
+        return 2;
+    }
+    for(int i=0;i<6;i++) {
+        tx_packet[i] = 0xFF;
+    }
+    for(int i=6;i<tx_len;i++) {
+        tx_packet[i] = (uint8_t)i;
+    }
+    intf->output(tx_packet, tx_len);
+
+    vTaskDelay(3);
+
+	uint8_t *rx_packet;
+	int rx_len;
+	if (getNetworkPacket(&rx_packet, &rx_len) == 0) {
+		warn_message(testname, "No network packet received.");
+        fail_message(testname);
+		return 3;
+	} else {
+		if (rx_len != tx_len) {
+            warn_message(testname, "Received packet length %d, expected %d.", rx_len, tx_len);
+            fail_message(testname);
+			return 2;
+		}
 	}
     TEST_RESULT(0);
 }

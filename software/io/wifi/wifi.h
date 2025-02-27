@@ -15,7 +15,7 @@
 #include "semphr.h"
 #include "browsable.h"
 #include "size_str.h"
-#include "network_esp32.h"
+//#include "network_esp32.h"
 #include "wifi_cmd.h"
 
 // This class provides an interface to the WiFi module, to manage and program it
@@ -29,6 +29,8 @@ typedef enum {
     eWifi_NotConnected,
     eWifi_Connected,
 } WifiState_t;
+
+class NetworkLWIP_WiFi;
 
 class WiFi : public Esp32Application
 {

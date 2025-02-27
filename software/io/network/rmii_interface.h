@@ -5,8 +5,7 @@
 #include "task.h"
 #include "queue.h"
 #include "iomap.h"
-#include "network_interface.h"
-#include "integer.h"
+#include <stdint.h>
 
 // Rx
 // Tx
