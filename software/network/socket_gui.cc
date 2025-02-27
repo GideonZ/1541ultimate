@@ -137,9 +137,9 @@ void socket_gui_task(void *a)
 	SocketStream *str = (SocketStream *)a;
 	socket_ensure_authenticated(str);
 
-	char product[41];
+	char product[64];
 	char title[81];
-	getProductVersionString(product, sizeof(product));
+	getProductVersionString(product, sizeof(product), true);
 	sprintf(title, "\eA*** %s *** Remote ***\eO", product);
 
 	HostStream *host = new HostStream(str);
