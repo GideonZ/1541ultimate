@@ -131,7 +131,8 @@ API_CALL(GET, info, none, NULL, ARRAY( { }))
 #ifdef U64
         ->add("core_version", core_version)
 #endif
-        ->add("hostname", hostname);
+        ->add("hostname", hostname)
+        ->add("unique_id", getProductUniqueId());
 
     resp->json_response(HTTP_OK);
 }
