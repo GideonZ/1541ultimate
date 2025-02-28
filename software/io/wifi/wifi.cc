@@ -160,6 +160,7 @@ void WiFi :: RunModeThread()
     int result;
     state = eWifi_NotDetected;
     uint8_t conn;
+    uint32_t ip;
 
     RefreshRoot();
     static char boot_message[256];
@@ -314,8 +315,9 @@ void WiFi :: RunModeThread()
 
             case EVENT_GOTIP:
                 ev = (event_pkt_got_ip *)buf->data;
-                printf("-> ESP32 received IP from DHCP: %d.%d.%d.%d (changed: %d)\n", (ev->ip >> 24),
-                    (ev->ip >> 16) & 0xFF, (ev->ip >> 8) & 0xFF, ev->ip & 0xFF, ev->changed);
+                ip = ntohl(ev->ip);
+                printf("-> ESP32 received IP from DHCP: %d.%d.%d.%d (changed: %d)\n", (ip >> 24),
+                    (ip >> 16) & 0xFF, (ip >> 8) & 0xFF, ip & 0xFF, ev->changed);
                 cmd_buffer_free(packets, buf);
                 break;
 
