@@ -388,6 +388,7 @@ int  UserInterface :: popup(const char *msg, uint8_t flags)
         ret = pop->poll(0);
     } while(!ret);
     pop->deinit();
+    delete pop;
     return ret;
 }
     
