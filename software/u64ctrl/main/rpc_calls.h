@@ -168,28 +168,6 @@ typedef struct {
 #define CMD_WIFI_AUTOCONNECT  0x12
 #define CMD_MACHINE_REBOOT    0x13
 
-/*
-#define CMD_SOCKET          0x11
-#define CMD_CONNECT         0x12
-#define CMD_ACCEPT          0x13
-#define CMD_BIND            0x14
-#define CMD_SHUTDOWN        0x15
-#define CMD_CLOSE           0x16
-#define CMD_LISTEN          0x17
-#define CMD_READ            0x18
-#define CMD_RECV            0x19
-#define CMD_RECVFROM        0x1A
-#define CMD_WRITE           0x1B
-#define CMD_SEND            0x1C
-#define CMD_SENDTO          0x1D
-#define CMD_GETHOSTBYNAME   0x21
-#define CMD_GETPEERNAME     0x22
-#define CMD_GETSOCKNAME     0x23
-#define CMD_GETSOCKOPT      0x24
-#define CMD_SETSOCKOPT      0x25
-#define CMD_IOCTL           0x28
-#define CMD_FCNTL           0x29
-*/
 #define EVENT_CONNECTED     0x40
 #define EVENT_GOTIP         0x41
 #define EVENT_DISCONNECTED  0x42

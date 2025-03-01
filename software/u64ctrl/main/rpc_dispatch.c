@@ -176,7 +176,7 @@ void cmd_reboot(command_buf_t *buf)
     my_uart_transmit_packet(UART_CHAN, buf);
     vTaskDelay(1000 / portTICK_PERIOD_MS);
     extern_button_event(BUTTON_OFF);
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    vTaskDelay(2000 / portTICK_PERIOD_MS);
     extern_button_event(BUTTON_ON);
 }
 

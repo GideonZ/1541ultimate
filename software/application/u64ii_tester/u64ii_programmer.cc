@@ -26,7 +26,7 @@
 #include "wifi_cmd.h"
 
 // These defines are from the test concept that runs tests via jtag.
-#define PROG_BUFFER      ((uint8_t *)(0x1000000))
+#define PROG_BUFFER      (uint8_t *)(*(volatile int *)(0x0080))
 #define TEST_PARAM		 (*(volatile int *)(0x0084))
 #define PROG_PROGRESS    (*(volatile int *)(0x0088))
 #define PROG_LENGTH      (*(volatile int *)(0x008C))
@@ -239,6 +239,12 @@ int programESP32()
         warn_message("Flashing", "Illegal flash address %08x\n", PROG_LOCATION);
         return -4;
     }
+    int j = PROG_LENGTH >> 2;
+    uint32_t sum = 0;
+    for(int i = 0; i < j; i++) {
+        sum += ((uint32_t *)PROG_BUFFER)[i];
+    }
+    info_message("Programming %d bytes to ESP32 at %08x, from %p. Sum = %08x\n", PROG_LENGTH, PROG_LOCATION, PROG_BUFFER, sum);
     return esp32.Flash(PROG_BUFFER, PROG_LOCATION, PROG_LENGTH, esp_cb, NULL);
 }
 
@@ -258,6 +264,13 @@ int programFlash()
 		warn_message("Flashing", "Illegal flash address %08x\n", PROG_LOCATION);
 		return -4;
 	}
+    int j = PROG_LENGTH >> 2;
+    uint32_t sum = 0;
+    for(int i = 0; i < j; i++) {
+        sum += ((uint32_t *)PROG_BUFFER)[i];
+    }
+    info_message("Programming %d bytes to Flash at %08x, from %p. Sum = %08x\n", PROG_LENGTH, PROG_LOCATION, PROG_BUFFER, sum);
+
 	if (flash_buffer_at(PROG_LOCATION, PROG_BUFFER, PROG_LENGTH)) {
 		return 0;
 	} else {

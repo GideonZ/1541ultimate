@@ -355,6 +355,13 @@ int Esp32 :: Flash(const uint8_t *binary, uint32_t address, uint32_t length, Esp
     printf("Number of blocks to program: %d (from %p) to %u\n", blocks, binary, address);
 
     // Now start Flashing
+#if U64 == 2 || U2P == 2 // ESP32-C3 or S3, no need to try with extra zero
+    PackParams(parambuf, 5, total_length, blocks, block_size, address, 0);
+    if (!Command(ESP_FLASH_BEGIN, 20, 0, parambuf, receiveBuffer, 15 * 200)) {
+        printf("Command Error ESP_FLASH_BEGIN (with zero)\n");
+        return -4;
+    }
+#else
     PackParams(parambuf, 4, total_length, blocks, block_size, address);
     if (!Command(ESP_FLASH_BEGIN, 16, 0, parambuf, receiveBuffer, 15 * 200)) {
     	printf("Command Error ESP_FLASH_BEGIN. Let's try adding an extra 0 for ESP32-C3\n");
@@ -364,7 +371,7 @@ int Esp32 :: Flash(const uint8_t *binary, uint32_t address, uint32_t length, Esp
     	    return -4;
         }
     }
-
+#endif
     // Flash Blocks
     const uint8_t *pb = binary;
     uint32_t remain = length;
