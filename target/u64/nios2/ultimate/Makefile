@@ -142,6 +142,7 @@ SRCS_CC	 =  u2p_init.cc \
 			socket_stream.cc \
 			socket_gui.cc \
 			socket_dma.cc \
+			syslog.cc \
 			home_directory.cc \
 			reu_preloader.cc \
 			color_timings.cc \

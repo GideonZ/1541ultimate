@@ -16,6 +16,7 @@ struct t_cfg_definition network_config[] = {
     { CFG_NETWORK_TELNET_SERVICE,   CFG_TYPE_ENUM,      "Telnet Remote Menu Service",       "%s", en_dis,     0,  1, 1 },
     { CFG_NETWORK_FTP_SERVICE,      CFG_TYPE_ENUM,      "FTP File Service",                 "%s", en_dis,     0,  1, 1 },
     { CFG_NETWORK_HTTP_SERVICE,     CFG_TYPE_ENUM,      "Web Remote Control Service",       "%s", en_dis,     0,  1, 1 },
+    { CFG_NETWORK_REMOTE_SYSLOG_SERVER, CFG_TYPE_STRING,"Log to Syslog Server",             "%s", NULL,       8, 31, (int)"" },
     { CFG_TYPE_END,                CFG_TYPE_END,        "",                                 "",   NULL,       0,  0, 0 }
 };
 

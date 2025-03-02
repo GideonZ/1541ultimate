@@ -6,6 +6,7 @@
 #include "task.h"
 
 #include "itu.h"
+#include "syslog.h"
 #include "c64.h"
 #include "c64_subsys.h"
 #include "c1541.h"
@@ -58,6 +59,7 @@ C64_Subsys *c64_subsys;
 HomeDirectory *home_directory;
 REUPreloader *reu_preloader;
 StreamTextLog textLog(96*1024);
+Syslog syslog;
 
 extern "C" void (*custom_outbyte)(int c);
 
@@ -70,6 +72,12 @@ void outbyte_log(int c)
 	textLog.charout(c);
 }
 
+void outbyte_log_syslog(int c)
+{
+	textLog.charout(c);  // Internal log
+	syslog.charout(c);  // Remote syslog server
+}
+
 extern "C" {
     void codec_init();
 }
@@ -77,6 +85,11 @@ void initialize_usb_hub();
 
 extern "C" void ultimate_main(void *a)
 {
+    // Normal boot log size is about 5k right now, so 16k should be enough to
+    // give time to flush the buffer.
+    const int syslog_bufsize = 16*1024;
+    custom_outbyte = syslog.init(syslog_bufsize) ? outbyte_log_syslog : outbyte_log;
+
     char time_buffer[32];
 
     uint32_t capabilities = getFpgaCapabilities();
@@ -195,7 +208,6 @@ extern "C" void ultimate_main(void *a)
     }
 #endif
 */
-    custom_outbyte = outbyte_log;
 
     while(c64) {
         int doIt = 0;
