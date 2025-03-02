@@ -19,6 +19,14 @@ static uint8_t chartohex(const char a)
     return 0xff;
 }
 
+API_CALL(PUT, machine, menu_button, NULL, ARRAY( {  }))
+{
+    SubsysCommand *cmd = new SubsysCommand(NULL, SUBSYSID_C64, C64_PUSH_BUTTON, 0);
+    SubsysResultCode_t retval = cmd->execute();
+    resp->error(SubsysCommand::error_string(retval.status));
+    resp->json_response(SubsysCommand::http_response_map(retval.status));
+}
+
 API_CALL(PUT, machine, reset, NULL, ARRAY( {  }))
 {
     SubsysCommand *cmd = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_RESET, 0);
