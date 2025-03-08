@@ -557,7 +557,6 @@ void SocketDMA::identThread(void *_a)
 #endif
                     ->add("hostname", hostname)
                     ->add("menu_header", menu_header)
-                    ->add("unique_id", getProductUniqueId())
                     ->add("your_string", client_message+4);
 
                 // Current Assembly64 ignores responses with booleans so we only send this if passwords
@@ -565,6 +564,17 @@ void SocketDMA::identThread(void *_a)
                 if (*password) {
                     ((JSON_Object *)obj)->add("password_protected", &password_protected);
                 }
+
+                // Add unique id if configured
+                const char *unique_id = networkConfig.cfg->get_string(CFG_NETWORK_UNIQUE_ID);
+                if (unique_id && *unique_id) {
+                    if (strcmp(unique_id, "Default") == 0) {
+                        unique_id = getProductUniqueId();
+                    }
+                    ((JSON_Object *)obj)->add("unique_id", unique_id);
+                }
+
+                // Render and send
                 const char *msg = obj->render();
                 n = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&cli_addr,
                         client_struct_length);
