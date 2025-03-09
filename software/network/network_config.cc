@@ -11,6 +11,7 @@ static char default_hostname[42];
 struct t_cfg_definition network_config[] = {
     { CFG_NETWORK_HOSTNAME,        CFG_TYPE_STRING,     "Host Name",                        "%s", NULL,       3, 31, (int)default_hostname},
     { CFG_NETWORK_PASSWORD,        CFG_TYPE_STRPASS,    "Network Password",                 "%s", NULL,       3, 31, (int)"" },
+    { CFG_NETWORK_UNIQUE_ID,       CFG_TYPE_STRFUNC,    "Unique ID",                        "%s", (const char **)NetworkConfig :: list_unique_id_choices, 0, 16, (int)"Default" },
     { CFG_NETWORK_ULTIMATE_IDENT_SERVICE, CFG_TYPE_ENUM,"Ultimate Ident Service",           "%s", en_dis,     0,  1, 1 },
     { CFG_NETWORK_ULTIMATE_DMA_SERVICE, CFG_TYPE_ENUM,  "Ultimate DMA Service",             "%s", en_dis,     0,  1, 1 },
     { CFG_NETWORK_TELNET_SERVICE,   CFG_TYPE_ENUM,      "Telnet Remote Menu Service",       "%s", en_dis,     0,  1, 1 },
@@ -27,6 +28,19 @@ NetworkConfig :: NetworkConfig() {
 }
 
 NetworkConfig :: ~NetworkConfig() {
+}
+
+void NetworkConfig :: list_unique_id_choices(ConfigItem *it, IndexedList<char *>& strings)
+{
+    char *empty = new char[12];
+    strcpy(empty, "\er- None -");
+    strings.append(empty);
+
+    char *def = new char[12];
+    strcpy(def, "Default");
+    strings.append(def);
+
+    // The "Enter Manually" option is appended by the config browser automatically
 }
 
 NetworkConfig networkConfig;

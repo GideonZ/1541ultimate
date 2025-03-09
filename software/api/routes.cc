@@ -131,8 +131,15 @@ API_CALL(GET, info, none, NULL, ARRAY( { }))
 #ifdef U64
         ->add("core_version", core_version)
 #endif
-        ->add("hostname", hostname)
-        ->add("unique_id", getProductUniqueId());
+        ->add("hostname", hostname);
+
+    const char *unique_id = networkConfig.cfg->get_string(CFG_NETWORK_UNIQUE_ID);
+    if (unique_id && *unique_id) {
+        if (strcmp(unique_id, "Default") == 0) {
+            unique_id = getProductUniqueId();
+        }
+        resp->json->add("unique_id", unique_id);
+    }
 
     resp->json_response(HTTP_OK);
 }
