@@ -85,6 +85,9 @@ void ContextMenu :: init(Window *parwin, Keyboard *key)
         for(int i=0;i<actions.get_elements();i++) {
         	Action *it = actions[i];
             len = strlen(it->getName());
+            if (len == 0) {
+                len = 8;   // "" will be transformed to "- None -"
+            }
             if(len > max_len)
                 max_len = len;
         }
@@ -311,7 +314,8 @@ void ContextMenu :: draw()
 	        window->set_background(0);
 		}
 		if (t) {
-			window->output_line(t->getName());
+			const char *string = t->getName();
+			window->output_line(*string ? string : "- None -");  // Action name or "- None -"
 		} else {
 			window->output_line("");
 		}

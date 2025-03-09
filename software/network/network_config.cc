@@ -32,8 +32,8 @@ NetworkConfig :: ~NetworkConfig() {
 
 void NetworkConfig :: list_unique_id_choices(ConfigItem *it, IndexedList<char *>& strings)
 {
-    char *empty = new char[12];
-    strcpy(empty, "\er- None -");
+    char *empty = new char[1];
+    *empty = 0;
     strings.append(empty);
 
     char *def = new char[12];
