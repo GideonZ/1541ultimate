@@ -569,6 +569,11 @@ FRESULT FileManager::delete_recursive(Path *path, const char *name)
 
 FRESULT FileManager::house_keeping_delete(const char *dirpath, const char*matchPattern, int min_files, int max_files, uint32_t max_size)
 {
+#ifdef U2
+    if (max_size > 480*1024) {
+        max_size = 480*1024;  // Only 1MB ramdisk for U2 (software/filesystem/ramdisk.cc), limit max_size to slightly below half
+    }
+#endif
     Path dir;
     dir.cd(dirpath);
     IndexedList<FileInfo *> files(32, NULL);

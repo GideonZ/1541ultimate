@@ -213,7 +213,7 @@ public:
     FRESULT delete_file(Path *path, const char *name);
     FRESULT delete_file(const char *pathname);
     FRESULT delete_recursive(Path *path, const char *name);
-    FRESULT house_keeping_delete(const char *dirpath, const char*matchPattern, int min_files = 2, int max_files = 16, uint32_t max_size = 1024*1024);
+    FRESULT house_keeping_delete(const char *dirpath, const char*matchPattern, int min_files = 2, int max_files = 16, uint32_t max_size = 4*1024*1024);
 
     FRESULT create_dir(Path *path, const char *name);
     FRESULT create_dir(const char *pathname);
