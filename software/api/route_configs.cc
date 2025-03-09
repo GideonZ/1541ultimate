@@ -13,7 +13,7 @@ void emit_store(ConfigStore *st, JSON_Object *pobj, ArgsURI &args)
     for(int n = 0; n < st->items.get_elements(); n++) {
         i = st->items[n];
         if ((args.get_path_depth() < 2) || (pattern_match(args.get_path(1), i->definition->item_text))) {
-            JSON *obj;            
+            JSON *obj;
             if ((i->definition->type == CFG_TYPE_STRING) || (i->definition->type == CFG_TYPE_STRFUNC) || (i->definition->type == CFG_TYPE_STRPASS)) {
                 obj = new JSON_String(i->getString());
             } else if(i->definition->type == CFG_TYPE_ENUM) {
@@ -40,7 +40,19 @@ void emit_store(ConfigStore *st, JSON_Object *pobj, ArgsURI &args)
                     ob->add("max", i->definition->max);
                     ob->add("format", (const char *)i->definition->item_format);
                     ob->add("default", (int)i->definition->def);
-                } else if((i->definition->type == CFG_TYPE_STRING) || (i->definition->type == CFG_TYPE_STRFUNC) || (i->definition->type == CFG_TYPE_STRPASS)) {
+                } else if(i->definition->type == CFG_TYPE_STRFUNC) {
+                    JSON_List *list = JSON::List();
+                    ob->add("presets", list);
+                    t_cfg_strfunc preset_func = (t_cfg_strfunc)i->definition->items;
+                    IndexedList<char *> presets(8, NULL);
+                    (preset_func)(NULL, presets);
+                    for(int j=0;j < presets.get_elements(); j++) {
+                        char *preset = presets[j];
+                        list->add(*preset == '\e' ? "" : preset);  // Strings starting with escape are always stored as an emptry string
+                        delete [] preset;
+                    }
+                    ob->add("default", (const char *)i->definition->def);
+                } else if((i->definition->type == CFG_TYPE_STRING) || (i->definition->type == CFG_TYPE_STRPASS)) {
                     ob->add("default", (const char *)i->definition->def);
                 }
             }
