@@ -1338,8 +1338,8 @@ void C64 :: list_crts(ConfigItem *it, IndexedList<char *>& strings)
 {
 #ifndef NO_FILE_ACCESS
     // Always return at least the empty string
-    char *empty = new char[12];
-    strcpy(empty, "\er- None -");
+    char *empty = new char[1];
+    *empty = 0;
     strings.append(empty);
 
     Path p;
@@ -1367,8 +1367,8 @@ void C64 :: list_kernals(ConfigItem *it, IndexedList<char *>& strings)
 {
 #if !U64
     // Always return at least the empty string
-    char *empty = new char[12];
-    strcpy(empty, "\er- None -");
+    char *empty = new char[1];
+    *empty = 0;
     strings.append(empty);
 #endif
 

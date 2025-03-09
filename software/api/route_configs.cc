@@ -48,7 +48,7 @@ void emit_store(ConfigStore *st, JSON_Object *pobj, ArgsURI &args)
                     (preset_func)(NULL, presets);
                     for(int j=0;j < presets.get_elements(); j++) {
                         char *preset = presets[j];
-                        list->add(*preset == '\e' ? "" : preset);  // Strings starting with escape are always stored as an emptry string
+                        list->add(preset);
                         delete [] preset;
                     }
                     ob->add("default", (const char *)i->definition->def);

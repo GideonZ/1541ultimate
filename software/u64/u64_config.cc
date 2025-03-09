@@ -2089,8 +2089,8 @@ bool U64Config :: IsMonitorHDMI()
 void U64Config :: list_palettes(ConfigItem *it, IndexedList<char *>& strings)
 {
     // Always return at least the empty string
-    char *empty = new char[16];
-    strcpy(empty, "\er- Default -");
+    char *empty = new char[1];
+    *empty = 0;
     strings.append(empty);
 
     Path p;
