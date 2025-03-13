@@ -74,6 +74,17 @@ typedef struct {
     char password[64];
 } rpc_wifi_connect_req;
 
+typedef struct {
+    rpc_header_t hdr;
+    char serial[16];
+} rpc_set_serial_req;
+
+typedef struct {
+    rpc_header_t hdr;
+    int esp_err;
+    char serial[16];
+} rpc_get_serial_resp;
+
 /* 42 byte AP record */
 typedef struct {
     uint8_t bssid[6];            // MAC address of AP
@@ -167,6 +178,8 @@ typedef struct {
 #define CMD_CLEAR_APS         0x11
 #define CMD_WIFI_AUTOCONNECT  0x12
 #define CMD_MACHINE_REBOOT    0x13
+#define CMD_SET_SERIAL        0x14
+#define CMD_GET_SERIAL        0x15
 
 #define EVENT_CONNECTED     0x40
 #define EVENT_GOTIP         0x41

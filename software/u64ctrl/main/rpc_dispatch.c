@@ -10,6 +10,7 @@
 #include "freertos/queue.h"
 #include "esp_wifi.h"
 #include "esp_log.h"
+#include "nvs_flash.h"
 #include "driver/uart.h"
 #include "rpc_calls.h"
 #include "rpc_dispatch.h"
@@ -249,6 +250,48 @@ void cmd_clear_aps(command_buf_t *buf)
     rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
     buf->size = sizeof(rpc_espcmd_resp);
     resp->esp_err = wifi_clear_aps();
+    if (resp->esp_err == ESP_OK) {
+        resp->esp_err = esp_wifi_disconnect();
+    }
+    my_uart_transmit_packet(UART_CHAN, buf);
+}
+
+void cmd_set_serial(command_buf_t *buf)
+{
+    rpc_set_serial_req *param = (rpc_set_serial_req *)buf->data;
+    rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
+
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open("board", NVS_READWRITE, &handle);
+    if (err == ESP_OK) {
+        size_t len;
+        esp_err_t err2 = nvs_get_str(handle, "serial", NULL, &len);
+        if (err2 == ESP_ERR_NVS_NOT_FOUND) {
+            param->serial[15] = 0;
+            err = nvs_set_str(handle, "serial", param->serial);
+            if (err == ESP_OK) {
+                err = nvs_commit(handle);
+            }
+        }
+        nvs_close(handle);
+    }
+    resp->esp_err = err;
+    buf->size = sizeof(rpc_espcmd_resp);
+    my_uart_transmit_packet(UART_CHAN, buf);
+}
+
+void cmd_get_serial(command_buf_t *buf)
+{
+    rpc_get_serial_resp *resp = (rpc_get_serial_resp *)buf->data;
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open("board", NVS_READONLY, &handle);
+    if (err == ESP_OK) {
+        size_t length = 16;
+        err = nvs_get_str(handle, "serial", resp->serial, &length);
+        nvs_close(handle);
+    }
+    resp->esp_err = err;
+    buf->size = sizeof(rpc_get_serial_resp);
     my_uart_transmit_packet(UART_CHAN, buf);
 }
 
@@ -368,6 +411,12 @@ void dispatch(void *ct)
             break;
         case CMD_CLEAR_APS:
             cmd_clear_aps(pbuffer);
+            break;
+        case CMD_SET_SERIAL:
+            cmd_set_serial(pbuffer);
+            break;
+        case CMD_GET_SERIAL:
+            cmd_get_serial(pbuffer);
             break;
         default:
             cmd_not_implemented(pbuffer);

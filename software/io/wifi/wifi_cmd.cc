@@ -115,6 +115,29 @@ int wifi_getmac(uint8_t *mac)
     RETURN_ESP;
 }
 
+#if U64 == 2
+int wifi_set_serial(const char *serial)
+{
+    BUFARGS(set_serial, CMD_SET_SERIAL);
+    strncpy(args->serial, serial, 16);
+    TRANSMIT(espcmd);
+    RETURN_ESP;
+}
+
+int wifi_get_serial(char *serial)
+{
+    BUFARGS(identify, CMD_GET_SERIAL);
+    TRANSMIT(get_serial);
+    if (result->esp_err == 0) {
+        memcpy(serial, result->serial, 16);
+    } else {
+        strcpy(serial, "-Not set-");
+        printf("Get Serial returned %d as error code.\n", result->esp_err);
+    }
+    RETURN_ESP;
+}
+#endif
+
 int wifi_is_connected(uint8_t &status)
 {
     BUFARGS(identify, CMD_WIFI_IS_CONNECTED);
