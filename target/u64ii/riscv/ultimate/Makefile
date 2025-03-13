@@ -203,17 +203,17 @@ VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/risc-v
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/risc-v/chip_specific_extensions/RV32I_CLINT_no_extensions
 VPATH +=	$(PATH_SW)/portable/riscv
 VPATH +=	$(PATH_SW)/6502/sidcrt/target
+VPATH +=	$(PATH_SW)/u64ii
 VPATH +=	$(PATH_SW)/u64
 VPATH +=	$(PATH_SW)/u64ctrl/main
-
 
 SRCS_ASM =
 
 SRCS_ASMS = crt0.S port_asm.S
 
-SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas eapi.tas
+SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas eapi.tas default_kernal.tas
 
-SRCS_BIN =  basic.bin chars.bin module.bin sidcrt.bin muscrt.bin musplayer.bin
+SRCS_BIN =  basic.bin chars.bin module.bin sidcrt.bin muscrt.bin musplayer.bin default_chars.bin 
 
 SRCS_IEC = iec_code.iec
 

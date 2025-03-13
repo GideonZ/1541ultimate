@@ -1,0 +1,195 @@
+;-------------------------------------------------
+; System ROM initialization (without actual Kernal/Basic ROM)
+;
+; Programmed by Gideon Zweijtzer
+;
+; Copyright (c) 2018 - Gideon Zweijtzer
+;
+;-------------------------------------------------
+;
+
+; System ROM = 16K, of which the first 8K will be mapped to $A000. However, we won't use it
+; so we can fool the assembler that we start a 16K contiguous block at $C000
+
+    *= $C000            
+
+signature
+    .byte $55
+    .byte $66
+    
+    *= $F000
+
+start
+	sei
+	ldx #$ff
+	txs
+
+; Init VIC chip
+	LDX #$2F        ; set the count/index
+-	LDA vic_init-1,X     ; get a vic ii chip initialisation value
+	STA $CFFF,X     ; save it to the vic ii chip
+	DEX             ; decrement the count/index
+	BNE -       	; loop if more to do
+
+; Init color ram
+	lda #0
+	ldx #0
+-	sta $d800,x
+	sta $d900,x
+	sta $da00,x
+	sta $db00,x
+	inx
+	bne -	
+
+; Init screen text
+	lda #<welcome
+	sta $fb
+	lda #>welcome
+	sta $fc
+	
+	ldy #0
+-	lda ($fb),y
+	jsr fix
+	sta $0400,y
+	iny
+	bne -
+	inc $fc
+	ldy #0
+-	lda ($fb),y
+	jsr fix
+	sta $0500,y
+	iny
+	bne -
+	inc $fc
+	ldy #0
+-	lda ($fb),y
+	jsr fix
+	sta $0600,y
+	iny
+	bne -
+	inc $fc
+	ldy #0
+-	lda ($fb),y
+	jsr fix
+	sta $0700,y
+	iny
+	cpy #$e8
+	bne -
+	
+do_jingle
+    jsr jingle 
+
+    lda #30
+-   jsr delay
+    sec
+    sbc #1
+    bne -    
+	jmp do_jingle
+
+fix
+	pha
+	and #$20
+	bne +
+	pla
+	eor #$40
+	rts
++	pla
+	rts
+
+jingle
+    lda #$0f
+    sta $d418
+    lda #$29
+    sta $d405
+    lda #$00
+    sta $d406
+
+    lda #$10
+    sta $d404
+    lda #$4b
+    sta $d400
+    lda #$22
+    sta $d401
+    lda #$11
+    sta $d404
+    jsr delay
+        
+    lda #$10
+    sta $d404
+    lda #$34
+    sta $d400
+    lda #$2b
+    sta $d401
+    lda #$11
+    sta $d404
+    jsr delay
+
+    lda #$10
+    sta $d404
+    lda #$61
+    sta $d400
+    lda #$33
+    sta $d401
+    lda #$11
+    sta $d404
+    jsr delay
+
+    lda #$10
+    sta $d404
+    rts
+    
+
+; more or less half a second
+delay
+    ldx #145
+    ldy #0
+-   iny
+    nop
+    nop
+    bne -
+    dex
+    bne -
+    rts
+    
+welcome
+	.enc "screen"
+    .text "                                        " ; 1
+	.text "     Welcome to the Ultimate-64!        " ; 2
+	.text "                                        " ; 3
+	.text " To avoid any potential legal issues,   " ; 4
+	.text " the Ultimate-64 is shipped without     " ; 5
+	.text " System ROMs. You can obtain these ROMs " ; 6
+	.text " from an original Commodore C64 machine," ; 7
+	.text " or download them from the internet.    " ; 8
+	.text "                                        " ; 9
+	.text " Once you have the ROMs on a USB stick, " ; 10
+	.text " you can save them into the Ultimate 64:" ; 11
+	.text "                                        " ; 12
+	.text " 1) Press the power button briefly to   " ; 13
+	.text "    enter the Ultimate Browser Menu.    " ; 14
+	.text "                                        " ; 15
+	.text " 2) Browse to the folder with the ROMs. " ; 16
+	.text "                                        " ; 17
+    .text " 3) For Basic, Kernal and Character     " ; 18
+    .text "    ROMs, repeat:                       " ; 19
+    .text "                                        " ; 20
+	.text "    - Select ROM file (.bin or .rom) and" ; 21
+	.text "      press RETURN. Choose 'Flash as...'" ; 22
+	.text "                                        " ; 23
+	.text " 4) Reboot, and have fun! :-)           " ; 24
+    .text "                                        " ; 25
+	.enc "none"
+
+restore
+	rti
+
+        
+vic_init
+	.byte 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+	.byte 0, $9B, $37, 0, 0, 0, 8, 0, $16, $0F, 0, 0, 0, 0, 0, 0
+	.byte 6, 12, 1, 2, 3, 4, 0, 1, 2, 3, 4, 5, 6, 7 
+
+	*=$FFFA
+	.word restore
+	.word start
+	.word restore
