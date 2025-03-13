@@ -865,6 +865,7 @@ void U64Config :: effectuate_settings()
     C64_PADDLE_EN    = cfg->get_value(CFG_PADDLE_EN);
     C64_PLD_JOYCTRL  = cfg->get_value(CFG_JOYSWAP) ^ 1;
     C64_PADDLE_SWAP  = cfg->get_value(CFG_JOYSWAP);
+    U64II_KEYB_JOY   = cfg->get_value(CFG_JOYSWAP);
     U64_USERPORT_EN  = cfg->get_value(CFG_USERPORT_EN) ? 3 : 0;
     printf("USERPORT_EN = %d\n", U64_USERPORT_EN);
     
@@ -1140,7 +1141,6 @@ int U64Config :: setSidEmuParams(ConfigItem *it)
 }
 
 #define MENU_U64_SAVEEDID 1
-#define MENU_U64_SAVEEEPROM 2
 #define MENU_U64_WIFI_DISABLE 3
 #define MENU_U64_WIFI_ENABLE 4
 #define MENU_U64_WIFI_BOOT 5
@@ -1218,24 +1218,7 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
     		}
     	}
     	break;
-#if 0
-    case MENU_U64_SAVEEEPROM:
-        // Try to read EDID, just a hardware test
-        if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
-            if (ext_i2c_read_block(0xA0, 0x00, edid, 256) == 0) {
-                dump_hex_relative(edid, 256);
-                if (cmd->user_interface->string_box("Reading I2C OK. Save to:", name, 31) > 0) {
-                    set_extension(name, ".bin", 32);
-                    fres = fm->fopen(cmd->path.c_str(), name, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
-                    if (fres == FR_OK) {
-                        f->write(edid, 256, &trans);
-                        fm->fclose(f);
-                    }
-                }
-            }
-        }
-        break;
-#endif
+
     case MENU_U64_POKE:
         if (cmd->user_interface->string_box("Poke AAAA,DD", poke_buffer, 16)) {
 
@@ -1860,6 +1843,7 @@ int swap_joystick()
     int swap = item->getValue();
     swap ^= 1;
     item->setValue(swap);
+    U64II_KEYB_JOY  = (uint8_t)swap;
     C64_PLD_JOYCTRL = (uint8_t)(swap ^ 1);
     C64_PADDLE_SWAP = (uint8_t)swap;
 

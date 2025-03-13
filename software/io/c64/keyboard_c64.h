@@ -13,6 +13,7 @@ class Keyboard_C64 : public Keyboard
     GenericHost *host;
     volatile uint8_t *row_register;
     volatile uint8_t *col_register;
+    volatile uint8_t *joy_register;
     
     uint8_t shift_prev;
     uint8_t mtrx_prev;
@@ -26,7 +27,7 @@ class Keyboard_C64 : public Keyboard
     int  key_head;
     int  key_tail;
 public:
-    Keyboard_C64(GenericHost *, volatile uint8_t *r, volatile uint8_t *c);
+    Keyboard_C64(GenericHost *, volatile uint8_t *r, volatile uint8_t *c, volatile uint8_t *j);
     ~Keyboard_C64();
     
     void scan(void);

@@ -75,12 +75,13 @@ const uint8_t *keymaps[8] = {
 		keymap_control  // 7 Shift C= Control
 };
 
-Keyboard_C64 :: Keyboard_C64(GenericHost *h, volatile uint8_t *row, volatile uint8_t *col)
+Keyboard_C64 :: Keyboard_C64(GenericHost *h, volatile uint8_t *row, volatile uint8_t *col, volatile uint8_t *joy)
 {
     host = h;
     col_register = col;
     row_register = row;
-    
+    joy_register = joy;
+
     repeat_speed = 4;
     first_delay = 16;
     key_head = 0;
@@ -117,8 +118,9 @@ void Keyboard_C64 :: scan(void)
     // Scan Joystick Port 2 first
     *col_register = 0xFF; // deselect keyboard for pure joystick scan
     *col_register = 0XFF; // delay
-    row = *col_register; // port2
-    row = *col_register; // delay
+
+    row = *joy_register;
+    row = *joy_register;
     if(row != 0xFF) {
         joy = true;
         if     (!(row & 0x01)) { shift_flag = 0x01; mtrx = 0x07; }

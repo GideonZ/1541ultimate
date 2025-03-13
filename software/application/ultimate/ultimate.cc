@@ -129,11 +129,11 @@ extern "C" void ultimate_main(void *a)
 #if U64 == 2
     i2c->enable_scan(true, false);
     overlay = new Overlay(false, 12, U64II_OVERLAY_BASE);
-    Keyboard *kb = new Keyboard_C64(overlay, &U64II_KEYB_ROW, &U64II_KEYB_COL);
+    Keyboard *kb = new Keyboard_C64(overlay, &U64II_KEYB_ROW, &U64II_KEYB_COL, &U64II_KEYB_JOY);
     overlay->setKeyboard(kb);
 #elif U64 == 1
     overlay = new Overlay(false, 11, U64_OVERLAY_BASE);
-    Keyboard *kb = new Keyboard_C64(overlay, C64_PLD_PORTB, C64_PLD_PORTA);
+    Keyboard *kb = new Keyboard_C64(overlay, C64_PLD_PORTB, C64_PLD_PORTA, C64_PLD_PORTA);
     overlay->setKeyboard(kb);
 #endif
 

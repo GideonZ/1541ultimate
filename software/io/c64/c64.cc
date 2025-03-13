@@ -138,7 +138,7 @@ C64::C64()
 #endif
 
     char_set = (uint8_t *) &_chars_bin_start;
-    keyb = new Keyboard_C64(this, &CIA1_DPB, &CIA1_DPA);
+    keyb = new Keyboard_C64(this, &CIA1_DPB, &CIA1_DPA, &CIA1_DPA);
     screen = new Screen_MemMappedCharMatrix((char *) C64_SCREEN, (char *) C64_COLORRAM, 40, 25);
 
     C64_STOP_MODE = STOP_COND_FORCE;
