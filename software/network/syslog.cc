@@ -58,6 +58,9 @@ void Syslog::charout(int c)
     if (overflow) {
         return;
     }
+    if (c == '\r') {
+        return;
+    }
     if (bufpos < bufsize) {
         buf[bufpos] = (char)c;
         ENTER_SAFE_SECTION;
