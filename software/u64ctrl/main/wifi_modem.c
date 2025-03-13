@@ -52,8 +52,9 @@ QueueHandle_t connect_events;
 ConnectCommand_t last_connect;
 
 typedef enum {
-    LastAP, Scanning, ScannedAPs, StoredAPs, Connected, Disconnected,
+    LastAP, Scanning, ScannedAPs, StoredAPs, Connected, Disconnected, Disabled,
 } ConnectState_t;
+static const char *states[] = { "LastAP", "Scanning", "ScannedAPs", "StoredAPs", "Connected", "Disconnected", "Disabled" }; 
 
 // typedef err_t (*netif_input_fn)(struct pbuf *p, struct netif *inp);
 
@@ -595,6 +596,37 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
     esp_err_t err;
 
     switch(cmd->command) {
+        case CMD_WIFI_DISABLE:
+            if (*state == Connected) {
+                err = esp_wifi_disconnect();
+                if (err == ESP_OK) {
+                    xQueueReceive(connect_events, &connect_event, portMAX_DELAY);
+                    if (connect_event.event_code == EVENT_DISCONNECTED) {
+                        *state = Disconnected;
+                    }
+                }
+            }
+            err = esp_wifi_stop();
+            if (err == ESP_OK) {
+                *state = Disabled;
+                return 1;
+            } else {
+                ESP_LOGW(TAG, "Failed to stop WiFi: %d", err);
+            }
+            break;
+        case CMD_WIFI_ENABLE:
+            if (*state == Disabled) {
+                err = esp_wifi_start();
+                if (err == ESP_OK) {
+                    *state = LastAP;
+                    return 1;
+                } else {
+                    ESP_LOGW(TAG, "Failed to start WiFi: %d", err);
+                }
+            } else {
+                ESP_LOGE(TAG, "Enabling WiFi is not possible in state %s.", states[*state]);
+            } // else, do nothing, not supported
+            break;
         case CMD_WIFI_SCAN:
             {
                 rpc_scan_resp *resp = (rpc_scan_resp *)buf->data;
@@ -642,7 +674,6 @@ void connect_thread(void *a)
     ConnectState_t state = LastAP;
     ConnectState_t prev = LastAP;
     esp_err_t err;
-    static const char *states[] = { "LastAP", "Scanning", "ScannedAPs", "StoredAPs", "Connected", "Disconnected" }; 
 
     while(1) {
         switch (state) {
@@ -734,6 +765,13 @@ void connect_thread(void *a)
                     }
                 }
                 break;
+
+            case Disabled:
+                // The only way to wake up the WiFi again is to send a connect command
+                xQueueReceive(connect_commands, &connect_command, portMAX_DELAY);
+                handle_connect_command(&connect_command, &state);
+                break;
+
             default:
                 state = LastAP;                        
         }

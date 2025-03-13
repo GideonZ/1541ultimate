@@ -199,20 +199,26 @@ void cmd_modem_off(command_buf_t *buf)
     disable_hook();
 }
 
-void cmd_wifi_disable(command_buf_t *buf)
+void cmd_wifi_endisable(command_buf_t *buf)
 {
+    rpc_header_t *hdr = (rpc_header_t *)buf->data;
     rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
-    resp->esp_err = ESP_ERR_NOT_SUPPORTED;
-    buf->size = sizeof(rpc_espcmd_resp);
-    my_uart_transmit_packet(UART_CHAN, buf);
-}
 
-void cmd_wifi_enable(command_buf_t *buf)
-{
-    rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
-    resp->esp_err = ESP_ERR_NOT_SUPPORTED;
     buf->size = sizeof(rpc_espcmd_resp);
-    my_uart_transmit_packet(UART_CHAN, buf);
+    ConnectCommand_t ev;
+    ev.buf = buf;
+    ev.command = hdr->command;
+
+    if (xQueueSend(connect_commands, &ev, 1000) == pdFALSE) {
+        resp->esp_err = ESP_ERR_NO_MEM;
+        my_uart_transmit_packet(UART_CHAN, buf);
+        return;
+    } else {
+        resp->esp_err = ESP_OK;
+        my_uart_transmit_packet(UART_CHAN, buf);
+    }
+    xSemaphoreGive(connect_semaphore);
+    // command is now in the queue, so the connect handler will process it further
 }
 
 void cmd_get_voltages(command_buf_t *buf)
@@ -395,10 +401,8 @@ void dispatch(void *ct)
             cmd_modem_off(pbuffer);
             break;
         case CMD_WIFI_DISABLE:
-            cmd_wifi_disable(pbuffer);
-            break;
         case CMD_WIFI_ENABLE:
-            cmd_wifi_enable(pbuffer);
+            cmd_wifi_endisable(pbuffer);
             break;
         case CMD_GET_VOLTAGES:
             cmd_get_voltages(pbuffer);
