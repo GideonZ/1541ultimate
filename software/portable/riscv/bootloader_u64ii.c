@@ -89,7 +89,9 @@ static void init_ext_pll()
 // HDMI Color from 54.18867 MHz: 570001010fa2caad
     const uint8_t addr = 0xC8;
     const uint8_t init_pal[] = { 0x57, 0x00, 0x05, 0x05, 0xCF, 0x54, 0x53, 0x4A };
-    const uint8_t init_hdmi[] = { 0x57, 0x00, 0x01, 0x01, 0x0F, 0xA2, 0xCA, 0xAD };
+    const uint8_t init_ntsc[] = { 0x57, 0x00, 0x03, 0x03, 0x02, 0xD0, 0x22, 0x08 };
+    const uint8_t init_hdmi_50[] = { 0x57, 0x00, 0x01, 0x01, 0x0F, 0xA2, 0xCA, 0xAD };
+    const uint8_t init_hdmi_60[] = { 0x57, 0x00, 0x01, 0x01, 0x55, 0xf7, 0x82, 0x89 };
 
     volatile t_hw_i2c *i2c_regs = (volatile t_hw_i2c *)(U64II_HW_I2C_BASE);
     hexbyte(i2c_regs->soft_reset);
@@ -105,7 +107,7 @@ static void init_ext_pll()
     i2c_regs->data_out = 0x08; // Length
     i2c_spin_busy(i2c_regs);
     for(int i=0; i < 8; i++) {
-        i2c_regs->data_out = init_pal[i];
+        i2c_regs->data_out = init_ntsc[i];
         i2c_spin_busy(i2c_regs);
     }
     i2c_regs->stop = 1;
@@ -119,7 +121,7 @@ static void init_ext_pll()
     i2c_regs->data_out = 0x08; // Length
     i2c_spin_busy(i2c_regs);
     for(int i=0; i < 8; i++) {
-        i2c_regs->data_out = init_hdmi[i];
+        i2c_regs->data_out = init_hdmi_60[i];
         i2c_spin_busy(i2c_regs);
     }
     i2c_regs->stop = 1;
