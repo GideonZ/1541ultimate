@@ -48,6 +48,8 @@ int wifi_modem_enable(bool);
 int wifi_get_voltages(voltages_t *voltages);
 int wifi_is_connected(uint8_t &status);
 int wifi_forget_aps();
+int wifi_set_serial(const char *serial);
+int wifi_get_serial(char *serial);
 
 extern uint16_t sequence_nr;
 extern TaskHandle_t tasksWaitingForReply[NUM_BUFFERS];

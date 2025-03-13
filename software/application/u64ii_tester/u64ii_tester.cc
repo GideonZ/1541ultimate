@@ -28,6 +28,7 @@
 
 // dirty to define it twice, but alas
 #define VOLTAGES         ((volatile voltages_t *)(0x00A0))
+#define SERIAL_NUMBER    ((volatile char *)(0x00B0))
 
 extern "C" {
     #include "audio_dma.h"
@@ -787,5 +788,34 @@ int U64TestEthernet(void)
 			return 2;
 		}
 	}
+    TEST_RESULT(0);
+}
+
+int U64TestSetSerial()
+{
+    TEST_START("Set Serial");
+    char serial[16];
+    memset(serial, 0, 16);
+    memcpy(serial, (char *)SERIAL_NUMBER, 15);
+    int res = wifi_set_serial(serial);
+    if (res != 0) {
+        printf("WiFi module not responding to set_serial command\n");
+        fail_message(testname);
+        return 1;
+    }
+    TEST_RESULT(0);
+}
+
+int U64TestGetSerial()
+{
+    TEST_START("Get Serial");
+    char serial[16];
+    int res = wifi_get_serial(serial);
+    if (res != 0) {
+        printf("WiFi module not responding to get_serial command\n");
+        fail_message(testname);
+        return 1;
+    }
+    info_message("Serial: %s", serial);
     TEST_RESULT(0);
 }

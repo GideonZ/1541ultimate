@@ -35,6 +35,7 @@
 #define TESTER_TO_DUT	 (*(volatile uint32_t *)(0x0098))
 #define TEST_STATUS		 (*(volatile int *)(0x009C))
 #define VOLTAGES         ((volatile voltages_t *)(0x00A0))
+#define SERIAL_NUMBER    ((volatile char *)(0x00B0))
 
 Screen *screen;
 Screen *screen2;
@@ -368,6 +369,12 @@ void test_loop()
             break;
         case 18:
             result = U64TestReboot();
+            break;
+        case 19:
+            result = U64TestSetSerial();
+            break;
+        case 20:
+            result = U64TestGetSerial();
             break;
         case 50:
             result = programFlash();

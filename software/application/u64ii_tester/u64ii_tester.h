@@ -82,6 +82,8 @@ int U64TestUsbHub();
 int U64TestEthernet();
 int U64TestOff();
 int U64TestReboot();
+int U64TestSetSerial();
+int U64TestGetSerial();
 
 #ifdef __cplusplus
 }
