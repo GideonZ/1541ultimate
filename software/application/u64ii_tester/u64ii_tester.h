@@ -84,6 +84,7 @@ int U64TestOff();
 int U64TestReboot();
 int U64TestSetSerial();
 int U64TestGetSerial();
+int U64TestClearConfig();
 
 #ifdef __cplusplus
 }

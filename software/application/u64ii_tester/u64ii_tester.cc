@@ -819,3 +819,15 @@ int U64TestGetSerial()
     info_message("Serial: %s", serial);
     TEST_RESULT(0);
 }
+
+int U64TestClearConfig()
+{
+    TEST_START("Clear Config");
+    Flash *fl = get_flash();
+    int num = fl->get_number_of_config_pages();
+    for (int i=0; i < num; i++) {
+        fl->clear_config_page(i);
+    }
+    info_message("Configuration cleared, %d pages", num);
+    TEST_RESULT(0);
+}

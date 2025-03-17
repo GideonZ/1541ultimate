@@ -376,6 +376,9 @@ void test_loop()
         case 20:
             result = U64TestGetSerial();
             break;
+        case 21:
+            result = U64TestClearConfig();
+            break;
         case 50:
             result = programFlash();
             break;
