@@ -25,6 +25,7 @@
 #include "usb_device.h"
 #include "wifi_cmd.h"
 #include "network_test.h"
+#include "flash.h"
 
 // dirty to define it twice, but alas
 #define VOLTAGES         ((volatile voltages_t *)(0x00A0))
