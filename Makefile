@@ -251,6 +251,19 @@ u64_clean:
 	@$(MAKE) -C target/u64/nios2/ultimate clean
 	@$(MAKE) -C target/u64/nios2/updater clean
 
+u64ii:
+	@mkdir -p u64ii
+	@$(MAKE) -C tools
+	@$(MAKE) -C target/libs/riscv/lwip
+	@$(MAKE) -C target/u64ii/riscv/ultimate
+	@$(MAKE) -C target/u64ii/riscv/factorytest
+	@cp target/u64ii/riscv/ultimate/result/ultimate.app u64ii
+	@cp target/u64ii/riscv/factorytest/result/factorytest.bin u64ii
+	@cp software/u64ctrl/build/bootloader/bootloader.bin u64ii
+	@cp software/u64ctrl/build/partition_table/partition-table.bin u64ii
+	@cp software/u64ctrl/build/u64ctrl.bin u64ii
+# U64II update package cannot be built yet, until the FPGA image is available in github
+
 u2pl:
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/libs/riscv/lwip

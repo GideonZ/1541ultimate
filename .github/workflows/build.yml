@@ -128,7 +128,13 @@ jobs:
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64"
 
-      - name: Upload Artifacts
+      - name: Build U64-II Software
+        run: |
+          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64ii"
+
+      - name: Upload User Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: update_package_${{ env.GIT_VERSION }}
@@ -137,3 +143,14 @@ jobs:
             update.u2p
             update.u2l
             update.u64
+
+      - name: Upload Factory Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: factory_package_${{ env.GIT_VERSION }}
+          path: |
+            u64ii/bootloader.bin
+            u64ii/partition-table.bin
+            u64ii/u64ctrl.bin
+            u64ii/ultimate.app
+            u64ii/factorytest.bin
