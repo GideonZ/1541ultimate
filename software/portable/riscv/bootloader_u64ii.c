@@ -134,8 +134,9 @@ int main()
 {
     puts("Hello world, U64-II!");
     if (*__warm_boot == 0) {
-        mdio_write(0x00, 0x9100);
         *__warm_boot = 1;
+        mdio_write(0x00, 0x0100);
+        mdio_write(0x00, 0x9100);
     }
 
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
