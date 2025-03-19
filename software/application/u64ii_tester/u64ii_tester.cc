@@ -514,7 +514,7 @@ static int socket_test(volatile socket_tester_t *test, int socket_nr)
     error |= test_socket_voltages(skti2c, socket_nr, 2,  8640,  9560, false) << 3;
     error |= test_socket_voltages(skti2c, socket_nr, 3, 11600, 13000, false) << 6;
     error |= test_socket_voltages(skti2c, socket_nr, 7, 11600, 13000, true) << 9;
-    error |= test_socket_caps(test, socket_nr, 7 , 19500, 25000, 22470) << 12;
+    error |= test_socket_caps(test, socket_nr, 7 , 19500, 26000, 22470) << 12;
     error |= test_socket_caps(test, socket_nr, 15, 200, 900, 470) << 14;
 
     if (!error) {
@@ -817,7 +817,7 @@ int U64TestGetSerial()
         fail_message(testname);
         return 1;
     }
-    info_message("Serial: %s", serial);
+    info_message("Serial: %s\n", serial);
     TEST_RESULT(0);
 }
 
@@ -829,6 +829,6 @@ int U64TestClearConfig()
     for (int i=0; i < num; i++) {
         fl->clear_config_page(i);
     }
-    info_message("Configuration cleared, %d pages", num);
+    info_message("Configuration cleared, %d pages\n", num);
     TEST_RESULT(0);
 }

@@ -7,6 +7,7 @@
 #include "dump_hex.h"
 #include "color_timings.h" // FIXME: Doesn't belong here
 #include "itu.h"
+#include "mdio.h"
 
 #define PLL1 0xC8
 #define HUB  0x58
@@ -114,39 +115,17 @@ void custom_hardware_init()
 {
     i2c = new Hw_I2C_Driver((volatile t_hw_i2c *)U64II_HW_I2C_BASE);
 
-    // We are not yet running under FreeRTOS, so we cannot use mutexes here.
+    // Initialize Ethernet
+    mdio_write(0x1B, 0x0500); // enable link up, link down interrupts
+    mdio_write(0x16, 0x0002); // disable factory reset mode
 
+    // We are not yet running under FreeRTOS, so we cannot use mutexes here.
     // Initialize Audio codec
     nau8822_init(I2C_CHANNEL_1V8);
 
     // Initialize USB hub
     initialize_usb_hub();
 
-/*
-    U64_HDMI_ENABLE = 0;
-    uint8_t bytes[16];
-    printf("C64 PLL\n");
-    calc_pll(24.0f, 31.527928889f, bytes); // should result in 3317/505, P=5
-    printf("HDMI PLL\n");
-    calc_pll(54.18867f, 148.8699824f, bytes); // should result in a multiplication of 250/91.
-    //t_video_mode systemMode = e_PAL_50;
-    t_video_mode systemMode = e_NTSC_60;
-    const t_video_color_timing *ct = color_timings[(int)systemMode];
-
-    printf("HDMI clock 1: %08x\n", U64_CLOCK_FREQ);
-    SetVideoPll(systemMode);
-    SetHdmiPll(systemMode, ct->mode_bits);
-    C64_VIDEOFORMAT = ct->mode_bits;
-    printf("Mode bits: %b\n", ct->mode_bits);
-    ResetHdmiPll();
-    wait_ms(300);
-    printf("HDMI clock 2: %08x\n", U64_CLOCK_FREQ);
-    wait_ms(300);
-    printf("HDMI clock 3: %08x\n", U64_CLOCK_FREQ);
-    SetVideoMode1080p(systemMode);
-    wait_ms(300);
-    printf("HDMI clock 4: %08x\n", U64_CLOCK_FREQ);
-*/
 
     U64_HDMI_REG = U64_HDMI_DDC_ENABLE;
     i2c->set_channel(I2C_CHANNEL_1V8);
