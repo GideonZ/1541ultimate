@@ -5,8 +5,8 @@
 MEMORY
 {
     memory  : ORIGIN = 0x00001000, LENGTH = 0xE9F000
-    bootrom : ORIGIN = 0x80000000, LENGTH = 0xE00
-    ram     : ORIGIN = 0x80000E00, LENGTH = 0x200
+    bootrom : ORIGIN = 0x80000000, LENGTH = 0x1C00
+    ram     : ORIGIN = 0x80001C00, LENGTH = 0x400
 }
 
 OUTPUT_FORMAT( "elf32-littleriscv",
@@ -253,7 +253,8 @@ PROVIDE( __stack_limit   = __stack_base );
 
 
   /* Provide symbols for neorv32 crt0 start-up code */
-PROVIDE(__crt0_stack_begin         = ORIGIN(ram) + LENGTH(ram));
+PROVIDE(__warm_boot                = ORIGIN(ram) + LENGTH(ram) - 4);
+PROVIDE(__crt0_stack_begin         = ORIGIN(ram) + LENGTH(ram) - 4);
 PROVIDE(__crt0_bss_start           = __BSS_START__);
 PROVIDE(__crt0_bss_end             = __BSS_END__);
 PROVIDE(__crt0_copy_data_src_begin = LOADADDR(.data));

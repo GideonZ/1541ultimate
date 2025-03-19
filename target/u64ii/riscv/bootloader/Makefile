@@ -13,7 +13,7 @@ PRJ      =  bootloader
 FINAL    =  $(RESULT)/$(PRJ).elf $(RESULT)/$(PRJ).bin $(DEST)
 IMAGE_GEN = $(PATH_SW)/../tools/bin2vhdl.py 
 
-SRCS_C   =	bootloader_u64ii.c ddr2_calibrator_u64ii.c small_printf.c itu.c
+SRCS_C   =	bootloader_u64ii.c ddr2_calibrator_u64ii.c small_printf.c itu.c mdio.c
                         
 SRCS_CC	 =  
 
@@ -45,4 +45,4 @@ LFLAGS   = --gc-sections
 include ../../../common/rules.mk
 
 $(DEST) : $(RESULT)/$(PRJ).bin
-	$(IMAGE_GEN) $< $(DEST)
+	$(IMAGE_GEN) $< $(DEST) 8192

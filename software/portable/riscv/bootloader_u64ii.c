@@ -5,6 +5,7 @@
 #include "u64.h"
 #include "u2p.h"
 #include "hw_i2c.h"
+#include "mdio.h"
 
 #define W25Q_ContinuousArrayRead_LowFrequency       0x03
 
@@ -107,7 +108,7 @@ static void init_ext_pll()
     i2c_regs->data_out = 0x08; // Length
     i2c_spin_busy(i2c_regs);
     for(int i=0; i < 8; i++) {
-        i2c_regs->data_out = init_ntsc[i];
+        i2c_regs->data_out = init_pal[i];
         i2c_spin_busy(i2c_regs);
     }
     i2c_regs->stop = 1;
@@ -121,16 +122,22 @@ static void init_ext_pll()
     i2c_regs->data_out = 0x08; // Length
     i2c_spin_busy(i2c_regs);
     for(int i=0; i < 8; i++) {
-        i2c_regs->data_out = init_hdmi_60[i];
+        i2c_regs->data_out = init_hdmi_50[i];
         i2c_spin_busy(i2c_regs);
     }
     i2c_regs->stop = 1;
     i2c_spin_busy(i2c_regs);
 }
 
+extern uint32_t *__warm_boot;
 int main()
 {
     puts("Hello world, U64-II!");
+    if (*__warm_boot == 0) {
+        mdio_write(0x00, 0x9100);
+        *__warm_boot = 1;
+    }
+
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
     SPI_FLASH_DATA = 0xFF;
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
