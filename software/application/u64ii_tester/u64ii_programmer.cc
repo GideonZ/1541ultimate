@@ -25,6 +25,10 @@
 #include "product.h"
 #include "wifi_cmd.h"
 
+#include "fpll.h"
+#include "color_timings.h"
+#include "hdmi_scan.h"
+
 // These defines are from the test concept that runs tests via jtag.
 #define PROG_BUFFER      (uint8_t *)(*(volatile int *)(0x0080))
 #define TEST_PARAM		 (*(volatile int *)(0x0084))
@@ -51,6 +55,15 @@ extern "C" {
 #define CHARGEN_REGS  ((volatile t_chargen_registers *)U64II_CHARGEN_REGS)
 void initScreen()
 {
+    // const t_video_mode systemMode = e_NTSC_60;
+    // const t_video_color_timing *ct = color_timings[(int)systemMode];
+    // SetVideoPll(systemMode);
+    // SetHdmiPll(systemMode, ct->mode_bits);
+    // SetVideoMode1080p(systemMode);
+    // ResetHdmiPll();
+    // wait_ms(200);
+    printf("Measurement: %08x\n", U64_CLOCK_FREQ);
+
     //TVideoMode mode = { 01, 25175000,  640, 16,  96,  48, 0,   480, 10, 2, 33, 0, 1, 0 };  // VGA 60
     //SetScanModeRegisters((volatile t_video_timing_regs *)CHARGEN_TIMING, &mode);
 
@@ -417,18 +430,20 @@ void ultimate_main(void *context)
     printf("DUT Main..\n");
 	DUT_TO_TESTER = 1;
 	TEST_STATUS = 0;
+    uint32_t *__warm_boot = (uint32_t *)0x80001FFC;
 
     Flash *flash = get_flash();
     initVGAScreen();
     initScreen();
     screen->clear();
     screen->move_cursor(0,0);
-    info_message("U64E-II Tester - 02.11.2024 - 11:48\n\n");
+    info_message("U64E-II Tester - 20.03.2025 - 11:48\n\n");
     info_message("Board Revision: %s\n", getBoardRevision());
     uint8_t serial[8];
     flash->read_serial(serial);
     info_message("Flash Type: %s\n", flash->get_type_string());
     info_message("Hardware Serial Number: %b%b:%b%b:%b%b:%b%b\n\n", serial[0], serial[1], serial[2], serial[3], serial[4], serial[5], serial[6], serial[7]);
+    info_message("Warm boot: %08x\n", *__warm_boot);
 	InitFunction :: executeAll();
 
     test_loop();

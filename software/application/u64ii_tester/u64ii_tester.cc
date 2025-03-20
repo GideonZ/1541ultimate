@@ -26,6 +26,8 @@
 #include "wifi_cmd.h"
 #include "network_test.h"
 #include "flash.h"
+#include "screen.h"
+#include "screen_logger.h"
 
 // dirty to define it twice, but alas
 #define VOLTAGES         ((volatile voltages_t *)(0x00A0))
@@ -818,6 +820,8 @@ int U64TestGetSerial()
         return 1;
     }
     info_message("Serial: %s\n", serial);
+    extern Screen *screen2;
+    console_print(screen2, "                %s", serial);
     TEST_RESULT(0);
 }
 
