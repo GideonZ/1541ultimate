@@ -130,12 +130,13 @@ static void init_ext_pll()
     wait_ms(2);
 }
 
-extern uint32_t *__warm_boot;
+extern uint32_t __warm_boot;
 int main()
 {
     puts("Hello world, U64-II!");
-    if (*__warm_boot == 0) {
-        *__warm_boot = 1;
+    if (__warm_boot == 0) {
+        __warm_boot = 1;
+        puts("Reset PHY");
         wait_ms(2);
         // either one, we reset; only one will respond
         mdio_write(0x00, 0x9100, 0);
