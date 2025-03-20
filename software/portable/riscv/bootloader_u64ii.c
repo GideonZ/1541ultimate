@@ -127,6 +127,7 @@ static void init_ext_pll()
     }
     i2c_regs->stop = 1;
     i2c_spin_busy(i2c_regs);
+    wait_ms(2);
 }
 
 extern uint32_t *__warm_boot;
@@ -135,8 +136,10 @@ int main()
     puts("Hello world, U64-II!");
     if (*__warm_boot == 0) {
         *__warm_boot = 1;
-        mdio_write(0x00, 0x0100);
-        mdio_write(0x00, 0x9100);
+        wait_ms(2);
+        // either one, we reset; only one will respond
+        mdio_write(0x00, 0x9100, 0);
+        mdio_write(0x00, 0x9100, 3);
     }
 
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high

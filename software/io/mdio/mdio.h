@@ -15,8 +15,8 @@ extern "C" {
 #endif
 
 void mdio_reset();
-uint16_t mdio_read(uint8_t reg);
-void mdio_write(uint8_t reg, uint16_t data);
+uint16_t mdio_read(uint8_t reg, uint8_t addr);
+void mdio_write(uint8_t reg, uint16_t data, uint8_t addr);
 int mdio_get_irq(void);
 
 #ifdef __cplusplus

@@ -379,6 +379,9 @@ void test_loop()
         case 21:
             result = U64TestClearConfig();
             break;
+        case 22:
+            result = U64TestClearFlash();
+            break;
         case 50:
             result = programFlash();
             break;

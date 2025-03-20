@@ -25,9 +25,6 @@ void custom_hardware_init()
     REMOTE_FLASHSELCK_0;
     REMOTE_FLASHSELCK_1;
 
-    mdio_write(0x1B, 0x0500); // enable link up, link down interrupts
-    mdio_write(0x16, 0x0002); // disable factory reset mode
-
     if (!i2c) {
         i2c = new I2C_Driver();
     }

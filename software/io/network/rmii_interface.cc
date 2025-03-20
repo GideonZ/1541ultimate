@@ -39,9 +39,20 @@ RmiiInterface :: RmiiInterface()
 		RMII_FREE_BASE = (uint32_t)ram_base;
 
 		// printf("Rmii RAM buffer: %p.. Base = %p\n", ram_buffer, ram_base);
+		addr = 0;
+		uint16_t phy_ident = mdio_read(0x02, addr);
+		if (phy_ident != 0x0022) {
+			addr = 3;
+			phy_ident = mdio_read(0x02, addr);
+			if (phy_ident != 0x0022) {
+				printf("--> RmiiInterface could not find Ethernet PHY!\n");
+			} else {
+				printf("--> RmiiInterface found PHY at MDIO address 3n");
+			}
+		}
 
-		mdio_write(0x1B, 0x0500); // enable link up, link down interrupts
-		mdio_write(0x16, 0x0002); // disable factory reset mode
+		mdio_write(0x1B, 0x0500, addr); // enable link up, link down interrupts
+		mdio_write(0x16, 0x0002, addr); // disable factory test mode, in case it was enabled
 
 		if (ram_buffer) {
 			xTaskCreate( RmiiInterface :: startRmiiTask, "RMII Driver Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
@@ -112,7 +123,7 @@ void RmiiInterface :: rmiiTask(void)
     struct EthPacket pkt;
     while(1) {
     	if (!link_up) {
-			uint16_t status = mdio_read(1);
+			uint16_t status = mdio_read(1, addr);
 			if(status & 0x04) {
 				if(!link_up) {
 					//printf("Bringing link up.\n");
@@ -128,7 +139,7 @@ void RmiiInterface :: rmiiTask(void)
     	} else if (xQueueReceive(queue, &pkt, 200) == pdTRUE) {
 			input_packet(&pkt);
 		} else { // Link is up, but not received a packet in 1 second
-			uint16_t status = mdio_read(1);
+			uint16_t status = mdio_read(1, addr);
 			if ((status & 0x04) == 0) {
 				if(link_up) {
 					//printf("Bringing link down.\n");

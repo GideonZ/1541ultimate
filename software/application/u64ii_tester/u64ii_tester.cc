@@ -832,3 +832,12 @@ int U64TestClearConfig()
     info_message("Configuration cleared, %d pages\n", num);
     TEST_RESULT(0);
 }
+
+int U64TestClearFlash()
+{
+    TEST_START("Clear Flash (First sector only)");
+    Flash *fl = get_flash();
+    fl->protect_disable();
+    bool res = fl->erase_sector(0);
+    TEST_RESULT(res ? 0 : 1);
+}

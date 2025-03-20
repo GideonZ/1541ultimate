@@ -39,9 +39,9 @@ class RmiiInterface
 	uint8_t *ram_buffer;
 	uint8_t *ram_base;
 	bool link_up;
+	uint8_t addr;
 	uint8_t local_mac[6];
 	QueueHandle_t queue;
-
 
 	static void startRmiiTask(void *);
     void rmiiTask(void);

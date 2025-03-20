@@ -115,10 +115,6 @@ void custom_hardware_init()
 {
     i2c = new Hw_I2C_Driver((volatile t_hw_i2c *)U64II_HW_I2C_BASE);
 
-    // Initialize Ethernet
-    mdio_write(0x1B, 0x0500); // enable link up, link down interrupts
-    mdio_write(0x16, 0x0002); // disable factory reset mode
-
     // We are not yet running under FreeRTOS, so we cannot use mutexes here.
     // Initialize Audio codec
     nau8822_init(I2C_CHANNEL_1V8);
