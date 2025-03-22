@@ -922,7 +922,6 @@ void U64Config :: effectuate_settings()
         SetVideoMode1080p(systemMode);
         ResetHdmiPll();
         SetResampleFilter(systemMode);
-        overlay->initRegs();
     }
 #else
     if (doPll) {
@@ -932,7 +931,6 @@ void U64Config :: effectuate_settings()
         SetVideoMode(systemMode);
         ResetHdmiPll();
         SetResampleFilter(systemMode);
-        overlay->initRegs();
     }
 #endif
 
