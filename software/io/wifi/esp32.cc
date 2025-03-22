@@ -68,6 +68,7 @@ Esp32 :: Esp32()
     rxSemaphore = xSemaphoreCreateBinary();
     packets = new command_buf_context_t;
     cmd_buffer_init(packets); // C functions, so no constructor
+    running = false;
 
     uart = new DmaUART((void *)WIFI_UART_BASE, ITU_IRQHIGH_WIFI, rxSemaphore, packets);
 }
@@ -79,6 +80,7 @@ void Esp32 :: AttachApplication(Esp32Application *app)
 
 void Esp32 :: Disable()
 {
+    running = false;
     StopApp();
 
     // stop running the run-mode task
@@ -88,8 +90,6 @@ void Esp32 :: Disable()
 
 void Esp32 :: StartApp()
 {
-//    Disable();
-
     StopApp();
 
     // Note that the application will start with the module in the either on or off state.
@@ -118,6 +118,7 @@ void Esp32 :: StopApp()
 
 int Esp32 :: DetectModule(void *buffer, int buffer_len)
 {
+    running = false;
     uart->ModuleCtrl(ESP_MODE_OFF);
     uart->ClearRxBuffer(); // disables interrupts as well
     vTaskDelay(50);
@@ -148,11 +149,12 @@ void Esp32 :: EnableRunMode()
     vTaskDelay(300); // 1.5 seconds
     ReadRxMessage();
     uart->EnableSlip(true);
+    running = true;
 }
 
 void Esp32 :: Boot()
 {
-    Disable();
+    Disable(); // clears running
     vTaskDelay(150);
     uart->SetBaudRate(115200);
     uart->EnableLoopback(false);

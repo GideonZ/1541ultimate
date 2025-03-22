@@ -54,6 +54,7 @@ class Esp32
     Esp32Application *application;
     bool doClose;
     bool programError;
+    bool running;
 
     void Disable();
     void Boot();
@@ -72,6 +73,9 @@ public:
     void EnableRunMode();
     void StartApp();
     void StopApp();
+    bool isRunning() {
+        return running;
+    }
 };
 
 extern Esp32 esp32;

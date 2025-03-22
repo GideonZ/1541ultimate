@@ -663,18 +663,22 @@ int U64TestWiFiComm(void)
 
 int U64TestOff(void)
 {
-    esp32.EnableRunMode(); // cannot catch reply
-    vTaskDelay(100); // Half a second delay
-    wifi_command_init();
+    if (!esp32.isRunning()) {
+        esp32.EnableRunMode(); // cannot catch reply
+        vTaskDelay(100); // Half a second delay
+        wifi_command_init();
+    }
     wifi_machine_off();
     return 0;
 }
 
 int U64TestReboot(void)
 {
-    esp32.EnableRunMode(); // cannot catch reply
-    vTaskDelay(100); // Half a second delay
-    wifi_command_init();
+    if (!esp32.isRunning()) {
+        esp32.EnableRunMode(); // cannot catch reply
+        vTaskDelay(100); // Half a second delay
+        wifi_command_init();
+    }
     printf("Sending reboot command\n");
     wifi_machine_reboot();
     return 0;
@@ -685,6 +689,13 @@ int U64TestVoltages(void)
 {
     TEST_START("Board Voltages test");
     voltages_t voltages;
+
+    if (!esp32.isRunning()) {
+        esp32.EnableRunMode(); // cannot catch reply
+        vTaskDelay(100); // Half a second delay
+        wifi_command_init();
+    }
+
     int res = wifi_get_voltages(&voltages);
     if (res != 0) {
         printf("WiFi module not responding to voltage command\n");
