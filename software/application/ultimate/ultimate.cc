@@ -43,9 +43,6 @@
 #include "i2c_drv.h"
 #include "product.h"
 
-// these should move to main_loop.h
-extern "C" void main_loop(void *a);
-
 bool connectedToU64 = false;
 
 C1541 *c1541_A;

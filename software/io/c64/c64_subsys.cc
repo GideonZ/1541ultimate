@@ -64,6 +64,7 @@ void C64_Subsys :: create_task_items(void)
 {
     myActions.reset    = new Action("Reset C64", SUBSYSID_C64, MENU_C64_RESET);
     myActions.reboot   = new Action("Reboot C64", SUBSYSID_C64, MENU_C64_REBOOT);
+    myActions.powercyc = new Action("Power Cycle", SUBSYSID_C64, MENU_C64_POWERCYCLE);
     myActions.off      = new Action("Power OFF", SUBSYSID_C64, MENU_C64_POWEROFF);
     myActions.pause    = new Action("Pause",  SUBSYSID_C64, MENU_C64_PAUSE);
     myActions.resume   = new Action("Resume", SUBSYSID_C64, MENU_C64_RESUME);
@@ -80,6 +81,9 @@ void C64_Subsys :: create_task_items(void)
     taskCategory->append(myActions.reboot);
 #if U64
     taskCategory->append(myActions.off);
+#endif
+#if U64 == 2
+    taskCategory->append(myActions.powercyc);
 #endif
 #if DEVELOPER > 0
     taskCategory->append(myActions.pause);
@@ -188,6 +192,13 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
             c64->resume();
             break;
 
+        case MENU_C64_POWERCYCLE:
+#if U64 == 2
+            wifi_machine_reboot();
+#else
+            result = SSRET_NOT_IMPLEMENTED;
+#endif
+            break;
         case MENU_C64_POWEROFF:
 #if U64 == 2
             wifi_machine_off();
