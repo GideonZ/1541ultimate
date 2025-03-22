@@ -75,11 +75,6 @@ void outbyte_log_syslog(int c)
 	syslog.charout(c);  // Remote syslog server
 }
 
-extern "C" {
-    void codec_init();
-}
-void initialize_usb_hub();
-
 extern "C" void ultimate_main(void *a)
 {
     // Normal boot log size is about 5k right now, so 16k should be enough to

@@ -41,6 +41,7 @@ extern "C" {
 #define ITU_IRQHIGH_ACIA     0
 #define ITU_IRQHIGH_1581     1
 #define ITU_IRQHIGH_WIFI     3
+#define ITU_IRQHIGH_GURU     7
 
 #define CAPAB_UART          0x00000001
 #define CAPAB_DRIVE_1541_1  0x00000002
