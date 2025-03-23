@@ -37,6 +37,8 @@ static void configure_led(void)
 {
     gpio_reset_pin(IO_ESP_LED);
     gpio_set_direction(IO_ESP_LED, GPIO_MODE_OUTPUT);
+    gpio_reset_pin(IO_ESP_LED_RED);
+    gpio_set_direction(IO_ESP_LED_RED, GPIO_MODE_OUTPUT);
 }
 
 /*---------------------------------------------------------------
@@ -118,17 +120,18 @@ static void configure_adc(void)
 }
 
 const int adc_scale[7] = { SCALE_VBUS, SCALE_VAUX, SCALE_V50, SCALE_V33, SCALE_V18, SCALE_V10, SCALE_VUSB };
+static uint16_t adc_data_cached[7];
 
-static void read_adcs(void)
-{
-    const char *names[] = { "Vbus", "Vaux", "5.0V", "3.3V", "1.8V", "1.0V", "Vusb" };
-    int adc_raw, voltage;
-    for(int i=0;i<7;i++) {
-        ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, ADC_CHANNEL_0+i, &adc_raw));
-        ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc1_cali_handle[i], adc_raw, &voltage));
-        ESP_LOGI(TAG, "ADC Channel %d, read: %d. Node %s: %d mV", i, adc_raw, names[i], (voltage * adc_scale[i]) >> 16);
-    }
-}
+// static void read_adcs(void)
+// {
+//     const char *names[] = { "Vbus", "Vaux", "5.0V", "3.3V", "1.8V", "1.0V", "Vusb" };
+//     int adc_raw, voltage;
+//     for(int i=0;i<7;i++) {
+//         ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, ADC_CHANNEL_0+i, &adc_raw));
+//         ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc1_cali_handle[i], adc_raw, &voltage));
+//         ESP_LOGI(TAG, "ADC Channel %d, read: %d. Node %s: %d mV", i, adc_raw, names[i], (voltage * adc_scale[i]) >> 16);
+//     }
+// }
 
 esp_err_t read_adc_channels(uint16_t *adc_data)
 {
@@ -147,6 +150,13 @@ esp_err_t read_adc_channels(uint16_t *adc_data)
     }
     return ESP_OK;
 }
+
+esp_err_t read_adc_channels_cached(uint16_t *adc_data)
+{
+    memcpy(adc_data, adc_data_cached, sizeof(adc_data_cached));
+    return ESP_OK;
+}
+
 
 void setup_modem();
 
@@ -181,10 +191,13 @@ void app_main(void)
     start_button_handler(initial_state);
 
     while (1) {
-        ESP_LOGI(TAG, "App Main Alive; 5V_GOOD: %d (Initial: %d)", gpio_get_level(IO_5V_GOOD), initial_state);
-        // print_time();
-        // read_adcs();
+        read_adc_channels(adc_data_cached);
+        ESP_LOGI(TAG, "App Main Alive; 5V_GOOD: %d (Initial: %d). VBus = %d mV", gpio_get_level(IO_5V_GOOD), initial_state, adc_data_cached[0]);
+        if (adc_data_cached[0] < 8000) {
+            gpio_set_level(IO_ESP_LED_RED, 0);
+        } else {
+            gpio_set_level(IO_ESP_LED_RED, 1);
+        }
         vTaskDelay(10000 / portTICK_PERIOD_MS);
-        // print_time_for_zone("CEST-1CET,M3.2.0/2:00:00,M11.1.0/2:00:00");
     }
 }

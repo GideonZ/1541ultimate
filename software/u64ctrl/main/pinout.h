@@ -25,11 +25,11 @@
 #define IO_I2S_SDO     35
 #define IO_I2S_LRCLK   36
 #define IO_ENABLE_V50  37
-#define IO_USB_PWROK   38
-#define IO_TP16        39
-#define IO_TP17        40
-#define IO_TP18        41
-#define IO_TP19        42
+#define IO_ESP_LED_RED 38
+//#define IO_TP16        39
+#define IO_P88_PIN4    40
+#define IO_P88_PIN3    41
+#define IO_P88_PIN2    42
 #define IO_UART_TXD    43
 #define IO_UART_RXD    44
 

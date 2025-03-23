@@ -223,11 +223,11 @@ void cmd_wifi_endisable(command_buf_t *buf)
 
 void cmd_get_voltages(command_buf_t *buf)
 {
-    extern esp_err_t read_adc_channels(uint16_t *adc_data);
+    extern esp_err_t read_adc_channels_cached(uint16_t *adc_data);
 
     rpc_get_voltages_resp *resp = (rpc_get_voltages_resp *)buf->data;
     resp->esp_err = ESP_OK;
-    read_adc_channels(&(resp->vbus));
+    read_adc_channels_cached(&(resp->vbus));
     buf->size = sizeof(rpc_get_voltages_resp);
     my_uart_transmit_packet(UART_CHAN, buf);
 }
@@ -350,12 +350,12 @@ void dispatch(void *ct)
     printf("Dispatcher Start. Queue = %p\n", queue);
     while(1) {
         pbuffer = NULL;
-        BaseType_t received = xQueueReceive(queue, &pbuffer, 2000 / portTICK_PERIOD_MS);
-        led = 1 - led;
-        gpio_set_level(IO_ESP_LED, led);
+        BaseType_t received = xQueueReceive(queue, &pbuffer, 200 / portTICK_PERIOD_MS);
         if (received == pdFALSE) {
+            gpio_set_level(IO_ESP_LED, 1); // OFF
             continue;
         }
+        gpio_set_level(IO_ESP_LED, 0); // ON!
 #if UART_DEBUG_RX
         printf("Received buffer %d with %d bytes.\n", pbuffer->bufnr, pbuffer->size);
 #endif
