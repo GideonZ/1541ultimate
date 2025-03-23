@@ -6,26 +6,26 @@
 #include "small_printf.h"
 #include "u64.h"
 
-// Longest supported product_name string is 16. Update below functions and callers if this increases!
+// Longest supported product_name string is 17. Update below functions and callers if this increases!
 
-static char *product_name[] = {
+static const char *product_name[] = {
     "Ultimate",  // Default if unknown product
     "Ultimate II",
     "Ultimate II+",
     "Ultimate II+L",
     "Ultimate 64",
-    "Ultimate 64E",
-    "Ultimate 64E2",
+    "Ultimate 64 Elite",
+    "Ultimate 64-II",
 };
 
-static char *product_hostname[] = {
+static const char *product_hostname[] = {
     "Ultimate",  // Default if unknown product
     "Ultimate-II",
     "Ultimate-IIp",
     "Ultimate-IIpL",
     "Ultimate-64",
-    "Ultimate-64E",
-    "Ultimate-64E2",
+    "Ultimate-64-Elite",
+    "Ultimate-64-II",
 };
 
 #if U64
@@ -100,8 +100,8 @@ char *getProductVersionString(char *buf, int sz, bool ascii) {
 
     // Required size is max of all fields:
     //
-    //   7 fixed non-%-format-chars, 16 product, 2 fpga_version, 11 APPL_VERSION_ASCII, 1 NULL-byte
-    if (sz < 7 + 16 + 2 + 11 + 1) {
+    //   7 fixed non-%-format-chars, 17 product, 2 fpga_version, 11 APPL_VERSION_ASCII, 1 NULL-byte
+    if (sz < 7 + 17 + 2 + 11 + 1) {
         return NULL;
     }
 
@@ -118,7 +118,7 @@ char *getProductVersionString(char *buf, int sz, bool ascii) {
         case PRODUCT_ULTIMATE_64:
         case PRODUCT_ULTIMATE_64_ELITE:
         case PRODUCT_ULTIMATE_64_ELITE_II:
-            format = "%s (V1.%b) %s%s";
+            format = "%s (V1.%b) %s";
             fpga_version = C64_CORE_VERSION;
             sprintf(buf, format, getProductString(), fpga_version, appl_version);
             break;
@@ -132,7 +132,7 @@ char *getProductTitleString(char *buf, int sz, bool ascii)
 {
     char product_version[41];
 
-    if (sz < 17)
+    if (sz < 18)
         return NULL;
     if (sz < sizeof(product_version) || !getProductVersionString(product_version, sizeof(product_version), ascii)) {
        strcpy(buf, "*** Ultimate ***");
@@ -150,7 +150,7 @@ char *getProductTitleString(char *buf, int sz, bool ascii)
 }
 
 char *getProductDefaultHostname(char *buf, int sz) {
-    if (sz < 16 + 7 + 1) {   // Name-XXYYZZ<NULL>
+    if (sz < 17 + 7 + 1) {   // Name-XXYYZZ<NULL>
         return NULL;
     }
 
@@ -158,7 +158,7 @@ char *getProductDefaultHostname(char *buf, int sz) {
     uint8_t product = getProductId();
     if (product >= sizeof(product_hostname) / sizeof(char *))
         product = 0;
-    char *hostname = product_hostname[product];
+    const char *hostname = product_hostname[product];
     strcpy(buf, hostname);
 
     // Try to make hostname unique by adding the last 3 octets of MAC to hostname (same algo used
