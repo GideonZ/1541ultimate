@@ -85,6 +85,7 @@ SRCS_CC	 =  u64ii_init.cc \
 			dma_uart.cc \
 			esp32.cc \
 			wifi_cmd.cc \
+			product.cc \
 			update_u64ii.cc
 
 VPATH +=	.
