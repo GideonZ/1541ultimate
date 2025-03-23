@@ -80,6 +80,9 @@ void NetworkLWIP_WiFi :: getDisplayString(int index, char *buffer, int width)
     case eWifi_Connected:
         sprintf(buffer, "WiFi    IP: %#s\eELink Up", width - 21, getIpAddrString(ip, 16));
         break;
+    case eWifi_Disabled:
+        sprintf(buffer, "WiFi    %#s\eJDisabled", width - 17, wifi.getModuleName());
+        break;
     default:
         sprintf(buffer, "WiFi%#s\eJUnknown", width - 17, "");
         break;
@@ -105,14 +108,21 @@ void NetworkLWIP_WiFi :: effectuate_settings(void)
 	my_net_if.name[0] = 'W';
 	my_net_if.name[1] = 'I';
 
+#if U64 == 2
+    if (cfg->get_value(CFG_WIFI_ENABLE) && wifi.getState() == eWifi_Disabled) {
+        wifi.RadioOn();
+    } else if (!(cfg->get_value(CFG_WIFI_ENABLE)) && wifi.getState() != eWifi_Disabled) {
+        wifi.RadioOff();
+    }
+#else
     if (wifi.getState() == eWifi_Off && cfg->get_value(CFG_WIFI_ENABLE)) {
         wifi.Enable();
     }
-
 //  For now, we don't disable the Wifi here, because effectuate_settings is also called when the init callback of the network stack occurs, OWWW
 //    else if (wifi.getState() != eWifi_Off && !cfg->get_value(CFG_WIFI_ENABLE)) {
 //        wifi.Disable();
 //    }
+#endif
 }
 
 void NetworkLWIP_WiFi :: fetch_context_items(IndexedList<Action *>&items)
@@ -128,7 +138,7 @@ void NetworkLWIP_WiFi :: fetch_context_items(IndexedList<Action *>&items)
         items.append(new Action("Rescan APs", NetworkLWIP_WiFi :: rescan, 0, 0));
         items.append(new Action("Forget APs", NetworkLWIP_WiFi :: clear_aps, 0, 0));
         items.append(new Action("Disable", NetworkLWIP_WiFi :: disable, 0, 0));
-    } else if (wifi.getState() == eWifi_Off) {
+    } else if ((wifi.getState() == eWifi_Off) || (wifi.getState() == eWifi_Disabled)) {
         items.append(new Action("Enable", NetworkLWIP_WiFi :: enable, 0, 0));
     } else if (wifi.getState() == eWifi_NotDetected) {
         items.append(new Action("Disable", NetworkLWIP_WiFi :: disable, 0, 0));
@@ -210,12 +220,20 @@ SubsysResultCode_e NetworkLWIP_WiFi :: rescan(SubsysCommand *cmd)
 
 SubsysResultCode_e NetworkLWIP_WiFi :: disable(SubsysCommand *cmd)
 {
+#if U64 == 2
+    wifi.RadioOff();
+#else
     wifi.Disable();
+#endif
     return SSRET_OK;
 }
 
 SubsysResultCode_e NetworkLWIP_WiFi :: enable(SubsysCommand *cmd)
 {
+#if U64 == 2
+    wifi.RadioOn();
+#else
     wifi.Enable();
+#endif
     return SSRET_OK;
 }

@@ -28,6 +28,7 @@ typedef enum {
     eWifi_Scanning,
     eWifi_NotConnected,
     eWifi_Connected,
+    eWifi_Disabled,
 } WifiState_t;
 
 class NetworkLWIP_WiFi;
@@ -72,6 +73,8 @@ public:
     // User Interface functions
     void Disable(void);
     void Enable(void);
+    void RadioOn(void);
+    void RadioOff(void);
 
     // From Esp32Application
     void Init(DmaUART *uart, command_buf_context_t *packets);

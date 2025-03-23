@@ -124,11 +124,33 @@ static void got_ip_event_handler(void *esp_netif, esp_event_base_t base, int32_t
     }
 }
 
+static void send_event(uint8_t evcode)
+{
+    command_buf_t *reply;
+    if (my_uart_get_buffer(UART_NUM_1, &reply, 100)) {
+        rpc_header_t *ev = (rpc_header_t *)reply->data;
+        ev->command = evcode;
+        ev->thread = 0xFF;
+        ev->sequence = 0;
+        reply->size = sizeof(rpc_header_t);
+        if (evcode == EVENT_CONNECTED) {
+            event_pkt_connected *ev2 = (event_pkt_connected *)reply->data;
+            memcpy(ev2->ssid, last_connect.ssid, 32);
+            reply->size = sizeof(event_pkt_connected);
+        }
+        ESP_LOGI(TAG, "Sending event %d to ultimate", evcode);
+        if(my_uart_transmit_packet(UART_NUM_1, reply) == pdFALSE) {
+            ESP_LOGW(TAG, "Failed to send event to ultimate");
+        }
+    } else {
+        ESP_LOGW(TAG, "No buffer to send event.");
+    }
+}
+
 static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t event_id, void *data)
 {
     ESP_LOGW(TAG, "WiFi Event %ld, data %p", event_id, data);
     ConnectEvent_t cev;
-    command_buf_t *reply;
 
     uint8_t evcode = 0;
     switch(event_id) {
@@ -149,29 +171,11 @@ static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t e
         default:
             break;
     }
-
     if (evcode) {
-        if (my_uart_get_buffer(UART_NUM_1, &reply, 100)) {
-            rpc_header_t *ev = (rpc_header_t *)reply->data;
-            ev->command = evcode;
-            ev->thread = 0xFF;
-            ev->sequence = 0;
-            reply->size = sizeof(rpc_header_t);
-            if (evcode == EVENT_CONNECTED) {
-                event_pkt_connected *ev2 = (event_pkt_connected *)reply->data;
-                memcpy(ev2->ssid, last_connect.ssid, 32);
-                reply->size = sizeof(event_pkt_connected);
-            }
-            ESP_LOGI(TAG, "Sending event %d to ultimate", evcode);
-            if(my_uart_transmit_packet(UART_NUM_1, reply) == pdFALSE) {
-                ESP_LOGW(TAG, "Failed to send event to ultimate");
-            }
-        } else {
-            ESP_LOGW(TAG, "No buffer to send event.");
-        }
+        send_event(evcode);
     }
 }
-
+    
 void enable_hook()
 {
     struct netif *lw = ((struct esp_netif_obj *)my_sta_netif)->lwip_netif;
@@ -598,6 +602,7 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
     switch(cmd->command) {
         case CMD_WIFI_DISABLE:
             if (*state == Connected) {
+                ESP_LOGI(TAG, "Disconnecting from WiFi.");
                 err = esp_wifi_disconnect();
                 if (err == ESP_OK) {
                     xQueueReceive(connect_events, &connect_event, portMAX_DELAY);
@@ -606,8 +611,10 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
                     }
                 }
             }
+            ESP_LOGI(TAG, "Stopping WiFi.");
             err = esp_wifi_stop();
             if (err == ESP_OK) {
+                send_event(EVENT_DISABLED);
                 *state = Disabled;
                 return 1;
             } else {
@@ -616,8 +623,10 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
             break;
         case CMD_WIFI_ENABLE:
             if (*state == Disabled) {
+                ESP_LOGI(TAG, "Starting WiFi.");
                 err = esp_wifi_start();
                 if (err == ESP_OK) {
+                    send_event(EVENT_DISCONNECTED);
                     *state = LastAP;
                     return 1;
                 } else {

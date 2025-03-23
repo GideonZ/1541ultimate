@@ -195,6 +195,7 @@ typedef struct {
 #define EVENT_RECV_PACKET   0x43
 #define EVENT_RESCAN        0x44
 #define EVENT_KEEPALIVE     0x45
+#define EVENT_DISABLED      0x46
 
 #define EVENT_BUTTON        0x80
 #define EVENT_FREEZE        0x81

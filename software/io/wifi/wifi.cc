@@ -35,7 +35,10 @@ WiFi :: WiFi()
     my_netmask = 0;
     netstack = new NetworkLWIP_WiFi(this, wifi_tx_packet, wifi_free);
     netstack->attach_config();
-    netstack->effectuate_settings(); // might already turn this thing on!
+#if U64 == 2
+    Enable(); // Unconditionally enable the WiFi module
+#endif
+    netstack->effectuate_settings(); // may start the WiFi application
 }
 
 void WiFi :: RefreshRoot()
@@ -52,6 +55,16 @@ void WiFi :: Enable()
 void WiFi :: Disable()
 {
     esp32.StopApp();
+}
+
+void WiFi :: RadioOn()
+{
+    wifi_enable();
+}
+
+void WiFi :: RadioOff()
+{
+    wifi_disable();
 }
 
 BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseType_t *w);
@@ -262,6 +275,7 @@ void WiFi :: RunModeThread()
 
         case eWifi_NotConnected:
         case eWifi_Connected:
+        case eWifi_Disabled:
             cmd_buffer_received(packets, &buf, portMAX_DELAY);
             hdr = (rpc_header_t *)(buf->data);
 #if DEBUG_INPUT
@@ -272,6 +286,13 @@ void WiFi :: RunModeThread()
                 cmd_buffer_free(packets, buf);
                 netstack->link_down();
                 state = eWifi_Scanning;
+                RefreshRoot();
+                break;
+
+            case EVENT_DISABLED:
+                cmd_buffer_free(packets, buf);
+                state = eWifi_Disabled;
+                netstack->link_down();
                 RefreshRoot();
                 break;
 
