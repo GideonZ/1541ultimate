@@ -146,7 +146,7 @@ void SystemInfo :: storage_info(StreamTextLog& b)
         if (fres == FR_OK) {
             b.format("%14s%s Free\n", inf->lfname, size_expression(free_clusters, cluster_size, buffer));
         } else {
-            b.format("%14s%s\n", FileSystem :: get_error_string(fres));
+            b.format("%14s%s\n", inf->lfname, FileSystem :: get_error_string(fres));
         }
     }
 }
