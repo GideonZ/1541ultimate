@@ -93,8 +93,9 @@ static bool adc_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_att
     return calibrated;
 }
 
-adc_oneshot_unit_handle_t adc1_handle;
-adc_cali_handle_t adc1_cali_handle[7] = { 0 };
+static adc_oneshot_unit_handle_t adc1_handle;
+static SemaphoreHandle_t adc_lock = NULL;
+static adc_cali_handle_t adc1_cali_handle[7] = { 0 };
 
 static void configure_adc(void)
 {
@@ -117,10 +118,12 @@ static void configure_adc(void)
     for(int i=0;i<7;i++) {
         adc_calibration_init(ADC_UNIT_1, ADC_CHANNEL_0+i, ADC_ATTEN_DB_12, &adc1_cali_handle[i]);
     }
+
+    adc_lock = xSemaphoreCreateMutex();
 }
 
 const int adc_scale[7] = { SCALE_VBUS, SCALE_VAUX, SCALE_V50, SCALE_V33, SCALE_V18, SCALE_V10, SCALE_VUSB };
-static uint16_t adc_data_cached[7];
+static uint16_t adc_data_local[7];
 
 // static void read_adcs(void)
 // {
@@ -137,25 +140,21 @@ esp_err_t read_adc_channels(uint16_t *adc_data)
 {
     int adc_raw, voltage;
     esp_err_t ret = ESP_OK;
+    xSemaphoreTake(adc_lock, portMAX_DELAY);
     for(int i=0;i<7;i++) {
         ret = adc_oneshot_read(adc1_handle, ADC_CHANNEL_0+i, &adc_raw);
         if (ret != ESP_OK) {
+            xSemaphoreGive(adc_lock);
             return ret;
         }
         ret = adc_cali_raw_to_voltage(adc1_cali_handle[i], adc_raw, &voltage);
         if (ret != ESP_OK) {
+            xSemaphoreGive(adc_lock);
             return ret;
         }
         adc_data[i] = (voltage * adc_scale[i]) >> 16;
     }
-    return ESP_OK;
-}
-
-esp_err_t read_adc_channels_cached(uint16_t *adc_data)
-{
-    for(int i=0;i<7;i++) {
-        adc_data[i] = adc_data_cached[i];
-    }
+    xSemaphoreGive(adc_lock);
     return ESP_OK;
 }
 
@@ -193,9 +192,9 @@ void app_main(void)
     start_button_handler(initial_state);
 
     while (1) {
-        read_adc_channels(adc_data_cached);
-        ESP_LOGI(TAG, "App Main Alive; 5V_GOOD: %d (Initial: %d). VBus = %d mV", gpio_get_level(IO_5V_GOOD), initial_state, adc_data_cached[0]);
-        if (adc_data_cached[0] < 8000) {
+        read_adc_channels(adc_data_local);
+        ESP_LOGI(TAG, "App Main Alive; 5V_GOOD: %d (Initial: %d). VBus = %d mV", gpio_get_level(IO_5V_GOOD), initial_state, adc_data_local[0]);
+        if (adc_data_local[0] < 8000) {
             gpio_set_level(IO_ESP_LED_RED, 0);
         } else {
             gpio_set_level(IO_ESP_LED_RED, 1);

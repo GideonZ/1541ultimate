@@ -223,11 +223,12 @@ void cmd_wifi_endisable(command_buf_t *buf)
 
 void cmd_get_voltages(command_buf_t *buf)
 {
-    extern esp_err_t read_adc_channels_cached(uint16_t *adc_data);
+    extern esp_err_t read_adc_channels(uint16_t *adc_data);
 
     rpc_get_voltages_resp *resp = (rpc_get_voltages_resp *)buf->data;
     resp->esp_err = ESP_OK;
-    read_adc_channels_cached(&(resp->vbus));
+    read_adc_channels(&(resp->vbus));
+    ESP_LOGI(TAG, "Vbus = %d, Vaux = %d, V50 = %d, V33 = %d, V18 = %d, V10 = %d, Vusb = %d", resp->vbus, resp->vaux, resp->v50, resp->v33, resp->v18, resp->v10, resp->vusb);
     buf->size = sizeof(rpc_get_voltages_resp);
     my_uart_transmit_packet(UART_CHAN, buf);
 }
@@ -346,7 +347,6 @@ void dispatch(void *ct)
     command_buf_t *pbuffer;
     rpc_header_t *hdr;
 
-    int led = 0;
     printf("Dispatcher Start. Queue = %p\n", queue);
     while(1) {
         pbuffer = NULL;
