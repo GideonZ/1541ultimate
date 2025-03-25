@@ -121,7 +121,7 @@ void Keyboard_C64 :: scan(void)
 
     row = *joy_register;
     row = *joy_register;
-    if(row != 0xFF) {
+    if((row & 0x1F) != 0x1F) {
         joy = true;
         if     (!(row & 0x01)) { shift_flag = 0x01; mtrx = 0x07; }
         else if(!(row & 0x02)) { shift_flag = 0x00; mtrx = 0x07; }
