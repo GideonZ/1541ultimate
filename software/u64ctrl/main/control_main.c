@@ -153,7 +153,9 @@ esp_err_t read_adc_channels(uint16_t *adc_data)
 
 esp_err_t read_adc_channels_cached(uint16_t *adc_data)
 {
-    memcpy(adc_data, adc_data_cached, sizeof(adc_data_cached));
+    for(int i=0;i<7;i++) {
+        adc_data[i] = adc_data_cached[i];
+    }
     return ESP_OK;
 }
 
