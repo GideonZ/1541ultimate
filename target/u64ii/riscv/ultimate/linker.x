@@ -280,8 +280,8 @@ PROVIDE( __cart_rom_limit = 0x01000000 );
 PROVIDE( __reu_ram_start = 0x01000000 );
 PROVIDE( __reu_ram_limit = 0x02000000 );
 
-PROVIDE( __ram_disk_start = 0x01100000 ); /* Proto limitation */
-PROVIDE( __ram_disk_limit = 0x02000000 ); /* Proto limitation */
+PROVIDE( __ram_disk_start = 0x02000000 );
+PROVIDE( __ram_disk_limit = 0x03000000 );
 
 PROVIDE( __updater_start = 0x03000000 );
 PROVIDE( __updater_limit = 0x04000000 );
