@@ -171,7 +171,7 @@ int U64TestUserPort()
             { "Init Out",    &LOCAL_CIA2, 0x00, NULL, 0, 0, 0, NULL },
             { "Init Out",    &LOCAL_CIA3, 0x00, NULL, 0, 0, 0, NULL },
             { "Init Out",    &LOCAL_IEC,  0x00, NULL, 0, 0, 0, NULL },
-            { "PB0->PWM1",   &LOCAL_CIA3, 0x80, &LOCAL_CIA2, 0x02, 0x00, 0x02, NULL },
+            { "PB0->PWM1",   &LOCAL_CIA3, 0x81, &LOCAL_CIA2, 0x02, 0x02, 0x00, NULL },
             { "PB1->ATN",    &LOCAL_CIA3, 0x82, &LOCAL_IEC,  0x01, 0x00, 0x01, NULL },
             { "Init Out",    &LOCAL_CIA3, 0x00, NULL, 0, 0, 0, NULL }, // tristate 
             { "/PC2->PB2",   &LOCAL_CIA1, 0x08, &LOCAL_CIA3, 0x04, 0x04, 0x00, NULL },
@@ -181,7 +181,7 @@ int U64TestUserPort()
             { "PB6->CNT1",   &LOCAL_CIA1, 0x10, &LOCAL_CIA1, 0x08, 0x08, 0x00, NULL },
             { "PB7->/RESET", &LOCAL_CIA1, 0x20, &LOCAL_CIA3, 0x80, 0x80, 0x00, NULL },
             { "PA2->/FLAG2", &LOCAL_CIA3, 0x40, &LOCAL_CIA2, 0x80, 0x80, 0x00, NULL },
-            { "PWM0->PWM1",  &LOCAL_CIA2, 0x05, &LOCAL_CIA2, 0x02, 0x00, 0x02, NULL },
+            { "PWM0->PWM1",  &LOCAL_CIA2, 0x04, &LOCAL_CIA2, 0x02, 0x02, 0x00, NULL },
             { "Init Out",    &LOCAL_CIA1, 0x00, NULL, 0, 0, 0, NULL },
             { "Init Out",    &LOCAL_CIA2, 0x00, NULL, 0, 0, 0, NULL },
             { "Init Out",    &LOCAL_CIA3, 0x00, NULL, 0, 0, 0, NULL },
