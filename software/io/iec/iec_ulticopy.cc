@@ -88,16 +88,14 @@ void UltiCopy :: warp_loop()
 {
     uint8_t data;
     bool done = false;
-
+    wait_irq = false;
+    int cnt = 0;
     printf("Warp loop..\n");
     while(!done) {
 
         if(wait_irq) {
-            ioWrite8(UART_DATA, '?');
-            if (HW_IEC_IRQ & 0x01) {
-                ioWrite8(UART_DATA, '!');
+            if (HW_IEC_IRQ_R & HW_IEC_IRQ_BIT) {
                 get_warp_data();
-                ioWrite8(UART_DATA, '!');
             }
             vTaskDelay(1);
             continue;
@@ -105,8 +103,6 @@ void UltiCopy :: warp_loop()
 
         uint8_t a = HW_IEC_RX_FIFO_STATUS;
         if (!(a & IEC_FIFO_EMPTY)) {
-            ioWrite8(UART_DATA, '`');
-
             data = HW_IEC_RX_DATA;
 
             if(a & IEC_FIFO_CTRL) {

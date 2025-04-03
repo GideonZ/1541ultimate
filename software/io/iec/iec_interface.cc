@@ -437,9 +437,9 @@ void flush_rx(void)
         }
         uint8_t data = HW_IEC_RX_DATA;
         if (a & IEC_FIFO_CTRL) {
-            printf("<%02x>", data);
+            DBGIECV("<%02x>", data);
         } else {
-            printf("[%02x]", data);
+            DBGIECV("[%02x]", data);
         }
     }
     while(1);
@@ -448,47 +448,56 @@ void flush_rx(void)
 bool IecInterface :: master_send_cmd(int device, uint8_t *cmd, int length)
 {
     //printf("Send command on device '%d' [%s]\n", device, cmd);
+    flush_rx();
+#if IECDEBUG > 1
     dump_hex_relative(cmd, length);
-    
+#endif
 	HW_IEC_TX_FIFO_RELEASE = 1;
     HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
     HW_IEC_TX_DATA = 0x20 | (((uint8_t)device) & 0x1F); // listen!
     HW_IEC_TX_DATA = 0x6F;
     HW_IEC_TX_CTRL = IEC_CMD_ATN_TO_TX;
 
+    int timeout = 0;
     for (int i=0;i<length;i++) {
-        while(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL) 
+        while(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL) {
+            timeout++;
+            if (timeout > 50) {
+                printf("Timeout on TX FIFO\n");
+                return false;
+            }
             vTaskDelay(2);
+        }
         if (i == (length-1)) {
             HW_IEC_TX_LAST = cmd[i];
         } else {
             HW_IEC_TX_DATA = cmd[i];
         }
     }
-    flush_rx();
-    while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_EMPTY))
+    timeout = 0;
+    while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_EMPTY)) {
+        timeout++;
+        if (timeout > 50) {
+            printf("Timeout on TX FIFO\n");
+            return false;
+        }
         vTaskDelay(2);
+    }
 
     HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
     HW_IEC_TX_DATA = 0x3F; // unlisten
     HW_IEC_TX_CTRL = IEC_CMD_ATN_RELEASE;
 
-    flush_rx();
-    while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_EMPTY))
+    timeout = 0;
+    while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_EMPTY)) {
+        timeout++;
+        if (timeout > 50) {
+            printf("Timeout on TX FIFO\n");
+            return false;
+        }
         vTaskDelay(2);
-
-    uint8_t st,code;
-    st = HW_IEC_RX_FIFO_STATUS;
-    if(!(st & IEC_FIFO_EMPTY)) {
-        code = HW_IEC_RX_DATA;
-        if(st & IEC_FIFO_CTRL) {
-            printf("Return code: %b\n", code);
-            if((code & 0xF0) == 0xE0)
-                return false;
-        } else {
-            printf("Huh? Didn't expect data: %b\n", code);
-        }        
     }
+    flush_rx();
     return true;
 }
 
@@ -526,5 +535,6 @@ bool IecInterface :: run_drive_code(int device, uint16_t addr, uint8_t *code, in
     strcpy((char*)buffer, "M-E");
     buffer[3] = (uint8_t)(addr & 0xFF);
     buffer[4] = (uint8_t)(addr >> 8);
+    printf("\n");
     return master_send_cmd(device, buffer, 5);
 }

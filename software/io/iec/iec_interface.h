@@ -45,6 +45,8 @@ typedef void *QueueHandle_t;
 #define HW_IEC_TX_LAST         *((volatile uint8_t *)(HW_IEC_REGS + 0xA)) // push eoi byte
 #define HW_IEC_IRQ             *((volatile uint8_t *)(HW_IEC_REGS + 0xC)) // write=ack, bit0=irq enable
 #define HW_IEC_TX_FIFO_RELEASE *((volatile uint8_t *)(HW_IEC_REGS + 0xD)) // write any value to release fifo.
+#define HW_IEC_IRQ_R           *((volatile uint8_t *)(HW_IEC_REGS + 0xC)) // read
+#define HW_IEC_IRQ_BIT        0x01
 
 #define HW_IEC_UP_FIFO_COUNT_LO  *((volatile uint8_t *)(HW_IEC_REGS + 0xE))
 #define HW_IEC_UP_FIFO_COUNT_HI  *((volatile uint8_t *)(HW_IEC_REGS + 0xF))
