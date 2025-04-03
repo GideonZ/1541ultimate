@@ -77,7 +77,8 @@ architecture arch of acia6551 is
     alias dtr               : std_logic is command(0);
     alias rx_irq_disable    : std_logic is command(1);
     alias tx_mode           : std_logic_vector(1 downto 0) is command(3 downto 2);
-
+    signal rx_irq           : std_logic;
+    signal irq_holdoff      : natural range 0 to 7 := 0;
     signal dtr_d            : std_logic;
     
     signal enable           : std_logic;
@@ -145,6 +146,9 @@ begin
 
             rate_tick <= '0';
             if tick = '1' then
+                if irq_holdoff /= 0 then
+                    irq_holdoff <= irq_holdoff - 1;
+                end if;
                 if rate_counter = 0 then
                     rate_tick <= '1';
                     rate_counter <= c_rate_dividers(to_integer(unsigned(baud_index)));
@@ -161,6 +165,15 @@ begin
                 tx_presc <= tx_presc - 1;
             end if;
 
+            -- IRQ generation
+            if tx_empty = '1' and tx_mode = "01" and irq_holdoff = 0 then
+                irq <= '1';
+            elsif rx_irq = '1' and rx_irq_disable = '0' and irq_holdoff = 0 then
+                irq <= '1';
+            else
+                irq <= '0';
+            end if;
+
             b_en <= '0';
             b_we <= '0';
             b_address <= (others => 'X');
@@ -174,9 +187,6 @@ begin
                 tx_head <= tx_head + 1;
                 tx_presc <= "111";
                 tx_empty <= '1';
-                if tx_mode = "01" then
-                    irq <= '1';
-                end if;
             elsif rx_full = '0' and rx_head /= rx_tail and b_pending = '0' and dtr = '1' and (rx_presc = "000" or rx_irq_disable = '1') then
                 b_address <= '1' & rx_tail;
                 b_en <= '1';
@@ -209,7 +219,8 @@ begin
                         overrun_err <= '0';
                         rx_full <= '0';
                     when c_addr_status_register =>
-                        irq <= '0';  
+                        irq_holdoff <= 7;
+                        rx_irq <= '0';
                     when c_addr_command_register =>
                         null;
                     when c_addr_control_register =>
@@ -299,9 +310,7 @@ begin
             if b_pending = '1' then
                 if b_en = '0' then
                     rx_full <= '1';
-                    if rx_irq_disable = '0' then
-                        irq <= '1';
-                    end if;
+                    rx_irq <= '1';
                     rx_data <= b_rdata;
                     b_pending <= '0';
                 end if;
@@ -309,15 +318,11 @@ begin
 
             dsr_d <= dsr_n;
             if (dsr_d /= dsr_n) then
-                if rx_irq_disable = '0' then
-                    irq <= '1';
-                end if;
+                rx_irq <= '1';
             end if;
             dcd_d <= dcd_n;
             if (dcd_d /= dcd_n) then
-                if rx_irq_disable = '0' then
-                    irq <= '1';
-                end if;
+                rx_irq <= '1';
             end if;             
             if (dtr /= dtr_d) then
                 dtr_change <= '1';
@@ -332,6 +337,8 @@ begin
                 tx_tail <= X"00";
                 tx_empty <= '1';
                 enable  <= '0';
+                rx_irq  <= '0';
+                irq_holdoff <= 0;
                 b_pending <= '0';
                 cts <= '0';
                 dsr_n <= '1';
