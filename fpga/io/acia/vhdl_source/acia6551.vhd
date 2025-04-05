@@ -179,7 +179,8 @@ begin
             b_address <= (others => 'X');
             b_wdata <= (others => 'X');
 
-            if tx_empty = '0' and dtr = '1' and tx_fifo_full = '0' and (tx_presc = "000" or tx_mode /= "01") then
+            --if tx_empty = '0' and dtr = '1' and tx_fifo_full = '0' and (tx_presc = "000" or tx_mode /= "01") then
+            if tx_empty = '0' and dtr = '1' and tx_fifo_full = '0' and tx_presc = "000" then
                 b_address <= '0' & tx_head;
                 b_wdata <= tx_data;
                 b_we <= '1';
@@ -187,7 +188,8 @@ begin
                 tx_head <= tx_head + 1;
                 tx_presc <= "111";
                 tx_empty <= '1';
-            elsif rx_full = '0' and rx_head /= rx_tail and b_pending = '0' and dtr = '1' and (rx_presc = "000" or rx_irq_disable = '1') then
+            -- elsif rx_full = '0' and rx_head /= rx_tail and b_pending = '0' and dtr = '1' and (rx_presc = "000" or rx_irq_disable = '1') then
+            elsif rx_full = '0' and rx_head /= rx_tail and b_pending = '0' and dtr = '1' and rx_presc = "000" then
                 b_address <= '1' & rx_tail;
                 b_en <= '1';
                 b_pending <= '1';
