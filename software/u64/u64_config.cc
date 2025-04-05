@@ -2097,7 +2097,11 @@ void U64Config :: list_palettes(ConfigItem *it, IndexedList<char *>& strings)
 
 void U64Config :: set_palette_rgb(const uint8_t rgb[16][3])
 {
+#if U64 == 2
+    volatile uint8_t *rgb_registers = (volatile uint8_t *)U64II_HDMI_PALETTE;
+#else
     volatile uint8_t *rgb_registers = (volatile uint8_t *)C64_PALETTE;
+#endif
     uint8_t yuv[16][3];
     for(int i=0; i<16; i++) {
         *(rgb_registers++) = rgb[i][0];
