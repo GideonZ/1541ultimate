@@ -56,6 +56,7 @@ class WiFi : public Esp32Application
     void RefreshRoot();
 public:
     WiFi();
+    static void Init(void *obj, void *param);
 
     BaseType_t doRequestEcho(void);
 

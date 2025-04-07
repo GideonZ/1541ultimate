@@ -1035,4 +1035,4 @@ bool FTPDataConnection::receivefile(vfs_file_t *file)
 }
 
 #include "init_function.h"
-InitFunction init_ftpd([](void *_obj, void *_param) { ftpd = new FTPDaemon(); }, NULL, NULL, 101); // global that causes us to exist
+InitFunction init_ftpd("FTP Daemon", [](void *_obj, void *_param) { ftpd = new FTPDaemon(); }, NULL, NULL, 101); // global that causes us to exist

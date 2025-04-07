@@ -33,7 +33,7 @@ void init_iec_drive(void *_a, void *_b)
 {
     iec_drive = new IecDrive();
 }
-InitFunction iec_drive_init(init_iec_drive, NULL, NULL);
+InitFunction iec_drive_init("SoftIEC Drive", init_iec_drive, NULL, NULL, 11);
 
 // Errors 
 

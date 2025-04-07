@@ -19,8 +19,7 @@ void create_ulticopy(void *_a, void *_b)
         return;
     uc = new UltiCopy();
 }
-InitFunction ulticopy_init(create_ulticopy, NULL, NULL);
-
+InitFunction ulticopy_init("UltiCopy", create_ulticopy, NULL, NULL, 13);
 
 UltiCopy :: UltiCopy() : SubSystem(SUBSYSID_ULTICOPY)
 {

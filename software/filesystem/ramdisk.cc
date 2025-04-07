@@ -40,4 +40,4 @@ void init_ram_disk(void *obj, void *param)
     FileManager :: getFileManager()->add_root_entry(ramdisk_node);
 }
 
-InitFunction ramdisk_init(init_ram_disk, NULL, NULL);
+InitFunction ramdisk_init("RAM Disk",init_ram_disk, NULL, NULL, 1);

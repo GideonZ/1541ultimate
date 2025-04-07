@@ -599,4 +599,4 @@ void SocketDMA::identThread(void *_a)
 }
 
 #include "init_function.h"
-InitFunction init_socket64([](void *_obj, void *_param) { socket_dma = new SocketDMA(); }, NULL, NULL, 102); // global that causes us to exist
+InitFunction init_socket64("Raw Socket 64", [](void *_obj, void *_param) { socket_dma = new SocketDMA(); }, NULL, NULL, 102); // global that causes us to exist

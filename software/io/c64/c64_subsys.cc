@@ -42,7 +42,7 @@ static void initBootCart(void *object, void *param)
     memcpy(boot_cart.custom_addr, &_bootcrt_65_start, size);
     printf("%d bytes copied into boot_cart.\n", size);
 }
-InitFunction bootCart_initializer(initBootCart, NULL, NULL);
+InitFunction bootCart_initializer("Boot Cart", initBootCart, NULL, NULL);
 
 C64_Subsys::C64_Subsys(C64 *machine)  : SubSystem(SUBSYSID_C64) {
 	taskHandle = 0;

@@ -807,7 +807,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
             cfg->disable(CFG_JOYSWAP);
         }
 
-        InitFunction *init_u64 = new InitFunction([](void *obj, void *_param) {
+        InitFunction *init_u64 = new InitFunction("U64 Configurator", [](void *obj, void *_param) {
             printf("*** Init U64 Configurator\n");
             u64_configurator.sockets.detect();
             u64_configurator.hdmiMonitor = u64_configurator.IsMonitorHDMI(); // requires I2C
@@ -2202,7 +2202,7 @@ void U64Config :: set_palette_filename(const char *filename)
 // The flash disk initializes also with an init function, so make sure the ordering
 // number here is higher than the ordering number in blockdev_flash.
 
-InitFunction init_palette(U64Config :: late_init_palette, NULL, NULL, 9);
+InitFunction init_palette("U64 Palette", U64Config :: late_init_palette, NULL, NULL, 9);
 
 void U64Config :: late_init_palette(void *obj, void *param)
 {

@@ -24,7 +24,7 @@
 #include "product.h"
 
 SocketGui *socket_gui = NULL;
-InitFunction init_socket_gui([](void *_obj, void *_param) { socket_gui = new SocketGui(); }, NULL, NULL, 100); // global that causes us to exist
+InitFunction init_socket_gui("Telnet Server", [](void *_obj, void *_param) { socket_gui = new SocketGui(); }, NULL, NULL, 100); // global that causes us to exist
 
 static void socket_gui_listen_task(void *a)
 {

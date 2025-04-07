@@ -14,6 +14,7 @@
 #include "rpc_calls.h"
 #include "filemanager.h"
 #include "network_esp32.h"
+#include "init_function.h"
 
 #define DEBUG_INPUT  0
 #define EVENT_START  0xF1
@@ -21,6 +22,7 @@
 
 WiFi wifi;
 ultimate_ap_records_t wifi_aps;
+InitFunction wifi_init("WiFi Application", WiFi::Init, NULL, NULL, 51); // after LWIP
 
 WiFi :: WiFi()
 {
@@ -35,10 +37,14 @@ WiFi :: WiFi()
     my_netmask = 0;
     netstack = new NetworkLWIP_WiFi(this, wifi_tx_packet, wifi_free);
     netstack->attach_config();
+}
+
+void WiFi :: Init(void *obj, void *param)
+{
 #if U64 == 2
-    Enable(); // Unconditionally enable the WiFi module
+    wifi.Enable(); // Unconditionally enable the WiFi module
 #endif
-    netstack->effectuate_settings(); // may start the WiFi application
+    wifi.netstack->effectuate_settings(); // may start the WiFi application
 }
 
 void WiFi :: RefreshRoot()

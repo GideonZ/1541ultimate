@@ -4,8 +4,8 @@
 #include <string.h>
 #include "pattern.h"
 #include "network_config.h"
-
 #include "httpd.h"
+#include "init_function.h"
 
 extern "C" {
     #include "server.h" // from MicroHTTPServer
@@ -17,20 +17,20 @@ HTTPServer srv;
 
 HTTPDaemon::HTTPDaemon()
 {
-    xTaskCreate(http_listen_task, "HTTP Listener", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &listenTaskHandle);
+    new InitFunction("HTTP Daemon", [](void *obj, void *_param) { 
+        HTTPDaemon *httpd = (HTTPDaemon *)obj;
+        xTaskCreate(http_listen_task, "HTTP Listener", configMINIMAL_STACK_SIZE, httpd, tskIDLE_PRIORITY + 1, &(httpd->listenTaskHandle));
+    }, this, NULL, 103);
 }
 
 void HTTPDaemon::http_listen_task(void *a)
 {
+    printf("<http_listen_task>\n");
     while (networkConfig.cfg->get_value(CFG_NETWORK_HTTP_SERVICE) == 0) {
         vTaskDelay(2000 / portTICK_PERIOD_MS);
     }
 
-/* Running the MicroHTTPServer code */
-    printf("Waiting to start HTTP Server.\n");
-    vTaskDelay(2000); /// wait for 10 sec
-
-    printf("Init HTTP Server.\n");
+    /* Running the MicroHTTPServer code */
 	HTTPServerInit(&srv, MHS_PORT);
 	/* Run the HTTP server forever. */
 	/* Run the dispatch callback if there is a new request */

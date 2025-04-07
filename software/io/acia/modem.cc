@@ -875,4 +875,4 @@ bool Modem :: prohibit_acia(uint16_t base)
 
 #include "init_function.h"
 Modem modem;
-InitFunction init_modem([](void *obj, void *_param) { Modem *modem = (Modem *)obj; modem->start(); }, &modem, NULL, 105); // global that causes us to exist
+InitFunction init_modem("Modem", [](void *obj, void *_param) { Modem *modem = (Modem *)obj; modem->start(); }, &modem, NULL, 105); // global that causes us to exist

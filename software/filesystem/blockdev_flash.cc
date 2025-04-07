@@ -36,8 +36,8 @@ BlockDevice_Flash::BlockDevice_Flash(Flash *flash)
     	number_of_sectors = 0;
         set_state(e_device_no_media);
     }
-    printf("BlockDevice Flash:\nSectorSize: %d\nPagesPerSector: %d\nFirstPage: %d\nFirstSector: %d\nErase:%d\nNumberOfSectors: %d\n",
-            sector_size, pages_per_sector, first_page, first_sector, requires_erase, number_of_sectors);
+    //printf("BlockDevice Flash:\nSectorSize: %d\nPagesPerSector: %d\nFirstPage: %d\nFirstSector: %d\nErase:%d\nNumberOfSectors: %d\n",
+    //        sector_size, pages_per_sector, first_page, first_sector, requires_erase, number_of_sectors);
 }
     
 BlockDevice_Flash::~BlockDevice_Flash()
@@ -188,5 +188,5 @@ void reformat_flash_disk(void)
     flashdisk_node->probe();
 }
 
-InitFunction flashdisk_init(init_flash_disk, NULL, NULL);
+InitFunction flashdisk_init("Flash Disk", init_flash_disk, NULL, NULL, 1);
 

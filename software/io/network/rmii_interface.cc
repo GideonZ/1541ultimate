@@ -8,7 +8,7 @@
 #include "flash.h"
 #include "mdio.h"
 #include "endianness.h"
-
+#include "init_function.h"
 RmiiInterface rmii_interface; // global object!
 
 // entry point for free buffer callback
@@ -47,17 +47,20 @@ RmiiInterface :: RmiiInterface()
 			if (phy_ident != 0x0022) {
 				printf("--> RmiiInterface could not find Ethernet PHY!\n");
 			} else {
-				printf("--> RmiiInterface found PHY at MDIO address 3n");
+				printf("--> RmiiInterface found PHY at MDIO address 3\n");
 			}
 		}
 
 		mdio_write(0x1B, 0x0500, addr); // enable link up, link down interrupts
 		mdio_write(0x16, 0x0002, addr); // disable factory test mode, in case it was enabled
 
-		if (ram_buffer) {
-			xTaskCreate( RmiiInterface :: startRmiiTask, "RMII Driver Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
-			queue = xQueueCreate(128, sizeof(struct EthPacket));
-		}
+        if (ram_buffer) {
+            queue = xQueueCreate(128, sizeof(struct EthPacket));
+            new InitFunction("RmiiInterface", [](void *obj, void *_param) {
+                RmiiInterface *rmii = (RmiiInterface *)obj;
+                xTaskCreate( RmiiInterface :: startRmiiTask, "RMII Driver Task", configMINIMAL_STACK_SIZE, rmii, tskIDLE_PRIORITY + 1, NULL );
+            }, this, NULL, 52);
+        }
     }
 }
 

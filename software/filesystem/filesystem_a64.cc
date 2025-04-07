@@ -117,4 +117,4 @@ void add_a64_to_root(void *_context, void *_param)
     Node_DirectFS *node = new Node_DirectFS(a64, "a64", AM_DIR | AM_HID);
     FileManager :: getFileManager()->add_root_entry(node);
 }
-InitFunction init_a64(add_a64_to_root, NULL, NULL, 30);
+InitFunction init_a64("Assembly 64 FS", add_a64_to_root, NULL, NULL, 30);

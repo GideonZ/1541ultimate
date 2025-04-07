@@ -115,7 +115,7 @@ static void init_printer(void *_a, void *_b)
  *  This global will cause us to run!
  *
 -*/
-InitFunction iec_printer_init(init_printer, NULL, NULL, 10);
+InitFunction iec_printer_init("Printer", init_printer, NULL, NULL, 12);
 
 /************************************************************************
 *                  IecPrinter::effectuate_settings()            Public  *

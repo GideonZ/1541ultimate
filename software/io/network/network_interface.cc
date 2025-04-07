@@ -35,11 +35,11 @@ struct t_cfg_definition net_config[] = {
  */
 void initLwip(void *a, void *b)
 {
-	printf("Initializing lwIP.\n");
+//	printf("Initializing lwIP.\n");
 	tcpip_init(NULL, NULL);
 }
 
-InitFunction lwIP_initializer(initLwip, NULL, NULL, 200);
+InitFunction lwIP_initializer("LwIP Networking", initLwip, NULL, NULL, 50);
 IndexedList<NetworkInterface *> NetworkInterface :: netInterfaces(4, NULL);
 /**
  * Callbacks

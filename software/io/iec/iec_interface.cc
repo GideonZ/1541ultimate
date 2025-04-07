@@ -68,7 +68,7 @@ void IecInterface :: unregister_slave(int slot)
 
 void IecInterface :: program_processor(void)
 {
-    printf("IEC Processor found: Version = %b. Loading code...", HW_IEC_VERSION);
+    printf("IEC Processor found: Version = %b. Loading code...\n", HW_IEC_VERSION);
     HW_IEC_RESET_ENABLE = 0; // disable while programming
     int size = (int)&_iec_code_b_size;
     uint8_t *src = &_iec_code_b_start;

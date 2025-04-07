@@ -6,14 +6,15 @@
  */
 
 #include "init_function.h"
-
+#include <stdio.h>
 static IndexedList<InitFunction *> *getInitFunctionList(void) {
 	static IndexedList<InitFunction *> initFunctions(24, 0);
 	return &initFunctions;
 }
 
-InitFunction::InitFunction(initFunction_t func, void *obj, void *prm, int ord) {
-	function = func;
+InitFunction::InitFunction(const char *name, initFunction_t func, void *obj, void *prm, int ord) {
+	this->name = name;
+    function = func;
 	object = obj;
 	param = prm;
 	ordering = ord;
@@ -30,6 +31,7 @@ void InitFunction::executeAll() {
     int elements = getInitFunctionList()->get_elements();
 	for (int i=0; i < elements; i++) {
 	    InitFunction *func = (*getInitFunctionList())[i];
+        printf("----> Initializing %s (%d)...\n", func->name, func->ordering);
 		func->function(func->object, func->param);
 	}
 }

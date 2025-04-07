@@ -88,7 +88,7 @@ static void initSidCart(void *object, void *param)
     printf("%d bytes copied into mus_cart.\n", mus_crt_size);
     memcpy(mus_rom_area + 0x2000, _basic_bin_start, 8192);
 }
-InitFunction sidCart_initializer(initSidCart, NULL, NULL);
+InitFunction sidCart_initializer("SID Cart", initSidCart, NULL, NULL);
 
 // on U64, this function will fall through in the audio configurator. On other platforms, the function below (empty)
 // will be called.
