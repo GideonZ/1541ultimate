@@ -98,6 +98,8 @@ public:
         printf("UART status: %b\n", uart->status);
     }
 
+    void ReEnableBufferIRQ(void);
+
     // never blocking
     int Read(uint8_t *buffer, int bufferSize);
 

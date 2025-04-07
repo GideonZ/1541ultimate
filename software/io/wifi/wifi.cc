@@ -290,6 +290,7 @@ void WiFi :: RunModeThread()
             switch(hdr->command) {
             case EVENT_RESCAN: // requested from user interface
                 cmd_buffer_free(packets, buf);
+                uart->ReEnableBufferIRQ();
                 netstack->link_down();
                 state = eWifi_Scanning;
                 RefreshRoot();
@@ -297,6 +298,7 @@ void WiFi :: RunModeThread()
 
             case EVENT_DISABLED:
                 cmd_buffer_free(packets, buf);
+                uart->ReEnableBufferIRQ();
                 state = eWifi_Disabled;
                 netstack->link_down();
                 RefreshRoot();
@@ -304,7 +306,7 @@ void WiFi :: RunModeThread()
 
             case EVENT_CONNECTED:
                 // conn_req = (rpc_wifi_connect_req *)buf->data;
-                cmd_buffer_free(packets, buf);
+                uart->ReEnableBufferIRQ();
                 if (state == eWifi_Connected) { // already connected!
                     netstack->link_down();
                 }
@@ -318,6 +320,7 @@ void WiFi :: RunModeThread()
 
             case EVENT_DISCONNECTED:
                 cmd_buffer_free(packets, buf);
+                uart->ReEnableBufferIRQ();
                 state = eWifi_NotConnected;
                 if(netstack) {
                     netstack->link_down();
@@ -336,6 +339,7 @@ void WiFi :: RunModeThread()
                 } else {
                     puts("Packet received, but no net stack!");
                     cmd_buffer_free(packets, buf);
+                    uart->ReEnableBufferIRQ();
                 }
                 // no free, as the packet needs to live on in the network stack
                 break;
@@ -346,11 +350,13 @@ void WiFi :: RunModeThread()
                 printf("-> ESP32 received IP from DHCP: %d.%d.%d.%d (changed: %d)\n", (ip >> 24),
                     (ip >> 16) & 0xFF, (ip >> 8) & 0xFF, ip & 0xFF, ev->changed);
                 cmd_buffer_free(packets, buf);
+                uart->ReEnableBufferIRQ();
                 break;
 
             default:
                 printf("Unexpected Event type: Pkt %d. Ev %b. Sz %d. Seq: %d. Thread: %d.\n", buf->bufnr, hdr->command, buf->size, hdr->sequence, hdr->thread);
                 cmd_buffer_free(packets, buf);
+                uart->ReEnableBufferIRQ();
                 break;
             }
         }
@@ -392,6 +398,7 @@ void WiFi :: sendConnectEvent(const char *ssid, const char *pass, uint8_t auth)
 void WiFi :: freeBuffer(command_buf_t *buf)
 {
     cmd_buffer_free(packets, buf);
+    uart->ReEnableBufferIRQ();
 }
 
 void WiFi ::getAccessPointItems(Browsable *parent, IndexedList<Browsable *> &list)

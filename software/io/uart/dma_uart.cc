@@ -204,15 +204,8 @@ uint8_t DmaUART::DmaUartInterrupt(void *context)
         
         // Receive code!
         if (uart_intr_status & DMAUART_RxInterrupt) {
-            // u->uart->ictrl = DMAUART_RxIRQ_DIS; /// THIS IS SO BAD!
             command_buf_t *rxb = NULL;
-/*
-            ioWrite8(UART_DATA, '<');
-            uint16_t ti = getMsTimer();
-            hex(ti >> 8);
-            hex(ti & 0xFF);
-            ioWrite8(UART_DATA, '\n');
-*/
+
             if (xQueueReceiveFromISR(u->rx_bufs, &rxb, &HPTaskAwoken) == pdTRUE) {
                 // hex(rxb->bufnr);
                 rxb->size = u->uart->length;
@@ -305,3 +298,7 @@ BaseType_t DmaUART :: GetBuffer(command_buf_t **buf, TickType_t ticks)
     return ret;
 }
 
+void DmaUART :: ReEnableBufferIRQ(void)
+{
+    uart->ictrl = DMAUART_BufReq_EN;
+}
