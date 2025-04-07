@@ -169,7 +169,7 @@ begin
                 when c_itu_irq_edge =>
                     io_resp_it.data <= iedge;
                 when c_itu_irq_active =>
-                    io_resp_it.data <= irq_active;
+                    io_resp_it.data <= irq_active and imask;
                 when c_itu_timer =>
                     io_resp_it.data <= std_logic_vector(timer);
                 when c_itu_irq_timer_en =>
