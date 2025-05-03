@@ -49,13 +49,14 @@ void LedStrip :: task(void *a)
         v1 = C64_VOICE_ADSR(strip->sidsel * 4 + 0);
         v2 = C64_VOICE_ADSR(strip->sidsel * 4 + 1);
         v3 = C64_VOICE_ADSR(strip->sidsel * 4 + 2);
+        offset &= 0x7F;
         switch (strip->mode) {
         case 0:
             LEDSTRIP_DATA[offset++] = 0xE0; // intensity 0
             LEDSTRIP_DATA[offset++] = 0;
             LEDSTRIP_DATA[offset++] = 0;
             LEDSTRIP_DATA[offset++] = 0;
-            LEDSTRIP_FROM = 0x00 | (start & 0x3F);
+            LEDSTRIP_FROM = 0x00 | (start & 0x1F);
             LEDSTRIP_LEN = 25;
             start ++;
             vTaskDelay(200);
@@ -67,7 +68,7 @@ void LedStrip :: task(void *a)
             LEDSTRIP_DATA[offset++] = strip->blue;
             LEDSTRIP_DATA[offset++] = strip->green;
             LEDSTRIP_DATA[offset++] = strip->red;
-            LEDSTRIP_FROM = 0x00 | (start & 0x3F);
+            LEDSTRIP_FROM = 0x00 | (start & 0x1F);
             LEDSTRIP_LEN = 25;
             start ++;
             vTaskDelay(50);
@@ -78,8 +79,7 @@ void LedStrip :: task(void *a)
             LEDSTRIP_DATA[offset++] = v1;
             LEDSTRIP_DATA[offset++] = v2;
             LEDSTRIP_DATA[offset++] = v3;
-            // LEDSTRIP_FROM = 0x40 | (start & 0x3F);
-            LEDSTRIP_FROM = 0x00 | (start & 0x3F);
+            LEDSTRIP_FROM = 0x00 | (start & 0x1F);
             LEDSTRIP_LEN = 25;
             start ++;
             vTaskDelay(7);
@@ -90,7 +90,7 @@ void LedStrip :: task(void *a)
             LEDSTRIP_DATA[offset++] = v1;
             LEDSTRIP_DATA[offset++] = v2;
             LEDSTRIP_DATA[offset++] = v3;
-            LEDSTRIP_FROM = 0x40 | ((start - 24) & 0x3F);
+            LEDSTRIP_FROM = 0x40 | ((start - 24) & 0x1F);
             LEDSTRIP_LEN = 25;
             start ++;
             vTaskDelay(3);
@@ -101,7 +101,7 @@ void LedStrip :: task(void *a)
             LEDSTRIP_DATA[offset++] = v1;
             LEDSTRIP_DATA[offset++] = v2;
             LEDSTRIP_DATA[offset++] = v3;
-            LEDSTRIP_FROM = 0x80 | (start & 0x3F);
+            LEDSTRIP_FROM = 0x80 | (start & 0x1F);
             LEDSTRIP_LEN = 25;
             start ++;
             vTaskDelay(3);
