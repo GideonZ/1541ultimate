@@ -54,12 +54,6 @@ CommandInterface :: CommandInterface() : SubSystem(SUBSYSID_CMD_IF)
         queue = xQueueCreate(16, sizeof(uint8_t));
         xTaskCreate( CommandInterface :: start_task, "UCI Server", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, &taskHandle );
         xTaskCreate( CommandInterface :: reset_task, "UCI Reset Server", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, &resetTaskHandle );
-        ioWrite8(ITU_IRQ_ENABLE, ITU_INTERRUPT_CMDIF);
-        CMD_IF_IRQMASK_CLEAR = 7;
-
-        // enable IRQ on C64 reset
-        ioWrite8(ITU_IRQ_CLEAR,  ITU_INTERRUPT_RESET);
-        ioWrite8(ITU_IRQ_ENABLE, ITU_INTERRUPT_RESET);
 
         resetSemaphore = xSemaphoreCreateBinary();
     }
@@ -97,6 +91,10 @@ extern "C" BaseType_t command_interface_irq(void) {
 
 void CommandInterface :: run_reset_task(void)
 {
+    // enable IRQ on C64 reset
+    ioWrite8(ITU_IRQ_CLEAR,  ITU_INTERRUPT_RESET);
+    ioWrite8(ITU_IRQ_ENABLE, ITU_INTERRUPT_RESET);
+
     while (1) {
         xSemaphoreTake(resetSemaphore, portMAX_DELAY);
         // now also clear the audio sampler stuff
@@ -109,6 +107,9 @@ void CommandInterface :: run_task(void)
 	int length;
     Message *data, *status;
     uint8_t status_byte;
+
+    CMD_IF_IRQMASK_CLEAR = 7;
+    ioWrite8(ITU_IRQ_ENABLE, ITU_INTERRUPT_CMDIF);
 
     while(1) {
 		xQueueReceive(queue, &status_byte, portMAX_DELAY);
