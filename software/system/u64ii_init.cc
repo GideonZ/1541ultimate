@@ -67,7 +67,7 @@ void calc_pll(const float ref, const float target, uint8_t *bytes)
     }
     dump_hex_relative(&setting, sizeof(setting));
     // printf("N/M = %d/%d. P=%d. Error=%.3f ppm. VCO=%.2f\n", setting.n, setting.m, setting.p, setting.error, setting.vco);
-    printf("N/M = %d/%d. P=%d.\n", setting.n, setting.m, setting.p);
+    printf("N/M = %d/%d. P=%d. VCO=%.3f Err=%.5f\n", setting.n, setting.m, setting.p, setting.vco, setting.error);
 
     //np = max(0, 4 - int(math.log2(n/m)))
     int frac = setting.n / setting.m;
@@ -108,7 +108,7 @@ extern "C" void ResetHdmiPll(void)
     U64_HDMI_PLL_RESET = 0;
 }
 extern "C" void SetHdmiPll(t_video_mode mode, uint8_t _mode_bits);
-extern "C" void SetVideoPll(t_video_mode mode);
+extern "C" void SetVideoPll(t_video_mode mode, int ppm);
 
 extern "C" {
 void custom_hardware_init()
@@ -138,13 +138,15 @@ void custom_hardware_init()
 }
 }
 
-extern "C" void SetVideoPll(t_video_mode mode)
+extern "C" void SetVideoPll(t_video_mode mode, int ppm)
 {
     const t_video_color_timing *ct = color_timings[(int)mode];
 
     float m = ct->m + (ct->frac / (65536.0f * 65536.0f));
     m *= 50.0f;
-    m /= 30.0f;
+    m /= 30.00f;
+    float offset = (float)ppm * m / 1000000.0f;
+    m += offset;
 
     printf("--> Requested video frequency = %.3f\n", m);
     uint8_t hw_version = (U2PIO_BOARDREV >> 3);

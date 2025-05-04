@@ -917,7 +917,7 @@ void U64Config :: effectuate_settings()
 //    vTaskDelay(4000);
     if (doPll) {
         printf("config doing plls...\n");
-        SetVideoPll(systemMode);
+        SetVideoPll(systemMode, cfg->get_value(CFG_COLOR_CLOCK_ADJ));
         SetHdmiPll(systemMode, ct->mode_bits | format);
         SetVideoMode1080p(systemMode);
         ResetHdmiPll();
@@ -926,7 +926,7 @@ void U64Config :: effectuate_settings()
 #else
     if (doPll) {
         C64_VIDEOFORMAT = ct->mode_bits | format;
-        SetVideoPll(systemMode);
+        SetVideoPll(systemMode, cfg->get_value(CFG_COLOR_CLOCK_ADJ));
         SetHdmiPll(systemMode, ct->mode_bits | format);
         SetVideoMode(systemMode);
         ResetHdmiPll();

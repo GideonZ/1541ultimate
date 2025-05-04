@@ -389,7 +389,7 @@ void Fpll :: execute(void)
     printf("RB: %04x%04x\n", a, b);
 }
 
-extern "C" void SetVideoPll(t_video_mode mode)
+extern "C" void SetVideoPll(t_video_mode mode, int ppm)
 {
     if (!videoPll) {
         videoPll = new Fpll(0x92000000, videoPll_def, 6);
