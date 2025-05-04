@@ -245,7 +245,8 @@ static const uint16_t pan_ctrl[] = { 0, 40, 79, 116, 150, 181, 207, 228, 243, 25
 
 static const uint8_t stereo_bits[] = { 0x00, 0x02, 0x04, 0x08, 0x10, 0x20 };
 static const uint8_t split_bits[] = { 0x00, 0x02, 0x04, 0x08, 0x10, 0x06, 0x12, 0x18 };
-static const char *speeds[] = { " 1", " 2", " 3", " 4", " 5", " 6", " 8", "10", "12", "14", "16", "20", "24", "32", "40", "48" };
+static const char *speeds_u64[]   = { " 1", " 2", " 3", " 4", " 5", " 6", " 8", "10", "12", "14", "16", "20", "24", "32", "40", "48" };
+static const char *speeds_u64ii[] = { " 1", " 2", " 3", " 4", " 6", " 8", "10", "12", "14", "16", "20", "24", "32", "40", "48", "64" };
 static const char *speed_regs[] = { "Off", "Manual", "U64 Turbo Registers", "TurboEnable Bit", "a", "b" };
 static const uint8_t speedregs_regvalues[] = { 0x00, 0x00, 0x01, 0x05, 0x00, 0x00 }; // removed 3 and 7
 
@@ -294,7 +295,11 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_VIC_TEST,             CFG_TYPE_ENUM, "VIC Test Colors",              "%s", en_dis5,      0,  2, 0 },
 #endif
     { CFG_SPEED_REGS,           CFG_TYPE_ENUM, "Turbo Control",                "%s", speed_regs,   0,  3, 0 },
-    { CFG_SPEED_PREF,           CFG_TYPE_ENUM, "CPU Speed",                "%s MHz", speeds,       0, 15, 0 },
+#if U64 == 2
+    { CFG_SPEED_PREF,           CFG_TYPE_ENUM, "CPU Speed",                "%s MHz", speeds_u64ii, 0, 15, 0 },
+#else
+    { CFG_SPEED_PREF,           CFG_TYPE_ENUM, "CPU Speed",                "%s MHz", speeds_u64,   0, 15, 0 },
+#endif
     { CFG_BADLINES_EN,          CFG_TYPE_ENUM, "Badline Timing",               "%s", en_dis,       0,  1, 1 },
     { CFG_SUPERCPU_DET,         CFG_TYPE_ENUM, "SuperCPU Detect (D0BC)",       "%s", en_dis,       0,  1, 0 },
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
