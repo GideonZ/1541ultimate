@@ -839,7 +839,7 @@
  * The priority value itself is platform-dependent, but is passed to
  * sys_thread_new() when the thread is created.
  */
-#define TCPIP_THREAD_PRIO               PRIO_TCPIP_STACK
+#define TCPIP_THREAD_PRIO               PRIO_TCPIP
 
 /**
  * TCPIP_MBOX_SIZE: The mailbox size for the tcpip thread messages
