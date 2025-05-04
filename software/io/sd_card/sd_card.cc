@@ -241,8 +241,7 @@ DRESULT SdCard :: read(uint8_t* buf, uint32_t address, int sectors)
 	uint8_t firstblock;
 	uint32_t place;
 
-//	DBG((TXT("sd_readSector::Trying to read sector %u and store it at %p.\n"),address,&buf[0]));
-//    printf("Trying to read sector %d to %p.\n",address,buf);
+//    printf("Trying to read sectors %d-%d to %p.\n", address, address+sectors-1, buf);
 
 /*
     if (!xSemaphoreTake(mutex, 5000)) {

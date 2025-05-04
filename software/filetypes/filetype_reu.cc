@@ -76,7 +76,12 @@ SubsysResultCode_e FileTypeREU :: execute_st(SubsysCommand *cmd)
     uint8_t *dest;
     FileManager *fm = FileManager :: getFileManager();
     FileInfo info(32);
-    fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
+    FRESULT fres = fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
+
+    if (fres != FR_OK) {
+        cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
+        return SSRET_CANNOT_OPEN_FILE;
+    }
 
     if (cmd->functionID == REUFILE_SET_PRELOAD) {
         C64 *machine = C64 :: getMachine();
@@ -99,11 +104,11 @@ SubsysResultCode_e FileTypeREU :: execute_st(SubsysCommand *cmd)
 	bytes_per_step = secs_per_step << 9;
 	remain = info.size;
 
-	printf("REU Load.. %s\nUI = %p", cmd->filename.c_str(), cmd->user_interface);
+	printf("REU Load.. %s  UI = %p FSize = %d (%s)\n", cmd->filename.c_str(), cmd->user_interface, info.size, FileSystem::get_error_string(fres));
 	if (!cmd->user_interface)
 		progress = false;
 
-	FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
+	fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
 	if(file) {
 		total_bytes_read = 0;
 		// load file in REU memory
@@ -136,7 +141,7 @@ SubsysResultCode_e FileTypeREU :: execute_st(SubsysCommand *cmd)
 	} else {
 		printf("Error opening file.\n");
         cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
-		return SSRET_CANNOT_OPEN_FILE;
+        return SSRET_CANNOT_OPEN_FILE;
 	}
 	return SSRET_OK;
 }
