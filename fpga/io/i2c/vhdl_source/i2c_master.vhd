@@ -35,6 +35,7 @@ architecture behavioral of i2c_master is
     signal sda_o_i          : std_logic;
     signal stretch          : std_logic;
     signal error            : std_logic;
+    signal temp_error       : std_logic;
     signal started          : std_logic;
     signal do_ack           : std_logic;
     signal bit_count        : integer range 0 to 7;
@@ -66,6 +67,7 @@ architecture behavioral of i2c_master is
     signal sda_queue        : std_logic_vector(3 downto 0);
     signal scl_queue        : std_logic_vector(3 downto 0);
     signal sampled          : std_logic;
+
 begin
     -- generate processing tick
     process(clock)
@@ -73,9 +75,9 @@ begin
         if rising_edge(clock) then
             tick <= '0';
             if stretch = '1' then
-                divisor <= c_divisor;
+                divisor <= c_divisor-1;
             elsif divisor = 0 then
-                divisor <= c_divisor;
+                divisor <= c_divisor-1;
                 tick <= '1';
             else
                 divisor <= divisor - 1;
@@ -148,6 +150,9 @@ begin
             do_seq <= '0';
             soft_reset <= '0';
             io_resp <= c_io_resp_init;
+            if seq_done = '1' then
+                temp_error <= '0';
+            end if;
 
             case state is
             when idle =>
@@ -217,6 +222,7 @@ begin
                     state <= idle;
                     if sampled = '1' then -- not acknowledged
                         error <= '1';
+                        temp_error <= '1';
                     end if;
                 elsif seq_busy = '0' and do_seq = '0' then
                     do_seq <= '1';
@@ -297,6 +303,7 @@ begin
                     io_resp.data(0) <= started;
                     io_resp.data(2) <= error;
                     io_resp.data(3) <= missed_write;
+                    io_resp.data(4) <= temp_error;
                     error <= '0';
                     missed_write <= '0';
                     if state = idle then
