@@ -34,7 +34,7 @@ IecInterface :: IecInterface()
     jiffy_transfer = 0;
     queueToIec = xQueueCreate(2, sizeof(iec_closure_t));
 
-    xTaskCreate( IecInterface :: start_task, "IEC Server", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 2, &taskHandle );
+    xTaskCreate( IecInterface :: start_task, "IEC Server", configMINIMAL_STACK_SIZE, this, PRIO_HW_SERVICE, &taskHandle );
 }
 
 IecInterface :: ~IecInterface()

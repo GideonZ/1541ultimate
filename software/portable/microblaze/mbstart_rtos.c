@@ -135,7 +135,7 @@ void start_rtos (void)
 
     ioWrite8(UART_DATA, 0x33);
 
-    xTaskCreate( _construct_and_go, "U-II Main", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL );
+    xTaskCreate( _construct_and_go, "U-II Main", configMINIMAL_STACK_SIZE, NULL, PRIO_MAIN, NULL );
 
     ioWrite8(UART_DATA, 0x34);
     ioWrite8(ITU_IRQ_GLOBAL, 0x01); // Enable interrupts globally

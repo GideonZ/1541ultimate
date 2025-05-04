@@ -3,8 +3,18 @@
 
 /* Here is a good place to include header files that are required across
 your application. */
+#define PRIO_BACKGROUND 0
+#define PRIO_MAIN       0
+#define PRIO_USERIFACE  0
+#define PRIO_HW_SERVICE 1
+#define PRIO_NETSERVICE 1
+#define PRIO_DRIVER     1
+#define PRIO_FLOPPY     1
+#define PRIO_POLL       1
+#define PRIO_TCPIP      2
+#define PRIO_REALTIME   3
 
-#define configUSE_PREEMPTION                    0
+#define configUSE_PREEMPTION                    1
 #define configUSE_PORT_OPTIMISED_TASK_SELECTION 0
 #define configUSE_TICKLESS_IDLE                 0
 #define configCPU_CLOCK_HZ                      62500000

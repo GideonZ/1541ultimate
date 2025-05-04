@@ -63,9 +63,9 @@ extern cart_def boot_cart;
 SocketDMA::SocketDMA() {
 	load_buffer = new uint8_t[SOCKET_BUFFER_SIZE];
 	if (load_buffer) {
-	    xTaskCreate( dmaThread, "DMA Load Task", configMINIMAL_STACK_SIZE, (void *)load_buffer, tskIDLE_PRIORITY + 1, NULL );
+	    xTaskCreate( dmaThread, "DMA Load Task", configMINIMAL_STACK_SIZE, (void *)load_buffer, PRIO_NETSERVICE, NULL );
 	}
-    xTaskCreate(identThread, "UDP Ident Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL );
+    xTaskCreate(identThread, "UDP Ident Task", configMINIMAL_STACK_SIZE, NULL, PRIO_NETSERVICE, NULL );
 }
 
 SocketDMA::~SocketDMA() {

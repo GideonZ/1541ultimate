@@ -217,7 +217,7 @@ void C1541 :: init(void)
     mfm_controller->init();
     effectuate_settings();
 
-	xTaskCreate( C1541 :: run, (const char *)(this->drive_name.c_str()), configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &taskHandle );
+	xTaskCreate( C1541 :: run, (const char *)(this->drive_name.c_str()), configMINIMAL_STACK_SIZE, this, PRIO_FLOPPY, &taskHandle );
 }
 
 

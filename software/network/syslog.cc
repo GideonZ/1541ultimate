@@ -43,7 +43,7 @@ bool Syslog::init(size_t buffer_size)
         bufsize = buffer_size;
         buf = new char[bufsize];
         bufpos = 0;
-        xTaskCreate(syslogTask, "Syslog Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &task);
+        xTaskCreate(syslogTask, "Syslog Task", configMINIMAL_STACK_SIZE, this, PRIO_NETSERVICE, &task);
         printf("Sending logs to syslog server '%s'\n", server);
         return true;
     }

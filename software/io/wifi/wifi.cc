@@ -90,7 +90,7 @@ void WiFi :: Start()
         return;
     }
     state = eWifi_NotDetected;
-    xTaskCreate( WiFi :: RunModeTaskStart, "WiFi Command Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &runModeTask );
+    xTaskCreate( WiFi :: RunModeTaskStart, "WiFi Command Task", configMINIMAL_STACK_SIZE, this, PRIO_DRIVER, &runModeTask );
 }
 
 void WiFi :: Terminate()

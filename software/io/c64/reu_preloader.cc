@@ -16,7 +16,7 @@ REUPreloader::REUPreloader()
         observerQueue = new ObserverQueue("REU Preloader");
         fm->registerObserver(observerQueue);
 
-        xTaskCreate(REUPreloader::poll_reu_preload, "REU Preloader", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL);
+        xTaskCreate(REUPreloader::poll_reu_preload, "REU Preloader", configMINIMAL_STACK_SIZE, this, PRIO_BACKGROUND, NULL);
     }
 }
 

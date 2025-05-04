@@ -58,7 +58,7 @@ RmiiInterface :: RmiiInterface()
             queue = xQueueCreate(128, sizeof(struct EthPacket));
             new InitFunction("RmiiInterface", [](void *obj, void *_param) {
                 RmiiInterface *rmii = (RmiiInterface *)obj;
-                xTaskCreate( RmiiInterface :: startRmiiTask, "RMII Driver Task", configMINIMAL_STACK_SIZE, rmii, tskIDLE_PRIORITY + 1, NULL );
+                xTaskCreate( RmiiInterface :: startRmiiTask, "RMII Driver Task", configMINIMAL_STACK_SIZE, rmii, PRIO_DRIVER, NULL );
             }, this, NULL, 52);
         }
     }

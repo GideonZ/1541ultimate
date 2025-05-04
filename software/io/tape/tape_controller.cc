@@ -34,7 +34,7 @@ TapeController :: TapeController() : SubSystem(SUBSYSID_TAPE_PLAYER)
 	stop();
 	taskHandle = 0;
 	if (getFpgaCapabilities() & CAPAB_C2N_STREAMER) {
-		xTaskCreate( TapeController :: poll_static, "TapePlayer", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, &taskHandle );
+		xTaskCreate( TapeController :: poll_static, "TapePlayer", configMINIMAL_STACK_SIZE, this, PRIO_REALTIME, &taskHandle );
 }
 	}
 

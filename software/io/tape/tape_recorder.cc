@@ -36,7 +36,7 @@ TapeRecorder :: TapeRecorder() : SubSystem(SUBSYSID_TAPE_RECORDER)
         cache_blocks[i] = (uint32_t *)&cache[512*i];
     }
 	if (getFpgaCapabilities() & CAPAB_C2N_RECORDER) {
-		xTaskCreate( TapeRecorder :: poll_tape_rec, "TapeRecorder", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, &taskHandle );
+		xTaskCreate( TapeRecorder :: poll_tape_rec, "TapeRecorder", configMINIMAL_STACK_SIZE, this, PRIO_REALTIME, &taskHandle );
         ioWrite8(ITU_IRQ_ENABLE, 0x08);
 	}
 }

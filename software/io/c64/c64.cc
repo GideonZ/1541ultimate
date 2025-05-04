@@ -154,7 +154,7 @@ C64::C64()
 #ifdef OS
     if (!phi2_present()) {
         printf("No PHI2 clock detected.. Stand alone mode. Stopped = %d\n", C64_STOP);
-        xTaskCreate(C64 :: init_poll_task, "C64 Init poll task", 500, this, 2, NULL);
+        xTaskCreate(C64 :: init_poll_task, "C64 Init poll task", 500, this, PRIO_BACKGROUND, NULL);
     }
 #endif
 #else

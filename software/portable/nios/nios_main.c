@@ -170,7 +170,7 @@ int main(int argc, char *argv[]) {
 	ioWrite8(ITU_IRQ_GLOBAL, 0x01); // Enable interrupts globally
 
     puts("-- Start Scheduler --");
-    xTaskCreate(ultimate_main, "U-II Main", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL);
+    xTaskCreate(ultimate_main, "U-II Main", configMINIMAL_STACK_SIZE, NULL, PRIO_MAIN, NULL);
 
 	// Finally start the scheduler.
 	vTaskStartScheduler();

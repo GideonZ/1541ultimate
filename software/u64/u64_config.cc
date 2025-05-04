@@ -819,7 +819,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 #if U64 == 2
             u64_configurator.speakercfg.effectuate_settings();
 #endif
-            xTaskCreate( U64Config :: reset_task, "U64 Reset Task", configMINIMAL_STACK_SIZE, &u64_configurator, tskIDLE_PRIORITY + 3, &u64_configurator.resetTaskHandle );
+            xTaskCreate( U64Config :: reset_task, "U64 Reset Task", configMINIMAL_STACK_SIZE, &u64_configurator, PRIO_REALTIME, &u64_configurator.resetTaskHandle );
             printf("*** U64 Configurator Done\n");
         }, NULL, NULL, 3); // early
     }

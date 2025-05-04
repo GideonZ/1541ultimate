@@ -40,7 +40,7 @@ void ListenerSocket :: ListenerTask()
         if (newsockfd < 0) {
             printf("ERROR %s: Accept\n", socketName);
         } else {
-            xTaskCreate(spawnFunction, spawnName, configMINIMAL_STACK_SIZE, (void *)newsockfd, tskIDLE_PRIORITY + 1, NULL);
+            xTaskCreate(spawnFunction, spawnName, configMINIMAL_STACK_SIZE, (void *)newsockfd, PRIO_NETSERVICE, NULL);
         }
     }
 }
@@ -84,7 +84,7 @@ int ListenerSocket :: Start(int port)
     listen(listenfd, 5);
     printf("INFO %s: listening\n", socketName);
 
-    xTaskCreate( ListenerSocket :: task, socketName, configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &listenerTask );
+    xTaskCreate( ListenerSocket :: task, socketName, configMINIMAL_STACK_SIZE, this, PRIO_NETSERVICE, &listenerTask );
 
     return 0;
 }

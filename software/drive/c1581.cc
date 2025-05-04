@@ -135,7 +135,7 @@ void C1581 :: init(void)
     registers[C1541_DISKCHANGE] = 0;
     disk_state = e_no_disk;
 
-	xTaskCreate( C1581 :: run, (const char *)(this->drive_name.c_str()), configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &taskHandle );
+	xTaskCreate( C1581 :: run, (const char *)(this->drive_name.c_str()), configMINIMAL_STACK_SIZE, this, PRIO_FLOPPY, &taskHandle );
     effectuate_settings();
     ioWrite8(ITU_IRQ_HIGH_EN, ioRead8(ITU_IRQ_HIGH_EN) | 2);
 }

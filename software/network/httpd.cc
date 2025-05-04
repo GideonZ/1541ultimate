@@ -19,7 +19,7 @@ HTTPDaemon::HTTPDaemon()
 {
     new InitFunction("HTTP Daemon", [](void *obj, void *_param) { 
         HTTPDaemon *httpd = (HTTPDaemon *)obj;
-        xTaskCreate(http_listen_task, "HTTP Listener", configMINIMAL_STACK_SIZE, httpd, tskIDLE_PRIORITY + 1, &(httpd->listenTaskHandle));
+        xTaskCreate(http_listen_task, "HTTP Listener", configMINIMAL_STACK_SIZE, httpd, PRIO_NETSERVICE, &(httpd->listenTaskHandle));
     }, this, NULL, 103);
 }
 

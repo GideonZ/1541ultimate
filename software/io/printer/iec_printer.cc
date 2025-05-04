@@ -382,7 +382,7 @@ IecPrinter::IecPrinter() : SubSystem(SUBSYSID_PRINTER)
     /* Create the task, storing the handle. */
     xTaskCreate((TaskFunction_t) IecPrinter::task, "Virtual Printer",
                 configMINIMAL_STACK_SIZE, this,
-                tskIDLE_PRIORITY, &taskHandle);
+                PRIO_BACKGROUND, &taskHandle);
 }
 
 /************************************************************************

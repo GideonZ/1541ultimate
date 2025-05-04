@@ -146,7 +146,7 @@ FTPDaemon *ftpd = NULL;
 
 FTPDaemon::FTPDaemon()
 {
-    xTaskCreate(ftp_listen_task, "FTP Listener", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &listenTaskHandle);
+    xTaskCreate(ftp_listen_task, "FTP Listener", configMINIMAL_STACK_SIZE, this, PRIO_NETSERVICE, &listenTaskHandle);
 }
 
 void FTPDaemon::ftp_listen_task(void *a)
@@ -202,7 +202,7 @@ int FTPDaemon::listen_task()
 
         FTPDaemonThread *thread = new FTPDaemonThread(actual_socket, cli_addr.sin_addr.s_addr, cli_addr.sin_port);
 
-        xTaskCreate(FTPDaemonThread::run, "FTP Task", configMINIMAL_STACK_SIZE, thread, tskIDLE_PRIORITY + 1, NULL);
+        xTaskCreate(FTPDaemonThread::run, "FTP Task", configMINIMAL_STACK_SIZE, thread, PRIO_NETSERVICE, NULL);
     }
 }
 
@@ -931,7 +931,7 @@ int FTPDataConnection::do_bind(void)
     parent->send_msg(msg227, parent->my_ip[0], parent->my_ip[1], parent->my_ip[2], parent->my_ip[3], port >> 8, port & 0xFF);
 
     spawningTask = xTaskGetCurrentTaskHandle();
-    xTaskCreate(FTPDataConnection::accept_data, "FTP Data", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 2,
+    xTaskCreate(FTPDataConnection::accept_data, "FTP Data", configMINIMAL_STACK_SIZE, this, PRIO_NETSERVICE,
             &acceptTaskHandle);
     vTaskDelay(1); // allow the other task to run
     return 0;

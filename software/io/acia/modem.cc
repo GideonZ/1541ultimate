@@ -106,9 +106,9 @@ Modem :: Modem()
 
 void Modem :: start()
 {
-    xTaskCreate( Modem :: task, "Modem Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
-    xTaskCreate( Modem :: callerTask, "Outgoing Caller", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
     listenerSocket = new ListenerSocket("Modem Listener", Modem :: listenerTask, "Modem External Connection");
+    xTaskCreate( Modem :: task, "Modem Task", configMINIMAL_STACK_SIZE, this, PRIO_HW_SERVICE, NULL );
+    xTaskCreate( Modem :: callerTask, "Outgoing Caller", configMINIMAL_STACK_SIZE, this, PRIO_NETSERVICE, NULL );
 }
 
 /*

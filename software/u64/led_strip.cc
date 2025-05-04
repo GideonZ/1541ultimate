@@ -26,7 +26,7 @@ static struct t_cfg_definition cfg_definition[] = {
 
 LedStrip :: LedStrip()
 {
-    xTaskCreate( LedStrip :: task, "LedStrip Controller", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, NULL );
+    xTaskCreate( LedStrip :: task, "LedStrip Controller", configMINIMAL_STACK_SIZE, this, PRIO_REALTIME, NULL );
     register_store(0x4C454453, "LED Strip Settings", cfg_definition);
     effectuate_settings();
     cfg->set_change_hook(CFG_LED_MODE,      LedStrip :: hot_effectuate);
