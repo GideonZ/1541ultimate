@@ -143,6 +143,7 @@ jobs:
             update.u2p
             update.u2l
             update.u64
+            update.ue2
 
       - name: Upload Factory Artifacts
         uses: actions/upload-artifact@v4

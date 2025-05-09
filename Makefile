@@ -1,5 +1,5 @@
 
-all: esp32 u2_rv u2plus u2pl u64
+all: esp32 u2_rv u2plus u2pl u64 u64ii
 
 esp32:
 	@cd software/wifi/raw_u64 && idf.py build
@@ -257,12 +257,13 @@ u64ii:
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u64ii/riscv/ultimate
 	@$(MAKE) -C target/u64ii/riscv/factorytest
+	@$(MAKE) -C target/u64ii/riscv/update
 	@cp target/u64ii/riscv/ultimate/result/ultimate.app u64ii
 	@cp target/u64ii/riscv/factorytest/result/factorytest.bin u64ii
 	@cp software/u64ctrl/build/bootloader/bootloader.bin u64ii
 	@cp software/u64ctrl/build/partition_table/partition-table.bin u64ii
 	@cp software/u64ctrl/build/u64ctrl.bin u64ii
-# U64II update package cannot be built yet, until the FPGA image is available in github
+	@cp target/u64ii/riscv/update/result/update.app ./update.ue2
 
 u2pl:
 	@$(MAKE) -C tools
