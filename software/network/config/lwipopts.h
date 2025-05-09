@@ -521,7 +521,7 @@
 /**
  * LWIP_IGMP==1: Turn on IGMP module. 
  */
-#define LWIP_IGMP                       0
+#define LWIP_IGMP                       1
 
 /*
    ----------------------------------
@@ -569,6 +569,9 @@
 /** If this is turned on, the local host-list can be dynamically changed
  *  at runtime. */
 #define DNS_LOCAL_HOSTLIST_IS_DYNAMIC   0
+
+#define LWIP_MDNS_RESPONDER 1
+#define LWIP_NUM_NETIF_CLIENT_DATA 2
 
 /*
    ---------------------------------

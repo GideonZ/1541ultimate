@@ -22,6 +22,7 @@ VPATH     = $(PATH_SW)/lwip/src/ \
 			$(PATH_SW)/lwip/src/include \
 			$(PATH_SW)/lwip/src/include/ipv4 \
 			$(PATH_SW)/lwip/src/apps/sntp \
+			$(PATH_SW)/lwip/src/apps/mdns \
 			$(PATH_SW)/lwip/src/include/apps \
 			$(PATH_SW)/FreeRTOS/Source \
 			$(PATH_SW)/FreeRTOS/Source/include \
@@ -74,6 +75,9 @@ SRCS_C   =	sys_arch.c \
 			slipif.c \
 			zepif.c \
 			sntp.c \
+			mdns.c \
+			mdns_out.c \
+			mdns_domain.c
 
 # the order of the files is important, because of the static constructors.
 # main loop defines two important globals that define the event based polling mechanism:

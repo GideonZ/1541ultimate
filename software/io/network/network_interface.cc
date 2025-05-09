@@ -5,6 +5,7 @@
 #include <string.h>
 #include <ctype.h>
 #include "lwip/dhcp.h"
+#include "lwip/apps/mdns.h"
 #include "filemanager.h"
 
 extern "C" {
@@ -153,6 +154,7 @@ bool NetworkInterface :: start()
 	memset(&my_net_if, 0, sizeof(my_net_if)); // clear the whole thing
     my_net_if.state = this;
     netif_add(&my_net_if, &my_ip, &my_netmask, &my_gateway, this, lwip_init_callback, tcpip_input);
+
     //netif_set_default(&my_net_if);
     if_up = false;
     return true;
@@ -223,6 +225,9 @@ void NetworkInterface :: init_callback( )
 
     /* device capabilities */
 	my_net_if.flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_LINK_UP;
+
+    mdns_resp_remove_netif(&my_net_if); // In case we are reinitializing the interface, remove the old one
+    mdns_resp_add_netif(&my_net_if, this->hostname);
 
     netif_set_status_callback(&my_net_if, NetworkInterface :: statusCallback);
 }
