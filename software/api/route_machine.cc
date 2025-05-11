@@ -135,7 +135,7 @@ API_CALL(POST, machine, writemem, &attachment_writer, ARRAY( { {"address", P_REQ
     TempfileWriter *handler = (TempfileWriter *)body;
     uint8_t *buffer = new uint8_t[65536];
     uint32_t datalen = 0;
-    FRESULT fres = FileManager::getFileManager()->load_file("", handler->get_filename(0), buffer, 65536, &datalen);
+    FRESULT fres = load_file("", handler->get_filename(0), buffer, 65536, &datalen);
     if (fres != FR_OK) {
         resp->error("Could not read data from attachment");
         resp->json_response(HTTP_NOT_FOUND);

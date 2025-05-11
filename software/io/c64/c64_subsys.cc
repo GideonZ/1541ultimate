@@ -47,7 +47,6 @@ InitFunction bootCart_initializer("Boot Cart", initBootCart, NULL, NULL);
 C64_Subsys::C64_Subsys(C64 *machine)  : SubSystem(SUBSYSID_C64) {
 	taskHandle = 0;
 	c64 = machine;
-	fm = FileManager :: getFileManager();
 	taskHandle = 0;
 
 	taskCategory = TasksCollection :: getCategory("C64 Machine", SORT_ORDER_C64);
@@ -236,7 +235,7 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
                 fix_filename(buffer);
                 set_extension(buffer, ".reu", 32);
 
-                res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), buffer, &f);
+                res = create_file_ask_if_exists(cmd->user_interface, cmd->path.c_str(), buffer, &f);
                 if (res == FR_OK) {
                     printf("Opened file successfully.\n");
 
@@ -256,7 +255,7 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
                     src = (uint8_t *)REU_MEMORY_BASE;
 
                     while (remain != 0) {
-                        f->write(src, bytes_per_step, &bytes_written);
+                        FileManager::write(f, src, bytes_per_step, &bytes_written);
                         transferred += bytes_written;
                         cmd->user_interface->update_progress(NULL, 1);
                         remain -= bytes_per_step;
@@ -268,7 +267,7 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
                     sprintf(buffer, "Bytes saved: %d ($%8x)", transferred, transferred);
                     cmd->user_interface->popup(buffer, BUTTON_OK);
 
-                    fm->fclose(f);
+                    FileManager::fclose(f);
                 } else {
                     printf("Couldn't open file..\n");
                     cmd->user_interface->popup(FileSystem::get_error_string(res), BUTTON_OK);
@@ -282,7 +281,7 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
                 fix_filename(buffer);
                 set_extension(buffer, ".bin", 32);
 
-                res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), buffer, &f);
+                res = create_file_ask_if_exists(cmd->user_interface, cmd->path.c_str(), buffer, &f);
                 if (res == FR_OK) {
                     printf("Opened file successfully.\n");
 
@@ -290,13 +289,13 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
                     c64->get_all_memory(pb);
 
                     uint32_t bytes_written;
-                    f->write(pb, ram_size, &bytes_written);
+                    FileManager::write(f, pb, ram_size, &bytes_written);
 
                     printf("written: %d...", bytes_written);
                     sprintf(buffer, "bytes saved: %d ($%8x)", bytes_written, bytes_written);
                     cmd->user_interface->popup(buffer, BUTTON_OK);
 
-                    fm->fclose(f);
+                    FileManager::fclose(f);
                     delete[] pb;
                 } else {
                     printf("Couldn't open file..\n");
@@ -311,10 +310,10 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
                 fix_filename(buffer);
                 set_extension(buffer, ".crt", 32);
 
-                res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), buffer, &f);
+                res = create_file_ask_if_exists(cmd->user_interface, cmd->path.c_str(), buffer, &f);
                 if (res == FR_OK) {
                     SubsysResultCode_e retval = C64_CRT::save_crt(f);
-                    fm->fclose(f);
+                    FileManager::fclose(f);
                     if (retval != SSRET_OK) {
                         cmd->user_interface->popup(SubsysCommand::error_string(retval), BUTTON_OK);
                     }
@@ -323,7 +322,7 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
             break;
 
         case MENU_C64_SAVEFLASH: // doesn't belong here, but i need it fast
-            res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), "flash_dump.bin", &f);
+            res = create_file_ask_if_exists(cmd->user_interface, cmd->path.c_str(), "flash_dump.bin", &f);
 
             if (res == FR_OK) {
                 int pages = c64->flash->get_number_of_pages();
@@ -331,10 +330,10 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
                 uint8_t *page_buf = new uint8_t[page_size];
                 for (int i = 0; i < pages; i++) {
                     c64->flash->read_page(i, page_buf);
-                    f->write(page_buf, page_size, &transferred);
+                    FileManager::write(f, page_buf, page_size, &transferred);
                 }
                 delete[] page_buf;
-                fm->fclose(f);
+                FileManager::fclose(f);
             } else {
                 printf("Couldn't open file..\n");
             }
@@ -349,10 +348,10 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
             break;
 
         case C64_DMA_LOAD:
-            res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
+            res = FileManager::fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
             if (res == FR_OK) {
                 dma_load(f, NULL, 0, cmd->filename.c_str(), cmd->mode, c64->cfg->get_value(CFG_C64_DMA_ID));
-                fm->fclose(f);
+                FileManager::fclose(f);
             } else {
                 result = SSRET_CANNOT_OPEN_FILE;
             }
@@ -360,20 +359,20 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
 
 #ifndef RECOVERYAPP
         case C64_DMA_LOAD_MNT:
-            res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
+            res = FileManager::fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
             if (res == FR_OK) {
                 dma_load(f, NULL, 0, cmd->filename.c_str(), cmd->mode, c1541_A->get_current_iec_address());
-                fm->fclose(f);
+                FileManager::fclose(f);
             } else {
                 result = SSRET_CANNOT_OPEN_FILE;
             }
             break;
 #endif
         case C64_DMA_LOAD_RAW:
-            res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
+            res = FileManager::fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
             if (res == FR_OK) {
                 dma_load_raw(f);
-                fm->fclose(f);
+                FileManager::fclose(f);
             } else {
                 result = SSRET_CANNOT_OPEN_FILE;
             }
@@ -452,24 +451,24 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
                 fix_filename(buffer);
                 set_extension(buffer, extension, 32);
 
-                res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), buffer, &f);
+                res = create_file_ask_if_exists(cmd->user_interface, cmd->path.c_str(), buffer, &f);
                 if (res == FR_OK) {
                     printf("Opened file successfully.\n");
                     uint32_t bytes_written;
 
                     if (ftype == 1571) {
-                        f->write(srcAddr, expSize / 2, &bytes_written);
+                        FileManager::write(f, srcAddr, expSize / 2, &bytes_written);
                         uint32_t tmp;
-                        f->write(srcAddr + 700 * 256, expSize / 2, &tmp);
+                        FileManager::write(f, srcAddr + 700 * 256, expSize / 2, &tmp);
                         bytes_written += tmp;
                     } else {
-                        f->write(srcAddr, expSize, &bytes_written);
+                        FileManager::write(f, srcAddr, expSize, &bytes_written);
                     }
                     printf("written: %d...", bytes_written);
                     sprintf(buffer, "bytes saved: %d ($%8x)", bytes_written, bytes_written);
                     cmd->user_interface->popup(buffer, BUTTON_OK);
 
-                    fm->fclose(f);
+                    FileManager::fclose(f);
                 } else {
                     printf("Couldn't open file..\n");
                     cmd->user_interface->popup(FileSystem::get_error_string(res), BUTTON_OK);
@@ -617,7 +616,7 @@ int C64_Subsys :: load_file_dma(File *f, uint16_t reloc)
     dma_load_buffer_b = (uint8_t *)dma_load_buffer;
 
     if (f) {
-        f->read(&load_address, 2, &transferred);
+        FileManager::read(f, &load_address, 2, &transferred);
         if(transferred != 2) {
             printf("Can't read from file..\n");
             return -1;
@@ -637,7 +636,7 @@ int C64_Subsys :: load_file_dma(File *f, uint16_t reloc)
 	/* Now actually load the file */
 	int total_trans = 0;
 	while (max_length > 0) {
-		FRESULT fres = f->read(dma_load_buffer, block, &transferred);
+		FRESULT fres = FileManager::read(f, dma_load_buffer, block, &transferred);
 		if (fres != FR_OK) {
 			printf("Error reading from file. %s\n", FileSystem :: get_error_string(fres));
 			return -1;
@@ -722,15 +721,15 @@ bool C64_Subsys :: write_vic_state(File *f)
     uint8_t bank = 3 - (c64->cia_backup[1] & 0x03);
     uint32_t addr = C64_MEMORY_BASE + (uint32_t(bank) << 14);
     if(bank == 0) {
-        f->write((uint8_t *)C64_MEMORY_BASE, 0x0400, &transferred);
-        f->write(c64->screen_backup, 0x0400, &transferred);
-        f->write(c64->ram_backup, 0x0800, &transferred);
-        f->write((uint8_t *)(C64_MEMORY_BASE + 0x1000), 0x3000, &transferred);
+        FileManager::write(f, (uint8_t *)C64_MEMORY_BASE, 0x0400, &transferred);
+        FileManager::write(f, c64->screen_backup, 0x0400, &transferred);
+        FileManager::write(f, c64->ram_backup, 0x0800, &transferred);
+        FileManager::write(f, (uint8_t *)(C64_MEMORY_BASE + 0x1000), 0x3000, &transferred);
     } else {
-        f->write((uint8_t *)addr, 16384, &transferred);
+        FileManager::write(f, (uint8_t *)addr, 16384, &transferred);
     }
-    f->write(c64->color_backup, 0x0400, &transferred);
-    f->write(c64->vic_backup, NUM_VICREGS, &transferred);
+    FileManager::write(f, c64->color_backup, 0x0400, &transferred);
+    FileManager::write(f, c64->vic_backup, NUM_VICREGS, &transferred);
 
     C64_MODE = mode;
     return true;

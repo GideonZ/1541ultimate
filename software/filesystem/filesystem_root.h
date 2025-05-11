@@ -16,6 +16,7 @@ class FileSystem_Root: public FileSystem {
 public:
 	FileSystem_Root(CachedTreeNode *node);
 	virtual ~FileSystem_Root();
+    const char *identify() { return "FileSystem_Root"; } // identify the file system type
 
 	PathStatus_t walk_path(PathInfo& pathInfo);
 

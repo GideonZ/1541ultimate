@@ -15,7 +15,6 @@ class UltiCopyWindow;
 
 class UltiCopy : public ObjectWithMenu, SubSystem
 {
-    FileManager *fm;
     IecInterface *intf;
     UserInterface *cmd_ui;
     SemaphoreHandle_t ulticopyBusy;

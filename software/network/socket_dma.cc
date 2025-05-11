@@ -170,8 +170,7 @@ bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
     case SOCKET_CMD_MOUNT_IMG:
     case SOCKET_CMD_RUN_IMG:
     {
-        FileManager *fm = FileManager :: getFileManager();
-        FRESULT fres = fm->save_file(true, "/temp", "tcpimage.d64", buf, len, NULL);
+        FRESULT fres = save_file(true, "/temp", "tcpimage.d64", buf, len, NULL);
         if (fres == FR_OK) {
             sys_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, MENU_1541_MOUNT_D64, 1541, "/temp", "tcpimage.d64");
             sys_command->execute();
@@ -186,8 +185,7 @@ bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
     break;
     case SOCKET_CMD_RUN_CRT:
     {
-        FileManager *fm = FileManager :: getFileManager();
-        FRESULT fres = fm->save_file(true, "/temp", "tcpimage.crt", buf, len, NULL);
+        FRESULT fres = save_file(true, "/temp", "tcpimage.crt", buf, len, NULL);
         if (fres == FR_OK) {
             sys_command = new SubsysCommand(NULL, SUBSYSID_C64, 0, 0, "/temp", "tcpimage.crt");
             FileTypeCRT::execute_st(sys_command);

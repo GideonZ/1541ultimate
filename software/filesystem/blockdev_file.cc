@@ -1,6 +1,7 @@
 
 #include <stdio.h>
 #include "blockdev_file.h"
+#include "filemanager.h"
 
 BlockDevice_File::BlockDevice_File(File *file, int sec_size)
 {
@@ -37,11 +38,11 @@ DSTATUS BlockDevice_File::status(void)
     
 DRESULT BlockDevice_File::read(uint8_t *buffer, uint32_t sector, int count)
 {
-    if(file->seek(sector << shift))
+    if(FileManager::seek(file, sector << shift))
         return RES_PARERR;
         
     uint32_t read;
-    if(file->read(buffer, sector_size * (int)count, &read) != FR_OK)
+    if(FileManager::read(file, buffer, sector_size * (int)count, &read) != FR_OK)
         return RES_ERROR;
     
     return RES_OK;
@@ -49,11 +50,11 @@ DRESULT BlockDevice_File::read(uint8_t *buffer, uint32_t sector, int count)
 
 DRESULT BlockDevice_File::write(const uint8_t *buffer, uint32_t sector, int count)
 {
-    if(file->seek(sector << shift))
+    if(FileManager::seek(file, sector << shift))
         return RES_PARERR;
         
     uint32_t written;
-    if(file->write((uint8_t *)buffer, sector_size * (int)count, &written) != FR_OK)
+    if(FileManager::write(file, (uint8_t *)buffer, sector_size * (int)count, &written) != FR_OK)
         return RES_ERROR;
     
     return RES_OK;
@@ -79,7 +80,7 @@ DRESULT BlockDevice_File::ioctl(uint8_t command, void *data)
             break;
         case CTRL_SYNC:
             if (file) {
-                fres = file->sync();
+                fres = FileManager::sync(file);
             }
             if (fres != FR_OK) {
                 return RES_ERROR;

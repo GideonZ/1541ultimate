@@ -626,7 +626,7 @@ bool GcrImage :: load(File *f)
     uint16_t w = 0x1E0C;
 
     invalidate();
-    FRESULT res = f->read(gcr_data, GCRIMAGE_MAXSIZE, &bytes_read);
+    FRESULT res = FileManager::read(f, gcr_data, GCRIMAGE_MAXSIZE, &bytes_read);
 
     printf("Total bytes read: %d.\n", bytes_read);
     if(res != FR_OK) {
@@ -768,7 +768,7 @@ bool GcrImage :: save(File *f, bool align, UserInterface *user_interface)
 
     uint32_t bytes_written;
     FRESULT res;
-    f->write(header, 12 + max_tracks * 8, &bytes_written);
+    FileManager::write(f, header, 12 + max_tracks * 8, &bytes_written);
     delete header;
     
     if(bytes_written != 12 + max_tracks * 8)
@@ -790,7 +790,7 @@ bool GcrImage :: save(File *f, bool align, UserInterface *user_interface)
         if (tracks[i].track_is_mfm) {
             size[1] |= 0x80; // MFM flag
         }
-        f->write(size, 2, &bytes_written);
+        FileManager::write(f, size, 2, &bytes_written);
         if(bytes_written != 2)
             break;
         // find alignment
@@ -798,16 +798,16 @@ bool GcrImage :: save(File *f, bool align, UserInterface *user_interface)
         if(align)
             start = find_track_start(i);
         if(start > 0) {
-            res = f->write(tracks[i].track_address+start, tracks[i].track_length-start, &bytes_written);
+            res = FileManager::write(f, tracks[i].track_address+start, tracks[i].track_length-start, &bytes_written);
             if (res == FR_OK) {
-                res = f->write(tracks[i].track_address, start, &bytes_written);
+                res = FileManager::write(f, tracks[i].track_address, start, &bytes_written);
             }
         } else {
-        	res = f->write(tracks[i].track_address, tracks[i].track_length, &bytes_written);
+        	res = FileManager::write(f, tracks[i].track_address, tracks[i].track_length, &bytes_written);
         }
         if(res != FR_OK)
             break;
-        //res = f->write(filler_bytes, C1541_MAXTRACKLEN - track_length[i], &bytes_written);
+        //res = FileManager::write(f, filler_bytes, C1541_MAXTRACKLEN - track_length[i], &bytes_written);
         if(user_interface)
             user_interface->update_progress(NULL, 1 + skipped);
         if(res != FR_OK)
@@ -857,7 +857,7 @@ bool GcrImage :: write_track(int track, File *f, bool align)
 	if (offset < 2) {
 	    return false;
 	}
-	FRESULT res = f->seek(offset-2); // write the length field as well, to update the mfm flag
+	FRESULT res = FileManager::seek(f, offset-2); // write the length field as well, to update the mfm flag
 	if(res != FR_OK) {
 		return false;
 	}
@@ -869,7 +869,7 @@ bool GcrImage :: write_track(int track, File *f, bool align)
 	    s[1] |= 0x80;
 	}
 
-	res = f->write(s, 2, &bytes_written);
+	res = FileManager::write(f, s, 2, &bytes_written);
 	if (res != FR_OK) {
 	    return false;
 	}
@@ -878,17 +878,17 @@ bool GcrImage :: write_track(int track, File *f, bool align)
     if(align)
         start = find_track_start(track);
     if(start > 0) {
-    	res = f->write(tracks[track].track_address+start, tracks[track].track_length-start, &bytes_written);
+    	res = FileManager::write(f, tracks[track].track_address+start, tracks[track].track_length-start, &bytes_written);
         if(res != FR_OK)
     		return false;
-        res = f->write(tracks[track].track_address, start, &bw2);
+        res = FileManager::write(f, tracks[track].track_address, start, &bw2);
         bytes_written += bw2;
     } else {
-    	res = f->write(tracks[track].track_address, tracks[track].track_length, &bytes_written);
+    	res = FileManager::write(f, tracks[track].track_address, tracks[track].track_length, &bytes_written);
     }
 	if(res != FR_OK)
 		return false;
-    f->sync();
+    FileManager::sync(f);
 	printf("%d bytes written at offset %6x.\n", bytes_written, offset);
 	return true;
 }
@@ -1039,10 +1039,10 @@ int BinImage :: load(File *file)
 	FRESULT  res;
 	uint32_t transferred = 0;
 
-	res = file->seek(0);
+	res = FileManager::seek(file, 0);
 	if(res != FR_OK)
 		return -1;
-	res = file->read(bin_data, allocated_size, &transferred);
+	res = FileManager::read(file, bin_data, allocated_size, &transferred);
 	if(res != FR_OK)
 		return -2;
 	printf("Transferred: %d bytes\n", transferred);
@@ -1100,7 +1100,7 @@ int BinImage :: init(uint32_t size)
 int BinImage :: save(File *file, UserInterface *user_interface)
 {
 	uint32_t transferred = 0;
-	FRESULT res = file->seek(0);
+	FRESULT res = FileManager::seek(file, 0);
 	if(res != FR_OK) {
 		printf("SEEK ERROR: %d\n", res);
 		return -1;
@@ -1110,7 +1110,7 @@ int BinImage :: save(File *file, UserInterface *user_interface)
 	for (int tr=0; tr < num_tracks; tr++) {
         uint8_t *data = track_start[tr];
         secs += track_sectors[tr];
-        res = file->write(data, track_sectors[tr] * 256, &transferred);
+        res = FileManager::write(file, data, track_sectors[tr] * 256, &transferred);
         if(res != FR_OK) {
             printf("WRITE ERROR: %d. Transferred = %d\n", res, transferred);
             return -2;
@@ -1126,7 +1126,7 @@ int BinImage :: save(File *file, UserInterface *user_interface)
 	       orred |= errors[i];
 	    }
 	    if (orred) { // contains valid error data
-            res = file->write(errors, secs, &transferred);
+            res = FileManager::write(file, errors, secs, &transferred);
             if(res != FR_OK) {
                 printf("WRITE ERROR: %d. Transferred = %d\n", res, transferred);
                 return -4;
@@ -1209,16 +1209,16 @@ int BinImage :: write_track(int phys_track, GcrImage *gcr_image, File *file, int
     }
     uint32_t offset = uint32_t(bin - bin_data);
 	// Write
-	FRESULT res = file->seek(offset);
+	FRESULT res = FileManager::seek(file, offset);
 	if(res != 0) {
         printf("While trying to write track %d, seek offset $%6x failed with error %d.\n", logical_track+1, offset, res);
 		return res;
 	}
 	uint32_t transferred;
-	FRESULT fres = file->write(bin, 256*track_sectors[logical_track], &transferred);
+	FRESULT fres = FileManager::write(file, bin, 256*track_sectors[logical_track], &transferred);
 	if(fres != FR_OK)
 		return res;
-    return file->sync();
+    return FileManager::sync(file);
 }
 
 bool BinImage :: is_double_sided(void)
@@ -1270,7 +1270,6 @@ void BinImage :: get_sensible_name(char *buffer)
 
 SubsysResultCode_e ImageCreator :: S_createD71(SubsysCommand *cmd)
 {
-    FileManager *fm = FileManager :: getFileManager();
     File *f = 0;
     uint32_t written;
     char name_buffer[32];
@@ -1283,7 +1282,7 @@ SubsysResultCode_e ImageCreator :: S_createD71(SubsysCommand *cmd)
         result = SSRET_CANNOT_OPEN_FILE;
     }
     if (fres == FR_OK) {
-        fres = f->seek(0);
+        fres = FileManager::seek(f, 0);
     }
     if (fres == FR_OK) {
         BlockDevice_File blk(f, 256);
@@ -1295,14 +1294,13 @@ SubsysResultCode_e ImageCreator :: S_createD71(SubsysCommand *cmd)
         cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
     }
     if (f) {
-        fm->fclose(f);
+        FileManager::fclose(f);
     }
     return (fres == FR_OK) ? SSRET_OK : SSRET_DISK_ERROR;
 }
 
 SubsysResultCode_e ImageCreator :: S_createD81(SubsysCommand *cmd)
 {
-    FileManager *fm = FileManager :: getFileManager();
     File *f = 0;
     uint32_t written;
     char name_buffer[32];
@@ -1312,7 +1310,7 @@ SubsysResultCode_e ImageCreator :: S_createD81(SubsysCommand *cmd)
         fres = write_zeros(f, 256*3200, written);
     }
     if (fres == FR_OK) {
-        fres = f->seek(0);
+        fres = FileManager::seek(f, 0);
     }
     if (fres == FR_OK) {
         BlockDevice_File blk(f, 256);
@@ -1324,14 +1322,13 @@ SubsysResultCode_e ImageCreator :: S_createD81(SubsysCommand *cmd)
         cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
     }
     if (f) {
-        fm->fclose(f);
+        FileManager::fclose(f);
     }
     return (fres == FR_OK) ? SSRET_OK : SSRET_DISK_ERROR;
 }
 
 SubsysResultCode_e ImageCreator :: S_createDNP(SubsysCommand *cmd)
 {
-    FileManager *fm = FileManager :: getFileManager();
     File *f = 0;
     uint32_t written;
     char name_buffer[32];
@@ -1358,7 +1355,7 @@ SubsysResultCode_e ImageCreator :: S_createDNP(SubsysCommand *cmd)
         fres = write_zeros(f, 65536*tracks, written);
     }
     if (fres == FR_OK) {
-        fres = f->seek(0);
+        fres = FileManager::seek(f, 0);
     }
     if (fres == FR_OK) {
         BlockDevice_File blk(f, 256);
@@ -1370,7 +1367,7 @@ SubsysResultCode_e ImageCreator :: S_createDNP(SubsysCommand *cmd)
         cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
     }
     if (f) {
-        fm->fclose(f);
+        FileManager::fclose(f);
     }
     return (fres == FR_OK) ? SSRET_OK : SSRET_DISK_ERROR;
 }
@@ -1388,7 +1385,6 @@ SubsysResultCode_e ImageCreator :: S_createD64(SubsysCommand *cmd)
 	int res;
 	BinImage *bin;
 	GcrImage *gcr;
-	FileManager *fm = FileManager :: getFileManager();
 	bool save_result;
 	SubsysResultCode_e retval = SSRET_OK;
 
@@ -1400,7 +1396,7 @@ SubsysResultCode_e ImageCreator :: S_createD64(SubsysCommand *cmd)
             fix_filename(buffer);
 			set_extension(buffer, extensions[cmd->mode], 32);
             File *f = 0;
-            FRESULT fres = fm -> fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_NEW, &f);
+            FRESULT fres = FileManager::fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_NEW, &f);
 			if(f) {
                 if(doGCR) {
                     gcr = new GcrImage;
@@ -1421,7 +1417,7 @@ SubsysResultCode_e ImageCreator :: S_createD64(SubsysCommand *cmd)
                     cmd->user_interface->hide_progress();
                 }
         		printf("Result of save: %d.\n", save_result);
-                fm->fclose(f);
+                FileManager::fclose(f);
 			} else {
 				printf("Can't create file '%s'\n", buffer);
 				cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);

@@ -198,6 +198,7 @@ class FileSystemCBM : public FileSystem
 public:
     FileSystemCBM(Partition *p, bool writable, const int *lay);
     virtual ~FileSystemCBM();
+    const char *identify() { return "FileSystemCBM"; } // identify the file system type
 
     static  bool check(Partition *p); // check if file system is present on this partition
     virtual bool init(void);               // Initialize

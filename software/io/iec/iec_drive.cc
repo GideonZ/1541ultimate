@@ -133,7 +133,7 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
     register_store(0x49454300, "SoftIEC Drive Settings", iec_config);
 
     enable = false;
-    cmd_path = fm->get_new_path("IEC Gui Path");
+    cmd_path = new Path();
 
     last_error_code = ERR_DOS;
     last_error_track = 0;
@@ -160,7 +160,7 @@ IecDrive :: ~IecDrive()
     for(int i=0;i<16;i++)
         delete channels[i];
 
-    fm->release_path(cmd_path);
+    delete cmd_path;
     delete vfs;
     intf->unregister_slave(slot_id);
 }

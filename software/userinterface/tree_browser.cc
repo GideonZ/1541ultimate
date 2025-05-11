@@ -81,7 +81,7 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root)
     state = 0;
     state_root = 0;
     fm = FileManager :: getFileManager();
-    path = fm->get_new_path("Tree Browser");
+    path = new Path();
     observerQueue = new ObserverQueue("TreeBrowser");
     fm->registerObserver(observerQueue);
 
@@ -95,7 +95,8 @@ TreeBrowser :: ~TreeBrowser()
 {
 	if(state)
 		delete state;
-	FileManager :: getFileManager() -> release_path(path);
+	if (path)
+        delete path;
 	if (observerQueue) {
 	    fm->deregisterObserver(observerQueue);
 		delete observerQueue;
@@ -264,7 +265,7 @@ void TreeBrowser :: checkFileManagerEvent(void)
 
         // example: browser path = /SD/Hallo  Event = media removed /SD/
 
-        Path *path = fm->get_new_path("handleEvent");
+        Path *path = new Path();
         path->cd(event->pathName.c_str()); // now we have a path object, with indexable elements :)
 
         TreeBrowserState *st = state_root;
@@ -284,7 +285,7 @@ void TreeBrowser :: checkFileManagerEvent(void)
                 match_dir = false;
             }
         }
-        fm->release_path(path);
+        delete path;
         path = NULL; // make sure it is no longer referenced.
 
         // match dir means: Our view is -or is a child of- the path mentioned in the event.
@@ -569,7 +570,7 @@ void TreeBrowser::paste(void)
     user_interface->show_progress("Copying...", items);
     for (int i = 0; i < items; i++) {
         const char *fn = clipboard.getFileNameByIndex(i);
-        FRESULT res = fm->fcopy(clipboard.getPath(), fn, this->getPath(), fn, false);  // from path, filename, dest path
+        FRESULT res = fcopy(clipboard.getPath(), fn, this->getPath(), fn, false);  // from path, filename, dest path
         if (res != FR_OK) {
             user_interface->hide_progress(); // temporarily
             printf("Error while copying: %s %s to %s\n", FileSystem::get_error_string(res), fn, this->getPath());
@@ -615,7 +616,7 @@ void TreeBrowser::delete_selected(void)
     for(int i=0;i<state->children->get_elements();i++) {
         Browsable *t = (*state->children)[i];
         if (t && t->getSelection()) {
-            FRESULT res = fm->delete_recursive(path, t->getName());
+            FRESULT res = delete_recursive(path, t->getName());
             if (res != FR_OK) {
                 user_interface->hide_progress(); // temporarily
                 int resp = user_interface->popup("Delete error occurred. Continue?", BUTTON_YES | BUTTON_NO);
@@ -644,12 +645,12 @@ void TreeBrowser :: cd(const char *dst)
 void TreeBrowser :: cd_impl(const char *dst)
 {
     // get the destination path to navigate to
-    Path *destination = fm->get_new_path("Tree Browser");
+    Path *destination = new Path();
     destination->cd(dst);
     
     // bail out on invalid path
     if(!fm->is_path_valid(destination)) {
-        fm->release_path(destination);
+        delete destination;
         return;
     }
     
@@ -662,7 +663,7 @@ void TreeBrowser :: cd_impl(const char *dst)
     for(uint8_t i=0; i<destination->getDepth(); i++) {
         state->into3(destination->getElement(i));
     }
-    fm->release_path(destination);
+    delete destination;
 }
 
 const char *TreeBrowser :: getPath() {

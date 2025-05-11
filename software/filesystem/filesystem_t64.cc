@@ -7,6 +7,7 @@
 
 #include "filesystem_t64.h"
 #include "pattern.h"
+#include "filemanager.h"
 
 /*************************************************************/
 /* T64 File System implementation                            */
@@ -33,7 +34,7 @@ FRESULT FileSystemT64 :: get_free (uint32_t* free, uint32_t *cs)
 // Clean-up cached data
 FRESULT FileSystemT64 :: sync(void)
 {
-    return t64_file->sync();
+    return FileManager::sync(t64_file);
 }
 
 FRESULT FileSystemT64 :: dir_open(const char *path, Directory **dir) // Opens directory (creates dir object, NULL = root)
@@ -65,11 +66,11 @@ FRESULT DirectoryT64 :: get_entry(FileInfo &f)
     f.extension[0] = '\0';
 
 	if(idx == 0) {
-	    fres = t64_file->seek(0); // rewind
+	    fres = FileManager::seek(t64_file, 0); // rewind
 		if(fres != FR_OK)
 			return fres;
 
-	    fres = t64_file->read(read_buf, 32, &bytes_read);
+	    fres = FileManager::read(t64_file, read_buf, 32, &bytes_read);
 		if(fres != FR_OK)
 			return fres;
 
@@ -79,7 +80,7 @@ FRESULT DirectoryT64 :: get_entry(FileInfo &f)
 	    }
 
 	    // read name of directory as first entry
-	    fres = t64_file->read(read_buf, 32, &bytes_read);
+	    fres = FileManager::read(t64_file, read_buf, 32, &bytes_read);
 		if(fres != FR_OK)
 			return fres;
 
@@ -100,7 +101,7 @@ FRESULT DirectoryT64 :: get_entry(FileInfo &f)
 	} else {
 		//printf("Idx = %d, Used = %d\n", idx, used);
 		if(idx <= used) {
-	        fres = t64_file->read(read_buf, 32, &bytes_read);
+	        fres = FileManager::read(t64_file, read_buf, 32, &bytes_read);
 			if(fres != FR_OK)
 				return fres;
 
@@ -211,7 +212,7 @@ FRESULT FileInT64 :: open(FileInfo *info, uint8_t flags)
 	length = info->size;
 	start_addr = info->time; // hack
 
-	return fs->t64_file->seek(file_offset);
+	return FileManager::seek(fs->t64_file, file_offset);
 }
 
 FRESULT FileInT64 :: close(void)
@@ -255,7 +256,7 @@ FRESULT FileInT64 :: read(void *buffer, uint32_t len, uint32_t *transferred)
         len = length - offset;
     }
 
-	res = fs->t64_file->read(dst, len, &bytes_read);
+	res = FileManager::read(fs->t64_file, dst, len, &bytes_read);
 	*transferred += bytes_read;
 	offset += bytes_read;
 	return res;

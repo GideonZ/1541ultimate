@@ -50,6 +50,8 @@ SRCS_CC	 =	small_printf.cc \
 			config.cc \
 			subsys.cc \
 			filemanager.cc \
+			filemanager_service.cc \
+			file_utils.cc \
 			file_device.cc \
 			file_partition.cc \
 			embedded_d64.cc \

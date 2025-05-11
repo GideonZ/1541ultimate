@@ -90,6 +90,7 @@ public:
 
     static FileSystem *test (Partition *prt);
 
+    const char *identify() { return "FileSystemFAT"; } // identify the file system type
     bool    init(void);              // Initialize file system
     FRESULT format(const char *name);// Format!
     FRESULT get_free (uint32_t *e, uint32_t *cs);  // Get number of free sectors on the file system

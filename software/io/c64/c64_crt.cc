@@ -2,7 +2,7 @@
 #include "dump_hex.h"
 #include "subsys.h"
 
-extern uint8_t _eapi_65_start;
+extern uint8_t _eapi_65_start[768];
 
 #define CRTHDR_HDRSIZE 0x10
 #define CRTHDR_TYPE    0x16
@@ -165,7 +165,7 @@ void C64_CRT::clear_definition(cart_def *def)
 SubsysResultCode_e C64_CRT::check_header(File *f, cart_def *def)
 {
     uint32_t bytes_read = 0;
-    FRESULT res = f->read(crt_header, 0x40, &bytes_read);
+    FRESULT res = FileManager::read(f, crt_header, 0x40, &bytes_read);
     if (bytes_read != 0x40) {
         return SSRET_FILE_READ_FAILED; // unable to read file header
     }
@@ -215,7 +215,7 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
     chunk->last = false;
 
     uint32_t bytes_read;
-    FRESULT res = f->read(chip_header, 0x10, &bytes_read);
+    FRESULT res = FileManager::read(f, chip_header, 0x10, &bytes_read);
     // dump_hex_relative(chip_header, 0x10);
     if ((res != FR_OK) || (bytes_read != 0x10)) {
         chunk->last = true;
@@ -251,7 +251,7 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
         eeprom_size = size;
 
         chunk->ram_location = eeprom_buffer;
-        res = f->read(eeprom_buffer, size, &bytes_read);
+        res = FileManager::read(f, eeprom_buffer, size, &bytes_read);
 
         if (getFpgaCapabilities() & CAPAB_EEPROM) {
             C64 :: set_eeprom_data(eeprom_buffer);
@@ -286,7 +286,7 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
 
     if (size && ((type == 0) || (type == 2))) {
         chunk->ram_location = mem_addr;
-        res = f->read(mem_addr, size, &bytes_read);
+        res = FileManager::read(f, mem_addr, size, &bytes_read);
         total_read += bytes_read;
         if (bytes_read != size) {
             printf("Just read %4x bytes\n", bytes_read);
@@ -358,7 +358,7 @@ void C64_CRT::patch_easyflash_eapi()
         if (eapi[0] == 0x65 && eapi[1] == 0x61 && eapi[2] == 0x70 && eapi[3] == 0x69) {
             original_eapi = new uint8_t[768];
             memcpy(original_eapi, eapi, 768);
-            memcpy(eapi, &_eapi_65_start, 768);
+            memcpy(eapi, _eapi_65_start, 768);
             printf("EAPI successfully patched!\n");
         }
     }
@@ -390,7 +390,7 @@ SubsysResultCode_e C64_CRT::read_crt(File *file, cart_def *def)
     }
 
     printf("Header OK. Now reading chip packets starting from %6x.\n", dw);
-    FRESULT fres = file->seek(dw);
+    FRESULT fres = FileManager::seek(file, dw);
     if (fres != FR_OK) {
         return SSRET_FILE_SEEK_FAILED;
     }
@@ -604,12 +604,11 @@ SubsysResultCode_e C64_CRT::load_crt(const char *path, const char *filename, car
 {
     File *file = 0;
     FileInfo *inf;
-    FileManager *fm = FileManager::getFileManager();
 
     clear_definition(def);
     def->filename = filename;
 
-    FRESULT fres = fm->fopen(path, filename, FA_READ, &file);
+    FRESULT fres = FileManager::fopen(path, filename, FA_READ, &file);
     if (fres != FR_OK) {
         return { SSRET_CANNOT_OPEN_FILE };
     }
@@ -617,7 +616,7 @@ SubsysResultCode_e C64_CRT::load_crt(const char *path, const char *filename, car
     C64_CRT *work = get_instance(); // Singleton.
     work->initialize(mem); // Clear previous definitions
     SubsysResultCode_e retval = work->read_crt(file, def);
-    fm->fclose(file);
+    FileManager::fclose(file);
 
     if (retval != SSRET_OK) {
         work->initialize(NULL); // clear remaining stuff if not successful
@@ -635,7 +634,7 @@ SubsysResultCode_e C64_CRT::save_crt(File *fo)
 
     uint32_t written;
 
-    FRESULT res = fo->write(crt->crt_header, 0x40, &written);
+    FRESULT res = FileManager::write(fo, crt->crt_header, 0x40, &written);
     if (res != FR_OK) {
         return SSRET_DISK_ERROR;
     }
@@ -671,12 +670,12 @@ SubsysResultCode_e C64_CRT::save_crt(File *fo)
         }
         
         
-        res = fo->write(cc->header, 0x10, &written);
+        res = FileManager::write(fo, cc->header, 0x10, &written);
         if (res != FR_OK) {
             break;
         }
 
-        res = fo->write(cc->ram_location, size, &written);
+        res = FileManager::write(fo, cc->ram_location, size, &written);
         if (res != FR_OK) {
             break;
         }

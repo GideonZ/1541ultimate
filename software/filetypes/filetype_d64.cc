@@ -153,7 +153,7 @@ SubsysResultCode_e FileTypeD64 :: loadMP3_st(SubsysCommand *cmd)
         
         FileInfo info(32);
         FileManager *fm = FileManager :: getFileManager();
-        fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
+        FileManager::fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
         int actSize = info.size;
         
         if (expSize != actSize)
@@ -168,26 +168,25 @@ SubsysResultCode_e FileTypeD64 :: loadMP3_st(SubsysCommand *cmd)
         }
     }
 
-    FileManager *fm = FileManager::getFileManager();
     FileInfo info(32);
-    fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
+    FileManager::fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
 
     File *file = 0;
-    FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
+    FRESULT fres = FileManager::fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
     if (file) {
         total_bytes_read = 0;
 
         if (ftype == 1571) {
-            file->read(dstAddr, expSize / 2, &bytes_read);
+            FileManager::read(file, dstAddr, expSize / 2, &bytes_read);
             total_bytes_read += bytes_read;
-            file->read(dstAddr + 700 * 256, expSize / 2, &bytes_read);
+            FileManager::read(file, dstAddr + 700 * 256, expSize / 2, &bytes_read);
         } else {
-            file->read(dstAddr, expSize, &bytes_read);
+            FileManager::read(file, dstAddr, expSize, &bytes_read);
         }
         total_bytes_read += bytes_read;
 
         printf("\nClosing file. ");
-        fm->fclose(file);
+        FileManager::fclose(file);
         file = NULL;
         printf("done.\n");
         static char buffer[48];

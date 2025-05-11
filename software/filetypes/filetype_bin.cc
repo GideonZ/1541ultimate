@@ -149,7 +149,7 @@ SubsysResultCode_e FileTypeBin :: execute(SubsysCommand *cmd)
 {
     FileManager *fm = FileManager :: getFileManager();
     uint32_t rom[4];
-    FRESULT fres = fm->load_file(cmd->path.c_str(), cmd->filename.c_str(), (uint8_t *)rom, 16, NULL);
+    FRESULT fres = load_file(cmd->path.c_str(), cmd->filename.c_str(), (uint8_t *)rom, 16, NULL);
     if (fres != FR_OK) {
         cmd->user_interface->popup("Unable to read file.", BUTTON_OK);
         return SSRET_CANNOT_OPEN_FILE;
@@ -168,7 +168,7 @@ SubsysResultCode_e FileTypeBin :: execute(SubsysCommand *cmd)
         }
         if (ok) {
             fm->create_dir(ROMS_DIRECTORY);
-            fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), ROMS_DIRECTORY, fnbuf, true);
+            fcopy(cmd->path.c_str(), cmd->filename.c_str(), ROMS_DIRECTORY, fnbuf, true);
             C64 :: getMachine() ->set_rom_config(0, cmd->filename.c_str());
         }
         break;
@@ -181,7 +181,7 @@ SubsysResultCode_e FileTypeBin :: execute(SubsysCommand *cmd)
         }
         if (ok) {
             fm->create_dir(ROMS_DIRECTORY);
-            fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), ROMS_DIRECTORY, fnbuf, true);
+            fcopy(cmd->path.c_str(), cmd->filename.c_str(), ROMS_DIRECTORY, fnbuf, true);
             C64 :: getMachine() ->set_rom_config(1, cmd->filename.c_str());
         }
         break;
@@ -194,7 +194,7 @@ SubsysResultCode_e FileTypeBin :: execute(SubsysCommand *cmd)
         }
         if (ok) {
             fm->create_dir(ROMS_DIRECTORY);
-            fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), ROMS_DIRECTORY, fnbuf, true);
+            fcopy(cmd->path.c_str(), cmd->filename.c_str(), ROMS_DIRECTORY, fnbuf, true);
             C64 :: getMachine() ->set_rom_config(2, cmd->filename.c_str());
         }
         break;
@@ -209,7 +209,7 @@ SubsysResultCode_e FileTypeBin :: execute(SubsysCommand *cmd)
     case CMD_SET_DRIVEROM_71:
     case CMD_SET_DRIVEROM_81:
         fm->create_dir(ROMS_DIRECTORY);
-        fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), ROMS_DIRECTORY, fnbuf, true);
+        fcopy(cmd->path.c_str(), cmd->filename.c_str(), ROMS_DIRECTORY, fnbuf, true);
         if(c1541_A) {
             c1541_A->set_rom_config(cmd->functionID - CMD_SET_DRIVEROM_41, cmd->filename.c_str());
         }
@@ -225,7 +225,7 @@ SubsysResultCode_e FileTypeBin :: load_kernal(SubsysCommand *cmd)
     uint8_t *buffer = new uint8_t[size];
 
     printf("Binary Load.. %s\n", cmd->filename.c_str());
-    FRESULT fres = fm->load_file(cmd->path.c_str(), cmd->filename.c_str(), buffer, size, NULL);
+    FRESULT fres = load_file(cmd->path.c_str(), cmd->filename.c_str(), buffer, size, NULL);
 
     if(fres == FR_OK) {
         SubsysCommand *c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_SET_KERNAL, 0, buffer, size);

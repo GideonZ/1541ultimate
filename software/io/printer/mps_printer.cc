@@ -168,7 +168,7 @@ MpsPrinter::MpsPrinter(char * filename)
     DBGMSG("creation");
 #ifndef NOT_ULTIMATE
     fm = FileManager :: getFileManager();
-    path = fm->get_new_path("mps_printer");
+    path = new Path();
     if (filename == NULL) filename = (char *) FS_ROOT "mps";
 #else
     if (filename == NULL) filename = (char *) "mps";
@@ -229,7 +229,7 @@ MpsPrinter::~MpsPrinter()
 {
 #ifndef NOT_ULTIMATE
     /* =======  Release resources */
-    fm->release_path(path);
+    delete path;
 #endif
     lodepng_state_cleanup(&lodepng_state);
     DBGMSG("deletion");
@@ -754,7 +754,7 @@ MpsPrinter::calcPageNum(void)
 
     path->cd(dirname);
     IndexedList<FileInfo *> *infos = new IndexedList<FileInfo *>(8, NULL);
-    if (fm->get_directory(path, *infos, NULL) != FR_OK)
+    if (get_directory(path, *infos, NULL) != FR_OK)
     {
         delete infos;
     }
@@ -886,12 +886,12 @@ MpsPrinter::Print(const char * filename)
 #ifndef NOT_ULTIMATE
     File *f;
     printf("Saving printer file %s\n", filename);
-    FRESULT fres = fm->fopen((const char *) filename, FA_WRITE|FA_CREATE_NEW, &f);
+    FRESULT fres = FileManager::fopen((const char *) filename, FA_WRITE|FA_CREATE_NEW, &f);
     if (f)
     {
         uint32_t bytes;
-        f->write(buffer, outsize, &bytes);
-        fm->fclose(f);
+        FileManager::write(f, buffer, outsize, &bytes);
+        FileManager::fclose(f);
         DBGMSG("PNG saved");
     }
     else

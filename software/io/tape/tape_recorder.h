@@ -47,7 +47,6 @@
 
 class TapeRecorder : public SubSystem, ObjectWithMenu
 {
-	FileManager *fm;
 	TaskHandle_t taskHandle;
     volatile UserInterface *last_user_interface;
 	File *file;

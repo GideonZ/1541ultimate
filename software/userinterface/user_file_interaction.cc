@@ -49,9 +49,9 @@ int UserFileInteraction::fetch_context_items(BrowsableDirEntry *br, IndexedList<
 
     FileManager *fm = FileManager::getFileManager();
     File *file = 0;
-    FRESULT fres = fm->fopen(app_directory, appname, FA_READ, &file);
+    FRESULT fres = FileManager::fopen(app_directory, appname, FA_READ, &file);
     if (file) {
-        fm->fclose(file);
+        FileManager::fclose(file);
         showRunWithApp = true;
     }
 #endif
@@ -96,52 +96,52 @@ SubsysResultCode_e UserFileInteraction::S_rename(SubsysCommand *cmd)
 
     FileManager *fm = FileManager::getFileManager();
 
-    Path *p = fm->get_new_path("S_rename");
-    p->cd(cmd->path.c_str());
+    Path *pf = new Path(cmd->path.c_str());
+    pf->cd(cmd->filename.c_str());
+    Path *pt = new Path(cmd->path.c_str());
 
     strncpy(buffer, cmd->filename.c_str(), 64);
     buffer[63] = 0;
 
     res = cmd->user_interface->string_box("Give a new name..", buffer, 63);
     if (res > 0) {
-        fres = fm->rename(p, cmd->filename.c_str(), buffer);
+        pt->cd(buffer);
+        fres = FileManager::rename(pf->get_path(), pt->get_path());
         if (fres != FR_OK) {
             sprintf(buffer, "Error: %s", FileSystem::get_error_string(fres));
             cmd->user_interface->popup(buffer, BUTTON_OK);
         }
     }
-    fm->release_path(p);
+    delete pt;
+    delete pf;
     return SSRET_OK;
 }
 
 SubsysResultCode_e UserFileInteraction::S_delete(SubsysCommand *cmd)
 {
     char buffer[64];
-    FileManager *fm = FileManager::getFileManager();
     int res = cmd->user_interface->popup("Are you sure?", BUTTON_YES | BUTTON_NO);
-    Path *p = fm->get_new_path("S_delete");
-    p->cd(cmd->path.c_str());
+    Path *p = new Path(cmd->path.c_str());
     if (res == BUTTON_YES) {
-        FRESULT fres = FileManager::getFileManager()->delete_recursive(p, cmd->filename.c_str());
+        FRESULT fres = delete_recursive(p, cmd->filename.c_str());
         if (fres != FR_OK) {
             sprintf(buffer, "Error: %s", FileSystem::get_error_string(fres));
             cmd->user_interface->popup(buffer, BUTTON_OK);
         }
     }
-    fm->release_path(p);
+    delete(p);
     return SSRET_OK;
 }
 
 SubsysResultCode_e UserFileInteraction::S_view(SubsysCommand *cmd)
 {
-    FileManager *fm = FileManager::getFileManager();
     File *f = 0;
-    FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
+    FRESULT fres = FileManager::fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
     uint32_t transferred;
     if (f != NULL) {
         uint32_t size = f->get_size();
         char *text_buf = new char[size + 1];
-        FRESULT fres = f->read(text_buf, size, &transferred);
+        FRESULT fres = FileManager::read(f, text_buf, size, &transferred);
         printf("Res = %d. Read text buffer: %d bytes\n", fres, transferred);
         text_buf[transferred] = 0;
         cmd->user_interface->run_editor(text_buf, transferred);
@@ -155,19 +155,18 @@ SubsysResultCode_e UserFileInteraction::S_createDir(SubsysCommand *cmd)
     char buffer[64];
     buffer[0] = 0;
 
-    FileManager *fm = FileManager::getFileManager();
-    Path *path = fm->get_new_path("createDir");
+    Path *path = new Path(cmd->path.c_str());
     path->cd(cmd->path.c_str());
 
     int res = cmd->user_interface->string_box("Give name for new directory..", buffer, 22);
     if (res > 0) {
-        FRESULT fres = fm->create_dir(path, buffer);
+        FRESULT fres = FileManager::create_dir(path, buffer);
         if (fres != FR_OK) {
             sprintf(buffer, "Error: %s", FileSystem::get_error_string(fres));
             cmd->user_interface->popup(buffer, BUTTON_OK);
         }
     }
-    fm->release_path(path);
+    delete path;
     return SSRET_OK;
 }
 
@@ -188,7 +187,7 @@ SubsysResultCode_e UserFileInteraction::S_runApp(SubsysCommand *cmd)
     uint8_t *dest;
     FileManager *fm = FileManager::getFileManager();
     FileInfo info(32);
-    fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
+    FileManager::fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
 
     sectors = (info.size >> 9);
     if (sectors >= 128)
@@ -201,7 +200,7 @@ SubsysResultCode_e UserFileInteraction::S_runApp(SubsysCommand *cmd)
     if (!cmd->user_interface)
         progress = false;
 
-    FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
+    FRESULT fres = FileManager::fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
     if (file) {
         total_bytes_read = 0;
         // load file in REU memory
@@ -209,7 +208,7 @@ SubsysResultCode_e UserFileInteraction::S_runApp(SubsysCommand *cmd)
             cmd->user_interface->show_progress("Loading REU file..", 32);
             dest = (uint8_t *) (REU_MEMORY_BASE + 4);
             while (remain > 0) {
-                file->read(dest, bytes_per_step, &bytes_read);
+                FileManager::read(file, dest, bytes_per_step, &bytes_read);
                 total_bytes_read += bytes_read;
                 cmd->user_interface->update_progress(NULL, 1);
                 remain -= bytes_per_step;
@@ -217,11 +216,11 @@ SubsysResultCode_e UserFileInteraction::S_runApp(SubsysCommand *cmd)
             }
             cmd->user_interface->hide_progress();
         } else {
-            file->read((void *) (REU_MEMORY_BASE + 4), (REU_MAX_SIZE - 4), &bytes_read);
+            FileManager::read(file, (void *) (REU_MEMORY_BASE + 4), (REU_MAX_SIZE - 4), &bytes_read);
             total_bytes_read += bytes_read;
         }
         printf("\nClosing file. ");
-        fm->fclose(file);
+        FileManager::fclose(file);
         file = NULL;
         printf("done.\n");
         *(uint8_t *) (REU_MEMORY_BASE) = total_bytes_read & 0xff;
@@ -261,12 +260,12 @@ SubsysResultCode_e UserFileInteraction::S_runApp(SubsysCommand *cmd)
 }
 
 // TODO: Use these functions in other user-interface based subsystem calls
-FRESULT create_file_ask_if_exists(FileManager *fm, UserInterface *ui, const char *path, const char *filename, File **f)
+FRESULT create_file_ask_if_exists(UserInterface *ui, const char *path, const char *filename, File **f)
 {
-    FRESULT res = fm->fopen(path, filename, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, f);
+    FRESULT res = FileManager::fopen(path, filename, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, f);
     if (res == FR_EXIST) {
         if (ui->popup("File already exists. Overwrite?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
-            res = fm->fopen(path, filename, FA_WRITE | FA_CREATE_ALWAYS, f);
+            res = FileManager::fopen(path, filename, FA_WRITE | FA_CREATE_ALWAYS, f);
         }
     }
     return res;
@@ -275,13 +274,12 @@ FRESULT create_file_ask_if_exists(FileManager *fm, UserInterface *ui, const char
 FRESULT create_user_file(UserInterface *ui, const char *message, const char *ext, const char *path, File **f, char *buffer)
 {
     char filename[32];
-    FileManager *fm = FileManager :: getFileManager();
     *f = NULL;
     if(ui->string_box(message, buffer, 22) > 0) {
         strcpy(filename, buffer);
         fix_filename(filename);
         set_extension(filename, ext, 32);
-        FRESULT res = create_file_ask_if_exists(fm, ui, path, filename, f);
+        FRESULT res = create_file_ask_if_exists(ui, path, filename, f);
         return res;
     }
     return FR_DENIED;
@@ -296,7 +294,7 @@ FRESULT write_zeros(File *f, int size, uint32_t &written)
     FRESULT fres = FR_OK;
     while(size > 0) {
         int now = (size > 16384) ? 16384 : size;
-        fres = f->write(buffer, now, &wr);
+        fres = FileManager::write(f, buffer, now, &wr);
         written += wr;
         size -= wr;
         if (fres != FR_OK) {

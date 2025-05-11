@@ -15,7 +15,6 @@ class HomeDirectory
     UserInterface *ui;
     TreeBrowser *browser;
     ObserverQueue *observerQueue;
-    FileManager *fm;
     Path *path;
     
     static void poll_home_directory(void *a);

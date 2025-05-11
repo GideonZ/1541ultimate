@@ -6,15 +6,14 @@ REUPreloader::REUPreloader()
 {
     cfg = C64::getMachine()->cfg;
     sem = xSemaphoreCreateMutex();
-    fm = FileManager::getFileManager();
 
     if (cfg->get_value(CFG_C64_REU_PRE)) {
 
-        path = fm->get_new_path("REUPreloader");
+        path = new Path();
         path->cd(cfg->get_string(CFG_C64_REU_IMG));
 
         observerQueue = new ObserverQueue("REU Preloader");
-        fm->registerObserver(observerQueue);
+        FileManager::getFileManager()->registerObserver(observerQueue);
 
         xTaskCreate(REUPreloader::poll_reu_preload, "REU Preloader", configMINIMAL_STACK_SIZE, this, PRIO_BACKGROUND, NULL);
     }
@@ -31,11 +30,11 @@ REUPreloader::~REUPreloader()
 void REUPreloader :: cleanup(void)
 {
     if (observerQueue) {
-        fm->deregisterObserver(observerQueue);
+        FileManager::getFileManager()->deregisterObserver(observerQueue);
         delete observerQueue;
     }
     if (path) {
-        fm->release_path(path);
+        delete path;
     }
 }
 
@@ -97,7 +96,7 @@ int REUPreloader::LoadREU(char *status)
         uint32_t size = reu_sizes[cfg->get_value(CFG_C64_REU_SIZE)];
 
         if (offset < size) {
-            f->read((uint8_t *) address, size - offset, &transferred);
+            FileManager::read(f, (uint8_t *) address, size - offset, &transferred);
             sprintf(status, "REU Load: Loaded %d bytes to $%6x from %s", transferred, offset, fullpath);
         } else {
             sprintf(status, "REU Load: Offset %d >= REU size %d, skipping", offset, size);
@@ -157,7 +156,7 @@ int REUPreloader::SaveREU(char *status)
             return -1;
         }
 
-        f->write((uint8_t *) address, size - offset, &transferred);
+        FileManager::write(f, (uint8_t *) address, size - offset, &transferred);
         sprintf(status, "REU Save: Saved %d bytes from $%6x to %s", transferred, offset, fullpath);
 
         fm->fclose(f);

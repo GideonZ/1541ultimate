@@ -112,7 +112,7 @@ API_CALL(PUT, runners, modplay, NULL, ARRAY( { { "file", P_REQUIRED } }))
         return;
     }
     uint32_t trans;
-    FRESULT fres = FileManager :: getFileManager() -> load_file("", args["file"], (uint8_t *)REU_MEMORY_BASE, REU_MAX_SIZE, &trans);
+    FRESULT fres = load_file("", args["file"], (uint8_t *)REU_MEMORY_BASE, REU_MAX_SIZE, &trans);
     if (fres != FR_OK) {
         resp->error(FileSystem::get_error_string(fres));
         resp->json_response(HTTP_NOT_FOUND);

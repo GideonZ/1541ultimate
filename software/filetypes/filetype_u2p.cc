@@ -104,13 +104,12 @@ SubsysResultCode_e FileTypeUpdate :: execute(SubsysCommand *cmd)
 
     uint8_t *dest;
 
-    FileManager *fm = FileManager :: getFileManager();
     FileInfo inf(32);
-    fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), inf);
+    FileManager::fstat(cmd->path.c_str(), cmd->filename.c_str(), inf);
 	remain = inf.size;
 
 	printf("Update Load.. %s\n", cmd->filename.c_str());
-	FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
+	FRESULT fres = FileManager::fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
 
 	struct {
 		uint32_t load;
@@ -123,19 +122,19 @@ SubsysResultCode_e FileTypeUpdate :: execute(SubsysCommand *cmd)
 		total_bytes_read = 0;
 		// load file in REU memory
 		while(remain) {
-			file->read(&header, 12, &bytes_read);
+			FileManager::read(file, &header, 12, &bytes_read);
 			remain -= bytes_read;
 			total_bytes_read += bytes_read;
 			if (header.start)
 				start = header.start;
 			if (bytes_read == 12) {
 				dest = (uint8_t *)(header.load);
-				file->read(dest, header.length, &bytes_read);
+				FileManager::read(file, dest, header.length, &bytes_read);
 				remain -= bytes_read;
 				total_bytes_read += bytes_read;
 			}
 		}
-		fm->fclose(file);
+		FileManager::fclose(file);
 		// this is a hack!
 		cmd->user_interface->host->release_ownership();
 		file = NULL;

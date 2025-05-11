@@ -97,7 +97,6 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     mstring drive_name;
     t_drive_type current_drive_type;
     mstring current_drive_rom;
-    FileManager *fm;
     
     TaskCategory *taskItemCategory;
     int iec_address;

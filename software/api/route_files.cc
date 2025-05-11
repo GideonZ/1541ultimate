@@ -48,7 +48,7 @@ static File *create_file_of_size(ResponseWrapper *resp, const char *fn, int size
         fm->fclose(f);
         return NULL;
     }
-    fres = f->seek(0);
+    fres = FileManager::seek(f, 0);
     if (fres != FR_OK) {
         resp->error(FileSystem::get_error_string(fres));
         resp->json_response(HTTP_INTERNAL_SERVER_ERROR);

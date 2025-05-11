@@ -179,7 +179,7 @@ FileTypeSID ::FileTypeSID(const char *filename, const char *sslfile, bool mus)
 FileTypeSID ::~FileTypeSID()
 {
     if (file)
-        fm->fclose(file);
+        FileManager::fclose(file);
 }
 
 int FileTypeSID ::readHeader(void)
@@ -191,23 +191,23 @@ int FileTypeSID ::readHeader(void)
 
     // if we didn't open the file yet, open it now
     if (!file) {
-        fres = fm->fopen(path_string.c_str(), file_string.c_str(), FA_READ, &file);
+        fres = FileManager::fopen(path_string.c_str(), file_string.c_str(), FA_READ, &file);
 
         if (fres != FR_OK) {
             printf("opening file was not successful. %s\n", FileSystem ::get_error_string(fres));
             return SSRET_CANNOT_OPEN_FILE;
         }
     } else {
-        if (file->seek(0) != FR_OK) {
-            fm->fclose(file);
+        if (FileManager::seek(file, 0) != FR_OK) {
+            FileManager::fclose(file);
             file = NULL;
             return SSRET_FILE_SEEK_FAILED;
         }
     }
 
-    fres = file->read(sid_header, 0x7e, &bytes_read);
+    fres = FileManager::read(file, sid_header, 0x7e, &bytes_read);
     if (fres != FR_OK) {
-        fm->fclose(file);
+        FileManager::fclose(file);
         file = NULL;
         return SSRET_FILE_READ_FAILED;
     }
@@ -216,12 +216,12 @@ int FileTypeSID ::readHeader(void)
     magic = (uint32_t *)sid_header;
     if ((cpu_to_32le(*magic) != magic_rsid) && (cpu_to_32le(*magic) != magic_psid)) {
         printf("Filetype not as expected. (%08x)\n", *magic);
-        fm->fclose(file);
+        FileManager::fclose(file);
         file = NULL;
         return SSRET_ERROR_IN_FILE_FORMAT;
     }
 
-    fm->fclose(file);
+    FileManager::fclose(file);
     file = NULL;
     header_valid = true;
     return 0;
@@ -474,7 +474,7 @@ SubsysResultCode_e FileTypeSID ::execute(SubsysCommand *cmd)
             printf("Error: %s\n", SubsysCommand::error_string(error));
         }
         if (file) {
-            fm->fclose(file);
+            FileManager::fclose(file);
             file = NULL;
         }
     }
@@ -497,10 +497,10 @@ void FileTypeSID ::readSongLengths(void)
     memset(sid_rom + 0x3000, 0, 512);
 
     uint32_t songLengthsArrayLength = 0;
-    if (fm->fopen(path_string.c_str(), ssl_filename.c_str(), FA_READ, &sslFile) == FR_OK) {
-        sslFile->read(sid_rom + 0x3000, 512, &songLengthsArrayLength);
+    if (FileManager::fopen(path_string.c_str(), ssl_filename.c_str(), FA_READ, &sslFile) == FR_OK) {
+        FileManager::read(sslFile, sid_rom + 0x3000, 512, &songLengthsArrayLength);
         printf("Song length array loaded. %d bytes\n", songLengthsArrayLength);
-        fm->fclose(sslFile);
+        FileManager::fclose(sslFile);
     } else {
         printf("Cannot open file with song lengths.\n");
 
@@ -552,9 +552,9 @@ bool FileTypeSID ::tryLoadStereoMus(int offset)
 
         set_extension(filename, ".str", 80);
 
-        if (fm->fopen(path_string.c_str(), filename, FA_READ, &strFile) == FR_OK) {
-            if (strFile->seek(2) != FR_OK) { // skip first 2 bytes
-                fm->fclose(strFile);
+        if (FileManager::fopen(path_string.c_str(), filename, FA_READ, &strFile) == FR_OK) {
+            if (FileManager::seek(strFile, 2) != FR_OK) { // skip first 2 bytes
+                FileManager::fclose(strFile);
                 return false;
             }
 
@@ -594,12 +594,12 @@ SubsysResultCode_e FileTypeSID ::prepare(bool use_default)
     uint32_t *magic = (uint32_t *)sid_header;
     if (!file) {
         printf("Open: '%s' / '%s'\n", path_string.c_str(), filename);
-        if (fm->fopen(path_string.c_str(), filename, FA_READ, &file) != FR_OK) {
+        if (FileManager::fopen(path_string.c_str(), filename, FA_READ, &file) != FR_OK) {
             file = NULL;
             return SSRET_CANNOT_OPEN_FILE;
         }
     }
-    if (file->seek(0) != FR_OK) {
+    if (FileManager::seek(file, 0) != FR_OK) {
         return SSRET_FILE_SEEK_FAILED;
     }
 
@@ -612,11 +612,11 @@ SubsysResultCode_e FileTypeSID ::prepare(bool use_default)
         start = 0x1000; // sidplayer music data at $1000
         bytesToSkip = 2;
 
-        if (file->seek(data_offset + bytesToSkip) != FR_OK) {
+        if (FileManager::seek(file, data_offset + bytesToSkip) != FR_OK) {
             return SSRET_FILE_SEEK_FAILED;
         }
     } else {
-        if (file->read(sid_header, 0x7E, &bytes_read) != FR_OK) {
+        if (FileManager::read(file, sid_header, 0x7E, &bytes_read) != FR_OK) {
             return SSRET_FILE_READ_FAILED;
         }
         if ((*magic != magic_rsid) && (*magic != magic_psid)) {
@@ -630,18 +630,18 @@ SubsysResultCode_e FileTypeSID ::prepare(bool use_default)
             start = 0x1000; // sidplayer music data at $1000
             bytesToSkip = 2;
 
-            if (file->seek(data_offset + bytesToSkip) != FR_OK) {
+            if (FileManager::seek(file, data_offset + bytesToSkip) != FR_OK) {
                 return SSRET_FILE_SEEK_FAILED;
             }
         } else {
-            if (file->seek(data_offset) != FR_OK) {
+            if (FileManager::seek(file, data_offset) != FR_OK) {
                 return SSRET_FILE_SEEK_FAILED;
             }
             start = uint16_t(sid_header[0x08]) << 8;
             start |= sid_header[0x09];
 
             if (start == 0) {
-                if (file->read(&start, 2, &bytes_read) != FR_OK) {
+                if (FileManager::read(file, &start, 2, &bytes_read) != FR_OK) {
                     return SSRET_FILE_READ_FAILED;
                 }
             }
@@ -751,7 +751,7 @@ void FileTypeSID ::load(void)
         timeout++;
         if (timeout == 30) {
             printf("Time out!\n");
-            fm->fclose(file);
+            FileManager::fclose(file);
             file = NULL;
             machine->init_cartridge();
             return;
@@ -821,7 +821,7 @@ int FileTypeSID ::loadFile(File *file, int offset)
     uint8_t *dest = (uint8_t *)(C64_MEMORY_BASE);
 
     while (max_length > 0) {
-        file->read(dma_load_buffer, block, &bytes_read);
+        FileManager::read(file, dma_load_buffer, block, &bytes_read);
         total_trans += bytes_read;
         if ((bytes_read + offset) > 65535) {
             // printf("\nRead: %d\nmemcpy(%p, %p, %d);\n", bytes_read, &dest[offset], dma_load_buffer, 65536 - offset);
@@ -840,7 +840,7 @@ int FileTypeSID ::loadFile(File *file, int offset)
         block = 512;
     }
 
-    fm->fclose(file);
+    FileManager::fclose(file);
 
     printf("Bytes loaded: %d. $%4x-$%4x\n", total_trans, start, end);
     return offset;

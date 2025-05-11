@@ -8,13 +8,12 @@ HomeDirectory::HomeDirectory(UserInterface *ui, TreeBrowser *browser)
     this->ui = ui;
     this->browser = browser;
 
-    fm = FileManager :: getFileManager();
-    path = fm->get_new_path("HomeDirectory");
+    path = new Path();
     path->cd(ui->cfg->get_string(CFG_USERIF_HOME_DIR));
     setHomeDirectory(path->get_path());
     
     observerQueue = new ObserverQueue("HomeDir");
-    fm->registerObserver(observerQueue);
+    FileManager::getFileManager()->registerObserver(observerQueue);
 
     xTaskCreate( HomeDirectory :: poll_home_directory, "Home Directory", configMINIMAL_STACK_SIZE, this, PRIO_BACKGROUND, NULL);
 #endif
@@ -24,11 +23,11 @@ HomeDirectory::~HomeDirectory()
 {
     printf("-> HomeDirectory destruct.\n");
     if (observerQueue) {
-        fm->deregisterObserver(observerQueue);
+        FileManager::getFileManager()->deregisterObserver(observerQueue);
         delete observerQueue;
     }
     if(path) {
-        fm->release_path(path);
+        delete path;
     }
     vTaskDelete(NULL);
 }

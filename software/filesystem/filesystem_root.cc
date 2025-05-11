@@ -59,21 +59,19 @@ PathStatus_t FileSystem_Root::walk_path(PathInfo& pathInfo)
 // functions for reading directories
 FRESULT FileSystem_Root :: dir_open(const char *path, Directory **dir)
 {
-	FileManager *fm = FileManager :: getFileManager();
-	Path *p = fm->get_new_path("root_temp");
-	p->cd(path);
+	Path *p = new Path(path);
 	CachedTreeNode *n = rootnode;
 	int elements = n->children.get_elements();
 	for(int i=0;i<p->getDepth();i++) {
 		n = n->find_child(p->getElement(i));
 		if (!n) {
-			fm->release_path(p);
+			delete p;
 			return FR_NO_PATH;
 		}
 		elements = n->probe();
 	}
 
-	fm->release_path(p);
+	delete(p);
 	if (!elements) {
 		return FR_DENIED;
 	}

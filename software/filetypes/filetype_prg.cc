@@ -118,7 +118,7 @@ bool FileTypePRG :: check_header(File *f, bool has_header)
     if(!has_header)
         return true;
     uint32_t bytes_read;
-    FRESULT res = f->read(p00_header, 0x1A, &bytes_read);
+    FRESULT res = FileManager::read(f, p00_header, 0x1A, &bytes_read);
     if(res != FR_OK)
         return false;
     if(strncmp(p00_header, "C64File", 7))

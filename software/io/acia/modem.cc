@@ -817,20 +817,19 @@ void Modem :: RelayFileToSocket(const char *filename, int socket, const char *al
         return;
     }
 
-    FileManager *fm = FileManager :: getFileManager();
     File *f;
     uint32_t tr = 0;
-    FRESULT fres = fm->fopen(filename, FA_READ, &f);
+    FRESULT fres = FileManager::fopen(filename, FA_READ, &f);
 
     uint8_t *buffer = new uint8_t[512];
     if (fres == FR_OK) {
         do {
-            f->read(buffer, 512, &tr);
+            FileManager::read(f, buffer, 512, &tr);
             if (tr) {
                 send(socket, buffer, tr, 0);
             }
         } while(tr == 512);
-        fm->fclose(f);
+        FileManager::fclose(f);
     } else if (alt) {
         send(socket, alt, strlen(alt), 0);
     }

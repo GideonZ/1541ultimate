@@ -263,6 +263,7 @@ public:
     FileSystem_ISO9660(Partition *p);
     ~FileSystem_ISO9660();
 
+    const char *identify() { return "FileSystemISO9660"; } // identify the file system type
     static FileSystem* test(Partition *p);        // check if file system is present on this partition
     bool    init(void);              // Initialize file system
     

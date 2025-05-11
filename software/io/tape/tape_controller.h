@@ -36,7 +36,6 @@
 
 class TapeController : public SubSystem, ObjectWithMenu, ConfigurableObject
 {
-	FileManager *fm;
 	File *file;
 	uint32_t length;
 	int   state;

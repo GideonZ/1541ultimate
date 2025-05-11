@@ -74,9 +74,8 @@ SubsysResultCode_e FileTypeREU :: execute_st(SubsysCommand *cmd)
     
 	static char buffer[48];
     uint8_t *dest;
-    FileManager *fm = FileManager :: getFileManager();
     FileInfo info(32);
-    FRESULT fres = fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
+    FRESULT fres = FileManager::fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
 
     if (fres != FR_OK) {
         cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
@@ -108,7 +107,7 @@ SubsysResultCode_e FileTypeREU :: execute_st(SubsysCommand *cmd)
 	if (!cmd->user_interface)
 		progress = false;
 
-	fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
+	fres = FileManager::fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
 	if(file) {
 		total_bytes_read = 0;
 		// load file in REU memory
@@ -116,7 +115,7 @@ SubsysResultCode_e FileTypeREU :: execute_st(SubsysCommand *cmd)
 			cmd->user_interface->show_progress("Loading REU file..", 32);
 			dest = (uint8_t *)(REU_MEMORY_BASE);
 			while(remain > 0) {
-				file->read(dest, bytes_per_step, &bytes_read);
+				FileManager::read(file, dest, bytes_per_step, &bytes_read);
 				total_bytes_read += bytes_read;
 				cmd->user_interface->update_progress(NULL, 1);
 				remain -= bytes_per_step;
@@ -124,11 +123,11 @@ SubsysResultCode_e FileTypeREU :: execute_st(SubsysCommand *cmd)
 			}
 			cmd->user_interface->hide_progress();
 		} else {
-			file->read((void *)(REU_MEMORY_BASE), (REU_MAX_SIZE), &bytes_read);
+			FileManager::read(file, (void *)(REU_MEMORY_BASE), (REU_MAX_SIZE), &bytes_read);
 			total_bytes_read += bytes_read;
 		}
 		printf("\nClosing file. ");
-		fm->fclose(file);
+		FileManager::fclose(file);
 		file = NULL;
 		printf("done.\n");
 

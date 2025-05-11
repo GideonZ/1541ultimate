@@ -47,6 +47,8 @@ SRCS_CC	 =  small_printf.cc \
 			usb_scsi.cc \
 			path.cc \
 			filemanager.cc \
+			filemanager_service.cc \
+			file_utils.cc \
 			mystring.cc \
 			filesystem_root.cc \
 			file_device.cc \

@@ -17,6 +17,7 @@ public:
     FileSystemA64();
     ~FileSystemA64();
 
+    const char *identify() { return "FileSystemA64"; } // identify the file system type
     // functions for reading and writing files
     FRESULT file_open(const char *filename, uint8_t flags, File **);  // Opens file (creates file object)
     PathStatus_t walk_path(PathInfo& pathInfo);
@@ -50,27 +51,27 @@ public:
     FRESULT sync(void)
     {
         if (cached)
-            return cached->sync();
+            return FileManager::sync(cached);
         return FR_INT_ERR;
     }
     FRESULT read(void *buffer, uint32_t len, uint32_t *transferred)
     {
         if (cached)
-            return cached->read(buffer, len, transferred);
+            return FileManager::read(cached, buffer, len, transferred);
         return FR_INT_ERR;
     }
 
     FRESULT write(const void *buffer, uint32_t len, uint32_t *transferred)
     {
         if (cached)
-            return cached->write(buffer, len, transferred);
+            return FileManager::write(cached, (void *)buffer, len, transferred);
         return FR_INT_ERR;
     }
 
     FRESULT seek(uint32_t pos)
     {
         if (cached)
-            return cached->seek(pos);
+            return FileManager::seek(cached, pos);
         return FR_INT_ERR;
     }
 

@@ -17,7 +17,7 @@ void  vfs_load_plugin()
 vfs_t *vfs_openfs()
 {
     vfs_t *vfs = new vfs_t;
-    vfs->path = FileManager :: getFileManager() -> get_new_path("vfs");
+    vfs->path = new Path();
     vfs->open_file = NULL;
     return vfs;
 }
@@ -25,7 +25,7 @@ vfs_t *vfs_openfs()
 void vfs_closefs(vfs_t *vfs)
 {
     Path *p = (Path *)vfs->path;
-    FileManager :: getFileManager() -> release_path(p);
+    delete p;
     delete vfs;
 }
 
@@ -72,7 +72,7 @@ int  vfs_read(void *buffer, int chunks, int chunk_len, vfs_file_t *file)
     uint32_t trans = 0;
     uint32_t len = chunks*chunk_len;
     dbg_printf("R(%d,%d)",chunks,chunk_len);
-    if(f->read(buffer, len, &trans) != FR_OK)
+    if(FileManager::read(f, buffer, len, &trans) != FR_OK)
         return -1;
     
     if (trans < len) {
@@ -87,7 +87,7 @@ int  vfs_write(const void *buffer, int chunks, int chunk_len, vfs_file_t *file)
     File *f = (File *)file->file;
     uint32_t trans = 0;
     uint32_t len = chunks*chunk_len;
-    FRESULT fres = f->write(buffer, len, &trans);
+    FRESULT fres = FileManager::write(f, (void *)buffer, len, &trans);
     if(fres != FR_OK)
         return -1;
     
@@ -107,16 +107,15 @@ vfs_dir_t *vfs_opendir(vfs_t *fs, const char *name, into_mode_t into_mode)
     dbg_printf("OpenDIR: fs = %p, name arg = '%s' Into = %d\n", fs, name, into_mode);
 
     mstring matchPattern;
-    FileManager *fm = FileManager :: getFileManager();
-    Path *temp = fm->get_new_path("FTP Temp");
+    Path *temp = new Path();
     temp->cd(path->get_path());
     temp->cd(name);
-    if (!fm->is_path_valid(temp)) { // Is it not a directory?
+    if (!FileManager::is_path_valid(temp)) { // Is it not a directory?
         // Maybe it's a file, so we 'cd' one step up and store the last part of the path as a pattern
         temp->up(&matchPattern);
         dbg_printf("Stripped = '%s'\n", matchPattern.c_str());
-        if (! fm->is_path_valid(temp)) { // Is the parent not a directory? then we don't know.
-            fm->release_path(temp);
+        if (! FileManager::is_path_valid(temp)) { // Is the parent not a directory? then we don't know.
+            delete temp;
             return NULL;
         }
     }
@@ -134,9 +133,9 @@ vfs_dir_t *vfs_opendir(vfs_t *fs, const char *name, into_mode_t into_mode)
     dir->into_mode = into_mode;
     dir->do_alternative = false;
 
-    fm->get_directory(temp, *listOfEntries, matchPattern.c_str());
+    get_directory(temp, *listOfEntries, matchPattern.c_str());
 
-    fm->release_path(temp);
+    delete temp; // delete the temporary path object
 
     // clear wrapper for file info
     ent->file_info = NULL;
@@ -263,7 +262,7 @@ int  vfs_stat(vfs_t *fs, const char *name, vfs_stat_t *st)
 {
     dbg_printf("STAT: VFS=%p. %s -> %p\n", fs, name, st);
     FileInfo localInfo(32);
-    if ((FileManager :: getFileManager() -> fstat((Path *)fs->path, name, localInfo)) == FR_OK) {
+    if ((FileManager :: getFileManager() -> fstat((Path *)fs->path, name, localInfo, false)) == FR_OK) {
         return vfs_stat_impl(&localInfo, st);
     }
     return -1;
@@ -273,23 +272,22 @@ int  vfs_chdir(vfs_t *fs, const char *name)
 {
 //    dbg_printf("CD: %s\n", name);
 
-    FileManager *fm = FileManager :: getFileManager();
-    Path *temp = fm->get_new_path("Temp FTP");
+    Path *temp = new Path();
     Path *p = (Path *)fs->path;
 
     temp->cd(p->get_path());
 
     if (!temp->cd((char*)name)) { // Construction of Path is illegal
-        fm->release_path(temp);
+        delete temp;
         return -1;
     }
 
-    if (!fm->is_path_valid(temp)) { // Resulting path doesn't exist on the file system
-        fm->release_path(temp);
+    if (!FileManager::is_path_valid(temp)) { // Resulting path doesn't exist on the file system
+        delete temp;
         return -2;
     }
     p->cd((char *)name); // This was a valid action for temp, so the same can be done on p
-    fm->release_path(temp);
+    delete temp;
     return 0;
 }
 
@@ -311,8 +309,16 @@ char *vfs_getcwd(vfs_t *fs, void *args, int dummy)
 int  vfs_rename(vfs_t *fs, const char *old_name, const char *new_name)
 {
 	printf("Rename from %s to %s.\n", old_name, new_name);
-    Path *p = (Path *)fs->path;
-	FRESULT fres = FileManager :: getFileManager() -> rename(p, old_name, new_name);
+    Path *pf = new Path((Path *)fs->path);
+    Path *pt = new Path((Path *)fs->path);
+    pf->cd(old_name);
+    pt->cd(new_name);
+	FRESULT fres = FileManager :: getFileManager() -> rename(pf->get_path(), pt->get_path());
+    delete pf;
+    delete pt;
+    if (fres != FR_OK) {
+        printf("Rename failed: %s\n", FileSystem::get_error_string(fres));
+    }
 	return (fres == FR_OK) ? 0 : -1;
 }
 

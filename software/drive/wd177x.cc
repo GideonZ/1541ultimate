@@ -282,9 +282,9 @@ void WD177x :: handle_wd177x_command(t_wd177x_cmd& cmd)
 		    printf("WD177x: Read Sector H/T/S: %d/%d/%d  (offset: %5x) Actual track: %d\n", drive->side, wd177x->track, wd177x->sector, offset, drive->track);
 
             if (mount_file) {
-                res = mount_file->seek(offset);
+                res = fm->seek(mount_file, offset);
                 if (res == FR_OK) {
-                    res = mount_file->read(buffer, sectSize, &dummy);
+                    res = fm->read(mount_file, buffer, sectSize, &dummy);
                     if (res == FR_OK) {
                         printf("Sector read OK:\n");
                         //dump_hex_relative(buffer, sectSize);
@@ -396,9 +396,9 @@ void WD177x :: handle_wd177x_completion(t_wd177x_cmd& cmd)
         wd177x->dma_mode = 0;
 
         if (mount_file) {
-            res = mount_file->seek(offset);
+            res = fm->seek(mount_file, offset);
             if (res == FR_OK) {
-                res = mount_file->write(buffer, sectSize, &dummy);
+                res = fm->write(mount_file, buffer, sectSize, &dummy);
                 if (res == FR_OK) {
                     printf("Sector write OK. %d/%d bytes written to offset %6x.\n", dummy, sectSize, offset);
                 } else {
@@ -427,9 +427,9 @@ void WD177x :: handle_wd177x_completion(t_wd177x_cmd& cmd)
         printf("Write track completion. Offset = %6x. Found %d sectors! (Size: %04x)\n", offset, newTrack.numSectors, newTrack.actualDataSize);
 
         if (mount_file) {
-            res = mount_file->seek(offset);
+            res = fm->seek(mount_file, offset);
             if (res == FR_OK) {
-                res = mount_file->write(binbuf, newTrack.actualDataSize, &dummy);
+                res = fm->write(mount_file, binbuf, newTrack.actualDataSize, &dummy);
                 if (res == FR_OK) {
                     printf("Track format OK.\n");
                 } else {

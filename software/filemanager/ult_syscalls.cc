@@ -41,7 +41,6 @@ int _fstat(int file, struct stat *st)
 
 int _open(const char *name, int oflag, ...)
 {
-    FileManager *fm = FileManager::getFileManager();
     int fd = find_slot();
     if (!fd) {
         errno = -ENFILE;
@@ -65,12 +64,12 @@ int _open(const char *name, int oflag, ...)
     if (oflag & O_TRUNC)  u8flags |= FA_CREATE_ALWAYS;
 
     File *file = NULL;
-    FRESULT res = fm->fopen(name, u8flags, &file);
+    FRESULT res = FileManager::fopen(name, u8flags, &file);
     if (res == FR_OK) {
         _fm_file_mapping[fd] = file;
         if (oflag & O_APPEND) {
             uint32_t size = file->get_size();
-            res = file->seek(size);
+            res = FileManager::seek(file, size);
         }
         return fd; // OK
     }
@@ -85,8 +84,7 @@ int _close(int fd)
         errno = -EBADF;
         return -1;
     }
-    FileManager *fm = FileManager::getFileManager();
-    fm->fclose(_fm_file_mapping[fd]); // returns void?!
+    FileManager::fclose(_fm_file_mapping[fd]); // returns void?!
     _fm_file_mapping[fd] = NULL;
 
     return 0; // always ok?
@@ -100,7 +98,7 @@ ssize_t _read(int fd, void *ptr, size_t len)
         return -1;
     }
     uint32_t trans = 0;
-    FRESULT fres = f->read(ptr, len, &trans);
+    FRESULT fres = FileManager::read(f, ptr, len, &trans);
     if (fres == FR_OK) {
         return (ssize_t) trans;
     }
@@ -116,7 +114,7 @@ ssize_t _write(int fd, const void *ptr, size_t len)
         return -1;
     }
     uint32_t trans = 0;
-    FRESULT fres = f->write(ptr, len, &trans);
+    FRESULT fres = FileManager::write(f, (void *)ptr, len, &trans);
     if (fres == FR_OK) {
         return (ssize_t) trans;
     }
@@ -143,10 +141,10 @@ off_t _lseek(int fd, off_t ptr, int dir)
             errno = -EPERM; // not implemented
             return -1;
         case SEEK_SET:
-            fres = f->seek((uint32_t)ptr);
+            fres = FileManager::seek(f, (uint32_t)ptr);
             return ptr; // assume it worked for now
         case SEEK_END:
-            fres = f->seek((uint32_t)ptr + f->get_size());
+            fres = FileManager::seek(f, (uint32_t)ptr + f->get_size());
             return (off_t)f->get_size(); // assume that we don't support reading after the file size
         default:
             errno = -EINVAL;

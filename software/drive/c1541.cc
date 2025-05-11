@@ -66,7 +66,6 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
     mount_file = NULL;
     drive_letter = letter;
 	flash = get_flash();
-    fm = FileManager :: getFileManager();
     current_drive_type = e_dt_unset;
     
     // Create local copy of configuration definition, since the default differs.
@@ -143,10 +142,10 @@ C1541 :: ~C1541()
 	    delete mfm_controller;
 	}
 	if (gcr_ram_file) {
-	    gcr_ram_file->close(); // not via FileManager; it is not a public file
+	    delete gcr_ram_file;
 	}
 	if(mount_file)
-		fm->fclose(mount_file);
+		FileManager::fclose(mount_file);
 
 	// turn the drive off on destruction
     drive_power(false);
@@ -410,7 +409,7 @@ void C1541 :: remove_disk(void)
         registers[C1541_SOUNDS] = 2; // play remove sound
     }
     if(mount_file) {
-        fm->fclose(mount_file);
+        FileManager::fclose(mount_file);
     }
     mount_file = NULL;
     mount_file_path = "";
@@ -675,7 +674,7 @@ void C1541 :: swap_disk(SubsysCommand *cmd)
         }
         work.set(index, c);
         printf("Trying %s\n", workstr);
-        if (fm->fstat(mount_file_path.c_str(), work.c_str(), info) == FR_OK) {
+        if (FileManager::fstat(mount_file_path.c_str(), work.c_str(), info) == FR_OK) {
 
             printf("Disk Swap: %s -> %s\n", mount_file_name.c_str(), work.c_str());
             
@@ -736,7 +735,7 @@ void C1541 :: poll() // called under mutex
 	if (mount_file && !mount_file->isValid()) {
         printf("C1541: File was invalidated..\n");
         disk_state = e_disk_file_closed;
-        fm->fclose(mount_file);
+        FileManager::fclose(mount_file);
         mount_file = NULL;
     }
 
@@ -889,7 +888,7 @@ SubsysResultCode_e C1541 :: set_drive_type(t_drive_type drv)
 
     // Load the correct sound bank...
     const char *sounds =  (drv == e_dt_1571) ? "snds1571.bin" : (drv == e_dt_1581) ? "snds1581.bin" : "snds1541.bin";
-    if (fm->load_file(ROMS_DIRECTORY, sounds, audio_address, 0xC000, NULL) != FR_OK) {
+    if (load_file(ROMS_DIRECTORY, sounds, audio_address, 0xC000, NULL) != FR_OK) {
         // Silence upon failure to load
         memset(audio_address, 0, 0xC000);
     }
@@ -897,7 +896,7 @@ SubsysResultCode_e C1541 :: set_drive_type(t_drive_type drv)
     // Load the correct ROM...
     uint8_t cfg_id_file = (drv == e_dt_1571) ? CFG_C1541_ROMFILE1 : (drv == e_dt_1581) ? CFG_C1541_ROMFILE2 : CFG_C1541_ROMFILE0;
     uint32_t transferred = 0;
-    FRESULT res = fm->load_file(ROMS_DIRECTORY, cfg->get_string(cfg_id_file), (uint8_t *)&memory_map[0x8000], 0x8000, &transferred);
+    FRESULT res = load_file(ROMS_DIRECTORY, cfg->get_string(cfg_id_file), (uint8_t *)&memory_map[0x8000], 0x8000, &transferred);
     if (res == FR_OK) {
         current_drive_rom = cfg->get_string(cfg_id_file);
     } else {
@@ -946,7 +945,7 @@ SubsysResultCode_e C1541 :: executeCommand(SubsysCommand *cmd)
 	FileInfo info(32);
 	SubsysResultCode_e returnValue = SSRET_OK;
 
-    fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
+    FileManager::fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
 
 	flags = FA_READ | FA_WRITE;
 	protect = (cmd->functionID & MENU_1541_READ_ONLY);
@@ -997,7 +996,7 @@ SubsysResultCode_e C1541 :: executeCommand(SubsysCommand *cmd)
 	            returnValue = SSRET_WRONG_MOUNT_MODE;
 	    }
 	    if (returnValue == SSRET_OK) {
-            res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), flags, &newFile);
+            res = FileManager::fopen(cmd->path.c_str(), cmd->filename.c_str(), flags, &newFile);
             if (res == FR_OK) {
                 if(cmdCode == MENU_1541_MOUNT_G64) {
                     mount_g64(protect, newFile);
@@ -1084,13 +1083,12 @@ SubsysResultCode_e C1541 :: executeCommand(SubsysCommand *cmd)
 
 SubsysResultCode_e C1541 :: load_dos_from_file(const char *path, const char *filename)
 {
-    FileManager *fm = FileManager :: getFileManager();
     uint32_t size = 32768;
     uint32_t transferred = 0;
     uint8_t *buffer = (uint8_t *)&memory_map[0x8000];
 
     printf("Binary Load.. %s\n", filename);
-    FRESULT fres = fm->load_file(path, filename, buffer, size, &transferred);
+    FRESULT fres = load_file(path, filename, buffer, size, &transferred);
 
     if(fres == FR_OK) {
     	if ((size == 32768) && (transferred == 16384)) {
@@ -1112,7 +1110,7 @@ void C1541 :: unlink(void)
 {
 	disk_state = e_disk_file_closed;
 	if(mount_file) {
-		fm->fclose(mount_file);
+		FileManager::fclose(mount_file);
 		mount_file = NULL;
 	}
 	mfm_controller->set_file(NULL);
@@ -1147,7 +1145,7 @@ SubsysResultCode_e C1541 :: save_disk_to_file(SubsysCommand *cmd)
 	if(res > 0) {
 		set_extension(buffer, ext, 32);
 		fix_filename(buffer);
-		fres = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_ALWAYS | FA_CREATE_NEW, &file);
+		fres = FileManager::fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_ALWAYS | FA_CREATE_NEW, &file);
 		if(fres == FR_OK) {
 			if(cmd->mode) {
 				cmd->user_interface->show_progress("Saving GCR...", gcr_image->double_sided ? 164 : 84);
@@ -1167,7 +1165,7 @@ SubsysResultCode_e C1541 :: save_disk_to_file(SubsysCommand *cmd)
 				success = bin_image->save(file, cmd->user_interface);
 				cmd->user_interface->hide_progress();
 			}
-			fm->fclose(file);
+			FileManager::fclose(file);
 			return success ? SSRET_OK : SSRET_SAVE_FAILED;
 		} else {
 			cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
@@ -1189,8 +1187,7 @@ void C1541 :: list_roms(ConfigItem *it, IndexedList<char *>& strings)
     Path p;
     p.cd(ROMS_DIRECTORY);
     IndexedList<FileInfo *>infos(16, NULL);
-    FileManager *fm = FileManager :: getFileManager();
-    FRESULT fres = fm->get_directory(&p, infos, NULL);
+    FRESULT fres = get_directory(&p, infos, NULL);
     if (fres != FR_OK) {
         return;
     }

@@ -23,10 +23,9 @@ InitFunction ulticopy_init("UltiCopy", create_ulticopy, NULL, NULL, 13);
 
 UltiCopy :: UltiCopy() : SubSystem(SUBSYSID_ULTICOPY)
 {
-	fm = FileManager :: getFileManager();
     intf = IecInterface :: get_iec_interface();
 
-    path = fm->get_new_path("UltiCopy Path");
+    path = new Path();
     cmd_ui = 0;
 	ui_window = NULL;
 
@@ -37,7 +36,7 @@ UltiCopy :: UltiCopy() : SubSystem(SUBSYSID_ULTICOPY)
 
 UltiCopy :: ~UltiCopy()
 {
-    fm->release_path(path);
+    delete path;
 }
 
 void UltiCopy :: create_task_items(void)
@@ -179,12 +178,12 @@ void UltiCopy :: start_warp(int drive)
     printf("Starting IEC Warp Mode.\n");
     C64_POKE(0xDD00,0x07); // make sure the C64 that might be connected does not interfere
     // make sure that our local drives are turned off as well
-    if (c1541_A) {
-        c1541_A->drive_power(false);
-    }
-    if (c1541_B) {
-        c1541_B->drive_power(false);
-    }
+    // if (c1541_A) {
+    //     c1541_A->drive_power(false);
+    // }
+    // if (c1541_B) {
+    //     c1541_B->drive_power(false);
+    // }
 
     ui_window = new UltiCopyWindow();
     ui_window->init(cmd_ui->screen, cmd_ui->keyboard);
@@ -340,13 +339,13 @@ void UltiCopy :: save_copied_disk()
 	if(res > 0) {
 		fix_filename(buffer);
 		set_extension(buffer, ".d64", 32);
-        FRESULT fres = fm->fopen(path, buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+        FRESULT fres = FileManager::fopen(path, buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
 		if(f) {
             cmd_ui->show_progress("Saving D64..", 100);
             save_result = ulticopy_bin_image->save(f, cmd_ui);
             cmd_ui->hide_progress();
     		printf("Result of save: %d.\n", save_result);
-            fm->fclose(f);
+            FileManager::fclose(f);
 		} else {
 			printf("Can't create file '%s': %s\n", buffer, FileSystem::get_error_string(fres));
 			cmd_ui->popup("Can't create file.", BUTTON_OK);

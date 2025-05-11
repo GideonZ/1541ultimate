@@ -85,7 +85,7 @@ SubsysResultCode_e FileTypeCRT::executeFlash_st(SubsysCommand *cmd)
     fm->create_dir(CARTS_DIRECTORY); // just in case it doesn't exist
     char fnbuf[32];
     truncate_filename(cmd->filename.c_str(), fnbuf, 30);
-    FRESULT fres = fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), CARTS_DIRECTORY, fnbuf, true);
+    FRESULT fres = fcopy(cmd->path.c_str(), cmd->filename.c_str(), CARTS_DIRECTORY, fnbuf, true);
     if (fres != FR_OK) {
         cmd->user_interface->popup(FileSystem::get_error_string(fres), BUTTON_OK);
         return SSRET_DISK_ERROR;

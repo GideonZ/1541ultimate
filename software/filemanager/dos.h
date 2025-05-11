@@ -54,7 +54,6 @@ typedef struct _dos_info {
 
 class Dos : CommandTarget
 {
-    FileManager *fm;
     e_dos_state dos_state;
     t_dos_info dos_info;
     File *file;

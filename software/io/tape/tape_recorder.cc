@@ -23,7 +23,6 @@ extern "C" BaseType_t tape_recorder_irq(void)
 
 TapeRecorder :: TapeRecorder() : SubSystem(SUBSYSID_TAPE_RECORDER)
 {
-    fm = FileManager :: getFileManager();
     recording = 0;
     select = 0;
 	file = NULL;
@@ -142,7 +141,7 @@ void TapeRecorder :: stop(int error)
         printf("Flush TAP..\n");
         flush();
 		printf("Closing tape file..\n");
-		fm->fclose((File *)file);
+		FileManager::fclose((File *)file);
 	} else {
 	    printf("Stopping. File = NULL. ERR = %d\n", error);
     }
@@ -209,7 +208,7 @@ int TapeRecorder :: write_block()
 	uint32_t bytes_written;
 
     uint32_t *block = cache_blocks[block_out];
-	FRESULT res = file->write((void *)block, 512, &bytes_written);
+	FRESULT res = FileManager::write(file, (void *)block, 512, &bytes_written);
     total_length += 512;
 	if(res != FR_OK) {
 		return REC_ERR_WRITE_ERROR;
@@ -250,14 +249,14 @@ void TapeRecorder :: flush()
 				break;
 		}
 		printf("Writing out remaining %d bytes.\n", i);
-		FRESULT res = file->write((void *)cache_blocks[block_in], i, &bytes_written);
+		FRESULT res = FileManager::write(file, (void *)cache_blocks[block_in], i, &bytes_written);
 		total_length += bytes_written;
     }
-    file->seek(16);
+    FileManager::seek(file, 16);
     uint32_t le_size = cpu_to_32le(total_length);
-    file->write(&le_size, 4, &bytes_written);
+    FileManager::write(file, &le_size, 4, &bytes_written);
 
-	fm->fclose(file);
+	FileManager::fclose(file);
 	file = NULL;
 
 	recording = 0;
@@ -333,9 +332,9 @@ bool TapeRecorder :: request_file(SubsysCommand *cmd)
         total_length = 0;
 		set_extension(buffer, ".tap", 32);
 		fix_filename(buffer);
-        FRESULT fres = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &file);
+        FRESULT fres = FileManager::fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &file);
         if(fres == FR_OK) {
-            FRESULT res = file->write(signature, 20, &dummy);
+            FRESULT res = FileManager::write(file, (void *)signature, 20, &dummy);
             if(res != FR_OK) {
                 cmd->user_interface->popup("Error writing signature", BUTTON_OK);
                 return false;

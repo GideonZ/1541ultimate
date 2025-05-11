@@ -40,6 +40,9 @@ public:
 
 	virtual PathStatus_t walk_path(PathInfo& pathInfo);
 
+    virtual const char *identify() { return "BaseClass"; } // identify the file system type
+
+    virtual bool    is_ready(void) { return false; } // check if the file system is ready
 	virtual bool    init();              // Initialize file system
     virtual bool    is_writable() { return false; } // by default a file system is not writable, unless we implement it
 	virtual FRESULT format(const char *name);    // create initial structures of empty disk
@@ -124,6 +127,15 @@ public:
 			return;
 		workPath.cd(filename);
 	}
+
+    void init(Path *path, const char *pathname, const char *filename) {
+        if (path)
+            workPath.cd(path->get_path());
+        if (pathname)
+            workPath.cd(pathname);
+        if (filename)
+            workPath.cd(filename);
+    }
 
 	bool hasMore() {
 		return (index < workPath.depth);

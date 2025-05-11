@@ -5,7 +5,6 @@ const char *modeNames[] = { "", "Read", "Write", "Replace", "Append", "Relative"
 
 IecChannel::IecChannel(IecDrive *dr, int ch)
 {
-    fm = FileManager::getFileManager();
     drive = dr;
     channel = ch;
     f = NULL;
@@ -309,7 +308,7 @@ int IecChannel::read_block(void)
 
     if (f) {
         swap_buffers(); // bring the data in view that was already available
-        res = f->read(nxtblk->bufdata, 512, &nxtblk->valid_bytes);
+        res = FileManager::read(f, nxtblk->bufdata, 512, &nxtblk->valid_bytes);
 #if IECDEBUG > 2
         printf("Read %d bytes.\n", nxtblk->valid_bytes);
 #endif
@@ -337,7 +336,7 @@ t_channel_retval IecChannel::read_record(int offset)
     FRESULT res = FR_DENIED;
     uint32_t bytes;
     if (f) {
-        res = f->read(buffer, recordSize, &bytes);
+        res = FileManager::read(f, buffer, recordSize, &bytes);
 #if IECDEBUG > 2
         printf("Read record. Expected file position: %d\n", recordOffset);
         dump_hex_relative(buffer, bytes);
@@ -382,16 +381,16 @@ t_channel_retval IecChannel::write_record(void)
             }
         }
         // if everything went well, we are on a record boundary already by the last 'seek' operation
-        res = f->seek(recordOffset);
+        res = FileManager::seek(f, recordOffset);
         if (res == FR_OK) {
 #if IECDEBUG > 2
             printf("Writing record to position %d:\n", recordOffset);
             dump_hex_relative(buffer, recordSize);
 #endif
-            res = f->write(buffer, recordSize, &bytes);
+            res = FileManager::write(f, buffer, recordSize, &bytes);
             if (res == FR_OK) {
                 recordOffset += recordSize; // move to the next record
-                res = f->sync();
+                res = FileManager::sync(f);
             }
         }
         // If the file pointer was aligned on a record boundary, it will still be on a record boundary.
@@ -436,10 +435,10 @@ t_channel_retval IecChannel::push_data(uint8_t b)
         if (pointer == 512) {
             FRESULT res = FR_DENIED;
             if (f) {
-                res = f->write(buffer, 512, &bytes);
+                res = FileManager::write(f, buffer, 512, &bytes);
             }
             if (res != FR_OK) {
-                fm->fclose(f);
+                FileManager::fclose(f);
                 f = NULL;
                 state = e_error;
                 return IEC_WRITE_ERROR;
@@ -474,7 +473,7 @@ t_channel_retval IecChannel::push_command(uint8_t b)
             if (f) {
                 if (pointer > 0) {
                     uint32_t dummy;
-                    FRESULT res = f->write(buffer, pointer, &dummy);
+                    FRESULT res = FileManager::write(f, buffer, pointer, &dummy);
                     if (res != FR_OK) {
                         state = e_error;
                         return IEC_WRITE_ERROR;
@@ -804,7 +803,7 @@ int IecChannel::setup_file_access(name_t& name)
 int IecChannel::init_iec_transfer(void)
 {
     if (name.mode == e_append) {
-        FRESULT fres = f->seek(f->get_size());
+        FRESULT fres = FileManager::seek(f, f->get_size());
         if (fres != FR_OK) {
             drive->get_command_channel()->set_error(ERR_FRESULT_CODE, fres);
             state = e_error;
@@ -821,7 +820,7 @@ int IecChannel::init_iec_transfer(void)
         if (f) {
             curblk->valid_bytes = 0;
             // queue up one next block
-            f->read(nxtblk->bufdata, 512, &nxtblk->valid_bytes);
+            FileManager::read(f, nxtblk->bufdata, 512, &nxtblk->valid_bytes);
 #if IECDEBUG > 2
             printf("Initial read %d bytes.\n", nxtblk->valid_bytes);
 #endif
@@ -870,21 +869,21 @@ int IecChannel::open_file(void)  // name should be in buffer
         return 0;
     }
 
-    FRESULT fres = fm->fopen(partition->GetPath(), fs_filename, flags | FA_OPEN_FROM_CBM, &f);
+    FRESULT fres = FileManager::fopen(partition->GetPath(), fs_filename, flags | FA_OPEN_FROM_CBM, &f);
     if (f) {
         printf("Successfully opened file %s in %s\n", fs_filename, partition->GetFullPath());
 
         if (name.mode == e_relative) {
             if (!f->get_size()) { // the file must be newly created, because its size is 0.
                 uint16_t wrd = name.recordSize;
-                fres = f->write(&wrd, 2, &tr);
+                fres = FileManager::write(f, &wrd, 2, &tr);
                 drive->set_error_fres(fres);
                 if (fres == FR_OK) {
                     recordSize = name.recordSize;
                 }
             } else { // file already exists
                 uint16_t wrd;
-                fres = f->read(&wrd, 2, &tr);
+                fres = FileManager::read(f, &wrd, 2, &tr);
                 recordSize = (uint8_t) wrd;
                 if (wrd >= 256) {
                     printf("WARNING: Illegal record size in .rel file...Is it a REL file at all? (%d)\n", wrd);
@@ -906,7 +905,7 @@ int IecChannel::open_file(void)  // name should be in buffer
 int IecChannel::close_file(void) // file should be open
 {
     if (f)
-        fm->fclose(f);
+        FileManager::fclose(f);
     f = NULL;
     state = e_idle;
     return 0;
@@ -963,7 +962,7 @@ void IecChannel::seek_record(const uint8_t *cmd)
     uint32_t currentSize = f->get_size();
     FRESULT fres;
     if (currentSize < minimumFileSize) { // append with additional records that are 'FF's, followed by zeros.
-        fres = f->seek(currentSize);
+        fres = FileManager::seek(f, currentSize);
 
         uint8_t *block = new uint8_t[512];
         uint32_t tr = 0;
@@ -972,7 +971,7 @@ void IecChannel::seek_record(const uint8_t *cmd)
 
         if (partialRecord) {
             printf("Current file size should be a multiple of record size.. This should not happen.\n");
-            fres = f->write(block, partialRecord, &tr);
+            fres = FileManager::write(f, block, partialRecord, &tr);
             currentSize += partialRecord;
         }
 #if IECDEBUG > 0
@@ -981,7 +980,7 @@ void IecChannel::seek_record(const uint8_t *cmd)
         uint32_t remain = minimumFileSize - currentSize;
         block[0] = 0xFF;
         while (remain >= recordSize) {
-            fres = f->write(block, recordSize, &tr);
+            fres = FileManager::write(f, block, recordSize, &tr);
             remain -= recordSize;
         }
         delete[] block;
@@ -993,7 +992,7 @@ void IecChannel::seek_record(const uint8_t *cmd)
     }
     uint32_t targetPosition = c_header + (recordNumber * recordSize); // + offset; // reserve 2 bytes for control (record Size)
 
-    fres = f->seek(targetPosition);
+    fres = FileManager::seek(f, targetPosition);
     if (fres != FR_OK) {
         drive->set_error_fres(fres);
         return;
@@ -1303,7 +1302,7 @@ void IecCommandChannel::block_command(command_t& cmd)
 #if IECDEBUG
         printf("Read Track %d Sector %d of Drive %d into buffer of channel %d.\n", tr, sc, dr, ch);
 #endif
-        fres = fm->fs_read_sector(partition->GetPath(), channel->buffer, tr, sc);
+        fres = FileManager::fs_read_sector(partition->GetPath(), channel->buffer, tr, sc);
         drive->set_error_fres(fres);
         channel->pointer = 0;
         channel->reset_prefetch();
@@ -1314,7 +1313,7 @@ void IecCommandChannel::block_command(command_t& cmd)
 #if IECDEBUG
         printf("Write Track %d Sector %d of Drive %d from buffer of channel %d.\n", tr, sc, dr, ch);
 #endif
-        fres = fm->fs_write_sector(partition->GetPath(), channel->buffer, tr, sc);
+        fres = FileManager::fs_write_sector(partition->GetPath(), channel->buffer, tr, sc);
         drive->set_error_fres(fres);
         state = e_idle;
         break;
@@ -1379,7 +1378,13 @@ void IecCommandChannel::renam(command_t& cmd)
     IecPartition *partitionTo = drive->vfs->GetPartition(toPart);
 
     // Just try the actual rename by the filesystem
-    FRESULT fres = fm->rename(partitionFrom->GetPath(), fromInfo->lfname, partitionTo->GetPath(), toName);
+    Path *pf = new Path(partitionFrom->GetPath());
+    Path *pt = new Path(partitionTo->GetPath());
+    pf->cd(fromInfo->lfname);
+    pt->cd(toName);
+    FRESULT fres = FileManager::rename(pf->get_path(), pt->get_path());
+    delete pf;
+    delete pt;
     if (fres == FR_OK) {
         set_error(ERR_ALL_OK, 0);
         return;
@@ -1453,7 +1458,7 @@ void IecCommandChannel::copy(command_t& cmd)
     }
 
     File *fo;
-    FRESULT fres = fm->fopen(partitionTo->GetPath(), toName, (FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS), &fo);
+    FRESULT fres = FileManager::fopen(partitionTo->GetPath(), toName, (FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS), &fo);
     if (fres == FR_EXIST) {
         set_error(ERR_FILE_EXISTS, 0);
         return;
@@ -1472,9 +1477,9 @@ void IecCommandChannel::copy(command_t& cmd)
             }
             IecPartition *partitionFrom = drive->vfs->GetPartition(names[i].drive);
             File *fi;
-            FRESULT fres = fm->fopen(partitionFrom->GetPath(), infos[i]->lfname, FA_READ, &fi);
+            FRESULT fres = FileManager::fopen(partitionFrom->GetPath(), infos[i]->lfname, FA_READ, &fi);
             if (fres != FR_OK) {
-                fm->fclose(fo);
+                FileManager::fclose(fo);
                 set_error(ERR_FRESULT_CODE, fres);
                 return;
             }
@@ -1484,16 +1489,16 @@ void IecCommandChannel::copy(command_t& cmd)
 #endif
                 uint32_t transferred = 1;
                 while (transferred) {
-                    fi->read(buffer, 512, &transferred);
+                    FileManager::read(fi, buffer, 512, &transferred);
                     if (transferred) {
-                        fo->write(buffer, transferred, &transferred);
+                        FileManager::write(fo, buffer, transferred, &transferred);
                         blocks++;
                     }
                 }
-                fm->fclose(fi);
+                FileManager::fclose(fi);
             }
         }
-        fm->fclose(fo);
+        FileManager::fclose(fo);
     }
     set_error(ERR_ALL_OK, 0, blocks);
 }
@@ -1560,5 +1565,5 @@ void IecPartition::SetInitialPath(void)
 
 bool IecPartition::IsValid()
 {
-    return fm->is_path_valid(path);
+    return FileManager::is_path_valid(path);
 }

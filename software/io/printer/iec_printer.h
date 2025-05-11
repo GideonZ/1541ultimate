@@ -93,9 +93,6 @@ class IecPrinter : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObjec
         /* Ultimate IEC interface */
         IecInterface *interface;
 
-        /* Ultimate filesystem interface */
-        FileManager *fm;
-
         /* Output base filename */
         const char *output_filename;
 

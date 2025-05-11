@@ -19,7 +19,6 @@
 class C64_Subsys : public SubSystem, ObjectWithMenu
 {
     TaskHandle_t taskHandle;
-    FileManager *fm;
     C64 *c64;
     TaskCategory *taskCategory;
     struct {

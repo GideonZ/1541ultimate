@@ -17,6 +17,7 @@ public:
     ~FileSystemDummy() { }
 
     // Initialize file system
+    const char *identify() { return "FileSystemDummy"; } // identify the file system type
     bool    init(void) { return true; }
 
     // Get number of free sectors on the file system

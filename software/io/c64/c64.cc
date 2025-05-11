@@ -796,7 +796,7 @@ void C64::init_system_roms(void)
     extern uint8_t _default_kernal_65_start[];
     extern uint8_t _default_chars_bin_start[];
 
-    FRESULT fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_KERNFILE), (uint8_t *)U64_KERNAL_BASE, 8192, NULL);
+    FRESULT fres = load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_KERNFILE), (uint8_t *)U64_KERNAL_BASE, 8192, NULL);
     if (fres != FR_OK) {
         printf("Failed to load KERNAL ROM; loading default.\n");
         memcpy((void *)U64_KERNAL_BASE, (void *)_default_kernal_65_start, 8192);
@@ -807,8 +807,8 @@ void C64::init_system_roms(void)
         }
     }
 
-    FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_BASIFILE), (uint8_t *)U64_BASIC_BASE, 8192, NULL);
-    fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_CHARFILE), (uint8_t *)U64_CHARROM_BASE, 4096, NULL);
+    load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_BASIFILE), (uint8_t *)U64_BASIC_BASE, 8192, NULL);
+    fres = load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_CHARFILE), (uint8_t *)U64_CHARROM_BASE, 4096, NULL);
     if (fres != FR_OK) {
         printf("Failed to load CHAR ROM; loading default.\n");
         memcpy((void *)U64_CHARROM_BASE, (void *)_default_chars_bin_start, 4096);
@@ -1354,8 +1354,7 @@ void C64 :: list_crts(ConfigItem *it, IndexedList<char *>& strings)
     Path p;
     p.cd(CARTS_DIRECTORY);
     IndexedList<FileInfo *>infos(16, NULL);
-    FileManager *fm = FileManager :: getFileManager();
-    FRESULT fres = fm->get_directory(&p, infos, NULL);
+    FRESULT fres = get_directory(&p, infos, NULL);
     if (fres != FR_OK) {
         return;
     }
@@ -1385,8 +1384,7 @@ void C64 :: list_kernals(ConfigItem *it, IndexedList<char *>& strings)
     Path p;
     p.cd(ROMS_DIRECTORY);
     IndexedList<FileInfo *>infos(16, NULL);
-    FileManager *fm = FileManager :: getFileManager();
-    FRESULT fres = fm->get_directory(&p, infos, NULL);
+    FRESULT fres = get_directory(&p, infos, NULL);
     if (fres != FR_OK) {
         return;
     }
@@ -1409,8 +1407,7 @@ void C64 :: list_basics(ConfigItem *it, IndexedList<char *>& strings)
     Path p;
     p.cd(ROMS_DIRECTORY);
     IndexedList<FileInfo *>infos(16, NULL);
-    FileManager *fm = FileManager :: getFileManager();
-    FRESULT fres = fm->get_directory(&p, infos, NULL);
+    FRESULT fres = get_directory(&p, infos, NULL);
     if (fres != FR_OK) {
         return;
     }
@@ -1433,8 +1430,7 @@ void C64 :: list_chars(ConfigItem *it, IndexedList<char *>& strings)
     Path p;
     p.cd(ROMS_DIRECTORY);
     IndexedList<FileInfo *>infos(16, NULL);
-    FileManager *fm = FileManager :: getFileManager();
-    FRESULT fres = fm->get_directory(&p, infos, NULL);
+    FRESULT fres = get_directory(&p, infos, NULL);
     if (fres != FR_OK) {
         return;
     }

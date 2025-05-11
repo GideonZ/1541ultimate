@@ -69,7 +69,6 @@ FileTypeTap :: ~FileTypeTap()
 
 void FileTypeTap :: readIndexFile(void)
 {
-    FileManager *fm = FileManager :: getFileManager();
     File *idxFile;
 
     char filename[80];
@@ -79,9 +78,9 @@ void FileTypeTap :: readIndexFile(void)
     set_extension(filename, ".idx", 80);
 
     indexValid = false;
-    if (fm->fopen(node->getPath(), filename, FA_READ, &idxFile) == FR_OK) {
+    if (FileManager::fopen(node->getPath(), filename, FA_READ, &idxFile) == FR_OK) {
         parseIndexFile(idxFile);
-        fm->fclose(idxFile);
+        FileManager::fclose(idxFile);
     } else {
         printf("Cannot open index file.\n");
     }
@@ -154,7 +153,7 @@ void FileTypeTap :: parseIndexFile(File *f)
     char *name;
 
     uint32_t transferred;
-    f->read(buffer, size, &transferred);
+    FileManager::read(f, buffer, size, &transferred);
     buffer[size] = 0;
 
     uint32_t offset;
@@ -270,7 +269,7 @@ SubsysResultCode_e FileTypeTap :: execute_st(SubsysCommand *cmd)
 		cmd->user_interface->popup("Can't open TAP file.", BUTTON_OK);
 		return SSRET_CANNOT_OPEN_FILE;
 	}
-	fres = file->read(read_buf, 20, &bytes_read);
+	fres = FileManager::read(file, read_buf, 20, &bytes_read);
 	if(fres != FR_OK) {
 		cmd->user_interface->popup("Error reading TAP file header.", BUTTON_OK);
 		return SSRET_FILE_READ_FAILED;

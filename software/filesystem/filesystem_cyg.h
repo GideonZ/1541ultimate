@@ -10,6 +10,7 @@ public:
 	FileSystemCygwin();
     ~FileSystemCygwin();
 
+    const char *identify() { return "FileSystemCygwin"; } // identify the file system type
     bool    init(void);               // Initialize file system
 
     // Status

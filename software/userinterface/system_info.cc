@@ -134,7 +134,7 @@ void SystemInfo :: storage_info(StreamTextLog& b)
     FileManager *fm = FileManager :: getFileManager();
     IndexedList<FileInfo *> dir(8, NULL);
     Path path; // defaults to Root directory
-    fm->get_directory(&path, dir, NULL);
+    get_directory(&path, dir, NULL);
     char buffer[16];
 
     for(int i=0; i<dir.get_elements(); i++) {

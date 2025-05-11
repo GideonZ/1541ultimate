@@ -6,6 +6,7 @@
  */
 
 #include "embedded_fat.h"
+#include "filemanager.h"
 
 // tester instance
 FactoryRegistrator<FileInfo *, FileSystemInFile *>
@@ -34,12 +35,13 @@ void FileSystemInFile_FAT :: init(File *f)
     uint32_t transferred = 0;
     uint8_t secsize[2];
     
+    FileManager *fm = FileManager::getFileManager();
     FRESULT fres;
-    fres = f->seek(11);
+    fres = fm->seek(f, 11);
     if (fres != FR_OK) {
         return;
     }
-    fres = f->read(secsize, 2, &transferred);
+    fres = fm->read(f, secsize, 2, &transferred);
     if (fres != FR_OK) {
         return;
     }

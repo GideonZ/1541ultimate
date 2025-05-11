@@ -499,10 +499,9 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
 #ifdef U64
 void ControlTarget :: save_u64_memory(Message *command)
 {
-    FileManager *fm = FileManager :: getFileManager();
     File *f;
 
-    FRESULT res = fm->fopen("/Usb1", "c64_memory.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+    FRESULT res = FileManager::fopen("/Temp", "c64_memory.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
     if(res == FR_OK) {
         printf("Opened file successfully.\n");
 
@@ -514,9 +513,9 @@ void ControlTarget :: save_u64_memory(Message *command)
         portEXIT_CRITICAL();
         uint32_t bytes_written;
 
-        f->write(dest, 0x10000, &bytes_written);
+        FileManager::write(f, dest, 0x10000, &bytes_written);
         printf("written: %d...", bytes_written);
-        fm->fclose(f);
+        FileManager::fclose(f);
         delete[] dest;
     }
 }

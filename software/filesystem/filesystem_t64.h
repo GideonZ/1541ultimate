@@ -21,6 +21,8 @@ public:
     FileSystemT64(File *file);
     ~FileSystemT64();
 
+    const char *identify() { return "FileSystemT64"; } // identify the file system type
+
     File *getFile() { return t64_file; }
 
     FRESULT get_free (uint32_t*, uint32_t*);        // Get number of free sectors on the file system

@@ -36,15 +36,14 @@ Dos::Dos(int id) :
     command_targets[id] = this;
     data_message.message = new uint8_t[512];
     status_message.message = new uint8_t[80];
-    fm = FileManager::getFileManager();
-    path = fm->get_new_path("Dos");
+    path = new Path();
     file = 0;
     dir_entries = remaining = current_index = 0;
     dos_state = e_dos_idle;
 }
 
 Dos::~Dos() {
-    fm->release_path(path);
+    delete path;
     delete[] data_message.message;
     delete[] status_message.message;
     // officially we should deregister ourselves, but as this will only occur at application exit, there is no need
@@ -58,7 +57,7 @@ void Dos::cd(Message *command, Message **reply, Message **status) {
     path->cd((char *) &command->message[2]);
 
     cleanupDirectory();
-    FRESULT fres = fm->get_directory(path, directoryList, NULL);
+    FRESULT fres = get_directory(path, directoryList, NULL);
     if (fres == FR_OK) {
         *status = &c_status_ok;
     } else {
@@ -104,6 +103,7 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
     Action* mount_action;
     SubsysCommand* mount_command;
     SubsysCommand* swap_command;
+    Path *pf, *pt;
 
     switch (command->message[1]) {
     case DOS_CMD_IDENTIFY:
@@ -112,7 +112,7 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
         break;
     case DOS_CMD_OPEN_FILE:
         command->message[command->length] = 0;
-        res = fm->fopen(path, (char *) &command->message[3],
+        res = FileManager::fopen(path, (char *) &command->message[3],
                 command->message[2], &file);
         *reply = &c_message_empty;
         if (!file) {
@@ -127,7 +127,7 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
     case DOS_CMD_CLOSE_FILE:
         *reply = &c_message_empty;
         if (file) {
-            fm->fclose(file);
+            FileManager::fclose(file);
             file = NULL;
             *status = &c_status_ok;
         } else {
@@ -144,7 +144,7 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
                     | (((uint32_t) command->message[4]) << 16)
                     | (((uint32_t) command->message[3]) << 8)
                     | command->message[2];
-            res = file->seek(pos);
+            res = FileManager::seek(file, pos);
             if (res != FR_OK) {
                 strcpy((char *) status_message.message,
                         FileSystem::get_error_string(res));
@@ -161,7 +161,7 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
         }
         *status = &c_status_ok;
         ffi = new FileInfo(INFO_SIZE);
-        res = fm->fstat(file->get_path(), *ffi);
+        res = FileManager::fstat(file->get_path(), *ffi);
         if (res != FR_OK) {
             *status = &c_status_file_not_found;
             delete ffi;
@@ -186,7 +186,7 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
         *reply = &c_message_empty;
         *status = &c_status_ok;
         ffi = new FileInfo(INFO_SIZE);
-        res = fm->fstat(path, (char *) &command->message[2], *ffi);
+        res = FileManager::fstat(path, (char *) &command->message[2], *ffi, false);
         if (res != FR_OK) {
             *status = &c_status_file_not_found;
             delete ffi;
@@ -210,7 +210,7 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
     case DOS_CMD_DELETE_FILE:
         *reply = &c_message_empty;
         command->message[command->length] = 0;
-        res = fm->delete_file(path, (char *) &command->message[2]);
+        res = FileManager::delete_file(path, (char *) &command->message[2]);
 
         if (res == FR_OK) {
             *status = &c_status_ok;
@@ -226,7 +226,13 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
         command->message[command->length] = 0;
         oldname = (char *) &command->message[2];
         newname = (char *) &command->message[2 + strlen(oldname) + 1];
-        res = fm->rename(path, oldname, newname);
+        pf = new Path(path);
+        pt = new Path(path);
+        pf->cd(oldname);
+        pt->cd(newname);
+        res = FileManager::rename(pf->get_path(), pt->get_path());
+        delete pf;
+        delete pt;
 
         if (res == FR_OK) {
             *status = &c_status_ok;
@@ -242,7 +248,7 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
         command->message[command->length] = 0;
         filename = (char *) &command->message[2];
         destination = (char *) &command->message[2 + strlen(filename) + 1];
-        res = fm->fcopy(path->get_path(), filename, destination, filename, false);
+        res = fcopy(path->get_path(), filename, destination, filename, false);
 
         if (res == FR_OK) {
             *status = &c_status_ok;
@@ -273,7 +279,7 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
             len = 0x01000000 - addr;
             *status = &c_status_truncated;
         }
-        res = file->read((uint8_t *) (addr | 0x01000000), len, &transferred);
+        res = FileManager::read(file, (uint8_t *) (addr | 0x01000000), len, &transferred);
         *reply = &data_message;
         sprintf((char *) data_message.message, "$%6x BYTES LOADED TO REU $%6x",
                 transferred, addr);
@@ -306,7 +312,7 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
             len = 0x01000000 - addr;
             *status = &c_status_truncated;
         }
-        res = file->write((uint8_t *) (addr | 0x01000000), len, &transferred);
+        res = FileManager::write(file, (uint8_t *) (addr | 0x01000000), len, &transferred);
         *reply = &data_message;
         sprintf((char *) data_message.message, "$%6x BYTES SAVED FROM REU $%6x",
                 transferred, addr);
@@ -333,7 +339,7 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
         }
 
         ffi = new FileInfo(INFO_SIZE);
-        res = fm->fstat(path, filename, *ffi);
+        res = FileManager::fstat(path, filename, *ffi, false);
 
         if (res != FR_OK) {
             *status = &c_status_file_not_found;
@@ -434,7 +440,7 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
     case DOS_CMD_CREATE_DIR:
         *reply = &c_message_empty;
         command->message[command->length] = 0;
-        res = fm->create_dir(path, (char *) &command->message[2]);
+        res = FileManager::create_dir(path, (char *) &command->message[2]);
 
         if (res == FR_OK) {
             *status = &c_status_ok;
@@ -447,7 +453,7 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
         break;
     case DOS_CMD_OPEN_DIR:
         cleanupDirectory();
-        res = fm->get_directory(path, directoryList, NULL);
+        res = get_directory(path, directoryList, NULL);
         *reply = &c_message_empty;
         if (res != FR_OK) {
             *status = &c_status_cannot_read_dir;
@@ -482,7 +488,7 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
         if (!file) {
             *status = &c_status_file_not_open;
         } else {
-            res = file->write(&command->message[4], command->length - 4,
+            res = FileManager::write(file, &command->message[4], command->length - 4,
                     &transferred);
             *status = &c_status_ok;
             if (res != FR_OK) {
@@ -593,7 +599,7 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
                char* filename = (char *) &command->message[3];
                FileInfo* ffi = new FileInfo(INFO_SIZE);
                FileManager *fm = FileManager :: getFileManager();
-               FRESULT res = fm->fstat(path, filename, *ffi);
+               FRESULT res = FileManager::fstat(path, filename, *ffi, false);
                if (res != FR_OK) {
                    *status = &c_status_file_not_found;
                    delete ffi;
@@ -615,7 +621,7 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
                bool ok = actType == ftype;
                if (!ok)
                 {
-                   printf("DEBUG1: Wrong type, actual = %i, exüectted = %i\n", actType, ftype);
+                   printf("DEBUG1: Wrong type, actual = %i, exï¿½ectted = %i\n", actType, ftype);
                    *status = &c_status_incompatible_image;
                    delete ffi;
                    break;
@@ -656,19 +662,19 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
                // FileManager *fm = FileManager::getFileManager();
                FileInfo info(32);
                File *file = 0;
-               FRESULT fres = fm->fopen(path,filename, FA_READ, &file);
+               FRESULT fres = FileManager::fopen(path,filename, FA_READ, &file);
                if (file) {
                   uint32_t bytes_read;
                   // total_bytes_read = 0;
                   if (ftype == 1571) {
-                     file->read(dstAddr, expSize / 2, &bytes_read);
+                     FileManager::read(file, dstAddr, expSize / 2, &bytes_read);
                      // total_bytes_read += bytes_read;
-                     file->read(dstAddr + 700 * 256, expSize / 2, &bytes_read);
+                     FileManager::read(file, dstAddr + 700 * 256, expSize / 2, &bytes_read);
                   } else {
-                     file->read(dstAddr, expSize, &bytes_read);
+                     FileManager::read(file, dstAddr, expSize, &bytes_read);
                   }
                   // total_bytes_read += bytes_read;
-                  fm->fclose(file);
+                  FileManager::fclose(file);
                }
                else
                {
@@ -707,7 +713,7 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
                bool ok = actType == ftype;
                if (!ok)
                 {
-                   printf("DEBUG1: Wrong type, actual = %i, exüectted = %i\n", actType, ftype);
+                   printf("DEBUG1: Wrong type, actual = %i, exï¿½ectted = %i\n", actType, ftype);
                    *status = &c_status_incompatible_image;
                    delete ffi;
                    break;
@@ -736,18 +742,18 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
                
                uint8_t* dstAddr = reu+(((uint32_t) ramBase) << 16);
                File *file = 0;
-               FRESULT fres = fm->fopen(path,filename, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &file);
+               FRESULT fres = FileManager::fopen(path,filename, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &file);
                if (file) {
                   uint32_t bytes_written;
                   if (ftype == 1571) {
-                     file->write(dstAddr, expSize / 2, &bytes_written);
+                     FileManager::write(file, dstAddr, expSize / 2, &bytes_written);
                      // total_bytes_read += bytes_read;
-                     file->write(dstAddr + 700 * 256, expSize / 2, &bytes_written);
+                     FileManager::write(file, dstAddr + 700 * 256, expSize / 2, &bytes_written);
                   } else {
-                     file->write(dstAddr, expSize, &bytes_written);
+                     FileManager::write(file, dstAddr, expSize, &bytes_written);
                   }
                   // total_bytes_read += bytes_read;
-                  fm->fclose(file);
+                  FileManager::fclose(file);
                }
                else
                {
@@ -785,7 +791,7 @@ void Dos::get_more_data(Message **reply, Message **status) {
         break;
     case e_dos_in_file:
         length = (remaining > 512) ? 512 : remaining;
-        res = file->read(data_message.message, length, &transferred);
+        res = FileManager::read(file, data_message.message, length, &transferred);
         data_message.length = (int) transferred;
         remaining -= transferred;
         if ((transferred != length) || (remaining == 0)) {

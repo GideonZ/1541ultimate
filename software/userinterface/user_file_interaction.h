@@ -44,7 +44,7 @@ public:
 	int fetch_context_items(BrowsableDirEntry *br, IndexedList<Action *> &list);
 };
 
-FRESULT create_file_ask_if_exists(FileManager *fm, UserInterface *ui, const char *path, const char *filename, File **f);
+FRESULT create_file_ask_if_exists(UserInterface *ui, const char *path, const char *filename, File **f);
 FRESULT create_user_file(UserInterface *ui, const char *message, const char *ext, const char *path, File **f, char *name_buffer);
 FRESULT write_zeros(File *f, int size, uint32_t &written);
 

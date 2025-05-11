@@ -90,13 +90,12 @@ SubsysResultCode_e FileTypeESP::execute(SubsysCommand *cmd)
 
     uint8_t *dest;
 
-    FileManager *fm = FileManager::getFileManager();
     FileInfo inf(32);
-    fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), inf);
+    FileManager::fstat(cmd->path.c_str(), cmd->filename.c_str(), inf);
     remain = inf.size;
 
     printf("Multipart ESP application Load.. %s\n", cmd->filename.c_str());
-    FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
+    FRESULT fres = FileManager::fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
 
     struct
     {
@@ -118,7 +117,7 @@ SubsysResultCode_e FileTypeESP::execute(SubsysCommand *cmd)
         cmd->user_interface->show_progress("Flashing ESP32 Application", filesize / 1024);
         total_bytes_read = 0;
         while (remain) {
-            file->read(&header, 12, &bytes_read);
+            FileManager::read(file, &header, 12, &bytes_read);
             remain -= bytes_read;
             total_bytes_read += bytes_read;
             if (bytes_read != 12) {
@@ -140,7 +139,7 @@ SubsysResultCode_e FileTypeESP::execute(SubsysCommand *cmd)
                 error = true;
                 break;
             }
-            file->read(dest, header.length, &bytes_read);
+            FileManager::read(file, dest, header.length, &bytes_read);
             remain -= bytes_read;
             total_bytes_read += bytes_read;
             status = esp32.Flash(dest, header.address, header.length, status_callback, cmd->user_interface);
@@ -153,7 +152,7 @@ SubsysResultCode_e FileTypeESP::execute(SubsysCommand *cmd)
                 break;
             }
         }
-        fm->fclose(file);
+        FileManager::fclose(file);
         if (!error) {
             cmd->user_interface->hide_progress();
             cmd->user_interface->popup("Flashing ESP32 Success!", BUTTON_OK);

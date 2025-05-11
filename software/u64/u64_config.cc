@@ -1207,10 +1207,10 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
     			if (i2c->i2c_read_block(0xA0, 0x00, edid, 256) == 0) {
     				if (cmd->user_interface->string_box("Reading EDID OK. Save to:", name, 31) > 0) {
     					set_extension(name, ".bin", 32);
-    			        fres = fm->fopen(cmd->path.c_str(), name, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+    			        fres = FileManager::fopen(cmd->path.c_str(), name, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
     			        if (fres == FR_OK) {
-    			        	f->write(edid, 256, &trans);
-    			        	fm->fclose(f);
+    			        	FileManager::write(f, edid, 256, &trans);
+    			        	FileManager::fclose(f);
     			        }
     				}
     			} else {
@@ -2083,8 +2083,7 @@ void U64Config :: list_palettes(ConfigItem *it, IndexedList<char *>& strings)
     Path p;
     p.cd(DATA_DIRECTORY);
     IndexedList<FileInfo *>infos(16, NULL);
-    FileManager *fm = FileManager :: getFileManager();
-    FRESULT fres = fm->get_directory(&p, infos, NULL);
+    FRESULT fres = get_directory(&p, infos, NULL);
     if (fres != FR_OK) {
         return;
     }
@@ -2179,8 +2178,7 @@ void U64Config :: rgb_to_yuv(const uint8_t rgb[3], uint8_t yuv[3], bool ntsc)
 bool U64Config :: load_palette_vpl(const char *path, const char *filename)
 {
     File *file = NULL;
-    FileManager *fm = FileManager :: getFileManager();
-    FRESULT fres = fm->fopen(path, filename, FA_READ, &file);
+    FRESULT fres = FileManager::fopen(path, filename, FA_READ, &file);
 
     uint8_t rgb[16][3];
 
@@ -2190,7 +2188,7 @@ bool U64Config :: load_palette_vpl(const char *path, const char *filename)
         if (success) {
             set_palette_rgb(rgb);
         }
-        fm->fclose(file);
+        FileManager::fclose(file);
     }
     return success;
 }

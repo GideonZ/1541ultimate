@@ -81,6 +81,8 @@ SRCS_CC	 =  stream.cc \
 			event.cc \
 			main_loop.cc \
 			filemanager.cc \
+			filemanager_service.cc \
+			file_utils.cc \
 			file_device.cc \
 			file_partition.cc \
 			file_direntry.cc \

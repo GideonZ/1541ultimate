@@ -11,7 +11,6 @@
 
 class REUPreloader {
     ObserverQueue *observerQueue;
-    FileManager *fm;
     ConfigStore *cfg;
     Path *path;
     SemaphoreHandle_t sem;

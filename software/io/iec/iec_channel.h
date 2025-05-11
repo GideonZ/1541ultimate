@@ -54,17 +54,15 @@ class IecPartition {
     IndexedList<FileInfo *> *dirlist;
     IndexedList<char *> *iecNames;
     Path *path;
-    FileManager *fm;
     IecFileSystem *vfs;
     int partitionNumber;
 
 public:
     IecPartition(IecFileSystem *vfs, int nr)
     {
-        fm = FileManager::getFileManager();
         this->vfs = vfs;
         partitionNumber = nr;
-        path = fm->get_new_path("IEC Partition");
+        path = new Path();
         dirlist = NULL;
         iecNames = NULL;
         dirlist = new IndexedList<FileInfo *>(8, NULL);
@@ -77,7 +75,7 @@ public:
     {
         delete dirlist;
         delete iecNames;
-        fm->release_path(path);
+        delete path;
     }
 
     int GetPartitionNumber(void)
@@ -91,7 +89,7 @@ public:
     FRESULT get_free(uint32_t &free)
     {
         uint32_t block_size;
-        FRESULT fres = fm->get_free(path, free, block_size);
+        FRESULT fres = FileManager::get_free(path, free, block_size);
         return fres;
     }
 
@@ -171,7 +169,7 @@ public:
     FRESULT ReadDirectory()
     {
         CleanupDir();
-        FRESULT res = fm->get_directory(path, *dirlist, NULL);
+        FRESULT res = get_directory(path, *dirlist, NULL);
         char buffer[128];
         for (int i = 0; i < dirlist->get_elements(); i++) {
             FileInfo *inf = (*dirlist)[i];
@@ -215,13 +213,13 @@ public:
 
     FRESULT MakeDirectory(const char *name)
     {
-        FRESULT res = fm->create_dir(path, name);
+        FRESULT res = FileManager::create_dir(path, name);
         return res;
     }
 
     FRESULT RemoveFile(const char *name)
     {
-        FRESULT res = fm->delete_file(path, name);
+        FRESULT res = FileManager::delete_file(path, name);
         return res;
     }
 
@@ -230,7 +228,7 @@ public:
         if (name[0] == '_') { // left arrow
             // return to root of partition
             SetInitialPath();
-            if (!fm->is_path_valid(path)) {
+            if (!FileManager::is_path_valid(path)) {
                 CleanupDir();
                 return false;
             }
@@ -249,7 +247,7 @@ public:
         }
         mstring previous_path(path->get_path());
         path->cd(name);  // just try!
-        if (!fm->is_path_valid(path)) {
+        if (!FileManager::is_path_valid(path)) {
             path->cd(previous_path.c_str()); // revert
             return false;
         }
@@ -303,7 +301,6 @@ public:
 };
 
 class IecFileSystem {
-    FileManager *fm;
     int currentPartition;
     IecPartition *partitions[MAX_PARTITIONS];
     IecDrive *drive;
@@ -311,7 +308,6 @@ public:
     IecFileSystem(IecDrive *dr)
     {
         drive = dr;
-        fm = FileManager::getFileManager();
         for (int i = 0; i < MAX_PARTITIONS; i++) {
             partitions[i] = 0;
         }
@@ -365,7 +361,6 @@ typedef struct {
 
 class IecChannel {
     IecDrive *drive;
-    FileManager *fm;
 
     int channel;
     bufblk_t bufblk[2];

@@ -33,6 +33,8 @@ SRCS_CC	 =  memory.cc \
 			pattern.cc \
 			config.cc \
 			filemanager.cc \
+			filemanager_service.cc \
+			file_utils.cc \
 			file_device.cc \
 			file_partition.cc \
 			filesystem_root.cc \

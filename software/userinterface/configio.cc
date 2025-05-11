@@ -66,7 +66,6 @@ SubsysResultCode_e ConfigIO :: S_save_log(SubsysCommand *cmd)
     extern StreamTextLog textLog; // the global log
     int len = textLog.getLength();
 
-    FileManager *fm = FileManager::getFileManager();
     File *f;
 
     char buffer[64];
@@ -74,11 +73,11 @@ SubsysResultCode_e ConfigIO :: S_save_log(SubsysCommand *cmd)
     int res = cmd->user_interface->string_box("Give filename..", buffer, 22);
     set_extension(buffer, ".log", 32);
     if (res > 0) {
-        FRESULT fres = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_ALWAYS, &f);
+        FRESULT fres = FileManager::fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_ALWAYS, &f);
         if (fres == FR_OK) {
             uint32_t transferred = 0;
-            fres = f->write(textLog.getText(), len, &transferred);
-            fm->fclose(f);
+            fres = FileManager::write(f, textLog.getText(), len, &transferred);
+            FileManager::fclose(f);
             return (fres == FR_OK) ? SSRET_OK : SSRET_DISK_ERROR;
         } else {
             sprintf(buffer, "Error: %s", FileSystem::get_error_string(fres));
@@ -101,10 +100,10 @@ SubsysResultCode_e ConfigIO :: S_save_to_file(SubsysCommand *cmd)
     int res = cmd->user_interface->string_box("Give filename..", buffer, 22);
     set_extension(buffer, ".cfg", 32);
     if (res > 0) {
-        FRESULT fres = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_ALWAYS, &f);
+        FRESULT fres = FileManager::fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_ALWAYS, &f);
         if (fres == FR_OK) {
             S_write_to_file(f); // FIXME? Cannot fail?
-            fm->fclose(f);
+            FileManager::fclose(f);
         } else {
             sprintf(buffer, "Error: %s", FileSystem::get_error_string(fres));
             cmd->user_interface->popup(buffer, BUTTON_OK);
@@ -204,7 +203,7 @@ void ConfigIO :: S_write_store_to_file(ConfigStore *st, File *f)
 
     len = sprintf(buffer, "[%s]\n", st->store_name.c_str() );
     if (len) {
-        f->write(buffer, len, &tr);
+        FileManager::write(f, buffer, len, &tr);
     }
     for(int n = 0; n < st->items.get_elements(); n++) {
         i = st->items[n];
@@ -217,11 +216,11 @@ void ConfigIO :: S_write_store_to_file(ConfigStore *st, File *f)
             len = sprintf(buffer, "%s=%d\n", i->definition->item_text, i->getValue());
         }
         if (len) {
-            f->write(buffer, len, &tr);
+            FileManager::write(f, buffer, len, &tr);
         }
     }
     len = sprintf(buffer, "\n");
-    f->write(buffer, len, &tr);
+    FileManager::write(f, buffer, len, &tr);
 }
 
 bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log)
@@ -236,7 +235,7 @@ bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log)
 
     while(1) {
         for(int i=0;i<128;) {
-            FRESULT fres = f->read(&c, 1, &tr);
+            FRESULT fres = FileManager::read(f, &c, 1, &tr);
             if ((fres == FR_OK) && tr) {
                 if (c == 0x0D) {
                     continue;

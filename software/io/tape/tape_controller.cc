@@ -24,7 +24,6 @@ struct t_cfg_definition tape_config[] = {
 
 TapeController :: TapeController() : SubSystem(SUBSYSID_TAPE_PLAYER)
 {
-    fm = FileManager :: getFileManager();
     register_store(0x54415045, "Tape Settings", tape_config);
     file = NULL;
 	paused = 0;
@@ -108,7 +107,7 @@ void TapeController :: close()
 {
 	if(file) {
 		printf("Closing tape file..\n");
-        fm->fclose(file);
+        FileManager::fclose(file);
 	}
 	file = NULL;
 }
@@ -172,7 +171,7 @@ void TapeController :: read_block()
 		return;
 	}	
 
-	file->read(blockBuffer, block, &bytes_read);
+	FileManager::read(file, blockBuffer, block, &bytes_read);
 	for(int i=0;i<bytes_read;i++)// not sure if memcpy copies the bytes in the right order.
 		*PLAYBACK_DATA = blockBuffer[i];
 
@@ -257,6 +256,6 @@ void TapeController :: set_file(File *f, uint32_t len, int m, int offset)
 	if (offset < 20) {
 	    offset = 20;
 	}
-	file->seek((uint32_t)offset);
+	FileManager::seek(file, (uint32_t)offset);
 	block = 512 - (offset & 0x1FF);
 }

@@ -69,7 +69,7 @@ class BrowsableDirEntry : public Browsable
 
 	void setPath(void) {
 		if (!path) {
-			path = FileManager :: getFileManager() -> get_new_path(info->lfname);
+			path = new Path();
 			path->cd(parent_path->get_path());
 			path->cd(info->lfname);
 		}
@@ -93,7 +93,7 @@ public:
 		if (fatname)
 		    delete fatname;
 		if (path)
-			FileManager :: getFileManager() -> release_path(path);
+			delete path;
 	}
 
 	FileInfo *getInfo(void) {
@@ -123,7 +123,7 @@ public:
 
 		setPath();
 		IndexedList<FileInfo *> *infos = new IndexedList<FileInfo *>(8, NULL);
-		if (FileManager :: getFileManager()->get_directory(path, *infos, NULL) != FR_OK) {
+		if (get_directory(path, *infos, NULL) != FR_OK) {
 			delete infos;
 			error = -1;
 		} else {
@@ -224,15 +224,13 @@ public:
 class BrowsableRoot : public Browsable
 {
 	Path *root;
-	FileManager *fm;
 public:
 	BrowsableRoot()  {
-		fm = FileManager :: getFileManager();
-		root = fm -> get_new_path("Browsable Root");
+		root = new Path();
 		UserFileInteraction :: getUserFileInteractionObject(); // just to make sure the UserFileInteraction class has been initialized
 	}
 	virtual ~BrowsableRoot() {
-		fm -> release_path(root);
+		delete root;
 	}
 
 	// get parent function not implemented; there is no parent, see base class
@@ -240,7 +238,7 @@ public:
 	virtual IndexedList<Browsable *> *getSubItems(int &error) {
 		if (children.get_elements() == 0) {
 			IndexedList<FileInfo *> *infos = new IndexedList<FileInfo *>(8, NULL);
-			fm -> get_directory(root, *infos, NULL);
+			get_directory(root, *infos, NULL);
 			// printf("Root get sub items: get_directory of %s returned %d elements.\n", root->get_path(), infos->get_elements());
 			for(int i=0;i<infos->get_elements();i++) {
 				FileInfo *inf = (*infos)[i];

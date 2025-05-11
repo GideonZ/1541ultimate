@@ -350,8 +350,6 @@ void IecPrinter::updateFlushProgressBar(void)
 
 IecPrinter::IecPrinter() : SubSystem(SUBSYSID_PRINTER)
 {
-    fm = FileManager::getFileManager();
-
     /* Create printer settings page in F2 menu */
     register_store(0x4d505300, "Printer Settings", iec_printer_config);
 
@@ -488,7 +486,7 @@ t_channel_retval IecPrinter::_push_data(uint8_t b)
                 if (f)
                 {
                     uint32_t bytes;
-                    f->write(buffer, IEC_PRINTER_BUFFERSIZE, &bytes);
+                    FileManager::write(f, buffer, IEC_PRINTER_BUFFERSIZE, &bytes);
                     buffer_pointer = 0;
                 }
                 else
@@ -1035,16 +1033,16 @@ int IecPrinter::open_file(void)
     /* Add .txt extension if ASCII output type */
     sprintf(filename,(output_type == PRINTER_ASCII_OUTPUT) ? "%s.txt" : "%s", output_filename);
 
-    FRESULT fres = fm->fopen((const char *) NULL, filename, FA_WRITE|FA_OPEN_ALWAYS, &f);
+    FRESULT fres = FileManager::fopen((const char *) NULL, filename, FA_WRITE|FA_OPEN_ALWAYS, &f);
 
     if(f)
     {
         printf("Successfully opened printer file %s\n", filename);
-        f->seek(f->get_size());
+        FileManager::seek(f, f->get_size());
     }
     else
     {
-        FRESULT fres = fm->fopen((const char *) filename, FA_WRITE|FA_CREATE_NEW, &f);
+        FRESULT fres = FileManager::fopen((const char *) filename, FA_WRITE|FA_CREATE_NEW, &f);
 
         if(f)
         {
@@ -1100,11 +1098,11 @@ int IecPrinter::close_file(void) // file should be open
                 {
                     uint32_t bytes;
 
-                    f->write(buffer, buffer_pointer, &bytes);
+                    FileManager::write(f, buffer, buffer_pointer, &bytes);
                     buffer_pointer = 0;
                 }
 
-                fm->fclose(f);
+                FileManager::fclose(f);
                 f = NULL;
             }
 

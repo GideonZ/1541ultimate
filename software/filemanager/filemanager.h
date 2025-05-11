@@ -7,12 +7,12 @@
 #include "cached_tree_node.h"
 #include "observer.h"
 #include "embedded_fs.h"
+#include "filemanager_service.h"
 
 #ifdef OS
 #include "FreeRTOS.h"
+#include "task.h"
 #include "semphr.h"
-#else
-//typedef void * SemaphoreHandle_t;
 #endif
 
 #define INFO_SIZE 128
@@ -71,32 +71,28 @@ public:
 	~FileManagerEvent() { }
 };
 
+#define FILE_MANAGER_QUEUE_LENGTH 16
 
 class FileManager
 {
-#ifdef OS
-    SemaphoreHandle_t serializer;
-#endif
 	IndexedList<MountPoint *>mount_points;
     IndexedList<File *>open_file_list;
-	//IndexedList<Path *>used_paths;
 	IndexedList<ObserverQueue *>observers;
 	CachedTreeNode *root;
 	FileSystem *rootfs;
+    QueueHandle_t fileCommandQueue;
+    TaskHandle_t fileManagerServiceTaskHandle;
 
     FileManager() : mount_points(8, NULL), open_file_list(16, NULL), /*used_paths(8, NULL), */observers(4, NULL) {
         root = new CachedTreeNode(NULL, "RootNode");
         root->get_file_info()->attrib = AM_DIR;
         rootfs = new FileSystem_Root(root);
-#ifdef OS
-        serializer = xSemaphoreCreateRecursiveMutex();
-#endif
+
+        fileCommandQueue = xQueueCreate(FILE_MANAGER_QUEUE_LENGTH, sizeof(FileCommand *));
+        xTaskCreate(FileManager::FileManagerServiceTask, "FileMgrTask", 2048, nullptr, 2, &fileManagerServiceTaskHandle);
     }
 
     ~FileManager() {
-#ifdef OS
-    	vSemaphoreDelete(serializer);
-#endif
         for(int i=0;i<mount_points.get_elements();i++) {
             fclose(mount_points[i]->get_file());
             delete mount_points[i];
@@ -105,32 +101,44 @@ class FileManager
         for(int i=0;i<open_file_list.get_elements();i++) {
         	delete open_file_list[i];
         }
-/*
-        for(int i=0;i<used_paths.get_elements();i++) {
-        	delete used_paths[i];
-        }
-*/
         delete rootfs;
         delete root;
     }
 
-	FRESULT find_pathentry(PathInfo &pathInfo, bool enter_mount);
+    static void FileManagerServiceTask(void* param);
+    __inline__ bool in_context() { return (xTaskGetCurrentTaskHandle() == fileManagerServiceTaskHandle); }
+
+    // File system functions
+    FRESULT find_pathentry(PathInfo &pathInfo, bool open_mount);
 	FRESULT fopen_impl(PathInfo &pathInfo, uint8_t flags, File **);
 	FRESULT rename_impl(PathInfo &from, PathInfo &to);
 	FRESULT delete_file_impl(PathInfo &pathInfo);
 
-//	friend class FileDirEntry;
+    // Serialized versions of the functions for thread safety
+    // For backward compatibility reasons, the file path could be passed as a string or as a Path object.
+    // The rule is that if the path object is null, a new one will be created and deleted after use.
+    // Internally, the PathInfo structs are used; which can be initialized with either of the two methods.
+    // In some cases, the path is passed as a string. In this case, it will be prepended. Lots of legacy here.
+    FRESULT priv_stat(Path *pathobj, const char *path, const char *filename, FileInfo &info, bool open_mount);
+    FRESULT priv_open(Path *pathobj, const char *path, const char *filename, uint8_t flags, File **);
+    FRESULT priv_read(File *fp, uint8_t *buffer, uint32_t size, uint32_t *transferred);
+    FRESULT priv_write(File *fp, uint8_t *buffer, uint32_t size, uint32_t *transferred);
+    FRESULT priv_seek(File *fp, uint32_t offset);
+    FRESULT priv_sync(File *f);
+    FRESULT priv_close(File *f);
+    FRESULT priv_delete(Path *pathobj, const char *path, const char *filename);
 
-    void lock() {
-#ifdef OS
-    	xSemaphoreTakeRecursive(serializer, portMAX_DELAY);
-#endif
-    }
-    void unlock() {
-#ifdef OS
-    	xSemaphoreGiveRecursive(serializer);
-#endif
-    }
+    FRESULT priv_create_dir(Path *path, const char *pathname, const char *filename);
+    FRESULT priv_open_dir(const char *pathname, Directory **dir);
+    FRESULT priv_read_dir(Directory *dir, FileInfo &info);
+    FRESULT priv_close_dir(Directory *dir);
+
+    FRESULT priv_rename(const char *old_name, const char *new_name);
+    FRESULT priv_get_free(Path *path, uint32_t &free, uint32_t &cluster_size);
+    FRESULT priv_fs_read_sector(Path *path, uint8_t *buffer, int track, int sector);
+    FRESULT priv_fs_write_sector(Path *path, uint8_t *buffer, int track, int sector);
+    FRESULT priv_is_path_writable(Path *p);
+
 public:
 
     static FileManager* getFileManager() {
@@ -145,7 +153,6 @@ public:
     static const char *eventStrings[];
 
     void dump(void) {
-		lock();
 		printf("** This is a dump of the state of the file manager **\n");
 		root->dump(0);
 
@@ -161,64 +168,43 @@ public:
     		MountPoint *f = mount_points[i];
     		printf("%p: %s\n", f->get_embedded(), f->get_path());
     	}
-		unlock();
 	}
 
 	void invalidate(CachedTreeNode *obj);
 	void remove_from_parent(CachedTreeNode *o);
     void add_root_entry(CachedTreeNode *obj);
     void remove_root_entry(CachedTreeNode *obj);
-
     MountPoint *add_mount_point(SubPath *path, File *, FileSystemInFile *);
     MountPoint *find_mount_point(SubPath *path, FileInfo *info);
 
-    // Functions to use / handle path objects:
-    Path *get_new_path(const char *owner) {
-    	Path *p = new Path();
-    	p->owner = owner;
-    	//used_paths.append(p);
-    	return p;
-    }
-    void  release_path(Path *p) {
-    	//used_paths.remove(p);
-    	delete p;
-    }
+    // Serializable, thread safe functions
+    static FRESULT get_free(Path *path, uint32_t &free, uint32_t &cluster_size);
+    static FRESULT fs_read_sector(Path *path, uint8_t *buffer, int track, int sector);
+    static FRESULT fs_write_sector(Path *path, uint8_t *buffer, int track, int sector);
+    static FRESULT fstat(Path *path, const char *filename, FileInfo &info, bool open_mount);
+    static FRESULT fstat(const char *path, const char *name, FileInfo &info);
+    static FRESULT fstat(const char *pathname, FileInfo &info);
+    static FRESULT fopen(Path *path, const char *filename, uint8_t flags, File **);
+    static FRESULT fopen(const char *path, const char *filename, uint8_t flags, File **);
+    static FRESULT fopen(const char *pathname, uint8_t flags, File **);
+    static FRESULT fclose(File *f);
+    static FRESULT rename(const char *old_name, const char *new_name);
+    static FRESULT delete_file(Path *path, const char *name);
+    static FRESULT delete_file(const char *pathname);
+    static FRESULT create_dir(Path *path, const char *name);
+    static FRESULT create_dir(const char *pathname);
+    static FRESULT open_dir(const char *pathname, Directory **dir);
+    static FRESULT read_dir(Directory *dir, FileInfo &info);
+    static FRESULT close_dir(Directory *dir);
+    static FRESULT read(File *fp, void *buffer, const uint32_t size, uint32_t *transferred);
+    static FRESULT write(File *fp, void *buffer, const uint32_t size, uint32_t *transferred);
+    static FRESULT seek(File *fp, uint32_t offset);
+    static FRESULT sync(File *fp);
+    static bool    is_path_valid(Path *p);
+    static bool    is_path_writable(Path *p);
 
-    bool  is_path_valid(Path *p);
-    bool  is_path_writable(Path *p);
-
-    void  get_display_string(Path *p, const char *filename, char *buffer, int width);
-
-    FRESULT get_free(Path *path, uint32_t &free, uint32_t &cluster_size);
-    FRESULT fs_read_sector(Path *path, uint8_t *buffer, int track, int sector);
-    FRESULT fs_write_sector(Path *path, uint8_t *buffer, int track, int sector);
-
-    FRESULT fstat(Path *path, const char *filename, FileInfo &info);
-    FRESULT fstat(const char *path, const char *name, FileInfo &info);
-    FRESULT fstat(const char *pathname, FileInfo &info);
-
-    FRESULT fopen(Path *path, const char *filename, uint8_t flags, File **);
-    FRESULT fopen(const char *path, const char *filename, uint8_t flags, File **);
-    FRESULT fopen(const char *pathname, uint8_t flags, File **);
-
-    void 	fclose(File *f);
-    FRESULT fcopy(const char *path, const char *filename, const char *dest, const char *dest_filename, bool overwrite);
-
-    FRESULT rename(Path *old_path, const char *old_name, Path *new_path, const char *new_name);
-    FRESULT rename(Path *path, const char *old_name, const char *new_name);
-    FRESULT rename(const char *old_name, const char *new_name);
-
-    FRESULT delete_file(Path *path, const char *name);
-    FRESULT delete_file(const char *pathname);
-    FRESULT delete_recursive(Path *path, const char *name);
-
-    FRESULT create_dir(Path *path, const char *name);
-    FRESULT create_dir(const char *pathname);
-
-    FRESULT get_directory(Path *p, IndexedList<FileInfo *> &target, const char *matchPattern);
-    FRESULT print_directory(const char *path);
-    FRESULT load_file(const char *path, const char *filename, uint8_t *mem, uint32_t maxlen, uint32_t *transferred);
-    FRESULT save_file(bool overwrite, const char *path, const char *filename, uint8_t *mem, uint32_t len, uint32_t *transferred);
+    // TODO
+    void get_display_string(Path *p, const char *filename, char *buffer, int width);
 
     void registerObserver(ObserverQueue *q) {
     	observers.append(q);
@@ -245,4 +231,5 @@ public:
     }
 };
 
+#include "file_utils.h"
 #endif
