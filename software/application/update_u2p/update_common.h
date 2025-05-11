@@ -95,8 +95,7 @@ static bool original_kernal_found(Flash *flash, int addr)
 
 static void create_dir(const char *name)
 {
-    FileManager *fm = FileManager :: getFileManager();
-    FRESULT fres = fm->create_dir(name);
+    FRESULT fres = FileManager::create_dir(name);
     console_print(screen, "Creating '%s': %s\n", name, FileSystem :: get_error_string(fres));
 }
 
@@ -104,12 +103,11 @@ static FRESULT write_flash_file(const char *name, uint8_t *data, int length)
 {
     File *f;
     uint32_t dummy;
-    FileManager *fm = FileManager :: getFileManager();
-    FRESULT fres = fm->fopen(ROMS_DIRECTORY, name, FA_CREATE_ALWAYS | FA_WRITE, &f);
+    FRESULT fres = FileManager::fopen(ROMS_DIRECTORY, name, FA_CREATE_ALWAYS | FA_WRITE, &f);
     if (fres == FR_OK) {
-        fres = f->write(data, length, &dummy);
+        fres = FileManager::write(f, data, length, &dummy);
         console_print(screen, "Writing %s to /flash: %s\n", name, FileSystem :: get_error_string(fres));
-        fm->fclose(f);
+        FileManager::fclose(f);
     }
     if (fres != FR_OK) {
         user_interface->popup("Failed to write essentials. Abort!", BUTTON_OK);
@@ -122,12 +120,11 @@ static FRESULT write_html_file(const char *name, const char *data, int length)
 {
     File *f;
     uint32_t dummy;
-    FileManager *fm = FileManager :: getFileManager();
-    FRESULT fres = fm->fopen(HTML_DIRECTORY, name, FA_CREATE_ALWAYS | FA_WRITE, &f);
+    FRESULT fres = FileManager::fopen(HTML_DIRECTORY, name, FA_CREATE_ALWAYS | FA_WRITE, &f);
     if (fres == FR_OK) {
-        fres = f->write(data, length, &dummy);
+        fres = FileManager::write(f, (void *)data, length, &dummy);
         console_print(screen, "Writing %s to /flash: %s\n", name, FileSystem :: get_error_string(fres));
-        fm->fclose(f);
+        FileManager::fclose(f);
     }
     return fres;
 }
@@ -136,18 +133,16 @@ static void copy_flash_binary(Flash *flash, uint32_t addr, uint32_t len, const c
 {
     uint8_t *buffer = new uint8_t[len];
     flash->read_linear_addr(addr, len, buffer);
-    FileManager *fm = FileManager :: getFileManager();
     console_print(screen, "Saving %s to /flash..\n", fn);
-    fm->save_file(false, ROMS_DIRECTORY, fn, buffer, len, NULL);
+    save_file(false, ROMS_DIRECTORY, fn, buffer, len, NULL);
 }
 
 static FRESULT check_flashdisk_empty()
 {
-    FileManager *fm = FileManager :: getFileManager();
     Path p;
     p.cd("/flash");
     IndexedList<FileInfo *> dir(16, NULL);
-    FRESULT fres = fm->get_directory(&p, dir, NULL);
+    FRESULT fres = get_directory(&p, dir, NULL);
     if (fres != FR_OK) {
         return fres;
     }
@@ -159,11 +154,10 @@ static FRESULT check_flashdisk_empty()
 
 static uint32_t print_free_flash_blocks()
 {
-    FileManager *fm = FileManager :: getFileManager();
     Path p;
     p.cd("/flash");
     uint32_t free = 0, cs = 0;
-    fm->get_free(&p, free, cs);
+    FileManager::get_free(&p, free, cs);
     console_print(screen, "\e5%d Flash Blocks Free\e?\n", free);
     return free;
 }

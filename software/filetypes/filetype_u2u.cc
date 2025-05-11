@@ -116,7 +116,7 @@ SubsysResultCode_e FileTypeUpdate :: execute(SubsysCommand *cmd)
 			cmd->user_interface->show_progress("Loading Update..", 32);
 			dest = (uint8_t *)(REU_MEMORY_BASE);
 			while(remain >= 0) {
-				file->read(dest, bytes_per_step, &bytes_read);
+				FileManager::read(file, dest, bytes_per_step, &bytes_read);
 				total_bytes_read += bytes_read;
 				cmd->user_interface->update_progress(NULL, 1);
 				remain -= bytes_per_step;
@@ -124,7 +124,7 @@ SubsysResultCode_e FileTypeUpdate :: execute(SubsysCommand *cmd)
 			}
 			cmd->user_interface->hide_progress();
 		} else {
-			file->read((void *)(REU_MEMORY_BASE), (REU_MAX_SIZE), &bytes_read);
+			FileManager::read(file, (void *)(REU_MEMORY_BASE), (REU_MAX_SIZE), &bytes_read);
 			total_bytes_read += bytes_read;
 		}
 		fm->fclose(file);
