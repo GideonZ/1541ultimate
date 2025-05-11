@@ -816,7 +816,7 @@ void C64::init_system_roms(void)
 
 #else
     uint8_t *temp = new uint8_t[8192];
-    FRESULT fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_KERNFILE), temp, 8192, NULL);
+    FRESULT fres = load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_KERNFILE), temp, 8192, NULL);
     if (fres == FR_OK) {
         enable_kernal(temp);
     } else {
