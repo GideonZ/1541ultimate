@@ -8,10 +8,7 @@
 ;-------------------------------------------------
 ;
 
-; System ROM = 16K, of which the first 8K will be mapped to $A000. However, we won't use it
-; so we can fool the assembler that we start a 16K contiguous block at $C000
-
-    *= $C000            
+    *= $E000
 
 signature
     .byte $55
