@@ -68,6 +68,7 @@ class C64_CRT
     bool         a000_seen;
     e_known_cart local_type;
     uint8_t      max_bank;
+    uint8_t      highest_bank;
     uint32_t     total_read;
 
     // CRT File Structure
@@ -94,6 +95,7 @@ class C64_CRT
     SubsysResultCode_e read_crt(File *file, cart_def *def);
     void configure_cart(cart_def *def);
     void find_eeprom(void);
+    void auto_mirror(void);
 public:
     static SubsysResultCode_e load_crt(const char *path, const char *filename, cart_def *def, uint8_t *mem);
     static SubsysResultCode_e save_crt(File *f);
