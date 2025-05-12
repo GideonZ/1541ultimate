@@ -467,6 +467,7 @@ void C64_CRT::configure_cart(cart_def *def)
                 require = CART_UCI_DE1C;
             } else {
                 prohibit = CART_PROHIBIT_IO;
+                require = CART_UCI_DE1C;
             }
             break;
         case CART_SUPERSNAP:
