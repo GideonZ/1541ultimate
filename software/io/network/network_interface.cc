@@ -173,13 +173,22 @@ void NetworkInterface :: statusCallback(struct netif *net)
 }
 
 #include "lwip/ip_addr.h"
+void NetworkInterface :: set_default_interface(void)
+{
+    for(int i=0;i<getNumberOfInterfaces();i++) {
+        NetworkInterface *intf = getInterface(i);
+        if (netif_is_up(&intf->my_net_if) && (intf->my_net_if.ip_addr.addr != 0)) {
+            netif_set_default(&intf->my_net_if);
+            break;
+        }        
+    }
+}
+
 void NetworkInterface :: statusUpdate(void)
 {
     char str[16];
     printf("Status update IP = %s\n", ipaddr_ntoa_r(&(my_net_if.ip_addr), str, sizeof(str)));
-    if (netif_is_up(&my_net_if) && (my_net_if.ip_addr.addr != 0)) {
-        netif_set_default(&my_net_if);
-    }
+    set_default_interface();
 
     // quick hack to perform update on the browser
 	FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
@@ -281,9 +290,8 @@ void NetworkInterface :: link_up()
 	netif_set_up(&my_net_if);
     if (dhcp_enable) {
     	dhcp_start(&my_net_if);
-    } else {
-        netif_set_default(&my_net_if);
     }
+    set_default_interface();
 }
 
 void NetworkInterface :: link_down()
@@ -292,6 +300,7 @@ void NetworkInterface :: link_down()
 	// Disable the network interface
 	netif_set_down(&my_net_if);
 	dhcp_stop(&my_net_if);
+    set_default_interface();
 }
 
 void NetworkInterface :: set_mac_address(uint8_t *mac)

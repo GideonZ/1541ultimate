@@ -71,6 +71,7 @@ public:
         }
         return NULL;
     }
+    static void set_default_interface(void);
 
 protected:
 	struct pbuf_custom pbuf_array[PBUF_FIFO_SIZE];
