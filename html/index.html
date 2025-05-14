@@ -186,7 +186,7 @@ $(document).ready(async function () {
 
         // Split into lines, remove blank lines, convert to lowercase, and join back
         var temp = textarea.split('\n')
-                                .map(line => line.trim().toLowerCase())
+                                //.map(line => line.trim().toLowerCase())	//Shifted is neded!
                                 .filter(line => line.trim().length > 0) 
                                 .join('\n');
 
@@ -247,74 +247,75 @@ $(document).ready(async function () {
     var basic_error = "";
 
     const TOKENS = [
-        ['restore', 140],
-        ['input#', 132],
-        ['return', 142],
-        ['verify', 149],
-        ['print#', 152],
-        ['right$', 201],
-        ['input', 133],
-        ['gosub', 141],
-        ['print', 153],
-        ['close', 160],
-        ['left$', 200],
-        ['next', 130],
-        ['data', 131],
-        ['read', 135],
-        ['goto', 137],
-        ['stop', 144],
-        ['wait', 146],
-        ['load', 147],
-        ['save', 148],
-        ['poke', 151],
-        ['cont', 154],
-        ['list', 155],
-        ['open', 159],
-        ['tab(', 163],
-        ['spc(', 166],
-        ['then', 167],
-        ['step', 169],
-        ['peek', 194],
-        ['str$', 196],
-        ['chr$', 199],
-        ['mid$', 202],
-        ['end', 128],
-        ['for', 129],
-        ['dim', 134],
-        ['let', 136],
-        ['run', 138],
-        ['rem', 143],
-        ['def', 150],
-        ['clr', 156],
-        ['cmd', 157],
-        ['sys', 158],
-        ['get', 161],
-        ['new', 162],
-        ['not', 168],
-        ['and', 175],
-        ['sgn', 180],
-        ['int', 181],
-        ['abs', 182],
-        ['usr', 183],
-        ['fre', 184],
-        ['pos', 185],
-        ['sqr', 186],
-        ['rnd', 187],
-        ['log', 188],
-        ['exp', 189],
-        ['cos', 190],
-        ['sin', 191],
-        ['tan', 192],
-        ['atn', 193],
-        ['len', 195],
-        ['val', 197],
-        ['asc', 198],
-        ['if', 139],
-        ['on', 145],
-        ['to', 164],
-        ['fn', 165],
-        ['or', 176],
-        ['go', 203],
+        ['restore', 140],	['reS', 140],		['resT', 140],		['restO', 140],		['restoR', 140],
+        ['input#', 132],	['iN', 132],		['inP', 132],		['inpU', 132],		['inpuT', 132],
+        ['return', 142],	['reT', 142],		['retU', 142],		['retuR', 142],
+        ['verify', 149],	['vE', 149],		['veR', 149],		['verI', 149],		['veriF', 149],
+        ['print#', 152],	['pR', 152],		['prI', 152],		['priN', 152],		['prinT', 152],
+        ['right$', 201],	['rI', 201],		['riG', 201],		['rigH', 201],		['righT', 201],
+        ['input', 133],		//No abbreviation
+        ['gosub', 141],		['goS', 141],		['gosU', 141],
+        ['print', 153],		['?', 153],
+        ['close', 160],		['clO', 160],		['cloS', 160],
+        ['left$', 200],		['leF', 200],		['lefT', 200],
+        ['next', 130],		['nE', 130],		['neX', 130],
+        ['data', 131],		['dA', 131],
+        ['read', 135],		['rE', 135],
+        ['goto', 137],		['gO', 137],		['goT', 137],
+        ['stop', 144],		['sT', 144],		['stO', 144],
+        ['wait', 146],		['wA', 146],		['waI', 146],
+        ['load', 147],		['lO', 147],		['loA', 147],
+        ['save', 148],		['sA', 148],		['saV', 148],
+        ['poke', 151],		['pO', 151],		['poK', 151],
+        ['cont', 154],		['cO', 154],		['coN', 154],
+        ['list', 155],		['lI', 155],		['liS', 155],
+        ['open', 159],		['oP', 159],		['opE', 159],
+        ['tab(', 163],		['tA', 163],		['taB', 163],
+        ['spc(', 166],		['sP', 166],		['spC', 166],
+        ['then', 167],		['tH', 167],		['thE', 167],
+        ['step', 169],		['stE', 169],
+        ['peek', 194],		['pE', 194],		['peE', 194],
+        ['str$', 196],		['stR', 196],
+        ['chr$', 199],		['cH', 199],		['chR', 199],
+        ['mid$', 202],		['mI', 202],		['miD', 202],
+        ['end', 128],		['eN', 128],
+        ['for', 129],		['fO', 129],
+        ['dim', 134],		['dI', 134],
+        ['let', 136],		['lE', 136],
+        ['run', 138],		['rU', 138],
+        ['rem', 143],		//No abbreviation
+        ['def', 150],		['dE', 150],
+        ['clr', 156],		['cL', 156],
+        ['cmd', 157],		['cM', 157],
+        ['sys', 158],		['sY', 158],
+        ['get', 161],		['gE', 161],
+        ['new', 162],		//No abbreviation
+        ['not', 168],		['nO', 168],
+        ['and', 175],		['aN', 175],
+        ['sgn', 180],		['sG', 180],
+        ['int', 181],		//No abbreviation
+        ['abs', 182],		['aB', 182],
+        ['usr', 183],		['uS', 183],
+        ['fre', 184],		['fR', 184],
+        ['pos', 185],		//No abbreviation
+        ['sqr', 186],		['sQ', 186],
+        ['rnd', 187],		['rN', 187],
+        ['log', 188],		//No abbreviation
+        ['exp', 189],		['eX', 189],
+        ['cos', 190],		//No abbreviation
+        ['sin', 191],		['sI', 191],
+        ['tan', 192],		//No abbreviation
+        ['atn', 193],		['aT', 193],
+        ['len', 195],		//No abbreviation
+        ['val', 197],		['vA', 197],
+        ['asc', 198],		['aS', 198],
+        ['if', 139],		//No abbreviation
+        ['on', 145],		//No abbreviation
+        ['to', 164],		//No abbreviation
+        ['fn', 165],		//No abbreviation
+        ['or', 176],		//No abbreviation
+        ['go', 203],		//No abbreviation
+	//
         ['+', 170],
         ['-', 171],
         ['*', 172],
@@ -327,36 +328,121 @@ $(document).ready(async function () {
 
     const TOKENS_UPPERCASE = TOKENS.map(token => [token[0].toUpperCase(), token[1]]);
 
-
     const SPECIAL = [
-        ['{rvs off}',  0x92],
-        ['{rvs on}',   0x12],
-        ['{up}',       0x91],
-        ['{down}',     0x11],
-        ['{left}',     0x9d],
-        ['{rght}',     0x1d],
-        ['{clr}',      0x93],
-        ['{clear}',    0x93],
-        ['{home}',     0x13],
-        
-        ['{blk}',      0x90],
-        ['{wht}',      0x05],
-        ['{red}',      0x1c],
-        ['{cyn}',      0x9f],
-        ['{pur}',      0x9c],
-        ['{grn}',      0x1e],
-        ['{blu}',      0x1f],
-        ['{yel}',      0x9e],
-        ['{org}',      0x81],
-        ['{brn}',      0x95],
-        ['{lred}',     0x96],
-        ['{dgry}',     0x97],
-        ['{mgry}',     0x98],
-        ['{lgrn}',     0x99],
-        ['{lblu}',     0x9a],
-        ['{lgry}',     0x9b]
-        
-        
+	['{black}', 0x90],
+	['{white}', 0x05],
+	['{red}', 0x1c],
+	['{cyan}', 0x9f],
+	['{purple}', 0x9c],
+	['{green}', 0x1e],
+	['{blue}', 0x1f],
+	['{yellow}', 0x9e],
+	['{orange}', 0x81],
+	['{brown}', 0x95],
+	['{pink}', 0x96],
+	['{dark gray}', 0x97],
+	['{gray}', 0x98],
+	['{light green}', 0x99],
+	['{light blue}', 0x9a],
+	['{light gray}', 0x9b],
+	//
+	['{reverse on}', 0x12],
+	['{reverse off}', 0x92],
+	//
+	['{clear}', 0x93],
+	['{home}', 0x13],
+	['{insert}', 0x94],
+	['{delete}', 0x14],
+	//
+	['{pound}', 0x5c],
+	['{arrow left}', 0x5f],
+	['{^}', 0x5e],
+	['{pi}', 0xff],
+	//
+	['{up}', 0x91],
+	['{down}', 0x11],
+	['{left}', 0x9d],
+	['{right}', 0x1d],
+	// commodore key +
+	['{cm a}', 0xb0],
+	['{cm b}', 0xbf],
+	['{cm c}', 0xbc],
+	['{cm d}', 0xac],
+	['{cm e}', 0xb1],
+	['{cm f}', 0xbb],
+	['{cm g}', 0xa5],
+	['{cm h}', 0xb4],
+	['{cm i}', 0xa2],
+	['{cm j}', 0xb5],
+	['{cm k}', 0xa1],
+	['{cm l}', 0xb6],
+	['{cm m}', 0xa7],
+	['{cm n}', 0xaa],
+	['{cm o}', 0xb9],
+	['{cm p}', 0xaf],
+	['{cm q}', 0xab],
+	['{cm r}', 0xb2],
+	['{cm s}', 0xae],
+	['{cm t}', 0xa3],
+	['{cm u}', 0xb8],
+	['{cm v}', 0xbe],
+	['{cm w}', 0xb3],
+	['{cm x}', 0xbd],
+	['{cm y}', 0xb7],
+	['{cm z}', 0xad],
+	['{cm +}', 0xa6],
+	['{cm -}', 0xdc],
+	['{cm pound}', 0xa8],
+	['{cm @}', 0xa4],
+	['{cm asterisk}', 0xdf],
+	['{cm ^}', 0xff],
+	['{cm space}', 0xa0],
+	// control key +
+	['{ct a}', 0x01],
+	['{ct b}', 0x02],
+	['{ct c}', 0x03],
+	['{ct d}', 0x04],
+	['{ct e}', 0x05],
+	['{ct f}', 0x06],
+	['{ct g}', 0x07],
+	['{ct h}', 0x08],
+	['{ct i}', 0x09],
+	['{ct j}', 0x0a],
+	['{ct k}', 0x0b],
+	['{ct l}', 0x0c],
+	['{ct n}', 0x0e],
+	['{ct o}', 0x0f],
+	['{ct p}', 0x10],
+	['{ct q}', 0x11],
+	['{ct r}', 0x12],
+	['{ct s}', 0x13],
+	['{ct t}', 0x14],
+	['{ct u}', 0x15],
+	['{ct v}', 0x16],
+	['{ct w}', 0x17],
+	['{ct x}', 0x18],
+	['{ct y}', 0x19],
+	['{ct z}', 0x1a],
+	['{ct [}', 0x1b],
+	['{ct ]}', 0x1d],
+	['{ct =}', 0x1f],
+	// shift key +
+	['{sh +}', 0xdb],
+	['{sh -}', 0xdd],
+	['{sh pound}', 0xa9],
+	['{sh @}', 0xba],
+	['{sh asterisk}', 0xc0],
+	['{sh ^}', 0xff],
+	['{sh space}', 0xa0],
+	// function keys
+	['{f1}', 0x85],
+	['{f2}', 0x89],
+	['{f3}', 0x86],
+	['{f4}', 0x8a],
+	['{f5}', 0x87],
+	['{f6}', 0x8b],
+	['{f7}', 0x88],
+	['{f8}', 0x8c]
     ];
 
     function asciiToPetscii(o) {
@@ -494,13 +580,13 @@ $(document).ready(async function () {
     function createTable() {
             let $table = $('<table border="0"></table>');
             
-            // Calculate the number of rows needed for 10 columns
-            let numRows = Math.ceil(SPECIAL.length / 10);
+            // Calculate the number of rows needed for 16 columns
+            let numRows = Math.ceil(SPECIAL.length / 16);
 
             for (let row = 0; row < numRows; row++) {
                 let $row = $('<tr></tr>');
-                for (let col = 0; col < 10; col++) {
-                    let cellIndex = row * 10 + col;
+                for (let col = 0; col < 16; col++) {
+                    let cellIndex = row * 16 + col;
                     if (cellIndex < SPECIAL.length) {
                         let [symbol, code] = SPECIAL[cellIndex];
                         $row.append(`<td>${symbol}</td>`);
@@ -1392,13 +1478,13 @@ function disassembler(startInt, byteArray) {
 
         <div id="tokenizer" class="page">
             <h1>BASIC Tokenizer / Editor</h1>
-            <p>Here, you may enter a BASIC program, and upload it directly to your machine.</p>
+            <p>Here, you may enter a BASIC program (type in lower case, abbreviation is allowed), and upload it directly to your machine.</p>
             <p><b>Special characters:</b></p>
             <div id="tableContainer"></div>
 
             <textarea id="basiceditor" class="c64-textarea" cols="80">
-10 print "hello world"
-20 goto 10
+10 ? cH(14)"Hello world!" :rem print chr$(14)"Hello world!"
+20 gO 10 :rem goto 10
             </textarea>
             <p><input type="button" id="submitBASIC" value="Upload"></p>
 
