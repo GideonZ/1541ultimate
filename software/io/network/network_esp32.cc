@@ -37,6 +37,7 @@ struct t_cfg_definition wifi_config[] = {
 	{ CFG_NET_IP,      CFG_TYPE_STRING, "Static IP",					 "%s", NULL,       7, 16, (int)"192.168.2.64" },
 	{ CFG_NET_NETMASK, CFG_TYPE_STRING, "Static Netmask",				 "%s", NULL,       7, 16, (int)"255.255.255.0" },
 	{ CFG_NET_GATEWAY, CFG_TYPE_STRING, "Static Gateway",				 "%s", NULL,       7, 16, (int)"192.168.2.1" },
+	{ CFG_NET_DNS,     CFG_TYPE_STRING, "Static DNS",		   		 "%s", NULL,       7, 16, (int)"" },
 	{ CFG_TYPE_END,    CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 

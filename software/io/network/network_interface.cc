@@ -5,6 +5,7 @@
 #include <string.h>
 #include <ctype.h>
 #include "lwip/dhcp.h"
+#include "lwip/dns.h"
 #include "lwip/apps/mdns.h"
 #include "filemanager.h"
 
@@ -27,6 +28,7 @@ struct t_cfg_definition net_config[] = {
 	{ CFG_NET_IP,      CFG_TYPE_STRING, "Static IP",					 "%s", NULL,       7, 16, (int)"192.168.2.64" },
 	{ CFG_NET_NETMASK, CFG_TYPE_STRING, "Static Netmask",				 "%s", NULL,       7, 16, (int)"255.255.255.0" },
 	{ CFG_NET_GATEWAY, CFG_TYPE_STRING, "Static Gateway",				 "%s", NULL,       7, 16, (int)"192.168.2.1" },
+	{ CFG_NET_DNS,     CFG_TYPE_STRING, "Static DNS",		   		 "%s", NULL,       7, 16, (int)"" },
 	{ CFG_TYPE_END,    CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
@@ -53,6 +55,16 @@ err_t lwip_init_callback(struct netif *netif)
 }
 
 
+// This function has to be called by "tcpip_callback" to be safe.
+void set_dns_server_unsafe(void* arg)
+{
+    ip_addr_t *dns = (ip_addr_t *)arg;
+    if(dns->addr != 0)
+        dns_setserver(0, dns); // Setzt den primären DNS
+    else
+        dns_setserver(0, 0); // Setzt den primären DNS
+}
+ 
 err_t NetworkInterface :: lwip_output_callback(struct netif *netif, struct pbuf *pbuf)
 {
 	static uint8_t temporary_out_buffer[1536];
@@ -290,6 +302,8 @@ void NetworkInterface :: link_up()
 	netif_set_up(&my_net_if);
     if (dhcp_enable) {
     	dhcp_start(&my_net_if);
+    } else {
+        tcpip_callback((sys_timeout_handler)set_dns_server_unsafe, &my_dns);
     }
     set_default_interface();
 }
@@ -320,10 +334,15 @@ void NetworkInterface :: effectuate_settings(void)
         my_ip.addr = inet_addr(cfg->get_string(CFG_NET_IP));
         my_netmask.addr = inet_addr(cfg->get_string(CFG_NET_NETMASK));
         my_gateway.addr = inet_addr(cfg->get_string(CFG_NET_GATEWAY));
+        const char *dnsserver = cfg->get_string(CFG_NET_DNS);
+        if (!*dnsserver)
+           dnsserver = cfg->get_string(CFG_NET_GATEWAY);
+        my_dns.addr = inet_addr(dnsserver);
     } else { // in case of DHCP, we start using 0.0.0.0
         my_ip.addr = 0L;
         my_netmask.addr = 0L;
         my_gateway.addr = 0L;
+        my_dns.addr = 0L;
     }
 
     const char *h = networkConfig.cfg->get_string(CFG_NETWORK_HOSTNAME);
@@ -353,7 +372,9 @@ void NetworkInterface :: effectuate_settings(void)
 			dhcp_stop(&my_net_if);
 			if (dhcp_enable) {
 				dhcp_start(&my_net_if);
-			}
+			} else {
+        tcpip_callback((sys_timeout_handler)set_dns_server_unsafe, &my_dns);
+      }
 		}
 	}
 }
