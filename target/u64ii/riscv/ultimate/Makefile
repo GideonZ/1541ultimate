@@ -120,7 +120,6 @@ SRCS_CC	 =  u64ii_init.cc \
 			filetype_bin.cc \
 			filetype_cfg.cc \
 			filetype_vpl.cc \
-			filetype_esp.cc \
 			host_stream.cc \
 			keyboard_vt100.cc \
 			screen_vt100.cc \
