@@ -1,10 +1,14 @@
 #include "rtc_i2c_sntp.h"
 #include <stdio.h>
+#include "i2c_drv.h"
 #include "u2p.h"
 
 #include <stdlib.h>
 #include <time.h>
 #include "sntp_time.h"
+#include "config.h"
+
+static int use_ntp = -1;
 
 const char *month_strings_short[]={ "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
@@ -114,6 +118,7 @@ const char *zone_names[] = {
 #define CFG_RTC_SECOND  0x17
 #define CFG_RTC_CORR    0x18
 #define CFG_RTC_ZONE    0x19
+#define CFG_RTC_NTP     0x1A
 
 struct t_cfg_definition rtc_config[] = {
     { CFG_RTC_YEAR,     CFG_TYPE_VALUE,  "Year",     "%d", NULL,  1980, 2079, 2015 },
@@ -129,8 +134,37 @@ struct t_cfg_definition rtc_config[] = {
 
 struct t_cfg_definition time_config[] = {
     { CFG_RTC_ZONE,     CFG_TYPE_ENUM,   "TimeZone", "%s", zone_names, 0, (sizeof(zone_names)/sizeof(const char *))-1, 16 },
+    { CFG_RTC_NTP,      CFG_TYPE_ENUM,   "NTP Enable", "%s", en_dis,     0,  1, 0 },
     { CFG_TYPE_END,     CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
+
+#define RTC_ADDR_CTRL1      0
+#define RTC_ADDR_CTRL2      1
+#define RTC_ADDR_OFFSET     2
+#define RTC_ADDR_RAM        3
+#define RTC_ADDR_SECONDS    4
+#define RTC_ADDR_MINUTES    5
+#define RTC_ADDR_HOURS      6
+#define RTC_ADDR_DAYS       7
+#define RTC_ADDR_WEEKDAYS   8
+#define RTC_ADDR_MONTHS     9
+#define RTC_ADDR_YEARS      10
+
+static uint8_t bcd2bin(uint8_t bcd)
+{
+    return (((bcd & 0xF0) >> 4) * 10) + (bcd & 0x0F);
+}
+
+static uint8_t bin2bcd(uint8_t bin)
+{
+    uint8_t bcd = 0;
+    while (bin >= 10) { // division is probably slower
+        bin -= 10;
+        bcd += 0x10;
+    }
+    bcd += bin;
+    return bcd;
+}
 
 Rtc::Rtc()
 {
@@ -138,6 +172,14 @@ Rtc::Rtc()
     register_store(0x54696d65, "Time Settings", time_config);
     cfg2 = new RtcConfigStore("Clock Settings", rtc_config);
     ConfigManager::getConfigManager()->add_custom_store(cfg2);
+    // This is a fix for the case where the I2C is not yet initialized
+    // This only works for systems where I2C is operated in PIO mode
+    // Fortunately, the only system where this is not the case is the U64-II,
+    // which does not have an RTC.
+    if (!i2c) {
+        i2c = new I2C_Driver();
+    }
+    get_time_from_chip();
 }
 
 Rtc::~Rtc()
@@ -150,36 +192,92 @@ Rtc::~Rtc()
 
 void Rtc::effectuate_settings(void)
 {
+    use_ntp = cfg->get_value(CFG_RTC_NTP);
+    printf("Set use_ntp=%i\n", use_ntp);
 }
 
 void Rtc::write_byte(int addr, uint8_t val)
 {
+    ENTER_SAFE_SECTION
+    i2c->i2c_write_byte(0xA2, addr, val);
+    LEAVE_SAFE_SECTION
+    rtc_regs[addr] = val; // update internal structure as well.
 }
 
 void Rtc::read_all(void)
 {
+    ENTER_SAFE_SECTION
+    int dummy;
+    for (int i = 0; i < 11; i++) {
+        rtc_regs[i] = i2c->i2c_read_byte(0xA2, i, &dummy);
+
+    }
+    LEAVE_SAFE_SECTION
 }
 
 bool Rtc::is_valid(void)
 {
-    return true;
+    return (rtc_regs[RTC_ADDR_WEEKDAYS] != 0xFF);
 }
 
 void Rtc::get_time_from_chip(void)
 {
+    read_all();
 }
 
 void Rtc::set_time_in_chip(int corr_ppm, int y, int M, int D, int wd, int h, int m, int s)
 {
+    // calculate correction register
+    uint8_t corr_byte = 0;
+    int div;
+    int val = (29 * corr_ppm) / 59;
+    if (val > 0)
+        if (val & 1)
+            val++;
+        else if (val & 1)
+            val--;
+    val = (val >> 1) & 0x7F;
+    corr_byte = 0x80 | uint8_t(val);
+    printf("Correction byte for %d ppm: %b\n", corr_ppm, corr_byte);
+
+    write_byte(RTC_ADDR_CTRL1, 0x21); // stop
+    write_byte(RTC_ADDR_CTRL2, 0x07); // no clock out
+    write_byte(RTC_ADDR_SECONDS, bin2bcd(s));
+    write_byte(RTC_ADDR_MINUTES, bin2bcd(m));
+    write_byte(RTC_ADDR_HOURS, bin2bcd(h));
+    write_byte(RTC_ADDR_WEEKDAYS, bin2bcd(wd));
+    write_byte(RTC_ADDR_DAYS, bin2bcd(D));
+    write_byte(RTC_ADDR_MONTHS, bin2bcd(M));
+    write_byte(RTC_ADDR_YEARS, bin2bcd(y));
+    write_byte(RTC_ADDR_OFFSET, corr_byte);
+    write_byte(RTC_ADDR_CTRL1, 0x01);
+
 }
 
 int Rtc::get_correction(void)
 {
-	return 0;
+    uint8_t corr_byte = rtc_regs[RTC_ADDR_OFFSET] & 0x7F;
+    int val = (corr_byte & 0x40) ? (int(corr_byte & 0x3F) - 64) : int(corr_byte & 0x3F);
+
+    int corr = (236 * val) / 29;
+    if (corr > 0)
+        if (corr & 1)
+            corr++;
+        else if (corr & 1)
+            corr--;
+    return (corr >> 1);
 }
 
 void Rtc::get_time(int &y, int &M, int &D, int &wd, int &h, int &m, int &s)
 {
+   if (use_ntp < 0)
+   {
+    use_ntp = cfg->get_value(CFG_RTC_NTP);
+    printf("Set use_ntp=%i\n", use_ntp);
+   }
+
+   if (use_ntp)
+   {
     uint32_t sec = RTC_TIMER_SECONDS;
 
     time_t now;
@@ -198,10 +296,42 @@ void Rtc::get_time(int &y, int &M, int &D, int &wd, int &h, int &m, int &s)
     h = timeinfo.tm_hour;
     m = timeinfo.tm_min;
     s = timeinfo.tm_sec;
+   }
+   else
+   {
+    read_all(); // read directly from chip
+
+    s = (int) bcd2bin(rtc_regs[RTC_ADDR_SECONDS] & 0x7F);
+    m = (int) bcd2bin(rtc_regs[RTC_ADDR_MINUTES]);
+    h = (int) bcd2bin(rtc_regs[RTC_ADDR_HOURS]);
+    wd = (int) bcd2bin(rtc_regs[RTC_ADDR_WEEKDAYS]);
+    D = (int) bcd2bin(rtc_regs[RTC_ADDR_DAYS]);
+    M = (int) bcd2bin(rtc_regs[RTC_ADDR_MONTHS]);
+    y = (int) bcd2bin(rtc_regs[RTC_ADDR_YEARS]);
+
+    if (M < 1)
+        M = 1;
+    if (M > 12)
+        M = 12;
+    if (D < 1)
+        D = 1;
+    if (D > 31)
+        D = 31;
+    if (wd < 0)
+        wd = 0;
+    if (wd > 6)
+        wd = 6;
+   }
 }
 
 void Rtc::set_time(int y, int M, int D, int wd, int h, int m, int s)
 {
+   if (use_ntp < 0)
+   {
+    use_ntp = cfg->get_value(CFG_RTC_NTP);
+    printf("Set use_ntp=%i\n", use_ntp);
+   }
+    if (!use_ntp) return;
     struct tm timeinfo;
     timeinfo.tm_year = y + 80;
     timeinfo.tm_mon = M - 1;
@@ -386,4 +516,14 @@ extern "C" uint32_t get_fattime(void) /* 31-25: Year(0-127 org.1980), 24-21: Mon
 /* 15-11: Hour(0-23), 10-5: Minute(0-59), 4-0: Second(0-29 *2) */
 {
     return rtc.get_fat_time();
+
+    /*
+     29 << 25 = 0x3A000000
+     4 << 21 = 0x00800000
+     4 << 16 = 0x00040000
+     9 << 11 = 0x00004800
+     36 <<  5 = 0x00000480
+     23 <<  0 = 0x00000017
+     return 0x3A844C97;
+     */
 }

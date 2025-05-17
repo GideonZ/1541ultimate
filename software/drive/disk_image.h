@@ -80,7 +80,7 @@ class GcrImage
     static uint8_t *wrap(uint8_t **, uint8_t *, uint8_t *, int, uint8_t *buffer, uint8_t shift);
     static uint8_t *find_sync(uint8_t *, uint8_t *, uint8_t *);
     uint8_t *convert_block_bin2gcr(uint8_t *bin, uint8_t *gcr, int len);
-    uint8_t *convert_track_bin2gcr(uint8_t logical_track_1b, int region, uint8_t *bin, uint8_t *gcr, uint8_t *errors, int errors_size);
+    uint8_t *convert_track_bin2gcr(uint8_t logical_track_1b, int region, uint8_t *bin, uint8_t *gcr, uint8_t *errors, int errors_size, int geosgaps);
     int   find_track_start(int);
     void add_blank_tracks(uint8_t *);
 public:
@@ -92,7 +92,7 @@ public:
     bool load(File *f);
     bool save(File *f, bool, UserInterface *ui);
     bool write_track(int, File *f, bool);
-    void convert_disk_bin2gcr(BinImage *bin_image, UserInterface *ui);
+    void convert_disk_bin2gcr(BinImage *bin_image, UserInterface *ui, int geoscopyprot);
     int  convert_disk_gcr2bin(BinImage *bin_image, UserInterface *ui);
     int  convert_track_gcr2bin(int track, BinImage *bin_image, int &errors);
     void invalidate(void);
@@ -145,17 +145,18 @@ extern BinImage static_bin_image; // for general use
 class ImageCreator : public ObjectWithMenu
 {
     TaskCategory *taskCategory;
-    Action *d64, *g64, *d71, *g71, *d81, *dnp;
+    Action *d64, *g64, *d71, *g71, *d81, *d81_81, *dnp;
 public:
 	ImageCreator() {
 	    taskCategory = TasksCollection :: getCategory("Create", SORT_ORDER_CREATE);
-	    d64 = g64 = d71 = g71 = d81 = dnp = NULL;
+	    d64 = g64 = d71 = g71 = d81 = d81_81 = dnp = NULL;
 	}
 	~ImageCreator() { }
 
 	static SubsysResultCode_e S_createD64(SubsysCommand *cmd);
     static SubsysResultCode_e S_createD71(SubsysCommand *cmd);
     static SubsysResultCode_e S_createD81(SubsysCommand *cmd);
+    static SubsysResultCode_e S_createD81_81(SubsysCommand *cmd);
     static SubsysResultCode_e S_createDNP(SubsysCommand *cmd);
 
 	// object with menu
@@ -166,12 +167,14 @@ public:
         d71 = new Action("D71 Image", ImageCreator :: S_createD71, 0, 0); // may also be created using createD64 with mode 2
         g71 = new Action("G71 Image", ImageCreator :: S_createD64, 0, 3);
         d81 = new Action("D81 Image", ImageCreator :: S_createD81, 0, 0);
+        d81_81 = new Action("D81 (81 Tr.)", ImageCreator :: S_createD81_81, 0, 0);
         dnp = new Action("DNP Image", ImageCreator :: S_createDNP, 0, 0);
         taskCategory->append(d64);
         taskCategory->append(g64);
         taskCategory->append(d71);
         taskCategory->append(g71);
         taskCategory->append(d81);
+        taskCategory->append(d81_81);
         taskCategory->append(dnp);
     }
 
@@ -182,6 +185,7 @@ public:
         d71->setDisabled(!writablePath);
         g71->setDisabled(!writablePath);
         d81->setDisabled(!writablePath);
+        d81_81->setDisabled(!writablePath);
         dnp->setDisabled(!writablePath);
 	}
 };

@@ -90,7 +90,7 @@ int MfmDisk :: AddDataSpace(int physTrack, int physSide, const uint32_t pos, con
     return 0;
 }
 
-uint32_t MfmDisk :: init(MfmFormat_t type)
+uint32_t MfmDisk :: init(MfmFormat_t type, int tracks)
 {
     uint32_t size = 0;
     uint32_t offset = 0;
@@ -101,7 +101,7 @@ uint32_t MfmDisk :: init(MfmFormat_t type)
 
     switch(type) {
     case fmt_D81:
-        for (int t=0;t<80;t++) {
+        for (int t=0;t<tracks;t++) {
             side0[t].actualDataSize = 5120;
             side0[t].reservedSpace = 5120;
             side0[t].numSectors = 10;
