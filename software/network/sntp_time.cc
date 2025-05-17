@@ -3,8 +3,7 @@
 #include <stdio.h>
 #include <time.h>
 
-
-#define RTC_TIMER_SECONDS    *((volatile uint32_t *)RTC_TIMER_BASE)
+#include "rtc.h"
 
 extern "C" {
     #include "lwip/apps/sntp.h"
@@ -25,8 +24,7 @@ extern "C" {
     void sntp_time_received(uint32_t sec)
     {
         printf("--> Time Received: %u\n", sec);
-        RTC_TIMER_SECONDS = sec;
-        print_time_for_zone(sec, "CEST-1CET,M3.2.0/2:00:00,M11.1.0/2:00:00");
+        rtc.set_time_utc(sec);
     }
 }
 

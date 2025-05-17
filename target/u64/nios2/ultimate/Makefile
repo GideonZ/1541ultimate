@@ -64,7 +64,7 @@ SRCS_CC	 =  u2p_init.cc \
 			embedded_iso.cc \
 			embedded_fat.cc \
 			u64_config.cc \
-			rtc_i2c_sntp.cc \
+			rtc_i2c.cc \
 			c64.cc \
 			c64_crt.cc \
 			u64_machine.cc \

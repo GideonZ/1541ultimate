@@ -1,7 +1,10 @@
 #include "rtc.h"
 #include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 #include "i2c_drv.h"
 #include "u2p.h"
+#include "timezones.cc"
 
 const char *month_strings_short[]={ "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
@@ -18,17 +21,20 @@ const char *weekday_strings[] = { "Sunday", "Monday", "Tuesday", "Wednesday", "T
 #define CFG_RTC_YEAR    0x11
 #define CFG_RTC_MONTH   0x12
 #define CFG_RTC_DATE    0x13
-// #define CFG_RTC_WEEKDAY 0x14
 #define CFG_RTC_HOUR    0x15
 #define CFG_RTC_MINUTE  0x16
 #define CFG_RTC_SECOND  0x17
 #define CFG_RTC_CORR    0x18
+#define CFG_RTC_ZONE    0x19
+#define CFG_RTC_NTP     0x1A
 
 struct t_cfg_definition rtc_config[] = {
+    { CFG_RTC_NTP,      CFG_TYPE_ENUM,   "NTP Enable", "%s", en_dis,     0,  1, 0 },
+    { CFG_RTC_ZONE,     CFG_TYPE_ENUM,   "TimeZone", "%s", zone_names, 0, (sizeof(zone_names)/sizeof(const char *))-1, 16 },
+
     { CFG_RTC_YEAR,     CFG_TYPE_VALUE,  "Year",     "%d", NULL,  1980, 2079, 2015 },
     { CFG_RTC_MONTH,    CFG_TYPE_ENUM,   "Month",    "%s", month_strings_long,  1, 12,  10 },
     { CFG_RTC_DATE,     CFG_TYPE_VALUE,  "Day",      "%d", NULL,     1, 31,  13 },
-//  { CFG_RTC_WEEKDAY,  CFG_TYPE_ENUM,   "Weekday",  "%s", weekday_strings, 0, 6, 2 },
     { CFG_RTC_HOUR,     CFG_TYPE_VALUE,  "Hours",   "%02d", NULL,     0, 23, 16 },
     { CFG_RTC_MINUTE,   CFG_TYPE_VALUE,  "Minutes", "%02d", NULL,     0, 59, 52 },
     { CFG_RTC_SECOND,   CFG_TYPE_VALUE,  "Seconds", "%02d", NULL,     0, 59, 55 },
@@ -64,11 +70,22 @@ static uint8_t bin2bcd(uint8_t bin)
     return bcd;
 }
 
+int ntp_cfg_hook(ConfigItem *it)
+{
+    rtc.update_selection(it->getValue());
+    return 1; // redraw
+}
+
 Rtc::Rtc()
 {
     capable = true;
     cfg = new RtcConfigStore("Clock Settings", rtc_config);
     ConfigManager::getConfigManager()->add_custom_store(cfg);
+
+    cfg->set_change_hook(CFG_RTC_NTP, ntp_cfg_hook);
+
+    update_selection(cfg->get_value(CFG_RTC_NTP));
+
     // This is a fix for the case where the I2C is not yet initialized
     // This only works for systems where I2C is operated in PIO mode
     // Fortunately, the only system where this is not the case is the U64-II,
@@ -84,6 +101,29 @@ Rtc::~Rtc()
     if (capable) {
         ConfigManager::getConfigManager()->remove_store(cfg);
         delete cfg;
+    }
+}
+
+void Rtc::update_selection(int value)
+{
+    if (value) {
+        cfg->disable(CFG_RTC_YEAR);
+        cfg->disable(CFG_RTC_MONTH);
+        cfg->disable(CFG_RTC_DATE);
+        cfg->disable(CFG_RTC_HOUR);
+        cfg->disable(CFG_RTC_MINUTE);
+        cfg->disable(CFG_RTC_SECOND);
+        cfg->disable(CFG_RTC_CORR);
+        cfg->enable(CFG_RTC_ZONE);
+    } else {
+        cfg->enable(CFG_RTC_YEAR);
+        cfg->enable(CFG_RTC_MONTH);
+        cfg->enable(CFG_RTC_DATE);
+        cfg->enable(CFG_RTC_HOUR);
+        cfg->enable(CFG_RTC_MINUTE);
+        cfg->enable(CFG_RTC_SECOND);
+        cfg->enable(CFG_RTC_CORR);
+        cfg->disable(CFG_RTC_ZONE);
     }
 }
 
@@ -187,7 +227,33 @@ void Rtc::get_time(int &y, int &M, int &D, int &wd, int &h, int &m, int &s)
 
 void Rtc::set_time(int y, int M, int D, int wd, int h, int m, int s)
 {
+    set_time_in_chip(get_correction(), y, M, D, wd, h, m, s);
+}
 
+void Rtc::set_time_utc(int seconds)
+{
+    if (cfg->get_value(CFG_RTC_NTP) == 0) {
+        return;
+    }
+    // UTC time coming in, so convert it to local time
+    time_t now;
+    struct tm timeinfo;
+    int zone_index = cfg->get_value(CFG_RTC_ZONE);
+
+    setenv("TZ", zones[zone_index].posix, 1);
+    tzset();
+    now = seconds;
+    localtime_r(&now, &timeinfo);
+
+    int y = timeinfo.tm_year - 80;
+    int M = timeinfo.tm_mon + 1;
+    int D = timeinfo.tm_mday;
+    int wd = timeinfo.tm_wday;
+    int h = timeinfo.tm_hour;
+    int m = timeinfo.tm_min;
+    int s = timeinfo.tm_sec;
+
+    set_time_in_chip(get_correction(), y, M, D, wd, h, m, s);
 }
 
 const char * Rtc::get_time_string(char *dest, int len)

@@ -25,8 +25,9 @@ public:
 	// DUMMYs
     int  get_correction(void);
 	void set_time_in_chip(int, int y, int M, int D, int wd, int h, int m, int s);
-	void set_time(int y, int M, int D, int wd, int h, int m, int s);
     // END DUMMYs
+	void set_time(int y, int M, int D, int wd, int h, int m, int s);
+    void set_time_utc(int seconds); // this is a dummy for U2; since it won't support NTP
 
 	void get_time(int &y, int &M, int &D, int &wd, int &h, int &m, int &s);
 	const char* get_time_string(char *dest, int len);

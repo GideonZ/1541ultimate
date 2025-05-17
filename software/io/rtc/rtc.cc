@@ -279,6 +279,16 @@ uint32_t Rtc::get_fat_time(void)
     return result;
 }
 
+void Rtc::set_time_utc(int seconds)
+{
+    // this is a dummy for U2; since it won't support NTP
+}
+
+void Rtc::update_selection(int value)
+{
+    // this is a dummy for U2; since it won't support NTP
+}
+
 Rtc rtc; // global
 
 // ============================================================

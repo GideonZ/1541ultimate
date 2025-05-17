@@ -14,8 +14,6 @@
 #include "config.h"
 #include "iomap.h"
 
-#define RTC_TIMER_SECONDS    *((volatile uint32_t *)RTC_TIMER_BASE)
-
 class RtcConfigStore : public ConfigStore
 {
 public:
@@ -48,10 +46,12 @@ public:
 
 	void get_time(int &y, int &M, int &D, int &wd, int &h, int &m, int &s);
 	void set_time(int y, int M, int D, int wd, int h, int m, int s);
+    void set_time_utc(int seconds); // this is a dummy for U2; since it won't support NTP
 	const char* get_time_string(char *dest, int len);
 	const char* get_date_string(char *dest, int len);
 	const char* get_long_date(char *dest, int len);
 	uint32_t get_fat_time(void);
+    void update_selection(int value);
 };
 
 extern "C" uint32_t get_fattime(void);
