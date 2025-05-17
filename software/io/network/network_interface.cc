@@ -28,7 +28,7 @@ struct t_cfg_definition net_config[] = {
     { CFG_NET_IP,      CFG_TYPE_STRING, "Static IP",        "%s", NULL,       7, 16, (int)"192.168.2.64" },
     { CFG_NET_NETMASK, CFG_TYPE_STRING, "Static Netmask",   "%s", NULL,       7, 16, (int)"255.255.255.0" },
     { CFG_NET_GATEWAY, CFG_TYPE_STRING, "Static Gateway",   "%s", NULL,       7, 16, (int)"192.168.2.1" },
-    { CFG_NET_DNS,     CFG_TYPE_STRING, "Static DNS",       "%s", NULL,       7, 16, (int)"" },
+    { CFG_NET_DNS,     CFG_TYPE_STRING, "Static DNS",       "%s", NULL,       7, 16, (int)"8.8.8.8" },
     { CFG_TYPE_END,    CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
@@ -308,7 +308,7 @@ void NetworkInterface :: link_up()
     if (dhcp_enable) {
     	dhcp_start(&my_net_if);
     } else {
-        tcpip_callback((sys_timeout_handler)set_dns_server_unsafe, &my_dns);
+        tcpip_callback((tcpip_callback_fn)set_dns_server_unsafe, &my_dns);
     }
     set_default_interface();
 }
@@ -340,7 +340,7 @@ void NetworkInterface :: effectuate_settings(void)
         my_netmask.addr = inet_addr(cfg->get_string(CFG_NET_NETMASK));
         my_gateway.addr = inet_addr(cfg->get_string(CFG_NET_GATEWAY));
         const char *dnsserver = cfg->get_string(CFG_NET_DNS);
-        if (!*dnsserver || strlen(dnsserver) == 0) {
+        if (!*dnsserver) {
             // if no DNS server is set, use the gateway as DNS server
            dnsserver = cfg->get_string(CFG_NET_GATEWAY);
         }
@@ -373,13 +373,12 @@ void NetworkInterface :: effectuate_settings(void)
  * NetIF is running (link up). State != NULL. DHCP may be started and may need to be restarted.
  */
     if (my_net_if.state) { // is it initialized?
-        netif_set_addr(&my_net_if, &my_ip, &my_netmask, &my_gateway);
-
         if (netif_is_link_up(&my_net_if)) {
             dhcp_stop(&my_net_if);
             if (dhcp_enable) {
                 dhcp_start(&my_net_if);
             } else {
+                netif_set_addr(&my_net_if, &my_ip, &my_netmask, &my_gateway);
                 tcpip_callback((tcpip_callback_fn)set_dns_server_unsafe, &my_dns);
             }
         }
