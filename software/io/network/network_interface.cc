@@ -189,11 +189,15 @@ void NetworkInterface :: set_default_interface(void)
 {
     for(int i=0;i<getNumberOfInterfaces();i++) {
         NetworkInterface *intf = getInterface(i);
+        printf("Checking interface %d: Up: %d. IP = %08x\n", i,
+            netif_is_up(&intf->my_net_if), intf->my_net_if.ip_addr.addr);
+
         if (netif_is_up(&intf->my_net_if) && (intf->my_net_if.ip_addr.addr != 0)) {
             netif_set_default(&intf->my_net_if);
-            break;
+            return;
         }        
     }
+    netif_set_default(&(getInterface(0)->my_net_if));
 }
 
 void NetworkInterface :: statusUpdate(void)
