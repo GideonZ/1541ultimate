@@ -625,45 +625,39 @@ void GcrImage :: convert_disk_bin2gcr(BinImage *bin_image, UserInterface *user_i
             user_interface->update_progress(NULL, 1);
     }
 
-    //printf("DEBUG: geoscopyprot=%i, bin_image->num_tracks=%i\n", geoscopyprot, bin_image->num_tracks);  
-    if ((geoscopyprot & 2) && (bin_image->num_tracks == 35)) 
-    {
-       //printf("DEBUG: Enter track 36 generation\n");
-       int pt = 70;
-       tracks[pt].track_length = 7692;
-       tracks[pt].track_address = gcr;
-       tracks[pt].speed_zone = 3;
-       tracks[pt].track_used = true;
-       for (int i=0; i<7692; i++)
-           gcr[i] = 0x55;
-       
-       uint8_t data[12] = { 0x2f, 0x53, 0x77, 0x7d, 0x67, 0x45, 0xb5, 0xdd, 0x77, 0x62, 0x73, 0x77 };
-       
-       for (int s=0; s<0x18; s++)
-       {
-          for (int l=0; l<4; l++)
-          {
-             for (int i=0; i<0x15; i++)
-             {
-                   *(newgcr++) = data[ 3*l + 0];
-                   *(newgcr++) = data[ 3*l + 1];
-                   *(newgcr++) = data[ 3*l + 2];
-             }
-          }
-          
-          for (int l=0; l<4; l++)
-          {
-             uint8_t ovl0 = data[3*l] > 127 ? 1 : 0;
-             uint8_t ovl1 = data[3*l+1] > 127 ? 1 : 0;
-             uint8_t ovl2 = data[3*l+2] > 127 ? 1 : 0;
-             
-             data[3*l+2] = (data[3*l+2] << 1) + ovl0; 
-             data[3*l+1] = (data[3*l+1] << 1) + ovl2; 
-             data[3*l+0] = (data[3*l+0] << 1) + ovl1; 
-          }
-          
-       }
-       gcr += 7692;
+    //printf("DEBUG: geoscopyprot=%i, bin_image->num_tracks=%i\n", geoscopyprot, bin_image->num_tracks);
+    if ((geoscopyprot & 2) && (bin_image->num_tracks == 35)) {
+        // printf("DEBUG: Enter track 36 generation\n");
+        int pt = 70;
+        tracks[pt].track_length = 7692;
+        tracks[pt].track_address = gcr;
+        tracks[pt].speed_zone = 3;
+        tracks[pt].track_used = true;
+        for (int i = 0; i < 7692; i++)
+            gcr[i] = 0x55;
+
+        uint8_t data[12] = {0x2f, 0x53, 0x77, 0x7d, 0x67, 0x45, 0xb5, 0xdd, 0x77, 0x62, 0x73, 0x77};
+
+        for (int s = 0; s < 0x18; s++) {
+            for (int l = 0; l < 4; l++) {
+                for (int i = 0; i < 0x15; i++) {
+                    *(newgcr++) = data[3 * l + 0];
+                    *(newgcr++) = data[3 * l + 1];
+                    *(newgcr++) = data[3 * l + 2];
+                }
+            }
+
+            for (int l = 0; l < 4; l++) {
+                uint8_t ovl0 = data[3 * l] > 127 ? 1 : 0;
+                uint8_t ovl1 = data[3 * l + 1] > 127 ? 1 : 0;
+                uint8_t ovl2 = data[3 * l + 2] > 127 ? 1 : 0;
+
+                data[3 * l + 2] = (data[3 * l + 2] << 1) + ovl0;
+                data[3 * l + 1] = (data[3 * l + 1] << 1) + ovl2;
+                data[3 * l + 0] = (data[3 * l + 0] << 1) + ovl1;
+            }
+        }
+        gcr += 7692;
     }
 
     add_blank_tracks(gcr);
