@@ -24,12 +24,12 @@ void start_sntp() { }
 
 //-----------------------------------
 struct t_cfg_definition net_config[] = {
-    { CFG_NET_DHCP_EN, CFG_TYPE_ENUM,   "Use DHCP",                      "%s", en_dis,     0,  1, 1 },
-	{ CFG_NET_IP,      CFG_TYPE_STRING, "Static IP",					 "%s", NULL,       7, 16, (int)"192.168.2.64" },
-	{ CFG_NET_NETMASK, CFG_TYPE_STRING, "Static Netmask",				 "%s", NULL,       7, 16, (int)"255.255.255.0" },
-	{ CFG_NET_GATEWAY, CFG_TYPE_STRING, "Static Gateway",				 "%s", NULL,       7, 16, (int)"192.168.2.1" },
-	{ CFG_NET_DNS,     CFG_TYPE_STRING, "Static DNS",		   		 "%s", NULL,       7, 16, (int)"" },
-	{ CFG_TYPE_END,    CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
+    { CFG_NET_DHCP_EN, CFG_TYPE_ENUM,   "Use DHCP",         "%s", en_dis,     0,  1, 1 },
+    { CFG_NET_IP,      CFG_TYPE_STRING, "Static IP",        "%s", NULL,       7, 16, (int)"192.168.2.64" },
+    { CFG_NET_NETMASK, CFG_TYPE_STRING, "Static Netmask",   "%s", NULL,       7, 16, (int)"255.255.255.0" },
+    { CFG_NET_GATEWAY, CFG_TYPE_STRING, "Static Gateway",   "%s", NULL,       7, 16, (int)"192.168.2.1" },
+    { CFG_NET_DNS,     CFG_TYPE_STRING, "Static DNS",       "%s", NULL,       7, 16, (int)"" },
+    { CFG_TYPE_END,    CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
 
@@ -59,10 +59,11 @@ err_t lwip_init_callback(struct netif *netif)
 void set_dns_server_unsafe(void* arg)
 {
     ip_addr_t *dns = (ip_addr_t *)arg;
-    if(dns->addr != 0)
-        dns_setserver(0, dns); // Setzt den primären DNS
-    else
-        dns_setserver(0, 0); // Setzt den primären DNS
+    if(dns->addr != 0) {
+        dns_setserver(0, dns); // Sets the primary DNS
+    } else {
+        dns_setserver(0, 0); // Sets the primary DNS
+    }
 }
  
 err_t NetworkInterface :: lwip_output_callback(struct netif *netif, struct pbuf *pbuf)
@@ -339,8 +340,10 @@ void NetworkInterface :: effectuate_settings(void)
         my_netmask.addr = inet_addr(cfg->get_string(CFG_NET_NETMASK));
         my_gateway.addr = inet_addr(cfg->get_string(CFG_NET_GATEWAY));
         const char *dnsserver = cfg->get_string(CFG_NET_DNS);
-        if (!*dnsserver)
+        if (!*dnsserver || strlen(dnsserver) == 0) {
+            // if no DNS server is set, use the gateway as DNS server
            dnsserver = cfg->get_string(CFG_NET_GATEWAY);
+        }
         my_dns.addr = inet_addr(dnsserver);
     } else { // in case of DHCP, we start using 0.0.0.0
         my_ip.addr = 0L;
@@ -369,18 +372,18 @@ void NetworkInterface :: effectuate_settings(void)
  * NetIF is added, but there is no link. State != NULL. DHCP is not started yet. We can just call netif_set_addr
  * NetIF is running (link up). State != NULL. DHCP may be started and may need to be restarted.
  */
-	if (my_net_if.state) { // is it initialized?
-		netif_set_addr(&my_net_if, &my_ip, &my_netmask, &my_gateway);
+    if (my_net_if.state) { // is it initialized?
+        netif_set_addr(&my_net_if, &my_ip, &my_netmask, &my_gateway);
 
-		if (netif_is_link_up(&my_net_if)) {
-			dhcp_stop(&my_net_if);
-			if (dhcp_enable) {
-				dhcp_start(&my_net_if);
-			} else {
-        tcpip_callback((sys_timeout_handler)set_dns_server_unsafe, &my_dns);
-      }
-		}
-	}
+        if (netif_is_link_up(&my_net_if)) {
+            dhcp_stop(&my_net_if);
+            if (dhcp_enable) {
+                dhcp_start(&my_net_if);
+            } else {
+                tcpip_callback((tcpip_callback_fn)set_dns_server_unsafe, &my_dns);
+            }
+        }
+    }
 }
 
 char *NetworkInterface :: getIpAddrString(char *buf, int buflen)
