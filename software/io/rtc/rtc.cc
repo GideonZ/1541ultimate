@@ -16,7 +16,6 @@ const char *weekday_strings[] = { "Sunday", "Monday", "Tuesday", "Wednesday", "T
 #define CFG_RTC_YEAR    0x11
 #define CFG_RTC_MONTH   0x12
 #define CFG_RTC_DATE    0x13
-// #define CFG_RTC_WEEKDAY 0x14
 #define CFG_RTC_HOUR    0x15
 #define CFG_RTC_MINUTE  0x16
 #define CFG_RTC_SECOND  0x17
@@ -26,7 +25,6 @@ struct t_cfg_definition rtc_config[] = {
     { CFG_RTC_YEAR,     CFG_TYPE_VALUE,  "Year",     "%d", NULL,  1980, 2079, 2015 },
     { CFG_RTC_MONTH,    CFG_TYPE_ENUM,   "Month",    "%s", month_strings_long,  1, 12,  10 },
     { CFG_RTC_DATE,     CFG_TYPE_VALUE,  "Day",      "%d", NULL,     1, 31,  13 },
-//  { CFG_RTC_WEEKDAY,  CFG_TYPE_ENUM,   "Weekday",  "%s", weekday_strings, 0, 6, 2 },
     { CFG_RTC_HOUR,     CFG_TYPE_VALUE,  "Hours",   "%02d", NULL,     0, 23, 16 },
     { CFG_RTC_MINUTE,   CFG_TYPE_VALUE,  "Minutes", "%02d", NULL,     0, 59, 52 },
     { CFG_RTC_SECOND,   CFG_TYPE_VALUE,  "Seconds", "%02d", NULL,     0, 59, 55 },
@@ -284,11 +282,6 @@ void Rtc::set_time_utc(int seconds)
     // this is a dummy for U2; since it won't support NTP
 }
 
-void Rtc::update_selection(int value)
-{
-    // this is a dummy for U2; since it won't support NTP
-}
-
 Rtc rtc; // global
 
 // ============================================================
@@ -314,11 +307,6 @@ void RtcConfigStore::at_open_config(void)
         case CFG_RTC_DATE:
             i->value = D;
             break;
-            /*
-             case CFG_RTC_WEEKDAY:
-             i->value = wd;
-             break;
-             */
         case CFG_RTC_HOUR:
             i->value = h;
             break;
@@ -362,11 +350,6 @@ void RtcConfigStore::at_close_config(void)
         case CFG_RTC_DATE:
             D = value;
             break;
-            /*
-             case CFG_RTC_WEEKDAY:
-             wd = i->value;
-             break;
-             */
         case CFG_RTC_HOUR:
             h = value;
             break;

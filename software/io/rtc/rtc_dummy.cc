@@ -2,8 +2,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include "sntp_time.h"
-#include "timezones.cc"
 
 const char *month_strings_short[]={ "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
@@ -13,22 +11,13 @@ const char *month_strings_long[] = { "", "January", "February", "March", "April"
 
 const char *weekday_strings[] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
 
-#define CFG_RTC_ZONE    0x19
-
-struct t_cfg_definition time_config[] = {
-    { CFG_RTC_ZONE,     CFG_TYPE_ENUM,   "TimeZone", "%s", zone_names, 0, (sizeof(zone_names)/sizeof(const char *))-1, 16 },
-    { CFG_TYPE_END,     CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
-};
-
 Rtc::Rtc()
 {
-    register_store(0x54696d65, "Time Settings", time_config);
 }
 
 Rtc::~Rtc()
 {
 }
-
 
 void Rtc::get_time(int &y, int &M, int &D, int &wd, int &h, int &m, int &s)
 {
@@ -36,10 +25,7 @@ void Rtc::get_time(int &y, int &M, int &D, int &wd, int &h, int &m, int &s)
 
     time_t now;
     struct tm timeinfo;
-    int zone_index = cfg->get_value(CFG_RTC_ZONE);
 
-    setenv("TZ", zones[zone_index].posix, 1);
-    tzset();
     now = sec;
     localtime_r(&now, &timeinfo);
 

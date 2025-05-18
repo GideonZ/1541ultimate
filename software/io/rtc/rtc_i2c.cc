@@ -1,10 +1,13 @@
+/*
+ * This module implements a simple driver for the PCF85063TP RTC chip.
+ */
+
 #include "rtc.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 #include "i2c_drv.h"
 #include "u2p.h"
-#include "timezones.cc"
 
 const char *month_strings_short[]={ "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
@@ -25,13 +28,8 @@ const char *weekday_strings[] = { "Sunday", "Monday", "Tuesday", "Wednesday", "T
 #define CFG_RTC_MINUTE  0x16
 #define CFG_RTC_SECOND  0x17
 #define CFG_RTC_CORR    0x18
-#define CFG_RTC_ZONE    0x19
-#define CFG_RTC_NTP     0x1A
 
 struct t_cfg_definition rtc_config[] = {
-    { CFG_RTC_NTP,      CFG_TYPE_ENUM,   "NTP Enable", "%s", en_dis,     0,  1, 0 },
-    { CFG_RTC_ZONE,     CFG_TYPE_ENUM,   "TimeZone", "%s", zone_names, 0, (sizeof(zone_names)/sizeof(const char *))-1, 16 },
-
     { CFG_RTC_YEAR,     CFG_TYPE_VALUE,  "Year",     "%d", NULL,  1980, 2079, 2015 },
     { CFG_RTC_MONTH,    CFG_TYPE_ENUM,   "Month",    "%s", month_strings_long,  1, 12,  10 },
     { CFG_RTC_DATE,     CFG_TYPE_VALUE,  "Day",      "%d", NULL,     1, 31,  13 },
@@ -70,21 +68,11 @@ static uint8_t bin2bcd(uint8_t bin)
     return bcd;
 }
 
-int ntp_cfg_hook(ConfigItem *it)
-{
-    rtc.update_selection(it->getValue());
-    return 1; // redraw
-}
-
 Rtc::Rtc()
 {
     capable = true;
     cfg = new RtcConfigStore("Clock Settings", rtc_config);
     ConfigManager::getConfigManager()->add_custom_store(cfg);
-
-    cfg->set_change_hook(CFG_RTC_NTP, ntp_cfg_hook);
-
-    update_selection(cfg->get_value(CFG_RTC_NTP));
 
     // This is a fix for the case where the I2C is not yet initialized
     // This only works for systems where I2C is operated in PIO mode
@@ -101,29 +89,6 @@ Rtc::~Rtc()
     if (capable) {
         ConfigManager::getConfigManager()->remove_store(cfg);
         delete cfg;
-    }
-}
-
-void Rtc::update_selection(int value)
-{
-    if (value) {
-        cfg->disable(CFG_RTC_YEAR);
-        cfg->disable(CFG_RTC_MONTH);
-        cfg->disable(CFG_RTC_DATE);
-        cfg->disable(CFG_RTC_HOUR);
-        cfg->disable(CFG_RTC_MINUTE);
-        cfg->disable(CFG_RTC_SECOND);
-        cfg->disable(CFG_RTC_CORR);
-        cfg->enable(CFG_RTC_ZONE);
-    } else {
-        cfg->enable(CFG_RTC_YEAR);
-        cfg->enable(CFG_RTC_MONTH);
-        cfg->enable(CFG_RTC_DATE);
-        cfg->enable(CFG_RTC_HOUR);
-        cfg->enable(CFG_RTC_MINUTE);
-        cfg->enable(CFG_RTC_SECOND);
-        cfg->enable(CFG_RTC_CORR);
-        cfg->disable(CFG_RTC_ZONE);
     }
 }
 
@@ -210,7 +175,6 @@ void Rtc::get_time(int &y, int &M, int &D, int &wd, int &h, int &m, int &s)
     D = (int) bcd2bin(rtc_regs[RTC_ADDR_DAYS]);
     M = (int) bcd2bin(rtc_regs[RTC_ADDR_MONTHS]);
     y = (int) bcd2bin(rtc_regs[RTC_ADDR_YEARS]);
-
     if (M < 1)
         M = 1;
     if (M > 12)
@@ -232,16 +196,10 @@ void Rtc::set_time(int y, int M, int D, int wd, int h, int m, int s)
 
 void Rtc::set_time_utc(int seconds)
 {
-    if (cfg->get_value(CFG_RTC_NTP) == 0) {
-        return;
-    }
     // UTC time coming in, so convert it to local time
     time_t now;
     struct tm timeinfo;
-    int zone_index = cfg->get_value(CFG_RTC_ZONE);
 
-    setenv("TZ", zones[zone_index].posix, 1);
-    tzset();
     now = seconds;
     localtime_r(&now, &timeinfo);
 
@@ -331,11 +289,6 @@ void RtcConfigStore::at_open_config(void)
         case CFG_RTC_DATE:
             i->value = D;
             break;
-            /*
-             case CFG_RTC_WEEKDAY:
-             i->value = wd;
-             break;
-             */
         case CFG_RTC_HOUR:
             i->value = h;
             break;
@@ -418,7 +371,6 @@ void RtcConfigStore::at_close_config(void)
     printf("Writing time: %d-%d-%d (%d) %02d:%02d:%02d\n", y, M, D, wd, h, m, s);
     rtc.set_time(y, M, D, wd, h, m, s);
     rtc.set_time_in_chip(corr, y, M, D, wd, h, m, s);
-
     set_effectuated();
 }
 

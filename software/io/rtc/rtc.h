@@ -51,7 +51,6 @@ public:
 	const char* get_date_string(char *dest, int len);
 	const char* get_long_date(char *dest, int len);
 	uint32_t get_fat_time(void);
-    void update_selection(int value);
 };
 
 extern "C" uint32_t get_fattime(void);
