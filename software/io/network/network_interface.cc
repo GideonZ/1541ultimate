@@ -165,6 +165,7 @@ void NetworkInterface :: attach_config()
 bool NetworkInterface :: start()
 {
 	memset(&my_net_if, 0, sizeof(my_net_if)); // clear the whole thing
+    effectuate_settings(); // this will set the IP address, netmask and gateway
     my_net_if.state = this;
     netif_add(&my_net_if, &my_ip, &my_netmask, &my_gateway, this, lwip_init_callback, tcpip_input);
 
@@ -221,7 +222,7 @@ void NetworkInterface :: init_callback( )
 	my_net_if.name[0] = 'U';
 	my_net_if.name[1] = '2';
 
-	effectuate_settings();
+	// effectuate_settings();
 
 	/* set MAC hardware address length */
 	my_net_if.hwaddr_len = ETHARP_HWADDR_LEN;
