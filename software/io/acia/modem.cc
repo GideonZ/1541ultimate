@@ -873,7 +873,7 @@ bool Modem :: prohibit_acia(uint16_t base)
 #include "init_function.h"
 Modem *modem = NULL;
 InitFunction init_modem("Modem", [](void *_obj, void *_param) {
-    if (!(getFpgaCapabilities() & CAPAB_ACIA)) {
+    if (getFpgaCapabilities() & CAPAB_ACIA) {
         modem = new Modem();
         modem->start();
     }
