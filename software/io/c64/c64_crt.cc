@@ -330,7 +330,7 @@ void C64_CRT::auto_mirror(void)
     // First round up to the nearest power of 2, then mirror it.
 
     int size = 1;
-    while (size < highest_bank) {
+    while (size <= highest_bank) {
         size <<= 1;
     }
     // we support 1MB of cart memory, so max 64 banks
