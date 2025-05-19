@@ -279,7 +279,22 @@ uint32_t Rtc::get_fat_time(void)
 
 void Rtc::set_time_utc(int seconds)
 {
-    // this is a dummy for U2; since it won't support NTP
+    // UTC time coming in, so convert it to local time
+    time_t now;
+    struct tm timeinfo;
+
+    now = seconds;
+    localtime_r(&now, &timeinfo);
+
+    int y = timeinfo.tm_year - 80;
+    int M = timeinfo.tm_mon + 1;
+    int D = timeinfo.tm_mday;
+    int wd = timeinfo.tm_wday;
+    int h = timeinfo.tm_hour;
+    int m = timeinfo.tm_min;
+    int s = timeinfo.tm_sec;
+
+    set_time_in_chip(get_correction(), y, M, D, wd, h, m, s);
 }
 
 Rtc rtc; // global

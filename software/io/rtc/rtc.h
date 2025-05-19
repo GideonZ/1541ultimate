@@ -46,7 +46,7 @@ public:
 
 	void get_time(int &y, int &M, int &D, int &wd, int &h, int &m, int &s);
 	void set_time(int y, int M, int D, int wd, int h, int m, int s);
-    void set_time_utc(int seconds); // this is a dummy for U2; since it won't support NTP
+    void set_time_utc(int seconds);
 	const char* get_time_string(char *dest, int len);
 	const char* get_date_string(char *dest, int len);
 	const char* get_long_date(char *dest, int len);
