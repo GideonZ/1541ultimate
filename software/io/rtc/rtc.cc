@@ -1,5 +1,7 @@
 #include "rtc.h"
 #include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 
 const char *month_strings_short[]={ "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
