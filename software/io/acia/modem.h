@@ -70,6 +70,6 @@ public:
 
 };
 
-extern Modem modem;
+extern Modem *modem;
 
 #endif

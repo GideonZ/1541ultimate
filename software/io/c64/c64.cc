@@ -1013,10 +1013,14 @@ void C64::set_cartridge(cart_def *cart)
     }
 #ifndef RECOVERYAPP
     if(def->require & CART_ACIA_DE) {
-        modem.reinit_acia(0xDE00);
+        if (modem) {
+            modem->reinit_acia(0xDE00);
+        }
     }
     if(def->require & CART_ACIA_DF) {
-        modem.reinit_acia(0xDF00);
+        if (modem) {
+            modem->reinit_acia(0xDF00);
+        }
     }
 #endif
 #if U64
@@ -1053,14 +1057,16 @@ void C64::set_cartridge(cart_def *cart)
     }
 
 #ifndef RECOVERYAPP
-    if(def->prohibit & CART_ACIA_DE) {
-        if(modem.prohibit_acia(0xDE00)) {
-            def->disabled |= CART_ACIA_DE;
+    if (modem) {
+        if(def->prohibit & CART_ACIA_DE) {
+            if(modem->prohibit_acia(0xDE00)) {
+                def->disabled |= CART_ACIA_DE;
+            }
         }
-    }
-    if(def->prohibit & CART_ACIA_DF) {
-        if(modem.prohibit_acia(0xDF00)) {
-            def->disabled |= CART_ACIA_DF;
+        if(def->prohibit & CART_ACIA_DF) {
+            if(modem->prohibit_acia(0xDF00)) {
+                def->disabled |= CART_ACIA_DF;
+            }
         }
     }
 #endif

@@ -73,15 +73,12 @@ struct t_cfg_definition modem_cfg[] = {
     { CFG_MODEM_CONNFILE,      CFG_TYPE_STRING, "Modem Connect Text",            "%s", NULL,         0, 30, (int)"/Usb0/welcome.txt" },
     { CFG_MODEM_BUSYFILE,      CFG_TYPE_STRING, "Modem Busy Text",               "%s", NULL,         0, 30, (int)"/Usb0/busy.txt" },
     { CFG_MODEM_TCPNODELAY,    CFG_TYPE_ENUM,   "Set Socket Opt TCP_NODELAY",    "%s", en_dis,       0,  1, 0 },
-    { CFG_MODEM_LOOPDELAY,     CFG_TYPE_VALUE,  "Loop Delay (OS ticks)",         "%d", NULL,         1, 20, 2 },
+    { CFG_MODEM_LOOPDELAY,     CFG_TYPE_VALUE,  "Loop Delay",                    "%d0 ms", NULL,     1, 20, 2 },
     { CFG_TYPE_END,            CFG_TYPE_END,    "",                              "",   NULL,         0,  0, 0 } };
 
 
 Modem :: Modem()
 {
-    if (!(getFpgaCapabilities() & CAPAB_ACIA)) {
-        return;
-    }
     register_store(0x4D4F444D, "Modem Settings", modem_cfg);
 
     aciaQueue = xQueueCreate(16, sizeof(AciaMessage_t));
@@ -137,7 +134,7 @@ void Modem :: listenerTask(void *a)
     //int len = sprintf(buffer, "You are connected to the modem!\n");
     //send(socketNumber, buffer, len, 0);
 
-    modem.IncomingConnection(socketNumber);
+    modem->IncomingConnection(socketNumber);
 
     closesocket(socketNumber);
     vTaskDelete(NULL);
@@ -145,12 +142,12 @@ void Modem :: listenerTask(void *a)
 
 void Modem :: RunRelay(int socket)
 {
-    int loopDelay = cfg->get_value(CFG_MODEM_LOOPDELAY);
+    int loopDelay = 10 * cfg->get_value(CFG_MODEM_LOOPDELAY); // steps of 10 ms
     printf("Using loopDelay = %d\n", loopDelay);
 
     struct timeval tv;
-    tv.tv_sec = loopDelay * portTICK_PERIOD_MS;
-    tv.tv_usec = loopDelay * portTICK_PERIOD_MS;
+    tv.tv_sec = 0;
+    tv.tv_usec = loopDelay * 1000;
     setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
 
     if (cfg->get_value(CFG_MODEM_TCPNODELAY)) {
@@ -874,5 +871,10 @@ bool Modem :: prohibit_acia(uint16_t base)
 }
 
 #include "init_function.h"
-Modem modem;
-InitFunction init_modem("Modem", [](void *obj, void *_param) { Modem *modem = (Modem *)obj; modem->start(); }, &modem, NULL, 105); // global that causes us to exist
+Modem *modem = NULL;
+InitFunction init_modem("Modem", [](void *_obj, void *_param) {
+    if (!(getFpgaCapabilities() & CAPAB_ACIA)) {
+        modem = new Modem();
+        modem->start();
+    }
+}, NULL, NULL, 105); // global that causes us to exist
