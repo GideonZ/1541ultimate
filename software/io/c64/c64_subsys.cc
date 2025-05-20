@@ -149,6 +149,8 @@ void C64_Subsys :: restoreCart(void)
 	} else {
 	    printf("Cart got disabled, now restoring.\n");
 	    c64->set_cartridge(NULL);
+        C64_CARTRIDGE_KILL = 2; // Force update
+        C64_CARTRIDGE_KILL = 2; // Force update
 	}
 }
 

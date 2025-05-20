@@ -187,7 +187,7 @@ begin
                 ef_write     <= '0';
                 allow_bank   <= '0';
                 do_io2       <= '1';
-                cart_en      <= '1';
+                cart_en      <= reset_in; -- When reset, cart_en = 1, when forcing cartridge mode, it is forced to OFF! (Freezer will enable it)
                 hold_nmi     <= '0';
                 ee_clk       <= '0';
                 ee_sel       <= '0';
