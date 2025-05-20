@@ -154,6 +154,7 @@ SRCS_CC	 =	small_printf.cc \
 			assembly_search.cc \
 			assembly.cc \
 			filesystem_a64.cc \
+			sntp_time.cc \
 			$(PRJ).cc
 
 SRCS_CC +=  iec_interface.cc \
