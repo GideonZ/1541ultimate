@@ -177,7 +177,6 @@ IecCommandChannel *IecDrive :: get_data_channel(int chan)
 
 void IecDrive :: effectuate_settings(void)
 {
-    
     my_bus_id = cfg->get_value(CFG_IEC_BUS_ID);
     cmd_if.set_kernal_device_id(my_bus_id);
     
@@ -259,6 +258,11 @@ void IecDrive :: reset(void)
     for(int i=0; i < 16; i++) {
         channels[i]->reset();
     }
+    vfs->SetCurrentPartition(0);
+    last_error_code = ERR_DOS;
+    last_error_track = 0;
+    last_error_sector = 0;
+    current_channel = 0;
 }
 
 t_channel_retval IecDrive :: prefetch_data(uint8_t& data)
