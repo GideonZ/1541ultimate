@@ -857,8 +857,19 @@ void Modem :: effectuate_settings()
 
 void Modem :: reinit_acia(uint16_t base)
 {
-    acia.init(base & 0xFFFE, base & 1, aciaQueue, aciaQueue, aciaTxBuffer);
-    current_iobase = base & 0xFFFE;
+    if (base == 0xFFFF) {
+        int basecfg = acia_base[cfg->get_value(CFG_MODEM_ACIA)];
+        if (!basecfg) {
+            acia.deinit();
+            current_iobase = 0;
+        } else {
+            acia.init(basecfg & 0xFFFE, base & 1, aciaQueue, aciaQueue, aciaTxBuffer);
+            current_iobase = basecfg & 0xFFFE;
+        }
+    } else {
+        acia.init(base & 0xFFFE, base & 1, aciaQueue, aciaQueue, aciaTxBuffer);
+        current_iobase = base & 0xFFFE;
+    }
 }
 
 bool Modem :: prohibit_acia(uint16_t base)
