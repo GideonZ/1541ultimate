@@ -1011,6 +1011,7 @@ void C64::set_cartridge(cart_def *cart)
             CMD_IF_SLOT_BASE = 0x07; // $de1c
         }
     }
+#ifndef RECOVERYAPP
     if (modem) {
         if(def->require & CART_ACIA_DE) {
             modem->reinit_acia(0xDE00);
@@ -1020,6 +1021,7 @@ void C64::set_cartridge(cart_def *cart)
             modem->reinit_acia(0xFFFF); // from config
         }
     }
+#endif
 
 #if U64
     if(def->require & CART_WMIRROR) {
@@ -1054,6 +1056,7 @@ void C64::set_cartridge(cart_def *cart)
         C64_SAMPLER_ENABLE = 0;
     }
 
+#ifndef RECOVERYAPP
     if (modem) {
         if(def->prohibit & CART_ACIA_DE) {
             if(modem->prohibit_acia(0xDE00)) {
@@ -1066,6 +1069,7 @@ void C64::set_cartridge(cart_def *cart)
             }
         }
     }
+#endif
 
     // clear function RAM on the cartridge
     memset(get_cartridge_ram_addr(), 0x00, 65536);
