@@ -29,9 +29,10 @@
 #define MENU_C64_SAVE_MP3_DRV_B 0x640F
 #define MENU_C64_SAVE_MP3_DRV_C 0x6410
 #define MENU_C64_SAVE_MP3_DRV_D 0x6411
-#define MENU_MEASURE_TIMING 0x6412
+#define MENU_MEASURE_TIMING     0x6412
 #define MENU_MEASURE_TIMING_API 0x6413
-#define MENU_C64_POWERCYCLE 0x6414
+#define MENU_C64_POWERCYCLE     0x6414
+#define MENU_C64_CLEARMEM       0x6415
 
 #define C64_DMA_LOAD		0x6464
 #define C64_DRIVE_LOAD	    0x6465
@@ -311,7 +312,7 @@ class C64 : public GenericHost, ConfigurableObject
     void freeze(void);
     void measure_timing(uint8_t *buffer);
     virtual void get_all_memory(uint8_t *) { /* NOT YET IMPLEMENTED */ };
-    
+    virtual void clear_ram(void) { /* NOT YET IMPLEMENTED */ };
     static uint8_t get_exrom_game(void) {
         return (C64_CLOCK_DETECT & 0x0C) >> 2;
     }

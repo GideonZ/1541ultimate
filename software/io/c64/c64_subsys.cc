@@ -64,6 +64,7 @@ void C64_Subsys :: create_task_items(void)
 {
     myActions.reset    = new Action("Reset C64", SUBSYSID_C64, MENU_C64_RESET);
     myActions.reboot   = new Action("Reboot C64", SUBSYSID_C64, MENU_C64_REBOOT);
+    myActions.clearmem = new Action("Clear C64 Memory", SUBSYSID_C64, MENU_C64_CLEARMEM);
     myActions.powercyc = new Action("Power Cycle", SUBSYSID_C64, MENU_C64_POWERCYCLE);
     myActions.off      = new Action("Power OFF", SUBSYSID_C64, MENU_C64_POWEROFF);
     myActions.pause    = new Action("Pause",  SUBSYSID_C64, MENU_C64_PAUSE);
@@ -81,6 +82,7 @@ void C64_Subsys :: create_task_items(void)
     taskCategory->append(myActions.reboot);
 #if U64
     taskCategory->append(myActions.off);
+    taskCategory->append(myActions.clearmem);
 #endif
 #if U64 == 2
     taskCategory->append(myActions.powercyc);
@@ -193,6 +195,17 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
         case MENU_C64_RESUME:
             c64->resume();
             break;
+
+        case MENU_C64_CLEARMEM:
+#if U64
+            if (c64->client) { // we can't execute this yet
+                c64->client->release_host(); // disconnect from user interface
+                c64->client = 0;
+            }
+            c64->clear_ram();
+            c64->start_cartridge(NULL);
+            break;
+#endif
 
         case MENU_C64_POWERCYCLE:
 #if U64 == 2

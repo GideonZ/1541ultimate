@@ -815,6 +815,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
         InitFunction *init_u64 = new InitFunction("U64 Configurator", [](void *obj, void *_param) {
             printf("*** Init U64 Configurator\n");
             u64_configurator.sockets.detect();
+            u64_configurator.clear_ram();
             u64_configurator.hdmiMonitor = u64_configurator.IsMonitorHDMI(); // requires I2C
             u64_configurator.effectuate_settings(); // requires I2C
             u64_configurator.sockets.effectuate_settings();
@@ -2019,6 +2020,12 @@ void U64Config :: access_socket_post(int socket)
     }
 
     portEXIT_CRITICAL();
+}
+
+void U64Config :: clear_ram()
+{
+    C64 *machine = C64 :: getMachine();
+    machine->clear_ram();
 }
 
 bool U64Config :: IsMonitorHDMI()
