@@ -122,6 +122,7 @@ public:
     static int setScanMode(ConfigItem *it);
     static int setMixer(ConfigItem *it);
     static int setSpeakerMixer(ConfigItem *it);
+    static int enableDisableSpeaker(ConfigItem *it);
     static int setFilter(ConfigItem *it);
     static int setSidEmuParams(ConfigItem *it);
     static int setLedSelector(ConfigItem *it);

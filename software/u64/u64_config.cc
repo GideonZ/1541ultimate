@@ -113,6 +113,7 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_MIXER8_PAN        0x38
 #define CFG_MIXER9_PAN        0x39
 
+#define CFG_SPEAKER_EN        0x40
 #define CFG_SYSTEM_MODE       0x41
 #define CFG_LED_SELECT_0      0x42
 #define CFG_LED_SELECT_1      0x43
@@ -362,6 +363,7 @@ struct t_cfg_definition u64_mixer_cfg[] = {
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
 struct t_cfg_definition u64_speaker_mixer_cfg[] = {
+    { CFG_SPEAKER_EN,           CFG_TYPE_ENUM, "Speaker Enable",               "%s", en_dis,       0,  1, 1 },
     { CFG_MIXER0_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 1",                "%s", volumes,      0, 30, 16 },
     { CFG_MIXER1_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 2",                "%s", volumes,      0, 30, 16 },
     { CFG_MIXER2_VOL,           CFG_TYPE_ENUM, "Vol Socket 1",                 "%s", volumes,      0, 30, 16 },
@@ -404,10 +406,12 @@ U64Config :: U64SpeakerMixer :: U64SpeakerMixer()
     for (uint8_t b = CFG_MIXER0_VOL; b <= CFG_MIXER9_VOL; b++) {
         cfg->set_change_hook(b, U64Config::setSpeakerMixer);
     }
+    cfg->set_change_hook(CFG_SPEAKER_EN, U64Config::enableDisableSpeaker);
 }
 
 void U64Config :: U64SpeakerMixer :: effectuate_settings()
 {
+    enableDisableSpeaker(cfg->items[0]); // This should be the first!
     setSpeakerMixer(cfg->items[0]);
 }
 
@@ -1039,12 +1043,35 @@ int U64Config :: setMixer(ConfigItem *it)
     return 0;
 }
 
+int U64Config :: enableDisableSpeaker(ConfigItem *it)
+{
+    ConfigStore *cfg = it->store;
+    if (it->getValue()) {
+        for (uint8_t b = CFG_MIXER0_VOL; b <= CFG_MIXER9_VOL; b++) {
+            cfg->enable(b);
+        }
+    } else {
+        for (uint8_t b = CFG_MIXER0_VOL; b <= CFG_MIXER9_VOL; b++) {
+            cfg->disable(b);
+        }
+    }
+    setSpeakerMixer(it);
+    return 1;
+}
+
 int U64Config :: setSpeakerMixer(ConfigItem *it)
 {
     // Now, configure the mixer
     volatile uint8_t *mixer = (volatile uint8_t *)U64_SPEAKER_MIXER;
     ConfigStore *cfg = it->store;
 
+    if (cfg->get_value(CFG_SPEAKER_EN) == 0) {
+        // Disable speaker mixer
+        for(int i=0; i<20; i++) {
+            *(mixer++) = 0;
+        }
+        return 0;
+    }
     for(int i=0; i<10; i++) {
         uint8_t vol = volume_ctrl[cfg->get_value(CFG_MIXER0_VOL + i)];
         *(mixer++) = vol;
