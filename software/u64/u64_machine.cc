@@ -27,6 +27,7 @@ void U64Machine :: get_all_memory(uint8_t *pb)
 
 void U64Machine :: clear_ram()
 {
+#ifndef RECOVERYAPP
     // Clear RAM from $0000 to $FFFF
     extern const uint8_t _raminit_bin_start[65536];
     volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
@@ -47,5 +48,6 @@ void U64Machine :: clear_ram()
         memcpy(screen_backup, _raminit_bin_start + 1024, 1024);
         memcpy(ram_backup, _raminit_bin_start + 2048, 2048);
     }
+#endif
 }
 
