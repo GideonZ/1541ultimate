@@ -105,6 +105,15 @@ void Acia :: SetHS(uint8_t value)
     regs->handsh = value;
 }
 
+void Acia :: EnableRTSInRx(uint8_t value)
+{
+    if (value) {
+        regs->handsh &= ~ACIA_HANDSH_RTSDIS;
+    } else {
+        regs->handsh |= ACIA_HANDSH_RTSDIS;
+    }
+}
+
 void Acia :: SetDCD(uint8_t value)
 {
     if (value) {

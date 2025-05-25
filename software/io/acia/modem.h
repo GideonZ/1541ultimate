@@ -47,7 +47,7 @@ class Modem : public ConfigurableObject
     QueueHandle_t aciaQueue;
     DataBuffer *aciaTxBuffer;
     ListenerSocket *listenerSocket;
-    uint8_t ctsMode, dsrMode, dcdMode;
+    uint8_t ctsMode, dsrMode, dcdMode, rtsMode;
     uint8_t lastHandshake;
     uint16_t current_iobase;
     const char *responseString;

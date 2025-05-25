@@ -95,6 +95,7 @@ architecture arch of acia6551 is
     
     signal cts              : std_logic; -- written by sys
     signal rts              : std_logic; -- written by slot (command register)
+    signal rts_disable       : std_logic; -- written by sys
 
     signal rx_head, rx_tail : unsigned(7 downto 0);
     signal tx_head, tx_tail : unsigned(7 downto 0);
@@ -179,8 +180,7 @@ begin
             b_address <= (others => 'X');
             b_wdata <= (others => 'X');
 
-            --if tx_empty = '0' and dtr = '1' and tx_fifo_full = '0' and (tx_presc = "000" or tx_mode /= "01") then
-            if tx_empty = '0' and dtr = '1' and tx_fifo_full = '0' and tx_presc = "000" then
+            if tx_empty = '0' and cts = '1' and tx_fifo_full = '0' and tx_presc = "000" then
                 b_address <= '0' & tx_head;
                 b_wdata <= tx_data;
                 b_we <= '1';
@@ -188,8 +188,7 @@ begin
                 tx_head <= tx_head + 1;
                 tx_presc <= "111";
                 tx_empty <= '1';
-            -- elsif rx_full = '0' and rx_head /= rx_tail and b_pending = '0' and dtr = '1' and (rx_presc = "000" or rx_irq_disable = '1') then
-            elsif rx_full = '0' and rx_head /= rx_tail and b_pending = '0' and dtr = '1' and rx_presc = "000" then
+            elsif rx_full = '0' and rx_head /= rx_tail and b_pending = '0' and (rts = '1' or rts_disable = '1') and rx_presc = "000" then
                 b_address <= '1' & rx_tail;
                 b_en <= '1';
                 b_pending <= '1';
@@ -251,6 +250,7 @@ begin
                     cts   <= io_req_regs.data(0);
                     dsr_n <= not io_req_regs.data(2);
                     dcd_n <= not io_req_regs.data(4);
+                    rts_disable <= io_req_regs.data(5);
                 when c_reg_irq_source =>
                     if io_req_regs.data(3) = '1' then
                         control_change <= '0';
@@ -294,6 +294,7 @@ begin
                     io_resp_regs.data(2) <= not dsr_n;
                     io_resp_regs.data(3) <= dtr;
                     io_resp_regs.data(4) <= not dcd_n;
+                    io_resp_regs.data(5) <= rts_disable;
                 when c_reg_irq_source =>
                     io_resp_regs.data(1) <= appl_rx_irq;
                     io_resp_regs.data(2) <= appl_tx_irq;
@@ -354,6 +355,7 @@ begin
                 slot_base <= (others => '0');
                 nmi_selected <= '1';
                 irq <= '0';
+                rts_disable <= '0';
             end if;
             if soft_reset = '1' or c64_reset = '1' then
                 command(4 downto 0) <= "00010";
