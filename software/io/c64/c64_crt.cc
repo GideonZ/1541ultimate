@@ -609,7 +609,7 @@ void C64_CRT::configure_cart(cart_def *def)
                 prohibit = CART_PROHIBIT_ALL_BUT_REU;
                 require = CART_UCI;
             } else if (crt_header[CRTHDR_SUBTYPE] == 2) {
-                prohibit = CART_PROHIBIT_ALL_BUT_REU;
+                prohibit = CART_PROHIBIT_ALL_BUT_REU_AND_ACIA_DE; // leaves room for ACIA at DE00, REU and UCI at DF00
                 require = CART_UCI;
                 cart_type = CART_TYPE_128 | VARIANT_7; // with IO and ROM banking
             } else {
