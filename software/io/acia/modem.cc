@@ -23,6 +23,7 @@
 #define CFG_MODEM_TCPNODELAY  0x0E
 #define CFG_MODEM_LOOPDELAY   0x0F
 #define CFG_MODEM_RTS         0x10
+#define CFG_MODEM_HARDWARE    0x11
 
 #define RESP_OK				0
 #define RESP_CONNECT		1
@@ -42,6 +43,7 @@
 
 static const char *interfaces[] = { "ACIA / SwiftLink" };
 static const char *acia_mode[] = { "Off", "DE00/IRQ", "DE00/NMI", "DF00/IRQ", "DF00/NMI", "DF80/IRQ", "DF80/NMI" };
+static const char *hw_mode[] = { "SwiftLink", "Turbo232" };
 static const char *dcd_dsr[] = { "Active (Low)", "Active when connected", "Inactive when connected", "Inactive (High)", "Act. when connecting", "Inact. when connecting" };
 static const int acia_base[] = { 0, 0xDE00, 0xDE01, 0xDF00, 0xDF01, 0xDF80, 0xDF81 };
 static const char *responseCode[] = {"\r0\r","\r1\r","\r2\r","\r3\r","\r4\r","\r5\r","\r6\r","\r7\r","\r8\r",
@@ -63,7 +65,8 @@ static const AciaMessage_t rxData = { ACIA_MSG_RXDATA, 0, 0 };
 
 struct t_cfg_definition modem_cfg[] = {
     { CFG_MODEM_INTF,          CFG_TYPE_ENUM,   "Modem Interface",               "%s", interfaces,   0,  0, 0 },
-    { CFG_MODEM_ACIA,          CFG_TYPE_ENUM,   "ACIA (6551) Mode",              "%s", acia_mode,    0,  6, 0 },
+    { CFG_MODEM_ACIA,          CFG_TYPE_ENUM,   "ACIA (6551) Mapping",           "%s", acia_mode,    0,  6, 0 },
+    { CFG_MODEM_HARDWARE,      CFG_TYPE_ENUM,   "Hardware Mode",                 "%s", hw_mode,      0,  1, 0 },
     { CFG_MODEM_LISTEN_PORT,   CFG_TYPE_STRING, "Listening Port",                "%s", NULL,         2,  8, (int)"3000" },
     { CFG_MODEM_LISTEN_RING,   CFG_TYPE_ENUM,   "Do RING sequence (incoming)",   "%s", en_dis,       0,  1, 1 },
     { CFG_MODEM_DTRDROP,       CFG_TYPE_ENUM,   "Drop connection on DTR low",    "%s", en_dis,       0,  1, 1 },
@@ -749,6 +752,7 @@ void Modem :: ModemTask()
     // first time configuration
     cfg->effectuate();
     acia.SetRxRate(rateValues[8]);
+    SetHandshakes(false, false);
     baudRate = baudRates[8];
 
     while(1) {
@@ -852,6 +856,9 @@ void Modem :: effectuate_settings()
         acia.deinit();
         current_iobase = 0;
     } else {
+        if (cfg->get_value(CFG_MODEM_HARDWARE) == 1) {
+            base |= 4; // set the hardware turbo enable bit (hacky hacky)
+        }
         acia.init(base & 0xFFFE, base & 1, aciaQueue, aciaQueue, aciaTxBuffer);
         current_iobase = base & 0xFFFE;
     }
@@ -861,6 +868,7 @@ void Modem :: effectuate_settings()
     dsrMode = cfg->get_value(CFG_MODEM_DSR);
     dcdMode = cfg->get_value(CFG_MODEM_DCD);
     rtsMode = cfg->get_value(CFG_MODEM_RTS);
+    SetHandshakes(false, false);
     listenerSocket->Start(newPort);
 }
 
