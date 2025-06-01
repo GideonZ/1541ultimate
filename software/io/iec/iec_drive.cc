@@ -255,6 +255,9 @@ SubsysResultCode_e IecDrive :: executeCommand(SubsysCommand *cmd)
 
 void IecDrive :: reset(void)
 {
+    effectuate_settings();
+    IecPartition *p = vfs->GetPartition(0);
+    p->cd(rootPath);
     for(int i=0; i < 16; i++) {
         channels[i]->reset();
     }
