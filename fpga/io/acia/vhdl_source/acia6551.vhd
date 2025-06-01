@@ -79,7 +79,6 @@ architecture arch of acia6551 is
     alias tx_mode           : std_logic_vector(1 downto 0) is command(3 downto 2);
     signal rx_irq           : std_logic;
     signal chng_irq         : std_logic := '0';
-    signal irq_holdoff      : natural range 0 to 7 := 0;
     signal dtr_d            : std_logic;
     
     signal enable           : std_logic;
@@ -130,14 +129,14 @@ begin
     turbo_rb(1 downto 0) <= turbo_sp;
 
     -- ena tur ad2 | reg
-    --  0   0   0  |  0
-    --  0   0   1  |  0
-    --  0   1   0  |  0
-    --  0   1   1  |  0
-    --  1   0   0  |  1
-    --  1   0   1  |  0 <- 4 bytes when turbo_en = 0
-    --  1   1   0  |  1
-    --  1   1   1  |  1 <- 8 bytes when turbo_en = 1
+    --  0   0   0  |  0 <- disabled
+    --  0   0   1  |  0 <- disabled
+    --  0   1   0  |  0 <- disabled
+    --  0   1   1  |  0 <- disabled
+    --  1   0   0  |  1 <- first 4 bytes
+    --  1   0   1  |  0 <- second 4 bytes with turbo off does not respond
+    --  1   1   0  |  1 <- first 4 bytes
+    --  1   1   1  |  1 <- second 4 bytes (8 bytes when turbo_en = 1)
  
     slot_resp.reg_output <= enable and (turbo_en or not slot_req.bus_address(2)) when slot_req.bus_address(8 downto 3) = slot_base else '0';
     slot_resp.irq  <= irq and not nmi_selected;
@@ -165,9 +164,6 @@ begin
 
             rate_tick <= '0';
             if tick = '1' then
-                if irq_holdoff /= 0 then
-                    irq_holdoff <= irq_holdoff - 1;
-                end if;
                 if rate_counter = 0 or rate_counter = 1 then -- Allow counting by steps of 2
                     rate_tick <= '1';
                     rate_counter <= c_rate_dividers(to_integer(unsigned(baud_index)));
@@ -188,7 +184,7 @@ begin
 
             -- IRQ generation
             irq <= '0';
-            if irq_holdoff = 0 and dtr = '1' then
+            if dtr = '1' then
                 if tx_empty = '1' and tx_mode = "01" then
                     irq <= '1';
                 elsif rx_irq = '1' and rx_irq_disable = '0' then
@@ -246,9 +242,8 @@ begin
                         framing_err <= '0';
                         overrun_err <= '0';
                         rx_full <= '0';
-                    when c_addr_status_register =>
-                        irq_holdoff <= 7;
                         rx_irq <= '0';
+                    when c_addr_status_register =>
                         chng_irq <= '0';
                     when c_addr_command_register =>
                         null;
@@ -371,7 +366,6 @@ begin
                 enable  <= '0';
                 rx_irq  <= '0';
                 chng_irq <= '0';
-                irq_holdoff <= 0;
                 b_pending <= '0';
                 cts <= '0';
                 dsr_n <= '1';
