@@ -90,6 +90,7 @@ void C64_Subsys :: create_task_items(void)
 #if DEVELOPER > 0
     taskCategory->append(myActions.pause);
     taskCategory->append(myActions.resume);
+    taskCategory->append(myActions.measure);
 #endif
 #if U64
     taskCategory->append(myActions.savemem);
@@ -100,7 +101,6 @@ void C64_Subsys :: create_task_items(void)
     taskCategory->append(myActions.savemp3b);
     taskCategory->append(myActions.savemp3c);
     taskCategory->append(myActions.savemp3d);
-    taskCategory->append(myActions.measure);
 }
 
 void C64_Subsys :: update_task_items(bool writablePath, Path *p)
