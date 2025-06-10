@@ -80,10 +80,7 @@ void Acia :: deinit(void)
     regs->enable = 0;
     this->controlQueue = NULL;
     this->dataQueue = NULL;
-    if (buffer) {
-        delete buffer;
-        buffer = NULL;
-    }
+    this->buffer = NULL;
 }
 
 int Acia :: SendToRx(uint8_t *data, int length)
