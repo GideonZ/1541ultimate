@@ -32,7 +32,8 @@ struct t_cfg_definition network_config[] = {
 
 
 NetworkConfig :: NetworkConfig() {
-    strcpy(default_hostname, getProductDefaultHostname(default_hostname, sizeof(default_hostname)));
+    char *hostname = getProductDefaultHostname(default_hostname, sizeof(default_hostname));
+    strcpy(default_hostname, hostname ? hostname : "Small Buffer");
     cfg = ConfigManager :: getConfigManager()->register_store(0x4E455400, "Network Settings", network_config, this);
 }
 

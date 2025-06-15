@@ -160,15 +160,6 @@ SRCS_CC	 =	small_printf.cc \
 SRCS_CC +=  iec_interface.cc \
 			iec_drive.cc \
 			iec_channel.cc \
-			iec_printer.cc \
-			mps_printer.cc \
-			mps_printer_cbm.cc \
-			mps_printer_epson.cc \
-			mps_printer_ibmgp.cc \
-			mps_printer_ibmpp.cc \
-			mps_chargen.cc \
-			mps_charset.cc \
-			mps_png.cc \
 			iec_ulticopy.cc \
 			softiec_target.cc
 

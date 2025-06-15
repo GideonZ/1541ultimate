@@ -230,6 +230,7 @@ void AT45_Flash :: read_serial(void *buffer)
 {
 	portENTER_CRITICAL();
     uint8_t *buf = (uint8_t *)buffer;
+    uint8_t temp[64];
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = AT45_ReadSecurityRegister;
     SPI_FLASH_DATA = 0;
@@ -239,10 +240,18 @@ void AT45_Flash :: read_serial(void *buffer)
         SPI_FLASH_DATA = 0xFF; // read dummy
     }
     for(int i=0;i<64;i++) {
-        *(buf++) = SPI_FLASH_DATA;
+        temp[i] = SPI_FLASH_DATA;
     }
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
 	portEXIT_CRITICAL();
+    buf[0] = temp[10];
+    buf[1] = temp[11];
+    buf[2] = temp[14];
+    buf[3] = temp[18];
+    buf[4] = temp[20];
+    buf[5] = temp[21];
+    buf[6] = temp[22];
+    buf[7] = temp[19];
 }
 
 int  AT45_Flash :: get_config_page_size(void)
