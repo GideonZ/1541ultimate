@@ -96,7 +96,7 @@ public:
 
     void init(void);
     uint8_t IrqHandler(void);
-    void format_d81(void);
+    void format_d81(int);
     void set_file(File *);
     MfmDisk *get_disk(void);
     void set_track_update_callback(void *obj, track_update_callback_t func);

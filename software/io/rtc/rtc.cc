@@ -1,5 +1,7 @@
 #include "rtc.h"
 #include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 
 const char *month_strings_short[]={ "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
@@ -16,7 +18,6 @@ const char *weekday_strings[] = { "Sunday", "Monday", "Tuesday", "Wednesday", "T
 #define CFG_RTC_YEAR    0x11
 #define CFG_RTC_MONTH   0x12
 #define CFG_RTC_DATE    0x13
-// #define CFG_RTC_WEEKDAY 0x14
 #define CFG_RTC_HOUR    0x15
 #define CFG_RTC_MINUTE  0x16
 #define CFG_RTC_SECOND  0x17
@@ -26,7 +27,6 @@ struct t_cfg_definition rtc_config[] = {
     { CFG_RTC_YEAR,     CFG_TYPE_VALUE,  "Year",     "%d", NULL,  1980, 2079, 2015 },
     { CFG_RTC_MONTH,    CFG_TYPE_ENUM,   "Month",    "%s", month_strings_long,  1, 12,  10 },
     { CFG_RTC_DATE,     CFG_TYPE_VALUE,  "Day",      "%d", NULL,     1, 31,  13 },
-//  { CFG_RTC_WEEKDAY,  CFG_TYPE_ENUM,   "Weekday",  "%s", weekday_strings, 0, 6, 2 },
     { CFG_RTC_HOUR,     CFG_TYPE_VALUE,  "Hours",   "%02d", NULL,     0, 23, 16 },
     { CFG_RTC_MINUTE,   CFG_TYPE_VALUE,  "Minutes", "%02d", NULL,     0, 59, 52 },
     { CFG_RTC_SECOND,   CFG_TYPE_VALUE,  "Seconds", "%02d", NULL,     0, 59, 55 },
@@ -279,6 +279,26 @@ uint32_t Rtc::get_fat_time(void)
     return result;
 }
 
+void Rtc::set_time_utc(int seconds)
+{
+    // UTC time coming in, so convert it to local time
+    time_t now;
+    struct tm timeinfo;
+
+    now = seconds;
+    localtime_r(&now, &timeinfo);
+
+    int y = timeinfo.tm_year - 80;
+    int M = timeinfo.tm_mon + 1;
+    int D = timeinfo.tm_mday;
+    int wd = timeinfo.tm_wday;
+    int h = timeinfo.tm_hour;
+    int m = timeinfo.tm_min;
+    int s = timeinfo.tm_sec;
+
+    set_time_in_chip(get_correction(), y, M, D, wd, h, m, s);
+}
+
 Rtc rtc; // global
 
 // ============================================================
@@ -304,11 +324,6 @@ void RtcConfigStore::at_open_config(void)
         case CFG_RTC_DATE:
             i->value = D;
             break;
-            /*
-             case CFG_RTC_WEEKDAY:
-             i->value = wd;
-             break;
-             */
         case CFG_RTC_HOUR:
             i->value = h;
             break;
@@ -352,11 +367,6 @@ void RtcConfigStore::at_close_config(void)
         case CFG_RTC_DATE:
             D = value;
             break;
-            /*
-             case CFG_RTC_WEEKDAY:
-             wd = i->value;
-             break;
-             */
         case CFG_RTC_HOUR:
             h = value;
             break;

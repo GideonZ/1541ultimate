@@ -25,6 +25,7 @@ class C64_Subsys : public SubSystem, ObjectWithMenu
     struct {
         Action *reset;
         Action *reboot;
+        Action *clearmem;
         Action *powercyc;
         Action *off;
         Action *pause;

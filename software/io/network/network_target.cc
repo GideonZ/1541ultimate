@@ -227,8 +227,8 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
 	data_message.last_part = true;
 
 	struct timeval tv;
-	tv.tv_sec = 4;
-	tv.tv_usec = 4;
+	tv.tv_sec = 0;
+	tv.tv_usec = 40000; // 40 ms
 	setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(struct timeval));
 }
 

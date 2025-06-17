@@ -14,8 +14,6 @@
 #include "config.h"
 #include "iomap.h"
 
-#define RTC_TIMER_SECONDS    *((volatile uint32_t *)RTC_TIMER_BASE)
-
 class RtcConfigStore : public ConfigStore
 {
 public:
@@ -48,6 +46,7 @@ public:
 
 	void get_time(int &y, int &M, int &D, int &wd, int &h, int &m, int &s);
 	void set_time(int y, int M, int D, int wd, int h, int m, int s);
+    void set_time_utc(int seconds);
 	const char* get_time_string(char *dest, int len);
 	const char* get_date_string(char *dest, int len);
 	const char* get_long_date(char *dest, int len);

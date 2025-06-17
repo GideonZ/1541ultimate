@@ -80,10 +80,7 @@ void Acia :: deinit(void)
     regs->enable = 0;
     this->controlQueue = NULL;
     this->dataQueue = NULL;
-    if (buffer) {
-        delete buffer;
-        buffer = NULL;
-    }
+    this->buffer = NULL;
 }
 
 int Acia :: SendToRx(uint8_t *data, int length)
@@ -103,6 +100,15 @@ int Acia :: SendToRx(uint8_t *data, int length)
 void Acia :: SetHS(uint8_t value)
 {
     regs->handsh = value;
+}
+
+void Acia :: EnableRTSInRx(uint8_t value)
+{
+    if (value) {
+        regs->handsh &= ~ACIA_HANDSH_RTSDIS;
+    } else {
+        regs->handsh |= ACIA_HANDSH_RTSDIS;
+    }
 }
 
 void Acia :: SetDCD(uint8_t value)

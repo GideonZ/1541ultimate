@@ -47,12 +47,12 @@ architecture arch of acia6551 is
     end function;
     constant c_rate_dividers    : t_rate_array(0 to 15) := rate_dividers(4_000_000);
 
-    signal rate_counter     : integer range 0 to 100000; -- only 5 chars per second!
+    signal rate_counter     : integer range 0 to 131071; -- only 5 chars per second!
     signal rate_tick        : std_logic; -- 8x per byte
     signal rx_presc         : unsigned(2 downto 0) := "100";
     signal tx_presc         : unsigned(2 downto 0) := "100";
 
-    signal slot_base        : unsigned(8 downto 2) := (others => '0');
+    signal slot_base        : unsigned(8 downto 3) := (others => '0');
     signal rx_data          : std_logic_vector(7 downto 0) := X"FF";
     signal status           : std_logic_vector(7 downto 0) := X"04";
     signal command          : std_logic_vector(7 downto 0);
@@ -78,7 +78,7 @@ architecture arch of acia6551 is
     alias rx_irq_disable    : std_logic is command(1);
     alias tx_mode           : std_logic_vector(1 downto 0) is command(3 downto 2);
     signal rx_irq           : std_logic;
-    signal irq_holdoff      : natural range 0 to 7 := 0;
+    signal chng_irq         : std_logic := '0';
     signal dtr_d            : std_logic;
     
     signal enable           : std_logic;
@@ -95,6 +95,7 @@ architecture arch of acia6551 is
     
     signal cts              : std_logic; -- written by sys
     signal rts              : std_logic; -- written by slot (command register)
+    signal rts_disable       : std_logic; -- written by sys
 
     signal rx_head, rx_tail : unsigned(7 downto 0);
     signal tx_head, tx_tail : unsigned(7 downto 0);
@@ -112,15 +113,32 @@ architecture arch of acia6551 is
     signal io_ram_ack       : std_logic;
     signal io_ram_en        : std_logic;
     signal io_ram_rdata     : std_logic_vector(7 downto 0);
+    signal turbo_en         : std_logic;
+    signal turbo_sp         : std_logic_vector(1 downto 0) := "00";
+    signal turbo_rb         : std_logic_vector(7 downto 0) := X"00";
 begin
-    with slot_req.bus_address(1 downto 0) select slot_resp.data <=
+    with slot_req.bus_address(2 downto 0) select slot_resp.data <=
         rx_data     when c_addr_data_register,
         status      when c_addr_status_register,
         command     when c_addr_command_register, 
         control     when c_addr_control_register,
+        turbo_rb    when c_addr_turbo_register,
         X"FF"       when others;   
 
-    slot_resp.reg_output <= enable when slot_req.bus_address(8 downto 2) = slot_base else '0';
+    turbo_rb(2) <= '1' when baud_index = "0000" else '0';
+    turbo_rb(1 downto 0) <= turbo_sp;
+
+    -- ena tur ad2 | reg
+    --  0   0   0  |  0 <- disabled
+    --  0   0   1  |  0 <- disabled
+    --  0   1   0  |  0 <- disabled
+    --  0   1   1  |  0 <- disabled
+    --  1   0   0  |  1 <- first 4 bytes
+    --  1   0   1  |  0 <- second 4 bytes with turbo off does not respond
+    --  1   1   0  |  1 <- first 4 bytes
+    --  1   1   1  |  1 <- second 4 bytes (8 bytes when turbo_en = 1)
+ 
+    slot_resp.reg_output <= enable and (turbo_en or not slot_req.bus_address(2)) when slot_req.bus_address(8 downto 3) = slot_base else '0';
     slot_resp.irq  <= irq and not nmi_selected;
     slot_resp.nmi  <= irq and nmi_selected;
 
@@ -146,18 +164,17 @@ begin
 
             rate_tick <= '0';
             if tick = '1' then
-                if irq_holdoff /= 0 then
-                    irq_holdoff <= irq_holdoff - 1;
-                end if;
-                if rate_counter = 0 then
+                if rate_counter = 0 or rate_counter = 1 then -- Allow counting by steps of 2
                     rate_tick <= '1';
                     rate_counter <= c_rate_dividers(to_integer(unsigned(baud_index)));
                 else
-                    rate_counter <= rate_counter - 1;
+                    rate_counter <= rate_counter - 2;
                 end if;
             end if;
 
-            if rate_tick = '1' and rx_presc /= 0 then
+            if (rts = '0' and rts_disable = '0') or dtr = '0' then
+                rx_presc <= "111";
+            elsif rate_tick = '1' and rx_presc /= 0 then
                 rx_presc <= rx_presc - 1;
             end if;
 
@@ -166,12 +183,15 @@ begin
             end if;
 
             -- IRQ generation
-            if tx_empty = '1' and tx_mode = "01" and irq_holdoff = 0 then
-                irq <= '1';
-            elsif rx_irq = '1' and rx_irq_disable = '0' and irq_holdoff = 0 then
-                irq <= '1';
-            else
-                irq <= '0';
+            irq <= '0';
+            if dtr = '1' then
+                if tx_empty = '1' and tx_mode = "01" then
+                    irq <= '1';
+                elsif rx_irq = '1' and rx_irq_disable = '0' then
+                    irq <= '1';
+                elsif chng_irq = '1' then
+                    irq <= '1';
+                end if;
             end if;
 
             b_en <= '0';
@@ -179,8 +199,7 @@ begin
             b_address <= (others => 'X');
             b_wdata <= (others => 'X');
 
-            --if tx_empty = '0' and dtr = '1' and tx_fifo_full = '0' and (tx_presc = "000" or tx_mode /= "01") then
-            if tx_empty = '0' and dtr = '1' and tx_fifo_full = '0' and tx_presc = "000" then
+            if tx_empty = '0' and cts = '1' and dtr = '1' and tx_fifo_full = '0' and tx_presc = "000" then
                 b_address <= '0' & tx_head;
                 b_wdata <= tx_data;
                 b_we <= '1';
@@ -188,8 +207,7 @@ begin
                 tx_head <= tx_head + 1;
                 tx_presc <= "111";
                 tx_empty <= '1';
-            -- elsif rx_full = '0' and rx_head /= rx_tail and b_pending = '0' and dtr = '1' and (rx_presc = "000" or rx_irq_disable = '1') then
-            elsif rx_full = '0' and rx_head /= rx_tail and b_pending = '0' and dtr = '1' and rx_presc = "000" then
+            elsif rx_full = '0' and rx_head /= rx_tail and b_pending = '0' and rx_presc = "000" then
                 b_address <= '1' & rx_tail;
                 b_en <= '1';
                 b_pending <= '1';
@@ -197,9 +215,9 @@ begin
                 rx_presc <= "111";
             end if;
 
-            if (slot_req.io_address(8 downto 2) = slot_base) and (enable = '1') then
+            if (slot_req.io_address(8 downto 3) = slot_base) and (enable = '1') then
                 if slot_req.io_write='1' then
-                    case slot_req.io_address(1 downto 0) is
+                    case slot_req.io_address(2 downto 0) is
                     when c_addr_data_register =>
                         tx_data <= slot_req.data;
                         tx_empty <= '0';
@@ -210,19 +228,23 @@ begin
                     when c_addr_control_register =>
                         control <= slot_req.data;
                         control_change <= '1';
+                    when c_addr_turbo_register =>
+                        if turbo_en = '1' and turbo_rb(2) = '1' then
+                            turbo_sp <= slot_req.data(1 downto 0);
+                        end if;
                     when others =>
                         null;
                     end case;
                 elsif slot_req.io_read='1' then
-                    case slot_req.io_address(1 downto 0) is
+                    case slot_req.io_address(2 downto 0) is
                     when c_addr_data_register =>
                         parity_err <= '0';
                         framing_err <= '0';
                         overrun_err <= '0';
                         rx_full <= '0';
-                    when c_addr_status_register =>
-                        irq_holdoff <= 7;
                         rx_irq <= '0';
+                    when c_addr_status_register =>
+                        chng_irq <= '0';
                     when c_addr_command_register =>
                         null;
                     when c_addr_control_register =>
@@ -251,6 +273,7 @@ begin
                     cts   <= io_req_regs.data(0);
                     dsr_n <= not io_req_regs.data(2);
                     dcd_n <= not io_req_regs.data(4);
+                    rts_disable <= io_req_regs.data(5);
                 when c_reg_irq_source =>
                     if io_req_regs.data(3) = '1' then
                         control_change <= '0';
@@ -259,7 +282,8 @@ begin
                         dtr_change <= '0';
                     end if;
                 when c_reg_slot_base =>
-                    slot_base <= unsigned(io_req_regs.data(6 downto 0));
+                    turbo_en <= io_req_regs.data(0);
+                    slot_base <= unsigned(io_req_regs.data(6 downto 1));
                     nmi_selected <= io_req_regs.data(7);
 
                 when others =>
@@ -294,6 +318,7 @@ begin
                     io_resp_regs.data(2) <= not dsr_n;
                     io_resp_regs.data(3) <= dtr;
                     io_resp_regs.data(4) <= not dcd_n;
+                    io_resp_regs.data(5) <= rts_disable;
                 when c_reg_irq_source =>
                     io_resp_regs.data(1) <= appl_rx_irq;
                     io_resp_regs.data(2) <= appl_tx_irq;
@@ -320,11 +345,11 @@ begin
 
             dsr_d <= dsr_n;
             if (dsr_d /= dsr_n) then
-                rx_irq <= '1';
+                chng_irq <= '1';
             end if;
             dcd_d <= dcd_n;
             if (dcd_d /= dcd_n) then
-                rx_irq <= '1';
+                chng_irq <= '1';
             end if;             
             if (dtr /= dtr_d) then
                 dtr_change <= '1';
@@ -340,7 +365,7 @@ begin
                 tx_empty <= '1';
                 enable  <= '0';
                 rx_irq  <= '0';
-                irq_holdoff <= 0;
+                chng_irq <= '0';
                 b_pending <= '0';
                 cts <= '0';
                 dsr_n <= '1';
@@ -354,6 +379,9 @@ begin
                 slot_base <= (others => '0');
                 nmi_selected <= '1';
                 irq <= '0';
+                rts_disable <= '0';
+                turbo_en <= '0';
+                turbo_sp <= "00";
             end if;
             if soft_reset = '1' or c64_reset = '1' then
                 command(4 downto 0) <= "00010";

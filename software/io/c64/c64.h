@@ -29,9 +29,10 @@
 #define MENU_C64_SAVE_MP3_DRV_B 0x640F
 #define MENU_C64_SAVE_MP3_DRV_C 0x6410
 #define MENU_C64_SAVE_MP3_DRV_D 0x6411
-#define MENU_MEASURE_TIMING 0x6412
+#define MENU_MEASURE_TIMING     0x6412
 #define MENU_MEASURE_TIMING_API 0x6413
-#define MENU_C64_POWERCYCLE 0x6414
+#define MENU_C64_POWERCYCLE     0x6414
+#define MENU_C64_CLEARMEM       0x6415
 
 #define C64_DMA_LOAD		0x6464
 #define C64_DRIVE_LOAD	    0x6465
@@ -253,6 +254,8 @@
 #define CART_PROHIBIT_DFXX (CART_ACIA_DF | CART_REU | CART_MAXREU | CART_UCI | CART_SAMPLER)
 #define CART_PROHIBIT_IO   (CART_PROHIBIT_DEXX | CART_PROHIBIT_DFXX)
 #define CART_PROHIBIT_ALL_BUT_REU (CART_PROHIBIT_DEXX | CART_ACIA_DF | CART_SAMPLER)
+#define CART_PROHIBIT_ALL_BUT_REU_AND_ACIA_DE (CART_ACIA_DF | CART_SAMPLER)
+
 
 typedef struct _cart
 {
@@ -311,7 +314,7 @@ class C64 : public GenericHost, ConfigurableObject
     void freeze(void);
     void measure_timing(uint8_t *buffer);
     virtual void get_all_memory(uint8_t *) { /* NOT YET IMPLEMENTED */ };
-    
+    virtual void clear_ram(void) { /* NOT YET IMPLEMENTED */ };
     static uint8_t get_exrom_game(void) {
         return (C64_CLOCK_DETECT & 0x0C) >> 2;
     }

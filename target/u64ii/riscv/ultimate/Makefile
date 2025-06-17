@@ -120,7 +120,6 @@ SRCS_CC	 =  u64ii_init.cc \
 			filetype_bin.cc \
 			filetype_cfg.cc \
 			filetype_vpl.cc \
-			filetype_esp.cc \
 			host_stream.cc \
 			keyboard_vt100.cc \
 			screen_vt100.cc \
@@ -213,7 +212,7 @@ SRCS_ASMS = crt0.S port_asm.S
 
 SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas eapi.tas default_kernal.tas
 
-SRCS_BIN =  basic.bin chars.bin module.bin sidcrt.bin muscrt.bin musplayer.bin default_chars.bin 
+SRCS_BIN =  basic.bin chars.bin module.bin sidcrt.bin muscrt.bin musplayer.bin default_chars.bin raminit.bin
 
 SRCS_IEC = iec_code.iec
 

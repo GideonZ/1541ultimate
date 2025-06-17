@@ -2,40 +2,32 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
-
-
-#define RTC_TIMER_SECONDS    *((volatile uint32_t *)RTC_TIMER_BASE)
+#include "network_config.h"
+#include "rtc.h"
 
 extern "C" {
     #include "lwip/apps/sntp.h"
 
-    void print_time_for_zone(uint32_t sec, const char *zone)
-    {
-        char strftime_buf[64];
-        time_t now;
-        struct tm timeinfo;
-        setenv("TZ", zone, 1);
-        tzset();
-        now = sec;
-        localtime_r(&now, &timeinfo);
-        strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
-        printf("The current date/time in zone %s is: %s\n", zone, strftime_buf);
-    }
-
     void sntp_time_received(uint32_t sec)
     {
-        printf("--> Time Received: %u\n", sec);
-        RTC_TIMER_SECONDS = sec;
-        print_time_for_zone(sec, "CEST-1CET,M3.2.0/2:00:00,M11.1.0/2:00:00");
+        printf("--> Time Received: %u  (current TZ = %s)\n", sec, getenv("TZ"));
+        rtc.set_time_utc(sec);
     }
 }
 
 void start_sntp(void)
 {
     sntp_stop();
-    sntp_setservername(0, "time.windows.com");
-    sntp_setservername(1, "time.google.com");
-    sntp_setservername(2, "pool.ntp.org");
+    if (networkConfig.cfg->get_value(CFG_NETWORK_NTP_EN) == 0) {
+        return;
+    }
+    const char *timezone = networkConfig.get_posix_timezone();
+    printf("Setting timezone: %s\n", timezone);
+    setenv("TZ", timezone, 1);
+    tzset();
+    sntp_setservername(0, networkConfig.cfg->get_string(CFG_NETWORK_NTP_SRV1));
+    sntp_setservername(1, networkConfig.cfg->get_string(CFG_NETWORK_NTP_SRV2));
+    sntp_setservername(2, networkConfig.cfg->get_string(CFG_NETWORK_NTP_SRV3));
     sntp_init();
 }
 

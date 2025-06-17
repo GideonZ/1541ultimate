@@ -122,6 +122,7 @@ public:
     static int setScanMode(ConfigItem *it);
     static int setMixer(ConfigItem *it);
     static int setSpeakerMixer(ConfigItem *it);
+    static int enableDisableSpeaker(ConfigItem *it);
     static int setFilter(ConfigItem *it);
     static int setSidEmuParams(ConfigItem *it);
     static int setLedSelector(ConfigItem *it);
@@ -144,6 +145,7 @@ public:
 
     volatile uint8_t *access_socket_pre(int socket);
     void access_socket_post(int socket);
+    void clear_ram(void);
 };
 
 extern uint8_t C64_EMUSID1_BASE_BAK;

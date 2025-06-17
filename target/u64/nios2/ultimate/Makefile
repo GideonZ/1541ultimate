@@ -64,7 +64,7 @@ SRCS_CC	 =  u2p_init.cc \
 			embedded_iso.cc \
 			embedded_fat.cc \
 			u64_config.cc \
-			rtc_dummy.cc \
+			rtc_i2c.cc \
 			c64.cc \
 			c64_crt.cc \
 			u64_machine.cc \
@@ -221,7 +221,7 @@ SRCS_ASMS = port_asm.S
 
 SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas eapi.tas default_kernal.tas
 
-SRCS_BIN =  basic.bin sidcrt.bin muscrt.bin musplayer.bin chars.bin module.bin default_chars.bin 
+SRCS_BIN =  basic.bin sidcrt.bin muscrt.bin musplayer.bin chars.bin module.bin default_chars.bin raminit.bin
 
 SRCS_IEC = iec_code.iec
 
