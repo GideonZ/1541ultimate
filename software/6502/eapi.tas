@@ -464,6 +464,7 @@ erase1:
     
         ; increment bank
         inc EAPI_BANK
+        lda EAPI_BANK
         sta EASYFLASH_IO_BANK
         pla
         tax

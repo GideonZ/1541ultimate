@@ -22,6 +22,8 @@
 #define CFG_MODEM_QUIRKS      0x0D
 #define CFG_MODEM_TCPNODELAY  0x0E
 #define CFG_MODEM_LOOPDELAY   0x0F
+#define CFG_MODEM_RTS         0x10
+#define CFG_MODEM_HARDWARE    0x11
 
 #define RESP_OK				0
 #define RESP_CONNECT		1
@@ -41,6 +43,7 @@
 
 static const char *interfaces[] = { "ACIA / SwiftLink" };
 static const char *acia_mode[] = { "Off", "DE00/IRQ", "DE00/NMI", "DF00/IRQ", "DF00/NMI", "DF80/IRQ", "DF80/NMI" };
+static const char *hw_mode[] = { "SwiftLink", "Turbo232" };
 static const char *dcd_dsr[] = { "Active (Low)", "Active when connected", "Inactive when connected", "Inactive (High)", "Act. when connecting", "Inact. when connecting" };
 static const int acia_base[] = { 0, 0xDE00, 0xDE01, 0xDF00, 0xDF01, 0xDF80, 0xDF81 };
 static const char *responseCode[] = {"\r0\r","\r1\r","\r2\r","\r3\r","\r4\r","\r5\r","\r6\r","\r7\r","\r8\r",
@@ -62,26 +65,25 @@ static const AciaMessage_t rxData = { ACIA_MSG_RXDATA, 0, 0 };
 
 struct t_cfg_definition modem_cfg[] = {
     { CFG_MODEM_INTF,          CFG_TYPE_ENUM,   "Modem Interface",               "%s", interfaces,   0,  0, 0 },
-    { CFG_MODEM_ACIA,          CFG_TYPE_ENUM,   "ACIA (6551) Mode",              "%s", acia_mode,    0,  6, 0 },
+    { CFG_MODEM_ACIA,          CFG_TYPE_ENUM,   "ACIA (6551) Mapping",           "%s", acia_mode,    0,  6, 0 },
+    { CFG_MODEM_HARDWARE,      CFG_TYPE_ENUM,   "Hardware Mode",                 "%s", hw_mode,      0,  1, 0 },
     { CFG_MODEM_LISTEN_PORT,   CFG_TYPE_STRING, "Listening Port",                "%s", NULL,         2,  8, (int)"3000" },
     { CFG_MODEM_LISTEN_RING,   CFG_TYPE_ENUM,   "Do RING sequence (incoming)",   "%s", en_dis,       0,  1, 1 },
     { CFG_MODEM_DTRDROP,       CFG_TYPE_ENUM,   "Drop connection on DTR low",    "%s", en_dis,       0,  1, 1 },
+    { CFG_MODEM_RTS,           CFG_TYPE_ENUM,   "RTS Handshake (Rx)",            "%s", en_dis,       0,  1, 1 },
     { CFG_MODEM_CTS,           CFG_TYPE_ENUM,   "CTS Behavior",                  "%s", dcd_dsr,      0,  5, 0 },
-    { CFG_MODEM_DCD,           CFG_TYPE_ENUM,   "DCD Behavior",                  "%s", dcd_dsr,      0,  5, 1 },
+    { CFG_MODEM_DCD,           CFG_TYPE_ENUM,   "DCD Behavior",                  "%s", dcd_dsr,      0,  5, 0 },
     { CFG_MODEM_DSR,           CFG_TYPE_ENUM,   "DSR Behavior",                  "%s", dcd_dsr,      0,  5, 1 },
     { CFG_MODEM_OFFLINEFILE,   CFG_TYPE_STRING, "Modem Offline Text",            "%s", NULL,         0, 30, (int)"/Usb0/offline.txt" },
     { CFG_MODEM_CONNFILE,      CFG_TYPE_STRING, "Modem Connect Text",            "%s", NULL,         0, 30, (int)"/Usb0/welcome.txt" },
     { CFG_MODEM_BUSYFILE,      CFG_TYPE_STRING, "Modem Busy Text",               "%s", NULL,         0, 30, (int)"/Usb0/busy.txt" },
     { CFG_MODEM_TCPNODELAY,    CFG_TYPE_ENUM,   "Set Socket Opt TCP_NODELAY",    "%s", en_dis,       0,  1, 0 },
-    { CFG_MODEM_LOOPDELAY,     CFG_TYPE_VALUE,  "Loop Delay (OS ticks)",         "%d", NULL,         1, 20, 2 },
+    { CFG_MODEM_LOOPDELAY,     CFG_TYPE_VALUE,  "Loop Delay",                    "%d0 ms", NULL,     1, 20, 2 },
     { CFG_TYPE_END,            CFG_TYPE_END,    "",                              "",   NULL,         0,  0, 0 } };
 
 
 Modem :: Modem()
 {
-    if (!(getFpgaCapabilities() & CAPAB_ACIA)) {
-        return;
-    }
     register_store(0x4D4F444D, "Modem Settings", modem_cfg);
 
     aciaQueue = xQueueCreate(16, sizeof(AciaMessage_t));
@@ -137,7 +139,7 @@ void Modem :: listenerTask(void *a)
     //int len = sprintf(buffer, "You are connected to the modem!\n");
     //send(socketNumber, buffer, len, 0);
 
-    modem.IncomingConnection(socketNumber);
+    modem->IncomingConnection(socketNumber);
 
     closesocket(socketNumber);
     vTaskDelete(NULL);
@@ -145,12 +147,12 @@ void Modem :: listenerTask(void *a)
 
 void Modem :: RunRelay(int socket)
 {
-    int loopDelay = cfg->get_value(CFG_MODEM_LOOPDELAY);
+    int loopDelay = 10 * cfg->get_value(CFG_MODEM_LOOPDELAY); // steps of 10 ms
     printf("Using loopDelay = %d\n", loopDelay);
 
     struct timeval tv;
-    tv.tv_sec = loopDelay * portTICK_PERIOD_MS;
-    tv.tv_usec = loopDelay * portTICK_PERIOD_MS;
+    tv.tv_sec = 0;
+    tv.tv_usec = loopDelay * 1000;
     setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
 
     if (cfg->get_value(CFG_MODEM_TCPNODELAY)) {
@@ -428,6 +430,12 @@ void Modem :: SetHandshakes(bool connected, bool connecting)
         break;
     default:
         break;
+    }
+
+    if (rtsMode) {
+        handshakes &= ~ACIA_HANDSH_RTSDIS;
+    } else {
+        handshakes |= ACIA_HANDSH_RTSDIS;
     }
 
     AciaMessage_t setHS = { ACIA_MSG_SETHS, 0, 0 };
@@ -744,6 +752,7 @@ void Modem :: ModemTask()
     // first time configuration
     cfg->effectuate();
     acia.SetRxRate(rateValues[8]);
+    SetHandshakes(false, false);
     baudRate = baudRates[8];
 
     while(1) {
@@ -847,6 +856,9 @@ void Modem :: effectuate_settings()
         acia.deinit();
         current_iobase = 0;
     } else {
+        if (cfg->get_value(CFG_MODEM_HARDWARE) == 1) {
+            base |= 4; // set the hardware turbo enable bit (hacky hacky)
+        }
         acia.init(base & 0xFFFE, base & 1, aciaQueue, aciaQueue, aciaTxBuffer);
         current_iobase = base & 0xFFFE;
     }
@@ -855,13 +867,26 @@ void Modem :: effectuate_settings()
     ctsMode = cfg->get_value(CFG_MODEM_CTS);
     dsrMode = cfg->get_value(CFG_MODEM_DSR);
     dcdMode = cfg->get_value(CFG_MODEM_DCD);
+    rtsMode = cfg->get_value(CFG_MODEM_RTS);
+    SetHandshakes(false, false);
     listenerSocket->Start(newPort);
 }
 
 void Modem :: reinit_acia(uint16_t base)
 {
-    acia.init(base & 0xFFFE, base & 1, aciaQueue, aciaQueue, aciaTxBuffer);
-    current_iobase = base & 0xFFFE;
+    if (base == 0xFFFF) {
+        int basecfg = acia_base[cfg->get_value(CFG_MODEM_ACIA)];
+        if (!basecfg) {
+            acia.deinit();
+            current_iobase = 0;
+        } else {
+            acia.init(basecfg & 0xFFFE, base & 1, aciaQueue, aciaQueue, aciaTxBuffer);
+            current_iobase = basecfg & 0xFFFE;
+        }
+    } else {
+        acia.init(base & 0xFFFE, base & 1, aciaQueue, aciaQueue, aciaTxBuffer);
+        current_iobase = base & 0xFFFE;
+    }
 }
 
 bool Modem :: prohibit_acia(uint16_t base)
@@ -874,5 +899,10 @@ bool Modem :: prohibit_acia(uint16_t base)
 }
 
 #include "init_function.h"
-Modem modem;
-InitFunction init_modem("Modem", [](void *obj, void *_param) { Modem *modem = (Modem *)obj; modem->start(); }, &modem, NULL, 105); // global that causes us to exist
+Modem *modem = NULL;
+InitFunction init_modem("Modem", [](void *_obj, void *_param) {
+    if (getFpgaCapabilities() & CAPAB_ACIA) {
+        modem = new Modem();
+        modem->start();
+    }
+}, NULL, NULL, 105); // global that causes us to exist

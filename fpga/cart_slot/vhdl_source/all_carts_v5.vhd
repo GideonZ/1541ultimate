@@ -187,7 +187,7 @@ begin
                 ef_write     <= '0';
                 allow_bank   <= '0';
                 do_io2       <= '1';
-                cart_en      <= '1';
+                cart_en      <= reset_in; -- When reset, cart_en = 1, when forcing cartridge mode, it is forced to OFF! (Freezer will enable it)
                 hold_nmi     <= '0';
                 ee_clk       <= '0';
                 ee_sel       <= '0';
@@ -347,13 +347,13 @@ begin
                 rom_mode  <= "01"; -- 16K banks
 
             when c_system3 => -- 16K, only 8K used?
-                if io_write='1' and io_addr(8)='0' then -- DE00 range
+                if (io_write='1' or io_read='1') and io_addr(8)='0' then -- DE00 range
                     bank_bits(19 downto 14) <= io_addr(5 downto 0); -- max 64 banks of 8K
                     -- turn on
                     mode_bits(0) <= '0';
-                elsif io_read='1' and io_addr(8)='0' then
-                    -- turn off
-                    mode_bits(0) <= '1';
+                -- elsif io_read='1' and io_addr(8)='0' then
+                --     -- turn off
+                --     mode_bits(0) <= '1';
                 end if;
                 game_n    <= '1';
                 exrom_n   <= mode_bits(0);

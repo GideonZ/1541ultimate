@@ -23,17 +23,17 @@ typedef struct _acia_t {
 #define ACIA_TX_RAM_OFFSET 0x800
 #define ACIA_RX_RAM_OFFSET 0xA00
 
-#define ACIA_HANDSH_CTS 0x01
-#define ACIA_HANDSH_RTS 0x02 // Read Only
-#define ACIA_HANDSH_DSR 0x04
-#define ACIA_HANDSH_DTR 0x08 // Read Only
-#define ACIA_HANDSH_DCD 0x10
+#define ACIA_HANDSH_CTS    0x01
+#define ACIA_HANDSH_RTS    0x02 // Read Only
+#define ACIA_HANDSH_DSR    0x04
+#define ACIA_HANDSH_DTR    0x08 // Read Only
+#define ACIA_HANDSH_DCD    0x10
+#define ACIA_HANDSH_RTSDIS 0x20 // when set, RTS is not used in Rx path
 
 #define ACIA_IRQ_RX     0x02
 #define ACIA_IRQ_TX     0x04
 #define ACIA_IRQ_CTRL   0x08
 #define ACIA_IRQ_HANDSH 0x10
-
 typedef struct _AciaMessage_t
 {
     uint8_t messageType;
@@ -163,6 +163,7 @@ public:
     void SetDSR(uint8_t value);
     void SetCTS(uint8_t value);
     void SetRxRate(uint8_t value);
+    void EnableRTSInRx(uint8_t value);
 
     // efficient transfers
     int      GetRxSpace(void);

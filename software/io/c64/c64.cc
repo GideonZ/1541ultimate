@@ -1012,13 +1012,17 @@ void C64::set_cartridge(cart_def *cart)
         }
     }
 #ifndef RECOVERYAPP
-    if(def->require & CART_ACIA_DE) {
-        modem.reinit_acia(0xDE00);
-    }
-    if(def->require & CART_ACIA_DF) {
-        modem.reinit_acia(0xDF00);
+    if (modem) {
+        if(def->require & CART_ACIA_DE) {
+            modem->reinit_acia(0xDE00);
+        } else if(def->require & CART_ACIA_DF) {
+            modem->reinit_acia(0xDF00);
+        } else {
+            modem->reinit_acia(0xFFFF); // from config
+        }
     }
 #endif
+
 #if U64
     if(def->require & CART_WMIRROR) {
         EnableWriteMirroring();
@@ -1053,17 +1057,20 @@ void C64::set_cartridge(cart_def *cart)
     }
 
 #ifndef RECOVERYAPP
-    if(def->prohibit & CART_ACIA_DE) {
-        if(modem.prohibit_acia(0xDE00)) {
-            def->disabled |= CART_ACIA_DE;
+    if (modem) {
+        if(def->prohibit & CART_ACIA_DE) {
+            if(modem->prohibit_acia(0xDE00)) {
+                def->disabled |= CART_ACIA_DE;
+            }
         }
-    }
-    if(def->prohibit & CART_ACIA_DF) {
-        if(modem.prohibit_acia(0xDF00)) {
-            def->disabled |= CART_ACIA_DF;
+        if(def->prohibit & CART_ACIA_DF) {
+            if(modem->prohibit_acia(0xDF00)) {
+                def->disabled |= CART_ACIA_DF;
+            }
         }
     }
 #endif
+
     // clear function RAM on the cartridge
     memset(get_cartridge_ram_addr(), 0x00, 65536);
 

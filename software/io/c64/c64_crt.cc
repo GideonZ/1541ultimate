@@ -124,6 +124,7 @@ void C64_CRT::initialize(uint8_t *mem)
     machine = 0;
     total_read = 0;
     max_bank = 0xFF;
+    highest_bank = 0;
     a000_seen = false;
     bank_multiplier = 16 * 1024;
 }
@@ -264,14 +265,13 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
         }
     }
 
-    if ((load == 0xA000) && !a000_seen) {
-        a000_seen = true;
-        if (bank > 0) { // strange; first time A000 is seen, it is not bank 0.
-            max_bank = bank - 1;
-        }
-    }
-
-    bank &= max_bank;
+    // if ((load == 0xA000) && !a000_seen) {
+    //     a000_seen = true;
+    //     if (bank > 0) { // strange; first time A000 is seen, it is not bank 0.
+    //         max_bank = bank - 1;
+    //     }
+    // }
+    // bank &= max_bank;
 
     uint32_t offset = uint32_t(bank) * bank_multiplier;
     offset += (load & 0x2000); // switch between 8000 and A000
@@ -291,6 +291,9 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
         if (bytes_read != size) {
             printf("Just read %4x bytes\n", bytes_read);
             return SSRET_FILE_READ_FAILED;
+        }
+        if (bank > highest_bank) {
+            highest_bank = bank;
         }
         if (bytes_read < 8192) {
             // round up to the nearest multiple of 2, minimum 256 bytes
@@ -316,6 +319,27 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
 void C64_CRT::clear_cart_mem(void)
 {
     memset(cart_memory, 0xff, 1024 * 1024); // clear all cart memory
+}
+
+void C64_CRT::auto_mirror(void)
+{
+    if (bank_multiplier == 32 * 1024) {
+        return; // C128 mode
+    }    
+    // bank size is 16k. highest_bank is the highest bank number seen in the file.
+    // First round up to the nearest power of 2, then mirror it.
+
+    int size = 1;
+    while (size <= highest_bank) {
+        size <<= 1;
+    }
+    // we support 1MB of cart memory, so max 64 banks
+    while(size < 64) {
+        // mirror the data
+        printf("Mirroring %6x bytes from %p to %p.\n", size * bank_multiplier, cart_memory, cart_memory + size * bank_multiplier);
+        memcpy(cart_memory + size * bank_multiplier, cart_memory, size * bank_multiplier);
+        size <<= 1;
+    }
 }
 
 void C64_CRT::regenerate_easyflash_chunks()
@@ -400,10 +424,11 @@ SubsysResultCode_e C64_CRT::read_crt(File *file, cart_def *def)
         retval = read_chip_packet(file, chunk);
 
         if (retval == SSRET_OK) {
-            chip_chunks.append(chunk);
             if (chunk->last) {
+                delete chunk;
                 break;
             }
+            chip_chunks.append(chunk);
         } else {
             delete chunk;
             break;
@@ -416,6 +441,7 @@ SubsysResultCode_e C64_CRT::read_crt(File *file, cart_def *def)
     }
 
     patch_easyflash_eapi();
+    auto_mirror();
     regenerate_easyflash_chunks();
     configure_cart(def);
 
@@ -467,6 +493,7 @@ void C64_CRT::configure_cart(cart_def *def)
                 require = CART_UCI_DE1C;
             } else {
                 prohibit = CART_PROHIBIT_IO;
+                require = CART_UCI_DE1C;
             }
             break;
         case CART_SUPERSNAP:
@@ -582,7 +609,7 @@ void C64_CRT::configure_cart(cart_def *def)
                 prohibit = CART_PROHIBIT_ALL_BUT_REU;
                 require = CART_UCI;
             } else if (crt_header[CRTHDR_SUBTYPE] == 2) {
-                prohibit = CART_PROHIBIT_ALL_BUT_REU;
+                prohibit = CART_PROHIBIT_ALL_BUT_REU_AND_ACIA_DE; // leaves room for ACIA at DE00, REU and UCI at DF00
                 require = CART_UCI;
                 cart_type = CART_TYPE_128 | VARIANT_7; // with IO and ROM banking
             } else {

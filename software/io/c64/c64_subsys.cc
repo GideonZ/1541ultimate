@@ -64,6 +64,7 @@ void C64_Subsys :: create_task_items(void)
 {
     myActions.reset    = new Action("Reset C64", SUBSYSID_C64, MENU_C64_RESET);
     myActions.reboot   = new Action("Reboot C64", SUBSYSID_C64, MENU_C64_REBOOT);
+    myActions.clearmem = new Action("Reboot (Clr Mem)", SUBSYSID_C64, MENU_C64_CLEARMEM);
     myActions.powercyc = new Action("Power Cycle", SUBSYSID_C64, MENU_C64_POWERCYCLE);
     myActions.off      = new Action("Power OFF", SUBSYSID_C64, MENU_C64_POWEROFF);
     myActions.pause    = new Action("Pause",  SUBSYSID_C64, MENU_C64_PAUSE);
@@ -80,6 +81,7 @@ void C64_Subsys :: create_task_items(void)
     taskCategory->append(myActions.reset);
     taskCategory->append(myActions.reboot);
 #if U64
+    taskCategory->append(myActions.clearmem);
     taskCategory->append(myActions.off);
 #endif
 #if U64 == 2
@@ -88,6 +90,7 @@ void C64_Subsys :: create_task_items(void)
 #if DEVELOPER > 0
     taskCategory->append(myActions.pause);
     taskCategory->append(myActions.resume);
+    taskCategory->append(myActions.measure);
 #endif
 #if U64
     taskCategory->append(myActions.savemem);
@@ -98,7 +101,6 @@ void C64_Subsys :: create_task_items(void)
     taskCategory->append(myActions.savemp3b);
     taskCategory->append(myActions.savemp3c);
     taskCategory->append(myActions.savemp3d);
-    taskCategory->append(myActions.measure);
 }
 
 void C64_Subsys :: update_task_items(bool writablePath, Path *p)
@@ -149,6 +151,8 @@ void C64_Subsys :: restoreCart(void)
 	} else {
 	    printf("Cart got disabled, now restoring.\n");
 	    c64->set_cartridge(NULL);
+        C64_CARTRIDGE_KILL = 2; // Force update
+        C64_CARTRIDGE_KILL = 2; // Force update
 	}
 }
 
@@ -191,6 +195,17 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
         case MENU_C64_RESUME:
             c64->resume();
             break;
+
+        case MENU_C64_CLEARMEM:
+#if U64
+            if (c64->client) { // we can't execute this yet
+                c64->client->release_host(); // disconnect from user interface
+                c64->client = 0;
+            }
+            c64->clear_ram();
+            c64->start_cartridge(NULL);
+            break;
+#endif
 
         case MENU_C64_POWERCYCLE:
 #if U64 == 2

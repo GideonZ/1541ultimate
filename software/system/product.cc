@@ -149,7 +149,8 @@ char *getProductTitleString(char *buf, int sz, bool ascii)
     return buf;
 }
 
-char *getProductDefaultHostname(char *buf, int sz) {
+char *getProductDefaultHostname(char *buf, int sz)
+{
     if (sz < 17 + 7 + 1) {   // Name-XXYYZZ<NULL>
         return NULL;
     }
