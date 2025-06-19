@@ -417,6 +417,7 @@ PROHIBIT PRIMARY NET "i_riscv/i_imem/dat_i_0_sqmuxa" ;
 PROHIBIT PRIMARY NET "i_riscv/r_icache.i_cache/dat_i_0_sqmuxa" ;
 PROHIBIT PRIMARY NET "i_riscv/r_icache.i_cache/ena_o_RNO_0" ;
 PROHIBIT PRIMARY NET "i_riscv/rst_d" ;
+PROHIBIT PRIMARY NET "i_double_freq_bridge.busy" ;
 PROHIBIT PRIMARY NET "i_double_freq_bridge/dack_tag_2x_1_sqmuxa_i" ;
 PROHIBIT PRIMARY NET "i_double_freq_bridge/toggle_r_1x" ;
 PROHIBIT PRIMARY NET "i_double_freq_bridge/un1_mem_resp_2x_1_i" ;
