@@ -567,6 +567,38 @@ FRESULT FileManager::delete_recursive(Path *path, const char *name)
     return ret;
 }
 
+FRESULT FileManager::house_keeping_delete(const char *dirpath, const char*matchPattern, int min_files, int max_files, uint32_t max_size)
+{
+#ifdef U2
+    if (max_size > 480*1024) {
+        max_size = 480*1024;  // Only 1MB ramdisk for U2 (software/filesystem/ramdisk.cc), limit max_size to slightly below half
+    }
+#endif
+    Path dir;
+    dir.cd(dirpath);
+    IndexedList<FileInfo *> files(32, NULL);
+    FRESULT res = get_directory(&dir, files, matchPattern);
+    if (res == FR_OK) {
+        files.sort(compare_timestamp);
+        uint32_t total_size = 0;
+        for (int i = 0; i < files.get_elements(); ++i) {
+            total_size += files[i]->size;
+            if (i >= min_files && (total_size >= max_size || i >= max_files)) {
+                printf("House keeping: Deleting %s from %s\n", files[i]->lfname, dirpath);
+                delete_file(&dir, files[i]->lfname);
+            }
+        }
+    }
+    return FR_OK;
+}
+
+int FileManager::compare_timestamp(IndexedList<FileInfo *> *list, int a, int b)
+{
+    uint32_t a_timestamp = ((*list)[a]->date << 16) | (*list)[a]->time;
+    uint32_t b_timestamp = ((*list)[b]->date << 16) | (*list)[b]->time;
+    return (int)(b_timestamp - a_timestamp);  // Newest first (descending)
+}
+
 
 FRESULT FileManager::rename(Path *path, const char *old_name, const char *new_name)
 {

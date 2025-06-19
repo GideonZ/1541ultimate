@@ -5,18 +5,21 @@
 #include <stdlib.h>
 #include "indexed_list.h"
 #include "pattern.h"
+#include "filemanager.h"
 
 extern "C" {
     #include "multipart.h"
 }
 
+// The below will show up as: LOAD"/TEMP/WEB-UPLOAD",8,1
+// on the C64 screen. The truncation after 16 characters nicely
+// hides the slightly cryptic "-0001" part of the filename.
 #ifndef TEMP_FILE_PATH
 #define TEMP_FILE_PATH "/Temp/"
 #endif
+#define TEMP_FILE_PREFIX "web-upload-"
+#define TEMP_FILE_PATTERN "web-upload-????"
 
-#ifdef USE_FILEMANAGER
-#include "filemanager.h"
-#endif
 
 class TempfileWriter;
 
@@ -84,23 +87,24 @@ public:
         uint32_t dummy;
 
         HTTPHeaderField *f;
-
+        FileManager *fm = FileManager::getFileManager();
         switch(block->type) {
             case eStart:
                 fo = NULL;
                 break;
             case eDataStart:
-                sprintf(filename, TEMP_FILE_PATH "temp%04x", temp_count++);
+                sprintf(filename, TEMP_FILE_PATH TEMP_FILE_PREFIX "%04x", ++temp_count);
                 filenames.append(strdup(filename));
+                fm->house_keeping_delete(TEMP_FILE_PATH, TEMP_FILE_PATTERN);
 #ifdef USE_FILEMANAGER
-                FileManager::getFileManager()->fopen(filename, FA_WRITE | FA_CREATE_ALWAYS, &fo);
+                fm->fopen(filename, FA_WRITE | FA_CREATE_ALWAYS, &fo);
 #else
                 fo = fopen(filename, "wb");
 #endif
                 file_size = 0;
                 break;
             case eSubHeader:
-                sprintf(filename, TEMP_FILE_PATH "temp%04x", temp_count++);
+                sprintf(filename, TEMP_FILE_PATH TEMP_FILE_PREFIX "%04x", ++temp_count);
                 f = (HTTPHeaderField *)block->data;
                 for(int i=0; i < block->length; i++) {
                     if (strcasecmp(f[i].key, "Content-Disposition") == 0) {
@@ -123,8 +127,9 @@ public:
                     }
                 }
                 filenames.append(strdup(filename));
+                fm->house_keeping_delete(TEMP_FILE_PATH, TEMP_FILE_PATTERN);
 #ifdef USE_FILEMANAGER
-                FileManager::getFileManager()->fopen(filename, FA_WRITE | FA_CREATE_ALWAYS, &fo);
+                fm->fopen(filename, FA_WRITE | FA_CREATE_ALWAYS, &fo);
 #else
                 fo = fopen(filename, "wb");
 #endif
@@ -144,7 +149,7 @@ public:
                 if (fo) {
                     filesizes.append(file_size);
 #ifdef USE_FILEMANAGER
-                    FileManager::getFileManager()->fclose(fo);
+                    fm->fclose(fo);
 #else
                     fclose(fo);
 #endif
@@ -154,7 +159,7 @@ public:
             case eTerminate:
                 if (fo) {
 #ifdef USE_FILEMANAGER
-                    FileManager::getFileManager()->fclose(fo);
+                    fm->fclose(fo);
 #else
                     fclose(fo);
 #endif
