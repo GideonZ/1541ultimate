@@ -29,6 +29,23 @@ mstring :: mstring(const char *k)
     }
 }
 
+void mstring :: copy(const char *k, int from, int to)
+{
+    if (!k) {
+        return;
+    }
+    int needed = 2 + to - from;
+    if (alloc < needed) {
+        if (cp) {
+            delete[] cp;
+        }
+        cp = new char[needed];
+        alloc = needed;
+    }
+    strncpy(cp, k+from, 1+to-from);
+    cp[needed-1] = 0;
+}
+
 mstring :: mstring(const char *k, int from, int to)
 {
     if (k) {
@@ -75,7 +92,33 @@ const int mstring :: allocated_space(void) const
 {
     return alloc;
 }
-    
+
+bool mstring :: contains_any(const char *c)
+{
+    if (!cp) {
+        return false;
+    }
+    while(*c) {
+        if(strchr(cp, *c) != NULL) {
+            return true;
+        }
+        c++;
+    }
+    return false;
+}
+
+int mstring :: pos(const char c)
+{
+    if (!cp) {
+        return -1;
+    }
+    const char *p = strchr(cp, c);
+    if (!p) {
+        return -1;
+    }
+    return int(p - cp);
+}
+
 mstring& mstring :: operator=(const char *rhs)
 {
 //    printf("Operator = char*rhs=%s. This = %p.\n", rhs, this);
@@ -179,14 +222,22 @@ mstring& mstring :: operator+=(const mstring &rhs)
         alloc = n;
         if (cp) {
             strcpy(new_cp, cp);
-            strcat(new_cp, rhs.cp);
+            if (rhs.cp) {
+                strcat(new_cp, rhs.cp);
+            }
             delete[] cp;
         } else {
-            strcpy(new_cp, rhs.cp);
+            if (rhs.cp) {
+                strcpy(new_cp, rhs.cp);
+            } else {
+                new_cp[0] = 0; // shouldn't happen
+            }
         }
         cp = new_cp;
     } else { // fits
-        strcat(cp, rhs.cp);
+        if (rhs.cp) {
+            strcat(cp, rhs.cp);
+        }
     }
     return *this;
 }
@@ -234,6 +285,53 @@ mstring mstring::operator+(const char *right)
     return result;
 }
 
+const char mstring::operator[](int pos)
+{
+    // Python style indexing for the fun of it
+    if (pos < 0) {
+        pos = strlen(cp) + pos;
+    }
+    if (pos < 0) {
+        return 0;
+    }
+    if (pos >= strlen(cp)) {
+        return 0;
+    }
+    return cp[pos];
+}
+
+bool mstring::split(const char c, const char **remaining)
+{
+    char *loc = strchr(cp, c);
+    if (!loc) {
+        return false;
+    }
+    *loc = 0;
+    *remaining = (loc + 1);
+    return true;
+}
+
+int mstring::split(const char c, const char **remaining, int count)
+{
+    char *current = cp;
+    int out = 0;
+    while(count > 0) {
+        char *loc = strchr(current, c);
+        if (!loc) {
+            *remaining = current;
+            out++;
+            return out;
+        }
+        *loc = 0;
+        *remaining = current;
+        remaining++;
+        current = loc + 1;
+        count --;
+        out ++;
+    }
+    return out;
+}
+
 void mstring::to_upper(void)
 {
     int len = length();
@@ -247,10 +345,10 @@ void mstring::set(int index, char c)
     if (!cp) {
         return;
     }
-    if (index >= length()) {
-        return;
-    }
     if (index < 0) {
+        index = strlen(cp) + index;
+    }
+    if (index >= length()) {
         return;
     }
     cp[index] = c;
