@@ -53,7 +53,7 @@
 
 #include "cbmdos_parser.h"
 
-int parse_full_path(const char *buf, filename_t& name, bool *replace = NULL, bool path_only = false)
+int IecParser :: parse_full_path(const char *buf, filename_t& name, bool *replace = NULL, bool path_only = false)
 {
     //  [[@][n][path]:]pattern
     // $[=(T|P)][[n][path][:pattern[=commalist(type|option)]]]
@@ -102,7 +102,7 @@ int parse_full_path(const char *buf, filename_t& name, bool *replace = NULL, boo
     return 0;
 }
 
-int parse_dir_option(const char *buf, dir_options_t &opt)
+int IecParser :: parse_dir_option(const char *buf, dir_options_t &opt)
 {
     int M, d, y, h, h12, m, n;
     char ampm;
@@ -140,7 +140,7 @@ int parse_dir_option(const char *buf, dir_options_t &opt)
     return 0;
 }
 
-int parse_open(const char *buf, open_t& fn)
+int IecParser::parse_open(const char *buf, open_t& fn)
 {
     fn.dir_opt = c_dir_options_init;
     fn.replace = false;
@@ -205,7 +205,7 @@ int parse_open(const char *buf, open_t& fn)
     return 0;
 }
 
-int block_command(const uint8_t *buffer, int len)
+int IecParser :: block_command(const uint8_t *buffer, int len)
 {
     if (buffer[1] != '-') {
         return ERR_SYNTAX;
@@ -215,22 +215,22 @@ int block_command(const uint8_t *buffer, int len)
     case 'R':
         n = sscanf((const char *)buffer+3, "%d%d%d%d", &chan, &part, &track, &sector);
         if (n != 4) return ERR_SYNTAX;
-        return do_block_read(chan, part, track, sector);
+        return exec->do_block_read(chan, part, track, sector);
     case 'W':
         n = sscanf((const char *)buffer+3, "%d%d%d%d", &chan, &part, &track, &sector);
         if (n != 4) return ERR_SYNTAX;
-        return do_block_write(chan, part, track, sector);
+        return exec->do_block_write(chan, part, track, sector);
     case 'P':
         n = sscanf((const char *)buffer+3, "%d%d", &chan, &part);
         if (n != 2) return ERR_SYNTAX;
-        return do_buffer_position(chan, part);
+        return exec->do_buffer_position(chan, part);
     default:
         return ERR_UNKNOWN_CMD;
     }
     return 0;
 }
 
-int cp_command(const uint8_t *buffer, int len)
+int IecParser :: cp_command(const uint8_t *buffer, int len)
 {
     int part = 0;
     if (buffer[1] & 0x80) { // binary
@@ -243,10 +243,10 @@ int cp_command(const uint8_t *buffer, int len)
             return ERR_SYNTAX;
         }
     }
-    return do_set_current_partition(part);
+    return exec->do_set_current_partition(part);
 }
 
-int dir_command(const uint8_t *buffer, int len)
+int IecParser :: dir_command(const uint8_t *buffer, int len)
 {
     if (buffer[1] != 'D') {
         return ERR_UNKNOWN_CMD;
@@ -264,16 +264,16 @@ int dir_command(const uint8_t *buffer, int len)
     path += dest.filename;
     const char *mode;
     switch (buffer[0]) {
-    case 'C': return do_change_dir(dest.partition, path);
-    case 'M': return do_make_dir(dest.partition, path);
-    case 'R': return do_remove_dir(dest.partition, path);
+    case 'C': return exec->do_change_dir(dest.partition, path);
+    case 'M': return exec->do_make_dir(dest.partition, path);
+    case 'R': return exec->do_remove_dir(dest.partition, path);
     default:
         return ERR_UNKNOWN_CMD;
     }
     return 0;
 }
 
-int copy_command(const uint8_t *buffer, int len)
+int IecParser :: copy_command(const uint8_t *buffer, int len)
 {
     // [[n][path]:]filename = commalist([[n][path]:]pattern)    
     // Split on =, then parse before = as [[n][path]:]filename
@@ -304,15 +304,15 @@ int copy_command(const uint8_t *buffer, int len)
             return err;
         }
     }
-    return do_copy(dest, source_list, n);
+    return IecParser :: exec->do_copy(dest, source_list, n);
 }
 
-int initialize_command(const uint8_t *buffer, int len)
+int IecParser :: initialize_command(const uint8_t *buffer, int len)
 {
-    return do_initialize();
+    return exec->do_initialize();
 }
 
-int format_command(const uint8_t *buffer, int len)
+int IecParser :: format_command(const uint8_t *buffer, int len)
 {
     uint8_t name[24] = { 0xA0 };
     name[23] = 0;
@@ -326,10 +326,10 @@ int format_command(const uint8_t *buffer, int len)
             name[i-2] = buffer[i];
         }
     }
-    return do_format(name, id1, id2);
+    return exec->do_format(name, id1, id2);
 }
 
-int position_command(const uint8_t *buffer, int len)
+int IecParser :: position_command(const uint8_t *buffer, int len)
 {
     uint32_t pos = 0;
     len--;
@@ -341,10 +341,10 @@ int position_command(const uint8_t *buffer, int len)
     for(int i=0; i<len-1; i++) {
         pos |= ((uint32_t)buffer[i+2]) << (8*i);
     }
-    return do_set_position(chan, pos);
+    return exec->do_set_position(chan, pos);
 }
 
-int rename_command(const uint8_t *buffer, int len)
+int IecParser :: rename_command(const uint8_t *buffer, int len)
 {
     while(isalpha(*buffer)) {
         buffer++;
@@ -369,10 +369,10 @@ int rename_command(const uint8_t *buffer, int len)
     if (dest.has_wildcard)
         return ERR_ILLEGAL_NAME;
 
-    return do_rename(src, dest);
+    return exec->do_rename(src, dest);
 }
 
-int scratch_command(const uint8_t *buffer, int len)
+int IecParser :: scratch_command(const uint8_t *buffer, int len)
 {
     while(isalpha(*buffer)) {
         buffer++;
@@ -388,10 +388,10 @@ int scratch_command(const uint8_t *buffer, int len)
             return err;
         }
     }
-    return do_scratch(filenames, n);
+    return exec->do_scratch(filenames, n);
 }
 
-uint8_t bcdbyte(int a)
+static uint8_t bcdbyte(int a)
 {
     if(a > 99)
         return 0x99;
@@ -399,7 +399,7 @@ uint8_t bcdbyte(int a)
     return r;
 }
 
-int time_command(const uint8_t *buffer, int len)
+int IecParser :: time_command(const uint8_t *buffer, int len)
 {
     const char *wd4[] = { "SUN.", "MON.", "TUES", "WED.", "THUR", "FRI.", "SAT." };
     const char *wd3[] = { "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT" };
@@ -456,7 +456,7 @@ int time_command(const uint8_t *buffer, int len)
         default:
             return ERR_SYNTAX; 
         }
-        return do_cmd_response(result, reslen);
+        return exec->do_cmd_response(result, reslen);
         break;
     case 'W':
         return 0; // just assume OK
@@ -464,25 +464,25 @@ int time_command(const uint8_t *buffer, int len)
     return ERR_UNKNOWN_CMD;
 }
 
-int user_command(const uint8_t *buffer, int len)
+int IecParser :: user_command(const uint8_t *buffer, int len)
 {
     int n, chan, part, track, sector;
     switch(buffer[1]) {
     case '1':
         n = sscanf((const char *)buffer+2, "%d%d%d%d", &chan, &part, &track, &sector);
         if (n != 4) return ERR_SYNTAX;
-        return do_block_read(chan, part, track, sector);
+        return exec->do_block_read(chan, part, track, sector);
     case '2':
         n = sscanf((const char *)buffer+2, "%d%d%d%d", &chan, &part, &track, &sector);
         if (n != 4) return ERR_SYNTAX;
-        return do_block_write(chan, part, track, sector);
+        return exec->do_block_write(chan, part, track, sector);
     default:
         return ERR_UNKNOWN_CMD;
     }
     return 0;
 }
 
-int execute_command(const uint8_t *buffer, int len)
+int IecParser :: execute_command(const uint8_t *buffer, int len)
 {
     switch(buffer[0]) {
     case 'B': return block_command(buffer, len);

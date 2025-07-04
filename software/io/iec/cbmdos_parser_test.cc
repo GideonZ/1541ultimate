@@ -22,6 +22,9 @@ typedef struct {
 const open_result_t c_open_result_init = { 0, "", "", false, false, e_any, e_not_set,
                                             e_file, e_none, 0x0, 0x0, 0x00 };
 
+IecCommandExecuter exec;
+IecParser parser(&exec);
+
 void print_file(filename_t& file)
 {
     // printf("  Partition: %d\n", file.partition);
@@ -56,7 +59,7 @@ void print_open(open_t& o)
 
 void d_parse_open(const char *buf, open_t& o, int expected_retval = 0, open_result_t result = c_open_result_init)
 {
-    int err = parse_open(buf, o);
+    int err = parser.parse_open(buf, o);
 
     bool ok = true;
     ok &= (err == expected_retval);
@@ -206,54 +209,53 @@ int main(int argc, const char *argv[])
                 { 3, "", "", false, false, e_any, e_not_set,
                   e_dir_files, e_none, 0x0, 0x00, 0x00 });
 
-    execute_command((const uint8_t *)"C:S=/C64 OS/:S", 14);
-    execute_command((const uint8_t *)"B-R 2 0 18 1\r", 13);
-    execute_command((const uint8_t *)"B-W 2 0 18 2\r", 13);
-    execute_command((const uint8_t *)"U1 2 0 18 3\r", 12);
-    execute_command((const uint8_t *)"U2 2 0 18 4\r", 12);
-    execute_command((const uint8_t *)"B-P 2 234\r", 10);
-    execute_command((const uint8_t *)"C99:EMPTY=", 10);
-    execute_command((const uint8_t *)"C1:FCOPY=3:FCOPY", 16);
-    execute_command((const uint8_t *)"C:FULLSTATS=STAT1,3:STAT3", 25);
-    execute_command((const uint8_t *)"C2:MCOPY=1/COPIERS/:MCOPY", 25);
-    execute_command((const uint8_t *)"COPY2/SUBDIR:COMBINED=1/COPIERS/:FILE1,1/COPIERS/:FILE2,2/OTHERDIR:FILE*", 73);
-    execute_command((const uint8_t *)"R1:BOOT1=BOOT", 13);
-    execute_command((const uint8_t *)"R1/UTILS/:NEWT=1/UTILS/:WW", 26);
-    execute_command((const uint8_t *)"S1:JUNK,3:C?*.BAS", 17);
-    execute_command((const uint8_t *)"S1/UTILS/:CO*", 13);
-    execute_command((const uint8_t *)"SCRATCH1/UTILS/:CO*", 19);
-    execute_command((const uint8_t *)"P\x02\x64", 3);
-    execute_command((const uint8_t *)"P\x02\xC8\0", 4);
-    execute_command((const uint8_t *)"P\x02\x2C\x01\0", 5);
-    execute_command((const uint8_t *)"P\x02\x90\x01\0\0", 6);
-    execute_command((const uint8_t *)"P\x02\xF4\x01\0\0\0", 7);
-    execute_command((const uint8_t *)"CD:TEMP", 7);
-    execute_command((const uint8_t *)"CD1//TEMP", 9);
-    execute_command((const uint8_t *)"CD1//TEMP/TEMP2", 15);
-    execute_command((const uint8_t *)"CD1_", 4);
-    execute_command((const uint8_t *)"RD33_/BLAH", 10);
-    execute_command((const uint8_t *)"CD/TEMP/TEMP2", 13);
-    execute_command((const uint8_t *)"T-RA", 4);
-    execute_command((const uint8_t *)"T-RI", 4);
-    execute_command((const uint8_t *)"T-RD", 4);
-    execute_command((const uint8_t *)"T-RB", 4);
-    execute_command((const uint8_t *)"CP1", 3);
-    execute_command((const uint8_t *)"CP12", 4);
-    execute_command((const uint8_t *)"CP123", 5);
-    execute_command((const uint8_t *)"CP1234", 6);
-    execute_command((const uint8_t *)"C\xD0\x1F", 3);
-    execute_command((const uint8_t *)"N:HELLO,123", 11);
-    execute_command((const uint8_t *)"N:HELLO,23", 10);
-    execute_command((const uint8_t *)"N:HELLO,A", 9);
-    execute_command((const uint8_t *)"N:HELLO,", 8);
-    execute_command((const uint8_t *)"N:HELLO", 7);
-    execute_command((const uint8_t *)"N:", 2);
-//
-    execute_command((const uint8_t *)"MD:TEMP", 7);
-    execute_command((const uint8_t *)"MD1:TEMP", 8);
-    execute_command((const uint8_t *)"MD1//:TEMP", 10);
-    execute_command((const uint8_t *)"MD1//TEMP/:TEMP2", 16);
-    execute_command((const uint8_t *)"MD:", 3);
-    execute_command((const uint8_t *)"MD", 2);
+    parser.execute_command((const uint8_t *)"C:S=/C64 OS/:S", 14);
+    parser.execute_command((const uint8_t *)"B-R 2 0 18 1\r", 13);
+    parser.execute_command((const uint8_t *)"B-W 2 0 18 2\r", 13);
+    parser.execute_command((const uint8_t *)"U1 2 0 18 3\r", 12);
+    parser.execute_command((const uint8_t *)"U2 2 0 18 4\r", 12);
+    parser.execute_command((const uint8_t *)"B-P 2 234\r", 10);
+    parser.execute_command((const uint8_t *)"C99:EMPTY=", 10);
+    parser.execute_command((const uint8_t *)"C1:FCOPY=3:FCOPY", 16);
+    parser.execute_command((const uint8_t *)"C:FULLSTATS=STAT1,3:STAT3", 25);
+    parser.execute_command((const uint8_t *)"C2:MCOPY=1/COPIERS/:MCOPY", 25);
+    parser.execute_command((const uint8_t *)"COPY2/SUBDIR:COMBINED=1/COPIERS/:FILE1,1/COPIERS/:FILE2,2/OTHERDIR:FILE*", 73);
+    parser.execute_command((const uint8_t *)"R1:BOOT1=BOOT", 13);
+    parser.execute_command((const uint8_t *)"R1/UTILS/:NEWT=1/UTILS/:WW", 26);
+    parser.execute_command((const uint8_t *)"S1:JUNK,3:C?*.BAS", 17);
+    parser.execute_command((const uint8_t *)"S1/UTILS/:CO*", 13);
+    parser.execute_command((const uint8_t *)"SCRATCH1/UTILS/:CO*", 19);
+    parser.execute_command((const uint8_t *)"P\x02\x64", 3);
+    parser.execute_command((const uint8_t *)"P\x02\xC8\0", 4);
+    parser.execute_command((const uint8_t *)"P\x02\x2C\x01\0", 5);
+    parser.execute_command((const uint8_t *)"P\x02\x90\x01\0\0", 6);
+    parser.execute_command((const uint8_t *)"P\x02\xF4\x01\0\0\0", 7);
+    parser.execute_command((const uint8_t *)"CD:TEMP", 7);
+    parser.execute_command((const uint8_t *)"CD1//TEMP", 9);
+    parser.execute_command((const uint8_t *)"CD1//TEMP/TEMP2", 15);
+    parser.execute_command((const uint8_t *)"CD1_", 4);
+    parser.execute_command((const uint8_t *)"RD33_/BLAH", 10);
+    parser.execute_command((const uint8_t *)"CD/TEMP/TEMP2", 13);
+    parser.execute_command((const uint8_t *)"T-RA", 4);
+    parser.execute_command((const uint8_t *)"T-RI", 4);
+    parser.execute_command((const uint8_t *)"T-RD", 4);
+    parser.execute_command((const uint8_t *)"T-RB", 4);
+    parser.execute_command((const uint8_t *)"CP1", 3);
+    parser.execute_command((const uint8_t *)"CP12", 4);
+    parser.execute_command((const uint8_t *)"CP123", 5);
+    parser.execute_command((const uint8_t *)"CP1234", 6);
+    parser.execute_command((const uint8_t *)"C\xD0\x1F", 3);
+    parser.execute_command((const uint8_t *)"N:HELLO,123", 11);
+    parser.execute_command((const uint8_t *)"N:HELLO,23", 10);
+    parser.execute_command((const uint8_t *)"N:HELLO,A", 9);
+    parser.execute_command((const uint8_t *)"N:HELLO,", 8);
+    parser.execute_command((const uint8_t *)"N:HELLO", 7);
+    parser.execute_command((const uint8_t *)"N:", 2);
+    parser.execute_command((const uint8_t *)"MD:TEMP", 7);
+    parser.execute_command((const uint8_t *)"MD1:TEMP", 8);
+    parser.execute_command((const uint8_t *)"MD1//:TEMP", 10);
+    parser.execute_command((const uint8_t *)"MD1//TEMP/:TEMP2", 16);
+    parser.execute_command((const uint8_t *)"MD:", 3);
+    parser.execute_command((const uint8_t *)"MD", 2);
 
 }
