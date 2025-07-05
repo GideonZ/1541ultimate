@@ -70,6 +70,14 @@ void send_command(IecDrive *dr, const char *cmd)
     dr->push_ctrl(SLAVE_CMD_EOI);
 }
 
+void open_file(IecDrive *dr, const char *fn)
+{
+    dr->push_ctrl(SLAVE_CMD_ATN);
+    dr->push_ctrl(0xF0); // open channel 0!
+    while(*fn) dr->push_data(*(fn++));
+    dr->push_ctrl(SLAVE_CMD_EOI);
+}
+
 int main(int argc, const char **argv)
 {
     UserInterface *ui = new UserInterface("Test Drive");
@@ -109,18 +117,15 @@ int main(int argc, const char **argv)
     fm->save_file(false, "/Temp", "pppppppppppppppp.prg", msg, 28, &tr);
     fm->save_file(false, "/Temp", "qqqqqqqq012345678.prg", msg, 28, &tr);
     fm->save_file(false, "/Temp", "abc{2f}def.usr", msg, 28, &tr);
-
+    fm->create_dir("/Temp/SomeDir");
     get_status(dr);
     get_status(dr);
     get_status(dr);
     send_command(dr, "CD/TEMP");
 
-    dr->push_ctrl(SLAVE_CMD_ATN);
-    dr->push_ctrl(0xF0); // open channel 0!
-    dr->push_data('$'); // Interesting filename!
-    dr->push_ctrl(SLAVE_CMD_EOI);
-    dr->talk();
+    open_file(dr, "$:*=B");
 
+    dr->talk();
     do {
         ret = dr->prefetch_more(256, data, data_size);
         printf("Ret: %d Count = %d\n", ret, data_size);
@@ -128,11 +133,8 @@ int main(int argc, const char **argv)
         dr->pop_more(data_size);
     } while(ret == 0);
 
-    printf("Klaar!\n");
     dr->push_ctrl(SLAVE_CMD_ATN);
-    printf("ATN!\n");
     dr->push_ctrl(0xE0); // close
-    printf("Close!\n");
 
     delete dr;
     delete ui;

@@ -462,11 +462,18 @@ int IecChannel::read_dir_entry(void)
     filetype_t ftype = e_any;
     IecPartition::CreateIecName(&info, cbm_name, ftype);
 
-    // ToDo pattern matching
-    // if (!pattern_match(dirpattern.c_str(), iecName, false)) {
-    //     dir_index++;
-    //     return 1;
-    // }
+    // filter by type
+    if (name_to_open.dir_opt.filetypes) {
+        if ((name_to_open.dir_opt.filetypes & (1 << (int)ftype)) == 0) {
+            return 1;
+        }
+    }
+    // filter by pattern
+    if (name_to_open.file.filename.length() > 0) {
+        if (!pattern_match(name_to_open.file.filename.c_str(), cbm_name, false)) {
+            return 1;
+        }
+    }
 
     uint32_t size = 0;
     uint32_t size2 = 0;
@@ -514,7 +521,7 @@ int IecChannel::read_dir_entry(void)
     }
 */
 
-int IecChannel :: setup_directory_read(open_t& name)
+int IecChannel :: setup_directory_read()
 {
     printf("Setup dir read\n");
     char full_path[256];
@@ -524,17 +531,17 @@ int IecChannel :: setup_directory_read(open_t& name)
     if (dir) {
         delete dir;
     }    
-    if (!drive->vfs->construct_path(name, full_path, 256, file_name, 128)) {
-        drive->get_command_channel()->set_error(ERR_PARTITION_ERROR, name.file.partition);
+    if (!drive->vfs->construct_path(name_to_open, full_path, 256, file_name, 128)) {
+        drive->get_command_channel()->set_error(ERR_PARTITION_ERROR, name_to_open.file.partition);
         state = e_error;
         return -1;
     } 
-    printf("Full Path = %s\n", full_path);
+    printf("Full Path = %s, filename = %s\n", full_path, file_name);
 
     FRESULT fres = fm->open_directory(full_path, &dir);
     if (fres != FR_OK) {
         printf("opening dir failed %s\n", FileSystem::get_error_string(fres));
-        drive->get_command_channel()->set_error(ERR_DRIVE_NOT_READY, name.file.partition);
+        drive->get_command_channel()->set_error(ERR_DRIVE_NOT_READY, name_to_open.file.partition);
         state = e_error;
         return -1;
     }
@@ -549,9 +556,9 @@ int IecChannel :: setup_directory_read(open_t& name)
     prefetch_max = 32;
     last_byte = -1;
     memcpy(buffer, c_header, 32);
-    buffer[4] = (uint8_t) name.file.partition;
+    buffer[4] = (uint8_t) name_to_open.file.partition;
 
-    IecPartition *part = drive->vfs->GetPartition(name.file.partition);
+    IecPartition *part = drive->vfs->GetPartition(name_to_open.file.partition);
 
     // If we are listing a CBM medium, let's use the volume indicator
 //    FileInfo *header = dirPartition->GetSystemFile(0);
@@ -578,7 +585,7 @@ int IecChannel :: setup_directory_read(open_t& name)
     return 0;
 }
 
-int IecChannel :: setup_file_access(open_t& name)
+int IecChannel :: setup_file_access()
 {
     return 0;
 }
@@ -761,21 +768,20 @@ int IecChannel::open_file(void)  // name should be in buffer
 {
     buffer[pointer] = 0; // string terminator
     printf("Open file. Raw Filename = '%s'\n", buffer);
-    open_t name;
-    parse_open((const char *)buffer, name);
+    parse_open((const char *)buffer, name_to_open);
 
-    IecPartition *partition = drive->vfs->GetPartition(name.file.partition);
+    IecPartition *partition = drive->vfs->GetPartition(name_to_open.file.partition);
     recordSize = 0;
 
-    switch(name.dir_opt.stream) {
+    switch(name_to_open.dir_opt.stream) {
     case e_stream_buffer:
         return setup_buffer_access();
     case e_stream_dir:
-        return setup_directory_read(name);
+        return setup_directory_read();
     case e_stream_partitions:
         return -1;
     case e_stream_file:
-        return setup_file_access(name);
+        return setup_file_access();
     default: // file
         printf("Unknown stream mode\n");
     }

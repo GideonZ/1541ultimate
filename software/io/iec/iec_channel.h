@@ -221,12 +221,12 @@ class IecChannel {
     int prefetch_max;
     int last_byte;
 
+    open_t name_to_open;
     File *f;
     Directory *dir;
     fileaccess_t filemode;
     uint32_t dir_free;
-//    IecPartition *dirPartition;
-//    mstring dirpattern;
+
     uint32_t recordOffset;
     uint8_t recordSize;
     bool recordDirty;
@@ -237,8 +237,8 @@ class IecChannel {
     char fs_filename[64];
 
 private:
-    int setup_directory_read(open_t& name);
-    int setup_file_access(open_t& name);
+    int setup_directory_read();
+    int setup_file_access();
     int setup_buffer_access(void);
     int init_iec_transfer(void);
 

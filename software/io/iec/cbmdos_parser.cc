@@ -111,13 +111,13 @@ int parse_dir_option(const char *buf, dir_options_t &opt)
     switch(buf[0]) {
     //case 'S': opt.timefmt = e_stamp_short; break;
     case 'L': opt.timefmt = e_stamp_long;  break;
-    case 'P': opt.filetypes |= 0x01; break;
-    case 'S': opt.filetypes |= 0x02; break;
-    case 'U': opt.filetypes |= 0x04; break;
-    case 'R': opt.filetypes |= 0x08; break;
-    case 'B': opt.filetypes |= 0x10; break;
-    case 'D': opt.filetypes |= 0x10; break;
-    case 'H': opt.filetypes |= 0x20; break;
+    case 'P': opt.filetypes |= 0x02; break;
+    case 'S': opt.filetypes |= 0x04; break;
+    case 'U': opt.filetypes |= 0x08; break;
+    case 'R': opt.filetypes |= 0x10; break;
+    case 'B': opt.filetypes |= 0x20; break;
+    case 'D': opt.filetypes |= 0x20; break;
+    case 'H': opt.filetypes |= 0x40; break;
     case 'N': opt.timefmt = e_stamp_none; break;
     case '<':
     case '>':
