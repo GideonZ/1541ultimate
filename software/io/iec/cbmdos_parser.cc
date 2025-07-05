@@ -53,7 +53,7 @@
 
 #include "cbmdos_parser.h"
 
-int IecParser :: parse_full_path(const char *buf, filename_t& name, bool *replace = NULL, bool path_only = false)
+int parse_full_path(const char *buf, filename_t& name, bool *replace = NULL, bool path_only = false)
 {
     //  [[@][n][path]:]pattern
     // $[=(T|P)][[n][path][:pattern[=commalist(type|option)]]]
@@ -102,15 +102,15 @@ int IecParser :: parse_full_path(const char *buf, filename_t& name, bool *replac
     return 0;
 }
 
-int IecParser :: parse_dir_option(const char *buf, dir_options_t &opt)
+int parse_dir_option(const char *buf, dir_options_t &opt)
 {
     int M, d, y, h, h12, m, n;
     char ampm;
     uint32_t datetime;
 
     switch(buf[0]) {
-    //case 'S': opt.timefmt = e_short; break;
-    case 'L': opt.timefmt = e_long;  break;
+    //case 'S': opt.timefmt = e_stamp_short; break;
+    case 'L': opt.timefmt = e_stamp_long;  break;
     case 'P': opt.filetypes |= 0x01; break;
     case 'S': opt.filetypes |= 0x02; break;
     case 'U': opt.filetypes |= 0x04; break;
@@ -118,7 +118,7 @@ int IecParser :: parse_dir_option(const char *buf, dir_options_t &opt)
     case 'B': opt.filetypes |= 0x10; break;
     case 'D': opt.filetypes |= 0x10; break;
     case 'H': opt.filetypes |= 0x20; break;
-    case 'N': opt.timefmt = e_none; break;
+    case 'N': opt.timefmt = e_stamp_none; break;
     case '<':
     case '>':
         n = sscanf(buf+1, "%d/%d/%d %d:%d %c", &M, &d, &y, &h12, &m, &ampm);
@@ -140,7 +140,7 @@ int IecParser :: parse_dir_option(const char *buf, dir_options_t &opt)
     return 0;
 }
 
-int IecParser::parse_open(const char *buf, open_t& fn)
+int parse_open(const char *buf, open_t& fn)
 {
     fn.dir_opt = c_dir_options_init;
     fn.replace = false;
@@ -148,13 +148,17 @@ int IecParser::parse_open(const char *buf, open_t& fn)
     fn.filetype = e_any;
 
     int err = 0;
-    if (buf[0] == '$') {
-        fn.dir_opt.stream = e_dir_files;
+    if (buf[0] == '#') {
+        fn.dir_opt.stream = e_stream_buffer;
+        // Call parse to initialize the rest
+        parse_full_path(buf+1, fn.file, NULL, true); 
+    } else if (buf[0] == '$') {
+        fn.dir_opt.stream = e_stream_dir;
         if (buf[1] == '=') {
             if (buf[2] == 'P') {
-                fn.dir_opt.stream = e_dir_partitions;
+                fn.dir_opt.stream = e_stream_partitions;
             } else if(buf[2] == 'T') {
-                fn.dir_opt.timefmt = e_short;
+                fn.dir_opt.timefmt = e_stamp_short;
             }
             parse_full_path(buf+3, fn.file, &fn.replace, true);
         } else {
@@ -167,7 +171,11 @@ int IecParser::parse_open(const char *buf, open_t& fn)
         return err;
     }
 
-    if (fn.dir_opt.stream != e_file) {
+    if (fn.dir_opt.stream == e_stream_buffer) {
+        return 0;
+    }
+
+    if (fn.dir_opt.stream != e_stream_file) {
         // Parse options / filter
         const char *rem;
         if (fn.file.filename.split('=', &rem)) {

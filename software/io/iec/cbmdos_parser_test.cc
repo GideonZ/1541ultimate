@@ -20,9 +20,10 @@ typedef struct {
 } open_result_t;
 
 const open_result_t c_open_result_init = { 0, "", "", false, false, e_any, e_not_set,
-                                            e_file, e_none, 0x0, 0x0, 0x00 };
+                                            e_stream_file, e_stamp_none, 0x0, 0x0, 0x00 };
 
-IecCommandExecuter exec;
+#include "cbmdos_stubs.cc"
+IecCommandExecuterStubs exec;
 IecParser parser(&exec);
 
 void print_file(filename_t& file)
@@ -39,12 +40,14 @@ void print_open(open_t& o)
 {
     char buf[24];
     print_file(o.file);
+
+    const char *strm[] = { "File", "Buffer", "Directory of Files", "Directory of Partitions" };
     printf("  Replace: %s\n", o.replace ? "true" : "false");
     printf("  FileType: %d\n", (int)o.filetype);
     printf("  Access: %d\n", (int)o.access);
-    printf("  Dir: %s\n", o.dir_opt.stream == e_file ? "No" :
-                        (o.dir_opt.stream == e_dir_files ? "Files" : "Partitions") );
-    if (o.dir_opt.stream != e_file) {
+    printf("  Stream: %s\n", strm[(int)o.dir_opt.stream]);
+
+    if ((o.dir_opt.stream == e_stream_dir) || (o.dir_opt.stream == e_stream_partitions)) {
         const char *fmt[] = { "None", "Short", "Long "};
         printf("  Stamp Format: %s\n", fmt[(int)o.dir_opt.timefmt] );
         printf("  File Types: %02x\n", o.dir_opt.filetypes);
@@ -59,7 +62,7 @@ void print_open(open_t& o)
 
 void d_parse_open(const char *buf, open_t& o, int expected_retval = 0, open_result_t result = c_open_result_init)
 {
-    int err = parser.parse_open(buf, o);
+    int err = parse_open(buf, o);
 
     bool ok = true;
     ok &= (err == expected_retval);
@@ -96,53 +99,53 @@ int main(int argc, const char *argv[])
     open_t o;
     d_parse_open("JUSTFILE", o,     0,
                 { -1, "", "JUSTFILE", false, false, e_any, e_not_set,
-                  e_file, e_none, 0x0, 0x0, 0x00} );
+                  e_stream_file, e_stamp_none, 0x0, 0x0, 0x00} );
 
     d_parse_open("JUSTFILE,U", o,   0,
                 { -1, "", "JUSTFILE", false, false, e_usr, e_not_set,
-                  e_file, e_none, 0x0, 0x0, 0x00} );
+                  e_stream_file, e_stamp_none, 0x0, 0x0, 0x00} );
 
     d_parse_open("JUSTFILE,USR", o, ERR_ILLEGAL_CHARS );
 
     d_parse_open("JUSTFILE,U,A", o, 0,
                 { -1, "", "JUSTFILE", false, false, e_usr, e_append,
-                  e_file, e_none, 0x0, 0x0, 0x00 } );
+                  e_stream_file, e_stamp_none, 0x0, 0x0, 0x00 } );
 
     d_parse_open("JUSTFILE,H", o,  ERR_SYNTAX );
 
     d_parse_open("0:FILEON0", o,    0,
                 {  0, "", "FILEON0",  false, false, e_any, e_not_set,
-                  e_file, e_none, 0x0, 0x0, 0x00 } );
+                  e_stream_file, e_stamp_none, 0x0, 0x0, 0x00 } );
 
     d_parse_open("1:FILE/ON1", o,   0,
                 {  1, "", "FILE/ON1", false, false, e_any, e_not_set,
-                  e_file, e_none, 0x0, 0x0, 0x00 } );
+                  e_stream_file, e_stamp_none, 0x0, 0x0, 0x00 } );
 
     d_parse_open("-2:FILE ON NEGATIVE", o, ERR_SYNTAX );
 
     d_parse_open("56:FILE ON 56", o, 0,
                 { 56, "", "FILE ON 56", false, false, e_any, e_not_set,
-                  e_file, e_none, 0x0, 0x0, 0x00 } );
+                  e_stream_file, e_stamp_none, 0x0, 0x0, 0x00 } );
 
     d_parse_open("@:REPLACE", o,     0,
                 { -1, "", "REPLACE",  false, true, e_any, e_not_set,
-                  e_file, e_none, 0x0, 0x0, 0x00 } );
+                  e_stream_file, e_stamp_none, 0x0, 0x0, 0x00 } );
 
     d_parse_open("@1:REPLACE ON 1", o, 0,
                 {  1, "", "REPLACE ON 1", false, true, e_any, e_not_set,
-                  e_file, e_none, 0x0, 0x0, 0x00 } );
+                  e_stream_file, e_stamp_none, 0x0, 0x0, 0x00 } );
 
     d_parse_open("@1/HELLO:REPLACE ON 1 IN PATH HELLO", o, 0,
                 { 1, "/HELLO", "REPLACE ON 1 IN PATH HELLO", false, true, e_any, e_not_set,
-                  e_file, e_none, 0x0, 0x0, 0x00 });
+                  e_stream_file, e_stamp_none, 0x0, 0x0, 0x00 });
 
     d_parse_open("@78/HELLO/DEEPER:EVERYTHING,U,A", o, 0,
                 { 78, "/HELLO/DEEPER", "EVERYTHING", false, true, e_usr, e_append,
-                  e_file, e_none, 0x0, 0x0, 0x00 });
+                  e_stream_file, e_stamp_none, 0x0, 0x0, 0x00 });
 
     d_parse_open("//FROMROOT/DEEPER:BLAH,S,R", o, 0,
                 { -1, "//FROMROOT/DEEPER", "BLAH", false, false, e_seq, e_read,
-                  e_file, e_none, 0x0, 0x0, 0x00});
+                  e_stream_file, e_stamp_none, 0x0, 0x0, 0x00});
 
     d_parse_open("@345:", o, ERR_ILLEGAL_NAME);
 
@@ -152,43 +155,43 @@ int main(int argc, const char *argv[])
 
     d_parse_open("@1:FOO,S", o, 0,
                 { 1, "", "FOO", false, true, e_seq, e_not_set,
-                  e_file, e_none, 0x0, 0x0, 0x00});
+                  e_stream_file, e_stamp_none, 0x0, 0x0, 0x00});
 
     d_parse_open("@1/HELLO?:DIR WITH WILDCARD", o, 0,
                 { 1, "/HELLO?", "DIR WITH WILDCARD", false, true, e_any, e_not_set,
-                  e_file, e_none, 0x0, 0x0, 0x00});
+                  e_stream_file, e_stamp_none, 0x0, 0x0, 0x00});
 
     d_parse_open("@1/HELLO:FILE WITH WILD*", o, 0,
                 { 1, "/HELLO", "FILE WITH WILD*", true, true, e_any, e_not_set,
-                  e_file, e_none, 0x0, 0x0, 0x00 });
+                  e_stream_file, e_stamp_none, 0x0, 0x0, 0x00 });
 
     d_parse_open("$", o, 0,
                 {-1, "", "", false, false, e_any, e_not_set,
-                  e_dir_files, e_none, 0x0, 0x0, 0x00 });
+                  e_stream_dir, e_stamp_none, 0x0, 0x0, 0x00 });
 
     d_parse_open("$=T", o, 0,
                 {-1, "", "", false, false, e_any, e_not_set,
-                  e_dir_files, e_short, 0x0, 0x0, 0x00 });
+                  e_stream_dir, e_stamp_short, 0x0, 0x0, 0x00 });
 
     d_parse_open("$=P", o, 0,
                 {-1, "", "", false, false, e_any, e_not_set,
-                  e_dir_partitions, e_none, 0x0, 0x0, 0x00 });
+                  e_stream_partitions, e_stamp_none, 0x0, 0x0, 0x00 });
 
     d_parse_open("$=T2", o, 0,
                 { 2, "", "", false, false, e_any, e_not_set,
-                  e_dir_files, e_short, 0x0, 0x0, 0x00 });
+                  e_stream_dir, e_stamp_short, 0x0, 0x0, 0x00 });
 
     d_parse_open("$=T2:*=P", o, 0,
                 { 2, "", "*", true, false, e_any, e_not_set,
-                  e_dir_files, e_short, 0x0, 0x0, 0x01 });
+                  e_stream_dir, e_stamp_short, 0x0, 0x0, 0x01 });
 
     d_parse_open("$=T2:*=P,L", o, 0,
                 { 2, "", "*", true, false, e_any, e_not_set,
-                  e_dir_files, e_long, 0x0, 0x0, 0x01 });
+                  e_stream_dir, e_stamp_long, 0x0, 0x0, 0x01 });
 
     d_parse_open("$=T2:*=P,L,>12/21/18 04:15 PM", o, 0,
                 { 2, "", "*", true, false, e_any, e_not_set,
-                  e_dir_files, e_long, 0x4D9581E0, 0x0, 0x01 });
+                  e_stream_dir, e_stamp_long, 0x4D9581E0, 0x0, 0x01 });
                   // 2018=>38 => 0100110
                   // 12       => 1100
                   // 21       => 10101
@@ -199,16 +202,37 @@ int main(int argc, const char *argv[])
 
     d_parse_open("$=T:*=L,<12/21/18 04:15 PM", o, 0, 
                 { -1, "", "*", true, false, e_any, e_not_set,
-                  e_dir_files, e_long, 0x0, 0x4D9581E0, 0x00 });
+                  e_stream_dir, e_stamp_long, 0x0, 0x4D9581E0, 0x00 });
 
     d_parse_open("$=T4:*=S,N,>12/21/18 12:01 AM,<12/31/18 12:00 PM", o, 0, 
                 { 4, "", "*", true, false, e_any, e_not_set,
-                  e_dir_files, e_none, 0x4d950020, 0x4d9f6000, 0x02 });
+                  e_stream_dir, e_stamp_none, 0x4d950020, 0x4d9f6000, 0x02 });
 
     d_parse_open("$3", o, 0,
                 { 3, "", "", false, false, e_any, e_not_set,
-                  e_dir_files, e_none, 0x0, 0x00, 0x00 });
+                  e_stream_dir, e_stamp_none, 0x0, 0x00, 0x00 });
 
+    d_parse_open("#", o, 0,
+                { -1, "", "", false, false, e_any, e_not_set,
+                  e_stream_buffer, e_stamp_none, 0x0, 0x00, 0x00 });
+
+    d_parse_open("#2", o, 0,
+                { 2, "", "", false, false, e_any, e_not_set,
+                  e_stream_buffer, e_stamp_none, 0x0, 0x00, 0x00 });
+
+    d_parse_open("$=P:S*", o, 0,
+                { -1, "", "S*", true, false, e_any, e_not_set,
+                  e_stream_partitions, e_stamp_none, 0x0, 0x00, 0x00 });
+
+    d_parse_open("$=P:?A*", o, 0,
+                { -1, "", "?A*", true, false, e_any, e_not_set,
+                  e_stream_partitions, e_stamp_none, 0x0, 0x00, 0x00 });
+
+    d_parse_open("$=P69", o, 0,
+                { 69, "", "", false, false, e_any, e_not_set,
+                  e_stream_partitions, e_stamp_none, 0x0, 0x00, 0x00 });
+
+    
     parser.execute_command((const uint8_t *)"C:S=/C64 OS/:S", 14);
     parser.execute_command((const uint8_t *)"B-R 2 0 18 1\r", 13);
     parser.execute_command((const uint8_t *)"B-W 2 0 18 2\r", 13);
