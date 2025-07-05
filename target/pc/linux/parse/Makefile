@@ -21,6 +21,7 @@ SIZE	  = $(CROSS)size
 
 SRCS_C   =	dump_hex.c
 SRCS_CC	 =  mystring.cc \
+			pattern.cc \
 			cbmdos_parser.cc \
 			cbmdos_parser_test.cc
 

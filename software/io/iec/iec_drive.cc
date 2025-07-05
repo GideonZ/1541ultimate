@@ -329,7 +329,7 @@ void IecDrive :: set_iec_dir(IecSlave *sl, void *data)
 // called from critical section
 const char *IecDrive :: get_partition_dir(int p)
 {
-    return vfs->GetPartitionPath(p);
+    return vfs->GetPartitionPath(p, false);
 }
                 
 void IecDrive :: set_error(int code, int track, int sector)

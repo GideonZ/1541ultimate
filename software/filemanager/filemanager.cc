@@ -86,6 +86,14 @@ bool FileManager::is_path_valid(Path *p)
     return (res == FR_OK);
 }
 
+bool FileManager::is_path_valid(const char *p)
+{
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(p);
+    FRESULT res = find_pathentry(pathInfo, true);
+    return (res == FR_OK);
+}
+
 void FileManager::get_display_string(Path *p, const char *filename, char *buffer, int width)
 {
     CachedTreeNode *n = root;
@@ -103,6 +111,24 @@ void FileManager::get_display_string(Path *p, const char *filename, char *buffer
         return;
     }
     n->get_display_string(buffer, width);
+}
+
+FRESULT FileManager::open_directory(const char *path, Directory **dir)
+{
+    *dir = NULL;
+    lock();
+
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(path);
+    FRESULT res = find_pathentry(pathInfo, true);
+    if (res != FR_OK) {
+        unlock();
+        return res;
+    }
+    FileSystem *fs = pathInfo.getLastInfo()->fs;
+    res = fs->dir_open(pathInfo.getPathFromLastFS(), dir);
+    unlock();
+    return res;
 }
 
 FRESULT FileManager::get_directory(Path *p, IndexedList<FileInfo *> &target, const char *matchPattern)
@@ -805,7 +831,7 @@ FRESULT FileManager :: load_file(const char *path, const char *filename, uint8_t
     return fres;
 }
 
-FRESULT FileManager :: save_file(bool overwrite, const char *path, const char *filename, uint8_t *mem, uint32_t len, uint32_t *transferred)
+FRESULT FileManager :: save_file(bool overwrite, const char *path, const char *filename, const uint8_t *mem, uint32_t len, uint32_t *transferred)
 {
     File *file = 0;
     uint8_t flag = FA_WRITE | (overwrite ? FA_CREATE_ALWAYS : FA_CREATE_NEW);

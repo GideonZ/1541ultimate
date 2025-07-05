@@ -396,8 +396,8 @@ void petscii_to_fat(const char *pet, char *fat, int maxlen)
     while(*pet) {
         char p = *(pet++);
         if ((p < 32) || (p >= 96) || (p == ':') || (p == '/') ||
-                (p == '\\') || (p == '*') || (p == '\x22') ||
-                (p == '<') || (p == '>') || (p == '?')) {  // '|' > 96 ;)
+                (p == '\\') || (p == '\x22') || (p == ',') ||
+                (p == '<') || (p == '>') ) {  // '|' > 96 ;)
 
             if ((i + 4) >= maxlen) {
                 break;

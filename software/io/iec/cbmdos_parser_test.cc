@@ -3,6 +3,7 @@
 // from the side of the commodore in a CMDHD / SD2IEC fashion
 
 #include "cbmdos_parser.h"
+#include "pattern.h"
 
 typedef struct {
     int partition;

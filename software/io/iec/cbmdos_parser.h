@@ -20,6 +20,7 @@ typedef enum {
     e_seq,
     e_usr,
     e_rel,
+    e_folder,
 } filetype_t;
 
 typedef struct {

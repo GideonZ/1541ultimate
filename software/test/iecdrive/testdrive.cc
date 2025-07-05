@@ -83,46 +83,56 @@ int main(int argc, const char **argv)
     init_ram_disk();
     File *f;
     FileManager *fm = FileManager :: getFileManager();
-    FRESULT fres = fm->fopen("/Temp/h.prg", FA_CREATE_NEW | FA_WRITE, &f);
+
+    const uint8_t *msg = (const uint8_t *)"This is really a silly test.";
+    FRESULT fres;
+    fres = fm->save_file(false, "/Temp", "a.prg", msg, 28, &tr);
     if (fres == FR_OK) {
-        f->write("This is really a silly test.", 28, &tr);
         printf("Written %u bytes to the file.\n", tr);
-        fm->fclose(f);
+    } else {
+        printf("%s\n", FileSystem::get_error_string(fres));
     }
+    fm->save_file(false, "/Temp", "bb.prg", msg, 28, &tr);
+    fm->save_file(false, "/Temp", "ccc.prg", msg, 28, &tr);
+    fm->save_file(false, "/Temp", "dddd.prg", msg, 28, &tr);
+    fm->save_file(false, "/Temp", "eeeee.prg", msg, 28, &tr);
+    fm->save_file(false, "/Temp", "ffffff.prg", msg, 28, &tr);
+    fm->save_file(false, "/Temp", "ggggggg.prg", msg, 28, &tr);
+    fm->save_file(false, "/Temp", "hhhhhhhh.prg", msg, 28, &tr);
+    fm->save_file(false, "/Temp", "iiiiiiiii.prg", msg, 28, &tr);
+    fm->save_file(false, "/Temp", "jjjjjjjjjj.prg", msg, 28, &tr);
+    fm->save_file(false, "/Temp", "kkkkkkkkkkk.prg", msg, 28, &tr);
+    fm->save_file(false, "/Temp", "llllllllllll.prg", msg, 28, &tr);
+    fm->save_file(false, "/Temp", "mmmmmmmmmmmmm.prg", msg, 28, &tr);
+    fm->save_file(false, "/Temp", "nnnnnnnnnnnnnn.prg", msg, 28, &tr);
+    fm->save_file(false, "/Temp", "ooooooooooooooo.prg", msg, 28, &tr);
+    fm->save_file(false, "/Temp", "pppppppppppppppp.prg", msg, 28, &tr);
+    fm->save_file(false, "/Temp", "qqqqqqqq012345678.prg", msg, 28, &tr);
+    fm->save_file(false, "/Temp", "abc{2f}def.usr", msg, 28, &tr);
 
     get_status(dr);
-    get_status2(dr);
-    get_status2(dr);
-    send_command(dr, "CD:/Temp");
+    get_status(dr);
+    get_status(dr);
+    send_command(dr, "CD/TEMP");
 
     dr->push_ctrl(SLAVE_CMD_ATN);
     dr->push_ctrl(0xF0); // open channel 0!
-    dr->push_data('H'); // Interesting filename!
+    dr->push_data('$'); // Interesting filename!
     dr->push_ctrl(SLAVE_CMD_EOI);
     dr->talk();
 
-    ret = dr->prefetch_more(256, data, data_size);
-    printf("Ret: %d Count = %d\n", ret, data_size);
-    dump_hex_relative(data, data_size);
-    dr->pop_more(data_size);
+    do {
+        ret = dr->prefetch_more(256, data, data_size);
+        printf("Ret: %d Count = %d\n", ret, data_size);
+        dump_hex_relative(data, data_size);
+        dr->pop_more(data_size);
+    } while(ret == 0);
 
-    ret = dr->prefetch_more(256, data, data_size);
-    printf("Ret: %d Count = %d\n", ret, data_size);
-    dump_hex_relative(data, data_size);
-    dr->pop_more(data_size);
-
-    ret = dr->prefetch_more(256, data, data_size);
-    printf("Ret: %d Count = %d\n", ret, data_size);
-    dump_hex_relative(data, data_size);
-    dr->pop_more(data_size);
-
-    ret = dr->prefetch_more(256, data, data_size);
-    printf("Ret: %d Count = %d\n", ret, data_size);
-    dump_hex_relative(data, data_size);
-    dr->pop_more(data_size);
-
+    printf("Klaar!\n");
     dr->push_ctrl(SLAVE_CMD_ATN);
+    printf("ATN!\n");
     dr->push_ctrl(0xE0); // close
+    printf("Close!\n");
 
     delete dr;
     delete ui;

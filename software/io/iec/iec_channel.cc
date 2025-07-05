@@ -1,26 +1,18 @@
 #include "iec_channel.h"
 #include "dump_hex.h"
 
-const char *modeNames[] = { "", "Read", "Write", "Replace", "Append", "Relative" };
-
 IecChannel::IecChannel(IecDrive *dr, int ch)
 {
     fm = FileManager::getFileManager();
     drive = dr;
     channel = ch;
     f = NULL;
+    dir = NULL;
     pointer = 0;
     state = e_idle;
-    dir_index = 0;
-    dir_last = 0;
     last_byte = 0;
     prefetch = 0;
     prefetch_max = 0;
-    dirPartition = NULL;
-    name.name = NULL;
-    name.drive = 0;
-    name.extension = ".prg";
-    name.mode = e_undefined;
     partition = NULL;
     flags = 0;
     recordSize = 0;
@@ -43,14 +35,10 @@ void IecChannel::reset(void)
     pingpong = true;
     swap_buffers();
     pointer = 0;
-    dir_index = 0;
-    dir_last = 0;
     last_byte = 0;
     prefetch = 0;
     prefetch_max = 0;
-    dirPartition = NULL;
     partition = NULL;
-    name.mode = e_undefined;
 }
 
 void IecChannel::reset_prefetch(void)
@@ -96,9 +84,6 @@ t_channel_retval IecChannel::prefetch_data(uint8_t& data)
     }
     return IEC_BUFFER_END; // prefetch == prefetch_max, buffer needs refresh
 }
-
-
-
 
 t_channel_retval IecChannel::prefetch_more(int max_fetch, uint8_t*& datapointer, int &fetched)
 {
@@ -149,7 +134,7 @@ t_channel_retval IecChannel::pop_more(int pop_size)
         }
         pointer += pop_size;
         if (pointer == 32) {
-            while (read_dir_entry())
+            while (read_dir_entry() > 0)
                 ;
             return IEC_OK;
         }
@@ -224,77 +209,6 @@ t_channel_retval IecChannel::pop_data(void)
     return IEC_OK;
 }
 
-int IecChannel::read_dir_entry(void)
-{
-    if (dir_index >= dir_last) {
-        if (dir_free > 65535) {
-            buffer[2] = 0xFF;
-            buffer[3] = 0xFF;
-        } else {
-            buffer[2] = (uint8_t) (dir_free & 0xFF);
-            buffer[3] = (uint8_t) (dir_free >> 8);
-        }
-        memcpy(&buffer[4], "BLOCKS FREE.             \0\0\0", 28);
-        last_byte = 31;
-        pointer = 0;
-        prefetch_max = 31;
-        prefetch = 0;
-        return 0;
-    }
-    const char *iecName = dirPartition->GetIecName(dir_index);
-
-    // printf("Dir index = %d %s\n", dir_index, iecName);
-
-    if (!pattern_match(dirpattern.c_str(), iecName, false)) {
-        dir_index++;
-        return 1;
-    }
-    FileInfo *info = dirPartition->GetSystemFile(dir_index);
-
-    //printf("info = %p\n", info);
-    uint32_t size = 0;
-    uint32_t size2 = 0;
-    if (info) {
-        size = info->size;
-    }
-    size = (size + 253) / 254;
-    if (size > 9999)
-        size = 9999;
-    size2 = size;
-    int chars = 1;
-    while (size2 >= 10) {
-        size2 /= 10;
-        chars++;
-    }
-    int spaces = 3 - chars;
-    buffer[2] = size & 255;
-    buffer[3] = size >> 8;
-    int pos = 4;
-    while ((spaces--) >= 0)
-        buffer[pos++] = 32;
-    buffer[pos++] = 34;
-    const char *name = iecName;
-    const char *src = name + 3;
-    while (*src)
-        buffer[pos++] = *(src++);
-    buffer[pos++] = 34;
-    while (pos < 32)
-        buffer[pos++] = 32;
-
-    if (info->is_directory()) {
-        memcpy(&buffer[27 - chars], "DIR", 3);
-    } else {
-        memcpy(&buffer[27 - chars], name, 3);
-    }
-
-    buffer[31] = 0;
-    pointer = 0;
-    prefetch_max = 32;
-    prefetch = 0;
-    dir_index++;
-    return 0;
-}
-
 void IecChannel::swap_buffers(void)
 {
     pingpong = !pingpong;
@@ -330,6 +244,112 @@ int IecChannel::read_block(void)
     prefetch = 0;
     prefetch_max = 512;
     return 0;
+}
+
+t_channel_retval IecChannel::push_data(uint8_t b)
+{
+    uint32_t bytes;
+
+    switch (state) {
+    case e_filename:
+        if (pointer < 64)
+            buffer[pointer++] = b;
+        break;
+
+    case e_record:
+        if (pointer == recordSize) {
+            // issue error 50
+            drive->get_command_channel()->set_error(ERR_OVERFLOW_IN_RECORD, 0, 0);
+            return IEC_BYTE_LOST;
+        } else {
+            buffer[pointer++] = b;
+            recordDirty = true;
+        }
+        break;
+        // the actual writing does not happen here, because it is initiated by EOI
+
+    case e_file:
+        buffer[pointer++] = b;
+        if (pointer == 512) {
+            FRESULT res = FR_DENIED;
+            if (f) {
+                res = f->write(buffer, 512, &bytes);
+            }
+            if (res != FR_OK) {
+                fm->fclose(f);
+                f = NULL;
+                state = e_error;
+                return IEC_WRITE_ERROR;
+            }
+            pointer = 0;
+        }
+        break;
+
+    case e_buffer:
+        if (pointer < 256) {
+            buffer[pointer++] = b;
+        }
+        break;
+
+    default:
+        return IEC_BYTE_LOST;
+    }
+    return IEC_OK;
+}
+
+t_channel_retval IecChannel::push_command(uint8_t b)
+{
+    switch (b) {
+    case 0xF0: // open
+        close_file();
+        state = e_filename;
+        pointer = 0;
+        break;
+    case 0xE0: // close
+        //printf("close %d %d\n", pointer, name.mode);
+        if ((filemode == e_write) || (filemode == e_append)) {
+            if (f) {
+                if (pointer > 0) {
+                    uint32_t dummy;
+                    FRESULT res = f->write(buffer, pointer, &dummy);
+                    if (res != FR_OK) {
+                        state = e_error;
+                        return IEC_WRITE_ERROR;
+                    }
+                }
+                close_file();
+            } else {
+                state = e_error;
+                return IEC_WRITE_ERROR;
+            }
+        } else if (state == e_record) {
+            state = e_idle;
+            t_channel_retval r = write_record();
+            close_file();
+            return r;
+        } else {
+            close_file();
+        }
+        state = e_idle;
+        break;
+    case 0x60:
+        reset_prefetch();
+        break;
+    case 0x00: // end of data
+        if (state == e_filename) {
+            open_file();
+        } else if (state == e_record) {
+            t_channel_retval r = write_record(); // sets error if necessary. Advances to next record if OK
+            if (r == IEC_OK) {
+                r = read_record(0);
+            }
+            return r;
+        }
+        break;
+    default:
+        printf("Error on channel %d. Unknown command: %b\n", channel, b);
+    }
+    return IEC_OK;
 }
 
 t_channel_retval IecChannel::read_record(int offset)
@@ -409,263 +429,82 @@ t_channel_retval IecChannel::write_record(void)
     return IEC_OK;
 }
 
-t_channel_retval IecChannel::push_data(uint8_t b)
+
+int IecChannel::read_dir_entry(void)
 {
-    uint32_t bytes;
-
-    switch (state) {
-    case e_filename:
-        if (pointer < 64)
-            buffer[pointer++] = b;
-        break;
-
-    case e_record:
-        if (pointer == recordSize) {
-            // issue error 50
-            drive->get_command_channel()->set_error(ERR_OVERFLOW_IN_RECORD, 0, 0);
-            return IEC_BYTE_LOST;
-        } else {
-            buffer[pointer++] = b;
-            recordDirty = true;
-        }
-        break;
-        // the actual writing does not happen here, because it is initiated by EOI
-
-    case e_file:
-        buffer[pointer++] = b;
-        if (pointer == 512) {
-            FRESULT res = FR_DENIED;
-            if (f) {
-                res = f->write(buffer, 512, &bytes);
-            }
-            if (res != FR_OK) {
-                fm->fclose(f);
-                f = NULL;
-                state = e_error;
-                return IEC_WRITE_ERROR;
-            }
-            pointer = 0;
-        }
-        break;
-
-    case e_buffer:
-        if (pointer < 256) {
-            buffer[pointer++] = b;
-        }
-        break;
-
-    default:
-        return IEC_BYTE_LOST;
+    FileInfo info(40);
+    if (!dir) {
+        return -1;
     }
-    return IEC_OK;
-}
 
-t_channel_retval IecChannel::push_command(uint8_t b)
-{
-    switch (b) {
-    case 0xF0: // open
-        close_file();
-        state = e_filename;
+    FRESULT fres = dir->get_entry(info);
+    if (fres != FR_OK) {
+        delete dir;
+        dir = NULL;
+
+        if (dir_free > 65535) {
+            buffer[2] = 0xFF;
+            buffer[3] = 0xFF;
+        } else {
+            buffer[2] = (uint8_t) (dir_free & 0xFF);
+            buffer[3] = (uint8_t) (dir_free >> 8);
+        }
+        memcpy(&buffer[4], "BLOCKS FREE.             \0\0\0", 28);
+        last_byte = 31;
         pointer = 0;
-        break;
-    case 0xE0: // close
-        //printf("close %d %d\n", pointer, name.mode);
-        if ((name.mode == e_write) || (name.mode == e_append) || (name.mode == e_replace)) {
-            if (f) {
-                if (pointer > 0) {
-                    uint32_t dummy;
-                    FRESULT res = f->write(buffer, pointer, &dummy);
-                    if (res != FR_OK) {
-                        state = e_error;
-                        return IEC_WRITE_ERROR;
-                    }
-                }
-                close_file();
-            } else {
-                state = e_error;
-                return IEC_WRITE_ERROR;
-            }
-        } else if (state == e_record) {
-            state = e_idle;
-            t_channel_retval r = write_record();
-            close_file();
-            return r;
-        } else {
-            close_file();
-        }
-        state = e_idle;
-        break;
-    case 0x60:
-        reset_prefetch();
-        break;
-    case 0x00: // end of data
-        if (state == e_filename) {
-            open_file();
-        } else if (state == e_record) {
-            t_channel_retval r = write_record(); // sets error if necessary. Advances to next record if OK
-            if (r == IEC_OK) {
-                r = read_record(0);
-            }
-            return r;
-        }
-        break;
-    default:
-        printf("Error on channel %d. Unknown command: %b\n", channel, b);
+        prefetch_max = 31;
+        prefetch = 0;
+        return 0;
     }
-    return IEC_OK;
+        
+    // convert FAT name to CBM name
+    char cbm_name[24];
+    filetype_t ftype = e_any;
+    IecPartition::CreateIecName(&info, cbm_name, ftype);
+
+    // ToDo pattern matching
+    // if (!pattern_match(dirpattern.c_str(), iecName, false)) {
+    //     dir_index++;
+    //     return 1;
+    // }
+
+    uint32_t size = 0;
+    uint32_t size2 = 0;
+    size = info.size;
+    size = (size + 253) / 254;
+    if (size > 9999)
+        size = 9999;
+    size2 = size;
+    int chars = 1;
+    while (size2 >= 10) {
+        size2 /= 10;
+        chars++;
+    }
+    int spaces = 3 - chars;
+    buffer[2] = size & 255;
+    buffer[3] = size >> 8;
+    int pos = 4;
+    while ((spaces--) >= 0)
+        buffer[pos++] = 32;
+    buffer[pos++] = 34;
+    const char *src = cbm_name;
+    while (*src)
+        buffer[pos++] = *(src++);
+    buffer[pos++] = 34;
+    while (pos < 32)
+        buffer[pos++] = 32;
+
+    const char *types[] = { "ANY", "PRG", "SEQ", "USR", "REL", "DIR" };
+    memcpy(&buffer[27 - chars], types[(int)ftype], 3);
+
+    buffer[31] = 0;
+    pointer = 0;
+    prefetch_max = 32;
+    prefetch = 0;
+    return 0;
 }
 
-void IecChannel::dump_command(command_t& cmd)
-{
-#if IECDEBUG
-    printf("Command = '%s' on %d.\n", cmd.cmd, cmd.digits);
-    printf("Remainder: '%s'\n", cmd.remaining);
-#endif
-}
-
-void IecChannel::dump_name(name_t& name, const char *id)
-{
-#if IECDEBUG
-    const char *n = name.name ? name.name : "(null)";
-    printf("%s: [%d:] '%s%s'\n  Mode: %s\n  Dir: %s\n  Explicit Extension: %s\n  Record size: %d\n", id, name.drive, n,
-            name.extension, modeNames[name.mode], name.directory ? "Yes" : "No",
-            name.explicitExt ? "Yes" : "No", name.recordSize);
-#endif
-}
-
-bool IecChannel::hasIllegalChars(const char *name)
-{
-    int len = strlen(name);
-    for (int i = 0; i < len; i++) {
-        switch (name[i]) {
-        case '/':
-            return true;
-        case '$':
-            return true;
-        case '?':
-            return true;
-        case '*':
-            return true;
-        case ',':
-            return true;
-        default:
-            break;
-        }
-    }
-    return false;
-}
-
-bool IecChannel::parse_filename(int channel, char *buffer, name_t *name, int default_drive, bool doFlags)
-{
-#if IECDEBUG
-    printf("Parsing filename: '%s' (Default drive: %d, Do flags: %d)\n", buffer, default_drive, doFlags);
-#endif
-
-    name->drive = default_drive;
-    name->extension = 0;
-    name->explicitExt = false;
-    name->buffer = false;
-    name->mode = (channel == 0) ? e_read : ((channel == 1) ? e_write : e_read);
-    name->name = buffer;
-    name->directory = false;
-    name->recordSize = 0;
-
-    char *s = buffer;
-    if (isEmptyString(s)) {
-        return false;
-    }
-
-    // Handle the case of the $ before the :
-    if (*s == '$') {
-        name->directory = true;
-        s++;
-    } else if (*s == '#') {
-        name->buffer = true;
-        s++;
-    } else {
-        // Handle the case of the @ before the :
-        if (*s == '@') {
-            name->mode = e_replace;
-            s++;
-        }
-    }
-
-    name->name = s;
-    int len = strlen(s);
-    bool hasDigits = false;
-    int drive = 0;
-
-    for (int i = 0; i < len; i++) {
-        if (s[i] == ':') {
-            s[i] = 0;
-            name->name = s + i + 1;
-            // now snoop off the digits and place them into drive number
-            for (int j = 0; j < i; j++) {
-                if (isdigit(s[j])) {
-                    drive *= 10;
-                    drive += (s[j] - '0');
-                    hasDigits = true;
-                } else {
-                    return false; // only digits are allowed before the colon!
-                }
-            }
-            break;
-        }
-    }
-    if (hasDigits) {
-        name->drive = drive;
-    }
-
-    char *parts[3] = { NULL, NULL, NULL };
-    if (doFlags) {
-        split_string(',', name->name, parts, 3);
-        for (int i = 1; i < 3; i++) {
-            if (!parts[i]) {
-                break;
-            }
-            switch (toupper(parts[i][0])) {
-            case 'P':
-                if (!name->explicitExt)
-                    name->extension = ".prg";
-                name->explicitExt = true;
-                break;
-            case 'S':
-                if (!name->explicitExt)
-                    name->extension = ".seq";
-                name->explicitExt = true;
-                break;
-            case 'U':
-                if (!name->explicitExt)
-                    name->extension = ".usr";
-                name->explicitExt = true;
-                break;
-            case 'L':
-                name->extension = ".rel";
-                name->explicitExt = true;
-                if (parts[3 - i]) {
-                    name->recordSize = parts[3 - i][0];
-                }
-                name->mode = e_relative;
-                i = 2;
-                break;
-            case 'R':
-                name->mode = e_read;
-                break;
-            case 'W':
-                name->mode = e_write;
-                break;
-            case 'A':
-                name->mode = e_append;
-                break;
-            default:
-                return false;
-            }
-        }
-        if (name->name[0] == '@') {
-            name->mode = e_replace;
-            name->name++;
-        }
-    }
+/*
     if (!name->extension) {
         if (name->mode == e_read) {
             name->extension = ".???";
@@ -673,15 +512,78 @@ bool IecChannel::parse_filename(int channel, char *buffer, name_t *name, int def
             name->extension = (channel < 2) ? ".prg" : ".seq";
         }
     }
+*/
 
-#if IECDEBUG
-    printf("Parsing filename successful.\n");
-    dump_name(*name, "");
-#endif
+int IecChannel :: setup_directory_read(open_t& name)
+{
+    printf("Setup dir read\n");
+    char full_path[256];
+    char file_name[128];
 
-    return true;
+    // previously not closed??
+    if (dir) {
+        delete dir;
+    }    
+    if (!drive->vfs->construct_path(name, full_path, 256, file_name, 128)) {
+        drive->get_command_channel()->set_error(ERR_PARTITION_ERROR, name.file.partition);
+        state = e_error;
+        return -1;
+    } 
+    printf("Full Path = %s\n", full_path);
+
+    FRESULT fres = fm->open_directory(full_path, &dir);
+    if (fres != FR_OK) {
+        printf("opening dir failed %s\n", FileSystem::get_error_string(fres));
+        drive->get_command_channel()->set_error(ERR_DRIVE_NOT_READY, name.file.partition);
+        state = e_error;
+        return -1;
+    }
+
+    Path path(full_path);
+    uint32_t cluster_size;
+    fm->get_free(&path, dir_free, cluster_size);
+    drive->get_command_channel()->set_error(ERR_ALL_OK, 0, 0);
+    state = e_dir;
+    pointer = 0;
+    prefetch = 0;
+    prefetch_max = 32;
+    last_byte = -1;
+    memcpy(buffer, c_header, 32);
+    buffer[4] = (uint8_t) name.file.partition;
+
+    IecPartition *part = drive->vfs->GetPartition(name.file.partition);
+
+    // If we are listing a CBM medium, let's use the volume indicator
+//    FileInfo *header = dirPartition->GetSystemFile(0);
+//    if ((header->attrib & AM_VOL) && (header->name_format & NAME_FORMAT_CBM)) {
+//        for (int i = 0; i < 20; i++) {
+//            buffer[8 + i] = header->lfname[i] & 0x7F;
+//        }
+//        buffer[8 + 16] = 0x22;
+//    } else {
+        const char *fullname = part->GetRelativePath();
+        int pos = 8;
+        int len = strlen(fullname);
+        if (len > 16) {
+            fullname += (len - 16);
+        }
+        while ((pos < 24) && (*fullname))
+            buffer[pos++] = toupper(*(fullname++));
+//    }
+
+
+//    if (dir) {
+//        delete dir;
+//    }
+    return 0;
 }
 
+int IecChannel :: setup_file_access(open_t& name)
+{
+    return 0;
+}
+
+/*
 int IecChannel::setup_directory_read(name_t& name)
 {
     if (name.explicitExt) {
@@ -698,40 +600,52 @@ int IecChannel::setup_directory_read(name_t& name)
         return -1;
     }
 
-    dirPartition->get_free(dir_free);
-    drive->get_command_channel()->set_error(ERR_ALL_OK, 0, 0);
-    dir_last = dirPartition->GetDirItemCount();
-    state = e_dir;
-    pointer = 0;
-    prefetch = 0;
-    prefetch_max = 32;
-    last_byte = -1;
-    memcpy(buffer, c_header, 32);
-    buffer[4] = (uint8_t) dirPartition->GetPartitionNumber();
-
-    // If we are listing a CBM medium, let's use the volume indicator
-    FileInfo *header = dirPartition->GetSystemFile(0);
-    if ((header->attrib & AM_VOL) && (header->name_format & NAME_FORMAT_CBM)) {
-        for (int i = 0; i < 20; i++) {
-            buffer[8 + i] = header->lfname[i] & 0x7F;
-        }
-        buffer[8 + 16] = 0x22;
-    } else {
-        const char *fullname = dirPartition->GetFullPath();
-        int pos = 8;
-        int len = strlen(fullname);
-        if (len > 16) {
-            fullname += (len - 16);
-        }
-        while ((pos < 24) && (*fullname))
-            buffer[pos++] = toupper(*(fullname++));
-    }
     dir_index = 0;
     return 0;
 }
 
 int IecChannel::setup_file_access(name_t& name)
 {
+    drive->get_command_channel()->set_error(ERR_ALL_OK, 0, 0);
+    if (!setup_file_access(name)) {
+        drive->get_error_string(fs_filename); // abusing this buffer to store temporary error
+        printf("Setup file access failed for file '%d:%s%s': %s\n", name.drive, name.name, name.extension, fs_filename);
+        // Something went wrong, so just exit.
+        return 0;
+    }
+
+    FRESULT fres = fm->fopen(partition->GetPath(), fs_filename, flags | FA_OPEN_FROM_CBM, &f);
+    if (f) {
+        printf("Successfully opened file %s in %s\n", fs_filename, partition->GetFullPath());
+
+        if (name.mode == e_relative) {
+            if (!f->get_size()) { // the file must be newly created, because its size is 0.
+                uint16_t wrd = name.recordSize;
+                fres = f->write(&wrd, 2, &tr);
+                drive->set_error_fres(fres);
+                if (fres == FR_OK) {
+                    recordSize = name.recordSize;
+                }
+            } else { // file already exists
+                uint16_t wrd;
+                fres = f->read(&wrd, 2, &tr);
+                recordSize = (uint8_t) wrd;
+                if (wrd >= 256) {
+                    printf("WARNING: Illegal record size in .rel file...Is it a REL file at all? (%d)\n", wrd);
+                }
+                drive->set_error_fres(fres);
+#if IECDEBUG
+                printf("Opened existing relative file. Record size is: %d.\n", recordSize);
+#endif
+            }
+        }
+        return init_iec_transfer();
+    } else {
+        printf("Can't open file %s in %s: %s\n", fs_filename, partition->GetFullPath(), FileSystem::get_error_string(fres));
+        drive->set_error_fres(fres);
+    }
+    return 0;
+
     flags = FA_READ;
 
     partition = drive->vfs->GetPartition(name.drive);
@@ -800,10 +714,10 @@ int IecChannel::setup_file_access(name_t& name)
     state = e_error; // assume something goes wrong ;)
     return 1; // OK so far
 }
-
+*/
 int IecChannel::init_iec_transfer(void)
 {
-    if (name.mode == e_append) {
+    if (filemode == e_append) {
         FRESULT fres = f->seek(f->get_size());
         if (fres != FR_OK) {
             drive->get_command_channel()->set_error(ERR_FRESULT_CODE, fres);
@@ -817,7 +731,7 @@ int IecChannel::init_iec_transfer(void)
     prefetch_max = 512;
     state = e_file;
 
-    if (name.mode == e_read) {
+    if (filemode == e_read) {
         if (f) {
             curblk->valid_bytes = 0;
             // queue up one next block
@@ -847,60 +761,25 @@ int IecChannel::open_file(void)  // name should be in buffer
 {
     buffer[pointer] = 0; // string terminator
     printf("Open file. Raw Filename = '%s'\n", buffer);
+    open_t name;
+    parse_open((const char *)buffer, name);
 
-    fs_filename[0] = 0;
-    uint32_t tr = 0;
-
-    parse_filename(channel, (char *) buffer, &name, -1, true);
-
-    dirPartition = drive->vfs->GetPartition(name.drive);
+    IecPartition *partition = drive->vfs->GetPartition(name.file.partition);
     recordSize = 0;
 
-    if (name.directory) {
-        return setup_directory_read(name);
-    } else if (name.buffer) {
+    switch(name.dir_opt.stream) {
+    case e_stream_buffer:
         return setup_buffer_access();
+    case e_stream_dir:
+        return setup_directory_read(name);
+    case e_stream_partitions:
+        return -1;
+    case e_stream_file:
+        return setup_file_access(name);
+    default: // file
+        printf("Unknown stream mode\n");
     }
-
-    drive->get_command_channel()->set_error(ERR_ALL_OK, 0, 0);
-    if (!setup_file_access(name)) {
-        drive->get_error_string(fs_filename); // abusing this buffer to store temporary error
-        printf("Setup file access failed for file '%d:%s%s': %s\n", name.drive, name.name, name.extension, fs_filename);
-        // Something went wrong, so just exit.
-        return 0;
-    }
-
-    FRESULT fres = fm->fopen(partition->GetPath(), fs_filename, flags | FA_OPEN_FROM_CBM, &f);
-    if (f) {
-        printf("Successfully opened file %s in %s\n", fs_filename, partition->GetFullPath());
-
-        if (name.mode == e_relative) {
-            if (!f->get_size()) { // the file must be newly created, because its size is 0.
-                uint16_t wrd = name.recordSize;
-                fres = f->write(&wrd, 2, &tr);
-                drive->set_error_fres(fres);
-                if (fres == FR_OK) {
-                    recordSize = name.recordSize;
-                }
-            } else { // file already exists
-                uint16_t wrd;
-                fres = f->read(&wrd, 2, &tr);
-                recordSize = (uint8_t) wrd;
-                if (wrd >= 256) {
-                    printf("WARNING: Illegal record size in .rel file...Is it a REL file at all? (%d)\n", wrd);
-                }
-                drive->set_error_fres(fres);
-#if IECDEBUG
-                printf("Opened existing relative file. Record size is: %d.\n", recordSize);
-#endif
-            }
-        }
-        return init_iec_transfer();
-    } else {
-        printf("Can't open file %s in %s: %s\n", fs_filename, partition->GetFullPath(), FileSystem::get_error_string(fres));
-        drive->set_error_fres(fres);
-    }
-    return 0;
+    return -1;
 }
 
 int IecChannel::close_file(void) // file should be open
@@ -1009,6 +888,7 @@ void IecChannel::seek_record(const uint8_t *cmd)
 IecCommandChannel::IecCommandChannel(IecDrive *dr, int ch) :
         IecChannel(dr, ch)
 {
+    parser = new IecParser(this);
     wr_pointer = 0;
 }
 
@@ -1088,415 +968,138 @@ t_channel_retval IecCommandChannel::push_data(uint8_t b)
     return IEC_BYTE_LOST;
 }
 
-bool IecCommandChannel::parse_command(char *buffer, int length, command_t *command)
+void print_file(filename_t& file)
 {
-#if IECDEBUG
-    printf("Parsing command: '%s'\n", buffer);
-#endif
-    // initialize
-    bool digits = false;
-    command->digits = 0;
-    command->remaining = 0;
-
-    // Handle non-null terminated string commands
-    if ((buffer[0] == 'P') && ((buffer[1] & 0xF0) == 0x60) && (length >= 4)) { // rel file positioning command
-        memcpy(command->cmd, buffer, 5);
-        if (length < 5) {
-            command->cmd[4] = 1; // default for Positioning command
-        }
-        return true;
-    }
-
-    // First strip off any carriage returns, in any case
-    int len = strlen(buffer);
-    while ((len > 0) && (buffer[len - 1] == 0x0d)) {
-        len--;
-        buffer[len] = 0;
-    }
-
-    int cmdlen = 0;
-    int i = 0;
-    // First analyze the command itself, if given that it is a command
-
-    for (i = 0; (i < len) && (i < 15); i++) {
-        if (isalpha(buffer[i]) || (buffer[i] == '-')) {
-            command->cmd[i] = toupper(buffer[i]);
-            cmdlen++;
-        } else {
-            break;
-        }
-    }
-    command->cmd[cmdlen] = 0; // null terminate string
-
-    while (isdigit(buffer[i])) {
-        digits = true;
-        command->digits *= 10;
-        command->digits += (buffer[i] - '0');
-        i++;
-    }
-    if (!digits) {
-        command->digits = -1;
-    }
-    command->remaining = &buffer[i];
-    if (buffer[i] == 0) {
-        return true;
-    }
-    if (buffer[i] != ':') {
-        return false;
-    }
-    i++;
-    command->remaining++;
-    if (buffer[i] == 0) {
-        return true;
-    }
-    return true;
+    printf("P=%d, Path='%s', Filename='%s', Wildcard: %s\n",
+        file.partition, file.path.c_str(), file.filename.c_str(), file.has_wildcard?"true":"false" );
 }
 
-void IecCommandChannel::exec_command(command_t &command)
+int IecCommandChannel :: do_block_read(int chan, int part, int track, int sector)
 {
-    IecPartition *p;
-    IecChannel *ch;
-
-    if (isEmptyString(command.cmd)) {
-        set_error(ERR_SYNTAX_ERROR_GEN);
-    } else if (command.cmd[0] == 'P') {
-        if ((command.cmd[1] <= 0x60) || (command.cmd[1] >= 0x6E)) {
-            set_error(ERR_SYNTAX_ERROR_CMD);
-        }
-        ch = drive->get_data_channel(command.cmd[1] & 0x0F);
-        ch->seek_record((uint8_t *) command.cmd);
-    } else if (strncmp(command.cmd, "B-", 2) == 0) { // Block comand
-        block_command(command);
-    } else if (strcmp(command.cmd, "U") == 0) { // Block Read or Block write
-        block_command(command);
-    } else if (strcmp(command.cmd, "CD") == 0) {
-        p = drive->vfs->GetPartition(command.digits);
-        if (isEmptyString(command.remaining)) {
-            set_error(ERR_SYNTAX_ERROR_CMD);
-        } else if (p->cd(command.remaining)) {
-            set_error(ERR_ALL_OK);
-        } else {
-            set_error(ERR_DIRECTORY_ERROR);
-        }
-    } else if (strncmp(command.cmd, "CP", 2) == 0) {
-        if (command.digits < 0) {
-            set_error(ERR_SYNTAX_ERROR_CMD);
-        } else if (command.digits >= MAX_PARTITIONS) {
-            set_error(ERR_SYNTAX_ERROR_CMD);
-        } else { // partition number found
-            p = drive->vfs->GetPartition(command.digits);
-            if (p->IsValid()) {
-                set_error(ERR_PARTITION_OK, command.digits);
-                drive->vfs->SetCurrentPartition(command.digits);
-            } else {
-                set_error(ERR_PARTITION_ERROR, command.digits);
-            }
-        }
-    } else if (strcmp(command.cmd, "MD") == 0) {
-        p = drive->vfs->GetPartition(command.digits);
-        if (!p->IsValid()) {
-            set_error(ERR_PARTITION_ERROR, command.digits);
-        } else if (isEmptyString(command.remaining)) {
-            set_error(ERR_SYNTAX_ERROR_CMD);
-        } else if (hasIllegalChars(command.remaining)) {
-            set_error(ERR_SYNTAX_ERROR_CMD);
-        } else if (p->MakeDirectory(command.remaining) == FR_OK) {
-            set_error(ERR_ALL_OK);
-        } else {
-            set_error(ERR_DIRECTORY_ERROR);
-        }
-    } else if (strcmp(command.cmd, "RD") == 0) {
-        p = drive->vfs->GetPartition(command.digits);
-        int f = p->Remove(command, true);
-        if (f < 0) {
-            set_error(ERR_SYNTAX_ERROR_CMD);
-        } else {
-            set_error(ERR_FILES_SCRATCHED, f);
-        }
-    } else if (strncmp(command.cmd, "SCRATCH", strlen(command.cmd)) == 0) {
-        p = drive->vfs->GetPartition(command.digits);
-        int f = p->Remove(command, false);
-        if (f < 0) {
-            set_error(ERR_SYNTAX_ERROR_CMD);
-        } else {
-            set_error(ERR_FILES_SCRATCHED, f);
-        }
-    } else if (strncmp(command.cmd, "RENAME", strlen(command.cmd)) == 0) {
-        renam(command);
-    } else if (strncmp(command.cmd, "COPY", strlen(command.cmd)) == 0) {
-        copy(command);
-    } else if (strncmp(command.cmd, "INITIALIZE", strlen(command.cmd)) == 0) {
-        set_error(ERR_ALL_OK);
-    } else if (strcmp(command.cmd, "UI") == 0) {
-        set_error(ERR_DOS);
-    } else { // unknown command
+    if ((chan < 0) || (chan > 14)) {
+        // set_error(ERR_SYNTAX_ERROR_CMD);
+        return ERR_SYNTAX_ERROR_CMD;
+    }
+    if (part >= MAX_PARTITIONS) {
         set_error(ERR_SYNTAX_ERROR_CMD);
+        return ERR_SYNTAX_ERROR_CMD;
     }
-}
-
-void IecCommandChannel::block_command(command_t& cmd)
-{
-    IecChannel *channel;
-    IecPartition *partition;
+    IecChannel *channel = iec_drive->get_data_channel(chan);
+    IecPartition *partition = iec_drive->vfs->GetPartition(part);
+    Path path(partition->GetFullPath());
     FRESULT fres;
-    int operation = 0;
-
-    int ch, dr, tr, sc;
-    if (cmd.cmd[0] == 'U') {
-        if ((cmd.digits < 1) || (cmd.digits > 2)) {
-            set_error(ERR_SYNTAX_ERROR_CMD);
-            return;
-        }
-        operation = cmd.digits;
-    } else { // must be B-
-        int n = sscanf(cmd.remaining, "%d%d%d%d", &ch, &dr, &tr, &sc);
-        switch (cmd.cmd[2]) {
-        case 'R':
-            operation = 3;
-            break;
-        case 'W':
-            operation = 4;
-            break;
-        case 'P':
-            if ((n != 2) || (ch < 0) || (ch > 14)) { // illegal
-                set_error(ERR_SYNTAX_ERROR_CMD);
-                return;
-            }
-            if ((dr < 0) || (dr > 255)) {
-                set_error(ERR_SYNTAX_ERROR_CMD);
-                return;
-            }
-            channel = drive->get_data_channel(ch);
-            channel->pointer = dr;
-            channel->reset_prefetch();
-            set_error(ERR_ALL_OK);
-            return;
-        default:
-            set_error(ERR_SYNTAX_ERROR_CMD);
-            return;
-        }
-    }
-
-    // when we get here, it's either U1, U2, B-R or B-W, which all take 4 params
-
-    int n = sscanf(cmd.remaining, "%d%d%d%d", &ch, &dr, &tr, &sc);
-    if ((n != 4) || (ch < 0) || (ch > 14)) { // illegal
-        set_error(ERR_SYNTAX_ERROR_CMD);
-        return;
-    }
-    if (dr >= MAX_PARTITIONS) {
-        set_error(ERR_SYNTAX_ERROR_CMD);
-        return;
-    }
-    channel = drive->get_data_channel(ch);
-    partition = drive->vfs->GetPartition(dr);
-    /*
-     FileSystem *fs = partition->GetFileSystem();
-     if (!fs || !(fs->supports_direct_sector_access())) {
-     set_error(ERR_DRIVE_NOT_READY);
-     return;
-     }
-     */
-    switch (operation) {
-    case 1:
-    case 3:
-#if IECDEBUG
-        printf("Read Track %d Sector %d of Drive %d into buffer of channel %d.\n", tr, sc, dr, ch);
-#endif
-        fres = fm->fs_read_sector(partition->GetPath(), channel->buffer, tr, sc);
-        drive->set_error_fres(fres);
-        channel->pointer = 0;
-        channel->reset_prefetch();
-        state = e_idle;
-        break;
-    case 2:
-    case 4:
-#if IECDEBUG
-        printf("Write Track %d Sector %d of Drive %d from buffer of channel %d.\n", tr, sc, dr, ch);
-#endif
-        fres = fm->fs_write_sector(partition->GetPath(), channel->buffer, tr, sc);
-        drive->set_error_fres(fres);
-        state = e_idle;
-        break;
-    }
+    fres = fm->fs_read_sector(&path, channel->buffer, track, sector);
+    drive->set_error_fres(fres);
+    channel->pointer = 0;
+    channel->reset_prefetch();
+    state = e_idle;
+    return 0;
 }
 
-void IecCommandChannel::renam(command_t& cmd)
+int IecCommandChannel::do_block_write(int chan, int part, int track, int sector)
 {
-    char fromName[32];
-    int fromPart;
-    char toName[32];
-    int toPart;
-
-    bool dummy;
-    int fromAt;
-
-    char *leftright[2] = { 0, 0 };
-
-    name_t destination;
-    name_t source;
-
-    split_string('=', cmd.remaining, leftright, 2);
-    if (leftright[1]) {
-        parse_filename(channel, leftright[0], &destination, cmd.digits, true);
-        parse_filename(channel, leftright[1], &source, cmd.digits, true);
-    } else {
-        // there is no = token
-        set_error(ERR_SYNTAX_ERROR_CMD);
-        return;
-    }
-
-    strcpy(toName, destination.name);
-    toPart = destination.drive;
-
-    const char *fromExt = ".???";
-    strcpy(fromName, source.name);
-    fromPart = source.drive;
-
-    // does the source name have an extension specified?
-    if (source.explicitExt) {
-        fromExt = source.extension;
-    }
-
-    printf("From: %d:%s%s To: %d:%s%s \n", fromPart, fromName, fromExt, toPart, toName, destination.extension);
-
-    IecPartition *partitionFrom = drive->vfs->GetPartition(fromPart);
-    partitionFrom->ReadDirectory();
-    int posFrom = partitionFrom->FindIecName(fromName, fromExt, true);
-    if (posFrom < 0) {
-        set_error(ERR_FILE_NOT_FOUND, 0);
-        return;
-    }
-    FileInfo *fromInfo = partitionFrom->GetSystemFile(posFrom);
-    // Yey, we finally got the actual file we need to rename!!
-
-    if ((!destination.explicitExt) && !(fromInfo->attrib & AM_DIR)) {
-        add_extension(toName, fromInfo->extension, 32);
-    } else {
-        add_extension(toName, destination.extension, 32);
-    }
-
-    IecPartition *partitionTo = drive->vfs->GetPartition(toPart);
-
-    // Just try the actual rename by the filesystem
-    FRESULT fres = fm->rename(partitionFrom->GetPath(), fromInfo->lfname, partitionTo->GetPath(), toName);
-    if (fres == FR_OK) {
-        set_error(ERR_ALL_OK, 0);
-        return;
-    } else if (fres == FR_EXIST) {
-        set_error(ERR_FILE_EXISTS, 0);
-        return;
-    }
-
-    set_error(ERR_FRESULT_CODE, fres);
+    printf("Block write: Channel %d, Partition %d, T/S %d/%d\n", chan, part, track, sector);
+    return 0;
 }
 
-void IecCommandChannel::copy(command_t& cmd)
+int IecCommandChannel :: do_buffer_position(int chan, int pos)
 {
-    // parse remainder
-    char *leftright[2] = { 0, 0 };
-    char *files[4] = { 0, 0, 0, 0 };
-
-    name_t destination;
-
-    split_string('=', cmd.remaining, leftright, 2);
-    if (leftright[1]) {
-        split_string(',', leftright[1], files, 4);
-        parse_filename(channel, leftright[0], &destination, cmd.digits, true);
-    } else {
-        // there is no = token
-        set_error(ERR_SYNTAX_ERROR_CMD);
-        return;
+    if ((chan < 0) || (chan > 14)) {
+        // set_error(ERR_SYNTAX_ERROR_CMD);
+        return ERR_SYNTAX_ERROR_CMD;
     }
-
-    FileInfo *infos[4] = { 0, 0, 0, 0 };
-    name_t names[4];
-
-    // First try to find all (possibly) four sources
-    for (int i = 0; i < 4; i++) {
-        if (!files[i]) {
-            break;
-        }
-        parse_filename(channel, files[i], &names[i], cmd.digits, false);
-        if ((names[i].directory || names[i].mode == e_replace)) {
-            set_error(ERR_SYNTAX_ERROR_CMD, i + 1);
-            return;
-        }
-
-        IecPartition *partitionFrom = drive->vfs->GetPartition(names[i].drive);
-        partitionFrom->ReadDirectory();
-        int posFrom = partitionFrom->FindIecName(names[i].name, "???", false);
-        if (posFrom < 0) {
-            set_error(ERR_FILE_NOT_FOUND, i);
-            return;
-        }
-        FileInfo *info = partitionFrom->GetSystemFile(posFrom);
-#if IECDEBUG
-        printf("Found matching file %d: %s -> %s\n", i, files[i], info->lfname);
-#endif
-        infos[i] = info;
-        if (info->attrib & AM_DIR) {
-            set_error(ERR_FILE_TYPE_MISMATCH, i);
-            return;
-        }
+    if ((pos < 0) || (pos > 255)) {
+        // set_error(ERR_SYNTAX_ERROR_CMD);
+        return ERR_SYNTAX_ERROR_CMD;
     }
-
-    // Now try to create the output file
-    IecPartition *partitionTo = drive->vfs->GetPartition(destination.drive);
-    char toName[32];
-    strcpy(toName, destination.name);
-    // Take the extension from the first file to copy
-    if (destination.explicitExt) {
-        add_extension(toName, destination.extension, 32);
-    } else {
-        add_extension(toName, infos[0]->extension, 32);
-    }
-
-    File *fo;
-    FRESULT fres = fm->fopen(partitionTo->GetPath(), toName, (FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS), &fo);
-    if (fres == FR_EXIST) {
-        set_error(ERR_FILE_EXISTS, 0);
-        return;
-    } else if (fres != FR_OK) {
-        set_error(ERR_FRESULT_CODE, fres);
-        return;
-    }
-    int blocks = 0;
-    uint8_t buffer[512];
-
-    if (fo) {
-        // okay, the output file is now finally open, let's read the input files and write them to the output file
-        for (int i = 0; i < 4; i++) {
-            if (!infos[i]) {
-                break;
-            }
-            IecPartition *partitionFrom = drive->vfs->GetPartition(names[i].drive);
-            File *fi;
-            FRESULT fres = fm->fopen(partitionFrom->GetPath(), infos[i]->lfname, FA_READ, &fi);
-            if (fres != FR_OK) {
-                fm->fclose(fo);
-                set_error(ERR_FRESULT_CODE, fres);
-                return;
-            }
-            if (fi) {
-#if IECDEBUG
-                printf("Opened '%s' for copy.\n", infos[i]->lfname);
-#endif
-                uint32_t transferred = 1;
-                while (transferred) {
-                    fi->read(buffer, 512, &transferred);
-                    if (transferred) {
-                        fo->write(buffer, transferred, &transferred);
-                        blocks++;
-                    }
-                }
-                fm->fclose(fi);
-            }
-        }
-        fm->fclose(fo);
-    }
-    set_error(ERR_ALL_OK, 0, blocks);
+    IecChannel *channel;
+    channel = iec_drive->get_data_channel(chan);
+    channel->pointer = pos;
+    channel->reset_prefetch();
+    // set_error(ERR_ALL_OK);
+    return ERR_ALL_OK;
 }
+
+int IecCommandChannel::do_set_current_partition(int part)
+{
+    printf("Change to partition %d\n", part);
+    return 0;
+}
+
+int IecCommandChannel::do_change_dir(int part, mstring& path)
+{
+    printf("Partition %d Change dir %s\n", part, path.c_str());
+    IecPartition *prt = drive->vfs->GetPartition(part);
+    const char *ps = path.c_str();
+    prt->cd(ps + 1);
+    return 0;
+}
+
+int IecCommandChannel::do_make_dir(int part, mstring& path)
+{
+    printf("Partition %d Make dir %s\n",  part, path.c_str());
+    return 0;
+}
+
+int IecCommandChannel::do_remove_dir(int part, mstring& path)
+{
+    printf("Partition %d Remove dir %s\n",  part, path.c_str());
+    return 0;
+}
+
+int IecCommandChannel::do_copy(filename_t& dest, filename_t sources[], int n)
+{
+    printf("Copy %d sources to ", n);
+    print_file(dest);
+    for(int i=0;i<n;i++) {
+        printf("  %d. ", i);
+        print_file(sources[i]);
+    }
+    return 0;
+}
+
+int IecCommandChannel::do_initialize()
+{
+    return 73;
+}
+
+int IecCommandChannel::do_format(uint8_t *name, uint8_t id1, uint8_t id2)
+{
+    printf("Format: %s %02x %02x\n", name, id1, id2);
+    return 0;
+}
+
+int IecCommandChannel::do_rename(filename_t &src, filename_t &dest)
+{
+    printf("Rename from: ");
+    print_file(src);
+    printf("  To: ");
+    print_file(dest);
+    return 0;
+}
+
+int IecCommandChannel::do_scratch(filename_t filenames[], int n)
+{
+    printf("Scratch %d files:\n", n);
+    for(int i=0;i<n;i++) {
+        printf("  %d. ", i);
+        print_file(filenames[i]);
+    }
+    return 0;
+}
+
+int IecCommandChannel::do_cmd_response(uint8_t *data, int len)
+{
+    dump_hex_relative(data, len);
+    return 0;
+}
+
+int IecCommandChannel::do_set_position(int chan, uint32_t pos)
+{
+    printf("Set File position to %lu on chan %d\n", pos, chan);
+    return 0;
+}
+
 
 int IecCommandChannel::ext_open_file(const char *filenameOrCommand)
 {
@@ -1515,8 +1118,6 @@ int IecCommandChannel::ext_close_file(void)
 
 t_channel_retval IecCommandChannel::push_command(uint8_t b)
 {
-    command_t command;
-
     switch (b) {
     case 0x60:
         reset_prefetch();
@@ -1529,9 +1130,7 @@ t_channel_retval IecCommandChannel::push_command(uint8_t b)
     case 0x00: // end of data, command received in buffer
         wr_buffer[wr_pointer] = 0;
         if (wr_pointer) {
-            parse_command((char *) wr_buffer, wr_pointer, &command);
-            dump_command(command);
-            exec_command(command);
+            parser->execute_command(wr_buffer, wr_pointer);
         }
         wr_pointer = 0;
         break;
@@ -1541,24 +1140,7 @@ t_channel_retval IecCommandChannel::push_command(uint8_t b)
     return IEC_OK;
 }
 
-void IecPartition::SetInitialPath(void)
-{
-    char temp[120];
-    char temp2[8];
-
-    strcpy(temp, vfs->GetRootPath());
-    if (temp[strlen(temp) - 1] != '/') {
-        strcat(temp, "/");
-    }
-    if (partitionNumber > 0) {
-        sprintf(temp2, "%d", partitionNumber);
-        strcat(temp, temp2);
-    }
-    printf("Partition command. CD to '%s'\n", temp);
-    path->cd(temp);
-}
-
 bool IecPartition::IsValid()
 {
-    return fm->is_path_valid(path);
+    return fm->is_path_valid(GetFullPath());
 }
