@@ -133,7 +133,7 @@ t_channel_retval IecChannel::pop_more(int pop_size)
             return IEC_NO_FILE; // no more data?
         }
         pointer += pop_size;
-        if (pointer == 32) {
+        if (pointer == prefetch_max) {
             while (read_dir_entry() > 0)
                 ;
             return IEC_OK;
@@ -180,8 +180,8 @@ t_channel_retval IecChannel::pop_data(void)
         if (pointer == last_byte) {
             state = e_complete;
             return IEC_NO_FILE; // no more data?
-        } else if (pointer == 31) {
-            while (read_dir_entry())
+        } else if (pointer == prefetch_max - 1) {
+            while (read_dir_entry() > 0)
                 ;
             return IEC_OK;
         }
@@ -475,6 +475,19 @@ int IecChannel::read_dir_entry(void)
         }
     }
 
+    // filter by date and time
+    uint32_t dt = (((uint32_t)info.date) << 16) | info.time;
+    if (name_to_open.dir_opt.max_datetime) {
+        if (dt > name_to_open.dir_opt.max_datetime) {
+            return 1;
+        }
+    }
+    if (name_to_open.dir_opt.min_datetime) {
+        if (dt < name_to_open.dir_opt.min_datetime) {
+            return 1;
+        }
+    }
+
     uint32_t size = 0;
     uint32_t size2 = 0;
     size = info.size;
@@ -504,10 +517,23 @@ int IecChannel::read_dir_entry(void)
     const char *types[] = { "ANY", "PRG", "SEQ", "USR", "REL", "DIR" };
     memcpy(&buffer[27 - chars], types[(int)ftype], 3);
 
-    buffer[31] = 0;
     pointer = 0;
-    prefetch_max = 32;
     prefetch = 0;
+    switch(name_to_open.dir_opt.timefmt) {
+    case e_stamp_none:
+        buffer[31] = 0;
+        prefetch_max = 32;
+        break;
+    case e_stamp_long:
+        cbmdos_time(dt, (char *)buffer + 31 - chars, true);
+        prefetch_max = 31 + 18 - chars;
+        break;
+    case e_stamp_short:
+        buffer[28 - chars] = 32; // space out second letter of file type
+        cbmdos_time(dt, (char *)buffer + 29 - chars, false);
+        prefetch_max = 29 + 14 - chars;
+        break;
+    }
     return 0;
 }
 

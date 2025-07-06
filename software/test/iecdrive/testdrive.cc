@@ -117,13 +117,14 @@ int main(int argc, const char **argv)
     fm->save_file(false, "/Temp", "pppppppppppppppp.prg", msg, 28, &tr);
     fm->save_file(false, "/Temp", "qqqqqqqq012345678.prg", msg, 28, &tr);
     fm->save_file(false, "/Temp", "abc{2f}def.usr", msg, 28, &tr);
+    fm->save_file(false, "/Temp", "{c1c2c3}.seq", msg, 28, &tr);
     fm->create_dir("/Temp/SomeDir");
     get_status(dr);
     get_status(dr);
     get_status(dr);
     send_command(dr, "CD/TEMP");
 
-    open_file(dr, "$:*=B");
+    open_file(dr, "$=T:*=P,L");
 
     dr->talk();
     do {
