@@ -40,7 +40,9 @@ void get_status(IecDrive *dr)
     dr->push_ctrl(0x6f); // channel 15
     dr->talk();
     dr->prefetch_more(256, data, data_size);
-    dump_hex_relative(data, data_size);
+    data[data_size] = 0;
+    printf("Status: %s\n", data);
+    //dump_hex_relative(data, data_size);
     dr->pop_more(data_size);
 }
 
@@ -68,6 +70,7 @@ void send_command(IecDrive *dr, const char *cmd)
         dr->push_data((uint8_t)cmd[i]);
     }
     dr->push_ctrl(SLAVE_CMD_EOI);
+    get_status(dr);
 }
 
 void open_file(IecDrive *dr, const char *fn)
@@ -119,12 +122,11 @@ int main(int argc, const char **argv)
     fm->save_file(false, "/Temp", "abc{2f}def.usr", msg, 28, &tr);
     fm->save_file(false, "/Temp", "{c1c2c3}.seq", msg, 28, &tr);
     fm->create_dir("/Temp/SomeDir");
-    get_status(dr);
-    get_status(dr);
+    fm->create_dir("/Temp/OtherDir");
     get_status(dr);
     send_command(dr, "CD/TEMP");
     send_command(dr, "CD/SOMEDIR");
-    send_command(dr, "CD_");
+    send_command(dr, "CD/_/OTHERDIR2");
     open_file(dr, "$=T0:*=L");
 //    open_file(dr, "$=P:*=L");
     get_status(dr);

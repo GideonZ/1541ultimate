@@ -55,10 +55,20 @@ public:
 
     bool IsValid(); // implemented in iec_channel.cc, to resolve an illegal forward reference
 
-    void cd(const char *p) {
-        path->cd(p);
-        const char *rp = path->get_path();        
-        full_path = root + (rp+1); // strip off the leading slash
+    bool cd(const char *p) {
+        // make a new temporary path in string form
+        Path temp(path);
+        temp.cd(p);
+        const char *rp = temp.get_path();        
+        mstring full = root + (rp+1); // strip off the leading slash
+
+        // now test the result, if correct copy
+        if (fm->is_path_valid(full.c_str())) {
+            path->cd(p);
+            full_path = root + (rp+1); // strip off the leading slash
+            return true;
+        } 
+        return false;
     }
 
     static char *CreateIecName(FileInfo *inf, char *out, filetype_t& type)
@@ -153,14 +163,17 @@ public:
         return NULL;
     }
 
-    IecPartition *GetPartition(int index)
+    int GetTargetPartitionNumber(int index)
     {
         if (index < 0) {
             index = currentPartition;
         }
-//        if (!partitions[index]) {
-//            partitions[index] = new IecPartition(this, index);
-//        }
+        return index;
+    }
+
+    IecPartition *GetPartition(int index)
+    {
+        index = GetTargetPartitionNumber(index);
         return partitions[index];
     }
 

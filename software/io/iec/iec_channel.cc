@@ -1106,20 +1106,32 @@ int IecCommandChannel::do_change_dir(int part, mstring& path)
 {
     IecPartition *prt = drive->vfs->GetPartition(part);
     if (!prt) {
-        drive->get_command_channel()->set_error(ERR_DRIVE_NOT_READY, part);
+        drive->get_command_channel()->set_error(ERR_PARTITION_ERROR, drive->vfs->GetTargetPartitionNumber(part));
         state = e_error;
         return -1;
     }        
-    // printf("Partition %d ('%s') Change dir %s\n", part, prt->GetFullPath(), path.c_str());
+#if IECDEBUG > 1
+    printf("Partition %d ('%s') Change dir %s\n", part, prt->GetFullPath(), path.c_str());
+#endif
     // Path conversion needs to take place, because
     // in this context, _ means "..", and when the path starts
     // with a /, it should be stripped off, while // means root,
     // which corresponds to starting with / in Ultimate VFS.
-    if (path[0] == '/') path = path.c_str() + 1;
+    if (path[0] == '/' && path[1] != '/')
+        path = path.c_str() + 1;
     path.replace("_", "..");
     path.replace("//", "/");
-    prt->cd(path.c_str());
-    // printf("Result of CD: '%s'\n", prt->GetFullPath());
+#if IECDEBUG > 1
+    printf("After replace: %s\n", path.c_str());
+#endif
+    if(!prt->cd(path.c_str())) {
+        drive->get_command_channel()->set_error(ERR_DIRECTORY_ERROR, prt->GetPartitionNumber());
+        state = e_error;
+        return -1;
+    }
+#if IECDEBUG > 1
+    printf("Result of CD: '%s'\n", prt->GetFullPath());
+#endif
     return 0;
 }
 
