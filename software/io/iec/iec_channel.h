@@ -10,7 +10,7 @@
 #include "cbmdos_parser.h"
 
 typedef enum _t_channel_state {
-    e_idle, e_filename, e_file, e_dir, e_record, e_buffer, e_complete, e_error, e_status
+    e_idle, e_filename, e_file, e_dir, e_partlist, e_record, e_buffer, e_complete, e_error, e_status
     
 } t_channel_state;
 
@@ -39,7 +39,7 @@ public:
         this->vfs = vfs;
         partitionNumber = nr;
         path = fm->get_new_path("IEC Partition");
-        root = "";
+        root = "/";
         full_path = "/";
     }
 
@@ -57,7 +57,8 @@ public:
 
     void cd(const char *p) {
         path->cd(p);
-        full_path = root + path->get_path();
+        const char *rp = path->get_path();        
+        full_path = root + (rp+1); // strip off the leading slash
     }
 
     static char *CreateIecName(FileInfo *inf, char *out, filetype_t& type)
@@ -157,9 +158,9 @@ public:
         if (index < 0) {
             index = currentPartition;
         }
-        if (!partitions[index]) {
-            partitions[index] = new IecPartition(this, index);
-        }
+//        if (!partitions[index]) {
+//            partitions[index] = new IecPartition(this, index);
+//        }
         return partitions[index];
     }
 
@@ -226,6 +227,7 @@ class IecChannel {
     Directory *dir;
     fileaccess_t filemode;
     uint32_t dir_free;
+    int part_idx;
 
     uint32_t recordOffset;
     uint8_t recordSize;
@@ -237,6 +239,7 @@ class IecChannel {
     char fs_filename[64];
 
 private:
+    int setup_partition_read();
     int setup_directory_read();
     int setup_file_access();
     int setup_buffer_access(void);

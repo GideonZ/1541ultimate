@@ -1,5 +1,6 @@
 #include "iec_channel.h"
 #include "dump_hex.h"
+#include "rtc.h"
 
 IecChannel::IecChannel(IecDrive *dr, int ch)
 {
@@ -8,6 +9,7 @@ IecChannel::IecChannel(IecDrive *dr, int ch)
     channel = ch;
     f = NULL;
     dir = NULL;
+    part_idx = 0;
     pointer = 0;
     state = e_idle;
     last_byte = 0;
@@ -128,6 +130,7 @@ t_channel_retval IecChannel::pop_more(int pop_size)
         }
         break;
     case e_dir:
+    case e_partlist:
         if (pointer == last_byte) {
             state = e_complete;
             return IEC_NO_FILE; // no more data?
@@ -177,6 +180,7 @@ t_channel_retval IecChannel::pop_data(void)
         }
         break;
     case e_dir:
+    case e_partlist:
         if (pointer == last_byte) {
             state = e_complete;
             return IEC_NO_FILE; // no more data?
@@ -433,14 +437,40 @@ t_channel_retval IecChannel::write_record(void)
 int IecChannel::read_dir_entry(void)
 {
     FileInfo info(40);
-    if (!dir) {
-        return -1;
+    FRESULT fres;
+    if (state == e_dir) {
+        if (!dir) {
+            return -1;
+        }
+        fres = dir->get_entry(info);
+    } else {
+        // list partition and construct fake info
+        if (part_idx >= MAX_PARTITIONS) {
+            fres = FR_NO_FILE;
+        } else {
+            fres = FR_OK;
+            IecPartition *prt = drive->vfs->GetPartition(part_idx);
+            if (!prt) {
+                part_idx ++;
+                return 1;
+            }
+            info.size = part_idx * 254;
+            uint32_t fattime = get_fattime();
+            info.date = fattime >> 16;
+            info.time = fattime & 0xFFFF;
+            info.attrib = AM_DIR;
+            const char *ps = prt->GetRootPath();
+            //sprintf(info.lfname, "PART%03d", part_idx);
+            strncpy(info.lfname, ps, info.lfsize);
+            part_idx ++;
+        }
     }
 
-    FRESULT fres = dir->get_entry(info);
     if (fres != FR_OK) {
-        delete dir;
-        dir = NULL;
+        if (dir) {
+            delete dir;
+            dir = NULL;
+        }
 
         if (dir_free > 65535) {
             buffer[2] = 0xFF;
@@ -546,6 +576,20 @@ int IecChannel::read_dir_entry(void)
         }
     }
 */
+int IecChannel :: setup_partition_read()
+{
+    printf("Setup partition read\n");
+    drive->get_command_channel()->set_error(ERR_ALL_OK, 0, 0);
+    state = e_partlist;
+    part_idx = 0;
+    pointer = 0;
+    prefetch = 0;
+    prefetch_max = 32;
+    last_byte = -1;
+    memcpy(buffer, c_header, 32);
+    memcpy(buffer+8, "ULTIMATE HD", 11);
+    return 0;
+}
 
 int IecChannel :: setup_directory_read()
 {
@@ -805,7 +849,7 @@ int IecChannel::open_file(void)  // name should be in buffer
     case e_stream_dir:
         return setup_directory_read();
     case e_stream_partitions:
-        return -1;
+        return setup_partition_read();
     case e_stream_file:
         return setup_file_access();
     default: // file
@@ -1060,10 +1104,22 @@ int IecCommandChannel::do_set_current_partition(int part)
 
 int IecCommandChannel::do_change_dir(int part, mstring& path)
 {
-    printf("Partition %d Change dir %s\n", part, path.c_str());
     IecPartition *prt = drive->vfs->GetPartition(part);
-    const char *ps = path.c_str();
-    prt->cd(ps + 1);
+    if (!prt) {
+        drive->get_command_channel()->set_error(ERR_DRIVE_NOT_READY, part);
+        state = e_error;
+        return -1;
+    }        
+    // printf("Partition %d ('%s') Change dir %s\n", part, prt->GetFullPath(), path.c_str());
+    // Path conversion needs to take place, because
+    // in this context, _ means "..", and when the path starts
+    // with a /, it should be stripped off, while // means root,
+    // which corresponds to starting with / in Ultimate VFS.
+    if (path[0] == '/') path = path.c_str() + 1;
+    path.replace("_", "..");
+    path.replace("//", "/");
+    prt->cd(path.c_str());
+    // printf("Result of CD: '%s'\n", prt->GetFullPath());
     return 0;
 }
 

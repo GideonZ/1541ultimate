@@ -28,7 +28,8 @@ public:
     int  pos(const char c);
     bool split(const char c, const char **remaining);
     int  split(const char c, const char **remaining, int count);
-
+    void replace(const char *from, const char *to);
+    
     const char operator[](int pos);
     mstring& operator=(const char *rhs);
     mstring& operator=(const mstring &rhs);

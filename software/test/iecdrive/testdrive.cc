@@ -123,9 +123,14 @@ int main(int argc, const char **argv)
     get_status(dr);
     get_status(dr);
     send_command(dr, "CD/TEMP");
+    send_command(dr, "CD/SOMEDIR");
+    send_command(dr, "CD_");
+    open_file(dr, "$=T0:*=L");
+//    open_file(dr, "$=P:*=L");
+    get_status(dr);
 
-    open_file(dr, "$=T:*=P,L");
-
+    dr->push_ctrl(SLAVE_CMD_ATN);
+    dr->push_ctrl(0x60);
     dr->talk();
     do {
         ret = dr->prefetch_more(256, data, data_size);
@@ -136,6 +141,8 @@ int main(int argc, const char **argv)
 
     dr->push_ctrl(SLAVE_CMD_ATN);
     dr->push_ctrl(0xE0); // close
+
+    get_status(dr);
 
     delete dr;
     delete ui;
