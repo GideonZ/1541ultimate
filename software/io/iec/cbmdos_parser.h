@@ -73,9 +73,9 @@ public:
     virtual int do_block_write(int chan, int part, int track, int sector) { return 0; }
     virtual int do_buffer_position(int chan, int pos) { return 0; }
     virtual int do_set_current_partition(int part) { return 0; }
-    virtual int do_change_dir(int part, mstring& path) { return 0; }
-    virtual int do_make_dir(int part, mstring& path) { return 0; }
-    virtual int do_remove_dir(int part, mstring& path) { return 0; }
+    virtual int do_change_dir(filename_t& dest) { return 0; }
+    virtual int do_make_dir(filename_t& dest) { return 0; }
+    virtual int do_remove_dir(filename_t& dest) { return 0; }
     virtual int do_copy(filename_t& dest, filename_t sources[], int n) { return 0; }
     virtual int do_initialize() { return 0; }
     virtual int do_format(uint8_t *name, uint8_t id1, uint8_t id2) { return 0; }

@@ -17,7 +17,7 @@ typedef void *QueueHandle_t;
 #include "stream_textlog.h"
 #include "command_intf.h"
 
-#define IECDEBUG 0
+#define IECDEBUG 2
 
 #if (IECDEBUG>1)
 #define DBGIEC(x) printf(x)

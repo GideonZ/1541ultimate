@@ -265,16 +265,15 @@ int IecParser :: dir_command(const uint8_t *buffer, int len)
     if (err) {
         return err;
     }
-    mstring path = dest.path;
-    if ((path.length() > 0) && (path[-1] != '/') && (dest.filename.length() > 0)) {
-        path += '/';
-    }
-    path += dest.filename;
-    const char *mode;
+//    mstring path = dest.path;
+//    if ((path.length() > 0) && (path[-1] != '/') && (dest.filename.length() > 0)) {
+//        path += '/';
+//    }
+//    path += dest.filename;
     switch (buffer[0]) {
-    case 'C': return exec->do_change_dir(dest.partition, path);
-    case 'M': return exec->do_make_dir(dest.partition, path);
-    case 'R': return exec->do_remove_dir(dest.partition, path);
+    case 'C': return exec->do_change_dir(dest);
+    case 'M': return exec->do_make_dir(dest);
+    case 'R': return exec->do_remove_dir(dest);
     default:
         return ERR_UNKNOWN_CMD;
     }

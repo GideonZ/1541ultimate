@@ -1050,10 +1050,32 @@ void print_file(filename_t& file)
         file.partition, file.path.c_str(), file.filename.c_str(), file.has_wildcard?"true":"false" );
 }
 
+#define GETPARTITION(part, partition) \
+    IecPartition *partition = drive->vfs->GetPartition(part); \
+    if (!partition) { \
+        drive->get_command_channel()->set_error(ERR_PARTITION_ERROR, drive->vfs->GetTargetPartitionNumber(part)); \
+        state = e_error; \
+        return -1; \
+    }
+
+static void iec_path_to_fs_path(mstring &path)
+{
+    // Path conversion needs to take place, because
+    // in this context, _ means "..", and when the path starts
+    // with a /, it should be stripped off, while // means root,
+    // which corresponds to starting with / in Ultimate VFS.
+    if (path[0] == '/' && path[1] != '/')
+        path = path.c_str() + 1;
+    path.replace("_", "..");
+    path.replace("//", "/");
+    if (path[-1] == '/')
+        path.set(-1, 0);
+}
+
 int IecCommandChannel :: do_block_read(int chan, int part, int track, int sector)
 {
     if ((chan < 0) || (chan > 14)) {
-        // set_error(ERR_SYNTAX_ERROR_CMD);
+        set_error(ERR_SYNTAX_ERROR_CMD);
         return ERR_SYNTAX_ERROR_CMD;
     }
     if (part >= MAX_PARTITIONS) {
@@ -1061,7 +1083,7 @@ int IecCommandChannel :: do_block_read(int chan, int part, int track, int sector
         return ERR_SYNTAX_ERROR_CMD;
     }
     IecChannel *channel = iec_drive->get_data_channel(chan);
-    IecPartition *partition = iec_drive->vfs->GetPartition(part);
+    GETPARTITION(part, partition);
     Path path(partition->GetFullPath());
     FRESULT fres;
     fres = fm->fs_read_sector(&path, channel->buffer, track, sector);
@@ -1074,76 +1096,119 @@ int IecCommandChannel :: do_block_read(int chan, int part, int track, int sector
 
 int IecCommandChannel::do_block_write(int chan, int part, int track, int sector)
 {
-    printf("Block write: Channel %d, Partition %d, T/S %d/%d\n", chan, part, track, sector);
+    if ((chan < 0) || (chan > 14)) {
+        set_error(ERR_SYNTAX_ERROR_CMD);
+        return ERR_SYNTAX_ERROR_CMD;
+    }
+    if (part >= MAX_PARTITIONS) {
+        set_error(ERR_SYNTAX_ERROR_CMD);
+        return ERR_SYNTAX_ERROR_CMD;
+    }
+    IecChannel *channel = iec_drive->get_data_channel(chan);
+    GETPARTITION(part, partition);
+    Path path(partition->GetFullPath());
+    FRESULT fres;
+    fres = fm->fs_write_sector(&path, channel->buffer, track, sector);
+    drive->set_error_fres(fres);
+    state = e_idle;
     return 0;
 }
 
 int IecCommandChannel :: do_buffer_position(int chan, int pos)
 {
     if ((chan < 0) || (chan > 14)) {
-        // set_error(ERR_SYNTAX_ERROR_CMD);
+        set_error(ERR_SYNTAX_ERROR_CMD);
         return ERR_SYNTAX_ERROR_CMD;
     }
     if ((pos < 0) || (pos > 255)) {
-        // set_error(ERR_SYNTAX_ERROR_CMD);
+        set_error(ERR_SYNTAX_ERROR_CMD);
         return ERR_SYNTAX_ERROR_CMD;
     }
     IecChannel *channel;
     channel = iec_drive->get_data_channel(chan);
     channel->pointer = pos;
     channel->reset_prefetch();
-    // set_error(ERR_ALL_OK);
+    set_error(ERR_ALL_OK);
     return ERR_ALL_OK;
 }
 
 int IecCommandChannel::do_set_current_partition(int part)
 {
-    printf("Change to partition %d\n", part);
+    GETPARTITION(part, partition);
+    drive->vfs->SetCurrentPartition(part);        
+    set_error(ERR_PARTITION_OK, part);
     return 0;
 }
 
-int IecCommandChannel::do_change_dir(int part, mstring& path)
+int IecCommandChannel::do_change_dir(filename_t& dest)
 {
-    IecPartition *prt = drive->vfs->GetPartition(part);
-    if (!prt) {
-        drive->get_command_channel()->set_error(ERR_PARTITION_ERROR, drive->vfs->GetTargetPartitionNumber(part));
-        state = e_error;
-        return -1;
-    }        
-#if IECDEBUG > 1
-    printf("Partition %d ('%s') Change dir %s\n", part, prt->GetFullPath(), path.c_str());
-#endif
-    // Path conversion needs to take place, because
-    // in this context, _ means "..", and when the path starts
-    // with a /, it should be stripped off, while // means root,
-    // which corresponds to starting with / in Ultimate VFS.
-    if (path[0] == '/' && path[1] != '/')
-        path = path.c_str() + 1;
-    path.replace("_", "..");
-    path.replace("//", "/");
-#if IECDEBUG > 1
-    printf("After replace: %s\n", path.c_str());
-#endif
-    if(!prt->cd(path.c_str())) {
+    GETPARTITION(dest.partition, prt);
+    DBGIECV("Partition %d ('%s') Change dir %s:%s\n", dest.partition, prt->GetFullPath(), dest.path.c_str(), dest.filename.c_str());
+
+    // first get names in more usable format
+    iec_path_to_fs_path(dest.path);
+    char fatname[48];
+    petscii_to_fat(dest.filename.c_str(), fatname, 48);
+
+    if(!prt->cd(dest.path.c_str())) {
         drive->get_command_channel()->set_error(ERR_DIRECTORY_ERROR, prt->GetPartitionNumber());
         state = e_error;
         return -1;
     }
-#if IECDEBUG > 1
-    printf("Result of CD: '%s'\n", prt->GetFullPath());
-#endif
+    if(!prt->cd(fatname)) {
+        drive->get_command_channel()->set_error(ERR_DIRECTORY_ERROR, prt->GetPartitionNumber());
+        state = e_error;
+        return -1;
+    }
+    DBGIECV("Result of CD: '%s'\n", prt->GetFullPath());
     return 0;
 }
 
-int IecCommandChannel::do_make_dir(int part, mstring& path)
+int IecCommandChannel::do_make_dir(filename_t& dest)
 {
-    printf("Partition %d Make dir %s\n",  part, path.c_str());
+    GETPARTITION(dest.partition, partition);
+
+    DBGIECV("MAKEDIR %s -> %s:%s\n", partition->GetFullPath(), dest.path.c_str(), dest.filename.c_str());  
+
+    // first get names in more usable format
+    iec_path_to_fs_path(dest.path);
+    char fatname[48];
+    petscii_to_fat(dest.filename.c_str(), fatname, 48);
+
+    DBGIECV(">> %s:%s\n", dest.path.c_str(), fatname);
+    // now, constuct the entire path
+    Path temppath(partition->GetFullPath());
+    temppath.cd(dest.path.c_str());
+    temppath.cd(fatname);
+
+    DBGIECV("Directory to create: %s\n", temppath.get_path());
+
+    FRESULT fres = fm->create_dir(temppath.get_path());
+    drive->set_error_fres(fres);
     return 0;
 }
 
-int IecCommandChannel::do_remove_dir(int part, mstring& path)
+int IecCommandChannel::do_remove_dir(filename_t& dest)
 {
-    printf("Partition %d Remove dir %s\n",  part, path.c_str());
+    GETPARTITION(dest.partition, partition);
+
+    DBGIECV("RMDIR %s -> %s:%s\n", partition->GetFullPath(), dest.path.c_str(), dest.filename.c_str());  
+
+    // first get names in more usable format
+    iec_path_to_fs_path(dest.path);
+    char fatname[48];
+    petscii_to_fat(dest.filename.c_str(), fatname, 48);
+
+    DBGIECV(">> %s:%s\n", dest.path.c_str(), fatname);
+    // now, constuct the entire path
+    Path temppath(partition->GetFullPath());
+    temppath.cd(dest.path.c_str());
+    temppath.cd(fatname);
+
+    DBGIECV("Directory to remove: %s\n", temppath.get_path());
+
+    FRESULT fres = fm->delete_file(temppath.get_path());
+    drive->set_error_fres(fres);
     return 0;
 }
 

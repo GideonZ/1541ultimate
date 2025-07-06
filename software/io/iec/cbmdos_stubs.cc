@@ -11,9 +11,9 @@ public:
     int do_block_write(int chan, int part, int track, int sector);
     int do_buffer_position(int chan, int pos);
     int do_set_current_partition(int part);
-    int do_change_dir(int part, mstring& path);
-    int do_make_dir(int part, mstring& path);
-    int do_remove_dir(int part, mstring& path);
+    int do_change_dir(filename_t& dest);
+    int do_make_dir(filename_t& dest);
+    int do_remove_dir(filename_t& dest);
     int do_copy(filename_t& dest, filename_t sources[], int n);
     int do_initialize();
     int do_format(uint8_t *name, uint8_t id1, uint8_t id2);
@@ -48,21 +48,21 @@ int IecCommandExecuterStubs::do_set_current_partition(int part)
     return 0;
 }
 
-int IecCommandExecuterStubs::do_change_dir(int part, mstring& path)
+int IecCommandExecuterStubs::do_change_dir(filename_t& dest)
 {
-    printf("Partition %d Change dir %s\n",  part, path.c_str());
+    printf("Partition %d Change dir %s:%s\n",  dest.partition, dest.path.c_str(), dest.filename.c_str());
     return 0;
 }
 
-int IecCommandExecuterStubs::do_make_dir(int part, mstring& path)
+int IecCommandExecuterStubs::do_make_dir(filename_t& dest)
 {
-    printf("Partition %d Make dir %s\n",  part, path.c_str());
+    printf("Partition %d Make dir %s:%s\n",  dest.partition, dest.path.c_str(), dest.filename.c_str());
     return 0;
 }
 
-int IecCommandExecuterStubs::do_remove_dir(int part, mstring& path)
+int IecCommandExecuterStubs::do_remove_dir(filename_t& dest)
 {
-    printf("Partition %d Remove dir %s\n",  part, path.c_str());
+    printf("Partition %d Remove dir %s:%s\n",  dest.partition, dest.path.c_str(), dest.filename.c_str());
     return 0;
 }
 

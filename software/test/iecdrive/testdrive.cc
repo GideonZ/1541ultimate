@@ -81,6 +81,30 @@ void open_file(IecDrive *dr, const char *fn)
     dr->push_ctrl(SLAVE_CMD_EOI);
 }
 
+void read_directory(IecDrive *dr, const char *file)
+{
+    open_file(dr, file);
+    get_status(dr);
+
+    dr->push_ctrl(SLAVE_CMD_ATN);
+    dr->push_ctrl(0x60);
+    dr->talk();
+    int ret;
+    uint8_t *data;
+    int data_size;
+    do {
+        ret = dr->prefetch_more(256, data, data_size);
+        printf("Ret: %d Count = %d\n", ret, data_size);
+        dump_hex_relative(data, data_size);
+        dr->pop_more(data_size);
+    } while(ret == 0);
+
+    dr->push_ctrl(SLAVE_CMD_ATN);
+    dr->push_ctrl(0xE0); // close
+
+    get_status(dr);
+}
+
 int main(int argc, const char **argv)
 {
     UserInterface *ui = new UserInterface("Test Drive");
@@ -123,28 +147,30 @@ int main(int argc, const char **argv)
     fm->save_file(false, "/Temp", "{c1c2c3}.seq", msg, 28, &tr);
     fm->create_dir("/Temp/SomeDir");
     fm->create_dir("/Temp/OtherDir");
+    fm->create_dir("/Temp/blah{c1c2}");
     get_status(dr);
     send_command(dr, "CD/TEMP");
     send_command(dr, "CD/SOMEDIR");
-    send_command(dr, "CD/_/OTHERDIR2");
-    open_file(dr, "$=T0:*=L");
-//    open_file(dr, "$=P:*=L");
-    get_status(dr);
+    send_command(dr, "CD/_/OTHERDIR");
+    send_command(dr, "CD//TEMP/:BLAH\xc1\xc2");
 
-    dr->push_ctrl(SLAVE_CMD_ATN);
-    dr->push_ctrl(0x60);
-    dr->talk();
-    do {
-        ret = dr->prefetch_more(256, data, data_size);
-        printf("Ret: %d Count = %d\n", ret, data_size);
-        dump_hex_relative(data, data_size);
-        dr->pop_more(data_size);
-    } while(ret == 0);
+    read_directory(dr, "$=T0:*=L");
 
-    dr->push_ctrl(SLAVE_CMD_ATN);
-    dr->push_ctrl(0xE0); // close
-
-    get_status(dr);
+    // send_command(dr, "MD//HOI");
+    send_command(dr, "MD:HOI");
+    send_command(dr, "MD/OTHERDIR:DEEPER");
+    send_command(dr, "MD_/OTHERDIR:DEEPER");
+    send_command(dr, "MD:_/DEEPER");
+    send_command(dr, "RD:HOI");
+    send_command(dr, "MD:HOI");
+    fres = fm->save_file(false, "/Temp/blah{C1C2}/HOI", "mmmmmmmmmmmmm.prg", msg, 28, &tr);
+    if (fres == FR_OK) {
+        printf("Written %u bytes to the file.\n", tr);
+    } else {
+        printf("%s\n", FileSystem::get_error_string(fres));
+    }
+    read_directory(dr, "$");
+    send_command(dr, "RD:HOI");
 
     delete dr;
     delete ui;
