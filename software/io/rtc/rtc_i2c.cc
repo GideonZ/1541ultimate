@@ -389,3 +389,8 @@ extern "C" uint32_t get_fattime(void) /* 31-25: Year(0-127 org.1980), 24-21: Mon
      return 0x3A844C97;
      */
 }
+
+extern "C" void get_current_time(int& wd, int& year, int& month, int& day, int& hour, int& min, int& sec)
+{
+    rtc.get_time(year, month, day, wd, hour, min, sec);
+}

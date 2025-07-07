@@ -53,6 +53,13 @@
 
 #include "cbmdos_parser.h"
 
+extern "C" {
+    void get_current_time(int& wd, int& year, int& month, int& day, int& hour, int& min, int& sec) __attribute__((weak));
+    void get_current_time(int& wd, int& year, int& month, int& day, int& hour, int& min, int& sec)
+    {
+        wd = 3; year = 2025; month = 6; day = 26; hour = 0; min = 41; sec = 1;
+    }
+}
 int parse_full_path(const char *buf, filename_t& name, bool *replace = NULL, bool path_only = false)
 {
     //  [[@][n][path]:]pattern
@@ -265,11 +272,6 @@ int IecParser :: dir_command(const uint8_t *buffer, int len)
     if (err) {
         return err;
     }
-//    mstring path = dest.path;
-//    if ((path.length() > 0) && (path[-1] != '/') && (dest.filename.length() > 0)) {
-//        path += '/';
-//    }
-//    path += dest.filename;
     switch (buffer[0]) {
     case 'C': return exec->do_change_dir(dest);
     case 'M': return exec->do_make_dir(dest);
@@ -417,9 +419,11 @@ int IecParser :: time_command(const uint8_t *buffer, int len)
     if (buffer[1] != '-') {
         return ERR_SYNTAX;
     }
+
     int wd, day, month, year, hour, min, sec, hour12;
-    // get time
-    wd = 3; year = 2025; month = 6; day = 26; hour = 0; min = 41; sec = 1;
+
+    get_current_time(wd, year, month, day, hour, min, sec);
+
     hour12 = (hour % 12); if (hour12 == 0) hour12 = 12;
 
     int reslen;
@@ -483,6 +487,8 @@ int IecParser :: user_command(const uint8_t *buffer, int len)
         n = sscanf((const char *)buffer+2, "%d%d%d%d", &chan, &part, &track, &sector);
         if (n != 4) return ERR_SYNTAX;
         return exec->do_block_write(chan, part, track, sector);
+    case 'I':
+        return exec->do_initialize();
     default:
         return ERR_UNKNOWN_CMD;
     }

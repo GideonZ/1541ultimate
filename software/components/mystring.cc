@@ -260,6 +260,11 @@ bool mstring :: operator==(const mstring &rhs)
     return (strcmp(cp, rhs.cp) == 0);
 }
 
+bool mstring :: operator!=(const mstring &rhs)
+{
+    return !(*this == rhs);
+}
+
 bool mstring :: operator==(const char *rhs)
 {
     if(!cp && !rhs)
@@ -269,6 +274,11 @@ bool mstring :: operator==(const char *rhs)
     if(!rhs)
         return false;
     return (strcmp(cp, rhs) == 0);
+}
+
+bool mstring :: operator!=(const char *rhs)
+{
+    return !(*this == rhs);
 }
 
 mstring mstring::operator+(const mstring &right)

@@ -1050,12 +1050,12 @@ void print_file(filename_t& file)
         file.partition, file.path.c_str(), file.filename.c_str(), file.has_wildcard?"true":"false" );
 }
 
-#define GETPARTITION(part, partition) \
+#define GETPARTITION(part, partition, reterr) \
     IecPartition *partition = drive->vfs->GetPartition(part); \
     if (!partition) { \
         drive->get_command_channel()->set_error(ERR_PARTITION_ERROR, drive->vfs->GetTargetPartitionNumber(part)); \
         state = e_error; \
-        return -1; \
+        return reterr; \
     }
 
 static void iec_path_to_fs_path(mstring &path)
@@ -1068,9 +1068,44 @@ static void iec_path_to_fs_path(mstring &path)
         path = path.c_str() + 1;
     path.replace("_", "..");
     path.replace("//", "/");
-    if (path[-1] == '/')
-        path.set(-1, 0);
+//    if (path[-1] == '/')
+//        path.set(-1, 0);
 }
+
+const char *IecChannel :: ConstructPath(mstring& work, filename_t& name, filetype_t ftype, fileaccess_t acc)
+{
+    const char *types[] = { ".???", ".prg", ".seq", ".usr", ".rel", "" };
+
+    GETPARTITION(name.partition, partition, NULL);
+    // first get names in more usable format
+    iec_path_to_fs_path(name.path);
+    char fatname[48];
+    petscii_to_fat(name.filename.c_str(), fatname, 48);
+
+    if (ftype == e_any) {
+        if ((acc == e_write) || (acc == e_append)) {
+            if (channel == 0) {
+                ftype = e_prg;
+            } else {
+                ftype = e_seq;
+            }
+        }
+    }
+
+    const char *ext = types[(int)ftype];
+    if (*ext)
+        set_extension(fatname, ext, 48);
+
+    Path workpath;
+    workpath.cd(partition->GetRelativePath());
+    if(!workpath.cd(name.path.c_str())) return NULL;
+    if(!workpath.cd(fatname)) return NULL;
+    const char *pp = workpath.get_path();
+    work = partition->GetRootPath();
+    work += (pp + 1);
+    return work.c_str();
+}
+
 
 int IecCommandChannel :: do_block_read(int chan, int part, int track, int sector)
 {
@@ -1083,7 +1118,7 @@ int IecCommandChannel :: do_block_read(int chan, int part, int track, int sector
         return ERR_SYNTAX_ERROR_CMD;
     }
     IecChannel *channel = iec_drive->get_data_channel(chan);
-    GETPARTITION(part, partition);
+    GETPARTITION(part, partition, -1);
     Path path(partition->GetFullPath());
     FRESULT fres;
     fres = fm->fs_read_sector(&path, channel->buffer, track, sector);
@@ -1105,7 +1140,7 @@ int IecCommandChannel::do_block_write(int chan, int part, int track, int sector)
         return ERR_SYNTAX_ERROR_CMD;
     }
     IecChannel *channel = iec_drive->get_data_channel(chan);
-    GETPARTITION(part, partition);
+    GETPARTITION(part, partition, -1);
     Path path(partition->GetFullPath());
     FRESULT fres;
     fres = fm->fs_write_sector(&path, channel->buffer, track, sector);
@@ -1134,7 +1169,7 @@ int IecCommandChannel :: do_buffer_position(int chan, int pos)
 
 int IecCommandChannel::do_set_current_partition(int part)
 {
-    GETPARTITION(part, partition);
+    GETPARTITION(part, partition, -1);
     drive->vfs->SetCurrentPartition(part);        
     set_error(ERR_PARTITION_OK, part);
     return 0;
@@ -1142,7 +1177,7 @@ int IecCommandChannel::do_set_current_partition(int part)
 
 int IecCommandChannel::do_change_dir(filename_t& dest)
 {
-    GETPARTITION(dest.partition, prt);
+    GETPARTITION(dest.partition, prt, -1);
     DBGIECV("Partition %d ('%s') Change dir %s:%s\n", dest.partition, prt->GetFullPath(), dest.path.c_str(), dest.filename.c_str());
 
     // first get names in more usable format
@@ -1166,66 +1201,111 @@ int IecCommandChannel::do_change_dir(filename_t& dest)
 
 int IecCommandChannel::do_make_dir(filename_t& dest)
 {
-    GETPARTITION(dest.partition, partition);
-
-    DBGIECV("MAKEDIR %s -> %s:%s\n", partition->GetFullPath(), dest.path.c_str(), dest.filename.c_str());  
-
-    // first get names in more usable format
-    iec_path_to_fs_path(dest.path);
-    char fatname[48];
-    petscii_to_fat(dest.filename.c_str(), fatname, 48);
-
-    DBGIECV(">> %s:%s\n", dest.path.c_str(), fatname);
-    // now, constuct the entire path
-    Path temppath(partition->GetFullPath());
-    temppath.cd(dest.path.c_str());
-    temppath.cd(fatname);
-
-    DBGIECV("Directory to create: %s\n", temppath.get_path());
-
-    FRESULT fres = fm->create_dir(temppath.get_path());
-    drive->set_error_fres(fres);
+    mstring work;
+    const char *fullpath = ConstructPath(work, dest, e_folder, e_read);
+    if (fullpath) {
+        DBGIECV("Directory to create: %s\n", fullpath);
+        FRESULT fres = fm->create_dir(fullpath);
+        drive->set_error_fres(fres);
+    } else {
+        return ERR_DIRECTORY_ERROR;
+    }
     return 0;
 }
 
 int IecCommandChannel::do_remove_dir(filename_t& dest)
 {
-    GETPARTITION(dest.partition, partition);
-
-    DBGIECV("RMDIR %s -> %s:%s\n", partition->GetFullPath(), dest.path.c_str(), dest.filename.c_str());  
-
-    // first get names in more usable format
-    iec_path_to_fs_path(dest.path);
-    char fatname[48];
-    petscii_to_fat(dest.filename.c_str(), fatname, 48);
-
-    DBGIECV(">> %s:%s\n", dest.path.c_str(), fatname);
-    // now, constuct the entire path
-    Path temppath(partition->GetFullPath());
-    temppath.cd(dest.path.c_str());
-    temppath.cd(fatname);
-
-    DBGIECV("Directory to remove: %s\n", temppath.get_path());
-
-    FRESULT fres = fm->delete_file(temppath.get_path());
-    drive->set_error_fres(fres);
+    mstring work;
+    const char *fullpath = ConstructPath(work, dest, e_folder, e_read);
+    if (fullpath) {
+        DBGIECV("Directory to remove: %s\n", fullpath);
+        FRESULT fres = fm->delete_file(fullpath);
+        if (fres == FR_DENIED) {
+            return ERR_FILE_EXISTS;
+        } else {
+            drive->set_error_fres(fres);
+        }
+    } else {
+        return ERR_DIRECTORY_ERROR;
+    }
     return 0;
 }
 
 int IecCommandChannel::do_copy(filename_t& dest, filename_t sources[], int n)
 {
-    printf("Copy %d sources to ", n);
-    print_file(dest);
-    for(int i=0;i<n;i++) {
-        printf("  %d. ", i);
-        print_file(sources[i]);
+    // Curiously, an original drive takes the file type from the FIRST file it copies.
+    // So in order to know the destination extension, we'd need to first open the first file
+    // using wildcards and then see what file was opened.
+    mstring work;
+    FileInfo info(48);
+    const char *source1 = ConstructPath(work, sources[0], e_any, e_read);
+    if (!source1) {
+        drive->get_command_channel()->set_error(ERR_PARTITION_ERROR, sources[0].partition);
+        return 0;
     }
+    FRESULT fres = fm->fstat(source1, info);
+    if (fres != FR_OK) {
+        return ERR_FILE_NOT_FOUND;
+    }
+    // convert FAT name to CBM name
+    char cbm_name[24];
+    filetype_t ftype = e_any;
+    IecPartition::CreateIecName(&info, cbm_name, ftype);
+    // ftype is now set to the type of the first original file.
+
+    // Now the real copy action can begin
+    File *fi, *fo;
+    const char *destpath = ConstructPath(work, dest, ftype, e_write);    
+    if (!destpath) {
+        drive->get_command_channel()->set_error(ERR_PARTITION_ERROR, dest.partition);
+        return 0;
+    }
+    DBGIECV("Destination: %s\n", destpath);
+    fres = fm->fopen(destpath, FA_CREATE_NEW | FA_WRITE, &fo);
+    if (fres != FR_OK) {
+        drive->set_error_fres(fres);
+        return 0;
+    }
+    // Output file is now open, let's copy data into it
+    uint8_t *databuf = new uint8_t[32768];
+
+    for(int i=0;i<n;i++) {
+        const char *frompath = ConstructPath(work, sources[i], e_any, e_read);
+        if (frompath) {
+            DBGIECV("  %d. %s\n", i, frompath);
+        } else {
+            drive->get_command_channel()->set_error(ERR_PARTITION_ERROR, sources[i].partition);
+            break;
+        }
+        fres = fm->fopen(frompath, FA_READ, &fi);
+        if (fres != FR_OK) {
+            drive->set_error_fres(fres);
+            break;
+        }
+        uint32_t bytes_read, bytes_written;
+        do {
+            fres = fi->read(databuf, 32768, &bytes_read);
+            if (fres == FR_OK) {
+                fres = fo->write(databuf, bytes_read, &bytes_written);
+            }
+            if (fres != FR_OK) {
+                drive->set_error_fres(fres);
+                break;
+            }
+        } while (bytes_read > 0);
+
+        fm->fclose(fi);
+        if (fres != FR_OK)
+            break;
+    }
+    delete databuf;
+    fm->fclose(fo);
     return 0;
 }
 
 int IecCommandChannel::do_initialize()
 {
-    return 73;
+    return ERR_DOS;
 }
 
 int IecCommandChannel::do_format(uint8_t *name, uint8_t id1, uint8_t id2)
@@ -1236,26 +1316,64 @@ int IecCommandChannel::do_format(uint8_t *name, uint8_t id1, uint8_t id2)
 
 int IecCommandChannel::do_rename(filename_t &src, filename_t &dest)
 {
-    printf("Rename from: ");
-    print_file(src);
-    printf("  To: ");
-    print_file(dest);
+    mstring works, workd;
+    const char *src_path = ConstructPath(works, src, e_any, e_read);
+    if (!src_path) {
+        return ERR_PARTITION_ERROR;
+    }
+    FileInfo info(48);
+    FRESULT fres = fm->fstat(src_path, info);
+    if (fres != FR_OK) {
+        drive->set_error_fres(fres);
+        return 0;
+    }
+    // convert FAT name to CBM name
+    char cbm_name[24];
+    filetype_t ftype = e_any;
+    IecPartition::CreateIecName(&info, cbm_name, ftype);
+    // ftype is now set to the type of the first original file.
+    
+    const char *dest_path = ConstructPath(workd, src, ftype, e_write);
+    if (!dest_path) {
+        return ERR_PARTITION_ERROR;
+    }
+
+    fres = fm->rename(src_path, dest_path);
+    if (fres != FR_OK) {
+        drive->set_error_fres(fres);
+    }
     return 0;
 }
 
 int IecCommandChannel::do_scratch(filename_t filenames[], int n)
 {
-    printf("Scratch %d files:\n", n);
+    DBGIECV("Scratch %d files:\n", n);
+    mstring work;
     for(int i=0;i<n;i++) {
-        printf("  %d. ", i);
-        print_file(filenames[i]);
+        const char *fp = ConstructPath(work, filenames[i], e_any, e_not_set);
+        if (fp) {
+            DBGIECV("  %d. %s\n", i, fp);
+        } else {
+            drive->get_command_channel()->set_error(ERR_PARTITION_ERROR, filenames[i].partition);
+            break;
+        }
+        FRESULT fres = fm->delete_file(fp);
+        if (fres != FR_OK) {
+            drive->set_error_fres(fres);
+        }
     }
     return 0;
 }
 
 int IecCommandChannel::do_cmd_response(uint8_t *data, int len)
 {
-    dump_hex_relative(data, len);
+    memcpy(buffer, data, len);
+    last_byte = len - 1;
+    pointer = 0;
+    prefetch = 0;
+    prefetch_max = len;
+    state = e_status;
+    drive->set_error(0, 0, 0);
     return 0;
 }
 
@@ -1283,6 +1401,7 @@ int IecCommandChannel::ext_close_file(void)
 
 t_channel_retval IecCommandChannel::push_command(uint8_t b)
 {
+    int err;
     switch (b) {
     case 0x60:
         reset_prefetch();
@@ -1295,7 +1414,9 @@ t_channel_retval IecCommandChannel::push_command(uint8_t b)
     case 0x00: // end of data, command received in buffer
         wr_buffer[wr_pointer] = 0;
         if (wr_pointer) {
-            parser->execute_command(wr_buffer, wr_pointer);
+            drive->set_error(0, 0, 0);
+            err = parser->execute_command(wr_buffer, wr_pointer);
+            if (err) set_error(err);
         }
         wr_pointer = 0;
         break;

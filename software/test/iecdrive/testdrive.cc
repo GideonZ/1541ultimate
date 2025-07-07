@@ -10,6 +10,8 @@ CommandInterface cmd_if;
 BlockDevice *ramdisk_blk;
 FileDevice *ramdisk_node;
 
+char last_status[128];
+
 void init_ram_disk()
 {
     const int sz = 512;
@@ -40,6 +42,9 @@ void get_status(IecDrive *dr)
     dr->push_ctrl(0x6f); // channel 15
     dr->talk();
     dr->prefetch_more(256, data, data_size);
+
+    memcpy(last_status, data, data_size);
+    last_status[data_size] = 0;
     data[data_size] = 0;
     printf("Status: %s\n", data);
     //dump_hex_relative(data, data_size);
@@ -62,7 +67,7 @@ void get_status2(IecDrive *dr)
     printf(".\n");
 }
 
-void send_command(IecDrive *dr, const char *cmd)
+const char *send_command(IecDrive *dr, const char *cmd)
 {
     dr->push_ctrl(SLAVE_CMD_ATN);
     dr->push_ctrl(0x6F); // open channel 15
@@ -71,6 +76,7 @@ void send_command(IecDrive *dr, const char *cmd)
     }
     dr->push_ctrl(SLAVE_CMD_EOI);
     get_status(dr);
+    return last_status;
 }
 
 void open_file(IecDrive *dr, const char *fn)
@@ -111,9 +117,9 @@ int main(int argc, const char **argv)
 
     IecDrive *dr = new IecDrive();
     t_channel_retval ret;
-    uint8_t *data;
-    int data_size;
     uint32_t tr;
+
+    mstring status;
 
     init_ram_disk();
     File *f;
@@ -147,30 +153,83 @@ int main(int argc, const char **argv)
     fm->save_file(false, "/Temp", "{c1c2c3}.seq", msg, 28, &tr);
     fm->create_dir("/Temp/SomeDir");
     fm->create_dir("/Temp/OtherDir");
+    fm->create_dir("/Temp/OtherDir/Level2");
     fm->create_dir("/Temp/blah{c1c2}");
-    get_status(dr);
-    send_command(dr, "CD/TEMP");
-    send_command(dr, "CD/SOMEDIR");
-    send_command(dr, "CD/_/OTHERDIR");
-    send_command(dr, "CD//TEMP/:BLAH\xc1\xc2");
+    fm->create_dir("/Temp/Partition2");
+    
+    dr->add_partition(1, "/Temp");
+    dr->add_partition(2, "/Temp/Partition2");
+
+    int error = 0;
+    status = send_command(dr, "CP1");
+    if(status != "02,PARTITION SELECTED,01,00\r") error++;
+
+    status = send_command(dr, "CD/TEMP");
+    if(status != "71,DIRECTORY ERROR,01,00\r") error++;
+
+    status = send_command(dr, "CD/SOMEDIR");
+    if(status != "00, OK,00,00\r") error++;
+    status = send_command(dr, "CD/_/OTHERDIR");
+    if(status != "00, OK,00,00\r") error++;
+    status = send_command(dr, "CD:LEVEL2");
+    if(status != "00, OK,00,00\r") error++;
+    status = send_command(dr, "CD//");
+    if(status != "00, OK,00,00\r") error++;
+    status = send_command(dr, "CD/OTHERDIR/LEVEL2");
+    if(status != "00, OK,00,00\r") error++;
+    status = send_command(dr, "CD//:BLAH\xc1\xc2");
+    if(status != "00, OK,00,00\r") error++;
+    status = send_command(dr, "CD_");
+    if(status != "00, OK,00,00\r") error++;
 
     read_directory(dr, "$=T0:*=L");
 
     // send_command(dr, "MD//HOI");
-    send_command(dr, "MD:HOI");
-    send_command(dr, "MD/OTHERDIR:DEEPER");
-    send_command(dr, "MD_/OTHERDIR:DEEPER");
-    send_command(dr, "MD:_/DEEPER");
-    send_command(dr, "RD:HOI");
-    send_command(dr, "MD:HOI");
-    fres = fm->save_file(false, "/Temp/blah{C1C2}/HOI", "mmmmmmmmmmmmm.prg", msg, 28, &tr);
+    status = send_command(dr, "MD:HOI");
+    if(status != "00, OK,00,00\r") error++;
+    status = send_command(dr, "MD/OTHERDIR:DEEPER");
+    if(status != "00, OK,00,00\r") error++;
+    status = send_command(dr, "MD_/OTHERDIR:DEEPER");
+    if(status != "71,DIRECTORY ERROR,00,00\r") error++;
+    status = send_command(dr, "MD:_/DEEPER");
+    if(status != "00, OK,00,00\r") error++;
+    status = send_command(dr, "RD:HOI");
+    if(status != "00, OK,00,00\r") error++;
+    status = send_command(dr, "MD:HOI");
+    if(status != "00, OK,00,00\r") error++;
+
+
+    fres = fm->save_file(false, "/Temp/HOI", "mmmmmmmmmmmmm.prg", msg, 28, &tr);
     if (fres == FR_OK) {
         printf("Written %u bytes to the file.\n", tr);
     } else {
         printf("%s\n", FileSystem::get_error_string(fres));
     }
-    read_directory(dr, "$");
-    send_command(dr, "RD:HOI");
+    status = send_command(dr, "RD:HOI");
+    if(status != "63,FILE EXISTS,00,00\r") error++;
+
+
+    // read_directory(dr, "$");
+    status = send_command(dr, "T-RA");
+    if(status != "WED. 26/06/25 12:41:01 AM\r") error++;
+    status = send_command(dr, "T-RI");
+    if(status != "2025-06-26T00:41:01 WED\r") error++;
+    status = send_command(dr, "T-RB");
+
+    status = send_command(dr, "C2:DEST=");
+    if(status != "32,SYNTAX ERROR,00,00\r") error++;
+    status = send_command(dr, "C2:DEST=1:A,1:BB");
+    if(status != "00, OK,00,00\r") error++;
+    status = send_command(dr, "CP2");
+    if(status != "02,PARTITION SELECTED,02,00\r") error++;
+
+    // send_command(dr, "CP3");
+    // read_directory(dr, "$");
+    // send_command(dr, "CP2");
+    read_directory(dr, "$=P");
+
+    printf("Errors: %d\n", error);
+    return 0;
 
     delete dr;
     delete ui;

@@ -33,14 +33,18 @@ class IecPartition {
     mstring root;
     mstring full_path;
 public:
-    IecPartition(IecFileSystem *vfs, int nr)
+    IecPartition(IecFileSystem *vfs, int nr, const char *rt)
     {
         fm = FileManager::getFileManager();
         this->vfs = vfs;
         partitionNumber = nr;
         path = fm->get_new_path("IEC Partition");
-        root = "/";
-        full_path = "/";
+        root = rt;
+        full_path = rt;
+        if(root[-1] != '/') {
+            root += "/";
+            full_path += "/";
+        }
     }
 
     ~IecPartition()
@@ -55,13 +59,19 @@ public:
 
     bool IsValid(); // implemented in iec_channel.cc, to resolve an illegal forward reference
 
-    bool cd(const char *p) {
+    bool cd(const char *p)
+    {
+        // zero pointers or zero strings don't need to be considered
+        if (!p || !*p) {
+            return true;
+        }
         // make a new temporary path in string form
         Path temp(path);
         temp.cd(p);
         const char *rp = temp.get_path();        
         mstring full = root + (rp+1); // strip off the leading slash
 
+        //printf("Now we need to check if the resulting path '%s' is valid\n", full.c_str());
         // now test the result, if correct copy
         if (fm->is_path_valid(full.c_str())) {
             path->cd(p);
@@ -134,7 +144,7 @@ public:
             partitions[i] = 0;
         }
         currentPartition = 0;
-        partitions[0] = new IecPartition(this, 0);
+        partitions[0] = new IecPartition(this, 0, "/"); // drive->get_root_path());
     }
 
     ~IecFileSystem() 
@@ -144,6 +154,14 @@ public:
                 delete partitions[i];
             }
         }
+    }
+
+    void add_partition(int p, const char *path)
+    {
+        if (partitions[p]) {
+            delete partitions[p];
+        }
+        partitions[p] = new IecPartition(this, p, path);
     }
 
     const char *GetRootPath()
@@ -265,6 +283,9 @@ private:
     int read_block(void);
     t_channel_retval read_record(int offset);
     t_channel_retval write_record(void);
+
+    const char *ConstructPath(mstring& work, filename_t& name, filetype_t ftype, fileaccess_t acc);
+
 public:
     IecChannel(IecDrive *dr, int ch);
     virtual ~IecChannel();

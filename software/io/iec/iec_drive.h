@@ -87,6 +87,7 @@ public:
     IecCommandChannel *get_data_channel(int chan);
     const char *get_root_path();
     const char *get_partition_dir(int p);
+    void add_partition(int p, const char *path);
 
     friend class IecChannel;
     friend class IecCommandChannel;

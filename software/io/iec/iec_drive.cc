@@ -332,6 +332,11 @@ const char *IecDrive :: get_partition_dir(int p)
     return vfs->GetPartitionPath(p, false);
 }
                 
+void IecDrive :: add_partition(int p, const char *path)
+{
+    vfs->add_partition(p, path);
+}
+
 void IecDrive :: set_error(int code, int track, int sector)
 {
     last_error_code = code;
