@@ -135,6 +135,8 @@ int main(int argc, const char **argv)
     }
     fm->save_file(false, "/Temp", "bb.prg", msg, 28, &tr);
     fm->save_file(false, "/Temp", "ccc.prg", msg, 28, &tr);
+    fm->save_file(false, "/Temp", "cc2.prg", msg, 28, &tr);
+    fm->save_file(false, "/Temp", "cc3.prg", msg, 28, &tr);
     fm->save_file(false, "/Temp", "dddd.prg", msg, 28, &tr);
     fm->save_file(false, "/Temp", "eeeee.prg", msg, 28, &tr);
     fm->save_file(false, "/Temp", "ffffff.prg", msg, 28, &tr);
@@ -223,10 +225,13 @@ int main(int argc, const char **argv)
     status = send_command(dr, "CP2");
     if(status != "02,PARTITION SELECTED,02,00\r") error++;
 
+    //status = send_command(dr, "S1:C*");
+    status = send_command(dr, "RENAME1:DOOM=1:DDDD");
+    
     // send_command(dr, "CP3");
-    // read_directory(dr, "$");
+    read_directory(dr, "$1");
     // send_command(dr, "CP2");
-    read_directory(dr, "$=P");
+    //read_directory(dr, "$=P");
 
     printf("Errors: %d\n", error);
     return 0;

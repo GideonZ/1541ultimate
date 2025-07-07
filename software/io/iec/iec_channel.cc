@@ -1333,7 +1333,7 @@ int IecCommandChannel::do_rename(filename_t &src, filename_t &dest)
     IecPartition::CreateIecName(&info, cbm_name, ftype);
     // ftype is now set to the type of the first original file.
     
-    const char *dest_path = ConstructPath(workd, src, ftype, e_write);
+    const char *dest_path = ConstructPath(workd, dest, ftype, e_write);
     if (!dest_path) {
         return ERR_PARTITION_ERROR;
     }
