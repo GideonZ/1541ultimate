@@ -69,7 +69,8 @@ public:
         Path temp(path);
         temp.cd(p);
         const char *rp = temp.get_path();        
-        mstring full = root + (rp+1); // strip off the leading slash
+        mstring full = root;
+        full += (rp+1); // strip off the leading slash
 
         //printf("Now we need to check if the resulting path '%s' is valid\n", full.c_str());
         // now test the result, if correct copy
