@@ -106,7 +106,9 @@ int main(int argc, const char *argv[])
                 { -1, "", "JUSTFILE", false, false, e_usr, e_not_set,
                   e_stream_file, e_stamp_none, 0x0, 0x0, 0x00} );
 
-    d_parse_open("JUSTFILE,USR", o, ERR_ILLEGAL_CHARS );
+    d_parse_open("JUSTFILE,USR", o, 0,
+                { -1, "", "JUSTFILE", false, false, e_usr, e_not_set,
+                  e_stream_file, e_stamp_none, 0x0, 0x0, 0x00} );
 
     d_parse_open("JUSTFILE,U,A", o, 0,
                 { -1, "", "JUSTFILE", false, false, e_usr, e_append,
@@ -150,9 +152,11 @@ int main(int argc, const char *argv[])
 
     d_parse_open("@345:", o, ERR_ILLEGAL_NAME);
 
-    d_parse_open(",", o, ERR_ILLEGAL_CHARS);
+    d_parse_open(",", o, ERR_SYNTAX);
 
-    d_parse_open("BLAH,SEQ", o, ERR_ILLEGAL_CHARS);
+    d_parse_open("BLAH,SEQ", o, 0,
+                {-1, "", "BLAH", false, false, e_seq, e_not_set,
+                  e_stream_file, e_stamp_none, 0x0, 0x0, 0x00});
 
     d_parse_open("@1:FOO,S", o, 0,
                 { 1, "", "FOO", false, true, e_seq, e_not_set,
@@ -184,15 +188,15 @@ int main(int argc, const char *argv[])
 
     d_parse_open("$=T2:*=P", o, 0,
                 { 2, "", "*", true, false, e_any, e_not_set,
-                  e_stream_dir, e_stamp_short, 0x0, 0x0, 0x01 });
+                  e_stream_dir, e_stamp_short, 0x0, 0x0, 0x02 });
 
     d_parse_open("$=T2:*=P,L", o, 0,
                 { 2, "", "*", true, false, e_any, e_not_set,
-                  e_stream_dir, e_stamp_long, 0x0, 0x0, 0x01 });
+                  e_stream_dir, e_stamp_long, 0x0, 0x0, 0x02 });
 
     d_parse_open("$=T2:*=P,L,>12/21/18 04:15 PM", o, 0,
                 { 2, "", "*", true, false, e_any, e_not_set,
-                  e_stream_dir, e_stamp_long, 0x4D9581E0, 0x0, 0x01 });
+                  e_stream_dir, e_stamp_long, 0x4D9581E0, 0x0, 0x02 });
                   // 2018=>38 => 0100110
                   // 12       => 1100
                   // 21       => 10101
@@ -207,7 +211,7 @@ int main(int argc, const char *argv[])
 
     d_parse_open("$=T4:*=S,N,>12/21/18 12:01 AM,<12/31/18 12:00 PM", o, 0, 
                 { 4, "", "*", true, false, e_any, e_not_set,
-                  e_stream_dir, e_stamp_none, 0x4d950020, 0x4d9f6000, 0x02 });
+                  e_stream_dir, e_stamp_none, 0x4d950020, 0x4d9f6000, 0x04 });
 
     d_parse_open("$3", o, 0,
                 { 3, "", "", false, false, e_any, e_not_set,

@@ -310,8 +310,7 @@ t_channel_retval IecChannel::push_command(uint8_t b)
         pointer = 0;
         break;
     case 0xE0: // close
-        //printf("close %d %d\n", pointer, name.mode);
-        if ((filemode == e_write) || (filemode == e_append)) {
+        if ((name_to_open.access == e_write) || (name_to_open.access == e_append)) {
             if (f) {
                 if (pointer > 0) {
                     uint32_t dummy;
@@ -567,15 +566,6 @@ int IecChannel::read_dir_entry(void)
     return 0;
 }
 
-/*
-    if (!name->extension) {
-        if (name->mode == e_read) {
-            name->extension = ".???";
-        } else {
-            name->extension = (channel < 2) ? ".prg" : ".seq";
-        }
-    }
-*/
 int IecChannel :: setup_partition_read()
 {
     printf("Setup partition read\n");
@@ -649,152 +639,72 @@ int IecChannel :: setup_directory_read()
 //    }
 
 
-//    if (dir) {
-//        delete dir;
-//    }
     return 0;
 }
 
 int IecChannel :: setup_file_access()
 {
-    return 0;
-}
+    drive->set_error(0, 0, 0);
 
-/*
-int IecChannel::setup_directory_read(name_t& name)
-{
-    if (name.explicitExt) {
-        dirpattern = &(name.extension[1]); // skip the .
-    } else {
-        dirpattern = "???";
-    }
-    const char *first = isEmptyString(name.name) ? "*" : name.name;
-    dirpattern += first;
-    printf("IEC Channel: Opening directory... (Pattern = %s)\n", dirpattern.c_str());
-    if (dirPartition->ReadDirectory()) {
-        drive->get_command_channel()->set_error(ERR_DRIVE_NOT_READY, dirPartition->GetPartitionNumber());
-        state = e_error;
-        return -1;
+    if (name_to_open.access == e_not_set) {
+        name_to_open.access = e_read;
     }
 
-    dir_index = 0;
-    return 0;
-}
-
-int IecChannel::setup_file_access(name_t& name)
-{
-    drive->get_command_channel()->set_error(ERR_ALL_OK, 0, 0);
-    if (!setup_file_access(name)) {
-        drive->get_error_string(fs_filename); // abusing this buffer to store temporary error
-        printf("Setup file access failed for file '%d:%s%s': %s\n", name.drive, name.name, name.extension, fs_filename);
-        // Something went wrong, so just exit.
+    mstring work;
+    const char *full_path = ConstructPath(work, name_to_open.file, name_to_open.filetype, name_to_open.access );
+    if (!full_path) {
+        drive->set_error(ERR_PARTITION_ERROR, name_to_open.file.partition, 0);
         return 0;
     }
 
-    FRESULT fres = fm->fopen(partition->GetPath(), fs_filename, flags | FA_OPEN_FROM_CBM, &f);
-    if (f) {
-        printf("Successfully opened file %s in %s\n", fs_filename, partition->GetFullPath());
-
-        if (name.mode == e_relative) {
-            if (!f->get_size()) { // the file must be newly created, because its size is 0.
-                uint16_t wrd = name.recordSize;
-                fres = f->write(&wrd, 2, &tr);
-                drive->set_error_fres(fres);
-                if (fres == FR_OK) {
-                    recordSize = name.recordSize;
-                }
-            } else { // file already exists
-                uint16_t wrd;
-                fres = f->read(&wrd, 2, &tr);
-                recordSize = (uint8_t) wrd;
-                if (wrd >= 256) {
-                    printf("WARNING: Illegal record size in .rel file...Is it a REL file at all? (%d)\n", wrd);
-                }
-                drive->set_error_fres(fres);
-#if IECDEBUG
-                printf("Opened existing relative file. Record size is: %d.\n", recordSize);
-#endif
-            }
-        }
-        return init_iec_transfer();
-    } else {
-        printf("Can't open file %s in %s: %s\n", fs_filename, partition->GetFullPath(), FileSystem::get_error_string(fres));
-        drive->set_error_fres(fres);
-    }
-    return 0;
-
-    flags = FA_READ;
-
-    partition = drive->vfs->GetPartition(name.drive);
-    partition->ReadDirectory();
-    int pos = partition->FindIecName(name.name, name.extension, false);
-    if ((pos < 0) && !name.explicitExt && (name.mode != e_append) && (name.mode != e_write)) {
-        name.extension = ".???";
-        pos = partition->FindIecName(name.name, name.extension, false);
-    }
-
-    FileInfo *info;
-    if (pos >= 0) {
-        info = partition->GetSystemFile(pos);
-        if (strncmp(info->extension, "REL", 3) == 0) {
-            name.mode = e_relative;
-        }
-    }
-
-    switch (name.mode) {
+    uint8_t flags;
+    switch(name_to_open.access) {
     case e_append:
-        if (pos < 0) {
-            drive->get_command_channel()->set_error(ERR_FILE_NOT_FOUND, dirPartition->GetPartitionNumber());
-            state = e_error;
-            return 0;
-        }
-        info = partition->GetSystemFile(pos);
-        strncpy(fs_filename, info->lfname, 64);
         flags = FA_WRITE;
         break;
-
     case e_write:
-        if (pos >= 0) { // file exists, and not allowed to overwrite
-            drive->get_command_channel()->set_error(ERR_FILE_EXISTS, dirPartition->GetPartitionNumber());
-            state = e_error;
-            return 0;
+        if (name_to_open.replace) {
+            flags = (FA_WRITE | FA_CREATE_ALWAYS);
+        } else {
+            flags = (FA_WRITE | FA_CREATE_NEW);
         }
-        petscii_to_fat(name.name, fs_filename, 64); // we may convert it back later!!
-        //strcpy(fs_filename, name.name);
-        strcat(fs_filename, name.extension);
-        flags = FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS;
         break;
-
-    case e_replace:
-        petscii_to_fat(name.name, fs_filename, 64);
-        //strcpy(fs_filename, name.name);
-        strcat(fs_filename, name.extension);
-        flags = FA_WRITE | FA_CREATE_ALWAYS;
-        break;
-
-    case e_relative:
-        petscii_to_fat(name.name, fs_filename, 64);
-        strcat(fs_filename, name.extension);
-        flags = FA_READ | FA_WRITE | FA_OPEN_ALWAYS;
-        break;
-
-    default: // read / undefined
-        if (pos < 0) {
-            drive->get_command_channel()->set_error(ERR_FILE_NOT_FOUND, dirPartition->GetPartitionNumber());
-            state = e_error;
-            return 0;
-        }
-        strncpy(fs_filename, info->lfname, 64);
-        flags = FA_READ;
+    default:
+        flags = FA_READ; 
+    }
+    if (name_to_open.filetype == e_rel) {
+        flags |= ( FA_READ | FA_WRITE );
     }
 
-    state = e_error; // assume something goes wrong ;)
-    return 1; // OK so far
-}
-*/
-int IecChannel::init_iec_transfer(void)
-{
-    if (filemode == e_append) {
+    DBGIECV("Setup File Access %s %02x\n", full_path, flags);
+
+    FRESULT fres = fm->fopen(full_path, flags, &f);
+    if (fres != FR_OK) {
+        drive->set_error_fres(fres);
+        return 0;
+    }
+    if (name_to_open.filetype == e_rel) {
+        uint32_t tr;
+        if (!f->get_size()) { // the file must be newly created, because its size is 0.
+            uint16_t wrd = name_to_open.record_size;
+            fres = f->write(&wrd, 2, &tr);
+            drive->set_error_fres(fres);
+            if (fres == FR_OK) {
+                recordSize = name_to_open.record_size;
+                state = e_record;
+            }
+        } else { // file already exists
+            uint16_t wrd;
+            fres = f->read(&wrd, 2, &tr);
+            recordSize = (uint8_t) wrd;
+            if (wrd >= 256) {
+                printf("WARNING: Illegal record size in .rel file...Is it a REL file at all? (%d)\n", wrd);
+            }
+            drive->set_error_fres(fres);
+            DBGIECV("Opened existing relative file. Record size is: %d.\n", recordSize);
+            state = e_record;
+        }
+    } else if (name_to_open.access == e_append) {
         FRESULT fres = f->seek(f->get_size());
         if (fres != FR_OK) {
             drive->get_command_channel()->set_error(ERR_FRESULT_CODE, fres);
@@ -808,14 +718,12 @@ int IecChannel::init_iec_transfer(void)
     prefetch_max = 512;
     state = e_file;
 
-    if (filemode == e_read) {
+    if (name_to_open.access == e_read) {
         if (f) {
             curblk->valid_bytes = 0;
             // queue up one next block
             f->read(nxtblk->bufdata, 512, &nxtblk->valid_bytes);
-#if IECDEBUG > 2
-            printf("Initial read %d bytes.\n", nxtblk->valid_bytes);
-#endif
+            DBGIECV("Initial read %d bytes.\n", nxtblk->valid_bytes);
         }
         // read block will swap the buffers, so the read above will appear in current block
         return read_block();
@@ -1349,6 +1257,7 @@ int IecCommandChannel::do_scratch(filename_t filenames[], int n)
 {
     DBGIECV("Scratch %d files:\n", n);
     mstring work;
+    int scratched = 0;
     for(int i=0;i<n;i++) {
         const char *fp = ConstructPath(work, filenames[i], e_any, e_not_set);
         if (fp) {
@@ -1357,11 +1266,18 @@ int IecCommandChannel::do_scratch(filename_t filenames[], int n)
             drive->get_command_channel()->set_error(ERR_PARTITION_ERROR, filenames[i].partition);
             break;
         }
-        FRESULT fres = fm->delete_file(fp);
-        if (fres != FR_OK) {
-            drive->set_error_fres(fres);
-        }
+        FRESULT fres;
+        do {
+            fres = fm->delete_file(fp);
+            if (fres == FR_OK) {
+                scratched ++;
+            }
+        } while(fres == FR_OK);
     }
+    if (scratched == 0) {
+        return ERR_FILE_NOT_FOUND;
+    }
+    set_error(ERR_FILES_SCRATCHED, scratched);
     return 0;
 }
 

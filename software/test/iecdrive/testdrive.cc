@@ -87,6 +87,23 @@ void open_file(IecDrive *dr, const char *fn)
     dr->push_ctrl(SLAVE_CMD_EOI);
 }
 
+void write_file(IecDrive *dr, uint8_t chan, const char *fn, const char *msg)
+{
+    dr->push_ctrl(SLAVE_CMD_ATN);
+    dr->push_ctrl(0xF0 | chan);
+    while(*fn) dr->push_data(*(fn++));
+    dr->push_ctrl(SLAVE_CMD_EOI);
+
+    dr->push_ctrl(SLAVE_CMD_ATN);
+    dr->push_ctrl(0x60 | chan);
+    while(*msg) dr->push_data(*(msg++));
+    dr->push_ctrl(SLAVE_CMD_EOI);
+
+    dr->push_ctrl(SLAVE_CMD_ATN);
+    dr->push_ctrl(0xE0 | chan);
+    dr->push_ctrl(SLAVE_CMD_EOI);
+}
+
 void read_directory(IecDrive *dr, const char *file)
 {
     open_file(dr, file);
@@ -210,7 +227,6 @@ int main(int argc, const char **argv)
     status = send_command(dr, "RD:HOI");
     if(status != "63,FILE EXISTS,00,00\r") error++;
 
-
     // read_directory(dr, "$");
     status = send_command(dr, "T-RA");
     if(status != "WED. 26/06/25 12:41:01 AM\r") error++;
@@ -225,13 +241,24 @@ int main(int argc, const char **argv)
     status = send_command(dr, "CP2");
     if(status != "02,PARTITION SELECTED,02,00\r") error++;
 
-    //status = send_command(dr, "S1:C*");
     status = send_command(dr, "RENAME1:DOOM=1:DDDD");
-    
+    if(status != "00, OK,00,00\r") error++;
+
+    status = send_command(dr, "RENAME2:DOOM=1:DOOM");
+    if(status != "00, OK,00,00\r") error++;
+
     // send_command(dr, "CP3");
     read_directory(dr, "$1");
     // send_command(dr, "CP2");
     //read_directory(dr, "$=P");
+    status = send_command(dr, "SCRATCH1:C*");
+    if(status != "01, FILES SCRATCHED,03,00\r") error++;
+
+    read_directory(dr, "1:A");
+
+    write_file(dr, 3, "2:WRITETEST,U,W", "This is some random string that should be written to an open file.");
+
+    fm->print_directory("/Temp/Partition2");
 
     printf("Errors: %d\n", error);
     return 0;

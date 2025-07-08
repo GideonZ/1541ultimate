@@ -59,6 +59,7 @@ typedef struct {
     filetype_t filetype;
     fileaccess_t access;
     dir_options_t dir_opt;
+    uint16_t record_size;
 } open_t;
 
 #define ERR_SYNTAX        30

@@ -153,6 +153,7 @@ int parse_open(const char *buf, open_t& fn)
     fn.replace = false;
     fn.access = e_not_set;
     fn.filetype = e_any;
+    fn.record_size = 0;
 
     int err = 0;
     if (buf[0] == '#') {
@@ -197,21 +198,28 @@ int parse_open(const char *buf, open_t& fn)
         return 0;
     }
 
-
     // check for file access modifiers
-    while(fn.file.filename[-2] == ',') {
-        switch (fn.file.filename[-1]) {
+    const char *modifiers[3] = { NULL };
+    int m = fn.file.filename.split(',', modifiers, 3);
+    for(int i=1; i < m; i++) {
+        switch (modifiers[i][0]) {
         case 'R': fn.access = e_read; break;
         case 'W': fn.access = e_write; break;
         case 'A': fn.access = e_append; break;
         case 'P': fn.filetype = e_prg; break;
         case 'S': fn.filetype = e_seq; break;
         case 'U': fn.filetype = e_usr; break;
-        case 'L': fn.filetype = e_rel; break;
+        case 'L':
+            if (i == 1) {
+                fn.filetype = e_rel; break;
+                fn.record_size = modifiers[2][0];
+            } else {
+                return ERR_SYNTAX;
+            }
+            break;
         default:
             return ERR_SYNTAX;
         }
-        fn.file.filename.set(-2, '\0');
     }
 
     if (fn.file.filename.contains_any(",=:\xA0\r")) {
