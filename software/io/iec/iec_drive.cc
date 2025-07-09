@@ -150,6 +150,16 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
     }
     channels[15] = new IecCommandChannel(this, 15);
 
+    // Temporary for testing purposes.
+    add_partition(1, rootPath);
+    add_partition(2, "/Usb0/");
+    add_partition(3, "/Usb1/");
+    add_partition(4, "/Usb2/");
+    add_partition(5, "/SD/");
+    add_partition(11, "/Temp/");
+    add_partition(12, "/Flash/");
+    vfs->SetCurrentPartition(1);
+
     // Register and configure the processor
     slot_id = intf->register_slave(this);
     intf->configure();

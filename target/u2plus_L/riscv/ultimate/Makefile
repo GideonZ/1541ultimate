@@ -181,6 +181,7 @@ SRCS_CC +=  iec_interface.cc \
 			mps_charset.cc \
 			mps_png.cc \
 			iec_ulticopy.cc \
+			cbmdos_parser.cc \
 			softiec_target.cc
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/risc-v

@@ -195,6 +195,7 @@ SRCS_CC +=  iec_drive.cc \
 			mps_charset.cc \
 			mps_png.cc \
 			iec_ulticopy.cc \
+			cbmdos_parser.cc \
 			softiec_target.cc
 
 #			usb_em1010.cc \
