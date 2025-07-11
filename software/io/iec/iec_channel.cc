@@ -680,7 +680,11 @@ int IecChannel :: setup_file_access()
     drive->set_error(0, 0, 0);
 
     if (name_to_open.access == e_not_set) {
-        name_to_open.access = e_read;
+        name_to_open.access = (channel == 1) ? e_write : e_read;
+    }
+
+    if ((name_to_open.filetype == e_any) && (name_to_open.access != e_read)) {
+        name_to_open.filetype = (channel < 2) ? e_prg : e_seq;
     }
 
     mstring work;
