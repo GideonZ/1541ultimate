@@ -257,22 +257,12 @@ int execute_suite1(FileManager *fm, IecDrive *dr)
     return error;
 }
 
-int main(int argc, const char **argv)
+int execute_suite2(FileManager *fm, IecDrive *dr)
 {
-    UserInterface *ui = new UserInterface("Test Drive");
-
-    IecDrive *dr = new IecDrive();
-    t_channel_retval ret;
-    uint32_t tr;
-    int error = 0;
     mstring status;
+    int error = 0;
+    uint32_t tr;
 
-    init_ram_disk();
-    File *f;
-    FileManager *fm = FileManager :: getFileManager();
-
-    //create_test_files(fm);
-    //error = execute_suite1(fm, dr);
     read_directory(dr, "$=P");
     status = send_command(dr, "C\xD0\x0B");
     if(status != "02,PARTITION SELECTED,11,00\r") error++;
@@ -288,6 +278,27 @@ int main(int argc, const char **argv)
     if(status != "00, OK,00,00\r") error++;
     read_directory(dr, "$//");
     read_directory(dr, "$_");
+
+    return error;
+}
+
+int main(int argc, const char **argv)
+{
+    UserInterface *ui = new UserInterface("Test Drive");
+
+    IecDrive *dr = new IecDrive();
+    t_channel_retval ret;
+    uint32_t tr;
+    int error = 0;
+    mstring status;
+
+    init_ram_disk();
+    File *f;
+    FileManager *fm = FileManager :: getFileManager();
+
+    create_test_files(fm);
+    error += execute_suite1(fm, dr);
+    //error += execute_suite2(fm, dr);
 
     printf("Errors: %d\n", error);
     return 0;

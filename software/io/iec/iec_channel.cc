@@ -511,6 +511,9 @@ int IecChannel::read_dir_entry(void)
     char cbm_name[24];
     filetype_t ftype = e_any;
     IecPartition::CreateIecName(&info, cbm_name, ftype);
+    if (ftype == e_any) {
+        ftype = e_seq;
+    }
 
     // filter by type
     if (name_to_open.dir_opt.filetypes) {
@@ -1005,19 +1008,10 @@ const char *IecChannel :: ConstructPath(mstring& work, filename_t& name, filetyp
     char fatname[48];
     petscii_to_fat(name.filename.c_str(), fatname, 48);
 
-    if (ftype == e_any) {
-        if ((acc == e_write) || (acc == e_append)) {
-            if (channel == 0) {
-                ftype = e_prg;
-            } else {
-                ftype = e_seq;
-            }
-        }
-    }
-
     const char *ext = types[(int)ftype];
-    if (*ext)
+    if ((acc == e_read) || (ftype != e_any)) { // for reads, .??? is allowed, but for writes it is not
         set_extension(fatname, ext, 48);
+    }
 
     Path workpath;
     workpath.cd(partition->GetRelativePath());
@@ -1254,7 +1248,7 @@ int IecCommandChannel::do_rename(filename_t &src, filename_t &dest)
     char cbm_name[24];
     filetype_t ftype = e_any;
     IecPartition::CreateIecName(&info, cbm_name, ftype);
-    // ftype is now set to the type of the first original file.
+    // ftype is now set to the type of the original file.
     
     const char *dest_path = ConstructPath(workd, dest, ftype, e_write);
     if (!dest_path) {

@@ -104,7 +104,7 @@ public:
             type = e_usr;
             cutExtension = true;
         } else {
-            type = e_seq;
+            type = e_any;
         }
         if (inf->name_format & NAME_FORMAT_CBM) {
             strncpy(out, inf->lfname, 16);
