@@ -237,6 +237,9 @@ int main(int argc, const char *argv[])
                 { 69, "", "", false, false, e_any, e_not_set,
                   e_stream_partitions, e_stamp_none, 0x0, 0x00, 0x00 });
 
+    d_parse_open("$//", o, 0,
+                { -1, "//", "", false, false, e_any, e_not_set,
+                  e_stream_dir, e_stamp_none, 0x0, 0x00, 0x00 });
     
     parser.execute_command((const uint8_t *)"C:S=/C64 OS/:S", 14);
     parser.execute_command((const uint8_t *)"B-R 2 0 18 1\r", 13);

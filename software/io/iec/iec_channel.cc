@@ -432,6 +432,27 @@ t_channel_retval IecChannel::write_record(void)
     return IEC_OK;
 }
 
+#define GETPARTITION(part, partition, reterr) \
+    IecPartition *partition = drive->vfs->GetPartition(part); \
+    if (!partition) { \
+        drive->get_command_channel()->set_error(ERR_PARTITION_ERROR, drive->vfs->GetTargetPartitionNumber(part)); \
+        state = e_error; \
+        return reterr; \
+    }
+
+static void iec_path_to_fs_path(mstring &path)
+{
+    // Path conversion needs to take place, because
+    // in this context, _ means "..", and when the path starts
+    // with a /, it should be stripped off, while // means root,
+    // which corresponds to starting with / in Ultimate VFS.
+    if (path[0] == '/' && path[1] != '/')
+        path = path.c_str() + 1;
+    path.replace("_", "..");
+    path.replace("//", "/");
+//    if (path[-1] == '/')
+//        path.set(-1, 0);
+}
 
 int IecChannel::read_dir_entry(void)
 {
@@ -584,21 +605,33 @@ int IecChannel :: setup_partition_read()
 int IecChannel :: setup_directory_read()
 {
     printf("Setup dir read\n");
-    char full_path[256];
-    char file_name[128];
+    char fatname[48];
 
     // previously not closed??
     if (dir) {
         delete dir;
     }    
-    if (!drive->vfs->construct_path(name_to_open, full_path, 256, file_name, 128)) {
-        drive->get_command_channel()->set_error(ERR_PARTITION_ERROR, name_to_open.file.partition);
+
+    GETPARTITION(name_to_open.file.partition, partition, -1);
+    // first get names in more usable format
+    iec_path_to_fs_path(name_to_open.file.path);
+    petscii_to_fat(name_to_open.file.filename.c_str(), fatname, 48);
+
+    Path workpath;
+    mstring work;
+    workpath.cd(partition->GetRelativePath());
+    if(!workpath.cd(name_to_open.file.path.c_str())) {
+        drive->set_error(ERR_DIRECTORY_ERROR, drive->vfs->GetTargetPartitionNumber(name_to_open.file.partition), 0);
         state = e_error;
         return -1;
-    } 
-    printf("Full Path = %s, filename = %s\n", full_path, file_name);
+    }
+    const char *pp = workpath.get_path();
+    work = partition->GetRootPath();
+    work += (pp + 1);
 
-    FRESULT fres = fm->open_directory(full_path, &dir);
+    printf("Full Path = %s, filename = %s\n", work.c_str(), fatname);
+
+    FRESULT fres = fm->open_directory(work.c_str(), &dir);
     if (fres != FR_OK) {
         printf("opening dir failed %s\n", FileSystem::get_error_string(fres));
         drive->get_command_channel()->set_error(ERR_DRIVE_NOT_READY, name_to_open.file.partition);
@@ -606,7 +639,7 @@ int IecChannel :: setup_directory_read()
         return -1;
     }
 
-    Path path(full_path);
+    Path path(name_to_open.file.path.c_str());
     uint32_t cluster_size;
     fm->get_free(&path, dir_free, cluster_size);
     drive->get_command_channel()->set_error(ERR_ALL_OK, 0, 0);
@@ -628,14 +661,14 @@ int IecChannel :: setup_directory_read()
 //        }
 //        buffer[8 + 16] = 0x22;
 //    } else {
-        const char *fullname = part->GetRelativePath();
+        //const char *fullname = part->GetRelativePath();
         int pos = 8;
-        int len = strlen(fullname);
+        int len = strlen(pp);
         if (len > 16) {
-            fullname += (len - 16);
+            pp += (len - 16);
         }
-        while ((pos < 24) && (*fullname))
-            buffer[pos++] = toupper(*(fullname++));
+        while ((pos < 24) && (*pp))
+            buffer[pos++] = toupper(*(pp++));
 //    }
 
 
@@ -956,28 +989,6 @@ void print_file(filename_t& file)
 {
     printf("P=%d, Path='%s', Filename='%s', Wildcard: %s\n",
         file.partition, file.path.c_str(), file.filename.c_str(), file.has_wildcard?"true":"false" );
-}
-
-#define GETPARTITION(part, partition, reterr) \
-    IecPartition *partition = drive->vfs->GetPartition(part); \
-    if (!partition) { \
-        drive->get_command_channel()->set_error(ERR_PARTITION_ERROR, drive->vfs->GetTargetPartitionNumber(part)); \
-        state = e_error; \
-        return reterr; \
-    }
-
-static void iec_path_to_fs_path(mstring &path)
-{
-    // Path conversion needs to take place, because
-    // in this context, _ means "..", and when the path starts
-    // with a /, it should be stripped off, while // means root,
-    // which corresponds to starting with / in Ultimate VFS.
-    if (path[0] == '/' && path[1] != '/')
-        path = path.c_str() + 1;
-    path.replace("_", "..");
-    path.replace("//", "/");
-//    if (path[-1] == '/')
-//        path.set(-1, 0);
 }
 
 const char *IecChannel :: ConstructPath(mstring& work, filename_t& name, filetype_t ftype, fileaccess_t acc)

@@ -128,58 +128,54 @@ void read_directory(IecDrive *dr, const char *file)
     get_status(dr);
 }
 
-int main(int argc, const char **argv)
+const uint8_t *testmsg = (const uint8_t *)"This is really a silly test.";
+void create_test_files(FileManager *fm)
 {
-    UserInterface *ui = new UserInterface("Test Drive");
-
-    IecDrive *dr = new IecDrive();
-    t_channel_retval ret;
     uint32_t tr;
-
-    mstring status;
-
-    init_ram_disk();
-    File *f;
-    FileManager *fm = FileManager :: getFileManager();
-
-    const uint8_t *msg = (const uint8_t *)"This is really a silly test.";
     FRESULT fres;
-    fres = fm->save_file(false, "/Temp", "a.prg", msg, 28, &tr);
+    fres = fm->save_file(false, "/Temp", "a.prg", testmsg, 28, &tr);
     if (fres == FR_OK) {
         printf("Written %u bytes to the file.\n", tr);
     } else {
         printf("%s\n", FileSystem::get_error_string(fres));
     }
-    fm->save_file(false, "/Temp", "bb.prg", msg, 28, &tr);
-    fm->save_file(false, "/Temp", "ccc.prg", msg, 28, &tr);
-    fm->save_file(false, "/Temp", "cc2.prg", msg, 28, &tr);
-    fm->save_file(false, "/Temp", "cc3.prg", msg, 28, &tr);
-    fm->save_file(false, "/Temp", "dddd.prg", msg, 28, &tr);
-    fm->save_file(false, "/Temp", "eeeee.prg", msg, 28, &tr);
-    fm->save_file(false, "/Temp", "ffffff.prg", msg, 28, &tr);
-    fm->save_file(false, "/Temp", "ggggggg.prg", msg, 28, &tr);
-    fm->save_file(false, "/Temp", "hhhhhhhh.prg", msg, 28, &tr);
-    fm->save_file(false, "/Temp", "iiiiiiiii.prg", msg, 28, &tr);
-    fm->save_file(false, "/Temp", "jjjjjjjjjj.prg", msg, 28, &tr);
-    fm->save_file(false, "/Temp", "kkkkkkkkkkk.prg", msg, 28, &tr);
-    fm->save_file(false, "/Temp", "llllllllllll.prg", msg, 28, &tr);
-    fm->save_file(false, "/Temp", "mmmmmmmmmmmmm.prg", msg, 28, &tr);
-    fm->save_file(false, "/Temp", "nnnnnnnnnnnnnn.prg", msg, 28, &tr);
-    fm->save_file(false, "/Temp", "ooooooooooooooo.prg", msg, 28, &tr);
-    fm->save_file(false, "/Temp", "pppppppppppppppp.prg", msg, 28, &tr);
-    fm->save_file(false, "/Temp", "qqqqqqqq012345678.prg", msg, 28, &tr);
-    fm->save_file(false, "/Temp", "abc{2f}def.usr", msg, 28, &tr);
-    fm->save_file(false, "/Temp", "{c1c2c3}.seq", msg, 28, &tr);
+    fm->save_file(false, "/Temp", "bb.prg", testmsg, 28, &tr);
+    fm->save_file(false, "/Temp", "ccc.prg", testmsg, 28, &tr);
+    fm->save_file(false, "/Temp", "cc2.prg", testmsg, 28, &tr);
+    fm->save_file(false, "/Temp", "cc3.prg", testmsg, 28, &tr);
+    fm->save_file(false, "/Temp", "dddd.prg", testmsg, 28, &tr);
+    fm->save_file(false, "/Temp", "eeeee.prg", testmsg, 28, &tr);
+    fm->save_file(false, "/Temp", "ffffff.prg", testmsg, 28, &tr);
+    fm->save_file(false, "/Temp", "ggggggg.prg", testmsg, 28, &tr);
+    fm->save_file(false, "/Temp", "hhhhhhhh.prg", testmsg, 28, &tr);
+    fm->save_file(false, "/Temp", "iiiiiiiii.prg", testmsg, 28, &tr);
+    fm->save_file(false, "/Temp", "jjjjjjjjjj.prg", testmsg, 28, &tr);
+    fm->save_file(false, "/Temp", "kkkkkkkkkkk.prg", testmsg, 28, &tr);
+    fm->save_file(false, "/Temp", "llllllllllll.prg", testmsg, 28, &tr);
+    fm->save_file(false, "/Temp", "mmmmmmmmmmmmm.prg", testmsg, 28, &tr);
+    fm->save_file(false, "/Temp", "nnnnnnnnnnnnnn.prg", testmsg, 28, &tr);
+    fm->save_file(false, "/Temp", "ooooooooooooooo.prg", testmsg, 28, &tr);
+    fm->save_file(false, "/Temp", "pppppppppppppppp.prg", testmsg, 28, &tr);
+    fm->save_file(false, "/Temp", "qqqqqqqq012345678.prg", testmsg, 28, &tr);
+    fm->save_file(false, "/Temp", "abc{2f}def.usr", testmsg, 28, &tr);
+    fm->save_file(false, "/Temp", "{c1c2c3}.seq", testmsg, 28, &tr);
     fm->create_dir("/Temp/SomeDir");
     fm->create_dir("/Temp/OtherDir");
     fm->create_dir("/Temp/OtherDir/Level2");
     fm->create_dir("/Temp/blah{c1c2}");
+}
+
+int execute_suite1(FileManager *fm, IecDrive *dr)
+{
+    mstring status;
+    int error = 0;
+    FRESULT fres;
+    uint32_t tr;
+
     fm->create_dir("/Temp/Partition2");
-    
     dr->add_partition(1, "/Temp");
     dr->add_partition(2, "/Temp/Partition2");
 
-    int error = 0;
     status = send_command(dr, "CP1");
     if(status != "02,PARTITION SELECTED,01,00\r") error++;
 
@@ -217,8 +213,7 @@ int main(int argc, const char **argv)
     status = send_command(dr, "MD:HOI");
     if(status != "00, OK,00,00\r") error++;
 
-
-    fres = fm->save_file(false, "/Temp/HOI", "mmmmmmmmmmmmm.prg", msg, 28, &tr);
+    fres = fm->save_file(false, "/Temp/HOI", "mmmmmmmmmmmmm.prg", testmsg, 28, &tr);
     if (fres == FR_OK) {
         printf("Written %u bytes to the file.\n", tr);
     } else {
@@ -259,6 +254,40 @@ int main(int argc, const char **argv)
     write_file(dr, 3, "2:WRITETEST,U,W", "This is some random string that should be written to an open file.");
 
     fm->print_directory("/Temp/Partition2");
+    return error;
+}
+
+int main(int argc, const char **argv)
+{
+    UserInterface *ui = new UserInterface("Test Drive");
+
+    IecDrive *dr = new IecDrive();
+    t_channel_retval ret;
+    uint32_t tr;
+    int error = 0;
+    mstring status;
+
+    init_ram_disk();
+    File *f;
+    FileManager *fm = FileManager :: getFileManager();
+
+    //create_test_files(fm);
+    //error = execute_suite1(fm, dr);
+    read_directory(dr, "$=P");
+    status = send_command(dr, "C\xD0\x0B");
+    if(status != "02,PARTITION SELECTED,11,00\r") error++;
+
+    fm->save_file(false, "/Temp", "ccc.prg", testmsg, 28, &tr);
+    fm->save_file(false, "/Temp", "cc2.prg", testmsg, 28, &tr);
+    fm->save_file(false, "/Temp", "abc.prg", testmsg, 28, &tr);
+    fm->create_dir("/Temp/Subdir");
+    fm->save_file(false, "/Temp/SubDir", "01234.usr", testmsg, 28, &tr);
+    read_directory(dr, "$:*=B");
+    read_directory(dr, "$/Subdir");
+    status = send_command(dr, "CD/Subdir");
+    if(status != "00, OK,00,00\r") error++;
+    read_directory(dr, "$//");
+    read_directory(dr, "$_");
 
     printf("Errors: %d\n", error);
     return 0;

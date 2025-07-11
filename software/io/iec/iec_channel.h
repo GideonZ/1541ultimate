@@ -201,35 +201,6 @@ public:
         currentPartition = pn;
     }
 
-    bool construct_path(open_t &fn, char *pathbuf, int path_size, char *namebuf, int name_size)
-    {
-        // replace current partition
-        if (fn.file.partition < 1) {
-            fn.file.partition = currentPartition;
-        }
-
-        // check for double slash path
-        bool root = ((fn.file.path[0] == '/') && (fn.file.path[1] == '/'));
-
-        const char *pp = GetPartitionPath(fn.file.partition, root);
-        if (!pp) {
-            return false;
-        }
-        // 
-        strncpy(pathbuf, pp, path_size);
-
-        // now, lets add the parts of the path and the filename
-        char temp[32];            
-        const char *parts[8] = { NULL };
-        int n = fn.file.path.split('/', parts, 8);
-        for (int i=(root)?2:1; i<n; i++) {
-            petscii_to_fat(parts[i], temp, 32);
-            strncat(pathbuf, temp, path_size);
-            strncat(pathbuf, "/", path_size);
-        }
-        petscii_to_fat(fn.file.filename.c_str(), namebuf, name_size);
-        return true;
-    }
 };
 
 typedef struct {
