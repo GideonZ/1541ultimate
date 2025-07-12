@@ -74,7 +74,7 @@ const char msg69[] = "FILESYSTEM ERROR";        //69
 const char msg70[] = "NO CHANNEL";	            //70
 const char msg71[] = "DIRECTORY ERROR";			//71
 const char msg72[] = "DISK FULL";				//72
-const char msg73[] = "U64IEC ULTIMATE DOS V1.1";//73 DOS MISMATCH(Returns DOS Version)
+const char msg73[] = "U64HD ULTIMATE DOS V2.0"  ;//73 DOS MISMATCH(Returns DOS Version)
 const char msg74[] = "DRIVE NOT READY";			//74
 const char msg77[] = "SELECTED PARTITION ILLEGAL"; //77
 const char msg_c1[] = "BAD COMMAND";			//custom
@@ -266,12 +266,16 @@ SubsysResultCode_e IecDrive :: executeCommand(SubsysCommand *cmd)
 void IecDrive :: reset(void)
 {
     effectuate_settings();
-    IecPartition *p = vfs->GetPartition(0);
-    p->cd(rootPath);
     for(int i=0; i < 16; i++) {
         channels[i]->reset();
     }
-    vfs->SetCurrentPartition(0);
+    for(int i=0; i < MAX_PARTITIONS; i++) {
+        IecPartition *p = vfs->GetPartition(i);
+        if (p) {
+            p->cd("/");
+        }
+    }
+    vfs->SetCurrentPartition(1);
     last_error_code = ERR_DOS;
     last_error_track = 0;
     last_error_sector = 0;
