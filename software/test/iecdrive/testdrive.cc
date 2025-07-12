@@ -276,6 +276,8 @@ int execute_suite2(FileManager *fm, IecDrive *dr)
     read_directory(dr, "$/Subdir");
     status = send_command(dr, "CD/Subdir");
     if(status != "00, OK,00,00\r") error++;
+    status = send_command(dr, "XPWD");
+    if(status != "/Subdir/") error++;
     read_directory(dr, "$//");
     read_directory(dr, "$_");
 

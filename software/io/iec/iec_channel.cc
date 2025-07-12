@@ -1299,6 +1299,25 @@ int IecCommandChannel::do_cmd_response(uint8_t *data, int len)
     return 0;
 }
 
+int IecCommandChannel::do_pwd_command()
+{
+    IecPartition *part = drive->vfs->GetPartition(drive->vfs->GetTargetPartitionNumber(0)); // get current partition
+    if (!part) {
+        return ERR_PARTITION_ERROR;
+    }
+    buffer[255] = 0; // ensure string terminator
+    strncpy((char *) buffer, part->GetRelativePath(), 255);
+    int len = strlen((char *) buffer);
+    dump_hex_relative(buffer, len);
+    last_byte = len - 1;
+    pointer = 0;
+    prefetch = 0;
+    prefetch_max = len;
+    state = e_status;
+    drive->set_error(0, 0, 0);
+    return 0;
+}
+
 int IecCommandChannel::do_set_position(int chan, uint32_t pos, int recnr, int recoffset)
 {
     printf("Set File position to %lu on chan %d\n", pos, chan);

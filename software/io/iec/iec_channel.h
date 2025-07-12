@@ -183,7 +183,7 @@ public:
 
     int GetTargetPartitionNumber(int index)
     {
-        if (index < 0) {
+        if (index < 1) {
             index = currentPartition;
         }
         return index;
@@ -304,7 +304,7 @@ class IecCommandChannel: public IecChannel, public IecCommandExecuter {
     int do_scratch(filename_t filenames[], int n);
     int do_cmd_response(uint8_t *data, int len);
     int do_set_position(int chan, uint32_t pos, int recnr, int recoffset);
-
+    int do_pwd_command();
 public:
     IecCommandChannel(IecDrive *dr, int ch);
     virtual ~IecCommandChannel();
