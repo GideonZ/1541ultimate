@@ -144,8 +144,7 @@ public:
         for (int i = 0; i < MAX_PARTITIONS; i++) {
             partitions[i] = 0;
         }
-        currentPartition = 0;
-        partitions[0] = new IecPartition(this, 0, "/"); // drive->get_root_path());
+        currentPartition = 1;
     }
 
     ~IecFileSystem() 
