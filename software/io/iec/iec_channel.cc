@@ -687,8 +687,12 @@ int IecChannel :: setup_file_access()
         name_to_open.access = (channel == 1) ? e_write : e_read;
     }
 
-    if ((name_to_open.filetype == e_any) && (name_to_open.access != e_read)) {
-        name_to_open.filetype = (channel < 2) ? e_prg : e_seq;
+    if (name_to_open.filetype == e_any) {
+        if (channel < 2) {
+            name_to_open.filetype = e_prg;
+        } else if (name_to_open.access != e_read) { // for writes on other channels, default to seq.
+            name_to_open.filetype = e_seq;
+        }
     }
 
     mstring work;
