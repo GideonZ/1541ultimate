@@ -652,7 +652,7 @@ int IecChannel :: setup_directory_read()
     prefetch_max = 32;
     last_byte = -1;
     memcpy(buffer, c_header, 32);
-    buffer[4] = (uint8_t) name_to_open.file.partition;
+    buffer[4] = (uint8_t) drive->vfs->GetTargetPartitionNumber(name_to_open.file.partition);
 
     IecPartition *part = drive->vfs->GetPartition(name_to_open.file.partition);
 
