@@ -516,6 +516,7 @@ int IecParser :: user_command(const uint8_t *buffer, int len)
         if (n != 4) return ERR_SYNTAX;
         return exec->do_block_write(chan, part, track, sector);
     case 'I':
+    case 'J':
         return exec->do_initialize();
     default:
         return ERR_UNKNOWN_CMD;

@@ -436,7 +436,6 @@ t_channel_retval IecChannel::write_record(void)
     IecPartition *partition = drive->vfs->GetPartition(part); \
     if (!partition) { \
         drive->get_command_channel()->set_error(ERR_PARTITION_ERROR, drive->vfs->GetTargetPartitionNumber(part)); \
-        state = e_error; \
         return reterr; \
     }
 
@@ -446,12 +445,11 @@ static void iec_path_to_fs_path(mstring &path)
     // in this context, _ means "..", and when the path starts
     // with a /, it should be stripped off, while // means root,
     // which corresponds to starting with / in Ultimate VFS.
-    if (path[0] == '/' && path[1] != '/')
+    if (path[0] == '/' && path[1] != '/') {
         path = path.c_str() + 1;
+    }
     path.replace("_", "..");
     path.replace("//", "/");
-//    if (path[-1] == '/')
-//        path.set(-1, 0);
 }
 
 int IecChannel::read_dir_entry(void)
@@ -682,6 +680,7 @@ int IecChannel :: setup_directory_read()
 int IecChannel :: setup_file_access()
 {
     drive->set_error(0, 0, 0);
+    state = e_error;
 
     if (name_to_open.access == e_not_set) {
         name_to_open.access = (channel == 1) ? e_write : e_read;
@@ -698,7 +697,7 @@ int IecChannel :: setup_file_access()
     mstring work;
     const char *full_path = ConstructPath(work, name_to_open.file, name_to_open.filetype, name_to_open.access );
     if (!full_path) {
-        drive->set_error(ERR_PARTITION_ERROR, name_to_open.file.partition, 0);
+        drive->set_error(ERR_PARTITION_ERROR, drive->vfs->GetTargetPartitionNumber(name_to_open.file.partition), 0);
         return 0;
     }
 
@@ -753,7 +752,6 @@ int IecChannel :: setup_file_access()
         FRESULT fres = f->seek(f->get_size());
         if (fres != FR_OK) {
             drive->get_command_channel()->set_error(ERR_FRESULT_CODE, fres);
-            state = e_error;
             return 0;
         }
     }
@@ -1105,12 +1103,10 @@ int IecCommandChannel::do_change_dir(filename_t& dest)
 
     if(!prt->cd(dest.path.c_str())) {
         drive->get_command_channel()->set_error(ERR_DIRECTORY_ERROR, prt->GetPartitionNumber());
-        state = e_error;
         return -1;
     }
     if(!prt->cd(fatname)) {
         drive->get_command_channel()->set_error(ERR_DIRECTORY_ERROR, prt->GetPartitionNumber());
-        state = e_error;
         return -1;
     }
     DBGIECV("Result of CD: '%s'\n", prt->GetFullPath());
