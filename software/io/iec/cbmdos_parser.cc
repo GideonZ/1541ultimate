@@ -82,6 +82,10 @@ int parse_full_path(const char *buf, filename_t& name, bool *replace = NULL, boo
             *replace = true;
             idx++;
         }
+        // Skip whitespace before partition number
+        while(buf[idx] == ' ') {
+            idx++;
+        }
         if (isdigit(buf[idx])) {
             name.partition = 0;
             while(isdigit(buf[idx])) {
@@ -89,6 +93,11 @@ int parse_full_path(const char *buf, filename_t& name, bool *replace = NULL, boo
                 name.partition += (buf[idx++] - '0');
             }
         }
+        // Skip whitespace after partition number
+        while(buf[idx] == ' ') {
+            idx++;
+        }
+        // Paths should start with a slash or underscore, if any.
         if ((buf[idx] == '/') || (path_only && buf[idx] == '_')) {
             if (colon) {
                 int colon_pos = colon - buf;
