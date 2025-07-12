@@ -602,6 +602,7 @@ int IecChannel :: setup_partition_read()
     last_byte = -1;
     memcpy(buffer, c_header, 32);
     memcpy(buffer+8, "ULTIMATE HD", 11);
+    memcpy(buffer+26, "UL 64", 5);
     return 0;
 }
 
