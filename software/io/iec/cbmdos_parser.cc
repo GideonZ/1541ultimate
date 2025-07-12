@@ -256,6 +256,11 @@ int IecParser :: block_command(const uint8_t *buffer, int len)
         n = sscanf((const char *)buffer+3, "%d%d", &chan, &part);
         if (n != 2) return ERR_SYNTAX;
         return exec->do_buffer_position(chan, part);
+    case 'A':
+    case 'F':
+        n = sscanf((const char *)buffer+3, "%d%d%d%d", &chan, &part, &track, &sector);
+        if (n != 4) return ERR_SYNTAX;
+        return exec->do_block_allocate(chan, part, track, sector, buffer[2] == 'A');
     default:
         return ERR_UNKNOWN_CMD;
     }

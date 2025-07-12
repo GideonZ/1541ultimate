@@ -9,6 +9,7 @@ class IecCommandExecuterStubs : public IecCommandExecuter
 public:
     int do_block_read(int chan, int part, int track, int sector);
     int do_block_write(int chan, int part, int track, int sector);
+    int do_block_allocate(int chan, int part, int track, int sector, bool allocate);
     int do_buffer_position(int chan, int pos);
     int do_set_current_partition(int part);
     int do_change_dir(filename_t& dest);
@@ -33,6 +34,12 @@ int IecCommandExecuterStubs::do_block_read(int chan, int part, int track, int se
 int IecCommandExecuterStubs::do_block_write(int chan, int part, int track, int sector)
 {
     printf("Block write: Channel %d, Partition %d, T/S %d/%d\n", chan, part, track, sector);
+    return 0;
+}
+
+int IecCommandExecuterStubs::do_block_allocate(int chan, int part, int track, int sector, bool allocate)
+{
+    printf("Block %s: Channel %d, Partition %d, T/S %d/%d\n", allocate ? "allocate" : "free", chan, part, track, sector);
     return 0;
 }
 

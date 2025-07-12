@@ -244,6 +244,8 @@ int main(int argc, const char *argv[])
     parser.execute_command((const uint8_t *)"C:S=/C64 OS/:S", 14);
     parser.execute_command((const uint8_t *)"B-R 2 0 18 1\r", 13);
     parser.execute_command((const uint8_t *)"B-W 2 0 18 2\r", 13);
+    parser.execute_command((const uint8_t *)"B-A 2 0 16 3\r", 13);
+    parser.execute_command((const uint8_t *)"B-F 2 0 16 4\r", 13);
     parser.execute_command((const uint8_t *)"U1 2 0 18 3\r", 12);
     parser.execute_command((const uint8_t *)"U2 2 0 18 4\r", 12);
     parser.execute_command((const uint8_t *)"B-P 2 234\r", 10);
