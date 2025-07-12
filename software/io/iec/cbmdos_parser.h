@@ -84,7 +84,9 @@ public:
     virtual int do_rename(filename_t &src, filename_t &dest) { return 0; }
     virtual int do_scratch(filename_t filenames[], int n) { return 0; }
     virtual int do_cmd_response(uint8_t *data, int len) { return 0; }
-    virtual int do_set_position(int chan, uint32_t pos) { return 0; }
+    virtual int do_set_position(int chan, uint32_t pos, int recnr, int recoffset) { return 0; }
+    virtual int do_pwd_command() { return 0; }
+
 };
 
 class IecParser
@@ -102,6 +104,7 @@ class IecParser
     int scratch_command(const uint8_t *buffer, int len);
     int time_command(const uint8_t *buffer, int len);
     int user_command(const uint8_t *buffer, int len);
+    int extended_command(const uint8_t *buffer, int len);
 
 public:
     IecParser(IecCommandExecuter *e) : exec(e) { }

@@ -293,5 +293,6 @@ int main(int argc, const char *argv[])
     parser.execute_command((const uint8_t *)"MD", 2);
     parser.execute_command((const uint8_t *)"MD/PATH\xC1\xC2", 9);
     parser.execute_command((const uint8_t *)"MD:PATH\xC1\xC2", 9);
+    parser.execute_command((const uint8_t *)"XPWD", 4);
 
 }

@@ -277,7 +277,7 @@ public:
     virtual int ext_open_file(const char *name);
     virtual int ext_close_file(void);
 
-    void seek_record(const uint8_t *);
+    int seek_record(int, int);
     friend class IecCommandChannel;
 };
 
@@ -303,7 +303,7 @@ class IecCommandChannel: public IecChannel, public IecCommandExecuter {
     int do_rename(filename_t &src, filename_t &dest);
     int do_scratch(filename_t filenames[], int n);
     int do_cmd_response(uint8_t *data, int len);
-    int do_set_position(int chan, uint32_t pos);
+    int do_set_position(int chan, uint32_t pos, int recnr, int recoffset);
 
 public:
     IecCommandChannel(IecDrive *dr, int ch);

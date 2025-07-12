@@ -838,16 +838,11 @@ int IecChannel::ext_close_file(void)
     return push_command(0xE0);
 }
 
-void IecChannel::seek_record(const uint8_t *cmd)
+int IecChannel::seek_record(int recordNumber, int offset)
 {
-    const uint32_t c_header = 2;
-
+    const uint32_t c_header = 2; // 2 bytes for record size in the beginning of the file
     // flush
     write_record();
-
-    uint32_t recordNumber = ((uint32_t) cmd[3]) << 8;
-    recordNumber |= cmd[2];
-    uint8_t offset = cmd[4];
 
     if (recordNumber != 0)
         recordNumber--;  // Record numbers are starting from 1.
@@ -858,16 +853,13 @@ void IecChannel::seek_record(const uint8_t *cmd)
     printf("SEEK Record Number #%d. Offset = %d\n", recordNumber, offset);
 #endif
     if (!f) {
-        drive->get_command_channel()->set_error(ERR_FILE_NOT_OPEN, 0, 0);
-        return;
+        return ERR_FILE_NOT_OPEN;
     }
     if (!recordSize) { // not a (valid) rel file
-        drive->get_command_channel()->set_error(ERR_FILE_TYPE_MISMATCH, 0, 0);
-        return;
+        return ERR_FILE_TYPE_MISMATCH;
     }
-    drive->get_command_channel()->set_error(ERR_ALL_OK, 0, 0);
 
-    uint32_t minimumFileSize = c_header + (recordNumber + 1) * recordSize; // reserve 2 bytes in the beginning
+    uint32_t minimumFileSize = (recordNumber + 1) * recordSize; // reserve 2 bytes in the beginning
     uint32_t currentSize = f->get_size();
     FRESULT fres;
     if (currentSize < minimumFileSize) { // append with additional records that are 'FF's, followed by zeros.
@@ -893,21 +885,25 @@ void IecChannel::seek_record(const uint8_t *cmd)
             remain -= recordSize;
         }
         delete[] block;
-        drive->get_command_channel()->set_error(ERR_RECORD_NOT_PRESENT, 0, 0);
+        return ERR_RECORD_NOT_PRESENT;
     }
     if (offset > recordSize - 1) {
         offset = recordSize - 1;
-        drive->get_command_channel()->set_error(ERR_OVERFLOW_IN_RECORD, 0, 0);
+        return ERR_OVERFLOW_IN_RECORD;
     }
     uint32_t targetPosition = c_header + (recordNumber * recordSize); // + offset; // reserve 2 bytes for control (record Size)
 
     fres = f->seek(targetPosition);
     if (fres != FR_OK) {
         drive->set_error_fres(fres);
-        return;
+        return 0;
     }
     recordOffset = targetPosition;
-    read_record(offset);
+    t_channel_retval ret = read_record(offset);
+    if (ret != IEC_OK) {
+        return ERR_READ_ERROR;
+    }
+    return 0;    
 }
 
 /******************************************************************************
@@ -1307,9 +1303,37 @@ int IecCommandChannel::do_cmd_response(uint8_t *data, int len)
     return 0;
 }
 
-int IecCommandChannel::do_set_position(int chan, uint32_t pos)
+int IecCommandChannel::do_set_position(int chan, uint32_t pos, int recnr, int recoffset)
 {
     printf("Set File position to %lu on chan %d\n", pos, chan);
+    if ((chan < 0) || (chan > 14)) {
+        return ERR_SYNTAX_ERROR_CMD;
+    }
+    IecChannel *channel = iec_drive->get_data_channel(chan);
+    if (!channel->f) {
+        return ERR_FILE_NOT_OPEN;
+    }
+    FRESULT fres;
+    switch(channel->state) {
+    case e_buffer:
+        return do_buffer_position(chan, pos);
+    case e_file:
+        fres = channel->f->seek(pos);
+        if (fres != FR_OK) {
+            drive->set_error_fres(fres);
+            return 0;
+        }
+    case e_record:
+        return channel->seek_record(recnr, recoffset);
+    default:
+        return ERR_FILE_NOT_OPEN;
+    }  
+
+    channel->recordOffset = pos;
+    channel->pointer = 0;
+    channel->reset_prefetch();
+    drive->set_error(ERR_ALL_OK, 0, 0);
+    state = e_idle;
     return 0;
 }
 

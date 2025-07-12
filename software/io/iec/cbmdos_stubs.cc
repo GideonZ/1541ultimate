@@ -21,7 +21,8 @@ public:
     int do_rename(filename_t &src, filename_t &dest);
     int do_scratch(filename_t filenames[], int n);
     int do_cmd_response(uint8_t *data, int len);
-    int do_set_position(int chan, uint32_t pos);
+    int do_set_position(int chan, uint32_t pos, int recnr, int recoffset);
+    int do_pwd_command();
 };
 
 
@@ -120,8 +121,14 @@ int IecCommandExecuterStubs::do_cmd_response(uint8_t *data, int len)
     return 0;
 }
 
-int IecCommandExecuterStubs::do_set_position(int chan, uint32_t pos)
+int IecCommandExecuterStubs::do_set_position(int chan, uint32_t pos, int recnr, int recoffset)
 {
-    printf("Set File position to %lu on chan %d\n", pos, chan);
+    printf("Set File position to %lu on chan %d (or record #%d:%d)\n", pos, chan, recnr, recoffset);
+    return 0;
+}
+
+int IecCommandExecuterStubs::do_pwd_command()
+{
+    printf("PWD command\n");
     return 0;
 }

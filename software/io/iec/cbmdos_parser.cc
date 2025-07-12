@@ -363,16 +363,22 @@ int IecParser :: format_command(const uint8_t *buffer, int len)
 int IecParser :: position_command(const uint8_t *buffer, int len)
 {
     uint32_t pos = 0;
-    len--;
+    int chan = (int)buffer[1];
+    len -= 2; buffer += 2;
 
-    if (len > 5) {
+    if ((len < 1) || (len > 4)) {
         return ERR_SYNTAX;
     }
-    int chan = (int)buffer[1];
-    for(int i=0; i<len-1; i++) {
-        pos |= ((uint32_t)buffer[i+2]) << (8*i);
+    for(int i=0; i<len; i++) {
+        pos |= ((uint32_t)buffer[i]) << (8*i);
     }
-    return exec->do_set_position(chan, pos);
+    int recnr = 0;
+    int recoffset = 0;
+    if (len == 3) {
+        recnr = (int)(pos & 0xFFFF);
+        recoffset = (int)buffer[2];
+    }
+    return exec->do_set_position(chan, pos, recnr, recoffset);
 }
 
 int IecParser :: rename_command(const uint8_t *buffer, int len)
@@ -517,6 +523,15 @@ int IecParser :: user_command(const uint8_t *buffer, int len)
     return 0;
 }
 
+int IecParser :: extended_command(const uint8_t *buffer, int len)
+{
+    mstring cmd((const char *)buffer, 1, len-1);
+    if (cmd == "PWD") {
+        return exec->do_pwd_command();
+    }
+    return ERR_UNKNOWN_CMD;
+}
+
 int IecParser :: execute_command(const uint8_t *buffer, int len)
 {
     switch(buffer[0]) {
@@ -542,6 +557,9 @@ int IecParser :: execute_command(const uint8_t *buffer, int len)
     case 'S': return scratch_command(buffer, len);
     case 'T': return time_command(buffer, len);
     case 'U': return user_command(buffer, len);
+    case 'X':
+    case 'E':
+        return extended_command(buffer, len);
     }
     return ERR_UNKNOWN_CMD;
 }
