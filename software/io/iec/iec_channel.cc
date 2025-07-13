@@ -1313,15 +1313,16 @@ int IecCommandChannel::do_pwd_command()
         return ERR_PARTITION_ERROR;
     }
     buffer[255] = 0; // ensure string terminator
+    sprintf((char *) buffer, "%d:", part->GetPartitionNumber());
+    int pl = strlen((char *) buffer);    
     const char *src = part->GetRelativePath();
-    for(int i=0;i<255;i++) {
-        buffer[i] = toupper(src[i]);
-        if (buffer[i] == 0) {
+    for(int i=0;i < 255-pl;i++) {
+        buffer[pl+i] = toupper(src[i]);
+        if (src[i] == 0) {
             break; 
         }
     }
     int len = strlen((char *) buffer);
-    dump_hex_relative(buffer, len);
     last_byte = len - 1;
     pointer = 0;
     prefetch = 0;
