@@ -95,6 +95,16 @@ void d_parse_open(const char *buf, open_t& o, int expected_retval = 0, open_resu
     printf("\n");
 }
 
+void test_command(int exp_retval, const uint8_t *cmd, int len)
+{
+    int retval = parser.execute_command(cmd, len);
+    if (retval != exp_retval) {
+        printf("Command '%s' returned %d, expected %d\n", cmd, retval, exp_retval);
+    } else {
+        printf("Command '%s' => OK!\n", cmd);
+    }
+}
+
 int main(int argc, const char *argv[])
 {
     open_t o;
@@ -241,58 +251,60 @@ int main(int argc, const char *argv[])
                 { -1, "//", "", false, false, e_any, e_not_set,
                   e_stream_dir, e_stamp_none, 0x0, 0x00, 0x00 });
     
-    parser.execute_command((const uint8_t *)"C:S=/C64 OS/:S", 14);
-    parser.execute_command((const uint8_t *)"B-R 2 0 18 1\r", 13);
-    parser.execute_command((const uint8_t *)"B-W 2 0 18 2\r", 13);
-    parser.execute_command((const uint8_t *)"B-A 2 0 16 3\r", 13);
-    parser.execute_command((const uint8_t *)"B-F 2 0 16 4\r", 13);
-    parser.execute_command((const uint8_t *)"U1 2 0 18 3\r", 12);
-    parser.execute_command((const uint8_t *)"U2 2 0 18 4\r", 12);
-    parser.execute_command((const uint8_t *)"B-P 2 234\r", 10);
-    parser.execute_command((const uint8_t *)"C99:EMPTY=", 10);
-    parser.execute_command((const uint8_t *)"C1:FCOPY=3:FCOPY", 16);
-    parser.execute_command((const uint8_t *)"C:FULLSTATS=STAT1,3:STAT3", 25);
-    parser.execute_command((const uint8_t *)"C2:MCOPY=1/COPIERS/:MCOPY", 25);
-    parser.execute_command((const uint8_t *)"COPY2/SUBDIR:COMBINED=1/COPIERS/:FILE1,1/COPIERS/:FILE2,2/OTHERDIR:FILE*", 73);
-    parser.execute_command((const uint8_t *)"R1:BOOT1=BOOT", 13);
-    parser.execute_command((const uint8_t *)"R1/UTILS/:NEWT=1/UTILS/:WW", 26);
-    parser.execute_command((const uint8_t *)"S1:JUNK,3:C?*.BAS", 17);
-    parser.execute_command((const uint8_t *)"S1/UTILS/:CO*", 13);
-    parser.execute_command((const uint8_t *)"SCRATCH1/UTILS/:CO*", 19);
-    parser.execute_command((const uint8_t *)"P\x02\x64", 3);
-    parser.execute_command((const uint8_t *)"P\x02\xC8\0", 4);
-    parser.execute_command((const uint8_t *)"P\x02\x2C\x01\0", 5);
-    parser.execute_command((const uint8_t *)"P\x02\x90\x01\0\0", 6);
-    parser.execute_command((const uint8_t *)"P\x02\xF4\x01\0\0\0", 7);
-    parser.execute_command((const uint8_t *)"CD:TEMP", 7);
-    parser.execute_command((const uint8_t *)"CD1//TEMP", 9);
-    parser.execute_command((const uint8_t *)"CD1//TEMP/TEMP2", 15);
-    parser.execute_command((const uint8_t *)"CD1_", 4);
-    parser.execute_command((const uint8_t *)"RD33_/BLAH", 10);
-    parser.execute_command((const uint8_t *)"CD/TEMP/TEMP2", 13);
-    parser.execute_command((const uint8_t *)"T-RA", 4);
-    parser.execute_command((const uint8_t *)"T-RI", 4);
-    parser.execute_command((const uint8_t *)"T-RD", 4);
-    parser.execute_command((const uint8_t *)"T-RB", 4);
-    parser.execute_command((const uint8_t *)"CP1", 3);
-    parser.execute_command((const uint8_t *)"CP12", 4);
-    parser.execute_command((const uint8_t *)"CP123", 5);
-    parser.execute_command((const uint8_t *)"CP1234", 6);
-    parser.execute_command((const uint8_t *)"C\xD0\x1F", 3);
-    parser.execute_command((const uint8_t *)"N:HELLO,123", 11);
-    parser.execute_command((const uint8_t *)"N:HELLO,23", 10);
-    parser.execute_command((const uint8_t *)"N:HELLO,A", 9);
-    parser.execute_command((const uint8_t *)"N:HELLO,", 8);
-    parser.execute_command((const uint8_t *)"N:HELLO", 7);
-    parser.execute_command((const uint8_t *)"N:", 2);
-    parser.execute_command((const uint8_t *)"MD:TEMP", 7);
-    parser.execute_command((const uint8_t *)"MD1:TEMP", 8);
-    parser.execute_command((const uint8_t *)"MD1//:TEMP", 10);
-    parser.execute_command((const uint8_t *)"MD1//TEMP/:TEMP2", 16);
-    parser.execute_command((const uint8_t *)"MD:", 3);
-    parser.execute_command((const uint8_t *)"MD", 2);
-    parser.execute_command((const uint8_t *)"MD/PATH\xC1\xC2", 9);
-    parser.execute_command((const uint8_t *)"MD:PATH\xC1\xC2", 9);
-    parser.execute_command((const uint8_t *)"XPWD", 4);
+    test_command( 0, (const uint8_t *)"C:S=/C64 OS/:S", 14);
+    test_command( 0, (const uint8_t *)"B-R 2 0 18 1\r", 13);
+    test_command( 0, (const uint8_t *)"B-W 2 0 18 2\r", 13);
+    test_command( 0, (const uint8_t *)"B-A 2 0 16 3\r", 13);
+    test_command( 0, (const uint8_t *)"B-F 2 0 16 4\r", 13);
+    test_command( 0, (const uint8_t *)"U1 2 0 18 3\r", 12);
+    test_command( 0, (const uint8_t *)"U2 2 0 18 4\r", 12);
+    test_command( 0, (const uint8_t *)"B-P 2 234\r", 10);
+    test_command(32, (const uint8_t *)"C99:EMPTY=", 10);
+    test_command( 0, (const uint8_t *)"C1:FCOPY=3:FCOPY", 16);
+    test_command( 0, (const uint8_t *)"C:FULLSTATS=STAT1,3:STAT3", 25);
+    test_command( 0, (const uint8_t *)"C2:MCOPY=1/COPIERS/:MCOPY", 25);
+    test_command( 0, (const uint8_t *)"COPY2/SUBDIR:COMBINED=1/COPIERS/:FILE1,1/COPIERS/:FILE2,2/OTHERDIR:FILE*", 73);
+    test_command( 0, (const uint8_t *)"R1:BOOT1=BOOT", 13);
+    test_command( 0, (const uint8_t *)"R1/UTILS/:NEWT=1/UTILS/:WW", 26);
+    test_command( 0, (const uint8_t *)"S1:JUNK,3:C?*.BAS", 17);
+    test_command( 0, (const uint8_t *)"S1/UTILS/:CO*", 13);
+    test_command( 0, (const uint8_t *)"SCRATCH1/UTILS/:CO*", 19);
+    test_command( 0, (const uint8_t *)"P\x02\x64", 3);
+    test_command( 0, (const uint8_t *)"P\x02\xC8\0", 4);
+    test_command( 0, (const uint8_t *)"P\x02\x2C\x01\0", 5);
+    test_command( 0, (const uint8_t *)"P\x02\x90\x01\0\0", 6);
+    test_command( 0, (const uint8_t *)"P\x02\xF4\x01\0\0\0", 7);
+    test_command( 0, (const uint8_t *)"CD:TEMP", 7);
+    test_command( 0, (const uint8_t *)"CD1//TEMP", 9);
+    test_command( 0, (const uint8_t *)"CD1//TEMP/TEMP2", 15);
+    test_command( 0, (const uint8_t *)"CD1_", 4);
+    test_command( 0, (const uint8_t *)"RD33_/BLAH", 10);
+    test_command( 0, (const uint8_t *)"CD/TEMP/TEMP2", 13);
+    test_command( 0, (const uint8_t *)"T-RA", 4);
+    test_command( 0, (const uint8_t *)"T-RI", 4);
+    test_command( 0, (const uint8_t *)"T-RD", 4);
+    test_command( 0, (const uint8_t *)"T-RB", 4);
+    test_command( 0, (const uint8_t *)"T-WASUN. 13/07/25 09:34:13 PM", 29);
+    test_command( 0, (const uint8_t *)"CP1", 3);
+    test_command( 0, (const uint8_t *)"CP12", 4);
+    test_command( 0, (const uint8_t *)"CP123", 5);
+    test_command( 0, (const uint8_t *)"CP1234", 6);
+    test_command( 0, (const uint8_t *)"C\xD0\x1F", 3);
+    test_command( 0, (const uint8_t *)"N3/INSOMEDIR:HELL/HEAVEN=D64,NAME OF DISK,XX", 44);
+    test_command( 0, (const uint8_t *)"N:HELLO,123", 11);
+    test_command( 0, (const uint8_t *)"N:HELLO,23", 10);
+    test_command( 0, (const uint8_t *)"N:HELLO,A", 9);
+    test_command( 0, (const uint8_t *)"N:HELLO,", 8);
+    test_command( 0, (const uint8_t *)"N:HELLO", 7);
+    test_command( 0, (const uint8_t *)"N:", 2);
+    test_command( 0, (const uint8_t *)"MD:TEMP", 7);
+    test_command( 0, (const uint8_t *)"MD1:TEMP", 8);
+    test_command( 0, (const uint8_t *)"MD1//:TEMP", 10);
+    test_command( 0, (const uint8_t *)"MD1//TEMP/:TEMP2", 16);
+    test_command( 0, (const uint8_t *)"MD:", 3);
+    test_command( 0, (const uint8_t *)"MD", 2);
+    test_command( 0, (const uint8_t *)"MD/PATH\xC1\xC2", 9);
+    test_command( 0, (const uint8_t *)"MD:PATH\xC1\xC2", 9);
+    test_command( 0, (const uint8_t *)"XPWD", 4);
 
 }

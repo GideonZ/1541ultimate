@@ -441,9 +441,7 @@ int IecParser :: time_command(const uint8_t *buffer, int len)
     const char *wd4[] = { "SUN.", "MON.", "TUES", "WED.", "THUR", "FRI.", "SAT." };
     const char *wd3[] = { "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT" };
     uint8_t result[32];
-    if (len != 4) {
-        return ERR_SYNTAX;
-    }
+
     if (buffer[1] != '-') {
         return ERR_SYNTAX;
     }
@@ -457,6 +455,9 @@ int IecParser :: time_command(const uint8_t *buffer, int len)
     int reslen;
     switch(buffer[2]) {
     case 'R':
+        if (len != 4) {
+            return ERR_SYNTAX;
+        }
         switch(buffer[3]) {
         case 'A': // ASC-II in wrong order date format
             // "dow. mo/da/yr hr:mi:se xx"+CHR$(13)
