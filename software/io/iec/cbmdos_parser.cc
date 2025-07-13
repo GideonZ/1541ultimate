@@ -459,7 +459,7 @@ int IecParser :: time_command(const uint8_t *buffer, int len)
             return ERR_SYNTAX;
         }
         switch(buffer[3]) {
-        case 'A': // ASC-II in wrong order date format
+        case 'A': // ASC-II in wrong date order format
             // "dow. mo/da/yr hr:mi:se xx"+CHR$(13)
             reslen = sprintf((char *)result, "%s %02d/%02d/%02d %02d:%02d:%02d %s\r",
                 wd4[wd], day, month, year % 100, hour12, min, sec, (hour >= 12)?"PM":"AM");  

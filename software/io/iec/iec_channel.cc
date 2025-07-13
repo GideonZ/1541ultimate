@@ -641,9 +641,9 @@ int IecChannel :: setup_directory_read()
         return -1;
     }
 
-    Path path(name_to_open.file.path.c_str());
+    Path path(work.c_str());
     uint32_t cluster_size;
-    fm->get_free(&path, dir_free, cluster_size);
+    fres = fm->get_free(&path, dir_free, cluster_size);
     drive->get_command_channel()->set_error(ERR_ALL_OK, 0, 0);
     state = e_dir;
     pointer = 0;
