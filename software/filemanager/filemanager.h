@@ -184,7 +184,7 @@ public:
     	delete p;
     }
 
-    bool  is_path_valid(const char *p);
+    bool  is_path_valid(const char *p, FileInfo *inf = NULL);
     bool  is_path_valid(Path *p);
     bool  is_path_writable(Path *p);
 
@@ -216,7 +216,7 @@ public:
     FRESULT create_dir(Path *path, const char *name);
     FRESULT create_dir(const char *pathname);
 
-	FRESULT open_directory(const char *path, Directory **dir);
+	FRESULT open_directory(const char *path, Directory **dir, FileInfo *info = NULL);
     FRESULT get_directory(Path *p, IndexedList<FileInfo *> &target, const char *matchPattern);
     FRESULT print_directory(const char *path);
     FRESULT load_file(const char *path, const char *filename, uint8_t *mem, uint32_t maxlen, uint32_t *transferred);

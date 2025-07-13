@@ -86,11 +86,15 @@ bool FileManager::is_path_valid(Path *p)
     return (res == FR_OK);
 }
 
-bool FileManager::is_path_valid(const char *p)
+bool FileManager::is_path_valid(const char *p, FileInfo *inf)
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(p);
     FRESULT res = find_pathentry(pathInfo, true);
+    if ((res == FR_OK) && (inf != NULL)) {
+        // if success, we can copy the file info to the output to get more info
+        inf->copyfrom(pathInfo.getLastInfo());
+    }
     return (res == FR_OK);
 }
 
@@ -113,7 +117,7 @@ void FileManager::get_display_string(Path *p, const char *filename, char *buffer
     n->get_display_string(buffer, width);
 }
 
-FRESULT FileManager::open_directory(const char *path, Directory **dir)
+FRESULT FileManager::open_directory(const char *path, Directory **dir, FileInfo *info)
 {
     *dir = NULL;
     lock();
@@ -124,6 +128,10 @@ FRESULT FileManager::open_directory(const char *path, Directory **dir)
     if (res != FR_OK) {
         unlock();
         return res;
+    }
+    if (info) {
+        // if info is given, copy the file info to it
+        info->copyfrom(pathInfo.getLastInfo());
     }
     FileSystem *fs = pathInfo.getLastInfo()->fs;
     res = fs->dir_open(pathInfo.getPathFromLastFS(), dir);

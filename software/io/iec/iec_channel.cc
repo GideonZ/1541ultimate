@@ -505,6 +505,11 @@ int IecChannel::read_dir_entry(void)
         return 0;
     }
         
+    // Skip volume entries
+    if (info.attrib & AM_VOL) {
+        return 1;
+    }    
+
     // convert FAT name to CBM name
     char cbm_name[24];
     filetype_t ftype = e_any;
@@ -633,7 +638,8 @@ int IecChannel :: setup_directory_read()
 
     printf("Full Path = %s, filename = %s\n", work.c_str(), fatname);
 
-    FRESULT fres = fm->open_directory(work.c_str(), &dir);
+    FileInfo info(40);
+    FRESULT fres = fm->open_directory(work.c_str(), &dir, &info);
     if (fres != FR_OK) {
         printf("opening dir failed %s\n", FileSystem::get_error_string(fres));
         drive->get_command_channel()->set_error(ERR_DRIVE_NOT_READY, name_to_open.file.partition);
@@ -655,25 +661,26 @@ int IecChannel :: setup_directory_read()
 
     IecPartition *part = drive->vfs->GetPartition(name_to_open.file.partition);
 
-    // If we are listing a CBM medium, let's use the volume indicator
-//    FileInfo *header = dirPartition->GetSystemFile(0);
-//    if ((header->attrib & AM_VOL) && (header->name_format & NAME_FORMAT_CBM)) {
-//        for (int i = 0; i < 20; i++) {
-//            buffer[8 + i] = header->lfname[i] & 0x7F;
-//        }
-//        buffer[8 + 16] = 0x22;
-//    } else {
-        //const char *fullname = part->GetRelativePath();
-        int pos = 8;
-        int len = strlen(pp);
-        if (len > 16) {
-            pp += (len - 16);
+    if (info.fs->supports_direct_sector_access()) { // might be CBM image!
+        dir->get_entry(info); // first one SHOULD be the volume label
+        if ((info.attrib & AM_VOL) && (info.name_format & NAME_FORMAT_CBM)) {
+            printf("Volume label found: %s\n", info.lfname);
+            for (int i = 0; i < 23; i++) {
+                buffer[8 + i] = info.lfname[i] & 0x7F;
+            }
+            buffer[8 + 16] = 0x22;
+            return 0;
         }
-        while ((pos < 24) && (*pp))
-            buffer[pos++] = toupper(*(pp++));
-//    }
+    }
 
-
+    //const char *fullname = part->GetRelativePath();
+    int pos = 8;
+    int len = strlen(pp);
+    if (len > 16) {
+        pp += (len - 16);
+    }
+    while ((pos < 24) && (*pp))
+        buffer[pos++] = toupper(*(pp++));
     return 0;
 }
 
@@ -1306,7 +1313,13 @@ int IecCommandChannel::do_pwd_command()
         return ERR_PARTITION_ERROR;
     }
     buffer[255] = 0; // ensure string terminator
-    strncpy((char *) buffer, part->GetRelativePath(), 255);
+    const char *src = part->GetRelativePath();
+    for(int i=0;i<255;i++) {
+        buffer[i] = toupper(src[i]);
+        if (buffer[i] == 0) {
+            break; 
+        }
+    }
     int len = strlen((char *) buffer);
     dump_hex_relative(buffer, len);
     last_byte = len - 1;
