@@ -598,11 +598,12 @@ int IecChannel :: setup_partition_read()
     printf("Setup partition read\n");
     drive->get_command_channel()->set_error(ERR_ALL_OK, 0, 0);
     state = e_partlist;
-    part_idx = 0;
+    part_idx = 1;
     pointer = 0;
     prefetch = 0;
     prefetch_max = 32;
     last_byte = -1;
+    dir_free = 0;
     memcpy(buffer, c_header, 32);
     memcpy(buffer+8, "ULTIMATE HD", 11);
     memcpy(buffer+26, "UL 64", 5);
