@@ -298,9 +298,9 @@ int main(int argc, const char **argv)
     File *f;
     FileManager *fm = FileManager :: getFileManager();
 
-    create_test_files(fm);
-    error += execute_suite1(fm, dr);
-    //error += execute_suite2(fm, dr);
+    //create_test_files(fm);
+    //error += execute_suite1(fm, dr);
+    error += execute_suite2(fm, dr);
 
     printf("Errors: %d\n", error);
     return 0;

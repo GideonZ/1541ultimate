@@ -345,6 +345,20 @@ int IecParser :: initialize_command(const uint8_t *buffer, int len)
 
 int IecParser :: format_command(const uint8_t *buffer, int len)
 {
+    mstring cmd((const char *)buffer, 1, len-1);    
+
+    const char *create[2];
+    int n = cmd.split('=', create, 2);;
+    if (n == 2) { // create!
+        filename_t dest;
+        int err = parse_full_path(create[0], dest, NULL, false);
+        if (err) {
+            return err;
+        }
+        printf("Create disk image command: (%d) %s:%s, cmd: %s\n", dest.partition, dest.path.c_str(), dest.filename.c_str(), create[1]);
+        return 0;
+    }
+
     uint8_t name[24] = { 0xA0 };
     name[23] = 0;
     uint8_t id1 = 0xA0, id2 = 0xA0;

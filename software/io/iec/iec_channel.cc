@@ -1367,6 +1367,33 @@ int IecCommandChannel::do_set_position(int chan, uint32_t pos, int recnr, int re
     return 0;
 }
 
+int IecCommandChannel::do_get_partition_info(int part)
+{
+// Byte 0
+// - Partition type
+// 0 not created
+// 1 Native Mode
+// 2 1541 Emulation Mode
+// 3 1571 Emulation Mode
+// 4 1581 Emulation Mode
+// 5 1581 CP/M Emulation Mode
+// 6 Print Buffer
+// 7 Foreign Mode
+// 255 System
+// 
+// Byte1        - CHR$(0) (reserved)
+// Byte2        - Partition number
+// Bytes 3-18   - Partition name as displayed in the partition directory
+// Byte 19      - Starting system address of partition (high byte} 
+// Byte 20      - Starting system address of partition (middle byte)
+// Byte 21      - Starting system address of partition (low byte)
+// Bytes 22-26  - CHR$(0) (reserved)
+// Byte 27      - Size of partition (high byte)
+// Byte 28      - Size of partition (middle byte)
+// Byte 29      - Size of partition (low byte)
+// Byte 30      - CHR$(13)
+    return 0;
+}
 
 int IecCommandChannel::ext_open_file(const char *filenameOrCommand)
 {
