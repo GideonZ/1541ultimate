@@ -82,7 +82,7 @@ static const char *queryhelp =
         "\nWorks like any directory. Please\n"
         "note that accessing disks or files\n"
         "introduces a delay as the data needs\n"
-        "to be downloaded form the internet.";
+        "to be downloaded from the internet.";
 
 int AssemblySearch :: handle_key(int c)
 {
