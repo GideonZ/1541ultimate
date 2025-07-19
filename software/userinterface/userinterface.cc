@@ -22,15 +22,17 @@ static const char *colors[] = { "Black", "White", "Red", "Cyan", "Purple", "Gree
 static const char *filename_overflow_squeeze[] = { "None", "Beginning", "Middle", "End" };
 static const char *itype[]      = { "Freeze", "Overlay on HDMI" };
 static const char *cfg_save[]   = { "No", "Ask", "Yes" };
+static const char *navstyles[] = { "Quick Search", "WASD Cursors" };
 
 struct t_cfg_definition user_if_config[] = {
 #if U64
-    { CFG_USERIF_ITYPE,      CFG_TYPE_ENUM,   "Interface Type",       "%s", itype,   0,  1, 1 },
+    { CFG_USERIF_ITYPE,      CFG_TYPE_ENUM,   "Interface Type",       "%s", itype,   0,  1, 0 },
 #endif
-    { CFG_USERIF_BACKGROUND, CFG_TYPE_ENUM,   "Background color",     "%s", colors,  0, 15, 0 },
-    { CFG_USERIF_BORDER,     CFG_TYPE_ENUM,   "Border color",         "%s", colors,  0, 15, 0 },
-    { CFG_USERIF_FOREGROUND, CFG_TYPE_ENUM,   "Foreground color",     "%s", colors,  0, 15, 12 },
-    { CFG_USERIF_SELECTED,   CFG_TYPE_ENUM,   "Selected Item color",  "%s", colors,  0, 15, 1 },
+    { CFG_USERIF_NAVIGATION, CFG_TYPE_ENUM,   "Navigation Style",     "%s", navstyles, 0,  1, 1 },
+    { CFG_USERIF_BACKGROUND, CFG_TYPE_ENUM,   "Background color",     "%s", colors,  0, 15, 14 },
+    { CFG_USERIF_BORDER,     CFG_TYPE_ENUM,   "Border color",         "%s", colors,  0, 15, 6 },
+    { CFG_USERIF_FOREGROUND, CFG_TYPE_ENUM,   "Foreground color",     "%s", colors,  0, 15, 1 },
+    { CFG_USERIF_SELECTED,   CFG_TYPE_ENUM,   "Selected Item color",  "%s", colors,  0, 15, 0 },
 #if U64
     { CFG_USERIF_SELECTED_BG,CFG_TYPE_ENUM,   "Selected Backgr (Overlay)",  "%s", colors,  0, 15, 6 },
 #endif
@@ -251,6 +253,14 @@ void UserInterface :: swapDisk(void)
 #endif                                                                
 }
 
+void UserInterface :: send_keystroke(int key)
+{
+    UIObject *obj = ui_objects[focus];
+    if (obj) {
+        obj->send_keystroke(key);
+    }
+}
+
 int UserInterface :: pollInactive(void)
 {
     return ui_objects[focus]->poll_inactive();
@@ -360,6 +370,18 @@ void UserInterface :: set_screen_title()
     int width = screen->get_size_x();
     int height = screen->get_size_y();
 
+#if COMMODORE
+    screen->clear();
+    screen->output("\e6\x12\x12\x12\x12\x12\x12\x12\x12\x12\x12\x1c");
+    screen->output("\x14\x15\x17");
+    screen->output("\e1 COMMODORE 64 ");
+    screen->output("\e6\x1e\x12\x12\x12\x12\x12\x12\x12\x12\x12\x12\x12");
+    screen->move_cursor(0, 1);
+    screen->output("\e2\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x1d");
+    screen->output("\e6\x18\x16\e2\x19");
+    screen->output(" \eR\e1\x1a ULTIMATE \x1a\er ");
+    screen->output("\e2\x1f\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b");
+#else
     int len = title.length();
     int hpos = (width - len) / 2;
 
@@ -373,6 +395,7 @@ void UserInterface :: set_screen_title()
     screen->move_cursor(0, height-1);
 	screen->scroll_mode(false);
 	screen->repeat('\002', width);
+#endif
 }
 
 /* Blocking variants of our simple objects follow: */

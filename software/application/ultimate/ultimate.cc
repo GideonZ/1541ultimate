@@ -42,13 +42,14 @@
 #include "keyboard_usb.h"
 #include "i2c_drv.h"
 #include "product.h"
+#include "commodore_menu.h"
 
 bool connectedToU64 = false;
 
 C1541 *c1541_A;
 C1541 *c1541_B;
 IecInterface *iec_if;
-TreeBrowser *root_tree_browser;
+static TreeBrowser *root_tree_browser;
 StreamMenu *root_menu;
 Overlay *overlay;
 C64 *c64;
@@ -147,7 +148,10 @@ extern "C" void ultimate_main(void *a)
         // Instantiate and attach the root tree browser
         Browsable *root = new BrowsableRoot();
         root_tree_browser = new TreeBrowser(c64UserInterface, root);
-        c64UserInterface->activate_uiobject(root_tree_browser); // root of all evil!
+        CommodoreMenu *commodoreMenu = new CommodoreMenu(c64UserInterface);
+
+        // c64UserInterface->activate_uiobject(root_tree_browser); // root of all evil!
+        c64UserInterface->activate_uiobject(commodoreMenu); // root of all evil!
         c64UserInterface->init(c64);
         if(c64UserInterface->cfg->get_value(CFG_USERIF_START_HOME)) {
             new HomeDirectory(c64UserInterface, root_tree_browser);

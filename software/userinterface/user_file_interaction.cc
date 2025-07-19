@@ -82,7 +82,7 @@ void UserFileInteraction::update_task_items(bool writablePath, Path *path)
 SubsysResultCode_e UserFileInteraction::S_enter(SubsysCommand *cmd)
 {
     if (cmd->user_interface) {
-        int retval = cmd->user_interface->enterSelection();
+        cmd->user_interface->send_keystroke(KEY_RIGHT);
         return SSRET_OK; // FIXME
     }
     return SSRET_NO_USER_INTERFACE;

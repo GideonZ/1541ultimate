@@ -227,6 +227,7 @@ public:
     
     ConfigStore *register_store(uint32_t page_id, const char *name, t_cfg_definition *defs, ConfigurableObject *ob);
     ConfigStore *find_store(const char *storename);
+    ConfigStore *find_store(uint32_t page_id);
     void add_custom_store(ConfigStore *cfg);
     void remove_store(ConfigStore *cfg);
 

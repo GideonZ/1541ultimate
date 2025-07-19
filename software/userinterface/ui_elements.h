@@ -40,6 +40,7 @@ public:
     {
         return 0;
     }
+    virtual void send_keystroke(int key) { }
 };
 
 class UIPopup : public UIObject

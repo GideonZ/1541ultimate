@@ -46,8 +46,9 @@ class ContextMenu : public UIObject
     int y_offs;
     int hook_y;
     int corner;
+    int when_done; // what to do when done with this menu (MENU_CLOSE, MENU_EXIT, MENU_HIDE)
 public:
-    ContextMenu(UserInterface *ui, TreeBrowserState *state, int initial, int y);
+    ContextMenu(UserInterface *ui, TreeBrowserState *state, int initial, int y, int when_done = MENU_CLOSE);
     virtual ~ContextMenu(void);
     
     Action *getSelectedAction(void) { return selectedAction; }
@@ -59,9 +60,10 @@ public:
     virtual void deinit(void);
     virtual int poll(int);
     virtual void draw();
-    void redraw(void);
+    virtual void redraw(void);
     virtual int select_item(void);
     friend class TaskMenu;
+    friend class CommodoreMenu;
 };
 
 #endif

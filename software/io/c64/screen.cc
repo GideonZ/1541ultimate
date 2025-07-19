@@ -268,6 +268,7 @@ void Screen_MemMappedCharMatrix :: clear() {
 	int size = get_size_x() * get_size_y();
 	memset(char_base, 32, size);
 	memset(color_base, 15, size);
+    move_cursor(0, 0);
 }
 
 /**
@@ -377,20 +378,24 @@ void Window :: output_length(const char *string, int len)
 void Window :: draw_border(void)
 {
     parent->move_cursor(offset_x, offset_y);
-    parent->output(1);
-    parent->repeat(2, window_x-2);
-    parent->output(3);
+    parent->set_color(1);
+    parent->output(BORD_LOWER_RIGHT_CORNER);
+    parent->set_color(15);
+    parent->repeat(CHR_HORIZONTAL_LINE, window_x-2);
+    parent->output(BORD_LOWER_LEFT_CORNER);
     
     parent->move_cursor(offset_x, offset_y + window_y - 1);
-    parent->output(5);
-    parent->repeat(2, window_x-2);
-    parent->output(6);
+    parent->output(BORD_UPPER_RIGHT_CORNER);
+    parent->repeat(CHR_HORIZONTAL_LINE, window_x-2);
+    parent->set_color(12);
+    parent->output_raw(BORD_UPPER_LEFT_CORNER);
 
+    parent->set_color(15);
     for(int i=1;i<window_y-1;i++) {
     	parent->move_cursor(offset_x, offset_y + i);
-    	parent->output(4);
+    	parent->output(CHR_VERTICAL_LINE);
     	parent->move_cursor(offset_x + window_x - 1, offset_y + i);
-    	parent->output(4);
+    	parent->output(CHR_VERTICAL_LINE);
     }
 
     offset_x ++;
@@ -418,9 +423,9 @@ void Window :: reset_border(void)
 void Window :: draw_border_horiz(void)
 {
     parent->move_cursor(offset_x, offset_y);
-    parent->repeat(2, window_x);
+    parent->repeat(CHR_HORIZONTAL_LINE, window_x);
     parent->move_cursor(offset_x, offset_y + window_y-1);
-    parent->repeat(2, window_x);
+    parent->repeat(CHR_HORIZONTAL_LINE, window_x);
     
     offset_y ++;
     window_y -=2;

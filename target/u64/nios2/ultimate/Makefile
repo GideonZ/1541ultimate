@@ -103,6 +103,7 @@ SRCS_CC	 =  u2p_init.cc \
 			config_menu.cc \
 			context_menu.cc \
 			task_menu.cc \
+			commodore_menu.cc \
 			filetype_d64.cc \
 			filetype_g64.cc \
 			filetype_t64.cc \
@@ -228,7 +229,7 @@ SRCS_IEC = iec_code.iec
 SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -Os -DOS -DDEVELOPER=0 -DNIOS=1 -DCLOCK_FREQ=66666667 -DU64=1 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
+OPTIONS  = -g -ffunction-sections -Os -DOS -DDEVELOPER=0 -DNIOS=1 -DCLOCK_FREQ=66666667 -DU64=1 -DCOMMODORE=1 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = $(BSP)/linker.x

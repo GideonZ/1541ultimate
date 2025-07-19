@@ -54,6 +54,7 @@ class TreeBrowser : public UIObject
 public:
     char quick_seek_string[MAX_SEARCH_LEN_TB];
     int  quick_seek_length;
+    bool allow_exit;
 
     FileManager *fm;
     UserInterface *user_interface;
@@ -85,6 +86,7 @@ public:
     virtual int handle_key(int);
     virtual void checkFileManagerEvent(void);
 
+    void send_keystroke(int key) { if (keyb) keyb->push_head(key); }
     void reset_quick_seek(void);
     bool perform_quick_seek(void);
     

@@ -11,11 +11,12 @@ extern "C" {
 /************************/
 /* ConfigBrowser Object */
 /************************/
-ConfigBrowser :: ConfigBrowser(UserInterface *ui, Browsable *root) : TreeBrowser(ui, root)
+ConfigBrowser :: ConfigBrowser(UserInterface *ui, Browsable *root, int level) : TreeBrowser(ui, root)
 {
     printf("Constructor config browser\n");
     setCleanup();
-    state = new ConfigBrowserState(root, this, 0);
+    start_level = level;
+    state = new ConfigBrowserState(root, this, level);
 }
 
 ConfigBrowser :: ~ConfigBrowser()
@@ -69,8 +70,10 @@ void ConfigBrowserState :: level_up(void)
         st->at_close_config();
     }
     browser->state = previous;
-    previous->refresh = true;
-    previous = NULL; // unlink;
+    if (previous) {
+        previous->refresh = true;
+        previous = NULL; // unlink;
+    }
     delete this;
 }
            
@@ -144,6 +147,14 @@ void ConfigBrowserState :: decrease(void)
     }
 }
     
+void ConfigBrowserState :: on_close(void)
+{
+    if (level == 1) { // only at level 1, we know that our current node is of the type BrowsableConfigStore
+        ConfigStore *st = ((BrowsableConfigStore *) node)->getStore();
+        st->at_close_config();
+    }
+}
+
 void ConfigBrowser :: on_exit(void)
 {
     if (user_interface->config_save == 0) {
@@ -190,12 +201,12 @@ int ConfigBrowser :: handle_key(int c)
         case KEY_BREAK: // runstop
         case KEY_ESCAPE:
             if (state->level == 1) { // going to level 0
-                ConfigStore *st = ((BrowsableConfigStore *) state->previous->under_cursor)->getStore();
-                st->at_close_config();
+                ((ConfigBrowserState *)state)->on_close();
             }
-            if(state->level!=0)
-            // check if we need to save to flash
-            on_exit();
+            if(state->level == start_level) {
+                // check if we need to save to flash
+                on_exit();
+            }
             ret = MENU_CLOSE;
             break;
         case KEY_DOWN: // down
@@ -236,7 +247,7 @@ int ConfigBrowser :: handle_key(int c)
             break;
         case KEY_LEFT: // left
 		case KEY_BACK: // del
-            if(state->level==0) {
+            if(state->level == start_level) {
                 on_exit();
                 ret = MENU_CLOSE; // leave
             } else {

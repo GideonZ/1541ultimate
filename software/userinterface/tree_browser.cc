@@ -105,11 +105,14 @@ TreeBrowser :: ~TreeBrowser()
 void TreeBrowser :: init(Screen *screen, Keyboard *k) // call on root!
 {
 	this->screen = screen;
-
+    allow_exit = false;
     screen->move_cursor(screen->get_size_x()-8, screen->get_size_y()-1);
 	screen->output("\eAF3=Help\eO");
 
 	window = new Window(screen, 0, 2, screen->get_size_x(), screen->get_size_y()-3);
+#if COMMODORE
+	window->draw_border();
+#endif
 	keyb = k;
     state->reload();
 	// state->do_refresh();
@@ -385,10 +388,10 @@ int TreeBrowser :: handle_key(int c)
     
     switch(c) {
         case KEY_BREAK: // runstop
-            ret = MENU_HIDE;
+            ret = (allow_exit) ? MENU_CLOSE : MENU_HIDE;
             break;
         case KEY_F8: // exit (F8)
-            ret = MENU_EXIT;
+            ret = (allow_exit) ? MENU_CLOSE : MENU_EXIT;
             break;
         case KEY_DOWN: // down
         	reset_quick_seek();

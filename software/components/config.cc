@@ -180,6 +180,17 @@ ConfigStore *ConfigManager :: find_store(const char *storename)
     return NULL;
 }
 
+ConfigStore *ConfigManager :: find_store(uint32_t page_id)
+{
+    for(int i=0; i < stores.get_elements(); i++) {
+        ConfigStore *st = stores[i];
+        if (st->get_page()->get_id() == page_id) {
+            return st;
+        }
+    }
+    return NULL;
+}
+
 //   ===================
 /*** CONFIGURATION STORE ***/
 //   ===================

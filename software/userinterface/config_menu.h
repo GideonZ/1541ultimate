@@ -18,13 +18,15 @@ public:
     void change(void);
     void increase(void);
     void decrease(void);
+    void on_close(void);
 };
 
 class ConfigBrowser: public TreeBrowser
 {
     void on_exit(void);
+    int start_level;
 public:
-    ConfigBrowser(UserInterface *ui, Browsable *);
+    ConfigBrowser(UserInterface *ui, Browsable *, int level = 0);
     virtual ~ConfigBrowser();
 
     virtual void init(Screen *screen, Keyboard *k);

@@ -4,11 +4,11 @@
 #include "tree_browser.h"
 #include "tree_browser_state.h"
 
-ContextMenu :: ContextMenu(UserInterface *ui, TreeBrowserState *state, int initial, int y) : actions(2, 0)
+ContextMenu :: ContextMenu(UserInterface *ui, TreeBrowserState *state, int initial, int y, int when_done) : actions(2, 0)
 {
 	user_interface = ui;
 	this->state = state;
-
+    this->when_done = when_done;
 	if (state)
 		contextable = state->under_cursor;
 	else
@@ -126,10 +126,12 @@ int ContextMenu :: poll(int sub)
             draw();
         }
         return sub;
+    } else if(sub < 0) {
+        redraw();
     }
     if(!keyb) {
         printf("ContextMenu: Keyboard not initialized.. exit.\n");
-        return -1;
+        return when_done;
     }
 
     switch(context_state) {
@@ -140,12 +142,12 @@ int ContextMenu :: poll(int sub)
                 if(ret)
                     context_state = e_finished;
             } else if(c == -2) {
-            	ret = -1;
+            	ret = when_done;
             }
             break;
         
         default:
-            ret = -1;
+            ret = when_done;
             break;
     }
     return ret;
@@ -282,11 +284,11 @@ void ContextMenu :: redraw()
 
     window->draw_border();
     if((corner == oy)||(corner == (oy+rows-1))) {
-        window->set_char(0, corner-oy, 2);
+        window->set_char(0, corner-oy, CHR_HORIZONTAL_LINE);
     } else if(corner == 0) {
-        window->set_char(0, corner-oy, 8);
+        window->set_char(0, corner-oy, CHR_COLUMN_BAR_TOP);
     } else {
-        window->set_char(0, corner-oy, 3);
+        window->set_char(0, corner-oy, CHR_LOWER_LEFT_CORNER);
     }
     draw();
 }
