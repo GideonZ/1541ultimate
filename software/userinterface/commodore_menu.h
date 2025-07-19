@@ -9,6 +9,7 @@ class CommodoreMenu: public ContextMenu
     static SubsysResultCode_e S_file_browser(Action *act, void *context);
     static SubsysResultCode_e S_cfg_page(Action *act, void *context);
     static SubsysResultCode_e S_advanced(Action *act, void *context);
+    static SubsysResultCode_e S_assembly64(Action *act, void *context);
 
     TreeBrowser *root_tree_browser;
 

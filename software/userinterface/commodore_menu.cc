@@ -8,6 +8,7 @@ extern "C" {
 #include "commodore_menu.h"
 #include "browsable_root.h"
 #include "config_menu.h"
+#include "assembly_search.h"
 
 typedef enum {
     e_audio_mixer = 0,
@@ -61,7 +62,8 @@ CommodoreMenu :: CommodoreMenu(UserInterface *ui) : ContextMenu(ui, NULL, 1, 0, 
     Action *dummy = new Action(" ", S_file_browser, 0);
     dummy->disable();
     appendAction(dummy);
-    appendAction(new Action(" FILE BROWSER", S_file_browser, 0));
+    appendAction(new Action(" LOCAL FILE BROWSER", S_file_browser, 0));
+    appendAction(new Action(" INTERNET SEARCH", S_assembly64, 0));
     appendAction(new Action(" STARTUP & MEMORY", S_cfg_page, e_c64_carts));
     appendAction(new Action(" TV & JOYSTICKS", S_cfg_page, e_u64_specific));
     appendAction(new Action(" NETWORK SERVICES & TIMEZONE", S_cfg_page, e_network));
@@ -139,5 +141,12 @@ SubsysResultCode_e CommodoreMenu :: S_advanced(Action *act, void *context)
     ConfigBrowser *configBrowser = new ConfigBrowser(menu->user_interface, configRoot);
     configBrowser->init(menu->window->getScreen(), menu->keyb);
     menu->user_interface->activate_uiobject(configBrowser);
+    return SSRET_OK;
+}
+
+SubsysResultCode_e CommodoreMenu :: S_assembly64(Action *act, void *context)
+{
+    CommodoreMenu *menu = (CommodoreMenu *)context;
+    AssemblyInGui :: S_OpenSearch(menu->user_interface);
     return SSRET_OK;
 }
