@@ -1273,7 +1273,7 @@ int IecCommandChannel::do_scratch(filename_t filenames[], int n)
     mstring work;
     int scratched = 0;
     for(int i=0;i<n;i++) {
-        const char *fp = ConstructPath(work, filenames[i], e_any, e_not_set);
+        const char *fp = ConstructPath(work, filenames[i], e_any, e_read); // If read is not set, the extension will not be set to .???
         if (fp) {
             DBGIECV("  %d. %s\n", i, fp);
         } else {
