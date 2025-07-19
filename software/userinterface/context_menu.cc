@@ -194,6 +194,9 @@ int ContextMenu :: handle_key(int c)
             if (newpos < 0) {
                 newpos = 0;
             }
+            while(actions[newpos] && !actions[newpos]->isEnabled() && (newpos < actions.get_elements()-1)) {
+                newpos++;
+            }
             if (newpos != item_index) {
                 item_index = newpos;
                 draw();
@@ -205,6 +208,9 @@ int ContextMenu :: handle_key(int c)
             newpos = item_index + 10;
             if (newpos >  actions.get_elements()-1) {
                 newpos = actions.get_elements()-1;
+            }
+            while(actions[newpos] && !actions[newpos]->isEnabled() && (newpos > 0)) {
+                newpos--;
             }
             if (newpos != item_index) {
                 item_index = newpos;
