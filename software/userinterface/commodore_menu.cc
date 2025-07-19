@@ -55,26 +55,26 @@ const char *config_menu_names[] = {
 /************************/
 /* CommodoreMenu Object */
 /************************/
-CommodoreMenu :: CommodoreMenu(UserInterface *ui) : ContextMenu(ui, NULL, 1, 0, MENU_HIDE)
+CommodoreMenu :: CommodoreMenu(UserInterface *ui) : ContextMenu(ui, NULL, 1, 0, MENU_HIDE, 1)
 {
     printf("Constructor Commodore browser\n");
 
     Action *dummy = new Action(" ", S_file_browser, 0);
     dummy->disable();
     appendAction(dummy);
-    appendAction(new Action(" LOCAL FILE BROWSER", S_file_browser, 0));
-    appendAction(new Action(" INTERNET SEARCH", S_assembly64, 0));
-    appendAction(new Action(" STARTUP & MEMORY", S_cfg_page, e_c64_carts));
-    appendAction(new Action(" TV & JOYSTICKS", S_cfg_page, e_u64_specific));
-    appendAction(new Action(" NETWORK SERVICES & TIMEZONE", S_cfg_page, e_network));
-    appendAction(new Action(" WIRED NETWORK SETUP", S_cfg_page, e_ethernet));
-    appendAction(new Action(" WI-FI NETWORK SETUP", S_cfg_page, e_wifi));
-    appendAction(new Action(" MODEMS", S_cfg_page, e_modem));
-    appendAction(new Action(" PRINTERS", S_cfg_page, e_printer));
-    appendAction(new Action(" USER INTERFACE", S_cfg_page, e_user_interface));
-    appendAction(new Action(" DISK DRIVE A OPTIONS", S_cfg_page, e_drive_a));
-    appendAction(new Action(" DISK DRIVE B OPTIONS", S_cfg_page, e_drive_b));
-    appendAction(new Action(" ADVANCED SETTINGS", S_advanced, 0));
+    appendAction(new Action("LOCAL FILE BROWSER", S_file_browser, 0));
+    appendAction(new Action("INTERNET SEARCH", S_assembly64, 0));
+    appendAction(new Action("STARTUP & MEMORY", S_cfg_page, e_c64_carts));
+    appendAction(new Action("TV & JOYSTICKS", S_cfg_page, e_u64_specific));
+    appendAction(new Action("NETWORK SERVICES & TIMEZONE", S_cfg_page, e_network));
+    appendAction(new Action("WIRED NETWORK SETUP", S_cfg_page, e_ethernet));
+    appendAction(new Action("WI-FI NETWORK SETUP", S_cfg_page, e_wifi));
+    appendAction(new Action("MODEMS", S_cfg_page, e_modem));
+    appendAction(new Action("PRINTERS", S_cfg_page, e_printer));
+    appendAction(new Action("USER INTERFACE", S_cfg_page, e_user_interface));
+    appendAction(new Action("DISK DRIVE A OPTIONS", S_cfg_page, e_drive_a));
+    appendAction(new Action("DISK DRIVE B OPTIONS", S_cfg_page, e_drive_b));
+    appendAction(new Action("ADVANCED SETTINGS", S_advanced, 0));
 
     // Instantiate and attach the root tree browser
     Browsable *root = new BrowsableRoot();
@@ -98,7 +98,11 @@ void CommodoreMenu :: redraw()
 {
     draw();
     screen->move_cursor(0, screen->get_size_y()-1);
-    screen->output("\e1 WASD=NAV F1=MENU F3/F5=PGUP/DN F7=HELP");
+    if (user_interface->navmode == 0) {
+        screen->output("\e1 CRSR+TYPE to NAV F1/F7=PGUP/DN F3=HELP");
+    } else {
+        screen->output("\e1 WASD=NAV F1=MENU F3/F5=PGUP/DN F7=HELP");
+    }
     context_state = e_active;
 }
 

@@ -4,7 +4,7 @@
 #include "tree_browser.h"
 #include "tree_browser_state.h"
 
-ContextMenu :: ContextMenu(UserInterface *ui, TreeBrowserState *state, int initial, int y, int when_done) : actions(2, 0)
+ContextMenu :: ContextMenu(UserInterface *ui, TreeBrowserState *state, int initial, int y, int when_done, int ind) : actions(2, 0)
 {
 	user_interface = ui;
 	this->state = state;
@@ -23,6 +23,7 @@ ContextMenu :: ContextMenu(UserInterface *ui, TreeBrowserState *state, int initi
     corner = y;
     first = 0;
     hook_y = 0;
+    indent = ind;
     quick_seek_length = 0;
     item_index = initial;
     subContext = NULL;
@@ -108,6 +109,14 @@ void ContextMenu :: deinit()
     }
 }
 
+void ContextMenu :: help()
+{
+    reset_quick_seek();
+    if(state)
+        state->refresh = true;
+    //user_interface->run_editor(helptext, strlen(helptext));
+}
+
 int ContextMenu :: poll(int sub)
 {
     int ret = 0;
@@ -153,10 +162,77 @@ int ContextMenu :: poll(int sub)
     return ret;
 }
 
+void ContextMenu :: page_up(void)
+{
+    int newpos = item_index - 10;
+    if (newpos < 0) {
+        newpos = 0;
+    }
+    while(actions[newpos] && !actions[newpos]->isEnabled() && (newpos < actions.get_elements()-1)) {
+        newpos++;
+    }
+    if (newpos != item_index) {
+        item_index = newpos;
+        reset_quick_seek();
+        draw();
+    }
+}
+
+void ContextMenu :: page_down(void)
+{
+    int newpos = item_index + 10;
+    if (newpos >  actions.get_elements()-1) {
+        newpos = actions.get_elements()-1;
+    }
+    while(actions[newpos] && !actions[newpos]->isEnabled() && (newpos > 0)) {
+        newpos--;
+    }
+    if (newpos != item_index) {
+        item_index = newpos;
+        reset_quick_seek();
+        draw();
+    }
+}
+
+void ContextMenu :: seek_char(int c)
+{
+    if(quick_seek_length < (MAX_SEARCH_LEN-2)) {
+        quick_seek_string[quick_seek_length++] = c;
+        if(!perform_quick_seek()) {
+            quick_seek_length--;
+        } else {
+            draw();
+        }
+    }
+}
+
+void ContextMenu :: down(void)
+{
+    reset_quick_seek();
+    for (int i=item_index+1; i < actions.get_elements(); i++) {
+        if (actions[i]->isEnabled()) {
+            item_index = i;
+            draw();
+            break;
+        }
+    }
+}
+
+void ContextMenu :: up(void)
+{
+    reset_quick_seek();
+    for (int i=item_index-1; i >= 0; i--) {
+        if (actions[i]->isEnabled()) {
+            item_index = i;
+            draw();
+            break;
+        }
+    }
+}
+
 int ContextMenu :: handle_key(int c)
 {
     int ret = 0;
-    int newpos;
     Action *a;
     
     switch(c) {
@@ -169,63 +245,52 @@ int ContextMenu :: handle_key(int c)
             ret = -1;
             break;
         case KEY_DOWN: // down
-        	reset_quick_seek();
-            for (int i=item_index+1; i < actions.get_elements(); i++) {
-                if (actions[i]->isEnabled()) {
-                    item_index = i;
-                    draw();
-                    break;
-                }
-            }
+            down();
         	break;
         case KEY_UP: // up
-        	reset_quick_seek();
-            for (int i=item_index-1; i >= 0; i--) {
-                if (actions[i]->isEnabled()) {
-                    item_index = i;
-                    draw();
-                    break;
-                }
-            }
+            up();
         	break;
-        case KEY_F1: // page up
-        case KEY_PAGEUP:
-            newpos = item_index - 10;
-            if (newpos < 0) {
-                newpos = 0;
-            }
-            while(actions[newpos] && !actions[newpos]->isEnabled() && (newpos < actions.get_elements()-1)) {
-                newpos++;
-            }
-            if (newpos != item_index) {
-                item_index = newpos;
-                draw();
+
+        case KEY_F1: // page up or menu
+            if (user_interface->navmode == 0) {
+                page_up();
             }
             break;
 
-        case KEY_F7: // page up
-        case KEY_PAGEDOWN:
-            newpos = item_index + 10;
-            if (newpos >  actions.get_elements()-1) {
-                newpos = actions.get_elements()-1;
+        case KEY_F3: // help or page up
+            if (user_interface->navmode == 0) {
+                help();
+            } else {
+                page_up();
             }
-            while(actions[newpos] && !actions[newpos]->isEnabled() && (newpos > 0)) {
-                newpos--;
+            break;
+
+        case KEY_F5:
+            if (user_interface->navmode == 0) {
+                ;
+            } else {
+                page_down();
             }
-            if (newpos != item_index) {
-                item_index = newpos;
-                draw();
+            break;
+
+        case KEY_F7: // page down or help
+            if (user_interface->navmode == 0) {
+                page_down();
+            } else {
+                help();
             }
+            break;
+
+        case KEY_PAGEDOWN: // page down
+            page_down();
+            break;
+
+        case KEY_PAGEUP:
+            page_up();
             break;
 
         case KEY_BACK: // backspace
             ret = -1;
-/*
-            if(quick_seek_length) {
-                quick_seek_length--;
-                perform_quick_seek();
-            }
-*/
             break;
         case KEY_SPACE: // space
         case KEY_RETURN: // return
@@ -240,16 +305,38 @@ int ContextMenu :: handle_key(int c)
             }
             break;
 
+        case KEY_A:
+            if (user_interface->navmode == 0) {
+                seek_char('a');
+            } else {
+                ret = -1;
+            }
+            break;
+        case KEY_S:
+            if (user_interface->navmode == 0) {
+                seek_char('s');
+            } else {
+                down();
+            }
+            break;
+        case KEY_D:
+            if (user_interface->navmode == 0) {
+                seek_char('d');
+            } else {
+                select_item();
+            }
+            break;
+        case KEY_W:
+            if (user_interface->navmode == 0) {
+                seek_char('w');
+            } else {
+                up();
+            }
+            break;
+
         default:
-            if((c >= '!')&&(c < 0x80)) {
-                if(quick_seek_length < (MAX_SEARCH_LEN-2)) {
-                    quick_seek_string[quick_seek_length++] = c;
-                    if(!perform_quick_seek()) {
-                        quick_seek_length--;
-                    } else {
-                    	draw();
-                    }
-                }
+            if ((user_interface->navmode == 0) && (c >= '!') && (c < 0x80)) {
+                seek_char(c);
             } else {
                 printf("Unhandled context key: %b\n", c);
             }
@@ -323,7 +410,7 @@ void ContextMenu :: draw()
 		}
 		if (t) {
 			const char *string = t->getName();
-			window->output_line(*string ? string : "- None -");  // Action name or "- None -"
+			window->output_line(*string ? string : "- None -", indent);  // Action name or "- None -"
 		} else {
 			window->output_line("");
 		}

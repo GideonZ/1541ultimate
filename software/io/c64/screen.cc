@@ -365,9 +365,10 @@ void Window :: repeat(char a, int len)
 }
 
 
-void Window :: output_line(const char *string)
+void Window :: output_line(const char *string, int indent)
 {
-	parent->output_fixed_length(string, offset_x, window_x);
+    parent->repeat(' ', indent);
+	parent->output_fixed_length(string, offset_x, window_x-indent);
 }
 
 void Window :: output_length(const char *string, int len)

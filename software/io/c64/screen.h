@@ -162,7 +162,7 @@ public:
     virtual void  move_cursor(int, int);
     virtual void  output(char);
     virtual void  output(const char *);
-    virtual void  output_line(const char *);
+    virtual void  output_line(const char *, int indent=0);
     virtual void  output_length(const char *, int);
     virtual void  repeat(char a, int len);
     virtual void  draw_border(void);

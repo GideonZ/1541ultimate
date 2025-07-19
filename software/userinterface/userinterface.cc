@@ -86,6 +86,7 @@ void UserInterface :: effectuate_settings(void)
 #endif
     config_save  = cfg->get_value(CFG_USERIF_CFG_SAVE);
     filename_overflow_squeeze = cfg->get_value(CFG_USERIF_FILENAME_OVERFLOW_SQUEEZE);
+    navmode      = cfg->get_value(CFG_USERIF_NAVIGATION);
 
     if(host && host->is_accessible())
         host->set_colors(color_bg, color_border);
