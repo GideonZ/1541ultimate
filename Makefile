@@ -4,6 +4,7 @@ all: esp32 u2_rv u2plus u2pl u64 u64ii
 esp32: esp32_raw_u64 esp32_raw_c3 esp32_u64ctrl
 
 esp32_clean: esp32_raw_u64_clean esp32_raw_c3_clean esp32_u64ctrl_clean
+
 esp32_raw_u64:
 	@cd software/wifi/raw_u64 && idf.py build
 
@@ -21,7 +22,6 @@ esp32_u64ctrl:
 
 esp32_u64ctrl_clean:
 	@cd software/u64ctrl && idf.py clean
-
 
 u2:
 	@$(MAKE) -C tools
