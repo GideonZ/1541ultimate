@@ -50,6 +50,7 @@ C1541 *c1541_A;
 C1541 *c1541_B;
 IecInterface *iec_if;
 static TreeBrowser *root_tree_browser;
+static TreeBrowser *root_tree_browser_overlay;
 StreamMenu *root_menu;
 Overlay *overlay;
 C64 *c64;
@@ -133,11 +134,11 @@ extern "C" void ultimate_main(void *a)
 #if U64
     overlayUserInterface = new UserInterface(title);
     Browsable *root = new BrowsableRoot();
-    root_tree_browser = new TreeBrowser(overlayUserInterface, root);
-    overlayUserInterface->activate_uiobject(root_tree_browser); // root of all evil!
+    root_tree_browser_overlay = new TreeBrowser(overlayUserInterface, root);
+    overlayUserInterface->activate_uiobject(root_tree_browser_overlay); // root of all evil!
     overlayUserInterface->init(overlay);
     if(overlayUserInterface->cfg->get_value(CFG_USERIF_START_HOME)) {
-        new HomeDirectory(overlayUserInterface, root_tree_browser);
+        new HomeDirectory(overlayUserInterface, root_tree_browser_overlay);
         // will clean itself up
     }
 #endif
@@ -147,11 +148,13 @@ extern "C" void ultimate_main(void *a)
         c64UserInterface = new UserInterface(title);
         // Instantiate and attach the root tree browser
         Browsable *root = new BrowsableRoot();
-        root_tree_browser = new TreeBrowser(c64UserInterface, root);
+#if COMMODORE
         CommodoreMenu *commodoreMenu = new CommodoreMenu(c64UserInterface);
-
-        // c64UserInterface->activate_uiobject(root_tree_browser); // root of all evil!
         c64UserInterface->activate_uiobject(commodoreMenu); // root of all evil!
+#else
+        root_tree_browser = new TreeBrowser(c64UserInterface, root);
+        c64UserInterface->activate_uiobject(root_tree_browser); // root of all evil!
+#endif
         c64UserInterface->init(c64);
         if(c64UserInterface->cfg->get_value(CFG_USERIF_START_HOME)) {
             new HomeDirectory(c64UserInterface, root_tree_browser);
