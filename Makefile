@@ -1,10 +1,27 @@
 
 all: esp32 u2_rv u2plus u2pl u64 u64ii
 
-esp32:
+esp32: esp32_raw_u64 esp32_raw_c3 esp32_u64ctrl
+
+esp32_clean: esp32_raw_u64_clean esp32_raw_c3_clean esp32_u64ctrl_clean
+
+esp32_raw_u64:
 	@cd software/wifi/raw_u64 && idf.py build
+
+esp32_raw_u64_clean:
+	@cd software/wifi/raw_u64 && idf.py clean
+
+esp32_raw_c3:
 	@cd software/wifi/raw_c3 && idf.py build
+
+esp32_raw_c3_clean:
+	@cd software/wifi/raw_c3 && idf.py clean
+
+esp32_u64ctrl:
 	@cd software/u64ctrl && idf.py build
+
+esp32_u64ctrl_clean:
+	@cd software/u64ctrl && idf.py clean
 
 u2:
 	@$(MAKE) -C tools
@@ -168,7 +185,7 @@ u2p_tester_sw:
 	@$(MAKE) -C target/tester_package force
 	@$(MAKE) -C target/tester_package force
 
-clean:
+clean: esp32_clean
 	@$(MAKE) -C tools clean
 	@rm -f ./update*.u2*
 	@rm -f ./update.u64
@@ -234,7 +251,7 @@ nios_bsps:
 	@$(MAKE) -C software/nios_solo_bsp
 	@$(MAKE) -C software/nios_appl_bsp
 
-u64:
+u64: esp32_raw_u64
 	@touch software/nios_solo_bsp/Makefile
 	@touch software/nios_solo_bsp/public.mk
 	@touch software/nios_appl_bsp/Makefile
@@ -251,7 +268,7 @@ u64_clean:
 	@$(MAKE) -C target/u64/nios2/ultimate clean
 	@$(MAKE) -C target/u64/nios2/updater clean
 
-u64ii:
+u64ii: esp32_u64ctrl
 	@mkdir -p u64ii
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/libs/riscv/lwip
@@ -265,7 +282,7 @@ u64ii:
 	@cp software/u64ctrl/build/u64ctrl.bin u64ii
 	@cp target/u64ii/riscv/update/result/update.app ./update.ue2
 
-u2pl:
+u2pl: esp32_raw_c3
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u2plus_L/rvlite/bootloader
