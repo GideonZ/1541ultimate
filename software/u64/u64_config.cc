@@ -937,13 +937,12 @@ void U64Config :: effectuate_settings()
     }
 #else
     if (doPll) {
+        C64_VIDEOFORMAT = ct->mode_bits | format;
         SetVideoPll(systemMode, cfg->get_value(CFG_COLOR_CLOCK_ADJ));
         SetHdmiPll(systemMode, ct->mode_bits | format);
         SetVideoMode(systemMode);
         ResetHdmiPll();
         SetResampleFilter(systemMode);
-    } else {
-        C64_VIDEOFORMAT = ct->mode_bits | format;
     }
 #endif
 
