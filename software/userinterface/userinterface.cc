@@ -28,11 +28,20 @@ struct t_cfg_definition user_if_config[] = {
 #if U64
     { CFG_USERIF_ITYPE,      CFG_TYPE_ENUM,   "Interface Type",       "%s", itype,   0,  1, 0 },
 #endif
+#if COMMODORE
     { CFG_USERIF_NAVIGATION, CFG_TYPE_ENUM,   "Navigation Style",     "%s", navstyles, 0,  1, 1 },
     { CFG_USERIF_BACKGROUND, CFG_TYPE_ENUM,   "Background color",     "%s", colors,  0, 15, 14 },
     { CFG_USERIF_BORDER,     CFG_TYPE_ENUM,   "Border color",         "%s", colors,  0, 15, 6 },
     { CFG_USERIF_FOREGROUND, CFG_TYPE_ENUM,   "Foreground color",     "%s", colors,  0, 15, 1 },
     { CFG_USERIF_SELECTED,   CFG_TYPE_ENUM,   "Selected Item color",  "%s", colors,  0, 15, 0 },
+#else
+    { CFG_USERIF_NAVIGATION, CFG_TYPE_ENUM,   "Navigation Style",     "%s", navstyles, 0,  1, 0 },
+    { CFG_USERIF_BACKGROUND, CFG_TYPE_ENUM,   "Background color",     "%s", colors,  0, 15, 0 },
+    { CFG_USERIF_BORDER,     CFG_TYPE_ENUM,   "Border color",         "%s", colors,  0, 15, 0 },
+    { CFG_USERIF_FOREGROUND, CFG_TYPE_ENUM,   "Foreground color",     "%s", colors,  0, 15, 15 },
+    { CFG_USERIF_SELECTED,   CFG_TYPE_ENUM,   "Selected Item color",  "%s", colors,  0, 15, 1 },
+#endif
+
 #if U64
     { CFG_USERIF_SELECTED_BG,CFG_TYPE_ENUM,   "Selected Backgr (Overlay)",  "%s", colors,  0, 15, 6 },
 #endif
