@@ -5,14 +5,16 @@
  *      Author: Gideon
  */
 #include "ui_elements.h"
+#include "userinterface.h"
 #include <string.h>
 #include <stdio.h>
 
 
 /* User Interface Objects */
 /* Popup */
-UIPopup :: UIPopup(const char *msg, uint8_t btns, int count, const char **names, const char *keys) : message(msg), button_count(count)
+UIPopup :: UIPopup(UserInterface *ui, const char *msg, uint8_t btns, int count, const char **names, const char *keys) : message(msg), button_count(count)
 {
+    user_interface = ui;
     button_names = names;
     button_keys = keys;
     buttons = btns;
@@ -55,6 +57,7 @@ void UIPopup :: init(Screen *screen, Keyboard *k)
     window->draw_border();
     // window->no_scroll();
     window->move_cursor(x_m, 0);
+    window->set_color(user_interface->color_fg);
     window->output(message.c_str());
 
     active_button = 0; // we can change this

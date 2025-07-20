@@ -77,7 +77,7 @@ static const char *helptext_wasd=
         "F2:         Enter advanced setup\n"
     #ifndef RECOVERYAPP
         "F4:         Show System Information\n"
-        "F6:         Search Assembly64 Database\n"
+        "F6:         Search Assembly64\n"
     #endif
         "\n"
         "SPACE:      Select file / directory\n"
@@ -106,6 +106,7 @@ int swap_joystick() __attribute__ ((weak));
 TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root)
 {
 	// initialize state
+    allow_exit = false;
 	user_interface = ui;
 	screen = NULL;
 	window = NULL;
@@ -142,12 +143,11 @@ TreeBrowser :: ~TreeBrowser()
 void TreeBrowser :: init(Screen *screen, Keyboard *k) // call on root!
 {
 	this->screen = screen;
-    allow_exit = false;
     screen->move_cursor(screen->get_size_x()-8, screen->get_size_y()-1);
     if (user_interface->navmode == 0) {
 	    screen->output("\eAF3=Help\eO");
     } else {
-	    screen->output("\eAF7=Help\eO");
+	    screen->output("\eAF7=HELP\eO");
     }
 
 	window = new Window(screen, 0, 2, screen->get_size_x(), screen->get_size_y()-3);
@@ -439,6 +439,8 @@ int TreeBrowser :: handle_key(int c)
     
     switch(c) {
         case KEY_BREAK: // runstop
+            ret = MENU_HIDE;
+            break;
         case KEY_MENU:
             ret = (allow_exit) ? MENU_CLOSE : MENU_HIDE;
             break;

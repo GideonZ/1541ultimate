@@ -8,8 +8,6 @@ struct Line
     int  length;
 };
 
-class UserInterface;
-
 class Editor : public UIObject
 {
 	UserInterface *user_interface;

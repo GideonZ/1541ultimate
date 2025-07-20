@@ -79,6 +79,7 @@ CommodoreMenu :: CommodoreMenu(UserInterface *ui) : ContextMenu(ui, NULL, 1, 0, 
     // Instantiate and attach the root tree browser
     Browsable *root = new BrowsableRoot();
     root_tree_browser = new TreeBrowser(ui, root);
+    root_tree_browser->allow_exit = true;
 }
 
 CommodoreMenu :: ~CommodoreMenu()
@@ -119,7 +120,6 @@ SubsysResultCode_e CommodoreMenu :: S_file_browser(Action *act, void *context)
 {
     CommodoreMenu *menu = (CommodoreMenu *)context;
     menu->root_tree_browser->init(menu->window->getScreen(), menu->keyb);
-    menu->root_tree_browser->allow_exit = true;
     menu->user_interface->activate_uiobject(menu->root_tree_browser);
     return SSRET_OK;
 }

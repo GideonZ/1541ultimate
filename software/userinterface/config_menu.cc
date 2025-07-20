@@ -190,28 +190,35 @@ void ConfigBrowser :: on_exit(void)
 }
 
 static const char *helptext_ult =
-        "Setup Menu Help\n"
+        "Setup Menu Help\n\n"
+        "Cursor Keys:Up/Left/Down/Right\n"
         "  (Up/Down) Selection up/down\n"
         "  (Left)    Go one level up\n"
         "            leave directory or disk\n"
-        "  (Right)   Enter selected item\n"
-        "  (Space)   Select item\n"
-        "  (+/-)     Increase/Decrease value of item\n"
-        "  (Return)  Change item value\n"
-        "  (F1)      Show this help text\n"
-        "  (F8/Esc)  Exit this menu";
+        "  (Right)   Enter selected item\n\n"
+        "SPACE /     Select / change item\n"
+        "  RETURN\n"
+        "+ / -       Increase/Decrease value\n"
+        "F1          Page Up\n"
+        "F7          Page Down\n"
+        "F3          Show this help text\n"
+        "RUN/STOP:   Exit\n";
 
 static const char *helptext_wasd =
-        "Setup Menu Help\n"
+        "Setup Menu Help\n\n"
+        "WASD:       Up/Left/Down/Right\n"
+        "Cursor Keys:Up/Left/Down/Right\n"
         "  (Up/Down) Selection up/down\n"
         "  (Left)    Go one level up\n"
         "            leave directory or disk\n"
-        "  (Right)   Enter selected item\n"
-        "  (Space)   Select item\n"
-        "  (+/-)     Increase/Decrease value of item\n"
-        "  (Return)  Change item value\n"
-        "  (F1)      Show this help text\n"
-        "  (F8/Esc)  Exit this menu";
+        "  (Right)   Enter selected item\n\n"
+        "SPACE /     Select / change item\n"
+        "  RETURN\n"
+        "+ / -       Increase/Decrease value\n"
+        "F3          Page Up\n"
+        "F5          Page Down\n"
+        "F7          Show this help text\n"
+        "RUN/STOP:   Exit\n";
 
 int ConfigBrowser :: handle_key(int c)
 {
@@ -237,18 +244,76 @@ int ConfigBrowser :: handle_key(int c)
         case KEY_UP: // up
             state->up(1);
             break;
-        case KEY_F1: // F1 -> page up
         case KEY_PAGEUP:
             state->up(window->get_size_y()/2);
             break;
-        case KEY_F7: // F7 -> page down
         case KEY_PAGEDOWN:
             state->down(window->get_size_y()/2);
             break;
+        case KEY_A:
+            if (user_interface->navmode == 0) {
+                // do nothing
+            } else {
+                if(state->level == start_level) {
+                    on_exit();
+                    ret = MENU_CLOSE; // leave
+                } else {
+                    state->level_up();
+                }
+            }
+            break;
+        case KEY_S:
+            if (user_interface->navmode == 0) { 
+                // do nothing
+            } else {
+                state->down(1);
+            }
+            break;
+        case KEY_D:
+            if (user_interface->navmode == 0) {
+                // do nothing
+            } else {
+                if(state->level==0)
+                    state->into();
+            }
+            break;
+        case KEY_W:
+            if (user_interface->navmode == 0) {
+                // do nothing
+            } else {
+                state->up(1);
+            }
+            break;
+        case KEY_F1: // F7 -> page down
+            if (user_interface->navmode == 0) {
+                state->up(window->get_size_y()-2);
+            } else {
+                ret = MENU_CLOSE; // do nothing in the non-commodore mode
+            }
+            break;
         case KEY_F3: // F3 -> help
-            reset_quick_seek();
-            state->refresh = true;
-            user_interface->run_editor(helptext_ult, strlen(helptext_ult));
+            if (user_interface->navmode == 0) {
+                reset_quick_seek();
+                state->refresh = true;
+                user_interface->run_editor(helptext_ult, strlen(helptext_ult));
+            } else {
+                state->up(window->get_size_y()-2);
+            }
+            break;
+        case KEY_F5: // F5: Menu | Page down
+            if (user_interface->navmode == 0) {
+                // do nothing
+            } else {
+                state->down(window->get_size_y()-2);
+            }
+            break;
+        case KEY_F7: // F7 -> page down or help
+            if (user_interface->navmode == 0) {
+                state->down(window->get_size_y()-2);
+            } else {
+                state->refresh = true;
+                user_interface->run_editor(helptext_wasd, strlen(helptext_wasd));
+            }
             break;
         case KEY_SPACE: // space = select
         case KEY_RETURN: // CR = select

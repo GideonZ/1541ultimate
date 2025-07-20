@@ -19,6 +19,8 @@
 #define BUTTON_ALL    0x08
 #define BUTTON_CANCEL 0x10
 
+class UserInterface;
+
 class UIObject
 {
     bool autoCleanup;
@@ -46,6 +48,7 @@ public:
 class UIPopup : public UIObject
 {
 private:
+    UserInterface *user_interface;
     mstring   message;
     uint8_t buttons;
 
@@ -62,7 +65,7 @@ private:
     void draw_buttons();
 
 public:
-    UIPopup(const char *msg, uint8_t flags, int count, const char **names, const char *keys);
+    UIPopup(UserInterface *ui, const char *msg, uint8_t flags, int count, const char **names, const char *keys);
     ~UIPopup() { }
 
     void init(Screen *screen, Keyboard *keyb);

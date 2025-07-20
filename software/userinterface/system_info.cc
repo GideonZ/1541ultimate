@@ -156,6 +156,9 @@ void SystemInfo :: generate(UserInterface *ui)
     StreamTextLog buffer(4096);
     char buf[40];
 
+#if COMMODORE
+    buffer.raw("\x14\x15\x17\n\x18\x16\x19\n");
+#endif
     buffer.format("System Information\n");
     buffer.format("==================\n");
     buffer.format("Date: %s\n", rtc.get_long_date(buf, 40));
