@@ -236,17 +236,18 @@ int ContextMenu :: handle_key(int c)
     Action *a;
     
     switch(c) {
-        case KEY_LEFT: // left
+        case KEY_LEFT:  // left
         case KEY_BREAK: // runstop
+        case KEY_BACK:  // backspace
         case KEY_ESCAPE:
-        	ret = -1;
+        case KEY_F8:    // exit
+        	ret = when_done;
             break;
-        case KEY_F8: // exit
-            ret = -1;
-            break;
+
         case KEY_DOWN: // down
             down();
         	break;
+
         case KEY_UP: // up
             up();
         	break;
@@ -289,9 +290,6 @@ int ContextMenu :: handle_key(int c)
             page_up();
             break;
 
-        case KEY_BACK: // backspace
-            ret = -1;
-            break;
         case KEY_SPACE: // space
         case KEY_RETURN: // return
             ret = select_item();
@@ -300,8 +298,8 @@ int ContextMenu :: handle_key(int c)
         case KEY_RIGHT: // cursor
             a = actions[item_index];
             // only select if it has a submenu, otherwise require enter / space
-            if (a && a->getObject()) {
-                select_item();
+            if (a && (a->getObject() || a->func || a->direct_func)) {
+                ret = select_item();
             }
             break;
 
@@ -309,7 +307,7 @@ int ContextMenu :: handle_key(int c)
             if (user_interface->navmode == 0) {
                 seek_char('a');
             } else {
-                ret = -1;
+                ret = when_done;
             }
             break;
         case KEY_S:

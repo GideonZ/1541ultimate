@@ -116,7 +116,7 @@ void TreeBrowserState :: draw()
     browser->window->set_color(11);
     browser->window->set_background(0);
     browser->window->getScreen()->move_cursor(0, browser->window->getScreen()->get_size_y()-1);
-    browser->window->getScreen()->output_fixed_length(browser->path->get_path(), 0, browser->window->get_size_x()-9);
+    browser->window->getScreen()->output_fixed_length(browser->path->get_path(), 0, browser->window->getScreen()->get_size_x()-9);
 
     //	printf("Draw. First=%d. Selected_line=%d. Number of el=%d\n", first_item_on_screen, selected_line, children->get_elements());
 //	printf("Window = %p. WindowBase: %p\n", browser->window, browser->window->get_pointer());
@@ -127,7 +127,7 @@ void TreeBrowserState :: draw()
     if(children->get_elements() == 0) {
 		browser->window->clear();
     	browser->window->move_cursor(0, 0);
-    	browser->window->output("\eE< No Items >");
+    	browser->window->output("\eF< No Items >");
     	under_cursor = NULL;
     	return;
     }

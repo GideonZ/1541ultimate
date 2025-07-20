@@ -122,6 +122,13 @@ int TaskMenu :: select_item(void)
     int first_selectable_sub_item = 0;
     IndexedList <Action *> *actionlist = cat->getActions();
     int num_el = actionlist->get_elements();
+
+    Action *singleAction = (*actionlist)[0];
+    if ((num_el == 1) && (singleAction->isEnabled())) { // Only one enabled item, so we can just execute it
+        selectedAction = singleAction;
+        return 1; // done
+    }
+
     for(int i=0; i < num_el; i++) {
         Action *a = (*actionlist)[i];
         if(a->isEnabled()) {

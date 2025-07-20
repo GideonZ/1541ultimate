@@ -50,6 +50,7 @@ public:
 class TreeBrowser : public UIObject
 {
 	void tasklist(void);
+    void seek_char(int c);
     void cd_impl(const char *path);
 public:
     char quick_seek_string[MAX_SEARCH_LEN_TB];

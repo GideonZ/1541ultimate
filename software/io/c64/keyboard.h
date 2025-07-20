@@ -68,4 +68,6 @@ public:
 #define KEY_SCRLOCK  0xA3
 #define KEY_NUMLOCK  0xA4
 
+// Specials
+#define KEY_MENU     0xFE
 #endif

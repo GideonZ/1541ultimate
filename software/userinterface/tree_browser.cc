@@ -18,7 +18,7 @@
 #include "system_info.h"
 #include "assembly_search.h"
 
-const char *helptext=
+static const char *helptext_ult=
 		"CRSR UP/DN: Selection up/down\n"
 		"CRSR LEFT:  Go one level up\n"
 		"            leave directory or disk\n"
@@ -57,6 +57,43 @@ const char *helptext=
 #endif
         "C=-L:       Show debug log\n"
 		"\nRUN/STOP to close this window.";
+
+static const char *helptext_wasd=
+        "WASD:       Up/Left/Down/Right\n"
+        "Cursor Keys:Up/Left/Down/Right\n"
+        "  (Up/Down) Selection up/down\n"
+        "  (Left)    Go one level up\n"
+        "            leave directory or disk\n"
+        "  (Right)   Go one level down\n"
+        "            enter directory or disk\n"
+        "RETURN:     Selection context menu\n"
+        "RUN/STOP:   Leave menu / Back\n"
+        "\n"
+        "F1:         Action Menu\n"
+        "F3:         Page up\n"
+        "F5:         Page down\n"
+        "F7:         Help\n"
+        "\n"
+        "F2:         Enter advanced setup\n"
+    #ifndef RECOVERYAPP
+        "F4:         Show System Information\n"
+        "F6:         Search Assembly64 Database\n"
+    #endif
+        "\n"
+        "SPACE:      Select file / directory\n"
+        "C=-A        Select all\n"
+        "C=-N        Deselect all\n"
+        "C=-C        Copy current selection\n"
+        "C=-V        Paste selection here.\n"
+        "\n"
+        "HOME:       Enter home directory\n"
+        "C=-HOME:    Set current dir as home\n"
+        "INST:       Delete selected files\n"
+        "\n"  
+    #ifndef RECOVERYAPP
+    #endif
+        "C=-L:       Show debug log\n"
+        "\nRUN/STOP to close this window.";
 
 #include "stream_textlog.h"
 extern StreamTextLog textLog; // the global log
@@ -107,7 +144,11 @@ void TreeBrowser :: init(Screen *screen, Keyboard *k) // call on root!
 	this->screen = screen;
     allow_exit = false;
     screen->move_cursor(screen->get_size_x()-8, screen->get_size_y()-1);
-	screen->output("\eAF3=Help\eO");
+    if (user_interface->navmode == 0) {
+	    screen->output("\eAF3=Help\eO");
+    } else {
+	    screen->output("\eAF7=Help\eO");
+    }
 
 	window = new Window(screen, 0, 2, screen->get_size_x(), screen->get_size_y()-3);
 #if COMMODORE
@@ -382,12 +423,23 @@ void TreeBrowser :: tasklist(void)
     delete buffer;
 }
 
+void TreeBrowser :: seek_char(int c)
+{
+    if(quick_seek_length < (MAX_SEARCH_LEN_TB-2)) {
+        quick_seek_string[quick_seek_length++] = c;
+        if(!perform_quick_seek()) {
+            quick_seek_length--;
+        }
+    }
+}
+
 int TreeBrowser :: handle_key(int c)
 {           
     int ret = 0;
     
     switch(c) {
         case KEY_BREAK: // runstop
+        case KEY_MENU:
             ret = (allow_exit) ? MENU_CLOSE : MENU_HIDE;
             break;
         case KEY_F8: // exit (F8)
@@ -401,23 +453,50 @@ int TreeBrowser :: handle_key(int c)
         	reset_quick_seek();
             state->up(1);
             break;
-        case KEY_F1: // F1 -> page up
         case KEY_PAGEUP:
-        	reset_quick_seek();
+            reset_quick_seek();
             state->up(window->get_size_y()/2);
             break;
-        case KEY_F3: // F3 -> help
-        	reset_quick_seek();
-        	state->refresh = true;
-        	user_interface->run_editor(helptext, strlen(helptext));
-            break;
-		case KEY_F5: // F5: Menu
-			task_menu();
-			break;
-        case KEY_F7: // F7 -> page down
         case KEY_PAGEDOWN:
         	reset_quick_seek();
             state->down(window->get_size_y()/2);
+            break;
+        case KEY_F1: // F1 -> page up
+            if (user_interface->navmode == 0) {
+                reset_quick_seek();
+                state->up(window->get_size_y()-2);
+            } else {
+                task_menu();
+                // ret = (allow_exit) ? MENU_CLOSE : 0; // do nothing in the non-commodore mode
+            }
+            break;
+        case KEY_F3: // F3 -> help | Page up
+            if (user_interface->navmode == 0) {
+                reset_quick_seek();
+                state->refresh = true;
+                user_interface->run_editor(helptext_ult, strlen(helptext_ult));
+            } else {
+                reset_quick_seek();
+                state->up(window->get_size_y()-2);
+            }
+            break;
+		case KEY_F5: // F5: Menu | Page down
+            if (user_interface->navmode == 0) {
+                task_menu();
+            } else {
+                reset_quick_seek();
+                state->down(window->get_size_y()-2);
+            }
+			break;
+        case KEY_F7: // F7 -> page down
+            if (user_interface->navmode == 0) {
+                reset_quick_seek();
+                state->down(window->get_size_y()-2);
+            } else {
+                reset_quick_seek();
+                state->refresh = true;
+                user_interface->run_editor(helptext_wasd, strlen(helptext_wasd));
+            }
             break;
         case KEY_F2: // F2 -> config
             config();
@@ -501,15 +580,42 @@ int TreeBrowser :: handle_key(int c)
            }
            break;
 #endif         
-        default:
-            if((c >= '!')&&(c < 0x80)) {
-                if(quick_seek_length < (MAX_SEARCH_LEN_TB-2)) {
-                    quick_seek_string[quick_seek_length++] = c;
-                    if(!perform_quick_seek())
-                        quick_seek_length--;
-                }
+        case KEY_A:
+            if (user_interface->navmode == 0) {
+                seek_char('a');
             } else {
-                printf("Unhandled key: %b\n", c);
+            	state->level_up();
+            }
+            break;
+        case KEY_S:
+            if (user_interface->navmode == 0) {
+                seek_char('s');
+            } else {
+                reset_quick_seek();
+                state->down(1);
+            }
+            break;
+        case KEY_D:
+            if (user_interface->navmode == 0) {
+                seek_char('d');
+            } else {
+                reset_quick_seek();
+                state->into2();
+            }
+            break;
+        case KEY_W:
+            if (user_interface->navmode == 0) {
+                seek_char('w');
+            } else {
+                reset_quick_seek();
+                state->up(1);
+            }
+            break;
+        default:
+            if ((user_interface->navmode == 0) && (c >= '!') && (c < 0x80)) {
+                seek_char(c);
+            } else {
+                printf("Unhandled context key: %b\n", c);
             }
     }    
     return ret;

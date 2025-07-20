@@ -189,7 +189,29 @@ void ConfigBrowser :: on_exit(void)
     }
 }
 
-extern const char *helptext;
+static const char *helptext_ult =
+        "Setup Menu Help\n"
+        "  (Up/Down) Selection up/down\n"
+        "  (Left)    Go one level up\n"
+        "            leave directory or disk\n"
+        "  (Right)   Enter selected item\n"
+        "  (Space)   Select item\n"
+        "  (+/-)     Increase/Decrease value of item\n"
+        "  (Return)  Change item value\n"
+        "  (F1)      Show this help text\n"
+        "  (F8/Esc)  Exit this menu";
+
+static const char *helptext_wasd =
+        "Setup Menu Help\n"
+        "  (Up/Down) Selection up/down\n"
+        "  (Left)    Go one level up\n"
+        "            leave directory or disk\n"
+        "  (Right)   Enter selected item\n"
+        "  (Space)   Select item\n"
+        "  (+/-)     Increase/Decrease value of item\n"
+        "  (Return)  Change item value\n"
+        "  (F1)      Show this help text\n"
+        "  (F8/Esc)  Exit this menu";
 
 int ConfigBrowser :: handle_key(int c)
 {
@@ -226,7 +248,7 @@ int ConfigBrowser :: handle_key(int c)
         case KEY_F3: // F3 -> help
             reset_quick_seek();
             state->refresh = true;
-            user_interface->run_editor(helptext, strlen(helptext));
+            user_interface->run_editor(helptext_ult, strlen(helptext_ult));
             break;
         case KEY_SPACE: // space = select
         case KEY_RETURN: // CR = select
