@@ -399,7 +399,7 @@ void ContextMenu :: draw()
 		if ((i + first) == item_index) {
 			window->set_color(user_interface->color_sel);
 			window->set_background(user_interface->color_sel_bg);
-		} else if(t->isEnabled()) {
+		} else if(t && t->isEnabled()) {
 			window->set_color(user_interface->color_fg);
             window->set_background(0);
 		} else { // not enabled
