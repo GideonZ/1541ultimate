@@ -10,6 +10,8 @@
 #include "disk_image.h"
 #include "iec_interface.h"
 
+#define IEC_PARTITION_CONFIG "iec_partitions.ipr"
+
 class IecChannel;
 class IecCommandChannel;
 class IecFileSystem;

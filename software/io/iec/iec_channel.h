@@ -209,7 +209,7 @@ public:
         if (fres == FR_OK) {
             for(int i=1; i<MAX_PARTITIONS; i++) {
                 if (partitions[i]) {
-                    int len = sprintf(num, "%3d:", i);    
+                    int len = sprintf(num, "%3d;", i);    
                     fres = fo->write(num, len, &tr);
                     if (fres != FR_OK) {
                         return fres;
@@ -221,6 +221,8 @@ public:
         return fres;
     }
 
+    void LoadPartitions(const char *path, const char *name);
+    void LoadPartitions(File *fi);
 };
 
 typedef struct {

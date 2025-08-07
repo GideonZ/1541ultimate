@@ -27,6 +27,8 @@
 #include "mystring.h"
 #include "file.h"
 
+#define CFG_FILEPATH "/flash/config"
+
 #define CFG_TYPE_VALUE   0x01
 #define CFG_TYPE_ENUM    0x02
 #define CFG_TYPE_STRING  0x03

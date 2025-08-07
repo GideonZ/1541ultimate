@@ -6,6 +6,7 @@
 #include "command_intf.h"
 #include "init_function.h"
 #include "json.h"
+#include "blockdev_flash.h"
 #include <string.h>
 
 #define MENU_IEC_ON          0xCA0E
@@ -157,6 +158,10 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
     add_partition(1, "/Temp");
     vfs->SetCurrentPartition(1);
 
+    // Attempt to load default config
+    // Note: Flash file system should exist, because of register_store
+    vfs->LoadPartitions(CFG_FILEPATH, IEC_PARTITION_CONFIG);
+
     // Register and configure the processor
     slot_id = intf->register_slave(this);
     intf->configure();
@@ -270,7 +275,7 @@ SubsysResultCode_e IecDrive :: executeCommand(SubsysCommand *cmd)
             strcpy(temp, "default");
             cmd->user_interface->string_box("Give filename or 'default'", temp, 31);
             if(strcasecmp(temp, "default") == 0) {
-                vfs->SavePartitions("/flash/config", "iec_partitions.ipr");
+                vfs->SavePartitions(CFG_FILEPATH, IEC_PARTITION_CONFIG);
             } else {
                 set_extension(temp, "ipr", 32);
                 vfs->SavePartitions(cmd->path.c_str(), temp);

@@ -1441,3 +1441,56 @@ bool IecPartition::IsValid()
 {
     return fm->is_path_valid(GetFullPath());
 }
+
+void IecFileSystem :: LoadPartitions(const char *path, const char *file)
+{
+    File *fi;
+    FRESULT fres = fm->fopen(path, file, FA_READ, &fi);
+    if (fres == FR_OK) {
+        LoadPartitions(fi);
+    }
+    fm->fclose(fi);
+}
+
+void IecFileSystem :: LoadPartitions(File *f)
+{
+    uint32_t size = f->get_size();
+    if ((size > 12288) || (size < 8)) { // max 12K partition paths file
+        return;
+    }
+    char *buffer = new char[size+1];
+    char *linebuf = new char[256];
+    char *name;
+
+    uint32_t transferred;
+    f->read(buffer, size, &transferred);
+    buffer[transferred] = 0;
+
+    uint32_t offset;
+
+    uint32_t index = 0;
+
+    while(index < size) {
+        index = read_line(buffer, index, linebuf, 256);
+        if (strlen(linebuf) > 0) {
+            char *rest;
+            uint32_t part = strtol(linebuf, &rest, 0);
+            while (*rest && (*rest != ';')) {
+                rest++;
+            }
+            if (*rest) {
+                // skip ;
+                rest++;
+            }
+            if ((part >= 1) && (part < MAX_PARTITIONS)) {
+                if (partitions[part]) {
+                    partitions[part]->SetRoot(rest);
+                } else {
+                    add_partition(part, rest);
+                }
+            }
+        }
+    }
+    delete linebuf;
+    delete buffer;
+}
