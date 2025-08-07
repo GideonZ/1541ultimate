@@ -25,6 +25,7 @@
 #include "flash.h"
 #include "indexed_list.h"
 #include "mystring.h"
+#include "file.h"
 
 #define CFG_TYPE_VALUE   0x01
 #define CFG_TYPE_ENUM    0x02
@@ -205,6 +206,7 @@ public:
     }
 
     void read(bool ignore);
+    void read_from_file(File *f);
     void write();
     void unpack(ConfigStore *s);
 };

@@ -20,9 +20,11 @@ U2+:
 U2+L:
 - Lattice Diamond 3.12 with a (free) generated license
 - RiscV GNU C/C++ Compiler (for RV32I), same as for U2/RiscV.
+- Espressif
 
 U64:
 - Altera Quartus (tested with 18.1 Lite Edition)  - for the Nios-II compiler only.
+- Espressif
 
 
 IMPORTANT NOTICE!!!!
