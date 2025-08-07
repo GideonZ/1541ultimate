@@ -29,5 +29,6 @@ public:
 };
 
 void reformat_flash_disk(void);
+void init_flash_disk(void);
 
 #endif
