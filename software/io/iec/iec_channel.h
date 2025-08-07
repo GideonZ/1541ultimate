@@ -39,17 +39,22 @@ public:
         this->vfs = vfs;
         partitionNumber = nr;
         path = fm->get_new_path("IEC Partition");
+        SetRoot(rt);
+    }
+
+    ~IecPartition()
+    {
+        fm->release_path(path);
+    }
+
+    void SetRoot(const char *rt)
+    {
         root = rt;
         full_path = rt;
         if(root[-1] != '/') {
             root += "/";
             full_path += "/";
         }
-    }
-
-    ~IecPartition()
-    {
-        fm->release_path(path);
     }
 
     int GetPartitionNumber(void)

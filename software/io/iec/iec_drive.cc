@@ -15,7 +15,8 @@
 #define MENU_IEC_OFF         0xCA0F
 #define MENU_IEC_RESET       0xCA10
 #define MENU_IEC_SET_DIR     0xCA17
-   
+#define MENU_IEC_SAVE_PAR    0xCA18
+
 #define CFG_IEC_ENABLE   0x51
 #define CFG_IEC_BUS_ID   0x52
 #define CFG_IEC_PATH     0x53
@@ -25,6 +26,12 @@ static struct t_cfg_definition iec_config[] = {
     { CFG_IEC_BUS_ID,    CFG_TYPE_VALUE,  "Soft Drive Bus ID", "%d", NULL,   8, 30, 11 },
     { CFG_IEC_PATH,      CFG_TYPE_STRING, "Default Path",      "%s", NULL,   0, 30, (long int)FS_ROOT },
     { 0xFF, CFG_TYPE_END, "", "", NULL, 0, 0, 0 }
+};
+
+struct set_part_t
+{
+    const char *path;
+    int partition;
 };
 
 // this global will cause us to run!
@@ -206,7 +213,8 @@ void IecDrive :: create_task_items(void)
     TaskCategory *iec = TasksCollection :: getCategory("Software IEC", SORT_ORDER_SOFTIEC);
     myActions.turn_on	 = new Action("Turn On",        SUBSYSID_IEC, MENU_IEC_ON);
     myActions.reset      = new Action("Reset",          SUBSYSID_IEC, MENU_IEC_RESET);
-    myActions.set_dir    = new Action("Set dir. here",  SUBSYSID_IEC, MENU_IEC_SET_DIR);
+    myActions.set_dir    = new Action("Set Partition here", SUBSYSID_IEC, MENU_IEC_SET_DIR);
+    myActions.save_part  = new Action("Save Partitions", SUBSYSID_IEC, MENU_IEC_SAVE_PAR);
     myActions.turn_off	 = new Action("Turn Off",       SUBSYSID_IEC, MENU_IEC_OFF);
 
     iec->append(myActions.turn_on);
@@ -232,8 +240,10 @@ SubsysResultCode_e IecDrive :: executeCommand(SubsysCommand *cmd)
 {
     const char *path;
     char *pathcopy;
+    struct set_part_t data;
     iec_closure_t cb;
-
+    int res, part;
+    char num[8];
     cmd_path->cd(cmd->path.c_str());
 
 	switch(cmd->functionID) {
@@ -251,10 +261,23 @@ SubsysResultCode_e IecDrive :: executeCommand(SubsysCommand *cmd)
             reset();
 			break;
 		case MENU_IEC_SET_DIR:
+            if (!cmd->user_interface)
+                break;
+
+            cmd->user_interface->string_box("Give Partition Number to Set", num, 5);
+            res = sscanf(num, "%d", &part);
+            if (!res) {
+                break;
+            }
+            if ((part < 1)||(part >= MAX_PARTITIONS)) {
+                cmd->user_interface->popup("Partition # should be between 1-255", BUTTON_OK);
+                break;
+            }
             path = cmd->path.c_str();
             pathcopy = new char[strlen(path) + 1];
             strcpy(pathcopy, path);
-            cb = { this, set_iec_dir, pathcopy };
+            data = { pathcopy, part };
+            cb = { this, set_iec_dir, &data };
             intf->run_from_iec(&cb);
     	    break;
 		default:
@@ -334,10 +357,14 @@ void IecDrive :: talk(void)
 void IecDrive :: set_iec_dir(IecSlave *sl, void *data)
 {
     IecDrive *drive = (IecDrive *)sl;
-    const char *pathstring = (const char *)data;
-    IecPartition *p = drive->vfs->GetPartition(0);
-    p->cd(pathstring);
-    delete[] pathstring;
+    struct set_part_t *pd = (struct set_part_t *)data;
+    IecPartition *p = drive->vfs->GetPartition(pd->partition);
+    if (!p) {
+        drive->vfs->add_partition(pd->partition, pd->path);
+    } else {
+        p->SetRoot(pd->path);
+    }
+    delete[] pd->path;
 }
 
 // called from critical section

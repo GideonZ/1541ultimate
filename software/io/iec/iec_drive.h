@@ -44,6 +44,7 @@ class IecDrive : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObject
         Action *turn_off;
     	Action *reset;
         Action *set_dir;
+        Action *save_part;
     } myActions;
 public:
     IecDrive();
