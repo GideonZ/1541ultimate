@@ -63,9 +63,10 @@ ConfigManager :: ConfigManager() : stores(16, NULL), pages(16, NULL)
         printf("SAFE MODE ENABLED. Loading defaults...\n");
     }
 
+#ifndef RECOVERYAPP
     // Now, also open the Flash File system!
     init_flash_disk();
-
+#endif
 }
 
 ConfigManager :: ~ConfigManager()
