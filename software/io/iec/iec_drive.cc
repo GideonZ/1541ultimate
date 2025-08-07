@@ -6,10 +6,7 @@
 #include "command_intf.h"
 #include "init_function.h"
 #include "json.h"
-
-#ifndef FS_ROOT
-#define FS_ROOT "/Usb0/"
-#endif
+#include <string.h>
 
 #define MENU_IEC_ON          0xCA0E
 #define MENU_IEC_OFF         0xCA0F
@@ -24,7 +21,6 @@
 static struct t_cfg_definition iec_config[] = {
     { CFG_IEC_ENABLE,    CFG_TYPE_ENUM,   "IEC Drive",         "%s", en_dis, 0,  1, 0 },
     { CFG_IEC_BUS_ID,    CFG_TYPE_VALUE,  "Soft Drive Bus ID", "%d", NULL,   8, 30, 11 },
-    { CFG_IEC_PATH,      CFG_TYPE_STRING, "Default Path",      "%s", NULL,   0, 30, (long int)FS_ROOT },
     { 0xFF, CFG_TYPE_END, "", "", NULL, 0, 0, 0 }
 };
 
@@ -158,13 +154,7 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
     channels[15] = new IecCommandChannel(this, 15);
 
     // Temporary for testing purposes.
-    add_partition(1, rootPath);
-    add_partition(2, "/Usb0/");
-    add_partition(3, "/Usb1/");
-    add_partition(4, "/Usb2/");
-    add_partition(5, "/SD/");
-    add_partition(11, "/Temp/");
-    add_partition(12, "/Flash/");
+    add_partition(1, "/Temp");
     vfs->SetCurrentPartition(1);
 
     // Register and configure the processor
@@ -197,15 +187,9 @@ void IecDrive :: effectuate_settings(void)
     my_bus_id = cfg->get_value(CFG_IEC_BUS_ID);
     cmd_if.set_kernal_device_id(my_bus_id);
     
-    rootPath = cfg->get_string(CFG_IEC_PATH);
     enable = uint8_t(cfg->get_value(CFG_IEC_ENABLE));
 
     intf->configure();
-}
-
-const char *IecDrive :: get_root_path(void)
-{
-    return rootPath;
 }
 
 void IecDrive :: create_task_items(void)
@@ -221,6 +205,7 @@ void IecDrive :: create_task_items(void)
     iec->append(myActions.turn_off);
     iec->append(myActions.reset);
     iec->append(myActions.set_dir);
+    iec->append(myActions.save_part);
 }
 
 // called from GUI task
@@ -243,7 +228,7 @@ SubsysResultCode_e IecDrive :: executeCommand(SubsysCommand *cmd)
     struct set_part_t data;
     iec_closure_t cb;
     int res, part;
-    char num[8];
+    char temp[32];
     cmd_path->cd(cmd->path.c_str());
 
 	switch(cmd->functionID) {
@@ -264,12 +249,10 @@ SubsysResultCode_e IecDrive :: executeCommand(SubsysCommand *cmd)
             if (!cmd->user_interface)
                 break;
 
-            cmd->user_interface->string_box("Give Partition Number to Set", num, 5);
-            res = sscanf(num, "%d", &part);
-            if (!res) {
-                break;
-            }
-            if ((part < 1)||(part >= MAX_PARTITIONS)) {
+            temp[0] = 0;
+            cmd->user_interface->string_box("Give Partition Number to Set", temp, 5);
+            res = sscanf(temp, "%d", &part);
+            if ((!res)||(part < 1)||(part >= MAX_PARTITIONS)) {
                 cmd->user_interface->popup("Partition # should be between 1-255", BUTTON_OK);
                 break;
             }
@@ -280,6 +263,19 @@ SubsysResultCode_e IecDrive :: executeCommand(SubsysCommand *cmd)
             cb = { this, set_iec_dir, &data };
             intf->run_from_iec(&cb);
     	    break;
+        case MENU_IEC_SAVE_PAR:
+            if (!cmd->user_interface)
+                break;
+
+            strcpy(temp, "default");
+            cmd->user_interface->string_box("Give filename or 'default'", temp, 31);
+            if(strcasecmp(temp, "default") == 0) {
+                vfs->SavePartitions("/flash/config", "iec_partitions.ipr");
+            } else {
+                set_extension(temp, "ipr", 32);
+                vfs->SavePartitions(cmd->path.c_str(), temp);
+            }
+            break;
 		default:
 			break;
     }

@@ -35,7 +35,6 @@ class IecDrive : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObject
 
     Path *cmd_path;
     IecFileSystem *vfs;
-    const char *rootPath;
  
     static void set_iec_dir(IecSlave *obj, void *path);
 
@@ -86,7 +85,6 @@ public:
     int get_error_string(char *); // writes string into buffer
     IecCommandChannel *get_command_channel();
     IecCommandChannel *get_data_channel(int chan);
-    const char *get_root_path();
     const char *get_partition_dir(int p);
     void add_partition(int p, const char *path);
 

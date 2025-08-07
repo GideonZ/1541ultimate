@@ -169,11 +169,6 @@ public:
         partitions[p] = new IecPartition(this, p, path);
     }
 
-    const char *GetRootPath()
-    {
-        return drive->get_root_path();
-    }
-
     const char *GetPartitionPath(int index, bool root)
     {
         if (partitions[index]) {
@@ -203,6 +198,27 @@ public:
     void SetCurrentPartition(int pn)
     {
         currentPartition = pn;
+    }
+
+    FRESULT SavePartitions(const char *path, const char *filename)
+    {
+        File *fo;
+        uint32_t tr;
+        char num[8];
+        FRESULT fres = fm->fopen(path, filename, FA_CREATE_ALWAYS | FA_WRITE, &fo);
+        if (fres == FR_OK) {
+            for(int i=1; i<MAX_PARTITIONS; i++) {
+                if (partitions[i]) {
+                    int len = sprintf(num, "%3d:", i);    
+                    fres = fo->write(num, len, &tr);
+                    if (fres != FR_OK) {
+                        return fres;
+                    }
+                }
+            }
+            fm->fclose(fo);
+        }
+        return fres;
     }
 
 };
