@@ -89,6 +89,7 @@ public:
     IecCommandChannel *get_data_channel(int chan);
     const char *get_partition_dir(int p);
     void add_partition(int p, const char *path);
+    void load_partitions(const char *p, const char *f);
 
     friend class IecChannel;
     friend class IecCommandChannel;
@@ -132,5 +133,17 @@ typedef struct {
 } IEC_ERROR_MSG;
 
 extern IecDrive *iec_drive;
+
+#include "filetypes.h"
+class FileTypeIPR : public FileType
+{
+public:
+	FileTypeIPR(BrowsableDirEntry *par);
+    ~FileTypeIPR();
+
+    int   fetch_context_items(IndexedList<Action *> &list);
+    static FileType *test_type(BrowsableDirEntry *inf);
+    static SubsysResultCode_e load(SubsysCommand *);
+};
 
 #endif

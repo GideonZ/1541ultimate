@@ -491,3 +491,45 @@ void IecDrive :: info(JSON_Object *obj)
         ->add("last_error", buffer)
         ->add("partitions", partitions);
 }
+
+void IecDrive :: load_partitions(const char *p, const char *f)
+{
+    vfs->LoadPartitions(p, f);
+}
+
+#ifndef RUNS_ON_PC
+#include "browsable_root.h"
+// tester instance
+FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_ipr(FileType :: getFileTypeFactory(), FileTypeIPR :: test_type);
+
+FileTypeIPR :: FileTypeIPR(BrowsableDirEntry *br)
+{
+}
+
+FileTypeIPR :: ~FileTypeIPR()
+{
+}
+
+int FileTypeIPR :: fetch_context_items(IndexedList<Action *> &list)
+{
+	list.append(new Action("Load", FileTypeIPR :: load, 0 ));
+    return 1;
+}
+
+FileType *FileTypeIPR :: test_type(BrowsableDirEntry *br)
+{
+	FileInfo *inf = br->getInfo();
+	if(strcmp(inf->extension, "IPR")==0)
+        return new FileTypeIPR(br);
+    return NULL;
+}
+
+SubsysResultCode_e FileTypeIPR :: load(SubsysCommand *cmd)
+{
+    if (iec_drive) {
+        iec_drive->load_partitions(cmd->path.c_str(), cmd->filename.c_str());
+    }
+    return SSRET_OK;
+}
+
+#endif // RUNS_ON_PC
