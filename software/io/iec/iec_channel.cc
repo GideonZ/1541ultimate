@@ -1448,8 +1448,8 @@ void IecFileSystem :: LoadPartitions(const char *path, const char *file)
     FRESULT fres = fm->fopen(path, file, FA_READ, &fi);
     if (fres == FR_OK) {
         LoadPartitions(fi);
+        fm->fclose(fi);
     }
-    fm->fclose(fi);
 }
 
 void IecFileSystem :: LoadPartitions(File *f)

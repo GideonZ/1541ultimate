@@ -209,8 +209,17 @@ public:
         if (fres == FR_OK) {
             for(int i=1; i<MAX_PARTITIONS; i++) {
                 if (partitions[i]) {
+                    const char *pp = partitions[i]->GetRootPath();
                     int len = sprintf(num, "%3d;", i);    
                     fres = fo->write(num, len, &tr);
+                    if (fres != FR_OK) {
+                        return fres;
+                    }
+                    fres = fo->write(pp, strlen(pp), &tr);
+                    if (fres != FR_OK) {
+                        return fres;
+                    }
+                    fres = fo->write("\n", 1, &tr);
                     if (fres != FR_OK) {
                         return fres;
                     }
