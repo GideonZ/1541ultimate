@@ -32,7 +32,8 @@
 #define U64II_CHARGEN_COLOR_RAM     (U64II_OVERLAY_BASE + 0x2000)
 
 #define U64II_HW_I2C_BASE (U2P_IO_BASE + 0x0700)
-
+#define U64II_BLINGBOARD_KEYB (U2P_IO_BASE + 0x0800)
+#define U64II_BLINGBOARD_LEDS (U2P_IO_BASE + 0x0900)
 // end U64-II
 
 
@@ -88,8 +89,6 @@
 #define U64_POWER_OFF_2			0xB2
 
 #define LEDSTRIP_DATA ( (volatile uint8_t *)(C64_IO_LED))
-#define LEDSTRIP_FROM (*(volatile uint8_t *)(C64_IO_LED + 0xFE))
-#define LEDSTRIP_LEN  (*(volatile uint8_t *)(C64_IO_LED + 0xFF))
 #define U64_DEBUG_REGISTER (*(volatile uint8_t *)C64_IO_DEBUG)
 
 #define C64_SCANLINES    (*(volatile uint8_t *)(C64_IO_BASE + 0x00))
