@@ -1,4 +1,12 @@
 #include "reu_preloader.h"
+#include "init_function.h"
+
+REUPreloader *reu_preloader = NULL; // globally static
+static void init(void *_a, void *_b)
+{
+    reu_preloader = new REUPreloader();
+}
+InitFunction reu_preload_init("REU Preloader", init, NULL, NULL, 98);
 
 static const uint32_t reu_sizes[] = { 0x20000, 0x40000, 0x80000, 0x100000, 0x200000, 0x400000, 0x800000, 0x1000000 };
 

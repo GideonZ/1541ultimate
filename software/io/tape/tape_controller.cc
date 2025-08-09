@@ -5,8 +5,15 @@
 #include "menu.h"
 #include "filemanager.h"
 #include "c64.h"
+#include "init_function.h"
 
 TapeController *tape_controller = NULL; // globally static
+static void init_tape_controller(void *_a, void *_b)
+{
+    if(getFpgaCapabilities() & CAPAB_C2N_STREAMER)
+	    tape_controller = new TapeController;
+}
+InitFunction tape_playback_init("Tape Playback Controller", init_tape_controller, NULL, NULL, 60);
 
 #define MENU_C2N_PAUSE         0x3201
 #define MENU_C2N_RESUME        0x3202
@@ -260,3 +267,4 @@ void TapeController :: set_file(File *f, uint32_t len, int m, int offset)
 	file->seek((uint32_t)offset);
 	block = 512 - (offset & 0x1FF);
 }
+

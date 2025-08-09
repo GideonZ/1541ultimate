@@ -12,6 +12,7 @@
 #include "userinterface.h"
 #include "filemanager.h"
 #include "file_ram.h"
+#include "init_function.h"
 
 #ifndef CLOCK_FREQ
 #define CLOCK_FREQ 50000000
@@ -1232,3 +1233,26 @@ const char *C1541 :: get_drive_rom_file(void)
 {
     return current_drive_rom.c_str();
 }
+
+C1541 *c1541_A;
+C1541 *c1541_B;
+
+static void init(void *_a, void *_b)
+{
+    uint32_t capabilities = getFpgaCapabilities();
+    if(capabilities & CAPAB_DRIVE_1541_1) {
+        c1541_A = new C1541(C1541_IO_LOC_DRIVE_1, 'A');
+    }
+    if(capabilities & CAPAB_DRIVE_1541_2) {
+        c1541_B = new C1541(C1541_IO_LOC_DRIVE_2, 'B');
+    }
+
+    if(c1541_A) {
+    	c1541_A->init();
+    }
+
+    if(c1541_B) {
+    	c1541_B->init();
+    }
+}
+InitFunction drives_init_func("C1541/71/81 Init", init, NULL, NULL, 65);

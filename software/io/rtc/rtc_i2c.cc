@@ -70,6 +70,11 @@ static uint8_t bin2bcd(uint8_t bin)
 
 Rtc::Rtc()
 {
+    capable = false;
+}
+
+void Rtc::init()
+{
     capable = true;
     cfg = new RtcConfigStore("Clock Settings", rtc_config);
     ConfigManager::getConfigManager()->add_custom_store(cfg);
@@ -394,3 +399,6 @@ extern "C" void get_current_time(int& wd, int& year, int& month, int& day, int& 
 {
     rtc.get_time(year, month, day, wd, hour, min, sec);
 }
+
+#include "init_function.h"
+InitFunction init_rtc("RTC", [](void *_obj, void *_param) { rtc.init(); }, NULL, NULL, 2);

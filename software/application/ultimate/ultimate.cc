@@ -9,26 +9,19 @@
 #include "syslog.h"
 #include "c64.h"
 #include "c64_subsys.h"
-#include "c1541.h"
-#include "iec_interface.h"
 #include "screen.h"
 #include "keyboard.h"
 #include "userinterface.h"
 #include "tree_browser.h"
 #include "browsable_root.h"
 #include "filemanager.h"
-#include "sd_card.h"
-#include "file_device.h"
 #include "config.h"
 #include "path.h"
 #include "rtc.h"
-#include "tape_controller.h"
-#include "tape_recorder.h"
 #include "stream.h"
 #include "host_stream.h"
 #include "ui_stream.h"
 #include "stream_menu.h"
-#include "audio_select.h"
 #include "overlay.h"
 #include "init_function.h"
 #include "stream_uart.h"
@@ -36,7 +29,6 @@
 #include "dump_hex.h"
 #include "usb_base.h"
 #include "home_directory.h"
-#include "reu_preloader.h"
 #include "u2p.h"
 #include "u64.h"
 #include "keyboard_usb.h"
@@ -45,16 +37,12 @@
 
 bool connectedToU64 = false;
 
-C1541 *c1541_A;
-C1541 *c1541_B;
-IecInterface *iec_if;
 TreeBrowser *root_tree_browser;
 StreamMenu *root_menu;
 Overlay *overlay;
 C64 *c64;
 C64_Subsys *c64_subsys;
 HomeDirectory *home_directory;
-REUPreloader *reu_preloader;
 StreamTextLog textLog(96*1024);
 Syslog syslog;
 
@@ -90,12 +78,12 @@ extern "C" void ultimate_main(void *a)
     printf("*** %s ***\n", getProductVersionString(product_version, sizeof(product_version), true));
     printf("*** FPGA Capabilities: %8x ***\n\n", capabilities);
 
+	puts("Executing init functions.");
+	InitFunction :: executeAll();
+   
     printf("%s ", rtc.get_long_date(time_buffer, 32));
     printf("%s\n", rtc.get_time_string(time_buffer, 32));
 
-	puts("Executing init functions.");
-	InitFunction :: executeAll();
-    
 	if (capabilities & CAPAB_CARTRIDGE) {
 		c64 = C64 :: getMachine();
 		c64_subsys = new C64_Subsys(c64);
@@ -150,32 +138,11 @@ extern "C" void ultimate_main(void *a)
         c64UserInterface->activate_uiobject(root_tree_browser); // root of all evil!
         c64UserInterface->init(c64);
         if(c64UserInterface->cfg->get_value(CFG_USERIF_START_HOME)) {
-            new HomeDirectory(c64UserInterface, root_tree_browser);
+            home_directory = new HomeDirectory(c64UserInterface, root_tree_browser);
             // will clean itself up
         }
     }
 
-    if(capabilities & CAPAB_C2N_STREAMER)
-	    tape_controller = new TapeController;
-    if(capabilities & CAPAB_C2N_RECORDER)
-	    tape_recorder   = new TapeRecorder;
-    if(capabilities & CAPAB_DRIVE_1541_1) {
-        c1541_A = new C1541(C1541_IO_LOC_DRIVE_1, 'A');
-    }
-    if(capabilities & CAPAB_DRIVE_1541_2) {
-        c1541_B = new C1541(C1541_IO_LOC_DRIVE_2, 'B');
-    }
-
-    if(c1541_A) {
-    	c1541_A->init();
-    }
-
-    if(c1541_B) {
-    	c1541_B->init();
-    }
-
-    reu_preloader = new REUPreloader();
-    
     printf("All linked modules have been initialized and are now running.\n");
     print_tasks();
 
@@ -266,18 +233,8 @@ extern "C" void ultimate_main(void *a)
     	delete c64_subsys;
     if(c64)
         delete c64;
-    if(c1541_A)
-        delete c1541_A;
-    if(c1541_B)
-        delete c1541_B;
-    if(tape_controller)
-	    delete tape_controller;
-    if(tape_recorder)
-	    delete tape_recorder;
     if(home_directory)
         delete home_directory;
-    if(reu_preloader)
-      delete reu_preloader;
     
     printf("Graceful exit!!\n");
 //    return 0;

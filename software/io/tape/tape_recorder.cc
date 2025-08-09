@@ -6,12 +6,19 @@
 #include "filemanager.h"
 #include "c64.h"
 #include "endianness.h"
+#include "init_function.h"
+
 extern "C" {
     #include "dump_hex.h"
 }
 
 TapeRecorder *tape_recorder = NULL; // globally static
-
+static void init_tape_recorder(void *_a, void *_b)
+{
+    if(getFpgaCapabilities() & CAPAB_C2N_RECORDER)
+	    tape_recorder   = new TapeRecorder;
+}
+InitFunction tape_record_init("Tape Recording Controller", init_tape_recorder, NULL, NULL, 61);
 
 extern "C" BaseType_t tape_recorder_irq(void)
 {
@@ -276,13 +283,10 @@ void TapeRecorder :: poll()
 {
 	volatile void *aap = this;
 
-	printf("** tape recorder this = %p\n", this);
 	while(1) {
 		if(error_code != REC_ERR_OK) {
 			PROFILER_SUB = 15;
 			if (last_user_interface) {
-				printf("** tape recorder this = %p\n", this);
-				printf("Last User Interface = %p\n");
 				UserInterface *ui = (UserInterface *)last_user_interface;
 				if (ui->is_available()) {
 					ui->popup("Error during tape capture.", BUTTON_OK);

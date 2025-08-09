@@ -83,18 +83,7 @@ static uint8_t bin2bcd(uint8_t bin)
 
 Rtc::Rtc()
 {
-    if (getFpgaCapabilities() & CAPAB_RTC_CHIP) {
-        capable = true;
-        cfg = new RtcConfigStore("Clock Settings", rtc_config);
-        ConfigManager::getConfigManager()->add_custom_store(cfg);
-        get_time_from_chip();
-
-        // Check and correct clock out setting
-        if ((rtc_regs[RTC_ADDR_CLOCKOUT] & 0x70) != 0x70)
-            write_byte(RTC_ADDR_CLOCKOUT, 0x72);
-    } else {
-        capable = false;
-    }
+    capable = false;
 }
 
 Rtc::~Rtc()
@@ -105,6 +94,20 @@ Rtc::~Rtc()
         ConfigManager::getConfigManager()->remove_store(cfg);
         delete cfg;
         //printf("RTC configuration store now gone..\n");
+    }
+}
+
+void Rtc::init()
+{
+    if (getFpgaCapabilities() & CAPAB_RTC_CHIP) {
+        capable = true;
+        cfg = new RtcConfigStore("Clock Settings", rtc_config);
+        ConfigManager::getConfigManager()->add_custom_store(cfg);
+        get_time_from_chip();
+
+        // Check and correct clock out setting
+        if ((rtc_regs[RTC_ADDR_CLOCKOUT] & 0x70) != 0x70)
+            write_byte(RTC_ADDR_CLOCKOUT, 0x72);
     }
 }
 
@@ -415,3 +418,6 @@ extern "C" void get_current_time(int& wd, int& year, int& month, int& day, int& 
 {
     rtc.get_time(year, month, day, wd, hour, min, sec);
 }
+
+#include "init_function.h"
+InitFunction init_rtc("RTC", [](void *_obj, void *_param) { rtc.init(); }, NULL, NULL, 2);

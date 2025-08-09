@@ -9,6 +9,16 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "u64.h"
+#include "init_function.h"
+
+// globally static
+LedStrip *ledstrip = NULL;
+static void init(void *_a, void *_b)
+{
+    ledstrip = new LedStrip();
+}
+InitFunction ledstrip_init_func("LED Strip", init, NULL, NULL, 61);
+
 
 static const char *modes[] = {"Off", "Fixed Color", "SID Pulse", "SID Scroll 1", "SID Scroll 2" };
 static const char *sidsel[] = { "UltiSID1-A", "UltiSID1-B", "UltiSID1-C", "UltiSID1-D",
@@ -26,6 +36,9 @@ static struct t_cfg_definition cfg_definition[] = {
 
 LedStrip :: LedStrip()
 {
+    // because higher priority task may start right away, the return value of the constructor
+    // may not yet been written in the global variable.
+	ledstrip = this; 
     xTaskCreate( LedStrip :: task, "LedStrip Controller", configMINIMAL_STACK_SIZE, this, PRIO_REALTIME, NULL );
     register_store(0x4C454453, "LED Strip Settings", cfg_definition);
     effectuate_settings();
@@ -106,12 +119,11 @@ void LedStrip :: task(void *a)
             start ++;
             vTaskDelay(3);
             break;
+        default:
+            strip->mode = 0;
         }
     }
 }
-
-// globally static, causes constructor to be called
-LedStrip ledstrip;
 
 void LedStrip :: effectuate_settings(void)
 {
