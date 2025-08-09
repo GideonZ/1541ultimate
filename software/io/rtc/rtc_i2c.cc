@@ -70,6 +70,11 @@ static uint8_t bin2bcd(uint8_t bin)
 
 Rtc::Rtc()
 {
+    capable = false;
+}
+
+void Rtc::init()
+{
     capable = true;
     cfg = new RtcConfigStore("Clock Settings", rtc_config);
     ConfigManager::getConfigManager()->add_custom_store(cfg);
@@ -389,3 +394,6 @@ extern "C" uint32_t get_fattime(void) /* 31-25: Year(0-127 org.1980), 24-21: Mon
      return 0x3A844C97;
      */
 }
+
+#include "init_function.h"
+InitFunction init_rtc("RTC", [](void *_obj, void *_param) { rtc.init(); }, NULL, NULL, 2);

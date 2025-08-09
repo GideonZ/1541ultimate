@@ -23,7 +23,7 @@ class NetworkConfig : ConfigurableObject {
 public:
     NetworkConfig();
     ~NetworkConfig();
-
+    void init();
     void effectuate_settings(void);
     static void list_unique_id_choices(ConfigItem *it, IndexedList<char *>& strings);
     const char *get_posix_timezone(void);

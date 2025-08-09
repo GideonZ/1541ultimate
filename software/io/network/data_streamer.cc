@@ -10,6 +10,7 @@
 #include "netdb.h"
 #include "userinterface.h"
 #include "profiler.h"
+#include "init_function.h"
 
 extern "C" {
 #include "dump_hex.h"
@@ -52,7 +53,13 @@ DataStreamer :: ~DataStreamer()
 
 }
 
-DataStreamer dataStreamer;
+DataStreamer *dataStreamer;
+static void init(void *_a, void *_b)
+{
+    dataStreamer = new DataStreamer();
+}
+InitFunction datastreamer_init_func("Data Streamer", init, NULL, NULL, 70);
+
 
 SubsysResultCode_e DataStreamer :: S_startStream(SubsysCommand *cmd)
 {
@@ -71,9 +78,9 @@ void DataStreamer :: S_timer(TimerHandle_t a)
     int streamID = (int)pvTimerGetTimerID(a);
     printf("S_timer %p %d\n", a, streamID);
     if ((streamID >= 0) && (streamID <= 3)) {
-        stream_config_t *stream = &dataStreamer.streams[streamID];
+        stream_config_t *stream = &(dataStreamer->streams[streamID]);
         stream->enable = 0;
-        dataStreamer.calculate_udp_headers(streamID);
+        dataStreamer->calculate_udp_headers(streamID);
     }
 }
 

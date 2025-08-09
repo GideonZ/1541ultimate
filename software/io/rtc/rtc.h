@@ -38,7 +38,8 @@ private:
 public:
 	Rtc();
 	~Rtc();
-
+	void init(void);
+	
 	bool is_valid(void);
 	int  get_correction(void);
 	void get_time_from_chip(void);

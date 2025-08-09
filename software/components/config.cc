@@ -24,9 +24,14 @@ extern "C" {
 }
 #include "config.h"
 #include <string.h>
+#include "blockdev_flash.h"
+#include "filemanager.h"
+
 #if U64
 #include "u64.h"
 #endif
+
+#define CFG_FILEPATH "/flash/config"
 
 /*** CONFIGURATION MANAGER ***/
 ConfigManager :: ConfigManager() : stores(16, NULL), pages(16, NULL)
@@ -57,7 +62,11 @@ ConfigManager :: ConfigManager() : stores(16, NULL), pages(16, NULL)
     if (safeMode) {
         printf("SAFE MODE ENABLED. Loading defaults...\n");
     }
-	//    root.add_child(this); // make ourselves visible in the browser
+
+#ifndef RECOVERYAPP
+    // Now, also open the Flash File system!
+    init_flash_disk();
+#endif
 }
 
 ConfigManager :: ~ConfigManager()
@@ -128,6 +137,21 @@ ConfigStore *ConfigManager :: register_store(uint32_t page_id, const char *name,
         }
     }
 
+    // Not found in config pages, maybe it's on the flash storage itself?
+    if (!page) {
+        char fn[20];
+        sprintf(fn, "page_%08x.bin", page_id);
+        File *df;
+        FileManager *fm = FileManager :: getFileManager(); 
+        FRESULT fres = fm->fopen(CFG_FILEPATH, fn, FA_READ, &df);
+        if (fres == FR_OK) {
+            page = new ConfigPage(NULL, page_id, -1, page_size);
+            pages.append(page);
+            page->read_from_file(df);
+            fm->fclose(df);
+        }
+    }
+
     // if still no luck, try to create a page in flash
     if (!page) {
         uint32_t id;
@@ -143,10 +167,11 @@ ConfigStore *ConfigManager :: register_store(uint32_t page_id, const char *name,
         }
     }
 
-    // No space in Flash! Issue warning and create page in memory
+    // No space in Flash! Issue warning and create page on disk
     if (!page) {
         page = new ConfigPage(NULL, page_id, -1, page_size);
         pages.append(page);
+        write = true; // write to disk
     }
     ConfigStore *s = new ConfigStore(page, name, defs, ob);
     stores.append(s);
@@ -318,8 +343,27 @@ void ConfigStore :: write()
 
 void ConfigPage :: write()
 {
-    printf("Page: %d", flash_page);
 	int size = pack();
+
+    if (flash_page < 0) {
+        char fn[20];
+        File *df;
+        sprintf(fn, "page_%08x.bin", id);
+        FileManager *fm = FileManager :: getFileManager();
+        FRESULT fres = fm->create_dir(CFG_FILEPATH);
+        fres = fm->fopen(CFG_FILEPATH, fn, FA_CREATE_ALWAYS | FA_WRITE, &df );
+        if (fres == FR_OK) {
+        	int size = pack();
+            uint32_t tr;
+            df->write(mem_block, (uint32_t)size, &tr);
+            fm->fclose(df);
+            printf("Written %s to flash disk\n", fn);
+        } else {
+            printf("Could not open '%s' for writing\n", fn);
+        }
+        return;
+    }
+    printf("Page: %d", flash_page);
 	//dump_hex_relative(mem_block, size);
 	if(flash) {
 	    flash->write_config_page(flash_page, mem_block);
@@ -357,8 +401,28 @@ void ConfigStore :: unpack(uint8_t *mem_block, int block_size)
     }
 }
 
+void ConfigPage :: read_from_file(File *f)
+{
+    uint32_t tr;
+    f->read(mem_block, (uint32_t)block_size, &tr);
+    printf("%d bytes read from config file\n", tr);
+}
+
 void ConfigPage :: read(bool ignoreData)
 {
+    if (flash_page < 0) {
+        char fn[20];
+        sprintf(fn, "page_%08x.bin", id);
+        File *df;
+        FileManager *fm = FileManager :: getFileManager(); 
+        FRESULT fres = fm->fopen(CFG_FILEPATH, fn, FA_READ, &df);
+        if (fres == FR_OK) {
+            read_from_file(df);
+            fm->fclose(df);
+        }
+        return;
+    }
+
     if(flash && !ignoreData) {
         flash->read_config_page(flash_page, block_size, mem_block);
     } else {
