@@ -1463,7 +1463,7 @@
  */
 #define SNTP_CHECK_RESPONSE         1
 #define SNTP_COMP_ROUNDTRIP         0
-#define SNTP_STARTUP_DELAY          0
+#define SNTP_STARTUP_DELAY          1
 
 void sntp_time_received(u32_t sec);
 

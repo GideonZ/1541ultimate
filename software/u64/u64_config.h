@@ -20,7 +20,7 @@
 #define DATA_DIRECTORY "/flash/data"
 
 class U64Config;
-extern U64Config u64_configurator;
+extern U64Config *u64_configurator;
 
 class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
 {
@@ -110,7 +110,7 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
 public:
     U64Config();
     ~U64Config() {}
-    static U64Config *getConfigurator() { return &u64_configurator; }
+    static U64Config *getConfigurator() { return u64_configurator; }
 
     void ResetHandler();
     void create_task_items(void);

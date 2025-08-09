@@ -31,13 +31,19 @@ struct t_cfg_definition network_config[] = {
 };
 
 
-NetworkConfig :: NetworkConfig() {
+NetworkConfig :: NetworkConfig()
+{
+}
+
+NetworkConfig :: ~NetworkConfig()
+{
+}
+
+void NetworkConfig :: init()
+{
     char *hostname = getProductDefaultHostname(default_hostname, sizeof(default_hostname));
     strcpy(default_hostname, hostname ? hostname : "Small Buffer");
     cfg = ConfigManager :: getConfigManager()->register_store(0x4E455400, "Network Settings", network_config, this);
-}
-
-NetworkConfig :: ~NetworkConfig() {
 }
 
 void NetworkConfig :: list_unique_id_choices(ConfigItem *it, IndexedList<char *>& strings)
@@ -65,4 +71,7 @@ void NetworkConfig :: effectuate_settings(void)
     start_sntp(); // restart with possible new settings or new time zone
 }
 
+#include "init_function.h"
 NetworkConfig networkConfig;
+InitFunction init_netcfg("Network Config", [](void *_obj, void *_param) { networkConfig.init(); }, NULL, NULL, 20);
+

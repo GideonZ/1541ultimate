@@ -52,7 +52,12 @@ const uint8_t default_colors[16][3] = {
     { 0xB2, 0xB2, 0xB2 } };
 
 // static pointer
-U64Config u64_configurator;
+U64Config *u64_configurator = NULL;
+static void init(void *_a, void *_b)
+{
+    u64_configurator = new U64Config();
+}
+InitFunction u64_init_func("U64 Config", init, NULL, NULL, 1);
 
 // Semaphore set by interrupt
 static SemaphoreHandle_t resetSemaphore;
@@ -552,22 +557,22 @@ void U64Config :: U64SidSockets :: detect(void)
         ;
 
     S_SetupDetectionAddresses();
-    sid1 = u64_configurator.detectFPGASID(0);
+    sid1 = u64_configurator->detectFPGASID(0);
 
     S_SetupDetectionAddresses();
-    sid2 = u64_configurator.detectFPGASID(1);
+    sid2 = u64_configurator->detectFPGASID(1);
 
     if ((sid1 == SID_TYPE_NONE) || (sid2 == SID_TYPE_NONE)) {
         wait_ms(100);
 
         S_SetupDetectionAddresses();
         if (sid1 == SID_TYPE_NONE) {
-            sid1 = u64_configurator.detectRemakes(0);
+            sid1 = u64_configurator->detectRemakes(0);
         }
 
         S_SetupDetectionAddresses();
         if (sid2 == SID_TYPE_NONE) {
-            sid2 = u64_configurator.detectRemakes(1);
+            sid2 = u64_configurator->detectRemakes(1);
         }
     }
 
@@ -583,7 +588,7 @@ void U64Config :: U64SidSockets :: detect(void)
 
     if ((sid1 == SID_TYPE_FPGASID) && (sid2 == SID_TYPE_NONE)) {
     	S_SetupDetectionAddresses();
-    	int tmp = u64_configurator.detectDukestahAdapter();
+    	int tmp = u64_configurator->detectDukestahAdapter();
     	if (tmp == SID_TYPE_FPGASID_DUKESTAH)
            sid1 = sid2 = tmp;
     }
@@ -818,18 +823,18 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 
         InitFunction *init_u64 = new InitFunction("U64 Configurator", [](void *obj, void *_param) {
             printf("*** Init U64 Configurator\n");
-            u64_configurator.sockets.detect();
-            u64_configurator.clear_ram();
-            u64_configurator.hdmiMonitor = u64_configurator.IsMonitorHDMI(); // requires I2C
-            u64_configurator.effectuate_settings(); // requires I2C
-            u64_configurator.sockets.effectuate_settings();
-            u64_configurator.mixercfg.effectuate_settings();
-            u64_configurator.ultisids.effectuate_settings();
-            u64_configurator.sidaddressing.effectuate_settings();
+            u64_configurator->sockets.detect();
+            u64_configurator->clear_ram();
+            u64_configurator->hdmiMonitor = u64_configurator->IsMonitorHDMI(); // requires I2C
+            u64_configurator->effectuate_settings(); // requires I2C
+            u64_configurator->sockets.effectuate_settings();
+            u64_configurator->mixercfg.effectuate_settings();
+            u64_configurator->ultisids.effectuate_settings();
+            u64_configurator->sidaddressing.effectuate_settings();
 #if U64 == 2
-            u64_configurator.speakercfg.effectuate_settings();
+            u64_configurator->speakercfg.effectuate_settings();
 #endif
-            xTaskCreate( U64Config :: reset_task, "U64 Reset Task", configMINIMAL_STACK_SIZE, &u64_configurator, PRIO_REALTIME, &u64_configurator.resetTaskHandle );
+            xTaskCreate( U64Config :: reset_task, "U64 Reset Task", configMINIMAL_STACK_SIZE, &u64_configurator, PRIO_REALTIME, &u64_configurator->resetTaskHandle );
             printf("*** U64 Configurator Done\n");
         }, NULL, NULL, 3); // early
     }
@@ -1590,13 +1595,13 @@ bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
 // this function overrides the weak function in FiletypeSID.. ;-)
 bool SidAutoConfig(int count, t_sid_definition *requested)
 {
-    return u64_configurator.SidAutoConfig(count, requested);
+    return u64_configurator->SidAutoConfig(count, requested);
 }
 
 extern "C" {
     void ResetInterruptHandlerU64()
     {
-        u64_configurator.ResetHandler();
+        u64_configurator->ResetHandler();
     }
 }
 
@@ -1872,7 +1877,7 @@ int swap_joystick()
         return MENU_NOP;
     }
 
-    ConfigItem *item = u64_configurator.cfg->find_item(CFG_JOYSWAP);
+    ConfigItem *item = u64_configurator->cfg->find_item(CFG_JOYSWAP);
     int swap = item->getValue();
     swap ^= 1;
     item->setValue(swap);
@@ -2011,7 +2016,7 @@ void U64Config :: show_mapping(uint8_t *base, uint8_t *mask, uint8_t *split, int
 
 void U64Config :: show_sid_addr(UserInterface *intf, ConfigItem *it)
 {
-    SidEditor *se = new SidEditor(intf, u64_configurator.sidaddressing.cfg);
+    SidEditor *se = new SidEditor(intf, u64_configurator->sidaddressing.cfg);
     se->init(intf->screen, intf->keyboard);
     intf->activate_uiobject(se);
 }
@@ -2247,7 +2252,7 @@ InitFunction init_palette("U64 Palette", U64Config :: late_init_palette, NULL, N
 
 void U64Config :: late_init_palette(void *obj, void *param)
 {
-    const char *palette = u64_configurator.cfg->get_string(CFG_PALETTE);
+    const char *palette = u64_configurator->cfg->get_string(CFG_PALETTE);
     if (strlen(palette)) {
         load_palette_vpl(DATA_DIRECTORY, palette);
     } else {

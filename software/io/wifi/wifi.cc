@@ -22,25 +22,25 @@
 
 WiFi wifi;
 ultimate_ap_records_t wifi_aps;
-InitFunction wifi_init("WiFi Application", WiFi::Init, NULL, NULL, 51); // after LWIP
+InitFunction wifi_init("WiFi Application", WiFi::Init, NULL, NULL, 52); // after LWIP
 
 WiFi :: WiFi()
 {
     runModeTask = NULL;
     state = eWifi_Off;
-    esp32.AttachApplication(this);
-
     bzero(my_mac, 6);
     wifi_aps.num_records  = 0;
     my_ip = 0;
     my_gateway = 0;
     my_netmask = 0;
-    netstack = new NetworkLWIP_WiFi(this, wifi_tx_packet, wifi_free);
-    netstack->attach_config();
 }
 
 void WiFi :: Init(void *obj, void *param)
 {
+    esp32.AttachApplication(&wifi);
+    wifi.netstack = new NetworkLWIP_WiFi(&wifi, wifi_tx_packet, wifi_free);
+    wifi.netstack->attach_config();
+
 #if U64 == 2
     wifi.Enable(); // Unconditionally enable the WiFi module
 #endif

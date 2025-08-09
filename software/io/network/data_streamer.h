@@ -66,6 +66,6 @@ public:
 
 };
 
-extern DataStreamer dataStreamer;
+extern DataStreamer *dataStreamer;
 
 #endif
