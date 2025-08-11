@@ -80,6 +80,14 @@ SRCS_CC	 =  memory.cc \
 			dma_uart.cc \
 			esp32.cc \
 			wifi_cmd.cc \
+			\
+			u2p_init.cc \
+			usb_hwinit.cc \
+			usb_base.cc \
+			usb_device.cc \
+			usb_hub.cc \
+			usb_hid.cc \
+			\
 			update_u64.cc
 
 VPATH +=	.
