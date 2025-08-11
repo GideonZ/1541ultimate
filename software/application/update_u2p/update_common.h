@@ -181,6 +181,8 @@ static void clear_field(void)
 static void setup(const char *title)
 {
     printf(title);
+    InitFunction::executeAll();
+    init_flash_disk();
 
     Flash *flash = get_flash();
     GenericHost *host = 0;
