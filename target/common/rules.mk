@@ -23,13 +23,13 @@ all: $(OUTPUT) gitinfo $(RESULT) $(FINAL)
 	@echo Making all requires $(OUTPUT), $(RESULT) and $(FINAL)	
 
 gitinfo::
-	@echo '/* Generated file, do not edit. */' >output/gitinfo.h
-	@echo '#define APP_VERSION_TAG    "'`git describe --tags`'"' >>output/gitinfo.h
-	@echo '#define APP_VERSION_BRANCH "'`git describe --all`'"' >>output/gitinfo.h
-	@echo '#define APP_VERSION_DATE   "'`git log -n 1 --format=%ai`'"' >>output/gitinfo.h
-	@echo '#define APP_VERSION_HASH   "'`git rev-parse --short HEAD`'"' >>output/gitinfo.h
-	@echo '#define APP_BUILD_DATE     "'`date +"%F %R"`'"' >>output/gitinfo.h
-	@echo '#define APP_BUILD_MACHINE  "'`hostname`'"' >>output/gitinfo.h
+	@echo '/* Generated file, do not edit. */' >$(OUTPUT)/gitinfo.h
+	@echo '#define APP_VERSION_TAG    "'`git describe --tags`'"' >>$(OUTPUT)/gitinfo.h
+	@echo '#define APP_VERSION_BRANCH "'`git describe --all`'"' >>$(OUTPUT)/gitinfo.h
+	@echo '#define APP_VERSION_DATE   "'`git log -n 1 --format=%ai`'"' >>$(OUTPUT)/gitinfo.h
+	@echo '#define APP_VERSION_HASH   "'`git rev-parse --short HEAD`'"' >>$(OUTPUT)/gitinfo.h
+	@echo '#define APP_BUILD_DATE     "'`date +"%F %R"`'"' >>$(OUTPUT)/gitinfo.h
+	@echo '#define APP_BUILD_MACHINE  "'`hostname`'"' >>$(OUTPUT)/gitinfo.h
 
 mem: $(OUTPUT)/$(PRJ).mem
 

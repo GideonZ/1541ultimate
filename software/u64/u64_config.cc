@@ -791,6 +791,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 
     fm = FileManager::getFileManager();
     resetSemaphore = xSemaphoreCreateBinary();
+    u64_configurator = this; // hack
 
     if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
 		struct t_cfg_definition *def = u64_cfg;
@@ -821,22 +822,20 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
             cfg->disable(CFG_JOYSWAP);
         }
 
-        InitFunction *init_u64 = new InitFunction("U64 Configurator", [](void *obj, void *_param) {
-            printf("*** Init U64 Configurator\n");
-            u64_configurator->sockets.detect();
-            u64_configurator->clear_ram();
-            u64_configurator->hdmiMonitor = u64_configurator->IsMonitorHDMI(); // requires I2C
-            u64_configurator->effectuate_settings(); // requires I2C
-            u64_configurator->sockets.effectuate_settings();
-            u64_configurator->mixercfg.effectuate_settings();
-            u64_configurator->ultisids.effectuate_settings();
-            u64_configurator->sidaddressing.effectuate_settings();
+        printf("*** Init U64 Configurator\n");
+        u64_configurator->sockets.detect();
+        u64_configurator->clear_ram();
+        u64_configurator->hdmiMonitor = u64_configurator->IsMonitorHDMI(); // requires I2C
+        u64_configurator->effectuate_settings(); // requires I2C
+        u64_configurator->sockets.effectuate_settings();
+        u64_configurator->mixercfg.effectuate_settings();
+        u64_configurator->ultisids.effectuate_settings();
+        u64_configurator->sidaddressing.effectuate_settings();
 #if U64 == 2
-            u64_configurator->speakercfg.effectuate_settings();
+        u64_configurator->speakercfg.effectuate_settings();
 #endif
-            xTaskCreate( U64Config :: reset_task, "U64 Reset Task", configMINIMAL_STACK_SIZE, &u64_configurator, PRIO_REALTIME, &u64_configurator->resetTaskHandle );
-            printf("*** U64 Configurator Done\n");
-        }, NULL, NULL, 3); // early
+        xTaskCreate( U64Config :: reset_task, "U64 Reset Task", configMINIMAL_STACK_SIZE, u64_configurator, PRIO_REALTIME, &u64_configurator->resetTaskHandle );
+        printf("*** U64 Configurator Done\n");
     }
 }
 
