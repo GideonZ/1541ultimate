@@ -10,6 +10,7 @@
 #include "i2c_drv.h"
 #include "wifi_cmd.h"
 #include "product.h"
+#include "usb_base.h"
 
 extern uint32_t _u64_rbf_start;
 extern uint32_t _u64_rbf_end;
@@ -43,6 +44,7 @@ static void status_callback(void *user)
 void do_update(void)
 {
     setup("\033\025** Ultimate 64 Elite-II Updater **\n\033\037");
+    usb2.initHardware();
 
     Flash *flash2 = get_flash();
     console_print(screen, "\033\024Detected Flash: %s\n", flash2->get_type_string());
@@ -73,7 +75,11 @@ void do_update(void)
 
     check_flash_disk();
 
-    if(user_interface->popup("About to update. Continue?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+#if SILENT
+#else
+    if(user_interface->popup("About to update. Continue?", BUTTON_YES | BUTTON_NO) == BUTTON_YES)
+#endif
+    {
         clear_field();
         create_dir(ROMS_DIRECTORY);
         create_dir(CARTS_DIRECTORY);
@@ -98,6 +104,10 @@ void do_update(void)
     reset_config(flash2);
 
     wifi_command_init();
+
+#if SILENT
+    goto esp32_done;
+#endif
     uint16_t major, minor;
     char moduleName[32];
     BaseType_t module_detected;
@@ -132,7 +142,7 @@ void do_update(void)
     } else {
         console_print(screen, "WiFi module not detected.\n");
     }
-
+esp32_done:
     // assuming that the ESP32 is running still, we should be able to send a slip message to it
     wifi_command_init();
     turn_off();
