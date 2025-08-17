@@ -1,5 +1,5 @@
-WELCOME TO THE OFFICIAL REPOSITORY FOR THE ULTIMATE-II, ULTIMATE-II+, ULTIMATE-II+L and U64 FIRMWARE
-====================================================================================================
+WELCOME TO THE OFFICIAL REPOSITORY FOR THE COMMODORE 64 ULTIMATE
+================================================================
 
 Before you continue, be aware that this git repository uses some submodules. Make sure you also
 clone them by issuing the following commands after cloning this repository:
