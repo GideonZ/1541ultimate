@@ -15,47 +15,13 @@ jobs:
       - name: Generate Version String
         run: echo "GIT_VERSION=$(git describe --tags --always)" >>$GITHUB_ENV
 
-      - name: Determine FPGA & ESP32 dependencies
+      - name: Determine ESP32 dependencies
         run: |
           docker run --rm \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make fpga_depends && make esp_depends"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make esp_depends"
 
-      - name: Cache U2 FPGA
-        id: cache-u2
-        uses: actions/cache@v4
-        with:
-            path: |
-                target/fpga/rv700dd/rv700dd/rv700dd.bit
-                target/fpga/rv700au/work/rv700au.bit
-            key: ${{ runner.os }}-u2-${{ hashFiles('target/fpga/depends/u2.txt') }}
-            restore-keys: |
-                ${{ runner.os }}-u2-${{ hashFiles('target/fpga/depends/u2.txt') }}
-
-      - name: Cache U2+ FPGA
-        id: cache-u2p
-        uses: actions/cache@v4
-        with:
-            path: |
-                target/fpga/u2plus_recovery/output_files/ultimate_recovery.rbf
-                target/fpga/u2plus_run/output_files/ultimate_run.rbf
-
-            key: ${{ runner.os }}-u2p-${{ hashFiles('target/fpga/depends/u2p.txt') }}
-            restore-keys: |
-                ${{ runner.os }}-u2p-${{ hashFiles('target/fpga/depends/u2p.txt') }}
-
-      - name: Cache U2+L FPGA
-        id: cache-u2pl
-        uses: actions/cache@v4
-        with:
-            path: |
-                target/fpga/u2plus_ecp5/impl1/u2p_ecp5_impl1.bit
-
-            key: ${{ runner.os }}-u2pl-${{ hashFiles('target/fpga/depends/u2pl.txt') }}
-            restore-keys: |
-                ${{ runner.os }}-u2pl-${{ hashFiles('target/fpga/depends/u2pl.txt') }}
-
-      - name: Cache ESP32 Targets
+      - name: Cache ESP32 Target
         id: cache-esp32
         uses: actions/cache@v4
         with:
@@ -63,12 +29,6 @@ jobs:
                 software/u64ctrl/build/u64ctrl.bin
                 software/u64ctrl/build/bootloader/bootloader.bin
                 software/u64ctrl/build/partition_table/partition-table.bin
-                software/wifi/raw_c3/build/bridge.bin
-                software/wifi/raw_c3/build/bootloader/bootloader.bin
-                software/wifi/raw_c3/build/partition_table/partition-table.bin
-                software/wifi/raw_u64/build/bridge.bin
-                software/wifi/raw_u64/build/bootloader/bootloader.bin
-                software/wifi/raw_u64/build/partition_table/partition-table.bin
             key: ${{ runner.os }}-esp32-${{ hashFiles('software/esp_depends.txt') }}
             restore-keys: |
                 ${{ runner.os }}-esp32-${{ hashFiles('software/esp_depends.txt') }}
@@ -80,81 +40,25 @@ jobs:
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make esp32"
 
-      - if: steps.cache-u2.outputs.cache-hit != 'true'
-        name: Build U2 including FPGAs
-        run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
-          -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2_rv"
-
-      - if: steps.cache-u2.outputs.cache-hit == 'true'
-        name: Build U2 using cached FPGAs
-        run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
-          -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2_rv_swonly"
-
-      - if: steps.cache-u2p.outputs.cache-hit != 'true'
-        name: Build U2+ including FPGAs
-        run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
-          -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2plus"
-
-      - if: steps.cache-u2p.outputs.cache-hit == 'true'
-        name: Build U2+ using cached FPGAs
-        run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
-          -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2plus_swonly"
-
-      - if: steps.cache-u2pl.outputs.cache-hit != 'true'
-        name: Build U2+L including FPGA
-        run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
-          -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2pl"
-
-      - if: steps.cache-u2pl.outputs.cache-hit == 'true'
-        name: Build U2+L using cached FPGAs
-        run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
-          -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2pl_swonly"
-
       - name: Build U64 Software
         run: |
           docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64 && mv update.u64 update_${{ env.GIT_VERSION }}.u64"
 
       - name: Build U64-II Software
         run: |
           docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64ii"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64ii && mv update.ue2 update_${{ env.GIT_VERSION }}.ue2"
 
       - name: Upload User Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: update_package_${{ env.GIT_VERSION }}
           path: |
-            update.u2r
-            update.u2p
-            update.u2l
-            update.u64
-            update.ue2
-
-      - name: Upload Factory Artifacts U2+L
-        uses: actions/upload-artifact@v4
-        with:
-          name: factory_package_u2pl_${{ env.GIT_VERSION }}
-          path: |
-            software/wifi/raw_c3/build/bootloader/bootloader.bin
-            software/wifi/raw_c3/build/partition_table/partition-table.bin
-            software/wifi/raw_c3/build/bridge.bin
-            target/u2plus_L/riscv/ultimate/result/ultimate.app
-            target/fpga/u2plus_ecp5/impl1/u2p_ecp5_impl1.bit
+            update_${{ env.GIT_VERSION }}.u64
+            update_${{ env.GIT_VERSION }}.ue2
 
       - name: Upload Factory Artifacts U64II
         uses: actions/upload-artifact@v4
@@ -164,5 +68,6 @@ jobs:
             u64ii/bootloader.bin
             u64ii/partition-table.bin
             u64ii/u64ctrl.bin
+
             u64ii/ultimate.app
             u64ii/factorytest.bin
