@@ -285,6 +285,7 @@ int main(int argc, const char *argv[])
     test_command( 0, (const uint8_t *)"T-RD", 4);
     test_command( 0, (const uint8_t *)"T-RB", 4);
     test_command( 0, (const uint8_t *)"T-WASUN. 13/07/25 09:34:13 PM", 29);
+    test_command( 0, (const uint8_t *)"CP", 2);
     test_command( 0, (const uint8_t *)"CP1", 3);
     test_command( 0, (const uint8_t *)"CP12", 4);
     test_command( 0, (const uint8_t *)"CP123", 5);

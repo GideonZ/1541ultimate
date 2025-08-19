@@ -277,7 +277,7 @@ int IecParser :: cp_command(const uint8_t *buffer, int len)
         }
     } else {
         if (sscanf((const char *)buffer + 2, "%d", &part) != 1) {
-            return ERR_SYNTAX;
+            return exec->do_set_current_partition(0);
         }
     }
     return exec->do_set_current_partition(part);

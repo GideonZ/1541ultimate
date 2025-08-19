@@ -1096,7 +1096,7 @@ int IecCommandChannel::do_set_current_partition(int part)
 {
     GETPARTITION(part, partition, -1);
     drive->vfs->SetCurrentPartition(part);        
-    set_error(ERR_PARTITION_OK, part);
+    set_error(ERR_PARTITION_OK, drive->vfs->GetTargetPartitionNumber(0));
     return 0;
 }
 

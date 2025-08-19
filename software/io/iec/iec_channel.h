@@ -197,7 +197,9 @@ public:
 
     void SetCurrentPartition(int pn)
     {
-        currentPartition = pn;
+        if (pn) { // zero is not allowed
+            currentPartition = pn;
+        }
     }
 
     FRESULT SavePartitions(const char *path, const char *filename)
