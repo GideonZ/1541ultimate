@@ -1373,11 +1373,19 @@ int IecCommandChannel::do_get_partition_info(int part)
     IecPartition *p = drive->vfs->GetPartition(part);
     buffer[30] = 0x0d;
     memset(buffer, 0, 30);
+
     if (p) {
         drive->set_error(0, 0, 0);
         buffer[1] = 1;
         buffer[2] = (uint8_t)part;
-        strncpy((char *)(buffer+3), p->GetRootPath(), 16);
+
+        char cbm_name[24];
+        FileInfo info(40);
+        filetype_t ftype = e_any;
+        strncpy(info.lfname, p->GetRootPath(), info.lfsize);
+        IecPartition::CreateIecName(&info, cbm_name, ftype);
+
+        strncpy((char *)(buffer+3), cbm_name, 16);
         buffer[27] = 0xFF; // for now always reporting 0xFF0000 as partition size
     } else {
         drive->set_error(77, part, 0);
