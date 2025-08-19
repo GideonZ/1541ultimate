@@ -502,6 +502,7 @@ int IecChannel::read_dir_entry(void)
         pointer = 0;
         prefetch_max = 31;
         prefetch = 0;
+        state = e_dir; // This causes a -1 to be returned next time this function is called
         return 0;
     }
         
