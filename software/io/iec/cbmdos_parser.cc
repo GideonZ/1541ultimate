@@ -338,6 +338,26 @@ int IecParser :: copy_command(const uint8_t *buffer, int len)
     return IecParser :: exec->do_copy(dest, source_list, n);
 }
 
+int IecParser :: get_command(const uint8_t *buffer, int len)
+{
+    if (buffer[1] != '-') {
+        return ERR_SYNTAX;
+    }
+    int n, chan, part, track, sector;
+    switch(buffer[2]) {
+    case 'P':
+        if (len == 4) {
+            return exec->do_get_partition_info((int)buffer[3]);
+        } else if (len == 3) {
+            return exec->do_get_partition_info(0);
+        }
+        return ERR_SYNTAX;
+    default:
+        return ERR_UNKNOWN_CMD;
+    }
+    return 0;
+}
+
 int IecParser :: initialize_command(const uint8_t *buffer, int len)
 {
     return exec->do_initialize();
@@ -561,6 +581,7 @@ int IecParser :: execute_command(const uint8_t *buffer, int len)
             return copy_command(buffer, len);
         }
         break;
+    case 'G': return get_command(buffer, len);
     case 'I': return initialize_command(buffer, len);
     case 'M': return dir_command(buffer, len);
     case 'N': return format_command(buffer, len);

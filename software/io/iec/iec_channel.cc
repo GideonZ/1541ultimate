@@ -1370,6 +1370,26 @@ int IecCommandChannel::do_set_position(int chan, uint32_t pos, int recnr, int re
 
 int IecCommandChannel::do_get_partition_info(int part)
 {
+    IecPartition *p = drive->vfs->GetPartition(part);
+    buffer[30] = 0x0d;
+    memset(buffer, 0, 30);
+    if (p) {
+        drive->set_error(0, 0, 0);
+        buffer[1] = 1;
+        buffer[2] = (uint8_t)part;
+        strncpy((char *)(buffer+3), p->GetRootPath(), 16);
+        buffer[27] = 0xFF; // for now always reporting 0xFF0000 as partition size
+    } else {
+        drive->set_error(77, part, 0);
+    }
+
+    last_byte = 30;
+    pointer = 0;
+    prefetch = 0;
+    prefetch_max = 30;
+    state = e_status;
+    return 0;
+
 // Byte 0
 // - Partition type
 // 0 not created
@@ -1393,7 +1413,6 @@ int IecCommandChannel::do_get_partition_info(int part)
 // Byte 28      - Size of partition (middle byte)
 // Byte 29      - Size of partition (low byte)
 // Byte 30      - CHR$(13)
-    return 0;
 }
 
 int IecCommandChannel::ext_open_file(const char *filenameOrCommand)

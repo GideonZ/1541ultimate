@@ -23,6 +23,7 @@ public:
     int do_cmd_response(uint8_t *data, int len);
     int do_set_position(int chan, uint32_t pos, int recnr, int recoffset);
     int do_pwd_command();
+    int do_get_partition_info(int part);
 };
 
 
