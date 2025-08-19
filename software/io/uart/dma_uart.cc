@@ -184,6 +184,7 @@ uint8_t DmaUART::DmaUartInterrupt(void *context)
         if (uart_intr_status & DMAUART_TxInterrupt) {
             if (u->current_tx_buf) { // done, free it
                 cmd_buffer_free_isr(u->packets, u->current_tx_buf, &HPTaskAwoken);
+                u->uart->ictrl = DMAUART_BufReq_EN;
                 u->current_tx_buf = NULL;        
             }
             if (cmd_buffer_get_tx_isr(u->packets, &(u->current_tx_buf), &HPTaskAwoken) == pdTRUE) {
@@ -213,6 +214,7 @@ uint8_t DmaUART::DmaUartInterrupt(void *context)
                 if (u->isr_rx_callback(u->packets, rxb, &HPTaskAwoken) != pdTRUE) {
                     // Packet could not be queued, so we need to drop it, But now it's free again
                     cmd_buffer_free_isr(u->packets, rxb, &HPTaskAwoken);
+                    u->uart->ictrl = DMAUART_BufReq_EN;
                 }
             } else {
                 ioWrite8(UART_DATA, '!');
@@ -298,7 +300,7 @@ BaseType_t DmaUART :: GetBuffer(command_buf_t **buf, TickType_t ticks)
     return ret;
 }
 
-void DmaUART :: ReEnableBufferIRQ(void)
-{
-    uart->ictrl = DMAUART_BufReq_EN;
-}
+// void DmaUART :: ReEnableBufferIRQ(void)
+// {
+//     uart->ictrl = DMAUART_BufReq_EN;
+// }
