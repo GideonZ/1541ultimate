@@ -322,7 +322,7 @@ void ConfigStore :: effectuate()
         printf("Effectuate for %s not needed; not stale.\n", get_store_name());
         return;
     }
-    printf("Calling Effectuate on %s for %d objects.\n", get_store_name(), objects.get_elements());
+    // printf("Calling Effectuate on %s for %d objects.\n", get_store_name(), objects.get_elements());
     for(int i=0; i<objects.get_elements(); i++) {
         ConfigurableObject *obj = objects[i];
         if(obj) {
