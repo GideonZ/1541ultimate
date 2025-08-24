@@ -148,6 +148,7 @@ SRCS_CC	 =  u64ii_init.cc \
 			home_directory.cc \
 			reu_preloader.cc \
 			led_strip.cc \
+			bling_board.cc \
 			data_streamer.cc \
 			configio.cc \
 			u64_config.cc \
