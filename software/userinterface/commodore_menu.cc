@@ -95,6 +95,16 @@ void CommodoreMenu :: init(Screen *screen, Keyboard *k) // call on root!
     this->keyb = k;
 }
 
+int CommodoreMenu :: poll(int prev)
+{
+    mstring *msg = this->user_interface->getMessage();
+    if (msg) {
+        user_interface->popup(msg->c_str(), BUTTON_OK);
+        delete msg;
+    }
+    return ContextMenu::poll(prev);
+}
+
 void CommodoreMenu :: redraw()
 {
     draw();

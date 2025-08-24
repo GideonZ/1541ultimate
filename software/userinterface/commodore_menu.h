@@ -26,6 +26,7 @@ public:
 
     virtual void init(Screen *screen, Keyboard *k);
     void redraw();
+    int poll(int);
     int select_item(void);
     
     void create_task_items(void) {
