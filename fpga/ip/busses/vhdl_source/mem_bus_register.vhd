@@ -25,7 +25,7 @@ end entity;
 architecture rtl of mem_bus_register is
     signal req_c    : t_mem_req_32 := c_mem_req_32_init;
     signal got_accepted : std_logic;
-
+    signal extended_inhibit : std_logic;
     -- In between register blocks
 --    signal temp_inh  : std_logic := '0';
 --    signal temp_req  : t_mem_req_32;
@@ -120,16 +120,28 @@ begin
                 req_c.address     <= a_req.address;
                 req_c.byte_en     <= a_req.byte_en;
                 req_c.data        <= a_req.data;
+
+                -- If inhibit was active in the moment we send the request out,
+                -- we need to extend the refresh inhibit until the command actually
+                -- got accepted.
+                if a_req.request = '1' and a_refr_inh = '1' then
+                    extended_inhibit <= '1';
+                elsif got_accepted = '1' then
+                    extended_inhibit <= '0';
+                end if;
+
             else
                 req_c.tag(7) <= req_c.tag(7); -- test if we ever come here
             end if;
-            -- if reset = '1' then
+            if reset = '1' then
+                extended_inhibit <= '0';
             --     req_c.request <= '0';
-            -- end if;
-            b_refr_inh <= a_refr_inh;
+            end if;
         end if;
     end process;
-    
+
+    b_refr_inh <= a_refr_inh or extended_inhibit;
+
     process(b_resp, a_req, req_c, got_accepted)
     begin
         -- Just wire the data

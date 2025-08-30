@@ -311,3 +311,5 @@ print_abort .proc
             jmp $ffd2
 busy_string .text "PENDING COMMAND ABORTED.", $00
             .pend
+
+            .align $a000, $55
