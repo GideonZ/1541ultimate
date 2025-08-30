@@ -96,6 +96,49 @@ Keyboard_C64 :: ~Keyboard_C64()
 }
 
 #include "u64.h"
+uint8_t Keyboard_C64 :: scan_keyboard()
+{
+    printf("Scanning Keyboard: %p\n", col_register);
+    const uint8_t *map;
+
+    uint8_t shift_flag = 0;
+    uint8_t mtrx = 0x40;
+    uint8_t col, row;
+    uint8_t mod = 0;
+
+    *col_register = 0; // select all rows of keyboard
+    if (*row_register != 0xFF) { // process key image
+        map = keymap_normal;
+        col = 0xFE;
+        for(int idx=0,y=0;y<8;y++) {
+            *col_register = 0xFF;
+            *col_register = col;
+            *col_register = col;
+            do {
+                row = *row_register;
+                *col_register = col;
+            } while(row != *row_register);
+            printf("%b %b\n", col, row);
+            for(int x=0;x<8;x++, idx++) {
+                if((row & 1)==0) {
+                    mod = modifier_map[idx];
+                    shift_flag |= mod;
+                    if(!mod) {
+                        mtrx = idx;
+                    }
+                }
+                row >>= 1;
+            }
+            col = (col << 1) | 1;
+        }
+    } else {
+        printf(" no key pressed. %b\n", *row_register);
+    }
+    
+    map = keymaps[shift_flag & 0x07];
+    return map[mtrx];
+}
+
 void Keyboard_C64 :: scan(void)
 {
     const uint8_t *map;

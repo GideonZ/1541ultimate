@@ -112,13 +112,15 @@ extern "C" void ultimate_main(void *a)
 #if U64 == 2
     i2c->enable_scan(true, false);
     overlay = new Overlay(false, 12, U64II_OVERLAY_BASE);
-    Keyboard *kb = new Keyboard_C64(overlay, &U64II_KEYB_ROW, &U64II_KEYB_COL, &U64II_KEYB_JOY);
+    Keyboard_C64 *kb = new Keyboard_C64(overlay, &U64II_KEYB_ROW, &U64II_KEYB_COL, &U64II_KEYB_JOY);
     overlay->setKeyboard(kb);
 #elif U64 == 1
     overlay = new Overlay(false, 11, U64_OVERLAY_BASE);
-    Keyboard *kb = new Keyboard_C64(overlay, C64_PLD_PORTB, C64_PLD_PORTA, C64_PLD_PORTA);
+    Keyboard_C64 *kb = new Keyboard_C64(overlay, C64_PLD_PORTB, C64_PLD_PORTA, C64_PLD_PORTA);
     overlay->setKeyboard(kb);
 #endif
+
+
 
 #if U64
     overlayUserInterface = new UserInterface(title);
@@ -150,6 +152,15 @@ extern "C" void ultimate_main(void *a)
             // will clean itself up
         }
     }
+
+#if U64 == 2
+    char bufje[24];
+    int initkey = kb->scan_keyboard();
+    if (initkey > 0) {
+        sprintf(bufje, "Key at boot: %d", initkey);
+        c64UserInterface->postMessage(bufje);
+    }
+#endif
 
     printf("All linked modules have been initialized and are now running.\n");
     print_tasks();

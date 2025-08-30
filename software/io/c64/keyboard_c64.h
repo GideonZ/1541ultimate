@@ -30,6 +30,8 @@ public:
     Keyboard_C64(GenericHost *, volatile uint8_t *r, volatile uint8_t *c, volatile uint8_t *j);
     ~Keyboard_C64();
     
+    uint8_t scan_keyboard();
+
     void scan(void);
     void set_delays(int, int);
     int  getch(void);
