@@ -148,8 +148,12 @@ int ContextMenu :: poll(int sub)
             c = keyb->getch();
             if(c > 0) {
                 ret = handle_key(c);
-                if(ret)
+                if(ret) {
                     context_state = e_finished;
+                    if (when_done == MENU_HIDE) {
+                        keyb->wait_free();
+                    }
+                }
             } else if(c == -2) {
             	ret = when_done;
             }
