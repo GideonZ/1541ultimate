@@ -76,11 +76,12 @@ architecture gideon of ulpi_bus is
     signal state            : t_state;
     
     attribute iob : string;
-    attribute iob of ulpi_data_in  : signal is "true";
-    attribute iob of ulpi_dir_d1   : signal is "true";
-    attribute iob of ulpi_nxt_d1   : signal is "true";
-    attribute iob of ulpi_data_out : signal is "false";
-    attribute iob of ULPI_STP      : signal is "false";
+    attribute iob of ulpi_data_in  : signal is "false";
+    attribute iob of ulpi_dir_d1   : signal is "false";
+    attribute iob of ulpi_nxt_d1   : signal is "false";
+    attribute iob of ulpi_data_out : signal is "true";
+    attribute iob of ulpi_stop     : signal is "true";
+
 begin
     -- Marking incoming data based on next/dir pattern
     rx_data      <= ulpi_data_in;
@@ -244,9 +245,9 @@ begin
     end process;
 
     bus_has_our_data <= '1' when ULPI_DIR='0' and ulpi_dir_d1='0' else '0';    
---    ULPI_DATA  <= ulpi_data_out when bus_has_our_data = '1'  else (others => 'Z');
+    -- bus_has_our_data <= '1' when ulpi_dir_d1 = '0' else '0'; -- Eliminate the loop from ULPI_DIR
 
     ULPI_DATA_O <= ulpi_data_out;
-    ULPI_DATA_T <= bus_has_our_data;
+    ULPI_DATA_T <= not ULPI_DIR; -- when falling_edge(clock); --bus_has_our_data;
     ULPI_STP    <= ulpi_stop;
 end gideon;    
