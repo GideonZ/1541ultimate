@@ -235,8 +235,10 @@ int ConfigBrowser :: handle_key(int c)
             if(state->level == start_level) {
                 // check if we need to save to flash
                 on_exit();
+                ret = MENU_CLOSE;
+            } else {
+                state->level_up();
             }
-            ret = MENU_CLOSE;
             break;
         case KEY_DOWN: // down
             state->down(1);
@@ -254,6 +256,9 @@ int ConfigBrowser :: handle_key(int c)
             if (user_interface->navmode == 0) {
                 // do nothing
             } else {
+                if (state->level == 1) { // going to level 0
+                    ((ConfigBrowserState *)state)->on_close();
+                }
                 if(state->level == start_level) {
                     on_exit();
                     ret = MENU_CLOSE; // leave
@@ -334,6 +339,9 @@ int ConfigBrowser :: handle_key(int c)
             break;
         case KEY_LEFT: // left
 		case KEY_BACK: // del
+            if (state->level == 1) { // going to level 0
+                ((ConfigBrowserState *)state)->on_close();
+            }
             if(state->level == start_level) {
                 on_exit();
                 ret = MENU_CLOSE; // leave
