@@ -62,11 +62,11 @@ extern "C" void SetVideoMode1080p(t_video_mode mode)
     const t_video_color_timing *ct = color_timings[(int)mode];
     if (ct->audio_div == 77) {
         SetScanModeRegisters(regs, &pal);
-        SetVicCrop(0, 9, 400, 270);
+        SetVicCrop(0, 9, 392, 270);
         regs->scaler_vstretch = 0x02 + 12; // resync, stretch off
     } else {
         SetScanModeRegisters(regs, &ntsc);
-        SetVicCrop(0, 0, 400, 240);
+        SetVicCrop(0, 0, 392, 240);
         regs->scaler_vstretch = 0x03 + 12; // resync, stretch on
     }
 }
