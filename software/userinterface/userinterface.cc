@@ -517,23 +517,6 @@ void UserInterface :: run_editor(const char *text_buf, int max_len)
     delete edit;
 }
 
-int UserInterface :: enterSelection()
-{
-#ifndef NO_FILE_ACCESS
-	// because we know that the command can only be caused by a TreeBrowser, we can safely cast
-	TreeBrowser *browser = (TreeBrowser *)(get_root_object());
-	if (browser) {
-		if (browser->state) {
-			if(browser->state->into2()) {
-			    return -1;
-			}
-			return 0;
-		}
-	}
-#endif
-	return -1;
-}
-
 QueueHandle_t userMessageQueue = 0;
 
 void UserInterface :: postMessage(const char *msg)

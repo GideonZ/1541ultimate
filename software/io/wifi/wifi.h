@@ -54,6 +54,7 @@ class WiFi : public Esp32Application
     static void RunModeTaskStart(void *context);
     void RunModeThread();
     void RefreshRoot();
+    void RefreshAPs();
 public:
     WiFi();
     static void Init(void *obj, void *param);

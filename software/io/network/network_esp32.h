@@ -23,7 +23,7 @@ public:
 				driver_free_function_t free);
     virtual ~NetworkLWIP_WiFi();
 
-    const char *identify() { return "NetworkLWIP_WiFi"; }
+    const char *identify() { return "WiFi"; }
     void attach_config();
 
     // User Interface

@@ -263,7 +263,7 @@ void NetworkInterface :: getDisplayString(int index, char *buffer, int width)
 {
     char ip[16];
     if (is_link_up()) {
-        sprintf(buffer, "Net%d    IP: %#s\eELink Up", index, width - 21, getIpAddrString(ip, 16));
+        sprintf(buffer, "Net%d    IP: %#s\eMLink Up", index, width - 21, getIpAddrString(ip, 16));
     } else {
         sprintf(buffer, "Net%d    MAC %b:%b:%b:%b:%b:%b%#s\eJLink Down", index, mac_address[0], mac_address[1],
                 mac_address[2], mac_address[3], mac_address[4], mac_address[5], width - 38, "");

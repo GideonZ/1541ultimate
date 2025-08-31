@@ -87,8 +87,6 @@ public:
     virtual void update_progress(const char *msg, int steps); // not blocking
     virtual void hide_progress(void); // not blocking (of course)
 
-    virtual int enterSelection(void);
-
     void init(GenericHost *h);
     void appear(void);
     void set_screen(Screen *s); /* Only used in updater */

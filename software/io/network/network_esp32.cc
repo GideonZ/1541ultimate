@@ -79,7 +79,7 @@ void NetworkLWIP_WiFi :: getDisplayString(int index, char *buffer, int width)
                 mac_address[3], mac_address[4], mac_address[5], width - 38, "");
         break;
     case eWifi_Connected:
-        sprintf(buffer, "WiFi    IP: %#s\eELink Up", width - 21, getIpAddrString(ip, 16));
+        sprintf(buffer, "WiFi    IP: %#s\eMLink Up", width - 21, getIpAddrString(ip, 16));
         break;
     case eWifi_Disabled:
         sprintf(buffer, "WiFi    %#s\eJDisabled", width - 17, wifi.getModuleName());
@@ -136,7 +136,7 @@ void NetworkLWIP_WiFi :: fetch_context_items(IndexedList<Action *>&items)
         items.append(new Action("Show APs..", NetworkLWIP_WiFi :: list_aps, 0, 0));
         items.append(new Action("Connect", NetworkLWIP_WiFi :: auto_connect, 0, 0));
         items.append(new Action("Connect to..", NetworkLWIP_WiFi :: manual_connect, 0, 0));
-        items.append(new Action("Rescan APs", NetworkLWIP_WiFi :: rescan, 0, 0));
+        // items.append(new Action("Rescan APs", NetworkLWIP_WiFi :: rescan, 0, 0));
         items.append(new Action("Forget APs", NetworkLWIP_WiFi :: clear_aps, 0, 0));
         items.append(new Action("Disable", NetworkLWIP_WiFi :: disable, 0, 0));
     } else if ((wifi.getState() == eWifi_Off) || (wifi.getState() == eWifi_Disabled)) {
@@ -206,8 +206,9 @@ SubsysResultCode_e NetworkLWIP_WiFi :: manual_connect(SubsysCommand *cmd)
 
 SubsysResultCode_e NetworkLWIP_WiFi :: list_aps(SubsysCommand *cmd)
 {
+    wifi.sendEvent(EVENT_RESCAN);
     if(cmd->user_interface) {
-        cmd->user_interface->enterSelection(); // ignore result, as it is just sending a signal
+        cmd->user_interface->send_keystroke(KEY_RIGHT);
         return SSRET_OK;
     }
     return SSRET_NO_USER_INTERFACE;

@@ -105,7 +105,7 @@ public:
     virtual ~NetworkInterface();
 
     virtual void attach_config();
-    virtual const char *identify() { return "NetworkLWIP"; }
+    virtual const char *identify() { return "Wired Network"; }
 
 	bool start();
     void stop();
