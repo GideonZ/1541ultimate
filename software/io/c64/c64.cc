@@ -1386,12 +1386,10 @@ void C64 :: list_crts(ConfigItem *it, IndexedList<char *>& strings)
 
 void C64 :: list_kernals(ConfigItem *it, IndexedList<char *>& strings)
 {
-#if !U64
     // Always return at least the empty string
     char *empty = new char[1];
     *empty = 0;
     strings.append(empty);
-#endif
 
 #ifndef NO_FILE_ACCESS
     Path p;
@@ -1417,6 +1415,11 @@ void C64 :: list_kernals(ConfigItem *it, IndexedList<char *>& strings)
 
 void C64 :: list_basics(ConfigItem *it, IndexedList<char *>& strings)
 {
+    // Always return at least the empty string
+    char *empty = new char[1];
+    *empty = 0;
+    strings.append(empty);
+
 #ifndef NO_FILE_ACCESS
     Path p;
     p.cd(ROMS_DIRECTORY);
@@ -1441,6 +1444,11 @@ void C64 :: list_basics(ConfigItem *it, IndexedList<char *>& strings)
 
 void C64 :: list_chars(ConfigItem *it, IndexedList<char *>& strings)
 {
+    // Always return at least the empty string
+    char *empty = new char[1];
+    *empty = 0;
+    strings.append(empty);
+
 #ifndef NO_FILE_ACCESS
     Path p;
     p.cd(ROMS_DIRECTORY);
