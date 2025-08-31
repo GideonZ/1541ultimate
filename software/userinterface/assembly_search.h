@@ -408,6 +408,14 @@ public:
                 cmd_ui->popup("No Valid Network Link", BUTTON_OK);
             return;
         }
+        Screen *scr = cmd_ui->screen;
+
+        // TODO: Refactor to function of screen itself
+        scr->set_color(6);
+        scr->set_background(0);
+        scr->move_cursor(0, scr->get_size_y()-1);
+        scr->output_fixed_length("Connecting...", 0, scr->get_size_x()-9);
+
         BrowsableAssemblyRoot *root = assembly_gui.getRoot();
         if (!root->isInitialized()) {
             if (cmd_ui)
