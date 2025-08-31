@@ -123,7 +123,7 @@ extern "C" void ultimate_main(void *a)
 
 
 #if U64
-    overlayUserInterface = new UserInterface(title);
+    overlayUserInterface = new UserInterface(title, true);
     Browsable *root = new BrowsableRoot();
     root_tree_browser_overlay = new TreeBrowser(overlayUserInterface, root);
     overlayUserInterface->activate_uiobject(root_tree_browser_overlay); // root of all evil!
@@ -136,7 +136,7 @@ extern "C" void ultimate_main(void *a)
 
     UserInterface *c64UserInterface = NULL;
     if(c64) {
-        c64UserInterface = new UserInterface(title);
+        c64UserInterface = new UserInterface(title, true);
         // Instantiate and attach the root tree browser
         Browsable *root = new BrowsableRoot();
 #if COMMODORE

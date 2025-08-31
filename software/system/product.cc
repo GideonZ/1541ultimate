@@ -14,8 +14,13 @@ static const char *product_name[] = {
     "Ultimate II+",
     "Ultimate II+L",
     "Ultimate 64",
+#if COMMODORE
+    "C64 Ultimate (MK1)",
+    "C64 Ultimate",
+#else
     "Ultimate 64 Elite",
     "Ultimate 64-II",
+#endif
 };
 
 static const char *product_hostname[] = {
@@ -24,8 +29,13 @@ static const char *product_hostname[] = {
     "Ultimate-IIp",
     "Ultimate-IIpL",
     "Ultimate-64",
+#if COMMODORE
+    "C64-Ultimate-MK1",
+    "C64-Ultimate",
+#else    
     "Ultimate-64-Elite",
     "Ultimate-64-II",
+#endif
 };
 
 #if U64

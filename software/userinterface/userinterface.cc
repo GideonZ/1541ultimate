@@ -16,8 +16,7 @@
 #endif // NO_FILE_ACCESS
 
 /* Configuration */
-static const char *colors[] = { "Black", "White", "Red", "Cyan", "Purple", "Green", "Blue", "Yellow",
-                         "Orange", "Brown", "Pink", "Dark Grey", "Mid Grey", "Light Green", "Light Blue", "Light Grey" };
+static const char *colors[] = { "Commodore Blue", "Ultimate Black" };
                           
 static const char *filename_overflow_squeeze[] = { "None", "Beginning", "Middle", "End" };
 static const char *itype[]      = { "Freeze", "Overlay on HDMI" };
@@ -30,16 +29,10 @@ struct t_cfg_definition user_if_config[] = {
 #endif
 #if COMMODORE
     { CFG_USERIF_NAVIGATION, CFG_TYPE_ENUM,   "Navigation Style",     "%s", navstyles, 0,  1, 1 },
-    { CFG_USERIF_BACKGROUND, CFG_TYPE_ENUM,   "Background color",     "%s", colors,  0, 15, 14 },
-    { CFG_USERIF_BORDER,     CFG_TYPE_ENUM,   "Border color",         "%s", colors,  0, 15, 6 },
-    { CFG_USERIF_FOREGROUND, CFG_TYPE_ENUM,   "Foreground color",     "%s", colors,  0, 15, 1 },
-    { CFG_USERIF_SELECTED,   CFG_TYPE_ENUM,   "Selected Item color",  "%s", colors,  0, 15, 0 },
+    { CFG_USERIF_COLORSCHEME,CFG_TYPE_ENUM,   "Color Scheme",         "%s", colors,  0,  1, 1 },
 #else
     { CFG_USERIF_NAVIGATION, CFG_TYPE_ENUM,   "Navigation Style",     "%s", navstyles, 0,  1, 0 },
-    { CFG_USERIF_BACKGROUND, CFG_TYPE_ENUM,   "Background color",     "%s", colors,  0, 15, 0 },
-    { CFG_USERIF_BORDER,     CFG_TYPE_ENUM,   "Border color",         "%s", colors,  0, 15, 0 },
-    { CFG_USERIF_FOREGROUND, CFG_TYPE_ENUM,   "Foreground color",     "%s", colors,  0, 15, 15 },
-    { CFG_USERIF_SELECTED,   CFG_TYPE_ENUM,   "Selected Item color",  "%s", colors,  0, 15, 1 },
+    { CFG_USERIF_COLORSCHEME,CFG_TYPE_ENUM,   "Color Scheme",         "%s", colors,  0,  1, 0 },
 #endif
 
 #if U64
@@ -54,7 +47,7 @@ struct t_cfg_definition user_if_config[] = {
     { CFG_TYPE_END,           CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
 };
 
-UserInterface :: UserInterface(const char *title) : title(title)
+UserInterface :: UserInterface(const char *title, bool use_logo) : title(title)
 {
     initialized = false;
     focus = -1;
@@ -67,6 +60,7 @@ UserInterface :: UserInterface(const char *title) : title(title)
     color_sel_bg = 0;
     filename_overflow_squeeze = 0;
     menu_response_to_action = MENU_NOP;
+    logo = use_logo;
     register_store(0x47454E2E, "User Interface Settings", user_if_config);
     effectuate_settings();
 }
@@ -84,14 +78,28 @@ UserInterface :: ~UserInterface()
     printf(" bye UI!\n");
 }
 
+typedef struct {
+    int border;
+    int background;
+    int foreground;
+    int selected;
+    int selected_bg;
+} t_scheme_colors;
+
+const t_scheme_colors schemes[] = {
+    { 6, 14,  1, 0, 6 },
+    { 0,  0, 12, 1, 6 },
+};
+
 void UserInterface :: effectuate_settings(void)
 {
-    color_border = cfg->get_value(CFG_USERIF_BORDER);
-    color_fg     = cfg->get_value(CFG_USERIF_FOREGROUND);
-    color_bg     = cfg->get_value(CFG_USERIF_BACKGROUND);
-    color_sel    = cfg->get_value(CFG_USERIF_SELECTED);
+    const t_scheme_colors *scheme = logo ? &schemes[cfg->get_value(CFG_USERIF_COLORSCHEME)] : &schemes[1]; // for telnet always use black
+    color_border = scheme->border;
+    color_fg     = scheme->foreground;
+    color_bg     = scheme->background;
+    color_sel    = scheme->selected;
 #if U64
-    color_sel_bg = cfg->get_value(CFG_USERIF_SELECTED_BG);
+    color_sel_bg = scheme->selected_bg;
 #endif
     config_save  = cfg->get_value(CFG_USERIF_CFG_SAVE);
     filename_overflow_squeeze = cfg->get_value(CFG_USERIF_FILENAME_OVERFLOW_SQUEEZE);
@@ -380,32 +388,32 @@ void UserInterface :: set_screen_title()
     int width = screen->get_size_x();
     int height = screen->get_size_y();
 
-#if COMMODORE
-    screen->clear();
-    screen->output("\e6\x12\x12\x12\x12\x12\x12\x12\x12\x12\x12\x1c");
-    screen->output("\x14\x15\x17");
-    screen->output("\e1 COMMODORE 64 ");
-    screen->output("\e6\x1e\x12\x12\x12\x12\x12\x12\x12\x12\x12\x12\x12");
-    screen->move_cursor(0, 1);
-    screen->output("\e2\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x1d");
-    screen->output("\e6\x18\x16\e2\x19");
-    screen->output(" \eR\e1\x1a ULTIMATE \x1a\er ");
-    screen->output("\e2\x1f\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b");
-#else
-    int len = title.length();
-    int hpos = (width - len) / 2;
+    if (logo) {
+        screen->clear();
+        screen->output("\e6\x12\x12\x12\x12\x12\x12\x12\x12\x12\x12\x1c");
+        screen->output("\x14\x15\x17");
+        screen->output("\e1 COMMODORE 64 ");
+        screen->output("\e6\x1e\x12\x12\x12\x12\x12\x12\x12\x12\x12\x12\x12");
+        screen->move_cursor(0, 1);
+        screen->output("\e2\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x1d");
+        screen->output("\e6\x18\x16\e2\x19");
+        screen->output(" \eR\e1\x1a ULTIMATE \x1a\er ");
+        screen->output("\e2\x1f\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b");
+    } else {
+        int len = title.length();
+        int hpos = (width - len) / 2;
 
-    screen->clear();
-    screen->move_cursor(hpos, 0);
-    screen->output("\eA");
-    screen->output(title.c_str());
-    screen->output("\eO");
-    screen->move_cursor(0, 1);
-	screen->repeat('\002', width);
-    screen->move_cursor(0, height-1);
-	screen->scroll_mode(false);
-	screen->repeat('\002', width);
-#endif
+        screen->clear();
+        screen->move_cursor(hpos, 0);
+        screen->output("\eA");
+        screen->output(title.c_str());
+        screen->output("\eO");
+        screen->move_cursor(0, 1);
+        screen->repeat('\002', width);
+        screen->move_cursor(0, height-1);
+        screen->scroll_mode(false);
+        screen->repeat('\002', width);
+    }
 }
 
 /* Blocking variants of our simple objects follow: */

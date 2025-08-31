@@ -28,6 +28,15 @@ class BrowsableNetwork : public Browsable
         this->index = index;
     }
 
+    const char *getName()
+    {
+        NetworkInterface *ni = NetworkInterface ::getInterface(index);
+        if (ni) {
+            return ni->identify();
+        }
+        return "Unknown Network";
+    }
+
     void getDisplayString(char *buffer, int width)
     {
         NetworkInterface *ni = NetworkInterface ::getInterface(index);

@@ -389,7 +389,7 @@ void Window :: draw_border(void)
     parent->output(BORD_UPPER_RIGHT_CORNER);
     parent->repeat(CHR_HORIZONTAL_LINE, window_x-2);
     parent->set_color(12);
-    parent->output_raw(BORD_UPPER_LEFT_CORNER);
+    parent->output(BORD_UPPER_LEFT_CORNER);
 
     parent->set_color(15);
     for(int i=1;i<window_y-1;i++) {
