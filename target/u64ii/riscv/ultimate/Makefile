@@ -213,9 +213,9 @@ SRCS_ASM =
 
 SRCS_ASMS = crt0.S port_asm.S
 
-SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas eapi.tas default_kernal.tas
+SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas eapi.tas # default_kernal.tas
 
-SRCS_BIN =  basic.bin chars.bin module.bin sidcrt.bin muscrt.bin musplayer.bin default_chars.bin raminit.bin
+SRCS_BIN =  basic.bin chars.bin module.bin sidcrt.bin muscrt.bin musplayer.bin raminit.bin characters.901225-01.bin kernal.901227-03.bin # default_chars.bin
 
 SRCS_IEC = iec_code.iec
 

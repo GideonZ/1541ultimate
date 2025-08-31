@@ -82,9 +82,9 @@ struct t_cfg_definition c64_config[] = {
 #endif
     { CFG_C64_FASTRESET, CFG_TYPE_ENUM,   "Fast Reset",                   "%s", en_dis,     0,  1, 0 },
 #if U64
-    { CFG_C64_KERNFILE, CFG_TYPE_STRFUNC, "Kernal ROM",                   "%s", (const char **)C64 :: list_kernals, 0, 30, (int)"kernal.bin" },
-    { CFG_C64_BASIFILE, CFG_TYPE_STRFUNC, "Basic ROM",                    "%s", (const char **)C64 :: list_basics, 0, 30, (int)"basic.bin" },
-    { CFG_C64_CHARFILE, CFG_TYPE_STRFUNC, "Char ROM",                     "%s", (const char **)C64 :: list_chars, 0, 30, (int)"chars.bin" },
+    { CFG_C64_KERNFILE, CFG_TYPE_STRFUNC, "Kernal ROM",                   "%s", (const char **)C64 :: list_kernals, 0, 30, (int)"" },
+    { CFG_C64_BASIFILE, CFG_TYPE_STRFUNC, "Basic ROM",                    "%s", (const char **)C64 :: list_basics, 0, 30, (int)"" },
+    { CFG_C64_CHARFILE, CFG_TYPE_STRFUNC, "Char ROM",                     "%s", (const char **)C64 :: list_chars, 0, 30, (int)"" },
 #else
     { CFG_C64_KERNFILE, CFG_TYPE_STRFUNC, "Alternate Kernal",             "%s", (const char **)C64 :: list_kernals, 0, 30, (int)"" },
 #endif
@@ -793,25 +793,30 @@ void C64::init_system_roms(void)
     C64_KERNAL_ENABLE = 0;
     
 #if U64
-    extern uint8_t _default_kernal_65_start[];
-    extern uint8_t _default_chars_bin_start[];
+    extern uint8_t _kernal_901227_03_bin_start[];
+    extern uint8_t _basic_bin_start[];
+    extern uint8_t _characters_901225_01_bin_start[];
 
     FRESULT fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_KERNFILE), (uint8_t *)U64_KERNAL_BASE, 8192, NULL);
     if (fres != FR_OK) {
         printf("Failed to load KERNAL ROM; loading default.\n");
-        memcpy((void *)U64_KERNAL_BASE, (void *)_default_kernal_65_start, 8192);
-    } else if (cfg->get_value(CFG_C64_FASTRESET)) {
+        memcpy((void *)U64_KERNAL_BASE, (void *)_kernal_901227_03_bin_start, 8192);
+    }
+    if (cfg->get_value(CFG_C64_FASTRESET)) {
         unsigned char *kernal = (unsigned char *)U64_KERNAL_BASE;
         if (!memcmp((void *) (kernal+0x1d6c), (void *) fastresetOrg, sizeof(fastresetOrg))) {
             memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, 22);
         }
     }
-
-    FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_BASIFILE), (uint8_t *)U64_BASIC_BASE, 8192, NULL);
+    fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_BASIFILE), (uint8_t *)U64_BASIC_BASE, 8192, NULL);
+    if (fres != FR_OK) {
+        printf("Failed to load BASIC ROM; loading default.\n");
+        memcpy((void *)U64_BASIC_BASE, (void *)_basic_bin_start, 8192);
+    }
     fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_CHARFILE), (uint8_t *)U64_CHARROM_BASE, 4096, NULL);
     if (fres != FR_OK) {
         printf("Failed to load CHAR ROM; loading default.\n");
-        memcpy((void *)U64_CHARROM_BASE, (void *)_default_chars_bin_start, 4096);
+        memcpy((void *)U64_CHARROM_BASE, (void *)_characters_901225_01_bin_start, 4096);
     }
 
 #else
