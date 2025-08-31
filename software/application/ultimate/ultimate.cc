@@ -110,7 +110,6 @@ extern "C" void ultimate_main(void *a)
     UserInterface *overlayUserInterface = NULL;
 
 #if U64 == 2
-    i2c->enable_scan(true, false);
     overlay = new Overlay(false, 12, U64II_OVERLAY_BASE);
     Keyboard_C64 *kb = new Keyboard_C64(overlay, &U64II_KEYB_ROW, &U64II_KEYB_COL, &U64II_KEYB_JOY);
     overlay->setKeyboard(kb);
@@ -153,39 +152,9 @@ extern "C" void ultimate_main(void *a)
         }
     }
 
-#if U64 == 2
-    char bufje[24];
-    int initkey = kb->scan_keyboard();
-    if (initkey > 0) {
-        sprintf(bufje, "Key at boot: %d", initkey);
-        c64UserInterface->postMessage(bufje);
-    }
-#endif
-
     printf("All linked modules have been initialized and are now running.\n");
     print_tasks();
 
-/*
-#ifdef U64
-    {
-       *C64_PLD_PORTA = 251;
-       uint8_t k1 = *C64_PLD_PORTB;
-       *C64_PLD_PORTA = 247;
-       uint8_t k2 = *C64_PLD_PORTB;
-       *C64_PLD_PORTA = 255;
-
-       if (k1 == 239)
-          C64_VIDEOFORMAT = 0, C64_BURST_PHASE=24;
-       if (k1 == 253)
-          C64_VIDEOFORMAT = 4;
-       if (k1 == 251)
-          U64_HDMI_ENABLE = 0;
-       if (k2 == 223)
-          U64_HDMI_ENABLE = 1;
-
-    }
-#endif
-*/
 
     while(c64) {
         int doIt = 0;

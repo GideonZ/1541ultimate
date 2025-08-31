@@ -276,7 +276,7 @@ dc 0c 11 00 00 9e 01 1d  00 72 51 d0 1e 20 6e 28
 */
 
 struct t_cfg_definition u64_cfg[] = {
-    { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  5, 1 },
+    { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  5, 0 },
     { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  1, 0 },
     { CFG_USERPORT_EN,          CFG_TYPE_ENUM, "UserPort Power Enable",        "%s", en_dis,       0,  1, 1 },
 //    { CFG_CART_PREFERENCE,      CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,    0,  2, 0 }, // moved to C64 for user consistency
@@ -640,7 +640,6 @@ void U64Config :: U64SidSockets :: detect(void)
         }
     }
     if (cfg->is_flash_stale()) {
-        cfg->write();
         UserInterface :: postMessage("SID changed. Please review settings");
     }
 }
@@ -823,8 +822,30 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
         }
 
         printf("*** Init U64 Configurator\n");
+#if U64 == 2
+        i2c->enable_scan(true, false);
+#endif
         u64_configurator->sockets.detect();
         u64_configurator->clear_ram();
+
+        // Boot hotkey
+        {
+            C64_POKE(0xDC02, 0xFF);
+            C64_POKE(0xDC03, 0x00);
+            uint8_t key = Keyboard_C64 :: scan_keyboard(&CIA1_DPB, &CIA1_DPA);
+            printf("Key at U64 Config: %d\n", key);
+            switch(key) {
+            case 0x10: // ctrl-p
+                cfg->set_value(CFG_SYSTEM_MODE, 0);
+                break;
+            case 0x0E: // ctrl-n
+                cfg->set_value(CFG_SYSTEM_MODE, 1);
+                break;
+            default:
+                break;
+            }
+        }
+
         u64_configurator->hdmiMonitor = u64_configurator->IsMonitorHDMI(); // requires I2C
         u64_configurator->effectuate_settings(); // requires I2C
         u64_configurator->sockets.effectuate_settings();
@@ -834,6 +855,10 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 #if U64 == 2
         u64_configurator->speakercfg.effectuate_settings();
 #endif
+        if (cfg->is_flash_stale()) {
+            cfg->write();
+        }
+
         xTaskCreate( U64Config :: reset_task, "U64 Reset Task", configMINIMAL_STACK_SIZE, u64_configurator, PRIO_REALTIME, &u64_configurator->resetTaskHandle );
         printf("*** U64 Configurator Done\n");
     }
