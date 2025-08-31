@@ -367,7 +367,7 @@ void ContextMenu :: reset_quick_seek(void)
 void ContextMenu :: redraw()
 {
     window->set_color(user_interface->color_fg);
-    window->set_background(user_interface->color_bg);
+    //window->set_background(user_interface->color_bg);
 
     // for the hook, use the old size parameters
     int rows = window->get_size_y();

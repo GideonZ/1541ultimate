@@ -29,10 +29,10 @@ struct t_cfg_definition user_if_config[] = {
 #endif
 #if COMMODORE
     { CFG_USERIF_NAVIGATION, CFG_TYPE_ENUM,   "Navigation Style",     "%s", navstyles, 0,  1, 1 },
-    { CFG_USERIF_COLORSCHEME,CFG_TYPE_ENUM,   "Color Scheme",         "%s", colors,  0,  1, 1 },
+    { CFG_USERIF_COLORSCHEME,CFG_TYPE_ENUM,   "Color Scheme",         "%s", colors,  0,  1, 0 },
 #else
     { CFG_USERIF_NAVIGATION, CFG_TYPE_ENUM,   "Navigation Style",     "%s", navstyles, 0,  1, 0 },
-    { CFG_USERIF_COLORSCHEME,CFG_TYPE_ENUM,   "Color Scheme",         "%s", colors,  0,  1, 0 },
+    { CFG_USERIF_COLORSCHEME,CFG_TYPE_ENUM,   "Color Scheme",         "%s", colors,  0,  1, 1 },
 #endif
 //    { CFG_USERIF_WORDWRAP,   CFG_TYPE_ENUM,   "Wordwrap text viewer", "%s", en_dis,  0,  1, 1 },
     { CFG_USERIF_HOME_DIR,   CFG_TYPE_STRING, "Home Directory",        "%s", NULL, 0, 31, (int)"" },
