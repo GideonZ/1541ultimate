@@ -171,7 +171,7 @@ void SystemInfo :: generate(UserInterface *ui)
     buffer.format("   Build machine:   " APP_BUILD_MACHINE "\n");
     buffer.format("Ultimate FPGA core: 1%02X\n", getFpgaVersion());
     if(getFpgaCapabilities() & CAPAB_ULTIMATE64) {
-        buffer.format("C64 FPGA version:   V1.%02X\n", C64_CORE_VERSION);
+        buffer.format("C64U FPGA version:  V1.%02X\n", C64_CORE_VERSION);
     }
     Flash *flash = get_flash();
     if (flash) {

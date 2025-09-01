@@ -130,7 +130,7 @@ C64::C64()
 {
     flash = get_flash();
 
-    register_store(0x43363420, "C64 and Cartridge Settings", c64_config);
+    register_store(0x43363420, "Cartridge and ROM Settings", c64_config);
 
 #ifdef U64
     cfg->set_change_hook(CFG_C64_CART_PREF, C64::setCartPref);

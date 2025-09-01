@@ -794,7 +794,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 
     if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
 		struct t_cfg_definition *def = u64_cfg;
-		register_store(STORE_PAGE_ID, "U64 Specific Settings", def);
+		register_store(STORE_PAGE_ID, "C64U Specific Settings", def);
 
 		// Tweak: This has to be done first in order to make sure that the correct cart is started
 		// at cold boot.

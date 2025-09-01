@@ -30,32 +30,31 @@ static const char *helptext_ult=
 		"F1:         Selection Page up\n"
 		"F7:         Selection Page down\n"
 		"\n"
-		"F2:         Enter the setup menu\n"
+		"F2:         Enter Advanced Settings\n"
 		"F5:         Action menu\n"
 #ifndef RECOVERYAPP
         "F6:         Search Assembly64 Database\n"
 #endif
 		"\n"
 		"SPACE:      Select file / directory\n"
-		"C=-A        Select all\n"
-		"C=-N        Deselect all\n"
-		"C=-C        Copy current selection\n"
-		"C=-V        Paste selection here.\n"
+		"C= A:       Select all\n"
+		"C= N:       Deselect all\n"
+		"C= C:       Copy current selection\n"
+		"C= V:       Paste selection here\n"
 		"\n"
         "HOME:       Enter home directory\n"
-        "C=-HOME:    Set current dir as home\n"
+        "C= HOME:    Set current dir as home\n"
         "INST:       Delete selected files\n"
         "\n"  
 		"Quick seek: Use the keyboard to type\n"
-		"            the name to search for.\n"
+		"            the name to search for:\n"
 		"            You can use ? as a\n"
-		"            wildcard.\n"
-        "+/-:        Change value in config.\n"
+		"            wildcard\n"
         "\n"
 #ifndef RECOVERYAPP
         "F4:         Show System Information\n"
 #endif
-        "C=-L:       Show debug log\n"
+        "C= L:       Show Debug Log\n"
 		"\nRUN/STOP to close this window.";
 
 static const char *helptext_wasd=
@@ -74,25 +73,25 @@ static const char *helptext_wasd=
         "F5:         Page down\n"
         "F7:         Help\n"
         "\n"
-        "F2:         Enter advanced setup\n"
+        "F2:         Enter Advanced Settings\n"
     #ifndef RECOVERYAPP
         "F4:         Show System Information\n"
         "F6:         Search Assembly64\n"
     #endif
         "\n"
         "SPACE:      Select file / directory\n"
-        "C=-A        Select all\n"
-        "C=-N        Deselect all\n"
-        "C=-C        Copy current selection\n"
-        "C=-V        Paste selection here.\n"
+        "C= A:       Select all\n"
+        "C= N:       Deselect all\n"
+        "C= C:       Copy current selection\n"
+        "C= V:       Paste selection here\n"
         "\n"
         "HOME:       Enter home directory\n"
-        "C=-HOME:    Set current dir as home\n"
+        "C= HOME:    Set current dir as home\n"
         "INST:       Delete selected files\n"
         "\n"  
     #ifndef RECOVERYAPP
     #endif
-        "C=-L:       Show debug log\n"
+        "C= L:       Show debug log\n"
         "\nRUN/STOP to close this window.";
 
 #include "stream_textlog.h"
