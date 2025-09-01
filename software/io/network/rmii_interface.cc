@@ -58,8 +58,10 @@ RmiiInterface :: RmiiInterface()
 			}
 		}
 
-		mdio_write(0x1B, 0x0500, addr); // enable link up, link down interrupts
-		mdio_write(0x16, 0x0002, addr); // disable factory test mode, in case it was enabled
+        mdio_write(0x04, 0x01E1, addr); // set the correct auto negotiation bits
+        mdio_write(0x1B, 0x0500, addr); // enable link up, link down interrupts
+        mdio_write(0x16, 0x0002, addr); // disable factory test mode, in case it was enabled
+        mdio_write(0x00, 0x1200, addr); // restart auto negotiation
 
         if (ram_buffer) {
             queue = xQueueCreate(128, sizeof(struct EthPacket));
