@@ -70,6 +70,7 @@ SRCS_CC	 =  u64ii_init.cc \
 			stream.cc \
 			host_stream.cc \
 			prog_flash.cc \
+			product.cc \
 			stream_uart.cc \
 			path.cc \
 			blockdev.cc \
@@ -84,7 +85,12 @@ SRCS_CC	 =  u64ii_init.cc \
 			dma_uart.cc \
 			esp32.cc \
 			wifi_cmd.cc \
-			product.cc \
+			\
+			usb_base.cc \
+			usb_device.cc \
+			usb_hub.cc \
+			usb_hid.cc \
+			\
 			update_u64ii.cc
 
 VPATH +=	.

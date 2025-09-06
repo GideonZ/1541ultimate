@@ -22,25 +22,25 @@
 
 WiFi wifi;
 ultimate_ap_records_t wifi_aps;
-InitFunction wifi_init("WiFi Application", WiFi::Init, NULL, NULL, 51); // after LWIP
+InitFunction wifi_init("WiFi Application", WiFi::Init, NULL, NULL, 52); // after LWIP
 
 WiFi :: WiFi()
 {
     runModeTask = NULL;
     state = eWifi_Off;
-    esp32.AttachApplication(this);
-
     bzero(my_mac, 6);
     wifi_aps.num_records  = 0;
     my_ip = 0;
     my_gateway = 0;
     my_netmask = 0;
-    netstack = new NetworkLWIP_WiFi(this, wifi_tx_packet, wifi_free);
-    netstack->attach_config();
 }
 
 void WiFi :: Init(void *obj, void *param)
 {
+    esp32.AttachApplication(&wifi);
+    wifi.netstack = new NetworkLWIP_WiFi(&wifi, wifi_tx_packet, wifi_free);
+    wifi.netstack->attach_config();
+
 #if U64 == 2
     wifi.Enable(); // Unconditionally enable the WiFi module
 #endif
@@ -289,16 +289,14 @@ void WiFi :: RunModeThread()
 #endif
             switch(hdr->command) {
             case EVENT_RESCAN: // requested from user interface
-                cmd_buffer_free(packets, buf);
-                uart->ReEnableBufferIRQ();
+                uart->FreeBuffer(buf);
                 netstack->link_down();
                 state = eWifi_Scanning;
                 RefreshRoot();
                 break;
 
             case EVENT_DISABLED:
-                cmd_buffer_free(packets, buf);
-                uart->ReEnableBufferIRQ();
+                uart->FreeBuffer(buf);
                 state = eWifi_Disabled;
                 netstack->link_down();
                 RefreshRoot();
@@ -306,7 +304,7 @@ void WiFi :: RunModeThread()
 
             case EVENT_CONNECTED:
                 // conn_req = (rpc_wifi_connect_req *)buf->data;
-                uart->ReEnableBufferIRQ();
+                uart->FreeBuffer(buf);
                 if (state == eWifi_Connected) { // already connected!
                     netstack->link_down();
                 }
@@ -319,8 +317,7 @@ void WiFi :: RunModeThread()
                 break;
 
             case EVENT_DISCONNECTED:
-                cmd_buffer_free(packets, buf);
-                uart->ReEnableBufferIRQ();
+                uart->FreeBuffer(buf);
                 state = eWifi_NotConnected;
                 if(netstack) {
                     netstack->link_down();
@@ -338,8 +335,7 @@ void WiFi :: RunModeThread()
                     netstack->input(buf, (uint8_t*)&pkt->data, pkt->len);
                 } else {
                     puts("Packet received, but no net stack!");
-                    cmd_buffer_free(packets, buf);
-                    uart->ReEnableBufferIRQ();
+                    uart->FreeBuffer(buf);
                 }
                 // no free, as the packet needs to live on in the network stack
                 break;
@@ -349,14 +345,12 @@ void WiFi :: RunModeThread()
                 ip = ntohl(ev->ip);
                 printf("-> ESP32 received IP from DHCP: %d.%d.%d.%d (changed: %d)\n", (ip >> 24),
                     (ip >> 16) & 0xFF, (ip >> 8) & 0xFF, ip & 0xFF, ev->changed);
-                cmd_buffer_free(packets, buf);
-                uart->ReEnableBufferIRQ();
+                uart->FreeBuffer(buf);
                 break;
 
             default:
                 printf("Unexpected Event type: Pkt %d. Ev %b. Sz %d. Seq: %d. Thread: %d.\n", buf->bufnr, hdr->command, buf->size, hdr->sequence, hdr->thread);
-                cmd_buffer_free(packets, buf);
-                uart->ReEnableBufferIRQ();
+                uart->FreeBuffer(buf);
                 break;
             }
         }
@@ -397,8 +391,7 @@ void WiFi :: sendConnectEvent(const char *ssid, const char *pass, uint8_t auth)
 
 void WiFi :: freeBuffer(command_buf_t *buf)
 {
-    cmd_buffer_free(packets, buf);
-    uart->ReEnableBufferIRQ();
+    uart->FreeBuffer(buf);
 }
 
 void WiFi ::getAccessPointItems(Browsable *parent, IndexedList<Browsable *> &list)

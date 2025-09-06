@@ -9,7 +9,13 @@
 #include "mdio.h"
 #include "endianness.h"
 #include "init_function.h"
-RmiiInterface rmii_interface; // global object!
+
+RmiiInterface *rmii_interface = NULL; // global object!
+static void init(void *_a, void *_b)
+{
+    rmii_interface = new RmiiInterface();
+}
+InitFunction rmii_init_func("RMII Interface", init, NULL, NULL, 51);
 
 // entry point for free buffer callback
 void RmiiInterface_free_buffer(void *drv, void *b) {
@@ -24,12 +30,13 @@ err_t RmiiInterface_output(void *drv, void *b, int len) {
 extern "C" {
 	void RmiiRxInterruptHandler(void)
 	{
-		rmii_interface.rx_interrupt_handler();
+		rmii_interface->rx_interrupt_handler();
 	}
 }
 
 RmiiInterface :: RmiiInterface()
 {
+	rmii_interface = this;
     if(getFpgaCapabilities() & CAPAB_ETH_RMII) {
     	netstack = getNetworkStack(this, RmiiInterface_output, RmiiInterface_free_buffer);
 		link_up = false;
@@ -51,22 +58,21 @@ RmiiInterface :: RmiiInterface()
 			}
 		}
 
-		mdio_write(0x1B, 0x0500, addr); // enable link up, link down interrupts
-		mdio_write(0x16, 0x0002, addr); // disable factory test mode, in case it was enabled
+        mdio_write(0x04, 0x01E1, addr); // set the correct auto negotiation bits
+        mdio_write(0x1B, 0x0500, addr); // enable link up, link down interrupts
+        mdio_write(0x16, 0x0002, addr); // disable factory test mode, in case it was enabled
+        mdio_write(0x00, 0x1200, addr); // restart auto negotiation
 
         if (ram_buffer) {
             queue = xQueueCreate(128, sizeof(struct EthPacket));
-            new InitFunction("RmiiInterface", [](void *obj, void *_param) {
-                RmiiInterface *rmii = (RmiiInterface *)obj;
-                xTaskCreate( RmiiInterface :: startRmiiTask, "RMII Driver Task", configMINIMAL_STACK_SIZE, rmii, PRIO_DRIVER, NULL );
-            }, this, NULL, 52);
+			xTaskCreate( RmiiInterface :: startRmiiTask, "RMII Driver Task", configMINIMAL_STACK_SIZE, this, PRIO_DRIVER, NULL );
         }
     }
 }
 
 void RmiiInterface :: startRmiiTask(void *a)
 {
-	rmii_interface.rmiiTask();
+	rmii_interface->rmiiTask();
 }
 
 void RmiiInterface :: initRx(void)
@@ -176,7 +182,7 @@ void RmiiInterface :: rx_interrupt_handler(void)
 	pkt.id   = RMII_ALLOC_ID;
 	RMII_ALLOC_POP = 1;
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-	xQueueSendFromISR(rmii_interface.queue, &pkt, &xHigherPriorityTaskWoken);
+	xQueueSendFromISR(rmii_interface->queue, &pkt, &xHigherPriorityTaskWoken);
 }
 
 void RmiiInterface :: input_packet(struct EthPacket *pkt)

@@ -16,7 +16,7 @@
 
 #define RTC_TIMER_SECONDS    *((volatile uint32_t *)RTC_TIMER_BASE)
 
-class Rtc : public ConfigurableObject
+class Rtc //: public ConfigurableObject
 {
 public:
 	Rtc();

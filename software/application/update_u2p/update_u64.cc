@@ -38,10 +38,11 @@ static void status_callback(void *user)
     UserInterface *ui = (UserInterface *)user;
     ui->update_progress(NULL, 1);
 }
-
+#include "usb_base.h"
 void do_update(void)
 {
     setup("\033\025** Ultimate 64 Updater **\n\033\037");
+    usb2.initHardware();
 
     Flash *flash2 = get_flash();
     console_print(screen, "\033\024Detected Flash: %s\n", flash2->get_type_string());

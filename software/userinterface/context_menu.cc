@@ -3,6 +3,7 @@
 #include <string.h>
 #include "tree_browser.h"
 #include "tree_browser_state.h"
+#include "mdio.h"
 
 ContextMenu :: ContextMenu(UserInterface *ui, TreeBrowserState *state, int initial, int y) : actions(2, 0)
 {
@@ -156,7 +157,10 @@ int ContextMenu :: handle_key(int c)
     int ret = 0;
     int newpos;
     Action *a;
-    
+    char buf[20];
+    int addr, reg, value, n;
+    buf[0] = 0;
+
     switch(c) {
         case KEY_LEFT: // left
         case KEY_BREAK: // runstop
@@ -232,6 +236,25 @@ int ContextMenu :: handle_key(int c)
             }
             break;
 
+#if DEVELOPER > 0
+        case KEY_F4: // C= R
+            user_interface->string_box("MDIO Read", buf, 16);
+            n = sscanf(buf, "%x %x", &addr, &reg);
+            if (n == 1) {
+                for(uint8_t i=0;i<32;i++) {
+                    printf("MDIO Register %b: %04x\n", i, mdio_read(i, (uint8_t)addr));
+                }
+            } else {
+                printf("MDIO Register %b: %04x\n", reg, mdio_read((uint8_t)reg, (uint8_t)addr));
+            }
+            break;
+
+        case KEY_F6: // C= W
+            user_interface->string_box("MDIO Write", buf, 16);
+            n = sscanf(buf, "%x %x %x", &addr, &reg, &value);
+            mdio_write((uint8_t)reg, (uint16_t)value, (uint8_t)addr);
+            break;
+#endif
         default:
             if((c >= '!')&&(c < 0x80)) {
                 if(quick_seek_length < (MAX_SEARCH_LEN-2)) {

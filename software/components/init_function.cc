@@ -34,6 +34,7 @@ void InitFunction::executeAll() {
         printf("----> Initializing %s (%d)...\n", func->name, func->ordering);
 		func->function(func->object, func->param);
 	}
+	printf("---> All Init functions called.\n");
 }
 
 int InitFunction::compare(IndexedList<InitFunction *> *list, int a, int b)

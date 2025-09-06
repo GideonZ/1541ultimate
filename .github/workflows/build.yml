@@ -145,10 +145,21 @@ jobs:
             update.u64
             update.ue2
 
-      - name: Upload Factory Artifacts
+      - name: Upload Factory Artifacts U2+L
         uses: actions/upload-artifact@v4
         with:
-          name: factory_package_${{ env.GIT_VERSION }}
+          name: factory_package_u2pl_${{ env.GIT_VERSION }}
+          path: |
+            software/wifi/raw_c3/build/bootloader/bootloader.bin
+            software/wifi/raw_c3/build/partition_table/partition-table.bin
+            software/wifi/raw_c3/build/bridge.bin
+            target/u2plus_L/riscv/ultimate/result/ultimate.app
+            target/fpga/u2plus_ecp5/impl1/u2p_ecp5_impl1.bit
+
+      - name: Upload Factory Artifacts U64II
+        uses: actions/upload-artifact@v4
+        with:
+          name: factory_package_U64e2_${{ env.GIT_VERSION }}
           path: |
             u64ii/bootloader.bin
             u64ii/partition-table.bin

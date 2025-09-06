@@ -78,7 +78,11 @@ static void turn_off()
 
 static void reset_config(Flash *fl)
 {
-    if(user_interface->popup("Reset Configuration? (Recommended)", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+#if SILENT
+#else
+    if(user_interface->popup("Reset Configuration? (Recommended)", BUTTON_YES | BUTTON_NO) == BUTTON_YES)
+#endif
+    {
         int num = fl->get_number_of_config_pages();
         for (int i=0; i < num; i++) {
             fl->clear_config_page(i);
@@ -181,6 +185,8 @@ static void clear_field(void)
 static void setup(const char *title)
 {
     printf(title);
+    InitFunction::executeAll();
+    init_flash_disk();
 
     Flash *flash = get_flash();
     GenericHost *host = 0;
@@ -213,7 +219,12 @@ static void check_flash_disk()
     screen->move_cursor(0, 16);
     uint32_t free = print_free_flash_blocks();
 
+#if SILENT
+    FRESULT flashdisk = FR_NO_FILE;
+#else
     FRESULT flashdisk = check_flashdisk_empty();
+#endif
+
     switch(flashdisk) {
         case FR_NO_FILE: // the only case we don't need to do anything
             break;
