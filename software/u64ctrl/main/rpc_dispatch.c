@@ -240,6 +240,9 @@ void cmd_get_connection(command_buf_t *buf)
     resp->status = wifi_get_connection();
     buf->size = sizeof(rpc_get_connection_resp);
     my_uart_transmit_packet(UART_CHAN, buf);
+
+    // if connected; also send the connected event, so that the SSID is communicated.
+    wifi_send_connected_event();
 }
 
 void cmd_get_time(command_buf_t *buf)

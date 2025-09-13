@@ -260,6 +260,13 @@ int ConfigStore :: unregister(ConfigurableObject *obj)
     return objects.get_elements();
 }
 
+void ConfigStore :: at_open_config(void)
+{
+    for(int i=0; i<objects.get_elements(); i++) {
+        objects[i]->on_edit();
+    }
+}
+
 int ConfigPage :: pack(void)
 {
     memset(mem_block, 0xFF, block_size);

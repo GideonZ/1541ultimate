@@ -179,7 +179,8 @@ void WiFi :: RunModeThread()
     BaseType_t suc = pdFALSE;
     command_buf_t *buf;
     rpc_header_t *hdr;
-    rpc_wifi_connect_req *conn_req;
+    // rpc_wifi_connect_req *conn_req;
+    event_pkt_connected *ev2;
     event_pkt_got_ip *ev;
     int result;
     state = eWifi_NotDetected;
@@ -266,14 +267,14 @@ void WiFi :: RunModeThread()
             netstack->set_mac_address(my_mac);
             netstack->start(); // always starts in link down state
             state = eWifi_NotConnected;
-            if (wifi_is_connected(conn) == 0) {
-                if (conn) {
-                    wifi_modem_enable(true); // take control!
-                    uart->txDebug = false;
-                    netstack->link_up();
-                    state = eWifi_Connected;
-                }
-            }
+            wifi_is_connected(conn); // == 0) {
+            //     if (conn) {
+            //         wifi_modem_enable(true); // take control!
+            //         uart->txDebug = false;
+            //         netstack->link_up();
+            //         state = eWifi_Connected;
+            //     }
+            // }
             RefreshRoot();
             break;
 
@@ -309,7 +310,8 @@ void WiFi :: RunModeThread()
                 break;
 
             case EVENT_CONNECTED:
-                // conn_req = (rpc_wifi_connect_req *)buf->data;
+                ev2 = (event_pkt_connected *)buf->data;
+                memcpy(last_ap, ev2->ssid, 32);
                 uart->FreeBuffer(buf);
                 if (state == eWifi_Connected) { // already connected!
                     netstack->link_down();

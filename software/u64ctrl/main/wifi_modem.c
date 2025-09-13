@@ -149,6 +149,13 @@ static void send_event(uint8_t evcode)
     }
 }
 
+void wifi_send_connected_event(void)
+{
+    if(connected_g) {
+        send_event(EVENT_CONNECTED);
+    }
+}
+
 static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t event_id, void *data)
 {
     ESP_LOGW(TAG, "WiFi Event %ld, data %p", event_id, data);

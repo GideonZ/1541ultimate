@@ -33,11 +33,15 @@ const char *authmodes[] = { "Open", "WEP", "WPA PSK", "WPA2 PSK", "WPA/WPA2 PSK"
 //-----------------------------------
 struct t_cfg_definition wifi_config[] = {
     { CFG_WIFI_ENABLE, CFG_TYPE_ENUM,   "WiFi Enabled",                  "%s", en_dis,     0,  1, 1 },
+    { CFG_WIFI_SEL_AP, CFG_TYPE_FUNC,   "Select AP from list",           "-->",(const char **)NetworkLWIP_WiFi :: show_aps, 0, 0, 0 },
+    { CFG_WIFI_ENT_AP, CFG_TYPE_FUNC,   "Enter AP manually",             "-->",(const char **)NetworkLWIP_WiFi :: enter_ap, 0, 0, 0 },
     { CFG_NET_DHCP_EN, CFG_TYPE_ENUM,   "Use DHCP",                      "%s", en_dis,     0,  1, 1 },
 	{ CFG_NET_IP,      CFG_TYPE_STRING, "Static IP",					 "%s", NULL,       7, 16, (int)"192.168.2.64" },
 	{ CFG_NET_NETMASK, CFG_TYPE_STRING, "Static Netmask",				 "%s", NULL,       7, 16, (int)"255.255.255.0" },
 	{ CFG_NET_GATEWAY, CFG_TYPE_STRING, "Static Gateway",				 "%s", NULL,       7, 16, (int)"192.168.2.1" },
 	{ CFG_NET_DNS,     CFG_TYPE_STRING, "Static DNS",		   		 "%s", NULL,       7, 16, (int)"" },
+    { CFG_SEPARATOR,   CFG_TYPE_SEP,    "",                               "",  NULL,       0,  0, 0 },
+    { CFG_WIFI_CUR_AP, CFG_TYPE_INFO,   "Connected to",                  "%s", NULL,       0, 32, (int)"" },
 	{ CFG_TYPE_END,    CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
@@ -126,6 +130,14 @@ void NetworkLWIP_WiFi :: effectuate_settings(void)
 #endif
 }
 
+void NetworkLWIP_WiFi :: on_edit()
+{
+    ConfigItem *it = cfg->find_item(CFG_WIFI_CUR_AP);
+    it->setEnabled(false);
+    char *ap = (char *)it->getString(); // dirty!
+    strncpy(ap, wifi.getLastAP(), 31);
+}
+
 void NetworkLWIP_WiFi :: fetch_context_items(IndexedList<Action *>&items)
 {
     if (wifi.getState() == eWifi_Connected) {
@@ -204,6 +216,18 @@ SubsysResultCode_e NetworkLWIP_WiFi :: manual_connect(SubsysCommand *cmd)
     return SSRET_OK;
 }
 
+void NetworkLWIP_WiFi :: show_aps(UserInterface *intf, ConfigItem *it)
+{
+    wifi.sendEvent(EVENT_RESCAN);
+
+}
+
+void NetworkLWIP_WiFi :: enter_ap(UserInterface *intf, ConfigItem *it)
+{
+    SubsysCommand cmd(intf, 0, 0, 0, "", "");
+    manual_connect(&cmd);
+}
+
 SubsysResultCode_e NetworkLWIP_WiFi :: list_aps(SubsysCommand *cmd)
 {
     wifi.sendEvent(EVENT_RESCAN);
@@ -239,3 +263,4 @@ SubsysResultCode_e NetworkLWIP_WiFi :: enable(SubsysCommand *cmd)
 #endif
     return SSRET_OK;
 }
+

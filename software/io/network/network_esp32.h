@@ -14,6 +14,9 @@
 
 
 #define CFG_WIFI_ENABLE 0xB1
+#define CFG_WIFI_SEL_AP 0xB2
+#define CFG_WIFI_ENT_AP 0xB3
+#define CFG_WIFI_CUR_AP 0xB4
 
 class NetworkLWIP_WiFi : public NetworkInterface
 {
@@ -39,8 +42,13 @@ public:
     static SubsysResultCode_e manual_connect(SubsysCommand *cmd);
     static SubsysResultCode_e auto_connect(SubsysCommand *cmd);
 
+    // From Config menu
+    static void show_aps(UserInterface *intf, ConfigItem *it);
+    static void enter_ap(UserInterface *intf, ConfigItem *it);
+
     // from ConfigurableObject
     void effectuate_settings(void);
+    void on_edit(void);
 };
 
 

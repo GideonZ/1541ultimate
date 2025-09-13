@@ -24,9 +24,9 @@ void start_dispatch(QueueHandle_t queue);
 void send_button_event(uint8_t button);
 void send_keepalive();
 
-#define IDENT_STRING "ESP32 WiFi Bridge V1.3"
+#define IDENT_STRING "ESP32 WiFi Bridge V1.4"
 #define IDENT_MAJOR   1
-#define IDENT_MINOR   3
+#define IDENT_MINOR   4
 #define MULTITHREADED 0
 #define DISPATCHER_STACK 3072
 

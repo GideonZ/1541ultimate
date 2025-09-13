@@ -41,6 +41,7 @@ class WiFi : public Esp32Application
     NetworkLWIP_WiFi *netstack;
 
     WifiState_t state;
+    char    last_ap[32];
     char    moduleName[34];
     char    moduleType[24];
     uint8_t my_mac[6];
@@ -62,6 +63,7 @@ public:
     BaseType_t doRequestEcho(void);
 
     WifiState_t getState(void) { return state; }
+    const char *getLastAP(void) { return (state == eWifi_Connected) ? last_ap : "-"; }
     const char *getModuleName(void) { return moduleName; }
     const char *getModuleType(void) { return moduleType; }
     void  getMacAddr(uint8_t *target) { memcpy(target, my_mac, 6); }

@@ -35,6 +35,7 @@
 #define CFG_TYPE_INFO    0x06
 #define CFG_TYPE_STRFUNC 0x07
 #define CFG_TYPE_STRPASS 0x08
+#define CFG_SEPARATOR    0xFE
 #define CFG_TYPE_END     0xFF
 
 class UserInterface;
@@ -132,7 +133,7 @@ public:
     virtual void reset(void);
     virtual void read(bool ignore);
     virtual void write(void);
-    virtual void at_open_config(void) { }
+    virtual void at_open_config(void);
 
     virtual void at_close_config(void)
     {
@@ -266,6 +267,7 @@ public:
         return (cfg != NULL);
     }
 
+    virtual void on_edit() { }
     virtual void effectuate_settings() { }
 };
 
