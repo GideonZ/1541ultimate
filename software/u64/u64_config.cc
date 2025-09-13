@@ -238,18 +238,18 @@ static const char *ledselects[] = { "On", "Off", "Drive A Pwr", "DrvAPwr + DrvBP
 
 const char *speaker_vol[] = { "Disabled", "Vol 1", "Vol 2", "Vol 3", "Vol 4", "Vol 5", "Vol 6", "Vol 7", "Vol 8", "Vol 9", "Vol 10", "Vol 11", "Vol 12", "Vol 13", "Vol 14", "Vol 15" };
 
-static const char *volumes[] = { "OFF", "+6 dB", "+5 dB", "+4 dB", "+3 dB", "+2 dB", "+1 dB", " 0 dB", "-1 dB",
-                                 "-2 dB", "-3 dB", "-4 dB", "-5 dB", "-6 dB", "-7 dB", "-8 dB", "-9 dB",
-                                 "-10 dB","-11 dB","-12 dB","-13 dB","-14 dB","-15 dB","-16 dB","-17 dB",
-                                 "-18 dB","-24 dB","-27 dB","-30 dB","-36 dB","-42 dB"  }; // 31 settings
+static const char *volumes[] = { "OFF", "-42 dB", "-36 dB", "-30 dB", "-27 dB", "-24 dB", "-18 dB", "-17 dB",
+                                 "-16 dB", "-15 dB", "-14 dB", "-13 dB", "-12 dB", "-11 dB", "-10 dB", "-9 dB",
+                                 "-8 dB", "-7 dB", "-6 dB", "-5 dB", "-4 dB", "-3 dB", "-2 dB", "-1 dB",
+                                 " 0 dB", "+1 dB", "+2 dB", "+3 dB", "+4 dB", "+5 dB", "+6 dB" }; // 31 settings
 
 static const char *pannings[] = { "Left 5", "Left 4", "Left 3", "Left 2", "Left 1", "Center",
                                   "Right 1", "Right 2", "Right 3", "Right 4", "Right 5" }; // 11 settings
 
-static const uint8_t volume_ctrl[] = { 0x00, 0xff, 0xe4, 0xcb, 0xb5, 0xa1, 0x90, 0x80, 0x72,
-                                       0x66, 0x5b, 0x51, 0x48, 0x40, 0x39, 0x33, 0x2d,
-                                       0x28, 0x24, 0x20, 0x1d, 0x1a, 0x17, 0x14, 0x12,
-                                       0x10, 0x08, 0x06, 0x04, 0x02, 0x01 };
+static const uint8_t volume_ctrl[] = { 
+    0x00, 0x01, 0x02, 0x04, 0x06, 0x08, 0x10, 0x12, 0x14, 0x17, 0x1a, 0x1d, 0x20, 0x24, 0x28, 0x2d,
+    0x33, 0x39, 0x40, 0x48, 0x51, 0x5b, 0x66, 0x72, 0x80, 0x90, 0xa1, 0xb5, 0xcb, 0xe4, 0xff
+};
 
 static const uint16_t pan_ctrl[] = { 0, 40, 79, 116, 150, 181, 207, 228, 243, 253, 256 };
 
@@ -349,16 +349,16 @@ struct t_cfg_definition u64_ultisid_cfg[] = {
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
 struct t_cfg_definition u64_mixer_cfg[] = {
-    { CFG_MIXER0_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 1",                "%s", volumes,      0, 30, 7 },
-    { CFG_MIXER1_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 2",                "%s", volumes,      0, 30, 7 },
-    { CFG_MIXER2_VOL,           CFG_TYPE_ENUM, "Vol Socket 1",                 "%s", volumes,      0, 30, 7 },
-    { CFG_MIXER3_VOL,           CFG_TYPE_ENUM, "Vol Socket 2",                 "%s", volumes,      0, 30, 7 },
-    { CFG_MIXER4_VOL,           CFG_TYPE_ENUM, "Vol Sampler L",                "%s", volumes,      0, 30, 7 },
-    { CFG_MIXER5_VOL,           CFG_TYPE_ENUM, "Vol Sampler R",                "%s", volumes,      0, 30, 7 },
-    { CFG_MIXER6_VOL,           CFG_TYPE_ENUM, "Vol Drive 1",                  "%s", volumes,      0, 30, 11 },
-    { CFG_MIXER7_VOL,           CFG_TYPE_ENUM, "Vol Drive 2",                  "%s", volumes,      0, 30, 11 },
-    { CFG_MIXER8_VOL,           CFG_TYPE_ENUM, "Vol Tape Read",                "%s", volumes,      0, 30, 29 },
-    { CFG_MIXER9_VOL,           CFG_TYPE_ENUM, "Vol Tape Write",               "%s", volumes,      0, 30, 29 },
+    { CFG_MIXER0_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 1",                "%s", volumes,      0, 30, 24 },
+    { CFG_MIXER1_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 2",                "%s", volumes,      0, 30, 24 },
+    { CFG_MIXER2_VOL,           CFG_TYPE_ENUM, "Vol Socket 1",                 "%s", volumes,      0, 30, 24 },
+    { CFG_MIXER3_VOL,           CFG_TYPE_ENUM, "Vol Socket 2",                 "%s", volumes,      0, 30, 24 },
+    { CFG_MIXER4_VOL,           CFG_TYPE_ENUM, "Vol Sampler L",                "%s", volumes,      0, 30, 24 },
+    { CFG_MIXER5_VOL,           CFG_TYPE_ENUM, "Vol Sampler R",                "%s", volumes,      0, 30, 24 },
+    { CFG_MIXER6_VOL,           CFG_TYPE_ENUM, "Vol Drive 1",                  "%s", volumes,      0, 30, 20 },
+    { CFG_MIXER7_VOL,           CFG_TYPE_ENUM, "Vol Drive 2",                  "%s", volumes,      0, 30, 20 },
+    { CFG_MIXER8_VOL,           CFG_TYPE_ENUM, "Vol Tape Read",                "%s", volumes,      0, 30, 2 },
+    { CFG_MIXER9_VOL,           CFG_TYPE_ENUM, "Vol Tape Write",               "%s", volumes,      0, 30, 2 },
     { CFG_MIXER0_PAN,           CFG_TYPE_ENUM, "Pan UltiSID 1",                "%s", pannings,     0, 10, 5 },
     { CFG_MIXER1_PAN,           CFG_TYPE_ENUM, "Pan UltiSID 2",                "%s", pannings,     0, 10, 5 },
     { CFG_MIXER2_PAN,           CFG_TYPE_ENUM, "Pan Socket 1",                 "%s", pannings,     0, 10, 2 },
@@ -373,16 +373,16 @@ struct t_cfg_definition u64_mixer_cfg[] = {
 
 struct t_cfg_definition u64_speaker_mixer_cfg[] = {
     { CFG_SPEAKER_EN,           CFG_TYPE_ENUM, "Speaker Enable",               "%s", en_dis,       0,  1, 1 },
-    { CFG_MIXER0_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 1",                "%s", volumes,      0, 30, 16 },
-    { CFG_MIXER1_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 2",                "%s", volumes,      0, 30, 16 },
-    { CFG_MIXER2_VOL,           CFG_TYPE_ENUM, "Vol Socket 1",                 "%s", volumes,      0, 30, 16 },
-    { CFG_MIXER3_VOL,           CFG_TYPE_ENUM, "Vol Socket 2",                 "%s", volumes,      0, 30, 16 },
-    { CFG_MIXER4_VOL,           CFG_TYPE_ENUM, "Vol Sampler L",                "%s", volumes,      0, 30, 16 },
-    { CFG_MIXER5_VOL,           CFG_TYPE_ENUM, "Vol Sampler R",                "%s", volumes,      0, 30, 16 },
-    { CFG_MIXER6_VOL,           CFG_TYPE_ENUM, "Vol Drive 1",                  "%s", volumes,      0, 30, 11 },
-    { CFG_MIXER7_VOL,           CFG_TYPE_ENUM, "Vol Drive 2",                  "%s", volumes,      0, 30, 11 },
-    { CFG_MIXER8_VOL,           CFG_TYPE_ENUM, "Vol Tape Read",                "%s", volumes,      0, 30, 29 },
-    { CFG_MIXER9_VOL,           CFG_TYPE_ENUM, "Vol Tape Write",               "%s", volumes,      0, 30, 29 },
+    { CFG_MIXER0_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 1",                "%s", volumes,      0, 30, 15 },
+    { CFG_MIXER1_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 2",                "%s", volumes,      0, 30, 15 },
+    { CFG_MIXER2_VOL,           CFG_TYPE_ENUM, "Vol Socket 1",                 "%s", volumes,      0, 30, 15 },
+    { CFG_MIXER3_VOL,           CFG_TYPE_ENUM, "Vol Socket 2",                 "%s", volumes,      0, 30, 15 },
+    { CFG_MIXER4_VOL,           CFG_TYPE_ENUM, "Vol Sampler L",                "%s", volumes,      0, 30, 15 },
+    { CFG_MIXER5_VOL,           CFG_TYPE_ENUM, "Vol Sampler R",                "%s", volumes,      0, 30, 15 },
+    { CFG_MIXER6_VOL,           CFG_TYPE_ENUM, "Vol Drive 1",                  "%s", volumes,      0, 30, 20 },
+    { CFG_MIXER7_VOL,           CFG_TYPE_ENUM, "Vol Drive 2",                  "%s", volumes,      0, 30, 20 },
+    { CFG_MIXER8_VOL,           CFG_TYPE_ENUM, "Vol Tape Read",                "%s", volumes,      0, 30, 2 },
+    { CFG_MIXER9_VOL,           CFG_TYPE_ENUM, "Vol Tape Write",               "%s", volumes,      0, 30, 2 },
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0,  0 } };
 
 extern Overlay *overlay;
