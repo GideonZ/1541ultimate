@@ -27,7 +27,7 @@ typedef struct{
     void *context;
 } IrqHandler_t;
 
-#define HIGH_IRQS 4
+#define HIGH_IRQS 6
 static IrqHandler_t high_irqs[HIGH_IRQS];
 
 void install_high_irq(int irqNr, irq_function_t func, void *context)
@@ -35,15 +35,14 @@ void install_high_irq(int irqNr, irq_function_t func, void *context)
     if (irqNr < HIGH_IRQS) {
         high_irqs[irqNr].handler = func;
         high_irqs[irqNr].context = context;
+        ioWrite8(ITU_IRQ_HIGH_EN, ioRead8(ITU_IRQ_HIGH_EN) | (1 << irqNr));
     }
-    ioWrite8(ITU_IRQ_HIGH_EN, ioRead8(ITU_IRQ_HIGH_EN) | (1 << irqNr));
 }
 
 void deinstall_high_irq(int irqNr)
 {
-    ioWrite8(ITU_IRQ_HIGH_EN, ioRead8(ITU_IRQ_HIGH_EN) & ~(1 << irqNr));
-
     if (irqNr < HIGH_IRQS) {
+        ioWrite8(ITU_IRQ_HIGH_EN, ioRead8(ITU_IRQ_HIGH_EN) & ~(1 << irqNr));
         high_irqs[irqNr].handler = NULL;
         high_irqs[irqNr].context = NULL;
     }
@@ -111,7 +110,7 @@ void freertos_risc_v_application_interrupt_handler(void)
 	}
 
 	uint8_t h = ioRead8(ITU_IRQ_HIGH_ACT);
-	for(int i=0;i < HIGH_IRQS; i++, h>>=1) {
+	for(int i=0;(h != 0) && (i < HIGH_IRQS); i++, h>>=1) {
 	    if (h & 1) {
 	        if (high_irqs[i].handler) {
 	            // Run handler with context parameter if installed

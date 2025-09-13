@@ -43,6 +43,12 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
     //alt_irq_context irq_context;
     bool temporary_stop;
 
+    uint8_t hdmiSetting;
+    TaskHandle_t hpd_monitor_task_handle;
+    SemaphoreHandle_t hpd_monitor_sem;
+    static uint8_t hpd_monitor_irq(void *a);
+    static void hpd_monitor_task(void *a);
+
     class U64Mixer : public ConfigurableObject
     {
     public:

@@ -5,7 +5,6 @@
  *      Author: Gideon
  */
 
-#include "integer.h"
 extern "C" {
     #include "itu.h"
 	#include "dump_hex.h"
@@ -13,6 +12,11 @@ extern "C" {
     #include "sid_coeff.h"
 }
 #include <string.h>
+#include <stdint.h>
+#include "FreeRTOS.h"
+#include "semphr.h"
+#include "task.h"
+
 #include "flash.h"
 #include "product.h"
 #include "userinterface.h"
@@ -846,8 +850,15 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
             }
         }
 
-        u64_configurator->hdmiMonitor = u64_configurator->IsMonitorHDMI(); // requires I2C
+        // the following sets the HDMI mode
         u64_configurator->effectuate_settings(); // requires I2C
+
+        hpd_monitor_sem = xSemaphoreCreateBinary();
+        xTaskCreate(U64Config::hpd_monitor_task, "HPD Monitor", configMINIMAL_STACK_SIZE, u64_configurator, PRIO_HW_SERVICE, &u64_configurator->hpd_monitor_task_handle);
+        install_high_irq(ITU_IRQHIGH_HDMI, U64Config::hpd_monitor_irq, u64_configurator);
+        xSemaphoreGive(hpd_monitor_sem);
+
+//        u64_configurator->hdmiMonitor = u64_configurator->IsMonitorHDMI(); // requires I2C
         u64_configurator->sockets.effectuate_settings();
         u64_configurator->mixercfg.effectuate_settings();
         u64_configurator->ultisids.effectuate_settings();
@@ -855,6 +866,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 #if U64 == 2
         u64_configurator->speakercfg.effectuate_settings();
 #endif
+
         if (cfg->is_flash_stale()) {
             cfg->write();
         }
@@ -863,6 +875,29 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
         printf("*** U64 Configurator Done\n");
     }
 }
+
+uint8_t U64Config :: hpd_monitor_irq(void *a)
+{
+    U64_HDMI_REG = U64_HDMI_HPD_RESET;
+    BaseType_t higherTaskWoken;
+    xSemaphoreGiveFromISR(u64_configurator->hpd_monitor_sem, &higherTaskWoken);
+    return 1;
+}
+
+void U64Config :: hpd_monitor_task(void *_a)
+{
+    while(1) {
+        xSemaphoreTake(u64_configurator->hpd_monitor_sem, portMAX_DELAY);
+        vTaskDelay(200 / portTICK_PERIOD_MS);
+        u64_configurator->hdmiMonitor = u64_configurator->IsMonitorHDMI();
+        if (!u64_configurator->hdmiSetting) { // Auto = 0
+            U64_HDMI_ENABLE = u64_configurator->hdmiMonitor ? 1 : 0;
+        } else {
+            U64_HDMI_ENABLE = (u64_configurator->hdmiSetting == 1) ? 1 : 0; // 1 = HDMI, 2 = DVI
+        }
+    }
+}
+
 
 void U64Config :: ResetHandler()
 {
@@ -918,7 +953,7 @@ void U64Config :: effectuate_settings()
 
     U2PIO_SPEAKER_EN = sp_vol ? (sp_vol << 1) | 0x01 : 0;
     C64_SCANLINES    = cfg->get_value(CFG_SCANLINES);
-    uint8_t hdmiSetting = cfg->get_value(CFG_HDMI_ENABLE);
+    hdmiSetting = cfg->get_value(CFG_HDMI_ENABLE);
 
     if (!hdmiSetting) { // Auto = 0
         U64_HDMI_ENABLE = hdmiMonitor ? 1 : 0;
