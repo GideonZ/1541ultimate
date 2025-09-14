@@ -165,6 +165,19 @@ class BrowsableConfigStore: public Browsable
     {
         return store->get_store_name();
     }
+
+    BrowsableConfigItem *findConfigItem(uint8_t id)
+    {
+        for (int i = 0; i < children.get_elements(); i++) {
+            BrowsableConfigItem *bit = ((BrowsableConfigItem *)children[i]);
+            if (bit->getItem()->definition->id == id) {
+                return bit;
+            }
+        }
+        return NULL;
+    }
+
+
 };
 
 class BrowsableConfigRoot: public Browsable

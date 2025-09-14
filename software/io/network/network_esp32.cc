@@ -32,17 +32,25 @@ const char *authmodes[] = { "Open", "WEP", "WPA PSK", "WPA2 PSK", "WPA/WPA2 PSK"
 
 //-----------------------------------
 struct t_cfg_definition wifi_config[] = {
+#if U64 == 2
+    { CFG_WIFI_ENA,    CFG_TYPE_FUNC,   "Enable",                        "",(const char **)NetworkLWIP_WiFi :: cfg_enable, 0, 0, 0 },
+    { CFG_WIFI_DIS,    CFG_TYPE_FUNC,   "Disable",                       "",(const char **)NetworkLWIP_WiFi :: cfg_disable, 0, 0, 0 },
+#else
     { CFG_WIFI_ENABLE, CFG_TYPE_ENUM,   "WiFi Enabled",                  "%s", en_dis,     0,  1, 1 },
-    { CFG_WIFI_DISCONN,CFG_TYPE_FUNC,   "Disconnect",                    "...",(const char **)NetworkLWIP_WiFi :: cfg_disconn, 0, 0, 0 },
-    { CFG_WIFI_CONN,   CFG_TYPE_FUNC,   "Connect to last AP",            "...",(const char **)NetworkLWIP_WiFi :: cfg_conn_last, 0, 0, 0 },
-    { CFG_WIFI_SEL_AP, CFG_TYPE_FUNC,   "Select AP from list",           "...",(const char **)NetworkLWIP_WiFi :: cfg_show_aps, 0, 0, 0 },
-    { CFG_WIFI_ENT_AP, CFG_TYPE_FUNC,   "Enter AP manually",             "...",(const char **)NetworkLWIP_WiFi :: cfg_enter_ap, 0, 0, 0 },
+#endif
+    { CFG_WIFI_DISCONN,CFG_TYPE_FUNC,   "Disconnect",                    "",(const char **)NetworkLWIP_WiFi :: cfg_disconn, 0, 0, 0 },
+    { CFG_WIFI_CONN,   CFG_TYPE_FUNC,   "Connect to last AP",            "",(const char **)NetworkLWIP_WiFi :: cfg_conn_last, 0, 0, 0 },
+    { CFG_WIFI_SEL_AP, CFG_TYPE_FUNC,   "Select AP from list",           "",(const char **)NetworkLWIP_WiFi :: cfg_show_aps, 0, 0, 0 },
+    { CFG_WIFI_ENT_AP, CFG_TYPE_FUNC,   "Enter AP manually",             "",(const char **)NetworkLWIP_WiFi :: cfg_enter_ap, 0, 0, 0 },
+    { CFG_WIFI_FORGET, CFG_TYPE_FUNC,   "Forget APs",                    "",(const char **)NetworkLWIP_WiFi :: cfg_forget, 0, 0, 0 },
+    { CFG_SEPARATOR,   CFG_TYPE_SEP,    "",                               "",  NULL,       0,  0, 0 },
     { CFG_NET_DHCP_EN, CFG_TYPE_ENUM,   "Use DHCP",                      "%s", en_dis,     0,  1, 1 },
 	{ CFG_NET_IP,      CFG_TYPE_STRING, "Static IP",					 "%s", NULL,       7, 16, (int)"192.168.2.64" },
 	{ CFG_NET_NETMASK, CFG_TYPE_STRING, "Static Netmask",				 "%s", NULL,       7, 16, (int)"255.255.255.0" },
 	{ CFG_NET_GATEWAY, CFG_TYPE_STRING, "Static Gateway",				 "%s", NULL,       7, 16, (int)"192.168.2.1" },
 	{ CFG_NET_DNS,     CFG_TYPE_STRING, "Static DNS",		   		 "%s", NULL,       7, 16, (int)"" },
     { CFG_SEPARATOR,   CFG_TYPE_SEP,    "",                               "",  NULL,       0,  0, 0 },
+    { CFG_WIFI_STATUS, CFG_TYPE_INFO,   "Status",                        "%s", NULL,       0, 32, (int)"" },
     { CFG_WIFI_CUR_AP, CFG_TYPE_INFO,   "Connected to",                  "%s", NULL,       0, 32, (int)"" },
     { CFG_WIFI_CUR_IP, CFG_TYPE_INFO,   "Active IP address",             "%s", NULL,       0, 32, (int)"" },
     { CFG_WIFI_MAC,    CFG_TYPE_INFO,   "Interface MAC",                 "%s", NULL,       0, 32, (int)"" },
@@ -118,11 +126,11 @@ void NetworkLWIP_WiFi :: effectuate_settings(void)
 	my_net_if.name[1] = 'I';
 
 #if U64 == 2
-    if (cfg->get_value(CFG_WIFI_ENABLE) && wifi.getState() == eWifi_Disabled) {
-        wifi.RadioOn();
-    } else if (!(cfg->get_value(CFG_WIFI_ENABLE)) && wifi.getState() != eWifi_Disabled) {
-        wifi.RadioOff();
-    }
+    // if (cfg->get_value(CFG_WIFI_ENABLE) && wifi.getState() == eWifi_Disabled) {
+    //     wifi.RadioOn();
+    // } else if (!(cfg->get_value(CFG_WIFI_ENABLE)) && wifi.getState() != eWifi_Disabled) {
+    //     wifi.RadioOff();
+    // }
 #else
     if (wifi.getState() == eWifi_Off && cfg->get_value(CFG_WIFI_ENABLE)) {
         wifi.Enable();
@@ -139,6 +147,48 @@ void NetworkLWIP_WiFi :: on_edit()
     ConfigItem *it = cfg->find_item(CFG_WIFI_CUR_AP);
     it->setEnabled(false);
     it->setString(wifi.getLastAP());
+
+    it = cfg->find_item(CFG_WIFI_STATUS);
+    it->setEnabled(false);
+
+    bool ok_to_connect = false;
+    WifiState_t state = wifi.getState();
+    switch (state) {
+    case eWifi_Off:
+        it->setString("OFF");
+        break;
+    case eWifi_Download:
+        it->setString("Programming");
+        break;
+    case eWifi_NotDetected:
+        it->setString("No Module Detected");
+        break;
+    case eWifi_ModuleDetected:
+        it->setString("Detected, ...");
+        break;
+    case eWifi_AppDetected:               
+    case eWifi_Scanning:
+        it->setString("Scanning...");
+        break;
+    case eWifi_NotConnected:
+        it->setString("Link Down");
+        ok_to_connect = true;
+        break;
+    case eWifi_Connected:
+        it->setString("Link Up");
+        ok_to_connect = true;
+        break;
+    case eWifi_Disabled:
+        it->setString("Disabled");
+        break;
+    default:
+        it->setString("???");
+        break;
+    }
+
+    // cfg->find_item(CFG_WIFI_ENT_AP)->setEnabled(ok_to_connect);
+    // cfg->find_item(CFG_WIFI_SEL_AP)->setEnabled(ok_to_connect);
+    // cfg->find_item(CFG_WIFI_CONN)->setEnabled(ok_to_connect);
 
     uint8_t mac[8];
     char buf[32];
@@ -233,6 +283,11 @@ SubsysResultCode_e NetworkLWIP_WiFi :: manual_connect(SubsysCommand *cmd)
 
 void NetworkLWIP_WiFi :: cfg_show_aps(UserInterface *intf, ConfigItem *it)
 {
+    WifiState_t state = wifi.getState();
+    if ((state != eWifi_NotConnected) && (state != eWifi_Connected)) {
+        intf->popup("Can only show APs when active", BUTTON_OK);
+        return;
+    }
     wifi.sendEvent(EVENT_RESCAN);
     BrowsableWifiAPList *broot = new BrowsableWifiAPList(); // new root!
     TreeBrowser *tb = new TreeBrowser(intf, broot);
@@ -247,18 +302,48 @@ void NetworkLWIP_WiFi :: cfg_show_aps(UserInterface *intf, ConfigItem *it)
 
 void NetworkLWIP_WiFi :: cfg_enter_ap(UserInterface *intf, ConfigItem *it)
 {
+    WifiState_t state = wifi.getState();
+    if ((state != eWifi_NotConnected) && (state != eWifi_Connected)) {
+        intf->popup("Can only connect when active", BUTTON_OK);
+        return;
+    }
     SubsysCommand cmd(intf, 0, 0, 0, "", "");
     manual_connect(&cmd);
 }
 
 void NetworkLWIP_WiFi :: cfg_conn_last(UserInterface *intf, ConfigItem *it)
 {
+    WifiState_t state = wifi.getState();
+    if ((state != eWifi_NotConnected) && (state != eWifi_Connected)) {
+        intf->popup("Can only connect when active", BUTTON_OK);
+        return;
+    }
     wifi_wifi_autoconnect();    
 }
 
 void NetworkLWIP_WiFi :: cfg_disconn(UserInterface *intf, ConfigItem *it)
 {
+    WifiState_t state = wifi.getState();
+    if ((state != eWifi_NotConnected) && (state != eWifi_Connected)) {
+        intf->popup("Can only disconnect when active", BUTTON_OK);
+        return;
+    }
     wifi_wifi_disconnect();    
+}
+
+void NetworkLWIP_WiFi :: cfg_enable(UserInterface *intf, ConfigItem *it)
+{
+    wifi.RadioOn();
+}
+
+void NetworkLWIP_WiFi :: cfg_disable(UserInterface *intf, ConfigItem *it)
+{
+    wifi.RadioOff();
+}
+
+void NetworkLWIP_WiFi :: cfg_forget(UserInterface *intf, ConfigItem *it)
+{
+    wifi_forget_aps();
 }
 
 SubsysResultCode_e NetworkLWIP_WiFi :: list_aps(SubsysCommand *cmd)
