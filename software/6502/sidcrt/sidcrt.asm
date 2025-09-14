@@ -315,7 +315,7 @@ sidFx           .binclude 'sidfx.asm'
 songlengths     .binclude 'songlengths.asm'
 
                 .enc 'screen'
-screenData1     .text '  *** THE ULTIMATE C-64 SID PLAYER ***  '
+screenData1     .text '  *** THE C-64 ULTIMATE SID PLAYER ***  '
                 .byte $ff, $40, 40  ; line
                 .byte $ff, $20, 40  ; empty line
 

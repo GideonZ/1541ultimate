@@ -599,7 +599,7 @@ songlengths     .binclude 'songlengths.asm'
 colorCodes      .byte $90, $05, $1c, $9f, $9c, $1e, $1f, $9e, $81, $95, $96, $97, $98, $99, $9a, $9b;
 
                 .enc 'screen'
-screenData1     .text '  *** THE ULTIMATE C-64 MUS PLAYER ***  '
+screenData1     .text '  *** THE C-64 ULTIMATE MUS PLAYER ***  '
                 .byte $ff, $40, 40  ; line
                 .byte $ff, $20, 40  ; empty line
                 .byte $00 ;end
