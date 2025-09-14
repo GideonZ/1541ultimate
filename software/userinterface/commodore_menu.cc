@@ -57,8 +57,6 @@ const char *config_menu_names[] = {
 /************************/
 CommodoreMenu :: CommodoreMenu(UserInterface *ui) : ContextMenu(ui, NULL, 1, 0, MENU_HIDE, 1)
 {
-    printf("Constructor Commodore browser\n");
-
     Action *dummy = new Action(" ", S_file_browser, 0);
     dummy->disable();
     appendAction(dummy);

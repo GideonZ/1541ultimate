@@ -119,14 +119,19 @@ extern "C" void ultimate_main(void *a)
     overlay->setKeyboard(kb);
 #endif
 
-
-
 #if U64
     overlayUserInterface = new UserInterface(title, true);
+
+#if COMMODORE
+    CommodoreMenu *commodoreMenuOverlay = new CommodoreMenu(overlayUserInterface);
+    overlayUserInterface->activate_uiobject(commodoreMenuOverlay); // root of all evil!
+#else
     Browsable *root = new BrowsableRoot();
     root_tree_browser_overlay = new TreeBrowser(overlayUserInterface, root);
     overlayUserInterface->activate_uiobject(root_tree_browser_overlay); // root of all evil!
+#endif
     overlayUserInterface->init(overlay);
+
     if(overlayUserInterface->cfg->get_value(CFG_USERIF_START_HOME)) {
         new HomeDirectory(overlayUserInterface, root_tree_browser_overlay);
         // will clean itself up
