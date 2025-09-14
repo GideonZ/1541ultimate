@@ -31,9 +31,7 @@ public:
 
     virtual void init(Screen *screen, Keyboard *k);
     virtual int handle_key(int);
-    virtual void checkFileManagerEvent(void)
-    {
-    } // we are not listening to file manager events
+    virtual void checkFileManagerEvent(void);
 };
 
 class BrowsableConfigItem: public Browsable

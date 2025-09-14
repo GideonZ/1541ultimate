@@ -15,6 +15,7 @@ ConfigBrowser :: ConfigBrowser(UserInterface *ui, Browsable *root, int level) : 
 {
     printf("Constructor config browser\n");
     setCleanup();
+    has_path = false;
     start_level = level;
     state = new ConfigBrowserState(root, this, level);
 }
@@ -278,8 +279,11 @@ int ConfigBrowser :: handle_key(int c)
             if (user_interface->navmode == 0) {
                 // do nothing
             } else {
-                if(state->level==0)
+                if(state->level==0) {
                     state->into();
+                } else {
+                    state->change();
+                }
             }
             break;
         case KEY_W:
@@ -359,3 +363,28 @@ int ConfigBrowser :: handle_key(int c)
     return ret;
 }
 
+void ConfigBrowser :: checkFileManagerEvent(void)
+{
+    FileManagerEvent *event;
+    while(1) {
+        event = (FileManagerEvent *)observerQueue->waitForEvent(0);
+        if (!event) {
+            break;
+        }
+
+        switch (event->eventType) {
+        case eRefreshDirectory:
+            state->refresh = true;
+            state->needs_reload = true;
+            if (state->level == 1) { // this MUST be a BrowseableConfigStore FIXME!
+                ((BrowsableConfigStore *)state->node)->getStore()->at_open_config();
+            }
+            break;
+
+        default:
+            break;
+        }
+
+        delete event;
+    }
+}

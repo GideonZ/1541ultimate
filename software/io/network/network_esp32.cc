@@ -12,7 +12,7 @@
 #include "dump_hex.h"
 #include "subsys.h"
 #include "userinterface.h"
-
+#include "tree_browser.h"
 // Concept:
 // 1) Take buffer from cmd buffer free queue (may block)
 // 2) Fill buffer with command and task and sequence code
@@ -33,8 +33,9 @@ const char *authmodes[] = { "Open", "WEP", "WPA PSK", "WPA2 PSK", "WPA/WPA2 PSK"
 //-----------------------------------
 struct t_cfg_definition wifi_config[] = {
     { CFG_WIFI_ENABLE, CFG_TYPE_ENUM,   "WiFi Enabled",                  "%s", en_dis,     0,  1, 1 },
-    { CFG_WIFI_SEL_AP, CFG_TYPE_FUNC,   "Select AP from list",           "-->",(const char **)NetworkLWIP_WiFi :: show_aps, 0, 0, 0 },
-    { CFG_WIFI_ENT_AP, CFG_TYPE_FUNC,   "Enter AP manually",             "-->",(const char **)NetworkLWIP_WiFi :: enter_ap, 0, 0, 0 },
+    { CFG_WIFI_CONN,   CFG_TYPE_FUNC,   "Connect to last AP",            "...",(const char **)NetworkLWIP_WiFi :: conn_last, 0, 0, 0 },
+    { CFG_WIFI_SEL_AP, CFG_TYPE_FUNC,   "Select AP from list",           "...",(const char **)NetworkLWIP_WiFi :: show_aps, 0, 0, 0 },
+    { CFG_WIFI_ENT_AP, CFG_TYPE_FUNC,   "Enter AP manually",             "...",(const char **)NetworkLWIP_WiFi :: enter_ap, 0, 0, 0 },
     { CFG_NET_DHCP_EN, CFG_TYPE_ENUM,   "Use DHCP",                      "%s", en_dis,     0,  1, 1 },
 	{ CFG_NET_IP,      CFG_TYPE_STRING, "Static IP",					 "%s", NULL,       7, 16, (int)"192.168.2.64" },
 	{ CFG_NET_NETMASK, CFG_TYPE_STRING, "Static Netmask",				 "%s", NULL,       7, 16, (int)"255.255.255.0" },
@@ -42,6 +43,8 @@ struct t_cfg_definition wifi_config[] = {
 	{ CFG_NET_DNS,     CFG_TYPE_STRING, "Static DNS",		   		 "%s", NULL,       7, 16, (int)"" },
     { CFG_SEPARATOR,   CFG_TYPE_SEP,    "",                               "",  NULL,       0,  0, 0 },
     { CFG_WIFI_CUR_AP, CFG_TYPE_INFO,   "Connected to",                  "%s", NULL,       0, 32, (int)"" },
+    { CFG_WIFI_CUR_IP, CFG_TYPE_INFO,   "Active IP address",             "%s", NULL,       0, 32, (int)"" },
+    { CFG_WIFI_MAC,    CFG_TYPE_INFO,   "Interface MAC",                 "%s", NULL,       0, 32, (int)"" },
 	{ CFG_TYPE_END,    CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
@@ -134,8 +137,19 @@ void NetworkLWIP_WiFi :: on_edit()
 {
     ConfigItem *it = cfg->find_item(CFG_WIFI_CUR_AP);
     it->setEnabled(false);
-    char *ap = (char *)it->getString(); // dirty!
-    strncpy(ap, wifi.getLastAP(), 31);
+    it->setString(wifi.getLastAP());
+
+    uint8_t mac[8];
+    char buf[32];
+    wifi.getMacAddr(mac);
+    sprintf(buf, "%b:%b:%b:%b:%b:%b", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    it = cfg->find_item(CFG_WIFI_MAC);
+    it->setEnabled(false);
+    it->setString(buf);
+
+    it = cfg->find_item(CFG_WIFI_CUR_IP);
+    it->setEnabled(false);
+    it->setString(getIpAddrString(buf, 16));
 }
 
 void NetworkLWIP_WiFi :: fetch_context_items(IndexedList<Action *>&items)
@@ -219,13 +233,26 @@ SubsysResultCode_e NetworkLWIP_WiFi :: manual_connect(SubsysCommand *cmd)
 void NetworkLWIP_WiFi :: show_aps(UserInterface *intf, ConfigItem *it)
 {
     wifi.sendEvent(EVENT_RESCAN);
+    BrowsableWifiAPList *broot = new BrowsableWifiAPList(); // new root!
+    TreeBrowser *tb = new TreeBrowser(intf, broot);
+    tb->allow_exit = true;
+    tb->has_path = false;
+    tb->init(intf->screen, intf->keyboard);
+    tb->setCleanup();
 
+    intf->activate_uiobject(tb);
+    // There is a new treebrowser now, which will call the fetch items from the BrowsableWifiAPList!!
 }
 
 void NetworkLWIP_WiFi :: enter_ap(UserInterface *intf, ConfigItem *it)
 {
     SubsysCommand cmd(intf, 0, 0, 0, "", "");
     manual_connect(&cmd);
+}
+
+void NetworkLWIP_WiFi :: conn_last(UserInterface *intf, ConfigItem *it)
+{
+    wifi_wifi_autoconnect();    
 }
 
 SubsysResultCode_e NetworkLWIP_WiFi :: list_aps(SubsysCommand *cmd)
@@ -262,5 +289,13 @@ SubsysResultCode_e NetworkLWIP_WiFi :: enable(SubsysCommand *cmd)
     wifi.Enable();
 #endif
     return SSRET_OK;
+}
+
+// Browsable APs
+IndexedList<Browsable *> *BrowsableWifiAPList :: getSubItems(int &error)
+{
+    error = 0;
+    wifi.getAccessPointItems(this, children);
+    return &children;
 }
 

@@ -57,7 +57,6 @@ void TreeBrowserState :: cleanup()
  */
 void TreeBrowserState :: do_refresh()
 {
-//	printf("RefreshIn.");
     if(!(browser->window)) {
         printf("INTERNAL ERROR: NO WINDOW TO DO REFRESH ON!!\n");
         return;
@@ -113,16 +112,14 @@ void TreeBrowserState :: draw()
 		return;
 	}
 
-    browser->window->set_color(6);
     browser->window->set_background(0);
-    browser->window->getScreen()->move_cursor(0, browser->window->getScreen()->get_size_y()-1);
-    browser->window->getScreen()->output_fixed_length(browser->path->get_path(), 0, browser->window->getScreen()->get_size_x()-9);
-
-    //	printf("Draw. First=%d. Selected_line=%d. Number of el=%d\n", first_item_on_screen, selected_line, children->get_elements());
-//	printf("Window = %p. WindowBase: %p\n", browser->window, browser->window->get_pointer());
-	// this functions initializes the screen
-    browser->window->set_color(browser->user_interface->color_fg);
     browser->window->reverse_mode(0);
+    if (browser->has_path) {
+        browser->window->set_color(6);
+        browser->window->getScreen()->move_cursor(0, browser->window->getScreen()->get_size_y()-1);
+        browser->window->getScreen()->output_fixed_length(browser->path->get_path(), 0, browser->window->getScreen()->get_size_x()-9);
+        browser->window->set_color(browser->user_interface->color_fg);
+    }
 
     if(children->get_elements() == 0) {
 		browser->window->clear();
@@ -166,7 +163,7 @@ void TreeBrowserState :: draw_item(Browsable *t, int line, bool selected)
 			browser->window->set_color(browser->user_interface->color_fg);
             browser->window->set_background(0);
 		} else { // non selectable item
-			browser->window->set_color(12); // TODO
+			browser->window->set_color(6); // TODO
 		}
 		int squeeze_type = browser->user_interface->filename_overflow_squeeze;
 		t->getDisplayString(buffer, browser->window->get_size_x(), squeeze_type);

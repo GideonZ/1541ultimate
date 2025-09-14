@@ -29,6 +29,9 @@ struct t_cfg_definition net_config[] = {
     { CFG_NET_NETMASK, CFG_TYPE_STRING, "Static Netmask",   "%s", NULL,       7, 16, (int)"255.255.255.0" },
     { CFG_NET_GATEWAY, CFG_TYPE_STRING, "Static Gateway",   "%s", NULL,       7, 16, (int)"192.168.2.1" },
     { CFG_NET_DNS,     CFG_TYPE_STRING, "Static DNS",       "%s", NULL,       7, 16, (int)"8.8.8.8" },
+    { CFG_SEPARATOR,   CFG_TYPE_SEP,    "",                               "",  NULL,       0,  0, 0 },
+    { CFG_NET_CUR_IP,  CFG_TYPE_INFO,   "Active IP address",             "%s", NULL,       0, 32, (int)"" },
+    { CFG_NET_MAC,     CFG_TYPE_INFO,   "Interface MAC",                 "%s", NULL,       0, 32, (int)"" },
     { CFG_TYPE_END,    CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
@@ -434,4 +437,19 @@ bool NetworkInterface :: peekArpTable(uint32_t ipToQuery, uint8_t *mac)
     portEXIT_CRITICAL();
 
     return ret;
+}
+
+void NetworkInterface :: on_edit()
+{
+    uint8_t mac[8];
+    char buf[32];
+    getMacAddr(mac);
+    sprintf(buf, "%b:%b:%b:%b:%b:%b", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    ConfigItem *it = cfg->find_item(CFG_NET_MAC);
+    it->setEnabled(false);
+    it->setString(buf);
+
+    it = cfg->find_item(CFG_NET_CUR_IP);
+    it->setEnabled(false);
+    it->setString(getIpAddrString(buf, 16));
 }

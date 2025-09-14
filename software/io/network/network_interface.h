@@ -32,6 +32,8 @@ extern "C" {
 #define CFG_VIC_UDP_IP      0xE8
 #define CFG_VIC_UDP_PORT    0xE9
 #define CFG_VIC_UDP_EN      0xEA
+#define CFG_NET_CUR_IP      0xEB
+#define CFG_NET_MAC         0xEC
 
 #include "fifo.h" // my oh so cool fifo! :)
 #define PBUF_FIFO_SIZE 70
@@ -121,6 +123,7 @@ public:
 
     // from ConfigurableObject
     virtual void effectuate_settings(void);
+    virtual void on_edit(void);
 
 	void getIpAddr(uint8_t *a);
 	void getMacAddr(uint8_t *a);

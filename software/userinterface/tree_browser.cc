@@ -106,6 +106,7 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root)
 {
 	// initialize state
     allow_exit = false;
+    has_path = true;
 	user_interface = ui;
 	screen = NULL;
 	window = NULL;
@@ -304,7 +305,6 @@ void TreeBrowser :: checkFileManagerEvent(void)
             break;
         }
         // printf("Event (%p) %s on %s\n", event, FileManager :: eventStrings[(int)event->eventType], event->pathName.c_str() );
-
         // example: browser path = /SD/Hallo  Event = media removed /SD/
 
         Path *path = fm->get_new_path("handleEvent");
@@ -344,7 +344,7 @@ void TreeBrowser :: checkFileManagerEvent(void)
             }
         }
 
-        // printf("DIR %sMATCHED, ENTRY %sMATCHED, st = %s\n", match_dir?"":"NOT ", match_entry?"":"NOT ", st->node->getName());
+        // printf("DIR %sMATCHED, ENTRY %sMATCHED, st = %s, %p, %p, %d\n", match_dir?"":"NOT ", match_entry?"":"NOT ", st->node->getName(), st, this->state, match_exact_path);
         Browsable *b;
 
         switch (event->eventType) {
@@ -438,7 +438,7 @@ int TreeBrowser :: handle_key(int c)
     
     switch(c) {
         case KEY_BREAK: // runstop
-            ret = MENU_HIDE;
+            ret = (allow_exit) ? MENU_CLOSE : MENU_HIDE;
             break;
         case KEY_MENU:
             ret = (allow_exit) ? MENU_CLOSE : MENU_HIDE;
@@ -565,6 +565,9 @@ int TreeBrowser :: handle_key(int c)
             state->into2();
             break;
         case KEY_LEFT: // left
+            if (!state->previous && allow_exit) {
+                ret = MENU_CLOSE;
+            }
         	state->level_up();
             break;
         case KEY_INSERT: // shift del

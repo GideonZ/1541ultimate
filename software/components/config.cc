@@ -751,7 +751,7 @@ const char *ConfigItem :: get_display_string(char *buffer, int width)
     dst = &buffer[width+1];
     for(int b = len-1; b >= 0; b--)
         *(dst--) = buf[b];
-    *(dst--) = (enabled) ? 7 : 11;
+    *(dst--) = (enabled) ? 7 : 6;
     *(dst--) = '\033'; // escape code = set color
     return (const char *)buffer;
 }

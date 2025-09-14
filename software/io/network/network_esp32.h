@@ -17,6 +17,9 @@
 #define CFG_WIFI_SEL_AP 0xB2
 #define CFG_WIFI_ENT_AP 0xB3
 #define CFG_WIFI_CUR_AP 0xB4
+#define CFG_WIFI_CUR_IP 0xB5
+#define CFG_WIFI_MAC    0xB6
+#define CFG_WIFI_CONN   0xB7
 
 class NetworkLWIP_WiFi : public NetworkInterface
 {
@@ -45,12 +48,21 @@ public:
     // From Config menu
     static void show_aps(UserInterface *intf, ConfigItem *it);
     static void enter_ap(UserInterface *intf, ConfigItem *it);
-
+    static void conn_last(UserInterface *intf, ConfigItem *it);
+    
     // from ConfigurableObject
     void effectuate_settings(void);
     void on_edit(void);
 };
 
+class BrowsableWifiAPList : public Browsable
+{
+public:
+    BrowsableWifiAPList() { }
+
+    IndexedList<Browsable *> *getSubItems(int &error);
+    const char *getName() { return "BrowsableWiFiAPList"; }
+};
 
 
 

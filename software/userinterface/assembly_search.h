@@ -17,7 +17,7 @@ public:
     AssemblySearchForm(Browsable *node, TreeBrowser *tb, int level);
     ~AssemblySearchForm();
 
-    void into(void) { printf("Seach Form Into\n"); }
+    void into(void) { printf("Search Form Into\n"); }
     void level_up(void) { printf("Search Form Up\n"); };
     void change(void);
     void increase(void);

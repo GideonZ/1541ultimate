@@ -110,6 +110,7 @@ public:
     }
 
     void fetch_context_items(IndexedList<Action *>&items);
+	IndexedList<Browsable *> *getSubItems(int &error) { error = -1; return &children; }
     static SubsysResultCode_e connect_ap(SubsysCommand *cmd);
 };
 
