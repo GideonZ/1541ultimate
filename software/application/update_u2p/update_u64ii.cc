@@ -113,13 +113,13 @@ void do_update(void)
 #if SILENT
     goto esp32_done;
 #endif
-    uint16_t major, minor;
+    uint16_t major = 0, minor = 0;
     char moduleName[32];
     BaseType_t module_detected;
     module_detected = wifi_detect(&major, &minor, moduleName, 32);
     module_detected = wifi_detect(&major, &minor, moduleName, 32); // second time should pass
     if (module_detected == pdTRUE) {
-        console_print(screen, "WiFi module detected: %s\n", moduleName);
+        console_print(screen, "WiFi module detected: %s (%d.%d)\n", moduleName, major, minor);
         
         // if(user_interface->popup("Want to update the WiFi Module?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
         if ((major != IDENT_MAJOR) || (minor != IDENT_MINOR)) {
