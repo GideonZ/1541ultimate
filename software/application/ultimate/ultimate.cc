@@ -71,7 +71,6 @@ extern "C" void ultimate_main(void *a)
     // Normal boot log size is about 5k right now, so 16k should be enough to
     // give time to flush the buffer.
     const int syslog_bufsize = 16*1024;
-    custom_outbyte = syslog.init(syslog_bufsize) ? outbyte_log_syslog : outbyte_log;
 
     char time_buffer[32];
 
@@ -83,6 +82,7 @@ extern "C" void ultimate_main(void *a)
 
 	puts("Executing init functions.");
 	InitFunction :: executeAll();
+    custom_outbyte = syslog.init(syslog_bufsize) ? outbyte_log_syslog : outbyte_log;
    
     printf("%s ", rtc.get_long_date(time_buffer, 32));
     printf("%s\n", rtc.get_time_string(time_buffer, 32));
