@@ -55,6 +55,11 @@ static const char *helptext_ult=
         "F4:         Show System Information\n"
 #endif
         "C= L:       Show Debug Log\n"
+#if U64 == 2
+        "\nOutside menus the machine can be\n"
+        "reset by holding the switch up\n"
+        "for 1 second.\n"
+#endif
 		"\nRUN/STOP to close this window.";
 
 static const char *helptext_wasd=
@@ -91,8 +96,13 @@ static const char *helptext_wasd=
         "\n"  
     #ifndef RECOVERYAPP
     #endif
-        "C= L:       Show debug log\n"
-        "\nRUN/STOP to close this window.";
+        "C= L:       Show Debug Log\n"
+#if U64 == 2
+        "\nOutside menus the machine can be\n"
+        "reset by holding the switch up\n"
+        "for 1 second.\n"
+#endif
+		"\nRUN/STOP to close this window.";
 
 #include "stream_textlog.h"
 extern StreamTextLog textLog; // the global log
