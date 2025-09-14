@@ -169,7 +169,7 @@ void init_flash_disk(void)
 
     flashdisk_blk = new BlockDevice_Flash(flash);
 
-    flashdisk_node = new FileDevice(flashdisk_blk, "Flash", "Flash Disk");
+    flashdisk_node = new FileDevice(flashdisk_blk, "Flash", "Internal Memory");
     flashdisk_node->attach_disk(flash->get_sector_size(0));
     int a = flashdisk_node->probe();
     if (a < 1) {
