@@ -142,11 +142,11 @@ extern "C" void ultimate_main(void *a)
     if(c64) {
         c64UserInterface = new UserInterface(title, true);
         // Instantiate and attach the root tree browser
-        Browsable *root = new BrowsableRoot();
 #if COMMODORE
         CommodoreMenu *commodoreMenu = new CommodoreMenu(c64UserInterface);
         c64UserInterface->activate_uiobject(commodoreMenu); // root of all evil!
 #else
+        Browsable *root = new BrowsableRoot();
         root_tree_browser = new TreeBrowser(c64UserInterface, root);
         c64UserInterface->activate_uiobject(root_tree_browser); // root of all evil!
 #endif

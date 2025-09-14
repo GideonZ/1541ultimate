@@ -71,7 +71,8 @@ static const char *queryhelp =
         "CRSR LEFT:  Close Search\n"
         "\n"
 		"Quick type: Use the keyboard to type\n"
-		"            directly in current field.\n"
+		"            directly in current\n"
+        "            field.\n"
         "\n"
         "2. Query Result Screen:\n"
 		"CRSR UP/DN: Select title\n"
@@ -92,7 +93,13 @@ int AssemblySearch :: handle_key(int c)
         return MENU_CLOSE; // independent of level, it closes the search.
         // if we'd have this handled by the tree browser, it would cause a HIDE instead
     }
-    if (state->level >= 2) {
+    // For level 1 it's just like tree browser, with the exception of the return key / space
+    // This could also be handled by the tree browser, if we check for context menus and do 'into' when none exist.
+    if (((c == KEY_RETURN) || (c == KEY_SPACE)) && (state->level == 1)) {
+        state->into();
+        return 0;
+    }
+    if (state->level >= 1) {
         return TreeBrowser :: handle_key(c);
     }
     switch(c) {
@@ -179,6 +186,7 @@ int AssemblySearch :: handle_key(int c)
                 state->level_up();
             }
             break;
+
         default:
             if ((state->level == 0) && (
                 (c >= 'a' && c <= 'z') ||
