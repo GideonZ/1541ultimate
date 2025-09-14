@@ -11,6 +11,7 @@
 #include "wifi_cmd.h"
 #include "product.h"
 #include "usb_base.h"
+#include "rpc_dispatch.h"
 
 extern uint32_t _u64_rbf_start;
 extern uint32_t _u64_rbf_end;
@@ -43,7 +44,11 @@ static void status_callback(void *user)
 
 void do_update(void)
 {
+#if COMMODORE
+    setup("\033\025** Commodore 64 Ultimate Updater **\n\033\037");
+#else
     setup("\033\025** Ultimate 64 Elite-II Updater **\n\033\037");
+#endif
     usb2.initHardware();
 
     Flash *flash2 = get_flash();
@@ -115,7 +120,9 @@ void do_update(void)
     module_detected = wifi_detect(&major, &minor, moduleName, 32); // second time should pass
     if (module_detected == pdTRUE) {
         console_print(screen, "WiFi module detected: %s\n", moduleName);
-        if(user_interface->popup("Want to update the WiFi Module?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+        
+        // if(user_interface->popup("Want to update the WiFi Module?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+        if ((major != IDENT_MAJOR) || (minor != IDENT_MINOR)) {
             if (esp32.Download() == 0) {
                 uint32_t total_size = (uint32_t)&_bootloader_bin_size + (uint32_t)&_partition_table_bin_size + (uint32_t)&_u64ctrl_bin_size;
                 user_interface->show_progress("Flashing ESP32", total_size / 1024);
@@ -136,7 +143,7 @@ void do_update(void)
                 }
                 esp32.EnableRunMode();
             } else {
-                user_interface->popup("Could not switch to download mode.", BUTTON_OK);
+                user_interface->popup("Could not set ESP32 to download mode", BUTTON_OK);
             }
         }
     } else {
