@@ -13,13 +13,14 @@
 #include "network_interface.h"
 
 
-#define CFG_WIFI_ENABLE 0xB1
-#define CFG_WIFI_SEL_AP 0xB2
-#define CFG_WIFI_ENT_AP 0xB3
-#define CFG_WIFI_CUR_AP 0xB4
-#define CFG_WIFI_CUR_IP 0xB5
-#define CFG_WIFI_MAC    0xB6
-#define CFG_WIFI_CONN   0xB7
+#define CFG_WIFI_ENABLE  0xB1
+#define CFG_WIFI_SEL_AP  0xB2
+#define CFG_WIFI_ENT_AP  0xB3
+#define CFG_WIFI_CUR_AP  0xB4
+#define CFG_WIFI_CUR_IP  0xB5
+#define CFG_WIFI_MAC     0xB6
+#define CFG_WIFI_CONN    0xB7
+#define CFG_WIFI_DISCONN 0xB8
 
 class NetworkLWIP_WiFi : public NetworkInterface
 {
@@ -46,10 +47,11 @@ public:
     static SubsysResultCode_e auto_connect(SubsysCommand *cmd);
 
     // From Config menu
-    static void show_aps(UserInterface *intf, ConfigItem *it);
-    static void enter_ap(UserInterface *intf, ConfigItem *it);
-    static void conn_last(UserInterface *intf, ConfigItem *it);
-    
+    static void cfg_show_aps(UserInterface *intf, ConfigItem *it);
+    static void cfg_enter_ap(UserInterface *intf, ConfigItem *it);
+    static void cfg_conn_last(UserInterface *intf, ConfigItem *it);
+    static void cfg_disconn(UserInterface *intf, ConfigItem *it);
+
     // from ConfigurableObject
     void effectuate_settings(void);
     void on_edit(void);

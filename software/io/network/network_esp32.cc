@@ -33,9 +33,10 @@ const char *authmodes[] = { "Open", "WEP", "WPA PSK", "WPA2 PSK", "WPA/WPA2 PSK"
 //-----------------------------------
 struct t_cfg_definition wifi_config[] = {
     { CFG_WIFI_ENABLE, CFG_TYPE_ENUM,   "WiFi Enabled",                  "%s", en_dis,     0,  1, 1 },
-    { CFG_WIFI_CONN,   CFG_TYPE_FUNC,   "Connect to last AP",            "...",(const char **)NetworkLWIP_WiFi :: conn_last, 0, 0, 0 },
-    { CFG_WIFI_SEL_AP, CFG_TYPE_FUNC,   "Select AP from list",           "...",(const char **)NetworkLWIP_WiFi :: show_aps, 0, 0, 0 },
-    { CFG_WIFI_ENT_AP, CFG_TYPE_FUNC,   "Enter AP manually",             "...",(const char **)NetworkLWIP_WiFi :: enter_ap, 0, 0, 0 },
+    { CFG_WIFI_DISCONN,CFG_TYPE_FUNC,   "Disconnect",                    "...",(const char **)NetworkLWIP_WiFi :: cfg_disconn, 0, 0, 0 },
+    { CFG_WIFI_CONN,   CFG_TYPE_FUNC,   "Connect to last AP",            "...",(const char **)NetworkLWIP_WiFi :: cfg_conn_last, 0, 0, 0 },
+    { CFG_WIFI_SEL_AP, CFG_TYPE_FUNC,   "Select AP from list",           "...",(const char **)NetworkLWIP_WiFi :: cfg_show_aps, 0, 0, 0 },
+    { CFG_WIFI_ENT_AP, CFG_TYPE_FUNC,   "Enter AP manually",             "...",(const char **)NetworkLWIP_WiFi :: cfg_enter_ap, 0, 0, 0 },
     { CFG_NET_DHCP_EN, CFG_TYPE_ENUM,   "Use DHCP",                      "%s", en_dis,     0,  1, 1 },
 	{ CFG_NET_IP,      CFG_TYPE_STRING, "Static IP",					 "%s", NULL,       7, 16, (int)"192.168.2.64" },
 	{ CFG_NET_NETMASK, CFG_TYPE_STRING, "Static Netmask",				 "%s", NULL,       7, 16, (int)"255.255.255.0" },
@@ -230,7 +231,7 @@ SubsysResultCode_e NetworkLWIP_WiFi :: manual_connect(SubsysCommand *cmd)
     return SSRET_OK;
 }
 
-void NetworkLWIP_WiFi :: show_aps(UserInterface *intf, ConfigItem *it)
+void NetworkLWIP_WiFi :: cfg_show_aps(UserInterface *intf, ConfigItem *it)
 {
     wifi.sendEvent(EVENT_RESCAN);
     BrowsableWifiAPList *broot = new BrowsableWifiAPList(); // new root!
@@ -244,15 +245,20 @@ void NetworkLWIP_WiFi :: show_aps(UserInterface *intf, ConfigItem *it)
     // There is a new treebrowser now, which will call the fetch items from the BrowsableWifiAPList!!
 }
 
-void NetworkLWIP_WiFi :: enter_ap(UserInterface *intf, ConfigItem *it)
+void NetworkLWIP_WiFi :: cfg_enter_ap(UserInterface *intf, ConfigItem *it)
 {
     SubsysCommand cmd(intf, 0, 0, 0, "", "");
     manual_connect(&cmd);
 }
 
-void NetworkLWIP_WiFi :: conn_last(UserInterface *intf, ConfigItem *it)
+void NetworkLWIP_WiFi :: cfg_conn_last(UserInterface *intf, ConfigItem *it)
 {
     wifi_wifi_autoconnect();    
+}
+
+void NetworkLWIP_WiFi :: cfg_disconn(UserInterface *intf, ConfigItem *it)
+{
+    wifi_wifi_disconnect();    
 }
 
 SubsysResultCode_e NetworkLWIP_WiFi :: list_aps(SubsysCommand *cmd)
