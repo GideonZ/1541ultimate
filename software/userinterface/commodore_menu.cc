@@ -63,7 +63,7 @@ CommodoreMenu :: CommodoreMenu(UserInterface *ui) : ContextMenu(ui, NULL, 1, 0, 
     appendAction(new Action("LOCAL FILE BROWSER", S_file_browser, 0));
     appendAction(new Action("INTERNET SEARCH", S_assembly64, 0));
     appendAction(new Action("STARTUP & MEMORY", S_cfg_page, e_c64_carts));
-    appendAction(new Action("TV & JOYSTICKS", S_cfg_page, e_u64_specific));
+    appendAction(new Action("VIDEO & SPEED", S_cfg_page, e_u64_specific));
     appendAction(new Action("NETWORK SERVICES & TIMEZONE", S_cfg_page, e_network));
     appendAction(new Action("WIRED NETWORK SETUP", S_cfg_page, e_ethernet));
     appendAction(new Action("WI-FI NETWORK SETUP", S_cfg_page, e_wifi));

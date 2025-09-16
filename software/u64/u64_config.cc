@@ -257,7 +257,7 @@ static const uint8_t stereo_bits[] = { 0x00, 0x02, 0x04, 0x08, 0x10, 0x20 };
 static const uint8_t split_bits[] = { 0x00, 0x02, 0x04, 0x08, 0x10, 0x06, 0x12, 0x18 };
 static const char *speeds_u64[]   = { " 1", " 2", " 3", " 4", " 5", " 6", " 8", "10", "12", "14", "16", "20", "24", "32", "40", "48" };
 static const char *speeds_u64ii[] = { " 1", " 2", " 3", " 4", " 6", " 8", "10", "12", "14", "16", "20", "24", "32", "40", "48", "64" };
-static const char *speed_regs[] = { "Off", "Manual", "U64 Turbo Registers", "TurboEnable Bit", "a", "b" };
+static const char *speed_regs[] = { "Off", "Manual", "C64U Turbo Registers", "TurboEnable Bit", "a", "b" };
 static const uint8_t speedregs_regvalues[] = { 0x00, 0x00, 0x01, 0x05, 0x00, 0x00 }; // removed 3 and 7
 
 /*
