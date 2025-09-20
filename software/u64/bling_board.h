@@ -18,6 +18,8 @@
 #define CFG_LED_BLUE          0x04
 #define CFG_LED_INTENSITY     0x05
 #define CFG_LED_SIDSELECT     0x06
+#define CFG_LED_FIXED_COLOR   0x07
+#define CFG_LED_FIXED_TINT    0x08
 
 #define LED_DIRECTION 0xFC
 #define LED_STARTADDR 0xFD
@@ -27,7 +29,7 @@
 class BlingBoard : public ConfigurableObject
 {
     volatile uint8_t mode, intensity, sidsel;
-    volatile uint8_t red, green, blue;
+    volatile uint8_t hue, tint;
     
     static void task(void *);
     static int hot_effectuate(ConfigItem *item);
