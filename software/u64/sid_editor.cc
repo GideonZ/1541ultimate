@@ -251,6 +251,7 @@ int SidEditor :: handle_key(int c)
         break;
 
     case 'U':
+    case 'u':
         address_item[edit]->setValue(0);
         draw_edit();
         redraw();

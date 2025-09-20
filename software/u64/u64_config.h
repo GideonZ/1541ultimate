@@ -152,6 +152,7 @@ public:
     volatile uint8_t *access_socket_pre(int socket);
     void access_socket_post(int socket);
     void clear_ram(void);
+    void setup_config_menu();
 };
 
 extern uint8_t C64_EMUSID1_BASE_BAK;

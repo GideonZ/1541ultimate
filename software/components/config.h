@@ -125,7 +125,7 @@ class ConfigStore
     ConfigPage *page;
     bool  staleEffect;
     bool  staleFlash;
-    
+    bool  hidden;
     int  pack(uint8_t *buffer, int len);
     void unpack(uint8_t *buffer, int len);
 public:
@@ -137,6 +137,8 @@ public:
     void set_alt_name(const char *alt) { alt_name = alt; }
     void addObject(ConfigurableObject *obj);
     int  unregister(ConfigurableObject *obj);
+    void hide() { hidden = true; }
+    bool isHidden() { return hidden; }
 
 // Interface functions
     virtual void reset(void);

@@ -73,12 +73,9 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_SID2_ADDRESS      0x03
 #define CFG_EMUSID1_ADDRESS   0x04
 #define CFG_EMUSID2_ADDRESS   0x05
-#define CFG_AUDIO_LEFT_OUT	  0x06
-#define CFG_AUDIO_RIGHT_OUT	  0x07
 #define CFG_COLOR_CLOCK_ADJ   0x08
 #define CFG_ANALOG_OUT_SELECT 0x09
 #define CFG_CHROMA_DELAY      0x0A
-#define CFG_COLOR_CODING      0x0B
 #define CFG_HDMI_ENABLE       0x0C
 #define CFG_SID1_TYPE		  0x0D
 #define CFG_SID2_TYPE		  0x0E
@@ -301,7 +298,6 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_PLAYER_AUTOCONFIG,    CFG_TYPE_ENUM, "SID Player Autoconfig",        "%s", en_dis,       0,  1, 1 },
     { CFG_ALLOW_EMUSID,         CFG_TYPE_ENUM, "Allow Autoconfig uses UltiSid","%s", yes_no,       0,  1, 1 },
 #if DEVELOPER
-    //    { CFG_COLOR_CODING,         CFG_TYPE_ENUM, "Color Coding (not Timing!)",   "%s", color_sel,    0,  1, 0 },
     { CFG_VIC_TEST,             CFG_TYPE_ENUM, "VIC Test Colors",              "%s", en_dis5,      0,  2, 0 },
 #endif
     { CFG_SPEED_REGS,           CFG_TYPE_ENUM, "Turbo Control",                "%s", speed_regs,   0,  3, 0 },
@@ -806,8 +802,6 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
     if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
         struct t_cfg_definition *def = u64_cfg;
         register_store(STORE_PAGE_ID, "U64 Specific Settings", def);
-        cfg->set_alt_name("C64U Specific Settings");
-
 		// Tweak: This has to be done first in order to make sure that the correct cart is started
 		// at cold boot.
         C64 *machine = C64 :: getMachine();
@@ -839,6 +833,10 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 #endif
         u64_configurator->sockets.detect();
         u64_configurator->clear_ram();
+
+        cfg->set_alt_name("C64U Specific Settings");
+        setup_config_menu(); // Create different config groups
+        cfg->hide();
 
         // Boot hotkey
         {
@@ -2326,3 +2324,49 @@ void U64Config :: late_init_palette(void *obj, void *param)
         set_palette_rgb(default_colors);
     }
 }
+
+#define SORT_ORDER_CFG_U64 10
+#define SORT_ORDER_CFG_LEDS 15
+#define SORT_ORDER_CFG_TWEAKS 80
+#define SORT_ORDER_CFG_DRVA 11
+#define SORT_ORDER_CFG_DRVB 12
+#define SORT_ORDER_SIDPLAY 79
+
+void U64Config :: setup_config_menu(void)
+{
+    ConfigGroup *grp = ConfigGroupCollection :: getGroup("Video Configuration", SORT_ORDER_CFG_U64);
+    grp->append(cfg->find_item(CFG_SYSTEM_MODE));
+    grp->append(cfg->find_item(CFG_SCANLINES));
+    grp->append(cfg->find_item(CFG_PALETTE));
+    grp->append(ConfigItem :: separator());
+    grp->append(cfg->find_item(CFG_ANALOG_OUT_SELECT));
+    grp->append(cfg->find_item(CFG_HDMI_ENABLE));
+    grp->append(ConfigItem :: separator());
+//    grp->append(cfg->find_item(CFG_COLOR_CLOCK_ADJ)->set_item_altname("Clock Frequency Tuning"));
+//    grp->append(cfg->find_item(CFG_CHROMA_DELAY)->set_item_altname("Chroma Delay Tuning"));
+
+    grp = ConfigGroupCollection :: getGroup("LED Configuration", SORT_ORDER_CFG_LEDS);
+    grp->append(cfg->find_item(CFG_LED_SELECT_0)->set_item_altname("Power LED Output 1"));
+    grp->append(cfg->find_item(CFG_LED_SELECT_1)->set_item_altname("Power LED Output 2"));
+    grp->append(ConfigItem :: separator());
+
+    grp = ConfigGroupCollection :: getGroup("Machine Tweaks", SORT_ORDER_CFG_TWEAKS);
+    grp->append(cfg->find_item(CFG_JOYSWAP));
+    grp->append(ConfigItem :: separator());
+    grp->append(cfg->find_item(CFG_SPEED_REGS));
+    grp->append(cfg->find_item(CFG_SPEED_PREF));
+    grp->append(cfg->find_item(CFG_BADLINES_EN));
+    grp->append(cfg->find_item(CFG_SUPERCPU_DET));
+    grp->append(ConfigItem :: separator());
+    grp->append(sidaddressing.cfg->find_item(CFG_PADDLE_EN));
+    grp->append(cfg->find_item(CFG_IEC_BURST_EN));
+    grp->append(cfg->find_item(CFG_USERPORT_EN));
+
+    grp = ConfigGroupCollection :: getGroup("Drive A Settings", SORT_ORDER_CFG_DRVA);
+    grp->append(cfg->find_item(CFG_PARCABLE_ENABLE));
+
+    grp = ConfigGroupCollection :: getGroup("SID Player Behavior", SORT_ORDER_SIDPLAY);
+    grp->append(cfg->find_item(CFG_PLAYER_AUTOCONFIG));
+    grp->append(cfg->find_item(CFG_ALLOW_EMUSID));
+}
+

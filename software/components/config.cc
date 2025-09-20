@@ -231,6 +231,7 @@ ConfigStore :: ConfigStore(ConfigPage *page, const char *name,
     this->page = page;
     staleEffect = true;
     staleFlash = false;
+    hidden = false;
     
     for(int i=0;i<64;i++) {
         if(defs[i].type == CFG_TYPE_END)

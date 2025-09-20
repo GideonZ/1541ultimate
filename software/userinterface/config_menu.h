@@ -271,7 +271,8 @@ class BrowsableConfigRoot: public Browsable
         if (children.get_elements() == 0) {
             IndexedList<ConfigStore *> *storeList = ConfigManager::getConfigManager()->getStores();
             for (int i = 0; i < storeList->get_elements(); i++) {
-                children.append(new BrowsableConfigStore((*storeList)[i]));
+                if (!(*storeList)[i]->isHidden())
+                    children.append(new BrowsableConfigStore((*storeList)[i]));
             }
 
             IndexedList<ConfigGroup *> *groupList = ConfigGroupCollection::getGroups();
