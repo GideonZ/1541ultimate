@@ -201,6 +201,9 @@ ConfigStore *ConfigManager :: find_store(const char *storename)
         if (strcasecmp(st->get_store_name(), storename) == 0) {
             return st;
         }
+        if (strcasecmp(st->get_alt_store_name(), storename) == 0) {
+            return st;
+        }
     }
     return NULL;
 }

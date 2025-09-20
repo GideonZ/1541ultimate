@@ -121,6 +121,7 @@ class ConfigStore
 {
     IndexedList<ConfigurableObject *> objects;
     mstring store_name;
+    mstring alt_name;
     ConfigPage *page;
     bool  staleEffect;
     bool  staleFlash;
@@ -132,6 +133,8 @@ public:
 
     ConfigStore(ConfigPage *page, const char *name, t_cfg_definition *defs, ConfigurableObject *obj);
     virtual ~ConfigStore();
+
+    void set_alt_name(const char *alt) { alt_name = alt; }
     void addObject(ConfigurableObject *obj);
     int  unregister(ConfigurableObject *obj);
 
@@ -151,11 +154,6 @@ public:
 
     virtual void effectuate(void);
 
-/*
-    int  get_page(void) { return flash_page; }
-    int  get_page_size(void) { return block_size; }
-*/
-
     void set_change_hook(uint8_t id, t_change_hook hook);
     void disable(uint8_t id);
     void enable(uint8_t id);
@@ -165,6 +163,7 @@ public:
     ConfigItem *find_item(const char *str);
     int  get_value(uint8_t id);
     const char *get_store_name() { return store_name.c_str(); }
+    const char *get_alt_store_name() { return alt_name.length() ? alt_name.c_str() : store_name.c_str(); }
     const char *get_string(uint8_t id);
     void set_value(uint8_t id, int value);
     void set_string(uint8_t id, const char *s);

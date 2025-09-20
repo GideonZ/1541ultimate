@@ -164,9 +164,10 @@ class BrowsableConfigStore: public Browsable
     {
         return store;
     }
+
     const char *getName()
     {
-        return store->get_store_name();
+        return store->get_alt_store_name();
     }
 
     void event(int code)
