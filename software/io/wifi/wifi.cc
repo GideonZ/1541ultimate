@@ -517,3 +517,10 @@ void wifi_free(void *driver, void *buffer)
     WiFi *w = (WiFi *)driver;
     w->freeBuffer((command_buf_t *)buffer);
 }
+
+extern "C" {
+    void print_uart_status()
+    {
+        wifi.uart->PrintStatus();
+    }
+}

@@ -96,6 +96,10 @@ public:
 
     void PrintStatus(void) {
         printf("UART status: %b\n", uart->status);
+        printf("Packets in Rxbufs: %d\n", uxQueueMessagesWaiting(rx_bufs));
+        printf("Packets in Free queue: %d\n", uxQueueMessagesWaiting(packets->freeQueue));
+        printf("Packets in Tx queue: %d\n", uxQueueMessagesWaiting(packets->transmitQueue));
+        printf("Packets in Received queue: %d\n", uxQueueMessagesWaiting(packets->receivedQueue));
     }
 
 //    void ReEnableBufferIRQ(void);
