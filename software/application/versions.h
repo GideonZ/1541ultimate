@@ -13,8 +13,8 @@
 // A = |-
 // B = bar lower 7 lines
 // C = -|
-// D = rounded corner upper right
-// E = _|_
+// D = _|_
+// E = rounded corner upper right
 // F = rounded corner upper left
 // 10 = alpha
 // 11 = beta

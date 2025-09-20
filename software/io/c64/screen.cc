@@ -211,7 +211,7 @@ void Screen_MemMappedCharMatrix :: output_raw(char c)
             if(reverse)
                 char_base[pointer] = c | 0x80;
             else
-                char_base[pointer] = c;
+                char_base[pointer] = c & 0x7F;
 
             color_base[pointer] = (char)(color | background << 4);
             pointer ++;

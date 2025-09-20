@@ -79,27 +79,14 @@ int SidEditor :: poll(int)
 
 void SidEditor :: draw()
 {
-    // 1 = corner lower right
-    // 2 = horizontal bar
-    // 3 = corner lower left
-    // 4 = vertical bar
-    // 5 = corner upper right
-    // 6 = corner upper left
-    // 7 = rounded corner lower right
-    // 8 = T
-    // 9 = rounded corner lower left
-    // A = |-
-    // B = +
-    // C = -|
-    // D = rounded corner upper right
-    // E = _|_
-    // F = rounded corner upper left
-    // 10 = alpha
-    // 11 = beta
     const char hexchar[] = "0123456789ABCDEF";
-    const char *sep = "\002\002\013\002\002\002\002\013\002\002\002\002\013\002\002\002\002\013\002\002\002\002\013\002\002\002\002\013\002\002\002\002\014";
-    const char *opn = "\040\040\013\040\040\040\040\013\040\040\040\040\013\040\040\040\040\013\040\040\040\040\013\040\040\040\040\013\040\040\040\040\014";
-    const char *end = "\040\040\016\040\040\040\040\016\040\040\040\040\016\040\040\040\040\016\040\040\040\040\016\040\040\040\040\016\040\040\040\040\006";
+    const char *sep = "\002\002\053\002\002\002\002\053\002\002\002\002\053\002\002\002\002\053\002\002\002\002\053\002\002\002\002\053\002\002\002\002\014";
+    const char *opn = "\040\040\212\040\040\040\040\053\040\040\040\040\053\040\040\040\040\053\040\040\040\040\053\040\040\040\040\053\040\040\040\040\014";
+    const char *end = "\040\040\005\040\040\040\040\215\040\040\040\040\215\040\040\040\040\215\040\040\040\040\215\040\040\040\040\215\040\040\040\040\006";
+
+    if(user_interface->host && user_interface->host->is_accessible())
+        user_interface->host->set_colors(0, user_interface->color_border);
+
     window->move_cursor(0, 0);
     window->output("  \004D400\004D500\004D600\004D700\004DE00\004DF00\004");
     for (int i=0; i < 8; i++) {
@@ -229,10 +216,11 @@ void SidEditor :: draw_edit(void)
     window->output("       ");
 
     window->move_cursor(0, 19);
-    window->reverse_mode(1);
     window->output('S');
+    window->reverse_mode(1);
+    window->output('p');
     window->reverse_mode(0);
-    window->output("plit: ");
+    window->output("lit: ");
     if (edit < 2) {
         window->output(stereo_addr[split_item[edit]->getValue()]);
     } else {
@@ -292,7 +280,7 @@ int SidEditor :: handle_key(int c)
         redraw();
         break;
 
-    case 's':
+    case 'p':
         split_item[edit]->next(1);
         draw_edit();
         redraw();
@@ -308,6 +296,10 @@ int SidEditor :: handle_key(int c)
     case KEY_F8:
     case KEY_BREAK:
     case KEY_BACK:
+        // restore ugly blue
+        if(user_interface->host && user_interface->host->is_accessible())
+            user_interface->host->set_colors(user_interface->color_bg, user_interface->color_border);
+
         return MENU_CLOSE;
 
     default:
