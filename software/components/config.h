@@ -82,12 +82,15 @@ class ConfigItem
     int  pack(uint8_t *buffer, int len);
     void unpack(uint8_t *buffer, int len);
     void reset(void);
+    mstring altname;
 public:    
     ConfigStore *store;
     const t_cfg_definition *definition;
 
     ConfigItem(ConfigStore *s, t_cfg_definition *d);
     ~ConfigItem();
+
+    static ConfigItem *separator();
 
     const char *get_item_name() { return definition->item_text; }
     const char *get_display_string(char *buffer, int width);
@@ -96,6 +99,9 @@ public:
     void setChangeHook(t_change_hook hook) { this->hook = hook; }
     bool isEnabled(void) { return enabled; }
     void setEnabled(bool en) { enabled = en; }
+
+    const char *get_item_altname() { if (altname.length()) { return altname.c_str(); } else { return get_item_name(); } }
+    ConfigItem *set_item_altname(const char *n) { altname = n; return this; }
 
     const int getValue() { return value; }
     const char *getString() { return string; }
@@ -273,4 +279,5 @@ public:
 
 extern const char *en_dis[];
 
+#include "config_collection.h"
 #endif

@@ -603,6 +603,27 @@ ConfigItem :: ~ConfigItem()
         delete[] string;
 }
 
+ConfigItem *ConfigItem :: separator()
+{
+    // due to poor design, this cannot be const. But it will be referenced later,
+    // so we make it static. Otherwise it ends up on the stack.
+    static t_cfg_definition def = {
+        .id = 0xFE,
+        .type = CFG_TYPE_SEP,
+        .item_text = "",
+        .item_format = "",
+        .items = NULL,
+        .min = 0,
+        .max = 0,
+        .def = 0,
+    };
+    static ConfigItem *sep = NULL;
+    if (!sep) {
+        sep = new ConfigItem((ConfigStore *)NULL, &def);
+    }
+    return sep;
+}
+
 void ConfigItem :: reset(void)
 {
     if ((definition->type == CFG_TYPE_STRING) || (definition->type == CFG_TYPE_STRFUNC) || (definition->type == CFG_TYPE_STRPASS)) {
@@ -742,7 +763,7 @@ const char *ConfigItem :: get_display_string(char *buffer, int width)
     const char *src;
     char *dst;
     // left align copy
-    src = definition->item_text;
+    src = altname.length() ? altname.c_str() : definition->item_text;
     dst = buffer;
     while(*src) {
         *(dst++) = *(src++);

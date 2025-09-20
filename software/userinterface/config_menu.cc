@@ -67,8 +67,7 @@ void ConfigBrowserState :: into(void)
 void ConfigBrowserState :: level_up(void)
 {
     if (level == 1) { // going to level 0, we need to store in flash
-        ConfigStore *st = ((BrowsableConfigStore *) (previous->under_cursor))->getStore();
-        st->at_close_config();
+        previous->under_cursor->event(BR_EVENT_OUT);
     }
     browser->state = previous;
     if (previous) {
@@ -151,8 +150,7 @@ void ConfigBrowserState :: decrease(void)
 void ConfigBrowserState :: on_close(void)
 {
     if (level == 1) { // only at level 1, we know that our current node is of the type BrowsableConfigStore
-        ConfigStore *st = ((BrowsableConfigStore *) node)->getStore();
-        st->at_close_config();
+        node->event(BR_EVENT_CLOSE);
     }
 }
 

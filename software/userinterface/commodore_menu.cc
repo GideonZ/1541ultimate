@@ -60,8 +60,8 @@ CommodoreMenu :: CommodoreMenu(UserInterface *ui) : ContextMenu(ui, NULL, 1, 0, 
     Action *dummy = new Action(" ", S_file_browser, 0);
     dummy->disable();
     appendAction(dummy);
-    appendAction(new Action("LOCAL FILE BROWSER", S_file_browser, 0));
-    appendAction(new Action("INTERNET SEARCH", S_assembly64, 0));
+    appendAction(new Action("DISK FILE BROWSER", S_file_browser, 0));
+    appendAction(new Action("COMMOSERVE FILE SEARCH", S_assembly64, 0));
     appendAction(new Action("STARTUP & MEMORY", S_cfg_page, e_c64_carts));
     appendAction(new Action("VIDEO & SPEED", S_cfg_page, e_u64_specific));
     appendAction(new Action("NETWORK SERVICES & TIMEZONE", S_cfg_page, e_network));

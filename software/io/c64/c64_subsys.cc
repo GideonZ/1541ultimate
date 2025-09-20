@@ -44,7 +44,8 @@ static void initBootCart(void *object, void *param)
 }
 InitFunction bootCart_initializer("Boot Cart", initBootCart, NULL, NULL);
 
-C64_Subsys::C64_Subsys(C64 *machine)  : SubSystem(SUBSYSID_C64) {
+C64_Subsys::C64_Subsys(C64 *machine)  : SubSystem(SUBSYSID_C64)
+{
 	taskHandle = 0;
 	c64 = machine;
 	fm = FileManager :: getFileManager();
