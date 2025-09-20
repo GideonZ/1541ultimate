@@ -796,17 +796,21 @@ void C64::init_system_roms(void)
     extern uint8_t _kernal_901227_03_bin_start[];
     extern uint8_t _basic_bin_start[];
     extern uint8_t _characters_901225_01_bin_start[];
-
-    FRESULT fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_KERNFILE), (uint8_t *)U64_KERNAL_BASE, 8192, NULL);
-    if (fres != FR_OK) {
-        printf("Failed to load KERNAL ROM; loading default.\n");
-        memcpy((void *)U64_KERNAL_BASE, (void *)_kernal_901227_03_bin_start, 8192);
-    }
-    if (cfg->get_value(CFG_C64_FASTRESET)) {
-        unsigned char *kernal = (unsigned char *)U64_KERNAL_BASE;
-        if (!memcmp((void *) (kernal+0x1d6c), (void *) fastresetOrg, sizeof(fastresetOrg))) {
-            memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, 22);
+    FRESULT fres;
+    {
+        uint8_t *temp = new uint8_t[8192];
+        fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_KERNFILE), (uint8_t *)U64_KERNAL_BASE, 8192, NULL);
+        if (fres != FR_OK) {
+            printf("Failed to load KERNAL ROM; loading default.\n");
+            memcpy(temp, (void *)_kernal_901227_03_bin_start, 8192);
         }
+        if (cfg->get_value(CFG_C64_FASTRESET)) {
+            if (!memcmp((void *) (temp+0x1d6c), (void *) fastresetOrg, sizeof(fastresetOrg))) {
+                memcpy((void *) (temp+0x1d6c), (void *) fastresetPatch, 22);
+            }
+        }
+        memcpy((void *)U64_KERNAL_BASE, temp, 8192);
+        delete[] temp;
     }
     fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_BASIFILE), (uint8_t *)U64_BASIC_BASE, 8192, NULL);
     if (fres != FR_OK) {
