@@ -521,6 +521,6 @@ void wifi_free(void *driver, void *buffer)
 extern "C" {
     void print_uart_status()
     {
-        wifi.uart->PrintStatus();
+        wifi.PrintUartStatus();
     }
 }

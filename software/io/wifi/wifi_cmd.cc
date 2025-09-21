@@ -270,4 +270,5 @@ int wifi_modem_enable(bool enable)
     RETURN_ESP;
 }
 
+const char *no_wifi_buf = "*** NO BUFFER TO TRANSMIT ANYTHING.\n";
 

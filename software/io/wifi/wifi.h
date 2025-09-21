@@ -74,6 +74,8 @@ public:
     void freeBuffer(command_buf_t *buf);
     void getAccessPointItems(Browsable *parent, IndexedList<Browsable *> &list);
 
+    // Debug
+    void PrintUartStatus() { uart->PrintStatus(); }
     // User Interface functions
     void Disable(void);
     void Enable(void);
