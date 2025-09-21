@@ -108,6 +108,7 @@ void do_update(void)
 
     reset_config(flash2);
 
+    esp32.EnableRunMode();
     wifi_command_init();
 
 #if SILENT
