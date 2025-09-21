@@ -158,11 +158,14 @@ void TreeBrowserState :: draw_item(Browsable *t, int line, bool selected)
     if (t) {
 		if (selected) {
 			browser->window->set_color(browser->user_interface->color_sel);
+            browser->window->reverse_mode(browser->user_interface->reverse_sel);
             browser->window->set_background(browser->user_interface->color_sel_bg);
 		} else if(t->isSelectable()) {
 			browser->window->set_color(browser->user_interface->color_fg);
+            browser->window->reverse_mode(0);
             browser->window->set_background(0);
 		} else { // non selectable item
+            browser->window->reverse_mode(0);
 			browser->window->set_color(6); // TODO
 		}
 		int squeeze_type = browser->user_interface->filename_overflow_squeeze;
@@ -171,6 +174,7 @@ void TreeBrowserState :: draw_item(Browsable *t, int line, bool selected)
         browser->window->set_background(0);
     } else {
 		// draw an empty line
+        browser->window->reverse_mode(0);
 		browser->window->output_line("");
     }
 }

@@ -168,7 +168,7 @@ public:
 	    return info->lfname;
 	}
 
-	void squeezeToDisplayString(char *string_to_squeeze, char *squeezed_string, int max_width, int squeeze_quarter = 0) {
+	int squeezeToDisplayString(char *string_to_squeeze, char *squeezed_string, int max_width, int squeeze_quarter = 0) {
 		int len = strlen(string_to_squeeze);
 
 		if (squeeze_quarter < 0 || squeeze_quarter > 3) {
@@ -188,28 +188,32 @@ public:
 
 			squeezed_string[cut_off_point] = '~';
 		}
+        // strcat(squeezed_string, "\er");
+        // return 2;
+        return 0;
 	}
 
 	virtual void getDisplayString(char *buffer, int width, int squeeze_option = 0) {
 		static char sizebuf[8];
+        int extra;
 		if (info->name_format & NAME_FORMAT_DIRECT) {
 			FileManager::getFileManager()->get_display_string(parent_path, info->lfname, buffer, width);
 		} else {
 			int display_space = width - 11;
-			char tmp_buffer[display_space + 1];
+			char tmp_buffer[display_space + 5];
 			memset(tmp_buffer, '\0', display_space * sizeof(char));
 
 			char sel = getSelection() ? '\x13' : ' ';
 			if (info->is_directory()) {
-				squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
-				sprintf(buffer, "%#s\eJ DIR%c", display_space, tmp_buffer, sel);
+				extra = squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
+				sprintf(buffer, "%#s\eJ DIR%c", display_space + extra, tmp_buffer, sel);
 			} else if (info->attrib & AM_VOL) {
-				squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
-				sprintf(buffer, "\eR%#s\er VOLUME", display_space, tmp_buffer);
+				extra = squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
+				sprintf(buffer, "\eR%#s\er VOLUME", display_space + extra, tmp_buffer);
 			} else {
 				size_to_string_bytes(info->size, sizebuf);
-				squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
-				sprintf(buffer, "%#s\e7 %3s%c%s", display_space, tmp_buffer,
+				extra = squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
+				sprintf(buffer, "%#s\e7 %3s%c%s", display_space + extra, tmp_buffer,
 						info->extension, sel, sizebuf);
 			}
 		}
