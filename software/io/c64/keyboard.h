@@ -69,10 +69,10 @@ public:
 #define KEY_NUMLOCK  0xA4
 
 // Specials
-#define KEY_MENU     0xFE
-#define KEY_SEARCH   0xFD
-#define KEY_TASKS    0xFC
-#define KEY_HELP     0xFB
-#define KEY_CONFIG   0xFA
-#define KEY_SYSINFO  0xF9
+#define KEY_MENU     0x1FE
+#define KEY_SEARCH   0x1FD
+#define KEY_TASKS    0x1FC
+#define KEY_HELP     0x1FB
+#define KEY_CONFIG   0x1FA
+#define KEY_SYSINFO  0x1F9
 #endif
