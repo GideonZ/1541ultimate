@@ -85,12 +85,12 @@ CommodoreMenu :: ~CommodoreMenu()
     printf("Destructing Commodore browser..\n");
 }
 
-void CommodoreMenu :: init(Screen *screen, Keyboard *k) // call on root!
+void CommodoreMenu :: init() // call on root!
 {
-    this->screen = screen;
+    this->screen = get_ui()->get_screen();
+    this->keyb = get_ui()->get_keyboard();
 	window = new Window(screen, (screen->get_size_x() - 40) >> 1, 2, 40, screen->get_size_y()-3);
 	window->draw_border();
-    this->keyb = k;
 }
 
 int CommodoreMenu :: poll(int prev)
@@ -127,7 +127,7 @@ int CommodoreMenu :: select_item(void)
 SubsysResultCode_e CommodoreMenu :: S_file_browser(Action *act, void *context)
 {
     CommodoreMenu *menu = (CommodoreMenu *)context;
-    menu->root_tree_browser->init(menu->window->getScreen(), menu->keyb);
+    menu->root_tree_browser->init();
     menu->user_interface->activate_uiobject(menu->root_tree_browser);
     return SSRET_OK;
 }
@@ -140,7 +140,7 @@ SubsysResultCode_e CommodoreMenu :: S_cfg_page(Action *act, void *context)
     if (store) {
         Browsable *configPage = new BrowsableConfigStore(store);
         ConfigBrowser *configBrowser = new ConfigBrowser(menu->user_interface, configPage, 1);
-        configBrowser->init(menu->window->getScreen(), menu->keyb);
+        configBrowser->init();
         menu->user_interface->activate_uiobject(configBrowser);
     }
     return SSRET_OK;
@@ -151,7 +151,7 @@ SubsysResultCode_e CommodoreMenu :: S_advanced(Action *act, void *context)
     CommodoreMenu *menu = (CommodoreMenu *)context;
     Browsable *configRoot = new BrowsableConfigRoot();
     ConfigBrowser *configBrowser = new ConfigBrowser(menu->user_interface, configRoot);
-    configBrowser->init(menu->window->getScreen(), menu->keyb);
+    configBrowser->init();
     menu->user_interface->activate_uiobject(configBrowser);
     return SSRET_OK;
 }

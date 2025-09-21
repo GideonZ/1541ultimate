@@ -2082,7 +2082,7 @@ void U64Config :: show_mapping(uint8_t *base, uint8_t *mask, uint8_t *split, int
 void U64Config :: show_sid_addr(UserInterface *intf, ConfigItem *it)
 {
     SidEditor *se = new SidEditor(intf, u64_configurator->sidaddressing.cfg);
-    se->init(intf->screen, intf->keyboard);
+    se->init();
     intf->activate_uiobject(se);
 }
 

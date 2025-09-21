@@ -4,7 +4,7 @@
 #include "tree_browser.h"
 #include "tree_browser_state.h"
 
-ContextMenu :: ContextMenu(UserInterface *ui, TreeBrowserState *state, int initial, int y, int when_done, int ind) : actions(2, 0)
+ContextMenu :: ContextMenu(UserInterface *ui, TreeBrowserState *state, int initial, int y, int when_done, int ind) : UIObject(ui), actions(2, 0)
 {
 	user_interface = ui;
 	this->state = state;

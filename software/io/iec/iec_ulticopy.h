@@ -68,10 +68,10 @@ public:
     int return_code;
 
     // Member functions
-    UltiCopyWindow();
+    UltiCopyWindow(UserInterface *ui);
     virtual ~UltiCopyWindow();
 
-    virtual void init(Screen *win, Keyboard *k);
+    virtual void init();
     virtual void deinit(void);
 
     virtual int poll(int);

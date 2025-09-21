@@ -17,7 +17,7 @@
 #define CFG_EMUSID_SPLIT      0x47
 #define CFG_AUTO_MIRRORING    0x4A
 
-SidEditor :: SidEditor(UserInterface *intf, ConfigStore *cfg)
+SidEditor :: SidEditor(UserInterface *intf, ConfigStore *cfg) : UIObject(intf)
 {
     this->user_interface = intf;
     this->cfg = cfg;
@@ -45,10 +45,10 @@ SidEditor :: ~SidEditor()
 
 }
 
-void SidEditor :: init(Screen *scr, Keyboard *keyb)
+void SidEditor :: init()
 {
-    this->screen = scr;
-    this->keyb = keyb;
+    this->screen = get_ui()->get_screen();
+    this->keyb = get_ui()->get_keyboard();
     window = new Window(screen, (screen->get_size_x() - 40) >> 1, 2, 40, screen->get_size_y()-3);
     window->draw_border();
     window->clear();

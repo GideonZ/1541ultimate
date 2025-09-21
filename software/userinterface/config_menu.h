@@ -32,7 +32,7 @@ public:
     ConfigBrowser(UserInterface *ui, Browsable *, int level = 0);
     virtual ~ConfigBrowser();
 
-    virtual void init(Screen *screen, Keyboard *k);
+    virtual void init();
     virtual int handle_key(int);
     virtual void checkFileManagerEvent(void);
 };

@@ -62,7 +62,6 @@ public:
     bool logo;
     GenericHost *host;
     Keyboard *keyboard;
-    Keyboard *alt_keyboard;
     Screen *screen;
     int     focus;
     int     menu_response_to_action;
@@ -90,6 +89,9 @@ public:
     void init(GenericHost *h);
     void appear(void);
     void set_screen(Screen *s); /* Only used in updater */
+    Screen *get_screen() { return screen; }
+    Keyboard *get_keyboard() { return keyboard; }
+    
     int  activate_uiobject(UIObject *obj);
     bool has_focus(UIObject *obj);
     int  getPreferredType(void);

@@ -24,7 +24,7 @@ public:
     CommodoreMenu(UserInterface *ui);
     virtual ~CommodoreMenu();
 
-    virtual void init(Screen *screen, Keyboard *k);
+    virtual void init();
     void redraw();
     int poll(int);
     int select_item(void);

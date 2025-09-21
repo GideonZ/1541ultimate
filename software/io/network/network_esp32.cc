@@ -293,7 +293,7 @@ void NetworkLWIP_WiFi :: cfg_show_aps(UserInterface *intf, ConfigItem *it)
     TreeBrowser *tb = new TreeBrowser(intf, broot);
     tb->allow_exit = true;
     tb->has_path = false;
-    tb->init(intf->screen, intf->keyboard);
+    tb->init();
     tb->setCleanup();
 
     intf->activate_uiobject(tb);

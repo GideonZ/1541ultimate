@@ -49,7 +49,6 @@ UserInterface :: UserInterface(const char *title, bool use_logo) : title(title)
     focus = -1;
     host = NULL;
     keyboard = NULL;
-    alt_keyboard = NULL;
     screen = NULL;
     doBreak = false;
     available = false;
@@ -345,7 +344,7 @@ void UserInterface :: appear(void)
 	set_screen_title();
 	for(int i=0;i<=focus;i++) {  // build up
 		//printf("Going to (re)init objects %d.\n", i);
-		ui_objects[i]->init(screen, keyboard);
+		ui_objects[i]->init();
 		ui_objects[i]->redraw();
 	}
 }
@@ -419,7 +418,7 @@ int  UserInterface :: popup(const char *msg, uint8_t flags)
     const char c_button_keys[] = { 'o', 'y', 'n', 'a', 'c' };
 
     UIPopup *pop = new UIPopup(this, msg, flags, 5, c_button_names, c_button_keys);
-    pop->init(screen, keyboard);
+    pop->init();
     int ret;
     do {
         ret = pop->poll(0);
@@ -432,7 +431,7 @@ int  UserInterface :: popup(const char *msg, uint8_t flags)
 int  UserInterface :: popup(const char *msg, int count, const char **names, const char *keys)
 {
     UIPopup *pop = new UIPopup(this, msg, (1 << (count + 1))-1, count, names, keys);
-    pop->init(screen, keyboard);
+    pop->init();
     int ret;
     do {
         ret = pop->poll(0);
@@ -444,8 +443,8 @@ int  UserInterface :: popup(const char *msg, int count, const char **names, cons
 
 int UserInterface :: string_box(const char *msg, char *buffer, int maxlen)
 {
-    UIStringBox *box = new UIStringBox(msg, buffer, maxlen);
-    box->init(screen, keyboard);
+    UIStringBox *box = new UIStringBox(this, msg, buffer, maxlen);
+    box->init();
     screen->cursor_visible(1);
     int ret;
     do {
@@ -473,8 +472,8 @@ int UserInterface :: string_edit(char *buffer, int maxlen, Window *w, int x, int
 
 int UserInterface :: choice(const char *msg, const char **choices, int count)
 {
-    UIChoiceBox *box = new UIChoiceBox(msg, choices, count);
-    box->init(screen, keyboard, color_fg, color_bg, color_sel, color_sel_bg); // clunky
+    UIChoiceBox *box = new UIChoiceBox(this, msg, choices, count);
+    box->init();
     screen->cursor_visible(0);
     int ret;
     do {
@@ -486,8 +485,8 @@ int UserInterface :: choice(const char *msg, const char **choices, int count)
 
 void UserInterface :: show_progress(const char *msg, int steps)
 {
-    status_box = new UIStatusBox(msg, steps);
-    status_box->init(screen);
+    status_box = new UIStatusBox(this, msg, steps);
+    status_box->init();
 }
 
 void UserInterface :: update_progress(const char *msg, int steps)

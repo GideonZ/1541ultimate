@@ -79,7 +79,7 @@ public:
     TreeBrowser(UserInterface *ui, Browsable *);
     virtual ~TreeBrowser();
 
-    virtual void init(Screen *scr, Keyboard *k);
+    virtual void init();
     virtual void redraw(void);
     virtual void deinit(void);
 

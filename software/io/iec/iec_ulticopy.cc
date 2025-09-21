@@ -186,8 +186,8 @@ void UltiCopy :: start_warp(int drive)
         c1541_B->drive_power(false);
     }
 
-    ui_window = new UltiCopyWindow();
-    ui_window->init(cmd_ui->screen, cmd_ui->keyboard);
+    ui_window = new UltiCopyWindow(cmd_ui);
+    ui_window->init();
     cmd_ui->activate_uiobject(ui_window); // now we have focus
     ui_window->window->move_cursor(15,10);
     ui_window->window->output("Loading...");
@@ -357,7 +357,7 @@ void UltiCopy :: save_copied_disk()
 /*********************************************************************/
 /* Copier user interface screen
 /*********************************************************************/
-UltiCopyWindow :: UltiCopyWindow()
+UltiCopyWindow :: UltiCopyWindow(UserInterface *ui) : UIObject(ui)
 {
     parent_win = NULL;
     keyb = NULL;
@@ -369,10 +369,10 @@ UltiCopyWindow :: ~UltiCopyWindow()
 {
 }    
 
-void UltiCopyWindow :: init(Screen *scr, Keyboard *key)
+void UltiCopyWindow :: init()
 {
-    parent_win = scr;
-    keyb = key;
+    parent_win = get_ui()->get_screen();
+    keyb = get_ui()->get_keyboard();
     window = new Window(parent_win, 0, 1, 40, 23);
     window->draw_border_horiz();
     window->clear();

@@ -25,12 +25,12 @@ ConfigBrowser :: ~ConfigBrowser()
     printf("Destructing config browser..\n");
 }
 
-void ConfigBrowser :: init(Screen *screen, Keyboard *k) // call on root!
+void ConfigBrowser :: init() // call on root!
 {
-	this->screen = screen;
+	this->screen = get_ui()->get_screen();
+	this->keyb = get_ui()->get_keyboard();
 	window = new Window(screen, (screen->get_size_x() - 40) >> 1, 2, 40, screen->get_size_y()-3);
 	window->draw_border();
-	keyb = k;
     state->reload();
 	state->do_refresh();
 }

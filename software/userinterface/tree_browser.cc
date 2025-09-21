@@ -112,12 +112,12 @@ int swap_joystick() __attribute__ ((weak));
 /***********************/
 /* Tree Browser Object */
 /***********************/
-TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root)
+TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root) : UIObject(ui)
 {
 	// initialize state
     allow_exit = false;
     has_path = true;
-	user_interface = ui;
+	user_interface = ui; // copy!
 	screen = NULL;
 	window = NULL;
     keyb = NULL;
@@ -150,9 +150,11 @@ TreeBrowser :: ~TreeBrowser()
 	}
 }
 
-void TreeBrowser :: init(Screen *screen, Keyboard *k) // call on root!
+void TreeBrowser :: init() // call on root!
 {
-	this->screen = screen;
+	this->screen = user_interface->get_screen();
+    this->keyb   = user_interface->get_keyboard();
+
     screen->move_cursor(screen->get_size_x()-8, screen->get_size_y()-1);
     if (user_interface->navmode == 0) {
 	    screen->output("\eAF3=Help\eO");
@@ -164,7 +166,6 @@ void TreeBrowser :: init(Screen *screen, Keyboard *k) // call on root!
 #if COMMODORE
 	window->draw_border();
 #endif
-	keyb = k;
     state->reload();
 	// state->do_refresh();
 }
@@ -183,7 +184,7 @@ void TreeBrowser :: config(void)
         
     Browsable *configRoot = new BrowsableConfigRoot();
     configBrowser = new ConfigBrowser(user_interface, configRoot);
-    configBrowser->init(screen, keyb);
+    configBrowser->init();
     state->refresh = true; // refresh as soon as we come back
     user_interface->activate_uiobject(configBrowser);
 
