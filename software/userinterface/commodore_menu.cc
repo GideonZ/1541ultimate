@@ -10,6 +10,7 @@ extern "C" {
 #include "config_menu.h"
 #include "tree_browser.h"
 #include "assembly_search.h"
+#include "system_info.h"
 
 typedef enum {
     e_audio_mixer = 0,
@@ -74,6 +75,7 @@ CommodoreMenu :: CommodoreMenu(UserInterface *ui) : ContextMenu(ui, NULL, 1, 0, 
     appendAction(new Action("DISK DRIVE A OPTIONS AND ROMS", S_cfg_page, e_drive_a));
     appendAction(new Action("DISK DRIVE B OPTIONS AND ROMS", S_cfg_page, e_drive_b));
     appendAction(new Action("ADVANCED SETTINGS", S_advanced, 0));
+    appendAction(new Action("SYSTEM INFORMATION", S_sysinfo, 0));
 
     // Instantiate and attach the root tree browser
     Browsable *root = new BrowsableRoot();
@@ -169,5 +171,13 @@ SubsysResultCode_e CommodoreMenu :: S_assembly64(Action *act, void *context)
 {
     CommodoreMenu *menu = (CommodoreMenu *)context;
     AssemblyInGui :: S_OpenSearch(menu->user_interface);
+    return SSRET_OK;
+}
+
+SubsysResultCode_e CommodoreMenu :: S_sysinfo(Action *act, void *context)
+{
+    CommodoreMenu *menu = (CommodoreMenu *)context;
+    SystemInfo::generate(menu->user_interface);
+    menu->draw();
     return SSRET_OK;
 }

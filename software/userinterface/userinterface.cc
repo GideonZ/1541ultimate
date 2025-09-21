@@ -73,7 +73,7 @@ static const char *helptext =
 		"\nRUN/STOP to close this window.";
 
 /* Configuration */
-static const char *colors[] = { "Commodore Blue", "Ultimate Black", "Commodore 1", "Commodore 2" };
+static const char *colors[] = { "Commodore Blue", "Ultimate Black", "Commodore 1", "Commodore 2", "Commodore 3" };
                           
 static const char *filename_overflow_squeeze[] = { "None", "Beginning", "Middle", "End" };
 static const char *itype[]      = { "Freeze", "Overlay on HDMI" };
@@ -86,10 +86,10 @@ struct t_cfg_definition user_if_config[] = {
 #endif
 #if COMMODORE && !RECOVERYAPP
     { CFG_USERIF_NAVIGATION, CFG_TYPE_ENUM,   "Navigation Style",     "%s", navstyles, 0,  1, 1 },
-    { CFG_USERIF_COLORSCHEME,CFG_TYPE_ENUM,   "Color Scheme",         "%s", colors,  0,  3, 0 },
+    { CFG_USERIF_COLORSCHEME,CFG_TYPE_ENUM,   "Color Scheme",         "%s", colors,  0,  4, 0 },
 #else
     { CFG_USERIF_NAVIGATION, CFG_TYPE_ENUM,   "Navigation Style",     "%s", navstyles, 0,  1, 0 },
-    { CFG_USERIF_COLORSCHEME,CFG_TYPE_ENUM,   "Color Scheme",         "%s", colors,  0,  3, 1 },
+    { CFG_USERIF_COLORSCHEME,CFG_TYPE_ENUM,   "Color Scheme",         "%s", colors,  0,  4, 1 },
 #endif
 //    { CFG_USERIF_WORDWRAP,   CFG_TYPE_ENUM,   "Wordwrap text viewer", "%s", en_dis,  0,  1, 1 },
     { CFG_USERIF_HOME_DIR,   CFG_TYPE_STRING, "Home Directory",        "%s", NULL, 0, 31, (int)"" },
@@ -144,6 +144,7 @@ const t_scheme_colors schemes[] = {
     { 0,  0, 12, 1, 6,  0 },
     { 6, 14,  1, 0, 14, 0 },
     { 6, 14, 15, 1, 14, 0 },
+    { 6, 14,  0, 1, 14, 0 },
 };
 
 void UserInterface :: effectuate_settings(void)

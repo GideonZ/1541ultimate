@@ -160,7 +160,7 @@ public:
         }
 
         if (field[0] == '$') {
-            sprintf(buffer, "           \eR <<  Search  >> \er");
+            sprintf(buffer, "\er           \eR <<  Search  >> \er");
             return;
         }
 
@@ -172,9 +172,9 @@ public:
 
         if (value.length()) {
             // position 10
-            sprintf(buffer+10, "\eg%#s", width-11, value.c_str());
+            sprintf(buffer+10, "\er\eg%#s", width-11, value.c_str());
         } else {
-            sprintf(buffer+10, "\ek%#s", width-11, "__________________");
+            sprintf(buffer+10, "\er\ek%#s", width-11, "__________________");
         }
         if (buffer[0] > 0x60)
             buffer[0] &= 0xDF; // Capitalize ;-)
