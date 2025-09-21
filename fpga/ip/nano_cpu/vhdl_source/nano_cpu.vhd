@@ -163,7 +163,7 @@ begin
                 nxt.update_accu  <= '1';
                 nxt.update_flags <= '1';
             else
-                io_write  <= '1';
+                io_write  <= '0';
             end if;
             nxt.state <= fetch_inst;
             
