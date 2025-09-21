@@ -27,7 +27,7 @@ struct t_cfg_definition user_if_config[] = {
 #if U64
     { CFG_USERIF_ITYPE,      CFG_TYPE_ENUM,   "Interface Type",       "%s", itype,   0,  1, 0 },
 #endif
-#if COMMODORE
+#if COMMODORE && !RECOVERYAPP
     { CFG_USERIF_NAVIGATION, CFG_TYPE_ENUM,   "Navigation Style",     "%s", navstyles, 0,  1, 1 },
     { CFG_USERIF_COLORSCHEME,CFG_TYPE_ENUM,   "Color Scheme",         "%s", colors,  0,  1, 0 },
 #else

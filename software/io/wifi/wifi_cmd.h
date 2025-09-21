@@ -58,7 +58,7 @@ extern const char *no_wifi_buf;
 
 #define BUFARGS(x, cmd)     command_buf_t *buf; \
                             BaseType_t gotbuf = esp32.uart->GetBuffer(&buf, 1000); \
-                            if (gotbuf == pdFALSE) { printf(no_wifi_buf); print_uart_status(); return pdFALSE; } \
+                            if (gotbuf == pdFALSE) { printf(no_wifi_buf); /*print_uart_status();*/ return pdFALSE; } \
                             rpc_ ## x ## _req *args = (rpc_ ## x ## _req *)buf->data; \
                             args->hdr.command = cmd; \
                             args->hdr.sequence = sequence_nr++; \
