@@ -86,7 +86,7 @@ void UIPopup :: draw_buttons()
 int UIPopup :: poll(int dummy)
 {
     int c = keyboard->getch();
-    //c = keymapper(c, eKeymap_Default);
+    c = get_ui()->keymapper(c, e_keymap_default);
 
     if (c == -1) // nothing pressed
     	return 0;
@@ -437,7 +437,7 @@ int  UIChoiceBox :: poll(int)
     }
 
     c = keyboard->getch();
-    // c = keymapper(c, eKeymap_Default);
+    c = get_ui()->keymapper(c, e_keymap_default);
 
     if (c == -1) // nothing pressed
     	return 0;

@@ -118,35 +118,12 @@ int AssemblySearch :: handle_key(int c)
         case KEY_PAGEDOWN:
             state->down(window->get_size_y()/2);
             break;
-        case KEY_F1: // F1 -> page up
-            if (user_interface->navmode == 0) {
-                state->up(window->get_size_y()-2);
-            } else {
-                ret = MENU_CLOSE; // do nothing in the non-commodore mode
-            }
+        case KEY_TASKS:
+            ret = MENU_CLOSE; // do nothing in the non-commodore mode
             break;
-        case KEY_F3: // F3 -> help | Page up
-            if (user_interface->navmode == 0) {
-                state->refresh = true;
-                user_interface->run_editor(queryhelp, strlen(queryhelp));
-            } else {
-                state->up(window->get_size_y()-2);
-            }
-            break;
-        case KEY_F5: // F5: Menu | Page down
-            if (user_interface->navmode == 0) {
-                ;
-            } else {
-                state->down(window->get_size_y()-2);
-            }
-            break;
-        case KEY_F7: // F7 -> page down
-            if (user_interface->navmode == 0) {
-                state->down(window->get_size_y()-2);
-            } else {
-                state->refresh = true;
-                user_interface->run_editor(queryhelp, strlen(queryhelp));
-            }
+        case KEY_HELP: 
+            state->refresh = true;
+            user_interface->run_editor(queryhelp, strlen(queryhelp));
             break;
         case KEY_CLEAR: //
             if(state->level == 0) {

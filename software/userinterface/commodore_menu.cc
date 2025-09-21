@@ -8,6 +8,7 @@ extern "C" {
 #include "commodore_menu.h"
 #include "browsable_root.h"
 #include "config_menu.h"
+#include "tree_browser.h"
 #include "assembly_search.h"
 
 typedef enum {
@@ -108,9 +109,17 @@ void CommodoreMenu :: redraw()
     draw();
     screen->move_cursor(0, screen->get_size_y()-1);
     if (user_interface->navmode == 0) {
+#if COMMODORE
+        screen->output("\e1 CRSR+TYPE to NAV F3/F5=PGUP/DN F7=HELP");
+#else
         screen->output("\e1 CRSR+TYPE to NAV F1/F7=PGUP/DN F3=HELP");
+#endif
     } else {
+#if COMMODORE
         screen->output("\e1 WASD=NAV F1=MENU F3/F5=PGUP/DN F7=HELP");
+#else
+        screen->output("\e1 WASD=NAV F5=MENU F1/F7=PGUP/DN F3=HELP");
+#endif
     }
     context_state = e_active;
 }

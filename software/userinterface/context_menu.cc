@@ -112,9 +112,12 @@ void ContextMenu :: deinit()
 void ContextMenu :: help()
 {
     reset_quick_seek();
-    if(state)
+    if (state) {
         state->refresh = true;
-    //user_interface->run_editor(helptext, strlen(helptext));
+    } else {
+        user_interface->help(); // modal
+        draw();
+    }
 }
 
 int ContextMenu :: poll(int sub)
@@ -146,6 +149,7 @@ int ContextMenu :: poll(int sub)
     switch(context_state) {
         case e_active:
             c = keyb->getch();
+            c = get_ui()->keymapper(c, e_keymap_default);
             if(c > 0) {
                 ret = handle_key(c);
                 if(ret) {
@@ -256,34 +260,8 @@ int ContextMenu :: handle_key(int c)
             up();
         	break;
 
-        case KEY_F1: // page up or menu
-            if (user_interface->navmode == 0) {
-                page_up();
-            }
-            break;
-
-        case KEY_F3: // help or page up
-            if (user_interface->navmode == 0) {
-                help();
-            } else {
-                page_up();
-            }
-            break;
-
-        case KEY_F5:
-            if (user_interface->navmode == 0) {
-                ;
-            } else {
-                page_down();
-            }
-            break;
-
-        case KEY_F7: // page down or help
-            if (user_interface->navmode == 0) {
-                page_down();
-            } else {
-                help();
-            }
+        case KEY_HELP: // help or page up
+            help();
             break;
 
         case KEY_PAGEDOWN: // page down
@@ -307,37 +285,8 @@ int ContextMenu :: handle_key(int c)
             }
             break;
 
-        case KEY_A:
-            if (user_interface->navmode == 0) {
-                seek_char('a');
-            } else {
-                ret = when_done;
-            }
-            break;
-        case KEY_S:
-            if (user_interface->navmode == 0) {
-                seek_char('s');
-            } else {
-                down();
-            }
-            break;
-        case KEY_D:
-            if (user_interface->navmode == 0) {
-                seek_char('d');
-            } else {
-                select_item();
-            }
-            break;
-        case KEY_W:
-            if (user_interface->navmode == 0) {
-                seek_char('w');
-            } else {
-                up();
-            }
-            break;
-
         default:
-            if ((user_interface->navmode == 0) && (c >= '!') && (c < 0x80)) {
+            if ((c >= '!') && (c < 0x80)) {
                 seek_char(c);
             } else {
                 printf("Unhandled context key: %b\n", c);

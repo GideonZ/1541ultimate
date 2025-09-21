@@ -15,6 +15,63 @@
 #endif // UPDATER
 #endif // NO_FILE_ACCESS
 
+/* Help */
+static const char *helptext =
+        "WASD:       Up/Left/Down/Right\n"
+        "Cursor Keys:Up/Left/Down/Right\n"
+        "  (Up/Down) Selection up/down\n"
+        "  (Left)    Go one level up\n"
+        "            leave directory or disk\n"
+        "  (Right)   Go one level down\n"
+        "            enter directory or disk\n"
+        "RETURN:     Selection context menu\n"
+        "RUN/STOP:   Leave menu / Back\n"
+        "\n"
+#if COMMODORE
+        "F1:         Action Menu\n"
+        "F3:         Page up\n"
+        "F5:         Page down\n"
+        "F7:         Help\n"
+#else
+        "F1:         Page up\n"
+        "F3:         Help\n"
+        "F5:         Action Menu\n"
+        "F7:         Page down\n"
+#endif
+        "\n"
+        "F2:         Enter Advanced Settings\n"
+    #ifndef RECOVERYAPP
+        "F4:         Show System Information\n"
+        "F6:         Search Assembly64\n"
+    #endif
+        "\n"
+        "SPACE:      Select file / directory\n"
+        "C= A:       Select all\n"
+        "C= N:       Deselect all\n"
+        "C= C:       Copy current selection\n"
+        "C= V:       Paste selection here\n"
+        "\n"
+        "HOME:       Enter home directory\n"
+        "C= HOME:    Set current dir as home\n"
+        "INST:       Delete selected files\n"
+        "\n"  
+		"Quick seek: Use the keyboard to type\n"
+		"            the name to search for:\n"
+		"            You can use ? as a\n"
+		"            wildcard. When WASD\n"
+        "            cursors are enabled,\n"
+        "            type with SHIFT pressed.\n"
+        "\n"  
+    #ifndef RECOVERYAPP
+    #endif
+        "C= L:       Show Debug Log\n"
+#if U64 == 2
+        "\nOutside menus the machine can be\n"
+        "reset by holding the switch up\n"
+        "for 1 second.\n"
+#endif
+		"\nRUN/STOP to close this window.";
+
 /* Configuration */
 static const char *colors[] = { "Commodore Blue", "Ultimate Black" };
                           
@@ -539,4 +596,47 @@ mstring *UserInterface :: getMessage(void)
         xQueueReceive(userMessageQueue, &msg, 0);
     }
     return msg;
+}
+
+int UserInterface :: keymapper(int c, keymap_options_t map)
+{
+    if (navmode == 1) { // WASD cursors enabled
+        if (c >= 'A' && c <= 'Z') {
+            c |= 0x20; // make uppercase lowercase
+        } else {
+            switch(c) {
+            case 'w': c = KEY_UP; break;
+            case 'a': c = KEY_LEFT; break;
+            case 's': c = KEY_DOWN; break;
+            case 'd': c = KEY_RIGHT; break;
+            }
+        }
+    }
+#if COMMODORE
+    switch(c) {
+    case KEY_F1: c = KEY_TASKS; break;
+    case KEY_F3: c = KEY_PAGEUP; break;
+    case KEY_F5: c = KEY_PAGEDOWN; break;
+    case KEY_F7: c = KEY_HELP; break;
+    case KEY_F2: c = KEY_CONFIG; break;
+    case KEY_F4: c = KEY_SYSINFO; break;
+    case KEY_F6: c = KEY_SEARCH; break;
+    }
+#else
+    switch(c) {
+    case KEY_F1: c = KEY_PAGEUP; break;
+    case KEY_F3: c = KEY_HELP; break;
+    case KEY_F5: c = KEY_TASKS; break;
+    case KEY_F7: c = KEY_PAGEDOWN; break;
+    case KEY_F2: c = KEY_CONFIG; break;
+    case KEY_F4: c = KEY_SYSINFO; break;
+    case KEY_F6: c = KEY_SEARCH; break;
+    }
+#endif
+    return c;
+}
+
+void UserInterface :: help()
+{
+    run_editor(helptext, strlen(helptext));
 }

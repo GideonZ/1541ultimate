@@ -251,76 +251,13 @@ int ConfigBrowser :: handle_key(int c)
         case KEY_PAGEDOWN:
             state->down(window->get_size_y()/2);
             break;
-        case KEY_A:
-            if (user_interface->navmode == 0) {
-                // do nothing
-            } else {
-                if (state->level == 1) { // going to level 0
-                    ((ConfigBrowserState *)state)->on_close();
-                }
-                if(state->level == start_level) {
-                    on_exit();
-                    ret = MENU_CLOSE; // leave
-                } else {
-                    state->level_up();
-                }
-            }
+        case KEY_TASKS:
+            ret = MENU_CLOSE; // do nothing in the non-commodore mode
             break;
-        case KEY_S:
-            if (user_interface->navmode == 0) { 
-                // do nothing
-            } else {
-                state->down(1);
-            }
-            break;
-        case KEY_D:
-            if (user_interface->navmode == 0) {
-                // do nothing
-            } else {
-                if(state->level==0) {
-                    state->into();
-                } else {
-                    state->change();
-                }
-            }
-            break;
-        case KEY_W:
-            if (user_interface->navmode == 0) {
-                // do nothing
-            } else {
-                state->up(1);
-            }
-            break;
-        case KEY_F1: // F7 -> page down
-            if (user_interface->navmode == 0) {
-                state->up(window->get_size_y()-2);
-            } else {
-                ret = MENU_CLOSE; // do nothing in the non-commodore mode
-            }
-            break;
-        case KEY_F3: // F3 -> help
-            if (user_interface->navmode == 0) {
-                reset_quick_seek();
-                state->refresh = true;
-                user_interface->run_editor(helptext_ult, strlen(helptext_ult));
-            } else {
-                state->up(window->get_size_y()-2);
-            }
-            break;
-        case KEY_F5: // F5: Menu | Page down
-            if (user_interface->navmode == 0) {
-                // do nothing
-            } else {
-                state->down(window->get_size_y()-2);
-            }
-            break;
-        case KEY_F7: // F7 -> page down or help
-            if (user_interface->navmode == 0) {
-                state->down(window->get_size_y()-2);
-            } else {
-                state->refresh = true;
-                user_interface->run_editor(helptext_wasd, strlen(helptext_wasd));
-            }
+        case KEY_HELP:
+            reset_quick_seek();
+            state->refresh = true;
+            user_interface->run_editor(helptext_ult, strlen(helptext_ult));
             break;
         case KEY_SPACE: // space = select
         case KEY_RETURN: // CR = select

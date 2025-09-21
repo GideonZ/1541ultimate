@@ -70,4 +70,9 @@ public:
 
 // Specials
 #define KEY_MENU     0xFE
+#define KEY_SEARCH   0xFD
+#define KEY_TASKS    0xFC
+#define KEY_HELP     0xFB
+#define KEY_CONFIG   0xFA
+#define KEY_SYSINFO  0xF9
 #endif

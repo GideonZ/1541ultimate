@@ -64,6 +64,7 @@ int SidEditor :: poll(int)
 {
     int ret = 0;
     int c = keyb->getch();
+    c = get_ui()->keymapper(c, e_keymap_default);
 
     if(c == -2) { // error
         return MENU_EXIT;

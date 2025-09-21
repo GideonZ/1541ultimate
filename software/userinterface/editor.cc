@@ -154,6 +154,7 @@ int Editor :: poll(int dummy)
     }
 
     c = keyb->getch();
+    c = get_ui()->keymapper(c, e_keymap_default);
     if(c > 0) {
         ret = handle_key(c);
     }

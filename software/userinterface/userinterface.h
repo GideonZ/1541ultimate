@@ -40,6 +40,11 @@
 #define CFG_USERIF_NAVIGATION  0x0D
 #define CFG_USERIF_COLORSCHEME 0x0E
 
+typedef enum {
+    e_keymap_default,
+} keymap_options_t;
+
+
 class UserInterface : public ConfigurableObject, public HostClient
 {
 private:
@@ -91,10 +96,13 @@ public:
     void set_screen(Screen *s); /* Only used in updater */
     Screen *get_screen() { return screen; }
     Keyboard *get_keyboard() { return keyboard; }
-    
+
+    int keymapper(int c, keymap_options_t map);
+
     int  activate_uiobject(UIObject *obj);
     bool has_focus(UIObject *obj);
     int  getPreferredType(void);
+    void help();
     void run_editor(const char *, int);
     void swapDisk(void);
     void send_keystroke(int key);
