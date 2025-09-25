@@ -293,7 +293,7 @@ int ConfigBrowser :: handle_key(int c)
                 state->decrease();
             break;
         default:
-            printf("Unhandled key: %b\n", c);
+            printf("Unhandled key: %03x\n", c);
     }    
     return ret;
 }

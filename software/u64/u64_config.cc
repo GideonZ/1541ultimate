@@ -214,7 +214,7 @@ const char *stereo_addr[] = { "Off", "A5", "A6", "A7", "A8", "A9" };
 const char *sid_split[] = { "Off", "1/2 (A5)", "1/2 (A6)", "1/2 (A7)", "1/2 (A8)", "1/4 (A5,A6)", "1/4 (A5,A8)", "1/4 (A7,A8)" };
 
 static const char *iec_modes[] = { "All Connected", "C64U <-> Internal", "Ext. <-> Int.", "C64U <-> External" };
-static const char *joyswaps[] = { "Normal", "Swapped", "WASD on Port 2", "WASD on Port 1" };
+static const char *joyswaps[] = { "Normal", "Swapped", "WASD Port 2", "WASD Port 1", "WASD P2 No KB", "WASD P1 No KB" };
 static const char *en_dis5[] = { "Disabled", "Enabled", "Transp. Border" };
 static const char *digi_levels[] = { "Off", "Low", "Medium", "High" };
 static const char *burst_modes[] = { "Off", "CIA1", "CIA2" };
@@ -279,7 +279,7 @@ dc 0c 11 00 00 9e 01 1d  00 72 51 d0 1e 20 6e 28
 struct t_cfg_definition u64_cfg[] = {
     { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  5, 0 },
 #if U64 == 2
-    { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  3, 0 },
+    { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  5, 0 },
 #else
     { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  1, 0 },
 #endif
@@ -950,8 +950,10 @@ void U64Config :: effectuate_settings()
     C64_PADDLE_EN    = cfg->get_value(CFG_PADDLE_EN);
     C64_PADDLE_SWAP  = cfg->get_value(CFG_JOYSWAP) & 1;
 #if U64 == 2
-    U64II_KEYB_JOY     = cfg->get_value(CFG_JOYSWAP) & 1;
-    MATRIX_WASD_TO_JOY = wasd_to_joy = cfg->get_value(CFG_JOYSWAP) >> 1;
+    uint8_t swap = cfg->get_value(CFG_JOYSWAP);
+    U64II_KEYB_JOY     = swap & 1;
+    static const uint8_t wasd_settings[] = { 0x00, 0x00, 0x01, 0x01, 0x03, 0x03 };
+    MATRIX_WASD_TO_JOY = wasd_to_joy = wasd_settings[swap]; 
 #else
     C64_PLD_JOYCTRL  = cfg->get_value(CFG_JOYSWAP) ^ 1;
 #endif

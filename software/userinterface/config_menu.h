@@ -230,9 +230,17 @@ class BrowsableConfigGroup: public Browsable
 
     void event(int code)
     {
+        IndexedList<ConfigStore *> *stores;
         switch(code) {
         case BR_EVENT_OUT:
             printf("Leaving the config group '%s'\n", group->getName());
+            stores = group->getStores();
+            for(int i=0; i < stores->get_elements(); i++) {
+                ConfigStore *s = (*stores)[i];
+                printf("%p: ", s);
+                s->effectuate();
+            }
+            printf("You left!!\n");
             break;
         case BR_EVENT_CLOSE:
             printf("Closing the config group '%s'\n", group->getName());

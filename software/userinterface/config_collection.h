@@ -18,16 +18,29 @@ class ConfigGroup
     mstring name;
     const int sortOrder;
     IndexedList<ConfigItem *> cfgItems;
+    IndexedList<ConfigStore *> referencedStores;
 public:
-    ConfigGroup(const char *catname, int so) : cfgItems(8, NULL), name(catname), sortOrder(so) {
+    ConfigGroup(const char *catname, int so) : cfgItems(8, NULL), referencedStores(4, NULL), name(catname), sortOrder(so) {
 
     }
     ~ConfigGroup();
 
     const char *getName(void) { return name.c_str(); }
     const int getOrder(void) { return sortOrder; }
-    void append(ConfigItem *a) { cfgItems.append(a); }
     IndexedList<ConfigItem *> *getConfigItems(void) { return &cfgItems; }
+    IndexedList<ConfigStore *> *getStores(void) { return &referencedStores; }
+    void append(ConfigItem *a)
+    {
+        cfgItems.append(a);
+        if (!a->store) return; // separators for instance
+        bool found = false;
+        for(int i=0;i<referencedStores.get_elements();i++) {
+            if (referencedStores[i] == a->store) found = true;
+        }
+        if (!found) {
+            referencedStores.append(a->store);
+        }
+    }
 };
 
 class ConfigGroupCollection
@@ -66,6 +79,8 @@ public:
         col->groups.append(c);
         return c;
     }
+
+
 
     static IndexedList<ConfigGroup *> *getGroups() {
         ConfigGroupCollection *col = getConfigGroupCollection();
