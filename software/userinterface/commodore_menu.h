@@ -13,7 +13,7 @@ class CommodoreMenu: public ContextMenu, ObjectWithMenu
     static SubsysResultCode_e S_advanced(Action *act, void *context);
     static SubsysResultCode_e S_assembly64(Action *act, void *context);
     static SubsysResultCode_e S_sysinfo(Action *act, void *context);
-    
+
     static SubsysResultCode_e S_SendMenuKey(SubsysCommand *cmd) {
         cmd->user_interface->send_keystroke(KEY_MENU);
         return SSRET_OK;

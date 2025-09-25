@@ -57,11 +57,11 @@ const char *config_menu_names[] = {
 /************************/
 /* CommodoreMenu Object */
 /************************/
-CommodoreMenu :: CommodoreMenu(UserInterface *ui) : ContextMenu(ui, NULL, 1, 0, MENU_HIDE, 1)
+CommodoreMenu :: CommodoreMenu(UserInterface *ui) : ContextMenu(ui, NULL, 1, 0, MENU_HIDE, 0)
 {
-    Action *dummy = new Action(" ", S_file_browser, 0);
-    dummy->disable();
-    appendAction(dummy);
+    // Action *dummy = new Action(" ", S_file_browser, 0);
+    // dummy->disable();
+    // appendAction(dummy);
     appendAction(new Action("DISK FILE BROWSER", S_file_browser, 0));
     appendAction(new Action("COMMOSERVE FILE SEARCH", S_assembly64, 0));
     appendAction(new Action("STARTUP & MEMORY", S_cfg_page, e_c64_carts));
