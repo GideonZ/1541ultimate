@@ -213,8 +213,8 @@ const char *scan_modes[] = {
 const char *stereo_addr[] = { "Off", "A5", "A6", "A7", "A8", "A9" };
 const char *sid_split[] = { "Off", "1/2 (A5)", "1/2 (A6)", "1/2 (A7)", "1/2 (A8)", "1/4 (A5,A6)", "1/4 (A5,A8)", "1/4 (A7,A8)" };
 
-static const char *iec_modes[] = { "All Connected", "C64<->Ultimate", "DIN<->Ultimate", "C64<->DIN" };
-static const char *joyswaps[] = { "Normal", "Swapped" };
+static const char *iec_modes[] = { "All Connected", "C64U <-> Internal", "Ext. <-> Int.", "C64U <-> External" };
+static const char *joyswaps[] = { "Normal", "Swapped", "WASD on Port 2", "WASD on Port 1" };
 static const char *en_dis5[] = { "Disabled", "Enabled", "Transp. Border" };
 static const char *digi_levels[] = { "Off", "Low", "Medium", "High" };
 static const char *burst_modes[] = { "Off", "CIA1", "CIA2" };
@@ -278,7 +278,11 @@ dc 0c 11 00 00 9e 01 1d  00 72 51 d0 1e 20 6e 28
 
 struct t_cfg_definition u64_cfg[] = {
     { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  5, 0 },
+#if U64 == 2
+    { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  3, 0 },
+#else
     { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  1, 0 },
+#endif
     { CFG_USERPORT_EN,          CFG_TYPE_ENUM, "UserPort Power Enable",        "%s", en_dis,       0,  1, 1 },
 //    { CFG_CART_PREFERENCE,      CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,    0,  2, 0 }, // moved to C64 for user consistency
     { CFG_PALETTE,              CFG_TYPE_STRFUNC, "Palette Definition",        "%s", (const char **)U64Config :: list_palettes, 0, 30, (int)"" },
@@ -939,13 +943,18 @@ void U64Config :: run_reset_task()
 
 void U64Config :: effectuate_settings()
 {
+    extern uint8_t wasd_to_joy;
     if(!cfg)
         return;
 
     C64_PADDLE_EN    = cfg->get_value(CFG_PADDLE_EN);
+    C64_PADDLE_SWAP  = cfg->get_value(CFG_JOYSWAP) & 1;
+#if U64 == 2
+    U64II_KEYB_JOY     = cfg->get_value(CFG_JOYSWAP) & 1;
+    MATRIX_WASD_TO_JOY = wasd_to_joy = cfg->get_value(CFG_JOYSWAP) >> 1;
+#else
     C64_PLD_JOYCTRL  = cfg->get_value(CFG_JOYSWAP) ^ 1;
-    C64_PADDLE_SWAP  = cfg->get_value(CFG_JOYSWAP);
-    U64II_KEYB_JOY   = cfg->get_value(CFG_JOYSWAP);
+#endif
     U64_USERPORT_EN  = cfg->get_value(CFG_USERPORT_EN) ? 3 : 0;
     printf("USERPORT_EN = %d\n", U64_USERPORT_EN);
     
@@ -2351,7 +2360,7 @@ void U64Config :: setup_config_menu(void)
     grp->append(ConfigItem :: separator());
 
     grp = ConfigGroupCollection :: getGroup("Machine Tweaks", SORT_ORDER_CFG_TWEAKS);
-    grp->append(cfg->find_item(CFG_JOYSWAP));
+    grp->append(cfg->find_item(CFG_JOYSWAP)->set_item_altname("Joystick Input"));
     grp->append(ConfigItem :: separator());
     grp->append(cfg->find_item(CFG_SPEED_REGS));
     grp->append(cfg->find_item(CFG_SPEED_PREF));

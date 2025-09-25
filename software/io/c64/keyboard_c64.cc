@@ -9,6 +9,8 @@
 #include "task.h"
 #endif
 
+uint8_t wasd_to_joy = 0; // overwritten by U64_config, if it exists
+
 const uint8_t modifier_map[] = {
     0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
     0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01, // left shift
@@ -160,6 +162,10 @@ void Keyboard_C64 :: scan(void)
     if(!(host->is_accessible()))
         return;
 
+#if U64 == 2
+    MATRIX_WASD_TO_JOY = 0;
+#endif
+
     *row_register = 0xFF;
     *row_register = 0xFF;
 
@@ -207,10 +213,16 @@ void Keyboard_C64 :: scan(void)
         } else { // no key pressed
             mtrx_prev = 0xFF;
             shift_prev = 0xFF;
+#if U64 == 2
+    MATRIX_WASD_TO_JOY = wasd_to_joy;
+#endif
             return;
         }
     }
     
+#if U64 == 2
+    MATRIX_WASD_TO_JOY = wasd_to_joy;
+#endif
     // there was a key pressed (or the joystick is used)
     // determine which map to use
 /*
