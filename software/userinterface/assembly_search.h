@@ -33,6 +33,7 @@ public:
     ~AssemblyResultsView();
 
     void into(void);
+    bool into2(void) { into(); return true; }
 //    void level_up(void) { printf("Results Up\n"); };
 };
 

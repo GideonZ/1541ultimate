@@ -39,7 +39,6 @@ AssemblySearch :: AssemblySearch(UserInterface *ui, Browsable *root) : TreeBrows
     setCleanup();
     state = new AssemblySearchForm(root, this, 0);
     state->reload();
-    cd("/a64");
 }
 
 AssemblySearch :: ~AssemblySearch()
@@ -231,7 +230,7 @@ void AssemblySearchForm :: send_query(void)
     printf("Query:\n%s\n", query.c_str());
 
     // Let the user know we are busy
-    browser->window->set_color(12);
+    browser->window->set_color(6);
     browser->window->set_background(0);
     browser->window->getScreen()->move_cursor(0, browser->window->getScreen()->get_size_y()-1);
     browser->window->getScreen()->output_fixed_length("Sending query...", 0, browser->window->getScreen()->get_size_x()-9);
