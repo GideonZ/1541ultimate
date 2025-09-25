@@ -1559,7 +1559,7 @@ void C64 :: measure_timing(uint8_t *buffer)
 
 void C64 :: setup_config_menu(void)
 {
-    ConfigGroup *grp = ConfigGroupCollection :: getGroup("Memory Configuration", SORT_ORDER_C64);
+    ConfigGroup *grp = ConfigGroupCollection :: getGroup("Memory Configuration", SORT_ORDER_CFG_MEM);
     grp->append(cfg->find_item(CFG_C64_KERNFILE));
     grp->append(cfg->find_item(CFG_C64_BASIFILE));
     grp->append(cfg->find_item(CFG_C64_CHARFILE));
@@ -1570,4 +1570,5 @@ void C64 :: setup_config_menu(void)
     grp->append(ConfigItem :: separator());
     grp->append(cfg->find_item(CFG_CMD_ENABLE));
     grp->append(cfg->find_item(CFG_C64_MAP_SAMP)->set_item_altname("Ultimate Audio"));
+    grp->append(ConfigItem :: separator());
 }

@@ -352,6 +352,16 @@ void ConfigStore :: write()
 	}
 }
 
+void ConfigStore :: convert_to_group(const char *name, int sort_order)
+{
+    ConfigGroup *grp = ConfigGroupCollection::getGroup(name, sort_order);
+    if (grp) {
+        for(int i=0; i < items.get_elements(); i++) {
+            grp->append(items[i]);
+        }
+    }
+}
+
 void ConfigPage :: write()
 {
 	int size = pack();
@@ -626,6 +636,25 @@ ConfigItem *ConfigItem :: separator()
         sep = new ConfigItem((ConfigStore *)NULL, &def);
     }
     return sep;
+}
+
+ConfigItem *ConfigItem :: heading(const char *name)
+{
+    // due to poor design, this cannot be const. But it will be referenced later,
+    // so we make it static. Otherwise it ends up on the stack.
+    static t_cfg_definition def = {
+        .id = 0xFE,
+        .type = CFG_TYPE_SEP,
+        .item_text = "",
+        .item_format = "",
+        .items = NULL,
+        .min = 0,
+        .max = 0,
+        .def = 0,
+    };
+    ConfigItem *it = new ConfigItem((ConfigStore *)NULL, &def);
+    it->set_item_altname(name);
+    return it;
 }
 
 void ConfigItem :: reset(void)

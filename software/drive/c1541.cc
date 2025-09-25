@@ -97,8 +97,8 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
         memory_map = &__drive_b_area;
         audio_address = &__drive_b_sound;
     }
-    printf("C1541 Memory address: %p\n", memory_map);
-    printf("C1541 Audio address: %p\n", audio_address);
+    //printf("C1541 Memory address: %p\n", memory_map);
+    //printf("C1541 Audio address: %p\n", audio_address);
 
     drive_name = "Drive ";
     drive_name += letter;
@@ -118,6 +118,10 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
 
     sprintf(buffer, "Drive %c Settings", letter);
     register_store((uint32_t)regs, buffer, local_config_definitions);
+    cfg->convert_to_group(buffer, SORT_ORDER_CFG_DRVA + (letter == 'A')?1:0);
+    cfg->hide();
+    add_roms_to_cfg_group();
+
     sprintf(buffer, "Drive %c", drive_letter);
     taskItemCategory = TasksCollection :: getCategory(buffer, SORT_ORDER_DRIVES + drive_letter - 'A');
 
@@ -1256,3 +1260,15 @@ static void init(void *_a, void *_b)
     }
 }
 InitFunction drives_init_func("C1541/71/81 Init", init, NULL, NULL, 65);
+
+void C1541 :: add_roms_to_cfg_group(void)
+{
+    char buffer[16];
+    sprintf(buffer, "Drive %c", this->drive_letter);
+    ConfigGroup *grp = ConfigGroupCollection::getGroup("Memory Configuration", SORT_ORDER_CFG_MEM);
+    grp->append(ConfigItem::heading(buffer));
+    grp->append(cfg->find_item(CFG_C1541_ROMFILE0));
+    grp->append(cfg->find_item(CFG_C1541_ROMFILE1));
+    grp->append(cfg->find_item(CFG_C1541_ROMFILE2));
+    grp->append(ConfigItem::separator());
+}

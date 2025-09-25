@@ -157,6 +157,7 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     void map_gcr_image_to_mfm(void);
     void swap_disk(SubsysCommand *cmd);
     void wait_for_writeback(void);
+    void add_roms_to_cfg_group(void);
     static void mfm_update_callback(void *obj, int pt, int ps, MfmTrack *tr);
     SubsysResultCode_e save_disk_to_file(SubsysCommand *cmd);
     SubsysResultCode_e set_drive_type(t_drive_type drv);

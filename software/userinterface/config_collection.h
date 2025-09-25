@@ -75,9 +75,12 @@ public:
                 }
             }
         }
-        ConfigGroup *c = new ConfigGroup(name, sortOrder);
-        col->groups.append(c);
-        return c;
+        if (sortOrder >= 0) {
+            ConfigGroup *c = new ConfigGroup(name, sortOrder);
+            col->groups.append(c);
+            return c;
+        }
+        return NULL;
     }
 
 

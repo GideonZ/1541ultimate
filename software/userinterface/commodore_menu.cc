@@ -33,6 +33,10 @@ typedef enum {
     e_drive_a,
     e_drive_b,
     e_memory,
+    e_video,
+    e_audio,
+    e_leds,
+    e_tweaks,
 } config_menus_t;
 
 const char *config_menu_names[] = {
@@ -55,6 +59,10 @@ const char *config_menu_names[] = {
     "Drive A Settings",
     "Drive B Settings",
     "Memory Configuration",
+    "Video Configuration",
+    "Audio Configuration",
+    "LED Lighting",
+    "Machine Tweaks",
 };
 
 /************************/
@@ -68,16 +76,19 @@ CommodoreMenu :: CommodoreMenu(UserInterface *ui) : ContextMenu(ui, NULL, 0, 0, 
     appendAction(new Action("DISK FILE BROWSER", S_file_browser, 0));
     appendAction(new Action("COMMOSERVE FILE SEARCH", S_assembly64, 0));
     appendAction(new Action("MEMORY & ROMS", S_cfg_group, e_memory));
-    appendAction(new Action("VIDEO & SPEED", S_cfg_page, e_u64_specific));
+    appendAction(new Action("VIDEO SETUP", S_cfg_group, e_video));
+    appendAction(new Action("AUDIO SETUP", S_cfg_audio, 0));
+    appendAction(new Action("LED LIGHTING", S_cfg_group, e_leds));
     appendAction(new Action("NETWORK SERVICES & TIMEZONE", S_cfg_page, e_network));
     appendAction(new Action("WIRED NETWORK SETUP", S_cfg_page, e_ethernet));
     appendAction(new Action("WI-FI NETWORK SETUP", S_cfg_page, e_wifi));
     appendAction(new Action("MODEMS", S_cfg_page, e_modem));
     appendAction(new Action("PRINTERS", S_cfg_page, e_printer));
     appendAction(new Action("USER INTERFACE", S_cfg_page, e_user_interface));
-    appendAction(new Action("DISK DRIVE A OPTIONS & ROMS", S_cfg_page, e_drive_a));
-    appendAction(new Action("DISK DRIVE B OPTIONS & ROMS", S_cfg_page, e_drive_b));
-    appendAction(new Action("ADVANCED SETTINGS", S_advanced, 0));
+    appendAction(new Action("DISK DRIVE A OPTIONS", S_cfg_group, e_drive_a));
+    appendAction(new Action("DISK DRIVE B OPTIONS", S_cfg_page, e_drive_b));
+    appendAction(new Action("MACHINE TWEAKS", S_cfg_group, e_tweaks));
+    //appendAction(new Action("ADVANCED SETTINGS", S_advanced, 0));
     appendAction(new Action("SYSTEM INFORMATION", S_sysinfo, 0));
 
     // Instantiate and attach the root tree browser
@@ -210,6 +221,19 @@ SubsysResultCode_e CommodoreMenu :: S_cfg_group(Action *act, void *context)
         configBrowser->init();
         menu->user_interface->activate_uiobject(configBrowser);
     }
+    return SSRET_OK;
+}
+
+SubsysResultCode_e CommodoreMenu :: S_cfg_audio(Action *act, void *context)
+{
+    // Let's open the config browser, with one specific set of pages
+    CommodoreMenu *menu = (CommodoreMenu *)context;
+    static const char *names[] = { "Audio Mixer", "Speaker Mixer", "SID Sockets Configuration", "UltiSID Configuration", "SID Addressing", "SID Player Behavior" };
+    static BrowsableConfigRootPredefined br(6, names);
+
+    ConfigBrowser *configBrowser = new ConfigBrowser(menu->user_interface, &br);
+    configBrowser->init();
+    menu->user_interface->activate_uiobject(configBrowser);
     return SSRET_OK;
 }
 

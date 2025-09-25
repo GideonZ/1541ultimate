@@ -27,12 +27,13 @@
 #include "mystring.h"
 #include "file.h"
 
+#define SORT_ORDER_CFG_MEM 5
 #define SORT_ORDER_CFG_U64 10
 #define SORT_ORDER_CFG_LEDS 15
-#define SORT_ORDER_CFG_TWEAKS 80
 #define SORT_ORDER_CFG_DRVA 11
 #define SORT_ORDER_CFG_DRVB 12
 #define SORT_ORDER_SIDPLAY 79
+#define SORT_ORDER_CFG_TWEAKS 80
 
 #define GROUP_NAME_LEDS "LED Lighting"
 
@@ -100,7 +101,8 @@ public:
     ~ConfigItem();
 
     static ConfigItem *separator();
-
+    static ConfigItem *heading(const char *);
+    
     const char *get_item_name() { return definition->item_text; }
     const char *get_display_string(char *buffer, int width);
     int  fetch_possible_settings(IndexedList<ConfigSetting *> &list);
@@ -147,6 +149,7 @@ public:
     void addObject(ConfigurableObject *obj);
     int  unregister(ConfigurableObject *obj);
     void hide() { hidden = true; }
+    void convert_to_group(const char *name, int sort_order);
     bool isHidden() { return hidden; }
 
 // Interface functions

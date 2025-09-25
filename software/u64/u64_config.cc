@@ -2364,7 +2364,7 @@ void U64Config :: setup_config_menu(void)
     grp->append(ConfigItem :: separator());
     grp->append(sidaddressing.cfg->find_item(CFG_PADDLE_EN));
     grp->append(cfg->find_item(CFG_IEC_BURST_EN));
-    grp->append(cfg->find_item(CFG_USERPORT_EN));
+    // grp->append(cfg->find_item(CFG_USERPORT_EN));
 
     grp = ConfigGroupCollection :: getGroup("Drive A Settings", SORT_ORDER_CFG_DRVA);
     grp->append(cfg->find_item(CFG_PARCABLE_ENABLE));

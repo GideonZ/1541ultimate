@@ -276,7 +276,7 @@ class BrowsableConfigGroup: public Browsable
 class BrowsableConfigRoot: public Browsable
 {
     IndexedList<Browsable *> children;
-    public:
+public:
     BrowsableConfigRoot() :
             children(4, NULL)
     {
@@ -308,5 +308,43 @@ class BrowsableConfigRoot: public Browsable
     }
 };
 
+class BrowsableConfigRootPredefined : public Browsable
+{
+    const char **names;
+    int count;
+    IndexedList<Browsable *> children;
+public:
+    BrowsableConfigRootPredefined(int count, const char *names[]) :
+            children(count, NULL), names(names), count(count)
+    {
+
+    }
+
+    ~BrowsableConfigRootPredefined()
+    {
+    }
+
+    IndexedList<Browsable *> *getSubItems(int &error)
+    {
+        if (children.get_elements() == 0) {
+            for (int i=0; i<count; i++) {
+                ConfigGroup *grp = ConfigGroupCollection::getGroup(names[i], -1); // do not create
+                if (grp) {
+                    children.append(new BrowsableConfigGroup(grp));
+                    continue;
+                }
+                ConfigStore *store = ConfigManager::getConfigManager()->find_store(names[i]);
+                if (store) {
+                    children.append(new BrowsableConfigStore(store));
+                }
+            }
+        }
+        return &children;
+    }
+    const char *getName()
+    {
+        return "Browsable Config Predefined";
+    }
+};
 
 #endif
