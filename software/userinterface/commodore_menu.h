@@ -31,9 +31,13 @@ public:
     int select_item(void);
     
     void create_task_items(void) {
+        static bool done = false; // do it only once
         // nasty
-        TaskCategory *cat = TasksCollection :: getCategory("Return to Main Menu", -1);
-        cat->append(new Action("Return", S_SendMenuKey, 0, 0));
+        if (!done) {
+            TaskCategory *cat = TasksCollection :: getCategory("Return to Main Menu", -1);
+            cat->append(new Action("Return", S_SendMenuKey, 0, 0));
+            done = true;
+        }
     };
 
 };
