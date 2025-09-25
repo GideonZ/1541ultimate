@@ -58,7 +58,7 @@ const char *config_menu_names[] = {
 /************************/
 /* CommodoreMenu Object */
 /************************/
-CommodoreMenu :: CommodoreMenu(UserInterface *ui) : ContextMenu(ui, NULL, 1, 0, MENU_HIDE, 0)
+CommodoreMenu :: CommodoreMenu(UserInterface *ui) : ContextMenu(ui, NULL, 0, 0, MENU_HIDE, 0)
 {
     // Action *dummy = new Action(" ", S_file_browser, 0);
     // dummy->disable();
