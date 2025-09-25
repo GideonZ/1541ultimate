@@ -11,6 +11,7 @@ extern "C" {
 #include "tree_browser.h"
 #include "assembly_search.h"
 #include "system_info.h"
+#include "task_menu.h"
 
 typedef enum {
     e_audio_mixer = 0,
@@ -103,7 +104,46 @@ int CommodoreMenu :: poll(int prev)
         user_interface->popup(msg->c_str(), BUTTON_OK);
         delete msg;
     }
+
+    int ret = 0;
+    if(subContext) {
+        if(prev < 0) {
+        	delete subContext;
+            subContext = NULL;
+            draw();
+        } else if(prev > 0) {
+            // 0 is dummy, bec it is of the type ConfigItem. ConfigItem
+            // itself knows the value that the actual object (= selected of THIS
+            // browser!) needs to be called with. It would be better to just
+            // create a return value of a GUI object, and call execute
+            // with that immediately.
+            draw();
+            ret = subContext->executeSelected("");
+            delete subContext;
+            subContext = NULL;
+            if (user_interface->has_focus(this)) {
+                draw();
+            } else {
+                // we lost focus, apparently a new UI element is active
+                // state->refresh = true; // refresh as soon as we come back
+            }
+        }
+        return ret;
+    }
+
     return ContextMenu::poll(prev);
+}
+
+int CommodoreMenu :: handle_key(int c)
+{
+    if (c == KEY_TASKS) {
+        printf("Task Menu!\n");
+        subContext = new TaskMenu(user_interface, NULL, NULL);
+        subContext->init(window, keyb);
+        user_interface->activate_uiobject(subContext);
+        return 0;
+    }
+    return ContextMenu :: handle_key(c);
 }
 
 void CommodoreMenu :: redraw()

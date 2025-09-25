@@ -55,7 +55,7 @@ void UltiCopy :: create_task_items(void)
 }
 
 // called from GUI task
-void UltiCopy :: update_task_items(bool writablePath, Path *path)
+void UltiCopy :: update_task_items(bool writablePath)
 {
 	if (writablePath) {
 		myActions.ulticopy8->enable();

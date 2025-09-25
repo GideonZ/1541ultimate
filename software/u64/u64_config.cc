@@ -1273,7 +1273,7 @@ void U64Config :: create_task_items(void)
 #endif
 }
 
-void U64Config :: update_task_items(bool writablePath, Path *p)
+void U64Config :: update_task_items(bool writablePath)
 {
     myActions.saveedid->setDisabled(!writablePath);
 }

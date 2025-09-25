@@ -161,29 +161,13 @@ int TreeBrowser :: poll(int sub_returned)
             contextMenu = NULL;
             state->draw();
         } else if(sub_returned > 0) {
-            // printf("Pointer to selected context/menu item: %p\n", menu_browser->state->selected);
             // 0 is dummy, bec it is of the type ConfigItem. ConfigItem
             // itself knows the value that the actual object (= selected of THIS
             // browser!) needs to be called with. It would be better to just
             // create a return value of a GUI object, and call execute
             // with that immediately.
             state->draw();
-
-            Action *act = contextMenu->getSelectedAction();
-            if (act) {
-                printf("Action set was: %s\n", act->getName());
-                Browsable *b = contextMenu->getContextable();
-                const char *p = state->browser->getPath();
-                const char *filename = (b)?(b->getName()):"";
-                SubsysCommand *cmd = new SubsysCommand(user_interface, act, p, filename);
-                SubsysResultCode_t cmd_ret = cmd->execute();
-                // if (cmd_ret.status != SSRET_OK) {
-                //     user_interface->popup(SubsysCommand::error_string(cmd_ret.status), BUTTON_OK);
-                // }
-                ret = (int)(user_interface->menu_response_to_action);
-            } else {
-                printf("Action was not set in context menu!\n");
-            }
+            ret = contextMenu->executeSelected(state->browser->getPath());
             delete contextMenu;
             contextMenu = NULL;
             if (user_interface->has_focus(this)) {

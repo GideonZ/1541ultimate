@@ -206,7 +206,7 @@ void IecDrive :: create_task_items(void)
 }
 
 // called from GUI task
-void IecDrive :: update_task_items(bool writablePath, Path *path)
+void IecDrive :: update_task_items(bool writablePath)
 {
 	if (enable) {
 		myActions.turn_off->show();

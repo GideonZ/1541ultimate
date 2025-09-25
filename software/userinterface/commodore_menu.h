@@ -20,7 +20,7 @@ class CommodoreMenu: public ContextMenu, ObjectWithMenu
     }
 
     TreeBrowser *root_tree_browser;
-
+    int handle_key(int c);
 public:
     CommodoreMenu(UserInterface *ui);
     virtual ~CommodoreMenu();

@@ -251,7 +251,7 @@ void C1541 :: create_task_items(void)
     taskItemCategory->append(myActions.blank);
 }
 
-void C1541 :: update_task_items(bool writablePath, Path *p)
+void C1541 :: update_task_items(bool writablePath)
 {
     myActions.remove->hide();
     myActions.saved64->hide();

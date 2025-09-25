@@ -120,7 +120,7 @@ public:
 
     void ResetHandler();
     void create_task_items(void);
-    void update_task_items(bool writablePath, Path *p);
+    void update_task_items(bool writablePath);
     SubsysResultCode_e executeCommand(SubsysCommand *cmd);
     void effectuate_settings();
 

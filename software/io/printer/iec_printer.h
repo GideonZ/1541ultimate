@@ -169,7 +169,7 @@ class IecPrinter : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObjec
         int flush(void);
         /* =======  Interface menu */
         void create_task_items();
-        void update_task_items(bool writablePath, Path *path);
+        void update_task_items(bool writablePath);
         void effectuate_settings(void); // from ConfigurableObject
         SubsysResultCode_e executeCommand(SubsysCommand *cmd); // from SubSystem
         const char *identify(void) { return "Virtual Printer"; }

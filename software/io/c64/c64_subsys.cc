@@ -104,7 +104,7 @@ void C64_Subsys :: create_task_items(void)
     taskCategory->append(myActions.savemp3d);
 }
 
-void C64_Subsys :: update_task_items(bool writablePath, Path *p)
+void C64_Subsys :: update_task_items(bool writablePath)
 {
     if (C64 :: isMP3RamDrive(0) > 0) myActions.savemp3a->show(); else myActions.savemp3a->hide();
     if (C64 :: isMP3RamDrive(1) > 0) myActions.savemp3b->show(); else myActions.savemp3b->hide();

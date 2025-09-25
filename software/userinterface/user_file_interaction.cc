@@ -70,7 +70,7 @@ void UserFileInteraction :: create_task_items(void)
     cat->append(mkdir);
 }
 
-void UserFileInteraction::update_task_items(bool writablePath, Path *path)
+void UserFileInteraction::update_task_items(bool writablePath)
 {
     if (writablePath) {
         mkdir->enable();

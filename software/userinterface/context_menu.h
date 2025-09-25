@@ -59,6 +59,7 @@ public:
     ContextMenu(UserInterface *ui, TreeBrowserState *state, int initial, int y, int when_done = MENU_CLOSE, int indent=0);
     virtual ~ContextMenu(void);
     
+    int     executeSelected(const char *p);
     Action *getSelectedAction(void) { return selectedAction; }
     Browsable *getContextable(void) { return contextable; }
 

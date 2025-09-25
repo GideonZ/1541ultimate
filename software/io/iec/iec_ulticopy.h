@@ -56,7 +56,7 @@ public:
 
     // ObjectWithMenu (called from GUI task)
     void create_task_items(void);
-    void update_task_items(bool writablePath, Path *path);
+    void update_task_items(bool writablePath);
 };
 
 class UltiCopyWindow : public UIObject

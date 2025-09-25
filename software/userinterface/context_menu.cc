@@ -120,6 +120,25 @@ void ContextMenu :: help()
     }
 }
 
+int ContextMenu :: executeSelected(const char *p)
+{
+    Action *act = getSelectedAction();
+    if (act) {
+        printf("Action set was: %s\n", act->getName());
+        Browsable *b = getContextable();
+        const char *filename = (b)?(b->getName()):"";
+        SubsysCommand *cmd = new SubsysCommand(user_interface, act, p, filename);
+        SubsysResultCode_t cmd_ret = cmd->execute();
+        // if (cmd_ret.status != SSRET_OK) {
+        //     user_interface->popup(SubsysCommand::error_string(cmd_ret.status), BUTTON_OK);
+        // }
+        return (int)(user_interface->menu_response_to_action);
+    } else {
+        printf("Action was not set in context menu!\n");
+    }
+    return 0;
+}
+
 int ContextMenu :: poll(int sub)
 {
     int ret = 0;
@@ -289,7 +308,7 @@ int ContextMenu :: handle_key(int c)
             if ((c >= '!') && (c < 0x80)) {
                 seek_char(c);
             } else {
-                printf("Unhandled context key: %b\n", c);
+                printf("Unhandled context key: %03x\n", c);
             }
     }    
     return ret;
