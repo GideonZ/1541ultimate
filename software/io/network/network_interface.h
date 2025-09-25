@@ -99,6 +99,7 @@ protected:
     // callbacks
     static err_t lwip_output_callback(struct netif *netif, struct pbuf *pbuf);
     static void lwip_free_callback(struct pbuf *p);
+    static int dhcp_change(ConfigItem *it);
 public:
 
     NetworkInterface(void *driver,

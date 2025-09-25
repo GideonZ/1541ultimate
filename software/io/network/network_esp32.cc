@@ -48,7 +48,7 @@ struct t_cfg_definition wifi_config[] = {
 	{ CFG_NET_IP,      CFG_TYPE_STRING, "Static IP",					 "%s", NULL,       7, 16, (int)"192.168.2.64" },
 	{ CFG_NET_NETMASK, CFG_TYPE_STRING, "Static Netmask",				 "%s", NULL,       7, 16, (int)"255.255.255.0" },
 	{ CFG_NET_GATEWAY, CFG_TYPE_STRING, "Static Gateway",				 "%s", NULL,       7, 16, (int)"192.168.2.1" },
-	{ CFG_NET_DNS,     CFG_TYPE_STRING, "Static DNS",		   		 "%s", NULL,       7, 16, (int)"" },
+	{ CFG_NET_DNS,     CFG_TYPE_STRING, "Static DNS",		      		 "%s", NULL,       7, 16, (int)"8.8.8.8" },
     { CFG_SEPARATOR,   CFG_TYPE_SEP,    "",                               "",  NULL,       0,  0, 0 },
     { CFG_WIFI_STATUS, CFG_TYPE_INFO,   "Status",                        "%s", NULL,       0, 32, (int)"" },
     { CFG_WIFI_CUR_AP, CFG_TYPE_INFO,   "Connected to",                  "%s", NULL,       0, 32, (int)"" },
@@ -115,6 +115,8 @@ void NetworkLWIP_WiFi :: getSubItems(Browsable *parent, IndexedList<Browsable *>
 void NetworkLWIP_WiFi :: attach_config()
 {
 	register_store(0x57494649, "WiFi settings", wifi_config);
+    cfg->set_change_hook(CFG_NET_DHCP_EN, dhcp_change);
+    dhcp_change(cfg->find_item(CFG_NET_DHCP_EN));
 }
 
 // from ConfigurableObject

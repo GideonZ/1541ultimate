@@ -163,6 +163,18 @@ NetworkInterface :: ~NetworkInterface()
 void NetworkInterface :: attach_config()
 {
 	register_store(0x4E657477, "Ethernet Settings", net_config);
+    cfg->set_change_hook(CFG_NET_DHCP_EN, dhcp_change);
+    dhcp_change(cfg->find_item(CFG_NET_DHCP_EN));
+}
+
+int NetworkInterface :: dhcp_change(ConfigItem *it)
+{
+    bool enable_static = (it->getValue() == 0);
+    it->store->find_item(CFG_NET_IP)->setEnabled(enable_static);
+    it->store->find_item(CFG_NET_GATEWAY)->setEnabled(enable_static);
+    it->store->find_item(CFG_NET_NETMASK)->setEnabled(enable_static);
+    it->store->find_item(CFG_NET_DNS)->setEnabled(enable_static);
+    return 1;
 }
 
 bool NetworkInterface :: start()
