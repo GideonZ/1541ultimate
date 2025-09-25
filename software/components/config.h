@@ -27,6 +27,15 @@
 #include "mystring.h"
 #include "file.h"
 
+#define SORT_ORDER_CFG_U64 10
+#define SORT_ORDER_CFG_LEDS 15
+#define SORT_ORDER_CFG_TWEAKS 80
+#define SORT_ORDER_CFG_DRVA 11
+#define SORT_ORDER_CFG_DRVB 12
+#define SORT_ORDER_SIDPLAY 79
+
+#define GROUP_NAME_LEDS "LED Lighting"
+
 #define CFG_TYPE_VALUE   0x01
 #define CFG_TYPE_ENUM    0x02
 #define CFG_TYPE_STRING  0x03

@@ -2336,13 +2336,6 @@ void U64Config :: late_init_palette(void *obj, void *param)
     }
 }
 
-#define SORT_ORDER_CFG_U64 10
-#define SORT_ORDER_CFG_LEDS 15
-#define SORT_ORDER_CFG_TWEAKS 80
-#define SORT_ORDER_CFG_DRVA 11
-#define SORT_ORDER_CFG_DRVB 12
-#define SORT_ORDER_SIDPLAY 79
-
 void U64Config :: setup_config_menu(void)
 {
     ConfigGroup *grp = ConfigGroupCollection :: getGroup("Video Configuration", SORT_ORDER_CFG_U64);
@@ -2356,7 +2349,7 @@ void U64Config :: setup_config_menu(void)
 //    grp->append(cfg->find_item(CFG_COLOR_CLOCK_ADJ)->set_item_altname("Clock Frequency Tuning"));
 //    grp->append(cfg->find_item(CFG_CHROMA_DELAY)->set_item_altname("Chroma Delay Tuning"));
 
-    grp = ConfigGroupCollection :: getGroup("LED Configuration", SORT_ORDER_CFG_LEDS);
+    grp = ConfigGroupCollection :: getGroup(GROUP_NAME_LEDS, SORT_ORDER_CFG_LEDS);
     grp->append(cfg->find_item(CFG_LED_SELECT_0)->set_item_altname("Power LED Output 1"));
     grp->append(cfg->find_item(CFG_LED_SELECT_1)->set_item_altname("Power LED Output 2"));
     grp->append(ConfigItem :: separator());

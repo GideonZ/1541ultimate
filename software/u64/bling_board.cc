@@ -12,38 +12,12 @@
 #include "task.h"
 #include "u64.h"
 
+extern const char *fixed_colors[];
+extern const char *color_tints[];
 static const char *modes[] = {"Off", "Fixed Color", "SID Pulse", "SID Scroll 1", "SID Scroll 2" };
 static const char *sidsel[] = { "UltiSID1-A", "UltiSID1-B", "UltiSID1-C", "UltiSID1-D",
                                 "UltiSID2-A", "UltiSID2-B", "UltiSID2-C", "UltiSID2-D" };
 
-static const char *fixed_colors[] = {
-    "Red",
-    "Scarlet",
-    "Orange",
-    "Amber",
-    "Yellow",
-    "Lemon-Lime",
-    "Chartreuse",
-    "Lime",
-    "Green",
-    "Jade",
-    "Spring Green",
-    "Aquamarine",
-    "Cyan",
-    "Deep Sky Blue",
-    "Azure",
-    "Royal Blue",
-    "Blue",
-    "Indigo",
-    "Violet",
-    "Purple",
-    "Magenta",
-    "Fuchsia",
-    "Rose",
-    "Cerise"
-};
-
-static const char *tints[] = { "Pure", "Bright", "Pastel", "Whisper" };
 static const uint8_t tint_factors[] = { 0, 50, 100, 170 };
 
 static struct t_cfg_definition cfg_definition[] = {
@@ -51,7 +25,7 @@ static struct t_cfg_definition cfg_definition[] = {
     { CFG_LED_SIDSELECT,        CFG_TYPE_ENUM,  "LedStrip SID Select",          "%s", sidsel,       0,  7,  0  },
     { CFG_LED_INTENSITY,        CFG_TYPE_VALUE, "Strip Intensity",              "%d", NULL,         0, 31, 16  },
     { CFG_LED_FIXED_COLOR,      CFG_TYPE_ENUM,  "Fixed Color",                  "%s", fixed_colors, 0, 23, 15  },
-    { CFG_LED_FIXED_TINT,       CFG_TYPE_ENUM,  "Color tint",                   "%s", tints,        0,  3,  1  },
+    { CFG_LED_FIXED_TINT,       CFG_TYPE_ENUM,  "Color tint",                   "%s", color_tints,  0,  3,  1  },
     { CFG_TYPE_END,             CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
@@ -145,8 +119,9 @@ BlingBoard :: BlingBoard()
     cfg->set_change_hook(CFG_LED_INTENSITY,   BlingBoard :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_FIXED_COLOR, BlingBoard :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_FIXED_TINT,  BlingBoard :: hot_effectuate);
-    cfg->set_change_hook(CFG_LED_BLUE,        BlingBoard :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_SIDSELECT,   BlingBoard :: hot_effectuate);
+    cfg->hide();
+    setup_config_menu();
 }
 
 #define BLINGLEDS_DATA ( (volatile uint8_t *)(U64II_BLINGBOARD_LEDS))
@@ -261,4 +236,14 @@ int BlingBoard :: hot_effectuate(ConfigItem *item)
     item->store->set_need_effectuate();
     item->store->effectuate();
     return 0;
+}
+
+void BlingBoard :: setup_config_menu(void)
+{
+    ConfigGroup *grp = ConfigGroupCollection :: getGroup(GROUP_NAME_LEDS, SORT_ORDER_CFG_LEDS);
+    grp->append(cfg->find_item(CFG_LED_MODE)->set_item_altname("Keyboard Light Mode"));
+    grp->append(cfg->find_item(CFG_LED_INTENSITY)->set_item_altname("Keyboard Light Intensity"));
+    grp->append(cfg->find_item(CFG_LED_FIXED_COLOR)->set_item_altname("Keyboard Light Color"));
+    grp->append(cfg->find_item(CFG_LED_FIXED_TINT)->set_item_altname("Keyboard Light Tint"));
+    grp->append(ConfigItem::separator());
 }

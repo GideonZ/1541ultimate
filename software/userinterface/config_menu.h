@@ -9,6 +9,7 @@
 
 #define BR_EVENT_OUT   1
 #define BR_EVENT_CLOSE 2
+#define BR_EVENT_OPEN  3
 
 class ConfigBrowserState: public TreeBrowserState
 {
@@ -237,13 +238,24 @@ class BrowsableConfigGroup: public Browsable
             stores = group->getStores();
             for(int i=0; i < stores->get_elements(); i++) {
                 ConfigStore *s = (*stores)[i];
-                printf("%p: ", s);
                 s->effectuate();
             }
             printf("You left!!\n");
             break;
         case BR_EVENT_CLOSE:
             printf("Closing the config group '%s'\n", group->getName());
+            stores = group->getStores();
+            for(int i=0; i < stores->get_elements(); i++) {
+                ConfigStore *s = (*stores)[i];
+                s->at_close_config();
+            }
+            break;
+        case BR_EVENT_OPEN:
+            stores = group->getStores();
+            for(int i=0; i < stores->get_elements(); i++) {
+                ConfigStore *s = (*stores)[i];
+                s->at_open_config();
+            }
             break;
         };
     }

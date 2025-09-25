@@ -32,6 +32,7 @@ typedef enum {
     e_tape,
     e_drive_a,
     e_drive_b,
+    e_memory,
 } config_menus_t;
 
 const char *config_menu_names[] = {
@@ -52,7 +53,8 @@ const char *config_menu_names[] = {
     "User Interface Settings",
     "Tape Settings",
     "Drive A Settings",
-    "Drive B Settings"
+    "Drive B Settings",
+    "Memory Configuration",
 };
 
 /************************/
@@ -65,7 +67,7 @@ CommodoreMenu :: CommodoreMenu(UserInterface *ui) : ContextMenu(ui, NULL, 0, 0, 
     // appendAction(dummy);
     appendAction(new Action("DISK FILE BROWSER", S_file_browser, 0));
     appendAction(new Action("COMMOSERVE FILE SEARCH", S_assembly64, 0));
-    appendAction(new Action("STARTUP & MEMORY", S_cfg_page, e_c64_carts));
+    appendAction(new Action("MEMORY & ROMS", S_cfg_group, e_memory));
     appendAction(new Action("VIDEO & SPEED", S_cfg_page, e_u64_specific));
     appendAction(new Action("NETWORK SERVICES & TIMEZONE", S_cfg_page, e_network));
     appendAction(new Action("WIRED NETWORK SETUP", S_cfg_page, e_ethernet));
@@ -190,6 +192,20 @@ SubsysResultCode_e CommodoreMenu :: S_cfg_page(Action *act, void *context)
     ConfigStore *store = ConfigManager :: getConfigManager()->find_store(config_menu_names[act->function]);
     if (store) {
         Browsable *configPage = new BrowsableConfigStore(store);
+        ConfigBrowser *configBrowser = new ConfigBrowser(menu->user_interface, configPage, 1);
+        configBrowser->init();
+        menu->user_interface->activate_uiobject(configBrowser);
+    }
+    return SSRET_OK;
+}
+
+SubsysResultCode_e CommodoreMenu :: S_cfg_group(Action *act, void *context)
+{
+    // Let's open the config browser, and tell it to go to level 1 directly, looking for the config group.
+    CommodoreMenu *menu = (CommodoreMenu *)context;
+    ConfigGroup *group = ConfigGroupCollection :: getGroup(config_menu_names[act->function], 0);
+    if (group) {
+        Browsable *configPage = new BrowsableConfigGroup(group);
         ConfigBrowser *configBrowser = new ConfigBrowser(menu->user_interface, configPage, 1);
         configBrowser->init();
         menu->user_interface->activate_uiobject(configBrowser);

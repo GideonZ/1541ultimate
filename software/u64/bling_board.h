@@ -33,6 +33,7 @@ class BlingBoard : public ConfigurableObject
     
     static void task(void *);
     static int hot_effectuate(ConfigItem *item);
+    void setup_config_menu(void);
 public:
     BlingBoard();
     void effectuate_settings(void);

@@ -11,6 +11,35 @@
 #include "u64.h"
 #include "init_function.h"
 
+const char *fixed_colors[] = {
+    "Red",
+    "Scarlet",
+    "Orange",
+    "Amber",
+    "Yellow",
+    "Lemon-Lime",
+    "Chartreuse",
+    "Lime",
+    "Green",
+    "Jade",
+    "Spring Green",
+    "Aquamarine",
+    "Cyan",
+    "Deep Sky Blue",
+    "Azure",
+    "Royal Blue",
+    "Blue",
+    "Indigo",
+    "Violet",
+    "Purple",
+    "Magenta",
+    "Fuchsia",
+    "Rose",
+    "Cerise"
+};
+const char *color_tints[] = { "Pure", "Bright", "Pastel", "Whisper" };
+static const uint8_t tint_factors[] = { 0, 50, 100, 170 };
+
 // globally static
 LedStrip *ledstrip = NULL;
 static void init(void *_a, void *_b)
@@ -31,11 +60,62 @@ static struct t_cfg_definition cfg_definition[] = {
     { CFG_LED_SIDSELECT,        CFG_TYPE_ENUM,  "LedStrip SID Select",          "%s", sidsel,       0,  7,  0  },
     { CFG_LED_INTENSITY,        CFG_TYPE_VALUE, "Strip Intensity",              "%d", NULL,         0, 31, 16  },
     { CFG_LED_LENGTH,           CFG_TYPE_VALUE, "Strip Length",                 "%d", NULL,         1, 84, 24  },
-    { CFG_LED_RED,              CFG_TYPE_VALUE, "Fixed Color Red",            "%02x", NULL,         0,255, 128 },
-    { CFG_LED_GREEN,            CFG_TYPE_VALUE, "Fixed Color Green",          "%02x", NULL,         0,255, 0   },
-    { CFG_LED_BLUE,             CFG_TYPE_VALUE, "Fixed Color Blue",           "%02x", NULL,         0,255, 150 },
+    { CFG_LED_FIXED_COLOR,      CFG_TYPE_ENUM,  "Fixed Color",                  "%s", fixed_colors, 0, 23, 15  },
+    { CFG_LED_FIXED_TINT,       CFG_TYPE_ENUM,  "Color tint",                   "%s", color_tints,  0,  3,  1  },
     { CFG_TYPE_END,             CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
+
+typedef struct { uint8_t r, g, b; } RGB;
+
+// Map hue index (0..N-1) to fully saturated, full-brightness RGB.
+// Even spacing around the HSV wheel, using integer ramps.
+// If N is a multiple of 6, you'll land exactly on R, Y, G, C, B, M.
+
+static inline RGB hue_index_to_rgb(uint16_t idx, uint16_t N)
+{
+    // Scale hue to [0..1536) == 6 * 256; 256 steps per primary-secondary edge.
+    uint32_t h = ((uint32_t)idx * 1536u) / N;
+    uint8_t seg = (uint8_t)(h >> 8);   // 0..5
+    uint8_t f   = (uint8_t)(h & 0xFF); // 0..255
+
+    RGB c;
+    switch (seg) {
+        case 0: c.r = 255;     c.g = f;       c.b = 0;       break; // R → Y
+        case 1: c.r = 255 - f; c.g = 255;     c.b = 0;       break; // Y → G
+        case 2: c.r = 0;       c.g = 255;     c.b = f;       break; // G → C
+        case 3: c.r = 0;       c.g = 255 - f; c.b = 255;     break; // C → B
+        case 4: c.r = f;       c.g = 0;       c.b = 255;     break; // B → M
+        default:c.r = 255;     c.g = 0;       c.b = 255 - f; break; // M → R
+    }
+    return c;
+}
+
+// Mix one 8-bit channel toward another with t in [0..255]
+// t=0 → a, t=255 → b (rounded).
+static inline uint8_t mix8(uint8_t a, uint8_t b, uint8_t t)
+{
+    return (uint8_t)(((uint32_t)a * (255 - t) + (uint32_t)b * t + 127) / 255);
+}
+
+// Add white (tint). t=0 keeps the color, t=255 gives pure white.
+static inline RGB tint_with_white(RGB c, uint8_t t)
+{
+    RGB o;
+    o.r = mix8(c.r, 255, t);
+    o.g = mix8(c.g, 255, t);
+    o.b = mix8(c.b, 255, t);
+    return o;
+}
+
+static inline RGB apply_intensity(RGB c, uint8_t t)
+{
+    RGB o;
+    o.r = ((uint16_t)c.r * t) >> 5;
+    o.g = ((uint16_t)c.g * t) >> 5;
+    o.b = ((uint16_t)c.b * t) >> 5;
+    return o;
+}
+
 
 LedStrip :: LedStrip()
 {
@@ -49,10 +129,11 @@ LedStrip :: LedStrip()
     cfg->set_change_hook(CFG_LED_TYPE,      LedStrip :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_MODE,      LedStrip :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_INTENSITY, LedStrip :: hot_effectuate);
-    cfg->set_change_hook(CFG_LED_RED,       LedStrip :: hot_effectuate);
-    cfg->set_change_hook(CFG_LED_GREEN,     LedStrip :: hot_effectuate);
-    cfg->set_change_hook(CFG_LED_BLUE,      LedStrip :: hot_effectuate);
+    cfg->set_change_hook(CFG_LED_FIXED_COLOR, LedStrip :: hot_effectuate);
+    cfg->set_change_hook(CFG_LED_FIXED_TINT,  LedStrip :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_SIDSELECT, LedStrip :: hot_effectuate);
+    cfg->hide();
+    setup_config_menu();
 }
 
 #define LEDSTRIP_FROM (LEDSTRIP_DATA[LED_STARTADDR])
@@ -68,6 +149,8 @@ void LedStrip :: task(void *a)
     uint8_t offset = 0;
     uint8_t start = 0;
     uint8_t v1, v2, v3;
+
+    RGB fixed;
 
     while(1) {
         v1 = C64_VOICE_ADSR(strip->sidsel * 4 + 0);
@@ -90,16 +173,19 @@ void LedStrip :: task(void *a)
         case 1: // Fixed Color
             offset = 0;
             U64_LEDSTRIP_EN = 1;
+            fixed = hue_index_to_rgb(strip->hue, 24);
+            fixed = tint_with_white(fixed, tint_factors[strip->tint]);
+            fixed = apply_intensity(fixed, strip->intensity);
             LEDSTRIP_INTENSITY = strip->intensity << 2;
             LEDSTRIP_DIRECTION = 0 | strip->protocol;
             if (strip->protocol) {
-                LEDSTRIP_DATA[0] = strip->green;
-                LEDSTRIP_DATA[1] = strip->red;
-                LEDSTRIP_DATA[2] = strip->blue;
+                LEDSTRIP_DATA[0] = fixed.g;
+                LEDSTRIP_DATA[1] = fixed.r;
+                LEDSTRIP_DATA[2] = fixed.b;
             } else {
-                LEDSTRIP_DATA[0] = strip->blue;
-                LEDSTRIP_DATA[1] = strip->green;
-                LEDSTRIP_DATA[2] = strip->red;
+                LEDSTRIP_DATA[0] = fixed.b;
+                LEDSTRIP_DATA[1] = fixed.g;
+                LEDSTRIP_DATA[2] = fixed.r;
             }
             LEDSTRIP_FROM = 0x00;
             LEDSTRIP_LEN = strip->length;
@@ -160,9 +246,8 @@ void LedStrip :: effectuate_settings(void)
 {
     mode  = cfg->get_value(CFG_LED_MODE);
     intensity = cfg->get_value(CFG_LED_INTENSITY);
-    red   = cfg->get_value(CFG_LED_RED);
-    green = cfg->get_value(CFG_LED_GREEN);
-    blue  = cfg->get_value(CFG_LED_BLUE);
+    hue       = cfg->get_value(CFG_LED_FIXED_COLOR);
+    tint      = cfg->get_value(CFG_LED_FIXED_TINT);
     sidsel = cfg->get_value(CFG_LED_SIDSELECT);
     length = cfg->get_value(CFG_LED_LENGTH);
     protocol = cfg->get_value(CFG_LED_TYPE) ? 0x80 : 0x00; // 0x80 = WS2812, 0x00 = APA102;
@@ -175,4 +260,14 @@ int LedStrip :: hot_effectuate(ConfigItem *item)
     item->store->set_need_effectuate();
     item->store->effectuate();
     return 0;
+}
+
+void LedStrip :: setup_config_menu(void)
+{
+    ConfigGroup *grp = ConfigGroupCollection :: getGroup(GROUP_NAME_LEDS, SORT_ORDER_CFG_LEDS);
+    grp->append(cfg->find_item(CFG_LED_MODE)->set_item_altname("Case Light Mode"));
+    grp->append(cfg->find_item(CFG_LED_INTENSITY)->set_item_altname("Case Light Intensity"));
+    grp->append(cfg->find_item(CFG_LED_FIXED_COLOR)->set_item_altname("Case Light Color"));
+    grp->append(cfg->find_item(CFG_LED_FIXED_TINT)->set_item_altname("Case Light Tint"));
+    grp->append(ConfigItem::separator());
 }

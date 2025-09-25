@@ -149,7 +149,7 @@ void ConfigBrowserState :: decrease(void)
     
 void ConfigBrowserState :: on_close(void)
 {
-    if (level == 1) { // only at level 1, we know that our current node is of the type BrowsableConfigStore
+    if (level == 1) {
         node->event(BR_EVENT_CLOSE);
     }
 }
@@ -312,7 +312,7 @@ void ConfigBrowser :: checkFileManagerEvent(void)
             state->refresh = true;
             state->needs_reload = true;
             if (state->level == 1) { // this MUST be a BrowseableConfigStore FIXME!
-                ((BrowsableConfigStore *)state->node)->getStore()->at_open_config();
+                state->node->event(BR_EVENT_OPEN);
             }
             break;
 
