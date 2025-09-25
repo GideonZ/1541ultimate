@@ -799,7 +799,7 @@ void C64::init_system_roms(void)
     FRESULT fres;
     {
         uint8_t *temp = new uint8_t[8192];
-        fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_KERNFILE), (uint8_t *)U64_KERNAL_BASE, 8192, NULL);
+        fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_KERNFILE), (uint8_t *)temp, 8192, NULL);
         if (fres != FR_OK) {
             printf("Failed to load KERNAL ROM; loading default.\n");
             memcpy(temp, (void *)_kernal_901227_03_bin_start, 8192);
