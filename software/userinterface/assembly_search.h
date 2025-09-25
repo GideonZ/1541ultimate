@@ -161,7 +161,7 @@ public:
         }
 
         if (field[0] == '$') {
-            sprintf(buffer, "\er           \eR <<  Search  >> \er");
+            sprintf(buffer, "\er           \eR <<  Submit  >> \er");
             return;
         }
 
@@ -240,7 +240,7 @@ public:
     {
         // name, group, handle, event, date*, category*, subcat*, rating*, type*, repo*, latest, sort, order
         if (children.get_elements() == 0) {
-            children.append(new BrowsableStatic("\em  Assembly 64 Query Form"));
+            children.append(new BrowsableStatic("\em  CommoServe File Search"));
             children.append(new BrowsableStatic(""));
             children.append(new BrowsableQueryField("name", NULL));
             children.append(new BrowsableQueryField("group", NULL));
