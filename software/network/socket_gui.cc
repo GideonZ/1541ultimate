@@ -153,10 +153,12 @@ void socket_gui_task(void *a)
 	TreeBrowser *tree_browser = new TreeBrowser(user_interface, root);
 	user_interface->activate_uiobject(tree_browser);
 
+#ifndef COMMODORE
     if(user_interface->cfg->get_value(CFG_USERIF_START_HOME)) {
         new HomeDirectory(user_interface, tree_browser);
         // will clean itself up
     }
+#endif
 
 	user_interface->run_remote();
 

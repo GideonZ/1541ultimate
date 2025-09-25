@@ -45,7 +45,6 @@ StreamMenu *root_menu;
 Overlay *overlay;
 C64 *c64;
 C64_Subsys *c64_subsys;
-HomeDirectory *home_directory;
 StreamTextLog textLog(96*1024);
 Syslog syslog;
 
@@ -122,20 +121,21 @@ extern "C" void ultimate_main(void *a)
 #if U64
     overlayUserInterface = new UserInterface(title, true);
 
-#if COMMODORE
+  #if COMMODORE
     CommodoreMenu *commodoreMenuOverlay = new CommodoreMenu(overlayUserInterface);
     overlayUserInterface->activate_uiobject(commodoreMenuOverlay); // root of all evil!
-#else
+    overlayUserInterface->init(overlay);
+  #else
     Browsable *root = new BrowsableRoot();
     root_tree_browser_overlay = new TreeBrowser(overlayUserInterface, root);
     overlayUserInterface->activate_uiobject(root_tree_browser_overlay); // root of all evil!
-#endif
     overlayUserInterface->init(overlay);
-
     if(overlayUserInterface->cfg->get_value(CFG_USERIF_START_HOME)) {
         new HomeDirectory(overlayUserInterface, root_tree_browser_overlay);
         // will clean itself up
     }
+  #endif
+
 #endif
 
     UserInterface *c64UserInterface = NULL;
@@ -145,21 +145,21 @@ extern "C" void ultimate_main(void *a)
 #if COMMODORE
         CommodoreMenu *commodoreMenu = new CommodoreMenu(c64UserInterface);
         c64UserInterface->activate_uiobject(commodoreMenu); // root of all evil!
+        c64UserInterface->init(c64);
 #else
         Browsable *root = new BrowsableRoot();
         root_tree_browser = new TreeBrowser(c64UserInterface, root);
         c64UserInterface->activate_uiobject(root_tree_browser); // root of all evil!
-#endif
         c64UserInterface->init(c64);
         if(c64UserInterface->cfg->get_value(CFG_USERIF_START_HOME)) {
-            home_directory = new HomeDirectory(c64UserInterface, root_tree_browser);
+            new HomeDirectory(c64UserInterface, root_tree_browser);
             // will clean itself up
         }
+#endif
     }
 
     printf("All linked modules have been initialized and are now running.\n");
     print_tasks();
-
 
     while(c64) {
         int doIt = 0;
@@ -228,8 +228,6 @@ extern "C" void ultimate_main(void *a)
     	delete c64_subsys;
     if(c64)
         delete c64;
-    if(home_directory)
-        delete home_directory;
     
     printf("Graceful exit!!\n");
 //    return 0;
