@@ -649,8 +649,8 @@ calcExtraPlayerLocation
 
                 lda LOOP_INDEX
                 cmp LOOP_END_INDEX
-                beq noExtraPlayer
-                bcs noExtraPlayer
+                beq noSpaceBeforeLoad
+                bcs noSpaceBeforeLoad
 
                 jsr findExtraPlayerLoc
 
