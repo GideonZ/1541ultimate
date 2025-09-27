@@ -2364,8 +2364,9 @@ void U64Config :: setup_config_menu(void)
 //    grp->append(cfg->find_item(CFG_CHROMA_DELAY)->set_item_altname("Chroma Delay Tuning"));
 
     grp = ConfigGroupCollection :: getGroup(GROUP_NAME_LEDS, SORT_ORDER_CFG_LEDS);
-    grp->append(cfg->find_item(CFG_LED_SELECT_0)->set_item_altname("Power LED Output 1"));
-    grp->append(cfg->find_item(CFG_LED_SELECT_1)->set_item_altname("Power LED Output 2"));
+    grp->append(ConfigItem :: heading("Power LED"));
+    grp->append(cfg->find_item(CFG_LED_SELECT_0)->set_item_altname("Output 1"));
+    grp->append(cfg->find_item(CFG_LED_SELECT_1)->set_item_altname("Output 2"));
     grp->append(ConfigItem :: separator());
 
     grp = ConfigGroupCollection :: getGroup("Joystick Settings", SORT_ORDER_CFG_JOYSTICK);

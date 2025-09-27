@@ -241,9 +241,10 @@ int BlingBoard :: hot_effectuate(ConfigItem *item)
 void BlingBoard :: setup_config_menu(void)
 {
     ConfigGroup *grp = ConfigGroupCollection :: getGroup(GROUP_NAME_LEDS, SORT_ORDER_CFG_LEDS);
-    grp->append(cfg->find_item(CFG_LED_MODE)->set_item_altname("Keyboard Light Mode"));
-    grp->append(cfg->find_item(CFG_LED_INTENSITY)->set_item_altname("Keyboard Light Intensity"));
-    grp->append(cfg->find_item(CFG_LED_FIXED_COLOR)->set_item_altname("Keyboard Light Color"));
-    grp->append(cfg->find_item(CFG_LED_FIXED_TINT)->set_item_altname("Keyboard Light Tint"));
+    grp->append(ConfigItem::heading("Keyboard Lights"));
+    grp->append(cfg->find_item(CFG_LED_MODE)->set_item_altname("Mode"));
+    grp->append(cfg->find_item(CFG_LED_INTENSITY)->set_item_altname("Intensity"));
+    grp->append(cfg->find_item(CFG_LED_FIXED_COLOR)->set_item_altname("Color"));
+    grp->append(cfg->find_item(CFG_LED_FIXED_TINT)->set_item_altname("Tint"));
     grp->append(ConfigItem::separator());
 }

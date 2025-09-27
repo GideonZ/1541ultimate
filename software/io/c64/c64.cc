@@ -1561,12 +1561,12 @@ void C64 :: setup_config_menu(void)
 {
     ConfigGroup *grp = ConfigGroupCollection :: getGroup("Memory Configuration", SORT_ORDER_CFG_MEM);
     grp->append(cfg->find_item(CFG_C64_KERNFILE));
-    grp->append(cfg->find_item(CFG_C64_BASIFILE));
-    grp->append(cfg->find_item(CFG_C64_CHARFILE));
+    grp->append(cfg->find_item(CFG_C64_BASIFILE)->set_item_altname("BASIC ROM"));
+    grp->append(cfg->find_item(CFG_C64_CHARFILE)->set_item_altname("Character ROM"));
     grp->append(cfg->find_item(CFG_C64_CART_CRT));
     grp->append(ConfigItem :: separator());
     grp->append(cfg->find_item(CFG_C64_REU_EN));
-    grp->append(cfg->find_item(CFG_C64_REU_SIZE));
+    grp->append(cfg->find_item(CFG_C64_REU_SIZE)->set_item_altname("Size"));
     grp->append(ConfigItem :: separator());
     grp->append(cfg->find_item(CFG_CMD_ENABLE));
     grp->append(cfg->find_item(CFG_C64_MAP_SAMP)->set_item_altname("Ultimate Audio"));
