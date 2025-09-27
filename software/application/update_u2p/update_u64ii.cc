@@ -42,6 +42,32 @@ static void status_callback(void *user)
     ui->update_progress(NULL, 1);
 }
 
+void update_esp32_impl(void)
+{
+    if (esp32.Download() == 0) {
+        uint32_t total_size = (uint32_t)&_bootloader_bin_size + (uint32_t)&_partition_table_bin_size + (uint32_t)&_u64ctrl_bin_size;
+        user_interface->show_progress("Flashing ESP32", total_size / 1024);
+        int status = 0;
+        status = esp32.Flash((uint8_t *)&_bootloader_bin_start, 0x000000, (uint32_t)&_bootloader_bin_size, status_callback, user_interface);
+        if (status == 0) {
+            status = esp32.Flash((uint8_t *)&_partition_table_bin_start, 0x008000, (uint32_t)&_partition_table_bin_size, status_callback, user_interface);
+        }
+        if (status == 0) {
+            status = esp32.Flash((uint8_t *)&_u64ctrl_bin_start, 0x010000, (uint32_t)&_u64ctrl_bin_size, status_callback, user_interface);
+        }
+        user_interface->hide_progress();
+        printf("Flashing ESP32 Status: %d.\n", status);
+        if (status == 0) {
+            user_interface->popup("Flashing ESP32 Success!", BUTTON_OK);
+        } else {
+            user_interface->popup("Flashing ESP32 Failed!", BUTTON_OK);
+        }
+        esp32.EnableRunMode();
+    } else {
+        user_interface->popup("Could not set ESP32 to download mode", BUTTON_OK);
+    }
+}
+
 void update_esp32(void)
 {
     esp32.EnableRunMode();
@@ -57,31 +83,13 @@ void update_esp32(void)
         
         // if(user_interface->popup("Want to update the WiFi Module?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
         if ((major != IDENT_MAJOR) || (minor != IDENT_MINOR)) {
-            if (esp32.Download() == 0) {
-                uint32_t total_size = (uint32_t)&_bootloader_bin_size + (uint32_t)&_partition_table_bin_size + (uint32_t)&_u64ctrl_bin_size;
-                user_interface->show_progress("Flashing ESP32", total_size / 1024);
-                int status = 0;
-                status = esp32.Flash((uint8_t *)&_bootloader_bin_start, 0x000000, (uint32_t)&_bootloader_bin_size, status_callback, user_interface);
-                if (status == 0) {
-                    status = esp32.Flash((uint8_t *)&_partition_table_bin_start, 0x008000, (uint32_t)&_partition_table_bin_size, status_callback, user_interface);
-                }
-                if (status == 0) {
-                    status = esp32.Flash((uint8_t *)&_u64ctrl_bin_start, 0x010000, (uint32_t)&_u64ctrl_bin_size, status_callback, user_interface);
-                }
-                user_interface->hide_progress();
-                printf("Flashing ESP32 Status: %d.\n", status);
-                if (status == 0) {
-                    user_interface->popup("Flashing ESP32 Success!", BUTTON_OK);
-                } else {
-                    user_interface->popup("Flashing ESP32 Failed!", BUTTON_OK);
-                }
-                esp32.EnableRunMode();
-            } else {
-                user_interface->popup("Could not set ESP32 to download mode", BUTTON_OK);
-            }
+            update_esp32_impl();
+        } else {
+            console_print(screen, "No WiFi module update needed!\n");
         }
     } else {
-        console_print(screen, "WiFi module not detected.\n");
+        console_print(screen, "WiFi module version not detected.\n");
+        update_esp32_impl();
     }
 }
 
