@@ -65,18 +65,28 @@ static const AciaMessage_t rxData = { ACIA_MSG_RXDATA, 0, 0 };
 
 struct t_cfg_definition modem_cfg[] = {
     { CFG_MODEM_INTF,          CFG_TYPE_ENUM,   "Modem Interface",               "%s", interfaces,   0,  0, 0 },
+#if COMMODORE
+    { CFG_MODEM_ACIA,          CFG_TYPE_ENUM,   "ACIA (6551) Mapping",           "%s", acia_mode,    0,  6, 2 },
+#else
     { CFG_MODEM_ACIA,          CFG_TYPE_ENUM,   "ACIA (6551) Mapping",           "%s", acia_mode,    0,  6, 0 },
     { CFG_MODEM_HARDWARE,      CFG_TYPE_ENUM,   "Hardware Mode",                 "%s", hw_mode,      0,  1, 0 },
+#endif
     { CFG_MODEM_LISTEN_PORT,   CFG_TYPE_STRING, "Listening Port",                "%s", NULL,         2,  8, (int)"3000" },
+    { 0xFE,                    CFG_TYPE_SEP,    "",                              "",   NULL,         0,  0, 0 },
+    { 0xFE,                    CFG_TYPE_SEP,    "Handshaking",                   "",   NULL,         0,  0, 0 },
     { CFG_MODEM_LISTEN_RING,   CFG_TYPE_ENUM,   "Do RING sequence (incoming)",   "%s", en_dis,       0,  1, 1 },
     { CFG_MODEM_DTRDROP,       CFG_TYPE_ENUM,   "Drop connection on DTR low",    "%s", en_dis,       0,  1, 1 },
     { CFG_MODEM_RTS,           CFG_TYPE_ENUM,   "RTS Handshake (Rx)",            "%s", en_dis,       0,  1, 1 },
     { CFG_MODEM_CTS,           CFG_TYPE_ENUM,   "CTS Behavior",                  "%s", dcd_dsr,      0,  5, 0 },
     { CFG_MODEM_DCD,           CFG_TYPE_ENUM,   "DCD Behavior",                  "%s", dcd_dsr,      0,  5, 0 },
     { CFG_MODEM_DSR,           CFG_TYPE_ENUM,   "DSR Behavior",                  "%s", dcd_dsr,      0,  5, 1 },
-    { CFG_MODEM_OFFLINEFILE,   CFG_TYPE_STRING, "Modem Offline Text",            "%s", NULL,         0, 30, (int)"/Usb0/offline.txt" },
-    { CFG_MODEM_CONNFILE,      CFG_TYPE_STRING, "Modem Connect Text",            "%s", NULL,         0, 30, (int)"/Usb0/welcome.txt" },
-    { CFG_MODEM_BUSYFILE,      CFG_TYPE_STRING, "Modem Busy Text",               "%s", NULL,         0, 30, (int)"/Usb0/busy.txt" },
+    { 0xFE,                    CFG_TYPE_SEP,    "",                              "",   NULL,         0,  0, 0 },
+    { 0xFE,                    CFG_TYPE_SEP,    "Automated Responses",           "",   NULL,         0,  0, 0 },
+    { CFG_MODEM_OFFLINEFILE,   CFG_TYPE_STRING, "Modem Offline Text",            "%s", NULL,         0, 30, (int)"/USB0/offline.txt" },
+    { CFG_MODEM_CONNFILE,      CFG_TYPE_STRING, "Modem Connect Text",            "%s", NULL,         0, 30, (int)"/USB0/welcome.txt" },
+    { CFG_MODEM_BUSYFILE,      CFG_TYPE_STRING, "Modem Busy Text",               "%s", NULL,         0, 30, (int)"/USB0/busy.txt" },
+    { 0xFE,                    CFG_TYPE_SEP,    "",                              "",   NULL,         0,  0, 0 },
+    { 0xFE,                    CFG_TYPE_SEP,    "Tweaks",                        "",   NULL,         0,  0, 0 },
     { CFG_MODEM_TCPNODELAY,    CFG_TYPE_ENUM,   "Set Socket Opt TCP_NODELAY",    "%s", en_dis,       0,  1, 0 },
     { CFG_MODEM_LOOPDELAY,     CFG_TYPE_VALUE,  "Loop Delay",                    "%d0 ms", NULL,     1, 20, 2 },
     { CFG_TYPE_END,            CFG_TYPE_END,    "",                              "",   NULL,         0,  0, 0 } };

@@ -25,6 +25,15 @@ ConfigBrowser :: ~ConfigBrowser()
     printf("Destructing config browser..\n");
 }
 
+void ConfigBrowser :: start(UserInterface *ui)
+{
+    static BrowsableConfigRoot configRoot; // = new BrowsableConfigRoot();
+    ConfigBrowser *configBrowser = new ConfigBrowser(ui, &configRoot, 0);
+    configBrowser->init();
+    ui->activate_uiobject(configBrowser);
+    // from this moment on, we loose focus.. polls will go directly to config menu!
+}
+
 void ConfigBrowser :: init() // call on root!
 {
 	this->screen = get_ui()->get_screen();

@@ -2368,20 +2368,21 @@ void U64Config :: setup_config_menu(void)
     grp->append(cfg->find_item(CFG_LED_SELECT_1)->set_item_altname("Power LED Output 2"));
     grp->append(ConfigItem :: separator());
 
-    grp = ConfigGroupCollection :: getGroup("Machine Tweaks", SORT_ORDER_CFG_TWEAKS);
+    grp = ConfigGroupCollection :: getGroup("Joystick Settings", SORT_ORDER_CFG_JOYSTICK);
     grp->append(cfg->find_item(CFG_JOYSWAP)->set_item_altname("Joystick Input"));
-    grp->append(ConfigItem :: separator());
+    grp->append(sidaddressing.cfg->find_item(CFG_PADDLE_EN));
+
+    grp = ConfigGroupCollection :: getGroup("Turbo Settings", SORT_ORDER_CFG_TURBO);
     grp->append(cfg->find_item(CFG_SPEED_REGS));
     grp->append(cfg->find_item(CFG_SPEED_PREF));
     grp->append(cfg->find_item(CFG_BADLINES_EN));
     grp->append(cfg->find_item(CFG_SUPERCPU_DET));
-    grp->append(ConfigItem :: separator());
-    grp->append(sidaddressing.cfg->find_item(CFG_PADDLE_EN));
-    grp->append(cfg->find_item(CFG_IEC_BURST_EN));
-    // grp->append(cfg->find_item(CFG_USERPORT_EN));
 
-    grp = ConfigGroupCollection :: getGroup("Drive A Settings", SORT_ORDER_CFG_DRVA);
-    grp->append(cfg->find_item(CFG_PARCABLE_ENABLE));
+    grp = ConfigGroupCollection :: getGroup("Machine Tweaks", SORT_ORDER_CFG_TWEAKS);
+    grp->append(cfg->find_item(CFG_IEC_BURST_EN));
+    grp->append(cfg->find_item(CFG_PARCABLE_ENABLE)->set_item_altname("Parallel Cable to Drive A"));
+
+    // grp = ConfigGroupCollection :: getGroup("Drive A Settings", SORT_ORDER_CFG_DRVA);
 
     grp = ConfigGroupCollection :: getGroup("SID Player Behavior", SORT_ORDER_SIDPLAY);
     grp->append(cfg->find_item(CFG_PLAYER_AUTOCONFIG));

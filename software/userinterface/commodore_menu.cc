@@ -36,7 +36,8 @@ typedef enum {
     e_video,
     e_audio,
     e_leds,
-    e_tweaks,
+    e_turbo,
+    e_joystick,
 } config_menus_t;
 
 const char *config_menu_names[] = {
@@ -62,7 +63,8 @@ const char *config_menu_names[] = {
     "Video Configuration",
     "Audio Configuration",
     "LED Lighting",
-    "Machine Tweaks",
+    "Turbo Settings",
+    "Joystick Settings",
 };
 
 /************************/
@@ -76,8 +78,10 @@ CommodoreMenu :: CommodoreMenu(UserInterface *ui) : ContextMenu(ui, NULL, 0, 0, 
     appendAction(new Action("DISK FILE BROWSER", S_file_browser, 0));
     appendAction(new Action("COMMOSERVE FILE SEARCH", S_assembly64, 0));
     appendAction(new Action("MEMORY & ROMS", S_cfg_group, e_memory));
+    appendAction(new Action("TURBO BOOST", S_cfg_group, e_turbo));
     appendAction(new Action("VIDEO SETUP", S_cfg_group, e_video));
     appendAction(new Action("AUDIO SETUP", S_cfg_audio, 0));
+    appendAction(new Action("JOYSTICK & CONTROLLERS", S_cfg_group, e_joystick));
     appendAction(new Action("LED LIGHTING", S_cfg_group, e_leds));
     appendAction(new Action("NETWORK SERVICES & TIMEZONE", S_cfg_page, e_network));
     appendAction(new Action("WIRED NETWORK SETUP", S_cfg_page, e_ethernet));
@@ -87,7 +91,6 @@ CommodoreMenu :: CommodoreMenu(UserInterface *ui) : ContextMenu(ui, NULL, 0, 0, 
     appendAction(new Action("USER INTERFACE", S_cfg_page, e_user_interface));
     appendAction(new Action("DISK DRIVE A OPTIONS", S_cfg_group, e_drive_a));
     appendAction(new Action("DISK DRIVE B OPTIONS", S_cfg_page, e_drive_b));
-    appendAction(new Action("MACHINE TWEAKS", S_cfg_group, e_tweaks));
     //appendAction(new Action("ADVANCED SETTINGS", S_advanced, 0));
     appendAction(new Action("SYSTEM INFORMATION", S_sysinfo, 0));
 
@@ -149,12 +152,22 @@ int CommodoreMenu :: poll(int prev)
 
 int CommodoreMenu :: handle_key(int c)
 {
-    if (c == KEY_TASKS) {
-        printf("Task Menu!\n");
-        subContext = new TaskMenu(user_interface, NULL, NULL);
-        subContext->init(window, keyb);
-        user_interface->activate_uiobject(subContext);
-        return 0;
+    switch(c) {
+        case KEY_TASKS:
+            subContext = new TaskMenu(user_interface, NULL, NULL);
+            subContext->init(window, keyb);
+            user_interface->activate_uiobject(subContext);
+            return 0;
+        case KEY_CONFIG:
+            ConfigBrowser::start(user_interface);
+            return 0;
+        case KEY_SYSINFO:
+            SystemInfo::generate(user_interface);
+            draw();
+            return 0;
+        case KEY_SEARCH:
+            AssemblyInGui::S_OpenSearch(user_interface);
+            return 0;
     }
     return ContextMenu :: handle_key(c);
 }

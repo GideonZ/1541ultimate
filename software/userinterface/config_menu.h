@@ -36,6 +36,8 @@ public:
     virtual void init();
     virtual int handle_key(int);
     virtual void checkFileManagerEvent(void);
+
+    static void start(UserInterface *ui);
 };
 
 class BrowsableConfigItem: public Browsable

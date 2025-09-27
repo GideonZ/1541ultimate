@@ -8,7 +8,7 @@
 #include "json.h"
 
 #ifndef FS_ROOT
-#define FS_ROOT "/Usb0/"
+#define FS_ROOT "/USB0/"
 #endif
 
 #define MENU_IEC_ON          0xCA0E

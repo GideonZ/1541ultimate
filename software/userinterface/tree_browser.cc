@@ -35,7 +35,6 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root) : UIObject(ui)
 	screen = NULL;
 	window = NULL;
     keyb = NULL;
-    configBrowser = NULL;
     contextMenu = NULL;
     quick_seek_length = 0;
     quick_seek_string[0] = '\0';
@@ -95,14 +94,8 @@ void TreeBrowser :: deinit(void)
 void TreeBrowser :: config(void)
 {
     printf("Creating config menu...\n");
-        
-    Browsable *configRoot = new BrowsableConfigRoot();
-    configBrowser = new ConfigBrowser(user_interface, configRoot);
-    configBrowser->init();
     state->refresh = true; // refresh as soon as we come back
-    user_interface->activate_uiobject(configBrowser);
-
-    // from this moment on, we loose focus.. polls will go directly to config menu!
+    ConfigBrowser :: start(user_interface);
 }
 
 void TreeBrowser :: context(int initial)

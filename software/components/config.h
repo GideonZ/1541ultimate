@@ -32,6 +32,8 @@
 #define SORT_ORDER_CFG_LEDS 15
 #define SORT_ORDER_CFG_DRVA 11
 #define SORT_ORDER_CFG_DRVB 12
+#define SORT_ORDER_CFG_JOYSTICK 20
+#define SORT_ORDER_CFG_TURBO 30
 #define SORT_ORDER_SIDPLAY 79
 #define SORT_ORDER_CFG_TWEAKS 80
 
@@ -102,7 +104,7 @@ public:
 
     static ConfigItem *separator();
     static ConfigItem *heading(const char *);
-    
+
     const char *get_item_name() { return definition->item_text; }
     const char *get_display_string(char *buffer, int width);
     int  fetch_possible_settings(IndexedList<ConfigSetting *> &list);

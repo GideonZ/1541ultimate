@@ -73,7 +73,6 @@ public:
 
     // link to temporary popup
     ContextMenu *contextMenu; // anchor for menu that pops up
-    ConfigBrowser *configBrowser;
 
     // Member functions
     TreeBrowser(UserInterface *ui, Browsable *);
