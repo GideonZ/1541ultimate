@@ -297,10 +297,13 @@ public:
                     children.append(new BrowsableConfigStore((*storeList)[i]));
             }
 
+            // ConfigGroupCollection::getConfigGroupCollection()->sort();
             IndexedList<ConfigGroup *> *groupList = ConfigGroupCollection::getGroups();
             for (int i = 0; i < groupList->get_elements(); i++) {
                 children.append(new BrowsableConfigGroup((*groupList)[i]));
             }
+
+            children.sort(Browsable::compare_alphabetically);
         }
         return &children;
     }

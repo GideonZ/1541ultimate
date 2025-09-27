@@ -7,7 +7,7 @@ MARCH ?= rv32i
 MABI  ?= ilp32
 
 include ../../../common/environment.mk
-# /home/gideon/proj/ultimate/target/u64ii/riscv/ultimate/result/ultimate.elf
+
 PRJ      =  ultimate
 FINAL    =  $(RESULT)/$(PRJ).app $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
 
