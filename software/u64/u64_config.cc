@@ -1364,6 +1364,20 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
         effectuate_settings();
         break;
 
+#ifdef NO_ESP
+    case MENU_U64_WIFI_DISABLE:
+        esp32.Quit();
+        break;
+        
+    case MENU_U64_WIFI_DOWNLOAD:
+        esp32.Boot();
+        break;
+    
+    case MENU_U64_WIFI_ENABLE:
+        esp32.EnableRunMode();
+        break;
+#endif
+
     case 0xFFFE: // dummy
         DetectSidImpl(edid);
         break;

@@ -148,7 +148,9 @@ void do_update(void)
 
         write_protect(flash2, 4096);
 
+#ifndef NO_ESP
         update_esp32();
+#endif
     }
 
     reset_config(flash2);
