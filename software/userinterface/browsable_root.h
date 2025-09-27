@@ -206,7 +206,7 @@ public:
 			char sel = getSelection() ? '\x13' : ' ';
 			if (info->is_directory()) {
 				extra = squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
-				sprintf(buffer, "%#s\eJ DIR%c", display_space + extra, tmp_buffer, sel);
+				sprintf(buffer, "%#s\eC DIR%c", display_space + extra, tmp_buffer, sel);
 			} else if (info->attrib & AM_VOL) {
 				extra = squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
 				sprintf(buffer, "\eR%#s\er VOLUME", display_space + extra, tmp_buffer);
