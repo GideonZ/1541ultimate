@@ -37,6 +37,7 @@ static void configure_led(void)
 {
     gpio_reset_pin(IO_ESP_LED);
     gpio_set_direction(IO_ESP_LED, GPIO_MODE_OUTPUT);
+    gpio_set_level(IO_ESP_LED, 1); // off!
     gpio_reset_pin(IO_ESP_LED_RED);
     gpio_set_direction(IO_ESP_LED_RED, GPIO_MODE_OUTPUT);
 }

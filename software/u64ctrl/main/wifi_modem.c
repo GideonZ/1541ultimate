@@ -66,7 +66,7 @@ static err_t hacked_recv(struct pbuf *p, struct netif *inp)
     if ((memcmp(p->payload, inp->hwaddr, 6) == 0) || 
         (memcmp(p->payload, "\xff\xff\xff\xff\xff\xff", 6) == 0)) {
 
-        gpio_set_level(IO_ESP_LED, 0); // ON!
+        // gpio_set_level(IO_ESP_LED, 0); // ON!
 
         if (my_uart_get_buffer(UART_NUM_1, &reply, 100)) {
             rpc_rx_pkt *pkt = (rpc_rx_pkt *)reply->data;
