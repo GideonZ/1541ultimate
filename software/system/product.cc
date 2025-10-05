@@ -57,9 +57,9 @@ const char *getBoardRevision(void)
     case 0x15:
         return "U64E V2.0 (Early Proto)";
     case 0x16:
-        return "U64E V2.1 (Null Series)";
+        return "C64U V2.1 (Null Series)";
     case 0x17:
-        return "U64E V2.2 (Mass Prod)";
+        return "C64U V2.2 (Mass Prod)";
     }
     return "Unknown";
 }
