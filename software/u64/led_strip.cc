@@ -10,7 +10,6 @@
 #include "task.h"
 #include "u64.h"
 #include "init_function.h"
-#include <stdlib.h>
 
 const char *fixed_colors[] = {
     "Red",
@@ -321,7 +320,7 @@ void LedStrip :: task(void *a)
 {
     LedStrip *strip = (LedStrip *)a;
     int rainbow_hue = 0;
-    int rnd;
+    int rnd, lfsr = 64738;
     uint8_t spp = 0x00, spr = 0, spg = 0, spb = 0;
     uint8_t offset = 0;
     uint8_t v1, v2, v3;
@@ -482,7 +481,12 @@ void LedStrip :: task(void *a)
                 LEDSTRIP_DATA[spr*3+2] = backup[spr*3+2];
                 spr = 0xFF;
             }
-            rnd = random() & 0x1FFF;
+            if (lfsr < 0) {
+                lfsr = (lfsr << 1) ^ 0x04C11DB7;
+            } else {
+                lfsr <<= 1;
+            }
+            rnd = lfsr & 0x1FFF;
             if (rnd < 84) {
                 spr = rnd;
                 LEDSTRIP_DATA[rnd*3+0] = 0xFF;
