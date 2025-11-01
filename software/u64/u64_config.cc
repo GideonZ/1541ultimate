@@ -899,12 +899,8 @@ void U64Config :: hpd_monitor_task(void *_a)
     while(1) {
         xSemaphoreTake(u64_configurator->hpd_monitor_sem, portMAX_DELAY);
         vTaskDelay(200 / portTICK_PERIOD_MS);
-        u64_configurator->hdmiMonitor = u64_configurator->IsMonitorHDMI();
-        if (!u64_configurator->hdmiSetting) { // Auto = 0
-            U64_HDMI_ENABLE = u64_configurator->hdmiMonitor ? 1 : 0;
-        } else {
-            U64_HDMI_ENABLE = (u64_configurator->hdmiSetting == 1) ? 1 : 0; // 1 = HDMI, 2 = DVI
-        }
+        u64_configurator->read_edid();
+        u64_configurator->configure_hdmi_output();
     }
 }
 
@@ -1008,8 +1004,11 @@ void U64Config :: effectuate_settings()
 //    vTaskDelay(4000);
     if (doPll) {
         printf("config doing plls...\n");
+        // Set the primary C64 clock, which is also the reference for the HDMI pll
         SetVideoPll(systemMode, cfg->get_value(CFG_COLOR_CLOCK_ADJ));
-        SetHdmiPll(systemMode, ct->mode_bits | format);
+        // Now configure the HDMI pll based on the final scan resolution
+        SetHdmiPll(systemMode);
+        C64_VIDEOFORMAT = ct->mode_bits | format;
         SetVideoMode1080p(systemMode);
         ResetHdmiPll();
         SetResampleFilter(systemMode);
@@ -1020,7 +1019,7 @@ void U64Config :: effectuate_settings()
     if (doPll) {
         C64_VIDEOFORMAT = ct->mode_bits | format;
         SetVideoPll(systemMode, cfg->get_value(CFG_COLOR_CLOCK_ADJ));
-        SetHdmiPll(systemMode, ct->mode_bits | format);
+        SetHdmiPll(systemMode);
         SetVideoMode(systemMode);
         ResetHdmiPll();
         SetResampleFilter(systemMode);
@@ -2152,18 +2151,14 @@ void U64Config :: clear_ram()
     machine->clear_ram();
 }
 
-bool U64Config :: IsMonitorHDMI()
+bool U64Config :: read_edid()
 {
-    const uint8_t header_expected[8] = { 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00 };
-    uint8_t header[8];
-    uint8_t extension[8];
-
+    edid_size = 0;
 
     if ((U64_HDMI_REG & U64_HDMI_HPD_CURRENT) == 0) {
         printf("No HPD - no digital monitor attached.\n");
         return false;
     }
-
     if(!i2c) {
         printf("No I2C interface available.\n");
         return false;
@@ -2173,35 +2168,87 @@ bool U64Config :: IsMonitorHDMI()
 
     i2c->i2c_lock("HDMI check");
     i2c->set_channel(I2C_CHANNEL_HDMI);
-    if (i2c->i2c_read_block(0xA0, 0x00, header, 8) != 0) {
-        printf("EDID Read FAILED.\n");
+    if (i2c->i2c_read_block(0xA0, 0x00, edid, 128) != 0) {
+        printf("EDID Read Block 0 FAILED.\n");
         U64_HDMI_REG = U64_HDMI_DDC_DISABLE;
         i2c->i2c_unlock();
         return false;
     }
-    if (i2c->i2c_read_block(0xA0, 0x80, extension, 8) != 0) {
-        printf("EDID Read FAILED.\n");
+    edid_size = 128;
+    uint8_t num_ext = edid[126];
+    if (num_ext == 0) {
         U64_HDMI_REG = U64_HDMI_DDC_DISABLE;
         i2c->i2c_unlock();
         return false;
+    }
+    // num_ext is at least 1.
+    if (i2c->i2c_read_block(0xA0, 0x80, edid + 128, 128) != 0) {
+        printf("EDID Read Block 1 FAILED.\n");
+        U64_HDMI_REG = U64_HDMI_DDC_DISABLE;
+        i2c->i2c_unlock();
+        return false;
+    }
+    edid_size = 256;
+    num_ext = (num_ext > 7) ? 7 : num_ext; // limit to at most 7 extensions
+    for(int n=2; n <= num_ext; n++) {
+        if (i2c->i2c_read_block_ext(n >> 1, 0xA0, (n & 1) ? 0x80 : 0x00, edid + (128 * n), 128) != 0) {
+            printf("EDID Read Block %d FAILED.\n", n);
+            break;
+        } else {
+            edid_size += 128;
+        }
     }
     U64_HDMI_REG = U64_HDMI_DDC_DISABLE;
     i2c->i2c_unlock();
+    return true;
+}
 
-    if (memcmp(header, header_expected, 8) != 0) {
+bool U64Config :: IsMonitorHDMI()
+{
+    const uint8_t header_expected[8] = { 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00 };
+
+    if (edid_size < 128) {
+        return false;
+    }
+    if (memcmp(edid, header_expected, 8) != 0) {
         printf("EDID Header incorrect.\n");
         return false;
     }
-    if (extension[0] != 0x02) {
+    if (edid[126] == 0) {
+        printf("EDID No Extension found.\n");
+        return false;
+    }
+    if (edid[128] != 0x02) {
         printf("EDID Extension not of CEA type.\n");
         return false;
     }
-    if ((extension[3] & 0x70) == 0) {
+    if ((edid[131] & 0x70) == 0) {
         printf("EDID no support for any HDMI specific stuff.\n");
         return false;
     }
     printf("EDID: Monitor is HDMI!\n");
     return true;
+}
+
+void U64Config :: configure_hdmi_output(void)
+{
+    hdmiMonitor = IsMonitorHDMI();
+    if (!hdmiSetting) { // Auto = 0
+        U64_HDMI_ENABLE = hdmiMonitor ? 1 : 0;
+    } else {
+        U64_HDMI_ENABLE = (hdmiSetting == 1) ? 1 : 0; // 1 = HDMI, 2 = DVI
+    }
+
+//#if U64 == 2    
+    volatile t_video_timing_regs *regs = (volatile t_video_timing_regs *)U64II_HDMI_REGS;
+
+
+
+
+
+
+    regs->resync = 2;
+//#endif
 }
 
 void U64Config :: list_palettes(ConfigItem *it, IndexedList<char *>& strings)
