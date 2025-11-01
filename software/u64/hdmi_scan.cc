@@ -6,9 +6,9 @@ extern "C" void SetScanModeRegisters(volatile t_video_timing_regs *regs, const T
 {
     regs->VID_HSYNCPOL     = mode->hsyncpol;
     regs->VID_HSYNCTIME    = mode->hsync >> 1;
-    regs->VID_HBACKPORCH   = mode->hbackporch >> 1;
+    regs->VID_HBACKPORCH   = mode->hbackporch >> 2;
     regs->VID_HACTIVE      = mode->hactive >> 3;
-    regs->VID_HFRONTPORCH  = mode->hfrontporch >> 1;
+    regs->VID_HFRONTPORCH  = mode->hfrontporch >> 2;
     regs->VID_HREPETITION  = 0;
     regs->VID_VSYNCPOL     = mode->vsyncpol;
     regs->VID_VSYNCTIME    = mode->vsync;
@@ -56,17 +56,36 @@ extern "C" void SetVideoMode1080p(t_video_mode mode)
 {
     volatile t_video_timing_regs *regs = (volatile t_video_timing_regs *)U64II_HDMI_REGS;
 
-    const TVideoMode pal  =  { 31, 148869856, 1920, 510, 62, 148, 1,  1080, 4, 5, 36, 1, 1, 0 }; // 528,44
-    const TVideoMode ntsc =  { 16, 148069608, 1920, 88,  44, 148, 1,  1080, 4, 5, 36, 1, 1, 0 };
+    const TVideoMode pal    =  { 31, 148869856, 1920, 528, 44, 148, 1,  1080,  4, 5, 36, 1, 1, 0 };
+    const TVideoMode ntsc   =  { 16, 148069608, 1920, 88,  44, 148, 1,  1080,  4, 5, 36, 1, 1, 0 };
+    const TVideoMode lowpal =  { 17,  27067270,  720, 12,  64,  68, 0,   576,  5, 5, 39, 0, 1, 0 };
+    const TVideoMode vga    =  {  1,  25126964,  640, 16,  96,  48, 0,   480, 10, 2, 33, 0, 1, 0 };
 
     const t_video_color_timing *ct = color_timings[(int)mode];
+#if 1
     if (ct->audio_div == 77) {
         SetScanModeRegisters(regs, &pal);
-        SetVicCrop(4, 9, 392, 270);
-        regs->scaler_vstretch = 0x02 + 12; // resync, stretch off
+        SetVicCrop(8, 9, 384, 270);
+        regs->scaler_vstretch = 0x02;// + 24; // x mode 111 resync, stretch off
+        regs->x_offset = 0;
     } else {
         SetScanModeRegisters(regs, &ntsc);
         SetVicCrop(4, 0, 392, 240);
-        regs->scaler_vstretch = 0x03 + 12; // resync, stretch on
+        regs->scaler_vstretch = 0x03 + 28; // x mode 111 resync, stretch on
     }
+#else
+    if (ct->audio_div == 77) {
+        regs->gearbox = 1;
+        regs->x_offset = 0;
+        SetScanModeRegisters(regs, &lowpal);
+        SetVicCrop(8, 9, 384, 270);
+        regs->scaler_vstretch = 0x02 + 4; // x mode 001
+    } else {
+        regs->gearbox = 1;
+        regs->x_offset = 0;
+        SetScanModeRegisters(regs, &vga);
+        SetVicCrop(8, 0, 384, 240);
+        regs->scaler_vstretch = 0x03; // x mode 000
+    }
+#endif
 }

@@ -162,7 +162,7 @@ typedef struct {
     uint8_t VID_HREPETITION;
     uint8_t scaler_vstretch;
     uint8_t VID_Y;
-    uint8_t VID_VSYNCPOL;
+    uint8_t VID_VSYNCPOL; // 8
     uint8_t VID_VSYNCTIME;
     uint8_t VID_VBACKPORCH;
     uint8_t VID_VACTIVE;
@@ -170,6 +170,9 @@ typedef struct {
     uint8_t VID_VIC;
     uint8_t VID_REPCN;
     uint8_t VID_IRCYQ;
+    uint8_t x_offset;
+    uint8_t tx_swing;
+    uint8_t gearbox;
 } t_video_timing_regs;
 
 typedef enum {

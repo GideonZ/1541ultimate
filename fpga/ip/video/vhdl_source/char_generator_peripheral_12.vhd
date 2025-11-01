@@ -34,6 +34,7 @@ port (
 
     pix_clock       : in  std_logic;
     pix_reset       : in  std_logic;
+    pix_enable      : in  std_logic;
     data_enable     : in  std_logic := '1';
     h_count         : in  unsigned(11 downto 0);
     v_count         : in  unsigned(11 downto 0);
@@ -116,6 +117,7 @@ begin
 		g_screen_size	=> g_screen_size )
     port map (
         clock           => pix_clock,
+        clock_en        => pix_enable,
         reset           => pix_reset,
                                        
         data_enable     => data_enable,

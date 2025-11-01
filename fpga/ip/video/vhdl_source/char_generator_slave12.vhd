@@ -23,6 +23,7 @@ generic (
 	g_screen_size	: natural := 11 );
 port (
     clock           : in  std_logic;
+    clock_en        : in  std_logic := '1';
     reset           : in  std_logic;
         
     data_enable     : in  std_logic;
@@ -69,90 +70,92 @@ begin
         variable v_char_data : std_logic_vector(11 downto 0);
     begin
         if rising_edge(clock) then
-            active_d1 <= '0';
-            char_y_d  <= char_y;
-            color_data_d <= color_data;
-            
-            case state is
-            when idle =>
-                pointer <= control.pointer(pointer'range);
-                char_y  <= (others => '0');
-                remaining_lines <= control.active_lines;
-                if (v_count = control.y_on) and (overlay_ena = '1') and (data_enable = '1') then
-                    state <= active_line;
-                end if;
+            if clock_en = '1' then
+                active_d1 <= '0';
+                char_y_d  <= char_y;
+                color_data_d <= color_data;
                 
-            when active_line =>
-                char_x <= (others => '0');
-                pixel_count <= control.char_width;
-                
-                if remaining_lines = 0 then
-                    state <= idle;
-                elsif h_count = control.x_on and (data_enable = '1') then
-                    state <= draw;
-                end if;
-            
-            when draw =>
-                if pixel_count = 1 then
-                    pixel_count <= control.char_width;
-                    char_x <= char_x + 1;
-                    if char_x = control.chars_per_line-1 then
+                case state is
+                when idle =>
+                    pointer <= control.pointer(pointer'range);
+                    char_y  <= (others => '0');
+                    remaining_lines <= control.active_lines;
+                    if (v_count = control.y_on) and (overlay_ena = '1') and (data_enable = '1') then
                         state <= active_line;
-                        char_x <= (others => '0');
-                        if char_y = control.char_height-1 then
-                            pointer <= pointer + control.chars_per_line;
-                            char_y <= (others => '0');
-                            remaining_lines <= remaining_lines - 1;
-                        elsif char_y(1 downto 0) = "10" then -- count 0, 1, 2, 4, 5, 6, 8, 9 ...
-                            char_y <= char_y + 2;
-                        else                        
-                            char_y <= char_y + 1;
+                    end if;
+                    
+                when active_line =>
+                    char_x <= (others => '0');
+                    pixel_count <= control.char_width;
+                    
+                    if remaining_lines = 0 then
+                        state <= idle;
+                    elsif h_count = control.x_on and (data_enable = '1') then
+                        state <= draw;
+                    end if;
+                
+                when draw =>
+                    if pixel_count = 1 then
+                        pixel_count <= control.char_width;
+                        char_x <= char_x + 1;
+                        if char_x = control.chars_per_line-1 then
+                            state <= active_line;
+                            char_x <= (others => '0');
+                            if char_y = control.char_height-1 then
+                                pointer <= pointer + control.chars_per_line;
+                                char_y <= (others => '0');
+                                remaining_lines <= remaining_lines - 1;
+                            elsif char_y(1 downto 0) = "10" then -- count 0, 1, 2, 4, 5, 6, 8, 9 ...
+                                char_y <= char_y + 2;
+                            else                        
+                                char_y <= char_y + 1;
+                            end if;
+                        end if;
+                    else
+                        pixel_count <= pixel_count - 1;
+                    end if;
+                    active_d1    <= '1';
+
+                when others =>
+                    null;
+                end case;
+
+                -- pipeline forwards
+                pixel_sel_d1 <= pixel_count - 1;
+                pixel_sel_d2 <= pixel_sel_d1;
+                active_d2    <= active_d1;
+
+                -- pixel output
+                pixel_active <= active_d2;
+                if active_d2='1' then
+                    if char_y(1 downto 0) = "00" then
+                        v_char_data := char_data(11 downto 0);
+                    elsif char_y(1 downto 0) = "01" then
+                        v_char_data := char_data(23 downto 12);
+                    else
+                        v_char_data := char_data(35 downto 24);
+                    end if;
+
+                    if v_char_data(to_integer(pixel_sel_d2)) = not(reverse) then
+                        pixel_data <= unsigned(color_data_d(3 downto 0));
+                        if color_data_d(3 downto 0) = control.transparent then
+                            pixel_opaque <= '0';
+                        else
+                            pixel_opaque <= '1';
+                        end if;
+                    else
+                        pixel_data <= unsigned(color_data_d(7 downto 4));
+                        if color_data_d(7 downto 4) = control.transparent then
+                            pixel_opaque <= '0';
+                        else
+                            pixel_opaque <= '1';
                         end if;
                     end if;
                 else
-                    pixel_count <= pixel_count - 1;
-                end if;
-                active_d1    <= '1';
-
-            when others =>
-                null;
-            end case;
-
-            -- pipeline forwards
-            pixel_sel_d1 <= pixel_count - 1;
-            pixel_sel_d2 <= pixel_sel_d1;
-            active_d2    <= active_d1;
-
-            -- pixel output
-            pixel_active <= active_d2;
-			if active_d2='1' then
-                if char_y(1 downto 0) = "00" then
-                    v_char_data := char_data(11 downto 0);
-                elsif char_y(1 downto 0) = "01" then
-                    v_char_data := char_data(23 downto 12);
-                else
-                    v_char_data := char_data(35 downto 24);
-                end if;
-
-                if v_char_data(to_integer(pixel_sel_d2)) = not(reverse) then
-		            pixel_data <= unsigned(color_data_d(3 downto 0));
-                    if color_data_d(3 downto 0) = control.transparent then
-                        pixel_opaque <= '0';
-                    else
-                        pixel_opaque <= '1';
-                    end if;
-		        else
-		        	pixel_data <= unsigned(color_data_d(7 downto 4));
-                    if color_data_d(7 downto 4) = control.transparent then
-                        pixel_opaque <= '0';
-                    else
-                        pixel_opaque <= '1';
-                    end if;
-		        end if;
-			else
-				pixel_data   <= (others => '0');
-                pixel_opaque <= '0';
-		    end if;           
+                    pixel_data   <= (others => '0');
+                    pixel_opaque <= '0';
+                end if;           
+            end if;
 
             if reset='1' then
                 state <= idle;
