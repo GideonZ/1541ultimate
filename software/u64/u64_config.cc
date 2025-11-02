@@ -143,6 +143,8 @@ static SemaphoreHandle_t resetSemaphore;
 
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
+#define CFG_HDMI_TX_SWING     0xAB
+#define CFG_HDMI_RESOLUTION   0xAC
 
 uint8_t C64_EMUSID1_BASE_BAK;
 uint8_t C64_EMUSID2_BASE_BAK;
@@ -192,22 +194,31 @@ uint8_t u64_sid_offsets[] = { UNMAPPED_BASE,
                             };
 
 
+// const char *scan_modes[] = {
+// 	"VGA 60",
+// 	"VESA 768x576@60Hz",
+// 	"VESA 800x600@60Hz",
+// 	"VESA 1024x768@60Hz",
+// 	"720x480@60Hz",
+// 	"720x576@50Hz (625)",
+// 	"720x576@50.12Hz (625)",
+// 	"720x576@50Hz (624)",
+// 	"720x576@50.12Hz (624)",
+// 	"1440x288 @ 50Hz (312)",
+// 	"1440x288 @ 50Hz (313)",
+// 	"Commodore, Extd Blnk",
+// 	"Commodore, Detuned",
+// 	"Commodore, Wide brd",
+// 	"720(1440)x480 54MHz",
+// };
+
 const char *scan_modes[] = {
-	"VGA 60",
-	"VESA 768x576@60Hz",
-	"VESA 800x600@60Hz",
-	"VESA 1024x768@60Hz",
-	"720x480@60Hz",
-	"720x576@50Hz (625)",
-	"720x576@50.12Hz (625)",
-	"720x576@50Hz (624)",
-	"720x576@50.12Hz (624)",
-	"1440x288 @ 50Hz (312)",
-	"1440x288 @ 50Hz (313)",
-	"Commodore, Extd Blnk",
-	"Commodore, Detuned",
-	"Commodore, Wide brd",
-	"720(1440)x480 54MHz",
+    "SD (480p/576p)",
+    "HD (720p)",
+    "FullHD (1080p)",
+    "PC 800 x 600",
+    "PC 1024 x 768",
+    "PC 1280 x 1024",
 };
 
 const char *stereo_addr[] = { "Off", "A5", "A6", "A7", "A8", "A9" };
@@ -278,6 +289,8 @@ dc 0c 11 00 00 9e 01 1d  00 72 51 d0 1e 20 6e 28
 
 struct t_cfg_definition u64_cfg[] = {
     { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  5, 0 },
+    { CFG_HDMI_RESOLUTION,      CFG_TYPE_ENUM, "HDMI Scan Resolution",         "%s", scan_modes,   0,  5, 0 },
+    { CFG_HDMI_TX_SWING,        CFG_TYPE_VALUE, "HDMI Tx Swing",               "%d", NULL,         0, 15, 8 },
 #if U64 == 2
     { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  5, 0 },
 #else
@@ -796,6 +809,8 @@ void U64Config :: U64SidAddressing :: effectuate_settings()
 U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 {
     systemMode = e_NOT_SET;
+    hdmiMode = e_480p_576p;
+    
     U64_ETHSTREAM_ENA = 0;
 	skipReset = false;
 
@@ -820,6 +835,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 
         cfg->set_change_hook(CFG_SCAN_MODE_TEST, U64Config::setScanMode);
         cfg->set_change_hook(CFG_COLOR_CLOCK_ADJ, U64Config::setPllOffset);
+        cfg->set_change_hook(CFG_HDMI_TX_SWING, U64Config::setScanMode);
         cfg->set_change_hook(CFG_LED_SELECT_0, U64Config::setLedSelector);
         cfg->set_change_hook(CFG_LED_SELECT_1, U64Config::setLedSelector);
         cfg->set_change_hook(CFG_SPEED_REGS, U64Config::setCpuSpeed);
@@ -989,6 +1005,10 @@ void U64Config :: effectuate_settings()
         systemMode = (t_video_mode)cfg->get_value(CFG_SYSTEM_MODE);
         doPll = true;
     }
+    if (cfg->get_value(CFG_HDMI_RESOLUTION) != (int)hdmiMode) {
+        hdmiMode = (t_hdmi_mode)cfg->get_value(CFG_HDMI_RESOLUTION);
+        doPll = true;
+    }
 
     const char *palette = cfg->get_string(CFG_PALETTE);
     if (strlen(palette)) {
@@ -1000,16 +1020,13 @@ void U64Config :: effectuate_settings()
     const t_video_color_timing *ct = color_timings[(int)systemMode];
     C64_PHASE_INCR  = ct->phase_inc;
 #if U64 == 2
-//    printf("config waiting...\n");
-//    vTaskDelay(4000);
     if (doPll) {
         printf("config doing plls...\n");
         // Set the primary C64 clock, which is also the reference for the HDMI pll
         SetVideoPll(systemMode, cfg->get_value(CFG_COLOR_CLOCK_ADJ));
-        // Now configure the HDMI pll based on the final scan resolution
-        SetHdmiPll(systemMode);
+        // Now configure the HDMI plls based on the final scan resolution
         C64_VIDEOFORMAT = ct->mode_bits | format;
-        SetVideoMode1080p(systemMode);
+        SetVideoMode1080p(systemMode, hdmiMode);
         ResetHdmiPll();
         SetResampleFilter(systemMode);
     } else {
@@ -1172,7 +1189,10 @@ int U64Config :: setPllOffset(ConfigItem *it)
 
 int U64Config :: setScanMode(ConfigItem *it)
 {
+#define TX_SWING (*(volatile uint8_t *)(U64II_HDMI_REGS + 17))
 	if(it) {
+        printf("%d\n", it->getValue());
+        TX_SWING = it->getValue();
 //		SetScanMode(it->value);
 	}
     return 0;
@@ -2401,6 +2421,7 @@ void U64Config :: setup_config_menu(void)
 {
     ConfigGroup *grp = ConfigGroupCollection :: getGroup("Video Configuration", SORT_ORDER_CFG_U64);
     grp->append(cfg->find_item(CFG_SYSTEM_MODE));
+    grp->append(cfg->find_item(CFG_HDMI_RESOLUTION));
     grp->append(cfg->find_item(CFG_SCANLINES));
     grp->append(cfg->find_item(CFG_PALETTE));
     grp->append(ConfigItem :: separator());
@@ -2430,6 +2451,7 @@ void U64Config :: setup_config_menu(void)
     grp->append(cfg->find_item(CFG_IEC_BURST_EN));
     grp->append(cfg->find_item(CFG_PARCABLE_ENABLE)->set_item_altname("Parallel Cable to Drive A"));
     grp->append(cfg->find_item(CFG_IEC_BUS_MODE));
+    grp->append(cfg->find_item(CFG_HDMI_TX_SWING));
 
     // grp = ConfigGroupCollection :: getGroup("Drive A Settings", SORT_ORDER_CFG_DRVA);
 

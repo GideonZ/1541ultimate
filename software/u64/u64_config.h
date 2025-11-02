@@ -36,6 +36,8 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
     } myActions;
 
     t_video_mode systemMode;
+    t_hdmi_mode hdmiMode;
+    
     FileManager *fm;
 	bool skipReset;
     TaskHandle_t resetTaskHandle;

@@ -173,12 +173,13 @@ typedef struct {
     uint8_t x_offset; // 16
     uint8_t tx_swing;
     uint8_t gearbox;
-    uint8_t scaler;
+    uint8_t hscaler;
+    uint8_t vscaler;
     uint8_t VID_A;
     uint8_t VID_B;
     uint8_t VID_S;
-    uint8_t VID_C;
-    uint8_t VID_M; // 24
+    uint8_t VID_C; // 24
+    uint8_t VID_M;
     uint8_t VID_R;
     uint8_t VID_EC;
     uint8_t VID_SC;
@@ -194,5 +195,26 @@ typedef enum {
     e_NTSC_50_lock,
     e_NOT_SET,
 } t_video_mode;
+
+typedef enum {
+    e_480p_576p = 0,
+    e_1280x720,
+    e_1920x1080,
+
+    e_800x600,
+    e_1024x768,
+    e_1280x1024,
+
+    e_auto_edid,
+} t_hdmi_mode;
+
+typedef enum 
+{
+    e_INTPLL_1x,
+    e_INTPLL_6_5,
+    e_INTPLL_25_13,
+    e_INTPLL_45_52,
+    e_INTPLL_55_32,
+} t_intpll_mode;
 
 #endif /* U64_H_ */
