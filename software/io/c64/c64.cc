@@ -632,7 +632,10 @@ void C64::backup_io(void)
     // These printfs introduce some delay.. if you remove this, some programs won't resume well. Why?!
     printf("CIA1 registers: ");
     for (i = 0; i < 13; i++) {
-        printf("%b ", CIA1_REG(i));
+        if(i != 8 && i != 11) // reading registers 8 or 11 will mess with the TOD latching, so.. don't.
+            printf("%b ", CIA1_REG(i));
+        else
+            printf("--- "); // don't read registes 8 and 11, but still waste a bit of time with the printf
     }
     printf("\n");
 
