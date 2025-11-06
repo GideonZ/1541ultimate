@@ -137,6 +137,7 @@ LedStrip :: LedStrip()
     setup_config_menu();
 }
 
+#define LEDSTRIP_DATA ( (volatile uint8_t *)(C64_IO_LED))
 #define LEDSTRIP_FROM (LEDSTRIP_DATA[LED_STARTADDR])
 #define LEDSTRIP_LEN  (LEDSTRIP_DATA[LED_COUNT])
 #define LEDSTRIP_INTENSITY (LEDSTRIP_DATA[LED_INTENSITY])

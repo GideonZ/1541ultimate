@@ -88,7 +88,6 @@
 #define U64_POWER_OFF_1			0x2B
 #define U64_POWER_OFF_2			0xB2
 
-#define LEDSTRIP_DATA ( (volatile uint8_t *)(C64_IO_LED))
 #define U64_DEBUG_REGISTER (*(volatile uint8_t *)C64_IO_DEBUG)
 
 #define C64_SCANLINES    (*(volatile uint8_t *)(C64_IO_BASE + 0x00))

@@ -21,19 +21,30 @@
 #define CFG_LED_FIXED_COLOR   0x07
 #define CFG_LED_FIXED_TINT    0x08
 
-#define LED_DIRECTION 0xFC
+#define CFG_LED_PATTERN       0x0B
+
+#define LED_MAP       0xFC
 #define LED_STARTADDR 0xFD
 #define LED_INTENSITY 0xFE
 #define LED_COUNT     0xFF
 
 class BlingBoard : public ConfigurableObject
 {
-    volatile uint8_t mode, intensity, sidsel;
+    volatile uint8_t mode, intensity, sidsel, pattern;
     volatile uint8_t hue, tint;
     
     static void task(void *);
     static int hot_effectuate(ConfigItem *item);
     void setup_config_menu(void);
+
+    void MapDirect(void);
+    void MapSingleColor(void);
+    void MapLeftToRight(void);
+    void MapRightToLeft(void);
+    void MapFromCenter(void);
+    void MapToCenter(void);
+    void MapSerpentine(void);
+
 public:
     BlingBoard();
     void effectuate_settings(void);
