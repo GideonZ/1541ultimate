@@ -126,6 +126,7 @@ LedStrip :: LedStrip()
     xTaskCreate( LedStrip :: task, "LedStrip Controller", configMINIMAL_STACK_SIZE, this, PRIO_REALTIME, NULL );
     register_store(0x4C454453, "LED Strip Settings", cfg_definition);
     effectuate_settings();
+    update_menu();
     cfg->set_change_hook(CFG_LED_TYPE,      LedStrip :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_PATTERN,   LedStrip :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_MODE,      LedStrip :: hot_effectuate);
@@ -553,11 +554,43 @@ void LedStrip :: effectuate_settings(void)
 //    U64_PWM_DUTY = 0xC0;
 }
 
+void LedStrip :: update_menu()
+{
+    switch(mode) {
+    case 0:
+        cfg->find_item(CFG_LED_PATTERN)->setEnabled(false);
+        cfg->find_item(CFG_LED_INTENSITY)->setEnabled(false);
+        cfg->find_item(CFG_LED_FIXED_COLOR)->setEnabled(false);
+        cfg->find_item(CFG_LED_FIXED_TINT)->setEnabled(false);
+        break;
+    case 1: // fixed color
+        cfg->find_item(CFG_LED_PATTERN)->setEnabled(false);
+        cfg->find_item(CFG_LED_INTENSITY)->setEnabled(true);
+        cfg->find_item(CFG_LED_FIXED_COLOR)->setEnabled(true);
+        cfg->find_item(CFG_LED_FIXED_TINT)->setEnabled(true);
+        break;
+    case 2: // music
+        cfg->find_item(CFG_LED_PATTERN)->setEnabled(true);
+        cfg->find_item(CFG_LED_INTENSITY)->setEnabled(true);
+        cfg->find_item(CFG_LED_FIXED_COLOR)->setEnabled(false);
+        cfg->find_item(CFG_LED_FIXED_TINT)->setEnabled(false);
+        break;
+    default:
+        cfg->find_item(CFG_LED_PATTERN)->setEnabled(true);
+        cfg->find_item(CFG_LED_INTENSITY)->setEnabled(true);
+        cfg->find_item(CFG_LED_FIXED_COLOR)->setEnabled(false);
+        cfg->find_item(CFG_LED_FIXED_TINT)->setEnabled(true);
+    }
+}
+
 int LedStrip :: hot_effectuate(ConfigItem *item)
 {
     item->store->set_need_effectuate();
     item->store->effectuate();
-    return 0;
+    LedStrip *ls = (LedStrip *)item->store->get_first_object();
+    ls->update_menu();
+    
+    return 1;
 }
 
 void LedStrip :: setup_config_menu(void)

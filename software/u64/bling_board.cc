@@ -9,10 +9,13 @@
 
 #include "bling_board.h"
 #include "FreeRTOS.h"
+#include "FreeRTOSConfig.h"
 #include "task.h"
 #include "u64.h"
 #include "itu.h"
 #include <stdio.h>
+#include <math.h>
+#include <stdint.h>
 
 extern const char *fixed_colors[];
 extern const char *color_tints[];
@@ -33,8 +36,6 @@ static struct t_cfg_definition cfg_definition[] = {
     { CFG_TYPE_END,             CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
-#include <math.h>
-#include <stdint.h>
 
 static const uint8_t GAMMA22[256] = {
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,
@@ -305,7 +306,7 @@ void BlingBoard :: MapFromCenter(void)
     LEDSTRIP_MAP_ENABLE = 0;
 }
 
-void BlingBoard :: MapCircular(void)
+void BlingBoard :: MapCircular1(void)
 {
     short mapping[] = {
         28, -1, -1, -1, -1, -1, -1,
@@ -327,16 +328,6 @@ void BlingBoard :: MapCircular(void)
         20, 21, 52, 53, -1, -1, -1,
     };
 
-    short mapping2[] = {28, 27, 29, 44, 12, 13, 45, 43, 11, 14, 26, 30,
-                        61, 46, 62, 1,  2,  60, 42, 63, 10, 15, 47, 25,
-                        31, 59, 0,  41, 64, 9,  16, 3,  58, 48, 24, 32,
-                        65, 40, 8,  57, 17, 49, 23, 33, 66, 39, 7,  4,
-                        56, 50, 34, 67, 18, 38, 22, 55, 6,  35, 68, 19,
-                        51, 54, 37, 69, 36, 5,  21, 20, 52, 53, 70 };
-
-    // Remember: the led controller reads the address where to find the colors, so these indices should be written in
-    // on the addresses, sequenced in the list above.
-/*
     short *k = mapping;
     LEDSTRIP_MAP_ENABLE = 1;
     for(uint8_t i=0;i<17;i++) {
@@ -350,7 +341,20 @@ void BlingBoard :: MapCircular(void)
         }
     }
     LEDSTRIP_MAP_ENABLE = 0;
-*/
+}
+
+void BlingBoard :: MapCircular2(void)
+{
+    short mapping2[] = {28, 27, 29, 44, 12, 13, 45, 43, 11, 14, 26, 30,
+                        61, 46, 62, 1,  2,  60, 42, 63, 10, 15, 47, 25,
+                        31, 59, 0,  41, 64, 9,  16, 3,  58, 48, 24, 32,
+                        65, 40, 8,  57, 17, 49, 23, 33, 66, 39, 7,  4,
+                        56, 50, 34, 67, 18, 38, 22, 55, 6,  35, 68, 19,
+                        51, 54, 37, 69, 36, 5,  21, 20, 52, 53, 70 };
+
+    // Remember: the led controller reads the address where to find the colors, so these indices should be written in
+    // on the addresses, sequenced in the list above.
+
     uint8_t pos = 0;
     LEDSTRIP_MAP_ENABLE = 1;
     for(int i=0;i<71;i++) {
@@ -372,9 +376,10 @@ void BlingBoard :: play_boot_pattern(void)
     tint      = cfg->get_value(CFG_LED_FIXED_TINT);
     sidsel    = cfg->get_value(CFG_LED_SIDSELECT);
 
-    MapCircular();
+    MapCircular2(); // the smooth one
     ClearColors();
     LEDSTRIP_MAP_ENABLE = 0; // let shiftlock cycle too
+    LEDSTRIP_INTENSITY = intensity << 2;
 
     // start with yellow and cycle through the hue values
     int rainbow_hue = 112;
@@ -498,6 +503,7 @@ void BlingBoard :: run(void)
 
     play_boot_pattern();
     effectuate_settings();
+    update_menu();
 
     install_high_irq(4, &BlingBoard :: irq_handler, this);
     BLING_RX_IRQEN = 1;
@@ -667,8 +673,13 @@ void BlingBoard :: effectuate_settings(void)
                     speed = 12;
                     break;
                 case 3: // circular
-                    MapCircular();
-                    speed = 5;
+                    if (mode == 2) { // music
+                        MapCircular1();
+                        speed = 12;
+                    } else {
+                        MapCircular2();
+                        speed = 5;
+                    }
                     break;
                 case 4: // from center outward
                     MapFromCenter();
@@ -684,11 +695,47 @@ void BlingBoard :: effectuate_settings(void)
     LEDSTRIP_MAP_ENABLE = 2;
 }
 
+void BlingBoard :: update_menu()
+{
+    switch(mode) {
+    case 0:
+        cfg->find_item(CFG_LED_PATTERN)->setEnabled(false);
+        cfg->find_item(CFG_LED_INTENSITY)->setEnabled(false);
+        cfg->find_item(CFG_LED_FIXED_COLOR)->setEnabled(false);
+        cfg->find_item(CFG_LED_FIXED_TINT)->setEnabled(false);
+        break;
+    case 1: // fixed color
+        cfg->find_item(CFG_LED_PATTERN)->setEnabled(false);
+        cfg->find_item(CFG_LED_INTENSITY)->setEnabled(true);
+        cfg->find_item(CFG_LED_FIXED_COLOR)->setEnabled(true);
+        cfg->find_item(CFG_LED_FIXED_TINT)->setEnabled(true);
+        break;
+    case 2: // music
+        cfg->find_item(CFG_LED_PATTERN)->setEnabled(true);
+        cfg->find_item(CFG_LED_INTENSITY)->setEnabled(true);
+        cfg->find_item(CFG_LED_FIXED_COLOR)->setEnabled(false);
+        cfg->find_item(CFG_LED_FIXED_TINT)->setEnabled(false);
+        break;
+    default:
+        cfg->find_item(CFG_LED_PATTERN)->setEnabled(true);
+        cfg->find_item(CFG_LED_INTENSITY)->setEnabled(true);
+        cfg->find_item(CFG_LED_FIXED_COLOR)->setEnabled(false);
+        cfg->find_item(CFG_LED_FIXED_TINT)->setEnabled(true);
+    }
+}
+
 int BlingBoard :: hot_effectuate(ConfigItem *item)
 {
     item->store->set_need_effectuate();
     item->store->effectuate();
-    return 0;
+    BlingBoard *bb = (BlingBoard *)item->store->get_first_object();
+    bb->update_menu();
+    // when switching TO rainbow sparkle, we start with zeros
+    if(item->definition->id == CFG_LED_MODE) {
+        bb->ClearColors();
+    }
+
+    return 1;
 }
 
 void BlingBoard :: setup_config_menu(void)

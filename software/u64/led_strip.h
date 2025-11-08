@@ -36,7 +36,8 @@ class LedStrip : public ConfigurableObject
     static void task(void *);
     static int hot_effectuate(ConfigItem *item);
     void setup_config_menu(void);
-
+    void update_menu(void);
+    
     void MapDirect(void);
     void MapSingleColor(void);
     void MapLeftToRight(void);

@@ -10,9 +10,9 @@
 #ifndef BLING_BOARD_H_
 #define BLING_BOARD_H_
 
-#include "config.h"
 #include "FreeRTOS.h"
 #include "queue.h"
+#include "config.h"
 
 #define CFG_LED_MODE          0x01
 #define CFG_LED_RED           0x02
@@ -43,14 +43,15 @@ class BlingBoard : public ConfigurableObject
     static int hot_effectuate(ConfigItem *item);
     void setup_config_menu(void);
     void play_boot_pattern(void);
-
+    void update_menu(void);
+    
     void MapDirect(void);
     void MapSingleColor(void);
     void MapLeftToRight(void);
     void MapRightToLeft(void);
     void MapFromCenter(void);
-    void MapToCenter(void);
-    void MapCircular(void);
+    void MapCircular1(void);
+    void MapCircular2(void);
     void ClearColors(void);
 public:
     BlingBoard();
