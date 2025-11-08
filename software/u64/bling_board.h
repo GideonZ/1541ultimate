@@ -33,14 +33,16 @@
 class BlingBoard : public ConfigurableObject
 {
     volatile uint8_t mode, intensity, sidsel, pattern;
-    volatile uint8_t hue, tint;
+    volatile uint8_t hue, tint, offset, soft_start;
     volatile int speed;
     QueueHandle_t key_queue;
 
     static uint8_t irq_handler(void *context);
     static void task(void *);
+    void run(void);
     static int hot_effectuate(ConfigItem *item);
     void setup_config_menu(void);
+    void play_boot_pattern(void);
 
     void MapDirect(void);
     void MapSingleColor(void);
@@ -49,7 +51,7 @@ class BlingBoard : public ConfigurableObject
     void MapFromCenter(void);
     void MapToCenter(void);
     void MapCircular(void);
-
+    void ClearColors(void);
 public:
     BlingBoard();
     void effectuate_settings(void);

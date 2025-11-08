@@ -16,15 +16,15 @@
 
 extern const char *fixed_colors[];
 extern const char *color_tints[];
-static const char *modes[] = {"Off", "Fixed Color", "SID Pulse", "SID Music", "Rainbow", "Rainbow Sparkle" };
-static const char *patterns[] = { "Default", "Left to Right", "Right to Left", "Circular", "Outward" };
+static const char *modes[] = {"Off", "Fixed Color", "SID Music", "Rainbow", "Rainbow Sparkle" };
+static const char *patterns[] = { "Single Color", "Left to Right", "Right to Left", "Circular", "Outward" };
 static const char *sidsel[] = { "UltiSID1-A", "UltiSID1-B", "UltiSID1-C", "UltiSID1-D",
                                 "UltiSID2-A", "UltiSID2-B", "UltiSID2-C", "UltiSID2-D" };
 
 static const uint8_t tint_factors[] = { 0, 50, 100, 170 };
 
 static struct t_cfg_definition cfg_definition[] = {
-    { CFG_LED_MODE,             CFG_TYPE_ENUM,  "LedStrip Mode",                "%s", modes,        0,  5,  0  },
+    { CFG_LED_MODE,             CFG_TYPE_ENUM,  "LedStrip Mode",                "%s", modes,        0,  4,  3  },
     { CFG_LED_PATTERN,          CFG_TYPE_ENUM,  "LedStrip Pattern",             "%s", patterns,     0,  4,  0  },
     { CFG_LED_SIDSELECT,        CFG_TYPE_ENUM,  "LedStrip SID Select",          "%s", sidsel,       0,  7,  0  },
     { CFG_LED_INTENSITY,        CFG_TYPE_VALUE, "Strip Intensity",              "%d", NULL,         0, 31, 16  },
@@ -88,6 +88,15 @@ static inline uint8_t mix8(uint8_t a, uint8_t b, uint8_t t)
 }
 
 // Add white (tint). t=0 keeps the color, t=255 gives pure white.
+static inline RGB alpha(RGB c, RGB x, uint8_t t)
+{
+    RGB o;
+    o.r = mix8(c.r, x.r, t);
+    o.g = mix8(c.g, x.g, t);
+    o.b = mix8(c.b, x.b, t);
+    return o;
+}
+
 static inline RGB tint_with_white(RGB c, uint8_t t)
 {
     RGB o;
@@ -133,9 +142,10 @@ static inline void apply_gamma_inplace(RGB *c)
 BlingBoard :: BlingBoard()
 {
     speed = 10;
+    key_queue = xQueueCreate(16, sizeof(uint8_t));
     xTaskCreate( BlingBoard :: task, "Bling Controller", configMINIMAL_STACK_SIZE, this, PRIO_REALTIME, NULL );
     register_store(0x44524557, "Keyboard Lighting", cfg_definition);
-    effectuate_settings();
+
     cfg->set_change_hook(CFG_LED_MODE,        BlingBoard :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_PATTERN,     BlingBoard :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_INTENSITY,   BlingBoard :: hot_effectuate);
@@ -144,7 +154,6 @@ BlingBoard :: BlingBoard()
     cfg->set_change_hook(CFG_LED_SIDSELECT,   BlingBoard :: hot_effectuate);
     cfg->hide();
     setup_config_menu();
-    key_queue = xQueueCreate(16, sizeof(uint8_t));
 }
 
 uint8_t BlingBoard :: irq_handler(void *context)
@@ -157,6 +166,14 @@ uint8_t BlingBoard :: irq_handler(void *context)
         BLING_RX_GET  = 1;
     }
     return woken;
+}
+
+void BlingBoard :: ClearColors(void)
+{
+    LEDSTRIP_MAP_ENABLE = 0;
+    for(int i=0;i<84*3;i++) {
+        LEDSTRIP_DATA[i] = 0;
+    }
 }
 
 void BlingBoard :: MapDirect(void)
@@ -345,12 +362,132 @@ void BlingBoard :: MapCircular(void)
 }
 
 
+void BlingBoard :: play_boot_pattern(void)
+{
+    // start with the right values
+    mode      = cfg->get_value(CFG_LED_MODE);
+    pattern   = cfg->get_value(CFG_LED_PATTERN);
+    intensity = cfg->get_value(CFG_LED_INTENSITY);
+    hue       = cfg->get_value(CFG_LED_FIXED_COLOR);
+    tint      = cfg->get_value(CFG_LED_FIXED_TINT);
+    sidsel    = cfg->get_value(CFG_LED_SIDSELECT);
+
+    MapCircular();
+    ClearColors();
+    LEDSTRIP_MAP_ENABLE = 0; // let shiftlock cycle too
+
+    // start with yellow and cycle through the hue values
+    int rainbow_hue = 112;
+    RGB fixed;
+
+    // Soft start
+    for(int i=0; i < 16; i++) {
+        rainbow_hue+=1;
+        if (rainbow_hue >= 768)
+            rainbow_hue -= 768;
+        fixed = hue_index_to_rgb(rainbow_hue, 768);
+        fixed = alpha(fixed, {0,0,0}, 255-i*16);
+        LEDSTRIP_DATA[offset+0] = fixed.g;
+        LEDSTRIP_DATA[offset+1] = fixed.r;
+        LEDSTRIP_DATA[offset+2] = fixed.b;
+        LEDSTRIP_FROM = offset;
+        if (offset <= 0) {
+            offset = 3*70;
+        } else {
+            offset -= 3;
+        }
+        LEDSTRIP_START = 0;
+        vTaskDelay(5);
+    }
+
+
+    for(int i=0; i < 128; i++) {
+        rainbow_hue+=6;
+        if (rainbow_hue >= 768)
+            rainbow_hue -= 768;
+        fixed = hue_index_to_rgb(rainbow_hue, 768);
+        LEDSTRIP_DATA[offset+0] = fixed.g;
+        LEDSTRIP_DATA[offset+1] = fixed.r;
+        LEDSTRIP_DATA[offset+2] = fixed.b;
+        LEDSTRIP_FROM = offset;
+        if (offset <= 0) {
+            offset = 3*70;
+        } else {
+            offset -= 3;
+        }
+        LEDSTRIP_START = 0;
+        vTaskDelay(5);
+    }
+    // we are now on yellow again, let's fade to white
+    for(int i=0;i<140;i++) {
+        rainbow_hue+=6;
+        fixed = hue_index_to_rgb(rainbow_hue, 768);
+        int a = (i*7) >> 1;
+        fixed = tint_with_white(fixed, a > 255 ? 255 : a);
+        LEDSTRIP_DATA[offset+0] = fixed.g;
+        LEDSTRIP_DATA[offset+1] = fixed.r;
+        LEDSTRIP_DATA[offset+2] = fixed.b;
+        LEDSTRIP_FROM = offset;
+        if (offset <= 0) {
+            offset = 3*70;
+        } else {
+            offset -= 3;
+        }
+        LEDSTRIP_START = 0;
+        vTaskDelay(5);
+    }
+    // keyboard is now white, we can switch now to single color
+    LEDSTRIP_MAP_ENABLE = 0; // let shiftlock cycle too
+
+    RGB target;
+    switch(mode) {
+    case 0: // off 
+    case 2: // sid music
+        target = { 0, 0, 0 };
+        MapSingleColor();
+        break;
+    case 1: // fixed
+        target = hue_index_to_rgb(hue, 24);
+        target = tint_with_white(target, tint_factors[tint]);
+        MapSingleColor();
+        break;
+    }
+
+    RGB now;
+    if (mode < 3) {
+        // fade to target
+        for(int i=0;i<140;i++) {
+            int a = (i*7) >> 1;
+            now = alpha(fixed, target, a > 255 ? 255 : a);
+            LEDSTRIP_DATA[offset+0] = now.g;
+            LEDSTRIP_DATA[offset+1] = now.r;
+            LEDSTRIP_DATA[offset+2] = now.b;
+            LEDSTRIP_FROM = offset;
+            if (offset <= 0) {
+                offset = 3*70;
+            } else {
+                offset -= 3;
+            }
+            LEDSTRIP_START = 0;
+            vTaskDelay(5);
+        }
+    }
+    soft_start = 255;
+    // always do shiftlock once
+    uint8_t k = 0x41;
+    xQueueSend(key_queue, &k, 0);
+}
+
+
 void BlingBoard :: task(void *a)
 {
     BlingBoard *strip = (BlingBoard *)a;
+    strip->run();
+}
 
+void BlingBoard :: run(void)
+{
     int rainbow_hue = 0;
-    uint8_t offset = 0;
     uint8_t v1, v2, v3;
     int rnd, lfsr = 64738;
     uint8_t spp = 0x00, spr = 0, spg = 0, spb = 0;
@@ -359,11 +496,14 @@ void BlingBoard :: task(void *a)
     static uint8_t backup[252];
     uint8_t key;
 
-    install_high_irq(4, &BlingBoard :: irq_handler, strip);
+    play_boot_pattern();
+    effectuate_settings();
+
+    install_high_irq(4, &BlingBoard :: irq_handler, this);
     BLING_RX_IRQEN = 1;
 
     while(1) {
-        if (xQueueReceive(strip->key_queue, &key, strip->speed) == pdTRUE) {
+        if (xQueueReceive(key_queue, &key, speed) == pdTRUE) {
             if (key == BBKEY_SHIFT_LOCK) {
                 if (BLING_RX_FLAGS & 0x02) {
                     SHIFTLOCK_RED   = 0xC0;
@@ -376,12 +516,12 @@ void BlingBoard :: task(void *a)
                 }
             }
         }
-        v1 = C64_VOICE_ADSR(strip->sidsel * 4 + 0);
-        v2 = C64_VOICE_ADSR(strip->sidsel * 4 + 1);
-        v3 = C64_VOICE_ADSR(strip->sidsel * 4 + 2);
-        LEDSTRIP_INTENSITY = strip->intensity << 2;
+        v1 = C64_VOICE_ADSR(sidsel * 4 + 0);
+        v2 = C64_VOICE_ADSR(sidsel * 4 + 1);
+        v3 = C64_VOICE_ADSR(sidsel * 4 + 2);
+        LEDSTRIP_INTENSITY = intensity << 2;
 
-        switch (strip->mode) {
+        switch (mode) {
         case 0: // Off
             offset = 0;
             LEDSTRIP_DATA[0] = 0;
@@ -389,35 +529,22 @@ void BlingBoard :: task(void *a)
             LEDSTRIP_DATA[2] = 0;
             LEDSTRIP_FROM = 0x00;
             LEDSTRIP_START = 0;
-            U64_LEDSTRIP_EN = 0;
             break;
         case 1: // Fixed Color
             offset = 0;
-            U64_LEDSTRIP_EN = 1;
-            fixed = hue_index_to_rgb(strip->hue, 24);
-            fixed = tint_with_white(fixed, tint_factors[strip->tint]);
-            fixed = apply_intensity(fixed, strip->intensity);
+            fixed = hue_index_to_rgb(hue, 24);
+            fixed = tint_with_white(fixed, tint_factors[tint]);
             LEDSTRIP_DATA[0] = fixed.g;
             LEDSTRIP_DATA[1] = fixed.r;
             LEDSTRIP_DATA[2] = fixed.b;
             LEDSTRIP_FROM = 0x00;
             LEDSTRIP_START = 0;
             break;
-        case 2: // SID Music Pulse
-            U64_LEDSTRIP_EN = 1;
-            offset = 0;
-            LEDSTRIP_DATA[0] = v1;
-            LEDSTRIP_DATA[1] = v2;
-            LEDSTRIP_DATA[2] = v3;
-            LEDSTRIP_FROM = 0x00;
-            LEDSTRIP_START = 0;
-            break;
-        case 3: // SID Scroll 1 // shift new data in.
+        case 2: // SID Scroll 1 // shift new data in.
             // So first data appears at address 0, offset 0
             // then new data is written to LED 83, and offset is set to 83.
             // then new data is written to LED 82, and offset it set to 82.
             // etc
-            U64_LEDSTRIP_EN = 1;
             LEDSTRIP_DATA[offset+0] = v1;
             LEDSTRIP_DATA[offset+1] = v2;
             LEDSTRIP_DATA[offset+2] = v3;
@@ -429,13 +556,16 @@ void BlingBoard :: task(void *a)
             }
             LEDSTRIP_START = 0;
             break;
-        case 4: // rainbow
-            U64_LEDSTRIP_EN = 1;
+        case 3: // rainbow
             rainbow_hue+=6;
             if (rainbow_hue >= 768)
                 rainbow_hue -= 768;
             fixed = hue_index_to_rgb(rainbow_hue, 768);
-            fixed = tint_with_white(fixed, tint_factors[strip->tint]);
+            if (soft_start) {
+                fixed = tint_with_white(fixed, soft_start);
+                soft_start -= 15; // should end with 0
+            }
+            fixed = tint_with_white(fixed, tint_factors[tint]);
             LEDSTRIP_DATA[offset+0] = fixed.g;
             LEDSTRIP_DATA[offset+1] = fixed.r;
             LEDSTRIP_DATA[offset+2] = fixed.b;
@@ -448,16 +578,19 @@ void BlingBoard :: task(void *a)
             LEDSTRIP_START = 0;
             break;
 
-        case 5: // rainbow with sparkle
-            U64_LEDSTRIP_EN = 1;
+        case 4: // rainbow with sparkle
             LEDSTRIP_INTENSITY = 0x7F; // do it with the data itself
             rainbow_hue+=10;
             if (rainbow_hue >= 768)
                 rainbow_hue -= 768;
 
             fixed = hue_index_to_rgb(rainbow_hue, 768);
-            fixed = tint_with_white(fixed, tint_factors[strip->tint]);
-            fixed = apply_intensity(fixed, strip->intensity);
+            if (soft_start) {
+                fixed = tint_with_white(fixed, soft_start);
+                soft_start -= 15; // should end with 0
+            }
+            fixed = tint_with_white(fixed, tint_factors[tint]);
+            fixed = apply_intensity(fixed, intensity);
             backup[offset+0] = fixed.g;
             backup[offset+1] = fixed.r;
             backup[offset+2] = fixed.b;
@@ -496,7 +629,7 @@ void BlingBoard :: task(void *a)
             break;
 
         default:
-            strip->mode = 0;
+            mode = 0;
         }
     }
 }
@@ -517,22 +650,21 @@ void BlingBoard :: effectuate_settings(void)
     {
         case 0:
         case 1:
-        case 2:
             MapSingleColor();
             break;
         default:
             switch(pattern) {
-                case 0: // default
-                    MapDirect();
+                case 0: // default = single color
+                    MapSingleColor();
                     speed = 5;
                     break;
                 case 1: // left to right
                     MapLeftToRight();
-                    speed = 20;
+                    speed = 12;
                     break;
                 case 2: // right to left
                     MapRightToLeft();
-                    speed = 20;
+                    speed = 12;
                     break;
                 case 3: // circular
                     MapCircular();
@@ -540,7 +672,7 @@ void BlingBoard :: effectuate_settings(void)
                     break;
                 case 4: // from center outward
                     MapFromCenter();
-                    speed = 20;
+                    speed = 12;
                     break;
                 default:
                     MapDirect();
