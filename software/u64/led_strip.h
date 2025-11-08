@@ -25,7 +25,7 @@
 #define LED_MAP       0xFC
 #define LED_STARTADDR 0xFD
 #define LED_INTENSITY 0xFE
-#define LED_COUNT     0xFF
+#define LED_START     0xFF
 
 class LedStrip : public ConfigurableObject
 {

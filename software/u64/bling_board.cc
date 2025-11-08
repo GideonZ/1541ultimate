@@ -15,7 +15,7 @@
 extern const char *fixed_colors[];
 extern const char *color_tints[];
 static const char *modes[] = {"Off", "Fixed Color", "SID Pulse", "SID Music", "Rainbow", "Rainbow Sparkle" };
-static const char *patterns[] = { "Default", "Left to Right", "Right to Left", "Serpentine", "Outward" };
+static const char *patterns[] = { "Default", "Left to Right", "Right to Left", "Circular", "Outward" };
 static const char *sidsel[] = { "UltiSID1-A", "UltiSID1-B", "UltiSID1-C", "UltiSID1-D",
                                 "UltiSID2-A", "UltiSID2-B", "UltiSID2-C", "UltiSID2-D" };
 
@@ -114,6 +114,7 @@ static inline void apply_gamma_inplace(RGB *c)
 
 BlingBoard :: BlingBoard()
 {
+    speed = 10;
     xTaskCreate( BlingBoard :: task, "Bling Controller", configMINIMAL_STACK_SIZE, this, PRIO_REALTIME, NULL );
     register_store(0x44524557, "Keyboard Lighting", cfg_definition);
     effectuate_settings();
@@ -129,7 +130,7 @@ BlingBoard :: BlingBoard()
 
 #define LEDSTRIP_DATA ( (volatile uint8_t *)(U64II_BLINGBOARD_LEDS))
 #define LEDSTRIP_FROM (LEDSTRIP_DATA[LED_STARTADDR])
-#define LEDSTRIP_LEN  (LEDSTRIP_DATA[LED_COUNT])
+#define LEDSTRIP_START  (LEDSTRIP_DATA[LED_START])
 #define LEDSTRIP_INTENSITY (LEDSTRIP_DATA[LED_INTENSITY])
 #define LEDSTRIP_MAP_ENABLE (LEDSTRIP_DATA[LED_MAP])
 #define NUM_BLINGLEDS 71
@@ -158,150 +159,165 @@ void BlingBoard :: MapSingleColor(void)
 
 void BlingBoard :: MapLeftToRight(void)
 {
-    // Order of the LEDs is:
-    // case bottom left to right (30 pcs)
-    // case top left to right (30 pcs)
-    // kbstrip left to right (24 pcs) (left aligned)
-    // So, maybe for true left to right, we could do case bottom, case top, strip, then next etc for the first 24
-    // then the last 6 steps only case bottom and case top.
-    // In other words: 0, 30, 60, 1, 31, 61, 2, 32, 62, ..., 23, 53, 83, 24, 54, 25, 55, ..., 29, 59
+    int mapping[] = { -1,  5, 36, -1, -1,
+                      -1,  6, 35, 37, 69,
+                       4,  7, 34, 38, 68,
+                      -1,  8, 33, 39, 67,
+                       3,  9, 32, 40, 66,
+                      -1, 10, 31, 41, 65,
+                       2, 11, 30, 42, 64,
+                      -1, 12, 29, 43, 63,
+                       1, 13, 28, 44, 62,
+                      -1, 14, 27, 45, 61,
+                       0, 15, 26, 46, 60,
+                      -1, 16, 25, 47, 59,
+                      -1, 17, 24, 48, 58,
+                      -1, -1, 23, 49, 57,
+                      -1, 18, 22, 50, 56,
+                      -1, 19, 51, 54, 55,
+                      -1, 20, 21, 52, 53,
+
+                  };
+
     // Remember: the led controller reads the address where to find the colors, so these indices should be written in
     // on the addresses, sequenced in the list above.
-    uint8_t pos = 0;
+    int *k = mapping;
     LEDSTRIP_MAP_ENABLE = 1;
-    for(int i=0;i<24;i++) {
-        LEDSTRIP_DATA[3*i+0] = pos++;
-        LEDSTRIP_DATA[3*i+1] = pos++;
-        LEDSTRIP_DATA[3*i+2] = pos++;
-
-        LEDSTRIP_DATA[3*i+90] = pos++;
-        LEDSTRIP_DATA[3*i+91] = pos++;
-        LEDSTRIP_DATA[3*i+92] = pos++;
-
-        LEDSTRIP_DATA[3*i+180] = pos++;
-        LEDSTRIP_DATA[3*i+181] = pos++;
-        LEDSTRIP_DATA[3*i+182] = pos++;
-    }
-
-    for(int i=25;i<30;i++) {
-        LEDSTRIP_DATA[3*i+0] = pos++;
-        LEDSTRIP_DATA[3*i+1] = pos++;
-        LEDSTRIP_DATA[3*i+2] = pos++;
-
-        LEDSTRIP_DATA[3*i+90] = pos++;
-        LEDSTRIP_DATA[3*i+91] = pos++;
-        LEDSTRIP_DATA[3*i+92] = pos++;
+    for(uint8_t i=0;i<17;i++) {
+        for(int j=0;j<5;j++) {
+            int n = *(k++);            
+            if (n >= 0) {
+                LEDSTRIP_DATA[3*n+0] = 3*i+0;
+                LEDSTRIP_DATA[3*n+1] = 3*i+1;
+                LEDSTRIP_DATA[3*n+2] = 3*i+2;
+            }
+        }
     }
     LEDSTRIP_MAP_ENABLE = 0;
 }
 
 void BlingBoard :: MapRightToLeft(void)
 {
-    // Order of the LEDs is:
-    // case bottom left to right (30 pcs)
-    // case top left to right (30 pcs)
-    // kbstrip left to right (24 pcs) (left aligned)
-    // So, maybe for true left to right, we could do case bottom, case top, strip, then next etc for the first 24
-    // then the last 6 steps only case bottom and case top.
-    // In other words: 0, 30, 60, 1, 31, 61, 2, 32, 62, ..., 23, 53, 83, 24, 54, 25, 55, ..., 29, 59
+    int mapping[] = {
+                      -1, 20, 21, 52, 53,
+                      -1, 19, 51, 54, 55,
+                      -1, 18, 22, 50, 56,
+                      -1, -1, 23, 49, 57,
+                      -1, 17, 24, 48, 58,
+                      -1, 16, 25, 47, 59,
+                       0, 15, 26, 46, 60,
+                      -1, 14, 27, 45, 61,
+                       1, 13, 28, 44, 62,
+                      -1, 12, 29, 43, 63,
+                       2, 11, 30, 42, 64,
+                      -1, 10, 31, 41, 65,
+                       3,  9, 32, 40, 66,
+                      -1,  8, 33, 39, 67,
+                       4,  7, 34, 38, 68,
+                      -1,  6, 35, 37, 69,
+                      -1,  5, 36, -1, -1,
+                  };
+
     // Remember: the led controller reads the address where to find the colors, so these indices should be written in
     // on the addresses, sequenced in the list above.
-    uint8_t pos = 0;
+    int *k = mapping;
     LEDSTRIP_MAP_ENABLE = 1;
-
-    for(int i=29;i>=24;i--) {
-        LEDSTRIP_DATA[3*i+0] = pos++;
-        LEDSTRIP_DATA[3*i+1] = pos++;
-        LEDSTRIP_DATA[3*i+2] = pos++;
-
-        LEDSTRIP_DATA[3*i+90] = pos++;
-        LEDSTRIP_DATA[3*i+91] = pos++;
-        LEDSTRIP_DATA[3*i+92] = pos++;
-    }
-
-    for(int i=23;i>=0;i--) {
-        LEDSTRIP_DATA[3*i+0] = pos++;
-        LEDSTRIP_DATA[3*i+1] = pos++;
-        LEDSTRIP_DATA[3*i+2] = pos++;
-
-        LEDSTRIP_DATA[3*i+90] = pos++;
-        LEDSTRIP_DATA[3*i+91] = pos++;
-        LEDSTRIP_DATA[3*i+92] = pos++;
-
-        LEDSTRIP_DATA[3*i+180] = pos++;
-        LEDSTRIP_DATA[3*i+181] = pos++;
-        LEDSTRIP_DATA[3*i+182] = pos++;
-    }
-
-    LEDSTRIP_MAP_ENABLE = 0;
-}
-
-void BlingBoard :: MapSerpentine(void)
-{
-    // Order of the LEDs is:
-    // case bottom left to right (30 pcs)
-    // case top left to right (30 pcs)
-    // kbstrip left to right (24 pcs) (left aligned)
-    // Let's start with the keyboard strip from left to right, then go down into the case top strip right to left and then
-    // the bottom strip left to right again. So 60-83, 59 downto 30 and then 0-29
-    // Remember: the led controller reads the address where to find the colors, so these indices should be written in
-    // on the addresses, sequenced in the list above.
-    uint8_t pos = 0;
-    LEDSTRIP_MAP_ENABLE = 1;
-    for(int i=60;i<=83;i++) {
-        LEDSTRIP_DATA[3*i+0] = pos++;
-        LEDSTRIP_DATA[3*i+1] = pos++;
-        LEDSTRIP_DATA[3*i+2] = pos++;
-    }
-    for(int i=59;i>=30;i--) {
-        LEDSTRIP_DATA[3*i+0] = pos++;
-        LEDSTRIP_DATA[3*i+1] = pos++;
-        LEDSTRIP_DATA[3*i+2] = pos++;
-    }
-    for(int i=0;i<=29;i++) {
-        LEDSTRIP_DATA[3*i+0] = pos++;
-        LEDSTRIP_DATA[3*i+1] = pos++;
-        LEDSTRIP_DATA[3*i+2] = pos++;
+    for(uint8_t i=0;i<17;i++) {
+        for(int j=0;j<5;j++) {
+            int n = *(k++);            
+            if (n >= 0) {
+                LEDSTRIP_DATA[3*n+0] = 3*i+0;
+                LEDSTRIP_DATA[3*n+1] = 3*i+1;
+                LEDSTRIP_DATA[3*n+2] = 3*i+2;
+            }
+        }
     }
     LEDSTRIP_MAP_ENABLE = 0;
 }
 
 void BlingBoard :: MapFromCenter(void)
 {
-    // Order of the LEDs is:
-    // case bottom left to right (30 pcs)
-    // case top left to right (30 pcs)
-    // kbstrip left to right (24 pcs) (left aligned)
-    // Strip: 60, 61, 62, 63, ... 83
-    // Top:   30, 31, 32, 33, ... 53, 54, 55, 56, 57, 58, 59
-    // Bottom: 0,  1,  2,  3, ... 23, 24, 25, 26, 27, 28, 29
+    int mapping[] = {
+                      62, 44, -1, -1, -1, -1, -1, -1, 61,
+                      63, 43, 29, 12, -1, -1, 28, 45, 60,
+                      64, 42, 30, 11,  2, 13, 27, 46, 59,
+                      65, 41, 31, 10,  1, 14, 26, 47, 58,
+                      66, 40, 32,  9,  3, 15, 25, 48, 57,
+                      67, 39, 33,  8,  0, 16, 24, 49, 56,
+                      68, 38, 34,  7,  4, 17, 23, 50, 55,
+                      69, 37, 35,  6, -1, 18, 22, 51, 54,
+                      36,  5, -1, 70, 19, 20, 21, 52, 53,
+                  };
 
-    // From center, we start from LEDs 14/15, LEDs 44/45, and LEDs 74/75
-    // then 13 and 16, and so on..
-    const uint8_t leds[84] = {
-        14, 44, 74, 75, 45, 15,
-        13, 43, 73, 76, 46, 16,
-        12, 42, 72, 77, 47, 17,
-        11, 41, 71, 78, 48, 18,
-        10, 40, 70, 79, 49, 19,
-         9, 39, 69, 80, 50, 20,
-         8, 38, 68, 81, 51, 21,
-         7, 37, 67, 82, 52, 22,
-         6, 36, 66, 83, 53, 23,
-         5, 35, 65,     54, 24,        
-         4, 34, 64,     55, 25,        
-         3, 33, 63,     56, 26,        
-         2, 32, 62,     57, 27,        
-         1, 31, 61,     58, 28,        
-         0, 30, 60,     59, 29,        
+    // Remember: the led controller reads the address where to find the colors, so these indices should be written in
+    // on the addresses, sequenced in the list above.
+    int *k = mapping;
+    LEDSTRIP_MAP_ENABLE = 1;
+    for(uint8_t i=0;i<9;i++) {
+        for(int j=0;j<9;j++) {
+            int n = *(k++);            
+            if (n >= 0) {
+                LEDSTRIP_DATA[3*n+0] = 3*i+0;
+                LEDSTRIP_DATA[3*n+1] = 3*i+1;
+                LEDSTRIP_DATA[3*n+2] = 3*i+2;
+            }
+        }
+    }
+    LEDSTRIP_MAP_ENABLE = 0;
+}
+
+void BlingBoard :: MapCircular(void)
+{
+    short mapping[] = {
+        28, -1, -1, -1, -1, -1, -1,
+        27, 29, 44, -1, -1, -1, -1,
+        12, 13, 43, 45, -1, -1, -1,
+        11, 14, 26, 30, 46, 61, -1,
+        1, 2, 42, 60, 62, -1, -1,
+        10, 15, 25, 31, 47, 59, 63,
+        0, 9, 16, 41, 64, -1, -1,
+        3, 24, 32, 48, 58, -1, -1,
+        8, 40, 57, 65, -1, -1, -1,
+        17, 23, 33, 49, 66, -1, -1,
+        4, 7, 39, 56, -1, -1, -1,
+        18, 34, 38, 50, 67, -1, -1,
+        22, 55, -1, -1, -1, -1, -1,
+        6, 19, 35, 51, 68, -1, -1,
+        37, 54, -1, -1, -1, -1, -1,
+        5, 36, 69, -1, -1, -1, -1,
+        20, 21, 52, 53, -1, -1, -1,
     };
 
+    short mapping2[] = {28, 27, 29, 44, 12, 13, 45, 43, 11, 14, 26, 30,
+                        61, 46, 62, 1,  2,  60, 42, 63, 10, 15, 47, 25,
+                        31, 59, 0,  41, 64, 9,  16, 3,  58, 48, 24, 32,
+                        65, 40, 8,  57, 17, 49, 23, 33, 66, 39, 7,  4,
+                        56, 50, 34, 67, 18, 38, 22, 55, 6,  35, 68, 19,
+                        51, 54, 37, 69, 36, 5,  21, 20, 52, 53, 70 };
+
+    // Remember: the led controller reads the address where to find the colors, so these indices should be written in
+    // on the addresses, sequenced in the list above.
+/*
+    short *k = mapping;
+    LEDSTRIP_MAP_ENABLE = 1;
+    for(uint8_t i=0;i<17;i++) {
+        for(int j=0;j<7;j++) {
+            int n = *(k++);            
+            if (n >= 0) {
+                LEDSTRIP_DATA[3*n+0] = 3*i+0;
+                LEDSTRIP_DATA[3*n+1] = 3*i+1;
+                LEDSTRIP_DATA[3*n+2] = 3*i+2;
+            }
+        }
+    }
+    LEDSTRIP_MAP_ENABLE = 0;
+*/
     uint8_t pos = 0;
     LEDSTRIP_MAP_ENABLE = 1;
-    for(int i=0;i<=83;i++) {
-        LEDSTRIP_DATA[3*leds[i]+0] = pos++;
-        LEDSTRIP_DATA[3*leds[i]+1] = pos++;
-        LEDSTRIP_DATA[3*leds[i]+2] = pos++;
+    for(int i=0;i<71;i++) {
+        LEDSTRIP_DATA[3*mapping2[i]+0] = pos++;
+        LEDSTRIP_DATA[3*mapping2[i]+1] = pos++;
+        LEDSTRIP_DATA[3*mapping2[i]+2] = pos++;
     }
     LEDSTRIP_MAP_ENABLE = 0;
 }
@@ -333,7 +349,7 @@ void BlingBoard :: task(void *a)
             LEDSTRIP_DATA[1] = 0;
             LEDSTRIP_DATA[2] = 0;
             LEDSTRIP_FROM = 0x00;
-            LEDSTRIP_LEN = (NUM_BLINGLEDS * 3);
+            LEDSTRIP_START = 0;
             vTaskDelay(200);
             U64_LEDSTRIP_EN = 0;
             break;
@@ -348,7 +364,7 @@ void BlingBoard :: task(void *a)
             LEDSTRIP_DATA[1] = fixed.r;
             LEDSTRIP_DATA[2] = fixed.b;
             LEDSTRIP_FROM = 0x00;
-            LEDSTRIP_LEN = (NUM_BLINGLEDS * 3); // and go!
+            LEDSTRIP_START = 0;
             vTaskDelay(50);
             break;
         case 2: // SID Music Pulse
@@ -359,8 +375,8 @@ void BlingBoard :: task(void *a)
             LEDSTRIP_DATA[1] = v2;
             LEDSTRIP_DATA[2] = v3;
             LEDSTRIP_FROM = 0x00;
-            LEDSTRIP_LEN = (NUM_BLINGLEDS * 3); // and go!
-            vTaskDelay(7);
+            LEDSTRIP_START = 0;
+            vTaskDelay(strip->speed);
             break;
         case 3: // SID Scroll 1 // shift new data in.
             // So first data appears at address 0, offset 0
@@ -374,40 +390,40 @@ void BlingBoard :: task(void *a)
             LEDSTRIP_DATA[offset+2] = v3;
             LEDSTRIP_FROM = offset;
             if (offset == 0) {
-                offset = 3*83;
+                offset = 3*70;
             } else {
                 offset -= 3;
             }
-            LEDSTRIP_LEN = (NUM_BLINGLEDS * 3); // and go!
-            vTaskDelay(3);
+            LEDSTRIP_START = 0;
+            vTaskDelay(strip->speed);
             break;
         case 4: // rainbow
             U64_LEDSTRIP_EN = 1;
             LEDSTRIP_INTENSITY = strip->intensity << 2;
-            rainbow_hue+=4;
+            rainbow_hue+=6;
             if (rainbow_hue >= 768)
-                rainbow_hue = 0;
+                rainbow_hue -= 768;
             fixed = hue_index_to_rgb(rainbow_hue, 768);
             fixed = tint_with_white(fixed, tint_factors[strip->tint]);
             LEDSTRIP_DATA[offset+0] = fixed.g;
             LEDSTRIP_DATA[offset+1] = fixed.r;
             LEDSTRIP_DATA[offset+2] = fixed.b;
             LEDSTRIP_FROM = offset;
-            if (offset == 0) {
-                offset = 3*83;
+            if (offset <= 0) {
+                offset = 3*70;
             } else {
                 offset -= 3;
             }
-            LEDSTRIP_LEN = (NUM_BLINGLEDS * 3); // and go!
-            vTaskDelay(3);
+            LEDSTRIP_START = 0;
+            vTaskDelay(strip->speed);
             break;
 
         case 5: // rainbow with sparkle
             U64_LEDSTRIP_EN = 1;
             LEDSTRIP_INTENSITY = 0x7F; // do it with the data itself
-            rainbow_hue+=3;
+            rainbow_hue+=10;
             if (rainbow_hue >= 768)
-                rainbow_hue = 0;
+                rainbow_hue -= 768;
 
             fixed = hue_index_to_rgb(rainbow_hue, 768);
             fixed = tint_with_white(fixed, tint_factors[strip->tint]);
@@ -421,7 +437,7 @@ void BlingBoard :: task(void *a)
             LEDSTRIP_DATA[offset+2] = fixed.b;
             LEDSTRIP_FROM = offset;
             if (offset == 0) {
-                offset = 3*83;
+                offset = 3*70;
             } else {
                 offset -= 3;
             }
@@ -438,7 +454,7 @@ void BlingBoard :: task(void *a)
             } else {
                 lfsr <<= 1;
             }
-            rnd = lfsr & 0x00FF;
+            rnd = lfsr & 0x03FF;
             if (rnd < NUM_BLINGLEDS) {
                 spr = rnd;
                 LEDSTRIP_DATA[rnd*3+0] = 0xFF;
@@ -446,8 +462,8 @@ void BlingBoard :: task(void *a)
                 LEDSTRIP_DATA[rnd*3+2] = 0xFF;
 
             }
-            LEDSTRIP_LEN = (NUM_BLINGLEDS * 3); // and go!
-            vTaskDelay(3);
+            LEDSTRIP_START = 0;
+            vTaskDelay(5);
             break;
 
         default:
@@ -479,21 +495,27 @@ void BlingBoard :: effectuate_settings(void)
             switch(pattern) {
                 case 0: // default
                     MapDirect();
+                    speed = 5;
                     break;
                 case 1: // left to right
                     MapLeftToRight();
+                    speed = 20;
                     break;
                 case 2: // right to left
                     MapRightToLeft();
+                    speed = 20;
                     break;
-                case 3: // serpentine
-                    MapSerpentine();
+                case 3: // circular
+                    MapCircular();
+                    speed = 5;
                     break;
                 case 4: // from center outward
                     MapFromCenter();
+                    speed = 20;
                     break;
                 default:
                     MapDirect();
+                    speed = 5;
                     break;
             }
             break;

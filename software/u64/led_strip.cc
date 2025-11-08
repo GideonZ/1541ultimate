@@ -139,7 +139,7 @@ LedStrip :: LedStrip()
 
 #define LEDSTRIP_DATA ( (volatile uint8_t *)(C64_IO_LED))
 #define LEDSTRIP_FROM (LEDSTRIP_DATA[LED_STARTADDR])
-#define LEDSTRIP_LEN  (LEDSTRIP_DATA[LED_COUNT])
+#define LEDSTRIP_START (LEDSTRIP_DATA[LED_START])
 #define LEDSTRIP_INTENSITY (LEDSTRIP_DATA[LED_INTENSITY])
 #define LEDSTRIP_MAP_ENABLE (LEDSTRIP_DATA[LED_MAP])
 
@@ -342,7 +342,7 @@ void LedStrip :: task(void *a)
             LEDSTRIP_DATA[1] = 0;
             LEDSTRIP_DATA[2] = 0;
             LEDSTRIP_FROM = 0x00;
-            LEDSTRIP_LEN = 252; // and go!
+            LEDSTRIP_START = 0; // and go!
             vTaskDelay(200);
             U64_LEDSTRIP_EN = 0;
             break;
@@ -363,7 +363,7 @@ void LedStrip :: task(void *a)
                 LEDSTRIP_DATA[2] = fixed.r;
             }
             LEDSTRIP_FROM = 0x00;
-            LEDSTRIP_LEN = 252; // and go!
+            LEDSTRIP_START = 0; // and go!
             vTaskDelay(50);
             break;
         case 2: // SID Music Pulse
@@ -374,7 +374,7 @@ void LedStrip :: task(void *a)
             LEDSTRIP_DATA[1] = v2;
             LEDSTRIP_DATA[2] = v3;
             LEDSTRIP_FROM = 0x00;
-            LEDSTRIP_LEN = 252; // and go!
+            LEDSTRIP_START = 0; // and go!
             vTaskDelay(7);
             break;
         case 3: // SID Scroll 1 // shift new data in.
@@ -393,7 +393,7 @@ void LedStrip :: task(void *a)
             } else {
                 offset -= 3;
             }
-            LEDSTRIP_LEN = 252; // and go!
+            LEDSTRIP_START = 0; // and go!
             vTaskDelay(3);
             break;
         // case 4: // Rainbow
@@ -411,7 +411,7 @@ void LedStrip :: task(void *a)
         //         offset = 0;
         //     }
         //     LEDSTRIP_FROM = offset;
-        //     LEDSTRIP_LEN = 252; // and go!
+        //     LEDSTRIP_START = 0; // and go!
         //     vTaskDelay(3);
         //     break;
         case 4: // rainbow
@@ -437,7 +437,7 @@ void LedStrip :: task(void *a)
             } else {
                 offset -= 3;
             }
-            LEDSTRIP_LEN = 252; // and go!
+            LEDSTRIP_START = 0; // and go!
             vTaskDelay(3);
             break;
 
@@ -495,7 +495,7 @@ void LedStrip :: task(void *a)
                 LEDSTRIP_DATA[rnd*3+2] = 0xFF;
 
             }
-            LEDSTRIP_LEN = 252; // and go!
+            LEDSTRIP_START = 0; // and go!
             vTaskDelay(3);
             break;
 
