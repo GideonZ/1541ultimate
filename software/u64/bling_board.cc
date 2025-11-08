@@ -11,6 +11,8 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "u64.h"
+#include "itu.h"
+#include <stdio.h>
 
 extern const char *fixed_colors[];
 extern const char *color_tints[];
@@ -112,6 +114,22 @@ static inline void apply_gamma_inplace(RGB *c)
     c->b = GAMMA22[c->b];
 }
 
+#define LEDSTRIP_DATA ( (volatile uint8_t *)(U64II_BLINGBOARD_LEDS))
+#define LEDSTRIP_FROM (LEDSTRIP_DATA[LED_STARTADDR])
+#define LEDSTRIP_START  (LEDSTRIP_DATA[LED_START])
+#define LEDSTRIP_INTENSITY (LEDSTRIP_DATA[LED_INTENSITY])
+#define LEDSTRIP_MAP_ENABLE (LEDSTRIP_DATA[LED_MAP])
+#define NUM_BLINGLEDS 71
+
+#define BLING_RX_DATA  (*(volatile uint8_t *)(U64II_BLINGBOARD_KEYB + 0))
+#define BLING_RX_GET   (*(volatile uint8_t *)(U64II_BLINGBOARD_KEYB + 1))
+#define BLING_RX_FLAGS (*(volatile uint8_t *)(U64II_BLINGBOARD_KEYB + 2))
+#define BLING_RX_IRQEN (*(volatile uint8_t *)(U64II_BLINGBOARD_KEYB + 3))
+#define BBKEY_SHIFT_LOCK  0x41
+#define SHIFTLOCK_RED    LEDSTRIP_DATA[0xFA]
+#define SHIFTLOCK_GREEN  LEDSTRIP_DATA[0xF9]
+#define SHIFTLOCK_BLUE   LEDSTRIP_DATA[0xFB]
+
 BlingBoard :: BlingBoard()
 {
     speed = 10;
@@ -126,18 +144,23 @@ BlingBoard :: BlingBoard()
     cfg->set_change_hook(CFG_LED_SIDSELECT,   BlingBoard :: hot_effectuate);
     cfg->hide();
     setup_config_menu();
+    key_queue = xQueueCreate(16, sizeof(uint8_t));
 }
 
-#define LEDSTRIP_DATA ( (volatile uint8_t *)(U64II_BLINGBOARD_LEDS))
-#define LEDSTRIP_FROM (LEDSTRIP_DATA[LED_STARTADDR])
-#define LEDSTRIP_START  (LEDSTRIP_DATA[LED_START])
-#define LEDSTRIP_INTENSITY (LEDSTRIP_DATA[LED_INTENSITY])
-#define LEDSTRIP_MAP_ENABLE (LEDSTRIP_DATA[LED_MAP])
-#define NUM_BLINGLEDS 71
+uint8_t BlingBoard :: irq_handler(void *context)
+{
+    BaseType_t woken = pdFALSE;
+    BlingBoard *bb = (BlingBoard *)context;
+    while (BLING_RX_FLAGS & UART_RxDataAv) {
+        uint8_t key = BLING_RX_DATA;
+        xQueueSendFromISR(bb->key_queue, &key, &woken);
+        BLING_RX_GET  = 1;
+    }
+    return woken;
+}
 
 void BlingBoard :: MapDirect(void)
 {
-    printf("Map DIRECT\n");
     LEDSTRIP_MAP_ENABLE = 1;
     for(int i=0;i<84*3;i++) {
         LEDSTRIP_DATA[i] = (uint8_t)i;
@@ -147,7 +170,6 @@ void BlingBoard :: MapDirect(void)
 
 void BlingBoard :: MapSingleColor(void)
 {
-    printf("Map Single Color\n");
     LEDSTRIP_MAP_ENABLE = 1;
     for(int i=0, j=0;i<84;i++) {
         LEDSTRIP_DATA[j++] = 0;
@@ -335,22 +357,38 @@ void BlingBoard :: task(void *a)
 
     RGB fixed;
     static uint8_t backup[252];
+    uint8_t key;
+
+    install_high_irq(4, &BlingBoard :: irq_handler, strip);
+    BLING_RX_IRQEN = 1;
 
     while(1) {
+        if (xQueueReceive(strip->key_queue, &key, strip->speed) == pdTRUE) {
+            if (key == BBKEY_SHIFT_LOCK) {
+                if (BLING_RX_FLAGS & 0x02) {
+                    SHIFTLOCK_RED   = 0xC0;
+                    SHIFTLOCK_GREEN = 0xA0;
+                    SHIFTLOCK_BLUE  = 0x00;
+                } else {
+                    SHIFTLOCK_RED   = 0x00;
+                    SHIFTLOCK_GREEN = 0x00;
+                    SHIFTLOCK_BLUE  = 0x00;
+                }
+            }
+        }
         v1 = C64_VOICE_ADSR(strip->sidsel * 4 + 0);
         v2 = C64_VOICE_ADSR(strip->sidsel * 4 + 1);
         v3 = C64_VOICE_ADSR(strip->sidsel * 4 + 2);
+        LEDSTRIP_INTENSITY = strip->intensity << 2;
 
         switch (strip->mode) {
         case 0: // Off
             offset = 0;
-            LEDSTRIP_INTENSITY = 0;
             LEDSTRIP_DATA[0] = 0;
             LEDSTRIP_DATA[1] = 0;
             LEDSTRIP_DATA[2] = 0;
             LEDSTRIP_FROM = 0x00;
             LEDSTRIP_START = 0;
-            vTaskDelay(200);
             U64_LEDSTRIP_EN = 0;
             break;
         case 1: // Fixed Color
@@ -359,24 +397,20 @@ void BlingBoard :: task(void *a)
             fixed = hue_index_to_rgb(strip->hue, 24);
             fixed = tint_with_white(fixed, tint_factors[strip->tint]);
             fixed = apply_intensity(fixed, strip->intensity);
-            LEDSTRIP_INTENSITY = strip->intensity << 2;
             LEDSTRIP_DATA[0] = fixed.g;
             LEDSTRIP_DATA[1] = fixed.r;
             LEDSTRIP_DATA[2] = fixed.b;
             LEDSTRIP_FROM = 0x00;
             LEDSTRIP_START = 0;
-            vTaskDelay(50);
             break;
         case 2: // SID Music Pulse
             U64_LEDSTRIP_EN = 1;
-            LEDSTRIP_INTENSITY = strip->intensity << 2;
             offset = 0;
             LEDSTRIP_DATA[0] = v1;
             LEDSTRIP_DATA[1] = v2;
             LEDSTRIP_DATA[2] = v3;
             LEDSTRIP_FROM = 0x00;
             LEDSTRIP_START = 0;
-            vTaskDelay(strip->speed);
             break;
         case 3: // SID Scroll 1 // shift new data in.
             // So first data appears at address 0, offset 0
@@ -384,7 +418,6 @@ void BlingBoard :: task(void *a)
             // then new data is written to LED 82, and offset it set to 82.
             // etc
             U64_LEDSTRIP_EN = 1;
-            LEDSTRIP_INTENSITY = strip->intensity << 2;
             LEDSTRIP_DATA[offset+0] = v1;
             LEDSTRIP_DATA[offset+1] = v2;
             LEDSTRIP_DATA[offset+2] = v3;
@@ -395,11 +428,9 @@ void BlingBoard :: task(void *a)
                 offset -= 3;
             }
             LEDSTRIP_START = 0;
-            vTaskDelay(strip->speed);
             break;
         case 4: // rainbow
             U64_LEDSTRIP_EN = 1;
-            LEDSTRIP_INTENSITY = strip->intensity << 2;
             rainbow_hue+=6;
             if (rainbow_hue >= 768)
                 rainbow_hue -= 768;
@@ -415,7 +446,6 @@ void BlingBoard :: task(void *a)
                 offset -= 3;
             }
             LEDSTRIP_START = 0;
-            vTaskDelay(strip->speed);
             break;
 
         case 5: // rainbow with sparkle
@@ -463,7 +493,6 @@ void BlingBoard :: task(void *a)
 
             }
             LEDSTRIP_START = 0;
-            vTaskDelay(5);
             break;
 
         default:
@@ -520,6 +549,7 @@ void BlingBoard :: effectuate_settings(void)
             }
             break;
     }
+    LEDSTRIP_MAP_ENABLE = 2;
 }
 
 int BlingBoard :: hot_effectuate(ConfigItem *item)

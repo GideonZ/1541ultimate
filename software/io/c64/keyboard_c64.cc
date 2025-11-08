@@ -146,15 +146,6 @@ void Keyboard_C64 :: scan(void)
     uint8_t mod = 0;
     bool joy = false;
     
-#define BLING_RX_DATA  (*(volatile uint8_t *)(U64II_BLINGBOARD_KEYB + 0))
-#define BLING_RX_GET   (*(volatile uint8_t *)(U64II_BLINGBOARD_KEYB + 1))
-#define BLING_RX_FLAGS (*(volatile uint8_t *)(U64II_BLINGBOARD_KEYB + 2))
-
-    if (BLING_RX_FLAGS & UART_RxDataAv) {
-        printf("Bling RX: %02x\n", BLING_RX_DATA);
-        BLING_RX_GET  = 1;
-    }
-
     if(!host) {
         return;
     }

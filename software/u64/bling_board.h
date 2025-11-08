@@ -11,6 +11,8 @@
 #define BLING_BOARD_H_
 
 #include "config.h"
+#include "FreeRTOS.h"
+#include "queue.h"
 
 #define CFG_LED_MODE          0x01
 #define CFG_LED_RED           0x02
@@ -33,7 +35,9 @@ class BlingBoard : public ConfigurableObject
     volatile uint8_t mode, intensity, sidsel, pattern;
     volatile uint8_t hue, tint;
     volatile int speed;
+    QueueHandle_t key_queue;
 
+    static uint8_t irq_handler(void *context);
     static void task(void *);
     static int hot_effectuate(ConfigItem *item);
     void setup_config_menu(void);
