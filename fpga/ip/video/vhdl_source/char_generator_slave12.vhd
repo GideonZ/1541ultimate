@@ -14,8 +14,6 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
-
-library work;
 use work.char_generator_pkg.all;
 
 entity char_generator_slave12 is
@@ -37,8 +35,10 @@ port (
     screen_data     : in  std_logic_vector(7 downto 0);
 	color_data		: in  std_logic_vector(7 downto 0);
 	
-    char_addr       : out unsigned(9 downto 0);
-    char_data       : in  std_logic_vector(35 downto 0);
+    char_addr_8     : out unsigned(10 downto 0);
+    char_data_8     : in  std_logic_vector(7 downto 0);
+    char_addr_12    : out unsigned(9 downto 0);
+    char_data_12    : in  std_logic_vector(35 downto 0);
 
     pixel_active    : out std_logic;
     pixel_opaque    : out std_logic;
@@ -105,7 +105,8 @@ begin
                                 pointer <= pointer + control.chars_per_line;
                                 char_y <= (others => '0');
                                 remaining_lines <= remaining_lines - 1;
-                            elsif char_y(1 downto 0) = "10" then -- count 0, 1, 2, 4, 5, 6, 8, 9 ...
+                            -- count 0, 1, 2, 4, 5, 6, 8, 9 ... for char_heights of at least 16 (use other ROM)
+                            elsif char_y(1 downto 0) = "10" and control.char_height(4) = '1' then 
                                 char_y <= char_y + 2;
                             else                        
                                 char_y <= char_y + 1;
@@ -128,12 +129,19 @@ begin
                 -- pixel output
                 pixel_active <= active_d2;
                 if active_d2='1' then
-                    if char_y(1 downto 0) = "00" then
-                        v_char_data := char_data(11 downto 0);
-                    elsif char_y(1 downto 0) = "01" then
-                        v_char_data := char_data(23 downto 12);
+                    if control.char_height(4) = '1' then
+                        if char_y(1 downto 0) = "00" then
+                            v_char_data := char_data_12(11 downto 0);
+                        elsif char_y(1 downto 0) = "01" then
+                            v_char_data := char_data_12(23 downto 12);
+                        else
+                            v_char_data := char_data_12(35 downto 24);
+                        end if;
                     else
-                        v_char_data := char_data(35 downto 24);
+                        v_char_data := X"0" & char_data_8;
+                        if char_data_8 /= X"18" and char_y(3) = '1' and control.stretch_y = '0' then -- allow a vertical line to continue
+                            v_char_data := X"000"; -- otherwise insert blank
+                        end if;
                     end if;
 
                     if v_char_data(to_integer(pixel_sel_d2)) = not(reverse) then
@@ -165,7 +173,10 @@ begin
     
     screen_addr <= pointer + char_x;
 
-    char_addr   <= unsigned(screen_data(6 downto 0)) & char_y_d(4 downto 2);
-    reverse     <= screen_data(7) when rising_edge(clock);
+    char_addr_8  <= '0' & unsigned(screen_data(6 downto 0)) & char_y_d(3 downto 1) when control.stretch_y = '1' else 
+                    '0' & unsigned(screen_data(6 downto 0)) & char_y_d(2 downto 0) when char_y_d(3)='0' else 
+                    '0' & unsigned(screen_data(6 downto 0)) & "111"; -- keep repeating the last line
+    char_addr_12 <= unsigned(screen_data(6 downto 0)) & char_y_d(4 downto 2);
+    reverse      <= screen_data(7) when rising_edge(clock);
 
 end architecture;

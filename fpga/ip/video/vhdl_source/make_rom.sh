@@ -1,0 +1,1 @@
+../../../../tools/make_array ../../../../roms/chars.bin 2048 char_generator_rom 10 >./char_generator_rom_pkg.vhd
