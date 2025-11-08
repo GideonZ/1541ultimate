@@ -35,7 +35,8 @@ const char *fixed_colors[] = {
     "Magenta",
     "Fuchsia",
     "Rose",
-    "Cerise"
+    "Cerise",
+    "White"
 };
 const char *color_tints[] = { "Pure", "Bright", "Pastel", "Whisper" };
 static const uint8_t tint_factors[] = { 0, 50, 100, 170 };
@@ -61,7 +62,7 @@ static struct t_cfg_definition cfg_definition[] = {
     { CFG_LED_PATTERN,          CFG_TYPE_ENUM,  "LedStrip Pattern",             "%s", patterns,     0,  4,  0  },
     { CFG_LED_SIDSELECT,        CFG_TYPE_ENUM,  "LedStrip SID Select",          "%s", sidsel,       0,  7,  0  },
     { CFG_LED_INTENSITY,        CFG_TYPE_VALUE, "Strip Intensity",              "%d", NULL,         0, 31, 16  },
-    { CFG_LED_FIXED_COLOR,      CFG_TYPE_ENUM,  "Fixed Color",                  "%s", fixed_colors, 0, 23, 15  },
+    { CFG_LED_FIXED_COLOR,      CFG_TYPE_ENUM,  "Fixed Color",                  "%s", fixed_colors, 0, 24, 15  },
     { CFG_LED_FIXED_TINT,       CFG_TYPE_ENUM,  "Color tint",                   "%s", color_tints,  0,  3,  1  },
     { CFG_TYPE_END,             CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
@@ -147,7 +148,6 @@ LedStrip :: LedStrip()
 
 void LedStrip :: MapDirect(void)
 {
-    printf("Map DIRECT\n");
     LEDSTRIP_MAP_ENABLE = 1;
     for(int i=0;i<84*3;i++) {
         LEDSTRIP_DATA[i] = (uint8_t)i;
@@ -157,7 +157,6 @@ void LedStrip :: MapDirect(void)
 
 void LedStrip :: MapSingleColor(void)
 {
-    printf("Map Single Color\n");
     LEDSTRIP_MAP_ENABLE = 1;
     for(int i=0, j=0;i<84;i++) {
         LEDSTRIP_DATA[j++] = 0;
@@ -350,7 +349,11 @@ void LedStrip :: task(void *a)
         case 1: // Fixed Color
             offset = 0;
             U64_LEDSTRIP_EN = 1;
-            fixed = hue_index_to_rgb(strip->hue, 24);
+            if (strip->hue == 24) {
+                fixed = { 255, 255, 255 };
+            } else {
+                fixed = hue_index_to_rgb(strip->hue, 24);
+            }
             fixed = tint_with_white(fixed, tint_factors[strip->tint]);
             fixed = apply_intensity(fixed, strip->intensity);
             LEDSTRIP_INTENSITY = strip->intensity << 2;

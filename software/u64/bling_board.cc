@@ -31,7 +31,7 @@ static struct t_cfg_definition cfg_definition[] = {
     { CFG_LED_PATTERN,          CFG_TYPE_ENUM,  "LedStrip Pattern",             "%s", patterns,     0,  4,  0  },
     { CFG_LED_SIDSELECT,        CFG_TYPE_ENUM,  "LedStrip SID Select",          "%s", sidsel,       0,  7,  0  },
     { CFG_LED_INTENSITY,        CFG_TYPE_VALUE, "Strip Intensity",              "%d", NULL,         0, 31, 16  },
-    { CFG_LED_FIXED_COLOR,      CFG_TYPE_ENUM,  "Fixed Color",                  "%s", fixed_colors, 0, 23, 15  },
+    { CFG_LED_FIXED_COLOR,      CFG_TYPE_ENUM,  "Fixed Color",                  "%s", fixed_colors, 0, 24, 15  },
     { CFG_LED_FIXED_TINT,       CFG_TYPE_ENUM,  "Color tint",                   "%s", color_tints,  0,  3,  1  },
     { CFG_TYPE_END,             CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
@@ -452,6 +452,9 @@ void BlingBoard :: play_boot_pattern(void)
         MapSingleColor();
         break;
     case 1: // fixed
+        if (hue == 24) {
+            return; // white -> white
+        }
         target = hue_index_to_rgb(hue, 24);
         target = tint_with_white(target, tint_factors[tint]);
         MapSingleColor();
@@ -538,7 +541,11 @@ void BlingBoard :: run(void)
             break;
         case 1: // Fixed Color
             offset = 0;
-            fixed = hue_index_to_rgb(hue, 24);
+            if (hue == 24) {
+                fixed = { 255, 255, 255 };
+            } else {
+                fixed = hue_index_to_rgb(hue, 24);
+            }
             fixed = tint_with_white(fixed, tint_factors[tint]);
             LEDSTRIP_DATA[0] = fixed.g;
             LEDSTRIP_DATA[1] = fixed.r;
