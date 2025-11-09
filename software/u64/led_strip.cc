@@ -522,7 +522,6 @@ void LedStrip :: run(void)
 
             // restore sparkle color
             if (spr != 0xFF) {
-                printf("Restore %b %b %b %b\n", spr, backup[spr*3+0], backup[spr*3+1],backup[spr*3+2]);
                 LEDSTRIP_DATA[spr*3+0] = backup[spr*3+0];
                 LEDSTRIP_DATA[spr*3+1] = backup[spr*3+1];
                 LEDSTRIP_DATA[spr*3+2] = backup[spr*3+2];
