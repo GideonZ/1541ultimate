@@ -146,6 +146,7 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_HDMI_TX_SWING     0xAB
 #define CFG_HDMI_RESOLUTION   0xAC
 #define CFG_MODEL             0xAD
+#define CFG_JOYWASD           0xAE
 
 uint8_t C64_EMUSID1_BASE_BAK;
 uint8_t C64_EMUSID2_BASE_BAK;
@@ -226,7 +227,7 @@ const char *stereo_addr[] = { "Off", "A5", "A6", "A7", "A8", "A9" };
 const char *sid_split[] = { "Off", "1/2 (A5)", "1/2 (A6)", "1/2 (A7)", "1/2 (A8)", "1/4 (A5,A6)", "1/4 (A5,A8)", "1/4 (A7,A8)" };
 static const char *models[] = { "BASIC Beige", "Starlight Edition", "Founders Edition" };
 static const char *iec_modes[] = { "All Connected", "C64U <-> Internal", "Ext. <-> Int.", "C64U <-> External" };
-static const char *joyswaps[] = { "Normal", "Swapped", "WASD Port 2", "WASD Port 1", "WASD P2 No KB", "WASD P1 No KB" };
+static const char *joyswaps[] = { "Normal", "Swapped"  };
 static const char *en_dis5[] = { "Disabled", "Enabled", "Transp. Border" };
 static const char *digi_levels[] = { "Off", "Low", "Medium", "High" };
 static const char *burst_modes[] = { "Off", "CIA1", "CIA2" };
@@ -293,10 +294,9 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  5, 0 },
     { CFG_HDMI_RESOLUTION,      CFG_TYPE_ENUM, "HDMI Scan Resolution",         "%s", scan_modes,   0,  5, 0 },
     { CFG_HDMI_TX_SWING,        CFG_TYPE_VALUE, "HDMI Tx Swing",               "%d", NULL,         0, 15, 8 },
-#if U64 == 2
-    { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  5, 0 },
-#else
     { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  1, 0 },
+#if U64 == 2
+    { CFG_JOYWASD,              CFG_TYPE_ENUM, "WASD Joystick Emulation",      "%s", en_dis,       0,  1, 0 },
 #endif
     { CFG_USERPORT_EN,          CFG_TYPE_ENUM, "UserPort Power Enable",        "%s", en_dis,       0,  1, 1 },
 //    { CFG_CART_PREFERENCE,      CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,    0,  2, 0 }, // moved to C64 for user consistency
@@ -974,15 +974,12 @@ void U64Config :: effectuate_settings()
     C64_PADDLE_EN    = cfg->get_value(CFG_PADDLE_EN);
     C64_PADDLE_SWAP  = cfg->get_value(CFG_JOYSWAP) & 1;
 #if U64 == 2
-    uint8_t swap = cfg->get_value(CFG_JOYSWAP);
-    U64II_KEYB_JOY     = swap & 1;
-    static const uint8_t wasd_settings[] = { 0x00, 0x00, 0x01, 0x01, 0x03, 0x03 };
-    MATRIX_WASD_TO_JOY = wasd_to_joy = wasd_settings[swap]; 
+    U64II_KEYB_JOY     = cfg->get_value(CFG_JOYSWAP) & 1;
+    MATRIX_WASD_TO_JOY = cfg->get_value(CFG_JOYWASD); 
 #else
     C64_PLD_JOYCTRL  = cfg->get_value(CFG_JOYSWAP) ^ 1;
 #endif
     U64_USERPORT_EN  = cfg->get_value(CFG_USERPORT_EN) ? 3 : 0;
-    printf("USERPORT_EN = %d\n", U64_USERPORT_EN);
     
     //C64_TURBOREGS_EN = 0;
     //C64_SPEED_PREFER = 0;
