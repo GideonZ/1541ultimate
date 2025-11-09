@@ -165,6 +165,7 @@ public:
     void clear_ram(void);
     void setup_config_menu();
     void getOverlaySettings(overlay_settings_t &settings) { settings = this->overlaySettings; }
+    int  get_model(void);
 };
 
 extern uint8_t C64_EMUSID1_BASE_BAK;

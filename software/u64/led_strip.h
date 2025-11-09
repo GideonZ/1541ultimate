@@ -27,20 +27,35 @@
 #define LED_INTENSITY 0xFE
 #define LED_START     0xFF
 
+typedef enum {
+    e_led_off = 0,
+    e_led_fixed,
+    e_led_sid,
+    e_led_rainbow,
+    e_led_rsparkle,
+    e_led_sparkle,
+    e_led_default,
+} led_mode_t;
+
 typedef struct { uint8_t r, g, b; } RGB;
 
 class LedStrip : public ConfigurableObject
 {
-    volatile uint8_t mode, intensity, sidsel, pattern;
+    volatile led_mode_t mode;
+    volatile uint8_t intensity, sidsel, pattern;
     volatile uint8_t hue, tint, offset, soft_start;;
     volatile uint8_t length, protocol;
     
+    int model;
+
     static int hot_effectuate(ConfigItem *item);
     static void task(void *);
     void run(void);
     void setup_config_menu(void);
     void update_menu(void);
     void play_boot_pattern(void);
+    void boot_pattern_starlight(void);
+    void boot_pattern_founders(void);
 
     void MapDirect(void);
     void MapSingleColor(void);

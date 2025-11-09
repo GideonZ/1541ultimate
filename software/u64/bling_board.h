@@ -30,11 +30,24 @@
 #define LED_INTENSITY 0xFE
 #define LED_START     0xFF
 
+typedef struct { uint8_t r, g, b; } RGB;
+typedef enum {
+    e_led_off = 0,
+    e_led_fixed,
+    e_led_sid,
+    e_led_rainbow,
+    e_led_rsparkle,
+    e_led_default,
+} led_mode_t;
+
 class BlingBoard : public ConfigurableObject
 {
-    volatile uint8_t mode, intensity, sidsel, pattern;
+    volatile led_mode_t mode;
+    volatile uint8_t intensity, sidsel, pattern;
     volatile uint8_t hue, tint, offset, soft_start;
     volatile int speed;
+
+    int model;
     QueueHandle_t key_queue;
 
     static uint8_t irq_handler(void *context);
@@ -43,6 +56,8 @@ class BlingBoard : public ConfigurableObject
     static int hot_effectuate(ConfigItem *item);
     void setup_config_menu(void);
     void play_boot_pattern(void);
+    void boot_pattern_starlight(void);
+    void boot_pattern_founders(void);
     void update_menu(void);
 
     void MapDirect(void);
@@ -53,6 +68,7 @@ class BlingBoard : public ConfigurableObject
     void MapCircular1(void);
     void MapCircular2(void);
     void ClearColors(void);
+    void ShiftInColor(RGB &color);
 public:
     BlingBoard();
     void effectuate_settings(void);

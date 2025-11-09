@@ -2465,6 +2465,7 @@ void U64Config :: setup_config_menu(void)
     grp->append(cfg->find_item(CFG_SUPERCPU_DET));
 
     grp = ConfigGroupCollection :: getGroup("Machine Tweaks", SORT_ORDER_CFG_TWEAKS);
+    grp->append(cfg->find_item(CFG_MODEL));
     grp->append(cfg->find_item(CFG_IEC_BURST_EN));
     grp->append(cfg->find_item(CFG_PARCABLE_ENABLE)->set_item_altname("Parallel Cable to Drive A"));
     grp->append(cfg->find_item(CFG_IEC_BUS_MODE));
@@ -2512,3 +2513,9 @@ void U64Config :: DetermineOverlaySettings(t_video_mode mode, t_hdmi_mode hdmimo
     }
 }
 
+int U64Config :: get_model(void)
+{
+    if(!BLINGBOARD_INSTALLED)
+        return 0;
+    return cfg->get_value(CFG_MODEL);
+}
