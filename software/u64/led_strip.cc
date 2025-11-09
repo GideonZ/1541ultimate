@@ -50,24 +50,22 @@ static void init(void *_a, void *_b)
 InitFunction ledstrip_init_func("LED Strip", init, NULL, NULL, 61);
 
 
-static const char *modes[] = {"Off", "Fixed Color", "SID Pulse", "SID Music", "Rainbow", "Rainbow Sparkle" };
-static const char *patterns[] = { "Default", "Left to Right", "Right to Left", "Serpentine", "Outward"};
+static const char *modes[] = {"Off", "Fixed Color", "SID Music", "Rainbow", "Rainbow Sparkle" };
+static const char *patterns[] = { "SingleColor", "Left to Right", "Right to Left", "Serpentine", "Outward"};
 static const char *sidsel[] = { "UltiSID1-A", "UltiSID1-B", "UltiSID1-C", "UltiSID1-D",
                                 "UltiSID2-A", "UltiSID2-B", "UltiSID2-C", "UltiSID2-D" };
-static const char *types[] = { "APA102", "WS2812" };
+// static const char *types[] = { "APA102", "WS2812" };
 
 static struct t_cfg_definition cfg_definition[] = {
-    { CFG_LED_TYPE,             CFG_TYPE_ENUM,  "LedStrip Type",                "%s", types,        0,  1,  1  },
-    { CFG_LED_MODE,             CFG_TYPE_ENUM,  "LedStrip Mode",                "%s", modes,        0,  5,  0  },
+//    { CFG_LED_TYPE,             CFG_TYPE_ENUM,  "LedStrip Type",                "%s", types,        0,  1,  1  },
+    { CFG_LED_MODE,             CFG_TYPE_ENUM,  "LedStrip Mode",                "%s", modes,        0,  4,  1  },
     { CFG_LED_PATTERN,          CFG_TYPE_ENUM,  "LedStrip Pattern",             "%s", patterns,     0,  4,  0  },
     { CFG_LED_SIDSELECT,        CFG_TYPE_ENUM,  "LedStrip SID Select",          "%s", sidsel,       0,  7,  0  },
-    { CFG_LED_INTENSITY,        CFG_TYPE_VALUE, "Strip Intensity",              "%d", NULL,         0, 31, 16  },
+    { CFG_LED_INTENSITY,        CFG_TYPE_VALUE, "Strip Intensity",              "%d", NULL,         0, 31,  9  },
     { CFG_LED_FIXED_COLOR,      CFG_TYPE_ENUM,  "Fixed Color",                  "%s", fixed_colors, 0, 24, 15  },
-    { CFG_LED_FIXED_TINT,       CFG_TYPE_ENUM,  "Color tint",                   "%s", color_tints,  0,  3,  1  },
+    { CFG_LED_FIXED_TINT,       CFG_TYPE_ENUM,  "Color tint",                   "%s", color_tints,  0,  3,  0  },
     { CFG_TYPE_END,             CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
-
-typedef struct { uint8_t r, g, b; } RGB;
 
 // Map hue index (0..N-1) to fully saturated, full-brightness RGB.
 // Even spacing around the HSV wheel, using integer ramps.
@@ -99,6 +97,14 @@ static inline uint8_t mix8(uint8_t a, uint8_t b, uint8_t t)
     return (uint8_t)(((uint32_t)a * (255 - t) + (uint32_t)b * t + 127) / 255);
 }
 
+static inline RGB alpha(RGB c, RGB x, uint8_t t)
+{
+    RGB o;
+    o.r = mix8(c.r, x.r, t);
+    o.g = mix8(c.g, x.g, t);
+    o.b = mix8(c.b, x.b, t);
+    return o;
+}
 // Add white (tint). t=0 keeps the color, t=255 gives pure white.
 static inline RGB tint_with_white(RGB c, uint8_t t)
 {
@@ -124,11 +130,9 @@ LedStrip :: LedStrip()
     // because higher priority task may start right away, the return value of the constructor
     // may not yet been written in the global variable.
 	ledstrip = this; 
-    xTaskCreate( LedStrip :: task, "LedStrip Controller", configMINIMAL_STACK_SIZE, this, PRIO_REALTIME, NULL );
     register_store(0x4C454453, "LED Strip Settings", cfg_definition);
-    effectuate_settings();
-    update_menu();
-    cfg->set_change_hook(CFG_LED_TYPE,      LedStrip :: hot_effectuate);
+
+    //cfg->set_change_hook(CFG_LED_TYPE,      LedStrip :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_PATTERN,   LedStrip :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_MODE,      LedStrip :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_INTENSITY, LedStrip :: hot_effectuate);
@@ -136,7 +140,8 @@ LedStrip :: LedStrip()
     cfg->set_change_hook(CFG_LED_FIXED_TINT,  LedStrip :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_SIDSELECT, LedStrip :: hot_effectuate);
     cfg->hide();
-    setup_config_menu();
+
+    xTaskCreate( LedStrip :: task, "LedStrip Controller", configMINIMAL_STACK_SIZE, this, PRIO_REALTIME, NULL );
 }
 
 #define LEDSTRIP_DATA ( (volatile uint8_t *)(C64_IO_LED))
@@ -320,21 +325,30 @@ void LedStrip :: MapFromCenter(void)
 void LedStrip :: task(void *a)
 {
     LedStrip *strip = (LedStrip *)a;
+    strip->run();
+}
+
+void LedStrip :: run(void)
+{
     int rainbow_hue = 0;
     int rnd, lfsr = 64738;
     uint8_t spp = 0x00, spr = 0, spg = 0, spb = 0;
-    uint8_t offset = 0;
     uint8_t v1, v2, v3;
 
     RGB fixed;
     static uint8_t backup[252];
 
-    while(1) {
-        v1 = C64_VOICE_ADSR(strip->sidsel * 4 + 0);
-        v2 = C64_VOICE_ADSR(strip->sidsel * 4 + 1);
-        v3 = C64_VOICE_ADSR(strip->sidsel * 4 + 2);
+    setup_config_menu();
+    play_boot_pattern();
+    effectuate_settings();
+    update_menu();
 
-        switch (strip->mode) {
+    while(1) {
+        v1 = C64_VOICE_ADSR(sidsel * 4 + 0);
+        v2 = C64_VOICE_ADSR(sidsel * 4 + 1);
+        v3 = C64_VOICE_ADSR(sidsel * 4 + 2);
+
+        switch (mode) {
         case 0: // Off
             offset = 0;
             LEDSTRIP_INTENSITY = 0;
@@ -349,15 +363,15 @@ void LedStrip :: task(void *a)
         case 1: // Fixed Color
             offset = 0;
             U64_LEDSTRIP_EN = 1;
-            if (strip->hue == 24) {
+            if (hue == 24) {
                 fixed = { 255, 255, 255 };
             } else {
-                fixed = hue_index_to_rgb(strip->hue, 24);
+                fixed = hue_index_to_rgb(hue, 24);
             }
-            fixed = tint_with_white(fixed, tint_factors[strip->tint]);
-            fixed = apply_intensity(fixed, strip->intensity);
-            LEDSTRIP_INTENSITY = strip->intensity << 2;
-            if (strip->protocol) {
+            fixed = tint_with_white(fixed, tint_factors[tint]);
+            fixed = apply_intensity(fixed, intensity);
+            LEDSTRIP_INTENSITY = intensity << 2;
+            if (protocol) {
                 LEDSTRIP_DATA[0] = fixed.g;
                 LEDSTRIP_DATA[1] = fixed.r;
                 LEDSTRIP_DATA[2] = fixed.b;
@@ -370,24 +384,13 @@ void LedStrip :: task(void *a)
             LEDSTRIP_START = 0; // and go!
             vTaskDelay(50);
             break;
-        case 2: // SID Music Pulse
-            U64_LEDSTRIP_EN = 1;
-            LEDSTRIP_INTENSITY = strip->intensity << 2;
-            offset = 0;
-            LEDSTRIP_DATA[0] = v1;
-            LEDSTRIP_DATA[1] = v2;
-            LEDSTRIP_DATA[2] = v3;
-            LEDSTRIP_FROM = 0x00;
-            LEDSTRIP_START = 0; // and go!
-            vTaskDelay(7);
-            break;
-        case 3: // SID Scroll 1 // shift new data in.
+        case 2: // SID Scroll 1 // shift new data in.
             // So first data appears at address 0, offset 0
             // then new data is written to LED 83, and offset is set to 83.
             // then new data is written to LED 82, and offset it set to 82.
             // etc
             U64_LEDSTRIP_EN = 1;
-            LEDSTRIP_INTENSITY = strip->intensity << 2;
+            LEDSTRIP_INTENSITY = intensity << 2;
             LEDSTRIP_DATA[offset+0] = v1;
             LEDSTRIP_DATA[offset+1] = v2;
             LEDSTRIP_DATA[offset+2] = v3;
@@ -400,33 +403,19 @@ void LedStrip :: task(void *a)
             LEDSTRIP_START = 0; // and go!
             vTaskDelay(3);
             break;
-        // case 4: // Rainbow
-        //     // So first data appears at LED 83, offset 0 (last led goes on) (or actually: the length of the pattern, if it is not 84!)
-        //     // then new data is written to LED 0, and offset is set to 1.
-        //     // then new data is written to LED 1, and offset it set to 2.
-        //     // etc
-        //     U64_LEDSTRIP_EN = 1;
-        //     LEDSTRIP_INTENSITY = strip->intensity << 2;
-        //     LEDSTRIP_DATA[offset+0] = v1;
-        //     LEDSTRIP_DATA[offset+1] = v2;
-        //     LEDSTRIP_DATA[offset+2] = v3;
-        //     offset += 3;
-        //     if (offset >= 252) {
-        //         offset = 0;
-        //     }
-        //     LEDSTRIP_FROM = offset;
-        //     LEDSTRIP_START = 0; // and go!
-        //     vTaskDelay(3);
-        //     break;
-        case 4: // rainbow
+        case 3: // rainbow
             U64_LEDSTRIP_EN = 1;
-            LEDSTRIP_INTENSITY = strip->intensity << 2;
+            LEDSTRIP_INTENSITY = intensity << 2;
             rainbow_hue++;
             if (rainbow_hue >= 768)
                 rainbow_hue = 0;
             fixed = hue_index_to_rgb(rainbow_hue, 768);
-            fixed = tint_with_white(fixed, tint_factors[strip->tint]);
-            if (strip->protocol) {
+            fixed = tint_with_white(fixed, tint_factors[tint]);
+            if (soft_start) {
+                fixed = tint_with_white(fixed, soft_start);
+                soft_start -= 3; // should end with 0
+            }
+            if (protocol) {
                 LEDSTRIP_DATA[offset+0] = fixed.g;
                 LEDSTRIP_DATA[offset+1] = fixed.r;
                 LEDSTRIP_DATA[offset+2] = fixed.b;
@@ -442,10 +431,10 @@ void LedStrip :: task(void *a)
                 offset -= 3;
             }
             LEDSTRIP_START = 0; // and go!
-            vTaskDelay(3);
+            vTaskDelay(16);
             break;
 
-        case 5: // rainbow with sparkle
+        case 4: // rainbow with sparkle
             U64_LEDSTRIP_EN = 1;
             LEDSTRIP_INTENSITY = 0x7F; // do it with the data itself
             rainbow_hue++;
@@ -453,9 +442,9 @@ void LedStrip :: task(void *a)
                 rainbow_hue = 0;
 
             fixed = hue_index_to_rgb(rainbow_hue, 768);
-            fixed = tint_with_white(fixed, tint_factors[strip->tint]);
-            fixed = apply_intensity(fixed, strip->intensity);
-            if (strip->protocol) {
+            fixed = tint_with_white(fixed, tint_factors[tint]);
+            fixed = apply_intensity(fixed, intensity);
+            if (protocol) {
                 backup[offset+0] = fixed.g;
                 backup[offset+1] = fixed.r;
                 backup[offset+2] = fixed.b;
@@ -504,7 +493,7 @@ void LedStrip :: task(void *a)
             break;
 
         default:
-            strip->mode = 0;
+            mode = 0;
         }
     }
 }
@@ -516,20 +505,20 @@ void LedStrip :: effectuate_settings(void)
     hue       = cfg->get_value(CFG_LED_FIXED_COLOR);
     tint      = cfg->get_value(CFG_LED_FIXED_TINT);
     sidsel    = cfg->get_value(CFG_LED_SIDSELECT);
-    protocol  = cfg->get_value(CFG_LED_TYPE) ? 0x80 : 0x00; // 0x80 = WS2812, 0x00 = APA102;
+    // protocol  = cfg->get_value(CFG_LED_TYPE) ? 0x80 : 0x00; // 0x80 = WS2812, 0x00 = APA102;
+    protocol  = 1;
     pattern   = cfg->get_value(CFG_LED_PATTERN);
 
     switch(mode)
     {
         case 0:
         case 1:
-        case 2:
             MapSingleColor();
             break;
         default:
             switch(pattern) {
                 case 0: // default
-                    MapDirect();
+                    MapSingleColor();
                     break;
                 case 1: // left to right
                     MapLeftToRight();
@@ -549,11 +538,11 @@ void LedStrip :: effectuate_settings(void)
             }
             break;
     }
-    if (protocol) {
-        LEDSTRIP_MAP_ENABLE = 0x80; // WS
-    } else {
-        LEDSTRIP_MAP_ENABLE = 0x40; // APA
-    }
+    // if (protocol) {
+    //     LEDSTRIP_MAP_ENABLE = 0x80; // WS
+    // } else {
+    //     LEDSTRIP_MAP_ENABLE = 0x40; // APA
+    // }
 //    U64_PWM_DUTY = 0xC0;
 }
 
@@ -596,14 +585,125 @@ int LedStrip :: hot_effectuate(ConfigItem *item)
     return 1;
 }
 
+#define BLING_RX_FLAGS (*(volatile uint8_t *)(U64II_BLINGBOARD_KEYB + 2))
 void LedStrip :: setup_config_menu(void)
 {
     ConfigGroup *grp = ConfigGroupCollection :: getGroup(GROUP_NAME_LEDS, SORT_ORDER_CFG_LEDS);
-    grp->append(ConfigItem::heading("Case Lights"));
+    if (!BLINGBOARD_INSTALLED) { // No Bling Board
+        grp->append(ConfigItem::heading("LED Strip (if installed)"));
+    } else {
+        grp->append(ConfigItem::heading("Case Lights"));
+    }
     grp->append(cfg->find_item(CFG_LED_MODE)->set_item_altname("Mode"));
     grp->append(cfg->find_item(CFG_LED_PATTERN)->set_item_altname("Pattern"));
     grp->append(cfg->find_item(CFG_LED_INTENSITY)->set_item_altname("Intensity"));
     grp->append(cfg->find_item(CFG_LED_FIXED_COLOR)->set_item_altname("Color"));
     grp->append(cfg->find_item(CFG_LED_FIXED_TINT)->set_item_altname("Tint"));
     grp->append(ConfigItem::separator());
+}
+
+void LedStrip :: ShiftInColor(RGB &fixed)
+{
+    LEDSTRIP_DATA[offset+0] = fixed.g;
+    LEDSTRIP_DATA[offset+1] = fixed.r;
+    LEDSTRIP_DATA[offset+2] = fixed.b;
+    LEDSTRIP_FROM = offset;
+    if (offset <= 0) {
+        offset = 3*83;
+    } else {
+        offset -= 3;
+    }
+}
+
+
+void LedStrip :: play_boot_pattern(void)
+{
+    // start with the right values
+    mode      = cfg->get_value(CFG_LED_MODE);
+    pattern   = cfg->get_value(CFG_LED_PATTERN);
+    intensity = cfg->get_value(CFG_LED_INTENSITY);
+    hue       = cfg->get_value(CFG_LED_FIXED_COLOR);
+    tint      = cfg->get_value(CFG_LED_FIXED_TINT);
+    sidsel    = cfg->get_value(CFG_LED_SIDSELECT);
+
+    MapFromCenter();
+    ClearColors();
+    LEDSTRIP_MAP_ENABLE = 0;
+    LEDSTRIP_INTENSITY = intensity << 2;
+
+    // start with yellow and cycle through the hue values
+    int rainbow_hue = 112;
+    RGB fixed;
+
+    // Soft start
+    for(int i=0; i < 16; i++) {
+        rainbow_hue+=1;
+        if (rainbow_hue >= 768)
+            rainbow_hue -= 768;
+        fixed = hue_index_to_rgb(rainbow_hue, 768);
+        fixed = alpha(fixed, {0,0,0}, 255-i*16);
+        ShiftInColor(fixed);
+        LEDSTRIP_START = 0;
+        vTaskDelay(5);
+    }
+
+    for(int i=0; i < 320; i++) {
+        rainbow_hue+=2;
+        if (rainbow_hue >= 768)
+            rainbow_hue -= 768;
+        fixed = hue_index_to_rgb(rainbow_hue, 768);
+        ShiftInColor(fixed);
+        LEDSTRIP_START = 0;
+        vTaskDelay(2);
+    }
+
+    // we are now on yellow again, let's fade to white
+    for(int i=0;i<140;i++) {
+        rainbow_hue+=2;
+        fixed = hue_index_to_rgb(rainbow_hue, 768);
+        int a = (i*7) >> 1;
+        fixed = tint_with_white(fixed, a > 255 ? 255 : a);
+        ShiftInColor(fixed);
+        LEDSTRIP_START = 0;
+        vTaskDelay(2);
+    }
+
+    RGB target;
+    switch(mode) {
+    case 0: // off 
+    case 2: // sid music
+        target = { 0, 0, 0 };
+        MapSingleColor();
+        break;
+    case 1: // fixed
+        MapSingleColor();
+        if (hue == 24) {
+            goto done; // white -> white
+        }
+        target = hue_index_to_rgb(hue, 24);
+        target = tint_with_white(target, tint_factors[tint]);
+        break;
+    }
+
+    RGB now;
+    if (mode < 3) {
+        // fade to target
+        for(int i=0;i<140;i++) {
+            int a = (i*7) >> 1;
+            now = alpha(fixed, target, a > 255 ? 255 : a);
+            ShiftInColor(now);
+            LEDSTRIP_START = 0;
+            vTaskDelay(5);
+        }
+    }
+done:
+    soft_start = 255;
+}
+
+void LedStrip :: ClearColors(void)
+{
+    LEDSTRIP_MAP_ENABLE = 0;
+    for(int i=0;i<84*3;i++) {
+        LEDSTRIP_DATA[i] = 0;
+    }
 }

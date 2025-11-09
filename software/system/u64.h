@@ -34,6 +34,15 @@
 #define U64II_HW_I2C_BASE (U2P_IO_BASE + 0x0700)
 #define U64II_BLINGBOARD_KEYB (U2P_IO_BASE + 0x0800)
 #define U64II_BLINGBOARD_LEDS (U2P_IO_BASE + 0x0900)
+
+#define BLING_RX_DATA  (*(volatile uint8_t *)(U64II_BLINGBOARD_KEYB + 0))
+#define BLING_RX_GET   (*(volatile uint8_t *)(U64II_BLINGBOARD_KEYB + 1))
+#define BLING_RX_FLAGS (*(volatile uint8_t *)(U64II_BLINGBOARD_KEYB + 2))
+#define BLING_RX_IRQEN (*(volatile uint8_t *)(U64II_BLINGBOARD_KEYB + 3))
+
+//#define BLINGBOARD_INSTALLED (BLING_RX_FLAGS & 0x04)
+#define BLINGBOARD_INSTALLED (1)
+
 // end U64-II
 
 

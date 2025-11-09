@@ -27,17 +27,21 @@
 #define LED_INTENSITY 0xFE
 #define LED_START     0xFF
 
+typedef struct { uint8_t r, g, b; } RGB;
+
 class LedStrip : public ConfigurableObject
 {
     volatile uint8_t mode, intensity, sidsel, pattern;
-    volatile uint8_t hue, tint;
+    volatile uint8_t hue, tint, offset, soft_start;;
     volatile uint8_t length, protocol;
     
-    static void task(void *);
     static int hot_effectuate(ConfigItem *item);
+    static void task(void *);
+    void run(void);
     void setup_config_menu(void);
     void update_menu(void);
-    
+    void play_boot_pattern(void);
+
     void MapDirect(void);
     void MapSingleColor(void);
     void MapLeftToRight(void);
@@ -45,7 +49,8 @@ class LedStrip : public ConfigurableObject
     void MapFromCenter(void);
     void MapToCenter(void);
     void MapSerpentine(void);
-
+    void ClearColors(void);
+    void ShiftInColor(RGB &color);
 public:
     LedStrip();
     void effectuate_settings(void);

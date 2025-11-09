@@ -44,7 +44,7 @@ class BlingBoard : public ConfigurableObject
     void setup_config_menu(void);
     void play_boot_pattern(void);
     void update_menu(void);
-    
+
     void MapDirect(void);
     void MapSingleColor(void);
     void MapLeftToRight(void);
