@@ -145,6 +145,7 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_VIC_TEST          0xA9
 #define CFG_HDMI_TX_SWING     0xAB
 #define CFG_HDMI_RESOLUTION   0xAC
+#define CFG_MODEL             0xAD
 
 uint8_t C64_EMUSID1_BASE_BAK;
 uint8_t C64_EMUSID2_BASE_BAK;
@@ -223,7 +224,7 @@ const char *scan_modes[] = {
 
 const char *stereo_addr[] = { "Off", "A5", "A6", "A7", "A8", "A9" };
 const char *sid_split[] = { "Off", "1/2 (A5)", "1/2 (A6)", "1/2 (A7)", "1/2 (A8)", "1/4 (A5,A6)", "1/4 (A5,A8)", "1/4 (A7,A8)" };
-
+static const char *models[] = { "BASIC Beige", "Starlight Edition", "Founders Edition" };
 static const char *iec_modes[] = { "All Connected", "C64U <-> Internal", "Ext. <-> Int.", "C64U <-> External" };
 static const char *joyswaps[] = { "Normal", "Swapped", "WASD Port 2", "WASD Port 1", "WASD P2 No KB", "WASD P1 No KB" };
 static const char *en_dis5[] = { "Disabled", "Enabled", "Transp. Border" };
@@ -288,6 +289,7 @@ dc 0c 11 00 00 9e 01 1d  00 72 51 d0 1e 20 6e 28
 */
 
 struct t_cfg_definition u64_cfg[] = {
+    { CFG_MODEL,                CFG_TYPE_ENUM, "C64U Model",                   "%s", models,       0,  2, 0 },
     { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  5, 0 },
     { CFG_HDMI_RESOLUTION,      CFG_TYPE_ENUM, "HDMI Scan Resolution",         "%s", scan_modes,   0,  5, 0 },
     { CFG_HDMI_TX_SWING,        CFG_TYPE_VALUE, "HDMI Tx Swing",               "%d", NULL,         0, 15, 8 },
@@ -833,6 +835,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 		sidDevice[0] = NULL;
         sidDevice[1] = NULL;
 
+        cfg->disable(CFG_MODEL);
         cfg->set_change_hook(CFG_SCAN_MODE_TEST, U64Config::setScanMode);
         cfg->set_change_hook(CFG_COLOR_CLOCK_ADJ, U64Config::setPllOffset);
         cfg->set_change_hook(CFG_HDMI_TX_SWING, U64Config::setScanMode);
@@ -870,6 +873,15 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
                 break;
             case 0x0E: // ctrl-n
                 cfg->set_value(CFG_SYSTEM_MODE, 1);
+                break;
+            case 0x02: // ctrl-b
+                cfg->set_value(CFG_MODEL, 0);
+                break;
+            case 0x13: // ctrl-s
+                cfg->set_value(CFG_MODEL, 1);
+                break;
+            case 0x06: // ctrl-f
+                cfg->set_value(CFG_MODEL, 2);
                 break;
             default:
                 break;
