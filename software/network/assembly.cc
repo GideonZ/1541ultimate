@@ -10,6 +10,12 @@
 #define URL_ENTRIES   "/leet/search/entries"
 #define URL_DOWNLOAD  "/leet/search/bin"
 
+#if COMMODORE
+#define CLIENTID "Commodore"
+#else
+#define CLIENTID "Ultimate"
+#endif
+
 Assembly assembly;
 
 void url_encode(const char *src, mstring &dest)
@@ -147,7 +153,7 @@ JSON *Assembly :: get_presets(void)
         "Accept-encoding: identity\r\n"
         "Host: " HOSTNAME "\r\n"
         "User-Agent: Assembly Query\r\n"
-        "Client-Id: Ultimate\r\n"
+        "Client-Id: " CLIENTID "\r\n"
         "Connection: close\r\n"
         "\r\n";
 
@@ -177,7 +183,7 @@ JSON *Assembly :: send_query(const char *query)
         "Accept-encoding: identity\r\n"
         "Host: " HOSTNAME "\r\n"
         "User-Agent: Assembly Query\r\n"
-        "Client-Id: Ultimate\r\n"
+        "Client-Id: " CLIENTID "\r\n"
         "Connection: close\r\n"
         "\r\n";
 
@@ -229,7 +235,7 @@ JSON *Assembly :: request_entries(const char *id, int cat)
         "Accept-encoding: identity\r\n"
         "Host: " HOSTNAME "\r\n"
         "User-Agent: Assembly Query\r\n"
-        "Client-Id: Ultimate\r\n"
+        "Client-Id: " CLIENTID "\r\n"
         "Connection: close\r\n"
         "\r\n";
 
@@ -278,7 +284,7 @@ void Assembly :: request_binary(const char *path, const char *filename)
         "Accept-encoding: identity\r\n"
         "Host: " HOSTNAME "\r\n"
         "User-Agent: Assembly Query\r\n"
-        "Client-Id: Ultimate\r\n"
+        "Client-Id: " CLIENTID "\r\n"
         "Connection: close\r\n"
         "\r\n";
 
