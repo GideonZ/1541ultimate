@@ -1027,6 +1027,10 @@ void U64Config :: effectuate_settings()
         // Now configure the HDMI plls based on the final scan resolution
         C64_VIDEOFORMAT = ct->mode_bits | format;
         SetVideoMode1080p(systemMode, hdmiMode);
+        DetermineOverlaySettings(systemMode, hdmiMode);
+        if (overlay) {
+            overlay->update_settings(overlaySettings);
+        }
         ResetHdmiPll();
         SetResampleFilter(systemMode);
     } else {
@@ -2458,5 +2462,40 @@ void U64Config :: setup_config_menu(void)
     grp = ConfigGroupCollection :: getGroup("SID Player Behavior", SORT_ORDER_SIDPLAY);
     grp->append(cfg->find_item(CFG_PLAYER_AUTOCONFIG));
     grp->append(cfg->find_item(CFG_ALLOW_EMUSID));
+}
+
+void U64Config :: DetermineOverlaySettings(t_video_mode mode, t_hdmi_mode hdmimode)
+{
+    switch(hdmimode) {
+    case e_480p_576p:
+        switch(mode) {
+        case e_PAL_50:
+        case e_NTSC_50:
+        case e_NTSC_50_lock:
+            overlaySettings = { 40, 25, 386, 307, 8, OVERLAY_CHARHEIGHT_9 };
+            break;
+        default: // 60 Hz
+            overlaySettings = { 40, 25, 300, 235, 8, OVERLAY_CHARHEIGHT_9 };
+            break;
+        }
+        break;
+    case e_1280x720:
+        overlaySettings = { 40, 45, 958, 0, 8, OVERLAY_CHARHEIGHT_16 };
+        break;
+    case e_1920x1080:
+        overlaySettings = { 40, 45, 1438, 0, 12, OVERLAY_CHARHEIGHT_24 };
+        break;
+    case e_800x600:
+        overlaySettings = { 40, 25, 450, 355, 8, OVERLAY_CHARHEIGHT_9 };
+        break;
+    case e_1024x768:
+        overlaySettings = { 40, 25, 674, 288, 8, OVERLAY_CHARHEIGHT_16 };
+        break;
+    case e_1280x1024:
+        overlaySettings = { 40, 25, 745, 300, 12, OVERLAY_CHARHEIGHT_24 };
+        break;
+    default:
+        break;
+    }
 }
 

@@ -16,6 +16,7 @@
 #include "sid_device.h"
 #include "u64.h"
 #include "filetype_vpl.h"
+#include "overlay.h"
 
 #define DATA_DIRECTORY "/flash/data"
 
@@ -99,6 +100,7 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
     uint8_t edid[1024];
     int edid_size;
     bool hdmiMonitor;
+    overlay_settings_t overlaySettings;
 
     uint8_t GetSidType(int slot);
     void SetSidType(int slot, uint8_t sidType);
@@ -119,6 +121,8 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
     bool read_edid();
     bool IsMonitorHDMI();
     void configure_hdmi_output();
+    void DetermineOverlaySettings(t_video_mode mode, t_hdmi_mode hdmimode);
+
     SidDevice *getDevice(int index) { return sidDevice[index]; }
 public:
     U64Config();
@@ -160,6 +164,7 @@ public:
     void access_socket_post(int socket);
     void clear_ram(void);
     void setup_config_menu();
+    void getOverlaySettings(overlay_settings_t &settings) { settings = this->overlaySettings; }
 };
 
 extern uint8_t C64_EMUSID1_BASE_BAK;

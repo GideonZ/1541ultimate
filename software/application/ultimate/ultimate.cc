@@ -36,6 +36,9 @@
 #include "product.h"
 #include "commodore_menu.h"
 
+#if U64
+    #include "u64_config.h"
+#endif
 bool connectedToU64 = false;
 
 static TreeBrowser *root_tree_browser;
@@ -109,11 +112,14 @@ extern "C" void ultimate_main(void *a)
     UserInterface *overlayUserInterface = NULL;
 
 #if U64 == 2
-    overlay = new Overlay(false, 12, U64II_OVERLAY_BASE);
+    overlay_settings_t overlay_default;
+    u64_configurator->getOverlaySettings(overlay_default);
+    overlay = new Overlay(false, 12, U64II_OVERLAY_BASE, overlay_default);
     Keyboard_C64 *kb = new Keyboard_C64(overlay, &U64II_KEYB_ROW, &U64II_KEYB_COL, &U64II_KEYB_JOY);
     overlay->setKeyboard(kb);
 #elif U64 == 1
-    overlay = new Overlay(false, 11, U64_OVERLAY_BASE);
+    overlay_settings_t overlay_default = { 40, 25, 366, 274,  8, OVERLAY_CHARHEIGHT_9 };
+    overlay = new Overlay(false, 11, U64_OVERLAY_BASE, overlay_default);
     Keyboard_C64 *kb = new Keyboard_C64(overlay, C64_PLD_PORTB, C64_PLD_PORTA, C64_PLD_PORTA);
     overlay->setKeyboard(kb);
 #endif

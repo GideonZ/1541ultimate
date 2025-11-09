@@ -106,7 +106,7 @@ begin
                                 char_y <= (others => '0');
                                 remaining_lines <= remaining_lines - 1;
                             -- count 0, 1, 2, 4, 5, 6, 8, 9 ... for char_heights of at least 16 (use other ROM)
-                            elsif char_y(1 downto 0) = "10" and control.char_height(4) = '1' then 
+                            elsif char_y(1 downto 0) = "10" and control.big_font = '1' then 
                                 char_y <= char_y + 2;
                             else                        
                                 char_y <= char_y + 1;
@@ -129,7 +129,7 @@ begin
                 -- pixel output
                 pixel_active <= active_d2;
                 if active_d2='1' then
-                    if control.char_height(4) = '1' then
+                    if control.big_font = '1' then
                         if char_y(1 downto 0) = "00" then
                             v_char_data := char_data_12(11 downto 0);
                         elsif char_y(1 downto 0) = "01" then

@@ -82,7 +82,7 @@ static const char *navstyles[] = { "Quick Search", "WASD Cursors" };
 
 struct t_cfg_definition user_if_config[] = {
 #if U64
-    { CFG_USERIF_ITYPE,      CFG_TYPE_ENUM,   "Interface Type",       "%s", itype,   0,  0, 0 },
+    { CFG_USERIF_ITYPE,      CFG_TYPE_ENUM,   "Interface Type",       "%s", itype,   0,  1, 0 },
 #endif
 #if COMMODORE && !RECOVERYAPP
     { CFG_USERIF_NAVIGATION, CFG_TYPE_ENUM,   "Navigation Style",     "%s", navstyles, 0,  1, 1 },

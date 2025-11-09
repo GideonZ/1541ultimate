@@ -145,14 +145,16 @@ begin
     process(pix_clock)
     begin
         if rising_edge(pix_clock) then
-            char_data_12 <= c_font(to_integer(char_addr_12));
+            if pix_enable = '1' then
+                char_data_12 <= c_font(to_integer(char_addr_12));
+            end if;
         end if;
     end process;
 
     i_rom: entity work.char_generator_rom
     port map (
         clock       => pix_clock,
-        enable      => '1',
+        enable      => pix_enable,
         address     => char_addr_8,
         data        => char_data_8 );
 
@@ -163,6 +165,7 @@ begin
         g_storage               => "block" )
     port map (
         a_clock                 => pix_clock,
+        a_en                    => pix_enable,
         a_address               => screen_addr,
         a_rdata                 => screen_Data,
 
@@ -178,6 +181,7 @@ begin
             g_storage               => "block" )
         port map (
             a_clock                 => pix_clock,
+            a_en                    => pix_enable,
             a_address               => screen_addr,
             a_rdata                 => color_data,
     

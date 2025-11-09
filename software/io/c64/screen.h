@@ -101,7 +101,7 @@ protected:
     bool allow_scroll;
     char *backup_chars;
     char *backup_color;
-    int backup_x, backup_y;
+    int backup_x, backup_y, backup_size;
     void output_raw(char c);
 public:
     Screen_MemMappedCharMatrix(char *, char *, int, int);
@@ -109,6 +109,7 @@ public:
 
     void backup(void);
     void restore(void);
+    void update_size(int sx, int sy);
 
     // functions called directly, or from a window
     void  cursor_visible(int a);

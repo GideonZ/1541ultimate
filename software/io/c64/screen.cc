@@ -37,28 +37,40 @@ Screen_MemMappedCharMatrix :: Screen_MemMappedCharMatrix(char *b, char *c, int s
 
     backup_chars = 0;
     backup_color = 0;
-    backup_x = backup_y = 0;
+    backup_x = backup_y = backup_size = 0;
+}
+
+void Screen_MemMappedCharMatrix :: update_size(int sx, int sy)
+{
+    size_x = sx;
+    size_y = sy;
 }
 
 void Screen_MemMappedCharMatrix :: backup(void)
 {
-	int size = size_x * size_y;
-	backup_chars = new char[size];
-	backup_color = new char[size];
+    if (backup_size) {
+        restore();
+    }
+    backup_size = size_x * size_y;
+	backup_chars = new char[backup_size];
+	backup_color = new char[backup_size];
 	backup_x = cursor_x;
 	backup_y = cursor_y;
-	memcpy(backup_chars, char_base, size);
-	memcpy(backup_color, color_base, size);
+	memcpy(backup_chars, char_base, backup_size);
+	memcpy(backup_color, color_base, backup_size);
 }
 
 void Screen_MemMappedCharMatrix :: restore(void)
 {
-	int size = size_x * size_y;
-	memcpy(char_base, backup_chars, size);
-	memcpy(color_base, backup_color, size);
+    if(!backup_size) {
+        return;
+    }
+	memcpy(char_base, backup_chars, backup_size);
+	memcpy(color_base, backup_color, backup_size);
 	move_cursor(backup_x, backup_y);
 	delete[] backup_chars;
 	delete[] backup_color;
+    backup_size = 0;
 }
 
 void  Screen_MemMappedCharMatrix :: cursor_visible(int a) {
