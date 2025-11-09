@@ -126,7 +126,7 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
     //cfg->hide();
     add_roms_to_cfg_group();
 
-    sprintf(buffer, "Drive %c", drive_letter);
+    sprintf(buffer, "Built-in Drive %c", drive_letter);
     taskItemCategory = TasksCollection :: getCategory(buffer, SORT_ORDER_DRIVES + drive_letter - 'A');
 
     if (!multi_mode) {

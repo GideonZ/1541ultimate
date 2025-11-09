@@ -51,7 +51,7 @@ C64_Subsys::C64_Subsys(C64 *machine)  : SubSystem(SUBSYSID_C64)
 	fm = FileManager :: getFileManager();
 	taskHandle = 0;
 
-	taskCategory = TasksCollection :: getCategory("C64 Machine", SORT_ORDER_C64);
+	taskCategory = TasksCollection :: getCategory("Power & Reset", SORT_ORDER_C64);
 }
 
 C64_Subsys::~C64_Subsys() {

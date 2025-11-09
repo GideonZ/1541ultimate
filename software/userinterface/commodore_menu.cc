@@ -89,8 +89,8 @@ CommodoreMenu :: CommodoreMenu(UserInterface *ui) : ContextMenu(ui, NULL, 0, 0, 
     appendAction(new Action("MODEMS", S_cfg_page, e_modem));
     appendAction(new Action("PRINTERS", S_cfg_page, e_printer));
     appendAction(new Action("USER INTERFACE", S_cfg_page, e_user_interface));
-    appendAction(new Action("DISK DRIVE A OPTIONS", S_cfg_page, e_drive_a));
-    appendAction(new Action("DISK DRIVE B OPTIONS", S_cfg_page, e_drive_b));
+    appendAction(new Action("BUILT-IN DRIVE A OPTIONS", S_cfg_page, e_drive_a));
+    appendAction(new Action("BUILT-IN DRIVE B OPTIONS", S_cfg_page, e_drive_b));
     //appendAction(new Action("ADVANCED SETTINGS", S_advanced, 0));
     appendAction(new Action("SYSTEM INFORMATION", S_sysinfo, 0));
 

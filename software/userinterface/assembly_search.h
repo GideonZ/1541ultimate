@@ -442,7 +442,7 @@ public:
     }
 
     void create_task_items(void) {
-        taskItemCategory->append(new Action("New Search", S_OpenSearch, 0, 0));
+        // taskItemCategory->append(new Action("New Search", S_OpenSearch, 0, 0));
     }
 };
 
