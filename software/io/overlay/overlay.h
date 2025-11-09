@@ -37,7 +37,7 @@ class Overlay : public GenericHost
     volatile t_chargen_registers *overlay_regs;
     char *charmap, *colormap;
     Keyboard *keyb;
-    Screen *screen;
+    Screen_MemMappedCharMatrix *screen;
     bool enabled;
     bool buttonPushSeen;
     int activeX;
@@ -54,10 +54,11 @@ public:
         keyb = NULL;
         enabled = active;
         buttonPushSeen = false;
-        
+        screen = NULL;
+
         update_settings(initial_settings);
         screen = new Screen_MemMappedCharMatrix(charmap, colormap, activeX, activeY);
-
+        screen->update_size(activeX, activeY);
         if (enabled) {
             take_ownership(0);
         } else {
@@ -161,7 +162,9 @@ public:
         overlay_regs->POINTER_HI       = 0;
         overlay_regs->POINTER_LO       = 0;
         overlay_regs->PERFORM_SYNC     = 0;
-        
+        if(screen) {
+            screen->update_size(activeX, activeY);
+        }
     }
 };
 

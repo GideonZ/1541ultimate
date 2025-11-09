@@ -2493,19 +2493,19 @@ void U64Config :: DetermineOverlaySettings(t_video_mode mode, t_hdmi_mode hdmimo
         }
         break;
     case e_1280x720:
-        overlaySettings = { 40, 45, 958, 0, 8, OVERLAY_CHARHEIGHT_16 };
+        overlaySettings = { 40, 25, 958, 160, 8, OVERLAY_CHARHEIGHT_16 };
         break;
     case e_1920x1080:
-        overlaySettings = { 40, 45, 1438, 0, 12, OVERLAY_CHARHEIGHT_24 };
+        overlaySettings = { 40, 25, 1438, 240, 12, OVERLAY_CHARHEIGHT_24 };
         break;
     case e_800x600:
         overlaySettings = { 40, 25, 450, 355, 8, OVERLAY_CHARHEIGHT_9 };
         break;
     case e_1024x768:
-        overlaySettings = { 40, 25, 674, 288, 8, OVERLAY_CHARHEIGHT_16 };
+        overlaySettings = { 40, 25, 674, 325, 8, OVERLAY_CHARHEIGHT_16 };
         break;
     case e_1280x1024:
-        overlaySettings = { 40, 25, 745, 300, 12, OVERLAY_CHARHEIGHT_24 };
+        overlaySettings = { 40, 25, 745, 330, 12, OVERLAY_CHARHEIGHT_24 };
         break;
     default:
         break;
