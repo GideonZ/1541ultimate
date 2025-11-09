@@ -258,8 +258,11 @@ public:
                 }
             }
             children.append(new BrowsableStatic(""));
-            children.append(new BrowsableStatic(""));
+            //children.append(new BrowsableStatic(""));
             children.append(new BrowsableQueryField("$", NULL));
+            children.append(new BrowsableStatic(""));
+            children.append(new BrowsableStatic("You agree you have a necessary license"));
+            children.append(new BrowsableStatic("or rights to download any software."));
         }
         return &children;
     }
