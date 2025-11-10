@@ -767,7 +767,7 @@ int BlingBoard :: hot_effectuate(ConfigItem *item)
     if(item->definition->id == CFG_LED_MODE) {
         bb->ClearColors();
     }
-
+    LEDSTRIP_MAP_ENABLE = 2;
     return 1;
 }
 
