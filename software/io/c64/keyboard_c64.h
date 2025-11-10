@@ -23,7 +23,7 @@ class Keyboard_C64 : public Keyboard
         
     int  delay_count;
 
-    uint8_t key_buffer[KEY_BUFFER_SIZE];
+    int key_buffer[KEY_BUFFER_SIZE];
     int  key_head;
     int  key_tail;
 public:

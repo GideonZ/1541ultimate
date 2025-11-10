@@ -464,7 +464,7 @@ int TreeBrowser :: handle_key(int c)
             if ((c >= '!') && (c < 0x80)) {
                 seek_char(c);
             } else {
-                printf("Unhandled context key: %b\n", c);
+                printf("Unhandled browser key: %03x\n", c);
             }
     }    
     return ret;

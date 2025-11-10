@@ -36,7 +36,7 @@ public:
         static bool done = false; // do it only once
         // nasty
         if (!done) {
-            TaskCategory *cat = TasksCollection :: getCategory("Return to Main Menu", -1);
+            TaskCategory *cat = TasksCollection :: getCategory("Return to Main Menu", 9999);
             cat->append(new Action("Return", S_SendMenuKey, 0, 0));
             done = true;
         }

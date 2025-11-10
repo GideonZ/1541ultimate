@@ -270,20 +270,18 @@ int Keyboard_C64 :: getch(void)
     if(key_head == key_tail) {
         return system_usb_keyboard.getch();
     }
-    uint8_t key = key_buffer[key_tail];
+    int key = key_buffer[key_tail];
     key_tail = (key_tail + 1) % KEY_BUFFER_SIZE;
 
-    return (int)key;
+    return key;
 }
 
 void Keyboard_C64 :: push_head(int c)
 {
-    uint8_t uc = (uint8_t)c;
-
     // For now, we only support push tail, alas
     int next_head = (key_head + 1) % KEY_BUFFER_SIZE;
     if(next_head != key_tail) {
-        key_buffer[key_head] = uc;
+        key_buffer[key_head] = c;
         key_head = next_head;
     }
 }

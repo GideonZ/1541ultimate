@@ -267,6 +267,7 @@ int ContextMenu :: handle_key(int c)
         case KEY_LEFT:  // left
         case KEY_BREAK: // runstop
         case KEY_BACK:  // backspace
+        case KEY_MENU:  // injected
         case KEY_ESCAPE:
         case KEY_F8:    // exit
         	ret = when_done;
