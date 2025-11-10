@@ -290,7 +290,7 @@ dc 0c 11 00 00 9e 01 1d  00 72 51 d0 1e 20 6e 28
 */
 
 struct t_cfg_definition u64_cfg[] = {
-    { CFG_MODEL,                CFG_TYPE_ENUM, "C64U Model",                   "%s", models,       0,  2, 0 },
+    { CFG_MODEL,                CFG_TYPE_ENUM, "C64U Model",                   "%s", models,       0,  2, 1 },
     { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  5, 0 },
     { CFG_HDMI_RESOLUTION,      CFG_TYPE_ENUM, "HDMI Scan Resolution",         "%s", scan_modes,   0,  5, 0 },
     { CFG_HDMI_TX_SWING,        CFG_TYPE_VALUE, "HDMI Tx Swing",               "%d", NULL,         0, 15, 8 },
