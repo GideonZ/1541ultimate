@@ -154,7 +154,8 @@ void Keyboard_C64 :: scan(void)
         return;
 
 #if U64 == 2
-    MATRIX_WASD_TO_JOY = 0;
+    MATRIX_WASD_TO_JOY = 0; // Forces WASD crap to be off
+    BLING_RX_FLAGS = 0x01; // disable shift lock in bling board
 #endif
 
     *row_register = 0xFF;
@@ -206,6 +207,7 @@ void Keyboard_C64 :: scan(void)
             shift_prev = 0xFF;
 #if U64 == 2
     MATRIX_WASD_TO_JOY = wasd_to_joy;
+    BLING_RX_FLAGS = 0x00; // reenable shift lock
 #endif
             return;
         }
@@ -213,16 +215,10 @@ void Keyboard_C64 :: scan(void)
     
 #if U64 == 2
     MATRIX_WASD_TO_JOY = wasd_to_joy;
+    BLING_RX_FLAGS = 0x00; // reenable shift lock
 #endif
     // there was a key pressed (or the joystick is used)
     // determine which map to use
-/*
-    if(shift_flag) { // we now only have two maps, so put all modifiers to shift
-        map = keymap_shifted;
-    } else {
-        map = keymap_normal;
-    }
-*/
     map = keymaps[shift_flag & 0x07];
     key = map[mtrx];
 
