@@ -294,7 +294,7 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_HDMI_RESOLUTION,      CFG_TYPE_ENUM, "HDMI Scan Resolution",         "%s", scan_modes,   0,  5, 0 },
     { CFG_HDMI_TX_SWING,        CFG_TYPE_VALUE, "HDMI Tx Swing",               "%d", NULL,         0, 15, 8 },
 #if U64 == 2
-    { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  5, 0 },
+    { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  3, 0 },
 #else
     { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  1, 0 },
 #endif
@@ -2459,6 +2459,10 @@ void U64Config :: setup_config_menu(void)
     grp = ConfigGroupCollection :: getGroup("Joystick Settings", SORT_ORDER_CFG_JOYSTICK);
     grp->append(cfg->find_item(CFG_JOYSWAP)->set_item_altname("Joystick Input"));
     grp->append(sidaddressing.cfg->find_item(CFG_PADDLE_EN));
+    grp->append(ConfigItem :: separator());
+    grp->append(ConfigItem :: heading("Note: When WASD Joystick emulation"));
+    grp->append(ConfigItem :: heading("is enabled, hold [CTRL] to type the"));
+    grp->append(ConfigItem :: heading("W, A, S, D and RETURN characters."));
 
     grp = ConfigGroupCollection :: getGroup("Turbo Settings", SORT_ORDER_CFG_TURBO);
     grp->append(cfg->find_item(CFG_SPEED_REGS));
