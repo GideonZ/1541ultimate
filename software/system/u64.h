@@ -40,8 +40,8 @@
 #define BLING_RX_FLAGS (*(volatile uint8_t *)(U64II_BLINGBOARD_KEYB + 2))
 #define BLING_RX_IRQEN (*(volatile uint8_t *)(U64II_BLINGBOARD_KEYB + 3))
 
-// #define BLINGBOARD_INSTALLED (BLING_RX_FLAGS & 0x04)
-#define BLINGBOARD_INSTALLED (1)
+#define BLINGBOARD_INSTALLED (BLING_RX_FLAGS & 0x04)
+// #define BLINGBOARD_INSTALLED (1)
 
 // end U64-II
 
