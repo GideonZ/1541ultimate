@@ -43,7 +43,7 @@ class LedStrip : public ConfigurableObject
 {
     volatile led_mode_t mode;
     volatile uint8_t intensity, sidsel, pattern;
-    volatile uint8_t hue, tint, offset, soft_start;;
+    volatile uint8_t hue, tint, offset, soft_start;
     volatile uint8_t length, protocol;
     
     int model;

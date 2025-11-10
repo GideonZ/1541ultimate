@@ -141,6 +141,7 @@ LedStrip :: LedStrip()
     cfg->set_change_hook(CFG_LED_SIDSELECT, LedStrip :: hot_effectuate);
     cfg->hide();
 
+    offset = 0;
     xTaskCreate( LedStrip :: task, "LedStrip Controller", configMINIMAL_STACK_SIZE, this, PRIO_REALTIME, NULL );
 }
 

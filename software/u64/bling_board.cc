@@ -160,6 +160,7 @@ BlingBoard :: BlingBoard()
     cfg->set_change_hook(CFG_LED_SIDSELECT,   BlingBoard :: hot_effectuate);
     cfg->hide();
 
+    offset = 0;
     xTaskCreate( BlingBoard :: task, "Bling Controller", configMINIMAL_STACK_SIZE, this, PRIO_REALTIME, NULL );
 }
 
