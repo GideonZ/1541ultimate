@@ -2458,7 +2458,6 @@ void U64Config :: setup_config_menu(void)
 
     grp = ConfigGroupCollection :: getGroup("Joystick Settings", SORT_ORDER_CFG_JOYSTICK);
     grp->append(cfg->find_item(CFG_JOYSWAP)->set_item_altname("Joystick Input"));
-    grp->append(cfg->find_item(CFG_JOYWASD)->set_item_altname("WASD Joystick Emulation"));
     grp->append(sidaddressing.cfg->find_item(CFG_PADDLE_EN));
 
     grp = ConfigGroupCollection :: getGroup("Turbo Settings", SORT_ORDER_CFG_TURBO);
