@@ -253,7 +253,7 @@ void WiFi :: RunModeThread()
                 result = wifi_get_voltages(&voltages);
                 printf("Result get voltages: %d %d %d %d %d %d %d %d\n", result, voltages.vbus, voltages.vaux, voltages.v50, voltages.v33, voltages.v18, voltages.v10, voltages.vusb);
                 if (voltages.vbus < 8500) {
-                    UserInterface :: postMessage("Low input voltage. Use USB-C PD");
+                    UserInterface :: postMessage("Low input voltage.");
                 }
 #endif
                 RefreshRoot();
