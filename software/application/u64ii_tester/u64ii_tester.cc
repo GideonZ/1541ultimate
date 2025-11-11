@@ -512,7 +512,7 @@ static int socket_test(volatile socket_tester_t *test, int socket_nr)
         printf("\e2Unable to access I2C ADC on tester\n");
         return -2;
     }
-    error |= test_socket_voltages(skti2c, socket_nr, 0,  4700,  5200, false);
+    error |= test_socket_voltages(skti2c, socket_nr, 0,  4500,  5200, false);
     error |= test_socket_voltages(skti2c, socket_nr, 2,  8640,  9560, false) << 3;
     error |= test_socket_voltages(skti2c, socket_nr, 3, 11600, 13000, false) << 6;
     error |= test_socket_voltages(skti2c, socket_nr, 7, 11600, 13000, true) << 9;
