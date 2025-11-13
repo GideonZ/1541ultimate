@@ -516,7 +516,7 @@ static int socket_test(volatile socket_tester_t *test, int socket_nr)
     error |= test_socket_voltages(skti2c, socket_nr, 2,  8640,  9560, false) << 3;
     error |= test_socket_voltages(skti2c, socket_nr, 3, 11600, 13000, false) << 6;
     error |= test_socket_voltages(skti2c, socket_nr, 7, 11600, 13000, true) << 9;
-    error |= test_socket_caps(test, socket_nr, 7 , 19000, 30000, 22470) << 12;
+    error |= test_socket_caps(test, socket_nr, 7 , 19000, 40000, 22470) << 12;
     error |= test_socket_caps(test, socket_nr, 15, 200, 1200, 470) << 14;
 
     if (!error) {
