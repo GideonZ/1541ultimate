@@ -70,7 +70,8 @@ void Screen_VT100::move_cursor(int x, int y)
 
 int  Screen_VT100::output(char c)
 {
-	const char mapping[33] = " lqkxmjlwktnumvjABa`EFGHIJKLMNOP";
+	//                         123456789abcdef0123456789abcdef
+    const char mapping[33] = " lqkxmjlwktsuvmjABo`DEFGHIJKLMNO";
 
 	if (c == 27) { // escape = set color
 		expect_color = true;
@@ -81,7 +82,7 @@ int  Screen_VT100::output(char c)
 		this->set_color(c);
 		return 0;
 	}
-	if ((c >= 32) || (c < 0) || (c == 13) || (c == 10) || (c == 9)) {
+	if (((c >= 32) && (c <= 127)) || (c < 0) || (c == 13) || (c == 10)) { //} || (c == 9)) {
 		if (draw_mode) {
 			stream->write("\e(B", 3);
 			draw_mode = false;
@@ -92,7 +93,7 @@ int  Screen_VT100::output(char c)
 			stream->write("\e(0", 3);
 			draw_mode = true;
 		}
-		stream->charout(mapping[c]);
+		stream->charout(mapping[c & 0x1F]);
 	}
 	return 1;
 }

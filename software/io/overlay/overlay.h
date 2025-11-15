@@ -16,13 +16,28 @@ extern "C" {
 // This is a temporary fix, until there is a better build-up
 // of objects. In fact the overlay unit should be a variant of
 // an output device, but at this point there is no such base.
+#define OVERLAY_CHARHEIGHT_8    0x08
+#define OVERLAY_CHARHEIGHT_9    0x09
+#define OVERLAY_CHARHEIGHT_16   0x90
+#define OVERLAY_CHARHEIGHT_17   0x91
+#define OVERLAY_CHARHEIGHT_24   0x5E
+
+typedef struct
+{
+    int activeX;
+    int activeY;
+    int X_on;
+    int Y_on;
+    uint8_t charWidth;
+    uint8_t charHeight;
+} overlay_settings_t;
 
 class Overlay : public GenericHost
 {
     volatile t_chargen_registers *overlay_regs;
     char *charmap, *colormap;
     Keyboard *keyb;
-    Screen *screen;
+    Screen_MemMappedCharMatrix *screen;
     bool enabled;
     bool buttonPushSeen;
     int activeX;
@@ -31,28 +46,19 @@ class Overlay : public GenericHost
     int Y_on; //346
 
 public:
-    Overlay(bool active, int addrbits, uint32_t base) {
+    Overlay(bool active, int addrbits, uint32_t base, overlay_settings_t &initial_settings)
+    {
         overlay_regs = (volatile t_chargen_registers *)base;
         charmap = (char *)(base + (1 << addrbits));
         colormap = (char *)(base + (2 << addrbits));
         keyb = NULL;
         enabled = active;
         buttonPushSeen = false;
-        
-        activeX = 40;
-#if U64 == 2
-        activeY = 45;
-        X_on = 1438; //1520;
-        Y_on = 0;
-#else
-        activeY = 25;
-        X_on = 366;
-        Y_on = 314-40; //346
-#endif    
+        screen = NULL;
 
-        initRegs();
+        update_settings(initial_settings);
         screen = new Screen_MemMappedCharMatrix(charmap, colormap, activeX, activeY);
-
+        screen->update_size(activeX, activeY);
         if (enabled) {
             take_ownership(0);
         } else {
@@ -137,23 +143,28 @@ public:
         keyb = kb;
     }
 
-    void initRegs(void) {
-#if U64 == 2
-        overlay_regs->CHAR_WIDTH       = 12;
-        overlay_regs->CHAR_HEIGHT      = 0x80 | 31;
-#else
-        overlay_regs->CHAR_WIDTH       = 8;
-        overlay_regs->CHAR_HEIGHT      = 9;
-#endif
+
+    void update_settings(overlay_settings_t &settings)
+    {
+        activeX = settings.activeX;
+        activeY = settings.activeY;
+        X_on    = settings.X_on;
+        Y_on    = settings.Y_on;
+
         overlay_regs->CHARS_PER_LINE   = activeX;
         overlay_regs->ACTIVE_LINES     = activeY;
         overlay_regs->X_ON_HI          = X_on >> 8;
         overlay_regs->X_ON_LO          = X_on & 0xFF;
         overlay_regs->Y_ON_HI          = Y_on >> 8;
         overlay_regs->Y_ON_LO          = Y_on & 0xFF;
+        overlay_regs->CHAR_WIDTH       = settings.charWidth;
+        overlay_regs->CHAR_HEIGHT      = settings.charHeight;
         overlay_regs->POINTER_HI       = 0;
         overlay_regs->POINTER_LO       = 0;
         overlay_regs->PERFORM_SYNC     = 0;
+        if(screen) {
+            screen->update_size(activeX, activeY);
+        }
     }
 };
 

@@ -218,7 +218,7 @@ void IecPrinter::create_task_items(void)
 *                                                                       *
 ************************************************************************/
 
-void IecPrinter::update_task_items(bool writablePath, Path *path)
+void IecPrinter::update_task_items(bool writablePath)
 {
     if (printer_enable) {
         myActions.turn_off->show();

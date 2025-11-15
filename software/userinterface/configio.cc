@@ -43,7 +43,7 @@ void ConfigIO :: create_task_items(void)
     dev->append(myActions.save_dbg);
 }
 
-void ConfigIO :: update_task_items(bool writablePath, Path *path)
+void ConfigIO :: update_task_items(bool writablePath)
 {
     if (writablePath) {
         myActions.savefile ->enable();

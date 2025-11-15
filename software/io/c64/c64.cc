@@ -52,7 +52,6 @@
 #include "modem.h"
 #endif
 
-bool allowUltimateDosDateSet = false;
 #ifndef RECOVERYAPP
 extern bool connectedToU64;
 #endif
@@ -114,7 +113,7 @@ struct t_cfg_definition c64_config[] = {
     { CFG_C64_PHI2_REC, CFG_TYPE_ENUM,   "PHI2 edge recovery",           "%s", en_dis,     0,  1, 0 },
 #endif
     { CFG_CMD_ENABLE,   CFG_TYPE_ENUM,   "Command Interface",            "%s", en_dis,     0,  1, 0 },
-    { CFG_CMD_ALLOW_WRITE, CFG_TYPE_ENUM,   "UltiDOS: Allow SetDate",    "%s", en_dis,     0,  1, 0 },
+//    { CFG_CMD_ALLOW_WRITE, CFG_TYPE_ENUM,   "UltiDOS: Allow SetDate",    "%s", en_dis,     0,  1, 0 },
 #if DEVELOPER > 0
     { CFG_C64_DO_SYNC,  CFG_TYPE_ENUM,   "Perform VIC sync at DMA RUN",  "%s", en_dis,     0,  1, 0 },
 #endif
@@ -131,11 +130,14 @@ C64::C64()
     flash = get_flash();
 
     register_store(0x43363420, "C64 and Cartridge Settings", c64_config);
+    cfg->set_alt_name("Cartridge and ROM Settings");
 
 #ifdef U64
     cfg->set_change_hook(CFG_C64_CART_PREF, C64::setCartPref);
     setCartPref(cfg->find_item(CFG_C64_CART_PREF));
 #endif
+
+    setup_config_menu();
 
     char_set = (uint8_t *) &_chars_bin_start;
     keyb = new Keyboard_C64(this, &CIA1_DPB, &CIA1_DPA, &CIA1_DPA);
@@ -315,8 +317,6 @@ void C64::set_emulation_flags(void)
         int choice = cfg->get_value(CFG_CMD_ENABLE);
         CMD_IF_SLOT_ENABLE = !!choice;
         CMD_IF_SLOT_BASE = 0x47; // $$DF1C
-        choice = cfg->get_value(CFG_CMD_ALLOW_WRITE);
-        allowUltimateDosDateSet = choice;
     }
 
 #if U64
@@ -1412,6 +1412,11 @@ void C64 :: list_kernals(ConfigItem *it, IndexedList<char *>& strings)
 
 void C64 :: list_basics(ConfigItem *it, IndexedList<char *>& strings)
 {
+    // Always return at least the empty string
+    char *empty = new char[1];
+    *empty = 0;
+    strings.append(empty);
+
 #ifndef NO_FILE_ACCESS
     Path p;
     p.cd(ROMS_DIRECTORY);
@@ -1436,6 +1441,11 @@ void C64 :: list_basics(ConfigItem *it, IndexedList<char *>& strings)
 
 void C64 :: list_chars(ConfigItem *it, IndexedList<char *>& strings)
 {
+    // Always return at least the empty string
+    char *empty = new char[1];
+    *empty = 0;
+    strings.append(empty);
+
 #ifndef NO_FILE_ACCESS
     Path p;
     p.cd(ROMS_DIRECTORY);
@@ -1538,4 +1548,20 @@ void C64 :: measure_timing(uint8_t *buffer)
     if (i_stopped_it) {
         resume();
     }
+}
+
+void C64 :: setup_config_menu(void)
+{
+    ConfigGroup *grp = ConfigGroupCollection :: getGroup("Memory Configuration", SORT_ORDER_CFG_MEM);
+    grp->append(cfg->find_item(CFG_C64_KERNFILE));
+    grp->append(cfg->find_item(CFG_C64_BASIFILE)->set_item_altname("BASIC ROM"));
+    grp->append(cfg->find_item(CFG_C64_CHARFILE)->set_item_altname("Character ROM"));
+    grp->append(cfg->find_item(CFG_C64_CART_CRT));
+    grp->append(ConfigItem :: separator());
+    grp->append(cfg->find_item(CFG_C64_REU_EN));
+    grp->append(cfg->find_item(CFG_C64_REU_SIZE)->set_item_altname("Size"));
+    grp->append(ConfigItem :: separator());
+    grp->append(cfg->find_item(CFG_CMD_ENABLE));
+    grp->append(cfg->find_item(CFG_C64_MAP_SAMP)->set_item_altname("Ultimate Audio"));
+    grp->append(ConfigItem :: separator());
 }

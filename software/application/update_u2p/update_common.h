@@ -201,7 +201,7 @@ static void setup(const char *title)
     }
     screen = host->getScreen();
 
-    user_interface = new UserInterface(title);
+    user_interface = new UserInterface(title, false);
     user_interface->init(host);
     host->take_ownership(user_interface);
     user_interface->appear();

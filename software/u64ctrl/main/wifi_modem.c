@@ -41,6 +41,7 @@ command_buf_context_t work_buffers;
 wifi_ap_record_t ap_info[DEFAULT_SCAN_LIST_SIZE];
 uint16_t ap_count = 0;
 uint16_t connected_g = 0;
+uint16_t disabled_g = 0;
 
 esp_netif_t *my_sta_netif = NULL;
 netif_input_fn default_input;
@@ -65,7 +66,7 @@ static err_t hacked_recv(struct pbuf *p, struct netif *inp)
     if ((memcmp(p->payload, inp->hwaddr, 6) == 0) || 
         (memcmp(p->payload, "\xff\xff\xff\xff\xff\xff", 6) == 0)) {
 
-        gpio_set_level(IO_ESP_LED, 0); // ON!
+        // gpio_set_level(IO_ESP_LED, 0); // ON!
 
         if (my_uart_get_buffer(UART_NUM_1, &reply, 100)) {
             rpc_rx_pkt *pkt = (rpc_rx_pkt *)reply->data;
@@ -146,6 +147,15 @@ static void send_event(uint8_t evcode)
         }
     } else {
         ESP_LOGW(TAG, "No buffer to send event.");
+    }
+}
+
+void wifi_send_connected_event(void)
+{
+    if(connected_g) {
+        send_event(EVENT_CONNECTED);
+    } else if(disabled_g) {
+        send_event(EVENT_DISABLED);
     }
 }
 
@@ -595,6 +605,22 @@ esp_err_t wifi_connect_to_last()
     return err;
 }
 
+esp_err_t enable_wifi_if_needed(ConnectState_t state)
+{
+    if (state == Disabled) {
+        ESP_LOGI(TAG, "Starting WiFi.");
+        esp_err_t err = esp_wifi_start();
+        if (err == ESP_OK) {
+            send_event(EVENT_DISCONNECTED);
+            disabled_g = 0;
+        } else {
+            ESP_LOGW(TAG, "Failed to start WiFi: %d", err);
+        }
+        return err;
+    }
+    return ESP_OK;
+}
+
 int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
 {
     ConnectEvent_t connect_event;
@@ -618,6 +644,7 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
             if (err == ESP_OK) {
                 send_event(EVENT_DISABLED);
                 *state = Disabled;
+                disabled_g = 1;
                 return 1;
             } else {
                 ESP_LOGW(TAG, "Failed to stop WiFi: %d", err);
@@ -630,6 +657,7 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
                 if (err == ESP_OK) {
                     send_event(EVENT_DISCONNECTED);
                     *state = LastAP;
+                    disabled_g = 0;
                     return 1;
                 } else {
                     ESP_LOGW(TAG, "Failed to start WiFi: %d", err);
@@ -640,21 +668,33 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
             break;
         case CMD_WIFI_SCAN:
             {
+                err = enable_wifi_if_needed(*state);
                 rpc_scan_resp *resp = (rpc_scan_resp *)buf->data;
-                resp->esp_err = wifi_scan(&resp->rec);
+                if (err == ESP_OK) {
+                    resp->esp_err = wifi_scan(&resp->rec);
+                } else {
+                    resp->esp_err = err;
+                    resp->rec.num_records = 0;
+                }
                 buf->size = sizeof(resp->hdr) + sizeof(resp->esp_err) + 2 + (resp->rec.num_records * sizeof(ultimate_ap_record_t));
                 my_uart_transmit_packet(UART_NUM_1, buf);
             }
             break;
         case CMD_WIFI_AUTOCONNECT:
-            *state = LastAP;
+            err = enable_wifi_if_needed(*state);
+            if (err == ESP_OK) {
+                *state = LastAP;
+            }
             return 1;
         case CMD_WIFI_CONNECT:
+            err = enable_wifi_if_needed(*state);
             {
                 last_connect = *cmd;
                 last_connect.list_index = -1;
                 rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
-                err = attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode);
+                if (err == ESP_OK) {
+                    err = attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode);
+                }
                 resp->esp_err = err;
                 my_uart_transmit_packet(UART_NUM_1, cmd->buf);
 

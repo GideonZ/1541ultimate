@@ -267,7 +267,7 @@ void DataStreamer :: create_task_items()
     dev->append(myActions.stopDbg);
 }
 
-void DataStreamer :: update_task_items(bool writablePath, Path *path)
+void DataStreamer :: update_task_items(bool writablePath)
 {
     myActions.startVic->setHidden(streams[0].enable != 0);
     myActions.stopVic->setHidden(streams[0].enable == 0);

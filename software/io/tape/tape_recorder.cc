@@ -115,7 +115,7 @@ void TapeRecorder :: create_task_items(void)
     cat->append(myActions.finish);
 }
 
-void TapeRecorder :: update_task_items(bool writablePath, Path *path)
+void TapeRecorder :: update_task_items(bool writablePath)
 {
     if (recording) {
         myActions.finish->show();

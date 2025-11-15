@@ -352,3 +352,48 @@ int I2C_Driver :: i2c_read_block(const uint8_t devaddr, const uint8_t regaddr, u
 	i2c_stop();
 	return 0;
 }
+
+int I2C_Driver :: i2c_read_block_ext(const uint8_t page, const uint8_t devaddr, const uint8_t regaddr, uint8_t *data, const int length)
+{
+    if(!length)
+        return 0;
+
+    i2c_start();
+    int res = i2c_send_byte(0x60);
+    if (res) {
+        printf("NACK on page address (%d)\n", res);
+        i2c_stop();
+        return -1;
+    }
+    res = i2c_send_byte(page);
+    if (res) {
+        printf("NACK on page byte (%d)\n", res);
+        i2c_stop();
+        return -1;
+    }
+    i2c_restart();
+    res = i2c_send_byte(devaddr);
+    if(res) {
+        printf("NACK on address %02x (%d)\n", devaddr, res);
+        i2c_stop();
+        return -1;
+    }
+    res = i2c_send_byte(regaddr);
+    if(res) {
+        printf("NACK on register address %02x (%d)\n", regaddr, res);
+        i2c_stop();
+        return -1;
+    }
+    i2c_restart();
+    res = i2c_send_byte(devaddr | 1);
+    if(res) {
+        printf("NACK on address %02x (%d)\n", devaddr | 1, res);
+        i2c_stop();
+        return -2;
+    }
+    for(int i=0;i<length;i++) {
+        *(data++) = i2c_receive_byte((i == length-1)? 0 : 1);
+    }
+    i2c_stop();
+    return 0;
+}

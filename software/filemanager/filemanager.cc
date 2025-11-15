@@ -792,6 +792,9 @@ FRESULT FileManager::fcopy(const char *path, const char *filename, const char *d
 
 FRESULT FileManager :: load_file(const char *path, const char *filename, uint8_t *mem, uint32_t maxlen, uint32_t *transferred)
 {
+    if (strlen(filename) == 0) {
+        return FR_NO_FILE;
+    }
     File *file = 0;
     FRESULT fres = fopen(path, filename, FA_READ, &file);
     uint32_t tr = 0;

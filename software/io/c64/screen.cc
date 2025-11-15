@@ -37,28 +37,40 @@ Screen_MemMappedCharMatrix :: Screen_MemMappedCharMatrix(char *b, char *c, int s
 
     backup_chars = 0;
     backup_color = 0;
-    backup_x = backup_y = 0;
+    backup_x = backup_y = backup_size = 0;
+}
+
+void Screen_MemMappedCharMatrix :: update_size(int sx, int sy)
+{
+    size_x = sx;
+    size_y = sy;
 }
 
 void Screen_MemMappedCharMatrix :: backup(void)
 {
-	int size = size_x * size_y;
-	backup_chars = new char[size];
-	backup_color = new char[size];
+    if (backup_size) {
+        restore();
+    }
+    backup_size = size_x * size_y;
+	backup_chars = new char[backup_size];
+	backup_color = new char[backup_size];
 	backup_x = cursor_x;
 	backup_y = cursor_y;
-	memcpy(backup_chars, char_base, size);
-	memcpy(backup_color, color_base, size);
+	memcpy(backup_chars, char_base, backup_size);
+	memcpy(backup_color, color_base, backup_size);
 }
 
 void Screen_MemMappedCharMatrix :: restore(void)
 {
-	int size = size_x * size_y;
-	memcpy(char_base, backup_chars, size);
-	memcpy(color_base, backup_color, size);
+    if(!backup_size) {
+        return;
+    }
+	memcpy(char_base, backup_chars, backup_size);
+	memcpy(color_base, backup_color, backup_size);
 	move_cursor(backup_x, backup_y);
 	delete[] backup_chars;
 	delete[] backup_color;
+    backup_size = 0;
 }
 
 void  Screen_MemMappedCharMatrix :: cursor_visible(int a) {
@@ -211,7 +223,7 @@ void Screen_MemMappedCharMatrix :: output_raw(char c)
             if(reverse)
                 char_base[pointer] = c | 0x80;
             else
-                char_base[pointer] = c;
+                char_base[pointer] = c & 0x7F;
 
             color_base[pointer] = (char)(color | background << 4);
             pointer ++;
@@ -268,6 +280,7 @@ void Screen_MemMappedCharMatrix :: clear() {
 	int size = get_size_x() * get_size_y();
 	memset(char_base, 32, size);
 	memset(color_base, 15, size);
+    move_cursor(0, 0);
 }
 
 /**
@@ -364,9 +377,10 @@ void Window :: repeat(char a, int len)
 }
 
 
-void Window :: output_line(const char *string)
+void Window :: output_line(const char *string, int indent)
 {
-	parent->output_fixed_length(string, offset_x, window_x);
+    parent->repeat(' ', indent);
+	parent->output_fixed_length(string, offset_x, window_x-indent);
 }
 
 void Window :: output_length(const char *string, int len)
@@ -377,20 +391,24 @@ void Window :: output_length(const char *string, int len)
 void Window :: draw_border(void)
 {
     parent->move_cursor(offset_x, offset_y);
-    parent->output(1);
-    parent->repeat(2, window_x-2);
-    parent->output(3);
+    parent->set_color(1);
+    parent->output(BORD_LOWER_RIGHT_CORNER);
+    parent->set_color(15);
+    parent->repeat(CHR_HORIZONTAL_LINE, window_x-2);
+    parent->output(BORD_LOWER_LEFT_CORNER);
     
     parent->move_cursor(offset_x, offset_y + window_y - 1);
-    parent->output(5);
-    parent->repeat(2, window_x-2);
-    parent->output(6);
+    parent->output(BORD_UPPER_RIGHT_CORNER);
+    parent->repeat(CHR_HORIZONTAL_LINE, window_x-2);
+    parent->set_color(12);
+    parent->output(BORD_UPPER_LEFT_CORNER);
 
+    parent->set_color(15);
     for(int i=1;i<window_y-1;i++) {
     	parent->move_cursor(offset_x, offset_y + i);
-    	parent->output(4);
+    	parent->output(CHR_VERTICAL_LINE);
     	parent->move_cursor(offset_x + window_x - 1, offset_y + i);
-    	parent->output(4);
+    	parent->output(CHR_VERTICAL_LINE);
     }
 
     offset_x ++;
@@ -418,9 +436,9 @@ void Window :: reset_border(void)
 void Window :: draw_border_horiz(void)
 {
     parent->move_cursor(offset_x, offset_y);
-    parent->repeat(2, window_x);
+    parent->repeat(CHR_HORIZONTAL_LINE, window_x);
     parent->move_cursor(offset_x, offset_y + window_y-1);
-    parent->repeat(2, window_x);
+    parent->repeat(CHR_HORIZONTAL_LINE, window_x);
     
     offset_y ++;
     window_y -=2;

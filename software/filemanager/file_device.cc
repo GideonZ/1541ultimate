@@ -118,5 +118,5 @@ void FileDevice :: get_display_string(char *buffer, int width)
     prt->ioctl(GET_SECTOR_COUNT, &length);
     size_to_string_sectors(length, sizebuf);
 */
-    sprintf(buffer, "%8s%#s \eE%s", get_name(), width-18, display_name, c_state_string[(int)state]);
+    sprintf(buffer, "%8s%#s \e\x0d%s", get_name(), width-18, display_name, c_state_string[(int)state]);
 }

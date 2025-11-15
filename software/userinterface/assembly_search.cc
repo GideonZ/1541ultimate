@@ -39,7 +39,6 @@ AssemblySearch :: AssemblySearch(UserInterface *ui, Browsable *root) : TreeBrows
     setCleanup();
     state = new AssemblySearchForm(root, this, 0);
     state->reload();
-    cd("/a64");
 }
 
 AssemblySearch :: ~AssemblySearch()
@@ -71,7 +70,8 @@ static const char *queryhelp =
         "CRSR LEFT:  Close Search\n"
         "\n"
 		"Quick type: Use the keyboard to type\n"
-		"            directly in current field.\n"
+		"            directly in current\n"
+        "            field.\n"
         "\n"
         "2. Query Result Screen:\n"
 		"CRSR UP/DN: Select title\n"
@@ -92,7 +92,13 @@ int AssemblySearch :: handle_key(int c)
         return MENU_CLOSE; // independent of level, it closes the search.
         // if we'd have this handled by the tree browser, it would cause a HIDE instead
     }
-    if (state->level >= 2) {
+    // For level 1 it's just like tree browser, with the exception of the return key / space
+    // This could also be handled by the tree browser, if we check for context menus and do 'into' when none exist.
+    if (((c == KEY_RETURN) || (c == KEY_SPACE)) && (state->level == 1)) {
+        state->into();
+        return 0;
+    }
+    if (state->level >= 1) {
         return TreeBrowser :: handle_key(c);
     }
     switch(c) {
@@ -105,16 +111,16 @@ int AssemblySearch :: handle_key(int c)
         case KEY_UP: // up
             state->up(1);
             break;
-        case KEY_F1: // F1 -> page up
         case KEY_PAGEUP:
             state->up(window->get_size_y()/2);
             break;
-        case KEY_F7: // F7 -> page down
         case KEY_PAGEDOWN:
             state->down(window->get_size_y()/2);
             break;
-        case KEY_F3: // F3 -> help
-            reset_quick_seek();
+        case KEY_TASKS:
+            ret = MENU_CLOSE; // do nothing in the non-commodore mode
+            break;
+        case KEY_HELP: 
             state->refresh = true;
             user_interface->run_editor(queryhelp, strlen(queryhelp));
             break;
@@ -156,6 +162,7 @@ int AssemblySearch :: handle_key(int c)
                 state->level_up();
             }
             break;
+
         default:
             if ((state->level == 0) && (
                 (c >= 'a' && c <= 'z') ||
@@ -223,7 +230,7 @@ void AssemblySearchForm :: send_query(void)
     printf("Query:\n%s\n", query.c_str());
 
     // Let the user know we are busy
-    browser->window->set_color(12);
+    browser->window->set_color(6);
     browser->window->set_background(0);
     browser->window->getScreen()->move_cursor(0, browser->window->getScreen()->get_size_y()-1);
     browser->window->getScreen()->output_fixed_length("Sending query...", 0, browser->window->getScreen()->get_size_x()-9);

@@ -8,11 +8,8 @@ struct Line
     int  length;
 };
 
-class UserInterface;
-
 class Editor : public UIObject
 {
-	UserInterface *user_interface;
 	void line_breakdown(const char *text_buffer, int buffer_size);
     void draw();
 public:

@@ -1,6 +1,31 @@
 #ifndef SCREEN_H
 #define SCREEN_H
 
+#define CHR_LOWER_RIGHT_CORNER  0x01
+#define CHR_HORIZONTAL_LINE     0x02
+#define CHR_LOWER_LEFT_CORNER   0x03
+#define CHR_VERTICAL_LINE       0x04
+#define CHR_UPPER_RIGHT_CORNER  0x05
+#define CHR_UPPER_LEFT_CORNER   0x06
+#define CHR_ROUNDED_LOWER_RIGHT 0x07
+#define CHR_COLUMN_BAR_TOP      0x08 // not usable!
+#define CHR_ROUNDED_LOWER_LEFT  0x09
+#define CHR_ROW_LINE_LEFT       0x0A // not usable!
+#define CHR_SOLID_BAR_LOWER_7   0x0B
+#define CHR_ROW_LINE_RIGHT      0x0C
+#define CHR_COLUMN_BAR_BOTTOM   0x0D // not usable!
+#define CHR_ROUNDED_UPPER_RIGHT 0x0E
+#define CHR_ROUNDED_UPPER_LEFT  0x0F
+#define CHR_ALPHA               0x10
+#define CHR_BETA                0x11
+#define CHR_SOLID_BAR_UPPER_7   0x12
+#define CHR_DIAMOND             0x13
+
+#define BORD_LOWER_RIGHT_CORNER  CHR_LOWER_RIGHT_CORNER  
+#define BORD_LOWER_LEFT_CORNER   CHR_LOWER_LEFT_CORNER   
+#define BORD_UPPER_RIGHT_CORNER  CHR_UPPER_RIGHT_CORNER  
+#define BORD_UPPER_LEFT_CORNER   CHR_UPPER_LEFT_CORNER   
+
 class Screen
 {
 public:
@@ -69,7 +94,7 @@ protected:
     bool allow_scroll;
     char *backup_chars;
     char *backup_color;
-    int backup_x, backup_y;
+    int backup_x, backup_y, backup_size;
     void output_raw(char c);
 public:
     Screen_MemMappedCharMatrix(char *, char *, int, int);
@@ -77,6 +102,7 @@ public:
 
     void backup(void);
     void restore(void);
+    void update_size(int sx, int sy);
 
     // functions called directly, or from a window
     void  cursor_visible(int a);
@@ -130,7 +156,7 @@ public:
     virtual void  move_cursor(int, int);
     virtual void  output(char);
     virtual void  output(const char *);
-    virtual void  output_line(const char *);
+    virtual void  output_line(const char *, int indent=0);
     virtual void  output_length(const char *, int);
     virtual void  repeat(char a, int len);
     virtual void  draw_border(void);

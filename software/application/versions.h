@@ -11,17 +11,28 @@
 // 8 = T
 // 9 = rounded corner lower left
 // A = |-
-// B = +
+// B = bar lower 7 lines
 // C = -|
-// D = rounded corner upper right
-// E = _|_
+// D = _|_
+// E = rounded corner upper right
 // F = rounded corner upper left
 // 10 = alpha
 // 11 = beta
-// 12 = test grid
+// 12 = bar upper 7 lines
 // 13 = diamond
+// 14 = logo1
+// 15 = logo2
+// 16 = logo3
+// 17 = logo4
+// 18 = logo5
+// 19 = logo6
+// 1A = ball
+// 1B = empty (escape!)
+// 1C = slant upper left
+// 1D = slant lower left
+// 1E = slant upper right
+// 1F = slant lower right
 
-// 18-1F commodore specifics (<-, ^, pound, and their reverse counterparts)
 
 // alpha = \020
 // beta  = \021
@@ -30,7 +41,7 @@
 #define RELEASE_TYPE_BETA   1
 #define RELEASE_TYPE_ALPHA  2
 
-#define APPL_VERSION_NUMBER "3.12a"
+#define APPL_VERSION_NUMBER "3.14"
 #define APPL_RELEASE_TYPE RELEASE_TYPE_NORMAL
 #define BOOT_VERSION "V3.2"
 #define FPGA_VERSION "FPGA U2 V116"

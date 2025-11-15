@@ -53,6 +53,11 @@ void WiFi :: RefreshRoot()
     FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");    
 }
 
+void WiFi :: RefreshAPs()
+{
+    FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/WiFi", "");    
+}
+
 void WiFi :: Enable()
 {
     esp32.StartApp(); 
@@ -174,7 +179,8 @@ void WiFi :: RunModeThread()
     BaseType_t suc = pdFALSE;
     command_buf_t *buf;
     rpc_header_t *hdr;
-    rpc_wifi_connect_req *conn_req;
+    // rpc_wifi_connect_req *conn_req;
+    event_pkt_connected *ev2;
     event_pkt_got_ip *ev;
     int result;
     state = eWifi_NotDetected;
@@ -247,7 +253,7 @@ void WiFi :: RunModeThread()
                 result = wifi_get_voltages(&voltages);
                 printf("Result get voltages: %d %d %d %d %d %d %d %d\n", result, voltages.vbus, voltages.vaux, voltages.v50, voltages.v33, voltages.v18, voltages.v10, voltages.vusb);
                 if (voltages.vbus < 8500) {
-                    UserInterface :: postMessage("Low input voltage. Use USB-C PD");
+                    UserInterface :: postMessage("Low input voltage.");
                 }
 #endif
                 RefreshRoot();
@@ -261,14 +267,14 @@ void WiFi :: RunModeThread()
             netstack->set_mac_address(my_mac);
             netstack->start(); // always starts in link down state
             state = eWifi_NotConnected;
-            if (wifi_is_connected(conn) == 0) {
-                if (conn) {
-                    wifi_modem_enable(true); // take control!
-                    uart->txDebug = false;
-                    netstack->link_up();
-                    state = eWifi_Connected;
-                }
-            }
+            wifi_is_connected(conn); // == 0) {
+            //     if (conn) {
+            //         wifi_modem_enable(true); // take control!
+            //         uart->txDebug = false;
+            //         netstack->link_up();
+            //         state = eWifi_Connected;
+            //     }
+            // }
             RefreshRoot();
             break;
 
@@ -277,6 +283,7 @@ void WiFi :: RunModeThread()
             wifi_scan(&wifi_aps);
             state = eWifi_NotConnected;
             RefreshRoot();
+            RefreshAPs();
             break;
 
         case eWifi_NotConnected:
@@ -303,7 +310,8 @@ void WiFi :: RunModeThread()
                 break;
 
             case EVENT_CONNECTED:
-                // conn_req = (rpc_wifi_connect_req *)buf->data;
+                ev2 = (event_pkt_connected *)buf->data;
+                memcpy(last_ap, ev2->ssid, 32);
                 uart->FreeBuffer(buf);
                 if (state == eWifi_Connected) { // already connected!
                     netstack->link_down();
@@ -397,6 +405,10 @@ void WiFi :: freeBuffer(command_buf_t *buf)
 void WiFi ::getAccessPointItems(Browsable *parent, IndexedList<Browsable *> &list)
 {
     ultimate_ap_records_t *aps = &wifi_aps;
+    if (aps->num_records == 0) {
+        list.append(new BrowsableStatic("Scanning..."));
+        return;
+    }
     ENTER_SAFE_SECTION;
     for (int i = 0; i < aps->num_records; i++) {
         list.append(new BrowsableWifiAP(parent, (char *)aps->aps[i].ssid, aps->aps[i].rssi, aps->aps[i].authmode));
@@ -504,4 +516,11 @@ void wifi_free(void *driver, void *buffer)
     // buffer points to the cmd_buffer_t object
     WiFi *w = (WiFi *)driver;
     w->freeBuffer((command_buf_t *)buffer);
+}
+
+extern "C" {
+    void print_uart_status()
+    {
+        wifi.PrintUartStatus();
+    }
 }

@@ -8,15 +8,15 @@ int main(int argc, char **argv)
 {
     FILE *f;
     unsigned char *buffer;
-    int i, size;
+    int i, size, width;
     
-    if(argc != 3) {
-        printf("Usage: make_array <input file> <size>\n");
+    if(argc != 5) {
+        printf("Usage: make_array <input file> <size> <name> <width>\n");
         return 0;
     }
     
-    sscanf(argv[2], "%d", &size);
-
+    size = strtol(argv[2], NULL, 0);
+    width = strtol(argv[4], NULL, 0);
     buffer = malloc(size);
     memset(buffer, 0xAA, size);
 
@@ -30,12 +30,12 @@ int main(int argc, char **argv)
     fread((char *)buffer, 1, size, f);
     fclose(f);    
 
-    printf("library ieee;\nuse ieee.std_logic_1164.all;\n\npackage sd_rom_pkg is\n\n");
-    printf("    type t_sdrom_array is array (natural range <>) of std_logic_vector(7 downto 0);\n\n");
-    printf("    constant sdrom_array : t_sdrom_array(0 to %d) := (", size-1);
+    printf("library ieee;\nuse ieee.std_logic_1164.all;\n\npackage %s_pkg is\n\n", argv[3]);
+    printf("    type t_%s_array is array (natural range <>) of std_logic_vector(7 downto 0);\n\n", argv[3]);
+    printf("    constant %s_array : t_%s_array(0 to %d) := (", argv[3], argv[3], size-1);
 
     for(i=0;i<size;i++) {
-        if ((i % 16) == 0)
+        if ((i % width) == 0)
             printf("\n        ");
             
         printf("X\"%02X\"", buffer[i]);

@@ -254,7 +254,7 @@ void DataStreamer :: create_task_items()
 	}
 }
 
-void DataStreamer :: update_task_items(bool writablePath, Path *path)
+void DataStreamer :: update_task_items(bool writablePath)
 {
     volatile uint8_t *hardware = (uint8_t *)U2P_DEBUG_ETH;
 	if (*hardware) {

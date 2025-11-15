@@ -29,6 +29,7 @@ package char_generator_pkg is
         perform_sync        : std_logic;
         overlay_on          : std_logic;
         stretch_y           : std_logic;
+        big_font            : std_logic;
         transparent         : std_logic_vector(3 downto 0);
     end record;
 
@@ -44,6 +45,7 @@ package char_generator_pkg is
         perform_sync        => '0',
         overlay_on          => '0',
         stretch_y           => '0',
+        big_font            => '0',
         transparent         => X"5" );
 
     -- 640x225 (80x25 => 8x9 chars, in 45 C64 chars width)
@@ -59,6 +61,7 @@ package char_generator_pkg is
         overlay_on          => '0',
         stretch_y           => '0',
         perform_sync        => '0',
+        big_font            => '0',
         transparent         => X"5" );
 
     -- 480x200 (80x25 => 6x8 chars, in 45 C64 chars width)
@@ -74,6 +77,7 @@ package char_generator_pkg is
         overlay_on          => '0',
         stretch_y           => '0',
         perform_sync        => '0',
+        big_font            => '0',
         transparent         => X"5" );
 
     constant c_chargen_line_clocks_hi   : unsigned(3 downto 0) := X"0";

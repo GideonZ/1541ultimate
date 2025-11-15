@@ -24,10 +24,11 @@
 
 #define MAX_UI_OBJECTS  8
 
-#define CFG_USERIF_BACKGROUND  0x01
-#define CFG_USERIF_BORDER      0x02
-#define CFG_USERIF_FOREGROUND  0x03
-#define CFG_USERIF_SELECTED    0x04
+//#define CFG_USERIF_BACKGROUND  0x01
+//#define CFG_USERIF_BORDER      0x02
+//#define CFG_USERIF_FOREGROUND  0x03
+//#define CFG_USERIF_SELECTED    0x04
+
 #define CFG_USERIF_WORDWRAP    0x05
 #define CFG_USERIF_START_HOME  0x06
 #define CFG_USERIF_HOME_DIR    0x07
@@ -36,6 +37,13 @@
 #define CFG_USERIF_CFG_SAVE    0x0A
 #define CFG_USERIF_ULTICOPY_NAME 0x0B
 #define CFG_USERIF_FILENAME_OVERFLOW_SQUEEZE 0x0C
+#define CFG_USERIF_NAVIGATION  0x0D
+#define CFG_USERIF_COLORSCHEME 0x0E
+
+typedef enum {
+    e_keymap_default,
+} keymap_options_t;
+
 
 class UserInterface : public ConfigurableObject, public HostClient
 {
@@ -55,16 +63,16 @@ private:
     void peel_off(void);
     bool buttonDownFor(uint32_t ms);
 public:
-    int color_border, color_bg, color_fg, color_sel, color_sel_bg, config_save, filename_overflow_squeeze;
-
+    int color_border, color_bg, color_fg, color_sel, color_sel_bg, reverse_sel;
+    int config_save, filename_overflow_squeeze, navmode;
+    bool logo;
     GenericHost *host;
     Keyboard *keyboard;
-    Keyboard *alt_keyboard;
     Screen *screen;
     int     focus;
     int     menu_response_to_action;
 
-    UserInterface(const char *title);
+    UserInterface(const char *title, bool logo);
     virtual ~UserInterface();
 
     // from HostClient
@@ -84,16 +92,21 @@ public:
     virtual void update_progress(const char *msg, int steps); // not blocking
     virtual void hide_progress(void); // not blocking (of course)
 
-    virtual int enterSelection(void);
-
     void init(GenericHost *h);
     void appear(void);
     void set_screen(Screen *s); /* Only used in updater */
+    Screen *get_screen() { return screen; }
+    Keyboard *get_keyboard() { return keyboard; }
+
+    int keymapper(int c, keymap_options_t map);
+
     int  activate_uiobject(UIObject *obj);
     bool has_focus(UIObject *obj);
     int  getPreferredType(void);
+    void help();
     void run_editor(const char *, int);
     void swapDisk(void);
+    void send_keystroke(int key);
 
     UIObject *get_root_object(void) { return ui_objects[0]; }
 

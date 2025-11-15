@@ -17,9 +17,8 @@ const char *test_text =
 
 struct Line empty_line = { NULL, 0 };
 
-Editor :: Editor(UserInterface *ui, const char *text_buffer, int max_len)
+Editor :: Editor(UserInterface *ui, const char *text_buffer, int max_len) : UIObject(ui)
 {
-	user_interface = ui;
 	screen = NULL;
     keyb = NULL;
     window = NULL;
@@ -113,8 +112,8 @@ void Editor :: init(Screen *scr, Keyboard *key)
     printf("Line length: %d. Height: %d\n", line_length, height);
     
     window = new Window(screen, 0, 2, line_length, height);
-    window->set_color(user_interface->color_fg);
     window->draw_border();
+    window->set_color(get_ui()->color_fg);
     height -= 2;
     first_line = 0;
     line_length -= 2;
@@ -155,6 +154,7 @@ int Editor :: poll(int dummy)
     }
 
     c = keyb->getch();
+    c = get_ui()->keymapper(c, e_keymap_default);
     if(c > 0) {
         ret = handle_key(c);
     }

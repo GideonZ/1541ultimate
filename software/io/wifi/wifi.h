@@ -41,6 +41,7 @@ class WiFi : public Esp32Application
     NetworkLWIP_WiFi *netstack;
 
     WifiState_t state;
+    char    last_ap[32];
     char    moduleName[34];
     char    moduleType[24];
     uint8_t my_mac[6];
@@ -54,6 +55,7 @@ class WiFi : public Esp32Application
     static void RunModeTaskStart(void *context);
     void RunModeThread();
     void RefreshRoot();
+    void RefreshAPs();
 public:
     WiFi();
     static void Init(void *obj, void *param);
@@ -61,6 +63,7 @@ public:
     BaseType_t doRequestEcho(void);
 
     WifiState_t getState(void) { return state; }
+    const char *getLastAP(void) { return (state == eWifi_Connected) ? last_ap : "-"; }
     const char *getModuleName(void) { return moduleName; }
     const char *getModuleType(void) { return moduleType; }
     void  getMacAddr(uint8_t *target) { memcpy(target, my_mac, 6); }
@@ -71,6 +74,8 @@ public:
     void freeBuffer(command_buf_t *buf);
     void getAccessPointItems(Browsable *parent, IndexedList<Browsable *> &list);
 
+    // Debug
+    void PrintUartStatus() { uart->PrintStatus(); }
     // User Interface functions
     void Disable(void);
     void Enable(void);
@@ -107,6 +112,7 @@ public:
     }
 
     void fetch_context_items(IndexedList<Action *>&items);
+	IndexedList<Browsable *> *getSubItems(int &error) { error = -1; return &children; }
     static SubsysResultCode_e connect_ap(SubsysCommand *cmd);
 };
 

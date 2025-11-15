@@ -53,9 +53,12 @@ int wifi_get_serial(char *serial);
 
 extern uint16_t sequence_nr;
 extern TaskHandle_t tasksWaitingForReply[NUM_BUFFERS];
+extern "C" { void print_uart_status(); }
+extern const char *no_wifi_buf;
 
 #define BUFARGS(x, cmd)     command_buf_t *buf; \
-                            esp32.uart->GetBuffer(&buf, portMAX_DELAY); \
+                            BaseType_t gotbuf = esp32.uart->GetBuffer(&buf, 1000); \
+                            if (gotbuf == pdFALSE) { printf(no_wifi_buf); /*print_uart_status();*/ return pdFALSE; } \
                             rpc_ ## x ## _req *args = (rpc_ ## x ## _req *)buf->data; \
                             args->hdr.command = cmd; \
                             args->hdr.sequence = sequence_nr++; \
