@@ -56,7 +56,7 @@ extern "C" void ultimate_main(void *a)
     c64->start();
 
     if(c64 && c64->exists()) {
-        ui = new UserInterface("** Ultimate-II+ Recovery **");
+        ui = new UserInterface("** Ultimate-II+ Recovery **", false);
         ui->init(c64);
 
     	// Instantiate and attach the root tree browser
