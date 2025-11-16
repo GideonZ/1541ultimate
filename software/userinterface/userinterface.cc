@@ -130,7 +130,7 @@ typedef struct {
 } t_scheme_colors;
 
 const t_scheme_colors schemes[] = {
-    { 14, 6,  1, 1, 6,  0 },
+    { 14, 6, 14, 1, 6,  0 },
     { 0,  0, 12, 1, 6,  0 },
 };
 

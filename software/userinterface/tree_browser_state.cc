@@ -115,7 +115,7 @@ void TreeBrowserState :: draw()
     browser->window->set_background(0);
     browser->window->reverse_mode(0);
     if (browser->has_path) {
-        browser->window->set_color(6);
+        browser->window->set_color(12); // FIXME
         browser->window->getScreen()->move_cursor(0, browser->window->getScreen()->get_size_y()-1);
         browser->window->getScreen()->output_fixed_length(browser->path->get_path(), 0, browser->window->getScreen()->get_size_x()-9);
         browser->window->set_color(browser->user_interface->color_fg);
@@ -124,7 +124,7 @@ void TreeBrowserState :: draw()
     if(children->get_elements() == 0) {
 		browser->window->clear();
     	browser->window->move_cursor(0, 0);
-    	browser->window->output("\eF< No Items >");
+    	browser->window->output("\es< No Items >"); // FIXME
     	under_cursor = NULL;
     	return;
     }
