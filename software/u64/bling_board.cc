@@ -778,7 +778,7 @@ void BlingBoard :: setup_config_menu(void)
     grp->append(ConfigItem::heading("Keyboard Lights"));
     grp->append(cfg->find_item(CFG_LED_MODE)->set_item_altname("Mode"));
     grp->append(cfg->find_item(CFG_LED_PATTERN)->set_item_altname("Pattern"));
-    grp->append(cfg->find_item(CFG_LED_INTENSITY)->set_item_altname("Intensity"));
+    grp->append(cfg->find_item(CFG_LED_INTENSITY)->set_item_altname("Brightness"));
     grp->append(cfg->find_item(CFG_LED_FIXED_COLOR)->set_item_altname("Color"));
     grp->append(cfg->find_item(CFG_LED_FIXED_TINT)->set_item_altname("Tint"));
     grp->append(ConfigItem::separator());
