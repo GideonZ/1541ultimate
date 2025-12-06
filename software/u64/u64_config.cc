@@ -2220,16 +2220,16 @@ bool U64Config :: IsMonitorHDMI()
         printf("EDID No Extension found.\n");
         return false;
     }
-    if (edid[128] != 0x02) {
-        printf("EDID Extension not of CEA type.\n");
-        return false;
+    bool cea861 = false;
+    for (int s = 128; s < edid_size; s += 128) {
+        if ((edid[s] == 0x02) && (edid[s+3] & 0x70)) {
+            cea861 = true;
+        }
     }
-    if ((edid[131] & 0x70) == 0) {
-        printf("EDID no support for any HDMI specific stuff.\n");
-        return false;
+    if (cea861) {
+        printf("EDID: Monitor is HDMI!\n");
     }
-    printf("EDID: Monitor is HDMI!\n");
-    return true;
+    return cea861;
 }
 
 void U64Config :: configure_hdmi_output(void)
