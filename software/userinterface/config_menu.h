@@ -182,6 +182,9 @@ class BrowsableConfigStore: public Browsable
         case BR_EVENT_CLOSE:
             store->at_close_config();
             break;
+        case BR_EVENT_OPEN:
+            store->at_open_config();
+            break;
         };
     }
 
