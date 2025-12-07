@@ -30,6 +30,7 @@ struct t_cfg_definition net_config[] = {
     { CFG_NET_GATEWAY, CFG_TYPE_STRING, "Static Gateway",   "%s", NULL,       7, 16, (int)"192.168.2.1" },
     { CFG_NET_DNS,     CFG_TYPE_STRING, "Static DNS",       "%s", NULL,       7, 16, (int)"8.8.8.8" },
     { CFG_SEPARATOR,   CFG_TYPE_SEP,    "",                               "",  NULL,       0,  0, 0 },
+    { CFG_NET_STATUS,  CFG_TYPE_INFO,   "Status",                        "%s", NULL,       0, 32, (int)"" },
     { CFG_NET_CUR_IP,  CFG_TYPE_INFO,   "Active IP address",             "%s", NULL,       0, 32, (int)"" },
     { CFG_NET_MAC,     CFG_TYPE_INFO,   "Interface MAC",                 "%s", NULL,       0, 32, (int)"" },
     { CFG_TYPE_END,    CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
@@ -464,4 +465,12 @@ void NetworkInterface :: on_edit()
     it = cfg->find_item(CFG_NET_CUR_IP);
     it->setEnabled(false);
     it->setString(getIpAddrString(buf, 16));
+
+    it = cfg->find_item(CFG_NET_STATUS);
+    it->setEnabled(false);
+    if (!if_up) {
+        it->setString("Link Down");
+    } else {
+        it->setString("Link Up");
+    }
 }
