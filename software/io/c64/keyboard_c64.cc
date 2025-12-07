@@ -296,7 +296,9 @@ void Keyboard_C64 :: wait_free(void)
     if(!(host->is_accessible()))
         return;
 
+#if U64==2
     BLING_RX_FLAGS = 0x01; // disable shift lock in bling board
+#endif
     *col_register = 0; // select all rows
 
     int timeout = 2000;
@@ -305,8 +307,9 @@ void Keyboard_C64 :: wait_free(void)
         wait_ms(1);
     }
     *col_register = 0xFF;
+#if U64==2
     BLING_RX_FLAGS = 0x00; // allow shift lock
-
+#endif
 }
 
 void Keyboard_C64 :: set_delays(int initial, int repeat)
