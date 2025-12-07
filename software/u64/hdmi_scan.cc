@@ -6,9 +6,9 @@ extern "C" void SetScanModeRegisters(volatile t_video_timing_regs *regs, const T
 {
     regs->VID_HSYNCPOL     = mode->hsyncpol;
     regs->VID_HSYNCTIME    = mode->hsync >> 1;
-    regs->VID_HBACKPORCH   = mode->hbackporch >> 1;
+    regs->VID_HBACKPORCH   = mode->hbackporch >> 2;
     regs->VID_HACTIVE      = mode->hactive >> 3;
-    regs->VID_HFRONTPORCH  = mode->hfrontporch >> 1;
+    regs->VID_HFRONTPORCH  = mode->hfrontporch >> 2;
     regs->VID_HREPETITION  = 0;
     regs->VID_VSYNCPOL     = mode->vsyncpol;
     regs->VID_VSYNCTIME    = mode->vsync;
@@ -56,7 +56,7 @@ extern "C" void SetVideoMode1080p(t_video_mode mode)
 {
     volatile t_video_timing_regs *regs = (volatile t_video_timing_regs *)U64II_HDMI_REGS;
 
-    const TVideoMode pal  =  { 31, 148869856, 1920, 510, 62, 148, 1,  1080, 4, 5, 36, 1, 1, 0 }; // 528,44
+    const TVideoMode pal  =  { 31, 148869856, 1920, 528, 44, 148, 1,  1080, 4, 5, 36, 1, 1, 0 };
     const TVideoMode ntsc =  { 16, 148069608, 1920, 88,  44, 148, 1,  1080, 4, 5, 36, 1, 1, 0 };
 
     const t_video_color_timing *ct = color_timings[(int)mode];
