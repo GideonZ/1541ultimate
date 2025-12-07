@@ -39,7 +39,7 @@ SRCS_C   =	itu.c \
 			cmd_buffer.c \
 			url.c \
 
-SRCS_CC	 =  u2p_init.cc \
+SRCS_CC	 =  u2pl_init.cc \
 			usb_hwinit.cc \
 			i2c_drv.cc \
 			codec.cc \
