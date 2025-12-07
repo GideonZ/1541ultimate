@@ -34,6 +34,7 @@ extern "C" {
 #define CFG_VIC_UDP_EN      0xEA
 #define CFG_NET_CUR_IP      0xEB
 #define CFG_NET_MAC         0xEC
+#define CFG_NET_STATUS      0xEF
 
 #include "fifo.h" // my oh so cool fifo! :)
 #define PBUF_FIFO_SIZE 70
