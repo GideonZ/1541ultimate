@@ -106,7 +106,7 @@ public:
     static ConfigItem *heading(const char *);
 
     const char *get_item_name() { return definition->item_text; }
-    const char *get_display_string(char *buffer, int width);
+    const char *get_display_string(char *buffer, int width, int act, int inact);
     int  fetch_possible_settings(IndexedList<ConfigSetting *> &list);
     void execute(int sel);
     void setChangeHook(t_change_hook hook) { this->hook = hook; }

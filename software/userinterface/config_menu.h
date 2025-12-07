@@ -95,7 +95,7 @@ public:
 
     void getDisplayString(char *buffer, int width)
     {
-        item->get_display_string(buffer, width);
+        item->get_display_string(buffer, width, 7, 12); // TODO
     }
 
     void fetch_context_items(IndexedList<Action *>&actions)

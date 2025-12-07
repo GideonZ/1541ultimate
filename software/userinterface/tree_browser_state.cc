@@ -115,10 +115,7 @@ void TreeBrowserState :: draw()
     browser->window->set_background(0);
     browser->window->reverse_mode(0);
     if (browser->has_path) {
-        browser->window->set_color(12); // FIXME
-        browser->window->getScreen()->move_cursor(0, browser->window->getScreen()->get_size_y()-1);
-        browser->window->getScreen()->output_fixed_length(browser->path->get_path(), 0, browser->window->getScreen()->get_size_x()-9);
-        browser->window->set_color(browser->user_interface->color_fg);
+        browser->window->getScreen()->set_status(browser->path->get_path(), browser->user_interface->color_status);
     }
 
     if(children->get_elements() == 0) {
@@ -166,7 +163,7 @@ void TreeBrowserState :: draw_item(Browsable *t, int line, bool selected)
             browser->window->set_background(0);
 		} else { // non selectable item
             browser->window->reverse_mode(0);
-			browser->window->set_color(6); // TODO
+			browser->window->set_color(browser->user_interface->color_inactive);
 		}
 		int squeeze_type = browser->user_interface->filename_overflow_squeeze;
 		t->getDisplayString(buffer, browser->window->get_size_x(), squeeze_type);

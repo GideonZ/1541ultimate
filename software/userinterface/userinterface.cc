@@ -127,11 +127,13 @@ typedef struct {
     int selected;
     int selected_bg;
     int selected_rev;
+    int status;
+    int inactive;
 } t_scheme_colors;
 
 const t_scheme_colors schemes[] = {
-    { 14, 6, 14, 1, 6,  0 },
-    { 0,  0, 12, 1, 6,  0 },
+    { 14, 6, 14, 1, 6,  0, 12, 12 },
+    { 0,  0, 12, 1, 6,  0,  6,  6 },
 };
 
 void UserInterface :: effectuate_settings(void)
@@ -141,6 +143,8 @@ void UserInterface :: effectuate_settings(void)
     color_fg     = scheme->foreground;
     color_bg     = scheme->background;
     color_sel    = scheme->selected;
+    color_status = scheme->status;
+    color_inactive = scheme->inactive;
     reverse_sel  = scheme->selected_rev;
 
 #if U64

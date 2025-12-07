@@ -402,7 +402,7 @@ void ContextMenu :: draw()
 			window->set_color(user_interface->color_fg);
             window->set_background(0);
 		} else { // not enabled
-	        window->set_color(11); // TODO
+	        window->set_color(user_interface->color_inactive);
             window->reverse_mode(0);
 	        window->set_background(0);
 		}

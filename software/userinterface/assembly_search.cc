@@ -230,10 +230,7 @@ void AssemblySearchForm :: send_query(void)
     printf("Query:\n%s\n", query.c_str());
 
     // Let the user know we are busy
-    browser->window->set_color(6);
-    browser->window->set_background(0);
-    browser->window->getScreen()->move_cursor(0, browser->window->getScreen()->get_size_y()-1);
-    browser->window->getScreen()->output_fixed_length("Sending query...", 0, browser->window->getScreen()->get_size_x()-9);
+    browser->window->getScreen()->set_status("Sending query...", browser->user_interface->color_status);
 
     JSON *response = assembly.send_query(query.c_str());
     // if (response) {
@@ -253,10 +250,7 @@ void AssemblySearchForm :: send_query(void)
         }
         delete response;
     } else {
-        browser->window->set_color(10);
-        browser->window->set_background(0);
-        browser->window->getScreen()->move_cursor(0, browser->window->getScreen()->get_size_y()-1);
-        browser->window->getScreen()->output_fixed_length("** Connection FAILED **", 0, browser->window->getScreen()->get_size_x()-9);
+        browser->window->getScreen()->set_status("** Connection FAILED **", 10);
     }
     t_BufferedBody *body = (t_BufferedBody *)assembly.get_user_context();
     if (body)

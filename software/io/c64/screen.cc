@@ -481,3 +481,13 @@ int console_print(Screen *s, const char *fmt, ...)
     va_end(ap);
     return (ret);
 }
+
+void Screen :: set_status(const char *message, int color)
+{
+    int old = get_color();
+    set_color(color);
+    set_background(0);
+    move_cursor(0, get_size_y()-1);
+    output_fixed_length(message, 0, get_size_x()-9);
+    set_color(old);
+}

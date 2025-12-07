@@ -49,6 +49,7 @@ public:
     virtual int  output(const char *c) { return 0; }
     virtual void repeat(char c, int rep) { }
     virtual void output_fixed_length(const char *string, int offset_x, int width) { }
+    virtual void set_status(const char *message, int color);
 
     // raw
     virtual void output_raw(char c) { }

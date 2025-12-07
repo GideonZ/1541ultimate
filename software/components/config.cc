@@ -758,7 +758,7 @@ int ConfigItem :: pack(uint8_t *buffer, int len)
 
 // note:the buffer needs to be at least 3 bytes bigger than what width indicates
 // width is the actual width in characters on the screen, and two additional bytes are needed to set the color
-const char *ConfigItem :: get_display_string(char *buffer, int width)
+const char *ConfigItem :: get_display_string(char *buffer, int width, int act, int inact)
 {
 	static char buf[32];
 
@@ -805,7 +805,7 @@ const char *ConfigItem :: get_display_string(char *buffer, int width)
     dst = &buffer[width+1];
     for(int b = len-1; b >= 0; b--)
         *(dst--) = buf[b];
-    *(dst--) = (enabled) ? 7 : 6;
+    *(dst--) = (enabled) ? act : inact;
     *(dst--) = '\033'; // escape code = set color
     return (const char *)buffer;
 }
