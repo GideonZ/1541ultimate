@@ -293,6 +293,7 @@ void NetworkLWIP_WiFi :: cfg_show_aps(UserInterface *intf, ConfigItem *it)
     wifi.sendEvent(EVENT_RESCAN);
     BrowsableWifiAPList *broot = new BrowsableWifiAPList(); // new root!
     TreeBrowser *tb = new TreeBrowser(intf, broot);
+    tb->has_border = true;
     tb->allow_exit = true;
     tb->has_path = false;
     tb->init();

@@ -45,6 +45,7 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root) : UIObject(ui)
     path = fm->get_new_path("Tree Browser");
     observerQueue = new ObserverQueue("TreeBrowser");
     fm->registerObserver(observerQueue);
+    has_border = false;
 
     if(!state) {
         state = new TreeBrowserState(root, this, 0);
@@ -72,6 +73,9 @@ void TreeBrowser :: init() // call on root!
     screen->output("\eAF3=HELP\eO");
 
 	window = new Window(screen, 0, 2, screen->get_size_x(), screen->get_size_y()-3);
+    if(has_border) {
+        window->draw_border();
+    }
     state->reload();
 }
 

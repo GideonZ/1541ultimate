@@ -57,7 +57,8 @@ public:
     int  quick_seek_length;
     bool allow_exit;
     bool has_path;
-
+    bool has_border;
+    
     FileManager *fm;
     UserInterface *user_interface;
     ObserverQueue *observerQueue;
