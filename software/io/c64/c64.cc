@@ -1554,8 +1554,10 @@ void C64 :: setup_config_menu(void)
 {
     ConfigGroup *grp = ConfigGroupCollection :: getGroup("Memory Configuration", SORT_ORDER_CFG_MEM);
     grp->append(cfg->find_item(CFG_C64_KERNFILE));
+#ifdef U64
     grp->append(cfg->find_item(CFG_C64_BASIFILE)->set_item_altname("BASIC ROM"));
     grp->append(cfg->find_item(CFG_C64_CHARFILE)->set_item_altname("Character ROM"));
+#endif
     grp->append(cfg->find_item(CFG_C64_CART_CRT));
     grp->append(ConfigItem :: separator());
     grp->append(cfg->find_item(CFG_C64_REU_EN));
