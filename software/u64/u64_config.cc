@@ -289,8 +289,8 @@ dc 0c 11 00 00 9e 01 1d  00 72 51 d0 1e 20 6e 28
 struct t_cfg_definition u64_cfg[] = {
     { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  5, 1 },
     { CFG_HDMI_RESOLUTION,      CFG_TYPE_ENUM, "HDMI Scan Resolution",         "%s", scan_modes,   0,  5, 0 },
-    { CFG_HDMI_TX_SWING,        CFG_TYPE_VALUE, "HDMI Tx Swing",               "%d", NULL,         0, 15, 8 },
 #if U64 == 2
+    { CFG_HDMI_TX_SWING,        CFG_TYPE_VALUE, "HDMI Tx Swing",               "%d", NULL,         0, 15, 8 },
     { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  3, 0 },
 #else
     { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  1, 0 },
