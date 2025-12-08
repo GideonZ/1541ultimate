@@ -423,8 +423,8 @@ begin
                     ram_bank(14) <= io_wdata(1);
                 end if;
                 ram_bank(13) <= slot_addr(13); -- :-) 
-                game_n    <= mode_bits(0);
-                exrom_n   <= mode_bits(0);
+                game_n    <= mode_bits(2);
+                exrom_n   <= mode_bits(2);
                 serve_rom <= '1';
                 rom_mode  <= "01"; -- 16K banks
 
@@ -725,11 +725,11 @@ begin
             end if;
             
         when c_pagefox =>
-            if ram_bank(15 downto 14)="10" then
+            if mode_bits(1 downto 0)="10" then
                 addr_map <= RAM;
-            end if;
-            if slot_addr(15 downto 14)="10" then
-                allow_write <= '1';
+        	if slot_addr(15 downto 14)="10" then
+            	    allow_write <= '1';
+		end if;
             end if;
 
         when others =>
