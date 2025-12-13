@@ -288,9 +288,8 @@ dc 0c 11 00 00 9e 01 1d  00 72 51 d0 1e 20 6e 28
 
 struct t_cfg_definition u64_cfg[] = {
     { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  5, 1 },
-    { CFG_HDMI_RESOLUTION,      CFG_TYPE_ENUM, "HDMI Scan Resolution",         "%s", scan_modes,   0,  5, 0 },
 #if U64 == 2
-    { CFG_HDMI_TX_SWING,        CFG_TYPE_VALUE, "HDMI Tx Swing",               "%d", NULL,         0, 15, 8 },
+    { CFG_HDMI_RESOLUTION,      CFG_TYPE_ENUM, "HDMI Scan Resolution",         "%s", scan_modes,   0,  5, 0 },
     { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  3, 0 },
 #else
     { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  1, 0 },
@@ -825,9 +824,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 		sidDevice[0] = NULL;
         sidDevice[1] = NULL;
 
-        cfg->set_change_hook(CFG_SCAN_MODE_TEST, U64Config::setScanMode);
         cfg->set_change_hook(CFG_COLOR_CLOCK_ADJ, U64Config::setPllOffset);
-        cfg->set_change_hook(CFG_HDMI_TX_SWING, U64Config::setScanMode);
         cfg->set_change_hook(CFG_LED_SELECT_0, U64Config::setLedSelector);
         cfg->set_change_hook(CFG_LED_SELECT_1, U64Config::setLedSelector);
         cfg->set_change_hook(CFG_SPEED_REGS, U64Config::setCpuSpeed);
@@ -1043,7 +1040,6 @@ void U64Config :: effectuate_settings()
     C64_VIC_TEST = cfg->get_value(CFG_VIC_TEST);
 #endif
     setPllOffset(cfg->find_item(CFG_COLOR_CLOCK_ADJ));
-    setScanMode(cfg->find_item(CFG_SCAN_MODE_TEST));
     setLedSelector(cfg->find_item(CFG_LED_SELECT_0)); // does both anyway
 
 }
@@ -1183,16 +1179,6 @@ int U64Config :: setPllOffset(ConfigItem *it)
     return 0;
 }
 
-int U64Config :: setScanMode(ConfigItem *it)
-{
-#define TX_SWING (*(volatile uint8_t *)(U64II_HDMI_REGS + 17))
-	if(it) {
-        printf("%d\n", it->getValue());
-        TX_SWING = it->getValue();
-//		SetScanMode(it->value);
-	}
-    return 0;
-}
 
 int U64Config :: setLedSelector(ConfigItem *it)
 {
@@ -2451,7 +2437,7 @@ void U64Config :: setup_config_menu(void)
     grp->append(cfg->find_item(CFG_IEC_BURST_EN));
     grp->append(cfg->find_item(CFG_PARCABLE_ENABLE)->set_item_altname("Parallel Cable to Drive A"));
     grp->append(cfg->find_item(CFG_IEC_BUS_MODE));
-    grp->append(cfg->find_item(CFG_HDMI_TX_SWING));
+    //grp->append(cfg->find_item(CFG_HDMI_TX_SWING));
 
     // grp = ConfigGroupCollection :: getGroup("Drive A Settings", SORT_ORDER_CFG_DRVA);
 

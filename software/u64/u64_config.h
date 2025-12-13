@@ -136,7 +136,6 @@ public:
     void effectuate_settings();
 
     static int setPllOffset(ConfigItem *it);
-    static int setScanMode(ConfigItem *it);
     static int setMixer(ConfigItem *it);
     static int setSpeakerMixer(ConfigItem *it);
     static int enableDisableSpeaker(ConfigItem *it);
