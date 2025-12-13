@@ -2220,16 +2220,38 @@ bool U64Config :: IsMonitorHDMI()
         printf("EDID No Extension found.\n");
         return false;
     }
-    bool cea861 = false;
-    for (int s = 128; s < edid_size; s += 128) {
-        if ((edid[s] == 0x02) && (edid[s+3] & 0x70)) {
-            cea861 = true;
+
+    for (int s = 128; s + 127 < edid_size; s += 128) {
+        if (edid[s] != 0x02)
+            continue; // not a CEA-861 extension
+
+        uint8_t dtd_offset = edid[s + 2];
+        if (dtd_offset < 4 || dtd_offset > 127)
+            continue; // sanity
+
+        int i = s + 4;
+        int end = s + dtd_offset; // data blocks end right before DTDs
+        while (i < end) {
+            uint8_t tag_len = edid[i++];
+            uint8_t tag = (tag_len >> 5) & 0x07;
+            uint8_t len = tag_len & 0x1F;
+
+            if (i + len > end)
+                break; // malformed
+
+            // Vendor Specific Data Block
+            if (tag == 0x03 && len >= 3) {
+                // HDMI VSDB has IEEE OUI 0x000C03, stored as 03 0C 00
+                if (edid[i+0] == 0x03 && edid[i+1] == 0x0C && edid[i+2] == 0x00) {
+                    return true;
+                }
+                // (Optional) also detect HDMI Forum VSDB (different OUI)
+            }
+
+            i += len;
         }
     }
-    if (cea861) {
-        printf("EDID: Monitor is HDMI!\n");
-    }
-    return cea861;
+    return false;
 }
 
 void U64Config :: configure_hdmi_output(void)
