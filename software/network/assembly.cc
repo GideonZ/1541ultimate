@@ -4,7 +4,7 @@
 #include "attachment_writer.h"
 
 //#define HOSTNAME      "hackerswithstyle.se"
-#define HOSTNAME      "commoserve.file.commodore.net"
+#define HOSTNAME      "commoserve.files.commodore.net"
 #define HOSTPORT      80
 #define URL_SEARCH    "/leet/search/aql?query="
 #define URL_PATTERNS  "/leet/search/aql/presets"
