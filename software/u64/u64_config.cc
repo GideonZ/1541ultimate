@@ -997,10 +997,6 @@ void U64Config :: effectuate_settings()
         systemMode = (t_video_mode)cfg->get_value(CFG_SYSTEM_MODE);
         doPll = true;
     }
-    if (cfg->get_value(CFG_HDMI_RESOLUTION) != (int)hdmiMode) {
-        hdmiMode = (t_hdmi_mode)cfg->get_value(CFG_HDMI_RESOLUTION);
-        doPll = true;
-    }
 
     const char *palette = cfg->get_string(CFG_PALETTE);
     if (strlen(palette)) {
@@ -1011,7 +1007,13 @@ void U64Config :: effectuate_settings()
 
     const t_video_color_timing *ct = color_timings[(int)systemMode];
     C64_PHASE_INCR  = ct->phase_inc;
+
 #if U64 == 2
+    if (cfg->get_value(CFG_HDMI_RESOLUTION) != (int)hdmiMode) {
+        hdmiMode = (t_hdmi_mode)cfg->get_value(CFG_HDMI_RESOLUTION);
+        doPll = true;
+    }
+
     if (doPll) {
         printf("config doing plls...\n");
         // Set the primary C64 clock, which is also the reference for the HDMI pll
@@ -2428,7 +2430,9 @@ void U64Config :: setup_config_menu(void)
 {
     ConfigGroup *grp = ConfigGroupCollection :: getGroup("Video Configuration", SORT_ORDER_CFG_U64);
     grp->append(cfg->find_item(CFG_SYSTEM_MODE));
+#if U64 == 2
     grp->append(cfg->find_item(CFG_HDMI_RESOLUTION));
+#endif
     grp->append(cfg->find_item(CFG_SCANLINES));
     grp->append(cfg->find_item(CFG_PALETTE));
     grp->append(ConfigItem :: separator());
