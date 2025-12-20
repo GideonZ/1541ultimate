@@ -54,10 +54,10 @@ static const char *modes[] = {"Off", "Fixed Color", "SID Music", "Rainbow" };
 static const char *patterns[] = { "SingleColor", "Left to Right", "Right to Left" };
 static const char *sidsel[] = { "UltiSID1-A", "UltiSID1-B", "UltiSID1-C", "UltiSID1-D",
                                 "UltiSID2-A", "UltiSID2-B", "UltiSID2-C", "UltiSID2-D" };
-// static const char *types[] = { "APA102", "WS2812" };
+ static const char *types[] = { "WS2812", "APA102" };
 
 static struct t_cfg_definition cfg_definition[] = {
-//    { CFG_LED_TYPE,             CFG_TYPE_ENUM,  "LedStrip Type",                "%s", types,        0,  1,  1  },
+    { CFG_LED_TYPE,             CFG_TYPE_ENUM,  "LedStrip Type",                "%s", types,        0,  1,  1  },
     { CFG_LED_MODE,             CFG_TYPE_ENUM,  "LedStrip Mode",                "%s", modes,        0,  3,  1  },
     { CFG_LED_PATTERN,          CFG_TYPE_ENUM,  "LedStrip Pattern",             "%s", patterns,     0,  2,  0  },
     { CFG_LED_SIDSELECT,        CFG_TYPE_ENUM,  "LedStrip SID Select",          "%s", sidsel,       0,  7,  0  },
@@ -133,6 +133,7 @@ LedStrip :: LedStrip()
     register_store(0x4C454453, "LED Strip Settings", cfg_definition);
 
     //cfg->set_change_hook(CFG_LED_TYPE,      LedStrip :: hot_effectuate);
+    cfg->set_change_hook(CFG_LED_TYPE,      LedStrip :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_PATTERN,   LedStrip :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_MODE,      LedStrip :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_INTENSITY, LedStrip :: hot_effectuate);
@@ -369,15 +370,9 @@ void LedStrip :: run(void)
             }
             fixed = tint_with_white(fixed, tint_factors[tint]);
             LEDSTRIP_INTENSITY = intensity << 2;
-            if (protocol) {
-                LEDSTRIP_DATA[0] = fixed.g;
-                LEDSTRIP_DATA[1] = fixed.r;
-                LEDSTRIP_DATA[2] = fixed.b;
-            } else {
-                LEDSTRIP_DATA[0] = fixed.b;
-                LEDSTRIP_DATA[1] = fixed.g;
-                LEDSTRIP_DATA[2] = fixed.r;
-            }
+            LEDSTRIP_DATA[offset+0] = fixed.r;
+            LEDSTRIP_DATA[offset+1] = fixed.g;
+            LEDSTRIP_DATA[offset+2] = fixed.b;
             LEDSTRIP_FROM = 0x00;
             LEDSTRIP_START = 0; // and go!
             vTaskDelay(50);
@@ -404,7 +399,7 @@ void LedStrip :: run(void)
         case e_led_rainbow: // rainbow
             U64_LEDSTRIP_EN = 1;
             LEDSTRIP_INTENSITY = intensity << 2;
-            rainbow_hue++;
+            rainbow_hue+=4;
             if (rainbow_hue >= 768)
                 rainbow_hue = 0;
             fixed = hue_index_to_rgb(rainbow_hue, 768);
@@ -413,21 +408,7 @@ void LedStrip :: run(void)
                 fixed = tint_with_white(fixed, soft_start);
                 soft_start -= 1; // should end with 0
             }
-            if (protocol) {
-                LEDSTRIP_DATA[offset+0] = fixed.g;
-                LEDSTRIP_DATA[offset+1] = fixed.r;
-                LEDSTRIP_DATA[offset+2] = fixed.b;
-            } else {
-                LEDSTRIP_DATA[offset+0] = fixed.b;
-                LEDSTRIP_DATA[offset+1] = fixed.g;
-                LEDSTRIP_DATA[offset+2] = fixed.r;
-            }
-            LEDSTRIP_FROM = offset;
-            if (offset == 0) {
-                offset = 3*83;
-            } else {
-                offset -= 3;
-            }
+            ShiftInColor(fixed);
             LEDSTRIP_START = 0; // and go!
             vTaskDelay(16);
             break;
@@ -440,13 +421,12 @@ void LedStrip :: run(void)
 
 void LedStrip :: effectuate_settings(void)
 {
+    protocol  = cfg->get_value(CFG_LED_TYPE);
     mode      = led_mode_t(cfg->get_value(CFG_LED_MODE));
     intensity = cfg->get_value(CFG_LED_INTENSITY);
     hue       = cfg->get_value(CFG_LED_FIXED_COLOR);
     tint      = cfg->get_value(CFG_LED_FIXED_TINT);
     sidsel    = cfg->get_value(CFG_LED_SIDSELECT);
-    // protocol  = cfg->get_value(CFG_LED_TYPE) ? 0x80 : 0x00; // 0x80 = WS2812, 0x00 = APA102;
-    protocol  = 1;
     pattern   = cfg->get_value(CFG_LED_PATTERN);
 
     switch(mode)
@@ -461,7 +441,7 @@ void LedStrip :: effectuate_settings(void)
                     MapSingleColor();
                     break;
                 case 1: // left to right
-                    MapLeftToRight();
+                    MapDirect(); //MapLeftToRight();
                     break;
                 case 2: // right to left
                     MapRightToLeft();
@@ -478,11 +458,11 @@ void LedStrip :: effectuate_settings(void)
             }
             break;
     }
-    // if (protocol) {
-    //     LEDSTRIP_MAP_ENABLE = 0x80; // WS
-    // } else {
-    //     LEDSTRIP_MAP_ENABLE = 0x40; // APA
-    // }
+    if (protocol) {
+        LEDSTRIP_MAP_ENABLE = 0x80; // APA
+    } else {
+        LEDSTRIP_MAP_ENABLE = 0x40; // WS
+    }
 //    U64_PWM_DUTY = 0xC0;
 }
 
@@ -533,6 +513,7 @@ void LedStrip :: setup_config_menu(void)
     } else {
         grp->append(ConfigItem::heading("Case Lights"));
     }
+    grp->append(cfg->find_item(CFG_LED_TYPE)->set_item_altname("LED Type"));
     grp->append(cfg->find_item(CFG_LED_MODE)->set_item_altname("Mode"));
     grp->append(cfg->find_item(CFG_LED_PATTERN)->set_item_altname("Pattern"));
     grp->append(cfg->find_item(CFG_LED_INTENSITY)->set_item_altname("Intensity"));
@@ -543,8 +524,8 @@ void LedStrip :: setup_config_menu(void)
 
 void LedStrip :: ShiftInColor(RGB &fixed)
 {
-    LEDSTRIP_DATA[offset+0] = fixed.g;
-    LEDSTRIP_DATA[offset+1] = fixed.r;
+    LEDSTRIP_DATA[offset+0] = fixed.r;
+    LEDSTRIP_DATA[offset+1] = fixed.g;
     LEDSTRIP_DATA[offset+2] = fixed.b;
     LEDSTRIP_FROM = offset;
     if (offset <= 0) {
