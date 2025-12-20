@@ -958,7 +958,10 @@ void U64Config :: effectuate_settings()
 #else
     C64_PLD_JOYCTRL  = cfg->get_value(CFG_JOYSWAP) ^ 1;
 #endif
-    U64_USERPORT_EN  = cfg->get_value(CFG_USERPORT_EN) ? 3 : 0;
+
+    uint8_t en = cfg->get_value(CFG_USERPORT_EN) ? 3 : 0;
+    U64_USERPORT_EN  = en;
+    U64_PWM_DUTY = (en) ? 0xD8 : 0x00;
     printf("USERPORT_EN = %d\n", U64_USERPORT_EN);
     
     //C64_TURBOREGS_EN = 0;
