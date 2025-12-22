@@ -19,17 +19,21 @@
 #define BUTTON_ALL    0x08
 #define BUTTON_CANCEL 0x10
 
+class UserInterface;
+
 class UIObject
 {
     bool autoCleanup;
+    UserInterface *ui;
 public:
-    UIObject() { autoCleanup = false; }
+    UIObject(UserInterface *ui) { autoCleanup = false; this->ui = ui; }
     void setCleanup() { autoCleanup = true; }
     bool needCleanup() { return autoCleanup; }
-
+    UserInterface *get_ui() { return ui; }
+    
     virtual ~UIObject() { }
 
-    virtual void init(Screen *scr, Keyboard *key) { }
+    virtual void init() { }
     virtual void redraw(void) { }
     virtual void deinit(void) { }
     virtual int  poll(int)
@@ -40,6 +44,7 @@ public:
     {
         return 0;
     }
+    virtual void send_keystroke(int key) { }
 };
 
 class UIPopup : public UIObject
@@ -61,10 +66,10 @@ private:
     void draw_buttons();
 
 public:
-    UIPopup(const char *msg, uint8_t flags, int count, const char **names, const char *keys);
+    UIPopup(UserInterface *ui, const char *msg, uint8_t flags, int count, const char **names, const char *keys);
     ~UIPopup() { }
 
-    void init(Screen *screen, Keyboard *keyb);
+    void init();
     void deinit(void);
     int  poll(int);
 };
@@ -100,10 +105,10 @@ private:
     UIStringEdit edit;
     Window *window;
 public:
-    UIStringBox(const char *msg, char *buf, int max);
+    UIStringBox(UserInterface *ui, const char *msg, char *buf, int max);
     ~UIStringBox() { }
 
-    void init(Screen *screen, Keyboard *keyb);
+    void init();
     void deinit(void);
     int  poll(int a) { return edit.poll(a); }
 };
@@ -116,10 +121,10 @@ private:
     int      progress;
     Window  *window;
 public:
-    UIStatusBox(const char *msg, int steps);
+    UIStatusBox(UserInterface *ui, const char *msg, int steps);
     ~UIStatusBox() { }
 
-    void init(Screen *screen);
+    void init();
     void deinit(void);
     void update(const char *msg, int steps);
 };
@@ -135,10 +140,10 @@ private:
     Keyboard *keyboard;
     int color_fg, color_bg, color_sel_fg, color_sel_bg;
 public:
-    UIChoiceBox(const char *msg, const char **choices, int count);
+    UIChoiceBox(UserInterface *ui, const char *msg, const char **choices, int count);
     ~UIChoiceBox() { }
 
-    void init(Screen *screen, Keyboard *kb, int fg, int bg, int sel_fg, int sel_bg);
+    void init();
     void deinit(void);
     int  poll(int);
     void redraw(void);

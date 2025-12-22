@@ -400,7 +400,7 @@ char *UsbDevice :: get_pathname(char *dest, int len)
 		//buf[--i] = 0x2E;
 		d = d->parent;
 	}
-	strncpy(dest, "Usb", 3);
+	strncpy(dest, "USB", 3);
 	strncpy(dest+3, (const char *)&buf[i], len-3);
 	return dest;
 }

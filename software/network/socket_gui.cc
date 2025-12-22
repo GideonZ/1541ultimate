@@ -146,7 +146,7 @@ void socket_gui_task(void *a)
 //	Screen *scr = host->getScreen();
 //	Keyboard *keyb = host->getKeyboard();
 
-	UserInterface *user_interface = new UserInterface(title);
+	UserInterface *user_interface = new UserInterface(title, false);
 	user_interface->init(host);
 
 	Browsable *root = new BrowsableRoot();

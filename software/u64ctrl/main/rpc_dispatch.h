@@ -8,9 +8,11 @@
 #ifndef SOFTWARE_WIFI_SCAN_MAIN_RPC_DISPATCH_H_
 #define SOFTWARE_WIFI_SCAN_MAIN_RPC_DISPATCH_H_
 
-#include "freertos/FreeRTOS.h"
-#include "freertos/queue.h"
-#include "freertos/task.h"
+#ifndef RECOVERYAPP
+    #include "freertos/FreeRTOS.h"
+    #include "freertos/queue.h"
+    #include "freertos/task.h"
+#endif
 #include "cmd_buffer.h" // For the constant NUM_BUFFERS
 
 typedef struct {
@@ -24,9 +26,9 @@ void start_dispatch(QueueHandle_t queue);
 void send_button_event(uint8_t button);
 void send_keepalive();
 
-#define IDENT_STRING "ESP32 WiFi Bridge V1.3"
+#define IDENT_STRING "ESP32 WiFi Bridge V1.8"
 #define IDENT_MAJOR   1
-#define IDENT_MINOR   3
+#define IDENT_MINOR   8
 #define MULTITHREADED 0
 #define DISPATCHER_STACK 3072
 

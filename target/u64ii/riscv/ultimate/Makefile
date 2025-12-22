@@ -171,6 +171,7 @@ SRCS_CC	 =  u64ii_init.cc \
 			route_runners.cc \
 			route_configs.cc \
 			route_machine.cc \
+			route_streams.cc \
 			assembly_search.cc \
 			assembly.cc \
 			filesystem_a64.cc \

@@ -236,10 +236,10 @@ int FileTypeTap :: getCustomBrowsables(Browsable *parentBrowsable, IndexedList<B
 SubsysResultCode_e FileTypeTap :: enter_st(SubsysCommand *cmd)
 {
     if (cmd->user_interface) {
-        int ret = cmd->user_interface->enterSelection();
-        if (ret < 0) {
-            cmd->user_interface->popup("No Index file found", BUTTON_OK);
-        }
+        cmd->user_interface->send_keystroke(KEY_RIGHT);
+        // if (ret < 0) {
+        //     cmd->user_interface->popup("No Index file found", BUTTON_OK);
+        // }
         return SSRET_OK;
     }
     return SSRET_NO_USER_INTERFACE;

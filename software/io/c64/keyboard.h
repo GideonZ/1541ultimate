@@ -34,6 +34,11 @@ public:
 #define KEY_CTRL_J 0x0A
 #define KEY_CTRL_L 0x0C
 
+#define KEY_A      0x61
+#define KEY_S      0x73
+#define KEY_D      0x64
+#define KEY_W      0x77
+
 #define KEY_F1     0x85
 #define KEY_F3     0x86
 #define KEY_F5     0x87
@@ -63,4 +68,11 @@ public:
 #define KEY_SCRLOCK  0xA3
 #define KEY_NUMLOCK  0xA4
 
+// Specials
+#define KEY_MENU     0x1FE
+#define KEY_SEARCH   0x1FD
+#define KEY_TASKS    0x1FC
+#define KEY_HELP     0x1FB
+#define KEY_CONFIG   0x1FA
+#define KEY_SYSINFO  0x1F9
 #endif

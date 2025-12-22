@@ -15,47 +15,94 @@
 #endif // UPDATER
 #endif // NO_FILE_ACCESS
 
+/* Help */
+static const char *helptext =
+        "WASD:       Up/Left/Down/Right\n"
+        "Cursor Keys:Up/Left/Down/Right\n"
+        "  (Up/Down) Selection up/down\n"
+        "  (Left)    Go one level up\n"
+        "            leave directory or disk\n"
+        "  (Right)   Go one level down\n"
+        "            enter directory or disk\n"
+        "RETURN:     Selection context menu\n"
+        "RUN/STOP:   Leave menu / Back\n"
+        "\n"
+        "F1:         Page up\n"
+        "F3:         Help\n"
+        "F5:         Action Menu\n"
+        "F7:         Page down\n"
+        "\n"
+        "F2:         Enter Advanced Settings\n"
+    #ifndef RECOVERYAPP
+        "F4:         Show System Information\n"
+        "F6:         Search Assembly64\n"
+    #endif
+        "\n"
+        "SPACE:      Select file / directory\n"
+        "C= A:       Select all\n"
+        "C= N:       Deselect all\n"
+        "C= C:       Copy current selection\n"
+        "C= V:       Paste selection here\n"
+        "\n"
+        "HOME:       Enter home directory\n"
+        "C= HOME:    Set current dir as home\n"
+        "INST:       Delete selected files\n"
+        "\n"  
+		"Quick seek: Use the keyboard to type\n"
+		"            the name to search for:\n"
+		"            You can use ? as a\n"
+		"            wildcard. When WASD\n"
+        "            cursors are enabled,\n"
+        "            type with SHIFT pressed.\n"
+        "\n"  
+    #ifndef RECOVERYAPP
+    #endif
+        "C= L:       Show Debug Log\n"
+#if U64 == 2
+        "\nOutside menus the machine can be\n"
+        "reset by holding the switch up\n"
+        "for 1 second.\n"
+#endif
+		"\nRUN/STOP to close this window.";
+
 /* Configuration */
-static const char *colors[] = { "Black", "White", "Red", "Cyan", "Purple", "Green", "Blue", "Yellow",
-                         "Orange", "Brown", "Pink", "Dark Grey", "Mid Grey", "Light Green", "Light Blue", "Light Grey" };
+static const char *colors[] = { "Standard Blue", "Ultimate Black"  };
                           
 static const char *filename_overflow_squeeze[] = { "None", "Beginning", "Middle", "End" };
 static const char *itype[]      = { "Freeze", "Overlay on HDMI" };
 static const char *cfg_save[]   = { "No", "Ask", "Yes" };
+static const char *navstyles[] = { "Quick Search", "WASD Cursors" };
 
 struct t_cfg_definition user_if_config[] = {
 #if U64
-    { CFG_USERIF_ITYPE,      CFG_TYPE_ENUM,   "Interface Type",       "%s", itype,   0,  1, 1 },
+    { CFG_USERIF_ITYPE,      CFG_TYPE_ENUM,   "Interface Type",       "%s", itype,   0,  1, 0 },
 #endif
-    { CFG_USERIF_BACKGROUND, CFG_TYPE_ENUM,   "Background color",     "%s", colors,  0, 15, 0 },
-    { CFG_USERIF_BORDER,     CFG_TYPE_ENUM,   "Border color",         "%s", colors,  0, 15, 0 },
-    { CFG_USERIF_FOREGROUND, CFG_TYPE_ENUM,   "Foreground color",     "%s", colors,  0, 15, 12 },
-    { CFG_USERIF_SELECTED,   CFG_TYPE_ENUM,   "Selected Item color",  "%s", colors,  0, 15, 1 },
-#if U64
-    { CFG_USERIF_SELECTED_BG,CFG_TYPE_ENUM,   "Selected Backgr (Overlay)",  "%s", colors,  0, 15, 6 },
-#endif
+    { CFG_USERIF_NAVIGATION, CFG_TYPE_ENUM,   "Navigation Style",     "%s", navstyles, 0,  1, 0 },
+    { CFG_USERIF_COLORSCHEME,CFG_TYPE_ENUM,   "Color Scheme",         "%s", colors,  0,  1, 1 },
 //    { CFG_USERIF_WORDWRAP,   CFG_TYPE_ENUM,   "Wordwrap text viewer", "%s", en_dis,  0,  1, 1 },
-    { CFG_USERIF_HOME_DIR,   CFG_TYPE_STRING, "Home Directory",        "%s", NULL, 0, 31, (int)"" },
+
     { CFG_USERIF_START_HOME, CFG_TYPE_ENUM,   "Enter Home on Startup", "%s", en_dis, 0,  1, 0 },
+    { CFG_USERIF_HOME_DIR,   CFG_TYPE_STRING, "Home Directory",        "%s", NULL, 0, 31, (int)"" },
+
     { CFG_USERIF_CFG_SAVE,   CFG_TYPE_ENUM,   "Auto Save Config",      "%s", cfg_save, 0, 2, 1 },
     { CFG_USERIF_ULTICOPY_NAME, CFG_TYPE_ENUM, "Ulticopy Uses disk name", "%s", en_dis, 0, 1, 1 },
     { CFG_USERIF_FILENAME_OVERFLOW_SQUEEZE, CFG_TYPE_ENUM, "Filename overflow squeeze", "%s", filename_overflow_squeeze, 0, 3, 0 },
     { CFG_TYPE_END,           CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
 };
 
-UserInterface :: UserInterface(const char *title) : title(title)
+UserInterface :: UserInterface(const char *title, bool use_logo) : title(title)
 {
     initialized = false;
     focus = -1;
     host = NULL;
     keyboard = NULL;
-    alt_keyboard = NULL;
     screen = NULL;
     doBreak = false;
     available = false;
     color_sel_bg = 0;
     filename_overflow_squeeze = 0;
     menu_response_to_action = MENU_NOP;
+    logo = use_logo;
     register_store(0x47454E2E, "User Interface Settings", user_if_config);
     effectuate_settings();
 }
@@ -73,17 +120,39 @@ UserInterface :: ~UserInterface()
     printf(" bye UI!\n");
 }
 
+typedef struct {
+    int border;
+    int background;
+    int foreground;
+    int selected;
+    int selected_bg;
+    int selected_rev;
+    int status;
+    int inactive;
+} t_scheme_colors;
+
+const t_scheme_colors schemes[] = {
+    { 14, 6, 14, 1, 6,  0, 12, 12 },
+    { 0,  0, 12, 1, 6,  0,  6,  6 },
+};
+
 void UserInterface :: effectuate_settings(void)
 {
-    color_border = cfg->get_value(CFG_USERIF_BORDER);
-    color_fg     = cfg->get_value(CFG_USERIF_FOREGROUND);
-    color_bg     = cfg->get_value(CFG_USERIF_BACKGROUND);
-    color_sel    = cfg->get_value(CFG_USERIF_SELECTED);
+    const t_scheme_colors *scheme = logo ? &schemes[cfg->get_value(CFG_USERIF_COLORSCHEME)] : &schemes[1]; // for telnet always use black
+    color_border = scheme->border;
+    color_fg     = scheme->foreground;
+    color_bg     = scheme->background;
+    color_sel    = scheme->selected;
+    color_status = scheme->status;
+    color_inactive = scheme->inactive;
+    reverse_sel  = scheme->selected_rev;
+
 #if U64
-    color_sel_bg = cfg->get_value(CFG_USERIF_SELECTED_BG);
+    color_sel_bg = scheme->selected_bg;
 #endif
     config_save  = cfg->get_value(CFG_USERIF_CFG_SAVE);
     filename_overflow_squeeze = cfg->get_value(CFG_USERIF_FILENAME_OVERFLOW_SQUEEZE);
+    navmode      = cfg->get_value(CFG_USERIF_NAVIGATION);
 
     if(host && host->is_accessible())
         host->set_colors(color_bg, color_border);
@@ -251,6 +320,14 @@ void UserInterface :: swapDisk(void)
 #endif                                                                
 }
 
+void UserInterface :: send_keystroke(int key)
+{
+    UIObject *obj = ui_objects[focus];
+    if (obj) {
+        obj->send_keystroke(key);
+    }
+}
+
 int UserInterface :: pollInactive(void)
 {
     return ui_objects[focus]->poll_inactive();
@@ -321,7 +398,7 @@ void UserInterface :: appear(void)
 	set_screen_title();
 	for(int i=0;i<=focus;i++) {  // build up
 		//printf("Going to (re)init objects %d.\n", i);
-		ui_objects[i]->init(screen, keyboard);
+		ui_objects[i]->init();
 		ui_objects[i]->redraw();
 	}
 }
@@ -381,8 +458,8 @@ int  UserInterface :: popup(const char *msg, uint8_t flags)
     const char *c_button_names[] = { " Ok ", " Yes ", " No ", " All ", " Cancel " };
     const char c_button_keys[] = { 'o', 'y', 'n', 'a', 'c' };
 
-    UIPopup *pop = new UIPopup(msg, flags, 5, c_button_names, c_button_keys);
-    pop->init(screen, keyboard);
+    UIPopup *pop = new UIPopup(this, msg, flags, 5, c_button_names, c_button_keys);
+    pop->init();
     int ret;
     do {
         ret = pop->poll(0);
@@ -394,8 +471,8 @@ int  UserInterface :: popup(const char *msg, uint8_t flags)
     
 int  UserInterface :: popup(const char *msg, int count, const char **names, const char *keys)
 {
-    UIPopup *pop = new UIPopup(msg, (1 << (count + 1))-1, count, names, keys);
-    pop->init(screen, keyboard);
+    UIPopup *pop = new UIPopup(this, msg, (1 << (count + 1))-1, count, names, keys);
+    pop->init();
     int ret;
     do {
         ret = pop->poll(0);
@@ -407,8 +484,8 @@ int  UserInterface :: popup(const char *msg, int count, const char **names, cons
 
 int UserInterface :: string_box(const char *msg, char *buffer, int maxlen)
 {
-    UIStringBox *box = new UIStringBox(msg, buffer, maxlen);
-    box->init(screen, keyboard);
+    UIStringBox *box = new UIStringBox(this, msg, buffer, maxlen);
+    box->init();
     screen->cursor_visible(1);
     int ret;
     do {
@@ -436,8 +513,8 @@ int UserInterface :: string_edit(char *buffer, int maxlen, Window *w, int x, int
 
 int UserInterface :: choice(const char *msg, const char **choices, int count)
 {
-    UIChoiceBox *box = new UIChoiceBox(msg, choices, count);
-    box->init(screen, keyboard, color_fg, color_bg, color_sel, color_sel_bg); // clunky
+    UIChoiceBox *box = new UIChoiceBox(this, msg, choices, count);
+    box->init();
     screen->cursor_visible(0);
     int ret;
     do {
@@ -449,8 +526,8 @@ int UserInterface :: choice(const char *msg, const char **choices, int count)
 
 void UserInterface :: show_progress(const char *msg, int steps)
 {
-    status_box = new UIStatusBox(msg, steps);
-    status_box->init(screen);
+    status_box = new UIStatusBox(this, msg, steps);
+    status_box->init();
 }
 
 void UserInterface :: update_progress(const char *msg, int steps)
@@ -474,23 +551,6 @@ void UserInterface :: run_editor(const char *text_buf, int max_len)
     } while(!ret);
     edit->deinit();
     delete edit;
-}
-
-int UserInterface :: enterSelection()
-{
-#ifndef NO_FILE_ACCESS
-	// because we know that the command can only be caused by a TreeBrowser, we can safely cast
-	TreeBrowser *browser = (TreeBrowser *)(get_root_object());
-	if (browser) {
-		if (browser->state) {
-			if(browser->state->into2()) {
-			    return -1;
-			}
-			return 0;
-		}
-	}
-#endif
-	return -1;
 }
 
 QueueHandle_t userMessageQueue = 0;
@@ -520,4 +580,35 @@ mstring *UserInterface :: getMessage(void)
         xQueueReceive(userMessageQueue, &msg, 0);
     }
     return msg;
+}
+
+int UserInterface :: keymapper(int c, keymap_options_t map)
+{
+    if (navmode == 1) { // WASD cursors enabled
+        if (c >= 'A' && c <= 'Z') {
+            c |= 0x20; // make uppercase lowercase
+        } else {
+            switch(c) {
+            case 'w': c = KEY_UP; break;
+            case 'a': c = KEY_LEFT; break;
+            case 's': c = KEY_DOWN; break;
+            case 'd': c = KEY_RIGHT; break;
+            }
+        }
+    }
+    switch(c) {
+    case KEY_F1: c = KEY_PAGEUP; break;
+    case KEY_F3: c = KEY_HELP; break;
+    case KEY_F5: c = KEY_TASKS; break;
+    case KEY_F7: c = KEY_PAGEDOWN; break;
+    case KEY_F2: c = KEY_CONFIG; break;
+    case KEY_F4: c = KEY_SYSINFO; break;
+    case KEY_F6: c = KEY_SEARCH; break;
+    }
+    return c;
+}
+
+void UserInterface :: help()
+{
+    run_editor(helptext, strlen(helptext));
 }

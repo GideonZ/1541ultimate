@@ -29,6 +29,10 @@ struct t_cfg_definition net_config[] = {
     { CFG_NET_NETMASK, CFG_TYPE_STRING, "Static Netmask",   "%s", NULL,       7, 16, (int)"255.255.255.0" },
     { CFG_NET_GATEWAY, CFG_TYPE_STRING, "Static Gateway",   "%s", NULL,       7, 16, (int)"192.168.2.1" },
     { CFG_NET_DNS,     CFG_TYPE_STRING, "Static DNS",       "%s", NULL,       7, 16, (int)"8.8.8.8" },
+    { CFG_SEPARATOR,   CFG_TYPE_SEP,    "",                               "",  NULL,       0,  0, 0 },
+    { CFG_NET_STATUS,  CFG_TYPE_INFO,   "Status",                        "%s", NULL,       0, 32, (int)"" },
+    { CFG_NET_CUR_IP,  CFG_TYPE_INFO,   "Active IP address",             "%s", NULL,       0, 32, (int)"" },
+    { CFG_NET_MAC,     CFG_TYPE_INFO,   "Interface MAC",                 "%s", NULL,       0, 32, (int)"" },
     { CFG_TYPE_END,    CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
@@ -160,6 +164,18 @@ NetworkInterface :: ~NetworkInterface()
 void NetworkInterface :: attach_config()
 {
 	register_store(0x4E657477, "Ethernet Settings", net_config);
+    cfg->set_change_hook(CFG_NET_DHCP_EN, dhcp_change);
+    dhcp_change(cfg->find_item(CFG_NET_DHCP_EN));
+}
+
+int NetworkInterface :: dhcp_change(ConfigItem *it)
+{
+    bool enable_static = (it->getValue() == 0);
+    it->store->find_item(CFG_NET_IP)->setEnabled(enable_static);
+    it->store->find_item(CFG_NET_GATEWAY)->setEnabled(enable_static);
+    it->store->find_item(CFG_NET_NETMASK)->setEnabled(enable_static);
+    it->store->find_item(CFG_NET_DNS)->setEnabled(enable_static);
+    return 1;
 }
 
 bool NetworkInterface :: start()
@@ -263,7 +279,7 @@ void NetworkInterface :: getDisplayString(int index, char *buffer, int width)
 {
     char ip[16];
     if (is_link_up()) {
-        sprintf(buffer, "Net%d    IP: %#s\eELink Up", index, width - 21, getIpAddrString(ip, 16));
+        sprintf(buffer, "Net%d    IP: %#s\eMLink Up", index, width - 21, getIpAddrString(ip, 16));
     } else {
         sprintf(buffer, "Net%d    MAC %b:%b:%b:%b:%b:%b%#s\eJLink Down", index, mac_address[0], mac_address[1],
                 mac_address[2], mac_address[3], mac_address[4], mac_address[5], width - 38, "");
@@ -434,4 +450,27 @@ bool NetworkInterface :: peekArpTable(uint32_t ipToQuery, uint8_t *mac)
     portEXIT_CRITICAL();
 
     return ret;
+}
+
+void NetworkInterface :: on_edit()
+{
+    uint8_t mac[8];
+    char buf[32];
+    getMacAddr(mac);
+    sprintf(buf, "%b:%b:%b:%b:%b:%b", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    ConfigItem *it = cfg->find_item(CFG_NET_MAC);
+    it->setEnabled(false);
+    it->setString(buf);
+
+    it = cfg->find_item(CFG_NET_CUR_IP);
+    it->setEnabled(false);
+    it->setString(getIpAddrString(buf, 16));
+
+    it = cfg->find_item(CFG_NET_STATUS);
+    it->setEnabled(false);
+    if (!if_up) {
+        it->setString("Link Down");
+    } else {
+        it->setString("Link Up");
+    }
 }
