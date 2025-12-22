@@ -58,6 +58,7 @@ static const char *sidsel[] = { "UltiSID1-A", "UltiSID1-B", "UltiSID1-C", "UltiS
 
 static struct t_cfg_definition cfg_definition[] = {
     { CFG_LED_TYPE,             CFG_TYPE_ENUM,  "LedStrip Type",                "%s", types,        0,  1,  1  },
+    { CFG_LED_LENGTH,           CFG_TYPE_VALUE, "LedStrip Length",              "%d", NULL,         1, 40,  24 },
     { CFG_LED_MODE,             CFG_TYPE_ENUM,  "LedStrip Mode",                "%s", modes,        0,  3,  1  },
     { CFG_LED_PATTERN,          CFG_TYPE_ENUM,  "LedStrip Pattern",             "%s", patterns,     0,  2,  0  },
     { CFG_LED_SIDSELECT,        CFG_TYPE_ENUM,  "LedStrip SID Select",          "%s", sidsel,       0,  7,  0  },
@@ -132,8 +133,8 @@ LedStrip :: LedStrip()
 	ledstrip = this; 
     register_store(0x4C454453, "LED Strip Settings", cfg_definition);
 
-    //cfg->set_change_hook(CFG_LED_TYPE,      LedStrip :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_TYPE,      LedStrip :: hot_effectuate);
+    cfg->set_change_hook(CFG_LED_LENGTH,    LedStrip :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_PATTERN,   LedStrip :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_MODE,      LedStrip :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_INTENSITY, LedStrip :: hot_effectuate);
@@ -214,40 +215,15 @@ void LedStrip :: MapLeftToRight(void)
 
 void LedStrip :: MapRightToLeft(void)
 {
-    // Order of the LEDs is:
-    // case bottom left to right (30 pcs)
-    // case top left to right (30 pcs)
-    // kbstrip left to right (24 pcs) (left aligned)
-    // So, maybe for true left to right, we could do case bottom, case top, strip, then next etc for the first 24
-    // then the last 6 steps only case bottom and case top.
-    // In other words: 0, 30, 60, 1, 31, 61, 2, 32, 62, ..., 23, 53, 83, 24, 54, 25, 55, ..., 29, 59
-    // Remember: the led controller reads the address where to find the colors, so these indices should be written in
-    // on the addresses, sequenced in the list above.
+    // The rightmost LED is length-1, then length-2 etc.
+
     uint8_t pos = 0;
     LEDSTRIP_MAP_ENABLE = 1;
 
-    for(int i=29;i>=24;i--) {
+    for(int i=length-1;i>=0;i--) {
         LEDSTRIP_DATA[3*i+0] = pos++;
         LEDSTRIP_DATA[3*i+1] = pos++;
         LEDSTRIP_DATA[3*i+2] = pos++;
-
-        LEDSTRIP_DATA[3*i+90] = pos++;
-        LEDSTRIP_DATA[3*i+91] = pos++;
-        LEDSTRIP_DATA[3*i+92] = pos++;
-    }
-
-    for(int i=23;i>=0;i--) {
-        LEDSTRIP_DATA[3*i+0] = pos++;
-        LEDSTRIP_DATA[3*i+1] = pos++;
-        LEDSTRIP_DATA[3*i+2] = pos++;
-
-        LEDSTRIP_DATA[3*i+90] = pos++;
-        LEDSTRIP_DATA[3*i+91] = pos++;
-        LEDSTRIP_DATA[3*i+92] = pos++;
-
-        LEDSTRIP_DATA[3*i+180] = pos++;
-        LEDSTRIP_DATA[3*i+181] = pos++;
-        LEDSTRIP_DATA[3*i+182] = pos++;
     }
 
     LEDSTRIP_MAP_ENABLE = 0;
@@ -421,6 +397,7 @@ void LedStrip :: run(void)
 
 void LedStrip :: effectuate_settings(void)
 {
+    length    = cfg->get_value(CFG_LED_LENGTH);
     protocol  = cfg->get_value(CFG_LED_TYPE);
     mode      = led_mode_t(cfg->get_value(CFG_LED_MODE));
     intensity = cfg->get_value(CFG_LED_INTENSITY);
@@ -463,7 +440,6 @@ void LedStrip :: effectuate_settings(void)
     } else {
         LEDSTRIP_MAP_ENABLE = 0x40; // WS
     }
-//    U64_PWM_DUTY = 0xC0;
 }
 
 void LedStrip :: update_menu()
@@ -514,6 +490,8 @@ void LedStrip :: setup_config_menu(void)
         grp->append(ConfigItem::heading("Case Lights"));
     }
     grp->append(cfg->find_item(CFG_LED_TYPE)->set_item_altname("LED Type"));
+    grp->append(cfg->find_item(CFG_LED_LENGTH)->set_item_altname("Strip Length"));
+    grp->append(ConfigItem::separator());
     grp->append(cfg->find_item(CFG_LED_MODE)->set_item_altname("Mode"));
     grp->append(cfg->find_item(CFG_LED_PATTERN)->set_item_altname("Pattern"));
     grp->append(cfg->find_item(CFG_LED_INTENSITY)->set_item_altname("Intensity"));
