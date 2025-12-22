@@ -2451,10 +2451,13 @@ void U64Config :: setup_config_menu(void)
     grp = ConfigGroupCollection :: getGroup("Joystick Settings", SORT_ORDER_CFG_JOYSTICK);
     grp->append(cfg->find_item(CFG_JOYSWAP)->set_item_altname("Joystick Input"));
     grp->append(sidaddressing.cfg->find_item(CFG_PADDLE_EN));
+
+#if U64==2
     grp->append(ConfigItem :: separator());
     grp->append(ConfigItem :: heading("Note: When WASD Joystick emulation"));
     grp->append(ConfigItem :: heading("is enabled, hold [CTRL] to type the"));
     grp->append(ConfigItem :: heading("W, A, S, D and RETURN characters."));
+#endif
 
     grp = ConfigGroupCollection :: getGroup("Turbo Settings", SORT_ORDER_CFG_TURBO);
     grp->append(cfg->find_item(CFG_SPEED_REGS));
