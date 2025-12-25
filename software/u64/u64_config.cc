@@ -2341,12 +2341,9 @@ void U64Config :: list_palettes(ConfigItem *it, IndexedList<char *>& strings)
 
 void U64Config :: set_palette_rgb(const uint8_t rgb[16][3])
 {
-#if U64 == 2
-    volatile uint8_t *rgb_registers = (volatile uint8_t *)U64II_HDMI_PALETTE;
-#else
-    volatile uint8_t *rgb_registers = (volatile uint8_t *)C64_PALETTE;
-#endif
     uint8_t yuv[16][3];
+
+    volatile uint8_t *rgb_registers = (volatile uint8_t *)C64_PALETTE;
     for(int i=0; i<16; i++) {
         *(rgb_registers++) = rgb[i][0];
         *(rgb_registers++) = rgb[i][1];
@@ -2354,8 +2351,17 @@ void U64Config :: set_palette_rgb(const uint8_t rgb[16][3])
         rgb_registers++;
         rgb_to_yuv(rgb[i], yuv[i], false);
     }
-//    dump_hex_relative(rgb, 48);
-//    dump_hex_relative(yuv, 48);
+#if U64 == 2
+    volatile uint8_t *rgb_registers_hdmi = (volatile uint8_t *)U64II_HDMI_PALETTE;
+    for(int i=0; i<16; i++) {
+        *(rgb_registers_hdmi++) = rgb[i][0];
+        *(rgb_registers_hdmi++) = rgb[i][1];
+        *(rgb_registers_hdmi++) = rgb[i][2];
+        rgb_registers_hdmi++;
+    }
+#endif
+
+
     set_palette_yuv(yuv);
 }
 
