@@ -532,10 +532,14 @@ esp_err_t wifi_connect_to_scanned(int index)
     if (ap_info[index].authmode) {
         err = wifi_find_password(ap_info[index].ssid, last_connect.pw, 64, &last_connect.list_index);
     } else {
-        last_connect.pw[0] = 0; // clear password
-        last_connect.list_index = -1;
+        // no authentication required. But make sure the user has configured this AP.
+        err = wifi_find_password(ap_info[index].ssid, last_connect.pw, 64, &last_connect.list_index);
+        if ((err == ESP_OK) && (last_connect.pw[0] != 0)) {
+            // AP is known and configured, however, with a password. Do not allow to connect.
+            err = ESP_ERR_NOT_FOUND;
+        }
     }
-    if (err == ESP_OK) { // password found, or not required
+    if (err == ESP_OK) { // known AP found
         strncpy(last_connect.ssid, (const char *)(ap_info[index].ssid), 32);
         last_connect.auth_mode = ap_info[index].authmode;
         return attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode);
