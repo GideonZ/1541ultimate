@@ -68,7 +68,7 @@ class BrowsableConfigItem: public Browsable
         buffer[32] = 0;
         if (cmd->user_interface) {
             int ret = cmd->user_interface->string_box(item->definition->item_text, buffer, 32);
-            if (ret > 0) {
+            if (ret > 0) { // allow empty string
                 item->setString(buffer);
             }
         }

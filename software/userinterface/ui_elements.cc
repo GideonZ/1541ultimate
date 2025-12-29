@@ -223,8 +223,6 @@ int UIStringEdit :: poll(int dummy)
     switch(key) {
     case KEY_RETURN: // CR
         buffer[len] = 0;
-        if(!len)
-            return -1; // cancel
         return 1; // done
     case KEY_LEFT: // left
     	if (cur > 0) {

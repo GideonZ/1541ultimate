@@ -103,7 +103,7 @@ SubsysResultCode_e UserFileInteraction::S_rename(SubsysCommand *cmd)
     buffer[63] = 0;
 
     res = cmd->user_interface->string_box("Give a new name..", buffer, 63);
-    if (res > 0) {
+    if ((res > 0) && (*buffer)) {
         fres = fm->rename(p, cmd->filename.c_str(), buffer);
         if (fres != FR_OK) {
             sprintf(buffer, "Error: %s", FileSystem::get_error_string(fres));
@@ -160,7 +160,7 @@ SubsysResultCode_e UserFileInteraction::S_createDir(SubsysCommand *cmd)
     path->cd(cmd->path.c_str());
 
     int res = cmd->user_interface->string_box("Give name for new directory..", buffer, 22);
-    if (res > 0) {
+    if ((res > 0) && (*buffer)) {
         FRESULT fres = fm->create_dir(path, buffer);
         if (fres != FR_OK) {
             sprintf(buffer, "Error: %s", FileSystem::get_error_string(fres));
@@ -277,7 +277,7 @@ FRESULT create_user_file(UserInterface *ui, const char *message, const char *ext
     char filename[32];
     FileManager *fm = FileManager :: getFileManager();
     *f = NULL;
-    if(ui->string_box(message, buffer, 22) > 0) {
+    if ((ui->string_box(message, buffer, 22) > 0) && (*buffer)) {
         strcpy(filename, buffer);
         fix_filename(filename);
         set_extension(filename, ext, 32);

@@ -337,7 +337,7 @@ void UltiCopy :: save_copied_disk()
         ulticopy_bin_image->get_sensible_name(buffer);
     }
 	res = cmd_ui->string_box("Give name for copied disk..", buffer, 22);
-	if(res > 0) {
+	if ((res > 0) && (*buffer)) {
 		fix_filename(buffer);
 		set_extension(buffer, ".d64", 32);
         FRESULT fres = fm->fopen(path, buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
