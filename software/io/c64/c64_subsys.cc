@@ -248,7 +248,7 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
             ram_size = 128 * 1024;
             ram_size <<= c64->cfg->get_value(CFG_C64_REU_SIZE);
 
-            if (cmd->user_interface->string_box("Save REU memory as..", buffer, 22) > 0) {
+            if ((cmd->user_interface->string_box("Save REU memory as..", buffer, 22) > 0) && (*buffer)) {
                 fix_filename(buffer);
                 set_extension(buffer, ".reu", 32);
 
@@ -294,7 +294,7 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
 
         case MENU_U64_SAVERAM:
             ram_size = 64 * 1024;
-            if (cmd->user_interface->string_box("Save RAM as..", buffer, 22) > 0) {
+            if ((cmd->user_interface->string_box("Save RAM as..", buffer, 22) > 0) && (*buffer)) {
                 fix_filename(buffer);
                 set_extension(buffer, ".bin", 32);
 
@@ -323,7 +323,7 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
 
         case MENU_C64_SAVE_CARTRIDGE:
             buffer[0] = 0;
-            if (cmd->user_interface->string_box("Save Cartridge as..", buffer, 28) > 0) {
+            if ((cmd->user_interface->string_box("Save Cartridge as..", buffer, 28) > 0) && (*buffer)) {
                 fix_filename(buffer);
                 set_extension(buffer, ".crt", 32);
 
@@ -464,7 +464,7 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
             uint8_t ramBase = reu[0x7dc7 + devNo];
             uint8_t* srcAddr = reu + (((uint32_t)ramBase) << 16);
 
-            if (cmd->user_interface->string_box("Save RAMDISK as..", buffer, 22) > 0) {
+            if ((cmd->user_interface->string_box("Save RAMDISK as..", buffer, 22) > 0) && (*buffer)) {
                 fix_filename(buffer);
                 set_extension(buffer, extension, 32);
 

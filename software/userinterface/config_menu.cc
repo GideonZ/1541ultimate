@@ -115,7 +115,7 @@ void ConfigBrowserState :: change(void)
             if (max > 79)
                 max = 79;
             strncpy(buffer, it->getString(), max);
-            if(browser->user_interface->string_box(it->get_item_name(), buffer, max)) {
+            if(browser->user_interface->string_box(it->get_item_name(), buffer, max)) { // allow empty string
                 it->setString(buffer);
                 update_selected();
             }

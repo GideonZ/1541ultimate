@@ -1322,7 +1322,7 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
                 i2c->i2c_lock("EDID Read");
                 i2c->set_channel(I2C_CHANNEL_HDMI);
     			if (i2c->i2c_read_block(0xA0, 0x00, edid, 256) == 0) {
-    				if (cmd->user_interface->string_box("Reading EDID OK. Save to:", name, 31) > 0) {
+    				if ((cmd->user_interface->string_box("Reading EDID OK. Save to:", name, 31) > 0) && (*name)) {
     					set_extension(name, ".bin", 32);
     			        fres = fm->fopen(cmd->path.c_str(), name, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
     			        if (fres == FR_OK) {
@@ -1340,8 +1340,7 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
     	break;
 
     case MENU_U64_POKE:
-        if (cmd->user_interface->string_box("Poke AAAA,DD", poke_buffer, 16)) {
-
+        if ((cmd->user_interface->string_box("Poke AAAA,DD", poke_buffer, 16) > 0) && (*poke_buffer)) {
             sscanf(poke_buffer, "%x,%x", &addr, &value);
 
             C64 *machine = C64 :: getMachine();

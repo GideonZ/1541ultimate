@@ -72,8 +72,8 @@ SubsysResultCode_e ConfigIO :: S_save_log(SubsysCommand *cmd)
     char buffer[64];
     buffer[0] = 0;
     int res = cmd->user_interface->string_box("Give filename..", buffer, 22);
-    set_extension(buffer, ".log", 32);
-    if (res > 0) {
+    if ((res > 0) && (*buffer)) {
+        set_extension(buffer, ".log", 32);
         FRESULT fres = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_ALWAYS, &f);
         if (fres == FR_OK) {
             uint32_t transferred = 0;
@@ -99,8 +99,8 @@ SubsysResultCode_e ConfigIO :: S_save_to_file(SubsysCommand *cmd)
     File *f;
 
     int res = cmd->user_interface->string_box("Give filename..", buffer, 22);
-    set_extension(buffer, ".cfg", 32);
-    if (res > 0) {
+    if ((res > 0) && (*buffer)) {
+        set_extension(buffer, ".cfg", 32);
         FRESULT fres = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_ALWAYS, &f);
         if (fres == FR_OK) {
             S_write_to_file(f); // FIXME? Cannot fail?

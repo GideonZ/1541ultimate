@@ -1164,7 +1164,7 @@ SubsysResultCode_e C1541 :: save_disk_to_file(SubsysCommand *cmd)
 
     set_extension(buffer, "", 32); // initially remove the extension
 	res = cmd->user_interface->string_box("Give name for image file..", buffer, 24);
-	if(res > 0) {
+	if ((res > 0) && (*buffer)) {
 		set_extension(buffer, ext, 32);
 		fix_filename(buffer);
 		fres = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_ALWAYS | FA_CREATE_NEW, &file);

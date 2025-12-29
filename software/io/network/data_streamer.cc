@@ -134,7 +134,7 @@ SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
             strncpy(dest_host, default_host, 36);
         }
         if (cmd->user_interface) {
-            if (cmd->user_interface->string_box("Send to...", dest_host, 36) < 0) {
+            if ((cmd->user_interface->string_box("Send to...", dest_host, 36) < 0) || !(*dest_host)){
                 return SSRET_ABORTED_BY_USER;
             }
             cfg->set_string(CFG_STREAM_DEST0 + streamID, dest_host);
