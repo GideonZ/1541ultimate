@@ -265,15 +265,17 @@ SubsysResultCode_e NetworkLWIP_WiFi :: manual_connect(SubsysCommand *cmd)
     ssid[0] = 0;
     password[0] = 0;
     ret = cmd->user_interface->string_box("Name of Access Point (SSID)", ssid, 32);
-    if (ret < 1) {
+    if ((ret < 1)||(!ssid[0])) { // abort when SSID empty
         return SSRET_ABORTED_BY_USER;
     }
     ret = cmd->user_interface->string_box("Password", password, 62);
-    if (ret < 0) {
+    if (ret < 1) {
         return SSRET_ABORTED_BY_USER;
     }
-    if (ret > 0) {
+    if (password[0]) { // non-empty password: select authentication mode
         ret = cmd->user_interface->choice("Authentication", authmodes, 9);
+    } else {
+        ret = 0; // empty password: no authentication
     }
     if (ret < 0) { // either the picker or the password were aborted
         return SSRET_ABORTED_BY_USER;
