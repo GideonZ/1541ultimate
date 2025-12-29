@@ -265,20 +265,21 @@ SubsysResultCode_e NetworkLWIP_WiFi :: manual_connect(SubsysCommand *cmd)
     ssid[0] = 0;
     password[0] = 0;
     ret = cmd->user_interface->string_box("Name of Access Point (SSID)", ssid, 32);
-    if (ret < 1) {
+    if ((ret < 1) || !(*ssid)) {
         return SSRET_ABORTED_BY_USER;
     }
-    ret = cmd->user_interface->string_box("Password", password, 62);
-    if (ret < 0) {
+    ret = cmd->user_interface->choice("Authentication", authmodes, 9);
+    if (ret >= 0) {
+        authmode = ret;
+    } else {
         return SSRET_ABORTED_BY_USER;
     }
-    if (ret > 0) {
-        ret = cmd->user_interface->choice("Authentication", authmodes, 9);
+    if (authmode > 0) { // for anything except "Open", ask for password
+        ret = cmd->user_interface->string_box("Password", password, 62);
+        if (ret < 0) { // allow empty string (ret == 1)
+            return SSRET_ABORTED_BY_USER;
+        }
     }
-    if (ret < 0) { // either the picker or the password were aborted
-        return SSRET_ABORTED_BY_USER;
-    }
-    authmode = ret;
     wifi_wifi_connect(ssid, password, authmode);
     return SSRET_OK;
 }

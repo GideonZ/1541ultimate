@@ -456,7 +456,7 @@ int  UIChoiceBox :: poll(int)
             break;
         case KEY_SPACE:
         case KEY_RETURN:
-            return current;
+            return current + 1;
         case KEY_BREAK: // break
         case KEY_ESCAPE: // exit!
             return -1; // cancel

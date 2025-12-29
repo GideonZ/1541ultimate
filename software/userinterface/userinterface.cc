@@ -547,7 +547,8 @@ int UserInterface :: choice(const char *msg, const char **choices, int count)
         ret = box->poll(0);
     } while(!ret);
     delete box;
-    return ret;
+    // Return values are 1 based, unless it's an error
+    return (ret > 0) ? (ret - 1) : ret;
 }
 
 void UserInterface :: show_progress(const char *msg, int steps)
