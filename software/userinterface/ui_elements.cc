@@ -377,7 +377,7 @@ void UIChoiceBox :: init()
     this->color_sel_bg = get_ui()->color_sel_bg;
     Screen *screen = get_ui()->get_screen();
     
-    int rows = 2 + count;
+    int rows = 2 + 2 + count;  // 2 lines for title + spacing, 2 more lines for the frame
 	int max_len = message.length();
     int len;
     for(int i=0;i<count;i++) {
@@ -439,10 +439,6 @@ int  UIChoiceBox :: poll(int)
     c = keyboard->getch();
     c = get_ui()->keymapper(c, e_keymap_default);
 
-    if (c == -1) // nothing pressed
-    	return 0;
-    if (c == -2) // error
-    	return -1;
     switch(c) {
         case -1: return 0; // nothing pressed
         case -2: return -1; // error
@@ -461,6 +457,9 @@ int  UIChoiceBox :: poll(int)
         case KEY_SPACE:
         case KEY_RETURN:
             return current;
+        case KEY_BREAK: // break
+        case KEY_ESCAPE: // exit!
+            return -1; // cancel
         default:
             break;
     }
