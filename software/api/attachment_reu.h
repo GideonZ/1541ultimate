@@ -85,6 +85,7 @@ public:
                     }
                     delete args;
                 }
+                delete this;
                 break;
         }
     }
