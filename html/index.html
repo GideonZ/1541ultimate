@@ -431,17 +431,21 @@ $(document).ready(async function () {
         let bytes = [];
         let inQuotes = false;
         let inRemark = false;
+        let inData   = false;
 
         while (remainingString) {
-            let [byte, newString] = scan(remainingString, !(inQuotes || inRemark));
+            let [byte, newString] = scan(remainingString, !(inQuotes || inRemark || inData));
             bytes.push(byte);
             remainingString = newString;
 
             if (byte === '"'.charCodeAt(0)) {
                 inQuotes = !inQuotes;
             }
-            if (byte === 143) {
+            else if (byte === 143) {
                 inRemark = true;
+            }
+            else if (byte === 131) {
+                inData = true;
             }
         }
 
