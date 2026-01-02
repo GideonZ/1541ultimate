@@ -202,14 +202,10 @@ $(document).ready(async function () {
     async function parseBASIC() {
         var textarea = $("#basiceditor").val();
 
-        // Split into lines, remove blank lines, convert to lowercase, and join back
-        var temp = textarea.split('\n')
-                                //.map(line => line.trim().toLowerCase())	//Shifted is neded!
-                                .filter(line => line.trim().length > 0) 
-                                .join('\n');
-
-        $("#basiceditor").val(temp);
-        var lines = temp.split('\n');
+        // Split into lines, keep only those starting with a digit, and join back
+        var lines = textarea.split('\n')
+                .map(line => line.trim())
+                .filter(line => /^\d/.test(line));
 
         const tokenized_lines = [];
         let addr = 2049;
@@ -1522,8 +1518,12 @@ function disassembler(startInt, byteArray) {
             <div id="tableContainer"></div>
 
             <textarea id="basiceditor" class="c64-textarea" cols="80">
-10 ? cH(14)"Hello world!" :rem print chr$(14)"Hello world!"
-20 gO 10 :rem goto 10
+// print "Hello world!" text
+// example of writing using abbreviated commands
+// print chr$(14)"Hello world!" => ? cH(14)"Hello world!"
+10 ? cH(14)"Hello world!"
+// go to line no. 10, goto 10 => gO 10
+20 gO 10
             </textarea>
             <div class="padding-tr-5">
                 <span class="padding-tr-5"><input type="button" id="submitBASIC" value="Upload"></span>
