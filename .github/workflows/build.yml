@@ -85,65 +85,65 @@ jobs:
         run: |
           docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2_rv"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2_rv && mv update.u2r update_${{ env.GIT_VERSION }}.u2r"
 
       - if: steps.cache-u2.outputs.cache-hit == 'true'
         name: Build U2 using cached FPGAs
         run: |
           docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2_rv_swonly"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2_rv_swonly && mv update.u2r update_${{ env.GIT_VERSION }}.u2r"
 
       - if: steps.cache-u2p.outputs.cache-hit != 'true'
         name: Build U2+ including FPGAs
         run: |
           docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2plus"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2plus && mv update.u2p update_${{ env.GIT_VERSION }}.u2p"
 
       - if: steps.cache-u2p.outputs.cache-hit == 'true'
         name: Build U2+ using cached FPGAs
         run: |
           docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2plus_swonly"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2plus_swonly && mv update.u2p update_${{ env.GIT_VERSION }}.u2p"
 
       - if: steps.cache-u2pl.outputs.cache-hit != 'true'
         name: Build U2+L including FPGA
         run: |
           docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2pl"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2pl && mv update.u2l update_${{ env.GIT_VERSION }}.u2l"
 
       - if: steps.cache-u2pl.outputs.cache-hit == 'true'
         name: Build U2+L using cached FPGAs
         run: |
           docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2pl_swonly"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2pl_swonly && mv update.u2l update_${{ env.GIT_VERSION }}.u2l"
 
       - name: Build U64 Software
         run: |
           docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64 && mv update.u64 update_${{ env.GIT_VERSION }}.u64"
 
       - name: Build U64-II Software
         run: |
           docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64ii"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64ii && mv update.ue2 update_${{ env.GIT_VERSION }}.ue2"
 
       - name: Upload User Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: update_package_${{ env.GIT_VERSION }}
           path: |
-            update.u2r
-            update.u2p
-            update.u2l
-            update.u64
-            update.ue2
+            update_${{ env.GIT_VERSION }}.u2r
+            update_${{ env.GIT_VERSION }}.u2p
+            update_${{ env.GIT_VERSION }}.u2l
+            update_${{ env.GIT_VERSION }}.u64
+            update_${{ env.GIT_VERSION }}.ue2
 
       - name: Upload Factory Artifacts U2+L
         uses: actions/upload-artifact@v4

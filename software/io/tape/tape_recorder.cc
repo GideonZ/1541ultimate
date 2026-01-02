@@ -115,7 +115,7 @@ void TapeRecorder :: create_task_items(void)
     cat->append(myActions.finish);
 }
 
-void TapeRecorder :: update_task_items(bool writablePath, Path *path)
+void TapeRecorder :: update_task_items(bool writablePath)
 {
     if (recording) {
         myActions.finish->show();
@@ -333,7 +333,7 @@ bool TapeRecorder :: request_file(SubsysCommand *cmd)
     const char *signature = "C64-TAPE-RAW\001\0\0\0\0\0\0\0";
 
 	int res = cmd->user_interface->string_box("Give name for tap file..", buffer, 22);
-	if(res > 0) {
+	if ((res > 0) && (*buffer)) {
         total_length = 0;
 		set_extension(buffer, ".tap", 32);
 		fix_filename(buffer);

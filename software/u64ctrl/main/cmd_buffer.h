@@ -13,7 +13,9 @@
 #define CMD_BUF_PAYLOAD 1536
 #define CMD_BUF_HEADER  16
 #define CMD_BUF_SIZE (CMD_BUF_PAYLOAD + CMD_BUF_HEADER)
+#ifndef NUM_BUFFERS
 #define NUM_BUFFERS 16
+#endif
 
 #if (NIOS || RISCV)
     #include "FreeRTOS.h"

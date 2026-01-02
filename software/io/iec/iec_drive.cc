@@ -8,7 +8,7 @@
 #include "json.h"
 
 #ifndef FS_ROOT
-#define FS_ROOT "/Usb0/"
+#define FS_ROOT "/USB0/"
 #endif
 
 #define MENU_IEC_ON          0xCA0E
@@ -206,7 +206,7 @@ void IecDrive :: create_task_items(void)
 }
 
 // called from GUI task
-void IecDrive :: update_task_items(bool writablePath, Path *path)
+void IecDrive :: update_task_items(bool writablePath)
 {
 	if (enable) {
 		myActions.turn_off->show();

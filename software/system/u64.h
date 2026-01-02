@@ -32,6 +32,16 @@
 #define U64II_CHARGEN_COLOR_RAM     (U64II_OVERLAY_BASE + 0x2000)
 
 #define U64II_HW_I2C_BASE (U2P_IO_BASE + 0x0700)
+#define U64II_BLINGBOARD_KEYB (U2P_IO_BASE + 0x0800)
+#define U64II_BLINGBOARD_LEDS (U2P_IO_BASE + 0x0900)
+
+#define BLING_RX_DATA  (*(volatile uint8_t *)(U64II_BLINGBOARD_KEYB + 0))
+#define BLING_RX_GET   (*(volatile uint8_t *)(U64II_BLINGBOARD_KEYB + 1))
+#define BLING_RX_FLAGS (*(volatile uint8_t *)(U64II_BLINGBOARD_KEYB + 2))
+#define BLING_RX_IRQEN (*(volatile uint8_t *)(U64II_BLINGBOARD_KEYB + 3))
+
+#define BLINGBOARD_INSTALLED (BLING_RX_FLAGS & 0x04)
+// #define BLINGBOARD_INSTALLED (1)
 
 // end U64-II
 
@@ -58,6 +68,7 @@
 #define U64_HDMI_PLL_RESET (*(volatile uint8_t *)(U64_IO_BASE + 0x04))
 #define U64_USERPORT_EN    (*(volatile uint8_t *)(U64_IO_BASE + 0x05))
 #define U64II_KEYB_JOY     (*(volatile uint8_t *)(U64_IO_BASE + 0x06))
+#define U64II_BLACKBOARD   (*(volatile uint8_t *)(U64_IO_BASE + 0x07))
 #define U64_HDMI_ENABLE    (*(volatile uint8_t *)(U64_IO_BASE + 0x08))
 #define U64_INT_CONNECTORS (*(volatile uint8_t *)(U64_IO_BASE + 0x09))
 #define U64II_KEYB_COL     (*(volatile uint8_t *)(U64_IO_BASE + 0x0A))
@@ -87,9 +98,6 @@
 #define U64_POWER_OFF_1			0x2B
 #define U64_POWER_OFF_2			0xB2
 
-#define LEDSTRIP_DATA ( (volatile uint8_t *)(C64_IO_LED))
-#define LEDSTRIP_FROM (*(volatile uint8_t *)(C64_IO_LED + 0xFE))
-#define LEDSTRIP_LEN  (*(volatile uint8_t *)(C64_IO_LED + 0xFF))
 #define U64_DEBUG_REGISTER (*(volatile uint8_t *)C64_IO_DEBUG)
 
 #define C64_SCANLINES    (*(volatile uint8_t *)(C64_IO_BASE + 0x00))
@@ -161,9 +169,9 @@ typedef struct {
     uint8_t VID_HACTIVE;
     uint8_t VID_HFRONTPORCH;
     uint8_t VID_HREPETITION;
-    uint8_t scaler_vstretch;
+    uint8_t resync;
     uint8_t VID_Y;
-    uint8_t VID_VSYNCPOL;
+    uint8_t VID_VSYNCPOL; // 8
     uint8_t VID_VSYNCTIME;
     uint8_t VID_VBACKPORCH;
     uint8_t VID_VACTIVE;
@@ -171,6 +179,20 @@ typedef struct {
     uint8_t VID_VIC;
     uint8_t VID_REPCN;
     uint8_t VID_IRCYQ;
+    uint8_t x_offset; // 16
+    uint8_t tx_swing;
+    uint8_t gearbox;
+    uint8_t hscaler;
+    uint8_t vscaler;
+    uint8_t VID_A;
+    uint8_t VID_B;
+    uint8_t VID_S;
+    uint8_t VID_C; // 24
+    uint8_t VID_M;
+    uint8_t VID_R;
+    uint8_t VID_EC;
+    uint8_t VID_SC;
+    uint8_t VID_YQ;
 } t_video_timing_regs;
 
 typedef enum {
@@ -182,5 +204,26 @@ typedef enum {
     e_NTSC_50_lock,
     e_NOT_SET,
 } t_video_mode;
+
+typedef enum {
+    e_480p_576p = 0,
+    e_1280x720,
+    e_1920x1080,
+
+    e_800x600,
+    e_1024x768,
+    e_1280x1024,
+
+    e_auto_edid,
+} t_hdmi_mode;
+
+typedef enum 
+{
+    e_INTPLL_1x,
+    e_INTPLL_6_5,
+    e_INTPLL_25_13,
+    e_INTPLL_45_52,
+    e_INTPLL_55_32,
+} t_intpll_mode;
 
 #endif /* U64_H_ */

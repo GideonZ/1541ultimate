@@ -95,7 +95,7 @@ static void socket_ensure_authenticated(SocketStream *str) {
                     // Failed login, throttle and flush input
                     printf("Telnet connection invalid password\n");
                     vTaskDelay(attempt_delay / portTICK_PERIOD_MS);
-                    str->write("\r\nIncorrect password!\r\n", 4 + 19 + 4);
+                    str->write("\r\nIncorrect password!\r\n", 2 + 19 + 2);
                     --attempts;
                     attempt_delay <<= 1;  // Exponential delay, 0.25 -> 4s delay (5 attempts)
                     while (str->get_char() >= 0)
@@ -146,7 +146,7 @@ void socket_gui_task(void *a)
 //	Screen *scr = host->getScreen();
 //	Keyboard *keyb = host->getKeyboard();
 
-	UserInterface *user_interface = new UserInterface(title);
+	UserInterface *user_interface = new UserInterface(title, false);
 	user_interface->init(host);
 
 	Browsable *root = new BrowsableRoot();

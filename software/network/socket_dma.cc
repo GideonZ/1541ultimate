@@ -93,7 +93,7 @@ bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
     switch(cmd) {
     case SOCKET_CMD_AUTHENTICATE:
         password = networkConfig.cfg->get_string(CFG_NETWORK_PASSWORD);
-        if (*password || (strlen(password) == length && memcmp(password, load_buffer, length) == 0)) {
+        if (!(*password) || (strlen(password) == length && memcmp(password, load_buffer, length) == 0)) {
             authenticated = true;
             buf[0] = 1;
         }

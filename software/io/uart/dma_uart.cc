@@ -152,7 +152,7 @@ uint8_t DmaUART::DmaUartInterrupt(void *context)
     uint8_t uart_intr_status = 0;
 
     BaseType_t HPTaskAwoken = pdFALSE;
-//    ioWrite8(UART_DATA, '[');
+    // ioWrite8(UART_DATA, '[');
 
     while (1) {
         // The `continue statement` may cause the interrupt to loop infinitely
@@ -182,12 +182,13 @@ uint8_t DmaUART::DmaUartInterrupt(void *context)
         }
 
         if (uart_intr_status & DMAUART_TxInterrupt) {
+            // ioWrite8(UART_DATA, 'T');
+
             if (u->current_tx_buf) { // done, free it
                 cmd_buffer_free_isr(u->packets, u->current_tx_buf, &HPTaskAwoken);
                 u->uart->ictrl = DMAUART_BufReq_EN;
                 u->current_tx_buf = NULL;        
-            }
-            if (cmd_buffer_get_tx_isr(u->packets, &(u->current_tx_buf), &HPTaskAwoken) == pdTRUE) {
+            } else if (cmd_buffer_get_tx_isr(u->packets, &(u->current_tx_buf), &HPTaskAwoken) == pdTRUE) {
                 u->uart->tx_addr = u->current_tx_buf->data; // how about pbufs?
                 u->uart->length  = (uint16_t)u->current_tx_buf->size;
                 u->uart->tx_push = 1;
@@ -222,7 +223,7 @@ uint8_t DmaUART::DmaUartInterrupt(void *context)
             u->uart->rx_pop = 1;
         }
     }
-    //ioWrite8(UART_DATA, ']');
+    // ioWrite8(UART_DATA, ']');
     return HPTaskAwoken;
 }
 

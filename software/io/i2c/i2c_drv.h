@@ -67,6 +67,7 @@ public:
     uint8_t i2c_read_byte(const uint8_t devaddr, const uint8_t regaddr, int *res);
     uint16_t i2c_read_word(const uint8_t devaddr, const uint16_t regaddr);
     int i2c_read_block(const uint8_t devaddr, const uint8_t regaddr, uint8_t *data, const int length);
+    int i2c_read_block_ext(const uint8_t page, const uint8_t devaddr, const uint8_t regaddr, uint8_t *data, const int length);
     int i2c_write_byte(const uint8_t devaddr, const uint8_t regaddr, const uint8_t data);
     int i2c_write_word(const uint8_t devaddr, const uint16_t regaddr, const uint16_t data);
     int i2c_write_nau(const uint8_t devaddr, const uint8_t regaddr, const uint16_t data);

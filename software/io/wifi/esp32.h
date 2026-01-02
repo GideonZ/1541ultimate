@@ -76,6 +76,9 @@ public:
     bool isRunning() {
         return running;
     }
+#ifdef NO_ESP
+    friend class U64Config; // Only for the RF test version
+#endif
 };
 
 extern Esp32 esp32;

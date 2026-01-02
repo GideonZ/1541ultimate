@@ -45,9 +45,13 @@ const struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_POWERED,   CFG_TYPE_ENUM,   "Drive",                      "%s", en_dis,     0,  1, 1 },
     { CFG_C1541_DRIVETYPE, CFG_TYPE_ENUM,   "Drive Type",                 "%s", drive_types,0,  2, 0 },
     { CFG_C1541_BUS_ID,    CFG_TYPE_VALUE,  "Drive Bus ID",               "%d", NULL,       8, 11, 8 },
+    { 0xFE,                CFG_TYPE_SEP,    "",                            "",  NULL,       0,  0, 0 },
+    { 0xFE,                CFG_TYPE_SEP,    "ROMs",                        "",  NULL,       0,  0, 0 },
     { CFG_C1541_ROMFILE0,  CFG_TYPE_STRFUNC,"ROM for 1541 mode",          "%s", (const char **)C1541 :: list_roms,  1, 32, (int)"1541.rom" },
     { CFG_C1541_ROMFILE1,  CFG_TYPE_STRFUNC,"ROM for 1571 mode",          "%s", (const char **)C1541 :: list_roms,  1, 32, (int)"1571.rom" },
     { CFG_C1541_ROMFILE2,  CFG_TYPE_STRFUNC,"ROM for 1581 mode",          "%s", (const char **)C1541 :: list_roms,  1, 32, (int)"1581.rom" },
+    { 0xFE,                CFG_TYPE_SEP,    "",                            "",  NULL,       0,  0, 0 },
+    { 0xFE,                CFG_TYPE_SEP,    "Advanced",                    "",  NULL,       0,  0, 0 },
     { CFG_C1541_EXTRARAM,  CFG_TYPE_ENUM,   "Extra RAM",                  "%s", en_dis,     0,  1, 0 },
     { CFG_C1541_SWAPDELAY, CFG_TYPE_VALUE,  "Disk swap delay",            "%d00 ms", NULL,  1, 10, 1 },
     { CFG_C1541_C64RESET,  CFG_TYPE_ENUM,   "Resets when C64 resets",     "%s", yes_no,     0,  1, 1 },
@@ -97,8 +101,8 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
         memory_map = &__drive_b_area;
         audio_address = &__drive_b_sound;
     }
-    printf("C1541 Memory address: %p\n", memory_map);
-    printf("C1541 Audio address: %p\n", audio_address);
+    //printf("C1541 Memory address: %p\n", memory_map);
+    //printf("C1541 Audio address: %p\n", audio_address);
 
     drive_name = "Drive ";
     drive_name += letter;
@@ -118,7 +122,11 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
 
     sprintf(buffer, "Drive %c Settings", letter);
     register_store((uint32_t)regs, buffer, local_config_definitions);
-    sprintf(buffer, "Drive %c", drive_letter);
+    //cfg->convert_to_group(buffer, SORT_ORDER_CFG_DRVA + (letter == 'A')?1:0);
+    //cfg->hide();
+    add_roms_to_cfg_group();
+
+    sprintf(buffer, "Built-in Drive %c", drive_letter);
     taskItemCategory = TasksCollection :: getCategory(buffer, SORT_ORDER_DRIVES + drive_letter - 'A');
 
     if (!multi_mode) {
@@ -251,7 +259,7 @@ void C1541 :: create_task_items(void)
     taskItemCategory->append(myActions.blank);
 }
 
-void C1541 :: update_task_items(bool writablePath, Path *p)
+void C1541 :: update_task_items(bool writablePath)
 {
     myActions.remove->hide();
     myActions.saved64->hide();
@@ -1156,7 +1164,7 @@ SubsysResultCode_e C1541 :: save_disk_to_file(SubsysCommand *cmd)
 
     set_extension(buffer, "", 32); // initially remove the extension
 	res = cmd->user_interface->string_box("Give name for image file..", buffer, 24);
-	if(res > 0) {
+	if ((res > 0) && (*buffer)) {
 		set_extension(buffer, ext, 32);
 		fix_filename(buffer);
 		fres = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_ALWAYS | FA_CREATE_NEW, &file);
@@ -1256,3 +1264,15 @@ static void init(void *_a, void *_b)
     }
 }
 InitFunction drives_init_func("C1541/71/81 Init", init, NULL, NULL, 65);
+
+void C1541 :: add_roms_to_cfg_group(void)
+{
+    char buffer[16];
+    sprintf(buffer, "Drive %c", this->drive_letter);
+    ConfigGroup *grp = ConfigGroupCollection::getGroup("Memory Configuration", SORT_ORDER_CFG_MEM);
+    grp->append(ConfigItem::heading(buffer));
+    grp->append(cfg->find_item(CFG_C1541_ROMFILE0));
+    grp->append(cfg->find_item(CFG_C1541_ROMFILE1));
+    grp->append(cfg->find_item(CFG_C1541_ROMFILE2));
+    grp->append(ConfigItem::separator());
+}

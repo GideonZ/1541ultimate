@@ -22,6 +22,6 @@ typedef struct {
 
 extern "C" void SetScanModeRegisters(volatile t_video_timing_regs *regs, const TVideoMode *mode);
 extern "C" void SetVideoMode(t_video_mode mode); // For U64
-extern "C" void SetVideoMode1080p(t_video_mode mode); // For U64II
+extern "C" void SetVideoMode1080p(t_video_mode mode, t_hdmi_mode hdmimode); // For U64II
 
 #endif /* HDMI_SCAN_H_ */

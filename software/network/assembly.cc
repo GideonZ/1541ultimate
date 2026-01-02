@@ -2,6 +2,7 @@
 #include <sys/socket.h>
 #include "netdb.h"
 #include "attachment_writer.h"
+#include "u64.h"
 
 #define HOSTNAME      "hackerswithstyle.se"
 #define HOSTPORT      80
@@ -100,6 +101,12 @@ int Assembly :: connect_to_server(void)
     this->socket_fd = 0;
     InitReqMessage(&this->response);
     this->response.usedAsResponseFromServer = 1;
+
+#if U64==2    
+    if (!(U64II_BLACKBOARD & 1)) {
+        return -1;
+    }
+#endif
 
     // setup the connection
     int result = gethostbyname_r(HOSTNAME, &my_host, buffer, 1024, &ret_host, &error);

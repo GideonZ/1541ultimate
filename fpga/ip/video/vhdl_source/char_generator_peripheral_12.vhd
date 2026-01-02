@@ -34,6 +34,7 @@ port (
 
     pix_clock       : in  std_logic;
     pix_reset       : in  std_logic;
+    pix_enable      : in  std_logic;
     data_enable     : in  std_logic := '1';
     h_count         : in  unsigned(11 downto 0);
     v_count         : in  unsigned(11 downto 0);
@@ -49,8 +50,10 @@ architecture structural of char_generator_peripheral_12 is
     signal screen_addr     : unsigned(g_screen_size-1 downto 0);
     signal screen_data     : std_logic_vector(7 downto 0);
     signal color_data      : std_logic_vector(7 downto 0) := X"0F";
-    signal char_addr       : unsigned(9 downto 0);
-    signal char_data       : std_logic_vector(35 downto 0);
+    signal char_addr_8     : unsigned(10 downto 0);
+    signal char_addr_12    : unsigned(9 downto 0);
+    signal char_data_8     : std_logic_vector(7 downto 0);
+    signal char_data_12    : std_logic_vector(35 downto 0);
 
 	signal io_req_regs		: t_io_req  := c_io_req_init;
     signal io_req_regs_p    : t_io_req  := c_io_req_init;
@@ -116,6 +119,7 @@ begin
 		g_screen_size	=> g_screen_size )
     port map (
         clock           => pix_clock,
+        clock_en        => pix_enable,
         reset           => pix_reset,
                                        
         data_enable     => data_enable,
@@ -129,8 +133,10 @@ begin
         screen_data     => screen_data,
 		color_data		=> color_data,
 		                                       
-        char_addr       => char_addr,
-        char_data       => char_data,
+        char_addr_8     => char_addr_8,
+        char_addr_12    => char_addr_12,
+        char_data_8     => char_data_8,
+        char_data_12    => char_data_12,
                                        
         pixel_active    => pixel_active,
         pixel_opaque    => pixel_opaque,
@@ -139,17 +145,27 @@ begin
     process(pix_clock)
     begin
         if rising_edge(pix_clock) then
-            char_data <= c_font(to_integer(char_addr));
+            if pix_enable = '1' then
+                char_data_12 <= c_font(to_integer(char_addr_12));
+            end if;
         end if;
     end process;
 
+    i_rom: entity work.char_generator_rom
+    port map (
+        clock       => pix_clock,
+        enable      => pix_enable,
+        address     => char_addr_8,
+        data        => char_data_8 );
+
 	i_screen: entity work.dpram_io
     generic map (
-        g_depth_bits            => g_screen_size, -- max = 15 for 1920x1080
+        g_depth_bits            => g_screen_size, -- max = 11 for 1920x1080
         g_default               => X"20",
         g_storage               => "block" )
     port map (
         a_clock                 => pix_clock,
+        a_en                    => pix_enable,
         a_address               => screen_addr,
         a_rdata                 => screen_Data,
 
@@ -160,11 +176,12 @@ begin
     r_color: if g_color_ram generate
     	i_color: entity work.dpram_io
         generic map (
-            g_depth_bits            => g_screen_size, -- max = 15 for 1920x1080
+            g_depth_bits            => g_screen_size, -- max = 11 for 1920x1080
             g_default               => X"0F",
             g_storage               => "block" )
         port map (
             a_clock                 => pix_clock,
+            a_en                    => pix_enable,
             a_address               => screen_addr,
             a_rdata                 => color_data,
     

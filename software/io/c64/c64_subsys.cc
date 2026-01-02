@@ -44,7 +44,8 @@ static void initBootCart(void *object, void *param)
 }
 InitFunction bootCart_initializer("Boot Cart", initBootCart, NULL, NULL);
 
-C64_Subsys::C64_Subsys(C64 *machine)  : SubSystem(SUBSYSID_C64) {
+C64_Subsys::C64_Subsys(C64 *machine)  : SubSystem(SUBSYSID_C64)
+{
 	taskHandle = 0;
 	c64 = machine;
 	fm = FileManager :: getFileManager();
@@ -103,7 +104,7 @@ void C64_Subsys :: create_task_items(void)
     taskCategory->append(myActions.savemp3d);
 }
 
-void C64_Subsys :: update_task_items(bool writablePath, Path *p)
+void C64_Subsys :: update_task_items(bool writablePath)
 {
     if (C64 :: isMP3RamDrive(0) > 0) myActions.savemp3a->show(); else myActions.savemp3a->hide();
     if (C64 :: isMP3RamDrive(1) > 0) myActions.savemp3b->show(); else myActions.savemp3b->hide();
@@ -247,7 +248,7 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
             ram_size = 128 * 1024;
             ram_size <<= c64->cfg->get_value(CFG_C64_REU_SIZE);
 
-            if (cmd->user_interface->string_box("Save REU memory as..", buffer, 22) > 0) {
+            if ((cmd->user_interface->string_box("Save REU memory as..", buffer, 22) > 0) && (*buffer)) {
                 fix_filename(buffer);
                 set_extension(buffer, ".reu", 32);
 
@@ -293,7 +294,7 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
 
         case MENU_U64_SAVERAM:
             ram_size = 64 * 1024;
-            if (cmd->user_interface->string_box("Save RAM as..", buffer, 22) > 0) {
+            if ((cmd->user_interface->string_box("Save RAM as..", buffer, 22) > 0) && (*buffer)) {
                 fix_filename(buffer);
                 set_extension(buffer, ".bin", 32);
 
@@ -322,7 +323,7 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
 
         case MENU_C64_SAVE_CARTRIDGE:
             buffer[0] = 0;
-            if (cmd->user_interface->string_box("Save Cartridge as..", buffer, 28) > 0) {
+            if ((cmd->user_interface->string_box("Save Cartridge as..", buffer, 28) > 0) && (*buffer)) {
                 fix_filename(buffer);
                 set_extension(buffer, ".crt", 32);
 
@@ -463,7 +464,7 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
             uint8_t ramBase = reu[0x7dc7 + devNo];
             uint8_t* srcAddr = reu + (((uint32_t)ramBase) << 16);
 
-            if (cmd->user_interface->string_box("Save RAMDISK as..", buffer, 22) > 0) {
+            if ((cmd->user_interface->string_box("Save RAMDISK as..", buffer, 22) > 0) && (*buffer)) {
                 fix_filename(buffer);
                 set_extension(buffer, extension, 32);
 

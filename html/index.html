@@ -1,6 +1,8 @@
-<html>
+<html lang="en">
 <head>
-<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta charset="utf-8">
+<title>Ultimate II/64</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="https://cdn.jsdelivr.net/npm/jquery"></script>
 <script src="https://cdn.jsdelivr.net/npm/jquery.terminal/js/jquery.terminal.min.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jquery.terminal/css/jquery.terminal.min.css"/>
@@ -180,6 +182,22 @@ $(document).ready(async function () {
         event.preventDefault(); // Prevents the default action of the anchor tag
         parseBASIC();
     });
+
+    $('#submitBASICAndRun').click(function (event) {
+        event.preventDefault(); // Prevents the default action of the anchor tag
+        parseBASIC();
+        runBASIC();
+    });
+
+    $('#runBASIC').click(function (event) {
+        event.preventDefault(); // Prevents the default action of the anchor tag
+        runBASIC();
+    });
+
+    async function runBASIC() {
+        await make_put_request("/v1/machine:writemem", {address: "0277", data: "52554E0D"}); // Put "RUN\R" into the keybarod buffer
+        await make_put_request("/v1/machine:writemem", {address: "00C6", data: "04"}); // Set the keyboard buffer to 4 characters
+    }
 
     async function parseBASIC() {
         var textarea = $("#basiceditor").val();
@@ -1303,6 +1321,11 @@ function disassembler(startInt, byteArray) {
             src: url('C64_Pro-STYLE.woff') format('woff'); /* Path to your C64 font file */
         }
 
+        .padding-tr-5 {
+            padding-top: 5px;
+            padding-right: 5px;
+        }
+
         .c64-textarea {
             font-family: monospace;
             background-color: #1966be; /* Commodore 64 screen color */
@@ -1407,8 +1430,8 @@ function disassembler(startInt, byteArray) {
                 <li><a id="domenubutton" href="#">Menu Button</a></li>
             </ul>
             <ul>
-                <li><a href="https://1541u-documentation.readthedocs.io/en/latest/api/api_calls.html" target="_blank">API Documentation</a></li>
-                <li><a href="https://ultimate64.com/Firmware" target="_blank">Firmware Releases</a></li>
+                <li><a href="https://1541u-documentation.readthedocs.io/en/latest/api/api_calls.html" target="_blank" rel="noopener">API Documentation</a></li>
+                <li><a href="https://ultimate64.com/Firmware" target="_blank" rel="noopener">Firmware Releases</a></li>
             </ul>
             <ul id="logoutmenuitem">
                 <li><a id="logout" href="#">Logout</a></li>
@@ -1426,8 +1449,8 @@ function disassembler(startInt, byteArray) {
             <p>This site serves as the dedicated web server 
                 for the Ultimate 64 and Ultimate cartridge systems. It offers a comprehensive suite of APIs, designed to 
                 enable the development of advanced integrations and remote access to your system.</p>
-            <p>You can find out more by visiting the official <a href="https://ultimate64.com/" target="_blank"> Ultimate 64 website</a>,
-                or by joining our <a href="https://www.facebook.com/groups/ultimate64" target="_blank">Facebook group</a>.
+            <p>You can find out more by visiting the official <a href="https://ultimate64.com/" target="_blank" rel="noopener"> Ultimate 64 website</a>,
+                or by joining our <a href="https://www.facebook.com/groups/ultimate64" target="_blank" rel="noopener">Facebook group</a>.
             </p>
             <p>
                 Thank you for joining and contributing to the Ultimate family of products.
@@ -1474,6 +1497,22 @@ function disassembler(startInt, byteArray) {
                 </header>
                 <div class="body"></div>
             </div>
+            <div>
+                <hr />
+                <table>
+                    <thead>
+                        <tr>
+                            Available commands (with examples):
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>m -</td><td>memory view ( m c000 c100 )</td></tr>
+                        <tr><td>h -</td><td>hunt memory ( h c000 c100 4a 30 00 )</td></tr>
+                        <tr><td>f -</td><td>fill memory ( f c000 c100 00 )</td></tr>
+                        <tr><td>d -</td><td>disassemble ( d c000 c100 )</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <div id="tokenizer" class="page">
@@ -1486,7 +1525,11 @@ function disassembler(startInt, byteArray) {
 10 ? cH(14)"Hello world!" :rem print chr$(14)"Hello world!"
 20 gO 10 :rem goto 10
             </textarea>
-            <p><input type="button" id="submitBASIC" value="Upload"></p>
+            <div class="padding-tr-5">
+                <span class="padding-tr-5"><input type="button" id="submitBASIC" value="Upload"></span>
+                <span class="padding-tr-5"><input type="button" id="submitBASICAndRun" value="Upload and Run"></span>
+                <span class="padding-tr-5"><input type="button" id="runBASIC" value="Run"></span>
+            </div>
 
             <div id="basicmsg">An error has occurred. Check for valid codes.</div>
 

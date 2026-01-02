@@ -33,7 +33,7 @@ begin
     begin
         if rising_edge(clock) then
             if enable='1' then
-                data_i <= char_rom_array(to_integer(address));
+                data_i <= char_generator_rom_array(to_integer(address));
             end if;
         end if;
     end process;

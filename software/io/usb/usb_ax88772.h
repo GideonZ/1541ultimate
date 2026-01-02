@@ -6,7 +6,7 @@
 #include "network_interface.h"
 #include "fifo.h"
 
-#define NUM_BUFFERS 64
+#define NUM_AX_BUFFERS 64
 
 class UsbAx88772Driver : public UsbDriver
 {

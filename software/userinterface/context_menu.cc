@@ -5,11 +5,11 @@
 #include "tree_browser_state.h"
 #include "mdio.h"
 
-ContextMenu :: ContextMenu(UserInterface *ui, TreeBrowserState *state, int initial, int y) : actions(2, 0)
+ContextMenu :: ContextMenu(UserInterface *ui, TreeBrowserState *state, int initial, int y, int when_done, int ind) : UIObject(ui), actions(2, 0)
 {
 	user_interface = ui;
 	this->state = state;
-
+    this->when_done = when_done;
 	if (state)
 		contextable = state->under_cursor;
 	else
@@ -24,6 +24,7 @@ ContextMenu :: ContextMenu(UserInterface *ui, TreeBrowserState *state, int initi
     corner = y;
     first = 0;
     hook_y = 0;
+    indent = ind;
     quick_seek_length = 0;
     item_index = initial;
     subContext = NULL;
@@ -109,6 +110,36 @@ void ContextMenu :: deinit()
     }
 }
 
+void ContextMenu :: help()
+{
+    reset_quick_seek();
+    if (state) {
+        state->refresh = true;
+    } else {
+        user_interface->help(); // modal
+        draw();
+    }
+}
+
+int ContextMenu :: executeSelected(const char *p)
+{
+    Action *act = getSelectedAction();
+    if (act) {
+        printf("Action set was: %s\n", act->getName());
+        Browsable *b = getContextable();
+        const char *filename = (b)?(b->getName()):"";
+        SubsysCommand *cmd = new SubsysCommand(user_interface, act, p, filename);
+        SubsysResultCode_t cmd_ret = cmd->execute();
+        // if (cmd_ret.status != SSRET_OK) {
+        //     user_interface->popup(SubsysCommand::error_string(cmd_ret.status), BUTTON_OK);
+        // }
+        return (int)(user_interface->menu_response_to_action);
+    } else {
+        printf("Action was not set in context menu!\n");
+    }
+    return 0;
+}
+
 int ContextMenu :: poll(int sub)
 {
     int ret = 0;
@@ -127,102 +158,145 @@ int ContextMenu :: poll(int sub)
             draw();
         }
         return sub;
+    } else if(sub < 0) {
+        redraw();
     }
     if(!keyb) {
         printf("ContextMenu: Keyboard not initialized.. exit.\n");
-        return -1;
+        return when_done;
     }
 
     switch(context_state) {
         case e_active:
             c = keyb->getch();
+            c = get_ui()->keymapper(c, e_keymap_default);
             if(c > 0) {
                 ret = handle_key(c);
-                if(ret)
-                    context_state = e_finished;
+                if(ret) {
+                    if (when_done == MENU_HIDE) {
+                        keyb->wait_free();
+                    } else {
+                        context_state = e_finished;
+                    }
+                }
             } else if(c == -2) {
-            	ret = -1;
+            	ret = when_done;
             }
             break;
         
         default:
-            ret = -1;
+            ret = when_done;
             break;
     }
     return ret;
 }
 
+void ContextMenu :: page_up(void)
+{
+    int newpos = item_index - 10;
+    if (newpos < 0) {
+        newpos = 0;
+    }
+    while(actions[newpos] && !actions[newpos]->isEnabled() && (newpos < actions.get_elements()-1)) {
+        newpos++;
+    }
+    if (newpos != item_index) {
+        item_index = newpos;
+        reset_quick_seek();
+        draw();
+    }
+}
+
+void ContextMenu :: page_down(void)
+{
+    int newpos = item_index + 10;
+    if (newpos >  actions.get_elements()-1) {
+        newpos = actions.get_elements()-1;
+    }
+    while(actions[newpos] && !actions[newpos]->isEnabled() && (newpos > 0)) {
+        newpos--;
+    }
+    if (newpos != item_index) {
+        item_index = newpos;
+        reset_quick_seek();
+        draw();
+    }
+}
+
+void ContextMenu :: seek_char(int c)
+{
+    if(quick_seek_length < (MAX_SEARCH_LEN-2)) {
+        quick_seek_string[quick_seek_length++] = c;
+        if(!perform_quick_seek()) {
+            quick_seek_length--;
+        } else {
+            draw();
+        }
+    }
+}
+
+void ContextMenu :: down(void)
+{
+    reset_quick_seek();
+    for (int i=item_index+1; i < actions.get_elements(); i++) {
+        if (actions[i]->isEnabled()) {
+            item_index = i;
+            draw();
+            break;
+        }
+    }
+}
+
+void ContextMenu :: up(void)
+{
+    reset_quick_seek();
+    for (int i=item_index-1; i >= 0; i--) {
+        if (actions[i]->isEnabled()) {
+            item_index = i;
+            draw();
+            break;
+        }
+    }
+}
+
 int ContextMenu :: handle_key(int c)
 {
     int ret = 0;
-    int newpos;
     Action *a;
     char buf[20];
     int addr, reg, value, n;
     buf[0] = 0;
 
     switch(c) {
-        case KEY_LEFT: // left
+        case KEY_LEFT:  // left
         case KEY_BREAK: // runstop
+        case KEY_BACK:  // backspace
+        case KEY_MENU:  // injected
         case KEY_ESCAPE:
-        	ret = -1;
+        case KEY_F8:    // exit
+        	ret = when_done;
             break;
-        case KEY_F8: // exit
-            ret = -1;
-            break;
+
         case KEY_DOWN: // down
-        	reset_quick_seek();
-            for (int i=item_index+1; i < actions.get_elements(); i++) {
-                if (actions[i]->isEnabled()) {
-                    item_index = i;
-                    draw();
-                    break;
-                }
-            }
+            down();
         	break;
+
         case KEY_UP: // up
-        	reset_quick_seek();
-            for (int i=item_index-1; i >= 0; i--) {
-                if (actions[i]->isEnabled()) {
-                    item_index = i;
-                    draw();
-                    break;
-                }
-            }
+            up();
         	break;
-        case KEY_F1: // page up
+
+        case KEY_HELP: // help or page up
+            help();
+            break;
+
+        case KEY_PAGEDOWN: // page down
+            page_down();
+            break;
+
         case KEY_PAGEUP:
-            newpos = item_index - 10;
-            if (newpos < 0) {
-                newpos = 0;
-            }
-            if (newpos != item_index) {
-                item_index = newpos;
-                draw();
-            }
+            page_up();
             break;
 
-        case KEY_F7: // page up
-        case KEY_PAGEDOWN:
-            newpos = item_index + 10;
-            if (newpos >  actions.get_elements()-1) {
-                newpos = actions.get_elements()-1;
-            }
-            if (newpos != item_index) {
-                item_index = newpos;
-                draw();
-            }
-            break;
-
-        case KEY_BACK: // backspace
-            ret = -1;
-/*
-            if(quick_seek_length) {
-                quick_seek_length--;
-                perform_quick_seek();
-            }
-*/
-            break;
         case KEY_SPACE: // space
         case KEY_RETURN: // return
             ret = select_item();
@@ -231,8 +305,8 @@ int ContextMenu :: handle_key(int c)
         case KEY_RIGHT: // cursor
             a = actions[item_index];
             // only select if it has a submenu, otherwise require enter / space
-            if (a && a->getObject()) {
-                select_item();
+            if (a && (a->getObject() || a->func || a->direct_func)) {
+                ret = select_item();
             }
             break;
 
@@ -256,17 +330,10 @@ int ContextMenu :: handle_key(int c)
             break;
 #endif
         default:
-            if((c >= '!')&&(c < 0x80)) {
-                if(quick_seek_length < (MAX_SEARCH_LEN-2)) {
-                    quick_seek_string[quick_seek_length++] = c;
-                    if(!perform_quick_seek()) {
-                        quick_seek_length--;
-                    } else {
-                    	draw();
-                    }
-                }
+            if ((c >= '!') && (c < 0x80)) {
+                seek_char(c);
             } else {
-                printf("Unhandled context key: %b\n", c);
+                printf("Unhandled context key: %03x\n", c);
             }
     }    
     return ret;
@@ -297,7 +364,7 @@ void ContextMenu :: reset_quick_seek(void)
 void ContextMenu :: redraw()
 {
     window->set_color(user_interface->color_fg);
-    window->set_background(user_interface->color_bg);
+    //window->set_background(user_interface->color_bg);
 
     // for the hook, use the old size parameters
     int rows = window->get_size_y();
@@ -305,11 +372,11 @@ void ContextMenu :: redraw()
 
     window->draw_border();
     if((corner == oy)||(corner == (oy+rows-1))) {
-        window->set_char(0, corner-oy, 2);
+        window->set_char(0, corner-oy, CHR_HORIZONTAL_LINE);
     } else if(corner == 0) {
-        window->set_char(0, corner-oy, 8);
+        window->set_char(0, corner-oy, CHR_COLUMN_BAR_TOP);
     } else {
-        window->set_char(0, corner-oy, 3);
+        window->set_char(0, corner-oy, CHR_LOWER_LEFT_CORNER);
     }
     draw();
 }
@@ -328,17 +395,20 @@ void ContextMenu :: draw()
 
 		if ((i + first) == item_index) {
 			window->set_color(user_interface->color_sel);
+            window->reverse_mode(user_interface->reverse_sel);
 			window->set_background(user_interface->color_sel_bg);
-		} else if(t->isEnabled()) {
+		} else if(t && t->isEnabled()) {
+            window->reverse_mode(0);
 			window->set_color(user_interface->color_fg);
             window->set_background(0);
 		} else { // not enabled
-	        window->set_color(11); // TODO
+	        window->set_color(user_interface->color_inactive);
+            window->reverse_mode(0);
 	        window->set_background(0);
 		}
 		if (t) {
 			const char *string = t->getName();
-			window->output_line(*string ? string : "- None -");  // Action name or "- None -"
+			window->output_line(*string ? string : "- None -", indent);  // Action name or "- None -"
 		} else {
 			window->output_line("");
 		}

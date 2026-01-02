@@ -240,6 +240,9 @@ void cmd_get_connection(command_buf_t *buf)
     resp->status = wifi_get_connection();
     buf->size = sizeof(rpc_get_connection_resp);
     my_uart_transmit_packet(UART_CHAN, buf);
+
+    // if connected; also send the connected event, so that the SSID is communicated.
+    wifi_send_connected_event();
 }
 
 void cmd_get_time(command_buf_t *buf)
@@ -350,12 +353,13 @@ void dispatch(void *ct)
     printf("Dispatcher Start. Queue = %p\n", queue);
     while(1) {
         pbuffer = NULL;
-        BaseType_t received = xQueueReceive(queue, &pbuffer, 200 / portTICK_PERIOD_MS);
-        if (received == pdFALSE) {
-            gpio_set_level(IO_ESP_LED, 1); // OFF
-            continue;
-        }
-        gpio_set_level(IO_ESP_LED, 0); // ON!
+        // BaseType_t received = xQueueReceive(queue, &pbuffer, 200 / portTICK_PERIOD_MS);
+        // if (received == pdFALSE) {
+        //     gpio_set_level(IO_ESP_LED, 1); // OFF
+        //     continue;
+        // }
+        // gpio_set_level(IO_ESP_LED, 0); // ON!
+        xQueueReceive(queue, &pbuffer, portMAX_DELAY); // No LED at all.
 #if UART_DEBUG_RX
         printf("Received buffer %d with %d bytes.\n", pbuffer->bufnr, pbuffer->size);
 #endif

@@ -39,7 +39,7 @@ public:
 
 	// object with menu
 	void create_task_items(void);
-	void update_task_items(bool writablePath, Path *path);
+	void update_task_items(bool writablePath);
 
 	int fetch_context_items(BrowsableDirEntry *br, IndexedList<Action *> &list);
 };

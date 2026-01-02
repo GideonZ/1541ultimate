@@ -7,6 +7,10 @@
 #include "config.h"
 #include "subsys.h"
 
+#define BR_EVENT_OUT   1
+#define BR_EVENT_CLOSE 2
+#define BR_EVENT_OPEN  3
+
 class ConfigBrowserState: public TreeBrowserState
 {
 public:
@@ -18,20 +22,22 @@ public:
     void change(void);
     void increase(void);
     void decrease(void);
+    void on_close(void);
 };
 
 class ConfigBrowser: public TreeBrowser
 {
     void on_exit(void);
+    int start_level;
 public:
-    ConfigBrowser(UserInterface *ui, Browsable *);
+    ConfigBrowser(UserInterface *ui, Browsable *, int level = 0);
     virtual ~ConfigBrowser();
 
-    virtual void init(Screen *screen, Keyboard *k);
+    virtual void init();
     virtual int handle_key(int);
-    virtual void checkFileManagerEvent(void)
-    {
-    } // we are not listening to file manager events
+    virtual void checkFileManagerEvent(void);
+
+    static void start(UserInterface *ui);
 };
 
 class BrowsableConfigItem: public Browsable
@@ -62,7 +68,7 @@ class BrowsableConfigItem: public Browsable
         buffer[32] = 0;
         if (cmd->user_interface) {
             int ret = cmd->user_interface->string_box(item->definition->item_text, buffer, 32);
-            if (ret > 0) {
+            if (ret > 0) { // allow empty string
                 item->setString(buffer);
             }
         }
@@ -84,12 +90,12 @@ public:
     }
     const char *getName()
     {
-        return item->get_item_name();
+        return item->get_item_altname();
     }
 
     void getDisplayString(char *buffer, int width)
     {
-        item->get_display_string(buffer, width);
+        item->get_display_string(buffer, width, 7, 12); // TODO
     }
 
     void fetch_context_items(IndexedList<Action *>&actions)
@@ -161,16 +167,121 @@ class BrowsableConfigStore: public Browsable
     {
         return store;
     }
+
     const char *getName()
     {
-        return store->get_store_name();
+        return store->get_alt_store_name();
     }
+
+    void event(int code)
+    {
+        switch(code) {
+        case BR_EVENT_OUT:
+            store->at_close_config();
+            break;
+        case BR_EVENT_CLOSE:
+            store->at_close_config();
+            break;
+        case BR_EVENT_OPEN:
+            store->at_open_config();
+            break;
+        };
+    }
+
+    // BrowsableConfigItem *findConfigItem(uint8_t id)
+    // {
+    //     for (int i = 0; i < children.get_elements(); i++) {
+    //         BrowsableConfigItem *bit = ((BrowsableConfigItem *)children[i]);
+    //         if (bit->getItem()->definition->id == id) {
+    //             return bit;
+    //         }
+    //     }
+    //     return NULL;
+    // }
 };
+
+class BrowsableConfigGroup: public Browsable
+{
+    ConfigGroup *group;
+    IndexedList<Browsable *> children;
+    public:
+    BrowsableConfigGroup(ConfigGroup *g) :
+            children(4, NULL)
+    {
+        group = g;
+    }
+    ~BrowsableConfigGroup()
+    {
+        for (int i = 0; i < children.get_elements(); i++) {
+            delete children[i];
+        }
+    }
+
+    IndexedList<Browsable *> *getSubItems(int &error)
+    {
+        if (children.get_elements() == 0) {
+            IndexedList<ConfigItem *> *itemList = group->getConfigItems();
+            // store->at_open_config(); FIXME
+            for (int i = 0; i < itemList->get_elements(); i++) {
+                children.append(new BrowsableConfigItem((*itemList)[i]));
+            }
+        }
+        return &children;
+    }
+
+    const char *getName()
+    {
+        return group->getName();
+    }
+
+    void event(int code)
+    {
+        IndexedList<ConfigStore *> *stores;
+        switch(code) {
+        case BR_EVENT_OUT:
+            printf("Leaving the config group '%s'\n", group->getName());
+            stores = group->getStores();
+            for(int i=0; i < stores->get_elements(); i++) {
+                ConfigStore *s = (*stores)[i];
+                s->effectuate();
+            }
+            printf("You left!!\n");
+            break;
+        case BR_EVENT_CLOSE:
+            printf("Closing the config group '%s'\n", group->getName());
+            stores = group->getStores();
+            for(int i=0; i < stores->get_elements(); i++) {
+                ConfigStore *s = (*stores)[i];
+                s->at_close_config();
+            }
+            break;
+        case BR_EVENT_OPEN:
+            stores = group->getStores();
+            for(int i=0; i < stores->get_elements(); i++) {
+                ConfigStore *s = (*stores)[i];
+                s->at_open_config();
+            }
+            break;
+        };
+    }
+
+    // BrowsableConfigItem *findConfigItem(uint8_t id)
+    // {
+    //     for (int i = 0; i < children.get_elements(); i++) {
+    //         BrowsableConfigItem *bit = ((BrowsableConfigItem *)children[i]);
+    //         if (bit->getItem()->definition->id == id) {
+    //             return bit;
+    //         }
+    //     }
+    //     return NULL;
+    // }
+};
+
 
 class BrowsableConfigRoot: public Browsable
 {
     IndexedList<Browsable *> children;
-    public:
+public:
     BrowsableConfigRoot() :
             children(4, NULL)
     {
@@ -185,8 +296,17 @@ class BrowsableConfigRoot: public Browsable
         if (children.get_elements() == 0) {
             IndexedList<ConfigStore *> *storeList = ConfigManager::getConfigManager()->getStores();
             for (int i = 0; i < storeList->get_elements(); i++) {
-                children.append(new BrowsableConfigStore((*storeList)[i]));
+                if (!(*storeList)[i]->isHidden())
+                    children.append(new BrowsableConfigStore((*storeList)[i]));
             }
+
+            // ConfigGroupCollection::getConfigGroupCollection()->sort();
+            IndexedList<ConfigGroup *> *groupList = ConfigGroupCollection::getGroups();
+            for (int i = 0; i < groupList->get_elements(); i++) {
+                children.append(new BrowsableConfigGroup((*groupList)[i]));
+            }
+
+            children.sort(Browsable::compare_alphabetically);
         }
         return &children;
     }
@@ -196,5 +316,43 @@ class BrowsableConfigRoot: public Browsable
     }
 };
 
+class BrowsableConfigRootPredefined : public Browsable
+{
+    const char **names;
+    int count;
+    IndexedList<Browsable *> children;
+public:
+    BrowsableConfigRootPredefined(int count, const char *names[]) :
+            children(count, NULL), names(names), count(count)
+    {
+
+    }
+
+    ~BrowsableConfigRootPredefined()
+    {
+    }
+
+    IndexedList<Browsable *> *getSubItems(int &error)
+    {
+        if (children.get_elements() == 0) {
+            for (int i=0; i<count; i++) {
+                ConfigGroup *grp = ConfigGroupCollection::getGroup(names[i], -1); // do not create
+                if (grp) {
+                    children.append(new BrowsableConfigGroup(grp));
+                    continue;
+                }
+                ConfigStore *store = ConfigManager::getConfigManager()->find_store(names[i]);
+                if (store) {
+                    children.append(new BrowsableConfigStore(store));
+                }
+            }
+        }
+        return &children;
+    }
+    const char *getName()
+    {
+        return "Browsable Config Predefined";
+    }
+};
 
 #endif

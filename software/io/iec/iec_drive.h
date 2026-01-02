@@ -55,7 +55,7 @@ public:
 
     // From ObjectWithMenu
     void create_task_items();
-    void update_task_items(bool writablePath, Path *path);
+    void update_task_items(bool writablePath);
 
     // From ConfigurableObject
     void effectuate_settings(void); // from ConfigurableObject

@@ -93,7 +93,7 @@ err_t UsbAx88772Driver_output(void *drv, void *b, int len) {
 FactoryRegistrator<UsbInterface *, UsbDriver *> ax88772_tester(UsbInterface :: getUsbDriverFactory(), UsbAx88772Driver :: test_driver);
 
 
-UsbAx88772Driver :: UsbAx88772Driver(UsbInterface *intf, uint16_t prodID) : UsbDriver(intf), freeBuffers(NUM_BUFFERS, NULL)
+UsbAx88772Driver :: UsbAx88772Driver(UsbInterface *intf, uint16_t prodID) : UsbDriver(intf), freeBuffers(NUM_AX_BUFFERS, NULL)
 {
     device = NULL;
     host = NULL;
@@ -101,9 +101,9 @@ UsbAx88772Driver :: UsbAx88772Driver(UsbInterface *intf, uint16_t prodID) : UsbD
     link_up = false;
     this->prodID = prodID;
 
-    dataBuffersBlock = new uint8_t[1536 * NUM_BUFFERS];
+    dataBuffersBlock = new uint8_t[1536 * NUM_AX_BUFFERS];
 
-    for (int i=0; i < NUM_BUFFERS; i++) {
+    for (int i=0; i < NUM_AX_BUFFERS; i++) {
         freeBuffers.push(&dataBuffersBlock[BIT31 + 1536 * i]); // set bit 31, so that it is non-cacheable
     }
 }

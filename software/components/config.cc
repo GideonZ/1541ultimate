@@ -201,6 +201,20 @@ ConfigStore *ConfigManager :: find_store(const char *storename)
         if (strcasecmp(st->get_store_name(), storename) == 0) {
             return st;
         }
+        if (strcasecmp(st->get_alt_store_name(), storename) == 0) {
+            return st;
+        }
+    }
+    return NULL;
+}
+
+ConfigStore *ConfigManager :: find_store(uint32_t page_id)
+{
+    for(int i=0; i < stores.get_elements(); i++) {
+        ConfigStore *st = stores[i];
+        if (st->get_page()->get_id() == page_id) {
+            return st;
+        }
     }
     return NULL;
 }
@@ -217,6 +231,7 @@ ConfigStore :: ConfigStore(ConfigPage *page, const char *name,
     this->page = page;
     staleEffect = true;
     staleFlash = false;
+    hidden = false;
     
     for(int i=0;i<64;i++) {
         if(defs[i].type == CFG_TYPE_END)
@@ -247,6 +262,13 @@ int ConfigStore :: unregister(ConfigurableObject *obj)
 {
     objects.remove(obj);
     return objects.get_elements();
+}
+
+void ConfigStore :: at_open_config(void)
+{
+    for(int i=0; i<objects.get_elements(); i++) {
+        objects[i]->on_edit();
+    }
 }
 
 int ConfigPage :: pack(void)
@@ -311,7 +333,7 @@ void ConfigStore :: effectuate()
         printf("Effectuate for %s not needed; not stale.\n", get_store_name());
         return;
     }
-    printf("Calling Effectuate on %s for %d objects.\n", get_store_name(), objects.get_elements());
+    // printf("Calling Effectuate on %s for %d objects.\n", get_store_name(), objects.get_elements());
     for(int i=0; i<objects.get_elements(); i++) {
         ConfigurableObject *obj = objects[i];
         if(obj) {
@@ -328,6 +350,16 @@ void ConfigStore :: write()
 	    page->write();
         staleFlash = false;
 	}
+}
+
+void ConfigStore :: convert_to_group(const char *name, int sort_order)
+{
+    ConfigGroup *grp = ConfigGroupCollection::getGroup(name, sort_order);
+    if (grp) {
+        for(int i=0; i < items.get_elements(); i++) {
+            grp->append(items[i]);
+        }
+    }
 }
 
 void ConfigPage :: write()
@@ -585,6 +617,46 @@ ConfigItem :: ~ConfigItem()
         delete[] string;
 }
 
+ConfigItem *ConfigItem :: separator()
+{
+    // due to poor design, this cannot be const. But it will be referenced later,
+    // so we make it static. Otherwise it ends up on the stack.
+    static t_cfg_definition def = {
+        .id = 0xFE,
+        .type = CFG_TYPE_SEP,
+        .item_text = "",
+        .item_format = "",
+        .items = NULL,
+        .min = 0,
+        .max = 0,
+        .def = 0,
+    };
+    static ConfigItem *sep = NULL;
+    if (!sep) {
+        sep = new ConfigItem((ConfigStore *)NULL, &def);
+    }
+    return sep;
+}
+
+ConfigItem *ConfigItem :: heading(const char *name)
+{
+    // due to poor design, this cannot be const. But it will be referenced later,
+    // so we make it static. Otherwise it ends up on the stack.
+    static t_cfg_definition def = {
+        .id = 0xFE,
+        .type = CFG_TYPE_SEP,
+        .item_text = "",
+        .item_format = "",
+        .items = NULL,
+        .min = 0,
+        .max = 0,
+        .def = 0,
+    };
+    ConfigItem *it = new ConfigItem((ConfigStore *)NULL, &def);
+    it->set_item_altname(name);
+    return it;
+}
+
 void ConfigItem :: reset(void)
 {
     if ((definition->type == CFG_TYPE_STRING) || (definition->type == CFG_TYPE_STRFUNC) || (definition->type == CFG_TYPE_STRPASS)) {
@@ -686,7 +758,7 @@ int ConfigItem :: pack(uint8_t *buffer, int len)
 
 // note:the buffer needs to be at least 3 bytes bigger than what width indicates
 // width is the actual width in characters on the screen, and two additional bytes are needed to set the color
-const char *ConfigItem :: get_display_string(char *buffer, int width)
+const char *ConfigItem :: get_display_string(char *buffer, int width, int act, int inact)
 {
 	static char buf[32];
 
@@ -724,7 +796,7 @@ const char *ConfigItem :: get_display_string(char *buffer, int width)
     const char *src;
     char *dst;
     // left align copy
-    src = definition->item_text;
+    src = altname.length() ? altname.c_str() : definition->item_text;
     dst = buffer;
     while(*src) {
         *(dst++) = *(src++);
@@ -733,7 +805,7 @@ const char *ConfigItem :: get_display_string(char *buffer, int width)
     dst = &buffer[width+1];
     for(int b = len-1; b >= 0; b--)
         *(dst--) = buf[b];
-    *(dst--) = (enabled) ? 7 : 11;
+    *(dst--) = (enabled) ? act : inact;
     *(dst--) = '\033'; // escape code = set color
     return (const char *)buffer;
 }

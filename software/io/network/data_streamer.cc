@@ -134,7 +134,7 @@ SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
             strncpy(dest_host, default_host, 36);
         }
         if (cmd->user_interface) {
-            if (cmd->user_interface->string_box("Send to...", dest_host, 36) < 0) {
+            if ((cmd->user_interface->string_box("Send to...", dest_host, 36) < 0) || !(*dest_host)){
                 return SSRET_ABORTED_BY_USER;
             }
             cfg->set_string(CFG_STREAM_DEST0 + streamID, dest_host);
@@ -267,7 +267,7 @@ void DataStreamer :: create_task_items()
     dev->append(myActions.stopDbg);
 }
 
-void DataStreamer :: update_task_items(bool writablePath, Path *path)
+void DataStreamer :: update_task_items(bool writablePath)
 {
     myActions.startVic->setHidden(streams[0].enable != 0);
     myActions.stopVic->setHidden(streams[0].enable == 0);

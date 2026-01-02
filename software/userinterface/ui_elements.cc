@@ -5,14 +5,16 @@
  *      Author: Gideon
  */
 #include "ui_elements.h"
+#include "userinterface.h"
 #include <string.h>
 #include <stdio.h>
 
 
 /* User Interface Objects */
 /* Popup */
-UIPopup :: UIPopup(const char *msg, uint8_t btns, int count, const char **names, const char *keys) : message(msg), button_count(count)
+UIPopup :: UIPopup(UserInterface *ui, const char *msg, uint8_t btns, int count, const char **names, const char *keys) : UIObject(ui), message(msg), button_count(count)
 {
+//    user_interface = ui;
     button_names = names;
     button_keys = keys;
     buttons = btns;
@@ -23,12 +25,13 @@ UIPopup :: UIPopup(const char *msg, uint8_t btns, int count, const char **names,
     keyboard = 0;
 }
 
-void UIPopup :: init(Screen *screen, Keyboard *k)
+void UIPopup :: init()
 {
     // first, determine how wide our popup needs to be
     int button_width = 0;
     int message_width = message.length();
-    keyboard = k;
+    keyboard = get_ui()->get_keyboard();
+    Screen *screen = get_ui()->get_screen();
 
     uint8_t b = buttons;
     for(int i=0;i<button_count;i++) {
@@ -55,6 +58,7 @@ void UIPopup :: init(Screen *screen, Keyboard *k)
     window->draw_border();
     // window->no_scroll();
     window->move_cursor(x_m, 0);
+    window->set_color(get_ui()->color_fg);
     window->output(message.c_str());
 
     active_button = 0; // we can change this
@@ -82,6 +86,7 @@ void UIPopup :: draw_buttons()
 int UIPopup :: poll(int dummy)
 {
     int c = keyboard->getch();
+    c = get_ui()->keymapper(c, e_keymap_default);
 
     if (c == -1) // nothing pressed
     	return 0;
@@ -126,7 +131,7 @@ void UIPopup :: deinit()
 	delete window;
 }
 
-UIStringBox :: UIStringBox(const char *msg, char *buf, int max) : message(msg), edit(buf, max)
+UIStringBox :: UIStringBox(UserInterface *ui, const char *msg, char *buf, int max) : UIObject(ui), message(msg), edit(buf, max)
 {
 }
 
@@ -143,8 +148,11 @@ UIStringEdit :: UIStringEdit(char *buf, int max)
     win_yoffs = 0;
 }
 
-void UIStringBox :: init(Screen *screen, Keyboard *keyb)
+void UIStringBox :: init()
 {
+    Screen *screen = get_ui()->get_screen();
+    Keyboard *keyb = get_ui()->get_keyboard();
+
     int message_width = message.length();
     int window_width = message_width;
     if (edit.get_max_len() > message_width)
@@ -215,8 +223,6 @@ int UIStringEdit :: poll(int dummy)
     switch(key) {
     case KEY_RETURN: // CR
         buffer[len] = 0;
-        if(!len)
-            return -1; // cancel
         return 1; // done
     case KEY_LEFT: // left
     	if (cur > 0) {
@@ -349,7 +355,7 @@ void UIStringBox :: deinit(void)
 }
 
 /* Choice box */
-UIChoiceBox :: UIChoiceBox(const char *msg, const char **choices, int count) : message(msg)
+UIChoiceBox :: UIChoiceBox(UserInterface *ui, const char *msg, const char **choices, int count) : UIObject(ui), message(msg)
 {
     this->choices = choices;
     this->count = count;
@@ -361,14 +367,15 @@ UIChoiceBox :: UIChoiceBox(const char *msg, const char **choices, int count) : m
     this->color_sel_bg = 6;
 }
 
-void UIChoiceBox :: init(Screen *screen, Keyboard *kb, int fg, int bg, int sel_fg, int sel_bg)
+void UIChoiceBox :: init()
 {
-    this->color_fg = fg;
-    this->color_bg = bg;
-    this->color_sel_fg = sel_fg;
-    this->color_sel_bg = sel_bg;
-
-    int rows = 2 + count;
+    this->color_fg = get_ui()->color_fg;
+    this->color_bg = get_ui()->color_bg;
+    this->color_sel_fg = get_ui()->color_sel;
+    this->color_sel_bg = get_ui()->color_sel_bg;
+    Screen *screen = get_ui()->get_screen();
+    
+    int rows = 2 + 2 + count;  // 2 lines for title + spacing, 2 more lines for the frame
 	int max_len = message.length();
     int len;
     for(int i=0;i<count;i++) {
@@ -380,7 +387,7 @@ void UIChoiceBox :: init(Screen *screen, Keyboard *kb, int fg, int bg, int sel_f
     if (max_len > 25) {
         max_len = 25;
     }
-    keyboard = kb;
+    keyboard = get_ui()->get_keyboard();
 
     screen->backup();
     int y_offs = (screen->get_size_y() - rows - 2) >> 1;
@@ -428,11 +435,8 @@ int  UIChoiceBox :: poll(int)
     }
 
     c = keyboard->getch();
+    c = get_ui()->keymapper(c, e_keymap_default);
 
-    if (c == -1) // nothing pressed
-    	return 0;
-    if (c == -2) // error
-    	return -1;
     switch(c) {
         case -1: return 0; // nothing pressed
         case -2: return -1; // error
@@ -450,7 +454,10 @@ int  UIChoiceBox :: poll(int)
             break;
         case KEY_SPACE:
         case KEY_RETURN:
-            return current;
+            return current + 1;
+        case KEY_BREAK: // break
+        case KEY_ESCAPE: // exit!
+            return -1; // cancel
         default:
             break;
     }
@@ -459,15 +466,16 @@ int  UIChoiceBox :: poll(int)
 
 
 /* Status Box */
-UIStatusBox :: UIStatusBox(const char *msg, int steps) : message(msg)
+UIStatusBox :: UIStatusBox(UserInterface *ui, const char *msg, int steps) : UIObject(ui), message(msg)
 {
     total_steps = steps;
     progress = 0;
     window = 0;
 }
 
-void UIStatusBox :: init(Screen *screen)
+void UIStatusBox :: init()
 {
+    Screen *screen = get_ui()->get_screen();
     int window_width = 34;
     int message_width = message.length();
     int x1 = (screen->get_size_x() - window_width) / 2;

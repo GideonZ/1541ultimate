@@ -297,6 +297,7 @@ class C64 : public GenericHost, ConfigurableObject
     volatile bool buttonPushSeen;
     volatile bool available;
 
+    void setup_config_menu();
     bool isFrozen;
     void determine_d012(void);
     void goUltimax(void);

@@ -62,6 +62,18 @@ public:
         buffer[offset++] = (char)c;
     }
 
+    void raw(const char *data) {
+        int len = strlen(data);
+        if (offset + len >= size) {
+            offset = 0; // clear!
+        }
+        if (!enabled) {
+            return;
+        }
+        memcpy(buffer + offset, data, len);
+        offset += len;
+    }
+
     char *getText(void) {
     	buffer[offset] = 0;
     	return buffer;

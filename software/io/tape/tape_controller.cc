@@ -86,7 +86,7 @@ void TapeController :: create_task_items(void)
     myActions.stop->hide();
 }
 
-void TapeController :: update_task_items(bool writablePath, Path *path)
+void TapeController :: update_task_items(bool writablePath)
 {
     if(!file)
         return;
