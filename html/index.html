@@ -210,12 +210,23 @@ $(document).ready(async function () {
         const tokenized_lines = [];
         let addr = 2049;
 
+        // Clear error before starting
+        if (typeof basic_error !== 'undefined') basic_error = "";
+
         // Process each line
         for(let x=0; x<lines.length; x++) {
+            const currentLineText = lines[x].trim();
+            const tokenizedLine = new TokenizedLine(currentLineText, addr);
 
-            const tokenizedLine = new TokenizedLine(lines[x].trim(), addr);
+            // CHECK: If basic_error was set after processing this specific line
+            if(typeof basic_error !== 'undefined' && basic_error !== "") {
+                let lineNum = currentLineText.split(' ')[0]; // Extract the BASIC line number
+                $("#basicmsg").text("Error in line " + lineNum + ". Program contains errors and was not sent. " + basic_error).show();
+                return; // Stop execution to prevent sending corrupted data
+            }
+
             addr += tokenizedLine.length();
-            tokenized_lines.push(tokenizedLine)
+            tokenized_lines.push(tokenizedLine);
         }
 
         let i = 1
