@@ -42,7 +42,7 @@ static const char *helptext =
         "F2:         Enter Advanced Settings\n"
     #ifndef RECOVERYAPP
         "F4:         Show System Information\n"
-        "F6:         Search Assembly64\n"
+        "F6:         CommoServe File Search\n"
     #endif
         "\n"
         "SPACE:      Select file / directory\n"
