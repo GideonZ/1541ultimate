@@ -178,20 +178,20 @@ $(document).ready(async function () {
         }
     }
 
-    $('#submitBASIC').click(function(event){
+    $('#submitBASIC').click(async function(event){
         event.preventDefault(); // Prevents the default action of the anchor tag
-        parseBASIC();
+        await parseBASIC();
     });
 
-    $('#submitBASICAndRun').click(function (event) {
+    $('#submitBASICAndRun').click(async function (event) {
         event.preventDefault(); // Prevents the default action of the anchor tag
-        parseBASIC();
-        runBASIC();
+        await parseBASIC();
+        await runBASIC();
     });
 
-    $('#runBASIC').click(function (event) {
+    $('#runBASIC').click(async function (event) {
         event.preventDefault(); // Prevents the default action of the anchor tag
-        runBASIC();
+        await runBASIC();
     });
 
     async function runBASIC() {
