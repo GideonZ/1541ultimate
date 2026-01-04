@@ -178,20 +178,20 @@ $(document).ready(async function () {
         }
     }
 
-    $('#submitBASIC').click(function(event){
+    $('#submitBASIC').click(async function(event){
         event.preventDefault(); // Prevents the default action of the anchor tag
-        parseBASIC();
+        await parseBASIC();
     });
 
-    $('#submitBASICAndRun').click(function (event) {
+    $('#submitBASICAndRun').click(async function (event) {
         event.preventDefault(); // Prevents the default action of the anchor tag
-        parseBASIC();
-        runBASIC();
+        await parseBASIC();
+        await runBASIC();
     });
 
-    $('#runBASIC').click(function (event) {
+    $('#runBASIC').click(async function (event) {
         event.preventDefault(); // Prevents the default action of the anchor tag
-        runBASIC();
+        await runBASIC();
     });
 
     async function runBASIC() {
@@ -376,7 +376,7 @@ $(document).ready(async function () {
         ['{rght}',     0x1d],
         ['{clr}',      0x93],
         ['{clear}',    0x93],
-        ['{home}',     0x13],
+        ['{home}',     0x13],        
         
         ['{blk}',      0x90],
         ['{wht}',      0x05],
@@ -393,9 +393,23 @@ $(document).ready(async function () {
         ['{mgry}',     0x98],
         ['{lgrn}',     0x99],
         ['{lblu}',     0x9a],
-        ['{lgry}',     0x9b]
+        ['{lgry}',     0x9b],
         
-        
+        // additional entries found in COMPUTES!'s Gazette
+        ['{rvs}',      0x12],
+        ['{space}',    0x20],
+        ['{spaces}',   0x20],
+        ['{gry1}',     0x97],
+        ['{gry2}',     0x98],
+        ['{gry3}',     0x9b],
+        ['{f1}',       0x85],
+        ['{f2}',       0x86],
+        ['{f3}',       0x87],
+        ['{f4}',       0x88],
+        ['{f5}',       0x89],
+        ['{f6}',       0x8a],
+        ['{f7}',       0x8b],
+        ['{f8}',       0x8c],
     ];
 
     function asciiToPetscii(o) {
@@ -417,6 +431,8 @@ $(document).ready(async function () {
     }
 
     function scan(s, tokenize = true) {
+        s = expandCounts(s);
+        
         if (tokenize) {
             for (let i = 0; i < TOKENS.length; i++) {
                 let [token, value] = TOKENS[i];
@@ -435,6 +451,14 @@ $(document).ready(async function () {
             basic_error = "Error -> ..." + s + " \nInvalid code.";
         }
         return [asciiToPetscii(s.charCodeAt(0)), s.substring(1)];
+    }
+
+    // Expand patterns like {3 spaces} → {spaces}{spaces}{spaces}
+    function expandCounts(input) {
+        return input.replace(/\{(\d+)\s+([^}]+)\}/g, (_, count, word) => {
+            count = Number(count);
+            return Array(count).fill(`{${word}}`).join('');
+        });
     }
 
     function scanLineNumber(s) {
