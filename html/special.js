@@ -10,13 +10,13 @@ const SPECIAL = [
 	['{orange}', 0x81],				['{org}', 0x81],
 	['{brown}', 0x95],				['{brn}', 0x95],
 	['{pink}', 0x96],				['{lred}', 0x96],
-	['{dark gray}', 0x97],			['{dgry}', 0x97],
-	['{gray}', 0x98],				['{mgry}', 0x98],
+	['{dark gray}', 0x97],			['{dgry}', 0x97],			['{gry1}',     0x97],
+	['{gray}', 0x98],				['{mgry}', 0x98],			['{gry2}',     0x98],
 	['{light green}', 0x99],		['{lgrn}', 0x99],
 	['{light blue}', 0x9a],			['{lblu}', 0x9a],
-	['{light gray}', 0x9b],			['{lgry}', 0x9b],
+	['{light gray}', 0x9b],			['{lgry}', 0x9b],			['{gry3}',     0x9b],
 	//
-	['{reverse on}', 0x12],			['{rvs on}', 0x12],
+	['{reverse on}', 0x12],			['{rvs on}', 0x12],			['{rvs}',      0x12],
 	['{reverse off}', 0x92],		['{rvs off}', 0x92],
 	//
 	['{clear}', 0x93],				['{clr}', 0x93],
@@ -33,6 +33,7 @@ const SPECIAL = [
 	['{down}', 0x11],
 	['{left}', 0x9d],
 	['{right}', 0x1d],
+	['{space}',    0x20],			['{spaces}',   0x20],
 	// commodore key +
 	['{cm a}', 0xb0],
 	['{cm b}', 0xbf],
