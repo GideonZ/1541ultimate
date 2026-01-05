@@ -365,8 +365,8 @@ $(document).ready(async function () {
     const TOKENS_UPPERCASE = TOKENS.map(token => [token[0].toUpperCase(), token[1]]);
 
     function asciiToPetscii(o) {
-        // Check if character code is less than or equal to '@' or is '[' or ']'
-        if (o <= '@'.charCodeAt(0) || o === '['.charCodeAt(0) || o === ']'.charCodeAt(0)) {
+        // Check if character code is less than or equal to '@' or is '[' or ']' or '^'
+        if (o <= '@'.charCodeAt(0) || o === '['.charCodeAt(0) || o === ']'.charCodeAt(0) || o === '^'.charCodeAt(0)) {
             return o;
         }
         // Check if character code is between 'a' and 'z'
