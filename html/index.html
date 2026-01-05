@@ -230,7 +230,7 @@ $(document).ready(async function () {
             let lineTotalLength = tokenizedLine.length();
             if(lineTotalLength > 256) {
                 $("#basicmsg").text("Error in line " + lineNum + ". Line too long for C64 memory (" + lineTotalLength + " bytes). Max is 256. Program was not sent.").show();
-                return;
+                return; // Abort processing to prevent memory corruption
             }
 
             // CHECK: If basic_error was set after processing this specific line
@@ -242,7 +242,6 @@ $(document).ready(async function () {
             addr += lineTotalLength;
             tokenized_lines.push(tokenizedLine);
         }
-
 
         let i = 1
         while (i < tokenized_lines.length)
