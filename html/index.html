@@ -15,6 +15,8 @@ var ultimateInfo = {};
 
 $(document).ready(async function () {
 
+    var basic_error = ""; // for error reports during parsing
+
     async function ensureLoggedIn() {
         // This also works with older firmware that do not support password protection (will get a 404 for /v1/info)
         let [status_code, content] = await make_get_request("http://" + serverIP + "/v1/info");
@@ -178,6 +180,14 @@ $(document).ready(async function () {
         }
     }
 
+    function showBASICerror(message) {
+        $("#basicmsg").text(message);
+        if (message === "")
+           $("#basicmsg").hide();
+        else
+           $("#basicmsg").show();
+    }
+
     $('#submitBASIC').click(async function(event){
         event.preventDefault(); // Prevents the default action of the anchor tag
         await parseBASIC();
@@ -185,8 +195,8 @@ $(document).ready(async function () {
 
     $('#submitBASICAndRun').click(async function (event) {
         event.preventDefault(); // Prevents the default action of the anchor tag
-        await parseBASIC();
-        await runBASIC();
+        if (await parseBASIC() === true)
+            await runBASIC();   // Only RUN when parsing/upload was successful
     });
 
     $('#runBASIC').click(async function (event) {
@@ -194,9 +204,42 @@ $(document).ready(async function () {
         await runBASIC();
     });
 
+    $('#stopBASIC').click(async function (event) {
+        event.preventDefault(); // Prevents the default action of the anchor tag
+        await stopBASIC();
+    });
+
+    $('#uppercaseBASIC').on('change', async function (event) {
+        $("#basiceditor").toggleClass("uppercase", this.checked);  // change upper/lowercase display
+    });
+
+    // convenience: write memory - show error message when access fails
+    async function writeMemory(param, errorMsg) {
+        showBASICerror(""); // clear earlier errors
+        let [status_code, content] = await make_put_request("/v1/machine:writemem", param);
+        if (status_code !== 200) {
+            if (status_code === 0)
+                status_code = "no connection to device";
+            showBASICerror(errorMsg+" (error: "+status_code+").");
+            return false;
+        }
+        return true;
+    }
+
     async function runBASIC() {
-        await make_put_request("/v1/machine:writemem", {address: "0277", data: "52554E0D"}); // Put "RUN\R" into the keybarod buffer
-        await make_put_request("/v1/machine:writemem", {address: "00C6", data: "04"}); // Set the keyboard buffer to 4 characters
+        // Put "RUN\R" into the keyboard buffer
+        if (!await writeMemory({address: "0277", data: "52554E0D"}, "Failed to submit 'RUN' command"))
+            return;
+        // Set the keyboard buffer to 4 characters
+        await writeMemory({address: "00C6", data: "04"}, "Failed to submit 'RUN' command");
+    }
+
+    async function stopBASIC() {
+        // write the $91 STOP flag several times to reduce issues with a race condition, as the C64 kernal is also writing the flag
+        for (var i=0;i<5;i++)
+           // Set BASIC STOP key flag $0091
+           if (!await writeMemory({address: "0091", data: "7F"}, "Failed to set 'STOP' flag"))
+               return; // abort on first error
     }
 
     async function parseBASIC() {
@@ -215,7 +258,7 @@ $(document).ready(async function () {
         let addr = 2049;
 
         // Clear error before starting
-        if (typeof basic_error !== 'undefined') basic_error = "";
+        basic_error = "";
 
         // Process each line
         for(let x=0; x<lines.length; x++) {
@@ -233,9 +276,9 @@ $(document).ready(async function () {
             }
 
             // CHECK: If basic_error was set after processing this specific line
-            if(typeof basic_error !== 'undefined' && basic_error !== "") {
-                $("#basicmsg").text("Error in line " + lineNum + ". Program contains errors and was not sent. " + basic_error).show();
-                return; // Stop execution to prevent sending corrupted data
+            if(basic_error !== "") {
+                showBASICerror("Error in line " + lineNum + ". Program contains errors and was not sent. " + basic_error);
+                return false; // Stop execution to prevent sending corrupted data
             }
 
             addr += lineTotalLength;
@@ -254,24 +297,30 @@ $(document).ready(async function () {
 
         var data = convertData(tokenized_lines);
 
-        if(basic_error !== "") {
-            $("#basicmsg").text(basic_error);
-            $("#basicmsg").show();
-        }
-        else {
-            $("#basicmsg").hide();
+        showBASICerror(basic_error); // show parser error messages (or hide the text box)
 
+        if(basic_error === "") {
             let params = {"address":"0801"};
             let [status_code, content] = await make_post_request("http://" + serverIP + "/v1/machine:writemem", params, data);
         
-            let varptr = toHex16(tokenized_lines[i-1].next_addr + 2);
-            varptr = varptr.substring(2, 4) + varptr.substring(0, 2);
+            if (status_code === 200) {
+                let varptr = toHex16(tokenized_lines[i-1].next_addr + 2);
+                varptr = varptr.substring(2, 4) + varptr.substring(0, 2);
 
-            params = {"address":"002d", "data": varptr };
-            [status_code, content] = await make_put_request("http://" + serverIP + "/v1/machine:writemem", params);
+                params = {"address":"002d", "data": varptr };
+                [status_code, content] = await make_put_request("http://" + serverIP + "/v1/machine:writemem", params);
+            }
+
+            if (status_code !== 200) {
+                if (status_code === 0)
+                    status_code = "no connection to device";
+                showBASICerror("Upload failed (error: "+status_code+").");
+                return false;
+            }
+            return true;
         }
 
-        basic_error = "";
+        return false;
     }
 
     function getAsciiValues(str) {
@@ -281,8 +330,6 @@ $(document).ready(async function () {
         }
         return asciiValues;
     }
-
-    var basic_error = "";
 
     const TOKENS = [
         ['restore', 140],
@@ -1273,6 +1320,12 @@ function disassembler(startInt, byteArray) {
         color: white;
         width: 400px;
     }
+    #uppercaseBASIC {
+        margin-left: 20px;
+    }
+    .uppercase {
+        text-transform: uppercase;
+    }
 
     @font-face {
             font-family: 'C64';
@@ -1296,7 +1349,6 @@ function disassembler(startInt, byteArray) {
             width: 900px;
             height: 400px;
             resize: none;
-
         }
 
 .trinity-dialog {
@@ -1487,6 +1539,8 @@ function disassembler(startInt, byteArray) {
                 <span class="padding-tr-5"><input type="button" id="submitBASIC" value="Upload"></span>
                 <span class="padding-tr-5"><input type="button" id="submitBASICAndRun" value="Upload and Run"></span>
                 <span class="padding-tr-5"><input type="button" id="runBASIC" value="Run"></span>
+                <span class="padding-tr-5"><input type="button" id="stopBASIC" value="Stop" title="Send STOP command to the C64"></span>
+                <input type="checkbox" id="uppercaseBASIC"><label for="uppercaseBASIC" title="Toggle uppercase/lowercase display of BASIC program text">Uppercase</label>
             </div>
 
             <div id="basicmsg">An error has occurred. Check for valid codes.</div>
