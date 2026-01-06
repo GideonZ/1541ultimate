@@ -1434,12 +1434,49 @@ function disassembler(startInt, byteArray) {
             <div id="tableContainer"></div>
 
             <textarea id="basiceditor" wrap="off" class="c64-textarea" cols="80">
-// print "Hello world!" text
+//
+// short guide to using Basic Tokenizer
+//
+
+// clear screen and set uppercase mode
+10 print "{clear}"chr$(142)
+
+// print "HELLO WORLD!" text
+11 print "hello world!"
+
+// gosub to delay loop
+12 gosub 100
+
 // example of writing using abbreviated commands
-// print chr$(14)"Hello world!" => ? cH(14)"Hello world!"
-10 ? cH(14)"Hello world!"
-// go to line no. 10, goto 10 => gO 10
-20 gO 10
+// print > ?, gosub > goS
+13 ? "hello world!"
+14 goS 100
+
+// example of inserting characters using shift to obtain uppercase letters or special symbols
+// set lowercase (business) mode > print chr$(14)
+15 print chr$(14)
+16 print "Hello world!"
+17 gosub 100
+
+// a simplified format of inserting the same character multiple times is allowed
+// uppercase mode > print chr$(142)
+18 print chr$(142)
+19 print "       print {pi}{pi}:";{pi}{pi}
+20 print "{7 space}print {2 pi}:";{2 pi}
+21 gosub 100
+
+// special characters from keys: A S Z X in uppercase mode
+// with the Shift key
+22 print "AS": print "ZX"
+// with the C= key
+23 print "{cm a}{cm s}": print "{cm z}{cm x}"
+24 gosub 100
+
+// program end
+99 end
+
+// delay loop
+100 for i = 0 to 2000: next: return
             </textarea>
             <div class="padding-tr-5">
                 <span class="padding-tr-5"><input type="button" id="submitBASIC" value="Upload"></span>
