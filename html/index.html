@@ -1315,6 +1315,7 @@ function disassembler(startInt, byteArray) {
     }
     #basicmsg {
         flex-grow: 1;
+        margin-top: 20px;
         padding: 20px;
         display:none;
         background-color: red;
@@ -1326,6 +1327,12 @@ function disassembler(startInt, byteArray) {
     }
     .uppercase {
         text-transform: uppercase;
+    }
+    .c64-textarea:focus {
+        outline: none;
+    }
+    input[type="button"] {
+        padding: 5px 10px;
     }
 
     @font-face {
@@ -1342,7 +1349,9 @@ function disassembler(startInt, byteArray) {
             font-family: monospace;
             background-color: #1966be; /* Commodore 64 screen color */
             color: #68bee6; /* Light blue text color */
-            border: none;
+            border-style: solid;
+            border-color: #68bee6;
+            border-width: 20px 13px;
             border-radius: 0;
             padding: 10px;
             font-size: 16px;
@@ -1430,7 +1439,7 @@ function disassembler(startInt, byteArray) {
         <div id="left-nav">
             <ul>
                 <li><a id="showwelcome" href="#">Home</a></li>
-                <li><a id="showsidplay" href="#">SidPlayer</a></li>
+                <li><a id="showsidplay" href="#">SID Player</a></li>
                 <li><a id="showrunner" href="#">Execute PRG / CRT</a></li>
                 <li><a id="showterminal"  href="#">Live Monitor</a></li>
                 <li><a id="showtokenizer"  href="#">BASIC Editor</a></li>
@@ -1470,13 +1479,13 @@ function disassembler(startInt, byteArray) {
         </div>
 
         <div id="sidplay" class="page">
-            <h1>Sidplayer</h1>
-            <p>Use the form below to select and remotely play a sid file.</p>
+            <h1>SID Player</h1>
+            <p>Use the form below to select and remotely play a SID file.</p>
 
-            <input type="file" id="file" name="file">
+            <input type="file" id="file" name="file" accept=".sid,.SID" title="Select SID sound file to be played">
             <br />
             <br />
-            <input type="button" id="submitForm" value="Play!">
+            <input type="button" id="submitForm" value="Play!" title="Upload and play the selected SID sound file">
 
             <div id="sidmsg">An error has occurred when playing the selected file.</div>
 
@@ -1486,10 +1495,10 @@ function disassembler(startInt, byteArray) {
             <h1>PRG / CRT Executor</h1>
             <p>Use the form below to select a PRG or CRT file.</p>
 
-            <input type="file" id="runnerfile" name="file">
+            <input type="file" id="runnerfile" name="file" accept=".prg,.crt,.PRG,.CRT" title="Select PRG/CRT program file to be run">
             <br />
             <br />
-            <input type="button" id="submitRunnerForm" value="RUN!">
+            <input type="button" id="submitRunnerForm" value="RUN!" title="Upload and RUN the selected PRG/CRT">
 
             <div id="runmsg">An error has occurred when loading the selected file.</div>
 
@@ -1509,43 +1518,45 @@ function disassembler(startInt, byteArray) {
                 <div class="body"></div>
             </div>
             <div>
-                <hr />
+                <br />
                 <table>
                     <thead>
                         <tr>
-                            Available commands (with examples):
+                            <b>Available commands (with examples):</b>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td>m -</td><td>memory view ( m c000 c100 )</td></tr>
-                        <tr><td>h -</td><td>hunt memory ( h c000 c100 4a 30 00 )</td></tr>
-                        <tr><td>f -</td><td>fill memory ( f c000 c100 00 )</td></tr>
-                        <tr><td>d -</td><td>disassemble ( d c000 c100 )</td></tr>
+                        <tr><td>m</td><td>- memory view</td><td>( m c000 c100 )</td></tr>
+                        <tr><td>h</td><td>- hunt memory</td><td>( h c000 c100 4a 30 00 )</td></tr>
+                        <tr><td>f</td><td>- fill memory</td><td>( f c000 c100 00 )</td></tr>
+                        <tr><td>d</td><td>- disassemble</td><td>( d c000 c100 )</td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
 
         <div id="tokenizer" class="page">
-            <h1>BASIC Tokenizer / Editor</h1>
+            <h1>BASIC Editor / Tokenizer</h1>
             <p>Here, you may enter a BASIC program, and upload it directly to your machine.</p>
-            <p><b>Special characters:</b></p>
-            <div id="tableContainer"></div>
 
             <textarea id="basiceditor" wrap="off" class="c64-textarea" cols="80">
 10 print "hello world"
-20 goto 10
-            </textarea>
+20 goto 10</textarea>
             <div class="padding-tr-5">
-                <span class="padding-tr-5"><input type="button" id="submitBASIC" value="Upload"></span>
-                <span class="padding-tr-5"><input type="button" id="submitBASICAndRun" value="Upload and Run"></span>
-                <span class="padding-tr-5"><input type="button" id="runBASIC" value="Run"></span>
+                <span class="padding-tr-5"><input type="button" id="submitBASIC" value="Upload" title="Upload program to C64 memory"></span>
+                <span class="padding-tr-5"><input type="button" id="submitBASICAndRun" value="Upload and Run"  title="Upload program to C64 memory and RUN"></span>
+                <span class="padding-tr-5"><input type="button" id="runBASIC" value="Run" title="Send RUN command to the C64"></span>
                 <span class="padding-tr-5"><input type="button" id="stopBASIC" value="Stop" title="Send STOP command to the C64"></span>
                 <input type="checkbox" id="uppercaseBASIC"><label for="uppercaseBASIC" title="Toggle uppercase/lowercase display of BASIC program text">Uppercase</label>
             </div>
 
             <div id="basicmsg">An error has occurred. Check for valid codes.</div>
 
+            <br />
+            <div><b>Special characters:</b></div>
+            <div id="tableContainer"></div>
+
         </div>
+    </div>
 </body>
 </html>
