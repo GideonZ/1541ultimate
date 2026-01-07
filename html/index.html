@@ -104,82 +104,134 @@ $(document).ready(async function () {
             $('#welcome').show();
     });
 
+    // SID page event handlers
     $('#showsidplay').click(function(event){
-            event.preventDefault(); // Prevents the default action of the anchor tag
-            $(".page").hide();
-            $('#sidplay').show();
+        event.preventDefault(); // Prevents the default action of the anchor tag
+        $(".page").hide();
+        $('#sidplay').show();
     });
 
-     $('#submitForm').click(function(e) {
-            e.preventDefault();
+    $('#sidplaysubmit').click(function(e) {
+        e.preventDefault();
+        submitSidPlayer();
+    });
+
+    $('#sidfile').on("change", function () {
+        submitSidPlayer();
+    });
+
+    $('#siddropzone').on("dragover", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        $(this).addClass("dragover");
+    });
+
+    $('#siddropzone').on("dragleave", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        $(this).removeClass("dragover");
+    });
+
+    $('#siddropzone').on("drop", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        $(this).removeClass("dragover");
+
+        const files = e.originalEvent.dataTransfer.files;
+        if (files.length > 0) {
+            $("#sidfile").prop("files", files);
             submitSidPlayer();
+        }
     });
 
+    // PRG/CRT page event handlers
     $('#showrunner').click(function(event){
-            event.preventDefault(); // Prevents the default action of the anchor tag
-            $(".page").hide();
-            $("#runner").show();
+        event.preventDefault(); // Prevents the default action of the anchor tag
+        $(".page").hide();
+        $("#runner").show();
     });
 
-     $('#submitRunnerForm').click(function(e) {
-            e.preventDefault();
+    $('#runnersubmit').click(function(e) {
+        e.preventDefault();
+        submitRunner();
+    });
+
+    $('#runnerfile').on("change", function () {
+        submitRunner();
+    });
+
+    $('#runnerdropzone').on("dragover", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        $(this).addClass("dragover");
+    });
+
+    $('#runnerdropzone').on("dragleave", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        $(this).removeClass("dragover");
+    });
+
+    $('#runnerdropzone').on("drop", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        $(this).removeClass("dragover");
+
+        const files = e.originalEvent.dataTransfer.files;
+        if (files.length > 0) {
+            $('#runnerfile').prop("files", files);
             submitRunner();
+        }
     });
 
-    $('#showtokenizer').click(function(event){
-            event.preventDefault(); // Prevents the default action of the anchor tag
-            $(".page").hide();
-            $("#tokenizer").show();
-    });
+    function getFileExtension(filename) {
+        let parts = filename.split('.');
+        let extension = parts.length > 1 ? parts[parts.length - 1] : '';
+        return extension.toUpperCase();
+    }
 
     async function submitSidPlayer() {
-        let body = $('#file')[0].files[0];
+        let body = $('#sidfile')[0].files[0];
         let params = {};
-        let [status_code, content] = await make_post_request("http://" + serverIP + "/v1/runners:sidplay", params, body);
+        $("#sidmsg").hide();
 
+        let extension = getFileExtension(body.name);
+        if (extension !== "SID") {
+            alert("Unsupported file extension: '."+ extension.toLowerCase()+"'");
+            return;
+        }
+
+        let [status_code, content] = await make_post_request("http://" + serverIP + "/v1/runners:sidplay", params, body);
         if(status_code !== 200) {
             $("#sidmsg").show();
         }
-        else
-        {
-            $("#sidmsg").hide();
-        }
     }
 
+    // PRG/CRT(/SID) loader
     async function submitRunner() {
         let body = $('#runnerfile')[0].files[0];
-        let filename = $('#runnerfile')[0].files[0].name;
-        let parts = filename.split('.');
-        let extension = parts.length > 1 ? parts[parts.length - 1] : '';
-        extension = extension.toUpperCase();
-            console.log(extension);
+        let extension = getFileExtension(body.name);
         let params = {};
+        $("#runmsg").hide();
 
-        if (extension === "PRG") {
-            let [status_code, content] = await make_post_request("http://" + serverIP + "/v1/runners:run_prg", params, body);
+        let route = null;
+        if (extension === "PRG")
+            route = "/v1/runners:run_prg";
+        else if (extension === "CRT")
+            route = "/v1/runners:run_crt";
+        else if (extension === "SID")
+            route = "/v1/runners:sidplay";
+        else
+            alert("Unsupported file extension: '."+ extension.toLowerCase()+"'");
 
-            if(status_code !== 200) {
+        if (route !== null) {
+            let [status_code, content] = await make_post_request("http://" + serverIP + route, params, body);
+            if(status_code !== 200)
                 $("#runmsg").show();
-            }
-            else
-            {
-                $("#runmsg").hide();
-            }
-        }
-
-        if (extension === "CRT") {
-            let [status_code, content] = await make_post_request("http://" + serverIP + "/v1/runners:run_crt", params, body);
-
-            if(status_code !== 200) {
-                $("#runmsg").show();
-            }
-            else
-            {
-                $("#runmsg").hide();
-            }
-        }
+	}
     }
 
+    // BASIC/tokenizer page event handlers
     function showBASICerror(message) {
         $("#basicmsg").text(message);
         if (message === "")
@@ -187,6 +239,12 @@ $(document).ready(async function () {
         else
            $("#basicmsg").show();
     }
+
+    $('#showtokenizer').click(function(event){
+            event.preventDefault(); // Prevents the default action of the anchor tag
+            $(".page").hide();
+            $("#tokenizer").show();
+    });
 
     $('#submitBASIC').click(async function(event){
         event.preventDefault(); // Prevents the default action of the anchor tag
@@ -1315,6 +1373,13 @@ function disassembler(startInt, byteArray) {
         padding: 20px;
         visibility: hidden;
     }
+    div#left-nav a {
+        color: blue;
+        text-decoration: none;
+    }
+    div#left-nav a:hover {
+        background-color: #beffff;
+    }
     #login {
         padding: 20px;
         width: 800px;
@@ -1335,6 +1400,21 @@ function disassembler(startInt, byteArray) {
         padding: 20px;
         display:none;
     }
+    .dropzone {
+        max-width: 600px;
+        min-height: 120px;
+        border: 2px dashed #1966be;
+        border-radius: 6px;
+        text-align: center;
+        color: #666;
+        margin-top: 15px;
+        padding: 20px 10px;
+    }
+    .dropzone.dragover {
+        border-color: #4caf50;
+        color: #4caf50;
+        background-color: #f6fff6;
+    }
     #runner {
         flex-grow: 1;
         padding: 20px;
@@ -1347,6 +1427,7 @@ function disassembler(startInt, byteArray) {
     }
     #sidmsg {
         flex-grow: 1;
+        margin-top: 20px;
         padding: 20px;
         display:none;
         background-color: red;
@@ -1355,6 +1436,7 @@ function disassembler(startInt, byteArray) {
     }
     #runmsg {
         flex-grow: 1;
+        margin-top: 20px;
         padding: 20px;
         display:none;
         background-color: red;
@@ -1379,8 +1461,12 @@ function disassembler(startInt, byteArray) {
     .c64-textarea:focus {
         outline: none;
     }
-    input[type="button"] {
+    button, input[type="button"], input[type="password"], input[type="file"]::file-selector-button {
         padding: 5px 10px;
+        font-size: 14px;
+    }
+    li {
+	margin: 5px 0;
     }
 
     @font-face {
@@ -1528,28 +1614,40 @@ function disassembler(startInt, byteArray) {
 
         <div id="sidplay" class="page">
             <h1>SID Player</h1>
-            <p>Use the form below to select and remotely play a SID file.</p>
+            <p>Remotely play a SID file on your Ultimate!</p>
 
-            <input type="file" id="file" name="file" accept=".sid,.SID" title="Select SID sound file to be played">
-            <br />
-            <br />
-            <input type="button" id="submitForm" value="Play!" title="Upload and play the selected SID sound file">
+            <div id="siddropzone" class="dropzone" title="Drop SID file to be loaded here">
+                Drag & drop SID file here
+                <br />
+                <p style="font-size: 4em">&#x1F3B6;</p>
+                <br />
+                or press button to browse
+                <br /><br />
+                <input type="file" id="sidfile" name="file" accept=".sid,.SID" title="Select SID sound file to be played">
+                <br /><br />
+                <input type="button" id="sidplaysubmit" value="Play Again!" title="Upload and play the selected SID sound file again">
+            </div>
 
-            <div id="sidmsg">An error has occurred when playing the selected file.</div>
-
+            <div id="sidmsg">An error has occurred when uploading the selected file.</div>
         </div>
 
         <div id="runner" class="page">
             <h1>PRG / CRT Executor</h1>
-            <p>Use the form below to select a PRG or CRT file.</p>
+            <p>Remotely load a program or cartridge to your Ultimate!</p>
 
-            <input type="file" id="runnerfile" name="file" accept=".prg,.crt,.PRG,.CRT" title="Select PRG/CRT program file to be run">
-            <br />
-            <br />
-            <input type="button" id="submitRunnerForm" value="RUN!" title="Upload and RUN the selected PRG/CRT">
+            <div id="runnerdropzone" class="dropzone" title="Drop file to be loaded here">
+                Drag & drop PRG or CRT file here
+                <br />
+                <p style="font-size: 4em">&#x21EA;</p>
+                <br />
+                or press button to browse
+                <br /><br />
+                <input type="file" id="runnerfile" name="file" accept=".prg,.crt,.PRG,.CRT,.sid,.SID" title="Select PRG/CRT/SID file to be run">
+                <br /><br />
+                <input type="button" id="runnersubmit" value="Run Again!" title="Upload and RUN the selected file again">
+            </div>
 
             <div id="runmsg">An error has occurred when loading the selected file.</div>
-
         </div>
 
         <div id="livemon" class="page">
