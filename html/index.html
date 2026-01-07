@@ -626,31 +626,58 @@ $(document).ready(async function () {
 
     $('#tableContainer').append(createTable());
 
+    var memViewAddress = 0;   // "m"emory view command current address
+    var memViewRange   = 256; // "m"emory view command: current range
+    var disViewAddress = 0;   // "d"isassemble current address
+    var disViewRange   = 256; // "d"isassemble current range
+
     $('.body').terminal({
         help: async function() {
 
             this.echo("Available commands (with examples):");
-            this.echo(" m - memory view ( m c000 c100 )");
+            this.echo(" m - memory view ( m | m c000 | m c000 c100 )");
             this.echo(" h - hunt memory ( h c000 c100 4a 30 00 )");
             this.echo(" f - fill memory ( f c000 c100 00 )");
-            this.echo(" d - disassemble ( d c000 c100 )");
+            this.echo(" d - disassemble ( d | d c000 | d c000 c100 )");
 
         },
-        m: async function(address) {
+        m: async function(start, end) {
 
-            hex_num = address;
-            if (isHexadecimal(hex_num)) {
-                for (let i = 0; i < 16; i++) {
-                    let params = { 'address': hex_num, 'length': '16' };
+            if (typeof start !== 'undefined')
+                start = start.toString();
+            else
+                start = memViewAddress.toString(16); // no start given: continue from the end of previous range
+
+            if (isHexadecimal(start)) {
+                start = hexToInt(start);
+                if ((typeof end === 'undefined')||(!isHexadecimal(end)))
+                    end = start+memViewRange; // no end given: use default range
+                else
+                {
+                    end = hexToInt(end);
+                    if (end > start)
+                        memViewRange = end-start; // remember current range as new default
+                }
+                memViewAddress = end; // remember current end address as default for next "m" command
+                if (end >= 0x10000)
+                {
+                    end = 0x10000;
+                    memViewAddress = 0; // wrap address
+                }
+                for (let i = 0; (i < 4096)&&(start < end); i++) {
+                    let hex_num = start.toString(16).padStart(4, "0");
+                    let size = (start+16 <= end) ? 16 : (end-start);
+                    let params = { 'address': hex_num, 'length': size };
                     let [status_code, content] = await make_binary_get_request("http://" + serverIP + "/v1/machine:readmem", params);
                     
                     if (status_code === 200) {
                         let [hex_content, ascii_content] = format_bytes_as_hex_and_ascii(content);
+                        hex_content = hex_content.padEnd(16*3, " ");
                         this.echo(`${hex_num}: ${hex_content} | ${ascii_content}`);
                     } else {
                         this.echo("Failed to read memory or invalid response length");
                     }
-                    hex_num = hex_increment(hex_num, 16);
+                    start += 16;
                 }
             } else {
                 this.echo("Invalid hexadecimal number. Please enter a 16-bit hexadecimal number.");
@@ -671,7 +698,7 @@ $(document).ready(async function () {
                     let [status_code, content] = await make_binary_get_request("http://" + serverIP + "/v1/machine:readmem", params);
 
                     if (status_code === 200) {
-                        hunt = hunt.map(hex => parseInt(hex, 16));
+                        hunt = hunt.map(hex => hexToInt(hex));
                         let indices = findConsecutiveValues(content, hunt, startInt, endInt)
                         for(let x=0; x<indices.length; x++)
                             this.echo(`${toHex16(indices[x])}`);
@@ -718,22 +745,43 @@ $(document).ready(async function () {
         },
         d: async function(start, end) {
 
-            if(isHexadecimal(start) && isHexadecimal(end)) {
+            if (typeof start !== 'undefined')
+                start = start.toString();
+            else
+                start = disViewAddress.toString(16); // no start given: continue from the end of previous range
 
-                let size = hexToInt(end) - hexToInt(start);
-
-                let params = { 'address': start, 'length': size };
-                let [status_code, content] = await make_binary_get_request("http://" + serverIP + "/v1/machine:readmem", params);
-
-                if (status_code === 200) {
-                        let result = disassembler(hexToInt(start), content);
-                        this.echo(result);
+            if(isHexadecimal(start)) {
+                start = hexToInt(start);
+                if ((typeof end === 'undefined')||(!isHexadecimal(end)))
+                    end = start+disViewRange; // no end given: use default range
+                else
+                {
+                    end = hexToInt(end.toString());
+                    if (end > start)
+                        disViewRange = end-start; // remember current range as new default
+                }
+                disViewAddress = end; // remember current end address as default for next "d" command
+                if (end >= 0x10000)
+                {
+                    end = 0x10000;
+                    disViewAddress = 0; // wrap address
                 }
 
+                let size = end - start;
+                if (size > 0) {
+                    disViewRange = end-start; // remember length as default for next "d" command
 
+                    let params = { 'address': start.toString(16), 'length': size };
+                    let [status_code, content] = await make_binary_get_request("http://" + serverIP + "/v1/machine:readmem", params);
+
+                    if (status_code === 200) {
+                        let result = disassembler(start, content);
+                        this.echo(result);
+                    }
+                }
             }
             else {
-                this.echo("Usage: d <start addr> <end addr>");
+                this.echo("Invalid hexadecimal number. Please enter a 16-bit hexadecimal number.");
             }
         }
 
@@ -1526,10 +1574,10 @@ function disassembler(startInt, byteArray) {
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td>m</td><td>- memory view</td><td>( m c000 c100 )</td></tr>
+                        <tr><td>m</td><td>- memory view</td><td>( m | m c000 | m c000 c100 )</td></tr>
                         <tr><td>h</td><td>- hunt memory</td><td>( h c000 c100 4a 30 00 )</td></tr>
                         <tr><td>f</td><td>- fill memory</td><td>( f c000 c100 00 )</td></tr>
-                        <tr><td>d</td><td>- disassemble</td><td>( d c000 c100 )</td></tr>
+                        <tr><td>d</td><td>- disassemble</td><td>( d | d c000 | d c000 c100 )</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -1539,7 +1587,7 @@ function disassembler(startInt, byteArray) {
             <h1>BASIC Editor / Tokenizer</h1>
             <p>Here, you may enter a BASIC program, and upload it directly to your machine.</p>
 
-            <textarea id="basiceditor" wrap="off" class="c64-textarea" cols="80">
+            <textarea id="basiceditor" spellcheck="false" wrap="off" class="c64-textarea" cols="80">
 10 print "hello world"
 20 goto 10</textarea>
             <div class="padding-tr-5">
