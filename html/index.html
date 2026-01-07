@@ -220,16 +220,25 @@ $(document).ready(async function () {
         // Process each line
         for(let x=0; x<lines.length; x++) {
             const currentLineText = lines[x].trim();
+            // Correctly extract only the leading digits as line number
+            const lineNum = currentLineText.match(/^\d+/)?.[0] || "unknown";
+
             const tokenizedLine = new TokenizedLine(currentLineText, addr);
+
+            // VALIDATION: Total line size in memory
+            let lineTotalLength = tokenizedLine.length();
+            if(lineTotalLength > 256) {
+                $("#basicmsg").text("Error in line " + lineNum + ". Line too long for C64 memory (" + lineTotalLength + " bytes). Max is 256. Program was not sent.").show();
+                return; // Abort processing to prevent memory corruption
+            }
 
             // CHECK: If basic_error was set after processing this specific line
             if(typeof basic_error !== 'undefined' && basic_error !== "") {
-                let lineNum = currentLineText.split(' ')[0]; // Extract the BASIC line number
                 $("#basicmsg").text("Error in line " + lineNum + ". Program contains errors and was not sent. " + basic_error).show();
                 return; // Stop execution to prevent sending corrupted data
             }
 
-            addr += tokenizedLine.length();
+            addr += lineTotalLength;
             tokenized_lines.push(tokenizedLine);
         }
 
@@ -541,10 +550,6 @@ $(document).ready(async function () {
                     currentLine = i;
                     break;
                 }
-            }
-
-            if (lines[currentLine].length >= 160 && e.which !== 8 && e.which !== 13) {
-                e.preventDefault();
             }
     });
 
@@ -1474,7 +1479,7 @@ function disassembler(startInt, byteArray) {
             <p><b>Special characters:</b></p>
             <div id="tableContainer"></div>
 
-            <textarea id="basiceditor" class="c64-textarea" cols="80">
+            <textarea id="basiceditor" wrap="off" class="c64-textarea" cols="80">
 10 print "hello world"
 20 goto 10
             </textarea>
