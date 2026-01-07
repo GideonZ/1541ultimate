@@ -276,9 +276,9 @@ $(document).ready(async function () {
             }
 
             // CHECK: If basic_error was set after processing this specific line
-            if(basic_error !== "") {
-                showBASICerror("Error in line " + lineNum + ". Program contains errors and was not sent. " + basic_error);
-                return false; // Stop execution to prevent sending corrupted data
+            if(typeof basic_error !== 'undefined' && basic_error !== "") {
+                $("#basicmsg").text("Error in line " + lineNum + ". Program contains errors and was not sent. " + basic_error).show();
+                return; // Stop execution to prevent sending corrupted data
             }
 
             addr += lineTotalLength;
