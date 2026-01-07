@@ -447,7 +447,8 @@ $(document).ready(async function () {
                     return [value, s.substring(token.length)];
                 }
             }
-            basic_error = "Error -> ..." + s + " \nInvalid code.";
+            basic_error = "Error -> ..." + s + " \nInvalid special character code occurred from this point.";
+            return [null, null];
         }
         return [asciiToPetscii(s.charCodeAt(0)), s.substring(1)];
     }
