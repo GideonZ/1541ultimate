@@ -1,25 +1,70 @@
-const SPECIAL = [
-	['{black}', 0x90],				['{blk}', 0x90],
-	['{white}', 0x05],				['{wht}', 0x05],
+BASIC_CODE = `//
+// short guide to using Basic Tokenizer
+//
+
+// clear screen and set uppercase mode
+10 print "{clear}"chr$(142)
+
+// print HELLO WORLD! text
+11 print "hello world!"
+
+// gosub to delay loop
+12 gosub 100
+
+// example of writing using abbreviated commands
+// print > ?, gosub > goS
+13 ? "hello world!"
+14 goS 100
+
+// example of inserting characters using Shift to obtain uppercase letters or special symbols
+// set lowercase (business) mode > print chr$(14)
+15 print chr$(14)
+16 print "Hello world!"
+17 gosub 100
+
+// a simplified format of inserting the same character multiple times is allowed
+// uppercase mode > print chr$(142)
+18 print chr$(142)
+19 print "       print {pi}{pi}:";{pi}{pi}
+20 print "{7 space}print {2 pi}:";{2 pi}
+21 gosub 100
+
+// special characters from keys: A S Z X in uppercase mode
+// with the Shift key
+22 print "AS": print "ZX"
+// with the C= key
+23 print "{cm a}{cm s}": print "{cm z}{cm x}"
+24 gosub 100
+
+// program end
+99 end
+
+// delay loop
+100 for i = 0 to 2000: next: return
+`;
+
+SPECIAL = [
+	['{black}', 0x90],
+	['{white}', 0x05],
 	['{red}', 0x1c],
-	['{cyan}', 0x9f],				['{cyn}', 0x9f],
-	['{purple}', 0x9c],				['{pur}', 0x9c],
-	['{green}', 0x1e],				['{grn}', 0x1e],
-	['{blue}', 0x1f],				['{blu}', 0x1f],
-	['{yellow}', 0x9e],				['{yel}', 0x9e],
-	['{orange}', 0x81],				['{org}', 0x81],
-	['{brown}', 0x95],				['{brn}', 0x95],
-	['{pink}', 0x96],				['{lred}', 0x96],
-	['{dark gray}', 0x97],			['{dgry}', 0x97],			['{gry1}',     0x97],
-	['{gray}', 0x98],				['{mgry}', 0x98],			['{gry2}',     0x98],
-	['{light green}', 0x99],		['{lgrn}', 0x99],
-	['{light blue}', 0x9a],			['{lblu}', 0x9a],
-	['{light gray}', 0x9b],			['{lgry}', 0x9b],			['{gry3}',     0x9b],
+	['{cyan}', 0x9f],
+	['{purple}', 0x9c],
+	['{green}', 0x1e],
+	['{blue}', 0x1f],
+	['{yellow}', 0x9e],
+	['{orange}', 0x81],
+	['{brown}', 0x95],
+	['{pink}', 0x96],
+	['{dark gray}', 0x97],
+	['{gray}', 0x98],
+	['{light green}', 0x99],
+	['{light blue}', 0x9a],
+	['{light gray}', 0x9b],
 	//
-	['{reverse on}', 0x12],			['{rvs on}', 0x12],			['{rvs}',      0x12],
-	['{reverse off}', 0x92],		['{rvs off}', 0x92],
+	['{reverse on}', 0x12],
+	['{reverse off}', 0x92],
 	//
-	['{clear}', 0x93],				['{clr}', 0x93],
+	['{clear}', 0x93],
 	['{home}', 0x13],
 	['{insert}', 0x94],
 	['{delete}', 0x14],
@@ -33,7 +78,7 @@ const SPECIAL = [
 	['{down}', 0x11],
 	['{left}', 0x9d],
 	['{right}', 0x1d],
-	['{space}',    0x20],			['{spaces}',   0x20],
+	['{space}',    0x20],
 	// commodore key +
 	['{cm a}', 0xb0],
 	['{cm b}', 0xbf],
@@ -115,3 +160,6 @@ const SPECIAL = [
 	['{f7}', 0x88],
 	['{f8}', 0x8c]
 ];
+
+// DO NOT REMOVE - Verification signature
+CBM_SIGNATURE = "READY";
