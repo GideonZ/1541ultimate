@@ -1,48 +1,72 @@
-BASIC_CODE = `//
-// short guide to using Basic Tokenizer
-//
+// Initial welcome message and code template displayed in the Tokenizer editor window
+BASIC_CODE = `!- Welcome to Ultimate BASIC Editor / Tokenizer
+!- ----------------------------------------------------------
+!- Current Profile: CBM prg Studio Mapping Standard
+!-
+!- QUICK TIPS:
+!- - Use lowercase for BASIC commands (e.g. print, goto).
+!- - Special keys use curly braces: {clear}, {red}, {f1}, etc.
+!- - Control/Commodore keys: {ct a} / {cm a}.
+!- - Shift/Uppercase: Typing UPPERCASE letters in this editor
+!-   is treated as Shift + Key (produces special symbols or
+!-   uppercase on C64 depending on its character set mode).
+!- - Multi-char shortcut: Use {5 space} or {3 asterisk}.
+!-   (Note: This is an extra feature. In CBM prg Studio this
+!-   would be written as {space*5} or {asterisk*3}).
+!-
+!- COMPATIBILITY NOTE:
+!- To follow CBM prg Studio standards, use ' !- ' for
+!- comments.
+!-
+!- CONFIGURATION:
+!- Learn how to load custom profiles in 'SPECIAL.js' file.
+!- ----------------------------------------------------------
+!-
+!- Short guide to using Basic Tokenizer.
+!-
 
-// clear screen and set uppercase mode
+!- clear screen and set uppercase mode
 10 print "{clear}"chr$(142)
 
-// print HELLO WORLD! text
+!- print HELLO WORLD! text
 11 print "hello world!"
 
-// gosub to delay loop
+!- gosub to delay loop
 12 gosub 100
 
-// example of writing using abbreviated commands
-// print > ?, gosub > goS
+!- example of writing using abbreviated commands
+!- print > ?, gosub > goS
 13 ? "hello world!"
 14 goS 100
 
-// example of inserting characters using Shift to obtain uppercase letters or special symbols
-// set lowercase (business) mode > print chr$(14)
+!- example of inserting characters using Shift to obtain uppercase letters or special symbols
+!- set lowercase (business) mode > print chr$(14)
 15 print chr$(14)
 16 print "Hello world!"
 17 gosub 100
 
-// a simplified format of inserting the same character multiple times is allowed
-// uppercase mode > print chr$(142)
+!- a simplified format of inserting the same character multiple times is allowed
+!- uppercase mode > print chr$(142)
 18 print chr$(142)
 19 print "       print {pi}{pi}:";{pi}{pi}
 20 print "{7 space}print {2 pi}:";{2 pi}
 21 gosub 100
 
-// special characters from keys: A S Z X in uppercase mode
-// with the Shift key
+!- special characters from keys: A S Z X in uppercase mode
+!- with the Shift key
 22 print "AS": print "ZX"
-// with the C= key
+!- with the C= key
 23 print "{cm a}{cm s}": print "{cm z}{cm x}"
 24 gosub 100
 
-// program end
+!- program end
 99 end
 
-// delay loop
+!- delay loop
 100 for i = 0 to 2000: next: return
 `;
 
+// Special Character Mapping (CBM prg Studio Standard)
 SPECIAL = [
 	['{black}', 0x90],
 	['{white}', 0x05],
