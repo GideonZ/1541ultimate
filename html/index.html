@@ -3,30 +3,29 @@
 <meta charset="utf-8">
 <title>Ultimate II/64</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<!-- Try load the external SPECIAL file first -->
+<!-- Load the configuration script that defines SCRIPT_TO_LOAD -->
+<script src="SPECIAL.js"></script>
+<script>
+	// Dynamic loading of the external profile script based on SCRIPT_TO_LOAD
+	if (typeof SCRIPT_TO_LOAD !== 'undefined' && SCRIPT_TO_LOAD !== "") {
+		const script = document.createElement('script');
+		script.src = SCRIPT_TO_LOAD;
+
+		// Wait for the script to load, then ensure DOM elements are ready before initializing
+		script.onload = () => $(initializeTokenizerUI);
+		
+		document.head.appendChild(script);
+	} else {
+		// Fallback: initialize using internal defaults once the DOM is fully constructed
+		$(initializeTokenizerUI);
+	}
+</script>
+
 <script src="https://cdn.jsdelivr.net/npm/jquery"></script>
 <script src="https://cdn.jsdelivr.net/npm/jquery.terminal/js/jquery.terminal.min.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jquery.terminal/css/jquery.terminal.min.css"/>
-
-<!-- Try load the external SPECIAL file first -->
-<script src="SPECIAL.js"></script>
-
-<script>
-    // Load the external data file
-    if (typeof SCRIPT_TO_LOAD !== 'undefined') {
-        const script = document.createElement('script');
-        script.src = SCRIPT_TO_LOAD;
-        document.head.appendChild(script);
-    }
-
-    $(document).ready(function() {
-        // We only handle the Editor text here
-        setTimeout(function() {
-            if (window.CBM_SIGNATURE === "READY") {
-                $('#basiceditor').val(window.BASIC_CODE);
-            }
-        }, 150);
-    });
-</script>
 
 <script>
 
@@ -430,9 +429,9 @@ $(document).ready(async function () {
 
     const TOKENS_UPPERCASE = TOKENS.map(token => [token[0].toUpperCase(), token[1]]);
 
-	// Check if SPECIAL exists in the global window object
-    if (!window.SPECIAL) {
-		// If not found (file .js failed to load), define base data
+	// Check if SPECIAL exists in the global window object and is ready
+	if (!window.SPECIAL || window.CBM_SIGNATURE !== "READY") {
+		// If not found or not ready (file .js failed to load), define base data
 		window.SPECIAL = [
 			['{rvs off}',  0x92],
 			['{rvs on}',   0x12],
@@ -478,8 +477,8 @@ $(document).ready(async function () {
 			['{f8}',       0x8c],
         ];
     }
-	// Create a local reference so you don't have to change the rest of your code
-	var SPECIAL = window.SPECIAL;
+	// Link to the global window.SPECIAL to maintain compatibility with the existing codebase
+	SPECIAL = window.SPECIAL;
 
     function asciiToPetscii(o) {
         // Check if character code is less than or equal to '@' or is '[' or ']' or '^'
@@ -624,30 +623,34 @@ $(document).ready(async function () {
             }
     });
 
-    function createTable() {
-            let $table = $('<table border="0"></table>');
-            
-            // Calculate the number of rows needed for 16 columns
-            let numRows = Math.ceil(SPECIAL.length / 16);
+    /**
+     * Renders the special characters table.
+     * Uses window.SPECIAL to ensure tokens from external profiles are loaded correctly.
+     */
+    function renderSpecialTable() {
+        let tokens = window.SPECIAL;
+        let $table = $('<table border="0"></table>');
 
-            for (let row = 0; row < numRows; row++) {
-                let $row = $('<tr></tr>');
-                for (let col = 0; col < 16; col++) {
-                    let cellIndex = row * 16 + col;
-                    if (cellIndex < SPECIAL.length) {
-                        let [symbol, code] = SPECIAL[cellIndex];
-                        $row.append(`<td>${symbol}</td>`);
-                    } else {
-                        $row.append('<td></td>'); // Empty cell if no more data
-                    }
+        // Calculate the number of rows needed for 16 columns
+        let numRows = Math.ceil(tokens.length / 16);
+
+        for (let row = 0; row < numRows; row++) {
+            let $row = $('<tr></tr>');
+            for (let col = 0; col < 16; col++) {
+                let cellIndex = row * 16 + col;
+                if (cellIndex < tokens.length) {
+                    let [symbol, code] = tokens[cellIndex];
+                    $row.append(`<td>${symbol}</td>`);
+                } else {
+                    $row.append('<td></td>'); // Empty cell if no more data
                 }
-                $table.append($row);
             }
-
-            return $table;
+            $table.append($row);
+        }
+        $('#tableContainer').empty().append($table);
     }
 
-    $('#tableContainer').append(createTable());
+    $(document).ready(renderSpecialTable);
 
     $('.body').terminal({
         help: async function() {
@@ -1583,7 +1586,7 @@ function disassembler(startInt, byteArray) {
 
         </div>
     </div>
-
+	-
 	<!-- SCRIPT FOR DYNAMIC CONTENT LOADING -->
 	<script>
 		$(document).ready(function() {
