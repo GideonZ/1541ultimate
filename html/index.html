@@ -623,34 +623,83 @@ $(document).ready(async function () {
             }
     });
 
-    /**
-     * Renders the special characters table.
-     * Uses window.SPECIAL to ensure tokens from external profiles are loaded correctly.
-     */
-    function renderSpecialTable() {
-        let tokens = window.SPECIAL;
-        let $table = $('<table border="0"></table>');
+	/**
+	* Renders the C64 Special Characters Table in an 8x32 grid layout.
+	* Design: [Red Separator][HEX][4px Gap][Symbols][16px Gap][Next Column]
+	* Features: Pepto PAL color accuracy and adaptive text contrast for accessibility.
+	*/
+	function renderSpecialTable() {
+		// Reference global tokens list from the external profile
+		const tokens = window.SPECIAL;
 
-        // Calculate the number of rows needed for 16 columns
-        let numRows = Math.ceil(tokens.length / 16);
+		// 1. Official Pepto PAL Palette (by Philip Timmermann) for authentic C64 color reproduction
+		const colorByHex = {
+			0x90: '#000000', 0x05: '#FFFFFF', 0x1C: '#883932', 0x9F: '#67B6BD',
+			0x9C: '#8B3F96', 0x1E: '#55A049', 0x1F: '#40318D', 0x9E: '#BFA448',
+			0x81: '#8B5429', 0x95: '#574200', 0x96: '#B86962', 0x97: '#505050',
+			0x98: '#787878', 0x99: '#94E089', 0x9A: '#7869C4', 0x9B: '#9F9F9F'
+		};
 
-        for (let row = 0; row < numRows; row++) {
-            let $row = $('<tr></tr>');
-            for (let col = 0; col < 16; col++) {
-                let cellIndex = row * 16 + col;
-                if (cellIndex < tokens.length) {
-                    let [symbol, code] = tokens[cellIndex];
-                    $row.append(`<td>${symbol}</td>`);
-                } else {
-                    $row.append('<td></td>'); // Empty cell if no more data
-                }
-            }
-            $table.append($row);
-        }
-        $('#tableContainer').empty().append($table);
-    }
+		// 2. Map all tokens to their respective 0-255 HEX codes
+		let grouped = Array.from({ length: 256 }, () => []);
+		tokens.forEach(item => {
+			if (item.length >= 2) {
+				let [symbol, code] = item;
+				grouped[code].push(symbol);
+			}
+		});
 
-    $(document).ready(renderSpecialTable);
+		// 3. Build the table using a monospace font to ensure strict vertical alignment
+		let $table = $('<table style="font-family: monospace; border-collapse: collapse; background: #f5f5f5; font-size: 13px;"></table>');
+
+		// Create 32 rows to cover the 256 character map across 8 columns
+		for (let row = 0; row < 32; row++) {
+			let $tr = $('<tr></tr>');
+			for (let col = 0; col < 8; col++) {
+				// Calculate PETSCII code based on current row and column range
+				let code = row + (col * 32);
+				let hexDisplay = '0x' + code.toString(16).padStart(2, '0').toUpperCase();
+
+				// Render each symbol associated with the current HEX code
+				let formattedSymbols = grouped[code].map(symbol => {
+					let content = symbol.replace(/{|}/g, '');
+					let isNumeric = /^\d+$/.test(content);
+
+					if (isNumeric) {
+						// Render decimal values (e.g., {28}) in plain black text
+						return `<span style="color: #000000; padding: 0 2px;">${symbol}</span>`;
+					} else if (colorByHex[code]) {
+						// Render color tokens using the background color from Pepto PAL
+						const bgColor = colorByHex[code];
+
+						// Contrast Logic: Use White text for dark backgrounds (Luminance levels 1 & 2),
+						// and Black text for light backgrounds (Luminance levels 3 & 4)
+						const darkCodes = [0x90, 0x1F, 0x95, 0x1C, 0x97, 0x9C, 0x98, 0x81];
+						const textColor = darkCodes.includes(code) ? '#FFFFFF' : '#000000';
+
+						return `<span style="background-color: ${bgColor}; color: ${textColor}; font-weight: bold; padding: 1px 4px; border-radius: 2px; display: inline-block; margin: 1px 0; border: 1px solid rgba(0,0,0,0.1);">${symbol}</span>`;
+					} else {
+						// Render functional tokens (e.g., {space}, {home}) in standard blue
+						return `<span style="color: #0000ff; padding: 0 2px;">${symbol}</span>`;
+					}
+				}).join(' ');
+
+				// Apply specific spacing: 4px between HEX and symbols, 16px between columns
+				// Red border-left serves as a distinct vertical guide for the 8-column split
+				$tr.append(`
+					<td style="padding-right: 4px; color: #666; border-left: 1px solid red; padding-left: 5px; white-space: nowrap;">${hexDisplay}</td>
+					<td style="padding-right: 16px; white-space: nowrap;">${formattedSymbols}</td>
+				`);
+			}
+			$table.append($tr);
+		}
+
+		// Inject the final rendered table into the DOM container
+		$('#tableContainer').empty().append($table);
+	}
+
+	// Execute rendering on document ready
+	$(document).ready(renderSpecialTable);
 
     $('.body').terminal({
         help: async function() {
