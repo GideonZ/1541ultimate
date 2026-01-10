@@ -627,6 +627,7 @@ $(document).ready(async function () {
 	* Renders the C64 Special Characters Table in an 8x32 grid layout.
 	* Design: [Red Separator][HEX][4px Gap][Symbols][16px Gap][Next Column]
 	* Features: Pepto PAL color accuracy and adaptive text contrast for accessibility.
+	* Interaction: Symbols are clickable and insert their token into the BASIC editor.
 	*/
 	function renderSpecialTable() {
 		// Reference global tokens list from the external profile
@@ -661,13 +662,17 @@ $(document).ready(async function () {
 				let hexDisplay = '0x' + code.toString(16).padStart(2, '0').toUpperCase();
 
 				// Render each symbol associated with the current HEX code
+				// Only symbols get the 'special-token' class to remain clickable
 				let formattedSymbols = grouped[code].map(symbol => {
 					let content = symbol.replace(/{|}/g, '');
 					let isNumeric = /^\d+$/.test(content);
 
+					// Interaction styles: pointer cursor and no text selection
+					const baseStyle = `cursor: pointer; user-select: none;`;
+
 					if (isNumeric) {
 						// Render decimal values (e.g., {28}) in plain black text
-						return `<span style="color: #000000; padding: 0 2px;">${symbol}</span>`;
+						return `<span class="special-token" data-token="${symbol}" style="${baseStyle} color: #000000; padding: 0 2px;">${symbol}</span>`;
 					} else if (colorByHex[code]) {
 						// Render color tokens using the background color from Pepto PAL
 						const bgColor = colorByHex[code];
@@ -677,10 +682,10 @@ $(document).ready(async function () {
 						const darkCodes = [0x90, 0x1F, 0x95, 0x1C, 0x97, 0x9C, 0x98, 0x81];
 						const textColor = darkCodes.includes(code) ? '#FFFFFF' : '#000000';
 
-						return `<span style="background-color: ${bgColor}; color: ${textColor}; font-weight: bold; padding: 1px 4px; border-radius: 2px; display: inline-block; margin: 1px 0; border: 1px solid rgba(0,0,0,0.1);">${symbol}</span>`;
+						return `<span class="special-token" data-token="${symbol}" style="${baseStyle} background-color: ${bgColor}; color: ${textColor}; font-weight: bold; padding: 1px 4px; border-radius: 2px; display: inline-block; margin: 1px 0; border: 1px solid rgba(0,0,0,0.1);">${symbol}</span>`;
 					} else {
 						// Render functional tokens (e.g., {space}, {home}) in standard blue
-						return `<span style="color: #0000ff; padding: 0 2px;">${symbol}</span>`;
+						return `<span class="special-token" data-token="${symbol}" style="${baseStyle} color: #0000ff; padding: 0 2px;">${symbol}</span>`;
 					}
 				}).join(' ');
 
@@ -696,10 +701,47 @@ $(document).ready(async function () {
 
 		// Inject the final rendered table into the DOM container
 		$('#tableContainer').empty().append($table);
+
+		// 4. Interaction Logic: Insert clicked token into the #basiceditor textarea
+		$('.special-token').off('click').on('click', function(e) {
+			const token = $(this).data('token');
+			const $editor = $('#basiceditor');
+
+			if ($editor.length) {
+				// Save current scroll position to prevent jumping
+				const scrollPos = $(window).scrollTop();
+
+				const start = $editor.prop('selectionStart');
+				const end = $editor.prop('selectionEnd');
+				const oldText = $editor.val();
+
+				// Calculate new text content
+				const newText = oldText.substring(0, start) + token + oldText.substring(end);
+				$editor.val(newText);
+
+				// Trigger 'input' event
+				$editor.trigger('input');
+
+				// Set focus without scrolling (modern browsers)
+				$editor[0].focus({
+					preventScroll: true
+				});
+
+				// Double protection for older browsers: manually restore scroll position
+				$(window).scrollTop(scrollPos);
+
+				// Place the cursor after the inserted token
+				const newCursorPos = start + token.length;
+				$editor.setSelectionRange(newCursorPos, newCursorPos);
+			}
+		});
+
 	}
 
 	// Execute rendering on document ready
-	$(document).ready(renderSpecialTable);
+	$(document).ready(function() {
+		renderSpecialTable();
+	});
 
     $('.body').terminal({
         help: async function() {
