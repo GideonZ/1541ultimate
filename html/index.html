@@ -498,9 +498,15 @@ $(document).ready(async function () {
         
     }
 
+    /**
+    * Scans the input string for tokens, special characters, or plain text.
+    * @param {string} s - The input string fragment.
+    * @param {boolean} tokenize - Whether to attempt keyword tokenization.
+    * @returns {[number|null, string]} - Array containing the byte value and the remaining string.
+    */
     function scan(s, tokenize = true) {
         s = expandCounts(s);
-        
+
         if (tokenize) {
             for (let i = 0; i < TOKENS.length; i++) {
                 let [token, value] = TOKENS[i];
@@ -509,16 +515,25 @@ $(document).ready(async function () {
                 }
             }
         }
+
         if (s[0] === '{') {
             for (let i = 0; i < SPECIAL.length; i++) {
                 let [token, value] = SPECIAL[i];
                 if (s.startsWith(token)) {
+                    // A null byte (0x00) acts as an absolute end-of-line (EOL) terminator
+                    // in Commodore BASIC v2.0. If we encounter {null} (value 0), we return an
+                    // empty string to signal the main tokenizer loop to stop processing this line.
+                    if (value === 0) {
+                        return [0, ""];
+                    }
                     return [value, s.substring(token.length)];
                 }
             }
             basic_error = "Error -> ..." + s + " \nInvalid special character code occurred from this point.";
             return [null, null];
         }
+
+        // Convert standard character to PETSCII and move to next char
         return [asciiToPetscii(s.charCodeAt(0)), s.substring(1)];
     }
 
@@ -540,27 +555,45 @@ $(document).ready(async function () {
         return [parseInt(acc.join(''), 10), s.trimStart()];
     }
 
+    /**
+    * Converts a BASIC source line into a sequence of C64-compatible bytes.
+    * @param {string} s - The full source line (e.g., "10 PRINT A$").
+    * @returns {[number, number[]]} - Array containing the line number and the tokenized bytes.
+    */
     function tokenize(s) {
+        // Uses scanLineNumber to correctly handle cases like "10PRINT" (no space after line number)
         let [lineNumber, remainingString] = scanLineNumber(s);
         let bytes = [];
+
         let inQuotes = false;
         let inRemark = false;
         let inData   = false;
 
-        while (remainingString) {
-            let [byte, newString] = scan(remainingString, !(inQuotes || inRemark || inData));
-            bytes.push(byte);
-            remainingString = newString;
+        while (remainingString && remainingString.length > 0) {
+            // C64 Logic: Tokenization is disabled inside quotes, REM (comments), or after DATA statements
+            let shouldTokenize = !(inQuotes || inRemark || inData);
+            let [byte, newString] = scan(remainingString, shouldTokenize);
 
-            if (byte === '"'.charCodeAt(0)) {
-                inQuotes = !inQuotes;
+            // C64 CRITICAL FIX: If a 0x00 byte is generated, terminate the line immediately.
+            // This ensures compatibility with the C64 Kernal/BASIC interpreter, which
+            // stops parsing the line at the first null byte, regardless of the line pointer.
+            if (byte === 0) {
+                break;
             }
-            else if (byte === 143) {
-                inRemark = true;
+
+            if (byte !== null) {
+                bytes.push(byte);
+
+                // Mode switching based on standard C64 BASIC v2.0 token values
+                if (byte === 34) {          // ASCII/PETSCII for double quotes (")
+                    inQuotes = !inQuotes;
+                } else if (byte === 143) {  // C64 Token for REM ($8F)
+                    inRemark = true;
+                } else if (byte === 131) {  // C64 Token for DATA ($83)
+                    inData = true;
+                }
             }
-            else if (byte === 131) {
-                inData = true;
-            }
+            remainingString = newString;
         }
 
         return [lineNumber, bytes];
