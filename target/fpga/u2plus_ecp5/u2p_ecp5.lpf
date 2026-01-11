@@ -432,3 +432,4 @@ PROHIBIT PRIMARY NET "i_riscv/i_imem/un1_state_1_i" ;
 PROHIBIT PRIMARY NET "i_riscv/r_icache.i_cache/outsel_en_0" ;
 PROHIBIT PRIMARY NET "i_riscv/r_icache.i_cache/state_RNI52AF1[0]" ;
 PROHIBIT PRIMARY NET "i_riscv/ena_o_0" ;
+PROHIBIT PRIMARY NET "i_riscv/i_core/ena_o" ;
