@@ -220,7 +220,6 @@ $(document).ready(async function () {
         // Process each line
         for(let x=0; x<lines.length; x++) {
             const currentLineText = lines[x].trim();
-
             // Correctly extract only the leading digits as line number
             const lineNum = currentLineText.match(/^\d+/)?.[0] || "unknown";
 
