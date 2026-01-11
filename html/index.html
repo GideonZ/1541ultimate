@@ -1,7 +1,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Ultimate II/64</title>
+<title>Commodore 64 Ultimate</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="https://cdn.jsdelivr.net/npm/jquery"></script>
 <script src="https://cdn.jsdelivr.net/npm/jquery.terminal/js/jquery.terminal.min.js"></script>
@@ -329,14 +329,14 @@ $(document).ready(async function () {
             // VALIDATION: Total line size in memory
             let lineTotalLength = tokenizedLine.length();
             if(lineTotalLength > 256) {
-                $("#basicmsg").text("Error in line " + lineNum + ". Line too long for C64 memory (" + lineTotalLength + " bytes). Max is 256. Program was not sent.").show();
-                return; // Abort processing to prevent memory corruption
+                showBASICerror("Error in line " + lineNum + ". Line too long for C64 memory (" + lineTotalLength + " bytes). Max is 256. Program was not sent.");
+                return false; // Abort processing to prevent memory corruption
             }
 
             // CHECK: If basic_error was set after processing this specific line
             if(typeof basic_error !== 'undefined' && basic_error !== "") {
-                $("#basicmsg").text("Error in line " + lineNum + ". Program contains errors and was not sent. " + basic_error).show();
-                return; // Stop execution to prevent sending corrupted data
+                showBASICerror("Error in line " + lineNum + ". Program contains errors and was not sent. " + basic_error);
+                return false; // Stop execution to prevent sending corrupted data
             }
 
             addr += lineTotalLength;
@@ -845,7 +845,7 @@ $(document).ready(async function () {
 
     }, {
         checkArity: false,
-        greetings: 'Ultimate 64 / II+ Remote Monitor\nhelp = list of commands\n'
+        greetings: 'Commodore 64 Ultimate Remote Monitor\nhelp = list of commands\n'
     });
 
     // Kick off login/welcome screen as needed
@@ -1601,7 +1601,7 @@ function disassembler(startInt, byteArray) {
         <div id="welcome" class="page">
             <h1>Welcome to your Ultimate product!</h1>
             <p>This site serves as the dedicated web server 
-                for the Ultimate 64 and Ultimate cartridge systems. It offers a comprehensive suite of APIs, designed to 
+                for the Commodore 64 Ultimate and Ultimate cartridge systems. It offers a comprehensive suite of APIs, designed to 
                 enable the development of advanced integrations and remote access to your system.</p>
             <p>You can find out more by visiting the official <a href="https://ultimate64.com/" target="_blank" rel="noopener"> Ultimate 64 website</a>,
                 or by joining our <a href="https://www.facebook.com/groups/ultimate64" target="_blank" rel="noopener">Facebook group</a>.
@@ -1652,14 +1652,14 @@ function disassembler(startInt, byteArray) {
 
         <div id="livemon" class="page">
             <h1>Live Monitor</h1>
-            <p>Below is a simple 6510 monitor attached to your U64 or UII+.</p>
+            <p>Below is a simple 6510 monitor attached to your machine.</p>
             <div id="terminal" class="trinity-dialog">
                 <header>
                     <ul>
                         <li><a href="#"></a></li>
                         <li><a href="#"></a></li>
                     </ul>
-                    <span class="title">Ultimate 64</span>
+                    <span class="title">Commodore 64 Ultimate</span>
                 </header>
                 <div class="body"></div>
             </div>
