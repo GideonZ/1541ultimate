@@ -296,6 +296,7 @@ SubsysResultCode_e FileTypeTap :: execute_st(SubsysCommand *cmd)
 	case TAPFILE_RUN:
         c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DRIVE_LOAD, RUNCODE_TAPE_LOAD_RUN, "A", "");
         c64_command->execute();
+        vTaskDelay(50);
 		tape_controller->start(1);
 		break;
     case TAPFILE_WRITE:
