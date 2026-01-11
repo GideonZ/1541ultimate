@@ -15,6 +15,8 @@ var ultimateInfo = {};
 
 $(document).ready(async function () {
 
+    var basic_error = ""; // for error reports during parsing
+
     async function ensureLoggedIn() {
         // This also works with older firmware that do not support password protection (will get a 404 for /v1/info)
         let [status_code, content] = await make_get_request("http://" + serverIP + "/v1/info");
@@ -178,25 +180,66 @@ $(document).ready(async function () {
         }
     }
 
-    $('#submitBASIC').click(function(event){
+    function showBASICerror(message) {
+        $("#basicmsg").text(message);
+        if (message === "")
+           $("#basicmsg").hide();
+        else
+           $("#basicmsg").show();
+    }
+
+    $('#submitBASIC').click(async function(event){
         event.preventDefault(); // Prevents the default action of the anchor tag
-        parseBASIC();
+        await parseBASIC();
     });
 
-    $('#submitBASICAndRun').click(function (event) {
+    $('#submitBASICAndRun').click(async function (event) {
         event.preventDefault(); // Prevents the default action of the anchor tag
-        parseBASIC();
-        runBASIC();
+        if (await parseBASIC() === true)
+            await runBASIC();   // Only RUN when parsing/upload was successful
     });
 
-    $('#runBASIC').click(function (event) {
+    $('#runBASIC').click(async function (event) {
         event.preventDefault(); // Prevents the default action of the anchor tag
-        runBASIC();
+        await runBASIC();
     });
+
+    $('#stopBASIC').click(async function (event) {
+        event.preventDefault(); // Prevents the default action of the anchor tag
+        await stopBASIC();
+    });
+
+    $('#uppercaseBASIC').on('change', async function (event) {
+        $("#basiceditor").toggleClass("uppercase", this.checked);  // change upper/lowercase display
+    });
+
+    // convenience: write memory - show error message when access fails
+    async function writeMemory(param, errorMsg) {
+        showBASICerror(""); // clear earlier errors
+        let [status_code, content] = await make_put_request("/v1/machine:writemem", param);
+        if (status_code !== 200) {
+            if (status_code === 0)
+                status_code = "no connection to device";
+            showBASICerror(errorMsg+" (error: "+status_code+").");
+            return false;
+        }
+        return true;
+    }
 
     async function runBASIC() {
-        await make_put_request("/v1/machine:writemem", {address: "0277", data: "52554E0D"}); // Put "RUN\R" into the keybarod buffer
-        await make_put_request("/v1/machine:writemem", {address: "00C6", data: "04"}); // Set the keyboard buffer to 4 characters
+        // Put "RUN\R" into the keyboard buffer
+        if (!await writeMemory({address: "0277", data: "52554E0D"}, "Failed to submit 'RUN' command"))
+            return;
+        // Set the keyboard buffer to 4 characters
+        await writeMemory({address: "00C6", data: "04"}, "Failed to submit 'RUN' command");
+    }
+
+    async function stopBASIC() {
+        // write the $91 STOP flag several times to reduce issues with a race condition, as the C64 kernal is also writing the flag
+        for (var i=0;i<5;i++)
+           // Set BASIC STOP key flag $0091
+           if (!await writeMemory({address: "0091", data: "7F"}, "Failed to set 'STOP' flag"))
+               return; // abort on first error
     }
 
     async function parseBASIC() {
@@ -214,12 +257,32 @@ $(document).ready(async function () {
         const tokenized_lines = [];
         let addr = 2049;
 
+        // Clear error before starting
+        basic_error = "";
+
         // Process each line
         for(let x=0; x<lines.length; x++) {
+            const currentLineText = lines[x].trim();
+            // Correctly extract only the leading digits as line number
+            const lineNum = currentLineText.match(/^\d+/)?.[0] || "unknown";
 
-            const tokenizedLine = new TokenizedLine(lines[x].trim(), addr);
-            addr += tokenizedLine.length();
-            tokenized_lines.push(tokenizedLine)
+            const tokenizedLine = new TokenizedLine(currentLineText, addr);
+
+            // VALIDATION: Total line size in memory
+            let lineTotalLength = tokenizedLine.length();
+            if(lineTotalLength > 256) {
+                $("#basicmsg").text("Error in line " + lineNum + ". Line too long for C64 memory (" + lineTotalLength + " bytes). Max is 256. Program was not sent.").show();
+                return; // Abort processing to prevent memory corruption
+            }
+
+            // CHECK: If basic_error was set after processing this specific line
+            if(basic_error !== "") {
+                showBASICerror("Error in line " + lineNum + ". Program contains errors and was not sent. " + basic_error);
+                return false; // Stop execution to prevent sending corrupted data
+            }
+
+            addr += lineTotalLength;
+            tokenized_lines.push(tokenizedLine);
         }
 
         let i = 1
@@ -234,24 +297,30 @@ $(document).ready(async function () {
 
         var data = convertData(tokenized_lines);
 
-        if(basic_error !== "") {
-            $("#basicmsg").text(basic_error);
-            $("#basicmsg").show();
-        }
-        else {
-            $("#basicmsg").hide();
+        showBASICerror(basic_error); // show parser error messages (or hide the text box)
 
+        if(basic_error === "") {
             let params = {"address":"0801"};
             let [status_code, content] = await make_post_request("http://" + serverIP + "/v1/machine:writemem", params, data);
         
-            let varptr = toHex16(tokenized_lines[i-1].next_addr + 2);
-            varptr = varptr.substring(2, 4) + varptr.substring(0, 2);
+            if (status_code === 200) {
+                let varptr = toHex16(tokenized_lines[i-1].next_addr + 2);
+                varptr = varptr.substring(2, 4) + varptr.substring(0, 2);
 
-            params = {"address":"002d", "data": varptr };
-            [status_code, content] = await make_put_request("http://" + serverIP + "/v1/machine:writemem", params);
+                params = {"address":"002d", "data": varptr };
+                [status_code, content] = await make_put_request("http://" + serverIP + "/v1/machine:writemem", params);
+            }
+
+            if (status_code !== 200) {
+                if (status_code === 0)
+                    status_code = "no connection to device";
+                showBASICerror("Upload failed (error: "+status_code+").");
+                return false;
+            }
+            return true;
         }
 
-        basic_error = "";
+        return false;
     }
 
     function getAsciiValues(str) {
@@ -261,8 +330,6 @@ $(document).ready(async function () {
         }
         return asciiValues;
     }
-
-    var basic_error = "";
 
     const TOKENS = [
         ['restore', 140],
@@ -355,7 +422,7 @@ $(document).ready(async function () {
         ['{rght}',     0x1d],
         ['{clr}',      0x93],
         ['{clear}',    0x93],
-        ['{home}',     0x13],
+        ['{home}',     0x13],        
         
         ['{blk}',      0x90],
         ['{wht}',      0x05],
@@ -372,9 +439,23 @@ $(document).ready(async function () {
         ['{mgry}',     0x98],
         ['{lgrn}',     0x99],
         ['{lblu}',     0x9a],
-        ['{lgry}',     0x9b]
+        ['{lgry}',     0x9b],
         
-        
+        // additional entries found in COMPUTES!'s Gazette
+        ['{rvs}',      0x12],
+        ['{space}',    0x20],
+        ['{spaces}',   0x20],
+        ['{gry1}',     0x97],
+        ['{gry2}',     0x98],
+        ['{gry3}',     0x9b],
+        ['{f1}',       0x85],
+        ['{f2}',       0x86],
+        ['{f3}',       0x87],
+        ['{f4}',       0x88],
+        ['{f5}',       0x89],
+        ['{f6}',       0x8a],
+        ['{f7}',       0x8b],
+        ['{f8}',       0x8c],
     ];
 
     function asciiToPetscii(o) {
@@ -396,6 +477,8 @@ $(document).ready(async function () {
     }
 
     function scan(s, tokenize = true) {
+        s = expandCounts(s);
+        
         if (tokenize) {
             for (let i = 0; i < TOKENS.length; i++) {
                 let [token, value] = TOKENS[i];
@@ -411,9 +494,18 @@ $(document).ready(async function () {
                     return [value, s.substring(token.length)];
                 }
             }
-            basic_error = "Error -> ..." + s + " \nInvalid code.";
+            basic_error = "Error -> ..." + s + " \nInvalid special character code occurred from this point.";
+            return [null, null];
         }
         return [asciiToPetscii(s.charCodeAt(0)), s.substring(1)];
+    }
+
+    // Expand patterns like {3 spaces} → {spaces}{spaces}{spaces}
+    function expandCounts(input) {
+        return input.replace(/\{(\d+)\s+([^}]+)\}/g, (_, count, word) => {
+            count = Number(count);
+            return Array(count).fill(`{${word}}`).join('');
+        });
     }
 
     function scanLineNumber(s) {
@@ -431,17 +523,21 @@ $(document).ready(async function () {
         let bytes = [];
         let inQuotes = false;
         let inRemark = false;
+        let inData   = false;
 
         while (remainingString) {
-            let [byte, newString] = scan(remainingString, !(inQuotes || inRemark));
+            let [byte, newString] = scan(remainingString, !(inQuotes || inRemark || inData));
             bytes.push(byte);
             remainingString = newString;
 
             if (byte === '"'.charCodeAt(0)) {
                 inQuotes = !inQuotes;
             }
-            if (byte === 143) {
+            else if (byte === 143) {
                 inRemark = true;
+            }
+            else if (byte === 131) {
+                inData = true;
             }
         }
 
@@ -502,10 +598,6 @@ $(document).ready(async function () {
                     currentLine = i;
                     break;
                 }
-            }
-
-            if (lines[currentLine].length >= 160 && e.which !== 8 && e.which !== 13) {
-                e.preventDefault();
             }
     });
 
@@ -1223,11 +1315,24 @@ function disassembler(startInt, byteArray) {
     }
     #basicmsg {
         flex-grow: 1;
+        margin-top: 20px;
         padding: 20px;
         display:none;
         background-color: red;
         color: white;
         width: 400px;
+    }
+    #uppercaseBASIC {
+        margin-left: 20px;
+    }
+    .uppercase {
+        text-transform: uppercase;
+    }
+    .c64-textarea:focus {
+        outline: none;
+    }
+    input[type="button"] {
+        padding: 5px 10px;
     }
 
     @font-face {
@@ -1244,7 +1349,9 @@ function disassembler(startInt, byteArray) {
             font-family: monospace;
             background-color: #1966be; /* Commodore 64 screen color */
             color: #68bee6; /* Light blue text color */
-            border: none;
+            border-style: solid;
+            border-color: #68bee6;
+            border-width: 20px 13px;
             border-radius: 0;
             padding: 10px;
             font-size: 16px;
@@ -1252,7 +1359,6 @@ function disassembler(startInt, byteArray) {
             width: 900px;
             height: 400px;
             resize: none;
-
         }
 
 .trinity-dialog {
@@ -1333,7 +1439,7 @@ function disassembler(startInt, byteArray) {
         <div id="left-nav">
             <ul>
                 <li><a id="showwelcome" href="#">Home</a></li>
-                <li><a id="showsidplay" href="#">SidPlayer</a></li>
+                <li><a id="showsidplay" href="#">SID Player</a></li>
                 <li><a id="showrunner" href="#">Execute PRG / CRT</a></li>
                 <li><a id="showterminal"  href="#">Live Monitor</a></li>
                 <li><a id="showtokenizer"  href="#">BASIC Editor</a></li>
@@ -1373,13 +1479,13 @@ function disassembler(startInt, byteArray) {
         </div>
 
         <div id="sidplay" class="page">
-            <h1>Sidplayer</h1>
-            <p>Use the form below to select and remotely play a sid file.</p>
+            <h1>SID Player</h1>
+            <p>Use the form below to select and remotely play a SID file.</p>
 
-            <input type="file" id="file" name="file">
+            <input type="file" id="file" name="file" accept=".sid,.SID" title="Select SID sound file to be played">
             <br />
             <br />
-            <input type="button" id="submitForm" value="Play!">
+            <input type="button" id="submitForm" value="Play!" title="Upload and play the selected SID sound file">
 
             <div id="sidmsg">An error has occurred when playing the selected file.</div>
 
@@ -1389,10 +1495,10 @@ function disassembler(startInt, byteArray) {
             <h1>PRG / CRT Executor</h1>
             <p>Use the form below to select a PRG or CRT file.</p>
 
-            <input type="file" id="runnerfile" name="file">
+            <input type="file" id="runnerfile" name="file" accept=".prg,.crt,.PRG,.CRT" title="Select PRG/CRT program file to be run">
             <br />
             <br />
-            <input type="button" id="submitRunnerForm" value="RUN!">
+            <input type="button" id="submitRunnerForm" value="RUN!" title="Upload and RUN the selected PRG/CRT">
 
             <div id="runmsg">An error has occurred when loading the selected file.</div>
 
@@ -1412,41 +1518,45 @@ function disassembler(startInt, byteArray) {
                 <div class="body"></div>
             </div>
             <div>
-                <hr />
+                <br />
                 <table>
                     <thead>
                         <tr>
-                            Available commands (with examples):
+                            <b>Available commands (with examples):</b>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td>m -</td><td>memory view ( m c000 c100 )</td></tr>
-                        <tr><td>h -</td><td>hunt memory ( h c000 c100 4a 30 00 )</td></tr>
-                        <tr><td>f -</td><td>fill memory ( f c000 c100 00 )</td></tr>
-                        <tr><td>d -</td><td>disassemble ( d c000 c100 )</td></tr>
+                        <tr><td>m</td><td>- memory view</td><td>( m c000 c100 )</td></tr>
+                        <tr><td>h</td><td>- hunt memory</td><td>( h c000 c100 4a 30 00 )</td></tr>
+                        <tr><td>f</td><td>- fill memory</td><td>( f c000 c100 00 )</td></tr>
+                        <tr><td>d</td><td>- disassemble</td><td>( d c000 c100 )</td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
 
         <div id="tokenizer" class="page">
-            <h1>BASIC Tokenizer / Editor</h1>
+            <h1>BASIC Editor / Tokenizer</h1>
             <p>Here, you may enter a BASIC program, and upload it directly to your machine.</p>
-            <p><b>Special characters:</b></p>
-            <div id="tableContainer"></div>
 
-            <textarea id="basiceditor" class="c64-textarea" cols="80">
+            <textarea id="basiceditor" wrap="off" class="c64-textarea" cols="80">
 10 print "hello world"
-20 goto 10
-            </textarea>
+20 goto 10</textarea>
             <div class="padding-tr-5">
-                <span class="padding-tr-5"><input type="button" id="submitBASIC" value="Upload"></span>
-                <span class="padding-tr-5"><input type="button" id="submitBASICAndRun" value="Upload and Run"></span>
-                <span class="padding-tr-5"><input type="button" id="runBASIC" value="Run"></span>
+                <span class="padding-tr-5"><input type="button" id="submitBASIC" value="Upload" title="Upload program to C64 memory"></span>
+                <span class="padding-tr-5"><input type="button" id="submitBASICAndRun" value="Upload and Run"  title="Upload program to C64 memory and RUN"></span>
+                <span class="padding-tr-5"><input type="button" id="runBASIC" value="Run" title="Send RUN command to the C64"></span>
+                <span class="padding-tr-5"><input type="button" id="stopBASIC" value="Stop" title="Send STOP command to the C64"></span>
+                <input type="checkbox" id="uppercaseBASIC"><label for="uppercaseBASIC" title="Toggle uppercase/lowercase display of BASIC program text">Uppercase</label>
             </div>
 
             <div id="basicmsg">An error has occurred. Check for valid codes.</div>
 
+            <br />
+            <div><b>Special characters:</b></div>
+            <div id="tableContainer"></div>
+
         </div>
+    </div>
 </body>
 </html>
