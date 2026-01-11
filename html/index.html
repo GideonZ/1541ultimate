@@ -482,6 +482,292 @@ $(document).ready(async function () {
 	// Link to the global window.SPECIAL to maintain compatibility with the existing codebase
 	SPECIAL = window.SPECIAL;
 
+/**
+ * C64 PETSCII CONTROL & CHARACTER MAP (0x00 - 0xFF)
+ * 
+ * Provides descriptive tooltips for each PETSCII byte, including:
+ * - FUNCTION: Primary effect or character name.
+ * - KEY MAPPING: Physical keyboard shortcut (Commodore/PC style).
+ * - TYPE: Instruction or graphic symbol.
+ * - INPUT: Input method.
+ */
+window.TOOLTIP = {
+    0x00: "FUNCTION: NULL / END OF STRING\nKEY MAPPING: CONTROL + @\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x01: "FUNCTION: START OF HEADER\nKEY MAPPING: CONTROL + A\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x02: "FUNCTION: UNDERLINE ON\nKEY MAPPING: CONTROL + B\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x03: "FUNCTION: STOP\nKEY MAPPING: CONTROL + C | RUN/STOP\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x04: "FUNCTION: END OF TRANSMISSION\nKEY MAPPING: CONTROL + D\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x05: "FUNCTION: WHITE\nKEY MAPPING: CONTROL + 1 | CONTROL + E\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x06: "FUNCTION: DISP. ON\nKEY MAPPING: CONTROL + F\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x07: "FUNCTION: BELL\nKEY MAPPING: CONTROL + G\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x08: "FUNCTION: DISABLE SHIFT + C=\nKEY MAPPING: CONTROL + H\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x09: "FUNCTION: ENABLE SHIFT + C=\nKEY MAPPING: CONTROL + I\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x0A: "FUNCTION: LINE FEED\nKEY MAPPING: CONTROL + J\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x0B: "FUNCTION: DISABLE REFRESH\nKEY MAPPING: CONTROL + K\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x0C: "FUNCTION: ENABLE REFRESH\nKEY MAPPING: CONTROL + L\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x0D: "FUNCTION: RETURN\nKEY MAPPING: RETURN | CONTROL + M (IMMEDIATE ACTION)\nTYPE: INSTRUCTION\nINPUT: CHR$(13)",
+    0x0E: "FUNCTION: TO LOWERCASE\nKEY MAPPING: CONTROL + N\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x0F: "FUNCTION: FLASHING ON\nKEY MAPPING: CONTROL + O\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x10: "FUNCTION: BLACK\nKEY MAPPING: CONTROL + P\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x11: "FUNCTION: CURSOR DOWN\nKEY MAPPING: CURSOR DOWN | CONTROL + Q\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x12: "FUNCTION: REVERSE ON\nKEY MAPPING: CONTROL + 9 | CONTROL + R\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x13: "FUNCTION: HOME\nKEY MAPPING: HOME | CONTROL + S\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x14: "FUNCTION: DELETE\nKEY MAPPING: DELETE | CONTROL + T\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x15: "FUNCTION: SET TAB\nKEY MAPPING: CONTROL + U\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x16: "FUNCTION: CLEAR TAB\nKEY MAPPING: CONTROL + V\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x17: "FUNCTION: HELP\nKEY MAPPING: CONTROL + W\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x18: "FUNCTION: CANCEL\nKEY MAPPING: CONTROL + X\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x19: "FUNCTION: CURSOR UP\nKEY MAPPING: SHIFT + CRSR DOWN | CONTROL + Y\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x1A: "FUNCTION: CURSOR LEFT\nKEY MAPPING: SHIFT + CRSR RIGHT | CONTROL + Z\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x1B: "FUNCTION: ESCAPE\nKEY MAPPING: CONTROL + [\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x1C: "FUNCTION: RED\nKEY MAPPING: CONTROL + 2 | CONTROL + £\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x1D: "FUNCTION: CURSOR RIGHT\nKEY MAPPING: CURSOR RIGHT | CONTROL + ]\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x1E: "FUNCTION: GREEN\nKEY MAPPING: CONTROL + 6 | CONTROL + ↑\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+    0x1F: "FUNCTION: BLUE\nKEY MAPPING: CONTROL + 7 | CONTROL + ←\nTYPE: INSTRUCTION\nINPUT: SYMBOL",
+
+
+    0x20: "FUNCTION: GRAPHIC SYMBOL | SPACE\nKEY MAPPING: SPACE\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(32)",
+    0x21: "FUNCTION: GRAPHIC SYMBOL | !\nKEY MAPPING: SHIFT + 1\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(33)",
+    0x22: "FUNCTION: GRAPHIC SYMBOL | QUOTE\nKEY MAPPING: SHIFT + 2\nTYPE: CHARACTER\nINPUT: AS SYMBOL (STRING DELIMITER) | CHR$(34)",
+    0x23: "FUNCTION: GRAPHIC SYMBOL | #\nKEY MAPPING: SHIFT + 3\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(35)",
+    0x24: "FUNCTION: GRAPHIC SYMBOL | $\nKEY MAPPING: SHIFT + 4\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(36)",
+    0x25: "FUNCTION: GRAPHIC SYMBOL | %\nKEY MAPPING: SHIFT + 5\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(37)",
+    0x26: "FUNCTION: GRAPHIC SYMBOL | &\nKEY MAPPING: SHIFT + 6\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(38)",
+    0x27: "FUNCTION: GRAPHIC SYMBOL | '\nKEY MAPPING: SHIFT + 7\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(39)",
+    0x28: "FUNCTION: GRAPHIC SYMBOL | (\nKEY MAPPING: SHIFT + 8\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(40)",
+    0x29: "FUNCTION: GRAPHIC SYMBOL | )\nKEY MAPPING: SHIFT + 9\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(41)",
+    0x2A: "FUNCTION: GRAPHIC SYMBOL | *\nKEY MAPPING: *\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(42)",
+    0x2B: "FUNCTION: GRAPHIC SYMBOL | +\nKEY MAPPING: +\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(43)",
+    0x2C: "FUNCTION: GRAPHIC SYMBOL | ,\nKEY MAPPING: ,\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(44)",
+    0x2D: "FUNCTION: GRAPHIC SYMBOL | -\nKEY MAPPING: -\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(45)",
+    0x2E: "FUNCTION: GRAPHIC SYMBOL | .\nKEY MAPPING: .\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(46)",
+    0x2F: "FUNCTION: GRAPHIC SYMBOL | /\nKEY MAPPING: /\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(47)",
+    0x30: "FUNCTION: GRAPHIC SYMBOL | 0\nKEY MAPPING: 0\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(48)",
+    0x31: "FUNCTION: GRAPHIC SYMBOL | 1\nKEY MAPPING: 1\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(49)",
+    0x32: "FUNCTION: GRAPHIC SYMBOL | 2\nKEY MAPPING: 2\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(50)",
+    0x33: "FUNCTION: GRAPHIC SYMBOL | 3\nKEY MAPPING: 3\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(51)",
+    0x34: "FUNCTION: GRAPHIC SYMBOL | 4\nKEY MAPPING: 4\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(52)",
+    0x35: "FUNCTION: GRAPHIC SYMBOL | 5\nKEY MAPPING: 5\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(53)",
+    0x36: "FUNCTION: GRAPHIC SYMBOL | 6\nKEY MAPPING: 6\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(54)",
+    0x37: "FUNCTION: GRAPHIC SYMBOL | 7\nKEY MAPPING: 7\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(55)",
+    0x38: "FUNCTION: GRAPHIC SYMBOL | 8\nKEY MAPPING: 8\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(56)",
+    0x39: "FUNCTION: GRAPHIC SYMBOL | 9\nKEY MAPPING: 9\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(57)",
+    0x3A: "FUNCTION: GRAPHIC SYMBOL | :\nKEY MAPPING: :\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(58)",
+    0x3B: "FUNCTION: GRAPHIC SYMBOL | ;\nKEY MAPPING: ;\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(59)",
+    0x3C: "FUNCTION: GRAPHIC SYMBOL | <\nKEY MAPPING: SHIFT + ,\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(60)",
+    0x3D: "FUNCTION: GRAPHIC SYMBOL | =\nKEY MAPPING: =\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(61)",
+    0x3E: "FUNCTION: GRAPHIC SYMBOL | >\nKEY MAPPING: SHIFT + .\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(62)",
+    0x3F: "FUNCTION: GRAPHIC SYMBOL | ?\nKEY MAPPING: SHIFT + /\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(63)",
+
+
+	0x40: "FUNCTION: GRAPHIC SYMBOL | @\nKEY MAPPING: @\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(64)",
+	0x41: "FUNCTION: GRAPHIC SYMBOL | A\nKEY MAPPING: A\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(65)",
+	0x42: "FUNCTION: GRAPHIC SYMBOL | B\nKEY MAPPING: B\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(66)",
+	0x43: "FUNCTION: GRAPHIC SYMBOL | C\nKEY MAPPING: C\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(67)",
+	0x44: "FUNCTION: GRAPHIC SYMBOL | D\nKEY MAPPING: D\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(68)",
+	0x45: "FUNCTION: GRAPHIC SYMBOL | E\nKEY MAPPING: E\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(69)",
+	0x46: "FUNCTION: GRAPHIC SYMBOL | F\nKEY MAPPING: F\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(70)",
+	0x47: "FUNCTION: GRAPHIC SYMBOL | G\nKEY MAPPING: G\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(71)",
+	0x48: "FUNCTION: GRAPHIC SYMBOL | H\nKEY MAPPING: H\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(72)",
+	0x49: "FUNCTION: GRAPHIC SYMBOL | I\nKEY MAPPING: I\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(73)",
+	0x4A: "FUNCTION: GRAPHIC SYMBOL | J\nKEY MAPPING: J\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(74)",
+	0x4B: "FUNCTION: GRAPHIC SYMBOL | K\nKEY MAPPING: K\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(75)",
+	0x4C: "FUNCTION: GRAPHIC SYMBOL | L\nKEY MAPPING: L\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(76)",
+	0x4D: "FUNCTION: GRAPHIC SYMBOL | M\nKEY MAPPING: M\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(77)",
+	0x4E: "FUNCTION: GRAPHIC SYMBOL | N\nKEY MAPPING: N\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(78)",
+	0x4F: "FUNCTION: GRAPHIC SYMBOL | O\nKEY MAPPING: O\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(79)",
+	0x50: "FUNCTION: GRAPHIC SYMBOL | P\nKEY MAPPING: P\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(80)",
+	0x51: "FUNCTION: GRAPHIC SYMBOL | Q\nKEY MAPPING: Q\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(81)",
+	0x52: "FUNCTION: GRAPHIC SYMBOL | R\nKEY MAPPING: R\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(82)",
+	0x53: "FUNCTION: GRAPHIC SYMBOL | S\nKEY MAPPING: S\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(83)",
+	0x54: "FUNCTION: GRAPHIC SYMBOL | T\nKEY MAPPING: T\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(84)",
+	0x55: "FUNCTION: GRAPHIC SYMBOL | U\nKEY MAPPING: U\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(85)",
+	0x56: "FUNCTION: GRAPHIC SYMBOL | V\nKEY MAPPING: V\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(86)",
+	0x57: "FUNCTION: GRAPHIC SYMBOL | W\nKEY MAPPING: W\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(87)",
+	0x58: "FUNCTION: GRAPHIC SYMBOL | X\nKEY MAPPING: X\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(88)",
+	0x59: "FUNCTION: GRAPHIC SYMBOL | Y\nKEY MAPPING: Y\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(89)",
+	0x5A: "FUNCTION: GRAPHIC SYMBOL | Z\nKEY MAPPING: Z\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(90)",
+	0x5B: "FUNCTION: GRAPHIC SYMBOL | [\nKEY MAPPING: [\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(91)",
+	0x5C: "FUNCTION: GRAPHIC SYMBOL | £\nKEY MAPPING: £\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(92)",
+	0x5D: "FUNCTION: GRAPHIC SYMBOL | ]\nKEY MAPPING: ]\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(93)",
+	0x5E: "FUNCTION: GRAPHIC SYMBOL | ↑\nKEY MAPPING: ↑\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(94)",
+	0x5F: "FUNCTION: GRAPHIC SYMBOL | ←\nKEY MAPPING: ←\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(95)",
+
+
+	0x60: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xC0\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(96)",
+	0x61: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xC1\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(97)",
+	0x62: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xC2\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(98)",
+	0x63: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xC3\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(99)",
+	0x64: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xC4\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(100)",
+	0x65: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xC5\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(101)",
+	0x66: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xC6\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(102)",
+	0x67: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xC7\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(103)",
+	0x68: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xC8\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(104)",
+	0x69: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xC9\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(105)",
+	0x6A: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xCA\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(106)",
+	0x6B: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xCB\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(107)",
+	0x6C: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xCC\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(108)",
+	0x6D: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xCD\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(109)",
+	0x6E: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xCE\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(110)",
+	0x6F: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xCF\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(111)",
+	0x70: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xD0\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(112)",
+	0x71: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xD1\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(113)",
+	0x72: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xD2\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(114)",
+	0x73: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xD3\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(115)",
+	0x74: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xD4\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(116)",
+	0x75: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xD5\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(117)",
+	0x76: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xD6\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(118)",
+	0x77: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xD7\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(119)",
+	0x78: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xD8\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(120)",
+	0x79: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xD9\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(121)",
+	0x7A: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xDA\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(122)",
+	0x7B: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xDB\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(123)",
+	0x7C: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xDC\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(124)",
+	0x7D: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xDD\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(125)",
+	0x7E: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xDE\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(126)",
+	0x7F: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xDF\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(127)",
+
+
+
+	0x80: "FUNCTION: UNUSED\nKEY MAPPING: NONE\nTYPE: INSTRUCTION\nINPUT: CHR$(128)",
+	0x81: "FUNCTION: ORANGE\nKEY MAPPING: CONTROL + 9\nTYPE: INSTRUCTION\nINPUT: AS SYMBOL | CHR$(129)",
+	0x82: "FUNCTION: UNUSED\nKEY MAPPING: NONE\nTYPE: INSTRUCTION\nINPUT: CHR$(130)",
+	0x83: "FUNCTION: UNUSED\nKEY MAPPING: NONE\nTYPE: INSTRUCTION\nINPUT: CHR$(131)",
+	0x84: "FUNCTION: UNUSED\nKEY MAPPING: NONE\nTYPE: INSTRUCTION\nINPUT: CHR$(132)",
+	0x85: "FUNCTION: F1\nKEY MAPPING: F1 (NON-PRINTABLE)\nTYPE: INSTRUCTION\nINPUT: AS SYMBOL | CHR$(133)",
+	0x86: "FUNCTION: F3\nKEY MAPPING: F3 (NON-PRINTABLE)\nTYPE: INSTRUCTION\nINPUT: AS SYMBOL | CHR$(134)",
+	0x87: "FUNCTION: F5\nKEY MAPPING: F5 (NON-PRINTABLE)\nTYPE: INSTRUCTION\nINPUT: AS SYMBOL | CHR$(135)",
+	0x88: "FUNCTION: F7\nKEY MAPPING: F7 (NON-PRINTABLE)\nTYPE: INSTRUCTION\nINPUT: AS SYMBOL | CHR$(136)",
+	0x89: "FUNCTION: F2\nKEY MAPPING: SHIFT + F1 (NON-PRINTABLE)\nTYPE: INSTRUCTION\nINPUT: AS SYMBOL | CHR$(137)",
+	0x8A: "FUNCTION: F4\nKEY MAPPING: SHIFT + F3 (NON-PRINTABLE)\nTYPE: INSTRUCTION\nINPUT: AS SYMBOL | CHR$(138)",
+	0x8B: "FUNCTION: F6\nKEY MAPPING: SHIFT + F5 (NON-PRINTABLE)\nTYPE: INSTRUCTION\nINPUT: AS SYMBOL | CHR$(139)",
+	0x8C: "FUNCTION: F8\nKEY MAPPING: SHIFT + F7 (NON-PRINTABLE)\nTYPE: INSTRUCTION\nINPUT: AS SYMBOL | CHR$(140)",
+	0x8D: "FUNCTION: SHIFTED RETURN\nKEY MAPPING: SHIFT + RETURN\nTYPE: INSTRUCTION\nINPUT: CHR$(141)",
+	0x8E: "FUNCTION: UNUSED\nKEY MAPPING: NONE\nTYPE: INSTRUCTION\nINPUT: CHR$(142)",
+	0x8F: "FUNCTION: UNUSED\nKEY MAPPING: NONE\nTYPE: INSTRUCTION\nINPUT: CHR$(143)",
+	0x90: "FUNCTION: BLACK\nKEY MAPPING: CONTROL + 1\nTYPE: INSTRUCTION\nINPUT: AS SYMBOL | CHR$(144)",
+	0x91: "FUNCTION: CRSR UP\nKEY MAPPING: SHIFT + CRSR DOWN\nTYPE: INSTRUCTION\nINPUT: AS SYMBOL | CHR$(145)",
+	0x92: "FUNCTION: RVS OFF\nKEY MAPPING: CONTROL + 0\nTYPE: INSTRUCTION\nINPUT: AS SYMBOL | CHR$(146)",
+	0x93: "FUNCTION: HOME\nKEY MAPPING: SHIFT + HOME\nTYPE: INSTRUCTION\nINPUT: AS SYMBOL | CHR$(147)",
+	0x94: "FUNCTION: INST\nKEY MAPPING: SHIFT + DEL\nTYPE: INSTRUCTION\nINPUT: AS SYMBOL | CHR$(148)",
+	0x95: "FUNCTION: BROWN\nKEY MAPPING: CONTROL + 8\nTYPE: INSTRUCTION\nINPUT: AS SYMBOL | CHR$(149)",
+	0x96: "FUNCTION: PINK\nKEY MAPPING: C= + 1\nTYPE: INSTRUCTION\nINPUT: AS SYMBOL | CHR$(150)",
+	0x97: "FUNCTION: DARK GRAY\nKEY MAPPING: C= + 2\nTYPE: INSTRUCTION\nINPUT: AS SYMBOL | CHR$(151)",
+	0x98: "FUNCTION: GRAY\nKEY MAPPING: C= + 3\nTYPE: INSTRUCTION\nINPUT: AS SYMBOL | CHR$(152)",
+	0x99: "FUNCTION: LIGHT GREEN\nKEY MAPPING: C= + 4\nTYPE: INSTRUCTION\nINPUT: AS SYMBOL | CHR$(153)",
+	0x9A: "FUNCTION: LIGHT BLUE\nKEY MAPPING: C= + 5\nTYPE: INSTRUCTION\nINPUT: AS SYMBOL | CHR$(154)",
+	0x9B: "FUNCTION: LIGHT GRAY\nKEY MAPPING: C= + 6\nTYPE: INSTRUCTION\nINPUT: AS SYMBOL | CHR$(155)",
+	0x9C: "FUNCTION: PURPLE\nKEY MAPPING: C= + 7\nTYPE: INSTRUCTION\nINPUT: AS SYMBOL | CHR$(156)",
+	0x9D: "FUNCTION: CRSR LEFT\nKEY MAPPING: SHIFT + CRSR RIGHT\nTYPE: INSTRUCTION\nINPUT: AS SYMBOL | CHR$(157)",
+	0x9E: "FUNCTION: YELLOW\nKEY MAPPING: CONTROL + 7\nTYPE: INSTRUCTION\nINPUT: AS SYMBOL | CHR$(158)",
+	0x9F: "FUNCTION: CYAN\nKEY MAPPING: CONTROL + 3\nTYPE: INSTRUCTION\nINPUT: AS SYMBOL | CHR$(159)",
+
+
+	0xA0: "FUNCTION: GRAPHIC SYMBOL | SHIFTED SPACE\nKEY MAPPING: C= + SPACE | SHIFT + SPACE\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(160)",
+	0xA1: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + K\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(161)",
+	0xA2: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + I\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(162)",
+	0xA3: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + T\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(163)",
+	0xA4: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + @\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(164)",
+	0xA5: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + G\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(165)",
+	0xA6: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + +\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(166)",
+	0xA7: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + M\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(167)",
+	0xA8: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + £\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(168)",
+	0xA9: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + £\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(169)",
+	0xAA: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + N\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(170)",
+	0xAB: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + Q\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(171)",
+	0xAC: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + D\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(172)",
+	0xAD: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + Z\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(173)",
+	0xAE: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + S\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(174)",
+	0xAF: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + P\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(175)",
+	0xB0: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + A\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(176)",
+	0xB1: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + E\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(177)",
+	0xB2: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + R\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(178)",
+	0xB3: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + W\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(179)",
+	0xB4: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + H\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(180)",
+	0xB5: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + J\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(181)",
+	0xB6: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + L\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(182)",
+	0xB7: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + Y\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(183)",
+	0xB8: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + U\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(184)",
+	0xB9: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + O\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(185)",
+	0xBA: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + @\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(186)",
+	0xBB: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + F\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(187)",
+	0xBC: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + C\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(188)",
+	0xBD: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + X\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(189)",
+	0xBE: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + V\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(190)",
+	0xBF: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: C= + B\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(191)",
+
+
+
+	0xC0: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + *\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(192)",
+	0xC1: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + A\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(193)",
+	0xC2: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + B\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(194)",
+	0xC3: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + C\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(195)",
+	0xC4: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + D\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(196)",
+	0xC5: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + E\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(197)",
+	0xC6: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + F\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(198)",
+	0xC7: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + G\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(199)",
+	0xC8: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + H\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(200)",
+	0xC9: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + I\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(201)",
+	0xCA: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + J\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(202)",
+	0xCB: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + K\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(203)",
+	0xCC: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + L\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(204)",
+	0xCD: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + M\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(205)",
+	0xCE: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + N\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(206)",
+	0xCF: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + O\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(207)",
+	0xD0: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + P\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(208)",
+	0xD1: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + Q\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(209)",
+	0xD2: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + R\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(210)",
+	0xD3: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + S\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(211)",
+	0xD4: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + T\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(212)",
+	0xD5: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + U\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(213)",
+	0xD6: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + V\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(214)",
+	0xD7: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + W\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(215)",
+	0xD8: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + X\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(216)",
+	0xD9: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + Y\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(217)",
+	0xDA: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + Z\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(218)",
+	0xDB: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + [\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(219)",
+	0xDC: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + £\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(220)",
+	0xDD: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + ]\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(221)",
+	0xDE: "FUNCTION: GRAPHIC SYMBOL | π\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(222)",
+	0xDF: "FUNCTION: GRAPHIC SYMBOL\nKEY MAPPING: SHIFT + ←\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(223)",
+
+
+	0xE0: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xA0\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(224)",
+	0xE1: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xA1\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(225)",
+	0xE2: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xA2\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(226)",
+	0xE3: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xA3\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(227)",
+	0xE4: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xA4\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(228)",
+	0xE5: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xA5\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(229)",
+	0xE6: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xA6\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(230)",
+	0xE7: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xA7\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(231)",
+	0xE8: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xA8\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(232)",
+	0xE9: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xA9\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(233)",
+	0xEA: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xAA\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(234)",
+	0xEB: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xAB\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(235)",
+	0xEC: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xAC\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(236)",
+	0xED: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xAD\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(237)",
+	0xEE: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xAE\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(238)",
+	0xEF: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xAF\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(239)",
+	0xF0: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xB0\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(240)",
+	0xF1: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xB1\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(241)",
+	0xF2: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xB2\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(242)",
+	0xF3: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xB3\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(243)",
+	0xF4: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xB4\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(244)",
+	0xF5: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xB5\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(245)",
+	0xF6: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xB6\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(246)",
+	0xF7: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xB7\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(247)",
+	0xF8: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xB8\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(248)",
+	0xF9: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xB9\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(249)",
+	0xFA: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xBA\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(250)",
+	0xFB: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xBB\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(251)",
+	0xFC: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xBC\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(252)",
+	0xFD: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xBD\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(253)",
+	0xFE: "FUNCTION: GRAPHIC SYMBOL | SAME AS 0xBE\nKEY MAPPING: NONE\nTYPE: CHARACTER\nINPUT: CHR$(254)",
+	0xFF: "FUNCTION: GRAPHIC SYMBOLSYMBOL | π\nKEY MAPPING: SHIFT + ↑ | C= + ↑\nTYPE: CHARACTER\nINPUT: AS SYMBOL | CHR$(255)"
+
+
+};
+
     function asciiToPetscii(o) {
         // Check if character code is less than or equal to '@' or is '[' or ']' or '^'
         if (o <= '@'.charCodeAt(0) || o === '['.charCodeAt(0) || o === ']'.charCodeAt(0) || o === '^'.charCodeAt(0)) {
@@ -664,114 +950,104 @@ $(document).ready(async function () {
 	* Features: Pepto PAL color accuracy and adaptive text contrast for accessibility.
 	* Interaction: Symbols are clickable and insert their token into the BASIC editor.
 	*/
-	function renderSpecialTable() {
-		// Reference global tokens list from the external profile
-		const tokens = window.SPECIAL;
+function renderSpecialTable() {
+    // Reference global tokens list from the external profile
+    const tokens = window.SPECIAL;
 
-		// 1. Official Pepto PAL Palette (by Philip Timmermann) for authentic C64 color reproduction
-		const colorByHex = {
-			0x90: '#000000', 0x05: '#FFFFFF', 0x1C: '#883932', 0x9F: '#67B6BD',
-			0x9C: '#8B3F96', 0x1E: '#55A049', 0x1F: '#40318D', 0x9E: '#BFA448',
-			0x81: '#8B5429', 0x95: '#574200', 0x96: '#B86962', 0x97: '#505050',
-			0x98: '#787878', 0x99: '#94E089', 0x9A: '#7869C4', 0x9B: '#9F9F9F'
-		};
+    // 1. Official Pepto PAL Palette (by Philip Timmermann) for authentic C64 color reproduction
+    const colorByHex = {
+        0x90: '#000000', 0x05: '#FFFFFF', 0x1C: '#883932', 0x9F: '#67B6BD',
+        0x9C: '#8B3F96', 0x1E: '#55A049', 0x1F: '#40318D', 0x9E: '#BFA448',
+        0x81: '#8B5429', 0x95: '#574200', 0x96: '#B86962', 0x97: '#505050',
+        0x98: '#787878', 0x99: '#94E089', 0x9A: '#7869C4', 0x9B: '#9F9F9F'
+    };
 
-		// 2. Map all tokens to their respective 0-255 HEX codes
-		let grouped = Array.from({ length: 256 }, () => []);
-		tokens.forEach(item => {
-			if (item.length >= 2) {
-				let [symbol, code] = item;
-				grouped[code].push(symbol);
-			}
-		});
+    // 2. Map all tokens to their respective 0-255 HEX codes
+    let grouped = Array.from({ length: 256 }, () => []);
+    tokens.forEach(item => {
+        if (item.length >= 2) {
+            let [symbol, code] = item;
+            grouped[code].push(symbol);
+        }
+    });
 
-		// 3. Build the table using a monospace font to ensure strict vertical alignment
-		let $table = $('<table style="font-family: monospace; border-collapse: collapse; background: #f5f5f5; font-size: 13px;"></table>');
+    // 3. Build the table using a monospace font to ensure strict vertical alignment
+    let $table = $('<table style="font-family: monospace; border-collapse: collapse; background: #f5f5f5; font-size: 13px;"></table>');
 
-		// Create 32 rows to cover the 256 character map across 8 columns
-		for (let row = 0; row < 32; row++) {
-			let $tr = $('<tr></tr>');
-			for (let col = 0; col < 8; col++) {
-				// Calculate PETSCII code based on current row and column range
-				let code = row + (col * 32);
-				let hexDisplay = '0x' + code.toString(16).padStart(2, '0').toUpperCase();
+    // Create 32 rows to cover the 256 character map across 8 columns
+    for (let row = 0; row < 32; row++) {
+        let $tr = $('<tr></tr>');
+        for (let col = 0; col < 8; col++) {
+            // Calculate PETSCII code based on current row and column range
+            let code = row + (col * 32);
+            let hexDisplay = '0x' + code.toString(16).padStart(2, '0').toUpperCase();
 
-				// Render each symbol associated with the current HEX code
-				// Only symbols get the 'special-token' class to remain clickable
-				let formattedSymbols = grouped[code].map(symbol => {
-					let content = symbol.replace(/{|}/g, '');
-					let isNumeric = /^\d+$/.test(content);
+            // Get tooltip description for the current hex code
+            const tooltipText = (window.TOOLTIP && window.TOOLTIP[code]) ? window.TOOLTIP[code] : "";
 
-					// Interaction styles: pointer cursor and no text selection
-					const baseStyle = `cursor: pointer; user-select: none;`;
+            // Render each symbol associated with the current HEX code
+            let formattedSymbols = grouped[code].map(symbol => {
+                let content = symbol.replace(/{|}/g, '');
+                let isNumeric = /^\d+$/.test(content);
 
-					if (isNumeric) {
-						// Render decimal values (e.g., {28}) in plain black text
-						return `<span class="special-token" data-token="${symbol}" style="${baseStyle} color: #000000; padding: 0 2px;">${symbol}</span>`;
-					} else if (colorByHex[code]) {
-						// Render color tokens using the background color from Pepto PAL
-						const bgColor = colorByHex[code];
+                // Interaction styles: pointer cursor and no text selection
+                const baseStyle = `cursor: pointer; user-select: none;`;
 
-						// Contrast Logic: Use White text for dark backgrounds (Luminance levels 1 & 2),
-						// and Black text for light backgrounds (Luminance levels 3 & 4)
-						const darkCodes = [0x90, 0x1F, 0x95, 0x1C, 0x97, 0x9C, 0x98, 0x81];
-						const textColor = darkCodes.includes(code) ? '#FFFFFF' : '#000000';
+                if (isNumeric) {
+                    // Added title attribute for tooltip
+                    return `<span class="special-token" data-token="${symbol}" title="${tooltipText}" style="${baseStyle} color: #000000; padding: 0 2px;">${symbol}</span>`;
+                } else if (colorByHex[code]) {
+                    // Render color tokens using the background color from Pepto PAL
+                    const bgColor = colorByHex[code];
 
-						return `<span class="special-token" data-token="${symbol}" style="${baseStyle} background-color: ${bgColor}; color: ${textColor}; font-weight: bold; padding: 1px 4px; border-radius: 2px; display: inline-block; margin: 1px 0; border: 1px solid rgba(0,0,0,0.1);">${symbol}</span>`;
-					} else {
-						// Render functional tokens (e.g., {space}, {home}) in standard blue
-						return `<span class="special-token" data-token="${symbol}" style="${baseStyle} color: #0000ff; padding: 0 2px;">${symbol}</span>`;
-					}
-				}).join(' ');
+                    const darkCodes = [0x90, 0x1F, 0x95, 0x1C, 0x97, 0x9C, 0x98, 0x81];
+                    const textColor = darkCodes.includes(code) ? '#FFFFFF' : '#000000';
 
-				// Apply specific spacing: 4px between HEX and symbols, 16px between columns
-				// Red border-left serves as a distinct vertical guide for the 8-column split
-				$tr.append(`
-					<td style="padding-right: 4px; color: #666; border-left: 1px solid red; padding-left: 5px; white-space: nowrap;">${hexDisplay}</td>
-					<td style="padding-right: 16px; white-space: nowrap;">${formattedSymbols}</td>
-				`);
-			}
-			$table.append($tr);
-		}
+                    // Added title attribute for tooltip
+                    return `<span class="special-token" data-token="${symbol}" title="${tooltipText}" style="${baseStyle} background-color: ${bgColor}; color: ${textColor}; font-weight: bold; padding: 1px 4px; border-radius: 2px; display: inline-block; margin: 1px 0; border: 1px solid rgba(0,0,0,0.1);">${symbol}</span>`;
+                } else {
+                    // Render functional tokens in standard blue. Added title attribute for tooltip.
+                    return `<span class="special-token" data-token="${symbol}" title="${tooltipText}" style="${baseStyle} color: #0000ff; padding: 0 2px;">${symbol}</span>`;
+                }
+            }).join(' ');
 
-		// Inject the final rendered table into the DOM container
-		$('#tableContainer').empty().append($table);
+            // Apply specific spacing
+            $tr.append(`
+                <td style="padding-right: 4px; color: #666; border-left: 1px solid red; padding-left: 5px; white-space: nowrap;">${hexDisplay}</td>
+                <td style="padding-right: 16px; white-space: nowrap;">${formattedSymbols}</td>
+            `);
+        }
+        $table.append($tr);
+    }
 
-		// 4. Interaction Logic: Insert clicked token into the #basiceditor textarea
-		$('.special-token').off('click').on('click', function(e) {
-			const token = $(this).data('token');
-			const $editor = $('#basiceditor');
+    // Inject the final rendered table into the DOM container
+    $('#tableContainer').empty().append($table);
 
-			if ($editor.length) {
-				// Save current scroll position to prevent jumping
-				const scrollPos = $(window).scrollTop();
+    // 4. Interaction Logic: Insert clicked token into the #basiceditor textarea
+    $('.special-token').off('click').on('click', function(e) {
+        const token = $(this).data('token');
+        const $editor = $('#basiceditor');
 
-				const start = $editor.prop('selectionStart');
-				const end = $editor.prop('selectionEnd');
-				const oldText = $editor.val();
+        if ($editor.length) {
+            const scrollPos = $(window).scrollTop();
+            const start = $editor.prop('selectionStart');
+            const end = $editor.prop('selectionEnd');
+            const oldText = $editor.val();
 
-				// Calculate new text content
-				const newText = oldText.substring(0, start) + token + oldText.substring(end);
-				$editor.val(newText);
+            const newText = oldText.substring(0, start) + token + oldText.substring(end);
+            $editor.val(newText);
+            $editor.trigger('input');
 
-				// Trigger 'input' event
-				$editor.trigger('input');
+            $editor[0].focus({ preventScroll: true });
+            $(window).scrollTop(scrollPos);
 
-				// Set focus without scrolling (modern browsers)
-				$editor[0].focus({
-					preventScroll: true
-				});
+            const newCursorPos = start + token.length;
+            $editor.setSelectionRange(newCursorPos, newCursorPos);
+        }
+    });
+}
 
-				// Double protection for older browsers: manually restore scroll position
-				$(window).scrollTop(scrollPos);
 
-				// Place the cursor after the inserted token
-				const newCursorPos = start + token.length;
-				$editor.setSelectionRange(newCursorPos, newCursorPos);
-			}
-		});
-
-	}
 
 	// Execute rendering on document ready
 	$(document).ready(function() {
