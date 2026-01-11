@@ -40,12 +40,6 @@ jobs:
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make esp32"
 
-      - name: Build U64 Software
-        run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
-          -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64 && mv update.u64 update_${{ env.GIT_VERSION }}.u64"
-
       - name: Build U64-II Software
         run: |
           docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
@@ -57,7 +51,6 @@ jobs:
         with:
           name: update_package_${{ env.GIT_VERSION }}
           path: |
-            update_${{ env.GIT_VERSION }}.u64
             update_${{ env.GIT_VERSION }}.ue2
 
       - name: Upload Factory Artifacts U64II
