@@ -706,9 +706,9 @@ FRESULT FileManager::fcopy(const char *path, const char *filename, const char *d
         // In the special case that one tries to copy a file (or dir) onto itself, we just report
         // that we're done.
         if ( sp->equals(dp) && (strcasecmp(info->lfname, dest_filename) == 0)) {
-            return FR_OK;
+            ret = FR_OK;
         }
-        if (info->attrib & AM_DIR) {
+        else if (info->attrib & AM_DIR) {
             // create a new directory in our destination path
             FRESULT dir_create_result = create_dir(dp, dest_filename);
             if ((dir_create_result == FR_OK) || (dir_create_result == FR_EXIST)) {
@@ -733,7 +733,6 @@ FRESULT FileManager::fcopy(const char *path, const char *filename, const char *d
             else {
                 ret = dir_create_result;
             }
-            release_path(dp);
         }
         else if ((info->attrib & AM_VOL) == 0) { // it is a file!
             File *fi = 0;
@@ -786,6 +785,7 @@ FRESULT FileManager::fcopy(const char *path, const char *filename, const char *d
         printf("Could not stat %s (%s)\n", filename, FileSystem::get_error_string(ret));
     }
     release_path(sp);
+    release_path(dp);
     delete info;
     return ret;
 }
