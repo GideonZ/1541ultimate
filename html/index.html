@@ -1,9 +1,13 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jquery.terminal/css/jquery.terminal.min.css"/>
 <title>Ultimate II/64</title>
+<link rel="icon" href="data:,">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+<!-- Placeholder to prevent ReferenceError if the profile script calls this function -->
+<script>window.initializeTokenizerUI = () => {};</script>
 <!-- Try load the external SPECIAL file first -->
 <!-- Load the configuration script that defines SCRIPT_TO_LOAD -->
 <script src="SPECIAL.js"></script>
@@ -25,10 +29,8 @@
 
 <script src="https://cdn.jsdelivr.net/npm/jquery"></script>
 <script src="https://cdn.jsdelivr.net/npm/jquery.terminal/js/jquery.terminal.min.js"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jquery.terminal/css/jquery.terminal.min.css"/>
 
 <script>
-
 var serverIP = window.location.hostname;
 var apiPassword = "";
 var ultimateInfo = {};
