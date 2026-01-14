@@ -40,6 +40,16 @@ $(document).ready(async function () {
                 $("#logoutmenuitem").hide();
             }
             $("#banner").html(product + " HTTP Server");
+
+            // show power button for supported boards only
+            const ProductsWithPwrCtrl = ["Ultimate 64-II", "C64 Ultimate"];
+            if (ProductsWithPwrCtrl.includes(product))
+                $("#menu-power").show();
+
+            // show firmware version in side panel
+            if (ultimateInfo.firmware_version)
+                $("#firmware-version").html("firmware v"+ultimateInfo.firmware_version);
+
             $("#left-nav").css("visibility", "visible");
             $(".page").hide();
             $("#welcome").show();
@@ -72,7 +82,19 @@ $(document).ready(async function () {
         let [status_code, content] = await make_put_request("http://" + serverIP + "/v1/machine:reset", params);
     };
 
-    $('#doreboot').click(function(event){
+    async function doPowerOff() {
+        let params = {};
+        if (confirm("Are you sure you want to power off your Ultimate?")) {
+            let [status_code, content] = await make_put_request("http://" + serverIP + "/v1/machine:poweroff", params);
+        }
+    };
+
+    $('#dopoweroff').click(function(event) {
+        event.preventDefault(); // Prevents the default action of the anchor tag
+        doPowerOff();
+    });
+
+    $('#doreboot').click(function(event) {
         event.preventDefault(); // Prevents the default action of the anchor tag
         doReboot();
     });
@@ -1383,6 +1405,14 @@ function disassembler(startInt, byteArray) {
     div#left-nav a:hover {
         background-color: #beffff;
     }
+    #firmware-version {
+        font-size: 12px;
+        color: darkgray;
+        text-align: center;
+    }
+    #menu-power {
+        display: none;
+    }
     #login {
         padding: 20px;
         width: 800px;
@@ -1393,12 +1423,7 @@ function disassembler(startInt, byteArray) {
         width: 800px;
         display: none;
     }
-    #livemon {
-        flex-grow: 1;
-        padding: 20px;
-        display:none;
-    }
-    #sidplay {
+    div#livemon, div#sidplay, div#runner, div#tokenizer {
         flex-grow: 1;
         padding: 20px;
         display:none;
@@ -1418,35 +1443,7 @@ function disassembler(startInt, byteArray) {
         color: #4caf50;
         background-color: #f6fff6;
     }
-    #runner {
-        flex-grow: 1;
-        padding: 20px;
-        display:none;
-    }
-    #tokenizer {
-        flex-grow: 1;
-        padding: 20px;
-        display:none;
-    }
-    #sidmsg {
-        flex-grow: 1;
-        margin-top: 20px;
-        padding: 20px;
-        display:none;
-        background-color: red;
-        color: white;
-        width: 400px;
-    }
-    #runmsg {
-        flex-grow: 1;
-        margin-top: 20px;
-        padding: 20px;
-        display:none;
-        background-color: red;
-        color: white;
-        width: 400px;
-    }
-    #basicmsg {
+    #sidmsg, #runmsg, #basicmsg {
         flex-grow: 1;
         margin-top: 20px;
         padding: 20px;
@@ -1472,7 +1469,7 @@ function disassembler(startInt, byteArray) {
 	margin: 5px 0;
     }
 
-    @font-face {
+        @font-face {
             font-family: 'C64';
             src: url('C64_Pro-STYLE.woff') format('woff'); /* Path to your C64 font file */
         }
@@ -1582,9 +1579,10 @@ function disassembler(startInt, byteArray) {
                 <li><a id="showtokenizer"  href="#">BASIC Editor</a></li>
             </ul>
             <ul>
-                <li><a id="doreset" href="#">Reset Machine</a></li>
-                <li><a id="doreboot" href="#">Reboot Machine</a></li>
-                <li><a id="domenubutton" href="#">Menu Button</a></li>
+                <li><a id="doreset" href="#" title="Reset the C64...">Reset Machine</a></li>
+                <li><a id="doreboot" href="#" title="Reboot the C64...">Reboot Machine</a></li>
+                <li id="menu-power"><a id="dopoweroff" href="#" title="Standby/Switch off the Ultimate...">Power Off Machine</a></li>
+                <li><a id="domenubutton" href="#" title="Show menu...">Menu Button</a></li>
             </ul>
             <ul>
                 <li><a href="https://1541u-documentation.readthedocs.io/en/latest/api/api_calls.html" target="_blank" rel="noopener">API Documentation</a></li>
@@ -1593,6 +1591,7 @@ function disassembler(startInt, byteArray) {
             <ul id="logoutmenuitem">
                 <li><a id="logout" href="#">Logout</a></li>
             </ul>
+            <div id="firmware-version"></div>
         </div>
 
         <div id="login" class="page">
