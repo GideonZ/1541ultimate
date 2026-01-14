@@ -10,7 +10,7 @@ BASIC_CODE = `!- Welcome to Ultimate BASIC Editor / Tokenizer
 !- - Shift/Uppercase: Typing UPPERCASE letters in this editor
 !-   is treated as Shift + Key (produces special symbols or
 !-   uppercase on C64 depending on its character set mode).
-!- - Multi-char shortcut: Use {space*5} or {asterisk*3}.
+!- - Multi-char shortcut: Use {space*5} or {**3}.
 !-
 !- IMPORTANT:
 !- For mathematical operators, signs should not be placed inside {}.
@@ -64,8 +64,10 @@ BASIC_CODE = `!- Welcome to Ultimate BASIC Editor / Tokenizer
 
 !- Print 38 '-' characters between '+' signs.
 !- Print 40 '0' characters
+!- Print 10 '*' characters
 80 print "+{-*38}+";
 81 print "{zero*40}"
+82 print "{**10}"
 
 !- program end
 90 end
