@@ -873,10 +873,20 @@ $(document).ready(async function () {
         return [asciiToPetscii(s.charCodeAt(0)), s.substring(1)];
     }
 
-    // Expand patterns like {3 spaces} → {spaces}{spaces}{spaces}
+    /**
+    * Expands character repetition shorthands into individual tokens.
+    * Supports both historical type-in magazine formats and modern IDE syntax.
+    */
     function expandCounts(input) {
-        return input.replace(/\{(\d+)\s+([^}]+)\}/g, (_, count, word) => {
-            count = Number(count);
+        // This regex handles two variants:
+        // 1. {3 space} -> format used in "COMPUTE!'s Gazette" magazine
+        // 2. {space*3} -> format compatible with CBMprgStudio
+        return input.replace(/\{(\d+) ([^}]+)\}|\{([^}*]+)\*(\d+)\}/g, (_, count1, word1, word2, count2) => {
+            // Extract values from whichever group was matched
+            const count = Number(count1 || count2);
+            const word = word1 || word2
+
+            // Generates repeated tokens, e.g., {space}{space}{space}
             return Array(count).fill(`{${word}}`).join('');
         });
     }

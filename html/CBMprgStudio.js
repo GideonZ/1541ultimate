@@ -10,9 +10,7 @@ BASIC_CODE = `!- Welcome to Ultimate BASIC Editor / Tokenizer
 !- - Shift/Uppercase: Typing UPPERCASE letters in this editor
 !-   is treated as Shift + Key (produces special symbols or
 !-   uppercase on C64 depending on its character set mode).
-!- - Multi-char shortcut: Use {5 space} or {3 asterisk}.
-!-   (Note: This is an extra feature. In CBM prg Studio this
-!-   would be written as {space*5} or {asterisk*3}).
+!- - Multi-char shortcut: Use {space*5} or {asterisk*3}.
 !-
 !- IMPORTANT:
 !- For mathematical operators, signs should not be placed inside {}.
@@ -51,10 +49,10 @@ BASIC_CODE = `!- Welcome to Ultimate BASIC Editor / Tokenizer
 !- a simplified format of inserting the same character multiple times is allowed
 !- uppercase mode > print chr$(142)
 60 print "{uppercase}";
-61 print "      print {pi}{pi}:";{pi}{pi}"
+61 print "      print {pi}{pi}:";{pi}{pi}
 62 print "99999999999999999999"
-63 print "{6 space}print {2 pi}:";{2 pi}"
-64 print "{20 nine}"
+63 print "{space*6}print {pi*2}:";{pi*2}
+64 print "{nine*20}"
 65 gosub 100
 
 !- special characters from keys: A S Z X in uppercase mode
@@ -66,8 +64,8 @@ BASIC_CODE = `!- Welcome to Ultimate BASIC Editor / Tokenizer
 
 !- Print 38 '-' characters between '+' signs.
 !- Print 40 '0' characters
-80 print "+{38 -}+";
-81 print "{40 zero}"
+80 print "+{-*38}+";
+81 print "{zero*40}"
 
 !- program end
 90 end
