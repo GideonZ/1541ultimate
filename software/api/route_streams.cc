@@ -32,12 +32,12 @@ API_CALL(PUT, streams, start, NULL, ARRAY ( { { "ip", P_REQUIRED } }))
     }
 
     if (streamIndex == 0) { // video streams require debug to be off
-        sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 2, "", "");
+        sys_command = new SubsysCommand(NULL, -1, (int)dataStreamer, 2, "", "");
         sys_command->direct_call = DataStreamer :: S_stopStream;
         sys_command->execute();
     }
 
-    sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, streamIndex, args["ip"], "");
+    sys_command = new SubsysCommand(NULL, -1, (int)dataStreamer, streamIndex, args["ip"], "");
     sys_command->direct_call = DataStreamer :: S_startStream;
     SubsysResultCode_t retval = sys_command->execute();
     resp->error(SubsysCommand::error_string(retval.status));
@@ -61,7 +61,7 @@ API_CALL(PUT, streams, stop, NULL, ARRAY ( { } ))
         return;
     }
 
-    sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, streamIndex, "", "");
+    sys_command = new SubsysCommand(NULL, -1, (int)dataStreamer, streamIndex, "", "");
     sys_command->direct_call = DataStreamer :: S_stopStream;
     sys_command->execute();
     resp->json_response(HTTP_OK);
