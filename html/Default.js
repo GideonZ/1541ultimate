@@ -64,7 +64,6 @@ BASIC_CODE = `// Welcome to Ultimate BASIC Editor / Tokenizer
 // Print 38 dashes {45} between '+' signs
 // Print 40 zeros {48}
 // Print 10 asterisks {42}
-
 80 print "+{38 45}+";
 81 print "{40 48}";
 82 print "{42*10}"
