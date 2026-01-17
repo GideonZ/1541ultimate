@@ -267,14 +267,14 @@ void WiFi :: RunModeThread()
             netstack->set_mac_address(my_mac);
             netstack->start(); // always starts in link down state
             state = eWifi_NotConnected;
-            wifi_is_connected(conn); // == 0) {
-            //     if (conn) {
-            //         wifi_modem_enable(true); // take control!
-            //         uart->txDebug = false;
-            //         netstack->link_up();
-            //         state = eWifi_Connected;
-            //     }
-            // }
+            if (wifi_is_connected(conn) == 0) {
+                if (conn) {
+                    wifi_modem_enable(true); // take control!
+                    uart->txDebug = false;
+                    netstack->link_up();
+                    state = eWifi_Connected;
+                }
+            }
             RefreshRoot();
             break;
 
