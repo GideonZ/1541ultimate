@@ -858,7 +858,7 @@ void Modem :: RelayFileToSocket(const char *filename, int socket, const char *al
 
 void Modem :: effectuate_settings()
 {
-    int newPort;
+    int newPort = 0;
     sscanf(cfg->get_string(CFG_MODEM_LISTEN_PORT), "%d", &newPort);
 
     int base = acia_base[cfg->get_value(CFG_MODEM_ACIA)];
@@ -885,7 +885,8 @@ void Modem :: effectuate_settings()
         acia.init(base & 0xFFFE, base & 1, aciaQueue, aciaQueue, aciaTxBuffer);
     }
 
-    listenerSocket->Start(newPort);
+    if (newPort > 0)
+        listenerSocket->Start(newPort);
 }
 
 void Modem :: reinit_acia(uint16_t base)

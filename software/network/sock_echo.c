@@ -52,7 +52,7 @@ static void echo_run()
 		int nbytes;
 
 		clientfd = lwip_accept(lSocket, (struct sockaddr*)&client_addr, (socklen_t *)&addrlen);
-		if (clientfd > 0) {
+		if (clientfd >= 0) {
 			puts("Accepted Echo Connection");
 
 /*

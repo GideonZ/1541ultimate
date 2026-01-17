@@ -873,10 +873,12 @@ int FTPDataConnection::setup_connection()
 
 void FTPDataConnection::close_connection()
 {
-    if (actual_socket)
+    if (actual_socket >= 0)
         closesocket(actual_socket);
-    if ((sockfd) && (actual_socket != sockfd))
+    if ((sockfd >= 0) && (actual_socket != sockfd))
         closesocket(sockfd);
+    actual_socket = -1;
+    sockfd = -1;
 }
 
 int FTPDataConnection::connect_to(ip_addr_t ip, uint16_t port) // active mode
