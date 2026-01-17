@@ -14,4 +14,4 @@
 // var SCRIPT_TO_LOAD = "";                  // Use internal default set
 // =========================================================================
 
-var SCRIPT_TO_LOAD = "CBMprgStudio.js";
+var SCRIPT_TO_LOAD = "Default.js";
