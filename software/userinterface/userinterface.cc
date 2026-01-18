@@ -66,7 +66,7 @@ static const char *helptext =
 		"\nRUN/STOP to close this window.";
 
 /* Configuration */
-static const char *colors[] = { "Standard Blue", "Ultimate Black"  };
+static const char *colors[] = { "Standard Blue", "Ultimate Black", "C128 Style"  };
                           
 static const char *filename_overflow_squeeze[] = { "None", "Beginning", "Middle", "End" };
 static const char *itype[]      = { "Freeze", "Overlay on HDMI" };
@@ -78,7 +78,7 @@ struct t_cfg_definition user_if_config[] = {
     { CFG_USERIF_ITYPE,      CFG_TYPE_ENUM,   "Interface Type",       "%s", itype,   0,  1, 0 },
 #endif
     { CFG_USERIF_NAVIGATION, CFG_TYPE_ENUM,   "Navigation Style",     "%s", navstyles, 0,  1, 0 },
-    { CFG_USERIF_COLORSCHEME,CFG_TYPE_ENUM,   "Color Scheme",         "%s", colors,  0,  1, 1 },
+    { CFG_USERIF_COLORSCHEME,CFG_TYPE_ENUM,   "Color Scheme",         "%s", colors,  0,  2, 1 },
 //    { CFG_USERIF_WORDWRAP,   CFG_TYPE_ENUM,   "Wordwrap text viewer", "%s", en_dis,  0,  1, 1 },
 
     { CFG_USERIF_START_HOME, CFG_TYPE_ENUM,   "Enter Home on Startup", "%s", en_dis, 0,  1, 0 },
@@ -134,11 +134,13 @@ typedef struct {
 const t_scheme_colors schemes[] = {
     { 14, 6, 14, 1, 6,  0, 12, 12 },
     { 0,  0, 12, 1, 6,  0,  6,  6 },
+    { 13,11, 15,13, 0,  0, 15, 12 },
+    { 0,  0, 15,13, 0,  0, 15, 12 }, // telnet
 };
 
 void UserInterface :: effectuate_settings(void)
 {
-    const t_scheme_colors *scheme = logo ? &schemes[cfg->get_value(CFG_USERIF_COLORSCHEME)] : &schemes[1]; // for telnet always use black
+    const t_scheme_colors *scheme = logo ? &schemes[cfg->get_value(CFG_USERIF_COLORSCHEME)] : &schemes[3]; // for telnet always use something useful
     color_border = scheme->border;
     color_fg     = scheme->foreground;
     color_bg     = scheme->background;
