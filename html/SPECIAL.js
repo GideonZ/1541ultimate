@@ -12,8 +12,7 @@
 //   in your browser to apply changes.
 //
 // EXAMPLES:
-// var SCRIPT_TO_LOAD = "Default.js";        // Load default profile
 // var SCRIPT_TO_LOAD = "CBMprgStudio.js";   // Load CBM prg Studio mapping
 // =========================================================================
 
-var SCRIPT_TO_LOAD = "Default.js";
+var SCRIPT_TO_LOAD = "CBMprgStudio.js";

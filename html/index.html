@@ -11,11 +11,11 @@
 <!-- Load configuration and defines SCRIPT_TO_LOAD for later dynamic loading -->
 <script src="SPECIAL.js"></script>
 
-
 <script src="https://cdn.jsdelivr.net/npm/jquery"></script>
 <script src="https://cdn.jsdelivr.net/npm/jquery.terminal/js/jquery.terminal.min.js"></script>
 
 <script>
+
 var serverIP = window.location.hostname;
 var apiPassword = "";
 var ultimateInfo = {};
@@ -482,10 +482,8 @@ $(document).ready(async function () {
         editor.value = editor.defaultValue;
     }
 
-    /**
-     * Finalizes the initialization process once the external profile script is ready.
-     * This function is triggered only when CBM_SIGNATURE reaches "READY" state.
-     */
+    // * Finalizes the initialization process once the external profile script is ready.
+    // * This function is triggered only when CBM_SIGNATURE reaches "READY" state.
     const finalizeInitialization = () => {
         // 1. Assign table data from the loaded script
         window.SPECIAL = window.SPECIAL || [];
@@ -536,15 +534,13 @@ $(document).ready(async function () {
         finalizeInitialization();
     }
 
-    /**
-    * C64 PETSCII CONTROL & CHARACTER MAP (0x00 - 0xFF)
-    *
-    * Provides descriptive tooltips for each PETSCII byte, including:
-    * - FUNCTION: Primary effect or character name.
-    * - KEY MAPPING: Physical keyboard shortcut (Commodore/PC style).
-    * - TYPE: Instruction or graphic symbol.
-    * - INPUT: Input method.
-    */
+    // * C64 PETSCII CONTROL & CHARACTER MAP (0x00 - 0xFF)
+    // *
+    // * Provides descriptive tooltips for each PETSCII byte, including:
+    // * - FUNCTION: Primary effect or character name.
+    // * - KEY MAPPING: Physical keyboard shortcut (Commodore 64 style).
+    // * - TYPE: Instruction or graphic symbol.
+    // * - INPUT: Input method.
     window.TOOLTIP = {
         //Column 1
         0x00: "FUNCTION: NULL / END OF STRING\nKEY MAPPING: CONTROL @\nTYPE: INSTRUCTION (STRING TERMINATOR)\nINPUT: AS SYMBOL | CHR$(0)",
@@ -830,12 +826,10 @@ $(document).ready(async function () {
         
     }
 
-    /**
-    * Scans the input string for tokens, special characters, or plain text.
-    * @param {string} s - The input string fragment.
-    * @param {boolean} tokenize - Whether to attempt keyword tokenization.
-    * @returns {[number|null, string]} - Array containing the byte value and the remaining string.
-    */
+    // * Scans the input string for tokens, special characters, or plain text.
+    // * @param {string} s - The input string fragment.
+    // * @param {boolean} tokenize - Whether to attempt keyword tokenization.
+    // * @returns {[number|null, string]} - Array containing the byte value and the remaining string.
     function scan(s, tokenize = true) {
         s = expandCounts(s);
 
@@ -869,10 +863,8 @@ $(document).ready(async function () {
         return [asciiToPetscii(s.charCodeAt(0)), s.substring(1)];
     }
 
-    /**
-    * Expands character repetition shorthands into individual tokens.
-    * Supports both historical type-in magazine formats and modern IDE syntax.
-    */
+    // * Expands character repetition shorthands into individual tokens.
+    // * Supports both historical type-in magazine formats and modern IDE syntax.
     function expandCounts(input) {
         // This regex handles two variants:
         // 1. {3 space} -> format used in "COMPUTE!'s Gazette" magazine
@@ -897,11 +889,9 @@ $(document).ready(async function () {
         return [parseInt(acc.join(''), 10), s.trimStart()];
     }
 
-    /**
-    * Converts a BASIC source line into a sequence of C64-compatible bytes.
-    * @param {string} s - The full source line (e.g., "10 PRINT A$").
-    * @returns {[number, number[]]} - Array containing the line number and the tokenized bytes.
-    */
+    // * Converts a BASIC source line into a sequence of C64-compatible bytes.
+    // * @param {string} s - The full source line (e.g., "10 PRINT A$").
+    // * @returns {[number, number[]]} - Array containing the line number and the tokenized bytes.
     function tokenize(s) {
         // Uses scanLineNumber to correctly handle cases like "10PRINT" (no space after line number)
         let [lineNumber, remainingString] = scanLineNumber(s);
@@ -998,12 +988,10 @@ $(document).ready(async function () {
             }
     });
 
-    /**
-    * Renders the C64 Special Characters Table in an 8x32 grid layout.
-    * Design: [Red Separator][HEX][4px Gap][Symbols][16px Gap][Next Column]
-    * Features: Pepto PAL color accuracy and adaptive text contrast for accessibility.
-    * Interaction: Symbols are clickable and insert their token into the BASIC editor.
-    */
+    // * Renders the C64 Special Characters Table in an 8x32 grid layout.
+    // * Design: [Red Separator][HEX][4px Gap][Symbols][16px Gap][Next Column]
+    // * Features: Pepto PAL color accuracy and adaptive text contrast for accessibility.
+    // * Interaction: Symbols are clickable and insert their token into the BASIC editor.
     function renderSpecialTable() {
         // Reference global tokens list from the external profile
         const tokens = window.SPECIAL;
@@ -2102,8 +2090,8 @@ function disassembler(startInt, byteArray) {
 
 <textarea id="basiceditor" spellcheck="false" autocorrect="off" autocapitalize="off" wrap="off" class="c64-textarea">
 Data loading failed: please try reloading the page (Ctrl+F5).
-Verify the integrity of /Flash/html/SPECIAL.js, Default.js,
-or your custom profile if you have modified them.
+Check for syntax errors in /Flash/html/SPECIAL.js,
+or your custom profile if modified.
 </textarea>
 
             <div class="padding-tr-5">
