@@ -402,18 +402,19 @@ void WiFi :: freeBuffer(command_buf_t *buf)
     uart->FreeBuffer(buf);
 }
 
-void WiFi ::getAccessPointItems(Browsable *parent, IndexedList<Browsable *> &list)
+int WiFi ::getAccessPointItems(Browsable *parent, IndexedList<Browsable *> &list)
 {
     ultimate_ap_records_t *aps = &wifi_aps;
     if (aps->num_records == 0) {
         list.append(new BrowsableStatic("Scanning..."));
-        return;
+        return 0;
     }
     ENTER_SAFE_SECTION;
     for (int i = 0; i < aps->num_records; i++) {
         list.append(new BrowsableWifiAP(parent, (char *)aps->aps[i].ssid, aps->aps[i].rssi, aps->aps[i].authmode));
     }
     LEAVE_SAFE_SECTION;
+    return aps->num_records;
 }
 
 #include "subsys.h"

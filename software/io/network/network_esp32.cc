@@ -108,7 +108,9 @@ void NetworkLWIP_WiFi :: getDisplayString(int index, char *buffer, int width)
 
 void NetworkLWIP_WiFi :: getSubItems(Browsable *parent, IndexedList<Browsable *> &list, int &error)
 {
-    wifi.getAccessPointItems(parent, list);
+    if (wifi.getAccessPointItems(parent, list) == 0) {
+        wifi.sendEvent(EVENT_RESCAN);
+    }
     error = 0;
 }
 

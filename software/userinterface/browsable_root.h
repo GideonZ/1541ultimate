@@ -261,9 +261,9 @@ public:
 			}
 			delete infos; // deletes the indexed list, but not the FileInfos
 
-			// for(int i=0; i < NetworkInterface :: getNumberOfInterfaces(); i++) {
-			// 	children.append(new BrowsableNetwork(this, i));
-			// }
+			for(int i=0; i < NetworkInterface :: getNumberOfInterfaces(); i++) {
+			 	children.append(new BrowsableNetwork(this, i));
+			}
 		}
 		error = 0;
 		return &children;
