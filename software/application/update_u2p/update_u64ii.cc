@@ -41,7 +41,6 @@ static void status_callback(void *user)
     UserInterface *ui = (UserInterface *)user;
     ui->update_progress(NULL, 1);
 }
-#include "usb_base.h"
 
 void update_esp32_impl(void)
 {

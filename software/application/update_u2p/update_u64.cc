@@ -44,15 +44,15 @@ static void status_callback(void *user)
 void update_esp32_impl(void)
 {
     if (esp32.Download() == 0) {
-        uint32_t total_size = (uint32_t)&_bootloader_bin_size + (uint32_t)&_partition_table_bin_size + (uint32_t)&_u64ctrl_bin_size;
+        uint32_t total_size = (uint32_t)&_bootloader_bin_size + (uint32_t)&_partition_table_bin_size + (uint32_t)&_bridge_bin_size;
         user_interface->show_progress("Flashing ESP32", total_size / 1024);
         int status = 0;
-        status = esp32.Flash((uint8_t *)&_bootloader_bin_start, 0x000000, (uint32_t)&_bootloader_bin_size, status_callback, user_interface);
+        status = esp32.Flash((uint8_t *)&_bootloader_bin_start, 0x001000, (uint32_t)&_bootloader_bin_size, status_callback, user_interface);
         if (status == 0) {
             status = esp32.Flash((uint8_t *)&_partition_table_bin_start, 0x008000, (uint32_t)&_partition_table_bin_size, status_callback, user_interface);
         }
         if (status == 0) {
-            status = esp32.Flash((uint8_t *)&_u64ctrl_bin_start, 0x010000, (uint32_t)&_u64ctrl_bin_size, status_callback, user_interface);
+            status = esp32.Flash((uint8_t *)&_bridge_bin_start, 0x010000, (uint32_t)&_bridge_bin_size, status_callback, user_interface);
         }
         user_interface->hide_progress();
         printf("Flashing ESP32 Status: %d.\n", status);

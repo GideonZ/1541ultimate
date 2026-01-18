@@ -8,9 +8,11 @@
 #ifndef SOFTWARE_WIFI_SCAN_MAIN_RPC_DISPATCH_H_
 #define SOFTWARE_WIFI_SCAN_MAIN_RPC_DISPATCH_H_
 
-#include "freertos/FreeRTOS.h"
-#include "freertos/queue.h"
-#include "freertos/task.h"
+#ifndef RECOVERYAPP
+    #include "freertos/FreeRTOS.h"
+    #include "freertos/queue.h"
+    #include "freertos/task.h"
+#endif
 #include "cmd_buffer.h" // For the constant NUM_BUFFERS
 
 typedef struct {
