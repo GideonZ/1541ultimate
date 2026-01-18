@@ -2267,16 +2267,11 @@ void U64Config :: configure_hdmi_output(void)
         U64_HDMI_ENABLE = (hdmiSetting == 1) ? 1 : 0; // 1 = HDMI, 2 = DVI
     }
 
-//#if U64 == 2    
+#if U64 == 2    
     volatile t_video_timing_regs *regs = (volatile t_video_timing_regs *)U64II_HDMI_REGS;
 
-
-
-
-
-
     regs->resync = 2;
-//#endif
+#endif
 }
 
 void U64Config :: list_palettes(ConfigItem *it, IndexedList<char *>& strings)
