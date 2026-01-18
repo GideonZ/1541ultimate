@@ -41,6 +41,7 @@ static void status_callback(void *user)
     UserInterface *ui = (UserInterface *)user;
     ui->update_progress(NULL, 1);
 }
+#include "usb_base.h"
 
 void update_esp32_impl(void)
 {
@@ -160,6 +161,7 @@ void do_update(void)
     reset_config(flash2);
 
     esp32.EnableRunMode();
+    vTaskDelay(200);
     wifi_command_init();
     turn_off();
 }
@@ -167,7 +169,7 @@ void do_update(void)
 extern "C" int ultimate_main(int argc, char *argv[])
 {
     i2c->enable_scan(true, false);
-	do_update();
+    do_update();
     return 0;
 }
 
