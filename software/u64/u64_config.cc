@@ -308,6 +308,7 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_LED_SELECT_0,         CFG_TYPE_ENUM, "LED Select Top",               "%s", ledselects,   0, 15, 0 },
     { CFG_LED_SELECT_1,         CFG_TYPE_ENUM, "LED Select Bot",               "%s", ledselects,   0, 15, 4 },
 #if U64 != 2
+    { CFG_SPEAKER_EN,           CFG_TYPE_ENUM, "Speaker Enable",               "%s", en_dis,       0,  1, 1 },
     { CFG_SPEAKER_VOL,          CFG_TYPE_ENUM, "Speaker Volume (SpkDat)",      "%s", speaker_vol,  0, 10, 5 },
 #endif
     { CFG_PLAYER_AUTOCONFIG,    CFG_TYPE_ENUM, "SID Player Autoconfig",        "%s", en_dis,       0,  1, 1 },
@@ -970,9 +971,12 @@ void U64Config :: effectuate_settings()
     setCpuSpeed(cfg->find_item(CFG_SPEED_REGS));
 
     //printf("U64Config :: effectuate_settings()\n");
-    uint8_t sp_vol = cfg->get_value(CFG_SPEAKER_VOL);
-
-    U2PIO_SPEAKER_EN = sp_vol ? (sp_vol << 1) | 0x01 : 0;
+    if (cfg->get_value(CFG_SPEAKER_EN)) {
+        uint8_t sp_vol = cfg->get_value(CFG_SPEAKER_VOL);
+        U2PIO_SPEAKER_EN = sp_vol ? (sp_vol << 1) | 0x01 : 0;
+    } else {
+        U2PIO_SPEAKER_EN = 0;
+    }
     C64_SCANLINES    = cfg->get_value(CFG_SCANLINES);
     hdmiSetting = cfg->get_value(CFG_HDMI_ENABLE);
 
@@ -2459,6 +2463,12 @@ void U64Config :: setup_config_menu(void)
     grp->append(ConfigItem :: heading("W, A, S, D and RETURN characters."));
 #endif
 
+#if U64==1
+    grp = ConfigGroupCollection :: getGroup("Speaker Settings", SORT_ORDER_CFG_SPEAKER);
+    grp->append(cfg->find_item(CFG_SPEAKER_EN));
+    grp->append(cfg->find_item(CFG_SPEAKER_VOL));
+#endif
+
     grp = ConfigGroupCollection :: getGroup("Turbo Settings", SORT_ORDER_CFG_TURBO);
     grp->append(cfg->find_item(CFG_SPEED_REGS));
     grp->append(cfg->find_item(CFG_SPEED_PREF));
@@ -2473,7 +2483,7 @@ void U64Config :: setup_config_menu(void)
 
     // grp = ConfigGroupCollection :: getGroup("Drive A Settings", SORT_ORDER_CFG_DRVA);
 
-    grp = ConfigGroupCollection :: getGroup("SID Player Behavior", SORT_ORDER_SIDPLAY);
+    grp = ConfigGroupCollection :: getGroup("SID Player Behavior", SORT_ORDER_CFG_SIDPLAY);
     grp->append(cfg->find_item(CFG_PLAYER_AUTOCONFIG));
     grp->append(cfg->find_item(CFG_ALLOW_EMUSID));
 }
