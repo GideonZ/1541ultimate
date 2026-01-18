@@ -2474,6 +2474,7 @@ void U64Config :: setup_config_menu(void)
     grp->append(cfg->find_item(CFG_IEC_BURST_EN));
     grp->append(cfg->find_item(CFG_PARCABLE_ENABLE)->set_item_altname("Parallel Cable to Drive A"));
     grp->append(cfg->find_item(CFG_IEC_BUS_MODE));
+    grp->append(cfg->find_item(CFG_USERPORT_EN));
     //grp->append(cfg->find_item(CFG_HDMI_TX_SWING));
 
     // grp = ConfigGroupCollection :: getGroup("Drive A Settings", SORT_ORDER_CFG_DRVA);
