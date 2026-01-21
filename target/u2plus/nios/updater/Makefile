@@ -92,7 +92,7 @@ SRCS_6502 =
 
 SRCS_BIN =  chars.bin 1541.bin 1571.bin 1581.bin snds1541.bin snds1571.bin snds1581.bin
 
-SRCS_HTML = index.html
+SRCS_HTML = index.html CBMprgStudio.html SPECIAL.html
 
 SRCS_IEC = 
 
