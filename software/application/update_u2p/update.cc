@@ -25,16 +25,8 @@ extern uint8_t _1581_bin_start;
 extern uint8_t _snds1541_bin_start;
 extern uint8_t _snds1571_bin_start;
 extern uint8_t _snds1581_bin_start;
-
-
 extern const char _index_html_start[];
 extern const char _index_html_end[1];
-extern const char _CBMprgStudio_html_start[];
-extern const char _CBMprgStudio_html_end[1];
-extern const char _SPECIAL_html_start[];
-extern const char _SPECIAL_html_end[1];
-
-
 
 void do_update(void)
 {
@@ -74,12 +66,9 @@ void do_update(void)
         write_flash_file("snds1541.bin", &_snds1541_bin_start, 0xC000);
         write_flash_file("snds1571.bin", &_snds1571_bin_start, 0xC000);
         write_flash_file("snds1581.bin", &_snds1581_bin_start, 0xC000);
+        write_html_file("index.html", _index_html_start, (int)_index_html_end - (int)_index_html_start);
 
-write_html_file("index.html", _index_html_start, (int)_index_html_end - (int)_index_html_start);
-write_html_file("CBMprgStudio.js", _CBMprgStudio_html_start, (int)_CBMprgStudio_html_end - (int)_CBMprgStudio_html_start);
-write_html_file("SPECIAL.js", _SPECIAL_html_start, (int)_SPECIAL_html_end - (int)_SPECIAL_html_start);
-
-       Flash *flash2 = get_flash();
+        Flash *flash2 = get_flash();
         flash2->protect_disable();
         flash_buffer(flash2, screen, FLASH_ID_BOOTFPGA, &_ultimate_run_rbf_start, &_ultimate_run_rbf_end, "", "Runtime FPGA");
         flash_buffer(flash2, screen, FLASH_ID_APPL,     &_ultimate_app_start,     &_ultimate_app_end,  APPL_VERSION, "Ultimate Application");
