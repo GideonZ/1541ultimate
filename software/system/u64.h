@@ -68,6 +68,7 @@
 #define U64_HDMI_PLL_RESET (*(volatile uint8_t *)(U64_IO_BASE + 0x04))
 #define U64_USERPORT_EN    (*(volatile uint8_t *)(U64_IO_BASE + 0x05))
 #define U64II_KEYB_JOY     (*(volatile uint8_t *)(U64_IO_BASE + 0x06))
+#define U64II_BLACKBOARD   (*(volatile uint8_t *)(U64_IO_BASE + 0x07))
 #define U64_HDMI_ENABLE    (*(volatile uint8_t *)(U64_IO_BASE + 0x08))
 #define U64_INT_CONNECTORS (*(volatile uint8_t *)(U64_IO_BASE + 0x09))
 #define U64II_KEYB_COL     (*(volatile uint8_t *)(U64_IO_BASE + 0x0A))

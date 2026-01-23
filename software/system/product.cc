@@ -45,7 +45,7 @@ const char *getBoardRevision(void)
 
     switch (rev) {
     case 0x10:
-        return "U64 Prototype";
+        return "C64U V2.5 (TI HDMI)";
     case 0x11:
         return "U64 V1.1 (Null Series)";
     case 0x12:
@@ -59,7 +59,7 @@ const char *getBoardRevision(void)
     case 0x16:
         return "C64U V2.1 (Null Series)";
     case 0x17:
-        return "C64U V2.2 (Mass Prod)";
+        return "C64U V2.5 (Mass Prod)";
     }
     return "Unknown";
 }
