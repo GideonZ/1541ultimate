@@ -567,7 +567,7 @@ void LedStrip :: effectuate_settings(void)
             mode = e_led_rainbow;
         } else { // founders
             mode = e_led_sparkle;
-            hue = 24; // white
+            hue = 3; // amber
         }
     }
 
