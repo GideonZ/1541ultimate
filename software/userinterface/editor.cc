@@ -168,6 +168,7 @@ int Editor :: handle_key(uint8_t c)
     switch(c) {
         case KEY_LEFT: // left
         case KEY_BREAK: // runstop
+        case '`': // left arrow
             ret = -1;
             break;
         case KEY_DOWN: // down

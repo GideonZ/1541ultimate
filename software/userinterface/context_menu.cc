@@ -270,6 +270,7 @@ int ContextMenu :: handle_key(int c)
         case KEY_MENU:  // injected
         case KEY_ESCAPE:
         case KEY_F8:    // exit
+        case '`': // left arrow
         	ret = when_done;
             break;
 

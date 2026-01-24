@@ -278,8 +278,6 @@ int ConfigBrowser :: handle_key(int c)
         case KEY_RIGHT: // right
             if(state->level==0)
                 state->into();
-            else
-                state->increase();
             break;
         case '+':
             if(state->level!=0)
@@ -287,6 +285,7 @@ int ConfigBrowser :: handle_key(int c)
             break;
         case KEY_LEFT: // left
 		case KEY_BACK: // del
+        case '`': // left arrow
             if (state->level == 1) { // going to level 0
                 ((ConfigBrowserState *)state)->on_close();
             }

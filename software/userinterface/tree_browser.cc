@@ -342,6 +342,7 @@ int TreeBrowser :: handle_key(int c)
     
     switch(c) {
         case KEY_BREAK: // runstop
+        case '`': // left arrow
             ret = (allow_exit) ? MENU_CLOSE : MENU_HIDE;
             break;
         case KEY_MENU:
