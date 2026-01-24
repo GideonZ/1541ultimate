@@ -124,6 +124,14 @@ static inline RGB apply_intensity(RGB c, uint8_t t)
     return o;
 }
 
+static inline RGB apply_intensity_256(RGB c, uint8_t t)
+{
+    RGB o;
+    o.r = ((uint16_t)c.r * t) >> 8;
+    o.g = ((uint16_t)c.g * t) >> 8;
+    o.b = ((uint16_t)c.b * t) >> 8;
+    return o;
+}
 
 LedStrip :: LedStrip()
 {
@@ -774,7 +782,7 @@ void LedStrip :: boot_pattern_founders(void)
 
     // Soft start
     for(int i=0; i < 255; i++) {
-        temp = apply_intensity(fixed, (uint8_t)i);
+        temp = apply_intensity_256(fixed, (uint8_t)i);
         ShiftInColor(temp);
         LEDSTRIP_START = 0;
         vTaskDelay(2);
