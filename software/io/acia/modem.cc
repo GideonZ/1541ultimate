@@ -151,29 +151,38 @@ void Modem :: listenerTask(void *a)
     vTaskDelete(NULL);
 }
 
+// Helper function to print ACIA status bits: [IRQ|DSR|DCD|TDRE|RDRF|OVRN|FE|PE]
+void print_acia_status_bits(uint8_t status) {
+    printf("STAT:[");
+    for (int i = 7; i >= 0; i--) {
+        printf("%d", (status >> i) & 1);
+    }
+    printf("] ");
+}
+
 void Modem :: RunRelay(int socket)
 {
-    int loopDelay = 10 * cfg->get_value(CFG_MODEM_LOOPDELAY); // steps of 10 ms
-    printf("Using loopDelay = %d\n", loopDelay);
+    int loopDelay = 10 * cfg->get_value(CFG_MODEM_LOOPDELAY); 
+    int ret; // FIXED: Added local declaration for ret
 
     struct timeval tv;
     tv.tv_sec = 0;
     tv.tv_usec = loopDelay * 1000;
-    setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
+    setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(struct timeval));
 
     if (cfg->get_value(CFG_MODEM_TCPNODELAY)) {
-        int flags =1;
+        int flags = 1;
         setsockopt(socket, IPPROTO_TCP, TCP_NODELAY, &flags, sizeof(flags));
     }
 
     ModemCommand_t modemCommand;
-
     printf("Modem: Running Relay to socket %d.\n", socket);
-    int ret;
+    
     SetHandshakes(true, false);
     commandMode = false;
+    
     uint8_t escape = registerValues[MODEM_REG_ESCAPE];
-    int escapeTime = 4 * (int)registerValues[MODEM_REG_ESCAPETIME]; // Ultimate Timer is 200 Hz, hence *4, register specifies fiftieths of seconds
+    int escapeTime = 4 * (int)registerValues[MODEM_REG_ESCAPETIME]; 
     int escapeCount = 0;
     TickType_t escapeDetectTime = 0;
 
@@ -181,83 +190,71 @@ void Modem :: RunRelay(int socket)
     tcp_buffer_offset = 0;
 
     while(keepConnection) {
-        // Do we have space for TCP data? Then lets try to receive some.
+        // --- 1. NETWORK RECEIVE (RX: Internet -> C64) ---
         if (!tcp_buffer_valid) {
+            // Try to fetch new data only when the local buffer is empty
             ret = recv(socket, tcp_receive_buffer, 512, 0);
             if (ret > 0) {
-                //printf("[%d] TCP: %d\n", xTaskGetTickCount(), ret);
                 tcp_buffer_valid = ret;
-                tcp_buffer_offset= 0;
+                tcp_buffer_offset = 0;
             } else if(ret == 0) {
                 printf("Receive returned 0. Exiting\n");
                 break;
             }
-        } else {
-            // we did not wait for tcp, so we just wait a little
-            vTaskDelay(loopDelay);
         }
 
-        // Do we have TCP data to send?
-        if (tcp_buffer_valid) {
+        if (tcp_buffer_valid > 0) {
             int space = acia.GetRxSpace();
-            // Is there room in the ACIA Rx buffer?
             if (space > 0) {
+                int to_copy = (tcp_buffer_valid > space) ? space : tcp_buffer_valid;
                 volatile uint8_t *dest = acia.GetRxPointer();
-                if (tcp_buffer_valid > space) {
-                    memcpy((void *)dest, tcp_receive_buffer + tcp_buffer_offset, space);
-                    acia.AdvanceRx(space);
-                    //printf("[%d] Rx: Got=%d. Push:%d.\n", xTaskGetTickCount(), tcp_buffer_valid, space);
-                    tcp_buffer_valid -= space;
-                    tcp_buffer_offset += space;
-                } else {
-                    memcpy((void *)dest, tcp_receive_buffer + tcp_buffer_offset, tcp_buffer_valid);
-                    acia.AdvanceRx(tcp_buffer_valid);
-                    //printf("[%d] Rx: Got=%d. Push: All.\n", xTaskGetTickCount(), tcp_buffer_valid);
-                    tcp_buffer_valid = 0;
+                
+                memcpy((void *)dest, tcp_receive_buffer + tcp_buffer_offset, to_copy);
+                
+                // LOG RX TO PC
+                // FIXED: Using acia.GetStatus() instead of regs->status
+                print_acia_status_bits(acia.GetStatus());
+                printf("RX [%d b]: ", to_copy);
+                for(int i = 0; i < to_copy; i++) {
+                    uint8_t c = ((uint8_t*)dest)[i];
+                    if (c >= 32 && c <= 126) printf("%c", c);
+                    else printf("[%02X]", c);
                 }
+                printf("\n");
+
+                acia.AdvanceRx(to_copy);
+                tcp_buffer_valid -= to_copy;
+                tcp_buffer_offset += to_copy;
             }
         }
 
-        // Check for escapes to see if we can get out of data mode
-        if (escapeCount == 3) {
-            TickType_t since = xTaskGetTickCount() - escapeDetectTime;
-            if (since >= escapeTime) {
-                printf("Modem Escape detected!\n");
-                escapeCount = 0;
-                commandMode = true;
-
-                responseString = (verbose==TRUE ? responseText[RESP_OK] : responseCode[RESP_OK]);
-                responseLen=strlen(responseString);
-                acia.SendToRx((uint8_t*)responseString, responseLen);
-            }
-        }
-
-        // As long as we are in data mode, all data written to the ACIA shall be
-        // forwarded to TCP.
+        // --- 2. FORWARD TO SERVER (TX: C64 -> Internet) ---
         if (!commandMode) {
             int avail = aciaTxBuffer->AvailableContiguous();
             if (avail > 0) {
-
-                printf("DEBUG: TX avail=%d, sending to socket...\n", avail);
-
-
                 uint8_t *pnt = aciaTxBuffer->GetReadPointer();
-                for(int i=0;i<avail;i++) {
+                
+                // LOG TX TO PC (Crucial for debugging the DEL key)
+                // FIXED: Using acia.GetStatus() instead of regs->status
+                print_acia_status_bits(acia.GetStatus());
+                printf("TX [%d b]: ", avail);
+                for(int i = 0; i < avail; i++) {
+                    if (pnt[i] >= 32 && pnt[i] <= 126) printf("%c", pnt[i]);
+                    else printf("[%02X]", pnt[i]);
+                }
+                printf("\n");
+
+                // Escape sequence analysis (+++)
+                for(int i = 0; i < avail; i++) {
                     if (pnt[i] == escape) {
-                        escapeCount ++;
-                        if (escapeCount == 3) {
-                            escapeDetectTime = xTaskGetTickCount();
-                        }
+                        escapeCount++;
+                        if (escapeCount == 3) escapeDetectTime = xTaskGetTickCount();
                     } else {
                         escapeCount = 0;
                     }
                 }
+
                 ret = send(socket, pnt, avail, 0);
-
-
-                printf("DEBUG: socket send ret=%d\n", ret);
-
-
                 if (ret > 0) {
                     aciaTxBuffer->AdvanceReadPointer(ret);
                 } else if(ret < 0) {
@@ -267,18 +264,33 @@ void Modem :: RunRelay(int socket)
             }
         }
 
+        // --- 3. COMMANDS AND ESCAPE HANDLING ---
+        if (escapeCount == 3) {
+            if ((xTaskGetTickCount() - escapeDetectTime) >= (TickType_t)escapeTime) {
+                printf("Modem Escape detected!\n");
+                escapeCount = 0;
+                commandMode = true;
+                responseString = (verbose==true ? responseText[RESP_OK] : responseCode[RESP_OK]);
+                acia.SendToRx((uint8_t*)responseString, strlen(responseString));
+            }
+        }
 
-        // Maybe there are any commands that need to be executed?
         BaseType_t cmdAvailable = xQueueReceive(commandQueue, &modemCommand, 0);
         if (cmdAvailable) {
             ExecuteCommand(&modemCommand);
             escape = registerValues[MODEM_REG_ESCAPE];
-            escapeTime = 4 * (int)registerValues[MODEM_REG_ESCAPETIME]; // Ultimate Timer is 200 Hz, hence *4, register specifies fiftieths of seconds
+            escapeTime = 4 * (int)registerValues[MODEM_REG_ESCAPETIME];
+        }
+
+        // Throttle the loop to prevent 100% CPU usage
+        if (tcp_buffer_valid == 0 && aciaTxBuffer->AvailableData() == 0) {
+            vTaskDelay(pdMS_TO_TICKS(loopDelay > 0 ? loopDelay : 1));
         }
     }
     commandMode = true;
     SetHandshakes(false, false);
 }
+
 
 void Modem :: IncomingConnection(int socket)
 {

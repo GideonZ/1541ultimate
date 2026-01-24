@@ -170,6 +170,8 @@ public:
     volatile uint8_t *GetRxPointer(void);
     void     AdvanceRx(int);
 
+	uint8_t GetStatus(void) { return regs->status; }
+
     uint8_t IrqHandler(void);
 
     void GetHwMapping(uint8_t& enabled, uint16_t& address, uint8_t& nmi);
