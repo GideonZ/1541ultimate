@@ -566,7 +566,7 @@ void LedStrip :: effectuate_settings(void)
         if(model == 1) { // starlight
             mode = e_led_rainbow;
         } else { // founders
-            mode = e_led_sparkle;
+            mode = e_led_fixed;
             hue = 3; // amber
         }
     }
