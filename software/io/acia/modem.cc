@@ -237,6 +237,10 @@ void Modem :: RunRelay(int socket)
         if (!commandMode) {
             int avail = aciaTxBuffer->AvailableContiguous();
             if (avail > 0) {
+
+                printf("DEBUG: TX avail=%d, sending to socket...\n", avail);
+
+
                 uint8_t *pnt = aciaTxBuffer->GetReadPointer();
                 for(int i=0;i<avail;i++) {
                     if (pnt[i] == escape) {
@@ -249,7 +253,11 @@ void Modem :: RunRelay(int socket)
                     }
                 }
                 ret = send(socket, pnt, avail, 0);
-                //printf("[%d] Tx: Got=%d. Sent:%d\n", xTaskGetTickCount(), avail, ret);
+
+
+                printf("DEBUG: socket send ret=%d\n", ret);
+
+
                 if (ret > 0) {
                     aciaTxBuffer->AdvanceReadPointer(ret);
                 } else if(ret < 0) {
@@ -258,6 +266,7 @@ void Modem :: RunRelay(int socket)
                 }
             }
         }
+
 
         // Maybe there are any commands that need to be executed?
         BaseType_t cmdAvailable = xQueueReceive(commandQueue, &modemCommand, 0);
