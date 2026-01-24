@@ -372,15 +372,9 @@ void LedStrip :: run(void)
             }
             fixed = tint_with_white(fixed, tint_factors[tint]);
             LEDSTRIP_INTENSITY = intensity << 2;
-            if (protocol) {
-                LEDSTRIP_DATA[0] = fixed.g;
-                LEDSTRIP_DATA[1] = fixed.r;
-                LEDSTRIP_DATA[2] = fixed.b;
-            } else {
-                LEDSTRIP_DATA[0] = fixed.b;
-                LEDSTRIP_DATA[1] = fixed.g;
-                LEDSTRIP_DATA[2] = fixed.r;
-            }
+            LEDSTRIP_DATA[0] = fixed.r;
+            LEDSTRIP_DATA[1] = fixed.g;
+            LEDSTRIP_DATA[2] = fixed.b;
             LEDSTRIP_FROM = 0x00;
             LEDSTRIP_START = 0; // and go!
             vTaskDelay(50);
@@ -416,15 +410,9 @@ void LedStrip :: run(void)
                 fixed = tint_with_white(fixed, soft_start);
                 soft_start -= 1; // should end with 0
             }
-            if (protocol) {
-                LEDSTRIP_DATA[offset+0] = fixed.g;
-                LEDSTRIP_DATA[offset+1] = fixed.r;
-                LEDSTRIP_DATA[offset+2] = fixed.b;
-            } else {
-                LEDSTRIP_DATA[offset+0] = fixed.b;
-                LEDSTRIP_DATA[offset+1] = fixed.g;
-                LEDSTRIP_DATA[offset+2] = fixed.r;
-            }
+            LEDSTRIP_DATA[0] = fixed.r;
+            LEDSTRIP_DATA[1] = fixed.g;
+            LEDSTRIP_DATA[2] = fixed.b;
             LEDSTRIP_FROM = offset;
             if (offset == 0) {
                 offset = 3*83;
@@ -445,23 +433,15 @@ void LedStrip :: run(void)
             fixed = hue_index_to_rgb(rainbow_hue, 768);
             fixed = tint_with_white(fixed, tint_factors[tint]);
             fixed = apply_intensity(fixed, intensity);
-            if (protocol) {
-                backup[offset+0] = fixed.g;
-                backup[offset+1] = fixed.r;
-                backup[offset+2] = fixed.b;
 
-                LEDSTRIP_DATA[offset+0] = fixed.g;
-                LEDSTRIP_DATA[offset+1] = fixed.r;
-                LEDSTRIP_DATA[offset+2] = fixed.b;
-            } else {
-                backup[offset+0] = fixed.b;
-                backup[offset+1] = fixed.g;
-                backup[offset+2] = fixed.r;
+            backup[offset+0] = fixed.r;
+            backup[offset+1] = fixed.g;
+            backup[offset+2] = fixed.b;
 
-                LEDSTRIP_DATA[offset+0] = fixed.b;
-                LEDSTRIP_DATA[offset+1] = fixed.g;
-                LEDSTRIP_DATA[offset+2] = fixed.r;
-            }
+            LEDSTRIP_DATA[0] = fixed.r;
+            LEDSTRIP_DATA[1] = fixed.g;
+            LEDSTRIP_DATA[2] = fixed.b;
+
             LEDSTRIP_FROM = offset;
             if (offset == 0) {
                 offset = 3*83;
@@ -497,23 +477,15 @@ void LedStrip :: run(void)
             // LEDSTRIP_INTENSITY = 0x7F; // do it with the data itself
             LEDSTRIP_INTENSITY = intensity << 2;
             fixed = { 43, 43, 43 }; // 1/6
-            if (protocol) {
-                backup[offset+0] = fixed.g;
-                backup[offset+1] = fixed.r;
-                backup[offset+2] = fixed.b;
 
-                LEDSTRIP_DATA[offset+0] = fixed.g;
-                LEDSTRIP_DATA[offset+1] = fixed.r;
-                LEDSTRIP_DATA[offset+2] = fixed.b;
-            } else {
-                backup[offset+0] = fixed.b;
-                backup[offset+1] = fixed.g;
-                backup[offset+2] = fixed.r;
+            backup[offset+0] = fixed.r;
+            backup[offset+1] = fixed.g;
+            backup[offset+2] = fixed.b;
 
-                LEDSTRIP_DATA[offset+0] = fixed.b;
-                LEDSTRIP_DATA[offset+1] = fixed.g;
-                LEDSTRIP_DATA[offset+2] = fixed.r;
-            }
+            LEDSTRIP_DATA[0] = fixed.r;
+            LEDSTRIP_DATA[1] = fixed.g;
+            LEDSTRIP_DATA[2] = fixed.b;
+
             LEDSTRIP_FROM = offset;
             if (offset == 0) {
                 offset = 3*83;
@@ -676,8 +648,8 @@ void LedStrip :: setup_config_menu(void)
 
 void LedStrip :: ShiftInColor(RGB &fixed)
 {
-    LEDSTRIP_DATA[offset+0] = fixed.g;
-    LEDSTRIP_DATA[offset+1] = fixed.r;
+    LEDSTRIP_DATA[offset+0] = fixed.r;
+    LEDSTRIP_DATA[offset+1] = fixed.g;
     LEDSTRIP_DATA[offset+2] = fixed.b;
     LEDSTRIP_FROM = offset;
     if (offset <= 0) {
