@@ -24,6 +24,7 @@
 #define CFG_LED_FIXED_TINT    0x08
 
 #define CFG_LED_PATTERN       0x0B
+#define CFG_LED_AUTOSID       0x0C
 
 #define LED_MAP       0xFC
 #define LED_STARTADDR 0xFD
@@ -43,7 +44,7 @@ typedef enum {
 class BlingBoard : public ConfigurableObject
 {
     volatile led_mode_t mode;
-    volatile uint8_t intensity, sidsel, pattern;
+    volatile uint8_t intensity, sidsel, pattern, autosid;
     volatile uint8_t hue, tint, offset, soft_start;
     volatile int speed;
 
@@ -69,6 +70,7 @@ class BlingBoard : public ConfigurableObject
     void MapCircular2(void);
     void ClearColors(void);
     void ShiftInColor(RGB &color);
+    void ConfigurePattern(void);
 public:
     BlingBoard();
     void effectuate_settings(void);

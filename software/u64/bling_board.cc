@@ -19,6 +19,8 @@
 #include <math.h>
 #include <stdint.h>
 
+#define SID_TIMEOUT_VALUE 600
+
 // globally static
 BlingBoard *blingy = NULL;
 static void init(void *_a, void *_b)
@@ -39,6 +41,7 @@ static const uint8_t tint_factors[] = { 0, 50, 100, 170 };
 
 static struct t_cfg_definition cfg_definition[] = {
     { CFG_LED_MODE,             CFG_TYPE_ENUM,  "LedStrip Mode",                "%s", modes,        0,  5,  5  },
+    { CFG_LED_AUTOSID,          CFG_TYPE_ENUM,  "LedStrip Auto SID Mode",       "%s", en_dis,       0,  1,  1  },
     { CFG_LED_PATTERN,          CFG_TYPE_ENUM,  "LedStrip Pattern",             "%s", patterns,     0,  4,  0  },
     { CFG_LED_SIDSELECT,        CFG_TYPE_ENUM,  "LedStrip SID Select",          "%s", sidsel,       0,  7,  0  },
     { CFG_LED_INTENSITY,        CFG_TYPE_VALUE, "Strip Intensity",              "%d", NULL,         0, 31,  6  },
@@ -154,6 +157,7 @@ BlingBoard :: BlingBoard()
 
     cfg->set_change_hook(CFG_LED_MODE,        BlingBoard :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_PATTERN,     BlingBoard :: hot_effectuate);
+    cfg->set_change_hook(CFG_LED_AUTOSID,     BlingBoard :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_INTENSITY,   BlingBoard :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_FIXED_COLOR, BlingBoard :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_FIXED_TINT,  BlingBoard :: hot_effectuate);
@@ -196,11 +200,17 @@ void BlingBoard :: MapDirect(void)
 void BlingBoard :: MapSingleColor(void)
 {
     LEDSTRIP_MAP_ENABLE = 1;
-    for(int i=0, j=0;i<84;i++) {
+    int j = 0;
+    for(int i=0;i<84;i++) {
         LEDSTRIP_DATA[j++] = 0;
         LEDSTRIP_DATA[j++] = 1;
         LEDSTRIP_DATA[j++] = 2;
     }
+    j = 70*3;
+    LEDSTRIP_DATA[j++] = 3;
+    LEDSTRIP_DATA[j++] = 4;
+    LEDSTRIP_DATA[j++] = 5;
+
     LEDSTRIP_MAP_ENABLE = 0;
 }
 
@@ -394,7 +404,7 @@ void BlingBoard :: play_boot_pattern(void)
     hue       = cfg->get_value(CFG_LED_FIXED_COLOR);
     tint      = cfg->get_value(CFG_LED_FIXED_TINT);
     sidsel    = cfg->get_value(CFG_LED_SIDSELECT);
-
+    autosid   = cfg->get_value(CFG_LED_AUTOSID);
 
     ClearColors();
 
@@ -528,9 +538,10 @@ void BlingBoard :: run(void)
 {
     int rainbow_hue = 0;
     uint8_t v1, v2, v3;
+    int v_total;
     int rnd, lfsr = 64738;
     uint8_t spp = 0x00, spr = 0, spg = 0, spb = 0;
-
+    int sid_timeout = 0;
     RGB fixed;
     static uint8_t backup[252];
     uint8_t key;
@@ -564,6 +575,7 @@ void BlingBoard :: run(void)
         v1 = C64_VOICE_ADSR(sidsel * 4 + 0);
         v2 = C64_VOICE_ADSR(sidsel * 4 + 1);
         v3 = C64_VOICE_ADSR(sidsel * 4 + 2);
+        v_total = v1 + v2 + v3;
         LEDSTRIP_INTENSITY = intensity << 2;
 
         switch (mode) {
@@ -572,8 +584,18 @@ void BlingBoard :: run(void)
             LEDSTRIP_DATA[0] = 0;
             LEDSTRIP_DATA[1] = 0;
             LEDSTRIP_DATA[2] = 0;
+
+            LEDSTRIP_DATA[3] = 0xff;
+            LEDSTRIP_DATA[4] = 0;
+            LEDSTRIP_DATA[5] = 0;
+
             LEDSTRIP_FROM = 0x00;
             LEDSTRIP_START = 0;
+            if (autosid && (v_total > 0)) {
+                sid_timeout = SID_TIMEOUT_VALUE;
+                ConfigurePattern();
+                mode = e_led_sid;
+            }
             break;
         case e_led_fixed: // Fixed Color
             offset = 0;
@@ -588,8 +610,19 @@ void BlingBoard :: run(void)
             LEDSTRIP_DATA[0] = fixed.g;
             LEDSTRIP_DATA[1] = fixed.r;
             LEDSTRIP_DATA[2] = fixed.b;
+
+            LEDSTRIP_DATA[3] = 0xff;
+            LEDSTRIP_DATA[4] = 0;
+            LEDSTRIP_DATA[5] = 0;
+
             LEDSTRIP_FROM = 0x00;
             LEDSTRIP_START = 0;
+
+            if (autosid && v_total > 0) {
+                ConfigurePattern();
+                mode = e_led_sid;
+                sid_timeout = SID_TIMEOUT_VALUE;
+            }
             break;
         case e_led_sid: // SID Scroll 1 // shift new data in.
             // So first data appears at address 0, offset 0
@@ -599,6 +632,19 @@ void BlingBoard :: run(void)
             fixed = { v1, v2, v3 };
             ShiftInColor(fixed);
             LEDSTRIP_START = 0;
+
+            if (autosid) {
+                if (v_total == 0) {
+                    if (sid_timeout <= 0) {
+                        // switch back to selected mode
+                        effectuate_settings();
+                    } else {
+                        sid_timeout -= speed;
+                    }
+                } else {
+                    sid_timeout = SID_TIMEOUT_VALUE;
+                }
+            }
             break;
         case e_led_rainbow: // rainbow
             rainbow_hue+=1;
@@ -662,6 +708,42 @@ void BlingBoard :: run(void)
     }
 }
 
+void BlingBoard :: ConfigurePattern(void)
+{
+    switch(pattern) {
+        case 0: // default = single color
+            MapSingleColor();
+            speed = 16;
+            break;
+        case 1: // left to right
+            MapLeftToRight();
+            speed = 12;
+            break;
+        case 2: // right to left
+            MapRightToLeft();
+            speed = 12;
+            break;
+        case 3: // circular
+            if (mode == 2) { // music
+                MapCircular1();
+                speed = 12;
+            } else {
+                MapCircular2();
+                speed = 5;
+            }
+            break;
+        case 4: // from center outward
+            MapFromCenter();
+            speed = 12;
+            break;
+        default:
+            MapDirect();
+            speed = 5;
+            break;
+    }
+    LEDSTRIP_MAP_ENABLE = 2;
+}
+
 void BlingBoard :: effectuate_settings(void)
 {
     mode      = led_mode_t(cfg->get_value(CFG_LED_MODE));
@@ -670,6 +752,7 @@ void BlingBoard :: effectuate_settings(void)
     hue       = cfg->get_value(CFG_LED_FIXED_COLOR);
     tint      = cfg->get_value(CFG_LED_FIXED_TINT);
     sidsel    = cfg->get_value(CFG_LED_SIDSELECT);
+    autosid   = cfg->get_value(CFG_LED_AUTOSID);
 
     if(mode == e_led_default) {
         if(model == 1) { // starlight
@@ -687,37 +770,7 @@ void BlingBoard :: effectuate_settings(void)
             MapSingleColor();
             break;
         default:
-            switch(pattern) {
-                case 0: // default = single color
-                    MapSingleColor();
-                    speed = 16;
-                    break;
-                case 1: // left to right
-                    MapLeftToRight();
-                    speed = 12;
-                    break;
-                case 2: // right to left
-                    MapRightToLeft();
-                    speed = 12;
-                    break;
-                case 3: // circular
-                    if (mode == 2) { // music
-                        MapCircular1();
-                        speed = 12;
-                    } else {
-                        MapCircular2();
-                        speed = 5;
-                    }
-                    break;
-                case 4: // from center outward
-                    MapFromCenter();
-                    speed = 12;
-                    break;
-                default:
-                    MapDirect();
-                    speed = 5;
-                    break;
-            }
+            ConfigurePattern();
             break;
     }
     LEDSTRIP_MAP_ENABLE = 2;
@@ -777,6 +830,7 @@ void BlingBoard :: setup_config_menu(void)
     ConfigGroup *grp = ConfigGroupCollection :: getGroup(GROUP_NAME_LEDS, SORT_ORDER_CFG_LEDS);
     grp->append(ConfigItem::heading("Keyboard Lights"));
     grp->append(cfg->find_item(CFG_LED_MODE)->set_item_altname("Mode"));
+    grp->append(cfg->find_item(CFG_LED_AUTOSID)->set_item_altname("Music Detect"));
     grp->append(cfg->find_item(CFG_LED_PATTERN)->set_item_altname("Pattern"));
     grp->append(cfg->find_item(CFG_LED_INTENSITY)->set_item_altname("Brightness"));
     grp->append(cfg->find_item(CFG_LED_FIXED_COLOR)->set_item_altname("Color"));
