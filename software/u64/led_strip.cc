@@ -770,23 +770,23 @@ void LedStrip :: boot_pattern_founders(void)
     LEDSTRIP_MAP_ENABLE = 0; // let shiftlock cycle too
     LEDSTRIP_INTENSITY = intensity << 2;
 
-    RGB fixed;
+    RGB temp, fixed = hue_index_to_rgb(3, 24); // amber!
 
     // Soft start
     for(int i=0; i < 255; i++) {
-        fixed = {(uint8_t)i, (uint8_t)i, (uint8_t)i};
-        ShiftInColor(fixed);
+        temp = apply_intensity(fixed, (uint8_t)i);
+        ShiftInColor(temp);
         LEDSTRIP_START = 0;
         vTaskDelay(2);
     }
-    for(int i=254; i > 43; i--) {
-        fixed = {(uint8_t)i, (uint8_t)i, (uint8_t)i};
-        ShiftInColor(fixed);
-        LEDSTRIP_START = 0;
-        vTaskDelay(2);
-    }
-    memset((void *)LEDSTRIP_DATA, 43, 3*84);
-    MapDirect();
+    // for(int i=254; i > 43; i--) {
+    //     fixed = {(uint8_t)i, (uint8_t)i, (uint8_t)i};
+    //     ShiftInColor(fixed);
+    //     LEDSTRIP_START = 0;
+    //     vTaskDelay(2);
+    // }
+    // memset((void *)LEDSTRIP_DATA, 43, 3*84);
+    // MapDirect();
 }
 
 void LedStrip :: ClearColors(void)
