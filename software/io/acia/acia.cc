@@ -37,7 +37,7 @@ int Acia :: init(uint16_t base, bool useNMI, QueueHandle_t controlQueue, QueueHa
     if ((base < 0xDE00) || (base > 0xDFFC)) {
         return -1;
     }
-    printf("Enabling ACIA at address %04x\n", base);
+    printf("Enabling ACIA at address %04x, nmi=%u\n", base, useNMI);
 
     base -= 0xDE00;
     base >>= 2;
