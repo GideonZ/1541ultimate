@@ -7,13 +7,13 @@ ListenerSocket :: ListenerSocket(const char *socketName, SpawnFunction_t spawn, 
     spawnFunction = spawn;
     this->spawnName = spawnName;
     port = 0;
-    listenfd = 0;
+    listenfd = -1;
     listenerTask = 0;
 }
 
 ListenerSocket :: ~ListenerSocket()
 {
-    if (listenfd) {
+    if (listenfd >= 0) {
         closesocket(listenfd);
         vTaskDelay(10);
     }
@@ -55,7 +55,7 @@ int ListenerSocket :: Start(int port)
         listenerTask = 0;
     }
 
-    if (listenfd) {
+    if (listenfd >= 0) {
         closesocket(listenfd);
     }
 

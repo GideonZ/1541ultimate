@@ -31,6 +31,7 @@ public:
     Assembly() {
         body = NULL;
         presets = NULL;
+        socket_fd = -1;
     }
     ~Assembly() {
         if (presets)
