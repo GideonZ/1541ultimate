@@ -171,15 +171,23 @@ public:
     void     AdvanceRx(int);
 
 	uint8_t GetStatus(void) { 
-		// Force DCD (0x20) and DSR (0x40) to simulate a connected modem
-		uint8_t s = regs->status | 0x60; 
+		// Get the raw status from FPGA registers
+		uint8_t s = regs->status;
 
-		// If Data Register Full (0x08), also force IRQ flag (0x80)
-		// This pushes the BBS NMI handler to take the data immediately
-		if (s & 0x08) s |= 0x80;
+		// Force bits 5 (DCD - Carrier Detect) and 6 (DSR - Data Set Ready)
+		// This simulates an active modem connection (Carrier Online)
+		s |= 0x60; 
 
+		// If Receiver Data Register Full (bit 3) is set, force IRQ/NMI flag (bit 7)
+		// On a real 6551 ACIA, bit 7 is always high when a receive interrupt is pending.
+		// This ensures the BBS NMI handler correctly recognizes and pulls the data.
+		if (s & 0x08) {
+			s |= 0x80;
+		}
+		
 		return s; 
 	}
+
 	uint8_t GetCommand(void) { return regs->command; }
 
 

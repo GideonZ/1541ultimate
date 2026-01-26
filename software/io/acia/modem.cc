@@ -214,7 +214,8 @@ void Modem :: RunRelay(int socket)
 				int to_copy = 1; 
 				volatile uint8_t *dest = acia.GetRxPointer();
 				memcpy((void *)dest, tcp_receive_buffer + tcp_buffer_offset, to_copy);
-				
+				print_acia_status_bits(acia.GetStatus(), acia.GetRxSpace(), acia.GetCommand(), lastHandshake);
+				printf("RX [%d b]: ", to_copy);
 				acia.AdvanceRx(to_copy);
 				tcp_buffer_valid -= to_copy;
 				tcp_buffer_offset += to_copy;
