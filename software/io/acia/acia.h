@@ -171,6 +171,7 @@ public:
     void     AdvanceRx(int);
 
 	uint8_t GetStatus(void) { return regs->status; }
+	uint8_t GetCommand(void) { return regs->command; }
 
     uint8_t IrqHandler(void);
 
