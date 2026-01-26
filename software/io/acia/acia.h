@@ -170,7 +170,12 @@ public:
     volatile uint8_t *GetRxPointer(void);
     void     AdvanceRx(int);
 
-	uint8_t GetStatus(void) { return regs->status; }
+	uint8_t GetStatus(void) { 
+		uint8_t s = regs->status | 0x60; // DCD + DSR
+		if (s & 0x08) s |= 0x80;         // Jeśli są dane (bit 3), ustaw IRQ (bit 7)
+		return s;
+	}
+
 
     uint8_t IrqHandler(void);
 
