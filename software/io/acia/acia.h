@@ -170,7 +170,16 @@ public:
     volatile uint8_t *GetRxPointer(void);
     void     AdvanceRx(int);
 
-	uint8_t GetStatus(void) { return regs->status; }
+	uint8_t GetStatus(void) { 
+		// Force DCD (0x20) and DSR (0x40) to simulate a connected modem
+		uint8_t s = regs->status | 0x60; 
+
+		// If Data Register Full (0x08), also force IRQ flag (0x80)
+		// This pushes the BBS NMI handler to take the data immediately
+		if (s & 0x08) s |= 0x80;
+
+		return s; 
+	}
 	uint8_t GetCommand(void) { return regs->command; }
 
 

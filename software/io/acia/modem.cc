@@ -207,30 +207,22 @@ void Modem :: RunRelay(int socket)
             }
         }
 
-        if (tcp_buffer_valid > 0) {
-            int space = acia.GetRxSpace();
-            if (space > 0) {
-                int to_copy = (tcp_buffer_valid > space) ? space : tcp_buffer_valid;
-                volatile uint8_t *dest = acia.GetRxPointer();
-                
-                memcpy((void *)dest, tcp_receive_buffer + tcp_buffer_offset, to_copy);
-                
-                // LOG RX TO PC
-                // FIXED: Using acia.GetStatus() instead of regs->status
-                print_acia_status_bits(acia.GetStatus(), acia.GetRxSpace(), acia.GetCommand(), lastHandshake);
-                printf("RX [%d b]: ", to_copy);
-                for(int i = 0; i < to_copy; i++) {
-                    uint8_t c = ((uint8_t*)dest)[i];
-                    if (c >= 32 && c <= 126) printf("%c", c);
-                    else printf("[%02X]", c);
-                }
-                printf("\n");
+		if (tcp_buffer_valid > 0) {
+			int space = acia.GetRxSpace();
+			if (space > 0) {
+				// Zamiast kopiować wszystko na raz (to_copy), kopiujemy tylko 1 bajt
+				int to_copy = 1; 
+				volatile uint8_t *dest = acia.GetRxPointer();
+				memcpy((void *)dest, tcp_receive_buffer + tcp_buffer_offset, to_copy);
+				
+				acia.AdvanceRx(to_copy);
+				tcp_buffer_valid -= to_copy;
+				tcp_buffer_offset += to_copy;
 
-                acia.AdvanceRx(to_copy);
-                tcp_buffer_valid -= to_copy;
-                tcp_buffer_offset += to_copy;
-            }
-        }
+				// SZTUCZNE OPÓŹNIENIE (np. 1-2 ms), aby BBS zdążył obsłużyć NMI
+				vTaskDelay(pdMS_TO_TICKS(2)); 
+			}
+		}
 
         // --- 2. FORWARD TO SERVER (TX: C64 -> Internet) ---
         if (!commandMode) {
@@ -907,25 +899,26 @@ void Modem :: effectuate_settings()
 
 void Modem :: reinit_acia(uint16_t base)
 {
-    // 1. Synchronize settings
     effectuate_settings(); 
 
-    // 2. Force DTR High using existing variables
+    // Force DTR High so BBS knows the modem is ready
     lastHandshake |= ACIA_HANDSH_DTR; 
     AciaMessage_t msg = { ACIA_MSG_HANDSH, lastHandshake, 0 };
     xQueueSend(aciaQueue, &msg, 0);
 
-    // 3. Original initialization logic
     if (base == 0xFFFF) {
         int basecfg = acia_base[cfg->get_value(CFG_MODEM_ACIA)];
         if (!basecfg) {
             acia.deinit();
             current_iobase = 0;
         } else {
-            acia.init(basecfg & 0xFFFE, base & 1, aciaQueue, aciaQueue, aciaTxBuffer);
+            // Use 0xFFFE for correct C64 I/O mapping ($DE00)
+            // Use basecfg & 1 to enable NMI (required by Image BBS)
+            acia.init(basecfg & 0xFFFE, basecfg & 1, aciaQueue, aciaQueue, aciaTxBuffer);
             current_iobase = basecfg & 0xFFFE;
         }
     } else {
+        // Direct init: base & 1 defines IRQ (0) or NMI (1)
         acia.init(base & 0xFFFE, base & 1, aciaQueue, aciaQueue, aciaTxBuffer);
         current_iobase = base & 0xFFFE;
     }
