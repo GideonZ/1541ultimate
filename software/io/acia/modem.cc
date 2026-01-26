@@ -152,12 +152,16 @@ void Modem :: listenerTask(void *a)
 }
 
 // Helper function to print ACIA status bits: [IRQ|DSR|DCD|TDRE|RDRF|OVRN|FE|PE]
-void print_acia_status_bits(uint8_t status, int rx_space, uint8_t command) {
+void print_acia_status_bits(uint8_t status, int rx_space, uint8_t command, uint8_t handshake) {
     printf("STAT:[");
     for (int i = 7; i >= 0; i--) {
         printf("%d", (status >> i) & 1);
     }
-    printf("] RXSpace:%d CMD:%02X\n", rx_space, command);
+    printf("] COMMAND: [");
+    for (int i = 7; i >= 0; i--) {
+        printf("%d", (command >> i) & 1);
+    }
+    printf("] RXSpace:%d Handshake:%02X\n", rx_space, handshake);
 }
 
 void Modem :: RunRelay(int socket)
@@ -213,7 +217,7 @@ void Modem :: RunRelay(int socket)
                 
                 // LOG RX TO PC
                 // FIXED: Using acia.GetStatus() instead of regs->status
-                print_acia_status_bits(acia.GetStatus(), acia.GetRxSpace(), lastHandshake);
+                print_acia_status_bits(acia.GetStatus(), acia.GetRxSpace(), acia.GetCommand(), lastHandshake);
                 printf("RX [%d b]: ", to_copy);
                 for(int i = 0; i < to_copy; i++) {
                     uint8_t c = ((uint8_t*)dest)[i];
@@ -236,7 +240,7 @@ void Modem :: RunRelay(int socket)
                 
                 // LOG TX TO PC (Crucial for debugging the DEL key)
                 // FIXED: Using acia.GetStatus() instead of regs->status
-				print_acia_status_bits(acia.GetStatus(), acia.GetRxSpace(), lastHandshake);
+				print_acia_status_bits(acia.GetStatus(), acia.GetRxSpace(), acia.GetCommand(), lastHandshake);
                 printf("TX [%d b]: ", avail);
                 for(int i = 0; i < avail; i++) {
                     if (pnt[i] >= 32 && pnt[i] <= 126) printf("%c", pnt[i]);
@@ -918,12 +922,12 @@ void Modem :: reinit_acia(uint16_t base)
             acia.deinit();
             current_iobase = 0;
         } else {
-            acia.init(basecfg & 0x7fff, basecfg & 0x8000, aciaQueue, aciaQueue, aciaTxBuffer);
-            current_iobase = basecfg & 0x7fff;
+            acia.init(basecfg & 0xFFFE, base & 1, aciaQueue, aciaQueue, aciaTxBuffer);
+            current_iobase = basecfg & 0xFFFE;
         }
     } else {
-        acia.init(base & 0x7fff, base & 0x8000, aciaQueue, aciaQueue, aciaTxBuffer);
-        current_iobase = base & 0x7fff;
+        acia.init(base & 0xFFFE, base & 1, aciaQueue, aciaQueue, aciaTxBuffer);
+        current_iobase = base & 0xFFFE;
     }
 }
 

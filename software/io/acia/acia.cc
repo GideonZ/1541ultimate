@@ -99,7 +99,7 @@ int Acia :: SendToRx(uint8_t *data, int length)
 
 void Acia :: SetHS(uint8_t value)
 {
-    regs->handsh = value | 0x60; 
+    regs->handsh = value;
 }
 
 void Acia :: EnableRTSInRx(uint8_t value)
