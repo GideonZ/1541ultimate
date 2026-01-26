@@ -207,23 +207,55 @@ void Modem :: RunRelay(int socket)
             }
         }
 
-		if (tcp_buffer_valid > 0) {
-			int space = acia.GetRxSpace();
-			if (space > 0) {
-				// Zamiast kopiować wszystko na raz (to_copy), kopiujemy tylko 1 bajt
-				int to_copy = 1; 
-				volatile uint8_t *dest = acia.GetRxPointer();
-				memcpy((void *)dest, tcp_receive_buffer + tcp_buffer_offset, to_copy);
-				print_acia_status_bits(acia.GetStatus(), acia.GetRxSpace(), acia.GetCommand(), lastHandshake);
-				printf("RX [%d b]: ", to_copy);
-				acia.AdvanceRx(to_copy);
-				tcp_buffer_valid -= to_copy;
-				tcp_buffer_offset += to_copy;
+        // --- 1. NETWORK RECEIVE (RX: Internet -> C64) ---
+        if (!tcp_buffer_valid) {
+            ret = recv(socket, tcp_receive_buffer, 512, 0);
+            if (ret > 0) {
+                tcp_buffer_valid = ret;
+                tcp_buffer_offset = 0;
+            } else if(ret == 0) {
+                printf("Connection closed by server. Exiting.\n");
+                break;
+            }
+        }
 
-				// SZTUCZNE OPÓŹNIENIE (np. 1-2 ms), aby BBS zdążył obsłużyć NMI
-				vTaskDelay(pdMS_TO_TICKS(2)); 
-			}
-		}
+        // --- 2. DATA DELIVERY TO C64 (Strict 1-byte sync) ---
+        if (tcp_buffer_valid > 0) {
+            // Check if the FPGA buffer is completely empty
+            if (acia.GetRxSpace() == 255) { 
+                int to_copy = 1; // Deliver exactly one byte
+                volatile uint8_t *dest = acia.GetRxPointer();
+                
+                // Move one byte from ARM buffer to FPGA RX RAM
+                memcpy((void *)dest, tcp_receive_buffer + tcp_buffer_offset, to_copy);
+                
+                // Debug logging using the new print function
+                print_acia_status_bits(acia.GetStatus(), acia.GetRxSpace(), acia.GetCommand(), lastHandshake);
+                printf("RX [DELIVERED TO FPGA]: %02X\n", tcp_receive_buffer[tcp_buffer_offset]);
+
+                // Advance head pointer to trigger NMI/IRQ on the C64
+                acia.AdvanceRx(to_copy);
+                
+                // Update pointers
+                tcp_buffer_valid -= to_copy;
+                tcp_buffer_offset += to_copy;
+
+                // Brief pause to let C64 handle the interrupt
+                vTaskDelay(pdMS_TO_TICKS(1)); 
+            } 
+            else {
+                // CRITICAL FIX: If the C64 hasn't pulled the byte yet, 
+                // we MUST yield CPU time to the system (Menu/UI) to prevent freezing.
+                vTaskDelay(pdMS_TO_TICKS(5)); 
+            }
+        }
+
+        // --- 3. GENERAL SYSTEM YIELD ---
+        // If there's no data moving in either direction, let the CPU breathe.
+        if (tcp_buffer_valid == 0 && aciaTxBuffer->AvailableData() == 0) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+
 
         // --- 2. FORWARD TO SERVER (TX: C64 -> Internet) ---
         if (!commandMode) {
