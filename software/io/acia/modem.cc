@@ -152,12 +152,12 @@ void Modem :: listenerTask(void *a)
 }
 
 // Helper function to print ACIA status bits: [IRQ|DSR|DCD|TDRE|RDRF|OVRN|FE|PE]
-void print_acia_status_bits(uint8_t status) {
+void print_acia_status_bits(uint8_t status, int rx_space, uint8_t command) {
     printf("STAT:[");
     for (int i = 7; i >= 0; i--) {
         printf("%d", (status >> i) & 1);
     }
-    printf("] ");
+    printf("] RXSpace:%d CMD:%02X\n", rx_space, command);
 }
 
 void Modem :: RunRelay(int socket)
@@ -213,7 +213,7 @@ void Modem :: RunRelay(int socket)
                 
                 // LOG RX TO PC
                 // FIXED: Using acia.GetStatus() instead of regs->status
-                print_acia_status_bits(acia.GetStatus());
+                print_acia_status_bits(acia.GetStatus(), acia.GetRxSpace(), 0);
                 printf("RX [%d b]: ", to_copy);
                 for(int i = 0; i < to_copy; i++) {
                     uint8_t c = ((uint8_t*)dest)[i];
@@ -236,7 +236,7 @@ void Modem :: RunRelay(int socket)
                 
                 // LOG TX TO PC (Crucial for debugging the DEL key)
                 // FIXED: Using acia.GetStatus() instead of regs->status
-                print_acia_status_bits(acia.GetStatus());
+				 print_acia_status_bits(acia.GetStatus(), acia.GetRxSpace(), 0);
                 printf("TX [%d b]: ", avail);
                 for(int i = 0; i < avail; i++) {
                     if (pnt[i] >= 32 && pnt[i] <= 126) printf("%c", pnt[i]);
@@ -875,7 +875,7 @@ void Modem :: RelayFileToSocket(const char *filename, int socket, const char *al
 
 void Modem :: effectuate_settings()
 {
-    int newPort;
+    int newPort = 0;
     sscanf(cfg->get_string(CFG_MODEM_LISTEN_PORT), "%d", &newPort);
 
     int base = acia_base[cfg->get_value(CFG_MODEM_ACIA)];
@@ -897,6 +897,8 @@ void Modem :: effectuate_settings()
     rtsMode = cfg->get_value(CFG_MODEM_RTS);
     SetHandshakes(false, false);
     listenerSocket->Start(newPort);
+	if (newPort > 0)
+        listenerSocket->Start(newPort);
 }
 
 void Modem :: reinit_acia(uint16_t base)
