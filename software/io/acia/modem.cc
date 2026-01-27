@@ -192,6 +192,11 @@ void Modem :: RunRelay(int socket)
 
     tcp_buffer_valid = 0;
     tcp_buffer_offset = 0;
+	
+	// Clear the FPGA RX buffer to make sure it's 100% empty (space = 255)
+    // and reset the network buffer valid count.
+    acia.AdvanceRx(acia.GetRxSpace() - 255); 
+    tcp_buffer_valid = 0; 
 
     while(keepConnection) {
         // --- 1. NETWORK RECEIVE (RX: Internet -> C64) ---
