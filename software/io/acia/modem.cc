@@ -226,39 +226,36 @@ void Modem :: RunRelay(int socket)
 			int current_space = acia.GetRxSpace();
 			
 			if (current_space == 255) { 
-				// Logic: Only deliver the next byte if the previous one was pulled by the C64.
-				// This emulates a single-register ACIA and prevents "Race Conditions".
+				// Logic: Prioritize hardware delivery before logging to minimize latency.
 				uint8_t byte_to_send = tcp_receive_buffer[tcp_buffer_offset];
 				volatile uint8_t *dest = acia.GetRxPointer();
 				
-				// DEBUG: Log byte and status BEFORE the C64 sees it
-				printf(">>> ACIA_IN: HEX[%02X] (Status Before: %02X, Cmd: %02X)\n", 
-					   byte_to_send, acia.GetStatus(), acia.GetCommand());
-
-				// Physical delivery to FPGA RX RAM
+				// 1. IMMEDIATE DELIVERY: Put byte into FPGA RAM and trigger NMI
 				memcpy((void *)dest, &byte_to_send, 1);
-				acia.AdvanceRx(1); // This triggers the NMI/IRQ line for the 6502
+				acia.AdvanceRx(1); 
 
-				// Move to the next byte in the network buffer
+				// 2. UPDATE POINTERS: Do this before any slow I/O operations
 				tcp_buffer_valid -= 1;
 				tcp_buffer_offset += 1;
+
+				// 3. LOGGING: Perform printf after the C64 has already been signaled.
+				// This ensures the slow debug output doesn't delay the hardware response.
+				printf(">>> ACIA_IN: HEX[%02X] (Status: %02X, Cmd: %02X)\n", 
+					   byte_to_send, acia.GetStatus(), acia.GetCommand());
 				
-				// Small delay to allow BBS to process the NMI
-				vTaskDelay(pdMS_TO_TICKS(2)); 
+				// Brief delay to allow BBS to exit its NMI handler
+				vTaskDelay(pdMS_TO_TICKS(1)); 
 			} else {
-				// BUFFERS NOT EMPTY: BBS is still processing the previous byte.
-				// We log a "Stall" if the BBS takes too long to read the register.
+				// C64 is still processing. Yield CPU to keep the Ultimate UI responsive.
 				static int wait_cycles = 0;
 				if (wait_cycles++ > 200) { 
 					printf("!!! ACIA_STALL: BBS not pulling HEX[%02X]. Space: %d, Status: %02X\n", 
 						   tcp_receive_buffer[tcp_buffer_offset], current_space, acia.GetStatus());
 					wait_cycles = 0;
 				}
-				// Yield CPU time to avoid freezing the Ultimate UI
 				vTaskDelay(pdMS_TO_TICKS(5)); 
 			}
 		}
-
 
         // --- 3. GENERAL SYSTEM YIELD ---
         // If there's no data moving in either direction, let the CPU breathe.
