@@ -220,48 +220,65 @@ void Modem :: RunRelay(int socket)
 			}
 		}
 
-		// --- 2. DATA DELIVERY (ARM Buffer -> FPGA / Commodore 64) ---
+		// --- 2. DATA DELIVERY & NMI MONITORING (ARM Buffer -> FPGA / Commodore 64) ---
 		if (tcp_buffer_valid > 0) {
-			// Get current hardware buffer space (255 means empty)
+			// Check if the FPGA hardware buffer is completely empty (255 = ready for next byte)
 			int current_space = acia.GetRxSpace();
 			
 			if (current_space == 255) { 
-				// Logic: Prioritize hardware delivery before logging to minimize latency.
+				// Logic: Only proceed if the C64 has pulled the previous byte.
+				// This ensures perfect synchronization and no lost interrupts.
 				uint8_t byte_to_send = tcp_receive_buffer[tcp_buffer_offset];
 				volatile uint8_t *dest = acia.GetRxPointer();
 				
-				// 1. IMMEDIATE DELIVERY: Put byte into FPGA RAM and trigger NMI
+				// 1. DELIVERY: Push byte to FPGA and trigger the hardware NMI line
 				memcpy((void *)dest, &byte_to_send, 1);
 				acia.AdvanceRx(1); 
 
-				// 2. UPDATE POINTERS: Do this before any slow I/O operations
+				// LOG: Start tracking this specific NMI trigger
+				printf(">>> NMI_TRIGGERED for HEX[%02X] (Status: %02X)\n", byte_to_send, acia.GetStatus());
+
+				// Update ARM-side pointers
 				tcp_buffer_valid -= 1;
 				tcp_buffer_offset += 1;
-
-				// 3. LOGGING: Perform printf after the C64 has already been signaled.
-				// This ensures the slow debug output doesn't delay the hardware response.
-				printf(">>> ACIA_IN: HEX[%02X] (Status: %02X, Cmd: %02X)\n", 
-					   byte_to_send, acia.GetStatus(), acia.GetCommand());
 				
-				// Brief delay to allow BBS to exit its NMI handler
-				vTaskDelay(pdMS_TO_TICKS(1)); 
+				// Give the 6502 CPU a small head start to jump into the NMI handler
+				vTaskDelay(pdMS_TO_TICKS(5)); 
 			} else {
-				// C64 is still processing. Yield CPU to keep the Ultimate UI responsive.
-				static int wait_cycles = 0;
-				if (wait_cycles++ > 200) { 
-					printf("!!! ACIA_STALL: BBS not pulling HEX[%02X]. Space: %d, Status: %02X\n", 
-						   tcp_receive_buffer[tcp_buffer_offset], current_space, acia.GetStatus());
-					wait_cycles = 0;
+				// NMI MONITORING: The C64 has not yet acknowledged the interrupt by reading $DE00.
+				// We use a stall counter to detect if the BBS is effectively "blind" to our NMI.
+				static int nmi_stall_timer = 0;
+				nmi_stall_timer++;
+
+				// If the stall persists for ~1 second (200 cycles * 5ms delay)
+				if (nmi_stall_timer > 200) { 
+					uint8_t current_stat = acia.GetStatus();
+					printf("!!! NMI_STALL DETECTED: C64 has not responded to NMI for 1s!\n");
+					printf("    Pending Byte: %02X | Status: %02X | Command: %02X\n", 
+						   tcp_receive_buffer[tcp_buffer_offset], current_stat, acia.GetCommand());
+					
+					// Analyze the status bit 7 (IRQ/NMI flag). 
+					// If it's 1 but Space is still 254, the BBS is definitely missing the signal.
+					nmi_stall_timer = 0;
 				}
+				if (nmi_stall_timer > 100) {
+					// QUICK HACK: Manually trigger the IRQ handler in C++ 
+					// to see if it forces any state change in FPGA
+					acia.IrqHandler(); 
+					nmi_stall_timer = 0;
+				}
+				// Yield CPU to the system to keep the Menu/UI responsive while waiting
 				vTaskDelay(pdMS_TO_TICKS(5)); 
 			}
 		}
 
-        // --- 3. GENERAL SYSTEM YIELD ---
-        // If there's no data moving in either direction, let the CPU breathe.
-        if (tcp_buffer_valid == 0 && aciaTxBuffer->AvailableData() == 0) {
-            vTaskDelay(pdMS_TO_TICKS(10));
-        }
+		// --- 3. BACKPRESSURE PROTECTION ---
+		// If the C64 stops reading, the ARM buffer will naturally fill up, 
+		// and the TCP stack will stop receiving more data (Flow Control).
+		if (tcp_buffer_valid == 0 && aciaTxBuffer->AvailableData() == 0) {
+			vTaskDelay(pdMS_TO_TICKS(10));
+		}
+
 
 
         // --- 2. FORWARD TO SERVER (TX: C64 -> Internet) ---
