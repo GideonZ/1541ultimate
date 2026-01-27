@@ -207,48 +207,58 @@ void Modem :: RunRelay(int socket)
             }
         }
 
-        // --- 1. NETWORK RECEIVE (RX: Internet -> C64) ---
-        if (!tcp_buffer_valid) {
-            ret = recv(socket, tcp_receive_buffer, 512, 0);
-            if (ret > 0) {
-                tcp_buffer_valid = ret;
-                tcp_buffer_offset = 0;
-            } else if(ret == 0) {
-                printf("Connection closed by server. Exiting.\n");
-                break;
-            }
-        }
+		// --- 1. NETWORK RECEIVE (Data from Internet -> ARM Buffer) ---
+		if (!tcp_buffer_valid) {
+			// Attempt to read new data from the TCP socket
+			ret = recv(socket, tcp_receive_buffer, 512, 0);
+			if (ret > 0) {
+				tcp_buffer_valid = ret;
+				tcp_buffer_offset = 0;
+			} else if(ret == 0) {
+				printf("Connection closed by remote host.\n");
+				break;
+			}
+		}
 
-        // --- 2. DATA DELIVERY TO C64 (Strict 1-byte sync) ---
-        if (tcp_buffer_valid > 0) {
-            // Check if the FPGA buffer is completely empty
-            if (acia.GetRxSpace() == 255) { 
-                int to_copy = 1; // Deliver exactly one byte
-                volatile uint8_t *dest = acia.GetRxPointer();
-                
-                // Move one byte from ARM buffer to FPGA RX RAM
-                memcpy((void *)dest, tcp_receive_buffer + tcp_buffer_offset, to_copy);
-                
-                // Debug logging using the new print function
-                print_acia_status_bits(acia.GetStatus(), acia.GetRxSpace(), acia.GetCommand(), lastHandshake);
-                printf("RX [DELIVERED TO FPGA]: %02X\n", tcp_receive_buffer[tcp_buffer_offset]);
+		// --- 2. DATA DELIVERY (ARM Buffer -> FPGA / Commodore 64) ---
+		if (tcp_buffer_valid > 0) {
+			// Get current hardware buffer space (255 means empty)
+			int current_space = acia.GetRxSpace();
+			
+			if (current_space == 255) { 
+				// Logic: Only deliver the next byte if the previous one was pulled by the C64.
+				// This emulates a single-register ACIA and prevents "Race Conditions".
+				uint8_t byte_to_send = tcp_receive_buffer[tcp_buffer_offset];
+				volatile uint8_t *dest = acia.GetRxPointer();
+				
+				// DEBUG: Log byte and status BEFORE the C64 sees it
+				printf(">>> ACIA_IN: HEX[%02X] (Status Before: %02X, Cmd: %02X)\n", 
+					   byte_to_send, acia.GetStatus(), acia.GetCommand());
 
-                // Advance head pointer to trigger NMI/IRQ on the C64
-                acia.AdvanceRx(to_copy);
-                
-                // Update pointers
-                tcp_buffer_valid -= to_copy;
-                tcp_buffer_offset += to_copy;
+				// Physical delivery to FPGA RX RAM
+				memcpy((void *)dest, &byte_to_send, 1);
+				acia.AdvanceRx(1); // This triggers the NMI/IRQ line for the 6502
 
-                // Brief pause to let C64 handle the interrupt
-                vTaskDelay(pdMS_TO_TICKS(1)); 
-            } 
-            else {
-                // CRITICAL FIX: If the C64 hasn't pulled the byte yet, 
-                // we MUST yield CPU time to the system (Menu/UI) to prevent freezing.
-                vTaskDelay(pdMS_TO_TICKS(5)); 
-            }
-        }
+				// Move to the next byte in the network buffer
+				tcp_buffer_valid -= 1;
+				tcp_buffer_offset += 1;
+				
+				// Small delay to allow BBS to process the NMI
+				vTaskDelay(pdMS_TO_TICKS(2)); 
+			} else {
+				// BUFFERS NOT EMPTY: BBS is still processing the previous byte.
+				// We log a "Stall" if the BBS takes too long to read the register.
+				static int wait_cycles = 0;
+				if (wait_cycles++ > 200) { 
+					printf("!!! ACIA_STALL: BBS not pulling HEX[%02X]. Space: %d, Status: %02X\n", 
+						   tcp_receive_buffer[tcp_buffer_offset], current_space, acia.GetStatus());
+					wait_cycles = 0;
+				}
+				// Yield CPU time to avoid freezing the Ultimate UI
+				vTaskDelay(pdMS_TO_TICKS(5)); 
+			}
+		}
+
 
         // --- 3. GENERAL SYSTEM YIELD ---
         // If there's no data moving in either direction, let the CPU breathe.
