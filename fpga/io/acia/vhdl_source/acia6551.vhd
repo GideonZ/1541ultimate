@@ -137,8 +137,8 @@ begin
     --  1   1   1  |  1 <- second 4 bytes (8 bytes when turbo_en = 1)
  
     slot_resp.reg_output <= enable and (turbo_en or not slot_req.bus_address(2)) when slot_req.bus_address(8 downto 3) = slot_base else '0';
-    slot_resp.irq  <= enable and irq and not nmi_selected;
-    slot_resp.nmi  <= enable and irq and nmi_selected;
+    slot_resp.irq  <= irq and not nmi_selected;
+    slot_resp.nmi  <= irq and nmi_selected;
 
     rts       <= '0' when tx_mode = "00" else '1';
 
@@ -344,7 +344,11 @@ begin
             if (dtr /= dtr_d) then
                 dtr_change <= '1';
             end if;
-            
+            if enable = '0' then
+                irq <= '0';
+            end if;
+
+
             if reset = '1' then
                 command <= X"02";
                 control <= X"00";
