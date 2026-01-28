@@ -11,6 +11,8 @@
 #include "u64.h"
 #include "init_function.h"
 
+#define SID_TIMEOUT_VALUE 600
+
 const char *fixed_colors[] = {
     "Red",
     "Scarlet",
@@ -59,6 +61,7 @@ static const char *sidsel[] = { "UltiSID1-A", "UltiSID1-B", "UltiSID1-C", "UltiS
 static struct t_cfg_definition cfg_definition[] = {
 //    { CFG_LED_TYPE,             CFG_TYPE_ENUM,  "LedStrip Type",                "%s", types,        0,  1,  1  },
     { CFG_LED_MODE,             CFG_TYPE_ENUM,  "LedStrip Mode",                "%s", modes,        0,  6,  6  },
+    { CFG_LED_AUTOSID,          CFG_TYPE_ENUM,  "LedStrip Auto SID Mode",       "%s", en_dis,       0,  1,  1  },
     { CFG_LED_PATTERN,          CFG_TYPE_ENUM,  "LedStrip Pattern",             "%s", patterns,     0,  4,  0  },
     { CFG_LED_SIDSELECT,        CFG_TYPE_ENUM,  "LedStrip SID Select",          "%s", sidsel,       0,  7,  0  },
     { CFG_LED_INTENSITY,        CFG_TYPE_VALUE, "Strip Intensity",              "%d", NULL,         0, 31, 25  },
@@ -142,6 +145,7 @@ LedStrip :: LedStrip()
 
     //cfg->set_change_hook(CFG_LED_TYPE,      LedStrip :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_PATTERN,   LedStrip :: hot_effectuate);
+    cfg->set_change_hook(CFG_LED_AUTOSID,     LedStrip :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_MODE,      LedStrip :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_INTENSITY, LedStrip :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_FIXED_COLOR, LedStrip :: hot_effectuate);
@@ -343,6 +347,8 @@ void LedStrip :: run(void)
     int rnd, lfsr = 12364738;
     uint8_t spp = 0x00, spr = 0xFF, spg = 0, spb = 0;
     uint8_t v1, v2, v3;
+    int v_total;
+    int sid_timeout = 0;
 
     RGB fixed;
     static uint8_t backup[252];
@@ -357,6 +363,8 @@ void LedStrip :: run(void)
         v1 = C64_VOICE_ADSR(sidsel * 4 + 0);
         v2 = C64_VOICE_ADSR(sidsel * 4 + 1);
         v3 = C64_VOICE_ADSR(sidsel * 4 + 2);
+        v_total = v1 + v2 + v3;
+        LEDSTRIP_INTENSITY = intensity << 2;
 
         switch (mode) {
         case e_led_off: // Off
@@ -368,6 +376,13 @@ void LedStrip :: run(void)
             LEDSTRIP_FROM = 0x00;
             LEDSTRIP_START = 0; // and go!
             vTaskDelay(200);
+
+            if (autosid && (v_total > 0)) {
+                sid_timeout = SID_TIMEOUT_VALUE;
+                ConfigurePattern();
+                mode = e_led_sid;
+            }
+
             U64_LEDSTRIP_EN = 0;
             break;
         case e_led_fixed: // Fixed Color
@@ -384,7 +399,13 @@ void LedStrip :: run(void)
             LEDSTRIP_DATA[1] = fixed.g;
             LEDSTRIP_DATA[2] = fixed.b;
             LEDSTRIP_FROM = 0x00;
-            LEDSTRIP_START = 0; // and go!
+            LEDSTRIP_START = 0;
+
+            if (autosid && v_total > 0) {
+                ConfigurePattern();
+                mode = e_led_sid;
+                sid_timeout = SID_TIMEOUT_VALUE;
+            }
             vTaskDelay(50);
             break;
         case e_led_sid: // SID Scroll 1 // shift new data in.
@@ -404,6 +425,22 @@ void LedStrip :: run(void)
                 offset -= 3;
             }
             LEDSTRIP_START = 0; // and go!
+
+            if (autosid) {
+                if (v_total == 0) {
+                    if (sid_timeout <= 0) {
+                        // switch back to selected mode
+                        effectuate_settings();
+                    } else {
+                        sid_timeout -= 3;
+                    }
+                } else {
+                    sid_timeout = SID_TIMEOUT_VALUE;
+                }
+            }
+
+
+
             vTaskDelay(3);
             break;
         case e_led_rainbow: // rainbow
@@ -538,6 +575,7 @@ void LedStrip :: effectuate_settings(void)
     hue       = cfg->get_value(CFG_LED_FIXED_COLOR);
     tint      = cfg->get_value(CFG_LED_FIXED_TINT);
     sidsel    = cfg->get_value(CFG_LED_SIDSELECT);
+    autosid   = cfg->get_value(CFG_LED_AUTOSID);
     // protocol  = cfg->get_value(CFG_LED_TYPE) ? 0x80 : 0x00; // 0x80 = WS2812, 0x00 = APA102;
     protocol  = 1;
     pattern   = cfg->get_value(CFG_LED_PATTERN);
@@ -561,6 +599,19 @@ void LedStrip :: effectuate_settings(void)
             MapDirect();
             break;
         default:
+            ConfigurePattern();
+            break;
+    }
+    // if (protocol) {
+    //     LEDSTRIP_MAP_ENABLE = 0x80; // WS
+    // } else {
+    //     LEDSTRIP_MAP_ENABLE = 0x40; // APA
+    // }
+//    U64_PWM_DUTY = 0xC0;
+}
+
+void LedStrip :: ConfigurePattern(void)
+{
             switch(pattern) {
                 case 0: // default
                     MapSingleColor();
@@ -581,14 +632,6 @@ void LedStrip :: effectuate_settings(void)
                     MapDirect();
                     break;
             }
-            break;
-    }
-    // if (protocol) {
-    //     LEDSTRIP_MAP_ENABLE = 0x80; // WS
-    // } else {
-    //     LEDSTRIP_MAP_ENABLE = 0x40; // APA
-    // }
-//    U64_PWM_DUTY = 0xC0;
 }
 
 void LedStrip :: update_menu()
@@ -647,6 +690,7 @@ void LedStrip :: setup_config_menu(void)
         grp->append(ConfigItem::heading("Case Lights"));
     }
     grp->append(cfg->find_item(CFG_LED_MODE)->set_item_altname("Mode"));
+    grp->append(cfg->find_item(CFG_LED_AUTOSID)->set_item_altname("Music Detect"));
     grp->append(cfg->find_item(CFG_LED_PATTERN)->set_item_altname("Pattern"));
     grp->append(cfg->find_item(CFG_LED_INTENSITY)->set_item_altname("Brightness"));
     grp->append(cfg->find_item(CFG_LED_FIXED_COLOR)->set_item_altname("Color"));
