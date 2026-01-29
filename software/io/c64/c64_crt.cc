@@ -2,7 +2,7 @@
 #include "dump_hex.h"
 #include "subsys.h"
 
-extern uint8_t _eapi_65_start;
+extern uint8_t _eapi_65_start[768];
 
 #define CRTHDR_HDRSIZE 0x10
 #define CRTHDR_TYPE    0x16
@@ -382,7 +382,7 @@ void C64_CRT::patch_easyflash_eapi()
         if (eapi[0] == 0x65 && eapi[1] == 0x61 && eapi[2] == 0x70 && eapi[3] == 0x69) {
             original_eapi = new uint8_t[768];
             memcpy(original_eapi, eapi, 768);
-            memcpy(eapi, &_eapi_65_start, 768);
+            memcpy(eapi, _eapi_65_start, 768);
             printf("EAPI successfully patched!\n");
         }
     }
