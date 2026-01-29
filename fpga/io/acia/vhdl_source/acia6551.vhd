@@ -344,7 +344,7 @@ begin
             if (dtr /= dtr_d) then
                 dtr_change <= '1';
             end if;
-            if enable = '0' then
+            if enable = '0' or dtr = '0' then
                 irq <= '0';
             end if;
 
