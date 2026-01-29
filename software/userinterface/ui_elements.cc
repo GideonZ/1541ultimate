@@ -361,18 +361,10 @@ UIChoiceBox :: UIChoiceBox(UserInterface *ui, const char *msg, const char **choi
     this->count = count;
     this->keyboard = NULL;
     this->current = 0;
-    this->color_fg = 15;
-    this->color_bg = 0;
-    this->color_sel_fg = 1;
-    this->color_sel_bg = 6;
 }
 
 void UIChoiceBox :: init()
 {
-    this->color_fg = get_ui()->color_fg;
-    this->color_bg = get_ui()->color_bg;
-    this->color_sel_fg = get_ui()->color_sel;
-    this->color_sel_bg = get_ui()->color_sel_bg;
     Screen *screen = get_ui()->get_screen();
     
     int rows = 2 + 2 + count;  // 2 lines for title + spacing, 2 more lines for the frame
@@ -392,7 +384,7 @@ void UIChoiceBox :: init()
     screen->backup();
     int y_offs = (screen->get_size_y() - rows - 2) >> 1;
     window = new Window(screen, (screen->get_size_x() - max_len - 2) >> 1, y_offs, max_len+2, rows);
-    window->set_color(color_fg);
+    window->set_color(get_ui()->color_fg);
     window->draw_border();
     redraw();
 }
@@ -400,19 +392,21 @@ void UIChoiceBox :: init()
 void UIChoiceBox :: redraw(void)
 {
     window->move_cursor(0, 0);
-    window->set_color(color_fg);
-    window->set_background(color_bg);
+    window->set_color(get_ui()->color_fg);
+    window->set_background(get_ui()->color_bg);
     window->output_line(message.c_str());
     window->move_cursor(0, 1);
     window->output_line("");
     for(int i=0; i < count; i++) {
         window->move_cursor(0, i+2);
         if(i == current) {
-            window->set_color(color_sel_fg);
-            window->set_background(color_sel_bg);
+            window->set_color(get_ui()->color_sel);
+            window->set_background(get_ui()->color_sel_bg);
+            window->reverse_mode(get_ui()->reverse_sel);
         } else {
-            window->set_color(color_fg);
-            window->set_background(color_bg);
+            window->set_color(get_ui()->color_fg);
+            window->set_background(get_ui()->color_bg);
+            window->reverse_mode(0);
         }
         window->output_line(choices[i]);
     }

@@ -138,7 +138,6 @@ private:
     int      current;
     Window  *window;
     Keyboard *keyboard;
-    int color_fg, color_bg, color_sel_fg, color_sel_bg;
 public:
     UIChoiceBox(UserInterface *ui, const char *msg, const char **choices, int count);
     ~UIChoiceBox() { }
