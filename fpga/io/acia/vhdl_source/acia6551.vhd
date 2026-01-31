@@ -93,7 +93,6 @@ architecture arch of acia6551 is
     
     signal cts              : std_logic; -- written by sys
     signal rts              : std_logic; -- written by slot (command register)
-    signal rts_disable       : std_logic; -- written by sys
 
     signal rx_head, rx_tail : unsigned(7 downto 0);
     signal tx_head, tx_tail : unsigned(7 downto 0);
@@ -152,7 +151,6 @@ begin
     begin
         if rising_edge(clock) then
             soft_reset <= '0';
-            dtr_d <= dtr;
             
             if tx_head + 1 = tx_tail then
                 tx_fifo_full <= '1';
@@ -170,7 +168,7 @@ begin
                 end if;
             end if;
 
-            if (rts = '0' and rts_disable = '0') or dtr = '0' then
+            if dtr = '0' then -- receiver disabled
                 rx_presc <= "111";
             elsif rate_tick = '1' and rx_presc /= 0 then
                 rx_presc <= rx_presc - 1;
@@ -185,7 +183,9 @@ begin
             b_address <= (others => 'X');
             b_wdata <= (others => 'X');
 
-            if tx_empty = '0' and cts = '1' and dtr = '1' and tx_fifo_full = '0' and tx_presc = "000" then
+            -- BlockRAM access
+            -- For transmit, CTS should be active
+            if tx_empty = '0' and cts = '1' and tx_fifo_full = '0' and tx_presc = "000" then
                 b_address <= '0' & tx_head;
                 b_wdata <= tx_data;
                 b_we <= '1';
@@ -193,10 +193,8 @@ begin
                 tx_head <= tx_head + 1;
                 tx_presc <= "111";
                 tx_empty <= '1';
-                if tx_mode = "01" then
-                    irq <= '1';
-                end if;
-            elsif rx_full = '0' and rx_head /= rx_tail and b_pending = '0' and rx_presc = "000" then
+            -- For receive, DTR should be active
+            elsif rx_full = '0' and dtr = '1' and rx_head /= rx_tail and b_pending = '0' and rx_presc = "000" then
                 b_address <= '1' & rx_tail;
                 b_en <= '1';
                 b_pending <= '1';
@@ -261,7 +259,6 @@ begin
                     cts   <= io_req_regs.data(0);
                     dsr_n <= not io_req_regs.data(2);
                     dcd_n <= not io_req_regs.data(4);
-                    rts_disable <= io_req_regs.data(5);
                 when c_reg_irq_source =>
                     if io_req_regs.data(3) = '1' then
                         control_change <= '0';
@@ -306,7 +303,6 @@ begin
                     io_resp_regs.data(2) <= not dsr_n;
                     io_resp_regs.data(3) <= dtr;
                     io_resp_regs.data(4) <= not dcd_n;
-                    io_resp_regs.data(5) <= rts_disable;
                 when c_reg_irq_source =>
                     io_resp_regs.data(1) <= appl_rx_irq;
                     io_resp_regs.data(2) <= appl_tx_irq;
@@ -333,21 +329,32 @@ begin
                 end if;
             end if;
 
+            dtr_d <= dtr;
             dsr_d <= dsr_n;
-            if (dsr_d /= dsr_n) then
-                irq <= '1';
-            end if;
             dcd_d <= dcd_n;
-            if (dcd_d /= dcd_n) then
-                irq <= '1';
-            end if;             
+
+            -- dtr change detect for application (drop on DTR low)
             if (dtr /= dtr_d) then
                 dtr_change <= '1';
             end if;
-            if enable = '0' or dtr = '0' then
-                irq <= '0';
+
+            -- interrupts can only be generated when DTR = 1
+            if dtr = '1' then
+                if (dsr_d /= dsr_n) then
+                    irq <= '1';
+                end if;
+                if (dcd_d /= dcd_n) then
+                    irq <= '1';
+                end if;             
+                if tx_mode = "01" and tx_empty = '0' then
+                    irq <= '1';
+                end if;
             end if;
 
+            -- when the ACIA is disabled (invisble in I/O range, IRQ is forced off)
+            if enable = '0' then
+                irq <= '0';
+            end if;
 
             if reset = '1' then
                 command <= X"02";
@@ -371,7 +378,6 @@ begin
                 slot_base <= (others => '0');
                 nmi_selected <= '1';
                 irq <= '0';
-                rts_disable <= '0';
                 turbo_en <= '0';
                 turbo_sp <= "00";
             end if;
@@ -435,3 +441,36 @@ begin
         b_we                    => b_we );
 
 end architecture;
+
+-- Conclusions from measurements:
+-- ------------------------------
+-- GENERAL
+-- =======
+-- - DCD change IRQ only happens when DTR is 1.
+-- - IRQ remains set, even when DTR is switched off.
+-- - IRQ can only be set when DTR is 1. This also applies to TxIRQ.
+
+-- TRANSMIT
+-- ========
+-- - The transmitter is never turned off (at least not with the DTR), unlike what the datasheet claims.
+-- - TxIRQ is not generated when DTR is off.
+-- - Sending a character with the TxIRQ disabled, does not disable the IRQ flag, only reading the status does.
+
+-- Thus:
+-- * TxEmpty => current status in bit 4
+-- * TxEmpty and TxIRQEnable and DTR='1' => Set IRQ bit (at all times, not only when TxEmpty _becomes_ 1)
+-- * Reading Status clears the IRQ, but it would immediately get set again when TxEmpty = 1
+
+-- RECEIVE
+-- =======
+-- Receive does not work when DTR is off. => bytes do not end up in data byte
+
+-- When RxIRQ is off at the moment that a char arrives, IRQ is not set, not even after IRQ enable is set afterwards. However, when RxIRQ was on while the char
+-- arrives, then the IRQ bit is set. The IRQ bit is cleared when the status byte is read
+-- eventhough the RxFull remains set until the data byte is read.
+-- Thus:
+-- * DTR = 0 => no RxEvent (receiver disabled)
+-- * RxEvent => Set RxFull (implies that DTR = 1)
+-- * RxEvent and RxIRQEnable => set IRQ
+-- * Read Status => clear IRQ
+-- * Read Data => clear RxFull

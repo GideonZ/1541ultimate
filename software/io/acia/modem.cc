@@ -72,7 +72,6 @@ struct t_cfg_definition modem_cfg[] = {
     { 0xFE,                    CFG_TYPE_SEP,    "Handshaking",                   "",   NULL,         0,  0, 0 },
     { CFG_MODEM_LISTEN_RING,   CFG_TYPE_ENUM,   "Do RING sequence (incoming)",   "%s", en_dis,       0,  1, 1 },
     { CFG_MODEM_DTRDROP,       CFG_TYPE_ENUM,   "Drop connection on DTR low",    "%s", en_dis,       0,  1, 1 },
-    { CFG_MODEM_RTS,           CFG_TYPE_ENUM,   "RTS Handshake (Rx)",            "%s", en_dis,       0,  1, 1 },
     { CFG_MODEM_CTS,           CFG_TYPE_ENUM,   "CTS Behavior",                  "%s", dcd_dsr,      0,  5, 0 },
     { CFG_MODEM_DCD,           CFG_TYPE_ENUM,   "DCD Behavior",                  "%s", dcd_dsr,      0,  5, 0 },
     { CFG_MODEM_DSR,           CFG_TYPE_ENUM,   "DSR Behavior",                  "%s", dcd_dsr,      0,  5, 1 },
@@ -438,12 +437,6 @@ void Modem :: SetHandshakes(bool connected, bool connecting)
         break;
     }
 
-    if (rtsMode) {
-        handshakes &= ~ACIA_HANDSH_RTSDIS;
-    } else {
-        handshakes |= ACIA_HANDSH_RTSDIS;
-    }
-
     AciaMessage_t setHS = { ACIA_MSG_SETHS, 0, 0 };
     setHS.smallValue = handshakes;
     xQueueSend(aciaQueue, &setHS, portMAX_DELAY);
@@ -743,7 +736,6 @@ int Modem :: ReadRegister()
 void Modem :: ModemTask()
 {
     const int baudRates[]      = {   -1,  100,  150,  220, 269,   300,  600, 1200, 2400, 3600, 4800, 7200, 9600, 14400, 19200, 38400 };
-    const uint8_t rateValues[] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x82, 0x56, 0x41, 0x2B, 0x20, 0x16, 0x10, 0x08 };
 
     AciaMessage_t message;
     char outbuf[32];
@@ -757,7 +749,6 @@ void Modem :: ModemTask()
 
     // first time configuration
     cfg->effectuate();
-    acia.SetRxRate(rateValues[8]);
     SetHandshakes(false, false);
     baudRate = baudRates[8];
 
@@ -769,7 +760,6 @@ void Modem :: ModemTask()
             newRate = baudRates[message.smallValue & 0x0F];
             if (newRate != baudRate) {
                 printf("BAUD=%d\n", newRate);
-                acia.SetRxRate(rateValues[message.smallValue & 0x0F]);
                 baudRate = newRate;
             }
             break;
@@ -860,21 +850,24 @@ void Modem :: effectuate_settings()
     int base = acia_base[cfg->get_value(CFG_MODEM_ACIA)];
     if (!base) {
         acia.deinit();
-        current_iobase = 0;
     } else {
         if (cfg->get_value(CFG_MODEM_HARDWARE) == 1) {
             base |= 4; // set the hardware turbo enable bit (hacky hacky)
         }
-        acia.init(base & 0xFFFE, base & 1, aciaQueue, aciaQueue, aciaTxBuffer);
-        current_iobase = base & 0xFFFE;
     }
+    current_iobase = base & 0xFFFE;
 
     dropOnDTR = cfg->get_value(CFG_MODEM_DTRDROP);
     ctsMode = cfg->get_value(CFG_MODEM_CTS);
     dsrMode = cfg->get_value(CFG_MODEM_DSR);
     dcdMode = cfg->get_value(CFG_MODEM_DCD);
-    rtsMode = cfg->get_value(CFG_MODEM_RTS);
     SetHandshakes(false, false);
+
+    // Turn on after the default handshakes have been set correctly
+    if (base) {
+        acia.init(base & 0xFFFE, base & 1, aciaQueue, aciaQueue, aciaTxBuffer);
+    }
+
     listenerSocket->Start(newPort);
 }
 

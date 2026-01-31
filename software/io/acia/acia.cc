@@ -102,15 +102,6 @@ void Acia :: SetHS(uint8_t value)
     regs->handsh = value;
 }
 
-void Acia :: EnableRTSInRx(uint8_t value)
-{
-    if (value) {
-        regs->handsh &= ~ACIA_HANDSH_RTSDIS;
-    } else {
-        regs->handsh |= ACIA_HANDSH_RTSDIS;
-    }
-}
-
 void Acia :: SetDCD(uint8_t value)
 {
     if (value) {
@@ -204,12 +195,6 @@ volatile uint8_t *Acia :: GetRxPointer(void)
 void Acia :: AdvanceRx(int adv)
 {
     regs->rx_head += adv;
-}
-
-void Acia :: SetRxRate(uint8_t value)
-{
-    // Warning: Write only register
-    regs->rx_rate = value;
 }
 
 void Acia :: GetHwMapping(uint8_t& enabled, uint16_t& address, uint8_t& nmi)
