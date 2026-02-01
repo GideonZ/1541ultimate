@@ -270,6 +270,8 @@ $(document).ready(async function () {
     $('#uppercaseBASIC').on('change', async function (event) {
         $("#basiceditor").toggleClass("uppercase", this.checked);  // change upper/lowercase display
     });
+    // browser may have cached the checkbox state on a page reload: synchronize the initially displayed state
+    $("#basiceditor").toggleClass("uppercase", $('#uppercaseBASIC').prop('checked'));
 
     // convenience: write memory - show error message when access fails
     async function writeMemory(param, errorMsg) {
@@ -845,6 +847,7 @@ $(document).ready(async function () {
 
     }, {
         checkArity: false,
+        processArguments: false,
         greetings: 'Ultimate 64 / II+ Remote Monitor\nhelp = list of commands\n'
     });
 
@@ -1492,7 +1495,7 @@ function disassembler(startInt, byteArray) {
             line-height: 1.5;
             width: 900px;
             height: 400px;
-            resize: none;
+            resize: both;
         }
 
 .trinity-dialog {
