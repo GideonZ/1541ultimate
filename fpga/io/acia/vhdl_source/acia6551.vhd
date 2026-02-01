@@ -53,8 +53,8 @@ architecture arch of acia6551 is
     signal tx_presc         : unsigned(2 downto 0) := "100";
 
     signal slot_base        : unsigned(8 downto 3) := (others => '0');
-    signal rx_data          : std_logic_vector(7 downto 0) := X"FF";
-    signal status           : std_logic_vector(7 downto 0) := X"04";
+    signal rx_data          : std_logic_vector(7 downto 0) := X"00";
+    signal status           : std_logic_vector(7 downto 0) := X"00";
     signal command          : std_logic_vector(7 downto 0);
     signal control          : std_logic_vector(7 downto 0);
 
@@ -357,15 +357,7 @@ begin
             end if;
 
             if reset = '1' then
-                command <= X"02";
-                control <= X"00";
-                rx_head <= X"00";
-                rx_tail <= X"00";
-                tx_head <= X"00";
-                tx_tail <= X"00";
-                tx_empty <= '1';
                 enable  <= '0';
-                b_pending <= '0';
                 cts <= '0';
                 dsr_n <= '1';
                 dcd_n <= '1';
@@ -381,8 +373,21 @@ begin
                 turbo_en <= '0';
                 turbo_sp <= "00";
             end if;
-            if soft_reset = '1' or c64_reset = '1' then
+            if c64_reset = '1' or reset = '1' then
+                command <= X"02";
+                control <= X"00";
+                rx_head <= X"00";
+                rx_tail <= X"00";
+                tx_head <= X"00";
+                tx_tail <= X"00";
+                tx_empty <= '1';
+                rx_full  <= '0';
+                b_pending <= '0';
+                irq <= '0';
+            end if;
+            if soft_reset = '1' then
                 command(4 downto 0) <= "00010";
+                overrun_err <= '0';
             end if;
         end if;
     end process;
