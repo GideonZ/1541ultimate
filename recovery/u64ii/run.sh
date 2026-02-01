@@ -1,14 +1,13 @@
 #!/bin/bash
 
-# Pfad zum Script-Verzeichnis ermitteln
+# get path to script directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
-# Prüfen, ob das venv existiert
+# check, that venv exists
 if [ ! -d "$SCRIPT_DIR/.venv" ]; then
     echo "Fehler: Virtual Environment nicht gefunden. Bitte zuerst ./install.sh ausführen."
     exit 1
 fi
 
-# Script mit dem Python-Interpreter aus dem venv starten
-# Ersetze 'main.py' durch dein tatsächliches Start-Script
+# start script from venv 
 $SCRIPT_DIR/.venv/bin/python3 $SCRIPT_DIR/recover.py "$@"
