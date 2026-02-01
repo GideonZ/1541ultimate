@@ -5,7 +5,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
 # check, that venv exists
 if [ ! -d "$SCRIPT_DIR/.venv" ]; then
-    echo "Fehler: Virtual Environment nicht gefunden. Bitte zuerst ./install.sh ausführen."
+    echo "Error: Virtual environment not found. Please execute ./install.sh first."
     exit 1
 fi
 

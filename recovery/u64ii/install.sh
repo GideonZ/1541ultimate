@@ -30,7 +30,7 @@ case "$OS_TYPE" in
         
         # udev rules 
         if [ -f "99-ft232h.rules" ]; then
-            echo -e "${YELLOW}Installiere udev Rules...${NC}"
+            echo -e "${YELLOW}Install udev Rules...${NC}"
             sudo cp 99-ft232h.rules /etc/udev/rules.d/
             sudo udevadm control --reload-rules
             sudo udevadm trigger
@@ -38,11 +38,11 @@ case "$OS_TYPE" in
         ;;
         
     "Darwin")
-        echo -e "${YELLOW}macOS erkannt. Check Homebrew dependencies...${NC}"
+        echo -e "${YELLOW}macOS detected. Check Homebrew dependencies...${NC}"
         if command -v brew &> /dev/null; then
             brew install libusb
         else
-            echo -e "${RED}Fehler: Homebrew not installed. Please visit https://brew.sh${NC}"
+            echo -e "${RED}Error: Homebrew not installed. Please visit https://brew.sh${NC}"
         fi
         ;;
 
