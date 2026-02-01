@@ -321,9 +321,9 @@ begin
             if b_pending = '1' then
                 if b_en = '0' then
                     rx_full <= '1';
-                    if rx_irq_disable = '0' then
-                        irq <= '1';
-                    end if;
+                    -- if rx_irq_disable = '0' then
+                    --     irq <= '1';
+                    -- end if;
                     rx_data <= b_rdata;
                     b_pending <= '0';
                 end if;
@@ -346,6 +346,9 @@ begin
                 if (dcd_d /= dcd_n) then
                     irq <= '1';
                 end if;             
+                if rx_full = '1' and rx_irq_disable = '0' then
+                    irq <= '1';
+                end if;
                 if tx_mode = "01" and tx_empty = '0' then
                     irq <= '1';
                 end if;
