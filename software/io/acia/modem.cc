@@ -706,7 +706,7 @@ int Modem :: ExecuteCommand(ModemCommand_t *cmd)
 
     //ATA command does not return a response (except for CONNECT response)
     if(doesResponse)
-    	acia.SendToRx((uint8_t *)response, strlen(response));
+        acia.SendToRx((uint8_t *)response, strlen(response));
 
     return connectionStateChange;
 }
@@ -787,29 +787,29 @@ void Modem :: ModemTask()
             //acia.SendToRx((uint8_t *)outbuf, strlen(outbuf));
             break;
         case ACIA_MSG_TXDATA:
-            if (commandMode) {
+            {
                 len = aciaTxBuffer->Get(txbuf, 30);
-                if (echo) {
-                    acia.SendToRx(txbuf, len); // local echo
-                }
                 txbuf[len] = 0;
-                CollectCommand(&modemCommand, (char *)txbuf, len);
-                if (modemCommand.state == 3) {
-                    // Let's check if the modem is in a call
-                    if (xSemaphoreTake(connectionLock, 0) != pdTRUE) {
-                        if (xQueueSend(commandQueue, &modemCommand, 10) == pdFALSE) {
-                            acia.SendToRx((uint8_t *)"NAK\r", 4);
-                        }
-                    } else {
-                        // we were not in a call, release the semaphore that we got
-                        xSemaphoreGive(connectionLock);
-                        // Not in a call, we just execute the command right away
-                        ExecuteCommand(&modemCommand);
+                printf("B>%02X:%02X Spc:%d [%d] ", acia.GetStatus(), acia.GetCommand(), acia.GetRxSpace(), len);
+                if (commandMode) {
+                    if (echo) {
+                        acia.SendToRx(txbuf, len);
                     }
-                    modemCommand.state = 0;
-                    modemCommand.length = 0;
+                    CollectCommand(&modemCommand, (char *)txbuf, len);
+                    if (modemCommand.state == 3) {
+                        if (xSemaphoreTake(connectionLock, 0) != pdTRUE) {
+                            if (xQueueSend(commandQueue, &modemCommand, 10) == pdFALSE) {
+                                acia.SendToRx((uint8_t *)"NAK\r", 4);
+                            }
+                        } else {
+                            xSemaphoreGive(connectionLock);
+                            ExecuteCommand(&modemCommand);
+                        }
+                        modemCommand.state = 0;
+                        modemCommand.length = 0;
+                    }
                 }
-            } // else: relay thread will take the data and send it to the socket
+            }
             break;
         }
     }
