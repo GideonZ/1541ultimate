@@ -49,11 +49,12 @@ architecture arch of acia6551 is
 
     signal rate_counter     : integer range 0 to 131071; -- only 5 chars per second!
     signal rate_tick        : std_logic; -- 8x per byte
-    signal rx_presc         : unsigned(2 downto 0) := "100";
-    signal tx_presc         : unsigned(2 downto 0) := "100";
+    signal rx_presc         : unsigned(2 downto 0) := "000";
+    signal tx_presc         : unsigned(2 downto 0) := "000";
 
     signal slot_base        : unsigned(8 downto 3) := (others => '0');
     signal rx_data          : std_logic_vector(7 downto 0) := X"00";
+    signal rx_byte          : std_logic_vector(7 downto 0) := X"00";
     signal status           : std_logic_vector(7 downto 0) := X"00";
     signal command          : std_logic_vector(7 downto 0);
     signal control          : std_logic_vector(7 downto 0);
@@ -102,6 +103,8 @@ architecture arch of acia6551 is
     signal b_wdata          : std_logic_vector(7 downto 0);
     signal b_en, b_we       : std_logic;
     signal b_pending        : std_logic;
+    signal rx_pending       : std_logic;
+    signal tx_pending       : std_logic;
 
     signal io_req_regs      : t_io_req;
     signal io_resp_regs     : t_io_resp := c_io_resp_init;
@@ -168,9 +171,7 @@ begin
                 end if;
             end if;
 
-            if dtr = '0' then -- receiver disabled
-                rx_presc <= "111";
-            elsif rate_tick = '1' and rx_presc /= 0 then
+            if rate_tick = '1' and rx_presc /= 0 then
                 rx_presc <= rx_presc - 1;
             end if;
 
@@ -190,16 +191,45 @@ begin
                 b_wdata <= tx_data;
                 b_we <= '1';
                 b_en <= '1';
-                tx_head <= tx_head + 1;
+                tx_pending <= '1';
                 tx_presc <= "111";
-                tx_empty <= '1';
             -- For receive, DTR should be active
-            elsif rx_full = '0' and dtr = '1' and rx_head /= rx_tail and b_pending = '0' and rx_presc = "000" then
+            elsif dtr = '1' and rx_head /= rx_tail and b_pending = '0' and rx_presc = "000" then
                 b_address <= '1' & rx_tail;
                 b_en <= '1';
                 b_pending <= '1';
                 rx_tail <= rx_tail + 1;
                 rx_presc <= "111";
+                rx_pending <= '1';
+            end if;
+
+            -- first cycle b_en = 1 and b_pending = 1
+            -- then b_en = 0 and b_pending is still = 1. In this cycle RAM result is available.
+            if b_pending = '1' and b_en = '0' then
+                rx_byte <= b_rdata;
+                b_pending <= '0';
+            end if;
+
+            if rx_pending = '1' and rx_presc = "001" and rate_tick = '1' then
+                rx_pending <= '0';
+                rx_data <= rx_byte;
+                rx_full <= '1';
+                if rx_irq_disable = '0' then
+                    irq <= '1';
+                end if;
+            end if;
+
+            -- Update head pointer at the end of the transmit, so that the IRQ to the software is late
+            if tx_pending = '1' then
+                if tx_presc = "110" and rate_tick = '1' then -- byte now in transmission
+                    tx_empty <= '1';
+                    if tx_mode = "01" and dtr = '1' then
+                        irq <= '1';
+                    end if;
+                elsif tx_presc = "001" and rate_tick = '1' then -- byte transmitted
+                    tx_pending <= '0';
+                    tx_head <= tx_head + 1;
+                end if;
             end if;
 
             if (slot_req.io_address(8 downto 3) = slot_base) and (enable = '1') then
@@ -308,26 +338,11 @@ begin
                     io_resp_regs.data(2) <= appl_tx_irq;
                     io_resp_regs.data(3) <= control_change;
                     io_resp_regs.data(4) <= dtr_change;
---                when c_reg_slot_base =>
---                    io_resp_regs.data(6 downto 0) <= std_logic_vector(slot_base);
---                    io_resp_regs.data(7) <= nmi_selected;
                 when others =>
                     null;
                 end case;
             end if;                     
 
-            -- first cycle b_en = 1 and b_pending = 1
-            -- then b_en = 0 and b_pending is still = 1. In this cycle RAM result is available.
-            if b_pending = '1' then
-                if b_en = '0' then
-                    rx_full <= '1';
-                    if rx_irq_disable = '0' then
-                        irq <= '1';
-                    end if;
-                    rx_data <= b_rdata;
-                    b_pending <= '0';
-                end if;
-            end if;
 
             dtr_d <= dtr;
             dsr_d <= dsr_n;
@@ -346,9 +361,6 @@ begin
                 if (dcd_d /= dcd_n) then
                     irq <= '1';
                 end if;             
-                if tx_mode = "01" and tx_empty = '0' then
-                    irq <= '1';
-                end if;
             end if;
 
             -- when the ACIA is disabled (invisble in I/O range, IRQ is forced off)
@@ -372,6 +384,8 @@ begin
                 irq <= '0';
                 turbo_en <= '0';
                 turbo_sp <= "00";
+                rx_pending <= '0';
+                tx_pending <= '0';
             end if;
             if c64_reset = '1' or reset = '1' then
                 command <= X"02";

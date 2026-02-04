@@ -96,7 +96,12 @@ begin
         
         procedure read_status_and_data(exp: boolean := false; expdata : std_logic_vector(7 downto 0) := X"00") is
         begin
-            slot_io_read(slot, c_addr_status_register, status);
+            L1: while true loop
+                slot_io_read(slot, c_addr_status_register, status);
+                if not exp or status(3) = '1' then
+                    exit L1;
+                end if;
+            end loop; 
             slot_io_read(slot, c_addr_data_register, data);
             report hstr(status) & ":" & hstr(data);
             if exp and status(3) = '0' then
@@ -125,7 +130,7 @@ begin
                 assert exp report "There is data, but you didn't expected any." severity error;
                 assert data = expdata report "Data is not as expected?" severity error;
             else
-                assert not exp report "There is no data, but you did expect some!" severity error;
+                assert not exp report "There is no data, but you did expect some! " & hstr(expdata) severity error;
             end if;
         end procedure;
 
@@ -152,6 +157,7 @@ begin
         
         -- Enable and pass some bytes to the RX of the Host
         io_write(io, c_reg_enable, X"19" ); -- enable IRQ on DTR change and control write
+
         io_write(io, X"A00", X"47");
         io_write(io, X"A01", X"69");
         io_write(io, X"A02", X"64");
@@ -165,19 +171,18 @@ begin
 
         -- Set DTR
         slot_io_write(slot, c_addr_command_register, X"03");
-        check_io_irq('1', X"12");  -- Checks and clears IRQ
-        check_io_irq('0');
-        
+
         -- set the virtual baud rate
         slot_io_write(slot, c_addr_control_register, X"1F"); -- 19200 baud (48000 with 5 MHz tick)
-        -- transferring 6 bytes should thus take about 6 / 4800 seconds = 1.25 ms
-        check_io_irq('1', X"0A");  -- Checks and clears IRQ (control write)
-        check_io_irq('0');
+        -- read back control register
         io_read(io, c_reg_control, status);
         assert status = X"1F" report "Control read register is different from what we wrote earlier." severity error;
-                
-        -- Now that DTR is set, reading the host status should show that there is data available
 
+        -- control and handshake have both changed
+        check_io_irq('1', X"1A");  -- Checks and clears IRQ
+        check_io_irq('0');
+
+        -- Now that DTR is set, reading the host status should show that there is data available
         st := now;
         read_status_and_data(true, X"47");
         read_status_and_data(true, X"69");
@@ -222,11 +227,15 @@ begin
         io_write(io, c_reg_enable, X"05"); -- enable Tx Interrupt
         assert io_irq = '0' report "IO IRQ should be zero now." severity error;
 
+        io_write(io, c_reg_handsh, X"01"); -- Set CTS
+
         -- Now the other way around  (from Host to Appl)
         tx_byte_polling(X"01");
         tx_byte_polling(X"02");
         tx_byte_polling(X"03");
         tx_byte_polling(X"04");
+
+        wait for 250 us; -- byte should be transmitted in full
 
         assert io_irq = '1' report "IO IRQ should be active now." severity error;
 
@@ -271,6 +280,8 @@ begin
         assert data(4) = '1' report "TxEmpty should be true." severity error;
         assert slot_resp.nmi = '0' report "NMI should now be inactive!" severity error;
         slot_io_write(slot, c_addr_command_register, X"03"); -- disable Tx IRQ again
+
+        wait for 250 us; -- byte should be transmitted in full
 
         read_tx(true, X"11");
         read_tx(true, X"12");
