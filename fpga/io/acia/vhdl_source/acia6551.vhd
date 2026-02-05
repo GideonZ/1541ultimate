@@ -194,7 +194,7 @@ begin
                 tx_pending <= '1';
                 tx_presc <= "111";
             -- For receive, DTR should be active
-            elsif dtr = '1' and rx_head /= rx_tail and b_pending = '0' and rx_presc = "000" then
+            elsif rx_full = '0' and dtr = '1' and rx_head /= rx_tail and b_pending = '0' and rx_presc = "000" then
                 b_address <= '1' & rx_tail;
                 b_en <= '1';
                 b_pending <= '1';
