@@ -129,6 +129,15 @@ void Acia :: SetCTS(uint8_t value)
     }
 }
 
+void Acia :: SetRxPushback(uint8_t value)
+{
+    if (value) {
+        regs->handsh |= ACIA_HANDSH_RXPB;
+    } else {
+        regs->handsh &= ~ACIA_HANDSH_RXPB;
+    }
+}
+
 uint8_t Acia :: IrqHandler(void)
 {
     uint8_t source = regs->irq_source;

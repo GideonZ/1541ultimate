@@ -49,7 +49,7 @@ architecture arch of acia6551 is
 
     signal rate_counter     : integer range 0 to 131071; -- only 5 chars per second!
     signal rate_tick        : std_logic; -- 8x per byte
-    signal rx_presc         : unsigned(6 downto 0) := "0000000";
+    signal rx_presc         : unsigned(2 downto 0) := "000";
     signal tx_presc         : unsigned(2 downto 0) := "000";
 
     signal slot_base        : unsigned(8 downto 3) := (others => '0');
@@ -170,7 +170,7 @@ begin
             end if;
 
             if dtr = '0' then
-                rx_presc <= "1111111";
+                rx_presc <= "111";
             elsif rate_tick = '1' and rx_presc /= 0 then
                 rx_presc <= rx_presc - 1;
             end if;
@@ -197,13 +197,13 @@ begin
                 if tx_mode = "01" then
                     irq <= '1';
                 end if;
-            elsif rx_head /= rx_tail and b_pending = '0' then -- there is data to be received
-                if (rx_presc <= "1111000" and rx_full = '0') or (rx_presc = 0) then 
+            elsif rx_head /= rx_tail and b_pending = '0' and rx_presc = 0 then -- there is data to be received, and byte timeout has passed
+                if rx_full = '0' or rx_pushback = '0' then 
                     b_address <= '1' & rx_tail;
                     b_en <= '1';
                     b_pending <= '1';
                     rx_tail <= rx_tail + 1;
-                    rx_presc <= "1111111";
+                    rx_presc <= "111";
                 end if;
             end if;
 

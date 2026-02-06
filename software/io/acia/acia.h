@@ -27,6 +27,7 @@ typedef struct _acia_t {
 #define ACIA_HANDSH_DSR    0x04
 #define ACIA_HANDSH_DTR    0x08 // Read Only
 #define ACIA_HANDSH_DCD    0x10
+#define ACIA_HANDSH_RXPB   0x40
 
 #define ACIA_IRQ_RX     0x02
 #define ACIA_IRQ_TX     0x04
@@ -160,7 +161,8 @@ public:
     void SetDCD(uint8_t value);
     void SetDSR(uint8_t value);
     void SetCTS(uint8_t value);
-
+    void SetRxPushback(uint8_t value);
+    
     // efficient transfers
     int      GetRxSpace(void);
     volatile uint8_t *GetRxPointer(void);

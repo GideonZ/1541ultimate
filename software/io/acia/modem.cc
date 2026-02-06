@@ -24,6 +24,7 @@
 #define CFG_MODEM_LOOPDELAY   0x0F
 #define CFG_MODEM_RTS         0x10
 #define CFG_MODEM_HARDWARE    0x11
+#define CFG_MODEM_RXPB        0x13
 
 #define RESP_OK				0
 #define RESP_CONNECT		1
@@ -75,6 +76,7 @@ struct t_cfg_definition modem_cfg[] = {
     { CFG_MODEM_CTS,           CFG_TYPE_ENUM,   "CTS Behavior",                  "%s", dcd_dsr,      0,  5, 0 },
     { CFG_MODEM_DCD,           CFG_TYPE_ENUM,   "DCD Behavior",                  "%s", dcd_dsr,      0,  5, 0 },
     { CFG_MODEM_DSR,           CFG_TYPE_ENUM,   "DSR Behavior",                  "%s", dcd_dsr,      0,  5, 1 },
+    { CFG_MODEM_RXPB,          CFG_TYPE_ENUM,   "Automatic Rx Pushback",         "%s", en_dis,       0,  1, 0 },
     { 0xFE,                    CFG_TYPE_SEP,    "",                              "",   NULL,         0,  0, 0 },
     { 0xFE,                    CFG_TYPE_SEP,    "Automated Responses",           "",   NULL,         0,  0, 0 },
     { CFG_MODEM_OFFLINEFILE,   CFG_TYPE_STRING, "Modem Offline Text",            "%s", NULL,         0, 30, (int)"/USB0/offline.txt" },
@@ -437,6 +439,10 @@ void Modem :: SetHandshakes(bool connected, bool connecting)
         break;
     }
 
+    if (pushbackMode) {
+        handshakes |= ACIA_HANDSH_RXPB;
+    }
+
     AciaMessage_t setHS = { ACIA_MSG_SETHS, 0, 0 };
     setHS.smallValue = handshakes;
     xQueueSend(aciaQueue, &setHS, portMAX_DELAY);
@@ -776,6 +782,7 @@ void Modem :: ModemTask()
 */
         case ACIA_MSG_SETHS:
             acia.SetHS(message.smallValue);
+            printf("Handshake bits set to %b\n", message.smallValue);
             break;
         case ACIA_MSG_HANDSH:
             //printf("HANDSH=%b\n", message.smallValue);
@@ -861,6 +868,8 @@ void Modem :: effectuate_settings()
     ctsMode = cfg->get_value(CFG_MODEM_CTS);
     dsrMode = cfg->get_value(CFG_MODEM_DSR);
     dcdMode = cfg->get_value(CFG_MODEM_DCD);
+    pushbackMode = cfg->get_value(CFG_MODEM_RXPB);
+
     SetHandshakes(false, false);
 
     // Turn on after the default handshakes have been set correctly
