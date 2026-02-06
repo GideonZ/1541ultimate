@@ -51,7 +51,7 @@ case "$OS_TYPE" in
         ;;
 esac
 
-# 3. Virtual environment & Python packets
+# 3. Virtual environment & Python packets (für alle gleich)
 echo -e "${GREEN}Setup Python virtual environment ...${NC}"
 python3 -m venv .venv
 source .venv/bin/activate

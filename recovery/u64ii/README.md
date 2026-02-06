@@ -7,9 +7,9 @@ In this context, a bricked board means that incorrect or faulty firmware has bee
 ## Preparation
 The following hardware and software are required:
 
-### Hardware
+### Hardware needed
 
-* PC / Laptop
+* PC / Laptop with Linux, Mac or Windows OS
 * FT232H-based USB JTAG programmer, e.g., Adafruit FT232H board
 * 5 female-to-female jumper wires
 * Philips PH2 screwdriver to open the C64
@@ -17,28 +17,71 @@ The following hardware and software are required:
 
 ![JTAG USB Programmer](./images/usb-jtag.JPG)
 
-### Software Installation
+### Software needed
 
-#### Linux
+
+
+## script based Software Installation
+
+The Software can be installed with a install script
+
+### Linux
 1. open terminal.
 2. run `./install.sh`
 3. attach USB JTAG device
 
-#### Windows
+### Windows
 1. run `install.bat` 
 2. attach USB JTAG device
 3. Download [Zadig](https://zadig.akeo.ie/) and change driver for FT232H to `libusb-win32`
 
-#### macOS
+### macOS
 1. Install libusb with Homebrew: `brew install libusb`
 2. execute `./install.sh`
 
+## manual Software Installation 
 
-### Hardware Installation
+A second way to install the needed Software can be done manually
+
+### Linux
+
+1. Open a terminal
+2. set up a virtual Python environment `python -m venv ./myenv`
+3. start the virtual environment `. myenv/bin/activate'
+4. install the needed libraries `pip install -r requirements.txt`
+5. using udev rules to detect the FTDI adapter and give access to the user:
+
+```
+sudo cp ./99-ft232h.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+sudo usermod -a -G plugdev $USER
+```
+
+### Windows
+
+1. Open a cmd window
+2. Create a virtual Python environment `python -m venv .venv`
+3. start the virtual environment `call .venv\Scripts\activate`
+4. install the needed libraries `pip install -r requirements.txt`
+5. attach USB JTAG device
+6. Download [Zadig](https://zadig.akeo.ie/) and change driver for FT232H to `libusb-win32`
+
+
+### macOS
+
+1. Install libusb with Homebrew: `brew install libusb`
+1. Open a terminal
+2. set up a virtual Python environment `python -m venv ./myenv`
+3. start the virtual environment `. myenv/bin/activate'
+4. install the needed libraries `pip install -r requirements.txt`
+
+
+## Hardware Installation
 
 The hardware requires some preparation and careful wiring. Errors can damage the board.
 
-#### JTAG USB board
+### JTAG USB board
 
 A word of warning: Stay away from cheap Chinese FT232H boards. Buy an Adafruit board instead. 
 
@@ -59,7 +102,7 @@ The connection between the USB JTAG adapter and the 64U board is made via the JT
 
 ![JTAG USB Connection](./images/c64u-jtag-connection.png)
 
-## Connecting the U64 Board
+### Connecting to the U64 Board
 
 Before connecting the jumper cables to the U64 board:
 
@@ -77,7 +120,7 @@ Use the starter script for your platform:
 
 The recover.py script is used to load the FPGA bitcode and the Ultimate Application into DRAM. The flash memory is not modified. After a power cycle, the board woud just restart with the program from the FLASH memory. 
 
-## Final steps
+### Final steps
 
 The 64U board should start now and display the Commodore BASIC start screen. 
 * Open the Ultimate menu 
