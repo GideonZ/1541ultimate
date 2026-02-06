@@ -73,6 +73,7 @@ struct t_cfg_definition modem_cfg[] = {
     { 0xFE,                    CFG_TYPE_SEP,    "Handshaking",                   "",   NULL,         0,  0, 0 },
     { CFG_MODEM_LISTEN_RING,   CFG_TYPE_ENUM,   "Do RING sequence (incoming)",   "%s", en_dis,       0,  1, 1 },
     { CFG_MODEM_DTRDROP,       CFG_TYPE_ENUM,   "Drop connection on DTR low",    "%s", en_dis,       0,  1, 1 },
+    { CFG_MODEM_RTS,           CFG_TYPE_ENUM,   "RTS Handshake (Rx)",            "%s", en_dis,       0,  1, 1 },
     { CFG_MODEM_CTS,           CFG_TYPE_ENUM,   "CTS Behavior",                  "%s", dcd_dsr,      0,  5, 0 },
     { CFG_MODEM_DCD,           CFG_TYPE_ENUM,   "DCD Behavior",                  "%s", dcd_dsr,      0,  5, 0 },
     { CFG_MODEM_DSR,           CFG_TYPE_ENUM,   "DSR Behavior",                  "%s", dcd_dsr,      0,  5, 1 },
@@ -437,6 +438,12 @@ void Modem :: SetHandshakes(bool connected, bool connecting)
         break;
     default:
         break;
+    }
+
+    if (rtsMode) {
+        handshakes &= ~ACIA_HANDSH_RTSDIS;
+    } else {
+        handshakes |= ACIA_HANDSH_RTSDIS;
     }
 
     if (pushbackMode) {
@@ -868,6 +875,7 @@ void Modem :: effectuate_settings()
     ctsMode = cfg->get_value(CFG_MODEM_CTS);
     dsrMode = cfg->get_value(CFG_MODEM_DSR);
     dcdMode = cfg->get_value(CFG_MODEM_DCD);
+    rtsMode = cfg->get_value(CFG_MODEM_RTS);
     pushbackMode = cfg->get_value(CFG_MODEM_RXPB);
 
     SetHandshakes(false, false);

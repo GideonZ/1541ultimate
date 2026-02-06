@@ -94,6 +94,7 @@ architecture arch of acia6551 is
     
     signal cts              : std_logic; -- written by sys
     signal rts              : std_logic; -- written by slot (command register)
+    signal rts_disable       : std_logic; -- written by sys
 
     signal rx_head, rx_tail : unsigned(7 downto 0);
     signal tx_head, tx_tail : unsigned(7 downto 0);
@@ -169,7 +170,7 @@ begin
                 end if;
             end if;
 
-            if dtr = '0' then
+            if (rts = '0' and rts_disable = '0') or dtr = '0' then
                 rx_presc <= "111";
             elsif rate_tick = '1' and rx_presc /= 0 then
                 rx_presc <= rx_presc - 1;
@@ -264,6 +265,7 @@ begin
                     cts   <= io_req_regs.data(0);
                     dsr_n <= not io_req_regs.data(2);
                     dcd_n <= not io_req_regs.data(4);
+                    rts_disable <= io_req_regs.data(5);
                     rx_pushback <= io_req_regs.data(6);
                 when c_reg_irq_source =>
                     if io_req_regs.data(3) = '1' then
@@ -309,6 +311,7 @@ begin
                     io_resp_regs.data(2) <= not dsr_n;
                     io_resp_regs.data(3) <= dtr;
                     io_resp_regs.data(4) <= not dcd_n;
+                    io_resp_regs.data(5) <= rts_disable;
                     io_resp_regs.data(6) <= rx_pushback;
                 when c_reg_irq_source =>
                     io_resp_regs.data(1) <= appl_rx_irq;
@@ -371,6 +374,7 @@ begin
                 slot_base <= (others => '0');
                 nmi_selected <= '1';
                 irq <= '0';
+                rts_disable <= '0';
                 turbo_en <= '0';
                 turbo_sp <= "00";
                 rx_pushback <= '1';
