@@ -90,7 +90,6 @@ architecture arch of acia6551 is
     signal hs_irq_en        : std_logic;
     signal control_change   : std_logic;
     signal dtr_change       : std_logic;
-    signal rx_pushback      : std_logic;
     
     signal cts              : std_logic; -- written by sys
     signal rts              : std_logic; -- written by slot (command register)
@@ -264,7 +263,6 @@ begin
                     cts   <= io_req_regs.data(0);
                     dsr_n <= not io_req_regs.data(2);
                     dcd_n <= not io_req_regs.data(4);
-                    rx_pushback <= io_req_regs.data(6);
                 when c_reg_irq_source =>
                     if io_req_regs.data(3) = '1' then
                         control_change <= '0';
@@ -309,7 +307,6 @@ begin
                     io_resp_regs.data(2) <= not dsr_n;
                     io_resp_regs.data(3) <= dtr;
                     io_resp_regs.data(4) <= not dcd_n;
-                    io_resp_regs.data(6) <= rx_pushback;
                 when c_reg_irq_source =>
                     io_resp_regs.data(1) <= appl_rx_irq;
                     io_resp_regs.data(2) <= appl_tx_irq;
@@ -373,7 +370,6 @@ begin
                 irq <= '0';
                 turbo_en <= '0';
                 turbo_sp <= "00";
-                rx_pushback <= '1';
             end if;
             if c64_reset = '1' or reset = '1' then
                 command <= X"02";
