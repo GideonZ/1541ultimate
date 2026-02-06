@@ -98,7 +98,7 @@ int Assembly :: connect_to_server(void)
     struct sockaddr_in serv_addr;
     char buffer[1024];
 
-    this->socket_fd = 0;
+    this->socket_fd = -1;
     InitReqMessage(&this->response);
     this->response.usedAsResponseFromServer = 1;
 
@@ -141,10 +141,10 @@ int Assembly :: connect_to_server(void)
 
 void Assembly :: close_connection(void)
 {
-    if(socket_fd) {
+    if(socket_fd >= 0) {
         close(socket_fd);
     }
-    socket_fd = 0;
+    socket_fd = -1;
 }
 
 JSON *Assembly :: get_presets(void)
@@ -161,7 +161,7 @@ JSON *Assembly :: get_presets(void)
     if (presets) {
         return presets;
     }
-    if (connect_to_server() > 0) {
+    if (connect_to_server() >= 0) {
         send(this->socket_fd, request, strlen(request), MSG_DONTWAIT);
         get_response(collect_in_buffer);
         close_connection();
@@ -188,7 +188,7 @@ JSON *Assembly :: send_query(const char *query)
         "Connection: close\r\n"
         "\r\n";
 
-    if (connect_to_server() > 0) {
+    if (connect_to_server() >= 0) {
         send(this->socket_fd, request.c_str(), request.length(), MSG_DONTWAIT);
         get_response(collect_in_buffer);
         close_connection();
@@ -240,7 +240,7 @@ JSON *Assembly :: request_entries(const char *id, int cat)
         "Connection: close\r\n"
         "\r\n";
 
-    if (connect_to_server() > 0) {
+    if (connect_to_server() >= 0) {
         send(this->socket_fd, request.c_str(), request.length(), MSG_DONTWAIT);
         get_response(collect_in_buffer);
         close_connection();
@@ -289,7 +289,7 @@ void Assembly :: request_binary(const char *path, const char *filename)
         "Connection: close\r\n"
         "\r\n";
 
-    if (connect_to_server() > 0) { // resets userContext to NULL
+    if (connect_to_server() >= 0) { // resets userContext to NULL
         send(this->socket_fd, request.c_str(), request.length(), MSG_DONTWAIT);
         get_response(write_to_temp);
         close_connection();

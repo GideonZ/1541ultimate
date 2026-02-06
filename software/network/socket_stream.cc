@@ -103,8 +103,9 @@ int SocketStream :: transmit(const char *buffer, int out_length)
 
 void SocketStream :: close()
 {
-	if(actual_socket > 0) {
+	if(actual_socket >= 0) {
 		shutdown(actual_socket, 2);
 		lwip_close(actual_socket);
+		actual_socket = -1;
 	}
 }
