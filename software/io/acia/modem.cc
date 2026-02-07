@@ -187,7 +187,7 @@ void Modem :: RunRelay(int socket)
         if (!tcp_buffer_valid) {
             ret = recv(socket, tcp_receive_buffer, 512, 0);
             if (ret > 0) {
-                //printf("[%d] TCP: %d\n", xTaskGetTickCount(), ret);
+                printf("TCP:%d ", ret);
                 tcp_buffer_valid = ret;
                 tcp_buffer_offset= 0;
             } else if(ret == 0) {
@@ -208,13 +208,13 @@ void Modem :: RunRelay(int socket)
                 if (tcp_buffer_valid > space) {
                     memcpy((void *)dest, tcp_receive_buffer + tcp_buffer_offset, space);
                     acia.AdvanceRx(space);
-                    //printf("[%d] Rx: Got=%d. Push:%d.\n", xTaskGetTickCount(), tcp_buffer_valid, space);
+                    printf("Rx:%d/%d ", tcp_buffer_valid, space);
                     tcp_buffer_valid -= space;
                     tcp_buffer_offset += space;
                 } else {
                     memcpy((void *)dest, tcp_receive_buffer + tcp_buffer_offset, tcp_buffer_valid);
                     acia.AdvanceRx(tcp_buffer_valid);
-                    //printf("[%d] Rx: Got=%d. Push: All.\n", xTaskGetTickCount(), tcp_buffer_valid);
+                    printf("Rx:All ");
                     tcp_buffer_valid = 0;
                 }
             }
@@ -251,7 +251,7 @@ void Modem :: RunRelay(int socket)
                     }
                 }
                 ret = send(socket, pnt, avail, 0);
-                //printf("[%d] Tx: Got=%d. Sent:%d\n", xTaskGetTickCount(), avail, ret);
+                printf("Tx:%d/%d ", avail, ret);
                 if (ret > 0) {
                     aciaTxBuffer->AdvanceReadPointer(ret);
                 } else if(ret < 0) {
@@ -719,7 +719,7 @@ int Modem :: ExecuteCommand(ModemCommand_t *cmd)
 
     //ATA command does not return a response (except for CONNECT response)
     if(doesResponse)
-    	acia.SendToRx((uint8_t *)response, strlen(response));
+        acia.SendToRx((uint8_t *)response, strlen(response));
 
     return connectionStateChange;
 }
@@ -767,7 +767,7 @@ void Modem :: ModemTask()
 
     while(1) {
         xQueueReceive(aciaQueue, &message, portMAX_DELAY);
-        //printf("Message type: %d. Value: %b. DataLen: %d Buffer: %d\n", message.messageType, message.smallValue, message.dataLength, aciaTxBuffer->AvailableData());
+        printf("MSG:%d V:%02X [S:%02X C:%02X]\n", message.messageType, message.smallValue, acia.GetStatus(), acia.GetCommand());
         switch(message.messageType) {
         case ACIA_MSG_CONTROL:
             newRate = baudRates[message.smallValue & 0x0F];
@@ -792,7 +792,7 @@ void Modem :: ModemTask()
             printf("Handshake bits set to %b\n", message.smallValue);
             break;
         case ACIA_MSG_HANDSH:
-            //printf("HANDSH=%b\n", message.smallValue);
+            printf("HANDSH=%b\n", message.smallValue);
             lastHandshake = message.smallValue;
             if (!(message.smallValue & ACIA_HANDSH_DTR) && dropOnDTR) {
                 keepConnection = false;
@@ -801,29 +801,29 @@ void Modem :: ModemTask()
             //acia.SendToRx((uint8_t *)outbuf, strlen(outbuf));
             break;
         case ACIA_MSG_TXDATA:
-            if (commandMode) {
+            {
                 len = aciaTxBuffer->Get(txbuf, 30);
-                if (echo) {
-                    acia.SendToRx(txbuf, len); // local echo
-                }
                 txbuf[len] = 0;
-                CollectCommand(&modemCommand, (char *)txbuf, len);
-                if (modemCommand.state == 3) {
-                    // Let's check if the modem is in a call
-                    if (xSemaphoreTake(connectionLock, 0) != pdTRUE) {
-                        if (xQueueSend(commandQueue, &modemCommand, 10) == pdFALSE) {
-                            acia.SendToRx((uint8_t *)"NAK\r", 4);
-                        }
-                    } else {
-                        // we were not in a call, release the semaphore that we got
-                        xSemaphoreGive(connectionLock);
-                        // Not in a call, we just execute the command right away
-                        ExecuteCommand(&modemCommand);
+                printf("B>%02X:%02X Spc:%d [%d] ", acia.GetStatus(), acia.GetCommand(), acia.GetRxSpace(), len);
+                if (commandMode) {
+                    if (echo) {
+                        acia.SendToRx(txbuf, len);
                     }
-                    modemCommand.state = 0;
-                    modemCommand.length = 0;
+                    CollectCommand(&modemCommand, (char *)txbuf, len);
+                    if (modemCommand.state == 3) {
+                        if (xSemaphoreTake(connectionLock, 0) != pdTRUE) {
+                            if (xQueueSend(commandQueue, &modemCommand, 10) == pdFALSE) {
+                                acia.SendToRx((uint8_t *)"NAK\r", 4);
+                            }
+                        } else {
+                            xSemaphoreGive(connectionLock);
+                            ExecuteCommand(&modemCommand);
+                        }
+                        modemCommand.state = 0;
+                        modemCommand.length = 0;
+                    }
                 }
-            } // else: relay thread will take the data and send it to the socket
+            }
             break;
         }
     }
