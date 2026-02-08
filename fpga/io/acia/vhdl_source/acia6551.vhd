@@ -49,12 +49,12 @@ architecture arch of acia6551 is
 
     signal rate_counter     : integer range 0 to 131071; -- only 5 chars per second!
     signal rate_tick        : std_logic; -- 8x per byte
-    signal rx_presc         : unsigned(2 downto 0) := "100";
-    signal tx_presc         : unsigned(2 downto 0) := "100";
+    signal rx_presc         : unsigned(2 downto 0) := "000";
+    signal tx_presc         : unsigned(2 downto 0) := "000";
 
     signal slot_base        : unsigned(8 downto 3) := (others => '0');
     signal rx_data          : std_logic_vector(7 downto 0) := X"FF";
-    signal status           : std_logic_vector(7 downto 0) := X"04";
+    signal status           : std_logic_vector(7 downto 0) := X"00";
     signal command          : std_logic_vector(7 downto 0);
     signal control          : std_logic_vector(7 downto 0);
 
@@ -90,9 +90,11 @@ architecture arch of acia6551 is
     signal hs_irq_en        : std_logic;
     signal control_change   : std_logic;
     signal dtr_change       : std_logic;
+    signal rx_pushback      : std_logic;
     
     signal cts              : std_logic; -- written by sys
     signal rts              : std_logic; -- written by slot (command register)
+    signal rts_disable       : std_logic; -- written by sys
 
     signal rx_head, rx_tail : unsigned(7 downto 0);
     signal tx_head, tx_tail : unsigned(7 downto 0);
@@ -168,7 +170,7 @@ begin
                 end if;
             end if;
 
-            if dtr = '0' then -- receiver disabled
+            if (rts = '0' and rts_disable = '0') or dtr = '0' then
                 rx_presc <= "111";
             elsif rate_tick = '1' and rx_presc /= 0 then
                 rx_presc <= rx_presc - 1;
@@ -193,13 +195,17 @@ begin
                 tx_head <= tx_head + 1;
                 tx_presc <= "111";
                 tx_empty <= '1';
-            -- For receive, DTR should be active
-            elsif rx_full = '0' and dtr = '1' and rx_head /= rx_tail and b_pending = '0' and rx_presc = "000" then
-                b_address <= '1' & rx_tail;
-                b_en <= '1';
-                b_pending <= '1';
-                rx_tail <= rx_tail + 1;
-                rx_presc <= "111";
+                if tx_mode = "01" then
+                    irq <= '1';
+                end if;
+            elsif rx_head /= rx_tail and b_pending = '0' and rx_presc = 0 then -- there is data to be received, and byte timeout has passed
+                if rx_full = '0' or rx_pushback = '0' then 
+                    b_address <= '1' & rx_tail;
+                    b_en <= '1';
+                    b_pending <= '1';
+                    rx_tail <= rx_tail + 1;
+                    rx_presc <= "111";
+                end if;
             end if;
 
             if (slot_req.io_address(8 downto 3) = slot_base) and (enable = '1') then
@@ -259,6 +265,8 @@ begin
                     cts   <= io_req_regs.data(0);
                     dsr_n <= not io_req_regs.data(2);
                     dcd_n <= not io_req_regs.data(4);
+                    rts_disable <= io_req_regs.data(5);
+                    rx_pushback <= io_req_regs.data(6);
                 when c_reg_irq_source =>
                     if io_req_regs.data(3) = '1' then
                         control_change <= '0';
@@ -303,14 +311,13 @@ begin
                     io_resp_regs.data(2) <= not dsr_n;
                     io_resp_regs.data(3) <= dtr;
                     io_resp_regs.data(4) <= not dcd_n;
+                    io_resp_regs.data(5) <= rts_disable;
+                    io_resp_regs.data(6) <= rx_pushback;
                 when c_reg_irq_source =>
                     io_resp_regs.data(1) <= appl_rx_irq;
                     io_resp_regs.data(2) <= appl_tx_irq;
                     io_resp_regs.data(3) <= control_change;
                     io_resp_regs.data(4) <= dtr_change;
---                when c_reg_slot_base =>
---                    io_resp_regs.data(6 downto 0) <= std_logic_vector(slot_base);
---                    io_resp_regs.data(7) <= nmi_selected;
                 when others =>
                     null;
                 end case;
@@ -321,9 +328,9 @@ begin
             if b_pending = '1' then
                 if b_en = '0' then
                     rx_full <= '1';
-                    -- if rx_irq_disable = '0' then
-                    --     irq <= '1';
-                    -- end if;
+                    if rx_irq_disable = '0' then
+                        irq <= '1';
+                    end if;
                     rx_data <= b_rdata;
                     b_pending <= '0';
                 end if;
@@ -345,12 +352,6 @@ begin
                 end if;
                 if (dcd_d /= dcd_n) then
                     irq <= '1';
-                end if;             
-                if rx_full = '1' and rx_irq_disable = '0' then
-                    irq <= '1';
-                end if;
-                if tx_mode = "01" and tx_empty = '0' then
-                    irq <= '1';
                 end if;
             end if;
 
@@ -360,15 +361,7 @@ begin
             end if;
 
             if reset = '1' then
-                command <= X"02";
-                control <= X"00";
-                rx_head <= X"00";
-                rx_tail <= X"00";
-                tx_head <= X"00";
-                tx_tail <= X"00";
-                tx_empty <= '1';
                 enable  <= '0';
-                b_pending <= '0';
                 cts <= '0';
                 dsr_n <= '1';
                 dcd_n <= '1';
@@ -381,11 +374,26 @@ begin
                 slot_base <= (others => '0');
                 nmi_selected <= '1';
                 irq <= '0';
+                rts_disable <= '0';
                 turbo_en <= '0';
                 turbo_sp <= "00";
+                rx_pushback <= '1';
             end if;
-            if soft_reset = '1' or c64_reset = '1' then
+            if c64_reset = '1' or reset = '1' then
+                command <= X"02";
+                control <= X"00";
+                rx_head <= X"00";
+                rx_tail <= X"00";
+                tx_head <= X"00";
+                tx_tail <= X"00";
+                tx_empty <= '1';
+                rx_full  <= '0';
+                b_pending <= '0';
+                irq <= '0';
+            end if;
+            if soft_reset = '1' then
                 command(4 downto 0) <= "00010";
+                overrun_err <= '0';
             end if;
         end if;
     end process;
