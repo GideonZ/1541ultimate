@@ -70,8 +70,9 @@ begin
                     when c_chargen_perform_sync =>
                         control_i.perform_sync <= io_req.data(0);
                     when c_chargen_transparency =>
-                        control_i.transparent <= io_req.data(3 downto 0);
-                        control_i.overlay_on  <= io_req.data(7);
+                        control_i.transparent  <= io_req.data(3 downto 0);
+                        control_i.own_keyboard <= io_req.data(6);
+                        control_i.overlay_on   <= io_req.data(7);
                     when others =>
                         null;
                 end case;

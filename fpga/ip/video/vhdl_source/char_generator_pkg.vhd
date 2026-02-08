@@ -28,6 +28,7 @@ package char_generator_pkg is
         pointer             : unsigned(14 downto 0);
         perform_sync        : std_logic;
         overlay_on          : std_logic;
+        own_keyboard        : std_logic;
         stretch_y           : std_logic;
         big_font            : std_logic;
         transparent         : std_logic_vector(3 downto 0);
@@ -44,6 +45,7 @@ package char_generator_pkg is
         pointer             => to_unsigned(0, 15),
         perform_sync        => '0',
         overlay_on          => '0',
+        own_keyboard        => '0',
         stretch_y           => '0',
         big_font            => '0',
         transparent         => X"5" );
@@ -59,6 +61,7 @@ package char_generator_pkg is
         y_on                => to_unsigned(46, 12),
         pointer             => to_unsigned(0, 15),
         overlay_on          => '0',
+        own_keyboard        => '0',
         stretch_y           => '0',
         perform_sync        => '0',
         big_font            => '0',
@@ -75,6 +78,7 @@ package char_generator_pkg is
         y_on                => to_unsigned(48, 12),
         pointer             => to_unsigned(0, 15),
         overlay_on          => '0',
+        own_keyboard        => '0',
         stretch_y           => '0',
         perform_sync        => '0',
         big_font            => '0',

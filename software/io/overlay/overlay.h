@@ -89,7 +89,7 @@ public:
     }
     
     void take_ownership(HostClient *h) {
-        overlay_regs->TRANSPARENCY = 0x80;
+        overlay_regs->TRANSPARENCY = 0xC0;
         enabled = true;
         //system_usb_keyboard.enableMatrix(false);
     }

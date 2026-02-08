@@ -29,6 +29,7 @@ port (
     reset           : in  std_logic;
     io_req          : in  t_io_req;
     io_resp         : out t_io_resp;
+    own_keyboard    : out std_logic;
     overlay_on      : out std_logic;
     overlay_ena     : in  std_logic;
 
@@ -66,6 +67,7 @@ architecture structural of char_generator_peripheral_12 is
 
 begin
     overlay_on <= control.overlay_on;
+    own_keyboard <= control.own_keyboard;
     
 	-- allocate 32K for character memory
 	-- allocate 32K for color memory
