@@ -3,10 +3,10 @@ echo Start installation for Windows...
 
 :: 1. Virtual Environment
 if not exist .venv (
-    echo Erstelle Virtual Environment...
+    echo Creating Virtual Environment...
     python -m venv .venv
 ) else (
-    echo Virtual Environment existiert bereits.
+    echo Virtual Environment already exists.
 )
 
 :: 2. install libraries
