@@ -230,9 +230,10 @@ $(document).ready(async function () {
     }
 
     // PRG/CRT(/SID) loader
-    async function submitRunner() {
-        let body = $('#runnerfile')[0].files[0];
-        let extension = getFileExtension(body.name);
+    async function submitRunner(file, drive) {
+        if (drive === undefined) drive = "a";
+        if (file === undefined) file = $('#runnerfile')[0].files[0];
+        let extension = getFileExtension(file.name);
         let params = {};
         $("#runmsg").hide();
 
@@ -243,14 +244,28 @@ $(document).ready(async function () {
             route = "/v1/runners:run_crt";
         else if (extension === "SID")
             route = "/v1/runners:sidplay";
+        else if (extension === "D64") {
+            route = `/v1/drives/${drive}:mount`;
+            params = {"type":"d64"};
+        }
+        else if (extension === "D71") {
+            route = `/v1/drives/${drive}:mount`;
+            params = {"type":"d71"};
+        }
+        else if (extension === "D81") {
+            route = `/v1/drives/${drive}:mount`;
+            params = {"type":"d81"};
+        }
         else
             alert("Unsupported file extension: '."+ extension.toLowerCase()+"'");
 
         if (route !== null) {
-            let [status_code, content] = await make_post_request("http://" + serverIP + route, params, body);
+            let [status_code, content] = await make_post_request("http://" + serverIP + route, params, file);
             if(status_code !== 200)
                 $("#runmsg").show();
-	}
+            return status_code == 200;
+        }
+        return false;
     }
 
     // BASIC/tokenizer page event handlers
@@ -1644,7 +1659,7 @@ function disassembler(startInt, byteArray) {
                 <br />
                 or press button to browse
                 <br /><br />
-                <input type="file" id="runnerfile" name="file" accept=".prg,.crt,.PRG,.CRT,.sid,.SID" title="Select PRG/CRT/SID file to be run">
+                <input type="file" id="runnerfile" name="file" accept=".prg,.crt,.sid,.d64,.d71,.d81,.PRG,.CRT,.SID,.D64,.D71,.D81" title="Select PRG/CRT/SID file to be run">
                 <br /><br />
                 <input type="button" id="runnersubmit" value="Run Again!" title="Upload and RUN the selected file again">
             </div>
