@@ -896,7 +896,7 @@ void Modem :: reinit_acia(uint16_t base)
             acia.deinit();
             current_iobase = 0;
         } else {
-            acia.init(basecfg & 0xFFFE, base & 1, aciaQueue, aciaQueue, aciaTxBuffer);
+            acia.init(basecfg & 0xFFFE, basecfg & 1, aciaQueue, aciaQueue, aciaTxBuffer);
             current_iobase = basecfg & 0xFFFE;
         }
     } else {
