@@ -455,9 +455,9 @@ void LedStrip :: run(void)
                 fixed = tint_with_white(fixed, soft_start);
                 soft_start -= 1; // should end with 0
             }
-            LEDSTRIP_DATA[0] = fixed.r;
-            LEDSTRIP_DATA[1] = fixed.g;
-            LEDSTRIP_DATA[2] = fixed.b;
+            LEDSTRIP_DATA[offset+0] = fixed.r;
+            LEDSTRIP_DATA[offset+1] = fixed.g;
+            LEDSTRIP_DATA[offset+2] = fixed.b;
             LEDSTRIP_FROM = offset;
             if (offset == 0) {
                 offset = 3*83;
@@ -483,9 +483,9 @@ void LedStrip :: run(void)
             backup[offset+1] = fixed.g;
             backup[offset+2] = fixed.b;
 
-            LEDSTRIP_DATA[0] = fixed.r;
-            LEDSTRIP_DATA[1] = fixed.g;
-            LEDSTRIP_DATA[2] = fixed.b;
+            LEDSTRIP_DATA[offset+0] = fixed.r;
+            LEDSTRIP_DATA[offset+1] = fixed.g;
+            LEDSTRIP_DATA[offset+2] = fixed.b;
 
             LEDSTRIP_FROM = offset;
             if (offset == 0) {
@@ -527,9 +527,9 @@ void LedStrip :: run(void)
             backup[offset+1] = fixed.g;
             backup[offset+2] = fixed.b;
 
-            LEDSTRIP_DATA[0] = fixed.r;
-            LEDSTRIP_DATA[1] = fixed.g;
-            LEDSTRIP_DATA[2] = fixed.b;
+            LEDSTRIP_DATA[offset+0] = fixed.r;
+            LEDSTRIP_DATA[offset+1] = fixed.g;
+            LEDSTRIP_DATA[offset+2] = fixed.b;
 
             LEDSTRIP_FROM = offset;
             if (offset == 0) {
