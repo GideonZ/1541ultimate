@@ -134,17 +134,26 @@ int AssemblySearch :: handle_key(int c)
             ((AssemblySearchForm *)state)->clear_entry();
             break;
         case KEY_SPACE: // space = select
+        	state->select_one();
+            break;
         case KEY_RETURN: // CR = select
-            if(state->level!=0)
-                state->into();
-            else
+            switch (state->level) {
+            case 0:
                 state->change();
+                break;
+            case 1:
+                state->into();
+                break;
+            case 2:
+                context(0);
+                break;
+            default:
+                break;
+            }
             break;
         case KEY_RIGHT: // right
             if(state->level!=0)
                 state->into();
-            else
-                state->increase();
             break;
         case '+':
             if(state->level==0)
