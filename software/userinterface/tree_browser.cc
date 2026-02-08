@@ -20,6 +20,7 @@
 
 #include "stream_textlog.h"
 extern StreamTextLog textLog; // the global log
+ClipBoard clipboard; // only one, and it's global and static
 
 int swap_joystick() __attribute__ ((weak));
 

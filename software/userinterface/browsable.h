@@ -59,10 +59,10 @@ public:
 		return 0;
 	}
 
-	void setSelection(bool s) { selected = s; }
-	bool getSelection() { return selected; }
-	bool isSelectable() { return selectable; }
-    void allowSelectable(bool b) { selectable = b; }
+    virtual void setSelection(bool s) { selected = s; }
+    virtual bool getSelection() { return selected; }
+    virtual bool isSelectable() { return selectable; }
+    virtual void allowSelectable(bool b) { selectable = b; }
 
     static int compare_alphabetically(IndexedList<Browsable *>*list, int a, int b)
     {

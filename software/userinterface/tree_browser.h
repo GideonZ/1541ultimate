@@ -70,7 +70,6 @@ public:
 
     TreeBrowserState *state_root;
     TreeBrowserState *state;
-    ClipBoard clipboard;
 
     // link to temporary popup
     ContextMenu *contextMenu; // anchor for menu that pops up
