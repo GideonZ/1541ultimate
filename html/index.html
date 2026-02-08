@@ -1538,8 +1538,10 @@ function disassembler(startInt, byteArray) {
 }
 .trinity-dialog header .title {
     margin-top: -2px;
-    background: var(--color);
+    background: rgb(160, 182, 247);
     padding: 1px 10px;
+    top: -6px;
+    left: -2px;
 }
 .trinity-dialog header {
     background: var(--color);
@@ -1669,14 +1671,13 @@ function disassembler(startInt, byteArray) {
 
         <div id="livemon" class="page">
             <h1>Live Monitor</h1>
-            <p>Below is a simple 6510 monitor attached to your U64 or UII+.</p>
+            <p>Remotely inspect and debug the 6510 CPU of your U64 or UII+.</p>
             <div id="terminal" class="trinity-dialog">
                 <header>
                     <ul>
                         <li><a href="#"></a></li>
-                        <li><a href="#"></a></li>
+                        <span class="title">Ultimate 64 Monitor</span>
                     </ul>
-                    <span class="title">Ultimate 64</span>
                 </header>
                 <div class="body"></div>
             </div>
