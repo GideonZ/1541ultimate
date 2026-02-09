@@ -278,12 +278,22 @@ $(document).ready(async function () {
         $("#basiceditor").toggleClass("uppercase", this.checked);  // change upper/lowercase display
     });
 
+    // Custom modal handler to clear the editor without browser interference
     $('#clearBASIC').click(function (event) {
         event.preventDefault(); // Prevents the default action of the button
-        if (confirm("Are you sure you want to clear the editor window?")) {
-            $("#basiceditor").val(""); // Clears the textarea content
-            showBASICerror("");        // Hides any existing error messages
-        }
+        $("#customModalOverlay").show(); // Shows the custom modal
+    });
+
+    // Action when "Yes" is clicked in the custom modal
+    $('#modalYes').click(function () {
+        $("#basiceditor").val(""); // Clears the textarea content
+        showBASICerror("");        // Hides any existing error messages
+        $("#customModalOverlay").hide(); // Hides the modal after clearing
+    });
+
+    // Action when "No" (Cancel) is clicked in the custom modal
+    $('#modalNo').click(function () {
+        $("#customModalOverlay").hide(); // Simply closes the modal without changes
     });
 
     // convenience: write memory - show error message when access fails
@@ -1776,6 +1786,46 @@ or your custom profile if modified.
             <div><b>Special characters: Tokenization codes (0x00 - 0xFF) for Basic</b></div>
             <div id="tableContainer"></div>
 
+        </div>
+    </div>
+    <style>
+        /* Małe, pływające okienko na środku ekranu */
+        #customModalOverlay {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%); /* Idealne centrowanie */
+            z-index: 1000;
+        }
+        #customModal {
+            background: #333; /* Ciemne tło pasujące do terminala */
+            color: #fff;      /* Biały tekst */
+            padding: 20px;
+            border: 2px solid #fff; /* Ramka retro */
+            border-radius: 5px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            font-family: sans-serif;
+        }
+        .modal-btns { margin-top: 15px; }
+        .modal-btns button {
+            padding: 5px 15px;
+            cursor: pointer;
+            margin: 0 5px;
+            background: #444;
+            color: white;
+            border: 1px solid #999;
+        }
+        .modal-btns button:hover { background: #666; }
+    </style>
+    <div id="customModalOverlay">
+        <div id="customModal">
+            <p>Are you sure you want to clear the editor window?</p>
+            <div class="modal-btns">
+                <button id="modalYes">Yes</button>
+                <button id="modalNo">No</button>
+            </div>
         </div>
     </div>
 </body>
