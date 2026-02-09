@@ -278,6 +278,14 @@ $(document).ready(async function () {
         $("#basiceditor").toggleClass("uppercase", this.checked);  // change upper/lowercase display
     });
 
+    $('#clearBASIC').click(function (event) {
+        event.preventDefault(); // Prevents the default action of the button
+        if (confirm("Are you sure you want to clear the editor window?")) {
+            $("#basiceditor").val(""); // Clears the textarea content
+            showBASICerror("");        // Hides any existing error messages
+        }
+    });
+
     // convenience: write memory - show error message when access fails
     async function writeMemory(param, errorMsg) {
         showBASICerror(""); // clear earlier errors
@@ -1758,6 +1766,7 @@ or your custom profile if modified.
                 <span class="padding-tr-5"><input type="button" id="submitBASICAndRun" value="Upload and Run"  title="Upload program to C64 memory and RUN"></span>
                 <span class="padding-tr-5"><input type="button" id="runBASIC" value="Run" title="Send RUN command to the C64"></span>
                 <span class="padding-tr-5"><input type="button" id="stopBASIC" value="Stop" title="Send STOP command to the C64"></span>
+                <span class="padding-tr-5"><input type="button" id="clearBASIC" value="Clear" title="Clear the editor content"></span>
                 <input type="checkbox" id="uppercaseBASIC"><label for="uppercaseBASIC" title="Toggle uppercase/lowercase display of BASIC program text">Uppercase</label>
             </div>
 
