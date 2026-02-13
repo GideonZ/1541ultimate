@@ -8,7 +8,7 @@ jobs:
     container:
       # Replace with your actual GHCR image path
       image: ghcr.io/gideonz/riscv:latest
-      # options: --user root
+      options: --user root
 
     steps:
       - name: Checkout Code
