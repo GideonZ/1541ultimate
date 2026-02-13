@@ -1,12 +1,17 @@
-name: Build
+name: Build_with_docker
 
 on: [push, pull_request]
 
 jobs:
   build:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
+    container:
+      # Replace with your actual GHCR image path
+      image: ghcr.io/${{ github.repository_owner }}/riscv:latest
+      # options: --user root
+
     steps:
-      - name: Checkout repository
+      - name: Checkout Code
         uses: actions/checkout@v4
         with:
           submodules: recursive
@@ -15,36 +20,10 @@ jobs:
       - name: Generate Version String
         run: echo "GIT_VERSION=$(git describe --tags --always)" >>$GITHUB_ENV
 
-      - name: Determine ESP32 dependencies
-        run: |
-          docker run --rm \
-          -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make esp_depends"
-
-      - name: Cache ESP32 Target
-        id: cache-esp32
-        uses: actions/cache@v4
-        with:
-            path: |
-                software/u64ctrl/build/u64ctrl.bin
-                software/u64ctrl/build/bootloader/bootloader.bin
-                software/u64ctrl/build/partition_table/partition-table.bin
-            key: ${{ runner.os }}-esp32-${{ hashFiles('software/esp_depends.txt') }}
-            restore-keys: |
-                ${{ runner.os }}-esp32-${{ hashFiles('software/esp_depends.txt') }}
-
-      - if: steps.cache-esp32.outputs.cache-hit != 'true'
-        name: Build ESP32 Software (skipped if available in cache)
-        run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
-          -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make esp32"
-
-      - name: Build U64-II Software
-        run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
-          -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64ii && mv update.ue2 update_${{ env.GIT_VERSION }}.ue2"
+      - name: Run Make Target
+        # This calls your entrypoint.sh, which sources the IDF 
+        # and then executes the make command.
+        run: make u64ii && mv update.ue2 update_${{ env.GIT_VERSION }}.ue2
 
       - name: Upload User Artifacts
         uses: actions/upload-artifact@v4
@@ -53,14 +32,66 @@ jobs:
           path: |
             update_${{ env.GIT_VERSION }}.ue2
 
-      - name: Upload Factory Artifacts U64II
-        uses: actions/upload-artifact@v4
-        with:
-          name: factory_package_U64e2_${{ env.GIT_VERSION }}
-          path: |
-            u64ii/bootloader.bin
-            u64ii/partition-table.bin
-            u64ii/u64ctrl.bin
-
-            u64ii/ultimate.app
-            u64ii/factorytest.bin
+#jobs:
+#  build:
+#    runs-on: self-hosted
+#    steps:
+#      - name: Checkout repository
+#        uses: actions/checkout@v4
+#        with:
+#          submodules: recursive
+#          fetch-depth: 0
+#
+#      - name: Generate Version String
+#        run: echo "GIT_VERSION=$(git describe --tags --always)" >>$GITHUB_ENV
+#
+#      - name: Determine ESP32 dependencies
+#        run: |
+#          docker run --rm \
+#          -v /opt/build-tools:/mnt/build-tools:ro \
+#          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make esp_depends"
+#
+#      - name: Cache ESP32 Target
+#        id: cache-esp32
+#        uses: actions/cache@v4
+#        with:
+#            path: |
+#                software/u64ctrl/build/u64ctrl.bin
+#                software/u64ctrl/build/bootloader/bootloader.bin
+#                software/u64ctrl/build/partition_table/partition-table.bin
+#            key: ${{ runner.os }}-esp32-${{ hashFiles('software/esp_depends.txt') }}
+#            restore-keys: |
+#                ${{ runner.os }}-esp32-${{ hashFiles('software/esp_depends.txt') }}
+#
+#      - if: steps.cache-esp32.outputs.cache-hit != 'true'
+#        name: Build ESP32 Software (skipped if available in cache)
+#        run: |
+#          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+#          -v /opt/build-tools:/mnt/build-tools:ro \
+#          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make esp32"
+#
+#      - name: Build U64-II Software
+#        run: |
+#          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+#          -v /opt/build-tools:/mnt/build-tools:ro \
+#          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64ii && mv update.ue2 update_${{ env.GIT_VERSION }}.ue2"
+#
+#      - name: Upload User Artifacts
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: update_package_${{ env.GIT_VERSION }}
+#          path: |
+#            update_${{ env.GIT_VERSION }}.ue2
+#
+#      - name: Upload Factory Artifacts U64II
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: factory_package_U64e2_${{ env.GIT_VERSION }}
+#          path: |
+#            u64ii/bootloader.bin
+#            u64ii/partition-table.bin
+#            u64ii/u64ctrl.bin
+#
+#            u64ii/ultimate.app
+#            u64ii/factorytest.bin
+#
