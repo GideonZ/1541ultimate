@@ -22,7 +22,7 @@ clean: esp32_clean
 	@rm -rf `find target -name result`
 	@rm -rf `find target -name output`
 
-u64ii:
+u64ii::
 	@mkdir -p u64ii
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/libs/riscv/lwip
