@@ -1,5 +1,0 @@
-PLL_Name	mem_io:i_mut|altpll:i_pll|altpll_dak3:auto_generated|pll1
-PLLJITTER	31
-PLLSPEmax	84
-PLLSPEmin	-53
-
