@@ -2,6 +2,9 @@
 CROSS	     = riscv32-unknown-elf-
 ELFTYPE      = elf32-littleriscv
 ARCHITECTURE = riscv
+# CPU architecture and ABI
+MARCH ?= rv32i
+MABI  ?= ilp32
 
 include ../../../common/environment.mk
 
