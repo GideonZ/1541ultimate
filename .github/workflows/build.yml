@@ -60,11 +60,11 @@ jobs:
       - name: Upload Factory Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: factory_package_U64e2_${{ env.GIT_VERSION }}
+          name: factory_package_c64u_${{ env.GIT_VERSION }}
           path: |
             u64ii/bootloader.bin
             u64ii/partition-table.bin
             u64ii/u64ctrl.bin
-
+            u64ii/u64_mk2_artix.bit
             u64ii/ultimate.app
             u64ii/factorytest.bin
