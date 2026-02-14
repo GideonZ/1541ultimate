@@ -14,7 +14,7 @@ esp32_u64ctrl_clean:
 esp_depends::
 	@cd software && python3 esp_depends.py >esp_depends.txt
 
-clean: esp32_clean
+clean:
 	@$(MAKE) -C tools clean
 	@rm -f ./update*.u2*
 	@rm -f ./update.u64
