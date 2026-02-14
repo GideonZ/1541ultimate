@@ -23,16 +23,21 @@ clean: esp32_clean
 	@rm -rf `find target -name output`
 
 u64ii::
-	@mkdir -p u64ii
+	@$(MAKE) -C tools
+	@$(MAKE) -C target/libs/riscv/lwip
+	@$(MAKE) -C target/u64ii/riscv/ultimate
+	@$(MAKE) -C target/u64ii/riscv/update
+	@cp target/u64ii/riscv/update/result/update.app ./update.ue2
+
+factory::
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u64ii/riscv/ultimate
 	@$(MAKE) -C target/u64ii/riscv/factorytest
-	@$(MAKE) -C target/u64ii/riscv/update
+	@mkdir -p u64ii
 	@cp target/u64ii/riscv/ultimate/result/ultimate.app u64ii
 	@cp target/u64ii/riscv/factorytest/result/factorytest.bin u64ii
 	@cp software/u64ctrl/build/bootloader/bootloader.bin u64ii
 	@cp software/u64ctrl/build/partition_table/partition-table.bin u64ii
 	@cp software/u64ctrl/build/u64ctrl.bin u64ii
 	@cp external/u64_mk2*.bit u64ii
-	@cp target/u64ii/riscv/update/result/update.app ./update.ue2

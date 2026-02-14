@@ -43,10 +43,11 @@ jobs:
             source "$IDF_PATH/export.sh"
             make esp32
 
-      - name: Run Make Target
+      - name: Run Make
         shell: bash
         run: |
             make u64ii && mv update.ue2 update_${{ env.GIT_VERSION }}.ue2
+            make factory
 
       - name: Upload User Artifacts
         uses: actions/upload-artifact@v4
