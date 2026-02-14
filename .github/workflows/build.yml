@@ -21,13 +21,16 @@ jobs:
         run: echo "GIT_VERSION=$(git describe --tags --always)" >>$GITHUB_ENV
 
       - name: Run Make Target
-        # This calls your entrypoint.sh, which sources the IDF 
-        # and then executes the make command.
+        shell: bash
         run: |
             id
+            echo $IDF_PATH
             ls -l /
+            echo "Home:"
             ls -l /home
+            echo "Source:"
             source "$IDF_PATH/export.sh"
+            echo "Make:"
             make u64ii && mv update.ue2 update_${{ env.GIT_VERSION }}.ue2
 
       - name: Upload User Artifacts
