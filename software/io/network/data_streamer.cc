@@ -124,7 +124,7 @@ SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
             my_mac[0], my_mac[1], my_mac[2], my_mac[3], my_mac[4], my_mac[5]);
 */
 
-    char dest_host[40];
+    char dest_host[40] = {0};
 
     if ((cmd->path.length() > 0) && (cmd->user_interface == NULL)) { // we were not called from the menu, and a destination name is given in the path.
         strncpy(dest_host, cmd->path.c_str(), 36);
