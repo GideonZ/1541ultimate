@@ -164,6 +164,7 @@ void do_update(void)
     reset_config(flash2);
 
     esp32.EnableRunMode();
+    vTaskDelay(200);
     wifi_command_init();
     turn_off();
 }
