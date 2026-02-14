@@ -23,7 +23,12 @@ jobs:
       - name: Run Make Target
         # This calls your entrypoint.sh, which sources the IDF 
         # and then executes the make command.
-        run: id && ls -l / && make u64ii && mv update.ue2 update_${{ env.GIT_VERSION }}.ue2
+        run: |
+            id
+            ls -l /
+            ls -l /home
+            source "$IDF_PATH/export.sh"
+            make u64ii && mv update.ue2 update_${{ env.GIT_VERSION }}.ue2
 
       - name: Upload User Artifacts
         uses: actions/upload-artifact@v4
