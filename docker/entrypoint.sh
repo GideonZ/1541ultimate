@@ -34,5 +34,6 @@ exec gosu "${WS_UID}:${WS_GID}" bash -lc '
     export HOME="'"${RUNNER_HOME}"'"
     git config --global --add safe.directory "*"
     source $IDF_PATH/export.sh
+    cd /__w    
     exec "$@"
 ' bash "$@"

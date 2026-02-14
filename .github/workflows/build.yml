@@ -46,7 +46,6 @@ jobs:
       - name: Run Make Target
         shell: bash
         run: |
-            source "$IDF_PATH/export.sh"
             make u64ii && mv update.ue2 update_${{ env.GIT_VERSION }}.ue2
 
       - name: Upload User Artifacts

@@ -50,6 +50,7 @@ ENV IDF_TOOLS_PATH=/root/.espressif
 RUN ln -s /usr/bin/python3 /usr/bin/python && \
     apt-get update && apt-get install -y gosu && rm -rf /var/lib/apt/lists/*
 
+ARG CACHEBUST=1
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
