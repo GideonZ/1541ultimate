@@ -35,6 +35,7 @@ extern "C" {
 #define CFG_NET_CUR_IP      0xEB
 #define CFG_NET_MAC         0xEC
 #define CFG_NET_STATUS      0xEF
+#define CFG_NET_PCAP        0xF0
 
 #include "fifo.h" // my oh so cool fifo! :)
 #define PBUF_FIFO_SIZE 70
@@ -77,6 +78,7 @@ public:
     }
     static void set_default_interface(void);
 
+    static void write_pcap(UserInterface *intf, ConfigItem *it);
 protected:
 	struct pbuf_custom pbuf_array[PBUF_FIFO_SIZE];
 	Fifo<struct pbuf_custom *> pbuf_fifo;

@@ -9,6 +9,16 @@
 #include "mdio.h"
 #include "endianness.h"
 #include "init_function.h"
+#include "pcap.h"
+
+#define SANITY_CHECK 0
+#define ENABLE_PCAP  0
+#define NUM_BUFFERS  32
+
+static uint8_t freemap[NUM_BUFFERS];
+static int freecnt;
+
+Pcap pcap;
 
 RmiiInterface *rmii_interface = NULL; // global object!
 static void init(void *_a, void *_b)
@@ -40,7 +50,7 @@ RmiiInterface :: RmiiInterface()
     if(getFpgaCapabilities() & CAPAB_ETH_RMII) {
     	netstack = getNetworkStack(this, RmiiInterface_output, RmiiInterface_free_buffer);
 		link_up = false;
-		ram_buffer = new uint8_t[(128 * 1536) + 256];
+		ram_buffer = new uint8_t[(NUM_BUFFERS * 1536) + 256];
 		ram_base = (uint8_t *) (((uint32_t)ram_buffer + 255) & 0xFFFFFF00);
 
 		RMII_FREE_BASE = (uint32_t)ram_base;
@@ -64,7 +74,7 @@ RmiiInterface :: RmiiInterface()
         mdio_write(0x00, 0x1200, addr); // restart auto negotiation
 
         if (ram_buffer) {
-            queue = xQueueCreate(128, sizeof(struct EthPacket));
+            queue = xQueueCreate(NUM_BUFFERS+2, sizeof(struct EthPacket));
 			xTaskCreate( RmiiInterface :: startRmiiTask, "RMII Driver Task", configMINIMAL_STACK_SIZE, this, PRIO_DRIVER, NULL );
         }
     }
@@ -80,10 +90,20 @@ void RmiiInterface :: initRx(void)
     RMII_RX_ENABLE  = 0;
     vTaskDelay(1); // wait a few ms
     RMII_FREE_RESET = 1;
-    for(int i=0;i<127;i++) {
+    RMII_ALLOC_POP = 1;  // remove pending packet if any
+    RMII_FREE_RESET = 1; // reset pointers again
+
+#if SANITY_CHECK
+    freecnt = 0;
+    memset(freemap, 0, NUM_BUFFERS);
+#endif
+    for(int i=0;i<NUM_BUFFERS;i++) {
         RMII_FREE_PUT = (uint8_t)i;
+#if SANITY_CHECK
+        freemap[i] = 1;
+        freecnt++;
+#endif
     }
-//    printf("RMII Initialized, pointers: %08x\n", RMII_FREE_BASE);
     RMII_RX_ENABLE = 1;
     ioWrite8(ITU_IRQ_ENABLE, ITU_INTERRUPT_RMIIRX);
 }
@@ -139,6 +159,10 @@ void RmiiInterface :: rmiiTask(void)
 					if (netstack) {
 					    initRx();
 						netstack->link_up();
+#if ENABLE_PCAP
+                        pcap.init();
+#endif
+
 					}
 					link_up = true;
 				}
@@ -177,11 +201,33 @@ RmiiInterface :: ~RmiiInterface()
 
 void RmiiInterface :: rx_interrupt_handler(void)
 {
+    if (!RMII_ALLOC_POP) {
+        outbyte('\\');
+        return;
+    }
 	struct EthPacket pkt;
 	pkt.size = RMII_ALLOC_SIZE;
 	pkt.id   = RMII_ALLOC_ID;
 	RMII_ALLOC_POP = 1;
+
+#if SANITY_CHECK
+    outbyte('i');
+    uart_write_hex(pkt.id);
+#endif
+    if (pkt.id == 0xFF) {
+        outbyte('<');
+        return;
+    }
+#if SANITY_CHECK
+    if (freemap[pkt.id] == 0) {
+        outbyte('=');
+        return;
+    }
+    freecnt--;
+    freemap[pkt.id] = 0;
+#endif
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
 	xQueueSendFromISR(rmii_interface->queue, &pkt, &xHigherPriorityTaskWoken);
 }
 
@@ -190,15 +236,45 @@ void RmiiInterface :: input_packet(struct EthPacket *pkt)
 	uint32_t offset = ((uint32_t) pkt->id) * 1536;
 	uint8_t *buffer = &ram_base[offset];
 
-	//printf("Rmii Rx: %b %p (%d)\n", pkt->id, buffer, pkt->size);
-	//dump_hex_relative(buffer+2, pkt->size);
+#if ENABLE_PCAP
+    pcap.add_packet(buffer+2, pkt->size, xTaskGetTickCount());
+#endif
 
 	if(netstack) {
 		if (!netstack->input(buffer, buffer+2, pkt->size)) {
+#if SANITY_CHECK
+            portDISABLE_INTERRUPTS();
+            outbyte('_');
+            uart_write_hex(pkt->id);
+            if (freemap[pkt->id]) {
+                printf("Freeing packet that is already free (a)? %b:%b\n", pkt->id, freemap[pkt->id]);
+            }
+            freemap[pkt->id] = 2;
+            freecnt++;
 			RMII_FREE_PUT = pkt->id;
-		}
+            portENABLE_INTERRUPTS();
+#else
+			RMII_FREE_PUT = pkt->id;
+#endif
+		} else {
+#if SANITY_CHECK
+            outbyte('+');
+            uart_write_hex(pkt->id);
+#endif
+        }
 	} else {
+#if SANITY_CHECK
+        portDISABLE_INTERRUPTS();
+        if (freemap[pkt->id]) {
+            printf("Freeing packet that is already free (b)? %b:%b\n", pkt->id, freemap[pkt->id]);
+        }
+        freemap[pkt->id] = 3;
+        freecnt++;
 		RMII_FREE_PUT = pkt->id;
+        portENABLE_INTERRUPTS();
+#else
+		RMII_FREE_PUT = pkt->id;
+#endif
 	}
 }
  	
@@ -207,7 +283,21 @@ void RmiiInterface :: free_buffer(uint8_t *buffer)
 	uint32_t offset = (uint32_t)buffer - (uint32_t)ram_base;
 	uint8_t id = (offset / 1536);
 	//printf("FREE PBUF CALLED %p (=> %8x => %b)! Pointers: %08x %b\n", buffer, offset, id, RMII_FREE_BASE, RMII_FREE_PUT);
+
+#if SANITY_CHECK
+    portDISABLE_INTERRUPTS();
+    outbyte('>');
+    uart_write_hex(id);
+    if (freemap[id]) {
+        printf("Freeing packet that is already free (c)? %b:%b\n", id, freemap[id]);
+    }
+    freemap[id] = 4;
+    freecnt++;
 	RMII_FREE_PUT = id;
+    portENABLE_INTERRUPTS();
+#else
+	RMII_FREE_PUT = id;
+#endif
 }
 
 err_t RmiiInterface :: output_packet(uint8_t *buffer, int pkt_len)
@@ -219,6 +309,10 @@ err_t RmiiInterface :: output_packet(uint8_t *buffer, int pkt_len)
 		printf("Oops.. tx is busy!\n");
 		return ERR_INPROGRESS;
 	}
+
+#if ENABLE_PCAP
+    pcap.add_packet(buffer, pkt_len, xTaskGetTickCount());
+#endif
 	//printf("Rmii Out Packet: %p %4x\n", buffer, pkt_len);
 	//dump_hex_relative(buffer, (pkt_len > 64)?64:pkt_len);
 	RMII_TX_ADDRESS = (uint32_t)buffer;

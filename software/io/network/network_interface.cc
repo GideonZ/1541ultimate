@@ -33,9 +33,20 @@ struct t_cfg_definition net_config[] = {
     { CFG_NET_STATUS,  CFG_TYPE_INFO,   "Status",                        "%s", NULL,       0, 32, (int)"" },
     { CFG_NET_CUR_IP,  CFG_TYPE_INFO,   "Active IP address",             "%s", NULL,       0, 32, (int)"" },
     { CFG_NET_MAC,     CFG_TYPE_INFO,   "Interface MAC",                 "%s", NULL,       0, 32, (int)"" },
+//     { CFG_NET_PCAP,    CFG_TYPE_FUNC,   "Write PCAP",      "-->", (const char **)NetworkInterface :: write_pcap, 0, 0, 0 },
     { CFG_TYPE_END,    CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
+#include "userinterface.h"
+#include "pcap.h"
+
+void NetworkInterface :: write_pcap(UserInterface *intf, ConfigItem *it)
+{
+    char buffer[32] = { 0 };
+    intf->string_box("Give filename", buffer, 30);
+    extern Pcap pcap;
+    pcap.write_to_file(buffer);
+}
 
 /**
  * Initialization
