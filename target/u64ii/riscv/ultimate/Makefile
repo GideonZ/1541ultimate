@@ -155,6 +155,7 @@ SRCS_CC	 =  u64ii_init.cc \
 			sid_device_fpgasid.cc \
 			sid_device_swinsid.cc \
 			sid_device_armsid.cc \
+			sid_device_pdsid.cc \
 			acia.cc \
 			modem.cc \
 			socket_gui.cc \

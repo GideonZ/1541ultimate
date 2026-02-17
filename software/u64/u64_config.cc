@@ -33,6 +33,7 @@ extern "C" {
 #include "sid_device_fpgasid.h"
 #include "sid_device_swinsid.h"
 #include "sid_device_armsid.h"
+#include "sid_device_pdsid.h"
 #include "init_function.h"
 #include "color_timings.h"
 #include "hdmi_scan.h"
@@ -173,6 +174,7 @@ uint8_t C64_SID2_EN_BAK;
 #define SID_TYPE_ARM2SID 6
 #define SID_TYPE_SIDFX   7
 #define SID_TYPE_FPGASID_DUKESTAH 8
+#define SID_TYPE_PDSID   9
 
 const char *u64_sid_base[] = { "Unmapped",
                                "$D400", "$D420", "$D440", "$D460", "$D480", "$D4A0", "$D4C0", "$D4E0",
@@ -233,7 +235,7 @@ static const char *dvi_hdmi[] = { "Auto", "HDMI", "DVI" };
 static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
 static const char *color_sel[] = { "PAL", "NTSC", "PAL-60", "NTSC-50", "PAL-60/L", "NTSC-50/L" };
 
-static const char *sid_types[] = { "None", "6581", "8580", "FPGASID", "SwinSID Ultimate", "ARMSID", "ARM2SID", "SidFx", "FPGASID Dukestah" };
+static const char *sid_types[] = { "None", "6581", "8580", "FPGASID", "SwinSID Ultimate", "ARMSID", "ARM2SID", "SidFx", "FPGASID Dukestah", "PDsid" };
 static const char *sid_shunt[] = { "Off", "On" };
 static const char *sid_caps[] = { "470 pF", "22 nF" };
 static const char *filter_sel[] = { "8580 Lo", "8580 Hi", "6581", "6581 Alt", "U2 Low", "U2 Mid", "U2 High" };
@@ -329,8 +331,8 @@ struct t_cfg_definition u64_cfg[] = {
 struct t_cfg_definition u64_sid_detection_cfg[] = {
     { CFG_SOCKET1_ENABLE,       CFG_TYPE_ENUM, "SID Socket 1",                 "%s", en_dis,       0,  1, 0 },
     { CFG_SOCKET2_ENABLE,       CFG_TYPE_ENUM, "SID Socket 2",                 "%s", en_dis,       0,  1, 0 },
-    { CFG_SID1_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 1",        "%s", sid_types,    0,  8, 0 },
-    { CFG_SID2_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 2",        "%s", sid_types,    0,  8, 0 },
+    { CFG_SID1_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 1",        "%s", sid_types,    0,  9, 0 },
+    { CFG_SID2_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 2",        "%s", sid_types,    0,  9, 0 },
     { CFG_SID1_SHUNT,           CFG_TYPE_ENUM, "SID Socket 1 1K Ohm Resistor", "%s", sid_shunt,    0,  1, 0 },
     { CFG_SID2_SHUNT,           CFG_TYPE_ENUM, "SID Socket 2 1K Ohm Resistor", "%s", sid_shunt,    0,  1, 0 },
     { CFG_SID1_CAPS,            CFG_TYPE_ENUM, "SID Socket 1 Capacitors",      "%s", sid_caps,     0,  1, 0 },
@@ -557,6 +559,11 @@ int U64Config :: detectRemakes(int socket)
             return SID_TYPE_ARM2SID; // ARM2SID
         }
         return SID_TYPE_ARMSID; // ARMSID
+    }
+
+    if (SidDevicePdSid :: detect(base)) {
+        sidDevice[socket] = new SidDevicePdSid(socket, base);
+        return SID_TYPE_PDSID;
     }
 
     return 0;

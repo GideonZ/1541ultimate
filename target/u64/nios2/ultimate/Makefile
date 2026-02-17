@@ -163,6 +163,7 @@ SRCS_CC	 =  u2p_init.cc \
 			sid_device_fpgasid.cc \
 			sid_device_swinsid.cc \
 			sid_device_armsid.cc \
+			sid_device_pdsid.cc \
 			ramdisk.cc \
 			system_info.cc \
 			ult_syscalls.cc \
