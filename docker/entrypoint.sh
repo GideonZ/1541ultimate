@@ -23,10 +23,10 @@ RUNNER_USER="runner"
 RUNNER_HOME="/home/$RUNNER_USER"
 RUNNER_GROUP="runner"
 
-groupadd -g $WS_GID $RUNNER_GROUP
-useradd -m -u $WS_UID -g $WS_GID $RUNNER_USER
-mkdir -p $RUNNER_HOME
-chown -R $RUNNER_USER:$RUNNER_GROUP $RUNNER_HOME
+groupadd -g $WS_GID $RUNNER_GROUP || true
+useradd -m -u $WS_UID -g $WS_GID $RUNNER_USER || true
+mkdir -p $RUNNER_HOME || true
+chown -R $RUNNER_USER:$RUNNER_GROUP $RUNNER_HOME || true
 
 #Run the rest as user.
 exec gosu "${WS_UID}:${WS_GID}" bash -lc '
