@@ -58,14 +58,15 @@ void SidDeviceSidKick :: SetSidType(int type)
 
     base[0x1f] = 0xFF; // enter config mode
     base[0x1e] = 0x00; // choose profile to update
-    base[0x1d] = 0xFC; // update and afterwards leave config mode
+//     base[0x1d] = 0xFC; // update and afterwards leave config mode
 
     // Set sid#2 to none for now
     if (type) { // 8580
-        base[0x18] = SID_TYPE_8580_BOOST | (SID_TYPE_NONE << 4);
+        base[0x1d] = SID_TYPE_8580_BOOST;
     } else {
-        base[0x18] = SID_TYPE_6581 | (SID_TYPE_NONE << 4);
+        base[0x1d] = SID_TYPE_6581;
     }
+    base[0x1f] = 0xfd; // leave config mode
     wait_ms(5);
 
     // Restore C64 mode
@@ -90,7 +91,21 @@ SidDeviceSidKick::~SidDeviceSidKick()
 int SidDeviceSidKick::SidKickConfig:: S_cfg_pdsid_type(ConfigItem *it)
 {
     SidDeviceSidKick *obj = (SidDeviceSidKick *)it->store->get_hook_object();
-    obj->SetSidType(it->getValue());
+
+    volatile uint8_t *base = obj->pre();
+    obj->pre_mode = C64_MODE;
+    C64_MODE = MODE_ULTIMAX; // force I/O range on
+
+    base[0x1f] = 0xFF; // enter config mode
+    base[0x1e] = 0x00; // choose profile to update
+    base[0x1d] = it->getValue() & 3;
+    base[0x1f] = 0xfd; // leave config mode
+
+    wait_ms(5);
+
+    // Restore C64 mode
+    C64_MODE = obj->pre_mode;
+    obj->post();
     return 0;
 }
 
@@ -104,19 +119,15 @@ void SidDeviceSidKick::SidKickConfig :: at_open_config(void)
         base[0x1f] = 0xFF; // enter config mode
         base[0x1e] = 0x00; // choose profile to update
         for(int i=0; i<64; i++) {
-            C64_PEEK(2);
-            C64_PEEK(2);
-            C64_PEEK(2);
-            C64_PEEK(2);
-            C64_PEEK(2);
-            config[i] = base[i];
+            config[i] = base[0x1d];
         }
-        base[0x1d] = 0xFD; // Leave config mode
+        base[0x1f] = 0xFD; // Leave config mode
         i->setValueQuietly(config[CFG_SID1_TYPE] & 3);
+
+        printf("Current SidKick configuration:\n");
+        dump_hex_relative(config, 64);
     }
     parent->post();
-    printf("Current SidKick configuration:\n");
-    dump_hex_relative(config, 64);
     wait_ms(5);
 }
 
@@ -134,7 +145,7 @@ int SidDeviceSidKick::detect(volatile uint8_t *base)
     }
 
     // leave config mode
-    base[0x1d] = 0xfd;
+    base[0x1f] = 0xfd;
 
     dump_hex_relative(SIDKickVersion, 32);
 
