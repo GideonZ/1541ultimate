@@ -13,9 +13,16 @@
 #define CMD_BUF_PAYLOAD 1536
 #define CMD_BUF_HEADER  16
 #define CMD_BUF_SIZE (CMD_BUF_PAYLOAD + CMD_BUF_HEADER)
-#define NUM_BUFFERS 16
 
-#if NIOS
+#ifndef NUM_TX_BUFFERS
+#define NUM_TX_BUFFERS 12
+#endif
+
+#ifndef NUM_RX_BUFFERS
+#define NUM_RX_BUFFERS 12
+#endif
+
+#if (NIOS || RISCV)
     #include "FreeRTOS.h"
     #include "queue.h"
 #else
@@ -33,14 +40,17 @@ typedef struct {
 } command_buf_t;
 
 typedef struct {
-    QueueHandle_t freeQueue;
-    QueueHandle_t transmitQueue;
-    QueueHandle_t receivedQueue;
-    command_buf_t bufs[NUM_BUFFERS];
+    QueueHandle_t freeRxQueue; // available for receiving
+    QueueHandle_t freeTxQueue; // available for transmitting
+    QueueHandle_t receivedQueue; // used in receive
+    QueueHandle_t transmitQueue; // ready to be transmitted
+    command_buf_t rx_bufs[NUM_RX_BUFFERS];
+    command_buf_t tx_bufs[NUM_TX_BUFFERS];
 } command_buf_context_t;
 
 void cmd_buffer_init(command_buf_context_t *context);
 void cmd_buffer_reset(command_buf_context_t *context);
+
 BaseType_t cmd_buffer_free(command_buf_context_t *context, command_buf_t *b);
 BaseType_t cmd_buffer_get(command_buf_context_t *context, command_buf_t **b, TickType_t t);
 BaseType_t cmd_buffer_transmit(command_buf_context_t *context, command_buf_t *b);

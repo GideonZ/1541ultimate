@@ -3,7 +3,7 @@
 
 /// C like functions to 'talk' with the WiFi Module
 uint16_t sequence_nr = 0;
-TaskHandle_t tasksWaitingForReply[NUM_BUFFERS];
+TaskHandle_t tasksWaitingForReply[NUM_TX_BUFFERS];
 
 void hex(uint8_t h)
 {
@@ -17,7 +17,7 @@ BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseT
     rpc_header_t *hdr = (rpc_header_t *)buf->data;
     BaseType_t res;
 
-    if ((hdr->thread < NUM_BUFFERS) && (tasksWaitingForReply[hdr->thread])) {
+    if ((hdr->thread < NUM_TX_BUFFERS) && (tasksWaitingForReply[hdr->thread])) {
         TaskHandle_t thread = tasksWaitingForReply[hdr->thread];
         tasksWaitingForReply[hdr->thread] = NULL;
         ioWrite8(UART_DATA, 'N');
