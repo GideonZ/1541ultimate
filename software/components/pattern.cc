@@ -2,7 +2,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <cctype>
+#include <ctype.h>
 /*
 -------------------------------------------------------------------------------
 							pattern_match

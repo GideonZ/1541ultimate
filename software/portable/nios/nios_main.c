@@ -177,3 +177,17 @@ int main(int argc, char *argv[]) {
 	// Should not get here as the processor is now under control of the
 	// scheduler!
 }
+
+void _exit(int exit_status)
+{
+    while(1);
+}
+
+void *sbrk(ptrdiff_t incr)
+{
+    extern char _end; // Usually defined in your linker.x
+    static char *heap_end = &_end;
+    char *prev_heap_end = heap_end;
+    heap_end += incr;
+    return (void *)prev_heap_end;
+}

@@ -3,7 +3,7 @@
 #include "filemanager.h"
 #include "embedded_fs.h"
 #include "file_device.h"
-#include <cctype>
+#include <ctype.h>
 
 void FileManager::invalidate(CachedTreeNode *o)
 {

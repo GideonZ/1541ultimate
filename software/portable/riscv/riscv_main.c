@@ -222,3 +222,5 @@ int _isatty(int fd)
 {
     return isatty(fd);
 }
+
+void *__dso_handle = 0;

@@ -25,7 +25,7 @@
 
 /******************************  Inclusions  ****************************/
 
-#include <cstdlib>
+#include <stdlib.h>
 #include "mps_png.h"
 
 #ifndef NOT_ULTIMATE

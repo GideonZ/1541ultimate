@@ -232,8 +232,8 @@ OPTIONS  = -g -ffunction-sections -Os -DOS -DDEVELOPER=0 -DNIOS=1 -DCLOCK_FREQ=6
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = $(BSP)/linker.x
-LIBS2    = $(BSP)/libhal_bsp.a ../../../libs/nios2/lwip/result/liblwip.a
-LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
+LIBS2    = $(BSP)/libhal_bsp.a ../../../libs/nios2/lwip/result/liblwip.a -lgcc -lc -lm
+LFLAGS   = --gc-sections -fno-use-cxa-atexit -nodefaultlibs -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
 
 include ../../../common/rules.mk
 

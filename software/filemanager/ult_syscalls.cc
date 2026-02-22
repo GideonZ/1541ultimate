@@ -6,7 +6,7 @@
 /* It turns out that older newlib versions use different symbol names which goes
  * against newlib recommendations. Anyway this is fixed in later version.
  */
-#if __NEWLIB__ <= 2 && __NEWLIB_MINOR__ <= 5
+#if (__NEWLIB__ <= 2 && __NEWLIB_MINOR__ <= 5) || (__NEWLIB__ == 3)
 #    define _sbrk sbrk
 #    define _write write
 #    define _open open
