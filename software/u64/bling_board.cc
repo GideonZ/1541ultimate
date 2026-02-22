@@ -658,6 +658,11 @@ void BlingBoard :: run(void)
             fixed = tint_with_white(fixed, tint_factors[tint]);
             ShiftInColor(fixed);
             LEDSTRIP_START = 0;
+            if (autosid && (v_total > 0)) {
+                sid_timeout = SID_TIMEOUT_VALUE;
+                ConfigurePattern();
+                mode = e_led_sid;
+            }
             break;
 
         case e_led_rsparkle: // rainbow with sparkle
@@ -700,6 +705,11 @@ void BlingBoard :: run(void)
 
             }
             LEDSTRIP_START = 0;
+            if (autosid && (v_total > 0)) {
+                sid_timeout = SID_TIMEOUT_VALUE;
+                ConfigurePattern();
+                mode = e_led_sid;
+            }
             break;
 
         default:

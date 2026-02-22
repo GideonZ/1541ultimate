@@ -439,8 +439,6 @@ void LedStrip :: run(void)
                 }
             }
 
-
-
             vTaskDelay(3);
             break;
         case e_led_rainbow: // rainbow
@@ -465,6 +463,13 @@ void LedStrip :: run(void)
                 offset -= 3;
             }
             LEDSTRIP_START = 0; // and go!
+
+            if (autosid && (v_total > 0)) {
+                sid_timeout = SID_TIMEOUT_VALUE;
+                ConfigurePattern();
+                mode = e_led_sid;
+            }
+
             vTaskDelay(16);
             break;
 
@@ -515,6 +520,13 @@ void LedStrip :: run(void)
 
             }
             LEDSTRIP_START = 0; // and go!
+
+            if (autosid && (v_total > 0)) {
+                sid_timeout = SID_TIMEOUT_VALUE;
+                ConfigurePattern();
+                mode = e_led_sid;
+            }
+
             vTaskDelay(3);
             break;
 
@@ -559,6 +571,12 @@ void LedStrip :: run(void)
 
             }
             LEDSTRIP_START = 0; // and go!
+
+            if (autosid && (v_total > 0)) {
+                sid_timeout = SID_TIMEOUT_VALUE;
+                ConfigurePattern();
+                mode = e_led_sid;
+            }
             vTaskDelay(4);
             break;
 
