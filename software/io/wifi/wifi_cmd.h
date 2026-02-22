@@ -52,7 +52,7 @@ int wifi_set_serial(const char *serial);
 int wifi_get_serial(char *serial);
 
 extern uint16_t sequence_nr;
-extern TaskHandle_t tasksWaitingForReply[NUM_BUFFERS];
+extern TaskHandle_t tasksWaitingForReply[NUM_TX_BUFFERS];
 extern "C" { void print_uart_status(); }
 extern const char *no_wifi_buf;
 

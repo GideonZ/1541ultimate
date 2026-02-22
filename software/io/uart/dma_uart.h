@@ -75,7 +75,7 @@ public:
         uart->flowctrl = DMAUART_RESET;
         // printf("DmaUART initialized. Start rate: %d bps\n", CLOCK_FREQ / (rate + 1));
         uart->flowctrl = DMAUART_RESET;
-        rx_bufs = xQueueCreate(16, sizeof(command_buf_t *));
+        rx_bufs = xQueueCreate(NUM_RX_BUFFERS, sizeof(command_buf_t *));
         ResetReceiveCallback();
         install_high_irq(irq, DmaUART :: DmaUartInterrupt, this);
     }
@@ -97,7 +97,8 @@ public:
     void PrintStatus(void) {
         printf("UART status: %b\n", uart->status);
         printf("Packets in Rxbufs: %d\n", uxQueueMessagesWaiting(rx_bufs));
-        printf("Packets in Free queue: %d\n", uxQueueMessagesWaiting(packets->freeQueue));
+        printf("Packets in Tx Free queue: %d\n", uxQueueMessagesWaiting(packets->freeTxQueue));
+        printf("Packets in Rx Free queue: %d\n", uxQueueMessagesWaiting(packets->freeRxQueue));
         printf("Packets in Tx queue: %d\n", uxQueueMessagesWaiting(packets->transmitQueue));
         printf("Packets in Received queue: %d\n", uxQueueMessagesWaiting(packets->receivedQueue));
     }
