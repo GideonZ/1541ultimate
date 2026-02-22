@@ -21,7 +21,7 @@ $(document).ready(async function () {
         // This also works with older firmware that do not support password protection (will get a 404 for /v1/info)
         let [status_code, content] = await make_get_request("http://" + serverIP + "/v1/info");
         if (status_code == 401 || status_code == 403) {
-            $("#banner").html("&nbsp;");
+            $("#bannertitle").html("&nbsp;");
             $("#left-nav").css("visibility", "hidden");
             $("#password").val("");
             $(".page").hide();
@@ -39,7 +39,7 @@ $(document).ready(async function () {
             else {
                 $("#logoutmenuitem").hide();
             }
-            $("#banner").html(product + " HTTP Server");
+            $("#bannertitle").html(product + " HTTP Server");
             $("#left-nav").css("visibility", "visible");
             $(".page").hide();
             $("#welcome").show();
@@ -848,6 +848,35 @@ $(document).ready(async function () {
         greetings: 'Ultimate 64 / II+ Remote Monitor\nhelp = list of commands\n'
     });
 
+    // To add a theme, register the css class name in the array of themeNames, then themes.setTheme(themeName).
+    // When setTheme is called, it will unregister all classes from the themeNames and then apply then new className.
+    const themes = (() =>  {
+        const themeNames = ['lightmode', 'darkmode' /*, 'purple-theme' */ ];
+
+        const themedSelectors = [ 'body', '#left-nav', '#banner', 'a:-webkit-any-link', 'div#left-nav a', '#banner', 
+            '#left-nav', '#darkmode-button', '#lightmode-button'
+        ];
+
+        // theme: darkmode, lightmode, ...purple-theme...etc.
+        const removeThemes = () => themeNames.forEach(themeName => $(themedSelectors.join(',')).removeClass(themeName));
+        const setTheme = (themeName) => { removeThemes(); $(themedSelectors.join(',')).addClass(themeName); };
+        const setLightMode = () => { setTheme('lightmode'); };
+        const setDarkMode = () => { setTheme('darkmode'); };
+        const initDisplayMode = () => { 
+            if(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) { setDarkMode(); return; }
+            setLightMode();
+        };
+        
+        return {
+             initDisplayMode, setTheme, setLightMode, setDarkMode
+         };        
+    })();
+
+    $('#darkmode-button').on('click', () => themes.setDarkMode() );
+    $('#lightmode-button').on('click', () => themes.setLightMode() );
+    
+    themes.initDisplayMode();
+
     // Kick off login/welcome screen as needed
     await ensureLoggedIn();
 });
@@ -1347,7 +1376,6 @@ function disassembler(startInt, byteArray) {
 </script>
 
 <style>
-
     body {
         font-family: Arial, sans-serif;
         margin: 0;
@@ -1356,12 +1384,38 @@ function disassembler(startInt, byteArray) {
         flex-direction: column;
         height: 100vh;
     }
+    body.darkmode {
+        background-color:   #181818;
+        color: #e0e0e0;
+    }
     #banner {
         background: linear-gradient(to bottom, #0000FF, #0195c7); /* Dark blue to light blue */
         color: white;
         text-align: left;
         padding: 10px;
         font-size: 24px;
+        display: flex; 
+        align-items: center;
+    }
+    #banner.darkmode {
+        background: linear-gradient(to bottom, #222, #444)
+    }
+    #bannertitle {
+        flex-grow: 1; 
+        text-align: left;
+    }
+    #bannerspacer
+    {
+        flex-grow: 2; 
+        text-align: center;
+    }
+    #bannertheme-selectors
+    {
+        flex-grow: 0; 
+        margin-left: 40px; 
+        text-align: right;
+        width:24px;
+        height:24px;
     }
     #content {
         display: flex;
@@ -1373,12 +1427,19 @@ function disassembler(startInt, byteArray) {
         padding: 20px;
         visibility: hidden;
     }
+    #left-nav.darkmode {
+        background-color:   #1e1e1e;
+    }
     div#left-nav a {
         color: blue;
         text-decoration: none;
     }
     div#left-nav a:hover {
         background-color: #beffff;
+    }
+    div#left-nav a:hover.darkmode {
+        color:burlywood;
+        background-color: dimgray;
     }
     #login {
         padding: 20px;
@@ -1561,13 +1622,43 @@ function disassembler(startInt, byteArray) {
     border: 2px solid var(--background);
 }
 
+a:-webkit-any-link.darkmode {
+    color: yellow;
+}
+div#left-nav a.darkmode {
+    color:gray;
+}
+#darkmode-button {
+    visibility:hidden;
+    display: none;
+}
+#darkmode-button.lightmode {
+    visibility:visible;
+    display:inline;
+}
+#lightmode-button {
+    visibility:hidden;
+    display: none;
+}
+#lightmode-button.darkmode {
+    visibility:visible;
+    display:inline;
+}
+
 </style>
 
 
 
 </head>
 <body>
-    <div id="banner">&nbsp;</div>
+    <div id="banner">
+        <span id="bannertitle">&nbsp;</span>
+        <span id="bannerspacer">&nbsp;</span>
+        <span id="bannertheme-selectors">
+            <a id="darkmode-button" href="#"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M320 64C178.6 64 64 178.6 64 320C64 461.4 178.6 576 320 576C388.8 576 451.3 548.8 497.3 504.6C504.6 497.6 506.7 486.7 502.6 477.5C498.5 468.3 488.9 462.6 478.8 463.4C473.9 463.8 469 464 464 464C362.4 464 280 381.6 280 280C280 207.9 321.5 145.4 382.1 115.2C391.2 110.7 396.4 100.9 395.2 90.8C394 80.7 386.6 72.5 376.7 70.3C358.4 66.2 339.4 64 320 64z"/></svg></a>
+            <a id="lightmode-button" href="#"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path fill="rgb(116, 192, 252)" d="M320 32C328 32 335.4 36 339.9 42.6L398.7 130L502.1 109.8C509.9 108.3 518 110.7 523.7 116.4C529.4 122.1 531.8 130.2 530.3 138L510 241.3L597.4 300.1C604 304.5 608 312 608 320C608 328 604 335.4 597.4 339.9L510 398.7L530.2 502C531.7 509.8 529.3 517.9 523.6 523.6C517.9 529.3 509.8 531.7 502 530.2L398.7 510L339.9 597.4C335.4 604 328 608 320 608C312 608 304.6 604 300.1 597.4L241.3 510L137.9 530.2C130.1 531.7 122 529.3 116.3 523.6C110.6 517.9 108.2 509.8 109.7 502L130 398.7L42.6 339.9C36 335.4 32 328 32 320C32 312 36 304.6 42.6 300.1L130 241.3L109.8 137.9C108.3 130.1 110.7 122 116.4 116.3C122.1 110.6 130.2 108.2 138 109.7L241.3 129.9L300.1 42.5L301.9 40.2C306.4 35 313 32 320 32zM272.2 170C266.8 178 257.2 182 247.7 180.2L163.7 163.8L180.1 247.8C181.9 257.3 177.9 266.9 169.9 272.3L99 320L170 367.8C178 373.2 182 382.8 180.2 392.3L163.8 476.3L247.8 459.9L251.3 459.5C259.6 459.1 267.6 463.1 272.3 470.1L320.1 541.1L367.9 470.1L370.1 467.3C375.7 461.2 384.1 458.3 392.4 460L476.4 476.4L460 392.4C458.2 382.9 462.2 373.3 470.2 367.9L541.2 320.1L470.2 272.3C462.2 266.9 458.2 257.3 460 247.8L476.4 163.8L392.4 180.2C382.9 182 373.3 178 367.9 170L320.1 99L272.3 170zM320 440C253.7 440 200 386.3 200 320C200 253.7 253.7 200 320 200C386.3 200 440 253.7 440 320C440 386.3 386.3 440 320 440zM320 248C280.2 248 248 280.2 248 320C248 359.8 280.2 392 320 392C359.8 392 392 359.8 392 320C392 280.2 359.8 248 320 248z"/></svg></a>
+        </span>
+    </div>
 
     <div id="content">
         <div id="left-nav">
