@@ -16,7 +16,6 @@ class SidDevicePdSid: public SidDevice {
     class PdSidConfig : public ConfigStore
     {
         SidDevicePdSid *parent;
-        static void S_effectuate(volatile uint8_t *base, ConfigStore *store);
     public:
         PdSidConfig(SidDevicePdSid *parent, const char *name, t_cfg_definition *defs);
         ~PdSidConfig() {  }
@@ -27,8 +26,6 @@ class SidDevicePdSid: public SidDevice {
         void at_open_config(void);
         void at_close_config(void) { }
 
-        static volatile uint8_t *pre(ConfigItem *it);
-        static void post(ConfigItem *it);
         static int  S_cfg_pdsid_type(ConfigItem *it);
     };
 

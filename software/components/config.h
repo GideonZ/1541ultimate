@@ -134,6 +134,7 @@ public:
 class ConfigStore
 {
     IndexedList<ConfigurableObject *> objects;
+    void *hook_obj;
     mstring store_name;
     mstring alt_name;
     ConfigPage *page;
@@ -171,6 +172,8 @@ public:
 
     virtual void effectuate(void);
 
+    void  set_hook_object(void *obj) { hook_obj = obj; }
+    void *get_hook_object() { return hook_obj; }
     void set_change_hook(uint8_t id, t_change_hook hook);
     void disable(uint8_t id);
     void enable(uint8_t id);

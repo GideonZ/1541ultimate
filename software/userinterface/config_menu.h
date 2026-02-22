@@ -153,9 +153,9 @@ class BrowsableConfigStore: public Browsable
 
     IndexedList<Browsable *> *getSubItems(int &error)
     {
+        store->at_open_config();
         if (children.get_elements() == 0) {
             IndexedList<ConfigItem *> *itemList = store->getItems();
-            store->at_open_config();
             for (int i = 0; i < itemList->get_elements(); i++) {
                 children.append(new BrowsableConfigItem((*itemList)[i]));
             }

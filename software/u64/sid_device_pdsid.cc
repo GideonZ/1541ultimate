@@ -54,29 +54,9 @@ void SidDevicePdSid :: SetSidType(int type)
 SidDevicePdSid :: PdSidConfig :: PdSidConfig(SidDevicePdSid *parent, const char *name, t_cfg_definition *defs)
     : ConfigStore(NULL, name, defs, NULL), parent(parent)
 {
+    set_hook_object(parent);
     // Make most settings 'hot' ;)
     set_change_hook(CFG_PDSID_TYPE, S_cfg_pdsid_type);
-}
-
-// void SidDevicePdSid :: PdSidConfig :: effectuate_settings()
-// {
-//     volatile uint8_t *base = parent->pre();
-//     S_effectuate(base, cfg);
-//     parent->post();
-// }
-
-void SidDevicePdSid :: PdSidConfig :: S_effectuate(volatile uint8_t *base, ConfigStore *cfg)
-{
-    // Mode
-    base[29] = 'P';
-    C64_PEEK(2);
-    base[30] = 'D';
-    C64_PEEK(2);
-    base[31] = cfg->get_value(CFG_PDSID_TYPE) ? 0x01 : 0x00;
-    wait_ms(5);
-
-    // Exit config mode
-    base[29] = 0;
 }
 
 SidDevicePdSid::~SidDevicePdSid()
@@ -84,32 +64,10 @@ SidDevicePdSid::~SidDevicePdSid()
     // TODO Auto-generated destructor stub
 }
 
-volatile uint8_t *SidDevicePdSid::PdSidConfig::pre(ConfigItem *it)
-{
-    SidDevicePdSid::PdSidConfig *obj = (SidDevicePdSid::PdSidConfig *)it->store->get_first_object();
-    volatile uint8_t *base = obj->parent->pre();
-    return base;
-}
-
-void SidDevicePdSid::PdSidConfig::post(ConfigItem *it)
-{
-    SidDevicePdSid::PdSidConfig *obj = (SidDevicePdSid::PdSidConfig *)it->store->get_first_object();
-    obj->parent->post();
-}
-
 int SidDevicePdSid::PdSidConfig:: S_cfg_pdsid_type(ConfigItem *it)
 {
-    volatile uint8_t *base = pre(it);
-    // Mode
-    base[29] = 'P';
-    C64_PEEK(2);
-    base[30] = 'D';
-    C64_PEEK(2);
-    base[31] = it->getValue() ? 0x01 : 0x00;
-    wait_ms(5);
-    // Exit Config mode
-    base[29] = 0;
-    post(it);
+    SidDevicePdSid *obj = (SidDevicePdSid *)it->store->get_hook_object();
+    obj->SetSidType(it->getValue());
     return 0;
 }
 
@@ -122,7 +80,7 @@ void SidDevicePdSid::PdSidConfig :: at_open_config(void)
         C64_PEEK(2);
         base[30] = 'D';
         C64_PEEK(2);
-        i->setValue(base[31] & 1);
+        i->setValueQuietly(base[31] & 1);
         // Exit Config mode
         base[29] = 0;
     }

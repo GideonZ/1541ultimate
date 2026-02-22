@@ -232,7 +232,8 @@ ConfigStore :: ConfigStore(ConfigPage *page, const char *name,
     staleEffect = true;
     staleFlash = false;
     hidden = false;
-    
+    hook_obj = NULL;
+
     for(int i=0;i<64;i++) {
         if(defs[i].type == CFG_TYPE_END)
             break;
