@@ -289,6 +289,7 @@ $(document).ready(async function () {
         $("#basiceditor").val(""); // Clears the textarea content
         showBASICerror("");        // Hides any existing error messages
         $("#customModalOverlay").hide(); // Hides the modal after clearing
+        $("#basiceditor").focus(); // Sets focus back to the editor window for immediate pasting
     });
 
     // Action when "No" (Cancel) is clicked in the custom modal
