@@ -1644,6 +1644,18 @@ div#left-nav a.darkmode {
     visibility:visible;
     display:inline;
 }
+/* fix table's -internal-quirk-inherit*/
+/* Light mode */
+.lightmode table,
+.lightmode table * {
+    color: black;
+}
+
+/* Dark mode */
+.darkmode table,
+.darkmode table * {
+    color: gray;
+}
 
 </style>
 
