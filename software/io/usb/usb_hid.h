@@ -16,6 +16,8 @@ class UsbHidDriver : public UsbDriver
     UsbInterface *interface;
     int  irq_in;
     bool keyboard;
+    bool mouse;
+    uint16_t mouse_x, mouse_y;
 public:
 	static UsbDriver *test_driver(UsbInterface *intf);
 
