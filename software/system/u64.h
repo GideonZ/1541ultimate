@@ -133,15 +133,14 @@
 #define C64_SPEED_PREFER  (*(volatile uint8_t *)(C64_IO_BASE + 0x2D))
 #define C64_SPEED_UPDATE  (*(volatile uint8_t *)(C64_IO_BASE + 0x2E))
 
-/*
-#define C64_PLD_PORTA      ((volatile uint8_t *)(C64_IO_BASE + 0x16))
-#define C64_PLD_PORTB      ((volatile uint8_t *)(C64_IO_BASE + 0x17))
-#define C64_PLD_STATE0    (*(volatile uint8_t *)(C64_IO_BASE + 0x18))
-#define C64_PLD_STATE1    (*(volatile uint8_t *)(C64_IO_BASE + 0x19))
-#define C64_PLD_SIDCTRL2  (*(volatile uint8_t *)(C64_IO_BASE + 0x3A))
-#define C64_PLD_SIDCTRL1  (*(volatile uint8_t *)(C64_IO_BASE + 0x3B))
-#define C64_PLD_JOYCTRL   (*(volatile uint8_t *)(C64_IO_BASE + 0x3E))
-*/
+#define C64_JOY1_SWOUT    (*(volatile uint8_t *)(C64_IO_BASE + 0x30))
+#define C64_JOY2_SWOUT    (*(volatile uint8_t *)(C64_IO_BASE + 0x31))
+#define C64_PADDLE_1_X    (*(volatile uint8_t *)(C64_IO_BASE + 0x32))
+#define C64_PADDLE_1_Y    (*(volatile uint8_t *)(C64_IO_BASE + 0x33))
+#define C64_PADDLE_2_X    (*(volatile uint8_t *)(C64_IO_BASE + 0x34))
+#define C64_PADDLE_2_Y    (*(volatile uint8_t *)(C64_IO_BASE + 0x35))
+#define C64_MOUSE_EN_1    (*(volatile uint8_t *)(C64_IO_BASE + 0x36))
+#define C64_MOUSE_EN_2    (*(volatile uint8_t *)(C64_IO_BASE + 0x37))
 
 #define C64_PLD_PORTA      ((volatile uint8_t *)(C64_PLD_ACC + 0x10))
 #define C64_PLD_PORTB      ((volatile uint8_t *)(C64_PLD_ACC + 0x11))

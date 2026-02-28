@@ -9,6 +9,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "keyboard_usb.h"
+#include "u64.h"
 
 // Entry point for call-backs.
 void UsbHidDriver_interrupt_callback(void *object) {
@@ -30,6 +31,8 @@ UsbHidDriver :: UsbHidDriver(UsbInterface *intf) : UsbDriver(intf)
     irq_in = 0;
     irq_transaction = 0;
     keyboard = false;
+    mouse = false;
+    mouse_x = mouse_y = 0;
 }
 
 UsbHidDriver :: ~UsbHidDriver()
@@ -90,6 +93,10 @@ void UsbHidDriver :: install(UsbInterface *intf)
 			host->resume_input_pipe(irq_transaction); // start polling
 		} else if (interface->getInterfaceDescriptor()->protocol == 2) {
 			printf("Boot Mouse found (maxtrans = %d)!\n", iin->max_packet_size);
+            mouse = true;
+#if U64
+            C64_MOUSE_EN_1 = 1;
+#endif
             host->resume_input_pipe(irq_transaction); // start polling
 			// Note: Polling is not started!
 		}
@@ -103,6 +110,10 @@ void UsbHidDriver :: install(UsbInterface *intf)
 void UsbHidDriver :: disable()
 {
 	host->free_input_pipe(irq_transaction);
+#if U64
+    C64_MOUSE_EN_1 = 0;
+    C64_JOY1_SWOUT = 0x1F;
+#endif
 }
 
 void UsbHidDriver :: deinstall(UsbInterface *intf)
@@ -120,7 +131,23 @@ void UsbHidDriver :: interrupt_handler()
 
     if (keyboard) { // keyboard
 		system_usb_keyboard.process_data(irq_data);
-	} else {
+	} else if (mouse) { // mouse
+        mouse_x += irq_data[1];
+        mouse_y -= irq_data[2];
+        
+        uint8_t mouse_joy = 0x1F;
+        if (irq_data[0] & 0x01) mouse_joy &= ~0x10;
+        if (irq_data[0] & 0x02) mouse_joy &= ~0x01;
+        if (irq_data[0] & 0x04) mouse_joy &= ~0x02;
+#if U64
+        C64_JOY1_SWOUT = mouse_joy;
+        C64_PADDLE_1_X = mouse_x & 0x7F;
+        C64_PADDLE_1_Y = mouse_y & 0x7F;
+#else
+        printf("Mouse: %4x,%4x %b\n", mouse_x, mouse_y, mouse_joy);
+#endif
+
+    } else {
 	    printf("HID (ADDR=%d) IRQ data: ", device->current_address);
 	    for(int i=0;i<data_len;i++) {
 	        printf("%b ", irq_data[i]);
