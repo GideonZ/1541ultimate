@@ -161,6 +161,7 @@ public:
     	}
     }
 
+    uint8_t getNumber(void) { return interface_number; }
 
     void addAlternative(UsbInterface *intf) {
     	alternative = intf;
