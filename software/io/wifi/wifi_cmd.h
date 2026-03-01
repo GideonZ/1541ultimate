@@ -70,7 +70,7 @@ extern const char *no_wifi_buf;
 #define TRANSMIT(x)         esp32.uart->TransmitPacket(buf); \
                             xTaskNotifyWait(0, 0, (uint32_t *)&buf, portMAX_DELAY); \
                             rpc_ ## x ## _resp *result = (rpc_ ## x ## _resp *)buf->data; \
-                            if(result->hdr.thread < 16) { \
+                            if(result->hdr.thread < NUM_TX_BUFFERS) { \
                                 tasksWaitingForReply[result->hdr.thread] = NULL; \
                             }
 
@@ -79,7 +79,7 @@ extern const char *no_wifi_buf;
                             xTaskNotifyWait(0, 0, (uint32_t *)&buf, portMAX_DELAY); \
                             printf("Received %b:\n", buf->bufnr); dump_hex_relative(buf->data, buf->size);\
                             rpc_ ## x ## _resp *result = (rpc_ ## x ## _resp *)buf->data; \
-                            if(result->hdr.thread < 16) { \
+                            if(result->hdr.thread < NUM_TX_BUFFERS) { \
                                 tasksWaitingForReply[result->hdr.thread] = NULL; \
                             }
 

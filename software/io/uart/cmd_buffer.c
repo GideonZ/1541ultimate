@@ -88,6 +88,9 @@ INL BaseType_t cmd_buffer_get_tx_isr(command_buf_context_t *context, command_buf
 
 // free when a transmit buffer has been transferred to the TxFIFO completely
 INL BaseType_t cmd_buffer_free_isr(command_buf_context_t *context, command_buf_t *b, BaseType_t *w) {
+    if(b->bufnr & IS_RX_BUFFER) {
+        return xQueueSendFromISR(context->freeRxQueue, &b, w);
+    }
     return xQueueSendFromISR(context->freeTxQueue, &b, w);
 }
 

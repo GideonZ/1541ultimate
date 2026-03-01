@@ -883,3 +883,11 @@ void setup_modem()
     ESP_ERROR_CHECK( uart_set_pin(UART_NUM_1, IO_UART_TXD, IO_UART_RXD, IO_UART_RTS, IO_UART_CTS));
     start_dispatch(work_buffers.receivedQueue);
 }
+
+void show_buffer_status()
+{
+    ESP_LOGI(TAG, "Packets in Tx Free queue: %d", uxQueueMessagesWaiting(work_buffers.freeTxQueue));
+    ESP_LOGI(TAG, "Packets in Rx Free queue: %d", uxQueueMessagesWaiting(work_buffers.freeRxQueue));
+    ESP_LOGI(TAG, "Packets in Tx queue: %d", uxQueueMessagesWaiting(work_buffers.transmitQueue));
+    ESP_LOGI(TAG, "Packets in Received queue: %d", uxQueueMessagesWaiting(work_buffers.receivedQueue));
+}
