@@ -93,7 +93,8 @@ struct t_cfg_definition modem_cfg[] = {
 Modem :: Modem()
 {
     register_store(0x4D4F444D, "Modem Settings", modem_cfg);
-
+    cfg->set_sort_order(SORT_ORDER_CFG_MODEM);
+    
     aciaQueue = xQueueCreate(16, sizeof(AciaMessage_t));
     aciaTxBuffer = new DataBuffer(2048); // 2K transmit buffer (From C64)
 

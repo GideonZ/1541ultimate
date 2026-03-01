@@ -131,6 +131,7 @@ C64::C64()
 
     register_store(0x43363420, "C64 and Cartridge Settings", c64_config);
     cfg->set_alt_name("Cartridge and ROM Settings");
+    cfg->set_sort_order(SORT_ORDER_CFG_MEM);
 
 #ifdef U64
     cfg->set_change_hook(CFG_C64_CART_PREF, C64::setCartPref);

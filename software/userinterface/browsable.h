@@ -63,10 +63,16 @@ public:
     virtual bool getSelection() { return selected; }
     virtual bool isSelectable() { return selectable; }
     virtual void allowSelectable(bool b) { selectable = b; }
+    virtual int  getSortOrder(void) { return 0; }
 
     static int compare_alphabetically(IndexedList<Browsable *>*list, int a, int b)
     {
         return strcmp((*list)[a]->getName(), (*list)[b]->getName());
+    }
+
+    static int compare_sortorder(IndexedList<Browsable *>*list, int a, int b)
+    {
+        return (*list)[a]->getSortOrder() - (*list)[b]->getSortOrder();
     }
 
     virtual void event(int) {}
@@ -95,4 +101,27 @@ public:
     }
 };
 
+class BrowsableHeader : public Browsable
+{
+    const char *message;
+    int sort_order;
+public:
+    BrowsableHeader(const char *msg, int sortorder) : message(msg)
+    {
+        selectable = false;
+        sort_order = sortorder;
+    }
+
+    ~BrowsableHeader() { }
+    const char *getName() { return message; }
+    int getSortOrder() { return sort_order; }
+    void getDisplayString(char *buffer, int width) {
+        int len = strlen(message);
+        if (len > width) {
+            len = width;
+        }
+        int offs = 0;
+        sprintf(buffer, "%#s%#s", offs, "", len, message);
+    }
+};
 #endif /* USERINTERFACE_BROWSABLE_H_ */

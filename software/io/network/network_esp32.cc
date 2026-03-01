@@ -117,6 +117,7 @@ void NetworkLWIP_WiFi :: getSubItems(Browsable *parent, IndexedList<Browsable *>
 void NetworkLWIP_WiFi :: attach_config()
 {
 	register_store(0x57494649, "WiFi settings", wifi_config);
+    cfg->set_sort_order(SORT_ORDER_CFG_WIFI);
     cfg->set_change_hook(CFG_NET_DHCP_EN, dhcp_change);
     dhcp_change(cfg->find_item(CFG_NET_DHCP_EN));
 }

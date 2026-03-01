@@ -410,6 +410,8 @@ extern Overlay *overlay;
 U64Config :: U64Mixer :: U64Mixer()
 {
     register_store(STORE_PAGE_ID, "Audio Mixer", u64_mixer_cfg);
+    cfg->set_sort_order(SORT_ORDER_CFG_MIXER);
+
     // enable "hot" updates for mixer
     for (uint8_t b = CFG_MIXER0_VOL; b <= CFG_MIXER9_VOL; b++) {
         cfg->set_change_hook(b, U64Config::setMixer);
@@ -429,6 +431,7 @@ void U64Config :: U64Mixer :: effectuate_settings()
 U64Config :: U64SpeakerMixer :: U64SpeakerMixer()
 {
     register_store(STORE_PAGE_ID+1, "Speaker Mixer", u64_speaker_mixer_cfg);
+    cfg->set_sort_order(SORT_ORDER_CFG_SPEAKER);
     for (uint8_t b = CFG_MIXER0_VOL; b <= CFG_MIXER9_VOL; b++) {
         cfg->set_change_hook(b, U64Config::setSpeakerMixer);
     }
@@ -449,7 +452,7 @@ void U64Config :: U64SpeakerMixer :: effectuate_settings()
 U64Config :: U64SidSockets :: U64SidSockets()
 {
     register_store(STORE_PAGE_ID, "SID Sockets Configuration", u64_sid_detection_cfg);
-
+    cfg->set_sort_order(SORT_ORDER_CFG_SIDSKT);
     // This field shows what was detected and cannot be changed
     cfg->disable(CFG_SID1_TYPE);
     cfg->disable(CFG_SID2_TYPE);
@@ -750,7 +753,7 @@ void U64Config :: U64SidSockets :: effectuate_settings()
 U64Config :: U64UltiSids :: U64UltiSids()
 {
     register_store(STORE_PAGE_ID, "UltiSID Configuration", u64_ultisid_cfg);
-
+    cfg->set_sort_order(SORT_ORDER_CFG_ULTISID);
     cfg->set_change_hook(CFG_EMUSID1_FILTER, U64Config::setFilter);
     cfg->set_change_hook(CFG_EMUSID2_FILTER, U64Config::setFilter);
     cfg->set_change_hook(CFG_EMUSID1_RESONANCE, U64Config::setSidEmuParams);
@@ -779,6 +782,7 @@ void U64Config :: U64UltiSids :: effectuate_settings()
 U64Config :: U64SidAddressing :: U64SidAddressing()
 {
     register_store(STORE_PAGE_ID, "SID Addressing", u64_sid_addressing_cfg);
+    cfg->set_sort_order(SORT_ORDER_CFG_SIDADDR);
 }
 
 void U64Config :: U64SidAddressing :: effectuate_settings()
@@ -831,6 +835,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
     if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
         struct t_cfg_definition *def = u64_cfg;
         register_store(STORE_PAGE_ID, "U64 Specific Settings", def);
+
 		// Tweak: This has to be done first in order to make sure that the correct cart is started
 		// at cold boot.
         C64 *machine = C64 :: getMachine();
@@ -2450,7 +2455,7 @@ void U64Config :: late_init_palette(void *obj, void *param)
 
 void U64Config :: setup_config_menu(void)
 {
-    ConfigGroup *grp = ConfigGroupCollection :: getGroup("Video Configuration", SORT_ORDER_CFG_U64);
+    ConfigGroup *grp = ConfigGroupCollection :: getGroup("Video Configuration", SORT_ORDER_CFG_VIDEO);
     grp->append(cfg->find_item(CFG_SYSTEM_MODE));
 #if U64 == 2
     grp->append(cfg->find_item(CFG_HDMI_RESOLUTION));
@@ -2498,8 +2503,6 @@ void U64Config :: setup_config_menu(void)
     grp->append(cfg->find_item(CFG_PARCABLE_ENABLE)->set_item_altname("Parallel Cable to Drive A"));
     grp->append(cfg->find_item(CFG_IEC_BUS_MODE));
     //grp->append(cfg->find_item(CFG_HDMI_TX_SWING));
-
-    // grp = ConfigGroupCollection :: getGroup("Drive A Settings", SORT_ORDER_CFG_DRVA);
 
     grp = ConfigGroupCollection :: getGroup("SID Player Behavior", SORT_ORDER_CFG_SIDPLAY);
     grp->append(cfg->find_item(CFG_PLAYER_AUTOCONFIG));

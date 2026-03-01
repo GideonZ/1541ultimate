@@ -27,16 +27,45 @@
 #include "mystring.h"
 #include "file.h"
 
-#define SORT_ORDER_CFG_MEM 5
-#define SORT_ORDER_CFG_U64 10
-#define SORT_ORDER_CFG_SPEAKER 11
-#define SORT_ORDER_CFG_DRVA 12
-#define SORT_ORDER_CFG_DRVB 13
-#define SORT_ORDER_CFG_LEDS 15
-#define SORT_ORDER_CFG_JOYSTICK 20
-#define SORT_ORDER_CFG_TURBO 30
-#define SORT_ORDER_CFG_SIDPLAY 79
-#define SORT_ORDER_CFG_TWEAKS 80
+// Groups
+#define SORT_ORDER_HDR_AUVID    100
+#define SORT_ORDER_CFG_VIDEO    110 //
+#define SORT_ORDER_CFG_MIXER    120 //
+#define SORT_ORDER_CFG_SPEAKER  130 //
+#define SORT_ORDER_CFG_LEDS     140 // 
+#define SORT_ORDER_CFG_CLOCK    150 //
+
+#define SORT_ORDER_HDR_C64      200
+#define SORT_ORDER_CFG_MEM      210 //
+#define SORT_ORDER_CFG_TURBO    220 //
+#define SORT_ORDER_CFG_TWEAKS   230 //
+
+#define SORT_ORDER_HDR_USERIF   300
+#define SORT_ORDER_CFG_USERIF   310 //
+
+#define SORT_ORDER_HDR_SID      500
+#define SORT_ORDER_CFG_SIDSKT   501 //
+#define SORT_ORDER_CFG_SIDADDR  502 //
+#define SORT_ORDER_CFG_ULTISID  503 //
+#define SORT_ORDER_CFG_SIDREP   510 // and 511 for socket 2
+#define SORT_ORDER_CFG_SIDPLAY  520 //
+
+#define SORT_ORDER_HDR_PERIPH   600
+#define SORT_ORDER_CFG_DRIVE_A  610 //
+#define SORT_ORDER_CFG_DRIVE_B  611 //
+#define SORT_ORDER_CFG_SOFTIEC  620 //
+#define SORT_ORDER_CFG_TAPE     630 //
+#define SORT_ORDER_CFG_PRINTER  640 //
+#define SORT_ORDER_CFG_MODEM    650 //
+#define SORT_ORDER_CFG_JOYSTICK 660 //
+
+#define SORT_ORDER_HDR_NETWORK  700
+#define SORT_ORDER_CFG_ETH      710 //
+#define SORT_ORDER_CFG_WIFI     720 //
+#define SORT_ORDER_CFG_SERVICES 730 //
+#define SORT_ORDER_CFG_STREAMS  740 //
+
+// #define SORT_ORDER_HDR_MISC     800
 
 #define GROUP_NAME_LEDS "LED Lighting"
 
@@ -133,6 +162,7 @@ public:
 
 class ConfigStore
 {
+    int sort_order;
     IndexedList<ConfigurableObject *> objects;
     void *hook_obj;
     mstring store_name;
@@ -150,6 +180,8 @@ public:
     virtual ~ConfigStore();
 
     void set_alt_name(const char *alt) { alt_name = alt; }
+    void set_sort_order(int so) { sort_order = so; }
+    int  get_sort_order() { return sort_order; }
     void addObject(ConfigurableObject *obj);
     int  unregister(ConfigurableObject *obj);
     void hide() { hidden = true; }

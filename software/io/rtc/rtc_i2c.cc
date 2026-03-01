@@ -78,6 +78,7 @@ void Rtc::init()
     capable = true;
     cfg = new RtcConfigStore("Clock Settings", rtc_config);
     ConfigManager::getConfigManager()->add_custom_store(cfg);
+    cfg->set_sort_order(SORT_ORDER_CFG_CLOCK);
 
     // This is a fix for the case where the I2C is not yet initialized
     // This only works for systems where I2C is operated in PIO mode

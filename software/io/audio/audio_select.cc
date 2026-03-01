@@ -182,7 +182,8 @@ AudioConfig :: AudioConfig()
         }
     }        
     register_store(store, "Audio Output Settings", def);
-
+    cfg->set_sort_order(SORT_ORDER_CFG_MIXER);
+    
     if(capabilities & CAPAB_ULTIMATE2PLUS) {
         map = normal_map;
         def = audio_cfg_plus;

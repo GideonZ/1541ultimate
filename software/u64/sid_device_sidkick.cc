@@ -44,10 +44,11 @@ static struct t_cfg_definition sidkick_config[] = {
 SidDeviceSidKick::SidDeviceSidKick(int socket, volatile uint8_t *base, int subtype) : SidDevice(socket)
 {
     char name[40];
-    sprintf(name, "SidKick%s in Socket %d", subtype ? " Pico" : "", socket + 1);
+    sprintf(name, "SID Socket %d: SidKick%s", socket + 1, subtype ? " Pico" : "");
     
     config = new SidDeviceSidKick :: SidKickConfig(this, name, sidkick_config);
     ConfigManager::getConfigManager()->add_custom_store(config);
+    config->set_sort_order(SORT_ORDER_CFG_SIDREP + socket);
 }
 
 void SidDeviceSidKick :: SetSidType(int type)

@@ -132,7 +132,7 @@ LedStrip :: LedStrip()
     // may not yet been written in the global variable.
 	ledstrip = this; 
     register_store(0x4C454453, "LED Strip Settings", cfg_definition);
-
+    cfg->set_sort_order(SORT_ORDER_CFG_LEDS);
     cfg->set_change_hook(CFG_LED_TYPE,      LedStrip :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_LENGTH,    LedStrip :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_PATTERN,   LedStrip :: hot_effectuate);

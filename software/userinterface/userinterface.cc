@@ -104,6 +104,7 @@ UserInterface :: UserInterface(const char *title, bool use_logo) : title(title)
     menu_response_to_action = MENU_NOP;
     logo = use_logo;
     register_store(0x47454E2E, "User Interface Settings", user_if_config);
+    cfg->set_sort_order(SORT_ORDER_CFG_USERIF);
     effectuate_settings();
 }
 

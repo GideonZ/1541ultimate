@@ -122,8 +122,7 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
 
     sprintf(buffer, "Drive %c Settings", letter);
     register_store((uint32_t)regs, buffer, local_config_definitions);
-    //cfg->convert_to_group(buffer, SORT_ORDER_CFG_DRVA + (letter == 'A')?1:0);
-    //cfg->hide();
+    cfg->set_sort_order(SORT_ORDER_CFG_DRIVE_A + (letter - 'A'));
     add_roms_to_cfg_group();
 
     sprintf(buffer, "Built-in Drive %c", drive_letter);

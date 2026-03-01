@@ -131,6 +131,7 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
     my_bus_id = 0;
 
     register_store(0x49454300, "SoftIEC Drive Settings", iec_config);
+    cfg->set_sort_order(SORT_ORDER_CFG_SOFTIEC);
 
     enable = false;
     cmd_path = fm->get_new_path("IEC Gui Path");

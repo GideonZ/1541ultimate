@@ -22,10 +22,11 @@ static struct t_cfg_definition pd_sid_config[] = {
 SidDevicePdSid::SidDevicePdSid(int socket, volatile uint8_t *base) : SidDevice(socket)
 {
     char name[40];
-    sprintf(name, "PDSID in Socket %d", socket + 1);
+    sprintf(name, "SID Socket %d: PDsid", socket + 1);
     
     config = new SidDevicePdSid :: PdSidConfig(this, name, pd_sid_config);
     ConfigManager::getConfigManager()->add_custom_store(config);
+    config->set_sort_order(SORT_ORDER_CFG_SIDREP + socket);
 }
 
 void SidDevicePdSid :: SetSidType(int type)
