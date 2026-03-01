@@ -26,4 +26,6 @@ void disable_hook();
 uint8_t wifi_get_connection();
 void wifi_send_connected_event();
 
+void show_buffer_status();
+
 #endif
