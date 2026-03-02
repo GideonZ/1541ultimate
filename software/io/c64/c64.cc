@@ -134,7 +134,7 @@ C64::C64()
 
 #ifdef U64
     cfg->set_change_hook(CFG_C64_CART_PREF, C64::setCartPref);
-    setCartPref(cfg->find_item(CFG_C64_CART_PREF));
+    setCartPrefUI(cfg->find_item(CFG_C64_CART_PREF));
 #endif
 
     setup_config_menu();
@@ -166,7 +166,16 @@ C64::C64()
 #endif
 }
 
-int C64 :: setCartPref(ConfigItem *item)
+int C64 :: setCartPref(ConfigItem *item) // also set store update
+{
+    if (!item) {
+        return 0;
+    }
+    item->store->set_need_effectuate();
+    return setCartPrefUI(item);
+}
+
+int C64 :: setCartPrefUI(ConfigItem *item)
 {
     if (!item) {
         return 0;

@@ -330,7 +330,7 @@ class C64 : public GenericHost, ConfigurableObject
     }
     static void init_poll_task(void *a);
     static int setCartPref(ConfigItem *item);
-
+    static int setCartPrefUI(ConfigItem *item);
 #if U64
     bool ConfigureU64SystemBus(void);
     void EnableWriteMirroring(void);
