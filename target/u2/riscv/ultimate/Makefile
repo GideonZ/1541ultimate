@@ -36,6 +36,10 @@ SRCS_C   =	itu.c \
             middleware.c \
             multipart.c \
             url.c \
+            miniz.c \
+            miniz_tdef.c \
+            miniz_tinfl.c \
+            miniz_zip.c \
 
 SRCS_CC	 =	small_printf.cc \
 			stream.cc \
@@ -105,6 +109,7 @@ SRCS_CC	 =	small_printf.cc \
 			filetype_u2u.cc \
 			filetype_reu.cc \
 			filetype_crt.cc \
+			filetype_zip.cc \
 			filetype_sid.cc \
 			filetype_bin.cc \
 			filetype_cfg.cc \
@@ -169,6 +174,7 @@ VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/risc-v
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/risc-v/chip_specific_extensions/RV32I_CLINT_no_extensions
 VPATH +=	$(PATH_SW)/portable/riscv
 VPATH +=	$(PATH_SW)/6502/sidcrt/target
+VPATH +=	$(PATH_SW)/miniz
 VPATH +=	$(PATH_SW)/../neorv32/sw/common
 VPATH +=	$(PATH_SW)/../neorv32/sw/lib/include
 VPATH +=	$(PATH_SW)/../neorv32/sw/lib/source

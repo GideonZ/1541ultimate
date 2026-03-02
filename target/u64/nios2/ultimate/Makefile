@@ -36,7 +36,11 @@ SRCS_C   =	itu.c \
 			http_protocol.c \
 			middleware.c \
 			multipart.c \
-			url.c
+			url.c \
+			miniz.c \
+			miniz_tdef.c \
+			miniz_tinfl.c \
+			miniz_zip.c
 
 SRCS_CC	 =  u2p_init.cc \
 			usb_hwinit.cc \
@@ -110,6 +114,7 @@ SRCS_CC	 =  u2p_init.cc \
 			filetype_u2p.cc \
 			filetype_reu.cc \
 			filetype_crt.cc \
+			filetype_zip.cc \
 			filetype_sid.cc \
 			filetype_bin.cc \
 			filetype_cfg.cc \
@@ -205,6 +210,7 @@ SRCS_CC +=  iec_drive.cc \
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
 VPATH +=	$(PATH_SW)/portable/nios
+VPATH +=	$(PATH_SW)/miniz
 VPATH +=	$(PATH_SW)/u64
 VPATH +=	$(PATH_SW)/6502/sidcrt/target
 VPATH +=	$(BSP)
