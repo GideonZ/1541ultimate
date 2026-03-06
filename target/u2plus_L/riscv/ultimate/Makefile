@@ -159,7 +159,9 @@ SRCS_CC	 =  u2pl_init.cc \
 			route_machine.cc \
 			assembly_search.cc \
 			assembly.cc \
+			ftp_client.cc \
 			filesystem_a64.cc \
+			filesystem_ftp.cc \
 			dma_uart.cc \
 			esp32.cc \
 			wifi_cmd.cc \

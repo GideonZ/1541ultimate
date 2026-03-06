@@ -176,7 +176,9 @@ SRCS_CC	 =  u64ii_init.cc \
 			route_streams.cc \
 			assembly_search.cc \
 			assembly.cc \
+			ftp_client.cc \
 			filesystem_a64.cc \
+			filesystem_ftp.cc \
 			dma_uart.cc \
 			esp32.cc \
 			network_esp32.cc \

@@ -179,7 +179,9 @@ SRCS_CC	 =  u2p_init.cc \
 			route_streams.cc \
 			assembly_search.cc \
 			assembly.cc \
+			ftp_client.cc \
 			filesystem_a64.cc \
+			filesystem_ftp.cc \
 			sntp_time.cc \
 			$(PRJ).cc
 
