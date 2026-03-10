@@ -1,4 +1,7 @@
 #include "userinterface.h"
+#ifndef RECOVERYAPP
+#include "path_picker.h"
+#endif
 #include <stdio.h>
 
 #ifndef NO_FILE_ACCESS
@@ -499,6 +502,21 @@ int UserInterface :: string_box(const char *msg, char *buffer, int maxlen)
     delete box;
     return ret;
 }
+
+#ifndef RECOVERYAPP
+int UserInterface :: path_box(char *buffer, int maxlen)
+{
+    UIPathPicker *picker = new UIPathPicker(this, buffer, maxlen);
+    picker->init();
+    int ret;
+    do {
+        ret = picker->poll(0);
+    } while(!ret);
+    picker->deinit();
+    delete picker;
+    return ret;
+}
+#endif
 
 int UserInterface :: string_edit(char *buffer, int maxlen, Window *w, int x, int y)
 {

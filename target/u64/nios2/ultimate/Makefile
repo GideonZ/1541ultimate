@@ -151,6 +151,7 @@ SRCS_CC	 =  u2p_init.cc \
 			socket_dma.cc \
 			syslog.cc \
 			home_directory.cc \
+			path_picker.cc \
 			reu_preloader.cc \
 			color_timings.cc \
 			hdmi_scan.cc \

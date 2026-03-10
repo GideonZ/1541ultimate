@@ -273,7 +273,7 @@ SubsysResultCode_e UserFileInteraction::S_copyTo(SubsysCommand *cmd)
     char dest_path[64];
     strcpy(dest_path, "/");
 
-    int res = cmd->user_interface->string_box("Copy to path:", dest_path, 63);
+    int res = cmd->user_interface->path_box(dest_path, 63);
     if (res <= 0 || !dest_path[0]) {
         return SSRET_OK;
     }
@@ -302,7 +302,7 @@ SubsysResultCode_e UserFileInteraction::S_moveTo(SubsysCommand *cmd)
     char dest_path[64];
     strcpy(dest_path, "/");
 
-    int res = cmd->user_interface->string_box("Move to path:", dest_path, 63);
+    int res = cmd->user_interface->path_box(dest_path, 63);
     if (res <= 0 || !dest_path[0]) {
         return SSRET_OK;
     }
