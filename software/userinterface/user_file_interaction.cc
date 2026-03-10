@@ -287,6 +287,83 @@ SubsysResultCode_e UserFileInteraction::S_runApp(SubsysCommand *cmd)
     return SSRET_OK;
 }
 
+SubsysResultCode_e UserFileInteraction::S_copyTo(SubsysCommand *cmd)
+{
+    char dest_path[64];
+    strcpy(dest_path, "/");
+
+    int res = cmd->user_interface->path_box(dest_path, 63);
+    if (res <= 0 || !dest_path[0]) {
+        return SSRET_OK;
+    }
+
+    FileManager *fm = FileManager::getFileManager();
+    char buffer[80];
+    FRESULT fres = fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), dest_path, cmd->filename.c_str(), false);
+    if (fres == FR_EXIST) {
+        if (cmd->user_interface->popup("File exists. Overwrite?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+            fres = fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), dest_path, cmd->filename.c_str(), true);
+        } else {
+            return SSRET_OK;
+        }
+    }
+    if (fres != FR_OK) {
+        sprintf(buffer, "Copy error: %s", FileSystem::get_error_string(fres));
+        cmd->user_interface->popup(buffer, BUTTON_OK);
+        return SSRET_DISK_ERROR;
+    }
+    cmd->user_interface->popup("Copy complete.", BUTTON_OK);
+    return SSRET_OK;
+}
+
+SubsysResultCode_e UserFileInteraction::S_moveTo(SubsysCommand *cmd)
+{
+    char dest_path[64];
+    strcpy(dest_path, "/");
+
+    int res = cmd->user_interface->path_box(dest_path, 63);
+    if (res <= 0 || !dest_path[0]) {
+        return SSRET_OK;
+    }
+
+    FileManager *fm = FileManager::getFileManager();
+    char buffer[80];
+
+    // Try rename first (same filesystem = instant move)
+    Path *src = fm->get_new_path("move_src");
+    src->cd(cmd->path.c_str());
+    Path *dst = fm->get_new_path("move_dst");
+    dst->cd(dest_path);
+    FRESULT fres = fm->rename(src, cmd->filename.c_str(), dst, cmd->filename.c_str());
+
+    if (fres == FR_INVALID_DRIVE) {
+        // Cross-filesystem: copy + delete
+        fres = fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), dest_path, cmd->filename.c_str(), false);
+        if (fres == FR_EXIST) {
+            if (cmd->user_interface->popup("File exists. Overwrite?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+                fres = fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), dest_path, cmd->filename.c_str(), true);
+            }
+        }
+        if (fres == FR_OK) {
+            Path *del_path = fm->get_new_path("move_del");
+            del_path->cd(cmd->path.c_str());
+            fres = fm->delete_recursive(del_path, cmd->filename.c_str());
+            fm->release_path(del_path);
+        }
+    }
+
+    fm->release_path(src);
+    fm->release_path(dst);
+
+    if (fres != FR_OK) {
+        sprintf(buffer, "Move error: %s", FileSystem::get_error_string(fres));
+        cmd->user_interface->popup(buffer, BUTTON_OK);
+        return SSRET_DISK_ERROR;
+    }
+    cmd->user_interface->popup("Move complete.", BUTTON_OK);
+    return SSRET_OK;
+}
+
 // TODO: Use these functions in other user-interface based subsystem calls
 FRESULT create_file_ask_if_exists(FileManager *fm, UserInterface *ui, const char *path, const char *filename, File **f)
 {
