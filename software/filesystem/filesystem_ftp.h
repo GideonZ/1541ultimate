@@ -42,26 +42,19 @@ class FileOnFTP : public File
     File *cached;
     uint32_t inode;
     static uint32_t node_count;
+    bool needs_upload;          // STOR on close?
+    mstring remote_path;        // full FTP path for upload
 
 public:
-    FileOnFTP(FileSystem *fs, File *wrapped) : File(fs), cached(wrapped)
+    FileOnFTP(FileSystem *fs, File *wrapped, const char *ftp_path = NULL, bool upload = false)
+        : File(fs), cached(wrapped), needs_upload(upload), remote_path(ftp_path ? ftp_path : "")
     {
         node_count++;
         inode = node_count;
     }
     ~FileOnFTP() {}
 
-    FRESULT close(void)
-    {
-        if (cached) {
-            FileManager::getFileManager()->fclose(cached);
-            cached = NULL;
-            delete this;
-            return FR_OK;
-        }
-        delete this;
-        return FR_INT_ERR;
-    }
+    FRESULT close(void);
 
     FRESULT sync(void) { return cached ? cached->sync() : FR_INT_ERR; }
     FRESULT read(void *buffer, uint32_t len, uint32_t *transferred) { return cached ? cached->read(buffer, len, transferred) : FR_INT_ERR; }

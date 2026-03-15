@@ -95,10 +95,59 @@ void FileSystemFTP::drop_connection()
     connected = false;
 }
 
+FRESULT FileOnFTP::close(void)
+{
+    if (!cached) {
+        delete this;
+        return FR_INT_ERR;
+    }
+
+    FRESULT ret = FR_OK;
+
+    if (needs_upload && remote_path.length() > 0) {
+        // Flush and rewind the temp file, then STOR to FTP
+        cached->sync();
+        uint32_t size = cached->get_size();
+        printf("[FTP-FS] Uploading %d bytes to '%s'\n", size, remote_path.c_str());
+
+        if (size > 0) {
+            uint8_t *buf = new uint8_t[size];
+            if (buf) {
+                cached->seek(0);
+                uint32_t transferred;
+                cached->read(buf, size, &transferred);
+
+                FileSystemFTP *ftpfs = static_cast<FileSystemFTP *>(get_file_system());
+                if (ftpfs->connect_if_needed() == 0) {
+                    if (ftpfs->get_client()->stor(remote_path.c_str(), buf, transferred) < 0) {
+                        printf("[FTP-FS] STOR failed\n");
+                        ret = FR_DISK_ERR;
+                    }
+                } else {
+                    ret = FR_DISK_ERR;
+                }
+                delete[] buf;
+            } else {
+                printf("[FTP-FS] Out of memory for upload buffer\n");
+                ret = FR_NOT_ENOUGH_CORE;
+            }
+        }
+    }
+
+    FileManager::getFileManager()->fclose(cached);
+    cached = NULL;
+    delete this;
+    return ret;
+}
+
 FRESULT FileSystemFTP::file_open(const char *filename, uint8_t flags, File **file)
 {
-    printf("[FTP-FS] file_open: '%s'\n", filename);
+    printf("[FTP-FS] file_open: '%s' flags=0x%02X\n", filename, flags);
     *file = NULL;
+
+    // Build full FTP path for this file
+    mstring ftp_path;
+    build_ftp_path(filename, ftp_path);
 
     // Build a clean filename for /Temp/ cache
     char *fixed = new char[1 + strlen(filename)];
@@ -107,22 +156,32 @@ FRESULT FileSystemFTP::file_open(const char *filename, uint8_t flags, File **fil
 
     FileManager *fm = FileManager::getFileManager();
 
-    // Check temp cache
     mstring temp_path("/Temp/ftp_");
     temp_path += fixed;
     delete[] fixed;
 
+    bool writing = (flags & FA_WRITE) != 0;
+
+    if (writing) {
+        // Create/open a temp file for writing; upload happens on close()
+        File *tmp = NULL;
+        FRESULT fres = fm->fopen(temp_path.c_str(), flags, &tmp);
+        if (tmp) {
+            *file = new FileOnFTP(this, tmp, ftp_path.c_str(), true);
+        }
+        return fres;
+    }
+
+    // --- Read path: download from FTP if not cached ---
     FileInfo inf(128);
     FRESULT fres = fm->fstat(temp_path.c_str(), inf);
     printf("[FTP-FS] cache '%s': %s\n", temp_path.c_str(), fres == FR_OK ? "HIT" : "MISS");
 
     if (fres == FR_NO_FILE) {
-        // Download from FTP
         if (connect_if_needed() < 0) {
             return FR_DISK_ERR;
         }
 
-        // Allocate download buffer (max 4MB)
         static const int kMaxFileSize = 4 * 1024 * 1024;
         uint8_t *buf = new uint8_t[kMaxFileSize];
         if (!buf) {
@@ -130,25 +189,16 @@ FRESULT FileSystemFTP::file_open(const char *filename, uint8_t flags, File **fil
             return FR_NOT_ENOUGH_CORE;
         }
 
-        // Build full FTP path: base_path + filename
-        mstring full_path(root_node ? root_node->get_ftp_path() : "");
-        if (full_path.length() > 0 && full_path.c_str()[full_path.length() - 1] == '/') {
-            // base has trailing slash, skip leading slash in filename
-            if (filename[0] == '/') filename++;
-        }
-        full_path += filename;
-
         int bytes_read = 0;
-        int ret = client->retr(full_path.c_str(), buf, kMaxFileSize, &bytes_read);
+        int ret = client->retr(ftp_path.c_str(), buf, kMaxFileSize, &bytes_read);
         if (ret < 0 || bytes_read <= 0) {
-            printf("[FTP-FS] RETR '%s' failed\n", full_path.c_str());
+            printf("[FTP-FS] RETR '%s' failed\n", ftp_path.c_str());
             delete[] buf;
             return FR_DISK_ERR;
         }
 
         printf("[FTP-FS] Downloaded %d bytes\n", bytes_read);
 
-        // Save to temp
         File *tmp = NULL;
         fres = fm->fopen(temp_path.c_str(), FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &tmp);
         if (tmp) {
@@ -165,7 +215,7 @@ FRESULT FileSystemFTP::file_open(const char *filename, uint8_t flags, File **fil
         }
     }
 
-    // Open the cached file
+    // Open the cached file for reading
     File *temp = NULL;
     fres = fm->fopen(temp_path.c_str(), flags, &temp);
     if (temp) {
@@ -274,6 +324,10 @@ PathStatus_t FileSystemFTP::walk_path(PathInfo &pathInfo)
         pathInfo.index++;
     }
 
+    // If the last element wasn't found in the tree, tell the caller
+    if (!node) {
+        return e_EntryNotFound;
+    }
     return e_EntryFound;
 }
 
