@@ -255,17 +255,22 @@ int FTPClient::list(const char *path, char *buf, int bufsize, int *bytes_read)
 {
     *bytes_read = 0;
 
+    // CWD to target directory first.  Passing paths with spaces as a
+    // LIST argument breaks on many FTP servers because they parse the
+    // argument like shell words.  CWD doesn't have this problem.
+    if (path && *path) {
+        if (send_cmd("CWD", path) != 250) {
+            printf("[FTP] CWD '%s' failed\n", path);
+            return -1;
+        }
+    }
+
     int data_fd = open_data_connection();
     if (data_fd < 0) {
         return -1;
     }
 
-    int code;
-    if (path && *path) {
-        code = send_cmd("LIST", path);
-    } else {
-        code = send_cmd("LIST");
-    }
+    int code = send_cmd("LIST");
     if (code != 150 && code != 125) {
         lwip_close(data_fd);
         return -1;
