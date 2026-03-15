@@ -473,6 +473,141 @@ int FTPNode::fetch_children()
     return children.get_elements();
 }
 
+void FTPNode::invalidate(void)
+{
+    // Delete all children so next fetch_children() re-reads from server
+    int n = children.get_elements();
+    for (int i = 0; i < n; i++) {
+        delete children[i];
+    }
+    children.clear_list();
+}
+
+/*************************************************************/
+/* Writable filesystem operations                            */
+/*************************************************************/
+
+// Build the full FTP server path from a local filesystem path.
+// Local paths look like "subdir/file.d64"; we prepend the root's base path.
+void FileSystemFTP::build_ftp_path(const char *local_path, mstring &out)
+{
+    out = root_node ? root_node->get_ftp_path() : "/";
+    if (out.length() > 0 && out.c_str()[out.length() - 1] != '/') {
+        out += "/";
+    }
+    if (local_path && local_path[0] == '/') {
+        local_path++;
+    }
+    if (local_path) {
+        out += local_path;
+    }
+}
+
+// Find the FTPNode for the parent directory of a path.
+FTPNode *FileSystemFTP::find_parent_node(const char *path)
+{
+    if (!path || !path[0]) {
+        return root_node;
+    }
+
+    // Find last '/' (skip trailing slash)
+    int len = (int)strlen(path);
+    while (len > 1 && path[len - 1] == '/') {
+        len--;
+    }
+
+    int last_sep = -1;
+    for (int i = len - 1; i >= 0; i--) {
+        if (path[i] == '/') {
+            last_sep = i;
+            break;
+        }
+    }
+
+    if (last_sep <= 0) {
+        return root_node;
+    }
+
+    // Extract parent path using substring constructor
+    mstring parent_path(path, 0, last_sep);
+    return find_node(parent_path.c_str());
+}
+
+// Invalidate the cached children of the parent directory.
+void FileSystemFTP::invalidate_parent(const char *path)
+{
+    FTPNode *parent = find_parent_node(path);
+    if (parent) {
+        parent->invalidate();
+    }
+}
+
+FRESULT FileSystemFTP::dir_create(const char *path)
+{
+    printf("[FTP-FS] dir_create('%s')\n", path);
+
+    if (connect_if_needed() < 0) {
+        return FR_DISK_ERR;
+    }
+
+    mstring ftp_path;
+    build_ftp_path(path, ftp_path);
+
+    if (client->mkd(ftp_path.c_str()) < 0) {
+        printf("[FTP-FS] MKD '%s' failed\n", ftp_path.c_str());
+        return FR_DENIED;
+    }
+
+    invalidate_parent(path);
+    return FR_OK;
+}
+
+FRESULT FileSystemFTP::file_delete(const char *path)
+{
+    printf("[FTP-FS] file_delete('%s')\n", path);
+
+    if (connect_if_needed() < 0) {
+        return FR_DISK_ERR;
+    }
+
+    mstring ftp_path;
+    build_ftp_path(path, ftp_path);
+
+    // Try file delete first, then directory delete
+    if (client->dele(ftp_path.c_str()) < 0) {
+        if (client->rmd(ftp_path.c_str()) < 0) {
+            printf("[FTP-FS] DELE/RMD '%s' failed\n", ftp_path.c_str());
+            return FR_DENIED;
+        }
+    }
+
+    invalidate_parent(path);
+    return FR_OK;
+}
+
+FRESULT FileSystemFTP::file_rename(const char *old_name, const char *new_name)
+{
+    printf("[FTP-FS] file_rename('%s' -> '%s')\n", old_name, new_name);
+
+    if (connect_if_needed() < 0) {
+        return FR_DISK_ERR;
+    }
+
+    mstring old_ftp, new_ftp;
+    build_ftp_path(old_name, old_ftp);
+    build_ftp_path(new_name, new_ftp);
+
+    if (client->rnfr_rnto(old_ftp.c_str(), new_ftp.c_str()) < 0) {
+        printf("[FTP-FS] RNFR/RNTO failed\n");
+        return FR_DENIED;
+    }
+
+    invalidate_parent(old_name);
+    // If renamed across directories, invalidate destination too
+    invalidate_parent(new_name);
+    return FR_OK;
+}
+
 /*************************************************************/
 /* Registration                                              */
 /*************************************************************/

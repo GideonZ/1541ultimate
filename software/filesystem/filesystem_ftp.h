@@ -15,6 +15,9 @@ class FileSystemFTP : public FileSystem
     FTPNode *root_node;
 
     FTPNode *find_node(const char *path);
+    FTPNode *find_parent_node(const char *path);
+    void build_ftp_path(const char *local_path, mstring &out);
+    void invalidate_parent(const char *path);
 public:
     FileSystemFTP();
     ~FileSystemFTP();
@@ -24,8 +27,13 @@ public:
     void drop_connection();
     void set_root_node(FTPNode *n) { root_node = n; }
 
+    bool is_writable() { return true; }
+
     FRESULT dir_open(const char *path, Directory **);
+    FRESULT dir_create(const char *path);
     FRESULT file_open(const char *filename, uint8_t flags, File **);
+    FRESULT file_rename(const char *old_name, const char *new_name);
+    FRESULT file_delete(const char *path);
     PathStatus_t walk_path(PathInfo &pathInfo);
 };
 
@@ -86,6 +94,7 @@ public:
     bool is_ready(void) { return true; }
     int probe(void) { return 1; }
     int fetch_children(void);
+    void invalidate(void);
 
     const char *get_ftp_path() { return ftp_path.c_str(); }
 };

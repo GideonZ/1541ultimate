@@ -271,14 +271,32 @@ int FTPClient::list(const char *path, char *buf, int bufsize, int *bytes_read)
         return -1;
     }
 
+    // Set receive timeout so we don't block forever if the server is
+    // slow to close the data connection after sending the listing.
+    struct timeval tv;
+    tv.tv_sec = 3;
+    tv.tv_usec = 0;
+    setsockopt(data_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(struct timeval));
+
     // Read directory listing from data connection
     int total = 0;
+    int idle_rounds = 0;
     while (total < bufsize - 1) {
         int n = recv(data_fd, buf + total, bufsize - 1 - total, 0);
-        if (n <= 0) {
-            break;
+        if (n > 0) {
+            total += n;
+            idle_rounds = 0;
+        } else if (n == 0) {
+            break;  // server closed connection — transfer complete
+        } else {
+            // recv returned -1: timeout or error
+            idle_rounds++;
+            if (idle_rounds >= 2) {
+                // Two consecutive timeouts with no new data — done
+                break;
+            }
+            // First timeout: try once more in case data is still arriving
         }
-        total += n;
     }
     buf[total] = '\0';
     *bytes_read = total;
@@ -308,13 +326,27 @@ int FTPClient::retr(const char *remote_path, uint8_t *buf, int bufsize, int *byt
         return -1;
     }
 
+    // Set receive timeout for data connection
+    struct timeval rtv;
+    rtv.tv_sec = 5;
+    rtv.tv_usec = 0;
+    setsockopt(data_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&rtv, sizeof(struct timeval));
+
     int total = 0;
+    int idle = 0;
     while (total < bufsize) {
         int n = recv(data_fd, buf + total, bufsize - total, 0);
-        if (n <= 0) {
+        if (n > 0) {
+            total += n;
+            idle = 0;
+        } else if (n == 0) {
             break;
+        } else {
+            idle++;
+            if (idle >= 2) {
+                break;
+            }
         }
-        total += n;
     }
     *bytes_read = total;
 
