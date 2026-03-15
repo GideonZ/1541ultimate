@@ -6,12 +6,15 @@
 #include "cached_tree_node.h"
 #include "ftp_client.h"
 
+class FTPNode; // forward
+
 class FileSystemFTP : public FileSystem
 {
     FTPClient *client;
     bool connected;
+    FTPNode *root_node;
 
-    int ensure_connected();
+    FTPNode *find_node(const char *path);
 public:
     FileSystemFTP();
     ~FileSystemFTP();
@@ -19,7 +22,9 @@ public:
     FTPClient *get_client() { return client; }
     int connect_if_needed();
     void drop_connection();
+    void set_root_node(FTPNode *n) { root_node = n; }
 
+    FRESULT dir_open(const char *path, Directory **);
     FRESULT file_open(const char *filename, uint8_t flags, File **);
     PathStatus_t walk_path(PathInfo &pathInfo);
 };
@@ -56,6 +61,17 @@ public:
     FRESULT seek(uint32_t pos) { return cached ? cached->seek(pos) : FR_INT_ERR; }
     uint32_t get_size(void) { return cached ? cached->get_size() : 0; }
     uint32_t get_inode(void) { return inode; }
+};
+
+class DirectoryOnFTP : public Directory
+{
+    FTPNode *node;
+    int index;
+public:
+    DirectoryOnFTP(FTPNode *n) : node(n), index(0) { }
+    ~DirectoryOnFTP() { }
+
+    FRESULT get_entry(FileInfo &info);
 };
 
 class FTPNode : public CachedTreeNode

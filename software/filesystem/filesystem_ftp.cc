@@ -20,7 +20,7 @@
 /*************************************************************/
 uint32_t FileOnFTP::node_count = 0;
 
-FileSystemFTP::FileSystemFTP() : FileSystem(0), client(NULL), connected(false)
+FileSystemFTP::FileSystemFTP() : FileSystem(0), client(NULL), connected(false), root_node(NULL)
 {
     client = new FTPClient();
 }
@@ -130,10 +130,18 @@ FRESULT FileSystemFTP::file_open(const char *filename, uint8_t flags, File **fil
             return FR_NOT_ENOUGH_CORE;
         }
 
+        // Build full FTP path: base_path + filename
+        mstring full_path(root_node ? root_node->get_ftp_path() : "");
+        if (full_path.length() > 0 && full_path.c_str()[full_path.length() - 1] == '/') {
+            // base has trailing slash, skip leading slash in filename
+            if (filename[0] == '/') filename++;
+        }
+        full_path += filename;
+
         int bytes_read = 0;
-        int ret = client->retr(filename, buf, kMaxFileSize, &bytes_read);
+        int ret = client->retr(full_path.c_str(), buf, kMaxFileSize, &bytes_read);
         if (ret < 0 || bytes_read <= 0) {
-            printf("[FTP-FS] RETR '%s' failed\n", filename);
+            printf("[FTP-FS] RETR '%s' failed\n", full_path.c_str());
             delete[] buf;
             return FR_DISK_ERR;
         }
@@ -166,21 +174,125 @@ FRESULT FileSystemFTP::file_open(const char *filename, uint8_t flags, File **fil
     return fres;
 }
 
+FTPNode *FileSystemFTP::find_node(const char *path)
+{
+    if (!root_node) {
+        return NULL;
+    }
+
+    // Empty path or "/" means root
+    if (!path || !path[0] || (path[0] == '/' && !path[1])) {
+        return root_node;
+    }
+
+    // Walk the FTPNode tree element by element
+    CachedTreeNode *node = root_node;
+    const char *p = path;
+    if (*p == '/') p++;
+
+    while (*p) {
+        // Extract next path element
+        const char *end = strchr(p, '/');
+        int len = end ? (int)(end - p) : (int)strlen(p);
+        if (len == 0) {
+            p++;
+            continue;
+        }
+
+        char element[128];
+        if (len >= (int)sizeof(element)) len = sizeof(element) - 1;
+        memcpy(element, p, len);
+        element[len] = '\0';
+
+        // Make sure children are populated
+        node->fetch_children();
+        CachedTreeNode *child = node->find_child(element);
+        if (!child) {
+            return NULL;
+        }
+        node = child;
+
+        p += len;
+        if (*p == '/') p++;
+    }
+
+    // Only return if it's actually an FTPNode (directory)
+    if (!(node->get_file_info()->attrib & AM_DIR)) {
+        return NULL;
+    }
+    return static_cast<FTPNode *>(node);
+}
+
+FRESULT FileSystemFTP::dir_open(const char *path, Directory **dir)
+{
+    printf("[FTP-FS] dir_open('%s')\n", path ? path : "(null)");
+
+    FTPNode *node = find_node(path);
+    if (!node) {
+        printf("[FTP-FS] dir_open: node not found for '%s'\n", path ? path : "(null)");
+        return FR_NO_PATH;
+    }
+
+    // Populate children via FTP LIST
+    node->fetch_children();
+
+    *dir = new DirectoryOnFTP(node);
+    return FR_OK;
+}
+
 PathStatus_t FileSystemFTP::walk_path(PathInfo &pathInfo)
 {
-    // Walk as deep as we can — every path element is valid
+    // Walk through the FTPNode tree to resolve path elements
+    CachedTreeNode *node = root_node;
+
     while (pathInfo.hasMore()) {
+        const char *element = pathInfo.workPath.getElement(pathInfo.index);
+
+        if (node) {
+            node->fetch_children();
+            CachedTreeNode *child = node->find_child(element);
+            if (child) {
+                node = child;
+            } else {
+                node = NULL; // Remaining elements are unresolved (could be a file)
+            }
+        }
+
+        FileInfo *inf = pathInfo.getNewInfoPointer();
+        strncpy(inf->lfname, element, inf->lfsize);
+        inf->fs = this;
+
+        if (node) {
+            inf->attrib = node->get_file_info()->attrib;
+            inf->size = node->get_file_info()->size;
+            memcpy(inf->extension, node->get_file_info()->extension, 4);
+        } else {
+            inf->attrib = 0;
+            get_extension(element, inf->extension, true);
+        }
+
         pathInfo.index++;
     }
 
-    FileInfo *inf = pathInfo.getNewInfoPointer();
-    const char *fname = pathInfo.getFileName();
-    strncpy(inf->lfname, fname, inf->lfsize);
-    inf->attrib = 0;
-    inf->fs = this;
-    get_extension(fname, inf->extension, true);
-
     return e_EntryFound;
+}
+
+/*************************************************************/
+/* DirectoryOnFTP                                            */
+/*************************************************************/
+
+FRESULT DirectoryOnFTP::get_entry(FileInfo &info)
+{
+    // Make sure children are populated
+    node->fetch_children();
+
+    if (index >= node->children.get_elements()) {
+        return FR_NO_FILE;
+    }
+
+    CachedTreeNode *child = node->children[index++];
+    info.copyfrom(child->get_file_info());
+    return FR_OK;
 }
 
 /*************************************************************/
@@ -235,7 +347,10 @@ static bool parse_ftp_list_line(const char *line, char *name, int namesize, uint
             }
             fields++;
         }
-        // p now points to the filename
+        // skip whitespace before filename
+        while (*p == ' ' || *p == '\t') {
+            p++;
+        }
         if (*p) {
             // For symlinks, strip " -> target"
             const char *arrow = strstr(p, " -> ");
@@ -378,6 +493,7 @@ void add_ftp_to_root(void *_context, void *_param)
 
     ftp_fs_instance = new FileSystemFTP();
     FTPNode *node = new FTPNode(ftp_fs_instance, NULL, "FTP", base_path, AM_DIR);
+    ftp_fs_instance->set_root_node(node);
     FileManager::getFileManager()->add_root_entry(node);
     printf("[FTP-FS] FTP root node added (base: %s)\n", base_path);
 }

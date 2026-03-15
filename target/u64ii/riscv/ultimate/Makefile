@@ -121,6 +121,8 @@ SRCS_CC	 =  u64ii_init.cc \
 			filetype_reu.cc \
 			filetype_crt.cc \
 			filetype_zip.cc \
+			filetype_gz.cc \
+			filetype_lnx.cc \
 			filetype_sid.cc \
 			filetype_bin.cc \
 			filetype_cfg.cc \
