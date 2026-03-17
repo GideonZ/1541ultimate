@@ -34,6 +34,7 @@ int UserFileInteraction::fetch_context_items(BrowsableDirEntry *br, IndexedList<
         list.append(new Action("View", UserFileInteraction::S_view, 0));
         count++;
     }
+#ifndef RECOVERYAPP
     if (!(info->attrib & AM_VOL)) {
         list.append(new Action("Copy to...", UserFileInteraction::S_copyTo, 0));
         count++;
@@ -42,6 +43,7 @@ int UserFileInteraction::fetch_context_items(BrowsableDirEntry *br, IndexedList<
             count++;
         }
     }
+#endif
     if (info->is_writable() && !(info->attrib & AM_VOL)) {
         list.append(new Action("Rename", UserFileInteraction::S_rename, 0));
         list.append(new Action("Delete", UserFileInteraction::S_delete, 0));
