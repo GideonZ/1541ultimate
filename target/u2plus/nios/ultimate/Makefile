@@ -34,6 +34,10 @@ SRCS_C   =	itu.c \
             middleware.c \
             multipart.c \
             url.c \
+            miniz.c \
+            miniz_tdef.c \
+            miniz_tinfl.c \
+            miniz_zip.c \
 
 
 SRCS_CC	 =  u2p_init.cc \
@@ -92,6 +96,7 @@ SRCS_CC	 =  u2p_init.cc \
 			userinterface.cc \
 			ui_elements.cc \
 			user_file_interaction.cc \
+			path_picker.cc \
 			editor.cc \
 			tree_browser.cc \
 			tree_browser_state.cc \
@@ -106,6 +111,9 @@ SRCS_CC	 =  u2p_init.cc \
 			filetype_u2p.cc \
 			filetype_reu.cc \
 			filetype_crt.cc \
+			filetype_zip.cc \
+			filetype_gz.cc \
+			filetype_lnx.cc \
 			filetype_sid.cc \
 			filetype_bin.cc \
 			filetype_cfg.cc \
@@ -156,7 +164,9 @@ SRCS_CC	 =  u2p_init.cc \
 			route_machine.cc \
 			assembly_search.cc \
 			assembly.cc \
+			ftp_client.cc \
 			filesystem_a64.cc \
+			filesystem_ftp.cc \
 			sntp_time.cc \
 			$(PRJ).cc
 
@@ -177,6 +187,7 @@ SRCS_CC +=  iec_interface.cc \
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
 VPATH +=	$(PATH_SW)/portable/nios
+VPATH +=	$(PATH_SW)/miniz
 VPATH +=	$(PATH_SW)/nios_appl_bsp
 VPATH +=	$(PATH_SW)/nios_appl_bsp/HAL/inc
 VPATH +=	$(PATH_SW)/nios_appl_bsp/drivers/inc
