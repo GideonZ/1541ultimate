@@ -107,6 +107,7 @@ SRCS_CC	 =  u64ii_init.cc \
 			userinterface.cc \
 			ui_elements.cc \
 			user_file_interaction.cc \
+			path_picker.cc \
 			editor.cc \
 			tree_browser.cc \
 			tree_browser_state.cc \
