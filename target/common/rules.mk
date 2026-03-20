@@ -22,7 +22,7 @@ ALL_DEP_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_C) $(OBJS_CC))
 all: $(OUTPUT) gitinfo $(RESULT) $(FINAL)
 	@echo Making all requires $(OUTPUT), $(RESULT) and $(FINAL)	
 
-gitinfo::
+gitinfo:: $(OUTPUT)
 	@echo '/* Generated file, do not edit. */' >$(OUTPUT)/gitinfo.h
 	@echo '#define APP_VERSION_TAG    "'`git describe --tags`'"' >>$(OUTPUT)/gitinfo.h
 	@echo '#define APP_VERSION_BRANCH "'`git describe --all`'"' >>$(OUTPUT)/gitinfo.h
