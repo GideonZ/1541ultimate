@@ -123,7 +123,7 @@ void Editor :: init(Screen *scr, Keyboard *key)
     
 void Editor :: draw(void)
 {
-    struct Line line, *line_ptr;
+    struct Line line;
     int width = window->get_size_x();
     for(int i=0;i<height;i++) {
         window->move_cursor(0, i);
@@ -214,6 +214,9 @@ int Editor :: handle_key(uint8_t c)
         case KEY_F8: // end
         case KEY_END:
         	first_line = linecount - height;
+            if (first_line < 0) {
+                first_line = 0;
+            }
 			draw();
 			break;
         case KEY_BACK: // backspace

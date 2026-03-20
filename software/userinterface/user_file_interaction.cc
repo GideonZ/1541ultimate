@@ -141,22 +141,28 @@ static SubsysResultCode_e view_file(SubsysCommand *cmd, EditorType editor_type)
     FileManager *fm = FileManager::getFileManager();
     File *f = 0;
     FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
-    uint32_t transferred;
-    if (f != NULL) {
+    uint32_t transferred = 0;
+    if ((fres == FR_OK) && (f != NULL)) {
         uint32_t size = f->get_size();
         char *text_buf = new char[size + 1];
-        FRESULT fres = f->read(text_buf, size, &transferred);
+        fres = f->read(text_buf, size, &transferred);
         printf("Res = %d. Read text buffer: %d bytes. File size: %d bytes\n", fres, transferred, size);
-        text_buf[transferred] = 0;
-        switch (editor_type) {
-            case HEX_EDITOR:
-                cmd->user_interface->run_hex_editor(text_buf, transferred);
-                break;
-            default:
-                cmd->user_interface->run_editor(text_buf, transferred);
-                break;
+        if (transferred > size) {
+            transferred = size;
         }
-        delete text_buf;
+        if (fres == FR_OK) {
+            text_buf[transferred] = 0;
+            switch (editor_type) {
+                case HEX_EDITOR:
+                    cmd->user_interface->run_hex_editor(text_buf, transferred);
+                    break;
+                default:
+                    cmd->user_interface->run_editor(text_buf, transferred);
+                    break;
+            }
+        }
+        delete[] text_buf;
+        fm->fclose(f);
     }
     return SSRET_OK;
 }
