@@ -83,18 +83,32 @@ class JSON_Object : public JSON
     IndexedList<const char *>keys;
     IndexedList<JSON *>values;
     mstring renderspace;
+    bool own_keys;
 public:
-    JSON_Object() : keys(4, NULL), values(4, NULL) { }
+    JSON_Object() : keys(4, NULL), values(4, NULL), own_keys(false) { }
+    JSON_Object(bool owned) : keys(4, NULL), values(4, NULL), own_keys(owned) { }
     JsonType_t type() { return eObject; }
 
     ~JSON_Object() {
         for (int i=0;i<values.get_elements();i++) {
             delete values[i];
         }
+        if (own_keys) {
+            for (int i=0;i<keys.get_elements();i++) {
+                delete[] keys[i];
+            }
+        }
     }
 
     JSON_Object *add(const char *key, JSON *value) {
-        keys.append(key);
+        if (own_keys) {
+            // not using strdup, because we use delete[] above
+            char *newstr = new char[1+strlen(key)];
+            strcpy(newstr, key);
+            keys.append(newstr);
+        } else {
+            keys.append(key);
+        }
         values.append(value);
         return this;
     }
@@ -109,6 +123,39 @@ public:
 
     JSON_Object *add(const char *key, const bool val) {
         return add(key, new JSON_Bool(val));
+    }
+
+    JSON_Object *set(const char *key, int val) {
+        for (int i=0;i<keys.get_elements();i++) {
+            if (strcasecmp(keys[i], key) == 0) { // key exists!
+                delete values[i];
+                values.replace_idx(i, new JSON_Integer(val));
+                return this;
+            }
+        }
+        return add(key, val);
+    }
+
+    JSON_Object *set(const char *key, bool b) {
+        for (int i=0;i<keys.get_elements();i++) {
+            if (strcasecmp(keys[i], key) == 0) { // key exists!
+                delete values[i];
+                values.replace_idx(i, new JSON_Bool(b));
+                return this;
+            }
+        }
+        return add(key, b);
+    }
+
+    JSON_Object *set(const char *key, const char *str) {
+        for (int i=0;i<keys.get_elements();i++) {
+            if (strcasecmp(keys[i], key) == 0) { // key exists!
+                delete values[i];
+                values.replace_idx(i, new JSON_String(str));
+                return this;
+            }
+        }
+        return add(key, str);
     }
 
     const char *render() {
