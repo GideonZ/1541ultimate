@@ -227,23 +227,48 @@ void Keyboard_C64 :: scan(void)
         shift_prev = 0xFF;
         return;
     }
-            
-    if((shift_flag == shift_prev) && (mtrx_prev == mtrx)) { // this key was pressed before
-        if (delay_count == 0) {
-            delay_count = repeat_speed;
-            // do not return, store char
+    
+    // Special handling for the RETURN key - make it more responsive on C128D machines
+    // RETURN key is in keymap_normal[1] or on specific matrix coordinates
+    if(key == KEY_RETURN) {
+        // For RETURN key, reduce the debounce delay to make it more responsive
+        if((shift_flag == shift_prev) && (mtrx_prev == mtrx)) {
+            // RETURN key was pressed before, don't wait as long for repeat
+            if (delay_count <= 1) {  // Use a shorter threshold for RETURN key
+                delay_count = repeat_speed / 2;  // Use half the repeat delay for RETURN
+                // Continue to store the key below
+            } else {
+                delay_count = delay_count - 2;  // Decrease the delay counter faster
+                if (delay_count <= 0) {
+                    delay_count = 0;  // Prevent underflow
+                }
+                // Continue to store the key
+            }
         } else {
-            delay_count = delay_count - 1;
-            return;
+            // First time RETURN key was pressed
+            delay_count = first_delay / 2;  // Half the initial delay for RETURN
+            mtrx_prev = mtrx;
+            shift_prev = shift_flag;
         }
-    } else if(mtrx == mtrx_prev) { // same key, but modifier changed.. ignore! (for some time)
-        delay_count = first_delay;
-        shift_prev = shift_flag;
-        return;
-    } else {  // first time this key was pressed
-        delay_count = first_delay;
-        mtrx_prev = mtrx;
-        shift_prev = shift_flag;        
+    } else {
+        // Normal handling for other keys
+        if((shift_flag == shift_prev) && (mtrx_prev == mtrx)) { // this key was pressed before
+            if (delay_count == 0) {
+                delay_count = repeat_speed;
+                // do not return, store char
+            } else {
+                delay_count = delay_count - 1;
+                return;
+            }
+        } else if(mtrx == mtrx_prev) { // same key, but modifier changed.. ignore! (for some time)
+            delay_count = first_delay;
+            shift_prev = shift_flag;
+            return;
+        } else {  // first time this key was pressed
+            delay_count = first_delay;
+            mtrx_prev = mtrx;
+            shift_prev = shift_flag;        
+        }
     }
 
 //    printf("%b ", key);
