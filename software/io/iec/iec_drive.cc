@@ -6,15 +6,10 @@
 #include "command_intf.h"
 #include "init_function.h"
 #include "json.h"
-<<<<<<< HEAD
-#include "blockdev_flash.h"
-#include <string.h>
-=======
 
 #ifndef FS_ROOT
 #define FS_ROOT "/USB0/"
 #endif
->>>>>>> master
 
 #define MENU_IEC_ON          0xCA0E
 #define MENU_IEC_OFF         0xCA0F
