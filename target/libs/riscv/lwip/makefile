@@ -2,6 +2,9 @@
 CROSS	     = riscv32-unknown-elf-
 ELFTYPE      = elf32-littleriscv
 ARCHITECTURE = riscv
+# CPU architecture and ABI
+MARCH ?= rv32i
+MABI  ?= ilp32
 
 include ../../../common/environment.mk
 
@@ -93,7 +96,7 @@ SRCS_CC	 =
 SRCS_ASM =  
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -Os -ffunction-sections -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000
+OPTIONS  = -march=$(MARCH) -mabi=$(MABI) -gdwarf-2 -Os -ffunction-sections -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000
 COPTIONS = $(OPTIONS) -std=c99 
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti
 LINK 	 = 

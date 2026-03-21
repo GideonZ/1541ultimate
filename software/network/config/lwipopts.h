@@ -629,7 +629,7 @@
  * Define to 0 if your device is low on memory.
  */
 #define TCP_QUEUE_OOSEQ                 (LWIP_TCP)
-
+#define TCP_OOSEQ_MAX_PBUFS             3
 /**
  * TCP_MSS: TCP Maximum segment size. (default is 128, a *very*
  * conservative default.)

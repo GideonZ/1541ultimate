@@ -11,11 +11,13 @@ extern "C" {
 /************************/
 /* ConfigBrowser Object */
 /************************/
-ConfigBrowser :: ConfigBrowser(UserInterface *ui, Browsable *root) : TreeBrowser(ui, root)
+ConfigBrowser :: ConfigBrowser(UserInterface *ui, Browsable *root, int level) : TreeBrowser(ui, root)
 {
     printf("Constructor config browser\n");
     setCleanup();
-    state = new ConfigBrowserState(root, this, 0);
+    has_path = false;
+    start_level = level;
+    state = new ConfigBrowserState(root, this, level);
 }
 
 ConfigBrowser :: ~ConfigBrowser()
@@ -23,12 +25,21 @@ ConfigBrowser :: ~ConfigBrowser()
     printf("Destructing config browser..\n");
 }
 
-void ConfigBrowser :: init(Screen *screen, Keyboard *k) // call on root!
+void ConfigBrowser :: start(UserInterface *ui)
 {
-	this->screen = screen;
+    static BrowsableConfigRoot configRoot; // = new BrowsableConfigRoot();
+    ConfigBrowser *configBrowser = new ConfigBrowser(ui, &configRoot, 0);
+    configBrowser->init();
+    ui->activate_uiobject(configBrowser);
+    // from this moment on, we loose focus.. polls will go directly to config menu!
+}
+
+void ConfigBrowser :: init() // call on root!
+{
+	this->screen = get_ui()->get_screen();
+	this->keyb = get_ui()->get_keyboard();
 	window = new Window(screen, (screen->get_size_x() - 40) >> 1, 2, 40, screen->get_size_y()-3);
 	window->draw_border();
-	keyb = k;
     state->reload();
 	state->do_refresh();
 }
@@ -65,12 +76,13 @@ void ConfigBrowserState :: into(void)
 void ConfigBrowserState :: level_up(void)
 {
     if (level == 1) { // going to level 0, we need to store in flash
-        ConfigStore *st = ((BrowsableConfigStore *) (previous->under_cursor))->getStore();
-        st->at_close_config();
+        previous->under_cursor->event(BR_EVENT_OUT);
     }
     browser->state = previous;
-    previous->refresh = true;
-    previous = NULL; // unlink;
+    if (previous) {
+        previous->refresh = true;
+        previous = NULL; // unlink;
+    }
     delete this;
 }
            
@@ -103,7 +115,7 @@ void ConfigBrowserState :: change(void)
             if (max > 79)
                 max = 79;
             strncpy(buffer, it->getString(), max);
-            if(browser->user_interface->string_box(it->get_item_name(), buffer, max)) {
+            if(browser->user_interface->string_box(it->get_item_name(), buffer, max)) { // allow empty string
                 it->setString(buffer);
                 update_selected();
             }
@@ -144,6 +156,13 @@ void ConfigBrowserState :: decrease(void)
     }
 }
     
+void ConfigBrowserState :: on_close(void)
+{
+    if (level == 1) {
+        node->event(BR_EVENT_CLOSE);
+    }
+}
+
 void ConfigBrowser :: on_exit(void)
 {
     if (user_interface->config_save == 0) {
@@ -178,7 +197,36 @@ void ConfigBrowser :: on_exit(void)
     }
 }
 
-extern const char *helptext;
+static const char *helptext_ult =
+        "Setup Menu Help\n\n"
+        "Cursor Keys:Up/Left/Down/Right\n"
+        "  (Up/Down) Selection up/down\n"
+        "  (Left)    Go one level up\n"
+        "            leave directory or disk\n"
+        "  (Right)   Enter selected item\n\n"
+        "SPACE /     Select / change item\n"
+        "  RETURN\n"
+        "+ / -       Increase/Decrease value\n"
+        "F1          Page Up\n"
+        "F7          Page Down\n"
+        "F3          Show this help text\n"
+        "RUN/STOP:   Exit\n";
+
+static const char *helptext_wasd =
+        "Setup Menu Help\n\n"
+        "WASD:       Up/Left/Down/Right\n"
+        "Cursor Keys:Up/Left/Down/Right\n"
+        "  (Up/Down) Selection up/down\n"
+        "  (Left)    Go one level up\n"
+        "            leave directory or disk\n"
+        "  (Right)   Enter selected item\n\n"
+        "SPACE /     Select / change item\n"
+        "  RETURN\n"
+        "+ / -       Increase/Decrease value\n"
+        "F3          Page Up\n"
+        "F5          Page Down\n"
+        "F7          Show this help text\n"
+        "RUN/STOP:   Exit\n";
 
 int ConfigBrowser :: handle_key(int c)
 {
@@ -190,13 +238,15 @@ int ConfigBrowser :: handle_key(int c)
         case KEY_BREAK: // runstop
         case KEY_ESCAPE:
             if (state->level == 1) { // going to level 0
-                ConfigStore *st = ((BrowsableConfigStore *) state->previous->under_cursor)->getStore();
-                st->at_close_config();
+                ((ConfigBrowserState *)state)->on_close();
             }
-            if(state->level!=0)
-            // check if we need to save to flash
-            on_exit();
-            ret = MENU_CLOSE;
+            if(state->level == start_level) {
+                // check if we need to save to flash
+                on_exit();
+                ret = MENU_CLOSE;
+            } else {
+                state->level_up();
+            }
             break;
         case KEY_DOWN: // down
             state->down(1);
@@ -204,18 +254,19 @@ int ConfigBrowser :: handle_key(int c)
         case KEY_UP: // up
             state->up(1);
             break;
-        case KEY_F1: // F1 -> page up
         case KEY_PAGEUP:
             state->up(window->get_size_y()/2);
             break;
-        case KEY_F7: // F7 -> page down
         case KEY_PAGEDOWN:
             state->down(window->get_size_y()/2);
             break;
-        case KEY_F3: // F3 -> help
+        case KEY_TASKS:
+            ret = MENU_CLOSE; // do nothing in the non-commodore mode
+            break;
+        case KEY_HELP:
             reset_quick_seek();
             state->refresh = true;
-            user_interface->run_editor(helptext, strlen(helptext));
+            user_interface->run_editor(helptext_ult, strlen(helptext_ult));
             break;
         case KEY_SPACE: // space = select
         case KEY_RETURN: // CR = select
@@ -236,7 +287,10 @@ int ConfigBrowser :: handle_key(int c)
             break;
         case KEY_LEFT: // left
 		case KEY_BACK: // del
-            if(state->level==0) {
+            if (state->level == 1) { // going to level 0
+                ((ConfigBrowserState *)state)->on_close();
+            }
+            if(state->level == start_level) {
                 on_exit();
                 ret = MENU_CLOSE; // leave
             } else {
@@ -248,8 +302,33 @@ int ConfigBrowser :: handle_key(int c)
                 state->decrease();
             break;
         default:
-            printf("Unhandled key: %b\n", c);
+            printf("Unhandled key: %03x\n", c);
     }    
     return ret;
 }
 
+void ConfigBrowser :: checkFileManagerEvent(void)
+{
+    FileManagerEvent *event;
+    while(1) {
+        event = (FileManagerEvent *)observerQueue->waitForEvent(0);
+        if (!event) {
+            break;
+        }
+
+        switch (event->eventType) {
+        case eRefreshDirectory:
+            state->refresh = true;
+            state->needs_reload = true;
+            if (state->level == 1) { // this MUST be a BrowseableConfigStore FIXME!
+                state->node->event(BR_EVENT_OPEN);
+            }
+            break;
+
+        default:
+            break;
+        }
+
+        delete event;
+    }
+}

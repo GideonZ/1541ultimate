@@ -97,12 +97,13 @@ class SubsysCommand
 {
 public:
     // Only used in Stream Menu - an obsolete ASC-II menu that was once available on UART. It directly connects to an action
-	SubsysCommand(UserInterface *ui, Action *act, const char *p, const char *fn) :
+	SubsysCommand(UserInterface *ui, Action *act, const char *p = NULL, const char *fn = NULL) :
 		user_interface(ui),
 		subsysID(act->subsys),
 		functionID(act->function),
 		mode(act->mode),
 		direct_call(act->func),
+        direct_obj(act->getObject()),
 		actionName(act->getName()),
 		path(p), filename(fn) {
 		buffer = NULL;
@@ -116,6 +117,7 @@ public:
 		functionID(funcID),
 		mode(mode),
 		direct_call(0),
+        direct_obj(NULL),
 		actionName(""),
 		path(p), filename(fn) {
 		buffer = NULL;
@@ -129,6 +131,7 @@ public:
 		functionID(funcID),
 		mode(mode),
 		direct_call(0),
+        direct_obj(NULL),
         actionName(""),
 		path(""), filename(""),
 		buffer(buffer),
@@ -231,6 +234,7 @@ public:
 	int			   functionID;
 	int 		   mode;
 	actionFunction_t direct_call;
+    const void    *direct_obj;
 	mstring        path;
 	mstring		   filename;
 	mstring        actionName;

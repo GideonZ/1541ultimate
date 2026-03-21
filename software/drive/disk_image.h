@@ -178,7 +178,7 @@ public:
         taskCategory->append(dnp);
     }
 
-	void update_task_items(bool writablePath, Path *p)
+	void update_task_items(bool writablePath)
 	{
 	    d64->setDisabled(!writablePath);
         g64->setDisabled(!writablePath);

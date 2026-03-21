@@ -49,7 +49,7 @@ class C64_Subsys : public SubSystem, ObjectWithMenu
 
     /* Object With Menu */
     void create_task_items(void);
-    void update_task_items(bool writablePath, Path *p);
+    void update_task_items(bool writablePath);
 
     /* Others */
     int  dma_load(File *f, const uint8_t *buffer, const int bufferSize,

@@ -16,6 +16,7 @@
 #include "sid_device.h"
 #include "u64.h"
 #include "filetype_vpl.h"
+#include "overlay.h"
 
 #define DATA_DIRECTORY "/flash/data"
 
@@ -36,12 +37,20 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
     } myActions;
 
     t_video_mode systemMode;
+    t_hdmi_mode hdmiMode;
+    
     FileManager *fm;
 	bool skipReset;
     TaskHandle_t resetTaskHandle;
     SidDevice *sidDevice[2];
     //alt_irq_context irq_context;
     bool temporary_stop;
+
+    uint8_t hdmiSetting;
+    TaskHandle_t hpd_monitor_task_handle;
+    SemaphoreHandle_t hpd_monitor_sem;
+    static uint8_t hpd_monitor_irq(void *a);
+    static void hpd_monitor_task(void *a);
 
     class U64Mixer : public ConfigurableObject
     {
@@ -87,7 +96,11 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
     U64SidSockets sockets;
     U64UltiSids ultisids;
     U64SidAddressing sidaddressing;
+
+    uint8_t edid[1024];
+    int edid_size;
     bool hdmiMonitor;
+    overlay_settings_t overlaySettings;
 
     uint8_t GetSidType(int slot);
     void SetSidType(int slot, uint8_t sidType);
@@ -105,7 +118,11 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
     int detectRemakes(int socket);
     int detectFPGASID(int socket);
     int detectDukestahAdapter();
+    bool read_edid();
     bool IsMonitorHDMI();
+    void configure_hdmi_output();
+    void DetermineOverlaySettings(t_video_mode mode, t_hdmi_mode hdmimode);
+
     SidDevice *getDevice(int index) { return sidDevice[index]; }
 public:
     U64Config();
@@ -114,12 +131,11 @@ public:
 
     void ResetHandler();
     void create_task_items(void);
-    void update_task_items(bool writablePath, Path *p);
+    void update_task_items(bool writablePath);
     SubsysResultCode_e executeCommand(SubsysCommand *cmd);
     void effectuate_settings();
 
     static int setPllOffset(ConfigItem *it);
-    static int setScanMode(ConfigItem *it);
     static int setMixer(ConfigItem *it);
     static int setSpeakerMixer(ConfigItem *it);
     static int enableDisableSpeaker(ConfigItem *it);
@@ -146,6 +162,9 @@ public:
     volatile uint8_t *access_socket_pre(int socket);
     void access_socket_post(int socket);
     void clear_ram(void);
+    void setup_config_menu();
+    void getOverlaySettings(overlay_settings_t &settings) { settings = this->overlaySettings; }
+    int  get_model(void);
 };
 
 extern uint8_t C64_EMUSID1_BASE_BAK;

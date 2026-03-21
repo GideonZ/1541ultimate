@@ -1,6 +1,8 @@
-<html>
+<html lang="en">
 <head>
-<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta charset="utf-8">
+<title>Ultimate II/64</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="https://cdn.jsdelivr.net/npm/jquery"></script>
 <script src="https://cdn.jsdelivr.net/npm/jquery.terminal/js/jquery.terminal.min.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jquery.terminal/css/jquery.terminal.min.css"/>
@@ -12,6 +14,8 @@ var apiPassword = "";
 var ultimateInfo = {};
 
 $(document).ready(async function () {
+
+    var basic_error = ""; // for error reports during parsing
 
     async function ensureLoggedIn() {
         // This also works with older firmware that do not support password protection (will get a 404 for /v1/info)
@@ -100,27 +104,141 @@ $(document).ready(async function () {
             $('#welcome').show();
     });
 
+    // SID page event handlers
     $('#showsidplay').click(function(event){
-            event.preventDefault(); // Prevents the default action of the anchor tag
-            $(".page").hide();
-            $('#sidplay').show();
+        event.preventDefault(); // Prevents the default action of the anchor tag
+        $(".page").hide();
+        $('#sidplay').show();
     });
 
-     $('#submitForm').click(function(e) {
-            e.preventDefault();
+    $('#sidplaysubmit').click(function(e) {
+        e.preventDefault();
+        submitSidPlayer();
+    });
+
+    $('#sidfile').on("change", function () {
+        submitSidPlayer();
+    });
+
+    $('#siddropzone').on("dragover", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        $(this).addClass("dragover");
+    });
+
+    $('#siddropzone').on("dragleave", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        $(this).removeClass("dragover");
+    });
+
+    $('#siddropzone').on("drop", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        $(this).removeClass("dragover");
+
+        const files = e.originalEvent.dataTransfer.files;
+        if (files.length > 0) {
+            $("#sidfile").prop("files", files);
             submitSidPlayer();
+        }
     });
 
+    // PRG/CRT page event handlers
     $('#showrunner').click(function(event){
-            event.preventDefault(); // Prevents the default action of the anchor tag
-            $(".page").hide();
-            $("#runner").show();
+        event.preventDefault(); // Prevents the default action of the anchor tag
+        $(".page").hide();
+        $("#runner").show();
     });
 
-     $('#submitRunnerForm').click(function(e) {
-            e.preventDefault();
-            submitRunner();
+    $('#runnersubmit').click(function(e) {
+        e.preventDefault();
+        submitRunner();
     });
+
+    $('#runnerfile').on("change", function () {
+        submitRunner();
+    });
+
+    $('#runnerdropzone').on("dragover", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        $(this).addClass("dragover");
+    });
+
+    $('#runnerdropzone').on("dragleave", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        $(this).removeClass("dragover");
+    });
+
+    $('#runnerdropzone').on("drop", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        $(this).removeClass("dragover");
+
+        const files = e.originalEvent.dataTransfer.files;
+        if (files.length > 0) {
+            $('#runnerfile').prop("files", files);
+            submitRunner();
+        }
+    });
+
+    function getFileExtension(filename) {
+        let parts = filename.split('.');
+        let extension = parts.length > 1 ? parts[parts.length - 1] : '';
+        return extension.toUpperCase();
+    }
+
+    async function submitSidPlayer() {
+        let body = $('#sidfile')[0].files[0];
+        let params = {};
+        $("#sidmsg").hide();
+
+        let extension = getFileExtension(body.name);
+        if (extension !== "SID") {
+            alert("Unsupported file extension: '."+ extension.toLowerCase()+"'");
+            return;
+        }
+
+        let [status_code, content] = await make_post_request("http://" + serverIP + "/v1/runners:sidplay", params, body);
+        if(status_code !== 200) {
+            $("#sidmsg").show();
+        }
+    }
+
+    // PRG/CRT(/SID) loader
+    async function submitRunner() {
+        let body = $('#runnerfile')[0].files[0];
+        let extension = getFileExtension(body.name);
+        let params = {};
+        $("#runmsg").hide();
+
+        let route = null;
+        if (extension === "PRG")
+            route = "/v1/runners:run_prg";
+        else if (extension === "CRT")
+            route = "/v1/runners:run_crt";
+        else if (extension === "SID")
+            route = "/v1/runners:sidplay";
+        else
+            alert("Unsupported file extension: '."+ extension.toLowerCase()+"'");
+
+        if (route !== null) {
+            let [status_code, content] = await make_post_request("http://" + serverIP + route, params, body);
+            if(status_code !== 200)
+                $("#runmsg").show();
+	}
+    }
+
+    // BASIC/tokenizer page event handlers
+    function showBASICerror(message) {
+        $("#basicmsg").text(message);
+        if (message === "")
+           $("#basicmsg").hide();
+        else
+           $("#basicmsg").show();
+    }
 
     $('#showtokenizer').click(function(event){
             event.preventDefault(); // Prevents the default action of the anchor tag
@@ -128,58 +246,59 @@ $(document).ready(async function () {
             $("#tokenizer").show();
     });
 
-    async function submitSidPlayer() {
-        let body = $('#file')[0].files[0];
-        let params = {};
-        let [status_code, content] = await make_post_request("http://" + serverIP + "/v1/runners:sidplay", params, body);
-
-        if(status_code !== 200) {
-            $("#sidmsg").show();
-        }
-        else
-        {
-            $("#sidmsg").hide();
-        }
-    }
-
-    async function submitRunner() {
-        let body = $('#runnerfile')[0].files[0];
-        let filename = $('#runnerfile')[0].files[0].name;
-        let parts = filename.split('.');
-        let extension = parts.length > 1 ? parts[parts.length - 1] : '';
-        extension = extension.toUpperCase();
-            console.log(extension);
-        let params = {};
-
-        if (extension === "PRG") {
-            let [status_code, content] = await make_post_request("http://" + serverIP + "/v1/runners:run_prg", params, body);
-
-            if(status_code !== 200) {
-                $("#runmsg").show();
-            }
-            else
-            {
-                $("#runmsg").hide();
-            }
-        }
-
-        if (extension === "CRT") {
-            let [status_code, content] = await make_post_request("http://" + serverIP + "/v1/runners:run_crt", params, body);
-
-            if(status_code !== 200) {
-                $("#runmsg").show();
-            }
-            else
-            {
-                $("#runmsg").hide();
-            }
-        }
-    }
-
-    $('#submitBASIC').click(function(event){
+    $('#submitBASIC').click(async function(event){
         event.preventDefault(); // Prevents the default action of the anchor tag
-        parseBASIC();
+        await parseBASIC();
     });
+
+    $('#submitBASICAndRun').click(async function (event) {
+        event.preventDefault(); // Prevents the default action of the anchor tag
+        if (await parseBASIC() === true)
+            await runBASIC();   // Only RUN when parsing/upload was successful
+    });
+
+    $('#runBASIC').click(async function (event) {
+        event.preventDefault(); // Prevents the default action of the anchor tag
+        await runBASIC();
+    });
+
+    $('#stopBASIC').click(async function (event) {
+        event.preventDefault(); // Prevents the default action of the anchor tag
+        await stopBASIC();
+    });
+
+    $('#uppercaseBASIC').on('change', async function (event) {
+        $("#basiceditor").toggleClass("uppercase", this.checked);  // change upper/lowercase display
+    });
+
+    // convenience: write memory - show error message when access fails
+    async function writeMemory(param, errorMsg) {
+        showBASICerror(""); // clear earlier errors
+        let [status_code, content] = await make_put_request("/v1/machine:writemem", param);
+        if (status_code !== 200) {
+            if (status_code === 0)
+                status_code = "no connection to device";
+            showBASICerror(errorMsg+" (error: "+status_code+").");
+            return false;
+        }
+        return true;
+    }
+
+    async function runBASIC() {
+        // Put "RUN\R" into the keyboard buffer
+        if (!await writeMemory({address: "0277", data: "52554E0D"}, "Failed to submit 'RUN' command"))
+            return;
+        // Set the keyboard buffer to 4 characters
+        await writeMemory({address: "00C6", data: "04"}, "Failed to submit 'RUN' command");
+    }
+
+    async function stopBASIC() {
+        // write the $91 STOP flag several times to reduce issues with a race condition, as the C64 kernal is also writing the flag
+        for (var i=0;i<5;i++)
+           // Set BASIC STOP key flag $0091
+           if (!await writeMemory({address: "0091", data: "7F"}, "Failed to set 'STOP' flag"))
+               return; // abort on first error
+    }
 
     async function parseBASIC() {
         var textarea = $("#basiceditor").val();
@@ -196,12 +315,32 @@ $(document).ready(async function () {
         const tokenized_lines = [];
         let addr = 2049;
 
+        // Clear error before starting
+        basic_error = "";
+
         // Process each line
         for(let x=0; x<lines.length; x++) {
+            const currentLineText = lines[x].trim();
+            // Correctly extract only the leading digits as line number
+            const lineNum = currentLineText.match(/^\d+/)?.[0] || "unknown";
 
-            const tokenizedLine = new TokenizedLine(lines[x].trim(), addr);
-            addr += tokenizedLine.length();
-            tokenized_lines.push(tokenizedLine)
+            const tokenizedLine = new TokenizedLine(currentLineText, addr);
+
+            // VALIDATION: Total line size in memory
+            let lineTotalLength = tokenizedLine.length();
+            if(lineTotalLength > 256) {
+                $("#basicmsg").text("Error in line " + lineNum + ". Line too long for C64 memory (" + lineTotalLength + " bytes). Max is 256. Program was not sent.").show();
+                return; // Abort processing to prevent memory corruption
+            }
+
+            // CHECK: If basic_error was set after processing this specific line
+            if(basic_error !== "") {
+                showBASICerror("Error in line " + lineNum + ". Program contains errors and was not sent. " + basic_error);
+                return false; // Stop execution to prevent sending corrupted data
+            }
+
+            addr += lineTotalLength;
+            tokenized_lines.push(tokenizedLine);
         }
 
         let i = 1
@@ -216,24 +355,30 @@ $(document).ready(async function () {
 
         var data = convertData(tokenized_lines);
 
-        if(basic_error !== "") {
-            $("#basicmsg").text(basic_error);
-            $("#basicmsg").show();
-        }
-        else {
-            $("#basicmsg").hide();
+        showBASICerror(basic_error); // show parser error messages (or hide the text box)
 
+        if(basic_error === "") {
             let params = {"address":"0801"};
             let [status_code, content] = await make_post_request("http://" + serverIP + "/v1/machine:writemem", params, data);
         
-            let varptr = toHex16(tokenized_lines[i-1].next_addr + 2);
-            varptr = varptr.substring(2, 4) + varptr.substring(0, 2);
+            if (status_code === 200) {
+                let varptr = toHex16(tokenized_lines[i-1].next_addr + 2);
+                varptr = varptr.substring(2, 4) + varptr.substring(0, 2);
 
-            params = {"address":"002d", "data": varptr };
-            [status_code, content] = await make_put_request("http://" + serverIP + "/v1/machine:writemem", params);
+                params = {"address":"002d", "data": varptr };
+                [status_code, content] = await make_put_request("http://" + serverIP + "/v1/machine:writemem", params);
+            }
+
+            if (status_code !== 200) {
+                if (status_code === 0)
+                    status_code = "no connection to device";
+                showBASICerror("Upload failed (error: "+status_code+").");
+                return false;
+            }
+            return true;
         }
 
-        basic_error = "";
+        return false;
     }
 
     function getAsciiValues(str) {
@@ -243,8 +388,6 @@ $(document).ready(async function () {
         }
         return asciiValues;
     }
-
-    var basic_error = "";
 
     const TOKENS = [
         ['restore', 140],
@@ -337,7 +480,7 @@ $(document).ready(async function () {
         ['{rght}',     0x1d],
         ['{clr}',      0x93],
         ['{clear}',    0x93],
-        ['{home}',     0x13],
+        ['{home}',     0x13],        
         
         ['{blk}',      0x90],
         ['{wht}',      0x05],
@@ -354,9 +497,23 @@ $(document).ready(async function () {
         ['{mgry}',     0x98],
         ['{lgrn}',     0x99],
         ['{lblu}',     0x9a],
-        ['{lgry}',     0x9b]
+        ['{lgry}',     0x9b],
         
-        
+        // additional entries found in COMPUTES!'s Gazette
+        ['{rvs}',      0x12],
+        ['{space}',    0x20],
+        ['{spaces}',   0x20],
+        ['{gry1}',     0x97],
+        ['{gry2}',     0x98],
+        ['{gry3}',     0x9b],
+        ['{f1}',       0x85],
+        ['{f2}',       0x86],
+        ['{f3}',       0x87],
+        ['{f4}',       0x88],
+        ['{f5}',       0x89],
+        ['{f6}',       0x8a],
+        ['{f7}',       0x8b],
+        ['{f8}',       0x8c],
     ];
 
     function asciiToPetscii(o) {
@@ -378,6 +535,8 @@ $(document).ready(async function () {
     }
 
     function scan(s, tokenize = true) {
+        s = expandCounts(s);
+        
         if (tokenize) {
             for (let i = 0; i < TOKENS.length; i++) {
                 let [token, value] = TOKENS[i];
@@ -393,9 +552,18 @@ $(document).ready(async function () {
                     return [value, s.substring(token.length)];
                 }
             }
-            basic_error = "Error -> ..." + s + " \nInvalid code.";
+            basic_error = "Error -> ..." + s + " \nInvalid special character code occurred from this point.";
+            return [null, null];
         }
         return [asciiToPetscii(s.charCodeAt(0)), s.substring(1)];
+    }
+
+    // Expand patterns like {3 spaces} → {spaces}{spaces}{spaces}
+    function expandCounts(input) {
+        return input.replace(/\{(\d+)\s+([^}]+)\}/g, (_, count, word) => {
+            count = Number(count);
+            return Array(count).fill(`{${word}}`).join('');
+        });
     }
 
     function scanLineNumber(s) {
@@ -413,17 +581,21 @@ $(document).ready(async function () {
         let bytes = [];
         let inQuotes = false;
         let inRemark = false;
+        let inData   = false;
 
         while (remainingString) {
-            let [byte, newString] = scan(remainingString, !(inQuotes || inRemark));
+            let [byte, newString] = scan(remainingString, !(inQuotes || inRemark || inData));
             bytes.push(byte);
             remainingString = newString;
 
             if (byte === '"'.charCodeAt(0)) {
                 inQuotes = !inQuotes;
             }
-            if (byte === 143) {
+            else if (byte === 143) {
                 inRemark = true;
+            }
+            else if (byte === 131) {
+                inData = true;
             }
         }
 
@@ -485,10 +657,6 @@ $(document).ready(async function () {
                     break;
                 }
             }
-
-            if (lines[currentLine].length >= 160 && e.which !== 8 && e.which !== 13) {
-                e.preventDefault();
-            }
     });
 
     function createTable() {
@@ -516,31 +684,58 @@ $(document).ready(async function () {
 
     $('#tableContainer').append(createTable());
 
+    var memViewAddress = 0;   // "m"emory view command current address
+    var memViewRange   = 256; // "m"emory view command: current range
+    var disViewAddress = 0;   // "d"isassemble current address
+    var disViewRange   = 256; // "d"isassemble current range
+
     $('.body').terminal({
         help: async function() {
 
             this.echo("Available commands (with examples):");
-            this.echo(" m - memory view ( m c000 c100 )");
+            this.echo(" m - memory view ( m | m c000 | m c000 c100 )");
             this.echo(" h - hunt memory ( h c000 c100 4a 30 00 )");
             this.echo(" f - fill memory ( f c000 c100 00 )");
-            this.echo(" d - disassemble ( d c000 c100 )");
+            this.echo(" d - disassemble ( d | d c000 | d c000 c100 )");
 
         },
-        m: async function(address) {
+        m: async function(start, end) {
 
-            hex_num = address;
-            if (isHexadecimal(hex_num)) {
-                for (let i = 0; i < 16; i++) {
-                    let params = { 'address': hex_num, 'length': '16' };
+            if (typeof start !== 'undefined')
+                start = start.toString();
+            else
+                start = memViewAddress.toString(16); // no start given: continue from the end of previous range
+
+            if (isHexadecimal(start)) {
+                start = hexToInt(start);
+                if ((typeof end === 'undefined')||(!isHexadecimal(end)))
+                    end = start+memViewRange; // no end given: use default range
+                else
+                {
+                    end = hexToInt(end);
+                    if (end > start)
+                        memViewRange = end-start; // remember current range as new default
+                }
+                memViewAddress = end; // remember current end address as default for next "m" command
+                if (end >= 0x10000)
+                {
+                    end = 0x10000;
+                    memViewAddress = 0; // wrap address
+                }
+                for (let i = 0; (i < 4096)&&(start < end); i++) {
+                    let hex_num = start.toString(16).padStart(4, "0");
+                    let size = (start+16 <= end) ? 16 : (end-start);
+                    let params = { 'address': hex_num, 'length': size };
                     let [status_code, content] = await make_binary_get_request("http://" + serverIP + "/v1/machine:readmem", params);
                     
                     if (status_code === 200) {
                         let [hex_content, ascii_content] = format_bytes_as_hex_and_ascii(content);
+                        hex_content = hex_content.padEnd(16*3, " ");
                         this.echo(`${hex_num}: ${hex_content} | ${ascii_content}`);
                     } else {
                         this.echo("Failed to read memory or invalid response length");
                     }
-                    hex_num = hex_increment(hex_num, 16);
+                    start += 16;
                 }
             } else {
                 this.echo("Invalid hexadecimal number. Please enter a 16-bit hexadecimal number.");
@@ -561,7 +756,7 @@ $(document).ready(async function () {
                     let [status_code, content] = await make_binary_get_request("http://" + serverIP + "/v1/machine:readmem", params);
 
                     if (status_code === 200) {
-                        hunt = hunt.map(hex => parseInt(hex, 16));
+                        hunt = hunt.map(hex => hexToInt(hex));
                         let indices = findConsecutiveValues(content, hunt, startInt, endInt)
                         for(let x=0; x<indices.length; x++)
                             this.echo(`${toHex16(indices[x])}`);
@@ -608,22 +803,43 @@ $(document).ready(async function () {
         },
         d: async function(start, end) {
 
-            if(isHexadecimal(start) && isHexadecimal(end)) {
+            if (typeof start !== 'undefined')
+                start = start.toString();
+            else
+                start = disViewAddress.toString(16); // no start given: continue from the end of previous range
 
-                let size = hexToInt(end) - hexToInt(start);
-
-                let params = { 'address': start, 'length': size };
-                let [status_code, content] = await make_binary_get_request("http://" + serverIP + "/v1/machine:readmem", params);
-
-                if (status_code === 200) {
-                        let result = disassembler(hexToInt(start), content);
-                        this.echo(result);
+            if(isHexadecimal(start)) {
+                start = hexToInt(start);
+                if ((typeof end === 'undefined')||(!isHexadecimal(end)))
+                    end = start+disViewRange; // no end given: use default range
+                else
+                {
+                    end = hexToInt(end.toString());
+                    if (end > start)
+                        disViewRange = end-start; // remember current range as new default
+                }
+                disViewAddress = end; // remember current end address as default for next "d" command
+                if (end >= 0x10000)
+                {
+                    end = 0x10000;
+                    disViewAddress = 0; // wrap address
                 }
 
+                let size = end - start;
+                if (size > 0) {
+                    disViewRange = end-start; // remember length as default for next "d" command
 
+                    let params = { 'address': start.toString(16), 'length': size };
+                    let [status_code, content] = await make_binary_get_request("http://" + serverIP + "/v1/machine:readmem", params);
+
+                    if (status_code === 200) {
+                        let result = disassembler(start, content);
+                        this.echo(result);
+                    }
+                }
             }
             else {
-                this.echo("Usage: d <start addr> <end addr>");
+                this.echo("Invalid hexadecimal number. Please enter a 16-bit hexadecimal number.");
             }
         }
 
@@ -1157,6 +1373,13 @@ function disassembler(startInt, byteArray) {
         padding: 20px;
         visibility: hidden;
     }
+    div#left-nav a {
+        color: blue;
+        text-decoration: none;
+    }
+    div#left-nav a:hover {
+        background-color: #beffff;
+    }
     #login {
         padding: 20px;
         width: 800px;
@@ -1177,6 +1400,21 @@ function disassembler(startInt, byteArray) {
         padding: 20px;
         display:none;
     }
+    .dropzone {
+        max-width: 600px;
+        min-height: 120px;
+        border: 2px dashed #1966be;
+        border-radius: 6px;
+        text-align: center;
+        color: #666;
+        margin-top: 15px;
+        padding: 20px 10px;
+    }
+    .dropzone.dragover {
+        border-color: #4caf50;
+        color: #4caf50;
+        background-color: #f6fff6;
+    }
     #runner {
         flex-grow: 1;
         padding: 20px;
@@ -1189,6 +1427,7 @@ function disassembler(startInt, byteArray) {
     }
     #sidmsg {
         flex-grow: 1;
+        margin-top: 20px;
         padding: 20px;
         display:none;
         background-color: red;
@@ -1197,6 +1436,7 @@ function disassembler(startInt, byteArray) {
     }
     #runmsg {
         flex-grow: 1;
+        margin-top: 20px;
         padding: 20px;
         display:none;
         background-color: red;
@@ -1205,11 +1445,28 @@ function disassembler(startInt, byteArray) {
     }
     #basicmsg {
         flex-grow: 1;
+        margin-top: 20px;
         padding: 20px;
         display:none;
         background-color: red;
         color: white;
         width: 400px;
+    }
+    #uppercaseBASIC {
+        margin-left: 20px;
+    }
+    .uppercase {
+        text-transform: uppercase;
+    }
+    .c64-textarea:focus {
+        outline: none;
+    }
+    button, input[type="button"], input[type="password"], input[type="file"]::file-selector-button {
+        padding: 5px 10px;
+        font-size: 14px;
+    }
+    li {
+	margin: 5px 0;
     }
 
     @font-face {
@@ -1217,11 +1474,18 @@ function disassembler(startInt, byteArray) {
             src: url('C64_Pro-STYLE.woff') format('woff'); /* Path to your C64 font file */
         }
 
+        .padding-tr-5 {
+            padding-top: 5px;
+            padding-right: 5px;
+        }
+
         .c64-textarea {
             font-family: monospace;
             background-color: #1966be; /* Commodore 64 screen color */
             color: #68bee6; /* Light blue text color */
-            border: none;
+            border-style: solid;
+            border-color: #68bee6;
+            border-width: 20px 13px;
             border-radius: 0;
             padding: 10px;
             font-size: 16px;
@@ -1229,7 +1493,6 @@ function disassembler(startInt, byteArray) {
             width: 900px;
             height: 400px;
             resize: none;
-
         }
 
 .trinity-dialog {
@@ -1310,7 +1573,7 @@ function disassembler(startInt, byteArray) {
         <div id="left-nav">
             <ul>
                 <li><a id="showwelcome" href="#">Home</a></li>
-                <li><a id="showsidplay" href="#">SidPlayer</a></li>
+                <li><a id="showsidplay" href="#">SID Player</a></li>
                 <li><a id="showrunner" href="#">Execute PRG / CRT</a></li>
                 <li><a id="showterminal"  href="#">Live Monitor</a></li>
                 <li><a id="showtokenizer"  href="#">BASIC Editor</a></li>
@@ -1321,8 +1584,8 @@ function disassembler(startInt, byteArray) {
                 <li><a id="domenubutton" href="#">Menu Button</a></li>
             </ul>
             <ul>
-                <li><a href="https://1541u-documentation.readthedocs.io/en/latest/api/api_calls.html" target="_blank">API Documentation</a></li>
-                <li><a href="https://ultimate64.com/Firmware" target="_blank">Firmware Releases</a></li>
+                <li><a href="https://1541u-documentation.readthedocs.io/en/latest/api/api_calls.html" target="_blank" rel="noopener">API Documentation</a></li>
+                <li><a href="https://ultimate64.com/Firmware" target="_blank" rel="noopener">Firmware Releases</a></li>
             </ul>
             <ul id="logoutmenuitem">
                 <li><a id="logout" href="#">Logout</a></li>
@@ -1340,8 +1603,8 @@ function disassembler(startInt, byteArray) {
             <p>This site serves as the dedicated web server 
                 for the Ultimate 64 and Ultimate cartridge systems. It offers a comprehensive suite of APIs, designed to 
                 enable the development of advanced integrations and remote access to your system.</p>
-            <p>You can find out more by visiting the official <a href="https://ultimate64.com/" target="_blank"> Ultimate 64 website</a>,
-                or by joining our <a href="https://www.facebook.com/groups/ultimate64" target="_blank">Facebook group</a>.
+            <p>You can find out more by visiting the official <a href="https://ultimate64.com/" target="_blank" rel="noopener"> Ultimate 64 website</a>,
+                or by joining our <a href="https://www.facebook.com/groups/ultimate64" target="_blank" rel="noopener">Facebook group</a>.
             </p>
             <p>
                 Thank you for joining and contributing to the Ultimate family of products.
@@ -1350,29 +1613,41 @@ function disassembler(startInt, byteArray) {
         </div>
 
         <div id="sidplay" class="page">
-            <h1>Sidplayer</h1>
-            <p>Use the form below to select and remotely play a sid file.</p>
+            <h1>SID Player</h1>
+            <p>Remotely play a SID file on your Ultimate!</p>
 
-            <input type="file" id="file" name="file">
-            <br />
-            <br />
-            <input type="button" id="submitForm" value="Play!">
+            <div id="siddropzone" class="dropzone" title="Drop SID file to be loaded here">
+                Drag & drop SID file here
+                <br />
+                <p style="font-size: 4em">&#x1F3B6;</p>
+                <br />
+                or press button to browse
+                <br /><br />
+                <input type="file" id="sidfile" name="file" accept=".sid,.SID" title="Select SID sound file to be played">
+                <br /><br />
+                <input type="button" id="sidplaysubmit" value="Play Again!" title="Upload and play the selected SID sound file again">
+            </div>
 
-            <div id="sidmsg">An error has occurred when playing the selected file.</div>
-
+            <div id="sidmsg">An error has occurred when uploading the selected file.</div>
         </div>
 
         <div id="runner" class="page">
             <h1>PRG / CRT Executor</h1>
-            <p>Use the form below to select a PRG or CRT file.</p>
+            <p>Remotely load a program or cartridge to your Ultimate!</p>
 
-            <input type="file" id="runnerfile" name="file">
-            <br />
-            <br />
-            <input type="button" id="submitRunnerForm" value="RUN!">
+            <div id="runnerdropzone" class="dropzone" title="Drop file to be loaded here">
+                Drag & drop PRG or CRT file here
+                <br />
+                <p style="font-size: 4em">&#x21EA;</p>
+                <br />
+                or press button to browse
+                <br /><br />
+                <input type="file" id="runnerfile" name="file" accept=".prg,.crt,.PRG,.CRT,.sid,.SID" title="Select PRG/CRT/SID file to be run">
+                <br /><br />
+                <input type="button" id="runnersubmit" value="Run Again!" title="Upload and RUN the selected file again">
+            </div>
 
             <div id="runmsg">An error has occurred when loading the selected file.</div>
-
         </div>
 
         <div id="livemon" class="page">
@@ -1388,22 +1663,46 @@ function disassembler(startInt, byteArray) {
                 </header>
                 <div class="body"></div>
             </div>
+            <div>
+                <br />
+                <table>
+                    <thead>
+                        <tr>
+                            <b>Available commands (with examples):</b>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>m</td><td>- memory view</td><td>( m | m c000 | m c000 c100 )</td></tr>
+                        <tr><td>h</td><td>- hunt memory</td><td>( h c000 c100 4a 30 00 )</td></tr>
+                        <tr><td>f</td><td>- fill memory</td><td>( f c000 c100 00 )</td></tr>
+                        <tr><td>d</td><td>- disassemble</td><td>( d | d c000 | d c000 c100 )</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <div id="tokenizer" class="page">
-            <h1>BASIC Tokenizer / Editor</h1>
+            <h1>BASIC Editor / Tokenizer</h1>
             <p>Here, you may enter a BASIC program, and upload it directly to your machine.</p>
-            <p><b>Special characters:</b></p>
-            <div id="tableContainer"></div>
 
-            <textarea id="basiceditor" class="c64-textarea" cols="80">
+            <textarea id="basiceditor" spellcheck="false" wrap="off" class="c64-textarea" cols="80">
 10 print "hello world"
-20 goto 10
-            </textarea>
-            <p><input type="button" id="submitBASIC" value="Upload"></p>
+20 goto 10</textarea>
+            <div class="padding-tr-5">
+                <span class="padding-tr-5"><input type="button" id="submitBASIC" value="Upload" title="Upload program to C64 memory"></span>
+                <span class="padding-tr-5"><input type="button" id="submitBASICAndRun" value="Upload and Run"  title="Upload program to C64 memory and RUN"></span>
+                <span class="padding-tr-5"><input type="button" id="runBASIC" value="Run" title="Send RUN command to the C64"></span>
+                <span class="padding-tr-5"><input type="button" id="stopBASIC" value="Stop" title="Send STOP command to the C64"></span>
+                <input type="checkbox" id="uppercaseBASIC"><label for="uppercaseBASIC" title="Toggle uppercase/lowercase display of BASIC program text">Uppercase</label>
+            </div>
 
             <div id="basicmsg">An error has occurred. Check for valid codes.</div>
 
+            <br />
+            <div><b>Special characters:</b></div>
+            <div id="tableContainer"></div>
+
         </div>
+    </div>
 </body>
 </html>

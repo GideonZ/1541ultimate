@@ -49,6 +49,7 @@ begin
                         control_i.char_width <= unsigned(io_req.data(3 downto 0));
                     when c_chargen_char_height =>
                         control_i.char_height <= unsigned(io_req.data(4 downto 0));
+                        control_i.big_font <= io_req.data(6);
                         control_i.stretch_y <= io_req.data(7);
                     when c_chargen_chars_per_line =>
                         control_i.chars_per_line <= unsigned(io_req.data);
@@ -69,8 +70,9 @@ begin
                     when c_chargen_perform_sync =>
                         control_i.perform_sync <= io_req.data(0);
                     when c_chargen_transparency =>
-                        control_i.transparent <= io_req.data(3 downto 0);
-                        control_i.overlay_on  <= io_req.data(7);
+                        control_i.transparent  <= io_req.data(3 downto 0);
+                        control_i.own_keyboard <= io_req.data(6);
+                        control_i.overlay_on   <= io_req.data(7);
                     when others =>
                         null;
                 end case;

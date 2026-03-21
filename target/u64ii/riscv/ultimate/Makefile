@@ -3,7 +3,7 @@ CROSS	     = riscv32-unknown-elf-
 ELFTYPE      = elf32-littleriscv
 ARCHITECTURE = riscv
 # CPU architecture and ABI
-MARCH ?= rv32i
+MARCH ?= rv32im
 MABI  ?= ilp32
 
 include ../../../common/environment.mk
@@ -155,6 +155,8 @@ SRCS_CC	 =  u64ii_init.cc \
 			sid_device_fpgasid.cc \
 			sid_device_swinsid.cc \
 			sid_device_armsid.cc \
+			sid_device_pdsid.cc \
+			sid_device_sidkick.cc \
 			acia.cc \
 			modem.cc \
 			socket_gui.cc \
@@ -171,6 +173,7 @@ SRCS_CC	 =  u64ii_init.cc \
 			route_runners.cc \
 			route_configs.cc \
 			route_machine.cc \
+			route_streams.cc \
 			assembly_search.cc \
 			assembly.cc \
 			filesystem_a64.cc \
@@ -220,7 +223,7 @@ SRCS_IEC = iec_code.iec
 SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -march=$(MARCH) -mabi=$(MABI) $(EFFORT) -ffunction-sections -fdata-sections -nostartfiles -mno-fdiv
+OPTIONS  = -march=$(MARCH) -mabi=$(MABI) $(EFFORT) -ffunction-sections -fdata-sections -nostartfiles -mno-div
 OPTIONS += -gdwarf-2 -Os -DRISCV -DU64=2 -DUSB2513 -DOS -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=100000000 -Wno-write-strings -DFP_SUPPORT=1
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive

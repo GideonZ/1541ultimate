@@ -28,6 +28,47 @@
 #include "file.h"
 
 #define CFG_FILEPATH "/flash/config"
+// Groups
+#define SORT_ORDER_HDR_AUVID    100
+#define SORT_ORDER_CFG_VIDEO    110 //
+#define SORT_ORDER_CFG_MIXER    120 //
+#define SORT_ORDER_CFG_SPEAKER  130 //
+#define SORT_ORDER_CFG_LEDS     140 // 
+#define SORT_ORDER_CFG_CLOCK    150 //
+
+#define SORT_ORDER_HDR_C64      200
+#define SORT_ORDER_CFG_MEM      210 //
+#define SORT_ORDER_CFG_TURBO    220 //
+#define SORT_ORDER_CFG_TWEAKS   230 //
+
+#define SORT_ORDER_HDR_USERIF   300
+#define SORT_ORDER_CFG_USERIF   310 //
+
+#define SORT_ORDER_HDR_SID      500
+#define SORT_ORDER_CFG_SIDSKT   501 //
+#define SORT_ORDER_CFG_SIDADDR  502 //
+#define SORT_ORDER_CFG_ULTISID  503 //
+#define SORT_ORDER_CFG_SIDREP   510 // and 511 for socket 2
+#define SORT_ORDER_CFG_SIDPLAY  520 //
+
+#define SORT_ORDER_HDR_PERIPH   600
+#define SORT_ORDER_CFG_DRIVE_A  610 //
+#define SORT_ORDER_CFG_DRIVE_B  611 //
+#define SORT_ORDER_CFG_SOFTIEC  620 //
+#define SORT_ORDER_CFG_TAPE     630 //
+#define SORT_ORDER_CFG_PRINTER  640 //
+#define SORT_ORDER_CFG_MODEM    650 //
+#define SORT_ORDER_CFG_JOYSTICK 660 //
+
+#define SORT_ORDER_HDR_NETWORK  700
+#define SORT_ORDER_CFG_ETH      710 //
+#define SORT_ORDER_CFG_WIFI     720 //
+#define SORT_ORDER_CFG_SERVICES 730 //
+#define SORT_ORDER_CFG_STREAMS  740 //
+
+// #define SORT_ORDER_HDR_MISC     800
+
+#define GROUP_NAME_LEDS "LED Lighting"
 
 #define CFG_TYPE_VALUE   0x01
 #define CFG_TYPE_ENUM    0x02
@@ -37,6 +78,7 @@
 #define CFG_TYPE_INFO    0x06
 #define CFG_TYPE_STRFUNC 0x07
 #define CFG_TYPE_STRPASS 0x08
+#define CFG_SEPARATOR    0xFE
 #define CFG_TYPE_END     0xFF
 
 class UserInterface;
@@ -83,6 +125,7 @@ class ConfigItem
     int  pack(uint8_t *buffer, int len);
     void unpack(uint8_t *buffer, int len);
     void reset(void);
+    mstring altname;
 public:    
     ConfigStore *store;
     const t_cfg_definition *definition;
@@ -90,13 +133,19 @@ public:
     ConfigItem(ConfigStore *s, t_cfg_definition *d);
     ~ConfigItem();
 
+    static ConfigItem *separator();
+    static ConfigItem *heading(const char *);
+
     const char *get_item_name() { return definition->item_text; }
-    const char *get_display_string(char *buffer, int width);
+    const char *get_display_string(char *buffer, int width, int act, int inact);
     int  fetch_possible_settings(IndexedList<ConfigSetting *> &list);
     void execute(int sel);
     void setChangeHook(t_change_hook hook) { this->hook = hook; }
     bool isEnabled(void) { return enabled; }
     void setEnabled(bool en) { enabled = en; }
+
+    const char *get_item_altname() { if (altname.length()) { return altname.c_str(); } else { return get_item_name(); } }
+    ConfigItem *set_item_altname(const char *n) { altname = n; return this; }
 
     const int getValue() { return value; }
     const char *getString() { return string; }
@@ -114,12 +163,15 @@ public:
 
 class ConfigStore
 {
+    int sort_order;
     IndexedList<ConfigurableObject *> objects;
+    void *hook_obj;
     mstring store_name;
+    mstring alt_name;
     ConfigPage *page;
     bool  staleEffect;
     bool  staleFlash;
-    
+    bool  hidden;
     int  pack(uint8_t *buffer, int len);
     void unpack(uint8_t *buffer, int len);
 public:
@@ -127,14 +179,21 @@ public:
 
     ConfigStore(ConfigPage *page, const char *name, t_cfg_definition *defs, ConfigurableObject *obj);
     virtual ~ConfigStore();
+
+    void set_alt_name(const char *alt) { alt_name = alt; }
+    void set_sort_order(int so) { sort_order = so; }
+    int  get_sort_order() { return sort_order; }
     void addObject(ConfigurableObject *obj);
     int  unregister(ConfigurableObject *obj);
+    void hide() { hidden = true; }
+    void convert_to_group(const char *name, int sort_order);
+    bool isHidden() { return hidden; }
 
 // Interface functions
     virtual void reset(void);
     virtual void read(bool ignore);
     virtual void write(void);
-    virtual void at_open_config(void) { }
+    virtual void at_open_config(void);
 
     virtual void at_close_config(void)
     {
@@ -146,11 +205,8 @@ public:
 
     virtual void effectuate(void);
 
-/*
-    int  get_page(void) { return flash_page; }
-    int  get_page_size(void) { return block_size; }
-*/
-
+    void  set_hook_object(void *obj) { hook_obj = obj; }
+    void *get_hook_object() { return hook_obj; }
     void set_change_hook(uint8_t id, t_change_hook hook);
     void disable(uint8_t id);
     void enable(uint8_t id);
@@ -160,6 +216,7 @@ public:
     ConfigItem *find_item(const char *str);
     int  get_value(uint8_t id);
     const char *get_store_name() { return store_name.c_str(); }
+    const char *get_alt_store_name() { return alt_name.length() ? alt_name.c_str() : store_name.c_str(); }
     const char *get_string(uint8_t id);
     void set_value(uint8_t id, int value);
     void set_string(uint8_t id, const char *s);
@@ -231,6 +288,7 @@ public:
     
     ConfigStore *register_store(uint32_t page_id, const char *name, t_cfg_definition *defs, ConfigurableObject *ob);
     ConfigStore *find_store(const char *storename);
+    ConfigStore *find_store(uint32_t page_id);
     void add_custom_store(ConfigStore *cfg);
     void remove_store(ConfigStore *cfg);
 
@@ -267,9 +325,11 @@ public:
         return (cfg != NULL);
     }
 
+    virtual void on_edit() { }
     virtual void effectuate_settings() { }
 };
 
 extern const char *en_dis[];
 
+#include "config_collection.h"
 #endif

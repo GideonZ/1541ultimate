@@ -35,7 +35,7 @@ public:
     virtual ~ConfigIO();
 
     void create_task_items(void);
-    void update_task_items(bool writablePath, Path *path);
+    void update_task_items(bool writablePath);
     static SubsysResultCode_e S_save_to_file(SubsysCommand *cmd);
     static SubsysResultCode_e S_save(SubsysCommand *cmd);
     static SubsysResultCode_e S_restore(SubsysCommand *cmd);

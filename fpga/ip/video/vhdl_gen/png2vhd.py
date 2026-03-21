@@ -12,10 +12,46 @@ if len(sys.argv) < 2:
     sys.exit(1)
 
 reader = png.Reader(filename=sys.argv[1])
-data = reader.asRGB()
-size = data[:2] # get image width and height
-char_size = (size[0] // 16, size[1] // 16) # 16 characters in a row, 16 rows of characters
-bitmap = list(data[2]) # get image RGB values
+#data = reader.asRGB()
+w, h, pixels, meta = reader.read()
+char_size = (w // 16, h // 16) # 16 characters in a row, 16 rows of characters
+bitmap = list(pixels) # get image RGB values
+writer_meta = {k: meta[k] for k in (
+    "greyscale", "alpha", "bitdepth", "palette", "transparent",
+    "background", "gamma", "interlace", "planes", "chroma"
+) if k in meta}
+
+take_cbm = [0x0b, 0x12, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f]
+dest_pos = [0xd0, 0xd2, 0x80, 0x81, 0x91, 0x82, 0x90, 0x92, 0xd4, 0xd6, 0xd8, 0xda, 0xdc, 0xde]
+
+cbm_chars = bytearray(2048)
+with open("../../../../roms/chars.bin", "rb") as f:
+    cbm_chars = f.read(2048)
+
+for z,c in enumerate(take_cbm):
+    dest = dest_pos[z]
+    out_y = dest // 16 * 24
+    char = cbm_chars[c*8:c*8+8]
+    for i in range(8):
+        out_x = (dest % 16) * 12 * 3
+        write = []
+        for p in range(8):
+            if char[i] & (1 << p) != 0:
+                write = [255, 255, 255] + write
+                if p & 1 == 1:
+                    write = [255, 255, 255] + write
+            else:
+                write = [0, 0, 0] + write
+                if p & 1 == 1:
+                    write = [0, 0, 0] + write
+
+        write[0] = 128
+        bitmap[out_y + 3*i + 0][out_x : out_x + len(write)] = write
+        bitmap[out_y + 3*i + 1][out_x : out_x + len(write)] = write
+        bitmap[out_y + 3*i + 2][out_x : out_x + len(write)] = write
+
+with open("test.png", "wb") as output:
+    png.Writer(w, h, **writer_meta).write(output, bitmap)
 
 sys.stdout.write("""
 library ieee;
@@ -29,7 +65,7 @@ package font_pkg is
 
 raster = []
 for line in bitmap:
-    raster.append([c == 255 and 1 or 0 for c in [line[k+1] for k in range(0, size[0] * 3, 3)]])
+    raster.append([c == 255 and 1 or 0 for c in [line[k+1] for k in range(0, w * 3, 3)]])
 
 remap = [c for c in range(256)]
 # 1 = corner lower right
@@ -51,6 +87,15 @@ remap = [c for c in range(256)]
 # 11 = beta
 # 12 = test grid
 # 13 = diamond
+
+#buffer.raw("\x14\x15\x17\n\x18\x16\x19\n");
+remap[0x14] = 0x80
+remap[0x15] = 0x81
+remap[0x17] = 0x82
+remap[0x18] = 0x90
+remap[0x16] = 0x91
+remap[0x19] = 0x92
+
 #remap[1] = 0xda
 #remap[2] = 0xc4
 #remap[3] = 0xbf
@@ -70,6 +115,28 @@ remap = [c for c in range(256)]
 #remap[17] = 0xe1
 #remap[18] = 0xb2
 #remap[19] = 0x04
+
+remap[11] = 0xd0
+remap[12] = 0x0b
+remap[13] = 0x0e
+remap[14] = 0x0d
+remap[0x12] = 0xd2
+remap[0x1a] = 0xd4
+remap[0x1b] = 0xd6
+remap[0x1c] = 0xd8
+remap[0x1d] = 0xda
+remap[0x1e] = 0xdc
+remap[0x1f] = 0xde
+
+#define CHR_SOLID_BAR_LOWER_7   0x0B
+#define CHR_ROW_LINE_RIGHT      0x0C
+#define CHR_COLUMN_BAR_BOTTOM   0x0D // not usable!
+#define CHR_ROUNDED_UPPER_RIGHT 0x0E
+#define CHR_ROUNDED_UPPER_LEFT  0x0F
+#define CHR_ALPHA               0x10
+#define CHR_BETA                0x11
+#define CHR_SOLID_BAR_UPPER_7   0x12
+#define CHR_DIAMOND             0x13
 
 # array of character bitmaps; each bitmap is an array of lines, each line
 # consists of 1 - bit is set and 0 - bit is not set

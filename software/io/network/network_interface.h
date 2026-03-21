@@ -32,6 +32,10 @@ extern "C" {
 #define CFG_VIC_UDP_IP      0xE8
 #define CFG_VIC_UDP_PORT    0xE9
 #define CFG_VIC_UDP_EN      0xEA
+#define CFG_NET_CUR_IP      0xEB
+#define CFG_NET_MAC         0xEC
+#define CFG_NET_STATUS      0xEF
+#define CFG_NET_PCAP        0xF0
 
 #include "fifo.h" // my oh so cool fifo! :)
 #define PBUF_FIFO_SIZE 70
@@ -74,6 +78,7 @@ public:
     }
     static void set_default_interface(void);
 
+    static void write_pcap(UserInterface *intf, ConfigItem *it);
 protected:
 	struct pbuf_custom pbuf_array[PBUF_FIFO_SIZE];
 	Fifo<struct pbuf_custom *> pbuf_fifo;
@@ -97,6 +102,7 @@ protected:
     // callbacks
     static err_t lwip_output_callback(struct netif *netif, struct pbuf *pbuf);
     static void lwip_free_callback(struct pbuf *p);
+    static int dhcp_change(ConfigItem *it);
 public:
 
     NetworkInterface(void *driver,
@@ -105,7 +111,7 @@ public:
     virtual ~NetworkInterface();
 
     virtual void attach_config();
-    virtual const char *identify() { return "NetworkLWIP"; }
+    virtual const char *identify() { return "Wired Network"; }
 
 	bool start();
     void stop();
@@ -121,6 +127,7 @@ public:
 
     // from ConfigurableObject
     virtual void effectuate_settings(void);
+    virtual void on_edit(void);
 
 	void getIpAddr(uint8_t *a);
 	void getMacAddr(uint8_t *a);

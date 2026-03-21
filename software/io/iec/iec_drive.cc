@@ -6,8 +6,15 @@
 #include "command_intf.h"
 #include "init_function.h"
 #include "json.h"
+<<<<<<< HEAD
 #include "blockdev_flash.h"
 #include <string.h>
+=======
+
+#ifndef FS_ROOT
+#define FS_ROOT "/USB0/"
+#endif
+>>>>>>> master
 
 #define MENU_IEC_ON          0xCA0E
 #define MENU_IEC_OFF         0xCA0F
@@ -135,6 +142,7 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
     my_bus_id = 0;
 
     register_store(0x49454300, "SoftIEC Drive Settings", iec_config);
+    cfg->set_sort_order(SORT_ORDER_CFG_SOFTIEC);
 
     enable = false;
     cmd_path = fm->get_new_path("IEC Gui Path");
@@ -214,7 +222,7 @@ void IecDrive :: create_task_items(void)
 }
 
 // called from GUI task
-void IecDrive :: update_task_items(bool writablePath, Path *path)
+void IecDrive :: update_task_items(bool writablePath)
 {
 	if (enable) {
 		myActions.turn_off->show();

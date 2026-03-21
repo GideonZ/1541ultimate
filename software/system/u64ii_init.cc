@@ -107,7 +107,7 @@ extern "C" void ResetHdmiPll(void)
     U64_HDMI_PLL_RESET = 3;
     U64_HDMI_PLL_RESET = 0;
 }
-extern "C" void SetHdmiPll(t_video_mode mode, uint8_t _mode_bits);
+extern "C" void SetHdmiPll(t_video_mode mode);
 extern "C" void SetVideoPll(t_video_mode mode, int ppm);
 
 extern "C" {
@@ -159,22 +159,111 @@ extern "C" void SetVideoPll(t_video_mode mode, int ppm)
     i2c->i2c_unlock();
 }
 
-extern "C" void SetHdmiPll(t_video_mode mode, uint8_t mode_bits)
+void SetExternalPLL(const uint8_t *blob)
 {
-    const t_video_color_timing *ct = color_timings[(int)mode];
-    printf("--> Requested HDMI frequency mode = %d (%d Hz)\n", mode, ct->mode_bits & VIDEO_FMT_60_HZ ? 60 : 50);
-    const uint8_t init_hdmi_50[] = { 0x57, 0x00, 0x01, 0x01, 0x0F, 0xA2, 0xCA, 0xAD };
-    const uint8_t init_hdmi_60[] = { 0x57, 0x00, 0x01, 0x01, 0x55, 0xf7, 0x82, 0x89 };
-
     uint8_t hw_version = (U2PIO_BOARDREV >> 3);
-
-    C64_VIDEOFORMAT = VIDEO_FMT_60_HZ;
-    i2c->i2c_lock("SetHdmiPll");
+    i2c->i2c_lock("SetHdmiExtPll");
     i2c->set_channel(hw_version == 0x15 ? I2C_CHANNEL_1V8 : I2C_CHANNEL_HDMI);
     i2c->i2c_write_byte(PLL1, 0x81, 0x18); // LVCMOS input, powerdown
-    i2c->i2c_write_block(PLL1, 0x14, (ct->mode_bits & VIDEO_FMT_60_HZ) ? init_hdmi_60 : init_hdmi_50, 8);
-    C64_VIDEOFORMAT = mode_bits;
+    i2c->i2c_write_block(PLL1, 0x14, blob, 8);
     i2c->i2c_write_byte(PLL1, 0x81, 0x08); // LVCMOS input, powerup
     i2c->i2c_unlock();
+}
+
+#define MMCM        ((volatile uint16_t *)0x10200000)
+#define MMCM_RESET *((volatile uint8_t *)0x102000FF)
+
+void SetInternalPLL(const t_intpll_mode mode)
+{
+    switch(mode) {
+    case e_INTPLL_1x:
+        //14  128a 15  0000 16 1041 4F 1800 4E 0800 28 FFFF 18 00f4 19 7c01 1A 7de9
+        // M = 20
+        MMCM[0x14] = 0x128a;
+        MMCM[0x15] = 0x0000;
+        MMCM[0x13] = 0x0000;
+        MMCM[0x16] = 0x1041;
+        MMCM[0x4F] = 0x1800;
+        MMCM[0x4E] = 0x0800;
+        MMCM[0x28] = 0xFFFF;
+        MMCM[0x18] = 0x00f4;
+        MMCM[0x19] = 0x7C01;
+        MMCM[0x1A] = 0x7DE9;
+        // Div by 20
+        MMCM[0x08] = 0x128a;
+        MMCM[0x09] = 0x0000;
+        break;
+    case e_INTPLL_6_5:
+        // 14  130c 15  0000 16 1041 4F 1800 4E 0800 28 FFFF 18 0090 19 7c01 1A 7de9    
+        // M = 24
+        MMCM[0x14] = 0x130c;
+        MMCM[0x15] = 0x0000;
+        MMCM[0x13] = 0x0000;
+        MMCM[0x16] = 0x1041;
+        MMCM[0x4F] = 0x1800;
+        MMCM[0x4E] = 0x0800;
+        MMCM[0x28] = 0xFFFF;
+        MMCM[0x18] = 0x0090;
+        MMCM[0x19] = 0x7C01;
+        MMCM[0x1A] = 0x7DE9;
+        // Div by 20
+        MMCM[0x08] = 0x128a;
+        MMCM[0x09] = 0x0000;
+        break;
+    case e_INTPLL_25_13:
+        // 14  130d 15  0080 16 1041 4F 1800 4E 0800 28 FFFF 18 0090 19 7c01 1A 7de9
+        MMCM[0x14] = 0x130d;
+        MMCM[0x15] = 0x0080;
+        MMCM[0x13] = 0x0000;
+        MMCM[0x16] = 0x1041;
+        MMCM[0x4F] = 0x1800;
+        MMCM[0x4E] = 0x0800;
+        MMCM[0x28] = 0xFFFF;
+        MMCM[0x18] = 0x0090;
+        MMCM[0x19] = 0x7C01;
+        MMCM[0x1A] = 0x7DE9;
+        // Div by 13
+        MMCM[0x08] = 0x1187;
+        MMCM[0x09] = 0x0080;
+        break;
+    case e_INTPLL_45_52:        
+        // 14  128a 15  4c00 13 1400 16 1041 4F 1800 4E 0800 28 FFFF 18 00c2 19 7c01 1A 7de9
+        // Multiply by 22.5
+        MMCM[0x14] = 0x128a;
+        MMCM[0x15] = 0x4C00;
+        MMCM[0x13] = 0x1400;
+        MMCM[0x16] = 0x1041;
+        MMCM[0x4F] = 0x1800;
+        MMCM[0x4E] = 0x0800;
+        MMCM[0x28] = 0xFFFF;
+        MMCM[0x18] = 0x00C2;
+        MMCM[0x19] = 0x7C01;
+        MMCM[0x1A] = 0x7DE9;
+        // Div by 26
+        MMCM[0x08] = 0x134d;
+        MMCM[0x09] = 0x0000;
+        break;
+    case e_INTPLL_55_32:
+        // 14  134d 15  4800 13 3000 16 1041 4F 8800 4E 0800 28 FFFF 18 005e 19 7c01 1A 7de9
+        // Multiply by 27.5
+        MMCM[0x14] = 0x134d;
+        MMCM[0x15] = 0x4800;
+        MMCM[0x13] = 0x3000;
+        MMCM[0x16] = 0x1041;
+        MMCM[0x4F] = 0x8800;
+        MMCM[0x4E] = 0x0800;
+        MMCM[0x28] = 0xFFFF;
+        MMCM[0x18] = 0x005E;
+        MMCM[0x19] = 0x7C01;
+        MMCM[0x1A] = 0x7DE9;
+        // Div by 16
+        MMCM[0x08] = 0x1208;
+        MMCM[0x09] = 0x0000;
+        break;
+    default: 
+        printf("Unknown internal PLL request.\n");
+    }
+    MMCM_RESET = 0xB3;
+    MMCM_RESET = 0x3B;
 }
 

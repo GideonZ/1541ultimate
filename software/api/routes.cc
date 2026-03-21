@@ -30,6 +30,7 @@ void writer_complete(TempfileWriter *writer, const void *context1, void *context
         }
         delete args;
     }
+    delete writer;
 }
 
 TempfileWriter *attachment_writer(HTTPReqMessage *req, HTTPRespMessage *resp, const ApiCall_t *func, ArgsURI *args)

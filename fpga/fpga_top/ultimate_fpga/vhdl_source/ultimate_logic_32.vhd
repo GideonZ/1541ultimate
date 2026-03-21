@@ -10,7 +10,7 @@ use work.dma_bus_pkg.all;
 
 entity ultimate_logic_32 is
 generic (
-	g_version		: unsigned(7 downto 0) := X"21";
+    g_version		: unsigned(7 downto 0) := X"22";
     g_simulation    : boolean := true;
     g_ultimate2plus : boolean := false;
     g_ultimate_64   : boolean := false;
@@ -257,6 +257,8 @@ port (
     guru_irq    : in  std_logic := '0';
 
     -- Buttons
+    bling_irq       : in  std_logic := '0';
+    hdmi_irq        : in  std_logic := '0';
     emulated_freeze : in  std_logic := '0';
     emulated_menu   : in  std_logic := '0';
     emulated_reset  : in  std_logic := '0';
@@ -517,7 +519,9 @@ begin
         irq_high(1) => sys_irq_1541_1,
         irq_high(2) => sys_irq_1541_2,
         irq_high(3) => sys_irq_wifi,
-        irq_high(6 downto 4) => "000",
+        irq_high(4) => bling_irq,
+        irq_high(5) => hdmi_irq,
+        irq_high(6) => '0',
         irq_high(7) => guru_irq,
         irq_in(7)   => c64_reset_in,
         irq_in(6)   => sys_irq_eth_tx,

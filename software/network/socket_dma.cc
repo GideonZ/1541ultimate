@@ -93,7 +93,7 @@ bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
     switch(cmd) {
     case SOCKET_CMD_AUTHENTICATE:
         password = networkConfig.cfg->get_string(CFG_NETWORK_PASSWORD);
-        if (*password || (strlen(password) == length && memcmp(password, load_buffer, length) == 0)) {
+        if (!(*password) || (strlen(password) == length && memcmp(password, load_buffer, length) == 0)) {
             authenticated = true;
             buf[0] = 1;
         }
@@ -199,7 +199,7 @@ bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
 #ifdef U64
     case SOCKET_CMD_VICSTREAM_ON:
         // First DEBUG stream off
-        sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 2, "", "");
+        sys_command = new SubsysCommand(NULL, -1, (int)dataStreamer, 2, "", "");
         sys_command->direct_call = DataStreamer :: S_stopStream;
         sys_command->execute();
 
@@ -207,7 +207,7 @@ bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         if (len > 2) {
             name = (const char *)&buf[2];
         }
-        sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 0, name, "");
+        sys_command = new SubsysCommand(NULL, -1, (int)dataStreamer, 0, name, "");
         sys_command->direct_call = DataStreamer :: S_startStream;
 
         if ((len >= 2) && (buf[0] || buf[1])) {
@@ -221,7 +221,7 @@ bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         if (len > 2) {
             name = (const char *)&buf[2];
         }
-        sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 1, name, "");
+        sys_command = new SubsysCommand(NULL, -1, (int)dataStreamer, 1, name, "");
         sys_command->direct_call = DataStreamer :: S_startStream;
 
         if ((len >= 2) && (buf[0] || buf[1])) {
@@ -232,7 +232,7 @@ bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
 
     case SOCKET_CMD_DEBUGSTREAM_ON:
         // First VIC stream off
-        sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 0, "", "");
+        sys_command = new SubsysCommand(NULL, -1, (int)dataStreamer, 0, "", "");
         sys_command->direct_call = DataStreamer :: S_stopStream;
         sys_command->execute();
 
@@ -240,7 +240,7 @@ bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         if (len > 2) {
             name = (const char *)&buf[2];
         }
-        sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 2, name, "");
+        sys_command = new SubsysCommand(NULL, -1, (int)dataStreamer, 2, name, "");
         sys_command->direct_call = DataStreamer :: S_startStream;
 
         if ((len >= 2) && (buf[0] || buf[1])) {
@@ -250,19 +250,19 @@ bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         break;
 
     case SOCKET_CMD_VICSTREAM_OFF:
-        sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 0, "", "");
+        sys_command = new SubsysCommand(NULL, -1, (int)dataStreamer, 0, "", "");
         sys_command->direct_call = DataStreamer :: S_stopStream;
         sys_command->execute();
         break;
 
     case SOCKET_CMD_AUDIOSTREAM_OFF:
-        sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 1, "", "");
+        sys_command = new SubsysCommand(NULL, -1, (int)dataStreamer, 1, "", "");
         sys_command->direct_call = DataStreamer :: S_stopStream;
         sys_command->execute();
         break;
 
     case SOCKET_CMD_DEBUGSTREAM_OFF:
-        sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 2, "", "");
+        sys_command = new SubsysCommand(NULL, -1, (int)dataStreamer, 2, "", "");
         sys_command->direct_call = DataStreamer :: S_stopStream;
         sys_command->execute();
         break;

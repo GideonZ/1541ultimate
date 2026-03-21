@@ -24,6 +24,7 @@
 #define CFG_MODEM_LOOPDELAY   0x0F
 #define CFG_MODEM_RTS         0x10
 #define CFG_MODEM_HARDWARE    0x11
+#define CFG_MODEM_RXPB        0x13
 
 #define RESP_OK				0
 #define RESP_CONNECT		1
@@ -68,15 +69,22 @@ struct t_cfg_definition modem_cfg[] = {
     { CFG_MODEM_ACIA,          CFG_TYPE_ENUM,   "ACIA (6551) Mapping",           "%s", acia_mode,    0,  6, 0 },
     { CFG_MODEM_HARDWARE,      CFG_TYPE_ENUM,   "Hardware Mode",                 "%s", hw_mode,      0,  1, 0 },
     { CFG_MODEM_LISTEN_PORT,   CFG_TYPE_STRING, "Listening Port",                "%s", NULL,         2,  8, (int)"3000" },
+    { 0xFE,                    CFG_TYPE_SEP,    "",                              "",   NULL,         0,  0, 0 },
+    { 0xFE,                    CFG_TYPE_SEP,    "Handshaking",                   "",   NULL,         0,  0, 0 },
     { CFG_MODEM_LISTEN_RING,   CFG_TYPE_ENUM,   "Do RING sequence (incoming)",   "%s", en_dis,       0,  1, 1 },
     { CFG_MODEM_DTRDROP,       CFG_TYPE_ENUM,   "Drop connection on DTR low",    "%s", en_dis,       0,  1, 1 },
     { CFG_MODEM_RTS,           CFG_TYPE_ENUM,   "RTS Handshake (Rx)",            "%s", en_dis,       0,  1, 1 },
     { CFG_MODEM_CTS,           CFG_TYPE_ENUM,   "CTS Behavior",                  "%s", dcd_dsr,      0,  5, 0 },
     { CFG_MODEM_DCD,           CFG_TYPE_ENUM,   "DCD Behavior",                  "%s", dcd_dsr,      0,  5, 0 },
     { CFG_MODEM_DSR,           CFG_TYPE_ENUM,   "DSR Behavior",                  "%s", dcd_dsr,      0,  5, 1 },
-    { CFG_MODEM_OFFLINEFILE,   CFG_TYPE_STRING, "Modem Offline Text",            "%s", NULL,         0, 30, (int)"/Usb0/offline.txt" },
-    { CFG_MODEM_CONNFILE,      CFG_TYPE_STRING, "Modem Connect Text",            "%s", NULL,         0, 30, (int)"/Usb0/welcome.txt" },
-    { CFG_MODEM_BUSYFILE,      CFG_TYPE_STRING, "Modem Busy Text",               "%s", NULL,         0, 30, (int)"/Usb0/busy.txt" },
+    { CFG_MODEM_RXPB,          CFG_TYPE_ENUM,   "Automatic Rx Pushback",         "%s", en_dis,       0,  1, 0 },
+    { 0xFE,                    CFG_TYPE_SEP,    "",                              "",   NULL,         0,  0, 0 },
+    { 0xFE,                    CFG_TYPE_SEP,    "Automated Responses",           "",   NULL,         0,  0, 0 },
+    { CFG_MODEM_OFFLINEFILE,   CFG_TYPE_STRING, "Modem Offline Text",            "%s", NULL,         0, 30, (int)"/flash/offline.txt" },
+    { CFG_MODEM_CONNFILE,      CFG_TYPE_STRING, "Modem Connect Text",            "%s", NULL,         0, 30, (int)"/flash/welcome.txt" },
+    { CFG_MODEM_BUSYFILE,      CFG_TYPE_STRING, "Modem Busy Text",               "%s", NULL,         0, 30, (int)"/flash/busy.txt" },
+    { 0xFE,                    CFG_TYPE_SEP,    "",                              "",   NULL,         0,  0, 0 },
+    { 0xFE,                    CFG_TYPE_SEP,    "Tweaks",                        "",   NULL,         0,  0, 0 },
     { CFG_MODEM_TCPNODELAY,    CFG_TYPE_ENUM,   "Set Socket Opt TCP_NODELAY",    "%s", en_dis,       0,  1, 0 },
     { CFG_MODEM_LOOPDELAY,     CFG_TYPE_VALUE,  "Loop Delay",                    "%d0 ms", NULL,     1, 20, 2 },
     { CFG_TYPE_END,            CFG_TYPE_END,    "",                              "",   NULL,         0,  0, 0 } };
@@ -85,7 +93,8 @@ struct t_cfg_definition modem_cfg[] = {
 Modem :: Modem()
 {
     register_store(0x4D4F444D, "Modem Settings", modem_cfg);
-
+    cfg->set_sort_order(SORT_ORDER_CFG_MODEM);
+    
     aciaQueue = xQueueCreate(16, sizeof(AciaMessage_t));
     aciaTxBuffer = new DataBuffer(2048); // 2K transmit buffer (From C64)
 
@@ -438,6 +447,10 @@ void Modem :: SetHandshakes(bool connected, bool connecting)
         handshakes |= ACIA_HANDSH_RTSDIS;
     }
 
+    if (pushbackMode) {
+        handshakes |= ACIA_HANDSH_RXPB;
+    }
+
     AciaMessage_t setHS = { ACIA_MSG_SETHS, 0, 0 };
     setHS.smallValue = handshakes;
     xQueueSend(aciaQueue, &setHS, portMAX_DELAY);
@@ -737,7 +750,6 @@ int Modem :: ReadRegister()
 void Modem :: ModemTask()
 {
     const int baudRates[]      = {   -1,  100,  150,  220, 269,   300,  600, 1200, 2400, 3600, 4800, 7200, 9600, 14400, 19200, 38400 };
-    const uint8_t rateValues[] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x82, 0x56, 0x41, 0x2B, 0x20, 0x16, 0x10, 0x08 };
 
     AciaMessage_t message;
     char outbuf[32];
@@ -751,7 +763,6 @@ void Modem :: ModemTask()
 
     // first time configuration
     cfg->effectuate();
-    acia.SetRxRate(rateValues[8]);
     SetHandshakes(false, false);
     baudRate = baudRates[8];
 
@@ -763,7 +774,6 @@ void Modem :: ModemTask()
             newRate = baudRates[message.smallValue & 0x0F];
             if (newRate != baudRate) {
                 printf("BAUD=%d\n", newRate);
-                acia.SetRxRate(rateValues[message.smallValue & 0x0F]);
                 baudRate = newRate;
             }
             break;
@@ -780,6 +790,7 @@ void Modem :: ModemTask()
 */
         case ACIA_MSG_SETHS:
             acia.SetHS(message.smallValue);
+            printf("Handshake bits set to %b\n", message.smallValue);
             break;
         case ACIA_MSG_HANDSH:
             //printf("HANDSH=%b\n", message.smallValue);
@@ -848,28 +859,35 @@ void Modem :: RelayFileToSocket(const char *filename, int socket, const char *al
 
 void Modem :: effectuate_settings()
 {
-    int newPort;
+    int newPort = 0;
     sscanf(cfg->get_string(CFG_MODEM_LISTEN_PORT), "%d", &newPort);
 
     int base = acia_base[cfg->get_value(CFG_MODEM_ACIA)];
     if (!base) {
         acia.deinit();
-        current_iobase = 0;
     } else {
         if (cfg->get_value(CFG_MODEM_HARDWARE) == 1) {
             base |= 4; // set the hardware turbo enable bit (hacky hacky)
         }
-        acia.init(base & 0xFFFE, base & 1, aciaQueue, aciaQueue, aciaTxBuffer);
-        current_iobase = base & 0xFFFE;
     }
+    current_iobase = base & 0xFFFE;
 
     dropOnDTR = cfg->get_value(CFG_MODEM_DTRDROP);
     ctsMode = cfg->get_value(CFG_MODEM_CTS);
     dsrMode = cfg->get_value(CFG_MODEM_DSR);
     dcdMode = cfg->get_value(CFG_MODEM_DCD);
     rtsMode = cfg->get_value(CFG_MODEM_RTS);
+    pushbackMode = cfg->get_value(CFG_MODEM_RXPB);
+
     SetHandshakes(false, false);
-    listenerSocket->Start(newPort);
+
+    // Turn on after the default handshakes have been set correctly
+    if (base) {
+        acia.init(base & 0xFFFE, base & 1, aciaQueue, aciaQueue, aciaTxBuffer);
+    }
+
+    if (newPort > 0)
+        listenerSocket->Start(newPort);
 }
 
 void Modem :: reinit_acia(uint16_t base)
@@ -880,7 +898,7 @@ void Modem :: reinit_acia(uint16_t base)
             acia.deinit();
             current_iobase = 0;
         } else {
-            acia.init(basecfg & 0xFFFE, base & 1, aciaQueue, aciaQueue, aciaTxBuffer);
+            acia.init(basecfg & 0xFFFE, basecfg & 1, aciaQueue, aciaQueue, aciaTxBuffer);
             current_iobase = basecfg & 0xFFFE;
         }
     } else {

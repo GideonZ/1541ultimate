@@ -404,7 +404,7 @@ extern "C" void SetVideoPll(t_video_mode mode, int ppm)
     videoPll->execute();
 }
 
-extern "C" void SetHdmiPll(t_video_mode mode, uint8_t _mode_bits)
+extern "C" void SetHdmiPll(t_video_mode mode)
 {
     if (!hdmiPll) {
         hdmiPll = new Fpll(0x93000000, hdmiPll_def, 4);

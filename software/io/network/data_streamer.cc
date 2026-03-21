@@ -41,6 +41,7 @@ DataStreamer :: DataStreamer()
     memset(streams, 0, 4*sizeof(stream_config_t));
 
     cfg = ConfigManager :: getConfigManager()->register_store(0x44617461, "Data Streams", stream_cfg, NULL);
+    cfg->set_sort_order(SORT_ORDER_CFG_STREAMS);
 
     for (int i=0; i < 4; i++) {
         timers[i] = xTimerCreate("StreamTimer", 100, pdFALSE, (void *)i, DataStreamer :: S_timer);
@@ -124,7 +125,7 @@ SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
             my_mac[0], my_mac[1], my_mac[2], my_mac[3], my_mac[4], my_mac[5]);
 */
 
-    char dest_host[40];
+    char dest_host[40] = {0};
 
     if ((cmd->path.length() > 0) && (cmd->user_interface == NULL)) { // we were not called from the menu, and a destination name is given in the path.
         strncpy(dest_host, cmd->path.c_str(), 36);
@@ -134,7 +135,7 @@ SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
             strncpy(dest_host, default_host, 36);
         }
         if (cmd->user_interface) {
-            if (cmd->user_interface->string_box("Send to...", dest_host, 36) < 0) {
+            if ((cmd->user_interface->string_box("Send to...", dest_host, 36) < 0) || !(*dest_host)){
                 return SSRET_ABORTED_BY_USER;
             }
             cfg->set_string(CFG_STREAM_DEST0 + streamID, dest_host);
@@ -267,7 +268,7 @@ void DataStreamer :: create_task_items()
     dev->append(myActions.stopDbg);
 }
 
-void DataStreamer :: update_task_items(bool writablePath, Path *path)
+void DataStreamer :: update_task_items(bool writablePath)
 {
     myActions.startVic->setHidden(streams[0].enable != 0);
     myActions.stopVic->setHidden(streams[0].enable == 0);

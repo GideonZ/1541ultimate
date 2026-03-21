@@ -7,6 +7,10 @@
 
 bool Syslog::init(size_t buffer_size)
 {
+    if (!networkConfig.cfg) {
+        printf("** Network Config doesn't have a config?\n");
+        return false;
+    }
     const char *server = networkConfig.cfg->get_string(CFG_NETWORK_REMOTE_SYSLOG_SERVER);
     if (!server || *server == 0) {
         return false;  // Logging to syslog is disabled

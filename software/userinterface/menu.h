@@ -29,7 +29,7 @@ public:
 	}
 
 	virtual void create_task_items(void) { }
-	virtual void update_task_items(bool writablePath,  Path *) {  }
+	virtual void update_task_items(bool writablePath) {  }
 };
 
 #endif /* MENU_H_ */

@@ -8,7 +8,12 @@
 **/*.u2p
 **/*.u2r
 **/*.u2l
+**/*.ue2
 **/*.pyc
+**/*.vcd
+**/v*.str
+**/v*.jou
+**/*.log
 **/*.xrpt
 **/_xmsgs
 **/output

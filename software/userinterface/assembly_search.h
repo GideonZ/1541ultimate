@@ -17,7 +17,7 @@ public:
     AssemblySearchForm(Browsable *node, TreeBrowser *tb, int level);
     ~AssemblySearchForm();
 
-    void into(void) { printf("Seach Form Into\n"); }
+    void into(void) { printf("Search Form Into\n"); }
     void level_up(void) { printf("Search Form Up\n"); };
     void change(void);
     void increase(void);
@@ -33,6 +33,7 @@ public:
     ~AssemblyResultsView();
 
     void into(void);
+    bool into2(void) { into(); return true; }
 //    void level_up(void) { printf("Results Up\n"); };
 };
 
@@ -160,7 +161,7 @@ public:
         }
 
         if (field[0] == '$') {
-            sprintf(buffer, "           \eR <<  Search  >> \er");
+            sprintf(buffer, "\er           \eR <<  Submit  >> \er");
             return;
         }
 
@@ -172,9 +173,9 @@ public:
 
         if (value.length()) {
             // position 10
-            sprintf(buffer+10, "\eg%#s", width-11, value.c_str());
+            sprintf(buffer+10, "\er\eg%#s", width-11, value.c_str());
         } else {
-            sprintf(buffer+10, "\ek%#s", width-11, "__________________");
+            sprintf(buffer+10, "\er\ek%#s", width-11, "__________________");
         }
         if (buffer[0] > 0x60)
             buffer[0] &= 0xDF; // Capitalize ;-)
@@ -408,6 +409,9 @@ public:
                 cmd_ui->popup("No Valid Network Link", BUTTON_OK);
             return;
         }
+        Screen *scr = cmd_ui->screen;
+        scr->set_status("Connecting...", cmd_ui->color_status);
+
         BrowsableAssemblyRoot *root = assembly_gui.getRoot();
         if (!root->isInitialized()) {
             if (cmd_ui)

@@ -33,7 +33,7 @@ public:
     SidEditor(UserInterface *intf, ConfigStore *cfg);
     virtual ~SidEditor();
 
-    virtual void init(Screen *scr, Keyboard *keyb);
+    virtual void init();
     virtual void deinit(void);
     virtual int poll(int);
     virtual void draw();

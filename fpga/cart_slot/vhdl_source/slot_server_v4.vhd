@@ -706,6 +706,9 @@ begin
             stop_cond       => control.c64_stop_mode,
             c64_stop        => control.c64_stop,
             c64_stopped     => status.c64_stopped );
+
+        direct_dma_req <= c_dma_req_init;
+
     end generate;    
 
     r_no_master: if g_direct_dma generate
@@ -1049,7 +1052,7 @@ begin
         end if;
     end process;
 
-    process(address_out, kernal_addr_out, kernal_probe, do_probe_end, address_tri_l, address_tri_h)
+    process(address_out, kernal_addr_out, kernal_probe, do_probe_end, address_tri_l, address_tri_h, slot_addr_c)
     begin
         slot_addr_o <= unsigned(address_out);
         slot_addr_tl <= address_tri_l;

@@ -12,8 +12,6 @@ static const char* wdnames[7] = { "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT
 Dos dos1(1);
 Dos dos2(2);
 
-extern bool allowUltimateDosDateSet;
-
 static Message c_message_identification_dos = { 20, true, (uint8_t *)"ULTIMATE-II DOS V1.2" };
 static Message c_status_directory_empty     = { 18, true, (uint8_t *)"01,DIRECTORY EMPTY" };
 static Message c_status_truncated           = { 20, true, (uint8_t *)"02,REQUEST TRUNCATED" };
@@ -526,7 +524,7 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
         break;
     }
     case DOS_CMD_SET_TIME: {
-        if (allowUltimateDosDateSet) {
+        if (true) {
             int y, M, D, wd, h, m, s, yz, mz, cz;
             int len = command->length;
             if (len != 8) {
@@ -615,7 +613,7 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
                bool ok = actType == ftype;
                if (!ok)
                 {
-                   printf("DEBUG1: Wrong type, actual = %i, exüectted = %i\n", actType, ftype);
+                   printf("DEBUG1: Wrong type, actual = %i, exï¿½ectted = %i\n", actType, ftype);
                    *status = &c_status_incompatible_image;
                    delete ffi;
                    break;
@@ -707,7 +705,7 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
                bool ok = actType == ftype;
                if (!ok)
                 {
-                   printf("DEBUG1: Wrong type, actual = %i, exüectted = %i\n", actType, ftype);
+                   printf("DEBUG1: Wrong type, actual = %i, exï¿½ectted = %i\n", actType, ftype);
                    *status = &c_status_incompatible_image;
                    delete ffi;
                    break;

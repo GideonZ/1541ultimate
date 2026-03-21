@@ -95,6 +95,8 @@
 #define U2PL_DUT_GPIO_DIR(x)  (*(volatile uint8_t *)(U2PL_DUT_GPIO + 0x08 + x))
 #define U2PL_DUT_GPIO_DATA(x) (*(volatile uint8_t *)(U2PL_DUT_GPIO + 0x00 + x))
 
+#define MATRIX_WASD_TO_JOY (*(volatile uint32_t *)(MATRIX_KEYB + 0x0B))
+
 #define U2PIO_UR_BUFFER_ENABLE  0x80
 #define U2PIO_UR_BUFFER_DISABLE 0x40
 

@@ -1421,6 +1421,9 @@ SubsysResultCode_e ImageCreator :: S_createDNP(SubsysCommand *cmd)
         if (cmd->user_interface->string_box("Give size in tracks..", size_buffer, 16) <= 0) {
             return SSRET_INVALID_PARAMETER;
         }
+        if (!size_buffer[0]) {
+            return SSRET_INVALID_PARAMETER;
+        }
         sscanf(size_buffer, "%d", &tracks);
         if (tracks < 1) {
             cmd->user_interface->popup("Should be at least 1 track", BUTTON_OK);
@@ -1470,7 +1473,7 @@ SubsysResultCode_e ImageCreator :: S_createD64(SubsysCommand *cmd)
 	SubsysResultCode_e retval = SSRET_OK;
 
 	res = cmd->user_interface->string_box("Give name for new disk..", buffer, 22);
-	if(res > 0) {
+	if ((res > 0) && (*buffer)) {
 	    bin = new BinImage("Temporary Binary Image", tracks[cmd->mode]);
 		if(bin) {
     		bin->format(buffer);

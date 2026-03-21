@@ -56,19 +56,21 @@ void TaskMenu :: init(Window *pwin, Keyboard *key)
     int len, max_len;
     int rows, size_y;
 
-    bool writablePath = FileManager :: getFileManager() -> is_path_writable(path);
+    bool writablePath = path ? FileManager :: getFileManager() -> is_path_writable(path) : false;
     if(context_state == e_new) {
 
         for(int i=0;i<objects->get_elements();i++) {
-        	(*objects)[i]->update_task_items(writablePath, path); // This should actually update them, according to the current state of each object
+        	(*objects)[i]->update_task_items(writablePath); // This should actually update them, according to the current state of each object
         }
 
         IndexedList<TaskCategory *> *categories = TasksCollection::getCategories();
         for (int i=0; i < categories->get_elements(); i++) {
             TaskCategory *cat = (*categories)[i];
-            Action *catAction = new Action(cat->getName(), 0, 0, 0);
-            catAction->setObject(cat);
-            actions.append(catAction);
+            if (cat->countActive()) {
+                Action *catAction = new Action(cat->getName(), 0, 0, 0);
+                catAction->setObject(cat);
+                actions.append(catAction);
+            }
         }
 
         int items = actions.get_elements();
@@ -122,6 +124,13 @@ int TaskMenu :: select_item(void)
     int first_selectable_sub_item = 0;
     IndexedList <Action *> *actionlist = cat->getActions();
     int num_el = actionlist->get_elements();
+
+    Action *singleAction = (*actionlist)[0];
+    if ((num_el == 1) && (singleAction->isEnabled())) { // Only one enabled item, so we can just execute it
+        selectedAction = singleAction;
+        return 1; // done
+    }
+
     for(int i=0; i < num_el; i++) {
         Action *a = (*actionlist)[i];
         if(a->isEnabled()) {

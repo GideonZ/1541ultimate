@@ -56,7 +56,7 @@ public:
 
     // ObjectWithMenu (called from GUI task)
     void create_task_items(void);
-    void update_task_items(bool writablePath, Path *path);
+    void update_task_items(bool writablePath);
 };
 
 class UltiCopyWindow : public UIObject
@@ -68,10 +68,10 @@ public:
     int return_code;
 
     // Member functions
-    UltiCopyWindow();
+    UltiCopyWindow(UserInterface *ui);
     virtual ~UltiCopyWindow();
 
-    virtual void init(Screen *win, Keyboard *k);
+    virtual void init();
     virtual void deinit(void);
 
     virtual int poll(int);

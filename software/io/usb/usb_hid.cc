@@ -9,6 +9,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "keyboard_usb.h"
+#include "u64.h"
 
 // Entry point for call-backs.
 void UsbHidDriver_interrupt_callback(void *object) {
@@ -30,6 +31,8 @@ UsbHidDriver :: UsbHidDriver(UsbInterface *intf) : UsbDriver(intf)
     irq_in = 0;
     irq_transaction = 0;
     keyboard = false;
+    mouse = false;
+    mouse_x = mouse_y = 0;
 }
 
 UsbHidDriver :: ~UsbHidDriver()
@@ -64,7 +67,6 @@ void UsbHidDriver :: install(UsbInterface *intf)
 	    dump_hex_relative(reportDescriptor, len);
 	}
 
-
 	struct t_endpoint_descriptor *iin = interface->find_endpoint(0x83);
 
     host->initialize_pipe(&ipipe, device, iin);
@@ -85,13 +87,31 @@ void UsbHidDriver :: install(UsbInterface *intf)
 			printf("Boot Keyboard found!\n");
 			keyboard = true;
 
-			host->control_exchange(&dev->control_pipe, c_set_protocol, 8, NULL, 0);
-			host->control_exchange(&dev->control_pipe, c_set_idle, 8, NULL, 0);
+            host->control_exchange(&dev->control_pipe, c_set_protocol, 8, NULL, 0);
+            host->control_exchange(&dev->control_pipe, c_set_idle, 8, NULL, 0);
 			host->resume_input_pipe(irq_transaction); // start polling
 		} else if (interface->getInterfaceDescriptor()->protocol == 2) {
 			printf("Boot Mouse found (maxtrans = %d)!\n", iin->max_packet_size);
+            host->control_exchange(&dev->control_pipe, c_set_protocol, 8, NULL, 0);
+            host->control_exchange(&dev->control_pipe, c_set_idle, 8, NULL, 0);
+            mouse = true;
+
+#if USE_HID_REPORT
+            HidReportParser parser;
+            HidItemList result;
+            parser.decode(&result, reportDescriptor, len);
+            mouse = true;
+            mouse &= result.getInputItem(0x10002, 0x90001, rep_button1); // left button
+            mouse &= result.getInputItem(0x10002, 0x90002, rep_button2); // right button
+            mouse &= result.getInputItem(0x10002, 0x90003, rep_button3); // middle button
+            mouse &= result.getInputItem(0x10002, 0x10030, rep_mouse_x); // X
+            mouse &= result.getInputItem(0x10002, 0x10031, rep_mouse_y); // Y
+#endif
+
+#if U64
+            C64_MOUSE_EN_1 = mouse ? 1 : 0;
+#endif
             host->resume_input_pipe(irq_transaction); // start polling
-			// Note: Polling is not started!
 		}
     } else {
             // host->resume_input_pipe(irq_transaction); // start polling
@@ -103,6 +123,10 @@ void UsbHidDriver :: install(UsbInterface *intf)
 void UsbHidDriver :: disable()
 {
 	host->free_input_pipe(irq_transaction);
+#if U64
+    C64_MOUSE_EN_1 = 0;
+    C64_JOY1_SWOUT = 0x1F;
+#endif
 }
 
 void UsbHidDriver :: deinstall(UsbInterface *intf)
@@ -118,9 +142,42 @@ void UsbHidDriver :: interrupt_handler()
 {
     int data_len = host->getReceivedLength(irq_transaction);
 
+    // printf("I%d: ", interface->getNumber());
+    // for(int i=0;i<data_len;i++) {
+    //     printf("%b ", irq_data[i]);
+    // } printf("\n");
+
     if (keyboard) { // keyboard
 		system_usb_keyboard.process_data(irq_data);
-	} else {
+	} else if (mouse) { // mouse
+        uint8_t mouse_joy = 0x1F;
+
+#if USE_HID_REPORT
+        if (HidReport::getValueFromData(irq_data, rep_button1)) mouse_joy &= ~0x10;
+        if (HidReport::getValueFromData(irq_data, rep_button2)) mouse_joy &= ~0x01;
+        if (HidReport::getValueFromData(irq_data, rep_button3)) mouse_joy &= ~0x02;
+        int xx = HidReport::getValueFromData(irq_data, rep_mouse_x);
+        int yy = HidReport::getValueFromData(irq_data, rep_mouse_y);
+        mouse_x += xx; 
+        mouse_y -= yy;
+        // printf("Mouse: %08x, %08x => %4x,%4x %b\n", xx, yy, mouse_x, mouse_y, mouse_joy);
+#else
+        if (irq_data[0] & 1) mouse_joy &= ~0x10;
+        if (irq_data[0] & 2) mouse_joy &= ~0x01;
+        if (irq_data[0] & 4) mouse_joy &= ~0x02;
+        mouse_x += (int8_t)irq_data[1];
+        mouse_y -= (int8_t)irq_data[2];
+#endif
+
+#if U64
+        C64_JOY1_SWOUT = mouse_joy;
+        C64_PADDLE_1_X = mouse_x & 0x7F;
+        C64_PADDLE_1_Y = mouse_y & 0x7F;
+#else
+        printf("Mouse: %4x,%4x %b\n", mouse_x, mouse_y, mouse_joy);
+#endif
+
+    } else {
 	    printf("HID (ADDR=%d) IRQ data: ", device->current_address);
 	    for(int i=0;i<data_len;i++) {
 	        printf("%b ", irq_data[i]);

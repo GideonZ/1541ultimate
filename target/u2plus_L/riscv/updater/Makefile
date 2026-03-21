@@ -34,6 +34,7 @@ SRCS_C   =	itu.c \
 			malloc_lock.c \
                         
 SRCS_CC	 =  memory.cc \
+			u2pl_init.cc \
             i2c_drv.cc \
             codec.cc \
 			small_printf.cc \

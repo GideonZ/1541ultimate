@@ -103,6 +103,7 @@ void Rtc::init()
         capable = true;
         cfg = new RtcConfigStore("Clock Settings", rtc_config);
         ConfigManager::getConfigManager()->add_custom_store(cfg);
+        cfg->set_sort_order(SORT_ORDER_CFG_CLOCK);
         get_time_from_chip();
 
         // Check and correct clock out setting

@@ -75,7 +75,7 @@ extern "C" void SetScanMode(int modeIndex);
 extern "C" void pllOffsetHz(int Hz);
 extern "C" void pllOffsetPpm(int ppm);
 extern "C" void SetVideoPll(t_video_mode mode, int ppm);
-extern "C" void SetHdmiPll(t_video_mode mode, uint8_t _mode_bits);
+extern "C" void SetHdmiPll(t_video_mode mode);
 extern "C" void ResetHdmiPll(void);
 
 #endif /* FPLL_H_ */

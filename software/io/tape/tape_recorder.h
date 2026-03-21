@@ -76,7 +76,7 @@ public:
 	virtual ~TapeRecorder();
 
     void create_task_items(void);
-    void update_task_items(bool writablePath, Path *path);
+    void update_task_items(bool writablePath);
 	SubsysResultCode_e executeCommand(SubsysCommand *cmd);
     const char *identify(void) { return "Tape Recorder"; }
 	

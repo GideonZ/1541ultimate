@@ -37,6 +37,7 @@ static void configure_led(void)
 {
     gpio_reset_pin(IO_ESP_LED);
     gpio_set_direction(IO_ESP_LED, GPIO_MODE_OUTPUT);
+    gpio_set_level(IO_ESP_LED, 1); // off!
     gpio_reset_pin(IO_ESP_LED_RED);
     gpio_set_direction(IO_ESP_LED_RED, GPIO_MODE_OUTPUT);
 }
@@ -160,7 +161,7 @@ esp_err_t read_adc_channels(uint16_t *adc_data)
 
 
 void setup_modem();
-
+void show_buffer_status();
 
 int check_fpga(void)
 {
@@ -194,6 +195,7 @@ void app_main(void)
     while (1) {
         read_adc_channels(adc_data_local);
         ESP_LOGI(TAG, "App Main Alive; 5V_GOOD: %d (Initial: %d). VBus = %d mV", gpio_get_level(IO_5V_GOOD), initial_state, adc_data_local[0]);
+        // show_buffer_status();
         if (adc_data_local[0] < 8000) {
             gpio_set_level(IO_ESP_LED_RED, 0);
         } else {

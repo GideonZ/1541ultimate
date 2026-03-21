@@ -14,8 +14,10 @@
 #include "return_codes.h"
 
 class SubsysCommand;
+class Action;
 
 typedef SubsysResultCode_e (*actionFunction_t)(SubsysCommand *cmd);
+typedef SubsysResultCode_e (*directFunction_t)(Action *action, void *context);
 
 class Action
 {
@@ -28,7 +30,7 @@ public:
 
     // Action defintion using a function code, dispatched by Subsys.
 	// Examples: Flush Printer / Sample tape to TAP (task menu items only)
-	Action(const char *name, int ID, int f, int m=0) : subsys(ID), function(f), mode(m), func(0) {
+	Action(const char *name, int ID, int f, int m=0) : subsys(ID), function(f), mode(m), func(0), direct_func(NULL) {
 		if(name) {
 			actionName = new char[strlen(name)+1];
 			strcpy(actionName, name);
@@ -44,7 +46,7 @@ public:
     // Action definition using a direct function call, without a Subsys
 	// Examples: Create D64 (task!), Run Tape (context!)
 
-	Action(const char *name, actionFunction_t func, int f, int m=0) : subsys(-1), function(f), mode(m), func(func) {
+	Action(const char *name, actionFunction_t func, int f, int m=0, void *obj=NULL) : subsys(-1), function(f), mode(m), func(func), object(obj), direct_func(NULL) {
 		if(name) {
 			actionName = new char[strlen(name)+1];
 			strcpy(actionName, name);
@@ -53,9 +55,22 @@ public:
 		}
         hidden = false;
         greyed = false;
-        object = NULL;
         persistent = false;
 	}
+
+    // An Alternative Action definition using a direct function call, without a Subsys
+    Action(const char *name, directFunction_t func, int param, void *obj = NULL) : subsys(-1), function(param), mode(param), direct_func(func), func(NULL), object(obj) {
+		if(name) {
+			actionName = new char[strlen(name)+1];
+			strcpy(actionName, name);
+		} else {
+			actionName = 0;
+		}
+		hidden = false;
+		greyed = false;
+		object = NULL;
+        persistent = false;
+    }
 
 	virtual ~Action() {
 		if (actionName) {
@@ -106,7 +121,8 @@ public:
 	}
 
 	const actionFunction_t func;
-	const int   subsys;
+	const directFunction_t direct_func;
+    const int   subsys;
 	const int   function;
 	const int   mode;
 };

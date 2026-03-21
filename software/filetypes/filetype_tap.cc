@@ -215,10 +215,10 @@ int FileTypeTap :: getCustomBrowsables(Browsable *parentBrowsable, IndexedList<B
 SubsysResultCode_e FileTypeTap :: enter_st(SubsysCommand *cmd)
 {
     if (cmd->user_interface) {
-        int ret = cmd->user_interface->enterSelection();
-        if (ret < 0) {
-            cmd->user_interface->popup("No Index file found", BUTTON_OK);
-        }
+        cmd->user_interface->send_keystroke(KEY_RIGHT);
+        // if (ret < 0) {
+        //     cmd->user_interface->popup("No Index file found", BUTTON_OK);
+        // }
         return SSRET_OK;
     }
     return SSRET_NO_USER_INTERFACE;
@@ -275,6 +275,7 @@ SubsysResultCode_e FileTypeTap :: execute_st(SubsysCommand *cmd)
 	case TAPFILE_RUN:
         c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DRIVE_LOAD, RUNCODE_TAPE_LOAD_RUN, "A", "");
         c64_command->execute();
+        vTaskDelay(50);
 		tape_controller->start(1);
 		break;
     case TAPFILE_WRITE:

@@ -740,9 +740,9 @@ FRESULT FileManager::fcopy(const char *path, const char *filename, const char *d
         // In the special case that one tries to copy a file (or dir) onto itself, we just report
         // that we're done.
         if ( sp->equals(dp) && (strcasecmp(info->lfname, dest_filename) == 0)) {
-            return FR_OK;
+            ret = FR_OK;
         }
-        if (info->attrib & AM_DIR) {
+        else if (info->attrib & AM_DIR) {
             // create a new directory in our destination path
             FRESULT dir_create_result = create_dir(dp, dest_filename);
             if ((dir_create_result == FR_OK) || (dir_create_result == FR_EXIST)) {
@@ -767,7 +767,6 @@ FRESULT FileManager::fcopy(const char *path, const char *filename, const char *d
             else {
                 ret = dir_create_result;
             }
-            release_path(dp);
         }
         else if ((info->attrib & AM_VOL) == 0) { // it is a file!
             File *fi = 0;
@@ -782,15 +781,18 @@ FRESULT FileManager::fcopy(const char *path, const char *filename, const char *d
                 uint8_t writeflags = (overwrite)? (FA_WRITE|FA_CREATE_ALWAYS) : (FA_WRITE|FA_CREATE_NEW);
                 ret = fopen(dp, dest_name, writeflags, &fo);
                 if (fo) {
-#if OS
-                    vTaskDelay(2); // since this might take long, we should give other tasks chance to poll the USB devices
-#endif
                     uint8_t *buffer = new uint8_t[32768];
                     uint32_t transferred, written;
                     do {
                         FRESULT frd_result = fi->read(buffer, 32768, &transferred);
+#if OS
+                        vTaskDelay(2); // since this might take long, we should give other tasks chance to poll the USB devices
+#endif
                         if (frd_result == FR_OK) {
                             FRESULT fwr_result = fo->write(buffer, transferred, &written);
+#if OS
+                            vTaskDelay(2); // since this might take long, we should give other tasks chance to poll the USB devices
+#endif
                             if (fwr_result != FR_OK) {
                                 ret = fwr_result;
                                 break;
@@ -820,12 +822,16 @@ FRESULT FileManager::fcopy(const char *path, const char *filename, const char *d
         printf("Could not stat %s (%s)\n", filename, FileSystem::get_error_string(ret));
     }
     release_path(sp);
+    release_path(dp);
     delete info;
     return ret;
 }
 
 FRESULT FileManager :: load_file(const char *path, const char *filename, uint8_t *mem, uint32_t maxlen, uint32_t *transferred)
 {
+    if (strlen(filename) == 0) {
+        return FR_NO_FILE;
+    }
     File *file = 0;
     FRESULT fres = fopen(path, filename, FA_READ, &file);
     uint32_t tr = 0;

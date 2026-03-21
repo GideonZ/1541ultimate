@@ -33,6 +33,8 @@ TapeController :: TapeController() : SubSystem(SUBSYSID_TAPE_PLAYER)
 {
     fm = FileManager :: getFileManager();
     register_store(0x54415045, "Tape Settings", tape_config);
+    cfg->set_sort_order(SORT_ORDER_CFG_TAPE);
+    
     file = NULL;
 	paused = 0;
 	recording = 0;
@@ -86,7 +88,7 @@ void TapeController :: create_task_items(void)
     myActions.stop->hide();
 }
 
-void TapeController :: update_task_items(bool writablePath, Path *path)
+void TapeController :: update_task_items(bool writablePath)
 {
     if(!file)
         return;
