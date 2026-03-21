@@ -17,6 +17,7 @@ entity core is
 generic (
     g_gprf_ram  : string := "auto";
     g_hart_id   : natural := 0;
+    g_mult      : boolean := true;
     g_start_addr: std_logic_vector(31 downto 0) := X"00000000";
     g_version   : std_logic_vector(31 downto 0) := X"475A0001"
 );
@@ -85,6 +86,9 @@ begin
     );
 
     i_decode: entity work.decode
+    generic map (
+        g_mult   => g_mult
+    )
     port map (
         clock    => clock,
         reset    => reset,
@@ -110,6 +114,9 @@ begin
     );
 
     i_exec: entity work.execute
+    generic map (
+        g_mult   => g_mult
+    )
     port map (
         clock     => clock,
         reset     => reset,

@@ -22,6 +22,8 @@ library std;
 use std.textio.all;
 
 entity execute is
+generic (
+    g_mult      : boolean := true );
 port
 (
     clock       : in  std_logic;
@@ -63,6 +65,16 @@ begin
         branch_taken => branch_taken,
         data_out     => exec_c.alu_result
     );
+
+    r_mul: if g_mult generate
+        i_mul: entity work.multiply
+        port map (
+            data_1       => gprf_i.dat_a_o,
+            data_2       => gprf_i.dat_b_o,
+            oper         => exec_i.alu_operation,
+            data_out     => exec_c.mul_result
+        );
+    end generate;
 
     mem_address <= std_logic_vector(unsigned(gprf_i.dat_a_o) + unsigned(exec_i.imm_value));
     rel_address <= std_logic_vector(unsigned(exec_i.program_counter) + unsigned(exec_i.imm_value));
