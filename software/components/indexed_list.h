@@ -101,7 +101,7 @@ public:
 	
 	int remove(T el) {
 		ENTER_SAFE_SECTION
-		int res = 0;
+		int res = -1;
 		for(int i=0;i<elements;i++) {
 			if(element_array[i] == el) {
 				elements--;
@@ -109,7 +109,7 @@ public:
 					element_array[j] = element_array[j+1];
 					removal[j] = removal[j+1];
 				}
-				res = 1;
+				res = i;
 				break;
 			}
 		}

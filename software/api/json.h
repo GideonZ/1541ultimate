@@ -21,7 +21,8 @@ typedef enum {
 class JSON
 {
   public:
-    JSON() {}
+    JSON *parent;
+    JSON() : parent(NULL) { }
     virtual const char *render() { return "base?"; }
     virtual void render(StreamRamFile *s) { s->format("base?"); }
     virtual ~JSON() {}
@@ -68,7 +69,7 @@ class JSON_Bool : public JSON
 {
     bool value;
 public:
-    JSON_Bool(int v) : value(v) {}
+    JSON_Bool(bool v) : value(v) {}
     JsonType_t type() { return eBool; }
     const char *render() {
         return value ? "true" : "false";
@@ -76,6 +77,7 @@ public:
     void render(StreamRamFile *s) {
         s->format(value ? "true" : "false");
     }
+    bool get_value() { return value; }
 };
 
 class JSON_Object : public JSON
@@ -100,16 +102,28 @@ public:
         }
     }
 
+    void remove(JSON *el) {
+        int idx = values.remove(el);
+        if (idx >= 0) {
+            if (own_keys) {
+                delete[] keys[idx];
+            }
+            keys.remove_idx(idx);
+        }
+    }
+
     JSON_Object *add(const char *key, JSON *value) {
         if (own_keys) {
             // not using strdup, because we use delete[] above
-            char *newstr = new char[1+strlen(key)];
+            int len = strlen(key);
+            char *newstr = new char[1+len];
             strcpy(newstr, key);
             keys.append(newstr);
         } else {
             keys.append(key);
         }
         values.append(value);
+        value->parent = this;
         return this;
     }
 
@@ -226,8 +240,13 @@ public:
         return members[i];
     }
 
+    void remove(JSON *el) {
+        members.remove(el);
+    }
+
     JSON_List *add(JSON *value) {
         members.append(value);
+        value->parent = this;
         return this;
     }
 

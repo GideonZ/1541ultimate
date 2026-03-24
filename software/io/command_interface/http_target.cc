@@ -5,13 +5,14 @@
 // Register the target as ID $06 [cite: 117]
 HttpTarget http_target(6);
 
-static Message c_http_identification  = { 26, true, (uint8_t *)"ULTIMATE HTTP TARGET V1.0" };
+static Message c_http_identification  = { 25, true, (uint8_t *)"ULTIMATE HTTP TARGET V1.0" };
 static Message c_status_http_ok       = {  6, true, (uint8_t *)"000 OK" };
 static Message c_status_bad_cmd       = { 15, true, (uint8_t *)"400 BAD COMMAND" };
 static Message c_status_no_hdr_slot   = { 18, true, (uint8_t *)"507 NO HEADER SLOT" };
 static Message c_status_no_data_slot  = { 16, true, (uint8_t *)"507 NO DATA SLOT" };
 static Message c_status_bad_format    = { 14, true, (uint8_t *)"500 BAD FORMAT" };
-static Message c_status_key_missing   = { 20, true, (uint8_t *)"404 KEY NOT PRESENT" };
+static Message c_status_key_missing   = { 19, true, (uint8_t *)"404 KEY NOT PRESENT" };
+static Message c_status_not_found     = { 19, true, (uint8_t *)"404 ENTRY NOT FOUND" };
 
 HttpTarget::HttpTarget(int id)
 {
@@ -92,12 +93,29 @@ void HttpTarget::parse_command(Message *command, Message **reply, Message **stat
         case HTTP_CMD_BODY_ADD_INT:
         case HTTP_CMD_BODY_ADD_BOOL:
         case HTTP_CMD_BODY_ADD_STRING:
+        case HTTP_CMD_BODY_ADD_OBJECT:
+        case HTTP_CMD_BODY_ADD_ARRAY:
             cmd_body_add_primitive(command, reply, status, command->message[1]);
             break;
 
         case HTTP_CMD_BODY_UP:
-            // logic to move cursor_path up one level [cite: 210]
+            cmd_body_up(command, reply, status);
             *status = &c_status_http_ok;
+            break;
+
+        case HTTP_CMD_BODY_REMOVE:
+            cmd_body_remove(command, reply, status);
+            break;
+
+        case HTTP_CMD_BODY_QUERY:
+            cmd_body_query(command, reply, status);
+            break;
+
+        case HTTP_CMD_BODY_MOVE:
+            cmd_body_move(command, reply, status);
+            break;
+
+        case HTTP_CMD_BODY_ADD_BINARY:
             break;
 
         case HTTP_CMD_DO_EXCHANGE_OBJ:
@@ -256,7 +274,6 @@ void HttpTarget::cmd_body_create(Message *command, Message **reply, Message **st
         return;
     }
 
-    command->message[command->length] = 0;
     bodies[slot] = new HttpBodySlot(command->message[2]);
 
     data_message.message[0] = (uint8_t)slot;
@@ -268,7 +285,6 @@ void HttpTarget::cmd_body_create(Message *command, Message **reply, Message **st
 
 void HttpTarget::cmd_body_add_primitive(Message *command, Message **reply, Message **status, uint8_t type)
 {
-    *reply = &c_message_empty;
     uint8_t handle = command->message[2];
     if(handle >= MAX_HTTP_HANDLES || !bodies[handle]) {
         *status = &c_status_bad_cmd;
@@ -280,7 +296,7 @@ void HttpTarget::cmd_body_add_primitive(Message *command, Message **reply, Messa
 
     // extract key
     // ``$06 $23 <HANDLE> <KEYLEN> <KEY> <INT>``
-    mstring key((const char *)command->message, 4, 4 + command->message[3]);
+    mstring key((const char *)command->message, 4, 3 + command->message[3]);
     int pos_val = 4 + command->message[3];
 
     switch(type) {
@@ -309,9 +325,126 @@ void HttpTarget::cmd_body_add_primitive(Message *command, Message **reply, Messa
                 body->add_str(key.c_str(), s.c_str());
             }
             break;
+
+        case HTTP_CMD_BODY_ADD_OBJECT:
+            body->add_obj(key.c_str());
+            break;
+        
+        case HTTP_CMD_BODY_ADD_ARRAY:
+            body->add_array(key.c_str());
+            break;
+
         default:
             *status = &c_status_bad_cmd;
             return;
+    }
+    //printf("After add:\n");
+    //body->dump();
+    *status = &c_status_http_ok;
+}
+
+void HttpTarget::cmd_body_up(Message *command, Message **reply, Message **status)
+{
+    uint8_t handle = command->message[2];
+    if(handle >= MAX_HTTP_HANDLES || !bodies[handle]) {
+        *status = &c_status_bad_cmd;
+        return;
+    }
+    HttpBodySlot *body = bodies[handle];
+    body->move_up();
+    *status = &c_status_http_ok;
+}
+
+void HttpTarget::cmd_body_remove(Message *command, Message **reply, Message **status)
+{
+    uint8_t handle = command->message[2];
+    if(handle >= MAX_HTTP_HANDLES || !bodies[handle]) {
+        *status = &c_status_bad_cmd;
+        return;
+    }
+    HttpBodySlot *body = bodies[handle];
+    mstring path((const char *)command->message, 3, command->length - 1);
+    JSON *j = body->walk_path(path, (char *)status_message.message);
+    if(!j) {
+        *status = &status_message;
+        status_message.length = strlen((char *)status_message.message);
+        return;
+    }
+    printf("Entry to remove: %s\n", j->render());
+    body->remove(j);
+    *status = &c_status_http_ok;
+}
+
+void HttpTarget::cmd_body_move(Message *command, Message **reply, Message **status)
+{
+    uint8_t handle = command->message[2];
+    if(handle >= MAX_HTTP_HANDLES || !bodies[handle]) {
+        *status = &c_status_bad_cmd;
+        return;
+    }
+    HttpBodySlot *body = bodies[handle];
+    mstring path((const char *)command->message, 3, command->length - 1);
+    JSON *j = body->walk_path(path, (char *)status_message.message);
+    if(!j) {
+        *status = &status_message;
+        status_message.length = strlen((char *)status_message.message);
+        return;
+    }
+    body->set_current(j);
+    *status = &c_status_http_ok;
+}
+
+void HttpTarget::cmd_body_query(Message *command, Message **reply, Message **status)
+{
+    uint8_t handle = command->message[2];
+    if(handle >= MAX_HTTP_HANDLES || !bodies[handle]) {
+        *status = &c_status_bad_cmd;
+        return;
+    }
+    HttpBodySlot *body = bodies[handle];
+    mstring path((const char *)command->message, 3, command->length-1);
+    JSON *j = body->walk_path(path, (char *)status_message.message);
+    if(!j) {
+        *status = &status_message;
+        status_message.length = strlen((char *)status_message.message);
+        return;
+    }
+    *reply = &data_message;
+    int value;
+    const char *value_str;
+    switch(j->type()) {
+    case eInteger:
+        data_message.message[0] = 0x01;
+        value = ((JSON_Integer *)j)->get_value();
+        data_message.message[1] = value & 0xFF; value >>= 8;
+        data_message.message[2] = value & 0xFF; value >>= 8;
+        data_message.message[3] = value & 0xFF; value >>= 8;
+        data_message.message[4] = value & 0xFF;
+        data_message.length = 5;
+        break;
+    case eBool:
+        data_message.message[0] = 0x02;
+        value = ((JSON_Bool *)j)->get_value();
+        data_message.message[1] = value ? 1 : 0;
+        data_message.length = 2;
+        break;
+    case eString:
+        data_message.message[0] = 0x03;
+        value_str = ((JSON_String *)j)->get_string();
+        data_message.length = 1 + strlen(value_str);
+        strncpy((char *)&data_message.message[1], value_str, CMD_MAX_REPLY_LEN - 1);
+        break;
+    case eObject:
+        data_message.message[0] = 0x04;
+        value_str = j->render();
+        data_message.length = 1 + strlen(value_str);
+        strncpy((char *)&data_message.message[1], value_str, CMD_MAX_REPLY_LEN - 1);
+        break;
+    case eList:
+        data_message.message[0] = 0x05;
+        data_message.length = 1 + strlen(value_str);
+        strncpy((char *)&data_message.message[1], value_str, CMD_MAX_REPLY_LEN - 1);
+        break;
     }
     *status = &c_status_http_ok;
 }
@@ -347,4 +480,30 @@ void HttpTarget::get_more_data(Message **reply, Message **status)
 void HttpTarget::abort(int a)
 {
     // Reset any pending exchange state
+}
+
+int HttpTarget::create_body_from_json(char *body, int size, uint8_t *handle)
+{
+    JSON *json = NULL;
+    int j = convert_text_to_json_objects(body, size, 1000, &json);
+    if (j < 0) {
+        if (json) {
+            delete json;
+        }
+        return j;
+    }
+
+    int slot = -1;
+    for(int i=0; i<MAX_HTTP_HANDLES; i++) {
+        if(!bodies[i]) {
+            slot = i;
+            break;
+        }
+    }
+    if(slot == -1) {
+        return -99;
+    }
+    bodies[slot] = new HttpBodySlot(json);
+    *handle = slot;
+    return j;
 }
