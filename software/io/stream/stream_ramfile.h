@@ -132,6 +132,18 @@ public:
         }
         return len;
     }
+
+    int copy_from(StreamRamFile *src)
+    {
+        int total;
+        int len = total = src->getLength();
+        char buffer[128];
+        while(len) {
+            len -= src->read(buffer, 128);
+            write((uint8_t *)buffer, len);
+        }
+        return total;
+    }
 };
 
 

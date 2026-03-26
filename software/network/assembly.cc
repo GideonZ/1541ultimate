@@ -2,6 +2,7 @@
 #include <sys/socket.h>
 #include "netdb.h"
 #include "attachment_writer.h"
+#include "pattern.h"
 #include "u64.h"
 
 #define HOSTNAME      "hackerswithstyle.se"
@@ -12,27 +13,6 @@
 #define URL_DOWNLOAD  "/leet/search/bin"
 
 Assembly assembly;
-
-void url_encode(const char *src, mstring &dest)
-{
-    int len = strlen(src);
-    char pct[4] = {0};
-
-    for(int i=0; i<len; i++) {
-        if(src[i] == '_' || src[i] == '-' || src[i] == '.' || src[i] == '*') {
-            dest += src[i];
-        } else if(src[i] >= 'a' && src[i] <= 'z') {
-            dest += src[i];
-        } else if(src[i] >= 'A' && src[i] <= 'Z') {
-            dest += src[i];
-        } else if(src[i] >= '0' && src[i] <= '9') {
-            dest += src[i];
-        } else {
-            sprintf(pct, "%c%02x", '%', src[i]);
-            dest += pct;
-        }
-    }
-}
 
 void attachment_to_buffer(BodyDataBlock_t *block)
 {

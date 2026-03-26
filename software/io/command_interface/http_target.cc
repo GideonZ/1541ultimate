@@ -8,6 +8,7 @@ HttpTarget http_target(6);
 static Message c_http_identification  = { 25, true, (uint8_t *)"ULTIMATE HTTP TARGET V1.0" };
 static Message c_status_http_ok       = {  6, true, (uint8_t *)"000 OK" };
 static Message c_status_bad_cmd       = { 15, true, (uint8_t *)"400 BAD COMMAND" };
+static Message c_status_bad_req       = { 15, true, (uint8_t *)"400 BAD REQUEST" };
 static Message c_status_no_hdr_slot   = { 18, true, (uint8_t *)"507 NO HEADER SLOT" };
 static Message c_status_no_data_slot  = { 16, true, (uint8_t *)"507 NO DATA SLOT" };
 static Message c_status_bad_format    = { 14, true, (uint8_t *)"500 BAD FORMAT" };
@@ -116,6 +117,7 @@ void HttpTarget::parse_command(Message *command, Message **reply, Message **stat
             break;
 
         case HTTP_CMD_BODY_ADD_BINARY:
+            cmd_body_add_binary(command, reply, status);
             break;
 
         case HTTP_CMD_DO_EXCHANGE_OBJ:
@@ -261,6 +263,10 @@ void HttpTarget::cmd_header_list(Message *command, Message **reply, Message **st
 
 void HttpTarget::cmd_body_create(Message *command, Message **reply, Message **status)
 {
+    if ((command->message[2] < 1) || (command->message[2] > 4)) {
+        *status = &c_status_bad_format;
+        return;
+    }
     int slot = -1;
     for(int i=0; i<MAX_HTTP_HANDLES; i++) {
         if(!bodies[i]) {
@@ -291,6 +297,11 @@ void HttpTarget::cmd_body_add_primitive(Message *command, Message **reply, Messa
         return;
     }
     HttpBodySlot *body = bodies[handle];
+    if (body->get_format() == HTTP_TYPE_BINARY) {
+        *status = &c_status_bad_format;
+        return;
+    }
+
     bool value_bool = false;
     int value_int = 0;
 
@@ -338,8 +349,24 @@ void HttpTarget::cmd_body_add_primitive(Message *command, Message **reply, Messa
             *status = &c_status_bad_cmd;
             return;
     }
-    //printf("After add:\n");
-    //body->dump();
+    printf("After add:\n");
+    body->dump();
+    *status = &c_status_http_ok;
+}
+
+void HttpTarget::cmd_body_add_binary(Message *command, Message **reply, Message **status)
+{
+    uint8_t handle = command->message[2];
+    if(handle >= MAX_HTTP_HANDLES || !bodies[handle]) {
+        *status = &c_status_bad_cmd;
+        return;
+    }
+    HttpBodySlot *body = bodies[handle];
+    if (body->get_format() != HTTP_TYPE_BINARY) {
+        *status = &c_status_bad_req;
+        return;
+    }
+    body->add_binary(&command->message[3], command->length-3);
     *status = &c_status_http_ok;
 }
 
@@ -453,10 +480,24 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
 {
     uint8_t hdr_handle = command->message[2];
     uint8_t body_handle = command->message[3];
+
+    if(hdr_handle >= MAX_HTTP_HANDLES || !headers[hdr_handle]) {
+        *status = &c_status_bad_cmd;
+        return;
+    }
+    if(body_handle >= MAX_HTTP_HANDLES || !bodies[body_handle]) {
+        *status = &c_status_bad_cmd;
+        return;
+    }
+    HttpHeaderSlot *hdr = headers[hdr_handle];
+    HttpBodySlot *body = bodies[body_handle];
     
-    // Execute network exchange...
-    // In a real implementation, this triggers the background HTTP client
-    
+    StreamRamFile req(512), resp(512);
+    hdr->render(&req);
+    body->render(&req);
+
+    int result = http_exchange(&req, &resp);
+
     if(raw) {
         // Return raw data in data channel [cite: 264]
         *status = &c_status_http_ok; 

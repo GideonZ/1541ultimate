@@ -32,6 +32,13 @@
 
 #define MAX_HTTP_HANDLES 16
 
+#define HTTP_TYPE_BINARY      0x01
+#define HTTP_TYPE_JSON_OBJ    0x02
+#define HTTP_TYPE_JSON_ARRAY  0x03
+#define HTTP_TYPE_URL_ENCODED 0x04
+
+int http_exchange(StreamRamFile *req, StreamRamFile *resp);
+
 class HttpHeaderSlot
 {
     uint8_t verb;
@@ -137,35 +144,39 @@ class HttpBodySlot {
     uint8_t format;
     JSON *root_object;
     JSON *current;
+    StreamRamFile *binary_blob;
 public:
     HttpBodySlot(uint8_t fmt) : format(fmt)
     {
         root_object = NULL;
+        binary_blob = NULL;
         switch(fmt) {
-        case 1: // binary
+        case HTTP_TYPE_BINARY:
+            binary_blob = new StreamRamFile(512);
             break;
-        case 2: // object
-        case 4: // url
+        case HTTP_TYPE_JSON_OBJ: // object
+        case HTTP_TYPE_URL_ENCODED: // url
             root_object = new JSON_Object(true);
             break;
-        case 3: // list
+        case HTTP_TYPE_JSON_ARRAY: // list
             root_object = JSON::List();
             break;
         default:
             root_object = new JSON_Object(true);
-            format = 2;
+            format = HTTP_TYPE_JSON_OBJ;
         }
         current = root_object;
     }
 
     HttpBodySlot(JSON *j)
     {
+        binary_blob = NULL;
         root_object = current = j;
         if (j) {
             if (j->type() == eObject) {
-                format = 2;
+                format = HTTP_TYPE_JSON_OBJ;
             } else if (j->type() == eList) {
-                format = 3;
+                format = HTTP_TYPE_JSON_ARRAY;
             }
         }
     }
@@ -174,6 +185,35 @@ public:
     {
         if (root_object) {
             delete root_object;
+        }
+        if (binary_blob) {
+            delete binary_blob;
+        }
+    }
+
+    uint8_t get_format(void) {
+        return format;
+    }
+
+    void render(StreamRamFile *s)
+    {
+        switch(format) {
+        case HTTP_TYPE_BINARY:
+            s->copy_from(binary_blob);
+            break;
+        case HTTP_TYPE_JSON_ARRAY:
+        case HTTP_TYPE_JSON_OBJ:
+            if (root_object) {
+                root_object->render(s);
+            }
+            s->format("\n");
+            break;
+        case HTTP_TYPE_URL_ENCODED:
+            if (root_object) {
+                root_object->url(s);
+            }
+            s->format("\n");
+            break;         
         }
     }
 
@@ -272,6 +312,11 @@ public:
             return current;
         }
         return NULL;
+    }
+
+    void add_binary(uint8_t *data, int length)
+    {
+        binary_blob->write(data, length);
     }
 
     void move_up(void)
@@ -421,6 +466,7 @@ public:
     {
         if(root_object) {
             printf("%s\n", root_object->render());
+            printf("In URL format: %s\n", root_object->url());
         } else {
             printf("No root object\n");
         }
@@ -442,6 +488,7 @@ class HttpTarget : public CommandTarget {
 
     void cmd_body_create(Message *command, Message **reply, Message **status);
     void cmd_body_add_primitive(Message *command, Message **reply, Message **status, uint8_t type);
+    void cmd_body_add_binary(Message *command, Message **reply, Message **status);
     void cmd_body_up(Message *command, Message **reply, Message **status);
     void cmd_body_move(Message *command, Message **reply, Message **status);
     void cmd_body_remove(Message *command, Message **reply, Message **status);

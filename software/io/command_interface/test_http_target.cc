@@ -76,6 +76,8 @@ static Message c_cmd_body_free_00   = {  3, true, (uint8_t *)"\x06\x22\x00" };
 static Message c_cmd_body_free_01   = {  3, true, (uint8_t *)"\x06\x22\x01" };
 static Message c_cmd_body_free_02   = {  3, true, (uint8_t *)"\x06\x22\x02" };
 
+static Message c_exchange           = {  4, true, (uint8_t *)"\x06\x31\x00\x01" };
+
 void dump(Message *cmd, Message *reply, Message *status)
 {
     printf("command:\n");
@@ -119,9 +121,6 @@ int main(int argc, char **argv)
 
     t->parse_command(&c_cmd_header_list3, &reply, &status);
     dump(&c_cmd_header_list3, reply, status);
-
-    t->parse_command(&c_cmd_header_free, &reply, &status);
-    dump(&c_cmd_header_free, reply, status);
 
     t->parse_command(&c_cmd_body_create, &reply, &status);   
     t->parse_command(&c_cmd_body_add_int, &reply, &status);  
@@ -197,6 +196,12 @@ int main(int argc, char **argv)
     t->parse_command(&c_cmd_delete_object, &reply, &status);
     dump(&c_cmd_delete_object, reply, status);
 
+    t->parse_command(&c_exchange, &reply, &status);
+    dump(&c_exchange, reply, status);
+
+    t->parse_command(&c_cmd_header_free, &reply, &status);
+    dump(&c_cmd_header_free, reply, status);
+
     t->parse_command(&c_cmd_body_free_00, &reply, &status);
     dump(&c_cmd_body_free_00, reply, status);
 
@@ -206,7 +211,6 @@ int main(int argc, char **argv)
     t->parse_command(&c_cmd_body_free_02, &reply, &status);
     dump(&c_cmd_body_free_02, reply, status);
 
-
     return 0;
 }
 
@@ -214,4 +218,19 @@ int main(int argc, char **argv)
 void outbyte(int b)
 {
 	fputc(b, stdout);
+}
+
+int http_exchange(StreamRamFile *req, StreamRamFile *resp)
+{
+    int len = req->getLength();
+    printf("HTTP REQUEST! (%d)\n", len);
+    char buffer[132];
+    while(len) {
+        int now = req->read(buffer, 128);
+        buffer[now] = 0;
+        len -= now;
+        printf("%s", buffer);
+    }
+    printf("-- END OF REQUEST --\n");
+    return 0;
 }

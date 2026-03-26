@@ -8,6 +8,7 @@
 
 class JSON_Object;
 class JSON_List;
+void url_encode(const char *src, mstring &dest);
 
 typedef enum {
     eBase = 0,
@@ -24,7 +25,10 @@ class JSON
     JSON *parent;
     JSON() : parent(NULL) { }
     virtual const char *render() { return "base?"; }
+    virtual const char *render_compact() { return render(); }
     virtual void render(StreamRamFile *s) { s->format("base?"); }
+    virtual const char *url() { render_compact(); }
+    virtual void url(StreamRamFile *s) { render(s); }
     virtual ~JSON() {}
     virtual JsonType_t type() { return eBase; }
     static JSON_List *List();
@@ -188,6 +192,20 @@ public:
         return renderspace.c_str();
     }
 
+    const char *render_compact() {
+        renderspace = "{";
+        for (int i=0;i<keys.get_elements();i++) {
+            renderspace += keys[i];
+            renderspace += ":";
+            renderspace += values[i]->render_compact();
+            if (i != keys.get_elements()-1) {
+                renderspace += ",";
+            }
+        }
+        renderspace += "}";
+        return renderspace.c_str();
+    }
+
     void render(StreamRamFile *s) {
         s->format("{ \n");
         for (int i=0;i<keys.get_elements();i++) {
@@ -199,6 +217,34 @@ public:
             s->charout('\n');
         }
         s->charout('}');
+    }
+
+
+    const char *url() {
+        renderspace = "";
+        for (int i=0;i<keys.get_elements();i++) {
+            renderspace += keys[i];
+            renderspace += "=";
+            const char *val = values[i]->render_compact();
+            url_encode(val, renderspace); // this will add!
+            if (i != keys.get_elements()-1) {
+                renderspace += "&";
+            }
+        }
+        return renderspace.c_str();
+    }
+
+    void url(StreamRamFile *s) {
+        for (int i=0;i<keys.get_elements();i++) {
+            s->format("%s", keys[i]);
+            s->charout('=');
+            const char *val = values[i]->render_compact();
+            url_encode(val, renderspace);
+            s->format("%s", renderspace.c_str());
+            if (i != keys.get_elements()-1) {
+                s->charout('&');
+            }
+        }
     }
 
     JSON * get(const char *key) {
@@ -274,6 +320,18 @@ public:
             }
         }
         renderspace += " ]";
+        return renderspace.c_str();
+    }
+
+    const char *render_compact() {
+        renderspace = "[";
+        for (int i=0;i<members.get_elements();i++) {
+            renderspace += members[i]->render_compact();
+            if (i != members.get_elements()-1) {
+                renderspace += ",";
+            }
+        }
+        renderspace += "]";
         return renderspace.c_str();
     }
 

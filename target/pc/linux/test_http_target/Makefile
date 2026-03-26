@@ -29,6 +29,7 @@ SRCS_C   =	dump_hex.c \
 SRCS_CC	 =  mystring.cc \
 			json.cc \
 			http_target.cc \
+			pattern.cc \
 			test_http_target.cc
 
 

@@ -475,3 +475,24 @@ void fat_to_petscii(const char *fat, bool cutExt, char *pet, int len, bool term)
         pet[i] = 0;
     }
 }
+
+void url_encode(const char *src, mstring &dest)
+{
+    int len = strlen(src);
+    char pct[4] = {0};
+
+    for(int i=0; i<len; i++) {
+        if(src[i] == '_' || src[i] == '-' || src[i] == '.' || src[i] == '*') {
+            dest += src[i];
+        } else if(src[i] >= 'a' && src[i] <= 'z') {
+            dest += src[i];
+        } else if(src[i] >= 'A' && src[i] <= 'Z') {
+            dest += src[i];
+        } else if(src[i] >= '0' && src[i] <= '9') {
+            dest += src[i];
+        } else {
+            sprintf(pct, "%c%02x", '%', src[i]);
+            dest += pct;
+        }
+    }
+}
