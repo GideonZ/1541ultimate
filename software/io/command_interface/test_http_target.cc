@@ -10,11 +10,13 @@ Message c_status_unknown_command = { 18, true, (uint8_t *)"21,UNKNOWN COMMAND" }
 Message c_message_empty          = {  0, true, (uint8_t *)"" };
 
 static Message c_cmd_identify      = {  2, true, (uint8_t *)"\x06\x01" };
-static Message c_cmd_header_create = { 49, true, (uint8_t *)"\x06\x11\x03""commoserve.files.commodore.net/leet/search/bin" };
-static Message c_cmd_header_add1   = { 33, true, (uint8_t *)"\x06\x13\x00""Content-Type: application/json" };
-static Message c_cmd_header_add2   = { 20, true, (uint8_t *)"\x06\x13\x00""Connection: close" };
-static Message c_cmd_header_add3   = { 32, true, (uint8_t *)"\x06\x13\x00""Content-Type: application/xml" };
-static Message c_cmd_header_query  = { 15, true, (uint8_t *)"\x06\x14\x00""Content-Type" };
+static Message c_cmd_header_create = { 46, true, (uint8_t *)"\x06\x11\x01""hackerswithstyle.se/leet/search/aql/presets" };
+static Message c_cmd_header_add1   = { 28, true, (uint8_t *)"\x06\x13\x00""Accept-encoding: identity" };
+static Message c_cmd_header_add2   = { 29, true, (uint8_t *)"\x06\x13\x00""User-Agent: Assembly Query" };
+static Message c_cmd_header_add3   = { 22, true, (uint8_t *)"\x06\x13\x00""Client-Id: Ultimate" };
+static Message c_cmd_header_add4   = { 20, true, (uint8_t *)"\x06\x13\x00""Connection: close" };
+
+static Message c_cmd_header_query  = { 15, true, (uint8_t *)"\x06\x14\x00""Client-Id" };
 static Message c_cmd_header_list1  = {  4, true, (uint8_t *)"\x06\x15\x00\x00" };
 static Message c_cmd_header_list2  = {  4, true, (uint8_t *)"\x06\x15\x00\x01" };
 static Message c_cmd_header_list3  = {  4, true, (uint8_t *)"\x06\x15\x01\x00" };
@@ -76,7 +78,8 @@ static Message c_cmd_body_free_00   = {  3, true, (uint8_t *)"\x06\x22\x00" };
 static Message c_cmd_body_free_01   = {  3, true, (uint8_t *)"\x06\x22\x01" };
 static Message c_cmd_body_free_02   = {  3, true, (uint8_t *)"\x06\x22\x02" };
 
-static Message c_exchange           = {  4, true, (uint8_t *)"\x06\x31\x00\x01" };
+static Message c_exchange           = {  4, true, (uint8_t *)"\x06\x31\x00\xFF" };
+static Message c_exchange_raw       = {  4, true, (uint8_t *)"\x06\x32\x00\xFF" };
 
 void dump(Message *cmd, Message *reply, Message *status)
 {
@@ -109,6 +112,9 @@ int main(int argc, char **argv)
 
     t->parse_command(&c_cmd_header_add3, &reply, &status);
     dump(&c_cmd_header_add3, reply, status);
+
+    t->parse_command(&c_cmd_header_add4, &reply, &status);
+    dump(&c_cmd_header_add4, reply, status);
 
     t->parse_command(&c_cmd_header_query, &reply, &status);
     dump(&c_cmd_header_query, reply, status);
@@ -196,8 +202,29 @@ int main(int argc, char **argv)
     t->parse_command(&c_cmd_delete_object, &reply, &status);
     dump(&c_cmd_delete_object, reply, status);
 
+    t->parse_command(&c_exchange_raw, &reply, &status);
+    dump(&c_exchange_raw, reply, status);
+    t->get_more_data(&reply, &status);
+    dump(&c_exchange_raw, reply, status);
+    t->get_more_data(&reply, &status);
+    dump(&c_exchange_raw, reply, status);
+    t->get_more_data(&reply, &status);
+    dump(&c_exchange_raw, reply, status);
+    t->get_more_data(&reply, &status);
+    dump(&c_exchange_raw, reply, status);
+    t->get_more_data(&reply, &status);
+    dump(&c_exchange_raw, reply, status);
+    t->get_more_data(&reply, &status);
+    dump(&c_exchange_raw, reply, status);
+    t->get_more_data(&reply, &status);
+    dump(&c_exchange_raw, reply, status);
+
     t->parse_command(&c_exchange, &reply, &status);
     dump(&c_exchange, reply, status);
+
+    uint8_t listcmd[4] = { 0x06, 0x15, 0x00, 0x00 };
+    listcmd[2] = reply->message[0];
+    Message list_hdr = { 4, true, listcmd };
 
     t->parse_command(&c_cmd_header_free, &reply, &status);
     dump(&c_cmd_header_free, reply, status);
@@ -211,26 +238,38 @@ int main(int argc, char **argv)
     t->parse_command(&c_cmd_body_free_02, &reply, &status);
     dump(&c_cmd_body_free_02, reply, status);
 
+    t->parse_command(&list_hdr, &reply, &status);
+    dump(&list_hdr, reply, status);
+    list_hdr.message[3] = 1;
+
+    t->parse_command(&list_hdr, &reply, &status);
+    dump(&list_hdr, reply, status);
+
     return 0;
+
 }
 
 // stubs
+#include "attachment_writer.h"
+int TempfileWriter :: temp_count = 0;
 void outbyte(int b)
 {
 	fputc(b, stdout);
 }
 
-int http_exchange(StreamRamFile *req, StreamRamFile *resp)
-{
-    int len = req->getLength();
-    printf("HTTP REQUEST! (%d)\n", len);
-    char buffer[132];
-    while(len) {
-        int now = req->read(buffer, 128);
-        buffer[now] = 0;
-        len -= now;
-        printf("%s", buffer);
-    }
-    printf("-- END OF REQUEST --\n");
-    return 0;
-}
+// int http_exchange(unsigned char *host, uint16_t port, StreamRamFile *req, char *resp_buffer, int buffer_size)
+// {
+//     int len = req->getLength();
+//     printf("HTTP REQUEST! (%d) to %s:%d\n", len, host, port);
+
+
+//     char buffer[132];
+//     while(len) {
+//         int now = req->read(buffer, 128);
+//         buffer[now] = 0;
+//         len -= now;
+//         printf("%s", buffer);
+//     }
+//     printf("-- END OF REQUEST --\n");
+//     return 0;
+// }

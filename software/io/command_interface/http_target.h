@@ -7,6 +7,7 @@
 #include "json.h"
 #include "command_target.h"
 #include "pattern.h"
+#include "http_request.h"
 
 // Command Definitions
 #define HTTP_CMD_IDENTIFY         0x01
@@ -37,14 +38,13 @@
 #define HTTP_TYPE_JSON_ARRAY  0x03
 #define HTTP_TYPE_URL_ENCODED 0x04
 
-int http_exchange(StreamRamFile *req, StreamRamFile *resp);
-
 class HttpHeaderSlot
 {
     uint8_t verb;
     bool secure;
     mstring host;
     mstring url;
+    mstring renderspace;
     uint16_t port;
     JSON_Object lines;
 public:
@@ -73,6 +73,16 @@ public:
         if (portnr) {
             port = (uint16_t)strtol(portnr, NULL, 10);
         }
+        set("Host", host.c_str());
+    }
+
+    HttpHeaderSlot(HttpHeaderSlot *src) : verb(src->verb), lines(true)
+    {
+        host = src->host.c_str();
+        url = src->url.c_str();
+        port = src->port;
+        secure = src->secure;
+        set("Host", host.c_str());
     }
 
     ~HttpHeaderSlot()
@@ -98,6 +108,23 @@ public:
             return (*values)[index-1];
         }
         return NULL;
+    }
+
+    const char *get_host()
+    {
+        return host.c_str();
+    }
+
+    const uint16_t get_port()
+    {
+        return port;
+    }
+
+    void convert_from_response(HTTPReqHeader *hdr)
+    {
+        for(int i=0;i<hdr->FieldCount;i++) {
+            set(hdr->Fields[i].key, hdr->Fields[i].value);
+        }
     }
 
     void dump()
@@ -129,15 +156,44 @@ public:
             if(j) {
                 s->format("%s: ", key);
                 if (j->type() == eString) {
-                    s->format("%s\n", ((JSON_String *)j)->get_string());
+                    s->format("%s\r\n", ((JSON_String *)j)->get_string());
                 } else {
                     j->render(s);
-                    s->format("\n");
+                    s->format("\r\n");
                 }
             }
         }
-        s->format("\n");
+        s->format("\r\n");
     }
+
+    const char *render()
+    {
+        static const char *verbs[] = { "GET", "PUT", "POST", "PATCH", "DELETE", "HEAD", "OPTIONS", "CONNECT", "TRACE" };
+        renderspace = verbs[verb-1];
+        renderspace += " /";
+        renderspace += url;
+        renderspace += "\n";        
+
+        IndexedList<const char *> *keys = lines.get_keys();
+        IndexedList<JSON *> *values = lines.get_values();
+        for(int i=0;i<keys->get_elements();i++) {
+            const char *key = (*keys)[i];
+            JSON *j = (*values)[i];
+            if(j) {
+                renderspace += key;
+                renderspace += ": ";
+                if (j->type() == eString) {
+                    renderspace += ((JSON_String *)j)->get_string();
+                } else {
+                    renderspace += j->render();
+                }
+                renderspace += "\n";
+            }
+        }
+        renderspace += "\n";
+        return renderspace.c_str();
+    }
+
 };
 
 class HttpBodySlot {
@@ -479,6 +535,7 @@ class HttpTarget : public CommandTarget {
     
     HttpHeaderSlot *headers[MAX_HTTP_HANDLES];
     HttpBodySlot *bodies[MAX_HTTP_HANDLES];
+    HttpRequest *exch;
 
     // Helper methods for command processing
     void cmd_header_create(Message *command, Message **reply, Message **status);

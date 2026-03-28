@@ -14,6 +14,9 @@ static Message c_status_no_data_slot  = { 16, true, (uint8_t *)"507 NO DATA SLOT
 static Message c_status_bad_format    = { 14, true, (uint8_t *)"500 BAD FORMAT" };
 static Message c_status_key_missing   = { 19, true, (uint8_t *)"404 KEY NOT PRESENT" };
 static Message c_status_not_found     = { 19, true, (uint8_t *)"404 ENTRY NOT FOUND" };
+static Message c_status_no_more       = { 16, true, (uint8_t *)"500 NO MORE DATA" };
+static Message c_status_not_available = { 23, true, (uint8_t *)"503 SERVICE UNAVAILABLE" };
+static Message c_status_no_valid_json = { 17, true, (uint8_t *)"400 NO VALID JSON"};
 
 HttpTarget::HttpTarget(int id)
 {
@@ -22,6 +25,7 @@ HttpTarget::HttpTarget(int id)
     memset(headers, 0, sizeof(bodies));
     data_message.message = new uint8_t[CMD_MAX_REPLY_LEN];
     status_message.message = new uint8_t[CMD_MAX_STATUS_LEN];
+    exch = NULL;
 }
 
 HttpTarget::~HttpTarget()
@@ -38,6 +42,9 @@ HttpTarget::~HttpTarget()
     }
     delete[] data_message.message;
     delete[] status_message.message;
+    if (exch) {
+        delete exch;
+    }
 }
 
 void HttpTarget::parse_command(Message *command, Message **reply, Message **status)
@@ -480,31 +487,98 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
 {
     uint8_t hdr_handle = command->message[2];
     uint8_t body_handle = command->message[3];
-
+    HttpBodySlot *bdy = NULL;
+    HttpHeaderSlot *hdr = NULL;
     if(hdr_handle >= MAX_HTTP_HANDLES || !headers[hdr_handle]) {
         *status = &c_status_bad_cmd;
         return;
+    } else {
+        hdr = headers[hdr_handle];
     }
     if(body_handle >= MAX_HTTP_HANDLES || !bodies[body_handle]) {
-        *status = &c_status_bad_cmd;
+        //*status = &c_status_bad_cmd;
+        //return;
+    } else {
+        bdy = bodies[body_handle];
+    }
+    
+    StreamRamFile req(512);
+    hdr->render(&req);
+    if(bdy) {
+        bdy->render(&req);
+    }
+
+    hdr->dump();
+
+    if (exch) {
+        delete exch;
+        exch = NULL;
+    }
+
+    exch = new HttpRequest();
+    if (exch->connect_to_server(hdr->get_host(), hdr->get_port()) >= 0) {
+        if (!exch->send_request(&req)) {
+            exch->recv_response();
+        } else {
+            printf("Failed to send request\n");
+            delete exch;
+            exch = NULL;
+            *status = &c_status_not_available;
+            return;
+        }
+    } else {
+        printf("Failed to connect.\n");
+        delete exch;
+        exch = NULL;
+        *status = &c_status_not_available;
         return;
     }
-    HttpHeaderSlot *hdr = headers[hdr_handle];
-    HttpBodySlot *body = bodies[body_handle];
-    
-    StreamRamFile req(512), resp(512);
-    hdr->render(&req);
-    body->render(&req);
 
-    int result = http_exchange(&req, &resp);
+    // When we are here, the exch object exists and should contain the reply.
 
+    int slot = -1;
     if(raw) {
         // Return raw data in data channel [cite: 264]
         *status = &c_status_http_ok; 
+        *reply = &data_message;
+        data_message.length = exch->read_response_data(CMD_MAX_REPLY_LEN, data_message.message);
+        data_message.last_part = (data_message.length != CMD_MAX_REPLY_LEN);
     } else {
+        JSON *json = exch->get_json();
+        if(!json) {
+            *reply = &c_message_empty;
+            *status = &c_status_no_valid_json;
+            return;
+        }
+        for(int i=0; i<MAX_HTTP_HANDLES; i++) {
+            if(!bodies[i]) {
+                slot = i;
+                break;
+            }
+        }
+        if (slot == -1) {
+            *status = &c_status_no_data_slot;
+            *reply = &c_message_empty;
+            delete json;
+            return;
+        }
+        body_handle = slot;
+        bodies[body_handle] = new HttpBodySlot(json);
+
+        slot = -1;
+        for(int i=0; i<MAX_HTTP_HANDLES; i++) {
+            if(!headers[i]) {
+                slot = i;
+                break;
+            }
+        }
+        hdr_handle = slot;
+        headers[hdr_handle] = new HttpHeaderSlot(hdr);
+        headers[hdr_handle]->convert_from_response(exch->get_header());
+
         // Create response objects and return two handles [cite: 258]
-        data_message.message[0] = 0x01; // New Header Handle
-        data_message.message[1] = 0x01; // New Body Handle
+        data_message.message[0] = hdr_handle; // New Header Handle
+        data_message.message[1] = body_handle; // New Body Handle
         data_message.length = 2;
         *reply = &data_message;
         *status = &c_status_http_ok;
@@ -513,14 +587,28 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
 
 void HttpTarget::get_more_data(Message **reply, Message **status)
 {
-    // Used for raw transfers exceeding 896 bytes [cite: 265]
-    *reply = &c_message_empty;
-    *status = &c_status_http_ok;
+    if (exch) {
+        *reply = &data_message;
+        data_message.length = exch->read_response_data(CMD_MAX_REPLY_LEN, data_message.message);
+        data_message.last_part = (data_message.length != CMD_MAX_REPLY_LEN);
+        *status = &c_status_http_ok; 
+        if (data_message.length == 0) {
+            delete exch;
+            exch = NULL;
+        }
+    } else {
+        *reply = &c_message_empty;
+        *status = &c_status_no_more;
+    }
 }
 
 void HttpTarget::abort(int a)
 {
     // Reset any pending exchange state
+    if (exch) {
+        delete exch;
+        exch = NULL;
+    }
 }
 
 int HttpTarget::create_body_from_json(char *body, int size, uint8_t *handle)
@@ -542,6 +630,7 @@ int HttpTarget::create_body_from_json(char *body, int size, uint8_t *handle)
         }
     }
     if(slot == -1) {
+        delete json;
         return -99;
     }
     bodies[slot] = new HttpBodySlot(json);

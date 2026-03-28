@@ -27,7 +27,7 @@ class JSON
     virtual const char *render() { return "base?"; }
     virtual const char *render_compact() { return render(); }
     virtual void render(StreamRamFile *s) { s->format("base?"); }
-    virtual const char *url() { render_compact(); }
+    virtual const char *url() { return render_compact(); }
     virtual void url(StreamRamFile *s) { render(s); }
     virtual ~JSON() {}
     virtual JsonType_t type() { return eBase; }

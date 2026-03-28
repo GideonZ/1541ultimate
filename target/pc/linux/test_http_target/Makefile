@@ -1,12 +1,8 @@
 PRJ      =  test_http
 FINAL    =  $(RESULT)/$(PRJ)
+LWIP     =  nolwip
 
 include ../../../common/environment.mk
-
-#VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/microblaze
-#VPATH +=	$(PATH_SW)/test/filesys
-#VPATH +=	$(PATH_SW)/chan_fat/ff14/source
-#VPATH :=    $(PATH_SW)/chan_fat/pc $(VPATH)
 
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
@@ -24,12 +20,19 @@ SIZE	  = $(CROSS)size
 
 
 SRCS_C   =	dump_hex.c \
-			small_printf.c
+			small_printf.c \
+			server.c \
+			http_protocol.c \
+			middleware.c \
+			multipart.c \
+			url.c \
+			dummy_api.c
 
 SRCS_CC	 =  mystring.cc \
 			json.cc \
 			http_target.cc \
 			pattern.cc \
+			http_request.cc \
 			test_http_target.cc
 
 
@@ -40,7 +43,7 @@ SRCS_IEC =
 SRCS_NANO = 
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -O0 -DRUNS_ON_PC -Wno-format -Wno-format-extra-args
+OPTIONS  = -g -ffunction-sections -O0 -DRUNS_ON_PC -Wno-format -Wno-format-extra-args -DENABLE_STATIC_FILE=1 -DMHS_PORT=8001 -DTEMP_FILE_PATH=\"./\"
 COPTIONS = $(OPTIONS) -std=c99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics
 LINK 	 = ./mb_app.lds

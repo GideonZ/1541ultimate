@@ -2,16 +2,7 @@
 #define ASSEMBLY_H
 
 #include "json.h"
-extern "C" {
-    #include "server.h"
-    #include "multipart.h"
-}
-
-typedef struct {
-    int offset;
-    int size;
-    uint8_t buffer[16384];
-} t_BufferedBody;
+#include "http_request.h"
 
 class Assembly
 {
@@ -21,9 +12,6 @@ class Assembly
     HTTPReqMessage response;
 
     int   connect_to_server(void);
-    int read_socket(void);
-    void  get_response(HTTPREQ_CALLBACK callback);
-    JSON *convert_buffer_to_json(t_BufferedBody *body);
     void  close_connection(void);
 public:
     Assembly() {
