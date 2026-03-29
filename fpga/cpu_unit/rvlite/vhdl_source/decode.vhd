@@ -6,6 +6,9 @@ use ieee.numeric_std.all;
 use work.core_pkg.all;
 
 entity decode is
+generic (
+    g_mult      : boolean := true
+);
 port
 (
     decode_o    : out t_decode_out;
@@ -34,6 +37,9 @@ begin
     instruction <= decode_i.instruction;
 
     i_decode_comb: entity work.decode_comb
+    generic map (
+        g_mult          => g_mult
+    )
     port map (
         interrupt       => irq_i,
         program_counter => decode_i.program_counter,

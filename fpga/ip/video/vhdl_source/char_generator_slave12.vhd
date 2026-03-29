@@ -60,14 +60,17 @@ architecture gideon of char_generator_slave12 is
 
     -- pipeline
     signal color_data_d     : std_logic_vector(7 downto 0);
+    signal color_data_d2    : std_logic_vector(7 downto 0);
     signal active_d1        : std_logic;
     signal pixel_sel_d1     : unsigned(3 downto 0);
     signal active_d2        : std_logic;
     signal pixel_sel_d2     : unsigned(3 downto 0);
     signal reverse          : std_logic;
+    signal reverse_d        : std_logic;
+    signal active_d3        : std_logic;
+    signal char_data_d3     : std_logic_vector(11 downto 0);
 begin
     process(clock)
-        variable v_char_data : std_logic_vector(11 downto 0);
     begin
         if rising_edge(clock) then
             if clock_en = '1' then
@@ -126,34 +129,39 @@ begin
                 pixel_sel_d2 <= pixel_sel_d1;
                 active_d2    <= active_d1;
 
+                -- pipeline again
+                active_d3    <= active_d2;
+
                 -- pixel output
-                pixel_active <= active_d2;
                 if active_d2='1' then
                     if control.big_font = '1' then
                         if char_y(1 downto 0) = "00" then
-                            v_char_data := char_data_12(11 downto 0);
+                            char_data_d3 <= char_data_12(11 downto 0);
                         elsif char_y(1 downto 0) = "01" then
-                            v_char_data := char_data_12(23 downto 12);
+                            char_data_d3 <= char_data_12(23 downto 12);
                         else
-                            v_char_data := char_data_12(35 downto 24);
+                            char_data_d3 <= char_data_12(35 downto 24);
                         end if;
                     else
-                        v_char_data := X"0" & char_data_8;
+                        char_data_d3 <= X"0" & char_data_8;
                         if char_data_8 /= X"18" and char_y(3) = '1' and control.stretch_y = '0' then -- allow a vertical line to continue
-                            v_char_data := X"000"; -- otherwise insert blank
+                            char_data_d3 <= X"000"; -- otherwise insert blank
                         end if;
                     end if;
+                end if;
 
-                    if v_char_data(to_integer(pixel_sel_d2)) = not(reverse) then
-                        pixel_data <= unsigned(color_data_d(3 downto 0));
-                        if color_data_d(3 downto 0) = control.transparent then
+                pixel_active <= active_d3;
+                if active_d3 = '1' then
+                    if char_data_d3(to_integer(pixel_sel_d2)) = not(reverse) then
+                        pixel_data <= unsigned(color_data_d2(3 downto 0));
+                        if color_data_d2(3 downto 0) = control.transparent then
                             pixel_opaque <= '0';
                         else
                             pixel_opaque <= '1';
                         end if;
                     else
-                        pixel_data <= unsigned(color_data_d(7 downto 4));
-                        if color_data_d(7 downto 4) = control.transparent then
+                        pixel_data <= unsigned(color_data_d2(7 downto 4));
+                        if color_data_d2(7 downto 4) = control.transparent then
                             pixel_opaque <= '0';
                         else
                             pixel_opaque <= '1';
@@ -178,5 +186,5 @@ begin
                     '0' & unsigned(screen_data(6 downto 0)) & "111"; -- keep repeating the last line
     char_addr_12 <= unsigned(screen_data(6 downto 0)) & char_y_d(4 downto 2);
     reverse      <= screen_data(7) when rising_edge(clock);
-
+    reverse_d    <= reverse when rising_edge(clock);
 end architecture;

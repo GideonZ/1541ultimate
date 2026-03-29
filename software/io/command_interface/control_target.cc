@@ -13,6 +13,7 @@
 #include "audio_select.h"
 #endif
 #include "endianness.h"
+#include "product.h"
 
 extern REUPreloader *reu_preloader;
 
@@ -176,15 +177,12 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
                 drivepower = c1541_A->get_drive_power();
             }
 
-            if(drivepower == false)
-            {
-                sprintf((char*) data_message.message,"off");
+            if (drivepower == false) {
+                sprintf((char *)data_message.message, "off");
+            } else {
+                sprintf((char *)data_message.message, "on ");
             }
-            else
-            {
-                sprintf((char*) data_message.message,"on ");
-            }
-                
+
             data_message.length = 3;
             *status = &c_status_ok;
             data_message.last_part = true;
@@ -198,16 +196,12 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
                 drivepower = c1541_B->get_drive_power();
             }
 
-            if(drivepower == false)
-            {
-                sprintf((char*) data_message.message,"off");
+            if (drivepower == false) {
+                sprintf((char *)data_message.message, "off");
+            } else {
+                sprintf((char *)data_message.message, "on ");
             }
-            else
-            {
-                sprintf((char*) data_message.message,"on ");
-            }
-                
-                
+
             data_message.length = 3;
             *status = &c_status_ok;
             data_message.last_part = true;
@@ -251,56 +245,50 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
 #ifdef U64
         case CTRL_CMD_U64_SAVEMEM:
             printf("U64 Save C64 Memory\n");
-            save_u64_memory(command);
             *reply  = &c_message_empty;
-            *status = &c_status_ok;
+            *status = &status_message;
+            save_u64_memory(command);
             break;
 #endif
         case CTRL_CMD_EASYFLASH:
-            if (command->length < 3)
-                    {
-                *status = &c_status_unknown_command;
+            if (command->length < 3) {
+                *status = &c_status_invalid_params;
                 *reply = &c_message_empty;
-            }
-            else
-            {
+            } else {
                 unsigned char subcommand = command->message[2];
-                switch (subcommand)
-                {
-                    case 0:
-                        {
-                        if (command->length < 5)
-                                {
-                            *status = &c_status_unknown_command;
-                            *reply = &c_message_empty;
-                            break;
-                        }
-
-                        uint8_t *mem = C64 :: get_cartridge_rom_addr();
-                        unsigned char bank = command->message[3] & 0x38;
-                        unsigned char baseAddr = command->message[4];
-
-                        if (baseAddr & 0x20) { // high ROM
-                            mem += 0x2000;
-                        }
-                        mem += (bank * 0x4000);
-
-                        printf("Clearing EF Sector at $%p\n", mem);
-                        // Clear 8 banks of 8K
-                        for (int b = 0; b < 8; b++) {
-                            for (int i = 0; i < 8192; i++) {
-                                mem[i] = 0xff;
-                            }
-                            mem += 0x4000;
-                        }
+                switch (subcommand) {
+                case 0: {
+                    if (command->length < 5) {
+                        *status = &c_status_invalid_params;
                         *reply = &c_message_empty;
-                        *status = &c_status_ok;
                         break;
                     }
 
-                    default:
-                        *reply = &c_message_empty;
-                        *status = &c_status_unknown_command;
+                    uint8_t *mem = C64 ::get_cartridge_rom_addr();
+                    unsigned char bank = command->message[3] & 0x38;
+                    unsigned char baseAddr = command->message[4];
+
+                    if (baseAddr & 0x20) { // high ROM
+                        mem += 0x2000;
+                    }
+                    mem += (bank * 0x4000);
+
+                    printf("Clearing EF Sector at $%p\n", mem);
+                    // Clear 8 banks of 8K
+                    for (int b = 0; b < 8; b++) {
+                        for (int i = 0; i < 8192; i++) {
+                            mem[i] = 0xff;
+                        }
+                        mem += 0x4000;
+                    }
+                    *reply = &c_message_empty;
+                    *status = &c_status_ok;
+                    break;
+                }
+
+                default:
+                    *reply = &c_message_empty;
+                    *status = &c_status_invalid_params;
                 }
             }
             break;
@@ -336,163 +324,134 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
             }
             break;
 
-        case CTRL_CMD_GET_HWINFO: {
-        	
-            if (command->length < 3)
-            {
-                *status = &c_status_unknown_command;
-                *reply = &c_message_empty;
+        case CTRL_CMD_GET_HWINFO:
+        {
+            int device = command->message[2];
+            if (command->length < 3) {
+                device = 0;
             }
-            else
-            {
-                int device = command->message[2];
-                int frmt = command->message[3];
-#ifndef U64
-                if (device == 0) {
-                    unsigned char* data = (unsigned char*) data_message.message;
-                    strcpy((char*) data, "1541 ULTIMATE II");
-                    data_message.length = strlen((char*) data);
-    
-                    *status = &c_status_ok;
-                    data_message.last_part = true;
-                    *reply = &data_message;
-                }
-                else if (device == 1) {
-                    unsigned char* data = (unsigned char*) data_message.message;
-                    unsigned char el = !!ioRead8(SID_ENABLE_LEFT);
-                    unsigned char er = !!ioRead8(SID_ENABLE_RIGHT);
-                    unsigned char bl = ioRead8(SID_BASE_LEFT);
-                    unsigned char br = ioRead8(SID_BASE_RIGHT);
+            if (device == 0) {
+                unsigned char *data = (unsigned char *)data_message.message;
+                strcpy((char *)data, getProductString());
+                data_message.length = strlen((char *)data);
 
-                    data[0] = el+er;
-                    data_message.length = 1 + data[0] * 5;
-                    if (el)
-                        {
-                            data[1] = bl << 4;
-                            data[2] = 0xd0 | (bl >> 4);
-                            data[3] = 0;
-                            data[4] = 0;
-                            data[5] = 1;
-                        }
-                        if (er)
-                        {
-                            data[1+5*el] = br << 4;
-                            data[2+5*el] = 0xd0 | (br >> 4);
-                            data[3+5*el] = 0;
-                            data[3+5*el] = 0;
-                            data[4+5*el] = 1;
-                        }
-                        *status = &c_status_ok;
-                        data_message.last_part = true;
-                        *reply = &data_message;
-                }
-                else {
-                    *reply = &c_message_empty;
-                    *status = &c_status_unknown_command;
-                }
-#else // U64
-                if (device == 0) {
-                    char* data = (char*) data_message.message;
-                    strcpy(data, "ULTIMATE 64");
-                    data_message.length = strlen(data);
-                    *status = &c_status_ok;
-                    data_message.last_part = true;
-                    *reply = &data_message;
-                }
-                else if (device == 1) {
-               	    unsigned char* data = (unsigned char*) data_message.message;
-                
-               	    data[0] = 2 + (C64_SID1_EN_BAK ? 1 : 0) + (C64_SID2_EN_BAK ? 1 : 0);
-               	    data_message.length = 11 + (C64_SID1_EN_BAK ? 5 : 0) + (C64_SID2_EN_BAK ? 5 : 0);
-
-                    unsigned int base, mask;
-                    base = C64_EMUSID1_BASE_BAK; mask = C64_EMUSID1_MASK_BAK;
-                    data[1] = base << 4;
-                    data[2] = 0xd0 | (base >> 4);
-                    data[3] = 0;
-                    data[4] = 0;
-                    data[5] = ((mask == 0xFE) ? 2 : 3) | (true ? 128 : 0);
-                    
-                    base = C64_EMUSID2_BASE_BAK; mask = C64_EMUSID2_MASK_BAK;
-                    data[6] = base << 4;
-                    data[7] = 0xd0 | (base >> 4);
-                    data[8] = 0;
-                    data[9] = 0;
-                    data[10] = ((mask == 0xFE) ? 2 : 3) | (true ? 128 : 0);
-    
-                    if ( C64_SID1_EN_BAK )
-                    {
-                    	base = C64_SID1_BASE_BAK; mask = C64_SID1_MASK_BAK;
-                        data[11] = base << 4;
-                        data[12] = 0xd0 | (base >> 4);
-                        data[13] = 0;
-                        data[14] = 0;
-                        if ( C64_SID1_EN_BAK == 4 )
-                        {
-                           data[13] = data[11] | (C64_STEREO_ADDRSEL_BAK ? 0x20: 0);
-                           data[14] = data[12] | (C64_STEREO_ADDRSEL_BAK ? 0: 1);
-                        }
-                        data[15] = ((mask == 0xFE) ? 4 : 5) | (true ? 128 : 0);
-                    }
-                    uint8_t ofsTmp = C64_SID1_EN_BAK ? 5 : 0;
-                    
-                    if ( C64_SID2_EN_BAK )
-                    {
-                        base = C64_SID2_BASE_BAK; mask = C64_SID2_MASK_BAK;
-                        data[11+ofsTmp] = base << 4;
-                        data[12+ofsTmp] = 0xd0 | (base >> 4);
-                        data[13+ofsTmp] = 0;
-                        data[14+ofsTmp] = 0;
-                        if ( C64_SID2_EN_BAK == 4 )
-                        {
-                           data[13+ofsTmp] = data[11+ofsTmp] | (C64_STEREO_ADDRSEL_BAK ? 0x20: 0);
-                           data[14+ofsTmp] = data[12+ofsTmp] | (C64_STEREO_ADDRSEL_BAK ? 0: 1);
-                        }
-                        data[15+ofsTmp] = ((mask == 0xFE) ? 4 : 5) | (true ? 128 : 0);
-                    }
-    
-                    *status = &c_status_ok;
-                    data_message.last_part = true;
-                    *reply = &data_message;
-                }
-                else {
-                    *reply = &c_message_empty;
-                    *status = &c_status_unknown_command;
-                }
-#endif
-            }
-            break;
-
-        case CTRL_CMD_GET_RAMDISKINFO: {
-                data_message.length = 8;
-                unsigned char* data = (unsigned char*) data_message.message;
-                for (int i=0; i<4; i++)
-                {
-                    int typ = C64 :: isMP3RamDrive(i);
-                    unsigned char ty = 0;
-                    unsigned char si = 0;
-                    if (typ == 0) ty = 0;
-                    else if (typ == 1541) ty = 0x41;
-                    else if (typ == 1571) ty = 0x71;
-                    else if (typ == 1581) ty = 0x81;
-                    else if (typ == DRVTYPE_MP3_DNP)
-                    {
-                        ty = 0xDD;
-                        si = (unsigned char)(C64 :: getSizeOfMP3NativeRamdrive(i) >> 16);
-                    }
-                    else
-                       ty = si = 0;
-                       
-                    data[2*i] = ty;
-                    data[2*i+1] = si;
-                    
-                }
                 *status = &c_status_ok;
                 data_message.last_part = true;
                 *reply = &data_message;
+            } else if (device == 1) {
+#ifndef U64
+                unsigned char *data = (unsigned char *)data_message.message;
+                unsigned char el = !!ioRead8(SID_ENABLE_LEFT);
+                unsigned char er = !!ioRead8(SID_ENABLE_RIGHT);
+                unsigned char bl = ioRead8(SID_BASE_LEFT);
+                unsigned char br = ioRead8(SID_BASE_RIGHT);
+
+                data[0] = el + er;
+                data_message.length = 1 + data[0] * 5;
+                if (el) {
+                    data[1] = bl << 4;
+                    data[2] = 0xd0 | (bl >> 4);
+                    data[3] = 0;
+                    data[4] = 0;
+                    data[5] = 1;
+                }
+                if (er) {
+                    data[1 + 5 * el] = br << 4;
+                    data[2 + 5 * el] = 0xd0 | (br >> 4);
+                    data[3 + 5 * el] = 0;
+                    data[3 + 5 * el] = 0;
+                    data[4 + 5 * el] = 1;
+                }
+#else // U64
+                unsigned char *data = (unsigned char *)data_message.message;
+
+                data[0] = 2 + (C64_SID1_EN_BAK ? 1 : 0) + (C64_SID2_EN_BAK ? 1 : 0);
+                data_message.length = 11 + (C64_SID1_EN_BAK ? 5 : 0) + (C64_SID2_EN_BAK ? 5 : 0);
+
+                unsigned int base, mask;
+                base = C64_EMUSID1_BASE_BAK;
+                mask = C64_EMUSID1_MASK_BAK;
+                data[1] = base << 4;
+                data[2] = 0xd0 | (base >> 4);
+                data[3] = 0;
+                data[4] = 0;
+                data[5] = ((mask == 0xFE) ? 2 : 3) | (true ? 128 : 0);
+
+                base = C64_EMUSID2_BASE_BAK;
+                mask = C64_EMUSID2_MASK_BAK;
+                data[6] = base << 4;
+                data[7] = 0xd0 | (base >> 4);
+                data[8] = 0;
+                data[9] = 0;
+                data[10] = ((mask == 0xFE) ? 2 : 3) | (true ? 128 : 0);
+
+                if (C64_SID1_EN_BAK) {
+                    base = C64_SID1_BASE_BAK;
+                    mask = C64_SID1_MASK_BAK;
+                    data[11] = base << 4;
+                    data[12] = 0xd0 | (base >> 4);
+                    data[13] = 0;
+                    data[14] = 0;
+                    if (C64_SID1_EN_BAK == 4) {
+                        data[13] = data[11] | (C64_STEREO_ADDRSEL_BAK ? 0x20 : 0);
+                        data[14] = data[12] | (C64_STEREO_ADDRSEL_BAK ? 0 : 1);
+                    }
+                    data[15] = ((mask == 0xFE) ? 4 : 5) | (true ? 128 : 0);
+                }
+                uint8_t ofsTmp = C64_SID1_EN_BAK ? 5 : 0;
+
+                if (C64_SID2_EN_BAK) {
+                    base = C64_SID2_BASE_BAK;
+                    mask = C64_SID2_MASK_BAK;
+                    data[11 + ofsTmp] = base << 4;
+                    data[12 + ofsTmp] = 0xd0 | (base >> 4);
+                    data[13 + ofsTmp] = 0;
+                    data[14 + ofsTmp] = 0;
+                    if (C64_SID2_EN_BAK == 4) {
+                        data[13 + ofsTmp] = data[11 + ofsTmp] | (C64_STEREO_ADDRSEL_BAK ? 0x20 : 0);
+                        data[14 + ofsTmp] = data[12 + ofsTmp] | (C64_STEREO_ADDRSEL_BAK ? 0 : 1);
+                    }
+                    data[15 + ofsTmp] = ((mask == 0xFE) ? 4 : 5) | (true ? 128 : 0);
+                }
+#endif
+                *status = &c_status_ok;
+                data_message.last_part = true;
+                *reply = &data_message;
+            } else {
+                *reply = &c_message_empty;
+                *status = &c_status_invalid_params;
             }
-            break;
         }
+        break;
+
+        case CTRL_CMD_GET_RAMDISKINFO:
+            data_message.length = 8;
+            unsigned char *data = (unsigned char *)data_message.message;
+            for (int i = 0; i < 4; i++) {
+                int typ = C64 ::isMP3RamDrive(i);
+                unsigned char ty = 0;
+                unsigned char si = 0;
+                if (typ == 0)
+                    ty = 0;
+                else if (typ == 1541)
+                    ty = 0x41;
+                else if (typ == 1571)
+                    ty = 0x71;
+                else if (typ == 1581)
+                    ty = 0x81;
+                else if (typ == DRVTYPE_MP3_DNP) {
+                    ty = 0xDD;
+                    si = (unsigned char)(C64 ::getSizeOfMP3NativeRamdrive(i) >> 16);
+                } else
+                    ty = si = 0;
+
+                data[2 * i] = ty;
+                data[2 * i + 1] = si;
+            }
+            *status = &c_status_ok;
+            data_message.last_part = true;
+            *reply = &data_message;
+            break;
     }
 }
 
@@ -502,7 +461,11 @@ void ControlTarget :: save_u64_memory(Message *command)
     FileManager *fm = FileManager :: getFileManager();
     File *f;
 
-    FRESULT res = fm->fopen("/Usb1", "c64_memory.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+    const char *fn = "/temp/c64_memory.bin";
+    if(command->length > 2) {
+        fn = (const char *)command->message + 2;
+    }
+    FRESULT res = fm->fopen(fn, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
     if(res == FR_OK) {
         printf("Opened file successfully.\n");
 
@@ -514,11 +477,17 @@ void ControlTarget :: save_u64_memory(Message *command)
         portEXIT_CRITICAL();
         uint32_t bytes_written;
 
-        f->write(dest, 0x10000, &bytes_written);
+        res = f->write(dest, 0x10000, &bytes_written);
         printf("written: %d...", bytes_written);
         fm->fclose(f);
         delete[] dest;
     }
+    if (res == FR_OK) {
+        sprintf((char *)status_message.message, "00,OK");
+    } else {
+        sprintf((char *)status_message.message, "87,DISK ERR: %s", FileSystem::get_error_string(res));
+    }
+    status_message.length = strlen((char *)status_message.message);
 }
 #endif
 
