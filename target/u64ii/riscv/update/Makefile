@@ -90,6 +90,7 @@ SRCS_CC	 =  u64ii_init.cc \
 			usb_device.cc \
 			usb_hub.cc \
 			usb_hid.cc \
+			usb_hid_logitech.cc \
 			\
 			update_u64ii.cc
 

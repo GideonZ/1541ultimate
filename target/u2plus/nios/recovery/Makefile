@@ -79,6 +79,7 @@ SRCS_CC	 =  u2p_init.cc \
 			usb_scsi.cc \
 			usb_hub.cc \
 			usb_hid.cc \
+			usb_hid_logitech.cc \
 			keyboard_usb.cc \
 			network_config.cc \
 			network_interface.cc \
