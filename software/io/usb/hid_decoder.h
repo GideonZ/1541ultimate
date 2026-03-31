@@ -415,6 +415,11 @@ class HidItemList
 
     ~HidItemList()
     {
+        reset();
+    }
+
+    void reset()
+    {
         for (int i = 0; i < 256; i++) {
             if (inputReportList[i])
                 delete inputReportList[i];
@@ -423,6 +428,10 @@ class HidItemList
             if (featureReportList[i])
                 delete featureReportList[i];
         }
+        hasReportID = false;
+        memset(inputReportList, 0, sizeof(inputReportList));
+        memset(outputReportList, 0, sizeof(outputReportList));
+        memset(featureReportList, 0, sizeof(featureReportList));
     }
 
     bool getInputItem(uint32_t appl, uint32_t id, t_item_location& loc)
@@ -742,6 +751,7 @@ class HidReportParser
     {
         cleanup();
         init();
+        result->reset();
 
         t_globals *tempGlobals;
         uint32_t usage;

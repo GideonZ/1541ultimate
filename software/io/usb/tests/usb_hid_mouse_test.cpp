@@ -35,6 +35,15 @@ const uint8_t kMouseHorizontalWheelDescriptor[] = {
 	0x08, 0x95, 0x01, 0x81, 0x06, 0xC0, 0xC0,
 };
 
+const uint8_t kKeyboardDescriptor[] = {
+	0x05, 0x01, 0x09, 0x06, 0xA1, 0x01, 0x05, 0x07,
+	0x19, 0xE0, 0x29, 0xE7, 0x15, 0x00, 0x25, 0x01,
+	0x75, 0x01, 0x95, 0x08, 0x81, 0x02, 0x95, 0x01,
+	0x75, 0x08, 0x81, 0x01, 0x95, 0x06, 0x75, 0x08,
+	0x15, 0x00, 0x25, 0x65, 0x19, 0x00, 0x29, 0x65,
+	0x81, 0x00, 0xC0,
+};
+
 } // namespace
 
 TEST(HidMouseDescriptorTest, ParseStandardThreeButtonMouse)
@@ -142,6 +151,21 @@ TEST(HidMouseDescriptorTest, RejectsEmptyDescriptor)
 	t_hid_mouse_fields fields;
 	ASSERT_EQ(0, parser.decode(&items, kMouse3ButtonDescriptor, 0));
 	EXPECT_FALSE(items.locateMouseFields(fields));
+}
+
+TEST(HidMouseDescriptorTest, ReusedItemListDoesNotRetainPreviousReports)
+{
+	HidReportParser parser;
+	HidItemList items;
+	t_hid_mouse_fields fields;
+
+	ASSERT_EQ(0, parser.decode(&items, kMouse3ButtonDescriptor, sizeof(kMouse3ButtonDescriptor)));
+	ASSERT_TRUE(items.locateMouseFields(fields));
+	EXPECT_TRUE(fields.valid);
+
+	ASSERT_EQ(0, parser.decode(&items, kKeyboardDescriptor, sizeof(kKeyboardDescriptor)));
+	EXPECT_FALSE(items.locateMouseFields(fields));
+	EXPECT_FALSE(fields.valid);
 }
 
 TEST(HidMouseDescriptorTest, ParseHorizontalWheelAcPan)

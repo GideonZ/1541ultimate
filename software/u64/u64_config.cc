@@ -65,7 +65,8 @@ extern "C" int u64_get_usb_hid_config_value(int key, int default_value)
     if ((!u64_configurator) || (!u64_configurator->cfg)) {
         return default_value;
     }
-    return u64_configurator->cfg->get_value(key);
+    int value = u64_configurator->cfg->get_value(key);
+    return (value < 0) ? default_value : value;
 }
 
 static void init(void *_a, void *_b)

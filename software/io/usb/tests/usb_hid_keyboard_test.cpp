@@ -21,6 +21,16 @@ const uint8_t kNkroKeyboardDescriptor[] = {
 	0x75, 0x01, 0x96, 0x66, 0x00, 0x81, 0x02, 0xC0,
 };
 
+const uint8_t kMouse3ButtonDescriptor[] = {
+	0x05, 0x01, 0x09, 0x02, 0xA1, 0x01, 0x09, 0x01,
+	0xA1, 0x00, 0x05, 0x09, 0x19, 0x01, 0x29, 0x03,
+	0x15, 0x00, 0x25, 0x01, 0x95, 0x03, 0x75, 0x01,
+	0x81, 0x02, 0x95, 0x01, 0x75, 0x05, 0x81, 0x01,
+	0x05, 0x01, 0x09, 0x30, 0x09, 0x31, 0x15, 0x81,
+	0x25, 0x7F, 0x75, 0x08, 0x95, 0x02, 0x81, 0x06,
+	0xC0, 0xC0,
+};
+
 } // namespace
 
 TEST(HidKeyboardDescriptorTest, ParseStandardKeyboardDescriptor)
@@ -78,6 +88,21 @@ TEST(HidKeyboardDescriptorTest, RejectsKeyboardDescriptorMissingKeys)
 	HidItemList items;
 	t_hid_keyboard_fields fields;
 	ASSERT_EQ(0, parser.decode(&items, kModifiersOnlyKeyboardDescriptor, sizeof(kModifiersOnlyKeyboardDescriptor)));
+	EXPECT_FALSE(items.locateKeyboardFields(fields));
+	EXPECT_FALSE(fields.valid);
+}
+
+TEST(HidKeyboardDescriptorTest, ReusedItemListDoesNotRetainPreviousReports)
+{
+	HidReportParser parser;
+	HidItemList items;
+	t_hid_keyboard_fields fields;
+
+	ASSERT_EQ(0, parser.decode(&items, kKeyboardDescriptor, sizeof(kKeyboardDescriptor)));
+	ASSERT_TRUE(items.locateKeyboardFields(fields));
+	EXPECT_TRUE(fields.valid);
+
+	ASSERT_EQ(0, parser.decode(&items, kMouse3ButtonDescriptor, sizeof(kMouse3ButtonDescriptor)));
 	EXPECT_FALSE(items.locateKeyboardFields(fields));
 	EXPECT_FALSE(fields.valid);
 }
