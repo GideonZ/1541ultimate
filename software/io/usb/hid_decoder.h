@@ -442,22 +442,7 @@ class HidMouseInterpreter
         int direction = (wheel_delta > 0) ? 1 : -1;
         int magnitude = (wheel_delta > 0) ? wheel_delta : -wheel_delta;
 
-        if ((burst_direction == 0) || (burst_direction != direction)) {
-            // Rebound suppression: any opposite-direction signal arriving
-            // within reset_gap_ticks of the last committed event while in
-            // precise mode is treated as mechanical rebound or release noise,
-            // not a new user intent.  Suppress it without altering any state
-            // so the committed direction is preserved.  Only applies in
-            // PRECISE mode; ACCELERATED mode direction changes are genuine
-            // and must pass through.
-            if (burst_direction != 0
-                    && burst_direction != direction
-                    && mode == MENU_WHEEL_MODE_PRECISE) {
-                uint32_t delta_check = now_ticks - last_tick;
-                if (delta_check < reset_gap_ticks) {
-                    return 0;
-                }
-            }
+        if (burst_direction == 0) {
             burst_direction = direction;
             burst_accumulator = 0;
             mode = MENU_WHEEL_MODE_PRECISE;
@@ -468,32 +453,30 @@ class HidMouseInterpreter
         uint32_t delta_ticks = now_ticks - last_tick;
         last_tick = now_ticks;
 
-        // A long pause starts a new precise intent: emit exactly one menu step and
-        // discard any stale accelerated remainder so slow notches never leak.
         if (delta_ticks >= reset_gap_ticks) {
+            burst_direction = direction;
             burst_accumulator = 0;
             mode = MENU_WHEEL_MODE_PRECISE;
             return direction;
         }
 
-        // Once accelerated, stay there until reset. This avoids mode flicker during
-        // bursty reports while keeping the output deterministic for a fixed sequence.
         if (mode == MENU_WHEEL_MODE_ACCELERATED) {
+            if (direction != burst_direction) {
+                burst_direction = direction;
+                burst_accumulator = 0;
+                mode = MENU_WHEEL_MODE_PRECISE;
+                return direction;
+            }
             burst_accumulator += magnitude;
             int steps = burst_accumulator / burst_extra_threshold;
             burst_accumulator %= burst_extra_threshold;
             return direction * steps;
         }
 
-        // Distinct slow notches are separated by at least the slow threshold and are
-        // quantized to exactly one row movement per user intent.
-        if (delta_ticks >= slow_gap_ticks) {
-            burst_accumulator = 0;
-            return direction;
+        if (direction != burst_direction) {
+            return 0;
         }
 
-        // Only very tight consecutive reports promote the state machine into
-        // accelerated mode; medium gaps remain in precise mode and cannot amplify.
         if (delta_ticks < fast_gap_ticks) {
             mode = MENU_WHEEL_MODE_ACCELERATED;
             burst_accumulator += magnitude;
