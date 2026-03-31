@@ -443,6 +443,21 @@ class HidMouseInterpreter
         int magnitude = (wheel_delta > 0) ? wheel_delta : -wheel_delta;
 
         if ((burst_direction == 0) || (burst_direction != direction)) {
+            // Rebound suppression: any opposite-direction signal arriving
+            // within reset_gap_ticks of the last committed event while in
+            // precise mode is treated as mechanical rebound or release noise,
+            // not a new user intent.  Suppress it without altering any state
+            // so the committed direction is preserved.  Only applies in
+            // PRECISE mode; ACCELERATED mode direction changes are genuine
+            // and must pass through.
+            if (burst_direction != 0
+                    && burst_direction != direction
+                    && mode == MENU_WHEEL_MODE_PRECISE) {
+                uint32_t delta_check = now_ticks - last_tick;
+                if (delta_check < reset_gap_ticks) {
+                    return 0;
+                }
+            }
             burst_direction = direction;
             burst_accumulator = 0;
             mode = MENU_WHEEL_MODE_PRECISE;

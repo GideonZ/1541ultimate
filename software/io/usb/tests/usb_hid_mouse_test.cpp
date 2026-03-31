@@ -333,3 +333,108 @@ TEST(HidBootProtocolTest, PadsShortBootMouseReport)
 	EXPECT_EQ(0, sample.x);
 	EXPECT_EQ(0, sample.y);
 }
+
+// Rebound suppression tests.
+// Parameters: fast_gap=25, slow_gap=75, reset_gap=150, burst_extra_threshold=15
+// Helper to reset per-call state for clarity.
+namespace {
+struct BurstState {
+    uint32_t last_tick = 0;
+    int mode = HidMouseInterpreter::MENU_WHEEL_MODE_PRECISE;
+    int burst_direction = 0;
+    int burst_accumulator = 0;
+    int call(int delta, uint32_t now) {
+        return HidMouseInterpreter::scaleMenuWheelBurst(
+            delta, now, last_tick, mode, burst_direction, burst_accumulator,
+            25, 75, 150, 15);
+    }
+};
+} // namespace
+
+TEST(MenuWheelReboundTest, SlowDownwardReboundIsSuppressed)
+{
+    // Slow downward notch at t=0 commits one row down.
+    // A tiny upward signal at t=50 (< slow_gap=75) is mechanical rebound —
+    // it must not move the menu back up.
+    BurstState s;
+    EXPECT_EQ(1,  s.call(+1,  0));  // down: committed
+    EXPECT_EQ(0,  s.call(-1, 50));  // rebound within slow_gap: suppressed
+    EXPECT_EQ(0,  s.call(-1, 60));  // still within window: suppressed
+}
+
+TEST(MenuWheelReboundTest, SlowUpwardReboundIsSuppressed)
+{
+    // Mirror of downward: upward notch followed by small downward rebound.
+    BurstState s;
+    EXPECT_EQ(-1, s.call(-1,  0));  // up: committed
+    EXPECT_EQ(0,  s.call(+1, 50));  // rebound within slow_gap: suppressed
+}
+
+TEST(MenuWheelReboundTest, LateReboundBeyondSlowGapStillSuppressedByResetGap)
+{
+    // A rebound arriving between slow_gap(75) and reset_gap(150) was previously
+    // not caught; the extended window must suppress it.
+    BurstState s;
+    EXPECT_EQ(1,  s.call(+1,  0));  // down: committed, last_tick=0
+    EXPECT_EQ(0,  s.call(-1, 80));  // late rebound at 80ms: now suppressed (80 < reset_gap=150)
+    EXPECT_EQ(0,  s.call(-1, 100)); // still within window: suppressed
+    EXPECT_EQ(0,  s.call(-1, 140)); // 140ms: still suppressed (140 < 150)
+}
+
+TEST(MenuWheelReboundTest, GenuineOppositeGestureAfterResetGapIsNotSuppressed)
+{
+    // After reset_gap expires, a genuine opposite gesture must proceed normally.
+    BurstState s;
+    EXPECT_EQ(1,  s.call(+1,   0)); // down
+    EXPECT_EQ(-1, s.call(-1, 160)); // genuine opposite (delta=160 >= reset_gap=150)
+}
+
+TEST(MenuWheelReboundTest, ReboundWindowExpiresExactlyAtResetGap)
+{
+    // At exactly reset_gap the rebound guard must NOT suppress.
+    BurstState s;
+    EXPECT_EQ(1,  s.call(+1,   0));  // down
+    EXPECT_EQ(-1, s.call(-1, 150));  // delta=150 == reset_gap: NOT suppressed
+}
+
+TEST(MenuWheelReboundTest, ReboundDoesNotAlterStateForSubsequentSameDirection)
+{
+    // After suppression the locked direction must remain valid so a continued
+    // slow same-direction event still resolves to a second row (>= slow_gap).
+    BurstState s;
+    EXPECT_EQ(1,  s.call(+1,  0));   // down: committed, last_tick=0
+    EXPECT_EQ(0,  s.call(-1, 50));   // rebound: suppressed, last_tick stays 0
+    EXPECT_EQ(1,  s.call(+1, 100));  // second slow notch (delta from t=0 is 100 >= 75)
+}
+
+TEST(MenuWheelReboundTest, FastBurstDirectionChangeIsNotSuppressed)
+{
+    // After entering ACCELERATED mode a direction change must not be suppressed
+    // even if it arrives quickly — fast bursts must remain fully responsive.
+    BurstState s;
+    EXPECT_EQ(1, s.call(+5,  0));  // first: commit +1, PRECISE, last_tick=0
+    EXPECT_EQ(0, s.call(+5, 10));  // fast same-dir: enters ACCELERATED
+    EXPECT_EQ(HidMouseInterpreter::MENU_WHEEL_MODE_ACCELERATED, s.mode);
+    // Opposite direction while accelerated: guard does NOT apply → emits immediately.
+    EXPECT_EQ(-1, s.call(-1, 15));
+    EXPECT_EQ(HidMouseInterpreter::MENU_WHEEL_MODE_PRECISE, s.mode);
+}
+
+TEST(MenuWheelReboundTest, NewDirectionAfterResetGapPlusPauseIsNotSuppressed)
+{
+    // After reset_gap a new opposite gesture with sufficient gap still works.
+    BurstState s;
+    EXPECT_EQ(1,  s.call(+1,   0));   // down
+    EXPECT_EQ(1,  s.call(+1, 160));   // same dir after reset_gap: new precise, last_tick=160
+    EXPECT_EQ(-1, s.call(-1, 320));   // delta=160 >= reset_gap=150: genuine opposite
+}
+
+TEST(MenuWheelReboundTest, ReboundAfterResetGapStillSuppressed)
+{
+    // After a long-pause reset the new gesture still gets a lock window.
+    BurstState s;
+    EXPECT_EQ(1,  s.call(+1,   0));   // first down
+    EXPECT_EQ(1,  s.call(+1, 160));   // second down after reset_gap: emits, last_tick=160
+    EXPECT_EQ(0,  s.call(-1, 190));   // rebound 30ms after second: suppressed (30 < 150)
+    EXPECT_EQ(-1, s.call(-1, 320));   // genuine opposite 160ms after second: not suppressed
+}

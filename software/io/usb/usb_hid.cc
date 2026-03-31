@@ -755,7 +755,7 @@ void UsbHidDriver :: interrupt_handler()
                 }
                 if (right_button_pressed) {
                     if (!menu_right_button_consumed) {
-                        usb_hid_queue_menu_key(KEY_LEFT, 1, 1);
+                        usb_hid_queue_menu_key(KEY_BREAK, 1, 1);
                         menu_right_button_consumed = true;
                     }
                 } else {
