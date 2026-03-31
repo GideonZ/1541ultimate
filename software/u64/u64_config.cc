@@ -38,6 +38,7 @@ extern "C" {
 #include "init_function.h"
 #include "color_timings.h"
 #include "hdmi_scan.h"
+#include "usb_hid.h"
 
 const uint8_t default_colors[16][3] = {
     { 0x00, 0x00, 0x00 },
@@ -155,6 +156,11 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_WHEEL_MODE        0x55
 #define CFG_SCROLL_FACTOR     0x56
 #define CFG_WHEEL_DIRECTION   0x57
+#define CFG_MENU_MOUSE_NAV    0x58
+#define CFG_USB_MOUSE_NAME    0x59
+#define CFG_USB_MOUSE_MODE    0x5A
+#define CFG_USB_KEYBOARD_NAME 0x5B
+#define CFG_USB_KEYBOARD_MODE 0x5C
 
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
@@ -250,7 +256,7 @@ static const char *yes_no[] = { "No", "Yes" };
 static const char *dvi_hdmi[] = { "Auto", "HDMI", "DVI" };
 static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
 static const char *color_sel[] = { "PAL", "NTSC", "PAL-60", "NTSC-50", "PAL-60/L", "NTSC-50/L" };
-static const char *wheel_modes[] = { "Mouse Axis", "Cursor Keys" };
+static const char *wheel_modes[] = { "Mouse Move", "Cursor Keys" };
 static const char *wheel_directions[] = { "Normal", "Reversed" };
 
 static const char *sid_types[] = { "None", "6581", "8580", "FPGASID", "SwinSID Ultimate", "ARMSID", "ARM2SID", "SidFx", "FPGASID Dukestah", "PDsid", "SIDKick (Teensy)", "SIDKick Pico" };
@@ -317,6 +323,11 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_WHEEL_MODE,           CFG_TYPE_ENUM, "Mouse Wheel Mode",             "%s", wheel_modes,      0,  1, 0 },
     { CFG_SCROLL_FACTOR,        CFG_TYPE_VALUE, "Mouse Wheel Factor",          "%d", NULL,             1, 16, 8 },
     { CFG_WHEEL_DIRECTION,      CFG_TYPE_ENUM,  "Mouse Wheel Direction",       "%s", wheel_directions, 0,  1, 1 },
+    { CFG_MENU_MOUSE_NAV,       CFG_TYPE_ENUM,  "Menu Mouse Navigation",       "%s", en_dis,          0,  1, 1 },
+    { CFG_USB_MOUSE_NAME,       CFG_TYPE_INFO,  "USB Mouse",                   "%s", NULL,            0, 32, (int)"" },
+    { CFG_USB_MOUSE_MODE,       CFG_TYPE_INFO,  "USB Mouse HID Mode",          "%s", NULL,            0, 16, (int)"" },
+    { CFG_USB_KEYBOARD_NAME,    CFG_TYPE_INFO,  "USB Keyboard",                "%s", NULL,            0, 32, (int)"" },
+    { CFG_USB_KEYBOARD_MODE,    CFG_TYPE_INFO,  "USB Keyboard HID Mode",       "%s", NULL,            0, 16, (int)"" },
     { CFG_USERPORT_EN,          CFG_TYPE_ENUM, "UserPort Power Enable",        "%s", en_dis,       0,  1, 1 },
 //    { CFG_CART_PREFERENCE,      CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,    0,  2, 0 }, // moved to C64 for user consistency
     { CFG_PALETTE,              CFG_TYPE_STRFUNC, "Palette Definition",        "%s", (const char **)U64Config :: list_palettes, 0, 30, (int)"" },
@@ -1092,6 +1103,48 @@ void U64Config :: effectuate_settings()
     setPllOffset(cfg->find_item(CFG_COLOR_CLOCK_ADJ));
     setLedSelector(cfg->find_item(CFG_LED_SELECT_0)); // does both anyway
 
+}
+
+static void u64_update_usb_hid_info_items(ConfigStore *cfg)
+{
+    if (!cfg) {
+        return;
+    }
+
+    struct {
+        uint8_t name_id;
+        uint8_t mode_id;
+        const char *name_value;
+        const char *mode_value;
+    } hid_items[] = {
+        { CFG_USB_MOUSE_NAME, CFG_USB_MOUSE_MODE, usb_hid_get_visible_mouse_name(), usb_hid_get_visible_mouse_mode() },
+        { CFG_USB_KEYBOARD_NAME, CFG_USB_KEYBOARD_MODE, usb_hid_get_visible_keyboard_name(), usb_hid_get_visible_keyboard_mode() },
+    };
+
+    for (unsigned int i = 0; i < (sizeof(hid_items) / sizeof(hid_items[0])); i++) {
+        ConfigItem *name_item = cfg->find_item(hid_items[i].name_id);
+        ConfigItem *mode_item = cfg->find_item(hid_items[i].mode_id);
+        if (name_item) {
+            name_item->setEnabled(false);
+            name_item->setString(hid_items[i].name_value);
+        }
+        if (mode_item) {
+            mode_item->setEnabled(false);
+            mode_item->setString(hid_items[i].mode_value);
+        }
+    }
+}
+
+extern "C" void u64_refresh_usb_hid_status(void)
+{
+    if (u64_configurator) {
+        u64_update_usb_hid_info_items(u64_configurator->cfg);
+    }
+}
+
+void U64Config :: on_edit()
+{
+    u64_update_usb_hid_info_items(cfg);
 }
 
 void U64Config :: get_sid_addresses(ConfigStore *cfg, uint8_t *base, uint8_t *mask, uint8_t *split)
@@ -2499,6 +2552,12 @@ void U64Config :: setup_config_menu(void)
     grp->append(cfg->find_item(CFG_WHEEL_MODE));
     grp->append(cfg->find_item(CFG_SCROLL_FACTOR));
     grp->append(cfg->find_item(CFG_WHEEL_DIRECTION));
+    grp->append(cfg->find_item(CFG_MENU_MOUSE_NAV));
+    grp->append(ConfigItem :: separator());
+    grp->append(cfg->find_item(CFG_USB_MOUSE_NAME));
+    grp->append(cfg->find_item(CFG_USB_MOUSE_MODE));
+    grp->append(cfg->find_item(CFG_USB_KEYBOARD_NAME));
+    grp->append(cfg->find_item(CFG_USB_KEYBOARD_MODE));
 
 #if U64==2
     grp->append(ConfigItem :: separator());

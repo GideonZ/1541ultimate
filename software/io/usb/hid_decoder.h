@@ -356,6 +356,22 @@ class HidMouseInterpreter
         return scroll_factor;
     }
 
+    static int normalizeHorizontalWheel(int wheel_h)
+    {
+        // AC Pan reports are opposite the existing right/left menu convention.
+        return -wheel_h;
+    }
+
+    static int normalizeVerticalWheel(int wheel_v)
+    {
+        return -wheel_v;
+    }
+
+    static int applyWheelDirection(int wheel_delta, bool reversed)
+    {
+        return reversed ? -wheel_delta : wheel_delta;
+    }
+
     static void applyRelativeMotion(int16_t& mouse_x, int16_t& mouse_y, int x, int y)
     {
         mouse_x += x;
@@ -369,7 +385,7 @@ class HidMouseInterpreter
 
     static int scaleVerticalWheel(int wheel_v, int scroll_factor, int& remainder)
     {
-        return scaleWheelWithRemainder(wheel_v, clampWheelSetting(scroll_factor) * 10, 4, remainder);
+        return scaleWheelWithRemainder(wheel_v, clampWheelSetting(scroll_factor) * 10, 32, remainder);
     }
 
     static int scaleHorizontalWheelKeys(int wheel_h, int scroll_factor)
@@ -380,6 +396,17 @@ class HidMouseInterpreter
     static int scaleVerticalWheelKeys(int wheel_v, int scroll_factor, int& remainder)
     {
         return scaleWheelWithRemainder(wheel_v, clampWheelSetting(scroll_factor), 4, remainder);
+    }
+
+    static int scaleMenuWheelKeys(int wheel_delta)
+    {
+        if (wheel_delta > 0) {
+            return 1;
+        }
+        if (wheel_delta < 0) {
+            return -1;
+        }
+        return 0;
     }
 
     static void applyWheelAxisDeltas(int16_t& mouse_x, int16_t& mouse_y, int wheel_h_delta, int wheel_v_delta)

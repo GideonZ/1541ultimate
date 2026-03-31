@@ -109,6 +109,7 @@ public:
     void run_editor(const char *, int);
     void swapDisk(void);
     void send_keystroke(int key);
+    static bool anyMenuActive(void);
 
     UIObject *get_root_object(void) { return ui_objects[0]; }
 

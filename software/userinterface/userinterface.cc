@@ -15,6 +15,16 @@
 #endif // UPDATER
 #endif // NO_FILE_ACCESS
 
+namespace {
+
+IndexedList<UserInterface *> *get_user_interfaces(void)
+{
+    static IndexedList<UserInterface *> interfaces(4, NULL);
+    return &interfaces;
+}
+
+}
+
 /* Help */
 static const char *helptext =
         "WASD:       Up/Left/Down/Right\n"
@@ -92,6 +102,7 @@ struct t_cfg_definition user_if_config[] = {
 
 UserInterface :: UserInterface(const char *title, bool use_logo) : title(title)
 {
+    get_user_interfaces()->append(this);
     initialized = false;
     focus = -1;
     host = NULL;
@@ -111,6 +122,7 @@ UserInterface :: UserInterface(const char *title, bool use_logo) : title(title)
 UserInterface :: ~UserInterface()
 {
 	printf("Destructing user interface..\n");
+    get_user_interfaces()->remove(this);
     do {
         if (ui_objects[focus]) {
             ui_objects[focus]->deinit();
@@ -417,6 +429,18 @@ void UserInterface :: release_host(void)
 bool UserInterface :: is_available(void)
 {
     return available;
+}
+
+bool UserInterface :: anyMenuActive(void)
+{
+    IndexedList<UserInterface *> *interfaces = get_user_interfaces();
+    for (int i = 0; i < interfaces->get_elements(); i++) {
+        UserInterface *ui = (*interfaces)[i];
+        if (ui && ui->available) {
+            return true;
+        }
+    }
+    return false;
 }
 
 int UserInterface :: activate_uiobject(UIObject *obj)

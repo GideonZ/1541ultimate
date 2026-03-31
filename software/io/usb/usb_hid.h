@@ -5,6 +5,11 @@
 #include "usb_device.h"
 #include "hid_decoder.h"
 
+const char *usb_hid_get_visible_mouse_name(void);
+const char *usb_hid_get_visible_mouse_mode(void);
+const char *usb_hid_get_visible_keyboard_name(void);
+const char *usb_hid_get_visible_keyboard_mode(void);
+
 class UsbHidDriver : public UsbDriver
 {
 	int  irq_transaction;
@@ -36,6 +41,9 @@ class UsbHidDriver : public UsbDriver
     bool has_button3;
     bool has_wheel_v;
     bool has_wheel_h;
+    bool previous_left_button_pressed;
+    int menu_wheel_h_latch;
+    int menu_wheel_v_latch;
     int wheel_axis_v_remainder;
     int wheel_key_v_remainder;
 
