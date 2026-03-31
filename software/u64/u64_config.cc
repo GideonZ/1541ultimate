@@ -20,6 +20,7 @@ extern "C" {
 #include "flash.h"
 #include "product.h"
 #include "userinterface.h"
+#include "config_menu.h"
 #include "u64_config.h"
 #include "audio_select.h"
 #include "fpll.h"
@@ -279,7 +280,7 @@ static const char *volumes[] = { "OFF", "-42 dB", "-36 dB", "-30 dB", "-27 dB", 
 static const char *pannings[] = { "Left 5", "Left 4", "Left 3", "Left 2", "Left 1", "Center",
                                   "Right 1", "Right 2", "Right 3", "Right 4", "Right 5" }; // 11 settings
 
-static const uint8_t volume_ctrl[] = { 
+static const uint8_t volume_ctrl[] = {
     0x00, 0x01, 0x02, 0x04, 0x06, 0x08, 0x10, 0x12, 0x14, 0x17, 0x1a, 0x1d, 0x20, 0x24, 0x28, 0x2d,
     0x33, 0x39, 0x40, 0x48, 0x51, 0x5b, 0x66, 0x72, 0x80, 0x90, 0xa1, 0xb5, 0xcb, 0xe4, 0xff
 };
@@ -473,7 +474,7 @@ void U64Config :: U64SpeakerMixer :: effectuate_settings()
     setSpeakerMixer(cfg->items[0]);
 }
 
-#endif    
+#endif
 
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -500,7 +501,7 @@ int U64Config :: detectDukestahAdapter()
     volatile uint8_t *base2 = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD500); // D500
 
     C64 :: hard_stop();
-    
+
     base1[25] = 0x81; // Enter config mode
     base1[26] = 0x65;
     base1[30] = 4;   // Set FPGASID to stereo
@@ -514,7 +515,7 @@ int U64Config :: detectDukestahAdapter()
 
     base1[28] = 5;
     base2[28] = 13;
-    
+
     base1[25] = 0x82;   // Swap mode
     base1[26] = 0x65;
     uint8_t tmp1 = base1[28] & 15;   // Read SID2 register 28
@@ -525,7 +526,7 @@ int U64Config :: detectDukestahAdapter()
     ((SidDeviceFpgaSid*)(sidDevice[0]))->effectuate_settings();
 
     if (tmp1 == 13) return SID_TYPE_FPGASID_DUKESTAH;
-    
+
     return SID_TYPE_FPGASID;
 }
 
@@ -602,10 +603,10 @@ int U64Config :: detectRemakes(int socket)
     }
     switch(SidDeviceSidKick :: detect(base)) {
     case 1:
-        sidDevice[socket] = new SidDeviceSidKick(socket, base, 1); 
+        sidDevice[socket] = new SidDeviceSidKick(socket, base, 1);
         return SID_TYPE_SIDKICK_PICO;
     case 2:
-        sidDevice[socket] = new SidDeviceSidKick(socket, base, 0); 
+        sidDevice[socket] = new SidDeviceSidKick(socket, base, 0);
         return SID_TYPE_SIDKICK;
     }
 
@@ -853,7 +854,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 {
     systemMode = e_NOT_SET;
     hdmiMode = e_480p_576p;
-    
+
     U64_ETHSTREAM_ENA = 0;
 	skipReset = false;
 
@@ -1007,7 +1008,7 @@ void U64Config :: effectuate_settings()
     uint8_t swap = cfg->get_value(CFG_JOYSWAP);
     U64II_KEYB_JOY     = swap & 1;
     static const uint8_t wasd_settings[] = { 0x00, 0x00, 0x01, 0x01, 0x03, 0x03 };
-    MATRIX_WASD_TO_JOY = wasd_to_joy = wasd_settings[swap]; 
+    MATRIX_WASD_TO_JOY = wasd_to_joy = wasd_settings[swap];
 #else
     C64_PLD_JOYCTRL  = cfg->get_value(CFG_JOYSWAP) ^ 1;
 #endif
@@ -1016,7 +1017,7 @@ void U64Config :: effectuate_settings()
     U64_USERPORT_EN  = en;
     U64_PWM_DUTY = (en) ? 0xD8 : 0x00;
     printf("USERPORT_EN = %d\n", U64_USERPORT_EN);
-    
+
     //C64_TURBOREGS_EN = 0;
     //C64_SPEED_PREFER = 0;
 
@@ -1139,6 +1140,7 @@ extern "C" void u64_refresh_usb_hid_status(void)
 {
     if (u64_configurator) {
         u64_update_usb_hid_info_items(u64_configurator->cfg);
+        ConfigBrowser::refresh_active();
     }
 }
 
@@ -1471,11 +1473,11 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
     case MENU_U64_WIFI_DISABLE:
         esp32.Quit();
         break;
-        
+
     case MENU_U64_WIFI_DOWNLOAD:
         esp32.Boot();
         break;
-    
+
     case MENU_U64_WIFI_ENABLE:
         esp32.EnableRunMode();
         break;
@@ -2365,7 +2367,7 @@ void U64Config :: configure_hdmi_output(void)
         U64_HDMI_ENABLE = (hdmiSetting == 1) ? 1 : 0; // 1 = HDMI, 2 = DVI
     }
 
-#if U64 == 2    
+#if U64 == 2
     volatile t_video_timing_regs *regs = (volatile t_video_timing_regs *)U64II_HDMI_REGS;
 
     regs->resync = 2;

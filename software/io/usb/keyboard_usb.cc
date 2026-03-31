@@ -14,6 +14,20 @@
 
 Keyboard_USB system_usb_keyboard;
 
+namespace {
+
+uint8_t usb_keymap_lookup(const uint8_t *map, size_t map_size, uint8_t key)
+{
+	return (key < map_size) ? map[key] : KEY_ERR;
+}
+
+uint8_t usb_matrix_lookup(const uint8_t *map, size_t map_size, uint8_t key)
+{
+	return (key < map_size) ? map[key] : 0xFF;
+}
+
+}
+
 const uint8_t keymap_normal[] = {
     0x00, KEY_ERR, KEY_ERR, KEY_ERR, 'a', 'b', 'c', 'd',
     'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l',
@@ -231,14 +245,15 @@ void Keyboard_USB :: usb2matrix(uint8_t *kd)
 		if (!kd[i]) {
 			break;
 		}
-		if (keymap_normal[kd[i]] == KEY_F12) {
+		uint8_t normal = usb_keymap_lookup(keymap_normal, sizeof(keymap_normal), kd[i]);
+		if (normal == KEY_F12) {
 			restore = 1;
 		}
-		if (keymap_normal[kd[i]] == KEY_F11) {
+		if (normal == KEY_F11) {
 		    freeze = 1;
 		}
-		uint8_t n = (kd[0] & 0x22) ? keymap_usb2matrix_shift[kd[i]] :
-		                            keymap_usb2matrix[kd[i]];
+		uint8_t n = (kd[0] & 0x22) ? usb_matrix_lookup(keymap_usb2matrix_shift, sizeof(keymap_usb2matrix_shift), kd[i]) :
+		                            usb_matrix_lookup(keymap_usb2matrix, sizeof(keymap_usb2matrix), kd[i]);
 		//printf("[%b]", n);
 		if (n != 0xFF) {
 		    something_else_pressed = 1;
@@ -283,11 +298,20 @@ void Keyboard_USB :: process_data(uint8_t *kbdata)
 		}
 		if (!PresentInLastData(kbdata[i])) {
 			if (kbdata[0] & 0x11) { // control
-				putch(keymap_control[kbdata[i]]);
+				uint8_t mapped = usb_keymap_lookup(keymap_control, sizeof(keymap_control), kbdata[i]);
+				if ((mapped != 0) && (mapped != KEY_ERR)) {
+					putch(mapped);
+				}
 			} else if (kbdata[0] & 0x22) { // shift
-				putch(keymap_shifted[kbdata[i]]);
+				uint8_t mapped = usb_keymap_lookup(keymap_shifted, sizeof(keymap_shifted), kbdata[i]);
+				if ((mapped != 0) && (mapped != KEY_ERR)) {
+					putch(mapped);
+				}
 			} else {
-				putch(keymap_normal[kbdata[i]]);
+				uint8_t mapped = usb_keymap_lookup(keymap_normal, sizeof(keymap_normal), kbdata[i]);
+				if ((mapped != 0) && (mapped != KEY_ERR)) {
+					putch(mapped);
+				}
 			}
 		}
 	}
@@ -311,11 +335,20 @@ int  Keyboard_USB :: getch(void)
             delay_count = repeat_speed;
 
             if (last_data[0] & 0x11) { // control
-                putch(keymap_control[last_data[2]]);
+				uint8_t mapped = usb_keymap_lookup(keymap_control, sizeof(keymap_control), last_data[2]);
+				if ((mapped != 0) && (mapped != KEY_ERR)) {
+					putch(mapped);
+				}
             } else if (last_data[0] & 0x22) { // shift
-                putch(keymap_shifted[last_data[2]]);
+				uint8_t mapped = usb_keymap_lookup(keymap_shifted, sizeof(keymap_shifted), last_data[2]);
+				if ((mapped != 0) && (mapped != KEY_ERR)) {
+					putch(mapped);
+				}
             } else {
-                putch(keymap_normal[last_data[2]]);
+				uint8_t mapped = usb_keymap_lookup(keymap_normal, sizeof(keymap_normal), last_data[2]);
+				if ((mapped != 0) && (mapped != KEY_ERR)) {
+					putch(mapped);
+				}
             }
         } else {
             delay_count --;

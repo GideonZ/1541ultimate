@@ -12,8 +12,8 @@
 #include "userinterface.h"
 
 // Standards-based HID support only. Devices must expose standard HID mouse or
-// keyboard collections; vendor-specific protocols such as Logitech HID++ are
-// intentionally out of scope for this driver.
+// keyboard collections; proprietary non-HID control protocols are intentionally
+// out of scope for this driver.
 
 #define CFG_WHEEL_MODE    0x55
 #define CFG_SCROLL_FACTOR 0x56
@@ -35,6 +35,12 @@ extern "C" void u64_refresh_usb_hid_status(void) __attribute__((weak));
 
 namespace {
 
+enum {
+    USB_HID_MAX_KEYBOARD_SOURCES = 8
+};
+
+int usb_hid_active_mouse_interfaces = 0;
+
 struct t_usb_hid_visibility
 {
     char name[33];
@@ -45,6 +51,16 @@ struct t_usb_hid_visibility
 
 t_usb_hid_visibility usb_hid_mouse_visibility = { "Not connected", "-", -1, -1 };
 t_usb_hid_visibility usb_hid_keyboard_visibility = { "Not connected", "-", -1, -1 };
+
+struct t_usb_hid_keyboard_source
+{
+    bool occupied;
+    int source_address;
+    int source_interface;
+    uint8_t report[8];
+};
+
+t_usb_hid_keyboard_source usb_hid_keyboard_sources[USB_HID_MAX_KEYBOARD_SOURCES] = { 0 };
 
 void usb_hid_clear_visibility(t_usb_hid_visibility& visibility)
 {
@@ -104,6 +120,101 @@ void usb_hid_publish_visibility(void)
     }
 }
 
+int usb_hid_get_source_address(UsbDevice *device)
+{
+    return device ? device->current_address : -1;
+}
+
+int usb_hid_get_source_interface(UsbInterface *interface)
+{
+    return interface ? interface->getInterfaceDescriptor()->interface_number : -1;
+}
+
+void usb_hid_append_boot_key(uint8_t out[8], uint8_t key)
+{
+    if (key == 0) {
+        return;
+    }
+    for (int i = 2; i < 8; i++) {
+        if (out[i] == key) {
+            return;
+        }
+    }
+    for (int i = 2; i < 8; i++) {
+        if (out[i] == 0) {
+            out[i] = key;
+            return;
+        }
+    }
+}
+
+t_usb_hid_keyboard_source *usb_hid_find_keyboard_source(UsbDevice *device, UsbInterface *interface, bool create)
+{
+    int address = usb_hid_get_source_address(device);
+    int interface_number = usb_hid_get_source_interface(interface);
+    t_usb_hid_keyboard_source *free_slot = NULL;
+
+    for (int i = 0; i < USB_HID_MAX_KEYBOARD_SOURCES; i++) {
+        t_usb_hid_keyboard_source *source = &usb_hid_keyboard_sources[i];
+        if (source->occupied) {
+            if ((source->source_address == address) && (source->source_interface == interface_number)) {
+                return source;
+            }
+        } else if (!free_slot) {
+            free_slot = source;
+        }
+    }
+
+    if (!create || !free_slot) {
+        return NULL;
+    }
+
+    free_slot->occupied = true;
+    free_slot->source_address = address;
+    free_slot->source_interface = interface_number;
+    memset(free_slot->report, 0, sizeof(free_slot->report));
+    return free_slot;
+}
+
+void usb_hid_submit_keyboard_sources(void)
+{
+    uint8_t combined_report[8] = { 0 };
+    for (int i = 0; i < USB_HID_MAX_KEYBOARD_SOURCES; i++) {
+        t_usb_hid_keyboard_source *source = &usb_hid_keyboard_sources[i];
+        if (!source->occupied) {
+            continue;
+        }
+        combined_report[0] |= source->report[0];
+        for (int key_index = 2; key_index < 8; key_index++) {
+            usb_hid_append_boot_key(combined_report, source->report[key_index]);
+        }
+    }
+    system_usb_keyboard.process_data(combined_report);
+}
+
+void usb_hid_update_keyboard_source(UsbDevice *device, UsbInterface *interface, const uint8_t report[8])
+{
+    t_usb_hid_keyboard_source *source = usb_hid_find_keyboard_source(device, interface, true);
+    if (!source) {
+        return;
+    }
+    memcpy(source->report, report, sizeof(source->report));
+    usb_hid_submit_keyboard_sources();
+}
+
+void usb_hid_remove_keyboard_source(UsbDevice *device, UsbInterface *interface)
+{
+    t_usb_hid_keyboard_source *source = usb_hid_find_keyboard_source(device, interface, false);
+    if (!source) {
+        return;
+    }
+    source->occupied = false;
+    source->source_address = -1;
+    source->source_interface = -1;
+    memset(source->report, 0, sizeof(source->report));
+    usb_hid_submit_keyboard_sources();
+}
+
 bool usb_hid_keyboard_report_has_activity(const uint8_t *report)
 {
     if (!report) {
@@ -145,6 +256,16 @@ void usb_hid_clear_visibility_if_source_matches(t_usb_hid_visibility& visibility
     if ((visibility.source_address == address) && (visibility.source_interface == interface_number)) {
         usb_hid_clear_visibility(visibility);
     }
+}
+
+void usb_hid_apply_mouse_output_enable()
+{
+#if U64
+    C64_MOUSE_EN_1 = (usb_hid_active_mouse_interfaces > 0) ? 1 : 0;
+    if (usb_hid_active_mouse_interfaces == 0) {
+        C64_JOY1_SWOUT = 0x1F;
+    }
+#endif
 }
 
 }
@@ -269,6 +390,7 @@ UsbHidDriver :: UsbHidDriver(UsbInterface *intf) : UsbDriver(intf)
     has_wheel_v = false;
     has_wheel_h = false;
     previous_left_button_pressed = false;
+    mouse_registered = false;
     menu_wheel_h_latch = 0;
     menu_wheel_v_latch = 0;
     wheel_axis_v_remainder = 0;
@@ -296,7 +418,7 @@ void UsbHidDriver :: install(UsbInterface *intf)
     interface = intf;
     device = intf->getParentDevice();
 
-	dev->set_configuration(dev->get_device_config()->config_value); // not supposed to be here!
+    dev->set_configuration(dev->get_device_config()->config_value);
 
 	dev->set_interface(interface->getInterfaceDescriptor()->interface_number,
 			interface->getInterfaceDescriptor()->alternate_setting);
@@ -388,9 +510,20 @@ void UsbHidDriver :: install(UsbInterface *intf)
         host->control_exchange(&dev->control_pipe, c_set_protocol, 8, NULL, 0);
     }
     host->control_exchange(&dev->control_pipe, c_set_idle, 8, NULL, 0);
-#if U64
-    C64_MOUSE_EN_1 = mouse ? 1 : 0;
-#endif
+    if (mouse && !mouse_registered) {
+        usb_hid_active_mouse_interfaces++;
+        mouse_registered = true;
+        usb_hid_apply_mouse_output_enable();
+    }
+    if (mouse && !keyboard) {
+        usb_hid_set_visibility(usb_hid_mouse_visibility, dev, interface, descriptor_mouse);
+    }
+    if (keyboard) {
+        usb_hid_set_visibility(usb_hid_keyboard_visibility, dev, interface, descriptor_keyboard);
+    }
+    if (mouse || keyboard) {
+        usb_hid_publish_visibility();
+    }
     host->resume_input_pipe(irq_transaction);
 }
 
@@ -400,10 +533,18 @@ void UsbHidDriver :: disable()
 	host->free_input_pipe(irq_transaction);
         irq_transaction = 0;
     }
+    if (mouse_registered) {
+        if (usb_hid_active_mouse_interfaces > 0) {
+            usb_hid_active_mouse_interfaces--;
+        }
+        mouse_registered = false;
+        usb_hid_apply_mouse_output_enable();
+    }
     mouse_joy = 0x1F;
 #if U64
-    C64_MOUSE_EN_1 = 0;
-    C64_JOY1_SWOUT = 0x1F;
+    if (usb_hid_active_mouse_interfaces == 0) {
+        C64_JOY1_SWOUT = 0x1F;
+    }
 #endif
     previous_left_button_pressed = false;
     menu_wheel_h_latch = 0;
@@ -417,6 +558,7 @@ void UsbHidDriver :: deinstall(UsbInterface *intf)
         usb_hid_clear_visibility_if_source_matches(usb_hid_mouse_visibility, device, interface);
     }
     if (keyboard) {
+        usb_hid_remove_keyboard_source(device, interface);
         usb_hid_clear_visibility_if_source_matches(usb_hid_keyboard_visibility, device, interface);
     }
     usb_hid_publish_visibility();
@@ -454,11 +596,13 @@ void UsbHidDriver :: interrupt_handler()
             have_keyboard_report = true;
         }
         if (have_keyboard_report) {
-            system_usb_keyboard.process_data(keyboard_data);
+            usb_hid_update_keyboard_source(device, interface, keyboard_data);
             if (usb_hid_keyboard_report_has_activity(keyboard_data)) {
                 usb_hid_set_visibility(usb_hid_keyboard_visibility, device, interface, descriptor_keyboard);
                 usb_hid_publish_visibility();
             }
+            handled = true;
+        } else if (descriptor_keyboard && report_items.hasReportID && report_items.hasInputReportId(irq_data[0])) {
             handled = true;
         }
     }
@@ -520,13 +664,16 @@ void UsbHidDriver :: interrupt_handler()
         if (handled_mouse) {
             bool reversed_wheel = usb_hid_get_wheel_direction() == WHEEL_DIRECTION_REVERSED;
             bool menu_override = usb_hid_menu_override_active();
+            bool cursor_mode = usb_hid_get_wheel_mode() == WHEEL_MODE_CURSOR_KEYS;
             int scroll_factor = usb_hid_get_scroll_factor();
-            wheel_h = HidMouseInterpreter::normalizeHorizontalWheel(wheel_h);
-            wheel_v = HidMouseInterpreter::normalizeVerticalWheel(wheel_v);
-            wheel_h = HidMouseInterpreter::applyWheelDirection(wheel_h, reversed_wheel);
-            wheel_v = HidMouseInterpreter::applyWheelDirection(wheel_v, reversed_wheel);
+            int wheel_h_normalized = HidMouseInterpreter::normalizeHorizontalWheel(wheel_h);
+            int wheel_v_normalized = HidMouseInterpreter::normalizeVerticalWheel(wheel_v);
+            int wheel_h_keys = HidMouseInterpreter::applyWheelDirection(wheel_h_normalized, reversed_wheel);
+            int wheel_v_keys = HidMouseInterpreter::applyWheelDirection(wheel_v_normalized, reversed_wheel);
+            int wheel_h_axis = wheel_h_keys;
+            int wheel_v_axis = -wheel_v_keys;
 
-            if (usb_hid_mouse_report_has_activity(motion_x, motion_y, wheel_h, wheel_v, mouse_joy, previous_mouse_joy)) {
+            if (usb_hid_mouse_report_has_activity(motion_x, motion_y, wheel_h_normalized, wheel_v_normalized, mouse_joy, previous_mouse_joy)) {
                 usb_hid_set_visibility(usb_hid_mouse_visibility, device, interface, descriptor_mouse);
                 usb_hid_publish_visibility();
             }
@@ -535,22 +682,22 @@ void UsbHidDriver :: interrupt_handler()
                 usb_hid_queue_key(KEY_RETURN, 1);
             }
 
-            if ((wheel_v != 0) || (wheel_h != 0)) {
+            if ((wheel_v_normalized != 0) || (wheel_h_normalized != 0)) {
                 if (menu_override) {
                     wheel_axis_v_remainder = 0;
                     wheel_key_v_remainder = 0;
-                    int menu_wheel_h = usb_hid_filter_menu_wheel_step(HidMouseInterpreter::scaleMenuWheelKeys(wheel_h), menu_wheel_h_latch);
-                    int menu_wheel_v = usb_hid_filter_menu_wheel_step(HidMouseInterpreter::scaleMenuWheelKeys(wheel_v), menu_wheel_v_latch);
+                    int menu_wheel_h = usb_hid_filter_menu_wheel_step(HidMouseInterpreter::scaleMenuWheelKeys(wheel_h_keys), menu_wheel_h_latch);
+                    int menu_wheel_v = usb_hid_filter_menu_wheel_step(HidMouseInterpreter::scaleMenuWheelKeys(wheel_v_keys), menu_wheel_v_latch);
                     usb_hid_queue_wheel_keys(
                         menu_wheel_h,
                         menu_wheel_v);
-                } else if (usb_hid_get_wheel_mode() == WHEEL_MODE_CURSOR_KEYS) {
+                } else if (cursor_mode) {
                     menu_wheel_h_latch = 0;
                     menu_wheel_v_latch = 0;
                     wheel_axis_v_remainder = 0;
                     usb_hid_queue_wheel_keys(
-                        HidMouseInterpreter::scaleHorizontalWheelKeys(wheel_h, scroll_factor),
-                        HidMouseInterpreter::scaleVerticalWheelKeys(wheel_v, scroll_factor, wheel_key_v_remainder));
+                        HidMouseInterpreter::scaleHorizontalWheelKeys(wheel_h_keys, scroll_factor),
+                        HidMouseInterpreter::scaleVerticalWheelKeys(wheel_v_keys, scroll_factor, wheel_key_v_remainder));
                 } else {
                     menu_wheel_h_latch = 0;
                     menu_wheel_v_latch = 0;
@@ -558,8 +705,8 @@ void UsbHidDriver :: interrupt_handler()
                     HidMouseInterpreter::applyWheelAxisDeltas(
                         mouse_x,
                         mouse_y,
-                        HidMouseInterpreter::scaleHorizontalWheel(wheel_h, scroll_factor),
-                        HidMouseInterpreter::scaleVerticalWheel(wheel_v, scroll_factor, wheel_axis_v_remainder));
+                        HidMouseInterpreter::scaleHorizontalWheel(wheel_h_axis, scroll_factor),
+                        HidMouseInterpreter::scaleVerticalWheel(wheel_v_axis, scroll_factor, wheel_axis_v_remainder));
                 }
             } else {
                 menu_wheel_h_latch = 0;

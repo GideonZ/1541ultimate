@@ -219,7 +219,7 @@ TEST(HidMouseInterpreterTest, AppliesScrollFactorAndRuntimeChanges)
 TEST(HidMouseInterpreterTest, HorizontalDirectionAndMenuWheelAreSymmetric)
 {
 	EXPECT_EQ(3, HidMouseInterpreter::normalizeHorizontalWheel(-3));
-	EXPECT_EQ(-3, HidMouseInterpreter::normalizeVerticalWheel(3));
+	EXPECT_EQ(3, HidMouseInterpreter::normalizeVerticalWheel(3));
 	EXPECT_EQ(3, HidMouseInterpreter::applyWheelDirection(3, false));
 	EXPECT_EQ(-3, HidMouseInterpreter::applyWheelDirection(3, true));
 	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelKeys(2));

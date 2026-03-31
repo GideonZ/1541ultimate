@@ -364,7 +364,7 @@ class HidMouseInterpreter
 
     static int normalizeVerticalWheel(int wheel_v)
     {
-        return -wheel_v;
+        return wheel_v;
     }
 
     static int applyWheelDirection(int wheel_delta, bool reversed)
@@ -609,6 +609,11 @@ class HidItemList
             }
         }
         return matched_report;
+    }
+
+    bool hasInputReportId(uint8_t report_id)
+    {
+        return inputReportList[report_id] != NULL;
     }
 
   private:

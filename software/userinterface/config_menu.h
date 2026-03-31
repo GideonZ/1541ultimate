@@ -34,9 +34,11 @@ public:
     virtual ~ConfigBrowser();
 
     virtual void init();
+    virtual void deinit();
     virtual int handle_key(int);
     virtual void checkFileManagerEvent(void);
 
+    static void refresh_active(void);
     static void start(UserInterface *ui);
 };
 

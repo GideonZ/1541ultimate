@@ -8,6 +8,12 @@ extern "C" {
 #include "config.h"
 #include "config_menu.h"
 
+namespace {
+
+ConfigBrowser *active_config_browser = NULL;
+
+}
+
 /************************/
 /* ConfigBrowser Object */
 /************************/
@@ -40,8 +46,24 @@ void ConfigBrowser :: init() // call on root!
 	this->keyb = get_ui()->get_keyboard();
 	window = new Window(screen, (screen->get_size_x() - 40) >> 1, 2, 40, screen->get_size_y()-3);
 	window->draw_border();
+    active_config_browser = this;
     state->reload();
 	state->do_refresh();
+}
+
+void ConfigBrowser :: deinit()
+{
+    if (active_config_browser == this) {
+        active_config_browser = NULL;
+    }
+    TreeBrowser::deinit();
+}
+
+void ConfigBrowser :: refresh_active(void)
+{
+    if (active_config_browser && active_config_browser->state) {
+        active_config_browser->state->refresh = true;
+    }
 }
 
 ConfigBrowserState :: ConfigBrowserState(Browsable *node, TreeBrowser *tb, int level) : TreeBrowserState(node, tb, level)
@@ -85,7 +107,7 @@ void ConfigBrowserState :: level_up(void)
     }
     delete this;
 }
-           
+
 void ConfigBrowserState :: change(void)
 {
     ConfigItem *it = ((BrowsableConfigItem *)under_cursor)->getItem();
@@ -142,7 +164,7 @@ void ConfigBrowserState :: increase(void)
         update_selected();
     }
 }
-    
+
 void ConfigBrowserState :: decrease(void)
 {
     ConfigItem *it = ((BrowsableConfigItem *)under_cursor)->getItem();
@@ -155,7 +177,7 @@ void ConfigBrowserState :: decrease(void)
         update_selected();
     }
 }
-    
+
 void ConfigBrowserState :: on_close(void)
 {
     if (level == 1) {
@@ -231,7 +253,7 @@ static const char *helptext_wasd =
 int ConfigBrowser :: handle_key(int c)
 {
     int ret = 0;
-    
+
     BrowsableConfigRoot *br;
     switch(c) {
         case KEY_F8: // exit
@@ -303,7 +325,7 @@ int ConfigBrowser :: handle_key(int c)
             break;
         default:
             printf("Unhandled key: %03x\n", c);
-    }    
+    }
     return ret;
 }
 
