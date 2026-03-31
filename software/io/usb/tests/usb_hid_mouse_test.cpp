@@ -3,6 +3,11 @@
 
 namespace {
 
+const uint32_t kMenuFastGapTicks = 25;
+const uint32_t kMenuSlowGapTicks = 75;
+const uint32_t kMenuResetGapTicks = 210;
+const int kMenuBurstExtraThreshold = 15;
+
 const uint8_t kMouse3ButtonDescriptor[] = {
 	0x05, 0x01, 0x09, 0x02, 0xA1, 0x01, 0x09, 0x01,
 	0xA1, 0x00, 0x05, 0x09, 0x19, 0x01, 0x29, 0x03,
@@ -235,10 +240,10 @@ TEST(HidMouseInterpreterTest, SlowMenuWheelBurstLocksUntilReset)
 	int burst_direction = 0;
 	int burst_accumulator = 0;
 
-	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelBurst(1, 0, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
-	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(1, 40, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
-	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(1, 120, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
-	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelBurst(1, 280, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelBurst(1, 0, last_tick, mode, burst_direction, burst_accumulator, kMenuFastGapTicks, kMenuSlowGapTicks, kMenuResetGapTicks, kMenuBurstExtraThreshold));
+	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(1, 40, last_tick, mode, burst_direction, burst_accumulator, kMenuFastGapTicks, kMenuSlowGapTicks, kMenuResetGapTicks, kMenuBurstExtraThreshold));
+	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(1, 120, last_tick, mode, burst_direction, burst_accumulator, kMenuFastGapTicks, kMenuSlowGapTicks, kMenuResetGapTicks, kMenuBurstExtraThreshold));
+	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelBurst(1, 340, last_tick, mode, burst_direction, burst_accumulator, kMenuFastGapTicks, kMenuSlowGapTicks, kMenuResetGapTicks, kMenuBurstExtraThreshold));
 }
 
 TEST(HidMouseInterpreterTest, SeparatedSlowMenuWheelNotchesStartNewBursts)
@@ -248,9 +253,9 @@ TEST(HidMouseInterpreterTest, SeparatedSlowMenuWheelNotchesStartNewBursts)
 	int burst_direction = 0;
 	int burst_accumulator = 0;
 
-	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelBurst(1, 0, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
-	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelBurst(1, 160, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
-	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelBurst(1, 320, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelBurst(1, 0, last_tick, mode, burst_direction, burst_accumulator, kMenuFastGapTicks, kMenuSlowGapTicks, kMenuResetGapTicks, kMenuBurstExtraThreshold));
+	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelBurst(1, 220, last_tick, mode, burst_direction, burst_accumulator, kMenuFastGapTicks, kMenuSlowGapTicks, kMenuResetGapTicks, kMenuBurstExtraThreshold));
+	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelBurst(1, 440, last_tick, mode, burst_direction, burst_accumulator, kMenuFastGapTicks, kMenuSlowGapTicks, kMenuResetGapTicks, kMenuBurstExtraThreshold));
 }
 
 TEST(HidMouseInterpreterTest, FastMenuWheelBurstAcceleratesModerately)
@@ -260,13 +265,13 @@ TEST(HidMouseInterpreterTest, FastMenuWheelBurstAcceleratesModerately)
 	int burst_direction = 0;
 	int burst_accumulator = 0;
 
-	EXPECT_EQ(-1, HidMouseInterpreter::scaleMenuWheelBurst(-1, 0, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
-	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(-5, 10, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
-	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(-5, 20, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
-	EXPECT_EQ(-1, HidMouseInterpreter::scaleMenuWheelBurst(-5, 30, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
-	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(-5, 90, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
-	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(-5, 100, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
-	EXPECT_EQ(-1, HidMouseInterpreter::scaleMenuWheelBurst(-5, 110, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+	EXPECT_EQ(-1, HidMouseInterpreter::scaleMenuWheelBurst(-1, 0, last_tick, mode, burst_direction, burst_accumulator, kMenuFastGapTicks, kMenuSlowGapTicks, kMenuResetGapTicks, kMenuBurstExtraThreshold));
+	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(-5, 10, last_tick, mode, burst_direction, burst_accumulator, kMenuFastGapTicks, kMenuSlowGapTicks, kMenuResetGapTicks, kMenuBurstExtraThreshold));
+	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(-5, 20, last_tick, mode, burst_direction, burst_accumulator, kMenuFastGapTicks, kMenuSlowGapTicks, kMenuResetGapTicks, kMenuBurstExtraThreshold));
+	EXPECT_EQ(-1, HidMouseInterpreter::scaleMenuWheelBurst(-5, 30, last_tick, mode, burst_direction, burst_accumulator, kMenuFastGapTicks, kMenuSlowGapTicks, kMenuResetGapTicks, kMenuBurstExtraThreshold));
+	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(-5, 90, last_tick, mode, burst_direction, burst_accumulator, kMenuFastGapTicks, kMenuSlowGapTicks, kMenuResetGapTicks, kMenuBurstExtraThreshold));
+	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(-5, 100, last_tick, mode, burst_direction, burst_accumulator, kMenuFastGapTicks, kMenuSlowGapTicks, kMenuResetGapTicks, kMenuBurstExtraThreshold));
+	EXPECT_EQ(-1, HidMouseInterpreter::scaleMenuWheelBurst(-5, 110, last_tick, mode, burst_direction, burst_accumulator, kMenuFastGapTicks, kMenuSlowGapTicks, kMenuResetGapTicks, kMenuBurstExtraThreshold));
 }
 
 TEST(HidMouseInterpreterTest, HighResolutionSlowWheelDoesNotLeakPastOneStep)
@@ -276,12 +281,12 @@ TEST(HidMouseInterpreterTest, HighResolutionSlowWheelDoesNotLeakPastOneStep)
 	int burst_direction = 0;
 	int burst_accumulator = 0;
 
-	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelBurst(1, 0, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
-	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(1, 10, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
-	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(1, 20, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
-	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(1, 30, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
-	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(1, 120, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
-	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelBurst(1, 280, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelBurst(1, 0, last_tick, mode, burst_direction, burst_accumulator, kMenuFastGapTicks, kMenuSlowGapTicks, kMenuResetGapTicks, kMenuBurstExtraThreshold));
+	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(1, 10, last_tick, mode, burst_direction, burst_accumulator, kMenuFastGapTicks, kMenuSlowGapTicks, kMenuResetGapTicks, kMenuBurstExtraThreshold));
+	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(1, 20, last_tick, mode, burst_direction, burst_accumulator, kMenuFastGapTicks, kMenuSlowGapTicks, kMenuResetGapTicks, kMenuBurstExtraThreshold));
+	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(1, 30, last_tick, mode, burst_direction, burst_accumulator, kMenuFastGapTicks, kMenuSlowGapTicks, kMenuResetGapTicks, kMenuBurstExtraThreshold));
+	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(1, 120, last_tick, mode, burst_direction, burst_accumulator, kMenuFastGapTicks, kMenuSlowGapTicks, kMenuResetGapTicks, kMenuBurstExtraThreshold));
+	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelBurst(1, 340, last_tick, mode, burst_direction, burst_accumulator, kMenuFastGapTicks, kMenuSlowGapTicks, kMenuResetGapTicks, kMenuBurstExtraThreshold));
 }
 
 TEST(HidMouseInterpreterTest, MenuWheelResetAndDirectionChangesReturnToPreciseMode)
@@ -291,12 +296,12 @@ TEST(HidMouseInterpreterTest, MenuWheelResetAndDirectionChangesReturnToPreciseMo
 	int burst_direction = 0;
 	int burst_accumulator = 0;
 
-	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelBurst(1, 0, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
-	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(5, 10, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelBurst(1, 0, last_tick, mode, burst_direction, burst_accumulator, kMenuFastGapTicks, kMenuSlowGapTicks, kMenuResetGapTicks, kMenuBurstExtraThreshold));
+	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(5, 10, last_tick, mode, burst_direction, burst_accumulator, kMenuFastGapTicks, kMenuSlowGapTicks, kMenuResetGapTicks, kMenuBurstExtraThreshold));
 	EXPECT_EQ(HidMouseInterpreter::MENU_WHEEL_MODE_ACCELERATED, mode);
-	EXPECT_EQ(-1, HidMouseInterpreter::scaleMenuWheelBurst(-1, 20, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+	EXPECT_EQ(-1, HidMouseInterpreter::scaleMenuWheelBurst(-1, 20, last_tick, mode, burst_direction, burst_accumulator, kMenuFastGapTicks, kMenuSlowGapTicks, kMenuResetGapTicks, kMenuBurstExtraThreshold));
 	EXPECT_EQ(HidMouseInterpreter::MENU_WHEEL_MODE_PRECISE, mode);
-	EXPECT_EQ(-1, HidMouseInterpreter::scaleMenuWheelBurst(-1, 200, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+	EXPECT_EQ(-1, HidMouseInterpreter::scaleMenuWheelBurst(-1, 240, last_tick, mode, burst_direction, burst_accumulator, kMenuFastGapTicks, kMenuSlowGapTicks, kMenuResetGapTicks, kMenuBurstExtraThreshold));
 	EXPECT_EQ(HidMouseInterpreter::MENU_WHEEL_MODE_PRECISE, mode);
 }
 
@@ -347,7 +352,7 @@ struct BurstState {
 	{
 		return HidMouseInterpreter::scaleMenuWheelBurst(
 			delta, now, last_tick, mode, burst_direction, burst_accumulator,
-			25, 75, 150, 15);
+			kMenuFastGapTicks, kMenuSlowGapTicks, kMenuResetGapTicks, kMenuBurstExtraThreshold);
 	}
 };
 } // namespace
@@ -380,14 +385,14 @@ TEST(MenuWheelReboundTest, GenuineOppositeGestureAfterResetGapIsNotSuppressed)
 {
 	BurstState s;
 	EXPECT_EQ(1, s.call(+1, 0));
-	EXPECT_EQ(-1, s.call(-1, 160));
+	EXPECT_EQ(-1, s.call(-1, 220));
 }
 
 TEST(MenuWheelReboundTest, ReboundWindowExpiresExactlyAtResetGap)
 {
 	BurstState s;
 	EXPECT_EQ(1, s.call(+1, 0));
-	EXPECT_EQ(-1, s.call(-1, 150));
+	EXPECT_EQ(-1, s.call(-1, kMenuResetGapTicks));
 }
 
 TEST(MenuWheelReboundTest, ReboundDoesNotAlterStateForSubsequentSameDirection)
@@ -396,7 +401,7 @@ TEST(MenuWheelReboundTest, ReboundDoesNotAlterStateForSubsequentSameDirection)
 	EXPECT_EQ(1, s.call(+1, 0));
 	EXPECT_EQ(0, s.call(-1, 50));
 	EXPECT_EQ(0, s.call(+1, 100));
-	EXPECT_EQ(1, s.call(+1, 260));
+	EXPECT_EQ(1, s.call(+1, 320));
 }
 
 TEST(MenuWheelReboundTest, FastBurstDirectionChangeIsNotSuppressed)
@@ -413,18 +418,18 @@ TEST(MenuWheelReboundTest, NewDirectionAfterResetGapPlusPauseIsNotSuppressed)
 {
 	BurstState s;
 	EXPECT_EQ(1, s.call(+1, 0));
-	EXPECT_EQ(1, s.call(+1, 160));
-	EXPECT_EQ(-1, s.call(-1, 320));
+	EXPECT_EQ(1, s.call(+1, 220));
+	EXPECT_EQ(-1, s.call(-1, 440));
 }
 
 TEST(MenuWheelReboundTest, ReboundAfterResetGapStillSuppressed)
 {
 	BurstState s;
 	EXPECT_EQ(1, s.call(+1, 0));
-	EXPECT_EQ(1, s.call(+1, 160));
-	EXPECT_EQ(0, s.call(-1, 190));
-	EXPECT_EQ(0, s.call(-1, 320));
-	EXPECT_EQ(-1, s.call(-1, 470));
+	EXPECT_EQ(1, s.call(+1, 220));
+	EXPECT_EQ(0, s.call(-1, 250));
+	EXPECT_EQ(0, s.call(-1, 380));
+	EXPECT_EQ(-1, s.call(-1, 530));
 }
 
 TEST(MenuWheelReboundTest, SameDirectionReportsStayCollapsedUntilQuietReset)
@@ -433,5 +438,14 @@ TEST(MenuWheelReboundTest, SameDirectionReportsStayCollapsedUntilQuietReset)
 	EXPECT_EQ(1, s.call(+1, 0));
 	EXPECT_EQ(0, s.call(+1, 80));
 	EXPECT_EQ(0, s.call(+1, 140));
-	EXPECT_EQ(1, s.call(+1, 300));
+	EXPECT_EQ(1, s.call(+1, 360));
+}
+
+TEST(MenuWheelReboundTest, OppositeCleanupDoesNotExtendResetPastLastPrimary)
+{
+	BurstState s;
+	EXPECT_EQ(1, s.call(+1, 0));
+	EXPECT_EQ(0, s.call(+1, 90));
+	EXPECT_EQ(0, s.call(-1, 200));
+	EXPECT_EQ(-1, s.call(-1, 320));
 }

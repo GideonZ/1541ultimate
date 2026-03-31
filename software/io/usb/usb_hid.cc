@@ -41,10 +41,12 @@ enum {
 
 // HID menu navigation is serviced from the USB interrupt path at roughly 50 Hz, so
 // fast/slow/reset thresholds are expressed in a few report intervals rather than
-// frame time. This keeps wheel intent classification deterministic across devices.
+// frame time. The reset window is keyed off the last same-direction report so a
+// single notch stays collapsed to one menu move without letting late opposite-
+// direction cleanup tails create a long user-visible backoff.
 static const uint32_t USB_HID_MENU_WHEEL_FAST_GAP_TICKS = (pdMS_TO_TICKS(30) > 0) ? pdMS_TO_TICKS(30) : 1;
 static const uint32_t USB_HID_MENU_WHEEL_SLOW_GAP_TICKS = (pdMS_TO_TICKS(90) > 0) ? pdMS_TO_TICKS(90) : USB_HID_MENU_WHEEL_FAST_GAP_TICKS;
-static const uint32_t USB_HID_MENU_WHEEL_RESET_GAP_TICKS = (pdMS_TO_TICKS(180) > 0) ? pdMS_TO_TICKS(180) : USB_HID_MENU_WHEEL_SLOW_GAP_TICKS;
+static const uint32_t USB_HID_MENU_WHEEL_RESET_GAP_TICKS = (pdMS_TO_TICKS(210) > 0) ? pdMS_TO_TICKS(210) : USB_HID_MENU_WHEEL_SLOW_GAP_TICKS;
 static const int USB_HID_MENU_WHEEL_EXTRA_STEP_THRESHOLD = 15;
 static const int USB_HID_MENU_MAX_PENDING_VERTICAL_KEYS = 2;
 

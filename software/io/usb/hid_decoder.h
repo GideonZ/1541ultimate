@@ -451,12 +451,12 @@ class HidMouseInterpreter
         }
 
         uint32_t delta_ticks = now_ticks - last_tick;
-        last_tick = now_ticks;
 
         if (delta_ticks >= reset_gap_ticks) {
             burst_direction = direction;
             burst_accumulator = 0;
             mode = MENU_WHEEL_MODE_PRECISE;
+            last_tick = now_ticks;
             return direction;
         }
 
@@ -465,8 +465,10 @@ class HidMouseInterpreter
                 burst_direction = direction;
                 burst_accumulator = 0;
                 mode = MENU_WHEEL_MODE_PRECISE;
+                last_tick = now_ticks;
                 return direction;
             }
+            last_tick = now_ticks;
             burst_accumulator += magnitude;
             int steps = burst_accumulator / burst_extra_threshold;
             burst_accumulator %= burst_extra_threshold;
@@ -476,6 +478,11 @@ class HidMouseInterpreter
         if (direction != burst_direction) {
             return 0;
         }
+
+        // Track the last same-direction activity so long cleanup rebound in the
+        // opposite direction does not keep the menu locked after the notch has
+        // effectively finished.
+        last_tick = now_ticks;
 
         if (delta_ticks < fast_gap_ticks) {
             mode = MENU_WHEEL_MODE_ACCELERATED;
