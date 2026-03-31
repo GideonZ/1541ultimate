@@ -399,6 +399,52 @@ void Keyboard_USB :: push_head_repeat(int c, int repeat)
 	}
 }
 
+bool Keyboard_USB :: has_injected_key(int c) const
+{
+	if ((c < 0) || (c > 0xFF)) {
+		return false;
+	}
+	for (int index = injected_tail; index != injected_head; ) {
+		if (injected_buffer[index] == (uint8_t)c) {
+			return true;
+		}
+		index++;
+		if (index == USB_KEY_BUFFER_SIZE) {
+			index = 0;
+		}
+	}
+	return false;
+}
+
+void Keyboard_USB :: remove_injected_key(int c)
+{
+	if ((c < 0) || (c > 0xFF)) {
+		return;
+	}
+	if (injected_head == injected_tail) {
+		return;
+	}
+
+	uint8_t filtered[USB_KEY_BUFFER_SIZE];
+	int write_index = 0;
+	for (int index = injected_tail; index != injected_head; ) {
+		uint8_t key = injected_buffer[index];
+		if (key != (uint8_t)c) {
+			filtered[write_index++] = key;
+		}
+		index++;
+		if (index == USB_KEY_BUFFER_SIZE) {
+			index = 0;
+		}
+	}
+
+	injected_tail = 0;
+	injected_head = 0;
+	for (int i = 0; i < write_index; i++) {
+		injected_buffer[injected_head++] = filtered[i];
+	}
+}
+
 void Keyboard_USB :: wait_free(void)
 {
 	bool free;

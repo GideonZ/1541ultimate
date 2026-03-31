@@ -43,8 +43,11 @@ class UsbHidDriver : public UsbDriver
     bool has_wheel_h;
     bool previous_left_button_pressed;
     bool mouse_registered;
+    bool menu_left_button_consumed;
+    bool menu_right_button_consumed;
     int menu_wheel_h_latch;
     int menu_wheel_v_latch;
+    int menu_wheel_v_accumulator;
     int wheel_axis_v_remainder;
     int wheel_key_v_remainder;
 

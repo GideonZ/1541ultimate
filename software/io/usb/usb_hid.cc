@@ -249,6 +249,25 @@ int usb_hid_filter_menu_wheel_step(int step, int& latch)
     return step;
 }
 
+int usb_hid_accumulate_menu_wheel_steps(int delta, int threshold, int& accumulator)
+{
+    if (threshold <= 0) {
+        threshold = 1;
+    }
+    accumulator += delta;
+
+    int steps = 0;
+    while (accumulator >= threshold) {
+        steps++;
+        accumulator -= threshold;
+    }
+    while (accumulator <= -threshold) {
+        steps--;
+        accumulator += threshold;
+    }
+    return steps;
+}
+
 void usb_hid_clear_visibility_if_source_matches(t_usb_hid_visibility& visibility, UsbDevice *device, UsbInterface *interface)
 {
     int address = device ? device->current_address : -1;
@@ -336,6 +355,33 @@ static void usb_hid_queue_key(int key, int repeat)
     system_usb_keyboard.push_head_repeat(key, repeat);
 }
 
+static void usb_hid_queue_menu_key(int key)
+{
+    int opposite = 0;
+    switch (key) {
+    case KEY_UP:
+        opposite = KEY_DOWN;
+        break;
+    case KEY_DOWN:
+        opposite = KEY_UP;
+        break;
+    case KEY_LEFT:
+        opposite = KEY_RIGHT;
+        break;
+    case KEY_RIGHT:
+        opposite = KEY_LEFT;
+        break;
+    default:
+        usb_hid_queue_key(key, 1);
+        return;
+    }
+
+    system_usb_keyboard.remove_injected_key(opposite);
+    if (!system_usb_keyboard.has_injected_key(key)) {
+        system_usb_keyboard.push_head(key);
+    }
+}
+
 static void usb_hid_queue_wheel_keys(int wheel_h, int wheel_v)
 {
     if (wheel_v > 0) {
@@ -391,8 +437,11 @@ UsbHidDriver :: UsbHidDriver(UsbInterface *intf) : UsbDriver(intf)
     has_wheel_h = false;
     previous_left_button_pressed = false;
     mouse_registered = false;
+    menu_left_button_consumed = false;
+    menu_right_button_consumed = false;
     menu_wheel_h_latch = 0;
     menu_wheel_v_latch = 0;
+    menu_wheel_v_accumulator = 0;
     wheel_axis_v_remainder = 0;
     wheel_key_v_remainder = 0;
 }
@@ -547,8 +596,11 @@ void UsbHidDriver :: disable()
     }
 #endif
     previous_left_button_pressed = false;
+    menu_left_button_consumed = false;
+    menu_right_button_consumed = false;
     menu_wheel_h_latch = 0;
     menu_wheel_v_latch = 0;
+    menu_wheel_v_accumulator = 0;
 }
 
 void UsbHidDriver :: deinstall(UsbInterface *intf)
@@ -614,6 +666,7 @@ void UsbHidDriver :: interrupt_handler()
         int motion_y = 0;
         bool handled_mouse = false;
         bool left_button_pressed = previous_left_button_pressed;
+        bool right_button_pressed = (mouse_joy & 0x01) == 0;
         uint8_t previous_mouse_joy = mouse_joy;
 
         if (descriptor_mouse) {
@@ -647,6 +700,7 @@ void UsbHidDriver :: interrupt_handler()
                 wheel_h = HidReport::getValueFromData(irq_data, data_len, rep_wheel_h);
             }
             left_button_pressed = (mouse_joy & 0x10) == 0;
+            right_button_pressed = (mouse_joy & 0x01) == 0;
         } else {
             t_hid_boot_mouse_sample sample;
             HidBootProtocol::decodeMouseReport(irq_data, data_len, sample);
@@ -659,6 +713,7 @@ void UsbHidDriver :: interrupt_handler()
             motion_y = sample.y;
             HidMouseInterpreter::applyRelativeMotion(mouse_x, mouse_y, motion_x, motion_y);
             left_button_pressed = (sample.buttons & 0x01) != 0;
+            right_button_pressed = (sample.buttons & 0x02) != 0;
         }
 
         if (handled_mouse) {
@@ -666,6 +721,7 @@ void UsbHidDriver :: interrupt_handler()
             bool menu_override = usb_hid_menu_override_active();
             bool cursor_mode = usb_hid_get_wheel_mode() == WHEEL_MODE_CURSOR_KEYS;
             int scroll_factor = usb_hid_get_scroll_factor();
+            uint8_t output_mouse_joy = mouse_joy;
             int wheel_h_normalized = HidMouseInterpreter::normalizeHorizontalWheel(wheel_h);
             int wheel_v_normalized = HidMouseInterpreter::normalizeVerticalWheel(wheel_v);
             int wheel_h_keys = HidMouseInterpreter::applyWheelDirection(wheel_h_normalized, reversed_wheel);
@@ -678,8 +734,27 @@ void UsbHidDriver :: interrupt_handler()
                 usb_hid_publish_visibility();
             }
 
-            if (menu_override && left_button_pressed && !previous_left_button_pressed) {
-                usb_hid_queue_key(KEY_RETURN, 1);
+            if (menu_override) {
+                output_mouse_joy |= 0x11;
+                if (left_button_pressed) {
+                    if (!menu_left_button_consumed) {
+                        usb_hid_queue_menu_key(KEY_RETURN);
+                        menu_left_button_consumed = true;
+                    }
+                } else {
+                    menu_left_button_consumed = false;
+                }
+                if (right_button_pressed) {
+                    if (!menu_right_button_consumed) {
+                        usb_hid_queue_menu_key(KEY_LEFT);
+                        menu_right_button_consumed = true;
+                    }
+                } else {
+                    menu_right_button_consumed = false;
+                }
+            } else {
+                menu_left_button_consumed = left_button_pressed;
+                menu_right_button_consumed = right_button_pressed;
             }
 
             if ((wheel_v_normalized != 0) || (wheel_h_normalized != 0)) {
@@ -687,13 +762,18 @@ void UsbHidDriver :: interrupt_handler()
                     wheel_axis_v_remainder = 0;
                     wheel_key_v_remainder = 0;
                     int menu_wheel_h = usb_hid_filter_menu_wheel_step(HidMouseInterpreter::scaleMenuWheelKeys(wheel_h_keys), menu_wheel_h_latch);
-                    int menu_wheel_v = usb_hid_filter_menu_wheel_step(HidMouseInterpreter::scaleMenuWheelKeys(wheel_v_keys), menu_wheel_v_latch);
-                    usb_hid_queue_wheel_keys(
-                        menu_wheel_h,
-                        menu_wheel_v);
+                    int menu_wheel_v = usb_hid_accumulate_menu_wheel_steps(wheel_v_keys, 15, menu_wheel_v_accumulator);
+                    menu_wheel_v_latch = 0;
+                    if (menu_wheel_v > 0) {
+                        usb_hid_queue_menu_key(KEY_UP);
+                    } else if (menu_wheel_v < 0) {
+                        usb_hid_queue_menu_key(KEY_DOWN);
+                    }
+                    usb_hid_queue_wheel_keys(menu_wheel_h, 0);
                 } else if (cursor_mode) {
                     menu_wheel_h_latch = 0;
                     menu_wheel_v_latch = 0;
+                    menu_wheel_v_accumulator = 0;
                     wheel_axis_v_remainder = 0;
                     usb_hid_queue_wheel_keys(
                         HidMouseInterpreter::scaleHorizontalWheelKeys(wheel_h_keys, scroll_factor),
@@ -701,6 +781,7 @@ void UsbHidDriver :: interrupt_handler()
                 } else {
                     menu_wheel_h_latch = 0;
                     menu_wheel_v_latch = 0;
+                    menu_wheel_v_accumulator = 0;
                     wheel_key_v_remainder = 0;
                     HidMouseInterpreter::applyWheelAxisDeltas(
                         mouse_x,
@@ -714,11 +795,11 @@ void UsbHidDriver :: interrupt_handler()
             }
 
 #if U64
-            C64_JOY1_SWOUT = mouse_joy;
+            C64_JOY1_SWOUT = output_mouse_joy;
             C64_PADDLE_1_X = mouse_x & 0x7F;
             C64_PADDLE_1_Y = mouse_y & 0x7F;
 #else
-            printf("Mouse: %4x,%4x %b\n", mouse_x, mouse_y, mouse_joy);
+            printf("Mouse: %4x,%4x %b\n", mouse_x, mouse_y, output_mouse_joy);
 #endif
             previous_left_button_pressed = left_button_pressed;
             handled = true;

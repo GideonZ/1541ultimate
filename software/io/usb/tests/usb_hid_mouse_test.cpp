@@ -228,6 +228,40 @@ TEST(HidMouseInterpreterTest, HorizontalDirectionAndMenuWheelAreSymmetric)
 	EXPECT_EQ(-1, HidMouseInterpreter::scaleMenuWheelKeys(-120));
 }
 
+TEST(HidMouseInterpreterTest, SlowsMenuVerticalWheelByAccumulatingSteps)
+{
+	int accumulator = 0;
+	auto accumulate = [&](int delta) {
+		accumulator += delta;
+		int steps = 0;
+		while (accumulator >= 15) {
+			steps++;
+			accumulator -= 15;
+		}
+		while (accumulator <= -15) {
+			steps--;
+			accumulator += 15;
+		}
+		return steps;
+	};
+
+	for (int i = 0; i < 14; i++) {
+		EXPECT_EQ(0, accumulate(1));
+	}
+	EXPECT_EQ(1, accumulate(1));
+	EXPECT_EQ(0, accumulator);
+
+	EXPECT_EQ(0, accumulate(-7));
+	EXPECT_EQ(0, accumulate(-7));
+	EXPECT_EQ(-1, accumulate(-1));
+	EXPECT_EQ(0, accumulator);
+
+	EXPECT_EQ(0, accumulate(14));
+	EXPECT_EQ(14, accumulator);
+	EXPECT_EQ(1, accumulate(1));
+	EXPECT_EQ(0, accumulator);
+}
+
 TEST(HidBootProtocolTest, DecodesBootMouseReport)
 {
 	t_hid_boot_mouse_sample sample;

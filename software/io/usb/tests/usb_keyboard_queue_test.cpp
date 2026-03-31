@@ -48,3 +48,18 @@ TEST(KeyboardUsbQueueTest, InjectedCursorKeyPulsesMatrix)
 	EXPECT_EQ(0x00, matrix[0]);
 	EXPECT_EQ(0x00, matrix[6]);
 }
+
+TEST(KeyboardUsbQueueTest, RemoveInjectedKeyDropsPendingDirection)
+{
+	Keyboard_USB keyboard;
+
+	keyboard.push_head(KEY_DOWN);
+	keyboard.push_head(KEY_DOWN);
+	keyboard.push_head(KEY_UP);
+	keyboard.remove_injected_key(KEY_DOWN);
+
+	EXPECT_TRUE(keyboard.has_injected_key(KEY_UP));
+	EXPECT_FALSE(keyboard.has_injected_key(KEY_DOWN));
+	EXPECT_EQ(KEY_UP, keyboard.getch());
+	EXPECT_EQ(-1, keyboard.getch());
+}
