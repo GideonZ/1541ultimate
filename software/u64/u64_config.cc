@@ -59,6 +59,15 @@ const uint8_t default_colors[16][3] = {
 
 // static pointer
 U64Config *u64_configurator = NULL;
+
+extern "C" int u64_get_usb_hid_config_value(int key, int default_value)
+{
+    if ((!u64_configurator) || (!u64_configurator->cfg)) {
+        return default_value;
+    }
+    return u64_configurator->cfg->get_value(key);
+}
+
 static void init(void *_a, void *_b)
 {
     u64_configurator = new U64Config();
@@ -142,6 +151,9 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_SPEED_PREF        0x52
 #define CFG_BADLINES_EN       0x53
 #define CFG_SUPERCPU_DET      0x54
+#define CFG_WHEEL_MODE        0x55
+#define CFG_SCROLL_FACTOR     0x56
+#define CFG_WHEEL_DIRECTION   0x57
 
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
@@ -237,6 +249,8 @@ static const char *yes_no[] = { "No", "Yes" };
 static const char *dvi_hdmi[] = { "Auto", "HDMI", "DVI" };
 static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
 static const char *color_sel[] = { "PAL", "NTSC", "PAL-60", "NTSC-50", "PAL-60/L", "NTSC-50/L" };
+static const char *wheel_modes[] = { "Mouse Axis", "Cursor Keys" };
+static const char *wheel_directions[] = { "Normal", "Reversed" };
 
 static const char *sid_types[] = { "None", "6581", "8580", "FPGASID", "SwinSID Ultimate", "ARMSID", "ARM2SID", "SidFx", "FPGASID Dukestah", "PDsid", "SIDKick (Teensy)", "SIDKick Pico" };
 static const char *sid_shunt[] = { "Off", "On" };
@@ -299,6 +313,9 @@ struct t_cfg_definition u64_cfg[] = {
 #else
     { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  1, 0 },
 #endif
+    { CFG_WHEEL_MODE,           CFG_TYPE_ENUM, "Mouse Wheel Mode",             "%s", wheel_modes,      0,  1, 0 },
+    { CFG_SCROLL_FACTOR,        CFG_TYPE_VALUE, "Mouse Wheel Factor",          "%d", NULL,             1, 16, 8 },
+    { CFG_WHEEL_DIRECTION,      CFG_TYPE_ENUM,  "Mouse Wheel Direction",       "%s", wheel_directions, 0,  1, 1 },
     { CFG_USERPORT_EN,          CFG_TYPE_ENUM, "UserPort Power Enable",        "%s", en_dis,       0,  1, 1 },
 //    { CFG_CART_PREFERENCE,      CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,    0,  2, 0 }, // moved to C64 for user consistency
     { CFG_PALETTE,              CFG_TYPE_STRFUNC, "Palette Definition",        "%s", (const char **)U64Config :: list_palettes, 0, 30, (int)"" },
@@ -2478,6 +2495,9 @@ void U64Config :: setup_config_menu(void)
     grp = ConfigGroupCollection :: getGroup("Joystick Settings", SORT_ORDER_CFG_JOYSTICK);
     grp->append(cfg->find_item(CFG_JOYSWAP)->set_item_altname("Joystick Input"));
     grp->append(sidaddressing.cfg->find_item(CFG_PADDLE_EN));
+    grp->append(cfg->find_item(CFG_WHEEL_MODE));
+    grp->append(cfg->find_item(CFG_SCROLL_FACTOR));
+    grp->append(cfg->find_item(CFG_WHEEL_DIRECTION));
 
 #if U64==2
     grp->append(ConfigItem :: separator());

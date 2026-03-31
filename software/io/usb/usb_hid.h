@@ -3,10 +3,7 @@
 
 #include "usb_base.h"
 #include "usb_device.h"
-
-#if USE_HID_REPORT
-#   include "hid_decoder.h"
-#endif
+#include "hid_decoder.h"
 
 class UsbHidDriver : public UsbDriver
 {
@@ -14,21 +11,33 @@ class UsbHidDriver : public UsbDriver
     struct t_pipe ipipe;
 
     uint8_t irq_data[64];
-    
+
     UsbBase   *host;
     UsbDevice *device;
     UsbInterface *interface;
     int  irq_in;
     bool keyboard;
     bool mouse;
+    bool descriptor_keyboard;
+    bool descriptor_mouse;
     int16_t mouse_x, mouse_y;
-#if USE_HID_REPORT
+    uint8_t mouse_joy;
+    uint8_t keyboard_data[8];
+    HidItemList report_items;
     t_item_location rep_button1;
     t_item_location rep_button2;
     t_item_location rep_button3;
     t_item_location rep_mouse_x;
     t_item_location rep_mouse_y;
-#endif
+    t_item_location rep_wheel_v;
+    t_item_location rep_wheel_h;
+    bool has_button1;
+    bool has_button2;
+    bool has_button3;
+    bool has_wheel_v;
+    bool has_wheel_h;
+    int wheel_axis_v_remainder;
+    int wheel_key_v_remainder;
 
 public:
 	static UsbDriver *test_driver(UsbInterface *intf);
