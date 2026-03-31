@@ -401,19 +401,25 @@ void Keyboard_USB :: push_head_repeat(int c, int repeat)
 
 bool Keyboard_USB :: has_injected_key(int c) const
 {
+	return count_injected_key(c) > 0;
+}
+
+int Keyboard_USB :: count_injected_key(int c) const
+{
 	if ((c < 0) || (c > 0xFF)) {
-		return false;
+		return 0;
 	}
+	int count = 0;
 	for (int index = injected_tail; index != injected_head; ) {
 		if (injected_buffer[index] == (uint8_t)c) {
-			return true;
+			count++;
 		}
 		index++;
 		if (index == USB_KEY_BUFFER_SIZE) {
 			index = 0;
 		}
 	}
-	return false;
+	return count;
 }
 
 void Keyboard_USB :: remove_injected_key(int c)

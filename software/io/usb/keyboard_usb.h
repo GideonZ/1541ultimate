@@ -52,6 +52,7 @@ public:
     int  getch(void);
     void push_head(int c);
     void push_head_repeat(int c, int repeat);
+    int  count_injected_key(int c) const;
     bool has_injected_key(int c) const;
     void remove_injected_key(int c);
     void wait_free(void);

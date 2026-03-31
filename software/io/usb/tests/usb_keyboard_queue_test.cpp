@@ -56,10 +56,14 @@ TEST(KeyboardUsbQueueTest, RemoveInjectedKeyDropsPendingDirection)
 	keyboard.push_head(KEY_DOWN);
 	keyboard.push_head(KEY_DOWN);
 	keyboard.push_head(KEY_UP);
+	EXPECT_EQ(2, keyboard.count_injected_key(KEY_DOWN));
+	EXPECT_EQ(1, keyboard.count_injected_key(KEY_UP));
 	keyboard.remove_injected_key(KEY_DOWN);
 
 	EXPECT_TRUE(keyboard.has_injected_key(KEY_UP));
 	EXPECT_FALSE(keyboard.has_injected_key(KEY_DOWN));
+	EXPECT_EQ(1, keyboard.count_injected_key(KEY_UP));
+	EXPECT_EQ(0, keyboard.count_injected_key(KEY_DOWN));
 	EXPECT_EQ(KEY_UP, keyboard.getch());
 	EXPECT_EQ(-1, keyboard.getch());
 }

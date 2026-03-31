@@ -47,7 +47,10 @@ class UsbHidDriver : public UsbDriver
     bool menu_right_button_consumed;
     int menu_wheel_h_latch;
     int menu_wheel_v_latch;
-    int menu_wheel_v_accumulator;
+    int menu_wheel_v_mode;
+    int menu_wheel_v_burst_accumulator;
+    int menu_wheel_v_burst_direction;
+    uint32_t menu_wheel_v_last_tick;
     int wheel_axis_v_remainder;
     int wheel_key_v_remainder;
 

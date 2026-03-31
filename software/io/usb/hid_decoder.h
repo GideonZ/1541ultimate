@@ -409,6 +409,87 @@ class HidMouseInterpreter
         return 0;
     }
 
+    enum t_menu_wheel_mode {
+        MENU_WHEEL_MODE_PRECISE = 0,
+        MENU_WHEEL_MODE_ACCELERATED = 1
+    };
+
+    static int scaleMenuWheelBurst(int wheel_delta, uint32_t now_ticks, uint32_t& last_tick,
+        int& mode, int& burst_direction, int& burst_accumulator,
+        uint32_t fast_gap_ticks, uint32_t slow_gap_ticks, uint32_t reset_gap_ticks,
+        int burst_extra_threshold)
+    {
+        if (wheel_delta == 0) {
+            return 0;
+        }
+
+        if (fast_gap_ticks < 1) {
+            fast_gap_ticks = 1;
+        }
+        if (slow_gap_ticks < fast_gap_ticks) {
+            slow_gap_ticks = fast_gap_ticks;
+        }
+        if (reset_gap_ticks < slow_gap_ticks) {
+            reset_gap_ticks = slow_gap_ticks;
+        }
+        if ((mode != MENU_WHEEL_MODE_PRECISE) && (mode != MENU_WHEEL_MODE_ACCELERATED)) {
+            mode = MENU_WHEEL_MODE_PRECISE;
+        }
+        if (burst_extra_threshold < 1) {
+            burst_extra_threshold = 1;
+        }
+
+        int direction = (wheel_delta > 0) ? 1 : -1;
+        int magnitude = (wheel_delta > 0) ? wheel_delta : -wheel_delta;
+
+        if ((burst_direction == 0) || (burst_direction != direction)) {
+            burst_direction = direction;
+            burst_accumulator = 0;
+            mode = MENU_WHEEL_MODE_PRECISE;
+            last_tick = now_ticks;
+            return direction;
+        }
+
+        uint32_t delta_ticks = now_ticks - last_tick;
+        last_tick = now_ticks;
+
+        // A long pause starts a new precise intent: emit exactly one menu step and
+        // discard any stale accelerated remainder so slow notches never leak.
+        if (delta_ticks >= reset_gap_ticks) {
+            burst_accumulator = 0;
+            mode = MENU_WHEEL_MODE_PRECISE;
+            return direction;
+        }
+
+        // Once accelerated, stay there until reset. This avoids mode flicker during
+        // bursty reports while keeping the output deterministic for a fixed sequence.
+        if (mode == MENU_WHEEL_MODE_ACCELERATED) {
+            burst_accumulator += magnitude;
+            int steps = burst_accumulator / burst_extra_threshold;
+            burst_accumulator %= burst_extra_threshold;
+            return direction * steps;
+        }
+
+        // Distinct slow notches are separated by at least the slow threshold and are
+        // quantized to exactly one row movement per user intent.
+        if (delta_ticks >= slow_gap_ticks) {
+            burst_accumulator = 0;
+            return direction;
+        }
+
+        // Only very tight consecutive reports promote the state machine into
+        // accelerated mode; medium gaps remain in precise mode and cannot amplify.
+        if (delta_ticks < fast_gap_ticks) {
+            mode = MENU_WHEEL_MODE_ACCELERATED;
+            burst_accumulator += magnitude;
+            int steps = burst_accumulator / burst_extra_threshold;
+            burst_accumulator %= burst_extra_threshold;
+            return direction * steps;
+        }
+
+        return 0;
+    }
+
     static void applyWheelAxisDeltas(int16_t& mouse_x, int16_t& mouse_y, int wheel_h_delta, int wheel_v_delta)
     {
         mouse_x += wheel_h_delta;

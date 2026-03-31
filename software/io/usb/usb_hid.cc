@@ -39,6 +39,15 @@ enum {
     USB_HID_MAX_KEYBOARD_SOURCES = 8
 };
 
+// HID menu navigation is serviced from the USB interrupt path at roughly 50 Hz, so
+// fast/slow/reset thresholds are expressed in a few report intervals rather than
+// frame time. This keeps wheel intent classification deterministic across devices.
+static const uint32_t USB_HID_MENU_WHEEL_FAST_GAP_TICKS = (pdMS_TO_TICKS(30) > 0) ? pdMS_TO_TICKS(30) : 1;
+static const uint32_t USB_HID_MENU_WHEEL_SLOW_GAP_TICKS = (pdMS_TO_TICKS(90) > 0) ? pdMS_TO_TICKS(90) : USB_HID_MENU_WHEEL_FAST_GAP_TICKS;
+static const uint32_t USB_HID_MENU_WHEEL_RESET_GAP_TICKS = (pdMS_TO_TICKS(180) > 0) ? pdMS_TO_TICKS(180) : USB_HID_MENU_WHEEL_SLOW_GAP_TICKS;
+static const int USB_HID_MENU_WHEEL_EXTRA_STEP_THRESHOLD = 15;
+static const int USB_HID_MENU_MAX_PENDING_VERTICAL_KEYS = 2;
+
 int usb_hid_active_mouse_interfaces = 0;
 
 struct t_usb_hid_visibility
@@ -249,25 +258,6 @@ int usb_hid_filter_menu_wheel_step(int step, int& latch)
     return step;
 }
 
-int usb_hid_accumulate_menu_wheel_steps(int delta, int threshold, int& accumulator)
-{
-    if (threshold <= 0) {
-        threshold = 1;
-    }
-    accumulator += delta;
-
-    int steps = 0;
-    while (accumulator >= threshold) {
-        steps++;
-        accumulator -= threshold;
-    }
-    while (accumulator <= -threshold) {
-        steps--;
-        accumulator += threshold;
-    }
-    return steps;
-}
-
 void usb_hid_clear_visibility_if_source_matches(t_usb_hid_visibility& visibility, UsbDevice *device, UsbInterface *interface)
 {
     int address = device ? device->current_address : -1;
@@ -355,8 +345,12 @@ static void usb_hid_queue_key(int key, int repeat)
     system_usb_keyboard.push_head_repeat(key, repeat);
 }
 
-static void usb_hid_queue_menu_key(int key)
+static void usb_hid_queue_menu_key(int key, int repeat, int max_pending)
 {
+    if (repeat <= 0) {
+        return;
+    }
+
     int opposite = 0;
     switch (key) {
     case KEY_UP:
@@ -372,14 +366,23 @@ static void usb_hid_queue_menu_key(int key)
         opposite = KEY_LEFT;
         break;
     default:
-        usb_hid_queue_key(key, 1);
-        return;
+        break;
     }
 
-    system_usb_keyboard.remove_injected_key(opposite);
-    if (!system_usb_keyboard.has_injected_key(key)) {
-        system_usb_keyboard.push_head(key);
+    if (opposite != 0) {
+        system_usb_keyboard.remove_injected_key(opposite);
     }
+
+    int pending = system_usb_keyboard.count_injected_key(key);
+    int available = max_pending - pending;
+    if (available <= 0) {
+        return;
+    }
+    if (repeat > available) {
+        repeat = available;
+    }
+
+    system_usb_keyboard.push_head_repeat(key, repeat);
 }
 
 static void usb_hid_queue_wheel_keys(int wheel_h, int wheel_v)
@@ -441,7 +444,10 @@ UsbHidDriver :: UsbHidDriver(UsbInterface *intf) : UsbDriver(intf)
     menu_right_button_consumed = false;
     menu_wheel_h_latch = 0;
     menu_wheel_v_latch = 0;
-    menu_wheel_v_accumulator = 0;
+    menu_wheel_v_mode = HidMouseInterpreter::MENU_WHEEL_MODE_PRECISE;
+    menu_wheel_v_burst_accumulator = 0;
+    menu_wheel_v_burst_direction = 0;
+    menu_wheel_v_last_tick = 0;
     wheel_axis_v_remainder = 0;
     wheel_key_v_remainder = 0;
 }
@@ -600,7 +606,10 @@ void UsbHidDriver :: disable()
     menu_right_button_consumed = false;
     menu_wheel_h_latch = 0;
     menu_wheel_v_latch = 0;
-    menu_wheel_v_accumulator = 0;
+    menu_wheel_v_mode = HidMouseInterpreter::MENU_WHEEL_MODE_PRECISE;
+    menu_wheel_v_burst_accumulator = 0;
+    menu_wheel_v_burst_direction = 0;
+    menu_wheel_v_last_tick = 0;
 }
 
 void UsbHidDriver :: deinstall(UsbInterface *intf)
@@ -738,7 +747,7 @@ void UsbHidDriver :: interrupt_handler()
                 output_mouse_joy |= 0x11;
                 if (left_button_pressed) {
                     if (!menu_left_button_consumed) {
-                        usb_hid_queue_menu_key(KEY_RETURN);
+                        usb_hid_queue_menu_key(KEY_RETURN, 1, 1);
                         menu_left_button_consumed = true;
                     }
                 } else {
@@ -746,7 +755,7 @@ void UsbHidDriver :: interrupt_handler()
                 }
                 if (right_button_pressed) {
                     if (!menu_right_button_consumed) {
-                        usb_hid_queue_menu_key(KEY_LEFT);
+                        usb_hid_queue_menu_key(KEY_LEFT, 1, 1);
                         menu_right_button_consumed = true;
                     }
                 } else {
@@ -761,19 +770,33 @@ void UsbHidDriver :: interrupt_handler()
                 if (menu_override) {
                     wheel_axis_v_remainder = 0;
                     wheel_key_v_remainder = 0;
+                    uint32_t now_ticks = (uint32_t)xTaskGetTickCount();
                     int menu_wheel_h = usb_hid_filter_menu_wheel_step(HidMouseInterpreter::scaleMenuWheelKeys(wheel_h_keys), menu_wheel_h_latch);
-                    int menu_wheel_v = usb_hid_accumulate_menu_wheel_steps(wheel_v_keys, 15, menu_wheel_v_accumulator);
+                    int menu_wheel_v = HidMouseInterpreter::scaleMenuWheelBurst(
+                        wheel_v_keys,
+                        now_ticks,
+                        menu_wheel_v_last_tick,
+                        menu_wheel_v_mode,
+                        menu_wheel_v_burst_direction,
+                        menu_wheel_v_burst_accumulator,
+                        USB_HID_MENU_WHEEL_FAST_GAP_TICKS,
+                        USB_HID_MENU_WHEEL_SLOW_GAP_TICKS,
+                        USB_HID_MENU_WHEEL_RESET_GAP_TICKS,
+                        USB_HID_MENU_WHEEL_EXTRA_STEP_THRESHOLD);
                     menu_wheel_v_latch = 0;
                     if (menu_wheel_v > 0) {
-                        usb_hid_queue_menu_key(KEY_UP);
+                        usb_hid_queue_menu_key(KEY_UP, menu_wheel_v, USB_HID_MENU_MAX_PENDING_VERTICAL_KEYS);
                     } else if (menu_wheel_v < 0) {
-                        usb_hid_queue_menu_key(KEY_DOWN);
+                        usb_hid_queue_menu_key(KEY_DOWN, -menu_wheel_v, USB_HID_MENU_MAX_PENDING_VERTICAL_KEYS);
                     }
                     usb_hid_queue_wheel_keys(menu_wheel_h, 0);
                 } else if (cursor_mode) {
                     menu_wheel_h_latch = 0;
                     menu_wheel_v_latch = 0;
-                    menu_wheel_v_accumulator = 0;
+                    menu_wheel_v_mode = HidMouseInterpreter::MENU_WHEEL_MODE_PRECISE;
+                    menu_wheel_v_burst_accumulator = 0;
+                    menu_wheel_v_burst_direction = 0;
+                    menu_wheel_v_last_tick = 0;
                     wheel_axis_v_remainder = 0;
                     usb_hid_queue_wheel_keys(
                         HidMouseInterpreter::scaleHorizontalWheelKeys(wheel_h_keys, scroll_factor),
@@ -781,7 +804,10 @@ void UsbHidDriver :: interrupt_handler()
                 } else {
                     menu_wheel_h_latch = 0;
                     menu_wheel_v_latch = 0;
-                    menu_wheel_v_accumulator = 0;
+                    menu_wheel_v_mode = HidMouseInterpreter::MENU_WHEEL_MODE_PRECISE;
+                    menu_wheel_v_burst_accumulator = 0;
+                    menu_wheel_v_burst_direction = 0;
+                    menu_wheel_v_last_tick = 0;
                     wheel_key_v_remainder = 0;
                     HidMouseInterpreter::applyWheelAxisDeltas(
                         mouse_x,

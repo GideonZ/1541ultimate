@@ -228,38 +228,74 @@ TEST(HidMouseInterpreterTest, HorizontalDirectionAndMenuWheelAreSymmetric)
 	EXPECT_EQ(-1, HidMouseInterpreter::scaleMenuWheelKeys(-120));
 }
 
-TEST(HidMouseInterpreterTest, SlowsMenuVerticalWheelByAccumulatingSteps)
+TEST(HidMouseInterpreterTest, SlowMenuWheelBurstAdvancesSingleStep)
 {
-	int accumulator = 0;
-	auto accumulate = [&](int delta) {
-		accumulator += delta;
-		int steps = 0;
-		while (accumulator >= 15) {
-			steps++;
-			accumulator -= 15;
-		}
-		while (accumulator <= -15) {
-			steps--;
-			accumulator += 15;
-		}
-		return steps;
-	};
+	uint32_t last_tick = 0;
+	int mode = HidMouseInterpreter::MENU_WHEEL_MODE_PRECISE;
+	int burst_direction = 0;
+	int burst_accumulator = 0;
 
-	for (int i = 0; i < 14; i++) {
-		EXPECT_EQ(0, accumulate(1));
-	}
-	EXPECT_EQ(1, accumulate(1));
-	EXPECT_EQ(0, accumulator);
+	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelBurst(1, 0, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(1, 40, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelBurst(1, 120, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+}
 
-	EXPECT_EQ(0, accumulate(-7));
-	EXPECT_EQ(0, accumulate(-7));
-	EXPECT_EQ(-1, accumulate(-1));
-	EXPECT_EQ(0, accumulator);
+TEST(HidMouseInterpreterTest, SeparatedSlowMenuWheelNotchesStartNewBursts)
+{
+	uint32_t last_tick = 0;
+	int mode = HidMouseInterpreter::MENU_WHEEL_MODE_PRECISE;
+	int burst_direction = 0;
+	int burst_accumulator = 0;
 
-	EXPECT_EQ(0, accumulate(14));
-	EXPECT_EQ(14, accumulator);
-	EXPECT_EQ(1, accumulate(1));
-	EXPECT_EQ(0, accumulator);
+	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelBurst(1, 0, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelBurst(1, 90, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelBurst(1, 180, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+}
+
+TEST(HidMouseInterpreterTest, FastMenuWheelBurstAcceleratesModerately)
+{
+	uint32_t last_tick = 0;
+	int mode = HidMouseInterpreter::MENU_WHEEL_MODE_PRECISE;
+	int burst_direction = 0;
+	int burst_accumulator = 0;
+
+	EXPECT_EQ(-1, HidMouseInterpreter::scaleMenuWheelBurst(-1, 0, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(-5, 10, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(-5, 20, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+	EXPECT_EQ(-1, HidMouseInterpreter::scaleMenuWheelBurst(-5, 30, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(-5, 90, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(-5, 100, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+	EXPECT_EQ(-1, HidMouseInterpreter::scaleMenuWheelBurst(-5, 110, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+}
+
+TEST(HidMouseInterpreterTest, HighResolutionSlowWheelDoesNotLeakPastOneStep)
+{
+	uint32_t last_tick = 0;
+	int mode = HidMouseInterpreter::MENU_WHEEL_MODE_PRECISE;
+	int burst_direction = 0;
+	int burst_accumulator = 0;
+
+	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelBurst(1, 0, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(1, 10, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(1, 20, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(1, 30, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelBurst(1, 220, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+}
+
+TEST(HidMouseInterpreterTest, MenuWheelResetAndDirectionChangesReturnToPreciseMode)
+{
+	uint32_t last_tick = 0;
+	int mode = HidMouseInterpreter::MENU_WHEEL_MODE_PRECISE;
+	int burst_direction = 0;
+	int burst_accumulator = 0;
+
+	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelBurst(1, 0, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+	EXPECT_EQ(0, HidMouseInterpreter::scaleMenuWheelBurst(5, 10, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+	EXPECT_EQ(HidMouseInterpreter::MENU_WHEEL_MODE_ACCELERATED, mode);
+	EXPECT_EQ(-1, HidMouseInterpreter::scaleMenuWheelBurst(-1, 20, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+	EXPECT_EQ(HidMouseInterpreter::MENU_WHEEL_MODE_PRECISE, mode);
+	EXPECT_EQ(-1, HidMouseInterpreter::scaleMenuWheelBurst(-1, 200, last_tick, mode, burst_direction, burst_accumulator, 25, 75, 150, 15));
+	EXPECT_EQ(HidMouseInterpreter::MENU_WHEEL_MODE_PRECISE, mode);
 }
 
 TEST(HidBootProtocolTest, DecodesBootMouseReport)
