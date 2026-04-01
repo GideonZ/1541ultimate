@@ -121,7 +121,7 @@ void UsbHubDriver :: install(UsbInterface *intf)
 	printf("Installing '%s %s'\n", dev->manufacturer, dev->product);
     host = dev->host;
     device = dev;
-
+    
 	dev->set_configuration(dev->get_device_config()->config_value);
 
 	int i = dev->host->control_exchange(&dev->control_pipe,
@@ -134,7 +134,7 @@ void UsbHubDriver :: install(UsbInterface *intf)
     compound                = ((buf[3] & 0x04) == 4);
     power_on_time           = 2 * int(buf[5]);
     hub_current             =     int(buf[6]);
-
+    
     printf("Found a hub with %d ports.\n", num_ports);
 /*
     if(individual_power_switch)
@@ -165,7 +165,7 @@ void UsbHubDriver :: install(UsbInterface *intf)
     								    c_set_port_feature, 8,
     								    buf, 64);
     }
-    wait_ms(power_on_time);
+    wait_ms(power_on_time);        
 
 //    printf("Check all ports for connection..\n");
 
@@ -259,26 +259,26 @@ void UsbHubDriver :: handle_irqdata(void)
 	printf("HUB %d IRQ data: %b\n", device->current_address, irqd);
 
 	int i;
-
+    
     for(int j=0;j<num_ports;j++) {
         if(irqd & (1 << (j+1))) {
-	            c_get_port_status[4] = uint8_t(j+1);
-	            i = host->control_exchange(&device->control_pipe,
-												c_get_port_status, 8,
-												buf, 8);
-	            if(i == 4) {
+            c_get_port_status[4] = uint8_t(j+1);
+            i = host->control_exchange(&device->control_pipe,
+										c_get_port_status, 8,
+										buf, 8);
+            if(i == 4) {
 
             	printf("Port %d of hub on addr %d status:", j+1, device->current_address);
                 for(int b=0;b<4;b+=2) {
                     printf("%b%b ", buf[b+1], buf[b]);
                 } printf(" Port in reset: %d\n", port_in_reset);
 
-	            c_clear_port_feature[4] = uint8_t(j+1);
+                c_clear_port_feature[4] = uint8_t(j+1);
 
                 if(buf[2] & BIT_PORT_CONNECTION) {
                     //printf("* CONNECTION CHANGE *\n");
                     if(buf[0] & BIT_PORT_CONNECTION) { // if connected, let's reset it!
-						if (!reset_busy) {
+                    	if (!reset_busy) {
 							c_clear_port_feature[2] = C_PORT_CONNECTION;
 							i = host->control_exchange(&device->control_pipe,
 													   c_clear_port_feature, 8,
@@ -295,83 +295,83 @@ void UsbHubDriver :: handle_irqdata(void)
 							port_in_reset = j+1;
 							reset_busy = true;
 							reset_timeout = 4;
-						}
-					} else { // disconnect
-						printf("-> Disconnect\n");
-						if (port_in_reset == j+1) {
-							port_in_reset = 0;
-							reset_busy = false;
-						}
-						c_clear_port_feature[2] = C_PORT_CONNECTION;
-						if(children[j]) {
-							// let the poll task clean it up.
-							host->queueDeinstall(children[j]);
-						}
-						children[j] = NULL;
-						printf("-> Device stopped, now clearing feature.\n");
-						i = host->control_exchange(&device->control_pipe,
-												   c_clear_port_feature, 8,
-												   dummy, 8);
-						printf("-> Disconnect done (#%d:%d)\n", device->current_address, j+1);
-					}
+                    	}
+                    } else { // disconnect
+                    	printf("-> Disconnect\n");
+                    	if (port_in_reset == j+1) {
+                    		port_in_reset = 0;
+                    		reset_busy = false;
+                    	}
+                    	c_clear_port_feature[2] = C_PORT_CONNECTION;
+                    	if(children[j]) {
+                        	// let the poll task clean it up.
+                        	host->queueDeinstall(children[j]);
+                        }
+                        children[j] = NULL;
+                        printf("-> Device stopped, now clearing feature.\n");
+                        i = host->control_exchange(&device->control_pipe,
+                    							   c_clear_port_feature, 8,
+                    							   dummy, 8);
+                        printf("-> Disconnect done (#%d:%d)\n", device->current_address, j+1);
+                    }                        
                 }
                 if(buf[2] & BIT_PORT_ENABLE) {
                     //printf("* ENABLE CHANGE *\n");
-					c_clear_port_feature[2] = C_PORT_ENABLE;
-					i = host->control_exchange(&device->control_pipe,
-											   c_clear_port_feature, 8,
-											   dummy, 8);
+                    c_clear_port_feature[2] = C_PORT_ENABLE;
+                	i = host->control_exchange(&device->control_pipe,
+                							   c_clear_port_feature, 8,
+                							   dummy, 8);
                 }
                 if(buf[2] & BIT_PORT_SUSPEND) {
                     //printf("* SUSPEND CHANGE *\n");
-					c_clear_port_feature[2] = C_PORT_SUSPEND;
-					i = host->control_exchange(&device->control_pipe,
-											   c_clear_port_feature, 8,
-											   dummy, 8);
+                    c_clear_port_feature[2] = C_PORT_SUSPEND;
+                	i = host->control_exchange(&device->control_pipe,
+                							   c_clear_port_feature, 8,
+                							   dummy, 8);
                 }
                 if(buf[2] & BIT_PORT_OVER_CURRENT) {
                     printf("* OVERCURRENT CHANGE *\n");
-					c_clear_port_feature[2] = C_PORT_OVER_CURRENT;
-					i = host->control_exchange(&device->control_pipe,
-											   c_clear_port_feature, 8,
-											   dummy, 8);
+                    c_clear_port_feature[2] = C_PORT_OVER_CURRENT;
+                	i = host->control_exchange(&device->control_pipe,
+                							   c_clear_port_feature, 8,
+                							   dummy, 8);
                 }
                 if(buf[2] & BIT_PORT_RESET) {
                     printf("* RESET CHANGE %d *\n", j+1);
-					if(buf[0] & BIT_PORT_ENABLE) {
-						port_in_reset = 0;
-						reset_busy = false;
+                	if(buf[0] & BIT_PORT_ENABLE) {
+                    	port_in_reset = 0;
+                    	reset_busy = false;
 						if(children[j]) {
 							printf("*** ERROR *** Device already present! ***\n");
 							host->queueDeinstall(children[j]);
 							children[j] = NULL;
-							c_clear_port_feature[2] = C_PORT_RESET;
-							i = host->control_exchange(&device->control_pipe,
-													   c_clear_port_feature, 8,
-													   dummy, 8);
+		                    c_clear_port_feature[2] = C_PORT_RESET;
+		                	i = host->control_exchange(&device->control_pipe,
+		                							   c_clear_port_feature, 8,
+		                							   dummy, 8);
 						} else {
-							int speed = (buf[1] & BIT1_PORT_HIGH_SPEED) ? 2 :
-										(buf[1] & BIT1_PORT_LOW_SPEED) ? 0 : 1;
-							printf("Port reset to %s speed\n", (speed==2)?"high":(speed==1)?"full":"low");
-							wait_ms(power_on_time);
+	                    	int speed = (buf[1] & BIT1_PORT_HIGH_SPEED) ? 2 :
+	                    		     	(buf[1] & BIT1_PORT_LOW_SPEED) ? 0 : 1;
+	                    	printf("Port reset to %s speed\n", (speed==2)?"high":(speed==1)?"full":"low");
+	                    	wait_ms(power_on_time);
 							UsbDevice *d = new UsbDevice(host, speed);
 							d->set_parent(device, j);
 							if(!host->init_device(d)) {
 								printf("Device init failed...\n");
 								c_clear_port_feature[2] = C_PORT_ENABLE; // disable port
-								i = host->control_exchange(&device->control_pipe,
-														   c_clear_port_feature, 8,
-														   dummy, 8);
-								c_clear_port_feature[2] = C_PORT_RESET;
-								i = host->control_exchange(&device->control_pipe,
-														   c_clear_port_feature, 8,
-														   dummy, 8);
+			                	i = host->control_exchange(&device->control_pipe,
+			                							   c_clear_port_feature, 8,
+			                							   dummy, 8);
+			                    c_clear_port_feature[2] = C_PORT_RESET;
+			                	i = host->control_exchange(&device->control_pipe,
+			                							   c_clear_port_feature, 8,
+			                							   dummy, 8);
 								continue;
 							} else {
-								c_clear_port_feature[2] = C_PORT_RESET;
-								i = host->control_exchange(&device->control_pipe,
-														   c_clear_port_feature, 8,
-														   dummy, 8);
+			                    c_clear_port_feature[2] = C_PORT_RESET;
+			                	i = host->control_exchange(&device->control_pipe,
+			                							   c_clear_port_feature, 8,
+			                							   dummy, 8);
 								children[j] = d;
 								// TODO: Put devices in an install queue
 								d->init2();
@@ -379,26 +379,26 @@ void UsbHubDriver :: handle_irqdata(void)
 							}
 						}
                     } else {
-						if (reset_timeout <= 0) {
-							port_in_reset = 0;
-							reset_busy = false;
+                    	if (reset_timeout <= 0) {
+                    		port_in_reset = 0;
+                    		reset_busy = false;
 
-							printf("RESET TIMEOUT\n");
+                    		printf("RESET TIMEOUT\n");
 							c_clear_port_feature[2] = C_PORT_ENABLE; // disable port
-							i = host->control_exchange(&device->control_pipe,
-													   c_clear_port_feature, 8,
-													   dummy, 8);
-							c_clear_port_feature[2] = C_PORT_RESET;
-							i = host->control_exchange(&device->control_pipe,
-													   c_clear_port_feature, 8,
-													   dummy, 8);
-						} else {
-							reset_timeout --;
-						}
+		                	i = host->control_exchange(&device->control_pipe,
+		                							   c_clear_port_feature, 8,
+		                							   dummy, 8);
+		                    c_clear_port_feature[2] = C_PORT_RESET;
+		                	i = host->control_exchange(&device->control_pipe,
+		                							   c_clear_port_feature, 8,
+		                							   dummy, 8);
+                    	} else {
+                    		reset_timeout --;
+                    	}
                     }
                 }
             } else {
-	                printf("Failed to read port %d status. Got %d bytes.\n", j+1, i);
+                printf("Failed to read port %d status. Got %d bytes.\n", j+1, i);
                 continue;
             }
         }
