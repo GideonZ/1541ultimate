@@ -1,11 +1,18 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jquery.terminal/css/jquery.terminal.min.css"/>
 <title>Ultimate II/64</title>
+<link rel="icon" href="data:,">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<!-- Placeholder to prevent ReferenceError if the profile script calls this function -->
+<script>window.initializeTokenizerUI = () => {};</script>
+<!-- Load configuration and defines SCRIPT_TO_LOAD for later dynamic loading -->
+<script src="SPECIAL.js"></script>
+
 <script src="https://cdn.jsdelivr.net/npm/jquery"></script>
 <script src="https://cdn.jsdelivr.net/npm/jquery.terminal/js/jquery.terminal.min.js"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jquery.terminal/css/jquery.terminal.min.css"/>
 
 <script>
 
@@ -271,6 +278,25 @@ $(document).ready(async function () {
         $("#basiceditor").toggleClass("uppercase", this.checked);  // change upper/lowercase display
     });
 
+    // Custom modal handler to clear the editor without browser interference
+    $('#clearBASIC').click(function (event) {
+        event.preventDefault(); // Prevents the default action of the button
+        $("#customModalOverlay").show(); // Shows the custom modal
+    });
+
+    // Action when "Yes" is clicked in the custom modal
+    $('#modalYes').click(function () {
+        $("#basiceditor").val(""); // Clears the textarea content
+        showBASICerror("");        // Hides any existing error messages
+        $("#customModalOverlay").hide(); // Hides the modal after clearing
+        $("#basiceditor").focus(); // Sets focus back to the editor window for immediate pasting
+    });
+
+    // Action when "No" (Cancel) is clicked in the custom modal
+    $('#modalNo').click(function () {
+        $("#customModalOverlay").hide(); // Simply closes the modal without changes
+    });
+
     // convenience: write memory - show error message when access fails
     async function writeMemory(param, errorMsg) {
         showBASICerror(""); // clear earlier errors
@@ -303,14 +329,10 @@ $(document).ready(async function () {
     async function parseBASIC() {
         var textarea = $("#basiceditor").val();
 
-        // Split into lines, remove blank lines, convert to lowercase, and join back
-        var temp = textarea.split('\n')
-                                .map(line => line.trim().toLowerCase())
-                                .filter(line => line.trim().length > 0) 
-                                .join('\n');
-
-        $("#basiceditor").val(temp);
-        var lines = temp.split('\n');
+        // Split into lines, keep only those starting with a digit, and join back
+        var lines = textarea.split('\n')
+                .map(line => line.trim())
+                .filter(line => /^\d/.test(line));
 
         const tokenized_lines = [];
         let addr = 2049;
@@ -389,136 +411,84 @@ $(document).ready(async function () {
         return asciiValues;
     }
 
-    const TOKENS = [
-        ['restore', 140],
-        ['input#', 132],
-        ['return', 142],
-        ['verify', 149],
-        ['print#', 152],
-        ['right$', 201],
-        ['input', 133],
-        ['gosub', 141],
-        ['print', 153],
-        ['close', 160],
-        ['left$', 200],
-        ['next', 130],
-        ['data', 131],
-        ['read', 135],
-        ['goto', 137],
-        ['stop', 144],
-        ['wait', 146],
-        ['load', 147],
-        ['save', 148],
-        ['poke', 151],
-        ['cont', 154],
-        ['list', 155],
-        ['open', 159],
-        ['tab(', 163],
-        ['spc(', 166],
-        ['then', 167],
-        ['step', 169],
-        ['peek', 194],
-        ['str$', 196],
-        ['chr$', 199],
-        ['mid$', 202],
-        ['end', 128],
-        ['for', 129],
-        ['dim', 134],
-        ['let', 136],
-        ['run', 138],
-        ['rem', 143],
-        ['def', 150],
-        ['clr', 156],
-        ['cmd', 157],
-        ['sys', 158],
-        ['get', 161],
-        ['new', 162],
-        ['not', 168],
-        ['and', 175],
-        ['sgn', 180],
-        ['int', 181],
-        ['abs', 182],
-        ['usr', 183],
-        ['fre', 184],
-        ['pos', 185],
-        ['sqr', 186],
-        ['rnd', 187],
-        ['log', 188],
-        ['exp', 189],
-        ['cos', 190],
-        ['sin', 191],
-        ['tan', 192],
-        ['atn', 193],
-        ['len', 195],
-        ['val', 197],
-        ['asc', 198],
-        ['if', 139],
-        ['on', 145],
-        ['to', 164],
-        ['fn', 165],
-        ['or', 176],
-        ['go', 203],
-        ['+', 170],
-        ['-', 171],
-        ['*', 172],
-        ['/', 173],
-        ['^', 174],
-        ['>', 177],
-        ['=', 178],
-        ['<', 179]
-    ];
+    // Reset textarea to its default HTML value (the error message) on every reload.
+    // This prevents the browser from restoring previous session text after F5.
+    const editor = document.getElementById('basiceditor');
+    if (editor) {
+        // Reset to the initial content defined between <textarea> tags in HTML
+        editor.value = editor.defaultValue;
+    }
 
-    const TOKENS_UPPERCASE = TOKENS.map(token => [token[0].toUpperCase(), token[1]]);
+    // * Finalizes the initialization process once the external profile script is ready.
+    // * This function is triggered only when CBM_SIGNATURE reaches "READY" state.
+    const finalizeInitialization = () => {
+        // 1. Assign SPECIAL table from the loaded script
+        window.SPECIAL = window.SPECIAL || [];
+        SPECIAL = window.SPECIAL;
 
+        // 2. Assign TOKENS table from the loaded script
+        if (typeof TOKENS !== 'undefined') {
+            window.TOKENS = TOKENS;
+        } else if (typeof window.TOKENS === 'undefined') {
+            window.TOKENS = []; // Fallback if TOKENS are missing
+        }
 
-    const SPECIAL = [
-        ['{rvs off}',  0x92],
-        ['{rvs on}',   0x12],
-        ['{up}',       0x91],
-        ['{down}',     0x11],
-        ['{left}',     0x9d],
-        ['{rght}',     0x1d],
-        ['{clr}',      0x93],
-        ['{clear}',    0x93],
-        ['{home}',     0x13],        
-        
-        ['{blk}',      0x90],
-        ['{wht}',      0x05],
-        ['{red}',      0x1c],
-        ['{cyn}',      0x9f],
-        ['{pur}',      0x9c],
-        ['{grn}',      0x1e],
-        ['{blu}',      0x1f],
-        ['{yel}',      0x9e],
-        ['{org}',      0x81],
-        ['{brn}',      0x95],
-        ['{lred}',     0x96],
-        ['{dgry}',     0x97],
-        ['{mgry}',     0x98],
-        ['{lgrn}',     0x99],
-        ['{lblu}',     0x9a],
-        ['{lgry}',     0x9b],
-        
-        // additional entries found in COMPUTES!'s Gazette
-        ['{rvs}',      0x12],
-        ['{space}',    0x20],
-        ['{spaces}',   0x20],
-        ['{gry1}',     0x97],
-        ['{gry2}',     0x98],
-        ['{gry3}',     0x9b],
-        ['{f1}',       0x85],
-        ['{f2}',       0x86],
-        ['{f3}',       0x87],
-        ['{f4}',       0x88],
-        ['{f5}',       0x89],
-        ['{f6}',       0x8a],
-        ['{f7}',       0x8b],
-        ['{f8}',       0x8c],
-    ];
+        // 3. Assign TOOLTIP object from the loaded script
+        if (typeof TOOLTIP !== 'undefined') {
+            window.TOOLTIP = TOOLTIP;
+        } else if (typeof window.TOOLTIP === 'undefined') {
+            window.TOOLTIP = {}; // Fallback to empty object if TOOLTIP is missing
+        }
+
+        // 4. Render tables and initialize specialized UI components
+        if (typeof renderSpecialTable === 'function') {
+            renderSpecialTable(SPECIAL);
+        }
+
+        // 5. Initialize main tokenizer user interface logic
+        if (typeof initializeTokenizerUI === 'function') {
+            initializeTokenizerUI();
+        }
+
+        // 6. Inject predefined BASIC code into the editor
+        if (typeof window.BASIC_CODE !== 'undefined' && window.BASIC_CODE !== "") {
+            const editor = document.getElementById('basiceditor');
+            if (editor) {
+                editor.value = window.BASIC_CODE;
+                editor.dispatchEvent(new Event('input'));
+            }
+        }
+    };
+
+    // DYNAMIC LOADING LOGIC BASED ON SIGNATURE
+    if (typeof SCRIPT_TO_LOAD !== 'undefined' && SCRIPT_TO_LOAD !== "") {
+        const script = document.createElement('script');
+        script.src = SCRIPT_TO_LOAD;
+        document.head.appendChild(script);
+
+        // Polling mechanism: strictly verify if the file is ready via CBM_SIGNATURE
+        const checkReady = setInterval(() => {
+            if (window.CBM_SIGNATURE === "READY") {
+                clearInterval(checkReady);
+                finalizeInitialization();
+            }
+        }, 50);
+
+        // Safety timeout: if READY is not reached, stop polling
+        setTimeout(() => {
+            if (window.CBM_SIGNATURE !== "READY") {
+                clearInterval(checkReady);
+                // We do NOT call finalizeInitialization here to keep the error message visible
+            }
+        }, 3000);
+    } else {
+        // Fallback: initialize system without external profile
+        finalizeInitialization();
+    }
 
     function asciiToPetscii(o) {
-        // Check if character code is less than or equal to '@' or is '[' or ']'
-        if (o <= '@'.charCodeAt(0) || o === '['.charCodeAt(0) || o === ']'.charCodeAt(0)) {
+        // Check if character code is less than or equal to '@' or is '[' or ']' or '^'
+        if (o <= '@'.charCodeAt(0) || o === '['.charCodeAt(0) || o === ']'.charCodeAt(0) || o === '^'.charCodeAt(0)) {
             return o;
         }
         // Check if character code is between 'a' and 'z'
@@ -534,9 +504,13 @@ $(document).ready(async function () {
         
     }
 
+    // * Scans the input string for tokens, special characters, or plain text.
+    // * @param {string} s - The input string fragment.
+    // * @param {boolean} tokenize - Whether to attempt keyword tokenization.
+    // * @returns {[number|null, string]} - Array containing the byte value and the remaining string.
     function scan(s, tokenize = true) {
         s = expandCounts(s);
-        
+
         if (tokenize) {
             for (let i = 0; i < TOKENS.length; i++) {
                 let [token, value] = TOKENS[i];
@@ -545,23 +519,40 @@ $(document).ready(async function () {
                 }
             }
         }
+
         if (s[0] === '{') {
             for (let i = 0; i < SPECIAL.length; i++) {
                 let [token, value] = SPECIAL[i];
                 if (s.startsWith(token)) {
+                    // A null byte (0x00) acts as an absolute end-of-line (EOL) terminator
+                    // in Commodore BASIC v2.0. If we encounter {null} (value 0), we return an
+                    // empty string to signal the main tokenizer loop to stop processing this line.
+                    if (value === 0) {
+                        return [0, ""];
+                    }
                     return [value, s.substring(token.length)];
                 }
             }
             basic_error = "Error -> ..." + s + " \nInvalid special character code occurred from this point.";
             return [null, null];
         }
+
+        // Convert standard character to PETSCII and move to next char
         return [asciiToPetscii(s.charCodeAt(0)), s.substring(1)];
     }
 
-    // Expand patterns like {3 spaces} → {spaces}{spaces}{spaces}
+    // * Expands character repetition shorthands into individual tokens.
+    // * Supports both historical type-in magazine formats and modern IDE syntax.
     function expandCounts(input) {
-        return input.replace(/\{(\d+)\s+([^}]+)\}/g, (_, count, word) => {
-            count = Number(count);
+        // This regex handles two variants:
+        // 1. {3 space} -> format used in "COMPUTE!'s Gazette" magazine
+        // 2. {space*3} -> format compatible with CBMprgStudio
+        return input.replace(/\{(\d+) ([^}]+)\}|\{([^}]+)\*(\d+)\}/g, (_, count1, word1, word2, count2) => {
+            // Extract values from whichever group was matched
+            const count = Number(count1 || count2);
+            const word = word1 || word2
+
+            // Generates repeated tokens, e.g., {space}{space}{space}
             return Array(count).fill(`{${word}}`).join('');
         });
     }
@@ -576,27 +567,43 @@ $(document).ready(async function () {
         return [parseInt(acc.join(''), 10), s.trimStart()];
     }
 
+    // * Converts a BASIC source line into a sequence of C64-compatible bytes.
+    // * @param {string} s - The full source line (e.g., "10 PRINT A$").
+    // * @returns {[number, number[]]} - Array containing the line number and the tokenized bytes.
     function tokenize(s) {
+        // Uses scanLineNumber to correctly handle cases like "10PRINT" (no space after line number)
         let [lineNumber, remainingString] = scanLineNumber(s);
         let bytes = [];
+
         let inQuotes = false;
         let inRemark = false;
         let inData   = false;
 
-        while (remainingString) {
-            let [byte, newString] = scan(remainingString, !(inQuotes || inRemark || inData));
-            bytes.push(byte);
-            remainingString = newString;
+        while (remainingString && remainingString.length > 0) {
+            // C64 Logic: Tokenization is disabled inside quotes, REM (comments), or after DATA statements
+            let shouldTokenize = !(inQuotes || inRemark || inData);
+            let [byte, newString] = scan(remainingString, shouldTokenize);
 
-            if (byte === '"'.charCodeAt(0)) {
-                inQuotes = !inQuotes;
+            // C64 CRITICAL FIX: If a 0x00 byte is generated, terminate the line immediately.
+            // This ensures compatibility with the C64 Kernal/BASIC interpreter, which
+            // stops parsing the line at the first null byte, regardless of the line pointer.
+            if (byte === 0) {
+                break;
             }
-            else if (byte === 143) {
-                inRemark = true;
+
+            if (byte !== null) {
+                bytes.push(byte);
+
+                // Mode switching based on standard C64 BASIC v2.0 token values
+                if (byte === 34) {          // ASCII/PETSCII for double quotes (")
+                    inQuotes = !inQuotes;
+                } else if (byte === 143) {  // C64 Token for REM ($8F)
+                    inRemark = true;
+                } else if (byte === 131) {  // C64 Token for DATA ($83)
+                    inData = true;
+                }
             }
-            else if (byte === 131) {
-                inData = true;
-            }
+            remainingString = newString;
         }
 
         return [lineNumber, bytes];
@@ -659,30 +666,104 @@ $(document).ready(async function () {
             }
     });
 
-    function createTable() {
-            let $table = $('<table border="0"></table>');
-            
-            // Calculate the number of rows needed for 10 columns
-            let numRows = Math.ceil(SPECIAL.length / 10);
+    // * Renders the C64 Special Characters Table in an 8x32 grid layout.
+    // * Design: [Red Separator][HEX][4px Gap][Symbols][16px Gap][Next Column]
+    // * Features: Pepto PAL color accuracy and adaptive text contrast for accessibility.
+    // * Interaction: Symbols are clickable and insert their token into the BASIC editor.
+    function renderSpecialTable() {
+        // Reference global tokens list from the external profile
+        const tokens = window.SPECIAL;
 
-            for (let row = 0; row < numRows; row++) {
-                let $row = $('<tr></tr>');
-                for (let col = 0; col < 10; col++) {
-                    let cellIndex = row * 10 + col;
-                    if (cellIndex < SPECIAL.length) {
-                        let [symbol, code] = SPECIAL[cellIndex];
-                        $row.append(`<td>${symbol}</td>`);
-                    } else {
-                        $row.append('<td></td>'); // Empty cell if no more data
-                    }
-                }
-                $table.append($row);
+        // 1. Official Pepto PAL Palette (by Philip Timmermann) for authentic C64 color reproduction
+        const colorByHex = {
+            0x90: '#000000', 0x05: '#ffffff', 0x1c: '#68372b', 0x9f: '#70a4b2', 0x9c: '#6f3d86', 0x1e: '#588d43', 0x1f: '#352879', 0x9e: '#b8c76f',
+            0x81: '#6f4f25', 0x95: '#433900', 0x96: '#9a6759', 0x97: '#444444', 0x98: '#6c6c6c', 0x99: '#9ad284', 0x9a: '#6c5eb5', 0x9b: '#959595'
+        };
+
+        // 2. Map all tokens to their respective 0-255 HEX codes
+        let grouped = Array.from({ length: 256 }, () => []);
+        tokens.forEach(item => {
+            if (item.length >= 2) {
+                let [symbol, code] = item;
+                grouped[code].push(symbol);
             }
+        });
 
-            return $table;
+        // 3. Build the table using a monospace font to ensure strict vertical alignment
+        let $table = $('<table style="font-family: monospace; border-collapse: collapse; background: #f5f5f5; font-size: 13px;"></table>');
+
+        // Create 32 rows to cover the 256 character map across 8 columns
+        for (let row = 0; row < 32; row++) {
+            let $tr = $('<tr></tr>');
+            for (let col = 0; col < 8; col++) {
+                // Calculate PETSCII code based on current row and column range
+                let code = row + (col * 32);
+                let hexDisplay = '0x' + code.toString(16).padStart(2, '0').toUpperCase();
+
+                // Get tooltip description for the current hex code
+                const tooltipText = (window.TOOLTIP && window.TOOLTIP[code]) ? window.TOOLTIP[code] : "";
+
+                // Render each symbol associated with the current HEX code
+                let formattedSymbols = grouped[code].map(symbol => {
+                    let content = symbol.replace(/{|}/g, '');
+                    let isNumeric = /^\d+$/.test(content);
+
+                    // Interaction styles: pointer cursor and no text selection
+                    const baseStyle = `cursor: pointer; user-select: none;`;
+
+                    if (isNumeric) {
+                        // Added title attribute for tooltip
+                        return `<span class="special-token" data-token="${symbol}" title="${tooltipText}" style="${baseStyle} color: #000000; padding: 0 2px;">${symbol}</span>`;
+                    } else if (colorByHex[code]) {
+                        // Render color tokens using the background color from Pepto PAL
+                        const bgColor = colorByHex[code];
+
+                        const darkCodes = [0x90, 0x1F, 0x95, 0x1C, 0x97, 0x9C, 0x98, 0x81];
+                        const textColor = darkCodes.includes(code) ? '#FFFFFF' : '#000000';
+
+                        // Added title attribute for tooltip
+                        return `<span class="special-token" data-token="${symbol}" title="${tooltipText}" style="${baseStyle} background-color: ${bgColor}; color: ${textColor}; font-weight: bold; padding: 1px 4px; border-radius: 2px; display: inline-block; margin: 1px 0; border: 1px solid rgba(0,0,0,0.1);">${symbol}</span>`;
+                    } else {
+                        // Render functional tokens in standard blue. Added title attribute for tooltip.
+                        return `<span class="special-token" data-token="${symbol}" title="${tooltipText}" style="${baseStyle} color: #0000ff; padding: 0 2px;">${symbol}</span>`;
+                    }
+                }).join(' ');
+
+                // Apply specific spacing
+                $tr.append(`
+                    <td style="padding-right: 4px; color: #666; border-left: 1px solid red; padding-left: 5px; white-space: nowrap;">${hexDisplay}</td>
+                    <td style="padding-right: 8px; white-space: nowrap;">${formattedSymbols}</td>
+                `);
+            }
+            $table.append($tr);
+        }
+
+        // Inject the final rendered table into the DOM container
+        $('#tableContainer').empty().append($table);
+
+        // 4. Interaction Logic: Insert clicked token into the #basiceditor textarea
+        $('.special-token').off('click').on('click', function(e) {
+            const token = $(this).data('token');
+            const $editor = $('#basiceditor');
+
+            if ($editor.length) {
+                const scrollPos = $(window).scrollTop();
+                const start = $editor.prop('selectionStart');
+                const end = $editor.prop('selectionEnd');
+                const oldText = $editor.val();
+
+                const newText = oldText.substring(0, start) + token + oldText.substring(end);
+                $editor.val(newText);
+                $editor.trigger('input');
+
+                $editor[0].focus({ preventScroll: true });
+                $(window).scrollTop(scrollPos);
+
+                const newCursorPos = start + token.length;
+                $editor.setSelectionRange(newCursorPos, newCursorPos);
+            }
+        });
     }
-
-    $('#tableContainer').append(createTable());
 
     var memViewAddress = 0;   // "m"emory view command current address
     var memViewRange   = 256; // "m"emory view command: current range
@@ -1683,25 +1764,69 @@ function disassembler(startInt, byteArray) {
 
         <div id="tokenizer" class="page">
             <h1>BASIC Editor / Tokenizer</h1>
-            <p>Here, you may enter a BASIC program, and upload it directly to your machine.</p>
+            <p>Here, you may enter a BASIC program (type in lower case, abbreviation is allowed), and upload it directly to your machine.</p>
 
-            <textarea id="basiceditor" spellcheck="false" wrap="off" class="c64-textarea" cols="80">
-10 print "hello world"
-20 goto 10</textarea>
+<textarea id="basiceditor" spellcheck="false" autocorrect="off" autocapitalize="off" wrap="off" class="c64-textarea">
+Data loading failed: please try reloading the page (Ctrl+F5).
+Check for syntax errors in /Flash/html/SPECIAL.js,
+or your custom profile if modified.
+</textarea>
+
             <div class="padding-tr-5">
                 <span class="padding-tr-5"><input type="button" id="submitBASIC" value="Upload" title="Upload program to C64 memory"></span>
                 <span class="padding-tr-5"><input type="button" id="submitBASICAndRun" value="Upload and Run"  title="Upload program to C64 memory and RUN"></span>
                 <span class="padding-tr-5"><input type="button" id="runBASIC" value="Run" title="Send RUN command to the C64"></span>
                 <span class="padding-tr-5"><input type="button" id="stopBASIC" value="Stop" title="Send STOP command to the C64"></span>
+                <span class="padding-tr-5"><input type="button" id="clearBASIC" value="Clear" title="Clear the editor content"></span>
                 <input type="checkbox" id="uppercaseBASIC"><label for="uppercaseBASIC" title="Toggle uppercase/lowercase display of BASIC program text">Uppercase</label>
             </div>
 
             <div id="basicmsg">An error has occurred. Check for valid codes.</div>
 
             <br />
-            <div><b>Special characters:</b></div>
+            <div><b>Special characters: Tokenization codes (0x00 - 0xFF) for Basic</b></div>
             <div id="tableContainer"></div>
 
+        </div>
+    </div>
+    <style>
+        /* Small floating window centered on the screen */
+        #customModalOverlay {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%); /* Perfect centering */
+            z-index: 1000;
+        }
+        #customModal {
+            background: #333; /* Dark background matching the terminal */
+            color: #fff;      /* White text */
+            padding: 20px;
+            border: 2px solid #fff; /* Retro border */
+            border-radius: 5px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            font-family: sans-serif;
+        }
+        .modal-btns { margin-top: 15px; }
+        .modal-btns button {
+            padding: 5px 15px;
+            cursor: pointer;
+            margin: 0 5px;
+            background: #444;
+            color: white;
+            border: 1px solid #999;
+        }
+        .modal-btns button:hover { background: #666; }
+    </style>
+    <div id="customModalOverlay">
+        <div id="customModal">
+            <p>Are you sure you want to clear the editor window?</p>
+            <div class="modal-btns">
+                <button id="modalYes">Yes</button>
+                <button id="modalNo">No</button>
+            </div>
         </div>
     </div>
 </body>
