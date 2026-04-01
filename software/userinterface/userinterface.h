@@ -59,6 +59,7 @@ private:
     UIStatusBox *status_box;
     
     void set_screen_title(void);
+    void set_available(bool enable);
     int  pollFocussed(void);
     void peel_off(void);
     bool buttonDownFor(uint32_t ms);

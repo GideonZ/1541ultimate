@@ -5,10 +5,15 @@
 #include "usb_device.h"
 #include "hid_decoder.h"
 
-const char *usb_hid_get_visible_mouse_name(void);
-const char *usb_hid_get_visible_mouse_mode(void);
-const char *usb_hid_get_visible_keyboard_name(void);
-const char *usb_hid_get_visible_keyboard_mode(void);
+struct t_usb_hid_status_snapshot
+{
+    char mouse_name[33];
+    char mouse_mode[12];
+    char keyboard_name[33];
+    char keyboard_mode[12];
+};
+
+void usb_hid_get_status_snapshot(t_usb_hid_status_snapshot& snapshot);
 
 class UsbHidDriver : public UsbDriver
 {
@@ -59,6 +64,10 @@ public:
 
 	UsbHidDriver(UsbInterface *intf);
 	~UsbHidDriver();
+
+    bool has_active_report_keyboard(void) const;
+    bool has_active_report_mouse(void) const;
+    void relinquish_boot_function(bool release_keyboard, bool release_mouse);
 
 	void install(UsbInterface *intf);
 	void deinstall(UsbInterface *intf);

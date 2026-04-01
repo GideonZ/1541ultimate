@@ -10,6 +10,11 @@
 #include "task.h"
 #include <stdio.h>
 
+#ifndef portENTER_CRITICAL
+#define portENTER_CRITICAL()
+#define portEXIT_CRITICAL()
+#endif
+
 // static system wide available keyboard object
 
 Keyboard_USB system_usb_keyboard;
@@ -354,16 +359,21 @@ int  Keyboard_USB :: getch(void)
             delay_count --;
         }
     }
+    int injected_key = -1;
+    portENTER_CRITICAL();
     if (injected_head != injected_tail) {
-		uint8_t key = injected_buffer[injected_tail];
+		injected_key = injected_buffer[injected_tail];
 		injected_tail ++;
 		if (injected_tail == USB_KEY_BUFFER_SIZE) {
 			injected_tail = 0;
 		}
+    }
+    portEXIT_CRITICAL();
+    if (injected_key >= 0) {
 		if (matrixEnabled) {
-			setInjectedMatrixKey(key);
+			setInjectedMatrixKey(injected_key);
 		}
-		return key;
+		return injected_key;
     }
     if (key_head != key_tail) {
 		uint8_t key = key_buffer[key_tail];
@@ -386,6 +396,7 @@ void Keyboard_USB :: push_head_repeat(int c, int repeat)
 	if ((c < 0) || (c > 0xFF)) {
 		return;
 	}
+	portENTER_CRITICAL();
 	while (repeat-- > 0) {
 		int next_head = injected_head + 1;
 		if (next_head == USB_KEY_BUFFER_SIZE) {
@@ -397,6 +408,7 @@ void Keyboard_USB :: push_head_repeat(int c, int repeat)
 		injected_buffer[injected_head] = (uint8_t)c;
 		injected_head = next_head;
 	}
+	portEXIT_CRITICAL();
 }
 
 bool Keyboard_USB :: has_injected_key(int c) const
@@ -410,6 +422,7 @@ int Keyboard_USB :: count_injected_key(int c) const
 		return 0;
 	}
 	int count = 0;
+	portENTER_CRITICAL();
 	for (int index = injected_tail; index != injected_head; ) {
 		if (injected_buffer[index] == (uint8_t)c) {
 			count++;
@@ -419,6 +432,7 @@ int Keyboard_USB :: count_injected_key(int c) const
 			index = 0;
 		}
 	}
+	portEXIT_CRITICAL();
 	return count;
 }
 
@@ -433,6 +447,7 @@ void Keyboard_USB :: remove_injected_key(int c)
 
 	uint8_t filtered[USB_KEY_BUFFER_SIZE];
 	int write_index = 0;
+	portENTER_CRITICAL();
 	for (int index = injected_tail; index != injected_head; ) {
 		uint8_t key = injected_buffer[index];
 		if (key != (uint8_t)c) {
@@ -449,6 +464,7 @@ void Keyboard_USB :: remove_injected_key(int c)
 	for (int i = 0; i < write_index; i++) {
 		injected_buffer[injected_head++] = filtered[i];
 	}
+	portEXIT_CRITICAL();
 }
 
 void Keyboard_USB :: wait_free(void)
@@ -473,7 +489,9 @@ void Keyboard_USB :: wait_free(void)
 void Keyboard_USB :: clear_buffer(void)
 {
 	key_tail = key_head;
+	portENTER_CRITICAL();
 	injected_tail = injected_head;
+	portEXIT_CRITICAL();
 	clearInjectedMatrixState();
 }
 

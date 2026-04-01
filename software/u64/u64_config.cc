@@ -40,6 +40,7 @@ extern "C" {
 #include "color_timings.h"
 #include "hdmi_scan.h"
 #include "usb_hid.h"
+#include "usb_hid_config.h"
 
 const uint8_t default_colors[16][3] = {
     { 0x00, 0x00, 0x00 },
@@ -61,6 +62,7 @@ const uint8_t default_colors[16][3] = {
 
 // static pointer
 U64Config *u64_configurator = NULL;
+static volatile uint32_t u64_usb_hid_status_generation = 1;
 
 extern "C" int u64_get_usb_hid_config_value(int key, int default_value)
 {
@@ -154,14 +156,6 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_SPEED_PREF        0x52
 #define CFG_BADLINES_EN       0x53
 #define CFG_SUPERCPU_DET      0x54
-#define CFG_WHEEL_MODE        0x55
-#define CFG_SCROLL_FACTOR     0x56
-#define CFG_WHEEL_DIRECTION   0x57
-#define CFG_MENU_MOUSE_NAV    0x58
-#define CFG_USB_MOUSE_NAME    0x59
-#define CFG_USB_MOUSE_MODE    0x5A
-#define CFG_USB_KEYBOARD_NAME 0x5B
-#define CFG_USB_KEYBOARD_MODE 0x5C
 
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
@@ -1112,14 +1106,17 @@ static void u64_update_usb_hid_info_items(ConfigStore *cfg)
         return;
     }
 
+    t_usb_hid_status_snapshot snapshot;
+    usb_hid_get_status_snapshot(snapshot);
+
     struct {
         uint8_t name_id;
         uint8_t mode_id;
         const char *name_value;
         const char *mode_value;
     } hid_items[] = {
-        { CFG_USB_MOUSE_NAME, CFG_USB_MOUSE_MODE, usb_hid_get_visible_mouse_name(), usb_hid_get_visible_mouse_mode() },
-        { CFG_USB_KEYBOARD_NAME, CFG_USB_KEYBOARD_MODE, usb_hid_get_visible_keyboard_name(), usb_hid_get_visible_keyboard_mode() },
+        { CFG_USB_MOUSE_NAME, CFG_USB_MOUSE_MODE, snapshot.mouse_name, snapshot.mouse_mode },
+        { CFG_USB_KEYBOARD_NAME, CFG_USB_KEYBOARD_MODE, snapshot.keyboard_name, snapshot.keyboard_mode },
     };
 
     for (unsigned int i = 0; i < (sizeof(hid_items) / sizeof(hid_items[0])); i++) {
@@ -1138,10 +1135,27 @@ static void u64_update_usb_hid_info_items(ConfigStore *cfg)
 
 extern "C" void u64_refresh_usb_hid_status(void)
 {
-    if (u64_configurator) {
-        u64_update_usb_hid_info_items(u64_configurator->cfg);
-        ConfigBrowser::refresh_active();
+    portENTER_CRITICAL();
+    u64_usb_hid_status_generation++;
+    portEXIT_CRITICAL();
+}
+
+extern "C" void config_browser_poll_hook(void)
+{
+    static uint32_t last_applied_generation = 0;
+    uint32_t generation;
+
+    portENTER_CRITICAL();
+    generation = u64_usb_hid_status_generation;
+    portEXIT_CRITICAL();
+
+    if ((generation == last_applied_generation) || !u64_configurator || !u64_configurator->cfg) {
+        return;
     }
+
+    u64_update_usb_hid_info_items(u64_configurator->cfg);
+    ConfigBrowser::refresh_active();
+    last_applied_generation = generation;
 }
 
 void U64Config :: on_edit()

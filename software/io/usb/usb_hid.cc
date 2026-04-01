@@ -4,21 +4,17 @@
 #include "itu.h"
 #include "integer.h"
 #include "usb_hid.h"
+#include "usb_hid_config.h"
+#include "usb_hid_selection.h"
 #include "profiler.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "keyboard_usb.h"
 #include "u64.h"
-#include "userinterface.h"
 
 // Standards-based HID support only. Devices must expose standard HID mouse or
 // keyboard collections; proprietary non-HID control protocols are intentionally
 // out of scope for this driver.
-
-#define CFG_WHEEL_MODE    0x55
-#define CFG_SCROLL_FACTOR 0x56
-#define CFG_WHEEL_DIRECTION 0x57
-#define CFG_MENU_MOUSE_NAVIGATION 0x58
 
 enum {
     WHEEL_MODE_MOUSE_AXIS = 0,
@@ -32,6 +28,7 @@ enum {
 
 static int usb_hid_get_config_value(int key, int default_value);
 extern "C" void u64_refresh_usb_hid_status(void) __attribute__((weak));
+extern "C" bool userinterface_any_menu_active(void) __attribute__((weak));
 
 namespace {
 
@@ -75,10 +72,12 @@ t_usb_hid_keyboard_source usb_hid_keyboard_sources[USB_HID_MAX_KEYBOARD_SOURCES]
 
 void usb_hid_clear_visibility(t_usb_hid_visibility& visibility)
 {
+    portENTER_CRITICAL();
     strcpy(visibility.name, "Not connected");
     strcpy(visibility.mode, "-");
     visibility.source_address = -1;
     visibility.source_interface = -1;
+    portEXIT_CRITICAL();
 }
 
 void usb_hid_set_visibility(t_usb_hid_visibility& visibility, UsbDevice *device, UsbInterface *interface, bool report_protocol)
@@ -94,7 +93,16 @@ void usb_hid_set_visibility(t_usb_hid_visibility& visibility, UsbDevice *device,
             if (strncmp(device->product, device->manufacturer, strlen(device->manufacturer)) == 0) {
                 name = device->product;
             } else {
-                snprintf(name_buffer, sizeof(name_buffer), "%s %s", device->manufacturer, device->product);
+                strncpy(name_buffer, device->manufacturer, sizeof(name_buffer) - 1);
+                size_t used = strlen(name_buffer);
+                if (used < (sizeof(name_buffer) - 1)) {
+                    name_buffer[used++] = ' ';
+                    name_buffer[used] = 0;
+                }
+                if (used < (sizeof(name_buffer) - 1)) {
+                    strncpy(name_buffer + used, device->product, sizeof(name_buffer) - 1 - used);
+                    name_buffer[sizeof(name_buffer) - 1] = 0;
+                }
                 name = name_buffer;
             }
         } else if (device->product[0]) {
@@ -107,21 +115,29 @@ void usb_hid_set_visibility(t_usb_hid_visibility& visibility, UsbDevice *device,
             name = interface_name;
         }
     }
+    portENTER_CRITICAL();
     strncpy(visibility.name, name, sizeof(visibility.name) - 1);
     visibility.name[sizeof(visibility.name) - 1] = 0;
     strcpy(visibility.mode, report_protocol ? "Reporting" : "Boot");
     visibility.source_address = device ? device->current_address : -1;
     visibility.source_interface = interface ? interface->getInterfaceDescriptor()->interface_number : -1;
+    portEXIT_CRITICAL();
 }
 
 bool usb_hid_menu_mouse_navigation_enabled(void)
 {
-    return usb_hid_get_config_value(CFG_MENU_MOUSE_NAVIGATION, 1) != 0;
+    return usb_hid_get_config_value(CFG_MENU_MOUSE_NAV, 1) != 0;
 }
 
 bool usb_hid_menu_override_active(void)
 {
-    return usb_hid_menu_mouse_navigation_enabled() && UserInterface::anyMenuActive();
+    if (!usb_hid_menu_mouse_navigation_enabled()) {
+        return false;
+    }
+    if (!userinterface_any_menu_active) {
+        return false;
+    }
+    return userinterface_any_menu_active();
 }
 
 void usb_hid_publish_visibility(void)
@@ -281,24 +297,14 @@ void usb_hid_apply_mouse_output_enable()
 
 }
 
-const char *usb_hid_get_visible_mouse_name(void)
+void usb_hid_get_status_snapshot(t_usb_hid_status_snapshot& snapshot)
 {
-    return usb_hid_mouse_visibility.name;
-}
-
-const char *usb_hid_get_visible_mouse_mode(void)
-{
-    return usb_hid_mouse_visibility.mode;
-}
-
-const char *usb_hid_get_visible_keyboard_name(void)
-{
-    return usb_hid_keyboard_visibility.name;
-}
-
-const char *usb_hid_get_visible_keyboard_mode(void)
-{
-    return usb_hid_keyboard_visibility.mode;
+    portENTER_CRITICAL();
+    memcpy(snapshot.mouse_name, usb_hid_mouse_visibility.name, sizeof(snapshot.mouse_name));
+    memcpy(snapshot.mouse_mode, usb_hid_mouse_visibility.mode, sizeof(snapshot.mouse_mode));
+    memcpy(snapshot.keyboard_name, usb_hid_keyboard_visibility.name, sizeof(snapshot.keyboard_name));
+    memcpy(snapshot.keyboard_mode, usb_hid_keyboard_visibility.mode, sizeof(snapshot.keyboard_mode));
+    portEXIT_CRITICAL();
 }
 
 extern "C" int u64_get_usb_hid_config_value(int key, int default_value) __attribute__((weak));
@@ -333,6 +339,62 @@ static void usb_hid_set_mouse_button(uint8_t& mouse_joy, uint8_t mask, bool pres
         mouse_joy &= ~mask;
     } else {
         mouse_joy |= mask;
+    }
+}
+
+static void usb_hid_find_sibling_active_report_functions(UsbDevice *device, UsbInterface *skip,
+                                                         bool& report_keyboard, bool& report_mouse)
+{
+    report_keyboard = false;
+    report_mouse = false;
+    if (!device) {
+        return;
+    }
+
+    for (int i = 0; i < device->num_interfaces; i++) {
+        UsbInterface *candidate = device->interfaces[i];
+        if (!candidate || candidate == skip) {
+            continue;
+        }
+        UsbDriver *driver = candidate->getDriver();
+        if (!driver) {
+            continue;
+        }
+
+        UsbHidDriver *hid_driver = static_cast<UsbHidDriver *>(driver);
+        if (!report_mouse && hid_driver->has_active_report_mouse()) {
+            report_mouse = true;
+        }
+        if (!report_keyboard && hid_driver->has_active_report_keyboard()) {
+            report_keyboard = true;
+        }
+
+        if (report_keyboard && report_mouse) {
+            return;
+        }
+    }
+}
+
+static void usb_hid_relinquish_sibling_boot_functions(UsbDevice *device, UsbInterface *current,
+                                                      bool take_over_keyboard, bool take_over_mouse)
+{
+    if (!device || !(take_over_keyboard || take_over_mouse)) {
+        return;
+    }
+
+    for (int i = 0; i < device->num_interfaces; i++) {
+        UsbInterface *candidate = device->interfaces[i];
+        if (!candidate || candidate == current) {
+            continue;
+        }
+
+        UsbDriver *driver = candidate->getDriver();
+        if (!driver) {
+            continue;
+        }
+
+        UsbHidDriver *hid_driver = static_cast<UsbHidDriver *>(driver);
+        hid_driver->relinquish_boot_function(take_over_keyboard, take_over_mouse);
     }
 }
 
@@ -458,6 +520,36 @@ UsbHidDriver :: ~UsbHidDriver()
 {
 }
 
+bool UsbHidDriver :: has_active_report_keyboard(void) const
+{
+    return keyboard && descriptor_keyboard;
+}
+
+bool UsbHidDriver :: has_active_report_mouse(void) const
+{
+    return mouse && descriptor_mouse;
+}
+
+void UsbHidDriver :: relinquish_boot_function(bool release_keyboard, bool release_mouse)
+{
+    bool should_release_keyboard = release_keyboard && keyboard && !descriptor_keyboard;
+    bool should_release_mouse = release_mouse && mouse && !descriptor_mouse;
+    if (!(should_release_keyboard || should_release_mouse)) {
+        return;
+    }
+
+    disable();
+    if (should_release_mouse) {
+        usb_hid_clear_visibility_if_source_matches(usb_hid_mouse_visibility, device, interface);
+    }
+    if (should_release_keyboard) {
+        usb_hid_remove_keyboard_source(device, interface);
+        usb_hid_clear_visibility_if_source_matches(usb_hid_keyboard_visibility, device, interface);
+    }
+    keyboard = false;
+    mouse = false;
+}
+
 UsbDriver * UsbHidDriver :: test_driver(UsbInterface *intf)
 {
 	if (intf->getInterfaceDescriptor()->interface_class != 3) {
@@ -494,7 +586,6 @@ void UsbHidDriver :: install(UsbInterface *intf)
             t_hid_mouse_fields mouse_fields;
             if (report_items.locateMouseFields(mouse_fields)) {
                 descriptor_mouse = true;
-                mouse = true;
                 rep_mouse_x = mouse_fields.mouse_x;
                 rep_mouse_y = mouse_fields.mouse_y;
                 rep_button1 = mouse_fields.button1;
@@ -512,20 +603,33 @@ void UsbHidDriver :: install(UsbInterface *intf)
             t_hid_keyboard_fields keyboard_fields;
             if (report_items.locateKeyboardFields(keyboard_fields)) {
                 descriptor_keyboard = true;
-                keyboard = true;
             }
         }
     }
 
-    bool use_report_protocol = descriptor_mouse || descriptor_keyboard;
-    if (!use_report_protocol && (interface->getInterfaceDescriptor()->sub_class == 1)) {
-        if (interface->getInterfaceDescriptor()->protocol == 1) {
-            printf("Boot Keyboard found!\n");
-            keyboard = true;
-        } else if (interface->getInterfaceDescriptor()->protocol == 2) {
-            printf("Boot Mouse found!\n");
-            mouse = true;
-        }
+    t_usb_hid_interface_capabilities current_capabilities = {
+        descriptor_keyboard,
+        descriptor_mouse,
+        (interface->getInterfaceDescriptor()->sub_class == 1) && (interface->getInterfaceDescriptor()->protocol == 1),
+        (interface->getInterfaceDescriptor()->sub_class == 1) && (interface->getInterfaceDescriptor()->protocol == 2)
+    };
+    bool sibling_active_report_keyboard = false;
+    bool sibling_active_report_mouse = false;
+    usb_hid_find_sibling_active_report_functions(dev, interface,
+                                                 sibling_active_report_keyboard,
+                                                 sibling_active_report_mouse);
+
+    t_usb_hid_interface_selection selection = usb_hid_select_interface(current_capabilities,
+                                                                       sibling_active_report_keyboard,
+                                                                       sibling_active_report_mouse);
+    keyboard = selection.keyboard;
+    mouse = selection.mouse;
+
+    if (!selection.use_report_protocol && current_capabilities.boot_keyboard && keyboard) {
+        printf("Boot Keyboard found!\n");
+    }
+    if (!selection.use_report_protocol && current_capabilities.boot_mouse && mouse) {
+        printf("Boot Mouse found!\n");
     }
 
     if (!(keyboard || mouse)) {
@@ -563,7 +667,7 @@ void UsbHidDriver :: install(UsbInterface *intf)
     }
 
     if (interface->getInterfaceDescriptor()->sub_class == 1) {
-        c_set_protocol[2] = use_report_protocol ? 1 : 0;
+        c_set_protocol[2] = selection.use_report_protocol ? 1 : 0;
         host->control_exchange(&dev->control_pipe, c_set_protocol, 8, NULL, 0);
     }
     host->control_exchange(&dev->control_pipe, c_set_idle, 8, NULL, 0);
@@ -572,7 +676,7 @@ void UsbHidDriver :: install(UsbInterface *intf)
         mouse_registered = true;
         usb_hid_apply_mouse_output_enable();
     }
-    if (mouse && !keyboard) {
+    if (mouse) {
         usb_hid_set_visibility(usb_hid_mouse_visibility, dev, interface, descriptor_mouse);
     }
     if (keyboard) {
@@ -580,6 +684,9 @@ void UsbHidDriver :: install(UsbInterface *intf)
     }
     if (mouse || keyboard) {
         usb_hid_publish_visibility();
+    }
+    if (selection.use_report_protocol) {
+        usb_hid_relinquish_sibling_boot_functions(dev, interface, descriptor_keyboard, descriptor_mouse);
     }
     host->resume_input_pipe(irq_transaction);
 }

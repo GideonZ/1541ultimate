@@ -15,6 +15,11 @@
 #endif // UPDATER
 #endif // NO_FILE_ACCESS
 
+#ifndef portENTER_CRITICAL
+#define portENTER_CRITICAL()
+#define portEXIT_CRITICAL()
+#endif
+
 namespace {
 
 IndexedList<UserInterface *> *get_user_interfaces(void)
@@ -22,6 +27,8 @@ IndexedList<UserInterface *> *get_user_interfaces(void)
     static IndexedList<UserInterface *> interfaces(4, NULL);
     return &interfaces;
 }
+
+volatile int active_user_interface_count = 0;
 
 }
 
@@ -127,6 +134,7 @@ UserInterface :: UserInterface(const char *title, bool use_logo) : title(title)
 UserInterface :: ~UserInterface()
 {
 	printf("Destructing user interface..\n");
+    set_available(false);
     get_user_interfaces()->remove(this);
     do {
         if (ui_objects[focus]) {
@@ -136,6 +144,21 @@ UserInterface :: ~UserInterface()
         focus--;
     } while(focus>=0);
     printf(" bye UI!\n");
+}
+
+void UserInterface :: set_available(bool enable)
+{
+    if (available == enable) {
+        return;
+    }
+    available = enable;
+    portENTER_CRITICAL();
+    if (enable) {
+        active_user_interface_count++;
+    } else if (active_user_interface_count > 0) {
+        active_user_interface_count--;
+    }
+    portEXIT_CRITICAL();
 }
 
 typedef struct {
@@ -205,14 +228,15 @@ void UserInterface :: run_remote(void)
 {
     host->take_ownership(this);
     appear();
-    available = true;
+    set_available(true);
     while(1) {
         if (pollFocussed() == MENU_EXIT) {
-            available = false;
+            set_available(false);
             break;
         }
         vTaskDelay(3);
     }
+    set_available(false);
     host->release_ownership();
 }
 
@@ -256,14 +280,14 @@ void UserInterface :: run_once(void)
         appear();
     }
 
-    available = true;
+    set_available(true);
     while(!doBreak) {
         host->checkButton();
         if (!host->exists()) {
             break;
         } else if (host->buttonPush()) {
             if (!host->is_permanent()) {
-                available = false;
+                set_available(false);
                 release_host();
             }
             host->release_ownership();
@@ -277,7 +301,7 @@ void UserInterface :: run_once(void)
                 break;
             case MENU_HIDE:
             case MENU_EXIT:
-                available = false;
+                set_available(false);
                 doBreak = true;
                 if (!host->is_permanent()) {
                     release_host();
@@ -290,6 +314,7 @@ void UserInterface :: run_once(void)
         }
         vTaskDelay(3);
     }
+    set_available(false);
     doBreak = false;
 #endif
 }
@@ -438,14 +463,16 @@ bool UserInterface :: is_available(void)
 
 bool UserInterface :: anyMenuActive(void)
 {
-    IndexedList<UserInterface *> *interfaces = get_user_interfaces();
-    for (int i = 0; i < interfaces->get_elements(); i++) {
-        UserInterface *ui = (*interfaces)[i];
-        if (ui && ui->available) {
-            return true;
-        }
-    }
-    return false;
+    bool active;
+    portENTER_CRITICAL();
+    active = active_user_interface_count > 0;
+    portEXIT_CRITICAL();
+    return active;
+}
+
+extern "C" bool userinterface_any_menu_active(void)
+{
+    return UserInterface::anyMenuActive();
 }
 
 int UserInterface :: activate_uiobject(UIObject *obj)

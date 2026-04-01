@@ -35,6 +35,7 @@ public:
 
     virtual void init();
     virtual void deinit();
+    virtual int poll(int);
     virtual int handle_key(int);
     virtual void checkFileManagerEvent(void);
 

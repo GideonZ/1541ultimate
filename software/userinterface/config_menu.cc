@@ -14,6 +14,8 @@ ConfigBrowser *active_config_browser = NULL;
 
 }
 
+extern "C" void config_browser_poll_hook(void) __attribute__((weak));
+
 /************************/
 /* ConfigBrowser Object */
 /************************/
@@ -57,6 +59,14 @@ void ConfigBrowser :: deinit()
         active_config_browser = NULL;
     }
     TreeBrowser::deinit();
+}
+
+int ConfigBrowser :: poll(int sub_returned)
+{
+    if (config_browser_poll_hook) {
+        config_browser_poll_hook();
+    }
+    return TreeBrowser::poll(sub_returned);
 }
 
 void ConfigBrowser :: refresh_active(void)
