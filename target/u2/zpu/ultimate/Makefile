@@ -129,6 +129,7 @@ SRCS_CC	 =  stream.cc \
 			size_str.cc \
 			userinterface.cc \
 			editor.cc \
+			hex_editor.cc \
 			ui_stream.cc \
 			tree_browser.cc \
 			tree_browser_state.cc \
