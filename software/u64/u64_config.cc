@@ -20,6 +20,7 @@ extern "C" {
 #include "flash.h"
 #include "product.h"
 #include "userinterface.h"
+#include "config_menu.h"
 #include "u64_config.h"
 #include "audio_select.h"
 #include "fpll.h"
@@ -38,6 +39,8 @@ extern "C" {
 #include "init_function.h"
 #include "color_timings.h"
 #include "hdmi_scan.h"
+#include "usb_hid.h"
+#include "usb_hid_config.h"
 
 const uint8_t default_colors[16][3] = {
     { 0x00, 0x00, 0x00 },
@@ -59,6 +62,17 @@ const uint8_t default_colors[16][3] = {
 
 // static pointer
 U64Config *u64_configurator = NULL;
+static volatile uint32_t u64_usb_hid_status_generation = 1;
+
+extern "C" int u64_get_usb_hid_config_value(int key, int default_value)
+{
+    if ((!u64_configurator) || (!u64_configurator->cfg)) {
+        return default_value;
+    }
+    int value = u64_configurator->cfg->get_value(key);
+    return (value < 0) ? default_value : value;
+}
+
 static void init(void *_a, void *_b)
 {
     u64_configurator = new U64Config();
@@ -237,6 +251,8 @@ static const char *yes_no[] = { "No", "Yes" };
 static const char *dvi_hdmi[] = { "Auto", "HDMI", "DVI" };
 static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
 static const char *color_sel[] = { "PAL", "NTSC", "PAL-60", "NTSC-50", "PAL-60/L", "NTSC-50/L" };
+static const char *wheel_modes[] = { "Mouse Move", "Cursor Keys" };
+static const char *wheel_directions[] = { "Normal", "Reversed" };
 
 static const char *sid_types[] = { "None", "6581", "8580", "FPGASID", "SwinSID Ultimate", "ARMSID", "ARM2SID", "SidFx", "FPGASID Dukestah", "PDsid", "SIDKick (Teensy)", "SIDKick Pico" };
 static const char *sid_shunt[] = { "Off", "On" };
@@ -258,7 +274,7 @@ static const char *volumes[] = { "OFF", "-42 dB", "-36 dB", "-30 dB", "-27 dB", 
 static const char *pannings[] = { "Left 5", "Left 4", "Left 3", "Left 2", "Left 1", "Center",
                                   "Right 1", "Right 2", "Right 3", "Right 4", "Right 5" }; // 11 settings
 
-static const uint8_t volume_ctrl[] = { 
+static const uint8_t volume_ctrl[] = {
     0x00, 0x01, 0x02, 0x04, 0x06, 0x08, 0x10, 0x12, 0x14, 0x17, 0x1a, 0x1d, 0x20, 0x24, 0x28, 0x2d,
     0x33, 0x39, 0x40, 0x48, 0x51, 0x5b, 0x66, 0x72, 0x80, 0x90, 0xa1, 0xb5, 0xcb, 0xe4, 0xff
 };
@@ -299,6 +315,14 @@ struct t_cfg_definition u64_cfg[] = {
 #else
     { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  1, 0 },
 #endif
+    { CFG_WHEEL_MODE,           CFG_TYPE_ENUM, "Mouse Wheel Mode",             "%s", wheel_modes,      0,  1, 0 },
+    { CFG_SCROLL_FACTOR,        CFG_TYPE_VALUE, "Mouse Wheel Factor",          "%d", NULL,             1, 16, 8 },
+    { CFG_WHEEL_DIRECTION,      CFG_TYPE_ENUM,  "Mouse Wheel Direction",       "%s", wheel_directions, 0,  1, 1 },
+    { CFG_MENU_MOUSE_NAV,       CFG_TYPE_ENUM,  "Menu Mouse Navigation",       "%s", en_dis,          0,  1, 1 },
+    { CFG_USB_MOUSE_NAME,       CFG_TYPE_INFO,  "USB Mouse",                   "%s", NULL,            0, 32, (int)"" },
+    { CFG_USB_MOUSE_MODE,       CFG_TYPE_INFO,  "USB Mouse HID Mode",          "%s", NULL,            0, 16, (int)"" },
+    { CFG_USB_KEYBOARD_NAME,    CFG_TYPE_INFO,  "USB Keyboard",                "%s", NULL,            0, 32, (int)"" },
+    { CFG_USB_KEYBOARD_MODE,    CFG_TYPE_INFO,  "USB Keyboard HID Mode",       "%s", NULL,            0, 16, (int)"" },
     { CFG_USERPORT_EN,          CFG_TYPE_ENUM, "UserPort Power Enable",        "%s", en_dis,       0,  1, 1 },
 //    { CFG_CART_PREFERENCE,      CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,    0,  2, 0 }, // moved to C64 for user consistency
     { CFG_PALETTE,              CFG_TYPE_STRFUNC, "Palette Definition",        "%s", (const char **)U64Config :: list_palettes, 0, 30, (int)"" },
@@ -444,7 +468,7 @@ void U64Config :: U64SpeakerMixer :: effectuate_settings()
     setSpeakerMixer(cfg->items[0]);
 }
 
-#endif    
+#endif
 
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -471,7 +495,7 @@ int U64Config :: detectDukestahAdapter()
     volatile uint8_t *base2 = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD500); // D500
 
     C64 :: hard_stop();
-    
+
     base1[25] = 0x81; // Enter config mode
     base1[26] = 0x65;
     base1[30] = 4;   // Set FPGASID to stereo
@@ -485,7 +509,7 @@ int U64Config :: detectDukestahAdapter()
 
     base1[28] = 5;
     base2[28] = 13;
-    
+
     base1[25] = 0x82;   // Swap mode
     base1[26] = 0x65;
     uint8_t tmp1 = base1[28] & 15;   // Read SID2 register 28
@@ -496,7 +520,7 @@ int U64Config :: detectDukestahAdapter()
     ((SidDeviceFpgaSid*)(sidDevice[0]))->effectuate_settings();
 
     if (tmp1 == 13) return SID_TYPE_FPGASID_DUKESTAH;
-    
+
     return SID_TYPE_FPGASID;
 }
 
@@ -573,10 +597,10 @@ int U64Config :: detectRemakes(int socket)
     }
     switch(SidDeviceSidKick :: detect(base)) {
     case 1:
-        sidDevice[socket] = new SidDeviceSidKick(socket, base, 1); 
+        sidDevice[socket] = new SidDeviceSidKick(socket, base, 1);
         return SID_TYPE_SIDKICK_PICO;
     case 2:
-        sidDevice[socket] = new SidDeviceSidKick(socket, base, 0); 
+        sidDevice[socket] = new SidDeviceSidKick(socket, base, 0);
         return SID_TYPE_SIDKICK;
     }
 
@@ -824,7 +848,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 {
     systemMode = e_NOT_SET;
     hdmiMode = e_480p_576p;
-    
+
     U64_ETHSTREAM_ENA = 0;
 	skipReset = false;
 
@@ -978,7 +1002,7 @@ void U64Config :: effectuate_settings()
     uint8_t swap = cfg->get_value(CFG_JOYSWAP);
     U64II_KEYB_JOY     = swap & 1;
     static const uint8_t wasd_settings[] = { 0x00, 0x00, 0x01, 0x01, 0x03, 0x03 };
-    MATRIX_WASD_TO_JOY = wasd_to_joy = wasd_settings[swap]; 
+    MATRIX_WASD_TO_JOY = wasd_to_joy = wasd_settings[swap];
 #else
     C64_PLD_JOYCTRL  = cfg->get_value(CFG_JOYSWAP) ^ 1;
 #endif
@@ -987,7 +1011,7 @@ void U64Config :: effectuate_settings()
     U64_USERPORT_EN  = en;
     U64_PWM_DUTY = (en) ? 0xD8 : 0x00;
     printf("USERPORT_EN = %d\n", U64_USERPORT_EN);
-    
+
     //C64_TURBOREGS_EN = 0;
     //C64_SPEED_PREFER = 0;
 
@@ -1074,6 +1098,69 @@ void U64Config :: effectuate_settings()
     setPllOffset(cfg->find_item(CFG_COLOR_CLOCK_ADJ));
     setLedSelector(cfg->find_item(CFG_LED_SELECT_0)); // does both anyway
 
+}
+
+static void u64_update_usb_hid_info_items(ConfigStore *cfg)
+{
+    if (!cfg) {
+        return;
+    }
+
+    t_usb_hid_status_snapshot snapshot;
+    usb_hid_get_status_snapshot(snapshot);
+
+    struct {
+        uint8_t name_id;
+        uint8_t mode_id;
+        const char *name_value;
+        const char *mode_value;
+    } hid_items[] = {
+        { CFG_USB_MOUSE_NAME, CFG_USB_MOUSE_MODE, snapshot.mouse_name, snapshot.mouse_mode },
+        { CFG_USB_KEYBOARD_NAME, CFG_USB_KEYBOARD_MODE, snapshot.keyboard_name, snapshot.keyboard_mode },
+    };
+
+    for (unsigned int i = 0; i < (sizeof(hid_items) / sizeof(hid_items[0])); i++) {
+        ConfigItem *name_item = cfg->find_item(hid_items[i].name_id);
+        ConfigItem *mode_item = cfg->find_item(hid_items[i].mode_id);
+        if (name_item) {
+            name_item->setEnabled(false);
+            name_item->setString(hid_items[i].name_value);
+        }
+        if (mode_item) {
+            mode_item->setEnabled(false);
+            mode_item->setString(hid_items[i].mode_value);
+        }
+    }
+}
+
+extern "C" void u64_refresh_usb_hid_status(void)
+{
+    portENTER_CRITICAL();
+    u64_usb_hid_status_generation++;
+    portEXIT_CRITICAL();
+}
+
+extern "C" void config_browser_poll_hook(void)
+{
+    static uint32_t last_applied_generation = 0;
+    uint32_t generation;
+
+    portENTER_CRITICAL();
+    generation = u64_usb_hid_status_generation;
+    portEXIT_CRITICAL();
+
+    if ((generation == last_applied_generation) || !u64_configurator || !u64_configurator->cfg) {
+        return;
+    }
+
+    u64_update_usb_hid_info_items(u64_configurator->cfg);
+    ConfigBrowser::refresh_active();
+    last_applied_generation = generation;
+}
+
+void U64Config :: on_edit()
+{
+    u64_update_usb_hid_info_items(cfg);
 }
 
 void U64Config :: get_sid_addresses(ConfigStore *cfg, uint8_t *base, uint8_t *mask, uint8_t *split)
@@ -1400,11 +1487,11 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
     case MENU_U64_WIFI_DISABLE:
         esp32.Quit();
         break;
-        
+
     case MENU_U64_WIFI_DOWNLOAD:
         esp32.Boot();
         break;
-    
+
     case MENU_U64_WIFI_ENABLE:
         esp32.EnableRunMode();
         break;
@@ -2294,7 +2381,7 @@ void U64Config :: configure_hdmi_output(void)
         U64_HDMI_ENABLE = (hdmiSetting == 1) ? 1 : 0; // 1 = HDMI, 2 = DVI
     }
 
-#if U64 == 2    
+#if U64 == 2
     volatile t_video_timing_regs *regs = (volatile t_video_timing_regs *)U64II_HDMI_REGS;
 
     regs->resync = 2;
@@ -2478,6 +2565,15 @@ void U64Config :: setup_config_menu(void)
     grp = ConfigGroupCollection :: getGroup("Joystick Settings", SORT_ORDER_CFG_JOYSTICK);
     grp->append(cfg->find_item(CFG_JOYSWAP)->set_item_altname("Joystick Input"));
     grp->append(sidaddressing.cfg->find_item(CFG_PADDLE_EN));
+    grp->append(cfg->find_item(CFG_WHEEL_MODE));
+    grp->append(cfg->find_item(CFG_SCROLL_FACTOR));
+    grp->append(cfg->find_item(CFG_WHEEL_DIRECTION));
+    grp->append(cfg->find_item(CFG_MENU_MOUSE_NAV));
+    grp->append(ConfigItem :: separator());
+    grp->append(cfg->find_item(CFG_USB_MOUSE_NAME));
+    grp->append(cfg->find_item(CFG_USB_MOUSE_MODE));
+    grp->append(cfg->find_item(CFG_USB_KEYBOARD_NAME));
+    grp->append(cfg->find_item(CFG_USB_KEYBOARD_MODE));
 
 #if U64==2
     grp->append(ConfigItem :: separator());

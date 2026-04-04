@@ -3,10 +3,17 @@
 
 #include "usb_base.h"
 #include "usb_device.h"
+#include "hid_decoder.h"
 
-#if USE_HID_REPORT
-#   include "hid_decoder.h"
-#endif
+struct t_usb_hid_status_snapshot
+{
+    char mouse_name[33];
+    char mouse_mode[12];
+    char keyboard_name[33];
+    char keyboard_mode[12];
+};
+
+void usb_hid_get_status_snapshot(t_usb_hid_status_snapshot& snapshot);
 
 class UsbHidDriver : public UsbDriver
 {
@@ -14,27 +21,53 @@ class UsbHidDriver : public UsbDriver
     struct t_pipe ipipe;
 
     uint8_t irq_data[64];
-    
+
     UsbBase   *host;
     UsbDevice *device;
     UsbInterface *interface;
     int  irq_in;
     bool keyboard;
     bool mouse;
+    bool descriptor_keyboard;
+    bool descriptor_mouse;
     int16_t mouse_x, mouse_y;
-#if USE_HID_REPORT
+    uint8_t mouse_joy;
+    uint8_t keyboard_data[8];
+    HidItemList report_items;
     t_item_location rep_button1;
     t_item_location rep_button2;
     t_item_location rep_button3;
     t_item_location rep_mouse_x;
     t_item_location rep_mouse_y;
-#endif
+    t_item_location rep_wheel_v;
+    t_item_location rep_wheel_h;
+    bool has_button1;
+    bool has_button2;
+    bool has_button3;
+    bool has_wheel_v;
+    bool has_wheel_h;
+    bool previous_left_button_pressed;
+    bool mouse_registered;
+    bool menu_left_button_consumed;
+    bool menu_right_button_consumed;
+    int menu_wheel_h_latch;
+    int menu_wheel_v_latch;
+    int menu_wheel_v_mode;
+    int menu_wheel_v_burst_accumulator;
+    int menu_wheel_v_burst_direction;
+    uint32_t menu_wheel_v_last_tick;
+    int wheel_axis_v_remainder;
+    int wheel_key_v_remainder;
 
 public:
 	static UsbDriver *test_driver(UsbInterface *intf);
 
 	UsbHidDriver(UsbInterface *intf);
 	~UsbHidDriver();
+
+    bool has_active_report_keyboard(void) const;
+    bool has_active_report_mouse(void) const;
+    void relinquish_boot_function(bool release_keyboard, bool release_mouse);
 
 	void install(UsbInterface *intf);
 	void deinstall(UsbInterface *intf);

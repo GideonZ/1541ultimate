@@ -59,6 +59,7 @@ private:
     UIStatusBox *status_box;
     
     void set_screen_title(void);
+    void set_available(bool enable);
     int  pollFocussed(void);
     void peel_off(void);
     bool buttonDownFor(uint32_t ms);
@@ -109,6 +110,7 @@ public:
     void run_editor(const char *, int);
     void swapDisk(void);
     void send_keystroke(int key);
+    static bool anyMenuActive(void);
 
     UIObject *get_root_object(void) { return ui_objects[0]; }
 

@@ -24,7 +24,7 @@ class UsbHubDriver : public UsbDriver
     uint8_t dummy[16];
     uint32_t alignment;
     volatile uint8_t irq_data[64];
-    
+
     UsbBase   *host;
     UsbDevice *device;
     UsbDevice *children[7];
