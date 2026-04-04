@@ -325,7 +325,7 @@ JSON *Assembly :: convert_buffer_to_json(t_BufferedBody *body)
 {
     body->buffer[body->size] = 0;
     JSON *json = NULL;
-    int j = convert_text_to_json_objects((char *)body->buffer, body->size, 1000, &json);
+    int j = convert_text_to_json_objects((char *)body->buffer, body->size, 2000, &json);
     if (j < 0) {
         if (json) {
             delete json;
