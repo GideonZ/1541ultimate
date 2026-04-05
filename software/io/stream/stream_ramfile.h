@@ -103,7 +103,7 @@ public:
                 avail = blocksize;
             }
             int current = avail > len ? len : avail;
-            printf("%p <- %p (%d)\n", write_block + write_offset, buffer, current);
+            // printf("%p <- %p (%d)\n", write_block + write_offset, buffer, current);
             memcpy(write_block + write_offset, buffer, current);
             write_offset += current;
             buffer += current;

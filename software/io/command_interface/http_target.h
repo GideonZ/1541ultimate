@@ -38,6 +38,12 @@
 #define HTTP_TYPE_JSON_ARRAY  0x03
 #define HTTP_TYPE_URL_ENCODED 0x04
 
+#define HTTP_DATA_INTEGER 0x01
+#define HTTP_DATA_BOOL    0x02
+#define HTTP_DATA_STRING  0x03
+#define HTTP_DATA_OBJECT  0x04
+#define HTTP_DATA_ARRAY   0x05
+
 class HttpHeaderSlot
 {
     uint8_t verb;
@@ -411,6 +417,16 @@ public:
     JSON *walk_path(mstring& path, char *error)
     {
         JSON *cur = root_object;
+
+        if (path.length() == 0) {
+            if (cur) {
+                return cur;
+            } else {
+                sprintf(error, "500 INTERNAL ERROR: CURRENT OBJECT IS NULL");
+                return NULL;
+            }
+        }
+
         char *dup = strdup(path.c_str());
         char *start = dup;
         char *pnt = dup;
@@ -536,6 +552,7 @@ class HttpTarget : public CommandTarget {
     HttpHeaderSlot *headers[MAX_HTTP_HANDLES];
     HttpBodySlot *bodies[MAX_HTTP_HANDLES];
     HttpRequest *exch;
+    StreamRamFile *response_data;
 
     // Helper methods for command processing
     void cmd_header_create(Message *command, Message **reply, Message **status);
@@ -552,6 +569,8 @@ class HttpTarget : public CommandTarget {
     void cmd_body_query(Message *command, Message **reply, Message **status);
     void cmd_exchange(Message *command, Message **reply, Message **status, bool raw);
 
+    void express(JSON *j);
+    void reset_responses();
 public:
     HttpTarget(int id);
     virtual ~HttpTarget();

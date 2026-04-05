@@ -58,6 +58,7 @@ static Message c_cmd_body2_add_8   = {  5, true, (uint8_t *)"\x06\x23\x01\x00\xE
 static Message c_cmd_body2_add_9   = {  5, true, (uint8_t *)"\x06\x23\x01\x00\xEC"}; // unnamed -20
 static Message c_cmd_body2_add_10  = {  5, true, (uint8_t *)"\x06\x23\x01\x00\xED"}; // unnamed -19
 static Message c_cmd_body2_query2  = {  8, true, (uint8_t *)"\x06\x2A\x01""%2/%1"};
+static Message c_cmd_body2_queryall= {  3, true, (uint8_t *)"\x06\x2A\x01"};
 
     // Read external JSON and query it
 
@@ -163,6 +164,9 @@ int main(int argc, char **argv)
     t->parse_command(&c_cmd_body2_query2, &reply, &status);
     dump(&c_cmd_body2_query2, reply, status);
 
+    t->parse_command(&c_cmd_body2_queryall, &reply, &status);
+    dump(&c_cmd_body2_queryall, reply, status);
+
     FILE *fi = fopen("nested.json", "r");
     char *json_body = new char[4096];
     int size = fread(json_body, 1, 4096, fi);
@@ -226,6 +230,10 @@ int main(int argc, char **argv)
     listcmd[2] = reply->message[0];
     Message list_hdr = { 4, true, listcmd };
 
+    uint8_t querycmd[3] = { 0x06, 0x2A, 0x00 };
+    querycmd[2] = reply->message[1];
+    Message query_all = { 3, true, querycmd };
+
     t->parse_command(&c_cmd_header_free, &reply, &status);
     dump(&c_cmd_header_free, reply, status);
 
@@ -240,10 +248,31 @@ int main(int argc, char **argv)
 
     t->parse_command(&list_hdr, &reply, &status);
     dump(&list_hdr, reply, status);
-    list_hdr.message[3] = 1;
 
+    list_hdr.message[3] = 1;
     t->parse_command(&list_hdr, &reply, &status);
     dump(&list_hdr, reply, status);
+
+    t->parse_command(&query_all, &reply, &status);
+    dump(&query_all, reply, status);
+    t->get_more_data(&reply, &status);
+    dump(&c_exchange_raw, reply, status);
+    t->get_more_data(&reply, &status);
+    dump(&c_exchange_raw, reply, status);
+    t->get_more_data(&reply, &status);
+    dump(&c_exchange_raw, reply, status);
+    t->get_more_data(&reply, &status);
+    dump(&c_exchange_raw, reply, status);
+    t->get_more_data(&reply, &status);
+    dump(&c_exchange_raw, reply, status);
+
+    uint8_t query_entry[24];
+    strcpy((char *)query_entry, "\x06\x2A\xFF%0/values%3/name");
+    query_entry[2] = querycmd[2];
+    Message m_query_entry = { 19, true, query_entry };
+
+    t->parse_command(&m_query_entry, &reply, &status);
+    dump(&m_query_entry, reply, status);
 
     return 0;
 

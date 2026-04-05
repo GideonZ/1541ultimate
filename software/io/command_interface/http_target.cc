@@ -26,6 +26,7 @@ HttpTarget::HttpTarget(int id)
     data_message.message = new uint8_t[CMD_MAX_REPLY_LEN];
     status_message.message = new uint8_t[CMD_MAX_STATUS_LEN];
     exch = NULL;
+    response_data = NULL;
 }
 
 HttpTarget::~HttpTarget()
@@ -42,8 +43,18 @@ HttpTarget::~HttpTarget()
     }
     delete[] data_message.message;
     delete[] status_message.message;
+    reset_responses();
+}
+
+void HttpTarget::reset_responses()
+{
     if (exch) {
         delete exch;
+        exch = NULL;
+    }
+    if (response_data) {
+        delete response_data;
+        response_data = NULL;
     }
 }
 
@@ -443,44 +454,66 @@ void HttpTarget::cmd_body_query(Message *command, Message **reply, Message **sta
         status_message.length = strlen((char *)status_message.message);
         return;
     }
-    *reply = &data_message;
+    reset_responses();
+    response_data = new StreamRamFile(CMD_MAX_REPLY_LEN);
+    express(j);
+    get_more_data(reply, status);
+}
+
+void HttpTarget :: express(JSON *j)
+{
     int value;
     const char *value_str;
+    IndexedList<const char *> *keys;
+    IndexedList<JSON *> *values;
+    JSON_List *list;
+    JSON_Object *obj;
+
     switch(j->type()) {
     case eInteger:
-        data_message.message[0] = 0x01;
+        response_data->charout(HTTP_DATA_INTEGER);
         value = ((JSON_Integer *)j)->get_value();
-        data_message.message[1] = value & 0xFF; value >>= 8;
-        data_message.message[2] = value & 0xFF; value >>= 8;
-        data_message.message[3] = value & 0xFF; value >>= 8;
-        data_message.message[4] = value & 0xFF;
-        data_message.length = 5;
+        response_data->charout(value & 0xFF); value >>= 8;
+        response_data->charout(value & 0xFF); value >>= 8;
+        response_data->charout(value & 0xFF); value >>= 8;
+        response_data->charout(value & 0xFF);
         break;
     case eBool:
-        data_message.message[0] = 0x02;
+        response_data->charout(HTTP_DATA_BOOL);
         value = ((JSON_Bool *)j)->get_value();
-        data_message.message[1] = value ? 1 : 0;
-        data_message.length = 2;
+        response_data->charout(value ? 1 : 0);
         break;
     case eString:
-        data_message.message[0] = 0x03;
+        response_data->charout(HTTP_DATA_STRING);
         value_str = ((JSON_String *)j)->get_string();
-        data_message.length = 1 + strlen(value_str);
-        strncpy((char *)&data_message.message[1], value_str, CMD_MAX_REPLY_LEN - 1);
+        value = strlen(value_str);
+        response_data->charout(value);
+        response_data->write((uint8_t *)value_str, value);
         break;
     case eObject:
-        data_message.message[0] = 0x04;
-        value_str = j->render();
-        data_message.length = 1 + strlen(value_str);
-        strncpy((char *)&data_message.message[1], value_str, CMD_MAX_REPLY_LEN - 1);
+        response_data->charout(HTTP_DATA_OBJECT);
+        obj = (JSON_Object *)j;
+        keys = obj->get_keys();
+        values = obj->get_values();
+        response_data->charout(keys->get_elements());
+        for(int i=0;i<keys->get_elements();i++) {
+            // express key
+            value = strlen((*keys)[i]);
+            response_data->charout(value);
+            response_data->write((uint8_t *)(*keys)[i], value);
+            express((*values)[i]);
+        }
         break;
     case eList:
-        data_message.message[0] = 0x05;
-        data_message.length = 1 + strlen(value_str);
-        strncpy((char *)&data_message.message[1], value_str, CMD_MAX_REPLY_LEN - 1);
+        response_data->charout(HTTP_DATA_ARRAY);
+        list = (JSON_List *)j;
+        value = list->get_num_elements();
+        response_data->charout(value);
+        for(int i=0;i<value;i++) {
+            express((*list)[i]);
+        }
         break;
     }
-    *status = &c_status_http_ok;
 }
 
 void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **status, bool raw)
@@ -510,10 +543,7 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
 
     hdr->dump();
 
-    if (exch) {
-        delete exch;
-        exch = NULL;
-    }
+    reset_responses();
 
     exch = new HttpRequest();
     if (exch->connect_to_server(hdr->get_host(), hdr->get_port()) >= 0) {
@@ -539,10 +569,7 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
     int slot = -1;
     if(raw) {
         // Return raw data in data channel [cite: 264]
-        *status = &c_status_http_ok; 
-        *reply = &data_message;
-        data_message.length = exch->read_response_data(CMD_MAX_REPLY_LEN, data_message.message);
-        data_message.last_part = (data_message.length != CMD_MAX_REPLY_LEN);
+        get_more_data(reply, status);
     } else {
         JSON *json = exch->get_json();
         if(!json) {
@@ -580,6 +607,11 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
         data_message.message[0] = hdr_handle; // New Header Handle
         data_message.message[1] = body_handle; // New Body Handle
         data_message.length = 2;
+
+        // we should have taken all the data from the exchange
+        delete exch;
+        exch = NULL;
+
         *reply = &data_message;
         *status = &c_status_http_ok;
     }
@@ -587,12 +619,21 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
 
 void HttpTarget::get_more_data(Message **reply, Message **status)
 {
-    if (exch) {
+    if (response_data) {
+        *reply = &data_message;
+        data_message.length = response_data->read((char *)data_message.message, CMD_MAX_REPLY_LEN);
+        data_message.last_part = (data_message.length != CMD_MAX_REPLY_LEN);
+        *status = &c_status_http_ok; 
+        if (data_message.last_part) {
+            delete response_data;
+            response_data = NULL;
+        }
+    } else if (exch) {
         *reply = &data_message;
         data_message.length = exch->read_response_data(CMD_MAX_REPLY_LEN, data_message.message);
         data_message.last_part = (data_message.length != CMD_MAX_REPLY_LEN);
         *status = &c_status_http_ok; 
-        if (data_message.length == 0) {
+        if (data_message.last_part) {
             delete exch;
             exch = NULL;
         }
@@ -605,10 +646,7 @@ void HttpTarget::get_more_data(Message **reply, Message **status)
 void HttpTarget::abort(int a)
 {
     // Reset any pending exchange state
-    if (exch) {
-        delete exch;
-        exch = NULL;
-    }
+    reset_responses();
 }
 
 int HttpTarget::create_body_from_json(char *body, int size, uint8_t *handle)
