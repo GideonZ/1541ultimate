@@ -26,6 +26,11 @@ enum {
     WHEEL_DIRECTION_REVERSED = 1
 };
 
+enum {
+    MOUSE_ACCELERATION_OFF = 0,
+    MOUSE_ACCELERATION_ADAPTIVE = 1
+};
+
 static int usb_hid_get_config_value(int key, int default_value);
 extern "C" void u64_refresh_usb_hid_status(void) __attribute__((weak));
 extern "C" bool userinterface_any_menu_active(void) __attribute__((weak));
@@ -328,6 +333,11 @@ static int usb_hid_get_mouse_sensitivity(void)
     return usb_hid_get_config_value(CFG_MOUSE_SENSITIVITY, 8);
 }
 
+static int usb_hid_get_mouse_acceleration(void)
+{
+    return usb_hid_get_config_value(CFG_MOUSE_ACCELERATION, MOUSE_ACCELERATION_OFF);
+}
+
 static int usb_hid_get_wheel_mode(void)
 {
     return usb_hid_get_config_value(CFG_WHEEL_MODE, WHEEL_MODE_MOUSE_AXIS);
@@ -339,10 +349,17 @@ static int usb_hid_get_wheel_direction(void)
 }
 
 static void usb_hid_apply_mouse_sensitivity(int& motion_x, int& motion_y, int sensitivity,
-                                            int& auto_motion_ema_x16, int& auto_scale_factor)
+                                            int acceleration, int& auto_motion_ema_x16,
+                                            int& auto_scale_factor)
 {
-    if (sensitivity == 0) {
-        auto_motion_ema_x16 = HidMouseInterpreter::updateAutoSensitivityEma(auto_motion_ema_x16, motion_x, motion_y);
+    int raw_motion_x = motion_x;
+    int raw_motion_y = motion_y;
+
+    motion_x = HidMouseInterpreter::scalePointerSensitivity(raw_motion_x, sensitivity);
+    motion_y = HidMouseInterpreter::scalePointerSensitivity(raw_motion_y, sensitivity);
+
+    if (acceleration == MOUSE_ACCELERATION_ADAPTIVE) {
+        auto_motion_ema_x16 = HidMouseInterpreter::updateAutoSensitivityEma(auto_motion_ema_x16, raw_motion_x, raw_motion_y);
         auto_scale_factor = HidMouseInterpreter::limitScaleStep(
             auto_scale_factor,
             HidMouseInterpreter::computeAutoSensitivityScale(auto_motion_ema_x16),
@@ -354,10 +371,13 @@ static void usb_hid_apply_mouse_sensitivity(int& motion_x, int& motion_y, int se
         return;
     }
 
+    auto_motion_ema_x16 = 0;
+    auto_scale_factor = HidMouseInterpreter::AUTO_ACCELERATION_FALLBACK_SCALE;
+
     motion_x = HidMouseInterpreter::clampDelta(
-        HidMouseInterpreter::scaleSensitivity(motion_x, sensitivity), 63);
+        motion_x, 63);
     motion_y = HidMouseInterpreter::clampDelta(
-        HidMouseInterpreter::scaleSensitivity(motion_y, sensitivity), 63);
+        motion_y, 63);
 }
 
 static void usb_hid_set_mouse_button(uint8_t& mouse_joy, uint8_t mask, bool pressed)
@@ -841,7 +861,8 @@ void UsbHidDriver :: interrupt_handler()
                 motion_x = HidReport::getValueFromData(irq_data, data_len, rep_mouse_x);
                 motion_y = HidReport::getValueFromData(irq_data, data_len, rep_mouse_y);
                 int sensitivity = usb_hid_get_mouse_sensitivity();
-                usb_hid_apply_mouse_sensitivity(motion_x, motion_y, sensitivity,
+                int acceleration = usb_hid_get_mouse_acceleration();
+                usb_hid_apply_mouse_sensitivity(motion_x, motion_y, sensitivity, acceleration,
                                                 auto_motion_ema_x16, auto_scale_factor);
                 HidMouseInterpreter::applyRelativeMotion(mouse_x, mouse_y, motion_x, motion_y);
             }
@@ -864,7 +885,8 @@ void UsbHidDriver :: interrupt_handler()
             motion_x = sample.x;
             motion_y = sample.y;
             int sensitivity = usb_hid_get_mouse_sensitivity();
-            usb_hid_apply_mouse_sensitivity(motion_x, motion_y, sensitivity,
+            int acceleration = usb_hid_get_mouse_acceleration();
+            usb_hid_apply_mouse_sensitivity(motion_x, motion_y, sensitivity, acceleration,
                                             auto_motion_ema_x16, auto_scale_factor);
             HidMouseInterpreter::applyRelativeMotion(mouse_x, mouse_y, motion_x, motion_y);
             left_button_pressed = (sample.buttons & 0x01) != 0;

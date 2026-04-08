@@ -329,6 +329,14 @@ class HidBootProtocol
 class HidMouseInterpreter
 {
   public:
+    enum {
+        AUTO_MOUSE_SENSITIVITY = 6,
+        AUTO_ACCELERATION_TARGET_EMA = 32,
+        AUTO_ACCELERATION_FALLBACK_SCALE = 256,
+        AUTO_ACCELERATION_MIN_SCALE = 128,
+        AUTO_ACCELERATION_MAX_SCALE = 384
+    };
+
     static int divideRounded(int value, int divisor)
     {
         if (value >= 0) {
@@ -367,9 +375,22 @@ class HidMouseInterpreter
         return sensitivity;
     }
 
+    static int resolvePointerSensitivity(int sensitivity)
+    {
+        if (sensitivity == 0) {
+            return AUTO_MOUSE_SENSITIVITY;
+        }
+        return clampSensitivity(sensitivity);
+    }
+
     static int scaleSensitivity(int raw_delta, int sensitivity)
     {
         return (raw_delta * clampSensitivity(sensitivity)) / 8;
+    }
+
+    static int scalePointerSensitivity(int raw_delta, int sensitivity)
+    {
+        return (raw_delta * resolvePointerSensitivity(sensitivity)) / 8;
     }
 
     static int clampDelta(int delta, int limit)
@@ -409,9 +430,11 @@ class HidMouseInterpreter
     static int computeAutoSensitivityScale(int ema_x16)
     {
         if (ema_x16 <= 0) {
-            return 256;
+            return AUTO_ACCELERATION_FALLBACK_SCALE;
         }
-        return clampScaleFactor((16 * 4096) / ema_x16, 128, 384);
+        return clampScaleFactor((AUTO_ACCELERATION_TARGET_EMA * 4096) / ema_x16,
+                                AUTO_ACCELERATION_MIN_SCALE,
+                                AUTO_ACCELERATION_MAX_SCALE);
     }
 
     static int limitScaleStep(int previous_scale, int next_scale, int max_step)

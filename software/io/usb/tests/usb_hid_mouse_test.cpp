@@ -3,6 +3,18 @@
 
 namespace {
 
+int applyAdaptivePointerMotion(int raw_delta, int sensitivity, int& auto_motion_ema_x16, int& auto_scale_factor)
+{
+	int motion = HidMouseInterpreter::scalePointerSensitivity(raw_delta, sensitivity);
+	auto_motion_ema_x16 = HidMouseInterpreter::updateAutoSensitivityEma(auto_motion_ema_x16, raw_delta, 0);
+	auto_scale_factor = HidMouseInterpreter::limitScaleStep(
+		auto_scale_factor,
+		HidMouseInterpreter::computeAutoSensitivityScale(auto_motion_ema_x16),
+		32);
+	return HidMouseInterpreter::clampDelta(
+		HidMouseInterpreter::scaleFixed(motion, auto_scale_factor), 63);
+}
+
 const uint32_t kMenuFastGapTicks = 25;
 const uint32_t kMenuSlowGapTicks = 75;
 const uint32_t kMenuResetGapTicks = 210;
@@ -561,9 +573,9 @@ TEST(SensitivityClampIntegrationTest, MonotonicPotOutputUnderHighDelta)
 
 TEST(AutoSensitivityTest, ComputesExpectedScaleFromTrackedMagnitude)
 {
-	EXPECT_EQ(256, HidMouseInterpreter::computeAutoSensitivityScale(16 << 4));
-	EXPECT_EQ(128, HidMouseInterpreter::computeAutoSensitivityScale(32 << 4));
-	EXPECT_EQ(384, HidMouseInterpreter::computeAutoSensitivityScale(4 << 4));
+	EXPECT_EQ(384, HidMouseInterpreter::computeAutoSensitivityScale(16 << 4));
+	EXPECT_EQ(256, HidMouseInterpreter::computeAutoSensitivityScale(32 << 4));
+	EXPECT_EQ(128, HidMouseInterpreter::computeAutoSensitivityScale(64 << 4));
 }
 
 TEST(AutoSensitivityTest, LimitsScaleChangesPerReport)
@@ -576,19 +588,13 @@ TEST(AutoSensitivityTest, LimitsScaleChangesPerReport)
 TEST(AutoSensitivityTest, HighSpeedReportsSettleToSafeMonotonicOutput)
 {
 	int auto_motion_ema_x16 = 0;
-	int auto_scale_factor = 256;
+	int auto_scale_factor = HidMouseInterpreter::AUTO_ACCELERATION_FALLBACK_SCALE;
 	int16_t mouse_x = 0;
 	int16_t mouse_y = 0;
 	uint8_t prev_pot = mouse_x & 0x7F;
 
 	for (int i = 0; i < 50; i++) {
-		auto_motion_ema_x16 = HidMouseInterpreter::updateAutoSensitivityEma(auto_motion_ema_x16, 127, 0);
-		auto_scale_factor = HidMouseInterpreter::limitScaleStep(
-			auto_scale_factor,
-			HidMouseInterpreter::computeAutoSensitivityScale(auto_motion_ema_x16),
-			32);
-		int motion = HidMouseInterpreter::clampDelta(
-			HidMouseInterpreter::scaleFixed(127, auto_scale_factor), 63);
+		int motion = applyAdaptivePointerMotion(127, 0, auto_motion_ema_x16, auto_scale_factor);
 		HidMouseInterpreter::applyRelativeMotion(mouse_x, mouse_y, motion, 0);
 		uint8_t pot = mouse_x & 0x7F;
 		int delta = ((pot - prev_pot) + 128) % 128;
@@ -601,4 +607,43 @@ TEST(AutoSensitivityTest, HighSpeedReportsSettleToSafeMonotonicOutput)
 	}
 
 	EXPECT_EQ(128, auto_scale_factor);
+}
+
+TEST(AutoSensitivityTest, AutoSensitivityBaseMatchesManualSix)
+{
+	EXPECT_EQ(6, HidMouseInterpreter::resolvePointerSensitivity(0));
+	EXPECT_EQ(HidMouseInterpreter::scaleSensitivity(32, 6),
+		HidMouseInterpreter::scalePointerSensitivity(32, 0));
+	EXPECT_EQ(HidMouseInterpreter::scaleSensitivity(-32, 6),
+		HidMouseInterpreter::scalePointerSensitivity(-32, 0));
+}
+
+TEST(AutoSensitivityTest, AdaptiveAutoSettlesAtManualSixBaseline)
+{
+	int auto_motion_ema_x16 = 0;
+	int auto_scale_factor = HidMouseInterpreter::AUTO_ACCELERATION_FALLBACK_SCALE;
+	int motion = 0;
+
+	for (int i = 0; i < 50; i++) {
+		motion = applyAdaptivePointerMotion(32, 0, auto_motion_ema_x16, auto_scale_factor);
+	}
+
+	EXPECT_TRUE(motion > HidMouseInterpreter::scaleSensitivity(32, 4));
+	EXPECT_EQ(HidMouseInterpreter::scaleSensitivity(32, 6), motion);
+	EXPECT_TRUE(motion <= HidMouseInterpreter::scaleSensitivity(32, 8));
+	EXPECT_EQ(257, auto_scale_factor);
+}
+
+TEST(AutoSensitivityTest, AdaptiveManualSensitivityPreservesSelectedBaselineAtTargetSpeed)
+{
+	int auto_motion_ema_x16 = 0;
+	int auto_scale_factor = HidMouseInterpreter::AUTO_ACCELERATION_FALLBACK_SCALE;
+	int motion = 0;
+
+	for (int i = 0; i < 50; i++) {
+		motion = applyAdaptivePointerMotion(32, 8, auto_motion_ema_x16, auto_scale_factor);
+	}
+
+	EXPECT_EQ(HidMouseInterpreter::scaleSensitivity(32, 8), motion);
+	EXPECT_EQ(257, auto_scale_factor);
 }

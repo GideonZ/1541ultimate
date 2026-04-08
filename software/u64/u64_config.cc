@@ -253,6 +253,7 @@ static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
 static const char *color_sel[] = { "PAL", "NTSC", "PAL-60", "NTSC-50", "PAL-60/L", "NTSC-50/L" };
 static const char *sensitivity_modes[] = { "Auto", "1", "2", "3", "4", "5", "6", "7", "8",
                                            "9", "10", "11", "12", "13", "14", "15", "16" };
+static const char *mouse_acceleration_modes[] = { "Off", "Adaptive" };
 static const char *wheel_modes[] = { "Mouse Move", "Cursor Keys" };
 static const char *wheel_directions[] = { "Normal", "Reversed" };
 
@@ -318,8 +319,9 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  1, 0 },
 #endif
     { CFG_MOUSE_SENSITIVITY,    CFG_TYPE_ENUM, "Mouse Sensitivity",            "%s", sensitivity_modes, 0, 16, 8 },
+    { CFG_MOUSE_ACCELERATION,   CFG_TYPE_ENUM, "Mouse Acceleration",           "%s", mouse_acceleration_modes, 0,  1, 0 },
     { CFG_WHEEL_MODE,           CFG_TYPE_ENUM, "Mouse Wheel Mode",             "%s", wheel_modes,      0,  1, 0 },
-    { CFG_SCROLL_FACTOR,        CFG_TYPE_VALUE, "Mouse Wheel Factor",          "%d", NULL,             1, 16, 8 },
+    { CFG_SCROLL_FACTOR,        CFG_TYPE_VALUE, "Mouse Wheel Sensitivity",     "%d", NULL,             1, 16, 8 },
     { CFG_WHEEL_DIRECTION,      CFG_TYPE_ENUM,  "Mouse Wheel Direction",       "%s", wheel_directions, 0,  1, 1 },
     { CFG_MENU_MOUSE_NAV,       CFG_TYPE_ENUM,  "Menu Mouse Navigation",       "%s", en_dis,          0,  1, 1 },
     { CFG_USB_MOUSE_NAME,       CFG_TYPE_INFO,  "USB Mouse",                   "%s", NULL,            0, 32, (int)"" },
@@ -2568,11 +2570,14 @@ void U64Config :: setup_config_menu(void)
     grp = ConfigGroupCollection :: getGroup("Joystick Settings", SORT_ORDER_CFG_JOYSTICK);
     grp->append(cfg->find_item(CFG_JOYSWAP)->set_item_altname("Joystick Input"));
     grp->append(sidaddressing.cfg->find_item(CFG_PADDLE_EN));
+    grp->append(ConfigItem :: separator());
     grp->append(cfg->find_item(CFG_MOUSE_SENSITIVITY));
+    grp->append(cfg->find_item(CFG_MOUSE_ACCELERATION));
+    grp->append(cfg->find_item(CFG_MENU_MOUSE_NAV));
+    grp->append(ConfigItem :: separator());
     grp->append(cfg->find_item(CFG_WHEEL_MODE));
     grp->append(cfg->find_item(CFG_SCROLL_FACTOR));
     grp->append(cfg->find_item(CFG_WHEEL_DIRECTION));
-    grp->append(cfg->find_item(CFG_MENU_MOUSE_NAV));
     grp->append(ConfigItem :: separator());
     grp->append(cfg->find_item(CFG_USB_MOUSE_NAME));
     grp->append(cfg->find_item(CFG_USB_MOUSE_MODE));
