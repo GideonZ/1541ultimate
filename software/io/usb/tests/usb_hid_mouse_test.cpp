@@ -449,3 +449,156 @@ TEST(MenuWheelReboundTest, OppositeCleanupDoesNotExtendResetPastLastPrimary)
 	EXPECT_EQ(0, s.call(-1, 200));
 	EXPECT_EQ(-1, s.call(-1, 320));
 }
+
+TEST(SensitivityScalingTest, IdentityAtDefaultSensitivity)
+{
+	EXPECT_EQ(1, HidMouseInterpreter::scaleSensitivity(1, 8));
+	EXPECT_EQ(-1, HidMouseInterpreter::scaleSensitivity(-1, 8));
+	EXPECT_EQ(127, HidMouseInterpreter::scaleSensitivity(127, 8));
+	EXPECT_EQ(-127, HidMouseInterpreter::scaleSensitivity(-127, 8));
+	EXPECT_EQ(0, HidMouseInterpreter::scaleSensitivity(0, 8));
+}
+
+TEST(SensitivityScalingTest, MaxSensitivityDoublesOutput)
+{
+	EXPECT_EQ(2, HidMouseInterpreter::scaleSensitivity(1, 16));
+	EXPECT_EQ(-2, HidMouseInterpreter::scaleSensitivity(-1, 16));
+	EXPECT_EQ(254, HidMouseInterpreter::scaleSensitivity(127, 16));
+	EXPECT_EQ(-254, HidMouseInterpreter::scaleSensitivity(-127, 16));
+}
+
+TEST(SensitivityScalingTest, MinSensitivityAbsorbsSmallDeltas)
+{
+	EXPECT_EQ(0, HidMouseInterpreter::scaleSensitivity(1, 1));
+	EXPECT_EQ(0, HidMouseInterpreter::scaleSensitivity(-1, 1));
+	EXPECT_EQ(0, HidMouseInterpreter::scaleSensitivity(7, 1));
+	EXPECT_EQ(-1, HidMouseInterpreter::scaleSensitivity(-8, 1));
+	EXPECT_EQ(15, HidMouseInterpreter::scaleSensitivity(127, 1));
+}
+
+TEST(SensitivityScalingTest, HalfSensitivityHalvesOutput)
+{
+	EXPECT_EQ(0, HidMouseInterpreter::scaleSensitivity(1, 4));
+	EXPECT_EQ(1, HidMouseInterpreter::scaleSensitivity(2, 4));
+	EXPECT_EQ(63, HidMouseInterpreter::scaleSensitivity(127, 4));
+}
+
+TEST(SensitivityScalingTest, ClampsSensitivityOutOfRange)
+{
+	EXPECT_EQ(1, HidMouseInterpreter::clampSensitivity(0));
+	EXPECT_EQ(1, HidMouseInterpreter::clampSensitivity(-5));
+	EXPECT_EQ(16, HidMouseInterpreter::clampSensitivity(20));
+	EXPECT_EQ(8, HidMouseInterpreter::clampSensitivity(8));
+}
+
+TEST(DeltaClampingTest, ClampsPositiveDelta)
+{
+	EXPECT_EQ(63, HidMouseInterpreter::clampDelta(100, 63));
+	EXPECT_EQ(63, HidMouseInterpreter::clampDelta(127, 63));
+	EXPECT_EQ(63, HidMouseInterpreter::clampDelta(254, 63));
+	EXPECT_EQ(63, HidMouseInterpreter::clampDelta(63, 63));
+}
+
+TEST(DeltaClampingTest, ClampsNegativeDelta)
+{
+	EXPECT_EQ(-63, HidMouseInterpreter::clampDelta(-100, 63));
+	EXPECT_EQ(-63, HidMouseInterpreter::clampDelta(-127, 63));
+	EXPECT_EQ(-63, HidMouseInterpreter::clampDelta(-254, 63));
+	EXPECT_EQ(-63, HidMouseInterpreter::clampDelta(-63, 63));
+}
+
+TEST(DeltaClampingTest, PassesThroughSmallDeltas)
+{
+	EXPECT_EQ(0, HidMouseInterpreter::clampDelta(0, 63));
+	EXPECT_EQ(1, HidMouseInterpreter::clampDelta(1, 63));
+	EXPECT_EQ(-1, HidMouseInterpreter::clampDelta(-1, 63));
+	EXPECT_EQ(50, HidMouseInterpreter::clampDelta(50, 63));
+	EXPECT_EQ(-50, HidMouseInterpreter::clampDelta(-50, 63));
+	EXPECT_EQ(62, HidMouseInterpreter::clampDelta(62, 63));
+}
+
+TEST(SensitivityClampIntegrationTest, MaxInputMaxSensitivityClampedTo63)
+{
+	int scaled = HidMouseInterpreter::scaleSensitivity(127, 16);
+	EXPECT_EQ(254, scaled);
+	EXPECT_EQ(63, HidMouseInterpreter::clampDelta(scaled, 63));
+}
+
+TEST(SensitivityClampIntegrationTest, DefaultSensitivityLargeInputClamped)
+{
+	int scaled = HidMouseInterpreter::scaleSensitivity(100, 8);
+	EXPECT_EQ(100, scaled);
+	EXPECT_EQ(63, HidMouseInterpreter::clampDelta(scaled, 63));
+}
+
+TEST(SensitivityClampIntegrationTest, SmallInputPreservedAtDefaultSensitivity)
+{
+	int scaled = HidMouseInterpreter::scaleSensitivity(10, 8);
+	EXPECT_EQ(10, scaled);
+	EXPECT_EQ(10, HidMouseInterpreter::clampDelta(scaled, 63));
+}
+
+TEST(SensitivityClampIntegrationTest, MonotonicPotOutputUnderHighDelta)
+{
+	int16_t mouse_x = 0;
+	int16_t mouse_y = 0;
+	uint8_t prev_pot = mouse_x & 0x7F;
+
+	for (int i = 0; i < 50; i++) {
+		int motion = HidMouseInterpreter::clampDelta(
+			HidMouseInterpreter::scaleSensitivity(127, 16), 63);
+		HidMouseInterpreter::applyRelativeMotion(mouse_x, mouse_y, motion, 0);
+		uint8_t pot = mouse_x & 0x7F;
+		int delta = ((pot - prev_pot) + 128) % 128;
+		if (delta > 63) {
+			delta -= 128;
+		}
+		EXPECT_TRUE(delta >= 0);
+		EXPECT_TRUE(delta <= 63);
+		prev_pot = pot;
+	}
+}
+
+TEST(AutoSensitivityTest, ComputesExpectedScaleFromTrackedMagnitude)
+{
+	EXPECT_EQ(256, HidMouseInterpreter::computeAutoSensitivityScale(16 << 4));
+	EXPECT_EQ(128, HidMouseInterpreter::computeAutoSensitivityScale(32 << 4));
+	EXPECT_EQ(384, HidMouseInterpreter::computeAutoSensitivityScale(4 << 4));
+}
+
+TEST(AutoSensitivityTest, LimitsScaleChangesPerReport)
+{
+	EXPECT_EQ(288, HidMouseInterpreter::limitScaleStep(256, 384, 32));
+	EXPECT_EQ(224, HidMouseInterpreter::limitScaleStep(256, 128, 32));
+	EXPECT_EQ(256, HidMouseInterpreter::limitScaleStep(256, 256, 32));
+}
+
+TEST(AutoSensitivityTest, HighSpeedReportsSettleToSafeMonotonicOutput)
+{
+	int auto_motion_ema_x16 = 0;
+	int auto_scale_factor = 256;
+	int16_t mouse_x = 0;
+	int16_t mouse_y = 0;
+	uint8_t prev_pot = mouse_x & 0x7F;
+
+	for (int i = 0; i < 50; i++) {
+		auto_motion_ema_x16 = HidMouseInterpreter::updateAutoSensitivityEma(auto_motion_ema_x16, 127, 0);
+		auto_scale_factor = HidMouseInterpreter::limitScaleStep(
+			auto_scale_factor,
+			HidMouseInterpreter::computeAutoSensitivityScale(auto_motion_ema_x16),
+			32);
+		int motion = HidMouseInterpreter::clampDelta(
+			HidMouseInterpreter::scaleFixed(127, auto_scale_factor), 63);
+		HidMouseInterpreter::applyRelativeMotion(mouse_x, mouse_y, motion, 0);
+		uint8_t pot = mouse_x & 0x7F;
+		int delta = ((pot - prev_pot) + 128) % 128;
+		if (delta > 63) {
+			delta -= 128;
+		}
+		EXPECT_TRUE(delta >= 0);
+		EXPECT_TRUE(delta <= 63);
+		prev_pot = pot;
+	}
+
+	EXPECT_EQ(128, auto_scale_factor);
+}

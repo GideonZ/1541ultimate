@@ -356,6 +356,80 @@ class HidMouseInterpreter
         return scroll_factor;
     }
 
+    static int clampSensitivity(int sensitivity)
+    {
+        if (sensitivity < 1) {
+            return 1;
+        }
+        if (sensitivity > 16) {
+            return 16;
+        }
+        return sensitivity;
+    }
+
+    static int scaleSensitivity(int raw_delta, int sensitivity)
+    {
+        return (raw_delta * clampSensitivity(sensitivity)) / 8;
+    }
+
+    static int clampDelta(int delta, int limit)
+    {
+        if (delta > limit) {
+            return limit;
+        }
+        if (delta < -limit) {
+            return -limit;
+        }
+        return delta;
+    }
+
+    static int absoluteValue(int value)
+    {
+        return (value < 0) ? -value : value;
+    }
+
+    static int updateAutoSensitivityEma(int ema_x16, int motion_x, int motion_y)
+    {
+        int magnitude_x16 = (absoluteValue(motion_x) + absoluteValue(motion_y)) << 4;
+        ema_x16 += (magnitude_x16 - ema_x16) / 4;
+        return ema_x16;
+    }
+
+    static int clampScaleFactor(int scale_factor, int minimum, int maximum)
+    {
+        if (scale_factor < minimum) {
+            return minimum;
+        }
+        if (scale_factor > maximum) {
+            return maximum;
+        }
+        return scale_factor;
+    }
+
+    static int computeAutoSensitivityScale(int ema_x16)
+    {
+        if (ema_x16 <= 0) {
+            return 256;
+        }
+        return clampScaleFactor((16 * 4096) / ema_x16, 128, 384);
+    }
+
+    static int limitScaleStep(int previous_scale, int next_scale, int max_step)
+    {
+        if (next_scale > previous_scale + max_step) {
+            return previous_scale + max_step;
+        }
+        if (next_scale < previous_scale - max_step) {
+            return previous_scale - max_step;
+        }
+        return next_scale;
+    }
+
+    static int scaleFixed(int raw_delta, int scale_factor)
+    {
+        return (raw_delta * scale_factor) / 256;
+    }
+
     static int normalizeHorizontalWheel(int wheel_h)
     {
         // AC Pan reports are opposite the existing right/left menu convention.

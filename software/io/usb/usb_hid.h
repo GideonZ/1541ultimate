@@ -58,6 +58,8 @@ class UsbHidDriver : public UsbDriver
     uint32_t menu_wheel_v_last_tick;
     int wheel_axis_v_remainder;
     int wheel_key_v_remainder;
+    int auto_motion_ema_x16;
+    int auto_scale_factor;
 
 public:
 	static UsbDriver *test_driver(UsbInterface *intf);
