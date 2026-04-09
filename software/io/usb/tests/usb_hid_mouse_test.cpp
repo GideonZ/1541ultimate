@@ -3,18 +3,6 @@
 
 namespace {
 
-int applyAdaptivePointerMotion(int raw_delta, int sensitivity, int& auto_motion_ema_x16, int& auto_scale_factor)
-{
-	int motion = HidMouseInterpreter::scalePointerSensitivity(raw_delta, sensitivity);
-	auto_motion_ema_x16 = HidMouseInterpreter::updateAutoSensitivityEma(auto_motion_ema_x16, raw_delta, 0);
-	auto_scale_factor = HidMouseInterpreter::limitScaleStep(
-		auto_scale_factor,
-		HidMouseInterpreter::computeAutoSensitivityScale(auto_motion_ema_x16),
-		32);
-	return HidMouseInterpreter::clampDelta(
-		HidMouseInterpreter::scaleFixed(motion, auto_scale_factor), 63);
-}
-
 const uint32_t kMenuFastGapTicks = 25;
 const uint32_t kMenuSlowGapTicks = 75;
 const uint32_t kMenuResetGapTicks = 210;
@@ -209,21 +197,26 @@ TEST(HidMouseInterpreterTest, AppliesScrollFactorAndRuntimeChanges)
 {
 	int16_t mouse_x = 10;
 	int16_t mouse_y = 20;
+	int axis_horizontal_remainder = 0;
 	int axis_vertical_remainder = 0;
+	int key_horizontal_remainder = 0;
 	int key_vertical_remainder = 0;
 	HidMouseInterpreter::applyRelativeMotion(mouse_x, mouse_y, 3, -4);
 	EXPECT_EQ(13, mouse_x);
 	EXPECT_EQ(24, mouse_y);
 
-	EXPECT_EQ(-32, HidMouseInterpreter::scaleHorizontalWheel(-2, 8));
+	EXPECT_EQ(-32, HidMouseInterpreter::scaleHorizontalWheel(-2, 8, axis_horizontal_remainder));
+	EXPECT_EQ(0, axis_horizontal_remainder);
 	EXPECT_EQ(2, HidMouseInterpreter::scaleVerticalWheel(1, 8, axis_vertical_remainder));
 	EXPECT_EQ(16, axis_vertical_remainder);
 	HidMouseInterpreter::applyWheelAxisDeltas(mouse_x, mouse_y, -32, 2);
 	EXPECT_EQ(-19, mouse_x);
 	EXPECT_EQ(22, mouse_y);
 
-	EXPECT_EQ(12, HidMouseInterpreter::scaleHorizontalWheelKeys(1, 8));
-	EXPECT_EQ(-12, HidMouseInterpreter::scaleHorizontalWheelKeys(-1, 8));
+	EXPECT_EQ(12, HidMouseInterpreter::scaleHorizontalWheelKeys(1, 8, key_horizontal_remainder));
+	EXPECT_EQ(0, key_horizontal_remainder);
+	EXPECT_EQ(-12, HidMouseInterpreter::scaleHorizontalWheelKeys(-1, 8, key_horizontal_remainder));
+	EXPECT_EQ(0, key_horizontal_remainder);
 	EXPECT_EQ(2, HidMouseInterpreter::scaleVerticalWheelKeys(1, 8, key_vertical_remainder));
 	EXPECT_EQ(0, key_vertical_remainder);
 
@@ -571,30 +564,54 @@ TEST(SensitivityClampIntegrationTest, MonotonicPotOutputUnderHighDelta)
 	}
 }
 
-TEST(AutoSensitivityTest, ComputesExpectedScaleFromTrackedMagnitude)
+TEST(AdaptiveAccelerationTest, ComputesExpectedScaleFromTrackedMagnitude)
 {
-	EXPECT_EQ(384, HidMouseInterpreter::computeAutoSensitivityScale(16 << 4));
-	EXPECT_EQ(256, HidMouseInterpreter::computeAutoSensitivityScale(32 << 4));
-	EXPECT_EQ(128, HidMouseInterpreter::computeAutoSensitivityScale(64 << 4));
+	EXPECT_EQ(384, HidMouseInterpreter::computeAdaptiveAccelerationScale(16 << 4));
+	EXPECT_EQ(384, HidMouseInterpreter::computeAdaptiveAccelerationScale(32 << 4));
+	EXPECT_EQ(396, HidMouseInterpreter::computeAdaptiveAccelerationScale(48 << 4));
+	EXPECT_EQ(432, HidMouseInterpreter::computeAdaptiveAccelerationScale(64 << 4));
+	EXPECT_EQ(576, HidMouseInterpreter::computeAdaptiveAccelerationScale(96 << 4));
 }
 
-TEST(AutoSensitivityTest, LimitsScaleChangesPerReport)
+TEST(AdaptiveAccelerationTest, LimitsScaleChangesPerReport)
 {
-	EXPECT_EQ(288, HidMouseInterpreter::limitScaleStep(256, 384, 32));
-	EXPECT_EQ(224, HidMouseInterpreter::limitScaleStep(256, 128, 32));
-	EXPECT_EQ(256, HidMouseInterpreter::limitScaleStep(256, 256, 32));
+	EXPECT_EQ(416, HidMouseInterpreter::limitScaleStep(384, 576, 32));
+	EXPECT_EQ(576, HidMouseInterpreter::limitScaleStep(544, 576, 32));
+	EXPECT_EQ(384, HidMouseInterpreter::limitScaleStep(384, 384, 32));
 }
 
-TEST(AutoSensitivityTest, HighSpeedReportsSettleToSafeMonotonicOutput)
+TEST(AdaptiveAccelerationTest, SmallMovementsStayAtBaselineScale)
 {
-	int auto_motion_ema_x16 = 0;
-	int auto_scale_factor = HidMouseInterpreter::AUTO_ACCELERATION_FALLBACK_SCALE;
+	int adaptive_accel_ema_x16 = 0;
+	int adaptive_accel_scale_factor = HidMouseInterpreter::ADAPTIVE_ACCELERATION_FALLBACK_SCALE;
+
+	for (int i = 0; i < 50; i++) {
+		adaptive_accel_ema_x16 = HidMouseInterpreter::updateAdaptiveAccelerationEma(adaptive_accel_ema_x16, 2, 0);
+		adaptive_accel_scale_factor = HidMouseInterpreter::limitScaleStep(
+			adaptive_accel_scale_factor,
+			HidMouseInterpreter::computeAdaptiveAccelerationScale(adaptive_accel_ema_x16),
+			32);
+	}
+
+	EXPECT_EQ(384, adaptive_accel_scale_factor);
+}
+
+TEST(AdaptiveAccelerationTest, HighSpeedReportsSettleToSafeMonotonicOutput)
+{
+	int adaptive_accel_ema_x16 = 0;
+	int adaptive_accel_scale_factor = HidMouseInterpreter::ADAPTIVE_ACCELERATION_FALLBACK_SCALE;
 	int16_t mouse_x = 0;
 	int16_t mouse_y = 0;
 	uint8_t prev_pot = mouse_x & 0x7F;
 
 	for (int i = 0; i < 50; i++) {
-		int motion = applyAdaptivePointerMotion(127, 0, auto_motion_ema_x16, auto_scale_factor);
+		adaptive_accel_ema_x16 = HidMouseInterpreter::updateAdaptiveAccelerationEma(adaptive_accel_ema_x16, 127, 0);
+		adaptive_accel_scale_factor = HidMouseInterpreter::limitScaleStep(
+			adaptive_accel_scale_factor,
+			HidMouseInterpreter::computeAdaptiveAccelerationScale(adaptive_accel_ema_x16),
+			32);
+		int motion = HidMouseInterpreter::clampDelta(
+			HidMouseInterpreter::scaleFixed(127, adaptive_accel_scale_factor), 63);
 		HidMouseInterpreter::applyRelativeMotion(mouse_x, mouse_y, motion, 0);
 		uint8_t pot = mouse_x & 0x7F;
 		int delta = ((pot - prev_pot) + 128) % 128;
@@ -606,44 +623,26 @@ TEST(AutoSensitivityTest, HighSpeedReportsSettleToSafeMonotonicOutput)
 		prev_pot = pot;
 	}
 
-	EXPECT_EQ(128, auto_scale_factor);
+	EXPECT_EQ(576, adaptive_accel_scale_factor);
 }
 
-TEST(AutoSensitivityTest, AutoSensitivityBaseMatchesManualSix)
+TEST(AdaptiveAccelerationTest, HighSpeedMovementBoostsLowSensitivitySetting)
 {
-	EXPECT_EQ(6, HidMouseInterpreter::resolvePointerSensitivity(0));
-	EXPECT_EQ(HidMouseInterpreter::scaleSensitivity(32, 6),
-		HidMouseInterpreter::scalePointerSensitivity(32, 0));
-	EXPECT_EQ(HidMouseInterpreter::scaleSensitivity(-32, 6),
-		HidMouseInterpreter::scalePointerSensitivity(-32, 0));
-}
-
-TEST(AutoSensitivityTest, AdaptiveAutoSettlesAtManualSixBaseline)
-{
-	int auto_motion_ema_x16 = 0;
-	int auto_scale_factor = HidMouseInterpreter::AUTO_ACCELERATION_FALLBACK_SCALE;
+	int adaptive_accel_ema_x16 = 0;
+	int adaptive_accel_scale_factor = HidMouseInterpreter::ADAPTIVE_ACCELERATION_FALLBACK_SCALE;
 	int motion = 0;
+	int baseline = HidMouseInterpreter::scaleSensitivity(127, 1);
 
 	for (int i = 0; i < 50; i++) {
-		motion = applyAdaptivePointerMotion(32, 0, auto_motion_ema_x16, auto_scale_factor);
+		adaptive_accel_ema_x16 = HidMouseInterpreter::updateAdaptiveAccelerationEma(adaptive_accel_ema_x16, 127, 0);
+		adaptive_accel_scale_factor = HidMouseInterpreter::limitScaleStep(
+			adaptive_accel_scale_factor,
+			HidMouseInterpreter::computeAdaptiveAccelerationScale(adaptive_accel_ema_x16),
+			32);
+		motion = HidMouseInterpreter::clampDelta(
+			HidMouseInterpreter::scaleFixed(baseline, adaptive_accel_scale_factor), 63);
 	}
 
-	EXPECT_TRUE(motion > HidMouseInterpreter::scaleSensitivity(32, 4));
-	EXPECT_EQ(HidMouseInterpreter::scaleSensitivity(32, 6), motion);
-	EXPECT_TRUE(motion <= HidMouseInterpreter::scaleSensitivity(32, 8));
-	EXPECT_EQ(257, auto_scale_factor);
-}
-
-TEST(AutoSensitivityTest, AdaptiveManualSensitivityPreservesSelectedBaselineAtTargetSpeed)
-{
-	int auto_motion_ema_x16 = 0;
-	int auto_scale_factor = HidMouseInterpreter::AUTO_ACCELERATION_FALLBACK_SCALE;
-	int motion = 0;
-
-	for (int i = 0; i < 50; i++) {
-		motion = applyAdaptivePointerMotion(32, 8, auto_motion_ema_x16, auto_scale_factor);
-	}
-
-	EXPECT_EQ(HidMouseInterpreter::scaleSensitivity(32, 8), motion);
-	EXPECT_EQ(257, auto_scale_factor);
+	EXPECT_TRUE(motion > baseline);
+	EXPECT_EQ(576, adaptive_accel_scale_factor);
 }

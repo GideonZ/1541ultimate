@@ -1,7 +1,7 @@
 #ifndef USB_HID_CONFIG_H
 #define USB_HID_CONFIG_H
 
-#define CFG_WHEEL_MODE        0x55
+#define CFG_MOUSE_MODE        0x55
 #define CFG_SCROLL_FACTOR     0x56
 #define CFG_WHEEL_DIRECTION   0x57
 #define CFG_MENU_MOUSE_NAV    0x58

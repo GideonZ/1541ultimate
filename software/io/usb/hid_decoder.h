@@ -330,11 +330,18 @@ class HidMouseInterpreter
 {
   public:
     enum {
-        AUTO_MOUSE_SENSITIVITY = 6,
-        AUTO_ACCELERATION_TARGET_EMA = 32,
-        AUTO_ACCELERATION_FALLBACK_SCALE = 256,
-        AUTO_ACCELERATION_MIN_SCALE = 128,
-        AUTO_ACCELERATION_MAX_SCALE = 384
+        MOUSE_MODE_CURSOR = 0,
+        MOUSE_MODE_MOUSE = 1,
+        MOUSE_MODE_CURSOR_MOUSE = 2
+    };
+
+    enum {
+        SENSITIVITY_SCALE_STEP = 32,
+        ADAPTIVE_ACCELERATION_TARGET_EMA = 32,
+        ADAPTIVE_ACCELERATION_MAX_EMA = 96,
+        ADAPTIVE_ACCELERATION_FALLBACK_SCALE = 384,
+        ADAPTIVE_ACCELERATION_MIN_SCALE = 384,
+        ADAPTIVE_ACCELERATION_MAX_SCALE = 576
     };
 
     static int divideRounded(int value, int divisor)
@@ -351,6 +358,11 @@ class HidMouseInterpreter
         int delta = scaled / divisor;
         remainder = scaled % divisor;
         return delta;
+    }
+
+    static int scaleFixedWithRemainder(int raw_delta, int scale_factor, int& remainder)
+    {
+        return scaleWheelWithRemainder(raw_delta, scale_factor, 256, remainder);
     }
 
     static int clampWheelSetting(int scroll_factor)
@@ -375,22 +387,61 @@ class HidMouseInterpreter
         return sensitivity;
     }
 
-    static int resolvePointerSensitivity(int sensitivity)
+    static int computeSensitivityScaleFactor(int sensitivity)
     {
-        if (sensitivity == 0) {
-            return AUTO_MOUSE_SENSITIVITY;
-        }
-        return clampSensitivity(sensitivity);
+        return clampSensitivity(sensitivity) * SENSITIVITY_SCALE_STEP;
     }
 
     static int scaleSensitivity(int raw_delta, int sensitivity)
     {
-        return (raw_delta * clampSensitivity(sensitivity)) / 8;
+        return scaleFixed(raw_delta, computeSensitivityScaleFactor(sensitivity));
     }
 
-    static int scalePointerSensitivity(int raw_delta, int sensitivity)
+    static int scaleCursorMotionKeys(int motion_delta)
     {
-        return (raw_delta * resolvePointerSensitivity(sensitivity)) / 8;
+        int magnitude = (motion_delta < 0) ? -motion_delta : motion_delta;
+        if (magnitude == 0) {
+            return 0;
+        }
+        int repeat = divideRounded(magnitude, 4);
+        if (repeat == 0) {
+            repeat = 1;
+        }
+        return clampDelta(repeat, 63);
+    }
+
+    static int normalizeCursorVerticalMotion(int motion_y)
+    {
+        return -motion_y;
+    }
+
+    static bool mouseModeRoutesMotionToCursor(int mouse_mode)
+    {
+        return mouse_mode == MOUSE_MODE_CURSOR;
+    }
+
+    static bool mouseModeRoutesMotionToPointer(int mouse_mode)
+    {
+        return mouse_mode != MOUSE_MODE_CURSOR;
+    }
+
+    static bool mouseModeRoutesWheelToCursor(int mouse_mode)
+    {
+        return mouse_mode != MOUSE_MODE_MOUSE;
+    }
+
+    static bool mouseModeRoutesWheelToPointer(int mouse_mode)
+    {
+        return mouse_mode == MOUSE_MODE_MOUSE;
+    }
+
+    static int scaleWheelDelta(int wheel_delta, int scroll_factor,
+                               int multiplier, int divisor, int& remainder)
+    {
+        if (wheel_delta == 0) {
+            return 0;
+        }
+        return scaleWheelWithRemainder(wheel_delta, clampWheelSetting(scroll_factor) * multiplier, divisor, remainder);
     }
 
     static int clampDelta(int delta, int limit)
@@ -409,11 +460,16 @@ class HidMouseInterpreter
         return (value < 0) ? -value : value;
     }
 
-    static int updateAutoSensitivityEma(int ema_x16, int motion_x, int motion_y)
+    static int updateMotionEma(int ema_x16, int motion_x, int motion_y, int divisor)
     {
         int magnitude_x16 = (absoluteValue(motion_x) + absoluteValue(motion_y)) << 4;
-        ema_x16 += (magnitude_x16 - ema_x16) / 4;
+        ema_x16 += (magnitude_x16 - ema_x16) / divisor;
         return ema_x16;
+    }
+
+    static int updateAdaptiveAccelerationEma(int ema_x16, int motion_x, int motion_y)
+    {
+        return updateMotionEma(ema_x16, motion_x, motion_y, 4);
     }
 
     static int clampScaleFactor(int scale_factor, int minimum, int maximum)
@@ -427,14 +483,27 @@ class HidMouseInterpreter
         return scale_factor;
     }
 
-    static int computeAutoSensitivityScale(int ema_x16)
+    static int computeAdaptiveAccelerationScale(int ema_x16)
     {
         if (ema_x16 <= 0) {
-            return AUTO_ACCELERATION_FALLBACK_SCALE;
+            return ADAPTIVE_ACCELERATION_FALLBACK_SCALE;
         }
-        return clampScaleFactor((AUTO_ACCELERATION_TARGET_EMA * 4096) / ema_x16,
-                                AUTO_ACCELERATION_MIN_SCALE,
-                                AUTO_ACCELERATION_MAX_SCALE);
+        int target_ema_x16 = ADAPTIVE_ACCELERATION_TARGET_EMA << 4;
+        if (ema_x16 <= target_ema_x16) {
+            return ADAPTIVE_ACCELERATION_FALLBACK_SCALE;
+        }
+        int max_ema_x16 = ADAPTIVE_ACCELERATION_MAX_EMA << 4;
+        if (ema_x16 >= max_ema_x16) {
+            return ADAPTIVE_ACCELERATION_MAX_SCALE;
+        }
+        int excess = ema_x16 - target_ema_x16;
+        int range = max_ema_x16 - target_ema_x16;
+        int scale_range = ADAPTIVE_ACCELERATION_MAX_SCALE - ADAPTIVE_ACCELERATION_FALLBACK_SCALE;
+        int curved_scale = ADAPTIVE_ACCELERATION_FALLBACK_SCALE +
+                           (scale_range * excess * excess) / (range * range);
+        return clampScaleFactor(curved_scale,
+                                ADAPTIVE_ACCELERATION_MIN_SCALE,
+                                ADAPTIVE_ACCELERATION_MAX_SCALE);
     }
 
     static int limitScaleStep(int previous_scale, int next_scale, int max_step)
@@ -475,24 +544,48 @@ class HidMouseInterpreter
         mouse_y -= y;
     }
 
+    static int scaleHorizontalWheel(int wheel_h, int scroll_factor, int& remainder)
+    {
+        remainder = 0;
+        return wheel_h * clampWheelSetting(scroll_factor) * 2;
+    }
+
     static int scaleHorizontalWheel(int wheel_h, int scroll_factor)
     {
-        return wheel_h * clampWheelSetting(scroll_factor) * 2;
+        int remainder = 0;
+        return scaleHorizontalWheel(wheel_h, scroll_factor, remainder);
+    }
+
+    static int scaleHorizontalWheelAxisDelta(int wheel_h, int scroll_factor, int& remainder)
+    {
+        return clampDelta(scaleHorizontalWheel(wheel_h, scroll_factor, remainder), 63);
     }
 
     static int scaleVerticalWheel(int wheel_v, int scroll_factor, int& remainder)
     {
-        return scaleWheelWithRemainder(wheel_v, clampWheelSetting(scroll_factor) * 10, 32, remainder);
+        return scaleWheelDelta(wheel_v, scroll_factor, 10, 32, remainder);
+    }
+
+    static int scaleVerticalWheelAxisDelta(int wheel_v, int scroll_factor, int& remainder)
+    {
+        return clampDelta(scaleVerticalWheel(wheel_v, scroll_factor, remainder), 63);
+    }
+
+    static int scaleHorizontalWheelKeys(int wheel_h, int scroll_factor, int& remainder)
+    {
+        remainder = 0;
+        return divideRounded(wheel_h * clampWheelSetting(scroll_factor) * 3, 2);
     }
 
     static int scaleHorizontalWheelKeys(int wheel_h, int scroll_factor)
     {
-        return divideRounded(wheel_h * clampWheelSetting(scroll_factor) * 3, 2);
+        int remainder = 0;
+        return scaleHorizontalWheelKeys(wheel_h, scroll_factor, remainder);
     }
 
     static int scaleVerticalWheelKeys(int wheel_v, int scroll_factor, int& remainder)
     {
-        return scaleWheelWithRemainder(wheel_v, clampWheelSetting(scroll_factor), 4, remainder);
+        return scaleWheelDelta(wheel_v, scroll_factor, 1, 4, remainder);
     }
 
     static int scaleMenuWheelKeys(int wheel_delta)
@@ -600,10 +693,11 @@ class HidMouseInterpreter
 
     static void applyWheelAxis(int16_t& mouse_x, int16_t& mouse_y, int wheel_h, int wheel_v, int scroll_factor)
     {
+        int horizontal_remainder = 0;
         int vertical_remainder = 0;
         applyWheelAxisDeltas(mouse_x, mouse_y,
-            scaleHorizontalWheel(wheel_h, scroll_factor),
-            scaleVerticalWheel(wheel_v, scroll_factor, vertical_remainder));
+            scaleHorizontalWheelAxisDelta(wheel_h, scroll_factor, horizontal_remainder),
+            scaleVerticalWheelAxisDelta(wheel_v, scroll_factor, vertical_remainder));
     }
 };
 
