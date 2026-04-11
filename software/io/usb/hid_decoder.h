@@ -530,6 +530,16 @@ class HidMouseInterpreter
 
     static int normalizeVerticalWheel(int wheel_v)
     {
+        // Standard detented wheels often report one unit per notch, while
+        // higher-resolution wheels report several smaller deltas over the same
+        // physical motion. Promote single-detent reports to a canonical step so
+        // both classes respond similarly at the same user sensitivity.
+        if (wheel_v == 1) {
+            return 8;
+        }
+        if (wheel_v == -1) {
+            return -8;
+        }
         return wheel_v;
     }
 

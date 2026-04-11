@@ -230,12 +230,34 @@ TEST(HidMouseInterpreterTest, HorizontalDirectionAndMenuWheelAreSymmetric)
 {
 	EXPECT_EQ(3, HidMouseInterpreter::normalizeHorizontalWheel(-3));
 	EXPECT_EQ(3, HidMouseInterpreter::normalizeVerticalWheel(3));
+	EXPECT_EQ(8, HidMouseInterpreter::normalizeVerticalWheel(1));
+	EXPECT_EQ(-8, HidMouseInterpreter::normalizeVerticalWheel(-1));
 	EXPECT_EQ(3, HidMouseInterpreter::applyWheelDirection(3, false));
 	EXPECT_EQ(-3, HidMouseInterpreter::applyWheelDirection(3, true));
 	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelKeys(2));
 	EXPECT_EQ(-1, HidMouseInterpreter::scaleMenuWheelKeys(-2));
 	EXPECT_EQ(1, HidMouseInterpreter::scaleMenuWheelKeys(120));
 	EXPECT_EQ(-1, HidMouseInterpreter::scaleMenuWheelKeys(-120));
+}
+
+TEST(HidMouseInterpreterTest, SingleDetentVerticalWheelNormalizesToUsableStep)
+{
+	int axis_remainder = 0;
+	int key_remainder = 0;
+
+	EXPECT_EQ(20, HidMouseInterpreter::scaleVerticalWheel(
+		HidMouseInterpreter::normalizeVerticalWheel(1), 8, axis_remainder));
+	EXPECT_EQ(0, axis_remainder);
+	EXPECT_EQ(16, HidMouseInterpreter::scaleVerticalWheelKeys(
+		HidMouseInterpreter::normalizeVerticalWheel(1), 8, key_remainder));
+	EXPECT_EQ(0, key_remainder);
+
+	EXPECT_EQ(-20, HidMouseInterpreter::scaleVerticalWheel(
+		HidMouseInterpreter::normalizeVerticalWheel(-1), 8, axis_remainder));
+	EXPECT_EQ(0, axis_remainder);
+	EXPECT_EQ(-16, HidMouseInterpreter::scaleVerticalWheelKeys(
+		HidMouseInterpreter::normalizeVerticalWheel(-1), 8, key_remainder));
+	EXPECT_EQ(0, key_remainder);
 }
 
 TEST(HidMouseInterpreterTest, SlowMenuWheelBurstLocksUntilReset)
