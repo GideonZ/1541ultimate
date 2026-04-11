@@ -8,14 +8,6 @@ extern "C" {
 #include "config.h"
 #include "config_menu.h"
 
-namespace {
-
-ConfigBrowser *active_config_browser = NULL;
-
-}
-
-extern "C" void config_browser_poll_hook(void) __attribute__((weak));
-
 /************************/
 /* ConfigBrowser Object */
 /************************/
@@ -48,32 +40,8 @@ void ConfigBrowser :: init() // call on root!
 	this->keyb = get_ui()->get_keyboard();
 	window = new Window(screen, (screen->get_size_x() - 40) >> 1, 2, 40, screen->get_size_y()-3);
 	window->draw_border();
-    active_config_browser = this;
     state->reload();
 	state->do_refresh();
-}
-
-void ConfigBrowser :: deinit()
-{
-    if (active_config_browser == this) {
-        active_config_browser = NULL;
-    }
-    TreeBrowser::deinit();
-}
-
-int ConfigBrowser :: poll(int sub_returned)
-{
-    if (config_browser_poll_hook) {
-        config_browser_poll_hook();
-    }
-    return TreeBrowser::poll(sub_returned);
-}
-
-void ConfigBrowser :: refresh_active(void)
-{
-    if (active_config_browser && active_config_browser->state) {
-        active_config_browser->state->refresh = true;
-    }
 }
 
 ConfigBrowserState :: ConfigBrowserState(Browsable *node, TreeBrowser *tb, int level) : TreeBrowserState(node, tb, level)

@@ -20,7 +20,6 @@ extern "C" {
 #include "flash.h"
 #include "product.h"
 #include "userinterface.h"
-#include "config_menu.h"
 #include "u64_config.h"
 #include "audio_select.h"
 #include "fpll.h"
@@ -62,7 +61,8 @@ const uint8_t default_colors[16][3] = {
 
 // static pointer
 U64Config *u64_configurator = NULL;
-static volatile uint32_t u64_usb_hid_status_generation = 1;
+static volatile uint32_t u64_usb_hid_status_generation = 0;
+static volatile uint32_t u64_usb_hid_status_handled_generation = 0;
 
 extern "C" int u64_get_usb_hid_config_value(int key, int default_value)
 {
@@ -1143,26 +1143,27 @@ extern "C" void u64_refresh_usb_hid_status(void)
     portEXIT_CRITICAL();
 }
 
-extern "C" void config_browser_poll_hook(void)
+extern "C" void u64_dispatch_usb_hid_status_refresh(void)
 {
-    static uint32_t last_applied_generation = 0;
-    uint32_t generation;
+    bool refresh_needed = false;
 
     portENTER_CRITICAL();
-    generation = u64_usb_hid_status_generation;
+    if (u64_usb_hid_status_generation != u64_usb_hid_status_handled_generation) {
+        u64_usb_hid_status_handled_generation = u64_usb_hid_status_generation;
+        refresh_needed = true;
+    }
     portEXIT_CRITICAL();
 
-    if ((generation == last_applied_generation) || !u64_configurator || !u64_configurator->cfg) {
-        return;
+    if (refresh_needed) {
+        FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
     }
-
-    u64_update_usb_hid_info_items(u64_configurator->cfg);
-    ConfigBrowser::refresh_active();
-    last_applied_generation = generation;
 }
 
 void U64Config :: on_edit()
 {
+    portENTER_CRITICAL();
+    u64_usb_hid_status_handled_generation = u64_usb_hid_status_generation;
+    portEXIT_CRITICAL();
     u64_update_usb_hid_info_items(cfg);
 }
 
