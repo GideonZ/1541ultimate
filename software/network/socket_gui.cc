@@ -30,8 +30,7 @@ static void socket_gui_listen_task(void *a)
 {
 	SocketGui *gui = (SocketGui *)a;
 	gui->listenTask();
-	vTaskSuspend(NULL);
-//	vTaskDelete(gui->listenTaskHandle);
+	vTaskDelete(NULL);
 }
 
 SocketGui :: SocketGui()
@@ -123,10 +122,7 @@ static void socket_ensure_authenticated(SocketStream *str) {
         printf("Telnet connection closed before successful authentication\n");
         str->close();
         delete(str);
-        vTaskSuspend(NULL);
-        puts("You shouldn't ever see this.");
-        while (1)
-            ;
+        vTaskDelete(NULL);
     }
 }
 
@@ -172,8 +168,7 @@ void socket_gui_task(void *a)
 	delete str;
 	puts("str gone");
 
-	vTaskSuspend(NULL);
-	puts("You shouldn't ever see this.");
+	vTaskDelete(NULL);
 }
 
 int SocketGui :: listenTask(void)
@@ -210,7 +205,8 @@ int SocketGui :: listenTask(void)
 		int actual_socket = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
 		if (actual_socket < 0) {
 			 puts("ERROR on accept");
-			 return -3;
+			 vTaskDelay(100 / portTICK_PERIOD_MS);
+			 continue;
 		}
 
 		struct timeval tv;
@@ -219,6 +215,13 @@ int SocketGui :: listenTask(void)
 		setsockopt(actual_socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
 
 		SocketStream *stream = new SocketStream(actual_socket);
-		xTaskCreate( socket_gui_task, "Socket Gui Task", configMINIMAL_STACK_SIZE, stream, PRIO_USERIFACE, NULL );
+		BaseType_t res = xTaskCreate( socket_gui_task, "Socket Gui Task", configMINIMAL_STACK_SIZE, stream, PRIO_USERIFACE, NULL );
+		if (res != pdPASS) {
+			puts("Telnet: xTaskCreate failed; dropping connection");
+			stream->close();
+			delete stream;
+			vTaskDelay(100 / portTICK_PERIOD_MS);
+			continue;
+		}
     }
 }
