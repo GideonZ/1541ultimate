@@ -224,9 +224,13 @@ class BrowsableConfigGroup: public Browsable
 
     IndexedList<Browsable *> *getSubItems(int &error)
     {
+        IndexedList<ConfigStore *> *stores = group->getStores();
+        for(int i=0; i < stores->get_elements(); i++) {
+            ConfigStore *s = (*stores)[i];
+            s->at_open_config();
+        }
         if (children.get_elements() == 0) {
             IndexedList<ConfigItem *> *itemList = group->getConfigItems();
-            // store->at_open_config(); FIXME
             for (int i = 0; i < itemList->get_elements(); i++) {
                 children.append(new BrowsableConfigItem((*itemList)[i]));
             }
