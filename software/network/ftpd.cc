@@ -964,7 +964,14 @@ void FTPDataConnection::accept_data(void *a) // task entry point
     struct timeval tv;
     tv.tv_sec = 5;
     tv.tv_usec = 0;
-    setsockopt(conn->sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
+    if (setsockopt(conn->sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv)) < 0) {
+        puts("FTPD: failed to set accept timeout");
+        conn->actual_socket = -1;
+        xTaskNotifyGive(conn->spawningTask);
+        // After the notify the control thread may free `conn`. Do not touch
+        // `conn` after this point; just self-delete so no task is leaked.
+        vTaskDelete(NULL);
+    }
 
     socklen_t clilen = sizeof(struct sockaddr_in);
     struct sockaddr_in cli_addr;

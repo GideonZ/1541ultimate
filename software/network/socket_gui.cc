@@ -39,7 +39,7 @@ SocketGui :: SocketGui()
 	xTaskCreate( socket_gui_listen_task, "Socket Gui Listener", configMINIMAL_STACK_SIZE, this, PRIO_NETSERVICE, &listenTaskHandle );
 }
 
-static void socket_ensure_authenticated(SocketStream *str) {
+static bool socket_ensure_authenticated(SocketStream *str) {
     char buf[32 + 1];
     char pos;
     int failure_sleep = 1;
@@ -47,7 +47,7 @@ static void socket_ensure_authenticated(SocketStream *str) {
     bool authenticated = false;
     const char *password = networkConfig.cfg->get_string(CFG_NETWORK_PASSWORD);
     if (!*password)
-        return;  // Empty password configured, all good
+        return true;  // Empty password configured, all good
 
     int attempts = 5;
     int attempt_delay = 250;
@@ -122,8 +122,9 @@ static void socket_ensure_authenticated(SocketStream *str) {
         printf("Telnet connection closed before successful authentication\n");
         str->close();
         delete(str);
-        vTaskDelete(NULL);
+        return false;
     }
+    return true;
 }
 
 // The code below runs once for every socket gui instance
@@ -131,7 +132,9 @@ static void socket_ensure_authenticated(SocketStream *str) {
 void socket_gui_task(void *a)
 {
 	SocketStream *str = (SocketStream *)a;
-	socket_ensure_authenticated(str);
+	if (!socket_ensure_authenticated(str)) {
+		vTaskDelete(NULL);
+	}
 
 	char product[64];
 	char title[81];
