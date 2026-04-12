@@ -10,9 +10,28 @@
 #include "task.h"
 #include <stdio.h>
 
+#ifndef portENTER_CRITICAL
+#define portENTER_CRITICAL()
+#define portEXIT_CRITICAL()
+#endif
+
 // static system wide available keyboard object
 
 Keyboard_USB system_usb_keyboard;
+
+namespace {
+
+uint8_t usb_keymap_lookup(const uint8_t *map, size_t map_size, uint8_t key)
+{
+	return (key < map_size) ? map[key] : KEY_ERR;
+}
+
+uint8_t usb_matrix_lookup(const uint8_t *map, size_t map_size, uint8_t key)
+{
+	return (key < map_size) ? map[key] : 0xFF;
+}
+
+}
 
 const uint8_t keymap_normal[] = {
     0x00, KEY_ERR, KEY_ERR, KEY_ERR, 'a', 'b', 'c', 'd',
@@ -95,15 +114,21 @@ Keyboard_USB :: Keyboard_USB()
 {
 	matrix = 0;
 	matrixEnabled = false;
+	memset(matrix_state, 0, sizeof(matrix_state));
+	memset(injected_matrix_state, 0, sizeof(injected_matrix_state));
 	key_head = 0;
 	key_tail = 0;
+	injected_head = 0;
+	injected_tail = 0;
+	injected_matrix_hold = 0;
 
     repeat_speed = 4;
     first_delay = 16;
     delay_count = first_delay;
     num_keys = 0;
 
-	memset(key_buffer, 0, KEY_BUFFER_SIZE);
+	memset(key_buffer, 0, USB_KEY_BUFFER_SIZE);
+	memset(injected_buffer, 0, USB_KEY_BUFFER_SIZE);
 	memset(last_data, 0, USB_DATA_SIZE);
 }
 
@@ -115,7 +140,7 @@ Keyboard_USB :: ~Keyboard_USB()
 void Keyboard_USB :: putch(uint8_t ch)
 {
 	int next_head = key_head + 1;
-	if (next_head == KEY_BUFFER_SIZE)
+	if (next_head == USB_KEY_BUFFER_SIZE)
 		next_head = 0;
 
 	if (next_head == key_tail) {
@@ -123,6 +148,52 @@ void Keyboard_USB :: putch(uint8_t ch)
 	}
 	key_buffer[key_head] = ch;
 	key_head = next_head;
+}
+
+void Keyboard_USB :: applyMatrixState(void)
+{
+	if (!matrix) {
+		return;
+	}
+	for (int i = 0; i < 8; i++) {
+		matrix[i] = matrixEnabled ? (matrix_state[i] | injected_matrix_state[i]) : 0;
+	}
+}
+
+void Keyboard_USB :: clearInjectedMatrixState(void)
+{
+	if (injected_matrix_hold == 0) {
+		return;
+	}
+	injected_matrix_hold = 0;
+	memset(injected_matrix_state, 0, sizeof(injected_matrix_state));
+	applyMatrixState();
+}
+
+void Keyboard_USB :: setInjectedMatrixKey(int key)
+{
+	memset(injected_matrix_state, 0, sizeof(injected_matrix_state));
+	switch (key) {
+	case KEY_RIGHT:
+		injected_matrix_state[0] = (1 << 2);
+		break;
+	case KEY_LEFT:
+		injected_matrix_state[0] = (1 << 2);
+		injected_matrix_state[6] = (1 << 4);
+		break;
+	case KEY_DOWN:
+		injected_matrix_state[0] = (1 << 7);
+		break;
+	case KEY_UP:
+		injected_matrix_state[0] = (1 << 7);
+		injected_matrix_state[6] = (1 << 4);
+		break;
+	default:
+		injected_matrix_hold = 0;
+		return;
+	}
+	injected_matrix_hold = 1;
+	applyMatrixState();
 }
 
 bool Keyboard_USB :: PresentInLastData(uint8_t check)
@@ -179,14 +250,15 @@ void Keyboard_USB :: usb2matrix(uint8_t *kd)
 		if (!kd[i]) {
 			break;
 		}
-		if (keymap_normal[kd[i]] == KEY_F12) {
+		uint8_t normal = usb_keymap_lookup(keymap_normal, sizeof(keymap_normal), kd[i]);
+		if (normal == KEY_F12) {
 			restore = 1;
 		}
-		if (keymap_normal[kd[i]] == KEY_F11) {
+		if (normal == KEY_F11) {
 		    freeze = 1;
 		}
-		uint8_t n = (kd[0] & 0x22) ? keymap_usb2matrix_shift[kd[i]] :
-		                            keymap_usb2matrix[kd[i]];
+		uint8_t n = (kd[0] & 0x22) ? usb_matrix_lookup(keymap_usb2matrix_shift, sizeof(keymap_usb2matrix_shift), kd[i]) :
+		                            usb_matrix_lookup(keymap_usb2matrix, sizeof(keymap_usb2matrix), kd[i]);
 		//printf("[%b]", n);
 		if (n != 0xFF) {
 		    something_else_pressed = 1;
@@ -211,8 +283,9 @@ void Keyboard_USB :: usb2matrix(uint8_t *kd)
 
 	// copy temporary to hardware
 	for(int i=0; i<8; i++) {
-		matrix[i] = out[i];
+		matrix_state[i] = out[i];
 	}
+	applyMatrixState();
 }
 
 // called from USB thread
@@ -230,11 +303,20 @@ void Keyboard_USB :: process_data(uint8_t *kbdata)
 		}
 		if (!PresentInLastData(kbdata[i])) {
 			if (kbdata[0] & 0x11) { // control
-				putch(keymap_control[kbdata[i]]);
+				uint8_t mapped = usb_keymap_lookup(keymap_control, sizeof(keymap_control), kbdata[i]);
+				if ((mapped != 0) && (mapped != KEY_ERR)) {
+					putch(mapped);
+				}
 			} else if (kbdata[0] & 0x22) { // shift
-				putch(keymap_shifted[kbdata[i]]);
+				uint8_t mapped = usb_keymap_lookup(keymap_shifted, sizeof(keymap_shifted), kbdata[i]);
+				if ((mapped != 0) && (mapped != KEY_ERR)) {
+					putch(mapped);
+				}
 			} else {
-				putch(keymap_normal[kbdata[i]]);
+				uint8_t mapped = usb_keymap_lookup(keymap_normal, sizeof(keymap_normal), kbdata[i]);
+				if ((mapped != 0) && (mapped != KEY_ERR)) {
+					putch(mapped);
+				}
 			}
 		}
 	}
@@ -246,30 +328,143 @@ void Keyboard_USB :: process_data(uint8_t *kbdata)
 // called from the user interface thread
 int  Keyboard_USB :: getch(void)
 {
+    if (injected_matrix_hold > 0) {
+		injected_matrix_hold--;
+		if (injected_matrix_hold == 0) {
+			memset(injected_matrix_state, 0, sizeof(injected_matrix_state));
+			applyMatrixState();
+		}
+    }
     if (num_keys == 1) { // implement repeat for one key pressed (other than the modifiers)
         if (delay_count == 0) {
             delay_count = repeat_speed;
 
             if (last_data[0] & 0x11) { // control
-                putch(keymap_control[last_data[2]]);
+				uint8_t mapped = usb_keymap_lookup(keymap_control, sizeof(keymap_control), last_data[2]);
+				if ((mapped != 0) && (mapped != KEY_ERR)) {
+					putch(mapped);
+				}
             } else if (last_data[0] & 0x22) { // shift
-                putch(keymap_shifted[last_data[2]]);
+				uint8_t mapped = usb_keymap_lookup(keymap_shifted, sizeof(keymap_shifted), last_data[2]);
+				if ((mapped != 0) && (mapped != KEY_ERR)) {
+					putch(mapped);
+				}
             } else {
-                putch(keymap_normal[last_data[2]]);
+				uint8_t mapped = usb_keymap_lookup(keymap_normal, sizeof(keymap_normal), last_data[2]);
+				if ((mapped != 0) && (mapped != KEY_ERR)) {
+					putch(mapped);
+				}
             }
         } else {
             delay_count --;
         }
     }
+    int injected_key = -1;
+    portENTER_CRITICAL();
+    if (injected_head != injected_tail) {
+		injected_key = injected_buffer[injected_tail];
+		injected_tail ++;
+		if (injected_tail == USB_KEY_BUFFER_SIZE) {
+			injected_tail = 0;
+		}
+    }
+    portEXIT_CRITICAL();
+    if (injected_key >= 0) {
+		if (matrixEnabled) {
+			setInjectedMatrixKey(injected_key);
+		}
+		return injected_key;
+    }
     if (key_head != key_tail) {
 		uint8_t key = key_buffer[key_tail];
 		key_tail ++;
-		if (key_tail == KEY_BUFFER_SIZE) {
+		if (key_tail == USB_KEY_BUFFER_SIZE) {
 			key_tail = 0;
 		}
 		return key;
 	}
 	return -1;
+}
+
+void Keyboard_USB :: push_head(int c)
+{
+	push_head_repeat(c, 1);
+}
+
+void Keyboard_USB :: push_head_repeat(int c, int repeat)
+{
+	if ((c < 0) || (c > 0xFF)) {
+		return;
+	}
+	portENTER_CRITICAL();
+	while (repeat-- > 0) {
+		int next_head = injected_head + 1;
+		if (next_head == USB_KEY_BUFFER_SIZE) {
+			next_head = 0;
+		}
+		if (next_head == injected_tail) {
+			return;
+		}
+		injected_buffer[injected_head] = (uint8_t)c;
+		injected_head = next_head;
+	}
+	portEXIT_CRITICAL();
+}
+
+bool Keyboard_USB :: has_injected_key(int c) const
+{
+	return count_injected_key(c) > 0;
+}
+
+int Keyboard_USB :: count_injected_key(int c) const
+{
+	if ((c < 0) || (c > 0xFF)) {
+		return 0;
+	}
+	int count = 0;
+	portENTER_CRITICAL();
+	for (int index = injected_tail; index != injected_head; ) {
+		if (injected_buffer[index] == (uint8_t)c) {
+			count++;
+		}
+		index++;
+		if (index == USB_KEY_BUFFER_SIZE) {
+			index = 0;
+		}
+	}
+	portEXIT_CRITICAL();
+	return count;
+}
+
+void Keyboard_USB :: remove_injected_key(int c)
+{
+	if ((c < 0) || (c > 0xFF)) {
+		return;
+	}
+	if (injected_head == injected_tail) {
+		return;
+	}
+
+	uint8_t filtered[USB_KEY_BUFFER_SIZE];
+	int write_index = 0;
+	portENTER_CRITICAL();
+	for (int index = injected_tail; index != injected_head; ) {
+		uint8_t key = injected_buffer[index];
+		if (key != (uint8_t)c) {
+			filtered[write_index++] = key;
+		}
+		index++;
+		if (index == USB_KEY_BUFFER_SIZE) {
+			index = 0;
+		}
+	}
+
+	injected_tail = 0;
+	injected_head = 0;
+	for (int i = 0; i < write_index; i++) {
+		injected_buffer[injected_head++] = filtered[i];
+	}
+	portEXIT_CRITICAL();
 }
 
 void Keyboard_USB :: wait_free(void)
@@ -294,6 +489,10 @@ void Keyboard_USB :: wait_free(void)
 void Keyboard_USB :: clear_buffer(void)
 {
 	key_tail = key_head;
+	portENTER_CRITICAL();
+	injected_tail = injected_head;
+	portEXIT_CRITICAL();
+	clearInjectedMatrixState();
 }
 
 void Keyboard_USB :: setMatrix(volatile uint8_t *matrix)
@@ -305,10 +504,22 @@ void Keyboard_USB :: setMatrix(volatile uint8_t *matrix)
 	}
 
 	this->matrix = matrix;
+	memset(matrix_state, 0, sizeof(matrix_state));
+	memset(injected_matrix_state, 0, sizeof(injected_matrix_state));
+	injected_matrix_hold = 0;
 
 	if (this->matrix) {
 		for (int i=0; i<8; i++) {
 			matrix[i] = 0x00;
 		}
 	}
+}
+
+void Keyboard_USB :: enableMatrix(bool enable)
+{
+	matrixEnabled = enable;
+	if (!enable) {
+		clearInjectedMatrixState();
+	}
+	applyMatrixState();
 }
