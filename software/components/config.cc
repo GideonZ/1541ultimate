@@ -663,14 +663,6 @@ void ConfigItem :: reset(void)
 {
     if ((definition->type == CFG_TYPE_STRING) || (definition->type == CFG_TYPE_STRFUNC) || (definition->type == CFG_TYPE_STRPASS)) {
         strncpy(string, (const char *)definition->def, definition->max);
-        string[definition->max] = '\0';
-        value = 0;
-    } else if (definition->type == CFG_TYPE_INFO) {
-        string[0] = '\0';
-        if (definition->def) {
-            strncpy(string, (const char *)definition->def, definition->max);
-            string[definition->max] = '\0';
-        }
         value = 0;
     } else {
         value = (int)definition->def;
@@ -770,26 +762,22 @@ int ConfigItem :: pack(uint8_t *buffer, int len)
 // width is the actual width in characters on the screen, and two additional bytes are needed to set the color
 const char *ConfigItem :: get_display_string(char *buffer, int width, int act, int inact)
 {
-	static char buf[96];
+	static char buf[32];
 
     memset(buffer, ' ', width+2);
     buffer[width+2] = '\0';
-    buf[0] = '\0';
     
     switch(definition->type) {
         case CFG_TYPE_VALUE:
-            snprintf(buf, sizeof(buf), definition->item_format, value);
+            sprintf(buf, definition->item_format, value);
             break;
         case CFG_TYPE_ENUM:
-            snprintf(buf, sizeof(buf), definition->item_format, definition->items[value]);
+            sprintf(buf, definition->item_format, definition->items[value]);
             break;
         case CFG_TYPE_STRING:
         case CFG_TYPE_STRFUNC:
-            snprintf(buf, sizeof(buf), definition->item_format, string ? string : "");
-            break;
         case CFG_TYPE_INFO:
-            strncpy(buf, string ? string : "", sizeof(buf) - 1);
-            buf[sizeof(buf) - 1] = '\0';
+            sprintf(buf, definition->item_format, string);
             break;
         case CFG_TYPE_STRPASS:
             if (*string)
@@ -799,23 +787,20 @@ const char *ConfigItem :: get_display_string(char *buffer, int width, int act, i
             break;
         case CFG_TYPE_FUNC:
         case CFG_TYPE_SEP:
-            snprintf(buf, sizeof(buf), "%s", definition->item_format ? definition->item_format : "");
+            sprintf(buf, definition->item_format);
             break;
         default:
-            snprintf(buf, sizeof(buf), "%s", "Unknown type.");
+            sprintf(buf, "Unknown type.");
     }
 
     int len = strlen(buf);
-    if (len > width) {
-        len = width;
-    }
 
     const char *src;
     char *dst;
     // left align copy
     src = altname.length() ? altname.c_str() : definition->item_text;
     dst = buffer;
-    while(*src && (dst < &buffer[width])) {
+	while(*src) {
         *(dst++) = *(src++);
     }
     // right align copy

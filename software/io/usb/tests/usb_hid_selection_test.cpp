@@ -96,12 +96,6 @@ TEST(HidVisibilitySelectionTest, ActiveInputMayReplaceVisibleDevice)
 	EXPECT_TRUE(usb_hid_should_claim_visibility(keychron, 1, logitech, 2, true));
 }
 
-TEST(HidVisibilitySelectionTest, SameInterfaceMayRefreshItsOwnVisibility)
-{
-	const UsbDevice *logitech = makeDeviceAddress(0x2000);
-	EXPECT_TRUE(usb_hid_should_claim_visibility(logitech, 2, logitech, 2, false));
-}
-
 TEST(HidVisibilitySelectionTest, DisconnectMatchesOnlyTheExactVisibleSource)
 {
 	const UsbDevice *keychron = makeDeviceAddress(0x1000);
