@@ -226,6 +226,7 @@ class BrowsableConfigGroup: public Browsable
     {
         if (children.get_elements() == 0) {
             IndexedList<ConfigItem *> *itemList = group->getConfigItems();
+            // store->at_open_config(); FIXME
             for (int i = 0; i < itemList->get_elements(); i++) {
                 children.append(new BrowsableConfigItem((*itemList)[i]));
             }

@@ -800,7 +800,7 @@ const char *ConfigItem :: get_display_string(char *buffer, int width, int act, i
     // left align copy
     src = altname.length() ? altname.c_str() : definition->item_text;
     dst = buffer;
-	while(*src) {
+    while(*src) {
         *(dst++) = *(src++);
     }
     // right align copy
