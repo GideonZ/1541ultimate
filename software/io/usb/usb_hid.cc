@@ -53,7 +53,7 @@ struct t_usb_hid_visibility
 {
     char name[33];
     char mode[12];
-    const void *source_device;
+    const UsbDevice *source_device;
     int source_interface;
 };
 
@@ -63,7 +63,7 @@ t_usb_hid_visibility usb_hid_keyboard_visibility = { "Not connected", "-", NULL,
 struct t_usb_hid_keyboard_source
 {
     bool occupied;
-    const void *source_device;
+    const UsbDevice *source_device;
     int source_interface;
     uint8_t report[8];
 };
@@ -172,7 +172,7 @@ void usb_hid_append_boot_key(uint8_t out[8], uint8_t key)
 
 t_usb_hid_keyboard_source *usb_hid_find_keyboard_source(UsbDevice *device, UsbInterface *interface, bool create)
 {
-    const void *source_device = device;
+    const UsbDevice *source_device = device;
     int interface_number = usb_hid_get_source_interface(interface);
     t_usb_hid_keyboard_source *free_slot = NULL;
 
@@ -273,9 +273,10 @@ int usb_hid_filter_menu_wheel_step(int step, int& latch)
 
 void usb_hid_clear_visibility_if_source_matches(t_usb_hid_visibility& visibility, UsbDevice *device, UsbInterface *interface)
 {
-    const void *source_device = device;
+    const UsbDevice *source_device = device;
     int interface_number = interface ? interface->getInterfaceDescriptor()->interface_number : -1;
-    if ((visibility.source_device == source_device) && (visibility.source_interface == interface_number)) {
+    if (usb_hid_source_matches(visibility.source_device, visibility.source_interface,
+                               source_device, interface_number)) {
         usb_hid_clear_visibility(visibility);
     }
 }
@@ -754,10 +755,15 @@ void UsbHidDriver :: install(UsbInterface *intf)
         mouse_registered = true;
         usb_hid_apply_mouse_output_enable();
     }
-    if (mouse) {
+    int interface_number = usb_hid_get_source_interface(interface);
+    if (mouse && usb_hid_should_claim_visibility(usb_hid_mouse_visibility.source_device,
+                                                 usb_hid_mouse_visibility.source_interface,
+                                                 dev, interface_number, false)) {
         usb_hid_set_visibility(usb_hid_mouse_visibility, dev, interface, descriptor_mouse);
     }
-    if (keyboard) {
+    if (keyboard && usb_hid_should_claim_visibility(usb_hid_keyboard_visibility.source_device,
+                                                    usb_hid_keyboard_visibility.source_interface,
+                                                    dev, interface_number, false)) {
         usb_hid_set_visibility(usb_hid_keyboard_visibility, dev, interface, descriptor_keyboard);
     }
     if (mouse || keyboard) {
