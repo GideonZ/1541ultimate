@@ -111,6 +111,7 @@ SRCS_CC	 =  stream.cc \
 			userinterface.cc \
 			ui_elements.cc \
 			editor.cc \
+			hex_editor.cc \
 			pattern.cc \
 			ui_stream.cc \
 			tree_browser.cc \

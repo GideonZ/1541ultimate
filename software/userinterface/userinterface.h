@@ -45,6 +45,11 @@ typedef enum {
 } keymap_options_t;
 
 
+#define BYTES_PER_HEX_ROW 8
+#define CHARS_PER_HEX_ROW 37
+
+class Editor;
+class HexEditor;
 class UserInterface : public ConfigurableObject, public HostClient
 {
 private:
@@ -63,6 +68,7 @@ private:
     int  pollFocussed(void);
     void peel_off(void);
     bool buttonDownFor(uint32_t ms);
+    void run_editor(Editor *);
 public:
     int color_border, color_bg, color_fg, color_sel, color_sel_bg, reverse_sel;
     int color_status, color_inactive;
@@ -108,6 +114,7 @@ public:
     int  getPreferredType(void);
     void help();
     void run_editor(const char *, int);
+    void run_hex_editor(const char *, int);
     void swapDisk(void);
     void send_keystroke(int key);
     static bool anyMenuActive(void);
