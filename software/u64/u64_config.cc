@@ -79,6 +79,8 @@ static void init(void *_a, void *_b)
 }
 InitFunction u64_init_func("U64 Config", init, NULL, NULL, 1);
 
+static void u64_update_usb_hid_info_items(ConfigStore *cfg);
+
 // Semaphore set by interrupt
 static SemaphoreHandle_t resetSemaphore;
 
@@ -896,6 +898,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 
         cfg->set_alt_name("C64U Specific Settings");
         setup_config_menu(); // Create different config groups
+        u64_update_usb_hid_info_items(cfg);
         cfg->hide();
 
         // Boot hotkey
@@ -1155,6 +1158,9 @@ extern "C" void u64_dispatch_usb_hid_status_refresh(void)
     portEXIT_CRITICAL();
 
     if (refresh_needed) {
+        if (u64_configurator && u64_configurator->cfg) {
+            u64_update_usb_hid_info_items(u64_configurator->cfg);
+        }
         FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
     }
 }
