@@ -248,6 +248,16 @@ FTPDaemonThread::FTPDaemonThread(int socket, uint32_t addr, uint16_t port) :
     current_year = 1980 + (fattime >> 25);
 }
 
+FTPDaemonThread::~FTPDaemonThread()
+{
+    if (renamefrom) {
+        delete[] renamefrom;
+    }
+    if (vfs) {
+        vfs_closefs(vfs);
+    }
+}
+
 void FTPDaemonThread::run(void *a)
 {
     FTPDaemonThread *thread = (FTPDaemonThread *) a;
@@ -269,7 +279,7 @@ uint16_t FTPDaemonThread::getBindPort()
 int FTPDaemonThread::handle_connection()
 {
     sockaddr my_addr;
-    uint32_t size;
+    socklen_t size = sizeof(my_addr);
     getsockname(socket, &my_addr, &size);
 
     for (int i = 0; i < 4; i++)
@@ -411,7 +421,7 @@ void FTPDaemonThread::cmd_pwd(const char *arg)
     path = vfs_getcwd(vfs, NULL, 0);
     if (path) {
         send_msg(msg257PWD, path);
-        delete path;
+        free(path);
     }
 }
 
@@ -549,6 +559,12 @@ void FTPDaemonThread::cmd_stor(const char *arg)
         return;
     }
 
+    if (!connection) {
+        send_msg(msg425);
+        vfs_close(vfs_file);
+        return;
+    }
+
     send_msg(msg150stor, arg);
 
     bool success = connection->receivefile(vfs_file);
@@ -621,7 +637,7 @@ void FTPDaemonThread::cmd_rnfr(const char *arg)
         return;
     }
     if (renamefrom)
-        delete renamefrom;
+        delete[] renamefrom;
     renamefrom = new char[strlen(arg) + 1];
     if (renamefrom == NULL) {
         send_msg(msg451);
@@ -652,6 +668,8 @@ void FTPDaemonThread::cmd_rnto(const char *arg)
     } else {
         send_msg(msg250);
     }
+    delete[] renamefrom;
+    renamefrom = NULL;
 }
 
 void FTPDaemonThread::cmd_mkd(const char *arg)
@@ -667,13 +685,14 @@ void FTPDaemonThread::cmd_mkd(const char *arg)
     char *path = vfs_getcwd(vfs, NULL, 0);
     if (!path) {
         send_msg(msg553);
+        return;
     }
     if (vfs_mkdir(vfs, arg, VFS_IRWXU | VFS_IRWXG | VFS_IRWXO) != 0) {
         send_msg(msg553);
     } else {
         send_msg(msg257MKD, path, arg);
     }
-    delete path;
+    free(path);
 }
 
 void FTPDaemonThread::cmd_rmd(const char *arg)

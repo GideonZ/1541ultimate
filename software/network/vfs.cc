@@ -63,7 +63,8 @@ void vfs_close(vfs_file_t *file)
 {
     FileManager :: getFileManager() -> fclose((File *)file->file);
     dbg_printf("File closed. clearing open file link.\n");
-    file->parent_fs->open_file = NULL;    
+    file->parent_fs->open_file = NULL;
+    delete file;
 }
 
 int  vfs_read(void *buffer, int chunks, int chunk_len, vfs_file_t *file)
@@ -154,6 +155,7 @@ void vfs_closedir(vfs_dir_t *dir)
         	}
         	delete listOfEntries;
         }
+        delete dir->entry;
         delete dir;
     }
 }
