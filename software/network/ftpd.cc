@@ -153,8 +153,8 @@ void FTPDaemon::ftp_listen_task(void *a)
 {
     FTPDaemon *daemon = (FTPDaemon *) a;
     int error = daemon->listen_task();
-    printf("Going to suspend the FTPDaemon. Error = %d\n", error);
-    vTaskSuspend(NULL);
+    printf("FTPDaemon listen task exiting. Error = %d\n", error);
+    vTaskDelete(NULL);
 }
 
 int FTPDaemon::listen_task()
@@ -191,8 +191,8 @@ int FTPDaemon::listen_task()
         int actual_socket = accept(sockfd, (struct sockaddr * ) &cli_addr, &clilen);
         if (actual_socket < 0) {
             puts("FTPD: ERROR on accept");
+            vTaskDelay(100 / portTICK_PERIOD_MS);
             continue;  // Remote probably closed, just wait for another connection
-            // return -3;
         }
 
         struct timeval tv;
@@ -202,7 +202,15 @@ int FTPDaemon::listen_task()
 
         FTPDaemonThread *thread = new FTPDaemonThread(actual_socket, cli_addr.sin_addr.s_addr, cli_addr.sin_port);
 
-        xTaskCreate(FTPDaemonThread::run, "FTP Task", configMINIMAL_STACK_SIZE, thread, PRIO_NETSERVICE, NULL);
+        BaseType_t res = xTaskCreate(FTPDaemonThread::run, "FTP Task", configMINIMAL_STACK_SIZE, thread, PRIO_NETSERVICE, NULL);
+        if (res != pdPASS) {
+            puts("FTPD: xTaskCreate failed; dropping connection");
+            closesocket(actual_socket);
+            delete thread;
+            num_threads--;
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+            continue;
+        }
     }
 }
 
@@ -240,6 +248,16 @@ FTPDaemonThread::FTPDaemonThread(int socket, uint32_t addr, uint16_t port) :
     current_year = 1980 + (fattime >> 25);
 }
 
+FTPDaemonThread::~FTPDaemonThread()
+{
+    if (renamefrom) {
+        delete[] renamefrom;
+    }
+    if (vfs) {
+        vfs_closefs(vfs);
+    }
+}
+
 void FTPDaemonThread::run(void *a)
 {
     FTPDaemonThread *thread = (FTPDaemonThread *) a;
@@ -261,7 +279,7 @@ uint16_t FTPDaemonThread::getBindPort()
 int FTPDaemonThread::handle_connection()
 {
     sockaddr my_addr;
-    uint32_t size;
+    socklen_t size = sizeof(my_addr);
     getsockname(socket, &my_addr, &size);
 
     for (int i = 0; i < 4; i++)
@@ -403,7 +421,7 @@ void FTPDaemonThread::cmd_pwd(const char *arg)
     path = vfs_getcwd(vfs, NULL, 0);
     if (path) {
         send_msg(msg257PWD, path);
-        delete path;
+        free(path);
     }
 }
 
@@ -541,6 +559,12 @@ void FTPDaemonThread::cmd_stor(const char *arg)
         return;
     }
 
+    if (!connection) {
+        send_msg(msg425);
+        vfs_close(vfs_file);
+        return;
+    }
+
     send_msg(msg150stor, arg);
 
     bool success = connection->receivefile(vfs_file);
@@ -577,7 +601,12 @@ void FTPDaemonThread::cmd_pasv(const char *arg)
         delete connection;
     }
     connection = new FTPDataConnection(this);
-    connection->do_bind();
+    if (connection->do_bind() != ERR_OK) {
+        connection->close_connection();
+        delete connection;
+        connection = 0;
+        send_msg(msg425);
+    }
 }
 
 void FTPDaemonThread::cmd_abrt(const char *arg)
@@ -613,7 +642,7 @@ void FTPDaemonThread::cmd_rnfr(const char *arg)
         return;
     }
     if (renamefrom)
-        delete renamefrom;
+        delete[] renamefrom;
     renamefrom = new char[strlen(arg) + 1];
     if (renamefrom == NULL) {
         send_msg(msg451);
@@ -644,6 +673,8 @@ void FTPDaemonThread::cmd_rnto(const char *arg)
     } else {
         send_msg(msg250);
     }
+    delete[] renamefrom;
+    renamefrom = NULL;
 }
 
 void FTPDaemonThread::cmd_mkd(const char *arg)
@@ -659,13 +690,14 @@ void FTPDaemonThread::cmd_mkd(const char *arg)
     char *path = vfs_getcwd(vfs, NULL, 0);
     if (!path) {
         send_msg(msg553);
+        return;
     }
     if (vfs_mkdir(vfs, arg, VFS_IRWXU | VFS_IRWXG | VFS_IRWXO) != 0) {
         send_msg(msg553);
     } else {
         send_msg(msg257MKD, path, arg);
     }
-    delete path;
+    free(path);
 }
 
 void FTPDaemonThread::cmd_rmd(const char *arg)
@@ -857,10 +889,15 @@ FTPDataConnection::FTPDataConnection(FTPDaemonThread *parent)
 int FTPDataConnection::setup_connection()
 {
     if (parent->passive) {
-        if (ulTaskNotifyTake(pdTRUE, 2000)) { // try to wait for some time
-            //printf("Semaphore take returned. apparently someone connected to my socket!\n");
-            vTaskDelete(acceptTaskHandle);
-            return 0;
+        // The accept task bounds itself with SO_RCVTIMEO, so it always
+        // notifies within a few seconds and then self-deletes. Wait longer
+        // than that to guarantee we observe the notification and that the
+        // task has finished touching this object before we return.
+        if (ulTaskNotifyTake(pdTRUE, 8000 / portTICK_PERIOD_MS)) {
+            if (connected) {
+                return 0;
+            }
+            return -1;
         } else {
             printf("FTPD: Taking semaphore timed out.\n"
                    "Number of active connections in this thread: %d\n"
@@ -930,11 +967,16 @@ int FTPDataConnection::do_bind(void)
     } while (result < 0);
 
     result = listen(sockfd, 2);
-    parent->send_msg(msg227, parent->my_ip[0], parent->my_ip[1], parent->my_ip[2], parent->my_ip[3], port >> 8, port & 0xFF);
 
     spawningTask = xTaskGetCurrentTaskHandle();
-    xTaskCreate(FTPDataConnection::accept_data, "FTP Data", configMINIMAL_STACK_SIZE, this, PRIO_NETSERVICE,
+    BaseType_t res = xTaskCreate(FTPDataConnection::accept_data, "FTP Data", configMINIMAL_STACK_SIZE, this, PRIO_NETSERVICE,
             &acceptTaskHandle);
+    if (res != pdPASS) {
+        puts("FTPD: failed to create passive accept task");
+        return -ENOTCONN;
+    }
+
+    parent->send_msg(msg227, parent->my_ip[0], parent->my_ip[1], parent->my_ip[2], parent->my_ip[3], port >> 8, port & 0xFF);
     vTaskDelay(1); // allow the other task to run
     return 0;
 }
@@ -944,21 +986,37 @@ void FTPDataConnection::accept_data(void *a) // task entry point
 {
     FTPDataConnection *conn = (FTPDataConnection *) a;
 
-    socklen_t clilen;
-    struct sockaddr_in cli_addr;
+    // Bound the accept() call so this task always terminates. Without a
+    // timeout a client that never connects to the data channel would leave
+    // this task blocked forever, leaking tasks until the system runs out
+    // of resources. lwIP honours SO_RCVTIMEO on accept() via netconn_accept.
+    struct timeval tv;
+    tv.tv_sec = 5;
+    tv.tv_usec = 0;
+    if (setsockopt(conn->sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv)) < 0) {
+        puts("FTPD: failed to set accept timeout");
+        conn->actual_socket = -1;
+        xTaskNotifyGive(conn->spawningTask);
+        // After the notify the control thread may free `conn`. Do not touch
+        // `conn` after this point; just self-delete so no task is leaked.
+        vTaskDelete(NULL);
+    }
 
-    // TODO: Add timeout
-    clilen = sizeof(cli_addr);
-    conn->actual_socket = accept(conn->sockfd, (struct sockaddr * ) &cli_addr, &clilen);
-    if (conn->actual_socket < 0) {
-        puts("ERROR on accept");
+    socklen_t clilen = sizeof(struct sockaddr_in);
+    struct sockaddr_in cli_addr;
+    int s = accept(conn->sockfd, (struct sockaddr * ) &cli_addr, &clilen);
+    if (s < 0) {
+        puts("FTPD: accept timed out or failed");
+        conn->actual_socket = -1;
     } else {
+        conn->actual_socket = s;
         conn->connected = 1;
     }
     xTaskNotifyGive(conn->spawningTask);
 
-    dbg_printf("FTPD: Suspending FTPDataConnection\n");
-    vTaskSuspend(NULL);
+    // After the notify the control thread may free `conn`. Do not touch
+    // `conn` after this point; just self-delete so no task is leaked.
+    vTaskDelete(NULL);
 }
 
 void FTPDataConnection::directory(int listType, vfs_dir_t *dir)

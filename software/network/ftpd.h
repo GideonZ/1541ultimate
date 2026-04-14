@@ -113,7 +113,7 @@ class FTPDaemonThread
 	int open_dataconnection(bool passive);
 public:
 	FTPDaemonThread(int sock, uint32_t addr, uint16_t port);
-	~FTPDaemonThread() { }
+	~FTPDaemonThread();
 
 	int handle_connection(void);
 	uint16_t getBindPort();
