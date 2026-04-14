@@ -601,7 +601,12 @@ void FTPDaemonThread::cmd_pasv(const char *arg)
         delete connection;
     }
     connection = new FTPDataConnection(this);
-    connection->do_bind();
+    if (connection->do_bind() != ERR_OK) {
+        connection->close_connection();
+        delete connection;
+        connection = 0;
+        send_msg(msg425);
+    }
 }
 
 void FTPDaemonThread::cmd_abrt(const char *arg)
@@ -962,11 +967,16 @@ int FTPDataConnection::do_bind(void)
     } while (result < 0);
 
     result = listen(sockfd, 2);
-    parent->send_msg(msg227, parent->my_ip[0], parent->my_ip[1], parent->my_ip[2], parent->my_ip[3], port >> 8, port & 0xFF);
 
     spawningTask = xTaskGetCurrentTaskHandle();
-    xTaskCreate(FTPDataConnection::accept_data, "FTP Data", configMINIMAL_STACK_SIZE, this, PRIO_NETSERVICE,
+    BaseType_t res = xTaskCreate(FTPDataConnection::accept_data, "FTP Data", configMINIMAL_STACK_SIZE, this, PRIO_NETSERVICE,
             &acceptTaskHandle);
+    if (res != pdPASS) {
+        puts("FTPD: failed to create passive accept task");
+        return -ENOTCONN;
+    }
+
+    parent->send_msg(msg227, parent->my_ip[0], parent->my_ip[1], parent->my_ip[2], parent->my_ip[3], port >> 8, port & 0xFF);
     vTaskDelay(1); // allow the other task to run
     return 0;
 }
