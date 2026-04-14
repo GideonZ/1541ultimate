@@ -13,6 +13,9 @@
 
 #include "home_directory.h"
 #include "subsys.h"
+#include "editor.h"
+
+#define MAX_FILE_SIZE_TO_VIEW 262144
 
 // member
 int UserFileInteraction::fetch_context_items(BrowsableDirEntry *br, IndexedList<Action *> &list)
@@ -30,9 +33,10 @@ int UserFileInteraction::fetch_context_items(BrowsableDirEntry *br, IndexedList<
         list.append(new Action("Enter", UserFileInteraction::S_enter, 0));
         count++;
     }
-    if ((info->size <= 262144) && (!(info->attrib & (AM_DIR | AM_VOL)))) {
+    if ((info->size <= MAX_FILE_SIZE_TO_VIEW) && (!(info->attrib & (AM_DIR | AM_VOL)))) {
         list.append(new Action("View", UserFileInteraction::S_view, 0));
-        count++;
+        list.append(new Action("Hex View", UserFileInteraction::S_hex_view, 0));
+        count += 2;
     }
     if (info->is_writable() && !(info->attrib & AM_VOL)) {
         list.append(new Action("Rename", UserFileInteraction::S_rename, 0));
@@ -132,22 +136,45 @@ SubsysResultCode_e UserFileInteraction::S_delete(SubsysCommand *cmd)
     return SSRET_OK;
 }
 
-SubsysResultCode_e UserFileInteraction::S_view(SubsysCommand *cmd)
+static SubsysResultCode_e view_file(SubsysCommand *cmd, EditorType editor_type)
 {
     FileManager *fm = FileManager::getFileManager();
     File *f = 0;
     FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
-    uint32_t transferred;
-    if (f != NULL) {
+    uint32_t transferred = 0;
+    if ((fres == FR_OK) && (f != NULL)) {
         uint32_t size = f->get_size();
         char *text_buf = new char[size + 1];
-        FRESULT fres = f->read(text_buf, size, &transferred);
-        printf("Res = %d. Read text buffer: %d bytes\n", fres, transferred);
-        text_buf[transferred] = 0;
-        cmd->user_interface->run_editor(text_buf, transferred);
-        delete text_buf;
+        fres = f->read(text_buf, size, &transferred);
+        printf("Res = %d. Read text buffer: %d bytes. File size: %d bytes\n", fres, transferred, size);
+        if (transferred > size) {
+            transferred = size;
+        }
+        if (fres == FR_OK) {
+            text_buf[transferred] = 0;
+            switch (editor_type) {
+                case HEX_EDITOR:
+                    cmd->user_interface->run_hex_editor(text_buf, transferred);
+                    break;
+                default:
+                    cmd->user_interface->run_editor(text_buf, transferred);
+                    break;
+            }
+        }
+        delete[] text_buf;
+        fm->fclose(f);
     }
     return SSRET_OK;
+}
+
+SubsysResultCode_e UserFileInteraction::S_view(SubsysCommand *cmd)
+{
+    return view_file(cmd, TEXT_EDITOR);
+}
+
+SubsysResultCode_e UserFileInteraction::S_hex_view(SubsysCommand *cmd)
+{
+    return view_file(cmd, HEX_EDITOR);
 }
 
 SubsysResultCode_e UserFileInteraction::S_createDir(SubsysCommand *cmd)

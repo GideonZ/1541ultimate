@@ -134,6 +134,7 @@ public:
     void update_task_items(bool writablePath);
     SubsysResultCode_e executeCommand(SubsysCommand *cmd);
     void effectuate_settings();
+    void on_edit();
 
     static int setPllOffset(ConfigItem *it);
     static int setMixer(ConfigItem *it);

@@ -40,6 +40,7 @@ const char *geosCopyProt[] = { "none", "Gaps", "Track 36", "Both" };
 #define CFG_C1541_ROMFILE2  0xE3
 #define CFG_C1541_EXITMOUNT 0xE4
 #define CFG_C1541_GEOSGAPS  0xDF
+#define CFG_C1541_TWIST     0xE5
 
 const struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_POWERED,   CFG_TYPE_ENUM,   "Drive",                      "%s", en_dis,     0,  1, 1 },
@@ -59,6 +60,7 @@ const struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_GCRALIGN,  CFG_TYPE_ENUM,   "GCR Save Align Tracks",      "%s", yes_no,     0,  1, 1 },
     { CFG_C1541_EXITMOUNT, CFG_TYPE_ENUM,   "Leave Menu on Mount",        "%s", yes_no,     0,  1, 1 },
     { CFG_C1541_GEOSGAPS,  CFG_TYPE_ENUM,   "D64 Geos Copy Protection",   "%s", geosCopyProt, 0,  3, 0 },
+    { CFG_C1541_TWIST,     CFG_TYPE_VALUE,  "Track Twist",                "%d00", NULL,     0, 40, 27 },
     
 //    { CFG_C1541_LASTMOUNT, CFG_TYPE_ENUM,   "Load last mounted disk",  "%s", yes_no,     0,  1, 0 },
     { 0xFF, CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
@@ -459,16 +461,21 @@ void C1541 :: insert_disk(bool protect, GcrImage *image)
     uint32_t rotation_speed = (CLOCK_FREQ / 20); // 2 (half clocks) * 1/8 (bytes) * clocks per track. 300 RPM = 5 RPS. (5 * 8 / 2) = 20
 
     // side 0
+    uint32_t bit_time;
+    uint32_t track_len;
     volatile uint32_t *param = (volatile uint32_t *)&registers[C1541_PARAM_RAM];
     for(int i=0; i < GCRIMAGE_FIRSTTRACKSIDE1; i++) {
         GcrTrack *tr = &image->tracks[i];
-        uint32_t bit_time = rotation_speed / tr->track_length;
         if (tr->track_address) {
-            // printf("Side0: %2d %08x %08x %d\n", i, tr->track_address, tr->track_length, bit_time);
+            bit_time = rotation_speed / tr->track_length;
+            track_len = tr->track_length;
+            // printf("Side0: %2d %08x %08x %d\n", i, tr->track_address, track_len, bit_time);
             *(param++) = (uint32_t)tr->track_address;
-            *(param++) = (tr->track_length-1) | (bit_time << 16);
+            *(param++) = (track_len-1) | (bit_time << 16);
         } else {
-            param += 2;
+            // printf("Side0: %2d %08x %08x %d\n", i, tr->track_address, track_len, bit_time);
+            *(param++) = (uint32_t)dummy_track;
+            *(param++) = (track_len-1) | (bit_time << 16);
         }
         registers[C1541_DIRTYFLAGS + i/2] = 0;
     }            
@@ -477,13 +484,16 @@ void C1541 :: insert_disk(bool protect, GcrImage *image)
     param = (volatile uint32_t *)&registers[C1541_PARAM_RAM + 0x400]; // side 1
     for(int i=GCRIMAGE_FIRSTTRACKSIDE1; i < GCRIMAGE_MAXHDRTRACKS; i++) {
         GcrTrack *tr = &image->tracks[i];
-        uint32_t bit_time = rotation_speed / tr->track_length;
         if (tr->track_address) {
+            bit_time = rotation_speed / tr->track_length;
+            track_len = tr->track_length;
             // printf("Side1: %2d %08x %08x %d\n", i, tr->track_address, tr->track_length, bit_time);
             *(param++) = (uint32_t)tr->track_address;
-            *(param++) = (tr->track_length-1) | (bit_time << 16);
+            *(param++) = (track_len-1) | (bit_time << 16);
         } else {
-            param += 2;
+            // printf("Side1: %2d %08x %08x %d\n", i, tr->track_address, tr->track_length, bit_time);
+            *(param++) = (uint32_t)dummy_track;
+            *(param++) = (track_len-1) | (bit_time << 16);
         }
         registers[C1541_DIRTYFLAGS + i/2] = 0;
     }
@@ -585,8 +595,8 @@ void C1541 :: mount_d64(bool protect, File *file, int mode)
 	} else {
         printf("Loading...");
         bin_image->load(file);
-        printf("Converting...");
-        gcr_image->convert_disk_bin2gcr(bin_image, NULL, cfg->get_value(CFG_C1541_GEOSGAPS));
+        printf("Converting...%d\n", cfg->get_value(CFG_C1541_TWIST));
+        gcr_image->convert_disk_bin2gcr(bin_image, NULL, cfg->get_value(CFG_C1541_GEOSGAPS), 100*cfg->get_value(CFG_C1541_TWIST));
         printf("Inserting...");
         insert_disk(protect, gcr_image);
         printf("Done\n");

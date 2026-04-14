@@ -237,9 +237,13 @@ uint8_t *GcrImage :: convert_block_bin2gcr(uint8_t *bin, uint8_t *gcr, int len)
     return gcr;
 }
 
-uint8_t *GcrImage :: convert_track_bin2gcr(uint8_t logical_track_1b, int region, uint8_t *bin, uint8_t *gcr, uint8_t *errors, int errors_size, int geosgaps)
+uint8_t *GcrImage :: convert_track_bin2gcr(uint8_t logical_track_1b, int region, uint8_t *bin, uint8_t *gcr, uint8_t *errors, int errors_size, int geosgaps, int twist)
 {
 	uint8_t errorcode;
+
+    // reroute to internal buffer first
+    uint8_t *orig_dest = gcr;
+    gcr = this->track_buffer;
 
     uint8_t *bp, chk, b;
     uint8_t *end = gcr + track_lengths[region];
@@ -340,7 +344,14 @@ uint8_t *GcrImage :: convert_track_bin2gcr(uint8_t logical_track_1b, int region,
     if (geosgaps & 1)
         *(gcr-1) = 0x67;
 
-    return gcr;
+
+    // now copy with some offset, depending on track
+    int len = track_lengths[region];
+    int tw = twist * (16 - region) / 16;
+    int offset = (logical_track_1b * tw) % len;
+    memcpy(orig_dest + offset, track_buffer, len - offset);
+    memcpy(orig_dest, track_buffer + len - offset, offset);
+    return orig_dest + len; // gcr;
 }
 
 uint8_t *GcrImage :: find_sync(uint8_t *gcr_data, uint8_t *begin, uint8_t *end)
@@ -583,7 +594,7 @@ int GcrImage::convert_gcr_track_to_bin(uint8_t *gcr, int trackNumber, int trackL
     return secs;
 }
 
-void GcrImage :: convert_disk_bin2gcr(BinImage *bin_image, UserInterface *user_interface, int geoscopyprot)
+void GcrImage :: convert_disk_bin2gcr(BinImage *bin_image, UserInterface *user_interface, int geoscopyprot, int twist)
 {
 	id1 = bin_image->bin_data[91554];
     id2 = bin_image->bin_data[91555];
@@ -615,7 +626,7 @@ void GcrImage :: convert_disk_bin2gcr(BinImage *bin_image, UserInterface *user_i
             error_size  = bin_image->error_size - sec;
         }
         tracks[pt].track_address = gcr;
-        newgcr = convert_track_bin2gcr((uint8_t)(lt + 1), region, bin_image->track_start[lt], gcr, error_bytes, error_size,  geoscopyprot & 1);
+        newgcr = convert_track_bin2gcr((uint8_t)(lt + 1), region, bin_image->track_start[lt], gcr, error_bytes, error_size,  geoscopyprot & 1, twist);
         tracks[pt].track_length = int(newgcr - gcr);
         tracks[pt].speed_zone = region_speed_codes[region];
         tracks[pt].track_used = true;
@@ -965,7 +976,7 @@ bool GcrImage :: test(void)
     }
 
     // convert it to gcr
-    convert_disk_bin2gcr(bin, NULL, false);
+    convert_disk_bin2gcr(bin, NULL, false, 0);
 
     // now let's say we decode back to another location:
     bin->track_start[0] = bin->track_start[2];
@@ -1486,7 +1497,7 @@ SubsysResultCode_e ImageCreator :: S_createD64(SubsysCommand *cmd)
                     gcr = new GcrImage;
                     if(gcr) {
                         cmd->user_interface->show_progress("Converting..", tracks[cmd->mode]);
-                        gcr->convert_disk_bin2gcr(bin, cmd->user_interface, 0);
+                        gcr->convert_disk_bin2gcr(bin, cmd->user_interface, 0, 0);
                         cmd->user_interface->update_progress("Saving...", 1);
                         save_result = gcr->save(f, false, cmd->user_interface); // create image, without alignment, we are aligned already
                         cmd->user_interface->hide_progress();
