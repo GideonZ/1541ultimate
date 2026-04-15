@@ -1085,6 +1085,14 @@ void UsbHidDriver :: interrupt_handler()
         bool left_button_pressed = previous_left_button_pressed;
         bool right_button_pressed = (mouse_joy & 0x01) == 0;
         uint8_t previous_mouse_joy = mouse_joy;
+        bool previous_middle_button_pressed = (previous_mouse_joy & 0x02) == 0;
+        bool compact_shared_wheel_report = descriptor_mouse &&
+                                           has_button3 &&
+                                           has_wheel_v &&
+                                           has_wheel_h &&
+                                           HidMouseInterpreter::isCompactSharedWheelReport(rep_button3,
+                                                                                           rep_wheel_v,
+                                                                                           rep_wheel_h);
 
         if (descriptor_mouse) {
             bool axis_report = HidReport::hasValue(irq_data, data_len, rep_mouse_x) || HidReport::hasValue(irq_data, data_len, rep_mouse_y);
@@ -1163,7 +1171,15 @@ void UsbHidDriver :: interrupt_handler()
             bool reversed_wheel = usb_hid_get_wheel_direction() == WHEEL_DIRECTION_REVERSED;
             int scroll_factor = usb_hid_get_scroll_factor();
             uint8_t output_mouse_joy = mouse_joy;
-            int wheel_h_normalized = HidMouseInterpreter::normalizeHorizontalWheel(wheel_h);
+            bool middle_button_pressed = (mouse_joy & 0x02) == 0;
+            if (HidMouseInterpreter::shouldSuppressMiddleClickWheelNoise(compact_shared_wheel_report,
+                                                                         middle_button_pressed,
+                                                                         previous_middle_button_pressed)) {
+                wheel_v = 0;
+                wheel_h = 0;
+            }
+            int wheel_h_normalized = HidMouseInterpreter::normalizeHorizontalWheel(wheel_h,
+                                                                                   !compact_shared_wheel_report);
             int wheel_v_normalized = HidMouseInterpreter::normalizeVerticalWheel(wheel_v);
             int wheel_h_keys = HidMouseInterpreter::applyWheelDirection(wheel_h_normalized, reversed_wheel);
             int wheel_v_keys = HidMouseInterpreter::applyWheelDirection(wheel_v_normalized, reversed_wheel);

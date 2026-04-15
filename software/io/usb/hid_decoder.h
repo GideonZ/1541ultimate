@@ -450,7 +450,7 @@ class HidMouseInterpreter
 
     static int accumulateNativeWheelSteps(int wheel_delta, int sensitivity, int& accumulator)
     {
-        int scaled_delta = wheel_delta * clampWheelSetting(sensitivity);
+        (void)sensitivity;
         int steps = 0;
 
         if (((wheel_delta > 0) && (accumulator < 0)) ||
@@ -458,7 +458,7 @@ class HidMouseInterpreter
             accumulator = 0;
         }
 
-        accumulator += scaled_delta;
+        accumulator += wheel_delta;
         while (accumulator >= NATIVE_WHEEL_THRESHOLD) {
             accumulator -= NATIVE_WHEEL_THRESHOLD;
             steps++;
@@ -625,10 +625,31 @@ class HidMouseInterpreter
         return (raw_delta * scale_factor) / 256;
     }
 
+    static bool isCompactSharedWheelReport(const t_item_location& button3,
+                                           const t_item_location& wheel_v,
+                                           const t_item_location& wheel_h)
+    {
+        return (button3.report == 0) && (button3.offset == 2) && (button3.length == 1) &&
+               (wheel_v.report == 0) && (wheel_v.offset == 32) && (wheel_v.length == 8) &&
+               (wheel_h.report == 0) && (wheel_h.offset == 40) && (wheel_h.length == 8);
+    }
+
+    static bool shouldSuppressMiddleClickWheelNoise(bool compact_shared_wheel_report,
+                                                    bool middle_pressed,
+                                                    bool previous_middle_pressed)
+    {
+        return compact_shared_wheel_report && middle_pressed && !previous_middle_pressed;
+    }
+
+    static int normalizeHorizontalWheel(int wheel_h, bool invert)
+    {
+        return invert ? -wheel_h : wheel_h;
+    }
+
     static int normalizeHorizontalWheel(int wheel_h)
     {
         // AC Pan reports are opposite the existing right/left menu convention.
-        return -wheel_h;
+        return normalizeHorizontalWheel(wheel_h, true);
     }
 
     static int normalizeVerticalWheel(int wheel_v)

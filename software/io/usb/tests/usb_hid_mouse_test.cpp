@@ -40,6 +40,18 @@ const uint8_t kMouseHorizontalWheelDescriptor[] = {
 	0x08, 0x95, 0x01, 0x81, 0x06, 0xC0, 0xC0,
 };
 
+const uint8_t kCompactSharedWheelDescriptor[] = {
+	0x05, 0x01, 0x09, 0x02, 0xA1, 0x01, 0x09, 0x01,
+	0xA1, 0x00, 0x05, 0x09, 0x19, 0x01, 0x29, 0x03,
+	0x15, 0x00, 0x25, 0x01, 0x95, 0x03, 0x75, 0x01,
+	0x81, 0x02, 0x95, 0x01, 0x75, 0x05, 0x81, 0x01,
+	0x05, 0x01, 0x09, 0x30, 0x09, 0x31, 0x15, 0x81,
+	0x25, 0x7F, 0x75, 0x08, 0x95, 0x02, 0x81, 0x06,
+	0x95, 0x01, 0x81, 0x01, 0x09, 0x38, 0x95, 0x01,
+	0x81, 0x06, 0x05, 0x0C, 0x0A, 0x38, 0x02, 0x95,
+	0x01, 0x81, 0x06, 0xC0, 0xC0,
+};
+
 const uint8_t kKeyboardDescriptor[] = {
 	0x05, 0x01, 0x09, 0x06, 0xA1, 0x01, 0x05, 0x07,
 	0x19, 0xE0, 0x29, 0xE7, 0x15, 0x00, 0x25, 0x01,
@@ -182,6 +194,7 @@ TEST(HidMouseDescriptorTest, ParseHorizontalWheelAcPan)
 	ASSERT_TRUE(items.locateMouseFields(fields));
 	EXPECT_TRUE(fields.has_wheel_v);
 	EXPECT_TRUE(fields.has_wheel_h);
+	EXPECT_FALSE(HidMouseInterpreter::isCompactSharedWheelReport(fields.button3, fields.wheel_v, fields.wheel_h));
 	EXPECT_EQ(1, fields.mouse_x.report);
 	EXPECT_EQ(2, fields.wheel_h.report);
 
@@ -191,6 +204,29 @@ TEST(HidMouseDescriptorTest, ParseHorizontalWheelAcPan)
 	EXPECT_EQ(-4, HidReport::getValueFromData(axis_report, sizeof(axis_report), fields.mouse_y));
 	EXPECT_EQ(1, HidReport::getValueFromData(axis_report, sizeof(axis_report), fields.wheel_v));
 	EXPECT_EQ(-3, HidReport::getValueFromData(pan_report, sizeof(pan_report), fields.wheel_h));
+}
+
+TEST(HidMouseDescriptorTest, ParseCompactSharedWheelReport)
+{
+	HidReportParser parser;
+	HidItemList items;
+	t_hid_mouse_fields fields;
+	ASSERT_EQ(0, parser.decode(&items, kCompactSharedWheelDescriptor, sizeof(kCompactSharedWheelDescriptor)));
+	ASSERT_TRUE(items.locateMouseFields(fields));
+	EXPECT_TRUE(fields.has_button3);
+	EXPECT_TRUE(fields.has_wheel_v);
+	EXPECT_TRUE(fields.has_wheel_h);
+	EXPECT_TRUE(HidMouseInterpreter::isCompactSharedWheelReport(fields.button3, fields.wheel_v, fields.wheel_h));
+
+	const uint8_t clean_middle_click[] = { 0x04, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	const uint8_t contaminated_middle_click[] = { 0x04, 0x00, 0x00, 0x00, 0x00, 0xFF };
+	const uint8_t firm_press_artifact[] = { 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 };
+
+	EXPECT_NE(0, HidReport::getValueFromData(clean_middle_click, sizeof(clean_middle_click), fields.button3));
+	EXPECT_EQ(0, HidReport::getValueFromData(clean_middle_click, sizeof(clean_middle_click), fields.wheel_v));
+	EXPECT_EQ(0, HidReport::getValueFromData(clean_middle_click, sizeof(clean_middle_click), fields.wheel_h));
+	EXPECT_EQ(-1, HidReport::getValueFromData(contaminated_middle_click, sizeof(contaminated_middle_click), fields.wheel_h));
+	EXPECT_EQ(1, HidReport::getValueFromData(firm_press_artifact, sizeof(firm_press_artifact), fields.wheel_v));
 }
 
 TEST(HidMouseInterpreterTest, AppliesScrollFactorAndRuntimeChanges)
@@ -229,6 +265,8 @@ TEST(HidMouseInterpreterTest, AppliesScrollFactorAndRuntimeChanges)
 TEST(HidMouseInterpreterTest, HorizontalDirectionAndMenuWheelAreSymmetric)
 {
 	EXPECT_EQ(3, HidMouseInterpreter::normalizeHorizontalWheel(-3));
+	EXPECT_EQ(-1, HidMouseInterpreter::normalizeHorizontalWheel(-1, false));
+	EXPECT_EQ(1, HidMouseInterpreter::normalizeHorizontalWheel(1, false));
 	EXPECT_EQ(3, HidMouseInterpreter::normalizeVerticalWheel(3));
 	EXPECT_EQ(8, HidMouseInterpreter::normalizeVerticalWheel(1));
 	EXPECT_EQ(-8, HidMouseInterpreter::normalizeVerticalWheel(-1));
@@ -253,27 +291,37 @@ TEST(HidMouseInterpreterTest, WheelStepAccumulationPreservesRemainder)
 	int accumulator = 0;
 
 	EXPECT_EQ(0, HidMouseInterpreter::accumulateNativeWheelSteps(1, 4, accumulator));
-	EXPECT_EQ(4, accumulator);
-	EXPECT_EQ(1, HidMouseInterpreter::accumulateNativeWheelSteps(1, 4, accumulator));
+	EXPECT_EQ(1, accumulator);
+	EXPECT_EQ(0, HidMouseInterpreter::accumulateNativeWheelSteps(1, 16, accumulator));
+	EXPECT_EQ(2, accumulator);
+	EXPECT_EQ(1, HidMouseInterpreter::accumulateNativeWheelSteps(6, 8, accumulator));
 	EXPECT_EQ(0, accumulator);
-	EXPECT_EQ(0, HidMouseInterpreter::accumulateNativeWheelSteps(1, 4, accumulator));
-	EXPECT_EQ(4, accumulator);
-	EXPECT_EQ(-1, HidMouseInterpreter::accumulateNativeWheelSteps(-3, 4, accumulator));
-	EXPECT_EQ(-4, accumulator);
+	EXPECT_EQ(0, HidMouseInterpreter::accumulateNativeWheelSteps(0, 8, accumulator));
+	EXPECT_EQ(0, accumulator);
+	EXPECT_EQ(-1, HidMouseInterpreter::accumulateNativeWheelSteps(-8, 4, accumulator));
+	EXPECT_EQ(0, accumulator);
 }
 
-TEST(HidMouseInterpreterTest, HigherNativeWheelSensitivityProducesMoreSteps)
+TEST(HidMouseInterpreterTest, NativeWheelDetentsDoNotScaleWithSensitivity)
 {
 	int slow_accumulator = 0;
 	int medium_accumulator = 0;
 	int fast_accumulator = 0;
 
-	EXPECT_EQ(1, HidMouseInterpreter::accumulateNativeWheelSteps(8, 1, slow_accumulator));
-	EXPECT_EQ(8, HidMouseInterpreter::accumulateNativeWheelSteps(8, 8, medium_accumulator));
-	EXPECT_EQ(16, HidMouseInterpreter::accumulateNativeWheelSteps(8, 16, fast_accumulator));
+	EXPECT_EQ(1, HidMouseInterpreter::accumulateNativeWheelSteps(HidMouseInterpreter::normalizeVerticalWheel(1), 1, slow_accumulator));
+	EXPECT_EQ(1, HidMouseInterpreter::accumulateNativeWheelSteps(HidMouseInterpreter::normalizeVerticalWheel(1), 8, medium_accumulator));
+	EXPECT_EQ(1, HidMouseInterpreter::accumulateNativeWheelSteps(HidMouseInterpreter::normalizeVerticalWheel(1), 16, fast_accumulator));
 	EXPECT_EQ(0, slow_accumulator);
 	EXPECT_EQ(0, medium_accumulator);
 	EXPECT_EQ(0, fast_accumulator);
+}
+
+TEST(HidMouseInterpreterTest, MiddleClickWheelNoiseSuppressionIsCompactReportPressOnly)
+{
+	EXPECT_TRUE(HidMouseInterpreter::shouldSuppressMiddleClickWheelNoise(true, true, false));
+	EXPECT_FALSE(HidMouseInterpreter::shouldSuppressMiddleClickWheelNoise(true, true, true));
+	EXPECT_FALSE(HidMouseInterpreter::shouldSuppressMiddleClickWheelNoise(true, false, false));
+	EXPECT_FALSE(HidMouseInterpreter::shouldSuppressMiddleClickWheelNoise(false, true, false));
 }
 
 TEST(HidMouseInterpreterTest, NativeWheelBurstUsesLatestDirectionAndPulseMask)
