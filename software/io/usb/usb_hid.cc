@@ -1068,10 +1068,12 @@ void UsbHidDriver :: poll(void)
                                            native_wheel_delta,
                                            output_mouse_joy)) {
         had_native_wheel_input = true;
+        portENTER_CRITICAL();
         HidMouseInterpreter::mergeNativeWheelBurst(native_wheel_delta,
                                                    USB_HID_MOUSE_WHEEL_BURST_LIMIT,
                                                    wheel_pulse_burst_direction,
                                                    wheel_pulse_burst_count);
+        portEXIT_CRITICAL();
     }
 
     output_mouse_joy = HidMouseInterpreter::applyWheelPulseMask(output_mouse_joy,
