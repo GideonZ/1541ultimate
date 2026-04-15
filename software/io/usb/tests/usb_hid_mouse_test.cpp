@@ -291,26 +291,24 @@ TEST(HidMouseInterpreterTest, WheelStepAccumulationPreservesRemainder)
 	int accumulator = 0;
 
 	EXPECT_EQ(0, HidMouseInterpreter::accumulateNativeWheelSteps(1, 4, accumulator));
-	EXPECT_EQ(1, accumulator);
-	EXPECT_EQ(0, HidMouseInterpreter::accumulateNativeWheelSteps(1, 16, accumulator));
-	EXPECT_EQ(2, accumulator);
-	EXPECT_EQ(1, HidMouseInterpreter::accumulateNativeWheelSteps(6, 8, accumulator));
+	EXPECT_EQ(4, accumulator);
+	EXPECT_EQ(1, HidMouseInterpreter::accumulateNativeWheelSteps(1, 4, accumulator));
 	EXPECT_EQ(0, accumulator);
-	EXPECT_EQ(0, HidMouseInterpreter::accumulateNativeWheelSteps(0, 8, accumulator));
-	EXPECT_EQ(0, accumulator);
-	EXPECT_EQ(-1, HidMouseInterpreter::accumulateNativeWheelSteps(-8, 4, accumulator));
-	EXPECT_EQ(0, accumulator);
+	EXPECT_EQ(0, HidMouseInterpreter::accumulateNativeWheelSteps(1, 4, accumulator));
+	EXPECT_EQ(4, accumulator);
+	EXPECT_EQ(-1, HidMouseInterpreter::accumulateNativeWheelSteps(-3, 4, accumulator));
+	EXPECT_EQ(-4, accumulator);
 }
 
-TEST(HidMouseInterpreterTest, NativeWheelDetentsDoNotScaleWithSensitivity)
+TEST(HidMouseInterpreterTest, HigherNativeWheelSensitivityProducesMoreSteps)
 {
 	int slow_accumulator = 0;
 	int medium_accumulator = 0;
 	int fast_accumulator = 0;
 
 	EXPECT_EQ(1, HidMouseInterpreter::accumulateNativeWheelSteps(HidMouseInterpreter::normalizeVerticalWheel(1), 1, slow_accumulator));
-	EXPECT_EQ(1, HidMouseInterpreter::accumulateNativeWheelSteps(HidMouseInterpreter::normalizeVerticalWheel(1), 8, medium_accumulator));
-	EXPECT_EQ(1, HidMouseInterpreter::accumulateNativeWheelSteps(HidMouseInterpreter::normalizeVerticalWheel(1), 16, fast_accumulator));
+	EXPECT_EQ(8, HidMouseInterpreter::accumulateNativeWheelSteps(HidMouseInterpreter::normalizeVerticalWheel(1), 8, medium_accumulator));
+	EXPECT_EQ(16, HidMouseInterpreter::accumulateNativeWheelSteps(HidMouseInterpreter::normalizeVerticalWheel(1), 16, fast_accumulator));
 	EXPECT_EQ(0, slow_accumulator);
 	EXPECT_EQ(0, medium_accumulator);
 	EXPECT_EQ(0, fast_accumulator);

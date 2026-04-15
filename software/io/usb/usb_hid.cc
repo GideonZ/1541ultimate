@@ -683,6 +683,7 @@ UsbHidDriver :: UsbHidDriver(UsbInterface *intf) : UsbDriver(intf)
     native_wheel_queue_tail = 0;
     native_wheel_base_joy = 0x1F;
     native_wheel_output_active = 0;
+    wheel_pulse_timer = xTimerCreate("HidWheel", 1, pdFALSE, this, UsbHidDriver :: S_wheel_pulse_timer);
     memset(keyboard_data, 0, sizeof(keyboard_data));
     memset(&rep_button1, 0, sizeof(rep_button1));
     memset(&rep_button2, 0, sizeof(rep_button2));
@@ -725,6 +726,83 @@ UsbHidDriver :: UsbHidDriver(UsbInterface *intf) : UsbDriver(intf)
 
 UsbHidDriver :: ~UsbHidDriver()
 {
+    if (wheel_pulse_timer) {
+        xTimerStop(wheel_pulse_timer, 0);
+        xTimerDelete(wheel_pulse_timer, 0);
+        wheel_pulse_timer = NULL;
+    }
+}
+
+void UsbHidDriver :: S_wheel_pulse_timer(TimerHandle_t a)
+{
+    UsbHidDriver *driver = (UsbHidDriver *)pvTimerGetTimerID(a);
+    if (driver) {
+        driver->service_native_wheel_timer();
+    }
+}
+
+void UsbHidDriver :: service_native_wheel_timer(void)
+{
+#if U64
+    uint32_t now_ticks = (uint32_t)xTaskGetTickCount();
+    uint32_t delay_ticks = 0;
+    uint8_t output_mouse_joy;
+    bool active;
+
+    if (!mouse || !HidMouseInterpreter::mouseModeRoutesWheelToNative(usb_hid_get_mouse_mode())) {
+        portENTER_CRITICAL();
+        output_mouse_joy = HidMouseInterpreter::applyWheelPulseMask(native_wheel_base_joy,
+                                                                    HidMouseInterpreter::WHEEL_PULSE_PHASE_IDLE,
+                                                                    0);
+        usb_hid_reset_native_wheel_state(wheel_step_accumulator,
+                                         wheel_pulse_phase,
+                                         wheel_pulse_mask,
+                                         wheel_pulse_next_tick,
+                                         wheel_pulse_burst_direction,
+                                         wheel_pulse_burst_count);
+        native_wheel_output_active = 0;
+        portEXIT_CRITICAL();
+
+        C64_JOY1_SWOUT = output_mouse_joy;
+        if (wheel_pulse_timer) {
+            xTimerStop(wheel_pulse_timer, 0);
+        }
+        return;
+    }
+
+    portENTER_CRITICAL();
+    output_mouse_joy = HidMouseInterpreter::applyWheelPulseMask(native_wheel_base_joy,
+                                                                HidMouseInterpreter::WHEEL_PULSE_PHASE_IDLE,
+                                                                0);
+    if ((wheel_pulse_phase != HidMouseInterpreter::WHEEL_PULSE_PHASE_IDLE) ||
+        (wheel_pulse_burst_count != 0)) {
+        output_mouse_joy = usb_hid_service_native_wheel(output_mouse_joy,
+                                                        wheel_pulse_burst_direction,
+                                                        wheel_pulse_burst_count,
+                                                        wheel_pulse_phase,
+                                                        wheel_pulse_mask,
+                                                        wheel_pulse_next_tick,
+                                                        now_ticks);
+    }
+    active = (wheel_pulse_phase != HidMouseInterpreter::WHEEL_PULSE_PHASE_IDLE) ||
+             (wheel_pulse_burst_count != 0);
+    native_wheel_output_active = active ? 1 : 0;
+    if (active) {
+        int32_t remaining = (int32_t)(wheel_pulse_next_tick - now_ticks);
+        delay_ticks = (remaining > 0) ? (uint32_t)remaining : 1;
+    }
+    portEXIT_CRITICAL();
+
+    C64_JOY1_SWOUT = output_mouse_joy;
+    if (!wheel_pulse_timer) {
+        return;
+    }
+    if (active) {
+        xTimerChangePeriod(wheel_pulse_timer, delay_ticks, 0);
+    } else {
+        xTimerStop(wheel_pulse_timer, 0);
+    }
+#endif
 }
 
 bool UsbHidDriver :: has_active_report_keyboard(void) const
@@ -905,6 +983,9 @@ void UsbHidDriver :: install(UsbInterface *intf)
 
 void UsbHidDriver :: disable()
 {
+    if (wheel_pulse_timer) {
+        xTimerStop(wheel_pulse_timer, 0);
+    }
     if ((host) && (irq_transaction > 0)) {
 	host->free_input_pipe(irq_transaction);
         irq_transaction = 0;
@@ -998,6 +1079,9 @@ void UsbHidDriver :: poll(void)
                                                                 0);
 
     if (!HidMouseInterpreter::mouseModeRoutesWheelToNative(usb_hid_get_mouse_mode())) {
+        if (wheel_pulse_timer) {
+            xTimerStop(wheel_pulse_timer, 0);
+        }
         if ((wheel_pulse_phase != HidMouseInterpreter::WHEEL_PULSE_PHASE_IDLE) ||
             (wheel_pulse_burst_count != 0) ||
             (wheel_step_accumulator != 0) ||
@@ -1014,21 +1098,9 @@ void UsbHidDriver :: poll(void)
         return;
     }
 
-    if ((wheel_pulse_phase != HidMouseInterpreter::WHEEL_PULSE_PHASE_IDLE) ||
-        (wheel_pulse_burst_count != 0)) {
-        output_mouse_joy = usb_hid_service_native_wheel(output_mouse_joy,
-                                                        wheel_pulse_burst_direction,
-                                                        wheel_pulse_burst_count,
-                                                        wheel_pulse_phase,
-                                                        wheel_pulse_mask,
-                                                        wheel_pulse_next_tick,
-                                                        (uint32_t)xTaskGetTickCount());
+    if (had_native_wheel_input) {
+        service_native_wheel_timer();
     }
-
-    usb_hid_set_native_wheel_output_active(native_wheel_output_active,
-                                           (wheel_pulse_phase != HidMouseInterpreter::WHEEL_PULSE_PHASE_IDLE) ||
-                                           (wheel_pulse_burst_count != 0));
-    C64_JOY1_SWOUT = output_mouse_joy;
 #endif
 }
 

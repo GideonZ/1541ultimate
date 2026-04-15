@@ -448,9 +448,14 @@ class HidMouseInterpreter
         return mouse_mode == MOUSE_MODE_MOUSE_WHEEL;
     }
 
+    static int computeNativeWheelGain(int sensitivity)
+    {
+        return clampWheelSetting(sensitivity);
+    }
+
     static int accumulateNativeWheelSteps(int wheel_delta, int sensitivity, int& accumulator)
     {
-        (void)sensitivity;
+        int scaled_delta = wheel_delta * computeNativeWheelGain(sensitivity);
         int steps = 0;
 
         if (((wheel_delta > 0) && (accumulator < 0)) ||
@@ -458,7 +463,7 @@ class HidMouseInterpreter
             accumulator = 0;
         }
 
-        accumulator += wheel_delta;
+        accumulator += scaled_delta;
         while (accumulator >= NATIVE_WHEEL_THRESHOLD) {
             accumulator -= NATIVE_WHEEL_THRESHOLD;
             steps++;
