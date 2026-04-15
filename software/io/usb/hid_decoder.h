@@ -447,17 +447,33 @@ class HidMouseInterpreter
         return mouse_mode == MOUSE_MODE_MOUSE_WHEEL;
     }
 
-    static int computeNativeWheelThreshold(int sensitivity)
+    static int computeNativeWheelGain(int sensitivity)
     {
-        return 17 - clampWheelSetting(sensitivity);
+        // Mouse + Wheel mode emits discrete Micromys pulses, so map the
+        // promoted detent directly to the configured sensitivity. This keeps
+        // sensitivity 1 unchanged and lets higher settings expand a single
+        // notch into multiple native wheel pulses.
+        return clampWheelSetting(sensitivity);
     }
 
-    static int accumulateWheelSteps(int wheel_delta, int sensitivity, int& accumulator)
+    static int computeNativeWheelThreshold(int sensitivity)
+    {
+        (void)sensitivity;
+        return 8;
+    }
+
+    static int accumulateNativeWheelSteps(int wheel_delta, int sensitivity, int& accumulator)
     {
         int threshold = computeNativeWheelThreshold(sensitivity);
+        int scaled_delta = wheel_delta * computeNativeWheelGain(sensitivity);
         int steps = 0;
 
-        accumulator += wheel_delta;
+        if (((wheel_delta > 0) && (accumulator < 0)) ||
+            ((wheel_delta < 0) && (accumulator > 0))) {
+            accumulator = 0;
+        }
+
+        accumulator += scaled_delta;
         while (accumulator >= threshold) {
             accumulator -= threshold;
             steps++;
@@ -469,8 +485,32 @@ class HidMouseInterpreter
         return steps;
     }
 
-    static bool advanceWheelPulse(int& pending_steps, int& phase, uint8_t& pulse_mask,
-                                  uint32_t& next_tick, uint32_t now, uint32_t phase_ticks)
+    static void mergeNativeWheelBurst(int steps, uint8_t max_burst,
+                                      int& burst_direction, uint8_t& burst_count)
+    {
+        int direction;
+        int updated_count;
+
+        if ((steps == 0) || (max_burst == 0)) {
+            return;
+        }
+
+        direction = (steps > 0) ? 1 : -1;
+        if (burst_direction != direction) {
+            burst_direction = direction;
+            burst_count = 0;
+        }
+
+        updated_count = burst_count + absoluteValue(steps);
+        if (updated_count > max_burst) {
+            updated_count = max_burst;
+        }
+        burst_count = (uint8_t)updated_count;
+    }
+
+    static bool advanceNativeWheelBurst(int& burst_direction, uint8_t& burst_count,
+                                        int& phase, uint8_t& pulse_mask,
+                                        uint32_t& next_tick, uint32_t now, uint32_t phase_ticks)
     {
         if (phase_ticks == 0) {
             phase_ticks = 1;
@@ -478,20 +518,14 @@ class HidMouseInterpreter
 
         while (1) {
             if (phase == WHEEL_PULSE_PHASE_IDLE) {
-                if (pending_steps > 0) {
-                    pulse_mask = 0x04;
-                    pending_steps--;
+                if ((burst_count > 0) && (burst_direction != 0)) {
+                    pulse_mask = (burst_direction > 0) ? 0x04 : 0x08;
+                    burst_count--;
                     phase = WHEEL_PULSE_PHASE_LOW;
                     next_tick = now + phase_ticks;
                     return true;
                 }
-                if (pending_steps < 0) {
-                    pulse_mask = 0x08;
-                    pending_steps++;
-                    phase = WHEEL_PULSE_PHASE_LOW;
-                    next_tick = now + phase_ticks;
-                    return true;
-                }
+                burst_direction = 0;
                 pulse_mask = 0;
                 return false;
             }

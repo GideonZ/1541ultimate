@@ -267,34 +267,35 @@ TEST(HidMouseInterpreterTest, WheelStepAccumulationPreservesRemainder)
 {
 	int accumulator = 0;
 
-	EXPECT_EQ(0, HidMouseInterpreter::accumulateWheelSteps(3, 8, accumulator));
-	EXPECT_EQ(3, accumulator);
-	EXPECT_EQ(0, HidMouseInterpreter::accumulateWheelSteps(3, 8, accumulator));
-	EXPECT_EQ(6, accumulator);
-	EXPECT_EQ(1, HidMouseInterpreter::accumulateWheelSteps(3, 8, accumulator));
+	EXPECT_EQ(0, HidMouseInterpreter::accumulateNativeWheelSteps(1, 4, accumulator));
+	EXPECT_EQ(4, accumulator);
+	EXPECT_EQ(1, HidMouseInterpreter::accumulateNativeWheelSteps(1, 4, accumulator));
 	EXPECT_EQ(0, accumulator);
-	EXPECT_EQ(-1, HidMouseInterpreter::accumulateWheelSteps(-9, 8, accumulator));
-	EXPECT_EQ(0, accumulator);
+	EXPECT_EQ(0, HidMouseInterpreter::accumulateNativeWheelSteps(1, 4, accumulator));
+	EXPECT_EQ(4, accumulator);
+	EXPECT_EQ(-1, HidMouseInterpreter::accumulateNativeWheelSteps(-3, 4, accumulator));
+	EXPECT_EQ(-4, accumulator);
 }
 
 TEST(HidMouseInterpreterTest, WheelStepAccumulationSupportsMultipleQueuedSteps)
 {
 	int accumulator = 0;
 
-	EXPECT_EQ(1, HidMouseInterpreter::accumulateWheelSteps(17, 8, accumulator));
-	EXPECT_EQ(8, accumulator);
-	EXPECT_EQ(-1, HidMouseInterpreter::accumulateWheelSteps(-17, 8, accumulator));
-	EXPECT_EQ(0, accumulator);
+	EXPECT_EQ(2, HidMouseInterpreter::accumulateNativeWheelSteps(17, 1, accumulator));
+	EXPECT_EQ(1, accumulator);
+	EXPECT_EQ(-2, HidMouseInterpreter::accumulateNativeWheelSteps(-17, 1, accumulator));
+	EXPECT_EQ(-1, accumulator);
 
-	EXPECT_EQ(8, HidMouseInterpreter::accumulateWheelSteps(8, 16, accumulator));
+	EXPECT_EQ(16, HidMouseInterpreter::accumulateNativeWheelSteps(8, 16, accumulator));
 	EXPECT_EQ(0, accumulator);
 }
 
-TEST(HidMouseInterpreterTest, NativeWheelThresholdMatchesExistingSensitivityDirection)
+TEST(HidMouseInterpreterTest, NativeWheelThresholdStaysCanonicalDetentSize)
 {
-	EXPECT_EQ(16, HidMouseInterpreter::computeNativeWheelThreshold(1));
-	EXPECT_EQ(9, HidMouseInterpreter::computeNativeWheelThreshold(8));
-	EXPECT_EQ(1, HidMouseInterpreter::computeNativeWheelThreshold(16));
+	EXPECT_EQ(8, HidMouseInterpreter::computeNativeWheelThreshold(1));
+	EXPECT_EQ(8, HidMouseInterpreter::computeNativeWheelThreshold(4));
+	EXPECT_EQ(8, HidMouseInterpreter::computeNativeWheelThreshold(8));
+	EXPECT_EQ(8, HidMouseInterpreter::computeNativeWheelThreshold(16));
 }
 
 TEST(HidMouseInterpreterTest, HigherNativeWheelSensitivityProducesMoreSteps)
@@ -303,53 +304,119 @@ TEST(HidMouseInterpreterTest, HigherNativeWheelSensitivityProducesMoreSteps)
 	int medium_accumulator = 0;
 	int fast_accumulator = 0;
 
-	EXPECT_EQ(0, HidMouseInterpreter::accumulateWheelSteps(8, 1, slow_accumulator));
-	EXPECT_EQ(0, HidMouseInterpreter::accumulateWheelSteps(8, 8, medium_accumulator));
-	EXPECT_EQ(8, HidMouseInterpreter::accumulateWheelSteps(8, 16, fast_accumulator));
-	EXPECT_EQ(8, slow_accumulator);
-	EXPECT_EQ(8, medium_accumulator);
+	EXPECT_EQ(1, HidMouseInterpreter::accumulateNativeWheelSteps(8, 1, slow_accumulator));
+	EXPECT_EQ(8, HidMouseInterpreter::accumulateNativeWheelSteps(8, 8, medium_accumulator));
+	EXPECT_EQ(16, HidMouseInterpreter::accumulateNativeWheelSteps(8, 16, fast_accumulator));
+	EXPECT_EQ(0, slow_accumulator);
+	EXPECT_EQ(0, medium_accumulator);
 	EXPECT_EQ(0, fast_accumulator);
 }
 
-TEST(HidMouseInterpreterTest, WheelPulseSequenceProducesDistinctLowAndHighPhases)
+TEST(HidMouseInterpreterTest, NativeWheelLowSensitivityKeepsSingleDetentLinear)
 {
-	int pending_steps = 2;
+	int accumulator = 0;
+
+	EXPECT_EQ(1, HidMouseInterpreter::accumulateNativeWheelSteps(8, 1, accumulator));
+	EXPECT_EQ(0, accumulator);
+}
+
+TEST(HidMouseInterpreterTest, SingleNormalizedDetentAlwaysProducesAtLeastOneNativeStep)
+{
+	for (int sensitivity = 1; sensitivity <= 16; sensitivity++) {
+		int accumulator = 0;
+		EXPECT_TRUE(HidMouseInterpreter::accumulateNativeWheelSteps(8, sensitivity, accumulator) > 0);
+	}
+}
+
+TEST(HidMouseInterpreterTest, NativeWheelAccumulatorDropsOppositeRemainder)
+{
+	int accumulator = 5;
+
+	EXPECT_EQ(-1, HidMouseInterpreter::accumulateNativeWheelSteps(-8, 1, accumulator));
+	EXPECT_EQ(0, accumulator);
+}
+
+TEST(HidMouseInterpreterTest, NativeWheelBurstUsesLatestDirection)
+{
+	int burst_direction = 0;
+	uint8_t burst_count = 0;
 	int phase = HidMouseInterpreter::WHEEL_PULSE_PHASE_IDLE;
 	uint8_t pulse_mask = 0;
 	uint32_t next_tick = 0;
 
-	EXPECT_TRUE(HidMouseInterpreter::advanceWheelPulse(pending_steps, phase, pulse_mask, next_tick, 0, 10));
+	HidMouseInterpreter::mergeNativeWheelBurst(4, 4, burst_direction, burst_count);
+	EXPECT_EQ(1, burst_direction);
+	EXPECT_EQ(4, burst_count);
+
+	HidMouseInterpreter::mergeNativeWheelBurst(-2, 4, burst_direction, burst_count);
+	EXPECT_EQ(-1, burst_direction);
+	EXPECT_EQ(2, burst_count);
+
+	EXPECT_TRUE(HidMouseInterpreter::advanceNativeWheelBurst(burst_direction, burst_count, phase, pulse_mask, next_tick, 0, 10));
+	EXPECT_EQ(HidMouseInterpreter::WHEEL_PULSE_PHASE_LOW, phase);
+	EXPECT_EQ(0x08, pulse_mask);
+	EXPECT_EQ(1, burst_count);
+
+	EXPECT_TRUE(HidMouseInterpreter::advanceNativeWheelBurst(burst_direction, burst_count, phase, pulse_mask, next_tick, 10, 10));
+	EXPECT_EQ(HidMouseInterpreter::WHEEL_PULSE_PHASE_HIGH, phase);
+	EXPECT_TRUE(HidMouseInterpreter::advanceNativeWheelBurst(burst_direction, burst_count, phase, pulse_mask, next_tick, 20, 10));
+	EXPECT_EQ(HidMouseInterpreter::WHEEL_PULSE_PHASE_LOW, phase);
+	EXPECT_EQ(0x08, pulse_mask);
+	EXPECT_EQ(0, burst_count);
+}
+
+TEST(HidMouseInterpreterTest, NativeWheelBurstSaturatesInsteadOfGrowingLatency)
+{
+	int burst_direction = 0;
+	uint8_t burst_count = 0;
+
+	HidMouseInterpreter::mergeNativeWheelBurst(8, 4, burst_direction, burst_count);
+	EXPECT_EQ(1, burst_direction);
+	EXPECT_EQ(4, burst_count);
+}
+
+TEST(HidMouseInterpreterTest, WheelPulseSequenceProducesDistinctLowAndHighPhases)
+{
+	int burst_direction = 1;
+	uint8_t burst_count = 2;
+	int phase = HidMouseInterpreter::WHEEL_PULSE_PHASE_IDLE;
+	uint8_t pulse_mask = 0;
+	uint32_t next_tick = 0;
+
+	EXPECT_TRUE(HidMouseInterpreter::advanceNativeWheelBurst(burst_direction, burst_count, phase, pulse_mask, next_tick, 0, 10));
 	EXPECT_EQ(HidMouseInterpreter::WHEEL_PULSE_PHASE_LOW, phase);
 	EXPECT_EQ(0x04, pulse_mask);
-	EXPECT_EQ(1, pending_steps);
+	EXPECT_EQ(1, burst_count);
 	EXPECT_EQ(0x1B, HidMouseInterpreter::applyWheelPulseMask(0x1F, phase, pulse_mask));
 
-	EXPECT_TRUE(HidMouseInterpreter::advanceWheelPulse(pending_steps, phase, pulse_mask, next_tick, 10, 10));
+	EXPECT_TRUE(HidMouseInterpreter::advanceNativeWheelBurst(burst_direction, burst_count, phase, pulse_mask, next_tick, 10, 10));
 	EXPECT_EQ(HidMouseInterpreter::WHEEL_PULSE_PHASE_HIGH, phase);
 	EXPECT_EQ(0x1F, HidMouseInterpreter::applyWheelPulseMask(0x1F, phase, pulse_mask));
 
-	EXPECT_TRUE(HidMouseInterpreter::advanceWheelPulse(pending_steps, phase, pulse_mask, next_tick, 20, 10));
+	EXPECT_TRUE(HidMouseInterpreter::advanceNativeWheelBurst(burst_direction, burst_count, phase, pulse_mask, next_tick, 20, 10));
 	EXPECT_EQ(HidMouseInterpreter::WHEEL_PULSE_PHASE_LOW, phase);
 	EXPECT_EQ(0x04, pulse_mask);
-	EXPECT_EQ(0, pending_steps);
+	EXPECT_EQ(0, burst_count);
 
-	EXPECT_TRUE(HidMouseInterpreter::advanceWheelPulse(pending_steps, phase, pulse_mask, next_tick, 30, 10));
+	EXPECT_TRUE(HidMouseInterpreter::advanceNativeWheelBurst(burst_direction, burst_count, phase, pulse_mask, next_tick, 30, 10));
 	EXPECT_EQ(HidMouseInterpreter::WHEEL_PULSE_PHASE_HIGH, phase);
 
-	EXPECT_FALSE(HidMouseInterpreter::advanceWheelPulse(pending_steps, phase, pulse_mask, next_tick, 40, 10));
+	EXPECT_FALSE(HidMouseInterpreter::advanceNativeWheelBurst(burst_direction, burst_count, phase, pulse_mask, next_tick, 40, 10));
 	EXPECT_EQ(HidMouseInterpreter::WHEEL_PULSE_PHASE_IDLE, phase);
+	EXPECT_EQ(0, burst_direction);
 	EXPECT_EQ(0, pulse_mask);
 	EXPECT_EQ(0x1F, HidMouseInterpreter::applyWheelPulseMask(0x1F, phase, pulse_mask));
 }
 
 TEST(HidMouseInterpreterTest, WheelPulseDirectionSelectsDownBit)
 {
-	int pending_steps = -1;
+	int burst_direction = -1;
+	uint8_t burst_count = 1;
 	int phase = HidMouseInterpreter::WHEEL_PULSE_PHASE_IDLE;
 	uint8_t pulse_mask = 0;
 	uint32_t next_tick = 0;
 
-	EXPECT_TRUE(HidMouseInterpreter::advanceWheelPulse(pending_steps, phase, pulse_mask, next_tick, 0, 10));
+	EXPECT_TRUE(HidMouseInterpreter::advanceNativeWheelBurst(burst_direction, burst_count, phase, pulse_mask, next_tick, 0, 10));
 	EXPECT_EQ(HidMouseInterpreter::WHEEL_PULSE_PHASE_LOW, phase);
 	EXPECT_EQ(0x08, pulse_mask);
 	EXPECT_EQ(0x17, HidMouseInterpreter::applyWheelPulseMask(0x1F, phase, pulse_mask));
