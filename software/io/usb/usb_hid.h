@@ -60,6 +60,11 @@ class UsbHidDriver : public UsbDriver
     int wheel_axis_v_remainder;
     int wheel_key_h_remainder;
     int wheel_key_v_remainder;
+    int wheel_step_accumulator;
+    int wheel_pulse_pending_steps;
+    int wheel_pulse_phase;
+    uint8_t wheel_pulse_mask;
+    uint32_t wheel_pulse_next_tick;
     int pointer_sensitivity_setting;
     int pointer_sensitivity_remainder_x;
     int pointer_sensitivity_remainder_y;

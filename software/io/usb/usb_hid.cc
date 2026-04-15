@@ -44,6 +44,7 @@ enum {
 static const uint32_t USB_HID_MENU_WHEEL_FAST_GAP_TICKS = (pdMS_TO_TICKS(30) > 0) ? pdMS_TO_TICKS(30) : 1;
 static const uint32_t USB_HID_MENU_WHEEL_SLOW_GAP_TICKS = (pdMS_TO_TICKS(90) > 0) ? pdMS_TO_TICKS(90) : USB_HID_MENU_WHEEL_FAST_GAP_TICKS;
 static const uint32_t USB_HID_MENU_WHEEL_RESET_GAP_TICKS = (pdMS_TO_TICKS(210) > 0) ? pdMS_TO_TICKS(210) : USB_HID_MENU_WHEEL_SLOW_GAP_TICKS;
+static const uint32_t USB_HID_MOUSE_WHEEL_PULSE_TICKS = (pdMS_TO_TICKS(50) > 0) ? pdMS_TO_TICKS(50) : 1;
 static const int USB_HID_MENU_WHEEL_EXTRA_STEP_THRESHOLD = 15;
 static const int USB_HID_MENU_MAX_PENDING_VERTICAL_KEYS = 2;
 
@@ -395,6 +396,38 @@ static void usb_hid_set_mouse_button(uint8_t& mouse_joy, uint8_t mask, bool pres
     }
 }
 
+static void usb_hid_reset_native_wheel_state(int& wheel_step_accumulator,
+                                             int& wheel_pulse_pending_steps,
+                                             int& wheel_pulse_phase,
+                                             uint8_t& wheel_pulse_mask,
+                                             uint32_t& wheel_pulse_next_tick)
+{
+    wheel_step_accumulator = 0;
+    wheel_pulse_pending_steps = 0;
+    wheel_pulse_phase = HidMouseInterpreter::WHEEL_PULSE_PHASE_IDLE;
+    wheel_pulse_mask = 0;
+    wheel_pulse_next_tick = 0;
+}
+
+static uint8_t usb_hid_service_native_wheel(uint8_t mouse_joy,
+                                            int& wheel_pulse_pending_steps,
+                                            int& wheel_pulse_phase,
+                                            uint8_t& wheel_pulse_mask,
+                                            uint32_t& wheel_pulse_next_tick,
+                                            uint32_t now_ticks)
+{
+    HidMouseInterpreter::advanceWheelPulse(wheel_pulse_pending_steps,
+                                           wheel_pulse_phase,
+                                           wheel_pulse_mask,
+                                           wheel_pulse_next_tick,
+                                           now_ticks,
+                                           USB_HID_MOUSE_WHEEL_PULSE_TICKS);
+
+    return HidMouseInterpreter::applyWheelPulseMask(mouse_joy,
+                                                    wheel_pulse_phase,
+                                                    wheel_pulse_mask);
+}
+
 static void usb_hid_find_sibling_active_report_functions(UsbDevice *device, UsbInterface *skip,
                                                          bool& report_keyboard, bool& report_mouse)
 {
@@ -588,6 +621,11 @@ UsbHidDriver :: UsbHidDriver(UsbInterface *intf) : UsbDriver(intf)
     wheel_axis_v_remainder = 0;
     wheel_key_h_remainder = 0;
     wheel_key_v_remainder = 0;
+    wheel_step_accumulator = 0;
+    wheel_pulse_pending_steps = 0;
+    wheel_pulse_phase = HidMouseInterpreter::WHEEL_PULSE_PHASE_IDLE;
+    wheel_pulse_mask = 0;
+    wheel_pulse_next_tick = 0;
     pointer_sensitivity_setting = -1;
     pointer_sensitivity_remainder_x = 0;
     pointer_sensitivity_remainder_y = 0;
@@ -807,6 +845,11 @@ void UsbHidDriver :: disable()
     wheel_axis_v_remainder = 0;
     wheel_key_h_remainder = 0;
     wheel_key_v_remainder = 0;
+    wheel_step_accumulator = 0;
+    wheel_pulse_pending_steps = 0;
+    wheel_pulse_phase = HidMouseInterpreter::WHEEL_PULSE_PHASE_IDLE;
+    wheel_pulse_mask = 0;
+    wheel_pulse_next_tick = 0;
     pointer_sensitivity_setting = -1;
     pointer_sensitivity_remainder_x = 0;
     pointer_sensitivity_remainder_y = 0;
@@ -830,6 +873,42 @@ void UsbHidDriver :: deinstall(UsbInterface *intf)
 
 void UsbHidDriver :: poll(void)
 {
+#if U64
+    if (!mouse) {
+        return;
+    }
+
+    if (!HidMouseInterpreter::mouseModeRoutesWheelToNative(usb_hid_get_mouse_mode())) {
+        if ((wheel_pulse_phase != HidMouseInterpreter::WHEEL_PULSE_PHASE_IDLE) ||
+            (wheel_pulse_pending_steps != 0) ||
+            (wheel_step_accumulator != 0)) {
+            usb_hid_reset_native_wheel_state(wheel_step_accumulator,
+                                             wheel_pulse_pending_steps,
+                                             wheel_pulse_phase,
+                                             wheel_pulse_mask,
+                                             wheel_pulse_next_tick);
+            C64_JOY1_SWOUT = HidMouseInterpreter::applyWheelPulseMask(mouse_joy,
+                                                                      HidMouseInterpreter::WHEEL_PULSE_PHASE_IDLE,
+                                                                      0);
+            C64_PADDLE_1_X = mouse_x & 0x7F;
+            C64_PADDLE_1_Y = mouse_y & 0x7F;
+        }
+        return;
+    }
+
+    if ((wheel_pulse_phase != HidMouseInterpreter::WHEEL_PULSE_PHASE_IDLE) ||
+        (wheel_pulse_pending_steps != 0)) {
+        uint8_t output_mouse_joy = usb_hid_service_native_wheel(mouse_joy,
+                                                                wheel_pulse_pending_steps,
+                                                                wheel_pulse_phase,
+                                                                wheel_pulse_mask,
+                                                                wheel_pulse_next_tick,
+                                                                (uint32_t)xTaskGetTickCount());
+        C64_JOY1_SWOUT = output_mouse_joy;
+        C64_PADDLE_1_X = mouse_x & 0x7F;
+        C64_PADDLE_1_Y = mouse_y & 0x7F;
+    }
+#endif
 }
 
 void UsbHidDriver :: interrupt_handler()
@@ -963,6 +1042,7 @@ void UsbHidDriver :: interrupt_handler()
             bool reversed_wheel = usb_hid_get_wheel_direction() == WHEEL_DIRECTION_REVERSED;
             int scroll_factor = usb_hid_get_scroll_factor();
             uint8_t output_mouse_joy = mouse_joy;
+            uint32_t now_ticks = (uint32_t)xTaskGetTickCount();
             int wheel_h_normalized = HidMouseInterpreter::normalizeHorizontalWheel(wheel_h);
             int wheel_v_normalized = HidMouseInterpreter::normalizeVerticalWheel(wheel_v);
             int wheel_h_keys = HidMouseInterpreter::applyWheelDirection(wheel_h_normalized, reversed_wheel);
@@ -1008,7 +1088,6 @@ void UsbHidDriver :: interrupt_handler()
                     wheel_axis_v_remainder = 0;
                     wheel_key_h_remainder = 0;
                     wheel_key_v_remainder = 0;
-                    uint32_t now_ticks = (uint32_t)xTaskGetTickCount();
                     int menu_wheel_h = usb_hid_filter_menu_wheel_step(HidMouseInterpreter::scaleMenuWheelKeys(wheel_h_keys), menu_wheel_h_latch);
                     int menu_wheel_v = HidMouseInterpreter::scaleMenuWheelBurst(
                         wheel_v_keys,
@@ -1037,6 +1116,11 @@ void UsbHidDriver :: interrupt_handler()
                     menu_wheel_v_last_tick = 0;
                     wheel_axis_h_remainder = 0;
                     wheel_axis_v_remainder = 0;
+                    usb_hid_reset_native_wheel_state(wheel_step_accumulator,
+                                                     wheel_pulse_pending_steps,
+                                                     wheel_pulse_phase,
+                                                     wheel_pulse_mask,
+                                                     wheel_pulse_next_tick);
                     usb_hid_queue_wheel_keys(
                         HidMouseInterpreter::scaleHorizontalWheelKeys(wheel_h_keys, scroll_factor, wheel_key_h_remainder),
                         HidMouseInterpreter::scaleVerticalWheelKeys(wheel_v_keys, scroll_factor, wheel_key_v_remainder));
@@ -1049,15 +1133,54 @@ void UsbHidDriver :: interrupt_handler()
                     menu_wheel_v_last_tick = 0;
                     wheel_key_h_remainder = 0;
                     wheel_key_v_remainder = 0;
+                    usb_hid_reset_native_wheel_state(wheel_step_accumulator,
+                                                     wheel_pulse_pending_steps,
+                                                     wheel_pulse_phase,
+                                                     wheel_pulse_mask,
+                                                     wheel_pulse_next_tick);
                     HidMouseInterpreter::applyWheelAxisDeltas(
                         mouse_x,
                         mouse_y,
                         HidMouseInterpreter::scaleHorizontalWheelAxisDelta(wheel_h_axis, scroll_factor, wheel_axis_h_remainder),
                         HidMouseInterpreter::scaleVerticalWheelAxisDelta(wheel_v_axis, scroll_factor, wheel_axis_v_remainder));
+                } else if (HidMouseInterpreter::mouseModeRoutesWheelToNative(mouse_mode)) {
+                    menu_wheel_h_latch = 0;
+                    menu_wheel_v_latch = 0;
+                    menu_wheel_v_mode = HidMouseInterpreter::MENU_WHEEL_MODE_PRECISE;
+                    menu_wheel_v_burst_accumulator = 0;
+                    menu_wheel_v_burst_direction = 0;
+                    menu_wheel_v_last_tick = 0;
+                    wheel_axis_h_remainder = 0;
+                    wheel_axis_v_remainder = 0;
+                    wheel_key_h_remainder = 0;
+                    wheel_key_v_remainder = 0;
+                    int wheel_steps = HidMouseInterpreter::accumulateWheelSteps(
+                        wheel_v_normalized,
+                        scroll_factor,
+                        wheel_step_accumulator);
+                    wheel_pulse_pending_steps += HidMouseInterpreter::applyWheelDirection(wheel_steps, reversed_wheel);
                 }
             } else {
                 menu_wheel_h_latch = 0;
                 menu_wheel_v_latch = 0;
+            }
+
+            if (HidMouseInterpreter::mouseModeRoutesWheelToNative(mouse_mode)) {
+                output_mouse_joy = usb_hid_service_native_wheel(output_mouse_joy,
+                                                                wheel_pulse_pending_steps,
+                                                                wheel_pulse_phase,
+                                                                wheel_pulse_mask,
+                                                                wheel_pulse_next_tick,
+                                                                now_ticks);
+            } else {
+                usb_hid_reset_native_wheel_state(wheel_step_accumulator,
+                                                 wheel_pulse_pending_steps,
+                                                 wheel_pulse_phase,
+                                                 wheel_pulse_mask,
+                                                 wheel_pulse_next_tick);
+                output_mouse_joy = HidMouseInterpreter::applyWheelPulseMask(output_mouse_joy,
+                                                                            HidMouseInterpreter::WHEEL_PULSE_PHASE_IDLE,
+                                                                            0);
             }
 
 #if U64

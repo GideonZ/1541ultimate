@@ -332,7 +332,14 @@ class HidMouseInterpreter
     enum {
         MOUSE_MODE_CURSOR = 0,
         MOUSE_MODE_MOUSE = 1,
-        MOUSE_MODE_CURSOR_MOUSE = 2
+        MOUSE_MODE_MOUSE_CURSOR = 2,
+        MOUSE_MODE_MOUSE_WHEEL = 3
+    };
+
+    enum {
+        WHEEL_PULSE_PHASE_IDLE = 0,
+        WHEEL_PULSE_PHASE_LOW = 1,
+        WHEEL_PULSE_PHASE_HIGH = 2
     };
 
     enum {
@@ -427,12 +434,89 @@ class HidMouseInterpreter
 
     static bool mouseModeRoutesWheelToCursor(int mouse_mode)
     {
-        return mouse_mode != MOUSE_MODE_MOUSE;
+        return (mouse_mode == MOUSE_MODE_CURSOR) || (mouse_mode == MOUSE_MODE_MOUSE_CURSOR);
     }
 
     static bool mouseModeRoutesWheelToPointer(int mouse_mode)
     {
         return mouse_mode == MOUSE_MODE_MOUSE;
+    }
+
+    static bool mouseModeRoutesWheelToNative(int mouse_mode)
+    {
+        return mouse_mode == MOUSE_MODE_MOUSE_WHEEL;
+    }
+
+    static int computeNativeWheelThreshold(int sensitivity)
+    {
+        return 17 - clampWheelSetting(sensitivity);
+    }
+
+    static int accumulateWheelSteps(int wheel_delta, int sensitivity, int& accumulator)
+    {
+        int threshold = computeNativeWheelThreshold(sensitivity);
+        int steps = 0;
+
+        accumulator += wheel_delta;
+        while (accumulator >= threshold) {
+            accumulator -= threshold;
+            steps++;
+        }
+        while (accumulator <= -threshold) {
+            accumulator += threshold;
+            steps--;
+        }
+        return steps;
+    }
+
+    static bool advanceWheelPulse(int& pending_steps, int& phase, uint8_t& pulse_mask,
+                                  uint32_t& next_tick, uint32_t now, uint32_t phase_ticks)
+    {
+        if (phase_ticks == 0) {
+            phase_ticks = 1;
+        }
+
+        while (1) {
+            if (phase == WHEEL_PULSE_PHASE_IDLE) {
+                if (pending_steps > 0) {
+                    pulse_mask = 0x04;
+                    pending_steps--;
+                    phase = WHEEL_PULSE_PHASE_LOW;
+                    next_tick = now + phase_ticks;
+                    return true;
+                }
+                if (pending_steps < 0) {
+                    pulse_mask = 0x08;
+                    pending_steps++;
+                    phase = WHEEL_PULSE_PHASE_LOW;
+                    next_tick = now + phase_ticks;
+                    return true;
+                }
+                pulse_mask = 0;
+                return false;
+            }
+
+            if ((int32_t)(now - next_tick) < 0) {
+                return true;
+            }
+
+            if (phase == WHEEL_PULSE_PHASE_LOW) {
+                phase = WHEEL_PULSE_PHASE_HIGH;
+                next_tick += phase_ticks;
+                continue;
+            }
+
+            phase = WHEEL_PULSE_PHASE_IDLE;
+        }
+    }
+
+    static uint8_t applyWheelPulseMask(uint8_t mouse_joy, int phase, uint8_t pulse_mask)
+    {
+        mouse_joy |= 0x0C;
+        if ((phase == WHEEL_PULSE_PHASE_LOW) && pulse_mask) {
+            mouse_joy &= (uint8_t)~pulse_mask;
+        }
+        return mouse_joy;
     }
 
     static int scaleWheelDelta(int wheel_delta, int scroll_factor,
