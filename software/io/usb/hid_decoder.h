@@ -343,6 +343,7 @@ class HidMouseInterpreter
     };
 
     enum {
+        NATIVE_WHEEL_THRESHOLD = 8,
         SENSITIVITY_SCALE_STEP = 32,
         ADAPTIVE_ACCELERATION_TARGET_EMA = 32,
         ADAPTIVE_ACCELERATION_MAX_EMA = 96,
@@ -447,25 +448,9 @@ class HidMouseInterpreter
         return mouse_mode == MOUSE_MODE_MOUSE_WHEEL;
     }
 
-    static int computeNativeWheelGain(int sensitivity)
-    {
-        // Mouse + Wheel mode emits discrete Micromys pulses, so map the
-        // promoted detent directly to the configured sensitivity. This keeps
-        // sensitivity 1 unchanged and lets higher settings expand a single
-        // notch into multiple native wheel pulses.
-        return clampWheelSetting(sensitivity);
-    }
-
-    static int computeNativeWheelThreshold(int sensitivity)
-    {
-        (void)sensitivity;
-        return 8;
-    }
-
     static int accumulateNativeWheelSteps(int wheel_delta, int sensitivity, int& accumulator)
     {
-        int threshold = computeNativeWheelThreshold(sensitivity);
-        int scaled_delta = wheel_delta * computeNativeWheelGain(sensitivity);
+        int scaled_delta = wheel_delta * clampWheelSetting(sensitivity);
         int steps = 0;
 
         if (((wheel_delta > 0) && (accumulator < 0)) ||
@@ -474,12 +459,12 @@ class HidMouseInterpreter
         }
 
         accumulator += scaled_delta;
-        while (accumulator >= threshold) {
-            accumulator -= threshold;
+        while (accumulator >= NATIVE_WHEEL_THRESHOLD) {
+            accumulator -= NATIVE_WHEEL_THRESHOLD;
             steps++;
         }
-        while (accumulator <= -threshold) {
-            accumulator += threshold;
+        while (accumulator <= -NATIVE_WHEEL_THRESHOLD) {
+            accumulator += NATIVE_WHEEL_THRESHOLD;
             steps--;
         }
         return steps;
