@@ -1402,7 +1402,7 @@ void UsbHidDriver :: interrupt_handler()
 
 #if U64
             if (!HidMouseInterpreter::mouseModeRoutesWheelToNative(mouse_mode)) {
-                C64_JOY1_SWOUT = output_mouse_joy;
+            C64_JOY1_SWOUT = output_mouse_joy;
             }
             C64_PADDLE_1_X = mouse_x & 0x7F;
             C64_PADDLE_1_Y = mouse_y & 0x7F;
