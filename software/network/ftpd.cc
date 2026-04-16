@@ -262,7 +262,6 @@ FTPDaemonThread::~FTPDaemonThread()
 void FTPDaemonThread::destroy_connection()
 {
     if (connection) {
-        connection->close_connection();
         delete connection;
         connection = 0;
     }
