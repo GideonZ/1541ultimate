@@ -111,6 +111,7 @@ class FTPDaemonThread
 	void send_msg(const char *a, ...);
 	void dispatch_command(char *a, int length);
 	int open_dataconnection(bool passive);
+	void destroy_connection();
 public:
 	FTPDaemonThread(int sock, uint32_t addr, uint16_t port);
 	~FTPDaemonThread();
@@ -161,13 +162,10 @@ class FTPDataConnection
 
 	int setup_connection();
 	int connect_to(ip_addr_t ip, uint16_t port);
-	static void accept_data(void *); // task
-	TaskHandle_t acceptTaskHandle;
-	TaskHandle_t spawningTask;
 
 public:
 	FTPDataConnection(FTPDaemonThread *parent);
-	~FTPDataConnection() { }
+	~FTPDataConnection();
 	int do_bind(void);
 	void close_connection();
 
