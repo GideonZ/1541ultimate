@@ -1051,10 +1051,14 @@ FTPTransferResult FTPDataConnection::sendfile(vfs_file_t *file)
         return FTP_TRANSFER_SETUP_FAILED;
     }
 
-    uint32_t read;
+    int read;
     do {
         read = vfs_read(buffer, FTPD_DATA_BUFFER_SIZE, 1, file);
-        if (read) {
+        if (read < 0) {
+            result = FTP_TRANSFER_ABORTED;
+            break;
+        }
+        if (read > 0) {
             result = send_all(actual_socket, buffer, read);
             if (result != FTP_TRANSFER_OK) {
                 break;
