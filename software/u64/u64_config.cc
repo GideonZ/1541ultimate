@@ -254,7 +254,7 @@ static const char *dvi_hdmi[] = { "Auto", "HDMI", "DVI" };
 static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
 static const char *color_sel[] = { "PAL", "NTSC", "PAL-60", "NTSC-50", "PAL-60/L", "NTSC-50/L" };
 static const char *mouse_acceleration_modes[] = { "Off", "Adaptive" };
-static const char *mouse_modes[] = { "Cursor", "Mouse", "Cursor + Mouse" };
+static const char *mouse_modes[] = { "Cursor", "Mouse", "Mouse + Cursor", "Mouse + Wheel" };
 static const char *wheel_directions[] = { "Normal", "Reversed" };
 
 static const char *sid_types[] = { "None", "6581", "8580", "FPGASID", "SwinSID Ultimate", "ARMSID", "ARM2SID", "SidFx", "FPGASID Dukestah", "PDsid", "SIDKick (Teensy)", "SIDKick Pico" };
@@ -318,7 +318,7 @@ struct t_cfg_definition u64_cfg[] = {
 #else
     { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  1, 0 },
 #endif
-    { CFG_MOUSE_MODE,           CFG_TYPE_ENUM, "Mouse Mode",                   "%s", mouse_modes,       0,  2, 1 },
+    { CFG_MOUSE_MODE,           CFG_TYPE_ENUM, "Mouse Mode",                   "%s", mouse_modes,       0,  3, 1 },
     { CFG_MOUSE_SENSITIVITY,    CFG_TYPE_VALUE, "Mouse Sensitivity",           "%d", NULL,              1, 16, 8 },
     { CFG_MOUSE_ACCELERATION,   CFG_TYPE_ENUM, "Mouse Acceleration",           "%s", mouse_acceleration_modes, 0,  1, 0 },
     { CFG_SCROLL_FACTOR,        CFG_TYPE_VALUE, "Mouse Wheel Sensitivity",     "%d", NULL,              1, 16, 8 },

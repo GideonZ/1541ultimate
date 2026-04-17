@@ -4,6 +4,8 @@
 #include "usb_base.h"
 #include "usb_device.h"
 #include "hid_decoder.h"
+#include "FreeRTOS.h"
+#include "timers.h"
 
 struct t_usb_hid_status_snapshot
 {
@@ -32,6 +34,12 @@ class UsbHidDriver : public UsbDriver
     bool descriptor_mouse;
     int16_t mouse_x, mouse_y;
     uint8_t mouse_joy;
+    int native_wheel_delta_queue[8];
+    uint8_t native_wheel_queue_head;
+    uint8_t native_wheel_queue_tail;
+    uint8_t native_wheel_base_joy;
+    uint8_t native_wheel_output_active;
+    TimerHandle_t wheel_pulse_timer;
     uint8_t keyboard_data[8];
     HidItemList report_items;
     t_item_location rep_button1;
@@ -60,11 +68,19 @@ class UsbHidDriver : public UsbDriver
     int wheel_axis_v_remainder;
     int wheel_key_h_remainder;
     int wheel_key_v_remainder;
+    int wheel_step_accumulator;
+    int wheel_pulse_phase;
+    uint8_t wheel_pulse_mask;
+    uint32_t wheel_pulse_next_tick;
+    int wheel_pulse_burst_direction;
+    uint8_t wheel_pulse_burst_count;
     int pointer_sensitivity_setting;
     int pointer_sensitivity_remainder_x;
     int pointer_sensitivity_remainder_y;
     int adaptive_accel_ema_x16;
     int adaptive_accel_scale_factor;
+    static void S_wheel_pulse_timer(TimerHandle_t a);
+    void service_native_wheel_timer(void);
 
 public:
 	static UsbDriver *test_driver(UsbInterface *intf);

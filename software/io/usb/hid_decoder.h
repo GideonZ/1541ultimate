@@ -332,10 +332,18 @@ class HidMouseInterpreter
     enum {
         MOUSE_MODE_CURSOR = 0,
         MOUSE_MODE_MOUSE = 1,
-        MOUSE_MODE_CURSOR_MOUSE = 2
+        MOUSE_MODE_MOUSE_CURSOR = 2,
+        MOUSE_MODE_MOUSE_WHEEL = 3
     };
 
     enum {
+        WHEEL_PULSE_PHASE_IDLE = 0,
+        WHEEL_PULSE_PHASE_LOW = 1,
+        WHEEL_PULSE_PHASE_HIGH = 2
+    };
+
+    enum {
+        NATIVE_WHEEL_THRESHOLD = 8,
         SENSITIVITY_SCALE_STEP = 32,
         ADAPTIVE_ACCELERATION_TARGET_EMA = 32,
         ADAPTIVE_ACCELERATION_MAX_EMA = 96,
@@ -427,12 +435,112 @@ class HidMouseInterpreter
 
     static bool mouseModeRoutesWheelToCursor(int mouse_mode)
     {
-        return mouse_mode != MOUSE_MODE_MOUSE;
+        return (mouse_mode == MOUSE_MODE_CURSOR) || (mouse_mode == MOUSE_MODE_MOUSE_CURSOR);
     }
 
     static bool mouseModeRoutesWheelToPointer(int mouse_mode)
     {
         return mouse_mode == MOUSE_MODE_MOUSE;
+    }
+
+    static bool mouseModeRoutesWheelToNative(int mouse_mode)
+    {
+        return mouse_mode == MOUSE_MODE_MOUSE_WHEEL;
+    }
+
+    static int computeNativeWheelGain(int sensitivity)
+    {
+        return clampWheelSetting(sensitivity);
+    }
+
+    static int accumulateNativeWheelSteps(int wheel_delta, int sensitivity, int& accumulator)
+    {
+        int scaled_delta = wheel_delta * computeNativeWheelGain(sensitivity);
+        int steps = 0;
+
+        if (((wheel_delta > 0) && (accumulator < 0)) ||
+            ((wheel_delta < 0) && (accumulator > 0))) {
+            accumulator = 0;
+        }
+
+        accumulator += scaled_delta;
+        while (accumulator >= NATIVE_WHEEL_THRESHOLD) {
+            accumulator -= NATIVE_WHEEL_THRESHOLD;
+            steps++;
+        }
+        while (accumulator <= -NATIVE_WHEEL_THRESHOLD) {
+            accumulator += NATIVE_WHEEL_THRESHOLD;
+            steps--;
+        }
+        return steps;
+    }
+
+    static void mergeNativeWheelBurst(int steps, uint8_t max_burst,
+                                      int& burst_direction, uint8_t& burst_count)
+    {
+        int direction;
+        int updated_count;
+
+        if ((steps == 0) || (max_burst == 0)) {
+            return;
+        }
+
+        direction = (steps > 0) ? 1 : -1;
+        if (burst_direction != direction) {
+            burst_direction = direction;
+            burst_count = 0;
+        }
+
+        updated_count = burst_count + absoluteValue(steps);
+        if (updated_count > max_burst) {
+            updated_count = max_burst;
+        }
+        burst_count = (uint8_t)updated_count;
+    }
+
+    static bool advanceNativeWheelBurst(int& burst_direction, uint8_t& burst_count,
+                                        int& phase, uint8_t& pulse_mask,
+                                        uint32_t& next_tick, uint32_t now, uint32_t phase_ticks)
+    {
+        if (phase_ticks == 0) {
+            phase_ticks = 1;
+        }
+
+        while (1) {
+            if (phase == WHEEL_PULSE_PHASE_IDLE) {
+                if ((burst_count > 0) && (burst_direction != 0)) {
+                    pulse_mask = (burst_direction > 0) ? 0x04 : 0x08;
+                    burst_count--;
+                    phase = WHEEL_PULSE_PHASE_LOW;
+                    next_tick = now + phase_ticks;
+                    return true;
+                }
+                burst_direction = 0;
+                pulse_mask = 0;
+                return false;
+            }
+
+            if ((int32_t)(now - next_tick) < 0) {
+                return true;
+            }
+
+            if (phase == WHEEL_PULSE_PHASE_LOW) {
+                phase = WHEEL_PULSE_PHASE_HIGH;
+                next_tick += phase_ticks;
+                continue;
+            }
+
+            phase = WHEEL_PULSE_PHASE_IDLE;
+        }
+    }
+
+    static uint8_t applyWheelPulseMask(uint8_t mouse_joy, int phase, uint8_t pulse_mask)
+    {
+        mouse_joy |= 0x0C;
+        if ((phase == WHEEL_PULSE_PHASE_LOW) && pulse_mask) {
+            mouse_joy &= (uint8_t)~pulse_mask;
+        }
+        return mouse_joy;
     }
 
     static int scaleWheelDelta(int wheel_delta, int scroll_factor,
@@ -522,10 +630,31 @@ class HidMouseInterpreter
         return (raw_delta * scale_factor) / 256;
     }
 
+    static bool isCompactSharedWheelReport(const t_item_location& button3,
+                                           const t_item_location& wheel_v,
+                                           const t_item_location& wheel_h)
+    {
+        return (button3.report == 0) && (button3.offset == 2) && (button3.length == 1) &&
+               (wheel_v.report == 0) && (wheel_v.offset == 32) && (wheel_v.length == 8) &&
+               (wheel_h.report == 0) && (wheel_h.offset == 40) && (wheel_h.length == 8);
+    }
+
+    static bool shouldSuppressMiddleClickWheelNoise(bool compact_shared_wheel_report,
+                                                    bool middle_pressed,
+                                                    bool previous_middle_pressed)
+    {
+        return compact_shared_wheel_report && middle_pressed && !previous_middle_pressed;
+    }
+
+    static int normalizeHorizontalWheel(int wheel_h, bool invert)
+    {
+        return invert ? -wheel_h : wheel_h;
+    }
+
     static int normalizeHorizontalWheel(int wheel_h)
     {
         // AC Pan reports are opposite the existing right/left menu convention.
-        return -wheel_h;
+        return normalizeHorizontalWheel(wheel_h, true);
     }
 
     static int normalizeVerticalWheel(int wheel_v)
