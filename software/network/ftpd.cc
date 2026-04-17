@@ -132,6 +132,35 @@ int dbg_printf(const char *fmt, ...);
 static const char *month_table[16] = { "Nul", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
         "M13", "M14", "M15" };
 
+static FTPTransferResult send_all(int socket, const char *buffer, int length)
+{
+    while (length > 0) {
+        int sent = send(socket, buffer, length, 0);
+        if (sent <= 0) {
+            return FTP_TRANSFER_ABORTED;
+        }
+        buffer += sent;
+        length -= sent;
+    }
+    return FTP_TRANSFER_OK;
+}
+
+static const char *transfer_result_message(FTPTransferResult result)
+{
+    switch (result) {
+    case FTP_TRANSFER_OK:
+        return msg226;
+    case FTP_TRANSFER_SETUP_FAILED:
+        return msg425;
+    case FTP_TRANSFER_ABORTED:
+        return msg426;
+    case FTP_TRANSFER_STORAGE_ERROR:
+        return msg452;
+    default:
+        return msg226;
+    }
+}
+
 static int EndsWith(const char *str, const char *suffix)
 {
     if (!str || !suffix)
@@ -545,10 +574,10 @@ void FTPDaemonThread::cmd_retr(const char *arg)
 
     send_msg(msg150recv, arg, st.st_size);
 
-    connection->sendfile(vfs_file);
+    FTPTransferResult result = connection->sendfile(vfs_file);
     destroy_connection();
 
-    send_msg(msg226);
+    send_msg(transfer_result_message(result));
 }
 
 void FTPDaemonThread::cmd_stor(const char *arg)
@@ -569,13 +598,10 @@ void FTPDaemonThread::cmd_stor(const char *arg)
 
     send_msg(msg150stor, arg);
 
-    bool success = connection->receivefile(vfs_file);
+    FTPTransferResult result = connection->receivefile(vfs_file);
     destroy_connection();
 
-    if (success)
-        send_msg(msg226);
-    else
-        send_msg(msg452);
+    send_msg(transfer_result_message(result));
 }
 
 void FTPDaemonThread::cmd_noop(const char *arg)
@@ -1010,45 +1036,63 @@ void FTPDataConnection::directory(int listType, vfs_dir_t *dir)
             buffer[len] = 0;
             send(actual_socket, buffer, len, 0);
 
-            // for the next iteration
             vfs_dirent = vfs_readdir(dir);
         }
     }
     vfs_closedir(dir);
 }
 
-void FTPDataConnection::sendfile(vfs_file_t *file)
+FTPTransferResult FTPDataConnection::sendfile(vfs_file_t *file)
 {
-    if (setup_connection() == ERR_OK) {
-        uint32_t read;
-        do {
-            read = vfs_read(buffer, 1024, 1, file);
-            if (read)
-                send(actual_socket, buffer, read, 0);
-        } while (read > 0);
+    FTPTransferResult result = FTP_TRANSFER_OK;
+
+    if (setup_connection() != ERR_OK) {
+        vfs_close(file);
+        return FTP_TRANSFER_SETUP_FAILED;
     }
+
+    uint32_t read;
+    do {
+        read = vfs_read(buffer, FTPD_DATA_BUFFER_SIZE, 1, file);
+        if (read) {
+            result = send_all(actual_socket, buffer, read);
+            if (result != FTP_TRANSFER_OK) {
+                break;
+            }
+        }
+    } while (read > 0);
+
     vfs_close(file);
+    return result;
 }
 
-bool FTPDataConnection::receivefile(vfs_file_t *file)
+FTPTransferResult FTPDataConnection::receivefile(vfs_file_t *file)
 {
-    bool ret = true;
-    if (setup_connection() == ERR_OK) {
-        int n;
-        do {
-            n = recv(actual_socket, buffer, 1024, 0);
-            if (n > 0) {
-                uint32_t written = vfs_write(buffer, n, 1, file);
-                if (written != n) {
-                    printf("Hmm.. written = %d. n = %d\n", written, n);
-                    ret = false;
-                    break;
-                }
-            }
-        } while (n > 0);
+    FTPTransferResult result = FTP_TRANSFER_OK;
+
+    if (setup_connection() != ERR_OK) {
+        vfs_close(file);
+        return FTP_TRANSFER_SETUP_FAILED;
     }
+
+    int n;
+    do {
+        n = recv(actual_socket, buffer, FTPD_DATA_BUFFER_SIZE, 0);
+        if (n > 0) {
+            uint32_t written = vfs_write(buffer, n, 1, file);
+            if (written != (uint32_t)n) {
+                printf("Hmm.. written = %d. n = %d\n", written, n);
+                result = FTP_TRANSFER_STORAGE_ERROR;
+                break;
+            }
+        } else if (n < 0) {
+            result = FTP_TRANSFER_ABORTED;
+            break;
+        }
+    } while (n > 0);
+
     vfs_close(file);
-    return ret;
+    return result;
 }
 
 #include "init_function.h"
