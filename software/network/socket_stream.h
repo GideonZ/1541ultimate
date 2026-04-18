@@ -41,6 +41,7 @@ public:
 	// stream interface
 	int write(const char *buffer, int n);
 	int get_char(void);
+	bool is_alive(void) { return actual_socket >= 0; }
     void charout(int c)
     {
     	char cc = (char)c;
