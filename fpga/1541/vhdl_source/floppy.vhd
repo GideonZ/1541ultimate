@@ -139,6 +139,7 @@ begin
         do_write        => do_write,
         do_advance      => do_advance,
 
+        bit_time        => bit_time,
         track_start     => track_start,
         max_offset      => max_offset,
 

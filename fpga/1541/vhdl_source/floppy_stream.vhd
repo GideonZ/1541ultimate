@@ -19,6 +19,8 @@ use ieee.numeric_std.all;
 --use work.floppy_emu_pkg.all;
 
 entity floppy_stream is
+generic (
+    g_support_head_settle   : boolean := false );
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
@@ -59,12 +61,14 @@ architecture gideon of floppy_stream is
     signal bit_timer   : unsigned(8 downto 0);
     signal bit_carry   : std_logic;
     
+    signal head_settle_count    : unsigned(17 downto 0) := (others => '0');
+    signal head_stable          : std_logic := '1';
+
     signal mem_bit_cnt : unsigned(2 downto 0);
     signal rd_bit_cnt  : unsigned(2 downto 0) := "000";
     signal mem_shift   : std_logic_vector(7 downto 0);
     signal rd_shift    : std_logic_vector(9 downto 0) := (others => '0');
     signal sync_i      : std_logic;
-    signal byte_rdy_i  : std_logic_vector(3 downto 0);
     alias  mem_rd_bit  : std_logic is mem_shift(7);
     signal track_i     : unsigned(6 downto 0);
     signal mode_d      : std_logic;
@@ -153,7 +157,7 @@ begin
     random_trans <= '1' when random_data(10 downto 0) = "10010010101" else '0';
     
     -- These pulses only in read mode
-    transition_pulse <= mode and ((bit_tick and mem_rd_bit) or (random_trans and random_bit));
+    transition_pulse <= mode and ((bit_tick and head_stable and mem_rd_bit) or (random_trans and random_bit));
 
     p_resample: process(clock)
     begin
@@ -181,7 +185,6 @@ begin
     end process;
     rd_shift_data  <= sampl(3) nor sampl(2);
     rd_shift_phase <= not sampl(1);
-
 
     -- parallelize stream and generate sync
     -- and handle writes
@@ -246,17 +249,33 @@ begin
             do_track_out <= '0';
             do_head_bang <= '0';
 
+            -- introduce some milliseconds delay after a step before data is read
+            if head_stable = '0' and tick_16MHz = '1'and g_support_head_settle then
+                head_settle_count <= head_settle_count - 1;
+                if head_settle_count = 0 then
+                    head_stable <= '1';
+                end if;
+            end if;
+
             if stepper_en='1' then
                 st := std_logic_vector(track_i(1 downto 0)) & step;
     
                 case st is
                 when "0001" | "0110" | "1011" | "1100" => -- up
                     do_track_in <= '1';
+                    if g_support_head_settle then
+                        head_stable <= '0';
+                        head_settle_count <= (others => '1');
+                    end if;
                     if track_i /= 83 then
                         track_i <= track_i + 1;
                     end if;
                 when "0011" | "0100" | "1001" | "1110" => -- down
                     do_track_out <= '1';
+                    if g_support_head_settle then
+                        head_stable <= '0';
+                        head_settle_count <= (others => '1');
+                    end if;
                     if track_i /= 0 then
                         track_i <= track_i - 1;
                     end if;
@@ -267,6 +286,7 @@ begin
                             
             if reset='1' then
                 track_i <= "0000000";
+                head_stable <= '1';
             end if;            
         end if;
     end process;
@@ -274,7 +294,6 @@ begin
     -- outputs
     sync       <= sync_i;
     read_data  <= rd_shift(7 downto 0);
---    byte_ready <= byte_rdy_i;
     track      <= track_i;
     track_is_0 <= '1' when track_i = "0000000" else '0';
 end gideon;

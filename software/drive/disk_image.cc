@@ -33,6 +33,18 @@ const int region_end[] =         { 17, 24, 30, 35, 52, 59, 65, 70 };
 const int sector_gap_lengths[] = {  9, 19, 13, 10,  9, 19, 13, 10 };
 const int region_speed_codes[] = {  3,  2,  1,  0,  3,  2,  1,  0 };
 
+// const int track_offsets[]      = { 3238, 6003, 1076, 4075, 6840, 1913, 4678, 7442, 2515, 5280, 353, 3118,
+//                                    5883, 956, 3721, 6486, 1559, 3013, 4088, 5162, 6220, 153, 1227, 2310,
+//                                    6170, 5802, 5434, 5066, 4699, 4331, 5718, 4116, 2514, 912, 5752 };
+
+// const int track_offsets[]      = { 6793, 1496, 4060, 6455, 1159, 4060, 6455, 1159, 4060, 6455, 1159, 4060,
+//                                    6455, 1159, 4060, 6455, 1159, 3003, 3781, 4541, 5302, 6082, 6860, 499,
+//                                    5590, 4992, 4395, 3798, 3200, 2603, 3211, 1352, 5743, 3884, 2025 };
+
+const int track_offsets[]      = { 3741, 6135, 837, 3231, 5625, 328, 2722, 5116, 7510, 2213, 4607, 7001,
+                                   1704, 4098, 6492, 1195, 3589, 5258, 6046, 6836, 484, 1273, 2063, 2853,
+                                   1124, 500, 6540, 5916, 5291, 4665, 6001, 4169, 2338, 506, 4923 };
+
 #if HARDWARE_ENCODING == 0
 static uint8_t gcr_table_hi_0[256];
 static uint8_t gcr_table_lo_0[256];
@@ -854,8 +866,10 @@ bool GcrImage :: save(File *f, bool align, UserInterface *user_interface)
             break;
         // find alignment
         int start = 0;
-        if(align)
+        if(align) {
             start = find_track_start(i);
+            printf("Track start %d: %d\n", i, start);
+        }
         if(start > 0) {
             res = f->write(tracks[i].track_address+start, tracks[i].track_length-start, &bytes_written);
             if (res == FR_OK) {
