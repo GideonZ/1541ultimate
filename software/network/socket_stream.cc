@@ -37,9 +37,11 @@ int SocketStream :: get_char()
 		if (errno == EAGAIN)
 			return -1;
 		printf("ERROR reading from socket %d. Errno = %d", n, errno);
+		close();
 		return -2;
 	} else { // n == 0
 		printf("Socket got closed\n");
+		close();
 		return -2;
 	}
 	return -1;
@@ -92,6 +94,10 @@ int SocketStream :: transmit(const char *buffer, int out_length)
 			return 0; // OK!
 		} else if (n < 0) {
 			puts("ERROR writing to socket");
+			close();
+			return -5;
+		} else if (n == 0) {
+			close();
 			return -5;
 		} else {
 			out_length -= n;

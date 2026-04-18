@@ -46,7 +46,7 @@ struct t_device_descriptor
 // 07 05 81 02 00 02 00 -- bulk in      512
 // 07 05 02 02 00 02 00 -- bulk out     512
 // 07 05 83 03 08 00 01 -- interrupt in 8
- 
+
 struct t_device_configuration
 {
     uint8_t length;
@@ -267,6 +267,7 @@ public:
 
     uint16_t vendorID;
     uint16_t productID;
+    uint8_t active_configuration;
 
     char manufacturer[32];
     char product[32];
@@ -348,7 +349,7 @@ public:
     	}
     }
 
-};    
+};
 
 char *unicode_to_ascii(uint8_t *in, char *out);
 

@@ -15,6 +15,25 @@
 #endif // UPDATER
 #endif // NO_FILE_ACCESS
 
+#ifndef portENTER_CRITICAL
+#define portENTER_CRITICAL()
+#define portEXIT_CRITICAL()
+#endif
+
+namespace {
+
+IndexedList<UserInterface *> *get_user_interfaces(void)
+{
+    static IndexedList<UserInterface *> interfaces(4, NULL);
+    return &interfaces;
+}
+
+volatile int active_user_interface_count = 0;
+
+}
+
+extern "C" void u64_dispatch_usb_hid_status_refresh(void) __attribute__((weak));
+
 /* Help */
 static const char *helptext =
         "WASD:       Up/Left/Down/Right\n"
@@ -26,6 +45,11 @@ static const char *helptext =
         "            enter directory or disk\n"
         "RETURN:     Selection context menu\n"
         "RUN/STOP:   Leave menu / Back\n"
+        "\n"
+        "USB Mouse:\n"
+        "  Wheel:    Move selection\n"
+        "  Left:     Activate\n"
+        "  Right:    Leave menu / Back\n"
         "\n"
         "F1:         Page up\n"
         "F3:         Help\n"
@@ -92,6 +116,7 @@ struct t_cfg_definition user_if_config[] = {
 
 UserInterface :: UserInterface(const char *title, bool use_logo) : title(title)
 {
+    get_user_interfaces()->append(this);
     initialized = false;
     focus = -1;
     host = NULL;
@@ -111,6 +136,8 @@ UserInterface :: UserInterface(const char *title, bool use_logo) : title(title)
 UserInterface :: ~UserInterface()
 {
 	printf("Destructing user interface..\n");
+    set_available(false);
+    get_user_interfaces()->remove(this);
     do {
         if (ui_objects[focus]) {
             ui_objects[focus]->deinit();
@@ -119,6 +146,21 @@ UserInterface :: ~UserInterface()
         focus--;
     } while(focus>=0);
     printf(" bye UI!\n");
+}
+
+void UserInterface :: set_available(bool enable)
+{
+    if (available == enable) {
+        return;
+    }
+    available = enable;
+    portENTER_CRITICAL();
+    if (enable) {
+        active_user_interface_count++;
+    } else if (active_user_interface_count > 0) {
+        active_user_interface_count--;
+    }
+    portEXIT_CRITICAL();
 }
 
 typedef struct {
@@ -188,14 +230,15 @@ void UserInterface :: run_remote(void)
 {
     host->take_ownership(this);
     appear();
-    available = true;
-    while(1) {
+    set_available(true);
+    while(host->exists()) {
         if (pollFocussed() == MENU_EXIT) {
-            available = false;
+            set_available(false);
             break;
         }
         vTaskDelay(3);
     }
+    set_available(false);
     host->release_ownership();
 }
 
@@ -239,14 +282,14 @@ void UserInterface :: run_once(void)
         appear();
     }
 
-    available = true;
+    set_available(true);
     while(!doBreak) {
         host->checkButton();
         if (!host->exists()) {
             break;
         } else if (host->buttonPush()) {
             if (!host->is_permanent()) {
-                available = false;
+                set_available(false);
                 release_host();
             }
             host->release_ownership();
@@ -260,7 +303,7 @@ void UserInterface :: run_once(void)
                 break;
             case MENU_HIDE:
             case MENU_EXIT:
-                available = false;
+                set_available(false);
                 doBreak = true;
                 if (!host->is_permanent()) {
                     release_host();
@@ -273,6 +316,7 @@ void UserInterface :: run_once(void)
         }
         vTaskDelay(3);
     }
+    set_available(false);
     doBreak = false;
 #endif
 }
@@ -359,6 +403,9 @@ int UserInterface :: pollFocussed(void)
 {
 	int ret = 0;
     do {
+        if (u64_dispatch_usb_hid_status_refresh) {
+            u64_dispatch_usb_hid_status_refresh();
+        }
         ret = ui_objects[focus]->poll(ret); // param pass chain
 
         // Stay in the current window configuration
@@ -419,6 +466,20 @@ bool UserInterface :: is_available(void)
     return available;
 }
 
+bool UserInterface :: anyMenuActive(void)
+{
+    bool active;
+    portENTER_CRITICAL();
+    active = active_user_interface_count > 0;
+    portEXIT_CRITICAL();
+    return active;
+}
+
+extern "C" bool userinterface_any_menu_active(void)
+{
+    return UserInterface::anyMenuActive();
+}
+
 int UserInterface :: activate_uiobject(UIObject *obj)
 {
     if(focus < (MAX_UI_OBJECTS-1)) {
@@ -463,10 +524,10 @@ int  UserInterface :: popup(const char *msg, uint8_t flags)
 
     UIPopup *pop = new UIPopup(this, msg, flags, 5, c_button_names, c_button_keys);
     pop->init();
-    int ret;
-    do {
+    int ret = 0;
+    while(!ret && host->exists()) {
         ret = pop->poll(0);
-    } while(!ret);
+    }
     pop->deinit();
     delete pop;
     return ret;
@@ -476,10 +537,10 @@ int  UserInterface :: popup(const char *msg, int count, const char **names, cons
 {
     UIPopup *pop = new UIPopup(this, msg, (1 << (count + 1))-1, count, names, keys);
     pop->init();
-    int ret;
-    do {
+    int ret = 0;
+    while(!ret && host->exists()) {
         ret = pop->poll(0);
-    } while(!ret);
+    }
     pop->deinit();
     delete pop;
     return ret;
@@ -490,10 +551,10 @@ int UserInterface :: string_box(const char *msg, char *buffer, int maxlen)
     UIStringBox *box = new UIStringBox(this, msg, buffer, maxlen);
     box->init();
     screen->cursor_visible(1);
-    int ret;
-    do {
+    int ret = 0;
+    while(!ret && host->exists()) {
         ret = box->poll(0);
-    } while(!ret);
+    }
     screen->cursor_visible(0);
     box->deinit();
     delete box;
@@ -505,10 +566,10 @@ int UserInterface :: string_edit(char *buffer, int maxlen, Window *w, int x, int
     UIStringEdit *edit = new UIStringEdit(buffer, maxlen);
     edit->init(w, keyboard, x, y, maxlen); // maybe the max len should be limited by the window!
     screen->cursor_visible(1);
-    int ret;
-    do {
+    int ret = 0;
+    while(!ret && host->exists()) {
         ret = edit->poll(0);
-    } while(!ret);
+    }
     screen->cursor_visible(0);
     delete edit;
     return ret;
@@ -519,12 +580,15 @@ int UserInterface :: choice(const char *msg, const char **choices, int count)
     UIChoiceBox *box = new UIChoiceBox(this, msg, choices, count);
     box->init();
     screen->cursor_visible(0);
-    int ret;
-    do {
+    int ret = 0;
+    while(!ret && host->exists()) {
         ret = box->poll(0);
-    } while(!ret);
+    }
     delete box;
     // Return values are 1 based, unless it's an error
+    if (!ret && !host->exists()) {
+        return MENU_CLOSE;
+    }
     return (ret > 0) ? (ret - 1) : ret;
 }
 
@@ -545,16 +609,25 @@ void UserInterface :: hide_progress(void)
     delete status_box;
 }
 
+void UserInterface :: run_editor(Editor *editor)
+{
+    editor->init(screen, keyboard);
+    int ret = 0;
+    while(!ret && host->exists()) {
+        ret = editor->poll(0);
+    }
+    editor->deinit();
+    delete editor;
+}
+
 void UserInterface :: run_editor(const char *text_buf, int max_len)
 {
-    Editor *edit = new Editor(this, text_buf, max_len);
-    edit->init(screen, keyboard);
-    int ret;
-    do {
-        ret = edit->poll(0);
-    } while(!ret);
-    edit->deinit();
-    delete edit;
+    run_editor(new Editor(this, text_buf, max_len));
+}
+
+void UserInterface :: run_hex_editor(const char *text_buf, int max_len)
+{
+    run_editor(new HexEditor(this, text_buf, max_len));
 }
 
 QueueHandle_t userMessageQueue = 0;

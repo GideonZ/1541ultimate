@@ -17,7 +17,7 @@ char *unicode_to_ascii(uint8_t *in, char *out, int maxlen)
 {
     char *buf;
     uint8_t len = (*in);
-    
+
     buf = out;
     in += 2;
 
@@ -90,6 +90,7 @@ UsbDevice :: UsbDevice(UsbBase *u, int speed)
 	product[0] = 0;
 	vendorID = 0;
 	productID = 0;
+	active_configuration = 0;
 }
 
 UsbDevice :: ~UsbDevice()
@@ -118,7 +119,7 @@ void UsbDevice :: disable()
 void UsbDevice :: get_string(int index, char *dest, int len)
 {
     uint8_t usb_buffer[256];
-    
+
     uint8_t c_get_string_descriptor[] = { 0x80, 0x06, 0x00, 0x03, 0x09, 0x04, 0xFF, 0x00 };
 
     c_get_string_descriptor[2] = (uint8_t)index;
@@ -198,7 +199,7 @@ bool UsbDevice :: set_address(int address)
     c_set_address[2] = (uint8_t)address;
     int i = host->control_exchange(&control_pipe, c_set_address, 8, dummy_buffer, 0);
     //printf("Got %d bytes back.\n", i);
-    
+
     if(i >= 0) {
         current_address = address;
         control_pipe.DevEP = (address << 8);
@@ -222,7 +223,7 @@ bool UsbDevice :: get_configuration(uint8_t index)
 
     if(len_descr < 0)
     	return false;
-    
+
     if ((buf[0] == 9) && (buf[1] == DESCR_CONFIGURATION)) {
         len_descr = int(buf[2]) + 256*int(buf[3]);
         // printf("Total configuration length: %d\n", len_descr);
@@ -333,16 +334,27 @@ struct t_device_configuration *UsbDevice :: get_device_config()
 
 void UsbDevice :: set_configuration(uint8_t config)
 {
+	if ((device_state == dev_st_configured) && (active_configuration == config)) {
+		return;
+	}
     printf("Setting configuration %d.\n", config);
     c_set_configuration[2] = config;
 
     uint8_t dummy_buffer[8];
     int i = host->control_exchange(&control_pipe, c_set_configuration, 8, dummy_buffer, 0);
-//    printf("Set Configuration result:%d\n", i);
+	if (i >= 0) {
+		active_configuration = config;
+		device_state = dev_st_configured;
+	} else {
+		printf("Set Configuration failed:%d\n", i);
+	}
 }
 
 void UsbDevice :: set_interface(uint8_t interface, uint8_t alt)
 {
+	if (alt == 0) {
+		return;
+	}
     printf("Setting interface %d to alternate setting %d.\n", interface, alt);
     c_set_interface[2] = alt;
     c_set_interface[4] = interface;

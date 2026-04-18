@@ -219,7 +219,6 @@ void Assembly :: request_binary(const char *path, const char *filename)
     }
  }
 
-
 #if TEST
 int TempfileWriter::temp_count;
 
