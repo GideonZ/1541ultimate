@@ -65,9 +65,10 @@ architecture gideon of char_generator_slave12 is
     signal pixel_sel_d1     : unsigned(3 downto 0);
     signal active_d2        : std_logic;
     signal pixel_sel_d2     : unsigned(3 downto 0);
-    signal reverse          : std_logic;
-    signal reverse_d        : std_logic;
     signal active_d3        : std_logic;
+    signal pixel_sel_d3     : unsigned(3 downto 0);
+    signal reverse          : std_logic;
+    signal reverse_d3       : std_logic;
     signal char_data_d3     : std_logic_vector(11 downto 0);
 begin
     process(clock)
@@ -77,7 +78,9 @@ begin
                 active_d1 <= '0';
                 char_y_d  <= char_y;
                 color_data_d <= color_data;
-                
+                color_data_d2 <= color_data_d;
+                reverse_d3 <= reverse;
+
                 case state is
                 when idle =>
                     pointer <= control.pointer(pointer'range);
@@ -127,6 +130,7 @@ begin
                 -- pipeline forwards
                 pixel_sel_d1 <= pixel_count - 1;
                 pixel_sel_d2 <= pixel_sel_d1;
+                pixel_sel_d3 <= pixel_sel_d2;
                 active_d2    <= active_d1;
 
                 -- pipeline again
@@ -152,7 +156,7 @@ begin
 
                 pixel_active <= active_d3;
                 if active_d3 = '1' then
-                    if char_data_d3(to_integer(pixel_sel_d2)) = not(reverse) then
+                    if char_data_d3(to_integer(pixel_sel_d3)) = not(reverse_d3) then
                         pixel_data <= unsigned(color_data_d2(3 downto 0));
                         if color_data_d2(3 downto 0) = control.transparent then
                             pixel_opaque <= '0';
@@ -185,6 +189,5 @@ begin
                     '0' & unsigned(screen_data(6 downto 0)) & char_y_d(2 downto 0) when char_y_d(3)='0' else 
                     '0' & unsigned(screen_data(6 downto 0)) & "111"; -- keep repeating the last line
     char_addr_12 <= unsigned(screen_data(6 downto 0)) & char_y_d(4 downto 2);
-    reverse      <= screen_data(7) when rising_edge(clock);
-    reverse_d    <= reverse when rising_edge(clock);
+    reverse      <= screen_data(7) when rising_edge(clock); -- emulate ram latency
 end architecture;
