@@ -10,7 +10,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Default values
 ASM_FILE=""
-BUILD_ONLY=false
 RUN_EMULATOR=false
 INSTALL_DEPS=false
 VERBOSE=false
@@ -61,13 +60,12 @@ OPTIONS:
     --help              Show this help message
 
 EXAMPLES:
-EXAMPLES:
     ./c64-build.sh micromys-wheel.asm                    # Build micromys-wheel.prg
     ./c64-build.sh micromys-wheel.asm --run              # Build and run in VICE
     ./c64-build.sh micromys-wheel.asm --output /tmp      # Build to specific directory
-    ./c64-build.sh --install-deps                        # Install dependencies only:
-      - 64tass: C64 cross-assembler (sudo apt install 64tass)  
-      - VICE: C64 emulator (sudo apt install vice) - optional, for --run
+    ./c64-build.sh --install-deps                        # Install the full toolchain:
+      - 64tass: C64 cross-assembler (sudo apt install 64tass)
+      - VICE: C64 emulator (sudo apt install vice)
 
 NOTES:
     - Assembly file can be specified with relative or absolute path
@@ -77,10 +75,21 @@ NOTES:
 EOF
 }
 
+find_64tass() {
+    local local_64tass="$SCRIPT_DIR/../64tass/64tass"
+
+    if [[ -x "$local_64tass" ]]; then
+        printf '%s\n' "$local_64tass"
+        return 0
+    fi
+
+    command -v 64tass
+}
+
 check_dependencies() {
     local missing_deps=()
 
-    if ! command -v 64tass >/dev/null 2>&1; then
+    if ! find_64tass >/dev/null 2>&1; then
         missing_deps+=("64tass")
     fi
 
@@ -184,6 +193,7 @@ cleanup_spurious_files() {
 build_program() {
     local asm_file="$1"
     local output_dir="${2:-$(dirname "$asm_file")}"
+    local assembler
     
     local basename=$(basename "$asm_file" .asm)
     local prg_file="$output_dir/$basename.prg"
@@ -201,8 +211,10 @@ build_program() {
         rm -f "$prg_file"
     fi
 
-    # Build with 64tass (matching original script behavior)
-    local build_args=("64tass" "--cbm-prg" "--labels")
+    assembler=$(find_64tass)
+
+    # Build with 64tass and emit only the PRG artifact this helper advertises.
+    local build_args=("$assembler" "--cbm-prg")
     
     if [[ "$VERBOSE" == "false" ]]; then
         build_args+=("--quiet")
@@ -267,6 +279,7 @@ main() {
 
     # Check for install-deps only mode
     if [[ "$1" == "--install-deps" ]]; then
+        RUN_EMULATOR=true
         install_dependencies
         exit 0
     fi
@@ -285,16 +298,19 @@ main() {
     while [[ $# -gt 0 ]]; do
         case $1 in
             --build-only)
-                BUILD_ONLY=true
                 RUN_EMULATOR=false
                 shift
                 ;;
             --run)
                 RUN_EMULATOR=true
-                BUILD_ONLY=false
                 shift
                 ;;
             --output)
+                if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == --* ]]; then
+                    log_error "--output requires a directory argument"
+                    usage
+                    exit 1
+                fi
                 OUTPUT_DIR="$2"
                 shift 2
                 ;;

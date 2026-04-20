@@ -170,21 +170,46 @@ detect_pulse_start_got_down:
         rts
 
 measure_active_low_pulse:
+        lda #0
+        sta pulse_overflow
+
+        lda CIA1_ICR
+
         lda #$ff
         sta CIA1_TALO
         sta CIA1_TAHI
 
-        ; Timer A: force load + start, phi2, continuous
-        lda #%00010001
+        ; Timer A: one-shot + force load + start, phi2
+        lda #%00011001
         sta CIA1_CRA
 
 measure_active_low_pulse_wait_release:
         lda CIA1_PRB
         and pulse_mask
+        bne measure_active_low_pulse_released
+
+        lda CIA1_ICR
+        and #%00000001
         beq measure_active_low_pulse_wait_release
+
+measure_active_low_pulse_overflow:
+        lda #$00
+        sta CIA1_CRA
+
+        lda #1
+        sta pulse_overflow
+
+        lda #$ff
+        sta cycles_lo
+        sta cycles_hi
+        rts
+
+measure_active_low_pulse_released:
 
         lda #$00
         sta CIA1_CRA
+
+        lda CIA1_ICR
 
         lda CIA1_TALO
         sta timer_lo
@@ -567,6 +592,9 @@ print_verdict:
         lda #' '
         jsr CHROUT
 
+        lda pulse_overflow
+        bne print_verdict_fail
+
         lda abs_error_us_hi
         cmp #ERR_LIMIT_HI
         bcc print_verdict_ok
@@ -802,6 +830,9 @@ pulse_mask:
         .byte 0
 
 pulse_dir:
+        .byte 0
+
+pulse_overflow:
         .byte 0
 
 is_pal:
