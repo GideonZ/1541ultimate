@@ -17,7 +17,7 @@
 ; Notes:
 ; - This is a conformance probe for firmware behavior
 ; - Validation is time-based, not cycle-based
-; - PAL / NTSC is refreshed while waiting for the next pulse
+; - PAL / NTSC is detected once at startup
 ; - One full 1->0->1 low pulse is treated as one event
 ; - After each event, the code confirms a short stable idle
 ;   period before re-arming, to avoid double-logging
@@ -96,7 +96,6 @@ start:
 main_loop:
         jsr wait_for_idle
         jsr detect_pulse_start
-        jsr init_mode_constants
         jsr measure_active_low_pulse
         jsr compute_metrics
         jsr wait_for_stable_idle_gap
@@ -130,7 +129,6 @@ init_mode_constants_ntsc:
 
 wait_for_idle:
 wait_for_idle_loop:
-        jsr refresh_video_standard
         lda CIA1_PRB
         and #MASK_WHEEL
         cmp #MASK_WHEEL
@@ -139,7 +137,6 @@ wait_for_idle_loop:
 
 detect_pulse_start:
 detect_pulse_start_wait_fall:
-        jsr refresh_video_standard
         lda CIA1_PRB
         and #MASK_WHEEL
         cmp #MASK_WHEEL
@@ -790,9 +787,8 @@ print_u16_5d_1_emit:
 
 ; ------------------------------------------------------------
 ; PAL / NTSC detection
-; Startup uses the blocking probe once. While waiting for the next
-; pulse, a cheap refresher tracks mode changes without stalling
-; the state machine.
+; Use the blocking probe once at startup. Avoid on-the-fly refresh in
+; the hot wait loops so the classification cannot drift under load.
 ; ------------------------------------------------------------
 
 detect_video_standard:
@@ -823,36 +819,6 @@ detect_video_standard_check:
 detect_video_standard_set_pal:
         lda #1
         sta is_pal
-        rts
-
-refresh_video_standard:
-        lda VIC_CTRL1
-        bmi refresh_video_standard_high
-
-        lda video_probe_pending
-        beq refresh_video_standard_done
-
-        lda #0
-        sta video_probe_pending
-        sta is_pal
-        rts
-
-refresh_video_standard_high:
-        lda VIC_RASTER
-        cmp #$20
-        bcs refresh_video_standard_set_pal
-
-        lda #1
-        sta video_probe_pending
-        rts
-
-refresh_video_standard_set_pal:
-        lda #0
-        sta video_probe_pending
-        lda #1
-        sta is_pal
-
-refresh_video_standard_done:
         rts
 
 ; ------------------------------------------------------------
@@ -920,9 +886,6 @@ pulse_overflow:
         .byte 0
 
 is_pal:
-        .byte 0
-
-video_probe_pending:
         .byte 0
 
 target_lo:
