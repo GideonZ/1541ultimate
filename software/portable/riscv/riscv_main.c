@@ -11,12 +11,15 @@
 #include <string.h>
 #include "mdio.h"
 #include "dump_hex.h"
-#include "FreeRTOS.h"
-#include "task.h"
 #include "iomap.h"
 #include "itu.h"
 #include "profiler.h"
 #include "usb_nano.h"
+
+#if OS
+#include "FreeRTOS.h"
+#include "task.h"
+#endif
 
 void print_tasks(void);
 
@@ -72,7 +75,8 @@ void ResetInterruptHandlerU64()
 }
 
 extern void *freertos_risc_v_trap_handler;
-//void ituIrqHandler(void *context)
+
+#if OS
 void freertos_risc_v_application_interrupt_handler(void)
 {
 	static uint8_t pending;
@@ -126,8 +130,12 @@ void freertos_risc_v_application_interrupt_handler(void)
 		vTaskSwitchContext();
 	}
 }
+#endif
+
 void ultimate_main(void *context);
 void custom_hardware_init() __attribute__ ((weak));
+int  main(int argc, char *argv[]) __attribute__ ((weak));
+
 void custom_hardware_init()
 {
     printf("\nNo custom hardware init\n");
@@ -144,6 +152,7 @@ int main(int argc, char *argv[])
     puts("-- Custom Hardware Init --");
     custom_hardware_init();
 
+#if OS
     puts("-- Start Scheduler --");
     xTaskCreate(ultimate_main, "U-II Main", configMINIMAL_STACK_SIZE, NULL, PRIO_MAIN, NULL);
 
@@ -152,6 +161,7 @@ int main(int argc, char *argv[])
 
     // Should not get here as the processor is now under control of the
     // scheduler!
+#endif
 }
 
 void vPortSetupTimerInterrupt( void )
