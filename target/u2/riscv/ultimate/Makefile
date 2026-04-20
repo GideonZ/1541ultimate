@@ -35,7 +35,7 @@ SRCS_C   =	itu.c \
             http_protocol.c \
             middleware.c \
             multipart.c \
-            url.c \
+            url.c
 
 SRCS_CC	 =	small_printf.cc \
 			stream.cc \
@@ -91,6 +91,7 @@ SRCS_CC	 =	small_printf.cc \
 			userinterface.cc \
 			ui_elements.cc \
 			user_file_interaction.cc \
+			path_picker.cc \
 			editor.cc \
 			hex_editor.cc \
 			tree_browser.cc \
@@ -154,7 +155,9 @@ SRCS_CC	 =	small_printf.cc \
 			route_machine.cc \
 			assembly_search.cc \
 			assembly.cc \
+			ftp_client.cc \
 			filesystem_a64.cc \
+			filesystem_ftp.cc \
 			sntp_time.cc \
 			$(PRJ).cc
 
