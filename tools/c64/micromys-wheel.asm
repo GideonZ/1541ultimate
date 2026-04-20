@@ -787,8 +787,6 @@ print_u16_5d_1_emit:
 
 ; ------------------------------------------------------------
 ; PAL / NTSC detection
-; Use the blocking probe once at startup. Avoid on-the-fly refresh in
-; the hot wait loops so the classification cannot drift under load.
 ; ------------------------------------------------------------
 
 detect_video_standard:
