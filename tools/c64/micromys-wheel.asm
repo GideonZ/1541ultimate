@@ -17,10 +17,10 @@
 ; Notes:
 ; - This is a conformance probe for firmware behavior
 ; - Validation is time-based, not cycle-based
-; - PAL / NTSC is detected once at startup
+; - PAL / NTSC is refreshed while waiting for the next pulse
 ; - One full 1->0->1 low pulse is treated as one event
-; - After each event, the code waits for a stable idle gap
-;   before re-arming, to avoid double-logging
+; - After each event, the code confirms a short stable idle
+;   period before re-arming, to avoid double-logging
 ;
 ; ------------------------------------------------------------
 
@@ -70,10 +70,7 @@ TARGET_NTSC_HI  = >51136
 ERR_LIMIT_LO    = <2000
 ERR_LIMIT_HI    = >2000
 
-; Stable high gap before re-arm.
-; Roughly 20 ms on PAL. Good enough as a practical debounce.
-REARM_LO    = <19705
-REARM_HI    = >19705
+IDLE_CONFIRM = 32
 
 IDEAL_US_LO = <50000
 IDEAL_US_HI = >50000
@@ -91,16 +88,19 @@ start:
         sta CIA1_ICR
         lda CIA1_ICR
 
+        jsr clear_screen
+        jsr print_intro
         jsr detect_video_standard
         jsr init_mode_constants
 
 main_loop:
         jsr wait_for_idle
         jsr detect_pulse_start
+        jsr init_mode_constants
         jsr measure_active_low_pulse
         jsr compute_metrics
-        jsr print_result_line
         jsr wait_for_stable_idle_gap
+        jsr print_result_line
         jmp main_loop
 
 ; ------------------------------------------------------------
@@ -130,6 +130,7 @@ init_mode_constants_ntsc:
 
 wait_for_idle:
 wait_for_idle_loop:
+        jsr refresh_video_standard
         lda CIA1_PRB
         and #MASK_WHEEL
         cmp #MASK_WHEEL
@@ -138,6 +139,7 @@ wait_for_idle_loop:
 
 detect_pulse_start:
 detect_pulse_start_wait_fall:
+        jsr refresh_video_standard
         lda CIA1_PRB
         and #MASK_WHEEL
         cmp #MASK_WHEEL
@@ -234,19 +236,7 @@ wait_for_stable_idle_gap_wait_high:
         cmp #MASK_WHEEL
         bne wait_for_stable_idle_gap_wait_high
 
-        lda #$00
-        sta CIA1_CRB
-
-        lda CIA1_ICR
-
-        lda #REARM_LO
-        sta CIA1_TBLO
-        lda #REARM_HI
-        sta CIA1_TBHI
-
-        ; Timer B: one-shot + force load + start, phi2
-        lda #%00011001
-        sta CIA1_CRB
+        ldx #IDLE_CONFIRM
 
 wait_for_stable_idle_gap_check:
         lda CIA1_PRB
@@ -254,17 +244,11 @@ wait_for_stable_idle_gap_check:
         cmp #MASK_WHEEL
         bne wait_for_stable_idle_gap_restart
 
-        lda CIA1_ICR
-        and #%00000010
-        beq wait_for_stable_idle_gap_check
-
-        lda #$00
-        sta CIA1_CRB
+        dex
+        bne wait_for_stable_idle_gap_check
         rts
 
 wait_for_stable_idle_gap_restart:
-        lda #$00
-        sta CIA1_CRB
         jmp wait_for_stable_idle_gap_wait_high
 
 ; ------------------------------------------------------------
@@ -480,14 +464,66 @@ build_measured_us_negative:
 ; Printing
 ; ------------------------------------------------------------
 
-print_result_line:
+clear_screen:
+        lda #147
+        jsr CHROUT
+        rts
+
+print_intro:
+        ldx #0
+print_intro_header_loop:
+        lda txt_header,x
+        beq print_intro_header_done
+        jsr CHROUT
+        inx
+        bne print_intro_header_loop
+
+print_intro_header_done:
         jsr print_newline
+
+        ldx #0
+print_intro_move_loop:
+        lda txt_move,x
+        beq print_intro_move_done
+        jsr CHROUT
+        inx
+        bne print_intro_move_loop
+
+print_intro_move_done:
+        jsr print_newline
+
+        ldx #0
+print_intro_desc_loop:
+        lda txt_desc,x
+        beq print_intro_desc_done
+        jsr CHROUT
+        inx
+        bne print_intro_desc_loop
+
+print_intro_desc_done:
+        jsr print_newline
+
+        ldx #0
+print_intro_ok_loop:
+        lda txt_ok_desc,x
+        beq print_intro_ok_done
+        jsr CHROUT
+        inx
+        bne print_intro_ok_loop
+
+print_intro_ok_done:
+        jsr print_newline
+        jsr print_newline
+        rts
+
+print_result_line:
         jsr print_video_prefix
         jsr print_direction
         jsr print_cycles_field
         jsr print_us_field
         jsr print_error_field
         jsr print_verdict
+        jsr print_newline
         rts
 
 print_video_prefix:
@@ -608,7 +644,7 @@ print_verdict:
 print_verdict_fail:
         ldx #0
 print_verdict_fail_loop:
-        lda txt_fail,x
+        lda txt_er,x
         beq print_verdict_done
         jsr CHROUT
         inx
@@ -754,7 +790,9 @@ print_u16_5d_1_emit:
 
 ; ------------------------------------------------------------
 ; PAL / NTSC detection
-; Runs once at startup.
+; Startup uses the blocking probe once. While waiting for the next
+; pulse, a cheap refresher tracks mode changes without stalling
+; the state machine.
 ; ------------------------------------------------------------
 
 detect_video_standard:
@@ -787,9 +825,55 @@ detect_video_standard_set_pal:
         sta is_pal
         rts
 
+refresh_video_standard:
+        lda VIC_CTRL1
+        bmi refresh_video_standard_high
+
+        lda video_probe_pending
+        beq refresh_video_standard_done
+
+        lda #0
+        sta video_probe_pending
+        sta is_pal
+        rts
+
+refresh_video_standard_high:
+        lda VIC_RASTER
+        cmp #$20
+        bcs refresh_video_standard_set_pal
+
+        lda #1
+        sta video_probe_pending
+        rts
+
+refresh_video_standard_set_pal:
+        lda #0
+        sta video_probe_pending
+        lda #1
+        sta is_pal
+
+refresh_video_standard_done:
+        rts
+
 ; ------------------------------------------------------------
 ; Text
 ; ------------------------------------------------------------
+
+txt_header:
+        .text "MICROMYS WHEEL TEST"
+        .byte 0
+
+txt_move:
+        .text "MOVE MOUSE WHEEL UP OR DOWN."
+        .byte 0
+
+txt_desc:
+        .text "VERIFIES MICROMYS WHEEL PROTOCOL."
+        .byte 0
+
+txt_ok_desc:
+        .text "OK MEANS COMPLIANT."
+        .byte 0
 
 txt_pal:
         .text "PAL "
@@ -815,8 +899,8 @@ txt_ok:
         .text "OK"
         .byte 0
 
-txt_fail:
-        .text "FAIL"
+txt_er:
+        .text "ER"
         .byte 0
 
 ; ------------------------------------------------------------
@@ -836,6 +920,9 @@ pulse_overflow:
         .byte 0
 
 is_pal:
+        .byte 0
+
+video_probe_pending:
         .byte 0
 
 target_lo:
