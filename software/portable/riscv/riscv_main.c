@@ -9,6 +9,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
+#include <errno.h>
 #include "mdio.h"
 #include "dump_hex.h"
 #include "FreeRTOS.h"
@@ -221,4 +223,86 @@ int isatty(int);
 int _isatty(int fd)
 {
     return isatty(fd);
+}
+
+/*
+ * kill() is used by newlib in order to send signals to processes. Since there
+ * is only a single process in the HAL, the only valid values for pid are
+ * either the current process id, or the broadcast values, i.e. pid must be
+ * less than or equal to zero.
+ */
+
+int _kill(int pid, int sig)
+{
+    int status = 0;
+
+    if (pid <= 0) {
+        switch (sig) {
+        case 0:
+
+            /* The null signal is used to check that a pid is valid. */
+
+            break;
+
+        case SIGABRT:
+        case SIGALRM:
+        case SIGFPE:
+        case SIGILL:
+        case SIGKILL:
+        case SIGPIPE:
+        case SIGQUIT:
+        case SIGSEGV:
+        case SIGTERM:
+        case SIGUSR1:
+        case SIGUSR2:
+        case SIGBUS:
+        case SIGPOLL:
+        case SIGPROF:
+        case SIGSYS:
+        case SIGTRAP:
+        case SIGVTALRM:
+        case SIGXCPU:
+        case SIGXFSZ:
+
+            /*
+             * The Posix standard defines the default behaviour for all these signals
+             * as being eqivalent to a call to _exit(). No mechanism is provided to
+             * change this behaviour.
+             */
+
+            _exit(0);
+        case SIGCHLD:
+        case SIGURG:
+
+            /*
+             * The Posix standard defines these signals to be ignored by default. No
+             * mechanism is provided to change this behaviour.
+             */
+
+            break;
+        default:
+
+            /* Tried to send an unsupported signal */
+
+            status = EINVAL;
+        }
+    }
+
+    else if (pid > 0) {
+        /* Attempted to signal a non-existant process */
+
+        status = ESRCH;
+    }
+
+    if (status) {
+        errno = status;
+        return -1;
+    }
+
+    return 0;
+}
+
+int _getpid(void)
+{
+  return 0;
 }

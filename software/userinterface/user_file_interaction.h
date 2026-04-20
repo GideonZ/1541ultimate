@@ -31,6 +31,8 @@ public:
 	static SubsysResultCode_e S_hex_view(SubsysCommand *cmd);
 	static SubsysResultCode_e S_createDir(SubsysCommand *cmd);
 	static SubsysResultCode_e S_runApp(SubsysCommand *cmd);
+	static SubsysResultCode_e S_copyTo(SubsysCommand *cmd);
+	static SubsysResultCode_e S_moveTo(SubsysCommand *cmd);
 
 	static UserFileInteraction *getUserFileInteractionObject(void) {
 		static UserFileInteraction u;

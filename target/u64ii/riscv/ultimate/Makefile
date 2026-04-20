@@ -37,7 +37,7 @@ SRCS_C   =	itu.c \
 			middleware.c \
 			multipart.c \
 			cmd_buffer.c \
-			url.c \
+			url.c
 
 SRCS_CC	 =  u64ii_init.cc \
 			color_timings.cc \
@@ -103,6 +103,7 @@ SRCS_CC	 =  u64ii_init.cc \
 			userinterface.cc \
 			ui_elements.cc \
 			user_file_interaction.cc \
+			path_picker.cc \
 			editor.cc \
 			hex_editor.cc \
 			tree_browser.cc \
@@ -177,7 +178,9 @@ SRCS_CC	 =  u64ii_init.cc \
 			route_streams.cc \
 			assembly_search.cc \
 			assembly.cc \
+			ftp_client.cc \
 			filesystem_a64.cc \
+			filesystem_ftp.cc \
 			dma_uart.cc \
 			esp32.cc \
 			network_esp32.cc \
