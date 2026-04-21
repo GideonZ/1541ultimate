@@ -58,7 +58,17 @@ public:
 
     FRESULT sync(void) { return cached ? cached->sync() : FR_INT_ERR; }
     FRESULT read(void *buffer, uint32_t len, uint32_t *transferred) { return cached ? cached->read(buffer, len, transferred) : FR_INT_ERR; }
-    FRESULT write(const void *buffer, uint32_t len, uint32_t *transferred) { return cached ? cached->write(buffer, len, transferred) : FR_INT_ERR; }
+    FRESULT write(const void *buffer, uint32_t len, uint32_t *transferred) {
+        if (cached) {
+            FRESULT fres = cached->write(buffer, len, transferred);
+            if (fres == FR_OK) { // write successful
+                needs_upload = true;
+            }
+            return fres;
+        } else {
+            return FR_INT_ERR;
+        }
+    }
     FRESULT seek(uint32_t pos) { return cached ? cached->seek(pos) : FR_INT_ERR; }
     uint32_t get_size(void) { return cached ? cached->get_size() : 0; }
     uint32_t get_inode(void) { return inode; }
