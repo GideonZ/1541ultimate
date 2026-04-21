@@ -224,13 +224,13 @@ int _isatty(int fd)
 {
     return isatty(fd);
 }
-
 /*
- * kill() is used by newlib in order to send signals to processes. Since there
- * is only a single process in the HAL, the only valid values for pid are
- * either the current process id, or the broadcast values, i.e. pid must be
- * less than or equal to zero.
- */
+//
+// kill() is used by newlib in order to send signals to processes. Since there
+// is only a single process in the HAL, the only valid values for pid are
+// either the current process id, or the broadcast values, i.e. pid must be
+// less than or equal to zero.
+//
 
 int _kill(int pid, int sig)
 {
@@ -240,7 +240,7 @@ int _kill(int pid, int sig)
         switch (sig) {
         case 0:
 
-            /* The null signal is used to check that a pid is valid. */
+            // The null signal is used to check that a pid is valid.
 
             break;
 
@@ -264,32 +264,32 @@ int _kill(int pid, int sig)
         case SIGXCPU:
         case SIGXFSZ:
 
-            /*
-             * The Posix standard defines the default behaviour for all these signals
-             * as being eqivalent to a call to _exit(). No mechanism is provided to
-             * change this behaviour.
-             */
+            //
+            // The Posix standard defines the default behaviour for all these signals
+            // as being eqivalent to a call to _exit(). No mechanism is provided to
+            // change this behaviour.
+            //
 
             _exit(0);
         case SIGCHLD:
         case SIGURG:
 
-            /*
-             * The Posix standard defines these signals to be ignored by default. No
-             * mechanism is provided to change this behaviour.
-             */
+            //
+            // The Posix standard defines these signals to be ignored by default. No
+            // mechanism is provided to change this behaviour.
+            //
 
             break;
         default:
 
-            /* Tried to send an unsupported signal */
+            // Tried to send an unsupported signal
 
             status = EINVAL;
         }
     }
 
     else if (pid > 0) {
-        /* Attempted to signal a non-existant process */
+        // Attempted to signal a non-existant process 
 
         status = ESRCH;
     }
@@ -306,3 +306,4 @@ int _getpid(void)
 {
   return 0;
 }
+*/
