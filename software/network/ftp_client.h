@@ -2,6 +2,7 @@
 #define FTP_CLIENT_H
 
 #include <stdint.h>
+#include "filemanager.h"
 
 #define FTP_MAX_RESPONSE 512
 
@@ -29,8 +30,8 @@ public:
     int cwd(const char *path);
     int pwd(char *buf, int bufsize);
     int list(const char *path, char *buf, int bufsize, int *bytes_read);
-    int retr(const char *remote_path, uint8_t *buf, int bufsize, int *bytes_read);
-    int stor(const char *remote_path, const uint8_t *buf, int len);
+    int retr(const char *remote_path, File *file, int *bytes_read);
+    int stor(const char *remote_path, File *file);
     int dele(const char *path);
     int mkd(const char *path);
     int rmd(const char *path);

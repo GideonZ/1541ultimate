@@ -109,28 +109,16 @@ FRESULT FileOnFTP::close(void)
         cached->sync();
         uint32_t size = cached->get_size();
         printf("[FTP-FS] Uploading %d bytes to '%s'\n", size, remote_path.c_str());
+        cached->seek(0);
 
-        if (size > 0) {
-            uint8_t *buf = new uint8_t[size];
-            if (buf) {
-                cached->seek(0);
-                uint32_t transferred;
-                cached->read(buf, size, &transferred);
-
-                FileSystemFTP *ftpfs = static_cast<FileSystemFTP *>(get_file_system());
-                if (ftpfs->connect_if_needed() == 0) {
-                    if (ftpfs->get_client()->stor(remote_path.c_str(), buf, transferred) < 0) {
-                        printf("[FTP-FS] STOR failed\n");
-                        ret = FR_DISK_ERR;
-                    }
-                } else {
-                    ret = FR_DISK_ERR;
-                }
-                delete[] buf;
-            } else {
-                printf("[FTP-FS] Out of memory for upload buffer\n");
-                ret = FR_NOT_ENOUGH_CORE;
+        FileSystemFTP *ftpfs = static_cast<FileSystemFTP *>(get_file_system());
+        if (ftpfs->connect_if_needed() == 0) {
+            if (ftpfs->get_client()->stor(remote_path.c_str(), cached) < 0) {
+                printf("[FTP-FS] STOR failed\n");
+                ret = FR_DISK_ERR;
             }
+        } else {
+            ret = FR_DISK_ERR;
         }
     }
 
@@ -160,11 +148,12 @@ FRESULT FileSystemFTP::file_open(const char *filename, uint8_t flags, File **fil
     temp_path += fixed;
     delete[] fixed;
 
-    bool writing = (flags & FA_WRITE) != 0;
+    bool creating = (flags & FA_CREATE_ANY) != 0;
 
-    if (writing) {
-        // Create/open a temp file for writing; upload happens on close()
+    if (creating) {
+        // Create/open a temp file for creating; upload happens on close()
         File *tmp = NULL;
+        flags |= FA_READ; // when writing back to FTP, we need to read it!
         FRESULT fres = fm->fopen(temp_path.c_str(), flags, &tmp);
         if (tmp) {
             *file = new FileOnFTP(this, tmp, ftp_path.c_str(), true);
@@ -182,32 +171,20 @@ FRESULT FileSystemFTP::file_open(const char *filename, uint8_t flags, File **fil
             return FR_DISK_ERR;
         }
 
-        static const int kMaxFileSize = 4 * 1024 * 1024;
-        uint8_t *buf = new uint8_t[kMaxFileSize];
-        if (!buf) {
-            printf("[FTP-FS] Out of memory for download buffer\n");
-            return FR_NOT_ENOUGH_CORE;
-        }
-
-        int bytes_read = 0;
-        int ret = client->retr(ftp_path.c_str(), buf, kMaxFileSize, &bytes_read);
-        if (ret < 0 || bytes_read <= 0) {
-            printf("[FTP-FS] RETR '%s' failed\n", ftp_path.c_str());
-            delete[] buf;
-            return FR_DISK_ERR;
-        }
-
-        printf("[FTP-FS] Downloaded %d bytes\n", bytes_read);
-
         File *tmp = NULL;
         fres = fm->fopen(temp_path.c_str(), FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &tmp);
         if (tmp) {
-            uint32_t written;
-            tmp->write(buf, bytes_read, &written);
+            int bytes_read = 0;
+            int ret = client->retr(ftp_path.c_str(), tmp, &bytes_read);
             fm->fclose(tmp);
+
+            if (ret < 0 || bytes_read <= 0) {
+                printf("[FTP-FS] RETR '%s' failed\n", ftp_path.c_str());
+                return FR_DISK_ERR;
+            }
+            printf("[FTP-FS] Downloaded %d bytes\n", bytes_read);
             fres = FR_OK;
         }
-        delete[] buf;
 
         if (fres != FR_OK) {
             printf("[FTP-FS] Failed to save temp file: %d\n", fres);
@@ -217,9 +194,12 @@ FRESULT FileSystemFTP::file_open(const char *filename, uint8_t flags, File **fil
 
     // Open the cached file for reading
     File *temp = NULL;
+    flags &= ~FA_CREATE_ANY;
+    flags |= FA_READ; // when writing back to FTP, we need to read it!
+
     fres = fm->fopen(temp_path.c_str(), flags, &temp);
     if (temp) {
-        *file = new FileOnFTP(this, temp);
+        *file = new FileOnFTP(this, temp, ftp_path.c_str(), false);
     }
     return fres;
 }

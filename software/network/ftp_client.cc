@@ -316,7 +316,7 @@ int FTPClient::list(const char *path, char *buf, int bufsize, int *bytes_read)
     return 0;
 }
 
-int FTPClient::retr(const char *remote_path, uint8_t *buf, int bufsize, int *bytes_read)
+int FTPClient::retr(const char *remote_path, File *file, int *bytes_read)
 {
     *bytes_read = 0;
 
@@ -339,10 +339,21 @@ int FTPClient::retr(const char *remote_path, uint8_t *buf, int bufsize, int *byt
 
     int total = 0;
     int idle = 0;
-    while (total < bufsize) {
-        int n = recv(data_fd, buf + total, bufsize - total, 0);
+
+    uint8_t *buf = new uint8_t[4096];
+    if (!buf) {
+        return -1;
+    }
+    uint32_t tr;
+    FRESULT fres;
+    while (1) {
+        int n = recv(data_fd, buf, 4096, 0);
         if (n > 0) {
             total += n;
+            fres = file->write(buf, n, &tr);
+            if (fres != FR_OK) {
+                break;
+            }
             idle = 0;
         } else if (n == 0) {
             break;
@@ -353,6 +364,7 @@ int FTPClient::retr(const char *remote_path, uint8_t *buf, int bufsize, int *byt
             }
         }
     }
+    delete[] buf;
     *bytes_read = total;
 
     lwip_close(data_fd);
@@ -364,8 +376,13 @@ int FTPClient::retr(const char *remote_path, uint8_t *buf, int bufsize, int *byt
     return 0;
 }
 
-int FTPClient::stor(const char *remote_path, const uint8_t *buf, int len)
+int FTPClient::stor(const char *remote_path, File *file)
 {
+    FRESULT fres = file->seek(0); // reset to begin
+    if (fres != FR_OK) {
+        return -1;
+    }
+
     int data_fd = open_data_connection();
     if (data_fd < 0) {
         return -1;
@@ -378,16 +395,33 @@ int FTPClient::stor(const char *remote_path, const uint8_t *buf, int len)
     }
 
     int sent = 0;
-    while (sent < len) {
-        int n = send(data_fd, buf + sent, len - sent, 0);
-        if (n <= 0) {
-            printf("[FTP] STOR send error after %d bytes\n", sent);
-            lwip_close(data_fd);
-            return -1;
-        }
-        sent += n;
+    uint8_t *buf = new uint8_t[4096];
+    if (!buf) {
+        return -1;
     }
 
+    while (1) {
+        uint32_t tr = 0;
+        fres = file->read(buf, 4096, &tr);
+        if (fres != FR_OK) {
+            break;
+        }
+
+        if (tr) {
+            int n = send(data_fd, buf, tr, 0);
+            if (n <= 0) {
+                printf("[FTP] STOR send error after %d bytes\n", sent);
+                delete[] buf;
+                lwip_close(data_fd);
+                return -1;
+            }
+            sent += n;
+        } else {
+            break;
+        }
+    }
+
+    delete[] buf;
     lwip_close(data_fd);
 
     code = read_response();
