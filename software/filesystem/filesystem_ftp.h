@@ -6,26 +6,21 @@
 #include "cached_tree_node.h"
 #include "ftp_client.h"
 
-class FTPNode; // forward
-
 class FileSystemFTP : public FileSystem
 {
     FTPClient *client;
+    mstring root_path;
     bool connected;
-    FTPNode *root_node;
 
-    FTPNode *find_node(const char *path);
-    FTPNode *find_parent_node(const char *path);
     void build_ftp_path(const char *local_path, mstring &out);
     void invalidate_parent(const char *path);
 public:
-    FileSystemFTP();
+    FileSystemFTP(const char *base);
     ~FileSystemFTP();
 
     FTPClient *get_client() { return client; }
     int connect_if_needed();
     void drop_connection();
-    void set_root_node(FTPNode *n) { root_node = n; }
 
     bool is_writable() { return true; }
 
@@ -76,30 +71,23 @@ public:
 
 class DirectoryOnFTP : public Directory
 {
-    FTPNode *node;
     int index;
-public:
-    DirectoryOnFTP(FTPNode *n) : node(n), index(0) { }
-    ~DirectoryOnFTP() { }
-
-    FRESULT get_entry(FileInfo &info);
-};
-
-class FTPNode : public CachedTreeNode
-{
     FileSystemFTP *ftpfs;
-    mstring ftp_path; // absolute path on FTP server
+    IndexedList<FileInfo *> children;
 
 public:
-    FTPNode(FileSystemFTP *fs, CachedTreeNode *parent, const char *name, const char *remote_path, uint8_t attrib = AM_DIR);
-    ~FTPNode();
+    DirectoryOnFTP(FileSystemFTP *fs) : ftpfs(fs), index(0), children(16, NULL) { }
+    ~DirectoryOnFTP() {
+        for(int i=0;i<children.get_elements();i++) {
+            FileInfo *inf = children[i];
+            if (inf) {
+                delete inf;
+            }
+        }
+    }
 
-    bool is_ready(void) { return true; }
-    int probe(void) { return 1; }
-    int fetch_children(void);
-    void invalidate(void);
-
-    const char *get_ftp_path() { return ftp_path.c_str(); }
+    FRESULT list(const char *path);
+    FRESULT get_entry(FileInfo &info);
 };
 
 #endif
