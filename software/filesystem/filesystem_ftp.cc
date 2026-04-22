@@ -495,3 +495,61 @@ void add_ftp_to_root(void *_context, void *_param)
 }
 
 InitFunction init_ftp_fs("FTP Filesystem", add_ftp_to_root, NULL, NULL, 31);
+
+#define CFG_FILEPATH "/flash/config"
+#define FTP_SERVERS  "ftp_servers"
+
+void FTPNode :: load_servers()
+{
+    File *fi;
+    FileManager *fm = FileManager :: getFileManager();
+    FRESULT fres = fm->fopen(CFG_FILEPATH, FTP_SERVERS, FA_READ, &fi);
+    if (fres == FR_OK) {
+        load_servers_impl(fi);
+        fm->fclose(fi);
+    }
+}
+
+void FTPNode :: load_servers_impl(File *f)
+{
+    uint32_t size = f->get_size();
+    if ((size > 12288) || (size < 8)) { // max 12K partition paths file
+        return;
+    }
+    char *buffer = new char[size+1];
+    char *linebuf = new char[256];
+    char *name;
+
+    uint32_t transferred;
+    f->read(buffer, size, &transferred);
+    buffer[transferred] = 0;
+
+    uint32_t index = 0;
+
+    const char *words[6];
+    while(index < size) {
+        index = read_line(buffer, index, linebuf, 256);
+        int len = strlen(linebuf);
+        bool trigger = false;
+        if (len > 0) {
+            words[0] = buffer + index;
+            int w = 1;
+            for(int i=0; i<len; i++) {
+                if ((buffer[index + i] == ' ') || (buffer[index + i] == '\t')) {
+                    buffer[index+i] = 0;
+                    trigger = true;
+                } else if(trigger) {
+                    trigger = false;
+                    if (w <= 4) {
+                        words[w++] = buffer + index + i;
+                    }
+                }
+            }
+            servers.append(new FTPServer(words[0], words[1], words[2], words[3], words[4], words[5]));
+        }
+    }
+    delete linebuf;
+    delete buffer;
+}
+
+

@@ -5,6 +5,37 @@
 #include "filemanager.h"
 #include "cached_tree_node.h"
 #include "ftp_client.h"
+#include <stdlib.h>
+
+class FTPServer
+{
+public:
+    mstring  alias;
+    mstring  host;
+    uint16_t port;
+    mstring  user;
+    mstring  passw;
+    mstring  folder;
+
+    FTPServer(const char *alias, const char *host, const char *port_str,
+              const char *user, const char *passw, const char *folder) :
+              alias(alias), host(host), user(user), passw(passw), folder(folder)
+    {
+        port = (uint16_t)strtol(port_str ? port_str : "21", NULL, 10);
+        if (port == 0) {
+            port = 21;
+        }
+    }
+};
+
+class FTPNode
+{
+    IndexedList<FTPServer *> servers;
+    void load_servers_impl(File *);
+public:
+    FTPNode() : servers(4, NULL) { }
+    void load_servers();
+};
 
 class FileSystemFTP : public FileSystem
 {
