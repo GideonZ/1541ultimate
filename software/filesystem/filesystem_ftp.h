@@ -7,34 +7,25 @@
 #include "ftp_client.h"
 #include <stdlib.h>
 
-class FTPServer
+class FTPRootNode : public CachedTreeNode
 {
-public:
-    mstring  alias;
-    mstring  host;
-    uint16_t port;
-    mstring  user;
-    mstring  passw;
-    mstring  folder;
-
-    FTPServer(const char *alias, const char *host, const char *port_str,
-              const char *user, const char *passw, const char *folder) :
-              alias(alias), host(host), user(user), passw(passw), folder(folder)
-    {
-        port = (uint16_t)strtol(port_str ? port_str : "21", NULL, 10);
-        if (port == 0) {
-            port = 21;
-        }
-    }
-};
-
-class FTPNode
-{
-    IndexedList<FTPServer *> servers;
     void load_servers_impl(File *);
 public:
-    FTPNode() : servers(4, NULL) { }
+    FTPRootNode() : CachedTreeNode(NULL, "ftp") {
+        info.fs = NULL;
+        info.cluster = 0; // indicate root dir
+        info.attrib = AM_DIR; // ;-)
+        info.name_format = NAME_FORMAT_DIRECT;
+    }
     void load_servers();
+
+    void get_display_string(char *buffer, int width) {
+        sprintf(buffer, "%8s%#s \e\x0d%s", "Ftp", width-18, "Remote FTP Servers", "Ready");
+    }
+
+    int probe() {
+        return children.get_elements();
+    }
 };
 
 class FileSystemFTP : public FileSystem
@@ -60,7 +51,7 @@ public:
     FRESULT file_open(const char *filename, uint8_t flags, File **);
     FRESULT file_rename(const char *old_name, const char *new_name);
     FRESULT file_delete(const char *path);
-    PathStatus_t walk_path(PathInfo &pathInfo);
+//    PathStatus_t walk_path(PathInfo &pathInfo);
 };
 
 class FileOnFTP : public File
@@ -121,4 +112,27 @@ public:
     FRESULT get_entry(FileInfo &info);
 };
 
+class FTPServer : public CachedTreeNode
+{
+public:
+    mstring  alias;
+    mstring  host;
+    uint16_t port;
+    mstring  user;
+    mstring  passw;
+    mstring  folder;
+
+    FTPServer(CachedTreeNode *par, const char *alias, const char *host, const char *port_str,
+              const char *user, const char *passw, const char *folder) :
+              alias(alias), host(host), user(user), passw(passw), folder(folder), CachedTreeNode(par, alias)
+    {
+        port = (uint16_t)strtol(port_str ? port_str : "21", NULL, 10);
+        if (port == 0) {
+            port = 21;
+        }
+        info.fs = new FileSystemFTP("/");
+        info.attrib = AM_DIR; // ;)
+        info.cluster = 0;
+    }
+};
 #endif

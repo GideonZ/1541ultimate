@@ -477,21 +477,10 @@ static FileSystemFTP *ftp_fs_instance = NULL;
 
 void add_ftp_to_root(void *_context, void *_param)
 {
-    ConfigStore *cfg = networkConfig.cfg;
-    if (!cfg || !cfg->get_value(CFG_NETWORK_FTP_CLIENT_EN)) {
-        return;
-    }
-
-    const char *base_path = cfg->get_string(CFG_NETWORK_FTP_CLIENT_PATH);
-    if (!base_path || !base_path[0]) {
-        base_path = "/";
-    }
-
-//    ftp_fs_instance = new FileSystemFTP(base_path);
-//    FTPNode *node = new FTPNode(ftp_fs_instance, NULL, "FTP", base_path, AM_DIR);
-//    ftp_fs_instance->set_root_node(node);
-//    FileManager::getFileManager()->add_root_entry(node);
-    printf("[FTP-FS] FTP root node added (base: %s)\n", base_path);
+    FTPRootNode *node = new FTPRootNode();
+    node->load_servers();
+    FileManager::getFileManager()->add_root_entry(node);
+    printf("[FTP-FS] FTP root node added.\n");
 }
 
 InitFunction init_ftp_fs("FTP Filesystem", add_ftp_to_root, NULL, NULL, 31);
@@ -499,7 +488,7 @@ InitFunction init_ftp_fs("FTP Filesystem", add_ftp_to_root, NULL, NULL, 31);
 #define CFG_FILEPATH "/flash/config"
 #define FTP_SERVERS  "ftp_servers"
 
-void FTPNode :: load_servers()
+void FTPRootNode :: load_servers()
 {
     File *fi;
     FileManager *fm = FileManager :: getFileManager();
@@ -510,7 +499,7 @@ void FTPNode :: load_servers()
     }
 }
 
-void FTPNode :: load_servers_impl(File *f)
+void FTPRootNode :: load_servers_impl(File *f)
 {
     uint32_t size = f->get_size();
     if ((size > 12288) || (size < 8)) { // max 12K partition paths file
@@ -532,24 +521,22 @@ void FTPNode :: load_servers_impl(File *f)
         int len = strlen(linebuf);
         bool trigger = false;
         if (len > 0) {
-            words[0] = buffer + index;
+            words[0] = linebuf;
             int w = 1;
             for(int i=0; i<len; i++) {
-                if ((buffer[index + i] == ' ') || (buffer[index + i] == '\t')) {
-                    buffer[index+i] = 0;
+                if ((linebuf[i] == ' ') || (linebuf[i] == '\t')) {
+                    linebuf[i] = 0;
                     trigger = true;
                 } else if(trigger) {
                     trigger = false;
-                    if (w <= 4) {
-                        words[w++] = buffer + index + i;
+                    if (w <= 5) {
+                        words[w++] = linebuf + i;
                     }
                 }
             }
-            servers.append(new FTPServer(words[0], words[1], words[2], words[3], words[4], words[5]));
+            children.append(new FTPServer(this, words[0], words[1], words[2], words[3], words[4], words[5]));
         }
     }
-    delete linebuf;
-    delete buffer;
+    delete[] linebuf;
+    delete[] buffer;
 }
-
-
