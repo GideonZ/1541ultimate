@@ -63,6 +63,8 @@ void api_mount(ResponseWrapper *resp, const char *fn, const char *drive, const c
     SubsysResultCode_t retval = cmd->execute();
     if (retval.status != SSRET_OK) {
         resp->error(SubsysCommand::error_string(retval.status));
+    } else {
+        FileManager::getFileManager()->suspend_managed_temp(fn);
     }
     resp->json_response(SubsysCommand::http_response_map(retval.status));
 }

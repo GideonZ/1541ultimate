@@ -5,18 +5,11 @@
 #include <stdlib.h>
 #include "indexed_list.h"
 #include "pattern.h"
+#include "filemanager.h"
 
 extern "C" {
     #include "multipart.h"
 }
-
-#ifndef TEMP_FILE_PATH
-#define TEMP_FILE_PATH "/Temp/"
-#endif
-
-#ifdef USE_FILEMANAGER
-#include "filemanager.h"
-#endif
 
 class TempfileWriter;
 
@@ -27,12 +20,7 @@ class TempfileWriter
     IndexedList<const char *> filenames;
     IndexedList<size_t> filesizes;
     IndexedList<uint8_t *>filebuffers;
-    static int temp_count;
-#ifdef USE_FILEMANAGER
     File *fo;
-#else
-    FILE *fo;
-#endif
     size_t file_size;    
     HTTPReqMessage *req;
     HTTPRespMessage *resp;
@@ -90,17 +78,16 @@ public:
                 fo = NULL;
                 break;
             case eDataStart:
-                sprintf(filename, TEMP_FILE_PATH "temp%04x", temp_count++);
-                filenames.append(strdup(filename));
-#ifdef USE_FILEMANAGER
-                FileManager::getFileManager()->fopen(filename, FA_WRITE | FA_CREATE_ALWAYS, &fo);
-#else
-                fo = fopen(filename, "wb");
-#endif
+            {
+                mstring canonical_path;
+                FRESULT fres = FileManager::getFileManager()->create_temp_file(TempUpload, NULL,
+                        FA_WRITE | FA_CREATE_ALWAYS, &fo, &canonical_path);
+                filenames.append(strdup((fres == FR_OK) ? canonical_path.c_str() : ""));
+            }
                 file_size = 0;
                 break;
             case eSubHeader:
-                sprintf(filename, TEMP_FILE_PATH "temp%04x", temp_count++);
+                filename[0] = 0;
                 f = (HTTPHeaderField *)block->data;
                 for(int i=0; i < block->length; i++) {
                     if (strcasecmp(f[i].key, "Content-Disposition") == 0) {
@@ -117,47 +104,35 @@ public:
                                 sub++;
                             }
                             fix_filename(sub);
-                            strncpy(filename + strlen(TEMP_FILE_PATH), sub, 127-strlen(TEMP_FILE_PATH) );
+                            strncpy(filename, sub, sizeof(filename) - 1);
                             filename[127] = 0;
                         }
                     }
                 }
-                filenames.append(strdup(filename));
-#ifdef USE_FILEMANAGER
-                FileManager::getFileManager()->fopen(filename, FA_WRITE | FA_CREATE_ALWAYS, &fo);
-#else
-                fo = fopen(filename, "wb");
-#endif
+            {
+                mstring canonical_path;
+                FRESULT fres = FileManager::getFileManager()->create_temp_file(TempUpload,
+                        filename[0] ? filename : NULL, FA_WRITE | FA_CREATE_ALWAYS, &fo, &canonical_path);
+                filenames.append(strdup((fres == FR_OK) ? canonical_path.c_str() : ""));
+            }
                 file_size = 0;
                 break;
             case eDataBlock:
                 if (fo) {
-#ifdef USE_FILEMANAGER
                     fo->write(block->data, block->length, &dummy);
-#else
-                    fwrite(block->data, 1, block->length, fo);
-#endif
                     file_size += block->length;
                 }
                 break;
             case eDataEnd:
                 if (fo) {
                     filesizes.append(file_size);
-#ifdef USE_FILEMANAGER
                     FileManager::getFileManager()->fclose(fo);
-#else
-                    fclose(fo);
-#endif
                     fo = NULL;
                 }
                 break;
             case eTerminate:
                 if (fo) {
-#ifdef USE_FILEMANAGER
                     FileManager::getFileManager()->fclose(fo);
-#else
-                    fclose(fo);
-#endif
                     fo = NULL;
                 }
                 printf("Uploaded files:\n");

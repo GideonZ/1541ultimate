@@ -3,7 +3,369 @@
 #include "filemanager.h"
 #include "embedded_fs.h"
 #include "file_device.h"
+#include "pattern.h"
+#include "userinterface_settings.h"
 #include <cctype>
+#include <strings.h>
+
+namespace {
+
+const int kManagedTempMaxFiles = 10;
+
+const char *get_temp_class_dir(TempClass kind)
+{
+    switch (kind) {
+    case TempA64Cache:
+        return "a64";
+    case TempSocketImport:
+        return "socket";
+    case TempUpload:
+    default:
+        return NULL;
+    }
+}
+
+bool path_starts_with_ci(const char *path, const char *prefix)
+{
+    return strncasecmp(path, prefix, strlen(prefix)) == 0;
+}
+
+void sanitize_temp_name(const char *suggested_name, char *buffer, size_t buffer_size)
+{
+    if (!buffer_size) {
+        return;
+    }
+    buffer[0] = 0;
+    if (!suggested_name) {
+        return;
+    }
+    while ((*suggested_name == '.') || (*suggested_name == '/') || (*suggested_name == '\\')) {
+        suggested_name++;
+    }
+    strncpy(buffer, suggested_name, buffer_size - 1);
+    buffer[buffer_size - 1] = 0;
+    fix_filename(buffer);
+}
+
+void append_temp_sequence(mstring &buffer, uint64_t seq)
+{
+    char digits[24];
+    int count = 0;
+
+    if (seq == 0) {
+        digits[count++] = '0';
+    } else {
+        while (seq) {
+            digits[count++] = '0' + (seq % 10);
+            seq /= 10;
+        }
+    }
+    while (count < 4) {
+        digits[count++] = '0';
+    }
+    while (count) {
+        buffer += digits[--count];
+    }
+}
+
+}
+
+FRESULT FileManager::ensure_temp_directory(TempClass kind, mstring &directory_out)
+{
+    directory_out = "/Temp";
+    if (user_if_temp_use_cache_subfolder_enabled()) {
+        directory_out += "/cache";
+        FRESULT fres = create_dir(directory_out.c_str());
+        if ((fres != FR_OK) && (fres != FR_EXIST)) {
+            return fres;
+        }
+    }
+    const char *class_dir = get_temp_class_dir(kind);
+    if (class_dir && class_dir[0]) {
+        directory_out += "/";
+        directory_out += class_dir;
+        FRESULT fres = create_dir(directory_out.c_str());
+        if ((fres != FR_OK) && (fres != FR_EXIST)) {
+            return fres;
+        }
+    }
+    return FR_OK;
+}
+
+FRESULT FileManager::build_temp_path(TempClass kind, const char *suggested_name, uint64_t seq, bool unique_name,
+        mstring &canonical_path_out)
+{
+    mstring directory;
+    FRESULT fres = ensure_temp_directory(kind, directory);
+    if (fres != FR_OK) {
+        return fres;
+    }
+
+    char sanitized[128];
+    sanitize_temp_name(suggested_name, sanitized, sizeof(sanitized));
+
+    canonical_path_out = directory;
+    canonical_path_out += "/";
+    if (unique_name) {
+        canonical_path_out += "temp";
+        append_temp_sequence(canonical_path_out, seq);
+        if (sanitized[0]) {
+            canonical_path_out += "_";
+            canonical_path_out += sanitized;
+        }
+    } else if (sanitized[0]) {
+        canonical_path_out += sanitized;
+    } else {
+        canonical_path_out += "temp";
+        append_temp_sequence(canonical_path_out, seq);
+    }
+    return FR_OK;
+}
+
+ManagedTempEntry *FileManager::find_managed_temp_entry(const char *path)
+{
+    if (!path) {
+        return NULL;
+    }
+    for (int i = 0; i < managed_temp_entries.get_elements(); i++) {
+        ManagedTempEntry *entry = managed_temp_entries[i];
+        if (entry && (strcasecmp(entry->path.c_str(), path) == 0)) {
+            return entry;
+        }
+    }
+    return NULL;
+}
+
+void FileManager::note_managed_temp_open(File *file)
+{
+    ManagedTempEntry *entry = find_managed_temp_entry(file ? file->get_path() : NULL);
+    if (entry) {
+        entry->open_count++;
+    }
+}
+
+void FileManager::note_managed_temp_deleted(const char *path)
+{
+    ManagedTempEntry *entry = find_managed_temp_entry(path);
+    if (!entry) {
+        return;
+    }
+    managed_temp_entries.remove(entry);
+    delete entry;
+}
+
+void FileManager::suspend_managed_temp(const char *path)
+{
+    if (!path) {
+        return;
+    }
+
+    lock();
+    ManagedTempEntry *entry = find_managed_temp_entry(path);
+    if (entry) {
+        entry->cleanup_suspended = true;
+        entry->delete_on_last_close = false;
+    }
+    unlock();
+}
+
+void FileManager::restore_managed_temp(const char *path)
+{
+    bool should_enforce = false;
+
+    if (!path) {
+        return;
+    }
+
+    lock();
+    ManagedTempEntry *entry = find_managed_temp_entry(path);
+    if (entry) {
+        entry->cleanup_suspended = false;
+        should_enforce = (entry->open_count == 0);
+    }
+    unlock();
+
+    if (should_enforce) {
+        enforce_temp_limits();
+    }
+}
+
+bool FileManager::is_managed_temp_path(const char *path)
+{
+    if (!path) {
+        return false;
+    }
+
+    mstring prefix;
+    for (int use_cache_subfolder = 0; use_cache_subfolder < 2; use_cache_subfolder++) {
+        for (int kind = TempUpload; kind <= TempSocketImport; kind++) {
+            prefix = "/Temp";
+            if (use_cache_subfolder) {
+                prefix += "/cache";
+            }
+            const char *class_dir = get_temp_class_dir((TempClass)kind);
+            if (class_dir && class_dir[0]) {
+                prefix += "/";
+                prefix += class_dir;
+            }
+            prefix += "/";
+            if (path_starts_with_ci(path, prefix.c_str())) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+void FileManager::note_managed_temp_renamed(const char *old_path, const char *new_path)
+{
+    ManagedTempEntry *entry = find_managed_temp_entry(old_path);
+    if (!entry) {
+        return;
+    }
+    if (is_managed_temp_path(new_path)) {
+        entry->path = new_path;
+        return;
+    }
+    managed_temp_entries.remove(entry);
+    delete entry;
+}
+
+void FileManager::enforce_temp_limits(void)
+{
+    if (!user_if_temp_auto_cleanup_enabled()) {
+        return;
+    }
+
+    while (1) {
+        lock();
+        const int total_entries = managed_temp_entries.get_elements();
+        int active_entries = 0;
+        for (int i = 0; i < total_entries; i++) {
+            ManagedTempEntry *entry = managed_temp_entries[i];
+            if (entry && !entry->cleanup_suspended) {
+                active_entries++;
+            }
+        }
+        const int excess_entries = active_entries - kManagedTempMaxFiles;
+
+        if (excess_entries <= 0) {
+            unlock();
+            return;
+        }
+
+        ManagedTempEntry *candidate = NULL;
+        int active_index = 0;
+        for (int i = 0; i < total_entries; i++) {
+            ManagedTempEntry *entry = managed_temp_entries[i];
+            if (!entry || entry->cleanup_suspended) {
+                continue;
+            }
+            if ((active_index < excess_entries) && (entry->open_count == 0)) {
+                candidate = entry;
+                break;
+            }
+            active_index++;
+        }
+
+        if (candidate) {
+            mstring delete_path = candidate->path;
+            FRESULT fres = delete_file(candidate->path.c_str());
+            unlock();
+            if (fres != FR_OK) {
+                return;
+            }
+            continue;
+        }
+
+        int remaining_count = excess_entries;
+        bool marked_any = false;
+        active_index = 0;
+
+        for (int i = 0; i < total_entries; i++) {
+            ManagedTempEntry *entry = managed_temp_entries[i];
+            if (!entry || entry->cleanup_suspended) {
+                continue;
+            }
+            if (active_index >= excess_entries) {
+                break;
+            }
+            active_index++;
+            if ((entry->open_count == 0) || entry->delete_on_last_close) {
+                continue;
+            }
+            entry->delete_on_last_close = true;
+            marked_any = true;
+            remaining_count--;
+            if (remaining_count <= 0) {
+                break;
+            }
+        }
+        if (!marked_any) {
+            unlock();
+            return;
+        }
+        unlock();
+        return;
+    }
+}
+
+void FileManager::release_mount_point(MountPoint *mp)
+{
+    if (!mp) {
+        return;
+    }
+    fclose(mp->get_file());
+    delete mp;
+}
+
+FRESULT FileManager::get_temp_path(TempClass kind, const char *suggested_name, mstring *canonical_path_out)
+{
+    if (!canonical_path_out) {
+        return FR_INVALID_OBJECT;
+    }
+    const bool unique_name = (kind != TempA64Cache);
+    return build_temp_path(kind, suggested_name, next_temp_seq, unique_name, *canonical_path_out);
+}
+
+FRESULT FileManager::create_temp_file(TempClass kind, const char *suggested_name, uint8_t open_flags, File **file,
+        mstring *canonical_path_out)
+{
+    if (!file) {
+        return FR_INVALID_OBJECT;
+    }
+
+    lock();
+    const uint64_t seq = next_temp_seq++;
+    mstring canonical_path;
+    const bool unique_name = (kind != TempA64Cache);
+    FRESULT fres = build_temp_path(kind, suggested_name, seq, unique_name, canonical_path);
+    if (fres != FR_OK) {
+        *file = NULL;
+        unlock();
+        return fres;
+    }
+
+    fres = fopen(canonical_path.c_str(), open_flags, file);
+    if (fres != FR_OK) {
+        unlock();
+        return fres;
+    }
+
+    ManagedTempEntry *entry = new ManagedTempEntry;
+    entry->path = canonical_path;
+    entry->open_count = 1;
+    entry->delete_on_last_close = false;
+    entry->cleanup_suspended = false;
+    managed_temp_entries.append(entry);
+
+    if (canonical_path_out) {
+        *canonical_path_out = canonical_path;
+    }
+    unlock();
+    enforce_temp_limits();
+    return FR_OK;
+}
 
 void FileManager::invalidate(CachedTreeNode *o)
 {
@@ -28,8 +390,7 @@ void FileManager::invalidate(CachedTreeNode *o)
         printf("%2d. %s\n", i, f->get_path());
         if (strncmp(f->get_path(), pathStringC, len) == 0) {
             printf("Match!\n");
-            f->close();
-            delete m;
+            release_mount_point(m);
             mount_points.mark_for_removal(i);
         }
     }
@@ -313,6 +674,7 @@ FRESULT FileManager::fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file)
     if (fres == FR_OK) {
         open_file_list.append(*file);
         pathInfo.workPath.getTail(0, (*file)->get_path_reference());
+        note_managed_temp_open(*file);
         if (create) {
             const char *pathstring = pathInfo.getFullPath(workpath, -1);
             sendEventToObservers(eRefreshDirectory, pathstring, "");
@@ -421,6 +783,10 @@ FRESULT FileManager::fstat(const char *pathname, FileInfo &info)
 
 void FileManager::fclose(File *f)
 {
+    ManagedTempEntry *entry = NULL;
+    bool delete_on_last_close = false;
+    mstring delete_path;
+
     lock();
     if (f->get_file_system()) {
         // printf("Closing %s...\n", inf->lfname);
@@ -434,9 +800,27 @@ void FileManager::fclose(File *f)
      sendEventToObservers(eNodeUpdated, f->get_path(), "*");
      }
      */
+    entry = find_managed_temp_entry(f->get_path());
+    if (entry) {
+        if (entry->open_count > 0) {
+            entry->open_count--;
+        }
+        if ((entry->open_count == 0) && entry->delete_on_last_close) {
+            delete_on_last_close = true;
+            delete_path = entry->path;
+        }
+    }
     open_file_list.remove(f);
     f->close();
     unlock();
+
+    if (delete_on_last_close) {
+        delete_file(delete_path.c_str());
+        return;
+    }
+    if (entry && (entry->open_count == 0) && !entry->cleanup_suspended) {
+        enforce_temp_limits();
+    }
 }
 
 void FileManager::add_root_entry(CachedTreeNode *obj)
@@ -487,6 +871,7 @@ MountPoint *FileManager::find_mount_point(SubPath *path, FileInfo *info)
     FRESULT fr = info->fs->file_open(path->get_path(), flags, &file);
     if (fr == FR_OK) {
         path->get_root_path(file->get_path_reference());
+        note_managed_temp_open(file);
         emb = FileSystemInFile::getEmbeddedFileSystemFactory()->create(info);
         if (emb) {
             emb->init(file);
@@ -495,7 +880,10 @@ MountPoint *FileManager::find_mount_point(SubPath *path, FileInfo *info)
             }
             else {
                 delete emb;
+                fclose(file);
             }
+        } else {
+            fclose(file);
         }
     } else {
         printf("FileManager -> can't open file %s to create mountpoint.%s\n", path->get_path(), FileSystem :: get_error_string(fr));
@@ -515,6 +903,8 @@ FRESULT FileManager::delete_file_impl(PathInfo &pathInfo)
     fres = fs->file_delete(pathInfo.getPathFromLastFS());
     if (fres == FR_OK) {
         mstring work;
+        mstring full_path;
+        note_managed_temp_deleted(pathInfo.workPath.getTail(0, full_path));
         pathInfo.workPath.getHead(work);
         sendEventToObservers(eNodeRemoved, pathInfo.workPath.getSub(0, pathInfo.index - 1, work),
                 pathInfo.getFileName());
@@ -619,9 +1009,11 @@ FRESULT FileManager::rename_impl(PathInfo &from, PathInfo &to)
         }
         fres = from.getLastInfo()->fs->file_rename(from.getPathFromLastFS(), to.getPathFromLastFS());
         if (fres == FR_OK) {
-            mstring work1, work2;
-            const char *from_path = from.getFullPath(work1, -1);
-            const char *to_path = to.getFullPath(work2, -1);
+            mstring from_file_path, to_file_path;
+            mstring from_dir_path, to_dir_path;
+            note_managed_temp_renamed(from.workPath.getTail(0, from_file_path), to.workPath.getTail(0, to_file_path));
+            const char *from_path = from.getFullPath(from_dir_path, -1);
+            const char *to_path = to.getFullPath(to_dir_path, -1);
             sendEventToObservers(eRefreshDirectory, from_path, "");
             if (strcmp(from_path, to_path) != 0) {
                 sendEventToObservers(eRefreshDirectory, to_path, "");

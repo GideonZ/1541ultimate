@@ -42,10 +42,13 @@ FRESULT FileSystemA64 :: file_open(const char *filename, uint8_t flags, File **f
 
     // Let's see if cached copy exists
     FileInfo inf(128);
-    mstring fixed_temp_path("/Temp/");
-    fixed_temp_path += fixed;
+    mstring fixed_temp_path;
+    FRESULT fres = fm->get_temp_path(TempA64Cache, fixed, &fixed_temp_path);
     delete[] fixed;
-    FRESULT fres = fm->fstat(fixed_temp_path.c_str(), inf);
+    if (fres != FR_OK) {
+        return fres;
+    }
+    fres = fm->fstat(fixed_temp_path.c_str(), inf);
 
     // File was not found on the temp disk, let's download it
     if (fres == FR_NO_FILE) {

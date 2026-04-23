@@ -1,6 +1,8 @@
 #ifndef FILEMANAGER_H
 #define FILEMANAGER_H
 
+#include <stdint.h>
+
 #include "path.h"
 #include "file_system.h"
 #include "filesystem_root.h"
@@ -71,6 +73,20 @@ public:
 	~FileManagerEvent() { }
 };
 
+typedef enum {
+	TempUpload,
+	TempA64Cache,
+	TempSocketImport,
+} TempClass;
+
+struct ManagedTempEntry
+{
+	mstring path;
+	uint32_t open_count;
+	bool delete_on_last_close;
+	bool cleanup_suspended;
+};
+
 
 class FileManager
 {
@@ -79,12 +95,14 @@ class FileManager
 #endif
 	IndexedList<MountPoint *>mount_points;
     IndexedList<File *>open_file_list;
+	IndexedList<ManagedTempEntry *>managed_temp_entries;
+	uint64_t next_temp_seq;
 	//IndexedList<Path *>used_paths;
 	IndexedList<ObserverQueue *>observers;
 	CachedTreeNode *root;
 	FileSystem *rootfs;
 
-    FileManager() : mount_points(8, NULL), open_file_list(16, NULL), /*used_paths(8, NULL), */observers(4, NULL) {
+    FileManager() : mount_points(8, NULL), open_file_list(16, NULL), managed_temp_entries(16, NULL), next_temp_seq(0), /*used_paths(8, NULL), */observers(4, NULL) {
         root = new CachedTreeNode(NULL, "RootNode");
         root->get_file_info()->attrib = AM_DIR;
         rootfs = new FileSystem_Root(root);
@@ -98,13 +116,15 @@ class FileManager
     	vSemaphoreDelete(serializer);
 #endif
         for(int i=0;i<mount_points.get_elements();i++) {
-            fclose(mount_points[i]->get_file());
-            delete mount_points[i];
+            release_mount_point(mount_points[i]);
         }
 
         for(int i=0;i<open_file_list.get_elements();i++) {
         	delete open_file_list[i];
         }
+		for(int i=0;i<managed_temp_entries.get_elements();i++) {
+		    delete managed_temp_entries[i];
+		}
 /*
         for(int i=0;i<used_paths.get_elements();i++) {
         	delete used_paths[i];
@@ -118,6 +138,15 @@ class FileManager
 	FRESULT fopen_impl(PathInfo &pathInfo, uint8_t flags, File **);
 	FRESULT rename_impl(PathInfo &from, PathInfo &to);
 	FRESULT delete_file_impl(PathInfo &pathInfo);
+	void release_mount_point(MountPoint *mp);
+	FRESULT ensure_temp_directory(TempClass kind, mstring &directory_out);
+	FRESULT build_temp_path(TempClass kind, const char *suggested_name, uint64_t seq, bool unique_name, mstring &canonical_path_out);
+	ManagedTempEntry *find_managed_temp_entry(const char *path);
+	void note_managed_temp_open(File *file);
+	void note_managed_temp_deleted(const char *path);
+	void note_managed_temp_renamed(const char *old_path, const char *new_path);
+	bool is_managed_temp_path(const char *path);
+	void enforce_temp_limits(void);
 
 //	friend class FileDirEntry;
 
@@ -200,6 +229,11 @@ public:
     FRESULT fopen(Path *path, const char *filename, uint8_t flags, File **);
     FRESULT fopen(const char *path, const char *filename, uint8_t flags, File **);
     FRESULT fopen(const char *pathname, uint8_t flags, File **);
+
+	FRESULT get_temp_path(TempClass kind, const char *suggested_name, mstring *canonical_path_out);
+	FRESULT create_temp_file(TempClass kind, const char *suggested_name, uint8_t open_flags, File **file, mstring *canonical_path_out);
+	void suspend_managed_temp(const char *path);
+	void restore_managed_temp(const char *path);
 
     void 	fclose(File *f);
     FRESULT fcopy(const char *path, const char *filename, const char *dest, const char *dest_filename, bool overwrite);

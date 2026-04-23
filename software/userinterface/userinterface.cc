@@ -111,8 +111,41 @@ struct t_cfg_definition user_if_config[] = {
     { CFG_USERIF_CFG_SAVE,   CFG_TYPE_ENUM,   "Auto Save Config",      "%s", cfg_save, 0, 2, 1 },
     { CFG_USERIF_ULTICOPY_NAME, CFG_TYPE_ENUM, "Ulticopy Uses disk name", "%s", en_dis, 0, 1, 1 },
     { CFG_USERIF_FILENAME_OVERFLOW_SQUEEZE, CFG_TYPE_ENUM, "Filename overflow squeeze", "%s", filename_overflow_squeeze, 0, 3, 0 },
+    { 0xFE, CFG_TYPE_SEP, "", "", NULL, 0, 0, 0 },
+    { 0xFE, CFG_TYPE_SEP, "Temp Folder", "", NULL, 0, 0, 0 },
+    { CFG_USERIF_TEMP_AUTO_CLEANUP, CFG_TYPE_ENUM, "Auto Cleanup", "%s", en_dis, 0, 1, 1 },
+    { CFG_USERIF_TEMP_USE_CACHE_SUBFOLDER, CFG_TYPE_ENUM, "Use Cache Subfolder", "%s", en_dis, 0, 1, 1 },
     { CFG_TYPE_END,           CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
 };
+
+static int get_user_if_default(uint8_t id)
+{
+    for (int i = 0; user_if_config[i].type != CFG_TYPE_END; i++) {
+        if (user_if_config[i].id == id) {
+            return (int)user_if_config[i].def;
+        }
+    }
+    return 0;
+}
+
+static int get_user_if_setting(uint8_t id)
+{
+    ConfigStore *store = ConfigManager::getConfigManager()->find_store(CFG_USERIF_STORE_ID);
+    if (store) {
+        return store->get_value(id);
+    }
+    return get_user_if_default(id);
+}
+
+bool user_if_temp_auto_cleanup_enabled(void)
+{
+    return get_user_if_setting(CFG_USERIF_TEMP_AUTO_CLEANUP) != 0;
+}
+
+bool user_if_temp_use_cache_subfolder_enabled(void)
+{
+    return get_user_if_setting(CFG_USERIF_TEMP_USE_CACHE_SUBFOLDER) != 0;
+}
 
 UserInterface :: UserInterface(const char *title, bool use_logo) : title(title)
 {
@@ -128,7 +161,7 @@ UserInterface :: UserInterface(const char *title, bool use_logo) : title(title)
     filename_overflow_squeeze = 0;
     menu_response_to_action = MENU_NOP;
     logo = use_logo;
-    register_store(0x47454E2E, "User Interface Settings", user_if_config);
+    register_store(CFG_USERIF_STORE_ID, "User Interface Settings", user_if_config);
     cfg->set_sort_order(SORT_ORDER_CFG_USERIF);
     effectuate_settings();
 }

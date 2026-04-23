@@ -420,12 +420,21 @@ bool C1541 :: save_if_needed(SubsysCommand *cmd)
 
 void C1541 :: remove_disk(void)
 {
+    mstring previous_mount_path = mount_file_path;
+    if (mount_file_name.length()) {
+        if (previous_mount_path.length() && (previous_mount_path.c_str()[previous_mount_path.length() - 1] != '/')) {
+            previous_mount_path += "/";
+        }
+        previous_mount_path += mount_file_name;
+    }
+
     if (registers[C1541_INSERTED]) {
         registers[C1541_SOUNDS] = 2; // play remove sound
     }
     if(mount_file) {
         fm->fclose(mount_file);
     }
+    fm->restore_managed_temp(previous_mount_path.c_str());
     mount_file = NULL;
     mount_file_path = "";
     mount_file_name = "";
