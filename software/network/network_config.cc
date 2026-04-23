@@ -31,14 +31,6 @@ struct t_cfg_definition network_config[] = {
     { CFG_NETWORK_NTP_SRV1,        CFG_TYPE_STRING,     "Time Server 1",                    "%s", NULL,       3,  31, (int)"time.windows.com" },
     { CFG_NETWORK_NTP_SRV2,        CFG_TYPE_STRING,     "Time Server 2",                    "%s", NULL,       3,  31, (int)"time.google.com" },
     { CFG_NETWORK_NTP_SRV3,        CFG_TYPE_STRING,     "Time Server 3",                    "%s", NULL,       3,  31, (int)"pool.ntp.org" },
-    { 0xFE,                        CFG_TYPE_SEP,        "",                                 "",   NULL,       0,  0, 0 },
-    { 0xFE,                        CFG_TYPE_SEP,        "FTP Remote Filesystem",            "",   NULL,       0,  0, 0 },
-    { CFG_NETWORK_FTP_CLIENT_EN,   CFG_TYPE_ENUM,       "FTP Remote Mount",                 "%s", en_dis,     0,  1, 0 },
-    { CFG_NETWORK_FTP_CLIENT_HOST, CFG_TYPE_STRING,     "FTP Server Address",               "%s", NULL,       3, 31, (int)"" },
-    { CFG_NETWORK_FTP_CLIENT_PORT, CFG_TYPE_STRING,     "FTP Server Port",                  "%s", NULL,       1,  5, (int)"21" },
-    { CFG_NETWORK_FTP_CLIENT_USER, CFG_TYPE_STRING,     "FTP Username",                     "%s", NULL,       1, 31, (int)"anonymous" },
-    { CFG_NETWORK_FTP_CLIENT_PASS, CFG_TYPE_STRPASS,    "FTP Password",                     "%s", NULL,       0, 31, (int)"" },
-    { CFG_NETWORK_FTP_CLIENT_PATH, CFG_TYPE_STRING,     "FTP Base Path",                    "%s", NULL,       1, 63, (int)"/" },
     { CFG_TYPE_END,                CFG_TYPE_END,        "",                                 "",   NULL,       0,  0, 0 }
 };
 

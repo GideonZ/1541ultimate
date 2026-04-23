@@ -20,9 +20,9 @@
 /*************************************************************/
 uint32_t FileOnFTP::node_count = 0;
 
-FileSystemFTP::FileSystemFTP(const char *base) : FileSystem(0), client(NULL), connected(false), root_path(base)
+FileSystemFTP::FileSystemFTP(FTPServer *s) : FileSystem(0), client(NULL), connected(false), server(s)
 {
-    client = new FTPClient();
+    client = NULL;
 }
 
 FileSystemFTP::~FileSystemFTP()
@@ -35,39 +35,22 @@ FileSystemFTP::~FileSystemFTP()
 
 int FileSystemFTP::connect_if_needed()
 {
+    if (!client) {
+        client = new FTPClient();
+    }
     if (connected && client->is_connected()) {
         return 0;
     }
     connected = false;
 
-    ConfigStore *cfg = networkConfig.cfg;
-    if (!cfg) {
-        return -1;
-    }
+    printf("[FTP-FS] Connecting to %s:%d as '%s'\n", server->host.c_str(), server->port, server->user.c_str() );
 
-    const char *host = cfg->get_string(CFG_NETWORK_FTP_CLIENT_HOST);
-    const char *port_str = cfg->get_string(CFG_NETWORK_FTP_CLIENT_PORT);
-    const char *user = cfg->get_string(CFG_NETWORK_FTP_CLIENT_USER);
-    const char *pass = cfg->get_string(CFG_NETWORK_FTP_CLIENT_PASS);
-
-    if (!host || !host[0]) {
-        printf("[FTP-FS] No server configured\n");
-        return -1;
-    }
-
-    uint16_t port = (uint16_t)strtol(port_str ? port_str : "21", NULL, 10);
-    if (port == 0) {
-        port = 21;
-    }
-
-    printf("[FTP-FS] Connecting to %s:%d as '%s'\n", host, port, user ? user : "anonymous");
-
-    if (client->open(host, port) < 0) {
+    if (client->open(server->host.c_str(), server->port) < 0) {
         printf("[FTP-FS] Connection failed\n");
         return -1;
     }
 
-    if (client->login(user ? user : "anonymous", pass ? pass : "") < 0) {
+    if (client->login(server->user.c_str(), server->passw.c_str()) < 0) {
         printf("[FTP-FS] Login failed\n");
         client->disconnect();
         return -1;
@@ -75,10 +58,9 @@ int FileSystemFTP::connect_if_needed()
 
     client->type_binary();
 
-    const char *base = cfg->get_string(CFG_NETWORK_FTP_CLIENT_PATH);
-    if (base && base[0] && strcmp(base, "/") != 0) {
-        if (client->cwd(base) < 0) {
-            printf("[FTP-FS] CWD '%s' failed\n", base);
+    if (strcmp(server->folder.c_str(), "/") != 0) {
+        if (client->cwd(server->folder.c_str()) < 0) {
+            printf("[FTP-FS] CWD '%s' failed\n", server->folder.c_str());
         }
     }
 
@@ -212,8 +194,9 @@ FRESULT FileSystemFTP::dir_open(const char *path, Directory **dir)
 	if (!path) {
 	    path = "/";
 	}
-
-	FRESULT res = newdir->list(path);
+    mstring full_path;
+    build_ftp_path(path, full_path);
+	FRESULT res = newdir->list(full_path.c_str());
 
 	if (res == FR_OK) {
 		*dir = newdir;
@@ -397,7 +380,7 @@ FRESULT DirectoryOnFTP::list(const char *ftp_path)
 // Local paths look like "subdir/file.d64"; we prepend the root's base path.
 void FileSystemFTP::build_ftp_path(const char *local_path, mstring &out)
 {
-    out = root_path;
+    out = server->folder.c_str();
     if (out.length() > 0 && out.c_str()[out.length() - 1] != '/') {
         out += "/";
     }
@@ -539,4 +522,17 @@ void FTPRootNode :: load_servers_impl(File *f)
     }
     delete[] linebuf;
     delete[] buffer;
+}
+
+FTPServer :: FTPServer(CachedTreeNode *par, const char *alias, const char *host, const char *port_str,
+            const char *user, const char *passw, const char *folder) :
+            alias(alias), host(host), user(user), passw(passw), folder(folder), CachedTreeNode(par, alias)
+{
+    port = (uint16_t)strtol(port_str ? port_str : "21", NULL, 10);
+    if (port == 0) {
+        port = 21;
+    }
+    info.fs = new FileSystemFTP(this);
+    info.attrib = AM_DIR; // ;)
+    info.cluster = 0;
 }

@@ -37,6 +37,7 @@ void init_ram_disk(void *obj, void *param)
     }
     ramdisk_node = new FileDevice(ramdisk_blk, "Temp", "RAM Disk");
     ramdisk_node->attach_disk(512);
+    ramdisk_node->probe();
     FileManager :: getFileManager()->add_root_entry(ramdisk_node);
 }
 

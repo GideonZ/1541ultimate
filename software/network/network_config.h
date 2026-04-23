@@ -18,14 +18,6 @@
 #define CFG_NETWORK_NTP_SRV2               0x33
 #define CFG_NETWORK_NTP_SRV3               0x34
 
-#define CFG_NETWORK_FTP_CLIENT_EN          0x40
-#define CFG_NETWORK_FTP_CLIENT_HOST        0x41
-#define CFG_NETWORK_FTP_CLIENT_PORT        0x42
-#define CFG_NETWORK_FTP_CLIENT_USER        0x43
-#define CFG_NETWORK_FTP_CLIENT_PASS        0x44
-#define CFG_NETWORK_FTP_CLIENT_PATH        0x45
-
-
 class NetworkConfig : ConfigurableObject {
 public:
     NetworkConfig();

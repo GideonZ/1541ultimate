@@ -99,7 +99,7 @@ void FileManager::get_display_string(Path *p, const char *filename, char *buffer
     }
     n = n->find_child(filename);
     if (!n) {
-        strncpy(buffer, "Invalid entry", width);
+        snprintf(buffer, width, "Invalid entry %s", filename);
         return;
     }
     n->get_display_string(buffer, width);
