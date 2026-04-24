@@ -144,6 +144,7 @@ class FileManager
 	        bool create_dirs, mstring &canonical_path_out);
 	bool temp_path_exists(const char *path);
 	ManagedTempEntry *find_managed_temp_entry(const char *path);
+	bool get_temp_class_for_path(const char *path, TempClass &kind);
 	void note_managed_temp_open(File *file);
 	void note_managed_temp_deleted(const char *path);
 	void note_managed_temp_renamed(const char *old_path, const char *new_path);

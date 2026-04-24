@@ -805,6 +805,38 @@ TEST(TempAutoCleanupTest, TempClassesShareNewestTenPool)
     EXPECT_EQ(FR_OK, env.fm->fstat(paths.back().c_str(), info));
 }
 
+TEST(TempAutoCleanupTest, A64RenamedUploadStaysInSharedNewestTenPool)
+{
+    g_auto_cleanup = true;
+    g_use_cache_subfolder = true;
+
+    TempTestEnvironment env;
+    env.reset();
+
+    std::vector<std::string> old_paths;
+    for (int i = 0; i < 9; i++) {
+        char name[32];
+        sprintf(name, "old-%d.bin", i);
+        old_paths.push_back(create_managed_temp_file(env, TempUpload, name, 8));
+    }
+
+    std::string staged_path = create_managed_temp_file(env, TempUpload, "download.tmp", 8);
+    mstring a64_path;
+    ASSERT_EQ(FR_OK, env.fm->get_temp_path(TempA64Cache, "demo.prg", &a64_path));
+    mstring a64_dir;
+    ASSERT_EQ(FR_OK, env.fm->ensure_temp_directory(TempA64Cache, a64_dir));
+    ASSERT_EQ(FR_OK, env.fm->rename(staged_path.c_str(), a64_path.c_str()));
+
+    create_managed_temp_file(env, TempSocketImport, "socket-0.d64", 8);
+    create_managed_temp_file(env, TempSocketImport, "socket-1.d64", 8);
+
+    FileInfo info(64);
+    EXPECT_EQ(FR_NO_FILE, env.fm->fstat(old_paths[0].c_str(), info));
+    EXPECT_EQ(FR_NO_FILE, env.fm->fstat(old_paths[1].c_str(), info));
+    EXPECT_EQ(FR_OK, env.fm->fstat(a64_path.c_str(), info));
+    EXPECT_EQ(10, (int)env.filesystem->list_files().size());
+}
+
 TEST(TempAutoCleanupTest, GroupedFourFileUploadSurvivesNewestTenFloor)
 {
     g_auto_cleanup = true;

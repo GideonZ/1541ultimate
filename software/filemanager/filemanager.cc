@@ -183,6 +183,32 @@ ManagedTempEntry *FileManager::find_managed_temp_entry(const char *path)
     return NULL;
 }
 
+bool FileManager::get_temp_class_for_path(const char *path, TempClass &kind)
+{
+    if (!path) {
+        return false;
+    }
+
+    if (!user_if_temp_use_cache_subfolder_enabled()) {
+        mstring prefix;
+        get_temp_directory_path(kind, prefix);
+        prefix += "/";
+        return path_starts_with_ci(path, prefix.c_str());
+    }
+
+    TempClass classes[] = { TempUpload, TempA64Cache, TempSocketImport };
+    for (int i = 0; i < (int)(sizeof(classes) / sizeof(classes[0])); i++) {
+        mstring prefix;
+        get_temp_directory_path(classes[i], prefix);
+        prefix += "/";
+        if (path_starts_with_ci(path, prefix.c_str())) {
+            kind = classes[i];
+            return true;
+        }
+    }
+    return false;
+}
+
 void FileManager::note_managed_temp_open(File *file)
 {
     ManagedTempEntry *entry = find_managed_temp_entry(file ? file->get_path() : NULL);
@@ -208,11 +234,10 @@ void FileManager::note_managed_temp_renamed(const char *old_path, const char *ne
         return;
     }
 
-    mstring prefix;
-    get_temp_directory_path(entry->kind, prefix);
-    prefix += "/";
-    if (path_starts_with_ci(new_path, prefix.c_str())) {
+    TempClass new_kind = entry->kind;
+    if (get_temp_class_for_path(new_path, new_kind)) {
         entry->path = new_path;
+        entry->kind = new_kind;
         return;
     }
     managed_temp_entries.remove(entry);
