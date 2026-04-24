@@ -447,6 +447,10 @@ public:
 
     ~TempTestEnvironment()
     {
+        if (!root_attached) {
+            fm->add_root_entry(temp_node);
+            root_attached = true;
+        }
         remove_all_files();
         detach_root();
         delete temp_node;
@@ -478,11 +482,11 @@ public:
     }
 };
 
-std::string create_managed_temp_file(TempTestEnvironment &env, const char *suggested_name, uint32_t size)
+std::string create_managed_temp_file(TempTestEnvironment &env, TempClass kind, const char *suggested_name, uint32_t size)
 {
     File *file = NULL;
     mstring path;
-    ASSERT_EQ(FR_OK, env.fm->create_temp_file(TempUpload, suggested_name, FA_WRITE | FA_CREATE_ALWAYS, &file, &path));
+    ASSERT_EQ(FR_OK, env.fm->create_temp_file(kind, suggested_name, FA_WRITE | FA_CREATE_ALWAYS, &file, &path));
     ASSERT_TRUE(file != NULL);
     std::vector<uint8_t> data(size, 0xAA);
     uint32_t written = 0;
@@ -490,6 +494,19 @@ std::string create_managed_temp_file(TempTestEnvironment &env, const char *sugge
     ASSERT_EQ(size, written);
     env.fm->fclose(file);
     return path.c_str();
+}
+
+std::string create_managed_temp_file(TempTestEnvironment &env, const char *suggested_name, uint32_t size)
+{
+    return create_managed_temp_file(env, TempUpload, suggested_name, size);
+}
+
+File *create_open_managed_temp_file(TempTestEnvironment &env, const char *suggested_name, mstring &path)
+{
+    File *file = NULL;
+    ASSERT_EQ(FR_OK, env.fm->create_temp_file(TempUpload, suggested_name, FA_WRITE | FA_CREATE_ALWAYS, &file, &path));
+    ASSERT_TRUE(file != NULL);
+    return file;
 }
 
 std::string temp_relative_path(const std::string &absolute_path)
@@ -559,7 +576,7 @@ TEST(TempAutoCleanupTest, CacheSubfolderToggleChangesManagedTempRoot)
         TempTestEnvironment env;
         env.reset();
         std::string path = create_managed_temp_file(env, "upload.bin", 8);
-        EXPECT_EQ(0, path.find("/Temp/cache/"));
+        EXPECT_EQ(0, path.find("/Temp/cache/upload/"));
         EXPECT_TRUE(path.find("/Temp/cache/a64/") != 0);
         EXPECT_TRUE(path.find("/Temp/cache/socket/") != 0);
     }
@@ -569,12 +586,12 @@ TEST(TempAutoCleanupTest, CacheSubfolderToggleChangesManagedTempRoot)
         TempTestEnvironment env;
         env.reset();
         std::string path = create_managed_temp_file(env, "upload.bin", 8);
-        EXPECT_EQ(0, path.find("/Temp/"));
+        EXPECT_EQ(0, path.find("/Temp/upload/"));
         EXPECT_TRUE(path.find("/Temp/cache/") != 0);
     }
 }
 
-TEST(TempAutoCleanupTest, ManagedTempNamesUseDecimalSequence)
+TEST(TempAutoCleanupTest, ManagedTempNamesUseClientNameAndHexFallback)
 {
     g_auto_cleanup = false;
     g_use_cache_subfolder = true;
@@ -582,21 +599,31 @@ TEST(TempAutoCleanupTest, ManagedTempNamesUseDecimalSequence)
     TempTestEnvironment env;
     env.reset();
 
-    for (int i = 0; i < 16; i++) {
-        std::string path = create_managed_temp_file(env, "upload.bin", 8);
-        const std::string prefix = "/Temp/cache/temp";
-        const std::string suffix = "_upload.bin";
+    std::string first_upload = create_managed_temp_file(env, TempUpload, "upload.bin", 8);
+    std::string second_upload = create_managed_temp_file(env, TempUpload, "upload.bin", 8);
+    std::string socket_file = create_managed_temp_file(env, TempSocketImport, "tcpimage.d64", 8);
+    std::string a64_file = create_managed_temp_file(env, TempA64Cache, "demo.prg", 8);
 
+    EXPECT_EQ("/Temp/cache/upload/upload.bin", first_upload);
+    EXPECT_EQ("/Temp/cache/upload/upload_1.bin", second_upload);
+    EXPECT_EQ("/Temp/cache/socket/tcpimage.d64", socket_file);
+    EXPECT_EQ("/Temp/cache/a64/demo.prg", a64_file);
+
+    bool saw_hex_letter = false;
+    for (int i = 0; i < 20; i++) {
+        std::string path = create_managed_temp_file(env, TempUpload, NULL, 8);
+        const std::string prefix = "/Temp/cache/upload/temp";
         ASSERT_EQ(0, path.find(prefix));
-        ASSERT_TRUE(path.size() > (prefix.size() + suffix.size()));
-        ASSERT_EQ(path.size() - suffix.size(), path.rfind(suffix));
-
-        std::string seq = path.substr(prefix.size(), path.size() - prefix.size() - suffix.size());
-        ASSERT_TRUE(!seq.empty());
+        std::string seq = path.substr(prefix.size());
+        ASSERT_TRUE(seq.size() >= 4);
         for (size_t j = 0; j < seq.size(); j++) {
-            EXPECT_TRUE((seq[j] >= '0') && (seq[j] <= '9'));
+            EXPECT_TRUE(((seq[j] >= '0') && (seq[j] <= '9')) || ((seq[j] >= 'a') && (seq[j] <= 'f')));
+            if ((seq[j] >= 'a') && (seq[j] <= 'f')) {
+                saw_hex_letter = true;
+            }
         }
     }
+    EXPECT_TRUE(saw_hex_letter);
 }
 
 TEST(TempAutoCleanupTest, NonManagedTempFilesAreUnaffected)
@@ -623,7 +650,7 @@ TEST(TempAutoCleanupTest, NonManagedTempFilesAreUnaffected)
     }
 }
 
-TEST(TempAutoCleanupTest, SuspendedManagedTempEvictsAfterRestore)
+TEST(TempAutoCleanupTest, RenameWithinManagedRootKeepsTracking)
 {
     g_auto_cleanup = true;
     g_use_cache_subfolder = true;
@@ -631,8 +658,30 @@ TEST(TempAutoCleanupTest, SuspendedManagedTempEvictsAfterRestore)
     TempTestEnvironment env;
     env.reset();
 
-    std::string suspended_path = create_managed_temp_file(env, "mounted.d64", 16);
-    env.fm->suspend_managed_temp(suspended_path.c_str());
+    std::string original_path = create_managed_temp_file(env, "rename.d64", 16);
+    const char *renamed_path = "/Temp/cache/upload/renamed.d64";
+    ASSERT_EQ(FR_OK, env.fm->rename(original_path.c_str(), renamed_path));
+
+    for (int i = 0; i < 10; i++) {
+        create_managed_temp_file(env, "upload.bin", 16);
+    }
+
+    FileInfo info(64);
+    EXPECT_EQ(1, (int)env.filesystem->get_deleted_paths().size());
+    EXPECT_EQ(FR_NO_FILE, env.fm->fstat(renamed_path, info));
+}
+
+TEST(TempAutoCleanupTest, RenameOutsideManagedRootPromotesFile)
+{
+    g_auto_cleanup = true;
+    g_use_cache_subfolder = true;
+
+    TempTestEnvironment env;
+    env.reset();
+
+    std::string original_path = create_managed_temp_file(env, "promote.d64", 16);
+    const char *promoted_path = "/Temp/promoted.d64";
+    ASSERT_EQ(FR_OK, env.fm->rename(original_path.c_str(), promoted_path));
 
     std::vector<std::string> managed_paths;
     for (int i = 0; i < 11; i++) {
@@ -640,15 +689,32 @@ TEST(TempAutoCleanupTest, SuspendedManagedTempEvictsAfterRestore)
     }
 
     FileInfo info(64);
-    EXPECT_EQ(1, (int)env.filesystem->get_deleted_paths().size());
-    EXPECT_EQ(FR_OK, env.fm->fstat(suspended_path.c_str(), info));
+    EXPECT_EQ(FR_OK, env.fm->fstat(promoted_path, info));
     EXPECT_EQ(FR_NO_FILE, env.fm->fstat(managed_paths.front().c_str(), info));
     EXPECT_EQ(FR_OK, env.fm->fstat(managed_paths.back().c_str(), info));
+}
 
-    env.fm->restore_managed_temp(suspended_path.c_str());
+TEST(TempAutoCleanupTest, RenameIntoManagedRootDoesNotCreateTracking)
+{
+    g_auto_cleanup = true;
+    g_use_cache_subfolder = true;
 
-    EXPECT_EQ(2, (int)env.filesystem->get_deleted_paths().size());
-    EXPECT_EQ(FR_NO_FILE, env.fm->fstat(suspended_path.c_str(), info));
+    TempTestEnvironment env;
+    env.reset();
+    const uint8_t manual_data[] = { 0x01, 0x02, 0x03, 0x04 };
+    uint32_t written = 0;
+    ASSERT_EQ(FR_OK, env.fm->save_file(true, "/Temp", "manual.bin", (uint8_t *)manual_data, sizeof(manual_data), &written));
+    ASSERT_EQ(FR_OK, env.fm->create_dir("/Temp/cache"));
+    ASSERT_EQ(FR_OK, env.fm->create_dir("/Temp/cache/upload"));
+    ASSERT_EQ(FR_OK, env.fm->rename("/Temp/manual.bin", "/Temp/cache/upload/manual.bin"));
+
+    for (int i = 0; i < 11; i++) {
+        create_managed_temp_file(env, "upload.bin", 16);
+    }
+
+    FileInfo info(64);
+    EXPECT_EQ(FR_OK, env.fm->fstat("/Temp/cache/upload/manual.bin", info));
+    EXPECT_EQ(1, (int)env.filesystem->get_deleted_paths().size());
 }
 
 TEST(TempAutoCleanupTest, CountCleanupDefersOpenMountedTempUntilBackingHandleCloses)
@@ -680,4 +746,121 @@ TEST(TempAutoCleanupTest, CountCleanupDefersOpenMountedTempUntilBackingHandleClo
 
     EXPECT_FALSE(env.filesystem->exists(temp_relative_path(mount_path)));
     EXPECT_EQ(2, (int)env.filesystem->get_deleted_paths().size());
+}
+
+TEST(TempAutoCleanupTest, LowercaseTempRootResolvesCanonicalManagedPath)
+{
+    g_auto_cleanup = false;
+    g_use_cache_subfolder = true;
+
+    TempTestEnvironment env;
+    env.reset();
+
+    std::string path = create_managed_temp_file(env, "case.bin", 8);
+    ASSERT_EQ(0, path.find("/Temp/cache/upload/"));
+
+    std::string lower_path = path;
+    lower_path.replace(0, 5, "/temp");
+
+    FileInfo info(64);
+    EXPECT_EQ(FR_OK, env.fm->fstat(path.c_str(), info));
+    EXPECT_EQ(FR_OK, env.fm->fstat(lower_path.c_str(), info));
+}
+
+TEST(TempAutoCleanupTest, TempClassesShareNewestTenPool)
+{
+    g_auto_cleanup = true;
+    g_use_cache_subfolder = true;
+
+    TempTestEnvironment env;
+    env.reset();
+
+    std::vector<std::string> paths;
+    paths.push_back(create_managed_temp_file(env, TempUpload, "first-upload.bin", 8));
+    for (int i = 0; i < 4; i++) {
+        char name[32];
+        sprintf(name, "a64-%d.prg", i);
+        paths.push_back(create_managed_temp_file(env, TempA64Cache, name, 8));
+    }
+    for (int i = 0; i < 3; i++) {
+        char name[32];
+        sprintf(name, "socket-%d.d64", i);
+        paths.push_back(create_managed_temp_file(env, TempSocketImport, name, 8));
+    }
+    for (int i = 0; i < 3; i++) {
+        char name[32];
+        sprintf(name, "upload-%d.bin", i);
+        paths.push_back(create_managed_temp_file(env, TempUpload, name, 8));
+    }
+
+    FileInfo info(64);
+    EXPECT_EQ(1, (int)env.filesystem->get_deleted_paths().size());
+    EXPECT_EQ(FR_NO_FILE, env.fm->fstat(paths.front().c_str(), info));
+    EXPECT_EQ(FR_OK, env.fm->fstat(paths.back().c_str(), info));
+}
+
+TEST(TempAutoCleanupTest, GroupedFourFileUploadSurvivesNewestTenFloor)
+{
+    g_auto_cleanup = true;
+    g_use_cache_subfolder = true;
+
+    TempTestEnvironment env;
+    env.reset();
+
+    for (int i = 0; i < 7; i++) {
+        char name[32];
+        sprintf(name, "old-%d.bin", i);
+        create_managed_temp_file(env, TempUpload, name, 8);
+    }
+
+    std::vector<std::string> group_paths;
+    for (int i = 0; i < 4; i++) {
+        char name[32];
+        sprintf(name, "group-%d.bin", i);
+        group_paths.push_back(create_managed_temp_file(env, TempUpload, name, 8));
+    }
+
+    FileInfo info(64);
+    EXPECT_EQ(1, (int)env.filesystem->get_deleted_paths().size());
+    for (size_t i = 0; i < group_paths.size(); i++) {
+        EXPECT_EQ(FR_OK, env.fm->fstat(group_paths[i].c_str(), info));
+    }
+}
+
+TEST(TempAutoCleanupTest, ElevenOpenFilesDeleteOldestOnlyOnFinalClose)
+{
+    g_auto_cleanup = true;
+    g_use_cache_subfolder = true;
+
+    TempTestEnvironment env;
+    env.reset();
+
+    std::vector<File *> files;
+    std::vector<std::string> paths;
+    for (int i = 0; i < 11; i++) {
+        char name[32];
+        sprintf(name, "open-%d.bin", i);
+        mstring path;
+        files.push_back(create_open_managed_temp_file(env, name, path));
+        paths.push_back(path.c_str());
+    }
+
+    EXPECT_EQ(0, (int)env.filesystem->get_deleted_paths().size());
+    EXPECT_TRUE(env.filesystem->exists(temp_relative_path(paths.front())));
+
+    env.fm->fclose(files[1]);
+    files[1] = NULL;
+    EXPECT_EQ(0, (int)env.filesystem->get_deleted_paths().size());
+    EXPECT_TRUE(env.filesystem->exists(temp_relative_path(paths.front())));
+
+    env.fm->fclose(files[0]);
+    files[0] = NULL;
+    EXPECT_EQ(1, (int)env.filesystem->get_deleted_paths().size());
+    EXPECT_FALSE(env.filesystem->exists(temp_relative_path(paths.front())));
+
+    for (size_t i = 0; i < files.size(); i++) {
+        if (files[i]) {
+            env.fm->fclose(files[i]);
+        }
+    }
 }

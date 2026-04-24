@@ -84,7 +84,6 @@ struct ManagedTempEntry
 	mstring path;
 	uint32_t open_count;
 	bool delete_on_last_close;
-	bool cleanup_suspended;
 };
 
 
@@ -139,8 +138,11 @@ class FileManager
 	FRESULT rename_impl(PathInfo &from, PathInfo &to);
 	FRESULT delete_file_impl(PathInfo &pathInfo);
 	void release_mount_point(MountPoint *mp);
+	void get_temp_directory_path(TempClass kind, mstring &directory_out);
 	FRESULT ensure_temp_directory(TempClass kind, mstring &directory_out);
-	FRESULT build_temp_path(TempClass kind, const char *suggested_name, uint64_t seq, bool unique_name, mstring &canonical_path_out);
+	FRESULT build_temp_path(TempClass kind, const char *suggested_name, uint64_t seq, bool unique_name, uint32_t suffix,
+	        mstring &canonical_path_out);
+	bool temp_path_exists(const char *path);
 	ManagedTempEntry *find_managed_temp_entry(const char *path);
 	void note_managed_temp_open(File *file);
 	void note_managed_temp_deleted(const char *path);
@@ -228,12 +230,10 @@ public:
 
     FRESULT fopen(Path *path, const char *filename, uint8_t flags, File **);
     FRESULT fopen(const char *path, const char *filename, uint8_t flags, File **);
-    FRESULT fopen(const char *pathname, uint8_t flags, File **);
+	FRESULT fopen(const char *pathname, uint8_t flags, File **);
 
 	FRESULT get_temp_path(TempClass kind, const char *suggested_name, mstring *canonical_path_out);
 	FRESULT create_temp_file(TempClass kind, const char *suggested_name, uint8_t open_flags, File **file, mstring *canonical_path_out);
-	void suspend_managed_temp(const char *path);
-	void restore_managed_temp(const char *path);
 
     void 	fclose(File *f);
     FRESULT fcopy(const char *path, const char *filename, const char *dest, const char *dest_filename, bool overwrite);
