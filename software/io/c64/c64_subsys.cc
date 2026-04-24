@@ -14,6 +14,7 @@
 #include "u64.h"
 #include "c1541.h"
 #include "endianness.h"
+#include "cbmname.h"
 #if U64 == 2
 #include "wifi.h"
 #endif
@@ -31,6 +32,30 @@ extern uint8_t _bootcrt_65_start;
 extern uint8_t _bootcrt_65_end;
 
 cart_def boot_cart; // static => initialized with all zeros.
+
+static void make_bootcrt_display_name(const char *name, uint8_t run_code, char *display_name, uint8_t *display_length)
+{
+    const int max_display_chars = 16;
+    const char *display_source = name;
+    char truncated_name[max_display_chars + 1];
+
+    if (!(run_code & RUNCODE_REAL_BIT) && name) {
+        int source_length = strlen(name);
+        if (source_length > max_display_chars) {
+            memcpy(truncated_name, "...", 3);
+            memcpy(truncated_name + 3, name + source_length - (max_display_chars - 3), max_display_chars - 3);
+            truncated_name[max_display_chars] = 0;
+            display_source = truncated_name;
+        }
+    }
+
+    CbmFileName cbm;
+    cbm.init(display_source ? display_source : "");
+
+    memset(display_name, 0, max_display_chars);
+    memcpy(display_name, cbm.getName(), cbm.getLength());
+    *display_length = cbm.getLength();
+}
 
 static void initBootCart(void *object, void *param)
 {
@@ -550,6 +575,9 @@ int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, uint8_t *buffer, int leng
 int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
 		const char *name, uint8_t run_code, uint8_t drv, uint16_t reloc)
 {
+    char display_name[16];
+    uint8_t display_length;
+
 	// prepare DMA load
     if(c64->client) { // we are locked by a client, likely: user interface
     	c64->client->release_host(); // disconnect from user interface
@@ -563,13 +591,11 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
 
     C64_POKE(C64_BOOTCRT_DOSYNC, (c64->cfg->get_value(CFG_C64_DO_SYNC) == 1) ? 1 : 0);
 
-    CbmFileName cbm;
-    cbm.init(name);
-    const char *p = cbm.getName();
+    make_bootcrt_display_name(name, run_code, display_name, &display_length);
     for(int i=0; i<16; i++) {
-        C64_POKE(C64_BOOTCRT_NAME+i, p[i]);
+        C64_POKE(C64_BOOTCRT_NAME+i, display_name[i]);
     }
-    C64_POKE(C64_BOOTCRT_NAMELEN, strlen(p));
+    C64_POKE(C64_BOOTCRT_NAMELEN, display_length);
 
     C64_POKE(C64_BOOTCRT_HANDSHAKE, 0x80); // initial boot cart handshake
 

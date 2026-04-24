@@ -585,9 +585,15 @@ TEST(TempAutoCleanupTest, CacheSubfolderToggleChangesManagedTempRoot)
     {
         TempTestEnvironment env;
         env.reset();
-        std::string path = create_managed_temp_file(env, "upload.bin", 8);
-        EXPECT_EQ(0, path.find("/Temp/upload/"));
-        EXPECT_TRUE(path.find("/Temp/cache/") != 0);
+        std::string upload_path = create_managed_temp_file(env, TempUpload, "upload.bin", 8);
+        std::string a64_path = create_managed_temp_file(env, TempA64Cache, "demo.prg", 8);
+        std::string socket_path = create_managed_temp_file(env, TempSocketImport, "socket.d64", 8);
+        EXPECT_EQ("/Temp/upload.bin", upload_path);
+        EXPECT_EQ("/Temp/demo.prg", a64_path);
+        EXPECT_EQ("/Temp/socket.d64", socket_path);
+        EXPECT_TRUE(upload_path.find("/Temp/cache/") != 0);
+        EXPECT_TRUE(a64_path.find("/Temp/cache/") != 0);
+        EXPECT_TRUE(socket_path.find("/Temp/cache/") != 0);
     }
 }
 

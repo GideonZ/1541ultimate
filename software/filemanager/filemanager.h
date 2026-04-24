@@ -82,6 +82,7 @@ typedef enum {
 struct ManagedTempEntry
 {
 	mstring path;
+	TempClass kind;
 	uint32_t open_count;
 	bool delete_on_last_close;
 };
@@ -147,7 +148,6 @@ class FileManager
 	void note_managed_temp_open(File *file);
 	void note_managed_temp_deleted(const char *path);
 	void note_managed_temp_renamed(const char *old_path, const char *new_path);
-	bool is_managed_temp_path(const char *path);
 	void enforce_temp_limits(void);
 
 //	friend class FileDirEntry;

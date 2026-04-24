@@ -19,6 +19,8 @@ SEED_COUNT=10
 TEST_COUNT=12
 CFG_AUTO_CLEANUP="Enabled"
 CFG_USE_CACHE="Enabled"
+UPLOAD_DIR="/Temp/cache/upload"
+UPLOAD_CACHE_URL=""
 
 # State Variables
 MOUNTED_PATH_8=""
@@ -49,10 +51,34 @@ Options:
   -l, --limit <num>         Set the Managed Temp File Limit (default: 10).
   --seed-count <num>        Number of baseline files to upload (default: 10).
   --test-count <num>        Number of test files to upload (default: 12).
-  --cleanup <val>           Set Auto Cleanup to 'Enabled' or 'Disabled' (default: Enabled).
-  --subfolder <val>         Set Use Cache Subfolder to 'Enabled' or 'Disabled' (default: Enabled).
+    --cleanup <val>           Set Temp Auto Cleanup to 'Enabled' or 'Disabled' (default: Enabled).
+    --subfolder <val>         Set Temp Subfolders to 'Enabled' or 'Disabled' (default: Enabled).
 
 EOF
+}
+
+require_toggle_value() {
+    local flag=$1
+    local value=$2
+    case "$value" in
+        Enabled|Disabled)
+            return 0
+            ;;
+        *)
+            echo "Invalid value for $flag: $value"
+            echo "Expected: Enabled or Disabled"
+            exit 1
+            ;;
+    esac
+}
+
+refresh_managed_paths() {
+    if [[ "$CFG_USE_CACHE" == "Enabled" ]]; then
+        UPLOAD_DIR="/Temp/cache/upload"
+    else
+        UPLOAD_DIR="/Temp"
+    fi
+    UPLOAD_CACHE_URL="ftp://$U64_HOST$UPLOAD_DIR"
 }
 
 # --- Argument Parsing ---
@@ -103,10 +129,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 # --- Finalize Connection Config (Post-Parsing) ---
+require_toggle_value "--cleanup" "$CFG_AUTO_CLEANUP"
+require_toggle_value "--subfolder" "$CFG_USE_CACHE"
 REST_HEADER="X-Password: $U64_PASS"
 FTP_CRED="-u user:${U64_PASS:-password}"
 FTP_URL="ftp://$U64_HOST/Temp"
-UPLOAD_CACHE_URL="$FTP_URL/cache/upload"
+refresh_managed_paths
 
 # --- Utility Functions ---
 
@@ -133,7 +161,7 @@ verify_managed_temp_path() {
     local mounted_path=$1
     local context=$2
     case "$mounted_path" in
-        /Temp/cache/upload/*) echo -e " ${C_GREEN}[VERIFIED]${C_NC}" ;;
+        "$UPLOAD_DIR"/*) echo -e " ${C_GREEN}[VERIFIED]${C_NC}" ;;
         *) handle_failure "$context\n  Unexpected path: $mounted_path" ;;
     esac
 }
@@ -190,8 +218,26 @@ get_stats() {
     local c_cnt=$(echo "$c_ls" | awk '/^-/ {c++} END {print c+0}')
     local c_sz=$(echo "$c_ls" | awk '/^-/ {s+=$5} END {print s+0}')
     local persistent_cnt=$(count_persistent_mounts_in_cache)
+    if [[ "$CFG_USE_CACHE" == "Disabled" ]]; then
+        c_cnt=$((c_cnt - SEED_COUNT))
+        c_sz=$((c_sz - (SEED_COUNT * 768000)))
+    fi
     local managed_cnt=$((c_cnt - persistent_cnt))
     printf "%d|%d|%d|%d|%d" "$r_sz" "$c_cnt" "$c_sz" "$persistent_cnt" "$managed_cnt"
+}
+
+verify_user_files_untouched() {
+    local failures=0
+    for i in $(seq 1 "$SEED_COUNT"); do
+        local path="$FTP_URL/base_$i.bin"
+        local code=$(curl -s --ftp-pasv $FTP_CRED -o /dev/null -w "%{http_code}" "$path")
+        if [[ "$code" != "226" && "$code" != "200" ]]; then
+            echo -e "  ${C_RED}Missing user file:${C_NC} base_$i.bin"
+            failures=1
+        fi
+    done
+    [[ "$failures" -eq 0 ]] && echo -e "  ${C_GREEN}User files intact${C_NC}"
+    [[ "$failures" -eq 0 ]]
 }
 
 upload_rest_managed_temp() {
@@ -225,7 +271,7 @@ upload_until_removed() {
 
 run_config() {
     log_stage "1. Configuration Setup"
-    declare -A settings=( ["Auto%20Cleanup"]="$CFG_AUTO_CLEANUP" ["Use%20Cache%20Subfolder"]="$CFG_USE_CACHE" )
+    declare -A settings=( ["Temp%20Auto%20Cleanup"]="$CFG_AUTO_CLEANUP" ["Temp%20Subfolders"]="$CFG_USE_CACHE" )
     for key in "${!settings[@]}"; do
         echo -ne "  Setting $key to ${settings[$key]}... "
         local code=$(curl -s -o /dev/null -w "%{http_code}" -X PUT -H "$REST_HEADER" \
@@ -251,8 +297,11 @@ run_purge() {
     for drive in a b; do curl -s -o /dev/null -X PUT -H "$REST_HEADER" "http://$U64_HOST/v1/drives/$drive:remove"; done
     local files=$(curl -s --ftp-pasv $FTP_CRED "$FTP_URL/" | awk '/^-/ {print $9}')
     for f in $files; do [[ "$f" != "cache" && -n "$f" ]] && curl -s --ftp-pasv $FTP_CRED "$FTP_URL/" -X "DELE $f" > /dev/null; done
-    local cache_files=$(list_cache_files)
-    for f in $cache_files; do [[ -n "$f" ]] && curl -s --ftp-pasv $FTP_CRED "$UPLOAD_CACHE_URL/" -X "DELE $f" > /dev/null; done
+    local managed_urls=("ftp://$U64_HOST/Temp/cache/upload" "ftp://$U64_HOST/Temp/upload")
+    for managed_url in "${managed_urls[@]}"; do
+        local managed_files=$(curl -s --ftp-pasv $FTP_CRED "$managed_url/" | awk '/^-/ {print $9}')
+        for f in $managed_files; do [[ -n "$f" ]] && curl -s --ftp-pasv $FTP_CRED "$managed_url/" -X "DELE $f" > /dev/null; done
+    done
     echo -e "  ${C_GREEN}Purge Complete${C_NC}"
 }
 
@@ -301,12 +350,33 @@ run_seed() {
 
 run_count_limit_test() {
     log_stage "5. Managed Temp File Limit (Target: $MANAGED_LIMIT)"
+    local first_managed=""
+    local last_managed=""
     for i in $(seq 1 "$TEST_COUNT"); do
+        local before_cache=$(list_cache_files | sort)
         upload_rest_managed_temp "managed_$i"
+        local after_cache=$(list_cache_files | sort)
+        local latest=$(comm -13 <(printf '%s\n' "$before_cache") <(printf '%s\n' "$after_cache") | head -n 1)
+        if [[ -n "$latest" ]]; then
+            [[ -z "$first_managed" ]] && first_managed="$UPLOAD_CACHE_URL/$latest"
+            last_managed="$UPLOAD_CACHE_URL/$latest"
+        fi
         IFS='|' read r_sz c_cnt c_sz p_cnt m_cnt <<< "$(get_stats)"
         printf "    Stats: Managed Count=%d (Limit=%d)\n" "$m_cnt" "$MANAGED_LIMIT"
-        [[ "$m_cnt" -gt "$MANAGED_LIMIT" ]] && handle_failure "Limit exceeded ($m_cnt > $MANAGED_LIMIT)"
+        if [[ "$CFG_AUTO_CLEANUP" == "Enabled" ]]; then
+            [[ "$m_cnt" -gt "$MANAGED_LIMIT" ]] && handle_failure "Limit exceeded ($m_cnt > $MANAGED_LIMIT)"
+        fi
     done
+
+    if [[ "$CFG_AUTO_CLEANUP" == "Enabled" ]]; then
+        verify_remote_file_missing "$first_managed" "Oldest managed file should be evicted first"
+        verify_remote_file_exists "$last_managed" "Newest managed file should be retained"
+    else
+        IFS='|' read r_sz c_cnt c_sz p_cnt m_cnt <<< "$(get_stats)"
+        [[ "$m_cnt" -ne "$TEST_COUNT" ]] && handle_failure "Cleanup disabled should retain all managed uploads ($m_cnt != $TEST_COUNT)"
+        verify_remote_file_exists "$first_managed" "Cleanup disabled should not delete oldest managed file"
+        verify_remote_file_exists "$last_managed" "Cleanup disabled should retain newest managed file"
+    fi
 }
 
 run_unmount_cleanup_test() {
@@ -315,20 +385,34 @@ run_unmount_cleanup_test() {
     local code=$(curl -s -o /dev/null -w "%{http_code}" -X PUT -H "$REST_HEADER" "http://$U64_HOST/v1/drives/a:remove")
     [[ "$code" == "200" ]] && echo -e "${C_GREEN}OK${C_NC}" || handle_failure "Drive A removal failed"
 
-    upload_until_removed "$MOUNTED_PATH_8" "post_a" "Drive 8 removed" "$MOUNTED_PATH_9" "Drive 9 remains"
+    if [[ "$CFG_AUTO_CLEANUP" == "Enabled" ]]; then
+        upload_until_removed "$MOUNTED_PATH_8" "post_a" "Drive 8 removed" "$MOUNTED_PATH_9" "Drive 9 remains"
+    else
+        verify_remote_file_exists "ftp://$U64_HOST$MOUNTED_PATH_8" "Cleanup disabled should retain drive 8 after unmount"
+        verify_remote_file_exists "ftp://$U64_HOST$MOUNTED_PATH_9" "Cleanup disabled should retain drive 9 while still mounted"
+    fi
 
     echo -ne "  Removing drive B... "
     code=$(curl -s -o /dev/null -w "%{http_code}" -X PUT -H "$REST_HEADER" "http://$U64_HOST/v1/drives/b:remove")
     [[ "$code" == "200" ]] && echo -e "${C_GREEN}OK${C_NC}" || handle_failure "Drive B removal failed"
 
-    upload_until_removed "$MOUNTED_PATH_9" "post_b" "Drive 9 removed" "" ""
+    if [[ "$CFG_AUTO_CLEANUP" == "Enabled" ]]; then
+        upload_until_removed "$MOUNTED_PATH_9" "post_b" "Drive 9 removed" "" ""
+    else
+        verify_remote_file_exists "ftp://$U64_HOST$MOUNTED_PATH_9" "Cleanup disabled should retain drive 9 after unmount"
+    fi
 }
 
 run_final_integrity() {
     log_stage "7. Final Integrity Check"
     IFS='|' read r_sz c_cnt c_sz p_cnt m_cnt <<< "$(get_stats)"
-    [[ "$m_cnt" -gt "$MANAGED_LIMIT" ]] && handle_failure "Final count above limit ($m_cnt)"
-    [[ "$p_cnt" -ne 0 ]] && handle_failure "Persistent count not zero ($p_cnt)"
+    if [[ "$CFG_AUTO_CLEANUP" == "Enabled" ]]; then
+        [[ "$m_cnt" -gt "$MANAGED_LIMIT" ]] && handle_failure "Final count above limit ($m_cnt)"
+        [[ "$p_cnt" -ne 0 ]] && handle_failure "Persistent count not zero ($p_cnt)"
+    else
+        [[ "$m_cnt" -lt "$TEST_COUNT" ]] && handle_failure "Cleanup disabled should not remove managed uploads ($m_cnt < $TEST_COUNT)"
+    fi
+    verify_user_files_untouched || handle_failure "User files under /Temp were modified"
     echo -e "${C_GREEN}SUCCESS: Validation Passed.${C_NC}"
 }
 

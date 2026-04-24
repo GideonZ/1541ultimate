@@ -113,8 +113,8 @@ struct t_cfg_definition user_if_config[] = {
     { CFG_USERIF_FILENAME_OVERFLOW_SQUEEZE, CFG_TYPE_ENUM, "Filename overflow squeeze", "%s", filename_overflow_squeeze, 0, 3, 0 },
     { 0xFE, CFG_TYPE_SEP, "", "", NULL, 0, 0, 0 },
     { 0xFE, CFG_TYPE_SEP, "Temp Folder", "", NULL, 0, 0, 0 },
-    { CFG_USERIF_TEMP_AUTO_CLEANUP, CFG_TYPE_ENUM, "Auto Cleanup", "%s", en_dis, 0, 1, 1 },
-    { CFG_USERIF_TEMP_USE_CACHE_SUBFOLDER, CFG_TYPE_ENUM, "Use Cache Subfolder", "%s", en_dis, 0, 1, 1 },
+    { CFG_USERIF_TEMP_AUTO_CLEANUP, CFG_TYPE_ENUM, "Temp Auto Cleanup", "%s", en_dis, 0, 1, 1 },
+    { CFG_USERIF_TEMP_USE_CACHE_SUBFOLDER, CFG_TYPE_ENUM, "Temp Subfolders", "%s", en_dis, 0, 1, 1 },
     { CFG_TYPE_END,           CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
 };
 

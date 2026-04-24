@@ -90,9 +90,10 @@ void append_temp_name(mstring &buffer, const char *name, uint32_t suffix)
 void FileManager::get_temp_directory_path(TempClass kind, mstring &directory_out)
 {
     directory_out = "/Temp";
-    if (user_if_temp_use_cache_subfolder_enabled()) {
-        directory_out += "/cache";
+    if (!user_if_temp_use_cache_subfolder_enabled()) {
+        return;
     }
+    directory_out += "/cache";
     const char *class_dir = get_temp_class_dir(kind);
     if (class_dir && class_dir[0]) {
         directory_out += "/";
@@ -103,18 +104,19 @@ void FileManager::get_temp_directory_path(TempClass kind, mstring &directory_out
 FRESULT FileManager::ensure_temp_directory(TempClass kind, mstring &directory_out)
 {
     directory_out = "/Temp";
-    if (user_if_temp_use_cache_subfolder_enabled()) {
-        directory_out += "/cache";
-        FRESULT fres = create_dir(directory_out.c_str());
-        if ((fres != FR_OK) && (fres != FR_EXIST)) {
-            return fres;
-        }
+    if (!user_if_temp_use_cache_subfolder_enabled()) {
+        return FR_OK;
+    }
+    directory_out += "/cache";
+    FRESULT fres = create_dir(directory_out.c_str());
+    if ((fres != FR_OK) && (fres != FR_EXIST)) {
+        return fres;
     }
     const char *class_dir = get_temp_class_dir(kind);
     if (class_dir && class_dir[0]) {
         directory_out += "/";
         directory_out += class_dir;
-        FRESULT fres = create_dir(directory_out.c_str());
+        fres = create_dir(directory_out.c_str());
         if ((fres != FR_OK) && (fres != FR_EXIST)) {
             return fres;
         }
@@ -194,30 +196,17 @@ void FileManager::note_managed_temp_deleted(const char *path)
     delete entry;
 }
 
-bool FileManager::is_managed_temp_path(const char *path)
-{
-    if (!path) {
-        return false;
-    }
-
-    mstring prefix;
-    for (int kind = TempUpload; kind <= TempSocketImport; kind++) {
-        get_temp_directory_path((TempClass)kind, prefix);
-        prefix += "/";
-        if (path_starts_with_ci(path, prefix.c_str())) {
-            return true;
-        }
-    }
-    return false;
-}
-
 void FileManager::note_managed_temp_renamed(const char *old_path, const char *new_path)
 {
     ManagedTempEntry *entry = find_managed_temp_entry(old_path);
     if (!entry) {
         return;
     }
-    if (is_managed_temp_path(new_path)) {
+
+    mstring prefix;
+    get_temp_directory_path(entry->kind, prefix);
+    prefix += "/";
+    if (path_starts_with_ci(new_path, prefix.c_str())) {
         entry->path = new_path;
         return;
     }
@@ -353,6 +342,7 @@ FRESULT FileManager::create_temp_file(TempClass kind, const char *suggested_name
 
     ManagedTempEntry *entry = new ManagedTempEntry;
     entry->path = canonical_path;
+    entry->kind = kind;
     entry->open_count = 1;
     entry->delete_on_last_close = false;
     managed_temp_entries.append(entry);
