@@ -24,12 +24,7 @@
 
 #define MAX_UI_OBJECTS  8
 
-// Flash page ID for the user interface settings store. The value is a FourCC
-// ('G','E','N','.') matching the convention used by the other stores in this
-// codebase (e.g. 'LEDS', 'NET\0', 'C64 ', 'MPS\0'). The literal must not be
-// changed: it identifies the flash page where persisted settings already live
-// on deployed devices, so changing it would orphan existing user settings.
-#define CFG_USERIF_STORE_ID 0x47454E2E
+#define CFG_USERIF_STORE_ID 0x47454E2E // GEN.
 
 //#define CFG_USERIF_BACKGROUND  0x01
 //#define CFG_USERIF_BORDER      0x02
