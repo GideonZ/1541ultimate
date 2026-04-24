@@ -167,7 +167,7 @@ verify_managed_temp_path() {
 }
 
 list_cache_files() {
-    curl -s --ftp-pasv $FTP_CRED "$UPLOAD_CACHE_URL/" | awk '/^-/ {print $9}'
+    curl -s --ftp-pasv --list-only $FTP_CRED "$UPLOAD_CACHE_URL/"
 }
 
 count_persistent_mounts_in_cache() {

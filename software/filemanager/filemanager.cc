@@ -251,6 +251,9 @@ void FileManager::enforce_temp_limits(void)
     }
 
     while (1) {
+        IndexedList<ManagedTempEntry *> failed_candidates(4, NULL);
+
+        while (1) {
         lock();
         const int total_entries = managed_temp_entries.get_elements();
         const int excess_entries = total_entries - kManagedTempMaxFiles;
@@ -268,6 +271,17 @@ void FileManager::enforce_temp_limits(void)
                 continue;
             }
             if ((active_index < excess_entries) && (entry->open_count == 0)) {
+                bool skip_candidate = false;
+                for (int j = 0; j < failed_candidates.get_elements(); j++) {
+                    if (failed_candidates[j] == entry) {
+                        skip_candidate = true;
+                        break;
+                    }
+                }
+                if (skip_candidate) {
+                    active_index++;
+                    continue;
+                }
                 candidate = entry;
                 break;
             }
@@ -278,7 +292,17 @@ void FileManager::enforce_temp_limits(void)
             mstring candidate_path = candidate->path;
             unlock();
             FRESULT fres = delete_file(candidate_path.c_str());
-            if (fres != FR_OK) {
+            if (fres == FR_OK) {
+                break;
+            }
+            if (fres == FR_NO_FILE) {
+                lock();
+                note_managed_temp_deleted(candidate_path.c_str());
+                unlock();
+                break;
+            }
+            failed_candidates.append(candidate);
+            if (failed_candidates.get_elements() >= excess_entries) {
                 return;
             }
             continue;
@@ -313,6 +337,7 @@ void FileManager::enforce_temp_limits(void)
         }
         unlock();
         return;
+        }
     }
 }
 
@@ -371,18 +396,23 @@ FRESULT FileManager::create_temp_file(TempClass kind, const char *suggested_name
         return fres;
     }
 
-    ManagedTempEntry *entry = new ManagedTempEntry;
-    entry->path = canonical_path;
-    entry->kind = kind;
-    entry->open_count = 1;
-    entry->delete_on_last_close = false;
-    managed_temp_entries.append(entry);
+    const bool track_managed_temp = user_if_temp_auto_cleanup_enabled();
+    if (track_managed_temp) {
+        ManagedTempEntry *entry = new ManagedTempEntry;
+        entry->path = canonical_path;
+        entry->kind = kind;
+        entry->open_count = 1;
+        entry->delete_on_last_close = false;
+        managed_temp_entries.append(entry);
+    }
 
     if (canonical_path_out) {
         *canonical_path_out = canonical_path;
     }
     unlock();
-    enforce_temp_limits();
+    if (track_managed_temp) {
+        enforce_temp_limits();
+    }
     return FR_OK;
 }
 

@@ -142,6 +142,7 @@ class FakeTempFileSystem : public FileSystem
     std::set<std::string> directories;
     std::map<std::string, FakeFileRecord> files;
     std::vector<std::string> deleted_paths;
+    std::map<std::string, FRESULT> delete_failures;
 public:
     FakeTempFileSystem() : FileSystem(NULL), next_inode(1)
     {
@@ -154,6 +155,7 @@ public:
         directories.insert("/");
         files.clear();
         deleted_paths.clear();
+        delete_failures.clear();
     }
 
     bool is_writable() { return true; }
@@ -264,6 +266,12 @@ public:
     FRESULT file_delete(const char *path)
     {
         std::string normalized = normalize_path(path);
+        std::map<std::string, FRESULT>::iterator fail = delete_failures.find(normalized);
+        if (fail != delete_failures.end()) {
+            FRESULT fres = fail->second;
+            delete_failures.erase(fail);
+            return fres;
+        }
         std::map<std::string, FakeFileRecord>::iterator it = files.find(normalized);
         if (it == files.end()) {
             return FR_NO_FILE;
@@ -271,6 +279,16 @@ public:
         deleted_paths.push_back(normalized);
         files.erase(it);
         return FR_OK;
+    }
+
+    void remove_file_without_delete(const std::string &path)
+    {
+        files.erase(normalize_path(path.c_str()));
+    }
+
+    void fail_delete_once(const std::string &path, FRESULT fres)
+    {
+        delete_failures[normalize_path(path.c_str())] = fres;
     }
 
     FRESULT write_file(const std::string &path, uint32_t offset, uint32_t len, uint32_t *transferred)
@@ -548,6 +566,36 @@ TEST(TempAutoCleanupTest, AutoCleanupDisabledKeepsManagedFiles)
     EXPECT_EQ(FR_OK, env.fm->fstat(paths.front().c_str(), info));
 }
 
+TEST(TempAutoCleanupTest, AutoCleanupDisabledFilesStayUntrackedWhenCleanupTurnsOn)
+{
+    g_auto_cleanup = false;
+    g_use_cache_subfolder = true;
+
+    TempTestEnvironment env;
+    env.reset();
+    std::vector<std::string> disabled_paths;
+    for (int i = 0; i < 11; i++) {
+        char name[32];
+        sprintf(name, "disabled-%d.bin", i);
+        disabled_paths.push_back(create_managed_temp_file(env, name, 16));
+    }
+
+    g_auto_cleanup = true;
+    std::vector<std::string> tracked_paths;
+    for (int i = 0; i < 11; i++) {
+        char name[32];
+        sprintf(name, "tracked-%d.bin", i);
+        tracked_paths.push_back(create_managed_temp_file(env, name, 16));
+    }
+
+    FileInfo info(64);
+    EXPECT_EQ(1, (int)env.filesystem->get_deleted_paths().size());
+    EXPECT_EQ(21, (int)env.filesystem->list_files().size());
+    EXPECT_EQ(FR_OK, env.fm->fstat(disabled_paths.front().c_str(), info));
+    EXPECT_EQ(FR_NO_FILE, env.fm->fstat(tracked_paths.front().c_str(), info));
+    EXPECT_EQ(FR_OK, env.fm->fstat(tracked_paths.back().c_str(), info));
+}
+
 TEST(TempAutoCleanupTest, AutoCleanupEnabledDeletesOldestManagedFile)
 {
     g_auto_cleanup = true;
@@ -566,6 +614,33 @@ TEST(TempAutoCleanupTest, AutoCleanupEnabledDeletesOldestManagedFile)
     FileInfo info(64);
     EXPECT_EQ(FR_NO_FILE, env.fm->fstat(paths.front().c_str(), info));
     EXPECT_EQ(FR_OK, env.fm->fstat(paths.back().c_str(), info));
+}
+
+TEST(TempAutoCleanupTest, MissingManagedEntryDoesNotBlockFutureCleanup)
+{
+    g_auto_cleanup = true;
+    g_use_cache_subfolder = true;
+
+    TempTestEnvironment env;
+    env.reset();
+    std::vector<std::string> paths;
+    for (int i = 0; i < 10; i++) {
+        char name[32];
+        sprintf(name, "stale-%d.bin", i);
+        paths.push_back(create_managed_temp_file(env, name, 16));
+    }
+
+    env.filesystem->remove_file_without_delete(temp_relative_path(paths.front()));
+    create_managed_temp_file(env, "trigger-0.bin", 16);
+
+    FileInfo info(64);
+    EXPECT_EQ(0, (int)env.filesystem->get_deleted_paths().size());
+    EXPECT_EQ(FR_NO_FILE, env.fm->fstat(paths.front().c_str(), info));
+
+    create_managed_temp_file(env, "trigger-1.bin", 16);
+
+    EXPECT_EQ(1, (int)env.filesystem->get_deleted_paths().size());
+    EXPECT_EQ(FR_NO_FILE, env.fm->fstat(paths[1].c_str(), info));
 }
 
 TEST(TempAutoCleanupTest, CacheSubfolderToggleChangesManagedTempRoot)

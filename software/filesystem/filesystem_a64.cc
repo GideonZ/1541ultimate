@@ -60,9 +60,14 @@ FRESULT FileSystemA64 :: file_open(const char *filename, uint8_t flags, File **f
             const char *uploaded = writer->get_filename(0);
             if (uploaded) {
                 mstring ensured_dir;
-                fm->ensure_temp_directory(TempA64Cache, ensured_dir);
-                fres = fm->rename(uploaded, fixed_temp_path.c_str());
-                printf("Rename from %s to %s gave: %d\n", uploaded, fixed_temp_path.c_str(), fres);
+                fres = fm->ensure_temp_directory(TempA64Cache, ensured_dir);
+                if (fres == FR_OK) {
+                    fres = fm->rename(uploaded, fixed_temp_path.c_str());
+                    printf("Rename from %s to %s gave: %d\n", uploaded, fixed_temp_path.c_str(), fres);
+                }
+                if (fres != FR_OK) {
+                    fm->delete_file(uploaded);
+                }
             } else {
                 fres = FR_NO_FILE;
             }

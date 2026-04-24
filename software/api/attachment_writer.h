@@ -85,7 +85,7 @@ public:
                 if (fres == FR_OK) {
                     filenames.append(strdup(canonical_path.c_str()));
                 } else {
-                    filenames.append(NULL);
+                    filenames.append(strdup(""));
                     fo = NULL;
                 }
             }
@@ -121,7 +121,7 @@ public:
                 if (fres == FR_OK) {
                     filenames.append(strdup(canonical_path.c_str()));
                 } else {
-                    filenames.append(NULL);
+                    filenames.append(strdup(""));
                     fo = NULL;
                 }
             }
@@ -134,8 +134,8 @@ public:
                 }
                 break;
             case eDataEnd:
+                filesizes.append(fo ? file_size : 0);
                 if (fo) {
-                    filesizes.append(file_size);
                     FileManager::getFileManager()->fclose(fo);
                     fo = NULL;
                 }
@@ -161,7 +161,8 @@ public:
 
     const char *get_filename(int index)
     {
-        return filenames[index];
+        const char *filename = filenames[index];
+        return filename ? filename : "";
     }
     size_t get_filesize(int index)
     {
@@ -175,7 +176,8 @@ public:
     int buffer_file(int index, size_t max_size)
     {
         size_t size = filesizes[index];
-        if (size == 0) {
+        const char *filename = get_filename(index);
+        if ((size == 0) || !filename[0]) {
             return -1; // no data
         }
         if (size > max_size) {
@@ -184,7 +186,7 @@ public:
 
         uint8_t *buffer = (uint8_t *)malloc(size);
         if (buffer) {
-            FILE *f = fopen(get_filename(index), "rb");
+            FILE *f = fopen(filename, "rb");
             if (f) {
                 fread(buffer, size, 1, f);
                 fclose(f);
