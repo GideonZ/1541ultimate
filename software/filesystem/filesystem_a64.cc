@@ -51,14 +51,21 @@ FRESULT FileSystemA64 :: file_open(const char *filename, uint8_t flags, File **f
     fres = fm->fstat(fixed_temp_path.c_str(), inf);
 
     // File was not found on the temp disk, let's download it
-    if (fres == FR_NO_FILE) {
+    if ((fres == FR_NO_FILE) || (fres == FR_NO_PATH)) {
         mstring work1, work2;
         const char *remain = temp.getTail(2, work2); // starts with slash, so we do +1
         assembly.request_binary(temp.getSub(0, 2, work1), remain+1);
         TempfileWriter *writer = (TempfileWriter *)assembly.get_user_context();
         if (writer) {
-            fres = fm->rename(writer->get_filename(0), fixed_temp_path.c_str());
-            printf("Rename from %s to %s gave: %d\n", writer->get_filename(0), fixed_temp_path.c_str(), fres);
+            const char *uploaded = writer->get_filename(0);
+            if (uploaded) {
+                mstring ensured_dir;
+                fm->ensure_temp_directory(TempA64Cache, ensured_dir);
+                fres = fm->rename(uploaded, fixed_temp_path.c_str());
+                printf("Rename from %s to %s gave: %d\n", uploaded, fixed_temp_path.c_str(), fres);
+            } else {
+                fres = FR_NO_FILE;
+            }
             delete writer;
         }
     }

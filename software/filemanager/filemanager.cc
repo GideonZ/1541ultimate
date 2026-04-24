@@ -125,12 +125,17 @@ FRESULT FileManager::ensure_temp_directory(TempClass kind, mstring &directory_ou
 }
 
 FRESULT FileManager::build_temp_path(TempClass kind, const char *suggested_name, uint64_t seq, bool unique_name,
-        uint32_t suffix, mstring &canonical_path_out)
+        uint32_t suffix, bool create_dirs, mstring &canonical_path_out)
 {
     mstring directory;
-    FRESULT fres = ensure_temp_directory(kind, directory);
-    if (fres != FR_OK) {
-        return fres;
+    FRESULT fres = FR_OK;
+    if (create_dirs) {
+        fres = ensure_temp_directory(kind, directory);
+        if (fres != FR_OK) {
+            return fres;
+        }
+    } else {
+        get_temp_directory_path(kind, directory);
     }
 
     char sanitized[128];
@@ -245,8 +250,9 @@ void FileManager::enforce_temp_limits(void)
         }
 
         if (candidate) {
-            FRESULT fres = delete_file(candidate->path.c_str());
+            mstring candidate_path = candidate->path;
             unlock();
+            FRESULT fres = delete_file(candidate_path.c_str());
             if (fres != FR_OK) {
                 return;
             }
@@ -300,7 +306,7 @@ FRESULT FileManager::get_temp_path(TempClass kind, const char *suggested_name, m
         return FR_INVALID_OBJECT;
     }
     const bool unique_name = (kind != TempA64Cache);
-    return build_temp_path(kind, suggested_name, next_temp_seq, unique_name, 0, *canonical_path_out);
+    return build_temp_path(kind, suggested_name, next_temp_seq, unique_name, 0, false, *canonical_path_out);
 }
 
 FRESULT FileManager::create_temp_file(TempClass kind, const char *suggested_name, uint8_t open_flags, File **file,
@@ -317,7 +323,7 @@ FRESULT FileManager::create_temp_file(TempClass kind, const char *suggested_name
     FRESULT fres = FR_OK;
     uint32_t suffix = 0;
     do {
-        fres = build_temp_path(kind, suggested_name, seq, unique_name, suffix, canonical_path);
+        fres = build_temp_path(kind, suggested_name, seq, unique_name, suffix, true, canonical_path);
         if (fres != FR_OK) {
             *file = NULL;
             unlock();
@@ -771,8 +777,8 @@ FRESULT FileManager::fstat(const char *pathname, FileInfo &info)
 
 void FileManager::fclose(File *f)
 {
-    ManagedTempEntry *entry = NULL;
     bool delete_on_last_close = false;
+    bool enforce_after_close = false;
     mstring delete_path;
 
     lock();
@@ -788,14 +794,18 @@ void FileManager::fclose(File *f)
      sendEventToObservers(eNodeUpdated, f->get_path(), "*");
      }
      */
-    entry = find_managed_temp_entry(f->get_path());
+    ManagedTempEntry *entry = find_managed_temp_entry(f->get_path());
     if (entry) {
         if (entry->open_count > 0) {
             entry->open_count--;
         }
-        if ((entry->open_count == 0) && entry->delete_on_last_close) {
-            delete_on_last_close = true;
-            delete_path = entry->path;
+        if (entry->open_count == 0) {
+            if (entry->delete_on_last_close) {
+                delete_on_last_close = true;
+                delete_path = entry->path;
+            } else {
+                enforce_after_close = true;
+            }
         }
     }
     open_file_list.remove(f);
@@ -804,9 +814,7 @@ void FileManager::fclose(File *f)
 
     if (delete_on_last_close) {
         delete_file(delete_path.c_str());
-        return;
-    }
-    if (entry && (entry->open_count == 0)) {
+    } else if (enforce_after_close) {
         enforce_temp_limits();
     }
 }
@@ -905,14 +913,20 @@ FRESULT FileManager::delete_file(const char *pathname)
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(pathname);
-    return delete_file_impl(pathInfo);
+    lock();
+    FRESULT fres = delete_file_impl(pathInfo);
+    unlock();
+    return fres;
 }
 
 FRESULT FileManager::delete_file(Path *path, const char *name)
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(path, name);
-    return delete_file_impl(pathInfo);
+    lock();
+    FRESULT fres = delete_file_impl(pathInfo);
+    unlock();
+    return fres;
 }
 
 FRESULT FileManager::delete_recursive(Path *path, const char *name)

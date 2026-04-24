@@ -185,6 +185,8 @@ bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
                 sys_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, MENU_1541_MOUNT_D64, 1541,
                         image_path.getHead(temp_dir), image_path.getLastElement());
                 sys_command->execute();
+            } else {
+                fm->delete_file(temp_path.c_str());
             }
         }
         if (cmd == SOCKET_CMD_RUN_IMG) {
@@ -213,6 +215,8 @@ bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
                         image_path.getHead(temp_dir), image_path.getLastElement());
                 FileTypeCRT::execute_st(sys_command);
                 delete sys_command;
+            } else {
+                fm->delete_file(temp_path.c_str());
             }
         }
     }

@@ -82,7 +82,12 @@ public:
                 mstring canonical_path;
                 FRESULT fres = FileManager::getFileManager()->create_temp_file(TempUpload, NULL,
                         FA_WRITE | FA_CREATE_ALWAYS, &fo, &canonical_path);
-                filenames.append(strdup((fres == FR_OK) ? canonical_path.c_str() : ""));
+                if (fres == FR_OK) {
+                    filenames.append(strdup(canonical_path.c_str()));
+                } else {
+                    filenames.append(NULL);
+                    fo = NULL;
+                }
             }
                 file_size = 0;
                 break;
@@ -113,7 +118,12 @@ public:
                 mstring canonical_path;
                 FRESULT fres = FileManager::getFileManager()->create_temp_file(TempUpload,
                         filename[0] ? filename : NULL, FA_WRITE | FA_CREATE_ALWAYS, &fo, &canonical_path);
-                filenames.append(strdup((fres == FR_OK) ? canonical_path.c_str() : ""));
+                if (fres == FR_OK) {
+                    filenames.append(strdup(canonical_path.c_str()));
+                } else {
+                    filenames.append(NULL);
+                    fo = NULL;
+                }
             }
                 file_size = 0;
                 break;

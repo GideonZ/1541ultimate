@@ -287,3 +287,4 @@ tools/64tass/*.o
 python/grab*
 fpga/cpu_unit/rvlite/vhdl_source/bootrom_pkg_u2.vhd
 fpga/cpu_unit/rvlite/vhdl_source/bootrom_pkg_u2_loader.vhd
+
