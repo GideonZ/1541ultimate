@@ -80,7 +80,7 @@ public:
             case eDataStart:
             {
                 mstring canonical_path;
-                FRESULT fres = FileManager::getFileManager()->create_temp_file(TempUpload, NULL,
+                FRESULT fres = FileManager::getFileManager()->create_temp_file("upload", NULL,
                         FA_WRITE | FA_CREATE_ALWAYS, &fo, &canonical_path);
                 if (fres == FR_OK) {
                     filenames.append(strdup(canonical_path.c_str()));
@@ -116,7 +116,7 @@ public:
                 }
             {
                 mstring canonical_path;
-                FRESULT fres = FileManager::getFileManager()->create_temp_file(TempUpload,
+                FRESULT fres = FileManager::getFileManager()->create_temp_file("upload",
                         filename[0] ? filename : NULL, FA_WRITE | FA_CREATE_ALWAYS, &fo, &canonical_path);
                 if (fres == FR_OK) {
                     filenames.append(strdup(canonical_path.c_str()));

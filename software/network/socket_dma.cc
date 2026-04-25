@@ -171,23 +171,14 @@ bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
     case SOCKET_CMD_RUN_IMG:
     {
         FileManager *fm = FileManager :: getFileManager();
-        File *temp_file = NULL;
         mstring temp_path;
-        FRESULT fres = fm->create_temp_file(TempSocketImport, "tcpimage.d64", FA_WRITE | FA_CREATE_ALWAYS,
-            &temp_file, &temp_path);
+        FRESULT fres = fm->save_temp_file("socket", "tcpimage.d64", buf, len, &temp_path);
         if (fres == FR_OK) {
-            uint32_t written = 0;
-            fres = temp_file->write(buf, len, &written);
-            fm->fclose(temp_file);
-            if ((fres == FR_OK) && (written == len)) {
-                Path image_path(temp_path.c_str());
-                mstring temp_dir;
-                sys_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, MENU_1541_MOUNT_D64, 1541,
-                        image_path.getHead(temp_dir), image_path.getLastElement());
-                sys_command->execute();
-            } else {
-                fm->delete_file(temp_path.c_str());
-            }
+            Path image_path(temp_path.c_str());
+            mstring temp_dir;
+            sys_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, MENU_1541_MOUNT_D64, 1541,
+                    image_path.getHead(temp_dir), image_path.getLastElement());
+            sys_command->execute();
         }
         if (cmd == SOCKET_CMD_RUN_IMG) {
             char *drvId = "H";
@@ -200,24 +191,15 @@ bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
     case SOCKET_CMD_RUN_CRT:
     {
         FileManager *fm = FileManager :: getFileManager();
-        File *temp_file = NULL;
         mstring temp_path;
-        FRESULT fres = fm->create_temp_file(TempSocketImport, "tcpimage.crt", FA_WRITE | FA_CREATE_ALWAYS,
-            &temp_file, &temp_path);
+        FRESULT fres = fm->save_temp_file("socket", "tcpimage.crt", buf, len, &temp_path);
         if (fres == FR_OK) {
-            uint32_t written = 0;
-            fres = temp_file->write(buf, len, &written);
-            fm->fclose(temp_file);
-            if ((fres == FR_OK) && (written == len)) {
-                Path image_path(temp_path.c_str());
-                mstring temp_dir;
-                sys_command = new SubsysCommand(NULL, SUBSYSID_C64, 0, 0,
-                        image_path.getHead(temp_dir), image_path.getLastElement());
-                FileTypeCRT::execute_st(sys_command);
-                delete sys_command;
-            } else {
-                fm->delete_file(temp_path.c_str());
-            }
+            Path image_path(temp_path.c_str());
+            mstring temp_dir;
+            sys_command = new SubsysCommand(NULL, SUBSYSID_C64, 0, 0,
+                    image_path.getHead(temp_dir), image_path.getLastElement());
+            FileTypeCRT::execute_st(sys_command);
+            delete sys_command;
         }
     }
     break;

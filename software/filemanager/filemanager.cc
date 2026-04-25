@@ -4,27 +4,12 @@
 #include "embedded_fs.h"
 #include "file_device.h"
 #include "pattern.h"
-#include "userinterface_settings.h"
 #include <cctype>
 #include <strings.h>
 
 namespace {
 
 const int kManagedTempMaxFiles = 10;
-
-const char *get_temp_class_dir(TempClass kind)
-{
-    switch (kind) {
-    case TempA64Cache:
-        return "a64";
-    case TempSocketImport:
-        return "socket";
-    case TempUpload:
-        return "upload";
-    default:
-        return NULL;
-    }
-}
 
 bool path_starts_with_ci(const char *path, const char *prefix)
 {
@@ -48,24 +33,6 @@ void sanitize_temp_name(const char *suggested_name, char *buffer, size_t buffer_
     fix_filename(buffer);
 }
 
-void append_temp_sequence(mstring &buffer, uint64_t seq)
-{
-    const char *hex = "0123456789abcdef";
-    char digits[24];
-    int count = 0;
-
-    do {
-        digits[count++] = hex[seq & 0x0f];
-        seq >>= 4;
-    } while (seq && (count < (int)sizeof(digits)));
-    while (count < 4) {
-        digits[count++] = '0';
-    }
-    while (count) {
-        buffer += digits[--count];
-    }
-}
-
 void append_temp_name(mstring &buffer, const char *name, uint32_t suffix)
 {
     if (!suffix) {
@@ -87,24 +54,23 @@ void append_temp_name(mstring &buffer, const char *name, uint32_t suffix)
 
 }
 
-void FileManager::get_temp_directory_path(TempClass kind, mstring &directory_out)
+void FileManager::get_temp_directory_path(const char *category, mstring &directory_out)
 {
     directory_out = "/Temp";
-    if (!user_if_temp_use_cache_subfolder_enabled()) {
+    if (!temp_use_cache_subfolder_enabled) {
         return;
     }
     directory_out += "/cache";
-    const char *class_dir = get_temp_class_dir(kind);
-    if (class_dir && class_dir[0]) {
+    if (category && category[0]) {
         directory_out += "/";
-        directory_out += class_dir;
+        directory_out += category;
     }
 }
 
-FRESULT FileManager::ensure_temp_directory(TempClass kind, mstring &directory_out)
+FRESULT FileManager::ensure_temp_directory(const char *category, mstring &directory_out)
 {
     directory_out = "/Temp";
-    if (!user_if_temp_use_cache_subfolder_enabled()) {
+    if (!temp_use_cache_subfolder_enabled) {
         return FR_OK;
     }
     directory_out += "/cache";
@@ -112,10 +78,9 @@ FRESULT FileManager::ensure_temp_directory(TempClass kind, mstring &directory_ou
     if ((fres != FR_OK) && (fres != FR_EXIST)) {
         return fres;
     }
-    const char *class_dir = get_temp_class_dir(kind);
-    if (class_dir && class_dir[0]) {
+    if (category && category[0]) {
         directory_out += "/";
-        directory_out += class_dir;
+        directory_out += category;
         fres = create_dir(directory_out.c_str());
         if ((fres != FR_OK) && (fres != FR_EXIST)) {
             return fres;
@@ -124,18 +89,18 @@ FRESULT FileManager::ensure_temp_directory(TempClass kind, mstring &directory_ou
     return FR_OK;
 }
 
-FRESULT FileManager::build_temp_path(TempClass kind, const char *suggested_name, uint64_t seq, bool unique_name,
+FRESULT FileManager::build_temp_path(const char *category, const char *suggested_name, uint32_t seq, bool unique_name,
         uint32_t suffix, bool create_dirs, mstring &canonical_path_out)
 {
     mstring directory;
     FRESULT fres = FR_OK;
     if (create_dirs) {
-        fres = ensure_temp_directory(kind, directory);
+        fres = ensure_temp_directory(category, directory);
         if (fres != FR_OK) {
             return fres;
         }
     } else {
-        get_temp_directory_path(kind, directory);
+        get_temp_directory_path(category, directory);
     }
 
     char sanitized[128];
@@ -147,8 +112,9 @@ FRESULT FileManager::build_temp_path(TempClass kind, const char *suggested_name,
         if (sanitized[0]) {
             append_temp_name(canonical_path_out, sanitized, suffix);
         } else {
-            canonical_path_out += "temp";
-            append_temp_sequence(canonical_path_out, seq);
+            char seq_buf[16];
+            sprintf(seq_buf, "temp%04x", (unsigned int)seq);
+            canonical_path_out += seq_buf;
             if (suffix) {
                 canonical_path_out += "_";
                 canonical_path_out += (int)suffix;
@@ -157,8 +123,9 @@ FRESULT FileManager::build_temp_path(TempClass kind, const char *suggested_name,
     } else if (sanitized[0]) {
         canonical_path_out += sanitized;
     } else {
-        canonical_path_out += "temp";
-        append_temp_sequence(canonical_path_out, seq);
+        char seq_buf[16];
+        sprintf(seq_buf, "temp%04x", (unsigned int)seq);
+        canonical_path_out += seq_buf;
     }
     return FR_OK;
 }
@@ -183,34 +150,20 @@ ManagedTempEntry *FileManager::find_managed_temp_entry(const char *path)
     return NULL;
 }
 
-bool FileManager::get_temp_class_for_path(const char *path, TempClass &kind)
+bool FileManager::is_path_under_managed_root(const char *path)
 {
     if (!path) {
         return false;
     }
-
-    if (!user_if_temp_use_cache_subfolder_enabled()) {
-        mstring prefix;
-        get_temp_directory_path(kind, prefix);
-        prefix += "/";
-        return path_starts_with_ci(path, prefix.c_str());
-    }
-
-    TempClass classes[] = { TempUpload, TempA64Cache, TempSocketImport };
-    for (int i = 0; i < (int)(sizeof(classes) / sizeof(classes[0])); i++) {
-        mstring prefix;
-        get_temp_directory_path(classes[i], prefix);
-        prefix += "/";
-        if (path_starts_with_ci(path, prefix.c_str())) {
-            kind = classes[i];
-            return true;
-        }
-    }
-    return false;
+    const char *root = temp_use_cache_subfolder_enabled ? "/Temp/cache/" : "/Temp/";
+    return path_starts_with_ci(path, root);
 }
 
 void FileManager::note_managed_temp_open(File *file)
 {
+    if (managed_temp_entries.get_elements() == 0) {
+        return;
+    }
     ManagedTempEntry *entry = find_managed_temp_entry(file ? file->get_path() : NULL);
     if (entry) {
         entry->open_count++;
@@ -234,10 +187,8 @@ void FileManager::note_managed_temp_renamed(const char *old_path, const char *ne
         return;
     }
 
-    TempClass new_kind = entry->kind;
-    if (get_temp_class_for_path(new_path, new_kind)) {
+    if (is_path_under_managed_root(new_path)) {
         entry->path = new_path;
-        entry->kind = new_kind;
         return;
     }
     managed_temp_entries.remove(entry);
@@ -246,7 +197,7 @@ void FileManager::note_managed_temp_renamed(const char *old_path, const char *ne
 
 void FileManager::enforce_temp_limits(void)
 {
-    if (!user_if_temp_auto_cleanup_enabled()) {
+    if (!temp_auto_cleanup_enabled) {
         return;
     }
 
@@ -350,16 +301,15 @@ void FileManager::release_mount_point(MountPoint *mp)
     delete mp;
 }
 
-FRESULT FileManager::get_temp_path(TempClass kind, const char *suggested_name, mstring *canonical_path_out)
+FRESULT FileManager::get_temp_path(const char *category, const char *suggested_name, mstring *canonical_path_out)
 {
     if (!canonical_path_out) {
         return FR_INVALID_OBJECT;
     }
-    const bool unique_name = (kind != TempA64Cache);
-    return build_temp_path(kind, suggested_name, next_temp_seq, unique_name, 0, false, *canonical_path_out);
+    return build_temp_path(category, suggested_name, next_temp_seq, false, 0, false, *canonical_path_out);
 }
 
-FRESULT FileManager::create_temp_file(TempClass kind, const char *suggested_name, uint8_t open_flags, File **file,
+FRESULT FileManager::create_temp_file(const char *category, const char *suggested_name, uint8_t open_flags, File **file,
         mstring *canonical_path_out)
 {
     if (!file) {
@@ -367,25 +317,24 @@ FRESULT FileManager::create_temp_file(TempClass kind, const char *suggested_name
     }
 
     lock();
-    const uint64_t seq = next_temp_seq++;
+    const uint32_t seq = next_temp_seq++;
     mstring canonical_path;
-    const bool unique_name = (kind != TempA64Cache);
     FRESULT fres = FR_OK;
     uint32_t suffix = 0;
     do {
-        fres = build_temp_path(kind, suggested_name, seq, unique_name, suffix, true, canonical_path);
+        fres = build_temp_path(category, suggested_name, seq, true, suffix, true, canonical_path);
         if (fres != FR_OK) {
             *file = NULL;
             unlock();
             return fres;
         }
-        if (!unique_name || !temp_path_exists(canonical_path.c_str())) {
+        if (!temp_path_exists(canonical_path.c_str())) {
             break;
         }
         suffix++;
     } while (1);
 
-    if ((open_flags & FA_CREATE_ALWAYS) && unique_name) {
+    if (open_flags & FA_CREATE_ALWAYS) {
         open_flags &= ~FA_CREATE_ALWAYS;
         open_flags |= FA_CREATE_NEW;
     }
@@ -396,11 +345,10 @@ FRESULT FileManager::create_temp_file(TempClass kind, const char *suggested_name
         return fres;
     }
 
-    const bool track_managed_temp = user_if_temp_auto_cleanup_enabled();
+    const bool track_managed_temp = temp_auto_cleanup_enabled;
     if (track_managed_temp) {
         ManagedTempEntry *entry = new ManagedTempEntry;
         entry->path = canonical_path;
-        entry->kind = kind;
         entry->open_count = 1;
         entry->delete_on_last_close = false;
         managed_temp_entries.append(entry);
@@ -412,6 +360,28 @@ FRESULT FileManager::create_temp_file(TempClass kind, const char *suggested_name
     unlock();
     if (track_managed_temp) {
         enforce_temp_limits();
+    }
+    return FR_OK;
+}
+
+FRESULT FileManager::save_temp_file(const char *category, const char *suggested_name, const uint8_t *data, uint32_t len,
+        mstring *canonical_path_out)
+{
+    File *file = NULL;
+    mstring path;
+    FRESULT fres = create_temp_file(category, suggested_name, FA_WRITE | FA_CREATE_ALWAYS, &file, &path);
+    if (fres != FR_OK) {
+        return fres;
+    }
+    uint32_t written = 0;
+    fres = file->write(data, len, &written);
+    fclose(file);
+    if ((fres != FR_OK) || (written != len)) {
+        delete_file(path.c_str());
+        return (fres != FR_OK) ? fres : FR_DISK_ERR;
+    }
+    if (canonical_path_out) {
+        *canonical_path_out = path;
     }
     return FR_OK;
 }
@@ -849,17 +819,19 @@ void FileManager::fclose(File *f)
      sendEventToObservers(eNodeUpdated, f->get_path(), "*");
      }
      */
-    ManagedTempEntry *entry = find_managed_temp_entry(f->get_path());
-    if (entry) {
-        if (entry->open_count > 0) {
-            entry->open_count--;
-        }
-        if (entry->open_count == 0) {
-            if (entry->delete_on_last_close) {
-                delete_on_last_close = true;
-                delete_path = entry->path;
-            } else {
-                enforce_after_close = true;
+    if (managed_temp_entries.get_elements() > 0) {
+        ManagedTempEntry *entry = find_managed_temp_entry(f->get_path());
+        if (entry) {
+            if (entry->open_count > 0) {
+                entry->open_count--;
+            }
+            if (entry->open_count == 0) {
+                if (entry->delete_on_last_close) {
+                    delete_on_last_close = true;
+                    delete_path = entry->path;
+                } else {
+                    enforce_after_close = true;
+                }
             }
         }
     }

@@ -43,7 +43,7 @@ FRESULT FileSystemA64 :: file_open(const char *filename, uint8_t flags, File **f
     // Let's see if cached copy exists
     FileInfo inf(128);
     mstring fixed_temp_path;
-    FRESULT fres = fm->get_temp_path(TempA64Cache, fixed, &fixed_temp_path);
+    FRESULT fres = fm->get_temp_path("a64", fixed, &fixed_temp_path);
     delete[] fixed;
     if (fres != FR_OK) {
         return fres;
@@ -57,16 +57,16 @@ FRESULT FileSystemA64 :: file_open(const char *filename, uint8_t flags, File **f
         assembly.request_binary(temp.getSub(0, 2, work1), remain+1);
         TempfileWriter *writer = (TempfileWriter *)assembly.get_user_context();
         if (writer) {
-            const char *uploaded = writer->get_filename(0);
-            if (uploaded) {
+            const char *downloaded = writer->get_filename(0);
+            if (downloaded) {
                 mstring ensured_dir;
-                fres = fm->ensure_temp_directory(TempA64Cache, ensured_dir);
+                fres = fm->ensure_temp_directory("a64", ensured_dir);
                 if (fres == FR_OK) {
-                    fres = fm->rename(uploaded, fixed_temp_path.c_str());
-                    printf("Rename from %s to %s gave: %d\n", uploaded, fixed_temp_path.c_str(), fres);
+                    fres = fm->rename(downloaded, fixed_temp_path.c_str());
+                    printf("Rename from %s to %s gave: %d\n", downloaded, fixed_temp_path.c_str(), fres);
                 }
                 if (fres != FR_OK) {
-                    fm->delete_file(uploaded);
+                    fm->delete_file(downloaded);
                 }
             } else {
                 fres = FR_NO_FILE;

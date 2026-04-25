@@ -8,6 +8,7 @@
 #include "tree_browser_state.h"
 #include "path.h"
 #include "keyboard_usb.h"
+#include "filemanager.h"
 #ifndef UPDATER
 #ifndef RECOVERYAPP
 #include "c1541.h"
@@ -118,35 +119,6 @@ struct t_cfg_definition user_if_config[] = {
     { CFG_TYPE_END,           CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
 };
 
-static int get_user_if_default(uint8_t id)
-{
-    for (int i = 0; user_if_config[i].type != CFG_TYPE_END; i++) {
-        if (user_if_config[i].id == id) {
-            return (int)user_if_config[i].def;
-        }
-    }
-    return 0;
-}
-
-static int get_user_if_setting(uint8_t id)
-{
-    ConfigStore *store = ConfigManager::getConfigManager()->find_store(CFG_USERIF_STORE_ID);
-    if (store) {
-        return store->get_value(id);
-    }
-    return get_user_if_default(id);
-}
-
-bool user_if_temp_auto_cleanup_enabled(void)
-{
-    return get_user_if_setting(CFG_USERIF_TEMP_AUTO_CLEANUP) != 0;
-}
-
-bool user_if_temp_use_cache_subfolder_enabled(void)
-{
-    return get_user_if_setting(CFG_USERIF_TEMP_USE_CACHE_SUBFOLDER) != 0;
-}
-
 UserInterface :: UserInterface(const char *title, bool use_logo) : title(title)
 {
     get_user_interfaces()->append(this);
@@ -231,6 +203,14 @@ void UserInterface :: effectuate_settings(void)
     config_save  = cfg->get_value(CFG_USERIF_CFG_SAVE);
     filename_overflow_squeeze = cfg->get_value(CFG_USERIF_FILENAME_OVERFLOW_SQUEEZE);
     navmode      = cfg->get_value(CFG_USERIF_NAVIGATION);
+
+#ifndef NO_FILE_ACCESS
+    FileManager *fm = FileManager::getFileManager();
+    if (fm) {
+        fm->set_temp_auto_cleanup_enabled(cfg->get_value(CFG_USERIF_TEMP_AUTO_CLEANUP) != 0);
+        fm->set_temp_use_cache_subfolder_enabled(cfg->get_value(CFG_USERIF_TEMP_USE_CACHE_SUBFOLDER) != 0);
+    }
+#endif
 
     if(host && host->is_accessible())
         host->set_colors(color_bg, color_border);
