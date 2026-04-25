@@ -137,7 +137,6 @@ class FileManager
 	void get_temp_directory_path(const char *category, mstring &directory_out);
 	FRESULT build_temp_path(const char *category, const char *suggested_name, uint32_t seq, bool unique_name, uint32_t suffix,
 	        bool create_dirs, mstring &canonical_path_out);
-	bool temp_path_exists(const char *path);
 	ManagedTempEntry *find_managed_temp_entry(const char *path);
 	bool is_path_under_managed_root(const char *path);
 	void note_managed_temp_open(File *file);

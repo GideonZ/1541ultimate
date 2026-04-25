@@ -130,12 +130,6 @@ FRESULT FileManager::build_temp_path(const char *category, const char *suggested
     return FR_OK;
 }
 
-bool FileManager::temp_path_exists(const char *path)
-{
-    FileInfo info(INFO_SIZE);
-    return fstat(path, info) == FR_OK;
-}
-
 ManagedTempEntry *FileManager::find_managed_temp_entry(const char *path)
 {
     if (!path) {
@@ -164,7 +158,11 @@ void FileManager::note_managed_temp_open(File *file)
     if (managed_temp_entries.get_elements() == 0) {
         return;
     }
-    ManagedTempEntry *entry = find_managed_temp_entry(file ? file->get_path() : NULL);
+    const char *path = file ? file->get_path() : NULL;
+    if (!is_path_under_managed_root(path)) {
+        return;
+    }
+    ManagedTempEntry *entry = find_managed_temp_entry(path);
     if (entry) {
         entry->open_count++;
     }
@@ -318,47 +316,52 @@ FRESULT FileManager::create_temp_file(const char *category, const char *suggeste
 
     lock();
     const uint32_t seq = next_temp_seq++;
+    const bool track_managed_temp = temp_auto_cleanup_enabled;
     mstring canonical_path;
     FRESULT fres = FR_OK;
     uint32_t suffix = 0;
-    do {
-        fres = build_temp_path(category, suggested_name, seq, true, suffix, true, canonical_path);
-        if (fres != FR_OK) {
-            *file = NULL;
-            unlock();
-            return fres;
-        }
-        if (!temp_path_exists(canonical_path.c_str())) {
-            break;
-        }
-        suffix++;
-    } while (1);
+    bool enforce_limits = false;
 
     if (open_flags & FA_CREATE_ALWAYS) {
         open_flags &= ~FA_CREATE_ALWAYS;
         open_flags |= FA_CREATE_NEW;
     }
 
-    fres = fopen(canonical_path.c_str(), open_flags, file);
-    if (fres != FR_OK) {
-        unlock();
-        return fres;
+    while (1) {
+        fres = build_temp_path(category, suggested_name, seq, true, suffix, true, canonical_path);
+        if (fres != FR_OK) {
+            *file = NULL;
+            unlock();
+            return fres;
+        }
+
+        fres = fopen(canonical_path.c_str(), open_flags, file);
+        if (fres == FR_EXIST) {
+            suffix++;
+            continue;
+        }
+        if (fres != FR_OK) {
+            unlock();
+            return fres;
+        }
+
+        if (track_managed_temp) {
+            ManagedTempEntry *entry = new ManagedTempEntry;
+            entry->path = canonical_path;
+            entry->open_count = 1;
+            entry->delete_on_last_close = false;
+            managed_temp_entries.append(entry);
+            enforce_limits = managed_temp_entries.get_elements() > kManagedTempMaxFiles;
+        }
+
+        if (canonical_path_out) {
+            *canonical_path_out = canonical_path;
+        }
+        break;
     }
 
-    const bool track_managed_temp = temp_auto_cleanup_enabled;
-    if (track_managed_temp) {
-        ManagedTempEntry *entry = new ManagedTempEntry;
-        entry->path = canonical_path;
-        entry->open_count = 1;
-        entry->delete_on_last_close = false;
-        managed_temp_entries.append(entry);
-    }
-
-    if (canonical_path_out) {
-        *canonical_path_out = canonical_path;
-    }
     unlock();
-    if (track_managed_temp) {
+    if (enforce_limits) {
         enforce_temp_limits();
     }
     return FR_OK;
@@ -819,8 +822,9 @@ void FileManager::fclose(File *f)
      sendEventToObservers(eNodeUpdated, f->get_path(), "*");
      }
      */
-    if (managed_temp_entries.get_elements() > 0) {
-        ManagedTempEntry *entry = find_managed_temp_entry(f->get_path());
+    const char *path = f->get_path();
+    if ((managed_temp_entries.get_elements() > 0) && is_path_under_managed_root(path)) {
+        ManagedTempEntry *entry = find_managed_temp_entry(path);
         if (entry) {
             if (entry->open_count > 0) {
                 entry->open_count--;
