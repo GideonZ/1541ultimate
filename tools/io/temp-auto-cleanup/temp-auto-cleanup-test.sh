@@ -1,5 +1,5 @@
 #!/bin/bash
-# Ultimate 64 Temp Auto Cleanup E2E Validator
+# End-to-end validator for Temp auto cleanup on the Ultimate 64.
 
 # --- Defaults (Environment Variables) ---
 U64_HOST="${U64_HOST:-u64}"
@@ -27,6 +27,9 @@ MOUNTED_PATH_8=""
 MOUNTED_PATH_9=""
 MOUNTED_BASE_8=""
 MOUNTED_BASE_9=""
+INITIAL_AUTO_CLEANUP=""
+INITIAL_USE_CACHE=""
+CONFIG_RESTORED=false
 
 # Colors
 C_BLUE='\033[1;34m'
@@ -41,18 +44,26 @@ show_help() {
     cat << EOF
 Usage: $(basename "$0") [OPTIONS]
 
-Ultimate 64 Temp Auto Cleanup E2E Validator.
+Validate Temp auto cleanup behavior on a real Ultimate 64.
+
+This script configures the device, seeds /Temp, creates managed temp files,
+mounts D64 images, and verifies that cleanup keeps the expected files while
+preserving user files and mounted images.
 
 Options:
-  -h, --help                Show this help message and exit.
-  -H, --host <host>         IP or hostname of the U64 (Overrides U64_HOST).
-  -p, --password <pass>     U64 REST/FTP password (Overrides U64_PASS).
-  -n, --no-assertions       Disable exit on failure (continue with warnings).
-  -l, --limit <num>         Set the Managed Temp File Limit (default: 10).
-  --seed-count <num>        Number of baseline files to upload (default: 10).
-  --test-count <num>        Number of test files to upload (default: 12).
-    --cleanup <val>           Set Temp Auto Cleanup to 'Enabled' or 'Disabled' (default: Enabled).
-    --subfolder <val>         Set Temp Subfolders to 'Enabled' or 'Disabled' (default: Enabled).
+-h, --help                Show this help message and exit.
+-H, --host <host>         U64 host name or IP address (default: U64_HOST or u64).
+-p, --password <pass>     U64 REST and FTP password (default: U64_PASS).
+-n, --no-assertions       Keep running after a failed check and print warnings.
+-l, --limit <num>         Managed temp file limit to validate (default: 10).
+--seed-count <num>        Number of baseline files placed in /Temp (default: 10).
+--test-count <num>        Number of managed uploads used for limit checks (default: 12).
+--cleanup <val>           Temp Auto Cleanup setting: Enabled or Disabled.
+--subfolder <val>         Temp Subfolders setting: Enabled or Disabled.
+
+Examples:
+$(basename "$0") -H u64 --cleanup Enabled --subfolder Enabled
+$(basename "$0") -H 192.168.0.64 -p secret --cleanup Disabled
 
 EOF
 }
@@ -155,6 +166,72 @@ extract_json_field() {
     local json=$1
     local key=$2
     sed -n "s/.*\"$key\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" <<< "$json"
+}
+
+get_config_current() {
+    local key=$1
+    curl -s -H "$REST_HEADER" "http://$U64_HOST/v1/configs/User%20Interface%20Settings/$key" | \
+        sed -n 's/.*"current"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
+}
+
+apply_config_setting() {
+    local key=$1
+    local value=$2
+    local mode=${3:-strict}
+
+    echo -ne "  Setting $key to $value... "
+    local code=$(curl -s -o /dev/null -w "%{http_code}" -X PUT -H "$REST_HEADER" \
+        "http://$U64_HOST/v1/configs/User%20Interface%20Settings/$key?value=$value")
+
+    if [[ "$code" == "200" ]]; then
+        echo -e "${C_GREEN}OK${C_NC}"
+        return 0
+    fi
+
+    if [[ "$mode" == "strict" && "$ASSERTIONS_ENABLED" = true ]]; then
+        echo -e "${C_RED}FAIL ($code)${C_NC}"
+        echo -e "  Error: Category 'User Interface Settings' not found. Firmware may be too old."
+        exit 1
+    fi
+
+    echo -e "${C_YEL}WARNING ($code)${C_NC}"
+    if [[ "$mode" == "restore" ]]; then
+        echo -e "  Could not restore '$key' to '$value'."
+    else
+        echo -e "  [ASSERTIONS DISABLED] Skipping config '$key' due to category absence."
+    fi
+    return 1
+}
+
+capture_initial_config() {
+    log_stage "1. Capture Current Configuration"
+    INITIAL_AUTO_CLEANUP=$(get_config_current "Temp%20Auto%20Cleanup")
+    INITIAL_USE_CACHE=$(get_config_current "Temp%20Subfolders")
+
+    require_toggle_value "captured Temp Auto Cleanup" "$INITIAL_AUTO_CLEANUP"
+    require_toggle_value "captured Temp Subfolders" "$INITIAL_USE_CACHE"
+
+    echo -e "  Temp Auto Cleanup: ${C_GREEN}${INITIAL_AUTO_CLEANUP}${C_NC}"
+    echo -e "  Temp Subfolders:   ${C_GREEN}${INITIAL_USE_CACHE}${C_NC}"
+}
+
+restore_initial_config() {
+    [[ "$CONFIG_RESTORED" == true ]] && return
+    CONFIG_RESTORED=true
+
+    if [[ -z "$INITIAL_AUTO_CLEANUP" || -z "$INITIAL_USE_CACHE" ]]; then
+        return
+    fi
+
+    echo -e "\n${C_BLUE}RESTORE: User Interface Settings${C_NC}\n$(printf '%.s-' {1..60})"
+    apply_config_setting "Temp%20Auto%20Cleanup" "$INITIAL_AUTO_CLEANUP" restore
+    apply_config_setting "Temp%20Subfolders" "$INITIAL_USE_CACHE" restore
+}
+
+cleanup_and_restore() {
+    local exit_code=$?
+    restore_initial_config
+    return $exit_code
 }
 
 verify_managed_temp_path() {
@@ -270,30 +347,13 @@ upload_until_removed() {
 # --- Functional Stages ---
 
 run_config() {
-    log_stage "1. Configuration Setup"
-    declare -A settings=( ["Temp%20Auto%20Cleanup"]="$CFG_AUTO_CLEANUP" ["Temp%20Subfolders"]="$CFG_USE_CACHE" )
-    for key in "${!settings[@]}"; do
-        echo -ne "  Setting $key to ${settings[$key]}... "
-        local code=$(curl -s -o /dev/null -w "%{http_code}" -X PUT -H "$REST_HEADER" \
-            "http://$U64_HOST/v1/configs/User%20Interface%20Settings/$key?value=${settings[$key]}")
-
-        if [[ "$code" == "200" ]]; then
-            echo -e "${C_GREEN}OK${C_NC}"
-        else
-            if [ "$ASSERTIONS_ENABLED" = true ]; then
-                echo -e "${C_RED}FAIL ($code)${C_NC}"
-                echo -e "  Error: Category 'User Interface Settings' not found. Firmware may be too old."
-                exit 1
-            else
-                echo -e "${C_YEL}WARNING ($code)${C_NC}"
-                echo -e "  [ASSERTIONS DISABLED] Skipping config '$key' due to category absence."
-            fi
-        fi
-    done
+    log_stage "2. Configuration Setup"
+    apply_config_setting "Temp%20Auto%20Cleanup" "$CFG_AUTO_CLEANUP" strict
+    apply_config_setting "Temp%20Subfolders" "$CFG_USE_CACHE" strict
 }
 
 run_purge() {
-    log_stage "2. Purging /Temp"
+    log_stage "3. Purging /Temp"
     for drive in a b; do curl -s -o /dev/null -X PUT -H "$REST_HEADER" "http://$U64_HOST/v1/drives/$drive:remove"; done
     local files=$(curl -s --ftp-pasv $FTP_CRED "$FTP_URL/" | awk '/^-/ {print $9}')
     for f in $files; do [[ "$f" != "cache" && -n "$f" ]] && curl -s --ftp-pasv $FTP_CRED "$FTP_URL/" -X "DELE $f" > /dev/null; done
@@ -306,7 +366,7 @@ run_purge() {
 }
 
 run_mount_setup() {
-    log_stage "3. Mounting D64 Images"
+    log_stage "4. Mounting D64 Images"
     for spec in "$MOUNT_SOURCE_8|Drive8|$MOUNT_LOCAL_8|a|MOUNTED_PATH_8|MOUNTED_BASE_8" "$MOUNT_SOURCE_9|Drive9|$MOUNT_LOCAL_9|b|MOUNTED_PATH_9|MOUNTED_BASE_9"; do
         IFS='|' read remote_path diskname local_path drive path_var base_var <<< "$spec"
 
@@ -339,7 +399,7 @@ run_mount_setup() {
 }
 
 run_seed() {
-    log_stage "4. Seeding Baseline ($SEED_COUNT files)"
+    log_stage "5. Seeding Baseline ($SEED_COUNT files)"
     for i in $(seq 1 "$SEED_COUNT"); do
         head -c 768000 /dev/urandom > "/tmp/base_$i.bin"
         echo -ne "  Uploading base_$i.bin..."
@@ -349,7 +409,7 @@ run_seed() {
 }
 
 run_count_limit_test() {
-    log_stage "5. Managed Temp File Limit (Target: $MANAGED_LIMIT)"
+    log_stage "6. Managed Temp File Limit (Target: $MANAGED_LIMIT)"
     local first_managed=""
     local last_managed=""
     for i in $(seq 1 "$TEST_COUNT"); do
@@ -380,7 +440,7 @@ run_count_limit_test() {
 }
 
 run_unmount_cleanup_test() {
-    log_stage "6. Unmounted Uploads Rejoin Cleanup"
+    log_stage "7. Unmounted Uploads Rejoin Cleanup"
     echo -ne "  Removing drive A... "
     local code=$(curl -s -o /dev/null -w "%{http_code}" -X PUT -H "$REST_HEADER" "http://$U64_HOST/v1/drives/a:remove")
     [[ "$code" == "200" ]] && echo -e "${C_GREEN}OK${C_NC}" || handle_failure "Drive A removal failed"
@@ -404,7 +464,7 @@ run_unmount_cleanup_test() {
 }
 
 run_final_integrity() {
-    log_stage "7. Final Integrity Check"
+    log_stage "8. Final Integrity Check"
     IFS='|' read r_sz c_cnt c_sz p_cnt m_cnt <<< "$(get_stats)"
     if [[ "$CFG_AUTO_CLEANUP" == "Enabled" ]]; then
         [[ "$m_cnt" -gt "$MANAGED_LIMIT" ]] && handle_failure "Final count above limit ($m_cnt)"
@@ -422,6 +482,9 @@ echo -e "${C_YEL}Ultimate 64 Temp Auto Cleanup E2E Validator${C_NC}"
 echo -e "Target Host: ${U64_HOST}"
 [[ "$ASSERTIONS_ENABLED" = false ]] && echo -e "${C_RED}!! ASSERTIONS DISABLED !!${C_NC}"
 
+trap cleanup_and_restore EXIT
+
+capture_initial_config
 run_config
 run_purge
 run_mount_setup
