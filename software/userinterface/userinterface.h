@@ -111,6 +111,7 @@ public:
     int keymapper(int c, keymap_options_t map);
 
     int  activate_uiobject(UIObject *obj);
+    int  activate_uiobject_modal(UIObject *obj);
     bool has_focus(UIObject *obj);
     int  getPreferredType(void);
     void help();

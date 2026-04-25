@@ -8,15 +8,37 @@
 #include "browsable_root.h"
 #include "ftp_client.h"
 #include <stdlib.h>
+#include "form.h"
 
 class FTPRootNode; // forward
 
 class BrowsableFTPRoot : public BrowsableDirEntry
 {
-    static SubsysResultCode_e new_host(SubsysCommand *cmd) { printf("hoi\n"); }
+    static SubsysResultCode_e new_host(SubsysCommand *cmd)
+    { 
+        UserInterface *cmd_ui = cmd->user_interface;
+        FormUI *form = new FormUI(cmd_ui, 32, 12, "Enter New Server", (JSON_Object *)cmd->direct_obj);
+        form->init(cmd_ui->screen, cmd_ui->keyboard);
+        // form->setCleanup();
+        int ret = cmd_ui->activate_uiobject_modal(form);
+        printf("Result: %d %s\n", ret, ((JSON_Object *)cmd->direct_obj)->render());
+        delete form;
+        return SSRET_OK;
+    }
     Path *path;
+    JSON_Object *obj;
 public:
-    BrowsableFTPRoot(Path *p, Browsable *parent, FileInfo *inf): path(p), BrowsableDirEntry(p, parent, inf, true) {}
+    BrowsableFTPRoot(Path *p, Browsable *parent, FileInfo *inf): path(p), BrowsableDirEntry(p, parent, inf, true)
+    {
+        obj = JSON::Obj()
+            ->add("Alias", "")
+            ->add("Host", "")
+            ->add("Port", "21")
+            ->add("User", "anonymous")
+            ->add("Password", "")
+            ->add("Path", "/");
+    }
+
     virtual ~BrowsableFTPRoot() {}
 
     void getDisplayString(char *buffer, int width, int sq) {
@@ -25,8 +47,14 @@ public:
 
     void fetch_context_items(IndexedList<Action *>&items) {
         BrowsableDirEntry::fetch_context_items(items);
-        items.append(new Action("New Host", new_host, 0, 0));
+        items.append(new Action("New Host", new_host, 0, 0, obj));
     }
+
+	IndexedList<Browsable *> *getSubItems(int &error) {
+	    IndexedList<Browsable *> *ch = BrowsableDirEntry :: getSubItems(error);
+        return ch;
+    }
+
 };
 
 class FTPRootNode : public CachedTreeNode, WithBrowsableRootEntry
@@ -48,10 +76,6 @@ public:
 
     Browsable *create_browsable(Browsable *parent) {
         return new BrowsableFTPRoot(&path, parent, new FileInfo(info));
-    }
-
-    void get_display_string(char *buffer, int width) {
-        sprintf(buffer, "huh");
     }
 };
 
@@ -152,6 +176,5 @@ public:
     FRESULT list(const char *path);
     FRESULT get_entry(FileInfo &info);
 };
-
 
 #endif

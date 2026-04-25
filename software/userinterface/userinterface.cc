@@ -494,6 +494,18 @@ int UserInterface :: activate_uiobject(UIObject *obj)
     return -1;
 }
 
+int UserInterface :: activate_uiobject_modal(UIObject *obj)
+{
+    int ret = 0;//activate_uiobject(obj);
+    if (!ret) {
+        while(!ret && host->exists()) {
+            ret = obj->poll(0);
+        }
+        obj->deinit();
+    }
+    return ret;
+}
+
 bool UserInterface :: has_focus(UIObject *obj)
 {
     return (ui_objects[focus] == obj);
