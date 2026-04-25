@@ -103,7 +103,7 @@ public:
                 avail = blocksize;
             }
             int current = avail > len ? len : avail;
-            printf("%p <- %p (%d)\n", write_block + write_offset, buffer, current);
+            // printf("%p <- %p (%d)\n", write_block + write_offset, buffer, current);
             memcpy(write_block + write_offset, buffer, current);
             write_offset += current;
             buffer += current;
@@ -131,6 +131,18 @@ public:
             read_block = NULL;
         }
         return len;
+    }
+
+    int copy_from(StreamRamFile *src)
+    {
+        int total;
+        int len = total = src->getLength();
+        char buffer[128];
+        while(len) {
+            len -= src->read(buffer, 128);
+            write((uint8_t *)buffer, len);
+        }
+        return total;
     }
 };
 

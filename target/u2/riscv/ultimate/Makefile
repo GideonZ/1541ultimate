@@ -153,6 +153,8 @@ SRCS_CC	 =	small_printf.cc \
 			route_runners.cc \
 			route_configs.cc \
 			route_machine.cc \
+			http_request.cc \
+			http_target.cc \
 			assembly_search.cc \
 			assembly.cc \
 			ftp_client.cc \

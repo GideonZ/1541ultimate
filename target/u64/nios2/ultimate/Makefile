@@ -179,6 +179,8 @@ SRCS_CC	 =  u2p_init.cc \
 			route_configs.cc \
 			route_machine.cc \
 			route_streams.cc \
+			http_request.cc \
+			http_target.cc \
 			assembly_search.cc \
 			assembly.cc \
 			ftp_client.cc \

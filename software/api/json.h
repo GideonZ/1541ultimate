@@ -8,6 +8,7 @@
 
 class JSON_Object;
 class JSON_List;
+void url_encode(const char *src, mstring &dest);
 
 typedef enum {
     eBase = 0,
@@ -21,9 +22,13 @@ typedef enum {
 class JSON
 {
   public:
-    JSON() {}
+    JSON *parent;
+    JSON() : parent(NULL) { }
     virtual const char *render() { return "base?"; }
+    virtual const char *render_compact() { return render(); }
     virtual void render(StreamRamFile *s) { s->format("base?"); }
+    virtual const char *url() { return render_compact(); }
+    virtual void url(StreamRamFile *s) { render(s); }
     virtual ~JSON() {}
     virtual JsonType_t type() { return eBase; }
     static JSON_List *List();
@@ -68,7 +73,7 @@ class JSON_Bool : public JSON
 {
     bool value;
 public:
-    JSON_Bool(int v) : value(v) {}
+    JSON_Bool(bool v) : value(v) {}
     JsonType_t type() { return eBool; }
     const char *render() {
         return value ? "true" : "false";
@@ -76,6 +81,7 @@ public:
     void render(StreamRamFile *s) {
         s->format(value ? "true" : "false");
     }
+    bool get_value() { return value; }
 };
 
 class JSON_Object : public JSON
@@ -83,19 +89,45 @@ class JSON_Object : public JSON
     IndexedList<const char *>keys;
     IndexedList<JSON *>values;
     mstring renderspace;
+    bool own_keys;
 public:
-    JSON_Object() : keys(4, NULL), values(4, NULL) { }
+    JSON_Object() : keys(4, NULL), values(4, NULL), own_keys(false) { }
+    JSON_Object(bool owned) : keys(4, NULL), values(4, NULL), own_keys(owned) { }
     JsonType_t type() { return eObject; }
 
     ~JSON_Object() {
         for (int i=0;i<values.get_elements();i++) {
             delete values[i];
         }
+        if (own_keys) {
+            for (int i=0;i<keys.get_elements();i++) {
+                delete[] keys[i];
+            }
+        }
+    }
+
+    void remove(JSON *el) {
+        int idx = values.remove(el);
+        if (idx >= 0) {
+            if (own_keys) {
+                delete[] keys[idx];
+            }
+            keys.remove_idx(idx);
+        }
     }
 
     JSON_Object *add(const char *key, JSON *value) {
-        keys.append(key);
+        if (own_keys) {
+            // not using strdup, because we use delete[] above
+            int len = strlen(key);
+            char *newstr = new char[1+len];
+            strcpy(newstr, key);
+            keys.append(newstr);
+        } else {
+            keys.append(key);
+        }
         values.append(value);
+        value->parent = this;
         return this;
     }
 
@@ -109,6 +141,39 @@ public:
 
     JSON_Object *add(const char *key, const bool val) {
         return add(key, new JSON_Bool(val));
+    }
+
+    JSON_Object *set(const char *key, int val) {
+        for (int i=0;i<keys.get_elements();i++) {
+            if (strcasecmp(keys[i], key) == 0) { // key exists!
+                delete values[i];
+                values.replace_idx(i, new JSON_Integer(val));
+                return this;
+            }
+        }
+        return add(key, val);
+    }
+
+    JSON_Object *set(const char *key, bool b) {
+        for (int i=0;i<keys.get_elements();i++) {
+            if (strcasecmp(keys[i], key) == 0) { // key exists!
+                delete values[i];
+                values.replace_idx(i, new JSON_Bool(b));
+                return this;
+            }
+        }
+        return add(key, b);
+    }
+
+    JSON_Object *set(const char *key, const char *str) {
+        for (int i=0;i<keys.get_elements();i++) {
+            if (strcasecmp(keys[i], key) == 0) { // key exists!
+                delete values[i];
+                values.replace_idx(i, new JSON_String(str));
+                return this;
+            }
+        }
+        return add(key, str);
     }
 
     const char *render() {
@@ -127,6 +192,20 @@ public:
         return renderspace.c_str();
     }
 
+    const char *render_compact() {
+        renderspace = "{";
+        for (int i=0;i<keys.get_elements();i++) {
+            renderspace += keys[i];
+            renderspace += ":";
+            renderspace += values[i]->render_compact();
+            if (i != keys.get_elements()-1) {
+                renderspace += ",";
+            }
+        }
+        renderspace += "}";
+        return renderspace.c_str();
+    }
+
     void render(StreamRamFile *s) {
         s->format("{ \n");
         for (int i=0;i<keys.get_elements();i++) {
@@ -138,6 +217,34 @@ public:
             s->charout('\n');
         }
         s->charout('}');
+    }
+
+
+    const char *url() {
+        renderspace = "";
+        for (int i=0;i<keys.get_elements();i++) {
+            renderspace += keys[i];
+            renderspace += "=";
+            const char *val = values[i]->render_compact();
+            url_encode(val, renderspace); // this will add!
+            if (i != keys.get_elements()-1) {
+                renderspace += "&";
+            }
+        }
+        return renderspace.c_str();
+    }
+
+    void url(StreamRamFile *s) {
+        for (int i=0;i<keys.get_elements();i++) {
+            s->format("%s", keys[i]);
+            s->charout('=');
+            const char *val = values[i]->render_compact();
+            url_encode(val, renderspace);
+            s->format("%s", renderspace.c_str());
+            if (i != keys.get_elements()-1) {
+                s->charout('&');
+            }
+        }
     }
 
     JSON * get(const char *key) {
@@ -179,8 +286,13 @@ public:
         return members[i];
     }
 
+    void remove(JSON *el) {
+        members.remove(el);
+    }
+
     JSON_List *add(JSON *value) {
         members.append(value);
+        value->parent = this;
         return this;
     }
 
@@ -208,6 +320,18 @@ public:
             }
         }
         renderspace += " ]";
+        return renderspace.c_str();
+    }
+
+    const char *render_compact() {
+        renderspace = "[";
+        for (int i=0;i<members.get_elements();i++) {
+            renderspace += members[i]->render_compact();
+            if (i != members.get_elements()-1) {
+                renderspace += ",";
+            }
+        }
+        renderspace += "]";
         return renderspace.c_str();
     }
 

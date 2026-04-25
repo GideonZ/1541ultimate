@@ -19,6 +19,7 @@ public:
     ~mstring();
     
     const char *c_str(void);
+    const char *split(const char *sep);
     const int length(void) const;
     const int allocated_space(void) const;
     void to_upper(void);

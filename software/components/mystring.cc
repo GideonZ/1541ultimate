@@ -64,6 +64,19 @@ const char *mstring :: c_str(void)
     return "";
 }
 
+const char *mstring :: split(const char *sep)
+{
+    if(!cp) {
+        return NULL;
+    }
+    const char *loc = strstr(cp, sep);
+    if (!loc) {
+        return NULL;
+    }
+    *((char *)loc) = 0; // cut!
+    return loc + strlen(sep); // remain
+}
+
 const int mstring :: length(void) const
 {
     if(cp)
