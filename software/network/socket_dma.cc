@@ -171,9 +171,13 @@ bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
     case SOCKET_CMD_RUN_IMG:
     {
         FileManager *fm = FileManager :: getFileManager();
-        FRESULT fres = fm->save_file(true, "/temp", "tcpimage.d64", buf, len, NULL);
+        mstring temp_path;
+        FRESULT fres = fm->save_temp_file("socket", "tcpimage.d64", buf, len, &temp_path);
         if (fres == FR_OK) {
-            sys_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, MENU_1541_MOUNT_D64, 1541, "/temp", "tcpimage.d64");
+            Path image_path(temp_path.c_str());
+            mstring temp_dir;
+            sys_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, MENU_1541_MOUNT_D64, 1541,
+                    image_path.getHead(temp_dir), image_path.getLastElement());
             sys_command->execute();
         }
         if (cmd == SOCKET_CMD_RUN_IMG) {
@@ -187,9 +191,13 @@ bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
     case SOCKET_CMD_RUN_CRT:
     {
         FileManager *fm = FileManager :: getFileManager();
-        FRESULT fres = fm->save_file(true, "/temp", "tcpimage.crt", buf, len, NULL);
+        mstring temp_path;
+        FRESULT fres = fm->save_temp_file("socket", "tcpimage.crt", buf, len, &temp_path);
         if (fres == FR_OK) {
-            sys_command = new SubsysCommand(NULL, SUBSYSID_C64, 0, 0, "/temp", "tcpimage.crt");
+            Path image_path(temp_path.c_str());
+            mstring temp_dir;
+            sys_command = new SubsysCommand(NULL, SUBSYSID_C64, 0, 0,
+                    image_path.getHead(temp_dir), image_path.getLastElement());
             FileTypeCRT::execute_st(sys_command);
             delete sys_command;
         }

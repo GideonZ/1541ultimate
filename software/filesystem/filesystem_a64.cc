@@ -42,20 +42,35 @@ FRESULT FileSystemA64 :: file_open(const char *filename, uint8_t flags, File **f
 
     // Let's see if cached copy exists
     FileInfo inf(128);
-    mstring fixed_temp_path("/Temp/");
-    fixed_temp_path += fixed;
+    mstring fixed_temp_path;
+    FRESULT fres = fm->get_temp_path("a64", fixed, &fixed_temp_path);
     delete[] fixed;
-    FRESULT fres = fm->fstat(fixed_temp_path.c_str(), inf);
+    if (fres != FR_OK) {
+        return fres;
+    }
+    fres = fm->fstat(fixed_temp_path.c_str(), inf);
 
     // File was not found on the temp disk, let's download it
-    if (fres == FR_NO_FILE) {
+    if ((fres == FR_NO_FILE) || (fres == FR_NO_PATH)) {
         mstring work1, work2;
         const char *remain = temp.getTail(2, work2); // starts with slash, so we do +1
         assembly.request_binary(temp.getSub(0, 2, work1), remain+1);
         TempfileWriter *writer = (TempfileWriter *)assembly.get_user_context();
         if (writer) {
-            fres = fm->rename(writer->get_filename(0), fixed_temp_path.c_str());
-            printf("Rename from %s to %s gave: %d\n", writer->get_filename(0), fixed_temp_path.c_str(), fres);
+            const char *downloaded = writer->get_filename(0);
+            if (downloaded) {
+                mstring ensured_dir;
+                fres = fm->ensure_temp_directory("a64", ensured_dir);
+                if (fres == FR_OK) {
+                    fres = fm->rename(downloaded, fixed_temp_path.c_str());
+                    printf("Rename from %s to %s gave: %d\n", downloaded, fixed_temp_path.c_str(), fres);
+                }
+                if (fres != FR_OK) {
+                    fm->delete_file(downloaded);
+                }
+            } else {
+                fres = FR_NO_FILE;
+            }
             delete writer;
         }
     }

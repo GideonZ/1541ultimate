@@ -336,8 +336,6 @@ JSON *Assembly :: convert_buffer_to_json(t_BufferedBody *body)
 }
 
 #if TEST
-int TempfileWriter::temp_count;
-
 extern "C" {
     void outbyte(int c) { putc(c, stdout); }
 }
