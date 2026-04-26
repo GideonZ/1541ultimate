@@ -48,6 +48,7 @@ SRCS_CC	 =  u2p_init.cc \
 			s25fl_flash.cc \
 			s25fl_l_flash.cc \
 			prog_flash.cc \
+			product.cc \
 			config.cc \
 			filemanager.cc \
 			file_device.cc \
@@ -91,6 +92,7 @@ SRCS_CC	 =  u2p_init.cc \
 			ui_elements.cc \
 			user_file_interaction.cc \
 			editor.cc \
+			hex_editor.cc \
 			tree_browser.cc \
 			tree_browser_state.cc \
 			config_menu.cc \
@@ -118,6 +120,7 @@ SRCS_CC	 =  u2p_init.cc \
 			usb_hid.cc \
 			usb_ms_cbi.cc \
 			keyboard_usb.cc \
+			network_config.cc \
 			network_interface.cc \
 			network_lwip.cc \
 			vfs.cc \
@@ -139,11 +142,12 @@ SRCS_CC	 =  u2p_init.cc \
 			mps_printer_ibmpp.cc \
 			mps_chargen.cc \
 			mps_charset.cc \
-			lodepng.cc \
+			mps_png.cc \
 			filetype_tap.cc \
 			socket_stream.cc \
 			socket_gui.cc \
 			socket_dma.cc \
+			syslog.cc \
 			rmii_interface.cc \
 			home_directory.cc \
 			reu_preloader.cc \
@@ -181,7 +185,7 @@ SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas eapi.tas
 
 SRCS_BIN =  basic.bin sidcrt.bin muscrt.bin musplayer.bin chars.bin module.bin
 
-SRCS_IEC = iec_code.iec
+SRCS_IEC = iec_code_pr.iec iec_code_dr_pr.iec iec_code_dr.iec
 
 SRCS_NANO = nano_minimal.nan
 
@@ -198,7 +202,7 @@ LINKMETHOD = ld
 
 include ../../../common/rules.mk
 
-lodepng.o: lodepng.cc
+mps_png.o: mps_png.cc
 	@echo Compiling $(<F) optimized for speed
 	@$(CPP) $(CPPOPT) -O3 $(PATH_INC) -B. -c -o $(OUTPUT)/$(@F) $<
 	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)

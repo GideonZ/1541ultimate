@@ -30,6 +30,7 @@ SRCS_C   =	itu.c \
             alt_do_ctors.c
                         
 SRCS_CC	 =  u2p_init.cc \
+			usb_hwinit.cc \
             i2c_drv.cc \
             codec.cc \
 			small_printf.cc \
@@ -38,7 +39,9 @@ SRCS_CC	 =  u2p_init.cc \
 			init_function.cc \
 			flash.cc \
 			w25q_flash.cc \
+			product.cc \
 			config.cc \
+			subsys.cc \
 			filemanager.cc \
 			file_device.cc \
 			file_partition.cc \
@@ -49,6 +52,7 @@ SRCS_CC	 =  u2p_init.cc \
 			screen.cc \
 			keyboard_c64.cc \
 			editor.cc \
+			hex_editor.cc \
 			mystring.cc \
 			path.cc \
 			pattern.cc \
@@ -77,8 +81,8 @@ SRCS_CC	 =  u2p_init.cc \
 			usb_hub.cc \
 			usb_hid.cc \
 			keyboard_usb.cc \
+			network_config.cc \
 			network_interface.cc \
-			network_lwip.cc \
 			rmii_interface.cc \
 			$(PRJ).cc
 
@@ -104,7 +108,7 @@ SRCS_NANO = nano_minimal.nan
 PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -g -ffunction-sections -O0 -DOS -DNIOS=1 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx -DRECOVERYAPP=1
 COPTIONS = $(OPTIONS) -std=gnu99
-CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
+CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 BSP      = $(PATH_SW)/nios_appl_bsp
 LINK 	 = $(BSP)/linker.x
 LIBS2    = $(BSP)/libhal_bsp.a ../../../libs/nios2/lwip/result/liblwip.a

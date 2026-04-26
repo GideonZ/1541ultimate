@@ -24,6 +24,8 @@ end entity;
 
 architecture rtl of mem_bus_register is
     signal req_c    : t_mem_req_32 := c_mem_req_32_init;
+    signal got_accepted : std_logic;
+    signal extended_inhibit : std_logic;
     -- In between register blocks
 --    signal temp_inh  : std_logic := '0';
 --    signal temp_req  : t_mem_req_32;
@@ -101,35 +103,53 @@ begin
     --     b_refr_inh <= temp_inh;
     -- end block;
 
+    got_accepted <= '1' when (b_resp.rack = '1' and b_resp.rack_tag = req_c.tag) else '0';
+
     -- request register
     process(clock)
     begin
         if rising_edge(clock) then
-            if req_c.request = '0' or b_resp.rack = '1' then -- if output_valid = '0' or output_ready = '1' ...
+            if got_accepted = '1' then
+                req_c.request <= '0';
+            end if;
+
+            if req_c.request = '0' or got_accepted = '1' then -- if output_valid = '0' or output_ready = '1' ...
                 req_c.request     <= a_req.request;
                 req_c.tag         <= a_req.tag;
                 req_c.read_writen <= a_req.read_writen;
                 req_c.address     <= a_req.address;
                 req_c.byte_en     <= a_req.byte_en;
                 req_c.data        <= a_req.data;
+
+                -- If inhibit was active in the moment we send the request out,
+                -- we need to extend the refresh inhibit until the command actually
+                -- got accepted.
+                if a_req.request = '1' and a_refr_inh = '1' then
+                    extended_inhibit <= '1';
+                elsif got_accepted = '1' then
+                    extended_inhibit <= '0';
+                end if;
+
             else
                 req_c.tag(7) <= req_c.tag(7); -- test if we ever come here
             end if;
-            -- if reset = '1' then
+            if reset = '1' then
+                extended_inhibit <= '0';
             --     req_c.request <= '0';
-            -- end if;
-            b_refr_inh <= a_refr_inh;
+            end if;
         end if;
     end process;
-    
-    process(b_resp, a_req, req_c)
+
+    b_refr_inh <= a_refr_inh or extended_inhibit;
+
+    process(b_resp, a_req, req_c, got_accepted)
     begin
         -- Just wire the data
         a_resp.data     <= b_resp.data;
         a_resp.dack_tag <= b_resp.dack_tag;
 
         -- Control depends on when the request is loaded into the register
-        if req_c.request = '0' or b_resp.rack = '1' then
+        if req_c.request = '0' or got_accepted = '1' then -- if output_valid = '0' or output_ready = '1' ...
             a_resp.rack <= a_req.request;
             a_resp.rack_tag <= a_req.tag;
         else

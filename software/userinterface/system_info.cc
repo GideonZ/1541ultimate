@@ -8,18 +8,18 @@
 #include "system_info.h"
 #include "c1541.h"
 #include "c64.h"
-#include "iec.h"
-#include "iec_channel.h"
+#include "iec_interface.h"
 #include "command_intf.h"
 #include "acia.h"
 #include "versions.h"
 #include "gitinfo.h"
 #include "u64.h"
+#include "rtc.h"
 
 extern C1541 *c1541_A;
 extern C1541 *c1541_B;
-/*
 
+/*
 Drive Status information:
 
 Drive A:      Enabled
@@ -50,22 +50,11 @@ void SystemInfo :: drive_info(StreamTextLog &b, C1541 *drive, char letter)
     b.format("\n");
 }
 
-void SystemInfo :: iec_info(StreamTextLog &b)
+void iec_info(StreamTextLog &b) __attribute__((weak));
+
+void iec_info(StreamTextLog &b)
 {
-    char buffer[64];
-    b.format("SoftwareIEC:  %s\n", iec_if.iec_enable ? "Enabled" : "Disabled");
-    if (iec_if.iec_enable) {
-        b.format("Drive Bus ID: %d\n", iec_if.get_current_iec_address());
-        iec_if.get_error_string(buffer);
-        b.format("Error string: %s\n", buffer);
-        for (int i=0; i < MAX_PARTITIONS; i++) {
-            const char *p = iec_if.get_partition_dir(i);
-            if (p) {
-                b.format("Partition%3d: %s\n", i, p);
-            }
-        }
-    }
-    b.format("\n");
+
 }
 
 void SystemInfo :: hw_modules(StreamTextLog &b, uint16_t bits, const char *msg)
@@ -157,7 +146,7 @@ void SystemInfo :: storage_info(StreamTextLog& b)
         if (fres == FR_OK) {
             b.format("%14s%s Free\n", inf->lfname, size_expression(free_clusters, cluster_size, buffer));
         } else {
-            b.format("%14s%s\n", FileSystem :: get_error_string(fres));
+            b.format("%14s%s\n", inf->lfname, FileSystem :: get_error_string(fres));
         }
     }
 }
@@ -165,10 +154,16 @@ void SystemInfo :: storage_info(StreamTextLog& b)
 void SystemInfo :: generate(UserInterface *ui)
 {
     StreamTextLog buffer(4096);
+    char buf[40];
+
+    buffer.format("System Information\n");
+    buffer.format("==================\n");
+    buffer.format("Date: %s\n", rtc.get_long_date(buf, 40));
+    buffer.format("Time: %s\n\n", rtc.get_time_string(buf, 40));
 
     buffer.format("Version Information:\n");
     buffer.format("====================\n");
-    buffer.format("Software version:   " APPL_VERSION "\n");
+    buffer.format("Software version:   " APPL_VERSION_ASCII "\n");
     buffer.format("   Build date:      " APP_BUILD_DATE "\n");
     buffer.format("   Build machine:   " APP_BUILD_MACHINE "\n");
     buffer.format("Ultimate FPGA core: 1%02X\n", getFpgaVersion());
@@ -192,7 +187,7 @@ void SystemInfo :: generate(UserInterface *ui)
     if (c1541_B) {
         drive_info(buffer, c1541_B, 'B');
     }
-    iec_info(buffer);
+    IecInterface::info(buffer);
 
     buffer.format("Cartridge Information:\n");
     buffer.format("======================\n");

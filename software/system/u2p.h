@@ -61,12 +61,10 @@
 #define LATTICE_DDR2_DLL_LOCK  (*(volatile uint8_t *)(DDR2_BASE + 0x0E))
 
 
-#define U2PIO_SET_SCL  (*(volatile uint8_t *)(U2P_IO_BASE + 0x08))
-#define U2PIO_SET_SDA  (*(volatile uint8_t *)(U2P_IO_BASE + 0x09))
+#define U2PIO_SCL      (*(volatile uint8_t *)(U2P_IO_BASE + 0x08))
+#define U2PIO_SDA      (*(volatile uint8_t *)(U2P_IO_BASE + 0x09))
 #define U2PIO_SET_MDC  (*(volatile uint8_t *)(U2P_IO_BASE + 0x0A))
 #define U2PIO_SET_MDIO (*(volatile uint8_t *)(U2P_IO_BASE + 0x0B))
-#define U2PIO_GET_SCL  (*(volatile uint8_t *)(U2P_IO_BASE + 0x00))
-#define U2PIO_GET_SDA  (*(volatile uint8_t *)(U2P_IO_BASE + 0x02))
 #define U2PIO_GET_MDIO (*(volatile uint8_t *)(U2P_IO_BASE + 0x06))
 #define U2PIO_SPEAKER_EN (*(volatile uint8_t *)(U2P_IO_BASE + 0x0C))
 #define U2PIO_HUB_RESET  (*(volatile uint8_t *)(U2P_IO_BASE + 0x0D))
@@ -96,6 +94,8 @@
 
 #define U2PL_DUT_GPIO_DIR(x)  (*(volatile uint8_t *)(U2PL_DUT_GPIO + 0x08 + x))
 #define U2PL_DUT_GPIO_DATA(x) (*(volatile uint8_t *)(U2PL_DUT_GPIO + 0x00 + x))
+
+#define MATRIX_WASD_TO_JOY (*(volatile uint32_t *)(MATRIX_KEYB + 0x0B))
 
 #define U2PIO_UR_BUFFER_ENABLE  0x80
 #define U2PIO_UR_BUFFER_DISABLE 0x40

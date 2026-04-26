@@ -24,7 +24,14 @@ extern "C" {
 }
 #include "config.h"
 #include <string.h>
+#include "blockdev_flash.h"
+#include "filemanager.h"
+
+#if U64
 #include "u64.h"
+#endif
+
+#define CFG_FILEPATH "/flash/config"
 
 /*** CONFIGURATION MANAGER ***/
 ConfigManager :: ConfigManager() : stores(16, NULL), pages(16, NULL)
@@ -55,7 +62,11 @@ ConfigManager :: ConfigManager() : stores(16, NULL), pages(16, NULL)
     if (safeMode) {
         printf("SAFE MODE ENABLED. Loading defaults...\n");
     }
-	//    root.add_child(this); // make ourselves visible in the browser
+
+#ifndef RECOVERYAPP
+    // Now, also open the Flash File system!
+    init_flash_disk();
+#endif
 }
 
 ConfigManager :: ~ConfigManager()
@@ -69,7 +80,7 @@ ConfigManager :: ~ConfigManager()
     stores.clear_list();
 
     ConfigPage *p;
-    for(int n = 0; n < stores.get_elements();n++) {
+    for(int n = 0; n < pages.get_elements();n++) {
         p = (ConfigPage *)pages[n];
         delete p;
     }
@@ -126,6 +137,21 @@ ConfigStore *ConfigManager :: register_store(uint32_t page_id, const char *name,
         }
     }
 
+    // Not found in config pages, maybe it's on the flash storage itself?
+    if (!page) {
+        char fn[20];
+        sprintf(fn, "page_%08x.bin", page_id);
+        File *df;
+        FileManager *fm = FileManager :: getFileManager(); 
+        FRESULT fres = fm->fopen(CFG_FILEPATH, fn, FA_READ, &df);
+        if (fres == FR_OK) {
+            page = new ConfigPage(NULL, page_id, -1, page_size);
+            pages.append(page);
+            page->read_from_file(df);
+            fm->fclose(df);
+        }
+    }
+
     // if still no luck, try to create a page in flash
     if (!page) {
         uint32_t id;
@@ -141,10 +167,11 @@ ConfigStore *ConfigManager :: register_store(uint32_t page_id, const char *name,
         }
     }
 
-    // No space in Flash! Issue warning and create page in memory
+    // No space in Flash! Issue warning and create page on disk
     if (!page) {
         page = new ConfigPage(NULL, page_id, -1, page_size);
         pages.append(page);
+        write = true; // write to disk
     }
     ConfigStore *s = new ConfigStore(page, name, defs, ob);
     stores.append(s);
@@ -167,6 +194,31 @@ void ConfigManager :: remove_store(ConfigStore *cfg)
     stores.remove(cfg);
 }
 
+ConfigStore *ConfigManager :: find_store(const char *storename)
+{
+    for(int i=0; i < stores.get_elements(); i++) {
+        ConfigStore *st = stores[i];
+        if (strcasecmp(st->get_store_name(), storename) == 0) {
+            return st;
+        }
+        if (strcasecmp(st->get_alt_store_name(), storename) == 0) {
+            return st;
+        }
+    }
+    return NULL;
+}
+
+ConfigStore *ConfigManager :: find_store(uint32_t page_id)
+{
+    for(int i=0; i < stores.get_elements(); i++) {
+        ConfigStore *st = stores[i];
+        if (st->get_page()->get_id() == page_id) {
+            return st;
+        }
+    }
+    return NULL;
+}
+
 //   ===================
 /*** CONFIGURATION STORE ***/
 //   ===================
@@ -179,6 +231,9 @@ ConfigStore :: ConfigStore(ConfigPage *page, const char *name,
     this->page = page;
     staleEffect = true;
     staleFlash = false;
+    hidden = false;
+    hook_obj = NULL;
+    sort_order = 0;
     
     for(int i=0;i<64;i++) {
         if(defs[i].type == CFG_TYPE_END)
@@ -209,6 +264,13 @@ int ConfigStore :: unregister(ConfigurableObject *obj)
 {
     objects.remove(obj);
     return objects.get_elements();
+}
+
+void ConfigStore :: at_open_config(void)
+{
+    for(int i=0; i<objects.get_elements(); i++) {
+        objects[i]->on_edit();
+    }
 }
 
 int ConfigPage :: pack(void)
@@ -265,7 +327,15 @@ int ConfigStore :: pack(uint8_t *b, int remain)
 
 void ConfigStore :: effectuate()
 {
-    printf("Calling Effectuate for %d objects.\n", objects.get_elements());
+    if (objects.get_elements() == 0) {
+        staleEffect = false;
+        return;
+    }
+    if (!staleEffect) {
+        printf("Effectuate for %s not needed; not stale.\n", get_store_name());
+        return;
+    }
+    // printf("Calling Effectuate on %s for %d objects.\n", get_store_name(), objects.get_elements());
     for(int i=0; i<objects.get_elements(); i++) {
         ConfigurableObject *obj = objects[i];
         if(obj) {
@@ -284,10 +354,39 @@ void ConfigStore :: write()
 	}
 }
 
+void ConfigStore :: convert_to_group(const char *name, int sort_order)
+{
+    ConfigGroup *grp = ConfigGroupCollection::getGroup(name, sort_order);
+    if (grp) {
+        for(int i=0; i < items.get_elements(); i++) {
+            grp->append(items[i]);
+        }
+    }
+}
+
 void ConfigPage :: write()
 {
-    printf("Page: %d", flash_page);
 	int size = pack();
+
+    if (flash_page < 0) {
+        char fn[20];
+        File *df;
+        sprintf(fn, "page_%08x.bin", id);
+        FileManager *fm = FileManager :: getFileManager();
+        FRESULT fres = fm->create_dir(CFG_FILEPATH);
+        fres = fm->fopen(CFG_FILEPATH, fn, FA_CREATE_ALWAYS | FA_WRITE, &df );
+        if (fres == FR_OK) {
+        	int size = pack();
+            uint32_t tr;
+            df->write(mem_block, (uint32_t)size, &tr);
+            fm->fclose(df);
+            printf("Written %s to flash disk\n", fn);
+        } else {
+            printf("Could not open '%s' for writing\n", fn);
+        }
+        return;
+    }
+    printf("Page: %d", flash_page);
 	//dump_hex_relative(mem_block, size);
 	if(flash) {
 	    flash->write_config_page(flash_page, mem_block);
@@ -325,8 +424,28 @@ void ConfigStore :: unpack(uint8_t *mem_block, int block_size)
     }
 }
 
+void ConfigPage :: read_from_file(File *f)
+{
+    uint32_t tr;
+    f->read(mem_block, (uint32_t)block_size, &tr);
+    printf("%d bytes read from config file\n", tr);
+}
+
 void ConfigPage :: read(bool ignoreData)
 {
+    if (flash_page < 0) {
+        char fn[20];
+        sprintf(fn, "page_%08x.bin", id);
+        File *df;
+        FileManager *fm = FileManager :: getFileManager(); 
+        FRESULT fres = fm->fopen(CFG_FILEPATH, fn, FA_READ, &df);
+        if (fres == FR_OK) {
+            read_from_file(df);
+            fm->fclose(df);
+        }
+        return;
+    }
+
     if(flash && !ignoreData) {
         flash->read_config_page(flash_page, block_size, mem_block);
     } else {
@@ -351,6 +470,18 @@ ConfigItem *ConfigStore :: find_item(uint8_t id)
     for(int n = 0;n < items.get_elements(); n++) {
     	i = items[n];
         if(i->definition->id == id) {
+            return i;
+        }
+    }
+    return NULL;
+}
+
+ConfigItem *ConfigStore :: find_item(const char *str)
+{
+    ConfigItem *i;
+    for(int n = 0;n < items.get_elements(); n++) {
+    	i = items[n];
+        if(strcasecmp(i->definition->item_text, str) == 0) {
             return i;
         }
     }
@@ -425,6 +556,8 @@ void ConfigStore :: dump(void)
         printf("ID %02x: ", i->definition->id);
         if ((i->definition->type == CFG_TYPE_STRING) || (i->definition->type ==CFG_TYPE_STRFUNC)) {
             printf("%s = '%s'\n", i->definition->item_text, i->string);
+        } else if(i->definition->type == CFG_TYPE_STRPASS) {
+            printf("%s = '%s'\n", i->definition->item_text, "*****");
         } else if(i->definition->type == CFG_TYPE_ENUM) {
             printf("%s = %s\n", i->definition->item_text, i->definition->items[i->value]);
         } else {
@@ -471,7 +604,7 @@ ConfigItem :: ConfigItem(ConfigStore *s, t_cfg_definition *d)
 	hook = NULL;
 	definition = d;
     store = s;
-    if ((d->type == CFG_TYPE_STRING)||(d->type == CFG_TYPE_INFO)||(d->type == CFG_TYPE_STRFUNC)) {
+    if ((d->type == CFG_TYPE_STRING)||(d->type == CFG_TYPE_INFO)||(d->type == CFG_TYPE_STRFUNC)||(d->type == CFG_TYPE_STRPASS)) {
         string = new char[d->max+1];
     } else {
         string = NULL;
@@ -486,13 +619,53 @@ ConfigItem :: ~ConfigItem()
         delete[] string;
 }
 
+ConfigItem *ConfigItem :: separator()
+{
+    // due to poor design, this cannot be const. But it will be referenced later,
+    // so we make it static. Otherwise it ends up on the stack.
+    static t_cfg_definition def = {
+        .id = 0xFE,
+        .type = CFG_TYPE_SEP,
+        .item_text = "",
+        .item_format = "",
+        .items = NULL,
+        .min = 0,
+        .max = 0,
+        .def = 0,
+    };
+    static ConfigItem *sep = NULL;
+    if (!sep) {
+        sep = new ConfigItem((ConfigStore *)NULL, &def);
+    }
+    return sep;
+}
+
+ConfigItem *ConfigItem :: heading(const char *name)
+{
+    // due to poor design, this cannot be const. But it will be referenced later,
+    // so we make it static. Otherwise it ends up on the stack.
+    static t_cfg_definition def = {
+        .id = 0xFE,
+        .type = CFG_TYPE_SEP,
+        .item_text = "",
+        .item_format = "",
+        .items = NULL,
+        .min = 0,
+        .max = 0,
+        .def = 0,
+    };
+    ConfigItem *it = new ConfigItem((ConfigStore *)NULL, &def);
+    it->set_item_altname(name);
+    return it;
+}
+
 void ConfigItem :: reset(void)
 {
-    if ((definition->type == CFG_TYPE_STRING) || (definition->type == CFG_TYPE_STRFUNC)) {
-        strncpy(string, (char *)definition->def, definition->max);
+    if ((definition->type == CFG_TYPE_STRING) || (definition->type == CFG_TYPE_STRFUNC) || (definition->type == CFG_TYPE_STRPASS)) {
+        strncpy(string, (const char *)definition->def, definition->max);
         value = 0;
     } else {
-        value = definition->def;
+        value = (int)definition->def;
     }
 }
 
@@ -520,6 +693,7 @@ void ConfigItem :: unpack(uint8_t *buffer, int len)
             break;
         case CFG_TYPE_STRING:
         case CFG_TYPE_STRFUNC:
+        case CFG_TYPE_STRPASS:
             if(field > definition->max)
                 field = definition->max;
             strncpy(string, (char *)buffer, field);
@@ -565,6 +739,7 @@ int ConfigItem :: pack(uint8_t *buffer, int len)
             return 4;
         case CFG_TYPE_STRING:
         case CFG_TYPE_STRFUNC:
+        case CFG_TYPE_STRPASS:
 //            printf("String %s = %s\n", definition->item_text, string);
             if(2+strlen(string) > len) {
                 printf("String doesn't fit.\n");
@@ -585,7 +760,7 @@ int ConfigItem :: pack(uint8_t *buffer, int len)
 
 // note:the buffer needs to be at least 3 bytes bigger than what width indicates
 // width is the actual width in characters on the screen, and two additional bytes are needed to set the color
-const char *ConfigItem :: get_display_string(char *buffer, int width)
+const char *ConfigItem :: get_display_string(char *buffer, int width, int act, int inact)
 {
 	static char buf[32];
 
@@ -604,6 +779,12 @@ const char *ConfigItem :: get_display_string(char *buffer, int width)
         case CFG_TYPE_INFO:
             sprintf(buf, definition->item_format, string);
             break;
+        case CFG_TYPE_STRPASS:
+            if (*string)
+                strcpy(buf, "******");
+            else
+                strcpy(buf, "<none>");
+            break;
         case CFG_TYPE_FUNC:
         case CFG_TYPE_SEP:
             sprintf(buf, definition->item_format);
@@ -617,7 +798,7 @@ const char *ConfigItem :: get_display_string(char *buffer, int width)
     const char *src;
     char *dst;
     // left align copy
-    src = definition->item_text;
+    src = altname.length() ? altname.c_str() : definition->item_text;
     dst = buffer;
     while(*src) {
         *(dst++) = *(src++);
@@ -626,7 +807,7 @@ const char *ConfigItem :: get_display_string(char *buffer, int width)
     dst = &buffer[width+1];
     for(int b = len-1; b >= 0; b--)
         *(dst--) = buf[b];
-    *(dst--) = (enabled) ? 7 : 11;
+    *(dst--) = (enabled) ? act : inact;
     *(dst--) = '\033'; // escape code = set color
     return (const char *)buffer;
 }
@@ -668,11 +849,11 @@ void ConfigItem :: setString(const char *s)
 {
     if(this->string) {
         strncpy(this->string, s, this->definition->max);
-        if (s[definition->max - 1]) { // has to be terminated
-            string[this->definition->max - 1] = 0;
-            string[this->definition->max - 2] = '*';
+        this->string[this->definition->max] = 0;  // Safe since the "string" buffer is max+1 (see ConfigItem constructor)
+        if (strlen(s) > this->definition->max) {
+            this->string[this->definition->max - 1] = '*';  // Indicate string was truncated
         }
-        if ((definition->type == CFG_TYPE_STRING) || (definition->type == CFG_TYPE_STRFUNC)) {
+        if ((definition->type == CFG_TYPE_STRING) || (definition->type == CFG_TYPE_STRFUNC) || (definition->type == CFG_TYPE_STRPASS)) {
             setChanged();
         }
     }

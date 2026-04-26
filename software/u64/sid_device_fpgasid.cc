@@ -121,10 +121,11 @@ SidDeviceFpgaSid :: FpgaSidConfig :: FpgaSidConfig(SidDeviceFpgaSid *parent)
     this->parent = parent;
     uint32_t id = 0x46534944 + parent->socket; // FSID
     char name[40];
-    sprintf(name, "FPGASID in Socket %d", parent->socket + 1);
+    sprintf(name, "SID Socket %d: FPGASID", parent->socket + 1);
 
     register_store(id, name, fpga_sid_config);
-
+    cfg->set_sort_order(SORT_ORDER_CFG_SIDREP + parent->socket);
+    
     sprintf(name, "%b%b%b%b%b%b%b%b", parent->unique[0], parent->unique[1], parent->unique[2], parent->unique[3],
                 parent->unique[4], parent->unique[5], parent->unique[6], parent->unique[7]);
 

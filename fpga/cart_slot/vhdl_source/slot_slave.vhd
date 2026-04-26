@@ -7,13 +7,13 @@ use work.slot_bus_pkg.all;
 
 entity slot_slave is
 generic (
-    g_big_endian    : boolean );
+    g_big_endian    : boolean := false );
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
 
     -- Cartridge pins (ALL SYNCHRONIZED EXTERNALLY!)
-    VCC             : in  std_logic;
+    VCCDET          : in  std_logic;
     RSTn            : in  std_logic;
     PHI2            : in  std_logic;
     IO1n            : in  std_logic;
@@ -115,7 +115,7 @@ begin
     process(clock)
     begin
         if rising_edge(clock) then
-            reset_out <= reset or (not RSTn and VCC);
+            reset_out <= reset or (not RSTn and VCCDET);
             
             -- 470 nF / 3.3K pup / Vih = 2V, but might be lower
             -- Voh buffer = 0.3V, so let's take a threshold of 1.2V => 400 cycles

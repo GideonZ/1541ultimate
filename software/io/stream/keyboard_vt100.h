@@ -24,12 +24,13 @@ class Keyboard_VT100 : public Keyboard
 
 	escape_state_t escape_state;
 	int escape_value;
-
+    int pending_char;
 public:
 	Keyboard_VT100(Stream *s) {
 		stream = s;
 		escape_state = e_esc_idle;
 		escape_value = 0;
+        pending_char = 0;
 	}
 
     ~Keyboard_VT100() {
@@ -37,6 +38,7 @@ public:
     }
 
     int  getch(void);
+    void push_head(int);
     void wait_free(void);
     void clear_buffer(void);
 };

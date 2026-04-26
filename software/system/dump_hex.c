@@ -29,11 +29,11 @@
 
 static const char hex_chars[] = "0123456789ABCDEF";
 
-void dump_hex_actual(void *pp, int len, int relative)
+void dump_hex_actual(const void *pp, int len, int relative)
 {
     int w,t;
     uint8_t c;
-    uint8_t *p = (uint8_t *)pp;
+	const uint8_t *p = (const uint8_t *)pp;
     
 	for(w=0;w<len;w+=DUMP_BYTES) {
         if(relative)
@@ -64,17 +64,17 @@ void dump_hex_actual(void *pp, int len, int relative)
 	}
 }
 
-void dump_hex(void *pp, int len)
+void dump_hex(const void *pp, int len)
 {
     dump_hex_actual(pp, len, 0);
 }
 
-void dump_hex_relative(void *pp, int len)
+void dump_hex_relative(const void *pp, int len)
 {
     dump_hex_actual(pp, len, 1);
 }
 
-void dump_hex_dirty(void *pp, int len, uint8_t ptrn)
+void dump_hex_dirty(const void *pp, int len, uint8_t ptrn)
 {
 	int w,t,d;
     uint8_t *p = (uint8_t *)pp;
@@ -89,7 +89,7 @@ void dump_hex_dirty(void *pp, int len, uint8_t ptrn)
 	}
 }
 
-void dump_hex_verify(void *pp1, void *pp2, int len)
+void dump_hex_verify(const void *pp1, const void *pp2, int len)
 {
 	int w,t,d;
     uint8_t *p1 = (uint8_t *)pp1;

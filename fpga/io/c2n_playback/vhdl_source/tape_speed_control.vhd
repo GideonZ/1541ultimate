@@ -11,6 +11,7 @@ use ieee.numeric_std.all;
 
 entity tape_speed_control is
 generic (
+    g_simulation    : boolean := false;
     g_clock_freq    : natural := 50_000_000 );
 port (
     clock       : in  std_logic;
@@ -43,7 +44,9 @@ begin
         variable v_sum  : unsigned(16 downto 0);
     begin
         if rising_edge(clock) then
-            if divider = 0 then
+            if g_simulation then
+                pdm_value <= pdm_target;
+            elsif divider = 0 then
                 if motor_en = '1' and pdm_value < pdm_target then
                     pdm_value <= pdm_value + 1;
                     divider <= c_speedup_divider - 1;

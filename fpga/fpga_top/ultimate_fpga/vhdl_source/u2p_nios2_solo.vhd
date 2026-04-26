@@ -512,7 +512,6 @@ begin
         g_numerator     => 32,
         g_denominator   => 125,
         g_baud_rate     => 115_200,
-        g_timer_rate    => 200_000,
         g_big_endian    => false,
         g_icap          => false,
         g_uart          => true,
@@ -535,7 +534,6 @@ begin
         g_usb_host2     => true,
         g_spi_flash     => true,
         g_vic_copper    => false,
-        g_video_overlay => false,
         g_sampler       => true,
         g_acia          => true,
         g_rmii          => true )
@@ -555,7 +553,7 @@ begin
         
         -- slot side
         BUFFER_ENn  => open,
-        VCC         => SLOT_VCC,
+        VCCDET      => SLOT_VCC,
 
         phi2_i      => SLOT_PHI2,
         dotclk_i    => SLOT_DOTCLK,
@@ -651,7 +649,6 @@ begin
         SD_MOSI     => open,
         SD_MISO     => '1',
         SD_CARDDETn => '1',
-        SD_DATA     => open,
         
         -- RTC Interface
         RTC_CS      => open,

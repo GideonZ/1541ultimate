@@ -27,15 +27,11 @@ port (
     io_req          : in  t_io_req;
     io_resp         : out t_io_resp;
 
-    keyb_row        : in  std_logic_vector(7 downto 0);
-    keyb_col        : out std_logic_vector(7 downto 0);
-    
     control         : out t_chargen_control );
 end entity;
 
 architecture gideon of char_generator_regs is
     signal control_i        : t_chargen_control := c_chargen_control_init;
-    signal keyb_col_i       : std_logic_vector(7 downto 0);
 begin
     process(clock)
     begin
@@ -50,9 +46,10 @@ begin
                     when c_chargen_line_clocks_lo =>
                         control_i.clocks_per_line(7 downto 0) <= unsigned(io_req.data); 
                     when c_chargen_char_width =>
-                        control_i.char_width <= unsigned(io_req.data(2 downto 0));
+                        control_i.char_width <= unsigned(io_req.data(3 downto 0));
                     when c_chargen_char_height =>
                         control_i.char_height <= unsigned(io_req.data(4 downto 0));
+                        control_i.big_font <= io_req.data(6);
                         control_i.stretch_y <= io_req.data(7);
                     when c_chargen_chars_per_line =>
                         control_i.chars_per_line <= unsigned(io_req.data);
@@ -73,32 +70,21 @@ begin
                     when c_chargen_perform_sync =>
                         control_i.perform_sync <= io_req.data(0);
                     when c_chargen_transparency =>
-                        control_i.transparent <= io_req.data(3 downto 0);
-                        control_i.overlay_on  <= io_req.data(7);
-                    when c_chargen_keyb_col =>
-                        keyb_col_i <= io_req.data;
+                        control_i.transparent  <= io_req.data(3 downto 0);
+                        control_i.own_keyboard <= io_req.data(6);
+                        control_i.overlay_on   <= io_req.data(7);
                     when others =>
                         null;
                 end case;
             elsif io_req.read='1' then
                 io_resp.ack <= '1';
-                case io_req.address(3 downto 0) is
-                    when c_chargen_keyb_row =>
-                        io_resp.data <= keyb_row;
-                    when c_chargen_keyb_col =>
-                        io_resp.data <= keyb_col_i;
-                    when others =>
-                        null;
-                end case;
             end if;
 
             if reset='1' then
 --                control_i <= c_chargen_control_init;
-                keyb_col_i  <= (others => '1');
             end if;
         end if;
     end process;
     
-    keyb_col <= keyb_col_i;
     control <= control_i;
 end gideon;

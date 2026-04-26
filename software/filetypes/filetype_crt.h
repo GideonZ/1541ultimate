@@ -8,7 +8,7 @@ class FileTypeCRT : public FileType
 {
 	BrowsableDirEntry *node;
 
-    static int executeFlash_st(SubsysCommand *cmd);
+    static SubsysResultCode_e executeFlash_st(SubsysCommand *cmd);
 public:
     FileTypeCRT(BrowsableDirEntry *node);
     ~FileTypeCRT();
@@ -16,7 +16,7 @@ public:
     int   fetch_context_items(IndexedList<Action *> &list);
     static FileType *test_type(BrowsableDirEntry *obj);
 
-    static int execute_st(SubsysCommand *cmd);
+    static SubsysResultCode_e execute_st(SubsysCommand *cmd);
 };
 
 

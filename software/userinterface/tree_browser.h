@@ -50,11 +50,15 @@ public:
 class TreeBrowser : public UIObject
 {
 	void tasklist(void);
+    void seek_char(int c);
     void cd_impl(const char *path);
 public:
     char quick_seek_string[MAX_SEARCH_LEN_TB];
     int  quick_seek_length;
-
+    bool allow_exit;
+    bool has_path;
+    bool has_border;
+    
     FileManager *fm;
     UserInterface *user_interface;
     ObserverQueue *observerQueue;
@@ -66,25 +70,24 @@ public:
 
     TreeBrowserState *state_root;
     TreeBrowserState *state;
-    ClipBoard clipboard;
 
     // link to temporary popup
     ContextMenu *contextMenu; // anchor for menu that pops up
-    ConfigBrowser *configBrowser;
 
     // Member functions
     TreeBrowser(UserInterface *ui, Browsable *);
     virtual ~TreeBrowser();
 
-    virtual void init(Screen *scr, Keyboard *k);
+    virtual void init();
     virtual void redraw(void);
-    void deinit(void);
+    virtual void deinit(void);
 
     virtual int poll(int);
     virtual int poll_inactive(void);
     virtual int handle_key(int);
     virtual void checkFileManagerEvent(void);
 
+    void send_keystroke(int key) { if (keyb) keyb->push_head(key); }
     void reset_quick_seek(void);
     bool perform_quick_seek(void);
     

@@ -1,6 +1,13 @@
+/*
+ * This module implements a simple driver for the PCF85063TP RTC chip.
+ */
+
 #include "rtc.h"
 #include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 #include "i2c_drv.h"
+#include "u2p.h"
 
 const char *month_strings_short[]={ "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
@@ -17,7 +24,6 @@ const char *weekday_strings[] = { "Sunday", "Monday", "Tuesday", "Wednesday", "T
 #define CFG_RTC_YEAR    0x11
 #define CFG_RTC_MONTH   0x12
 #define CFG_RTC_DATE    0x13
-// #define CFG_RTC_WEEKDAY 0x14
 #define CFG_RTC_HOUR    0x15
 #define CFG_RTC_MINUTE  0x16
 #define CFG_RTC_SECOND  0x17
@@ -27,7 +33,6 @@ struct t_cfg_definition rtc_config[] = {
     { CFG_RTC_YEAR,     CFG_TYPE_VALUE,  "Year",     "%d", NULL,  1980, 2079, 2015 },
     { CFG_RTC_MONTH,    CFG_TYPE_ENUM,   "Month",    "%s", month_strings_long,  1, 12,  10 },
     { CFG_RTC_DATE,     CFG_TYPE_VALUE,  "Day",      "%d", NULL,     1, 31,  13 },
-//  { CFG_RTC_WEEKDAY,  CFG_TYPE_ENUM,   "Weekday",  "%s", weekday_strings, 0, 6, 2 },
     { CFG_RTC_HOUR,     CFG_TYPE_VALUE,  "Hours",   "%02d", NULL,     0, 23, 16 },
     { CFG_RTC_MINUTE,   CFG_TYPE_VALUE,  "Minutes", "%02d", NULL,     0, 59, 52 },
     { CFG_RTC_SECOND,   CFG_TYPE_VALUE,  "Seconds", "%02d", NULL,     0, 59, 55 },
@@ -65,9 +70,23 @@ static uint8_t bin2bcd(uint8_t bin)
 
 Rtc::Rtc()
 {
+    capable = false;
+}
+
+void Rtc::init()
+{
     capable = true;
     cfg = new RtcConfigStore("Clock Settings", rtc_config);
     ConfigManager::getConfigManager()->add_custom_store(cfg);
+    cfg->set_sort_order(SORT_ORDER_CFG_CLOCK);
+
+    // This is a fix for the case where the I2C is not yet initialized
+    // This only works for systems where I2C is operated in PIO mode
+    // Fortunately, the only system where this is not the case is the U64-II,
+    // which does not have an RTC.
+    if (!i2c) {
+        i2c = new I2C_Driver();
+    }
     get_time_from_chip();
 }
 
@@ -81,20 +100,18 @@ Rtc::~Rtc()
 
 void Rtc::write_byte(int addr, uint8_t val)
 {
-    I2C_Driver i2c;
     ENTER_SAFE_SECTION
-    i2c.i2c_write_byte(0xA2, addr, val);
+    i2c->i2c_write_byte(0xA2, addr, val);
     LEAVE_SAFE_SECTION
     rtc_regs[addr] = val; // update internal structure as well.
 }
 
 void Rtc::read_all(void)
 {
-    I2C_Driver i2c;
     ENTER_SAFE_SECTION
     int dummy;
     for (int i = 0; i < 11; i++) {
-        rtc_regs[i] = i2c.i2c_read_byte(0xA2, i, &dummy);
+        rtc_regs[i] = i2c->i2c_read_byte(0xA2, i, &dummy);
 
     }
     LEAVE_SAFE_SECTION
@@ -108,18 +125,6 @@ bool Rtc::is_valid(void)
 void Rtc::get_time_from_chip(void)
 {
     read_all();
-
-    if (getFpgaCapabilities() & CAPAB_RTC_TIMER) {
-        RTC_TIMER_LOCK = 1;
-        RTC_TIMER_SECONDS = bcd2bin(rtc_regs[RTC_ADDR_SECONDS]);
-        RTC_TIMER_MINUTES = bcd2bin(rtc_regs[RTC_ADDR_MINUTES]);
-        RTC_TIMER_HOURS = bcd2bin(rtc_regs[RTC_ADDR_HOURS]);
-        RTC_TIMER_WEEKDAYS = bcd2bin(rtc_regs[RTC_ADDR_WEEKDAYS]);
-        RTC_TIMER_DAYS = bcd2bin(rtc_regs[RTC_ADDR_DAYS]);
-        RTC_TIMER_MONTHS = bcd2bin(rtc_regs[RTC_ADDR_MONTHS]);
-        RTC_TIMER_YEARS = bcd2bin(rtc_regs[RTC_ADDR_YEARS]);
-        RTC_TIMER_LOCK = 0;
-    }
 }
 
 void Rtc::set_time_in_chip(int corr_ppm, int y, int M, int D, int wd, int h, int m, int s)
@@ -167,27 +172,15 @@ int Rtc::get_correction(void)
 
 void Rtc::get_time(int &y, int &M, int &D, int &wd, int &h, int &m, int &s)
 {
-    if (getFpgaCapabilities() & CAPAB_RTC_TIMER) {
-        RTC_TIMER_LOCK = 1;
-        y = (int) RTC_TIMER_YEARS;
-        M = (int) RTC_TIMER_MONTHS;
-        D = (int) RTC_TIMER_DAYS;
-        wd = (int) RTC_TIMER_WEEKDAYS;
-        h = (int) RTC_TIMER_HOURS;
-        m = (int) RTC_TIMER_MINUTES;
-        s = (int) RTC_TIMER_SECONDS;
-        RTC_TIMER_LOCK = 0;
-    } else {
-        read_all(); // read directly from chip
+    read_all(); // read directly from chip
 
-        s = (int) bcd2bin(rtc_regs[RTC_ADDR_SECONDS] & 0x7F);
-        m = (int) bcd2bin(rtc_regs[RTC_ADDR_MINUTES]);
-        h = (int) bcd2bin(rtc_regs[RTC_ADDR_HOURS]);
-        wd = (int) bcd2bin(rtc_regs[RTC_ADDR_WEEKDAYS]);
-        D = (int) bcd2bin(rtc_regs[RTC_ADDR_DAYS]);
-        M = (int) bcd2bin(rtc_regs[RTC_ADDR_MONTHS]);
-        y = (int) bcd2bin(rtc_regs[RTC_ADDR_YEARS]);
-    }
+    s = (int) bcd2bin(rtc_regs[RTC_ADDR_SECONDS] & 0x7F);
+    m = (int) bcd2bin(rtc_regs[RTC_ADDR_MINUTES]);
+    h = (int) bcd2bin(rtc_regs[RTC_ADDR_HOURS]);
+    wd = (int) bcd2bin(rtc_regs[RTC_ADDR_WEEKDAYS]);
+    D = (int) bcd2bin(rtc_regs[RTC_ADDR_DAYS]);
+    M = (int) bcd2bin(rtc_regs[RTC_ADDR_MONTHS]);
+    y = (int) bcd2bin(rtc_regs[RTC_ADDR_YEARS]);
     if (M < 1)
         M = 1;
     if (M > 12)
@@ -204,17 +197,27 @@ void Rtc::get_time(int &y, int &M, int &D, int &wd, int &h, int &m, int &s)
 
 void Rtc::set_time(int y, int M, int D, int wd, int h, int m, int s)
 {
-    if (getFpgaCapabilities() & CAPAB_RTC_TIMER) {
-        RTC_TIMER_LOCK = 1;
-        RTC_TIMER_YEARS = (uint8_t) y;
-        RTC_TIMER_MONTHS = (uint8_t) M;
-        RTC_TIMER_DAYS = (uint8_t) D;
-        RTC_TIMER_WEEKDAYS = (uint8_t) wd;
-        RTC_TIMER_HOURS = (uint8_t) h;
-        RTC_TIMER_MINUTES = (uint8_t) m;
-        RTC_TIMER_SECONDS = (uint8_t) s;
-        RTC_TIMER_LOCK = 0;
-    }
+    set_time_in_chip(get_correction(), y, M, D, wd, h, m, s);
+}
+
+void Rtc::set_time_utc(int seconds)
+{
+    // UTC time coming in, so convert it to local time
+    time_t now;
+    struct tm timeinfo;
+
+    now = seconds;
+    localtime_r(&now, &timeinfo);
+
+    int y = timeinfo.tm_year - 80;
+    int M = timeinfo.tm_mon + 1;
+    int D = timeinfo.tm_mday;
+    int wd = timeinfo.tm_wday;
+    int h = timeinfo.tm_hour;
+    int m = timeinfo.tm_min;
+    int s = timeinfo.tm_sec;
+
+    set_time_in_chip(get_correction(), y, M, D, wd, h, m, s);
 }
 
 const char * Rtc::get_time_string(char *dest, int len)
@@ -252,17 +255,6 @@ uint32_t Rtc::get_fat_time(void)
 {
     if (!capable)
         return 0x42FF9877;
-    /*
-     33 << 25 = 0x42000000
-     7 << 21 = 0x00E00000
-     31 << 16 = 0x001F0000
-     19 << 11 = 0x00009800
-     03 <<  5 = 0x00000060
-     23 <<  0 = 0x00000017
-     */
-
-    if (getFpgaCapabilities() & CAPAB_RTC_TIMER)
-        return RTC_TIMER_FAT_TIME;
 
     int y, M, D, wd, h, m, s;
     get_time(y, M, D, wd, h, m, s);
@@ -303,11 +295,6 @@ void RtcConfigStore::at_open_config(void)
         case CFG_RTC_DATE:
             i->value = D;
             break;
-            /*
-             case CFG_RTC_WEEKDAY:
-             i->value = wd;
-             break;
-             */
         case CFG_RTC_HOUR:
             i->value = h;
             break;
@@ -390,7 +377,6 @@ void RtcConfigStore::at_close_config(void)
     printf("Writing time: %d-%d-%d (%d) %02d:%02d:%02d\n", y, M, D, wd, h, m, s);
     rtc.set_time(y, M, D, wd, h, m, s);
     rtc.set_time_in_chip(corr, y, M, D, wd, h, m, s);
-
     set_effectuated();
 }
 
@@ -409,3 +395,6 @@ extern "C" uint32_t get_fattime(void) /* 31-25: Year(0-127 org.1980), 24-21: Mon
      return 0x3A844C97;
      */
 }
+
+#include "init_function.h"
+InitFunction init_rtc("RTC", [](void *_obj, void *_param) { rtc.init(); }, NULL, NULL, 2);

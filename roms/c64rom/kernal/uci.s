@@ -395,24 +395,11 @@ _ck11       cmp #3
 _ck30       jmp ck30
 
 _my_chkout  sta dflto
-            bit UCI_PENDING_CMD
-            bpl do_chkout   ; No command pending, so setup is always required
-
-            ; check if last command was also CHKOUT
-            ldx #UCI_CMD_CHKOUT
-            cpx UCI_LAST_CMD
-            bne do_chkout   ; Last command not CHKOUT? Setup is required
-
-            ; there is a pending CKOUT command, same SA?
-            lda SECADDR
-            cmp UCI_LAST_SA
-            beq _ckout_cont ; Yes!  Do nothing, just append
-
 do_chkout   lda #0
             sta MY_OUTLEN
             ldx #UCI_CMD_CHKOUT
             jsr uci_setup_cmd ; do not execute command, because we are waiting for data now
-_ckout_cont clc
+            clc
             rts
 
 ; $FFCC   
@@ -427,14 +414,16 @@ ulticlrchn_lsn
             cmp OUR_DEVICE
             beq _my_clrchn
             jmp unlsn ; if it was not us, it is serial
-_my_clrchn  clc
+_my_clrchn
+            jsr uci_abort ; will cause pending ckout to be executed
+_my_clrchn_common  
+            clc
             rts
-;jmp uci_abort
 
 ulticlrchn_tlk
             lda dfltn
             cmp OUR_DEVICE
-            beq _my_clrchn
+            beq _my_clrchn_common
             jmp untlk ; if it was not us, it is serial
 
 ;; UCI

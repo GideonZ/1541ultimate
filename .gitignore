@@ -6,7 +6,14 @@
 **/*.u64
 **/*.u2u
 **/*.u2p
+**/*.u2r
+**/*.u2l
+**/*.ue2
 **/*.pyc
+**/*.vcd
+**/v*.str
+**/v*.jou
+**/*.log
 **/*.xrpt
 **/_xmsgs
 **/output
@@ -67,7 +74,7 @@ target/fpga/**/*.rv*
 target/fpga/**/readback
 target/fpga/boot400
 target/fpga/boot700
-target/fpga/rv700/rv700dd
+target/fpga/rv700dd/rv700dd
 target/fpga/lx16
 target/fpga/testdut/*.hex
 target/fpga/testdut/*.sopcinfo
@@ -269,6 +276,7 @@ tools/makeappl
 tools/promgen
 tools/svf_dump
 tools/swap
+tools/c64/*.prg
 software/6502/sidcrt/target
 *.d
 tools/dump_bus_trace
@@ -277,4 +285,6 @@ tools/64tass/*.o
 .vscode
 .idea
 python/grab*
+fpga/cpu_unit/rvlite/vhdl_source/bootrom_pkg_u2.vhd
+fpga/cpu_unit/rvlite/vhdl_source/bootrom_pkg_u2_loader.vhd
 

@@ -8,11 +8,12 @@ OBJS_6502 = $(notdir $(SRCS_6502:%.tas=%.o))
 OBJS_IEC = $(notdir $(SRCS_IEC:%.iec=%.o))
 OBJS_NANO = $(notdir $(SRCS_NANO:%.nan=%.o))
 OBJS_BIN = $(notdir $(SRCS_BIN:%.bin=%.o))
+OBJS_HTML = $(notdir $(SRCS_HTML:%.html=%.o))
 OBJS_RBF = $(notdir $(SRCS_RBF:%.rbf=%.o))
 OBJS_APP = $(notdir $(SRCS_APP:%.app=%.ao))
 CHK_BIN  = $(notdir $(SRCS_BIN:%.bin=%.chk))
 
-ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_ASM) $(OBJS_ASMS) $(OBJS_C) $(OBJS_CC) $(OBJS_IEC) $(OBJS_NANO) $(OBJS_6502) $(OBJS_BIN) $(OBJS_RBF) $(OBJS_APP))
+ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_ASM) $(OBJS_ASMS) $(OBJS_C) $(OBJS_CC) $(OBJS_IEC) $(OBJS_NANO) $(OBJS_6502) $(OBJS_BIN) $(OBJS_RBF) $(OBJS_APP) $(OBJS_HTML)) 
 ALL_DEP_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_C) $(OBJS_CC))
 
 
@@ -22,13 +23,13 @@ all: $(OUTPUT) gitinfo $(RESULT) $(FINAL)
 	@echo Making all requires $(OUTPUT), $(RESULT) and $(FINAL)	
 
 gitinfo::
-	@echo '/* Generated file, do not edit. */' >output/gitinfo.h
-	@echo '#define APP_VERSION_TAG    "'`git describe --tags`'"' >>output/gitinfo.h
-	@echo '#define APP_VERSION_BRANCH "'`git describe --all`'"' >>output/gitinfo.h
-	@echo '#define APP_VERSION_DATE   "'`git log -n 1 --format=%ai`'"' >>output/gitinfo.h
-	@echo '#define APP_VERSION_HASH   "'`git rev-parse --short HEAD`'"' >>output/gitinfo.h
-	@echo '#define APP_BUILD_DATE     "'`date +"%F %R"`'"' >>output/gitinfo.h
-	@echo '#define APP_BUILD_MACHINE  "'`hostname`'"' >>output/gitinfo.h
+	@echo '/* Generated file, do not edit. */' >$(OUTPUT)/gitinfo.h
+	@echo '#define APP_VERSION_TAG    "'`git describe --tags`'"' >>$(OUTPUT)/gitinfo.h
+	@echo '#define APP_VERSION_BRANCH "'`git describe --all`'"' >>$(OUTPUT)/gitinfo.h
+	@echo '#define APP_VERSION_DATE   "'`git log -n 1 --format=%ai`'"' >>$(OUTPUT)/gitinfo.h
+	@echo '#define APP_VERSION_HASH   "'`git rev-parse --short HEAD`'"' >>$(OUTPUT)/gitinfo.h
+	@echo '#define APP_BUILD_DATE     "'`date +"%F %R"`'"' >>$(OUTPUT)/gitinfo.h
+	@echo '#define APP_BUILD_MACHINE  "'`hostname`'"' >>$(OUTPUT)/gitinfo.h
 
 mem: $(OUTPUT)/$(PRJ).mem
 
@@ -89,6 +90,16 @@ $(OUTPUT)/$(PRJ).shex: $(OUTPUT)/$(PRJ).out
 	--redefine-sym $(was)_size=$(becomes)_size \
 	--redefine-sym $(was)_end=$(becomes)_end
 
+%.o: %.html
+	@echo Converting $(<F) html to $(@F)..
+	@$(eval was := _binary_$(subst .,_,$(subst /,_,$(subst -,_,$<))))
+	@$(eval becomes := _$(subst .,_,$(subst -,_,$(<F))))
+	@$(OBJCOPY) -I binary -O $(ELFTYPE) --binary-architecture $(ARCHITECTURE) $< $(OUTPUT)/$@ \
+	--rename-section .data=.rodata,alloc,load,readonly,data,contents \
+	--redefine-sym $(was)_start=$(becomes)_start \
+	--redefine-sym $(was)_size=$(becomes)_size \
+	--redefine-sym $(was)_end=$(becomes)_end
+
 %.bin: %.srec
 	@echo Converting $(<F) SREC to $(@F)..
 	@$(OBJCOPY) -I srec -O binary $< $@
@@ -104,6 +115,7 @@ $(OUTPUT)/$(PRJ).shex: $(OUTPUT)/$(PRJ).out
 	@$(eval becomes := _$(subst .,_,$(subst -,_,$(<F))))
 	@$(SWAP) $< $(OUTPUT)/$(@F)
 	@$(OBJCOPY) -I binary -O $(ELFTYPE) --binary-architecture $(ARCHITECTURE) $(OUTPUT)/$(@F) $(OUTPUT)/$@ \
+	--rename-section .data=.rodata.$(<F),alloc,load,readonly,data,contents \
 	--redefine-sym $(was)_start=$(becomes)_start \
 	--redefine-sym $(was)_size=$(becomes)_size \
 	--redefine-sym $(was)_end=$(becomes)_end
@@ -113,6 +125,7 @@ $(OUTPUT)/$(PRJ).shex: $(OUTPUT)/$(PRJ).out
 	@$(eval was := _binary_$(subst .,_,$(subst /,_,$(subst -,_,$<))))
 	@$(eval becomes := _$(subst .,_,$(subst -,_,$(<F))))
 	@$(OBJCOPY) -I binary -O $(ELFTYPE) --binary-architecture $(ARCHITECTURE) $< $(OUTPUT)/$@ \
+	--rename-section .data=.rodata.$(<F),alloc,load,readonly,data,contents \
 	--redefine-sym $(was)_start=$(becomes)_start \
 	--redefine-sym $(was)_size=$(becomes)_size \
 	--redefine-sym $(was)_end=$(becomes)_end
@@ -139,7 +152,7 @@ $(OUTPUT)/$(PRJ).shex: $(OUTPUT)/$(PRJ).out
 	@$(eval was := _binary_$(subst .,_,$(subst /,_,$(subst -,_,$(fn)))))
 	@$(eval becomes := _$(subst .,_,$(subst /,_,$(<F))))
 	@$(OBJCOPY) -I binary -O $(ELFTYPE) --binary-architecture $(ARCHITECTURE) $(fn) $(OUTPUT)/$@ \
-	--rename-section .data=.rodata,alloc,load,readonly,data,contents \
+	--rename-section .data=.rodata.$(<F),alloc,load,readonly,data,contents \
 	--redefine-sym $(was)_start=$(becomes)_start \
 	--redefine-sym $(was)_size=$(becomes)_size \
 	--redefine-sym $(was)_end=$(becomes)_end
@@ -150,7 +163,7 @@ $(OUTPUT)/$(PRJ).shex: $(OUTPUT)/$(PRJ).out
 	@$(eval was := _binary_$(subst .,_,$(subst /,_,$(subst -,_,$(fn)))))
 	@$(eval becomes := _$(subst .,_,$(subst /,_,$(<F))))
 	@$(OBJCOPY) -I binary -O $(ELFTYPE) --binary-architecture $(ARCHITECTURE) $(fn) $(OUTPUT)/$@ \
-	--rename-section .data=.rodata,alloc,load,readonly,data,contents \
+	--rename-section .data=.rodata.$(<F),alloc,load,readonly,data,contents \
 	--redefine-sym $(was)_start=$(becomes)_start \
 	--redefine-sym $(was)_size=$(becomes)_size \
 	--redefine-sym $(was)_end=$(becomes)_end

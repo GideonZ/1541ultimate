@@ -14,7 +14,7 @@ public:
 
     int   fetch_context_items(IndexedList<Action *> &list);
     static FileType *test_type(BrowsableDirEntry *obj);
-    static int runDisk_st(SubsysCommand *cmd);
+    static SubsysResultCode_e runDisk_st(SubsysCommand *cmd);
 };
 
 #endif

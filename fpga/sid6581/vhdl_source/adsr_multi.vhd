@@ -33,7 +33,7 @@ port (
     attack   : in  std_logic_vector(3 downto 0);
     decay    : in  std_logic_vector(3 downto 0);
     sustain  : in  std_logic_vector(3 downto 0);
-    release  : in  std_logic_vector(3 downto 0);
+    releese  : in  std_logic_vector(3 downto 0);
     
     env_state: out std_logic_vector(1 downto 0); -- for testing only
     env_out  : out unsigned(7 downto 0) );
@@ -60,7 +60,7 @@ architecture gideon of adsr_multi is
     signal enveloppe : unsigned(7 downto 0)  := (others => '0');
     signal state     : unsigned(1 downto 0)  := (others => '0');
     
-    constant st_release : unsigned(1 downto 0) := "00";
+    constant st_releese : unsigned(1 downto 0) := "00";
     constant st_attack  : unsigned(1 downto 0) := "01";
     constant st_decay   : unsigned(1 downto 0) := "11";
     
@@ -136,8 +136,8 @@ begin
                 presc_select := to_integer(unsigned(attack));
             when st_decay =>
                 presc_select := to_integer(unsigned(decay));
-            when others => -- includes release and idle
-                presc_select := to_integer(unsigned(release));
+            when others => -- includes releese and idle
+                presc_select := to_integer(unsigned(releese));
             end case;
             presc_val := prescalers(presc_select)(14 downto 0);            
             
@@ -167,7 +167,7 @@ begin
             
             when st_attack =>
                 if gate = '0' then
-                    next_state := st_release;
+                    next_state := st_releese;
                 elsif cur_env = X"FF" then
                     next_state := st_decay;
                 end if;
@@ -181,7 +181,7 @@ begin
             
             when st_decay =>
                 if gate = '0' then
-                    next_state := st_release;
+                    next_state := st_releese;
                 end if;
                 
                 if do_count_15='1' and do_count_5='1' and 
@@ -190,7 +190,7 @@ begin
                     next_env := cur_env - 1;
                 end if;
 
-            when st_release =>
+            when st_releese =>
                 if gate = '1' then
                     next_state := st_attack;
                 end if;                    
@@ -201,7 +201,7 @@ begin
                 end if;
 
             when others =>
-                next_state := st_release;
+                next_state := st_releese;
                 
             end case;
 
@@ -221,7 +221,7 @@ begin
                 voice_dbg(voice_x).attack    <= attack;
                 voice_dbg(voice_x).decay     <= decay;
                 voice_dbg(voice_x).sustain   <= sustain;
-                voice_dbg(voice_x).release   <= release;
+                voice_dbg(voice_x).releese   <= releese;
             end if;
 
             if reset='1' then

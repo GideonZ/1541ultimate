@@ -13,10 +13,10 @@ class U64Machine : public C64
     void after_memory_access(uint8_t *, bool);
 
     void get_all_memory(uint8_t *pb);
+public:
+    void clear_ram();
     uint8_t peek(uint32_t address);
     void poke(uint32_t address, uint8_t byte);
-
-public:
     friend class C64;
 };
 

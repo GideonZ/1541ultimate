@@ -5,7 +5,6 @@
  *      Author: Gideon
  */
 
-#include "integer.h"
 extern "C" {
     #include "itu.h"
 	#include "dump_hex.h"
@@ -13,7 +12,13 @@ extern "C" {
     #include "sid_coeff.h"
 }
 #include <string.h>
+#include <stdint.h>
+#include "FreeRTOS.h"
+#include "semphr.h"
+#include "task.h"
+
 #include "flash.h"
+#include "product.h"
 #include "userinterface.h"
 #include "u64_config.h"
 #include "audio_select.h"
@@ -23,15 +28,22 @@ extern "C" {
 #include "u2p.h"
 //#include "sys/alt_irq.h"
 #include "c64.h"
+#include "esp32.h"
 #include "sid_editor.h"
 #include "sid_device_fpgasid.h"
 #include "sid_device_swinsid.h"
 #include "sid_device_armsid.h"
+#include "sid_device_pdsid.h"
+#include "sid_device_sidkick.h"
 #include "init_function.h"
+#include "color_timings.h"
+#include "hdmi_scan.h"
+#include "usb_hid.h"
+#include "usb_hid_config.h"
 
 const uint8_t default_colors[16][3] = {
     { 0x00, 0x00, 0x00 },
-    { 0xEF, 0xEF, 0xEF },
+    { 0xF7, 0xF7, 0xF7 },
     { 0x8D, 0x2F, 0x34 },
     { 0x6A, 0xD4, 0xCD },
     { 0x98, 0x35, 0xA4 },
@@ -48,7 +60,26 @@ const uint8_t default_colors[16][3] = {
     { 0xB2, 0xB2, 0xB2 } };
 
 // static pointer
-U64Config u64_configurator;
+U64Config *u64_configurator = NULL;
+static volatile uint32_t u64_usb_hid_status_generation = 0;
+static volatile uint32_t u64_usb_hid_status_handled_generation = 0;
+
+extern "C" int u64_get_usb_hid_config_value(int key, int default_value)
+{
+    if ((!u64_configurator) || (!u64_configurator->cfg)) {
+        return default_value;
+    }
+    int value = u64_configurator->cfg->get_value(key);
+    return (value < 0) ? default_value : value;
+}
+
+static void init(void *_a, void *_b)
+{
+    u64_configurator = new U64Config();
+}
+InitFunction u64_init_func("U64 Config", init, NULL, NULL, 1);
+
+static void u64_update_usb_hid_info_items(ConfigStore *cfg);
 
 // Semaphore set by interrupt
 static SemaphoreHandle_t resetSemaphore;
@@ -60,12 +91,9 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_SID2_ADDRESS      0x03
 #define CFG_EMUSID1_ADDRESS   0x04
 #define CFG_EMUSID2_ADDRESS   0x05
-#define CFG_AUDIO_LEFT_OUT	  0x06
-#define CFG_AUDIO_RIGHT_OUT	  0x07
 #define CFG_COLOR_CLOCK_ADJ   0x08
 #define CFG_ANALOG_OUT_SELECT 0x09
 #define CFG_CHROMA_DELAY      0x0A
-#define CFG_COLOR_CODING      0x0B
 #define CFG_HDMI_ENABLE       0x0C
 #define CFG_SID1_TYPE		  0x0D
 #define CFG_SID2_TYPE		  0x0E
@@ -109,6 +137,7 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_MIXER8_PAN        0x38
 #define CFG_MIXER9_PAN        0x39
 
+#define CFG_SPEAKER_EN        0x40
 #define CFG_SYSTEM_MODE       0x41
 #define CFG_LED_SELECT_0      0x42
 #define CFG_LED_SELECT_1      0x43
@@ -123,6 +152,8 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_SPEED_REGS        0x4C
 #define CFG_IEC_BURST_EN      0x4D
 #define CFG_PALETTE           0x4E
+#define CFG_IEC_BUS_MODE      0x4F
+#define CFG_USERPORT_EN       0x50
 
 #define CFG_SPEED_PREF        0x52
 #define CFG_BADLINES_EN       0x53
@@ -132,6 +163,8 @@ static SemaphoreHandle_t resetSemaphore;
 
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
+#define CFG_HDMI_TX_SWING     0xAB
+#define CFG_HDMI_RESOLUTION   0xAC
 
 
 uint8_t C64_EMUSID1_BASE_BAK;
@@ -161,6 +194,9 @@ uint8_t C64_SID2_EN_BAK;
 #define SID_TYPE_ARM2SID 6
 #define SID_TYPE_SIDFX   7
 #define SID_TYPE_FPGASID_DUKESTAH 8
+#define SID_TYPE_PDSID   9
+#define SID_TYPE_SIDKICK 10
+#define SID_TYPE_SIDKICK_PICO 11
 
 const char *u64_sid_base[] = { "Unmapped",
                                "$D400", "$D420", "$D440", "$D460", "$D480", "$D4A0", "$D4C0", "$D4E0",
@@ -182,28 +218,37 @@ uint8_t u64_sid_offsets[] = { UNMAPPED_BASE,
                             };
 
 
+// const char *scan_modes[] = {
+// 	"VGA 60",
+// 	"VESA 768x576@60Hz",
+// 	"VESA 800x600@60Hz",
+// 	"VESA 1024x768@60Hz",
+// 	"720x480@60Hz",
+// 	"720x576@50Hz (625)",
+// 	"720x576@50.12Hz (625)",
+// 	"720x576@50Hz (624)",
+// 	"720x576@50.12Hz (624)",
+// 	"1440x288 @ 50Hz (312)",
+// 	"1440x288 @ 50Hz (313)",
+// 	"Commodore, Extd Blnk",
+// 	"Commodore, Detuned",
+// 	"Commodore, Wide brd",
+// 	"720(1440)x480 54MHz",
+// };
+
 const char *scan_modes[] = {
-	"VGA 60",
-	"VESA 768x576@60Hz",
-	"VESA 800x600@60Hz",
-	"VESA 1024x768@60Hz",
-	"720x480@60Hz",
-	"720x576@50Hz (625)",
-	"720x576@50.12Hz (625)",
-	"720x576@50Hz (624)",
-	"720x576@50.12Hz (624)",
-	"1440x288 @ 50Hz (312)",
-	"1440x288 @ 50Hz (313)",
-	"Commodore, Extd Blnk",
-	"Commodore, Detuned",
-	"Commodore, Wide brd",
-	"720(1440)x480 54MHz",
+    "SD (480p/576p)",
+    "HD (720p)",
+    "FullHD (1080p)",
+    "PC 800 x 600",
+    "PC 1024 x 768",
+    "PC 1280 x 1024",
 };
 
 const char *stereo_addr[] = { "Off", "A5", "A6", "A7", "A8", "A9" };
 const char *sid_split[] = { "Off", "1/2 (A5)", "1/2 (A6)", "1/2 (A7)", "1/2 (A8)", "1/4 (A5,A6)", "1/4 (A5,A8)", "1/4 (A7,A8)" };
-
-static const char *joyswaps[] = { "Normal", "Swapped" };
+static const char *iec_modes[] = { "All Connected", "C64 <-> Internal", "Ext. <-> Int.", "C64 <-> External" };
+static const char *joyswaps[] = { "Normal", "Swapped", "WASD Port 2", "WASD Port 1", "WASD P2 No KB", "WASD P1 No KB" };
 static const char *en_dis5[] = { "Disabled", "Enabled", "Transp. Border" };
 static const char *digi_levels[] = { "Off", "Low", "Medium", "High" };
 static const char *burst_modes[] = { "Off", "CIA1", "CIA2" };
@@ -211,8 +256,11 @@ static const char *yes_no[] = { "No", "Yes" };
 static const char *dvi_hdmi[] = { "Auto", "HDMI", "DVI" };
 static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
 static const char *color_sel[] = { "PAL", "NTSC", "PAL-60", "NTSC-50", "PAL-60/L", "NTSC-50/L" };
+static const char *mouse_acceleration_modes[] = { "Off", "Adaptive" };
+static const char *mouse_modes[] = { "Cursor", "Mouse", "Mouse + Cursor", "Mouse + Wheel" };
+static const char *wheel_directions[] = { "Normal", "Reversed" };
 
-static const char *sid_types[] = { "None", "6581", "8580", "FPGASID", "SwinSID Ultimate", "ARMSID", "ARM2SID", "SidFx", "FPGASID Dukestah" };
+static const char *sid_types[] = { "None", "6581", "8580", "FPGASID", "SwinSID Ultimate", "ARMSID", "ARM2SID", "SidFx", "FPGASID Dukestah", "PDsid", "SIDKick (Teensy)", "SIDKick Pico" };
 static const char *sid_shunt[] = { "Off", "On" };
 static const char *sid_caps[] = { "470 pF", "22 nF" };
 static const char *filter_sel[] = { "8580 Lo", "8580 Hi", "6581", "6581 Alt", "U2 Low", "U2 Mid", "U2 High" };
@@ -224,24 +272,25 @@ static const char *ledselects[] = { "On", "Off", "Drive A Pwr", "DrvAPwr + DrvBP
 
 const char *speaker_vol[] = { "Disabled", "Vol 1", "Vol 2", "Vol 3", "Vol 4", "Vol 5", "Vol 6", "Vol 7", "Vol 8", "Vol 9", "Vol 10", "Vol 11", "Vol 12", "Vol 13", "Vol 14", "Vol 15" };
 
-static const char *volumes[] = { "OFF", "+6 dB", "+5 dB", "+4 dB", "+3 dB", "+2 dB", "+1 dB", " 0 dB", "-1 dB",
-                                 "-2 dB", "-3 dB", "-4 dB", "-5 dB", "-6 dB", "-7 dB", "-8 dB", "-9 dB",
-                                 "-10 dB","-11 dB","-12 dB","-13 dB","-14 dB","-15 dB","-16 dB","-17 dB",
-                                 "-18 dB","-24 dB","-27 dB","-30 dB","-36 dB","-42 dB"  }; // 31 settings
+static const char *volumes[] = { "OFF", "-42 dB", "-36 dB", "-30 dB", "-27 dB", "-24 dB", "-18 dB", "-17 dB",
+                                 "-16 dB", "-15 dB", "-14 dB", "-13 dB", "-12 dB", "-11 dB", "-10 dB", "-9 dB",
+                                 "-8 dB", "-7 dB", "-6 dB", "-5 dB", "-4 dB", "-3 dB", "-2 dB", "-1 dB",
+                                 " 0 dB", "+1 dB", "+2 dB", "+3 dB", "+4 dB", "+5 dB", "+6 dB" }; // 31 settings
 
 static const char *pannings[] = { "Left 5", "Left 4", "Left 3", "Left 2", "Left 1", "Center",
                                   "Right 1", "Right 2", "Right 3", "Right 4", "Right 5" }; // 11 settings
 
-static const uint8_t volume_ctrl[] = { 0x00, 0xff, 0xe4, 0xcb, 0xb5, 0xa1, 0x90, 0x80, 0x72,
-                                       0x66, 0x5b, 0x51, 0x48, 0x40, 0x39, 0x33, 0x2d,
-                                       0x28, 0x24, 0x20, 0x1d, 0x1a, 0x17, 0x14, 0x12,
-                                       0x10, 0x08, 0x06, 0x04, 0x02, 0x01 };
+static const uint8_t volume_ctrl[] = {
+    0x00, 0x01, 0x02, 0x04, 0x06, 0x08, 0x10, 0x12, 0x14, 0x17, 0x1a, 0x1d, 0x20, 0x24, 0x28, 0x2d,
+    0x33, 0x39, 0x40, 0x48, 0x51, 0x5b, 0x66, 0x72, 0x80, 0x90, 0xa1, 0xb5, 0xcb, 0xe4, 0xff
+};
 
 static const uint16_t pan_ctrl[] = { 0, 40, 79, 116, 150, 181, 207, 228, 243, 253, 256 };
 
 static const uint8_t stereo_bits[] = { 0x00, 0x02, 0x04, 0x08, 0x10, 0x20 };
 static const uint8_t split_bits[] = { 0x00, 0x02, 0x04, 0x08, 0x10, 0x06, 0x12, 0x18 };
-static const char *speeds[] = { " 1", " 2", " 3", " 4", " 5", " 6", " 8", "10", "12", "14", "16", "20", "24", "32", "40", "48" };
+static const char *speeds_u64[]   = { " 1", " 2", " 3", " 4", " 5", " 6", " 8", "10", "12", "14", "16", "20", "24", "32", "40", "48" };
+static const char *speeds_u64ii[] = { " 1", " 2", " 3", " 4", " 6", " 8", "10", "12", "14", "16", "20", "24", "32", "40", "48", "64" };
 static const char *speed_regs[] = { "Off", "Manual", "U64 Turbo Registers", "TurboEnable Bit", "a", "b" };
 static const uint8_t speedregs_regvalues[] = { 0x00, 0x00, 0x01, 0x05, 0x00, 0x00 }; // removed 3 and 7
 
@@ -265,28 +314,51 @@ dc 0c 11 00 00 9e 01 1d  00 72 51 d0 1e 20 6e 28
 */
 
 struct t_cfg_definition u64_cfg[] = {
-    { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  5, 0 },
+    { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  5, 1 },
+#if U64 == 2
+    { CFG_HDMI_RESOLUTION,      CFG_TYPE_ENUM, "HDMI Scan Resolution",         "%s", scan_modes,   0,  5, 0 },
+    { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  3, 0 },
+#else
     { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  1, 0 },
+#endif
+    { CFG_MOUSE_MODE,           CFG_TYPE_ENUM, "Mouse Mode",                   "%s", mouse_modes,       0,  3, 1 },
+    { CFG_MOUSE_SENSITIVITY,    CFG_TYPE_VALUE, "Mouse Sensitivity",           "%d", NULL,              1, 16, 8 },
+    { CFG_MOUSE_ACCELERATION,   CFG_TYPE_ENUM, "Mouse Acceleration",           "%s", mouse_acceleration_modes, 0,  1, 0 },
+    { CFG_SCROLL_FACTOR,        CFG_TYPE_VALUE, "Mouse Wheel Sensitivity",     "%d", NULL,              1, 16, 8 },
+    { CFG_WHEEL_DIRECTION,      CFG_TYPE_ENUM,  "Mouse Wheel Direction",       "%s", wheel_directions, 0,  1, 0 },
+    { CFG_MENU_MOUSE_NAV,       CFG_TYPE_ENUM,  "Menu Mouse Navigation",       "%s", en_dis,          0,  1, 1 },
+    { CFG_USB_MOUSE_NAME,       CFG_TYPE_INFO,  "USB Mouse",                   "%s", NULL,            0, 32, (int)"" },
+    { CFG_USB_MOUSE_MODE,       CFG_TYPE_INFO,  "USB Mouse HID Mode",          "%s", NULL,            0, 16, (int)"" },
+    { CFG_USB_KEYBOARD_NAME,    CFG_TYPE_INFO,  "USB Keyboard",                "%s", NULL,            0, 32, (int)"" },
+    { CFG_USB_KEYBOARD_MODE,    CFG_TYPE_INFO,  "USB Keyboard HID Mode",       "%s", NULL,            0, 16, (int)"" },
+    { CFG_USERPORT_EN,          CFG_TYPE_ENUM, "UserPort Power Enable",        "%s", en_dis,       0,  1, 1 },
 //    { CFG_CART_PREFERENCE,      CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,    0,  2, 0 }, // moved to C64 for user consistency
     { CFG_PALETTE,              CFG_TYPE_STRFUNC, "Palette Definition",        "%s", (const char **)U64Config :: list_palettes, 0, 30, (int)"" },
     { CFG_COLOR_CLOCK_ADJ,      CFG_TYPE_VALUE, "Adjust Color Clock",      "%d ppm", NULL,      -100,100, 0 },
     { CFG_ANALOG_OUT_SELECT,    CFG_TYPE_ENUM, "Analog Video Mode",            "%s", video_sel,    0,  1, 0 },
 //    { CFG_CHROMA_DELAY,         CFG_TYPE_VALUE, "Chroma Delay",                "%d", NULL,        -3,  3, 0 },
     { CFG_HDMI_ENABLE,          CFG_TYPE_ENUM, "Digital Video Mode",           "%s", dvi_hdmi,     0,  2, 0 },
-    { CFG_SCANLINES,            CFG_TYPE_ENUM, "HDMI Scan lines",              "%s", en_dis,       0,  1, 0 },
+    { CFG_SCANLINES,            CFG_TYPE_ENUM, "HDMI Scan lines",              "%s", en_dis,       0,  1, 1 },
+    { CFG_IEC_BUS_MODE,         CFG_TYPE_ENUM, "Serial Bus Mode",              "%s", iec_modes,    0,  3, 0 },
     { CFG_PARCABLE_ENABLE,      CFG_TYPE_ENUM, "SpeedDOS Parallel Cable",      "%s", en_dis,       0,  1, 0 },
     { CFG_IEC_BURST_EN,         CFG_TYPE_ENUM, "Burst Mode Patch",             "%s", burst_modes,  0,  2, 0 },
     { CFG_LED_SELECT_0,         CFG_TYPE_ENUM, "LED Select Top",               "%s", ledselects,   0, 15, 0 },
     { CFG_LED_SELECT_1,         CFG_TYPE_ENUM, "LED Select Bot",               "%s", ledselects,   0, 15, 4 },
+#if U64 != 2
+    { CFG_SPEAKER_EN,           CFG_TYPE_ENUM, "Speaker Enable",               "%s", en_dis,       0,  1, 1 },
     { CFG_SPEAKER_VOL,          CFG_TYPE_ENUM, "Speaker Volume (SpkDat)",      "%s", speaker_vol,  0, 10, 5 },
+#endif
     { CFG_PLAYER_AUTOCONFIG,    CFG_TYPE_ENUM, "SID Player Autoconfig",        "%s", en_dis,       0,  1, 1 },
     { CFG_ALLOW_EMUSID,         CFG_TYPE_ENUM, "Allow Autoconfig uses UltiSid","%s", yes_no,       0,  1, 1 },
 #if DEVELOPER
-    //    { CFG_COLOR_CODING,         CFG_TYPE_ENUM, "Color Coding (not Timing!)",   "%s", color_sel,    0,  1, 0 },
     { CFG_VIC_TEST,             CFG_TYPE_ENUM, "VIC Test Colors",              "%s", en_dis5,      0,  2, 0 },
 #endif
     { CFG_SPEED_REGS,           CFG_TYPE_ENUM, "Turbo Control",                "%s", speed_regs,   0,  3, 0 },
-    { CFG_SPEED_PREF,           CFG_TYPE_ENUM, "CPU Speed",                "%s MHz", speeds,       0, 15, 0 },
+#if U64 == 2
+    { CFG_SPEED_PREF,           CFG_TYPE_ENUM, "CPU Speed",                "%s MHz", speeds_u64ii, 0, 15, 0 },
+#else
+    { CFG_SPEED_PREF,           CFG_TYPE_ENUM, "CPU Speed",                "%s MHz", speeds_u64,   0, 15, 0 },
+#endif
     { CFG_BADLINES_EN,          CFG_TYPE_ENUM, "Badline Timing",               "%s", en_dis,       0,  1, 1 },
     { CFG_SUPERCPU_DET,         CFG_TYPE_ENUM, "SuperCPU Detect (D0BC)",       "%s", en_dis,       0,  1, 0 },
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
@@ -294,8 +366,8 @@ struct t_cfg_definition u64_cfg[] = {
 struct t_cfg_definition u64_sid_detection_cfg[] = {
     { CFG_SOCKET1_ENABLE,       CFG_TYPE_ENUM, "SID Socket 1",                 "%s", en_dis,       0,  1, 0 },
     { CFG_SOCKET2_ENABLE,       CFG_TYPE_ENUM, "SID Socket 2",                 "%s", en_dis,       0,  1, 0 },
-    { CFG_SID1_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 1",        "%s", sid_types,    0,  8, 0 },
-    { CFG_SID2_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 2",        "%s", sid_types,    0,  8, 0 },
+    { CFG_SID1_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 1",        "%s", sid_types,    0, 11, 0 },
+    { CFG_SID2_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 2",        "%s", sid_types,    0, 11, 0 },
     { CFG_SID1_SHUNT,           CFG_TYPE_ENUM, "SID Socket 1 1K Ohm Resistor", "%s", sid_shunt,    0,  1, 0 },
     { CFG_SID2_SHUNT,           CFG_TYPE_ENUM, "SID Socket 2 1K Ohm Resistor", "%s", sid_shunt,    0,  1, 0 },
     { CFG_SID1_CAPS,            CFG_TYPE_ENUM, "SID Socket 1 Capacitors",      "%s", sid_caps,     0,  1, 0 },
@@ -326,16 +398,16 @@ struct t_cfg_definition u64_ultisid_cfg[] = {
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
 struct t_cfg_definition u64_mixer_cfg[] = {
-    { CFG_MIXER0_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 1",                "%s", volumes,      0, 30, 7 },
-    { CFG_MIXER1_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 2",                "%s", volumes,      0, 30, 7 },
-    { CFG_MIXER2_VOL,           CFG_TYPE_ENUM, "Vol Socket 1",                 "%s", volumes,      0, 30, 7 },
-    { CFG_MIXER3_VOL,           CFG_TYPE_ENUM, "Vol Socket 2",                 "%s", volumes,      0, 30, 7 },
-    { CFG_MIXER4_VOL,           CFG_TYPE_ENUM, "Vol Sampler L",                "%s", volumes,      0, 30, 7 },
-    { CFG_MIXER5_VOL,           CFG_TYPE_ENUM, "Vol Sampler R",                "%s", volumes,      0, 30, 7 },
+    { CFG_MIXER0_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 1",                "%s", volumes,      0, 30, 24 },
+    { CFG_MIXER1_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 2",                "%s", volumes,      0, 30, 24 },
+    { CFG_MIXER2_VOL,           CFG_TYPE_ENUM, "Vol Socket 1",                 "%s", volumes,      0, 30, 24 },
+    { CFG_MIXER3_VOL,           CFG_TYPE_ENUM, "Vol Socket 2",                 "%s", volumes,      0, 30, 24 },
+    { CFG_MIXER4_VOL,           CFG_TYPE_ENUM, "Vol Sampler L",                "%s", volumes,      0, 30, 24 },
+    { CFG_MIXER5_VOL,           CFG_TYPE_ENUM, "Vol Sampler R",                "%s", volumes,      0, 30, 24 },
     { CFG_MIXER6_VOL,           CFG_TYPE_ENUM, "Vol Drive 1",                  "%s", volumes,      0, 30, 11 },
     { CFG_MIXER7_VOL,           CFG_TYPE_ENUM, "Vol Drive 2",                  "%s", volumes,      0, 30, 11 },
-    { CFG_MIXER8_VOL,           CFG_TYPE_ENUM, "Vol Tape Read",                "%s", volumes,      0, 30, 29 },
-    { CFG_MIXER9_VOL,           CFG_TYPE_ENUM, "Vol Tape Write",               "%s", volumes,      0, 30, 29 },
+    { CFG_MIXER8_VOL,           CFG_TYPE_ENUM, "Vol Tape Read",                "%s", volumes,      0, 30, 4 },
+    { CFG_MIXER9_VOL,           CFG_TYPE_ENUM, "Vol Tape Write",               "%s", volumes,      0, 30, 4 },
     { CFG_MIXER0_PAN,           CFG_TYPE_ENUM, "Pan UltiSID 1",                "%s", pannings,     0, 10, 5 },
     { CFG_MIXER1_PAN,           CFG_TYPE_ENUM, "Pan UltiSID 2",                "%s", pannings,     0, 10, 5 },
     { CFG_MIXER2_PAN,           CFG_TYPE_ENUM, "Pan Socket 1",                 "%s", pannings,     0, 10, 2 },
@@ -348,6 +420,19 @@ struct t_cfg_definition u64_mixer_cfg[] = {
     { CFG_MIXER9_PAN,           CFG_TYPE_ENUM, "Pan Tape Write",               "%s", pannings,     0, 10, 5 },
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
+struct t_cfg_definition u64_speaker_mixer_cfg[] = {
+    { CFG_SPEAKER_EN,           CFG_TYPE_ENUM, "Speaker Enable",               "%s", en_dis,       0,  1, 1 },
+    { CFG_MIXER0_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 1",                "%s", volumes,      0, 30, 0 },
+    { CFG_MIXER1_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 2",                "%s", volumes,      0, 30, 0 },
+    { CFG_MIXER2_VOL,           CFG_TYPE_ENUM, "Vol Socket 1",                 "%s", volumes,      0, 30, 0 },
+    { CFG_MIXER3_VOL,           CFG_TYPE_ENUM, "Vol Socket 2",                 "%s", volumes,      0, 30, 0 },
+    { CFG_MIXER4_VOL,           CFG_TYPE_ENUM, "Vol Sampler L",                "%s", volumes,      0, 30, 0 },
+    { CFG_MIXER5_VOL,           CFG_TYPE_ENUM, "Vol Sampler R",                "%s", volumes,      0, 30, 0 },
+    { CFG_MIXER6_VOL,           CFG_TYPE_ENUM, "Vol Drive 1",                  "%s", volumes,      0, 30, 9 },
+    { CFG_MIXER7_VOL,           CFG_TYPE_ENUM, "Vol Drive 2",                  "%s", volumes,      0, 30, 9 },
+    { CFG_MIXER8_VOL,           CFG_TYPE_ENUM, "Vol Tape Read",                "%s", volumes,      0, 30, 2 },
+    { CFG_MIXER9_VOL,           CFG_TYPE_ENUM, "Vol Tape Write",               "%s", volumes,      0, 30, 2 },
+    { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0,  0 } };
 
 extern Overlay *overlay;
 
@@ -357,6 +442,7 @@ extern Overlay *overlay;
 U64Config :: U64Mixer :: U64Mixer()
 {
     register_store(STORE_PAGE_ID, "Audio Mixer", u64_mixer_cfg);
+    cfg->set_sort_order(SORT_ORDER_CFG_MIXER);
 
     // enable "hot" updates for mixer
     for (uint8_t b = CFG_MIXER0_VOL; b <= CFG_MIXER9_VOL; b++) {
@@ -372,12 +458,33 @@ void U64Config :: U64Mixer :: effectuate_settings()
     //printf("U64Mixer :: effectuate_settings()\n");
     setMixer(cfg->items[0]);
 }
+
+#if U64 == 2
+U64Config :: U64SpeakerMixer :: U64SpeakerMixer()
+{
+    register_store(STORE_PAGE_ID+1, "Speaker Mixer", u64_speaker_mixer_cfg);
+    cfg->set_sort_order(SORT_ORDER_CFG_SPEAKER);
+    for (uint8_t b = CFG_MIXER0_VOL; b <= CFG_MIXER9_VOL; b++) {
+        cfg->set_change_hook(b, U64Config::setSpeakerMixer);
+    }
+    cfg->set_change_hook(CFG_SPEAKER_EN, U64Config::enableDisableSpeaker);
+}
+
+void U64Config :: U64SpeakerMixer :: effectuate_settings()
+{
+    enableDisableSpeaker(cfg->items[0]); // This should be the first!
+    setSpeakerMixer(cfg->items[0]);
+}
+
+#endif
+
+
 ////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////
 U64Config :: U64SidSockets :: U64SidSockets()
 {
     register_store(STORE_PAGE_ID, "SID Sockets Configuration", u64_sid_detection_cfg);
-
+    cfg->set_sort_order(SORT_ORDER_CFG_SIDSKT);
     // This field shows what was detected and cannot be changed
     cfg->disable(CFG_SID1_TYPE);
     cfg->disable(CFG_SID2_TYPE);
@@ -396,7 +503,7 @@ int U64Config :: detectDukestahAdapter()
     volatile uint8_t *base2 = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD500); // D500
 
     C64 :: hard_stop();
-    
+
     base1[25] = 0x81; // Enter config mode
     base1[26] = 0x65;
     base1[30] = 4;   // Set FPGASID to stereo
@@ -410,7 +517,7 @@ int U64Config :: detectDukestahAdapter()
 
     base1[28] = 5;
     base2[28] = 13;
-    
+
     base1[25] = 0x82;   // Swap mode
     base1[26] = 0x65;
     uint8_t tmp1 = base1[28] & 15;   // Read SID2 register 28
@@ -421,7 +528,7 @@ int U64Config :: detectDukestahAdapter()
     ((SidDeviceFpgaSid*)(sidDevice[0]))->effectuate_settings();
 
     if (tmp1 == 13) return SID_TYPE_FPGASID_DUKESTAH;
-    
+
     return SID_TYPE_FPGASID;
 }
 
@@ -492,6 +599,19 @@ int U64Config :: detectRemakes(int socket)
         return SID_TYPE_ARMSID; // ARMSID
     }
 
+    if (SidDevicePdSid :: detect(base)) {
+        sidDevice[socket] = new SidDevicePdSid(socket, base);
+        return SID_TYPE_PDSID;
+    }
+    switch(SidDeviceSidKick :: detect(base)) {
+    case 1:
+        sidDevice[socket] = new SidDeviceSidKick(socket, base, 1);
+        return SID_TYPE_SIDKICK_PICO;
+    case 2:
+        sidDevice[socket] = new SidDeviceSidKick(socket, base, 0);
+        return SID_TYPE_SIDKICK;
+    }
+
     return 0;
 }
 
@@ -506,22 +626,22 @@ void U64Config :: U64SidSockets :: detect(void)
         ;
 
     S_SetupDetectionAddresses();
-    sid1 = u64_configurator.detectFPGASID(0);
+    sid1 = u64_configurator->detectFPGASID(0);
 
     S_SetupDetectionAddresses();
-    sid2 = u64_configurator.detectFPGASID(1);
+    sid2 = u64_configurator->detectFPGASID(1);
 
     if ((sid1 == SID_TYPE_NONE) || (sid2 == SID_TYPE_NONE)) {
         wait_ms(100);
 
         S_SetupDetectionAddresses();
         if (sid1 == SID_TYPE_NONE) {
-            sid1 = u64_configurator.detectRemakes(0);
+            sid1 = u64_configurator->detectRemakes(0);
         }
 
         S_SetupDetectionAddresses();
         if (sid2 == SID_TYPE_NONE) {
-            sid2 = u64_configurator.detectRemakes(1);
+            sid2 = u64_configurator->detectRemakes(1);
         }
     }
 
@@ -537,13 +657,12 @@ void U64Config :: U64SidSockets :: detect(void)
 
     if ((sid1 == SID_TYPE_FPGASID) && (sid2 == SID_TYPE_NONE)) {
     	S_SetupDetectionAddresses();
-    	int tmp = u64_configurator.detectDukestahAdapter();
+    	int tmp = u64_configurator->detectDukestahAdapter();
     	if (tmp == SID_TYPE_FPGASID_DUKESTAH)
            sid1 = sid2 = tmp;
     }
 
     printf("$$ SID1 = %d. SID2 = %d\n", sid1, sid2);
-
 
     // Configuration has changed? Then disable the sockets until the user
     // has approved the detection. We only do this for 12V. We simply enable
@@ -590,13 +709,14 @@ void U64Config :: U64SidSockets :: detect(void)
         }
     }
     if (cfg->is_flash_stale()) {
-        cfg->write();
         UserInterface :: postMessage("SID changed. Please review settings");
     }
 }
 
 void U64Config :: U64SidSockets :: effectuate_settings()
 {
+    uint8_t sid_ctrl_value = 0;
+
     //printf("U64Sockets :: effectuate_settings()\n");
     {
         uint8_t typ = cfg->get_value(CFG_SID1_TYPE); // 0 = none, 1 = 6581, 2 = 8580
@@ -615,7 +735,10 @@ void U64Config :: U64SidSockets :: effectuate_settings()
         // bit 2 = shunt
         // bit 3 = caps
         uint8_t value = reg | (shu << 2) | (cap << 3);
+        sid_ctrl_value = value;
+#if U64 == 1
         C64_PLD_SIDCTRL1 = value | 0x50;
+#endif
     }
 
     {
@@ -635,8 +758,22 @@ void U64Config :: U64SidSockets :: effectuate_settings()
         // bit 2 = shunt
         // bit 3 = caps
         uint8_t value = reg | (shu << 2) | (cap << 3);
+        sid_ctrl_value |= (value << 4);
+#if U64 == 1
         C64_PLD_SIDCTRL2 = value | 0xB0;
+#endif
     }
+
+#if U64 == 2
+    if(i2c) {
+        i2c->i2c_lock("SID Configuration");
+        i2c->set_channel(I2C_CHANNEL_1V8);
+        i2c->i2c_write_byte(0x40, 0x01, sid_ctrl_value);
+        i2c->i2c_write_byte(0x40, 0x03, 0x00);
+        i2c->i2c_unlock();
+        printf("Written %02X to I2C\n", sid_ctrl_value);
+    }
+#endif
 
     C64_SID1_EN_BAK  = cfg->get_value(CFG_SOCKET1_ENABLE);
     C64_SID2_EN_BAK  = cfg->get_value(CFG_SOCKET2_ENABLE);
@@ -648,7 +785,7 @@ void U64Config :: U64SidSockets :: effectuate_settings()
 U64Config :: U64UltiSids :: U64UltiSids()
 {
     register_store(STORE_PAGE_ID, "UltiSID Configuration", u64_ultisid_cfg);
-
+    cfg->set_sort_order(SORT_ORDER_CFG_ULTISID);
     cfg->set_change_hook(CFG_EMUSID1_FILTER, U64Config::setFilter);
     cfg->set_change_hook(CFG_EMUSID2_FILTER, U64Config::setFilter);
     cfg->set_change_hook(CFG_EMUSID1_RESONANCE, U64Config::setSidEmuParams);
@@ -677,6 +814,7 @@ void U64Config :: U64UltiSids :: effectuate_settings()
 U64Config :: U64SidAddressing :: U64SidAddressing()
 {
     register_store(STORE_PAGE_ID, "SID Addressing", u64_sid_addressing_cfg);
+    cfg->set_sort_order(SORT_ORDER_CFG_SIDADDR);
 }
 
 void U64Config :: U64SidAddressing :: effectuate_settings()
@@ -717,15 +855,22 @@ void U64Config :: U64SidAddressing :: effectuate_settings()
 U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 {
     systemMode = e_NOT_SET;
-    U64_ETHSTREAM_ENA = 0;
+    hdmiMode = e_480p_576p;
 
-    C64 *machine = C64 :: getMachine();
+    U64_ETHSTREAM_ENA = 0;
+	skipReset = false;
+
+    fm = FileManager::getFileManager();
+    resetSemaphore = xSemaphoreCreateBinary();
+    u64_configurator = this; // hack
+
     if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
-		struct t_cfg_definition *def = u64_cfg;
-		register_store(STORE_PAGE_ID, "U64 Specific Settings", def);
+        struct t_cfg_definition *def = u64_cfg;
+        register_store(STORE_PAGE_ID, "U64 Specific Settings", def);
 
 		// Tweak: This has to be done first in order to make sure that the correct cart is started
 		// at cold boot.
+        C64 *machine = C64 :: getMachine();
 		machine->ConfigureU64SystemBus();
 		if (!(machine-> is_accessible())) {
 		    printf("*** WARNING: The C64 should be stopped at this time for the SID Detection to work!\n");
@@ -735,11 +880,6 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 		sidDevice[0] = NULL;
         sidDevice[1] = NULL;
 
-        sockets.detect();
-
-        hdmiMonitor = IsMonitorHDMI();
-
-        cfg->set_change_hook(CFG_SCAN_MODE_TEST, U64Config::setScanMode);
         cfg->set_change_hook(CFG_COLOR_CLOCK_ADJ, U64Config::setPllOffset);
         cfg->set_change_hook(CFG_LED_SELECT_0, U64Config::setLedSelector);
         cfg->set_change_hook(CFG_LED_SELECT_1, U64Config::setLedSelector);
@@ -747,22 +887,85 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
         cfg->set_change_hook(CFG_SPEED_PREF, U64Config::setCpuSpeed);
         cfg->set_change_hook(CFG_BADLINES_EN, U64Config::setCpuSpeed);
         cfg->set_change_hook(CFG_SUPERCPU_DET, U64Config::setCpuSpeed);
-        effectuate_settings();
-        sockets.effectuate_settings();
-        mixercfg.effectuate_settings();
-        ultisids.effectuate_settings();
-        sidaddressing.effectuate_settings();
 
         if (!isEliteBoard()) {
             cfg->disable(CFG_JOYSWAP);
         }
-    }
-    fm = FileManager::getFileManager();
 
-	skipReset = false;
-    xTaskCreate( U64Config :: reset_task, "U64 Reset Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, &resetTaskHandle );
-    resetSemaphore = xSemaphoreCreateBinary();
+        printf("*** Init U64 Configurator\n");
+#if U64 == 2
+        i2c->enable_scan(true, false);
+#endif
+        u64_configurator->sockets.detect();
+        u64_configurator->clear_ram();
+
+        cfg->set_alt_name("C64U Specific Settings");
+        setup_config_menu(); // Create different config groups
+        u64_update_usb_hid_info_items(cfg);
+        cfg->hide();
+
+        // Boot hotkey
+        {
+            C64_POKE(0xDC02, 0xFF);
+            C64_POKE(0xDC03, 0x00);
+            uint8_t key = Keyboard_C64 :: scan_keyboard(&CIA1_DPB, &CIA1_DPA);
+            printf("Key at U64 Config: %d\n", key);
+            switch(key) {
+            case 0x10: // ctrl-p
+                cfg->set_value(CFG_SYSTEM_MODE, 0);
+                break;
+            case 0x0E: // ctrl-n
+                cfg->set_value(CFG_SYSTEM_MODE, 1);
+                break;
+            default:
+                break;
+            }
+        }
+
+        // the following sets the HDMI mode
+        u64_configurator->effectuate_settings(); // requires I2C
+
+        hpd_monitor_sem = xSemaphoreCreateBinary();
+        xTaskCreate(U64Config::hpd_monitor_task, "HPD Monitor", configMINIMAL_STACK_SIZE, u64_configurator, PRIO_HW_SERVICE, &u64_configurator->hpd_monitor_task_handle);
+        install_high_irq(ITU_IRQHIGH_HDMI, U64Config::hpd_monitor_irq, u64_configurator);
+        xSemaphoreGive(hpd_monitor_sem);
+
+//        u64_configurator->hdmiMonitor = u64_configurator->IsMonitorHDMI(); // requires I2C
+        u64_configurator->sockets.effectuate_settings();
+        u64_configurator->mixercfg.effectuate_settings();
+        u64_configurator->ultisids.effectuate_settings();
+        u64_configurator->sidaddressing.effectuate_settings();
+#if U64 == 2
+        u64_configurator->speakercfg.effectuate_settings();
+#endif
+
+        if (cfg->is_flash_stale()) {
+            cfg->write();
+        }
+
+        xTaskCreate( U64Config :: reset_task, "U64 Reset Task", configMINIMAL_STACK_SIZE, u64_configurator, PRIO_REALTIME, &u64_configurator->resetTaskHandle );
+        printf("*** U64 Configurator Done\n");
+    }
 }
+
+uint8_t U64Config :: hpd_monitor_irq(void *a)
+{
+    U64_HDMI_REG = U64_HDMI_HPD_RESET;
+    BaseType_t higherTaskWoken;
+    xSemaphoreGiveFromISR(u64_configurator->hpd_monitor_sem, &higherTaskWoken);
+    return 1;
+}
+
+void U64Config :: hpd_monitor_task(void *_a)
+{
+    while(1) {
+        xSemaphoreTake(u64_configurator->hpd_monitor_sem, portMAX_DELAY);
+        vTaskDelay(200 / portTICK_PERIOD_MS);
+        u64_configurator->read_edid();
+        u64_configurator->configure_hdmi_output();
+    }
+}
+
 
 void U64Config :: ResetHandler()
 {
@@ -798,12 +1001,25 @@ void U64Config :: run_reset_task()
 
 void U64Config :: effectuate_settings()
 {
+    extern uint8_t wasd_to_joy;
     if(!cfg)
         return;
 
     C64_PADDLE_EN    = cfg->get_value(CFG_PADDLE_EN);
+    C64_PADDLE_SWAP  = cfg->get_value(CFG_JOYSWAP) & 1;
+#if U64 == 2
+    uint8_t swap = cfg->get_value(CFG_JOYSWAP);
+    U64II_KEYB_JOY     = swap & 1;
+    static const uint8_t wasd_settings[] = { 0x00, 0x00, 0x01, 0x01, 0x03, 0x03 };
+    MATRIX_WASD_TO_JOY = wasd_to_joy = wasd_settings[swap];
+#else
     C64_PLD_JOYCTRL  = cfg->get_value(CFG_JOYSWAP) ^ 1;
-    C64_PADDLE_SWAP  = cfg->get_value(CFG_JOYSWAP);
+#endif
+
+    uint8_t en = cfg->get_value(CFG_USERPORT_EN) ? 3 : 0;
+    U64_USERPORT_EN  = en;
+    U64_PWM_DUTY = (en) ? 0xD8 : 0x00;
+    printf("USERPORT_EN = %d\n", U64_USERPORT_EN);
 
     //C64_TURBOREGS_EN = 0;
     //C64_SPEED_PREFER = 0;
@@ -811,12 +1027,14 @@ void U64Config :: effectuate_settings()
     setCpuSpeed(cfg->find_item(CFG_SPEED_REGS));
 
     //printf("U64Config :: effectuate_settings()\n");
-    uint8_t sp_vol = cfg->get_value(CFG_SPEAKER_VOL);
-
-    U2PIO_SPEAKER_EN = sp_vol ? (sp_vol << 1) | 0x01 : 0;
+    if (cfg->get_value(CFG_SPEAKER_EN)) {
+        uint8_t sp_vol = cfg->get_value(CFG_SPEAKER_VOL);
+        U2PIO_SPEAKER_EN = sp_vol ? (sp_vol << 1) | 0x01 : 0;
+    } else {
+        U2PIO_SPEAKER_EN = 0;
+    }
     C64_SCANLINES    = cfg->get_value(CFG_SCANLINES);
-
-    uint8_t hdmiSetting = cfg->get_value(CFG_HDMI_ENABLE);
+    hdmiSetting = cfg->get_value(CFG_HDMI_ENABLE);
 
     if (!hdmiSetting) { // Auto = 0
         U64_HDMI_ENABLE = hdmiMonitor ? 1 : 0;
@@ -824,7 +1042,10 @@ void U64Config :: effectuate_settings()
         U64_HDMI_ENABLE = (hdmiSetting == 1) ? 1 : 0; // 1 = HDMI, 2 = DVI
     }
 
-    U64_INT_CONNECTORS = cfg->get_value(CFG_PARCABLE_ENABLE) | (cfg->get_value(CFG_IEC_BURST_EN) << 1);
+    // "All Connected", "C64<->Ultimate", "DIN<->Ultimate", "C64<->DIN"
+    const uint8_t c_iec_connectors[] = { 0x70, 0x60, 0x30, 0x50 }; // 4: ext, 5: ult, 6: cia
+    uint8_t iec_connections = c_iec_connectors[cfg->get_value(CFG_IEC_BUS_MODE)];
+    U64_INT_CONNECTORS = cfg->get_value(CFG_PARCABLE_ENABLE) | (cfg->get_value(CFG_IEC_BURST_EN) << 1) | iec_connections;
 
     uint8_t format = 0;
     if (cfg->get_value(CFG_ANALOG_OUT_SELECT)) {
@@ -837,10 +1058,6 @@ void U64Config :: effectuate_settings()
         doPll = true;
     }
 
-    const t_video_color_timing *ct = color_timings[(int)systemMode];
-    C64_PHASE_INCR  = ct->phase_inc;
-    C64_VIDEOFORMAT = ct->mode_bits | format;
-
     const char *palette = cfg->get_string(CFG_PALETTE);
     if (strlen(palette)) {
         load_palette_vpl(DATA_DIRECTORY, palette);
@@ -848,22 +1065,115 @@ void U64Config :: effectuate_settings()
         set_palette_rgb(default_colors);
     }
 
+    const t_video_color_timing *ct = color_timings[(int)systemMode];
+    C64_PHASE_INCR  = ct->phase_inc;
+
+#if U64 == 2
+    if (cfg->get_value(CFG_HDMI_RESOLUTION) != (int)hdmiMode) {
+        hdmiMode = (t_hdmi_mode)cfg->get_value(CFG_HDMI_RESOLUTION);
+        doPll = true;
+    }
+
     if (doPll) {
-        SetVideoPll(systemMode);
+        printf("config doing plls...\n");
+        // Set the primary C64 clock, which is also the reference for the HDMI pll
+        SetVideoPll(systemMode, cfg->get_value(CFG_COLOR_CLOCK_ADJ));
+        // Now configure the HDMI plls based on the final scan resolution
+        C64_VIDEOFORMAT = ct->mode_bits | format;
+        SetVideoMode1080p(systemMode, hdmiMode);
+        DetermineOverlaySettings(systemMode, hdmiMode);
+        if (overlay) {
+            overlay->update_settings(overlaySettings);
+        }
+        ResetHdmiPll();
+        SetResampleFilter(systemMode);
+    } else {
+        C64_VIDEOFORMAT = ct->mode_bits | format;
+    }
+#else
+    if (doPll) {
+        C64_VIDEOFORMAT = ct->mode_bits | format;
+        SetVideoPll(systemMode, cfg->get_value(CFG_COLOR_CLOCK_ADJ));
         SetHdmiPll(systemMode);
         SetVideoMode(systemMode);
         ResetHdmiPll();
         SetResampleFilter(systemMode);
-        overlay->initRegs();
     }
+#endif
 
 #if DEVELOPER
     C64_VIC_TEST = cfg->get_value(CFG_VIC_TEST);
 #endif
     setPllOffset(cfg->find_item(CFG_COLOR_CLOCK_ADJ));
-    setScanMode(cfg->find_item(CFG_SCAN_MODE_TEST));
     setLedSelector(cfg->find_item(CFG_LED_SELECT_0)); // does both anyway
 
+}
+
+static void u64_update_usb_hid_info_items(ConfigStore *cfg)
+{
+    if (!cfg) {
+        return;
+    }
+
+    t_usb_hid_status_snapshot snapshot;
+    usb_hid_get_status_snapshot(snapshot);
+
+    struct {
+        uint8_t name_id;
+        uint8_t mode_id;
+        const char *name_value;
+        const char *mode_value;
+    } hid_items[] = {
+        { CFG_USB_MOUSE_NAME, CFG_USB_MOUSE_MODE, snapshot.mouse_name, snapshot.mouse_mode },
+        { CFG_USB_KEYBOARD_NAME, CFG_USB_KEYBOARD_MODE, snapshot.keyboard_name, snapshot.keyboard_mode },
+    };
+
+    for (unsigned int i = 0; i < (sizeof(hid_items) / sizeof(hid_items[0])); i++) {
+        ConfigItem *name_item = cfg->find_item(hid_items[i].name_id);
+        ConfigItem *mode_item = cfg->find_item(hid_items[i].mode_id);
+        if (name_item) {
+            name_item->setEnabled(false);
+            name_item->setString(hid_items[i].name_value);
+        }
+        if (mode_item) {
+            mode_item->setEnabled(false);
+            mode_item->setString(hid_items[i].mode_value);
+        }
+    }
+}
+
+extern "C" void u64_refresh_usb_hid_status(void)
+{
+    portENTER_CRITICAL();
+    u64_usb_hid_status_generation++;
+    portEXIT_CRITICAL();
+}
+
+extern "C" void u64_dispatch_usb_hid_status_refresh(void)
+{
+    bool refresh_needed = false;
+
+    portENTER_CRITICAL();
+    if (u64_usb_hid_status_generation != u64_usb_hid_status_handled_generation) {
+        u64_usb_hid_status_handled_generation = u64_usb_hid_status_generation;
+        refresh_needed = true;
+    }
+    portEXIT_CRITICAL();
+
+    if (refresh_needed) {
+        if (u64_configurator && u64_configurator->cfg) {
+            u64_update_usb_hid_info_items(u64_configurator->cfg);
+        }
+        FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
+    }
+}
+
+void U64Config :: on_edit()
+{
+    portENTER_CRITICAL();
+    u64_usb_hid_status_handled_generation = u64_usb_hid_status_generation;
+    portEXIT_CRITICAL();
+    u64_update_usb_hid_info_items(cfg);
 }
 
 void U64Config :: get_sid_addresses(ConfigStore *cfg, uint8_t *base, uint8_t *mask, uint8_t *split)
@@ -956,21 +1266,51 @@ int U64Config :: setMixer(ConfigItem *it)
     return 0;
 }
 
+int U64Config :: enableDisableSpeaker(ConfigItem *it)
+{
+    ConfigStore *cfg = it->store;
+    if (it->getValue()) {
+        for (uint8_t b = CFG_MIXER0_VOL; b <= CFG_MIXER9_VOL; b++) {
+            cfg->enable(b);
+        }
+    } else {
+        for (uint8_t b = CFG_MIXER0_VOL; b <= CFG_MIXER9_VOL; b++) {
+            cfg->disable(b);
+        }
+    }
+    setSpeakerMixer(it);
+    return 1;
+}
+
+int U64Config :: setSpeakerMixer(ConfigItem *it)
+{
+    // Now, configure the mixer
+    volatile uint8_t *mixer = (volatile uint8_t *)U64_SPEAKER_MIXER;
+    ConfigStore *cfg = it->store;
+
+    if (cfg->get_value(CFG_SPEAKER_EN) == 0) {
+        // Disable speaker mixer
+        for(int i=0; i<20; i++) {
+            *(mixer++) = 0;
+        }
+        return 0;
+    }
+    for(int i=0; i<10; i++) {
+        uint8_t vol = volume_ctrl[cfg->get_value(CFG_MIXER0_VOL + i)];
+        *(mixer++) = vol;
+        *(mixer++) = vol;
+    }
+    return 0;
+}
+
 int U64Config :: setPllOffset(ConfigItem *it)
 {
 	if(it) {
-		pllOffsetPpm(it->getValue()); // Set correct mfrac
+//		pllOffsetPpm(it->getValue()); // Set correct mfrac
 	}
     return 0;
 }
 
-int U64Config :: setScanMode(ConfigItem *it)
-{
-	if(it) {
-//		SetScanMode(it->value);
-	}
-    return 0;
-}
 
 int U64Config :: setLedSelector(ConfigItem *it)
 {
@@ -1048,14 +1388,16 @@ int U64Config :: setSidEmuParams(ConfigItem *it)
 }
 
 #define MENU_U64_SAVEEDID 1
-#define MENU_U64_SAVEEEPROM 2
 #define MENU_U64_WIFI_DISABLE 3
 #define MENU_U64_WIFI_ENABLE 4
 #define MENU_U64_WIFI_BOOT 5
 #define MENU_U64_DETECT_SIDS 6
-#define MENU_U64_PEEK 7
+#define MENU_U64_WIFI_DOWNLOAD 7
 #define MENU_U64_POKE 8
-#define MENU_U64_MONITOR 9
+#define MENU_U64_WIFI_ECHO 9
+#define MENU_U64_UART_ECHO 10
+#define MENU_U64_PEEK 11
+#define MENU_U64_MONITOR 12
 
 void U64Config :: create_task_items(void)
 {
@@ -1065,9 +1407,9 @@ void U64Config :: create_task_items(void)
     myActions.monitor   = new Action("Monitor", SUBSYSID_U64, MENU_U64_MONITOR);
     myActions.saveedid  = new Action("Save EDID to file", SUBSYSID_U64, MENU_U64_SAVEEDID);
     myActions.siddetect = new Action("Detect SIDs", SUBSYSID_U64, MENU_U64_DETECT_SIDS);
-    myActions.wifioff   = new Action("Disable WiFi", SUBSYSID_U64, MENU_U64_WIFI_DISABLE);
-    myActions.wifion    = new Action("Enable WiFi",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE);
-    myActions.wifiboot  = new Action("Enable WiFi Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT);
+    myActions.esp32off  = new Action("Disable ESP32", SUBSYSID_U64, MENU_U64_WIFI_DISABLE);
+    myActions.esp32on   = new Action("Enable ESP32",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE);
+    myActions.esp32boot = new Action("Enable ESP32 Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT);
 
     dev->append(myActions.saveedid);
 
@@ -1078,37 +1420,19 @@ void U64Config :: create_task_items(void)
 #endif
 
 #if DEVELOPER > 0
-    dev->append(myActions.siddetect);
-    dev->append(myActions.wifioff  );
-    dev->append(myActions.wifion   );
-    dev->append(myActions.wifiboot );
+    dev->append(myActions.siddetect );
+    dev->append(myActions.esp32off  );
+    dev->append(myActions.esp32on   );
+    dev->append(myActions.esp32boot );
 #endif
 }
 
-void U64Config :: update_task_items(bool writablePath, Path *p)
+void U64Config :: update_task_items(bool writablePath)
 {
     myActions.saveedid->setDisabled(!writablePath);
 }
 
-bool U64Config :: stop_c64() {
-    portENTER_CRITICAL();
-    bool running = !(C64_STOP & C64_HAS_STOPPED);
-    if (running) {
-        C64 *machine = C64 :: getMachine();
-        machine->stop(false);
-    }
-    return running;
-}
-
-void U64Config :: resume_c64(bool stopped) {
-    if (stopped) {
-        C64 *machine = C64 :: getMachine();
-        machine->start();
-    }
-    portEXIT_CRITICAL();
-}           
-
-int U64Config :: executeCommand(SubsysCommand *cmd)
+SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
 {
 	File *f = 0;
 	FRESULT res;
@@ -1120,7 +1444,6 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
 	int sid1, sid2;
 	char sidString[40];
 	C64 *machine;
-	I2C_Driver i2c;
 	static char poke_buffer[16];
 	static char peek_buffer[16];
 	static char peek_range_buffer[16];
@@ -1129,14 +1452,16 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
 	switch(cmd->functionID) {
     case MENU_U64_SAVEEDID:
     	// Try to read EDID, just a hardware test
-    	if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
+    	if ((getFpgaCapabilities() & CAPAB_ULTIMATE64) && (i2c)) {
     		U64_HDMI_REG = U64_HDMI_HPD_RESET;
 
     		if (U64_HDMI_REG & U64_HDMI_HPD_CURRENT) {
     			U64_HDMI_REG = U64_HDMI_DDC_ENABLE;
     			printf("Monitor detected, now reading EDID.\n");
-    			if (i2c.i2c_read_block(0xA0, 0x00, edid, 256) == 0) {
-    				if (cmd->user_interface->string_box("Reading EDID OK. Save to:", name, 31) > 0) {
+                i2c->i2c_lock("EDID Read");
+                i2c->set_channel(I2C_CHANNEL_HDMI);
+    			if (i2c->i2c_read_block(0xA0, 0x00, edid, 256) == 0) {
+    				if ((cmd->user_interface->string_box("Reading EDID OK. Save to:", name, 31) > 0) && (*name)) {
     					set_extension(name, ".bin", 32);
     			        fres = fm->fopen(cmd->path.c_str(), name, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
     			        if (fres == FR_OK) {
@@ -1148,43 +1473,10 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
     			    cmd->user_interface->popup("Failed to read EDID", BUTTON_OK);
     			}
     			U64_HDMI_REG = U64_HDMI_DDC_DISABLE;
+                i2c->i2c_unlock();
     		}
     	}
     	break;
-#if 0
-    case MENU_U64_SAVEEEPROM:
-        // Try to read EDID, just a hardware test
-        if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
-            if (ext_i2c_read_block(0xA0, 0x00, edid, 256) == 0) {
-                dump_hex_relative(edid, 256);
-                if (cmd->user_interface->string_box("Reading I2C OK. Save to:", name, 31) > 0) {
-                    set_extension(name, ".bin", 32);
-                    fres = fm->fopen(cmd->path.c_str(), name, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
-                    if (fres == FR_OK) {
-                        f->write(edid, 256, &trans);
-                        fm->fclose(f);
-                    }
-                }
-            }
-        }
-        break;
-#endif
-
-    case MENU_U64_WIFI_DISABLE:
-        U64_WIFI_CONTROL = 0;
-        break;
-
-    case MENU_U64_WIFI_ENABLE:
-        U64_WIFI_CONTROL = 0;
-        vTaskDelay(50);
-        U64_WIFI_CONTROL = 5;
-        break;
-
-    case MENU_U64_WIFI_BOOT:
-        U64_WIFI_CONTROL = 2;
-        vTaskDelay(150);
-        U64_WIFI_CONTROL = 7;
-        break;
 
     case MENU_U64_PEEK:
         if (cmd->user_interface->string_box("Peek AAAA", peek_buffer, 16)) {
@@ -1199,7 +1491,7 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
         break;
 
     case MENU_U64_POKE:
-        if (cmd->user_interface->string_box("Poke AAAA,DD", poke_buffer, 16)) {
+        if ((cmd->user_interface->string_box("Poke AAAA,DD", poke_buffer, 16) > 0) && (*poke_buffer)) {
             sscanf(poke_buffer, "%x,%x", &addr, &value);
 
             C64 :: getMachine()->poke(addr, (uint8_t) value);
@@ -1211,7 +1503,7 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
         }
         break;
 
-    case MENU_U64_MONITOR:
+    case MENU_U64_MONITOR: {
         int ram_size = 64 * 1024;
         uint8_t *pb = new uint8_t[ram_size];
         
@@ -1220,6 +1512,7 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
         cmd->user_interface->run_hex_editor((const char *) pb, ram_size);   
         delete[] pb;
         break;
+    }
 
     case MENU_U64_DETECT_SIDS:
         machine = C64 :: getMachine();
@@ -1231,14 +1524,29 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
         effectuate_settings();
         break;
 
+#ifdef NO_ESP
+    case MENU_U64_WIFI_DISABLE:
+        esp32.Quit();
+        break;
+
+    case MENU_U64_WIFI_DOWNLOAD:
+        esp32.Boot();
+        break;
+
+    case MENU_U64_WIFI_ENABLE:
+        esp32.EnableRunMode();
+        break;
+#endif
+
     case 0xFFFE: // dummy
         DetectSidImpl(edid);
         break;
 
     default:
     	printf("U64 does not know this command\n");
+        return SSRET_NOT_IMPLEMENTED;
     }
-    return 0;
+    return SSRET_OK;
 }
 
 uint8_t U64Config :: GetSidType(int slot)
@@ -1536,13 +1844,13 @@ bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
 // this function overrides the weak function in FiletypeSID.. ;-)
 bool SidAutoConfig(int count, t_sid_definition *requested)
 {
-    return u64_configurator.SidAutoConfig(count, requested);
+    return u64_configurator->SidAutoConfig(count, requested);
 }
 
 extern "C" {
     void ResetInterruptHandlerU64()
     {
-        u64_configurator.ResetHandler();
+        u64_configurator->ResetHandler();
     }
 }
 
@@ -1815,36 +2123,21 @@ int U64Config :: S_SidDetector(int &sid1, int &sid2)
 int swap_joystick()
 {
     if (!isEliteBoard()) {
-        return 0;
+        return MENU_NOP;
     }
 
-    ConfigItem *item = u64_configurator.cfg->find_item(CFG_JOYSWAP);
+    ConfigItem *item = u64_configurator->cfg->find_item(CFG_JOYSWAP);
     int swap = item->getValue();
     swap ^= 1;
     item->setValue(swap);
+    U64II_KEYB_JOY  = (uint8_t)swap;
     C64_PLD_JOYCTRL = (uint8_t)(swap ^ 1);
     C64_PADDLE_SWAP = (uint8_t)swap;
 
     printf("*S%d*", swap);
 
     // swap performed, now exit menu
-    return -1;
-}
-
-bool isEliteBoard(void)
-{
-    uint8_t rev = (U2PIO_BOARDREV >> 3);
-    if (rev == 0x13) {
-        return true;
-    }
-    if (rev == 0x14) { // may be either!
-        uint8_t joyswap = C64_PLD_JOYCTRL;
-        if (joyswap & 0x80) {
-            return true;
-        }
-        return false;
-    }
-    return false;
+    return MENU_HIDE;
 }
 
 void U64Config :: auto_mirror(uint8_t *base, uint8_t *mask, uint8_t *split, int count)
@@ -1972,8 +2265,8 @@ void U64Config :: show_mapping(uint8_t *base, uint8_t *mask, uint8_t *split, int
 
 void U64Config :: show_sid_addr(UserInterface *intf, ConfigItem *it)
 {
-    SidEditor *se = new SidEditor(intf, u64_configurator.sidaddressing.cfg);
-    se->init(intf->screen, intf->keyboard);
+    SidEditor *se = new SidEditor(intf, u64_configurator->sidaddressing.cfg);
+    se->init();
     intf->activate_uiobject(se);
 }
 
@@ -2012,51 +2305,134 @@ void U64Config :: access_socket_post(int socket)
     portEXIT_CRITICAL();
 }
 
-bool U64Config :: IsMonitorHDMI()
+void U64Config :: clear_ram()
 {
-    const uint8_t header_expected[8] = { 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00 };
-    uint8_t header[8];
-    uint8_t extension[8];
-    I2C_Driver i2c;
+    C64 *machine = C64 :: getMachine();
+    machine->clear_ram();
+}
+
+bool U64Config :: read_edid()
+{
+    edid_size = 0;
 
     if ((U64_HDMI_REG & U64_HDMI_HPD_CURRENT) == 0) {
         printf("No HPD - no digital monitor attached.\n");
         return false;
     }
+    if(!i2c) {
+        printf("No I2C interface available.\n");
+        return false;
+    }
 
     U64_HDMI_REG = U64_HDMI_DDC_ENABLE;
-    if (i2c.i2c_read_block(0xA0, 0x00, header, 8) != 0) {
-        printf("EDID Read FAILED.\n");
+
+    i2c->i2c_lock("HDMI check");
+    i2c->set_channel(I2C_CHANNEL_HDMI);
+    if (i2c->i2c_read_block(0xA0, 0x00, edid, 128) != 0) {
+        printf("EDID Read Block 0 FAILED.\n");
         U64_HDMI_REG = U64_HDMI_DDC_DISABLE;
+        i2c->i2c_unlock();
         return false;
     }
-    if (i2c.i2c_read_block(0xA0, 0x80, extension, 8) != 0) {
-        printf("EDID Read FAILED.\n");
+    edid_size = 128;
+    uint8_t num_ext = edid[126];
+    if (num_ext == 0) {
         U64_HDMI_REG = U64_HDMI_DDC_DISABLE;
+        i2c->i2c_unlock();
         return false;
+    }
+    // num_ext is at least 1.
+    if (i2c->i2c_read_block(0xA0, 0x80, edid + 128, 128) != 0) {
+        printf("EDID Read Block 1 FAILED.\n");
+        U64_HDMI_REG = U64_HDMI_DDC_DISABLE;
+        i2c->i2c_unlock();
+        return false;
+    }
+    edid_size = 256;
+    num_ext = (num_ext > 7) ? 7 : num_ext; // limit to at most 7 extensions
+    for(int n=2; n <= num_ext; n++) {
+        if (i2c->i2c_read_block_ext(n >> 1, 0xA0, (n & 1) ? 0x80 : 0x00, edid + (128 * n), 128) != 0) {
+            printf("EDID Read Block %d FAILED.\n", n);
+            break;
+        } else {
+            edid_size += 128;
+        }
     }
     U64_HDMI_REG = U64_HDMI_DDC_DISABLE;
-    if (memcmp(header, header_expected, 8) != 0) {
+    i2c->i2c_unlock();
+    return true;
+}
+
+bool U64Config :: IsMonitorHDMI()
+{
+    const uint8_t header_expected[8] = { 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00 };
+
+    if (edid_size < 128) {
+        return false;
+    }
+    if (memcmp(edid, header_expected, 8) != 0) {
         printf("EDID Header incorrect.\n");
         return false;
     }
-    if (extension[0] != 0x02) {
-        printf("EDID Extension not of CEA type.\n");
+    if (edid[126] == 0) {
+        printf("EDID No Extension found.\n");
         return false;
     }
-    if ((extension[3] & 0x70) == 0) {
-        printf("EDID no support for any HDMI specific stuff.\n");
-        return false;
+
+    for (int s = 128; s + 127 < edid_size; s += 128) {
+        if (edid[s] != 0x02)
+            continue; // not a CEA-861 extension
+
+        uint8_t dtd_offset = edid[s + 2];
+        if (dtd_offset < 4 || dtd_offset > 127)
+            continue; // sanity
+
+        int i = s + 4;
+        int end = s + dtd_offset; // data blocks end right before DTDs
+        while (i < end) {
+            uint8_t tag_len = edid[i++];
+            uint8_t tag = (tag_len >> 5) & 0x07;
+            uint8_t len = tag_len & 0x1F;
+
+            if (i + len > end)
+                break; // malformed
+
+            // Vendor Specific Data Block
+            if (tag == 0x03 && len >= 3) {
+                // HDMI VSDB has IEEE OUI 0x000C03, stored as 03 0C 00
+                if (edid[i+0] == 0x03 && edid[i+1] == 0x0C && edid[i+2] == 0x00) {
+                    return true;
+                }
+                // (Optional) also detect HDMI Forum VSDB (different OUI)
+            }
+
+            i += len;
+        }
     }
-    printf("EDID: Monitor is HDMI!\n");
-    return true;
+    return false;
+}
+
+void U64Config :: configure_hdmi_output(void)
+{
+    hdmiMonitor = IsMonitorHDMI();
+    if (!hdmiSetting) { // Auto = 0
+        U64_HDMI_ENABLE = hdmiMonitor ? 1 : 0;
+    } else {
+        U64_HDMI_ENABLE = (hdmiSetting == 1) ? 1 : 0; // 1 = HDMI, 2 = DVI
+    }
+
+#if U64 == 2
+    volatile t_video_timing_regs *regs = (volatile t_video_timing_regs *)U64II_HDMI_REGS;
+
+    regs->resync = 2;
+#endif
 }
 
 void U64Config :: list_palettes(ConfigItem *it, IndexedList<char *>& strings)
 {
     // Always return at least the empty string
-    char *empty = new char[16];
-    strcpy(empty, "\er- Default -");
+    char *empty = new char[1];
+    *empty = 0;
     strings.append(empty);
 
     Path p;
@@ -2081,8 +2457,9 @@ void U64Config :: list_palettes(ConfigItem *it, IndexedList<char *>& strings)
 
 void U64Config :: set_palette_rgb(const uint8_t rgb[16][3])
 {
-    volatile uint8_t *rgb_registers = (volatile uint8_t *)C64_PALETTE;
     uint8_t yuv[16][3];
+
+    volatile uint8_t *rgb_registers = (volatile uint8_t *)C64_PALETTE;
     for(int i=0; i<16; i++) {
         *(rgb_registers++) = rgb[i][0];
         *(rgb_registers++) = rgb[i][1];
@@ -2090,8 +2467,17 @@ void U64Config :: set_palette_rgb(const uint8_t rgb[16][3])
         rgb_registers++;
         rgb_to_yuv(rgb[i], yuv[i], false);
     }
-//    dump_hex_relative(rgb, 48);
-//    dump_hex_relative(yuv, 48);
+#if U64 == 2
+    volatile uint8_t *rgb_registers_hdmi = (volatile uint8_t *)U64II_HDMI_PALETTE;
+    for(int i=0; i<16; i++) {
+        *(rgb_registers_hdmi++) = rgb[i][0];
+        *(rgb_registers_hdmi++) = rgb[i][1];
+        *(rgb_registers_hdmi++) = rgb[i][2];
+        rgb_registers_hdmi++;
+    }
+#endif
+
+
     set_palette_yuv(yuv);
 }
 
@@ -2182,14 +2568,118 @@ void U64Config :: set_palette_filename(const char *filename)
 // The flash disk initializes also with an init function, so make sure the ordering
 // number here is higher than the ordering number in blockdev_flash.
 
-InitFunction init_palette(U64Config :: late_init_palette, NULL, NULL, 9);
+InitFunction init_palette("U64 Palette", U64Config :: late_init_palette, NULL, NULL, 9);
 
 void U64Config :: late_init_palette(void *obj, void *param)
 {
-    const char *palette = u64_configurator.cfg->get_string(CFG_PALETTE);
+    const char *palette = u64_configurator->cfg->get_string(CFG_PALETTE);
     if (strlen(palette)) {
         load_palette_vpl(DATA_DIRECTORY, palette);
     } else {
         set_palette_rgb(default_colors);
+    }
+}
+
+void U64Config :: setup_config_menu(void)
+{
+    ConfigGroup *grp = ConfigGroupCollection :: getGroup("Video Configuration", SORT_ORDER_CFG_VIDEO);
+    grp->append(cfg->find_item(CFG_SYSTEM_MODE));
+#if U64 == 2
+    grp->append(cfg->find_item(CFG_HDMI_RESOLUTION));
+#endif
+    grp->append(cfg->find_item(CFG_SCANLINES));
+    grp->append(cfg->find_item(CFG_PALETTE));
+    grp->append(ConfigItem :: separator());
+    grp->append(cfg->find_item(CFG_ANALOG_OUT_SELECT));
+    grp->append(cfg->find_item(CFG_HDMI_ENABLE));
+    grp->append(ConfigItem :: separator());
+//    grp->append(cfg->find_item(CFG_COLOR_CLOCK_ADJ)->set_item_altname("Clock Frequency Tuning"));
+//    grp->append(cfg->find_item(CFG_CHROMA_DELAY)->set_item_altname("Chroma Delay Tuning"));
+
+    grp = ConfigGroupCollection :: getGroup(GROUP_NAME_LEDS, SORT_ORDER_CFG_LEDS);
+    grp->append(ConfigItem :: heading("Power LED"));
+    grp->append(cfg->find_item(CFG_LED_SELECT_0)->set_item_altname("Output 1"));
+    grp->append(cfg->find_item(CFG_LED_SELECT_1)->set_item_altname("Output 2"));
+    grp->append(ConfigItem :: separator());
+
+    grp = ConfigGroupCollection :: getGroup("Joystick Settings", SORT_ORDER_CFG_JOYSTICK);
+    grp->append(cfg->find_item(CFG_JOYSWAP)->set_item_altname("Joystick Input"));
+    grp->append(sidaddressing.cfg->find_item(CFG_PADDLE_EN));
+    grp->append(ConfigItem :: separator());
+    grp->append(cfg->find_item(CFG_MOUSE_MODE));
+    grp->append(cfg->find_item(CFG_MOUSE_SENSITIVITY));
+    grp->append(cfg->find_item(CFG_MOUSE_ACCELERATION));
+    grp->append(cfg->find_item(CFG_MENU_MOUSE_NAV));
+    grp->append(ConfigItem :: separator());
+    grp->append(cfg->find_item(CFG_SCROLL_FACTOR));
+    grp->append(cfg->find_item(CFG_WHEEL_DIRECTION));
+    grp->append(ConfigItem :: separator());
+    grp->append(cfg->find_item(CFG_USB_MOUSE_NAME));
+    grp->append(cfg->find_item(CFG_USB_MOUSE_MODE));
+    grp->append(cfg->find_item(CFG_USB_KEYBOARD_NAME));
+    grp->append(cfg->find_item(CFG_USB_KEYBOARD_MODE));
+
+#if U64==2
+    grp->append(ConfigItem :: separator());
+    grp->append(ConfigItem :: heading("Note: When WASD Joystick emulation"));
+    grp->append(ConfigItem :: heading("is enabled, hold [CTRL] to type the"));
+    grp->append(ConfigItem :: heading("W, A, S, D and RETURN characters."));
+#endif
+
+#if U64==1
+    grp = ConfigGroupCollection :: getGroup("Speaker Settings", SORT_ORDER_CFG_SPEAKER);
+    grp->append(cfg->find_item(CFG_SPEAKER_EN));
+    grp->append(cfg->find_item(CFG_SPEAKER_VOL));
+#endif
+
+    grp = ConfigGroupCollection :: getGroup("Turbo Settings", SORT_ORDER_CFG_TURBO);
+    grp->append(cfg->find_item(CFG_SPEED_REGS));
+    grp->append(cfg->find_item(CFG_SPEED_PREF));
+    grp->append(cfg->find_item(CFG_BADLINES_EN));
+    grp->append(cfg->find_item(CFG_SUPERCPU_DET));
+
+    grp = ConfigGroupCollection :: getGroup("Machine Tweaks", SORT_ORDER_CFG_TWEAKS);
+    grp->append(cfg->find_item(CFG_IEC_BURST_EN));
+    grp->append(cfg->find_item(CFG_PARCABLE_ENABLE)->set_item_altname("Parallel Cable to Drive A"));
+    grp->append(cfg->find_item(CFG_IEC_BUS_MODE));
+    //grp->append(cfg->find_item(CFG_HDMI_TX_SWING));
+
+    grp = ConfigGroupCollection :: getGroup("SID Player Behavior", SORT_ORDER_CFG_SIDPLAY);
+    grp->append(cfg->find_item(CFG_PLAYER_AUTOCONFIG));
+    grp->append(cfg->find_item(CFG_ALLOW_EMUSID));
+}
+
+void U64Config :: DetermineOverlaySettings(t_video_mode mode, t_hdmi_mode hdmimode)
+{
+    switch(hdmimode) {
+    case e_480p_576p:
+        switch(mode) {
+        case e_PAL_50:
+        case e_NTSC_50:
+        case e_NTSC_50_lock:
+            overlaySettings = { 40, 25, 386, 307, 8, OVERLAY_CHARHEIGHT_9 };
+            break;
+        default: // 60 Hz
+            overlaySettings = { 40, 25, 300, 235, 8, OVERLAY_CHARHEIGHT_9 };
+            break;
+        }
+        break;
+    case e_1280x720:
+        overlaySettings = { 40, 25, 958, 160, 8, OVERLAY_CHARHEIGHT_16 };
+        break;
+    case e_1920x1080:
+        overlaySettings = { 40, 25, 1438, 240, 12, OVERLAY_CHARHEIGHT_24 };
+        break;
+    case e_800x600:
+        overlaySettings = { 40, 25, 450, 355, 8, OVERLAY_CHARHEIGHT_9 };
+        break;
+    case e_1024x768:
+        overlaySettings = { 40, 25, 674, 325, 8, OVERLAY_CHARHEIGHT_16 };
+        break;
+    case e_1280x1024:
+        overlaySettings = { 40, 25, 745, 330, 12, OVERLAY_CHARHEIGHT_24 };
+        break;
+    default:
+        break;
     }
 }

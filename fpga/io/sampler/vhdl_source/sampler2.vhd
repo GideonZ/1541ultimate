@@ -9,6 +9,7 @@ use work.sampler_pkg.all;
 entity sampler is
 generic (
     g_clock_freq    : natural := 50_000_000;
+    g_support_16bit : boolean := true;
     g_num_voices    : positive := 8 );
 port (
     clock       : in  std_logic;
@@ -34,15 +35,32 @@ architecture gideon of sampler is
         if c then return t; else return f; end if;
     end function iif;
 
-    -- At this point there are 3 systems:
+    -- At this point there are 4 systems:
     -- Ultimate-II running at 50 MHz
     -- Ultimate-II+ running at 62.5 MHz
     -- Ultimate-64 running at 66.66 MHz
-    -- The ratios are: 1, 5/4 and 4/3, or 12/12, 15/12 and 16/12.  So we should divide by this value
-    -- Or multiply by:  20/20, 16/20 and 15/20 
-
-    constant c_prescale_numerator   : natural := iif(g_clock_freq = 50_000_000, 1, iif(g_clock_freq = 62_500_000, 4, 3));
-    constant c_prescale_denominator : natural := iif(g_clock_freq = 50_000_000, 1, iif(g_clock_freq = 62_500_000, 5, 4));
+    -- Ultimate-64-II running 100 MHz.
+    -- The ratios are: 1, 5/4, 4/3 and 5/2.  So we should divide by this value
+    type t_fraction is record
+        numerator   : positive;
+        denominator : positive;
+    end record;
+    function get_fraction(freq : natural) return t_fraction is
+    begin
+        case freq is
+        when  50_000_000 => return (numerator => 1, denominator => 1);
+        when  62_500_000 => return (numerator => 4, denominator => 5);
+        when  66_666_666 => return (numerator => 3, denominator => 4);
+        when  66_666_667 => return (numerator => 3, denominator => 4);
+        when 100_000_000 => return (numerator => 1, denominator => 2);
+        when 125_000_000 => return (numerator => 2, denominator => 5);
+        when others => report "Unsupported frequency " & integer'image(freq) severity failure;
+        end case;
+        return (numerator => 1, denominator => 1);
+    end function;
+    constant c_prescaler : t_fraction := get_fraction(g_clock_freq);
+    constant c_prescale_numerator   : natural := c_prescaler.numerator;
+    constant c_prescale_denominator : natural := c_prescaler.denominator;
 
     signal voice_i       : integer range 0 to g_num_voices-1;
     
@@ -66,6 +84,7 @@ architecture gideon of sampler is
 begin
     i_regs: entity work.sampler_regs
     generic map (
+        g_support_16bit => g_support_16bit,
         g_num_voices => g_num_voices )
     port map (
         clock       => clock,
@@ -153,10 +172,10 @@ begin
             when fetch1 =>
                 fetch_en <= '1';
                 fetch_addr <= current_control.start_addr + current_state.position;
-                if current_control.mode = mono8 then
+                if current_control.mode = mono8 or not g_support_16bit then
                     fetch_tag  <= "110" & std_logic_vector(to_unsigned(voice_i, 4)) & '1'; -- high
                     next_state.state := playing;
-                    if current_control.interleave then
+                    if current_control.interleave and g_support_16bit then
                         next_state.position := current_state.position + 2; -- this and the next byte
                     else
                         next_state.position := current_state.position + 1; -- this byte only
@@ -198,7 +217,9 @@ begin
             -- write port - sample data --
             if mem_resp.dack_tag(7 downto 5) = "110" then
                 v := to_integer(unsigned(mem_resp.dack_tag(4 downto 1)));
-                if mem_resp.dack_tag(0)='1' then
+                if not g_support_16bit then
+                    voice_sample_reg_h(v) <= signed(mem_resp.data);
+                elsif mem_resp.dack_tag(0)='1' then
                     voice_sample_reg_h(v) <= signed(mem_resp.data);
                 else
                     voice_sample_reg_l(v) <= signed(mem_resp.data);

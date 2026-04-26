@@ -29,12 +29,18 @@
 #define MENU_C64_SAVE_MP3_DRV_B 0x640F
 #define MENU_C64_SAVE_MP3_DRV_C 0x6410
 #define MENU_C64_SAVE_MP3_DRV_D 0x6411
+#define MENU_MEASURE_TIMING     0x6412
+#define MENU_MEASURE_TIMING_API 0x6413
+#define MENU_C64_POWERCYCLE     0x6414
+#define MENU_C64_CLEARMEM       0x6415
+
 #define C64_DMA_LOAD		0x6464
 #define C64_DRIVE_LOAD	    0x6465
 #define C64_DMA_LOAD_RAW	0x6466
 #define C64_DMA_BUFFER	    0x6467
-#define C64_DMA_RAW         0x6468
-#define C64_DMA_LOAD_MNT    0x6469
+#define C64_DMA_RAW_WRITE   0x6468
+#define C64_DMA_RAW_READ    0x6469
+#define C64_DMA_LOAD_MNT    0x646A
 #define C64_PUSH_BUTTON     0x6476
 #define C64_EVENT_MAX_REU   0x6477
 #define C64_EVENT_AUDIO_ON  0x6478
@@ -248,6 +254,8 @@
 #define CART_PROHIBIT_DFXX (CART_ACIA_DF | CART_REU | CART_MAXREU | CART_UCI | CART_SAMPLER)
 #define CART_PROHIBIT_IO   (CART_PROHIBIT_DEXX | CART_PROHIBIT_DFXX)
 #define CART_PROHIBIT_ALL_BUT_REU (CART_PROHIBIT_DEXX | CART_ACIA_DF | CART_SAMPLER)
+#define CART_PROHIBIT_ALL_BUT_REU_AND_ACIA_DE (CART_ACIA_DF | CART_SAMPLER)
+
 
 typedef struct _cart
 {
@@ -289,6 +297,7 @@ class C64 : public GenericHost, ConfigurableObject
     volatile bool buttonPushSeen;
     volatile bool available;
 
+    void setup_config_menu();
     bool isFrozen;
     void determine_d012(void);
     void goUltimax(void);
@@ -304,11 +313,11 @@ class C64 : public GenericHost, ConfigurableObject
     static void hard_stop(void);
     void resume(void);
     void freeze(void);
-    
-    virtual void get_all_memory(uint8_t *) { /* NOT YET IMPLEMENTED EXCEPT FOR U64*/ };
-    virtual uint8_t peek(uint32_t) { /* NOT YET IMPLEMENTED EXCEPT FOR U64*/ };
-    virtual void poke(uint32_t, uint8_t) { /* NOT YET IMPLEMENTED EXCEPT FOR U64*/ };
-    
+    void measure_timing(uint8_t *buffer);
+    virtual void get_all_memory(uint8_t *) { /* NOT YET IMPLEMENTED */ };
+    virtual void clear_ram(void) { /* NOT YET IMPLEMENTED */ };
+    virtual uint8_t peek(uint32_t) { return 0; /* NOT YET IMPLEMENTED */ };
+    virtual void poke(uint32_t, uint8_t) { /* NOT YET IMPLEMENTED */ };
     static uint8_t get_exrom_game(void) {
         return (C64_CLOCK_DETECT & 0x0C) >> 2;
     }
@@ -359,10 +368,10 @@ public:
 
     bool exists(void);
     bool is_accessible(void);
-
+    bool is_stopped(void);
+    
     void set_colors(int background, int border);
     Screen *getScreen(void);
-    void    releaseScreen(void);
     Keyboard *getKeyboard(void);
 
     int  get_cfg_value(uint8_t id)

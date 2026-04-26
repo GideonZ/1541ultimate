@@ -169,23 +169,8 @@ static void move_sys_clock()
     }
 }
 
-#define DRIVE1IRQ (*(volatile uint8_t *)(DRIVE_A_BASE + 0x1806))
-#define DRIVE2IRQ (*(volatile uint8_t *)(DRIVE_B_BASE + 0x1806))
-
 void ddr2_calibrate()
 {
-    hexbyte(DRIVE1IRQ);
-    outbyte('^');
-    hexbyte(DRIVE2IRQ);
-    outbyte('^');
-
-    // if(ram_test(5)) {
-    //     my_puts("\nReady to rumble!\n");
-    // } else {
-    //     my_puts("\nBoo!!\n");
-    // }
-    // return;
-
     // Turn on clock and let DDR stabilize
     LATTICE_DDR2_ENABLE    = CLOCKPIN;
     for (int i=0;i<5000;i++) {

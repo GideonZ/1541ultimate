@@ -6,12 +6,19 @@
 #include "filemanager.h"
 #include "c64.h"
 #include "endianness.h"
+#include "init_function.h"
+
 extern "C" {
     #include "dump_hex.h"
 }
 
 TapeRecorder *tape_recorder = NULL; // globally static
-
+static void init_tape_recorder(void *_a, void *_b)
+{
+    if(getFpgaCapabilities() & CAPAB_C2N_RECORDER)
+	    tape_recorder   = new TapeRecorder;
+}
+InitFunction tape_record_init("Tape Recording Controller", init_tape_recorder, NULL, NULL, 61);
 
 extern "C" BaseType_t tape_recorder_irq(void)
 {
@@ -36,7 +43,7 @@ TapeRecorder :: TapeRecorder() : SubSystem(SUBSYSID_TAPE_RECORDER)
         cache_blocks[i] = (uint32_t *)&cache[512*i];
     }
 	if (getFpgaCapabilities() & CAPAB_C2N_RECORDER) {
-		xTaskCreate( TapeRecorder :: poll_tape_rec, "TapeRecorder", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, &taskHandle );
+		xTaskCreate( TapeRecorder :: poll_tape_rec, "TapeRecorder", configMINIMAL_STACK_SIZE, this, PRIO_REALTIME, &taskHandle );
         ioWrite8(ITU_IRQ_ENABLE, 0x08);
 	}
 }
@@ -48,7 +55,7 @@ TapeRecorder :: ~TapeRecorder()
     delete[] cache;
 }
 	
-int TapeRecorder :: executeCommand(SubsysCommand *cmd)
+SubsysResultCode_e TapeRecorder :: executeCommand(SubsysCommand *cmd)
 {
 	if (cmd->user_interface) {
 		last_user_interface = cmd->user_interface;
@@ -93,7 +100,7 @@ int TapeRecorder :: executeCommand(SubsysCommand *cmd)
 		default:
 			break;
 	}
-	return 0;
+	return SSRET_OK;
 }
 
 void TapeRecorder :: create_task_items(void)
@@ -108,7 +115,7 @@ void TapeRecorder :: create_task_items(void)
     cat->append(myActions.finish);
 }
 
-void TapeRecorder :: update_task_items(bool writablePath, Path *path)
+void TapeRecorder :: update_task_items(bool writablePath)
 {
     if (recording) {
         myActions.finish->show();
@@ -276,13 +283,10 @@ void TapeRecorder :: poll()
 {
 	volatile void *aap = this;
 
-	printf("** tape recorder this = %p\n", this);
 	while(1) {
 		if(error_code != REC_ERR_OK) {
 			PROFILER_SUB = 15;
 			if (last_user_interface) {
-				printf("** tape recorder this = %p\n", this);
-				printf("Last User Interface = %p\n");
 				UserInterface *ui = (UserInterface *)last_user_interface;
 				if (ui->is_available()) {
 					ui->popup("Error during tape capture.", BUTTON_OK);
@@ -329,7 +333,7 @@ bool TapeRecorder :: request_file(SubsysCommand *cmd)
     const char *signature = "C64-TAPE-RAW\001\0\0\0\0\0\0\0";
 
 	int res = cmd->user_interface->string_box("Give name for tap file..", buffer, 22);
-	if(res > 0) {
+	if ((res > 0) && (*buffer)) {
         total_length = 0;
 		set_extension(buffer, ".tap", 32);
 		fix_filename(buffer);

@@ -15,7 +15,6 @@
 class C1541;
 class SystemInfo {
     static void drive_info(StreamTextLog &b, C1541 *drive, char letter);
-    static void iec_info(StreamTextLog &b);
     static void cart_info(StreamTextLog &b);
     static void storage_info(StreamTextLog &b);
     static char*size_expression(uint64_t a, uint64_t b, char *buf);

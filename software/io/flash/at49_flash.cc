@@ -280,7 +280,3 @@ bool AT49_Flash :: protect_configure(void)
 void AT49_Flash :: protect_disable(void)
 {
 }
-
-void AT49_Flash :: protect_enable(void)
-{
-}

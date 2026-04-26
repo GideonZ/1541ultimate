@@ -16,8 +16,8 @@ public:
     int   fetch_context_items(IndexedList<Action *> &list);
     static FileType *test_type(BrowsableDirEntry *inf);
 
-    static int execute(SubsysCommand *);
-    static int executeFlash(SubsysCommand *cmd);
+    static SubsysResultCode_e execute(SubsysCommand *);
+    static SubsysResultCode_e executeFlash(SubsysCommand *cmd);
 
     static bool parseVplFile(File *f, uint8_t rgb[16][3]);
 };

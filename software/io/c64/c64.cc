@@ -52,7 +52,6 @@
 #include "modem.h"
 #endif
 
-bool allowUltimateDosDateSet = false;
 #ifndef RECOVERYAPP
 extern bool connectedToU64;
 #endif
@@ -114,7 +113,7 @@ struct t_cfg_definition c64_config[] = {
     { CFG_C64_PHI2_REC, CFG_TYPE_ENUM,   "PHI2 edge recovery",           "%s", en_dis,     0,  1, 0 },
 #endif
     { CFG_CMD_ENABLE,   CFG_TYPE_ENUM,   "Command Interface",            "%s", en_dis,     0,  1, 0 },
-    { CFG_CMD_ALLOW_WRITE, CFG_TYPE_ENUM,   "UltiDOS: Allow SetDate",    "%s", en_dis,     0,  1, 0 },
+//    { CFG_CMD_ALLOW_WRITE, CFG_TYPE_ENUM,   "UltiDOS: Allow SetDate",    "%s", en_dis,     0,  1, 0 },
 #if DEVELOPER > 0
     { CFG_C64_DO_SYNC,  CFG_TYPE_ENUM,   "Perform VIC sync at DMA RUN",  "%s", en_dis,     0,  1, 0 },
 #endif
@@ -131,19 +130,23 @@ C64::C64()
     flash = get_flash();
 
     register_store(0x43363420, "C64 and Cartridge Settings", c64_config);
+    cfg->set_alt_name("Cartridge and ROM Settings");
+    cfg->set_sort_order(SORT_ORDER_CFG_MEM);
 
 #ifdef U64
     cfg->set_change_hook(CFG_C64_CART_PREF, C64::setCartPref);
     setCartPref(cfg->find_item(CFG_C64_CART_PREF));
 #endif
 
+    setup_config_menu();
+
     char_set = (uint8_t *) &_chars_bin_start;
-    keyb = new Keyboard_C64(this, &CIA1_DPB, &CIA1_DPA);
+    keyb = new Keyboard_C64(this, &CIA1_DPB, &CIA1_DPA, &CIA1_DPA);
     screen = new Screen_MemMappedCharMatrix((char *) C64_SCREEN, (char *) C64_COLORRAM, 40, 25);
 
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_MODE = MODE_NORMAL;
-    isFrozen = false; // ((C64_STOP & C64_HAS_STOPPED) == C64_HAS_STOPPED); Freeze is not the same as stop
+    isFrozen = false;
     backupIsValid = false;
     buttonPushSeen = false;
     client = 0;
@@ -154,7 +157,7 @@ C64::C64()
 #ifdef OS
     if (!phi2_present()) {
         printf("No PHI2 clock detected.. Stand alone mode. Stopped = %d\n", C64_STOP);
-        xTaskCreate(C64 :: init_poll_task, "C64 Init poll task", 500, this, 2, NULL);
+        xTaskCreate(C64 :: init_poll_task, "C64 Init poll task", 500, this, PRIO_BACKGROUND, NULL);
     }
 #endif
 #else
@@ -195,6 +198,11 @@ void C64 :: init(void)
         init_cartridge();
     }
     available = true;
+}
+
+bool C64 :: is_stopped(void)
+{
+    return ((C64_STOP & C64_HAS_STOPPED) == C64_HAS_STOPPED);
 }
 
 void C64 :: start(void)
@@ -310,25 +318,22 @@ void C64::set_emulation_flags(void)
         int choice = cfg->get_value(CFG_CMD_ENABLE);
         CMD_IF_SLOT_ENABLE = !!choice;
         CMD_IF_SLOT_BASE = 0x47; // $$DF1C
-        choice = cfg->get_value(CFG_CMD_ALLOW_WRITE);
-        allowUltimateDosDateSet = choice;
     }
 
-    int recovery = cfg->get_value(CFG_C64_PHI2_REC);
-    if (recovery >= 0) {
-        uint8_t edge = cfg->get_value(CFG_C64_PHI2_REC) | (cfg->get_value(CFG_SERVE_PHI1) << 2); // | (cfg->get_value(CFG_MEASURE_MODE) << 1) | 
-        C64_PHI2_EDGE_RECOVER = edge;
-        if (cfg->get_value(CFG_C64_TIMING1) >= 0) {
-            uint8_t byte = cfg->get_value(CFG_C64_TIMING) | (cfg->get_value(CFG_C64_TIMING1) << 4);
-            printf("Writing %b to timing register. %d/%d/%d\n", byte, cfg->get_value(CFG_C64_TIMING), cfg->get_value(CFG_C64_TIMING1), cfg->get_value(CFG_SERVE_PHI1));
-            C64_TIMING_ADDR_VALID = byte;
-        } else {
-            C64_TIMING_ADDR_VALID = cfg->get_value(CFG_C64_TIMING);
-        }
-    } else { // U64
-        C64_PHI2_EDGE_RECOVER = 0;
-        C64_TIMING_ADDR_VALID = 5;
+#if U64
+    C64_PHI2_EDGE_RECOVER = 0;
+    C64_TIMING_ADDR_VALID = 0xBB;
+#else
+    uint8_t edge = cfg->get_value(CFG_C64_PHI2_REC) | (cfg->get_value(CFG_SERVE_PHI1) << 2); // | (cfg->get_value(CFG_MEASURE_MODE) << 1) | 
+    C64_PHI2_EDGE_RECOVER = edge;
+    if (cfg->get_value(CFG_C64_TIMING1) >= 0) {
+        uint8_t byte = cfg->get_value(CFG_C64_TIMING) | (cfg->get_value(CFG_C64_TIMING1) << 4);
+        printf("Writing %b to timing register. %d/%d/%d\n", byte, cfg->get_value(CFG_C64_TIMING), cfg->get_value(CFG_C64_TIMING1), cfg->get_value(CFG_SERVE_PHI1));
+        C64_TIMING_ADDR_VALID = byte;
+    } else {
+        C64_TIMING_ADDR_VALID = cfg->get_value(CFG_C64_TIMING);
     }
+#endif
     printf("Cartridge registers:\n");
     dump_hex(((uint8_t *)(C64_CARTREGS_BASE + 0x0)), 16);
 }
@@ -500,7 +505,6 @@ void C64::stop(bool do_raster)
             printf("Internal error. Should be one of the cases.\n");
         }
     }
-    //printf("@");
 }
 
 void C64::resume(void)
@@ -567,7 +571,7 @@ void C64::resume(void)
         // un-stop the c-64
         C64_STOP = 0;
 
-        printf("Resumed on Bad line. Raster = %02x. VIC Irq Enable: %02x. Vic IRQ: %02x\n", raster, vic_irq_en, vic_irq);
+        // printf("Resumed on Bad line. Raster = %02x. VIC Irq Enable: %02x. Vic IRQ: %02x\n", raster, vic_irq_en, vic_irq);
     } else {
         C64_STOP_MODE = STOP_COND_FORCE;
         // un-stop the c-64
@@ -629,7 +633,10 @@ void C64::backup_io(void)
     // These printfs introduce some delay.. if you remove this, some programs won't resume well. Why?!
     printf("CIA1 registers: ");
     for (i = 0; i < 13; i++) {
-        printf("%b ", CIA1_REG(i));
+        if(i != 8 && i != 11) // reading registers 8 or 11 will mess with the TOD latching, so.. don't.
+            printf("%b ", CIA1_REG(i));
+        else
+            printf("--- "); // don't read registes 8 and 11, but still waste a bit of time with the printf
     }
     printf("\n");
 
@@ -788,11 +795,16 @@ void C64::restore_io(void)
 void C64::init_system_roms(void)
 {
     C64_KERNAL_ENABLE = 0;
-
+    
 #if U64
-    FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_KERNFILE), (uint8_t *)U64_KERNAL_BASE, 8192, NULL);
+    extern uint8_t _default_kernal_65_start[];
+    extern uint8_t _default_chars_bin_start[];
 
-    if (cfg->get_value(CFG_C64_FASTRESET)) {
+    FRESULT fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_KERNFILE), (uint8_t *)U64_KERNAL_BASE, 8192, NULL);
+    if (fres != FR_OK) {
+        printf("Failed to load KERNAL ROM; loading default.\n");
+        memcpy((void *)U64_KERNAL_BASE, (void *)_default_kernal_65_start, 8192);
+    } else if (cfg->get_value(CFG_C64_FASTRESET)) {
         unsigned char *kernal = (unsigned char *)U64_KERNAL_BASE;
         if (!memcmp((void *) (kernal+0x1d6c), (void *) fastresetOrg, sizeof(fastresetOrg))) {
             memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, 22);
@@ -800,7 +812,11 @@ void C64::init_system_roms(void)
     }
 
     FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_BASIFILE), (uint8_t *)U64_BASIC_BASE, 8192, NULL);
-    FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_CHARFILE), (uint8_t *)U64_CHARROM_BASE, 4096, NULL);
+    fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_CHARFILE), (uint8_t *)U64_CHARROM_BASE, 4096, NULL);
+    if (fres != FR_OK) {
+        printf("Failed to load CHAR ROM; loading default.\n");
+        memcpy((void *)U64_CHARROM_BASE, (void *)_default_chars_bin_start, 4096);
+    }
 
 #else
     uint8_t *temp = new uint8_t[8192];
@@ -908,16 +924,6 @@ Screen *C64::getScreen(void)
     return screen;
 }
 
-void C64::releaseScreen()
-{
-    /*
-     if(screen) {
-     delete screen;
-     screen = 0;
-     }
-     */
-}
-
 bool C64::is_accessible(void)
 {
     return isFrozen;
@@ -1010,13 +1016,17 @@ void C64::set_cartridge(cart_def *cart)
         }
     }
 #ifndef RECOVERYAPP
-    if(def->require & CART_ACIA_DE) {
-        modem.reinit_acia(0xDE00);
-    }
-    if(def->require & CART_ACIA_DF) {
-        modem.reinit_acia(0xDF00);
+    if (modem) {
+        if(def->require & CART_ACIA_DE) {
+            modem->reinit_acia(0xDE00);
+        } else if(def->require & CART_ACIA_DF) {
+            modem->reinit_acia(0xDF00);
+        } else {
+            modem->reinit_acia(0xFFFF); // from config
+        }
     }
 #endif
+
 #if U64
     if(def->require & CART_WMIRROR) {
         EnableWriteMirroring();
@@ -1051,17 +1061,20 @@ void C64::set_cartridge(cart_def *cart)
     }
 
 #ifndef RECOVERYAPP
-    if(def->prohibit & CART_ACIA_DE) {
-        if(modem.prohibit_acia(0xDE00)) {
-            def->disabled |= CART_ACIA_DE;
+    if (modem) {
+        if(def->prohibit & CART_ACIA_DE) {
+            if(modem->prohibit_acia(0xDE00)) {
+                def->disabled |= CART_ACIA_DE;
+            }
         }
-    }
-    if(def->prohibit & CART_ACIA_DF) {
-        if(modem.prohibit_acia(0xDF00)) {
-            def->disabled |= CART_ACIA_DF;
+        if(def->prohibit & CART_ACIA_DF) {
+            if(modem->prohibit_acia(0xDF00)) {
+                def->disabled |= CART_ACIA_DF;
+            }
         }
     }
 #endif
+
     // clear function RAM on the cartridge
     memset(get_cartridge_ram_addr(), 0x00, 65536);
 
@@ -1345,8 +1358,8 @@ void C64 :: list_crts(ConfigItem *it, IndexedList<char *>& strings)
 {
 #ifndef NO_FILE_ACCESS
     // Always return at least the empty string
-    char *empty = new char[12];
-    strcpy(empty, "\er- None -");
+    char *empty = new char[1];
+    *empty = 0;
     strings.append(empty);
 
     Path p;
@@ -1374,8 +1387,8 @@ void C64 :: list_kernals(ConfigItem *it, IndexedList<char *>& strings)
 {
 #if !U64
     // Always return at least the empty string
-    char *empty = new char[12];
-    strcpy(empty, "\er- None -");
+    char *empty = new char[1];
+    *empty = 0;
     strings.append(empty);
 #endif
 
@@ -1403,6 +1416,11 @@ void C64 :: list_kernals(ConfigItem *it, IndexedList<char *>& strings)
 
 void C64 :: list_basics(ConfigItem *it, IndexedList<char *>& strings)
 {
+    // Always return at least the empty string
+    char *empty = new char[1];
+    *empty = 0;
+    strings.append(empty);
+
 #ifndef NO_FILE_ACCESS
     Path p;
     p.cd(ROMS_DIRECTORY);
@@ -1427,6 +1445,11 @@ void C64 :: list_basics(ConfigItem *it, IndexedList<char *>& strings)
 
 void C64 :: list_chars(ConfigItem *it, IndexedList<char *>& strings)
 {
+    // Always return at least the empty string
+    char *empty = new char[1];
+    *empty = 0;
+    strings.append(empty);
+
 #ifndef NO_FILE_ACCESS
     Path p;
     p.cd(ROMS_DIRECTORY);
@@ -1447,4 +1470,104 @@ void C64 :: list_chars(ConfigItem *it, IndexedList<char *>& strings)
         delete inf;
     }
 #endif
+}
+
+void C64 :: measure_timing(uint8_t *buffer)
+{
+    uint8_t *wp = buffer;
+
+    bool i_stopped_it = false;
+    if(!is_stopped()) {
+        stop(false);
+        i_stopped_it = true;
+    }
+
+    C64_POKE(0xD011, 0x0B);
+    wait_ms(20);
+
+    volatile uint8_t *measurement = (volatile uint8_t *)(CART_TIMING_BASE);
+    volatile uint32_t *screen = (volatile uint32_t *)(C64_MEMORY_BASE + 0x400);
+    volatile uint32_t *vic = (volatile uint32_t *)(C64_MEMORY_BASE + 0xD000);
+    uint32_t old, newval;
+    for (uint8_t edge=0x08; edge <= 0x0B; edge++) {
+        // Test 0
+        C64_PHI2_EDGE_RECOVER = edge; // trigger
+        old = *screen;
+        for(int j=0;j<2048;j++) {
+            *(wp++) = measurement[j];
+        }
+
+        // Test 1
+        C64_PHI2_EDGE_RECOVER = edge; // trigger
+        *screen = 0x12345678;
+        for(int j=0;j<2048;j++) {
+            *(wp++) = measurement[j];
+        }
+
+        // Test 2
+        C64_PHI2_EDGE_RECOVER = edge; // trigger
+        newval = *screen;
+        for(int j=0;j<2048;j++) {
+            *(wp++) = measurement[j];
+        }
+
+        // Test 3
+        C64_PHI2_EDGE_RECOVER = edge; // trigger
+        *screen = old;
+        for(int j=0;j<2048;j++) {
+            *(wp++) = measurement[j];
+        }
+
+        // Test 4
+        C64_PHI2_EDGE_RECOVER = edge; // trigger
+        old = *vic;
+        for(int j=0;j<2048;j++) {
+            *(wp++) = measurement[j];
+        }
+
+        // Test 5
+        C64_PHI2_EDGE_RECOVER = edge; // trigger
+        *vic = 0x98765432;
+        for(int j=0;j<2048;j++) {
+            *(wp++) = measurement[j];
+        }
+
+        // Test 6
+        C64_PHI2_EDGE_RECOVER = edge; // trigger
+        newval = *vic;
+        for(int j=0;j<2048;j++) {
+            *(wp++) = measurement[j];
+        }
+
+        // Test 7
+        C64_PHI2_EDGE_RECOVER = edge; // trigger
+        *vic = old;
+        for(int j=0;j<2048;j++) {
+            *(wp++) = measurement[j];
+        }
+    }
+
+    C64_POKE(0xD011, 0x1B);
+
+    if (i_stopped_it) {
+        resume();
+    }
+}
+
+void C64 :: setup_config_menu(void)
+{
+    ConfigGroup *grp = ConfigGroupCollection :: getGroup("Memory Configuration", SORT_ORDER_CFG_MEM);
+    grp->append(cfg->find_item(CFG_C64_KERNFILE));
+#ifdef U64
+    grp->append(cfg->find_item(CFG_C64_BASIFILE)->set_item_altname("BASIC ROM"));
+    grp->append(cfg->find_item(CFG_C64_CHARFILE)->set_item_altname("Character ROM"));
+#endif
+    grp->append(cfg->find_item(CFG_C64_CART_CRT));
+    grp->append(ConfigItem :: separator());
+    grp->append(cfg->find_item(CFG_C64_REU_EN));
+    grp->append(cfg->find_item(CFG_C64_REU_SIZE)->set_item_altname("Size"));
+    grp->append(ConfigItem :: separator());
+    grp->append(cfg->find_item(CFG_CMD_ENABLE));
+    grp->append(cfg->find_item(CFG_C64_MAP_SAMP)->set_item_altname("Ultimate Audio"));
+    grp->append(ConfigItem :: separator());
 }

@@ -7,6 +7,7 @@ use work.sampler_pkg.all;
 
 entity sampler_regs is
 generic (
+    g_support_16bit : boolean := true;
     g_num_voices    : positive := 8 );
 port (
     clock       : in  std_logic;
@@ -33,7 +34,7 @@ architecture gideon of sampler_regs is
     signal repeat      : t_boolean_array(0 to g_num_voices-1) := (others => false);
     signal interrupt   : t_boolean_array(0 to g_num_voices-1) := (others => false);
     signal interleave  : t_boolean_array(0 to g_num_voices-1) := (others => false);
-    signal mode        : t_mode_array(0 to g_num_voices-1);
+    signal mode        : t_mode_array(0 to g_num_voices-1) := (others => mono8);
     signal rep_a_pos2  : t_u8_array(0 to g_num_voices-1) := (others => X"00");
     signal rep_a_pos1  : t_u8_array(0 to g_num_voices-1) := (others => X"00");
     signal rep_a_pos0  : t_u8_array(0 to g_num_voices-1) := (others => X"00");
@@ -53,8 +54,6 @@ architecture gideon of sampler_regs is
     signal pan         : t_u4_array(0 to g_num_voices-1) := (others => X"8");
 
     signal wr_addr       : integer range 0 to g_num_voices-1;
-
-    
 begin
     wr_addr <= to_integer(io_req.address(7 downto 5));
 
@@ -93,11 +92,13 @@ begin
                     enable(wr_addr)     <= (io_req.data(0) = '1');
                     repeat(wr_addr)     <= (io_req.data(1) = '1');
                     interrupt(wr_addr)  <= (io_req.data(2) = '1');
-                    interleave(wr_addr) <= (io_req.data(6) = '1');
-                    if io_req.data(5 downto 4) = "00" then
-                        mode(wr_addr) <= mono8;
-                    else
-                        mode(wr_addr) <= mono16;
+                    if g_support_16bit then
+                        interleave(wr_addr) <= (io_req.data(6) = '1');
+                        if io_req.data(5 downto 4) = "00" then
+                            mode(wr_addr) <= mono8;
+                        else
+                            mode(wr_addr) <= mono16;
+                        end if;
                     end if;
 
                 when c_sample_volume        =>

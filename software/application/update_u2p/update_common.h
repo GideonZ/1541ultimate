@@ -20,9 +20,16 @@
 #include "filemanager.h"
 #include "init_function.h"
 #include "blockdev_flash.h"
+#if U64 == 2
+    #include "wifi_cmd.h"
+#endif
 
 static Screen *screen;
 static UserInterface *user_interface;
+
+#ifndef HTML_DIRECTORY
+#define HTML_DIRECTORY "/flash/html"
+#endif
 
 int calc_checksum(uint8_t *buffer, uint8_t *buffer_end)
 {
@@ -45,7 +52,7 @@ const uint8_t orig_kernal[] = {
 
 static void turn_off()
 {
-#if U64
+#if U64 == 1
     console_print(screen, "\n\033\022Turning OFF machine in 5 seconds....\n");
 
     wait_ms(5000);
@@ -53,6 +60,13 @@ static void turn_off()
     U64_POWER_REG = 0xB2;
     U64_POWER_REG = 0x2B;
     U64_POWER_REG = 0xB2;
+    console_print(screen, "You shouldn't see this!\n");
+#elif U64 == 2
+    console_print(screen, "\n\033\022Turning OFF machine in 5 seconds....\n");
+
+    wait_ms(5000);
+    wifi_machine_off();
+    wait_ms(1000);
     console_print(screen, "You shouldn't see this!\n");
 #else
     console_print(screen, "\nPLEASE TURN OFF YOUR MACHINE.\n");
@@ -64,7 +78,11 @@ static void turn_off()
 
 static void reset_config(Flash *fl)
 {
-    if(user_interface->popup("Reset Configuration? (Recommended)", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+#if SILENT
+#else
+    if(user_interface->popup("Reset Configuration? (Recommended)", BUTTON_YES | BUTTON_NO) == BUTTON_YES)
+#endif
+    {
         int num = fl->get_number_of_config_pages();
         for (int i=0; i < num; i++) {
             fl->clear_config_page(i);
@@ -100,6 +118,20 @@ static FRESULT write_flash_file(const char *name, uint8_t *data, int length)
     if (fres != FR_OK) {
         user_interface->popup("Failed to write essentials. Abort!", BUTTON_OK);
         turn_off();
+    }
+    return fres;
+}
+
+static FRESULT write_html_file(const char *name, const char *data, int length)
+{
+    File *f;
+    uint32_t dummy;
+    FileManager *fm = FileManager :: getFileManager();
+    FRESULT fres = fm->fopen(HTML_DIRECTORY, name, FA_CREATE_ALWAYS | FA_WRITE, &f);
+    if (fres == FR_OK) {
+        fres = f->write(data, length, &dummy);
+        console_print(screen, "Writing %s to /flash: %s\n", name, FileSystem :: get_error_string(fres));
+        fm->fclose(f);
     }
     return fres;
 }
@@ -153,6 +185,8 @@ static void clear_field(void)
 static void setup(const char *title)
 {
     printf(title);
+    InitFunction::executeAll();
+    init_flash_disk();
 
     Flash *flash = get_flash();
     GenericHost *host = 0;
@@ -167,11 +201,7 @@ static void setup(const char *title)
     }
     screen = host->getScreen();
 
-    if (getFpgaCapabilities() & CAPAB_OVERLAY) {
-        OVERLAY_REGS->TRANSPARENCY = 0x00;
-    }
-
-    user_interface = new UserInterface(title);
+    user_interface = new UserInterface(title, false);
     user_interface->init(host);
     host->take_ownership(user_interface);
     user_interface->appear();
@@ -189,7 +219,12 @@ static void check_flash_disk()
     screen->move_cursor(0, 16);
     uint32_t free = print_free_flash_blocks();
 
+#if SILENT
+    FRESULT flashdisk = FR_NO_FILE;
+#else
     FRESULT flashdisk = check_flashdisk_empty();
+#endif
+
     switch(flashdisk) {
         case FR_NO_FILE: // the only case we don't need to do anything
             break;
@@ -213,10 +248,10 @@ static void check_flash_disk()
     }
 }
 
-static void write_protect(Flash *flash)
+static void write_protect(Flash *flash, int kilobytes)
 {
     console_print(screen, "\nConfiguring Flash write protection..\n");
-    flash->protect_configure();
+    flash->protect_configure(kilobytes);
     flash->protect_enable();
     console_print(screen, "Done!                            \n");
 }

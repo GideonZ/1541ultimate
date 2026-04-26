@@ -14,38 +14,57 @@
 #include "size_str.h"
 #include "user_file_interaction.h"
 #include "network_interface.h"
+#include "assembly_search.h"
 
 class BrowsableNetwork : public Browsable
 {
-	Browsable *parent;
-	int index;
-public:
-	BrowsableNetwork(Browsable *parent, int index) {
-		this->parent = parent;
-		this->index = index;
-	}
+    Browsable *parent;
+    int index;
 
-	void getDisplayString(char *buffer, int width) {
-		uint8_t mac[6];
-		char ip[16];
+  public:
+    BrowsableNetwork(Browsable *parent, int index)
+    {
+        this->parent = parent;
+        this->index = index;
+    }
 
-		NetworkInterface *ni = NetworkInterface :: getInterface(index);
-		if (!ni) {
-			sprintf(buffer, "Net%d%#s\eJRemoved", index, width-17, "");
-			return;
-		}
-		ni->getMacAddr(mac);
-		if (ni->is_link_up()) {
-			sprintf(buffer, "Net%d    IP: %#s\eELink Up", index, width-21, ni->getIpAddrString(ip, 16));
-		} else {
-			sprintf(buffer, "Net%d    MAC %b:%b:%b:%b:%b:%b%#s\eJLink Down", index, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], width-38, "");
-		}
-	}
+    const char *getName()
+    {
+        NetworkInterface *ni = NetworkInterface ::getInterface(index);
+        if (ni) {
+            return ni->identify();
+        }
+        return "Unknown Network";
+    }
 
-	IndexedList<Browsable *> *getSubItems(int &error) {
-		error = -1;
-		return &children;
-	}
+    void getDisplayString(char *buffer, int width)
+    {
+        NetworkInterface *ni = NetworkInterface ::getInterface(index);
+        if (!ni) {
+            sprintf(buffer, "Net%d%#s\eJRemoved", index, width - 17, "");
+            return;
+        }
+        ni->getDisplayString(index, buffer, width);
+    }
+
+    IndexedList<Browsable *> *getSubItems(int &error)
+    {
+        NetworkInterface *ni = NetworkInterface ::getInterface(index);
+        if (!ni) {
+            error = -1;
+            return &children;
+        }
+        ni->getSubItems(this, children, error);
+        return &children;
+    }
+
+    void fetch_context_items(IndexedList<Action *> &items)
+    {
+        NetworkInterface *ni = NetworkInterface ::getInterface(index);
+        if (ni) {
+            ni->fetch_context_items(items);
+        }
+    }
 };
 
 class BrowsableDirEntry : public Browsable
@@ -149,7 +168,7 @@ public:
 	    return info->lfname;
 	}
 
-	void squeezeToDisplayString(char *string_to_squeeze, char *squeezed_string, int max_width, int squeeze_quarter = 0) {
+	int squeezeToDisplayString(char *string_to_squeeze, char *squeezed_string, int max_width, int squeeze_quarter = 0) {
 		int len = strlen(string_to_squeeze);
 
 		if (squeeze_quarter < 0 || squeeze_quarter > 3) {
@@ -169,28 +188,32 @@ public:
 
 			squeezed_string[cut_off_point] = '~';
 		}
+        // strcat(squeezed_string, "\er");
+        // return 2;
+        return 0;
 	}
 
 	virtual void getDisplayString(char *buffer, int width, int squeeze_option = 0) {
 		static char sizebuf[8];
+        int extra;
 		if (info->name_format & NAME_FORMAT_DIRECT) {
 			FileManager::getFileManager()->get_display_string(parent_path, info->lfname, buffer, width);
 		} else {
 			int display_space = width - 11;
-			char tmp_buffer[display_space + 1];
+			char tmp_buffer[display_space + 5];
 			memset(tmp_buffer, '\0', display_space * sizeof(char));
 
 			char sel = getSelection() ? '\x13' : ' ';
 			if (info->is_directory()) {
-				squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
-				sprintf(buffer, "%#s\eJ DIR%c", display_space, tmp_buffer, sel);
+				extra = squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
+				sprintf(buffer, "%#s\eJ DIR%c", display_space + extra, tmp_buffer, sel); // FIXME
 			} else if (info->attrib & AM_VOL) {
-				squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
-				sprintf(buffer, "\eR%#s\er VOLUME", display_space, tmp_buffer);
+				extra = squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
+				sprintf(buffer, "\eR%#s\er VOLUME", display_space + extra, tmp_buffer);
 			} else {
 				size_to_string_bytes(info->size, sizebuf);
-				squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
-				sprintf(buffer, "%#s\e7 %3s%c%s", display_space, tmp_buffer,
+				extra = squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
+				sprintf(buffer, "%#s\e7 %3s%c%s", display_space + extra, tmp_buffer,
 						info->extension, sel, sizebuf);
 			}
 		}
@@ -239,7 +262,7 @@ public:
 			delete infos; // deletes the indexed list, but not the FileInfos
 
 			for(int i=0; i < NetworkInterface :: getNumberOfInterfaces(); i++) {
-				children.append(new BrowsableNetwork(this, i));
+			 	children.append(new BrowsableNetwork(this, i));
 			}
 		}
 		error = 0;

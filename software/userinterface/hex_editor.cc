@@ -16,7 +16,7 @@ void HexEditor :: line_breakdown(const char *text_buffer, int buffer_size)
     text->clear_list();
     while (pos < buffer_size) {
         current.buffer = text_buffer + pos;
-        current.length = (buffer_size - pos > BYTES_PER_HEX_ROW) ? BYTES_PER_HEX_ROW : buffer_size - pos;;
+        current.length = (buffer_size - pos > BYTES_PER_HEX_ROW) ? BYTES_PER_HEX_ROW : buffer_size - pos;
         text->append(current);
         pos += current.length;
         linecount++;

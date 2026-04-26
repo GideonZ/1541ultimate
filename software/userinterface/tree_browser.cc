@@ -16,60 +16,26 @@
 #include "keyboard_usb.h"
 #include "home_directory.h"
 #include "system_info.h"
-
-const char *helptext=
-		"CRSR UP/DN: Selection up/down\n"
-		"CRSR LEFT:  Go one level up\n"
-		"            leave directory or disk\n"
-		"CRSR RIGHT: Go one level down\n"
-		"            enter directory or disk\n"
-		"RETURN:     Selection context menu\n"
-        "RUN/STOP:   Leave menu / Back\n"
-		"\n"
-		"F1:         Selection Page up\n"
-		"F7:         Selection Page down\n"
-		"\n"
-		"F2:         Enter the setup menu\n"
-		"F5:         Action menu\n"
-		"\n"
-		"SPACE:      Select file / directory\n"
-		"C=-A        Select all\n"
-		"C=-N        Deselect all\n"
-		"C=-C        Copy current selection\n"
-		"C=-V        Paste selection here.\n"
-		"\n"
-        "HOME:       Enter home directory\n"
-        "C=-HOME:    Set current dir as home\n"
-        "INST:       Delete selected files\n"
-        "\n"  
-		"Quick seek: Use the keyboard to type\n"
-		"            the name to search for.\n"
-		"            You can use ? as a\n"
-		"            wildcard.\n"
-        "+/-:        Change value in config.\n"
-        "\n"
-#ifndef RECOVERYAPP
-        "F4:         Show System Information\n"
-#endif
-        "F6:         Show debug log\n"
-		"\nRUN/STOP to close this window.";
+#include "assembly_search.h"
 
 #include "stream_textlog.h"
 extern StreamTextLog textLog; // the global log
+ClipBoard clipboard; // only one, and it's global and static
 
 int swap_joystick() __attribute__ ((weak));
 
 /***********************/
 /* Tree Browser Object */
 /***********************/
-TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root)
+TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root) : UIObject(ui)
 {
 	// initialize state
-	user_interface = ui;
+    allow_exit = false;
+    has_path = true;
+	user_interface = ui; // copy!
 	screen = NULL;
 	window = NULL;
     keyb = NULL;
-    configBrowser = NULL;
     contextMenu = NULL;
     quick_seek_length = 0;
     quick_seek_string[0] = '\0';
@@ -80,6 +46,7 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root)
     path = fm->get_new_path("Tree Browser");
     observerQueue = new ObserverQueue("TreeBrowser");
     fm->registerObserver(observerQueue);
+    has_border = false;
 
     if(!state) {
         state = new TreeBrowserState(root, this, 0);
@@ -98,17 +65,19 @@ TreeBrowser :: ~TreeBrowser()
 	}
 }
 
-void TreeBrowser :: init(Screen *screen, Keyboard *k) // call on root!
+void TreeBrowser :: init() // call on root!
 {
-	this->screen = screen;
+	this->screen = user_interface->get_screen();
+    this->keyb   = user_interface->get_keyboard();
 
     screen->move_cursor(screen->get_size_x()-8, screen->get_size_y()-1);
-	screen->output("\eAF3=Help\eO");
+    screen->output("\eAF3=HELP\eO");
 
 	window = new Window(screen, 0, 2, screen->get_size_x(), screen->get_size_y()-3);
-	keyb = k;
+    if(has_border) {
+        window->draw_border();
+    }
     state->reload();
-	// state->do_refresh();
 }
 
 void TreeBrowser :: deinit(void)
@@ -122,14 +91,8 @@ void TreeBrowser :: deinit(void)
 void TreeBrowser :: config(void)
 {
     printf("Creating config menu...\n");
-        
-    Browsable *configRoot = new BrowsableConfigRoot();
-    configBrowser = new ConfigBrowser(user_interface, configRoot);
-    configBrowser->init(screen, keyb);
     state->refresh = true; // refresh as soon as we come back
-    user_interface->activate_uiobject(configBrowser);
-
-    // from this moment on, we loose focus.. polls will go directly to config menu!
+    ConfigBrowser :: start(user_interface);
 }
 
 void TreeBrowser :: context(int initial)
@@ -182,42 +145,35 @@ int TreeBrowser :: poll(int sub_returned)
 	int c;
     int ret = 0;
 
-    mstring *msg = this->user_interface->getMessage();
-    if (msg) {
-        user_interface->popup(msg->c_str(), BUTTON_OK);
-        delete msg;
-    }
-
     if(contextMenu) {
         if(sub_returned < 0) {
         	delete contextMenu;
             contextMenu = NULL;
             state->draw();
         } else if(sub_returned > 0) {
-            // printf("Pointer to selected context/menu item: %p\n", menu_browser->state->selected);
             // 0 is dummy, bec it is of the type ConfigItem. ConfigItem
             // itself knows the value that the actual object (= selected of THIS
             // browser!) needs to be called with. It would be better to just
             // create a return value of a GUI object, and call execute
             // with that immediately.
             state->draw();
-
-            Action *act = contextMenu->getSelectedAction();
-            if (act) {
-                printf("Action set was: %s\n", act->getName());
-                Browsable *b = contextMenu->getContextable();
-                const char *p = state->browser->getPath();
-                const char *filename = (b)?(b->getName()):"";
-                SubsysCommand *cmd = new SubsysCommand(user_interface, act, p, filename);
-                ret = cmd->execute();
-            } else {
-                printf("Action was not set in context menu!\n");
-            }
+            ret = contextMenu->executeSelected(state->browser->getPath());
             delete contextMenu;
             contextMenu = NULL;
-            state->draw();
+            if (user_interface->has_focus(this)) {
+                state->draw();
+            } else {
+                // we lost focus, apparently a new UI element is active
+                state->refresh = true; // refresh as soon as we come back
+            }
         }
         return ret;
+    }
+
+    mstring *msg = this->user_interface->getMessage();
+    if (msg) {
+        user_interface->popup(msg->c_str(), BUTTON_OK);
+        delete msg;
     }
 
     checkFileManagerEvent();
@@ -227,9 +183,10 @@ int TreeBrowser :: poll(int sub_returned)
 	}
 
     c = keyb->getch();
+    c = get_ui()->keymapper(c, e_keymap_default);
+
     if(c == -2) { // error
-        printf("Keyboard returned -2\n");
-        return -2;
+        return MENU_EXIT;
     }
     if(c >= 0) {
     	ret = handle_key(c);
@@ -249,7 +206,6 @@ void TreeBrowser :: checkFileManagerEvent(void)
             break;
         }
         // printf("Event (%p) %s on %s\n", event, FileManager :: eventStrings[(int)event->eventType], event->pathName.c_str() );
-
         // example: browser path = /SD/Hallo  Event = media removed /SD/
 
         Path *path = fm->get_new_path("handleEvent");
@@ -289,7 +245,7 @@ void TreeBrowser :: checkFileManagerEvent(void)
             }
         }
 
-        // printf("DIR %sMATCHED, ENTRY %sMATCHED, st = %s\n", match_dir?"":"NOT ", match_entry?"":"NOT ", st->node->getName());
+        // printf("DIR %sMATCHED, ENTRY %sMATCHED, st = %s, %p, %p, %d\n", match_dir?"":"NOT ", match_entry?"":"NOT ", st->node->getName(), st, this->state, match_exact_path);
         Browsable *b;
 
         switch (event->eventType) {
@@ -367,16 +323,29 @@ void TreeBrowser :: tasklist(void)
     delete buffer;
 }
 
+void TreeBrowser :: seek_char(int c)
+{
+    if(quick_seek_length < (MAX_SEARCH_LEN_TB-2)) {
+        quick_seek_string[quick_seek_length++] = c;
+        if(!perform_quick_seek()) {
+            quick_seek_length--;
+        }
+    }
+}
+
 int TreeBrowser :: handle_key(int c)
 {           
     int ret = 0;
     
     switch(c) {
         case KEY_BREAK: // runstop
-            ret = -1;
+            ret = (allow_exit) ? MENU_CLOSE : MENU_HIDE;
+            break;
+        case KEY_MENU:
+            ret = (allow_exit) ? MENU_CLOSE : MENU_HIDE;
             break;
         case KEY_F8: // exit (F8)
-            ret = -1;
+            ret = (allow_exit) ? MENU_CLOSE : MENU_EXIT;
             break;
         case KEY_DOWN: // down
         	reset_quick_seek();
@@ -386,28 +355,27 @@ int TreeBrowser :: handle_key(int c)
         	reset_quick_seek();
             state->up(1);
             break;
-        case KEY_F1: // F1 -> page up
         case KEY_PAGEUP:
-        	reset_quick_seek();
+            reset_quick_seek();
             state->up(window->get_size_y()/2);
             break;
-        case KEY_F3: // F3 -> help
-        	reset_quick_seek();
-        	state->refresh = true;
-        	user_interface->run_editor(helptext, strlen(helptext));
-            break;
-		case KEY_F5: // F5: Menu
-			task_menu();
-			break;
-        case KEY_F7: // F7 -> page down
         case KEY_PAGEDOWN:
         	reset_quick_seek();
             state->down(window->get_size_y()/2);
             break;
-        case KEY_F2: // F2 -> config
+        case KEY_TASKS:
+            reset_quick_seek();
+            task_menu();
+            break;
+        case KEY_HELP:
+            reset_quick_seek();
+            state->refresh = true;
+            user_interface->help();
+            break;
+        case KEY_CONFIG: // F2 -> config
             config();
             break;
-        case KEY_F4: // F4 -> show system info
+        case KEY_SYSINFO: // F4 -> show system info
         	reset_quick_seek();
         	state->refresh = true;
 #ifndef RECOVERYAPP
@@ -417,11 +385,19 @@ int TreeBrowser :: handle_key(int c)
         case KEY_SCRLOCK:
         case KEY_F10:
         case KEY_ESCAPE:
-        	ret = -1;
+        	ret = MENU_HIDE;
         	break;
 
 #ifndef RECOVERYAPP
-        case KEY_F6: // F6 -> show log
+#ifndef U2
+        case KEY_SEARCH:
+        	reset_quick_seek();
+        	state->refresh = true;
+            AssemblyInGui :: S_OpenSearch(user_interface);
+            break;
+#endif
+
+        case KEY_CTRL_L: // show log
         	reset_quick_seek();
         	state->refresh = true;
         	user_interface->run_editor(textLog.getText(), textLog.getLength());
@@ -434,7 +410,7 @@ int TreeBrowser :: handle_key(int c)
             }
             break;
         case KEY_SPACE: // space = select
-        	state->select();
+        	state->select_one();
         	break;
         case KEY_CTRL_A: // select all
         	state->select_all(true);
@@ -462,6 +438,9 @@ int TreeBrowser :: handle_key(int c)
             state->into2();
             break;
         case KEY_LEFT: // left
+            if (!state->previous && allow_exit) {
+                ret = MENU_CLOSE;
+            }
         	state->level_up();
             break;
         case KEY_INSERT: // shift del
@@ -479,14 +458,10 @@ int TreeBrowser :: handle_key(int c)
            break;
 #endif         
         default:
-            if((c >= '!')&&(c < 0x80)) {
-                if(quick_seek_length < (MAX_SEARCH_LEN_TB-2)) {
-                    quick_seek_string[quick_seek_length++] = c;
-                    if(!perform_quick_seek())
-                        quick_seek_length--;
-                }
+            if ((c >= '!') && (c < 0x80)) {
+                seek_char(c);
             } else {
-                printf("Unhandled key: %b\n", c);
+                printf("Unhandled browser key: %03x\n", c);
             }
     }    
     return ret;

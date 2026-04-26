@@ -439,7 +439,6 @@ set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/ethernet
 set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/eth_filter.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/free_queue/vhdl_source/block_bus_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/free_queue/vhdl_source/free_queue.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/packet_generator.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/align_read_to_bram.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/async_fifo_ft.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/crc32.vhd
@@ -508,6 +507,7 @@ set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_ctrl
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_timing.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/all_carts_v5.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_slave.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_trace.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_master_v4.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/reu_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/freezer.vhd
@@ -555,24 +555,12 @@ set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/pkg_6502_d
 set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/alu.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/bit_cpx_cpy.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/proc_control.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/pkg_6502_opcodes.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/proc_interrupt.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/pkg_6502_defs.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/proc_core.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/proc_registers.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/data_oper.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/implied.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dmem_arbiter.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/mem16k.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dm_cache_custom.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/mem4k.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/mblite_wrapper.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dm_with_invalidate.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/config_pkg.vhd -library mblite
-set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/mem32k.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dmem_splitter.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/cached_mblite.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dm_simple.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_debug.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/rxtx_to_buf.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_host_nano.vhd
@@ -631,18 +619,12 @@ set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_sour
 set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/noise_generator.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/sigma_delta_dac.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/c2n_record/vhdl_source/c2n_record.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler2.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler_regs.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler_accu.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/itu/vhdl_source/itu_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/itu/vhdl_source/itu.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/video/vhdl_source/char_generator_pkg.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/video/vhdl_source/char_generator_rom_pkg.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/video/vhdl_source/char_generator_rom.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/video/vhdl_source/char_generator_regs.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/video/vhdl_source/char_generator_slave.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/video/vhdl_source/char_generator_peripheral.vhd
 set_global_assignment -name QIP_FILE ../../../fpga/altera/megafunctions/pll.qip
 set_global_assignment -name QIP_FILE ../../../fpga/altera/megafunctions/update/synthesis/update.qip
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/u2p_io.vhd
@@ -651,6 +633,11 @@ set_global_assignment -name VHDL_FILE ../../../fpga/altera/ddr2_ctrl_logic.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/ddr2_ctrl_fast.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/synchronizer_gzw.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/mem_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/uart_dma.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/tx_dma.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/slip_encoder.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/slip_decoder.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/rx_dma.vhd
 
 
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top

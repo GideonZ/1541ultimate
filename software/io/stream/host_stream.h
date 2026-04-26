@@ -31,12 +31,13 @@ public:
 		}
 	}
 
-    bool exists(void) { return true; }
-    bool is_accessible(void) { return true; }
+	bool exists(void) { return stream && stream->is_alive(); }
+	bool is_accessible(void) { return stream && stream->is_alive(); }
 
     Screen   *getScreen(void);
-    void releaseScreen(void);
     Keyboard *getKeyboard(void);
+
+    void release_ownership(void);
 };
 
 #endif /* IO_STREAM_HOST_STREAM_H_ */

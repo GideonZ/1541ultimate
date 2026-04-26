@@ -1,0 +1,114 @@
+
+	*=$0801
+	.word ss,2025
+	.null $9e,^start;sys
+ss	.word 0
+
+reu_status      = $DF00
+reu_command     = $DF01
+reu_c64base_l   = $DF02
+reu_c64base_h   = $DF03
+reu_reubase_l   = $DF04
+reu_reubase_m   = $DF05
+reu_reubase_h   = $DF06
+reu_translen_l  = $DF07
+reu_translen_h  = $DF08
+reu_irqmask     = $DF09
+reu_control     = $DF0A
+
+reu_mode_toreu   = $B0
+reu_mode_toc64   = $B1
+reu_mode_swap    = $B2
+reu_mode_verify  = $B3
+
+reu_ctrl_nofix   = $00
+reu_ctrl_fixc64  = $80
+reu_ctrl_fixreu  = $40
+reu_ctrl_fixboth = $C0
+
+audio_control = $00
+audio_volume  = $01
+audio_pan     = $02
+audio_addr_h  = $04
+audio_addr_mh = $05
+audio_addr_ml = $06
+audio_addr_l  = $07
+audio_len_h   = $09
+audio_len_m   = $0A
+audio_len_l   = $0B
+audio_rate_h  = $0E
+audio_rate_l  = $0F
+audio_repa_h  = $11
+audio_repa_m  = $12
+audio_repa_l  = $13
+audio_repb_h  = $15
+audio_repb_m  = $16
+audio_repb_l  = $17
+audio_irq_clr = $1f
+
+voice1 = $df20
+voice2 = $df40
+voice3 = $df60
+voice4 = $df80
+voice5 = $dfa0
+voice6 = $dfc0
+voice7 = $dfe0
+
+start	sei
+        
+        lda $df21
+        cmp #$10
+        beq +
+
+        lda #$07
+        sta $d020
+        rts
+
++       jsr init_audio
+        lda #$0B
+        sta $D011
+
+        lda $8123
+-       cmp $8123
+        beq -
+        sta $dffa
+        lda #$02
+        sta $d020
+        lda #$1B
+        sta $d011
+        rts
+
+init_audio
+        ldx #$00
+        ldy #6
+-       lda #$01
+        sta voice1 + audio_addr_h,x
+        sta voice1 + audio_addr_mh,x
+        sta voice1 + audio_rate_h,x
+        sta voice1 + audio_len_h,x
+        tya
+        clc
+        adc #$41
+        sta voice1 + audio_rate_l,x
+        lda #$20
+        sta voice1 + audio_repa_m,x
+        lda #$f0
+        sta voice1 + audio_repb_m,x
+        lda #$00
+        sta voice1 + audio_len_m,x
+        sta voice1 + audio_len_l,x
+        sta voice1 + audio_repa_h,x
+        sta voice1 + audio_repb_h,x
+        sta voice1 + audio_repa_l,x
+        sta voice1 + audio_repb_l,x
+        sta voice1 + audio_control,x
+        lda #$03
+        sta voice1 + audio_control,x
+
+        txa
+        clc
+        adc #$20
+        tax
+        dey
+        bne -
+        rts

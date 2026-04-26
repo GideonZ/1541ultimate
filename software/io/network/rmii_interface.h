@@ -5,8 +5,7 @@
 #include "task.h"
 #include "queue.h"
 #include "iomap.h"
-#include "network_interface.h"
-#include "integer.h"
+#include <stdint.h>
 
 // Rx
 // Tx
@@ -40,10 +39,9 @@ class RmiiInterface
 	uint8_t *ram_buffer;
 	uint8_t *ram_base;
 	bool link_up;
+	uint8_t addr;
 	uint8_t local_mac[6];
 	QueueHandle_t queue;
-
-
 	static void startRmiiTask(void *);
     void rmiiTask(void);
     void initRx(void);
@@ -53,7 +51,7 @@ public:
 	~RmiiInterface();
 
 	void    input_packet(struct EthPacket *pkt);
-	uint8_t output_packet(uint8_t *buffer, int pkt_len);
+	err_t output_packet(uint8_t *buffer, int pkt_len);
     void free_buffer(uint8_t *b);
     void rx_interrupt_handler(void);
 };

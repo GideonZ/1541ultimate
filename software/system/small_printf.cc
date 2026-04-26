@@ -89,7 +89,10 @@ _my_vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, v
     int res = 0, length, width;
     int prepad, postpad, leading_zeros;
     int addr;
-    
+    int prec = 3;
+#ifdef FP_SUPPORT
+    float fval, rem;
+#endif
     while ((c = *fmt++) != '\0') {
         if (c == '%') {
             c = *fmt++;
@@ -97,12 +100,19 @@ _my_vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, v
             width = 0;
             prepad = 0;
             postpad = 0;
-            bool nega = false;
+            // bool _nega = false;
             if (c == '-') {
-            	nega = true;
+            	// _nega = true;
             	c = *fmt++;
             }
-            if (c == '#') {
+#ifdef FP_SUPPORT
+            if (c == '.') { // only very simple FP support
+            	c = *fmt++;
+                prec = (int)(c-'0');
+                c = *fmt++;
+            }
+#endif
+            if ((c == '#') || (c == '*')) { // I thought I was smart to invent the # for variable width... * already existed for this! haha!
             	width = va_arg(ap, int); // take width parameter from stack
 				c = *fmt++;
             } else {
@@ -122,6 +132,24 @@ _my_vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, v
                     prepad = width - length;
                 cp = buf;
                 break;
+#ifdef FP_SUPPORT
+            case 'f': // simple FP support
+                fval = (float)va_arg(ap, double);
+                val = (int)fval;
+                rem = fval - val;
+                for(int i=0;i<prec;i++)
+                    rem *= 10.0f;
+                length  = _cvt(val, buf, 10, hexchar, leading_zeros, width-prec-1, true);
+                buf[length++] = '.';
+                if (rem < 0.0f) {
+                    rem = -rem;
+                }
+                length += _cvt(int(rem+0.5), buf+length, 10, hexchar, true, prec, true);
+                if(length < width)
+                    prepad = width - length;
+                cp = buf;
+                break;
+#endif
             case 's':
                 cp = va_arg(ap, char *);
                 length = 0;
@@ -148,8 +176,10 @@ _my_vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, v
             case 'x': // any hex length
             case 'X': // any hex length
                 addr = va_arg(ap, int); // up to dword
-                _hex(addr, buf, width);
                 length = width;
+                if(!length || length > 8)
+                    length = 8;
+                _hex(addr, buf, length);
                 cp = buf;
                 break;
             case 'b': // byte

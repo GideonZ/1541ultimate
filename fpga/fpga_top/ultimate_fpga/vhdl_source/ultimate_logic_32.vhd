@@ -10,7 +10,7 @@ use work.dma_bus_pkg.all;
 
 entity ultimate_logic_32 is
 generic (
-	g_version		: unsigned(7 downto 0) := X"1D";
+    g_version		: unsigned(7 downto 0) := X"22";
     g_simulation    : boolean := true;
     g_ultimate2plus : boolean := false;
     g_ultimate_64   : boolean := false;
@@ -18,7 +18,6 @@ generic (
     g_numerator     : natural := 8;
     g_denominator   : natural := 25;
     g_baud_rate     : natural := 115_200;
-    g_timer_rate    : natural := 200_000;
     g_fpga_type     : natural := 0;
     g_cartreset_init: std_logic := '0';
     g_boot_stop     : boolean := false;
@@ -26,10 +25,10 @@ generic (
     g_ext_freeze_act: boolean := false;
     g_big_endian    : boolean := false;
     g_boot_rom      : boolean := false;
-    g_video_overlay : boolean := false;
     g_icap          : boolean := false;
     g_uart          : boolean := true;
     g_uart_rx       : boolean := false;
+    g_uart_big_fifo : boolean := false;
     g_drive_1541    : boolean := true;
     g_drive_1541_2  : boolean := false;
     g_mm_drive      : boolean := true;
@@ -52,15 +51,19 @@ generic (
     g_usb_host2     : boolean := true;
     g_spi_flash     : boolean := true;
     g_vic_copper    : boolean := false;
+    g_measure_timing: boolean := false;
     g_sampler       : boolean := true;
+    g_sampler_voices: natural := 8;
+    g_sampler_16bit : boolean := true;
     g_rmii          : boolean := false;
     g_sdcard        : boolean := false;
+    g_wifi_uart     : boolean := false;
+    g_wifi_events   : boolean := false;
     g_kernal_repl   : boolean := true );
 port (
     -- globals
     sys_clock   : in    std_logic;
     sys_reset   : in    std_logic;
-    mb_reset    : in    std_logic := '0';
     
     ulpi_clock  : in    std_logic;
     ulpi_reset  : in    std_logic;
@@ -104,7 +107,7 @@ port (
     io1n_i      : in    std_logic := '1';
     io2n_i      : in    std_logic := '1';
 
-    VCC         : in    std_logic := '1';
+    VCCDET      : in    std_logic := '1';
     freeze_activate : in  std_logic := '0';
 
     -- local bus side
@@ -131,8 +134,12 @@ port (
     aud_sid_1        : out signed(17 downto 0);
     aud_sid_2        : out signed(17 downto 0);
 
+    wifi_event       : out std_logic_vector(7 downto 0);
+    wifi_event_valid : out std_logic;
+
     -- IEC bus
     -- actual levels of the pins --
+    iec_connect : in    std_logic := '1';
     iec_reset_i : in    std_logic := '1';
     iec_atn_i   : in    std_logic := '1';
     iec_data_i  : in    std_logic := '1';
@@ -151,8 +158,6 @@ port (
 	SDACT_LEDn	: out   std_logic;
     motor_led2n : out   std_logic;
     disk_act2n  : out   std_logic;
-    power_led3n : out   std_logic;
-    act_led3n   : out   std_logic;
     	
     -- Parallel cable pins
     drv_track_is_0      : out std_logic;
@@ -179,19 +184,24 @@ port (
 	-- Debug UART
 	UART_TXD	: out   std_logic;
 	UART_RXD	: in    std_logic := '1';
+    UART_CTS    : in    std_logic := '1';
+    UART_RTS    : out   std_logic := '1';
 	
+    -- WiFi UART
+    WIFI_BOOT   : out   std_logic;
+    WIFI_ENABLE : out   std_logic;
+    WIFI_TXD    : out   std_logic;
+    WIFI_RXD    : in    std_logic := '1';
+    WIFI_RTS    : out   std_logic;
+    WIFI_CTS    : in    std_logic := '1';
+
     -- SD Card Interface
     SD_SSn      : out   std_logic;
     SD_CLK      : out   std_logic;
     SD_MOSI     : out   std_logic;
     SD_MISO     : in    std_logic := '1';
     SD_CARDDETn : in    std_logic := '1';
-    SD_DATA     : inout std_logic_vector(2 downto 1);
     
-    -- LED interface
-    LED_CLK     : out   std_logic;
-    LED_DATA    : out   std_logic;
-
     -- RTC Interface
     RTC_CS      : out   std_logic;
     RTC_SCK     : out   std_logic;
@@ -236,18 +246,6 @@ port (
     eth_rx_eof      : in  std_logic := '0';
     eth_rx_valid    : in  std_logic := '0';
 
-    -- Interface to other graphical output (Full HD of course and in 3D!) ;-)
-    vid_clock   : in    std_logic := '0';
-    vid_reset   : in    std_logic := '0';
-    vid_h_count : in    unsigned(11 downto 0) := (others => '0');
-    vid_v_count : in    unsigned(11 downto 0) := (others => '0');
-    vid_active  : out   std_logic;
-    vid_opaque  : out   std_logic;
-    vid_data    : out   unsigned(3 downto 0);
-    overlay_on  : out   std_logic;
-    keyb_row    : in    std_logic_vector(7 downto 0) := (others => '1');
-    keyb_col    : out   std_logic_vector(7 downto 0) := (others => '1');
-
     -- CPU / Simulation port
     misc_io     : out std_logic_vector(7 downto 0); -- switches to control caches
     ext_io_req  : in  t_io_req := c_io_req_init;
@@ -259,7 +257,12 @@ port (
     guru_irq    : in  std_logic := '0';
 
     -- Buttons
-    button      : in  std_logic_vector(2 downto 0) );
+    bling_irq       : in  std_logic := '0';
+    hdmi_irq        : in  std_logic := '0';
+    emulated_freeze : in  std_logic := '0';
+    emulated_menu   : in  std_logic := '0';
+    emulated_reset  : in  std_logic := '0';
+    button          : in  std_logic_vector(2 downto 0) );
 	
 end ultimate_logic_32;
 
@@ -283,7 +286,7 @@ architecture logic of ultimate_logic_32 is
         cap(03) := to_std(g_drive_sound);
         cap(04) := to_std(g_hardware_gcr);
         cap(05) := to_std(g_hardware_iec);
-        cap(06) := '0'; -- unused
+        cap(06) := to_std(g_measure_timing);
         cap(07) := to_std(g_c2n_streamer);
         cap(08) := to_std(g_c2n_recorder);
         cap(09) := to_std(g_cartridge);
@@ -296,8 +299,8 @@ architecture logic of ultimate_logic_32 is
         cap(16) := to_std(g_extended_reu);
         cap(17) := to_std(g_stereo_sid);
         cap(18) := to_std(g_command_intf);
-        cap(19) := to_std(g_vic_copper);
-        cap(20) := to_std(g_video_overlay);
+        cap(19) := to_std(g_wifi_uart);
+        cap(20) := '0';
         cap(21) := to_std(g_sampler);
         cap(22) := to_std(g_eeprom); 
         cap(23) := to_std(g_usb_host2);
@@ -326,9 +329,9 @@ architecture logic of ultimate_logic_32 is
     constant c_tag_slot          : std_logic_vector(7 downto 0) := X"09";
     constant c_tag_reu           : std_logic_vector(7 downto 0) := X"0A";
     constant c_tag_usb2          : std_logic_vector(7 downto 0) := X"0B";
-    constant c_tag_cpu_i         : std_logic_vector(7 downto 0) := X"0C";
-    constant c_tag_cpu_d         : std_logic_vector(7 downto 0) := X"0D";
     constant c_tag_rmii          : std_logic_vector(7 downto 0) := X"0E"; -- and 0F
+    constant c_tag_wifi_tx       : std_logic_vector(7 downto 0) := X"1E";
+    constant c_tag_wifi_rx       : std_logic_vector(7 downto 0) := X"1F";
 
     -- Timing
     signal tick_16MHz       : std_logic;
@@ -347,6 +350,8 @@ architecture logic of ultimate_logic_32 is
     signal mem_resp_32_usb       : t_mem_resp_32 := c_mem_resp_32_init;
     signal mem_req_32_rmii       : t_mem_req_32 := c_mem_req_32_init;
     signal mem_resp_32_rmii      : t_mem_resp_32 := c_mem_resp_32_init;
+    signal mem_req_32_wifi       : t_mem_req_32 := c_mem_req_32_init;
+    signal mem_resp_32_wifi      : t_mem_resp_32 := c_mem_resp_32_init;
     signal mem_reqs_inhibit      : std_logic;
     
     -- IO Bus
@@ -362,8 +367,6 @@ architecture logic of ultimate_logic_32 is
     signal io_resp_cart     : t_io_resp := c_io_resp_init;
     signal io_req_io        : t_io_req;
     signal io_resp_io       : t_io_resp := c_io_resp_init;
-    signal io_req_big_io    : t_io_req;
-    signal io_resp_big_io   : t_io_resp := c_io_resp_init;
     signal io_req_sd        : t_io_req;
     signal io_resp_sd       : t_io_resp := c_io_resp_init;
     signal io_req_rtc       : t_io_req;
@@ -388,6 +391,8 @@ architecture logic of ultimate_logic_32 is
     signal io_resp_aud_sel  : t_io_resp := c_io_resp_init;
     signal io_req_rmii      : t_io_req;
     signal io_resp_rmii     : t_io_resp := c_io_resp_init;
+    signal io_req_wifi      : t_io_req;
+    signal io_resp_wifi     : t_io_resp := c_io_resp_init;
     signal io_req_debug     : t_io_req;
     signal io_resp_debug    : t_io_resp := c_io_resp_init;
     signal io_irq           : std_logic;
@@ -408,6 +413,10 @@ architecture logic of ultimate_logic_32 is
     signal clk_o, clk_i     : std_logic := '1';
     signal data_o, data_i   : std_logic := '1';
     signal srq_o, srq_i     : std_logic := '1';
+    signal iec_atn_m        : std_logic := '1';
+    signal iec_data_m       : std_logic := '1';
+    signal iec_clock_m      : std_logic := '1';
+    signal iec_srq_m        : std_logic := '1';
 
     signal atn_o_2          : std_logic := '1';
     signal clk_o_2          : std_logic := '1';
@@ -418,6 +427,10 @@ architecture logic of ultimate_logic_32 is
 	signal hw_clk_o	        : std_logic := '1';
 	signal hw_data_o		: std_logic := '1';
     signal hw_srq_o         : std_logic := '1';
+
+    -- Serial port routing
+    signal itu_uart_txd     : std_logic;
+    signal itu_uart_rxd     : std_logic;
 
     -- Cassette
     signal c2n_play_sense_out   : std_logic := '0';
@@ -441,7 +454,6 @@ architecture logic of ultimate_logic_32 is
 	signal disk_led_n		: std_logic := '1';
 	signal motor_led_n		: std_logic := '1';
 	signal cart_led_n		: std_logic := '1';
-	signal c2n_pull_sense   : std_logic := '0';
     signal freezer_state    : std_logic_vector(1 downto 0);
     signal dirty_led_1_n    : std_logic := '1';
     signal dirty_led_2_n    : std_logic := '1';
@@ -455,6 +467,7 @@ architecture logic of ultimate_logic_32 is
     signal sys_irq_iec      : std_logic := '0';
     signal sys_irq_cmdif    : std_logic := '0';
     signal sys_irq_acia     : std_logic := '0';
+    signal sys_irq_wifi     : std_logic := '0';
     signal sys_irq_eth_tx   : std_logic := '0';
     signal sys_irq_eth_rx   : std_logic := '0';
     signal sys_irq_1541_1   : std_logic := '0';
@@ -485,6 +498,7 @@ begin
         g_capabilities  => c_capabilities,
         g_uart          => g_uart,
         g_uart_rx       => g_uart_rx,
+        g_uart_big_fifo => g_uart_big_fifo,
         g_edge_init     => "10000101",
         g_edge_write    => false,
         g_baudrate      => g_baud_rate )
@@ -499,11 +513,15 @@ begin
         tick_1us    => tick_1MHz,
         tick_1ms    => tick_1kHz,
         buttons     => button,
-
+        btn_menu    => emulated_menu,
+        
         irq_high(0) => sys_irq_acia,
         irq_high(1) => sys_irq_1541_1,
         irq_high(2) => sys_irq_1541_2,
-        irq_high(6 downto 3) => "0000",
+        irq_high(3) => sys_irq_wifi,
+        irq_high(4) => bling_irq,
+        irq_high(5) => hdmi_irq,
+        irq_high(6) => '0',
         irq_high(7) => guru_irq,
         irq_in(7)   => c64_reset_in,
         irq_in(6)   => sys_irq_eth_tx,
@@ -517,8 +535,10 @@ begin
         busy_led    => busy_led,
         misc_io     => misc_io,
 
-        uart_txd    => UART_TXD,
-        uart_rxd    => UART_RXD );
+        uart_txd    => itu_uart_txd,
+        uart_rxd    => itu_uart_rxd,
+        uart_rts    => UART_RTS,
+        uart_cts    => UART_CTS );
 
     r_drive1: if g_drive_1541 generate
     begin
@@ -837,19 +857,22 @@ begin
             g_acia          => g_acia,
             g_eeprom        => g_eeprom,
             g_sampler       => g_sampler,
+            g_sampler_voices=> g_sampler_voices,
+            g_sampler_16bit => g_sampler_16bit,
             g_implement_sid => g_stereo_sid,
             g_sid_voices    => 16,
             g_8voices       => g_8voices,
+            g_measure_timing=> g_measure_timing,
             g_vic_copper    => g_vic_copper )
         port map (
             clock           => sys_clock,
             reset           => sys_reset,
             
             -- Cartridge pins
-            VCC             => VCC,
+            VCCDET          => VCCDET,
 
             phi2_i          => phi2_i,
-
+            dotclk_i        => dotclk_i,
             rstn_i          => rstn_i,
             rstn_o          => rstn_o,
                        
@@ -887,6 +910,8 @@ begin
             BUFFER_ENn      => BUFFER_ENn,
             sense           => c2n_sense_in,        
 			buttons 		=> button,
+            btn_freeze      => emulated_freeze,
+            btn_reset       => emulated_reset,
             cart_led_n      => cart_led_n,
             
             -- audio
@@ -907,7 +932,8 @@ begin
             debug_select    => c64_debug_select,
             
             -- timing output
-			c64_stopped		=> c64_stopped,
+			tick_4MHz       => tick_4MHz,
+            c64_stopped		=> c64_stopped,
             phi2_tick       => phi2_tick,
 
             -- master on memory bus
@@ -932,7 +958,7 @@ begin
     generic map (
         g_range_lo  => 17,
         g_range_hi  => 19,
-        g_ports     => 8 )
+        g_ports     => 7 )
     port map (
         clock    => sys_clock,
         
@@ -946,7 +972,6 @@ begin
         reqs(4)  => io_req_usb,     -- 4080000 (  8K... 4081FFF)
         reqs(5)  => io_req_c2n,     -- 40A0000 (  4K... 40A0FFF)
         reqs(6)  => io_req_c2n_rec, -- 40C0000 (  4K... 40C0FFF)
-        reqs(7)  => io_req_big_io,  -- 40E0000 (128K... 40FFFFF)
 
         resps(0) => io_resp_itu,
         resps(1) => io_resp_1541,
@@ -954,9 +979,7 @@ begin
         resps(3) => io_resp_io,
         resps(4) => io_resp_usb,
         resps(5) => io_resp_c2n,
-        resps(6) => io_resp_c2n_rec,
-        resps(7) => io_resp_big_io );
-
+        resps(6) => io_resp_c2n_rec );
 
     i_split2: entity work.io_bus_splitter
     generic map (
@@ -981,7 +1004,7 @@ begin
     generic map (
         g_range_lo  => 8,
         g_range_hi  => 11,
-        g_ports     => 9 )
+        g_ports     => 10 )
     port map (
         clock    => sys_clock,
         
@@ -997,6 +1020,7 @@ begin
         reqs(6)  => io_req_icap,     -- 4060600
         reqs(7)  => io_req_aud_sel,  -- 4060700
         reqs(8)  => io_req_rmii,     -- 4060800
+        reqs(9)  => io_req_wifi,     -- 4060900
 
         resps(0) => io_resp_sd,
         resps(1) => io_resp_rtc,
@@ -1006,7 +1030,8 @@ begin
         resps(5) => io_resp_gcr_dec,
         resps(6) => io_resp_icap,
         resps(7) => io_resp_aud_sel,
-        resps(8) => io_resp_rmii );
+        resps(8) => io_resp_rmii,
+        resps(9) => io_resp_wifi );
 
     r_usb2: if g_usb_host2 generate
         i_usb2: entity work.usb_host_nano
@@ -1081,9 +1106,6 @@ begin
 
     end generate;    
 
-    LED_CLK <= 'Z';
-    LED_DATA <= 'Z';
-
     r_spi_flash: if g_spi_flash generate
         i_spi_flash: entity work.spi_peripheral_io
         generic map (
@@ -1148,17 +1170,15 @@ begin
 
     r_rtc_timer: if g_rtc_timer generate
         i_rtc_timer: entity work.real_time_clock
-        generic map (
-            g_freq      => g_clock_freq )
         port map (
             clock       => sys_clock,    
             reset       => sys_reset,
-            
+            tick_1kHz   => tick_1kHz,            
             req         => io_req_rtc_tmr,
             resp        => io_resp_rtc_tmr );
     end generate;
 
-    r_no_rtc_timer: if not g_rtc_chip generate
+    r_no_rtc_timer: if not g_rtc_timer generate
         i_rtc_timer_dummy: entity work.io_dummy
         port map (
             clock       => sys_clock,
@@ -1250,47 +1270,72 @@ begin
     c2n_sense_out <= c2n_play_sense_out or c2n_rec_sense_out;
     c2n_motor_out <= c2n_play_motor_out or c2n_rec_motor_out;
 
-    i_icap: entity work.icap
-    generic map (
-        g_enable        => g_icap )
+    i_icap: entity work.io_dummy
     port map (
         clock           => sys_clock,
-        reset           => sys_reset,
-    
         io_req          => io_req_icap,
         io_resp         => io_resp_icap );
 
-    r_overlay: if g_video_overlay generate
-        i_overlay: entity work.char_generator_peripheral
+    r_wifi_uart: if g_wifi_uart generate
+        signal wifi_route       : std_logic;
+        signal wifi_uart_txd    : std_logic;
+        signal wifi_uart_rxd    : std_logic;
+    begin
+        i_wifi_uart_dma: entity work.uart_dma
         generic map (
-            g_screen_size   => 11,
-            g_color_ram     => true )
+            g_rx_tag  => c_tag_wifi_rx,
+            g_tx_tag  => c_tag_wifi_tx,
+            g_events  => g_wifi_events,
+            g_divisor => (g_clock_freq / g_baud_rate)
+        )
         port map (
-            clock           => sys_clock,
-            reset           => sys_reset,
-            io_req          => io_req_big_io,  -- to be split later
-            io_resp         => io_resp_big_io,
+            clock    => sys_clock,
+            reset    => sys_reset,
 
-            keyb_col        => keyb_col,
-            keyb_row        => keyb_row,
-            
-            overlay_on      => overlay_on,
-            
-            pix_clock       => vid_clock,
-            pix_reset       => vid_reset,
+            io_req   => io_req_wifi,
+            io_resp  => io_resp_wifi,
+            irq      => sys_irq_wifi,
 
-            h_count         => vid_h_count,
-            v_count         => vid_v_count,
-            
-            pixel_active    => vid_active,
-            pixel_opaque    => vid_opaque,
-            pixel_data      => vid_data );
+            event       => wifi_event,
+            event_valid => wifi_event_valid,
+
+            mem_req  => mem_req_32_wifi,
+            mem_resp => mem_resp_32_wifi,
+
+            boot     => WIFI_BOOT,
+            enable   => WIFI_ENABLE,
+            route    => wifi_route,
+            txd      => wifi_uart_txd,
+            rxd      => wifi_uart_rxd,
+            rts      => WIFI_RTS,
+            cts      => WIFI_CTS );
+
+        UART_TXD <= itu_uart_txd  when wifi_route = '0' else WIFI_RXD;
+        WIFI_TXD <= wifi_uart_txd when wifi_route = '0' else UART_RXD;
+        itu_uart_rxd  <= UART_RXD when wifi_route = '0' else '1';
+        wifi_uart_rxd <= WIFI_RXD when wifi_route = '0' else '1';
+
+    end generate;
+
+    r_no_wifi: if not g_wifi_uart generate
+
+        UART_TXD <= itu_uart_txd;
+        itu_uart_rxd <= UART_RXD;
+
+        WIFI_TXD <= '1';
+        WIFI_RTS <= '1';
         
+        i_wifi_dummy: entity work.io_dummy
+        port map (
+            clock   => sys_clock,
+            io_req  => io_req_wifi,
+            io_resp => io_resp_wifi
+        );
     end generate;
 
     i_mem_arb: entity work.mem_bus_arbiter_pri_32
     generic map (
-        g_ports      => 6,
+        g_ports      => 7,
         g_registered => false ) -- Must be false to make sure cart requests go first and no pending request from other enties exist
     port map (
         clock       => sys_clock,
@@ -1303,14 +1348,16 @@ begin
         reqs(2)     => mem_req_32_1541_2,
         reqs(3)     => mem_req_32_rmii,
         reqs(4)     => mem_req_32_usb,
-        reqs(5)     => ext_mem_req,
+        reqs(5)     => mem_req_32_wifi,
+        reqs(6)     => ext_mem_req,
         
         resps(0)    => mem_resp_32_cart,
         resps(1)    => mem_resp_32_1541,
         resps(2)    => mem_resp_32_1541_2,
         resps(3)    => mem_resp_32_rmii,
         resps(4)    => mem_resp_32_usb,
-        resps(5)    => ext_mem_resp,
+        resps(5)    => mem_resp_32_wifi,
+        resps(6)    => ext_mem_resp,
         
         req         => mem_req,
         resp        => mem_resp );        
@@ -1393,27 +1440,29 @@ begin
         end if;  
     end process;
 
-    iec_atn_o    <= '0' when atn_o='0'  or atn_o_2='0'  or hw_atn_o='0'  else '1';
-    iec_clock_o  <= '0' when clk_o='0'  or clk_o_2='0'  or hw_clk_o='0'  else '1';
-    iec_data_o   <= '0' when data_o='0' or data_o_2='0' or hw_data_o='0' else '1';
-    iec_srq_o    <= '0' when srq_o='0'  or srq_o_2='0'  or hw_srq_o='0'  else '1';
+    iec_atn_o    <= '0' when iec_connect = '1' and (atn_o='0'  or atn_o_2='0'  or hw_atn_o='0' ) else '1';
+    iec_clock_o  <= '0' when iec_connect = '1' and (clk_o='0'  or clk_o_2='0'  or hw_clk_o='0' ) else '1';
+    iec_data_o   <= '0' when iec_connect = '1' and (data_o='0' or data_o_2='0' or hw_data_o='0') else '1';
+    iec_srq_o    <= '0' when iec_connect = '1' and (srq_o='0'  or srq_o_2='0'  or hw_srq_o='0' ) else '1';
         
     MOTOR_LEDn  <= motor_led_n;
 	DISK_ACTn   <= disk_led_n;
     CART_LEDn   <= cart_led_n;
 	SDACT_LEDn  <= (dirty_led_1_n and dirty_led_2_n and not (sd_act_stretched or busy_led));
 
-    filt1: entity work.spike_filter generic map (10) port map(sys_clock, iec_atn_i,    atn_i);
-    filt2: entity work.spike_filter generic map (10) port map(sys_clock, iec_clock_i,  clk_i);
-    filt3: entity work.spike_filter generic map (10) port map(sys_clock, iec_data_i,   data_i);
-    filt4: entity work.spike_filter generic map (10) port map(sys_clock, iec_srq_i,    srq_i);
+    iec_atn_m <= iec_atn_i or not iec_connect;
+    iec_clock_m <= iec_clock_i or not iec_connect;
+    iec_data_m <= iec_data_i or not iec_connect;
+    iec_srq_m <= iec_srq_i or not iec_connect;
+
+    filt1: entity work.spike_filter generic map (10) port map(sys_clock, iec_atn_m,   atn_i);
+    filt2: entity work.spike_filter generic map (10) port map(sys_clock, iec_clock_m, clk_i);
+    filt3: entity work.spike_filter generic map (10) port map(sys_clock, iec_data_m,  data_i);
+    filt4: entity work.spike_filter generic map (10) port map(sys_clock, iec_srq_m,   srq_i);
     filt5: entity work.spike_filter port map(sys_clock, irqn_i, c64_irq_n);
     filt6: entity work.spike_filter port map(sys_clock, rstn_i, c64_reset_in_n );
     c64_irq <= not c64_irq_n;
 
-    -- dummy
-    SD_DATA     <= "ZZ";
-    
     i_debug_dummy: entity work.io_dummy
     port map (
         clock       => sys_clock,

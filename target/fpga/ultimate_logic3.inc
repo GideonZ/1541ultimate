@@ -56,6 +56,11 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/io/audio_select/vhdl_source/audio_select.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/tx.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/rx.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/tx_dma.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/rx_dma.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/uart_dma.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/slip_encoder.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/slip_decoder.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/uart_peripheral_io.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/sigma_delta_dac/vhdl_source/sigma_delta_dac.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/sigma_delta_dac/vhdl_source/noise_generator.vhd \
@@ -209,6 +214,7 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/cart_slot_registers.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/slot_timing.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/slot_slave.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/slot_trace.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/slot_master_v4.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/slot_server_v4.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/freezer.vhd \

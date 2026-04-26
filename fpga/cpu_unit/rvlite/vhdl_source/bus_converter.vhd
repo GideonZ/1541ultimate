@@ -21,6 +21,8 @@ library work;
 entity bus_converter is
     generic (
         g_tag           : std_logic_vector(7 downto 0) := X"AE";
+        g_bootrom       : boolean := false;
+        g_bootaddr      : std_logic_vector(31 downto 16) := X"8000";
         g_io_bit        : natural := 26;
         g_support_io    : boolean := true );
 	port  (
@@ -33,6 +35,9 @@ entity bus_converter is
         mem_req     : out t_mem_req_32;
         mem_resp    : in  t_mem_resp_32;
         
+        bram_req    : out t_bram_req;
+        bram_resp   : in  t_bram_resp;
+
         io_busy     : out std_logic;
         io_req      : out t_io_req;
         io_resp     : in  t_io_resp );
@@ -40,7 +45,7 @@ entity bus_converter is
 end entity;
 
 architecture arch of bus_converter is
-    type t_state is (idle, mem_read, mem_write, io_access);
+    type t_state is (idle, mem_read, mem_write, io_access, boot_read);
     signal state        : t_state;
 
     signal mem_req_i   : t_mem_req_32 := c_mem_req_32_init;
@@ -59,10 +64,6 @@ begin
             dmem_resp.ena_i <= '1';
         when mem_read | io_access =>
             dmem_resp.ena_i <= '0';
-        when mem_write =>
---            if mem_resp.rack = '1' then
---                dmem_resp.ena_i <= '1';
---            end if;
         when others =>
             dmem_resp.ena_i <= '0';
         end case;
@@ -92,6 +93,11 @@ begin
         end case; 
     end process;
 
+    bram_req.ena        <= '1' when dmem_req.ena_o = '1' and dmem_req.adr_o(31 downto 16) = g_bootaddr else '0';
+    bram_req.wen        <= dmem_req.we_o;
+    bram_req.address    <= unsigned(dmem_req.adr_o(bram_req.address'range));
+    bram_req.data       <= dmem_req.dat_o;
+
     process(clock)
     begin
         if rising_edge(clock) then
@@ -109,7 +115,12 @@ begin
                     mem_req_i.tag <= g_tag;
                     remain <= c_remain(to_integer(unsigned(dmem_req.sel_o)));
                     
-                    if dmem_req.adr_o(g_io_bit) = '0' or not g_support_io then
+                    if dmem_req.adr_o(31 downto 16) = g_bootaddr and g_bootrom then
+                        -- writes are immediate
+                        if dmem_req.we_o = '0' then
+                            state <= boot_read;
+                        end if;
+                    elsif dmem_req.adr_o(g_io_bit) = '0' or not g_support_io then
                         mem_req_i.request <= '1';
                         if dmem_req.we_o = '1' then
                             state <= mem_write;
@@ -141,6 +152,10 @@ begin
                     state <= idle;
                 end if;
 
+            when boot_read =>
+                dmem_resp.dat_i <= bram_resp.data;
+                state <= idle;
+                
             when io_access =>
                 case addr_i(1 downto 0) is
                 when "11" =>

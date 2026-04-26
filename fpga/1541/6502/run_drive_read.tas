@@ -1,0 +1,75 @@
+VIA1 = $1800
+VIA2 = $1C00
+
+DRB = 0
+DRA = 1
+DDRB = 2
+DDRA = 3
+TALOCNT = 4
+TAHICNT = 5
+TALOLAT = 6
+TAHILAT = 7
+TB_LAT = 8
+TB_CNT = 9
+SER = 10
+ACR = 11
+PCR = 12
+IFR = 13
+IER = 14
+DRA_ALT = 15
+
+; VIA1 port A
+; Parallel port!
+
+; VIA1 port B
+; Serial port bits
+
+; VIA2 port A
+; Drive read/write data
+
+; VIA2 port B
+; Sync   = VIA2, Port B, bit 7 (input)
+; Rate   = VIA2, Port B, bit 6-5
+; WriteP = VIA2, Port B, bit 4 (input)
+; ActLed = VIA2, Port B, bit 3
+; Motor  = VIA2, Port B, bit 2
+; Step   = VIA2, Port B, bit 1-0
+
+; via2_cb2 = MODE (1 = write)
+; via2_ca2 = SOE (should be 1 for enabling set overflow flag)
+
+* = $FF00
+
+init:
+    sei
+    ldx #$FF
+    txs
+
+    lda #$FF
+    sta VIA1+DDRA ; Parallel
+    lda #$00
+    sta VIA1+DDRB ; Serial port
+    lda #$00
+    sta VIA2+DDRA ; Drive read/write
+    lda #$6F
+    sta VIA2+DDRB ; Control
+
+    lda #$64      ; Turn on Motor, Region 11
+    sta VIA2+DRB
+
+    lda #$0A ; Pulse output on CA2
+    sta VIA1+PCR
+    lda #$EE ; High output on CA2 (mode = read), High output on CB2 (soe = enabled)
+    sta VIA2+PCR
+    lda #$01 ; Latch enable on port A
+    sta VIA2+ACR
+loop:
+    bvc loop
+    clv
+    lda VIA2+DRA
+    sta VIA1+DRA
+    jmp loop
+
+* = $FFFC
+    .word init
+    .word init

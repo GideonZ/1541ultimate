@@ -20,11 +20,11 @@ SidDevice::~SidDevice()
 
 volatile uint8_t *SidDevice::pre(void)
 {
-    currentAddress = u64_configurator.access_socket_pre(socket);
+    currentAddress = u64_configurator->access_socket_pre(socket);
     return currentAddress;
 }
 
 void SidDevice::post(void)
 {
-    u64_configurator.access_socket_post(socket);
+    u64_configurator->access_socket_post(socket);
 }

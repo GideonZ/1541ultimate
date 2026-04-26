@@ -19,7 +19,7 @@ public:
     ~TaskMenu(void);
     
     void init(Window *pwin, Keyboard *keyb);
-    int select(void);
+    int select_item(void);
 };
 
 class TaskSubMenu : public ContextMenu

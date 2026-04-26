@@ -52,14 +52,8 @@ CommandInterface :: CommandInterface() : SubSystem(SUBSYSID_CMD_IF)
         incoming_command.length = 0;
         
         queue = xQueueCreate(16, sizeof(uint8_t));
-        xTaskCreate( CommandInterface :: start_task, "UCI Server", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, &taskHandle );
-        xTaskCreate( CommandInterface :: reset_task, "UCI Reset Server", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, &resetTaskHandle );
-        ioWrite8(ITU_IRQ_ENABLE, ITU_INTERRUPT_CMDIF);
-        CMD_IF_IRQMASK_CLEAR = 7;
-
-        // enable IRQ on C64 reset
-        ioWrite8(ITU_IRQ_CLEAR,  ITU_INTERRUPT_RESET);
-        ioWrite8(ITU_IRQ_ENABLE, ITU_INTERRUPT_RESET);
+        xTaskCreate( CommandInterface :: start_task, "UCI Server", configMINIMAL_STACK_SIZE, this, PRIO_HW_SERVICE, &taskHandle );
+        xTaskCreate( CommandInterface :: reset_task, "UCI Reset Server", configMINIMAL_STACK_SIZE, this, PRIO_HW_SERVICE, &resetTaskHandle );
 
         resetSemaphore = xSemaphoreCreateBinary();
     }
@@ -84,19 +78,25 @@ void CommandInterface :: reset_task(void *a)
     uci->run_reset_task();
 }
 
-extern "C" BaseType_t command_interface_irq(void) {
-
+extern "C" BaseType_t command_interface_irq(void)
+{
 	uint8_t status_byte = CMD_IF_STATUSBYTE;
 	uint8_t new_flags = status_byte & ~CMD_IF_IRQMASK;
-	CMD_IF_IRQMASK_SET = status_byte;
+	CMD_IF_IRQMASK_SET = new_flags;
 
 	BaseType_t retval;
-	xQueueSendFromISR(cmd_if.queue, &new_flags, &retval);
+    if (xQueueSendFromISR(cmd_if.queue, &new_flags, &retval) != pdTRUE) {
+        outbyte('\\');
+    }
 	return retval;
 }
 
 void CommandInterface :: run_reset_task(void)
 {
+    // enable IRQ on C64 reset
+    ioWrite8(ITU_IRQ_CLEAR,  ITU_INTERRUPT_RESET);
+    ioWrite8(ITU_IRQ_ENABLE, ITU_INTERRUPT_RESET);
+
     while (1) {
         xSemaphoreTake(resetSemaphore, portMAX_DELAY);
         // now also clear the audio sampler stuff
@@ -109,6 +109,9 @@ void CommandInterface :: run_task(void)
 	int length;
     Message *data, *status;
     uint8_t status_byte;
+
+    CMD_IF_IRQMASK_CLEAR = 7;
+    ioWrite8(ITU_IRQ_ENABLE, ITU_INTERRUPT_CMDIF);
 
     while(1) {
 		xQueueReceive(queue, &status_byte, portMAX_DELAY);
@@ -135,33 +138,35 @@ void CommandInterface :: run_task(void)
             CMD_IF_IRQMASK_CLEAR = CMD_DATA_ACCEPTED;
 		}
 
-		if(status_byte & CMD_NEW_COMMAND) {
-			length = int(CMD_IF_COMMAND_LEN_L) + (int(CMD_IF_COMMAND_LEN_H) << 8);
+        if (status_byte & CMD_NEW_COMMAND) {
+            length = int(CMD_IF_COMMAND_LEN_L) + (int(CMD_IF_COMMAND_LEN_H) << 8);
 
-			if (length) {
+            if (length) {
 #if CMD_IF_DEBUG
-				printf("Command received:\n");
-				dump_hex_relative((void *)command_buffer, length);
+                printf("Command received (%b):\n", CMD_IF_STATUSBYTE);
+                dump_hex_relative((void *)command_buffer, length);
 #endif
-				incoming_command.length = length;
-				target = incoming_command.message[0] & CMD_IF_MAX_TARGET;
-				bool no_reply = ((incoming_command.message[0] & CMD_IF_NO_REPLY) != 0);
-				command_targets[target]->parse_command(&incoming_command, &data, &status);
-				copy_result(data, status);
+                incoming_command.length = length;
+                target = incoming_command.message[0] & CMD_IF_MAX_TARGET;
+                bool no_reply = ((incoming_command.message[0] & CMD_IF_NO_REPLY) != 0);
+                command_targets[target]->parse_command(&incoming_command, &data, &status);
+
+                CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND; // clears CMD_NEW_COMMAND
+                if (no_reply) {
+                    CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET; // forces state to 00
+                } else {
+                    copy_result(data, status); // sets state to 10 or 11
+                }
+            } else {
+                printf("Null command.\n");
+                CMD_IF_RESPONSE_LEN_H = 0;
+                CMD_IF_RESPONSE_LEN_L = 0;
+                CMD_IF_STATUS_LENGTH = 0;
                 CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND;
-				if (no_reply) {
-				    CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;
-				}
-			} else {
-				printf("Null command.\n");
-				CMD_IF_RESPONSE_LEN_H = 0;
-				CMD_IF_RESPONSE_LEN_L = 0;
-				CMD_IF_STATUS_LENGTH = 0;
-				CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND;
-				CMD_IF_HANDSHAKE_OUT = HANDSHAKE_VALIDATE_LAST;
-			}
-			CMD_IF_IRQMASK_CLEAR = CMD_NEW_COMMAND;
-		}
+                CMD_IF_HANDSHAKE_OUT = HANDSHAKE_VALIDATE_LAST;
+            }
+            CMD_IF_IRQMASK_CLEAR = CMD_NEW_COMMAND;
+        }
     }
 }
 
@@ -212,6 +217,7 @@ void CommandInterface :: dump_registers(void)
     printf("CMD_IF_REPSONSE_LEN_H  %b\n", CMD_IF_RESPONSE_LEN_H);
     printf("CMD_IF_COMMAND_LEN_L   %b\n", CMD_IF_COMMAND_LEN_L );
     printf("CMD_IF_COMMAND_LEN_H   %b\n", CMD_IF_COMMAND_LEN_H );
+    printf("CMD_IF_IRQMASK         %b\n", CMD_IF_IRQMASK       );
 }
 
 Message c_message_no_target      = {  9, true, (uint8_t *)"NO TARGET" }; 

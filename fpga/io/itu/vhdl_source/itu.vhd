@@ -11,6 +11,8 @@ generic (
     g_version	    : unsigned(7 downto 0) := X"FE";
     g_uart          : boolean := true;
     g_uart_rx       : boolean := true;
+    g_uart_tx_fifo  : boolean := true;
+    g_uart_big_fifo : boolean := false;
     g_edge_init     : std_logic_vector(7 downto 0) := "00000001";
     g_capabilities  : std_logic_vector(31 downto 0) := X"5555AAAA";
     g_edge_write    : boolean := true;
@@ -23,11 +25,12 @@ port (
     io_resp         : out t_io_resp;
     irq_out         : out std_logic;
     
-    tick_4MHz       : in  std_logic;
-    tick_1us        : in  std_logic;
-    tick_1ms        : in  std_logic;
-    buttons         : in  std_logic_vector(2 downto 0);
-    
+    tick_4MHz       : in  std_logic := '1';
+    tick_1us        : in  std_logic := '0';
+    tick_1ms        : in  std_logic := '0';
+    buttons         : in  std_logic_vector(2 downto 0) := "000";
+    btn_menu        : in  std_logic := '0';
+
     irq_timer_tick  : in  std_logic := '0';
     irq_in          : in  std_logic_vector(7 downto 2) := (others => '0');
     irq_flags       : out std_logic_vector(7 downto 0);
@@ -78,6 +81,7 @@ architecture gideon of itu is
     
     signal usb_busy         : std_logic;
     signal sd_busy          : std_logic;
+    signal printer_busy     : std_logic;
 begin
     process(clock)
         variable new_irq_edge_flag  : std_logic_vector(irq_edge_flag'range);
@@ -165,7 +169,7 @@ begin
                 when c_itu_irq_edge =>
                     io_resp_it.data <= iedge;
                 when c_itu_irq_active =>
-                    io_resp_it.data <= irq_active;
+                    io_resp_it.data <= irq_active and imask;
                 when c_itu_timer =>
                     io_resp_it.data <= std_logic_vector(timer);
                 when c_itu_irq_timer_en =>
@@ -187,6 +191,9 @@ begin
                     io_resp_it.data <= g_capabilities( 7 downto 0);
                 when c_itu_buttons =>
                     io_resp_it.data <= buttons & "00000";
+                    if btn_menu = '1' then
+                        io_resp_it.data(6) <= '1';
+                    end if;
                 when others =>
                     null;
                 end case;
@@ -200,6 +207,8 @@ begin
                     usb_busy <= io_req_ms.data(0);
                 when c_itu_sd_busy =>
                     sd_busy <= io_req_ms.data(0);
+                when c_itu_printer_busy =>
+                    printer_busy <= io_req_ms.data(0);
                 when c_itu_misc_io =>
                     misc_io <= io_req_ms.data;
                 when c_itu_irq_en_high =>
@@ -257,6 +266,7 @@ begin
                 ms_timer      <= (others => '0');
                 usb_busy      <= '0';
                 sd_busy       <= '0';
+                printer_busy  <= '0';
                 misc_io       <= (others => '0');
             end if;
         end if;
@@ -285,6 +295,8 @@ begin
     r_uart: if g_uart generate
         uart: entity work.uart_peripheral_io
         generic map (
+            g_tx_fifo   => g_uart_tx_fifo,
+            g_big_fifo  => g_uart_big_fifo,
             g_impl_rx   => g_uart_rx,
             g_divisor   => c_baud_div )
         port map (
@@ -312,7 +324,7 @@ begin
         end process;
     end generate;
     
-    busy_led <= usb_busy or sd_busy;
+    busy_led <= usb_busy or sd_busy or printer_busy;
     
     irq_flags <= irq_active;
 end architecture;

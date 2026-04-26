@@ -13,6 +13,7 @@ class Keyboard_C64 : public Keyboard
     GenericHost *host;
     volatile uint8_t *row_register;
     volatile uint8_t *col_register;
+    volatile uint8_t *joy_register;
     
     uint8_t shift_prev;
     uint8_t mtrx_prev;
@@ -22,16 +23,19 @@ class Keyboard_C64 : public Keyboard
         
     int  delay_count;
 
-    uint8_t key_buffer[KEY_BUFFER_SIZE];
+    int key_buffer[KEY_BUFFER_SIZE];
     int  key_head;
     int  key_tail;
 public:
-    Keyboard_C64(GenericHost *, volatile uint8_t *r, volatile uint8_t *c);
+    Keyboard_C64(GenericHost *, volatile uint8_t *r, volatile uint8_t *c, volatile uint8_t *j);
     ~Keyboard_C64();
     
+    static uint8_t scan_keyboard(volatile uint8_t *r, volatile uint8_t *c);
+
     void scan(void);
     void set_delays(int, int);
     int  getch(void);
+    void push_head(int);
     void wait_free(void);
     void clear_buffer(void);
 };

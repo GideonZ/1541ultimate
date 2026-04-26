@@ -8,11 +8,8 @@ struct Line
     int  length;
 };
 
-class UserInterface;
-
 class Editor : public UIObject
 {
-	UserInterface *user_interface;
 public:
     int line_length;
     int height;
@@ -41,7 +38,6 @@ public:
 
 class HexEditor : public Editor
 {
-	UserInterface *user_interface;
 	void line_breakdown(const char *text_buffer, int buffer_size);
     void draw(int line_idx, Line *line);
 public:
@@ -50,11 +46,9 @@ public:
 
 class AssEditor : public Editor
 {
-	UserInterface *user_interface;
 	void line_breakdown(const char *text_buffer, int buffer_size);
     void draw(int line_idx, Line *line);
 public:
     AssEditor(UserInterface *ui, const char *text_buffer, int max_len);
 };
-
 #endif

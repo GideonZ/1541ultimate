@@ -7,10 +7,10 @@
 class FileTypeBin : public FileType
 {
 	BrowsableDirEntry *node;
-    static int execute_st(SubsysCommand *cmd);
-    int execute(SubsysCommand *cmd);
-    int load_kernal(SubsysCommand *cmd);
-    int load_dos(SubsysCommand *cmd);
+    static SubsysResultCode_e execute_st(SubsysCommand *cmd);
+    SubsysResultCode_e execute(SubsysCommand *cmd);
+    SubsysResultCode_e load_kernal(SubsysCommand *cmd);
+    SubsysResultCode_e load_dos(SubsysCommand *cmd);
 public:
     FileTypeBin(BrowsableDirEntry *node);
     virtual ~FileTypeBin();

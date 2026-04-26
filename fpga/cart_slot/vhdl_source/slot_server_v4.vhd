@@ -24,18 +24,21 @@ generic (
     g_ext_freeze_act: boolean := false;
     g_cartreset_init: std_logic := '0';
     g_boot_stop     : boolean := false;
-    g_big_endian    : boolean;
+    g_big_endian    : boolean := false;
     g_kernal_repl   : boolean := true;
     g_control_read  : boolean := true;
     g_command_intf  : boolean := true;
     g_ram_expansion : boolean := true;
     g_extended_reu  : boolean := false;
     g_sampler       : boolean := false;
+    g_sampler_voices: natural := 8;
+    g_sampler_16bit : boolean := true;
     g_acia          : boolean := false;
     g_eeprom        : boolean := true;
     g_implement_sid : boolean := true;
     g_sid_voices    : natural := 3;
     g_8voices       : boolean := false;
+    g_measure_timing: boolean := false;
     g_vic_copper    : boolean := false );
 
 port (
@@ -43,8 +46,9 @@ port (
     reset           : in  std_logic;
 
     -- Cartridge pins
-    VCC             : in    std_logic := '1';
+    VCCDET          : in    std_logic := '1';
 
+    dotclk_i        : in    std_logic;
     phi2_i          : in    std_logic;
     io1n_i          : in    std_logic;
     io2n_i          : in    std_logic;
@@ -84,6 +88,8 @@ port (
     sense           : in    std_logic;
 
     buttons         : in    std_logic_vector(2 downto 0);
+    btn_freeze      : in    std_logic;
+    btn_reset       : in    std_logic;
     cart_led_n      : out   std_logic;
 
     trigger_1       : out   std_logic;
@@ -104,7 +110,8 @@ port (
     samp_left        : out signed(17 downto 0);
     samp_right       : out signed(17 downto 0);
 
-    -- timing output
+    -- timing input / output
+    tick_4MHz       : in    std_logic;
     phi2_tick       : out   std_logic;
     c64_stopped     : out   std_logic;
 
@@ -127,6 +134,7 @@ end slot_server_v4;
 
 architecture structural of slot_server_v4 is
     -- Synchronized input signals
+    signal dotclk_c        : std_logic;
     signal phi2_c          : std_logic;
     signal io1n_c          : std_logic;
     signal io2n_c          : std_logic;
@@ -144,6 +152,7 @@ architecture structural of slot_server_v4 is
 
     -- Xilinx attributes
     attribute register_duplication : string;
+    attribute register_duplication of dotclk_c    : signal is "no";
     attribute register_duplication of phi2_c      : signal is "no";
     attribute register_duplication of io1n_c      : signal is "no";
     attribute register_duplication of io2n_c      : signal is "no";
@@ -161,6 +170,7 @@ architecture structural of slot_server_v4 is
 
     -- Lattice attributes
     attribute syn_replicate                     : boolean;
+    attribute syn_replicate of dotclk_c         : signal is false;
     attribute syn_replicate of phi2_c           : signal is false;
     attribute syn_replicate of io1n_c           : signal is false;
     attribute syn_replicate of io2n_c           : signal is false;
@@ -178,6 +188,7 @@ architecture structural of slot_server_v4 is
 
     -- Altera attributes
     attribute dont_replicate                    : boolean;
+    attribute dont_replicate of dotclk_c        : signal is true;
     attribute dont_replicate of phi2_c          : signal is true;
     attribute dont_replicate of io1n_c          : signal is true;
     attribute dont_replicate of io2n_c          : signal is true;
@@ -196,6 +207,7 @@ architecture structural of slot_server_v4 is
     signal phi2_tick_i     : std_logic;
     signal phi2_fall       : std_logic;
     signal phi2_recovered  : std_logic;
+    signal prepare_dma     : std_logic;
     signal vic_cycle       : std_logic;
     signal dma_data_out    : std_logic;
     signal do_sample_addr  : std_logic;
@@ -234,6 +246,8 @@ architecture structural of slot_server_v4 is
 
     -- timing measurement
     signal measure_data    : std_logic_vector(7 downto 0) := X"FF";
+    signal timing_data     : std_logic_vector(31 downto 0);
+    signal timing_trigger  : std_logic;
 
     -- kernal replacement logic
     signal kernal_area     : std_logic := '0';
@@ -319,6 +333,7 @@ architecture structural of slot_server_v4 is
     signal phi2_tick_avail  : std_logic;
 begin
     b_sync: block
+        signal dotclk_f        : std_logic;
         signal phi2_f          : std_logic;
         signal io1n_f          : std_logic;
         signal io2n_f          : std_logic;
@@ -335,6 +350,7 @@ begin
         signal nmin_f          : std_logic := '1';
 
         -- Xilinx attributes
+        attribute register_duplication of dotclk_f    : signal is "no";
         attribute register_duplication of phi2_f      : signal is "no";
         attribute register_duplication of io1n_f      : signal is "no";
         attribute register_duplication of io2n_f      : signal is "no";
@@ -351,6 +367,7 @@ begin
         attribute register_duplication of nmin_f      : signal is "no";
 
         -- Lattice attributes
+        attribute syn_replicate of dotclk_f         : signal is false;
         attribute syn_replicate of phi2_f           : signal is false;
         attribute syn_replicate of io1n_f           : signal is false;
         attribute syn_replicate of io2n_f           : signal is false;
@@ -367,6 +384,7 @@ begin
         attribute syn_replicate of nmin_f           : signal is false;
 
         -- Altera attributes
+        attribute dont_replicate of dotclk_f        : signal is true;
         attribute dont_replicate of phi2_f          : signal is true;
         attribute dont_replicate of io1n_f          : signal is true;
         attribute dont_replicate of io2n_f          : signal is true;
@@ -386,6 +404,7 @@ begin
         process(clock)
         begin
             if falling_edge(clock) then
+                dotclk_f    <= dotclk_i;
                 phi2_f      <= phi2_i;
                 io1n_f      <= io1n_i;
                 io2n_f      <= io2n_i;
@@ -403,6 +422,7 @@ begin
             end if;
 
             if rising_edge(clock) then
+                dotclk_c    <= dotclk_f;
                 phi2_c      <= phi2_f;
                 io1n_c      <= io1n_f;
                 io2n_c      <= io2n_f;
@@ -421,8 +441,8 @@ begin
         end process;
     end block b_sync;
 
-    reset_button  <= buttons(0) when control.swap_buttons='0' else buttons(2);
-    freeze_button <= buttons(2) when control.swap_buttons='0' else buttons(0);
+    reset_button  <= btn_reset or  (buttons(0) and not control.swap_buttons) or (buttons(2) and control.swap_buttons);
+    freeze_button <= btn_freeze or (buttons(2) and not control.swap_buttons) or (buttons(0) and control.swap_buttons);
 
     i_split_64K: entity work.io_bus_splitter
     generic map (
@@ -532,7 +552,8 @@ begin
         dma_data_out    => dma_data_out,
         clock_det       => status.clock_detect,
         vic_cycle       => vic_cycle,    
-    
+        prepare_dma     => prepare_dma,
+
         refr_inhibit    => mem_refr_inhibit,
         reqs_inhibit    => reqs_inhibit,
         clear_inhibit   => clear_inhibit,
@@ -547,6 +568,17 @@ begin
     mem_rack_slot <= '1' when mem_resp_32_slot.rack_tag = g_tag_slot else '0';
     mem_dack_slot <= '1' when mem_resp_32_slot.dack_tag = g_tag_slot else '0';
 
+    timing_data(31) <= dotclk_c;
+    timing_data(30) <= phi2_c;
+    timing_data(29) <= phi2_recovered;
+    timing_data(28) <= dma_data_out;
+    timing_data(27) <= slave_dtri or master_dtri;
+    timing_data(26) <= address_tri_l; 
+    timing_data(25) <= address_tri_h;
+    timing_data(24) <= rwn_c;
+    timing_data(23 downto 16) <= slot_data_c;
+    timing_data(15 downto 0)  <= std_logic_vector(slot_addr_c);
+
     i_slave: entity work.slot_slave
     generic map (
         g_big_endian => g_big_endian )
@@ -555,7 +587,7 @@ begin
         reset           => reset,
         
         -- Cartridge pins
-        VCC             => VCC,
+        VCCDET          => VCCDET,
         PHI2            => phi2_c,
         RSTn            => rstn_c,
         IO1n            => io1n_c,
@@ -658,6 +690,7 @@ begin
             -- timing inputs
             vic_cycle       => vic_cycle,    
             dma_data_out    => dma_data_out,
+            prepare_dma     => prepare_dma,
             phi2_recovered  => phi2_recovered,
             phi2_tick       => phi2_tick_i,
             do_sample_addr  => do_sample_addr,
@@ -673,6 +706,9 @@ begin
             stop_cond       => control.c64_stop_mode,
             c64_stop        => control.c64_stop,
             c64_stopped     => status.c64_stopped );
+
+        direct_dma_req <= c_dma_req_init;
+
     end generate;    
 
     r_no_master: if g_direct_dma generate
@@ -879,6 +915,31 @@ begin
 
     end generate;
 
+    r_timing_measure: if g_measure_timing generate
+        i_trace: entity work.slot_trace
+        port map (
+            clock   => clock,
+            reset   => reset,
+            data_in => timing_data,
+            trigger => control.timing_trigger,
+            io_req  => io_req_copper,
+            io_resp => io_resp_copper
+        );
+    end generate;
+
+    assert not (g_measure_timing and g_vic_copper)
+        report "Timing measure module and copper cannot be enabled at the same time"
+        severity failure;
+
+    r_neither: if not g_measure_timing and not g_vic_copper generate
+        io_dummy_inst: entity work.io_dummy
+        port map (
+            clock   => clock,
+            io_req  => io_req_copper,
+            io_resp => io_resp_copper
+        );
+    end generate;
+
     r_sampler: if g_sampler generate
         signal local_io_req     : t_io_req  := c_io_req_init;
         signal local_io_resp    : t_io_resp;
@@ -923,7 +984,8 @@ begin
         i_sampler: entity work.sampler
         generic map (
             g_clock_freq    => g_clock_freq,
-            g_num_voices    => 8 )
+            g_support_16bit => g_sampler_16bit,
+            g_num_voices    => g_sampler_voices )
         port map (
             clock       => clock,
             reset       => actual_c64_reset,
@@ -957,7 +1019,7 @@ begin
             clock     => clock,
             reset     => reset,
             c64_reset => actual_c64_reset,
-            slot_tick => phi2_tick_i,
+            tick      => tick_4MHz,
             slot_req  => slot_req,
             slot_resp => slot_resp_acia,
             io_req    => io_req_acia,
@@ -990,7 +1052,7 @@ begin
         end if;
     end process;
 
-    process(address_out, kernal_addr_out, kernal_probe, do_probe_end, address_tri_l, address_tri_h)
+    process(address_out, kernal_addr_out, kernal_probe, do_probe_end, address_tri_l, address_tri_h, slot_addr_c)
     begin
         slot_addr_o <= unsigned(address_out);
         slot_addr_tl <= address_tri_l;
@@ -1099,7 +1161,7 @@ begin
     process(clock)
     begin
         if rising_edge(clock) then
-            status.c64_vcc <= VCC;            
+            status.c64_vcc <= VCCDET;            
         end if;
     end process;
     status.exrom    <= not exromn_c;

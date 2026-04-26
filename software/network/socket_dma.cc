@@ -5,6 +5,8 @@
  *      Author: Gideon
  */
 
+#include <string.h>
+
 #include "itu.h"
 #include "filemanager.h"
 #include "socket_dma.h"
@@ -18,6 +20,8 @@
 #include "c1541.h"
 #include "data_streamer.h"
 #include "filetype_crt.h"
+#include "network_config.h"
+#include "product.h"
 
 // "Ok ok, use them then..."
 #define SOCKET_CMD_DMA         0xFF01
@@ -33,6 +37,9 @@
 #define SOCKET_CMD_RUN_IMG     0xFF0B
 #define SOCKET_CMD_POWEROFF    0xFF0C
 #define SOCKET_CMD_RUN_CRT     0xFF0D
+#define SOCKET_CMD_IDENTIFY    0xFF0E
+
+#define SOCKET_CMD_AUTHENTICATE 0xFF1F
 
 // Only available on U64
 #define SOCKET_CMD_VICSTREAM_ON    0xFF20
@@ -48,7 +55,7 @@
 #define SOCKET_CMD_READFLASH    0xFF75
 #define SOCKET_CMD_DEBUG_REG    0xFF76
 
-SocketDMA socket_dma; // global that causes the object to exist
+SocketDMA *socket_dma = NULL;
 
 extern cart_def sid_cart;
 extern cart_def boot_cart;
@@ -56,15 +63,16 @@ extern cart_def boot_cart;
 SocketDMA::SocketDMA() {
 	load_buffer = new uint8_t[SOCKET_BUFFER_SIZE];
 	if (load_buffer) {
-	    xTaskCreate( dmaThread, "DMA Load Task", configMINIMAL_STACK_SIZE, (void *)load_buffer, tskIDLE_PRIORITY + 1, NULL );
+	    xTaskCreate( dmaThread, "DMA Load Task", configMINIMAL_STACK_SIZE, (void *)load_buffer, PRIO_NETSERVICE, NULL );
 	}
+    xTaskCreate(identThread, "UDP Ident Task", configMINIMAL_STACK_SIZE, NULL, PRIO_NETSERVICE, NULL );
 }
 
 SocketDMA::~SocketDMA() {
     delete[] load_buffer;
 }
 
-void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint16_t cmd, uint32_t len, struct in_addr *client_ip)
+bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint16_t cmd, uint32_t len, struct in_addr *client_ip, bool &authenticated)
 {
 	uint8_t *buf = (uint8_t *)load_buffer;
 	SubsysCommand *sys_command;
@@ -74,9 +82,33 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
     uint16_t i;
     uint16_t size;
     const char *name = "";
+    char title[52];
+    bool ok = true;
     // TODO: check len > remaining
 
+    const char *password = NULL;
+    if (!authenticated && cmd != SOCKET_CMD_AUTHENTICATE) {
+        return false;  // If not authenticated we disconnect
+    }
     switch(cmd) {
+    case SOCKET_CMD_AUTHENTICATE:
+        password = networkConfig.cfg->get_string(CFG_NETWORK_PASSWORD);
+        if (!(*password) || (strlen(password) == length && memcmp(password, load_buffer, length) == 0)) {
+            authenticated = true;
+            buf[0] = 1;
+        }
+        else {
+            ok = false;
+            buf[0] = 0;
+            vTaskDelay(1000 / portTICK_PERIOD_MS);  // Throttle failed password attempts
+        }
+        writeSocket(socket, buf, 1);
+        break;
+    case SOCKET_CMD_IDENTIFY:
+        getProductTitleString(title+1, sizeof(title)-1, true);
+        title[0] = (char)strlen(title+1);
+        writeSocket(socket, title, 1+title[0]);
+        break;
     case SOCKET_CMD_DMA:
         sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_BUFFER, RUNCODE_DMALOAD, buf, len);
         sys_command->execute();
@@ -91,14 +123,14 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         break;
     case SOCKET_CMD_DMAWRITE:
         offs = (uint16_t)buf[0] | (((uint16_t)buf[1]) << 8);
-        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW, offs, buf + 2, len - 2);
+        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW_WRITE, offs, buf + 2, len - 2);
         sys_command->execute();
         break;
     case SOCKET_CMD_KEYB:
-        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW, 0x0277, buf, len);
+        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW_WRITE, 0x0277, buf, len);
         sys_command->execute();
         buf[0] = len;
-        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW, 0x00C6, buf, 1);
+        sys_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW_WRITE, 0x00C6, buf, 1);
         sys_command->execute();
         break;
     case SOCKET_CMD_RESET:
@@ -139,9 +171,13 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
     case SOCKET_CMD_RUN_IMG:
     {
         FileManager *fm = FileManager :: getFileManager();
-        FRESULT fres = fm->save_file(true, "/temp", "tcpimage.d64", buf, len, NULL);
+        mstring temp_path;
+        FRESULT fres = fm->save_temp_file("socket", "tcpimage.d64", buf, len, &temp_path);
         if (fres == FR_OK) {
-            sys_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, MENU_1541_MOUNT_D64, 1541, "/temp", "tcpimage.d64");
+            Path image_path(temp_path.c_str());
+            mstring temp_dir;
+            sys_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, MENU_1541_MOUNT_D64, 1541,
+                    image_path.getHead(temp_dir), image_path.getLastElement());
             sys_command->execute();
         }
         if (cmd == SOCKET_CMD_RUN_IMG) {
@@ -155,9 +191,13 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
     case SOCKET_CMD_RUN_CRT:
     {
         FileManager *fm = FileManager :: getFileManager();
-        FRESULT fres = fm->save_file(true, "/temp", "tcpimage.crt", buf, len, NULL);
+        mstring temp_path;
+        FRESULT fres = fm->save_temp_file("socket", "tcpimage.crt", buf, len, &temp_path);
         if (fres == FR_OK) {
-            sys_command = new SubsysCommand(NULL, SUBSYSID_C64, 0, 0, "/temp", "tcpimage.crt");
+            Path image_path(temp_path.c_str());
+            mstring temp_dir;
+            sys_command = new SubsysCommand(NULL, SUBSYSID_C64, 0, 0,
+                    image_path.getHead(temp_dir), image_path.getLastElement());
             FileTypeCRT::execute_st(sys_command);
             delete sys_command;
         }
@@ -167,7 +207,7 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
 #ifdef U64
     case SOCKET_CMD_VICSTREAM_ON:
         // First DEBUG stream off
-        sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 2, "", "");
+        sys_command = new SubsysCommand(NULL, -1, (int)dataStreamer, 2, "", "");
         sys_command->direct_call = DataStreamer :: S_stopStream;
         sys_command->execute();
 
@@ -175,7 +215,7 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         if (len > 2) {
             name = (const char *)&buf[2];
         }
-        sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 0, name, "");
+        sys_command = new SubsysCommand(NULL, -1, (int)dataStreamer, 0, name, "");
         sys_command->direct_call = DataStreamer :: S_startStream;
 
         if ((len >= 2) && (buf[0] || buf[1])) {
@@ -189,7 +229,7 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         if (len > 2) {
             name = (const char *)&buf[2];
         }
-        sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 1, name, "");
+        sys_command = new SubsysCommand(NULL, -1, (int)dataStreamer, 1, name, "");
         sys_command->direct_call = DataStreamer :: S_startStream;
 
         if ((len >= 2) && (buf[0] || buf[1])) {
@@ -200,7 +240,7 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
 
     case SOCKET_CMD_DEBUGSTREAM_ON:
         // First VIC stream off
-        sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 0, "", "");
+        sys_command = new SubsysCommand(NULL, -1, (int)dataStreamer, 0, "", "");
         sys_command->direct_call = DataStreamer :: S_stopStream;
         sys_command->execute();
 
@@ -208,7 +248,7 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         if (len > 2) {
             name = (const char *)&buf[2];
         }
-        sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 2, name, "");
+        sys_command = new SubsysCommand(NULL, -1, (int)dataStreamer, 2, name, "");
         sys_command->direct_call = DataStreamer :: S_startStream;
 
         if ((len >= 2) && (buf[0] || buf[1])) {
@@ -218,19 +258,19 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         break;
 
     case SOCKET_CMD_VICSTREAM_OFF:
-        sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 0, "", "");
+        sys_command = new SubsysCommand(NULL, -1, (int)dataStreamer, 0, "", "");
         sys_command->direct_call = DataStreamer :: S_stopStream;
         sys_command->execute();
         break;
 
     case SOCKET_CMD_AUDIOSTREAM_OFF:
-        sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 1, "", "");
+        sys_command = new SubsysCommand(NULL, -1, (int)dataStreamer, 1, "", "");
         sys_command->direct_call = DataStreamer :: S_stopStream;
         sys_command->execute();
         break;
 
     case SOCKET_CMD_DEBUGSTREAM_OFF:
-        sys_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 2, "", "");
+        sys_command = new SubsysCommand(NULL, -1, (int)dataStreamer, 2, "", "");
         sys_command->direct_call = DataStreamer :: S_stopStream;
         sys_command->execute();
         break;
@@ -288,6 +328,7 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
            }
     	}
     }
+    return ok;
 }
 
 int SocketDMA::readSocket(int socket, void *buffer, int max_remain)
@@ -328,6 +369,11 @@ int SocketDMA::writeSocket(int socket, void *buffer, int length)
 
 void SocketDMA::dmaThread(void *load_buffer)
 {
+    while (networkConfig.cfg->get_value(CFG_NETWORK_ULTIMATE_DMA_SERVICE) == 0) {
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+    }
+    puts("Socket DMA server starting");
+
 	int sockfd, newsockfd, portno;
 	unsigned long int clilen;
     struct sockaddr_in serv_addr, cli_addr;
@@ -345,7 +391,7 @@ void SocketDMA::dmaThread(void *load_buffer)
     printf("DMA Thread Sockfd = %8x\n", sockfd);
 
     /* Initialize socket structure */
-    bzero((char *) &serv_addr, sizeof(serv_addr));
+    memset((char *) &serv_addr, 0, sizeof(serv_addr));
     portno = 64;
 
     serv_addr.sin_family = AF_INET;
@@ -389,6 +435,10 @@ void SocketDMA::dmaThread(void *load_buffer)
 		uint8_t *mempntr = (uint8_t *)load_buffer;
 		uint8_t buf[16];
 
+		bool authenticated = false;
+		const char *password = networkConfig.cfg->get_string(CFG_NETWORK_PASSWORD);
+		if (!*password)
+	            authenticated = true;
 		while(1) {
 	        n = recv(newsockfd, buf, 2, 0);
 	        if (n <= 0) {
@@ -422,11 +472,139 @@ void SocketDMA::dmaThread(void *load_buffer)
 	        if (n <= 0) {
 	            break;
 	        }
-            performCommand(newsockfd, load_buffer, n, cmd, len32, &cli_addr.sin_addr);
+            if (!performCommand(newsockfd, load_buffer, n, cmd, len32, &cli_addr.sin_addr, authenticated)) {
+                break;
+            }
 		}
         puts("ERROR reading from socket");
-        lwip_close(newsockfd);
+        closesocket(newsockfd);
+    }
+    // this will never happen
+    closesocket(sockfd);
+}
+
+void SocketDMA::identThread(void *_a)
+{
+    while (networkConfig.cfg->get_value(CFG_NETWORK_ULTIMATE_IDENT_SERVICE) == 0) {
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+    }
+    puts("Socket ident server starting");
+
+	int sockfd, newsockfd, portno;
+	unsigned long int clilen;
+    struct sockaddr_in serv_addr, cli_addr;
+    socklen_t client_struct_length = sizeof(cli_addr);
+    int  n;
+    char client_message[256];
+    char menu_header[64];
+
+    getProductTitleString(menu_header, sizeof(menu_header), true);
+
+    /* First call to socket() function */
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+
+    if (sockfd < 0)
+	{
+    	puts("ERROR identThread opening socket");
+    	vTaskDelete(NULL);
+	}
+
+    while(1) {
+        /* Initialize socket structure */
+        memset((char *) &serv_addr, 0, sizeof(serv_addr));
+        portno = 64;
+
+        serv_addr.sin_family = AF_INET;
+        serv_addr.sin_addr.s_addr = INADDR_ANY;
+        serv_addr.sin_port = htons(portno);
+
+        /* Now bind the host address using bind() call.*/
+        if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
+        {
+            puts("identThread ERROR on binding");
+            vTaskDelay(500); // some seconds
+            continue; // try again
+        }
+        while(1) {
+            // Receive client's message:
+            int n = recvfrom(sockfd, client_message, sizeof(client_message), 0,
+                (struct sockaddr*)&cli_addr, &client_struct_length);
+            if (n < 0) {
+                printf("Couldn't receive: %d\n", n);
+                vTaskDelay(500); // some seconds
+                continue; // try again
+            }
+            printf("Received Ident Request from IP: %s and port: %i\n",
+                inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
+            if (n > 0) {
+                client_message[n] = 0;
+            }
+
+            const char *hostname = networkConfig.cfg->get_string(CFG_NETWORK_HOSTNAME);
+
+            char product[64];
+            getProductVersionString(product, sizeof(product), true);
+
+            char fpga_version[8];
+            sprintf(fpga_version, "1%02x", getFpgaVersion());
+#ifdef U64
+            char core_version[8];
+            sprintf(core_version, "1.%02x", C64_CORE_VERSION);
+#endif
+            const char *password = networkConfig.cfg->get_string(CFG_NETWORK_PASSWORD);
+
+            if (strncmp(client_message, "json", 4) == 0) {
+                client_message[36] = 0;
+                JSON_Bool password_protected(*password ? 1 : 0);
+                JSON *obj = JSON::Obj()
+                    ->add("product", product)
+                    ->add("firmware_version", APPL_VERSION_ASCII)
+                    ->add("fpga_version", fpga_version)
+#ifdef U64
+                    ->add("core_version", core_version)
+#endif
+                    ->add("hostname", hostname)
+                    ->add("menu_header", menu_header)
+                    ->add("your_string", client_message+4);
+
+                // Current Assembly64 ignores responses with booleans so we only send this if passwords
+                // are active, in which case Assembly won't work anyway.
+                if (*password) {
+                    ((JSON_Object *)obj)->add("password_protected", &password_protected);
+                }
+
+                // Add unique id if configured
+                const char *unique_id = networkConfig.cfg->get_string(CFG_NETWORK_UNIQUE_ID);
+                if (unique_id && *unique_id) {
+                    if (strcmp(unique_id, "Default") == 0) {
+                        unique_id = getProductUniqueId();
+                    }
+                    ((JSON_Object *)obj)->add("unique_id", unique_id);
+                }
+
+                // Render and send
+                const char *msg = obj->render();
+                n = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&cli_addr,
+                        client_struct_length);
+
+            } else {
+                // Respond to client:
+                if (n > 32) {
+                    n = 32;
+                }
+                sprintf(client_message + n, ",%s,%s", hostname, menu_header);
+
+                n = sendto(sockfd, client_message, strlen(client_message), 0, (struct sockaddr *)&cli_addr,
+                        client_struct_length);
+            }
+            if (n < 0) {
+                printf("Can't send, reason: %d\n", n);
+            }
+        }
     }
     // this will never happen
     lwip_close(sockfd);
 }
+
+#include "init_function.h"
+InitFunction init_socket64("Raw Socket 64", [](void *_obj, void *_param) { socket_dma = new SocketDMA(); }, NULL, NULL, 102); // global that causes us to exist

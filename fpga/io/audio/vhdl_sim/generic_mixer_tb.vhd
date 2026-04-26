@@ -19,7 +19,6 @@ architecture tb of generic_mixer_tb is
     signal clock       : std_logic := '0';
     signal reset       : std_logic;
     signal start       : std_logic;
-    signal sys_clock   : std_logic;
     signal req         : t_io_req;
     signal resp        : t_io_resp;
     signal inputs      : t_audio_array(0 to 7);

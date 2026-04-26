@@ -29,4 +29,5 @@ package itu_pkg is
     constant c_itu_misc_io       : unsigned(3 downto 0) := X"6";
     constant c_itu_irq_en_high   : unsigned(3 downto 0) := X"7";
     constant c_itu_irq_act_high  : unsigned(3 downto 0) := X"8";
+    constant c_itu_printer_busy  : unsigned(3 downto 0) := X"9";
 end package;

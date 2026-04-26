@@ -17,16 +17,16 @@ Screen   *HostStream :: getScreen(void)
 	return screen;
 }
 
-void HostStream :: releaseScreen(void)
-{
-	delete screen;
-	screen = 0;
-}
-
 Keyboard *HostStream :: getKeyboard(void)
 {
 	if (!keyboard) {
 		keyboard = new Keyboard_VT100(stream);
 	}
 	return keyboard;
+}
+
+void HostStream :: release_ownership(void) {
+	if (screen) {
+		((Screen_VT100 *)screen)->restore_terminal();
+	}
 }

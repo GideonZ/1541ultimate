@@ -63,7 +63,7 @@ architecture gideon of pdm_with_volume is
     others => "1111000000001111"  -- 8 ones and 8 zeros (off, but you may hear the unbalance)
     );
 begin
-    dac_in_scaled <= left_scale(dac_in, g_left_shift);
+    dac_in_scaled <= left_scale(dac_in, g_left_shift) when rising_edge(clock);
     converted <= (not dac_in_scaled(dac_in_scaled'high) & unsigned(dac_in_scaled(dac_in_scaled'high downto g_left_shift))) when g_use_mid_only else
                  (not dac_in_scaled(dac_in_scaled'high) & unsigned(dac_in_scaled(dac_in_scaled'high-1 downto g_left_shift))) & '0';
 

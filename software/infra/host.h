@@ -24,7 +24,6 @@ public:
     virtual void set_colors(int background, int border) { }
 
     virtual Screen   *getScreen(void) { return NULL; }
-    virtual void releaseScreen(void) { }
     virtual Keyboard *getKeyboard(void) { return NULL; }
 
     virtual void checkButton(void) {  }

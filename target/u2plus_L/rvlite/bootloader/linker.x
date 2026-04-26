@@ -5,9 +5,8 @@
 MEMORY
 {
     memory  : ORIGIN = 0x00001000, LENGTH = 0xE9F000
-    bootrom : ORIGIN = 0x00000000, LENGTH = 3584
-    ram     : ORIGIN = 0x00000E00, LENGTH = 512
-    iodev (rw) : ORIGIN = 0xFFFFFE00, LENGTH = 512
+    bootrom : ORIGIN = 0x80000000, LENGTH = 0xE00
+    ram     : ORIGIN = 0x80000E00, LENGTH = 0x200
 }
 
 OUTPUT_FORMAT( "elf32-littleriscv",
@@ -260,5 +259,3 @@ PROVIDE(__crt0_bss_end             = __BSS_END__);
 PROVIDE(__crt0_copy_data_src_begin = LOADADDR(.data));
 PROVIDE(__crt0_copy_data_dst_begin = __DATA_BEGIN__);
 PROVIDE(__crt0_copy_data_dst_end   = __DATA_BEGIN__ + SIZEOF(.data));
-PROVIDE(__crt0_io_space_begin      = ORIGIN(iodev));
-PROVIDE(__crt0_io_space_end        = ORIGIN(iodev) + LENGTH(iodev));

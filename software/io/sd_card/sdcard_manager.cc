@@ -36,9 +36,9 @@ SdCardManager :: ~SdCardManager()
 void SdCardManager :: init()
 {
 	sd_card = new SdCard; // block device
-	sd_dev = new FileDevice(sd_card, "SD", "SdCard");
+	sd_dev = new FileDevice(sd_card, "SD", "SD Card");
 	fm->add_root_entry(sd_dev);
-	xTaskCreate(poll_sdcard, "SD Card Manager", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &task_handle );
+	xTaskCreate(poll_sdcard, "SD Card Manager", configMINIMAL_STACK_SIZE, this, PRIO_BACKGROUND, &task_handle );
 }
 
 void SdCardManager :: poll()

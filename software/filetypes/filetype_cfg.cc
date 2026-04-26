@@ -64,13 +64,13 @@ FileType *FileTypeCfg :: test_type(BrowsableDirEntry *obj)
 }
 
 // static member
-int FileTypeCfg :: execute_st(SubsysCommand *cmd)
+SubsysResultCode_e FileTypeCfg :: execute_st(SubsysCommand *cmd)
 {
 	return ((FileTypeCfg *)cmd->mode)->execute(cmd);
 }
 
 // non-static member
-int FileTypeCfg :: execute(SubsysCommand *cmd)
+SubsysResultCode_e FileTypeCfg :: execute(SubsysCommand *cmd)
 {
 	File *file = 0;
 
@@ -103,7 +103,7 @@ int FileTypeCfg :: execute(SubsysCommand *cmd)
     } else {
         printf("Error opening file.\n");
         cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
-        return -2;
+        return SSRET_CANNOT_OPEN_FILE;
     }
-    return 0;
+    return SSRET_OK;
 }

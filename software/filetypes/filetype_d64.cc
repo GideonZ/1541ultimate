@@ -108,7 +108,7 @@ FileType *FileTypeD64 :: test_type(BrowsableDirEntry *obj)
     return NULL;
 }
 
-int FileTypeD64 :: runDisk_st(SubsysCommand *cmd)
+SubsysResultCode_e FileTypeD64 :: runDisk_st(SubsysCommand *cmd)
 {
     // First command is to mount the disk
     SubsysCommand *drvcmd = new SubsysCommand(cmd->user_interface, SUBSYSID_DRIVE_A, MENU_1541_MOUNT_D64, cmd->mode, cmd->path.c_str(), cmd->filename.c_str());
@@ -119,10 +119,11 @@ int FileTypeD64 :: runDisk_st(SubsysCommand *cmd)
     drvId[0] = 0x40 + c1541_A->get_current_iec_address();
     SubsysCommand *c64cmd = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DRIVE_LOAD, RUNCODE_MOUNT_LOAD_RUN, drvId, "*");
     c64cmd->execute();
-    return 0;
+
+    return SSRET_OK;
 }
 
-int FileTypeD64 :: loadMP3_st(SubsysCommand *cmd)
+SubsysResultCode_e FileTypeD64 :: loadMP3_st(SubsysCommand *cmd)
 {
     int total_bytes_read;
     uint32_t bytes_read;
@@ -137,7 +138,7 @@ int FileTypeD64 :: loadMP3_st(SubsysCommand *cmd)
     if (!ok)
     {
        cmd->user_interface->popup("Invalid operation", BUTTON_OK);
-       return -2;
+       return SSRET_WRONG_MOUNT_MODE;
     }
     
     uint8_t* dstAddr = reu+(((uint32_t) ramBase) << 16);
@@ -158,12 +159,12 @@ int FileTypeD64 :: loadMP3_st(SubsysCommand *cmd)
         if (expSize != actSize)
         {
            cmd->user_interface->popup("Size does not match", BUTTON_OK);
-           return -3;
+           return SSRET_MP3_INVALID_SIZE;
         }
         if (expSize > 12*1024*1024)
         {
            cmd->user_interface->popup("DNP file too large", BUTTON_OK);
-           return -4;
+           return SSRET_MP3_DNP_TOO_LARGE;
         }
     }
 
@@ -195,7 +196,7 @@ int FileTypeD64 :: loadMP3_st(SubsysCommand *cmd)
     } else {
         printf("Error opening file.\n");
         cmd->user_interface->popup(FileSystem::get_error_string(fres), BUTTON_OK);
-        return -2;
+        return SSRET_DISK_ERROR;
     }
-    return 0;
+    return SSRET_OK;
 }

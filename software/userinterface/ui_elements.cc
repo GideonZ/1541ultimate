@@ -5,14 +5,16 @@
  *      Author: Gideon
  */
 #include "ui_elements.h"
+#include "userinterface.h"
 #include <string.h>
 #include <stdio.h>
 
 
 /* User Interface Objects */
 /* Popup */
-UIPopup :: UIPopup(const char *msg, uint8_t btns, int count, const char **names, const char *keys) : message(msg), button_count(count)
+UIPopup :: UIPopup(UserInterface *ui, const char *msg, uint8_t btns, int count, const char **names, const char *keys) : UIObject(ui), message(msg), button_count(count)
 {
+//    user_interface = ui;
     button_names = names;
     button_keys = keys;
     buttons = btns;
@@ -23,12 +25,13 @@ UIPopup :: UIPopup(const char *msg, uint8_t btns, int count, const char **names,
     keyboard = 0;
 }
 
-void UIPopup :: init(Screen *screen, Keyboard *k)
+void UIPopup :: init()
 {
     // first, determine how wide our popup needs to be
     int button_width = 0;
     int message_width = message.length();
-    keyboard = k;
+    keyboard = get_ui()->get_keyboard();
+    Screen *screen = get_ui()->get_screen();
 
     uint8_t b = buttons;
     for(int i=0;i<button_count;i++) {
@@ -55,6 +58,7 @@ void UIPopup :: init(Screen *screen, Keyboard *k)
     window->draw_border();
     // window->no_scroll();
     window->move_cursor(x_m, 0);
+    window->set_color(get_ui()->color_fg);
     window->output(message.c_str());
 
     active_button = 0; // we can change this
@@ -82,27 +86,31 @@ void UIPopup :: draw_buttons()
 int UIPopup :: poll(int dummy)
 {
     int c = keyboard->getch();
+    c = get_ui()->keymapper(c, e_keymap_default);
 
     if (c == -1) // nothing pressed
     	return 0;
     if (c == -2) // error
     	return -1;
 
-    for(int i=0;i<btns_active;i++) {
+    int i;
+    int selected_button = -1;
+    if ((c == KEY_RETURN) || (c == KEY_SPACE)) {
+        selected_button = active_button;
+    }
+    for (i=0; i < btns_active; i++) {
         if(c == button_key[i]) {
-            return (1 << i);
+            selected_button = i;
+	}
+    }
+    if (selected_button >= 0) {
+        for(i=0; i < button_count; i++) {
+            if (button_key[selected_button] == button_keys[i]) {
+                return (1 << i);
+            }
         }
     }
-    if((c == KEY_RETURN)||(c == KEY_SPACE)) {
-		for(int i=0,j=0;i < button_count;i++) {
-			if(buttons & (1 << i)) {
-				if(active_button == j)
-					return (1 << i);
-				j++;
-			}
-		}
-        return 0;
-    }
+
     if(c == KEY_RIGHT) {
         active_button ++;
         if(active_button >= btns_active)
@@ -123,8 +131,11 @@ void UIPopup :: deinit()
 	delete window;
 }
 
+UIStringBox :: UIStringBox(UserInterface *ui, const char *msg, char *buf, int max) : UIObject(ui), message(msg), edit(buf, max)
+{
+}
 
-UIStringBox :: UIStringBox(const char *msg, char *buf, int max) : message(msg)
+UIStringEdit :: UIStringEdit(char *buf, int max)
 {
     buffer = buf;
     max_len = max;
@@ -133,27 +144,31 @@ UIStringBox :: UIStringBox(const char *msg, char *buf, int max) : message(msg)
     window = 0;
     keyboard = 0;
     cur = len = 0;
+    win_xoffs = 0;
+    win_yoffs = 0;
 }
 
-void UIStringBox :: init(Screen *screen, Keyboard *keyb)
+void UIStringBox :: init()
 {
+    Screen *screen = get_ui()->get_screen();
+    Keyboard *keyb = get_ui()->get_keyboard();
+
     int message_width = message.length();
     int window_width = message_width;
-    if (max_len > message_width)
-        window_width = max_len;
+    if (edit.get_max_len() > message_width)
+        window_width = edit.get_max_len();
     window_width += 3; // compensate for border, and the cursor
 
     // Maximize to screen width
     if (window_width >= screen->get_size_x()) {
         window_width = screen->get_size_x();
     }
-    max_chars = window_width - 2; // compensate for border. Total number of chars visible in string box
+    int max_chars = window_width - 2; // compensate for border. Total number of chars visible in string box
 
     int x1 = (screen->get_size_x() - window_width) / 2;
     int y1 = (screen->get_size_y() - 5) / 2;
     int x_m = (window_width - message_width) / 2;
 
-    keyboard = keyb;
     screen->backup();
     window = new Window(screen, x1, y1, window_width, 5);
     window->clear();
@@ -161,9 +176,18 @@ void UIStringBox :: init(Screen *screen, Keyboard *keyb)
     window->move_cursor(x_m, 0);
     window->output(message.c_str());
 
-    window->move_cursor(0, 2);
-    //scr = window->get_pointer();
+    edit.init(window, keyb, 0, 2, max_chars);
+}
 
+void UIStringEdit :: init(Window *win, Keyboard *kb, int xo, int yo, int max_c)
+{
+    win_xoffs = xo;
+    win_yoffs = yo;
+    keyboard = kb;
+    window = win;
+    max_chars = max_c;
+
+    window->move_cursor(xo, yo);
     keyboard->wait_free();
 
     /// Now prefill the box...
@@ -182,10 +206,10 @@ void UIStringBox :: init(Screen *screen, Keyboard *keyb)
         edit_offs = 1 + len - max_chars;
     }
     window->output_length(buffer+edit_offs, (len < max_chars)?len : max_chars);
-    window->move_cursor(cur-edit_offs, 2);
+    window->move_cursor(win_xoffs+ cur-edit_offs, win_yoffs);
 }
 
-int UIStringBox :: poll(int dummy)
+int UIStringEdit :: poll(int dummy)
 {
     int key;
     int i;
@@ -199,8 +223,6 @@ int UIStringBox :: poll(int dummy)
     switch(key) {
     case KEY_RETURN: // CR
         buffer[len] = 0;
-        if(!len)
-            return -1; // cancel
         return 1; // done
     case KEY_LEFT: // left
     	if (cur > 0) {
@@ -209,10 +231,10 @@ int UIStringBox :: poll(int dummy)
                 edit_offs -= 5;
                 if (edit_offs < 0)
                     edit_offs = 0;
-                window->move_cursor(0, 2);
-                window->output_line(buffer+edit_offs);
+                window->move_cursor(win_xoffs, win_yoffs);
+                window->output_length(buffer+edit_offs, max_chars);
             }
-            window->move_cursor(cur-edit_offs, 2);
+            window->move_cursor(win_xoffs + cur-edit_offs, win_yoffs);
         }
         break;
     case KEY_RIGHT: // right
@@ -220,10 +242,10 @@ int UIStringBox :: poll(int dummy)
             cur++;
             if ((cur-edit_offs) > (max_chars-1)) {
                 edit_offs++;
-                window->move_cursor(0, 2);
-                window->output_line(buffer+edit_offs);
+                window->move_cursor(win_xoffs, win_yoffs);
+                window->output_length(buffer+edit_offs,max_chars);
             }
-        	window->move_cursor(cur-edit_offs, 2);
+        	window->move_cursor(win_xoffs + cur-edit_offs, win_yoffs);
         }
         break;
     case KEY_BACK: // backspace
@@ -238,13 +260,13 @@ int UIStringBox :: poll(int dummy)
                 edit_offs -= 5;
                 if (edit_offs < 0)
                     edit_offs = 0;
-                window->move_cursor(0, 2);
-                window->output_line(buffer+edit_offs);
-                window->move_cursor(cur-edit_offs, 2);
+                window->move_cursor(win_xoffs, win_yoffs);
+                window->output_length(buffer+edit_offs, max_chars);
+                window->move_cursor(win_xoffs+cur-edit_offs, win_yoffs);
             } else { // no scroll left, just redraw from cursor position
-                window->move_cursor(cur-edit_offs, 2);
+                window->move_cursor(win_xoffs+cur-edit_offs, win_yoffs);
                 window->output_length(buffer+cur, max_chars+edit_offs-cur);
-                window->move_cursor(cur-edit_offs, 2);
+                window->move_cursor(win_xoffs+cur-edit_offs, win_yoffs);
             }
         }
         break;
@@ -253,9 +275,9 @@ int UIStringBox :: poll(int dummy)
         len = 0;
         cur = 0;
         edit_offs = 0;
-        window->move_cursor(0, 2);
-        window->output_line("");
-        window->move_cursor(0, 2);
+        window->move_cursor(win_xoffs, win_yoffs);
+        window->output_length(buffer+cur, max_chars+edit_offs-cur);
+        window->move_cursor(win_xoffs, win_yoffs);
         break;
     case KEY_DELETE: // del
         if(cur < len) {
@@ -263,9 +285,9 @@ int UIStringBox :: poll(int dummy)
             for(i=cur;i<len;i++) {
             	buffer[i] = buffer[i+1];
             } buffer[i] = 0;
-            window->move_cursor(cur-edit_offs, 2);
+            window->move_cursor(win_xoffs+cur-edit_offs, win_yoffs);
             window->output_length(buffer+cur, max_chars+edit_offs-cur);  // cursor position = cur-edit_offs. remaining chars = max_chars-cursor_position = max_chars+edit_offs-cur
-            window->move_cursor(cur-edit_offs, 2);
+            window->move_cursor(win_xoffs+cur-edit_offs, win_yoffs);
         }
         break;
     case KEY_HOME: // home
@@ -273,10 +295,10 @@ int UIStringBox :: poll(int dummy)
         cur = 0;
         if (edit_offs) { // scroll to the  beginning?
             edit_offs = 0;
-            window->move_cursor(0, 2);
-            window->output_length(buffer, (len < max_chars)?len : max_chars);
+            window->move_cursor(win_xoffs, win_yoffs);
+            window->output_length(buffer, max_chars);
         }
-        window->move_cursor(cur, 2);
+        window->move_cursor(win_xoffs + cur, win_yoffs);
         break;
     case KEY_DOWN: // down = end
     case KEY_END:
@@ -284,10 +306,10 @@ int UIStringBox :: poll(int dummy)
             cur = len;
             if (cur >= (max_chars-1)) {
                 edit_offs = 1 + cur - max_chars;
-                window->move_cursor(0, 2);
-                window->output_line(buffer+edit_offs);
+                window->move_cursor(win_xoffs, win_yoffs);
+                window->output_length(buffer+edit_offs, max_chars);
             }
-            window->move_cursor(cur-edit_offs, 2);
+            window->move_cursor(win_xoffs + cur-edit_offs, win_yoffs);
         }
         break;
     case KEY_BREAK: // break
@@ -311,12 +333,12 @@ int UIStringBox :: poll(int dummy)
             if (cur-edit_offs < max_chars) {
                 // window->move_cursor(cur-edit_offs, 2);
                 window->output_length(buffer+cur-1, max_chars+edit_offs-cur);
-                window->move_cursor(cur-edit_offs, 2);
+                window->move_cursor(win_xoffs+cur-edit_offs, win_yoffs);
             } else {
                 edit_offs++;
-                window->move_cursor(0, 2);
-                window->output_line(buffer+edit_offs);
-                window->move_cursor(cur-edit_offs, 2);
+                window->move_cursor(win_xoffs, win_yoffs);
+                window->output_length(buffer+edit_offs, max_chars);
+                window->move_cursor(win_xoffs+cur-edit_offs, win_yoffs);
             }
         }
         break;
@@ -332,16 +354,122 @@ void UIStringBox :: deinit(void)
 	}
 }
 
+/* Choice box */
+UIChoiceBox :: UIChoiceBox(UserInterface *ui, const char *msg, const char **choices, int count) : UIObject(ui), message(msg)
+{
+    this->choices = choices;
+    this->count = count;
+    this->keyboard = NULL;
+    this->current = 0;
+}
+
+void UIChoiceBox :: init()
+{
+    Screen *screen = get_ui()->get_screen();
+    
+    int rows = 2 + 2 + count;  // 2 lines for title + spacing, 2 more lines for the frame
+	int max_len = message.length();
+    int len;
+    for(int i=0;i<count;i++) {
+        len = strlen(choices[i]);
+        if (len > max_len) {
+            max_len = len;
+        }
+    }
+    if (max_len > 25) {
+        max_len = 25;
+    }
+    keyboard = get_ui()->get_keyboard();
+
+    screen->backup();
+    int y_offs = (screen->get_size_y() - rows - 2) >> 1;
+    window = new Window(screen, (screen->get_size_x() - max_len - 2) >> 1, y_offs, max_len+2, rows);
+    window->set_color(get_ui()->color_fg);
+    window->draw_border();
+    redraw();
+}
+
+void UIChoiceBox :: redraw(void)
+{
+    window->move_cursor(0, 0);
+    window->set_color(get_ui()->color_fg);
+    window->set_background(get_ui()->color_bg);
+    window->output_line(message.c_str());
+    window->move_cursor(0, 1);
+    window->output_line("");
+    for(int i=0; i < count; i++) {
+        window->move_cursor(0, i+2);
+        if(i == current) {
+            window->set_color(get_ui()->color_sel);
+            window->set_background(get_ui()->color_sel_bg);
+            window->reverse_mode(get_ui()->reverse_sel);
+        } else {
+            window->set_color(get_ui()->color_fg);
+            window->set_background(get_ui()->color_bg);
+            window->reverse_mode(0);
+        }
+        window->output_line(choices[i]);
+    }
+}
+
+void UIChoiceBox :: deinit(void)
+{
+    window->getScreen()->restore();
+    delete window;
+}
+
+int  UIChoiceBox :: poll(int)
+{
+    int ret = 0;
+    int c;
+        
+    if(!keyboard) {
+        printf("Choice picker: Keyboard not initialized.. exit.\n");
+        return -1;
+    }
+
+    c = keyboard->getch();
+    c = get_ui()->keymapper(c, e_keymap_default);
+
+    switch(c) {
+        case -1: return 0; // nothing pressed
+        case -2: return -1; // error
+        case KEY_UP:
+            if (current > 0) {
+                current--;
+                redraw();
+            }
+            break;
+        case KEY_DOWN:
+            if (current < count-1) {
+                current++;
+                redraw();
+            }
+            break;
+        case KEY_SPACE:
+        case KEY_RETURN:
+            return current + 1;
+        case KEY_BREAK: // break
+        case KEY_ESCAPE: // exit!
+            return -1; // cancel
+        default:
+            break;
+    }
+    return 0; // busy
+}
+
+
 /* Status Box */
-UIStatusBox :: UIStatusBox(const char *msg, int steps) : message(msg)
+UIStatusBox :: UIStatusBox(UserInterface *ui, const char *msg, int steps) : UIObject(ui), message(msg)
 {
     total_steps = steps;
     progress = 0;
     window = 0;
 }
 
-void UIStatusBox :: init(Screen *screen)
+void UIStatusBox :: init()
 {
+    Screen *screen = get_ui()->get_screen();
     int window_width = 34;
     int message_width = message.length();
     int x1 = (screen->get_size_x() - window_width) / 2;

@@ -35,7 +35,9 @@ SRCS_CC	 =  small_printf.cc \
 			at45_flash.cc \
 			w25q_flash.cc \
 			s25fl_flash.cc \
+			product.cc \
 			config.cc \
+			subsys.cc \
 			filemanager.cc \
 			file_device.cc \
 			file_partition.cc \
@@ -77,6 +79,7 @@ SRCS_CC	 =  small_printf.cc \
 			ui_elements.cc \
             user_file_interaction.cc \
 			editor.cc \
+			hex_editor.cc \
 			tree_browser.cc \
 			tree_browser_state.cc \
 			config_menu.cc \
@@ -103,32 +106,22 @@ SRCS_CC	 =  small_printf.cc \
 			usb_ax88772.cc \
 			usb_hid.cc \
 			keyboard_usb.cc \
+			network_config.cc \
 			network_interface.cc \
-			network_lwip.cc \
 			vfs.cc \
 			ftpd.cc \
+			json.cc \
 			tape_controller.cc \
 			tape_recorder.cc \
 			command_intf.cc \
 			dos.cc \
 			network_target.cc \
 			control_target.cc \
-			softiec_target.cc \
-			iec.cc \
-			iec_channel.cc \
-			iec_printer.cc \
-			mps_printer.cc \
-			mps_printer_cbm.cc \
-			mps_printer_epson.cc \
-			mps_printer_ibmgp.cc \
-			mps_printer_ibmpp.cc \
-			mps_chargen.cc \
-			mps_charset.cc \
-			lodepng.cc \
 			filetype_tap.cc \
             socket_stream.cc \
             socket_gui.cc \
 			socket_dma.cc \
+			syslog.cc \
             home_directory.cc \
             reu_preloader.cc \
             configio.cc \
@@ -138,6 +131,21 @@ SRCS_CC	 =  small_printf.cc \
             modem.cc \
             system_info.cc \
             $(PRJ).cc
+
+SRCS_CC +=  iec_interface.cc \
+			iec_drive.cc \
+			iec_channel.cc \
+			iec_printer.cc \
+			mps_printer.cc \
+			mps_printer_cbm.cc \
+			mps_printer_epson.cc \
+			mps_printer_ibmgp.cc \
+			mps_printer_ibmpp.cc \
+			mps_chargen.cc \
+			mps_charset.cc \
+			mps_png.cc \
+			iec_ulticopy.cc \
+			softiec_target.cc
 
 #            sock_echo.c \
 #			sys_calls.cc \
@@ -164,14 +172,14 @@ SRCS_NANO = nano_minimal.nan
 PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -g -ffunction-sections -nostartfiles -mcpu=v5.00.a -Os -DOS -DU2 -DDATACACHE=1 -DCLOCK_FREQ=50000000 -DBYTE_ORDER=BIG_ENDIAN
 COPTIONS = $(OPTIONS) -std=c99
-CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics
+CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics
 LINK 	 = ./mb_app.lds
 LIBS     = ../mb_lwip/result/liblwip.a
 LFLAGS   = --gc-sections  --relax
 
 include ../../../common/rules.mk
 
-lodepng.o: lodepng.cc
+mps_png.o: mps_png.cc
 	@echo Compiling $(<F) optimized for speed
 	@$(CPP) $(CPPOPT) -Os $(PATH_INC) -B. -c -o $(OUTPUT)/$(@F) $<
 	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)

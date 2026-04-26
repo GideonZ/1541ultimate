@@ -25,8 +25,6 @@ typedef struct {
     uint8_t POINTER_LO;
     uint8_t PERFORM_SYNC;
     uint8_t TRANSPARENCY;
-    uint8_t KEYB_ROW;
-    uint8_t KEYB_COL;
 } t_chargen_registers;
 
 #endif /* CHARGEN_H_ */

@@ -3,7 +3,7 @@ CROSS	     = riscv32-unknown-elf-
 ELFTYPE      = elf32-littleriscv
 ARCHITECTURE = riscv
 # CPU architecture and ABI
-MARCH ?= rv32i
+MARCH ?= rv32im
 MABI  ?= ilp32
 
 include ../../../common/environment.mk
@@ -30,11 +30,17 @@ SRCS_C   =	itu.c \
 			mdio.c \
 			sid_coeff.c \
 			riscv_main.c \
-			syscalls.c \
 			do_ctors.c \
 			malloc_lock.c \
+			server.c \
+			http_protocol.c \
+			middleware.c \
+			multipart.c \
+			cmd_buffer.c \
+			url.c \
 
-SRCS_CC	 =  u2p_init.cc \
+SRCS_CC	 =  u2pl_init.cc \
+			usb_hwinit.cc \
 			i2c_drv.cc \
 			codec.cc \
 			small_printf.cc \
@@ -46,7 +52,9 @@ SRCS_CC	 =  u2p_init.cc \
 			w25q_flash.cc \
 			s25fl_flash.cc \
 			prog_flash.cc \
+			product.cc \
 			config.cc \
+			subsys.cc \
 			filemanager.cc \
 			file_device.cc \
 			file_partition.cc \
@@ -87,6 +95,7 @@ SRCS_CC	 =  u2p_init.cc \
 			ui_elements.cc \
 			user_file_interaction.cc \
 			editor.cc \
+			hex_editor.cc \
 			tree_browser.cc \
 			tree_browser_state.cc \
 			config_menu.cc \
@@ -103,6 +112,7 @@ SRCS_CC	 =  u2p_init.cc \
 			filetype_sid.cc \
 			filetype_bin.cc \
 			filetype_cfg.cc \
+			filetype_esp.cc \
 			host_stream.cc \
 			keyboard_vt100.cc \
 			screen_vt100.cc \
@@ -114,8 +124,8 @@ SRCS_CC	 =  u2p_init.cc \
 			usb_hid.cc \
 			usb_ms_cbi.cc \
 			keyboard_usb.cc \
+			network_config.cc \
 			network_interface.cc \
-			network_lwip.cc \
 			debug_streamer_u2p.cc \
 			vfs.cc \
 			ftpd.cc \
@@ -125,22 +135,11 @@ SRCS_CC	 =  u2p_init.cc \
 			dos.cc \
 			network_target.cc \
 			control_target.cc \
-			softiec_target.cc \
-			iec.cc \
-			iec_channel.cc \
-			iec_printer.cc \
-			mps_printer.cc \
-			mps_printer_cbm.cc \
-			mps_printer_epson.cc \
-			mps_printer_ibmgp.cc \
-			mps_printer_ibmpp.cc \
-			mps_chargen.cc \
-			mps_charset.cc \
-			lodepng.cc \
 			filetype_tap.cc \
 			socket_stream.cc \
 			socket_gui.cc \
 			socket_dma.cc \
+			syslog.cc \
 			rmii_interface.cc \
 			home_directory.cc \
 			reu_preloader.cc \
@@ -150,7 +149,40 @@ SRCS_CC	 =  u2p_init.cc \
 			listener_socket.cc \
 			ramdisk.cc \
 			system_info.cc \
+			ult_syscalls.cc \
+			httpd.cc \
+			json.cc \
+			routes.cc \
+			route_files.cc \
+			route_drives.cc \
+			route_runners.cc \
+			route_configs.cc \
+			route_machine.cc \
+			assembly_search.cc \
+			assembly.cc \
+			filesystem_a64.cc \
+			dma_uart.cc \
+			esp32.cc \
+			wifi_cmd.cc \
+			wifi.cc \
+			network_esp32.cc \
+			sntp_time.cc \
 			$(PRJ).cc
+
+SRCS_CC +=  iec_interface.cc \
+			iec_drive.cc \
+			iec_channel.cc \
+			iec_printer.cc \
+			mps_printer.cc \
+			mps_printer_cbm.cc \
+			mps_printer_epson.cc \
+			mps_printer_ibmgp.cc \
+			mps_printer_ibmpp.cc \
+			mps_chargen.cc \
+			mps_charset.cc \
+			mps_png.cc \
+			iec_ulticopy.cc \
+			softiec_target.cc
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/risc-v
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/risc-v/chip_specific_extensions/RV32I_CLINT_no_extensions
@@ -159,6 +191,7 @@ VPATH +=	$(PATH_SW)/6502/sidcrt/target
 VPATH +=	$(PATH_SW)/../neorv32/sw/common
 VPATH +=	$(PATH_SW)/../neorv32/sw/lib/include
 VPATH +=	$(PATH_SW)/../neorv32/sw/lib/source
+VPATH +=	$(PATH_SW)/wifi/raw_c3/main
 
 
 SRCS_ASM =
@@ -174,10 +207,10 @@ SRCS_IEC = iec_code.iec
 SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -march=$(MARCH) -mabi=$(MABI) $(EFFORT) -ffunction-sections -fdata-sections -nostartfiles -mno-fdiv
-OPTIONS += -gdwarf-2 -Os -DRISCV -DUSB2503 -DOS -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=50000000 -Wno-write-strings
+OPTIONS  = -march=$(MARCH) -mabi=$(MABI) $(EFFORT) -ffunction-sections -fdata-sections -nostartfiles -mno-div
+OPTIONS += -gdwarf-2 -Os -DU2P=2 -DRISCV -DUSB2503 -DOS -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=50000000 -Wno-write-strings
 COPTIONS = $(OPTIONS) -std=gnu99
-CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
+CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = linker.x
 LIBS    = ../../../libs/riscv/lwip/result/liblwip.a
 #LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
@@ -186,7 +219,7 @@ LINKMETHOD = ld
 
 include ../../../common/rules.mk
 
-lodepng.o: lodepng.cc
+mps_png.o: mps_png.cc
 	@echo Compiling $(<F) optimized for speed
 	@$(CPP) $(CPPOPT) -O3 $(PATH_INC) -B. -c -o $(OUTPUT)/$(@F) $<
 	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)

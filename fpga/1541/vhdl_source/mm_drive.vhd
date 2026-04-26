@@ -8,7 +8,7 @@ use work.mem_bus_pkg.all;
 
 entity mm_drive is
 generic (
-    g_big_endian    : boolean;
+    g_big_endian    : boolean := false;
     g_audio_tag     : std_logic_vector(7 downto 0) := X"01";
     g_floppy_tag    : std_logic_vector(7 downto 0) := X"02";
     g_disk_tag      : std_logic_vector(7 downto 0) := X"03";

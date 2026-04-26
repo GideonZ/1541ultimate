@@ -78,6 +78,8 @@ SRCS_BIN =  ultimate.bin \
 			1541.bin \
 			snds1541.bin
 
+SRCS_HTML = index.html
+
 SRCS_IEC = 
 
 SRCS_NANO = 
@@ -85,6 +87,7 @@ SRCS_NANO =
 VPATH   += $(PATH_SW)/FreeRTOS/Source/portable/microblaze
 VPATH   += $(PATH_SW)/portable/microblaze
 VPATH   += $(PATH_SW)/application/rv_update_u2
+VPATH   += $(PATH_SW)/../html
 VPATH   += ../../riscv/ultimate/result
 VPATH   += ../../riscv/boot2/result
 VPATH   += ../../../fpga/rv700dd/rv700dd

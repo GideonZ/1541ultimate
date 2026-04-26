@@ -62,9 +62,9 @@ public:
 	virtual ~TapeController();
 	
     void create_task_items(void);
-    void update_task_items(bool writablePath, Path *path);
+    void update_task_items(bool writablePath);
     const char *identify(void) { return "Tape Player"; }
-	int executeCommand(SubsysCommand *cmd);
+	SubsysResultCode_e executeCommand(SubsysCommand *cmd);
 	
 	void close();
 	void stop();

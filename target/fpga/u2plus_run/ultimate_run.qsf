@@ -433,6 +433,14 @@ set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to SDRAM_DQ
 #set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/network/udp_header.vhd
 #set_global_assignment -name VHDL_FILE ../../../../ult64/proglogic/tl_packages/vhdl_source/tl_sync_fifo_ft.vhd
 #set_global_assignment -name VHDL_FILE "../../../../ult64/proglogic/tl_packages/vhdl_source/tl_sync_fifo_ft-plain.vhd"
+
+
+
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/uart_dma.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/tx_dma.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/slip_encoder.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/slip_decoder.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/rx_dma.vhd
 set_global_assignment -name QIP_FILE ../../../fpga/altera/megafunctions/pll.qip
 set_global_assignment -name QIP_FILE ../../../fpga/altera/megafunctions/update/synthesis/update.qip
 set_global_assignment -name QIP_FILE ../../../fpga/nios_solo/nios_solo/synthesis/nios_solo.qip
@@ -465,7 +473,6 @@ set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/data_oper.
 set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/implied.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/pkg_6502_decode.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/pkg_6502_defs.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/pkg_6502_opcodes.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/proc_control.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/proc_core.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/proc_interrupt.vhd
@@ -491,6 +498,7 @@ set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/reu.vh
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_master_v4.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_server_v4.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_slave.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_trace.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_timing.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_measure.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/devices/vhdl_source/microwire_eeprom.vhd
@@ -516,7 +524,6 @@ set_global_assignment -name VHDL_FILE ../../../fpga/io/copper/vhdl_source/copper
 set_global_assignment -name VHDL_FILE ../../../fpga/io/copper/vhdl_source/copper_regs.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/copper/vhdl_source/copper.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/debug/vhdl_source/eth_debug_stream.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/icap/vhdl_source/icap_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/iec_interface/vhdl_source/iec_processor_io.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/iec_interface/vhdl_source/iec_processor.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/itu/vhdl_source/itu_pkg.vhd
@@ -525,12 +532,11 @@ set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/crc32.vh
 set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/eth_filter.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/eth_transmit.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/ethernet_interface.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/packet_generator.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/rmii_transceiver.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler_accu.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler_regs.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler2.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/my_math_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/noise_generator.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/sigma_delta_dac.vhd
@@ -552,7 +558,6 @@ set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/token_cr
 set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/token_crc_check.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/token_crc.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/ulpi_bus.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/ulpi_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/ulpi_rx.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/ulpi_tx.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_cmd_nano.vhd
@@ -584,8 +589,6 @@ set_global_assignment -name VHDL_FILE ../../../fpga/ip/free_queue/vhdl_source/fr
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/dpram_8x16.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/dpram_8x32.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/dpram_io.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/dpram_rdw_byte.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/dpram_rdw.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/pseudo_dpram_8x16.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/pseudo_dpram_8x32.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/pseudo_dpram.vhd
@@ -603,12 +606,6 @@ set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/pulse_synchronizer.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/synchroniser.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/synchronizer_gzw.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/video/vhdl_source/char_generator_peripheral.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/video/vhdl_source/char_generator_pkg.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/video/vhdl_source/char_generator_regs.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/video/vhdl_source/char_generator_rom_pkg.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/video/vhdl_source/char_generator_rom.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/video/vhdl_source/char_generator_slave.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/adsr_multi.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/mult_acc.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/oscillator.vhd
@@ -625,15 +622,8 @@ set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_regs
 set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_top.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_trace.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/wave_map.vhd
-set_global_assignment -name VHDL_FILE ../../../target/simulation/packages/vhdl_source/tl_file_io_pkg.vhd
-set_global_assignment -name VHDL_FILE ../../../target/simulation/packages/vhdl_source/tl_string_util_pkg.vhd
-set_global_assignment -name VHDL_FILE ../../../target/simulation/packages/vhdl_source/tl_vector_pkg.vhd
-set_global_assignment -name VHDL_FILE "../../../fpga/io/icap/vhdl_source/icap-dummy.vhd"
 set_global_assignment -name VHDL_FILE "../../../fpga/ip/memory/vhdl_source/dpram_8x16-altera.vhd"
 set_global_assignment -name VHDL_FILE "../../../fpga/ip/memory/vhdl_source/dpram_8x32-altera.vhd"
 set_global_assignment -name VHDL_FILE "../../../fpga/ip/memory/vhdl_source/pseudo_dpram_8x16-altera.vhd"
 set_global_assignment -name VHDL_FILE "../../../fpga/ip/memory/vhdl_source/pseudo_dpram_8x32-altera.vhd"
-
-
-
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top

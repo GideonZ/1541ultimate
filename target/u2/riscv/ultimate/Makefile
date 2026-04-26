@@ -3,7 +3,7 @@ CROSS	     = riscv32-unknown-elf-
 ELFTYPE      = elf32-littleriscv
 ARCHITECTURE = riscv
 # CPU architecture and ABI
-MARCH ?= rv32i
+MARCH ?= rv32im
 MABI  ?= ilp32
 
 include ../../../common/environment.mk
@@ -29,9 +29,13 @@ SRCS_C   =	itu.c \
 			time.c \
 			sid_coeff.c \
 			riscv_main.c \
-			syscalls.c \
 			do_ctors.c \
 			malloc_lock.c \
+            server.c \
+            http_protocol.c \
+            middleware.c \
+            multipart.c \
+            url.c \
 
 SRCS_CC	 =	small_printf.cc \
 			stream.cc \
@@ -42,7 +46,9 @@ SRCS_CC	 =	small_printf.cc \
 			at45_flash.cc \
 			w25q_flash.cc \
 			s25fl_flash.cc \
+			product.cc \
 			config.cc \
+			subsys.cc \
 			filemanager.cc \
 			file_device.cc \
 			file_partition.cc \
@@ -86,6 +92,7 @@ SRCS_CC	 =	small_printf.cc \
 			ui_elements.cc \
 			user_file_interaction.cc \
 			editor.cc \
+			hex_editor.cc \
 			tree_browser.cc \
 			tree_browser_state.cc \
 			config_menu.cc \
@@ -113,8 +120,8 @@ SRCS_CC	 =	small_printf.cc \
 			usb_hid.cc \
 			usb_ms_cbi.cc \
 			keyboard_usb.cc \
+			network_config.cc \
 			network_interface.cc \
-			network_lwip.cc \
 			vfs.cc \
 			ftpd.cc \
 			tape_controller.cc \
@@ -123,22 +130,11 @@ SRCS_CC	 =	small_printf.cc \
 			dos.cc \
 			network_target.cc \
 			control_target.cc \
-			softiec_target.cc \
-			iec.cc \
-			iec_channel.cc \
-			iec_printer.cc \
-			mps_printer.cc \
-			mps_printer_cbm.cc \
-			mps_printer_epson.cc \
-			mps_printer_ibmgp.cc \
-			mps_printer_ibmpp.cc \
-			mps_chargen.cc \
-			mps_charset.cc \
-			lodepng.cc \
 			filetype_tap.cc \
 			socket_stream.cc \
 			socket_gui.cc \
 			socket_dma.cc \
+			syslog.cc \
 			home_directory.cc \
 			reu_preloader.cc \
 			configio.cc \
@@ -147,7 +143,26 @@ SRCS_CC	 =	small_printf.cc \
 			listener_socket.cc \
 			ramdisk.cc \
 			system_info.cc \
+			ult_syscalls.cc \
+			httpd.cc \
+			json.cc \
+			routes.cc \
+			route_files.cc \
+			route_drives.cc \
+			route_runners.cc \
+			route_configs.cc \
+			route_machine.cc \
+			assembly_search.cc \
+			assembly.cc \
+			filesystem_a64.cc \
+			sntp_time.cc \
 			$(PRJ).cc
+
+SRCS_CC +=  iec_interface.cc \
+			iec_drive.cc \
+			iec_channel.cc \
+			iec_ulticopy.cc \
+			softiec_target.cc
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/risc-v
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/risc-v/chip_specific_extensions/RV32I_CLINT_no_extensions
@@ -171,10 +186,10 @@ SRCS_IEC = iec_code.iec
 SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -march=$(MARCH) -mabi=$(MABI) $(EFFORT) -ffunction-sections -fdata-sections -nostartfiles -mno-fdiv
+OPTIONS  = -march=$(MARCH) -mabi=$(MABI) $(EFFORT) -ffunction-sections -fdata-sections -nostartfiles -mno-div
 OPTIONS += -gdwarf-2 -Os -DRISCV -DU2 -DOS -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=50000000 -Wno-write-strings
 COPTIONS = $(OPTIONS) -std=gnu99
-CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
+CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = linker.x
 LIBS    = ../../../libs/riscv/lwip/result/liblwip.a
 #LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
@@ -183,7 +198,7 @@ LINKMETHOD = ld
 
 include ../../../common/rules.mk
 
-lodepng.o: lodepng.cc
+mps_png.o: mps_png.cc
 	@echo Compiling $(<F) optimized for speed
 	@$(CPP) $(CPPOPT) -O3 $(PATH_INC) -B. -c -o $(OUTPUT)/$(@F) $<
 	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)

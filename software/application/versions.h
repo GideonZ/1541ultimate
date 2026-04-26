@@ -11,25 +11,52 @@
 // 8 = T
 // 9 = rounded corner lower left
 // A = |-
-// B = +
+// B = bar lower 7 lines
 // C = -|
-// D = rounded corner upper right
-// E = _|_
+// D = _|_
+// E = rounded corner upper right
 // F = rounded corner upper left
 // 10 = alpha
 // 11 = beta
-// 12 = test grid
+// 12 = bar upper 7 lines
 // 13 = diamond
+// 14 = logo1
+// 15 = logo2
+// 16 = logo3
+// 17 = logo4
+// 18 = logo5
+// 19 = logo6
+// 1A = ball
+// 1B = empty (escape!)
+// 1C = slant upper left
+// 1D = slant lower left
+// 1E = slant upper right
+// 1F = slant lower right
 
-// 18-1F commodore specifics (<-, ^, pound, and their reverse counterparts)
 
 // alpha = \020
 // beta  = \021
 
-#define APPL_VERSION "3.10j"
+#define RELEASE_TYPE_NORMAL 0
+#define RELEASE_TYPE_BETA   1
+#define RELEASE_TYPE_ALPHA  2
+
+#define APPL_VERSION_NUMBER "3.14e"
+#define APPL_RELEASE_TYPE RELEASE_TYPE_NORMAL
 #define BOOT_VERSION "V3.2"
 #define FPGA_VERSION "FPGA U2 V116"
 #define MINIMUM_FPGA_REV 0x18
+
+#if APPL_RELEASE_TYPE == RELEASE_TYPE_ALPHA
+  #define APPL_VERSION         APPL_VERSION_NUMBER "\020"
+  #define APPL_VERSION_ASCII   APPL_VERSION_NUMBER " alpha"
+#elif APPL_RELEASE_TYPE == RELEASE_TYPE_BETA
+  #define APPL_VERSION         APPL_VERSION_NUMBER "\021"
+  #define APPL_VERSION_ASCII   APPL_VERSION_NUMBER " beta"
+#else
+  #define APPL_VERSION         APPL_VERSION_NUMBER
+  #define APPL_VERSION_ASCII   APPL_VERSION_NUMBER
+#endif
 
 #endif
 

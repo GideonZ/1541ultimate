@@ -42,6 +42,7 @@ package cart_slot_pkg is
         force_serve_vic     : std_logic;
         phi2_edge_recover   : std_logic;
         measure_enable      : std_logic;
+        timing_trigger      : std_logic;
         serve_while_stopped : std_logic;
     end record;
     
@@ -78,6 +79,7 @@ package cart_slot_pkg is
         phi2_edge_recover => '1',
         measure_enable => '0',
         swap_buttons   => '1',
+        timing_trigger => '0',
         serve_while_stopped => '0' );
 
     type t_cartridge_in is record

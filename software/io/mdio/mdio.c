@@ -46,7 +46,7 @@ void mdio_reset()
     SET_MDC_LOW;
 }
 
-void mdio_write(uint8_t reg, uint16_t data)
+void mdio_write(uint8_t reg, uint16_t data, uint8_t addr)
 {
     for (int i=0; i<33; i++) {
         mdio_bit(1);
@@ -60,8 +60,8 @@ void mdio_write(uint8_t reg, uint16_t data)
     mdio_bit(0);
     mdio_bit(0);
     mdio_bit(0);
-    mdio_bit(0);
-    mdio_bit(0);
+    mdio_bit(addr);
+    mdio_bit(addr);
 
     for (int i=0; i<5; i++) {
         mdio_bit(reg & 0x10);
@@ -78,7 +78,7 @@ void mdio_write(uint8_t reg, uint16_t data)
     mdio_bit(1);
 }
 
-uint16_t mdio_read(uint8_t reg)
+uint16_t mdio_read(uint8_t reg, uint8_t addr)
 {
     for (int i=0; i<33; i++) {
         mdio_bit(1);
@@ -92,8 +92,8 @@ uint16_t mdio_read(uint8_t reg)
     mdio_bit(0);
     mdio_bit(0);
     mdio_bit(0);
-    mdio_bit(0);
-    mdio_bit(0);
+    mdio_bit(addr);
+    mdio_bit(addr);
 
     for (int i=0; i<5; i++) {
         mdio_bit(reg & 0x10);

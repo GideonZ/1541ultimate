@@ -77,7 +77,7 @@ int FileTypeG64 :: fetch_context_items(IndexedList<Action *> &list)
     return count;
 }
 
-int FileTypeG64 :: runDisk_st(SubsysCommand *cmd)
+SubsysResultCode_e FileTypeG64 :: runDisk_st(SubsysCommand *cmd)
 {
     // First command is to mount the disk
     SubsysCommand *drvcmd = new SubsysCommand(cmd->user_interface, SUBSYSID_DRIVE_A, MENU_1541_MOUNT_G64, cmd->mode, cmd->path.c_str(), cmd->filename.c_str());
@@ -88,7 +88,7 @@ int FileTypeG64 :: runDisk_st(SubsysCommand *cmd)
     drvId[0] = 0x40 + c1541_A->get_current_iec_address();
     SubsysCommand *c64cmd = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DRIVE_LOAD, RUNCODE_MOUNT_LOAD_RUN, drvId, "*");
     c64cmd->execute();
-    return 0;
+    return SSRET_OK;
 }
 
 FileType *FileTypeG64 :: test_type(BrowsableDirEntry *obj)

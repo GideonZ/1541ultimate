@@ -1,5 +1,27 @@
 
-all: u2 u2_rv u2_rv_revert u2plus u2pl u64
+all: esp32 u2_rv u2plus u2pl u64 u64ii
+
+esp32: esp32_raw_u64 esp32_raw_c3 esp32_u64ctrl
+
+esp32_clean: esp32_raw_u64_clean esp32_raw_c3_clean esp32_u64ctrl_clean
+
+esp32_raw_u64:
+	@cd software/wifi/raw_u64 && idf.py build
+
+esp32_raw_u64_clean:
+	@cd software/wifi/raw_u64 && idf.py clean
+
+esp32_raw_c3:
+	@cd software/wifi/raw_c3 && idf.py build
+
+esp32_raw_c3_clean:
+	@cd software/wifi/raw_c3 && idf.py clean
+
+esp32_u64ctrl:
+	@cd software/u64ctrl && idf.py build
+
+esp32_u64ctrl_clean:
+	@cd software/u64ctrl && idf.py clean
 
 u2:
 	@$(MAKE) -C tools
@@ -19,21 +41,52 @@ u2:
 	@cp target/u2/microblaze/mb_update_dd/result/update.u2u ./update_dual_drive_acia.u2u
 	@cp target/u2/microblaze/mb_update_gm/result/update.u2u ./update_dual_drive_gmod2.u2u
 
+u2_rv_loader:
+	@$(MAKE) -C tools
+	@$(MAKE) -C target/u2/riscv/loader
+	@$(MAKE) -C target/fpga/rv700_loader
+
+fpga_depends::
+	@touch software/nios_solo_bsp/Makefile
+	@touch software/nios_solo_bsp/public.mk
+	@touch software/nios_appl_bsp/Makefile
+	@touch software/nios_appl_bsp/public.mk
+	@$(MAKE) -C tools
+	@$(MAKE) -C target/u2/riscv/boot1
+	@$(MAKE) -C target/u2/riscv/boot2
+	@$(MAKE) -C software/nios_solo_bsp
+	@$(MAKE) -C software/nios_appl_bsp
+	@$(MAKE) -C target/u2plus/nios/boot_recovery
+	@$(MAKE) -C target/u2plus/nios/boot_run
+	@$(MAKE) -C target/u2plus_L/rvlite/bootloader
+	@cd target/fpga/depends && ./make_depends.sh
+
+esp_depends::
+	@cd software && python3 esp_depends.py >esp_depends.txt
+
 u2_rv:
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/u2/riscv/boot1
 	@$(MAKE) -C target/u2/riscv/boot2
-	@$(MAKE) -C target/u2/riscv/loader
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u2/riscv/ultimate
 	@$(MAKE) -C target/fpga/rv700dd
 	@$(MAKE) -C target/fpga/rv700au
-	@$(MAKE) -C target/fpga/rv700_loader
 	@$(MAKE) -C target/u2/riscv/updater
+	@cp target/u2/riscv/updater/result/update.u2r ./update.u2r
+
+u2_rv_swonly:
+	@$(MAKE) -C tools
+	@$(MAKE) -C target/libs/riscv/lwip
+	@$(MAKE) -C target/u2/riscv/ultimate
+	@$(MAKE) -C target/u2/riscv/updater
+	@cp target/u2/riscv/updater/result/update.u2r ./update.u2r
+
+u2_mb_to_rv:
+	@$(MAKE) u2_rv
 	@$(MAKE) -C target/u2/microblaze/mb_lwip
 	@$(MAKE) -C target/u2/microblaze/mb_update_to_rv
 	@cp target/u2/microblaze/mb_update_to_rv/result/update.u2u ./update_to_rv.u2u
-	@cp target/u2/riscv/updater/result/update.u2r ./update.u2r
 
 u2_rv_revert:
 	@$(MAKE) u2
@@ -132,7 +185,7 @@ u2p_tester_sw:
 	@$(MAKE) -C target/tester_package force
 	@$(MAKE) -C target/tester_package force
 
-clean:
+clean: esp32_clean
 	@$(MAKE) -C tools clean
 	@rm -f ./update*.u2*
 	@rm -f ./update.u64
@@ -145,14 +198,14 @@ clean:
 	@rm -rf target/fpga/_xm*
 	@rm -rf target/fpga/x*
 	@rm -rf target/fpga/*.x*
-	@rm -rf `find target/software -name result`
-	@rm -rf `find target/software -name output`
+	@rm -rf `find target -name result`
+	@rm -rf `find target -name output`
 
 sw_clean:
 	@rm -f ./update*.u2*
 	@rm -f ./update.u64
-	@rm -rf `find target/software -name result`
-	@rm -rf `find target/software -name output`
+	@rm -rf `find target -name result`
+	@rm -rf `find target -name output`
 
 mb_clean:
 	@rm -f ./update*.u2u
@@ -198,7 +251,7 @@ nios_bsps:
 	@$(MAKE) -C software/nios_solo_bsp
 	@$(MAKE) -C software/nios_appl_bsp
 
-u64:
+u64: esp32_raw_u64
 	@touch software/nios_solo_bsp/Makefile
 	@touch software/nios_solo_bsp/public.mk
 	@touch software/nios_appl_bsp/Makefile
@@ -215,11 +268,23 @@ u64_clean:
 	@$(MAKE) -C target/u64/nios2/ultimate clean
 	@$(MAKE) -C target/u64/nios2/updater clean
 
-u2pl:
+u64ii: esp32_u64ctrl
+	@mkdir -p u64ii
 	@$(MAKE) -C tools
-	@$(MAKE) -C neorv32/sw/example all
 	@$(MAKE) -C target/libs/riscv/lwip
-	@$(MAKE) -C target/u2plus_L/riscv/bootloader
+	@$(MAKE) -C target/u64ii/riscv/ultimate
+	@$(MAKE) -C target/u64ii/riscv/factorytest
+	@$(MAKE) -C target/u64ii/riscv/update
+	@cp target/u64ii/riscv/ultimate/result/ultimate.app u64ii
+	@cp target/u64ii/riscv/factorytest/result/factorytest.bin u64ii
+	@cp software/u64ctrl/build/bootloader/bootloader.bin u64ii
+	@cp software/u64ctrl/build/partition_table/partition-table.bin u64ii
+	@cp software/u64ctrl/build/u64ctrl.bin u64ii
+	@cp target/u64ii/riscv/update/result/update.app ./update.ue2
+
+u2pl: esp32_raw_c3
+	@$(MAKE) -C tools
+	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u2plus_L/rvlite/bootloader
 	@$(MAKE) -C target/fpga/u2plus_ecp5
 	@$(MAKE) -C target/u2plus_L/riscv/ultimate

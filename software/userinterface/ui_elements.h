@@ -19,13 +19,21 @@
 #define BUTTON_ALL    0x08
 #define BUTTON_CANCEL 0x10
 
+class UserInterface;
+
 class UIObject
 {
+    bool autoCleanup;
+    UserInterface *ui;
 public:
-    UIObject() { }
+    UIObject(UserInterface *ui) { autoCleanup = false; this->ui = ui; }
+    void setCleanup() { autoCleanup = true; }
+    bool needCleanup() { return autoCleanup; }
+    UserInterface *get_ui() { return ui; }
+    
     virtual ~UIObject() { }
 
-    virtual void init(Screen *scr, Keyboard *key) { }
+    virtual void init() { }
     virtual void redraw(void) { }
     virtual void deinit(void) { }
     virtual int  poll(int)
@@ -36,6 +44,7 @@ public:
     {
         return 0;
     }
+    virtual void send_keystroke(int key) { }
 };
 
 class UIPopup : public UIObject
@@ -57,20 +66,20 @@ private:
     void draw_buttons();
 
 public:
-    UIPopup(const char *msg, uint8_t flags, int count, const char **names, const char *keys);
+    UIPopup(UserInterface *ui, const char *msg, uint8_t flags, int count, const char **names, const char *keys);
     ~UIPopup() { }
 
-    void init(Screen *screen, Keyboard *keyb);
+    void init();
     void deinit(void);
     int  poll(int);
 };
 
-class UIStringBox : public UIObject
+class UIStringEdit
 {
 private:
-    mstring   message;
     Window   *window;
     Keyboard *keyboard;
+    int   win_xoffs, win_yoffs;
 
     int   cur;
     int   len;
@@ -81,12 +90,27 @@ private:
     int   max_len;
     char *buffer;
 public:
-    UIStringBox(const char *msg, char *buf, int max);
+    UIStringEdit(char *buf, int max);
+    ~UIStringEdit() { }
+
+    void init(Window *win, Keyboard *keyb, int x_offs, int y_offs, int max_chars);
+    int  poll(int);
+    int  get_max_len() { return max_len; }
+};
+
+class UIStringBox : public UIObject
+{
+private:
+    mstring message;
+    UIStringEdit edit;
+    Window *window;
+public:
+    UIStringBox(UserInterface *ui, const char *msg, char *buf, int max);
     ~UIStringBox() { }
 
-    void init(Screen *screen, Keyboard *keyb);
+    void init();
     void deinit(void);
-    int  poll(int);
+    int  poll(int a) { return edit.poll(a); }
 };
 
 class UIStatusBox : public UIObject
@@ -97,12 +121,31 @@ private:
     int      progress;
     Window  *window;
 public:
-    UIStatusBox(const char *msg, int steps);
+    UIStatusBox(UserInterface *ui, const char *msg, int steps);
     ~UIStatusBox() { }
 
-    void init(Screen *screen);
+    void init();
     void deinit(void);
     void update(const char *msg, int steps);
+};
+
+class UIChoiceBox : public UIObject
+{
+private:
+    mstring  message;
+    const char **choices;
+    int      count;
+    int      current;
+    Window  *window;
+    Keyboard *keyboard;
+public:
+    UIChoiceBox(UserInterface *ui, const char *msg, const char **choices, int count);
+    ~UIChoiceBox() { }
+
+    void init();
+    void deinit(void);
+    int  poll(int);
+    void redraw(void);
 };
 
 

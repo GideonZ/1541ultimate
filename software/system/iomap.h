@@ -15,6 +15,7 @@
 #define SID_BASE           (IOBASE + 0x42000)
 #define CMD_IF_BASE        (IOBASE + 0x44000)
 #define COPPER_BASE        (IOBASE + 0x46000)
+#define CART_TIMING_BASE   (IOBASE + 0x46000)
 #define SAMPLER_BASE       (IOBASE + 0x48000)
 #define ACIA_BASE          (IOBASE + 0x4A000)
 #define EEPROM_BASE        (IOBASE + 0x4C000)
@@ -28,10 +29,10 @@
 #define ICAP_BASE          (IOBASE + 0x60600)
 #define AUDIO_SEL_BASE     (IOBASE + 0x60700)
 #define RMII_BASE          (IOBASE + 0x60800)
+#define WIFI_UART_BASE     (IOBASE + 0x60900)
 #define USB_BASE           (IOBASE + 0x80000)
 #define C2N_PLAY_BASE      (IOBASE + 0xA0000)
 #define C2N_RECORD_BASE    (IOBASE + 0xC0000)
-#define OVERLAY_BASE       (IOBASE + 0xE0000)
 
 #ifndef RUNS_ON_PC
 #define ioWrite8(x, y)  (*(volatile uint8_t *)(x)) = y

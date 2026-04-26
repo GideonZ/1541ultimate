@@ -48,9 +48,9 @@ end entity;
 architecture gideon of char_generator_slave is
     signal pointer          : unsigned(g_screen_size-1 downto 0) := (others => '0');
     signal char_x           : unsigned(6 downto 0)  := (others => '0');
-    signal char_y           : unsigned(3 downto 0)  := (others => '0');
-    signal char_y_d         : unsigned(3 downto 0)  := (others => '0');
-    signal pixel_count      : unsigned(2 downto 0)  := (others => '0');
+    signal char_y           : unsigned(4 downto 0)  := (others => '0');
+    signal char_y_d         : unsigned(4 downto 0)  := (others => '0');
+    signal pixel_count      : unsigned(3 downto 0)  := (others => '0');
     signal remaining_lines  : unsigned(5 downto 0)  := (others => '0');
 
     type t_state is (idle, active_line, draw);
@@ -59,9 +59,9 @@ architecture gideon of char_generator_slave is
     -- pipeline
     signal color_data_d     : std_logic_vector(7 downto 0);
     signal active_d1        : std_logic;
-    signal pixel_sel_d1     : unsigned(2 downto 0);
+    signal pixel_sel_d1     : unsigned(3 downto 0);
     signal active_d2        : std_logic;
-    signal pixel_sel_d2     : unsigned(2 downto 0);
+    signal pixel_sel_d2     : unsigned(3 downto 0);
     
 begin
     process(clock)

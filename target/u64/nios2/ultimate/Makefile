@@ -30,9 +30,16 @@ SRCS_C   =	itu.c \
             sid_coeff.c \
             nios_main.c \
             alt_malloc_lock.c \
-            alt_do_ctors.c
+            alt_do_ctors.c \
+            cmd_buffer.c \
+			server.c \
+			http_protocol.c \
+			middleware.c \
+			multipart.c \
+			url.c
 
 SRCS_CC	 =  u2p_init.cc \
+			usb_hwinit.cc \
 			i2c_drv.cc \
 			codec.cc \
 			small_printf.cc \
@@ -46,7 +53,9 @@ SRCS_CC	 =  u2p_init.cc \
 			s25fl_flash.cc \
 			s25fl_l_flash.cc \
 			prog_flash.cc \
+			product.cc \
 			config.cc \
+			subsys.cc \
 			filemanager.cc \
 			file_device.cc \
 			file_partition.cc \
@@ -106,6 +115,7 @@ SRCS_CC	 =  u2p_init.cc \
 			filetype_bin.cc \
 			filetype_cfg.cc \
 			filetype_vpl.cc \
+			filetype_esp.cc \
 			host_stream.cc \
 			keyboard_vt100.cc \
 			screen_vt100.cc \
@@ -117,8 +127,10 @@ SRCS_CC	 =  u2p_init.cc \
 			usb_hid.cc \
 			usb_ms_cbi.cc \
 			keyboard_usb.cc \
+			network_config.cc \
 			network_interface.cc \
-			network_lwip.cc \
+			rmii_interface.cc \
+			network_esp32.cc \
 			vfs.cc \
 			ftpd.cc \
 			tape_controller.cc \
@@ -127,8 +139,54 @@ SRCS_CC	 =  u2p_init.cc \
 			dos.cc \
 			network_target.cc \
 			control_target.cc \
-			softiec_target.cc \
-			iec.cc \
+			filetype_tap.cc \
+			socket_stream.cc \
+			socket_gui.cc \
+			socket_dma.cc \
+			syslog.cc \
+			home_directory.cc \
+			reu_preloader.cc \
+			color_timings.cc \
+			hdmi_scan.cc \
+			fpll.cc \
+			dma_uart.cc \
+			esp32.cc \
+			wifi.cc \
+			wifi_cmd.cc \
+			acia.cc \
+			modem.cc \
+			listener_socket.cc \
+			led_strip.cc \
+			data_streamer.cc \
+			configio.cc \
+			sid_editor.cc \
+			sid_device.cc \
+			sid_device_fpgasid.cc \
+			sid_device_swinsid.cc \
+			sid_device_armsid.cc \
+			sid_device_pdsid.cc \
+			sid_device_sidkick.cc \
+			ramdisk.cc \
+			system_info.cc \
+			ult_syscalls.cc \
+			httpd.cc \
+			json.cc \
+			routes.cc \
+			route_files.cc \
+			route_drives.cc \
+			route_runners.cc \
+			route_configs.cc \
+			route_machine.cc \
+			route_streams.cc \
+			assembly_search.cc \
+			assembly.cc \
+			filesystem_a64.cc \
+			sntp_time.cc \
+			$(PRJ).cc
+
+SRCS_CC +=  iec_interface.cc 
+
+SRCS_CC +=  iec_drive.cc \
 			iec_channel.cc \
 			iec_printer.cc \
 			mps_printer.cc \
@@ -138,31 +196,9 @@ SRCS_CC	 =  u2p_init.cc \
 			mps_printer_ibmpp.cc \
 			mps_chargen.cc \
 			mps_charset.cc \
-			lodepng.cc \
-			filetype_tap.cc \
-			socket_stream.cc \
-			socket_gui.cc \
-			socket_dma.cc \
-			rmii_interface.cc \
-			home_directory.cc \
-			reu_preloader.cc \
-			fpll.cc \
-			fastuart.cc \
-			wifi.cc \
-			led_strip.cc \
-			data_streamer.cc \
-			configio.cc \
-			sid_editor.cc \
-			sid_device.cc \
-			sid_device_fpgasid.cc \
-			sid_device_swinsid.cc \
-			sid_device_armsid.cc \
-			acia.cc \
-			modem.cc \
-			listener_socket.cc \
-			ramdisk.cc \
-			system_info.cc \
-			$(PRJ).cc
+			mps_png.cc \
+			iec_ulticopy.cc \
+			softiec_target.cc
 
 #			usb_em1010.cc \
 
@@ -173,6 +209,8 @@ VPATH +=	$(PATH_SW)/6502/sidcrt/target
 VPATH +=	$(BSP)
 VPATH +=	$(BSP)/HAL/inc
 VPATH +=	$(BSP)/drivers/inc
+VPATH +=	$(PATH_SW)/6502/sidcrt/target
+VPATH +=	$(PATH_SW)/wifi/raw_u64/main
 
 #            sock_echo.c \
 #			sys_calls.cc \
@@ -184,9 +222,9 @@ SRCS_ASM =
 
 SRCS_ASMS = port_asm.S
 
-SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas eapi.tas
+SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas eapi.tas default_kernal.tas
 
-SRCS_BIN =  basic.bin sidcrt.bin muscrt.bin musplayer.bin chars.bin module.bin
+SRCS_BIN =  basic.bin sidcrt.bin muscrt.bin musplayer.bin chars.bin module.bin default_chars.bin raminit.bin
 
 SRCS_IEC = iec_code.iec
 
@@ -195,14 +233,14 @@ SRCS_NANO = nano_minimal.nan
 PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -g -ffunction-sections -Os -DOS -DDEVELOPER=0 -DNIOS=1 -DCLOCK_FREQ=66666667 -DU64=1 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
 COPTIONS = $(OPTIONS) -std=gnu99
-CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
+CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = $(BSP)/linker.x
 LIBS2    = $(BSP)/libhal_bsp.a ../../../libs/nios2/lwip/result/liblwip.a
 LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
 
 include ../../../common/rules.mk
 
-lodepng.o: lodepng.cc
+mps_png.o: mps_png.cc
 	@echo Compiling $(<F) optimized for speed
 	@$(CPP) $(CPPOPT) -O3 $(PATH_INC) -B. -c -o $(OUTPUT)/$(@F) $<
 	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)

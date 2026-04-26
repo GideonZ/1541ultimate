@@ -18,7 +18,8 @@ use ECP5U.components.all;
 
 entity u2p_riscv_lattice is
 generic (
-    g_jtag_debug     : boolean := false;
+    g_sampler        : boolean := true;
+    g_sid            : boolean := true;
     g_dual_drive     : boolean := true );
 port (
     -- (Optional) Oscillator
@@ -68,13 +69,37 @@ port (
     AUDIO_SDO   : out   std_logic := '0';
     AUDIO_SDI   : in    std_logic;
 
-    -- JTAG on-chip debugger interface (available if ON_CHIP_DEBUGGER_EN = true) --
-    DEBUG_TRSTn : in    std_ulogic := '0'; -- low-active TAP reset (optional)
-    DEBUG_TCK   : in    std_ulogic := '0'; -- serial clock
-    DEBUG_TMS   : in    std_ulogic := '1'; -- mode select
-    DEBUG_TDI   : in    std_ulogic := '1'; -- serial data input
-    DEBUG_TDO   : out   std_ulogic;        -- serial data output
-    DEBUG_SPARE : out   std_ulogic := '0';
+    -- Pin  1: GND    | 1.8V     Pin  2
+    -- Pin  3: TMS    | DBG_TRST Pin  4
+    -- Pin  5: TDI    | DBG_TDO  Pin  6
+    -- Pin  7: TCK    | DBG_TDI  Pin  8
+    -- Pin  9: TDO    | DBG_TCK  Pin 10
+    -- Pin 11: SPARE  | DBG_TMS  Pin 12
+    -- Pin 13: +3.3V  | GND      Pin 14
+
+    -- Clock Module:
+    -- RESON_OUT -> pin 11 -> SPARE
+    -- JITTERY   -> pin 12 -> DBG_TMS
+    -- CLKOUT1   -> pin  8 -> DBG_TDI
+    -- SDA       -> pin  6 -> DBG_TDO
+    -- SCL       -> pin  4 -> DBG_TRST
+
+    -- Clock module
+    -- DEBUG_TRSTn : inout std_logic;        -- Header PIN 4
+    -- DEBUG_TDO   : inout std_logic;        -- Header PIN 6
+    -- DEBUG_SPARE : out   std_logic := '1'; -- Header PIN 11
+    -- DEBUG_TDI   : in    std_logic := '1'; -- Header PIN 8
+    -- DEBUG_TCK   : out   std_logic := '1'; -- Header PIN 10
+    -- DEBUG_TMS   : out   std_logic := '1'; -- Header PIN 12
+
+    -- WiFi module
+    DEBUG_SPARE : out   std_logic; -- Header PIN 11
+    DEBUG_TRSTn : out   std_logic; -- Header PIN 4
+    DEBUG_TDI   : out   std_logic; -- Header PIN 8
+    DEBUG_TDO   : in    std_logic := '1'; -- Header PIN 6
+    DEBUG_TCK   : out   std_logic; -- Header PIN 10
+    DEBUG_TMS   : in    std_logic := '1'; -- Header PIN 12
+
     UNUSED_G12  : out   std_logic; -- not on test pad
     UNUSED_H3   : out   std_logic;
     UNUSED_F4   : out   std_logic;
@@ -195,7 +220,8 @@ architecture rtl of u2p_riscv_lattice is
     signal button_i     : std_logic_vector(2 downto 0);
     signal buffer_en    : std_logic;
     signal toggle       : std_logic;
-        
+    signal slot_dot_clock_f : std_logic;
+
     -- miscellaneous interconnect
     signal ulpi_reset_i     : std_logic;
     signal ulpi_data_o      : std_logic_vector(7 downto 0);
@@ -214,7 +240,6 @@ architecture rtl of u2p_riscv_lattice is
     signal mem_req_2x       : t_mem_req_32;
     signal mem_resp_2x      : t_mem_resp_32;
 
-    signal uart_txd_from_logic  : std_logic;
     signal i2c_sda_i   : std_logic;
     signal i2c_sda_o   : std_logic;
     signal i2c_scl_i   : std_logic;
@@ -328,6 +353,8 @@ architecture rtl of u2p_riscv_lattice is
     signal phase_loadreg : std_logic;
     signal all_buttons   : std_logic;
     signal ctrl_reset_pulse : std_logic;
+    signal wifi_boot        : std_logic;
+    signal wifi_enable      : std_logic;
 begin
     ctrl_clock  <= half_clock;
     HUB_CLOCK   <= clock_24;
@@ -580,7 +607,6 @@ begin
         g_numerator     => 8,
         g_denominator   => 25,
         g_baud_rate     => 115_200,
-        g_timer_rate    => 200_000,
         g_big_endian    => false,
         g_icap          => false,
         g_uart          => true,
@@ -591,7 +617,7 @@ begin
         g_hardware_gcr  => true,
         g_ram_expansion => true,
         g_extended_reu  => false,
-        g_stereo_sid    => true,
+        g_stereo_sid    => g_sid,
         g_8voices       => false,
         g_hardware_iec  => true,
         g_c2n_streamer  => true,
@@ -606,8 +632,10 @@ begin
         g_usb_host2     => true,
         g_spi_flash     => true,
         g_vic_copper    => false,
-        g_video_overlay => false,
-        g_sampler       => true,
+        g_wifi_uart     => true,
+        g_sampler       => g_sampler,
+        g_sampler_16bit => true,
+        g_sampler_voices=> 8,
         g_acia          => true,
         g_rmii          => true )
     port map (
@@ -626,7 +654,7 @@ begin
         
         -- slot side
         BUFFER_ENn  => open,
-        VCC         => SLOT_VCC,
+        VCCDET      => SLOT_VCC,
 
         phi2_i      => not SLOT_PHI2, -- 74LV14
         dotclk_i    => SLOT_DOTCLK,
@@ -706,9 +734,17 @@ begin
         drv_via1_cb1_t      => drv_via1_cb1_t,
 
         -- Debug UART
-        UART_TXD    => uart_txd_from_logic,
+        UART_TXD    => UART_TXD,
         UART_RXD    => UART_RXD,
         
+        -- WiFi UART
+        WIFI_BOOT     => wifi_boot,   -- DEBUG_SPARE, -- pin 11
+        WIFI_ENABLE   => wifi_enable, -- DEBUG_TRSTn, -- pin 4
+        WIFI_TXD      => DEBUG_TDI,   -- pin 8
+        WIFI_RXD      => DEBUG_TDO,   -- pin 6
+        WIFI_RTS      => DEBUG_TCK,   -- pin 10
+        WIFI_CTS      => DEBUG_TMS,   -- pin 12
+
         -- Debug buses
         drv_debug_data   => drv_debug_data,
         drv_debug_valid  => drv_debug_valid,
@@ -722,7 +758,6 @@ begin
         SD_MOSI     => open,
         SD_MISO     => '1',
         SD_CARDDETn => '1',
-        SD_DATA     => open,
         
         -- RTC Interface
         RTC_CS      => open,
@@ -771,6 +806,9 @@ begin
         -- Buttons
         sw_trigger  => sw_trigger,
         BUTTON      => button_i );
+
+    DEBUG_SPARE <= '0' when wifi_boot = '0' else 'Z';
+    DEBUG_TRSTn <= '0' when wifi_enable = '0' else 'Z';
 
     IEC_ATN_O   <= not ult_atn_o;
     IEC_DATA_O  <= not ult_data_o;
@@ -832,7 +870,6 @@ begin
     button_i <= not BUTTON;
 
     ULPI_RESET <= not sys_reset; --por_n;
-    UART_TXD <= uart_txd_from_logic; -- and uart_txd_from_qsys;
 
     -- Tape
     c2n_motor_in <= CAS_MOTOR;
@@ -1014,10 +1051,10 @@ begin
 
     -- SLOT_DATA_OEn    <= '1';
     -- SLOT_DATA_DIR    <= '1';
-    SLOT_ADDR_OEn    <= toggle;
-    SLOT_ADDR_DIR    <= DEBUG_TRSTn and DEBUG_TDI and DEBUG_TMS and DEBUG_TCK and RMII_RX_ER and UART_RXD and SLOT_DOTCLK and IEC_RESET_I and CAS_SENSE and CAS_MOTOR when rising_edge(CLOCK_50);
+    SLOT_ADDR_OEn    <= toggle and slot_dot_clock_f;
+    SLOT_ADDR_DIR    <= RMII_RX_ER and UART_RXD and IEC_RESET_I and CAS_SENSE and CAS_MOTOR when rising_edge(CLOCK_50);
     toggle <= not toggle when rising_edge(sys_clock);
-    DEBUG_SPARE      <= '0';
-    flash_sck_t      <= sys_reset; -- 0 when not in reset = enabled
+    slot_dot_clock_f <= SLOT_DOTCLK when falling_edge(sys_clock);
+    flash_sck_t      <= audio_reset; -- sys_reset when falling_edge(sys_clock); -- 0 when not in reset = enabled
 
 end architecture;

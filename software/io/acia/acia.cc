@@ -37,7 +37,7 @@ int Acia :: init(uint16_t base, bool useNMI, QueueHandle_t controlQueue, QueueHa
     if ((base < 0xDE00) || (base > 0xDFFC)) {
         return -1;
     }
-    printf("Enabling ACIA at address %04x\n", base);
+    printf("Enabling ACIA at address %04x, nmi=%u\n", base, useNMI);
 
     base -= 0xDE00;
     base >>= 2;
@@ -80,10 +80,7 @@ void Acia :: deinit(void)
     regs->enable = 0;
     this->controlQueue = NULL;
     this->dataQueue = NULL;
-    if (buffer) {
-        delete buffer;
-        buffer = NULL;
-    }
+    this->buffer = NULL;
 }
 
 int Acia :: SendToRx(uint8_t *data, int length)
@@ -129,6 +126,15 @@ void Acia :: SetCTS(uint8_t value)
         regs->handsh |= ACIA_HANDSH_CTS;
     } else {
         regs->handsh &= ~ACIA_HANDSH_CTS;
+    }
+}
+
+void Acia :: SetRxPushback(uint8_t value)
+{
+    if (value) {
+        regs->handsh |= ACIA_HANDSH_RXPB;
+    } else {
+        regs->handsh &= ~ACIA_HANDSH_RXPB;
     }
 }
 
@@ -198,12 +204,6 @@ volatile uint8_t *Acia :: GetRxPointer(void)
 void Acia :: AdvanceRx(int adv)
 {
     regs->rx_head += adv;
-}
-
-void Acia :: SetRxRate(uint8_t value)
-{
-    // Warning: Write only register
-    regs->rx_rate = value;
 }
 
 void Acia :: GetHwMapping(uint8_t& enabled, uint16_t& address, uint8_t& nmi)

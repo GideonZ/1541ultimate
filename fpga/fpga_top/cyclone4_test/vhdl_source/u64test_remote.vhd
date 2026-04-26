@@ -12,9 +12,11 @@ use ieee.numeric_std.all;
 entity u64test_remote is
 port  (
     arst    : in  std_logic;
-    
+    clock   : in  std_logic;
+
     BUTTON  : in  std_logic_vector(2 downto 0);
 
+    VCC     : in  std_logic := '0';
     PHI2    : in  std_logic;
     DOTCLK  : in  std_logic;
     IO1n    : in  std_logic;
@@ -35,16 +37,23 @@ port  (
     D       : inout std_logic_vector(7 downto 0);
     A       : inout std_logic_vector(15 downto 0);
     
-    LED_MOTORn  : out   std_logic;
-    LED_DISKn   : out   std_logic;
-    LED_CARTn   : out   std_logic;
-    LED_SDACTn  : out   std_logic;
+    LED_MOTORn  : out std_logic;
+    LED_DISKn   : out std_logic;
+    LED_CARTn   : out std_logic;
+    LED_SDACTn  : out std_logic;
+    LED_BLINKn  : out std_logic;
 
-    IEC_SRQ     : inout std_logic;
-    IEC_RST     : inout std_logic;
-    IEC_CLK     : inout std_logic;
-    IEC_DATA    : inout std_logic;
-    IEC_ATN     : inout std_logic;
+    IEC_SRQ_O   : out std_logic;
+    IEC_RST_O   : out std_logic;
+    IEC_CLK_O   : out std_logic;
+    IEC_DATA_O  : out std_logic;
+    IEC_ATN_O   : out std_logic;
+
+    IEC_SRQ_I   : in  std_logic;
+    IEC_RST_I   : in  std_logic;
+    IEC_CLK_I   : in  std_logic;
+    IEC_DATA_I  : in  std_logic;
+    IEC_ATN_I   : in  std_logic;
 
     CAS_READ    : in  std_logic;
     CAS_WRITE   : in  std_logic;
@@ -54,7 +63,6 @@ port  (
 end entity;
 
 architecture arch of u64test_remote is
-    signal clock        : std_logic;
     signal addr_en      : std_logic;
     signal ram_address  : unsigned(7 downto 0);
     signal ram_en       : std_logic;
@@ -72,10 +80,26 @@ architecture arch of u64test_remote is
     signal cas_in       : std_logic_vector(7 downto 0) := X"00";
 
     signal phi2_d       : std_logic := '1';
+    signal io1n_d       : std_logic := '1';
     signal io2n_d       : std_logic := '1';
     signal rwn_d        : std_logic := '1';
+    signal io1n_d2      : std_logic := '1';
+    signal io2n_d2      : std_logic := '1';
+    signal rwn_d2       : std_logic := '1';
+    signal io1n_d3      : std_logic := '1';
+    signal io2n_d3      : std_logic := '1';
+    signal rwn_d3       : std_logic := '1';
+    signal a_d1         : std_logic_vector(15 downto 0);
+    signal a_d2         : std_logic_vector(15 downto 0);
+    signal a_d3         : std_logic_vector(15 downto 0);
+    signal d_d1         : std_logic_vector(7 downto 0);
+    signal d_d2         : std_logic_vector(7 downto 0);
+    signal phi2_f       : std_logic;
+    signal phi2_c       : std_logic;
 begin
-    clock <= not PHI2;
+    phi2_f <= PHI2 when falling_edge(clock);
+    phi2_c <= phi2_f when rising_edge(clock);
+    phi2_d <= phi2_c when rising_edge(clock);    
 
     process(clock, arst)
         variable v_addr : std_logic_vector(2 downto 0);
@@ -88,23 +112,23 @@ begin
             cart_out <= (others => '0');
             led_out <= (others => '0');
         elsif rising_edge(clock) then
-            if RWn = '0' and IO1n = '0' then
-                v_addr := A(2 downto 0);
+            if phi2_c = '0' and phi2_d = '1' and rwn_d3 = '0' and io1n_d3 = '0' then
+                v_addr := a_d3(2 downto 0);
                 case v_addr is
                 when "000" =>
-                    cart_out <= D(cart_out'range);
+                    cart_out <= ram_wdata(cart_out'range);
                 when "010" =>
-                    addr_out(15 downto 8) <= D;
+                    addr_out(15 downto 8) <= ram_wdata;
                 when "011" =>
-                    addr_out(7 downto 0) <= D;
+                    addr_out(7 downto 0) <= ram_wdata;
                 when "100" =>
-                    iec_out <= D(iec_out'range);
+                    iec_out <= ram_wdata(iec_out'range);
                 when "110" =>
                     if D = X"B9" then
                         addr_en <= '1';
                     end if;
                 when "111" =>
-                    led_out <= D(led_out'range);
+                    led_out <= ram_wdata(led_out'range);
                     
                 when others =>
                     null;
@@ -119,7 +143,7 @@ begin
         g_depth_bits => 8
     )
     port map (
-        clock        => DOTCLK,
+        clock        => clock,
         address      => ram_address,
         rdata        => ram_rdata,
         wdata        => ram_wdata,
@@ -129,18 +153,33 @@ begin
     
     ram_en      <= '1';
 
-    process(DOTCLK)
+    process(clock)
     begin
-        if rising_edge(DOTCLK) then
-            ram_address <= unsigned(A(7 downto 0));
-            phi2_d <= PHI2;
+        if rising_edge(clock) then
+            io1n_d <= IO1n;
             io2n_d <= IO2n;
             rwn_d  <= RWn;
-            ram_wdata <= D;
+
+            io1n_d2 <= io1n_d;
+            io2n_d2 <= io2n_d;
+            rwn_d2  <= rwn_d;
+
+            io1n_d3 <= io1n_d2;
+            io2n_d3 <= io2n_d2;
+            rwn_d3  <= rwn_d2;
+
+            d_d1   <= D;
+            d_d2   <= d_d1;
+            ram_wdata <= d_d2;
+
+            a_d1   <= A;
+            a_d2   <= a_d1;
+            a_d3   <= a_d2;
+            ram_address <= unsigned(a_d2(7 downto 0));
         end if;
     end process;
-    ram_we <= '1' when phi2_d = '1' and PHI2 = '0' and io2n_d = '0' and rwn_d = '0' else '0';
-    
+    ram_we <= '1' when phi2_d = '1' and phi2_c = '0' and io2n_d3 = '0' and rwn_d3 = '0' else '0';
+
     with A(2 downto 0) select reg_out <=
         cart_out       when "000",
         cart_in        when "001",
@@ -171,16 +210,16 @@ begin
     end process;
 
     -- IEC pins
-    IEC_ATN     <= '0' when iec_out(0) = '1' else 'Z';
-    IEC_CLK     <= '0' when iec_out(1) = '1' else 'Z';
-    IEC_DATA    <= '0' when iec_out(2) = '1' else 'Z';
-    IEC_SRQ     <= '0' when iec_out(3) = '1' else 'Z';
-    IEC_RST     <= '0' when iec_out(4) = '1' else 'Z';
+    IEC_ATN_O   <= iec_out(0);
+    IEC_CLK_O   <= iec_out(1);
+    IEC_DATA_O  <= iec_out(2);
+    IEC_SRQ_O   <= iec_out(3);
+    IEC_RST_O   <= iec_out(4);
 
-    iec_in <= "000" & IEC_RST & IEC_SRQ & IEC_DATA & IEC_CLK & IEC_ATN;
+    iec_in <= arst & "00" & IEC_RST_I & IEC_SRQ_I & IEC_DATA_I & IEC_CLK_I & IEC_ATN_I;
 
     -- CAS pins
-    cas_in <= "0000" & CAS_SENSE & CAS_WRITE & CAS_READ & CAS_MOTOR;
+    cas_in <= arst & "000" & CAS_SENSE & CAS_WRITE & CAS_READ & CAS_MOTOR;
     
     -- CART pins
     cart_in(0) <= IRQn;
@@ -190,18 +229,26 @@ begin
     cart_in(4) <= DOTCLK;
     cart_in(5) <= RESETn;
     cart_in(6) <= BA;
-    
+    cart_in(7) <= VCC;
+
     IRQn       <= '0' when cart_out(0) = '1' or button(2) = '0' else 'Z';
     NMIn       <= '0' when cart_out(1) = '1' or button(1) = '0' else 'Z';
-    GAMEn      <= '0' when cart_out(2) = '1' else 'Z';
+    GAMEn      <= '0' when cart_out(2) = '1' or button(0) = '0' else 'Z';
     EXROMn     <= '0' when cart_out(3) = '1' else 'Z';
     DMAn       <= '0' when cart_out(4) = '1' else 'Z';
     -- RESETn     <= '0' when cart_out(5) <= '1' else 'Z';
 
-    LED_MOTORn <= not led_out(0); 
-    LED_DISKn  <= not led_out(1); 
-    LED_CARTn  <= not led_out(2); 
-    LED_SDACTn <= not led_out(3); 
+    LED_MOTORn <= '0' when led_out(0) = '1' else 'Z'; 
+    LED_DISKn  <= '0' when led_out(1) = '1' else 'Z'; 
+    LED_CARTn  <= '0' when led_out(2) = '1' else 'Z'; 
+    LED_SDACTn <= '0' when led_out(3) = '1' else 'Z'; 
 
+    process(clock)
+        variable v  : unsigned(25 downto 0) := (others => '0');
+    begin
+        if rising_edge(clock) then
+            LED_BLINKn <= v(v'high);
+            v := v + 1;
+        end if;
+    end process;
 end architecture;
-

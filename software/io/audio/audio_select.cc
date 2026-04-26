@@ -182,6 +182,34 @@ AudioConfig :: AudioConfig()
         }
     }        
     register_store(store, "Audio Output Settings", def);
+    cfg->set_sort_order(SORT_ORDER_CFG_MIXER);
+    
+    if(capabilities & CAPAB_ULTIMATE2PLUS) {
+        map = normal_map;
+        def = audio_cfg_plus;
+        if(!(capabilities & CAPAB_STEREO_SID)) {
+            cfg->disable(CFG_AUDIO_SID_ENABLE_L);
+            cfg->disable(CFG_AUDIO_SID_BASE_LEFT);
+            cfg->disable(CFG_AUDIO_SID_EXT_LEFT);
+            cfg->disable(CFG_AUDIO_SID_FILT_LEFT);
+            cfg->disable(CFG_AUDIO_SID_WAVE_LEFT);
+            cfg->disable(CFG_AUDIO_SID_ENABLE_R);
+            cfg->disable(CFG_AUDIO_SID_BASE_RIGHT);
+            cfg->disable(CFG_AUDIO_SID_EXT_RIGHT);
+            cfg->disable(CFG_AUDIO_SID_FILT_RIGHT);
+            cfg->disable(CFG_AUDIO_SID_WAVE_RIGHT);
+            cfg->disable(CFG_MIXER0_VOL);
+            cfg->disable(CFG_MIXER1_VOL);
+            cfg->disable(CFG_MIXER0_PAN);
+            cfg->disable(CFG_MIXER1_PAN);
+        }
+        if(!(capabilities & CAPAB_SAMPLER)) {
+            cfg->disable(CFG_MIXER4_VOL);
+            cfg->disable(CFG_MIXER5_VOL);
+            cfg->disable(CFG_MIXER4_PAN);
+            cfg->disable(CFG_MIXER5_PAN);
+        }
+    }
 
     effectuate_settings();
 }

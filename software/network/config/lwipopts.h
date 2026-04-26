@@ -44,6 +44,7 @@
 //  Altera TSE requires 2 byte padding for use with lwIP!
 #define ETH_PAD_SIZE        0
 
+//#define LWIP_DEBUG 1
 #include "lwip/debug.h"
 
 /*
@@ -71,7 +72,7 @@
  */
 #include "profiler.h"
 
-#define MEMCPY(dst,src,len)             profiled_memcpy(dst,src,len)
+#define MEMCPY(dst,src,len)             memcpy(dst,src,len)
 
 /**
  * SMEMCPY: override this with care! Some compilers (e.g. gcc) can inline a
@@ -193,7 +194,7 @@
  * per active UDP "connection".
  * (requires the LWIP_UDP option)
  */
-#define MEMP_NUM_UDP_PCB                4
+#define MEMP_NUM_UDP_PCB                8
 
 /**
  * MEMP_NUM_TCP_PCB: the number of simultaneously active TCP connections.
@@ -245,7 +246,7 @@
  * MEMP_NUM_NETBUF: the number of struct netbufs.
  * (only needed if you use the sequential API, like api_lib.c)
  */
-#define MEMP_NUM_NETBUF                 4
+#define MEMP_NUM_NETBUF                 8
 
 /**
  * MEMP_NUM_NETCONN: the number of struct netconns.
@@ -258,7 +259,7 @@
  * for callback/timeout API communication. 
  * (only needed if you use tcpip.c)
  */
-#define MEMP_NUM_TCPIP_MSG_API          8
+#define MEMP_NUM_TCPIP_MSG_API          12
 
 /**
  * MEMP_NUM_TCPIP_MSG_INPKT: the number of struct tcpip_msg, which are used
@@ -271,6 +272,10 @@
  * PBUF_POOL_SIZE: the number of buffers in the pbuf pool. 
  */
 #define PBUF_POOL_SIZE                  64
+
+
+#define LWIP_PBUF_CUSTOM_DATA      void *custom_obj; \
+                                   void *buffer_start;
 
 /*
    ---------------------------------
@@ -446,8 +451,8 @@
 /**
  * DHCP_DOES_ARP_CHECK==1: Do an ARP check on the offered address.
  */
-#define DHCP_DOES_ARP_CHECK             ((LWIP_DHCP) && (LWIP_ARP))
-
+#define LWIP_DHCP_DOES_ACD_CHECK        0
+#define DHCP_ADD_EXTRA_REQUEST_OPTIONS  ,100,101
 /*
    ------------------------------------
    ---------- AUTOIP options ----------
@@ -516,7 +521,7 @@
 /**
  * LWIP_IGMP==1: Turn on IGMP module. 
  */
-#define LWIP_IGMP                       0
+#define LWIP_IGMP                       1
 
 /*
    ----------------------------------
@@ -564,6 +569,9 @@
 /** If this is turned on, the local host-list can be dynamically changed
  *  at runtime. */
 #define DNS_LOCAL_HOSTLIST_IS_DYNAMIC   0
+
+#define LWIP_MDNS_RESPONDER 1
+#define LWIP_NUM_NETIF_CLIENT_DATA 2
 
 /*
    ---------------------------------
@@ -621,7 +629,7 @@
  * Define to 0 if your device is low on memory.
  */
 #define TCP_QUEUE_OOSEQ                 (LWIP_TCP)
-
+#define TCP_OOSEQ_MAX_PBUFS             3
 /**
  * TCP_MSS: TCP Maximum segment size. (default is 128, a *very*
  * conservative default.)
@@ -834,7 +842,7 @@
  * The priority value itself is platform-dependent, but is passed to
  * sys_thread_new() when the thread is created.
  */
-#define TCPIP_THREAD_PRIO               2
+#define TCPIP_THREAD_PRIO               PRIO_TCPIP
 
 /**
  * TCPIP_MBOX_SIZE: The mailbox size for the tcpip thread messages
@@ -937,7 +945,7 @@
  * LWIP_TCPIP_CORE_LOCKING: (EXPERIMENTAL!)
  * Don't use it if you're not an active lwIP project member
  */
-#define LWIP_TCPIP_CORE_LOCKING         0
+#define LWIP_TCPIP_CORE_LOCKING         1
 
 /**
  * LWIP_NETCONN==1: Enable Netconn API (require to use api_lib.c)
@@ -959,6 +967,7 @@
  * (only used if you use sockets.c)
  */
 #define LWIP_COMPAT_SOCKETS             1
+#define LWIP_SOCKET_POLL                0
 
 /**
  * LWIP_POSIX_SOCKETS_IO_NAMES==1: Enable POSIX-style sockets functions names.
@@ -1397,7 +1406,7 @@
 /**
  * DHCP_DEBUG: Enable debugging in dhcp.c.
  */
-#define DHCP_DEBUG                      LWIP_DBG_OFF
+#define DHCP_DEBUG                      (LWIP_DBG_ON | LWIP_DBG_TYPES_ON)
 
 /**
  * AUTOIP_DEBUG: Enable debugging in autoip.c.
@@ -1421,5 +1430,41 @@
 
 
 #define LWIP_TIMEVAL_PRIVATE 0
+
+
+/**  
+ * SNTP options
+ */
+#define SNTP_SET_SYSTEM_TIME(sec)   sntp_time_received(sec)
+#define SNTP_MAX_SERVERS            5
+#define SNTP_GET_SERVERS_FROM_DHCP  1
+
+/** Set this to 1 to support DNS names (or IP address strings) to set sntp servers
+ * One server address/name can be defined as default if SNTP_SERVER_DNS == 1:
+ * \#define SNTP_SERVER_ADDRESS "pool.ntp.org"
+ */
+#define SNTP_SERVER_DNS             1
+
+#define SNTP_DEBUG                  LWIP_DBG_OFF
+
+/** Sanity check:
+ * Define this to
+ * - 0 to turn off sanity checks (default; smaller code)
+ * - >= 1 to check address and port of the response packet to ensure the
+ *        response comes from the server we sent the request to.
+ * - >= 2 to check returned Originate Timestamp against Transmit Timestamp
+ *        sent to the server (to ensure response to older request).
+ * - >= 3 @todo: discard reply if any of the VN, Stratum, or Transmit Timestamp
+ *        fields is 0 or the Mode field is not 4 (unicast) or 5 (broadcast).
+ * - >= 4 @todo: to check that the Root Delay and Root Dispersion fields are each
+ *        greater than or equal to 0 and less than infinity, where infinity is
+ *        currently a cozy number like one second. This check avoids using a
+ *        server whose synchronization source has expired for a very long time.
+ */
+#define SNTP_CHECK_RESPONSE         1
+#define SNTP_COMP_ROUNDTRIP         0
+#define SNTP_STARTUP_DELAY          1
+
+void sntp_time_received(u32_t sec);
 
 #endif /* __LWIPOPTS_H__ */

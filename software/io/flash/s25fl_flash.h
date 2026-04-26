@@ -41,8 +41,7 @@ public:
     
 	// Protection functions
 	virtual void protect_disable(void);
-	virtual bool protect_configure(void);
-	virtual void protect_enable(void);
+	virtual bool protect_configure(int kilobytes);
 };
 
 extern S25FL_Flash s25fl_flash;

@@ -28,7 +28,6 @@ SRCS_C   =	itu.c \
             ffunicode.c \
             time.c \
 			riscv_main.c \
-			syscalls.c \
 			do_ctors.c \
 			malloc_lock.c \
 

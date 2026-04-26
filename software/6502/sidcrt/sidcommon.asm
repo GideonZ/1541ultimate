@@ -552,24 +552,28 @@ getBankPlay     ldy #$0d  ;get play address
 getBank         and #$f0
                 cmp #$d0
                 bne isBankKernal
+
                 lda #$34
                 rts
+
 isBankKernal    cmp #$e0
                 beq bankKernal
-                cmp #$f0
-                bne isBankBasic
+                bcc isBankBasic
+
 bankKernal      lda #$35
                 rts
+
 isBankBasic     jsr readHeader
-                and #$f0
-                bpl bankDefault
-                cmp #$80
-                beq bankDefault
-                cmp #$90
+                cmp #$a0
+                beq bankBasic
+                bcs bankBasic
+
+bankDefault     lda #$37
+                rts
+
+bankBasic       jsr isRsid
                 beq bankDefault
                 lda #$36
-                rts
-bankDefault     lda #$37
                 rts
 
 getInitLo       ldy #$0a            ; get init address lo-byte (note that SID header is converted to little endian here)

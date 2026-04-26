@@ -19,7 +19,6 @@ library ieee;
 
 entity input_synchronizer is
     generic (
-        g_width     : positive  := 1;
         g_reset_val : std_logic := '0'
     );
     port (
@@ -59,8 +58,8 @@ architecture rtl of input_synchronizer is
     signal sync2        : std_logic;
 
     -- Xilinx attributes
-    attribute iob                                           : string;
-    attribute iob of sync1                                  : signal is "true";
+    -- attribute iob                                           : string;
+    -- attribute iob of sync1                                  : signal is "true";
     -- Altera attributes
     -- Add FAST_INPUT_REGISTER to qsf file to force the sync1 register into an iob
 

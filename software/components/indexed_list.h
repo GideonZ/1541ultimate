@@ -2,6 +2,7 @@
 #define INDEXED_LIST_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 #ifndef ENTER_SAFE_SECTION
 #include "itu.h"
@@ -116,6 +117,21 @@ public:
         return res;
 	}
 
+	int remove_idx(int idx) {
+		int res = 0;
+		ENTER_SAFE_SECTION
+		if (idx < elements) {
+			elements--;
+			for(int j=idx;j<elements;j++) {
+				element_array[j] = element_array[j+1];
+				removal[j] = removal[j+1];
+			}
+			res = 1;
+		}
+        LEAVE_SAFE_SECTION
+        return res;
+	}
+
 	void swap(int i, int j) {
         ENTER_SAFE_SECTION
 		T temp;
@@ -129,7 +145,7 @@ public:
         LEAVE_SAFE_SECTION
 	}
 
-	void replace(int i, T el) {
+	void replace_idx(int i, T el) {
 		element_array[i] = el;
 	}
 	

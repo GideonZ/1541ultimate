@@ -37,7 +37,8 @@ begin
             io_resp <= c_io_resp_init;
             control_i.cartridge_kill <= '0'; 
             control_i.cartridge_force <= '0';
-            
+            control_i.timing_trigger <= '0';
+
             if io_req.write='1' then
                 io_resp.ack <= '1';
                 case io_req.address(3 downto 0) is
@@ -79,6 +80,7 @@ begin
                     control_i.phi2_edge_recover <= io_req.data(0);
                     control_i.measure_enable <= io_req.data(1);
                     control_i.force_serve_vic <= io_req.data(2); 
+                    control_i.timing_trigger <= io_req.data(3);
                 when c_cart_swap_buttons =>
                 	control_i.swap_buttons <= io_req.data(0);
                 when c_cart_sampler_enable =>

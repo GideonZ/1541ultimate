@@ -14,10 +14,10 @@ class Node_DirectFS : public CachedTreeNode
 {
 	FileSystem *fs;
 public:
-	Node_DirectFS(FileSystem *fs, const char *n) : CachedTreeNode(NULL, n) {
+	Node_DirectFS(FileSystem *fs, const char *n, uint8_t attrib = AM_DIR) : CachedTreeNode(NULL, n) {
 		this->fs = fs;
 		info.fs = fs;
-		info.attrib = AM_DIR;
+		info.attrib = attrib;
 	}
     virtual ~Node_DirectFS() {
 

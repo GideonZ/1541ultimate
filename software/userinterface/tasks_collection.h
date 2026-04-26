@@ -28,6 +28,14 @@ public:
     const int getOrder(void) { return sortOrder; }
     void append(Action *a) { actions.append(a); }
     IndexedList<Action *> *getActions(void) { return &actions; }
+    int countActive(void)
+    {
+        int c = 0;
+        for(int i=0;i<actions.get_elements();i++) {
+            if (actions[i]->isEnabled() && actions[i]->isShown()) c++;
+        }
+        return c;
+    }
 };
 
 class TasksCollection

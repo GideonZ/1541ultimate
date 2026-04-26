@@ -201,7 +201,7 @@ void UsbBase :: initHardware()
         ioWrite8(ITU_IRQ_DISABLE, ITU_INTERRUPT_USB);
         ioWrite8(ITU_IRQ_CLEAR, ITU_INTERRUPT_USB);
 
-        xTaskCreate( poll_usb2, "USB Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
+        xTaskCreate( poll_usb2, "USB Task", configMINIMAL_STACK_SIZE, this, PRIO_POLL, NULL );
     } else {
         printf("No USB2 hardware found. (%08x)\n", getFpgaCapabilities());
     }
@@ -346,7 +346,7 @@ void UsbBase :: init(void)
 	NANO_START = 1;
 
     printf("Queue = %p. Creating USB task. This = %p\n", queue, this);
-	xTaskCreate( UsbBase :: input_task_start, "USB Input Event Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 4, NULL );
+	xTaskCreate( UsbBase :: input_task_start, "USB Input Event Task", configMINIMAL_STACK_SIZE, this, PRIO_DRIVER, NULL );
 }
 
 // Called from poll / cleanup context

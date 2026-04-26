@@ -28,12 +28,13 @@ SRCS_C   =	itu.c \
             ffunicode.c \
             time.c \
             mdio.c \
+            cmd_buffer.c \
 			riscv_main.c \
-			syscalls.c \
 			do_ctors.c \
 			malloc_lock.c \
                         
 SRCS_CC	 =  memory.cc \
+			u2pl_init.cc \
             i2c_drv.cc \
             codec.cc \
 			small_printf.cc \
@@ -74,6 +75,9 @@ SRCS_CC	 =  memory.cc \
 			directory.cc \
 			file.cc \
 			filesystem_fat.cc \
+			dma_uart.cc \
+			esp32.cc \
+			wifi_cmd.cc \
 			$(PRJ).cc
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/risc-v
@@ -83,6 +87,11 @@ VPATH +=	$(PATH_SW)/../neorv32/sw/common
 VPATH +=	$(PATH_SW)/../neorv32/sw/lib/include
 VPATH +=	$(PATH_SW)/../neorv32/sw/lib/source
 VPATH +=    $(PATH_SW)/application/update_u2pl
+VPATH +=    $(PATH_SW)/../html
+VPATH +=	$(PATH_SW)/wifi/raw_c3/main
+VPATH +=	$(PATH_SW)/wifi/raw_c3/build/bootloader
+VPATH +=	$(PATH_SW)/wifi/raw_c3/build/partition_table
+VPATH +=	$(PATH_SW)/wifi/raw_c3/build
 VPATH +=    ../../../fpga/u2plus_ecp5/impl1
 VPATH +=    ../ultimate/result
 
@@ -92,7 +101,9 @@ SRCS_ASMS = crt0.S port_asm.S
 
 SRCS_6502 = 
 
-SRCS_BIN =  chars.bin 1541.bin 1571.bin 1581.bin snds1541.bin snds1571.bin snds1581.bin
+SRCS_BIN =  chars.bin 1541.bin 1571.bin 1581.bin snds1541.bin snds1571.bin snds1581.bin bootloader.bin partition-table.bin bridge.bin
+
+SRCS_HTML = index.html
 
 SRCS_IEC = 
 

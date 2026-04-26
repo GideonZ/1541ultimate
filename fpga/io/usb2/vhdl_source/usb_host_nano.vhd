@@ -17,7 +17,7 @@ use work.endianness_pkg.all;
 
 entity usb_host_nano is
     generic (
-        g_big_endian   : boolean;
+        g_big_endian   : boolean := false;
         g_incl_debug   : boolean := false;
         g_tag          : std_logic_vector(7 downto 0) := X"05";
         g_simulation   : boolean := false );

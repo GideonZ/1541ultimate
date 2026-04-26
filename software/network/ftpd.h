@@ -60,15 +60,24 @@ public:
 };
 
 #define COMMAND_BUFFER_SIZE 1024
+#define FTPD_DATA_BUFFER_SIZE 8192
 
 class FTPDataConnection;
 class FTPDaemonThread;
+
+enum FTPTransferResult {
+	FTP_TRANSFER_OK = 0,
+	FTP_TRANSFER_SETUP_FAILED,
+	FTP_TRANSFER_ABORTED,
+	FTP_TRANSFER_STORAGE_ERROR
+};
 
 typedef void (FTPDaemonThread::*func_t)(const char *args);
 
 class FTPDaemonThread
 {
 	int socket;
+	char authenticated;
 	uint8_t my_ip[4];
 	uint8_t your_ip[4];
 	uint16_t your_port;
@@ -93,7 +102,7 @@ class FTPDaemonThread
 	enum ftpd_state_e state;
 	vfs_t *vfs;
 
-	struct ip_addr dataip;
+	ip_addr_t dataip;
 	uint16_t dataport;
 	int passive;
 	FTPDataConnection *connection;
@@ -110,9 +119,10 @@ class FTPDaemonThread
 	void send_msg(const char *a, ...);
 	void dispatch_command(char *a, int length);
 	int open_dataconnection(bool passive);
+	void destroy_connection();
 public:
 	FTPDaemonThread(int sock, uint32_t addr, uint16_t port);
-	~FTPDaemonThread() { }
+	~FTPDaemonThread();
 
 	int handle_connection(void);
 	uint16_t getBindPort();
@@ -156,22 +166,19 @@ class FTPDataConnection
 	FTPDaemonThread *parent;
 	int sockfd;
 	int actual_socket;
-	char buffer[1024];
+	char buffer[FTPD_DATA_BUFFER_SIZE];
 
 	int setup_connection();
-	int connect_to(struct ip_addr ip, uint16_t port);
-	static void accept_data(void *); // task
-	TaskHandle_t acceptTaskHandle;
-	TaskHandle_t spawningTask;
+	int connect_to(ip_addr_t ip, uint16_t port);
 
 public:
 	FTPDataConnection(FTPDaemonThread *parent);
-	~FTPDataConnection() { }
+	~FTPDataConnection();
 	int do_bind(void);
 	void close_connection();
 
 	void directory(int listType, vfs_dir_t *dir);
-	void sendfile(vfs_file_t *file);
-	bool receivefile(vfs_file_t *file);
+	FTPTransferResult sendfile(vfs_file_t *file);
+	FTPTransferResult receivefile(vfs_file_t *file);
 };
 #endif				/* __FTPD_H__ */

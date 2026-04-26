@@ -157,7 +157,7 @@ begin
             
             when encode =>
                 fifo_write <= '1';
-                if (diff > 2040) or (motor_en = '0') then
+                if diff > 2040 then
                     fifo_din <= X"00";
                     state <= multi1;
                 else

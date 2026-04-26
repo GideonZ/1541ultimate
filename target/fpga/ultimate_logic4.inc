@@ -37,12 +37,6 @@ ALL_ULTIMATE_LOGIC := \
                 vhdl,work,$(ULTIMATE_FPGA)/ip/memory/vhdl_source/dpram_8x16-xilinx.vhd \
                 vhdl,work,$(ULTIMATE_FPGA)/ip/memory/vhdl_source/dpram_8x32.vhd \
                 vhdl,work,$(ULTIMATE_FPGA)/ip/memory/vhdl_source/dpram_8x32-xilinx.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/ip/video/vhdl_source/char_generator_pkg.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/ip/video/vhdl_source/char_generator_rom_pkg.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/ip/video/vhdl_source/char_generator_rom.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/ip/video/vhdl_source/char_generator_regs.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/ip/video/vhdl_source/char_generator_slave.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/ip/video/vhdl_source/char_generator_peripheral.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/clock/vhdl_source/real_time_clock.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/clock/vhdl_source/fractional_div.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/nano_cpu/vhdl_source/nano_cpu_pkg.vhd \
@@ -56,6 +50,11 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/io/audio_select/vhdl_source/audio_select.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/tx.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/rx.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/tx_dma.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/rx_dma.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/uart_dma.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/slip_encoder.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/slip_decoder.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/uart_peripheral_io.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/sigma_delta_dac/vhdl_source/sigma_delta_dac.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/sigma_delta_dac/vhdl_source/noise_generator.vhd \
@@ -112,7 +111,7 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/io/sampler/vhdl_source/sampler_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/sampler/vhdl_source/sampler_accu.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/sampler/vhdl_source/sampler_regs.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/io/sampler/vhdl_source/sampler.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/sampler/vhdl_source/sampler2.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/sid6581/vhdl_source/sid_debug_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/sid6581/vhdl_source/sid_trace.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/sid6581/vhdl_source/Q_table.vhd \
@@ -172,6 +171,7 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/cpu_unit/rvlite/vhdl_source/gprf.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cpu_unit/rvlite/vhdl_source/alu_logical.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cpu_unit/rvlite/vhdl_source/alu_branch.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/cpu_unit/rvlite/vhdl_source/multiply.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cpu_unit/rvlite/vhdl_source/execute.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cpu_unit/rvlite/vhdl_source/csr.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cpu_unit/rvlite/vhdl_source/writeback.vhd \
@@ -184,6 +184,7 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/cart_slot_registers.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/slot_timing.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/slot_slave.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/slot_trace.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/slot_master_v4.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/slot_server_v4.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/freezer.vhd \

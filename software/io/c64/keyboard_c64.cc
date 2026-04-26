@@ -9,6 +9,8 @@
 #include "task.h"
 #endif
 
+uint8_t wasd_to_joy = 0; // overwritten by U64_config, if it exists
+
 const uint8_t modifier_map[] = {
     0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
     0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01, // left shift
@@ -75,12 +77,13 @@ const uint8_t *keymaps[8] = {
 		keymap_control  // 7 Shift C= Control
 };
 
-Keyboard_C64 :: Keyboard_C64(GenericHost *h, volatile uint8_t *row, volatile uint8_t *col)
+Keyboard_C64 :: Keyboard_C64(GenericHost *h, volatile uint8_t *row, volatile uint8_t *col, volatile uint8_t *joy)
 {
     host = h;
     col_register = col;
     row_register = row;
-    
+    joy_register = joy;
+
     repeat_speed = 4;
     first_delay = 16;
     key_head = 0;
@@ -94,6 +97,45 @@ Keyboard_C64 :: ~Keyboard_C64()
 {
 }
 
+uint8_t Keyboard_C64 :: scan_keyboard(volatile uint8_t *row_reg, volatile uint8_t *col_reg)
+{
+    const uint8_t *map;
+
+    uint8_t shift_flag = 0;
+    uint8_t mtrx = 0x40;
+    uint8_t col, row;
+    uint8_t mod = 0;
+
+    *col_reg = 0; // select all rows of keyboard
+    if (*row_reg != 0xFF) { // process key image
+        map = keymap_normal;
+        col = 0xFE;
+        for(int idx=0,y=0;y<8;y++) {
+            *col_reg = 0xFF;
+            *col_reg = col;
+            *col_reg = col;
+            do {
+                row = *row_reg;
+                *col_reg = col;
+            } while(row != *row_reg);
+            for(int x=0;x<8;x++, idx++) {
+                if((row & 1)==0) {
+                    mod = modifier_map[idx];
+                    shift_flag |= mod;
+                    if(!mod) {
+                        mtrx = idx;
+                    }
+                }
+                row >>= 1;
+            }
+            col = (col << 1) | 1;
+        }
+    }
+    
+    map = keymaps[shift_flag & 0x07];
+    return map[mtrx];
+}
+#include "u64.h" // temporary!
 void Keyboard_C64 :: scan(void)
 {
     const uint8_t *map;
@@ -111,15 +153,21 @@ void Keyboard_C64 :: scan(void)
     if(!(host->is_accessible()))
         return;
 
+#if U64 == 2
+    MATRIX_WASD_TO_JOY = 0; // Forces WASD crap to be off
+    BLING_RX_FLAGS = 0x01; // disable shift lock in bling board
+#endif
+
     *row_register = 0xFF;
     *row_register = 0xFF;
 
     // Scan Joystick Port 2 first
     *col_register = 0xFF; // deselect keyboard for pure joystick scan
     *col_register = 0XFF; // delay
-    row = *col_register; // port2
-    row = *col_register; // delay
-    if(row != 0xFF) {
+
+    row = *joy_register;
+    row = *joy_register;
+    if((row & 0x1F) != 0x1F) {
         joy = true;
         if     (!(row & 0x01)) { shift_flag = 0x01; mtrx = 0x07; }
         else if(!(row & 0x02)) { shift_flag = 0x00; mtrx = 0x07; }
@@ -157,19 +205,20 @@ void Keyboard_C64 :: scan(void)
         } else { // no key pressed
             mtrx_prev = 0xFF;
             shift_prev = 0xFF;
+#if U64 == 2
+    MATRIX_WASD_TO_JOY = wasd_to_joy;
+    BLING_RX_FLAGS = 0x00; // reenable shift lock
+#endif
             return;
         }
     }
     
+#if U64 == 2
+    MATRIX_WASD_TO_JOY = wasd_to_joy;
+    BLING_RX_FLAGS = 0x00; // reenable shift lock
+#endif
     // there was a key pressed (or the joystick is used)
     // determine which map to use
-/*
-    if(shift_flag) { // we now only have two maps, so put all modifiers to shift
-        map = keymap_shifted;
-    } else {
-        map = keymap_normal;
-    }
-*/
     map = keymaps[shift_flag & 0x07];
     key = map[mtrx];
 
@@ -221,10 +270,20 @@ int Keyboard_C64 :: getch(void)
     if(key_head == key_tail) {
         return system_usb_keyboard.getch();
     }
-    uint8_t key = key_buffer[key_tail];
+    int key = key_buffer[key_tail];
     key_tail = (key_tail + 1) % KEY_BUFFER_SIZE;
 
-    return (int)key;
+    return key;
+}
+
+void Keyboard_C64 :: push_head(int c)
+{
+    // For now, we only support push tail, alas
+    int next_head = (key_head + 1) % KEY_BUFFER_SIZE;
+    if(next_head != key_tail) {
+        key_buffer[key_head] = c;
+        key_head = next_head;
+    }
 }
 
 void Keyboard_C64 :: wait_free(void)
@@ -237,6 +296,9 @@ void Keyboard_C64 :: wait_free(void)
     if(!(host->is_accessible()))
         return;
 
+#if U64==2
+    BLING_RX_FLAGS = 0x01; // disable shift lock in bling board
+#endif
     *col_register = 0; // select all rows
 
     int timeout = 2000;
@@ -245,6 +307,9 @@ void Keyboard_C64 :: wait_free(void)
         wait_ms(1);
     }
     *col_register = 0xFF;
+#if U64==2
+    BLING_RX_FLAGS = 0x00; // allow shift lock
+#endif
 }
 
 void Keyboard_C64 :: set_delays(int initial, int repeat)

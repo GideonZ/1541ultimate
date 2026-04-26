@@ -35,7 +35,7 @@ static const t_flash_address flash_addresses[] = { // Total 4096 pages.
 
 AT45_Flash::AT45_Flash()
 {
-
+    prot_size    = 128; // kB
     page_size    = 528;         // in bytes
 	sector_size  = 1; // 256;			// in pages, default to AT45DB161
 	sector_count = 4096; // 16;			// default to AT45DB161
@@ -99,6 +99,7 @@ AT45_Flash *AT45_Flash :: tester()
     	return NULL; // not Atmel
 
 	if(dev_id == 0x26) { // AT45DB161
+        prot_size    = 128; // kB
 		sector_size  = 1; // 256;
 		sector_count = 4096;
 	    total_size   = 4096;
@@ -106,6 +107,7 @@ AT45_Flash *AT45_Flash :: tester()
 		return this;
 	}
 	if(dev_id == 0x27) { // AT45DB321
+        prot_size    = 64; // kB
 		sector_size  = 1; // 128;
 		sector_count = 8192; // 64;
 	    total_size   = 8192;
@@ -228,6 +230,7 @@ void AT45_Flash :: read_serial(void *buffer)
 {
 	portENTER_CRITICAL();
     uint8_t *buf = (uint8_t *)buffer;
+    uint8_t temp[64];
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = AT45_ReadSecurityRegister;
     SPI_FLASH_DATA = 0;
@@ -237,10 +240,18 @@ void AT45_Flash :: read_serial(void *buffer)
         SPI_FLASH_DATA = 0xFF; // read dummy
     }
     for(int i=0;i<64;i++) {
-        *(buf++) = SPI_FLASH_DATA;
+        temp[i] = SPI_FLASH_DATA;
     }
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
 	portEXIT_CRITICAL();
+    buf[0] = temp[10];
+    buf[1] = temp[11];
+    buf[2] = temp[14];
+    buf[3] = temp[18];
+    buf[4] = temp[20];
+    buf[5] = temp[21];
+    buf[6] = temp[22];
+    buf[7] = temp[19];
 }
 
 int  AT45_Flash :: get_config_page_size(void)
@@ -421,7 +432,7 @@ void AT45_Flash :: reboot(int addr)
     error(("You should never see this!\n"));
 }
 
-bool AT45_Flash ::protect_configure(void)
+bool AT45_Flash ::protect_configure(int kilobytes)
 {
     portENTER_CRITICAL();
     // erase sector protection regsiter
@@ -436,6 +447,13 @@ bool AT45_Flash ::protect_configure(void)
         return false;
     }
 
+    // Now, how many bytes do we need to write? It depends on the number of sectors.
+    // We know that a page is roughly 512 bytes, and we know the number of pages.
+    // The size in kilobytes of the flash is (total_size / 2).
+    // The size of a sector in kilobytes is "prot_size".
+    // So the number of sectors is (total_size / 2) / prot_size.
+    int prot_bytes = (total_size / prot_size) >> 1;
+
     // program sector protection regsiter
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = 0x3D;
@@ -443,13 +461,8 @@ bool AT45_Flash ::protect_configure(void)
     SPI_FLASH_DATA = 0x7F;
     SPI_FLASH_DATA = 0xFC;
 
-    // by default, protect 1/2 of the device and leave 1/2 unprotected, which is the flash disk
-    int prot = 2 * (sector_count >> 2);
-    for (int i = 0; i < prot; i++) {
-        SPI_FLASH_DATA = 0xFF;
-    }
-    for (int i = prot; i < sector_count; i++) {
-        SPI_FLASH_DATA = 0x00;
+    for (int i = 1; i <= prot_bytes; i++) { // starting from 1 to prot_bytes inclusive
+        SPI_FLASH_DATA = ((i * prot_size) <= kilobytes) ? 0xFF : 0x00; // e.g. 1x64 <= 64: yes, 2x64 <= 64: no, etc..
     }
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
     portEXIT_CRITICAL();
@@ -502,7 +515,7 @@ void AT45_Flash ::protect_disable(void)
     portEXIT_CRITICAL();
 }
 
-void AT45_Flash ::protect_enable(void)
+void AT45_Flash ::protect_enable()
 {
     portENTER_CRITICAL();
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low

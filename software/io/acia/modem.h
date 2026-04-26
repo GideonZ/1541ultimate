@@ -47,12 +47,13 @@ class Modem : public ConfigurableObject
     QueueHandle_t aciaQueue;
     DataBuffer *aciaTxBuffer;
     ListenerSocket *listenerSocket;
-    uint8_t ctsMode, dsrMode, dcdMode;
+    uint8_t ctsMode, dsrMode, dcdMode, rtsMode, pushbackMode;
     uint8_t lastHandshake;
     uint16_t current_iobase;
     const char *responseString;
     uint8_t responseLen;
     bool verbose;
+    bool echo;
     bool keepConnection;
     bool commandMode;
     bool busyMode;
@@ -62,12 +63,13 @@ class Modem : public ConfigurableObject
     uint8_t registerValues[MODEM_NUM_REGS];
 public:
     Modem();
+    void start();
     void effectuate_settings();
     void reinit_acia(uint16_t base);
     bool prohibit_acia(uint16_t base);
 
 };
 
-extern Modem modem;
+extern Modem *modem;
 
 #endif

@@ -41,11 +41,10 @@ TreeBrowserState :: TreeBrowserState(Browsable *n, TreeBrowser *b, int lev)
 
 TreeBrowserState :: ~TreeBrowserState()
 {
-	printf("Deleting TBS %s ", node->getName());
+	printf("Deleting TBS Level %d (%s)\n", level, node->getName());
 	cleanup();
 	if(previous)
 		delete previous;
-	printf("done.\n");
 }
 
 void TreeBrowserState :: cleanup()
@@ -58,7 +57,6 @@ void TreeBrowserState :: cleanup()
  */
 void TreeBrowserState :: do_refresh()
 {
-//	printf("RefreshIn.");
     if(!(browser->window)) {
         printf("INTERNAL ERROR: NO WINDOW TO DO REFRESH ON!!\n");
         return;
@@ -114,21 +112,16 @@ void TreeBrowserState :: draw()
 		return;
 	}
 
-    browser->window->set_color(11);
     browser->window->set_background(0);
-    browser->window->getScreen()->move_cursor(0, browser->window->getScreen()->get_size_y()-1);
-    browser->window->getScreen()->output_fixed_length(browser->path->get_path(), 0, browser->window->get_size_x()-9);
-
-    //	printf("Draw. First=%d. Selected_line=%d. Number of el=%d\n", first_item_on_screen, selected_line, children->get_elements());
-//	printf("Window = %p. WindowBase: %p\n", browser->window, browser->window->get_pointer());
-	// this functions initializes the screen
-    browser->window->set_color(browser->user_interface->color_fg);
     browser->window->reverse_mode(0);
+    if (browser->has_path) {
+        browser->window->getScreen()->set_status(browser->path->get_path(), browser->user_interface->color_status);
+    }
 
     if(children->get_elements() == 0) {
 		browser->window->clear();
     	browser->window->move_cursor(0, 0);
-    	browser->window->output("\eE< No Items >");
+    	browser->window->output("\es< No Items >"); // FIXME
     	under_cursor = NULL;
     	return;
     }
@@ -162,12 +155,15 @@ void TreeBrowserState :: draw_item(Browsable *t, int line, bool selected)
     if (t) {
 		if (selected) {
 			browser->window->set_color(browser->user_interface->color_sel);
+            browser->window->reverse_mode(browser->user_interface->reverse_sel);
             browser->window->set_background(browser->user_interface->color_sel_bg);
 		} else if(t->isSelectable()) {
 			browser->window->set_color(browser->user_interface->color_fg);
+            browser->window->reverse_mode(0);
             browser->window->set_background(0);
 		} else { // non selectable item
-			browser->window->set_color(12); // TODO
+            browser->window->reverse_mode(0);
+			browser->window->set_color(browser->user_interface->color_inactive);
 		}
 		int squeeze_type = browser->user_interface->filename_overflow_squeeze;
 		t->getDisplayString(buffer, browser->window->get_size_x(), squeeze_type);
@@ -175,6 +171,7 @@ void TreeBrowserState :: draw_item(Browsable *t, int line, bool selected)
         browser->window->set_background(0);
     } else {
 		// draw an empty line
+        browser->window->reverse_mode(0);
 		browser->window->output_line("");
     }
 }
@@ -339,7 +336,7 @@ void TreeBrowserState :: level_up(void)
     delete this;
 }
 
-void TreeBrowserState :: select(void)
+void TreeBrowserState :: select_one(void)
 {
 	if(!under_cursor)
 		return;

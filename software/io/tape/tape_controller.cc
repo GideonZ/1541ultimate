@@ -5,8 +5,15 @@
 #include "menu.h"
 #include "filemanager.h"
 #include "c64.h"
+#include "init_function.h"
 
 TapeController *tape_controller = NULL; // globally static
+static void init_tape_controller(void *_a, void *_b)
+{
+    if(getFpgaCapabilities() & CAPAB_C2N_STREAMER)
+	    tape_controller = new TapeController;
+}
+InitFunction tape_playback_init("Tape Playback Controller", init_tape_controller, NULL, NULL, 60);
 
 #define MENU_C2N_PAUSE         0x3201
 #define MENU_C2N_RESUME        0x3202
@@ -26,6 +33,8 @@ TapeController :: TapeController() : SubSystem(SUBSYSID_TAPE_PLAYER)
 {
     fm = FileManager :: getFileManager();
     register_store(0x54415045, "Tape Settings", tape_config);
+    cfg->set_sort_order(SORT_ORDER_CFG_TAPE);
+    
     file = NULL;
 	paused = 0;
 	recording = 0;
@@ -34,7 +43,7 @@ TapeController :: TapeController() : SubSystem(SUBSYSID_TAPE_PLAYER)
 	stop();
 	taskHandle = 0;
 	if (getFpgaCapabilities() & CAPAB_C2N_STREAMER) {
-		xTaskCreate( TapeController :: poll_static, "TapePlayer", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, &taskHandle );
+		xTaskCreate( TapeController :: poll_static, "TapePlayer", configMINIMAL_STACK_SIZE, this, PRIO_REALTIME, &taskHandle );
 }
 	}
 
@@ -79,7 +88,7 @@ void TapeController :: create_task_items(void)
     myActions.stop->hide();
 }
 
-void TapeController :: update_task_items(bool writablePath, Path *path)
+void TapeController :: update_task_items(bool writablePath)
 {
     if(!file)
         return;
@@ -223,7 +232,7 @@ void TapeController :: poll()
 	}
 }
 	
-int TapeController :: executeCommand(SubsysCommand *cmd)
+SubsysResultCode_e TapeController :: executeCommand(SubsysCommand *cmd)
 {
 	switch(cmd->functionID) {
 		case MENU_C2N_PAUSE:
@@ -244,7 +253,7 @@ int TapeController :: executeCommand(SubsysCommand *cmd)
 		default:
 			break;
 	}
-	return 0;
+	return SSRET_OK;
 }
 
 void TapeController :: set_file(File *f, uint32_t len, int m, int offset)
@@ -260,3 +269,4 @@ void TapeController :: set_file(File *f, uint32_t len, int m, int offset)
 	file->seek((uint32_t)offset);
 	block = 512 - (offset & 0x1FF);
 }
+

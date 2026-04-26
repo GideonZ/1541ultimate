@@ -64,8 +64,12 @@ begin
     begin
         wait for 1 ns;
         bind_mem_model("dram", mem);
-        load_memory("../../../../target/software/riscv32_u2_boot2/result/boot2.bin", mem, X"00001000");
-        load_memory("../../../../target/software/riscv32_u2_ultimate/result/ultimate.bin", mem, X"00010000");
+        load_memory("../../../../target/u64ii/riscv/test/result/u64ii_test.bin", mem, X"00030000");
+        --load_memory("../../../../target/software/riscv32_u2_boot2/result/boot2.bin", mem, X"00001000");
+        --load_memory("../../../../target/software/riscv32_u2_ultimate/result/ultimate.bin", mem, X"00010000");
+        wait for 80 us;
+        write_memory_32(mem, X"0000FFF8", X"00030000");
+        write_memory_32(mem, X"0000FFFC", X"1571babe");
         wait;
     end process;
 
@@ -80,14 +84,26 @@ begin
             if io_req.read = '1' then
                 io_resp.ack <= '1';
                 case io_req.address is
+                when X"00000F" => -- Capabilities
+                    io_resp.data <= X"02"; -- Drive 1
                 when X"00000C" => -- Capabilities
-                    io_resp.data <= X"02";
+                    io_resp.data <= X"80"; -- Simulation
                 when X"000012" => -- UART_FLAGS
                     io_resp.data <= X"40";
                 when X"02000A" => -- 1541_A memmap
                     io_resp.data <= X"3F";
                 when X"02000B" => -- 1541_A audiomap
                     io_resp.data <= X"3E";
+                when X"100104" => -- DDR2 calibration DQS readback
+                    io_resp.data <= X"55";                    
+                when X"100105" => -- DDR2 calibration DQS readback
+                    io_resp.data <= X"55";                    
+                when X"100106" => -- DDR2 calibration DQS readback
+                    io_resp.data <= X"55";                    
+                when X"100107" => -- DDR2 calibration DQS readback
+                    io_resp.data <= X"55";                    
+                when X"10010C" => -- DDR2 calibration control reg readback (dummy)
+                    io_resp.data <= X"09";                    
                 when others =>
                     report "I/O read to " & hstr(io_req.address) & " dropped";
                     io_resp.data <= X"00";

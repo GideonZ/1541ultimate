@@ -13,13 +13,14 @@ typedef void (*initFunction_t)(void *object, void *param);
 #include "indexed_list.h"
 
 class InitFunction {
+    const char *name;
 	initFunction_t function;
 	void *object;
 	void *param;
 	int   ordering;
 	static int compare(IndexedList<InitFunction *> *list, int a, int b);
 public:
-    InitFunction(initFunction_t func, void *obj, void *prm, int ord = 0);
+    InitFunction(const char *name, initFunction_t func, void *obj, void *prm, int ord = 0);
 	virtual ~InitFunction();
 	static void executeAll();
 };

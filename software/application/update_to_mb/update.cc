@@ -413,7 +413,7 @@ int main()
         console_print(screen, "\n\n\n\n\n\n\n\n");
     }
 	console_print(screen, "\nConfiguring Flash write protection..\n");
-	flash->protect_configure();
+	flash->protect_configure(1024);
 	flash->protect_enable();
 
 	if (!virgin) {

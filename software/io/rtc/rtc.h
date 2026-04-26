@@ -10,21 +10,9 @@
 -- Title      : rtc.h
 -------------------------------------------------------------------------------
 */
-#include "integer.h"
+#include <stdint.h>
 #include "config.h"
 #include "iomap.h"
-
-
-#define RTC_TIMER_HUNDREDTHS *((volatile uint8_t *)(RTC_TIMER_BASE + 0x07))
-#define RTC_TIMER_SECONDS    *((volatile uint8_t *)(RTC_TIMER_BASE + 0x06))
-#define RTC_TIMER_MINUTES    *((volatile uint8_t *)(RTC_TIMER_BASE + 0x05))
-#define RTC_TIMER_HOURS      *((volatile uint8_t *)(RTC_TIMER_BASE + 0x04))
-#define RTC_TIMER_WEEKDAYS   *((volatile uint8_t *)(RTC_TIMER_BASE + 0x03))
-#define RTC_TIMER_DAYS       *((volatile uint8_t *)(RTC_TIMER_BASE + 0x02))
-#define RTC_TIMER_MONTHS     *((volatile uint8_t *)(RTC_TIMER_BASE + 0x01))
-#define RTC_TIMER_YEARS      *((volatile uint8_t *)(RTC_TIMER_BASE + 0x00))
-#define RTC_TIMER_LOCK       *((volatile uint8_t *)(RTC_TIMER_BASE + 0x0C))
-#define RTC_TIMER_FAT_TIME   *((volatile uint32_t *)(RTC_TIMER_BASE + 0x08))
 
 class RtcConfigStore : public ConfigStore
 {
@@ -50,7 +38,8 @@ private:
 public:
 	Rtc();
 	~Rtc();
-
+	void init(void);
+	
 	bool is_valid(void);
 	int  get_correction(void);
 	void get_time_from_chip(void);
@@ -58,6 +47,7 @@ public:
 
 	void get_time(int &y, int &M, int &D, int &wd, int &h, int &m, int &s);
 	void set_time(int y, int M, int D, int wd, int h, int m, int s);
+    void set_time_utc(int seconds);
 	const char* get_time_string(char *dest, int len);
 	const char* get_date_string(char *dest, int len);
 	const char* get_long_date(char *dest, int len);

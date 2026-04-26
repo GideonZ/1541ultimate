@@ -7,8 +7,10 @@
 class FileTypeSID : public FileType
 {
 	FileManager *fm;
-	BrowsableDirEntry *node;
 	SubsysCommand *cmd;
+	mstring path_string;
+	mstring file_string;
+	mstring ssl_filename;
 
 	File *file;
 	uint8_t sid_header[0x80];
@@ -25,12 +27,12 @@ class FileTypeSID : public FileType
 	bool mus_file;
 	bool sid_file;
 
-	int prepare(bool);
+	SubsysResultCode_e prepare(bool);
 	void load(void);
 	int loadFile(File *file, int offset);
 	bool tryLoadStereoMus(int offset);
-    int execute(SubsysCommand *cmd);
-    static int execute_st(SubsysCommand *cmd);
+    SubsysResultCode_e execute(SubsysCommand *cmd);
+    static SubsysResultCode_e execute_st(SubsysCommand *cmd);
     int readHeader(void);
 	void processHeader(void);
 	int createMusHeader(void);
@@ -40,10 +42,13 @@ class FileTypeSID : public FileType
     bool ConfigSIDs(void);
 public:
     FileTypeSID(BrowsableDirEntry *n);
+	FileTypeSID(const char *filename, const char *sslfile, bool mus);
+
     ~FileTypeSID();
 
     int fetch_context_items(IndexedList<Action *> &list);
     static FileType *test_type(BrowsableDirEntry *obj);
+	static SubsysResultCode_e play_file(const char *filename, const char *sslfile, int song);
 };
 
 #endif

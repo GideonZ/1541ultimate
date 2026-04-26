@@ -4824,18 +4824,85 @@ FRESULT f_getfree (
 
 					clst = fs->n_fatent - 2;	/* Number of clusters */
 					sect = fs->bitbase;			/* Bitmap sector */
-					i = 0;						/* Offset in the sector */
-					do {	/* Counts numbuer of bits with zero in the bitmap */
-						if (i == 0) {
-							res = move_window(fs, sect++);
-							if (res != FR_OK) break;
+
+					/* Prepare a lookup table to speed up free cluster calculation */
+					BYTE lookup[256];
+					BYTE num_zero_bits;
+					for (i = 0; i < 256; ++i) {
+						num_zero_bits = 0;
+						for (b = 0x01; b < 0xff; b <<= 1) {
+							if (!(i&b)) {
+								++num_zero_bits;
+							}
 						}
-						for (b = 8, bm = fs->win[i]; b && clst; b--, clst--) {
-							if (!(bm & 1)) nfree++;
-							bm >>= 1;
+						lookup[i] = num_zero_bits;
+					}
+
+					/* Determine how many clusters and sectors fit in the full buffer */
+					BYTE *buf = fs->win;
+					UINT buf_sz = sizeof(fs->win);
+					UINT sector_size = SS(fs);
+					UINT sector_clusters = sector_size * 8;
+					UINT buf_sectors = buf_sz / sector_size;
+					UINT buf_clusters = buf_sectors * sector_clusters;
+					UINT sectors;
+					UINT clusters;
+					BYTE *bitmap;
+#if !FF_FS_READONLY
+					/* Flush the window buffer (we will read into the buffer directly) */
+					res = sync_window(fs);
+#endif
+					/* Count number of zero-bits in the bitmap */
+					while (res == FR_OK && clst > 0) {
+						/* Determine how many sectors to read */
+						if (clst >= buf_clusters) {
+							clusters = buf_clusters;
+							sectors = buf_sectors;
 						}
-						i = (i + 1) % SS(fs);
-					} while (clst);
+						else {
+							clusters = clst;
+							if (clst == sector_clusters) {
+								sectors = 1;
+							}
+							else {
+								sectors = (clst / sector_clusters) + 1;
+							}
+						}
+
+						/* Load up the next part of the bitmap into the buffer */
+						if (disk_read(fs->pdrv, buf, sect, sectors) != RES_OK) {
+							res = FR_INT_ERR;
+							break;
+						}
+
+						/* Update position for next (if any) iteration */
+						clst -= clusters;
+						sect += sectors;
+
+						/* Process buffered bitmap using a slighly unrolled loop */
+						bitmap = buf;
+						while (clusters >= 8*4) {
+							nfree += lookup[*bitmap++];
+							nfree += lookup[*bitmap++];
+							nfree += lookup[*bitmap++];
+							nfree += lookup[*bitmap++];
+							clusters -= 8*4;
+						}
+						while (clusters >= 8) {
+							nfree += lookup[*bitmap++];
+							clusters -= 8;
+						}
+						if (clusters > 0) {
+							/* Mask out bits outside the covered bitmap and process the last clusters */
+							bm = (0xff00 >> (8 - clusters)) & 0xff;
+							nfree += lookup[(*bitmap) | bm];
+						}
+					}
+
+					/* Make sure the window buffer has valid data again */
+					if (res == FR_OK) {
+						res = move_window(fs, 0);	/* Read first sector on disk */
+					}
 				} else
 #endif
 				{	/* FAT16/32: Scan WORD/DWORD FAT entries */

@@ -35,7 +35,7 @@ OUTPUT_FP = $(shell pwd)/$(OUTPUT)
 
 PATH_SW  =  ../../../../software
 
-LWIP ?= lwip-1.4.1
+LWIP ?= lwip
 
 VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/application/ultimate \
@@ -66,8 +66,11 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/io/uart \
 			$(PATH_SW)/io/wifi \
 			$(PATH_SW)/io/acia \
+			$(PATH_SW)/api \
+			$(PATH_SW)/httpd/c-version/lib \
 			$(PATH_SW)/network/config \
 			$(PATH_SW)/io/iec \
+			$(PATH_SW)/io/printer \
 			$(PATH_SW)/6502 \
 			$(PATH_SW)/ModPlayer_16k \
 			$(PATH_SW)/chan_fat/ff14/source \
@@ -79,6 +82,8 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/$(LWIP)/src/include/ipv4 \
 			$(PATH_SW)/$(LWIP)/src/include/posix/sys \
 			$(PATH_SW)/$(LWIP)/src/include/posix \
+			$(PATH_SW)/$(LWIP)/src/include/compat/posix/sys \
+			$(PATH_SW)/$(LWIP)/src/include/compat/posix \
 			$(ROMS)
 
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))

@@ -30,7 +30,7 @@ static void echo_run()
 	sLocalAddr.sin_family = AF_INET;
 	sLocalAddr.sin_len = sizeof(sLocalAddr);
 	sLocalAddr.sin_addr.s_addr = 0L; //htonl(IP_ADDR_ANY);
-	sLocalAddr.sin_port = 23;
+	sLocalAddr.sin_port = htons(23);
 
 	if (lwip_bind(lSocket, (struct sockaddr *)&sLocalAddr, sizeof(sLocalAddr)) < 0) {
 		lwip_close(lSocket);
@@ -52,7 +52,7 @@ static void echo_run()
 		int nbytes;
 
 		clientfd = lwip_accept(lSocket, (struct sockaddr*)&client_addr, (socklen_t *)&addrlen);
-		if (clientfd > 0) {
+		if (clientfd >= 0) {
 			puts("Accepted Echo Connection");
 
 /*

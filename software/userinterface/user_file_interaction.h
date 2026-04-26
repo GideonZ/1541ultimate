@@ -24,13 +24,13 @@ class UserFileInteraction : public SubSystem, ObjectWithMenu {
 	Action *mkdir;
 
 public:
-	static int S_enter(SubsysCommand *cmd);
-	static int S_rename(SubsysCommand *cmd);
-	static int S_delete(SubsysCommand *cmd);
-	static int S_view(SubsysCommand *cmd);
-	static int S_hex_view(SubsysCommand *cmd);
-	static int S_createDir(SubsysCommand *cmd);
-	static int S_runApp(SubsysCommand *cmd);
+	static SubsysResultCode_e S_enter(SubsysCommand *cmd);
+	static SubsysResultCode_e S_rename(SubsysCommand *cmd);
+	static SubsysResultCode_e S_delete(SubsysCommand *cmd);
+	static SubsysResultCode_e S_view(SubsysCommand *cmd);
+	static SubsysResultCode_e S_hex_view(SubsysCommand *cmd);
+	static SubsysResultCode_e S_createDir(SubsysCommand *cmd);
+	static SubsysResultCode_e S_runApp(SubsysCommand *cmd);
 
 	static UserFileInteraction *getUserFileInteractionObject(void) {
 		static UserFileInteraction u;
@@ -42,7 +42,7 @@ public:
 
 	// object with menu
 	void create_task_items(void);
-	void update_task_items(bool writablePath, Path *path);
+	void update_task_items(bool writablePath);
 
 	int fetch_context_items(BrowsableDirEntry *br, IndexedList<Action *> &list);
 };

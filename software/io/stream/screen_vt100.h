@@ -39,6 +39,9 @@ public:
 
     // Synchronization
     void sync(void);
+
+    // VT100 specific
+    void restore_terminal(void);
 };
 
 #endif /* IO_STREAM_SCREEN_VT100_H_ */

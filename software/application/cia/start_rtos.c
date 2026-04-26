@@ -98,7 +98,7 @@ int main(int argc, char *argv[])
 
     ioWrite8(UART_DATA, 0x33);
 
-    xTaskCreate( main_task, "Tester Main", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL );
+    xTaskCreate( main_task, "Tester Main", configMINIMAL_STACK_SIZE, NULL, PRIO_MAIN, NULL );
 
     ioWrite8(UART_DATA, 0x34);
 
