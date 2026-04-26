@@ -595,10 +595,13 @@ int UserInterface :: path_box(char *buffer, int maxlen)
 }
 #endif
 
-int UserInterface :: string_edit(char *buffer, int maxlen, Window *w, int x, int y)
+int UserInterface :: string_edit(char *buffer, int maxlen, Window *w, int x, int y, int max_chars)
 {
     UIStringEdit *edit = new UIStringEdit(buffer, maxlen);
-    edit->init(w, keyboard, x, y, maxlen); // maybe the max len should be limited by the window!
+    if (max_chars <= 0) {
+        max_chars = w->get_size_x()-x;
+    }
+    edit->init(w, keyboard, x, y, max_chars); 
     screen->cursor_visible(1);
     int ret = 0;
     while(!ret && host->exists()) {

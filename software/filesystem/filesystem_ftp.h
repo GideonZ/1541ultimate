@@ -101,6 +101,13 @@ public:
 
     FTPServer(CachedTreeNode *par, const char *alias, const char *host, const char *port_str,
               const char *user, const char *passw, const char *folder);
+    
+    void drop_connection(void) {
+        FileSystemFTP *fs = (FileSystemFTP *)(get_file_info()->fs);
+        if (fs) {
+            fs->drop_connection();
+        }
+    }
 };
 
 class FileSystemFTP : public FileSystem

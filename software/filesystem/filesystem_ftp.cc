@@ -655,6 +655,9 @@ SubsysResultCode_e BrowsableFTPServer :: S_edit(SubsysCommand *cmd)
             }
 
             // OK!
+            FileManager :: getFileManager()->invalidate(serv);
+            serv->drop_connection();
+
             serv->alias  = alias->get_string();
             serv->host   = host->get_string();
             serv->port   = strtol(port->get_string(), NULL, 10);
@@ -665,7 +668,7 @@ SubsysResultCode_e BrowsableFTPServer :: S_edit(SubsysCommand *cmd)
                 serv->port = 21;
             }
             ftp_root->save_servers();
-            // FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/ftp", "");
+            FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/ftp", "");
             break;
         } else { // some other code
             break;

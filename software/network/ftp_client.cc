@@ -214,6 +214,14 @@ void FTPClient::disconnect()
     response_code = 0;
 }
 
+bool FTPClient::is_connected()
+{
+    if (ctrl_fd < 0) {
+        return false;
+    }
+    return (pwd(NULL, 0) == 0);
+}
+
 int FTPClient::cwd(const char *path)
 {
     int code = send_cmd("CWD", path);
@@ -225,6 +233,9 @@ int FTPClient::pwd(char *buf, int bufsize)
     int code = send_cmd("PWD");
     if (code != 257) {
         return -1;
+    }
+    if (!bufsize) {
+        return 0; // don't look at the path itself
     }
     // Parse "257 "/path" ..."
     char *start = strchr(response, '"');

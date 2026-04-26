@@ -25,7 +25,7 @@ public:
     int open(const char *host, uint16_t port);
     int login(const char *user, const char *pass);
     void disconnect();
-    bool is_connected() { return ctrl_fd >= 0; }
+    bool is_connected();
 
     int cwd(const char *path);
     int pwd(char *buf, int bufsize);

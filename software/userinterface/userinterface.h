@@ -98,7 +98,7 @@ public:
     virtual int  choice(const char *msg, const char **choices, int count);
     virtual int  string_box(const char *msg, char *buffer, int maxlen); // blocking
     int  path_box(char *buffer, int maxlen); // blocking, visual path picker
-    virtual int  string_edit(char *buffer, int maxlen, Window *w, int x, int y);
+    virtual int  string_edit(char *buffer, int maxlen, Window *w, int x, int y, int max_chars=0);
     virtual void show_progress(const char *msg, int steps); // not blocking
     virtual void update_progress(const char *msg, int steps); // not blocking
     virtual void hide_progress(void); // not blocking (of course)
