@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """Measure managed Temp upload latency with auto cleanup and subfolders toggled.
 
-The benchmark uploads the same small attachment-backed payload via native HTTP in two
+The benchmark uploads the same small attachment-backed payload via HTTP in two
 timed stages against the same Ultimate 64: first with Temp auto cleanup and
-Temp subfolders enabled, then after a 5-second wait with both disabled. Each stage starts from an
-empty managed Temp area,
-records upload latency samples, and asserts that the resulting managed upload
-count matches the expected cleanup behavior.
+Temp subfolders enabled, then with both disabled. Each stage starts from an
+empty managed Temp area, records upload latency samples, and asserts 
+that the resulting managed uploadcount matches the expected cleanup behavior.
 """
 
 import argparse
