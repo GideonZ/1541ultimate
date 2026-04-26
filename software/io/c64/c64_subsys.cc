@@ -30,6 +30,33 @@
 extern uint8_t _bootcrt_65_start;
 extern uint8_t _bootcrt_65_end;
 
+static bool contains_path_separator(const char *name)
+{
+    while (*name) {
+        if ((*name == '/') || (*name == '\\')) {
+            return true;
+        }
+        name++;
+    }
+    return false;
+}
+
+static void format_bootcrt_display_name(const char *name, char *display_name)
+{
+    const int kDisplayChars = 16;
+    const int kTrimmedTailChars = 13;
+    int length = strlen(name);
+
+    if ((length <= kDisplayChars) || !contains_path_separator(name)) {
+        strcpy(display_name, name);
+        return;
+    }
+
+    memcpy(display_name, "...", 3);
+    memcpy(display_name + 3, name + length - kTrimmedTailChars, kTrimmedTailChars);
+    display_name[kDisplayChars] = 0;
+}
+
 cart_def boot_cart; // static => initialized with all zeros.
 
 static void initBootCart(void *object, void *param)
@@ -563,8 +590,11 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
 
     C64_POKE(C64_BOOTCRT_DOSYNC, (c64->cfg->get_value(CFG_C64_DO_SYNC) == 1) ? 1 : 0);
 
+    char display_name[17];
+    format_bootcrt_display_name(name, display_name);
+
     CbmFileName cbm;
-    cbm.init(name);
+    cbm.init(display_name);
     const char *p = cbm.getName();
     for(int i=0; i<16; i++) {
         C64_POKE(C64_BOOTCRT_NAME+i, p[i]);
