@@ -499,6 +499,7 @@ FRESULT FTPRootNode :: save_servers()
 {
     File *fo;
     FileManager *fm = FileManager :: getFileManager();
+    fm->create_dir(CFG_FILEPATH);
     FRESULT fres = fm->fopen(CFG_FILEPATH, FTP_SERVERS, FA_WRITE | FA_OPEN_ALWAYS, &fo);
     if (fres != FR_OK) {
         return fres;
