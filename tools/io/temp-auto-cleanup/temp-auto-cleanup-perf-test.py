@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""Measure managed Temp upload latency with auto cleanup enabled and disabled.
+"""Measure managed Temp upload latency with auto cleanup and subfolders toggled.
 
 The benchmark uploads the same small attachment-backed payload via native HTTP in two
-timed stages against the same Ultimate 64: first with Temp auto cleanup enabled,
-then with it disabled. Each stage starts from an empty managed Temp area,
+timed stages against the same Ultimate 64: first with Temp auto cleanup and
+Temp subfolders enabled, then after a 5-second wait with both disabled. Each stage starts from an
+empty managed Temp area,
 records upload latency samples, and asserts that the resulting managed upload
 count matches the expected cleanup behavior.
 """
 
 import argparse
+from collections import deque
 import ftplib
 import http.client
 import json
@@ -24,13 +26,18 @@ CONFIG_ITEMS = (
     ("Temp%20Auto%20Cleanup", "Temp Auto Cleanup"),
     ("Temp%20Subfolders", "Temp Subfolders"),
 )
+DEFAULT_STAGE_MODE = "both"
 FTP_DEFAULT_PASSWORD = "password"
 FTP_USER = "user"
-MANAGED_UPLOAD_PATHS = ("/Temp/cache/upload", "/Temp/upload")
-MAX_DISABLED_TOTAL_UPLOADS = 100
+FTP_TIMEOUT_SECONDS = 30
+MANAGED_UPLOAD_PATHS = ("/Temp/cache/upload", "/Temp/upload", "/Temp")
+MAX_DISABLED_TOTAL_UPLOADS = 1000
 MEASURE_PROGRESS_INTERVAL = 100
 MEMORY_START_ADDRESS = 0x0400
 PAYLOAD_SIZE = 1024
+ROLLING_WINDOW_SECONDS = 1
+VERIFY_POLL_INTERVAL_SECONDS = 0.5
+VERIFY_TIMEOUT_SECONDS = 45.0
 WRITEMEM_PATH = f"/v1/machine:writemem?address={MEMORY_START_ADDRESS:04X}"
 WARMUP_PROGRESS_INTERVAL = 25
 
@@ -38,6 +45,12 @@ WARMUP_PROGRESS_INTERVAL = 25
 def require_toggle_value(flag, value):
     if value not in ("Enabled", "Disabled"):
         raise argparse.ArgumentTypeError(f"{flag} expects Enabled or Disabled")
+    return value
+
+
+def require_stage_mode(flag, value):
+    if value not in ("enabled", "disabled", DEFAULT_STAGE_MODE):
+        raise argparse.ArgumentTypeError(f"{flag} expects enabled, disabled, or {DEFAULT_STAGE_MODE}")
     return value
 
 
@@ -59,10 +72,10 @@ def format_percent(value):
     return f"{value:.2f}%"
 
 
-def managed_upload_dir(subfolder):
+def managed_upload_dirs(subfolder):
     if subfolder == "Enabled":
-        return "/Temp/cache/upload"
-    return "/Temp/upload"
+        return ("/Temp/cache/upload", "/Temp/upload")
+    return ("/Temp", "/Temp/upload")
 
 
 def assert_or_warn(assertions_enabled, condition, message):
@@ -152,7 +165,7 @@ class ManagedTempInspector:
         self.password = password or FTP_DEFAULT_PASSWORD
 
     def _open(self):
-        ftp = ftplib.FTP(self.host, timeout=10)
+        ftp = ftplib.FTP(self.host, timeout=FTP_TIMEOUT_SECONDS)
         ftp.login(FTP_USER, self.password)
         return ftp
 
@@ -163,13 +176,25 @@ class ManagedTempInspector:
             ftp.close()
 
     def _list_current_directory(self, ftp):
+        lines = []
         try:
-            names = ftp.nlst()
+            ftp.dir(lines.append)
         except ftplib.error_perm as exc:
             if str(exc).startswith("550"):
                 return []
             raise
-        return sorted(name for name in names if name not in (".", ".."))
+
+        names = []
+        for line in lines:
+            parts = line.split(maxsplit=8)
+            if len(parts) < 9:
+                continue
+            if parts[0].startswith("d"):
+                continue
+            name = parts[8]
+            if name not in (".", ".."):
+                names.append(name)
+        return sorted(names)
 
     def list_files(self, directory):
         ftp = self._open()
@@ -209,7 +234,7 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description=(
             "Benchmark attachment-backed 1 KiB screen-memory writes on a real Ultimate 64 with "
-            "Temp auto cleanup enabled first and disabled second."
+            "Temp auto cleanup and Temp subfolders enabled first, then both disabled after a 5-second wait."
         ),
         epilog=(
             "Before each stage the managed Temp upload area is purged and verified "
@@ -217,7 +242,7 @@ def parse_args():
             "files and that the resulting managed file count matches the active "
             "cleanup mode. Each request writes 1 KiB starting at $0400 via POST "
             "/v1/machine:writemem with an application/octet-stream body. The "
-            "original Temp settings are restored before exit."
+            "original Temp settings are restored before exit unless --no-config-change is used."
         ),
     )
     parser.add_argument("-H", "--host", default="u64", help="IP or hostname of the U64")
@@ -243,8 +268,19 @@ def parse_args():
     parser.add_argument(
         "--duration",
         type=float,
-        default=15.0,
+        default=20.0,
         help="Measured seconds per stage",
+    )
+    parser.add_argument(
+        "--stage",
+        type=lambda value: require_stage_mode("--stage", value),
+        default=DEFAULT_STAGE_MODE,
+        help="Select enabled, disabled, or both stages (default: both)",
+    )
+    parser.add_argument(
+        "--no-config-change",
+        action="store_true",
+        help="Do not change or restore Temp config settings; requires a single selected stage",
     )
     parser.add_argument(
         "--max-disabled-total-uploads",
@@ -258,8 +294,8 @@ def parse_args():
     parser.add_argument(
         "--subfolder",
         type=lambda value: require_toggle_value("--subfolder", value),
-        default="Enabled",
-        help="Temp Subfolders setting used for both stages",
+        default=None,
+        help="Override Temp Subfolders for both stages; default follows each stage setting",
     )
     parser.add_argument("-l", "--limit", type=int, default=10, help=argparse.SUPPRESS)
     parser.add_argument(
@@ -282,6 +318,8 @@ def parse_args():
         parser.error("--max-disabled-total-uploads must be > 0")
     if args.seed_count >= args.max_disabled_total_uploads:
         parser.error("--seed-count must be less than --max-disabled-total-uploads")
+    if args.no_config_change and args.stage == DEFAULT_STAGE_MODE:
+        parser.error("--no-config-change requires --stage enabled or --stage disabled")
     return args
 
 
@@ -366,6 +404,41 @@ def emit_progress(prefix, current, total=None, elapsed=None):
     sys.stdout.flush()
 
 
+def emit_rolling_window_stats(total_uploads, elapsed, window_latencies_ms):
+    if not window_latencies_ms:
+        return
+
+    window_count = len(window_latencies_ms)
+    rps = window_count / ROLLING_WINDOW_SECONDS
+    print(
+        f"files={total_uploads} t={elapsed:.1f}s "
+        f"5s p50={format_ms(percentile(window_latencies_ms, 50))} "
+        f"p90={format_ms(percentile(window_latencies_ms, 90))} "
+        f"p99={format_ms(percentile(window_latencies_ms, 99))} "
+        f"rps={format_rps(rps)}"
+    )
+
+
+def count_managed_files(inspector, directories):
+    total = 0
+    counts = []
+    seen = set()
+
+    for directory in directories:
+        if directory in seen:
+            continue
+        seen.add(directory)
+        file_count = len(inspector.list_files(directory))
+        total += file_count
+        counts.append((directory, file_count))
+
+    return total, counts
+
+
+def format_managed_counts(counts):
+    return ", ".join(f"{directory}={count}" for directory, count in counts)
+
+
 def summarize_stage(name, warmup_count, duration_seconds, latencies_ms, managed_file_count):
     if not latencies_ms:
         raise RuntimeError(f"No latency samples collected for {name}")
@@ -388,21 +461,31 @@ def summarize_stage(name, warmup_count, duration_seconds, latencies_ms, managed_
     )
 
 
-def wait_for_expected_file_count(inspector, directory, predicate, description, assertions_enabled):
-    deadline = time.monotonic() + 8.0
-    last_seen = len(inspector.list_files(directory))
+def wait_for_expected_file_count(inspector, directories, predicate, description, assertions_enabled):
+    deadline = time.monotonic() + VERIFY_TIMEOUT_SECONDS
+    last_seen, last_counts = count_managed_files(inspector, directories)
 
     while time.monotonic() < deadline:
         if predicate(last_seen):
             return last_seen
-        time.sleep(0.25)
-        last_seen = len(inspector.list_files(directory))
+        time.sleep(VERIFY_POLL_INTERVAL_SECONDS)
+        try:
+            last_seen, last_counts = count_managed_files(inspector, directories)
+        except (OSError, EOFError, ftplib.Error) as exc:
+            if time.monotonic() >= deadline:
+                message = f"{description} (last FTP error: {exc})"
+                assert_or_warn(assertions_enabled, False, message)
+                return last_seen
 
-    assert_or_warn(assertions_enabled, False, f"{description} (observed {last_seen})")
+    assert_or_warn(
+        assertions_enabled,
+        False,
+        f"{description} (observed {last_seen}; {format_managed_counts(last_counts)})",
+    )
     return last_seen
 
 
-def prepare_stage(inspector, upload_dir, stage_name, assertions_enabled):
+def prepare_stage(inspector, upload_dirs, stage_name, assertions_enabled):
     removed = inspector.purge_all()
     if removed:
         print(f"  Purged {removed} existing managed temp files")
@@ -418,19 +501,19 @@ def prepare_stage(inspector, upload_dir, stage_name, assertions_enabled):
         f"{stage_name}: expected empty managed Temp area before stage, found {'; '.join(leftovers)}",
     )
 
-    pre_count = len(inspector.list_files(upload_dir))
+    pre_count, pre_counts = count_managed_files(inspector, upload_dirs)
     assert_or_warn(
         assertions_enabled,
         pre_count == 0,
-        f"{stage_name}: expected 0 managed temp files before stage, found {pre_count}",
+        f"{stage_name}: expected 0 managed temp files before stage, found {pre_count} ({format_managed_counts(pre_counts)})",
     )
 
 
-def verify_stage_results(inspector, upload_dir, cleanup, limit, result, assertions_enabled):
+def verify_stage_results(inspector, upload_dirs, cleanup, limit, result, assertions_enabled):
     if cleanup == "Enabled":
         managed_count = wait_for_expected_file_count(
             inspector,
-            upload_dir,
+            upload_dirs,
             lambda count: 0 < count <= limit,
             f"{result.name}: expected managed temp uploads to exist but stay at or below {limit}",
             assertions_enabled,
@@ -439,7 +522,7 @@ def verify_stage_results(inspector, upload_dir, cleanup, limit, result, assertio
         expected = result.total_uploads
         managed_count = wait_for_expected_file_count(
             inspector,
-            upload_dir,
+            upload_dirs,
             lambda count: count == expected,
             f"{result.name}: expected all {expected} uploaded temp files to remain",
             assertions_enabled,
@@ -465,11 +548,14 @@ def run_stage(
     duration_seconds,
     limit,
     max_total_uploads=None,
+    apply_config=True,
 ):
-    set_temp_settings(client, cleanup, subfolder, allow_warning=not client.assertions_enabled)
-    upload_dir = managed_upload_dir(subfolder)
+    if apply_config:
+        set_temp_settings(client, cleanup, subfolder, allow_warning=not client.assertions_enabled)
+    upload_dirs = managed_upload_dirs(subfolder)
+    upload_dir = upload_dirs[0]
     clear_screen(client)
-    prepare_stage(inspector, upload_dir, name, client.assertions_enabled)
+    prepare_stage(inspector, upload_dirs, name, client.assertions_enabled)
 
     print(f"\n{name}: cleanup {cleanup}, subfolders {subfolder}")
     print(f"  Upload target: {upload_dir}")
@@ -487,23 +573,35 @@ def run_stage(
     latencies_ms = []
     stage_started = time.perf_counter()
     deadline = stage_started + duration_seconds
+    rolling_window = deque()
+    next_window_report = stage_started + ROLLING_WINDOW_SECONDS
 
     while True:
-        latencies_ms.append(post_screen_memory_write(client, frame_counter))
+        latency_ms = post_screen_memory_write(client, frame_counter)
         now = time.perf_counter()
-        if (len(latencies_ms) % MEASURE_PROGRESS_INTERVAL) == 0:
-            emit_progress("Measured", len(latencies_ms), elapsed=now - stage_started)
+        latencies_ms.append(latency_ms)
+        rolling_window.append((now, latency_ms))
+
+        cutoff = now - ROLLING_WINDOW_SECONDS
+        while rolling_window and rolling_window[0][0] < cutoff:
+            rolling_window.popleft()
+
+        if now >= next_window_report:
+            emit_rolling_window_stats(
+                warmup_count + len(latencies_ms),
+                now - stage_started,
+                [sample_latency for _, sample_latency in rolling_window],
+            )
+            next_window_report += ROLLING_WINDOW_SECONDS
         if max_total_uploads is not None and (warmup_count + len(latencies_ms)) >= max_total_uploads:
             break
         if (now >= deadline) and (len(latencies_ms) >= minimum_samples):
             break
 
     actual_duration = time.perf_counter() - stage_started
-    emit_progress("Measured", len(latencies_ms), elapsed=actual_duration)
-    sys.stdout.write("\n")
 
     result = summarize_stage(name, warmup_count, actual_duration, latencies_ms, 0)
-    verify_stage_results(inspector, upload_dir, cleanup, limit, result, client.assertions_enabled)
+    verify_stage_results(inspector, upload_dirs, cleanup, limit, result, client.assertions_enabled)
     return result
 
 
@@ -553,6 +651,30 @@ def print_comparison(enabled, disabled):
     )
 
 
+def stage_specs(args):
+    disabled_subfolder = args.subfolder if args.subfolder is not None else "Disabled"
+    enabled_subfolder = args.subfolder if args.subfolder is not None else "Enabled"
+
+    specs = {
+        "enabled": {
+            "name": "Enabled",
+            "cleanup": "Enabled",
+            "subfolder": enabled_subfolder,
+            "max_total_uploads": None,
+        },
+        "disabled": {
+            "name": "Disabled",
+            "cleanup": "Disabled",
+            "subfolder": disabled_subfolder,
+            "max_total_uploads": args.max_disabled_total_uploads,
+        },
+    }
+
+    if args.stage == DEFAULT_STAGE_MODE:
+        return [specs["enabled"], specs["disabled"]]
+    return [specs[args.stage]]
+
+
 def main():
     args = parse_args()
     client = U64Client(args.host, args.password, not args.no_assertions)
@@ -564,43 +686,43 @@ def main():
     print(f"Target Host: {args.host}")
     print(f"Stage Duration: {args.duration:.3f} s")
     print(f"Minimum Samples Per Stage: {args.test_count}")
+    print(f"Selected Stage Mode: {args.stage}")
+    print(f"Change Config Settings: {'no' if args.no_config_change else 'yes'}")
     print(f"Write Range: ${MEMORY_START_ADDRESS:04X}-${MEMORY_START_ADDRESS + PAYLOAD_SIZE - 1:04X}")
     print(f"Binary Payload Size: {PAYLOAD_SIZE} bytes")
 
     try:
-        initial_settings = capture_initial_settings(client)
-        print("Initial Temp settings")
-        for encoded_key, _ in CONFIG_ITEMS:
-            print(f"  {encoded_key}: {initial_settings[encoded_key]}")
+        if args.no_config_change:
+            print("Skipping initial Temp settings capture because config changes are disabled")
+        else:
+            initial_settings = capture_initial_settings(client)
+            print("Initial Temp settings")
+            for encoded_key, _ in CONFIG_ITEMS:
+                print(f"  {encoded_key}: {initial_settings[encoded_key]}")
 
-        enabled = run_stage(
-            client,
-            inspector,
-            frame_counter,
-            "Enabled",
-            "Enabled",
-            args.subfolder,
-            args.seed_count,
-            args.test_count,
-            args.duration,
-            args.limit,
-        )
-        disabled = run_stage(
-            client,
-            inspector,
-            frame_counter,
-            "Disabled",
-            "Disabled",
-            args.subfolder,
-            args.seed_count,
-            args.test_count,
-            args.duration,
-            args.limit,
-            args.max_disabled_total_uploads,
-        )
-        print_stage_summary(enabled)
-        print_stage_summary(disabled)
-        print_comparison(enabled, disabled)
+        results = []
+        for spec in stage_specs(args):
+            results.append(
+                run_stage(
+                    client,
+                    inspector,
+                    frame_counter,
+                    spec["name"],
+                    spec["cleanup"],
+                    spec["subfolder"],
+                    args.seed_count,
+                    args.test_count,
+                    args.duration,
+                    args.limit,
+                    spec["max_total_uploads"],
+                    apply_config=not args.no_config_change,
+                )
+            )
+
+        for result in results:
+            print_stage_summary(result)
+        if len(results) == 2:
+            print_comparison(results[0], results[1])
         return 0
     except KeyboardInterrupt:
         print("\nStopped.")
@@ -610,7 +732,10 @@ def main():
         return 1
     finally:
         try:
-            restore_initial_settings(client, initial_settings)
+            if args.no_config_change:
+                print("\nLeaving Temp settings unchanged")
+            else:
+                restore_initial_settings(client, initial_settings)
         finally:
             client.close()
 
