@@ -9,6 +9,7 @@ MABI  ?= ilp32
 include ../../../common/environment.mk
 
 PRJ      =  ultimate
+
 FINAL    =  $(RESULT)/$(PRJ).app $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
 
 SRCS_C   =	itu.c \
@@ -93,6 +94,7 @@ SRCS_CC	 =  u2pl_init.cc \
 			size_str.cc \
 			userinterface.cc \
 			ui_elements.cc \
+			form.cc \
 			user_file_interaction.cc \
 			path_picker.cc \
 			editor.cc \

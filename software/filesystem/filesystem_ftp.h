@@ -89,27 +89,6 @@ public:
     }
 };
 
-class FTPServer : public CachedTreeNode
-{
-public:
-    mstring  alias;
-    mstring  host;
-    uint16_t port;
-    mstring  user;
-    mstring  passw;
-    mstring  folder;
-
-    FTPServer(CachedTreeNode *par, const char *alias, const char *host, const char *port_str,
-              const char *user, const char *passw, const char *folder);
-    
-    void drop_connection(void) {
-        FileSystemFTP *fs = (FileSystemFTP *)(get_file_info()->fs);
-        if (fs) {
-            fs->drop_connection();
-        }
-    }
-};
-
 class FileSystemFTP : public FileSystem
 {
     FTPClient *client;
@@ -133,7 +112,6 @@ public:
     FRESULT file_open(const char *filename, uint8_t flags, File **);
     FRESULT file_rename(const char *old_name, const char *new_name);
     FRESULT file_delete(const char *path);
-//    PathStatus_t walk_path(PathInfo &pathInfo);
 };
 
 class FileOnFTP : public File
@@ -192,6 +170,27 @@ public:
 
     FRESULT list(const char *path);
     FRESULT get_entry(FileInfo &info);
+};
+
+class FTPServer : public CachedTreeNode
+{
+public:
+    mstring  alias;
+    mstring  host;
+    uint16_t port;
+    mstring  user;
+    mstring  passw;
+    mstring  folder;
+
+    FTPServer(CachedTreeNode *par, const char *alias, const char *host, const char *port_str,
+              const char *user, const char *passw, const char *folder);
+    
+    void drop_connection(void) {
+        FileSystemFTP *fs = (FileSystemFTP *)(get_file_info()->fs);
+        if (fs) {
+            fs->drop_connection();
+        }
+    }
 };
 
 #endif

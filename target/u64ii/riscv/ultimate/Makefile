@@ -102,6 +102,7 @@ SRCS_CC	 =  u64ii_init.cc \
 			size_str.cc \
 			userinterface.cc \
 			ui_elements.cc \
+			form.cc \
 			user_file_interaction.cc \
 			path_picker.cc \
 			editor.cc \

@@ -693,6 +693,7 @@ SubsysResultCode_e BrowsableFTPServer :: S_remove(SubsysCommand *cmd)
     ftp_root->children.remove(serv);
     ftp_root->save_servers();
     FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/ftp", "");
+    return SSRET_OK;
 }
 
 FTPServer :: FTPServer(CachedTreeNode *par, const char *alias, const char *host, const char *port_str,

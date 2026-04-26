@@ -90,6 +90,7 @@ SRCS_CC	 =	small_printf.cc \
 			size_str.cc \
 			userinterface.cc \
 			ui_elements.cc \
+			form.cc \
 			user_file_interaction.cc \
 			path_picker.cc \
 			editor.cc \
