@@ -456,20 +456,17 @@ FRESULT FileSystemFTP::file_rename(const char *old_name, const char *new_name)
 /* Registration                                              */
 /*************************************************************/
 
-static FileSystemFTP *ftp_fs_instance = NULL;
+FTPRootNode *ftp_root = NULL;
 
 void add_ftp_to_root(void *_context, void *_param)
 {
-    FTPRootNode *node = new FTPRootNode();
-    node->load_servers();
-    FileManager::getFileManager()->add_root_entry(node);
+    ftp_root = new FTPRootNode();
+    ftp_root->load_servers();
+    FileManager::getFileManager()->add_root_entry(ftp_root);
     printf("[FTP-FS] FTP root node added.\n");
 }
 
 InitFunction init_ftp_fs("FTP Filesystem", add_ftp_to_root, NULL, NULL, 31);
-
-#define CFG_FILEPATH "/flash/config"
-#define FTP_SERVERS  "ftp_servers"
 
 void FTPRootNode :: load_servers()
 {
@@ -480,6 +477,37 @@ void FTPRootNode :: load_servers()
         load_servers_impl(fi);
         fm->fclose(fi);
     }
+}
+
+FRESULT FTPRootNode :: save_servers()
+{
+    File *fo;
+    FileManager *fm = FileManager :: getFileManager();
+    FRESULT fres = fm->fopen(CFG_FILEPATH, FTP_SERVERS, FA_WRITE | FA_OPEN_ALWAYS, &fo);
+    if (fres != FR_OK) {
+        return fres;
+    }
+
+    char line[200];
+    for (int i=0; i < children.get_elements(); i++) {
+        FTPServer *serv = (FTPServer *)children[i];
+        const char *user = serv->user.c_str();
+        const char *passw = serv->passw.c_str();
+        const char *folder = serv->folder.c_str();
+        if (!(*user)) user = "~~";
+        if (!(*passw)) passw = "~~";
+        if (!(*folder)) folder = "/";
+
+        int len = snprintf(line, 200, "%s %s %d %s %s %s\n", serv->alias.c_str(),
+                    serv->host.c_str(), serv->port, user, passw, folder);
+        uint32_t _tr;
+        FRESULT fres = fo->write(line, len, &_tr);
+        if (fres != FR_OK) {
+            break;
+        }
+    }
+    fm->fclose(fo);
+    return fres;
 }
 
 void FTPRootNode :: load_servers_impl(File *f)
@@ -517,11 +545,151 @@ void FTPRootNode :: load_servers_impl(File *f)
                     }
                 }
             }
+            for(int i=0;i<6;i++) {
+                if (strcmp(words[i], "~~") == 0) words[i] = "";
+            }
             children.append(new FTPServer(this, words[0], words[1], words[2], words[3], words[4], words[5]));
         }
     }
     delete[] linebuf;
     delete[] buffer;
+}
+
+IndexedList<Browsable *> *BrowsableFTPRoot :: getSubItems(int &error)
+{
+    for(int i=0; i < node->children.get_elements(); i++) {
+        FTPServer *serv = (FTPServer *)node->children[i];
+        FileInfo *inf = new FileInfo(serv->alias.c_str());
+        inf->attrib = AM_DIR;
+        children.append(new BrowsableFTPServer(serv, path, this, inf));
+    }
+    error = 0;
+    return &children;
+}
+
+SubsysResultCode_e BrowsableFTPRoot :: S_new_host(SubsysCommand *cmd)
+{ 
+    UserInterface *cmd_ui = cmd->user_interface;
+
+    FormUI *form = new FormUI(cmd_ui, 38, 12, "Enter New Server", (JSON_Object *)cmd->direct_obj);
+    form->init(cmd_ui->screen, cmd_ui->keyboard);
+
+    do {
+        int ret = cmd_ui->uiobject_modal(form);
+
+        if (ret == MENU_DONE) {
+            JSON_Object *obj = (JSON_Object *)cmd->direct_obj;
+            printf("Result: %d %s\n", ret, obj->render());
+            JSON_String *alias = (JSON_String *)obj->get("Alias");
+            JSON_String *host  = (JSON_String *)obj->get("Host");
+            JSON_String *port  = (JSON_String *)obj->get("Port");
+            JSON_String *user  = (JSON_String *)obj->get("User");
+            JSON_String *passw = (JSON_String *)obj->get("Password");
+            JSON_String *folder= (JSON_String *)obj->get("Path");
+            if (!alias || (alias->get_string()[0] == 0)) {
+                cmd_ui->popup("Alias cannot be empty", BUTTON_OK);
+                continue;
+            }
+            if (!host || (host->get_string()[0] == 0)) {
+                cmd_ui->popup("Hostname cannot be empty", BUTTON_OK);
+                continue;
+            }
+
+            // OK!
+            FTPServer *new_server = new FTPServer(ftp_root, alias->get_string(), host->get_string(), port->get_string(),
+                                                    user->get_string(), passw->get_string(), folder->get_string());
+            ftp_root->children.append(new_server);
+            ftp_root->save_servers();
+            // FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/ftp", "");
+            break;
+        } else { // some other code
+            break;
+        } 
+    } while(1);
+    // Cleanup
+    form->deinit();
+    delete form;
+    return SSRET_OK;
+}
+
+SubsysResultCode_e BrowsableFTPServer :: S_edit(SubsysCommand *cmd)
+{ 
+    UserInterface *cmd_ui = cmd->user_interface;
+    BrowsableFTPServer *bs = (BrowsableFTPServer *)cmd->direct_obj;
+
+    FTPServer *serv = (FTPServer *)ftp_root->find_child(bs->getName());
+    if (!serv) {
+        return SSRET_INTERNAL_ERROR;
+    }
+
+    JSON_Object *fields = JSON::Obj();
+    char portstr[8];
+    sprintf(portstr, "%d", serv->port);
+    fields  ->add("Alias", serv->alias.c_str())
+            ->add("Host",  serv->host.c_str())
+            ->add("Port",  portstr)
+            ->add("User",  serv->user.c_str())
+            ->add("Password", serv->passw.c_str())
+            ->add("Path", serv->folder.c_str());
+
+    FormUI *form = new FormUI(cmd_ui, 38, 12, "Edit FTP Server", fields);
+    form->init(cmd_ui->screen, cmd_ui->keyboard);
+
+    do {
+        int ret = cmd_ui->uiobject_modal(form);
+
+        if (ret == MENU_DONE) {
+            JSON_String *alias = (JSON_String *)fields->get("Alias");
+            JSON_String *host  = (JSON_String *)fields->get("Host");
+            JSON_String *port  = (JSON_String *)fields->get("Port");
+            JSON_String *user  = (JSON_String *)fields->get("User");
+            JSON_String *passw = (JSON_String *)fields->get("Password");
+            JSON_String *folder= (JSON_String *)fields->get("Path");
+            if (!alias || (alias->get_string()[0] == 0)) {
+                cmd_ui->popup("Alias cannot be empty", BUTTON_OK);
+                continue;
+            }
+            if (!host || (host->get_string()[0] == 0)) {
+                cmd_ui->popup("Hostname cannot be empty", BUTTON_OK);
+                continue;
+            }
+
+            // OK!
+            serv->alias  = alias->get_string();
+            serv->host   = host->get_string();
+            serv->port   = strtol(port->get_string(), NULL, 10);
+            serv->user   = user->get_string();
+            serv->passw  = passw->get_string();
+            serv->folder = folder->get_string();
+            if (!serv->port) {
+                serv->port = 21;
+            }
+            ftp_root->save_servers();
+            // FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/ftp", "");
+            break;
+        } else { // some other code
+            break;
+        } 
+    } while(1);
+    // Cleanup
+    form->deinit();
+    delete form;
+    return SSRET_OK;
+}
+
+SubsysResultCode_e BrowsableFTPServer :: S_remove(SubsysCommand *cmd)
+{ 
+    UserInterface *cmd_ui = cmd->user_interface;
+    BrowsableFTPServer *bs = (BrowsableFTPServer *)cmd->direct_obj;
+
+    FTPServer *serv = (FTPServer *)ftp_root->find_child(bs->getName());
+    if (!serv) {
+        return SSRET_INTERNAL_ERROR;
+    }
+    FileManager :: getFileManager()->invalidate(serv);
+    ftp_root->children.remove(serv);
+    ftp_root->save_servers();
+    FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/ftp", "");
 }
 
 FTPServer :: FTPServer(CachedTreeNode *par, const char *alias, const char *host, const char *port_str,

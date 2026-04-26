@@ -23,7 +23,6 @@
 FormUI :: FormUI(UserInterface *ui, int size_x, int size_y, const char *title, JSON_Object *fields)
     : form(title, fields), size_x(size_x), size_y(size_y), TreeBrowser(ui, root)
 {
-    setCleanup();
     state = new FormUIState(&form, this, 0);
     state->reload();
 }
@@ -126,7 +125,7 @@ int FormUI :: handle_key(int c)
                 printf("Unhandled key: %b\n", c);
             }
     }    
-    if (ret == MENU_CLOSE) {
+    if (ret == MENU_DONE) {
         form.read_fields();
     }
     return ret;
@@ -150,17 +149,17 @@ int FormUIState :: edit(void)
 
     BrowsableQueryField *field = (BrowsableQueryField *)under_cursor;
 
-    char buffer[32];
+    char buffer[64];
     if ((field->getName())[0] == '$') {  // The dirtiest trick ever!
         submit();
-        return MENU_CLOSE;
+        return MENU_DONE;
     } else if (field->isDropDown()) {
         browser->context(0);
         // refresh will take place, because the context menu disappears and refresh flag is set
     } else {
         strcpy(buffer, field->getStringValue());
         browser->window->set_color(1);
-        browser->user_interface->string_edit(buffer, ((FormUI *)browser)->size_x - 12, browser->window, 10, this->cursor_pos);
+        browser->user_interface->string_edit(buffer, 63, browser->window, 10, this->cursor_pos);
         field->setStringValue(buffer);
         // explicit refresh
         refresh = true;

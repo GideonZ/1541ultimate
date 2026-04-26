@@ -494,14 +494,18 @@ int UserInterface :: activate_uiobject(UIObject *obj)
     return -1;
 }
 
-int UserInterface :: activate_uiobject_modal(UIObject *obj)
+int UserInterface :: uiobject_modal(UIObject *obj)
 {
-    int ret = 0;//activate_uiobject(obj);
-    if (!ret) {
-        while(!ret && host->exists()) {
-            ret = obj->poll(0);
-        }
+    int ret = 0;
+    while(!ret && host->exists()) {
+        ret = obj->poll(0);
+    }
+    if (obj->needCleanup()) {
         obj->deinit();
+        delete obj;
+    }
+    if (!host->exists()) {
+        ret = MENU_CLOSE;
     }
     return ret;
 }

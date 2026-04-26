@@ -15,6 +15,7 @@
 
                         // Values > 0 are valid choices from the user and need to be passed to the
                         // underlying object.
+#define MENU_DONE    1  // Modal window operation is complete and user "OK'ed"
 #define MENU_NOP     0  // Stay in current window
 #define MENU_CLOSE  -1  // Window operation is complete and can be closed
 #define MENU_HIDE   -2  // The selected action requests the menu to hide. (No effect for remote connection)
@@ -111,7 +112,7 @@ public:
     int keymapper(int c, keymap_options_t map);
 
     int  activate_uiobject(UIObject *obj);
-    int  activate_uiobject_modal(UIObject *obj);
+    int  uiobject_modal(UIObject *obj);
     bool has_focus(UIObject *obj);
     int  getPreferredType(void);
     void help();

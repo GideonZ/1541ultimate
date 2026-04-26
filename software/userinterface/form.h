@@ -49,7 +49,9 @@ public:
                 BrowsableQueryField *field = (BrowsableQueryField *)b;
                 const char *name = field->getName();
                 const char *value = field->getStringValue();
-                json->set(name, value);
+                if (name[0] != '$') {
+                    json->set(name, value);
+                }
             }
         }
     }

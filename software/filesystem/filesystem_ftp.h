@@ -10,25 +10,20 @@
 #include <stdlib.h>
 #include "form.h"
 
+#define CFG_FILEPATH "/flash/config"
+#define FTP_SERVERS  "ftp_servers"
+
 class FTPRootNode; // forward
+class FTPServer;   // forward
 
 class BrowsableFTPRoot : public BrowsableDirEntry
 {
-    static SubsysResultCode_e new_host(SubsysCommand *cmd)
-    { 
-        UserInterface *cmd_ui = cmd->user_interface;
-        FormUI *form = new FormUI(cmd_ui, 32, 12, "Enter New Server", (JSON_Object *)cmd->direct_obj);
-        form->init(cmd_ui->screen, cmd_ui->keyboard);
-        // form->setCleanup();
-        int ret = cmd_ui->activate_uiobject_modal(form);
-        printf("Result: %d %s\n", ret, ((JSON_Object *)cmd->direct_obj)->render());
-        delete form;
-        return SSRET_OK;
-    }
+    static SubsysResultCode_e S_new_host(SubsysCommand *cmd);
     Path *path;
     JSON_Object *obj;
+    FTPRootNode *node;
 public:
-    BrowsableFTPRoot(Path *p, Browsable *parent, FileInfo *inf): path(p), BrowsableDirEntry(p, parent, inf, true)
+    BrowsableFTPRoot(FTPRootNode *node, Path *p, Browsable *parent, FileInfo *inf): node(node), path(p), BrowsableDirEntry(p, parent, inf, true)
     {
         obj = JSON::Obj()
             ->add("Alias", "")
@@ -39,7 +34,10 @@ public:
             ->add("Path", "/");
     }
 
-    virtual ~BrowsableFTPRoot() {}
+    virtual ~BrowsableFTPRoot() {
+        if (obj)
+            delete obj;
+    }
 
     void getDisplayString(char *buffer, int width, int sq) {
         sprintf(buffer, "%8s%#s \e\x0d%s", "Ftp", width-18, "Remote FTP Servers", "Ready");
@@ -47,35 +45,47 @@ public:
 
     void fetch_context_items(IndexedList<Action *>&items) {
         BrowsableDirEntry::fetch_context_items(items);
-        items.append(new Action("New Host", new_host, 0, 0, obj));
+        items.append(new Action("New Host", S_new_host, 0, 0, obj));
     }
 
-	IndexedList<Browsable *> *getSubItems(int &error) {
-	    IndexedList<Browsable *> *ch = BrowsableDirEntry :: getSubItems(error);
-        return ch;
-    }
+    IndexedList<Browsable *> *getSubItems(int &error);
+};
 
+class BrowsableFTPServer : public BrowsableDirEntry
+{
+    static SubsysResultCode_e S_edit(SubsysCommand *cmd);
+    static SubsysResultCode_e S_remove(SubsysCommand *cmd);
+public:
+    BrowsableFTPServer(FTPServer *serv, Path *p, Browsable *parent, FileInfo *inf) : BrowsableDirEntry(p, parent, inf, true) {}
+    virtual ~BrowsableFTPServer() {}
+
+    virtual void fetch_context_items(IndexedList<Action *>&items) {
+        items.append(new Action("Enter",  UserFileInteraction:: S_enter, 0));
+        items.append(new Action("Edit",   BrowsableFTPServer :: S_edit, 0, 0, this));
+        items.append(new Action("Remove", BrowsableFTPServer :: S_remove, 0, 0, this));
+    }
 };
 
 class FTPRootNode : public CachedTreeNode, WithBrowsableRootEntry
 {
     void load_servers_impl(File *);
-    Path path;
+    Path ftp_root_path;
 public:
-    FTPRootNode() : CachedTreeNode(NULL, "ftp"), path("") {
+    FTPRootNode() : CachedTreeNode(NULL, "ftp"), ftp_root_path("/ftp") {
         info.fs = NULL;
         info.cluster = 0; // indicate root dir
         info.attrib = AM_DIR | AM_HID; // ;-)
         info.name_format = NAME_FORMAT_DIRECT; // causes FileSystem::get_display_string to be called instead of on BrowsableDirEntry
     }
     void load_servers();
+    FRESULT save_servers();
 
     int probe() {
         return children.get_elements();
     }
 
     Browsable *create_browsable(Browsable *parent) {
-        return new BrowsableFTPRoot(&path, parent, new FileInfo(info));
+        return new BrowsableFTPRoot(this, &ftp_root_path, parent, new FileInfo(info));
     }
 };
 

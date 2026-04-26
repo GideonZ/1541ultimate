@@ -196,7 +196,7 @@ SubsysResultCode_e UserFileInteraction::S_createDir(SubsysCommand *cmd)
     Path *path = fm->get_new_path("createDir");
     path->cd(cmd->path.c_str());
 
-    int res = cmd->user_interface->string_box("Give name for new directory..", buffer, 22);
+    int res = cmd->user_interface->string_box("Give name for new directory..", buffer, 32);
     if ((res > 0) && (*buffer)) {
         FRESULT fres = fm->create_dir(path, buffer);
         if (fres != FR_OK) {
