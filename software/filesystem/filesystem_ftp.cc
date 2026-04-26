@@ -126,9 +126,14 @@ FRESULT FileSystemFTP::file_open(const char *filename, uint8_t flags, File **fil
 
     FileManager *fm = FileManager::getFileManager();
 
-    mstring temp_path("/Temp/ftp_");
-    temp_path += fixed;
+    // mstring temp_path("/Temp/ftp_");
+    // temp_path += fixed;
+    // delete[] fixed;
+    mstring suggested_name(fixed);
     delete[] fixed;
+
+    mstring tempdir;
+    fm->ensure_temp_directory("ftp", tempdir);
 
     bool creating = (flags & FA_CREATE_ANY) != 0;
 
@@ -136,7 +141,9 @@ FRESULT FileSystemFTP::file_open(const char *filename, uint8_t flags, File **fil
         // Create/open a temp file for creating; upload happens on close()
         File *tmp = NULL;
         flags |= FA_READ; // when writing back to FTP, we need to read it!
-        FRESULT fres = fm->fopen(temp_path.c_str(), flags, &tmp);
+        mstring canonical_path;
+        FRESULT fres = fm->create_temp_file("ftp", suggested_name.c_str(), flags, &tmp, &canonical_path);
+        // FRESULT fres = fm->fopen(temp_path.c_str(), flags, &tmp);
         if (tmp) {
             *file = new FileOnFTP(this, tmp, ftp_path.c_str(), true);
         }
@@ -144,9 +151,16 @@ FRESULT FileSystemFTP::file_open(const char *filename, uint8_t flags, File **fil
     }
 
     // --- Read path: download from FTP if not cached ---
+    mstring fixed_temp_path;
+    FRESULT fres = fm->get_temp_path("ftp", suggested_name.c_str(), &fixed_temp_path);
+    if (fres != FR_OK) {
+        printf("[FTP-FS] Unable t oget temp path? %s\n", fixed_temp_path.c_str());
+        return fres;
+    }
+
     FileInfo inf(128);
-    FRESULT fres = fm->fstat(temp_path.c_str(), inf);
-    printf("[FTP-FS] cache '%s': %s\n", temp_path.c_str(), fres == FR_OK ? "HIT" : "MISS");
+    fres = fm->fstat(fixed_temp_path.c_str(), inf);
+    printf("[FTP-FS] cache '%s': %s\n", fixed_temp_path.c_str(), fres == FR_OK ? "HIT" : "MISS");
 
     if (fres == FR_NO_FILE) {
         if (connect_if_needed() < 0) {
@@ -154,7 +168,9 @@ FRESULT FileSystemFTP::file_open(const char *filename, uint8_t flags, File **fil
         }
 
         File *tmp = NULL;
-        fres = fm->fopen(temp_path.c_str(), FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &tmp);
+        // fres = fm->fopen(fixed_temp_path.c_str(), FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &tmp);
+        mstring canonical_path;
+        fm->create_temp_file("ftp", suggested_name.c_str(), FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &tmp, &canonical_path);
         if (tmp) {
             int bytes_read = 0;
             int ret = client->retr(ftp_path.c_str(), tmp, &bytes_read);
@@ -179,7 +195,7 @@ FRESULT FileSystemFTP::file_open(const char *filename, uint8_t flags, File **fil
     flags &= ~FA_CREATE_ANY;
     flags |= FA_READ; // when writing back to FTP, we need to read it!
 
-    fres = fm->fopen(temp_path.c_str(), flags, &temp);
+    fres = fm->fopen(fixed_temp_path.c_str(), flags, &temp);
     if (temp) {
         *file = new FileOnFTP(this, temp, ftp_path.c_str(), false);
     }
