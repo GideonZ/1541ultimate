@@ -120,6 +120,10 @@ class MachineMonitor : public UIObject
     void exit_edit_mode();
     void reset_edit_blink();
     bool update_edit_blink();
+    uint8_t disasm_length(uint16_t address);
+    uint16_t disasm_next_addr(uint16_t address);
+    uint16_t disasm_prev_addr(uint16_t address);
+    void step_disassembly(int lines);
     bool inline_edit_supported(void) const;
     uint16_t row_span(void) const;
 

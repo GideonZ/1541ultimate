@@ -18,6 +18,21 @@ static bool uses_live_cpu_port(U64Machine *machine, uint8_t monitor_cpu_port)
 
 }
 
+void U64MemoryBackend :: begin_session(void)
+{
+    U64Machine *machine = (U64Machine *)C64 :: getMachine();
+
+    stopped_machine_for_session = machine->begin_monitor_session();
+}
+
+void U64MemoryBackend :: end_session(void)
+{
+    if (stopped_machine_for_session) {
+        ((U64Machine *)C64 :: getMachine())->end_monitor_session(stopped_machine_for_session);
+        stopped_machine_for_session = false;
+    }
+}
+
 uint8_t U64MemoryBackend :: read(uint16_t address)
 {
     U64Machine *machine = (U64Machine *)C64 :: getMachine();

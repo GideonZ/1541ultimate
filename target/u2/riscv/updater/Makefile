@@ -117,9 +117,13 @@ include ../../../common/rules.mk
 
 # The FPGA updater payloads are linked from .b images so the generated symbols
 # match update.cc (_rv700dd_b_* / _rv700au_b_*). Append these after rules.mk,
-# which initializes OBJS_BIN/CHK_BIN from SRCS_BIN.
+# which initializes OBJS_BIN/CHK_BIN from SRCS_BIN. The link rule in gcc.mk is
+# already parsed by that point, so add explicit prerequisites for the payload
+# objects as well.
 OBJS_BIN += rv700dd.o rv700au.o
 CHK_BIN += rv700dd.chk rv700au.chk
+
+$(OUTPUT)/$(PRJ).out: rv700dd.o rv700au.o
 
 ../ultimate/result/ultimate.bin::
 	@$(MAKE) -C ../ultimate

@@ -5,12 +5,16 @@
 
 class U64MemoryBackend : public MemoryBackend
 {
+    bool stopped_machine_for_session;
 public:
+    U64MemoryBackend() : stopped_machine_for_session(false) { }
     virtual uint8_t read(uint16_t address);
     virtual void write(uint16_t address, uint8_t value);
     virtual void read_block(uint16_t address, uint8_t *dst, uint16_t len);
     virtual uint8_t get_live_cpu_port(void);
     virtual uint8_t get_live_vic_bank(void);
+    virtual void begin_session(void);
+    virtual void end_session(void);
 };
 
 #endif

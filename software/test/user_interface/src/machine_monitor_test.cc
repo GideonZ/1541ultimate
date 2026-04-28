@@ -239,10 +239,14 @@ mstring *UserInterface :: getMessage()
 struct FakeMemoryBackend : public MemoryBackend
 {
     uint8_t memory[65536];
+    int session_begin_count;
+    int session_end_count;
 
     FakeMemoryBackend()
     {
         memset(memory, 0, sizeof(memory));
+        session_begin_count = 0;
+        session_end_count = 0;
     }
 
     virtual uint8_t read(uint16_t address)
@@ -262,6 +266,16 @@ struct FakeMemoryBackend : public MemoryBackend
             dst[i] = memory[(uint16_t)(address + i)];
         }
     }
+
+    virtual void begin_session(void)
+    {
+        session_begin_count++;
+    }
+
+    virtual void end_session(void)
+    {
+        session_end_count++;
+    }
 };
 
 struct FakeBankedMemoryBackend : public MemoryBackend
@@ -274,6 +288,8 @@ struct FakeBankedMemoryBackend : public MemoryBackend
     uint8_t live_cpu_port;
     uint8_t live_cpu_ddr;
     uint8_t live_dd00;
+    int session_begin_count;
+    int session_end_count;
 
     FakeBankedMemoryBackend() : live_cpu_port(0x07), live_cpu_ddr(0x07), live_dd00(0x01)
     {
@@ -282,6 +298,8 @@ struct FakeBankedMemoryBackend : public MemoryBackend
         memset(kernal, 0, sizeof(kernal));
         memset(charrom, 0, sizeof(charrom));
         memset(io, 0, sizeof(io));
+        session_begin_count = 0;
+        session_end_count = 0;
         set_monitor_cpu_port(live_cpu_port);
     }
 
@@ -350,6 +368,16 @@ struct FakeBankedMemoryBackend : public MemoryBackend
     virtual uint8_t get_live_vic_bank(void)
     {
         return (uint8_t)(3 - (live_dd00 & 0x03));
+    }
+
+    virtual void begin_session(void)
+    {
+        session_begin_count++;
+    }
+
+    virtual void end_session(void)
+    {
+        session_end_count++;
     }
 };
 
@@ -840,6 +868,66 @@ static int test_kernal_disassembly_mapping(void)
     return 0;
 }
 
+static int test_disassembly_instruction_stepping(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeBankedMemoryBackend backend;
+    char line[39];
+
+    const uint8_t kernal_bytes[] = {
+        0x85, 0x56, 0x20, 0x0F, 0xBC, 0xA5, 0x61, 0xC9,
+        0x88, 0x90, 0x03, 0x20, 0xD4, 0xBA, 0x20, 0xCC,
+        0xBC, 0xA5, 0x07
+    };
+    const int keys[] = { 'J', 'D', KEY_DOWN, KEY_DOWN, KEY_UP, KEY_UP, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 7);
+
+    memcpy(backend.kernal, kernal_bytes, sizeof(kernal_bytes));
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("E000", 1);
+
+    MachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    if (expect(monitor.poll(0) == 0, "Goto to E000 failed for disassembly stepping test.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Disassembly view switch failed for stepping test.")) return 1;
+
+    screen.get_slice(1, 3, 38, line);
+    if (expect(strstr(line, "DIS $E000") == line, "Disassembly view must start at the goto address.")) return 1;
+    screen.get_slice(1, 4, 38, line);
+    if (expect(strstr(line, "E000 85 56") == line, "Initial disassembly row mismatch at E000.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "First disassembly down-step failed.")) return 1;
+    screen.get_slice(1, 3, 38, line);
+    if (expect(strstr(line, "DIS $E002") == line, "Disassembly down-step must advance by instruction length.")) return 1;
+    screen.get_slice(1, 4, 38, line);
+    if (expect(strstr(line, "E002 20 0F BC") == line, "First disassembly down-step landed on the wrong instruction.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "Second disassembly down-step failed.")) return 1;
+    screen.get_slice(1, 3, 38, line);
+    if (expect(strstr(line, "DIS $E005") == line, "Second disassembly down-step must follow the decoded length again.")) return 1;
+    screen.get_slice(1, 4, 38, line);
+    if (expect(strstr(line, "E005 A5 61") == line, "Second disassembly down-step landed on the wrong instruction.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "First disassembly up-step failed.")) return 1;
+    screen.get_slice(1, 3, 38, line);
+    if (expect(strstr(line, "DIS $E002") == line, "Disassembly up-step must return to the exact previous instruction.")) return 1;
+    screen.get_slice(1, 4, 38, line);
+    if (expect(strstr(line, "E002 20 0F BC") == line, "First disassembly up-step landed on the wrong instruction.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "Second disassembly up-step failed.")) return 1;
+    screen.get_slice(1, 3, 38, line);
+    if (expect(strstr(line, "DIS $E000") == line, "Second disassembly up-step must return to the original instruction.")) return 1;
+    screen.get_slice(1, 4, 38, line);
+    if (expect(strstr(line, "E000 85 56") == line, "Second disassembly up-step landed on the wrong instruction.")) return 1;
+
+    if (expect(monitor.poll(0) == 1, "RUN/STOP exit failed after disassembly stepping test.")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
 static int test_template_cursor(void)
 {
     char template_buffer[8] = "AAAA";
@@ -882,6 +970,7 @@ static int test_monitor_renders_window_border(void)
 
     MachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
+    if (expect(backend.session_begin_count == 1, "Monitor must begin a backend session when it opens.")) return 1;
     if (expect((unsigned char)screen.chars[2][0] == BORD_LOWER_RIGHT_CORNER, "Monitor must draw the same shared upper-left border corner as the hex editor.")) return 1;
     if (expect((unsigned char)screen.chars[2][39] == BORD_LOWER_LEFT_CORNER, "Monitor must draw the same shared upper-right border corner as the hex editor.")) return 1;
     if (expect((unsigned char)screen.chars[23][0] == BORD_UPPER_RIGHT_CORNER, "Monitor must draw the shared lower-left border corner.")) return 1;
@@ -892,6 +981,7 @@ static int test_monitor_renders_window_border(void)
     }
     if (expect(monitor.poll(0) == 1, "Monitor must close on RUN/STOP after border verification.")) return 1;
     monitor.deinit();
+    if (expect(backend.session_end_count == 1, "Monitor must end the backend session when it closes.")) return 1;
     return 0;
 }
 
@@ -948,6 +1038,58 @@ static int test_monitor_byte_to_address_invariant(void)
     return 0;
 }
 
+static int test_monitor_viewport_header_and_scroll(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char before_rows[16][MONITOR_HEX_ROW_CHARS + 1];
+    char after_rows[16][MONITOR_HEX_ROW_CHARS + 1];
+    char header[39];
+    int keys[17];
+
+    for (uint32_t addr = 0; addr < 0x10000; addr++) {
+        backend.write((uint16_t)addr, (uint8_t)((addr >> 3) & 0xFF));
+    }
+    for (int i = 0; i < 16; i++) {
+        keys[i] = KEY_DOWN;
+    }
+    keys[16] = KEY_BREAK;
+
+    FakeKeyboard keyboard(keys, 17);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    MachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "HEX $0000") == header, "Header must report the viewport start, not the cursor address.")) return 1;
+
+    for (int i = 0; i < 15; i++) {
+        if (expect(monitor.poll(0) == 0, "Down navigation failed before viewport scroll.")) return 1;
+    }
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "HEX $0000") == header, "Header must stay on the same viewport address while only the cursor moves.")) return 1;
+    for (int row = 0; row < 16; row++) {
+        screen.get_slice(1, 4 + row, MONITOR_HEX_ROW_CHARS, before_rows[row]);
+    }
+
+    if (expect(monitor.poll(0) == 0, "Down navigation failed at the viewport boundary.")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "HEX $0008") == header, "Header must advance by one row when the viewport scrolls.")) return 1;
+    for (int row = 0; row < 16; row++) {
+        screen.get_slice(1, 4 + row, MONITOR_HEX_ROW_CHARS, after_rows[row]);
+    }
+    for (int row = 1; row < 16; row++) {
+        if (expect(strcmp(after_rows[row - 1], before_rows[row]) == 0,
+                   "Scrolling down must shift each rendered row up by exactly one row span.")) return 1;
+    }
+    if (expect(monitor.poll(0) == 1, "Monitor must close on RUN/STOP after viewport scroll verification.")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
 static int test_monitor_interaction(void)
 {
     TestUserInterface ui;
@@ -974,8 +1116,14 @@ static int test_monitor_interaction(void)
 
     MachineMonitor help_monitor(&ui, &banked_backend);
     help_monitor.init(&screen, &help_keyboard);
+    screen.get_slice(1, 3, 38, line);
+    if (expect(strstr(line, "HEX $0000") == line && strstr(line, "CPU MAP") == NULL,
+               "Header must show only the view type and viewport start.")) return 1;
     if (expect(screen.reverse_chars[4][6] && screen.reverse_chars[4][7], "Hex view did not highlight the selected byte.")) return 1;
     if (expect(help_monitor.poll(0) == 0, "Goto to A000 failed.")) return 1;
+    screen.get_slice(1, 3, 38, line);
+    if (expect(strstr(line, "HEX $A000") == line && strstr(line, "CPU MAP") == NULL,
+               "Goto must update the header to the viewport start without CPU map text.")) return 1;
     screen.get_slice(1, 4, 8, line);
     if (expect(strncmp(line, "a000 ba", 7) == 0 || strncmp(line, "A000 BA", 7) == 0, "CPU banked BASIC view mismatch.")) return 1;
     screen.get_slice(1, 22, 38, status);
@@ -997,10 +1145,34 @@ static int test_monitor_interaction(void)
     if (expect(help_monitor.poll(0) == 0, "F3 help open failed.")) return 1;
     screen.get_slice(1, 4, 38, line);
     if (expect(strstr(line, "M HEX") != NULL, "Help view did not render in-place.")) return 1;
+    screen.get_slice(1, 21, 38, status);
+    if (expect(strstr(status, "ESC/F3 close help") != NULL, "Help status should show a useful close hint.")) return 1;
+    if (expect(strstr(status, "Help open") == NULL && strstr(status, "Help closed") == NULL,
+               "Help status should avoid redundant open/closed text.")) return 1;
 
     if (expect(help_monitor.poll(0) == 0, "F3 help close failed.")) return 1;
     screen.get_slice(1, 4, 8, line);
     if (expect(strncmp(line, "a000 aa", 7) == 0 || strncmp(line, "A000 AA", 7) == 0, "Help toggle did not restore the monitor view.")) return 1;
+    screen.get_slice(1, 21, 38, status);
+    if (expect(strstr(status, "Help closed") == NULL, "Closing help should not emit redundant status text.")) return 1;
+
+    {
+        const int esc_help_keys[] = { KEY_F3, KEY_ESCAPE, KEY_ESCAPE };
+        FakeKeyboard esc_help_keyboard(esc_help_keys, 3);
+        ui.keyboard = &esc_help_keyboard;
+        screen.clear();
+
+        MachineMonitor esc_help_monitor(&ui, &backend);
+        esc_help_monitor.init(&screen, &esc_help_keyboard);
+        if (expect(esc_help_monitor.poll(0) == 0, "F3 should open help before ESC handling is tested.")) return 1;
+        screen.get_slice(1, 4, 38, line);
+        if (expect(strstr(line, "M HEX") != NULL, "Help must be visible before ESC closes it.")) return 1;
+        if (expect(esc_help_monitor.poll(0) == 0, "ESC should close help without exiting the monitor.")) return 1;
+        screen.get_slice(1, 3, 38, line);
+        if (expect(strstr(line, "HEX $0000") == line, "ESC should restore the normal monitor header after closing help.")) return 1;
+        if (expect(esc_help_monitor.poll(0) == 1, "ESC should exit the monitor only after help is already closed.")) return 1;
+        esc_help_monitor.deinit();
+    }
 
     ui.set_prompt("E013", 1);
     const int goto_disasm_keys[] = { 'J', 'D', KEY_BREAK };
@@ -1078,8 +1250,8 @@ static int test_monitor_interaction(void)
     if (expect(screen.reverse_chars[4][6], "ASCII edit highlight should stay deterministic during idle redraws.")) return 1;
     blink_monitor.deinit();
 
-    const int view_keys[] = { 'M', KEY_DOWN, KEY_UP, 'e', 'Z', KEY_LEFT, KEY_BREAK };
-    FakeKeyboard view_keyboard(view_keys, 7);
+    const int view_keys[] = { 'M', KEY_DOWN, KEY_UP, 'e', 'Z', KEY_LEFT, 'Y', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard view_keyboard(view_keys, 9);
     ui.keyboard = &view_keyboard;
     ui.popup_count = 0;
     ui.navmode = 1;
@@ -1089,6 +1261,8 @@ static int test_monitor_interaction(void)
     view_monitor.init(&screen, &view_keyboard);
 
     if (expect(view_monitor.poll(0) == 0, "ASCII view command failed.")) return 1;
+    screen.get_slice(1, 3, 38, line);
+    if (expect(strstr(line, "ASC $0000") == line, "ASCII header must stay tied to the viewport start.")) return 1;
     screen.get_slice(1, 4, MONITOR_TEXT_ROW_CHARS, line);
     if (expect(strcmp(line, "0000 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA") == 0, "ASCII first-row rendering mismatch.")) return 1;
     screen.get_slice(1, 12, MONITOR_TEXT_ROW_CHARS, line);
@@ -1096,6 +1270,8 @@ static int test_monitor_interaction(void)
     if (expect((unsigned char)screen.chars[4][39] == CHR_VERTICAL_LINE, "ASCII view overwrote the right border.")) return 1;
 
     if (expect(view_monitor.poll(0) == 0, "ASCII down navigation failed.")) return 1;
+    screen.get_slice(1, 3, 38, line);
+    if (expect(strstr(line, "ASC $0000") == line, "ASCII header must not follow the cursor within the viewport.")) return 1;
     if (expect(screen.reverse_chars[5][6], "ASCII down should move the cursor one 32-byte row without scrolling.")) return 1;
     if (expect(view_monitor.poll(0) == 0, "ASCII up navigation failed.")) return 1;
     if (expect(screen.reverse_chars[4][6], "ASCII up should move the cursor back one 32-byte row without scrolling.")) return 1;
@@ -1107,14 +1283,18 @@ static int test_monitor_interaction(void)
     if (expect(backend.read(0x0000) == 'Z', "ASCII edit did not write memory.")) return 1;
     if (expect(screen.reverse_chars[4][7], "ASCII edit did not advance the highlighted cursor.")) return 1;
 
-    if (expect(view_monitor.poll(0) == 0, "ASCII left-arrow should exit edit mode without leaving the monitor.")) return 1;
+    if (expect(view_monitor.poll(0) == 0, "ASCII left-arrow should navigate without leaving edit mode.")) return 1;
     if (expect(backend.read(0x0001) == 'A', "ASCII left-arrow should not be written as data.")) return 1;
-    if (expect(screen.reverse_chars[4][7], "ASCII selection should remain highlighted after leaving edit mode.")) return 1;
-    if (expect(view_monitor.poll(0) == 1, "RUN/STOP monitor exit failed after ASCII edit exit.")) return 1;
+    if (expect(screen.reverse_chars[4][6], "ASCII left-arrow must move the edit cursor to the previous byte.")) return 1;
+    if (expect(view_monitor.poll(0) == 0, "ASCII edit must remain active after left-arrow navigation.")) return 1;
+    if (expect(backend.read(0x0000) == 'Y', "ASCII edit should keep writing after moving left in edit mode.")) return 1;
+    if (expect(screen.reverse_chars[4][7], "ASCII edit should continue to advance after writing post-left-arrow.")) return 1;
+    if (expect(view_monitor.poll(0) == 0, "RUN/STOP should leave ASCII edit mode before closing the monitor.")) return 1;
+    if (expect(view_monitor.poll(0) == 1, "RUN/STOP monitor exit failed after ASCII edit navigation.")) return 1;
     view_monitor.deinit();
 
-    const int hex_keys[] = { 'e', 'A', 'B', KEY_LEFT, KEY_BREAK };
-    FakeKeyboard hex_keyboard(hex_keys, 5);
+    const int hex_keys[] = { 'e', 'A', 'B', KEY_LEFT, 'C', 'D', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard hex_keyboard(hex_keys, 8);
     ui.keyboard = &hex_keyboard;
     screen.clear();
     backend.write(0x0000, 0x00);
@@ -1134,10 +1314,40 @@ static int test_monitor_interaction(void)
     if (expect(strstr(line, "0000 ab") == line || strstr(line, "0000 AB") == line,
                "Hex edit did not redraw the changed byte immediately.")) return 1;
     if (expect(screen.reverse_chars[4][9] && screen.reverse_chars[4][10], "Hex edit did not advance to the next byte.")) return 1;
-    if (expect(hex_monitor.poll(0) == 0, "Left-arrow should exit hex edit mode without leaving the monitor.")) return 1;
-    if (expect(screen.reverse_chars[4][9] && screen.reverse_chars[4][10], "Hex selection should remain on the current byte after leaving edit mode.")) return 1;
+    if (expect(hex_monitor.poll(0) == 0, "Left-arrow should navigate inside hex edit mode.")) return 1;
+    if (expect(screen.reverse_chars[4][6] && screen.reverse_chars[4][7], "Hex left-arrow must move the edit cursor back to the previous byte.")) return 1;
+    if (expect(hex_monitor.poll(0) == 0, "Hex edit must remain active after left-arrow navigation.")) return 1;
+    if (expect(hex_monitor.poll(0) == 0, "Hex edit second byte write after left-arrow failed.")) return 1;
+    if (expect(backend.read(0x0000) == 0xCD, "Hex edit should keep writing after moving left in edit mode.")) return 1;
+    if (expect(hex_monitor.poll(0) == 0, "RUN/STOP should leave hex edit mode before closing the monitor.")) return 1;
     if (expect(hex_monitor.poll(0) == 1, "RUN/STOP exit after hex edit failed.")) return 1;
     hex_monitor.deinit();
+
+    {
+        const int rom_write_keys[] = { 'J', 'e', '5', '5', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard rom_write_keyboard(rom_write_keys, 6);
+        ui.keyboard = &rom_write_keyboard;
+        ui.set_prompt("A000", 1);
+        screen.clear();
+        banked_backend.basic[0] = 0xBA;
+        banked_backend.ram[0xA000] = 0xAA;
+        banked_backend.set_monitor_cpu_port(0x07);
+
+        MachineMonitor rom_write_monitor(&ui, &banked_backend);
+        rom_write_monitor.init(&screen, &rom_write_keyboard);
+        if (expect(rom_write_monitor.poll(0) == 0, "Goto to A000 failed for ROM-visible write test.")) return 1;
+        if (expect(rom_write_monitor.poll(0) == 0, "ROM-visible edit mode entry failed.")) return 1;
+        if (expect(rom_write_monitor.poll(0) == 0, "ROM-visible first nibble failed.")) return 1;
+        if (expect(rom_write_monitor.poll(0) == 0, "ROM-visible second nibble failed.")) return 1;
+        if (expect(banked_backend.ram[0xA000] == 0x55, "ROM-visible write must update the underlying RAM just like the canonical backend path.")) return 1;
+        if (expect(banked_backend.basic[0] == 0xBA, "ROM-visible write must not overwrite BASIC ROM content.")) return 1;
+        screen.get_slice(1, 21, 38, status);
+        if (expect(strstr(status, "Byte written") != NULL && strstr(status, "masked by ROM") == NULL,
+                   "ROM-visible write must not be reported as masked when the canonical backend writes under ROM.")) return 1;
+        if (expect(rom_write_monitor.poll(0) == 0, "RUN/STOP should leave edit mode after ROM-visible write.")) return 1;
+        if (expect(rom_write_monitor.poll(0) == 1, "RUN/STOP exit failed after ROM-visible write test.")) return 1;
+        rom_write_monitor.deinit();
+    }
 
     {
         const int exit_keys[] = { 'e', KEY_F3, KEY_F3, 'A', 'B', KEY_BREAK, KEY_BREAK };
@@ -1224,10 +1434,12 @@ int main()
     if (test_parsers_and_formatters()) return 1;
     if (test_banked_backend()) return 1;
     if (test_kernal_disassembly_mapping()) return 1;
+    if (test_disassembly_instruction_stepping()) return 1;
     if (test_template_cursor()) return 1;
     if (test_task_action_lookup()) return 1;
     if (test_monitor_renders_window_border()) return 1;
     if (test_monitor_byte_to_address_invariant()) return 1;
+    if (test_monitor_viewport_header_and_scroll()) return 1;
     if (test_monitor_interaction()) return 1;
 
     puts("machine_monitor_test: OK");

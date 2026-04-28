@@ -297,11 +297,16 @@ static int cpu_mode_number(uint8_t cpu_port)
 static uint8_t next_cpu_mode(uint8_t cpu_port)
 {
     int i;
+    int count = (int)(sizeof(monitor_cpu_modes) / sizeof(monitor_cpu_modes[0]));
 
     cpu_port &= 0x07;
-    for (i = 0; i < (int)(sizeof(monitor_cpu_modes) / sizeof(monitor_cpu_modes[0])); i++) {
+    for (i = 0; i < count; i++) {
         if (monitor_cpu_modes[i] == cpu_port) {
-            return monitor_cpu_modes[(i + 1) % (int)(sizeof(monitor_cpu_modes) / sizeof(monitor_cpu_modes[0]))];
+            i++;
+            if (i >= count) {
+                i = 0;
+            }
+            return monitor_cpu_modes[i];
         }
     }
     return monitor_cpu_modes[0];
@@ -776,7 +781,7 @@ void MachineMonitor :: set_view(MachineMonitorView view)
 {
     state.view = view;
     if (view == MONITOR_VIEW_DISASM) {
-        state.base_addr = state.current_addr;
+        state.base_addr = (uint16_t)(state.current_addr + state.disasm_offset);
     } else {
         ensure_current_visible();
     }
@@ -797,7 +802,7 @@ void MachineMonitor :: move_current(int delta)
 {
     state.current_addr = (uint16_t)(state.current_addr + delta);
     if (state.view == MONITOR_VIEW_DISASM) {
-        state.base_addr = state.current_addr;
+        state.base_addr = (uint16_t)(state.current_addr + state.disasm_offset);
     } else {
         ensure_current_visible();
     }
@@ -834,7 +839,7 @@ bool MachineMonitor :: prompt_command(const char *title, char *buffer, int max_l
 void MachineMonitor :: toggle_help()
 {
     help_visible = !help_visible;
-    set_status(help_visible ? "Help open" : "Help closed");
+    set_status(help_visible ? "ESC/F3 close help" : "");
 }
 
 void MachineMonitor :: reset_edit_blink()
@@ -845,6 +850,64 @@ void MachineMonitor :: reset_edit_blink()
 bool MachineMonitor :: update_edit_blink()
 {
     return false;
+}
+
+uint8_t MachineMonitor :: disasm_length(uint16_t address)
+{
+    Disassembled6502 decoded;
+    uint8_t row_bytes[3];
+
+    read_row(address, row_bytes, 3);
+    disassemble_6502(address, row_bytes, state.illegal_enabled, &decoded);
+    return decoded.length ? decoded.length : 1;
+}
+
+uint16_t MachineMonitor :: disasm_next_addr(uint16_t address)
+{
+    return (uint16_t)(address + disasm_length(address));
+}
+
+uint16_t MachineMonitor :: disasm_prev_addr(uint16_t address)
+{
+    static const uint16_t scan_limit = 16;
+
+    for (uint16_t back = 1; back <= scan_limit; back++) {
+        uint16_t start = (uint16_t)(address - back);
+        uint16_t cursor = start;
+        uint16_t consumed = 0;
+        uint16_t previous = start;
+
+        while (consumed < back) {
+            uint8_t length = disasm_length(cursor);
+            previous = cursor;
+            cursor = (uint16_t)(cursor + length);
+            consumed = (uint16_t)(consumed + length);
+            if (consumed == back && cursor == address) {
+                return previous;
+            }
+            if (consumed >= back) {
+                break;
+            }
+        }
+    }
+    return (uint16_t)(address - 1);
+}
+
+void MachineMonitor :: step_disassembly(int lines)
+{
+    while (lines < 0) {
+        state.current_addr = disasm_prev_addr(state.current_addr);
+        lines++;
+    }
+    while (lines > 0) {
+        state.current_addr = disasm_next_addr(state.current_addr);
+        lines--;
+    }
+    state.base_addr = state.current_addr;
+    pending_hex_nibble = -1;
+    if (edit_mode) {
+        reset_edit_blink();
+    }
 }
 
 void MachineMonitor :: draw_header()
@@ -860,15 +923,7 @@ void MachineMonitor :: draw_header()
             case MONITOR_VIEW_SCREEN: view_name = "SCR"; break;
             default: break;
         }
-        uint8_t lo = canonical_read(state.current_addr);
-        uint8_t hi = canonical_read((uint16_t)(state.current_addr + 1));
-        uint16_t word = (uint16_t)(lo | (hi << 8));
-        const char *source = backend->source_name(state.current_addr);
-        sprintf(line, "%s $%04x%s%s >$%04x [%s]",
-                view_name, state.current_addr,
-                edit_mode ? " EDIT" : "",
-                state.illegal_enabled ? " ILG" : "",
-                word, source);
+        sprintf(line, "%s $%04X", view_name, state.base_addr);
     }
     draw_padded(window, 0, line, strlen(line));
 }
@@ -967,7 +1022,7 @@ void MachineMonitor :: draw_screen_codes()
 
 void MachineMonitor :: draw_disassembly()
 {
-    uint16_t addr = (uint16_t)(state.base_addr + state.disasm_offset);
+    uint16_t addr = state.base_addr;
     int line_idx;
     for (line_idx = 0; line_idx < content_height; line_idx++) {
         Disassembled6502 decoded;
@@ -1057,30 +1112,18 @@ void MachineMonitor :: apply_hex_digit(uint8_t value)
         set_status("Hex nibble pending");
     } else {
         uint8_t byte = (uint8_t)((pending_hex_nibble << 4) | value);
-        uint8_t verify;
         canonical_write(state.current_addr, byte);
-        verify = canonical_read(state.current_addr);
         move_current(1);
         pending_hex_nibble = -1;
-        if (verify == byte) {
-            set_status("Byte written");
-        } else {
-            set_status("Write masked by ROM");
-        }
+        set_status("Byte written");
     }
 }
 
 void MachineMonitor :: apply_ascii_char(char value)
 {
-    uint8_t verify;
     canonical_write(state.current_addr, (uint8_t)value);
-    verify = canonical_read(state.current_addr);
     move_current(1);
-    if (verify == (uint8_t)value) {
-        set_status("Char written");
-    } else {
-        set_status("Write masked by ROM");
-    }
+    set_status("Char written");
 }
 
 void MachineMonitor :: exit_edit_mode()
@@ -1115,6 +1158,7 @@ void MachineMonitor :: init(Screen *scr, Keyboard *keyb)
     window->draw_border();
     window->set_color(get_ui()->color_fg);
     content_height = window->get_size_y() - 4;
+    backend->begin_session();
     backend->set_monitor_cpu_port(normalize_cpu_mode(backend->get_live_cpu_port()));
     last_vic_bank = backend->get_live_vic_bank();
     set_status("M VIEW E EDIT O CPU . DIS F3 HELP");
@@ -1123,6 +1167,7 @@ void MachineMonitor :: init(Screen *scr, Keyboard *keyb)
 
 void MachineMonitor :: deinit(void)
 {
+    backend->end_session();
     if (window) {
         delete window;
         window = NULL;
@@ -1143,12 +1188,17 @@ int MachineMonitor :: handle_key(int key)
         draw();
         return 0;
     }
+    if (help_visible && key == KEY_ESCAPE) {
+        toggle_help();
+        draw();
+        return 0;
+    }
 
     if (edit_mode) {
         if (key == KEY_CTRL_O) {
             return 1;
         }
-        if (key == KEY_LEFT || key == KEY_BREAK || key == KEY_ESCAPE || key == KEY_CTRL_E) {
+        if (key == KEY_BREAK || key == KEY_ESCAPE || key == KEY_CTRL_E) {
             exit_edit_mode();
             draw();
             return 0;
@@ -1181,10 +1231,20 @@ int MachineMonitor :: handle_key(int key)
             draw();
             return 0;
         case KEY_UP:
+            if (state.view == MONITOR_VIEW_DISASM) {
+                step_disassembly(-1);
+                draw();
+                return 0;
+            }
             move_current(-row_span());
             draw();
             return 0;
         case KEY_DOWN:
+            if (state.view == MONITOR_VIEW_DISASM) {
+                step_disassembly(1);
+                draw();
+                return 0;
+            }
             move_current(row_span());
             draw();
             return 0;
@@ -1192,11 +1252,21 @@ int MachineMonitor :: handle_key(int key)
         case KEY_F1:
         case KEY_F2:
         case KEY_CONFIG:
+            if (state.view == MONITOR_VIEW_DISASM) {
+                step_disassembly(-content_height);
+                draw();
+                return 0;
+            }
             page_move(-content_height);
             draw();
             return 0;
         case KEY_PAGEDOWN:
         case KEY_F7:
+            if (state.view == MONITOR_VIEW_DISASM) {
+                step_disassembly(content_height);
+                draw();
+                return 0;
+            }
             page_move(content_height);
             draw();
             return 0;
@@ -1223,7 +1293,14 @@ int MachineMonitor :: handle_key(int key)
             set_status("");
             break;
         case '.':
-            state.disasm_offset = (uint8_t)((state.disasm_offset + 1) % 3);
+            if (state.disasm_offset >= 2) {
+                state.disasm_offset = 0;
+            } else {
+                state.disasm_offset++;
+            }
+            if (state.view == MONITOR_VIEW_DISASM) {
+                state.base_addr = (uint16_t)(state.current_addr + state.disasm_offset);
+            }
             set_status("Disasm offset");
             break;
         case '*':
