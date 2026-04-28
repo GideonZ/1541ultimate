@@ -39,6 +39,7 @@ struct MachineMonitorState
 };
 
 const char *monitor_error_text(MonitorError error);
+void monitor_reset_saved_state(void);
 void monitor_apply_goto(MachineMonitorState *state, uint16_t address);
 void monitor_format_hex_row(uint16_t address, const uint8_t *bytes, char *out);
 void monitor_format_text_row(uint16_t address, const uint8_t *bytes, int count, bool screen_codes, char *out);

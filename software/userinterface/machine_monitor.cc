@@ -41,6 +41,8 @@ static const char *const monitor_help_lines[] = {
 };
 
 static const uint8_t monitor_cpu_modes[] = { 0x07, 0x03, 0x06, 0x02, 0x05, 0x01, 0x04 };
+static bool monitor_saved_state_valid = false;
+static MachineMonitorState monitor_saved_state = { MONITOR_VIEW_HEX, 0, 0, 0, false };
 
 static bool is_space_char(char c)
 {
@@ -380,6 +382,16 @@ const char *monitor_error_text(MonitorError error)
     }
 }
 
+void monitor_reset_saved_state(void)
+{
+    monitor_saved_state_valid = false;
+    monitor_saved_state.view = MONITOR_VIEW_HEX;
+    monitor_saved_state.current_addr = 0;
+    monitor_saved_state.base_addr = 0;
+    monitor_saved_state.disasm_offset = 0;
+    monitor_saved_state.illegal_enabled = false;
+}
+
 void monitor_apply_goto(MachineMonitorState *state, uint16_t address)
 {
     uint16_t span = row_span_for_view(state->view);
@@ -699,11 +711,15 @@ MonitorError monitor_format_evaluate(const char *input, char *out, int out_len)
 MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) : UIObject(ui)
 {
     backend = mem_backend;
-    state.view = MONITOR_VIEW_HEX;
-    state.current_addr = 0;
-    state.base_addr = 0;
-    state.disasm_offset = 0;
-    state.illegal_enabled = false;
+    if (monitor_saved_state_valid) {
+        state = monitor_saved_state;
+    } else {
+        state.view = MONITOR_VIEW_HEX;
+        state.current_addr = 0;
+        state.base_addr = 0;
+        state.disasm_offset = 0;
+        state.illegal_enabled = false;
+    }
     registers_pc = 0;
     registers_a = 0;
     registers_x = 0;
@@ -1161,12 +1177,19 @@ void MachineMonitor :: init(Screen *scr, Keyboard *keyb)
     backend->begin_session();
     backend->set_monitor_cpu_port(normalize_cpu_mode(backend->get_live_cpu_port()));
     last_vic_bank = backend->get_live_vic_bank();
+    monitor_apply_goto(&state, state.current_addr);
     set_status("M VIEW E EDIT O CPU . DIS F3 HELP");
     draw();
 }
 
 void MachineMonitor :: deinit(void)
 {
+    monitor_saved_state.view = state.view;
+    monitor_saved_state.current_addr = state.current_addr;
+    monitor_saved_state.base_addr = state.base_addr;
+    monitor_saved_state.disasm_offset = 0;
+    monitor_saved_state.illegal_enabled = state.illegal_enabled;
+    monitor_saved_state_valid = true;
     backend->end_session();
     if (window) {
         delete window;

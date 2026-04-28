@@ -285,19 +285,24 @@ struct FakeBankedMemoryBackend : public MemoryBackend
     uint8_t kernal[8192];
     uint8_t charrom[4096];
     uint8_t io[4096];
+    uint8_t screen_backup[1024]; // Models the freezer's $0400-$07FF backup region.
+    uint8_t ram_backup[2048];    // Models the freezer's $0800-$0FFF backup region.
+    bool frozen;                 // When true, $0400-$0FFF reads/writes go to the backup buffers.
     uint8_t live_cpu_port;
     uint8_t live_cpu_ddr;
     uint8_t live_dd00;
     int session_begin_count;
     int session_end_count;
 
-    FakeBankedMemoryBackend() : live_cpu_port(0x07), live_cpu_ddr(0x07), live_dd00(0x01)
+    FakeBankedMemoryBackend() : frozen(false), live_cpu_port(0x07), live_cpu_ddr(0x07), live_dd00(0x01)
     {
         memset(ram, 0, sizeof(ram));
         memset(basic, 0, sizeof(basic));
         memset(kernal, 0, sizeof(kernal));
         memset(charrom, 0, sizeof(charrom));
         memset(io, 0, sizeof(io));
+        memset(screen_backup, 0, sizeof(screen_backup));
+        memset(ram_backup, 0, sizeof(ram_backup));
         session_begin_count = 0;
         session_end_count = 0;
         set_monitor_cpu_port(live_cpu_port);
@@ -331,6 +336,12 @@ struct FakeBankedMemoryBackend : public MemoryBackend
             }
             return ram[address];
         }
+        if (frozen && address >= 0x0400 && address < 0x0800) {
+            return screen_backup[address - 0x0400];
+        }
+        if (frozen && address >= 0x0800 && address < 0x1000) {
+            return ram_backup[address - 0x0800];
+        }
         if (address == 0x0001) {
             return (ram[address] & 0xF8) | live_cpu_port;
         }
@@ -352,6 +363,11 @@ struct FakeBankedMemoryBackend : public MemoryBackend
             return;
         }
         ram[address] = value;
+        if (frozen && address >= 0x0400 && address < 0x0800) {
+            screen_backup[address - 0x0400] = value;
+        } else if (frozen && address >= 0x0800 && address < 0x1000) {
+            ram_backup[address - 0x0800] = value;
+        }
         if (address == 0x0000) {
             live_cpu_ddr = value & 0x07;
         }
@@ -786,12 +802,80 @@ static int test_banked_backend(void)
     return 0;
 }
 
+static int test_frozen_banked_backend(void)
+{
+    // Mirrors the freeze-mode invariants from
+    // doc/research/machine-monitor/freeze-support/plan.md §Tests:
+    // monitor_cpu_port is authoritative; ROM overlays and write-under-ROM
+    // behave correctly; $0400-$0FFF reads from the freezer backup region;
+    // reads are stable across redraws; IO remains reachable when the bank
+    // exposes it.
+    FakeBankedMemoryBackend backend;
+
+    backend.frozen = true;
+    backend.live_cpu_port = 0x00; // Live latch is unobservable while frozen — must not influence routing.
+    backend.live_cpu_ddr = 0x00;
+
+    backend.basic[0] = 0xBA;
+    backend.kernal[0] = 0x4E;
+    backend.kernal[1] = 0x22;
+    backend.charrom[0] = 0xC3;
+    backend.io[0xD020 - 0xD000] = 0x00;
+    backend.ram[0xA000] = 0xAA;
+    backend.ram[0xE000] = 0x11;
+    backend.ram[0xE001] = 0x22;
+    backend.screen_backup[0x20] = 0x42; // $0420 sentinel — proves backup redirect is used.
+    backend.ram[0x0420] = 0xFF;         // Underlying DRAM differs to guarantee the redirect fired.
+
+    // (1) KERNAL visible at $E000 when (monitor_cpu_port & 0x02).
+    backend.set_monitor_cpu_port(0x07);
+    if (expect(backend.read(0xE000) == 0x4E, "Frozen: KERNAL must be visible at $E000 with port=$07.")) return 1;
+
+    // (1b) RAM otherwise.
+    backend.set_monitor_cpu_port(0x05); // & 0x02 == 0 -> KERNAL hidden.
+    if (expect(backend.read(0xE000) == 0x11, "Frozen: $E000 must read RAM when KERNAL is hidden.")) return 1;
+
+    // (2) BASIC visible at $A000 when (port & 0x03) == 0x03.
+    backend.set_monitor_cpu_port(0x07);
+    if (expect(backend.read(0xA000) == 0xBA, "Frozen: BASIC must be visible at $A000 with port=$07.")) return 1;
+    backend.set_monitor_cpu_port(0x06); // & 0x03 != 0x03 -> BASIC hidden.
+    if (expect(backend.read(0xA000) == 0xAA, "Frozen: $A000 must read RAM when BASIC is hidden.")) return 1;
+
+    // (3) $0400-$0FFF returns the screen_backup byte, not live DRAM.
+    if (expect(backend.read(0x0420) == 0x42, "Frozen: $0420 must come from the screen_backup region.")) return 1;
+
+    // (4) Two consecutive reads at $E000 return the same byte.
+    backend.set_monitor_cpu_port(0x07);
+    uint8_t first_read = backend.read(0xE000);
+    uint8_t second_read = backend.read(0xE000);
+    if (expect(first_read == second_read, "Frozen: two consecutive $E000 reads must agree (no scroll drift).")) return 1;
+
+    // (5) Write at $E000 while KERNAL is visible, switch to RAM-only bank,
+    //     read $E000 returns the written byte.
+    backend.set_monitor_cpu_port(0x07);
+    backend.write(0xE000, 0x99);
+    if (expect(backend.kernal[0] == 0x4E, "Frozen: write under KERNAL must not modify ROM.")) return 1;
+    backend.set_monitor_cpu_port(0x05); // KERNAL hidden.
+    if (expect(backend.read(0xE000) == 0x99, "Frozen: write-under-ROM must persist as RAM and survive bank switch.")) return 1;
+
+    // (6) Frozen + IO-selected bank: source_name reports IO and IO is reachable.
+    backend.set_monitor_cpu_port(0x07);
+    if (expect(strcmp(backend.source_name(0xD020), "IO") == 0,
+               "Frozen: source_name($D020) must remain IO with IO bank selected.")) return 1;
+    backend.write(0xD020, 0x05);
+    if (expect(backend.io[0xD020 - 0xD000] == 0x05, "Frozen: IO write must reach the IO region.")) return 1;
+    if (expect(backend.read(0xD020) == 0x05, "Frozen: IO read must return the freshly written byte.")) return 1;
+
+    return 0;
+}
+
 static int test_kernal_disassembly_mapping(void)
 {
     TestUserInterface ui;
     CaptureScreen screen;
     FakeBankedMemoryBackend backend;
     char line[39];
+    monitor_reset_saved_state();
 
     const uint8_t kernal_bytes[] = {
         0x85, 0x56, 0x20, 0x0F, 0xBC, 0xA5, 0x61, 0xC9,
@@ -874,6 +958,7 @@ static int test_disassembly_instruction_stepping(void)
     CaptureScreen screen;
     FakeBankedMemoryBackend backend;
     char line[39];
+    monitor_reset_saved_state();
 
     const uint8_t kernal_bytes[] = {
         0x85, 0x56, 0x20, 0x0F, 0xBC, 0xA5, 0x61, 0xC9,
@@ -964,6 +1049,7 @@ static int test_monitor_renders_window_border(void)
     FakeMemoryBackend backend;
     const int keys[] = { KEY_BREAK };
     FakeKeyboard keyboard(keys, 1);
+    monitor_reset_saved_state();
 
     ui.screen = &screen;
     ui.keyboard = &keyboard;
@@ -990,6 +1076,7 @@ static int test_monitor_byte_to_address_invariant(void)
     TestUserInterface ui;
     CaptureScreen screen;
     FakeMemoryBackend backend;
+    monitor_reset_saved_state();
 
     for (uint32_t addr = 0; addr < 0x10000; addr++) {
         backend.write((uint16_t)addr, (uint8_t)((addr >> 3) & 0xFF));
@@ -1047,6 +1134,7 @@ static int test_monitor_viewport_header_and_scroll(void)
     char after_rows[16][MONITOR_HEX_ROW_CHARS + 1];
     char header[39];
     int keys[17];
+    monitor_reset_saved_state();
 
     for (uint32_t addr = 0; addr < 0x10000; addr++) {
         backend.write((uint16_t)addr, (uint8_t)((addr >> 3) & 0xFF));
@@ -1098,6 +1186,7 @@ static int test_monitor_interaction(void)
     FakeBankedMemoryBackend banked_backend;
     char line[MONITOR_DISASM_ROW_CHARS + 1];
     char status[39];
+    monitor_reset_saved_state();
 
     for (int i = 0; i < MONITOR_TEXT_BYTES_PER_ROW * 18; i++) {
         backend.write((uint16_t)i, (uint8_t)('A' + ((i / MONITOR_TEXT_BYTES_PER_ROW) % 26)));
@@ -1161,6 +1250,7 @@ static int test_monitor_interaction(void)
         FakeKeyboard esc_help_keyboard(esc_help_keys, 3);
         ui.keyboard = &esc_help_keyboard;
         screen.clear();
+        monitor_reset_saved_state();
 
         MachineMonitor esc_help_monitor(&ui, &backend);
         esc_help_monitor.init(&screen, &esc_help_keyboard);
@@ -1179,6 +1269,7 @@ static int test_monitor_interaction(void)
     FakeKeyboard goto_disasm_keyboard(goto_disasm_keys, 3);
     ui.keyboard = &goto_disasm_keyboard;
     screen.clear();
+    monitor_reset_saved_state();
 
     MachineMonitor goto_disasm_monitor(&ui, &banked_backend);
     goto_disasm_monitor.init(&screen, &goto_disasm_keyboard);
@@ -1199,6 +1290,7 @@ static int test_monitor_interaction(void)
         banked_backend.live_cpu_port = 0x00;
         banked_backend.live_cpu_ddr = 0x07;
         banked_backend.live_dd00 = 0x01;
+        monitor_reset_saved_state();
 
         MachineMonitor vic_monitor(&ui, &banked_backend);
         vic_monitor.init(&screen, &idle_keyboard);
@@ -1222,6 +1314,7 @@ static int test_monitor_interaction(void)
         banked_backend.live_cpu_port = 0x01;
         banked_backend.live_cpu_ddr = 0x00;
         banked_backend.live_dd00 = 0x01;
+        monitor_reset_saved_state();
 
         MachineMonitor live_bank_monitor(&ui, &banked_backend);
         live_bank_monitor.init(&screen, &live_bank_keyboard);
@@ -1239,6 +1332,7 @@ static int test_monitor_interaction(void)
     FakeKeyboard blink_keyboard(blink_keys, 2);
     ui.keyboard = &blink_keyboard;
     screen.clear();
+    monitor_reset_saved_state();
 
     MachineMonitor blink_monitor(&ui, &backend);
     blink_monitor.init(&screen, &blink_keyboard);
@@ -1256,6 +1350,7 @@ static int test_monitor_interaction(void)
     ui.popup_count = 0;
     ui.navmode = 1;
     screen.clear();
+    monitor_reset_saved_state();
 
     MachineMonitor view_monitor(&ui, &backend);
     view_monitor.init(&screen, &view_keyboard);
@@ -1298,6 +1393,7 @@ static int test_monitor_interaction(void)
     ui.keyboard = &hex_keyboard;
     screen.clear();
     backend.write(0x0000, 0x00);
+    monitor_reset_saved_state();
 
     MachineMonitor hex_monitor(&ui, &backend);
     hex_monitor.init(&screen, &hex_keyboard);
@@ -1332,6 +1428,7 @@ static int test_monitor_interaction(void)
         banked_backend.basic[0] = 0xBA;
         banked_backend.ram[0xA000] = 0xAA;
         banked_backend.set_monitor_cpu_port(0x07);
+        monitor_reset_saved_state();
 
         MachineMonitor rom_write_monitor(&ui, &banked_backend);
         rom_write_monitor.init(&screen, &rom_write_keyboard);
@@ -1355,6 +1452,7 @@ static int test_monitor_interaction(void)
         ui.keyboard = &exit_keyboard;
         screen.clear();
         backend.write(0x0000, 0x00);
+        monitor_reset_saved_state();
 
         MachineMonitor exit_monitor(&ui, &backend);
         exit_monitor.init(&screen, &exit_keyboard);
@@ -1381,6 +1479,7 @@ static int test_monitor_interaction(void)
         FakeKeyboard nav_keyboard(nav_keys, 13);
         ui.keyboard = &nav_keyboard;
         screen.clear();
+        monitor_reset_saved_state();
 
         MachineMonitor nav_monitor(&ui, &backend);
         nav_monitor.init(&screen, &nav_keyboard);
@@ -1396,6 +1495,7 @@ static int test_monitor_interaction(void)
         FakeKeyboard toggle_keyboard(toggle_keys, 1);
         ui.keyboard = &toggle_keyboard;
         screen.clear();
+        monitor_reset_saved_state();
 
         MachineMonitor toggle_monitor(&ui, &backend);
         toggle_monitor.init(&screen, &toggle_keyboard);
@@ -1409,6 +1509,7 @@ static int test_monitor_interaction(void)
     screen.clear();
     ui.popup_count = 0;
     backend.write(0x0000, 0x00);
+    monitor_reset_saved_state();
 
     MachineMonitor ignored_monitor(&ui, &backend);
     ignored_monitor.init(&screen, &ignored_keyboard);
@@ -1427,12 +1528,143 @@ static int test_monitor_interaction(void)
     return 0;
 }
 
+static int test_monitor_reopen_restores_state(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char line[MONITOR_DISASM_ROW_CHARS + 1];
+
+    monitor_reset_saved_state();
+
+    backend.write(0xC123, 0x07);
+    backend.write(0xC124, 0x44);
+    backend.write(0xC125, 0x00);
+
+    {
+        const int first_keys[] = { 'J', 'D', '*', KEY_BREAK };
+        FakeKeyboard first_keyboard(first_keys, 4);
+        ui.screen = &screen;
+        ui.keyboard = &first_keyboard;
+        ui.set_prompt("C123", 1);
+
+        MachineMonitor first_monitor(&ui, &backend);
+        first_monitor.init(&screen, &first_keyboard);
+        if (expect(first_monitor.poll(0) == 0, "First monitor goto failed for reopen-state test.")) return 1;
+        if (expect(first_monitor.poll(0) == 0, "First monitor view switch failed for reopen-state test.")) return 1;
+        if (expect(first_monitor.poll(0) == 0, "First monitor illegal-op toggle failed for reopen-state test.")) return 1;
+        if (expect(first_monitor.poll(0) == 1, "First monitor exit failed for reopen-state test.")) return 1;
+        first_monitor.deinit();
+    }
+
+    screen.clear();
+
+    {
+        const int second_keys[] = { KEY_BREAK };
+        FakeKeyboard second_keyboard(second_keys, 1);
+        ui.keyboard = &second_keyboard;
+
+        MachineMonitor second_monitor(&ui, &backend);
+        second_monitor.init(&screen, &second_keyboard);
+        screen.get_slice(1, 3, 38, line);
+        if (expect(strstr(line, "DIS $C123") == line, "Reopened monitor did not restore the disassembly view and address.")) return 1;
+        screen.get_slice(1, 4, 38, line);
+        if (expect(strstr(line, "C123 07 44") == line, "Reopened monitor did not restore the saved current address.")) return 1;
+        if (expect(strstr(line, "SLO $44") != NULL, "Reopened monitor did not restore the illegal-opcodes setting.")) return 1;
+        if (expect(second_monitor.poll(0) == 1, "Second monitor exit failed for reopen-state test.")) return 1;
+        second_monitor.deinit();
+    }
+
+    monitor_reset_saved_state();
+    return 0;
+}
+
+static int test_monitor_kernal_bank_switch_and_ram_interaction(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeBankedMemoryBackend backend;
+    char line[MONITOR_HEX_ROW_CHARS + 1];
+    char status[39];
+
+    monitor_reset_saved_state();
+
+    backend.kernal[0] = 0x4E;
+    backend.kernal[1] = 0x22;
+    backend.ram[0xE000] = 0xAA;
+    backend.ram[0xE001] = 0xBB;
+
+    const int keys[] = {
+        'J', 'e', '5', '5', KEY_BREAK,
+        'O', 'O', 'O', 'O',
+        'e', '6', '6', KEY_BREAK,
+        'O', 'O', 'O',
+        KEY_BREAK
+    };
+    FakeKeyboard keyboard(keys, 17);
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("E000", 1);
+
+    MachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    if (expect(monitor.poll(0) == 0, "Goto to E000 failed for KERNAL banking test.")) return 1;
+    screen.get_slice(1, 4, MONITOR_HEX_ROW_CHARS, line);
+    if (expect(strstr(line, "e000 4e 22") == line || strstr(line, "E000 4E 22") == line,
+               "Initial KERNAL-visible bytes at E000 are incorrect.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "Edit mode entry failed for KERNAL-visible RAM write test.")) return 1;
+    if (expect(monitor.poll(0) == 0, "First KERNAL-visible nibble failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Second KERNAL-visible nibble failed.")) return 1;
+    if (expect(backend.ram[0xE000] == 0x55, "KERNAL-visible write did not update underlying RAM at E000.")) return 1;
+    if (expect(backend.kernal[0] == 0x4E, "KERNAL-visible write incorrectly modified KERNAL ROM content.")) return 1;
+    screen.get_slice(1, 4, MONITOR_HEX_ROW_CHARS, line);
+    if (expect(strstr(line, "e000 4e 22") == line || strstr(line, "E000 4E 22") == line,
+               "KERNAL-visible monitor view should still show ROM after write-under-ROM.")) return 1;
+    if (expect(monitor.poll(0) == 0, "RUN/STOP should leave edit mode after KERNAL-visible write.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "CPU bank cycle to CPU27 failed for KERNAL banking test.")) return 1;
+    if (expect(monitor.poll(0) == 0, "CPU bank cycle to CPU30 failed for KERNAL banking test.")) return 1;
+    if (expect(monitor.poll(0) == 0, "CPU bank cycle to CPU26 failed for KERNAL banking test.")) return 1;
+    if (expect(monitor.poll(0) == 0, "CPU bank cycle to CPU29 failed for KERNAL banking test.")) return 1;
+    screen.get_slice(1, 22, 38, status);
+    if (expect(strstr(status, "CPU29 RAM IO RAM") != NULL, "CPU29 status did not expose RAM at E000.")) return 1;
+    screen.get_slice(1, 4, MONITOR_HEX_ROW_CHARS, line);
+    if (expect(strstr(line, "e000 55 bb") == line || strstr(line, "E000 55 BB") == line,
+               "Bank switching to RAM did not reveal the underlying bytes at E000.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "Edit mode entry failed for RAM-visible write test.")) return 1;
+    if (expect(monitor.poll(0) == 0, "First RAM-visible nibble failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Second RAM-visible nibble failed.")) return 1;
+    if (expect(backend.ram[0xE001] == 0x66, "RAM-visible write did not update underlying RAM at E001.")) return 1;
+    screen.get_slice(1, 4, MONITOR_HEX_ROW_CHARS, line);
+    if (expect(strstr(line, "e000 55 66") == line || strstr(line, "E000 55 66") == line,
+               "RAM-visible monitor view did not redraw the edited underlying RAM byte.")) return 1;
+    if (expect(monitor.poll(0) == 0, "RUN/STOP should leave edit mode after RAM-visible write.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "CPU bank cycle to CPU25 failed for KERNAL restore test.")) return 1;
+    if (expect(monitor.poll(0) == 0, "CPU bank cycle to CPU28 failed for KERNAL restore test.")) return 1;
+    if (expect(monitor.poll(0) == 0, "CPU bank cycle to CPU31 failed for KERNAL restore test.")) return 1;
+    screen.get_slice(1, 22, 38, status);
+    if (expect(strstr(status, "CPU31 BASIC IO KERNAL") != NULL, "CPU31 status did not restore KERNAL visibility.")) return 1;
+    screen.get_slice(1, 4, MONITOR_HEX_ROW_CHARS, line);
+    if (expect(strstr(line, "e000 4e 22") == line || strstr(line, "E000 4E 22") == line,
+               "Switching back to KERNAL did not restore the ROM-visible bytes at E000.")) return 1;
+    if (expect(monitor.poll(0) == 1, "RUN/STOP exit failed after KERNAL banking interaction test.")) return 1;
+    monitor.deinit();
+
+    return 0;
+}
+
 int main()
 {
     if (test_disassembler()) return 1;
     if (test_memory_helpers()) return 1;
     if (test_parsers_and_formatters()) return 1;
     if (test_banked_backend()) return 1;
+    if (test_frozen_banked_backend()) return 1;
     if (test_kernal_disassembly_mapping()) return 1;
     if (test_disassembly_instruction_stepping()) return 1;
     if (test_template_cursor()) return 1;
@@ -1441,6 +1673,8 @@ int main()
     if (test_monitor_byte_to_address_invariant()) return 1;
     if (test_monitor_viewport_header_and_scroll()) return 1;
     if (test_monitor_interaction()) return 1;
+    if (test_monitor_reopen_restores_state()) return 1;
+    if (test_monitor_kernal_bank_switch_and_ram_interaction()) return 1;
 
     puts("machine_monitor_test: OK");
     return 0;
