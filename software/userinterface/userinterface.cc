@@ -2,11 +2,9 @@
 #include <stdio.h>
 
 #include "machine_monitor.h"
-#include "monitor_buffer_screen.h"
 
 #include "disassembler_6502.cc"
 #include "machine_monitor.cc"
-#include "monitor_buffer_screen.cc"
 
 #ifndef NO_FILE_ACCESS
 #include "FreeRTOS.h"
@@ -656,9 +654,8 @@ void UserInterface :: run_hex_editor(const char *text_buf, int max_len)
 
 void UserInterface :: run_machine_monitor(MemoryBackend *backend)
 {
-    MonitorBufferScreen buffer_screen(screen, screen->get_size_x(), screen->get_size_y());
     MachineMonitor *monitor = new MachineMonitor(this, backend);
-    monitor->init(&buffer_screen, keyboard);
+    monitor->init(screen, keyboard);
     int ret = 0;
     while(!ret && host->exists()) {
         ret = monitor->poll(0);

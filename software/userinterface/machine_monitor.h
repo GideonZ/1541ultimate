@@ -25,7 +25,8 @@ enum {
     MONITOR_HEX_ROW_CHARS = 37,
     MONITOR_TEXT_ROW_CHARS = 4 + 1 + MONITOR_TEXT_BYTES_PER_ROW,
     MONITOR_DISASM_ROW_CHARS = 38,
-    MONITOR_CACHE_BYTES = 1024,
+    MONITOR_DISASM_SOURCE_COL = 30,
+    MONITOR_DISASM_TEXT_COL = 15,
 };
 
 struct MachineMonitorState
@@ -80,9 +81,6 @@ class MachineMonitor : public UIObject
     Window *window;
     int content_height;
     char status_line[40];
-    uint8_t cache[MONITOR_CACHE_BYTES];
-    uint16_t cache_addr;
-    bool cache_valid;
     int pending_hex_nibble;
     bool edit_mode;
     bool edit_cursor_visible;
@@ -94,10 +92,9 @@ class MachineMonitor : public UIObject
     uint16_t edit_blink_ms;
 #endif
 
-    void invalidate_cache();
-    void refresh_cache(uint16_t address);
-    void read_block_wrap(uint16_t address, uint8_t *dst, uint16_t len);
-    uint8_t cached_byte(uint16_t address);
+    uint8_t canonical_read(uint16_t address);
+    void canonical_write(uint16_t address, uint8_t value);
+    void read_row(uint16_t address, uint8_t *dst, uint16_t len);
     void set_status(const char *text);
     void draw();
     void draw_header();
@@ -110,7 +107,6 @@ class MachineMonitor : public UIObject
     void draw_disassembly();
     void draw_hex_row(int y, uint16_t address, const uint8_t *bytes);
     void draw_text_row(int y, uint16_t address, const uint8_t *bytes, bool screen_codes);
-    void adjust_base_for_current();
     void ensure_current_visible();
     void set_view(MachineMonitorView view);
     void move_current(int delta);

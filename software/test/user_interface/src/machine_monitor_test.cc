@@ -2,8 +2,6 @@
 #include <string.h>
 
 #include "machine_monitor.h"
-#include "monitor_buffer_screen.h"
-#include "monitor_buffer_screen.cc"
 #include "disassembler_6502.h"
 #include "menu.h"
 #include "screen.h"
@@ -871,52 +869,82 @@ static int test_task_action_lookup(void)
     return 0;
 }
 
-static int test_monitor_buffer_screen_preserves_outer_chrome(void)
+static int test_monitor_renders_window_border(void)
 {
-    CaptureScreen target;
-    MonitorBufferScreen buffer(&target, 40, 25);
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    const int keys[] = { KEY_BREAK };
+    FakeKeyboard keyboard(keys, 1);
 
-    memset(target.chars[0], 'H', 40);
-    memset(target.chars[1], 'U', 40);
-    memset(target.chars[24], 'F', 40);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
 
-    buffer.move_cursor(0, 2);
-    buffer.output("MONITOR");
-    buffer.sync();
-
-    if (expect(target.clear_calls == 1, "Monitor buffer sync should not clear the outer screen chrome.")) return 1;
-    if (expect(target.chars[0][0] == 'H' && target.chars[1][0] == 'U' && target.chars[24][0] == 'F',
-               "Monitor buffer sync should preserve rows outside the monitor frame.")) return 1;
-
-    buffer.clear();
-    buffer.move_cursor(0, 2);
-    buffer.output("MONITOR+");
-    buffer.sync();
-
-    if (expect(target.clear_calls == 1, "Incremental monitor redraw should not clear the target screen on subsequent syncs.")) return 1;
-    if (expect(strncmp(target.chars[2], "MONITOR+", 8) == 0, "Monitor buffer sync did not update the monitor row in place.")) return 1;
-    if (expect(target.chars[0][0] == 'H' && target.chars[1][0] == 'U' && target.chars[24][0] == 'F',
-               "Incremental monitor redraw should keep the outer header/footer intact.")) return 1;
+    MachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect((unsigned char)screen.chars[2][0] == BORD_LOWER_RIGHT_CORNER, "Monitor must draw the same shared upper-left border corner as the hex editor.")) return 1;
+    if (expect((unsigned char)screen.chars[2][39] == BORD_LOWER_LEFT_CORNER, "Monitor must draw the same shared upper-right border corner as the hex editor.")) return 1;
+    if (expect((unsigned char)screen.chars[23][0] == BORD_UPPER_RIGHT_CORNER, "Monitor must draw the shared lower-left border corner.")) return 1;
+    if (expect((unsigned char)screen.chars[23][39] == BORD_UPPER_LEFT_CORNER, "Monitor must draw the shared lower-right border corner.")) return 1;
+    for (int y = 3; y < 23; y++) {
+        if (expect((unsigned char)screen.chars[y][0] == CHR_VERTICAL_LINE, "Monitor left border must be drawn for every row inside the frame.")) return 1;
+        if (expect((unsigned char)screen.chars[y][39] == CHR_VERTICAL_LINE, "Monitor right border must be drawn for every row inside the frame.")) return 1;
+    }
+    if (expect(monitor.poll(0) == 1, "Monitor must close on RUN/STOP after border verification.")) return 1;
+    monitor.deinit();
     return 0;
 }
 
-static int test_monitor_buffer_screen_preserves_ui_border_colors(void)
+static int test_monitor_byte_to_address_invariant(void)
 {
-    CaptureScreen target;
-    MonitorBufferScreen buffer(&target, 40, 25);
-    Window window(&buffer, 0, 2, 40, 22);
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
 
-    buffer.set_color(1);
-    window.draw_border();
-    window.set_color(1);
-    window.move_cursor(0, 0);
-    window.output("TXT");
-    buffer.sync();
+    for (uint32_t addr = 0; addr < 0x10000; addr++) {
+        backend.write((uint16_t)addr, (uint8_t)((addr >> 3) & 0xFF));
+    }
 
-    if (expect(target.colors[2][0] == 1, "Monitor frame top-left corner should keep the shared UI corner color.")) return 1;
-    if (expect(target.colors[2][1] == 15, "Monitor frame horizontal edge should keep the shared UI border color.")) return 1;
-    if (expect(target.colors[23][39] == 12, "Monitor frame opposite corner should keep the shared UI accent color.")) return 1;
-    if (expect(target.colors[3][1] == 1, "Monitor content should keep the requested text color.")) return 1;
+    const int keys[] = { KEY_PAGEDOWN, KEY_PAGEDOWN, KEY_PAGEDOWN, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 4);
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    MachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    for (int step = 0; step < 3; step++) {
+        if (expect(monitor.poll(0) == 0, "Page-down failed during byte-to-address invariant scan.")) return 1;
+        for (int row = 0; row < 16; row++) {
+            char line[MONITOR_HEX_ROW_CHARS + 1];
+            screen.get_slice(1, 4 + row, MONITOR_HEX_ROW_CHARS, line);
+            uint16_t row_addr = 0;
+            for (int n = 0; n < 4; n++) {
+                char c = line[n];
+                uint16_t digit = 0;
+                if (c >= '0' && c <= '9') digit = (uint16_t)(c - '0');
+                else if (c >= 'a' && c <= 'f') digit = (uint16_t)(c - 'a' + 10);
+                else if (c >= 'A' && c <= 'F') digit = (uint16_t)(c - 'A' + 10);
+                row_addr = (uint16_t)((row_addr << 4) | digit);
+            }
+            for (int b = 0; b < MONITOR_HEX_BYTES_PER_ROW; b++) {
+                int hi_pos = 5 + (3 * b);
+                int lo_pos = hi_pos + 1;
+                char hi = line[hi_pos];
+                char lo = line[lo_pos];
+                uint8_t parsed = 0;
+                uint8_t hi_v = (hi >= '0' && hi <= '9') ? (hi - '0') : ((hi >= 'a' && hi <= 'f') ? (hi - 'a' + 10) : (hi - 'A' + 10));
+                uint8_t lo_v = (lo >= '0' && lo <= '9') ? (lo - '0') : ((lo >= 'a' && lo <= 'f') ? (lo - 'a' + 10) : (lo - 'A' + 10));
+                parsed = (uint8_t)((hi_v << 4) | lo_v);
+                uint16_t cell_addr = (uint16_t)(row_addr + b);
+                uint8_t expected = backend.read(cell_addr);
+                if (expect(parsed == expected, "DISPLAY(addr) must equal CANONICAL_READ(addr) for every visible cell.")) return 1;
+            }
+        }
+    }
+    if (expect(monitor.poll(0) == 1, "Monitor must close on RUN/STOP after byte invariant scan.")) return 1;
+    monitor.deinit();
     return 0;
 }
 
@@ -968,7 +996,7 @@ static int test_monitor_interaction(void)
 
     if (expect(help_monitor.poll(0) == 0, "F3 help open failed.")) return 1;
     screen.get_slice(1, 4, 38, line);
-    if (expect(strstr(line, "M Hex") != NULL, "Help view did not render in-place.")) return 1;
+    if (expect(strstr(line, "M HEX") != NULL, "Help view did not render in-place.")) return 1;
 
     if (expect(help_monitor.poll(0) == 0, "F3 help close failed.")) return 1;
     screen.get_slice(1, 4, 8, line);
@@ -1123,7 +1151,7 @@ static int test_monitor_interaction(void)
         if (expect(exit_monitor.poll(0) == 0, "F3 edit-help setup via 'e' failed.")) return 1;
         if (expect(exit_monitor.poll(0) == 0, "F3 should toggle help while keeping edit mode.")) return 1;
         screen.get_slice(1, 4, 38, line);
-        if (expect(strstr(line, "M Hex") != NULL, "F3 did not open help while editing.")) return 1;
+        if (expect(strstr(line, "M HEX") != NULL, "F3 did not open help while editing.")) return 1;
         if (expect(exit_monitor.poll(0) == 0, "F3 should close help while keeping edit mode.")) return 1;
         if (expect(exit_monitor.poll(0) == 0, "F3-preserved edit mode first nibble failed.")) return 1;
         if (expect(exit_monitor.poll(0) == 0, "F3-preserved edit mode second nibble failed.")) return 1;
@@ -1165,8 +1193,8 @@ static int test_monitor_interaction(void)
         toggle_monitor.deinit();
     }
 
-    const int ignored_keys[] = { ':', 'E', 'Q', 'P', KEY_BREAK };
-    FakeKeyboard ignored_keyboard(ignored_keys, 5);
+    const int ignored_keys[] = { ':', 'Q', 'P', KEY_BREAK };
+    FakeKeyboard ignored_keyboard(ignored_keys, 4);
     ui.keyboard = &ignored_keyboard;
     screen.clear();
     ui.popup_count = 0;
@@ -1174,8 +1202,7 @@ static int test_monitor_interaction(void)
 
     MachineMonitor ignored_monitor(&ui, &backend);
     ignored_monitor.init(&screen, &ignored_keyboard);
-    if (expect(ignored_monitor.poll(0) == 0, "':' should be ignored after 'e' takes over edit entry.")) return 1;
-    if (expect(ignored_monitor.poll(0) == 0, "Uppercase E should not be treated as the old edit command.")) return 1;
+    if (expect(ignored_monitor.poll(0) == 0, "':' should be ignored after 'E' takes over edit entry.")) return 1;
     if (expect(ignored_monitor.poll(0) == 0, "Q should be ignored while not editing.")) return 1;
     if (expect(ignored_monitor.poll(0) == 0, "P should be ignored, not handled as a command.")) return 1;
     if (expect(ui.popup_count == 0, "Removed peek/poke commands should not show popups.")) return 1;
@@ -1199,8 +1226,8 @@ int main()
     if (test_kernal_disassembly_mapping()) return 1;
     if (test_template_cursor()) return 1;
     if (test_task_action_lookup()) return 1;
-    if (test_monitor_buffer_screen_preserves_outer_chrome()) return 1;
-    if (test_monitor_buffer_screen_preserves_ui_border_colors()) return 1;
+    if (test_monitor_renders_window_border()) return 1;
+    if (test_monitor_byte_to_address_invariant()) return 1;
     if (test_monitor_interaction()) return 1;
 
     puts("machine_monitor_test: OK");

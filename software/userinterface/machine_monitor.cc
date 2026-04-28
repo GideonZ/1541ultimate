@@ -22,17 +22,21 @@ static const uint16_t monitor_cursor_blink_half_period_ms = 400;
 #endif
 
 static const char *const monitor_help_lines[] = {
-    "M Hex/Asc  D Disasm  S Screen",
-    "O CPU bank       . Disasm offset",
-    "e Inline edit    J AAAA goto",
-    "F Fill           T Transfer",
-    "C Compare        H Hunt",
-    "R Registers      N Evaluate",
-    "* Illegal decode",
-    "F3/? toggle help",
-    "RUN/LTAR/ESC edit off",
-    "X/RUN exits monitor",
-    "Example: F C000-C0FF,00",
+    "M HEX/ASC   D DISASM    S SCREEN",
+    "E EDIT      O CPU BANK  . DIS OFF",
+    "J GOTO      F FILL      T XFER",
+    "C COMPARE   H HUNT      N EVAL",
+    "R REGS      * ILLEGAL OPS",
+    "F3/? HELP   X/RUN STOP EXIT",
+    "ESC/CBM+E LEAVE EDIT MODE",
+    "",
+    "DISASM SOURCE TAGS:",
+    "[RAM]    BANK SHOWS RAM",
+    "[BASIC]  BANK SHOWS BASIC ROM",
+    "[KERNAL] BANK SHOWS KERNAL ROM",
+    "[CHAR]   BANK SHOWS CHAR ROM",
+    "[IO]     BANK SHOWS I/O REGISTERS",
+    "EX: F C000-C0FF,00",
     NULL
 };
 
@@ -373,8 +377,12 @@ const char *monitor_error_text(MonitorError error)
 
 void monitor_apply_goto(MachineMonitorState *state, uint16_t address)
 {
+    uint16_t span = row_span_for_view(state->view);
     state->current_addr = address;
-    state->base_addr = address & 0xFFF8;
+    state->base_addr = (uint16_t)(address & (uint16_t)(~(span - 1)));
+    if (state->view == MONITOR_VIEW_DISASM) {
+        state->base_addr = address;
+    }
     state->disasm_offset = 0;
 }
 
@@ -702,8 +710,6 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     window = NULL;
     content_height = 0;
     status_line[0] = 0;
-    cache_addr = 0;
-    cache_valid = false;
     pending_hex_nibble = -1;
     edit_mode = false;
     edit_cursor_visible = true;
@@ -716,12 +722,17 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
 #endif
 }
 
-void MachineMonitor :: invalidate_cache()
+uint8_t MachineMonitor :: canonical_read(uint16_t address)
 {
-    cache_valid = false;
+    return backend->read(address);
 }
 
-void MachineMonitor :: read_block_wrap(uint16_t address, uint8_t *dst, uint16_t len)
+void MachineMonitor :: canonical_write(uint16_t address, uint8_t value)
+{
+    backend->write(address, value);
+}
+
+void MachineMonitor :: read_row(uint16_t address, uint8_t *dst, uint16_t len)
 {
     uint16_t first = len;
     if ((uint32_t)address + len > 0x10000UL) {
@@ -733,32 +744,10 @@ void MachineMonitor :: read_block_wrap(uint16_t address, uint8_t *dst, uint16_t 
     }
 }
 
-void MachineMonitor :: refresh_cache(uint16_t address)
-{
-    if (cache_valid && cache_addr == address) {
-        return;
-    }
-    cache_addr = address;
-    read_block_wrap(address, cache, sizeof(cache));
-    cache_valid = true;
-}
-
-uint8_t MachineMonitor :: cached_byte(uint16_t address)
-{
-    uint16_t offset = (uint16_t)(address - cache_addr);
-    return cache[offset];
-}
-
 void MachineMonitor :: set_status(const char *text)
 {
     strncpy(status_line, text, sizeof(status_line) - 1);
     status_line[sizeof(status_line) - 1] = 0;
-}
-
-void MachineMonitor :: adjust_base_for_current()
-{
-    uint16_t span = row_span();
-    state.base_addr = (uint16_t)(state.current_addr & (uint16_t)(~(span - 1)));
 }
 
 void MachineMonitor :: ensure_current_visible()
@@ -807,7 +796,11 @@ uint16_t MachineMonitor :: row_span(void) const
 void MachineMonitor :: move_current(int delta)
 {
     state.current_addr = (uint16_t)(state.current_addr + delta);
-    ensure_current_visible();
+    if (state.view == MONITOR_VIEW_DISASM) {
+        state.base_addr = state.current_addr;
+    } else {
+        ensure_current_visible();
+    }
     pending_hex_nibble = -1;
     if (edit_mode) {
         reset_edit_blink();
@@ -816,13 +809,15 @@ void MachineMonitor :: move_current(int delta)
 
 void MachineMonitor :: page_move(int lines)
 {
-    uint16_t step = (uint16_t)(lines * row_span());
+    uint16_t span = row_span();
+    uint16_t step = (uint16_t)(lines * span);
 
     state.current_addr = (uint16_t)(state.current_addr + step);
     if (state.view == MONITOR_VIEW_DISASM) {
         state.base_addr = state.current_addr;
     } else {
         state.base_addr = (uint16_t)(state.base_addr + step);
+        state.base_addr = (uint16_t)(state.base_addr & (uint16_t)(~(span - 1)));
         ensure_current_visible();
     }
     pending_hex_nibble = -1;
@@ -856,7 +851,7 @@ void MachineMonitor :: draw_header()
 {
     char line[40];
     if (help_visible) {
-        strcpy(line, "HELP (F3/? closes)");
+        strcpy(line, "HELP (F3/? CLOSES)");
     } else {
         const char *view_name = "HEX";
         switch (state.view) {
@@ -865,8 +860,15 @@ void MachineMonitor :: draw_header()
             case MONITOR_VIEW_SCREEN: view_name = "SCR"; break;
             default: break;
         }
-        sprintf(line, "%s $%04x %s %s", view_name, state.current_addr,
-                edit_mode ? "EDIT" : "    ", state.illegal_enabled ? "ILG" : "STD");
+        uint8_t lo = canonical_read(state.current_addr);
+        uint8_t hi = canonical_read((uint16_t)(state.current_addr + 1));
+        uint16_t word = (uint16_t)(lo | (hi << 8));
+        const char *source = backend->source_name(state.current_addr);
+        sprintf(line, "%s $%04x%s%s >$%04x [%s]",
+                view_name, state.current_addr,
+                edit_mode ? " EDIT" : "",
+                state.illegal_enabled ? " ILG" : "",
+                word, source);
     }
     draw_padded(window, 0, line, strlen(line));
 }
@@ -926,15 +928,11 @@ void MachineMonitor :: draw_text_row(int y, uint16_t addr, const uint8_t *bytes,
 void MachineMonitor :: draw_hex()
 {
     int line_idx;
-    refresh_cache(state.base_addr);
     for (line_idx = 0; line_idx < content_height; line_idx++) {
         uint16_t addr = (uint16_t)(state.base_addr + line_idx * MONITOR_HEX_BYTES_PER_ROW);
         uint8_t bytes[MONITOR_HEX_BYTES_PER_ROW];
-        int i;
 
-        for (i = 0; i < MONITOR_HEX_BYTES_PER_ROW; i++) {
-            bytes[i] = cached_byte((uint16_t)(addr + i));
-        }
+        read_row(addr, bytes, MONITOR_HEX_BYTES_PER_ROW);
         if (edit_mode && pending_hex_nibble >= 0 && state.current_addr >= addr && state.current_addr < (uint16_t)(addr + MONITOR_HEX_BYTES_PER_ROW)) {
             int index = state.current_addr - addr;
             bytes[index] = (uint8_t)((pending_hex_nibble << 4) | (bytes[index] & 0x0F));
@@ -946,15 +944,11 @@ void MachineMonitor :: draw_hex()
 void MachineMonitor :: draw_ascii()
 {
     int line_idx;
-    refresh_cache(state.base_addr);
     for (line_idx = 0; line_idx < content_height; line_idx++) {
         uint16_t addr = (uint16_t)(state.base_addr + line_idx * MONITOR_TEXT_BYTES_PER_ROW);
         uint8_t bytes[MONITOR_TEXT_BYTES_PER_ROW];
-        int i;
 
-        for (i = 0; i < MONITOR_TEXT_BYTES_PER_ROW; i++) {
-            bytes[i] = cached_byte((uint16_t)(addr + i));
-        }
+        read_row(addr, bytes, MONITOR_TEXT_BYTES_PER_ROW);
         draw_text_row(line_idx + 1, addr, bytes, false);
     }
 }
@@ -962,15 +956,11 @@ void MachineMonitor :: draw_ascii()
 void MachineMonitor :: draw_screen_codes()
 {
     int line_idx;
-    refresh_cache(state.base_addr);
     for (line_idx = 0; line_idx < content_height; line_idx++) {
         uint16_t addr = (uint16_t)(state.base_addr + line_idx * MONITOR_TEXT_BYTES_PER_ROW);
         uint8_t bytes[MONITOR_TEXT_BYTES_PER_ROW];
-        int i;
 
-        for (i = 0; i < MONITOR_TEXT_BYTES_PER_ROW; i++) {
-            bytes[i] = cached_byte((uint16_t)(addr + i));
-        }
+        read_row(addr, bytes, MONITOR_TEXT_BYTES_PER_ROW);
         draw_text_row(line_idx + 1, addr, bytes, true);
     }
 }
@@ -979,42 +969,50 @@ void MachineMonitor :: draw_disassembly()
 {
     uint16_t addr = (uint16_t)(state.base_addr + state.disasm_offset);
     int line_idx;
-    refresh_cache(addr);
     for (line_idx = 0; line_idx < content_height; line_idx++) {
         Disassembled6502 decoded;
         char line[MONITOR_DISASM_ROW_CHARS + 1];
-        uint8_t b0 = cached_byte(addr);
-        uint8_t b1 = cached_byte((uint16_t)(addr + 1));
-        uint8_t b2 = cached_byte((uint16_t)(addr + 2));
+        uint8_t row_bytes[3];
         int highlight = -1;
+        int text_limit;
+        int text_len;
+        const char *source;
+        int source_len;
+        int source_pos;
+
+        read_row(addr, row_bytes, 3);
         memset(line, ' ', sizeof(line));
         line[MONITOR_DISASM_ROW_CHARS] = 0;
-        disassemble_6502(addr, &cache[(uint16_t)(addr - cache_addr)], state.illegal_enabled, &decoded);
+        disassemble_6502(addr, row_bytes, state.illegal_enabled, &decoded);
         dump_hex_word(line, 0, addr);
         line[4] = ' ';
-        dump_hex_byte(line, 5, b0);
+        dump_hex_byte(line, 5, row_bytes[0]);
         if (decoded.length >= 2) {
-            dump_hex_byte(line, 8, b1);
+            dump_hex_byte(line, 8, row_bytes[1]);
         }
         if (decoded.length >= 3) {
-            dump_hex_byte(line, 11, b2);
+            dump_hex_byte(line, 11, row_bytes[2]);
         }
+        line[13] = ' ';
         line[14] = ' ';
-        strncpy(line + 15, decoded.text, MONITOR_DISASM_ROW_CHARS - 15);
-        {
-            const char *source = backend->source_name(addr);
-            int pos = 15 + strlen(decoded.text);
-            if (pos < MONITOR_DISASM_ROW_CHARS - 2) {
-                line[pos++] = ' ';
-                line[pos++] = '[';
-                while (*source && pos < MONITOR_DISASM_ROW_CHARS - 1) {
-                    line[pos++] = *source++;
-                }
-                if (pos < MONITOR_DISASM_ROW_CHARS) {
-                    line[pos++] = ']';
-                }
-            }
+
+        text_limit = MONITOR_DISASM_SOURCE_COL - 1 - MONITOR_DISASM_TEXT_COL;
+        text_len = (int)strlen(decoded.text);
+        if (text_len > text_limit) {
+            text_len = text_limit;
         }
+        memcpy(line + MONITOR_DISASM_TEXT_COL, decoded.text, text_len);
+
+        source = backend->source_name(addr);
+        source_len = (int)strlen(source);
+        if (source_len > MONITOR_DISASM_ROW_CHARS - MONITOR_DISASM_SOURCE_COL - 2) {
+            source_len = MONITOR_DISASM_ROW_CHARS - MONITOR_DISASM_SOURCE_COL - 2;
+        }
+        source_pos = MONITOR_DISASM_ROW_CHARS - source_len - 2;
+        line[source_pos] = '[';
+        memcpy(line + source_pos + 1, source, source_len);
+        line[source_pos + 1 + source_len] = ']';
+
         if (state.current_addr >= addr && state.current_addr < (uint16_t)(addr + decoded.length)) {
             highlight = 0;
         }
@@ -1059,20 +1057,30 @@ void MachineMonitor :: apply_hex_digit(uint8_t value)
         set_status("Hex nibble pending");
     } else {
         uint8_t byte = (uint8_t)((pending_hex_nibble << 4) | value);
-        backend->write(state.current_addr, byte);
-        invalidate_cache();
+        uint8_t verify;
+        canonical_write(state.current_addr, byte);
+        verify = canonical_read(state.current_addr);
         move_current(1);
         pending_hex_nibble = -1;
-        set_status("Byte written");
+        if (verify == byte) {
+            set_status("Byte written");
+        } else {
+            set_status("Write masked by ROM");
+        }
     }
 }
 
 void MachineMonitor :: apply_ascii_char(char value)
 {
-    backend->write(state.current_addr, (uint8_t)value);
-    invalidate_cache();
+    uint8_t verify;
+    canonical_write(state.current_addr, (uint8_t)value);
+    verify = canonical_read(state.current_addr);
     move_current(1);
-    set_status("Char written");
+    if (verify == (uint8_t)value) {
+        set_status("Char written");
+    } else {
+        set_status("Write masked by ROM");
+    }
 }
 
 void MachineMonitor :: exit_edit_mode()
@@ -1094,16 +1102,22 @@ void MachineMonitor :: enter_edit_mode()
 
 void MachineMonitor :: init(Screen *scr, Keyboard *keyb)
 {
+    int line_length;
+    int height;
+
     screen = scr;
     keyboard = keyb;
-    screen->set_color(1);
-    window = new Window(screen, 0, 2, screen->get_size_x(), screen->get_size_y() - 3);
+
+    line_length = screen->get_size_x();
+    height = screen->get_size_y() - 3;
+
+    window = new Window(screen, 0, 2, line_length, height);
     window->draw_border();
-    window->set_color(1);
+    window->set_color(get_ui()->color_fg);
     content_height = window->get_size_y() - 4;
     backend->set_monitor_cpu_port(normalize_cpu_mode(backend->get_live_cpu_port()));
     last_vic_bank = backend->get_live_vic_bank();
-    set_status("M view : edit O cpu . dis F3 help");
+    set_status("M VIEW E EDIT O CPU . DIS F3 HELP");
     draw();
 }
 
@@ -1206,12 +1220,10 @@ int MachineMonitor :: handle_key(int key)
         case 'o': case 'O':
             cpu_port = next_cpu_mode(backend->get_monitor_cpu_port());
             backend->set_monitor_cpu_port(cpu_port);
-            invalidate_cache();
             set_status("");
             break;
         case '.':
             state.disasm_offset = (uint8_t)((state.disasm_offset + 1) % 3);
-            invalidate_cache();
             set_status("Disasm offset");
             break;
         case '*':
@@ -1232,13 +1244,12 @@ int MachineMonitor :: handle_key(int key)
                 error = monitor_parse_address(buffer, &address);
                 if (error == MONITOR_OK) {
                     monitor_apply_goto(&state, address);
-                    invalidate_cache();
                 } else {
                     set_status(monitor_error_text(error));
                 }
             }
             break;
-        case 'e':
+        case 'e': case 'E':
             if (inline_edit_supported()) {
                 enter_edit_mode();
             } else {
@@ -1251,7 +1262,6 @@ int MachineMonitor :: handle_key(int key)
                 error = monitor_parse_fill(buffer, &start, &end, &byte_value);
                 if (error == MONITOR_OK) {
                     monitor_fill_memory(backend, start, end, byte_value);
-                    invalidate_cache();
                     set_status("Fill done");
                 } else {
                     set_status(monitor_error_text(error));
@@ -1264,7 +1274,6 @@ int MachineMonitor :: handle_key(int key)
                 error = monitor_parse_transfer(buffer, &start, &end, &dest);
                 if (error == MONITOR_OK) {
                     monitor_transfer_memory(backend, start, end, dest);
-                    invalidate_cache();
                     set_status("Transfer done");
                 } else {
                     set_status(monitor_error_text(error));
