@@ -17,7 +17,7 @@ class Screen_VT100: public Screen {
 	bool draw_mode;
 	bool expect_color;
 public:
-	Screen_VT100(Stream *s);
+    Screen_VT100(Stream *s);
 	virtual ~Screen_VT100();
 
     // functions called directly, or from a window
@@ -42,6 +42,7 @@ public:
 
     // VT100 specific
     void restore_terminal(void);
+	bool prefers_full_refresh(void) { return true; }
 };
 
 #endif /* IO_STREAM_SCREEN_VT100_H_ */

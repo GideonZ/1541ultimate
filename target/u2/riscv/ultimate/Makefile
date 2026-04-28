@@ -9,7 +9,7 @@ MABI  ?= ilp32
 include ../../../common/environment.mk
 
 PRJ      =  ultimate
-FINAL    =  $(RESULT)/$(PRJ).app $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
+FINAL    =  $(RESULT)/$(PRJ).app $(RESULT)/$(PRJ).bin $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
 
 SRCS_C   =	itu.c \
 			dump_hex.c \
@@ -97,6 +97,7 @@ SRCS_CC	 =	small_printf.cc \
 			tree_browser_state.cc \
 			config_menu.cc \
 			context_menu.cc \
+			task_actions.cc \
 			task_menu.cc \
 			audio_select.cc \
 			filetype_d64.cc \

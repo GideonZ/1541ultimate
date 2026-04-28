@@ -17,6 +17,7 @@
 #include "home_directory.h"
 #include "system_info.h"
 #include "assembly_search.h"
+#include "subsys.h"
 
 #include "stream_textlog.h"
 extern StreamTextLog textLog; // the global log
@@ -371,6 +372,20 @@ int TreeBrowser :: handle_key(int c)
             reset_quick_seek();
             state->refresh = true;
             user_interface->help();
+            break;
+        case KEY_CTRL_O:
+            reset_quick_seek();
+            state->refresh = true;
+            ensure_task_actions_created(path ? FileManager :: getFileManager()->is_path_writable(path) : false);
+            {
+                Action *monitorAction = find_task_action("Developer", "Machine Code Monitor");
+                if (monitorAction) {
+                    const char *currentPath = path ? path->get_path() : "";
+                    SubsysCommand *cmd = new SubsysCommand(user_interface, monitorAction, currentPath, "");
+                    cmd->execute();
+                    ret = (int)(user_interface->menu_response_to_action);
+                }
+            }
             break;
         case KEY_CONFIG: // F2 -> config
             config();

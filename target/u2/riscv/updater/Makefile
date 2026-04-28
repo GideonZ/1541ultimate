@@ -81,8 +81,6 @@ SRCS_6502 =
 SRCS_HTML = index.html
 
 SRCS_BIN =  ultimate.bin \
-			rv700dd.bin \
-			rv700au.bin \
 			boot2.bin \
 			chars.bin \
 			1541.bin \
@@ -116,6 +114,46 @@ LINK 	 = ./linker.x
 LFLAGS   = --gc-sections 
 
 include ../../../common/rules.mk
+
+# The FPGA updater payloads are linked from .b images so the generated symbols
+# match update.cc (_rv700dd_b_* / _rv700au_b_*). Append these after rules.mk,
+# which initializes OBJS_BIN/CHK_BIN from SRCS_BIN.
+OBJS_BIN += rv700dd.o rv700au.o
+CHK_BIN += rv700dd.chk rv700au.chk
+
+../ultimate/result/ultimate.bin::
+	@$(MAKE) -C ../ultimate
+
+../boot2/result/boot2.bin::
+	@$(MAKE) -C ../boot2
+
+ultimate.chk: ../ultimate/result/ultimate.bin
+	@echo Calculating checksum of $(<F) binary to $(@F)..
+	@$(CHECKSUM) $< $(OUTPUT)/$(@F)
+
+ultimate.o: ../ultimate/result/ultimate.bin
+	@echo Converting $(<F) binary to $(@F)..
+	@$(eval was := _binary_$(subst .,_,$(subst /,_,$(subst -,_,$<))))
+	@$(eval becomes := _ultimate_bin)
+	@$(OBJCOPY) -I binary -O $(ELFTYPE) --binary-architecture $(ARCHITECTURE) $< $(OUTPUT)/$@ \
+	--rename-section .data=.rodata,alloc,load,readonly,data,contents \
+	--redefine-sym $(was)_start=$(becomes)_start \
+	--redefine-sym $(was)_size=$(becomes)_size \
+	--redefine-sym $(was)_end=$(becomes)_end
+
+boot2.chk: ../boot2/result/boot2.bin
+	@echo Calculating checksum of $(<F) binary to $(@F)..
+	@$(CHECKSUM) $< $(OUTPUT)/$(@F)
+
+boot2.o: ../boot2/result/boot2.bin
+	@echo Converting $(<F) binary to $(@F)..
+	@$(eval was := _binary_$(subst .,_,$(subst /,_,$(subst -,_,$<))))
+	@$(eval becomes := _boot2_bin)
+	@$(OBJCOPY) -I binary -O $(ELFTYPE) --binary-architecture $(ARCHITECTURE) $< $(OUTPUT)/$@ \
+	--rename-section .data=.rodata,alloc,load,readonly,data,contents \
+	--redefine-sym $(was)_start=$(becomes)_start \
+	--redefine-sym $(was)_size=$(becomes)_size \
+	--redefine-sym $(was)_end=$(becomes)_end
 
 update.o: update.cc $(INCLUDES) $(CHK_BIN)
 	@echo "Compiling $(notdir $<)"

@@ -103,6 +103,7 @@ SRCS_CC	 =  u2p_init.cc \
 			tree_browser_state.cc \
 			config_menu.cc \
 			context_menu.cc \
+			task_actions.cc \
 			task_menu.cc \
 			filetype_d64.cc \
 			filetype_g64.cc \

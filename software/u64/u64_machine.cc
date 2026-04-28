@@ -3,13 +3,91 @@
 #include "FreeRTOS.h"
 #include <string.h>
 
-bool U64Machine :: before_memory_access() {
+namespace {
+
+static uint8_t read_frozen_byte(volatile uint8_t *ram, bool freezerMenu, uint32_t address,
+                                uint32_t *screen_backup, uint32_t *ram_backup)
+{
+    if (freezerMenu) {
+        if ((address >= 1024) && (address < 2048)) {
+            return ((uint8_t *)screen_backup)[address - 1024];
+        }
+        if ((address >= 2048) && (address < 4096)) {
+            return ((uint8_t *)ram_backup)[address - 2048];
+        }
+    }
+    return ram[address];
+}
+
+static void write_frozen_byte(volatile uint8_t *ram, bool freezerMenu, uint32_t address, uint8_t value,
+                              uint32_t *screen_backup, uint32_t *ram_backup)
+{
+    ram[address] = value;
+    if (freezerMenu) {
+        if ((address >= 1024) && (address < 2048)) {
+            ((uint8_t *)screen_backup)[address - 1024] = value;
+        } else if ((address >= 2048) && (address < 4096)) {
+            ((uint8_t *)ram_backup)[address - 2048] = value;
+        }
+    }
+}
+
+static void override_cpu_port(volatile uint8_t *ram, bool freezerMenu, uint8_t cpu_port,
+                              uint8_t *saved_ddr, uint8_t *saved_port,
+                              uint32_t *screen_backup, uint32_t *ram_backup)
+{
+    *saved_ddr = read_frozen_byte(ram, freezerMenu, 0x0000, screen_backup, ram_backup);
+    *saved_port = read_frozen_byte(ram, freezerMenu, 0x0001, screen_backup, ram_backup);
+    write_frozen_byte(ram, freezerMenu, 0x0000, (uint8_t)((*saved_ddr & 0xF8) | 0x07), screen_backup, ram_backup);
+    write_frozen_byte(ram, freezerMenu, 0x0001, (uint8_t)((*saved_port & 0xF8) | (cpu_port & 0x07)), screen_backup, ram_backup);
+    ram[0x0001];
+    ram[0x0001];
+}
+
+static void restore_cpu_port(volatile uint8_t *ram, bool freezerMenu, uint8_t saved_ddr,
+                             uint8_t saved_port, uint32_t *screen_backup, uint32_t *ram_backup)
+{
+    write_frozen_byte(ram, freezerMenu, 0x0000, saved_ddr, screen_backup, ram_backup);
+    write_frozen_byte(ram, freezerMenu, 0x0001, saved_port, screen_backup, ram_backup);
+    ram[0x0001];
+    ram[0x0001];
+}
+
+static void copy_raw_block(volatile uint8_t *ram, bool freezerMenu, uint32_t address, uint8_t *dst, uint32_t len,
+                           uint32_t *screen_backup, uint32_t *ram_backup)
+{
+    memcpy(dst, (const void *)(ram + address), len);
+
+    if (freezerMenu) {
+        uint32_t overlap;
+        if ((address < 2048) && ((address + len) > 1024)) {
+            uint32_t start = (address > 1024) ? address : 1024;
+            overlap = address + len - start;
+            if (overlap > 1024) {
+                overlap = 1024;
+            }
+            memcpy(dst + (start - address), screen_backup + (start - 1024), overlap);
+        }
+        if ((address < 4096) && ((address + len) > 2048)) {
+            uint32_t start = (address > 2048) ? address : 2048;
+            overlap = address + len - start;
+            if (overlap > 2048) {
+                overlap = 2048;
+            }
+            memcpy(dst + (start - address), ram_backup + (start - 2048), overlap);
+        }
+    }
+}
+
+}
+
+bool U64Machine :: before_memory_access(bool memOnly) {
     bool freezerMenu = isFrozen;
     if (!freezerMenu) {
         stop(false);
     }
     portENTER_CRITICAL();
-    C64_DMA_MEMONLY = 1;
+    C64_DMA_MEMONLY = memOnly ? 1 : 0;
     return freezerMenu;
 }
 
@@ -27,15 +105,116 @@ void U64Machine :: after_memory_access(uint8_t *pb, bool freezerMenu) {
 
 void U64Machine :: get_all_memory(uint8_t *pb)
 {
-    bool freezerMenu = before_memory_access();
+    // Match the REST C64_DMA_RAW_READ path: stop the machine and read C64_MEMORY_BASE directly.
+    bool freezerMenu = before_memory_access(false);
     memcpy(pb, (uint8_t *)C64_MEMORY_BASE, 65536);
     after_memory_access(pb, freezerMenu);
 }
 
+void U64Machine :: read_block(uint32_t address, uint8_t *dst, uint32_t len)
+{
+    bool freezerMenu = before_memory_access(false);
+    volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+
+    copy_raw_block(ram, freezerMenu, address, dst, len, screen_backup, ram_backup);
+
+    after_memory_access(0, freezerMenu);
+}
+
+void U64Machine :: read_cpu_block(uint32_t address, uint8_t *dst, uint32_t len, uint8_t cpu_port)
+{
+    bool freezerMenu = isFrozen;
+    uint8_t saved_memonly = C64_DMA_MEMONLY;
+    if (!freezerMenu) {
+        stop(false);
+    }
+    portENTER_CRITICAL();
+    C64_DMA_MEMONLY = 0;
+    volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+    uint8_t saved_ddr;
+    uint8_t saved_port;
+    uint8_t saved_serve = C64_SERVE_CONTROL;
+
+    C64_SERVE_CONTROL = saved_serve | SERVE_WHILE_STOPPED;
+    override_cpu_port(ram, freezerMenu, cpu_port, &saved_ddr, &saved_port, screen_backup, ram_backup);
+    copy_raw_block(ram, freezerMenu, address, dst, len, screen_backup, ram_backup);
+    restore_cpu_port(ram, freezerMenu, saved_ddr, saved_port, screen_backup, ram_backup);
+    C64_SERVE_CONTROL = saved_serve;
+    C64_DMA_MEMONLY = saved_memonly;
+    portEXIT_CRITICAL();
+    if (!freezerMenu) {
+        resume();
+    }
+}
+
+void U64Machine :: read_visible_block(uint32_t address, uint8_t *dst, uint32_t len)
+{
+    bool freezerMenu = isFrozen;
+    uint8_t saved_memonly = C64_DMA_MEMONLY;
+    if (!freezerMenu) {
+        stop(false);
+    }
+    portENTER_CRITICAL();
+    C64_DMA_MEMONLY = 0;
+    volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+    uint8_t saved_serve = C64_SERVE_CONTROL;
+
+    C64_SERVE_CONTROL = saved_serve | SERVE_WHILE_STOPPED;
+
+    for (uint32_t offset = 0; offset < len; offset++) {
+        uint32_t current = address + offset;
+        uint8_t byte = ram[current];
+
+        if (freezerMenu) {
+            if ((current >= 1024) && (current < 2048)) {
+                byte = screen_backup[current - 1024];
+            } else if ((current >= 2048) && (current < 4096)) {
+                byte = ram_backup[current - 2048];
+            }
+        }
+        dst[offset] = byte;
+    }
+
+    C64_SERVE_CONTROL = saved_serve;
+    C64_DMA_MEMONLY = saved_memonly;
+    portEXIT_CRITICAL();
+
+    if (!freezerMenu) {
+        resume();
+    }
+}
+
 uint8_t U64Machine :: peek(uint32_t address) 
 {
-    bool freezerMenu = before_memory_access();
+    bool freezerMenu = before_memory_access(false);
     volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+    uint8_t byte = read_frozen_byte(ram, freezerMenu, address, screen_backup, ram_backup);
+
+    after_memory_access(0, freezerMenu);
+    return byte;
+}
+
+uint8_t U64Machine :: peek_cpu(uint32_t address, uint8_t cpu_port)
+{
+    uint8_t byte = 0;
+    read_cpu_block(address, &byte, 1, cpu_port);
+    return byte;
+}
+
+uint8_t U64Machine :: peek_visible(uint32_t address)
+{
+    bool freezerMenu = isFrozen;
+    uint8_t saved_memonly = C64_DMA_MEMONLY;
+    if (!freezerMenu) {
+        stop(false);
+    }
+    portENTER_CRITICAL();
+    C64_DMA_MEMONLY = 0;
+    volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+    uint8_t saved_serve = C64_SERVE_CONTROL;
+
+    C64_SERVE_CONTROL = saved_serve | SERVE_WHILE_STOPPED;
+
     uint8_t byte = ram[address];
 
     if (freezerMenu) {
@@ -46,13 +225,42 @@ uint8_t U64Machine :: peek(uint32_t address)
         }
     }
 
-    after_memory_access(0, freezerMenu);
+    C64_SERVE_CONTROL = saved_serve;
+    C64_DMA_MEMONLY = saved_memonly;
+    portEXIT_CRITICAL();
+
+    if (!freezerMenu) {
+        resume();
+    }
     return byte;
 }
 
 void U64Machine :: poke(uint32_t address, uint8_t byte)
 {
-    bool freezerMenu = before_memory_access();
+    bool freezerMenu = before_memory_access(false);
+    volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+
+    write_frozen_byte(ram, freezerMenu, address, byte, screen_backup, ram_backup);
+
+    after_memory_access(0, freezerMenu);
+}
+
+void U64Machine :: poke_cpu(uint32_t address, uint8_t byte, uint8_t cpu_port)
+{
+    bool freezerMenu = before_memory_access(false);
+    volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+    uint8_t saved_ddr;
+    uint8_t saved_port;
+
+    override_cpu_port(ram, freezerMenu, cpu_port, &saved_ddr, &saved_port, screen_backup, ram_backup);
+    write_frozen_byte(ram, freezerMenu, address, byte, screen_backup, ram_backup);
+    restore_cpu_port(ram, freezerMenu, saved_ddr, saved_port, screen_backup, ram_backup);
+    after_memory_access(0, freezerMenu);
+}
+
+void U64Machine :: poke_visible(uint32_t address, uint8_t byte)
+{
+    bool freezerMenu = before_memory_access(false);
     volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
 
     ram[address] = byte;
@@ -92,4 +300,3 @@ void U64Machine :: clear_ram()
     }
 #endif
 }
-

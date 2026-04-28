@@ -15,9 +15,15 @@ class SocketGui
 {
 public:
 	TaskHandle_t listenTaskHandle;
+#if U64
+	TaskHandle_t monitorListenTaskHandle;
+#endif
 
 	SocketGui();
 	int listenTask(void);
+#if U64
+	int listenMonitorTask(void);
+#endif
 };
 
 #endif /* NETWORK_SOCKET_GUI_H_ */

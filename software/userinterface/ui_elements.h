@@ -89,8 +89,10 @@ private:
     // destination
     int   max_len;
     char *buffer;
+    bool  template_mode;
+    bool  clear_template_on_input;
 public:
-    UIStringEdit(char *buf, int max);
+    UIStringEdit(char *buf, int max, bool template_mode = false);
     ~UIStringEdit() { }
 
     void init(Window *win, Keyboard *keyb, int x_offs, int y_offs, int max_chars);
@@ -105,7 +107,7 @@ private:
     UIStringEdit edit;
     Window *window;
 public:
-    UIStringBox(UserInterface *ui, const char *msg, char *buf, int max);
+    UIStringBox(UserInterface *ui, const char *msg, char *buf, int max, bool template_mode = false);
     ~UIStringBox() { }
 
     void init();

@@ -1,0 +1,68 @@
+{
+  "kernal_hex_e000": {
+    "contains": {
+      "4": "E000 85 56 20 0F BC A5 61 C9"
+    }
+  },
+  "kernal_disasm_e000": {
+    "contains": {
+      "4": "E000 85 56     STA $56",
+      "5": "E002 20 0F BC  JSR $BC0F"
+    }
+  },
+  "kernal_disasm_e013": {
+    "contains": {
+      "4": "E013 18        CLC"
+    }
+  },
+  "status_cpu31": {
+    "contains": {
+      "22": "CPU31 BASIC IO KERNAL|VIC"
+    }
+  },
+  "ascii_top_row": {
+    "contains": {
+      "4": "C000 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    }
+  },
+  "ascii_scrolled_top_row": {
+    "contains": {
+      "4": "C020 BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+    }
+  },
+  "hex_first_nibble": {
+    "contains": {
+      "4": "C000 A0"
+    }
+  },
+  "hex_second_nibble": {
+    "contains": {
+      "4": "C000 AB"
+    }
+  },
+  "status_cpu27": {
+    "contains": {
+      "22": "CPU27 BASIC CHAR KERNAL|VIC"
+    }
+  },
+  "status_cpu30": {
+    "contains": {
+      "22": "CPU30 RAM IO KERNAL|VIC"
+    }
+  },
+  "status_cpu26": {
+    "contains": {
+      "22": "CPU26 RAM CHAR KERNAL|VIC"
+    }
+  },
+  "status_cpu29": {
+    "contains": {
+      "22": "CPU29 RAM IO RAM|VIC"
+    }
+  },
+  "ram_a000": {
+    "contains": {
+      "4": "A000 AA"
+    }
+  }
+}

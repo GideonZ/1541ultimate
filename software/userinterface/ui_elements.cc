@@ -131,11 +131,11 @@ void UIPopup :: deinit()
 	delete window;
 }
 
-UIStringBox :: UIStringBox(UserInterface *ui, const char *msg, char *buf, int max) : UIObject(ui), message(msg), edit(buf, max)
+UIStringBox :: UIStringBox(UserInterface *ui, const char *msg, char *buf, int max, bool template_mode) : UIObject(ui), message(msg), edit(buf, max, template_mode)
 {
 }
 
-UIStringEdit :: UIStringEdit(char *buf, int max)
+UIStringEdit :: UIStringEdit(char *buf, int max, bool template_edit_mode)
 {
     buffer = buf;
     max_len = max;
@@ -146,6 +146,8 @@ UIStringEdit :: UIStringEdit(char *buf, int max)
     cur = len = 0;
     win_xoffs = 0;
     win_yoffs = 0;
+    template_mode = template_edit_mode;
+    clear_template_on_input = template_edit_mode;
 }
 
 void UIStringBox :: init()
@@ -197,12 +199,15 @@ void UIStringEdit :: init(Window *win, Keyboard *kb, int xo, int yo, int max_c)
 /// Default to old string
     cur = strlen(buffer); // assume it is prefilled, set cursor at the end.
     if(cur > max_len) {
-        buffer[cur]=0;
+        buffer[max_len]=0;
         cur = max_len;
     }
     len = cur;
-/// Default to old string
-    if (len > (max_chars-1)) {
+    if (template_mode) {
+        cur = 0;
+        edit_offs = 0;
+        clear_template_on_input = (len > 0);
+    } else if (len > (max_chars-1)) {
         edit_offs = 1 + len - max_chars;
     }
     window->output_length(buffer+edit_offs, (len < max_chars)?len : max_chars);
@@ -219,6 +224,28 @@ int UIStringEdit :: poll(int dummy)
 		return 0;
 	if (key == -2) // error
 		return -1;
+
+    if (clear_template_on_input) {
+        if ((key >= 32) && (key < 127)) {
+            buffer[0] = 0;
+            len = 0;
+            cur = 0;
+            edit_offs = 0;
+            window->move_cursor(win_xoffs, win_yoffs);
+            window->repeat(' ', max_chars);
+            window->move_cursor(win_xoffs, win_yoffs);
+            clear_template_on_input = false;
+        } else if (key == KEY_CLEAR || key == KEY_DELETE) {
+            buffer[0] = 0;
+            len = 0;
+            cur = 0;
+            edit_offs = 0;
+            window->move_cursor(win_xoffs, win_yoffs);
+            window->repeat(' ', max_chars);
+            window->move_cursor(win_xoffs, win_yoffs);
+            clear_template_on_input = false;
+        }
+    }
 
     switch(key) {
     case KEY_RETURN: // CR
@@ -275,6 +302,7 @@ int UIStringEdit :: poll(int dummy)
         len = 0;
         cur = 0;
         edit_offs = 0;
+        clear_template_on_input = false;
         window->move_cursor(win_xoffs, win_yoffs);
         window->output_length(buffer+cur, max_chars+edit_offs-cur);
         window->move_cursor(win_xoffs, win_yoffs);
@@ -320,6 +348,7 @@ int UIStringEdit :: poll(int dummy)
             printf("Unhandled key: %d\n", key);
             break;
         }
+        clear_template_on_input = false;
         if (len < max_len) {
             for(i=len; i>=cur; i--) { // insert if necessary
                 buffer[i+1] = buffer[i];

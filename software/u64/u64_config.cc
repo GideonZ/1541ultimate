@@ -40,6 +40,10 @@ extern "C" {
 #include "hdmi_scan.h"
 #include "usb_hid.h"
 #include "usb_hid_config.h"
+#include "u64_memory_backend.h"
+#include "machine_monitor.h"
+
+#include "u64_memory_backend.cc"
 
 const uint8_t default_colors[16][3] = {
     { 0x00, 0x00, 0x00 },
@@ -1393,18 +1397,14 @@ int U64Config :: setSidEmuParams(ConfigItem *it)
 #define MENU_U64_WIFI_BOOT 5
 #define MENU_U64_DETECT_SIDS 6
 #define MENU_U64_WIFI_DOWNLOAD 7
-#define MENU_U64_POKE 8
 #define MENU_U64_WIFI_ECHO 9
 #define MENU_U64_UART_ECHO 10
-#define MENU_U64_PEEK 11
 #define MENU_U64_MONITOR 12
 
 void U64Config :: create_task_items(void)
 {
     TaskCategory *dev = TasksCollection :: getCategory("Developer", SORT_ORDER_DEVELOPER);
-    myActions.peek      = new Action("Peek", SUBSYSID_U64, MENU_U64_PEEK);
-    myActions.poke      = new Action("Poke", SUBSYSID_U64, MENU_U64_POKE);
-    myActions.monitor   = new Action("Monitor", SUBSYSID_U64, MENU_U64_MONITOR);
+    myActions.monitor   = new Action("Machine Code Monitor", SUBSYSID_U64, MENU_U64_MONITOR);
     myActions.saveedid  = new Action("Save EDID to file", SUBSYSID_U64, MENU_U64_SAVEEDID);
     myActions.siddetect = new Action("Detect SIDs", SUBSYSID_U64, MENU_U64_DETECT_SIDS);
     myActions.esp32off  = new Action("Disable ESP32", SUBSYSID_U64, MENU_U64_WIFI_DISABLE);
@@ -1414,8 +1414,6 @@ void U64Config :: create_task_items(void)
     dev->append(myActions.saveedid);
 
 #if U64
-    dev->append(myActions.peek);
-    dev->append(myActions.poke);
     dev->append(myActions.monitor);
 #endif
 
@@ -1444,9 +1442,6 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
 	int sid1, sid2;
 	char sidString[40];
 	C64 *machine;
-	static char poke_buffer[16];
-	static char peek_buffer[16];
-	static char peek_range_buffer[16];
 	uint32_t addr, end_addr, value;
 
 	switch(cmd->functionID) {
@@ -1478,39 +1473,9 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
     	}
     	break;
 
-    case MENU_U64_PEEK:
-        if (cmd->user_interface->string_box("Peek AAAA", peek_buffer, 16)) {
-            sscanf(peek_buffer, "%x", &addr);
-            
-            value = C64 :: getMachine()->peek(addr);
-
-            char msg[20];
-            sprintf(msg, "Peek(%4x)=%2x", addr, value);
-            cmd->user_interface->popup(msg, BUTTON_OK);
-        }
-        break;
-
-    case MENU_U64_POKE:
-        if ((cmd->user_interface->string_box("Poke AAAA,DD", poke_buffer, 16) > 0) && (*poke_buffer)) {
-            sscanf(poke_buffer, "%x,%x", &addr, &value);
-
-            C64 :: getMachine()->poke(addr, (uint8_t) value);
-            uint8_t verified_value = C64 :: getMachine()->peek(addr);
-
-            char msg[20];
-            sprintf(msg, "Poke(%4x,%2x)=%2x", addr, value, verified_value);
-            cmd->user_interface->popup(msg, BUTTON_OK);
-        }
-        break;
-
     case MENU_U64_MONITOR: {
-        int ram_size = 64 * 1024;
-        uint8_t *pb = new uint8_t[ram_size];
-        
-        C64 :: getMachine()->get_all_memory(pb);
-        
-        cmd->user_interface->run_hex_editor((const char *) pb, ram_size);   
-        delete[] pb;
+        U64MemoryBackend monitor_backend;
+        cmd->user_interface->run_machine_monitor(&monitor_backend);
         break;
     }
 

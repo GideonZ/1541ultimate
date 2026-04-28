@@ -5,12 +5,12 @@
 #include "browsable.h"
 #include "context_menu.h"
 #include "path.h"
+#include "task_actions.h"
 
 class TreeBrowserState;
 
 class TaskMenu : public ContextMenu
 {
-    static bool actionsCreated;
     TreeBrowserState *state;
 	Browsable *browsable;
 	Path *path;
