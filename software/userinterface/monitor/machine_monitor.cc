@@ -626,7 +626,7 @@ MonitorError monitor_parse_transfer(const char *text, uint16_t *start, uint16_t 
     if (error != MONITOR_OK) {
         return MONITOR_ADDR;
     }
-    if (*end < *start) {
+    if (*end <= *start) {
         return MONITOR_RANGE;
     }
     error = expect_separator(cursor, ',', MONITOR_SYNTAX);

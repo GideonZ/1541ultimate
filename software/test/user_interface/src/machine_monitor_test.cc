@@ -854,6 +854,10 @@ static int test_disassembler(void)
     disassemble_6502(0x3000, illegal, true, &decoded);
     if (expect(strcmp(decoded.text, "SLO $44") == 0, "Illegal opcode enable failed.")) return 1;
 
+    const uint8_t illegal_zpx[] = { 0x54, 0x44, 0x00 };
+    disassemble_6502(0x3000, illegal_zpx, true, &decoded);
+    if (expect(strcmp(decoded.text, "NOP $44,X") == 0, "Illegal zeropage,X disassembly failed.")) return 1;
+
     return 0;
 }
 
@@ -933,6 +937,10 @@ static int test_parsers_and_formatters(void)
     if (expect(monitor_parse_hunt("C100-C200, ", &start, &end, needle, &needle_len) == MONITOR_SYNTAX, "Hunt validator failure.")) return 1;
     if (expect(monitor_parse_transfer("C000-C010,C100", &start, &end, &dest) == MONITOR_OK, "Transfer parser failed.")) return 1;
     if (expect(start == 0xC000 && end == 0xC010 && dest == 0xC100, "Transfer parser values failed.")) return 1;
+    if (expect(monitor_parse_transfer("C000-C000,C100", &start, &end, &dest) == MONITOR_RANGE,
+               "Transfer parser should reject zero-length ranges.")) return 1;
+    if (expect(monitor_parse_compare("C000-C000,C100", &start, &end, &dest) == MONITOR_RANGE,
+               "Compare parser should reject zero-length ranges.")) return 1;
 
     if (expect(monitor_format_evaluate("$00ff", output, sizeof(output)) == MONITOR_OK && output[0] == '$',
                "Evaluate formatter failed.")) return 1;

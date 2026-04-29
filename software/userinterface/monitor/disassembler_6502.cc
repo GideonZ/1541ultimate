@@ -35,7 +35,7 @@ static const char *const opcode_templates[256] = {
     "JMP $nnnn    ", "EOR $nnnn    ", "LSR $nnnn    ", "LSE*$nnnn    ",
 
     "BVC rel      ", "EOR ($nn),Y  ", "HLT*         ", "LSE*($nn),Y  ",
-    "NOP $nn,x    ", "EOR $nn,X    ", "LSR $nn,X    ", "LSE*$nn,X    ",
+    "NOP $nn,X    ", "EOR $nn,X    ", "LSR $nn,X    ", "LSE*$nn,X    ",
     "CLI          ", "EOR $nnnn,Y  ", "NOP*         ", "LSE*$nnnn,Y  ",
     "NOP*$nnnn,X  ", "EOR $nnnn,X  ", "LSR $nnnn,X  ", "LSE*$nnnn,X  ",
 
@@ -45,7 +45,7 @@ static const char *const opcode_templates[256] = {
     "JMP ($nnnn)  ", "ADC $nnnn    ", "ROR $nnnn    ", "RRA*$nnnn    ",
 
     "BVS rel      ", "ADC ($nn),Y  ", "HLT*         ", "RRA*($nn),Y  ",
-    "NOP $nn,x    ", "ADC $nn,X    ", "ROR $nn,X    ", "RRA*$nn,X    ",
+    "NOP $nn,X    ", "ADC $nn,X    ", "ROR $nn,X    ", "RRA*$nn,X    ",
     "SEI          ", "ADC $nnnn,Y  ", "NOP*         ", "RRA*$nnnn,Y  ",
     "NOP*$nnnn,X  ", "ADC $nnnn,X  ", "ROR $nnnn,X  ", "RRA*$nnnn,X  ",
 
