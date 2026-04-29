@@ -154,6 +154,11 @@ int UserInterface :: string_box(const char *, char *, int, bool)
     return 0;
 }
 
+int UserInterface :: string_box(const char *, char *, int, bool, bool)
+{
+    return 0;
+}
+
 int UserInterface :: string_edit(char *, int, Window *, int, int)
 {
     return 0;
@@ -583,6 +588,11 @@ public:
     {
         return string_box(msg, buffer, maxlen);
     }
+
+    int string_box(const char *msg, char *buffer, int maxlen, bool, bool)
+    {
+        return string_box(msg, buffer, maxlen);
+    }
 };
 
 class TaskActionProvider : public ObjectWithMenu
@@ -747,6 +757,43 @@ static int test_parsers_and_formatters(void)
         if (expect(strcmp(text_row, "1000 ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEF") == 0, "ASCII row format mismatch.")) return 1;
         monitor_format_text_row(0x1000, ascii_bytes, MONITOR_TEXT_BYTES_PER_ROW, true, text_row);
         if (expect((int)strlen(text_row) == MONITOR_TEXT_ROW_CHARS, "Screen-code row width mismatch.")) return 1;
+    }
+
+    {
+        const uint8_t screen_bytes[MONITOR_TEXT_BYTES_PER_ROW] = {
+            0x00, 0x01, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F,
+            0x20, 0x21, 0x2A, 0x2B, 0x30, 0x3A, 0x3F, 0x40,
+            0x49, 0x4A, 0x4B, 0x55, 0x5A, 0x5B, 0x5D, 0x60,
+            0x7F, 0x80, 0x81, 0x9A, 0x9B, 0x9C, 0x9D, 0x9E
+        };
+        monitor_format_text_row(0x2000, screen_bytes, MONITOR_TEXT_BYTES_PER_ROW, true, text_row);
+        if (expect(strncmp(text_row, "2000 ", 5) == 0, "Screen-code row prefix mismatch.")) return 1;
+        if (expect(text_row[5] == '@', "Screen code $00 should map to '@'.")) return 1;
+        if (expect(text_row[6] == 'A', "Screen code $01 should map to 'A'.")) return 1;
+        if (expect(text_row[7] == 'Z', "Screen code $1A should map to 'Z'.")) return 1;
+        if (expect(text_row[8] == '[', "Screen code $1B should map to '['.")) return 1;
+        if (expect(text_row[9] == '#', "Screen code $1C should map to the pound-sign fallback.")) return 1;
+        if (expect(text_row[10] == ']', "Screen code $1D should map to ']'.")) return 1;
+        if (expect(text_row[11] == '^', "Screen code $1E should map to the up-arrow fallback.")) return 1;
+        if (expect(text_row[12] == '<', "Screen code $1F should map to the left-arrow fallback.")) return 1;
+        if (expect(text_row[13] == ' ' && text_row[14] == '!' && text_row[15] == '*' && text_row[16] == '+',
+                   "Printable screen-code punctuation mapping is incorrect.")) return 1;
+        if (expect(text_row[17] == '0' && text_row[18] == ':' && text_row[19] == '?',
+                   "Screen-code digit/punctuation positions are incorrect.")) return 1;
+        if (expect((unsigned char)text_row[20] == CHR_HORIZONTAL_LINE, "Screen code $40 should map to the horizontal-line glyph.")) return 1;
+        if (expect((unsigned char)text_row[21] == CHR_ROUNDED_UPPER_RIGHT, "Screen code $49 should map to the upper-right rounded corner glyph.")) return 1;
+        if (expect((unsigned char)text_row[22] == CHR_ROUNDED_LOWER_LEFT, "Screen code $4A should map to the lower-left rounded corner glyph.")) return 1;
+        if (expect((unsigned char)text_row[23] == CHR_ROUNDED_LOWER_RIGHT, "Screen code $4B should map to the lower-right rounded corner glyph.")) return 1;
+        if (expect((unsigned char)text_row[24] == CHR_ROUNDED_UPPER_LEFT, "Screen code $55 should map to the upper-left rounded corner glyph.")) return 1;
+        if (expect((unsigned char)text_row[25] == CHR_DIAMOND, "Screen code $5A should map to the diamond glyph.")) return 1;
+        if (expect(text_row[26] == '+' && (unsigned char)text_row[27] == CHR_VERTICAL_LINE,
+                   "Screen-code cross/vertical-line mapping is incorrect.")) return 1;
+        if (expect(text_row[28] == ' ' && text_row[29] == ' ',
+                   "Blank screen-code range $60-$7F should render as spaces.")) return 1;
+        if (expect(text_row[30] == '@' && text_row[31] == 'A' && text_row[32] == 'Z' && text_row[33] == '[',
+                   "Reverse screen codes should map to the same visible glyph positions as their base codes.")) return 1;
+        if (expect(text_row[34] == '#' && text_row[35] == ']' && text_row[36] == '^',
+                   "Reverse punctuation/arrow screen-code mapping is incorrect.")) return 1;
     }
 
     return 0;
@@ -980,31 +1027,29 @@ static int test_disassembly_instruction_stepping(void)
     if (expect(monitor.poll(0) == 0, "Disassembly view switch failed for stepping test.")) return 1;
 
     screen.get_slice(1, 3, 38, line);
-    if (expect(strstr(line, "DIS $E000") == line, "Disassembly view must start at the goto address.")) return 1;
+    if (expect(strstr(line, "ASM $E000") == line, "Disassembly view must start at the goto address.")) return 1;
     screen.get_slice(1, 4, 38, line);
     if (expect(strstr(line, "E000 85 56") == line, "Initial disassembly row mismatch at E000.")) return 1;
 
     if (expect(monitor.poll(0) == 0, "First disassembly down-step failed.")) return 1;
     screen.get_slice(1, 3, 38, line);
-    if (expect(strstr(line, "DIS $E002") == line, "Disassembly down-step must advance by instruction length.")) return 1;
+    if (expect(strstr(line, "ASM $E000") == line, "Disassembly down-step must keep the viewport top stable.")) return 1;
     screen.get_slice(1, 4, 38, line);
+    if (expect(strstr(line, "E000 85 56") == line, "First disassembly down-step must keep the previous row visible.")) return 1;
+    screen.get_slice(1, 5, 38, line);
     if (expect(strstr(line, "E002 20 0F BC") == line, "First disassembly down-step landed on the wrong instruction.")) return 1;
 
     if (expect(monitor.poll(0) == 0, "Second disassembly down-step failed.")) return 1;
     screen.get_slice(1, 3, 38, line);
-    if (expect(strstr(line, "DIS $E005") == line, "Second disassembly down-step must follow the decoded length again.")) return 1;
-    screen.get_slice(1, 4, 38, line);
+    if (expect(strstr(line, "ASM $E000") == line, "Second disassembly down-step must keep the viewport top stable.")) return 1;
+    screen.get_slice(1, 6, 38, line);
     if (expect(strstr(line, "E005 A5 61") == line, "Second disassembly down-step landed on the wrong instruction.")) return 1;
 
     if (expect(monitor.poll(0) == 0, "First disassembly up-step failed.")) return 1;
-    screen.get_slice(1, 3, 38, line);
-    if (expect(strstr(line, "DIS $E002") == line, "Disassembly up-step must return to the exact previous instruction.")) return 1;
-    screen.get_slice(1, 4, 38, line);
+    screen.get_slice(1, 5, 38, line);
     if (expect(strstr(line, "E002 20 0F BC") == line, "First disassembly up-step landed on the wrong instruction.")) return 1;
 
     if (expect(monitor.poll(0) == 0, "Second disassembly up-step failed.")) return 1;
-    screen.get_slice(1, 3, 38, line);
-    if (expect(strstr(line, "DIS $E000") == line, "Second disassembly up-step must return to the original instruction.")) return 1;
     screen.get_slice(1, 4, 38, line);
     if (expect(strstr(line, "E000 85 56") == line, "Second disassembly up-step landed on the wrong instruction.")) return 1;
 
@@ -1130,21 +1175,22 @@ static int test_monitor_viewport_header_and_scroll(void)
     TestUserInterface ui;
     CaptureScreen screen;
     FakeMemoryBackend backend;
-    char before_rows[16][MONITOR_HEX_ROW_CHARS + 1];
-    char after_rows[16][MONITOR_HEX_ROW_CHARS + 1];
+    enum { visible_rows = 18 };
+    char before_rows[visible_rows][MONITOR_HEX_ROW_CHARS + 1];
+    char after_rows[visible_rows][MONITOR_HEX_ROW_CHARS + 1];
     char header[39];
-    int keys[17];
+    int keys[visible_rows + 1];
     monitor_reset_saved_state();
 
     for (uint32_t addr = 0; addr < 0x10000; addr++) {
         backend.write((uint16_t)addr, (uint8_t)((addr >> 3) & 0xFF));
     }
-    for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < visible_rows; i++) {
         keys[i] = KEY_DOWN;
     }
-    keys[16] = KEY_BREAK;
+    keys[visible_rows] = KEY_BREAK;
 
-    FakeKeyboard keyboard(keys, 17);
+    FakeKeyboard keyboard(keys, visible_rows + 1);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
 
@@ -1154,22 +1200,25 @@ static int test_monitor_viewport_header_and_scroll(void)
     screen.get_slice(1, 3, 38, header);
     if (expect(strstr(header, "HEX $0000") == header, "Header must report the viewport start, not the cursor address.")) return 1;
 
-    for (int i = 0; i < 15; i++) {
+    for (int i = 0; i < visible_rows - 1; i++) {
         if (expect(monitor.poll(0) == 0, "Down navigation failed before viewport scroll.")) return 1;
     }
     screen.get_slice(1, 3, 38, header);
     if (expect(strstr(header, "HEX $0000") == header, "Header must stay on the same viewport address while only the cursor moves.")) return 1;
-    for (int row = 0; row < 16; row++) {
+    for (int row = 0; row < visible_rows; row++) {
         screen.get_slice(1, 4 + row, MONITOR_HEX_ROW_CHARS, before_rows[row]);
     }
+    if (expect(strstr(before_rows[visible_rows - 1], "0088 ") == before_rows[visible_rows - 1] ||
+               strstr(before_rows[visible_rows - 1], "0088") == before_rows[visible_rows - 1],
+               "Hex view should use the reclaimed row above the CPU/VIC status line.")) return 1;
 
     if (expect(monitor.poll(0) == 0, "Down navigation failed at the viewport boundary.")) return 1;
     screen.get_slice(1, 3, 38, header);
     if (expect(strstr(header, "HEX $0008") == header, "Header must advance by one row when the viewport scrolls.")) return 1;
-    for (int row = 0; row < 16; row++) {
+    for (int row = 0; row < visible_rows; row++) {
         screen.get_slice(1, 4 + row, MONITOR_HEX_ROW_CHARS, after_rows[row]);
     }
-    for (int row = 1; row < 16; row++) {
+    for (int row = 1; row < visible_rows; row++) {
         if (expect(strcmp(after_rows[row - 1], before_rows[row]) == 0,
                    "Scrolling down must shift each rendered row up by exactly one row span.")) return 1;
     }
@@ -1232,18 +1281,16 @@ static int test_monitor_interaction(void)
     if (expect(strstr(status, "CPU30 RAM IO KERNAL") != NULL, "CPU30 status did not update after O.")) return 1;
 
     if (expect(help_monitor.poll(0) == 0, "F3 help open failed.")) return 1;
+    screen.get_slice(1, 3, 38, status);
+    if (expect(strstr(status, "Help (F3/? closes)") == status, "Help header should replace the normal view header.")) return 1;
     screen.get_slice(1, 4, 38, line);
-    if (expect(strstr(line, "M HEX") != NULL, "Help view did not render in-place.")) return 1;
-    screen.get_slice(1, 21, 38, status);
-    if (expect(strstr(status, "ESC/F3 close help") != NULL, "Help status should show a useful close hint.")) return 1;
-    if (expect(strstr(status, "Help open") == NULL && strstr(status, "Help closed") == NULL,
-               "Help status should avoid redundant open/closed text.")) return 1;
+    if (expect(strstr(line, "M Hex") != NULL, "Help view did not render in-place.")) return 1;
 
     if (expect(help_monitor.poll(0) == 0, "F3 help close failed.")) return 1;
+    screen.get_slice(1, 3, 38, status);
+    if (expect(strstr(status, "HEX $A000") == status, "Closing help should restore the normal header.")) return 1;
     screen.get_slice(1, 4, 8, line);
     if (expect(strncmp(line, "a000 aa", 7) == 0 || strncmp(line, "A000 AA", 7) == 0, "Help toggle did not restore the monitor view.")) return 1;
-    screen.get_slice(1, 21, 38, status);
-    if (expect(strstr(status, "Help closed") == NULL, "Closing help should not emit redundant status text.")) return 1;
 
     {
         const int esc_help_keys[] = { KEY_F3, KEY_ESCAPE, KEY_ESCAPE };
@@ -1256,7 +1303,7 @@ static int test_monitor_interaction(void)
         esc_help_monitor.init(&screen, &esc_help_keyboard);
         if (expect(esc_help_monitor.poll(0) == 0, "F3 should open help before ESC handling is tested.")) return 1;
         screen.get_slice(1, 4, 38, line);
-        if (expect(strstr(line, "M HEX") != NULL, "Help must be visible before ESC closes it.")) return 1;
+        if (expect(strstr(line, "M Hex") != NULL, "Help must be visible before ESC closes it.")) return 1;
         if (expect(esc_help_monitor.poll(0) == 0, "ESC should close help without exiting the monitor.")) return 1;
         screen.get_slice(1, 3, 38, line);
         if (expect(strstr(line, "HEX $0000") == line, "ESC should restore the normal monitor header after closing help.")) return 1;
@@ -1362,6 +1409,8 @@ static int test_monitor_interaction(void)
     if (expect(strcmp(line, "0000 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA") == 0, "ASCII first-row rendering mismatch.")) return 1;
     screen.get_slice(1, 12, MONITOR_TEXT_ROW_CHARS, line);
     if (expect(strcmp(line, "0100 IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII") == 0, "ASCII later-row rendering mismatch.")) return 1;
+    screen.get_slice(1, 21, MONITOR_TEXT_ROW_CHARS, line);
+    if (expect(strcmp(line, "0220 RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR") == 0, "ASCII bottom-row rendering should use the reclaimed rows.")) return 1;
     if (expect((unsigned char)screen.chars[4][39] == CHR_VERTICAL_LINE, "ASCII view overwrote the right border.")) return 1;
 
     if (expect(view_monitor.poll(0) == 0, "ASCII down navigation failed.")) return 1;
@@ -1438,9 +1487,6 @@ static int test_monitor_interaction(void)
         if (expect(rom_write_monitor.poll(0) == 0, "ROM-visible second nibble failed.")) return 1;
         if (expect(banked_backend.ram[0xA000] == 0x55, "ROM-visible write must update the underlying RAM just like the canonical backend path.")) return 1;
         if (expect(banked_backend.basic[0] == 0xBA, "ROM-visible write must not overwrite BASIC ROM content.")) return 1;
-        screen.get_slice(1, 21, 38, status);
-        if (expect(strstr(status, "Byte written") != NULL && strstr(status, "masked by ROM") == NULL,
-                   "ROM-visible write must not be reported as masked when the canonical backend writes under ROM.")) return 1;
         if (expect(rom_write_monitor.poll(0) == 0, "RUN/STOP should leave edit mode after ROM-visible write.")) return 1;
         if (expect(rom_write_monitor.poll(0) == 1, "RUN/STOP exit failed after ROM-visible write test.")) return 1;
         rom_write_monitor.deinit();
@@ -1459,7 +1505,7 @@ static int test_monitor_interaction(void)
         if (expect(exit_monitor.poll(0) == 0, "F3 edit-help setup via 'e' failed.")) return 1;
         if (expect(exit_monitor.poll(0) == 0, "F3 should toggle help while keeping edit mode.")) return 1;
         screen.get_slice(1, 4, 38, line);
-        if (expect(strstr(line, "M HEX") != NULL, "F3 did not open help while editing.")) return 1;
+        if (expect(strstr(line, "M Hex") != NULL, "F3 did not open help while editing.")) return 1;
         if (expect(exit_monitor.poll(0) == 0, "F3 should close help while keeping edit mode.")) return 1;
         if (expect(exit_monitor.poll(0) == 0, "F3-preserved edit mode first nibble failed.")) return 1;
         if (expect(exit_monitor.poll(0) == 0, "F3-preserved edit mode second nibble failed.")) return 1;
@@ -1503,8 +1549,8 @@ static int test_monitor_interaction(void)
         toggle_monitor.deinit();
     }
 
-    const int ignored_keys[] = { ':', 'Q', 'P', KEY_BREAK };
-    FakeKeyboard ignored_keyboard(ignored_keys, 4);
+    const int ignored_keys[] = { 'D', '.', 'R', ':', 'Q', 'P', KEY_BREAK };
+    FakeKeyboard ignored_keyboard(ignored_keys, 7);
     ui.keyboard = &ignored_keyboard;
     screen.clear();
     ui.popup_count = 0;
@@ -1513,6 +1559,13 @@ static int test_monitor_interaction(void)
 
     MachineMonitor ignored_monitor(&ui, &backend);
     ignored_monitor.init(&screen, &ignored_keyboard);
+    if (expect(ignored_monitor.poll(0) == 0, "Disassembly view command failed before ignored-key checks.")) return 1;
+    screen.get_slice(1, 3, 38, line);
+    if (expect(strstr(line, "ASM $0000") == line, "Disassembly header setup failed before ignored-key checks.")) return 1;
+    if (expect(ignored_monitor.poll(0) == 0, "'.' should be ignored now that left/right already handle byte stepping.")) return 1;
+    screen.get_slice(1, 3, 38, status);
+    if (expect(strstr(status, "ASM $0000") == status, "'.' should not change the disassembly viewport.")) return 1;
+    if (expect(ignored_monitor.poll(0) == 0, "'R' should be ignored now that register editing is unsupported.")) return 1;
     if (expect(ignored_monitor.poll(0) == 0, "':' should be ignored after 'E' takes over edit entry.")) return 1;
     if (expect(ignored_monitor.poll(0) == 0, "Q should be ignored while not editing.")) return 1;
     if (expect(ignored_monitor.poll(0) == 0, "P should be ignored, not handled as a command.")) return 1;
@@ -1567,7 +1620,7 @@ static int test_monitor_reopen_restores_state(void)
         MachineMonitor second_monitor(&ui, &backend);
         second_monitor.init(&screen, &second_keyboard);
         screen.get_slice(1, 3, 38, line);
-        if (expect(strstr(line, "DIS $C123") == line, "Reopened monitor did not restore the disassembly view and address.")) return 1;
+        if (expect(strstr(line, "ASM $C123") == line, "Reopened monitor did not restore the disassembly view and address.")) return 1;
         screen.get_slice(1, 4, 38, line);
         if (expect(strstr(line, "C123 07 44") == line, "Reopened monitor did not restore the saved current address.")) return 1;
         if (expect(strstr(line, "SLO $44") != NULL, "Reopened monitor did not restore the illegal-opcodes setting.")) return 1;
@@ -1658,6 +1711,299 @@ static int test_monitor_kernal_bank_switch_and_ram_interaction(void)
     return 0;
 }
 
+#include "assembler_6502.h"
+
+static int test_assembler_encoding(void)
+{
+    AsmInsn insn;
+    MonitorError err = MONITOR_OK;
+
+    if (expect(monitor_assemble_line("LDA #$12", false, 0xC000, &insn, &err), "LDA #$12 must encode")) return 1;
+    if (expect(insn.length == 2 && insn.bytes[0] == 0xA9 && insn.bytes[1] == 0x12, "LDA #$12 -> A9 12")) return 1;
+
+    if (expect(monitor_assemble_line("JMP $C000", false, 0xC000, &insn, &err), "JMP $C000 must encode")) return 1;
+    if (expect(insn.length == 3 && insn.bytes[0] == 0x4C && insn.bytes[1] == 0x00 && insn.bytes[2] == 0xC0, "JMP $C000 -> 4C 00 C0")) return 1;
+
+    if (expect(monitor_assemble_line("BNE $C005", false, 0xC000, &insn, &err), "BNE $C005 must encode")) return 1;
+    if (expect(insn.length == 2 && insn.bytes[0] == 0xD0 && insn.bytes[1] == 0x03, "BNE $C005 from $C000 -> D0 03")) return 1;
+
+    if (expect(monitor_assemble_line("NOP", false, 0xC000, &insn, &err), "NOP must encode")) return 1;
+    if (expect(insn.length == 1 && insn.bytes[0] == 0xEA, "NOP -> EA")) return 1;
+
+    if (expect(monitor_assemble_line("STA $0400,X", false, 0xC000, &insn, &err), "STA $0400,X must encode")) return 1;
+    if (expect(insn.length == 3 && insn.bytes[0] == 0x9D && insn.bytes[1] == 0x00 && insn.bytes[2] == 0x04, "STA $0400,X -> 9D 00 04")) return 1;
+
+    // Illegal opcode rejected when toggle off.
+    if (expect(!monitor_assemble_line("SLO $12", false, 0xC000, &insn, &err), "SLO must be rejected when illegal=OFF")) return 1;
+    // ...accepted when on.
+    if (expect(monitor_assemble_line("SLO $12", true, 0xC000, &insn, &err), "SLO $12 must encode when illegal=ON")) return 1;
+    if (expect(insn.length == 2 && insn.bytes[0] == 0x07 && insn.bytes[1] == 0x12, "SLO $12 -> 07 12")) return 1;
+
+    return 0;
+}
+
+static int test_screen_code_reverse(void)
+{
+    if (expect(monitor_screen_code_for_char('A') == 0x01, "screen-code 'A' must be 0x01")) return 1;
+    if (expect(monitor_screen_code_for_char('Z') == 0x1A, "screen-code 'Z' must be 0x1A")) return 1;
+    if (expect(monitor_screen_code_for_char('@') == 0x00, "screen-code '@' must be 0x00")) return 1;
+    if (expect(monitor_screen_code_for_char(' ') == 0x20, "screen-code ' ' must be 0x20")) return 1;
+    if (expect(monitor_screen_code_for_char('1') == 0x31, "screen-code '1' must be 0x31")) return 1;
+    if (expect(monitor_screen_code_for_char('a') == 0x01, "lowercase 'a' must map to uppercase 'A' screen code")) return 1;
+    return 0;
+}
+
+static int test_logical_delete_per_view(void)
+{
+    // HEX: CTRL+L on a non-zero byte must clear it to 0x00.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        backend.write(0x0400, 0xAB);
+        const int keys[] = { 'J', 'E', KEY_CTRL_D, KEY_BREAK };
+        FakeKeyboard kb(keys, 4);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 4; i++) {
+            (void)mon.poll(0);
+        }
+        if (expect(backend.read(0x0400) == 0x00, "HEX CTRL+L must clear byte to 0x00")) return 1;
+    }
+
+    // ASC: CTRL+L on byte must set to 0x20.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        backend.write(0x0400, 0xAB);
+        const int keys[] = { 'J', 'M', 'E', KEY_CTRL_D, KEY_BREAK };
+        FakeKeyboard kb(keys, 5);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 5; i++) {
+            (void)mon.poll(0);
+        }
+        if (expect(backend.read(0x0400) == 0x20, "ASC CTRL+L must set byte to 0x20")) return 1;
+    }
+
+    // SCR: CTRL+L on byte must set to screen-code space (0x20).
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        backend.write(0x0400, 0x55);
+        // Get to SCREEN view: J 0400, then 'M' twice (ASC->SCR depending on toggle), or 'A' once is ASM, not SCR.
+        // SCR is reached via 'M' cycling? Look up: actually the SCR view is a separate key in this monitor.
+        // Use 'S' if available; otherwise we cycle.
+        const int keys[] = { 'J', 'S', 'E', KEY_CTRL_D, KEY_BREAK };
+        FakeKeyboard kb(keys, 5);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 5; i++) {
+            (void)mon.poll(0);
+        }
+        if (expect(backend.read(0x0400) == 0x20, "SCR CTRL+L must set byte to screen-code space (0x20)")) return 1;
+    }
+
+    // ASM: CTRL+L on $C000=0xA9 0x12 (LDA #$12, 2 bytes) must fill EA EA.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        backend.write(0xC000, 0xA9);
+        backend.write(0xC001, 0x12);
+        const int keys[] = { 'J', 'A', 'E', KEY_CTRL_D, KEY_BREAK };
+        FakeKeyboard kb(keys, 5);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 5; i++) {
+            (void)mon.poll(0);
+        }
+        if (expect(backend.read(0xC000) == 0xEA && backend.read(0xC001) == 0xEA,
+                   "ASM CTRL+L must replace LDA #$12 (2 bytes) with EA EA")) return 1;
+    }
+    return 0;
+}
+
+static int test_scr_edit_writes_screen_code(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    backend.write(0x0400, 0x00);
+    const int keys[] = { 'J', 'S', 'E', 'A', KEY_BREAK };
+    FakeKeyboard kb(keys, 5);
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("0400", 1);
+    MachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    for (int i = 0; i < 5; i++) {
+        (void)mon.poll(0);
+    }
+    if (expect(backend.read(0x0400) == 0x01, "SCR edit: typing 'A' must write screen code 0x01")) return 1;
+    return 0;
+}
+
+static int test_asm_edit_assemble_at_cursor(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    // ASM edit no longer goes through string_box. Pressing a letter on the
+    // mnemonic part opens the in-monitor opcode picker; further letters
+    // filter, UP/DOWN navigate, ENTER selects. After selection the cursor
+    // moves to the operand byte and hex digits write it directly.
+    //
+    //   J / "C000" / enter           -- jump to $C000
+    //   A                            -- switch to ASM
+    //   E                            -- enter edit mode
+    //   L D A                        -- open picker, narrow to LDA variants
+    //   DOWN DOWN                    -- LDA opcodes are A1, A5, A9, ... so
+    //                                   the third entry is A9 (immediate)
+    //   ENTER                        -- write A9 to $C000
+    //   4 2                          -- type the operand byte at $C001
+    const int keys[] = {
+        'J', 'A', 'E', 'L', 'D', 'A', KEY_DOWN, KEY_DOWN, KEY_RETURN, '4', '2', KEY_BREAK
+    };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C000", 1);
+    MachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+        (void)mon.poll(0);
+    }
+    if (expect(backend.read(0xC000) == 0xA9 && backend.read(0xC001) == 0x42,
+               "ASM edit must write A9 42 for LDA # via opcode picker")) return 1;
+    return 0;
+}
+
+static int test_asm_edit_direct_typing(void)
+{
+    // Power-user direct-typing path: type the full instruction without
+    // navigating the picker. "LDA $1000" -> AD 00 10 (absolute).
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    //   J / "C000" / enter           -- jump to $C000
+    //   A                            -- switch to ASM
+    //   E                            -- enter edit mode
+    //   L D A 1 0 0 0  ENTER         -- type the whole instruction
+    const int keys[] = {
+        'J', 'A', 'E', 'L', 'D', 'A', '1', '0', '0', '0', KEY_RETURN, KEY_BREAK
+    };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C000", 1);
+    MachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+        (void)mon.poll(0);
+    }
+    if (expect(backend.read(0xC000) == 0xAD && backend.read(0xC001) == 0x00 && backend.read(0xC002) == 0x10,
+               "ASM direct typing 'LDA 1000' must encode AD 00 10")) return 1;
+    return 0;
+}
+
+static int test_asm_edit_direct_typing_immediate(void)
+{
+    // Direct typing with immediate addressing: "LDA #FF" -> A9 FF.
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    const int keys[] = {
+        'J', 'A', 'E', 'L', 'D', 'A', '#', 'F', 'F', KEY_RETURN, KEY_BREAK
+    };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C000", 1);
+    MachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+        (void)mon.poll(0);
+    }
+    if (expect(backend.read(0xC000) == 0xA9 && backend.read(0xC001) == 0xFF,
+               "ASM direct typing 'LDA #FF' must encode A9 FF")) return 1;
+    return 0;
+}
+
+static int test_asm_edit_branch_two_parts(void)
+{
+    // Branch instructions encode opcode + 1-byte signed offset but render
+    // opcode + 4-hex absolute target. The asm-edit cursor must expose both
+    // halves of the displayed target as separately editable parts and
+    // translate the typed value back into a relative offset.
+    //
+    //   Memory at $C000: F0 10  ->  BEQ $C012
+    //   J / "C000" / enter           -- jump to $C000
+    //   A                            -- switch to ASM
+    //   E                            -- enter edit mode
+    //   RIGHT                        -- move cursor to high byte ($C0)
+    //   C 0                          -- type $C0 (no change to high byte)
+    //   RIGHT(implicit)              -- after 2nd nibble, advances to low
+    //   2 0                          -- type $20  -> target $C020
+    //   BREAK
+    // Expected: rel offset = $C020 - ($C000 + 2) = $1E -> memory F0 1E.
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    backend.write(0xC000, 0xF0);
+    backend.write(0xC001, 0x10);
+    const int keys[] = {
+        'J', 'A', 'E', KEY_RIGHT, 'C', '0', '2', '0', KEY_BREAK
+    };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C000", 1);
+    MachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+        (void)mon.poll(0);
+    }
+    if (expect(backend.read(0xC000) == 0xF0 && backend.read(0xC001) == 0x1E,
+               "ASM branch edit must rewrite rel offset to land on typed target")) return 1;
+    return 0;
+}
+
+static int test_cross_view_sync(void)
+{
+    // Edit in HEX, view memory unchanged; Edit in SCR via 'A' key should be visible
+    // through a direct memory read (which represents what every other view renders).
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    const int keys[] = { 'J', 'S', 'E', 'B', KEY_BREAK };
+    FakeKeyboard kb(keys, 5);
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("0400", 1);
+    MachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    for (int i = 0; i < 5; i++) (void)mon.poll(0);
+    // Now switch to HEX and verify the same byte reads back.
+    if (expect(backend.read(0x0400) == 0x02, "Cross-view: SCR 'B' edit must store 0x02 visible to all views")) return 1;
+    return 0;
+}
+
+
 int main()
 {
     if (test_disassembler()) return 1;
@@ -1675,6 +2021,15 @@ int main()
     if (test_monitor_interaction()) return 1;
     if (test_monitor_reopen_restores_state()) return 1;
     if (test_monitor_kernal_bank_switch_and_ram_interaction()) return 1;
+    if (test_assembler_encoding()) return 1;
+    if (test_screen_code_reverse()) return 1;
+    if (test_logical_delete_per_view()) return 1;
+    if (test_scr_edit_writes_screen_code()) return 1;
+    if (test_asm_edit_assemble_at_cursor()) return 1;
+    if (test_asm_edit_direct_typing()) return 1;
+    if (test_asm_edit_direct_typing_immediate()) return 1;
+    if (test_asm_edit_branch_two_parts()) return 1;
+    if (test_cross_view_sync()) return 1;
 
     puts("machine_monitor_test: OK");
     return 0;

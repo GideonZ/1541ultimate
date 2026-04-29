@@ -24,6 +24,7 @@ SRCS_CC  = small_printf.cc \
 			machine_monitor.cc \
 			task_actions.cc \
 			disassembler_6502.cc \
+			assembler_6502.cc \
 			machine_monitor_test.cc
 
 SRCS_ASM =

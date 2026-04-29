@@ -29,6 +29,7 @@ public:
 
 #define KEY_CTRL_A 0x01
 #define KEY_CTRL_C 0x03
+#define KEY_CTRL_D 0x04
 #define KEY_CTRL_E 0x05
 #define KEY_CTRL_N 0x0E
 #define KEY_CTRL_O 0x0F

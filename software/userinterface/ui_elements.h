@@ -91,6 +91,7 @@ private:
     char *buffer;
     bool  template_mode;
     bool  clear_template_on_input;
+    bool  uppercase;
 public:
     UIStringEdit(char *buf, int max, bool template_mode = false);
     ~UIStringEdit() { }
@@ -98,6 +99,7 @@ public:
     void init(Window *win, Keyboard *keyb, int x_offs, int y_offs, int max_chars);
     int  poll(int);
     int  get_max_len() { return max_len; }
+    void set_uppercase(bool b) { uppercase = b; }
 };
 
 class UIStringBox : public UIObject
@@ -113,6 +115,7 @@ public:
     void init();
     void deinit(void);
     int  poll(int a) { return edit.poll(a); }
+    void set_uppercase(bool b) { edit.set_uppercase(b); }
 };
 
 class UIStatusBox : public UIObject

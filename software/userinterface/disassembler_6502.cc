@@ -266,3 +266,12 @@ void disassemble_6502(uint16_t pc, const uint8_t *bytes, bool illegal_enabled, D
         strcpy(out->text, mnemonic);
     }
 }
+const char *disassembler_6502_template(uint8_t opcode)
+{
+    return opcode_templates[opcode];
+}
+
+bool disassembler_6502_is_illegal(uint8_t opcode)
+{
+    return is_illegal_opcode(opcode);
+}

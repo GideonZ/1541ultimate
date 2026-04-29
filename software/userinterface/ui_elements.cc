@@ -148,6 +148,7 @@ UIStringEdit :: UIStringEdit(char *buf, int max, bool template_edit_mode)
     win_yoffs = 0;
     template_mode = template_edit_mode;
     clear_template_on_input = template_edit_mode;
+    uppercase = false;
 }
 
 void UIStringBox :: init()
@@ -347,6 +348,9 @@ int UIStringEdit :: poll(int dummy)
         if ((key < 32)||(key >= 127)) {
             printf("Unhandled key: %d\n", key);
             break;
+        }
+        if (uppercase && key >= 'a' && key <= 'z') {
+            key = key - 'a' + 'A';
         }
         clear_template_on_input = false;
         if (len < max_len) {

@@ -4,6 +4,7 @@
 #include "machine_monitor.h"
 
 #include "disassembler_6502.cc"
+#include "assembler_6502.cc"
 #include "machine_monitor.cc"
 
 #ifndef NO_FILE_ACCESS
@@ -570,7 +571,13 @@ int UserInterface :: string_box(const char *msg, char *buffer, int maxlen)
 
 int UserInterface :: string_box(const char *msg, char *buffer, int maxlen, bool template_mode)
 {
+    return string_box(msg, buffer, maxlen, template_mode, false);
+}
+
+int UserInterface :: string_box(const char *msg, char *buffer, int maxlen, bool template_mode, bool uppercase)
+{
     UIStringBox *box = new UIStringBox(this, msg, buffer, maxlen, template_mode);
+    box->set_uppercase(uppercase);
     box->init();
     screen->cursor_visible(1);
     int ret = 0;

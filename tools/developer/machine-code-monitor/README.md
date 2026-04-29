@@ -4,13 +4,13 @@ This directory contains the real-device machine monitor validation harness.
 
 ## Service
 
-The firmware exposes a dedicated telnet machine monitor session on port `6510` when the telnet service is enabled.
-The existing remote-menu telnet service on port `23` is unchanged.
+The firmware exposes the machine monitor through the standard telnet session on port `23`.
+The validation harness connects to the normal remote-menu session and enters the monitor with `Ctrl+O`.
 
 ## Run
 
 ```bash
-python3 tools/developer/machine-code-monitor/monitor_test.py --host u64 --port 6510
+python3 tools/developer/machine-code-monitor/monitor_test.py --host u64 --port 23
 ```
 
 Optional environment variables:

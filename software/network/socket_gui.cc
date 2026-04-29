@@ -23,10 +23,6 @@
 #include "network_config.h"
 #include "product.h"
 
-#if U64
-#include "u64_memory_backend.h"
-#endif
-
 SocketGui *socket_gui = NULL;
 InitFunction init_socket_gui("Telnet Server", [](void *_obj, void *_param) { socket_gui = new SocketGui(); }, NULL, NULL, 100); // global that causes us to exist
 
@@ -40,47 +36,13 @@ static void socket_gui_listen_task(void *a)
 	vTaskDelete(NULL);
 }
 
-#if U64
-static void socket_monitor_listen_task(void *a)
-{
-    SocketGui *gui = (SocketGui *)a;
-    gui->listenMonitorTask();
-    vTaskDelete(NULL);
-}
-
-static void socket_start_monitor_listener(SocketGui *gui)
-{
-    if (gui->monitorListenTaskHandle != NULL) {
-        return;
-    }
-
-    for (int attempt = 0; attempt < 20; attempt++) {
-        BaseType_t res = xTaskCreate(socket_monitor_listen_task, "Socket Monitor Listener",
-                                     socket_listener_stack_size, gui, PRIO_NETSERVICE,
-                                     &gui->monitorListenTaskHandle);
-        if (res == pdPASS) {
-            printf("Telnet machine monitor listener task started\n");
-            return;
-        }
-        puts("Telnet machine monitor listener task creation failed; retrying");
-        vTaskDelay(250 / portTICK_PERIOD_MS);
-    }
-
-    puts("Telnet machine monitor listener task unavailable");
-}
-#endif
-
 typedef struct {
     SocketStream *stream;
-    bool monitor_only;
 } SocketGuiSessionContext;
 
 SocketGui :: SocketGui()
 {
     printf("Starting Telnet Server\n");
-#if U64
-    monitorListenTaskHandle = NULL;
-#endif
 	xTaskCreate( socket_gui_listen_task, "Socket Gui Listener", socket_listener_stack_size, this, PRIO_NETSERVICE, &listenTaskHandle );
 }
 
@@ -178,66 +140,47 @@ void socket_gui_task(void *a)
 {
     SocketGuiSessionContext *context = (SocketGuiSessionContext *)a;
     SocketStream *str = context->stream;
-    bool monitor_only = context->monitor_only;
     delete context;
 	if (!socket_ensure_authenticated(str)) {
 		vTaskDelete(NULL);
 	}
 
-    if (monitor_only) {
-#if U64
-        U64MemoryBackend monitor_backend;
-        HostStream *host = new HostStream(str);
-        UserInterface *user_interface = new UserInterface("Machine Monitor", false);
-        user_interface->init(host);
-        user_interface->run_machine_monitor(&monitor_backend);
-        puts("Monitor session on stream returned.");
-        str->close();
-        delete user_interface;
-        delete host;
-        delete str;
-#else
-        str->close();
-        delete str;
-#endif
-    } else {
-        char product[64];
-        char title[81];
-        getProductVersionString(product, sizeof(product), true);
-        sprintf(title, "\eA*** %s *** Remote ***\eO", product);
+    char product[64];
+    char title[81];
+    getProductVersionString(product, sizeof(product), true);
+    sprintf(title, "\eA*** %s *** Remote ***\eO", product);
 
-        HostStream *host = new HostStream(str);
-        UserInterface *user_interface = new UserInterface(title, false);
-        user_interface->init(host);
+    HostStream *host = new HostStream(str);
+    UserInterface *user_interface = new UserInterface(title, false);
+    user_interface->init(host);
 
-        Browsable *root = new BrowsableRoot();
-        TreeBrowser *tree_browser = new TreeBrowser(user_interface, root);
-        user_interface->activate_uiobject(tree_browser);
+    Browsable *root = new BrowsableRoot();
+    TreeBrowser *tree_browser = new TreeBrowser(user_interface, root);
+    user_interface->activate_uiobject(tree_browser);
 
-        if(user_interface->cfg->get_value(CFG_USERIF_START_HOME)) {
-            new HomeDirectory(user_interface, tree_browser);
-            // will clean itself up
-        }
-
-        user_interface->run_remote();
-
-        puts("User Interface on stream returned.");
-        str->close();
-
-        delete user_interface;
-        puts("user_interface gone");
-        delete root;
-        puts("root gone");
-        delete host;
-        puts("host gone");
-        delete str;
-        puts("str gone");
+    if(user_interface->cfg->get_value(CFG_USERIF_START_HOME)) {
+        new HomeDirectory(user_interface, tree_browser);
+        // will clean itself up
     }
+
+    user_interface->run_remote();
+
+    puts("User Interface on stream returned.");
+    str->close();
+
+    delete user_interface;
+    puts("user_interface gone");
+    delete root;
+    puts("root gone");
+    delete host;
+    puts("host gone");
+    delete str;
+    puts("str gone");
 
 	vTaskDelete(NULL);
 }
 
-static int socket_gui_accept_loop(int portno, const char *label, bool monitor_only)
+static int socket_gui_accept_loop(int portno, const char *label)
 {
     socklen_t clilen;
     struct sockaddr_in serv_addr, cli_addr;
@@ -290,11 +233,10 @@ static int socket_gui_accept_loop(int portno, const char *label, bool monitor_on
             SocketStream *stream = new SocketStream(actual_socket);
             SocketGuiSessionContext *context = new SocketGuiSessionContext;
             context->stream = stream;
-            context->monitor_only = monitor_only;
-            BaseType_t res = xTaskCreate(socket_gui_task, monitor_only ? "Socket Monitor Task" : "Socket Gui Task",
+            BaseType_t res = xTaskCreate(socket_gui_task, "Socket Gui Task",
                                          socket_session_stack_size, context, PRIO_USERIFACE, NULL);
             if (res != pdPASS) {
-                puts(monitor_only ? "Telnet monitor: xTaskCreate failed; dropping connection" : "Telnet: xTaskCreate failed; dropping connection");
+                puts("Telnet: xTaskCreate failed; dropping connection");
                 delete context;
                 stream->close();
                 delete stream;
@@ -309,18 +251,5 @@ int SocketGui :: listenTask(void)
     while (networkConfig.cfg->get_value(CFG_NETWORK_TELNET_SERVICE) == 0) {
         vTaskDelay(2000 / portTICK_PERIOD_MS);
     }
-#if U64
-    socket_start_monitor_listener(this);
-#endif
-    return socket_gui_accept_loop(23, "Telnet remote menu service", false);
+    return socket_gui_accept_loop(23, "Telnet remote menu service");
 }
-
-#if U64
-int SocketGui :: listenMonitorTask(void)
-{
-	while (networkConfig.cfg->get_value(CFG_NETWORK_TELNET_SERVICE) == 0) {
-		vTaskDelay(2000 / portTICK_PERIOD_MS);
-	}
-	return socket_gui_accept_loop(6510, "Telnet machine monitor service", true);
-}
-#endif

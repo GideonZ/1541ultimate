@@ -47,6 +47,7 @@ KEYS = {
     "PGDN": b"\x1b[6~",
     "F3": b"\x1b[13~",
     "RUNSTOP": b"\x11",
+    "CTRL_O": b"\x0f",
     "ESC": b"\x1b",
 }
 
@@ -286,6 +287,7 @@ class MonitorSession:
                 raise Failure("Telnet password prompt received but no password was provided")
             self.send_text(password + "\r", "password")
             self._drain_until_idle(timeout=timeout)
+        self.enter_monitor()
 
     def close(self) -> None:
         try:
@@ -336,6 +338,11 @@ class MonitorSession:
     def fill(self, expr: str) -> Snapshot:
         self.send_char("F")
         return self.send_text(expr + "\r", f"F {expr}")
+
+    def enter_monitor(self) -> Snapshot:
+        snapshot = self.send_key("CTRL_O")
+        snapshot.find_status_line()
+        return snapshot
 
     def _drain_until_idle(self, timeout: float) -> None:
         end = time.time() + timeout
@@ -610,9 +617,9 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate the U64 machine monitor over the telnet mirror service")
+    parser = argparse.ArgumentParser(description="Validate the U64 machine monitor over the standard telnet service")
     parser.add_argument("--host", default=os.environ.get("U64_MONITOR_HOST", "u64"))
-    parser.add_argument("--port", type=int, default=int(os.environ.get("U64_MONITOR_PORT", "6510")))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("U64_MONITOR_PORT", "23")))
     parser.add_argument("--rest-host", default=os.environ.get("U64_MONITOR_REST_HOST"))
     parser.add_argument("--password", default=os.environ.get("U64_MONITOR_PASSWORD"))
     parser.add_argument("--timeout", type=float, default=float(os.environ.get("U64_MONITOR_TIMEOUT", "5.0")))

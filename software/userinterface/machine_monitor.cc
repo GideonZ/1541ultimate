@@ -1,5 +1,6 @@
 #include "machine_monitor.h"
 
+#include "assembler_6502.h"
 #include "disassembler_6502.h"
 #include "editor.h"
 #include "userinterface.h"
@@ -22,21 +23,22 @@ static const uint16_t monitor_cursor_blink_half_period_ms = 400;
 #endif
 
 static const char *const monitor_help_lines[] = {
-    "M HEX/ASC   D DISASM    S SCREEN",
-    "E EDIT      O CPU BANK  . DIS OFF",
-    "J GOTO      F FILL      T XFER",
-    "C COMPARE   H HUNT      N EVAL",
-    "R REGS      * ILLEGAL OPS",
-    "F3/? HELP   X/RUN STOP EXIT",
-    "ESC/CBM+E LEAVE EDIT MODE",
+    "M Hex/Asc   A Asm       S Screen",
+    "E Edit      O CPU bank",
+    "J Jump      F Fill      T Transfer",
+    "C Compare   H Hunt      N Number",
+    "* Illegal opcodes",
     "",
-    "DISASM SOURCE TAGS:",
-    "[RAM]    BANK SHOWS RAM",
-    "[BASIC]  BANK SHOWS BASIC ROM",
-    "[KERNAL] BANK SHOWS KERNAL ROM",
-    "[CHAR]   BANK SHOWS CHAR ROM",
-    "[IO]     BANK SHOWS I/O REGISTERS",
-    "EX: F C000-C0FF,00",
+    "Edit mode:",
+    "  DEL    Erase last char",
+    "  CBM+D  Logical delete",
+    "",
+    "F3/?  Help",
+    "ESC   Exit edit / monitor",
+    "",
+    "ASM source tags:",
+    "  [RAM] [BASIC] [KERNAL]",
+    "  [CHAR] [IO]",
     NULL
 };
 
@@ -205,16 +207,29 @@ static char ascii_byte(uint8_t value)
 
 static char screen_code_char(uint8_t value)
 {
-    if (value < 26) {
-        return (char)('A' + value);
-    }
-    if (value >= 32 && value < 58) {
-        return (char)(' ' + (value - 32));
-    }
-    if (value >= 64 && value < 90) {
-        return (char)('a' + (value - 64));
-    }
-    return '.';
+    static const char translation[128] = {
+        /* 00-07 */ '@', 'A', 'B', 'C', 'D', 'E', 'F', 'G',
+        /* 08-0F */ 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O',
+        /* 10-17 */ 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W',
+        /* 18-1F */ 'X', 'Y', 'Z', '[', '#', ']', '^', '<',
+        /* 20-27 */ ' ', '!', '"', '#', '$', '%', '&', '\'',
+        /* 28-2F */ '(', ')', '*', '+', ',', '-', '.', '/',
+        /* 30-37 */ '0', '1', '2', '3', '4', '5', '6', '7',
+        /* 38-3F */ '8', '9', ':', ';', '<', '=', '>', '?',
+        /* 40-47 */ CHR_HORIZONTAL_LINE, 'S', '|', CHR_HORIZONTAL_LINE,
+                    CHR_HORIZONTAL_LINE, CHR_HORIZONTAL_LINE, CHR_HORIZONTAL_LINE, '|',
+        /* 48-4F */ '|', CHR_ROUNDED_UPPER_RIGHT, CHR_ROUNDED_LOWER_LEFT, CHR_ROUNDED_LOWER_RIGHT,
+                    CHR_SOLID_BAR_LOWER_7, '\\', '/', CHR_SOLID_BAR_UPPER_7,
+        /* 50-57 */ CHR_SOLID_BAR_UPPER_7, '*', CHR_HORIZONTAL_LINE, 'H',
+                    '|', CHR_ROUNDED_UPPER_LEFT, 'X', 'O',
+        /* 58-5F */ 'C', '|', CHR_DIAMOND, '+', '#', CHR_VERTICAL_LINE, 'P', '^',
+        /* 60-67 */ ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
+        /* 68-6F */ ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
+        /* 70-77 */ ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
+        /* 78-7F */ ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '
+    };
+
+    return translation[value & 0x7F];
 }
 
 static void draw_padded(Window *window, int y, const char *text, int len)
@@ -353,7 +368,8 @@ static void format_status_line(char *line, uint8_t cpu_port, uint8_t vic_bank)
 
 static bool inline_edit_view(MachineMonitorView view)
 {
-    return (view == MONITOR_VIEW_HEX) || (view == MONITOR_VIEW_ASCII);
+    return (view == MONITOR_VIEW_HEX) || (view == MONITOR_VIEW_ASCII) ||
+           (view == MONITOR_VIEW_SCREEN) || (view == MONITOR_VIEW_ASM);
 }
 
 static MachineMonitorView toggle_hex_ascii_view(MachineMonitorView view)
@@ -534,33 +550,6 @@ MonitorError monitor_parse_compare(const char *text, uint16_t *start, uint16_t *
     return monitor_parse_transfer(text, start, end, dest);
 }
 
-MonitorError monitor_parse_registers(const char *text, uint16_t *pc, uint8_t *a, uint8_t *x, uint8_t *y, uint8_t *sp, uint8_t *sr)
-{
-    const char *cursor = text;
-    uint16_t parsed = 0;
-    MonitorError error = parse_hex_digits(cursor, 1, 4, 0xFFFF, pc);
-    if (error != MONITOR_OK) {
-        return MONITOR_ADDR;
-    }
-    if ((error = expect_separator(cursor, ',', MONITOR_SYNTAX)) != MONITOR_OK) return error;
-    if ((error = parse_hex_digits(cursor, 1, 2, 0xFF, &parsed)) != MONITOR_OK) return MONITOR_VALUE;
-    *a = (uint8_t)parsed;
-    if ((error = expect_separator(cursor, ',', MONITOR_SYNTAX)) != MONITOR_OK) return error;
-    if ((error = parse_hex_digits(cursor, 1, 2, 0xFF, &parsed)) != MONITOR_OK) return MONITOR_VALUE;
-    *x = (uint8_t)parsed;
-    if ((error = expect_separator(cursor, ',', MONITOR_SYNTAX)) != MONITOR_OK) return error;
-    if ((error = parse_hex_digits(cursor, 1, 2, 0xFF, &parsed)) != MONITOR_OK) return MONITOR_VALUE;
-    *y = (uint8_t)parsed;
-    if ((error = expect_separator(cursor, ',', MONITOR_SYNTAX)) != MONITOR_OK) return error;
-    if ((error = parse_hex_digits(cursor, 1, 2, 0xFF, &parsed)) != MONITOR_OK) return MONITOR_VALUE;
-    *sp = (uint8_t)parsed;
-    if ((error = expect_separator(cursor, ',', MONITOR_SYNTAX)) != MONITOR_OK) return error;
-    if ((error = parse_hex_digits(cursor, 1, 2, 0xFF, &parsed)) != MONITOR_OK) return MONITOR_VALUE;
-    *sr = (uint8_t)parsed;
-    skip_spaces(cursor);
-    return *cursor ? MONITOR_SYNTAX : MONITOR_OK;
-}
-
 MonitorError monitor_parse_hunt(const char *text, uint16_t *start, uint16_t *end, uint8_t *needle, int *needle_len)
 {
     const char *cursor = text;
@@ -663,6 +652,56 @@ int monitor_compare_memory(MemoryBackend *backend, uint16_t start, uint16_t end,
     return count;
 }
 
+int monitor_compare_collect(MemoryBackend *backend, uint16_t start, uint16_t end, uint16_t dest, uint16_t *out_addrs, int max_addrs)
+{
+    uint32_t length = (uint16_t)(end - start);
+    uint32_t index;
+    int count = 0;
+
+    if (max_addrs <= 0) return 0;
+    for (index = 0; index < length; index++) {
+        if (backend->read((uint16_t)(start + index)) != backend->read((uint16_t)(dest + index))) {
+            if (count < max_addrs) {
+                out_addrs[count] = (uint16_t)(start + index);
+            }
+            count++;
+        }
+    }
+    return count;
+}
+
+int monitor_hunt_collect(MemoryBackend *backend, uint16_t start, uint16_t end, const uint8_t *needle, int needle_len, uint16_t *out_addrs, int max_addrs)
+{
+    uint32_t limit;
+    uint32_t index;
+    int count = 0;
+
+    if (max_addrs <= 0) {
+        return 0;
+    }
+    limit = (uint16_t)(end - start) + 1;
+    if ((uint32_t)needle_len > limit) {
+        return 0;
+    }
+    for (index = 0; index + (uint32_t)needle_len <= limit; index++) {
+        int matched = 1;
+        int i;
+        for (i = 0; i < needle_len; i++) {
+            if (backend->read((uint16_t)(start + index + i)) != needle[i]) {
+                matched = 0;
+                break;
+            }
+        }
+        if (matched) {
+            if (count < max_addrs) {
+                out_addrs[count] = (uint16_t)(start + index);
+            }
+            count++;
+        }
+    }
+    return count;
+}
+
 int monitor_hunt_memory(MemoryBackend *backend, uint16_t start, uint16_t end, const uint8_t *needle, int needle_len, char *out, int out_len)
 {
     uint32_t limit;
@@ -720,21 +759,31 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
         state.disasm_offset = 0;
         state.illegal_enabled = false;
     }
-    registers_pc = 0;
-    registers_a = 0;
-    registers_x = 0;
-    registers_y = 0;
-    registers_sp = 0;
-    registers_sr = 0;
     screen = NULL;
     keyboard = NULL;
     window = NULL;
     content_height = 0;
-    status_line[0] = 0;
     pending_hex_nibble = -1;
     edit_mode = false;
     edit_cursor_visible = true;
     help_visible = false;
+    hunt_picker_active = false;
+    hunt_count = 0;
+    hunt_selected = 0;
+    hunt_top = 0;
+    hunt_picker_label = "Hunt results";
+    asm_edit_part = 0;
+    asm_edit_pending = 0;
+    asm_edit_hist_len = 0;
+    asm_edit_hist_anchor_addr = 0;
+    opcode_picker_active = false;
+    opcode_prefix[0] = 0;
+    opcode_prefix_len = 0;
+    opcode_candidate_count = 0;
+    opcode_selected = 0;
+    opcode_top = 0;
+    opcode_operand[0] = 0;
+    opcode_operand_len = 0;
     last_vic_bank = 0;
 #ifdef RUNS_ON_PC
     edit_blink_polls = monitor_cursor_blink_idle_polls;
@@ -765,12 +814,6 @@ void MachineMonitor :: read_row(uint16_t address, uint8_t *dst, uint16_t len)
     }
 }
 
-void MachineMonitor :: set_status(const char *text)
-{
-    strncpy(status_line, text, sizeof(status_line) - 1);
-    status_line[sizeof(status_line) - 1] = 0;
-}
-
 void MachineMonitor :: ensure_current_visible()
 {
     if (state.view == MONITOR_VIEW_DISASM) {
@@ -796,8 +839,8 @@ void MachineMonitor :: ensure_current_visible()
 void MachineMonitor :: set_view(MachineMonitorView view)
 {
     state.view = view;
-    if (view == MONITOR_VIEW_DISASM) {
-        state.base_addr = (uint16_t)(state.current_addr + state.disasm_offset);
+    if (view == MONITOR_VIEW_ASM) {
+        ensure_disasm_visible();
     } else {
         ensure_current_visible();
     }
@@ -817,8 +860,8 @@ uint16_t MachineMonitor :: row_span(void) const
 void MachineMonitor :: move_current(int delta)
 {
     state.current_addr = (uint16_t)(state.current_addr + delta);
-    if (state.view == MONITOR_VIEW_DISASM) {
-        state.base_addr = (uint16_t)(state.current_addr + state.disasm_offset);
+    if (state.view == MONITOR_VIEW_ASM) {
+        ensure_disasm_visible();
     } else {
         ensure_current_visible();
     }
@@ -834,8 +877,8 @@ void MachineMonitor :: page_move(int lines)
     uint16_t step = (uint16_t)(lines * span);
 
     state.current_addr = (uint16_t)(state.current_addr + step);
-    if (state.view == MONITOR_VIEW_DISASM) {
-        state.base_addr = state.current_addr;
+    if (state.view == MONITOR_VIEW_ASM) {
+        ensure_disasm_visible();
     } else {
         state.base_addr = (uint16_t)(state.base_addr + step);
         state.base_addr = (uint16_t)(state.base_addr & (uint16_t)(~(span - 1)));
@@ -849,13 +892,12 @@ void MachineMonitor :: page_move(int lines)
 
 bool MachineMonitor :: prompt_command(const char *title, char *buffer, int max_len, bool template_mode)
 {
-    return get_ui()->string_box(title, buffer, max_len, template_mode) > 0;
+    return get_ui()->string_box(title, buffer, max_len, template_mode, true) > 0;
 }
 
 void MachineMonitor :: toggle_help()
 {
     help_visible = !help_visible;
-    set_status(help_visible ? "ESC/F3 close help" : "");
 }
 
 void MachineMonitor :: reset_edit_blink()
@@ -883,30 +925,71 @@ uint16_t MachineMonitor :: disasm_next_addr(uint16_t address)
     return (uint16_t)(address + disasm_length(address));
 }
 
+bool MachineMonitor :: asm_is_branch(uint16_t address)
+{
+    uint8_t op = canonical_read(address);
+    const char *templ = disassembler_6502_template(op);
+    if (!templ) return false;
+    // Mirror the disassembler's own rule (disassembler_6502.cc): any B*
+    // mnemonic other than BRK is a relative branch. Some templates spell
+    // out "rel" explicitly while others (BCC/BCS/BNE/BEQ) do not, so we
+    // test the leading mnemonic rather than relying on "rel" being present.
+    if (templ[0] == 'B' && templ[1] != 'R') return true;
+    return strstr(templ, "rel") != NULL;
+}
+
+// Number of editable parts presented in the ASM edit cursor for the
+// instruction at `address`. Branch instructions are encoded as opcode +
+// 1-byte signed offset but are *displayed* as opcode + absolute 16-bit
+// target, so we expose three editable parts (mnemonic, target high, target
+// low) for branches and let the byte-edit path translate the typed target
+// back into a relative offset.
+uint8_t MachineMonitor :: asm_edit_part_count(uint16_t address)
+{
+    uint8_t len = disasm_length(address);
+    if (len == 0) len = 1;
+    if (asm_is_branch(address) && len == 2) return 3;
+    return len;
+}
+
 uint16_t MachineMonitor :: disasm_prev_addr(uint16_t address)
 {
-    static const uint16_t scan_limit = 16;
-
-    for (uint16_t back = 1; back <= scan_limit; back++) {
-        uint16_t start = (uint16_t)(address - back);
-        uint16_t cursor = start;
-        uint16_t consumed = 0;
-        uint16_t previous = start;
-
-        while (consumed < back) {
-            uint8_t length = disasm_length(cursor);
-            previous = cursor;
-            cursor = (uint16_t)(cursor + length);
-            consumed = (uint16_t)(consumed + length);
-            if (consumed == back && cursor == address) {
-                return previous;
-            }
-            if (consumed >= back) {
-                break;
-            }
+    for (uint16_t back = 3; back >= 1; back--) {
+        uint16_t candidate = (uint16_t)(address - back);
+        if (disasm_length(candidate) == back) {
+            return candidate;
         }
     }
     return (uint16_t)(address - 1);
+}
+
+void MachineMonitor :: ensure_disasm_visible()
+{
+    if (state.view != MONITOR_VIEW_ASM) {
+        return;
+    }
+    int diff = (int16_t)(state.current_addr - state.base_addr);
+    if (diff < 0) {
+        state.base_addr = state.current_addr;
+        return;
+    }
+    uint16_t a = state.base_addr;
+    int rows = 0;
+    int max_scan = (content_height > 0 ? content_height : 1) + 64;
+    while (a != state.current_addr && rows < max_scan) {
+        a = disasm_next_addr(a);
+        rows++;
+    }
+    if (a != state.current_addr) {
+        state.base_addr = state.current_addr;
+        return;
+    }
+    if (content_height > 0 && rows >= content_height) {
+        int n = rows - (content_height - 1);
+        for (int i = 0; i < n; i++) {
+            state.base_addr = disasm_next_addr(state.base_addr);
+        }
+    }
 }
 
 void MachineMonitor :: step_disassembly(int lines)
@@ -919,7 +1002,7 @@ void MachineMonitor :: step_disassembly(int lines)
         state.current_addr = disasm_next_addr(state.current_addr);
         lines--;
     }
-    state.base_addr = state.current_addr;
+    ensure_disasm_visible();
     pending_hex_nibble = -1;
     if (edit_mode) {
         reset_edit_blink();
@@ -928,25 +1011,55 @@ void MachineMonitor :: step_disassembly(int lines)
 
 void MachineMonitor :: draw_header()
 {
-    char line[40];
+    char line[64];
+    int width = window->get_size_x();
+    if (width >= (int)sizeof(line)) {
+        width = (int)sizeof(line) - 1;
+    }
+
     if (help_visible) {
-        strcpy(line, "HELP (F3/? CLOSES)");
+        strcpy(line, "Help (F3/? closes)");
+    } else if (hunt_picker_active) {
+        sprintf(line, "%s  %d/%d", hunt_picker_label ? hunt_picker_label : "RESULTS",
+                hunt_count ? (hunt_selected + 1) : 0, hunt_count);
     } else {
         const char *view_name = "HEX";
         switch (state.view) {
-            case MONITOR_VIEW_DISASM: view_name = "DIS"; break;
+            case MONITOR_VIEW_ASM: view_name = "ASM"; break;
             case MONITOR_VIEW_ASCII: view_name = "ASC"; break;
             case MONITOR_VIEW_SCREEN: view_name = "SCR"; break;
             default: break;
         }
         sprintf(line, "%s $%04X", view_name, state.base_addr);
+        if (state.illegal_enabled && state.view == MONITOR_VIEW_ASM) {
+            int hp = strlen(line);
+            if (hp < (int)sizeof(line) - 14) {
+                strcpy(line + hp, "  Illegal:ON");
+            }
+        }
+    }
+
+    const char *right = NULL;
+    if (!help_visible) {
+        if (hunt_picker_active) right = "ENTER jumps  ESC exits";
+        else if (edit_mode) right = "Edit Mode";
+    }
+    if (right) {
+        int rlen = strlen(right);
+        int cur = strlen(line);
+        if (cur > width - rlen - 1) {
+            cur = width - rlen - 1;
+            if (cur < 0) cur = 0;
+            line[cur] = 0;
+        }
+        int pad = width - cur - rlen;
+        for (int i = 0; i < pad && cur < (int)sizeof(line) - 1; i++) {
+            line[cur++] = ' ';
+        }
+        line[cur] = 0;
+        strncat(line, right, sizeof(line) - cur - 1);
     }
     draw_padded(window, 0, line, strlen(line));
-}
-
-void MachineMonitor :: draw_message()
-{
-    draw_padded(window, window->get_size_y() - 2, status_line, strlen(status_line));
 }
 
 void MachineMonitor :: draw_status()
@@ -965,7 +1078,10 @@ void MachineMonitor :: draw_help()
     for (int line_idx = 0; line_idx < content_height; line_idx++) {
         const char *text = monitor_help_lines[line_idx];
         if (!text) {
-            text = "";
+            for (int blank = line_idx; blank < content_height; blank++) {
+                draw_padded(window, blank + 1, "", 0);
+            }
+            break;
         }
         draw_padded(window, line_idx + 1, text, strlen(text));
     }
@@ -990,7 +1106,10 @@ void MachineMonitor :: draw_text_row(int y, uint16_t addr, const uint8_t *bytes,
     int highlight = -1;
 
     monitor_format_text_row(addr, bytes, MONITOR_TEXT_BYTES_PER_ROW, screen_codes, line);
-    if ((!edit_mode || edit_cursor_visible) && state.view == MONITOR_VIEW_ASCII && state.current_addr >= addr && state.current_addr < (uint16_t)(addr + MONITOR_TEXT_BYTES_PER_ROW)) {
+    if ((!edit_mode || edit_cursor_visible) &&
+        ((state.view == MONITOR_VIEW_ASCII && !screen_codes) ||
+         (state.view == MONITOR_VIEW_SCREEN && screen_codes)) &&
+        state.current_addr >= addr && state.current_addr < (uint16_t)(addr + MONITOR_TEXT_BYTES_PER_ROW)) {
         highlight = 5 + (state.current_addr - addr);
     }
     draw_with_highlight(window, y, line, MONITOR_TEXT_ROW_CHARS, highlight, 1);
@@ -1087,9 +1206,258 @@ void MachineMonitor :: draw_disassembly()
         if (state.current_addr >= addr && state.current_addr < (uint16_t)(addr + decoded.length)) {
             highlight = 0;
         }
-        draw_with_highlight(window, line_idx + 1, line, MONITOR_DISASM_ROW_CHARS, highlight, MONITOR_DISASM_ROW_CHARS);
+        int hl_x = 0;
+        int hl_len = MONITOR_DISASM_ROW_CHARS;
+        if (highlight == 0 && edit_mode && state.view == MONITOR_VIEW_ASM) {
+            uint8_t part = asm_edit_part;
+            uint8_t part_count = asm_edit_part_count(addr);
+            if (part >= part_count) part = 0;
+            // All asm-edit highlights live inside the decoded text region
+            // (never on the raw byte columns to the left).
+            if (part == 0) {
+                int mnem_len = 0;
+                while (mnem_len < text_len && decoded.text[mnem_len] != ' ') mnem_len++;
+                if (mnem_len == 0) mnem_len = (text_len > 0) ? text_len : 1;
+                hl_x = MONITOR_DISASM_TEXT_COL;
+                hl_len = mnem_len;
+            } else {
+                // Locate the operand hex digits inside decoded.text.
+                int dollar = -1;
+                for (int i = 0; i < text_len; i++) {
+                    if (decoded.text[i] == '$') { dollar = i; break; }
+                }
+                int hexstart = (dollar >= 0) ? dollar + 1 : -1;
+                int hexcount = 0;
+                while (hexstart >= 0 && hexstart + hexcount < text_len) {
+                    char c = decoded.text[hexstart + hexcount];
+                    bool digit = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
+                    if (!digit) break;
+                    hexcount++;
+                }
+                bool branch = (decoded.length == 2) && asm_is_branch(addr);
+                if (hexstart >= 0 && hexcount >= 2) {
+                    if ((decoded.length == 3 || branch) && hexcount >= 4) {
+                        // part 1 -> first 2 hex chars (high byte, displayed first)
+                        // part 2 -> next  2 hex chars (low  byte, displayed second)
+                        int off = (part == 1) ? 0 : 2;
+                        hl_x = MONITOR_DISASM_TEXT_COL + hexstart + off;
+                        hl_len = 2;
+                    } else {
+                        hl_x = MONITOR_DISASM_TEXT_COL + hexstart;
+                        hl_len = 2;
+                    }
+                } else {
+                    // Fallback: highlight the mnemonic to avoid flashing the byte column.
+                    int mnem_len = 0;
+                    while (mnem_len < text_len && decoded.text[mnem_len] != ' ') mnem_len++;
+                    if (mnem_len == 0) mnem_len = 1;
+                    hl_x = MONITOR_DISASM_TEXT_COL;
+                    hl_len = mnem_len;
+                }
+            }
+        }
+        draw_with_highlight(window, line_idx + 1, line, MONITOR_DISASM_ROW_CHARS, highlight < 0 ? -1 : hl_x, hl_len);
         addr = (uint16_t)(addr + decoded.length);
     }
+}
+
+void MachineMonitor :: draw_hunt_picker()
+{
+    if (!window) {
+        return;
+    }
+    int rows = content_height;
+    if (rows <= 0) {
+        return;
+    }
+    if (hunt_selected < hunt_top) {
+        hunt_top = hunt_selected;
+    } else if (hunt_selected >= hunt_top + rows) {
+        hunt_top = hunt_selected - rows + 1;
+    }
+    if (hunt_top < 0) {
+        hunt_top = 0;
+    }
+    int width = window->get_size_x();
+    char line[MONITOR_HEX_ROW_CHARS + 1];
+    for (int r = 0; r < rows; r++) {
+        int idx = hunt_top + r;
+        memset(line, ' ', sizeof(line));
+        line[MONITOR_HEX_ROW_CHARS] = 0;
+        int draw_len = MONITOR_HEX_ROW_CHARS;
+        if (idx < hunt_count) {
+            uint8_t bytes[MONITOR_HEX_BYTES_PER_ROW];
+            read_row(hunt_addrs[idx], bytes, MONITOR_HEX_BYTES_PER_ROW);
+            monitor_format_hex_row(hunt_addrs[idx], bytes, line);
+        } else {
+            draw_padded(window, r + 1, line, 0);
+            continue;
+        }
+        if (draw_len > width) draw_len = width;
+        int hl = (idx == hunt_selected) ? 0 : -1;
+        draw_with_highlight(window, r + 1, line, draw_len, hl, draw_len);
+    }
+}
+
+void MachineMonitor :: draw_opcode_picker()
+{
+    if (!window) return;
+    int width = window->get_size_x();
+    // Anchor the overlay to the row that holds the current_addr in the
+    // disassembly view; if not visible, fall back to the top row.
+    int anchor_row = 1;
+    {
+        uint16_t addr = state.base_addr;
+        for (int i = 0; i < content_height; i++) {
+            uint8_t l = disasm_length(addr);
+            if (l == 0) l = 1;
+            if (state.current_addr >= addr && state.current_addr < (uint16_t)(addr + l)) {
+                anchor_row = i + 1;
+                break;
+            }
+            addr = (uint16_t)(addr + l);
+        }
+    }
+    // Box width: 18 chars (template up to 13 + small margin). Try to right-align
+    // beside the disassembly text.
+    int box_w = 18;
+    if (box_w > width - 2) box_w = width - 2;
+    int box_x = MONITOR_DISASM_TEXT_COL;
+    if (box_x + box_w > width) box_x = width - box_w;
+    if (box_x < 0) box_x = 0;
+
+    int max_rows = window->get_size_y() - 2 - anchor_row;
+    if (max_rows < 3) max_rows = 3;
+    int visible = opcode_candidate_count;
+    if (visible > max_rows - 1) visible = max_rows - 1;
+    if (visible < 1) visible = 1;
+
+    // Adjust scroll window.
+    if (opcode_selected < opcode_top) opcode_top = opcode_selected;
+    if (opcode_selected >= opcode_top + visible) opcode_top = opcode_selected - visible + 1;
+    if (opcode_top < 0) opcode_top = 0;
+
+    char line[40];
+    // Header row: typed prefix (or "_" if empty) + operand buffer + match count.
+    memset(line, ' ', sizeof(line));
+    line[box_w] = 0;
+    char prefix_show[6];
+    int n = 0;
+    for (; n < opcode_prefix_len && n < 3; n++) prefix_show[n] = opcode_prefix[n];
+    prefix_show[n++] = '_';
+    prefix_show[n] = 0;
+    if (opcode_operand_len > 0) {
+        sprintf(line, " %s %s %d", prefix_show, opcode_operand, opcode_candidate_count);
+    } else {
+        sprintf(line, " %s %d", prefix_show, opcode_candidate_count);
+    }
+    int len = (int)strlen(line);
+    if (len < box_w) { memset(line + len, ' ', box_w - len); line[box_w] = 0; }
+    window->move_cursor(box_x, anchor_row);
+    window->reverse_mode(1);
+    window->output_length(line, box_w);
+    window->reverse_mode(0);
+
+    // Candidate rows.
+    for (int r = 0; r < visible; r++) {
+        int idx = opcode_top + r;
+        memset(line, ' ', sizeof(line));
+        line[box_w] = 0;
+        if (idx < opcode_candidate_count) {
+            uint8_t op = opcode_candidates[idx];
+            const char *templ = disassembler_6502_template(op);
+            char buf[16];
+            // Copy template up to 13 chars, replacing leading '*' on the
+            // mnemonic with a space.
+            for (int i = 0; i < 13 && i < (int)sizeof(buf) - 1 && templ && templ[i]; i++) {
+                buf[i] = (templ[i] == '*') ? ' ' : templ[i];
+                buf[i + 1] = 0;
+            }
+            // Canonicalise mnemonic (HLT->JAM, etc.).
+            char mnem[4];
+            mnem[0] = buf[0]; mnem[1] = buf[1]; mnem[2] = buf[2]; mnem[3] = 0;
+            if (op == 0x5C || op == 0x7C) strcpy(mnem, "NOP");
+            else if (!strcmp(mnem, "HLT")) strcpy(mnem, "JAM");
+            else if (!strcmp(mnem, "ASO")) strcpy(mnem, "SLO");
+            else if (!strcmp(mnem, "LSE")) strcpy(mnem, "SRE");
+            else if (!strcmp(mnem, "DCM")) strcpy(mnem, "DCP");
+            else if (!strcmp(mnem, "INS")) strcpy(mnem, "ISC");
+            buf[0] = mnem[0]; buf[1] = mnem[1]; buf[2] = mnem[2];
+            sprintf(line, " %s", buf);
+            int slen = (int)strlen(line);
+            if (slen < box_w) { memset(line + slen, ' ', box_w - slen); line[box_w] = 0; }
+        }
+        window->move_cursor(box_x, anchor_row + 1 + r);
+        if (idx == opcode_selected && idx < opcode_candidate_count) {
+            window->reverse_mode(1);
+            window->output_length(line, box_w);
+            window->reverse_mode(0);
+        } else {
+            window->output_length(line, box_w);
+        }
+    }
+}
+
+void MachineMonitor :: hunt_picker_open(int count)
+{
+    hunt_picker_open_labeled(count, "Hunt results");
+}
+
+void MachineMonitor :: hunt_picker_open_labeled(int count, const char *label)
+{
+    hunt_count = count;
+    if (hunt_count > (int)(sizeof(hunt_addrs) / sizeof(hunt_addrs[0]))) {
+        hunt_count = (int)(sizeof(hunt_addrs) / sizeof(hunt_addrs[0]));
+    }
+    hunt_selected = 0;
+    hunt_top = 0;
+    hunt_picker_label = label ? label : "Results";
+    hunt_picker_active = true;
+}
+
+void MachineMonitor :: hunt_picker_close()
+{
+    hunt_picker_active = false;
+}
+
+void MachineMonitor :: hunt_picker_jump()
+{
+    if (hunt_count <= 0 || hunt_selected < 0 || hunt_selected >= hunt_count) {
+        return;
+    }
+    monitor_apply_goto(&state, hunt_addrs[hunt_selected]);
+    hunt_picker_close();
+}
+
+int MachineMonitor :: hunt_picker_handle_key(int key)
+{
+    if (key == KEY_ESCAPE || key == KEY_BREAK || key == KEY_CTRL_O) {
+        hunt_picker_close();
+        draw();
+        return (key == KEY_CTRL_O) ? 1 : 0;
+    }
+    if (key == KEY_RETURN) {
+        hunt_picker_jump();
+        draw();
+        return 0;
+    }
+    if (key == KEY_DOWN) {
+        if (hunt_selected + 1 < hunt_count) hunt_selected++;
+    } else if (key == KEY_UP) {
+        if (hunt_selected > 0) hunt_selected--;
+    } else if (key == KEY_PAGEDOWN) {
+        hunt_selected += content_height > 0 ? content_height : 1;
+        if (hunt_selected >= hunt_count) hunt_selected = hunt_count - 1;
+    } else if (key == KEY_PAGEUP) {
+        hunt_selected -= content_height > 0 ? content_height : 1;
+        if (hunt_selected < 0) hunt_selected = 0;
+    } else if (key == KEY_HOME) {
+        hunt_selected = 0;
+    } else if (key == KEY_END) {
+        hunt_selected = hunt_count - 1;
+    }
+    draw();
+    return 0;
 }
 
 void MachineMonitor :: draw()
@@ -1097,6 +1465,8 @@ void MachineMonitor :: draw()
     draw_header();
     if (help_visible) {
         draw_help();
+    } else if (hunt_picker_active) {
+        draw_hunt_picker();
     } else {
         switch (state.view) {
             case MONITOR_VIEW_DISASM:
@@ -1112,8 +1482,10 @@ void MachineMonitor :: draw()
                 draw_hex();
                 break;
         }
+        if (opcode_picker_active) {
+            draw_opcode_picker();
+        }
     }
-    draw_message();
     draw_status();
     if (screen) {
         screen->sync();
@@ -1125,13 +1497,11 @@ void MachineMonitor :: apply_hex_digit(uint8_t value)
     if (pending_hex_nibble < 0) {
         pending_hex_nibble = (int)value;
         reset_edit_blink();
-        set_status("Hex nibble pending");
     } else {
         uint8_t byte = (uint8_t)((pending_hex_nibble << 4) | value);
         canonical_write(state.current_addr, byte);
         move_current(1);
         pending_hex_nibble = -1;
-        set_status("Byte written");
     }
 }
 
@@ -1139,7 +1509,358 @@ void MachineMonitor :: apply_ascii_char(char value)
 {
     canonical_write(state.current_addr, (uint8_t)value);
     move_current(1);
-    set_status("Char written");
+}
+
+void MachineMonitor :: apply_screen_char(char value)
+{
+    uint8_t code = monitor_screen_code_for_char(value);
+    if (code == 0xFF) {
+        return;
+    }
+    canonical_write(state.current_addr, code);
+    move_current(1);
+}
+
+void MachineMonitor :: apply_logical_delete()
+{
+    switch (state.view) {
+        case MONITOR_VIEW_HEX: {
+            canonical_write(state.current_addr, 0x00);
+            pending_hex_nibble = -1;
+            move_current(1);
+            break;
+        }
+        case MONITOR_VIEW_ASCII: {
+            canonical_write(state.current_addr, 0x20);
+            move_current(1);
+            break;
+        }
+        case MONITOR_VIEW_SCREEN: {
+            canonical_write(state.current_addr, 0x20);
+            move_current(1);
+            break;
+        }
+        case MONITOR_VIEW_ASM: {
+            uint8_t len = disasm_length(state.current_addr);
+            for (uint8_t i = 0; i < len; i++) {
+                canonical_write((uint16_t)(state.current_addr + i), 0xEA);
+            }
+            step_disassembly(1);
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+void MachineMonitor :: apply_logical_delete_buffer()
+{
+    if (pending_hex_nibble >= 0) {
+        pending_hex_nibble = -1;
+    }
+}
+
+void MachineMonitor :: asm_edit_history_reset(uint16_t anchor_addr)
+{
+    asm_edit_hist_len = 0;
+    asm_edit_hist_anchor_addr = anchor_addr;
+}
+
+void MachineMonitor :: asm_edit_history_push(uint16_t addr, uint8_t prev_byte, uint8_t prev_part, uint8_t prev_pending)
+{
+    if (asm_edit_hist_len >= ASM_EDIT_HISTORY_MAX) {
+        // Drop the oldest entry to make room (FIFO eviction). The user's
+        // expected DEL undoes recent edits; very long edit chains beyond the
+        // buffer simply cannot be undone by the buffer entry that fell off.
+        for (int i = 1; i < ASM_EDIT_HISTORY_MAX; i++) {
+            asm_edit_hist_addr[i - 1]    = asm_edit_hist_addr[i];
+            asm_edit_hist_byte[i - 1]    = asm_edit_hist_byte[i];
+            asm_edit_hist_part[i - 1]    = asm_edit_hist_part[i];
+            asm_edit_hist_pending[i - 1] = asm_edit_hist_pending[i];
+        }
+        asm_edit_hist_len = ASM_EDIT_HISTORY_MAX - 1;
+    }
+    asm_edit_hist_addr[asm_edit_hist_len]    = addr;
+    asm_edit_hist_byte[asm_edit_hist_len]    = prev_byte;
+    asm_edit_hist_part[asm_edit_hist_len]    = prev_part;
+    asm_edit_hist_pending[asm_edit_hist_len] = prev_pending;
+    asm_edit_hist_len++;
+}
+
+bool MachineMonitor :: asm_edit_history_pop()
+{
+    if (asm_edit_hist_len <= 0) return false;
+    asm_edit_hist_len--;
+    uint16_t addr = asm_edit_hist_addr[asm_edit_hist_len];
+    uint8_t  byte = asm_edit_hist_byte[asm_edit_hist_len];
+    canonical_write(addr, byte);
+    state.current_addr = asm_edit_hist_anchor_addr;
+    asm_edit_part      = asm_edit_hist_part[asm_edit_hist_len];
+    asm_edit_pending   = asm_edit_hist_pending[asm_edit_hist_len];
+    return true;
+}
+
+// Direct-typing path in the opcode picker uses the existing assembler so it
+// accepts the same syntax as monitor_assemble_line ("LDA $1000", "LDA #$FF",
+// "JMP ($1000)", "LDA ($10),Y", etc.). The picker collects the operand chars
+// after the 3-letter mnemonic into opcode_operand[] and on commit asks the
+// assembler to turn the full "MNEM operand" string into bytes.
+
+void MachineMonitor :: opcode_picker_open(char seed)
+{
+    opcode_picker_active = true;
+    opcode_prefix_len = 0;
+    opcode_prefix[0] = 0;
+    opcode_operand_len = 0;
+    opcode_operand[0] = 0;
+    if (seed) {
+        char up = (seed >= 'a' && seed <= 'z') ? (char)(seed - 'a' + 'A') : seed;
+        if ((up >= 'A' && up <= 'Z')) {
+            opcode_prefix[0] = up;
+            opcode_prefix[1] = 0;
+            opcode_prefix_len = 1;
+        }
+    }
+    opcode_selected = 0;
+    opcode_top = 0;
+    opcode_picker_refilter();
+}
+
+void MachineMonitor :: opcode_picker_close()
+{
+    opcode_picker_active = false;
+    opcode_prefix_len = 0;
+    opcode_prefix[0] = 0;
+    opcode_operand_len = 0;
+    opcode_operand[0] = 0;
+}
+
+void MachineMonitor :: opcode_picker_refilter()
+{
+    opcode_candidate_count = 0;
+    for (int op = 0; op < 256; op++) {
+        const char *templ = disassembler_6502_template((uint8_t)op);
+        if (!templ) continue;
+        bool illegal = (templ[3] == '*');
+        if (illegal && !state.illegal_enabled) continue;
+        char mnem[4];
+        mnem[0] = templ[0]; mnem[1] = templ[1]; mnem[2] = templ[2]; mnem[3] = 0;
+        // Apply canonicalisation so the picker shows the same names the assembler accepts.
+        if (op == 0x5C || op == 0x7C) strcpy(mnem, "NOP");
+        else if (!strcmp(mnem, "HLT")) strcpy(mnem, "JAM");
+        else if (!strcmp(mnem, "ASO")) strcpy(mnem, "SLO");
+        else if (!strcmp(mnem, "LSE")) strcpy(mnem, "SRE");
+        else if (!strcmp(mnem, "DCM")) strcpy(mnem, "DCP");
+        else if (!strcmp(mnem, "INS")) strcpy(mnem, "ISC");
+        bool match = true;
+        for (int i = 0; i < opcode_prefix_len; i++) {
+            if (mnem[i] != opcode_prefix[i]) { match = false; break; }
+        }
+        if (!match) continue;
+        if (opcode_candidate_count < (int)sizeof(opcode_candidates)) {
+            opcode_candidates[opcode_candidate_count++] = (uint8_t)op;
+        }
+    }
+    if (opcode_selected >= opcode_candidate_count) opcode_selected = opcode_candidate_count - 1;
+    if (opcode_selected < 0) opcode_selected = 0;
+    if (opcode_top > opcode_selected) opcode_top = opcode_selected;
+}
+
+void MachineMonitor :: opcode_picker_commit()
+{
+    if (opcode_candidate_count <= 0) return;
+    if (opcode_selected < 0 || opcode_selected >= opcode_candidate_count) return;
+    uint8_t op = opcode_candidates[opcode_selected];
+    // Capture the entire previous instruction (up to 3 bytes) so DEL can
+    // restore the original line wholesale. Push in reverse memory order so
+    // popping replays the bytes back in low->high order — but order of
+    // restoration does not matter since each entry is independent.
+    uint8_t prev_len = disasm_length(state.current_addr);
+    if (prev_len == 0) prev_len = 1;
+    if (prev_len > 3) prev_len = 3;
+    // Snapshot anchor part/pending only on the first entry; all subsequent
+    // bytes are tagged with part 0 / pending 0 — they're just memory restores
+    // and the cursor state will be set by the LAST popped (i.e., FIRST pushed)
+    // entry, which is the highest-offset byte. To keep it simple: only the
+    // first push (the opcode byte) carries the pre-commit cursor state.
+    asm_edit_history_push(state.current_addr, canonical_read(state.current_addr), asm_edit_part, asm_edit_pending);
+    for (uint8_t i = 1; i < prev_len; i++) {
+        uint16_t a = (uint16_t)(state.current_addr + i);
+        asm_edit_history_push(a, canonical_read(a), 0, 0);
+    }
+    canonical_write(state.current_addr, op);
+    uint8_t new_len = disasm_length(state.current_addr);
+    if (new_len == 0) new_len = 1;
+    opcode_picker_close();
+    if (new_len > 1) {
+        // Leave the cursor on the (new) operand byte 1 so the user can type
+        // hex digits into it next.
+        asm_edit_part = 1;
+        asm_edit_pending = 0;
+    } else {
+        // No operand: advance to next instruction.
+        step_disassembly(1);
+        asm_edit_part = 0;
+        asm_edit_pending = 0;
+        asm_edit_history_reset(state.current_addr);
+    }
+    ensure_disasm_visible();
+}
+
+int MachineMonitor :: opcode_picker_handle_key(int key)
+{
+    if (key == KEY_ESCAPE || key == KEY_BREAK) {
+        opcode_picker_close();
+        draw();
+        return 0;
+    }
+    if (key == KEY_CTRL_O) {
+        opcode_picker_close();
+        return 1;
+    }
+    if (key == KEY_RETURN) {
+        if (opcode_operand_len > 0) {
+            if (opcode_picker_commit_typed()) {
+                draw();
+                return 0;
+            }
+        }
+        opcode_picker_commit();
+        draw();
+        return 0;
+    }
+    if (key == KEY_DOWN) {
+        if (opcode_selected + 1 < opcode_candidate_count) opcode_selected++;
+        draw();
+        return 0;
+    }
+    if (key == KEY_UP) {
+        if (opcode_selected > 0) opcode_selected--;
+        draw();
+        return 0;
+    }
+    if (key == KEY_BACK || key == KEY_DELETE) {
+        if (opcode_operand_len > 0) {
+            opcode_operand_len--;
+            opcode_operand[opcode_operand_len] = 0;
+        } else if (opcode_prefix_len > 0) {
+            opcode_prefix_len--;
+            opcode_prefix[opcode_prefix_len] = 0;
+            opcode_selected = 0;
+            opcode_top = 0;
+            opcode_picker_refilter();
+        } else {
+            opcode_picker_close();
+        }
+        draw();
+        return 0;
+    }
+
+    // Mnemonic accumulation: while we have fewer than 3 letters, treat any
+    // letter (including A-F) as part of the mnemonic prefix. Once the prefix
+    // is complete the picker switches to operand-typing mode.
+    bool is_letter = ((key >= 'A' && key <= 'Z') || (key >= 'a' && key <= 'z'));
+    if (is_letter && opcode_prefix_len < 3) {
+        char up = (key >= 'a' && key <= 'z') ? (char)(key - 'a' + 'A') : (char)key;
+        opcode_prefix[opcode_prefix_len++] = up;
+        opcode_prefix[opcode_prefix_len] = 0;
+        opcode_selected = 0;
+        opcode_top = 0;
+        opcode_picker_refilter();
+        // Auto-commit only for implied/accumulator instructions where the
+        // operand is irrelevant (e.g. BRK, NOP, TXA). For everything else
+        // wait for the user to type an operand or press ENTER.
+        if (opcode_candidate_count == 1 && opcode_prefix_len == 3) {
+            uint8_t op = opcode_candidates[0];
+            uint8_t op_len = disasm_length(state.current_addr);
+            (void)op_len;
+            // disasm_length depends on memory; check the candidate's own length
+            // by looking up the implied/accumulator forms via the assembler.
+            uint8_t lookup_op, lookup_len;
+            char m[4]; m[0] = opcode_prefix[0]; m[1] = opcode_prefix[1]; m[2] = opcode_prefix[2]; m[3] = 0;
+            bool is_imp = monitor_lookup_opcode(m, AM_IMP, state.illegal_enabled, &lookup_op, &lookup_len) && lookup_op == op;
+            bool is_acc = monitor_lookup_opcode(m, AM_ACC, state.illegal_enabled, &lookup_op, &lookup_len) && lookup_op == op;
+            if (is_imp || is_acc) {
+                opcode_picker_commit();
+            }
+        }
+        draw();
+        return 0;
+    }
+
+    // Operand-typing mode: only available once the mnemonic is complete.
+    if (opcode_prefix_len == 3) {
+        if (key == ' ') {
+            if (opcode_operand_len > 0 && opcode_picker_commit_typed()) {
+                draw();
+                return 0;
+            }
+            // SPACE before any operand chars is a no-op (allows "LDA 1000").
+            return 0;
+        }
+        char up = (key >= 'a' && key <= 'z') ? (char)(key - 'a' + 'A') : (char)key;
+        bool is_hex   = ((up >= '0' && up <= '9') || (up >= 'A' && up <= 'F'));
+        bool is_xy    = (up == 'X' || up == 'Y');
+        bool is_punct = (up == '#' || up == '$' || up == '(' || up == ')' || up == ',');
+        if (is_hex || is_xy || is_punct) {
+            if (opcode_operand_len < (int)sizeof(opcode_operand) - 1) {
+                opcode_operand[opcode_operand_len++] = up;
+                opcode_operand[opcode_operand_len] = 0;
+            }
+            draw();
+            return 0;
+        }
+    }
+    return 0;
+}
+
+bool MachineMonitor :: opcode_picker_commit_typed()
+{
+    if (opcode_prefix_len != 3) return false;
+    if (opcode_operand_len <= 0) return false;
+
+    // Build "MNEM operand" string and ask the existing assembler to encode it.
+    char line[24];
+    line[0] = opcode_prefix[0];
+    line[1] = opcode_prefix[1];
+    line[2] = opcode_prefix[2];
+    line[3] = ' ';
+    int n = 4;
+    for (int i = 0; i < opcode_operand_len && n < (int)sizeof(line) - 1; i++) {
+        line[n++] = opcode_operand[i];
+    }
+    line[n] = 0;
+
+    AsmInsn insn;
+    MonitorError err = MONITOR_OK;
+    if (!monitor_assemble_line(line, state.illegal_enabled, state.current_addr, &insn, &err)) {
+        return false;
+    }
+    if (insn.length < 1 || insn.length > 3) return false;
+
+    // Capture undo history for the whole previous instruction (up to 3 bytes).
+    uint8_t prev_len = disasm_length(state.current_addr);
+    if (prev_len == 0) prev_len = 1;
+    if (prev_len > 3) prev_len = 3;
+    asm_edit_history_push(state.current_addr,
+                          canonical_read(state.current_addr),
+                          asm_edit_part, asm_edit_pending);
+    for (uint8_t i = 1; i < prev_len; i++) {
+        uint16_t a = (uint16_t)(state.current_addr + i);
+        asm_edit_history_push(a, canonical_read(a), 0, 0);
+    }
+
+    for (uint8_t i = 0; i < insn.length; i++) {
+        canonical_write((uint16_t)(state.current_addr + i), insn.bytes[i]);
+    }
+
+    opcode_picker_close();
+    step_disassembly(1);
+    asm_edit_part = 0;
+    asm_edit_pending = 0;
+    asm_edit_history_reset(state.current_addr);
+    ensure_disasm_visible();
+    return true;
 }
 
 void MachineMonitor :: exit_edit_mode()
@@ -1147,7 +1868,9 @@ void MachineMonitor :: exit_edit_mode()
     edit_mode = false;
     edit_cursor_visible = true;
     pending_hex_nibble = -1;
-    set_status("Edit off");
+    asm_edit_part = 0;
+    asm_edit_pending = 0;
+    asm_edit_history_reset(state.current_addr);
 }
 
 void MachineMonitor :: enter_edit_mode()
@@ -1155,8 +1878,10 @@ void MachineMonitor :: enter_edit_mode()
     help_visible = false;
     edit_mode = true;
     pending_hex_nibble = -1;
+    asm_edit_part = 0;
+    asm_edit_pending = 0;
+    asm_edit_history_reset(state.current_addr);
     reset_edit_blink();
-    set_status(state.view == MONITOR_VIEW_HEX ? "Hex edit" : "ASCII edit");
 }
 
 void MachineMonitor :: init(Screen *scr, Keyboard *keyb)
@@ -1173,12 +1898,11 @@ void MachineMonitor :: init(Screen *scr, Keyboard *keyb)
     window = new Window(screen, 0, 2, line_length, height);
     window->draw_border();
     window->set_color(get_ui()->color_fg);
-    content_height = window->get_size_y() - 4;
+    content_height = window->get_size_y() - 2;
     backend->begin_session();
     backend->set_monitor_cpu_port(normalize_cpu_mode(backend->get_live_cpu_port()));
     last_vic_bank = backend->get_live_vic_bank();
     monitor_apply_goto(&state, state.current_addr);
-    set_status("M VIEW E EDIT O CPU . DIS F3 HELP");
     draw();
 }
 
@@ -1206,15 +1930,27 @@ int MachineMonitor :: handle_key(int key)
     int needle_len;
     MonitorError error;
 
+    if (hunt_picker_active) {
+        return hunt_picker_handle_key(key);
+    }
+    if (opcode_picker_active) {
+        return opcode_picker_handle_key(key);
+    }
+
     if (key == KEY_HELP || key == KEY_F3) {
         toggle_help();
         draw();
         return 0;
     }
-    if (help_visible && key == KEY_ESCAPE) {
-        toggle_help();
-        draw();
-        return 0;
+    if (help_visible) {
+        // Any other key dismisses the help overlay first, then continues to
+        // execute as a normal monitor command (so e.g. pressing H from the
+        // help screen actually launches Hunt instead of leaving help open).
+        help_visible = false;
+        if (key == KEY_ESCAPE) {
+            draw();
+            return 0;
+        }
     }
 
     if (edit_mode) {
@@ -1223,6 +1959,34 @@ int MachineMonitor :: handle_key(int key)
         }
         if (key == KEY_BREAK || key == KEY_ESCAPE || key == KEY_CTRL_E) {
             exit_edit_mode();
+            draw();
+            return 0;
+        }
+        if (key == KEY_CTRL_D) {
+            apply_logical_delete();
+            draw();
+            return 0;
+        }
+        if ((key == KEY_BACK || key == KEY_DELETE) && state.view == MONITOR_VIEW_HEX) {
+            apply_logical_delete_buffer();
+            draw();
+            return 0;
+        }
+        if ((key == KEY_BACK || key == KEY_DELETE) && state.view == MONITOR_VIEW_ASM) {
+            // First try to undo the last typed character on this instruction.
+            // Only fall through to wholesale NOP-ification when the line has
+            // no pending edits.
+            if (asm_edit_history_pop()) {
+                draw();
+                return 0;
+            }
+            apply_logical_delete();
+            asm_edit_history_reset(state.current_addr);
+            draw();
+            return 0;
+        }
+        if ((key == KEY_BACK || key == KEY_DELETE) && state.view != MONITOR_VIEW_HEX) {
+            apply_logical_delete();
             draw();
             return 0;
         }
@@ -1237,7 +2001,148 @@ int MachineMonitor :: handle_key(int key)
         }
         if (state.view == MONITOR_VIEW_ASCII) {
             if (key >= 32 && key < 127) {
-                apply_ascii_char((char)key);
+                char ch = (char)key;
+                if (ch >= 'a' && ch <= 'z') ch = (char)(ch - 'a' + 'A');
+                apply_ascii_char(ch);
+                draw();
+                return 0;
+            }
+        }
+        if (state.view == MONITOR_VIEW_SCREEN) {
+            if (key >= 32 && key < 127) {
+                char ch = (char)key;
+                if (ch >= 'a' && ch <= 'z') ch = (char)(ch - 'a' + 'A');
+                apply_screen_char(ch);
+                draw();
+                return 0;
+            }
+        }
+        if (state.view == MONITOR_VIEW_ASM) {
+            uint8_t insn_len = disasm_length(state.current_addr);
+            if (insn_len == 0) insn_len = 1;
+            uint8_t part_count = asm_edit_part_count(state.current_addr);
+            bool branch = asm_is_branch(state.current_addr) && insn_len == 2;
+            if (asm_edit_part >= part_count) asm_edit_part = 0;
+            if (key == KEY_LEFT) {
+                if (asm_edit_part > 0) {
+                    asm_edit_part--;
+                } else {
+                    step_disassembly(-1);
+                    uint8_t prev_parts = asm_edit_part_count(state.current_addr);
+                    asm_edit_part = (prev_parts > 0) ? (uint8_t)(prev_parts - 1) : 0;
+                    asm_edit_history_reset(state.current_addr);
+                }
+                asm_edit_pending = 0;
+                draw();
+                return 0;
+            }
+            if (key == KEY_RIGHT) {
+                if (asm_edit_part + 1 < part_count) {
+                    asm_edit_part++;
+                } else {
+                    step_disassembly(1);
+                    asm_edit_part = 0;
+                    asm_edit_history_reset(state.current_addr);
+                }
+                asm_edit_pending = 0;
+                draw();
+                return 0;
+            }
+            if (key == KEY_UP) {
+                step_disassembly(-1);
+                asm_edit_part = 0;
+                asm_edit_pending = 0;
+                asm_edit_history_reset(state.current_addr);
+                draw();
+                return 0;
+            }
+            if (key == KEY_DOWN) {
+                step_disassembly(1);
+                asm_edit_part = 0;
+                asm_edit_pending = 0;
+                asm_edit_history_reset(state.current_addr);
+                draw();
+                return 0;
+            }
+            if (asm_edit_part > 0 && is_hex_char((char)key)) {
+                uint8_t nib = (key >= '0' && key <= '9') ? (uint8_t)(key - '0')
+                                                        : (uint8_t)(to_upper_char((char)key) - 'A' + 10);
+                uint8_t prev_part = asm_edit_part;
+                uint8_t prev_pending = asm_edit_pending;
+                if (branch) {
+                    // Branch: virtual two-byte target ($hh$ll) backed by a
+                    // single signed offset at mem+1. Compute the new target
+                    // byte from the typed nibble, derive the new offset, and
+                    // only write if it still fits in -128..127.
+                    uint16_t rel_addr = (uint16_t)(state.current_addr + 1);
+                    uint8_t prev_rel = canonical_read(rel_addr);
+                    uint16_t target = (uint16_t)(state.current_addr + 2 + (int8_t)prev_rel);
+                    uint8_t hi = (uint8_t)(target >> 8);
+                    uint8_t lo = (uint8_t)(target & 0xFF);
+                    uint8_t *byte = (asm_edit_part == 1) ? &hi : &lo;
+                    if (asm_edit_pending == 0) {
+                        *byte = (uint8_t)((nib << 4) | (*byte & 0x0F));
+                    } else {
+                        *byte = (uint8_t)((*byte & 0xF0) | nib);
+                    }
+                    uint16_t new_target = (uint16_t)((hi << 8) | lo);
+                    int32_t offset = (int32_t)new_target - (int32_t)(state.current_addr + 2);
+                    if (offset < -128 || offset > 127) {
+                        // Out of range — refuse the edit (do not corrupt the offset).
+                        draw();
+                        return 0;
+                    }
+                    asm_edit_history_push(rel_addr, prev_rel, prev_part, prev_pending);
+                    canonical_write(rel_addr, (uint8_t)(offset & 0xFF));
+                    if (asm_edit_pending == 0) {
+                        asm_edit_pending = 1;
+                    } else {
+                        asm_edit_pending = 0;
+                        if (asm_edit_part + 1 < part_count) {
+                            asm_edit_part++;
+                        } else {
+                            step_disassembly(1);
+                            asm_edit_part = 0;
+                            asm_edit_history_reset(state.current_addr);
+                        }
+                    }
+                    draw();
+                    return 0;
+                }
+                // Map display-order parts to memory-order offsets:
+                //   2-byte insn: part 1 -> +1
+                //   3-byte insn: part 1 -> +2 (high byte, displayed first)
+                //                part 2 -> +1 (low byte,  displayed second)
+                uint8_t mem_off;
+                if (insn_len == 3) {
+                    mem_off = (asm_edit_part == 1) ? 2 : 1;
+                } else {
+                    mem_off = 1;
+                }
+                uint16_t byte_addr = (uint16_t)(state.current_addr + mem_off);
+                uint8_t prev_byte = canonical_read(byte_addr);
+                if (asm_edit_pending == 0) {
+                    canonical_write(byte_addr, (uint8_t)((nib << 4) | (prev_byte & 0x0F)));
+                    asm_edit_history_push(byte_addr, prev_byte, prev_part, prev_pending);
+                    asm_edit_pending = 1;
+                } else {
+                    canonical_write(byte_addr, (uint8_t)((prev_byte & 0xF0) | nib));
+                    asm_edit_history_push(byte_addr, prev_byte, prev_part, prev_pending);
+                    asm_edit_pending = 0;
+                    uint8_t new_parts = asm_edit_part_count(state.current_addr);
+                    if (asm_edit_part + 1 < new_parts) {
+                        asm_edit_part++;
+                    } else {
+                        step_disassembly(1);
+                        asm_edit_part = 0;
+                        asm_edit_history_reset(state.current_addr);
+                    }
+                }
+                draw();
+                return 0;
+            }
+            if (asm_edit_part == 0 && ((key >= 'A' && key <= 'Z') || (key >= 'a' && key <= 'z'))) {
+                opcode_picker_open((char)key);
                 draw();
                 return 0;
             }
@@ -1302,9 +2207,10 @@ int MachineMonitor :: handle_key(int key)
             help_visible = false;
             set_view(toggle_hex_ascii_view(state.view));
             break;
+        case 'a': case 'A':
         case 'd': case 'D':
             help_visible = false;
-            set_view(MONITOR_VIEW_DISASM);
+            set_view(MONITOR_VIEW_ASM);
             break;
         case 's': case 'S':
             help_visible = false;
@@ -1313,22 +2219,9 @@ int MachineMonitor :: handle_key(int key)
         case 'o': case 'O':
             cpu_port = next_cpu_mode(backend->get_monitor_cpu_port());
             backend->set_monitor_cpu_port(cpu_port);
-            set_status("");
-            break;
-        case '.':
-            if (state.disasm_offset >= 2) {
-                state.disasm_offset = 0;
-            } else {
-                state.disasm_offset++;
-            }
-            if (state.view == MONITOR_VIEW_DISASM) {
-                state.base_addr = (uint16_t)(state.current_addr + state.disasm_offset);
-            }
-            set_status("Disasm offset");
             break;
         case '*':
             state.illegal_enabled = !state.illegal_enabled;
-            set_status(state.illegal_enabled ? "Illegal: ON" : "Illegal: OFF");
             break;
         case '?':
             toggle_help();
@@ -1340,20 +2233,18 @@ int MachineMonitor :: handle_key(int key)
             return 1;
         case 'j': case 'J':
             strcpy(buffer, "AAAA");
-            if (prompt_command("Goto AAAA", buffer, sizeof(buffer) - 1, true)) {
+            if (prompt_command("Jump AAAA", buffer, sizeof(buffer) - 1, true)) {
                 error = monitor_parse_address(buffer, &address);
                 if (error == MONITOR_OK) {
                     monitor_apply_goto(&state, address);
                 } else {
-                    set_status(monitor_error_text(error));
+                    get_ui()->popup(monitor_error_text(error), BUTTON_OK);
                 }
             }
             break;
         case 'e': case 'E':
             if (inline_edit_supported()) {
                 enter_edit_mode();
-            } else {
-                set_status("Hex/ASCII only");
             }
             break;
         case 'f': case 'F':
@@ -1362,9 +2253,8 @@ int MachineMonitor :: handle_key(int key)
                 error = monitor_parse_fill(buffer, &start, &end, &byte_value);
                 if (error == MONITOR_OK) {
                     monitor_fill_memory(backend, start, end, byte_value);
-                    set_status("Fill done");
                 } else {
-                    set_status(monitor_error_text(error));
+                    get_ui()->popup(monitor_error_text(error), BUTTON_OK);
                 }
             }
             break;
@@ -1374,9 +2264,8 @@ int MachineMonitor :: handle_key(int key)
                 error = monitor_parse_transfer(buffer, &start, &end, &dest);
                 if (error == MONITOR_OK) {
                     monitor_transfer_memory(backend, start, end, dest);
-                    set_status("Transfer done");
                 } else {
-                    set_status(monitor_error_text(error));
+                    get_ui()->popup(monitor_error_text(error), BUTTON_OK);
                 }
             }
             break;
@@ -1385,38 +2274,36 @@ int MachineMonitor :: handle_key(int key)
             if (prompt_command("Compare AAAA-BBBB,CCCC", buffer, sizeof(buffer) - 1, true)) {
                 error = monitor_parse_compare(buffer, &start, &end, &dest);
                 if (error == MONITOR_OK) {
-                    monitor_compare_memory(backend, start, end, dest, output, sizeof(output));
-                    get_ui()->run_editor(output, strlen(output));
+                    int found = monitor_compare_collect(backend, start, end, dest,
+                                                       hunt_addrs, (int)(sizeof(hunt_addrs) / sizeof(hunt_addrs[0])));
+                    if (found <= 0) {
+                        get_ui()->popup("No differences", BUTTON_OK);
+                    } else {
+                        hunt_picker_open_labeled(found, "Compare results");
+                    }
                 } else {
-                    set_status(monitor_error_text(error));
+                    get_ui()->popup(monitor_error_text(error), BUTTON_OK);
                 }
             }
             break;
         case 'h': case 'H':
-            strcpy(buffer, "AAAA-BBBB, ");
-            if (prompt_command("Hunt AAAA-BBBB,...", buffer, sizeof(buffer) - 1, true)) {
+            strcpy(buffer, "0000-FFFF, ");
+            if (prompt_command("Hunt AAAA-BBBB,...", buffer, sizeof(buffer) - 1, false)) {
                 error = monitor_parse_hunt(buffer, &start, &end, needle, &needle_len);
                 if (error == MONITOR_OK) {
-                    monitor_hunt_memory(backend, start, end, needle, needle_len, output, sizeof(output));
-                    get_ui()->run_editor(output, strlen(output));
+                    int found = monitor_hunt_collect(backend, start, end, needle, needle_len,
+                                                    hunt_addrs, (int)(sizeof(hunt_addrs) / sizeof(hunt_addrs[0])));
+                    if (found <= 0) {
+                        get_ui()->popup("No matches", BUTTON_OK);
+                    } else {
+                        hunt_picker_open(found);
+                    }
                 } else {
-                    set_status(monitor_error_text(error));
-                }
-            }
-            break;
-        case 'r': case 'R':
-            sprintf(buffer, "%04x,%02x,%02x,%02x,%02x,%02x", registers_pc, registers_a, registers_x, registers_y, registers_sp, registers_sr);
-            if (prompt_command("Regs PC,A,X,Y,SP,SR", buffer, sizeof(buffer) - 1)) {
-                error = monitor_parse_registers(buffer, &registers_pc, &registers_a, &registers_x, &registers_y, &registers_sp, &registers_sr);
-                if (error == MONITOR_OK) {
-                    set_status("Registers updated");
-                } else {
-                    set_status(monitor_error_text(error));
+                    get_ui()->popup(monitor_error_text(error), BUTTON_OK);
                 }
             }
             break;
         case 'g': case 'G':
-        case 'a': case 'A':
             get_ui()->popup("Reserved", BUTTON_OK);
             break;
         case 'n': case 'N':
@@ -1426,7 +2313,7 @@ int MachineMonitor :: handle_key(int key)
                 if (error == MONITOR_OK) {
                     get_ui()->popup(output, BUTTON_OK);
                 } else {
-                    set_status(monitor_error_text(error));
+                    get_ui()->popup(monitor_error_text(error), BUTTON_OK);
                 }
             }
             break;
