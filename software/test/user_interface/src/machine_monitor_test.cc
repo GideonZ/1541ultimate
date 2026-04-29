@@ -1755,85 +1755,110 @@ static int test_screen_code_reverse(void)
 
 static int test_logical_delete_per_view(void)
 {
-    // HEX: CTRL+L on a non-zero byte must clear it to 0x00.
+    // HEX: DEL on a non-zero byte must clear it to 0x00 and step cursor RIGHT.
     {
         TestUserInterface ui;
         CaptureScreen screen;
         FakeMemoryBackend backend;
         backend.write(0x0400, 0xAB);
-        const int keys[] = { 'J', 'E', KEY_CTRL_D, KEY_BREAK };
-        FakeKeyboard kb(keys, 4);
+        backend.write(0x0401, 0xCD);
+        const int keys[] = { 'J', 'E', KEY_DELETE, KEY_DELETE, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys)/sizeof(keys[0]));
         ui.screen = &screen;
         ui.keyboard = &kb;
         ui.set_prompt("0400", 1);
         MachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < (int)(sizeof(keys)/sizeof(keys[0])) - 1; i++) {
             (void)mon.poll(0);
         }
-        if (expect(backend.read(0x0400) == 0x00, "HEX CTRL+L must clear byte to 0x00")) return 1;
+        // First DEL clears 0400 and moves to 0401; second DEL clears 0401.
+        if (expect(backend.read(0x0400) == 0x00 && backend.read(0x0401) == 0x00,
+                   "HEX DEL must clear current byte to 0x00 and advance cursor RIGHT")) return 1;
     }
 
-    // ASC: CTRL+L on byte must set to 0x20.
+    // ASC: DEL on byte must set to 0x20 and step cursor LEFT.
     {
         TestUserInterface ui;
         CaptureScreen screen;
         FakeMemoryBackend backend;
-        backend.write(0x0400, 0xAB);
-        const int keys[] = { 'J', 'M', 'E', KEY_CTRL_D, KEY_BREAK };
-        FakeKeyboard kb(keys, 5);
+        backend.write(0x03FF, 0xAA);
+        backend.write(0x0400, 0xBB);
+        const int keys[] = { 'J', 'M', 'E', KEY_DELETE, KEY_DELETE, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys)/sizeof(keys[0]));
         ui.screen = &screen;
         ui.keyboard = &kb;
         ui.set_prompt("0400", 1);
         MachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < (int)(sizeof(keys)/sizeof(keys[0])) - 1; i++) {
             (void)mon.poll(0);
         }
-        if (expect(backend.read(0x0400) == 0x20, "ASC CTRL+L must set byte to 0x20")) return 1;
+        // First DEL clears 0400 and moves to 03FF; second DEL clears 03FF.
+        if (expect(backend.read(0x0400) == 0x20 && backend.read(0x03FF) == 0x20,
+                   "ASC DEL must clear byte to 0x20 and advance cursor LEFT")) return 1;
     }
 
-    // SCR: CTRL+L on byte must set to screen-code space (0x20).
+    // SCR: DEL on byte must set to screen-code space (0x20) and step cursor LEFT.
     {
         TestUserInterface ui;
         CaptureScreen screen;
         FakeMemoryBackend backend;
+        backend.write(0x03FF, 0x11);
         backend.write(0x0400, 0x55);
-        // Get to SCREEN view: J 0400, then 'M' twice (ASC->SCR depending on toggle), or 'A' once is ASM, not SCR.
-        // SCR is reached via 'M' cycling? Look up: actually the SCR view is a separate key in this monitor.
-        // Use 'S' if available; otherwise we cycle.
-        const int keys[] = { 'J', 'S', 'E', KEY_CTRL_D, KEY_BREAK };
-        FakeKeyboard kb(keys, 5);
+        const int keys[] = { 'J', 'S', 'E', KEY_DELETE, KEY_DELETE, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys)/sizeof(keys[0]));
         ui.screen = &screen;
         ui.keyboard = &kb;
         ui.set_prompt("0400", 1);
         MachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < (int)(sizeof(keys)/sizeof(keys[0])) - 1; i++) {
             (void)mon.poll(0);
         }
-        if (expect(backend.read(0x0400) == 0x20, "SCR CTRL+L must set byte to screen-code space (0x20)")) return 1;
+        if (expect(backend.read(0x0400) == 0x20 && backend.read(0x03FF) == 0x20,
+                   "SCR DEL must clear byte to screen-code space and advance cursor LEFT")) return 1;
     }
 
-    // ASM: CTRL+L on $C000=0xA9 0x12 (LDA #$12, 2 bytes) must fill EA EA.
+    // ASM: DEL on $C000 = A9 12 (LDA #$12, 2 bytes) must fill EA EA.
     {
         TestUserInterface ui;
         CaptureScreen screen;
         FakeMemoryBackend backend;
         backend.write(0xC000, 0xA9);
         backend.write(0xC001, 0x12);
-        const int keys[] = { 'J', 'A', 'E', KEY_CTRL_D, KEY_BREAK };
-        FakeKeyboard kb(keys, 5);
+        const int keys[] = { 'J', 'A', 'E', KEY_DELETE, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys)/sizeof(keys[0]));
         ui.screen = &screen;
         ui.keyboard = &kb;
         ui.set_prompt("C000", 1);
         MachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < (int)(sizeof(keys)/sizeof(keys[0])) - 1; i++) {
             (void)mon.poll(0);
         }
         if (expect(backend.read(0xC000) == 0xEA && backend.read(0xC001) == 0xEA,
-                   "ASM CTRL+L must replace LDA #$12 (2 bytes) with EA EA")) return 1;
+                   "ASM DEL must replace LDA #$12 (2 bytes) with EA EA")) return 1;
+    }
+
+    // DEL must also work in non-edit mode for HEX/ASC/SCR/ASM.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        backend.write(0x0400, 0xAB);
+        const int keys[] = { 'J', KEY_DELETE, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys)/sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < (int)(sizeof(keys)/sizeof(keys[0])) - 1; i++) {
+            (void)mon.poll(0);
+        }
+        if (expect(backend.read(0x0400) == 0x00,
+                   "HEX DEL must work outside edit mode too")) return 1;
     }
     return 0;
 }

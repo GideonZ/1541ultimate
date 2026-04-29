@@ -30,8 +30,7 @@ static const char *const monitor_help_lines[] = {
     "* Illegal opcodes",
     "",
     "Edit mode:",
-    "  DEL    Erase last char",
-    "  CBM+D  Logical delete",
+    "  DEL    Erases last char or current byte / opcode",
     "",
     "F3/?  Help",
     "ESC   Exit edit / monitor",
@@ -1521,6 +1520,10 @@ void MachineMonitor :: apply_screen_char(char value)
     move_current(1);
 }
 
+// Unified DEL behaviour shared by edit and non-edit mode. ASC/SCR clear
+// the current cell to a space and step the cursor LEFT; HEX clears the
+// current byte to 0x00 and steps RIGHT; ASM replaces the current
+// instruction with NOP(s) and steps to the next disassembled line.
 void MachineMonitor :: apply_logical_delete()
 {
     switch (state.view) {
@@ -1532,12 +1535,12 @@ void MachineMonitor :: apply_logical_delete()
         }
         case MONITOR_VIEW_ASCII: {
             canonical_write(state.current_addr, 0x20);
-            move_current(1);
+            move_current(-1);
             break;
         }
         case MONITOR_VIEW_SCREEN: {
             canonical_write(state.current_addr, 0x20);
-            move_current(1);
+            move_current(-1);
             break;
         }
         case MONITOR_VIEW_ASM: {
@@ -1550,13 +1553,6 @@ void MachineMonitor :: apply_logical_delete()
         }
         default:
             break;
-    }
-}
-
-void MachineMonitor :: apply_logical_delete_buffer()
-{
-    if (pending_hex_nibble >= 0) {
-        pending_hex_nibble = -1;
     }
 }
 
@@ -1962,31 +1958,26 @@ int MachineMonitor :: handle_key(int key)
             draw();
             return 0;
         }
-        if (key == KEY_CTRL_D) {
-            apply_logical_delete();
-            draw();
-            return 0;
-        }
-        if ((key == KEY_BACK || key == KEY_DELETE) && state.view == MONITOR_VIEW_HEX) {
-            apply_logical_delete_buffer();
-            draw();
-            return 0;
-        }
-        if ((key == KEY_BACK || key == KEY_DELETE) && state.view == MONITOR_VIEW_ASM) {
-            // First try to undo the last typed character on this instruction.
-            // Only fall through to wholesale NOP-ification when the line has
-            // no pending edits.
-            if (asm_edit_history_pop()) {
+        if (key == KEY_BACK || key == KEY_DELETE) {
+            // ASM: undo the last typed character on this line first; only
+            // when nothing has been typed on the current instruction does
+            // DEL fall through to the unified logical delete (NOP-replace
+            // and advance to the next line).
+            if (state.view == MONITOR_VIEW_ASM && asm_edit_history_pop()) {
+                draw();
+                return 0;
+            }
+            // HEX: a half-typed nibble on the current byte is rolled back
+            // first; otherwise the byte itself is cleared.
+            if (state.view == MONITOR_VIEW_HEX && pending_hex_nibble >= 0) {
+                pending_hex_nibble = -1;
                 draw();
                 return 0;
             }
             apply_logical_delete();
-            asm_edit_history_reset(state.current_addr);
-            draw();
-            return 0;
-        }
-        if ((key == KEY_BACK || key == KEY_DELETE) && state.view != MONITOR_VIEW_HEX) {
-            apply_logical_delete();
+            if (state.view == MONITOR_VIEW_ASM) {
+                asm_edit_history_reset(state.current_addr);
+            }
             draw();
             return 0;
         }
@@ -2150,6 +2141,11 @@ int MachineMonitor :: handle_key(int key)
     }
 
     switch (key) {
+        case KEY_BACK:
+        case KEY_DELETE:
+            apply_logical_delete();
+            draw();
+            return 0;
         case KEY_LEFT:
             move_current(-1);
             draw();

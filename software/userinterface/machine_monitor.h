@@ -156,7 +156,6 @@ class MachineMonitor : public UIObject
     void apply_ascii_char(char value);
     void apply_screen_char(char value);
     void apply_logical_delete();
-    void apply_logical_delete_buffer();
     void asm_edit_history_reset(uint16_t anchor_addr);
     void asm_edit_history_push(uint16_t addr, uint8_t prev_byte, uint8_t prev_part, uint8_t prev_pending);
     bool asm_edit_history_pop();
