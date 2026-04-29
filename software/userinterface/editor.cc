@@ -59,7 +59,7 @@ void Editor :: line_breakdown(const char *text_buffer, int buffer_size)
 
 	// printf("Line length = %d\n", line_length);
 	text->clear_list();
-    while(pos < buffer_size) {
+    while(text_buffer[pos] && pos < buffer_size) {
         current.buffer = &text_buffer[pos];
         current.length = -1;
         last_space = -1;
@@ -67,11 +67,13 @@ void Editor :: line_breakdown(const char *text_buffer, int buffer_size)
         int max_line_length = (line_length > (buffer_size - pos)) ? buffer_size - pos : line_length;
         for(int i=0;i<max_line_length;i++) {
             last = c[i];
-            if((last == 0x0a)||(last == 0x0d)) {
+            if((last == 0x0a)||(last == 0x0d)||(last == 0)) {
                 current.length = i;
                 //printf("adding returned line = %d '%#s'\n", current.length, (current.length ? current.length : 1), current.buffer);
                 text->append(current);
 				linecount++;
+                if(last == 0)
+                    return;
                 i++;
                 if((c[i] == 0x0a)&&(last == 0x0d))
                     i++;
@@ -121,7 +123,7 @@ void Editor :: init(Screen *scr, Keyboard *key)
     
 void Editor :: draw(void)
 {
-    struct Line line, *line_ptr;
+    struct Line line;
     int width = window->get_size_x();
     for(int i=0;i<height;i++) {
         window->move_cursor(0, i);

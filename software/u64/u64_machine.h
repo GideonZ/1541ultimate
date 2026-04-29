@@ -17,6 +17,7 @@ public:
     bool begin_monitor_session();
     void end_monitor_session(bool stopped_it);
     void clear_ram();
+    uint8_t get_cpu_port(void);
     uint8_t peek(uint32_t address);
     uint8_t peek_cpu(uint32_t address, uint8_t cpu_port);
     uint8_t peek_visible(uint32_t address);

@@ -132,7 +132,7 @@ static void copy_raw_block(volatile uint8_t *ram, bool freezerMenu, uint32_t add
             if (overlap > 1024) {
                 overlap = 1024;
             }
-            memcpy(dst + (start - address), screen_backup + (start - 1024), overlap);
+            memcpy(dst + (start - address), ((uint8_t *)screen_backup) + (start - 1024), overlap);
         }
         if ((address < 4096) && ((address + len) > 2048)) {
             uint32_t start = (address > 2048) ? address : 2048;
@@ -140,7 +140,7 @@ static void copy_raw_block(volatile uint8_t *ram, bool freezerMenu, uint32_t add
             if (overlap > 2048) {
                 overlap = 2048;
             }
-            memcpy(dst + (start - address), ram_backup + (start - 2048), overlap);
+            memcpy(dst + (start - address), ((uint8_t *)ram_backup) + (start - 2048), overlap);
         }
     }
 }
@@ -273,11 +273,7 @@ void U64Machine :: read_visible_block(uint32_t address, uint8_t *dst, uint32_t l
         uint8_t byte = ram[current];
 
         if (freezerMenu) {
-            if ((current >= 1024) && (current < 2048)) {
-                byte = screen_backup[current - 1024];
-            } else if ((current >= 2048) && (current < 4096)) {
-                byte = ram_backup[current - 2048];
-            }
+            byte = read_frozen_byte(ram, true, current, screen_backup, ram_backup);
         }
         dst[offset] = byte;
     }
@@ -289,6 +285,18 @@ void U64Machine :: read_visible_block(uint32_t address, uint8_t *dst, uint32_t l
     if (!freezerMenu && !wasStopped) {
         resume();
     }
+}
+
+uint8_t U64Machine :: get_cpu_port(void)
+{
+    bool stopped_it = false;
+    bool freezerMenu = before_memory_access(isFrozen, &stopped_it);
+    volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+    uint8_t ddr = read_frozen_byte(ram, freezerMenu, 0x0000, screen_backup, ram_backup) & 0x07;
+    uint8_t port = read_frozen_byte(ram, freezerMenu, 0x0001, screen_backup, ram_backup) & 0x07;
+
+    after_memory_access(0, freezerMenu, stopped_it);
+    return (uint8_t)(((port & ddr) | ((uint8_t)(~ddr) & 0x07)) & 0x07);
 }
 
 uint8_t U64Machine :: peek(uint32_t address) 
@@ -327,11 +335,7 @@ uint8_t U64Machine :: peek_visible(uint32_t address)
     uint8_t byte = ram[address];
 
     if (freezerMenu) {
-        if ((address >= 1024) && (address < 2048)) {
-            byte = screen_backup[address - 1024];
-        } else if ((address >= 2048) && (address < 4096)) {
-            byte = ram_backup[address - 2048];
-        }
+        byte = read_frozen_byte(ram, true, address, screen_backup, ram_backup);
     }
 
     C64_SERVE_CONTROL = saved_serve;
@@ -387,14 +391,7 @@ void U64Machine :: poke_visible(uint32_t address, uint8_t byte)
     bool freezerMenu = before_memory_access(false, &stopped_it);
     volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
 
-    ram[address] = byte;
-    if (freezerMenu) {
-        if ((address >= 1024) && (address < 2048)) {
-            screen_backup[address - 1024] = byte;
-        } else if ((address >= 2048) && (address < 4096)) {
-            ram_backup[address - 2048] = byte;
-        }
-    }
+    write_frozen_byte(ram, freezerMenu, address, byte, screen_backup, ram_backup);
 
     after_memory_access(0, freezerMenu, stopped_it);
 }

@@ -37,7 +37,7 @@ static const char *const opcode_templates[256] = {
     "BVC rel      ", "EOR ($nn),Y  ", "HLT*         ", "LSE*($nn),Y  ",
     "NOP $nn,x    ", "EOR $nn,X    ", "LSR $nn,X    ", "LSE*$nn,X    ",
     "CLI          ", "EOR $nnnn,Y  ", "NOP*         ", "LSE*$nnnn,Y  ",
-    "JMP*$nnnn  $$", "EOR $nnnn,X  ", "LSR $nnnn,X  ", "LSE*$nnnn,X  ",
+    "NOP*$nnnn,X  ", "EOR $nnnn,X  ", "LSR $nnnn,X  ", "LSE*$nnnn,X  ",
 
     "RTS          ", "ADC ($nn,X)  ", "HLT*         ", "RRA*($nn,X)  ",
     "NOP*$nn      ", "ADC $nn      ", "ROR $nn      ", "RRA*$nn      ",
@@ -47,7 +47,7 @@ static const char *const opcode_templates[256] = {
     "BVS rel      ", "ADC ($nn),Y  ", "HLT*         ", "RRA*($nn),Y  ",
     "NOP $nn,x    ", "ADC $nn,X    ", "ROR $nn,X    ", "RRA*$nn,X    ",
     "SEI          ", "ADC $nnnn,Y  ", "NOP*         ", "RRA*$nnnn,Y  ",
-    "JMP*(ABS,X)$$", "ADC $nnnn,X  ", "ROR $nnnn,X  ", "RRA*$nnnn,X  ",
+    "NOP*$nnnn,X  ", "ADC $nnnn,X  ", "ROR $nnnn,X  ", "RRA*$nnnn,X  ",
 
     "NOP*#        ", "STA ($nn,X)  ", "NOP*#        ", "SAX*($nn,X)  ",
     "STY $nn      ", "STA $nn      ", "STX $nn      ", "SAX*$nn      ",
@@ -110,10 +110,6 @@ void canonicalize_mnemonic(uint8_t opcode, const char *templ, char *mnemonic)
     mnemonic[2] = templ[2];
     mnemonic[3] = 0;
 
-    if (opcode == 0x5C || opcode == 0x7C) {
-        strcpy(mnemonic, "NOP");
-        return;
-    }
     if (!strcmp(mnemonic, "HLT")) {
         strcpy(mnemonic, "JAM");
     } else if (!strcmp(mnemonic, "ASO")) {
@@ -177,10 +173,6 @@ void format_operand(uint8_t opcode, uint16_t pc, const uint8_t *bytes, uint8_t l
         *has_target = true;
         *target = (uint16_t)(pc + 2 + (int8_t)bytes[1]);
         sprintf(operand, "$%04x", *target);
-        return;
-    }
-    if (opcode == 0x5C || opcode == 0x7C) {
-        sprintf(operand, "$%04x,X", (uint16_t)(bytes[1] | (bytes[2] << 8)));
         return;
     }
     if (!strncmp(spec, "#", 1)) {

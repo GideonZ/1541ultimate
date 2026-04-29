@@ -31,9 +31,6 @@ static AsmAddrMode template_to_mode(uint8_t opcode, const char *t)
     if (t[0] == 'B' && t[1] != 'R' && t[1] != 'I') {
         return AM_REL;
     }
-    if (opcode == 0x5C || opcode == 0x7C) {
-        return AM_IAX;
-    }
     const char *spec = t + 4;
     while (*spec == ' ') spec++;
     if (*spec == 0) return AM_IMP;
@@ -68,7 +65,6 @@ static uint8_t mode_length(AsmAddrMode m)
 static void canonicalize_mnem(uint8_t opcode, const char *t, char *m)
 {
     m[0] = t[0]; m[1] = t[1]; m[2] = t[2]; m[3] = 0;
-    if (opcode == 0x5C || opcode == 0x7C) { strcpy(m, "NOP"); return; }
     if (!strcmp(m, "HLT")) strcpy(m, "JAM");
     else if (!strcmp(m, "ASO")) strcpy(m, "SLO");
     else if (!strcmp(m, "LSE")) strcpy(m, "SRE");
@@ -273,9 +269,6 @@ bool monitor_assemble_line(const char *text, bool illegal_enabled, uint16_t pc,
             if (monitor_lookup_opcode(m, AM_ABS, illegal_enabled, &opcode, &length)) {
                 ok = true; mode = AM_ABS;
             }
-        }
-        if (!ok) {
-            // ZPX→ABX, ZPY→ABY
         }
     }
     if (!ok) {
