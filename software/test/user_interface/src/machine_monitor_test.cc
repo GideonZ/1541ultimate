@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "machine_monitor.h"
-#include "disassembler_6502.h"
+#include "monitor/machine_monitor.h"
+#include "monitor/disassembler_6502.h"
 #include "menu.h"
 #include "screen.h"
 #include "task_actions.h"
@@ -224,26 +224,143 @@ void UserInterface :: run_machine_monitor(MemoryBackend *)
 }
 
 namespace monitor_io {
-bool pick_file(UserInterface *, const char *, char *, int, char *, int, bool)
+struct FakeMonitorIOState {
+    bool pick_file_result;
+    char pick_path[256];
+    char pick_name[64];
+    int pick_file_calls;
+    bool last_pick_save_mode;
+
+    bool load_called;
+    char load_path[256];
+    char load_name[64];
+    uint16_t load_start_addr;
+    bool load_use_prg;
+    uint32_t load_offset;
+    bool load_length_auto;
+    uint32_t load_length;
+    const char *load_error;
+    uint8_t load_data[131072];
+    uint32_t load_size;
+
+    bool save_called;
+    char save_path[256];
+    char save_name[64];
+    uint16_t save_start;
+    uint16_t save_end;
+    const char *save_error;
+    uint8_t saved_data[131072];
+    uint32_t saved_size;
+
+    bool jump_called;
+    uint16_t jump_address;
+};
+
+static FakeMonitorIOState g_monitor_io;
+
+static void reset_fake_monitor_io(void)
 {
-    return false;
+    memset(&g_monitor_io, 0, sizeof(g_monitor_io));
 }
 
-const char *load_into_memory(const char *, const char *, MemoryBackend *,
-                             uint16_t, bool, uint32_t, bool, uint32_t,
-                             uint16_t *, uint32_t *)
+bool pick_file(UserInterface *, const char *, char *path_out, int path_max, char *name_out, int name_max, bool save_mode)
 {
+    g_monitor_io.pick_file_calls++;
+    g_monitor_io.last_pick_save_mode = save_mode;
+    if (!g_monitor_io.pick_file_result) {
+        return false;
+    }
+    if (path_out && path_max > 0) {
+        strncpy(path_out, g_monitor_io.pick_path, path_max - 1);
+        path_out[path_max - 1] = 0;
+    }
+    if (name_out && name_max > 0) {
+        strncpy(name_out, g_monitor_io.pick_name, name_max - 1);
+        name_out[name_max - 1] = 0;
+    }
+    return true;
+}
+
+const char *load_into_memory(const char *path, const char *name, MemoryBackend *backend,
+                             uint16_t start_addr, bool use_prg_addr, uint32_t offset, bool length_auto, uint32_t length,
+                             uint16_t *out_start_addr, uint32_t *out_bytes)
+{
+    g_monitor_io.load_called = true;
+    strncpy(g_monitor_io.load_path, path ? path : "", sizeof(g_monitor_io.load_path) - 1);
+    g_monitor_io.load_path[sizeof(g_monitor_io.load_path) - 1] = 0;
+    strncpy(g_monitor_io.load_name, name ? name : "", sizeof(g_monitor_io.load_name) - 1);
+    g_monitor_io.load_name[sizeof(g_monitor_io.load_name) - 1] = 0;
+    g_monitor_io.load_start_addr = start_addr;
+    g_monitor_io.load_use_prg = use_prg_addr;
+    g_monitor_io.load_offset = offset;
+    g_monitor_io.load_length_auto = length_auto;
+    g_monitor_io.load_length = length;
+    if (g_monitor_io.load_error) {
+        return g_monitor_io.load_error;
+    }
+
+    uint32_t header_skip = 0;
+    uint32_t size = g_monitor_io.load_size;
+    if (use_prg_addr) {
+        if (size < 2) {
+            return "NOT A PRG";
+        }
+        start_addr = (uint16_t)(g_monitor_io.load_data[0] | (g_monitor_io.load_data[1] << 8));
+        header_skip = 2;
+        size -= 2;
+    }
+
+    uint32_t effective = 0;
+    MonitorError err = monitor_validate_load_size(size, offset, length_auto, length, &effective);
+    if (err != MONITOR_OK) {
+        return monitor_error_text(err);
+    }
+
+    backend->begin_session();
+    for (uint32_t i = 0; i < effective; i++) {
+        backend->write((uint16_t)(start_addr + i), g_monitor_io.load_data[header_skip + offset + i]);
+    }
+    backend->end_session();
+
+    if (out_start_addr) {
+        *out_start_addr = start_addr;
+    }
+    if (out_bytes) {
+        *out_bytes = effective;
+    }
     return NULL;
 }
 
-const char *save_from_memory(UserInterface *, const char *, const char *, MemoryBackend *,
-                             uint16_t, uint16_t)
+const char *save_from_memory(UserInterface *, const char *path, const char *name, MemoryBackend *backend,
+                             uint16_t start, uint16_t end)
 {
+    g_monitor_io.save_called = true;
+    strncpy(g_monitor_io.save_path, path ? path : "", sizeof(g_monitor_io.save_path) - 1);
+    g_monitor_io.save_path[sizeof(g_monitor_io.save_path) - 1] = 0;
+    strncpy(g_monitor_io.save_name, name ? name : "", sizeof(g_monitor_io.save_name) - 1);
+    g_monitor_io.save_name[sizeof(g_monitor_io.save_name) - 1] = 0;
+    g_monitor_io.save_start = start;
+    g_monitor_io.save_end = end;
+    if (g_monitor_io.save_error) {
+        return g_monitor_io.save_error;
+    }
+
+    uint32_t total = (uint32_t)end - (uint32_t)start + 1;
+    g_monitor_io.saved_data[0] = (uint8_t)(start & 0xFF);
+    g_monitor_io.saved_data[1] = (uint8_t)((start >> 8) & 0xFF);
+    backend->begin_session();
+    for (uint32_t i = 0; i < total; i++) {
+        g_monitor_io.saved_data[2 + i] = backend->read((uint16_t)(start + i));
+    }
+    backend->end_session();
+    g_monitor_io.saved_size = total + 2;
     return NULL;
 }
 
-void jump_to(uint16_t)
+void jump_to(uint16_t address)
 {
+    g_monitor_io.jump_called = true;
+    g_monitor_io.jump_address = address;
 }
 } // namespace monitor_io
 
@@ -597,34 +714,55 @@ class TestUserInterface : public UserInterface
 {
 public:
     int popup_count;
-    char next_prompt[64];
-    int next_prompt_result;
+    char last_popup[128];
+    char prompt_texts[8][64];
+    int prompt_results[8];
+    int prompt_count;
+    int prompt_index;
 
-    TestUserInterface() : UserInterface("test", false), popup_count(0), next_prompt_result(0)
+    TestUserInterface() : UserInterface("test", false), popup_count(0), prompt_count(0), prompt_index(0)
     {
-        next_prompt[0] = 0;
+        last_popup[0] = 0;
     }
 
     void set_prompt(const char *text, int result)
     {
-        strncpy(next_prompt, text, sizeof(next_prompt) - 1);
-        next_prompt[sizeof(next_prompt) - 1] = 0;
-        next_prompt_result = result;
+        prompt_count = 0;
+        prompt_index = 0;
+        push_prompt(text, result);
     }
 
-    int popup(const char *, uint8_t)
+    void push_prompt(const char *text, int result)
+    {
+        if (prompt_count >= (int)(sizeof(prompt_texts) / sizeof(prompt_texts[0]))) {
+            return;
+        }
+        strncpy(prompt_texts[prompt_count], text ? text : "", sizeof(prompt_texts[prompt_count]) - 1);
+        prompt_texts[prompt_count][sizeof(prompt_texts[prompt_count]) - 1] = 0;
+        prompt_results[prompt_count] = result;
+        prompt_count++;
+    }
+
+    int popup(const char *msg, uint8_t)
     {
         popup_count++;
+        strncpy(last_popup, msg ? msg : "", sizeof(last_popup) - 1);
+        last_popup[sizeof(last_popup) - 1] = 0;
         return BUTTON_OK;
     }
 
     int string_box(const char *, char *buffer, int maxlen)
     {
-        if (next_prompt_result > 0) {
-            strncpy(buffer, next_prompt, maxlen);
+        if (prompt_index >= prompt_count) {
+            return 0;
+        }
+        int result = prompt_results[prompt_index];
+        if (result > 0) {
+            strncpy(buffer, prompt_texts[prompt_index], maxlen);
             buffer[maxlen - 1] = 0;
         }
-        return next_prompt_result;
+        prompt_index++;
+        return result;
     }
 
     int string_box(const char *msg, char *buffer, int maxlen, bool)
@@ -1767,7 +1905,7 @@ static int test_monitor_kernal_bank_switch_and_ram_interaction(void)
     return 0;
 }
 
-#include "assembler_6502.h"
+#include "monitor/assembler_6502.h"
 
 static int test_assembler_encoding(void)
 {
@@ -2264,6 +2402,351 @@ static int test_clipboard_number_and_range(void)
     return 0;
 }
 
+static int test_asm_range_copy_paste(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    const int keys[] = { 'J', 'A', 'R', KEY_DOWN, KEY_CTRL_C, 'J', KEY_CTRL_V, KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+    const uint8_t expected[] = { 0xA9, 0x12, 0x8D, 0x00, 0x04 };
+
+    backend.write(0xC000, 0xA9);
+    backend.write(0xC001, 0x12);
+    backend.write(0xC002, 0x8D);
+    backend.write(0xC003, 0x00);
+    backend.write(0xC004, 0x04);
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C000", 1);
+    ui.push_prompt("C100", 1);
+    monitor_reset_saved_state();
+
+    MachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+        if (expect(mon.poll(0) == 0, "ASM range test command failed.")) return 1;
+    }
+
+    for (int i = 0; i < (int)sizeof(expected); i++) {
+        if (expect(backend.read((uint16_t)(0xC100 + i)) == expected[i],
+                   "ASM range copy/paste must include every byte of the final selected instruction.")) return 1;
+    }
+    if (expect(backend.read(0xC105) == 0x00,
+               "ASM range copy/paste must not overrun past the selected instructions.")) return 1;
+    if (expect(mon.poll(0) == 1, "ASM range test exit failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
+static int test_asm_paste_keeps_viewport_position(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char line[39];
+    int keys[32];
+    int n = 0;
+    const uint8_t expected[] = { 0xA9, 0x12, 0x8D, 0x00, 0x04 };
+
+    keys[n++] = 'J';
+    keys[n++] = 'A';
+    keys[n++] = 'R';
+    keys[n++] = KEY_DOWN;
+    keys[n++] = KEY_CTRL_C;
+    keys[n++] = 'J';
+    for (int i = 0; i < 8; i++) {
+        keys[n++] = KEY_DOWN;
+    }
+    keys[n++] = KEY_CTRL_V;
+    keys[n++] = KEY_BREAK;
+
+    backend.write(0xC000, 0xA9);
+    backend.write(0xC001, 0x12);
+    backend.write(0xC002, 0x8D);
+    backend.write(0xC003, 0x00);
+    backend.write(0xC004, 0x04);
+    for (uint16_t addr = 0xC100; addr < 0xC120; addr++) {
+        backend.write(addr, 0xEA);
+    }
+
+    FakeKeyboard kb(keys, n);
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C000", 1);
+    ui.push_prompt("C100", 1);
+    monitor_reset_saved_state();
+
+    MachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, "ASM paste viewport test: goto source failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "ASM paste viewport test: ASM view switch failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "ASM paste viewport test: range mode failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "ASM paste viewport test: range extension failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "ASM paste viewport test: copy failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "ASM paste viewport test: goto target failed.")) return 1;
+    for (int i = 0; i < 8; i++) {
+        if (expect(mon.poll(0) == 0, "ASM paste viewport test: target navigation failed.")) return 1;
+    }
+
+    screen.get_slice(1, 4, 38, line);
+    if (expect(strstr(line, "C100 EA") == line,
+               "ASM paste viewport test must start with the original top row still visible.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "ASM paste viewport test: paste failed.")) return 1;
+    screen.get_slice(1, 3, 38, line);
+    if (expect(strstr(line, "MONITOR ASM $C10D") == line,
+               "ASM paste must leave the cursor on the byte immediately after the pasted region.")) return 1;
+    screen.get_slice(1, 4, 38, line);
+    if (expect(strstr(line, "C100 EA") == line,
+               "ASM paste must keep the current viewport anchored instead of snapping the pasted region to the top.")) return 1;
+    for (int i = 0; i < (int)sizeof(expected); i++) {
+        if (expect(backend.read((uint16_t)(0xC108 + i)) == expected[i],
+                   "ASM paste viewport test must write the copied bytes at the current cursor position.")) return 1;
+    }
+
+    if (expect(mon.poll(0) == 1, "ASM paste viewport test: exit failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
+static int test_illegal_mode_header_label(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char line[39];
+    const int keys[] = { 'A', '*', KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+
+    MachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, "Illegal mode label test: ASM view switch failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Illegal mode label test: toggle failed.")) return 1;
+    screen.get_slice(1, 3, 38, line);
+    if (expect(strstr(line, "IllOp") != NULL,
+               "Illegal opcode mode must show the short IllOp label in the header.")) return 1;
+    if (expect(strstr(line, "Illegal:ON") == NULL,
+               "Illegal opcode mode must no longer show the old long header text.")) return 1;
+    if (expect(mon.poll(0) == 1, "Illegal mode label test: exit failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
+static int test_hunt_and_compare_picker_navigation(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        char row[38];
+        const int keys[] = { 'H', KEY_PAGEDOWN, KEY_RETURN, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        for (uint16_t addr = 0xC000; addr <= 0xC013; addr++) {
+            backend.write(addr, 0xDE);
+        }
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000-C013,DE", 1);
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Hunt picker test: hunt command failed.")) return 1;
+        screen.get_slice(1, 4, 37, row);
+        if (expect(strstr(row, "C000 DE") == row, "Hunt picker must show the first match at the top initially.")) return 1;
+        if (expect(mon.poll(0) == 0, "Hunt picker test: page-down failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Hunt picker test: RETURN jump failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR HEX $C012") == header,
+                   "Hunt picker RETURN must jump to the paged selection.")) return 1;
+        if (expect(mon.poll(0) == 1, "Hunt picker test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        char row[38];
+        const int keys[] = { 'C', KEY_DOWN, KEY_RETURN, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        backend.write(0xC100, 0x10);
+        backend.write(0xC101, 0x11);
+        backend.write(0xC102, 0x12);
+        backend.write(0xC103, 0x13);
+        backend.write(0xC200, 0x10);
+        backend.write(0xC201, 0x91);
+        backend.write(0xC202, 0x92);
+        backend.write(0xC203, 0x13);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C100-C103,C200", 1);
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Compare picker test: compare command failed.")) return 1;
+        screen.get_slice(1, 4, 37, row);
+        if (expect(strstr(row, "C101 11") == row, "Compare picker must list the first differing address first.")) return 1;
+        if (expect(mon.poll(0) == 0, "Compare picker test: DOWN failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Compare picker test: RETURN jump failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR HEX $C102") == header,
+                   "Compare picker RETURN must jump to the selected difference.")) return 1;
+        if (expect(mon.poll(0) == 1, "Compare picker test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_prompt_cancel_and_empty_clipboard(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'F', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("", 0);
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Prompt cancel test: fill command should stay in the monitor.")) return 1;
+        if (expect(backend.read(0x0000) == 0x00 && ui.popup_count == 0,
+                   "Canceled prompt must not mutate memory or raise an error popup.")) return 1;
+        if (expect(mon.poll(0) == 1, "Prompt cancel test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { KEY_CTRL_V, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Empty clipboard test: paste should not exit.")) return 1;
+        if (expect(ui.popup_count == 1 && strcmp(ui.last_popup, "?CLIP") == 0,
+                   "Pasting with an empty clipboard must raise ?CLIP.")) return 1;
+        if (expect(mon.poll(0) == 1, "Empty clipboard test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_load_save_and_goto_command_flow(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'L', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("PRG,0001,2", 1);
+        monitor_reset_saved_state();
+        monitor_io::reset_fake_monitor_io();
+        monitor_io::g_monitor_io.pick_file_result = true;
+        strcpy(monitor_io::g_monitor_io.pick_path, "/tmp");
+        strcpy(monitor_io::g_monitor_io.pick_name, "demo.prg");
+        monitor_io::g_monitor_io.load_data[0] = 0x01;
+        monitor_io::g_monitor_io.load_data[1] = 0x08;
+        monitor_io::g_monitor_io.load_data[2] = 0xAA;
+        monitor_io::g_monitor_io.load_data[3] = 0xBB;
+        monitor_io::g_monitor_io.load_data[4] = 0xCC;
+        monitor_io::g_monitor_io.load_size = 5;
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "LOAD command flow test failed.")) return 1;
+        if (expect(monitor_io::g_monitor_io.load_called && monitor_io::g_monitor_io.pick_file_calls == 1 &&
+                   strcmp(monitor_io::g_monitor_io.load_path, "/tmp") == 0 &&
+                   strcmp(monitor_io::g_monitor_io.load_name, "demo.prg") == 0,
+                   "LOAD command must invoke the monitor I/O shim with the picked file.")) return 1;
+        if (expect(backend.read(0x0801) == 0xBB && backend.read(0x0802) == 0xCC,
+                   "LOAD command must honour PRG header, file offset, and length.")) return 1;
+        if (expect(ui.popup_count == 1 && strstr(ui.last_popup, "LOAD demo.prg: $0801-$0802 (2 bytes)") != NULL,
+                   "LOAD command must show a confirmation popup with the effective byte range.")) return 1;
+        if (expect(mon.poll(0) == 1, "LOAD command flow test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'S', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        backend.write(0x0801, 0xA9);
+        backend.write(0x0802, 0x42);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0801-0802", 1);
+        monitor_reset_saved_state();
+        monitor_io::reset_fake_monitor_io();
+        monitor_io::g_monitor_io.pick_file_result = true;
+        strcpy(monitor_io::g_monitor_io.pick_path, "/tmp");
+        strcpy(monitor_io::g_monitor_io.pick_name, "save.prg");
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "SAVE command flow test failed.")) return 1;
+        if (expect(monitor_io::g_monitor_io.save_called && monitor_io::g_monitor_io.last_pick_save_mode,
+                   "SAVE command must invoke the monitor save shim in save-pick mode.")) return 1;
+        if (expect(monitor_io::g_monitor_io.saved_size == 4 &&
+                   monitor_io::g_monitor_io.saved_data[0] == 0x01 &&
+                   monitor_io::g_monitor_io.saved_data[1] == 0x08 &&
+                   monitor_io::g_monitor_io.saved_data[2] == 0xA9 &&
+                   monitor_io::g_monitor_io.saved_data[3] == 0x42,
+                   "SAVE command must emit a PRG header followed by the selected bytes.")) return 1;
+        if (expect(ui.popup_count == 1 && strstr(ui.last_popup, "SAVE save.prg: $0801-$0802 (2 bytes)") != NULL,
+                   "SAVE command must show a confirmation popup with the saved range.")) return 1;
+        if (expect(mon.poll(0) == 1, "SAVE command flow test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'G' };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C123", 1);
+        monitor_reset_saved_state();
+        monitor_io::reset_fake_monitor_io();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 1, "Goto-run command must exit the monitor.")) return 1;
+        if (expect(monitor_io::g_monitor_io.jump_called && monitor_io::g_monitor_io.jump_address == 0xC123,
+                   "Goto-run command must dispatch the requested jump address.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
 static int test_header_invariants_and_parity(void)
 {
     {
@@ -2464,6 +2947,12 @@ int main()
     if (test_cross_view_sync()) return 1;
     if (test_binary_bit_navigation_and_width()) return 1;
     if (test_clipboard_number_and_range()) return 1;
+    if (test_asm_range_copy_paste()) return 1;
+    if (test_asm_paste_keeps_viewport_position()) return 1;
+    if (test_illegal_mode_header_label()) return 1;
+    if (test_hunt_and_compare_picker_navigation()) return 1;
+    if (test_prompt_cancel_and_empty_clipboard()) return 1;
+    if (test_load_save_and_goto_command_flow()) return 1;
     if (test_header_invariants_and_parity()) return 1;
 
     puts("machine_monitor_test: OK");

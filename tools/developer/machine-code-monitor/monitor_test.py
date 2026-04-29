@@ -45,10 +45,20 @@ KEYS = {
     "LEFT": b"\x1b[D",
     "PGUP": b"\x1b[5~",
     "PGDN": b"\x1b[6~",
+    "F5": b"\x1b[15~",
     "F3": b"\x1b[13~",
     "RUNSTOP": b"\x11",
     "CTRL_O": b"\x0f",
     "ESC": b"\x1b",
+    "ENTER": b"\r",
+}
+
+VIEW_KEYS = {
+    "HEX ": "M",
+    "ASC ": "I",
+    "ASM ": "A",
+    "SCR ": "V",
+    "BIN ": "B",
 }
 
 
@@ -339,8 +349,27 @@ class MonitorSession:
         self.send_char("F")
         return self.send_text(expr + "\r", f"F {expr}")
 
+    def compare(self, expr: str) -> Snapshot:
+        self.send_char("C")
+        return self.send_text(expr + "\r", f"C {expr}")
+
+    def goto_run(self, address: str) -> Snapshot:
+        self.send_char("G")
+        return self.send_text(address + "\r", f"G {address}")
+
     def enter_monitor(self) -> Snapshot:
         snapshot = self.send_key("CTRL_O")
+        try:
+            snapshot.find_status_line()
+            return snapshot
+        except Failure:
+            pass
+
+        snapshot = self.send_key("F5")
+        snapshot = self.send_char("D")
+        snapshot = self.send_key("ENTER")
+        snapshot = self.send_key("DOWN")
+        snapshot = self.send_key("ENTER")
         snapshot.find_status_line()
         return snapshot
 
@@ -465,6 +494,26 @@ def read_rest_memory(host: str, address: int, length: int) -> bytes:
     raise TimeoutError(f"Timed out reading REST memory from {url}")
 
 
+def write_rest_memory(host: str, address: int, data: bytes) -> None:
+    if not data:
+        raise Failure("write_rest_memory requires at least one byte")
+
+    url = f"http://{host}/v1/machine:writemem?address={address:04X}&data={data.hex().upper()}"
+    request = urllib.request.Request(url, data=b"", method="PUT")
+    with urllib.request.urlopen(request, timeout=5.0):
+        pass
+
+
+def wait_for_rest_byte(host: str, address: int, expected: int, timeout: float = 2.0) -> None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        value = read_rest_memory(host, address, 1)[0]
+        if value == expected:
+            return
+        time.sleep(0.05)
+    raise Failure(f"Memory at ${address:04X} did not become ${expected:02X}")
+
+
 def assert_rest_matches_row(snapshot: Snapshot, line_index: int, address: int, rest_host: str) -> None:
     actual = snapshot.line(line_index).strip()
     if actual.startswith("|"):
@@ -505,6 +554,9 @@ def ensure_status(session: MonitorSession, expected: str) -> Snapshot:
 
 
 def ensure_view(session: MonitorSession, expected: str) -> Snapshot:
+    key = VIEW_KEYS.get(expected)
+    if key is None:
+        raise Failure(f"Unsupported monitor view selector for {expected!r}")
     screen = session.capture()
     for _ in range(3):
         try:
@@ -512,7 +564,7 @@ def ensure_view(session: MonitorSession, expected: str) -> Snapshot:
             return screen
         except Failure:
             pass
-        screen = session.send_char("M")
+        screen = session.send_char(key)
     raise Failure(f"Unable to reach expected monitor view {expected!r}; screen was\n{screen.text()}")
 
 
@@ -567,7 +619,7 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
     first_content_row = content_rows[0]
     last_content_row = content_rows[-1]
     assert_ascii_width(screen, first_content_row)
-    assert_status_contains(screen, snapshots["status_cpu31"]["contains"]["22"])
+    assert_status_contains(screen, snapshots["status_cpu29"]["contains"]["22"])
 
     screen = session.send_key("DOWN")
     assert_highlight(screen, [(6, first_content_row + 1)], "DOWN")
@@ -602,6 +654,16 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
     screen = session.send_char("O")
     assert_status_contains(screen, snapshots["status_cpu30"]["contains"]["22"])
 
+    session.fill("C100-C103,10")
+    session.fill("C200-C203,10")
+    session.fill("C201-C201,91")
+    session.fill("C203-C203,93")
+    screen = session.compare("C100-C103,C200")
+    assert_contains(screen, 4, "C101")
+    screen = session.send_key("DOWN")
+    screen = session.send_key("ENTER")
+    screen.find_line_containing("MONITOR HEX $C103")
+
     session.fill("A000-A000,AA")
     screen = session.goto("A000")
     assert_contains(screen, 4, snapshots["ram_a000"]["contains"]["4"])
@@ -614,6 +676,12 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
     status_line = screen.line(screen.find_status_line())
     if not re.search(r"VIC[0-3] [0-9A-F]{4}-[0-9A-F]{4}", status_line):
         raise Failure(f"VIC status line malformed after {screen.last_command}: {status_line!r}")
+
+    write_rest_memory(rest_host, 0x1000, bytes.fromhex("A9008D0004A9018D00044C0010"))
+    write_rest_memory(rest_host, 0x0400, bytes([0x20]))
+    session.goto("1000")
+    session.goto_run("1000")
+    wait_for_rest_byte(rest_host, 0x0400, 0x01)
 
 
 def main() -> int:

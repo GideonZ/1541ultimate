@@ -465,17 +465,36 @@ const char *monitor_error_text(MonitorError error)
 
 void monitor_reset_saved_state(void)
 {
-    // Tests use this to put the saved state into a deterministic, known
-    // position (HEX view at $0000). Production startup, by contrast, uses
-    // the static initializer which defaults to $0801 — see the constructor.
-    // Mark the state valid so the next monitor open honours the explicit
-    // address rather than falling back to the production default.
+    // Tests use this to put all persisted monitor state into a deterministic,
+    // known position. Production startup, by contrast, uses the static
+    // initializers which default to $0801 and the canonical command defaults.
     monitor_saved_state_valid = true;
     monitor_saved_state.view = MONITOR_VIEW_HEX;
     monitor_saved_state.current_addr = 0;
     monitor_saved_state.base_addr = 0;
     monitor_saved_state.disasm_offset = 0;
     monitor_saved_state.illegal_enabled = false;
+
+    monitor_last_load_use_prg = true;
+    monitor_last_load_start = 0x0801;
+    monitor_last_load_offset = 0x0000;
+    monitor_last_load_length_auto = true;
+    monitor_last_load_length = 0;
+
+    monitor_last_save_start = 0x0800;
+    monitor_last_save_end = 0x9FFF;
+    monitor_last_save_name[0] = 0;
+
+    monitor_last_goto_valid = false;
+    monitor_last_goto_addr = 0;
+
+    monitor_binary_bytes_per_row = 1;
+
+    if (monitor_clipboard.data) {
+        free(monitor_clipboard.data);
+        monitor_clipboard.data = NULL;
+    }
+    monitor_clipboard.length = 0;
 }
 
 void monitor_apply_goto(MachineMonitorState *state, uint16_t address)
@@ -1061,7 +1080,7 @@ void MachineMonitor :: canonical_write(uint16_t address, uint8_t value)
     backend->write(address, value);
 }
 
-void MachineMonitor :: read_row(uint16_t address, uint8_t *dst, uint16_t len)
+void MachineMonitor :: read_row(uint16_t address, uint8_t *dst, uint16_t len) const
 {
     uint16_t first = len;
     if ((uint32_t)address + len > 0x10000UL) {
@@ -1088,6 +1107,17 @@ bool MachineMonitor :: range_contains(uint16_t address) const
     }
     uint16_t start = range_anchor;
     uint16_t end = state.current_addr;
+    if (state.view == MONITOR_VIEW_ASM) {
+        uint16_t anchor_end = (uint16_t)(range_anchor + disasm_length(range_anchor) - 1);
+        uint16_t current_end = (uint16_t)(state.current_addr + disasm_length(state.current_addr) - 1);
+        if (state.current_addr < range_anchor) {
+            start = state.current_addr;
+            end = anchor_end;
+        } else {
+            start = range_anchor;
+            end = current_end;
+        }
+    }
     if (end < start) {
         uint16_t tmp = start;
         start = end;
@@ -1120,6 +1150,17 @@ bool MachineMonitor :: clipboard_copy_range(void)
 {
     uint16_t start = range_anchor;
     uint16_t end = state.current_addr;
+    if (state.view == MONITOR_VIEW_ASM) {
+        uint16_t anchor_end = (uint16_t)(range_anchor + disasm_length(range_anchor) - 1);
+        uint16_t current_end = (uint16_t)(state.current_addr + disasm_length(state.current_addr) - 1);
+        if (state.current_addr < range_anchor) {
+            start = state.current_addr;
+            end = anchor_end;
+        } else {
+            start = range_anchor;
+            end = current_end;
+        }
+    }
     if (end < start) {
         uint16_t tmp = start;
         start = end;
@@ -1365,7 +1406,7 @@ bool MachineMonitor :: update_edit_blink()
     return false;
 }
 
-uint8_t MachineMonitor :: disasm_length(uint16_t address)
+uint8_t MachineMonitor :: disasm_length(uint16_t address) const
 {
     Disassembled6502 decoded;
     uint8_t row_bytes[3];
@@ -1494,8 +1535,8 @@ void MachineMonitor :: draw_header()
         }
         if (state.illegal_enabled && state.view == MONITOR_VIEW_ASM) {
             int hp = strlen(line);
-            if (hp < (int)sizeof(line) - 14) {
-                strcpy(line + hp, "  Illegal:ON");
+            if (hp < (int)sizeof(line) - 8) {
+                strcpy(line + hp, "  IllOp");
             }
         }
     }

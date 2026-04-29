@@ -1,11 +1,11 @@
 #include "userinterface.h"
 #include <stdio.h>
 
-#include "machine_monitor.h"
+#include "monitor/machine_monitor.h"
 
-#include "disassembler_6502.cc"
-#include "assembler_6502.cc"
-#include "machine_monitor.cc"
+#include "monitor/disassembler_6502.cc"
+#include "monitor/assembler_6502.cc"
+#include "monitor/machine_monitor.cc"
 
 #ifndef NO_FILE_ACCESS
 #include "FreeRTOS.h"
@@ -670,7 +670,7 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
 }
 
 #ifndef NO_FILE_ACCESS
-#include "monitor_file_io.cc"
+#include "monitor/monitor_file_io.cc"
 #endif
 
 QueueHandle_t userMessageQueue = 0;

@@ -26,9 +26,6 @@
 SocketGui *socket_gui = NULL;
 InitFunction init_socket_gui("Telnet Server", [](void *_obj, void *_param) { socket_gui = new SocketGui(); }, NULL, NULL, 100); // global that causes us to exist
 
-static const uint32_t socket_listener_stack_size = configMINIMAL_STACK_SIZE * 2;
-static const uint32_t socket_session_stack_size = configMINIMAL_STACK_SIZE * 4;
-
 static void socket_gui_listen_task(void *a)
 {
 	SocketGui *gui = (SocketGui *)a;
@@ -36,14 +33,10 @@ static void socket_gui_listen_task(void *a)
 	vTaskDelete(NULL);
 }
 
-typedef struct {
-    SocketStream *stream;
-} SocketGuiSessionContext;
-
 SocketGui :: SocketGui()
 {
     printf("Starting Telnet Server\n");
-	xTaskCreate( socket_gui_listen_task, "Socket Gui Listener", socket_listener_stack_size, this, PRIO_NETSERVICE, &listenTaskHandle );
+	xTaskCreate( socket_gui_listen_task, "Socket Gui Listener", configMINIMAL_STACK_SIZE, this, PRIO_NETSERVICE, &listenTaskHandle );
 }
 
 static bool socket_ensure_authenticated(SocketStream *str) {
@@ -138,112 +131,47 @@ static bool socket_ensure_authenticated(SocketStream *str) {
 
 void socket_gui_task(void *a)
 {
-    SocketGuiSessionContext *context = (SocketGuiSessionContext *)a;
-    SocketStream *str = context->stream;
-    delete context;
+	SocketStream *str = (SocketStream *)a;
 	if (!socket_ensure_authenticated(str)) {
 		vTaskDelete(NULL);
 	}
 
-    char product[64];
-    char title[81];
-    getProductVersionString(product, sizeof(product), true);
-    sprintf(title, "\eA*** %s *** Remote ***\eO", product);
+	char product[64];
+	char title[81];
+	getProductVersionString(product, sizeof(product), true);
+	sprintf(title, "\eA*** %s *** Remote ***\eO", product);
 
-    HostStream *host = new HostStream(str);
-    UserInterface *user_interface = new UserInterface(title, false);
-    user_interface->init(host);
+	HostStream *host = new HostStream(str);
+//	Screen *scr = host->getScreen();
+//	Keyboard *keyb = host->getKeyboard();
 
-    Browsable *root = new BrowsableRoot();
-    TreeBrowser *tree_browser = new TreeBrowser(user_interface, root);
-    user_interface->activate_uiobject(tree_browser);
+	UserInterface *user_interface = new UserInterface(title, false);
+	user_interface->init(host);
+
+	Browsable *root = new BrowsableRoot();
+	TreeBrowser *tree_browser = new TreeBrowser(user_interface, root);
+	user_interface->activate_uiobject(tree_browser);
 
     if(user_interface->cfg->get_value(CFG_USERIF_START_HOME)) {
         new HomeDirectory(user_interface, tree_browser);
         // will clean itself up
     }
 
-    user_interface->run_remote();
+	user_interface->run_remote();
 
-    puts("User Interface on stream returned.");
-    str->close();
+	puts("User Interface on stream returned.");
+	str->close();
 
-    delete user_interface;
-    puts("user_interface gone");
-    delete root;
-    puts("root gone");
-    delete host;
-    puts("host gone");
-    delete str;
-    puts("str gone");
+	delete user_interface;
+	puts("user_interface gone");
+	delete root;
+	puts("root gone");
+	delete host;
+	puts("host gone");
+	delete str;
+	puts("str gone");
 
 	vTaskDelete(NULL);
-}
-
-static int socket_gui_accept_loop(int portno, const char *label)
-{
-    socklen_t clilen;
-    struct sockaddr_in serv_addr, cli_addr;
-
-    while (1) {
-        int sockfd = socket(AF_INET, SOCK_STREAM, 0);
-        if (sockfd < 0) {
-            puts("ERROR opening socket");
-            vTaskDelay(500 / portTICK_PERIOD_MS);
-            continue;
-        }
-
-        int enable = 1;
-        setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (char *)&enable, sizeof(enable));
-
-        memset((char *) &serv_addr, 0, sizeof(serv_addr));
-        serv_addr.sin_family = AF_INET;
-        serv_addr.sin_addr.s_addr = INADDR_ANY;
-        serv_addr.sin_port = htons(portno);
-        if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
-            puts("ERROR on binding");
-            lwip_close(sockfd);
-            vTaskDelay(500 / portTICK_PERIOD_MS);
-            continue;
-        }
-
-        if (listen(sockfd, 2) < 0) {
-            puts("ERROR on listen");
-            lwip_close(sockfd);
-            vTaskDelay(500 / portTICK_PERIOD_MS);
-            continue;
-        }
-
-        printf("%s starting on port %d\n", label, portno);
-
-        while (1) {
-	    	clilen = sizeof(cli_addr);
-            int actual_socket = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
-            if (actual_socket < 0) {
-                 puts("ERROR on accept");
-                 vTaskDelay(100 / portTICK_PERIOD_MS);
-                 continue;
-            }
-
-            struct timeval tv;
-            tv.tv_sec = 0;
-            tv.tv_usec = 200000; // 200 ms
-            setsockopt(actual_socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(struct timeval));
-
-            SocketStream *stream = new SocketStream(actual_socket);
-            SocketGuiSessionContext *context = new SocketGuiSessionContext;
-            context->stream = stream;
-            BaseType_t res = xTaskCreate(socket_gui_task, "Socket Gui Task",
-                                         socket_session_stack_size, context, PRIO_USERIFACE, NULL);
-            if (res != pdPASS) {
-                puts("Telnet: xTaskCreate failed; dropping connection");
-                delete context;
-                stream->close();
-                delete stream;
-                vTaskDelay(100 / portTICK_PERIOD_MS);
-            }
-        }
-    }
 }
 
 int SocketGui :: listenTask(void)
@@ -251,5 +179,52 @@ int SocketGui :: listenTask(void)
     while (networkConfig.cfg->get_value(CFG_NETWORK_TELNET_SERVICE) == 0) {
         vTaskDelay(2000 / portTICK_PERIOD_MS);
     }
-    return socket_gui_accept_loop(23, "Telnet remote menu service");
+    puts("Telnet server starting");
+
+	int sockfd, portno;
+	socklen_t clilen;
+    struct sockaddr_in serv_addr, cli_addr;
+
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+       puts("ERROR opening socket");
+       return -1;
+    }
+    memset((char *) &serv_addr, 0, sizeof(serv_addr));
+    portno = 23;
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = INADDR_ANY;
+    serv_addr.sin_port = htons(portno);
+    if (bind(sockfd, (struct sockaddr *) &serv_addr,
+             sizeof(serv_addr)) < 0) {
+        puts("ERROR on binding");
+        return -2;
+    }
+
+    listen(sockfd, 2);
+
+    while(1) {
+    	clilen = sizeof(cli_addr);
+		int actual_socket = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
+		if (actual_socket < 0) {
+			 puts("ERROR on accept");
+			 vTaskDelay(100 / portTICK_PERIOD_MS);
+			 continue;
+		}
+
+		struct timeval tv;
+		tv.tv_sec = 0;
+		tv.tv_usec = 200000; // 200 ms
+		setsockopt(actual_socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
+
+		SocketStream *stream = new SocketStream(actual_socket);
+		BaseType_t res = xTaskCreate( socket_gui_task, "Socket Gui Task", configMINIMAL_STACK_SIZE, stream, PRIO_USERIFACE, NULL );
+		if (res != pdPASS) {
+			puts("Telnet: xTaskCreate failed; dropping connection");
+			stream->close();
+			delete stream;
+			vTaskDelay(100 / portTICK_PERIOD_MS);
+			continue;
+		}
+    }
 }

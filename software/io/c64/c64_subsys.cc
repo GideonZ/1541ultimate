@@ -636,7 +636,9 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
             if (run_code & RUNCODE_JUMP_BIT) {
             	C64_POKE(C64_BOOTCRT_JUMPADDR, buffer[0]);
             	C64_POKE(C64_BOOTCRT_JUMPADDR+1, buffer[1]);
-            	load_buffer_dma(buffer+2, bufferSize-2, 0);
+                if (bufferSize > 2) {
+            	    load_buffer_dma(buffer+2, bufferSize-2, 0);
+                }
             } else {
             	load_buffer_dma(buffer, bufferSize, 0);
             }
@@ -724,7 +726,16 @@ int C64_Subsys :: load_file_dma(File *f, uint16_t reloc)
 
 int C64_Subsys :: load_buffer_dma(const uint8_t *buffer, const int bufferSize, uint16_t reloc)
 {
+    if (!buffer || bufferSize <= 0) {
+        return 0;
+    }
+    if (bufferSize < 2) {
+        printf("DMA load skipped: payload shorter than PRG header (%d byte).\n", bufferSize);
+        return 0;
+    }
+
     uint16_t load_address = 0;
+    int payload_size = bufferSize - 2;
 
     load_address = (uint16_t)buffer[0] | ((uint16_t)buffer[1]) << 8;
 	printf("Load address: %4x...", load_address);
@@ -732,12 +743,14 @@ int C64_Subsys :: load_buffer_dma(const uint8_t *buffer, const int bufferSize, u
 	if (reloc) {
     	load_address = reloc;
     	printf(" -> %4x ..", load_address);
-    }
+	}
 	volatile uint8_t *dest = (volatile uint8_t *)(C64_MEMORY_BASE + load_address);
 
-	memcpy((void *)dest, buffer + 2, bufferSize - 2);
+    if (payload_size > 0) {
+	    memcpy((void *)dest, buffer + 2, payload_size);
+    }
 
-	uint16_t end_address = load_address + bufferSize - 2;
+	uint16_t end_address = load_address + payload_size;
 	printf("DMA load complete: $%4x-$%4x\n", load_address, end_address);
 
     // The following pokes are documented in the C64 documentation and are not
@@ -755,7 +768,7 @@ int C64_Subsys :: load_buffer_dma(const uint8_t *buffer, const int bufferSize, u
 	C64_POKE(0x0035, 0);    // FRESPC
 	C64_POKE(0x0036, 0xA0);
 
-	return bufferSize - 2;
+	return payload_size;
 }
 
 bool C64_Subsys :: write_vic_state(File *f)

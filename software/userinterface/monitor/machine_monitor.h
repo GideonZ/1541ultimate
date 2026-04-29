@@ -163,7 +163,7 @@ class MachineMonitor : public UIObject
 
     uint8_t canonical_read(uint16_t address);
     void canonical_write(uint16_t address, uint8_t value);
-    void read_row(uint16_t address, uint8_t *dst, uint16_t len);
+    void read_row(uint16_t address, uint8_t *dst, uint16_t len) const;
     void draw();
     void draw_header();
     void draw_status();
@@ -235,7 +235,7 @@ class MachineMonitor : public UIObject
     void exit_edit_mode();
     void reset_edit_blink();
     bool update_edit_blink();
-    uint8_t disasm_length(uint16_t address);
+    uint8_t disasm_length(uint16_t address) const;
     bool    asm_is_branch(uint16_t address);
     uint8_t asm_edit_part_count(uint16_t address);
     uint16_t disasm_next_addr(uint16_t address);
