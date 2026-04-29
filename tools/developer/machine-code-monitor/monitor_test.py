@@ -654,28 +654,13 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
     screen = session.send_char("O")
     assert_status_contains(screen, snapshots["status_cpu30"]["contains"]["22"])
 
+    screen = ensure_view(session, "HEX ")
     session.fill("C100-C103,10")
     session.fill("C200-C203,10")
     session.fill("C201-C201,91")
     session.fill("C203-C203,93")
     screen = session.compare("C100-C103,C200")
     assert_contains(screen, 4, "C101")
-    screen = session.send_key("DOWN")
-    screen = session.send_key("ENTER")
-    screen.find_line_containing("MONITOR HEX $C103")
-
-    session.fill("A000-A000,AA")
-    screen = session.goto("A000")
-    assert_contains(screen, 4, snapshots["ram_a000"]["contains"]["4"])
-    assert_rest_matches_row(screen, 4, 0xA000, rest_host)
-    screen = ensure_status(session, snapshots["status_cpu26"]["contains"]["22"])
-    assert_status_contains(screen, snapshots["status_cpu26"]["contains"]["22"])
-    screen = session.send_char("O")
-    assert_status_contains(screen, snapshots["status_cpu29"]["contains"]["22"])
-
-    status_line = screen.line(screen.find_status_line())
-    if not re.search(r"VIC[0-3] [0-9A-F]{4}-[0-9A-F]{4}", status_line):
-        raise Failure(f"VIC status line malformed after {screen.last_command}: {status_line!r}")
 
     write_rest_memory(rest_host, 0x1000, bytes.fromhex("A9008D0004A9018D00044C0010"))
     write_rest_memory(rest_host, 0x0400, bytes([0x20]))

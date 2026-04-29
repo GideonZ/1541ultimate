@@ -16,30 +16,6 @@
 #include "u64.h"
 #include "rtc.h"
 
-#ifndef APP_BUILD_DATE
-#define APP_BUILD_DATE "unknown"
-#endif
-
-#ifndef APP_BUILD_MACHINE
-#define APP_BUILD_MACHINE "unknown"
-#endif
-
-#ifndef APP_VERSION_TAG
-#define APP_VERSION_TAG "unknown"
-#endif
-
-#ifndef APP_VERSION_BRANCH
-#define APP_VERSION_BRANCH "unknown"
-#endif
-
-#ifndef APP_VERSION_HASH
-#define APP_VERSION_HASH "unknown"
-#endif
-
-#ifndef APP_VERSION_DATE
-#define APP_VERSION_DATE "unknown"
-#endif
-
 extern C1541 *c1541_A;
 extern C1541 *c1541_B;
 

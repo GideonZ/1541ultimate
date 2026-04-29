@@ -32,7 +32,7 @@ void dump_hex_actual(void *pp, int len, int relative)
     int w,t;
     uint8_t c;
     uint8_t *p = (uint8_t *)pp;
-
+    
 	for(w=0;w<len;w+=DUMP_BYTES) {
         if(relative)
             printf("%4x: ", w);
