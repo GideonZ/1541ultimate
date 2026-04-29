@@ -53,11 +53,25 @@ class TreeBrowser : public UIObject
     void seek_char(int c);
     void cd_impl(const char *path);
 public:
+    enum PickMode { PICK_NONE = 0, PICK_LOAD = 1, PICK_SAVE = 2 };
+
     char quick_seek_string[MAX_SEARCH_LEN_TB];
     int  quick_seek_length;
     bool allow_exit;
     bool has_path;
     bool has_border;
+
+    // Monitor pick-mode support. When pick_mode != PICK_NONE the browser
+    // captures RETURN / RIGHT on a regular file and exits with picked = true.
+    // In PICK_SAVE the F5 key (KEY_TASKS) selects the current directory and
+    // exits with picked = true and an empty filename so the caller can prompt
+    // for a name. Selection / context / config / paste / delete / Ctrl-O are
+    // suppressed while picking.
+    PickMode pick_mode;
+    bool     picked;
+    bool     picked_is_dir_only;
+    mstring  picked_path;
+    mstring  picked_name;
     
     FileManager *fm;
     UserInterface *user_interface;

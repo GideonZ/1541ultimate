@@ -23,6 +23,14 @@ public:
         }
     }
 
+    // Freeze / pause control. Backends that can hold the host machine in a
+    // stopped state across many reads/writes (so register/IO state is stable)
+    // override these. The monitor exposes a Z toggle to drive this. Default
+    // behaviour is a no-op so non-U64 backends remain unaffected.
+    virtual bool supports_freeze(void) const { return false; }
+    virtual bool is_frozen(void) const { return false; }
+    virtual void set_frozen(bool) { }
+
     virtual void set_monitor_cpu_port(uint8_t value)
     {
         monitor_cpu_port = value & 0x07;

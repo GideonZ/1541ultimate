@@ -1,6 +1,8 @@
 #ifndef MACHINE_MONITOR_H
 #define MACHINE_MONITOR_H
 
+#include <stddef.h>
+
 #include "ui_elements.h"
 #include "memory_backend.h"
 
@@ -16,7 +18,13 @@ enum MachineMonitorView {
     MONITOR_VIEW_HEX = 0,
     MONITOR_VIEW_ASM,
     MONITOR_VIEW_ASCII,
-    MONITOR_VIEW_SCREEN
+    MONITOR_VIEW_SCREEN,
+    MONITOR_VIEW_BINARY
+};
+
+enum {
+    MONITOR_BINARY_MIN_BYTES_PER_ROW = 1,
+    MONITOR_BINARY_MAX_BYTES_PER_ROW = 4,
 };
 
 // Backwards-compat alias for prior internal code/tests.
@@ -39,6 +47,16 @@ struct MachineMonitorState
     uint16_t base_addr;
     uint8_t disasm_offset;
     bool illegal_enabled;
+};
+
+struct Clipboard {
+    uint8_t *data;
+    size_t length;
+};
+
+struct Cursor {
+    uint16_t address;
+    uint8_t bit_index; // 7 = MSB, 0 = LSB
 };
 
 const char *monitor_error_text(MonitorError error);
@@ -64,6 +82,22 @@ int monitor_compare_collect(MemoryBackend *backend, uint16_t start, uint16_t end
 
 MonitorError monitor_format_evaluate(const char *input, char *out, int out_len);
 
+// LOAD/SAVE parameter parsers. Used by the monitor and exercised by host tests.
+// Load template: "PRG,0000,AUTO" — field 1 is "PRG" (use embedded load address)
+// or a 4-hex start address; field 2 is a 4-hex offset; field 3 is "AUTO" or a
+// hex length up to 0x10000.
+MonitorError monitor_parse_load_params(const char *text, bool *use_prg_addr, uint16_t *start_addr,
+                                       uint16_t *offset, bool *length_auto, uint32_t *length);
+
+// Save template: "0800-9FFF" — start-end hex range, inclusive. Range size must
+// be in (0, 65536].
+MonitorError monitor_parse_save_params(const char *text, uint16_t *start, uint16_t *end);
+
+// Validate a requested load against the actual file size and the 64K limit.
+// Returns the effective number of bytes to read in *effective_len.
+MonitorError monitor_validate_load_size(uint32_t file_size, uint32_t offset, bool length_auto,
+                                        uint32_t length, uint32_t *effective_len);
+
 class UserInterface;
 class Screen;
 class Keyboard;
@@ -82,6 +116,11 @@ class MachineMonitor : public UIObject
     bool edit_mode;
     bool edit_cursor_visible;
     bool help_visible;
+    bool range_mode;
+    uint16_t range_anchor;
+    bool number_picker_active;
+    int number_selected;
+    uint8_t number_value;
     bool hunt_picker_active;
     int hunt_count;
     int hunt_selected;
@@ -112,6 +151,10 @@ class MachineMonitor : public UIObject
     char opcode_operand[16];
     int  opcode_operand_len;
     uint8_t last_vic_bank;
+    // Cursor bit-position within the current byte in BINARY view.
+    // 7 = MSB (leftmost rendered bit), 0 = LSB. Horizontal navigation and
+    // typed 0/1 edits advance by one bit.
+    uint8_t binary_bit_index;
 #ifdef RUNS_ON_PC
     uint8_t edit_blink_polls;
 #else
@@ -125,10 +168,16 @@ class MachineMonitor : public UIObject
     void draw_header();
     void draw_status();
     void draw_help();
+    void draw_number_picker();
     void draw_hex();
     void draw_ascii();
     void draw_screen_codes();
     void draw_disassembly();
+    void draw_binary();
+    void draw_binary_row(int y, uint16_t addr, const uint8_t *bytes, int byte_count);
+    // Re-paint border + entire content. Used after a sub-dialog (file picker,
+    // confirmation popup, ...) that may have stomped over our window.
+    void redraw_full();
     void draw_hunt_picker();
     void hunt_picker_open(int count);
     void hunt_picker_open_labeled(int count, const char *label);
@@ -147,10 +196,34 @@ class MachineMonitor : public UIObject
     void ensure_current_visible();
     void set_view(MachineMonitorView view);
     void move_current(int delta);
+    void move_binary_bits(int delta);
     void page_move(int lines);
+    Cursor active_cursor(void) const;
+    bool range_contains(uint16_t address) const;
+    bool clipboard_copy_current(void);
+    bool clipboard_copy_range(void);
+    bool clipboard_copy_byte(uint8_t value);
+    bool clipboard_paste(void);
+    void toggle_range_mode(void);
+    void open_number_picker(void);
+    int number_picker_handle_key(int key);
     bool prompt_command(const char *title, char *buffer, int max_len, bool template_mode = false);
     void toggle_help();
     int handle_key(int key);
+    void handle_load_command();
+    void handle_save_command();
+    // Display a confirmation overlay summarizing a completed LOAD/SAVE
+    // (filename, byte range, byte count) and wait for the user to dismiss it.
+    void show_io_confirmation(const char *op, const char *name,
+                              uint16_t start_addr, uint32_t bytes);
+    // Returns true when the monitor should exit (e.g., GOTO has dispatched a
+    // DMA jump and the C64 must now resume executing user code).
+    bool handle_goto_command();
+    // Prompt to change the binary view's bytes-per-row (1..4) on the fly.
+    // No-op (with informative popup) outside of BINARY view.
+    void handle_width_command();
+    // Apply a typed bit (0 or 1) to the byte at the cursor at binary_bit_index.
+    void binary_apply_bit(uint8_t bit_value);
     void enter_edit_mode();
     void apply_hex_digit(uint8_t value);
     void apply_ascii_char(char value);

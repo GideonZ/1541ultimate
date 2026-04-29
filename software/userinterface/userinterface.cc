@@ -10,9 +10,7 @@
 #ifndef NO_FILE_ACCESS
 #include "FreeRTOS.h"
 #include "task.h"
-#include "tree_browser.h"
 #include "tree_browser_state.h"
-#include "path.h"
 #include "keyboard_usb.h"
 #include "filemanager.h"
 #ifndef UPDATER
@@ -537,7 +535,7 @@ void UserInterface :: set_screen_title()
 /* Blocking variants of our simple objects follow: */
 int  UserInterface :: popup(const char *msg, uint8_t flags)
 {
-    const char *c_button_names[] = { " Ok ", " Yes ", " No ", " All ", " Cancel " };
+    const char *c_button_names[] = { " OK ", " Yes ", " No ", " All ", " Cancel " };
     const char c_button_keys[] = { 'o', 'y', 'n', 'a', 'c' };
 
     UIPopup *pop = new UIPopup(this, msg, flags, 5, c_button_names, c_button_keys);
@@ -670,6 +668,10 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
     monitor->deinit();
     delete monitor;
 }
+
+#ifndef NO_FILE_ACCESS
+#include "monitor_file_io.cc"
+#endif
 
 QueueHandle_t userMessageQueue = 0;
 

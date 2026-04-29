@@ -20,15 +20,31 @@ static bool uses_live_cpu_port(U64Machine *machine, uint8_t monitor_cpu_port)
 
 void U64MemoryBackend :: begin_session(void)
 {
-    U64Machine *machine = (U64Machine *)C64 :: getMachine();
-
-    stopped_machine_for_session = machine->begin_monitor_session();
+    // Do NOT freeze the C64 by default — per-access DMA stops handle the
+    // brief pauses required to read/write memory. The user can opt in via
+    // the monitor's Z (freeze) toggle, which calls set_frozen(true).
+    stopped_machine_for_session = false;
 }
 
 void U64MemoryBackend :: end_session(void)
 {
     if (stopped_machine_for_session) {
         ((U64Machine *)C64 :: getMachine())->end_monitor_session(stopped_machine_for_session);
+        stopped_machine_for_session = false;
+    }
+}
+
+void U64MemoryBackend :: set_frozen(bool on)
+{
+    U64Machine *machine = (U64Machine *)C64 :: getMachine();
+
+    if (on && !stopped_machine_for_session) {
+        // begin_monitor_session() returns true only if it actually had to
+        // stop the machine. If something else (e.g. freezer overlay) has
+        // it stopped already, leave it that way and don't try to resume it.
+        stopped_machine_for_session = machine->begin_monitor_session();
+    } else if (!on && stopped_machine_for_session) {
+        machine->end_monitor_session(stopped_machine_for_session);
         stopped_machine_for_session = false;
     }
 }

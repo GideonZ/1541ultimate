@@ -48,6 +48,9 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root) : UIObject(ui)
     observerQueue = new ObserverQueue("TreeBrowser");
     fm->registerObserver(observerQueue);
     has_border = false;
+    pick_mode = PICK_NONE;
+    picked = false;
+    picked_is_dir_only = false;
 
     if(!state) {
         state = new TreeBrowserState(root, this, 0);
@@ -337,7 +340,68 @@ void TreeBrowser :: seek_char(int c)
 int TreeBrowser :: handle_key(int c)
 {           
     int ret = 0;
-    
+
+    if (pick_mode != PICK_NONE) {
+        // Suppress destructive / context-bearing keys in pick mode.
+        switch (c) {
+            case KEY_RETURN:
+            case KEY_RIGHT: {
+                reset_quick_seek();
+                if (!state || !state->under_cursor) {
+                    return 0;
+                }
+                // Capture the entry name and the current path before calling
+                // into2(), since a successful descent will mutate state.
+                mstring name(state->under_cursor->getName());
+                mstring before_path(path ? path->get_path() : "");
+                bool not_descendable = state->into2();
+                if (not_descendable) {
+                    picked = true;
+                    picked_is_dir_only = false;
+                    picked_path = before_path;
+                    picked_name = name;
+                    return MENU_CLOSE;
+                }
+                return 0;
+            }
+            case KEY_LEFT:
+                if (!state->previous && allow_exit) {
+                    return MENU_CLOSE;
+                }
+                state->level_up();
+                return 0;
+            case KEY_TASKS: // F5: in SAVE mode, pick the current directory
+                if (pick_mode == PICK_SAVE) {
+                    picked = true;
+                    picked_is_dir_only = true;
+                    picked_path = path ? path->get_path() : "";
+                    picked_name = "";
+                    return MENU_CLOSE;
+                }
+                return 0;
+            case KEY_BREAK:
+            case KEY_F8:
+            case KEY_ESCAPE:
+            case KEY_F10:
+            case KEY_SCRLOCK:
+            case KEY_MENU:
+                picked = false;
+                return MENU_CLOSE;
+            // Suppress potentially destructive / unrelated actions while picking.
+            case KEY_CTRL_C:
+            case KEY_CTRL_V:
+            case KEY_CTRL_A:
+            case KEY_CTRL_N:
+            case KEY_CTRL_O:
+            case KEY_INSERT:
+            case KEY_CONFIG:
+            case KEY_SPACE:
+                return 0;
+            default:
+                break; // fall through to default handling (navigation, quick seek)
+        }
+    }
+
     switch(c) {
         case KEY_BREAK: // runstop
             ret = (allow_exit) ? MENU_CLOSE : MENU_HIDE;

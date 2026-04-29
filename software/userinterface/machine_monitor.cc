@@ -4,6 +4,7 @@
 #include "disassembler_6502.h"
 #include "editor.h"
 #include "userinterface.h"
+#include "monitor_file_io.h"
 #include "screen.h"
 #include "keyboard.h"
 
@@ -13,6 +14,7 @@ extern "C" {
 }
 
 #include <string.h>
+#include <stdlib.h>
 
 namespace {
 
@@ -23,27 +25,63 @@ static const uint16_t monitor_cursor_blink_half_period_ms = 400;
 #endif
 
 static const char *const monitor_help_lines[] = {
-    "M Hex/Asc   A Asm       S Screen",
-    "E Edit      O CPU bank",
-    "J Jump      F Fill      T Transfer",
-    "C Compare   H Hunt      N Number",
-    "* Illegal opcodes",
+    "M Hex     I Ascii   V Screen",
+    "A Asm     B Binary  * Illegal",
+    "J Jump    G Goto/Run",
+    "F Fill    T Transfer",
+    "C Compare H Hunt    N Number",
+    "L Load    S Save    O CPU bank",
+    "W Width   R Range   E Edit",
+    "Z Freeze",
     "",
-    "Edit mode:",
-    "  DEL    Erases last char or current byte / opcode",
+    "Open monitor:  C= + O",
+    "Close monitor: ESC",
+    "Leave edit:    C= + E",
+    "Copy/Paste:    C= + C / C= + V",
+    "Help:          F3 or ?",
     "",
-    "F3/?  Help",
-    "ESC   Exit edit / monitor",
+    "Binary view:",
+    "  W  Bytes/row (1..4)",
     "",
-    "ASM source tags:",
-    "  [RAM] [BASIC] [KERNAL]",
-    "  [CHAR] [IO]",
+    "ASM tags: [RAM] [BASIC] [KERNAL]",
+    "          [CHAR] [IO]",
     NULL
 };
 
 static const uint8_t monitor_cpu_modes[] = { 0x07, 0x03, 0x06, 0x02, 0x05, 0x01, 0x04 };
 static bool monitor_saved_state_valid = false;
-static MachineMonitorState monitor_saved_state = { MONITOR_VIEW_HEX, 0, 0, 0, false };
+static MachineMonitorState monitor_saved_state = { MONITOR_VIEW_HEX, 0x0801, 0x0801, 0, false };
+
+// Persistent LOAD/SAVE/GOTO state (across monitor invocations within a single
+// firmware run). Defaults match the spec: a "press L, RETURN, RETURN" sequence
+// loads a PRG to its embedded address, "press S, RETURN, RETURN" saves the
+// canonical $0800-$9FFF range, and GOTO pre-fills with the current cursor
+// address (handled at the call site).
+static bool     monitor_last_load_use_prg = true;
+static uint16_t monitor_last_load_start = 0x0801;
+static uint16_t monitor_last_load_offset = 0x0000;
+static bool     monitor_last_load_length_auto = true;
+static uint32_t monitor_last_load_length = 0;
+
+static uint16_t monitor_last_save_start = 0x0800;
+static uint16_t monitor_last_save_end = 0x9FFF;
+static char     monitor_last_save_name[40] = "";
+
+static bool     monitor_last_goto_valid = false;
+static uint16_t monitor_last_goto_addr = 0;
+
+// Persistent BINARY view configuration. Width is byte-based only; every byte
+// renders as 8 bits and R is reserved for range mode.
+static uint8_t monitor_binary_bytes_per_row = 1;
+static Clipboard monitor_clipboard = { NULL, 0 };
+
+static inline uint8_t monitor_binary_byte_stride(void)
+{
+    uint8_t b = monitor_binary_bytes_per_row;
+    if (b < MONITOR_BINARY_MIN_BYTES_PER_ROW) b = MONITOR_BINARY_MIN_BYTES_PER_ROW;
+    if (b > MONITOR_BINARY_MAX_BYTES_PER_ROW) b = MONITOR_BINARY_MAX_BYTES_PER_ROW;
+    return b;
+}
 
 static bool is_space_char(char c)
 {
@@ -287,6 +325,34 @@ static void draw_with_highlight(Window *window, int y, const char *text, int len
     window->repeat(' ', width - len);
 }
 
+static void draw_with_mask(Window *window, int y, const char *text, int len, const bool *mask)
+{
+    int width = window->get_size_x();
+    bool reverse = false;
+
+    if (len > width) {
+        len = width;
+    }
+    if (len < 0) {
+        len = 0;
+    }
+
+    window->move_cursor(0, y);
+    window->reverse_mode(0);
+    for (int i = 0; i < len; i++) {
+        bool want = mask && mask[i];
+        if (want != reverse) {
+            reverse = want;
+            window->reverse_mode(reverse ? 1 : 0);
+        }
+        window->output_length(text + i, 1);
+    }
+    if (reverse) {
+        window->reverse_mode(0);
+    }
+    window->repeat(' ', width - len);
+}
+
 static const char *cpu_a000_text(uint8_t cpu_port)
 {
     return ((cpu_port & 0x03) == 0x03) ? "BASIC" : "RAM";
@@ -368,18 +434,18 @@ static void format_status_line(char *line, uint8_t cpu_port, uint8_t vic_bank)
 static bool inline_edit_view(MachineMonitorView view)
 {
     return (view == MONITOR_VIEW_HEX) || (view == MONITOR_VIEW_ASCII) ||
-           (view == MONITOR_VIEW_SCREEN) || (view == MONITOR_VIEW_ASM);
-}
-
-static MachineMonitorView toggle_hex_ascii_view(MachineMonitorView view)
-{
-    return (view == MONITOR_VIEW_HEX) ? MONITOR_VIEW_ASCII : MONITOR_VIEW_HEX;
+           (view == MONITOR_VIEW_SCREEN) || (view == MONITOR_VIEW_ASM) ||
+           (view == MONITOR_VIEW_BINARY);
 }
 
 static uint16_t row_span_for_view(MachineMonitorView view)
 {
     if (view == MONITOR_VIEW_ASCII || view == MONITOR_VIEW_SCREEN) {
         return MONITOR_TEXT_BYTES_PER_ROW;
+    }
+    if (view == MONITOR_VIEW_BINARY) {
+        // Width is dynamic and configured on the fly by the W shortcut.
+        return monitor_binary_byte_stride();
     }
     return MONITOR_HEX_BYTES_PER_ROW;
 }
@@ -399,7 +465,12 @@ const char *monitor_error_text(MonitorError error)
 
 void monitor_reset_saved_state(void)
 {
-    monitor_saved_state_valid = false;
+    // Tests use this to put the saved state into a deterministic, known
+    // position (HEX view at $0000). Production startup, by contrast, uses
+    // the static initializer which defaults to $0801 — see the constructor.
+    // Mark the state valid so the next monitor open honours the explicit
+    // address rather than falling back to the production default.
+    monitor_saved_state_valid = true;
     monitor_saved_state.view = MONITOR_VIEW_HEX;
     monitor_saved_state.current_addr = 0;
     monitor_saved_state.base_addr = 0;
@@ -411,7 +482,14 @@ void monitor_apply_goto(MachineMonitorState *state, uint16_t address)
 {
     uint16_t span = row_span_for_view(state->view);
     state->current_addr = address;
-    state->base_addr = (uint16_t)(address & (uint16_t)(~(span - 1)));
+    if (state->view == MONITOR_VIEW_BINARY) {
+        // Width is not necessarily a power of two; align using modular
+        // arithmetic so a row-aligned base remains a multiple of the span.
+        if (span == 0) span = 1;
+        state->base_addr = (uint16_t)(address - (address % span));
+    } else {
+        state->base_addr = (uint16_t)(address & (uint16_t)(~(span - 1)));
+    }
     if (state->view == MONITOR_VIEW_DISASM) {
         state->base_addr = address;
     }
@@ -746,6 +824,182 @@ MonitorError monitor_format_evaluate(const char *input, char *out, int out_len)
     return MONITOR_OK;
 }
 
+namespace {
+
+static bool keyword_match(const char *&cursor, const char *keyword)
+{
+    int i;
+    for (i = 0; keyword[i]; i++) {
+        if (to_upper_char(cursor[i]) != keyword[i]) {
+            return false;
+        }
+    }
+    char follow = cursor[i];
+    if (follow != 0 && follow != ' ' && follow != '\t' && follow != ',') {
+        return false;
+    }
+    cursor += i;
+    return true;
+}
+
+// Parse 1..max_digits hex digits (no $ allowed; AUTO/PRG already filtered).
+// Used internally for the length field which can hold up to 5 digits (0x10000).
+static MonitorError parse_hex_unbounded(const char *&cursor, int max_digits, uint32_t max_value, uint32_t *value)
+{
+    uint32_t parsed = 0;
+    int digits = 0;
+    skip_spaces(cursor);
+    if (*cursor == '$') {
+        cursor++;
+    }
+    while (is_hex_char(*cursor) && digits < max_digits) {
+        char c = to_upper_char(*cursor++);
+        parsed <<= 4;
+        if (c >= '0' && c <= '9') {
+            parsed |= (uint32_t)(c - '0');
+        } else {
+            parsed |= (uint32_t)(c - 'A' + 10);
+        }
+        digits++;
+    }
+    if (digits == 0) {
+        return MONITOR_VALUE;
+    }
+    if (parsed > max_value) {
+        return MONITOR_VALUE;
+    }
+    *value = parsed;
+    return MONITOR_OK;
+}
+
+}
+
+// Parse the "[start],[offset],[length]" prompt that follows a LOAD file pick.
+// All fields are optional, individually and as trailing omissions:
+//   ""                  -> PRG, 0000, AUTO  (typical RETURN-only path)
+//   "PRG"               -> PRG, 0000, AUTO
+//   "0801"              -> 0801, 0000, AUTO
+//   "PRG,1000"          -> PRG, 1000, AUTO
+//   "0801,0002,0010"    -> 0801, 0002, length=0x10
+//   ",,0010"            -> PRG, 0000, length=0x10
+// Whitespace around fields is ignored. Empty fields take their default.
+MonitorError monitor_parse_load_params(const char *text, bool *use_prg_addr, uint16_t *start_addr,
+                                       uint16_t *offset, bool *length_auto, uint32_t *length)
+{
+    *use_prg_addr = true;
+    *start_addr = 0;
+    *offset = 0;
+    *length_auto = true;
+    *length = 0;
+
+    const char *cursor = text;
+    skip_spaces(cursor);
+
+    // Field 1 — start address or PRG.
+    if (!*cursor) return MONITOR_OK;
+    if (*cursor != ',') {
+        if (keyword_match(cursor, "PRG")) {
+            *use_prg_addr = true;
+            *start_addr = 0;
+        } else {
+            *use_prg_addr = false;
+            MonitorError error = parse_hex_digits(cursor, 1, 4, 0xFFFF, start_addr);
+            if (error != MONITOR_OK) return MONITOR_ADDR;
+        }
+        skip_spaces(cursor);
+    }
+    if (!*cursor) return MONITOR_OK;
+    if (*cursor != ',') return MONITOR_SYNTAX;
+    cursor++;
+    skip_spaces(cursor);
+
+    // Field 2 — offset (hex 0..FFFF), optional.
+    if (*cursor && *cursor != ',') {
+        MonitorError error = parse_hex_digits(cursor, 1, 4, 0xFFFF, offset);
+        if (error != MONITOR_OK) return MONITOR_ADDR;
+        skip_spaces(cursor);
+    }
+    if (!*cursor) return MONITOR_OK;
+    if (*cursor != ',') return MONITOR_SYNTAX;
+    cursor++;
+    skip_spaces(cursor);
+
+    // Field 3 — length (hex 1..10000) or AUTO, optional.
+    if (*cursor) {
+        if (keyword_match(cursor, "AUTO")) {
+            *length_auto = true;
+            *length = 0;
+        } else {
+            uint32_t parsed = 0;
+            MonitorError error = parse_hex_unbounded(cursor, 5, 0x10000, &parsed);
+            if (error != MONITOR_OK) return MONITOR_VALUE;
+            if (parsed == 0) return MONITOR_VALUE;
+            *length_auto = false;
+            *length = parsed;
+        }
+        skip_spaces(cursor);
+    }
+    if (*cursor) return MONITOR_SYNTAX;
+    return MONITOR_OK;
+}
+
+MonitorError monitor_parse_save_params(const char *text, uint16_t *start, uint16_t *end)
+{
+    const char *cursor = text;
+    MonitorError error = parse_hex_digits(cursor, 1, 4, 0xFFFF, start);
+    if (error != MONITOR_OK) {
+        return MONITOR_ADDR;
+    }
+    error = expect_separator(cursor, '-', MONITOR_SYNTAX);
+    if (error != MONITOR_OK) {
+        return error;
+    }
+    error = parse_hex_digits(cursor, 1, 4, 0xFFFF, end);
+    if (error != MONITOR_OK) {
+        return MONITOR_ADDR;
+    }
+    if (*end < *start) {
+        return MONITOR_RANGE;
+    }
+    skip_spaces(cursor);
+    if (*cursor) {
+        return MONITOR_SYNTAX;
+    }
+    return MONITOR_OK;
+}
+
+MonitorError monitor_validate_load_size(uint32_t file_size, uint32_t offset, bool length_auto,
+                                        uint32_t length, uint32_t *effective_len)
+{
+    if (offset > file_size) {
+        return MONITOR_RANGE;
+    }
+    if (offset == file_size) {
+        return MONITOR_RANGE;
+    }
+    uint32_t avail = file_size - offset;
+    uint32_t use;
+    if (length_auto) {
+        use = avail;
+    } else {
+        // Reject if the requested length exceeds what the file can supply: the
+        // user explicitly asked for that many bytes and silently truncating
+        // would mask the mistake.
+        if (length > avail) {
+            return MONITOR_RANGE;
+        }
+        use = length;
+    }
+    if (use == 0) {
+        return MONITOR_RANGE;
+    }
+    if (use > 65536) {
+        return MONITOR_RANGE;
+    }
+    *effective_len = use;
+    return MONITOR_OK;
+}
+
 MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) : UIObject(ui)
 {
     backend = mem_backend;
@@ -753,8 +1007,8 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
         state = monitor_saved_state;
     } else {
         state.view = MONITOR_VIEW_HEX;
-        state.current_addr = 0;
-        state.base_addr = 0;
+        state.current_addr = 0x0801;
+        state.base_addr = 0x0801;
         state.disasm_offset = 0;
         state.illegal_enabled = false;
     }
@@ -766,6 +1020,11 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     edit_mode = false;
     edit_cursor_visible = true;
     help_visible = false;
+    range_mode = false;
+    range_anchor = state.current_addr;
+    number_picker_active = false;
+    number_selected = 0;
+    number_value = 0;
     hunt_picker_active = false;
     hunt_count = 0;
     hunt_selected = 0;
@@ -784,6 +1043,7 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     opcode_operand[0] = 0;
     opcode_operand_len = 0;
     last_vic_bank = 0;
+    binary_bit_index = 7;
 #ifdef RUNS_ON_PC
     edit_blink_polls = monitor_cursor_blink_idle_polls;
 #else
@@ -813,6 +1073,157 @@ void MachineMonitor :: read_row(uint16_t address, uint8_t *dst, uint16_t len)
     }
 }
 
+Cursor MachineMonitor :: active_cursor(void) const
+{
+    Cursor cursor;
+    cursor.address = state.current_addr;
+    cursor.bit_index = (binary_bit_index <= 7) ? binary_bit_index : 7;
+    return cursor;
+}
+
+bool MachineMonitor :: range_contains(uint16_t address) const
+{
+    if (!range_mode) {
+        return false;
+    }
+    uint16_t start = range_anchor;
+    uint16_t end = state.current_addr;
+    if (end < start) {
+        uint16_t tmp = start;
+        start = end;
+        end = tmp;
+    }
+    return address >= start && address <= end;
+}
+
+bool MachineMonitor :: clipboard_copy_byte(uint8_t value)
+{
+    uint8_t *data = (uint8_t *)malloc(1);
+    if (!data) {
+        return false;
+    }
+    data[0] = value;
+    if (monitor_clipboard.data) {
+        free(monitor_clipboard.data);
+    }
+    monitor_clipboard.data = data;
+    monitor_clipboard.length = 1;
+    return true;
+}
+
+bool MachineMonitor :: clipboard_copy_current(void)
+{
+    return clipboard_copy_byte(canonical_read(state.current_addr));
+}
+
+bool MachineMonitor :: clipboard_copy_range(void)
+{
+    uint16_t start = range_anchor;
+    uint16_t end = state.current_addr;
+    if (end < start) {
+        uint16_t tmp = start;
+        start = end;
+        end = tmp;
+    }
+
+    uint32_t length = (uint32_t)end - (uint32_t)start + 1;
+    uint8_t *data = (uint8_t *)malloc((size_t)length);
+    if (!data) {
+        return false;
+    }
+    for (uint32_t i = 0; i < length; i++) {
+        data[i] = canonical_read((uint16_t)(start + i));
+    }
+    if (monitor_clipboard.data) {
+        free(monitor_clipboard.data);
+    }
+    monitor_clipboard.data = data;
+    monitor_clipboard.length = (size_t)length;
+    return true;
+}
+
+bool MachineMonitor :: clipboard_paste(void)
+{
+    if (!monitor_clipboard.data || monitor_clipboard.length == 0) {
+        return false;
+    }
+    for (size_t i = 0; i < monitor_clipboard.length; i++) {
+        canonical_write((uint16_t)(state.current_addr + i), monitor_clipboard.data[i]);
+    }
+    state.current_addr = (uint16_t)(state.current_addr + monitor_clipboard.length);
+    binary_bit_index = 7;
+    if (state.view == MONITOR_VIEW_ASM) {
+        ensure_disasm_visible();
+    } else {
+        ensure_current_visible();
+    }
+    pending_hex_nibble = -1;
+    if (edit_mode) {
+        reset_edit_blink();
+    }
+    return true;
+}
+
+void MachineMonitor :: toggle_range_mode(void)
+{
+    if (!range_mode) {
+        range_anchor = state.current_addr;
+        range_mode = true;
+        return;
+    }
+    if (!clipboard_copy_range()) {
+        get_ui()->popup("?MEM", BUTTON_OK);
+        redraw_full();
+        return;
+    }
+    range_mode = false;
+}
+
+void MachineMonitor :: open_number_picker(void)
+{
+    help_visible = false;
+    number_value = canonical_read(state.current_addr);
+    number_selected = 0;
+    number_picker_active = true;
+}
+
+int MachineMonitor :: number_picker_handle_key(int key)
+{
+    if (key == KEY_ESCAPE || key == KEY_BREAK || key == KEY_RETURN) {
+        number_picker_active = false;
+        draw();
+        return 0;
+    }
+    if (key == KEY_CTRL_O) {
+        number_picker_active = false;
+        return 1;
+    }
+    if (key == KEY_UP) {
+        if (number_selected > 0) {
+            number_selected--;
+        }
+        draw();
+        return 0;
+    }
+    if (key == KEY_DOWN) {
+        if (number_selected < 4) {
+            number_selected++;
+        }
+        draw();
+        return 0;
+    }
+    if (key == KEY_CTRL_C) {
+        if (!clipboard_copy_byte(number_value)) {
+            get_ui()->popup("?MEM", BUTTON_OK);
+            redraw_full();
+        }
+        number_picker_active = false;
+        draw();
+        return 0;
+    }
+    return 0;
+}
+
 void MachineMonitor :: ensure_current_visible()
 {
     if (state.view == MONITOR_VIEW_DISASM) {
@@ -820,10 +1231,16 @@ void MachineMonitor :: ensure_current_visible()
     }
 
     uint16_t span = row_span();
+    if (span == 0) span = 1;
     uint16_t page_bytes = (uint16_t)(content_height * span);
-    uint16_t current_row = (uint16_t)(state.current_addr & (uint16_t)(~(span - 1)));
-
-    state.base_addr = (uint16_t)(state.base_addr & (uint16_t)(~(span - 1)));
+    uint16_t current_row;
+    if (state.view == MONITOR_VIEW_BINARY) {
+        current_row = (uint16_t)(state.current_addr - (state.current_addr % span));
+        state.base_addr = (uint16_t)(state.base_addr - (state.base_addr % span));
+    } else {
+        current_row = (uint16_t)(state.current_addr & (uint16_t)(~(span - 1)));
+        state.base_addr = (uint16_t)(state.base_addr & (uint16_t)(~(span - 1)));
+    }
 
     if (current_row < state.base_addr) {
         state.base_addr = current_row;
@@ -844,6 +1261,7 @@ void MachineMonitor :: set_view(MachineMonitorView view)
         ensure_current_visible();
     }
     pending_hex_nibble = -1;
+    binary_bit_index = 7;
 }
 
 bool MachineMonitor :: inline_edit_supported(void) const
@@ -865,6 +1283,39 @@ void MachineMonitor :: move_current(int delta)
         ensure_current_visible();
     }
     pending_hex_nibble = -1;
+    if (state.view != MONITOR_VIEW_BINARY) {
+        binary_bit_index = 7;
+    }
+    if (edit_mode) {
+        reset_edit_blink();
+    }
+}
+
+void MachineMonitor :: move_binary_bits(int delta)
+{
+    if (binary_bit_index > 7) {
+        binary_bit_index = 7;
+    }
+    while (delta > 0) {
+        if (binary_bit_index > 0) {
+            binary_bit_index--;
+        } else {
+            state.current_addr = (uint16_t)(state.current_addr + 1);
+            binary_bit_index = 7;
+        }
+        delta--;
+    }
+    while (delta < 0) {
+        if (binary_bit_index < 7) {
+            binary_bit_index++;
+        } else {
+            state.current_addr = (uint16_t)(state.current_addr - 1);
+            binary_bit_index = 0;
+        }
+        delta++;
+    }
+    ensure_current_visible();
+    pending_hex_nibble = -1;
     if (edit_mode) {
         reset_edit_blink();
     }
@@ -873,6 +1324,7 @@ void MachineMonitor :: move_current(int delta)
 void MachineMonitor :: page_move(int lines)
 {
     uint16_t span = row_span();
+    if (span == 0) span = 1;
     uint16_t step = (uint16_t)(lines * span);
 
     state.current_addr = (uint16_t)(state.current_addr + step);
@@ -880,7 +1332,11 @@ void MachineMonitor :: page_move(int lines)
         ensure_disasm_visible();
     } else {
         state.base_addr = (uint16_t)(state.base_addr + step);
-        state.base_addr = (uint16_t)(state.base_addr & (uint16_t)(~(span - 1)));
+        if (state.view == MONITOR_VIEW_BINARY) {
+            state.base_addr = (uint16_t)(state.base_addr - (state.base_addr % span));
+        } else {
+            state.base_addr = (uint16_t)(state.base_addr & (uint16_t)(~(span - 1)));
+        }
         ensure_current_visible();
     }
     pending_hex_nibble = -1;
@@ -1027,9 +1483,15 @@ void MachineMonitor :: draw_header()
             case MONITOR_VIEW_ASM: view_name = "ASM"; break;
             case MONITOR_VIEW_ASCII: view_name = "ASC"; break;
             case MONITOR_VIEW_SCREEN: view_name = "SCR"; break;
+            case MONITOR_VIEW_BINARY: view_name = "BIN"; break;
             default: break;
         }
-        sprintf(line, "%s $%04X", view_name, state.base_addr);
+        if (state.view == MONITOR_VIEW_BINARY) {
+            Cursor cursor = active_cursor();
+            sprintf(line, "MONITOR %s $%04X/%u", view_name, cursor.address, (unsigned)cursor.bit_index);
+        } else {
+            sprintf(line, "MONITOR %s $%04X", view_name, state.current_addr);
+        }
         if (state.illegal_enabled && state.view == MONITOR_VIEW_ASM) {
             int hp = strlen(line);
             if (hp < (int)sizeof(line) - 14) {
@@ -1041,9 +1503,9 @@ void MachineMonitor :: draw_header()
     const char *right = NULL;
     if (!help_visible) {
         if (hunt_picker_active) right = "ENTER jumps  ESC exits";
-        else if (edit_mode) right = "Edit Mode";
+        else if (edit_mode) right = "Edit";
     }
-    if (right) {
+    if (right && (help_visible || hunt_picker_active)) {
         int rlen = strlen(right);
         int cur = strlen(line);
         if (cur > width - rlen - 1) {
@@ -1057,6 +1519,39 @@ void MachineMonitor :: draw_header()
         }
         line[cur] = 0;
         strncat(line, right, sizeof(line) - cur - 1);
+    } else if (!help_visible && !hunt_picker_active) {
+        char fixed[64];
+        int first_slot = width;
+        int range_slot = width - 18;
+        int freeze_slot = width - 11;
+        int edit_slot = width - 4;
+        if (range_slot < 0) range_slot = width;
+        if (freeze_slot < 0) freeze_slot = width;
+        if (edit_slot < 0) edit_slot = width;
+        if (range_mode && range_slot < first_slot) first_slot = range_slot;
+        if (backend && backend->supports_freeze() && backend->is_frozen() && freeze_slot < first_slot) first_slot = freeze_slot;
+        if (edit_mode && edit_slot < first_slot) first_slot = edit_slot;
+
+        memset(fixed, ' ', width);
+        fixed[width] = 0;
+        int left_len = strlen(line);
+        if (left_len > first_slot - 1) {
+            left_len = first_slot - 1;
+        }
+        if (left_len < 0) {
+            left_len = 0;
+        }
+        memcpy(fixed, line, left_len);
+        if (range_mode && range_slot + 5 <= width) {
+            memcpy(fixed + range_slot, "Range", 5);
+        }
+        if (backend && backend->supports_freeze() && backend->is_frozen() && freeze_slot + 6 <= width) {
+            memcpy(fixed + freeze_slot, "Freeze", 6);
+        }
+        if (edit_mode && edit_slot + 4 <= width) {
+            memcpy(fixed + edit_slot, "Edit", 4);
+        }
+        memcpy(line, fixed, width + 1);
     }
     draw_padded(window, 0, line, strlen(line));
 }
@@ -1086,32 +1581,82 @@ void MachineMonitor :: draw_help()
     }
 }
 
+void MachineMonitor :: draw_number_picker()
+{
+    char lines[5][32];
+    char bin[9];
+    char hex[3];
+    char scr_hex[3];
+    char ascii = ascii_byte(number_value);
+    char scr = screen_code_char(number_value);
+
+    for (int i = 0; i < 8; i++) {
+        bin[i] = (number_value & (uint8_t)(0x80 >> i)) ? '1' : '0';
+    }
+    bin[8] = 0;
+    dump_hex_byte(hex, 0, number_value);
+    hex[2] = 0;
+    dump_hex_byte(scr_hex, 0, number_value);
+    scr_hex[2] = 0;
+
+    sprintf(lines[0], "Hex         $%s", hex);
+    sprintf(lines[1], "Decimal     %u", (unsigned)number_value);
+    sprintf(lines[2], "Binary      %s", bin);
+    sprintf(lines[3], "ASCII       %c", ascii);
+    sprintf(lines[4], "Screen      %c ($%s)", scr, scr_hex);
+
+    for (int row = 0; row < content_height; row++) {
+        if (row < 5) {
+            draw_with_highlight(window, row + 1, lines[row], strlen(lines[row]),
+                                row == number_selected ? 0 : -1, strlen(lines[row]));
+        } else {
+            draw_padded(window, row + 1, "", 0);
+        }
+    }
+}
+
 void MachineMonitor :: draw_hex_row(int y, uint16_t addr, const uint8_t *bytes)
 {
     char line[MONITOR_HEX_ROW_CHARS + 1];
-    int highlight = -1;
+    bool mask[MONITOR_HEX_ROW_CHARS];
 
     monitor_format_hex_row(addr, bytes, line);
+    memset(mask, 0, sizeof(mask));
+    for (int i = 0; i < MONITOR_HEX_BYTES_PER_ROW; i++) {
+        uint16_t cell = (uint16_t)(addr + i);
+        if (range_contains(cell)) {
+            mask[5 + (3 * i)] = true;
+            mask[6 + (3 * i)] = true;
+            mask[29 + i] = true;
+        }
+    }
     if ((!edit_mode || edit_cursor_visible) && state.view == MONITOR_VIEW_HEX && state.current_addr >= addr && state.current_addr < (uint16_t)(addr + MONITOR_HEX_BYTES_PER_ROW)) {
         int index = state.current_addr - addr;
-        highlight = 5 + (3 * index);
+        mask[5 + (3 * index)] = true;
+        mask[6 + (3 * index)] = true;
     }
-    draw_with_highlight(window, y, line, MONITOR_HEX_ROW_CHARS, highlight, 2);
+    draw_with_mask(window, y, line, MONITOR_HEX_ROW_CHARS, mask);
 }
 
 void MachineMonitor :: draw_text_row(int y, uint16_t addr, const uint8_t *bytes, bool screen_codes)
 {
     char line[MONITOR_TEXT_ROW_CHARS + 1];
-    int highlight = -1;
+    bool mask[MONITOR_TEXT_ROW_CHARS];
 
     monitor_format_text_row(addr, bytes, MONITOR_TEXT_BYTES_PER_ROW, screen_codes, line);
+    memset(mask, 0, sizeof(mask));
+    for (int i = 0; i < MONITOR_TEXT_BYTES_PER_ROW; i++) {
+        if (range_contains((uint16_t)(addr + i))) {
+            mask[5 + i] = true;
+        }
+    }
     if ((!edit_mode || edit_cursor_visible) &&
         ((state.view == MONITOR_VIEW_ASCII && !screen_codes) ||
          (state.view == MONITOR_VIEW_SCREEN && screen_codes)) &&
         state.current_addr >= addr && state.current_addr < (uint16_t)(addr + MONITOR_TEXT_BYTES_PER_ROW)) {
-        highlight = 5 + (state.current_addr - addr);
+        mask[5 + (state.current_addr - addr)] = true;
     }
-    draw_with_highlight(window, y, line, MONITOR_TEXT_ROW_CHARS, highlight, 1);
+    draw_with_mask(window, y, line, MONITOR_TEXT_ROW_CHARS, mask);
 }
 
 void MachineMonitor :: draw_hex()
@@ -1152,6 +1697,85 @@ void MachineMonitor :: draw_screen_codes()
         read_row(addr, bytes, MONITOR_TEXT_BYTES_PER_ROW);
         draw_text_row(line_idx + 1, addr, bytes, true);
     }
+}
+
+void MachineMonitor :: draw_binary_row(int y, uint16_t addr, const uint8_t *bytes, int byte_count)
+{
+    // Format: "AAAA " followed by 8 bits per configured byte (MSB first).
+    enum { BIN_LINE_MAX = 4 + 1 + (MONITOR_BINARY_MAX_BYTES_PER_ROW * 8) };
+    char line[BIN_LINE_MAX + 1];
+    bool mask[BIN_LINE_MAX];
+    int bits = byte_count * 8;
+    if (bits < 8) bits = 8;
+    if (bits > MONITOR_BINARY_MAX_BYTES_PER_ROW * 8) bits = MONITOR_BINARY_MAX_BYTES_PER_ROW * 8;
+
+    memset(line, ' ', sizeof(line) - 1);
+    memset(mask, 0, sizeof(mask));
+    dump_hex_word(line, 0, addr);
+    line[4] = ' ';
+    int pos = 5;
+    for (int i = 0; i < bits; i++) {
+        int byte_off = i / 8;
+        int bit_in_byte = 7 - (i % 8);
+        if (byte_off >= byte_count) break;
+        line[pos++] = ((bytes[byte_off] >> bit_in_byte) & 1) ? '1' : '0';
+    }
+    int total = pos;
+    if (total > (int)sizeof(line) - 1) total = (int)sizeof(line) - 1;
+    line[total] = 0;
+
+    for (int i = 0; i < byte_count; i++) {
+        if (range_contains((uint16_t)(addr + i))) {
+            int first = 5 + (i * 8);
+            for (int b = 0; b < 8 && first + b < total; b++) {
+                mask[first + b] = true;
+            }
+        }
+    }
+    if ((!edit_mode || edit_cursor_visible) &&
+        state.view == MONITOR_VIEW_BINARY &&
+        state.current_addr >= addr &&
+        state.current_addr < (uint16_t)(addr + byte_count)) {
+        int byte_offset = state.current_addr - addr;
+        uint8_t bit = (binary_bit_index <= 7) ? binary_bit_index : 7;
+        int col = byte_offset * 8 + (7 - bit);
+        if (col >= 0 && col < bits) {
+            mask[5 + col] = true;
+        }
+    }
+    draw_with_mask(window, y, line, total, mask);
+}
+
+void MachineMonitor :: draw_binary()
+{
+    int stride = monitor_binary_byte_stride();
+    if (stride < 1) stride = 1;
+    uint8_t bytes[MONITOR_BINARY_MAX_BYTES_PER_ROW];
+    for (int line_idx = 0; line_idx < content_height; line_idx++) {
+        uint16_t addr = (uint16_t)(state.base_addr + line_idx * stride);
+        read_row(addr, bytes, (uint16_t)stride);
+        draw_binary_row(line_idx + 1, addr, bytes, stride);
+    }
+}
+
+void MachineMonitor :: redraw_full()
+{
+    // Re-paint everything after a sub-dialog (file picker, popup, confirmation)
+    // closed. We must also restore the screen title bar / separator rows that
+    // sit OUTSIDE our window (rows 0/1 and the bottom row), otherwise the user
+    // sees a "shrunken" monitor with the C64 chrome wiped away.
+    //
+    // Window::draw_border() permanently shrinks the window's effective area by
+    // one character on each side (it advances offset_x/y and reduces
+    // window_x/y by 2). So before redrawing the border we must reset the
+    // geometry, otherwise each popup nibbles another row+column off the
+    // monitor frame.
+    if (!window || !screen) return;
+    get_ui()->set_screen_title();
+    window->reset_border();
+    window->draw_border();
+    window->set_color(get_ui()->color_fg);
+    draw();
 }
 
 void MachineMonitor :: draw_disassembly()
@@ -1204,6 +1828,15 @@ void MachineMonitor :: draw_disassembly()
 
         if (state.current_addr >= addr && state.current_addr < (uint16_t)(addr + decoded.length)) {
             highlight = 0;
+        }
+        if (range_mode) {
+            uint8_t len = decoded.length ? decoded.length : 1;
+            for (uint8_t i = 0; i < len; i++) {
+                if (range_contains((uint16_t)(addr + i))) {
+                    highlight = 0;
+                    break;
+                }
+            }
         }
         int hl_x = 0;
         int hl_len = MONITOR_DISASM_ROW_CHARS;
@@ -1464,6 +2097,8 @@ void MachineMonitor :: draw()
     draw_header();
     if (help_visible) {
         draw_help();
+    } else if (number_picker_active) {
+        draw_number_picker();
     } else if (hunt_picker_active) {
         draw_hunt_picker();
     } else {
@@ -1476,6 +2111,9 @@ void MachineMonitor :: draw()
                 break;
             case MONITOR_VIEW_SCREEN:
                 draw_screen_codes();
+                break;
+            case MONITOR_VIEW_BINARY:
+                draw_binary();
                 break;
             default:
                 draw_hex();
@@ -1518,6 +2156,18 @@ void MachineMonitor :: apply_screen_char(char value)
     }
     canonical_write(state.current_addr, code);
     move_current(1);
+}
+
+void MachineMonitor :: binary_apply_bit(uint8_t bit_value)
+{
+    if (binary_bit_index > 7) binary_bit_index = 7;
+    uint8_t byte = canonical_read(state.current_addr);
+    uint8_t mask = (uint8_t)(1u << binary_bit_index);
+    if (bit_value) byte |= mask;
+    else           byte &= (uint8_t)~mask;
+    canonical_write(state.current_addr, byte);
+    move_binary_bits(1);
+    reset_edit_blink();
 }
 
 // Unified DEL behaviour shared by edit and non-edit mode. ASC/SCR clear
@@ -1932,6 +2582,9 @@ int MachineMonitor :: handle_key(int key)
     if (opcode_picker_active) {
         return opcode_picker_handle_key(key);
     }
+    if (number_picker_active) {
+        return number_picker_handle_key(key);
+    }
 
     if (key == KEY_HELP || key == KEY_F3) {
         toggle_help();
@@ -1947,6 +2600,43 @@ int MachineMonitor :: handle_key(int key)
             draw();
             return 0;
         }
+    }
+
+    if (key == KEY_CTRL_C) {
+        bool copied;
+        if (range_mode) {
+            copied = clipboard_copy_range();
+            if (copied) {
+                range_mode = false;
+            }
+        } else {
+            copied = clipboard_copy_current();
+        }
+        if (!copied) {
+            get_ui()->popup("?MEM", BUTTON_OK);
+            redraw_full();
+        }
+        draw();
+        return 0;
+    }
+    if (key == KEY_CTRL_V) {
+        if (!clipboard_paste()) {
+            get_ui()->popup("?CLIP", BUTTON_OK);
+            redraw_full();
+        }
+        draw();
+        return 0;
+    }
+    if (key == 'r' || key == 'R') {
+        help_visible = false;
+        toggle_range_mode();
+        draw();
+        return 0;
+    }
+    if (key == 'n' || key == 'N') {
+        open_number_picker();
+        draw();
+        return 0;
     }
 
     if (edit_mode) {
@@ -1974,12 +2664,34 @@ int MachineMonitor :: handle_key(int key)
                 draw();
                 return 0;
             }
+            // BINARY: walk the bit cursor backwards across bytes so the user
+            // can flip an individual bit without zeroing whole bytes.
+            if (state.view == MONITOR_VIEW_BINARY) {
+                move_binary_bits(-1);
+                reset_edit_blink();
+                draw();
+                return 0;
+            }
             apply_logical_delete();
             if (state.view == MONITOR_VIEW_ASM) {
                 asm_edit_history_reset(state.current_addr);
             }
             draw();
             return 0;
+        }
+        if (state.view == MONITOR_VIEW_BINARY) {
+            // Sprite/character editing input mapping. `*` and `1` set a bit;
+            // `.`, `0`, and SPACE clear a bit. Anything else is ignored.
+            if (key == '1' || key == '*') {
+                binary_apply_bit(1);
+                draw();
+                return 0;
+            }
+            if (key == '0' || key == '.' || key == ' ') {
+                binary_apply_bit(0);
+                draw();
+                return 0;
+            }
         }
         if (state.view == MONITOR_VIEW_HEX && is_hex_char((char)key)) {
             if (key >= '0' && key <= '9') {
@@ -2147,11 +2859,19 @@ int MachineMonitor :: handle_key(int key)
             draw();
             return 0;
         case KEY_LEFT:
-            move_current(-1);
+            if (state.view == MONITOR_VIEW_BINARY) {
+                move_binary_bits(-1);
+            } else {
+                move_current(-1);
+            }
             draw();
             return 0;
         case KEY_RIGHT:
-            move_current(1);
+            if (state.view == MONITOR_VIEW_BINARY) {
+                move_binary_bits(1);
+            } else {
+                move_current(1);
+            }
             draw();
             return 0;
         case KEY_UP:
@@ -2201,7 +2921,11 @@ int MachineMonitor :: handle_key(int key)
     switch (key) {
         case 'm': case 'M':
             help_visible = false;
-            set_view(toggle_hex_ascii_view(state.view));
+            set_view(MONITOR_VIEW_HEX);
+            break;
+        case 'i': case 'I':
+            help_visible = false;
+            set_view(MONITOR_VIEW_ASCII);
             break;
         case 'a': case 'A':
         case 'd': case 'D':
@@ -2210,7 +2934,28 @@ int MachineMonitor :: handle_key(int key)
             break;
         case 's': case 'S':
             help_visible = false;
+            handle_save_command();
+            break;
+        case 'l': case 'L':
+            help_visible = false;
+            handle_load_command();
+            break;
+        case 'v': case 'V':
+            help_visible = false;
             set_view(MONITOR_VIEW_SCREEN);
+            break;
+        case 'b': case 'B':
+            help_visible = false;
+            set_view(MONITOR_VIEW_BINARY);
+            break;
+        case 'w': case 'W':
+            handle_width_command();
+            break;
+        case 'z': case 'Z':
+            help_visible = false;
+            if (backend && backend->supports_freeze()) {
+                backend->set_frozen(!backend->is_frozen());
+            }
             break;
         case 'o': case 'O':
             cpu_port = next_cpu_mode(backend->get_monitor_cpu_port());
@@ -2300,17 +3045,8 @@ int MachineMonitor :: handle_key(int key)
             }
             break;
         case 'g': case 'G':
-            get_ui()->popup("Reserved", BUTTON_OK);
-            break;
-        case 'n': case 'N':
-            buffer[0] = 0;
-            if (prompt_command("Evaluate", buffer, sizeof(buffer) - 1)) {
-                error = monitor_format_evaluate(buffer, output, sizeof(output));
-                if (error == MONITOR_OK) {
-                    get_ui()->popup(output, BUTTON_OK);
-                } else {
-                    get_ui()->popup(monitor_error_text(error), BUTTON_OK);
-                }
+            if (handle_goto_command()) {
+                return 1;
             }
             break;
         default:
@@ -2343,4 +3079,212 @@ int MachineMonitor :: poll(int)
         return MENU_CLOSE;
     }
     return handle_key(key);
+}
+
+void MachineMonitor::handle_load_command()
+{
+    char path_buf[256] = "";
+    char name_buf[64] = "";
+    if (!monitor_io::pick_file(get_ui(), "LOAD: select file", path_buf, sizeof(path_buf),
+                               name_buf, sizeof(name_buf), false)) {
+        redraw_full();
+        return;
+    }
+    redraw_full();
+    if (!name_buf[0]) {
+        return;
+    }
+
+    // Default prompt is the canonical "PRG,0000,AUTO" — RETURN performs a
+    // standard PRG load. Last-used values are remembered if the user
+    // overrode anything in a previous invocation. Empty / partial entries
+    // fall back to defaults inside monitor_parse_load_params.
+    char buffer[40];
+    if (monitor_last_load_use_prg) {
+        strcpy(buffer, "PRG,");
+    } else {
+        sprintf(buffer, "%04X,", monitor_last_load_start);
+    }
+    char tail[24];
+    sprintf(tail, "%04X,", monitor_last_load_offset);
+    strcat(buffer, tail);
+    if (monitor_last_load_length_auto) {
+        strcat(buffer, "AUTO");
+    } else {
+        sprintf(tail, "%X", (unsigned)monitor_last_load_length);
+        strcat(buffer, tail);
+    }
+    if (!prompt_command("Load [PRG|AAAA],[Off],[Len|AUTO]", buffer, sizeof(buffer) - 1, true)) {
+        redraw_full();
+        return;
+    }
+
+    bool use_prg = true;
+    uint16_t start_addr = 0;
+    uint16_t offset = 0;
+    bool length_auto = true;
+    uint32_t length = 0;
+    MonitorError error = monitor_parse_load_params(buffer, &use_prg, &start_addr,
+                                                   &offset, &length_auto, &length);
+    if (error != MONITOR_OK) {
+        redraw_full();
+        get_ui()->popup(monitor_error_text(error), BUTTON_OK);
+        redraw_full();
+        return;
+    }
+
+    monitor_last_load_use_prg = use_prg;
+    if (!use_prg) {
+        monitor_last_load_start = start_addr;
+    }
+    monitor_last_load_offset = offset;
+    monitor_last_load_length_auto = length_auto;
+    monitor_last_load_length = length;
+
+    const char *err = monitor_io::load_into_memory(path_buf, name_buf, backend,
+                                                   start_addr, use_prg,
+                                                   offset, length_auto, length,
+                                                   &start_addr, &length);
+    redraw_full();
+    if (err) {
+        get_ui()->popup(err, BUTTON_OK);
+        redraw_full();
+        return;
+    }
+    show_io_confirmation("LOAD", name_buf, start_addr, length);
+    redraw_full();
+}
+
+void MachineMonitor::handle_save_command()
+{
+    // Prompt for the memory range FIRST, so the user is not left wondering
+    // what range the picker is about to write — and so we can short-circuit
+    // before opening the picker on an obviously invalid range.
+    char range_buf[16];
+    sprintf(range_buf, "%04X-%04X", monitor_last_save_start, monitor_last_save_end);
+    if (!prompt_command("Save AAAA-BBBB", range_buf, sizeof(range_buf) - 1, true)) {
+        return;
+    }
+    uint16_t start = 0;
+    uint16_t end = 0;
+    MonitorError error = monitor_parse_save_params(range_buf, &start, &end);
+    if (error != MONITOR_OK) {
+        get_ui()->popup(monitor_error_text(error), BUTTON_OK);
+        redraw_full();
+        return;
+    }
+    monitor_last_save_start = start;
+    monitor_last_save_end = end;
+
+    char path_buf[256] = "";
+    char name_buf[64] = "";
+    if (!monitor_io::pick_file(get_ui(), "SAVE: pick file/dir (F5=here)", path_buf, sizeof(path_buf),
+                               name_buf, sizeof(name_buf), true)) {
+        redraw_full();
+        return;
+    }
+    redraw_full();
+
+    if (!name_buf[0]) {
+        // Picker returned a directory only (F5 in pick mode); ask for filename.
+        if (monitor_last_save_name[0]) {
+            strncpy(name_buf, monitor_last_save_name, sizeof(name_buf) - 1);
+            name_buf[sizeof(name_buf) - 1] = 0;
+        } else {
+            name_buf[0] = 0;
+        }
+        if (!prompt_command("Save as", name_buf, sizeof(name_buf) - 1, false)) {
+            return;
+        }
+        if (!name_buf[0]) {
+            return;
+        }
+    }
+    strncpy(monitor_last_save_name, name_buf, sizeof(monitor_last_save_name) - 1);
+    monitor_last_save_name[sizeof(monitor_last_save_name) - 1] = 0;
+
+    const char *err = monitor_io::save_from_memory(get_ui(), path_buf, name_buf, backend, start, end);
+    redraw_full();
+    if (err) {
+        get_ui()->popup(err, BUTTON_OK);
+        redraw_full();
+        return;
+    }
+    uint32_t bytes = (uint32_t)end - (uint32_t)start + 1;
+    show_io_confirmation("SAVE", name_buf, start, bytes);
+    redraw_full();
+}
+
+void MachineMonitor::show_io_confirmation(const char *op, const char *name,
+                                          uint16_t start_addr, uint32_t bytes)
+{
+    // Single-line popup keeps the rendering simple and fits inside the
+    // monitor's standard popup width on both telnet and on-device. Format
+    // omits the leading path (already chosen by the user) and reports the
+    // effective range so the user can verify what just hit memory or disk.
+    char msg[80];
+    uint32_t end_addr = (uint32_t)start_addr + (bytes ? bytes - 1 : 0);
+    if (end_addr > 0xFFFF) end_addr = 0xFFFF;
+    sprintf(msg, "%s %s: $%04X-$%04X (%u bytes)",
+            op, name, (unsigned)start_addr, (unsigned)end_addr, (unsigned)bytes);
+    get_ui()->popup(msg, BUTTON_OK);
+}
+
+void MachineMonitor::handle_width_command()
+{
+    if (state.view != MONITOR_VIEW_BINARY) {
+        get_ui()->popup("WIDTH ONLY IN BINARY VIEW", BUTTON_OK);
+        redraw_full();
+        return;
+    }
+    char buf[8];
+    sprintf(buf, "%u", (unsigned)monitor_binary_byte_stride());
+    if (!prompt_command("Width 1..4 bytes/row", buf, sizeof(buf) - 1, true)) {
+        return;
+    }
+    int v = 0;
+    const char *p = buf;
+    while (*p == ' ') p++;
+    if (!*p) return;
+    while (*p >= '0' && *p <= '9') {
+        v = v * 10 + (*p - '0');
+        if (v > 9999) break;
+        p++;
+    }
+    while (*p == ' ') p++;
+    if (*p || v < MONITOR_BINARY_MIN_BYTES_PER_ROW || v > MONITOR_BINARY_MAX_BYTES_PER_ROW) {
+        get_ui()->popup("WIDTH 1..4 BYTES", BUTTON_OK);
+        redraw_full();
+        return;
+    }
+    monitor_binary_bytes_per_row = (uint8_t)v;
+    binary_bit_index = 7;
+    ensure_current_visible();
+    draw();
+}
+
+bool MachineMonitor::handle_goto_command()
+{
+    char buffer[8];
+    uint16_t default_addr = monitor_last_goto_valid ? monitor_last_goto_addr : state.current_addr;
+    sprintf(buffer, "%04X", default_addr);
+    if (!prompt_command("Goto AAAA", buffer, sizeof(buffer) - 1, true)) {
+        return false;
+    }
+    uint16_t address = 0;
+    MonitorError error = monitor_parse_address(buffer, &address);
+    if (error != MONITOR_OK) {
+        get_ui()->popup(monitor_error_text(error), BUTTON_OK);
+        return false;
+    }
+    monitor_last_goto_addr = address;
+    monitor_last_goto_valid = true;
+    // Reposition the cursor first (mirrors J), so the displayed address matches
+    // what we are about to execute.
+    monitor_apply_goto(&state, address);
+    // Hand off to the C64: the boot-cart DMA-jump path unfreezes the FPGA C64
+    // and JMP ($00AA)s to `address`. The monitor must exit so the menu
+    // dismisses and user code regains control.
+    monitor_io::jump_to(address);
+    return true;
 }

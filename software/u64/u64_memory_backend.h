@@ -15,6 +15,10 @@ public:
     virtual uint8_t get_live_vic_bank(void);
     virtual void begin_session(void);
     virtual void end_session(void);
+
+    virtual bool supports_freeze(void) const { return true; }
+    virtual bool is_frozen(void) const { return stopped_machine_for_session; }
+    virtual void set_frozen(bool on);
 };
 
 #endif

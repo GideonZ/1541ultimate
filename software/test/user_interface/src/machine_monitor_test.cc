@@ -190,6 +190,10 @@ void UserInterface :: set_screen(Screen *s)
     screen = s;
 }
 
+void UserInterface :: set_screen_title(void)
+{
+}
+
 int UserInterface :: activate_uiobject(UIObject *)
 {
     return 0;
@@ -218,6 +222,30 @@ void UserInterface :: run_hex_editor(const char *, int)
 void UserInterface :: run_machine_monitor(MemoryBackend *)
 {
 }
+
+namespace monitor_io {
+bool pick_file(UserInterface *, const char *, char *, int, char *, int, bool)
+{
+    return false;
+}
+
+const char *load_into_memory(const char *, const char *, MemoryBackend *,
+                             uint16_t, bool, uint32_t, bool, uint32_t,
+                             uint16_t *, uint32_t *)
+{
+    return NULL;
+}
+
+const char *save_from_memory(UserInterface *, const char *, const char *, MemoryBackend *,
+                             uint16_t, uint16_t)
+{
+    return NULL;
+}
+
+void jump_to(uint16_t)
+{
+}
+} // namespace monitor_io
 
 void UserInterface :: swapDisk(void)
 {
@@ -399,6 +427,21 @@ struct FakeBankedMemoryBackend : public MemoryBackend
     virtual void end_session(void)
     {
         session_end_count++;
+    }
+
+    virtual bool supports_freeze(void) const
+    {
+        return true;
+    }
+
+    virtual bool is_frozen(void) const
+    {
+        return frozen;
+    }
+
+    virtual void set_frozen(bool on)
+    {
+        frozen = on;
     }
 };
 
@@ -630,6 +673,19 @@ static int expect(int condition, const char *message)
 {
     if (!condition) {
         return fail(message);
+    }
+    return 0;
+}
+
+static int expect_screens_equal(const CaptureScreen &a, const CaptureScreen &b, const char *message)
+{
+    for (int y = 0; y < 25; y++) {
+        for (int x = 0; x < 40; x++) {
+            if (a.chars[y][x] != b.chars[y][x] ||
+                a.reverse_chars[y][x] != b.reverse_chars[y][x]) {
+                return fail(message);
+            }
+        }
     }
     return 0;
 }
@@ -1027,13 +1083,13 @@ static int test_disassembly_instruction_stepping(void)
     if (expect(monitor.poll(0) == 0, "Disassembly view switch failed for stepping test.")) return 1;
 
     screen.get_slice(1, 3, 38, line);
-    if (expect(strstr(line, "ASM $E000") == line, "Disassembly view must start at the goto address.")) return 1;
+    if (expect(strstr(line, "MONITOR ASM $E000") == line, "Disassembly view must start at the goto address.")) return 1;
     screen.get_slice(1, 4, 38, line);
     if (expect(strstr(line, "E000 85 56") == line, "Initial disassembly row mismatch at E000.")) return 1;
 
     if (expect(monitor.poll(0) == 0, "First disassembly down-step failed.")) return 1;
     screen.get_slice(1, 3, 38, line);
-    if (expect(strstr(line, "ASM $E000") == line, "Disassembly down-step must keep the viewport top stable.")) return 1;
+    if (expect(strstr(line, "MONITOR ASM $E002") == line, "Disassembly header must follow the active cursor after one down-step.")) return 1;
     screen.get_slice(1, 4, 38, line);
     if (expect(strstr(line, "E000 85 56") == line, "First disassembly down-step must keep the previous row visible.")) return 1;
     screen.get_slice(1, 5, 38, line);
@@ -1041,7 +1097,7 @@ static int test_disassembly_instruction_stepping(void)
 
     if (expect(monitor.poll(0) == 0, "Second disassembly down-step failed.")) return 1;
     screen.get_slice(1, 3, 38, line);
-    if (expect(strstr(line, "ASM $E000") == line, "Second disassembly down-step must keep the viewport top stable.")) return 1;
+    if (expect(strstr(line, "MONITOR ASM $E005") == line, "Disassembly header must follow the active cursor after two down-steps.")) return 1;
     screen.get_slice(1, 6, 38, line);
     if (expect(strstr(line, "E005 A5 61") == line, "Second disassembly down-step landed on the wrong instruction.")) return 1;
 
@@ -1170,7 +1226,7 @@ static int test_monitor_byte_to_address_invariant(void)
     return 0;
 }
 
-static int test_monitor_viewport_header_and_scroll(void)
+static int test_monitor_cursor_header_and_scroll(void)
 {
     TestUserInterface ui;
     CaptureScreen screen;
@@ -1198,13 +1254,13 @@ static int test_monitor_viewport_header_and_scroll(void)
     monitor.init(&screen, &keyboard);
 
     screen.get_slice(1, 3, 38, header);
-    if (expect(strstr(header, "HEX $0000") == header, "Header must report the viewport start, not the cursor address.")) return 1;
+    if (expect(strstr(header, "MONITOR HEX $0000") == header, "Header must report the active cursor address.")) return 1;
 
     for (int i = 0; i < visible_rows - 1; i++) {
         if (expect(monitor.poll(0) == 0, "Down navigation failed before viewport scroll.")) return 1;
     }
     screen.get_slice(1, 3, 38, header);
-    if (expect(strstr(header, "HEX $0000") == header, "Header must stay on the same viewport address while only the cursor moves.")) return 1;
+    if (expect(strstr(header, "MONITOR HEX $0088") == header, "Header must follow the cursor before the viewport scrolls.")) return 1;
     for (int row = 0; row < visible_rows; row++) {
         screen.get_slice(1, 4 + row, MONITOR_HEX_ROW_CHARS, before_rows[row]);
     }
@@ -1214,7 +1270,7 @@ static int test_monitor_viewport_header_and_scroll(void)
 
     if (expect(monitor.poll(0) == 0, "Down navigation failed at the viewport boundary.")) return 1;
     screen.get_slice(1, 3, 38, header);
-    if (expect(strstr(header, "HEX $0008") == header, "Header must advance by one row when the viewport scrolls.")) return 1;
+    if (expect(strstr(header, "MONITOR HEX $0090") == header, "Header must follow the cursor when the viewport scrolls.")) return 1;
     for (int row = 0; row < visible_rows; row++) {
         screen.get_slice(1, 4 + row, MONITOR_HEX_ROW_CHARS, after_rows[row]);
     }
@@ -1255,13 +1311,13 @@ static int test_monitor_interaction(void)
     MachineMonitor help_monitor(&ui, &banked_backend);
     help_monitor.init(&screen, &help_keyboard);
     screen.get_slice(1, 3, 38, line);
-    if (expect(strstr(line, "HEX $0000") == line && strstr(line, "CPU MAP") == NULL,
-               "Header must show only the view type and viewport start.")) return 1;
+    if (expect(strstr(line, "MONITOR HEX $0000") == line && strstr(line, "CPU MAP") == NULL,
+               "Header must show only the view type and cursor address.")) return 1;
     if (expect(screen.reverse_chars[4][6] && screen.reverse_chars[4][7], "Hex view did not highlight the selected byte.")) return 1;
     if (expect(help_monitor.poll(0) == 0, "Goto to A000 failed.")) return 1;
     screen.get_slice(1, 3, 38, line);
-    if (expect(strstr(line, "HEX $A000") == line && strstr(line, "CPU MAP") == NULL,
-               "Goto must update the header to the viewport start without CPU map text.")) return 1;
+    if (expect(strstr(line, "MONITOR HEX $A000") == line && strstr(line, "CPU MAP") == NULL,
+               "Goto must update the header to the cursor address without CPU map text.")) return 1;
     screen.get_slice(1, 4, 8, line);
     if (expect(strncmp(line, "a000 ba", 7) == 0 || strncmp(line, "A000 BA", 7) == 0, "CPU banked BASIC view mismatch.")) return 1;
     screen.get_slice(1, 22, 38, status);
@@ -1288,7 +1344,7 @@ static int test_monitor_interaction(void)
 
     if (expect(help_monitor.poll(0) == 0, "F3 help close failed.")) return 1;
     screen.get_slice(1, 3, 38, status);
-    if (expect(strstr(status, "HEX $A000") == status, "Closing help should restore the normal header.")) return 1;
+    if (expect(strstr(status, "MONITOR HEX $A000") == status, "Closing help should restore the normal header.")) return 1;
     screen.get_slice(1, 4, 8, line);
     if (expect(strncmp(line, "a000 aa", 7) == 0 || strncmp(line, "A000 AA", 7) == 0, "Help toggle did not restore the monitor view.")) return 1;
 
@@ -1306,7 +1362,7 @@ static int test_monitor_interaction(void)
         if (expect(strstr(line, "M Hex") != NULL, "Help must be visible before ESC closes it.")) return 1;
         if (expect(esc_help_monitor.poll(0) == 0, "ESC should close help without exiting the monitor.")) return 1;
         screen.get_slice(1, 3, 38, line);
-        if (expect(strstr(line, "HEX $0000") == line, "ESC should restore the normal monitor header after closing help.")) return 1;
+        if (expect(strstr(line, "MONITOR HEX $0000") == line, "ESC should restore the normal monitor header after closing help.")) return 1;
         if (expect(esc_help_monitor.poll(0) == 1, "ESC should exit the monitor only after help is already closed.")) return 1;
         esc_help_monitor.deinit();
     }
@@ -1375,7 +1431,7 @@ static int test_monitor_interaction(void)
         live_bank_monitor.deinit();
     }
 
-    const int blink_keys[] = { 'M', 'e' };
+    const int blink_keys[] = { 'I', 'e' };
     FakeKeyboard blink_keyboard(blink_keys, 2);
     ui.keyboard = &blink_keyboard;
     screen.clear();
@@ -1391,7 +1447,7 @@ static int test_monitor_interaction(void)
     if (expect(screen.reverse_chars[4][6], "ASCII edit highlight should stay deterministic during idle redraws.")) return 1;
     blink_monitor.deinit();
 
-    const int view_keys[] = { 'M', KEY_DOWN, KEY_UP, 'e', 'Z', KEY_LEFT, 'Y', KEY_BREAK, KEY_BREAK };
+    const int view_keys[] = { 'I', KEY_DOWN, KEY_UP, 'e', 'Z', KEY_LEFT, 'Y', KEY_BREAK, KEY_BREAK };
     FakeKeyboard view_keyboard(view_keys, 9);
     ui.keyboard = &view_keyboard;
     ui.popup_count = 0;
@@ -1404,7 +1460,7 @@ static int test_monitor_interaction(void)
 
     if (expect(view_monitor.poll(0) == 0, "ASCII view command failed.")) return 1;
     screen.get_slice(1, 3, 38, line);
-    if (expect(strstr(line, "ASC $0000") == line, "ASCII header must stay tied to the viewport start.")) return 1;
+    if (expect(strstr(line, "MONITOR ASC $0000") == line, "ASCII header must start at the cursor address.")) return 1;
     screen.get_slice(1, 4, MONITOR_TEXT_ROW_CHARS, line);
     if (expect(strcmp(line, "0000 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA") == 0, "ASCII first-row rendering mismatch.")) return 1;
     screen.get_slice(1, 12, MONITOR_TEXT_ROW_CHARS, line);
@@ -1415,7 +1471,7 @@ static int test_monitor_interaction(void)
 
     if (expect(view_monitor.poll(0) == 0, "ASCII down navigation failed.")) return 1;
     screen.get_slice(1, 3, 38, line);
-    if (expect(strstr(line, "ASC $0000") == line, "ASCII header must not follow the cursor within the viewport.")) return 1;
+    if (expect(strstr(line, "MONITOR ASC $0020") == line, "ASCII header must follow the cursor within the viewport.")) return 1;
     if (expect(screen.reverse_chars[5][6], "ASCII down should move the cursor one 32-byte row without scrolling.")) return 1;
     if (expect(view_monitor.poll(0) == 0, "ASCII up navigation failed.")) return 1;
     if (expect(screen.reverse_chars[4][6], "ASCII up should move the cursor back one 32-byte row without scrolling.")) return 1;
@@ -1561,10 +1617,10 @@ static int test_monitor_interaction(void)
     ignored_monitor.init(&screen, &ignored_keyboard);
     if (expect(ignored_monitor.poll(0) == 0, "Disassembly view command failed before ignored-key checks.")) return 1;
     screen.get_slice(1, 3, 38, line);
-    if (expect(strstr(line, "ASM $0000") == line, "Disassembly header setup failed before ignored-key checks.")) return 1;
+    if (expect(strstr(line, "MONITOR ASM $0000") == line, "Disassembly header setup failed before ignored-key checks.")) return 1;
     if (expect(ignored_monitor.poll(0) == 0, "'.' should be ignored now that left/right already handle byte stepping.")) return 1;
     screen.get_slice(1, 3, 38, status);
-    if (expect(strstr(status, "ASM $0000") == status, "'.' should not change the disassembly viewport.")) return 1;
+    if (expect(strstr(status, "MONITOR ASM $0000") == status, "'.' should not change the disassembly viewport.")) return 1;
     if (expect(ignored_monitor.poll(0) == 0, "'R' should be ignored now that register editing is unsupported.")) return 1;
     if (expect(ignored_monitor.poll(0) == 0, "':' should be ignored after 'E' takes over edit entry.")) return 1;
     if (expect(ignored_monitor.poll(0) == 0, "Q should be ignored while not editing.")) return 1;
@@ -1620,7 +1676,7 @@ static int test_monitor_reopen_restores_state(void)
         MachineMonitor second_monitor(&ui, &backend);
         second_monitor.init(&screen, &second_keyboard);
         screen.get_slice(1, 3, 38, line);
-        if (expect(strstr(line, "ASM $C123") == line, "Reopened monitor did not restore the disassembly view and address.")) return 1;
+        if (expect(strstr(line, "MONITOR ASM $C123") == line, "Reopened monitor did not restore the disassembly view and address.")) return 1;
         screen.get_slice(1, 4, 38, line);
         if (expect(strstr(line, "C123 07 44") == line, "Reopened monitor did not restore the saved current address.")) return 1;
         if (expect(strstr(line, "SLO $44") != NULL, "Reopened monitor did not restore the illegal-opcodes setting.")) return 1;
@@ -1784,7 +1840,7 @@ static int test_logical_delete_per_view(void)
         FakeMemoryBackend backend;
         backend.write(0x03FF, 0xAA);
         backend.write(0x0400, 0xBB);
-        const int keys[] = { 'J', 'M', 'E', KEY_DELETE, KEY_DELETE, KEY_BREAK };
+        const int keys[] = { 'J', 'I', 'E', KEY_DELETE, KEY_DELETE, KEY_BREAK };
         FakeKeyboard kb(keys, sizeof(keys)/sizeof(keys[0]));
         ui.screen = &screen;
         ui.keyboard = &kb;
@@ -1806,7 +1862,7 @@ static int test_logical_delete_per_view(void)
         FakeMemoryBackend backend;
         backend.write(0x03FF, 0x11);
         backend.write(0x0400, 0x55);
-        const int keys[] = { 'J', 'S', 'E', KEY_DELETE, KEY_DELETE, KEY_BREAK };
+        const int keys[] = { 'J', 'V', 'E', KEY_DELETE, KEY_DELETE, KEY_BREAK };
         FakeKeyboard kb(keys, sizeof(keys)/sizeof(keys[0]));
         ui.screen = &screen;
         ui.keyboard = &kb;
@@ -1869,7 +1925,7 @@ static int test_scr_edit_writes_screen_code(void)
     CaptureScreen screen;
     FakeMemoryBackend backend;
     backend.write(0x0400, 0x00);
-    const int keys[] = { 'J', 'S', 'E', 'A', KEY_BREAK };
+    const int keys[] = { 'J', 'V', 'E', 'A', KEY_BREAK };
     FakeKeyboard kb(keys, 5);
     ui.screen = &screen;
     ui.keyboard = &kb;
@@ -2015,7 +2071,7 @@ static int test_cross_view_sync(void)
     TestUserInterface ui;
     CaptureScreen screen;
     FakeMemoryBackend backend;
-    const int keys[] = { 'J', 'S', 'E', 'B', KEY_BREAK };
+    const int keys[] = { 'J', 'V', 'E', 'B', KEY_BREAK };
     FakeKeyboard kb(keys, 5);
     ui.screen = &screen;
     ui.keyboard = &kb;
@@ -2028,12 +2084,363 @@ static int test_cross_view_sync(void)
     return 0;
 }
 
+static int test_binary_bit_navigation_and_width(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        char row[38];
+        const int keys[] = {
+            'J', 'B',
+            KEY_RIGHT, KEY_RIGHT, KEY_RIGHT, KEY_RIGHT,
+            KEY_RIGHT, KEY_RIGHT, KEY_RIGHT, KEY_RIGHT,
+            KEY_BREAK
+        };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        backend.write(0x0400, 0x80);
+        backend.write(0x0401, 0x01);
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Binary bit test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary bit test: view switch failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR BIN $0400/7") == header,
+                   "Binary header must show cursor address and MSB bit index.")) return 1;
+        screen.get_slice(1, 4, 13, row);
+        if (expect(strcmp(row, "0400 10000000") == 0,
+                   "Binary width=1 must render exactly 8 bits per row.")) return 1;
+        if (expect(screen.reverse_chars[4][6] && !screen.reverse_chars[4][7],
+                   "Binary cursor must select exactly one bit at MSB.")) return 1;
+
+        for (int i = 0; i < 7; i++) {
+            if (expect(mon.poll(0) == 0, "Binary bit test: right navigation failed before byte boundary.")) return 1;
+        }
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR BIN $0400/0") == header,
+                   "Binary cursor must reach LSB as bit index 0.")) return 1;
+        if (expect(screen.reverse_chars[4][13] && !screen.reverse_chars[4][12],
+                   "Binary cursor must select exactly one bit at LSB.")) return 1;
+
+        if (expect(mon.poll(0) == 0, "Binary bit test: right navigation across byte boundary failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR BIN $0401/7") == header,
+                   "Binary cursor must cross to next byte at MSB.")) return 1;
+        if (expect(screen.reverse_chars[5][6],
+                   "Binary cursor must move to the next row's MSB after crossing byte boundary.")) return 1;
+        if (expect(mon.poll(0) == 1, "Binary bit test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        char row[38];
+        const int keys[] = { 'B', 'W', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("4", 1);
+        backend.write(0x0000, 0x80);
+        backend.write(0x0001, 0x01);
+        backend.write(0x0002, 0xFF);
+        backend.write(0x0003, 0x00);
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Binary width test: view switch failed.")) return 1;
+        screen.get_slice(1, 4, 13, row);
+        if (expect(strcmp(row, "0000 10000000") == 0,
+                   "Binary default width must be one byte per row.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary width test: width command failed.")) return 1;
+        screen.get_slice(1, 4, 37, row);
+        if (expect(strcmp(row, "0000 10000000000000011111111100000000") == 0,
+                   "Binary width=4 must render exactly 32 bits per row.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "W=") == NULL && strstr(header, "bits") == NULL,
+                   "Binary width must not be displayed in the header.")) return 1;
+        if (expect(mon.poll(0) == 1, "Binary width test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_clipboard_number_and_range(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        int keys[16];
+        int n = 0;
+        keys[n++] = 'N';
+        keys[n++] = KEY_DOWN;   // Decimal representation.
+        keys[n++] = KEY_CTRL_C;
+        keys[n++] = 'B';
+        for (int i = 0; i < 8; i++) keys[n++] = KEY_RIGHT;
+        keys[n++] = KEY_CTRL_V;
+        keys[n++] = KEY_BREAK;
+        FakeKeyboard kb(keys, n);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        backend.write(0x0000, 65);
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Number inspector did not open.")) return 1;
+        if (expect(mon.poll(0) == 0, "Number inspector decimal navigation failed.")) return 1;
+        if (expect(screen.reverse_chars[5][1],
+                   "Number inspector must allow navigating to the decimal representation.")) return 1;
+        if (expect(mon.poll(0) == 0, "Number inspector CBM-C copy failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary view switch after number copy failed.")) return 1;
+        for (int i = 0; i < 8; i++) {
+            if (expect(mon.poll(0) == 0, "Binary cursor move before paste failed.")) return 1;
+        }
+        if (expect(mon.poll(0) == 0, "CBM-V paste into binary mode failed.")) return 1;
+        if (expect(backend.read(0x0001) == 65,
+                   "Number clipboard paste must write canonical byte value in binary mode.")) return 1;
+        if (expect(mon.poll(0) == 1, "Number clipboard test exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = {
+            'R', KEY_RIGHT, KEY_RIGHT, KEY_RIGHT,
+            KEY_CTRL_C, KEY_RIGHT, KEY_CTRL_V, KEY_CTRL_V, KEY_BREAK
+        };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        for (int i = 0; i < 4; i++) {
+            backend.write((uint16_t)i, (uint8_t)(0xA0 + i));
+        }
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Range mode entry failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "Range") != NULL,
+                   "Header must show Range while range mode is active.")) return 1;
+        if (expect(mon.poll(0) == 0 && mon.poll(0) == 0 && mon.poll(0) == 0,
+                   "Range cursor movement failed.")) return 1;
+        if (expect(screen.reverse_chars[4][6] && screen.reverse_chars[4][9] &&
+                   screen.reverse_chars[4][12] && screen.reverse_chars[4][15],
+                   "Range selection must visibly invert every selected byte.")) return 1;
+        if (expect(mon.poll(0) == 0, "Range CBM-C copy failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "Range") == NULL,
+                   "CBM-C must exit range mode after copying.")) return 1;
+        if (expect(mon.poll(0) == 0, "Range paste target movement failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Range paste failed.")) return 1;
+        for (int i = 0; i < 4; i++) {
+            if (expect(backend.read((uint16_t)(4 + i)) == (uint8_t)(0xA0 + i),
+                       "Range paste must reproduce copied bytes sequentially.")) return 1;
+        }
+        if (expect(mon.poll(0) == 0, "Repeat range paste failed.")) return 1;
+        for (int i = 0; i < 4; i++) {
+            if (expect(backend.read((uint16_t)(8 + i)) == (uint8_t)(0xA0 + i),
+                       "Repeated CBM-V must duplicate the last copied content.")) return 1;
+        }
+        if (expect(mon.poll(0) == 1, "Range clipboard test exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_header_invariants_and_parity(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeBankedMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'E', 'R', 'Z', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Header test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Header test: range mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Header test: freeze toggle failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "Edit Mode") == NULL,
+                   "Header must show Edit, not Edit Mode.")) return 1;
+        if (expect(strncmp(header + 34, "Edit", 4) == 0,
+                   "Edit indicator must be fixed at top-right.")) return 1;
+        if (expect(strncmp(header + 20, "Range", 5) == 0,
+                   "Range indicator must use its fixed slot.")) return 1;
+        if (expect(strncmp(header + 27, "Freeze", 6) == 0,
+                   "Freeze indicator must use its fixed slot.")) return 1;
+        if (expect(strstr(header, "W=") == NULL,
+                   "Header must not display binary width.")) return 1;
+        if (expect(mon.poll(0) == 0, "Header test: RUN/STOP should leave edit mode first.")) return 1;
+        if (expect(mon.poll(0) == 1, "Header test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui_a;
+        TestUserInterface ui_b;
+        CaptureScreen screen_a;
+        CaptureScreen screen_b;
+        FakeMemoryBackend backend_a;
+        FakeMemoryBackend backend_b;
+        const int keys_a[] = { 'B', KEY_RIGHT, KEY_RIGHT, 'E', '1' };
+        const int keys_b[] = { 'B', KEY_RIGHT, KEY_RIGHT, 'E', '1' };
+        FakeKeyboard kb_a(keys_a, sizeof(keys_a) / sizeof(keys_a[0]));
+        FakeKeyboard kb_b(keys_b, sizeof(keys_b) / sizeof(keys_b[0]));
+        for (int i = 0; i < 16; i++) {
+            backend_a.write((uint16_t)i, (uint8_t)(0x10 + i));
+            backend_b.write((uint16_t)i, (uint8_t)(0x10 + i));
+        }
+
+        ui_a.screen = &screen_a;
+        ui_a.keyboard = &kb_a;
+        ui_b.screen = &screen_b;
+        ui_b.keyboard = &kb_b;
+        monitor_reset_saved_state();
+        MachineMonitor mon_a(&ui_a, &backend_a);
+        mon_a.init(&screen_a, &kb_a);
+        for (int i = 0; i < (int)(sizeof(keys_a) / sizeof(keys_a[0])); i++) {
+            if (expect(mon_a.poll(0) == 0, "Parity render A command failed.")) return 1;
+        }
+
+        monitor_reset_saved_state();
+        MachineMonitor mon_b(&ui_b, &backend_b);
+        mon_b.init(&screen_b, &kb_b);
+        for (int i = 0; i < (int)(sizeof(keys_b) / sizeof(keys_b[0])); i++) {
+            if (expect(mon_b.poll(0) == 0, "Parity render B command failed.")) return 1;
+        }
+        if (expect_screens_equal(screen_a, screen_b,
+                                 "Two monitor frontends using the shared renderer must produce byte-identical screens.")) return 1;
+        mon_a.deinit();
+        mon_b.deinit();
+    }
+
+    return 0;
+}
+
+
+static int test_load_save_param_parsers(void)
+{
+    bool use_prg = false;
+    uint16_t start = 0, off16 = 0, end = 0;
+    bool len_auto = false;
+    uint32_t length = 0;
+    uint32_t effective = 0;
+
+    // LOAD: standard "RETURN, RETURN" path: PRG keyword + AUTO length.
+    if (expect(monitor_parse_load_params("PRG,0000,AUTO", &use_prg, &start, &off16, &len_auto, &length) == MONITOR_OK,
+               "LOAD parser failed for PRG,0000,AUTO.")) return 1;
+    if (expect(use_prg && off16 == 0 && len_auto, "LOAD PRG defaults parsed wrong.")) return 1;
+
+    // LOAD: explicit start address & explicit length.
+    if (expect(monitor_parse_load_params("0801,0002,1FFE", &use_prg, &start, &off16, &len_auto, &length) == MONITOR_OK,
+               "LOAD parser failed for explicit form.")) return 1;
+    if (expect(!use_prg && start == 0x0801 && off16 == 0x0002 && !len_auto && length == 0x1FFE,
+               "LOAD explicit parser values wrong.")) return 1;
+
+    // LOAD: 5-digit length up to 0x10000 inclusive is permitted.
+    if (expect(monitor_parse_load_params("C000,0000,10000", &use_prg, &start, &off16, &len_auto, &length) == MONITOR_OK,
+               "LOAD parser must accept 64K length.")) return 1;
+    if (expect(length == 0x10000, "LOAD 64K length parsed wrong.")) return 1;
+
+    // LOAD: zero length must be rejected.
+    if (expect(monitor_parse_load_params("0801,0000,0", &use_prg, &start, &off16, &len_auto, &length) == MONITOR_VALUE,
+               "LOAD parser must reject zero length.")) return 1;
+
+    // LOAD: garbage in fields must be rejected.
+    if (expect(monitor_parse_load_params("XYZ,00,AUTO", &use_prg, &start, &off16, &len_auto, &length) != MONITOR_OK,
+               "LOAD parser must reject garbage.")) return 1;
+
+    // LOAD: empty input -> all defaults (PRG, offset 0, AUTO length).
+    use_prg = false; start = 0xDEAD; off16 = 0xDEAD; len_auto = false; length = 0xDEADBEEF;
+    if (expect(monitor_parse_load_params("", &use_prg, &start, &off16, &len_auto, &length) == MONITOR_OK,
+               "LOAD parser must accept empty input.")) return 1;
+    if (expect(use_prg && off16 == 0 && len_auto, "LOAD empty defaults wrong.")) return 1;
+
+    // LOAD: PRG only -> defaults for offset and length.
+    if (expect(monitor_parse_load_params("PRG", &use_prg, &start, &off16, &len_auto, &length) == MONITOR_OK,
+               "LOAD parser must accept 'PRG' alone.")) return 1;
+    if (expect(use_prg && off16 == 0 && len_auto, "LOAD PRG-only defaults wrong.")) return 1;
+
+    // LOAD: address only -> offset 0, length AUTO.
+    if (expect(monitor_parse_load_params("0801", &use_prg, &start, &off16, &len_auto, &length) == MONITOR_OK,
+               "LOAD parser must accept address alone.")) return 1;
+    if (expect(!use_prg && start == 0x0801 && off16 == 0 && len_auto, "LOAD addr-only defaults wrong.")) return 1;
+
+    // LOAD: address + offset, length defaults to AUTO.
+    if (expect(monitor_parse_load_params("0801,1000", &use_prg, &start, &off16, &len_auto, &length) == MONITOR_OK,
+               "LOAD parser must accept addr,off form.")) return 1;
+    if (expect(!use_prg && start == 0x0801 && off16 == 0x1000 && len_auto, "LOAD addr,off defaults wrong.")) return 1;
+
+    // LOAD: empty fields between commas -> defaults take over.
+    if (expect(monitor_parse_load_params(",,0010", &use_prg, &start, &off16, &len_auto, &length) == MONITOR_OK,
+               "LOAD parser must accept ,,len form.")) return 1;
+    if (expect(use_prg && off16 == 0 && !len_auto && length == 0x10, "LOAD ,,len defaults wrong.")) return 1;
+
+    // SAVE: canonical form.
+    if (expect(monitor_parse_save_params("0800-9FFF", &start, &end) == MONITOR_OK,
+               "SAVE parser failed for 0800-9FFF.")) return 1;
+    if (expect(start == 0x0800 && end == 0x9FFF, "SAVE parser values wrong.")) return 1;
+
+    // SAVE: inverted range must be rejected.
+    if (expect(monitor_parse_save_params("9FFF-0800", &start, &end) == MONITOR_RANGE,
+               "SAVE parser must reject inverted range.")) return 1;
+
+    // Validate load size: AUTO, file fits.
+    if (expect(monitor_validate_load_size(100, 0, true, 0, &effective) == MONITOR_OK && effective == 100,
+               "Validate AUTO small file failed.")) return 1;
+
+    // Validate load size: AUTO, >64K.
+    if (expect(monitor_validate_load_size(0x20000, 0, true, 0, &effective) == MONITOR_RANGE,
+               "Validate must reject AUTO over 64K.")) return 1;
+
+    // Validate load size: AUTO, partial window keeps within 64K.
+    if (expect(monitor_validate_load_size(0x20000, 0x10000, true, 0, &effective) == MONITOR_OK && effective == 0x10000,
+               "Validate AUTO partial window failed.")) return 1;
+
+    // Validate load size: explicit length over 64K rejected.
+    if (expect(monitor_validate_load_size(0x30000, 0, false, 0x10001, &effective) == MONITOR_RANGE,
+               "Validate must reject explicit length over 64K.")) return 1;
+
+    // Validate load size: offset past end rejected.
+    if (expect(monitor_validate_load_size(100, 100, true, 0, &effective) == MONITOR_RANGE,
+               "Validate must reject offset==filesize.")) return 1;
+
+    // Validate load size: requested length larger than what's left in the file.
+    if (expect(monitor_validate_load_size(100, 50, false, 100, &effective) == MONITOR_RANGE,
+               "Validate must reject length beyond EOF.")) return 1;
+
+    return 0;
+}
 
 int main()
 {
     if (test_disassembler()) return 1;
     if (test_memory_helpers()) return 1;
     if (test_parsers_and_formatters()) return 1;
+    if (test_load_save_param_parsers()) return 1;
     if (test_banked_backend()) return 1;
     if (test_frozen_banked_backend()) return 1;
     if (test_kernal_disassembly_mapping()) return 1;
@@ -2042,7 +2449,7 @@ int main()
     if (test_task_action_lookup()) return 1;
     if (test_monitor_renders_window_border()) return 1;
     if (test_monitor_byte_to_address_invariant()) return 1;
-    if (test_monitor_viewport_header_and_scroll()) return 1;
+    if (test_monitor_cursor_header_and_scroll()) return 1;
     if (test_monitor_interaction()) return 1;
     if (test_monitor_reopen_restores_state()) return 1;
     if (test_monitor_kernal_bank_switch_and_ram_interaction()) return 1;
@@ -2055,6 +2462,9 @@ int main()
     if (test_asm_edit_direct_typing_immediate()) return 1;
     if (test_asm_edit_branch_two_parts()) return 1;
     if (test_cross_view_sync()) return 1;
+    if (test_binary_bit_navigation_and_width()) return 1;
+    if (test_clipboard_number_and_range()) return 1;
+    if (test_header_invariants_and_parity()) return 1;
 
     puts("machine_monitor_test: OK");
     return 0;
