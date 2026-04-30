@@ -2586,12 +2586,11 @@ static int test_asm_edit_assemble_at_cursor(void)
     //   A                            -- switch to ASM
     //   E                            -- enter edit mode
     //   L D A                        -- open picker, narrow to LDA variants
-    //   DOWN DOWN                    -- LDA opcodes are A1, A5, A9, ... so
-    //                                   the third entry is A9 (immediate)
-    //   ENTER                        -- write A9 to $C000
+    //   ENTER                        -- deterministic ordering now places the
+    //                                   simplest LDA form first
     //   4 2                          -- type the operand byte at $C001
     const int keys[] = {
-        'J', 'A', 'E', 'L', 'D', 'A', KEY_DOWN, KEY_DOWN, KEY_RETURN, '4', '2', KEY_BREAK
+        'J', 'A', 'E', 'L', 'D', 'A', KEY_RETURN, '4', '2', KEY_BREAK
     };
     FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
     ui.screen = &screen;
@@ -2849,6 +2848,139 @@ static int test_opcode_picker_refilters_live(void)
     if (expect(mon.poll(0) == 0, "Opcode picker refilter test: RUN/STOP should close the picker first.")) return 1;
     if (expect(mon.poll(0) == 0, "Opcode picker refilter test: RUN/STOP should leave edit mode next.")) return 1;
     if (expect(mon.poll(0) == 1, "Opcode picker refilter test: exit failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
+static int test_opcode_picker_filters_orders_and_commits_on_enter(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char first_row[39];
+        char second_row[39];
+        const int keys[] = { 'J', 'A', 'E', 'N', 'O', 'P', KEY_RETURN };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 6; i++) {
+            if (expect(mon.poll(0) == 0, "Opcode picker NOP test: command sequence failed before ENTER.")) return 1;
+        }
+        screen.get_slice(1, 5, 38, first_row);
+        screen.get_slice(1, 6, 38, second_row);
+        if (expect(strstr(first_row, "NOP") != NULL,
+                   "Documented-only NOP completion must offer the documented NOP variant.")) return 1;
+        if (expect(strstr(second_row, "NOP") == NULL,
+                   "Documented-only NOP completion must not show undocumented NOP variants.")) return 1;
+        if (expect(backend.read(0xC000) == 0x00,
+                   "Typing a mnemonic in the opcode picker must not write memory before ENTER.")) return 1;
+        if (expect(mon.poll(0) == 0, "Opcode picker NOP test: ENTER commit failed.")) return 1;
+        if (expect(backend.read(0xC000) == 0xEA,
+                   "ENTER on documented-only NOP completion must encode the documented $EA NOP.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char first_row[39];
+        char second_row[39];
+        const int keys[] = { 'J', 'A', 'U', 'E', 'N', 'O', 'P', KEY_RETURN };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C100", 1);
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 7; i++) {
+            if (expect(mon.poll(0) == 0, "Opcode picker illegal NOP test: command sequence failed before ENTER.")) return 1;
+        }
+        screen.get_slice(1, 5, 38, first_row);
+        screen.get_slice(1, 6, 38, second_row);
+        if (expect(strstr(first_row, "NOP") != NULL && strstr(first_row, "$") == NULL && strstr(first_row, "#") == NULL,
+                   "Undocumented-enabled NOP completion must place the no-operand NOP first.")) return 1;
+        if (expect(strstr(second_row, "NOP") != NULL,
+                   "Undocumented-enabled NOP completion must still expose additional NOP variants.")) return 1;
+        if (expect(backend.read(0xC100) == 0x00,
+                   "Undocumented-enabled picker typing must still wait for ENTER before writing memory.")) return 1;
+        if (expect(mon.poll(0) == 0, "Opcode picker illegal NOP test: ENTER commit failed.")) return 1;
+        if (expect(backend.read(0xC100) == 0xEA,
+                   "ENTER must default to the first no-operand NOP variant when undocumented opcodes are enabled.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char first_row[39];
+        const int keys[] = { 'J', 'A', 'E', 'L', 'S', 'R', KEY_RETURN };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C200", 1);
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 6; i++) {
+            if (expect(mon.poll(0) == 0, "Opcode picker LSR test: command sequence failed before ENTER.")) return 1;
+        }
+        screen.get_slice(1, 5, 38, first_row);
+        if (expect(strstr(first_row, "LSR A") != NULL,
+                   "Mnemonic variants with an addressing-free form must list that simplest variant first.")) return 1;
+        if (expect(backend.read(0xC200) == 0x00,
+                   "Typing LSR in the picker must not write memory before ENTER.")) return 1;
+        if (expect(mon.poll(0) == 0, "Opcode picker LSR test: ENTER commit failed.")) return 1;
+        if (expect(backend.read(0xC200) == 0x4A,
+                   "ENTER must commit the first accumulator/implied variant when it is the simplest form.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_opcode_picker_browsing_does_not_mutate_frozen_charset_backup(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeBankedMemoryBackend backend;
+    const int keys[] = { 'J', 'A', 'E', 'C', 'L', 'D', KEY_DELETE, KEY_BREAK, KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+    const uint8_t sentinel[] = { 0x54, 0x18, 0xEA, 0x18, 0x18, 0x58, 0x00, 0x00 };
+
+    backend.set_frozen(true);
+    for (int i = 0; i < (int)sizeof(sentinel); i++) {
+        backend.ram_backup[0x10 + i] = sentinel[i];
+    }
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("0810", 1);
+    monitor_reset_saved_state();
+
+    MachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])); i++) {
+        if (expect(mon.poll(0) == 0 || i == (int)(sizeof(keys) / sizeof(keys[0])) - 1,
+                   "Freeze charset safety test: command sequence failed.")) return 1;
+    }
+    for (int i = 0; i < (int)sizeof(sentinel); i++) {
+        if (expect(backend.ram_backup[0x10 + i] == sentinel[i],
+                   "Browsing and filtering opcode suggestions in freeze mode must not mutate the active charset backup bytes.")) return 1;
+    }
     mon.deinit();
     return 0;
 }
@@ -3916,8 +4048,11 @@ static int test_header_invariants_and_parity(void)
         screen.get_slice(1, 3, 38, header);
         if (expect(strstr(header, "Edit Mode") == NULL,
                    "Header must show Edit, not Edit Mode.")) return 1;
-        if (expect(strncmp(header + 34, "Edit", 4) == 0,
-                   "Edit indicator must be fixed at top-right.")) return 1;
+        if (expect(strncmp(header + 34, "EDIT", 4) == 0,
+                   "Edit indicator must be fixed at top-right and uppercase.")) return 1;
+        if (expect(screen.colors[3][35] == 1 && screen.colors[3][36] == 1 &&
+                   screen.colors[3][37] == 1 && screen.colors[3][38] == 1,
+                   "EDIT must use the shared UI accent colour used for the help/title text.")) return 1;
         if (expect(strncmp(header + 20, "Range", 5) == 0,
                    "Range indicator must use its fixed slot.")) return 1;
         if (expect(strncmp(header + 27, "Freeze", 6) == 0,
@@ -3925,6 +4060,9 @@ static int test_header_invariants_and_parity(void)
         if (expect(strstr(header, "W=") == NULL,
                    "Header must not display binary width.")) return 1;
         if (expect(mon.poll(0) == 0, "Header test: RUN/STOP should leave edit mode first.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "EDIT") == NULL,
+                   "Leaving edit mode must clear the far-right EDIT indicator area.")) return 1;
         if (expect(mon.poll(0) == 1, "Header test: exit failed.")) return 1;
         mon.deinit();
     }
@@ -3966,6 +4104,79 @@ static int test_header_invariants_and_parity(void)
                                  "Two monitor frontends using the shared renderer must produce byte-identical screens.")) return 1;
         mon_a.deinit();
         mon_b.deinit();
+    }
+
+    return 0;
+}
+
+static int test_edit_indicator_layout_across_views(void)
+{
+    static const int hex_keys[] = { 'E' };
+    static const int asm_keys[] = { 'A', 'E' };
+    static const int asc_keys[] = { 'I', 'E' };
+    static const int scr_keys[] = { 'S', 'E' };
+    static const int bin_keys[] = { 'B', 'E' };
+    struct ViewCase {
+        const int *keys;
+        int key_count;
+    } cases[] = {
+        { hex_keys, 1 },
+        { asm_keys, 2 },
+        { asc_keys, 2 },
+        { scr_keys, 2 },
+        { bin_keys, 2 },
+    };
+
+    for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        FakeKeyboard kb(cases[i].keys, cases[i].key_count);
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int step = 0; step < cases[i].key_count; step++) {
+            if (expect(mon.poll(0) == 0, "Edit indicator cross-view test: command sequence failed.")) return 1;
+        }
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strncmp(header + 34, "EDIT", 4) == 0,
+                   "EDIT must remain far-right aligned in every edit-capable view.")) return 1;
+        if (expect(screen.colors[3][35] == 1 && screen.colors[3][36] == 1 &&
+                   screen.colors[3][37] == 1 && screen.colors[3][38] == 1,
+                   "EDIT must keep the shared UI accent colour in every edit-capable view.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeBankedMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'A', 'U', 'Z', 'E' };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int step = 0; step < (int)(sizeof(keys) / sizeof(keys[0])); step++) {
+            if (expect(mon.poll(0) == 0, "Edit indicator layout test: ASM/freeze sequence failed.")) return 1;
+        }
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strncmp(header + 20, "UndocOp", 7) == 0,
+                   "UndocOp must remain visible to the left of EDIT.")) return 1;
+        if (expect(strncmp(header + 27, "Freeze", 6) == 0,
+                   "Freeze must remain visible to the left of EDIT.")) return 1;
+        if (expect(strncmp(header + 34, "EDIT", 4) == 0,
+                   "EDIT must remain fixed at the far right when UndocOp and Freeze are active.")) return 1;
+        mon.deinit();
     }
 
     return 0;
@@ -4097,6 +4308,8 @@ int main()
     if (test_asm_cpu_bank_cycle_preserves_screen_row()) return 1;
     if (test_asm_page_up_keeps_screen_row()) return 1;
     if (test_opcode_picker_refilters_live()) return 1;
+    if (test_opcode_picker_filters_orders_and_commits_on_enter()) return 1;
+    if (test_opcode_picker_browsing_does_not_mutate_frozen_charset_backup()) return 1;
     if (test_cross_view_sync()) return 1;
     if (test_binary_bit_navigation_and_width()) return 1;
     if (test_clipboard_number_and_range()) return 1;
@@ -4112,6 +4325,7 @@ int main()
     if (test_prompt_cancel_and_empty_clipboard()) return 1;
     if (test_load_save_and_goto_command_flow()) return 1;
     if (test_header_invariants_and_parity()) return 1;
+    if (test_edit_indicator_layout_across_views()) return 1;
 
     puts("machine_monitor_test: OK");
     return 0;

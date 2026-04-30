@@ -46,6 +46,13 @@ bool monitor_lookup_opcode(const char *mnemonic, AsmAddrMode mode,
                            bool illegal_enabled, uint8_t *opcode,
                            uint8_t *length);
 
+// Collect opcode candidates whose canonical mnemonic matches `prefix`
+// case-insensitively. Results are deterministic: candidates are ordered by
+// mnemonic, then by addressing simplicity with operand-free variants first,
+// then by opcode value as a final tiebreaker.
+int monitor_collect_opcode_candidates(const char *prefix, bool illegal_enabled,
+                                      uint8_t *opcode_out, int max_candidates);
+
 // Convert a printable host character (ASCII subset of PETSCII) to its C64
 // screen-code representation. Returns the screen code, or 0xFF for chars
 // that have no useful screen code mapping.

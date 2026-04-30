@@ -132,6 +132,28 @@ static int find_mnem(const char *m)
     return -1;
 }
 
+static uint8_t candidate_mode_rank(AsmAddrMode mode)
+{
+    switch (mode) {
+        case AM_IMP: return 0;
+        case AM_ACC: return 1;
+        case AM_IMM: return 2;
+        case AM_ZP:  return 3;
+        case AM_ZPX: return 4;
+        case AM_ZPY: return 5;
+        case AM_ZPS: return 6;
+        case AM_IZX: return 7;
+        case AM_IZY: return 8;
+        case AM_ABS: return 9;
+        case AM_ABX: return 10;
+        case AM_ABY: return 11;
+        case AM_IND: return 12;
+        case AM_IAX: return 13;
+        case AM_REL: return 14;
+        default:     return 15;
+    }
+}
+
 static void skip_ws(const char *&p) { while (*p == ' ' || *p == '\t') p++; }
 
 // Parse a hex value of 1..4 nibbles. *digits returns nibble count.
@@ -210,6 +232,93 @@ static bool parse_operand(const char *p, AsmAddrMode *mode, uint16_t *value)
 }
 
 }  // namespace
+
+int monitor_collect_opcode_candidates(const char *prefix, bool illegal_enabled,
+                                      uint8_t *opcode_out, int max_candidates)
+{
+    struct Candidate {
+        uint8_t opcode;
+        char mnemonic[4];
+        uint8_t mode_rank;
+    };
+
+    if (!opcode_out || max_candidates <= 0) {
+        return 0;
+    }
+
+    build_reverse();
+
+    char want[4];
+    int prefix_len = 0;
+    while (prefix && prefix[prefix_len] && prefix_len < 3) {
+        want[prefix_len] = up(prefix[prefix_len]);
+        prefix_len++;
+    }
+    want[prefix_len] = 0;
+
+    Candidate candidates[256];
+    int candidate_count = 0;
+
+    for (int mnemonic_idx = 0; mnemonic_idx < reverse_mnemonic_count; mnemonic_idx++) {
+        const char *mnemonic = reverse_mnemonics[mnemonic_idx];
+        bool match = true;
+        for (int i = 0; i < prefix_len; i++) {
+            if (mnemonic[i] != want[i]) {
+                match = false;
+                break;
+            }
+        }
+        if (!match) {
+            continue;
+        }
+
+        for (int mode = 0; mode < AM_COUNT; mode++) {
+            const ReverseEntry &entry = reverse_table[mnemonic_idx][mode];
+            if (!entry.valid) {
+                continue;
+            }
+            if (entry.illegal && !illegal_enabled) {
+                continue;
+            }
+
+            Candidate candidate;
+            candidate.opcode = entry.opcode;
+            candidate.mnemonic[0] = mnemonic[0];
+            candidate.mnemonic[1] = mnemonic[1];
+            candidate.mnemonic[2] = mnemonic[2];
+            candidate.mnemonic[3] = 0;
+            candidate.mode_rank = candidate_mode_rank((AsmAddrMode)mode);
+
+            int insert_at = candidate_count;
+            while (insert_at > 0) {
+                const Candidate &prev = candidates[insert_at - 1];
+                int mnemonic_cmp = strcmp(candidate.mnemonic, prev.mnemonic);
+                if (mnemonic_cmp > 0) {
+                    break;
+                }
+                if (mnemonic_cmp == 0 && candidate.mode_rank > prev.mode_rank) {
+                    break;
+                }
+                if (mnemonic_cmp == 0 && candidate.mode_rank == prev.mode_rank &&
+                    candidate.opcode >= prev.opcode) {
+                    break;
+                }
+                candidates[insert_at] = candidates[insert_at - 1];
+                insert_at--;
+            }
+            candidates[insert_at] = candidate;
+            candidate_count++;
+        }
+    }
+
+    if (candidate_count > max_candidates) {
+        candidate_count = max_candidates;
+    }
+    for (int i = 0; i < candidate_count; i++) {
+        opcode_out[i] = candidates[i].opcode;
+    }
+    return candidate_count;
+}
 
 bool monitor_lookup_opcode(const char *mnemonic, AsmAddrMode mode,
                            bool illegal_enabled, uint8_t *opcode, uint8_t *length)

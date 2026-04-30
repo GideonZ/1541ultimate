@@ -91,6 +91,9 @@ enum {
     MONITOR_NUMBER_POPUP_INNER_HEIGHT = 8,
     MONITOR_NUMBER_POPUP_WIDTH = MONITOR_NUMBER_POPUP_INNER_WIDTH + 2,
     MONITOR_NUMBER_POPUP_HEIGHT = MONITOR_NUMBER_POPUP_INNER_HEIGHT + 2,
+    // Shared UI accent colour used by UserInterface::set_screen_title() and
+    // bottom-row help text via the historical "\eA" escape sequence.
+    MONITOR_UI_ACCENT_COLOR = 1,
 };
 
 static const uint8_t monitor_number_row_max_input[MONITOR_NUMBER_ROW_COUNT] = {
@@ -2101,12 +2104,6 @@ void MachineMonitor :: draw_header()
         } else {
             sprintf(line, "MONITOR %s $%04X", view_name, state.current_addr);
         }
-        if (state.illegal_enabled && state.view == MONITOR_VIEW_ASM) {
-            int hp = strlen(line);
-            if (hp < (int)sizeof(line) - 9) {
-                strcpy(line + hp, "  UndocOp");
-            }
-        }
     }
 
     const char *right = NULL;
@@ -2131,13 +2128,14 @@ void MachineMonitor :: draw_header()
     } else if (!help_visible && !hunt_picker_active) {
         char fixed[64];
         int first_slot = width;
-        int range_slot = width - 18;
+        int flag_slot = width - 18;
         int freeze_slot = width - 11;
         int edit_slot = width - 4;
-        if (range_slot < 0) range_slot = width;
+        bool show_undoc = state.illegal_enabled && state.view == MONITOR_VIEW_ASM;
+        if (flag_slot < 0) flag_slot = width;
         if (freeze_slot < 0) freeze_slot = width;
         if (edit_slot < 0) edit_slot = width;
-        if (range_mode && range_slot < first_slot) first_slot = range_slot;
+        if ((range_mode || show_undoc) && flag_slot < first_slot) first_slot = flag_slot;
         if (backend && backend->supports_freeze() && backend->is_frozen() && freeze_slot < first_slot) first_slot = freeze_slot;
         if (edit_mode && edit_slot < first_slot) first_slot = edit_slot;
 
@@ -2151,18 +2149,27 @@ void MachineMonitor :: draw_header()
             left_len = 0;
         }
         memcpy(fixed, line, left_len);
-        if (range_mode && range_slot + 5 <= width) {
-            memcpy(fixed + range_slot, "Range", 5);
+        if (show_undoc && flag_slot + 7 <= width) {
+            memcpy(fixed + flag_slot, "UndocOp", 7);
+        } else if (range_mode && flag_slot + 5 <= width) {
+            memcpy(fixed + flag_slot, "Range", 5);
         }
         if (backend && backend->supports_freeze() && backend->is_frozen() && freeze_slot + 6 <= width) {
             memcpy(fixed + freeze_slot, "Freeze", 6);
         }
-        if (edit_mode && edit_slot + 4 <= width) {
-            memcpy(fixed + edit_slot, "Edit", 4);
-        }
         memcpy(line, fixed, width + 1);
     }
     draw_padded(window, 0, line, strlen(line));
+    if (!help_visible && !hunt_picker_active && edit_mode) {
+        int edit_slot = width - 4;
+        if (edit_slot < 0) {
+            edit_slot = 0;
+        }
+        window->move_cursor(edit_slot, 0);
+        window->set_color(MONITOR_UI_ACCENT_COLOR);
+        window->output_length("EDIT", 4);
+        window->set_color(get_ui()->color_fg);
+    }
 }
 
 void MachineMonitor :: draw_status()
@@ -2959,29 +2966,14 @@ void MachineMonitor :: opcode_picker_close()
 
 void MachineMonitor :: opcode_picker_refilter()
 {
-    opcode_candidate_count = 0;
-    for (int op = 0; op < 256; op++) {
-        const char *templ = disassembler_6502_template((uint8_t)op);
-        if (!templ) continue;
-        bool illegal = (templ[3] == '*');
-        if (illegal && !state.illegal_enabled) continue;
-        char mnem[4];
-        mnem[0] = templ[0]; mnem[1] = templ[1]; mnem[2] = templ[2]; mnem[3] = 0;
-        // Apply canonicalisation so the picker shows the same names the assembler accepts.
-        if (op == 0x5C || op == 0x7C) strcpy(mnem, "NOP");
-        else if (!strcmp(mnem, "HLT")) strcpy(mnem, "JAM");
-        else if (!strcmp(mnem, "ASO")) strcpy(mnem, "SLO");
-        else if (!strcmp(mnem, "LSE")) strcpy(mnem, "SRE");
-        else if (!strcmp(mnem, "DCM")) strcpy(mnem, "DCP");
-        else if (!strcmp(mnem, "INS")) strcpy(mnem, "ISC");
-        bool match = true;
-        for (int i = 0; i < opcode_prefix_len; i++) {
-            if (mnem[i] != opcode_prefix[i]) { match = false; break; }
-        }
-        if (!match) continue;
-        if (opcode_candidate_count < (int)sizeof(opcode_candidates)) {
-            opcode_candidates[opcode_candidate_count++] = (uint8_t)op;
-        }
+    opcode_candidate_count = monitor_collect_opcode_candidates(opcode_prefix,
+                                                               state.illegal_enabled,
+                                                               opcode_candidates,
+                                                               (int)sizeof(opcode_candidates));
+    if (opcode_candidate_count <= 0) {
+        opcode_selected = 0;
+        opcode_top = 0;
+        return;
     }
     if (opcode_selected >= opcode_candidate_count) opcode_selected = opcode_candidate_count - 1;
     if (opcode_selected < 0) opcode_selected = 0;
@@ -3093,23 +3085,6 @@ int MachineMonitor :: opcode_picker_handle_key(int key)
         opcode_selected = 0;
         opcode_top = 0;
         opcode_picker_refilter();
-        // Auto-commit only for implied/accumulator instructions where the
-        // operand is irrelevant (e.g. BRK, NOP, TXA). For everything else
-        // wait for the user to type an operand or press ENTER.
-        if (opcode_candidate_count == 1 && opcode_prefix_len == 3) {
-            uint8_t op = opcode_candidates[0];
-            uint8_t op_len = disasm_length(state.current_addr);
-            (void)op_len;
-            // disasm_length depends on memory; check the candidate's own length
-            // by looking up the implied/accumulator forms via the assembler.
-            uint8_t lookup_op, lookup_len;
-            char m[4]; m[0] = opcode_prefix[0]; m[1] = opcode_prefix[1]; m[2] = opcode_prefix[2]; m[3] = 0;
-            bool is_imp = monitor_lookup_opcode(m, AM_IMP, state.illegal_enabled, &lookup_op, &lookup_len) && lookup_op == op;
-            bool is_acc = monitor_lookup_opcode(m, AM_ACC, state.illegal_enabled, &lookup_op, &lookup_len) && lookup_op == op;
-            if (is_imp || is_acc) {
-                opcode_picker_commit();
-            }
-        }
         if (opcode_picker_active) {
             refresh_popup_overlay();
         } else {
