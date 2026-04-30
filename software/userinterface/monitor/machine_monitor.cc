@@ -25,32 +25,25 @@ static const uint16_t monitor_cursor_blink_half_period_ms = 400;
 #endif
 
 static const char *const monitor_help_lines[] = {
-    "M Hex     I Ascii   V Screen",
-    "A Asm     B Binary  * Illegal",
-    "J Jump    G Goto/Run",
-    "F Fill    T Transfer",
-    "C Compare H Hunt    N Number",
-    "L Load    S Save    O CPU bank",
-    "W Width   R Range   E Edit",
-    "Z Freeze",
+    "M Memory    I ASCII     V Screen",
+    "A Assembly  B Binary    U Undoc Op",
+    "J Jump      G Go",
     "",
-    "Open monitor:  C= + O",
-    "Close monitor: ESC",
-    "Leave edit:    C= + E",
-    "Copy/Paste:    C= + C / C= + V",
-    "Help:          F3 or ?",
+    "E Edit      F Fill      T Transfer",
+    "C Compare   H Hunt      N Number",
+    "W Width     R Range     Z Freeze",
+    "O CPU Bank  Sh+O VIC",
+    "L Load      S Save",
     "",
-    "Binary view:",
-    "  W  Bytes/row (1..4)",
-    "",
-    "ASM tags: [RAM] [BASIC] [KERNAL]",
-    "          [CHAR] [IO]",
+    "Open monitor:  C=+O",
+    "Close monitor: C=+O / ESC",
+    "Leave edit:    C=+E",
+    "Copy/Paste:    C=+C / C=+V",
     NULL
 };
 
-static const uint8_t monitor_cpu_modes[] = { 0x07, 0x03, 0x06, 0x02, 0x05, 0x01, 0x04 };
 static bool monitor_saved_state_valid = false;
-static MachineMonitorState monitor_saved_state = { MONITOR_VIEW_HEX, 0x0801, 0x0801, 0, false };
+static MachineMonitorState monitor_saved_state = { MONITOR_VIEW_HEX, 0x0801, 0x0801, 0, false, 0x07 };
 
 // Persistent LOAD/SAVE/GOTO state (across monitor invocations within a single
 // firmware run). Defaults match the spec: a "press L, RETURN, RETURN" sequence
@@ -353,82 +346,61 @@ static void draw_with_mask(Window *window, int y, const char *text, int len, con
     window->repeat(' ', width - len);
 }
 
-static const char *cpu_a000_text(uint8_t cpu_port)
-{
-    return ((cpu_port & 0x03) == 0x03) ? "BASIC" : "RAM";
-}
+struct MonitorCpuStatusFields {
+    const char *a000;
+    const char *d000;
+    const char *e000;
+};
 
-static const char *cpu_d000_text(uint8_t cpu_port)
-{
-    if ((cpu_port & 0x03) == 0x00) {
-        return "RAM";
-    }
-    return (cpu_port & 0x04) ? "IO" : "CHAR";
-}
+static const MonitorCpuStatusFields monitor_cpu_status_fields[8] = {
+    { "RAM", "RAM", "RAM" }, // CPU0
+    { "RAM", "CHR", "RAM" }, // CPU1
+    { "RAM", "CHR", "KRN" }, // CPU2
+    { "BAS", "CHR", "KRN" }, // CPU3
+    { "RAM", "RAM", "RAM" }, // CPU4
+    { "RAM", "I/O", "RAM" }, // CPU5
+    { "RAM", "I/O", "KRN" }, // CPU6
+    { "BAS", "I/O", "KRN" }, // CPU7
+};
 
-static const char *cpu_e000_text(uint8_t cpu_port)
-{
-    return (cpu_port & 0x02) ? "KERNAL" : "RAM";
-}
-
-static int cpu_mode_number(uint8_t cpu_port)
-{
-    return 24 + (cpu_port & 0x07);
-}
+static const uint16_t monitor_vic_bank_bases[4] = {
+    0x0000, 0x4000, 0x8000, 0xC000
+};
 
 static uint8_t next_cpu_mode(uint8_t cpu_port)
 {
-    int i;
-    int count = (int)(sizeof(monitor_cpu_modes) / sizeof(monitor_cpu_modes[0]));
+    return (uint8_t)((cpu_port + 1) & 0x07);
+}
 
-    cpu_port &= 0x07;
-    for (i = 0; i < count; i++) {
-        if (monitor_cpu_modes[i] == cpu_port) {
-            i++;
-            if (i >= count) {
-                i = 0;
-            }
-            return monitor_cpu_modes[i];
-        }
-    }
-    return monitor_cpu_modes[0];
+static uint8_t next_vic_bank(uint8_t vic_bank)
+{
+    return (uint8_t)((vic_bank + 1) & 0x03);
 }
 
 static uint8_t normalize_cpu_mode(uint8_t cpu_port)
 {
-    cpu_port &= 0x07;
-    switch (cpu_port) {
-        case 0x00:
-            return 0x04;
-        case 0x07:
-        case 0x03:
-        case 0x06:
-        case 0x02:
-        case 0x05:
-        case 0x01:
-        case 0x04:
-            return cpu_port;
-        default:
-            return 0x07;
-    }
+    return cpu_port & 0x07;
 }
 
-static void format_status_line(char *line, uint8_t cpu_port, uint8_t vic_bank)
+static void format_status_line_impl(char *line, uint8_t port01, uint8_t vic_bank)
 {
-    uint16_t vic_base = (uint16_t)(vic_bank << 14);
+    uint8_t cpu_bank = port01 & 0x07;
+    const MonitorCpuStatusFields *fields = &monitor_cpu_status_fields[cpu_bank];
+    uint16_t vic_base;
     int pos;
 
-    sprintf(line, "CPU%d %s %s %s|VIC%d ",
-            cpu_mode_number(cpu_port),
-            cpu_a000_text(cpu_port),
-            cpu_d000_text(cpu_port),
-            cpu_e000_text(cpu_port),
-            vic_bank);
+    vic_bank &= 0x03;
+    vic_base = monitor_vic_bank_bases[vic_bank];
+
+    sprintf(line, "CPU%c $A:%s $D:%s $E:%s VIC%c $",
+            (char)('0' + cpu_bank),
+            fields->a000,
+            fields->d000,
+            fields->e000,
+            (char)('0' + vic_bank));
     pos = strlen(line);
     dump_hex_word(line, pos, vic_base);
-    line[pos + 4] = '-';
-    dump_hex_word(line, pos + 5, (uint16_t)(vic_base + 0x3FFF));
-    line[pos + 9] = 0;
+    line[pos + 4] = 0;
 }
 
 static bool inline_edit_view(MachineMonitorView view)
@@ -450,6 +422,11 @@ static uint16_t row_span_for_view(MachineMonitorView view)
     return MONITOR_HEX_BYTES_PER_ROW;
 }
 
+}
+
+void monitor_format_status_line(char *line, uint8_t port01, uint8_t vic_bank)
+{
+    format_status_line_impl(line, port01, vic_bank);
 }
 
 const char *monitor_error_text(MonitorError error)
@@ -474,6 +451,7 @@ void monitor_reset_saved_state(void)
     monitor_saved_state.base_addr = 0;
     monitor_saved_state.disasm_offset = 0;
     monitor_saved_state.illegal_enabled = false;
+    monitor_saved_state.cpu_port = 0x07;
 
     monitor_last_load_use_prg = true;
     monitor_last_load_start = 0x0801;
@@ -495,6 +473,11 @@ void monitor_reset_saved_state(void)
         monitor_clipboard.data = NULL;
     }
     monitor_clipboard.length = 0;
+}
+
+void monitor_invalidate_saved_state(void)
+{
+    monitor_saved_state_valid = false;
 }
 
 void monitor_apply_goto(MachineMonitorState *state, uint16_t address)
@@ -1030,6 +1013,7 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
         state.base_addr = 0x0801;
         state.disasm_offset = 0;
         state.illegal_enabled = false;
+        state.cpu_port = 0x07;
     }
     screen = NULL;
     keyboard = NULL;
@@ -1061,7 +1045,9 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     opcode_top = 0;
     opcode_operand[0] = 0;
     opcode_operand_len = 0;
-    last_vic_bank = 0;
+    current_vic_bank = 0;
+    last_live_vic_bank = 0;
+    vic_bank_override = false;
     binary_bit_index = 7;
 #ifdef RUNS_ON_PC
     edit_blink_polls = monitor_cursor_blink_idle_polls;
@@ -1535,8 +1521,8 @@ void MachineMonitor :: draw_header()
         }
         if (state.illegal_enabled && state.view == MONITOR_VIEW_ASM) {
             int hp = strlen(line);
-            if (hp < (int)sizeof(line) - 8) {
-                strcpy(line + hp, "  IllOp");
+            if (hp < (int)sizeof(line) - 9) {
+                strcpy(line + hp, "  UndocOp");
             }
         }
     }
@@ -1600,11 +1586,7 @@ void MachineMonitor :: draw_header()
 void MachineMonitor :: draw_status()
 {
     char line[40];
-    uint8_t cpu_port = backend->get_monitor_cpu_port();
-    uint8_t vic_bank = backend->get_live_vic_bank();
-
-    last_vic_bank = vic_bank;
-    format_status_line(line, cpu_port, vic_bank);
+    monitor_format_status_line(line, state.cpu_port, current_vic_bank);
     draw_padded(window, window->get_size_y() - 1, line, strlen(line));
 }
 
@@ -2587,8 +2569,11 @@ void MachineMonitor :: init(Screen *scr, Keyboard *keyb)
     window->set_color(get_ui()->color_fg);
     content_height = window->get_size_y() - 2;
     backend->begin_session();
-    backend->set_monitor_cpu_port(normalize_cpu_mode(backend->get_live_cpu_port()));
-    last_vic_bank = backend->get_live_vic_bank();
+    state.cpu_port = normalize_cpu_mode(state.cpu_port);
+    backend->set_monitor_cpu_port(state.cpu_port);
+    current_vic_bank = backend->get_live_vic_bank();
+    last_live_vic_bank = current_vic_bank;
+    vic_bank_override = false;
     monitor_apply_goto(&state, state.current_addr);
     draw();
 }
@@ -2600,6 +2585,7 @@ void MachineMonitor :: deinit(void)
     monitor_saved_state.base_addr = state.base_addr;
     monitor_saved_state.disasm_offset = 0;
     monitor_saved_state.illegal_enabled = state.illegal_enabled;
+    monitor_saved_state.cpu_port = state.cpu_port;
     monitor_saved_state_valid = true;
     backend->end_session();
     if (window) {
@@ -2613,7 +2599,7 @@ int MachineMonitor :: handle_key(int key)
     char buffer[96];
     char output[4096];
     uint16_t start, end, dest, address, value16;
-    uint8_t byte_value, needle[80], cpu_port;
+    uint8_t byte_value, needle[80];
     int needle_len;
     MonitorError error;
 
@@ -2998,11 +2984,16 @@ int MachineMonitor :: handle_key(int key)
                 backend->set_frozen(!backend->is_frozen());
             }
             break;
-        case 'o': case 'O':
-            cpu_port = next_cpu_mode(backend->get_monitor_cpu_port());
-            backend->set_monitor_cpu_port(cpu_port);
+        case 'o':
+            state.cpu_port = next_cpu_mode(state.cpu_port);
+            backend->set_monitor_cpu_port(state.cpu_port);
             break;
-        case '*':
+        case 'O':
+            current_vic_bank = next_vic_bank(current_vic_bank);
+            last_live_vic_bank = current_vic_bank;
+            vic_bank_override = true;
+            break;
+        case 'u': case 'U':
             state.illegal_enabled = !state.illegal_enabled;
             break;
         case '?':
@@ -3111,7 +3102,11 @@ int MachineMonitor :: poll(int)
             return 0;
         }
         uint8_t vic_bank = backend->get_live_vic_bank();
-        if (vic_bank != last_vic_bank) {
+        if (vic_bank != last_live_vic_bank) {
+            last_live_vic_bank = vic_bank;
+            if (!vic_bank_override) {
+                current_vic_bank = vic_bank;
+            }
             draw_status();
         }
         return 0;
@@ -3309,7 +3304,7 @@ bool MachineMonitor::handle_goto_command()
     char buffer[8];
     uint16_t default_addr = monitor_last_goto_valid ? monitor_last_goto_addr : state.current_addr;
     sprintf(buffer, "%04X", default_addr);
-    if (!prompt_command("Goto AAAA", buffer, sizeof(buffer) - 1, true)) {
+    if (!prompt_command("Go AAAA", buffer, sizeof(buffer) - 1, true)) {
         return false;
     }
     uint16_t address = 0;

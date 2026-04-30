@@ -48,6 +48,8 @@ public:
 
     virtual uint8_t get_live_vic_bank(void)
     {
+        // CIA2 stores the VIC bank in inverted form; keep the monitor's
+        // user-facing VIC0..VIC3 numbering aligned with the visible base.
         return (uint8_t)(3 - (read(0xDD00) & 0x03));
     }
 

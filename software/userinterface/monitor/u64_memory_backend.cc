@@ -96,6 +96,8 @@ uint8_t U64MemoryBackend :: get_live_cpu_port(void)
 
 uint8_t U64MemoryBackend :: get_live_vic_bank(void)
 {
+    // CIA2 uses inverted bank bits; translate them back to the monitor's
+    // user-facing VIC0..VIC3 order before rendering status text.
     uint8_t dd00 = ((U64Machine *)C64 :: getMachine())->peek_cpu(0xDD00, 0x07);
     return (uint8_t)(3 - (dd00 & 0x03));
 }

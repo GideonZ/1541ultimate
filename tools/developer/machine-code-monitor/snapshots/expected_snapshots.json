@@ -17,7 +17,7 @@
   },
   "status_cpu31": {
     "contains": {
-      "22": "CPU31 BASIC IO KERNAL|VIC"
+      "22": "CPU7 $A:BAS $D:I/O $E:KRN VIC"
     }
   },
   "ascii_top_row": {
@@ -42,22 +42,22 @@
   },
   "status_cpu27": {
     "contains": {
-      "22": "CPU27 BASIC CHAR KERNAL|VIC"
+      "22": "CPU3 $A:BAS $D:CHR $E:KRN VIC"
     }
   },
   "status_cpu30": {
     "contains": {
-      "22": "CPU30 RAM IO KERNAL|VIC"
+      "22": "CPU6 $A:RAM $D:I/O $E:KRN VIC"
     }
   },
   "status_cpu26": {
     "contains": {
-      "22": "CPU26 RAM CHAR KERNAL|VIC"
+      "22": "CPU2 $A:RAM $D:CHR $E:KRN VIC"
     }
   },
   "status_cpu29": {
     "contains": {
-      "22": "CPU29 RAM IO RAM|VIC"
+      "22": "CPU5 $A:RAM $D:I/O $E:RAM VIC"
     }
   },
   "ram_a000": {

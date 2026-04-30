@@ -31,6 +31,6 @@ Optional environment variables:
 - Immediate inline edit visibility and commit
 - Cursor vs scroll behavior in ASCII view
 - CPU bank status changes and RAM-visible writes at `$A000`
-- VIC bank status line format
+- Combined CPU/VIC status line format
 
 The harness parses the VT100 telnet stream into a deterministic `40x25` screen buffer and compares the captured output against the expected snapshot fragments in `snapshots/expected_snapshots.json`.

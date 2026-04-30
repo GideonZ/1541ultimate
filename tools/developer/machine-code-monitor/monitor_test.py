@@ -21,7 +21,7 @@ SNAPSHOT_FILE = Path(__file__).with_name("snapshots").joinpath("expected_snapsho
 REPO_ROOT = Path(__file__).resolve().parents[3]
 REDEPLOY_SCRIPT = REPO_ROOT / "tooling" / "build_and_deploy_u64.sh"
 
-STATUS_LINE_RE = re.compile(r"CPU\d+ .*\|VIC[0-3] [0-9A-F]{4}-[0-9A-F]{4}")
+STATUS_LINE_RE = re.compile(r"CPU[0-7] \$A:(?:RAM|BAS) \$D:(?:RAM|CHR|I/O) \$E:(?:RAM|KRN) VIC[0-3] \$[0-9A-F]{4}")
 MEMORY_ROW_RE = re.compile(r"^[0-9A-F]{4} ")
 
 ALT_CHARSET_MAP = {

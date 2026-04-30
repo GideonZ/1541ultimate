@@ -47,6 +47,7 @@ struct MachineMonitorState
     uint16_t base_addr;
     uint8_t disasm_offset;
     bool illegal_enabled;
+    uint8_t cpu_port;
 };
 
 struct Clipboard {
@@ -61,9 +62,11 @@ struct Cursor {
 
 const char *monitor_error_text(MonitorError error);
 void monitor_reset_saved_state(void);
+void monitor_invalidate_saved_state(void);
 void monitor_apply_goto(MachineMonitorState *state, uint16_t address);
 void monitor_format_hex_row(uint16_t address, const uint8_t *bytes, char *out);
 void monitor_format_text_row(uint16_t address, const uint8_t *bytes, int count, bool screen_codes, char *out);
+void monitor_format_status_line(char *out, uint8_t port01, uint8_t vic_bank);
 
 MonitorError monitor_parse_address(const char *text, uint16_t *address);
 MonitorError monitor_parse_expression(const char *text, uint16_t *value);
@@ -150,7 +153,9 @@ class MachineMonitor : public UIObject
     // having to navigate the picker. Empty when not in operand-typing mode.
     char opcode_operand[16];
     int  opcode_operand_len;
-    uint8_t last_vic_bank;
+    uint8_t current_vic_bank;
+    uint8_t last_live_vic_bank;
+    bool vic_bank_override;
     // Cursor bit-position within the current byte in BINARY view.
     // 7 = MSB (leftmost rendered bit), 0 = LSB. Horizontal navigation and
     // typed 0/1 edits advance by one bit.
