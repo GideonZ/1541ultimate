@@ -63,7 +63,7 @@ struct Cursor {
 const char *monitor_error_text(MonitorError error);
 void monitor_reset_saved_state(void);
 void monitor_invalidate_saved_state(void);
-void monitor_apply_goto(MachineMonitorState *state, uint16_t address);
+void monitor_apply_go(MachineMonitorState *state, uint16_t address);
 void monitor_format_hex_row(uint16_t address, const uint8_t *bytes, char *out);
 void monitor_format_text_row(uint16_t address, const uint8_t *bytes, int count, bool screen_codes, char *out);
 void monitor_format_status_line(char *out, uint8_t port01, uint8_t vic_bank);
@@ -118,8 +118,8 @@ class MachineMonitor : public UIObject
     uint16_t last_save_start;
     uint16_t last_save_end;
     char last_save_name[40];
-    bool last_goto_valid;
-    uint16_t last_goto_addr;
+    bool last_go_valid;
+    uint16_t last_go_addr;
     uint8_t binary_bytes_per_row;
     Clipboard clipboard;
 
@@ -166,6 +166,7 @@ class MachineMonitor : public UIObject
     int opcode_candidate_count;
     int opcode_selected;
     int opcode_top;
+    int opcode_drawn_rows;
     // Direct-typing operand buffer used while the picker is open. Allows
     // power users to type "LDA 1000" or "LDA #FF" or "LDA (10),Y" without
     // having to navigate the picker. Empty when not in operand-typing mode.
@@ -188,12 +189,14 @@ class MachineMonitor : public UIObject
     void canonical_write(uint16_t address, uint8_t value);
     void read_row(uint16_t address, uint8_t *dst, uint16_t len) const;
     uint8_t binary_byte_stride(void) const;
-    void apply_goto_local(uint16_t address);
+    void apply_go_local(uint16_t address);
+    bool number_shortcut_allowed(void) const;
     void draw();
     void draw_header();
     void draw_status();
     void draw_help();
     void draw_number_picker();
+    void refresh_popup_overlay();
     void draw_hex();
     void draw_ascii();
     void draw_screen_codes();
@@ -252,7 +255,7 @@ class MachineMonitor : public UIObject
                               uint16_t start_addr, uint32_t bytes);
     // Returns true when the monitor should exit (e.g., GOTO has dispatched a
     // DMA jump and the C64 must now resume executing user code).
-    bool handle_goto_command();
+    bool handle_go_command();
     // Prompt to change the binary view's bytes-per-row (1..4) on the fly.
     // No-op (with informative popup) outside of BINARY view.
     void handle_width_command();
@@ -274,7 +277,13 @@ class MachineMonitor : public UIObject
     uint8_t asm_edit_part_count(uint16_t address);
     uint16_t disasm_next_addr(uint16_t address);
     uint16_t disasm_prev_addr(uint16_t address);
+    uint16_t disasm_prev_visible_addr(uint16_t address);
+    int disasm_visible_row(uint16_t address) const;
+    uint16_t disasm_advance_rows(uint16_t address, int rows);
+    uint16_t disasm_rewind_rows(uint16_t address, int rows);
+    void restore_disasm_cursor_row(int row);
     void step_disassembly(int lines);
+    void page_disassembly(int lines);
     void ensure_disasm_visible();
     bool inline_edit_supported(void) const;
     uint16_t row_span(void) const;

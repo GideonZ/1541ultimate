@@ -590,6 +590,7 @@ public:
     char chars[25][40];
     uint8_t colors[25][40];
     bool reverse_chars[25][40];
+    int write_counts[25][40];
     bool reverse_mode_on;
     int clear_calls;
 
@@ -614,6 +615,7 @@ public:
                 chars[y][x] = ' ';
                 colors[y][x] = 0;
                 reverse_chars[y][x] = false;
+                write_counts[y][x] = 0;
             }
         }
         cursor_x = 0;
@@ -644,6 +646,7 @@ public:
             chars[cursor_y][cursor_x] = c;
             colors[cursor_y][cursor_x] = (uint8_t)color;
             reverse_chars[cursor_y][cursor_x] = reverse_mode_on;
+            write_counts[cursor_y][cursor_x]++;
         }
         if (cursor_x < width - 1) {
             cursor_x++;
@@ -678,12 +681,35 @@ public:
         }
     }
 
-    void get_slice(int x, int y, int len, char *out)
+    void get_slice(int x, int y, int len, char *out) const
     {
         for (int i = 0; i < len; i++) {
             out[i] = chars[y][x + i];
         }
         out[len] = 0;
+    }
+
+    void reset_write_counts()
+    {
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                write_counts[y][x] = 0;
+            }
+        }
+    }
+
+    int count_writes_outside_rect(int left, int top, int right, int bottom) const
+    {
+        int writes = 0;
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                if (x >= left && x <= right && y >= top && y <= bottom) {
+                    continue;
+                }
+                writes += write_counts[y][x];
+            }
+        }
+        return writes;
     }
 };
 
@@ -835,6 +861,94 @@ static int expect_screens_equal(const CaptureScreen &a, const CaptureScreen &b, 
     return 0;
 }
 
+static bool find_popup_rect(const CaptureScreen &screen, int *left, int *top, int *right, int *bottom)
+{
+    for (int y = 0; y < 25; y++) {
+        for (int x = 0; x < 40; x++) {
+            if ((unsigned char)screen.chars[y][x] != BORD_LOWER_RIGHT_CORNER) {
+                continue;
+            }
+            for (int xr = x + 2; xr < 40; xr++) {
+                if ((unsigned char)screen.chars[y][xr] != BORD_LOWER_LEFT_CORNER) {
+                    continue;
+                }
+                for (int yb = y + 2; yb < 25; yb++) {
+                    int width = xr - x + 1;
+                    int height = yb - y + 1;
+                    if (width >= 38 || height >= 23) {
+                        continue;
+                    }
+                    if ((unsigned char)screen.chars[yb][x] == BORD_UPPER_RIGHT_CORNER &&
+                        (unsigned char)screen.chars[yb][xr] == BORD_UPPER_LEFT_CORNER) {
+                        if (left) *left = x;
+                        if (top) *top = y;
+                        if (right) *right = xr;
+                        if (bottom) *bottom = yb;
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
+static int find_highlighted_cell(const CaptureScreen &screen, int *x, int *y)
+{
+    for (int row = 0; row < 25; row++) {
+        for (int col = 0; col < 40; col++) {
+            if (screen.reverse_chars[row][col]) {
+                if (x) *x = col;
+                if (y) *y = row;
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static void get_popup_line(const CaptureScreen &screen, int row, char *out, int out_len)
+{
+    int left = 0;
+    int top = 0;
+    int right = 0;
+    int bottom = 0;
+    int width;
+
+    if (!find_popup_rect(screen, &left, &top, &right, &bottom)) {
+        if (out_len > 0) {
+            out[0] = 0;
+        }
+        return;
+    }
+
+    width = right - left - 1;
+    if (width < 0) {
+        width = 0;
+    }
+    if (width > out_len - 1) {
+        width = out_len - 1;
+    }
+    screen.get_slice(left + 1, top + 1 + row, width, out);
+}
+
+static int popup_corner_diagonal_distance(int popup_left, int popup_top, int popup_right, int popup_bottom,
+                                          int cursor_x, int cursor_y)
+{
+    int distances[4];
+    distances[0] = abs(popup_left - cursor_x) + abs(popup_top - cursor_y);
+    distances[1] = abs(popup_right - cursor_x) + abs(popup_top - cursor_y);
+    distances[2] = abs(popup_left - cursor_x) + abs(popup_bottom - cursor_y);
+    distances[3] = abs(popup_right - cursor_x) + abs(popup_bottom - cursor_y);
+    int best = distances[0];
+    for (int i = 1; i < 4; i++) {
+        if (distances[i] < best) {
+            best = distances[i];
+        }
+    }
+    return best;
+}
+
 static int test_disassembler(void)
 {
     Disassembled6502 decoded;
@@ -937,7 +1051,7 @@ static int test_parsers_and_formatters(void)
     state.base_addr = 0;
     state.disasm_offset = 2;
     state.illegal_enabled = false;
-    monitor_apply_goto(&state, 0x1235);
+    monitor_apply_go(&state, 0x1235);
     if (expect(state.current_addr == 0x1235 && state.base_addr == 0x1230 && state.disasm_offset == 0, "Goto state alignment failed.")) return 1;
 
     if (expect(monitor_parse_address("XYZ", &value) == MONITOR_ADDR, "Address validator failure.")) return 1;
@@ -2330,6 +2444,134 @@ static int test_scr_edit_writes_screen_code(void)
     return 0;
 }
 
+static int test_number_shortcut_routing(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[19];
+        const int keys[] = { 'A', 'E', 'N', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASM N-routing test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM N-routing test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM N-routing test: typing N failed.")) return 1;
+        if (expect(!find_popup_rect(screen, NULL, NULL, NULL, NULL),
+                   "ASM edit N must not open the framed Number popup.")) return 1;
+        screen.get_slice(16, 4, 18, line);
+        if (expect(strstr(line, " N_") == line,
+                   "ASM edit N must be routed into mnemonic entry instead of Number.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM N-routing test: RUN/STOP should close the opcode picker first.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM N-routing test: RUN/STOP should leave edit mode next.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASM N-routing test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'I', 'E', 'N', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASCII N-routing test: ASCII view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII N-routing test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII N-routing test: typing N failed.")) return 1;
+        if (expect(backend.read(0x0000) == 'N',
+                   "ASCII edit N must write the typed character instead of opening Number.")) return 1;
+        if (expect(!find_popup_rect(screen, NULL, NULL, NULL, NULL),
+                   "ASCII edit N must not open the framed Number popup.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII N-routing test: RUN/STOP should leave edit mode first.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASCII N-routing test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'V', 'E', 'N', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Screen N-routing test: Screen view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Screen N-routing test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Screen N-routing test: typing N failed.")) return 1;
+        if (expect(backend.read(0x0000) == monitor_screen_code_for_char('N'),
+                   "Screen edit N must write the typed screen code instead of opening Number.")) return 1;
+        if (expect(!find_popup_rect(screen, NULL, NULL, NULL, NULL),
+                   "Screen edit N must not open the framed Number popup.")) return 1;
+        if (expect(mon.poll(0) == 0, "Screen N-routing test: RUN/STOP should leave edit mode first.")) return 1;
+        if (expect(mon.poll(0) == 1, "Screen N-routing test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'A', 'N', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASM non-edit N test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM non-edit N test: Number popup open failed.")) return 1;
+        if (expect(find_popup_rect(screen, NULL, NULL, NULL, NULL),
+                   "ASM non-edit N must still open the framed Number popup.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM non-edit N test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASM non-edit N test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'E', 'N', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "HEX edit N test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "HEX edit N test: Number popup open failed.")) return 1;
+        if (expect(find_popup_rect(screen, NULL, NULL, NULL, NULL),
+                   "HEX edit N must keep opening the framed Number popup.")) return 1;
+        if (expect(mon.poll(0) == 0, "HEX edit N test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "HEX edit N test: RUN/STOP should leave edit mode first.")) return 1;
+        if (expect(mon.poll(0) == 1, "HEX edit N test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
 static int test_asm_edit_assemble_at_cursor(void)
 {
     TestUserInterface ui;
@@ -2455,6 +2697,162 @@ static int test_asm_edit_branch_two_parts(void)
     return 0;
 }
 
+static int test_asm_cpu_bank_cycle_preserves_screen_row(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeBankedMemoryBackend backend;
+    char header[39];
+    char status[39];
+    int row_before = -1;
+    int row_after = -1;
+    const int keys[] = { 'J', 'A', KEY_DOWN, KEY_DOWN, 'o', KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    backend.basic[0] = 0x20;
+    backend.basic[1] = 0x34;
+    backend.basic[2] = 0x12;
+    backend.basic[3] = 0x20;
+    backend.basic[4] = 0x78;
+    backend.basic[5] = 0x56;
+    backend.basic[6] = 0xEA;
+    backend.basic[7] = 0xEA;
+    for (uint16_t addr = 0xA000; addr < 0xA010; addr++) {
+        backend.ram[addr] = 0xEA;
+    }
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("A000", 1);
+    monitor_reset_saved_state();
+
+    MachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, "ASM bank-anchor test: goto failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "ASM bank-anchor test: ASM view switch failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "ASM bank-anchor test: first down failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "ASM bank-anchor test: second down failed.")) return 1;
+    if (expect(find_highlighted_cell(screen, NULL, &row_before),
+               "ASM bank-anchor test: highlighted row not found before CPU bank cycle.")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR ASM $A006") == header,
+               "ASM bank-anchor test must land on the third visible instruction before cycling banks.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "ASM bank-anchor test: CPU bank cycle failed.")) return 1;
+    if (expect(find_highlighted_cell(screen, NULL, &row_after),
+               "ASM bank-anchor test: highlighted row not found after CPU bank cycle.")) return 1;
+    if (expect(row_after == row_before,
+               "CPU bank cycling in ASM view must preserve the visible cursor row.")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR ASM $A006") == header,
+               "CPU bank cycling in ASM view must preserve the logical cursor address when possible.")) return 1;
+    screen.get_slice(1, 22, 38, status);
+    if (expect(strstr(status, "CPU0 ") == status,
+               "CPU bank cycling test must actually advance the visible CPU bank status.")) return 1;
+    if (expect(mon.poll(0) == 1, "ASM bank-anchor test: exit failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
+static int test_asm_page_up_keeps_screen_row(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    int keys[16];
+    int key_count = 0;
+    int row_before = -1;
+    int row_after = -1;
+    uint16_t addr = 0xC000;
+
+    for (int i = 0; i < 96; i++) {
+        if ((i % 3) == 0) {
+            backend.write(addr++, 0x20);
+            backend.write(addr++, 0x00);
+            backend.write(addr++, 0x10);
+        } else if ((i % 3) == 1) {
+            backend.write(addr++, 0xA9);
+            backend.write(addr++, 0x01);
+        } else {
+            backend.write(addr++, 0xEA);
+        }
+    }
+
+    keys[key_count++] = 'J';
+    keys[key_count++] = 'A';
+    for (int i = 0; i < 5; i++) keys[key_count++] = KEY_DOWN;
+    keys[key_count++] = KEY_PAGEDOWN;
+    keys[key_count++] = KEY_PAGEUP;
+    keys[key_count++] = KEY_BREAK;
+    FakeKeyboard kb(keys, key_count);
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C000", 1);
+    monitor_reset_saved_state();
+
+    MachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, "ASM page-up test: goto failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "ASM page-up test: ASM view switch failed.")) return 1;
+    for (int i = 0; i < 5; i++) {
+        if (expect(mon.poll(0) == 0, "ASM page-up test: initial down navigation failed.")) return 1;
+    }
+    if (expect(mon.poll(0) == 0, "ASM page-up test: page-down failed.")) return 1;
+    if (expect(find_highlighted_cell(screen, NULL, &row_before),
+               "ASM page-up test: highlighted row not found before page-up.")) return 1;
+    if (expect(mon.poll(0) == 0, "ASM page-up test: page-up failed.")) return 1;
+    if (expect(find_highlighted_cell(screen, NULL, &row_after),
+               "ASM page-up test: highlighted row not found after page-up.")) return 1;
+    if (expect(row_after == row_before,
+               "ASM page-up must preserve the visible cursor row like page-down.")) return 1;
+    if (expect(mon.poll(0) == 1, "ASM page-up test: exit failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
+static int test_opcode_picker_refilters_live(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char line[39];
+    const int keys[] = { 'A', 'E', 'J', 'S', KEY_DELETE, KEY_BREAK, KEY_BREAK, KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+
+    MachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, "Opcode picker refilter test: ASM view switch failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Opcode picker refilter test: edit mode entry failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Opcode picker refilter test: first letter failed.")) return 1;
+    screen.get_slice(1, 6, 38, line);
+    if (expect(strstr(line, "JMP") != NULL || strstr(line, "JSR") != NULL || strstr(line, "JAM") != NULL,
+               "Opcode picker refilter test must start with multiple visible suggestions for prefix J.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Opcode picker refilter test: second letter failed.")) return 1;
+    screen.get_slice(1, 5, 38, line);
+    if (expect(strstr(line, "JSR") != NULL,
+               "Opcode picker must immediately shrink to the matching mnemonic list as the prefix narrows.")) return 1;
+    screen.get_slice(1, 6, 38, line);
+    if (expect(strstr(line, "JSR") == NULL && strstr(line, "JMP") == NULL && strstr(line, "JAM") == NULL,
+               "Opcode picker must clear stale suggestion rows when the candidate list shrinks.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Opcode picker refilter test: delete failed.")) return 1;
+    screen.get_slice(1, 6, 38, line);
+    if (expect(strstr(line, "JSR") != NULL || strstr(line, "JMP") != NULL || strstr(line, "JAM") != NULL,
+               "Opcode picker must expand the suggestion list again when the prefix is deleted.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Opcode picker refilter test: RUN/STOP should close the picker first.")) return 1;
+    if (expect(mon.poll(0) == 0, "Opcode picker refilter test: RUN/STOP should leave edit mode next.")) return 1;
+    if (expect(mon.poll(0) == 1, "Opcode picker refilter test: exit failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
 static int test_cross_view_sync(void)
 {
     // Edit in HEX, view memory unchanged; Edit in SCR via 'A' key should be visible
@@ -2572,6 +2970,10 @@ static int test_clipboard_number_and_range(void)
         TestUserInterface ui;
         CaptureScreen screen;
         FakeMemoryBackend backend;
+        int left = 0;
+        int top = 0;
+        int right = 0;
+        int bottom = 0;
         int keys[16];
         int n = 0;
         keys[n++] = 'N';
@@ -2591,9 +2993,9 @@ static int test_clipboard_number_and_range(void)
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Number inspector did not open.")) return 1;
         if (expect(mon.poll(0) == 0, "Number inspector decimal navigation failed.")) return 1;
-        if (expect((unsigned char)screen.chars[4][6] == BORD_LOWER_RIGHT_CORNER,
+         if (expect(find_popup_rect(screen, &left, &top, &right, &bottom),
                "Number inspector must open as a framed popup inside the monitor content area.")) return 1;
-        if (expect(screen.reverse_chars[7][7],
+        if (expect(screen.reverse_chars[top + 3][left + 1],
                "Number inspector must allow navigating to the decimal representation.")) return 1;
         if (expect(mon.poll(0) == 0, "Number inspector CBM-C copy failed.")) return 1;
         if (expect(mon.poll(0) == 0, "Binary view switch after number copy failed.")) return 1;
@@ -2874,7 +3276,7 @@ static int test_number_popup_edit_and_commit(void)
     TestUserInterface ui;
     CaptureScreen screen;
     FakeMemoryBackend backend;
-    char line[25];
+    char line[32];
     const int keys[] = { 'N', 'F', 'A', 'E', '1', KEY_DELETE, KEY_DELETE, KEY_RETURN, KEY_BREAK, KEY_BREAK };
     FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
 
@@ -2886,48 +3288,57 @@ static int test_number_popup_edit_and_commit(void)
     mon.init(&screen, &kb);
 
     if (expect(mon.poll(0) == 0, "Number popup test: open failed.")) return 1;
-    screen.get_slice(7, 5, 24, line);
+    get_popup_line(screen, 0, line, sizeof(line));
     if (expect(strstr(line, "MONITOR NUM $0000 BYTE") == line,
                "Number popup must open in BYTE mode with the current address in the framed header.")) return 1;
 
     if (expect(mon.poll(0) == 0, "Number popup test: typing first hex digit failed.")) return 1;
-    screen.get_slice(7, 6, 24, line);
+    get_popup_line(screen, 1, line, sizeof(line));
     if (expect(strstr(line, "Hex      $0F") == line,
                "Number popup must zero-pad one-digit hex input as a BYTE preview.")) return 1;
 
     if (expect(mon.poll(0) == 0, "Number popup test: typing second hex digit failed.")) return 1;
-    screen.get_slice(7, 6, 24, line);
+    get_popup_line(screen, 1, line, sizeof(line));
     if (expect(strstr(line, "Hex      $FA") == line,
                "Number popup must keep two-digit hex input in BYTE mode.")) return 1;
 
     if (expect(mon.poll(0) == 0, "Number popup test: typing third hex digit failed.")) return 1;
-    screen.get_slice(7, 5, 24, line);
+    get_popup_line(screen, 0, line, sizeof(line));
     if (expect(strstr(line, "MONITOR NUM $0000 WORD") == line,
                "Number popup must switch to WORD mode on the third hex digit.")) return 1;
-    screen.get_slice(7, 6, 24, line);
+    get_popup_line(screen, 1, line, sizeof(line));
     if (expect(strstr(line, "Hex      $0FAE") == line,
                "Number popup must preserve leading zeroes when hex input grows to WORD width.")) return 1;
+    get_popup_line(screen, 3, line, sizeof(line));
+    if (expect(strcmp(line, "Binary   0000111110101110") == 0,
+               "Number popup WORD binary preview must show all 16 bits without truncation.")) return 1;
 
     if (expect(mon.poll(0) == 0, "Number popup test: typing fourth hex digit failed.")) return 1;
-    screen.get_slice(7, 6, 24, line);
+    get_popup_line(screen, 1, line, sizeof(line));
     if (expect(strstr(line, "Hex      $FAE1") == line,
                "Number popup must show the full four-digit hex WORD preview.")) return 1;
+    get_popup_line(screen, 3, line, sizeof(line));
+    if (expect(strcmp(line, "Binary   1111101011100001") == 0,
+               "Number popup must show the full 16-bit WORD binary preview for $FAE1.")) return 1;
 
     if (expect(mon.poll(0) == 0, "Number popup test: first delete failed.")) return 1;
-    screen.get_slice(7, 5, 24, line);
+    get_popup_line(screen, 0, line, sizeof(line));
     if (expect(strstr(line, "MONITOR NUM $0000 WORD") == line,
                "Deleting from four to three hex digits must keep the Number popup in WORD mode.")) return 1;
-    screen.get_slice(7, 6, 24, line);
+    get_popup_line(screen, 1, line, sizeof(line));
     if (expect(strstr(line, "Hex      $0FAE") == line,
                "Deleting one hex digit must keep the remaining WORD preview intact.")) return 1;
 
     if (expect(mon.poll(0) == 0, "Number popup test: second delete failed.")) return 1;
-    screen.get_slice(7, 5, 24, line);
+    get_popup_line(screen, 0, line, sizeof(line));
     if (expect(strstr(line, "MONITOR NUM $0000 BYTE") == line,
                "Deleting from three to two hex digits must fall back to BYTE mode.")) return 1;
-    screen.get_slice(7, 6, 24, line);
+    get_popup_line(screen, 1, line, sizeof(line));
     if (expect(strstr(line, "Hex      $FA") == line,
                "Deleting back to two hex digits must preserve the BYTE preview value.")) return 1;
+    get_popup_line(screen, 3, line, sizeof(line));
+    if (expect(strstr(line, "Binary   11111010") == line && line[17] == ' ',
+               "Number popup BYTE binary preview must remain 8 bits wide.")) return 1;
 
     if (expect(mon.poll(0) == 0, "Number popup test: Enter commit failed.")) return 1;
     if (expect(backend.read(0x0000) == 0xFA && backend.read(0x0001) == 0x00,
@@ -2945,7 +3356,11 @@ static int test_number_popup_word_commit_and_sticky_row(void)
         TestUserInterface ui;
         CaptureScreen screen;
         FakeMemoryBackend backend;
-        char line[25];
+        char line[32];
+        int left = 0;
+        int top = 0;
+        int right = 0;
+        int bottom = 0;
         const int keys[] = {
             'N', KEY_DOWN, KEY_DOWN, KEY_DOWN, 'A', 'B', KEY_RETURN,
             KEY_ESCAPE, KEY_RIGHT, 'N', 'C', KEY_RETURN, KEY_BREAK, KEY_BREAK
@@ -2963,15 +3378,17 @@ static int test_number_popup_word_commit_and_sticky_row(void)
         if (expect(mon.poll(0) == 0, "ASCII Number popup test: first row navigation failed.")) return 1;
         if (expect(mon.poll(0) == 0, "ASCII Number popup test: second row navigation failed.")) return 1;
         if (expect(mon.poll(0) == 0, "ASCII Number popup test: third row navigation failed.")) return 1;
-        if (expect(screen.reverse_chars[9][7],
+        if (expect(find_popup_rect(screen, &left, &top, &right, &bottom),
+               "Number popup ASCII-row test must keep the popup framed.")) return 1;
+        if (expect(screen.reverse_chars[top + 5][left + 1],
                    "Number popup must allow selecting the ASCII row.")) return 1;
 
         if (expect(mon.poll(0) == 0, "ASCII Number popup test: first character failed.")) return 1;
         if (expect(mon.poll(0) == 0, "ASCII Number popup test: second character failed.")) return 1;
-        screen.get_slice(7, 5, 24, line);
+        get_popup_line(screen, 0, line, sizeof(line));
         if (expect(strstr(line, "MONITOR NUM $0000 WORD") == line,
                    "Two ASCII characters must switch the Number popup into WORD mode.")) return 1;
-        screen.get_slice(7, 9, 24, line);
+        get_popup_line(screen, 4, line, sizeof(line));
         if (expect(strstr(line, "ASCII    AB") == line,
                    "ASCII Number popup preview must show both typed characters without extra annotations.")) return 1;
         if (expect(mon.poll(0) == 0, "ASCII Number popup test: Enter commit failed.")) return 1;
@@ -2981,10 +3398,12 @@ static int test_number_popup_word_commit_and_sticky_row(void)
         if (expect(mon.poll(0) == 0, "ASCII Number popup test: close after commit failed.")) return 1;
         if (expect(mon.poll(0) == 0, "ASCII Number popup test: move to next address failed.")) return 1;
         if (expect(mon.poll(0) == 0, "ASCII Number popup test: reopen failed.")) return 1;
-        screen.get_slice(10, 5, 24, line);
+        get_popup_line(screen, 0, line, sizeof(line));
         if (expect(strstr(line, "MONITOR NUM $0001 BYTE") == line,
                    "Reopening the Number popup must use the current address and a fresh BYTE preview.")) return 1;
-        if (expect(screen.reverse_chars[9][10],
+        if (expect(find_popup_rect(screen, &left, &top, &right, &bottom),
+               "Number popup reopen test must keep the popup framed.")) return 1;
+        if (expect(screen.reverse_chars[top + 5][left + 1],
                    "The Number popup must remember the selected row across close and reopen in one monitor session.")) return 1;
 
         if (expect(mon.poll(0) == 0, "ASCII Number popup test: repeated-entry character failed.")) return 1;
@@ -3001,7 +3420,7 @@ static int test_number_popup_word_commit_and_sticky_row(void)
         TestUserInterface ui;
         CaptureScreen screen;
         FakeMemoryBackend backend;
-        char line[25];
+        char line[32];
         const int keys[] = { 'N', KEY_DOWN, KEY_DOWN, KEY_DOWN, KEY_DOWN, 'A', 'B', KEY_RETURN, KEY_BREAK, KEY_BREAK };
         FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
 
@@ -3018,7 +3437,7 @@ static int test_number_popup_word_commit_and_sticky_row(void)
         }
         if (expect(mon.poll(0) == 0, "Screen Number popup test: first character failed.")) return 1;
         if (expect(mon.poll(0) == 0, "Screen Number popup test: second character failed.")) return 1;
-        screen.get_slice(7, 10, 24, line);
+        get_popup_line(screen, 5, line, sizeof(line));
         if (expect(strstr(line, "Screen   AB") == line,
                    "Screen Number popup preview must show screen characters without redundant hex suffixes.")) return 1;
         if (expect(strchr(line, '(') == NULL,
@@ -3032,6 +3451,269 @@ static int test_number_popup_word_commit_and_sticky_row(void)
         mon.deinit();
     }
 
+    return 0;
+}
+
+static int test_number_popup_placement_and_overlay_redraw(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        int cursor_x = 0;
+        int cursor_y = 0;
+        int left = 0;
+        int top = 0;
+        int right = 0;
+        int bottom = 0;
+        const int keys[] = { 'N', '1', KEY_DOWN, KEY_DELETE, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+
+        if (expect(find_highlighted_cell(screen, &cursor_x, &cursor_y),
+                   "Placement test: initial cursor highlight not found.")) return 1;
+        if (expect(mon.poll(0) == 0, "Placement test: open failed.")) return 1;
+        if (expect(find_popup_rect(screen, &left, &top, &right, &bottom),
+                   "Placement test: framed popup not found.")) return 1;
+        if (expect(left == cursor_x + 1 && top == cursor_y + 1,
+                   "Top-left Number popup must be diagonally down-right from the invoking cursor when space allows.")) return 1;
+        if (expect(!(cursor_x >= left && cursor_x <= right && cursor_y >= top && cursor_y <= bottom),
+                   "Number popup must not cover the invoking cursor cell.")) return 1;
+        if (expect(screen.reverse_chars[cursor_y][cursor_x],
+                   "The invoking cursor cell must remain visible after opening the Number popup.")) return 1;
+
+        screen.reset_write_counts();
+        if (expect(mon.poll(0) == 0, "Placement test: typing should keep popup open.")) return 1;
+        if (expect(screen.count_writes_outside_rect(left, top, right, bottom) == 0,
+                   "Typing inside the Number popup must not redraw uncovered monitor cells.")) return 1;
+        screen.reset_write_counts();
+        if (expect(mon.poll(0) == 0, "Placement test: row navigation should keep popup open.")) return 1;
+        if (expect(screen.count_writes_outside_rect(left, top, right, bottom) == 0,
+                   "Popup row navigation must not redraw uncovered monitor cells.")) return 1;
+        screen.reset_write_counts();
+        if (expect(mon.poll(0) == 0, "Placement test: delete should keep popup open.")) return 1;
+        if (expect(screen.count_writes_outside_rect(left, top, right, bottom) == 0,
+                   "Deleting inside the Number popup must not redraw uncovered monitor cells.")) return 1;
+
+        if (expect(mon.poll(0) == 0, "Placement test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "Placement test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        int cursor_x = 0;
+        int cursor_y = 0;
+        int left = 0;
+        int top = 0;
+        int right = 0;
+        int bottom = 0;
+        int keys[32];
+        int n = 0;
+        keys[n++] = 'I';
+        for (int i = 0; i < 22; i++) keys[n++] = KEY_RIGHT;
+        keys[n++] = 'N';
+        keys[n++] = KEY_BREAK;
+        keys[n++] = KEY_BREAK;
+        FakeKeyboard kb(keys, n);
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Top-right placement test: ASCII view switch failed.")) return 1;
+        for (int i = 0; i < 22; i++) {
+            if (expect(mon.poll(0) == 0, "Top-right placement test: cursor movement failed.")) return 1;
+        }
+        if (expect(find_highlighted_cell(screen, &cursor_x, &cursor_y),
+                   "Top-right placement test: cursor highlight not found.")) return 1;
+        if (expect(mon.poll(0) == 0, "Top-right placement test: open failed.")) return 1;
+        if (expect(find_popup_rect(screen, &left, &top, &right, &bottom),
+                   "Top-right placement test: framed popup not found.")) return 1;
+        if (expect(right == cursor_x - 1 && top == cursor_y + 1,
+                   "Top-right Number popup must be diagonally down-left from the invoking cursor when space allows.")) return 1;
+        if (expect(mon.poll(0) == 0, "Top-right placement test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "Top-right placement test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        int cursor_x = 0;
+        int cursor_y = 0;
+        int left = 0;
+        int top = 0;
+        int right = 0;
+        int bottom = 0;
+        int keys[32];
+        int n = 0;
+        for (int i = 0; i < 17; i++) keys[n++] = KEY_DOWN;
+        keys[n++] = 'N';
+        keys[n++] = KEY_BREAK;
+        keys[n++] = KEY_BREAK;
+        FakeKeyboard kb(keys, n);
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 17; i++) {
+            if (expect(mon.poll(0) == 0, "Bottom-left placement test: cursor movement failed.")) return 1;
+        }
+        if (expect(find_highlighted_cell(screen, &cursor_x, &cursor_y),
+                   "Bottom-left placement test: cursor highlight not found.")) return 1;
+        if (expect(mon.poll(0) == 0, "Bottom-left placement test: open failed.")) return 1;
+        if (expect(find_popup_rect(screen, &left, &top, &right, &bottom),
+                   "Bottom-left placement test: framed popup not found.")) return 1;
+        if (expect(left == cursor_x + 1 && bottom == cursor_y - 1,
+                   "Bottom-left Number popup must be diagonally up-right from the invoking cursor when space allows.")) return 1;
+        if (expect(mon.poll(0) == 0, "Bottom-left placement test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "Bottom-left placement test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        int cursor_x = 0;
+        int cursor_y = 0;
+        int left = 0;
+        int top = 0;
+        int right = 0;
+        int bottom = 0;
+        int keys[64];
+        int n = 0;
+        keys[n++] = 'I';
+        for (int i = 0; i < 17; i++) keys[n++] = KEY_DOWN;
+        for (int i = 0; i < 22; i++) keys[n++] = KEY_RIGHT;
+        keys[n++] = 'N';
+        keys[n++] = KEY_BREAK;
+        keys[n++] = KEY_BREAK;
+        FakeKeyboard kb(keys, n);
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Bottom-right placement test: ASCII view switch failed.")) return 1;
+        for (int i = 0; i < 39; i++) {
+            if (expect(mon.poll(0) == 0, "Bottom-right placement test: cursor movement failed.")) return 1;
+        }
+        if (expect(find_highlighted_cell(screen, &cursor_x, &cursor_y),
+                   "Bottom-right placement test: cursor highlight not found.")) return 1;
+        if (expect(mon.poll(0) == 0, "Bottom-right placement test: open failed.")) return 1;
+        if (expect(find_popup_rect(screen, &left, &top, &right, &bottom),
+                   "Bottom-right placement test: framed popup not found.")) return 1;
+        if (expect(right == cursor_x - 1 && bottom == cursor_y - 1,
+                   "Bottom-right Number popup must be diagonally up-left from the invoking cursor when space allows.")) return 1;
+        if (expect(mon.poll(0) == 0, "Bottom-right placement test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "Bottom-right placement test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        int cursor_x = 0;
+        int cursor_y = 0;
+        int left = 0;
+        int top = 0;
+        int right = 0;
+        int bottom = 0;
+        int keys[40];
+        int n = 0;
+        keys[n++] = 'I';
+        for (int i = 0; i < 8; i++) keys[n++] = KEY_DOWN;
+        for (int i = 0; i < 22; i++) keys[n++] = KEY_RIGHT;
+        keys[n++] = 'N';
+        keys[n++] = KEY_BREAK;
+        keys[n++] = KEY_BREAK;
+        FakeKeyboard kb(keys, n);
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Center placement test: ASCII view switch failed.")) return 1;
+        for (int i = 0; i < 30; i++) {
+            if (expect(mon.poll(0) == 0, "Center placement test: cursor movement failed.")) return 1;
+        }
+        if (expect(find_highlighted_cell(screen, &cursor_x, &cursor_y),
+                   "Center placement test: cursor highlight not found.")) return 1;
+        if (expect(mon.poll(0) == 0, "Center placement test: open failed.")) return 1;
+        if (expect(find_popup_rect(screen, &left, &top, &right, &bottom),
+                   "Center placement test: framed popup not found.")) return 1;
+        if (expect(!(cursor_x >= left && cursor_x <= right && cursor_y >= top && cursor_y <= bottom),
+                   "Mid-row Number popup placement must keep the invoking cursor visible.")) return 1;
+        if (expect(left > 0 && top > 2 && right < 39 && bottom < 22,
+                   "Mid-row Number popup placement must stay inside the monitor content bounds.")) return 1;
+        if (expect(mon.poll(0) == 0, "Center placement test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "Center placement test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_disassembly_up_keeps_screen_row(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    int row_before = -1;
+    int row_after = -1;
+    const int keys[] = { 'A', 'J', KEY_DOWN, KEY_DOWN, KEY_UP, KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    backend.write(0x0000, 0x4C);
+    backend.write(0x0001, 0x00);
+    backend.write(0x0002, 0xEA);
+    backend.write(0x0003, 0xEA);
+    backend.write(0x0004, 0xEA);
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("0001", 1);
+    monitor_reset_saved_state();
+
+    MachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+
+    if (expect(mon.poll(0) == 0, "Disassembly row test: ASM view switch failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Disassembly row test: goto failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Disassembly row test: first step down failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Disassembly row test: second step down failed.")) return 1;
+    if (expect(find_highlighted_cell(screen, NULL, &row_before),
+               "Disassembly row test: highlighted current line not found before stepping up.")) return 1;
+    if (expect(row_before > 4,
+               "Disassembly row test must place the cursor away from the top row before stepping up.")) return 1;
+    if (expect(mon.poll(0) == 0, "Disassembly row test: step up failed.")) return 1;
+    if (expect(find_highlighted_cell(screen, NULL, &row_after),
+               "Disassembly row test: highlighted current line not found after stepping up.")) return 1;
+    if (expect(row_after == row_before - 1,
+               "Stepping upward in Assembly view must move the highlighted line up by one row without snapping it to the top.")) return 1;
+    if (expect(mon.poll(0) == 1, "Disassembly row test: exit failed.")) return 1;
+    mon.deinit();
     return 0;
 }
 
@@ -3407,18 +4089,24 @@ int main()
     if (test_screen_code_reverse()) return 1;
     if (test_logical_delete_per_view()) return 1;
     if (test_scr_edit_writes_screen_code()) return 1;
+    if (test_number_shortcut_routing()) return 1;
     if (test_asm_edit_assemble_at_cursor()) return 1;
     if (test_asm_edit_direct_typing()) return 1;
     if (test_asm_edit_direct_typing_immediate()) return 1;
     if (test_asm_edit_branch_two_parts()) return 1;
+    if (test_asm_cpu_bank_cycle_preserves_screen_row()) return 1;
+    if (test_asm_page_up_keeps_screen_row()) return 1;
+    if (test_opcode_picker_refilters_live()) return 1;
     if (test_cross_view_sync()) return 1;
     if (test_binary_bit_navigation_and_width()) return 1;
     if (test_clipboard_number_and_range()) return 1;
     if (test_number_popup_edit_and_commit()) return 1;
     if (test_number_popup_word_commit_and_sticky_row()) return 1;
+    if (test_number_popup_placement_and_overlay_redraw()) return 1;
     if (test_fixed_prompt_widths()) return 1;
     if (test_asm_range_copy_paste()) return 1;
     if (test_asm_paste_keeps_viewport_position()) return 1;
+    if (test_disassembly_up_keeps_screen_row()) return 1;
     if (test_illegal_mode_header_label()) return 1;
     if (test_hunt_and_compare_picker_navigation()) return 1;
     if (test_prompt_cancel_and_empty_clipboard()) return 1;

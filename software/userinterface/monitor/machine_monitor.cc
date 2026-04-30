@@ -45,10 +45,10 @@ static const char *const monitor_help_lines[] = {
 static bool monitor_saved_state_valid = false;
 static MachineMonitorState monitor_saved_state = { MONITOR_VIEW_HEX, 0x0801, 0x0801, 0, false, 0x07 };
 
-// Persistent LOAD/SAVE/GOTO state (across monitor invocations within a single
+// Persistent LOAD/SAVE/GO state (across monitor invocations within a single
 // firmware run). Defaults match the spec: a "press L, RETURN, RETURN" sequence
 // loads a PRG to its embedded address, "press S, RETURN, RETURN" saves the
-// canonical $0800-$9FFF range, and GOTO pre-fills with the current cursor
+// canonical $0800-$9FFF range, and GO pre-fills with the current cursor
 // address (handled at the call site).
 static bool     monitor_last_load_use_prg = true;
 static uint16_t monitor_last_load_start = 0x0801;
@@ -60,8 +60,8 @@ static uint16_t monitor_last_save_start = 0x0800;
 static uint16_t monitor_last_save_end = 0x9FFF;
 static char     monitor_last_save_name[40] = "";
 
-static bool     monitor_last_goto_valid = false;
-static uint16_t monitor_last_goto_addr = 0;
+static bool     monitor_last_go_valid = false;
+static uint16_t monitor_last_go_addr = 0;
 
 // Persistent BINARY view configuration. Width is byte-based only; every byte
 // renders as 8 bits and R is reserved for range mode.
@@ -87,7 +87,7 @@ enum {
     MONITOR_NUMBER_ROW_SCREEN,
     MONITOR_NUMBER_ROW_COUNT,
     MONITOR_NUMBER_EDIT_BUFFER_MAX = 16,
-    MONITOR_NUMBER_POPUP_INNER_WIDTH = 24,
+    MONITOR_NUMBER_POPUP_INNER_WIDTH = 25,
     MONITOR_NUMBER_POPUP_INNER_HEIGHT = 8,
     MONITOR_NUMBER_POPUP_WIDTH = MONITOR_NUMBER_POPUP_INNER_WIDTH + 2,
     MONITOR_NUMBER_POPUP_HEIGHT = MONITOR_NUMBER_POPUP_INNER_HEIGHT + 2,
@@ -598,8 +598,8 @@ void monitor_reset_saved_state(void)
     monitor_last_save_end = 0x9FFF;
     monitor_last_save_name[0] = 0;
 
-    monitor_last_goto_valid = false;
-    monitor_last_goto_addr = 0;
+    monitor_last_go_valid = false;
+    monitor_last_go_addr = 0;
 
     monitor_binary_bytes_per_row = 1;
 }
@@ -609,7 +609,7 @@ void monitor_invalidate_saved_state(void)
     monitor_saved_state_valid = false;
 }
 
-void monitor_apply_goto(MachineMonitorState *state, uint16_t address)
+void monitor_apply_go(MachineMonitorState *state, uint16_t address)
 {
     uint16_t span = row_span_for_view(state->view, monitor_binary_bytes_per_row);
     state->current_addr = address;
@@ -1153,8 +1153,8 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     last_save_end = monitor_last_save_end;
     strncpy(last_save_name, monitor_last_save_name, sizeof(last_save_name) - 1);
     last_save_name[sizeof(last_save_name) - 1] = 0;
-    last_goto_valid = monitor_last_goto_valid;
-    last_goto_addr = monitor_last_goto_addr;
+    last_go_valid = monitor_last_go_valid;
+    last_go_addr = monitor_last_go_addr;
     binary_bytes_per_row = monitor_binary_bytes_per_row;
     clipboard.data = NULL;
     clipboard.length = 0;
@@ -1193,6 +1193,7 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     opcode_candidate_count = 0;
     opcode_selected = 0;
     opcode_top = 0;
+    opcode_drawn_rows = 0;
     opcode_operand[0] = 0;
     opcode_operand_len = 0;
     current_vic_bank = 0;
@@ -1211,7 +1212,7 @@ uint8_t MachineMonitor :: binary_byte_stride(void) const
     return monitor_binary_byte_stride(binary_bytes_per_row);
 }
 
-void MachineMonitor :: apply_goto_local(uint16_t address)
+void MachineMonitor :: apply_go_local(uint16_t address)
 {
     uint16_t span = row_span();
     state.current_addr = address;
@@ -1225,6 +1226,16 @@ void MachineMonitor :: apply_goto_local(uint16_t address)
         state.base_addr = address;
     }
     state.disasm_offset = 0;
+}
+
+bool MachineMonitor :: number_shortcut_allowed(void) const
+{
+    if (!edit_mode) {
+        return true;
+    }
+    return state.view != MONITOR_VIEW_ASM &&
+           state.view != MONITOR_VIEW_ASCII &&
+           state.view != MONITOR_VIEW_SCREEN;
 }
 
 uint8_t MachineMonitor :: canonical_read(uint16_t address)
@@ -1537,6 +1548,27 @@ void MachineMonitor :: number_picker_place_popup(void)
     int anchor_y = 1;
     int max_x;
     int max_y;
+    int best_x = 0;
+    int best_y = 1;
+    int best_distance = 0x7FFFFFFF;
+
+    enum PopupCorner {
+        POPUP_CORNER_TOP_LEFT = 0,
+        POPUP_CORNER_TOP_RIGHT,
+        POPUP_CORNER_BOTTOM_LEFT,
+        POPUP_CORNER_BOTTOM_RIGHT,
+    };
+    struct PopupPlacement {
+        int raw_x;
+        int raw_y;
+        PopupCorner corner;
+    };
+    static const PopupPlacement placements[] = {
+        { 1, 1, POPUP_CORNER_TOP_LEFT },
+        { -MONITOR_NUMBER_POPUP_WIDTH, 1, POPUP_CORNER_TOP_RIGHT },
+        { 1, -MONITOR_NUMBER_POPUP_HEIGHT, POPUP_CORNER_BOTTOM_LEFT },
+        { -MONITOR_NUMBER_POPUP_WIDTH, -MONITOR_NUMBER_POPUP_HEIGHT, POPUP_CORNER_BOTTOM_RIGHT },
+    };
 
     number_picker_anchor(&anchor_x, &anchor_y);
 
@@ -1549,21 +1581,69 @@ void MachineMonitor :: number_picker_place_popup(void)
         max_y = 1;
     }
 
-    number_popup_x = (anchor_x < (window->get_size_x() / 2)) ? anchor_x : (anchor_x - MONITOR_NUMBER_POPUP_WIDTH + 1);
-    number_popup_y = (anchor_y <= (content_height / 2)) ? anchor_y : (anchor_y - MONITOR_NUMBER_POPUP_HEIGHT + 1);
+    for (size_t i = 0; i < (sizeof(placements) / sizeof(placements[0])); i++) {
+        int x = anchor_x + placements[i].raw_x;
+        int y = anchor_y + placements[i].raw_y;
+        if (x >= 0 && x <= max_x && y >= 1 && y <= max_y) {
+            number_popup_x = x;
+            number_popup_y = y;
+            return;
+        }
+    }
 
-    if (number_popup_x < 0) {
-        number_popup_x = 0;
+    for (size_t i = 0; i < (sizeof(placements) / sizeof(placements[0])); i++) {
+        int x = anchor_x + placements[i].raw_x;
+        int y = anchor_y + placements[i].raw_y;
+        int corner_x;
+        int corner_y;
+        int distance;
+
+        if (x < 0) {
+            x = 0;
+        } else if (x > max_x) {
+            x = max_x;
+        }
+        if (y < 1) {
+            y = 1;
+        } else if (y > max_y) {
+            y = max_y;
+        }
+
+        if (anchor_x >= x && anchor_x < (x + MONITOR_NUMBER_POPUP_WIDTH) &&
+            anchor_y >= y && anchor_y < (y + MONITOR_NUMBER_POPUP_HEIGHT)) {
+            continue;
+        }
+
+        switch (placements[i].corner) {
+            case POPUP_CORNER_TOP_LEFT:
+                corner_x = x;
+                corner_y = y;
+                break;
+            case POPUP_CORNER_TOP_RIGHT:
+                corner_x = x + MONITOR_NUMBER_POPUP_WIDTH - 1;
+                corner_y = y;
+                break;
+            case POPUP_CORNER_BOTTOM_LEFT:
+                corner_x = x;
+                corner_y = y + MONITOR_NUMBER_POPUP_HEIGHT - 1;
+                break;
+            case POPUP_CORNER_BOTTOM_RIGHT:
+            default:
+                corner_x = x + MONITOR_NUMBER_POPUP_WIDTH - 1;
+                corner_y = y + MONITOR_NUMBER_POPUP_HEIGHT - 1;
+                break;
+        }
+
+        distance = abs(corner_x - anchor_x) + abs(corner_y - anchor_y);
+        if (distance < best_distance) {
+            best_distance = distance;
+            best_x = x;
+            best_y = y;
+        }
     }
-    if (number_popup_x > max_x) {
-        number_popup_x = max_x;
-    }
-    if (number_popup_y < 1) {
-        number_popup_y = 1;
-    }
-    if (number_popup_y > max_y) {
-        number_popup_y = max_y;
-    }
+
+    number_popup_x = best_x;
+    number_popup_y = best_y;
 }
 
 void MachineMonitor :: number_picker_commit(void)
@@ -1600,12 +1680,12 @@ int MachineMonitor :: number_picker_handle_key(int key)
     }
     if (key == KEY_UP) {
         number_picker_set_row(number_selected - 1);
-        draw();
+        refresh_popup_overlay();
         return 0;
     }
     if (key == KEY_DOWN) {
         number_picker_set_row(number_selected + 1);
-        draw();
+        refresh_popup_overlay();
         return 0;
     }
     if (key == KEY_CTRL_C) {
@@ -1628,7 +1708,7 @@ int MachineMonitor :: number_picker_handle_key(int key)
             number_edit_length--;
             number_edit_buffer[number_edit_length] = 0;
             number_picker_update_preview_from_buffer();
-            draw();
+            refresh_popup_overlay();
         }
         return 0;
     }
@@ -1656,7 +1736,7 @@ int MachineMonitor :: number_picker_handle_key(int key)
     number_edit_buffer[number_edit_length] = 0;
     number_preview_value = value;
     number_word = word;
-    draw();
+    refresh_popup_overlay();
     return 0;
 }
 
@@ -1854,6 +1934,77 @@ uint16_t MachineMonitor :: disasm_prev_addr(uint16_t address)
     return (uint16_t)(address - 1);
 }
 
+uint16_t MachineMonitor :: disasm_prev_visible_addr(uint16_t address)
+{
+    uint16_t addr = state.base_addr;
+    int max_scan = (content_height > 0 ? content_height : 1) + 64;
+
+    if (addr == address) {
+        return disasm_prev_addr(address);
+    }
+
+    for (int row = 0; row < max_scan; row++) {
+        uint16_t next = disasm_next_addr(addr);
+        if (next == address) {
+            return addr;
+        }
+        if (next == addr) {
+            break;
+        }
+        addr = next;
+    }
+    return disasm_prev_addr(address);
+}
+
+int MachineMonitor :: disasm_visible_row(uint16_t address) const
+{
+    uint16_t addr = state.base_addr;
+    int max_scan = (content_height > 0 ? content_height : 1) + 64;
+
+    for (int row = 0; row < max_scan; row++) {
+        uint8_t len = disasm_length(addr);
+        if (len == 0) {
+            len = 1;
+        }
+        if (address >= addr && address < (uint16_t)(addr + len)) {
+            return row;
+        }
+        addr = (uint16_t)(addr + len);
+    }
+    return -1;
+}
+
+uint16_t MachineMonitor :: disasm_advance_rows(uint16_t address, int rows)
+{
+    while (rows > 0) {
+        address = disasm_next_addr(address);
+        rows--;
+    }
+    return address;
+}
+
+uint16_t MachineMonitor :: disasm_rewind_rows(uint16_t address, int rows)
+{
+    while (rows > 0) {
+        address = disasm_prev_addr(address);
+        rows--;
+    }
+    return address;
+}
+
+void MachineMonitor :: restore_disasm_cursor_row(int row)
+{
+    if (row < 0) {
+        ensure_disasm_visible();
+        return;
+    }
+    if (content_height > 0 && row >= content_height) {
+        row = content_height - 1;
+    }
+    state.base_addr = disasm_rewind_rows(state.current_addr, row);
+    ensure_disasm_visible();
+}
+
 void MachineMonitor :: ensure_disasm_visible()
 {
     if (state.view != MONITOR_VIEW_ASM) {
@@ -1886,7 +2037,7 @@ void MachineMonitor :: ensure_disasm_visible()
 void MachineMonitor :: step_disassembly(int lines)
 {
     while (lines < 0) {
-        state.current_addr = disasm_prev_addr(state.current_addr);
+        state.current_addr = disasm_prev_visible_addr(state.current_addr);
         lines++;
     }
     while (lines > 0) {
@@ -1894,6 +2045,28 @@ void MachineMonitor :: step_disassembly(int lines)
         lines--;
     }
     ensure_disasm_visible();
+    pending_hex_nibble = -1;
+    if (edit_mode) {
+        reset_edit_blink();
+    }
+}
+
+void MachineMonitor :: page_disassembly(int lines)
+{
+    int row = disasm_visible_row(state.current_addr);
+
+    if (row < 0) {
+        step_disassembly(lines);
+        return;
+    }
+
+    if (lines > 0) {
+        state.base_addr = disasm_advance_rows(state.base_addr, lines);
+    } else if (lines < 0) {
+        state.base_addr = disasm_rewind_rows(state.base_addr, -lines);
+    }
+
+    state.current_addr = disasm_advance_rows(state.base_addr, row);
     pending_hex_nibble = -1;
     if (edit_mode) {
         reset_edit_blink();
@@ -2085,6 +2258,26 @@ void MachineMonitor :: draw_number_picker()
                             (row >= 1 && row <= 5 && (row - 1) == number_selected) ? 0 : -1,
                             MONITOR_NUMBER_POPUP_INNER_WIDTH);
     }
+}
+
+void MachineMonitor :: refresh_popup_overlay()
+{
+    if (!window || !screen) {
+        return;
+    }
+    if (screen->prefers_full_refresh()) {
+        draw();
+        return;
+    }
+    if (!help_visible && !hunt_picker_active) {
+        if (opcode_picker_active) {
+            draw_opcode_picker();
+        }
+        if (number_picker_active) {
+            draw_number_picker();
+        }
+    }
+    screen->sync();
 }
 
 void MachineMonitor :: draw_hex_row(int y, uint16_t addr, const uint8_t *bytes)
@@ -2430,15 +2623,21 @@ void MachineMonitor :: draw_opcode_picker()
     if (box_x + box_w > width) box_x = width - box_w;
     if (box_x < 0) box_x = 0;
 
-    int max_rows = window->get_size_y() - 2 - anchor_row;
-    if (max_rows < 3) max_rows = 3;
+    int max_rows = content_height - anchor_row;
+    if (max_rows < 0) max_rows = 0;
     int visible = opcode_candidate_count;
-    if (visible > max_rows - 1) visible = max_rows - 1;
-    if (visible < 1) visible = 1;
+    if (visible > max_rows) visible = max_rows;
+    if (visible < 0) visible = 0;
+    int rows_to_draw = opcode_drawn_rows;
+    if (rows_to_draw < visible) rows_to_draw = visible;
 
     // Adjust scroll window.
-    if (opcode_selected < opcode_top) opcode_top = opcode_selected;
-    if (opcode_selected >= opcode_top + visible) opcode_top = opcode_selected - visible + 1;
+    if (visible > 0) {
+        if (opcode_selected < opcode_top) opcode_top = opcode_selected;
+        if (opcode_selected >= opcode_top + visible) opcode_top = opcode_selected - visible + 1;
+    } else {
+        opcode_top = 0;
+    }
     if (opcode_top < 0) opcode_top = 0;
 
     char line[40];
@@ -2463,14 +2662,15 @@ void MachineMonitor :: draw_opcode_picker()
     window->reverse_mode(0);
 
     // Candidate rows.
-    for (int r = 0; r < visible; r++) {
+    for (int r = 0; r < rows_to_draw; r++) {
         int idx = opcode_top + r;
         memset(line, ' ', sizeof(line));
         line[box_w] = 0;
-        if (idx < opcode_candidate_count) {
+        if (r < visible && idx < opcode_candidate_count) {
             uint8_t op = opcode_candidates[idx];
             const char *templ = disassembler_6502_template(op);
             char buf[16];
+            memset(buf, 0, sizeof(buf));
             // Copy template up to 13 chars, replacing leading '*' on the
             // mnemonic with a space.
             for (int i = 0; i < 13 && i < (int)sizeof(buf) - 1 && templ && templ[i]; i++) {
@@ -2492,7 +2692,7 @@ void MachineMonitor :: draw_opcode_picker()
             if (slen < box_w) { memset(line + slen, ' ', box_w - slen); line[box_w] = 0; }
         }
         window->move_cursor(box_x, anchor_row + 1 + r);
-        if (idx == opcode_selected && idx < opcode_candidate_count) {
+        if (r < visible && idx == opcode_selected && idx < opcode_candidate_count) {
             window->reverse_mode(1);
             window->output_length(line, box_w);
             window->reverse_mode(0);
@@ -2500,6 +2700,7 @@ void MachineMonitor :: draw_opcode_picker()
             window->output_length(line, box_w);
         }
     }
+    opcode_drawn_rows = visible;
 }
 
 void MachineMonitor :: hunt_picker_open(int count)
@@ -2529,7 +2730,7 @@ void MachineMonitor :: hunt_picker_jump()
     if (hunt_count <= 0 || hunt_selected < 0 || hunt_selected >= hunt_count) {
         return;
     }
-    apply_goto_local(hunt_addrs[hunt_selected]);
+    apply_go_local(hunt_addrs[hunt_selected]);
     hunt_picker_close();
 }
 
@@ -2728,6 +2929,7 @@ bool MachineMonitor :: asm_edit_history_pop()
 void MachineMonitor :: opcode_picker_open(char seed)
 {
     opcode_picker_active = true;
+    opcode_drawn_rows = 0;
     opcode_prefix_len = 0;
     opcode_prefix[0] = 0;
     opcode_operand_len = 0;
@@ -2748,6 +2950,7 @@ void MachineMonitor :: opcode_picker_open(char seed)
 void MachineMonitor :: opcode_picker_close()
 {
     opcode_picker_active = false;
+    opcode_drawn_rows = 0;
     opcode_prefix_len = 0;
     opcode_prefix[0] = 0;
     opcode_operand_len = 0;
@@ -2850,12 +3053,12 @@ int MachineMonitor :: opcode_picker_handle_key(int key)
     }
     if (key == KEY_DOWN) {
         if (opcode_selected + 1 < opcode_candidate_count) opcode_selected++;
-        draw();
+        refresh_popup_overlay();
         return 0;
     }
     if (key == KEY_UP) {
         if (opcode_selected > 0) opcode_selected--;
-        draw();
+        refresh_popup_overlay();
         return 0;
     }
     if (key == KEY_BACK || key == KEY_DELETE) {
@@ -2871,7 +3074,11 @@ int MachineMonitor :: opcode_picker_handle_key(int key)
         } else {
             opcode_picker_close();
         }
-        draw();
+        if (opcode_picker_active) {
+            refresh_popup_overlay();
+        } else {
+            draw();
+        }
         return 0;
     }
 
@@ -2903,7 +3110,11 @@ int MachineMonitor :: opcode_picker_handle_key(int key)
                 opcode_picker_commit();
             }
         }
-        draw();
+        if (opcode_picker_active) {
+            refresh_popup_overlay();
+        } else {
+            draw();
+        }
         return 0;
     }
 
@@ -2926,7 +3137,7 @@ int MachineMonitor :: opcode_picker_handle_key(int key)
                 opcode_operand[opcode_operand_len++] = up;
                 opcode_operand[opcode_operand_len] = 0;
             }
-            draw();
+            refresh_popup_overlay();
             return 0;
         }
     }
@@ -3024,7 +3235,7 @@ void MachineMonitor :: init(Screen *scr, Keyboard *keyb)
     current_vic_bank = backend->get_live_vic_bank();
     last_live_vic_bank = current_vic_bank;
     vic_bank_override = false;
-    apply_goto_local(state.current_addr);
+    apply_go_local(state.current_addr);
     draw();
 }
 
@@ -3046,8 +3257,8 @@ void MachineMonitor :: deinit(void)
     monitor_last_save_end = last_save_end;
     strncpy(monitor_last_save_name, last_save_name, sizeof(monitor_last_save_name) - 1);
     monitor_last_save_name[sizeof(monitor_last_save_name) - 1] = 0;
-    monitor_last_goto_valid = last_goto_valid;
-    monitor_last_goto_addr = last_goto_addr;
+    monitor_last_go_valid = last_go_valid;
+    monitor_last_go_addr = last_go_addr;
     monitor_binary_bytes_per_row = binary_bytes_per_row;
     backend->end_session();
     if (clipboard.data) {
@@ -3127,7 +3338,7 @@ int MachineMonitor :: handle_key(int key)
         draw();
         return 0;
     }
-    if (key == 'n' || key == 'N') {
+    if ((key == 'n' || key == 'N') && number_shortcut_allowed()) {
         open_number_picker();
         draw();
         return 0;
@@ -3391,7 +3602,7 @@ int MachineMonitor :: handle_key(int key)
         case KEY_F2:
         case KEY_CONFIG:
             if (state.view == MONITOR_VIEW_DISASM) {
-                step_disassembly(-content_height);
+                page_disassembly(-content_height);
                 draw();
                 return 0;
             }
@@ -3401,7 +3612,7 @@ int MachineMonitor :: handle_key(int key)
         case KEY_PAGEDOWN:
         case KEY_F7:
             if (state.view == MONITOR_VIEW_DISASM) {
-                step_disassembly(content_height);
+                page_disassembly(content_height);
                 draw();
                 return 0;
             }
@@ -3451,10 +3662,15 @@ int MachineMonitor :: handle_key(int key)
                 backend->set_frozen(!backend->is_frozen());
             }
             break;
-        case 'o':
+        case 'o': {
+            int asm_row = (state.view == MONITOR_VIEW_ASM) ? disasm_visible_row(state.current_addr) : -1;
             state.cpu_port = next_cpu_mode(state.cpu_port);
             backend->set_monitor_cpu_port(state.cpu_port);
+            if (state.view == MONITOR_VIEW_ASM) {
+                restore_disasm_cursor_row(asm_row);
+            }
             break;
+        }
         case 'O':
             backend->set_live_vic_bank(next_vic_bank(current_vic_bank));
             current_vic_bank = backend->get_live_vic_bank();
@@ -3479,7 +3695,7 @@ int MachineMonitor :: handle_key(int key)
             if (prompt_command("Jump AAAA", jump_buffer, sizeof(jump_buffer), true)) {
                 error = monitor_parse_address(jump_buffer, &address);
                 if (error == MONITOR_OK) {
-                    apply_goto_local(address);
+                    apply_go_local(address);
                 } else {
                     get_ui()->popup(monitor_error_text(error), BUTTON_OK);
                 }
@@ -3557,7 +3773,7 @@ int MachineMonitor :: handle_key(int key)
             }
             break;
         case 'g': case 'G':
-            if (handle_goto_command()) {
+            if (handle_go_command()) {
                 return 1;
             }
             break;
@@ -3777,10 +3993,10 @@ void MachineMonitor::handle_width_command()
     draw();
 }
 
-bool MachineMonitor::handle_goto_command()
+bool MachineMonitor::handle_go_command()
 {
     char buffer[8];
-    uint16_t default_addr = last_goto_valid ? last_goto_addr : state.current_addr;
+    uint16_t default_addr = last_go_valid ? last_go_addr : state.current_addr;
     sprintf(buffer, "%04X", default_addr);
     if (!prompt_command("Go AAAA", buffer, sizeof(buffer) - 1, true)) {
         return false;
@@ -3791,11 +4007,11 @@ bool MachineMonitor::handle_goto_command()
         get_ui()->popup(monitor_error_text(error), BUTTON_OK);
         return false;
     }
-    last_goto_addr = address;
-    last_goto_valid = true;
+    last_go_addr = address;
+    last_go_valid = true;
     // Reposition the cursor first (mirrors J), so the displayed address matches
     // what we are about to execute.
-    apply_goto_local(address);
+    apply_go_local(address);
     // Hand off to the C64: the boot-cart DMA-jump path unfreezes the FPGA C64
     // and JMP ($00AA)s to `address`. The monitor must exit so the menu
     // dismisses and user code regains control.
