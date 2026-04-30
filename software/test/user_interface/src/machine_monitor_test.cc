@@ -230,7 +230,6 @@ struct FakeMonitorIOState {
     char pick_name[64];
     int pick_file_calls;
     bool last_pick_save_mode;
-
     bool load_called;
     char load_path[256];
     char load_name[64];
@@ -255,6 +254,15 @@ struct FakeMonitorIOState {
     bool jump_called;
     uint16_t jump_address;
 };
+
+} // namespace monitor_io
+
+static SubsysResultCode_e test_monitor_action_callback(SubsysCommand *)
+{
+    return SSRET_OK;
+}
+
+namespace monitor_io {
 
 static FakeMonitorIOState g_monitor_io;
 
@@ -825,7 +833,7 @@ public:
     void create_task_items(void)
     {
         TaskCategory *dev = TasksCollection::getCategory("Developer", TEST_SORT_ORDER_DEVELOPER);
-        monitor_action = new Action("Machine Code Monitor", TEST_SUBSYSID_U64, 12);
+        monitor_action = new Action("Machine Code Monitor", test_monitor_action_callback, 12);
         dev->append(monitor_action);
     }
 
@@ -1523,7 +1531,7 @@ static int test_task_action_lookup(void)
     if (expect(provider.update_called && provider.last_writable, "Task action update hook was not called.")) return 1;
     if (expect(provider.monitor_action != NULL, "Task action provider did not create the monitor action.")) return 1;
     if (expect(provider.monitor_action->isPersistent(), "Task action should be made persistent.")) return 1;
-    if (expect(find_task_action("Developer", "Machine Code Monitor") == provider.monitor_action, "Task action lookup failed.")) return 1;
+    if (expect(find_task_action(TEST_SUBSYSID_U64, "Machine Code Monitor") == provider.monitor_action, "Task action lookup failed.")) return 1;
     return 0;
 }
 

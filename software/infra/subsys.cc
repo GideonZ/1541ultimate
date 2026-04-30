@@ -16,10 +16,7 @@ SubsysResultCode_t SubsysCommand :: execute(void)
         subsys = (*SubSystem :: getSubSystems())[subsysID];
         if (subsys) {
             printf("About to execute a command in subsys %s (%p)\n", subsys->identify(), subsys->myMutex);
-            if (!subsys->command_requires_lock(this)) {
-                retcode = subsys->executeCommand(this);
-                retval = { retcode }; // FIXME
-            } else if (xSemaphoreTake(subsys->myMutex, 1000)) {
+            if (xSemaphoreTake(subsys->myMutex, 1000)) {
                 retcode = subsys->executeCommand(this);
                 retval = { retcode }; // FIXME
                 xSemaphoreGive(subsys->myMutex);

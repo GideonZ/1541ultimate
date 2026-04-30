@@ -5,11 +5,6 @@
 
 namespace {
 
-static uint16_t sanitize_c64_address(uint32_t address)
-{
-    return (uint16_t)address;
-}
-
 static uint8_t read_frozen_byte(volatile uint8_t *ram, bool freezerMenu, uint32_t address,
                                 uint32_t *screen_backup, uint32_t *ram_backup)
 {
@@ -278,13 +273,12 @@ uint8_t U64Machine :: get_cpu_port(void)
     return (uint8_t)(((port & ddr) | ((uint8_t)(~ddr) & 0x07)) & 0x07);
 }
 
-uint8_t U64Machine :: peek(uint32_t address) 
+uint8_t U64Machine :: peek(uint16_t address) 
 {
     bool stopped_it = false;
     bool freezerMenu = before_memory_access(isFrozen, &stopped_it);
     volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
-    uint16_t safe_address = sanitize_c64_address(address);
-    uint8_t byte = read_frozen_byte(ram, freezerMenu, safe_address, screen_backup, ram_backup);
+    uint8_t byte = read_frozen_byte(ram, freezerMenu, address, screen_backup, ram_backup);
 
     after_memory_access(0, freezerMenu, stopped_it);
     return byte;
@@ -328,14 +322,13 @@ uint8_t U64Machine :: peek_visible(uint32_t address)
     return byte;
 }
 
-void U64Machine :: poke(uint32_t address, uint8_t byte)
+void U64Machine :: poke(uint16_t address, uint8_t byte)
 {
     bool stopped_it = false;
     bool freezerMenu = before_memory_access(isFrozen, &stopped_it);
     volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
-    uint16_t safe_address = sanitize_c64_address(address);
 
-    write_frozen_byte(ram, freezerMenu, safe_address, byte, screen_backup, ram_backup);
+    write_frozen_byte(ram, freezerMenu, address, byte, screen_backup, ram_backup);
 
     after_memory_access(0, freezerMenu, stopped_it);
 }

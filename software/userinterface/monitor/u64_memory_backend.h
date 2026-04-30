@@ -3,6 +3,8 @@
 
 #include "memory_backend.h"
 
+class C64;
+
 class U64MemoryBackend : public MemoryBackend
 {
     bool stopped_machine_for_session;

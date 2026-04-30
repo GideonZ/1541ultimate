@@ -4,6 +4,6 @@
 #include "action.h"
 
 void ensure_task_actions_created(bool writablePath);
-Action *find_task_action(const char *categoryName, const char *actionName);
+Action *find_task_action(int subsysId, const char *actionName);
 
 #endif

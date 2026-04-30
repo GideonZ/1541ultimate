@@ -18,10 +18,10 @@ public:
     void end_monitor_session(bool stopped_it);
     void clear_ram();
     uint8_t get_cpu_port(void);
-    uint8_t peek(uint32_t address);
+    uint8_t peek(uint16_t address);
     uint8_t peek_cpu(uint32_t address, uint8_t cpu_port);
     uint8_t peek_visible(uint32_t address);
-    void poke(uint32_t address, uint8_t byte);
+    void poke(uint16_t address, uint8_t byte);
     void poke_cpu(uint32_t address, uint8_t byte, uint8_t cpu_port);
     void poke_visible(uint32_t address, uint8_t byte);
     void read_block(uint32_t address, uint8_t *dst, uint32_t len);

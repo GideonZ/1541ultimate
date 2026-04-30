@@ -447,7 +447,7 @@ int TreeBrowser :: handle_key(int c)
             state->refresh = true;
             ensure_task_actions_created(path ? FileManager :: getFileManager()->is_path_writable(path) : false);
             {
-                Action *monitorAction = find_task_action("Developer", "Machine Code Monitor");
+                Action *monitorAction = find_task_action(SUBSYSID_U64, "Machine Code Monitor");
                 if (monitorAction) {
                     const char *currentPath = path ? path->get_path() : "";
                     SubsysCommand *cmd = new SubsysCommand(user_interface, monitorAction, currentPath, "");

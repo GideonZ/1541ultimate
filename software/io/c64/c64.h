@@ -316,8 +316,8 @@ class C64 : public GenericHost, ConfigurableObject
     void measure_timing(uint8_t *buffer);
     virtual void get_all_memory(uint8_t *) { /* NOT YET IMPLEMENTED */ };
     virtual void clear_ram(void) { /* NOT YET IMPLEMENTED */ };
-    virtual uint8_t peek(uint32_t) { return 0; /* NOT YET IMPLEMENTED */ };
-    virtual void poke(uint32_t, uint8_t) { /* NOT YET IMPLEMENTED */ };
+    virtual uint8_t peek(uint16_t) { return 0; /* NOT YET IMPLEMENTED */ };
+    virtual void poke(uint16_t, uint8_t) { /* NOT YET IMPLEMENTED */ };
     static uint8_t get_exrom_game(void) {
         return (C64_CLOCK_DETECT & 0x0C) >> 2;
     }

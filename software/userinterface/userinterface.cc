@@ -1,12 +1,6 @@
 #include "userinterface.h"
 #include <stdio.h>
 
-#include "monitor/machine_monitor.h"
-
-#include "monitor/disassembler_6502.cc"
-#include "monitor/assembler_6502.cc"
-#include "monitor/machine_monitor.cc"
-
 #ifndef NO_FILE_ACCESS
 #include "FreeRTOS.h"
 #include "task.h"
@@ -672,22 +666,6 @@ void UserInterface :: run_hex_editor(const char *text_buf, int max_len)
 {
     run_editor(new HexEditor(this, text_buf, max_len));
 }
-
-void UserInterface :: run_machine_monitor(MemoryBackend *backend)
-{
-    MachineMonitor *monitor = new MachineMonitor(this, backend);
-    monitor->init(screen, keyboard);
-    int ret = 0;
-    while(!ret && host->exists()) {
-        ret = monitor->poll(0);
-    }
-    monitor->deinit();
-    delete monitor;
-}
-
-#ifndef NO_FILE_ACCESS
-#include "monitor/monitor_file_io.cc"
-#endif
 
 QueueHandle_t userMessageQueue = 0;
 

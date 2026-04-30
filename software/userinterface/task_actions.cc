@@ -37,13 +37,14 @@ void ensure_task_actions_created(bool writablePath)
     }
 }
 
-Action *find_task_action(const char *categoryName, const char *actionName)
+Action *find_task_action(int subsysId, const char *actionName)
 {
     IndexedList<TaskCategory *> *categories = TasksCollection::getCategories();
+    Action *fallback = NULL;
 
     for (int i = 0; i < categories->get_elements(); i++) {
         TaskCategory *category = (*categories)[i];
-        if (!category || strcmp(category->getName(), categoryName) != 0) {
+        if (!category) {
             continue;
         }
 
@@ -51,9 +52,14 @@ Action *find_task_action(const char *categoryName, const char *actionName)
         for (int j = 0; j < actions->get_elements(); j++) {
             Action *action = (*actions)[j];
             if (action && action->isShown() && action->isEnabled() && (strcmp(action->getName(), actionName) == 0)) {
-                return action;
+                if (action->subsys == subsysId) {
+                    return action;
+                }
+                if (!fallback && (action->func || action->direct_func)) {
+                    fallback = action;
+                }
             }
         }
     }
-    return NULL;
+    return fallback;
 }

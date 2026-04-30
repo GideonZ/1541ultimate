@@ -71,7 +71,6 @@ public:
 	}
 
 	virtual const char *identify(void) { return "Unknown Subsystem"; }
-    virtual bool command_requires_lock(SubsysCommand *cmd) { return true; }
 
 	int  lock(const char *name) {
 		int retval = xSemaphoreTake(myMutex, 5000);

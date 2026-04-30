@@ -15,7 +15,7 @@ SIZE	  = $(CROSS)size
 
 .SUFFIXES:
 
-SRCS_C   = dump_hex.c
+SRCS_C   =
 
 SRCS_CC	 =  small_printf.cc \
 			screen.cc \
