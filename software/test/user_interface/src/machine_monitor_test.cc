@@ -715,6 +715,8 @@ class TestUserInterface : public UserInterface
 public:
     int popup_count;
     char last_popup[128];
+    char last_prompt_message[128];
+    int last_prompt_maxlen;
     char prompt_texts[8][64];
     int prompt_results[8];
     int prompt_count;
@@ -723,6 +725,8 @@ public:
     TestUserInterface() : UserInterface("test", false), popup_count(0), prompt_count(0), prompt_index(0)
     {
         last_popup[0] = 0;
+        last_prompt_message[0] = 0;
+        last_prompt_maxlen = 0;
     }
 
     void set_prompt(const char *text, int result)
@@ -751,8 +755,11 @@ public:
         return BUTTON_OK;
     }
 
-    int string_box(const char *, char *buffer, int maxlen)
+    int string_box(const char *msg, char *buffer, int maxlen)
     {
+        strncpy(last_prompt_message, msg ? msg : "", sizeof(last_prompt_message) - 1);
+        last_prompt_message[sizeof(last_prompt_message) - 1] = 0;
+        last_prompt_maxlen = maxlen;
         if (prompt_index >= prompt_count) {
             return 0;
         }
@@ -2584,8 +2591,10 @@ static int test_clipboard_number_and_range(void)
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Number inspector did not open.")) return 1;
         if (expect(mon.poll(0) == 0, "Number inspector decimal navigation failed.")) return 1;
-        if (expect(screen.reverse_chars[5][1],
-                   "Number inspector must allow navigating to the decimal representation.")) return 1;
+        if (expect((unsigned char)screen.chars[4][6] == BORD_LOWER_RIGHT_CORNER,
+               "Number inspector must open as a framed popup inside the monitor content area.")) return 1;
+        if (expect(screen.reverse_chars[7][7],
+               "Number inspector must allow navigating to the decimal representation.")) return 1;
         if (expect(mon.poll(0) == 0, "Number inspector CBM-C copy failed.")) return 1;
         if (expect(mon.poll(0) == 0, "Binary view switch after number copy failed.")) return 1;
         for (int i = 0; i < 8; i++) {
@@ -2854,6 +2863,211 @@ static int test_hunt_and_compare_picker_navigation(void)
         if (expect(strstr(header, "MONITOR HEX $C102") == header,
                    "Compare picker RETURN must jump to the selected difference.")) return 1;
         if (expect(mon.poll(0) == 1, "Compare picker test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_number_popup_edit_and_commit(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char line[25];
+    const int keys[] = { 'N', 'F', 'A', 'E', '1', KEY_DELETE, KEY_DELETE, KEY_RETURN, KEY_BREAK, KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+
+    MachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+
+    if (expect(mon.poll(0) == 0, "Number popup test: open failed.")) return 1;
+    screen.get_slice(7, 5, 24, line);
+    if (expect(strstr(line, "MONITOR NUM $0000 BYTE") == line,
+               "Number popup must open in BYTE mode with the current address in the framed header.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Number popup test: typing first hex digit failed.")) return 1;
+    screen.get_slice(7, 6, 24, line);
+    if (expect(strstr(line, "Hex      $0F") == line,
+               "Number popup must zero-pad one-digit hex input as a BYTE preview.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Number popup test: typing second hex digit failed.")) return 1;
+    screen.get_slice(7, 6, 24, line);
+    if (expect(strstr(line, "Hex      $FA") == line,
+               "Number popup must keep two-digit hex input in BYTE mode.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Number popup test: typing third hex digit failed.")) return 1;
+    screen.get_slice(7, 5, 24, line);
+    if (expect(strstr(line, "MONITOR NUM $0000 WORD") == line,
+               "Number popup must switch to WORD mode on the third hex digit.")) return 1;
+    screen.get_slice(7, 6, 24, line);
+    if (expect(strstr(line, "Hex      $0FAE") == line,
+               "Number popup must preserve leading zeroes when hex input grows to WORD width.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Number popup test: typing fourth hex digit failed.")) return 1;
+    screen.get_slice(7, 6, 24, line);
+    if (expect(strstr(line, "Hex      $FAE1") == line,
+               "Number popup must show the full four-digit hex WORD preview.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Number popup test: first delete failed.")) return 1;
+    screen.get_slice(7, 5, 24, line);
+    if (expect(strstr(line, "MONITOR NUM $0000 WORD") == line,
+               "Deleting from four to three hex digits must keep the Number popup in WORD mode.")) return 1;
+    screen.get_slice(7, 6, 24, line);
+    if (expect(strstr(line, "Hex      $0FAE") == line,
+               "Deleting one hex digit must keep the remaining WORD preview intact.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Number popup test: second delete failed.")) return 1;
+    screen.get_slice(7, 5, 24, line);
+    if (expect(strstr(line, "MONITOR NUM $0000 BYTE") == line,
+               "Deleting from three to two hex digits must fall back to BYTE mode.")) return 1;
+    screen.get_slice(7, 6, 24, line);
+    if (expect(strstr(line, "Hex      $FA") == line,
+               "Deleting back to two hex digits must preserve the BYTE preview value.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Number popup test: Enter commit failed.")) return 1;
+    if (expect(backend.read(0x0000) == 0xFA && backend.read(0x0001) == 0x00,
+               "Number popup Enter must commit the current BYTE preview without touching the next byte.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Number popup test: popup close failed.")) return 1;
+    if (expect(mon.poll(0) == 1, "Number popup test: exit failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
+static int test_number_popup_word_commit_and_sticky_row(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[25];
+        const int keys[] = {
+            'N', KEY_DOWN, KEY_DOWN, KEY_DOWN, 'A', 'B', KEY_RETURN,
+            KEY_ESCAPE, KEY_RIGHT, 'N', 'C', KEY_RETURN, KEY_BREAK, KEY_BREAK
+        };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: open failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: first row navigation failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: second row navigation failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: third row navigation failed.")) return 1;
+        if (expect(screen.reverse_chars[9][7],
+                   "Number popup must allow selecting the ASCII row.")) return 1;
+
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: first character failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: second character failed.")) return 1;
+        screen.get_slice(7, 5, 24, line);
+        if (expect(strstr(line, "MONITOR NUM $0000 WORD") == line,
+                   "Two ASCII characters must switch the Number popup into WORD mode.")) return 1;
+        screen.get_slice(7, 9, 24, line);
+        if (expect(strstr(line, "ASCII    AB") == line,
+                   "ASCII Number popup preview must show both typed characters without extra annotations.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: Enter commit failed.")) return 1;
+        if (expect(backend.read(0x0000) == 0x42 && backend.read(0x0001) == 0x41,
+                   "ASCII WORD commit must write low/high bytes in little-endian order.")) return 1;
+
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: close after commit failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: move to next address failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: reopen failed.")) return 1;
+        screen.get_slice(10, 5, 24, line);
+        if (expect(strstr(line, "MONITOR NUM $0001 BYTE") == line,
+                   "Reopening the Number popup must use the current address and a fresh BYTE preview.")) return 1;
+        if (expect(screen.reverse_chars[9][10],
+                   "The Number popup must remember the selected row across close and reopen in one monitor session.")) return 1;
+
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: repeated-entry character failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: repeated-entry Enter failed.")) return 1;
+        if (expect(backend.read(0x0001) == 0x43 && backend.read(0x0002) == 0x00,
+                   "Reopened Number popup must start with a fresh ASCII edit buffer at the new address.")) return 1;
+
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASCII Number popup test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[25];
+        const int keys[] = { 'N', KEY_DOWN, KEY_DOWN, KEY_DOWN, KEY_DOWN, 'A', 'B', KEY_RETURN, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+
+        if (expect(mon.poll(0) == 0, "Screen Number popup test: open failed.")) return 1;
+        for (int i = 0; i < 4; i++) {
+            if (expect(mon.poll(0) == 0, "Screen Number popup test: row navigation failed.")) return 1;
+        }
+        if (expect(mon.poll(0) == 0, "Screen Number popup test: first character failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Screen Number popup test: second character failed.")) return 1;
+        screen.get_slice(7, 10, 24, line);
+        if (expect(strstr(line, "Screen   AB") == line,
+                   "Screen Number popup preview must show screen characters without redundant hex suffixes.")) return 1;
+        if (expect(strchr(line, '(') == NULL,
+                   "Screen Number popup must not append per-byte hex annotations.")) return 1;
+        if (expect(mon.poll(0) == 0, "Screen Number popup test: Enter commit failed.")) return 1;
+        if (expect(backend.read(0x0000) == 0x02 && backend.read(0x0001) == 0x01,
+                   "Screen WORD commit must use screen-code values written in little-endian order.")) return 1;
+
+        if (expect(mon.poll(0) == 0, "Screen Number popup test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "Screen Number popup test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_fixed_prompt_widths(void)
+{
+    struct PromptCase {
+        int key;
+        const char *message;
+        int maxlen;
+    } cases[] = {
+        { 'F', "Fill AAAA-BBBB,DD", 13 },
+        { 'T', "Transfer AAAA-BBBB,CCCC", 15 },
+        { 'C', "Compare AAAA-BBBB,CCCC", 15 },
+        { 'H', "Hunt AAAA-BBBB,...", 95 },
+    };
+
+    for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        int keys[] = { cases[i].key, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("", 0);
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Fixed prompt width test: command key failed.")) return 1;
+        if (expect(strcmp(ui.last_prompt_message, cases[i].message) == 0,
+                   "Fixed prompt width test: monitor used the wrong prompt template.")) return 1;
+        if (expect(ui.last_prompt_maxlen == cases[i].maxlen,
+                   "Fixed prompt width test: prompt width did not match the expected bounded template length.")) return 1;
+        if (expect(mon.poll(0) == 1, "Fixed prompt width test: exit failed.")) return 1;
         mon.deinit();
     }
 
@@ -3200,6 +3414,9 @@ int main()
     if (test_cross_view_sync()) return 1;
     if (test_binary_bit_navigation_and_width()) return 1;
     if (test_clipboard_number_and_range()) return 1;
+    if (test_number_popup_edit_and_commit()) return 1;
+    if (test_number_popup_word_commit_and_sticky_row()) return 1;
+    if (test_fixed_prompt_widths()) return 1;
     if (test_asm_range_copy_paste()) return 1;
     if (test_asm_paste_keeps_viewport_position()) return 1;
     if (test_illegal_mode_header_label()) return 1;

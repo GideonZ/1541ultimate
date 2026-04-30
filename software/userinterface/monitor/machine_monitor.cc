@@ -75,6 +75,142 @@ static inline uint8_t monitor_binary_byte_stride(uint8_t bytes_per_row)
     return b;
 }
 
+static bool is_hex_char(char c);
+static char to_upper_char(char c);
+static char screen_code_char(uint8_t value);
+
+enum {
+    MONITOR_NUMBER_ROW_HEX = 0,
+    MONITOR_NUMBER_ROW_DECIMAL,
+    MONITOR_NUMBER_ROW_BINARY,
+    MONITOR_NUMBER_ROW_ASCII,
+    MONITOR_NUMBER_ROW_SCREEN,
+    MONITOR_NUMBER_ROW_COUNT,
+    MONITOR_NUMBER_EDIT_BUFFER_MAX = 16,
+    MONITOR_NUMBER_POPUP_INNER_WIDTH = 24,
+    MONITOR_NUMBER_POPUP_INNER_HEIGHT = 8,
+    MONITOR_NUMBER_POPUP_WIDTH = MONITOR_NUMBER_POPUP_INNER_WIDTH + 2,
+    MONITOR_NUMBER_POPUP_HEIGHT = MONITOR_NUMBER_POPUP_INNER_HEIGHT + 2,
+};
+
+static const uint8_t monitor_number_row_max_input[MONITOR_NUMBER_ROW_COUNT] = {
+    4, 5, 16, 2, 2
+};
+
+static bool is_decimal_char(char c)
+{
+    return c >= '0' && c <= '9';
+}
+
+static bool is_binary_char(char c)
+{
+    return c == '0' || c == '1';
+}
+
+static bool monitor_number_parse_buffer(int row, const char *buffer, int length,
+                                        uint16_t *value, bool *word)
+{
+    uint32_t parsed = 0;
+
+    if (length <= 0 || !buffer || !value || !word) {
+        return false;
+    }
+
+    switch (row) {
+        case MONITOR_NUMBER_ROW_HEX:
+            if (length > 4) {
+                return false;
+            }
+            for (int i = 0; i < length; i++) {
+                char c = to_upper_char(buffer[i]);
+                if (!is_hex_char(c)) {
+                    return false;
+                }
+                parsed <<= 4;
+                parsed |= (c <= '9') ? (uint32_t)(c - '0') : (uint32_t)(c - 'A' + 10);
+            }
+            *value = (uint16_t)parsed;
+            *word = length > 2;
+            return true;
+
+        case MONITOR_NUMBER_ROW_DECIMAL:
+            if (length > 5) {
+                return false;
+            }
+            for (int i = 0; i < length; i++) {
+                if (!is_decimal_char(buffer[i])) {
+                    return false;
+                }
+                parsed = parsed * 10 + (uint32_t)(buffer[i] - '0');
+                if (parsed > 65535UL) {
+                    return false;
+                }
+            }
+            *value = (uint16_t)parsed;
+            *word = parsed > 0xFFUL;
+            return true;
+
+        case MONITOR_NUMBER_ROW_BINARY:
+            if (length > 16) {
+                return false;
+            }
+            for (int i = 0; i < length; i++) {
+                if (!is_binary_char(buffer[i])) {
+                    return false;
+                }
+                parsed = (parsed << 1) | (uint32_t)(buffer[i] - '0');
+            }
+            *value = (uint16_t)parsed;
+            *word = length > 8;
+            return true;
+
+        case MONITOR_NUMBER_ROW_ASCII:
+            if (length > 2) {
+                return false;
+            }
+            for (int i = 0; i < length; i++) {
+                unsigned char c = (unsigned char)buffer[i];
+                if (c < 32 || c > 126) {
+                    return false;
+                }
+                parsed = (parsed << 8) | c;
+            }
+            *value = (uint16_t)parsed;
+            *word = length > 1;
+            return true;
+
+        case MONITOR_NUMBER_ROW_SCREEN:
+            if (length > 2) {
+                return false;
+            }
+            for (int i = 0; i < length; i++) {
+                uint8_t code = monitor_screen_code_for_char(buffer[i]);
+                if (code == 0xFF) {
+                    return false;
+                }
+                parsed = (parsed << 8) | code;
+            }
+            *value = (uint16_t)parsed;
+            *word = length > 1;
+            return true;
+
+        default:
+            break;
+    }
+    return false;
+}
+
+static char monitor_number_screen_display_char(uint8_t value)
+{
+    uint8_t base = (uint8_t)(value & 0x7F);
+    char mapped = screen_code_char(value);
+
+    if (mapped == ' ' && base != 0x20) {
+        return '.';
+    }
+    return mapped;
+}
+
 static bool is_space_char(char c)
 {
     return c == ' ' || c == '\t' || c == '\r' || c == '\n';
@@ -1034,7 +1170,14 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     range_anchor = state.current_addr;
     number_picker_active = false;
     number_selected = 0;
-    number_value = 0;
+    number_preview_value = 0;
+    number_base_bytes[0] = 0;
+    number_base_bytes[1] = 0;
+    number_word = false;
+    number_edit_length = 0;
+    number_edit_buffer[0] = 0;
+    number_popup_x = 0;
+    number_popup_y = 1;
     hunt_picker_active = false;
     hunt_count = 0;
     hunt_selected = 0;
@@ -1140,19 +1283,29 @@ bool MachineMonitor :: range_contains(uint16_t address) const
     return address >= start && address <= end;
 }
 
-bool MachineMonitor :: clipboard_copy_byte(uint8_t value)
+bool MachineMonitor :: clipboard_copy_bytes(const uint8_t *data, size_t length)
 {
-    uint8_t *data = (uint8_t *)malloc(1);
-    if (!data) {
+    uint8_t *copy;
+
+    if (!data || length == 0) {
         return false;
     }
-    data[0] = value;
+    copy = (uint8_t *)malloc(length);
+    if (!copy) {
+        return false;
+    }
+    memcpy(copy, data, length);
     if (clipboard.data) {
         free(clipboard.data);
     }
-    clipboard.data = data;
-    clipboard.length = 1;
+    clipboard.data = copy;
+    clipboard.length = length;
     return true;
+}
+
+bool MachineMonitor :: clipboard_copy_byte(uint8_t value)
+{
+    return clipboard_copy_bytes(&value, 1);
 }
 
 bool MachineMonitor :: clipboard_copy_current(void)
@@ -1237,14 +1390,206 @@ void MachineMonitor :: toggle_range_mode(void)
 void MachineMonitor :: open_number_picker(void)
 {
     help_visible = false;
-    number_value = canonical_read(state.current_addr);
-    number_selected = 0;
+    if (number_selected < 0 || number_selected >= MONITOR_NUMBER_ROW_COUNT) {
+        number_selected = MONITOR_NUMBER_ROW_HEX;
+    }
+    number_picker_reset_edit_buffer();
+    number_picker_refresh_preview_from_memory();
+    number_picker_place_popup();
     number_picker_active = true;
+}
+
+void MachineMonitor :: number_picker_reset_edit_buffer(void)
+{
+    number_edit_length = 0;
+    number_edit_buffer[0] = 0;
+}
+
+void MachineMonitor :: number_picker_refresh_preview_from_memory(void)
+{
+    number_base_bytes[0] = canonical_read(state.current_addr);
+    number_base_bytes[1] = canonical_read((uint16_t)(state.current_addr + 1));
+    if (number_edit_length <= 0) {
+        number_preview_value = number_base_bytes[0];
+        number_word = false;
+        return;
+    }
+    if (number_word) {
+        number_preview_value = (uint16_t)(((uint16_t)number_base_bytes[1] << 8) | number_base_bytes[0]);
+    } else {
+        number_preview_value = number_base_bytes[0];
+    }
+}
+
+void MachineMonitor :: number_picker_update_preview_from_buffer(void)
+{
+    uint16_t value;
+    bool word;
+
+    if (number_edit_length <= 0) {
+        number_preview_value = number_base_bytes[0];
+        number_word = false;
+        return;
+    }
+    if (!monitor_number_parse_buffer(number_selected, number_edit_buffer, number_edit_length,
+                                     &value, &word)) {
+        return;
+    }
+    number_preview_value = value;
+    number_word = word;
+}
+
+void MachineMonitor :: number_picker_set_row(int row)
+{
+    if (row < 0) {
+        row = 0;
+    }
+    if (row >= MONITOR_NUMBER_ROW_COUNT) {
+        row = MONITOR_NUMBER_ROW_COUNT - 1;
+    }
+    if (row == number_selected) {
+        return;
+    }
+    number_selected = row;
+    number_picker_reset_edit_buffer();
+}
+
+void MachineMonitor :: number_picker_anchor(int *x, int *y) const
+{
+    uint16_t span = row_span();
+    uint16_t row_addr = state.current_addr;
+    int row = 0;
+    int col = 0;
+
+    if (span == 0) {
+        span = 1;
+    }
+
+    switch (state.view) {
+        case MONITOR_VIEW_ASCII:
+        case MONITOR_VIEW_SCREEN:
+            row_addr = (uint16_t)(state.base_addr + (((uint16_t)(state.current_addr - state.base_addr)) / MONITOR_TEXT_BYTES_PER_ROW) * MONITOR_TEXT_BYTES_PER_ROW);
+            row = (uint16_t)(state.current_addr - state.base_addr) / MONITOR_TEXT_BYTES_PER_ROW;
+            col = 5 + (int)(state.current_addr - row_addr);
+            break;
+
+        case MONITOR_VIEW_BINARY: {
+            int stride = binary_byte_stride();
+            if (stride < 1) {
+                stride = 1;
+            }
+            row_addr = (uint16_t)(state.base_addr + (((uint16_t)(state.current_addr - state.base_addr)) / stride) * stride);
+            row = (uint16_t)(state.current_addr - state.base_addr) / stride;
+            col = 5 + ((int)(state.current_addr - row_addr) * 8) + (7 - ((binary_bit_index <= 7) ? binary_bit_index : 7));
+            break;
+        }
+
+        case MONITOR_VIEW_ASM: {
+            uint16_t addr = state.base_addr;
+            for (row = 0; row < content_height; row++) {
+                uint8_t len = disasm_length(addr);
+                if (len == 0) {
+                    len = 1;
+                }
+                if (state.current_addr >= addr && state.current_addr < (uint16_t)(addr + len)) {
+                    break;
+                }
+                addr = (uint16_t)(addr + len);
+            }
+            if (row >= content_height) {
+                row = 0;
+            }
+            col = MONITOR_DISASM_TEXT_COL;
+            break;
+        }
+
+        case MONITOR_VIEW_HEX:
+        default:
+            row_addr = (uint16_t)(state.base_addr + (((uint16_t)(state.current_addr - state.base_addr)) / MONITOR_HEX_BYTES_PER_ROW) * MONITOR_HEX_BYTES_PER_ROW);
+            row = (uint16_t)(state.current_addr - state.base_addr) / MONITOR_HEX_BYTES_PER_ROW;
+            col = 5 + ((int)(state.current_addr - row_addr) * 3);
+            break;
+    }
+
+    if (row < 0) {
+        row = 0;
+    }
+    if (row >= content_height) {
+        row = content_height - 1;
+    }
+    if (col < 0) {
+        col = 0;
+    }
+    if (col >= window->get_size_x()) {
+        col = window->get_size_x() - 1;
+    }
+    if (x) {
+        *x = col;
+    }
+    if (y) {
+        *y = row + 1;
+    }
+}
+
+void MachineMonitor :: number_picker_place_popup(void)
+{
+    int anchor_x = 0;
+    int anchor_y = 1;
+    int max_x;
+    int max_y;
+
+    number_picker_anchor(&anchor_x, &anchor_y);
+
+    max_x = window->get_size_x() - MONITOR_NUMBER_POPUP_WIDTH;
+    if (max_x < 0) {
+        max_x = 0;
+    }
+    max_y = content_height - MONITOR_NUMBER_POPUP_HEIGHT + 1;
+    if (max_y < 1) {
+        max_y = 1;
+    }
+
+    number_popup_x = (anchor_x < (window->get_size_x() / 2)) ? anchor_x : (anchor_x - MONITOR_NUMBER_POPUP_WIDTH + 1);
+    number_popup_y = (anchor_y <= (content_height / 2)) ? anchor_y : (anchor_y - MONITOR_NUMBER_POPUP_HEIGHT + 1);
+
+    if (number_popup_x < 0) {
+        number_popup_x = 0;
+    }
+    if (number_popup_x > max_x) {
+        number_popup_x = max_x;
+    }
+    if (number_popup_y < 1) {
+        number_popup_y = 1;
+    }
+    if (number_popup_y > max_y) {
+        number_popup_y = max_y;
+    }
+}
+
+void MachineMonitor :: number_picker_commit(void)
+{
+    uint8_t low = (uint8_t)(number_preview_value & 0xFF);
+    uint8_t high = (uint8_t)((number_preview_value >> 8) & 0xFF);
+
+    canonical_write(state.current_addr, low);
+    if (number_word) {
+        canonical_write((uint16_t)(state.current_addr + 1), high);
+    }
+    number_picker_refresh_preview_from_memory();
+}
+
+bool MachineMonitor :: number_picker_copy_preview(void)
+{
+    uint8_t bytes[2];
+
+    bytes[0] = (uint8_t)(number_preview_value & 0xFF);
+    bytes[1] = (uint8_t)((number_preview_value >> 8) & 0xFF);
+    return clipboard_copy_bytes(bytes, number_word ? 2 : 1);
 }
 
 int MachineMonitor :: number_picker_handle_key(int key)
 {
-    if (key == KEY_ESCAPE || key == KEY_BREAK || key == KEY_RETURN) {
+    if (key == KEY_ESCAPE || key == KEY_BREAK) {
         number_picker_active = false;
         draw();
         return 0;
@@ -1254,28 +1599,64 @@ int MachineMonitor :: number_picker_handle_key(int key)
         return 1;
     }
     if (key == KEY_UP) {
-        if (number_selected > 0) {
-            number_selected--;
-        }
+        number_picker_set_row(number_selected - 1);
         draw();
         return 0;
     }
     if (key == KEY_DOWN) {
-        if (number_selected < 4) {
-            number_selected++;
-        }
+        number_picker_set_row(number_selected + 1);
         draw();
         return 0;
     }
     if (key == KEY_CTRL_C) {
-        if (!clipboard_copy_byte(number_value)) {
+        if (!number_picker_copy_preview()) {
             get_ui()->popup("?MEM", BUTTON_OK);
             redraw_full();
+            return 0;
         }
         number_picker_active = false;
         draw();
         return 0;
     }
+    if (key == KEY_RETURN) {
+        number_picker_commit();
+        draw();
+        return 0;
+    }
+    if (key == KEY_BACK || key == KEY_DELETE) {
+        if (number_edit_length > 0) {
+            number_edit_length--;
+            number_edit_buffer[number_edit_length] = 0;
+            number_picker_update_preview_from_buffer();
+            draw();
+        }
+        return 0;
+    }
+
+    char typed = (char)key;
+    char candidate[sizeof(number_edit_buffer)];
+    uint16_t value;
+    bool word;
+
+    if (typed >= 'a' && typed <= 'z' && number_selected == MONITOR_NUMBER_ROW_SCREEN) {
+        typed = (char)(typed - 'a' + 'A');
+    }
+    if (number_edit_length >= monitor_number_row_max_input[number_selected]) {
+        return 0;
+    }
+
+    memcpy(candidate, number_edit_buffer, (size_t)number_edit_length);
+    candidate[number_edit_length] = typed;
+    candidate[number_edit_length + 1] = 0;
+    if (!monitor_number_parse_buffer(number_selected, candidate, number_edit_length + 1, &value, &word)) {
+        return 0;
+    }
+
+    number_edit_buffer[number_edit_length++] = typed;
+    number_edit_buffer[number_edit_length] = 0;
+    number_preview_value = value;
+    number_word = word;
+    draw();
     return 0;
 }
 
@@ -1634,35 +2015,75 @@ void MachineMonitor :: draw_help()
 
 void MachineMonitor :: draw_number_picker()
 {
-    char lines[5][32];
-    char bin[9];
-    char hex[3];
-    char scr_hex[3];
-    char ascii = ascii_byte(number_value);
-    char scr = screen_code_char(number_value);
+    char popup_lines[MONITOR_NUMBER_POPUP_INNER_HEIGHT][MONITOR_NUMBER_POPUP_INNER_WIDTH + 1];
+    char bits[17];
+    char ascii_text[3];
+    char screen_text[3];
+    char hex_digits[5];
+    uint8_t low = (uint8_t)(number_preview_value & 0xFF);
+    uint8_t high = (uint8_t)((number_preview_value >> 8) & 0xFF);
+    int screen_x;
+    int screen_y;
 
-    for (int i = 0; i < 8; i++) {
-        bin[i] = (number_value & (uint8_t)(0x80 >> i)) ? '1' : '0';
+    if (!window || !screen) {
+        return;
     }
-    bin[8] = 0;
-    dump_hex_byte(hex, 0, number_value);
-    hex[2] = 0;
-    dump_hex_byte(scr_hex, 0, number_value);
-    scr_hex[2] = 0;
 
-    sprintf(lines[0], "Hex         $%s", hex);
-    sprintf(lines[1], "Decimal     %u", (unsigned)number_value);
-    sprintf(lines[2], "Binary      %s", bin);
-    sprintf(lines[3], "ASCII       %c", ascii);
-    sprintf(lines[4], "Screen      %c ($%s)", scr, scr_hex);
+    if (number_word) {
+        dump_hex_word(hex_digits, 0, number_preview_value);
+        hex_digits[4] = 0;
+    } else {
+        dump_hex_byte(hex_digits, 0, low);
+        hex_digits[2] = 0;
+    }
+    for (int i = 0; i < (number_word ? 16 : 8); i++) {
+        int bit = number_word ? (15 - i) : (7 - i);
+        bits[i] = (number_preview_value & (uint16_t)(1u << bit)) ? '1' : '0';
+    }
+    bits[number_word ? 16 : 8] = 0;
 
-    for (int row = 0; row < content_height; row++) {
-        if (row < 5) {
-            draw_with_highlight(window, row + 1, lines[row], strlen(lines[row]),
-                                row == number_selected ? 0 : -1, strlen(lines[row]));
-        } else {
-            draw_padded(window, row + 1, "", 0);
+    ascii_text[0] = number_word ? ascii_byte(high) : ascii_byte(low);
+    ascii_text[1] = number_word ? ascii_byte(low) : 0;
+    ascii_text[number_word ? 2 : 1] = 0;
+    screen_text[0] = number_word ? monitor_number_screen_display_char(high) : monitor_number_screen_display_char(low);
+    screen_text[1] = number_word ? monitor_number_screen_display_char(low) : 0;
+    screen_text[number_word ? 2 : 1] = 0;
+
+    sprintf(popup_lines[0], "MONITOR NUM $%04X %s", state.current_addr, number_word ? "WORD" : "BYTE");
+    sprintf(popup_lines[1], "Hex      $%s", hex_digits);
+    sprintf(popup_lines[2], "Decimal  %u", (unsigned)number_preview_value);
+    sprintf(popup_lines[3], "Binary   %s", bits);
+    sprintf(popup_lines[4], "ASCII    %s", ascii_text);
+    sprintf(popup_lines[5], "Screen   %s", screen_text);
+    if (number_word) {
+        sprintf(popup_lines[6], "Write    $%04X/$%04X LE", state.current_addr,
+                (uint16_t)(state.current_addr + 1));
+        sprintf(popup_lines[7], "Bytes    %02X %02X", (unsigned)low, (unsigned)high);
+    } else {
+        sprintf(popup_lines[6], "Write    $%04X", state.current_addr);
+        sprintf(popup_lines[7], "Bytes    %02X", (unsigned)low);
+    }
+
+    window->getOffsets(screen_x, screen_y);
+    screen_x += number_popup_x;
+    screen_y += number_popup_y;
+
+    Window popup(screen, screen_x, screen_y, MONITOR_NUMBER_POPUP_WIDTH, MONITOR_NUMBER_POPUP_HEIGHT);
+    popup.set_color(get_ui()->color_fg);
+    popup.draw_border();
+
+    for (int row = 0; row < MONITOR_NUMBER_POPUP_INNER_HEIGHT; row++) {
+        char line[MONITOR_NUMBER_POPUP_INNER_WIDTH + 1];
+        int len = (int)strlen(popup_lines[row]);
+        if (len > MONITOR_NUMBER_POPUP_INNER_WIDTH) {
+            len = MONITOR_NUMBER_POPUP_INNER_WIDTH;
         }
+        memset(line, ' ', MONITOR_NUMBER_POPUP_INNER_WIDTH);
+        memcpy(line, popup_lines[row], (size_t)len);
+        line[MONITOR_NUMBER_POPUP_INNER_WIDTH] = 0;
+        draw_with_highlight(&popup, row, line, MONITOR_NUMBER_POPUP_INNER_WIDTH,
+                            (row >= 1 && row <= 5 && (row - 1) == number_selected) ? 0 : -1,
+                            MONITOR_NUMBER_POPUP_INNER_WIDTH);
     }
 }
 
@@ -2148,8 +2569,6 @@ void MachineMonitor :: draw()
     draw_header();
     if (help_visible) {
         draw_help();
-    } else if (number_picker_active) {
-        draw_number_picker();
     } else if (hunt_picker_active) {
         draw_hunt_picker();
     } else {
@@ -2172,6 +2591,9 @@ void MachineMonitor :: draw()
         }
         if (opcode_picker_active) {
             draw_opcode_picker();
+        }
+        if (number_picker_active) {
+            draw_number_picker();
         }
     }
     draw_status();
@@ -3051,9 +3473,11 @@ int MachineMonitor :: handle_key(int key)
         case KEY_ESCAPE:
             return 1;
         case 'j': case 'J':
-            strcpy(buffer, "AAAA");
-            if (prompt_command("Jump AAAA", buffer, sizeof(buffer) - 1, true)) {
-                error = monitor_parse_address(buffer, &address);
+        {
+            char jump_buffer[5];
+            strcpy(jump_buffer, "AAAA");
+            if (prompt_command("Jump AAAA", jump_buffer, sizeof(jump_buffer), true)) {
+                error = monitor_parse_address(jump_buffer, &address);
                 if (error == MONITOR_OK) {
                     apply_goto_local(address);
                 } else {
@@ -3061,15 +3485,18 @@ int MachineMonitor :: handle_key(int key)
                 }
             }
             break;
+        }
         case 'e': case 'E':
             if (inline_edit_supported()) {
                 enter_edit_mode();
             }
             break;
         case 'f': case 'F':
-            strcpy(buffer, "AAAA-BBBB,DD");
-            if (prompt_command("Fill AAAA-BBBB,DD", buffer, sizeof(buffer) - 1, true)) {
-                error = monitor_parse_fill(buffer, &start, &end, &byte_value);
+        {
+            char fill_buffer[13];
+            strcpy(fill_buffer, "AAAA-BBBB,DD");
+            if (prompt_command("Fill AAAA-BBBB,DD", fill_buffer, sizeof(fill_buffer), true)) {
+                error = monitor_parse_fill(fill_buffer, &start, &end, &byte_value);
                 if (error == MONITOR_OK) {
                     monitor_fill_memory(backend, start, end, byte_value);
                 } else {
@@ -3077,10 +3504,13 @@ int MachineMonitor :: handle_key(int key)
                 }
             }
             break;
+        }
         case 't': case 'T':
-            strcpy(buffer, "AAAA-BBBB,CCCC");
-            if (prompt_command("Transfer AAAA-BBBB,CCCC", buffer, sizeof(buffer) - 1, true)) {
-                error = monitor_parse_transfer(buffer, &start, &end, &dest);
+        {
+            char transfer_buffer[15];
+            strcpy(transfer_buffer, "AAAA-BBBB,CCCC");
+            if (prompt_command("Transfer AAAA-BBBB,CCCC", transfer_buffer, sizeof(transfer_buffer), true)) {
+                error = monitor_parse_transfer(transfer_buffer, &start, &end, &dest);
                 if (error == MONITOR_OK) {
                     monitor_transfer_memory(backend, start, end, dest);
                 } else {
@@ -3088,10 +3518,13 @@ int MachineMonitor :: handle_key(int key)
                 }
             }
             break;
+        }
         case 'c': case 'C':
-            strcpy(buffer, "AAAA-BBBB,CCCC");
-            if (prompt_command("Compare AAAA-BBBB,CCCC", buffer, sizeof(buffer) - 1, true)) {
-                error = monitor_parse_compare(buffer, &start, &end, &dest);
+        {
+            char compare_buffer[15];
+            strcpy(compare_buffer, "AAAA-BBBB,CCCC");
+            if (prompt_command("Compare AAAA-BBBB,CCCC", compare_buffer, sizeof(compare_buffer), true)) {
+                error = monitor_parse_compare(compare_buffer, &start, &end, &dest);
                 if (error == MONITOR_OK) {
                     int found = monitor_compare_collect(backend, start, end, dest,
                                                        hunt_addrs, (int)(sizeof(hunt_addrs) / sizeof(hunt_addrs[0])));
@@ -3105,6 +3538,7 @@ int MachineMonitor :: handle_key(int key)
                 }
             }
             break;
+        }
         case 'h': case 'H':
             strcpy(buffer, "0000-FFFF, ");
             if (prompt_command("Hunt AAAA-BBBB,...", buffer, sizeof(buffer) - 1, false)) {
