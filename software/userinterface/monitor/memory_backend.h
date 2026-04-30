@@ -53,6 +53,17 @@ public:
         return (uint8_t)(3 - (read(0xDD00) & 0x03));
     }
 
+    virtual void set_live_vic_bank(uint8_t vic_bank)
+    {
+        uint8_t saved_cpu_port = get_monitor_cpu_port();
+        uint8_t dd00;
+
+        set_monitor_cpu_port(0x07);
+        dd00 = read(0xDD00);
+        write(0xDD00, (uint8_t)((dd00 & 0xFC) | (uint8_t)(3 - (vic_bank & 0x03))));
+        set_monitor_cpu_port(saved_cpu_port);
+    }
+
     virtual const char *source_name(uint16_t address) const
     {
         uint8_t cpu_port = get_monitor_cpu_port();

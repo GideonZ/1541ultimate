@@ -1741,7 +1741,7 @@ void MachineMonitor :: draw_binary_row(int y, uint16_t addr, const uint8_t *byte
         int byte_off = i / 8;
         int bit_in_byte = 7 - (i % 8);
         if (byte_off >= byte_count) break;
-        line[pos++] = ((bytes[byte_off] >> bit_in_byte) & 1) ? '1' : '0';
+        line[pos++] = ((bytes[byte_off] >> bit_in_byte) & 1) ? '*' : '.';
     }
     int total = pos;
     if (total > (int)sizeof(line) - 1) total = (int)sizeof(line) - 1;
@@ -2989,9 +2989,10 @@ int MachineMonitor :: handle_key(int key)
             backend->set_monitor_cpu_port(state.cpu_port);
             break;
         case 'O':
-            current_vic_bank = next_vic_bank(current_vic_bank);
+            backend->set_live_vic_bank(next_vic_bank(current_vic_bank));
+            current_vic_bank = backend->get_live_vic_bank();
             last_live_vic_bank = current_vic_bank;
-            vic_bank_override = true;
+            vic_bank_override = false;
             break;
         case 'u': case 'U':
             state.illegal_enabled = !state.illegal_enabled;
@@ -3104,9 +3105,7 @@ int MachineMonitor :: poll(int)
         uint8_t vic_bank = backend->get_live_vic_bank();
         if (vic_bank != last_live_vic_bank) {
             last_live_vic_bank = vic_bank;
-            if (!vic_bank_override) {
-                current_vic_bank = vic_bank;
-            }
+            current_vic_bank = vic_bank;
             draw_status();
         }
         return 0;

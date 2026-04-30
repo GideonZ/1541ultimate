@@ -1141,6 +1141,12 @@ static int test_banked_backend(void)
     backend.write(0xD000, 0x88);
     if (expect(backend.io[0] == 0x88 && backend.ram[0xD000] == 0x77, "I/O write semantics failed.")) return 1;
     if (expect(backend.get_live_vic_bank() == 2, "Live VIC bank calculation failed.")) return 1;
+    backend.live_dd00 = 0xA9;
+    backend.set_monitor_cpu_port(0x00);
+    backend.set_live_vic_bank(1);
+    if (expect(backend.live_dd00 == 0xAA, "set_live_vic_bank must preserve unrelated CIA-2 bits while updating VIC bank bits.")) return 1;
+    if (expect(backend.get_monitor_cpu_port() == 0x00, "set_live_vic_bank must restore the selected monitor CPU bank after touching DD00.")) return 1;
+    backend.set_monitor_cpu_port(0x07);
     if (expect(strcmp(backend.source_name(0xA000), "BASIC") == 0, "BASIC source name failed.")) return 1;
     if (expect(strcmp(backend.source_name(0xD000), "IO") == 0, "I/O source name failed.")) return 1;
     if (expect(strcmp(backend.source_name(0xE000), "KERNAL") == 0, "KERNAL source name failed.")) return 1;
@@ -1939,6 +1945,9 @@ static int test_monitor_default_cpu_bank_and_vic_shortcuts(void)
         "CPU0 $A:RAM $D:RAM $E:RAM VIC1 $4000",
         "CPU0 $A:RAM $D:RAM $E:RAM VIC2 $8000",
     };
+    static const uint8_t vic_cycle_dd00[] = {
+        0xA8, 0xAB, 0xAA, 0xA9,
+    };
 
     ui.screen = &screen;
     ui.keyboard = &keyboard;
@@ -1949,7 +1958,7 @@ static int test_monitor_default_cpu_bank_and_vic_shortcuts(void)
 
     backend.live_cpu_port = 0x00;
     backend.live_cpu_ddr = 0x07;
-    backend.live_dd00 = 0x01;
+    backend.live_dd00 = 0xA9;
     backend.basic[0] = 0xBA;
     backend.ram[0xA000] = 0xAA;
 
@@ -1996,6 +2005,7 @@ static int test_monitor_default_cpu_bank_and_vic_shortcuts(void)
         if (expect(monitor.poll(0) == 0, "Shift+O VIC bank cycle failed.")) return 1;
         screen.get_slice(1, 22, 38, status);
         if (expect(strstr(status, vic_cycle_status[i]) == status, "Shift+O must cycle VIC0..VIC3 in ascending order.")) return 1;
+        if (expect(backend.live_dd00 == vic_cycle_dd00[i], "Shift+O must write the actual DD00 VIC bank bits without clobbering unrelated CIA-2 state.")) return 1;
     }
 
     if (expect(monitor.poll(0) == 1, "RUN/STOP exit failed after CPU/VIC shortcut test.")) return 1;
@@ -2488,7 +2498,7 @@ static int test_binary_bit_navigation_and_width(void)
         if (expect(strstr(header, "MONITOR BIN $0400/7") == header,
                    "Binary header must show cursor address and MSB bit index.")) return 1;
         screen.get_slice(1, 4, 13, row);
-        if (expect(strcmp(row, "0400 10000000") == 0,
+        if (expect(strcmp(row, "0400 *.......") == 0,
                    "Binary width=1 must render exactly 8 bits per row.")) return 1;
         if (expect(screen.reverse_chars[4][6] && !screen.reverse_chars[4][7],
                    "Binary cursor must select exactly one bit at MSB.")) return 1;
@@ -2533,11 +2543,11 @@ static int test_binary_bit_navigation_and_width(void)
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Binary width test: view switch failed.")) return 1;
         screen.get_slice(1, 4, 13, row);
-        if (expect(strcmp(row, "0000 10000000") == 0,
+        if (expect(strcmp(row, "0000 *.......") == 0,
                    "Binary default width must be one byte per row.")) return 1;
         if (expect(mon.poll(0) == 0, "Binary width test: width command failed.")) return 1;
         screen.get_slice(1, 4, 37, row);
-        if (expect(strcmp(row, "0000 10000000000000011111111100000000") == 0,
+        if (expect(strcmp(row, "0000 *..............*********........") == 0,
                    "Binary width=4 must render exactly 32 bits per row.")) return 1;
         screen.get_slice(1, 3, 38, header);
         if (expect(strstr(header, "W=") == NULL && strstr(header, "bits") == NULL,

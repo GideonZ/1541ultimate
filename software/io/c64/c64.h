@@ -379,7 +379,13 @@ public:
        if (!cfg) return 0;
        return cfg->get_value(id);	
     }
-    
+
+    const char *get_cfg_string(uint8_t id)
+    {
+       if (!cfg) return "";
+       return cfg->get_string(id);
+    }
+     
     /* C64 specifics */
     void resetConfigInFlash(int page);
     void unfreeze(void);
