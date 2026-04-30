@@ -24,6 +24,7 @@ extern StreamTextLog textLog; // the global log
 ClipBoard clipboard; // only one, and it's global and static
 
 int swap_joystick() __attribute__ ((weak));
+int swap_interface_type(UserInterface *ui) __attribute__ ((weak));
 
 /***********************/
 /* Tree Browser Object */
@@ -437,6 +438,10 @@ int TreeBrowser :: handle_key(int c)
             state->refresh = true;
             user_interface->help();
             break;
+        case KEY_CTRL_I:
+            reset_quick_seek();
+            ret = swap_interface_type(user_interface);
+            break;
         case KEY_CTRL_O:
             reset_quick_seek();
             state->refresh = true;
@@ -704,6 +709,11 @@ const char *TreeBrowser :: getPath() {
 }
 
 int swap_joystick()
+{
+    return 0;
+}
+
+int swap_interface_type(UserInterface *)
 {
     return 0;
 }

@@ -31,11 +31,12 @@ public:
 #define KEY_CTRL_C 0x03
 #define KEY_CTRL_D 0x04
 #define KEY_CTRL_E 0x05
+#define KEY_CTRL_I 0x09
+#define KEY_CTRL_J 0x0A
+#define KEY_CTRL_L 0x0C
 #define KEY_CTRL_N 0x0E
 #define KEY_CTRL_O 0x0F
 #define KEY_CTRL_V 0x16
-#define KEY_CTRL_J 0x0A
-#define KEY_CTRL_L 0x0C
 
 #define KEY_A      0x61
 #define KEY_S      0x73

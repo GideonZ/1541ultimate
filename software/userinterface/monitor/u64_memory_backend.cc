@@ -30,7 +30,9 @@ static bool rom_is_all_zero(const uint8_t *data, uint16_t len)
     return true;
 }
 
-static void load_monitor_char_rom_cache(C64 *machine)
+}
+
+void U64MemoryBackend :: load_monitor_char_rom_cache(C64 *machine)
 {
     FRESULT fres = FR_NOT_READY;
     if (machine) {
@@ -45,7 +47,22 @@ static void load_monitor_char_rom_cache(C64 *machine)
     }
 }
 
-static void load_monitor_rom_cache(C64 *machine)
+static void load_monitor_kernal_rom_cache(C64 *machine)
+{
+    FRESULT fres = FR_NOT_READY;
+    if (machine) {
+        fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY,
+                                                          machine->get_cfg_string(CFG_C64_KERNFILE),
+                                                          monitor_kernal_rom,
+                                                          sizeof(monitor_kernal_rom),
+                                                          NULL);
+    }
+    if (fres != FR_OK) {
+        memcpy(monitor_kernal_rom, _default_kernal_65_start, sizeof(monitor_kernal_rom));
+    }
+}
+
+void U64MemoryBackend :: load_monitor_rom_cache(C64 *machine)
 {
     snapshot_u64_rom((volatile uint8_t *)U64_BASIC_BASE, monitor_basic_rom, sizeof(monitor_basic_rom));
     snapshot_u64_rom((volatile uint8_t *)U64_KERNAL_BASE, monitor_kernal_rom, sizeof(monitor_kernal_rom));
@@ -54,11 +71,9 @@ static void load_monitor_rom_cache(C64 *machine)
         memcpy(monitor_basic_rom, _basic_bin_start, sizeof(monitor_basic_rom));
     }
     if (rom_is_all_zero(monitor_kernal_rom, sizeof(monitor_kernal_rom))) {
-        memcpy(monitor_kernal_rom, _default_kernal_65_start, sizeof(monitor_kernal_rom));
+        load_monitor_kernal_rom_cache(machine);
     }
     load_monitor_char_rom_cache(machine);
-}
-
 }
 
 enum CpuRegionMapping {
@@ -93,7 +108,7 @@ static bool uses_live_mapping_for_address(uint16_t address, uint8_t live_cpu_por
     return cpu_region_mapping(address, live_cpu_port) == cpu_region_mapping(address, monitor_cpu_port);
 }
 
-static bool read_monitor_rom_byte(uint16_t address, uint8_t cpu_port, uint8_t *value)
+bool U64MemoryBackend :: read_monitor_rom_byte(uint16_t address, uint8_t cpu_port, uint8_t *value) const
 {
     switch (cpu_region_mapping(address, cpu_port)) {
         case MAP_BASIC:
@@ -136,6 +151,7 @@ void U64MemoryBackend :: set_frozen(bool on)
         // stop the machine. If something else (e.g. freezer overlay) has
         // it stopped already, leave it that way and don't try to resume it.
         stopped_machine_for_session = machine->begin_monitor_session();
+        load_monitor_rom_cache(machine);
     } else if (!on && stopped_machine_for_session) {
         machine->end_monitor_session(stopped_machine_for_session);
         stopped_machine_for_session = false;
@@ -148,9 +164,10 @@ uint8_t U64MemoryBackend :: read(uint16_t address)
     uint8_t cpu_port = get_monitor_cpu_port();
     uint8_t live_cpu_port = machine->get_cpu_port();
     uint8_t rom_value = 0;
+    bool use_cached_rom = machine->is_accessible() || is_frozen() ||
+            !uses_live_mapping_for_address(address, live_cpu_port, cpu_port);
 
-    if (read_monitor_rom_byte(address, cpu_port, &rom_value) &&
-            (machine->is_accessible() || !uses_live_mapping_for_address(address, live_cpu_port, cpu_port))) {
+    if (read_monitor_rom_byte(address, cpu_port, &rom_value) && use_cached_rom) {
         return rom_value;
     }
     if (machine->is_accessible()) {

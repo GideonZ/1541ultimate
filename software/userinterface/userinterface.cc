@@ -37,6 +37,22 @@ volatile int active_user_interface_count = 0;
 
 }
 
+int swap_interface_type(UserInterface *ui)
+{
+    if (!ui || !ui->cfg) {
+        return MENU_NOP;
+    }
+
+    ConfigItem *item = ui->cfg->find_item(CFG_USERIF_ITYPE);
+    if (!item) {
+        return MENU_NOP;
+    }
+
+    item->setValue(1 - item->getValue());
+    ui->cfg->write();
+    return MENU_HIDE;
+}
+
 extern "C" void u64_dispatch_usb_hid_status_refresh(void) __attribute__((weak));
 
 /* Help */
