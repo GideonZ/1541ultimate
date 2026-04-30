@@ -977,6 +977,16 @@ static int test_disassembler(void)
     disassemble_6502(0x3000, illegal, true, &decoded);
     if (expect(strcmp(decoded.text, "SLO $44") == 0, "Illegal opcode enable failed.")) return 1;
 
+    const uint8_t lda_absy[] = { 0xB9, 0x99, 0xFF };
+    disassemble_6502(0x9010, lda_absy, false, &decoded);
+    if (expect(decoded.valid && decoded.length == 3 && decoded.operand_bytes == 2 && strcmp(decoded.text, "LDA $FF99,Y") == 0,
+               "Absolute indexed disassembly must expose a 2-byte operand.")) return 1;
+
+    const uint8_t asl_acc[] = { 0x0A, 0xEA, 0x00 };
+    disassemble_6502(0x4000, asl_acc, false, &decoded);
+    if (expect(decoded.valid && decoded.length == 1 && decoded.operand_bytes == 0 && strcmp(decoded.text, "ASL A") == 0,
+               "Accumulator disassembly must remain a 1-byte no-operand instruction.")) return 1;
+
     const uint8_t illegal_zpx[] = { 0x54, 0x44, 0x00 };
     disassemble_6502(0x3000, illegal_zpx, true, &decoded);
     if (expect(strcmp(decoded.text, "NOP $44,X") == 0, "Illegal zeropage,X disassembly failed.")) return 1;
@@ -2480,6 +2490,96 @@ static int test_number_shortcut_routing(void)
         TestUserInterface ui;
         CaptureScreen screen;
         FakeMemoryBackend backend;
+        char line[32];
+        const int keys[] = { 'J', 'A', 'E', KEY_RIGHT, 'N', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        backend.write(0xC000, 0xA9);
+        backend.write(0xC001, 0x12);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASM operand N test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM operand N test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM operand N test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM operand N test: moving to operand failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM operand N test: Number popup open failed.")) return 1;
+        get_popup_line(screen, 0, line, sizeof(line));
+        if (expect(strstr(line, "MONITOR NUM $C001 BYTE") == line,
+                   "ASM operand context must open Number on the operand byte without leaving edit mode.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM operand N test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM operand N test: exit edit mode failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASM operand N test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[19];
+        const int keys[] = { 'J', 'A', 'E', 'L', 'N', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C100", 1);
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASM popup N-routing test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM popup N-routing test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM popup N-routing test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM popup N-routing test: first mnemonic letter failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM popup N-routing test: second mnemonic letter failed.")) return 1;
+        if (expect(!find_popup_rect(screen, NULL, NULL, NULL, NULL),
+                   "Opcode completion popup must keep N as mnemonic input instead of opening Number.")) return 1;
+        screen.get_slice(16, 4, 18, line);
+        if (expect(strstr(line, " LN_") == line,
+                   "While the opcode picker is active, N must continue editing the mnemonic prefix.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM popup N-routing test: RUN/STOP should close the picker first.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM popup N-routing test: RUN/STOP should leave edit mode next.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASM popup N-routing test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[32];
+        const int keys[] = { 'J', 'A', 'E', 'L', 'D', 'A', KEY_RETURN, 'N', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C200", 1);
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 7; i++) {
+            if (expect(mon.poll(0) == 0, "ASM post-opcode N test: mnemonic commit failed.")) return 1;
+        }
+        if (expect(mon.poll(0) == 0, "ASM post-opcode N test: Number popup open failed.")) return 1;
+        get_popup_line(screen, 0, line, sizeof(line));
+        if (expect(strstr(line, "MONITOR NUM $C201 BYTE") == line,
+                   "After opcode entry advances to operand context, N must open Number without leaving edit mode.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM post-opcode N test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM post-opcode N test: exit edit mode failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASM post-opcode N test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
         const int keys[] = { 'I', 'E', 'N', KEY_BREAK, KEY_BREAK };
         FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
 
@@ -2568,6 +2668,203 @@ static int test_number_shortcut_routing(void)
         if (expect(mon.poll(0) == 0, "HEX edit N test: popup close failed.")) return 1;
         if (expect(mon.poll(0) == 0, "HEX edit N test: RUN/STOP should leave edit mode first.")) return 1;
         if (expect(mon.poll(0) == 1, "HEX edit N test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_asm_number_popup_targets_operands(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[32];
+        const int keys[] = { 'J', 'A', 'N', '1', '2', '3', '4', KEY_RETURN, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        backend.write(0x9010, 0xB9);
+        backend.write(0x9011, 0x99);
+        backend.write(0x9012, 0xFF);
+        backend.write(0x9013, 0xEA);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("9010", 1);
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASM word Number test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM word Number test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM word Number test: Number popup open failed.")) return 1;
+        get_popup_line(screen, 0, line, sizeof(line));
+        if (expect(strstr(line, "MONITOR NUM $9011 WORD") == line,
+                   "ASM Number popup must target the two-byte operand, not the opcode byte.")) return 1;
+        get_popup_line(screen, 1, line, sizeof(line));
+        if (expect(strstr(line, "Hex      $FF99") == line,
+                   "ASM Number popup must preload the operand word value.")) return 1;
+        get_popup_line(screen, 6, line, sizeof(line));
+        if (expect(strstr(line, "Write    $9011/$9012 LE") == line,
+                   "ASM Number popup must show the operand write-back range.")) return 1;
+        get_popup_line(screen, 7, line, sizeof(line));
+        if (expect(strstr(line, "Bytes    99 FF") == line,
+                   "ASM Number popup must show the operand bytes in little-endian order.")) return 1;
+        for (int i = 0; i < 5; i++) {
+            if (expect(mon.poll(0) == 0, "ASM word Number test: editing/commit failed.")) return 1;
+        }
+        if (expect(backend.read(0x9010) == 0xB9,
+                   "ASM word Number commit must leave the opcode byte unchanged.")) return 1;
+        if (expect(backend.read(0x9011) == 0x34 && backend.read(0x9012) == 0x12,
+                   "ASM word Number commit must rewrite only the operand bytes in little-endian order.")) return 1;
+        if (expect(backend.read(0x9013) == 0xEA,
+                   "ASM word Number commit must not overrun beyond the operand bytes.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM word Number test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASM word Number test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[32];
+        const int keys[] = { 'J', 'A', 'N', '3', '4', KEY_RETURN, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        backend.write(0xC000, 0xA9);
+        backend.write(0xC001, 0x12);
+        backend.write(0xC002, 0xEA);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASM byte Number test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM byte Number test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM byte Number test: Number popup open failed.")) return 1;
+        get_popup_line(screen, 0, line, sizeof(line));
+        if (expect(strstr(line, "MONITOR NUM $C001 BYTE") == line,
+                   "ASM Number popup must target the one-byte operand address.")) return 1;
+        get_popup_line(screen, 1, line, sizeof(line));
+        if (expect(strstr(line, "Hex      $12") == line,
+                   "ASM Number popup must preload the one-byte operand value.")) return 1;
+        for (int i = 0; i < 3; i++) {
+            if (expect(mon.poll(0) == 0, "ASM byte Number test: editing/commit failed.")) return 1;
+        }
+        if (expect(backend.read(0xC000) == 0xA9,
+                   "ASM byte Number commit must leave the opcode byte unchanged.")) return 1;
+        if (expect(backend.read(0xC001) == 0x34,
+                   "ASM byte Number commit must rewrite the one-byte operand.")) return 1;
+        if (expect(backend.read(0xC002) == 0xEA,
+                   "ASM byte Number commit must not touch the following byte.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM byte Number test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASM byte Number test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[32];
+        const int keys[] = { 'J', 'A', 'N', '4', '2', KEY_RETURN, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        backend.write(0xC100, 0x60);
+        backend.write(0xC101, 0xEA);
+        backend.write(0xC102, 0x99);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C100", 1);
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASM no-operand Number test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM no-operand Number test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM no-operand Number test: Number popup open failed.")) return 1;
+        get_popup_line(screen, 0, line, sizeof(line));
+        if (expect(strstr(line, "MONITOR NUM $C101 BYTE") == line,
+                   "No-operand ASM Number popup must fall back to the byte after the instruction.")) return 1;
+        for (int i = 0; i < 3; i++) {
+            if (expect(mon.poll(0) == 0, "ASM no-operand Number test: editing/commit failed.")) return 1;
+        }
+        if (expect(backend.read(0xC100) == 0x60,
+                   "No-operand ASM Number popup must not overwrite the opcode.")) return 1;
+        if (expect(backend.read(0xC101) == 0x42,
+                   "No-operand ASM Number popup must write to the deterministic fallback address.")) return 1;
+        if (expect(backend.read(0xC102) == 0x99,
+                   "No-operand ASM Number popup must not overrun past the fallback byte.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM no-operand Number test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASM no-operand Number test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_asm_number_popup_illegal_and_invalid_rows(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[32];
+        const int keys[] = { 'J', 'A', 'N', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        backend.write(0xC300, 0x07);
+        backend.write(0xC301, 0x44);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C300", 1);
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASM invalid-row Number test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM invalid-row Number test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM invalid-row Number test: Number popup open failed.")) return 1;
+        get_popup_line(screen, 0, line, sizeof(line));
+        if (expect(strstr(line, "MONITOR NUM $C300 BYTE") == line,
+                   "Disabled undocumented opcodes must fall back to the safe current-byte Number target.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM invalid-row Number test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASM invalid-row Number test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[32];
+        const int keys[] = { 'J', 'A', 'U', 'N', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        backend.write(0xC320, 0x07);
+        backend.write(0xC321, 0x44);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C320", 1);
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASM undocumented Number test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM undocumented Number test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM undocumented Number test: undocumented toggle failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM undocumented Number test: Number popup open failed.")) return 1;
+        get_popup_line(screen, 0, line, sizeof(line));
+        if (expect(strstr(line, "MONITOR NUM $C321 BYTE") == line,
+                   "Enabled undocumented opcodes must still target the decoded operand byte.")) return 1;
+        get_popup_line(screen, 1, line, sizeof(line));
+        if (expect(strstr(line, "Hex      $44") == line,
+                   "Enabled undocumented-opcode Number popup must preload the decoded operand value.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM undocumented Number test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASM undocumented Number test: exit failed.")) return 1;
         mon.deinit();
     }
 
@@ -4412,6 +4709,8 @@ int main()
     if (test_logical_delete_per_view()) return 1;
     if (test_scr_edit_writes_screen_code()) return 1;
     if (test_number_shortcut_routing()) return 1;
+    if (test_asm_number_popup_targets_operands()) return 1;
+    if (test_asm_number_popup_illegal_and_invalid_rows()) return 1;
     if (test_asm_edit_assemble_at_cursor()) return 1;
     if (test_asm_edit_direct_typing()) return 1;
     if (test_asm_edit_direct_typing_immediate()) return 1;

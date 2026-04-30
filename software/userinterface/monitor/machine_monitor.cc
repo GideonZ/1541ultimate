@@ -1181,6 +1181,9 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     number_edit_buffer[0] = 0;
     number_popup_x = 0;
     number_popup_y = 1;
+    number_target_addr = 0;
+    number_target_bytes = 1;
+    number_target_locked = false;
     hunt_picker_active = false;
     hunt_count = 0;
     hunt_selected = 0;
@@ -1236,8 +1239,13 @@ bool MachineMonitor :: number_shortcut_allowed(void) const
     if (!edit_mode) {
         return true;
     }
-    return state.view != MONITOR_VIEW_ASM &&
-           state.view != MONITOR_VIEW_ASCII &&
+    if (state.view == MONITOR_VIEW_ASM) {
+        if (opcode_picker_active) {
+            return false;
+        }
+        return asm_edit_part > 0;
+    }
+    return state.view != MONITOR_VIEW_ASCII &&
            state.view != MONITOR_VIEW_SCREEN;
 }
 
@@ -1407,10 +1415,55 @@ void MachineMonitor :: open_number_picker(void)
     if (number_selected < 0 || number_selected >= MONITOR_NUMBER_ROW_COUNT) {
         number_selected = MONITOR_NUMBER_ROW_HEX;
     }
+    number_picker_resolve_target();
     number_picker_reset_edit_buffer();
     number_picker_refresh_preview_from_memory();
     number_picker_place_popup();
     number_picker_active = true;
+}
+
+void MachineMonitor :: number_picker_resolve_target(void)
+{
+    number_target_addr = state.current_addr;
+    number_target_bytes = 1;
+    number_target_locked = false;
+
+    if (state.view != MONITOR_VIEW_ASM) {
+        return;
+    }
+
+    uint8_t row_bytes[3];
+    Disassembled6502 decoded;
+
+    read_row(state.current_addr, row_bytes, 3);
+    disassemble_6502(state.current_addr, row_bytes, state.illegal_enabled, &decoded);
+    if (!decoded.valid) {
+        return;
+    }
+
+    if (decoded.operand_bytes == 0) {
+        number_target_addr = (uint16_t)(state.current_addr + decoded.length);
+        number_target_bytes = 1;
+        number_target_locked = true;
+        return;
+    }
+
+    number_target_addr = (uint16_t)(state.current_addr + 1);
+    number_target_bytes = decoded.operand_bytes >= 2 ? 2 : 1;
+    number_target_locked = true;
+}
+
+uint16_t MachineMonitor :: number_picker_current_addr(void) const
+{
+    return number_target_addr;
+}
+
+uint8_t MachineMonitor :: number_picker_current_bytes(void) const
+{
+    if (number_target_locked) {
+        return number_target_bytes;
+    }
+    return number_word ? 2 : 1;
 }
 
 void MachineMonitor :: number_picker_reset_edit_buffer(void)
@@ -1421,14 +1474,21 @@ void MachineMonitor :: number_picker_reset_edit_buffer(void)
 
 void MachineMonitor :: number_picker_refresh_preview_from_memory(void)
 {
-    number_base_bytes[0] = canonical_read(state.current_addr);
-    number_base_bytes[1] = canonical_read((uint16_t)(state.current_addr + 1));
+    uint16_t target_addr = number_picker_current_addr();
+
+    number_base_bytes[0] = canonical_read(target_addr);
+    number_base_bytes[1] = canonical_read((uint16_t)(target_addr + 1));
     if (number_edit_length <= 0) {
-        number_preview_value = number_base_bytes[0];
-        number_word = false;
+        if (number_target_locked && number_target_bytes == 2) {
+            number_preview_value = (uint16_t)(((uint16_t)number_base_bytes[1] << 8) | number_base_bytes[0]);
+            number_word = true;
+        } else {
+            number_preview_value = number_base_bytes[0];
+            number_word = false;
+        }
         return;
     }
-    if (number_word) {
+    if (number_picker_current_bytes() == 2) {
         number_preview_value = (uint16_t)(((uint16_t)number_base_bytes[1] << 8) | number_base_bytes[0]);
     } else {
         number_preview_value = number_base_bytes[0];
@@ -1448,6 +1508,14 @@ void MachineMonitor :: number_picker_update_preview_from_buffer(void)
     if (!monitor_number_parse_buffer(number_selected, number_edit_buffer, number_edit_length,
                                      &value, &word)) {
         return;
+    }
+    if (number_target_locked) {
+        if (number_target_bytes == 1) {
+            value &= 0x00FF;
+            word = false;
+        } else {
+            word = true;
+        }
     }
     number_preview_value = value;
     number_word = word;
@@ -1653,10 +1721,11 @@ void MachineMonitor :: number_picker_commit(void)
 {
     uint8_t low = (uint8_t)(number_preview_value & 0xFF);
     uint8_t high = (uint8_t)((number_preview_value >> 8) & 0xFF);
+    uint16_t target_addr = number_picker_current_addr();
 
-    canonical_write(state.current_addr, low);
-    if (number_word) {
-        canonical_write((uint16_t)(state.current_addr + 1), high);
+    canonical_write(target_addr, low);
+    if (number_picker_current_bytes() == 2) {
+        canonical_write((uint16_t)(target_addr + 1), high);
     }
     number_picker_refresh_preview_from_memory();
 }
@@ -1667,7 +1736,7 @@ bool MachineMonitor :: number_picker_copy_preview(void)
 
     bytes[0] = (uint8_t)(number_preview_value & 0xFF);
     bytes[1] = (uint8_t)((number_preview_value >> 8) & 0xFF);
-    return clipboard_copy_bytes(bytes, number_word ? 2 : 1);
+    return clipboard_copy_bytes(bytes, number_picker_current_bytes());
 }
 
 int MachineMonitor :: number_picker_handle_key(int key)
@@ -1734,11 +1803,13 @@ int MachineMonitor :: number_picker_handle_key(int key)
     if (!monitor_number_parse_buffer(number_selected, candidate, number_edit_length + 1, &value, &word)) {
         return 0;
     }
+    if (number_target_locked && number_target_bytes == 1 && word) {
+        return 0;
+    }
 
     number_edit_buffer[number_edit_length++] = typed;
     number_edit_buffer[number_edit_length] = 0;
-    number_preview_value = value;
-    number_word = word;
+    number_picker_update_preview_from_buffer();
     refresh_popup_overlay();
     return 0;
 }
@@ -2200,6 +2271,8 @@ void MachineMonitor :: draw_number_picker()
     char ascii_text[3];
     char screen_text[3];
     char hex_digits[5];
+    uint16_t target_addr = number_picker_current_addr();
+    bool display_word = number_picker_current_bytes() == 2;
     uint8_t low = (uint8_t)(number_preview_value & 0xFF);
     uint8_t high = (uint8_t)((number_preview_value >> 8) & 0xFF);
     int screen_x;
@@ -2209,38 +2282,38 @@ void MachineMonitor :: draw_number_picker()
         return;
     }
 
-    if (number_word) {
+    if (display_word) {
         dump_hex_word(hex_digits, 0, number_preview_value);
         hex_digits[4] = 0;
     } else {
         dump_hex_byte(hex_digits, 0, low);
         hex_digits[2] = 0;
     }
-    for (int i = 0; i < (number_word ? 16 : 8); i++) {
-        int bit = number_word ? (15 - i) : (7 - i);
+    for (int i = 0; i < (display_word ? 16 : 8); i++) {
+        int bit = display_word ? (15 - i) : (7 - i);
         bits[i] = (number_preview_value & (uint16_t)(1u << bit)) ? '1' : '0';
     }
-    bits[number_word ? 16 : 8] = 0;
+    bits[display_word ? 16 : 8] = 0;
 
-    ascii_text[0] = number_word ? ascii_byte(high) : ascii_byte(low);
-    ascii_text[1] = number_word ? ascii_byte(low) : 0;
-    ascii_text[number_word ? 2 : 1] = 0;
-    screen_text[0] = number_word ? monitor_number_screen_display_char(high) : monitor_number_screen_display_char(low);
-    screen_text[1] = number_word ? monitor_number_screen_display_char(low) : 0;
-    screen_text[number_word ? 2 : 1] = 0;
+    ascii_text[0] = display_word ? ascii_byte(high) : ascii_byte(low);
+    ascii_text[1] = display_word ? ascii_byte(low) : 0;
+    ascii_text[display_word ? 2 : 1] = 0;
+    screen_text[0] = display_word ? monitor_number_screen_display_char(high) : monitor_number_screen_display_char(low);
+    screen_text[1] = display_word ? monitor_number_screen_display_char(low) : 0;
+    screen_text[display_word ? 2 : 1] = 0;
 
-    sprintf(popup_lines[0], "MONITOR NUM $%04X %s", state.current_addr, number_word ? "WORD" : "BYTE");
+    sprintf(popup_lines[0], "MONITOR NUM $%04X %s", target_addr, display_word ? "WORD" : "BYTE");
     sprintf(popup_lines[1], "Hex      $%s", hex_digits);
     sprintf(popup_lines[2], "Decimal  %u", (unsigned)number_preview_value);
     sprintf(popup_lines[3], "Binary   %s", bits);
     sprintf(popup_lines[4], "ASCII    %s", ascii_text);
     sprintf(popup_lines[5], "Screen   %s", screen_text);
-    if (number_word) {
-        sprintf(popup_lines[6], "Write    $%04X/$%04X LE", state.current_addr,
-                (uint16_t)(state.current_addr + 1));
+    if (display_word) {
+        sprintf(popup_lines[6], "Write    $%04X/$%04X LE", target_addr,
+                (uint16_t)(target_addr + 1));
         sprintf(popup_lines[7], "Bytes    %02X %02X", (unsigned)low, (unsigned)high);
     } else {
-        sprintf(popup_lines[6], "Write    $%04X", state.current_addr);
+        sprintf(popup_lines[6], "Write    $%04X", target_addr);
         sprintf(popup_lines[7], "Bytes    %02X", (unsigned)low);
     }
 

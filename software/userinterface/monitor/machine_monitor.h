@@ -142,6 +142,9 @@ class MachineMonitor : public UIObject
     char number_edit_buffer[17];
     int number_popup_x;
     int number_popup_y;
+    uint16_t number_target_addr;
+    uint8_t number_target_bytes;
+    bool number_target_locked;
     bool hunt_picker_active;
     int hunt_count;
     int hunt_selected;
@@ -235,12 +238,15 @@ class MachineMonitor : public UIObject
     bool clipboard_paste(void);
     void toggle_range_mode(void);
     void open_number_picker(void);
+    void number_picker_resolve_target(void);
     void number_picker_reset_edit_buffer(void);
     void number_picker_refresh_preview_from_memory(void);
     void number_picker_update_preview_from_buffer(void);
     void number_picker_set_row(int row);
     void number_picker_place_popup(void);
     void number_picker_anchor(int *x, int *y) const;
+    uint16_t number_picker_current_addr(void) const;
+    uint8_t number_picker_current_bytes(void) const;
     void number_picker_commit(void);
     bool number_picker_copy_preview(void);
     int number_picker_handle_key(int key);

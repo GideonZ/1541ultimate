@@ -6,6 +6,8 @@
 struct Disassembled6502
 {
     uint8_t length;
+    uint8_t operand_bytes;
+    bool valid;
     bool illegal;
     bool has_target;
     uint16_t target;

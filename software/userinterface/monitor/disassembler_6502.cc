@@ -123,18 +123,46 @@ void canonicalize_mnemonic(uint8_t opcode, const char *templ, char *mnemonic)
     }
 }
 
+const char *operand_spec(const char *templ)
+{
+    const char *spec = templ + 4;
+
+    while (*spec == ' ') {
+        spec++;
+    }
+    return spec;
+}
+
+uint8_t operand_length(const char *templ)
+{
+    const char *spec = operand_spec(templ);
+
+    if ((templ[0] == 'B') && (templ[1] != 'R')) {
+        return 1;
+    }
+    if (*spec == 0 || !strncmp(spec, "A", 1)) {
+        return 0;
+    }
+    if (!strncmp(spec, "rel", 3)) {
+        return 1;
+    }
+    if (!strncmp(spec, "($nnnn,X)", 9) || !strncmp(spec, "($nnnn)", 7) ||
+        !strncmp(spec, "(ABS,X)", 7) || !strncmp(spec, "$nnnn,Y", 7) ||
+        !strncmp(spec, "$nnnn,X", 7) || !strncmp(spec, "$nnnn", 5)) {
+        return 2;
+    }
+    if (!strncmp(spec, "($nn,X)", 7) || !strncmp(spec, "($nn),Y", 7) ||
+        !strncmp(spec, "$nn,Y", 5) || !strncmp(spec, "$nn,X", 5) ||
+        !strncmp(spec, "$nn,S", 5) || !strncmp(spec, "$nn", 3) ||
+        !strncmp(spec, "#", 1)) {
+        return 1;
+    }
+    return 0;
+}
+
 uint8_t instruction_length(const char *templ)
 {
-    if ((templ[0] == 'B') && (templ[1] != 'R')) {
-        return 2;
-    }
-    if (strstr(templ, "$nnnn") || strstr(templ, "ABS,X") || strstr(templ, "nnnn")) {
-        return 3;
-    }
-    if (strstr(templ, "$nn") || strstr(templ, "#") || strstr(templ, "rel") || strchr(templ, 'A')) {
-        return 2;
-    }
-    return 1;
+    return (uint8_t)(1 + operand_length(templ));
 }
 
 void trim_operand(char *operand)
@@ -240,10 +268,14 @@ void disassemble_6502(uint16_t pc, const uint8_t *bytes, bool illegal_enabled, D
     char operand[24];
 
     memset(out, 0, sizeof(Disassembled6502));
+    out->valid = true;
     out->illegal = is_illegal_opcode(opcode);
+    out->operand_bytes = operand_length(templ);
     out->length = instruction_length(templ);
 
     if (out->illegal && !illegal_enabled) {
+        out->valid = false;
+        out->operand_bytes = 0;
         strcpy(out->text, "???");
         out->length = 1;
         return;
