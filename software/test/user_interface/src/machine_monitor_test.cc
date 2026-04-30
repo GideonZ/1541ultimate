@@ -512,12 +512,14 @@ struct FakeBankedMemoryBackend : public MemoryBackend
             }
             return;
         }
-        ram[address] = value;
         if (frozen && address >= 0x0400 && address < 0x0800) {
             screen_backup[address - 0x0400] = value;
+            return;
         } else if (frozen && address >= 0x0800 && address < 0x1000) {
             ram_backup[address - 0x0800] = value;
+            return;
         }
+        ram[address] = value;
         if (address == 0x0000) {
             live_cpu_ddr = value & 0x07;
         }
@@ -2985,6 +2987,115 @@ static int test_opcode_picker_browsing_does_not_mutate_frozen_charset_backup(voi
     return 0;
 }
 
+static int test_opcode_picker_near_bottom_refresh_stays_inside_content(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    int keys[32];
+    int n = 0;
+
+    for (uint16_t addr = 0x0801; addr < 0x0820; addr++) {
+        backend.write(addr, 0xEA);
+    }
+
+    keys[n++] = 'A';
+    keys[n++] = 'E';
+    for (int i = 0; i < 16; i++) keys[n++] = KEY_DOWN;
+    keys[n++] = 'L';
+    keys[n++] = 'D';
+    keys[n++] = KEY_BREAK;
+    keys[n++] = KEY_BREAK;
+
+    FakeKeyboard kb(keys, n);
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+
+    MachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, "Lower-border popup bounds test: ASM view switch failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Lower-border popup bounds test: edit mode entry failed.")) return 1;
+    for (int i = 0; i < 16; i++) {
+        if (expect(mon.poll(0) == 0, "Lower-border popup bounds test: cursor movement failed.")) return 1;
+    }
+    if (expect(mon.poll(0) == 0, "Lower-border popup bounds test: popup open failed.")) return 1;
+
+    screen.reset_write_counts();
+    if (expect(mon.poll(0) == 0, "Lower-border popup bounds test: popup refilter failed.")) return 1;
+    if (expect(screen.count_writes_outside_rect(1, 4, 38, 21) == 0,
+               "Lower-border opcode popup refresh must stay inside the monitor content area.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Lower-border popup bounds test: RUN/STOP should close the picker first.")) return 1;
+    if (expect(mon.poll(0) == 0, "Lower-border popup bounds test: RUN/STOP should leave edit mode next.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
+static int test_opcode_picker_selection_near_bottom_preserves_live_charset_page(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeBankedMemoryBackend backend;
+    char header[39];
+    const char *addr_text = NULL;
+    unsigned int current_addr = 0;
+    int keys[48];
+    int n = 0;
+
+    backend.set_frozen(true);
+    for (uint16_t addr = 0x0801; addr < 0x0820; addr++) {
+        backend.ram_backup[addr - 0x0800] = 0xEA;
+        backend.ram[addr] = 0x40;
+    }
+
+    keys[n++] = 'J';
+    keys[n++] = 'A';
+    keys[n++] = 'E';
+    for (int i = 0; i < 15; i++) keys[n++] = KEY_DOWN;
+    keys[n++] = 'J';
+    keys[n++] = 'S';
+    keys[n++] = 'R';
+    keys[n++] = KEY_RETURN;
+    keys[n++] = KEY_BREAK;
+
+    FakeKeyboard kb(keys, n);
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("0801", 1);
+    monitor_reset_saved_state();
+
+    MachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, "Lower-border freeze write test: goto failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Lower-border freeze write test: ASM view switch failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Lower-border freeze write test: edit mode entry failed.")) return 1;
+    for (int i = 0; i < 15; i++) {
+        if (expect(mon.poll(0) == 0, "Lower-border freeze write test: cursor movement failed.")) return 1;
+    }
+    screen.get_slice(1, 3, 38, header);
+    addr_text = strchr(header, '$');
+    if (expect(addr_text != NULL && sscanf(addr_text + 1, "%x", &current_addr) == 1,
+               "Lower-border freeze write test must expose the current ASM address in the header.")) return 1;
+    if (expect(current_addr >= 0x0801 && current_addr < 0x0820,
+               "Lower-border freeze write test must stay inside the frozen $0800 page.")) return 1;
+    for (int i = 0; i < 3; i++) {
+        if (expect(mon.poll(0) == 0, "Lower-border freeze write test: popup interaction failed before commit.")) return 1;
+    }
+    if (expect(mon.poll(0) == 0, "Lower-border freeze write test: opcode commit failed.")) return 1;
+
+    if (expect(backend.read((uint16_t)current_addr) == 0x20,
+               "Lower-border popup selection must still commit the selected opcode to the intended frozen RAM address.")) return 1;
+    if (expect(backend.ram_backup[current_addr - 0x0800] == 0x20,
+               "Frozen opcode selection must update the saved RAM buffer for the selected address.")) return 1;
+    if (expect(backend.ram[current_addr] == 0x40,
+               "Frozen opcode selection near the lower border must not overwrite the live $0800 charset page.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Lower-border freeze write test: exit edit mode failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
 static int test_cross_view_sync(void)
 {
     // Edit in HEX, view memory unchanged; Edit in SCR via 'A' key should be visible
@@ -4310,6 +4421,8 @@ int main()
     if (test_opcode_picker_refilters_live()) return 1;
     if (test_opcode_picker_filters_orders_and_commits_on_enter()) return 1;
     if (test_opcode_picker_browsing_does_not_mutate_frozen_charset_backup()) return 1;
+    if (test_opcode_picker_near_bottom_refresh_stays_inside_content()) return 1;
+    if (test_opcode_picker_selection_near_bottom_preserves_live_charset_page()) return 1;
     if (test_cross_view_sync()) return 1;
     if (test_binary_bit_navigation_and_width()) return 1;
     if (test_clipboard_number_and_range()) return 1;

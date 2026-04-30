@@ -27,14 +27,16 @@ static uint8_t read_frozen_byte(volatile uint8_t *ram, bool freezerMenu, uint32_
 static void write_frozen_byte(volatile uint8_t *ram, bool freezerMenu, uint32_t address, uint8_t value,
                               uint32_t *screen_backup, uint32_t *ram_backup)
 {
-    ram[address] = value;
     if (freezerMenu) {
         if ((address >= 1024) && (address < 2048)) {
             ((uint8_t *)screen_backup)[address - 1024] = value;
+            return;
         } else if ((address >= 2048) && (address < 4096)) {
             ((uint8_t *)ram_backup)[address - 2048] = value;
+            return;
         }
     }
+    ram[address] = value;
 }
 
 static void override_cpu_port(volatile uint8_t *ram, bool freezerMenu, uint8_t cpu_port,
