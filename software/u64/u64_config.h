@@ -132,6 +132,7 @@ public:
     void ResetHandler();
     void create_task_items(void);
     void update_task_items(bool writablePath);
+    bool command_requires_lock(SubsysCommand *cmd);
     SubsysResultCode_e executeCommand(SubsysCommand *cmd);
     void effectuate_settings();
     void on_edit();

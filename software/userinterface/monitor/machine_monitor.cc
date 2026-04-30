@@ -66,11 +66,10 @@ static uint16_t monitor_last_goto_addr = 0;
 // Persistent BINARY view configuration. Width is byte-based only; every byte
 // renders as 8 bits and R is reserved for range mode.
 static uint8_t monitor_binary_bytes_per_row = 1;
-static Clipboard monitor_clipboard = { NULL, 0 };
 
-static inline uint8_t monitor_binary_byte_stride(void)
+static inline uint8_t monitor_binary_byte_stride(uint8_t bytes_per_row)
 {
-    uint8_t b = monitor_binary_bytes_per_row;
+    uint8_t b = bytes_per_row;
     if (b < MONITOR_BINARY_MIN_BYTES_PER_ROW) b = MONITOR_BINARY_MIN_BYTES_PER_ROW;
     if (b > MONITOR_BINARY_MAX_BYTES_PER_ROW) b = MONITOR_BINARY_MAX_BYTES_PER_ROW;
     return b;
@@ -410,14 +409,14 @@ static bool inline_edit_view(MachineMonitorView view)
            (view == MONITOR_VIEW_BINARY);
 }
 
-static uint16_t row_span_for_view(MachineMonitorView view)
+static uint16_t row_span_for_view(MachineMonitorView view, uint8_t binary_bytes_per_row)
 {
     if (view == MONITOR_VIEW_ASCII || view == MONITOR_VIEW_SCREEN) {
         return MONITOR_TEXT_BYTES_PER_ROW;
     }
     if (view == MONITOR_VIEW_BINARY) {
         // Width is dynamic and configured on the fly by the W shortcut.
-        return monitor_binary_byte_stride();
+        return monitor_binary_byte_stride(binary_bytes_per_row);
     }
     return MONITOR_HEX_BYTES_PER_ROW;
 }
@@ -467,12 +466,6 @@ void monitor_reset_saved_state(void)
     monitor_last_goto_addr = 0;
 
     monitor_binary_bytes_per_row = 1;
-
-    if (monitor_clipboard.data) {
-        free(monitor_clipboard.data);
-        monitor_clipboard.data = NULL;
-    }
-    monitor_clipboard.length = 0;
 }
 
 void monitor_invalidate_saved_state(void)
@@ -482,7 +475,7 @@ void monitor_invalidate_saved_state(void)
 
 void monitor_apply_goto(MachineMonitorState *state, uint16_t address)
 {
-    uint16_t span = row_span_for_view(state->view);
+    uint16_t span = row_span_for_view(state->view, monitor_binary_bytes_per_row);
     state->current_addr = address;
     if (state->view == MONITOR_VIEW_BINARY) {
         // Width is not necessarily a power of two; align using modular
@@ -1015,6 +1008,20 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
         state.illegal_enabled = false;
         state.cpu_port = 0x07;
     }
+    last_load_use_prg = monitor_last_load_use_prg;
+    last_load_start = monitor_last_load_start;
+    last_load_offset = monitor_last_load_offset;
+    last_load_length_auto = monitor_last_load_length_auto;
+    last_load_length = monitor_last_load_length;
+    last_save_start = monitor_last_save_start;
+    last_save_end = monitor_last_save_end;
+    strncpy(last_save_name, monitor_last_save_name, sizeof(last_save_name) - 1);
+    last_save_name[sizeof(last_save_name) - 1] = 0;
+    last_goto_valid = monitor_last_goto_valid;
+    last_goto_addr = monitor_last_goto_addr;
+    binary_bytes_per_row = monitor_binary_bytes_per_row;
+    clipboard.data = NULL;
+    clipboard.length = 0;
     screen = NULL;
     keyboard = NULL;
     window = NULL;
@@ -1054,6 +1061,27 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
 #else
     edit_blink_ms = 0;
 #endif
+}
+
+uint8_t MachineMonitor :: binary_byte_stride(void) const
+{
+    return monitor_binary_byte_stride(binary_bytes_per_row);
+}
+
+void MachineMonitor :: apply_goto_local(uint16_t address)
+{
+    uint16_t span = row_span();
+    state.current_addr = address;
+    if (state.view == MONITOR_VIEW_BINARY) {
+        if (span == 0) span = 1;
+        state.base_addr = (uint16_t)(address - (address % span));
+    } else {
+        state.base_addr = (uint16_t)(address & (uint16_t)(~(span - 1)));
+    }
+    if (state.view == MONITOR_VIEW_DISASM) {
+        state.base_addr = address;
+    }
+    state.disasm_offset = 0;
 }
 
 uint8_t MachineMonitor :: canonical_read(uint16_t address)
@@ -1119,11 +1147,11 @@ bool MachineMonitor :: clipboard_copy_byte(uint8_t value)
         return false;
     }
     data[0] = value;
-    if (monitor_clipboard.data) {
-        free(monitor_clipboard.data);
+    if (clipboard.data) {
+        free(clipboard.data);
     }
-    monitor_clipboard.data = data;
-    monitor_clipboard.length = 1;
+    clipboard.data = data;
+    clipboard.length = 1;
     return true;
 }
 
@@ -1161,23 +1189,23 @@ bool MachineMonitor :: clipboard_copy_range(void)
     for (uint32_t i = 0; i < length; i++) {
         data[i] = canonical_read((uint16_t)(start + i));
     }
-    if (monitor_clipboard.data) {
-        free(monitor_clipboard.data);
+    if (clipboard.data) {
+        free(clipboard.data);
     }
-    monitor_clipboard.data = data;
-    monitor_clipboard.length = (size_t)length;
+    clipboard.data = data;
+    clipboard.length = (size_t)length;
     return true;
 }
 
 bool MachineMonitor :: clipboard_paste(void)
 {
-    if (!monitor_clipboard.data || monitor_clipboard.length == 0) {
+    if (!clipboard.data || clipboard.length == 0) {
         return false;
     }
-    for (size_t i = 0; i < monitor_clipboard.length; i++) {
-        canonical_write((uint16_t)(state.current_addr + i), monitor_clipboard.data[i]);
+    for (size_t i = 0; i < clipboard.length; i++) {
+        canonical_write((uint16_t)(state.current_addr + i), clipboard.data[i]);
     }
-    state.current_addr = (uint16_t)(state.current_addr + monitor_clipboard.length);
+    state.current_addr = (uint16_t)(state.current_addr + clipboard.length);
     binary_bit_index = 7;
     if (state.view == MONITOR_VIEW_ASM) {
         ensure_disasm_visible();
@@ -1298,7 +1326,7 @@ bool MachineMonitor :: inline_edit_supported(void) const
 
 uint16_t MachineMonitor :: row_span(void) const
 {
-    return row_span_for_view(state.view);
+    return row_span_for_view(state.view, binary_bytes_per_row);
 }
 
 void MachineMonitor :: move_current(int delta)
@@ -1771,7 +1799,7 @@ void MachineMonitor :: draw_binary_row(int y, uint16_t addr, const uint8_t *byte
 
 void MachineMonitor :: draw_binary()
 {
-    int stride = monitor_binary_byte_stride();
+    int stride = binary_byte_stride();
     if (stride < 1) stride = 1;
     uint8_t bytes[MONITOR_BINARY_MAX_BYTES_PER_ROW];
     for (int line_idx = 0; line_idx < content_height; line_idx++) {
@@ -2080,7 +2108,7 @@ void MachineMonitor :: hunt_picker_jump()
     if (hunt_count <= 0 || hunt_selected < 0 || hunt_selected >= hunt_count) {
         return;
     }
-    monitor_apply_goto(&state, hunt_addrs[hunt_selected]);
+    apply_goto_local(hunt_addrs[hunt_selected]);
     hunt_picker_close();
 }
 
@@ -2574,7 +2602,7 @@ void MachineMonitor :: init(Screen *scr, Keyboard *keyb)
     current_vic_bank = backend->get_live_vic_bank();
     last_live_vic_bank = current_vic_bank;
     vic_bank_override = false;
-    monitor_apply_goto(&state, state.current_addr);
+    apply_goto_local(state.current_addr);
     draw();
 }
 
@@ -2587,7 +2615,24 @@ void MachineMonitor :: deinit(void)
     monitor_saved_state.illegal_enabled = state.illegal_enabled;
     monitor_saved_state.cpu_port = state.cpu_port;
     monitor_saved_state_valid = true;
+    monitor_last_load_use_prg = last_load_use_prg;
+    monitor_last_load_start = last_load_start;
+    monitor_last_load_offset = last_load_offset;
+    monitor_last_load_length_auto = last_load_length_auto;
+    monitor_last_load_length = last_load_length;
+    monitor_last_save_start = last_save_start;
+    monitor_last_save_end = last_save_end;
+    strncpy(monitor_last_save_name, last_save_name, sizeof(monitor_last_save_name) - 1);
+    monitor_last_save_name[sizeof(monitor_last_save_name) - 1] = 0;
+    monitor_last_goto_valid = last_goto_valid;
+    monitor_last_goto_addr = last_goto_addr;
+    monitor_binary_bytes_per_row = binary_bytes_per_row;
     backend->end_session();
+    if (clipboard.data) {
+        free(clipboard.data);
+        clipboard.data = NULL;
+    }
+    clipboard.length = 0;
     if (window) {
         delete window;
         window = NULL;
@@ -3010,7 +3055,7 @@ int MachineMonitor :: handle_key(int key)
             if (prompt_command("Jump AAAA", buffer, sizeof(buffer) - 1, true)) {
                 error = monitor_parse_address(buffer, &address);
                 if (error == MONITOR_OK) {
-                    monitor_apply_goto(&state, address);
+                    apply_goto_local(address);
                 } else {
                     get_ui()->popup(monitor_error_text(error), BUTTON_OK);
                 }
@@ -3135,18 +3180,18 @@ void MachineMonitor::handle_load_command()
     // overrode anything in a previous invocation. Empty / partial entries
     // fall back to defaults inside monitor_parse_load_params.
     char buffer[40];
-    if (monitor_last_load_use_prg) {
+    if (last_load_use_prg) {
         strcpy(buffer, "PRG,");
     } else {
-        sprintf(buffer, "%04X,", monitor_last_load_start);
+        sprintf(buffer, "%04X,", last_load_start);
     }
     char tail[24];
-    sprintf(tail, "%04X,", monitor_last_load_offset);
+    sprintf(tail, "%04X,", last_load_offset);
     strcat(buffer, tail);
-    if (monitor_last_load_length_auto) {
+    if (last_load_length_auto) {
         strcat(buffer, "AUTO");
     } else {
-        sprintf(tail, "%X", (unsigned)monitor_last_load_length);
+        sprintf(tail, "%X", (unsigned)last_load_length);
         strcat(buffer, tail);
     }
     if (!prompt_command("Load [PRG|AAAA],[Off],[Len|AUTO]", buffer, sizeof(buffer) - 1, true)) {
@@ -3168,13 +3213,13 @@ void MachineMonitor::handle_load_command()
         return;
     }
 
-    monitor_last_load_use_prg = use_prg;
+    last_load_use_prg = use_prg;
     if (!use_prg) {
-        monitor_last_load_start = start_addr;
+        last_load_start = start_addr;
     }
-    monitor_last_load_offset = offset;
-    monitor_last_load_length_auto = length_auto;
-    monitor_last_load_length = length;
+    last_load_offset = offset;
+    last_load_length_auto = length_auto;
+    last_load_length = length;
 
     const char *err = monitor_io::load_into_memory(path_buf, name_buf, backend,
                                                    start_addr, use_prg,
@@ -3196,7 +3241,7 @@ void MachineMonitor::handle_save_command()
     // what range the picker is about to write — and so we can short-circuit
     // before opening the picker on an obviously invalid range.
     char range_buf[16];
-    sprintf(range_buf, "%04X-%04X", monitor_last_save_start, monitor_last_save_end);
+    sprintf(range_buf, "%04X-%04X", last_save_start, last_save_end);
     if (!prompt_command("Save AAAA-BBBB", range_buf, sizeof(range_buf) - 1, true)) {
         return;
     }
@@ -3208,8 +3253,8 @@ void MachineMonitor::handle_save_command()
         redraw_full();
         return;
     }
-    monitor_last_save_start = start;
-    monitor_last_save_end = end;
+    last_save_start = start;
+    last_save_end = end;
 
     char path_buf[256] = "";
     char name_buf[64] = "";
@@ -3222,8 +3267,8 @@ void MachineMonitor::handle_save_command()
 
     if (!name_buf[0]) {
         // Picker returned a directory only (F5 in pick mode); ask for filename.
-        if (monitor_last_save_name[0]) {
-            strncpy(name_buf, monitor_last_save_name, sizeof(name_buf) - 1);
+        if (last_save_name[0]) {
+            strncpy(name_buf, last_save_name, sizeof(name_buf) - 1);
             name_buf[sizeof(name_buf) - 1] = 0;
         } else {
             name_buf[0] = 0;
@@ -3235,8 +3280,8 @@ void MachineMonitor::handle_save_command()
             return;
         }
     }
-    strncpy(monitor_last_save_name, name_buf, sizeof(monitor_last_save_name) - 1);
-    monitor_last_save_name[sizeof(monitor_last_save_name) - 1] = 0;
+    strncpy(last_save_name, name_buf, sizeof(last_save_name) - 1);
+    last_save_name[sizeof(last_save_name) - 1] = 0;
 
     const char *err = monitor_io::save_from_memory(get_ui(), path_buf, name_buf, backend, start, end);
     redraw_full();
@@ -3273,7 +3318,7 @@ void MachineMonitor::handle_width_command()
         return;
     }
     char buf[8];
-    sprintf(buf, "%u", (unsigned)monitor_binary_byte_stride());
+    sprintf(buf, "%u", (unsigned)binary_byte_stride());
     if (!prompt_command("Width 1..4 bytes/row", buf, sizeof(buf) - 1, true)) {
         return;
     }
@@ -3292,7 +3337,7 @@ void MachineMonitor::handle_width_command()
         redraw_full();
         return;
     }
-    monitor_binary_bytes_per_row = (uint8_t)v;
+    binary_bytes_per_row = (uint8_t)v;
     binary_bit_index = 7;
     ensure_current_visible();
     draw();
@@ -3301,7 +3346,7 @@ void MachineMonitor::handle_width_command()
 bool MachineMonitor::handle_goto_command()
 {
     char buffer[8];
-    uint16_t default_addr = monitor_last_goto_valid ? monitor_last_goto_addr : state.current_addr;
+    uint16_t default_addr = last_goto_valid ? last_goto_addr : state.current_addr;
     sprintf(buffer, "%04X", default_addr);
     if (!prompt_command("Go AAAA", buffer, sizeof(buffer) - 1, true)) {
         return false;
@@ -3312,11 +3357,11 @@ bool MachineMonitor::handle_goto_command()
         get_ui()->popup(monitor_error_text(error), BUTTON_OK);
         return false;
     }
-    monitor_last_goto_addr = address;
-    monitor_last_goto_valid = true;
+    last_goto_addr = address;
+    last_goto_valid = true;
     // Reposition the cursor first (mirrors J), so the displayed address matches
     // what we are about to execute.
-    monitor_apply_goto(&state, address);
+    apply_goto_local(address);
     // Hand off to the C64: the boot-cart DMA-jump path unfreezes the FPGA C64
     // and JMP ($00AA)s to `address`. The monitor must exit so the menu
     // dismisses and user code regains control.

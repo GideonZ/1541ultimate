@@ -1430,6 +1430,11 @@ void U64Config :: update_task_items(bool writablePath)
     myActions.saveedid->setDisabled(!writablePath);
 }
 
+bool U64Config :: command_requires_lock(SubsysCommand *cmd)
+{
+    return cmd->functionID != MENU_U64_MONITOR;
+}
+
 SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
 {
 	File *f = 0;

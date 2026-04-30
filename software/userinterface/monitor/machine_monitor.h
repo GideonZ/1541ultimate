@@ -110,6 +110,18 @@ class MachineMonitor : public UIObject
 {
     MemoryBackend *backend;
     MachineMonitorState state;
+    bool last_load_use_prg;
+    uint16_t last_load_start;
+    uint16_t last_load_offset;
+    bool last_load_length_auto;
+    uint32_t last_load_length;
+    uint16_t last_save_start;
+    uint16_t last_save_end;
+    char last_save_name[40];
+    bool last_goto_valid;
+    uint16_t last_goto_addr;
+    uint8_t binary_bytes_per_row;
+    Clipboard clipboard;
 
     Screen *screen;
     Keyboard *keyboard;
@@ -169,6 +181,8 @@ class MachineMonitor : public UIObject
     uint8_t canonical_read(uint16_t address);
     void canonical_write(uint16_t address, uint8_t value);
     void read_row(uint16_t address, uint8_t *dst, uint16_t len) const;
+    uint8_t binary_byte_stride(void) const;
+    void apply_goto_local(uint16_t address);
     void draw();
     void draw_header();
     void draw_status();
