@@ -636,9 +636,9 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
             if (run_code & RUNCODE_JUMP_BIT) {
             	C64_POKE(C64_BOOTCRT_JUMPADDR, buffer[0]);
             	C64_POKE(C64_BOOTCRT_JUMPADDR+1, buffer[1]);
-               if (bufferSize > 2) {
-                   load_buffer_dma(buffer+2, bufferSize-2, 0);
-               }
+                if (bufferSize > 2) {
+                    load_buffer_dma(buffer+2, bufferSize-2, 0);
+                }
             } else {
             	load_buffer_dma(buffer, bufferSize, 0);
             }

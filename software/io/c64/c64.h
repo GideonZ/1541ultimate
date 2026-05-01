@@ -385,7 +385,7 @@ public:
        if (!cfg) return "";
        return cfg->get_string(id);
     }
-     
+
     /* C64 specifics */
     void resetConfigInFlash(int page);
     void unfreeze(void);

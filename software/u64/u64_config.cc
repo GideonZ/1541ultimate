@@ -1441,20 +1441,20 @@ void U64Config :: update_task_items(bool writablePath)
 
 SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
 {
-	File *f = 0;
-	FRESULT res;
-	uint8_t edid[256];
-	char name[32];
-	FRESULT fres;
-	uint32_t trans;
-	name[0] = 0;
-	int sid1, sid2;
-	char sidString[40];
-	C64 *machine;
-	static char poke_buffer[16];
-	uint32_t addr, value;
+       File *f = 0;
+       FRESULT res;
+       uint8_t edid[256];
+       char name[32];
+       FRESULT fres;
+       uint32_t trans;
+       name[0] = 0;
+       int sid1, sid2;
+       char sidString[40];
+       C64 *machine;
+       static char poke_buffer[16];
+       uint32_t addr, value;
 
-	switch(cmd->functionID) {
+       switch(cmd->functionID) {
     case MENU_U64_SAVEEDID:
     	// Try to read EDID, just a hardware test
     	if ((getFpgaCapabilities() & CAPAB_ULTIMATE64) && (i2c)) {
@@ -1532,7 +1532,7 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
         break;
 
     default:
-    	printf("U64 does not know this command\n");
+       printf("U64 does not know this command\n");
         return SSRET_NOT_IMPLEMENTED;
     }
     return SSRET_OK;
