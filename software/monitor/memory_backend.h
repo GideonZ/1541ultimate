@@ -31,6 +31,9 @@ public:
     virtual bool freeze_available(void) const { return supports_freeze(); }
     virtual bool is_frozen(void) const { return false; }
     virtual void set_frozen(bool) { }
+    virtual bool supports_cpu_banking(void) const { return true; }
+    virtual bool supports_vic_bank(void) const { return true; }
+    virtual bool supports_go(void) const { return true; }
 
     virtual void set_monitor_cpu_port(uint8_t value)
     {

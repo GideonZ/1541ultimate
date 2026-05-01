@@ -11,7 +11,8 @@
 #include "userinterface.h"
 
 #define TEST_SORT_ORDER_DEVELOPER 999
-#define TEST_SUBSYSID_U64 6
+#define TEST_SUBSYSID_C64 1
+#define TEST_SUBSYSID_U64 9
 
 void outbyte(int b)
 {
@@ -652,6 +653,41 @@ struct FakeFrozenVicBackend : public FakeBankedMemoryBackend
     {
         requested_vic_bank = (uint8_t)(vic_bank & 0x03);
         set_live_vic_bank_calls++;
+    }
+};
+
+struct FakeRestrictedMemoryBackend : public FakeMemoryBackend
+{
+    int set_monitor_cpu_port_calls;
+    int set_live_vic_bank_calls;
+
+    FakeRestrictedMemoryBackend() : set_monitor_cpu_port_calls(0), set_live_vic_bank_calls(0)
+    {
+    }
+
+    virtual void set_monitor_cpu_port(uint8_t)
+    {
+        set_monitor_cpu_port_calls++;
+    }
+
+    virtual bool supports_cpu_banking(void) const
+    {
+        return false;
+    }
+
+    virtual bool supports_vic_bank(void) const
+    {
+        return false;
+    }
+
+    virtual void set_live_vic_bank(uint8_t)
+    {
+        set_live_vic_bank_calls++;
+    }
+
+    virtual const char *source_name(uint16_t) const
+    {
+        return "CPU";
     }
 };
 
@@ -1631,7 +1667,10 @@ static int test_task_action_lookup(void)
     if (expect(provider.update_called && provider.last_writable, "Task action update hook was not called.")) return 1;
     if (expect(provider.monitor_action != NULL, "Task action provider did not create the monitor action.")) return 1;
     if (expect(provider.monitor_action->isPersistent(), "Task action should be made persistent.")) return 1;
-    if (expect(TaskMenu::find_task_action(TEST_SUBSYSID_U64, "Machine Code Monitor") == provider.monitor_action, "Task action lookup failed.")) return 1;
+    if (expect(TaskMenu::find_task_action(TEST_SUBSYSID_U64, "Machine Code Monitor") == provider.monitor_action,
+               "U64 task action lookup failed.")) return 1;
+    if (expect(TaskMenu::find_task_action(TEST_SUBSYSID_C64, "Machine Code Monitor") == provider.monitor_action,
+               "C64 task action lookup failed.")) return 1;
     return 0;
 }
 
@@ -5192,6 +5231,58 @@ static int test_warning_popups_preserve_status_row(void)
     return 0;
 }
 
+static int test_restricted_backend_guards_platform_features(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeRestrictedMemoryBackend backend;
+    const int keys[] = { 'o', 'O', 'Z', 'G', KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+    char status[39];
+    uint16_t go_addr = 0;
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C123", 1);
+    monitor_reset_saved_state();
+    monitor_io::reset_fake_monitor_io();
+
+    MachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+
+    screen.get_slice(1, 22, 38, status);
+    if (expect(strstr(status, "CPU VIEW") == status && strstr(status, "CPU BANK N/A") != NULL && strstr(status, "VIC N/A") != NULL,
+               "Restricted backend status must describe the current CPU-visible map.")) return 1;
+    if (expect(backend.set_monitor_cpu_port_calls == 0,
+               "Restricted backend init must not receive a fake CPU-bank selection.")) return 1;
+
+    ui.popup_count = 0;
+    if (expect(mon.poll(0) == 0, "Restricted CPU-bank shortcut should not exit.")) return 1;
+    if (expect(ui.popup_count == 1 && strcmp(ui.last_popup, "CPU BANK UNAVAILABLE") == 0,
+               "Restricted CPU-bank shortcut must warn clearly.")) return 1;
+    if (expect(backend.set_monitor_cpu_port_calls == 0,
+               "Restricted CPU-bank shortcut must leave backend bank state unchanged.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Restricted VIC-bank shortcut should not exit.")) return 1;
+    if (expect(ui.popup_count == 2 && strcmp(ui.last_popup, "VIC BANK UNAVAILABLE") == 0,
+               "Restricted VIC-bank shortcut must warn clearly.")) return 1;
+    if (expect(backend.set_live_vic_bank_calls == 0,
+               "Restricted VIC-bank shortcut must not write DD00.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Restricted freeze shortcut should not exit.")) return 1;
+    if (expect(ui.popup_count == 3 && strcmp(ui.last_popup, "FREEZE UNAVAILABLE") == 0,
+               "Restricted freeze shortcut must warn clearly.")) return 1;
+
+    if (expect(mon.poll(0) == 1, "Restricted GO command should exit after queueing a jump.")) return 1;
+    if (expect(ui.popup_count == 3,
+               "Restricted GO command must not warn when a backend exposes CPU-view execution.")) return 1;
+    if (expect(mon.consume_pending_go(&go_addr) && go_addr == 0xC123,
+               "Restricted GO command must queue the requested jump address.")) return 1;
+    mon.deinit();
+    monitor_reset_saved_state();
+    return 0;
+}
+
 int main()
 {
     if (test_disassembler()) return 1;
@@ -5249,6 +5340,7 @@ int main()
     if (test_header_invariants_and_parity()) return 1;
     if (test_edit_indicator_layout_across_views()) return 1;
     if (test_warning_popups_preserve_status_row()) return 1;
+    if (test_restricted_backend_guards_platform_features()) return 1;
 
     puts("machine_monitor_test: OK");
     return 0;

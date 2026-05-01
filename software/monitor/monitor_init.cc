@@ -12,9 +12,7 @@
 Action *register_machine_monitor_task(actionFunction_t callback, int function_id)
 {
     Action *monitor = new Action("Machine Code Monitor", callback, function_id);
-#if U64
     TaskCategory *dev = TasksCollection::getCategory("Developer", SORT_ORDER_DEVELOPER);
     dev->prepend(monitor);
-#endif
     return monitor;
 }

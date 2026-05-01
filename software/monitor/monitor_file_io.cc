@@ -17,6 +17,7 @@
 #ifndef RECOVERYAPP
 #ifndef UPDATER
 #include "c64.h"
+#include "subsys.h"
 #if defined(U64) && (U64)
 #include "u64_machine.h"
 #endif
@@ -253,7 +254,15 @@ void monitor_io::jump_to(uint16_t address)
     machine->end_monitor_session(stopped_it);
     C64_MODE = MODE_NORMAL;
 #else
-    (void)address;
+    uint8_t jump_buffer[2] = {
+        (uint8_t)(address & 0xFF),
+        (uint8_t)(address >> 8)
+    };
+
+    SubsysCommand *cmd = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_BUFFER,
+                                           RUNCODE_DMALOAD_JUMP,
+                                           jump_buffer, sizeof(jump_buffer));
+    cmd->execute();
 #endif
 #else
     (void)address;

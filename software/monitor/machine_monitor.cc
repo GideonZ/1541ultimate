@@ -2310,7 +2310,16 @@ void MachineMonitor :: draw_header()
 void MachineMonitor :: draw_status()
 {
     char line[40];
-    monitor_format_status_line(line, state.cpu_port, current_vic_bank);
+    if (backend && !backend->supports_cpu_banking() && !backend->supports_vic_bank()) {
+        strcpy(line, "CPU VIEW  CPU BANK N/A  VIC N/A");
+    } else if (backend && !backend->supports_cpu_banking()) {
+        sprintf(line, "CPU VIEW  VIC%d $%04X", current_vic_bank & 0x03,
+                monitor_vic_bank_bases[current_vic_bank & 0x03]);
+    } else if (backend && !backend->supports_vic_bank()) {
+        sprintf(line, "CPU%d  VIC N/A", state.cpu_port & 0x07);
+    } else {
+        monitor_format_status_line(line, state.cpu_port, current_vic_bank);
+    }
     draw_padded(window, window->get_size_y() - 1, line, strlen(line));
 }
 
@@ -3349,8 +3358,10 @@ void MachineMonitor :: init(Screen *scr, Keyboard *keyb)
     content_height = window->get_size_y() - 2;
     backend->begin_session();
     state.cpu_port = normalize_cpu_mode(state.cpu_port);
-    backend->set_monitor_cpu_port(state.cpu_port);
-    current_vic_bank = backend->get_live_vic_bank();
+    if (backend->supports_cpu_banking()) {
+        backend->set_monitor_cpu_port(state.cpu_port);
+    }
+    current_vic_bank = backend->supports_vic_bank() ? backend->get_live_vic_bank() : 0;
     last_live_vic_bank = current_vic_bank;
     vic_bank_override = false;
     apply_go_local(state.current_addr);
@@ -3771,12 +3782,18 @@ int MachineMonitor :: handle_key(int key)
             if (backend && backend->freeze_available()) {
                 backend->set_frozen(!backend->is_frozen());
             } else {
-                get_ui()->popup("FREEZE ONLY IN OVERLAY MODE", BUTTON_OK);
+                get_ui()->popup((backend && backend->supports_freeze()) ?
+                                "FREEZE ONLY IN OVERLAY MODE" : "FREEZE UNAVAILABLE", BUTTON_OK);
                 redraw_full();
             }
             break;
         case 'o': {
             int asm_row = (state.view == MONITOR_VIEW_ASM) ? disasm_visible_row(state.current_addr) : -1;
+            if (backend && !backend->supports_cpu_banking()) {
+                get_ui()->popup("CPU BANK UNAVAILABLE", BUTTON_OK);
+                redraw_full();
+                break;
+            }
             state.cpu_port = next_cpu_mode(state.cpu_port);
             backend->set_monitor_cpu_port(state.cpu_port);
             if (state.view == MONITOR_VIEW_ASM) {
@@ -3789,6 +3806,11 @@ int MachineMonitor :: handle_key(int key)
             uint8_t requested_vic_bank = next_vic_bank(current_vic_bank);
             uint8_t live_vic_bank;
 
+            if (backend && !backend->supports_vic_bank()) {
+                get_ui()->popup("VIC BANK UNAVAILABLE", BUTTON_OK);
+                redraw_full();
+                break;
+            }
             backend->set_live_vic_bank(requested_vic_bank);
             live_vic_bank = backend->get_live_vic_bank();
             current_vic_bank = requested_vic_bank;
@@ -3921,14 +3943,16 @@ int MachineMonitor :: poll(int)
             draw();
             return 0;
         }
-        uint8_t vic_bank = backend->get_live_vic_bank();
-        if (vic_bank != last_live_vic_bank) {
-            last_live_vic_bank = vic_bank;
-            if (!vic_bank_override || vic_bank == current_vic_bank) {
-                current_vic_bank = vic_bank;
-                vic_bank_override = false;
+        if (backend->supports_vic_bank()) {
+            uint8_t vic_bank = backend->get_live_vic_bank();
+            if (vic_bank != last_live_vic_bank) {
+                last_live_vic_bank = vic_bank;
+                if (!vic_bank_override || vic_bank == current_vic_bank) {
+                    current_vic_bank = vic_bank;
+                    vic_bank_override = false;
+                }
+                draw_status();
             }
-            draw_status();
         }
         return 0;
     }
@@ -4136,6 +4160,11 @@ bool MachineMonitor::handle_go_command()
 {
     char buffer[8];
     uint16_t default_addr = last_go_valid ? last_go_addr : state.current_addr;
+    if (backend && !backend->supports_go()) {
+        get_ui()->popup("GO UNAVAILABLE", BUTTON_OK);
+        redraw_full();
+        return false;
+    }
     sprintf(buffer, "%04X", default_addr);
     if (!prompt_command("Go AAAA", buffer, sizeof(buffer) - 1, true)) {
         return false;

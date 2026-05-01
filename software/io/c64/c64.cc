@@ -597,6 +597,66 @@ bool C64::is_in_reset(void)
     return (C64_MODE & C64_MODE_RESET);
 }
 
+uint8_t C64::monitor_read_memory(uint16_t address)
+{
+    bool stopped_it = false;
+    volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+    uint8_t value;
+
+    if (!is_stopped()) {
+        stop(false);
+        stopped_it = true;
+    }
+
+    if (isFrozen && address >= 0x0400 && address < 0x0800) {
+        value = ((uint8_t *)screen_backup)[address - 0x0400];
+    } else if (isFrozen && address >= 0x0800 && address < 0x1000) {
+        value = ((uint8_t *)ram_backup)[address - 0x0800];
+    } else if (isFrozen && address >= 0xD800 && address < 0xDC00) {
+        value = ((uint8_t *)color_backup)[address - 0xD800];
+    } else {
+        value = ram[address];
+    }
+
+    if (stopped_it) {
+        resume();
+    }
+    return value;
+}
+
+void C64::monitor_write_memory(uint16_t address, uint8_t value)
+{
+    bool stopped_it = false;
+    volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+
+    if (!is_stopped()) {
+        stop(false);
+        stopped_it = true;
+    }
+
+    if (isFrozen && address >= 0x0400 && address < 0x0800) {
+        ((uint8_t *)screen_backup)[address - 0x0400] = value;
+    } else if (isFrozen && address >= 0x0800 && address < 0x1000) {
+        ((uint8_t *)ram_backup)[address - 0x0800] = value;
+    } else if (isFrozen && address >= 0xD800 && address < 0xDC00) {
+        ((uint8_t *)color_backup)[address - 0xD800] = value;
+    } else {
+        ram[address] = value;
+    }
+
+    if (stopped_it) {
+        resume();
+    }
+}
+
+void C64::monitor_read_memory_block(uint16_t address, uint8_t *dst, uint16_t len)
+{
+    while (len) {
+        *dst++ = monitor_read_memory(address++);
+        len--;
+    }
+}
+
 /*
  -------------------------------------------------------------------------------
  freeze (split in subfunctions)
