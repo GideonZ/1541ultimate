@@ -1,6 +1,6 @@
 // Firmware-only implementation of the monitor file/jump helpers.
 // Included from userinterface.cc so it shares the same translation unit.
-// Host-test builds supply a stub instead — see software/test/user_interface/src/.
+// Host-test builds supply a stub instead — see software/test/monitor/.
 
 #include "monitor_file_io.h"
 #include "machine_monitor.h"

@@ -40,8 +40,8 @@ extern "C" {
 #include "hdmi_scan.h"
 #include "usb_hid.h"
 #include "usb_hid_config.h"
-#include "monitor/u64_memory_backend.h"
-#include "monitor/machine_monitor.h"
+#include "u64_memory_backend.h"
+#include "machine_monitor.h"
 
 const uint8_t default_colors[16][3] = {
     { 0x00, 0x00, 0x00 },

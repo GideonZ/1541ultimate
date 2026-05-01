@@ -49,7 +49,7 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/components \
 			$(PATH_SW)/network \
 			$(PATH_SW)/userinterface \
-			$(PATH_SW)/userinterface/monitor \
+			$(PATH_SW)/monitor \
 			$(PATH_SW)/io/stream \
 			$(PATH_SW)/io/c64 \
 			$(PATH_SW)/io/rtc \
@@ -105,4 +105,3 @@ OBJCOPY	  = $(CROSS)objcopy
 SIZE	  = $(CROSS)size
 
 .SUFFIXES:
-

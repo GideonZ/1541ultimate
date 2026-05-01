@@ -3,7 +3,7 @@ FINAL    =  $(RESULT)/$(PRJ)
 
 include ../../../common/environment.mk
 
-VPATH += $(PATH_SW)/test/user_interface/src
+VPATH += $(PATH_SW)/test/monitor
 
 CROSS     =
 CC        = $(CROSS)gcc

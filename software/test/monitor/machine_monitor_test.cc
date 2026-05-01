@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "monitor/machine_monitor.h"
-#include "monitor/disassembler_6502.h"
+#include "machine_monitor.h"
+#include "disassembler_6502.h"
 #include "menu.h"
 #include "screen.h"
 #include "task_menu.h"
@@ -2439,7 +2439,7 @@ static int test_monitor_kernal_bank_switch_and_ram_interaction(void)
     return 0;
 }
 
-#include "monitor/assembler_6502.h"
+#include "assembler_6502.h"
 
 static int test_assembler_encoding(void)
 {
