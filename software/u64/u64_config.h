@@ -26,6 +26,7 @@ extern U64Config *u64_configurator;
 class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
 {
     struct {
+        Action *poke;
         Action *monitor;
         Action *saveedid;
         Action *siddetect;

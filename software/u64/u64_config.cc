@@ -1395,6 +1395,7 @@ int U64Config :: setSidEmuParams(ConfigItem *it)
 #define MENU_U64_WIFI_BOOT 5
 #define MENU_U64_DETECT_SIDS 6
 #define MENU_U64_WIFI_DOWNLOAD 7
+#define MENU_U64_POKE 8
 #define MENU_U64_WIFI_ECHO 9
 #define MENU_U64_UART_ECHO 10
 #define MENU_U64_MONITOR 12
@@ -1413,6 +1414,7 @@ SubsysResultCode_e U64Config :: S_run_monitor(SubsysCommand *cmd)
 void U64Config :: create_task_items(void)
 {
     TaskCategory *dev = TasksCollection :: getCategory("Developer", SORT_ORDER_DEVELOPER);
+    myActions.poke      = new Action("Poke", SUBSYSID_U64, MENU_U64_POKE);
     myActions.monitor   = new Action("Machine Code Monitor", U64Config::S_run_monitor, MENU_U64_MONITOR);
     myActions.saveedid  = new Action("Save EDID to file", SUBSYSID_U64, MENU_U64_SAVEEDID);
     myActions.siddetect = new Action("Detect SIDs", SUBSYSID_U64, MENU_U64_DETECT_SIDS);
@@ -1427,6 +1429,7 @@ void U64Config :: create_task_items(void)
 #endif
 
 #if DEVELOPER > 0
+    dev->append(myActions.poke      );
     dev->append(myActions.siddetect );
     dev->append(myActions.esp32off  );
     dev->append(myActions.esp32on   );
@@ -1451,7 +1454,8 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
 	int sid1, sid2;
 	char sidString[40];
 	C64 *machine;
-	uint32_t addr, end_addr, value;
+	static char poke_buffer[16];
+	uint32_t addr, value;
 
 	switch(cmd->functionID) {
     case MENU_U64_SAVEEDID:
@@ -1481,6 +1485,27 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
     		}
     	}
     	break;
+
+    case MENU_U64_POKE:
+        if ((cmd->user_interface->string_box("Poke AAAA,DD", poke_buffer, 16) > 0) && (*poke_buffer)) {
+            sscanf(poke_buffer, "%x,%x", &addr, &value);
+
+            C64 *machine = C64 :: getMachine();
+            portENTER_CRITICAL();
+
+            if (!(C64_STOP & C64_HAS_STOPPED)) {
+                machine->stop(false);
+
+                C64_POKE(addr, value);
+
+                machine->resume();
+            } else {
+                C64_POKE(addr, value);
+            }
+            portEXIT_CRITICAL();
+        }
+        break;
+
     case MENU_U64_DETECT_SIDS:
         machine = C64 :: getMachine();
         machine->stop(false);
