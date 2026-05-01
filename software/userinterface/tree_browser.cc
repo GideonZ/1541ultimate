@@ -26,6 +26,8 @@ ClipBoard clipboard; // only one, and it's global and static
 int swap_joystick() __attribute__ ((weak));
 int swap_interface_type(UserInterface *ui) __attribute__ ((weak));
 
+static const char c_help_footer_label[] = "F3=HELP";
+
 /***********************/
 /* Tree Browser Object */
 /***********************/
@@ -49,6 +51,7 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root) : UIObject(ui)
     observerQueue = new ObserverQueue("TreeBrowser");
     fm->registerObserver(observerQueue);
     has_border = false;
+    use_ui_focus_stack = true;
     pick_mode = PICK_NONE;
     picked = false;
     picked_is_dir_only = false;
@@ -75,13 +78,8 @@ void TreeBrowser :: init() // call on root!
 	this->screen = user_interface->get_screen();
     this->keyb   = user_interface->get_keyboard();
 
-    if (pick_mode == PICK_SAVE) {
-        screen->move_cursor(screen->get_size_x() - 19, screen->get_size_y() - 1);
-        screen->output("\eAF5=NewFile F3=HELP\eO");
-    } else {
-        screen->move_cursor(screen->get_size_x()-8, screen->get_size_y()-1);
-        screen->output("\eAF3=HELP\eO");
-    }
+    screen->move_cursor(screen->get_size_x() - (int)strlen(c_help_footer_label) - 1, screen->get_size_y() - 1);
+    screen->output("\eAF3=HELP\eO");
 
 	window = new Window(screen, 0, 2, screen->get_size_x(), screen->get_size_y()-3);
     if(has_border) {
@@ -109,12 +107,16 @@ void TreeBrowser :: context(int initial)
 {
 	if(!state->under_cursor)
 		return;
+    if (is_picker_synthetic_entry(state->under_cursor))
+        return;
 
     //printf("Creating context menu for %s\n", state->under_cursor->getName());
     contextMenu = new ContextMenu(user_interface, state, initial, state->selected_line);
     contextMenu->init(window, keyb);
-    user_interface->activate_uiobject(contextMenu);
-    // from this moment on, we loose focus.. polls will go directly to context menu!
+    if (use_ui_focus_stack) {
+        user_interface->activate_uiobject(contextMenu);
+        // from this moment on, we loose focus.. polls will go directly to context menu!
+    }
 }
 
 void TreeBrowser :: task_menu(void)
@@ -124,8 +126,10 @@ void TreeBrowser :: task_menu(void)
     //printf("Creating task menu for %s\n", state->node->getName());
     contextMenu = new TaskMenu(user_interface, state, path);
     contextMenu->init(window, keyb);
-    user_interface->activate_uiobject(contextMenu);
-    // from this moment on, we loose focus.. polls will go directly to menu!
+    if (use_ui_focus_stack) {
+        user_interface->activate_uiobject(contextMenu);
+        // from this moment on, we loose focus.. polls will go directly to menu!
+    }
 }
 
 void TreeBrowser :: test_editor(void)
@@ -156,8 +160,17 @@ int TreeBrowser :: poll(int sub_returned)
     int ret = 0;
 
     if(contextMenu) {
+        if (!use_ui_focus_stack) {
+            sub_returned = contextMenu->poll(0);
+            if (!sub_returned) {
+                return 0;
+            }
+        }
         if(sub_returned < 0) {
-        	delete contextMenu;
+            if (!use_ui_focus_stack) {
+                contextMenu->deinit();
+            }
+            delete contextMenu;
             contextMenu = NULL;
             state->draw();
         } else if(sub_returned > 0) {
@@ -167,7 +180,21 @@ int TreeBrowser :: poll(int sub_returned)
             // create a return value of a GUI object, and call execute
             // with that immediately.
             state->draw();
-            ret = contextMenu->executeSelected(state->browser->getPath());
+            Action *selectedAction = contextMenu->getSelectedAction();
+            Browsable *selectedEntry = contextMenu->getContextable();
+            FileInfo *info = selectedEntry ? selectedEntry->getFileInfo() : NULL;
+            if (selectedAction && selectedEntry &&
+                (pick_mode != PICK_NONE) &&
+                info && !(info->attrib & (AM_DIR | AM_VOL)) &&
+                (strcmp(selectedAction->getName(), "Select File") == 0)) {
+                pick_result(state->browser->getPath(), selectedEntry->getName(), false);
+                ret = MENU_CLOSE;
+            } else {
+                ret = contextMenu->executeSelected(state->browser->getPath());
+            }
+            if (!use_ui_focus_stack) {
+                contextMenu->deinit();
+            }
             delete contextMenu;
             contextMenu = NULL;
             if (user_interface->has_focus(this)) {
@@ -350,37 +377,21 @@ int TreeBrowser :: handle_key(int c)
     if (pick_mode != PICK_NONE) {
         switch (c) {
             case KEY_RETURN:
-            case KEY_RIGHT: {
                 reset_quick_seek();
                 if (!state || !state->under_cursor) {
                     return 0;
                 }
-                mstring name(state->under_cursor->getName());
-                mstring before_path(path ? path->get_path() : "");
-                bool not_descendable = state->into2();
-                if (not_descendable) {
-                    picked = true;
-                    picked_is_dir_only = false;
-                    picked_path = before_path;
-                    picked_name = name;
-                    return MENU_CLOSE;
+                if ((pick_mode == PICK_SAVE) && is_picker_synthetic_entry(state->under_cursor)) {
+                    return pick_current_directory();
                 }
+                context(0);
                 return 0;
-            }
-            case KEY_LEFT:
-                if (!state->previous && allow_exit) {
-                    return MENU_CLOSE;
+            case KEY_RIGHT:
+                reset_quick_seek();
+                if (!state || !state->under_cursor || is_picker_synthetic_entry(state->under_cursor)) {
+                    return 0;
                 }
-                state->level_up();
-                return 0;
-            case KEY_TASKS:
-                if (pick_mode == PICK_SAVE) {
-                    picked = true;
-                    picked_is_dir_only = true;
-                    picked_path = path ? path->get_path() : "";
-                    picked_name = "";
-                    return MENU_CLOSE;
-                }
+                state->into2();
                 return 0;
             case KEY_BREAK:
             case KEY_F8:
@@ -390,15 +401,6 @@ int TreeBrowser :: handle_key(int c)
             case KEY_MENU:
                 picked = false;
                 return MENU_CLOSE;
-            case KEY_CTRL_C:
-            case KEY_CTRL_V:
-            case KEY_CTRL_A:
-            case KEY_CTRL_N:
-            case KEY_CTRL_O:
-            case KEY_INSERT:
-            case KEY_CONFIG:
-            case KEY_SPACE:
-                return 0;
             default:
                 break;
         }
@@ -564,7 +566,7 @@ bool TreeBrowser :: perform_quick_seek(void)
     int num_el = state->children->get_elements();
     for(int i=0;i<num_el;i++) {
     	Browsable *t = (*state->children)[i];
-		if(pattern_match(quick_seek_string, t->getName(), false)) {
+		if(t && !t->isSyntheticPickerEntry() && pattern_match(quick_seek_string, t->getName(), false)) {
 			state->move_to_index(i);
 			return true;
 		}
@@ -590,7 +592,7 @@ void TreeBrowser :: copy_selection(void)
 	}
 	if (clipboard.getNumberOfFiles() == 0) {
 	    Browsable *t = state->under_cursor;
-	    if (t) {
+	    if (t && !t->isSyntheticPickerEntry()) {
 	        clipboard.addFile(t->getName());
 	    }
 	}
@@ -678,6 +680,25 @@ void TreeBrowser::delete_selected(void)
 void TreeBrowser :: cd(const char *dst)
 {
     observerQueue->putEvent(new FileManagerEvent(eChangeDirectory, dst));
+}
+
+bool TreeBrowser :: is_picker_synthetic_entry(Browsable *entry) const
+{
+    return entry && entry->isSyntheticPickerEntry();
+}
+
+void TreeBrowser :: pick_result(const char *path, const char *name, bool dir_only)
+{
+    picked = true;
+    picked_is_dir_only = dir_only;
+    picked_path = path ? path : "";
+    picked_name = name ? name : "";
+}
+
+int TreeBrowser :: pick_current_directory(void)
+{
+    pick_result(path ? path->get_path() : "", "", true);
+    return MENU_CLOSE;
 }
 
 // private

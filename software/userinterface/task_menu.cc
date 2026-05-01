@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include "task_menu.h"
 #include <string.h>
+#include "tree_browser.h"
 #include "tree_browser_state.h"
 #include "filemanager.h"
 
@@ -113,7 +114,9 @@ int TaskMenu :: select_item(void)
     }
     subContext = new TaskSubMenu(user_interface, state, cat, first_selectable_sub_item, item_index);
     subContext->init(window, keyb);
-    user_interface->activate_uiobject(subContext);
+    if (!state || !state->browser || state->browser->use_ui_focus_stack) {
+        user_interface->activate_uiobject(subContext);
+    }
     return 0;
 }
 

@@ -3994,7 +3994,7 @@ void MachineMonitor::handle_save_command()
 
     char path_buf[256] = "";
     char name_buf[64] = "";
-    if (!monitor_io::pick_file(get_ui(), "SAVE: pick file/dir (F5=here)", path_buf, sizeof(path_buf),
+    if (!monitor_io::pick_file(get_ui(), "SAVE: pick file/dir", path_buf, sizeof(path_buf),
                                name_buf, sizeof(name_buf), true)) {
         redraw_full();
         return;
@@ -4002,7 +4002,7 @@ void MachineMonitor::handle_save_command()
     redraw_full();
 
     if (!name_buf[0]) {
-        // Picker returned a directory only (F5 in pick mode); ask for filename.
+        // Picker returned a directory-only save target; ask for the filename.
         if (last_save_name[0]) {
             strncpy(name_buf, last_save_name, sizeof(name_buf) - 1);
             name_buf[sizeof(name_buf) - 1] = 0;

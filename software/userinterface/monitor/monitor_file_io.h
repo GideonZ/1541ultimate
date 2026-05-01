@@ -13,9 +13,9 @@ class MemoryBackend;
 namespace monitor_io {
 
 // Open the standard TreeBrowser in pick mode and return the user's selection.
-// `save_mode` switches between LOAD pick semantics (RETURN/RIGHT picks a file)
-// and SAVE semantics (additionally F5 picks the current directory only,
-// returning name_out empty so the caller can prompt for a filename).
+// `save_mode` switches between LOAD and SAVE picker semantics. SAVE mode can
+// return the current directory with an empty filename so the caller can prompt
+// for a new filename, while existing-file selection comes back as path + name.
 // Returns true if the user picked something, false on ESC / cancel.
 bool pick_file(UserInterface *ui, const char *title,
                char *path_out, int path_max,

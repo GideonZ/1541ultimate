@@ -109,6 +109,11 @@ public:
 		return this->info;
 	}
 
+    FileInfo *getFileInfo()
+    {
+        return info;
+    }
+
 	Path *getPath(void) {
 		return parent_path;
 	}

@@ -43,6 +43,7 @@ bool monitor_io::pick_file(UserInterface *ui, const char *title,
     Browsable *root = new BrowsableRoot();
     TreeBrowser *browser = new TreeBrowser(ui, root);
     browser->allow_exit = true;
+    browser->use_ui_focus_stack = false;
     browser->pick_mode = save_mode ? TreeBrowser::PICK_SAVE : TreeBrowser::PICK_LOAD;
     browser->init();
     if (s_monitor_browse_path.length() > 1) {
