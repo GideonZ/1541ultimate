@@ -32,5 +32,7 @@ Optional environment variables:
 - Cursor vs scroll behavior in ASCII view
 - CPU bank status changes and RAM-visible writes at `$A000`
 - Combined CPU/VIC status line format
+- Repeated finite `G 0810` execution using `LDA #$NN / STA $2000 / BRK`
+- `G 0810` preserving visible VIC state while a finite `INC $D021 / BRK` program runs
 
 The harness parses the VT100 telnet stream into a deterministic `40x25` screen buffer and compares the captured output against the expected snapshot fragments in `snapshots/expected_snapshots.json`.

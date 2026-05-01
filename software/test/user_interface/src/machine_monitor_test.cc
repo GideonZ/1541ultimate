@@ -222,8 +222,32 @@ void UserInterface :: run_hex_editor(const char *, int)
 {
 }
 
-void UserInterface :: run_machine_monitor(MemoryBackend *)
+namespace monitor_io {
+void jump_to(uint16_t address);
+}
+
+void UserInterface :: run_machine_monitor(MemoryBackend *backend)
 {
+    MachineMonitor *monitor = new MachineMonitor(this, backend);
+    uint16_t go_address = 0;
+    monitor->init(screen, keyboard);
+    int ret = 0;
+    while (!ret && (!host || host->exists())) {
+        ret = monitor->poll(0);
+    }
+    bool do_go = monitor->consume_pending_go(&go_address);
+    monitor->deinit();
+    delete monitor;
+    if (do_go) {
+#if defined(U64) && (U64) && !defined(RUNS_ON_PC)
+        C64 *machine = C64::getMachine();
+        if (machine && machine->is_accessible()) {
+            release_host();
+            machine->release_ownership();
+        }
+#endif
+        monitor_io::jump_to(go_address);
+    }
 }
 
 namespace monitor_io {
@@ -915,6 +939,23 @@ static int expect(int condition, const char *message)
         return fail(message);
     }
     return 0;
+}
+
+static int popup_longest_line(const char *msg)
+{
+    int longest = 0;
+    int current = 0;
+    while (msg && *msg) {
+        if (*msg == '\n') {
+            if (current > longest) longest = current;
+            current = 0;
+        } else if (*msg != '\r') {
+            current++;
+        }
+        msg++;
+    }
+    if (current > longest) longest = current;
+    return longest;
 }
 
 static int expect_screens_equal(const CaptureScreen &a, const CaptureScreen &b, const char *message)
@@ -4631,8 +4672,8 @@ static int test_load_save_and_goto_command_flow(void)
                    "LOAD command must invoke the monitor I/O shim with the picked file.")) return 1;
         if (expect(backend.read(0x0801) == 0xBB && backend.read(0x0802) == 0xCC,
                    "LOAD command must honour PRG header, file offset, and length.")) return 1;
-        if (expect(ui.popup_count == 1 && strstr(ui.last_popup, "LOAD demo.prg: $0801-$0802 (2 bytes)") != NULL,
-                   "LOAD command must show a confirmation popup with the effective byte range.")) return 1;
+        if (expect(ui.popup_count == 1 && strcmp(ui.last_popup, "LOAD demo.prg\n$0801-$0802 (2 bytes)") == 0,
+                   "LOAD command must show a two-line confirmation popup with the effective byte range.")) return 1;
         if (expect(mon.poll(0) == 1, "LOAD command flow test: exit failed.")) return 1;
         mon.deinit();
     }
@@ -4665,9 +4706,40 @@ static int test_load_save_and_goto_command_flow(void)
                    monitor_io::g_monitor_io.saved_data[2] == 0xA9 &&
                    monitor_io::g_monitor_io.saved_data[3] == 0x42,
                    "SAVE command must emit a PRG header followed by the selected bytes.")) return 1;
-        if (expect(ui.popup_count == 1 && strstr(ui.last_popup, "SAVE save.prg: $0801-$0802 (2 bytes)") != NULL,
-                   "SAVE command must show a confirmation popup with the saved range.")) return 1;
+        if (expect(ui.popup_count == 1 && strcmp(ui.last_popup, "SAVE save.prg\n$0801-$0802 (2 bytes)") == 0,
+                   "SAVE command must show a two-line confirmation popup with the saved range.")) return 1;
         if (expect(mon.poll(0) == 1, "SAVE command flow test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'S', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        backend.write(0x0801, 0xA9);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0801-0801", 1);
+        monitor_reset_saved_state();
+        monitor_io::reset_fake_monitor_io();
+        monitor_io::g_monitor_io.pick_file_result = true;
+        strcpy(monitor_io::g_monitor_io.pick_path, "/tmp");
+        strcpy(monitor_io::g_monitor_io.pick_name, "THIS-IS-A-VERY-LONG-FILENAME-FOR-CONFIRMATION-TESTING.PRG");
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Long confirmation filename test failed.")) return 1;
+        if (expect(ui.popup_count == 1,
+                   "Long confirmation filename test must produce one confirmation popup.")) return 1;
+        if (expect(popup_longest_line(ui.last_popup) <= 38,
+                   "Every line in the LOAD/SAVE confirmation popup must stay within 38 characters.")) return 1;
+        if (expect(strstr(ui.last_popup, "SAVE ") == ui.last_popup,
+                   "Long confirmation filename test must still label the operation on the first line.")) return 1;
+        if (expect(strstr(ui.last_popup, "\n$0801-$0801 (1 bytes)") != NULL,
+                   "Long confirmation filename test must keep the effective range on the second line.")) return 1;
+        if (expect(mon.poll(0) == 1, "Long confirmation filename test: exit failed.")) return 1;
         mon.deinit();
     }
 
@@ -4683,11 +4755,59 @@ static int test_load_save_and_goto_command_flow(void)
         monitor_reset_saved_state();
         monitor_io::reset_fake_monitor_io();
 
-        MachineMonitor mon(&ui, &backend);
-        mon.init(&screen, &kb);
-        if (expect(mon.poll(0) == 1, "Go command must exit the monitor.")) return 1;
+        ui.run_machine_monitor(&backend);
         if (expect(monitor_io::g_monitor_io.jump_called && monitor_io::g_monitor_io.jump_address == 0xC123,
                    "Go command must dispatch the requested jump address.")) return 1;
+    }
+
+    return 0;
+}
+
+static int test_hex_single_nibble_commits_on_navigation(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'E', 'E', KEY_RIGHT, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+        backend.write(0x0000, 0xFF);
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Hex nibble cursor-right test: enter edit mode failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Hex nibble cursor-right test: typing nibble failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Hex nibble cursor-right test: moving right failed.")) return 1;
+        if (expect(backend.read(0x0000) == 0x0E,
+                   "Leaving a half-typed hex nibble with cursor-right must commit it as 0x0N.")) return 1;
+        if (expect(mon.poll(0) == 0, "Hex nibble cursor-right test: edit-mode exit failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "Hex nibble cursor-right test: monitor exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'E', 'E', KEY_PAGEDOWN, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+        backend.write(0x0000, 0xFF);
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Hex nibble page-move test: enter edit mode failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Hex nibble page-move test: typing nibble failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Hex nibble page-move test: page down failed.")) return 1;
+        if (expect(backend.read(0x0000) == 0x0E,
+                   "Leaving a half-typed hex nibble with page movement must commit it as 0x0N.")) return 1;
+        if (expect(mon.poll(0) == 0, "Hex nibble page-move test: edit-mode exit failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "Hex nibble page-move test: monitor exit failed.")) return 1;
         mon.deinit();
     }
 
@@ -5125,6 +5245,7 @@ int main()
     if (test_hunt_and_compare_picker_navigation()) return 1;
     if (test_prompt_cancel_and_empty_clipboard()) return 1;
     if (test_load_save_and_goto_command_flow()) return 1;
+    if (test_hex_single_nibble_commits_on_navigation()) return 1;
     if (test_header_invariants_and_parity()) return 1;
     if (test_edit_indicator_layout_across_views()) return 1;
     if (test_warning_popups_preserve_status_row()) return 1;

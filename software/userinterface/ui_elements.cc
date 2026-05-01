@@ -21,6 +21,7 @@ UIPopup :: UIPopup(UserInterface *ui, const char *msg, uint8_t btns, int count, 
     btns_active = 0;
     active_button = 0; // we can change this
     button_start_x = 0;
+    button_y = 2;
     window = 0;
     keyboard = 0;
 }
@@ -29,9 +30,28 @@ void UIPopup :: init()
 {
     // first, determine how wide our popup needs to be
     int button_width = 0;
-    int message_width = message.length();
+    int message_width = 0;
+    int message_lines = 1;
     keyboard = get_ui()->get_keyboard();
     Screen *screen = get_ui()->get_screen();
+    const char *msg = message.c_str();
+
+    int current_line_width = 0;
+    while (*msg) {
+        if (*msg == '\n') {
+            if (current_line_width > message_width) {
+                message_width = current_line_width;
+            }
+            current_line_width = 0;
+            message_lines++;
+        } else if (*msg != '\r') {
+            current_line_width++;
+        }
+        msg++;
+    }
+    if (current_line_width > message_width) {
+        message_width = current_line_width;
+    }
 
     uint8_t b = buttons;
     for(int i=0;i<button_count;i++) {
@@ -46,20 +66,42 @@ void UIPopup :: init()
     if (button_width > message_width)
         window_width = button_width;
 
+    int window_height = message_lines + 4;
+
     int x1 = (screen->get_size_x() - window_width) / 2;
-    int y1 = (screen->get_size_y() - 5) / 2;
-    int x_m = (window_width - message_width) / 2;
+    int y1 = (screen->get_size_y() - window_height) / 2;
     int x_b = (window_width - button_width) / 2;
     button_start_x = x_b;
+    button_y = message_lines + 1;
 
     screen->backup();
-    window = new Window(screen, x1, y1, window_width+2, 5);
+    window = new Window(screen, x1, y1, window_width+2, window_height);
     window->clear();
     window->draw_border();
     // window->no_scroll();
-    window->move_cursor(x_m, 0);
     window->set_color(get_ui()->color_fg);
-    window->output(message.c_str());
+    msg = message.c_str();
+    int row = 0;
+    while (1) {
+        const char *line_end = msg;
+        while (*line_end && *line_end != '\n' && *line_end != '\r') {
+            line_end++;
+        }
+        int line_len = line_end - msg;
+        int x_m = (window_width - line_len) / 2;
+        window->move_cursor(x_m, row);
+        for (int i = 0; i < line_len; i++) {
+            window->output(msg[i]);
+        }
+        if (!*line_end) {
+            break;
+        }
+        while (*line_end == '\n' || *line_end == '\r') {
+            line_end++;
+        }
+        msg = line_end;
+        row++;
+    }
 
     active_button = 0; // we can change this
     keyboard->wait_free();
@@ -68,7 +110,7 @@ void UIPopup :: init()
 
 void UIPopup :: draw_buttons()
 {
-    window->move_cursor(button_start_x, 2);
+    window->move_cursor(button_start_x, button_y);
     int j=0;
     int b = buttons;
     for(int i=0;i<button_count;i++) {

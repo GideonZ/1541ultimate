@@ -121,6 +121,8 @@ class MachineMonitor : public UIObject
     char last_save_name[40];
     bool last_go_valid;
     uint16_t last_go_addr;
+    bool go_pending;
+    uint16_t go_pending_addr;
     uint8_t binary_bytes_per_row;
     Clipboard clipboard;
 
@@ -269,6 +271,7 @@ class MachineMonitor : public UIObject
     // Apply a typed bit (0 or 1) to the byte at the cursor at binary_bit_index.
     void binary_apply_bit(uint8_t bit_value);
     void enter_edit_mode();
+    void commit_pending_hex_nibble(void);
     void apply_hex_digit(uint8_t value);
     void apply_ascii_char(char value);
     void apply_screen_char(char value);
@@ -300,6 +303,7 @@ public:
     void init(Screen *screen, Keyboard *keyboard);
     void deinit(void);
     int poll(int);
+    bool consume_pending_go(uint16_t *address);
 };
 
 #endif

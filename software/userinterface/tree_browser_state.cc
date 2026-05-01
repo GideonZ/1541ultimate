@@ -66,13 +66,13 @@ void prepend_picker_entry(IndexedList<Browsable *> *children)
 
 void maybe_prepend_picker_entry(TreeBrowser *browser, Browsable *node, IndexedList<Browsable *> *children, int error)
 {
+    (void)node;
     if ((error < 0) || !browser || !children ||
         (browser->pick_mode != TreeBrowser::PICK_SAVE) ||
         !browser->path || (browser->path->getDepth() <= 0)) {
         return;
     }
-    FileInfo *info = node ? node->getFileInfo() : NULL;
-    if (info && info->is_directory()) {
+    if (browser->fm && browser->fm->is_path_writable(browser->path)) {
         prepend_picker_entry(children);
     }
 }

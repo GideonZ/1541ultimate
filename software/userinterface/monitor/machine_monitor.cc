@@ -980,6 +980,8 @@ MonitorError monitor_format_evaluate(const char *input, char *out, int out_len)
 
 namespace {
 
+static const int c_monitor_confirmation_line_max = 38;
+
 static bool keyword_match(const char *&cursor, const char *keyword)
 {
     int i;
@@ -1024,6 +1026,32 @@ static MonitorError parse_hex_unbounded(const char *&cursor, int max_digits, uin
     }
     *value = parsed;
     return MONITOR_OK;
+}
+
+static void format_confirmation_name_line(char *out, const char *op, const char *name)
+{
+    int prefix_len = strlen(op) + 1;
+    int available = c_monitor_confirmation_line_max - prefix_len;
+    const char *source = name ? name : "";
+    int name_len = strlen(source);
+    char trimmed[40];
+
+    if (available < 0) {
+        available = 0;
+    }
+    if (name_len <= available) {
+        strcpy(trimmed, source);
+    } else if (available > 3) {
+        strncpy(trimmed, source, available - 3);
+        trimmed[available - 3] = 0;
+        strcat(trimmed, "...");
+    } else if (available > 0) {
+        strncpy(trimmed, source, available);
+        trimmed[available] = 0;
+    } else {
+        trimmed[0] = 0;
+    }
+    sprintf(out, "%s %s", op, trimmed);
 }
 
 }
@@ -1178,6 +1206,8 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     last_save_name[sizeof(last_save_name) - 1] = 0;
     last_go_valid = monitor_last_go_valid;
     last_go_addr = monitor_last_go_addr;
+    go_pending = false;
+    go_pending_addr = 0;
     binary_bytes_per_row = monitor_binary_bytes_per_row;
     clipboard.data = NULL;
     clipboard.length = 0;
@@ -1886,6 +1916,7 @@ uint16_t MachineMonitor :: row_span(void) const
 
 void MachineMonitor :: move_current(int delta)
 {
+    commit_pending_hex_nibble();
     state.current_addr = (uint16_t)(state.current_addr + delta);
     if (state.view == MONITOR_VIEW_ASM) {
         ensure_disasm_visible();
@@ -1933,6 +1964,7 @@ void MachineMonitor :: move_binary_bits(int delta)
 
 void MachineMonitor :: page_move(int lines)
 {
+    commit_pending_hex_nibble();
     uint16_t span = row_span();
     if (span == 0) span = 1;
     uint16_t step = (uint16_t)(lines * span);
@@ -1958,6 +1990,15 @@ void MachineMonitor :: page_move(int lines)
 bool MachineMonitor :: prompt_command(const char *title, char *buffer, int max_len, bool template_mode)
 {
     return get_ui()->string_box(title, buffer, max_len, template_mode, true) > 0;
+}
+
+void MachineMonitor :: commit_pending_hex_nibble(void)
+{
+    if (!edit_mode || state.view != MONITOR_VIEW_HEX || pending_hex_nibble < 0) {
+        return;
+    }
+    canonical_write(state.current_addr, (uint8_t)pending_hex_nibble);
+    pending_hex_nibble = -1;
 }
 
 void MachineMonitor :: toggle_help()
@@ -2916,8 +2957,8 @@ void MachineMonitor :: apply_hex_digit(uint8_t value)
     } else {
         uint8_t byte = (uint8_t)((pending_hex_nibble << 4) | value);
         canonical_write(state.current_addr, byte);
-        move_current(1);
         pending_hex_nibble = -1;
+        move_current(1);
     }
 }
 
@@ -4034,15 +4075,15 @@ void MachineMonitor::handle_save_command()
 void MachineMonitor::show_io_confirmation(const char *op, const char *name,
                                           uint16_t start_addr, uint32_t bytes)
 {
-    // Single-line popup keeps the rendering simple and fits inside the
-    // monitor's standard popup width on both telnet and on-device. Format
-    // omits the leading path (already chosen by the user) and reports the
-    // effective range so the user can verify what just hit memory or disk.
-    char msg[80];
+    char line1[40];
+    char line2[40];
+    char msg[96];
     uint32_t end_addr = (uint32_t)start_addr + (bytes ? bytes - 1 : 0);
     if (end_addr > 0xFFFF) end_addr = 0xFFFF;
-    sprintf(msg, "%s %s: $%04X-$%04X (%u bytes)",
-            op, name, (unsigned)start_addr, (unsigned)end_addr, (unsigned)bytes);
+    format_confirmation_name_line(line1, op, name);
+    sprintf(line2, "$%04X-$%04X (%u bytes)",
+            (unsigned)start_addr, (unsigned)end_addr, (unsigned)bytes);
+    sprintf(msg, "%s\n%s", line1, line2);
     get_ui()->popup(msg, BUTTON_OK);
 }
 
@@ -4079,6 +4120,18 @@ void MachineMonitor::handle_width_command()
     draw();
 }
 
+bool MachineMonitor :: consume_pending_go(uint16_t *address)
+{
+    if (!go_pending) {
+        return false;
+    }
+    if (address) {
+        *address = go_pending_addr;
+    }
+    go_pending = false;
+    return true;
+}
+
 bool MachineMonitor::handle_go_command()
 {
     char buffer[8];
@@ -4098,9 +4151,7 @@ bool MachineMonitor::handle_go_command()
     // Reposition the cursor first (mirrors J), so the displayed address matches
     // what we are about to execute.
     apply_go_local(address);
-    // Hand off to the C64: the boot-cart DMA-jump path unfreezes the FPGA C64
-    // and JMP ($00AA)s to `address`. The monitor must exit so the menu
-    // dismisses and user code regains control.
-    monitor_io::jump_to(address);
+    go_pending = true;
+    go_pending_addr = address;
     return true;
 }

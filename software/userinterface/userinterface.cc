@@ -558,6 +558,9 @@ int  UserInterface :: popup(const char *msg, uint8_t flags)
         ret = pop->poll(0);
     }
     pop->deinit();
+    if ((ret > 0) && keyboard) {
+        keyboard->wait_free();
+    }
     delete pop;
     return ret;
 }
@@ -571,6 +574,9 @@ int  UserInterface :: popup(const char *msg, int count, const char **names, cons
         ret = pop->poll(0);
     }
     pop->deinit();
+    if ((ret > 0) && keyboard) {
+        keyboard->wait_free();
+    }
     delete pop;
     return ret;
 }

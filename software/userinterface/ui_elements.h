@@ -57,6 +57,7 @@ private:
     int  btns_active;
     int  active_button;
     int  button_start_x;
+    int  button_y;
     Window  *window;
     Keyboard *keyboard;
     const char **button_names;

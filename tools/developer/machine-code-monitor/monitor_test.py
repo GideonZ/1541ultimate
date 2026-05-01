@@ -515,20 +515,7 @@ def wait_for_rest_byte(host: str, address: int, expected: int, timeout: float = 
 
 
 def assert_rest_matches_row(snapshot: Snapshot, line_index: int, address: int, rest_host: str) -> None:
-    actual = snapshot.line(line_index).strip()
-    if actual.startswith("|"):
-        actual = actual[1:]
-    if actual.endswith("|"):
-        actual = actual[:-1]
-    actual = actual.strip()
-    match = re.match(rf"^{address:04X}((?: [0-9A-F]{{2}})+)", actual, re.IGNORECASE)
-    if not match:
-        raise Failure(
-            f"Unable to parse monitor memory row at ${address:04X} after {snapshot.last_command!r}:\n"
-            f"  {snapshot.line(line_index)!r}"
-        )
-
-    monitor_bytes = bytes.fromhex(match.group(1))
+    monitor_bytes = parse_memory_row(snapshot, address, line_index=line_index)
     rest_bytes = read_rest_memory(rest_host, address, len(monitor_bytes))
     if rest_bytes != monitor_bytes:
         raise Failure(
@@ -536,6 +523,29 @@ def assert_rest_matches_row(snapshot: Snapshot, line_index: int, address: int, r
             f"  monitor: {' '.join(f'{byte:02X}' for byte in monitor_bytes)}\n"
             f"  rest:    {' '.join(f'{byte:02X}' for byte in rest_bytes)}"
         )
+
+
+def parse_memory_row(snapshot: Snapshot, address: int, line_index: Optional[int] = None) -> bytes:
+    target = f"{address:04X}"
+    candidate_indexes = [line_index] if line_index is not None else range(len(snapshot.lines))
+
+    for index in candidate_indexes:
+        if index is None:
+            continue
+        actual = snapshot.line(index).strip()
+        if actual.startswith("|"):
+            actual = actual[1:]
+        if actual.endswith("|"):
+            actual = actual[:-1]
+        actual = actual.strip()
+        match = re.match(rf"^{target}((?: [0-9A-F]{{2}})+)", actual, re.IGNORECASE)
+        if match:
+            return bytes.fromhex(match.group(1))
+
+    raise Failure(
+        f"Unable to parse monitor memory row at ${address:04X} after {snapshot.last_command!r}:\n"
+        f"{snapshot.text()}"
+    )
 
 
 def ensure_status(session: MonitorSession, expected: str) -> Snapshot:
@@ -566,6 +576,65 @@ def ensure_view(session: MonitorSession, expected: str) -> Snapshot:
             pass
         screen = session.send_char(key)
     raise Failure(f"Unable to reach expected monitor view {expected!r}; screen was\n{screen.text()}")
+
+
+def run_go_repeat_test(session: MonitorSession, rest_host: str) -> None:
+    sentinel = 0x5A
+    values = (0x42, 0x37, 0x99)
+
+    for value in values:
+        write_rest_memory(rest_host, 0x0810, bytes((0xA9, value, 0x8D, 0x00, 0x20, 0x00)))
+        write_rest_memory(rest_host, 0x2000, bytes((sentinel,)))
+
+        screen = ensure_view(session, "HEX ")
+        screen = session.goto("2000")
+        before = parse_memory_row(screen, 0x2000)
+        if before[0] != sentinel:
+            raise Failure(
+                f"G precondition failed for ${value:02X}: expected ${sentinel:02X} at $2000, got ${before[0]:02X}"
+            )
+
+        session.goto_run("0810")
+        wait_for_rest_byte(rest_host, 0x2000, value)
+
+        session.enter_monitor()
+        screen = ensure_view(session, "HEX ")
+        screen = session.goto("2000")
+        after = parse_memory_row(screen, 0x2000)
+        if after[0] != value:
+            raise Failure(
+                f"G postcondition failed for ${value:02X}: expected ${value:02X} at $2000, got ${after[0]:02X}"
+            )
+
+
+def run_go_visible_state_test(session: MonitorSession, rest_host: str) -> None:
+    pre_d011 = read_rest_memory(rest_host, 0xD011, 1)[0]
+    pre_d020 = read_rest_memory(rest_host, 0xD020, 1)[0]
+    pre_d021 = read_rest_memory(rest_host, 0xD021, 1)[0]
+
+    write_rest_memory(rest_host, 0x0810, bytes.fromhex("EE21D000"))
+    session.goto_run("0810")
+    time.sleep(0.2)
+
+    post_d011 = read_rest_memory(rest_host, 0xD011, 1)[0]
+    post_d020 = read_rest_memory(rest_host, 0xD020, 1)[0]
+    post_d021 = read_rest_memory(rest_host, 0xD021, 1)[0]
+    expected_d021 = (pre_d021 + 1) & 0xFF
+
+    if post_d011 != pre_d011:
+        raise Failure(
+            f"G visual-state check failed: $D011 changed from ${pre_d011:02X} to ${post_d011:02X}"
+        )
+    if post_d020 != pre_d020:
+        raise Failure(
+            f"G visual-state check failed: $D020 changed from ${pre_d020:02X} to ${post_d020:02X}"
+        )
+    if post_d021 != expected_d021:
+        raise Failure(
+            f"G visual-state check failed: expected $D021 ${expected_d021:02X}, got ${post_d021:02X}"
+        )
+
+    session.enter_monitor()
 
 
 def run_tests(session: MonitorSession, rest_host: str) -> None:
@@ -667,6 +736,9 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
     session.goto("1000")
     session.goto_run("1000")
     wait_for_rest_byte(rest_host, 0x0400, 0x01)
+    session.enter_monitor()
+    run_go_repeat_test(session, rest_host)
+    run_go_visible_state_test(session, rest_host)
 
 
 def main() -> int:

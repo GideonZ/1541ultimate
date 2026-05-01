@@ -45,8 +45,8 @@ const char *save_from_memory(UserInterface *ui, const char *path, const char *na
                              uint16_t start, uint16_t end);
 
 // Instruct the FPGA C64 to commence execution at `address` once the monitor
-// (and freezer) is left. Reuses the boot-cart DMA-jump pathway so existing
-// unfreeze / cartridge sequencing is preserved.
+// (and freezer) is left. Uses the KERNAL RAM NMI vector plus a tiny cassette-
+// buffer trampoline so execution resumes on the live machine without a reset.
 void jump_to(uint16_t address);
 
 } // namespace monitor_io

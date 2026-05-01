@@ -16,8 +16,10 @@
 #include "memory_backend.h"
 #ifndef RECOVERYAPP
 #ifndef UPDATER
-#include "subsys.h"
 #include "c64.h"
+#if defined(U64) && (U64)
+#include "u64_machine.h"
+#endif
 #endif
 #endif
 
@@ -27,6 +29,9 @@ namespace {
 // last seen across LOAD/SAVE invocations. File-scope to avoid touching the
 // MachineMonitorState header that's shared with the host test.
 mstring s_monitor_browse_path("/");
+
+static const uint16_t c_monitor_nmi_vector = 0x0318;
+static const uint16_t c_monitor_jump_trampoline = 0x033C;
 
 } // namespace
 
@@ -218,17 +223,38 @@ const char *monitor_io::save_from_memory(UserInterface *ui, const char *path, co
 void monitor_io::jump_to(uint16_t address)
 {
 #if !defined(RECOVERYAPP) && !defined(UPDATER)
-    // Reuse the existing boot-cart DMA-jump pathway. The buffer's first two
-    // bytes are the JMP target ($00AA/$00AB on the C64), and the remainder is
-    // loaded as data — empty here, since GOTO must not modify memory. The
-    // boot cart's `start_jump` then JMP ($00AA)s into the user's program.
-    static uint8_t jump_buffer[2];
-    jump_buffer[0] = (uint8_t)(address & 0xFF);
-    jump_buffer[1] = (uint8_t)((address >> 8) & 0xFF);
-    SubsysCommand *cmd = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_BUFFER,
-                                           RUNCODE_DMALOAD_JUMP,
-                                           (void *)jump_buffer, 2);
-    cmd->execute();
+#if defined(U64) && (U64)
+    U64Machine *machine = static_cast<U64Machine *>(C64::getMachine());
+    if (!machine) {
+        return;
+    }
+
+    bool stopped_it = machine->begin_monitor_session();
+
+    uint8_t old_nmi_lo = machine->peek_visible(c_monitor_nmi_vector + 0);
+    uint8_t old_nmi_hi = machine->peek_visible(c_monitor_nmi_vector + 1);
+    // $033C is the KERNAL cassette buffer, so this avoids touching user code or
+    // the live VIC screen RAM while we restore NMINV and tail-jump to the target.
+    uint8_t trampoline[] = {
+        0xA9, old_nmi_lo,
+        0x8D, (uint8_t)(c_monitor_nmi_vector & 0xFF), (uint8_t)(c_monitor_nmi_vector >> 8),
+        0xA9, old_nmi_hi,
+        0x8D, (uint8_t)((c_monitor_nmi_vector + 1) & 0xFF), (uint8_t)((c_monitor_nmi_vector + 1) >> 8),
+        0x4C, (uint8_t)(address & 0xFF), (uint8_t)(address >> 8)
+    };
+
+    for (unsigned i = 0; i < sizeof(trampoline); i++) {
+        machine->poke_visible((uint16_t)(c_monitor_jump_trampoline + i), trampoline[i]);
+    }
+    machine->poke_visible(c_monitor_nmi_vector + 0, (uint8_t)(c_monitor_jump_trampoline & 0xFF));
+    machine->poke_visible(c_monitor_nmi_vector + 1, (uint8_t)(c_monitor_jump_trampoline >> 8));
+
+    C64_MODE = C64_MODE_NMI;
+    machine->end_monitor_session(stopped_it);
+    C64_MODE = MODE_NORMAL;
+#else
+    (void)address;
+#endif
 #else
     (void)address;
 #endif
