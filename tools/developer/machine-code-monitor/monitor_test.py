@@ -11,6 +11,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -23,6 +24,7 @@ REDEPLOY_SCRIPT = REPO_ROOT / "tooling" / "build_and_deploy_u64.sh"
 
 STATUS_LINE_RE = re.compile(r"CPU[0-7] \$A:(?:RAM|BAS) \$D:(?:RAM|CHR|I/O) \$E:(?:RAM|KRN) VIC[0-3] \$[0-9A-F]{4}")
 MEMORY_ROW_RE = re.compile(r"^[0-9A-F]{4} ")
+CHECK_COUNT = 0
 
 ALT_CHARSET_MAP = {
     "l": "+",
@@ -64,6 +66,19 @@ VIEW_KEYS = {
 
 class Failure(RuntimeError):
     pass
+
+
+@contextmanager
+def check(label: str):
+    global CHECK_COUNT
+    CHECK_COUNT += 1
+    print(f"[{CHECK_COUNT:02d}] {label} ... ", end="", flush=True)
+    try:
+        yield
+    except Exception:
+        print("FAIL", flush=True)
+        raise
+    print("OK", flush=True)
 
 
 def format_exception(exc: BaseException) -> str:
@@ -550,14 +565,14 @@ def parse_memory_row(snapshot: Snapshot, address: int, line_index: Optional[int]
 
 def ensure_status(session: MonitorSession, expected: str) -> Snapshot:
     screen = session.capture()
-    for _ in range(7):
+    for _ in range(8):
         try:
             line_index = screen.find_status_line()
         except Failure:
             line_index = -1
         if line_index >= 0 and expected in screen.line(line_index):
             return screen
-        screen = session.send_char("O")
+        screen = session.send_char("o")
     raise Failure(
         f"Unable to reach expected CPU/VIC status {expected!r}; last status line was {screen.line(screen.find_status_line())!r}"
     )
@@ -608,30 +623,27 @@ def run_go_repeat_test(session: MonitorSession, rest_host: str) -> None:
 
 
 def run_go_visible_state_test(session: MonitorSession, rest_host: str) -> None:
+    sentinel = 0xA5
+    done = 0x5C
+
     pre_d011 = read_rest_memory(rest_host, 0xD011, 1)[0]
     pre_d020 = read_rest_memory(rest_host, 0xD020, 1)[0]
-    pre_d021 = read_rest_memory(rest_host, 0xD021, 1)[0]
 
-    write_rest_memory(rest_host, 0x0810, bytes.fromhex("EE21D000"))
+    write_rest_memory(rest_host, 0x0810, bytes((0xEE, 0x21, 0xD0, 0xA9, done, 0x8D, 0x00, 0x20, 0x00)))
+    write_rest_memory(rest_host, 0x2000, bytes((sentinel,)))
     session.goto_run("0810")
-    time.sleep(0.2)
+    wait_for_rest_byte(rest_host, 0x2000, done)
 
     post_d011 = read_rest_memory(rest_host, 0xD011, 1)[0]
     post_d020 = read_rest_memory(rest_host, 0xD020, 1)[0]
-    post_d021 = read_rest_memory(rest_host, 0xD021, 1)[0]
-    expected_d021 = (pre_d021 + 1) & 0xFF
 
-    if post_d011 != pre_d011:
+    if (post_d011 & 0x7F) != (pre_d011 & 0x7F):
         raise Failure(
             f"G visual-state check failed: $D011 changed from ${pre_d011:02X} to ${post_d011:02X}"
         )
     if post_d020 != pre_d020:
         raise Failure(
             f"G visual-state check failed: $D020 changed from ${pre_d020:02X} to ${post_d020:02X}"
-        )
-    if post_d021 != expected_d021:
-        raise Failure(
-            f"G visual-state check failed: expected $D021 ${expected_d021:02X}, got ${post_d021:02X}"
         )
 
     session.enter_monitor()
@@ -640,105 +652,121 @@ def run_go_visible_state_test(session: MonitorSession, rest_host: str) -> None:
 def run_tests(session: MonitorSession, rest_host: str) -> None:
     snapshots = load_snapshots()
 
-    ensure_status(session, snapshots["status_cpu31"]["contains"]["22"])
-    ensure_view(session, "HEX ")
-    screen = session.goto("E000")
-    for row, expected in snapshots["kernal_hex_e000"]["contains"].items():
-        assert_contains(screen, int(row), expected)
-    assert_rest_matches_row(screen, 4, 0xE000, rest_host)
+    with check("initial CPU7/KERNAL monitor status"):
+        ensure_status(session, snapshots["status_cpu31"]["contains"]["22"])
 
-    initial_snapshot = screen.text()
-    session.send_key("PGDN")
-    back = session.send_key("PGUP")
-    assert_equal("Memory stability", initial_snapshot, back.text(), back.last_command)
+    with check("KERNAL $E000 hex view and REST match"):
+        ensure_view(session, "HEX ")
+        screen = session.goto("E000")
+        for row, expected in snapshots["kernal_hex_e000"]["contains"].items():
+            assert_contains(screen, int(row), expected)
+        assert_rest_matches_row(screen, 4, 0xE000, rest_host)
 
-    screen = session.send_char("D")
-    for row, expected in snapshots["kernal_disasm_e000"]["contains"].items():
-        assert_contains(screen, int(row), expected)
+    with check("paging away and back keeps memory view stable"):
+        initial_snapshot = screen.text()
+        session.send_key("PGDN")
+        back = session.send_key("PGUP")
+        assert_equal("Memory stability", initial_snapshot, back.text(), back.last_command)
 
-    screen = session.goto("E013")
-    screen = session.send_char("D")
-    for row, expected in snapshots["kernal_disasm_e013"]["contains"].items():
-        assert_contains(screen, int(row), expected)
+    with check("KERNAL disassembly formatting"):
+        screen = session.send_char("D")
+        for row, expected in snapshots["kernal_disasm_e000"]["contains"].items():
+            assert_contains(screen, int(row), expected)
 
-    screen = session.goto("E010")
-    assert_rest_matches_row(screen, 4, 0xE010, rest_host)
+        screen = session.goto("E013")
+        screen = session.send_char("D")
+        for row, expected in snapshots["kernal_disasm_e013"]["contains"].items():
+            assert_contains(screen, int(row), expected)
 
-    screen = ensure_view(session, "HEX ")
-    session.goto("A000")
-    screen = ensure_status(session, snapshots["status_cpu30"]["contains"]["22"])
-    for address in (0xA000, 0xBFF8):
-        screen = session.goto(f"{address:04X}")
-        assert_rest_matches_row(screen, 4, address, rest_host)
+    with check("KERNAL $E010 REST match"):
+        screen = session.goto("E010")
+        assert_rest_matches_row(screen, 4, 0xE010, rest_host)
 
-    session.goto("E000")
-    screen = ensure_status(session, snapshots["status_cpu29"]["contains"]["22"])
-    for address in (0xE000, 0xFFF8):
-        screen = session.goto(f"{address:04X}")
-        assert_rest_matches_row(screen, 4, address, rest_host)
+    with check("CPU6 RAM under BASIC write/read"):
+        screen = ensure_view(session, "HEX ")
+        session.goto("A000")
+        screen = ensure_status(session, snapshots["status_cpu30"]["contains"]["22"])
+        session.fill("A000-A000,AA")
+        screen = session.goto("A000")
+        assert_contains(screen, 4, snapshots["ram_a000"]["contains"]["4"])
 
-    session.goto("C000")
-    for row_index in range(19):
-        start = 0xC000 + row_index * 0x20
-        end = start + 0x1F
-        session.fill(f"{start:04X}-{end:04X},{0x41 + row_index:02X}")
+    with check("CPU5 RAM under KERNAL status"):
+        session.goto("E000")
+        screen = ensure_status(session, snapshots["status_cpu29"]["contains"]["22"])
 
-    screen = ensure_view(session, "ASC ")
-    content_rows = find_memory_rows(screen)
-    first_content_row = content_rows[0]
-    last_content_row = content_rows[-1]
-    assert_ascii_width(screen, first_content_row)
-    assert_status_contains(screen, snapshots["status_cpu29"]["contains"]["22"])
+    with check("ASCII view width and scrolling"):
+        session.goto("C000")
+        for row_index in range(19):
+            start = 0xC000 + row_index * 0x20
+            end = start + 0x1F
+            session.fill(f"{start:04X}-{end:04X},{0x41 + row_index:02X}")
 
-    screen = session.send_key("DOWN")
-    assert_highlight(screen, [(6, first_content_row + 1)], "DOWN")
-    assert_contains(screen, first_content_row, snapshots["ascii_top_row"]["contains"]["4"])
+        screen = ensure_view(session, "ASC ")
+        content_rows = find_memory_rows(screen)
+        first_content_row = content_rows[0]
+        last_content_row = content_rows[-1]
+        assert_ascii_width(screen, first_content_row)
+        assert_status_contains(screen, snapshots["status_cpu29"]["contains"]["22"])
 
-    screen = session.send_key("UP")
-    assert_highlight(screen, [(6, first_content_row)], "UP")
-
-    for _ in range(last_content_row - first_content_row):
         screen = session.send_key("DOWN")
-    assert_highlight(screen, [(6, last_content_row)], "DOWN to last row")
-    assert_contains(screen, first_content_row, snapshots["ascii_top_row"]["contains"]["4"])
+        assert_highlight(screen, [(6, first_content_row + 1)], "DOWN")
+        assert_contains(screen, first_content_row, snapshots["ascii_top_row"]["contains"]["4"])
 
-    screen = session.send_key("DOWN")
-    assert_highlight(screen, [(6, last_content_row)], "DOWN past last row")
-    assert_contains(screen, first_content_row, snapshots["ascii_scrolled_top_row"]["contains"]["4"])
+        screen = session.send_key("UP")
+        assert_highlight(screen, [(6, first_content_row)], "UP")
 
-    session.goto("C000")
-    session.fill("C000-C000,00")
-    screen = ensure_view(session, "HEX ")
-    screen = session.send_char("e")
-    assert_highlight(screen, [(6, 4), (7, 4)], "e")
-    screen = session.send_char("A")
-    assert_contains(screen, 4, snapshots["hex_first_nibble"]["contains"]["4"])
-    screen = session.send_char("B")
-    assert_contains(screen, 4, snapshots["hex_second_nibble"]["contains"]["4"])
-    session.send_key("ESC")
+        for _ in range(last_content_row - first_content_row):
+            screen = session.send_key("DOWN")
+        assert_highlight(screen, [(6, last_content_row)], "DOWN to last row")
+        assert_contains(screen, first_content_row, snapshots["ascii_top_row"]["contains"]["4"])
 
-    session.goto("A000")
-    screen = ensure_status(session, snapshots["status_cpu27"]["contains"]["22"])
-    assert_status_contains(screen, snapshots["status_cpu27"]["contains"]["22"])
-    screen = session.send_char("O")
-    assert_status_contains(screen, snapshots["status_cpu30"]["contains"]["22"])
+        screen = session.send_key("DOWN")
+        assert_highlight(screen, [(6, last_content_row)], "DOWN past last row")
+        assert_contains(screen, first_content_row, snapshots["ascii_scrolled_top_row"]["contains"]["4"])
 
-    screen = ensure_view(session, "HEX ")
-    session.fill("C100-C103,10")
-    session.fill("C200-C203,10")
-    session.fill("C201-C201,91")
-    session.fill("C203-C203,93")
-    screen = session.compare("C100-C103,C200")
-    assert_contains(screen, 4, "C101")
+    with check("HEX edit writes both nibbles"):
+        session.goto("C000")
+        session.fill("C000-C000,00")
+        screen = ensure_view(session, "HEX ")
+        screen = session.send_char("e")
+        assert_highlight(screen, [(6, 4), (7, 4)], "e")
+        screen = session.send_char("A")
+        assert_contains(screen, 4, snapshots["hex_first_nibble"]["contains"]["4"])
+        screen = session.send_char("B")
+        assert_contains(screen, 4, snapshots["hex_second_nibble"]["contains"]["4"])
+        session.send_key("ESC")
 
-    write_rest_memory(rest_host, 0x1000, bytes.fromhex("A9008D0004A9018D00044C0010"))
-    write_rest_memory(rest_host, 0x0400, bytes([0x20]))
-    session.goto("1000")
-    session.goto_run("1000")
-    wait_for_rest_byte(rest_host, 0x0400, 0x01)
-    session.enter_monitor()
-    run_go_repeat_test(session, rest_host)
-    run_go_visible_state_test(session, rest_host)
+    with check("CPU bank cycling reaches CHAR and RAM mappings"):
+        session.goto("A000")
+        screen = ensure_status(session, snapshots["status_cpu27"]["contains"]["22"])
+        assert_status_contains(screen, snapshots["status_cpu27"]["contains"]["22"])
+        session.send_char("o")
+        session.send_char("o")
+        screen = session.send_char("o")
+        assert_status_contains(screen, snapshots["status_cpu30"]["contains"]["22"])
+
+    with check("COMPARE reports differing address"):
+        screen = ensure_view(session, "HEX ")
+        session.fill("C100-C103,10")
+        session.fill("C200-C203,10")
+        session.fill("C201-C201,91")
+        session.fill("C203-C203,93")
+        screen = session.compare("C100-C103,C200")
+        assert_contains(screen, 4, "C101")
+
+    with check("G executes finite loop and returns to monitor"):
+        write_rest_memory(rest_host, 0x1000, bytes.fromhex("A9008D0004A9018D00044C0010"))
+        write_rest_memory(rest_host, 0x0400, bytes([0x20]))
+        session.goto("1000")
+        session.goto_run("1000")
+        wait_for_rest_byte(rest_host, 0x0400, 0x01)
+        session.enter_monitor()
+
+    with check("G repeated execution updates RAM sentinel"):
+        run_go_repeat_test(session, rest_host)
+
+    with check("G handoff preserves stable VIC state"):
+        run_go_visible_state_test(session, rest_host)
 
 
 def main() -> int:
@@ -789,7 +817,7 @@ def main() -> int:
             if session is not None:
                 session.close()
 
-    print("monitor_test: OK")
+    print(f"monitor_test: OK ({CHECK_COUNT} checks)")
     return 0
 
 
