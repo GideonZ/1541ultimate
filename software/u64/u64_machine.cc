@@ -201,7 +201,7 @@ void U64Machine :: get_all_memory(uint8_t *pb)
     after_memory_access(pb, freezerMenu, stopped_it);
 }
 
-void U64Machine :: read_block(uint32_t address, uint8_t *dst, uint32_t len)
+void U64Machine :: read_block(uint16_t address, uint8_t *dst, uint32_t len)
 {
     bool stopped_it = false;
     bool freezerMenu = before_memory_access(isFrozen, &stopped_it);
@@ -212,7 +212,7 @@ void U64Machine :: read_block(uint32_t address, uint8_t *dst, uint32_t len)
     after_memory_access(0, freezerMenu, stopped_it);
 }
 
-void U64Machine :: read_cpu_block(uint32_t address, uint8_t *dst, uint32_t len, uint8_t cpu_port)
+void U64Machine :: read_cpu_block(uint16_t address, uint8_t *dst, uint32_t len, uint8_t cpu_port)
 {
     bool stopped_it = false;
     bool freezerMenu = before_memory_access(true, &stopped_it);
@@ -221,13 +221,13 @@ void U64Machine :: read_cpu_block(uint32_t address, uint8_t *dst, uint32_t len, 
 
     C64_SERVE_CONTROL = saved_serve | SERVE_WHILE_STOPPED;
     for (uint32_t offset = 0; offset < len; offset++) {
-        dst[offset] = read_cpu_mapped_byte(ram, freezerMenu, address + offset, cpu_port, screen_backup, ram_backup);
+        dst[offset] = read_cpu_mapped_byte(ram, freezerMenu, (uint16_t)(address + offset), cpu_port, screen_backup, ram_backup);
     }
     C64_SERVE_CONTROL = saved_serve;
     after_memory_access(0, freezerMenu, stopped_it);
 }
 
-void U64Machine :: read_visible_block(uint32_t address, uint8_t *dst, uint32_t len)
+void U64Machine :: read_visible_block(uint16_t address, uint8_t *dst, uint32_t len)
 {
     bool freezerMenu = isFrozen;
     bool wasStopped = is_stopped();
@@ -284,14 +284,14 @@ uint8_t U64Machine :: peek(uint16_t address)
     return byte;
 }
 
-uint8_t U64Machine :: peek_cpu(uint32_t address, uint8_t cpu_port)
+uint8_t U64Machine :: peek_cpu(uint16_t address, uint8_t cpu_port)
 {
     uint8_t byte = 0;
     read_cpu_block(address, &byte, 1, cpu_port);
     return byte;
 }
 
-uint8_t U64Machine :: peek_visible(uint32_t address)
+uint8_t U64Machine :: peek_visible(uint16_t address)
 {
     bool freezerMenu = isFrozen;
     bool wasStopped = is_stopped();
@@ -333,7 +333,7 @@ void U64Machine :: poke(uint16_t address, uint8_t byte)
     after_memory_access(0, freezerMenu, stopped_it);
 }
 
-void U64Machine :: poke_cpu(uint32_t address, uint8_t byte, uint8_t cpu_port)
+void U64Machine :: poke_cpu(uint16_t address, uint8_t byte, uint8_t cpu_port)
 {
     bool stopped_it = false;
     bool freezerMenu = before_memory_access(true, &stopped_it);
@@ -346,7 +346,7 @@ void U64Machine :: poke_cpu(uint32_t address, uint8_t byte, uint8_t cpu_port)
     after_memory_access(0, freezerMenu, stopped_it);
 }
 
-void U64Machine :: poke_visible(uint32_t address, uint8_t byte)
+void U64Machine :: poke_visible(uint16_t address, uint8_t byte)
 {
     bool stopped_it = false;
     bool freezerMenu = before_memory_access(false, &stopped_it);

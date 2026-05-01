@@ -117,6 +117,12 @@ const char *monitor_io::load_into_memory(const char *path, const char *name,
         fm->fclose(f);
         return monitor_error_text(verr);
     }
+    // Reject loads that would wrap past $FFFF — silently corrupting low memory
+    // (zero page, stack) is a far worse outcome than an explicit error.
+    if ((uint32_t)start_addr + effective > 0x10000) {
+        fm->fclose(f);
+        return "LOAD WRAPS PAST $FFFF";
+    }
     if (f->seek(header_skip + offset) != FR_OK) {
         fm->fclose(f);
         return "SEEK FAILED";

@@ -28,6 +28,7 @@ public:
     // override these. The monitor exposes a Z toggle to drive this. Default
     // behaviour is a no-op so non-U64 backends remain unaffected.
     virtual bool supports_freeze(void) const { return false; }
+    virtual bool freeze_available(void) const { return supports_freeze(); }
     virtual bool is_frozen(void) const { return false; }
     virtual void set_frozen(bool) { }
 

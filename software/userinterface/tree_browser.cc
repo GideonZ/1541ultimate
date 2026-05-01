@@ -75,8 +75,16 @@ void TreeBrowser :: init() // call on root!
 	this->screen = user_interface->get_screen();
     this->keyb   = user_interface->get_keyboard();
 
-    screen->move_cursor(screen->get_size_x()-8, screen->get_size_y()-1);
-    screen->output("\eAF3=HELP\eO");
+    if (pick_mode == PICK_SAVE) {
+        // Save flow: surface the F5 = pick-current-directory ("New File")
+        // shortcut alongside the standard help hint so the new-file path is
+        // discoverable. Width: " F5=NewFile F3=HELP" = 19 chars (fits 40-col).
+        screen->move_cursor(screen->get_size_x() - 19, screen->get_size_y() - 1);
+        screen->output("\eAF5=NewFile F3=HELP\eO");
+    } else {
+        screen->move_cursor(screen->get_size_x()-8, screen->get_size_y()-1);
+        screen->output("\eAF3=HELP\eO");
+    }
 
 	window = new Window(screen, 0, 2, screen->get_size_x(), screen->get_size_y()-3);
     if(has_border) {

@@ -108,6 +108,12 @@ static bool uses_live_mapping_for_address(uint16_t address, uint8_t live_cpu_por
     return cpu_region_mapping(address, live_cpu_port) == cpu_region_mapping(address, monitor_cpu_port);
 }
 
+bool U64MemoryBackend :: freeze_available(void) const
+{
+    C64 *machine = C64 :: getMachine();
+    return machine && !machine->is_accessible();
+}
+
 bool U64MemoryBackend :: read_monitor_rom_byte(uint16_t address, uint8_t cpu_port, uint8_t *value) const
 {
     switch (cpu_region_mapping(address, cpu_port)) {

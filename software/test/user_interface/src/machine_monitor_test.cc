@@ -190,8 +190,11 @@ void UserInterface :: set_screen(Screen *s)
     screen = s;
 }
 
+int g_set_screen_title_call_count = 0;
+
 void UserInterface :: set_screen_title(void)
 {
+    g_set_screen_title_call_count++;
 }
 
 int UserInterface :: activate_uiobject(UIObject *)
@@ -569,6 +572,62 @@ struct FakeBankedMemoryBackend : public MemoryBackend
     virtual void set_frozen(bool on)
     {
         frozen = on;
+    }
+};
+
+struct FakeFreezeControlBackend : public FakeMemoryBackend
+{
+    bool available;
+    bool frozen;
+    int set_frozen_calls;
+
+    FakeFreezeControlBackend(bool available_now, bool frozen_now = false)
+        : available(available_now), frozen(frozen_now), set_frozen_calls(0)
+    {
+    }
+
+    virtual bool supports_freeze(void) const
+    {
+        return true;
+    }
+
+    virtual bool freeze_available(void) const
+    {
+        return available;
+    }
+
+    virtual bool is_frozen(void) const
+    {
+        return frozen;
+    }
+
+    virtual void set_frozen(bool on)
+    {
+        set_frozen_calls++;
+        frozen = on;
+    }
+};
+
+struct FakeFrozenVicBackend : public FakeBankedMemoryBackend
+{
+    uint8_t reported_vic_bank;
+    uint8_t requested_vic_bank;
+    int set_live_vic_bank_calls;
+
+    FakeFrozenVicBackend() : reported_vic_bank(0), requested_vic_bank(0), set_live_vic_bank_calls(0)
+    {
+        frozen = true;
+    }
+
+    virtual uint8_t get_live_vic_bank(void)
+    {
+        return reported_vic_bank & 0x03;
+    }
+
+    virtual void set_live_vic_bank(uint8_t vic_bank)
+    {
+        requested_vic_bank = (uint8_t)(vic_bank & 0x03);
+        set_live_vic_bank_calls++;
     }
 };
 
@@ -2155,6 +2214,53 @@ static int test_monitor_default_cpu_bank_and_vic_shortcuts(void)
     return 0;
 }
 
+static int test_monitor_freeze_mode_vic_shortcut_override(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeFrozenVicBackend backend;
+    char status[39];
+    const int keys[] = { 'O', 'O', 'O', 'O', KEY_BREAK };
+    FakeKeyboard keyboard(keys, sizeof(keys) / sizeof(keys[0]));
+    static const char *vic_cycle_status[] = {
+        "CPU7 $A:BAS $D:I/O $E:KRN VIC1 $4000",
+        "CPU7 $A:BAS $D:I/O $E:KRN VIC2 $8000",
+        "CPU7 $A:BAS $D:I/O $E:KRN VIC3 $C000",
+        "CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000",
+    };
+    static const uint8_t requested_vic_bank[] = { 1, 2, 3, 0 };
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    monitor_reset_saved_state();
+    monitor_invalidate_saved_state();
+
+    MachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    screen.get_slice(1, 22, 38, status);
+    if (expect(strstr(status, "CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000") == status,
+               "Freeze-mode VIC shortcut test must start from the freezer's VIC0 bank.")) return 1;
+
+    for (unsigned int i = 0; i < sizeof(vic_cycle_status) / sizeof(vic_cycle_status[0]); i++) {
+        if (expect(monitor.poll(0) == 0, "Freeze-mode Shift+O VIC bank cycle failed.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, vic_cycle_status[i]) == status,
+                   "Freeze-mode Shift+O must keep rotating through the requested VIC banks even when live readback stays pinned.")) return 1;
+        if (expect(backend.requested_vic_bank == requested_vic_bank[i],
+                   "Freeze-mode Shift+O must still request the next VIC bank from the backend.")) return 1;
+        if (expect(backend.set_live_vic_bank_calls == (int)i + 1,
+                   "Freeze-mode Shift+O must invoke set_live_vic_bank on every keypress.")) return 1;
+        if (expect(backend.get_live_vic_bank() == 0,
+                   "Freeze-mode VIC override test assumes the backend readback remains pinned to VIC0.")) return 1;
+    }
+
+    if (expect(monitor.poll(0) == 1, "RUN/STOP exit failed after freeze-mode VIC shortcut test.")) return 1;
+    monitor.deinit();
+    monitor_reset_saved_state();
+    return 0;
+}
+
 static int test_monitor_reopen_restores_state(void)
 {
     TestUserInterface ui;
@@ -3512,6 +3618,151 @@ static int test_binary_bit_navigation_and_width(void)
     return 0;
 }
 
+static int test_binary_delete_behavior(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        char row[14];
+        const int keys[] = { 'J', 'B', KEY_DELETE, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        backend.write(0x0400, 0xAA);
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Binary DEL set-bit test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary DEL set-bit test: view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary DEL set-bit test: delete failed.")) return 1;
+        if (expect(backend.read(0x0400) == 0x2A,
+                   "Binary DEL must clear only the selected set bit.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR BIN $0400/6") == header,
+                   "Binary DEL must advance the cursor by exactly one bit.")) return 1;
+        screen.get_slice(1, 4, 13, row);
+        if (expect(strcmp(row, "0400 ..*.*.*.") == 0,
+                   "Binary DEL must render the cleared bit as '.' without changing the other bits.")) return 1;
+        if (expect(screen.reverse_chars[4][7] && !screen.reverse_chars[4][6],
+                   "Binary DEL must leave the highlight on the next bit, not the original one.")) return 1;
+        if (expect(mon.poll(0) == 1, "Binary DEL set-bit test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        char row[14];
+        const int keys[] = { 'J', 'B', 'E', KEY_DELETE, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        backend.write(0x0400, 0x2A);
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Binary DEL clear-bit test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary DEL clear-bit test: view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary DEL clear-bit test: edit entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary DEL clear-bit test: delete failed.")) return 1;
+        if (expect(backend.read(0x0400) == 0x2A,
+                   "Binary DEL on an already-clear bit must leave the byte unchanged.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR BIN $0400/6") == header,
+                   "Binary DEL must still advance one bit while in edit mode.")) return 1;
+        screen.get_slice(1, 4, 13, row);
+        if (expect(strcmp(row, "0400 ..*.*.*.") == 0,
+                   "Binary DEL on a clear bit must preserve the rendered binary row.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary DEL clear-bit test: leave edit mode failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "Binary DEL clear-bit test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'J', 'B', KEY_RIGHT, KEY_RIGHT, KEY_RIGHT, KEY_RIGHT,
+                             KEY_RIGHT, KEY_RIGHT, KEY_RIGHT, KEY_DELETE, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        backend.write(0x0400, 0x01);
+        backend.write(0x0401, 0x80);
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Binary DEL boundary test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary DEL boundary test: view switch failed.")) return 1;
+        for (int i = 0; i < 7; i++) {
+            if (expect(mon.poll(0) == 0, "Binary DEL boundary test: cursor advance to bit 0 failed.")) return 1;
+        }
+        if (expect(mon.poll(0) == 0, "Binary DEL boundary test: delete failed.")) return 1;
+        if (expect(backend.read(0x0400) == 0x00,
+                   "Binary DEL must clear the final bit in the byte without touching the next byte.")) return 1;
+        if (expect(backend.read(0x0401) == 0x80,
+                   "Binary DEL byte-boundary advance must not modify the next byte.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR BIN $0401/7") == header,
+                   "Binary DEL must advance to the next byte's MSB after bit 0.")) return 1;
+        if (expect(screen.reverse_chars[5][6],
+                   "Binary DEL across a byte boundary must highlight the next row's first bit.")) return 1;
+        if (expect(mon.poll(0) == 1, "Binary DEL boundary test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        char row[14];
+        const int keys[] = { 'J', 'B', KEY_RIGHT, KEY_RIGHT, KEY_RIGHT, KEY_RIGHT,
+                             KEY_RIGHT, KEY_RIGHT, KEY_RIGHT, KEY_DELETE, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("FFFF", 1);
+        backend.write(0xFFFF, 0x01);
+        backend.write(0x0000, 0x80);
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Binary DEL wrap test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary DEL wrap test: view switch failed.")) return 1;
+        for (int i = 0; i < 7; i++) {
+            if (expect(mon.poll(0) == 0, "Binary DEL wrap test: cursor advance to bit 0 failed.")) return 1;
+        }
+        if (expect(mon.poll(0) == 0, "Binary DEL wrap test: delete failed.")) return 1;
+        if (expect(backend.read(0xFFFF) == 0x00,
+                   "Binary DEL must clear the selected bit at $FFFF before wrapping.")) return 1;
+        if (expect(backend.read(0x0000) == 0x80,
+                   "Binary DEL wraparound must not modify the wrapped-to byte.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR BIN $0000/7") == header,
+                   "Binary DEL at $FFFF bit 0 must wrap to $0000 bit 7.")) return 1;
+        screen.get_slice(1, 4, 13, row);
+        if (expect(strcmp(row, "0000 *.......") == 0,
+                   "Binary DEL wraparound must render the wrapped-to byte using the existing binary row layout.")) return 1;
+        if (expect(mon.poll(0) == 1, "Binary DEL wrap test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
 static int test_clipboard_number_and_range(void)
 {
     {
@@ -4693,6 +4944,134 @@ static int test_load_save_param_parsers(void)
     return 0;
 }
 
+extern int g_set_screen_title_call_count;
+
+// Regression: pressing 'W' in non-binary views, 'Z' when freeze is unavailable,
+// and 'U' outside ASM view must show a bounded warning popup, but the
+// post-popup redraw must NOT call UserInterface::set_screen_title(). That
+// helper repaints the screen chrome (including a horizontal-line glyph row
+// just below the monitor) and would clobber the application info row,
+// producing the reported "row of horizontal lines" symptom.
+static int test_warning_popups_preserve_status_row(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'W', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.popup_count = 0;
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        g_set_screen_title_call_count = 0;
+        if (expect(mon.poll(0) == 0, "W in hex view should not exit the monitor.")) return 1;
+        if (expect(ui.popup_count == 1, "W outside Binary view must raise exactly one warning popup.")) return 1;
+        if (expect(strstr(ui.last_popup, "BINARY") != NULL, "W warning must mention the BINARY view requirement.")) return 1;
+        if (expect(g_set_screen_title_call_count == 0,
+                   "W warning popup must not trigger set_screen_title (would erase the row below the monitor with horizontal lines).")) return 1;
+        mon.poll(0);
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeFreezeControlBackend backend(false);
+        const int keys[] = { 'Z', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.popup_count = 0;
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        g_set_screen_title_call_count = 0;
+        if (expect(mon.poll(0) == 0, "Z outside overlay mode should not exit.")) return 1;
+        if (expect(ui.popup_count == 1, "Z outside overlay mode must raise exactly one warning popup.")) return 1;
+        if (expect(strstr(ui.last_popup, "FREEZE") != NULL && strstr(ui.last_popup, "OVERLAY") != NULL,
+                   "Z warning must explain that freeze is only available in overlay mode.")) return 1;
+        if (expect(backend.set_frozen_calls == 0 && !backend.frozen,
+                   "Invalid-context Z must not change freeze state or call set_frozen.")) return 1;
+        if (expect(g_set_screen_title_call_count == 0,
+                   "Z warning popup must not trigger set_screen_title.")) return 1;
+        mon.poll(0);
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeFreezeControlBackend backend(true);
+        const int keys[] = { 'Z', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.popup_count = 0;
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Z in overlay mode should not exit.")) return 1;
+        if (expect(ui.popup_count == 0, "Z in overlay mode must not raise a warning popup.")) return 1;
+        if (expect(backend.set_frozen_calls == 1 && backend.frozen,
+                   "Z in overlay mode must still perform the freeze toggle.")) return 1;
+        mon.poll(0);
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'U', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.popup_count = 0;
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        g_set_screen_title_call_count = 0;
+        if (expect(mon.poll(0) == 0, "U outside ASM view should not exit.")) return 1;
+        if (expect(ui.popup_count == 1, "U outside ASM view must raise exactly one warning popup.")) return 1;
+        if (expect(strstr(ui.last_popup, "UNDOC") != NULL && strstr(ui.last_popup, "ASSEMBLY") != NULL,
+                   "U warning must explain that undocumented opcodes are only toggled in Assembly view.")) return 1;
+        if (expect(g_set_screen_title_call_count == 0,
+                   "U warning popup must not trigger set_screen_title.")) return 1;
+        mon.poll(0);
+        mon.deinit();
+    }
+
+    // Sanity: U in ASM view still toggles silently (no warning popup).
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'A', 'U', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.popup_count = 0;
+        monitor_reset_saved_state();
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASM view switch failed in U-in-ASM sanity test.")) return 1;
+        if (expect(mon.poll(0) == 0, "U in ASM view should toggle silently.")) return 1;
+        if (expect(ui.popup_count == 0, "U inside ASM view must not raise a warning popup.")) return 1;
+        mon.poll(0);
+        mon.deinit();
+    }
+
+    return 0;
+}
+
 int main()
 {
     if (test_disassembler()) return 1;
@@ -4710,6 +5089,7 @@ int main()
     if (test_monitor_cursor_header_and_scroll()) return 1;
     if (test_monitor_interaction()) return 1;
     if (test_monitor_default_cpu_bank_and_vic_shortcuts()) return 1;
+    if (test_monitor_freeze_mode_vic_shortcut_override()) return 1;
     if (test_monitor_reopen_restores_state()) return 1;
     if (test_monitor_kernal_bank_switch_and_ram_interaction()) return 1;
     if (test_assembler_encoding()) return 1;
@@ -4732,6 +5112,7 @@ int main()
     if (test_opcode_picker_selection_near_bottom_preserves_live_charset_page()) return 1;
     if (test_cross_view_sync()) return 1;
     if (test_binary_bit_navigation_and_width()) return 1;
+    if (test_binary_delete_behavior()) return 1;
     if (test_clipboard_number_and_range()) return 1;
     if (test_number_popup_edit_and_commit()) return 1;
     if (test_number_popup_word_commit_and_sticky_row()) return 1;
@@ -4746,6 +5127,7 @@ int main()
     if (test_load_save_and_goto_command_flow()) return 1;
     if (test_header_invariants_and_parity()) return 1;
     if (test_edit_indicator_layout_across_views()) return 1;
+    if (test_warning_popups_preserve_status_row()) return 1;
 
     puts("machine_monitor_test: OK");
     return 0;

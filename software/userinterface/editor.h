@@ -43,4 +43,5 @@ class HexEditor : public Editor
 public:
     HexEditor(UserInterface *ui, const char *text_buffer, int max_len);
 };
+
 #endif

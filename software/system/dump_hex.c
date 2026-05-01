@@ -33,7 +33,7 @@ void dump_hex_actual(const void *pp, int len, int relative)
 {
     int w,t;
     uint8_t c;
-	const uint8_t *p = (const uint8_t *)pp;
+    uint8_t *p = (uint8_t *)pp;
     
 	for(w=0;w<len;w+=DUMP_BYTES) {
         if(relative)

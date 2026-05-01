@@ -23,6 +23,7 @@ public:
     virtual void end_session(void);
 
     virtual bool supports_freeze(void) const { return true; }
+    virtual bool freeze_available(void) const;
     virtual bool is_frozen(void) const { return stopped_machine_for_session; }
     virtual void set_frozen(bool on);
 };

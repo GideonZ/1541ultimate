@@ -788,6 +788,9 @@ MonitorError monitor_parse_hunt(const char *text, uint16_t *start, uint16_t *end
     if (*cursor == '"') {
         cursor++;
         while (*cursor && *cursor != '"') {
+            if (count >= MONITOR_HUNT_NEEDLE_MAX) {
+                return MONITOR_RANGE;
+            }
             needle[count++] = (uint8_t)*cursor++;
         }
         if (*cursor != '"') {
@@ -800,6 +803,9 @@ MonitorError monitor_parse_hunt(const char *text, uint16_t *start, uint16_t *end
             error = parse_hex_digits(cursor, 1, 2, 0xFF, &parsed);
             if (error != MONITOR_OK) {
                 return count ? MONITOR_SYNTAX : MONITOR_SYNTAX;
+            }
+            if (count >= MONITOR_HUNT_NEEDLE_MAX) {
+                return MONITOR_RANGE;
             }
             needle[count++] = (uint8_t)parsed;
             skip_spaces(cursor);
@@ -1999,9 +2005,12 @@ uint8_t MachineMonitor :: asm_edit_part_count(uint16_t address)
 
 uint16_t MachineMonitor :: disasm_prev_addr(uint16_t address)
 {
-    for (uint16_t back = 3; back >= 1; back--) {
+    // Use a signed counter: a uint16_t loop variable would underflow from 0
+    // back to 0xFFFF when the heuristic fails to find a matching instruction
+    // length, hanging the monitor in an infinite read loop.
+    for (int back = 3; back >= 1; back--) {
         uint16_t candidate = (uint16_t)(address - back);
-        if (disasm_length(candidate) == back) {
+        if (disasm_length(candidate) == (uint16_t)back) {
             return candidate;
         }
     }
@@ -2505,10 +2514,13 @@ void MachineMonitor :: draw_binary()
 
 void MachineMonitor :: redraw_full()
 {
-    // Re-paint everything after a sub-dialog (file picker, popup, confirmation)
-    // closed. We must also restore the screen title bar / separator rows that
-    // sit OUTSIDE our window (rows 0/1 and the bottom row), otherwise the user
-    // sees a "shrunken" monitor with the C64 chrome wiped away.
+    // Re-paint border + content after a sub-dialog (file picker, popup,
+    // confirmation) closed. Do NOT call set_screen_title() here: that would
+    // re-clear the chrome rows above/below the monitor and overwrite the
+    // application status row beneath us with horizontal-line glyphs. Popup-
+    // style sub-dialogs already backup/restore the screen on memory-mapped
+    // backends, and on VT100 the chrome rows sit outside the centered popup
+    // area, so the chrome is intact when we get here.
     //
     // Window::draw_border() permanently shrinks the window's effective area by
     // one character on each side (it advances offset_x/y and reduces
@@ -2516,7 +2528,6 @@ void MachineMonitor :: redraw_full()
     // geometry, otherwise each popup nibbles another row+column off the
     // monitor frame.
     if (!window || !screen) return;
-    get_ui()->set_screen_title();
     window->reset_border();
     window->draw_border();
     window->set_color(get_ui()->color_fg);
@@ -2926,7 +2937,8 @@ void MachineMonitor :: binary_apply_bit(uint8_t bit_value)
 
 // Unified DEL behaviour shared by edit and non-edit mode. ASC/SCR clear
 // the current cell to a space and step the cursor LEFT; HEX clears the
-// current byte to 0x00 and steps RIGHT; ASM replaces the current
+// current byte to 0x00 and steps RIGHT; BINARY clears only the selected
+// bit to 0 and steps RIGHT by one bit; ASM replaces the current
 // instruction with NOP(s) and steps to the next disassembled line.
 void MachineMonitor :: apply_logical_delete()
 {
@@ -2947,6 +2959,9 @@ void MachineMonitor :: apply_logical_delete()
             move_current(-1);
             break;
         }
+        case MONITOR_VIEW_BINARY:
+            binary_apply_bit(0);
+            break;
         case MONITOR_VIEW_ASM: {
             uint8_t len = disasm_length(state.current_addr);
             for (uint8_t i = 0; i < len; i++) {
@@ -3325,7 +3340,7 @@ int MachineMonitor :: handle_key(int key)
     char buffer[96];
     char output[4096];
     uint16_t start, end, dest, address, value16;
-    uint8_t byte_value, needle[80];
+    uint8_t byte_value, needle[MONITOR_HUNT_NEEDLE_MAX];
     int needle_len;
     MonitorError error;
 
@@ -3414,14 +3429,6 @@ int MachineMonitor :: handle_key(int key)
             // first; otherwise the byte itself is cleared.
             if (state.view == MONITOR_VIEW_HEX && pending_hex_nibble >= 0) {
                 pending_hex_nibble = -1;
-                draw();
-                return 0;
-            }
-            // BINARY: walk the bit cursor backwards across bytes so the user
-            // can flip an individual bit without zeroing whole bytes.
-            if (state.view == MONITOR_VIEW_BINARY) {
-                move_binary_bits(-1);
-                reset_edit_blink();
                 draw();
                 return 0;
             }
@@ -3706,8 +3713,11 @@ int MachineMonitor :: handle_key(int key)
             break;
         case 'z': case 'Z':
             help_visible = false;
-            if (backend && backend->supports_freeze()) {
+            if (backend && backend->freeze_available()) {
                 backend->set_frozen(!backend->is_frozen());
+            } else {
+                get_ui()->popup("FREEZE ONLY IN OVERLAY MODE", BUTTON_OK);
+                redraw_full();
             }
             break;
         case 'o': {
@@ -3720,13 +3730,24 @@ int MachineMonitor :: handle_key(int key)
             break;
         }
         case 'O':
-            backend->set_live_vic_bank(next_vic_bank(current_vic_bank));
-            current_vic_bank = backend->get_live_vic_bank();
-            last_live_vic_bank = current_vic_bank;
-            vic_bank_override = false;
+        {
+            uint8_t requested_vic_bank = next_vic_bank(current_vic_bank);
+            uint8_t live_vic_bank;
+
+            backend->set_live_vic_bank(requested_vic_bank);
+            live_vic_bank = backend->get_live_vic_bank();
+            current_vic_bank = requested_vic_bank;
+            last_live_vic_bank = live_vic_bank;
+            vic_bank_override = (live_vic_bank != requested_vic_bank);
             break;
+        }
         case 'u': case 'U':
-            state.illegal_enabled = !state.illegal_enabled;
+            if (state.view == MONITOR_VIEW_ASM) {
+                state.illegal_enabled = !state.illegal_enabled;
+            } else {
+                get_ui()->popup("UNDOC OP ONLY IN ASSEMBLY", BUTTON_OK);
+                redraw_full();
+            }
             break;
         case '?':
             toggle_help();
@@ -3848,7 +3869,10 @@ int MachineMonitor :: poll(int)
         uint8_t vic_bank = backend->get_live_vic_bank();
         if (vic_bank != last_live_vic_bank) {
             last_live_vic_bank = vic_bank;
-            current_vic_bank = vic_bank;
+            if (!vic_bank_override || vic_bank == current_vic_bank) {
+                current_vic_bank = vic_bank;
+                vic_bank_override = false;
+            }
             draw_status();
         }
         return 0;

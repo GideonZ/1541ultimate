@@ -38,6 +38,7 @@ enum {
     MONITOR_DISASM_ROW_CHARS = 38,
     MONITOR_DISASM_SOURCE_COL = 30,
     MONITOR_DISASM_TEXT_COL = 15,
+    MONITOR_HUNT_NEEDLE_MAX = 80,
 };
 
 struct MachineMonitorState

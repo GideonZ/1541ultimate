@@ -4,7 +4,9 @@
 #ifndef NO_FILE_ACCESS
 #include "FreeRTOS.h"
 #include "task.h"
+#include "tree_browser.h"
 #include "tree_browser_state.h"
+#include "path.h"
 #include "keyboard_usb.h"
 #include "filemanager.h"
 #ifndef UPDATER
@@ -231,15 +233,15 @@ void UserInterface :: effectuate_settings(void)
 
     // push_event(e_refresh_browser); TODO
 }
-
+    
 void UserInterface :: init(GenericHost *h)
 {
     host = h;
     keyboard = h->getKeyboard();
-    screen = h->getScreen();
+	screen = h->getScreen();
     initialized = true;
     if (host->is_permanent()) {
-        appear();
+       appear();
     }
 }
 
@@ -247,6 +249,7 @@ int UserInterface :: getPreferredType(void)
 {
     return cfg->get_value(CFG_USERIF_ITYPE);
 }
+
 void UserInterface :: set_screen(Screen *s)
 {
     screen = s;
@@ -545,7 +548,7 @@ void UserInterface :: set_screen_title()
 /* Blocking variants of our simple objects follow: */
 int  UserInterface :: popup(const char *msg, uint8_t flags)
 {
-    const char *c_button_names[] = { " OK ", " Yes ", " No ", " All ", " Cancel " };
+    const char *c_button_names[] = { " Ok ", " Yes ", " No ", " All ", " Cancel " };
     const char c_button_keys[] = { 'o', 'y', 'n', 'a', 'c' };
 
     UIPopup *pop = new UIPopup(this, msg, flags, 5, c_button_names, c_button_keys);
