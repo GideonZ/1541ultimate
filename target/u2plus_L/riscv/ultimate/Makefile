@@ -100,7 +100,6 @@ SRCS_CC	 =  u2pl_init.cc \
 			tree_browser_state.cc \
 			config_menu.cc \
 			context_menu.cc \
-			task_actions.cc \
 			task_menu.cc \
 			audio_select.cc \
 			filetype_d64.cc \

@@ -60,13 +60,6 @@ public:
     bool allow_exit;
     bool has_path;
     bool has_border;
-
-    // Monitor pick-mode support. When pick_mode != PICK_NONE the browser
-    // captures RETURN / RIGHT on a regular file and exits with picked = true.
-    // In PICK_SAVE the F5 key (KEY_TASKS) selects the current directory and
-    // exits with picked = true and an empty filename so the caller can prompt
-    // for a name. Selection / context / config / paste / delete / Ctrl-O are
-    // suppressed while picking.
     PickMode pick_mode;
     bool     picked;
     bool     picked_is_dir_only;

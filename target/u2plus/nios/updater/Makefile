@@ -53,7 +53,6 @@ SRCS_CC	 =  memory.cc \
 			mystring.cc \
 			size_str.cc \
 			rtc_i2c.cc \
-			task_actions.cc \
 			task_menu.cc \
 			userinterface.cc \
 			ui_elements.cc \

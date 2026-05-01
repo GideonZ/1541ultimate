@@ -76,9 +76,6 @@ void TreeBrowser :: init() // call on root!
     this->keyb   = user_interface->get_keyboard();
 
     if (pick_mode == PICK_SAVE) {
-        // Save flow: surface the F5 = pick-current-directory ("New File")
-        // shortcut alongside the standard help hint so the new-file path is
-        // discoverable. Width: " F5=NewFile F3=HELP" = 19 chars (fits 40-col).
         screen->move_cursor(screen->get_size_x() - 19, screen->get_size_y() - 1);
         screen->output("\eAF5=NewFile F3=HELP\eO");
     } else {
@@ -351,7 +348,6 @@ int TreeBrowser :: handle_key(int c)
     int ret = 0;
 
     if (pick_mode != PICK_NONE) {
-        // Suppress destructive / context-bearing keys in pick mode.
         switch (c) {
             case KEY_RETURN:
             case KEY_RIGHT: {
@@ -359,8 +355,6 @@ int TreeBrowser :: handle_key(int c)
                 if (!state || !state->under_cursor) {
                     return 0;
                 }
-                // Capture the entry name and the current path before calling
-                // into2(), since a successful descent will mutate state.
                 mstring name(state->under_cursor->getName());
                 mstring before_path(path ? path->get_path() : "");
                 bool not_descendable = state->into2();
@@ -379,7 +373,7 @@ int TreeBrowser :: handle_key(int c)
                 }
                 state->level_up();
                 return 0;
-            case KEY_TASKS: // F5: in SAVE mode, pick the current directory
+            case KEY_TASKS:
                 if (pick_mode == PICK_SAVE) {
                     picked = true;
                     picked_is_dir_only = true;
@@ -396,7 +390,6 @@ int TreeBrowser :: handle_key(int c)
             case KEY_MENU:
                 picked = false;
                 return MENU_CLOSE;
-            // Suppress potentially destructive / unrelated actions while picking.
             case KEY_CTRL_C:
             case KEY_CTRL_V:
             case KEY_CTRL_A:
@@ -407,7 +400,7 @@ int TreeBrowser :: handle_key(int c)
             case KEY_SPACE:
                 return 0;
             default:
-                break; // fall through to default handling (navigation, quick seek)
+                break;
         }
     }
 
@@ -453,9 +446,9 @@ int TreeBrowser :: handle_key(int c)
         case KEY_CTRL_O:
             reset_quick_seek();
             state->refresh = true;
-            ensure_task_actions_created(path ? FileManager :: getFileManager()->is_path_writable(path) : false);
+            TaskMenu::ensure_task_actions_created(path ? FileManager :: getFileManager()->is_path_writable(path) : false);
             {
-                Action *monitorAction = find_task_action(SUBSYSID_U64, "Machine Code Monitor");
+                Action *monitorAction = TaskMenu::find_task_action(SUBSYSID_U64, "Machine Code Monitor");
                 if (monitorAction) {
                     const char *currentPath = path ? path->get_path() : "";
                     SubsysCommand *cmd = new SubsysCommand(user_interface, monitorAction, currentPath, "");
@@ -717,11 +710,6 @@ const char *TreeBrowser :: getPath() {
 }
 
 int swap_joystick()
-{
-    return 0;
-}
-
-int swap_interface_type(UserInterface *)
 {
     return 0;
 }

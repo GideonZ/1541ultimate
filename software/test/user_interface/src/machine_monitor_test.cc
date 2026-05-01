@@ -5,7 +5,7 @@
 #include "monitor/disassembler_6502.h"
 #include "menu.h"
 #include "screen.h"
-#include "task_actions.h"
+#include "task_menu.h"
 #include "tasks_collection.h"
 #include "ui_elements.h"
 #include "userinterface.h"
@@ -1586,11 +1586,11 @@ static int test_task_action_lookup(void)
 {
     TaskActionProvider provider;
 
-    ensure_task_actions_created(true);
+    TaskMenu::ensure_task_actions_created(true);
     if (expect(provider.update_called && provider.last_writable, "Task action update hook was not called.")) return 1;
     if (expect(provider.monitor_action != NULL, "Task action provider did not create the monitor action.")) return 1;
     if (expect(provider.monitor_action->isPersistent(), "Task action should be made persistent.")) return 1;
-    if (expect(find_task_action(TEST_SUBSYSID_U64, "Machine Code Monitor") == provider.monitor_action, "Task action lookup failed.")) return 1;
+    if (expect(TaskMenu::find_task_action(TEST_SUBSYSID_U64, "Machine Code Monitor") == provider.monitor_action, "Task action lookup failed.")) return 1;
     return 0;
 }
 

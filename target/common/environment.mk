@@ -105,3 +105,4 @@ OBJCOPY	  = $(CROSS)objcopy
 SIZE	  = $(CROSS)size
 
 .SUFFIXES:
+

@@ -241,7 +241,7 @@ void UserInterface :: init(GenericHost *h)
 	screen = h->getScreen();
     initialized = true;
     if (host->is_permanent()) {
-       appear();
+    	appear();
     }
 }
 

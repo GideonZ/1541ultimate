@@ -100,6 +100,20 @@ static const uint8_t monitor_number_row_max_input[MONITOR_NUMBER_ROW_COUNT] = {
     4, 5, 16, 2, 2
 };
 
+static const char monitor_hex_chars[] = "0123456789ABCDEF";
+
+static void dump_hex_byte(char *buf, int offset, uint8_t byte)
+{
+    buf[offset] = monitor_hex_chars[(byte >> 4) & 0x0F];
+    buf[offset + 1] = monitor_hex_chars[byte & 0x0F];
+}
+
+static void dump_hex_word(char *buf, int offset, uint16_t word)
+{
+    dump_hex_byte(buf, offset, (word >> 8) & 0xFF);
+    dump_hex_byte(buf, offset + 2, word & 0xFF);
+}
+
 static bool is_decimal_char(char c)
 {
     return c >= '0' && c <= '9';

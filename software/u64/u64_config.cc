@@ -161,13 +161,10 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_BADLINES_EN       0x53
 #define CFG_SUPERCPU_DET      0x54
 
-#define CFG_MONITOR           0x60
-
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
 #define CFG_HDMI_TX_SWING     0xAB
 #define CFG_HDMI_RESOLUTION   0xAC
-
 
 uint8_t C64_EMUSID1_BASE_BAK;
 uint8_t C64_EMUSID2_BASE_BAK;
@@ -1422,7 +1419,7 @@ void U64Config :: create_task_items(void)
     myActions.esp32on   = new Action("Enable ESP32",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE);
     myActions.esp32boot = new Action("Enable ESP32 Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT);
 
-    dev->append(myActions.saveedid);
+    dev->append(myActions.saveedid );
 
 #if U64
     dev->append(myActions.monitor);
@@ -1540,6 +1537,7 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
     }
     return SSRET_OK;
 }
+
 
 uint8_t U64Config :: GetSidType(int slot)
 {

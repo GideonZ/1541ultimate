@@ -111,7 +111,6 @@ SRCS_CC	 =  u64ii_init.cc \
 			tree_browser_state.cc \
 			config_menu.cc \
 			context_menu.cc \
-			task_actions.cc \
 			task_menu.cc \
 			monitor_file_io.cc \
 			machine_monitor.cc \

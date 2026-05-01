@@ -69,13 +69,13 @@ private:
     UIObject *ui_objects[MAX_UI_OBJECTS];
     UIStatusBox *status_box;
     
+    void set_screen_title(void);
     void set_available(bool enable);
     int  pollFocussed(void);
     void peel_off(void);
     bool buttonDownFor(uint32_t ms);
     void run_editor(Editor *);
 public:
-    void set_screen_title(void);
     int color_border, color_bg, color_fg, color_sel, color_sel_bg, reverse_sel;
     int color_status, color_inactive;
 
@@ -124,7 +124,6 @@ public:
     void run_editor(const char *, int);
     void run_hex_editor(const char *, int);
     void run_machine_monitor(MemoryBackend *backend);
-
     void swapDisk(void);
     void send_keystroke(int key);
     static bool anyMenuActive(void);
