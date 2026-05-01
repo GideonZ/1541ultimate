@@ -41,7 +41,7 @@ extern "C" {
 #include "usb_hid.h"
 #include "usb_hid_config.h"
 #include "u64_memory_backend.h"
-#include "machine_monitor.h"
+#include "monitor_init.h"
 
 const uint8_t default_colors[16][3] = {
     { 0x00, 0x00, 0x00 },
@@ -1412,7 +1412,7 @@ void U64Config :: create_task_items(void)
 {
     TaskCategory *dev = TasksCollection :: getCategory("Developer", SORT_ORDER_DEVELOPER);
     myActions.poke      = new Action("Poke", SUBSYSID_U64, MENU_U64_POKE);
-    myActions.monitor   = new Action("Machine Code Monitor", U64Config::S_run_monitor, MENU_U64_MONITOR);
+    myActions.monitor   = register_machine_monitor_task(U64Config::S_run_monitor, MENU_U64_MONITOR);
     myActions.saveedid  = new Action("Save EDID to file", SUBSYSID_U64, MENU_U64_SAVEEDID);
     myActions.siddetect = new Action("Detect SIDs", SUBSYSID_U64, MENU_U64_DETECT_SIDS);
     myActions.esp32off  = new Action("Disable ESP32", SUBSYSID_U64, MENU_U64_WIFI_DISABLE);
@@ -1420,10 +1420,6 @@ void U64Config :: create_task_items(void)
     myActions.esp32boot = new Action("Enable ESP32 Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT);
 
     dev->append(myActions.saveedid );
-
-#if U64
-    dev->append(myActions.monitor);
-#endif
 
 #if DEVELOPER > 0
     dev->append(myActions.poke      );

@@ -112,6 +112,7 @@ SRCS_CC	 =  u64ii_init.cc \
 			config_menu.cc \
 			context_menu.cc \
 			task_menu.cc \
+			monitor_init.cc \
 			monitor_file_io.cc \
 			machine_monitor.cc \
 			disassembler_6502.cc \
