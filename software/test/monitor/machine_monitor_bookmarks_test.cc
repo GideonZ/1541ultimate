@@ -198,7 +198,7 @@ static int test_bookmark_addendum_default_table(void)
         if (expect(slot->view == expected[i].view, "Bookmark default view mismatch.")) return 1;
         if (expect(strcmp(slot->label, expected[i].label) == 0,
                    "Bookmark default label mismatch.")) return 1;
-        if (expect(slot->cpu_bank == 7 && slot->vic_bank == 2, "Default CPU/VIC bank mismatch.")) return 1;
+        if (expect(slot->cpu_bank == 7 && slot->vic_bank == 0, "Default CPU/VIC bank mismatch.")) return 1;
         if (expect(!slot->edit_mode && slot->is_default, "Default mode/flags mismatch.")) return 1;
         if (expect(slot->binary_width == 1, "Default binary width must be W1.")) return 1;
     }
@@ -258,8 +258,8 @@ static int test_bookmark_corrupt_config_falls_back_to_defaults(void)
     reopened.ensure_loaded(7, 3);
     const MonitorBookmarkSlot *slot0 = reopened.get(0);
 
-    if (expect(slot0 && slot0->address == 0x0000 && slot0->cpu_bank == 7 && slot0->vic_bank == 3,
-               "Corrupt bookmark config should recreate defaults using the current VIC default.")) return 1;
+    if (expect(slot0 && slot0->address == 0x0000 && slot0->cpu_bank == 7 && slot0->vic_bank == 0,
+               "Corrupt bookmark config should recreate defaults with VIC0.")) return 1;
     if (expect(strcmp(slot0->label, "ZP") == 0,
                "Corrupt config should restore the default label.")) return 1;
     return 0;
@@ -314,9 +314,9 @@ static int test_bookmark_persists_label_and_binary_width(void)
     const MonitorBookmarkSlot *slot7 = reopened.get(7);
 
     if (expect(slot7 && slot7->address == 0x2000 && slot7->view == MONITOR_BOOKMARK_VIEW_BINARY &&
-               slot7->cpu_bank == 3 && slot7->vic_bank == 1 && slot7->edit_mode &&
+               slot7->cpu_bank == 3 && slot7->vic_bank == 1 && !slot7->edit_mode &&
                slot7->binary_width == 3 && strcmp(slot7->label, "SPRITE") == 0,
-               "Reopen should preserve label and binary width.")) return 1;
+               "Reopen should preserve label and binary width without persisting edit mode.")) return 1;
     return 0;
 }
 
@@ -487,8 +487,8 @@ static int test_bookmark_popup_line_formatting(void)
     bookmark.binary_width = 1;
     strcpy(bookmark.label, "KERNAL");
     monitor_bookmark_format_popup_line(line, sizeof(line), 9, &bookmark);
-    if (expect(strcmp(line, "9 KERNAL $E000 ASM    CPU7 VIC0 VIEW") == 0,
-               "Non-binary popup row must use LABEL6 + padded VIEW6.")) return 1;
+    if (expect(strcmp(line, "9 KERNAL $E000 ASM    CPU7 VIC0") == 0,
+               "Non-binary popup row must use LABEL6 + padded VIEW6 without a mode column.")) return 1;
     if (expect((int)strlen(line) <= 38, "Popup row must fit in 38 columns.")) return 1;
 
     bookmark.address = 0xDC00;
@@ -496,13 +496,14 @@ static int test_bookmark_popup_line_formatting(void)
     bookmark.binary_width = 1;
     strcpy(bookmark.label, "CIA1");
     monitor_bookmark_format_popup_line(line, sizeof(line), 7, &bookmark);
-    if (expect(strcmp(line, "7 CIA1   $DC00 BIN W1 CPU7 VIC0 VIEW") == 0,
-               "Binary popup row must use BIN Wn in VIEW6.")) return 1;
+    if (expect(strcmp(line, "7 CIA1   $DC00 BIN W1 CPU7 VIC0") == 0,
+               "Binary popup row must use BIN Wn in VIEW6 without a mode column.")) return 1;
     if (expect((int)strlen(line) <= 38, "Binary popup row must fit in 38 columns.")) return 1;
 
     bookmark.edit_mode = true;
     monitor_bookmark_format_popup_line(line, sizeof(line), 7, &bookmark);
-    if (expect(strstr(line, "EDIT") != NULL, "Popup row must include MODE.")) return 1;
+    if (expect(strcmp(line, "7 CIA1   $DC00 BIN W1 CPU7 VIC0") == 0,
+               "Popup row must ignore edit mode because bookmarks no longer store it.")) return 1;
     return 0;
 }
 
@@ -531,13 +532,13 @@ static int test_bookmark_default_popup_alignment(void)
 
 static int test_bookmark_popup_instruction_line(void)
 {
-    const char *expected = "0-9/RET Go  S Set  L Label  DEL Reset";
-    if (expect((int)strlen(expected) == 37,
-               "Instruction line must be 37 chars (within the 38-column popup).")) return 1;
+    const char *expected = "0-9/RET Jmp  S Set  L Label  DEL Reset";
+    if (expect((int)strlen(expected) == 38,
+               "Instruction line must be 38 chars (within the 38-column popup).")) return 1;
     if (expect((int)strlen(expected) <= 38, "Instruction line must fit in 38 columns.")) return 1;
-    if (expect(strstr(expected, "Go") != NULL && strstr(expected, "Set") != NULL &&
+    if (expect(strstr(expected, "Jmp") != NULL && strstr(expected, "Set") != NULL &&
                strstr(expected, "Label") != NULL && strstr(expected, "Reset") != NULL,
-               "Instruction line must document Go/Set/Label/Reset.")) return 1;
+               "Instruction line must document Jmp/Set/Label/Reset.")) return 1;
     return 0;
 }
 
@@ -606,7 +607,7 @@ static int test_monitor_bookmark_capture_restore_includes_binary_width(void)
     reset_bookmark_test_state();
     seed_bookmark_full(7, 0xDC00, MONITOR_BOOKMARK_VIEW_BINARY, 7, 2, false, 1, "CIA1");
 
-    const int keys[] = { '7', KEY_BREAK };
+    const int keys[] = { KEY_CTRL_7, KEY_BREAK };
     FakeKeyboard keyboard(keys, 2);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
@@ -634,7 +635,7 @@ static int test_monitor_bookmark_restore_applies_width_w3(void)
     reset_bookmark_test_state();
     seed_bookmark_full(5, 0x1000, MONITOR_BOOKMARK_VIEW_BINARY, 7, 2, false, 3, "WIDE");
 
-    const int keys[] = { '5', KEY_BREAK };
+    const int keys[] = { KEY_CTRL_5, KEY_BREAK };
     FakeKeyboard keyboard(keys, 2);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
@@ -655,8 +656,8 @@ static int test_monitor_bookmark_capture_no_memory_write(void)
     CaptureScreen screen;
     BookmarkTestBackend backend;
     char status[39];
-    const int keys[] = { 'J', 'D', 'e', KEY_CTRL_1, KEY_BREAK };
-    FakeKeyboard keyboard(keys, 5);
+    const int keys[] = { 'J', 'D', 'e', KEY_CTRL_B, KEY_DOWN, 'S', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 8);
 
     reset_bookmark_test_state();
     backend.ram[0xC000] = 0xA9;
@@ -670,7 +671,9 @@ static int test_monitor_bookmark_capture_no_memory_write(void)
     if (expect(monitor.poll(0) == 0, "Goto C000 failed for capture test.")) return 1;
     if (expect(monitor.poll(0) == 0, "ASM view switch failed for capture test.")) return 1;
     if (expect(monitor.poll(0) == 0, "Edit-entry failed for capture test.")) return 1;
-    if (expect(monitor.poll(0) == 0, "C=+1 capture failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Bookmark popup open failed for capture test.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Bookmark popup selection failed for capture test.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Bookmark popup set failed for capture test.")) return 1;
     get_monitor_status(screen, status);
     if (expect(strstr(status, "BM1 ") == status, "Set status must start with BMn label.")) return 1;
     if (expect(strstr(status, " SET") != NULL, "Set status must include SET.")) return 1;
@@ -689,8 +692,8 @@ static int test_monitor_bookmark_set_preserves_label(void)
     reset_bookmark_test_state();
     seed_bookmark_full(3, 0xC000, MONITOR_BOOKMARK_VIEW_HEX, 7, 2, false, 1, "OLDLBL");
 
-    const int keys[] = { 'J', 'D', KEY_CTRL_3, KEY_BREAK };
-    FakeKeyboard keyboard(keys, 4);
+    const int keys[] = { 'J', 'D', KEY_CTRL_B, KEY_DOWN, KEY_DOWN, KEY_DOWN, 'S', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 9);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
     ui.push_prompt("9000", 1);
@@ -699,7 +702,11 @@ static int test_monitor_bookmark_set_preserves_label(void)
 
     if (expect(monitor.poll(0) == 0, "Goto failed for set-preserves-label test.")) return 1;
     if (expect(monitor.poll(0) == 0, "ASM view switch failed for set-preserves-label test.")) return 1;
-    if (expect(monitor.poll(0) == 0, "Set bookmark via C=+3 failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Bookmark popup open failed for set-preserves-label test.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Bookmark popup down 1 failed for set-preserves-label test.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Bookmark popup down 2 failed for set-preserves-label test.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Bookmark popup down 3 failed for set-preserves-label test.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Bookmark popup set failed for set-preserves-label test.")) return 1;
     get_monitor_status(screen, status);
     if (expect(strstr(status, "OLDLBL") != NULL,
                "Set must preserve the existing label OLDLBL.")) return 1;
@@ -760,8 +767,8 @@ static int test_monitor_bookmark_popup_render(void)
     if (expect(strspn(line, " ") == strlen(line),
                "Popup must separate bookmarks from the help line with a blank line.")) return 1;
     get_popup_line(screen, 13, line, sizeof(line));
-    if (expect(strncmp(line, "0-9/RET Go  S Set  L Label  DEL Reset",
-                       strlen("0-9/RET Go  S Set  L Label  DEL Reset")) == 0,
+    if (expect(strncmp(line, "0-9/RET Jmp  S Set  L Label  DEL Reset",
+                       strlen("0-9/RET Jmp  S Set  L Label  DEL Reset")) == 0,
                "Popup instruction line must match addendum text.")) return 1;
 
     monitor.deinit();
@@ -986,7 +993,7 @@ static int test_monitor_bookmark_label_edit(void)
     return 0;
 }
 
-static int test_monitor_bookmark_digit_routing(void)
+static int test_monitor_bookmark_shortcut_routing(void)
 {
     char header[39];
 
@@ -1002,6 +1009,7 @@ static int test_monitor_bookmark_digit_routing(void)
 
         ui.screen = &screen;
         ui.keyboard = &keyboard;
+        monitor_reset_saved_state();
         MachineMonitor monitor(&ui, &backend);
         monitor.init(&screen, &keyboard);
 
@@ -1017,11 +1025,33 @@ static int test_monitor_bookmark_digit_routing(void)
         TestUserInterface ui;
         CaptureScreen screen;
         FakeMemoryBackend backend;
+        const int keys[] = { 'e', KEY_CTRL_1, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard keyboard(keys, 4);
+
+        ui.screen = &screen;
+        ui.keyboard = &keyboard;
+        monitor_reset_saved_state();
+        MachineMonitor monitor(&ui, &backend);
+        monitor.init(&screen, &keyboard);
+
+        if (expect(monitor.poll(0) == 0, "Hex edit entry before bookmark jump failed.")) return 1;
+        if (expect(monitor.poll(0) == 0, "CBM+1 bookmark jump should work in edit mode.")) return 1;
+        get_monitor_header(screen, header);
+        if (expect(strstr(header, "MONITOR ASM $C000") == header && strstr(header, "EDIT") != NULL,
+                   "Bookmark jumps must stay enabled in edit mode and preserve edit state.")) return 1;
+        monitor.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
         const int keys[] = { 'N', '1', KEY_ESCAPE, KEY_BREAK };
         FakeKeyboard keyboard(keys, 4);
 
         ui.screen = &screen;
         ui.keyboard = &keyboard;
+        monitor_reset_saved_state();
         MachineMonitor monitor(&ui, &backend);
         monitor.init(&screen, &keyboard);
 
@@ -1029,11 +1059,54 @@ static int test_monitor_bookmark_digit_routing(void)
         if (expect(monitor.poll(0) == 0, "Digit while number popup is open should stay in the popup.")) return 1;
         if (expect(find_popup_rect(screen, NULL, NULL, NULL, NULL),
                    "Number popup should remain open when digits are typed into it.")) return 1;
-        get_monitor_header(screen, header);
-        if (expect(strstr(header, "MONITOR HEX $0000") == header,
-                   "Digits must not restore bookmarks while the number popup owns the key.")) return 1;
         monitor.deinit();
     }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { '1', KEY_BREAK };
+        FakeKeyboard keyboard(keys, 2);
+
+        ui.screen = &screen;
+        ui.keyboard = &keyboard;
+        monitor_reset_saved_state();
+        MachineMonitor monitor(&ui, &backend);
+        monitor.init(&screen, &keyboard);
+
+        if (expect(monitor.poll(0) == 0, "Bare digit in main view should remain a normal key.")) return 1;
+        get_monitor_header(screen, header);
+        if (expect(strstr(header, "$C000") == NULL,
+                   "Bare digits in main monitor views must not jump to bookmarks.")) return 1;
+        monitor.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { KEY_CTRL_1, KEY_BREAK };
+        FakeKeyboard keyboard(keys, 2);
+
+        ui.screen = &screen;
+        ui.keyboard = &keyboard;
+        monitor_reset_saved_state();
+        MachineMonitor monitor(&ui, &backend);
+        monitor.init(&screen, &keyboard);
+
+        if (expect(monitor.poll(0) == 0, "CBM+1 bookmark jump failed.")) return 1;
+        get_monitor_header(screen, header);
+        if (expect(strstr(header, "MONITOR ASM $C000") == header,
+                   "CBM+digits in main monitor views must jump to bookmarks.")) return 1;
+        monitor.deinit();
+    }
+
+    MonitorBookmarks reopened;
+    reopened.ensure_loaded(7, 2);
+    const MonitorBookmarkSlot *slot1 = reopened.get(1);
+    if (expect(slot1 && slot1->address == 0xC000 && strcmp(slot1->label, "T1") == 0,
+               "CBM+digits in main monitor views must not overwrite bookmark targets.")) return 1;
 
     return 0;
 }
@@ -1044,7 +1117,7 @@ static int test_monitor_bookmark_status_dismissal(void)
     CaptureScreen screen;
     FakeMemoryBackend backend;
     char status[39];
-    const int keys[] = { '1', KEY_RIGHT, KEY_BREAK };
+    const int keys[] = { KEY_CTRL_1, KEY_RIGHT, KEY_BREAK };
     FakeKeyboard keyboard(keys, 3);
 
     reset_bookmark_test_state();
@@ -1094,7 +1167,7 @@ int main()
     if (test_monitor_bookmark_popup_set_preserves_label()) return 1;
     if (test_monitor_bookmark_popup_del_resets_selected()) return 1;
     if (test_monitor_bookmark_label_edit()) return 1;
-    if (test_monitor_bookmark_digit_routing()) return 1;
+    if (test_monitor_bookmark_shortcut_routing()) return 1;
     if (test_monitor_bookmark_status_dismissal()) return 1;
 
     puts("machine_monitor_bookmarks_test: OK");

@@ -135,6 +135,10 @@ static char monitor_bookmark_normalize_char(char c)
 
 static uint8_t monitor_bookmark_clamp_binary_width(uint8_t width)
 {
+    // Map legacy width 4 to width 3 for compatibility
+    if (width == 4) return 3;
+    // Preserve sprite mode marker
+    if (width == MONITOR_BOOKMARK_BINARY_WIDTH_SPRITE) return MONITOR_BOOKMARK_BINARY_WIDTH_SPRITE;
     if (width < MONITOR_BOOKMARK_BINARY_WIDTH_MIN) return MONITOR_BOOKMARK_BINARY_WIDTH_MIN;
     if (width > MONITOR_BOOKMARK_BINARY_WIDTH_MAX) return MONITOR_BOOKMARK_BINARY_WIDTH_MAX;
     return width;
@@ -219,7 +223,7 @@ static int monitor_bookmark_parse_slot(const char *text, MonitorBookmarkSlot *sl
     slot->view = (uint8_t)values[1];
     slot->cpu_bank = (uint8_t)values[2];
     slot->vic_bank = (uint8_t)values[3];
-    slot->edit_mode = values[4] ? true : false;
+    slot->edit_mode = false;
     slot->is_default = values[5] ? true : false;
     slot->binary_width = monitor_bookmark_clamp_binary_width((uint8_t)values[6]);
     monitor_bookmark_normalize_label(slot->label, sizeof(slot->label), label_field);
@@ -245,7 +249,7 @@ static void monitor_bookmark_encode_slot(char *out, size_t out_len, const Monito
             (unsigned)slot.view,
             (unsigned)slot.cpu_bank,
             (unsigned)slot.vic_bank,
-            slot.edit_mode ? 1U : 0U,
+            0U,
             slot.is_default ? 1U : 0U,
             (unsigned)monitor_bookmark_clamp_binary_width(slot.binary_width),
             label_buffer);
@@ -255,10 +259,11 @@ static void monitor_bookmark_encode_slot(char *out, size_t out_len, const Monito
 static void monitor_bookmark_assign_default(MonitorBookmarkSlot *slot, uint8_t index,
                                             uint8_t default_cpu_bank, uint8_t default_vic_bank)
 {
+    (void)default_vic_bank;
     slot->address = kMonitorBookmarkDefaults[index].address;
     slot->view = kMonitorBookmarkDefaults[index].view;
     slot->cpu_bank = (uint8_t)(default_cpu_bank & 0x07);
-    slot->vic_bank = (uint8_t)(default_vic_bank & 0x03);
+    slot->vic_bank = 0;
     slot->binary_width = MONITOR_BOOKMARK_BINARY_WIDTH_MIN;
     slot->edit_mode = false;
     slot->is_default = true;
@@ -501,7 +506,7 @@ void monitor_bookmark_format_popup_line(char *out, size_t out_len, uint8_t slot,
         const char *fallback = monitor_bookmark_default_label(slot);
         monitor_bookmark_normalize_label(label_buffer, sizeof(label_buffer), fallback);
         monitor_bookmark_format_label6(label6, sizeof(label6), label_buffer);
-        sprintf(buffer, "%u %s ----- ------ CPU- VIC- ----",
+        sprintf(buffer, "%u %s ----- ------ CPU- VIC-",
                 (unsigned)slot, label6);
         monitor_bookmark_copy(out, out_len, buffer);
         return;
@@ -511,14 +516,13 @@ void monitor_bookmark_format_popup_line(char *out, size_t out_len, uint8_t slot,
     monitor_bookmark_format_label6(label6, sizeof(label6), label_buffer);
     monitor_bookmark_format_view6(view6, sizeof(view6), bookmark->view, bookmark->binary_width);
 
-    sprintf(buffer, "%u %s $%04X %s CPU%u VIC%u %s",
+    sprintf(buffer, "%u %s $%04X %s CPU%u VIC%u",
             (unsigned)slot,
             label6,
             (unsigned)bookmark->address,
             view6,
             (unsigned)bookmark->cpu_bank,
-            (unsigned)bookmark->vic_bank,
-            bookmark->edit_mode ? "EDIT" : "VIEW");
+            (unsigned)bookmark->vic_bank);
     monitor_bookmark_copy(out, out_len, buffer);
 }
 
@@ -619,6 +623,7 @@ bool MonitorBookmarks :: set(uint8_t slot, const MonitorBookmarkSlot &bookmark)
     }
     slots[slot] = bookmark;
     slots[slot].is_valid = true;
+    slots[slot].edit_mode = false;
     slots[slot].binary_width = monitor_bookmark_clamp_binary_width(bookmark.binary_width);
     monitor_bookmark_normalize_label(slots[slot].label, sizeof(slots[slot].label), bookmark.label);
     loaded = true;
@@ -641,6 +646,7 @@ bool MonitorBookmarks :: set_target_preserve_label(uint8_t slot, const MonitorBo
     slots[slot] = target;
     slots[slot].is_valid = true;
     slots[slot].is_default = false;
+    slots[slot].edit_mode = false;
     slots[slot].binary_width = monitor_bookmark_clamp_binary_width(target.binary_width);
     monitor_bookmark_copy(slots[slot].label, sizeof(slots[slot].label), preserved);
     loaded = true;

@@ -24,7 +24,8 @@ enum MachineMonitorView {
 
 enum {
     MONITOR_BINARY_MIN_BYTES_PER_ROW = 1,
-    MONITOR_BINARY_MAX_BYTES_PER_ROW = 4,
+    MONITOR_BINARY_MAX_BYTES_PER_ROW = 3,
+    MONITOR_BINARY_SPRITE_MODE_MARKER = 0xFE,
 };
 
 // Backwards-compat alias for prior internal code/tests.

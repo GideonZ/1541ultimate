@@ -676,19 +676,22 @@ def run_bookmark_test(session: MonitorSession) -> None:
 
     screen = session.goto("C123")
     screen.find_line_containing("MONITOR HEX $C123")
-    screen = session.send_key("CBM_1")
+    screen = session.send_key("CTRL_B")
+    screen.find_line_containing("BOOKMARKS")
+    screen = session.send_key("DOWN")
+    screen = session.send_char("S")
     assert_line_contains_all(screen, ("BM1 SCREEN $C123 HEX", "SET"))
 
     screen = session.goto("E000")
     screen.find_line_containing("MONITOR HEX $E000")
-    screen = session.send_char("1")
+    screen = session.send_key("CBM_1")
     screen.find_line_containing("MONITOR HEX $C123")
     screen.find_line_containing("BM1 SCREEN $C123 HEX")
 
     screen = session.send_key("CTRL_B")
     screen.find_line_containing("BOOKMARKS")
     assert_line_contains_all(screen, ("1 SCREEN", "$C123", "HEX"))
-    screen.find_line_containing("0-9/RET Go  S Set  L Label  DEL Reset")
+    screen.find_line_containing("0-9/RET Jmp  S Set  L Label  DEL Reset")
 
     screen = session.send_key("DOWN")
     screen = session.send_char("L")
@@ -699,7 +702,7 @@ def run_bookmark_test(session: MonitorSession) -> None:
     screen.find_line_containing("MONITOR HEX $C123")
     screen = session.goto("E000")
     screen.find_line_containing("MONITOR HEX $E000")
-    screen = session.send_char("1")
+    screen = session.send_key("CBM_1")
     screen.find_line_containing("MONITOR HEX $C123")
     screen.find_line_containing("BM1 E2E $C123 HEX")
 

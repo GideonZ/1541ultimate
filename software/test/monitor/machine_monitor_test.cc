@@ -953,7 +953,7 @@ static int test_monitor_interaction(void)
         "L Load      S Save",
         "",
         "Bookmarks:",
-        "0-9 Recall  C=+0-9 Set  C=+B List",
+        "C=+B List   C=+0-9 Jump",
         "",
         "Open monitor:  C=+O",
         "Close monitor: C=+O / ESC",
@@ -2718,6 +2718,50 @@ static int test_opcode_picker_selection_near_bottom_preserves_live_charset_page(
     return 0;
 }
 
+static int test_opcode_picker_pauses_poll_mode(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    CaptureScreen snapshot;
+    FakeMemoryBackend backend;
+    char line[19];
+    int total_writes = 0;
+    const int keys[] = { 'A', 'P', 'E', 'N' };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+    set_fake_ms_timer(0);
+
+    MachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, "Opcode picker poll test: ASM view switch failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Opcode picker poll test: poll mode enable failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Opcode picker poll test: edit mode entry failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Opcode picker poll test: picker open failed.")) return 1;
+    screen.get_slice(16, 4, 18, line);
+    if (expect(strstr(line, " N_") == line,
+               "Opcode picker poll test must open the mnemonic overlay before idle polling.")) return 1;
+
+    snapshot = screen;
+    screen.reset_write_counts();
+    set_fake_ms_timer(20);
+    if (expect(mon.poll(0) == 0, "Opcode picker poll test: idle poll failed.")) return 1;
+    for (int y = 0; y < 25; y++) {
+        for (int x = 0; x < 40; x++) {
+            total_writes += screen.write_counts[y][x];
+        }
+    }
+    if (expect(total_writes == 0,
+               "Poll mode must not redraw the opcode picker overlay while it is open.")) return 1;
+    if (expect_screens_equal(snapshot, screen,
+                             "Idle poll must leave the opcode picker overlay screen unchanged.")) return 1;
+
+    mon.deinit();
+    return 0;
+}
+
 static int test_cross_view_sync(void)
 {
     // Edit in HEX, view memory unchanged; Edit in SCR via 'A' key should be visible
@@ -2797,12 +2841,12 @@ static int test_binary_bit_navigation_and_width(void)
         CaptureScreen screen;
         FakeMemoryBackend backend;
         char header[39];
-        char row[38];
+        char row[40];
         const int keys[] = { 'B', 'W', KEY_BREAK };
         FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
         ui.screen = &screen;
         ui.keyboard = &kb;
-        ui.set_prompt("4", 1);
+        ui.set_prompt("3", 1);
         backend.write(0x0000, 0x80);
         backend.write(0x0001, 0x01);
         backend.write(0x0002, 0xFF);
@@ -2812,17 +2856,73 @@ static int test_binary_bit_navigation_and_width(void)
         MachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Binary width test: view switch failed.")) return 1;
-        screen.get_slice(1, 4, 13, row);
-        if (expect(strcmp(row, "0000 *.......") == 0,
-                   "Binary default width must be one byte per row.")) return 1;
+        // Just verify we can switch to binary view at default width 1
         if (expect(mon.poll(0) == 0, "Binary width test: width command failed.")) return 1;
-        screen.get_slice(1, 4, 37, row);
-        if (expect(strcmp(row, "0000 *..............*********........") == 0,
-                   "Binary width=4 must render exactly 32 bits per row.")) return 1;
+        // Verify width 3 can be set
+        screen.get_slice(0, 4, 1, row);  // Just check that we can read the screen
+        if (expect(strlen(row) > 0, "Binary width=3: screen render test")) return 1;
         screen.get_slice(1, 3, 38, header);
         if (expect(strstr(header, "W=") == NULL && strstr(header, "bits") == NULL,
                    "Binary width must not be displayed in the header.")) return 1;
         if (expect(mon.poll(0) == 1, "Binary width test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_binary_row_formats(void)
+{
+    static const struct {
+        const char *width_prompt;
+        const char *expected_row;
+        int expected_len;
+    } cases[] = {
+        { NULL, "0000 ...*..*. 12", 16 },
+        { "2",  "0000 ...*..*. ..**.*.. 12 34", 28 },
+        { "3",  "0000 ...*..*. ..**.*.. .*.*.**. 123456", 38 },
+        { "S",  "0000 ...*..*...**.*...*.*.**. 12 34 56", 38 },
+    };
+
+    for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char row[39];
+        int keys[3];
+        int key_count = 0;
+
+        if (cases[i].width_prompt) {
+            ui.set_prompt(cases[i].width_prompt, 1);
+        }
+        backend.write(0x0000, 0x12);
+        backend.write(0x0001, 0x34);
+        backend.write(0x0002, 0x56);
+        monitor_reset_saved_state();
+
+        keys[key_count++] = 'B';
+        if (cases[i].width_prompt) {
+            keys[key_count++] = 'W';
+        }
+        keys[key_count++] = KEY_BREAK;
+        FakeKeyboard kb(keys, key_count);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+
+        MachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Binary row format test: binary view switch failed.")) return 1;
+        if (cases[i].width_prompt) {
+            if (expect(mon.poll(0) == 0, "Binary row format test: width selection failed.")) return 1;
+        }
+        screen.get_slice(1, 4, cases[i].expected_len, row);
+        if (expect(strcmp(row, cases[i].expected_row) == 0,
+                   "Binary row format test: rendered row mismatch.")) return 1;
+        if (expect((int)strlen(row) == cases[i].expected_len,
+                   "Binary row format test: rendered row length mismatch.")) return 1;
+        if (expect(cases[i].expected_len <= 38,
+                   "Binary row format test: row must fit within 38 columns.")) return 1;
+        if (expect(mon.poll(0) == 1, "Binary row format test: exit failed.")) return 1;
         mon.deinit();
     }
 
@@ -4548,7 +4648,9 @@ int main()
     if (test_opcode_picker_browsing_does_not_mutate_frozen_charset_backup()) return 1;
     if (test_opcode_picker_near_bottom_refresh_stays_inside_content()) return 1;
     if (test_opcode_picker_selection_near_bottom_preserves_live_charset_page()) return 1;
+    if (test_opcode_picker_pauses_poll_mode()) return 1;
     if (test_cross_view_sync()) return 1;
+    if (test_binary_row_formats()) return 1;
     if (test_binary_bit_navigation_and_width()) return 1;
     if (test_binary_delete_behavior()) return 1;
     if (test_clipboard_number_and_range()) return 1;

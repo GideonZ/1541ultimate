@@ -39,7 +39,7 @@ static const char *const monitor_help_lines[] = {
     "L Load      S Save",
     "",
     "Bookmarks:",
-    "0-9 Recall  C=+0-9 Set  C=+B List",
+    "C=+B List   C=+0-9 Jump",
     "",
     "Open monitor:  C=+O",
     "Close monitor: C=+O / ESC",
@@ -71,28 +71,30 @@ static bool     monitor_last_go_valid = false;
 static uint16_t monitor_last_go_addr = 0;
 
 // Persistent BINARY view configuration. Width is byte-based only; every byte
-// renders as 8 bits and R is reserved for range mode.
+// renders as 8 bits. Sprite mode (S) uses MONITOR_BINARY_SPRITE_MODE_MARKER (0xFE) and renders 3 bytes.
 static uint8_t monitor_binary_bytes_per_row = 1;
 
 static inline uint8_t monitor_binary_byte_stride(uint8_t bytes_per_row)
 {
     uint8_t b = bytes_per_row;
+    // Sprite mode marker returns 3 bytes
+    if (b == MONITOR_BINARY_SPRITE_MODE_MARKER) return 3;
     if (b < MONITOR_BINARY_MIN_BYTES_PER_ROW) b = MONITOR_BINARY_MIN_BYTES_PER_ROW;
     if (b > MONITOR_BINARY_MAX_BYTES_PER_ROW) b = MONITOR_BINARY_MAX_BYTES_PER_ROW;
     return b;
 }
 
-static int monitor_bookmark_restore_slot_for_key(int key)
+static int monitor_bookmark_main_slot_for_key(int key)
+{
+    return key_ctrl_digit_value(key);
+}
+
+static int monitor_bookmark_popup_slot_for_key(int key)
 {
     if (key >= '0' && key <= '9') {
         return key - '0';
     }
     return -1;
-}
-
-static int monitor_bookmark_set_slot_for_key(int key)
-{
-    return key_ctrl_digit_value(key);
 }
 
 static bool monitor_key_is_bookmark_popup(int key)
@@ -103,8 +105,7 @@ static bool monitor_key_is_bookmark_popup(int key)
 static bool monitor_key_is_bookmark_action(int key)
 {
     return monitor_key_is_bookmark_popup(key) ||
-           (monitor_bookmark_restore_slot_for_key(key) >= 0) ||
-           (monitor_bookmark_set_slot_for_key(key) >= 0);
+           (monitor_bookmark_main_slot_for_key(key) >= 0);
 }
 
 static bool monitor_deadline_reached(uint16_t deadline, uint16_t now)
@@ -1677,7 +1678,24 @@ void MachineMonitor :: number_picker_anchor(int *x, int *y) const
             }
             row_addr = (uint16_t)(state.base_addr + (((uint16_t)(state.current_addr - state.base_addr)) / stride) * stride);
             row = (uint16_t)(state.current_addr - state.base_addr) / stride;
-            col = 5 + ((int)(state.current_addr - row_addr) * 8) + (7 - ((binary_bit_index <= 7) ? binary_bit_index : 7));
+            
+            // Calculate column with proper spacing
+            int byte_offset = (int)(state.current_addr - row_addr);
+            uint8_t bit = (binary_bit_index <= 7) ? binary_bit_index : 7;
+            int bit_pos = 7 - bit;
+            
+            bool use_sprite_mode = (stride == 3) && (binary_bytes_per_row == MONITOR_BINARY_SPRITE_MODE_MARKER);
+            if (use_sprite_mode) {
+                col = 5 + (byte_offset * 8) + bit_pos;
+            } else if (stride == 1) {
+                col = 5 + bit_pos;
+            } else if (stride == 2) {
+                col = 5 + (byte_offset * 9) + bit_pos;  // 8 bits + 1 space
+            } else if (stride == 3) {
+                col = 5 + (byte_offset * 9) + bit_pos;  // 8 bits + 1 space
+            } else {
+                col = 5;
+            }
             break;
         }
 
@@ -2133,8 +2151,9 @@ void MachineMonitor :: capture_bookmark(MonitorBookmarkSlot *bookmark) const
     bookmark->view = (uint8_t)state.view;
     bookmark->cpu_bank = (uint8_t)(state.cpu_port & 0x07);
     bookmark->vic_bank = (uint8_t)(current_vic_bank & 0x03);
-    bookmark->binary_width = binary_byte_stride();
-    bookmark->edit_mode = edit_mode;
+    // Store the actual width value (which may be MONITOR_BINARY_SPRITE_MODE_MARKER for S mode)
+    bookmark->binary_width = binary_bytes_per_row;
+    bookmark->edit_mode = false;
     bookmark->is_default = false;
     bookmark->is_valid = true;
     bookmark->label[0] = 0;
@@ -2180,7 +2199,6 @@ bool MachineMonitor :: restore_bookmark(uint8_t slot)
     }
     set_view((MachineMonitorView)bookmark->view);
     apply_go_local(bookmark->address);
-    edit_mode = bookmark->edit_mode;
     reset_edit_blink();
     asm_edit_history_reset(state.current_addr);
     show_bookmark_status(slot, bookmark, MONITOR_BOOKMARK_STATUS_RESTORED);
@@ -2283,9 +2301,9 @@ int MachineMonitor :: bookmark_popup_handle_key(int key)
         }
         return 0;
     }
-    if (monitor_bookmark_restore_slot_for_key(key) >= 0) {
+    if (monitor_bookmark_popup_slot_for_key(key) >= 0) {
         bookmark_popup_active = false;
-        restore_bookmark((uint8_t)monitor_bookmark_restore_slot_for_key(key));
+        restore_bookmark((uint8_t)monitor_bookmark_popup_slot_for_key(key));
         redraw_full();
         return 0;
     }
@@ -2699,7 +2717,7 @@ void MachineMonitor :: draw_bookmark_popup()
                                            bookmarks ? bookmarks->get((uint8_t)i) : NULL);
     }
     strcpy(popup_lines[MONITOR_BOOKMARK_POPUP_HELP_ROW],
-           "0-9/RET Go  S Set  L Label  DEL Reset");
+           "0-9/RET Jmp  S Set  L Label  DEL Reset");
 
     window->getOffsets(screen_x, screen_y);
     popup_x = screen_x + ((window->get_size_x() - MONITOR_BOOKMARK_POPUP_INNER_WIDTH) / 2);
@@ -2933,8 +2951,12 @@ void MachineMonitor :: draw_screen_codes()
 
 void MachineMonitor :: draw_binary_row(int y, uint16_t addr, const uint8_t *bytes, int byte_count)
 {
-    // Format: "AAAA " followed by 8 bits per configured byte (MSB first).
-    enum { BIN_LINE_MAX = 4 + 1 + (MONITOR_BINARY_MAX_BYTES_PER_ROW * 8) };
+    // Format depends on width:
+    // Width 1: "AAAA bbbbbbbb HH"                        (16 cols)
+    // Width 2: "AAAA bbbbbbbb bbbbbbbb HH HH"            (28 cols)
+    // Width 3: "AAAA bbbbbbbb bbbbbbbb bbbbbbbb HHHHHH"  (38 cols)
+    // Width S: "AAAA bbbbbbbbbbbbbbbbbbbbbbbb HH HH HH"  (38 cols)
+    enum { BIN_LINE_MAX = 38 };
     char line[BIN_LINE_MAX + 1];
     bool mask[BIN_LINE_MAX];
     int bits = byte_count * 8;
@@ -2946,35 +2968,107 @@ void MachineMonitor :: draw_binary_row(int y, uint16_t addr, const uint8_t *byte
     dump_hex_word(line, 0, addr);
     line[4] = ' ';
     int pos = 5;
-    for (int i = 0; i < bits; i++) {
-        int byte_off = i / 8;
-        int bit_in_byte = 7 - (i % 8);
-        if (byte_off >= byte_count) break;
-        line[pos++] = ((bytes[byte_off] >> bit_in_byte) & 1) ? '*' : '.';
+    int hex_start = -1;
+
+    // Render binary bits with appropriate spacing
+    int stride = binary_byte_stride();
+    bool use_sprite_mode = (stride == 3) && (binary_bytes_per_row == MONITOR_BINARY_SPRITE_MODE_MARKER);
+    bool hex_bytes_spaced = use_sprite_mode || (byte_count == 2);
+
+    if (use_sprite_mode) {
+        // Sprite mode: packed binary bits (no spaces between bytes)
+        for (int i = 0; i < bits; i++) {
+            int byte_off = i / 8;
+            int bit_in_byte = 7 - (i % 8);
+            if (byte_off >= byte_count) break;
+            line[pos++] = ((bytes[byte_off] >> bit_in_byte) & 1) ? '*' : '.';
+        }
+        line[pos++] = ' ';
+        hex_start = pos;
+    } else {
+        for (int byte_idx = 0; byte_idx < byte_count; byte_idx++) {
+            for (int bit = 7; bit >= 0; bit--) {
+                line[pos++] = ((bytes[byte_idx] >> bit) & 1) ? '*' : '.';
+            }
+            if (byte_idx + 1 < byte_count) line[pos++] = ' ';
+        }
+        line[pos++] = ' ';
+        hex_start = pos;
     }
+
+    // Render hex preview
+    if (hex_start >= 0) {
+        for (int i = 0; i < byte_count; i++) {
+            dump_hex_byte(line, pos, bytes[i]);
+            pos += 2;
+            if (hex_bytes_spaced && i + 1 < byte_count) line[pos++] = ' ';
+        }
+    }
+
     int total = pos;
     if (total > (int)sizeof(line) - 1) total = (int)sizeof(line) - 1;
     line[total] = 0;
 
+    // Apply range highlighting
     for (int i = 0; i < byte_count; i++) {
         if (range_contains((uint16_t)(addr + i))) {
-            int first = 5 + (i * 8);
+            int first = 5;
+            // Calculate start position for this byte in the line
+            if (use_sprite_mode) {
+                first = 5 + (i * 8);
+            } else if (byte_count == 1) {
+                first = 5;
+            } else if (byte_count == 2) {
+                first = 5 + (i * 9);  // 8 bits + 1 space
+            } else if (byte_count == 3) {
+                first = 5 + (i * 9);  // 8 bits + 1 space
+            }
             for (int b = 0; b < 8 && first + b < total; b++) {
                 mask[first + b] = true;
             }
         }
     }
+
+    // Apply cursor highlighting
     if ((!edit_mode || edit_cursor_visible) &&
         state.view == MONITOR_VIEW_BINARY &&
         state.current_addr >= addr &&
         state.current_addr < (uint16_t)(addr + byte_count)) {
         int byte_offset = state.current_addr - addr;
         uint8_t bit = (binary_bit_index <= 7) ? binary_bit_index : 7;
-        int col = byte_offset * 8 + (7 - bit);
-        if (col >= 0 && col < bits) {
-            mask[5 + col] = true;
+        int bit_pos_in_byte = 7 - bit;  // bit position within byte (0-7)
+        
+        // Calculate column of the binary bit
+        int col = -1;
+        if (use_sprite_mode) {
+            col = 5 + (byte_offset * 8) + bit_pos_in_byte;
+        } else if (byte_count == 1) {
+            col = 5 + bit_pos_in_byte;
+        } else if (byte_count == 2) {
+            col = 5 + (byte_offset * 9) + bit_pos_in_byte;
+        } else if (byte_count == 3) {
+            col = 5 + (byte_offset * 9) + bit_pos_in_byte;
+        }
+
+        if (col >= 0 && col < total) {
+            mask[col] = true;
+        }
+
+        // Highlight corresponding hex nibble
+        if (hex_start >= 0) {
+            int nibble_col = hex_start + (byte_offset * (hex_bytes_spaced ? 3 : 2));
+            // High nibble (bits 7-4) = first hex digit; low nibble (bits 3-0) = second hex digit
+            // bit values: 7,6,5,4,3,2,1,0
+            // For bits 3-0, add 1 to get second hex digit; for bits 7-4, use first hex digit (no add)
+            if (bit < 4) {
+                nibble_col++;  // Low hex digit for low nibble
+            }
+            if (nibble_col >= 0 && nibble_col < total) {
+                mask[nibble_col] = true;
+            }
         }
     }
+
     draw_with_mask(window, y, line, total, mask);
 }
 
@@ -3865,9 +3959,9 @@ int MachineMonitor :: handle_key(int key)
         }
     }
 
-    if (bookmark_shortcut_allowed() && !edit_mode) {
-        if (monitor_bookmark_restore_slot_for_key(key) >= 0) {
-            restore_bookmark((uint8_t)monitor_bookmark_restore_slot_for_key(key));
+    if (bookmark_shortcut_allowed()) {
+        if (monitor_bookmark_main_slot_for_key(key) >= 0) {
+            restore_bookmark((uint8_t)monitor_bookmark_main_slot_for_key(key));
             draw();
             return 0;
         }
@@ -3880,12 +3974,6 @@ int MachineMonitor :: handle_key(int key)
         draw();
         return 0;
     }
-    if (bookmark_set_shortcut_allowed() && monitor_bookmark_set_slot_for_key(key) >= 0) {
-        set_bookmark((uint8_t)monitor_bookmark_set_slot_for_key(key));
-        draw();
-        return 0;
-    }
-
     if (key == KEY_CTRL_C) {
         bool copied;
         if (range_mode) {
@@ -4398,7 +4486,7 @@ int MachineMonitor :: poll(int)
     key = keyboard->getch();
     key = get_ui()->keymapper(key, e_keymap_monitor);
     if (key == -1) {
-        if (bookmark_popup_active) {
+        if (bookmark_popup_active || opcode_picker_active) {
             return 0;
         }
         uint16_t now = getMsTimer();
@@ -4596,26 +4684,48 @@ void MachineMonitor::handle_width_command()
         return;
     }
     char buf[8];
-    sprintf(buf, "%u", (unsigned)binary_byte_stride());
-    if (!prompt_command("Width 1..4 bytes/row", buf, sizeof(buf) - 1, true)) {
+    // Format the current width for display
+    if (binary_bytes_per_row == MONITOR_BINARY_SPRITE_MODE_MARKER) {
+        sprintf(buf, "S");
+    } else {
+        sprintf(buf, "%u", (unsigned)binary_bytes_per_row);
+    }
+    if (!prompt_command("Width 1,2,3,S bytes/row", buf, sizeof(buf) - 1, true)) {
         return;
     }
-    int v = 0;
+    
+    // Process input: accept only 1, 2, 3, S, s
+    // Normalize to uppercase and validate
     const char *p = buf;
     while (*p == ' ') p++;
     if (!*p) return;
-    while (*p >= '0' && *p <= '9') {
-        v = v * 10 + (*p - '0');
-        if (v > 9999) break;
-        p++;
-    }
+    
+    // Check for single character input
+    char c = *p;
+    if (c == 's') c = 'S';  // Normalize lowercase s to S
+    
+    p++;
     while (*p == ' ') p++;
-    if (*p || v < MONITOR_BINARY_MIN_BYTES_PER_ROW || v > MONITOR_BINARY_MAX_BYTES_PER_ROW) {
-        get_ui()->popup("WIDTH 1..4 BYTES", BUTTON_OK);
-        redraw_full();
+    
+    if (*p) {
+        // More characters than expected - invalid
         return;
     }
-    binary_bytes_per_row = (uint8_t)v;
+    
+    // Validate the character
+    if (c == '1') {
+        binary_bytes_per_row = 1;
+    } else if (c == '2') {
+        binary_bytes_per_row = 2;
+    } else if (c == '3') {
+        binary_bytes_per_row = 3;
+    } else if (c == 'S') {
+        binary_bytes_per_row = MONITOR_BINARY_SPRITE_MODE_MARKER;
+    } else {
+        // Invalid character - silently ignore, no change
+        return;
+    }
+    
     binary_bit_index = 7;
     ensure_current_visible();
     draw();
