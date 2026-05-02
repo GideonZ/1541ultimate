@@ -133,14 +133,23 @@ public:
         return len;
     }
 
+    void reset_read(void)
+    {
+        read_block = NULL;
+        read_index = 0;
+        read_offset = 0;
+    }
+
     int copy_from(StreamRamFile *src)
     {
         int total;
+        src->reset_read();
         int len = total = src->getLength();
         char buffer[128];
         while(len) {
-            len -= src->read(buffer, 128);
-            write((uint8_t *)buffer, len);
+            int transferred = src->read(buffer, 128);
+            write((uint8_t *)buffer, transferred);
+            len -= transferred;
         }
         return total;
     }

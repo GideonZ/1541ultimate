@@ -1,4 +1,4 @@
-#include "attachment_writer.h"
+//#include "attachment_writer.h"
 #include "http_request.h"
 #include "netdb.h"
 
@@ -118,13 +118,6 @@ void collect_in_buffer(HTTPReqMessage *req, HTTPRespMessage *resp)
     body->offset = 0;
     body->size = 0;
     setup_multipart(req, &attachment_to_buffer, body);
-}
-
-void write_to_temp(HTTPReqMessage *req, HTTPRespMessage *resp)
-{
-    TempfileWriter *writer = new TempfileWriter(req, resp, NULL, NULL, NULL);
-    setup_multipart(req, &TempfileWriter::collect_wrapper, writer);
-    req->userContext = writer;
 }
 
 int read_socket(int socket_fd, HTTPReqMessage& response)

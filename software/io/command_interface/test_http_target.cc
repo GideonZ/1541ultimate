@@ -99,6 +99,7 @@ int main(int argc, char **argv)
     if (!t) return -1;
 
     Message *reply, *status;
+
     t->parse_command(&c_cmd_identify, &reply, &status);
     dump(&c_cmd_identify, reply, status);
 
@@ -273,32 +274,13 @@ int main(int argc, char **argv)
 
     t->parse_command(&m_query_entry, &reply, &status);
     dump(&m_query_entry, reply, status);
-
+*/
     return 0;
 
 }
 
 // stubs
-#include "attachment_writer.h"
-int TempfileWriter :: temp_count = 0;
 void outbyte(int b)
 {
 	fputc(b, stdout);
 }
-
-// int http_exchange(unsigned char *host, uint16_t port, StreamRamFile *req, char *resp_buffer, int buffer_size)
-// {
-//     int len = req->getLength();
-//     printf("HTTP REQUEST! (%d) to %s:%d\n", len, host, port);
-
-
-//     char buffer[132];
-//     while(len) {
-//         int now = req->read(buffer, 128);
-//         buffer[now] = 0;
-//         len -= now;
-//         printf("%s", buffer);
-//     }
-//     printf("-- END OF REQUEST --\n");
-//     return 0;
-// }
