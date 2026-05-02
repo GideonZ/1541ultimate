@@ -39,9 +39,11 @@ class C64_Subsys : public SubSystem, ObjectWithMenu
         Action *savemp3c;
         Action *savemp3d;
         Action *measure;
+        Action *monitor;
     } myActions;
 
     static void poll(void *a);
+    static SubsysResultCode_e S_run_monitor(SubsysCommand *cmd);
 
     /* Subsystem */
 	const char *identify(void) { return "C64 Machine"; }

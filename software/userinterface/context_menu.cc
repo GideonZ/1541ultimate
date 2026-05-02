@@ -45,6 +45,13 @@ ContextMenu :: ~ContextMenu(void)
 
 int ContextMenu :: get_items(void)
 {
+    FileInfo *info = contextable ? contextable->getFileInfo() : NULL;
+    if (state && state->browser && contextable &&
+        (state->browser->pick_mode != TreeBrowser::PICK_NONE) &&
+        info && !(info->attrib & (AM_DIR | AM_VOL)) &&
+        !contextable->isSyntheticPickerEntry()) {
+        actions.append(new Action("Select File", SUBSYSID_USER_STANDARD, 0));
+    }
     if(contextable) {
         contextable->fetch_context_items(actions);
     }
@@ -144,15 +151,28 @@ int ContextMenu :: poll(int sub)
 {
     int ret = 0;
     int c;
+    bool use_focus_stack = !(state && state->browser && !state->browser->use_ui_focus_stack);
         
     if (subContext) {
+        if (!use_focus_stack) {
+            sub = subContext->poll(0);
+            if (!sub) {
+                return 0;
+            }
+        }
         if (sub < 0) {
+            if (!use_focus_stack) {
+                subContext->deinit();
+            }
             delete subContext;
             subContext = NULL;
             draw();
             return 0;
         } else if (sub > 0) {
             selectedAction = subContext->getSelectedAction();
+            if (!use_focus_stack) {
+                subContext->deinit();
+            }
             delete subContext;
             subContext = NULL;
             draw();

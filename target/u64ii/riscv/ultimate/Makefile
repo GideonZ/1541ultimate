@@ -71,6 +71,7 @@ SRCS_CC	 =  u64ii_init.cc \
 			c64.cc \
 			c64_crt.cc \
 			u64_machine.cc \
+			u64_memory_backend.cc \
 			c64_subsys.cc \
 			screen.cc \
 			keyboard_c64.cc \
@@ -101,6 +102,7 @@ SRCS_CC	 =  u64ii_init.cc \
 			sdcard_manager.cc \
 			size_str.cc \
 			userinterface.cc \
+			run_machine_monitor.cc \
 			ui_elements.cc \
 			user_file_interaction.cc \
 			editor.cc \
@@ -110,6 +112,12 @@ SRCS_CC	 =  u64ii_init.cc \
 			config_menu.cc \
 			context_menu.cc \
 			task_menu.cc \
+			monitor_init.cc \
+			monitor_file_io.cc \
+			monitor_bookmarks.cc \
+			machine_monitor.cc \
+			disassembler_6502.cc \
+			assembler_6502.cc \
 			filetype_d64.cc \
 			filetype_g64.cc \
 			filetype_t64.cc \

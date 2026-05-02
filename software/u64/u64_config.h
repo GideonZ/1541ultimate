@@ -27,6 +27,7 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
 {
     struct {
         Action *poke;
+        Action *monitor;
         Action *saveedid;
         Action *siddetect;
         Action *esp32off;
@@ -133,6 +134,7 @@ public:
     void create_task_items(void);
     void update_task_items(bool writablePath);
     SubsysResultCode_e executeCommand(SubsysCommand *cmd);
+    static SubsysResultCode_e S_run_monitor(SubsysCommand *cmd);
     void effectuate_settings();
     void on_edit();
 

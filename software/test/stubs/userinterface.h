@@ -69,6 +69,16 @@ public:
         return strlen(buffer);
     } // blocking
 
+    int  string_box(const char *msg, char *buffer, int maxlen, bool)
+    {
+        return string_box(msg, buffer, maxlen);
+    } // blocking
+
+    int  string_box(const char *msg, char *buffer, int maxlen, bool, bool)
+    {
+        return string_box(msg, buffer, maxlen);
+    } // blocking
+
     void show_progress(const char *msg, int steps) {} // not blocking
     void update_progress(const char *msg, int steps) {} // not blocking
     void hide_progress(void) {} // not blocking (of course)
