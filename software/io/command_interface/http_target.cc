@@ -12,6 +12,7 @@ static Message c_status_bad_req       = { 15, true, (uint8_t *)"400 BAD REQUEST"
 static Message c_status_no_hdr_slot   = { 18, true, (uint8_t *)"507 NO HEADER SLOT" };
 static Message c_status_no_data_slot  = { 16, true, (uint8_t *)"507 NO DATA SLOT" };
 static Message c_status_bad_format    = { 14, true, (uint8_t *)"500 BAD FORMAT" };
+static Message c_status_out_of_bounds = { 23, true, (uint8_t *)"400 INDEX OUT OF BOUNDS" };
 static Message c_status_key_missing   = { 19, true, (uint8_t *)"404 KEY NOT PRESENT" };
 static Message c_status_not_found     = { 19, true, (uint8_t *)"404 ENTRY NOT FOUND" };
 static Message c_status_no_more       = { 16, true, (uint8_t *)"500 NO MORE DATA" };
@@ -22,7 +23,7 @@ HttpTarget::HttpTarget(int id)
 {
     command_targets[id] = this;
     memset(headers, 0, sizeof(headers));
-    memset(headers, 0, sizeof(bodies));
+    memset(bodies, 0, sizeof(bodies));
     data_message.message = new uint8_t[CMD_MAX_REPLY_LEN];
     status_message.message = new uint8_t[CMD_MAX_STATUS_LEN];
     exch = NULL;
@@ -119,7 +120,6 @@ void HttpTarget::parse_command(Message *command, Message **reply, Message **stat
 
         case HTTP_CMD_BODY_UP:
             cmd_body_up(command, reply, status);
-            *status = &c_status_http_ok;
             break;
 
         case HTTP_CMD_BODY_REMOVE:
@@ -154,6 +154,15 @@ void HttpTarget::parse_command(Message *command, Message **reply, Message **stat
 
 void HttpTarget::cmd_header_create(Message *command, Message **reply, Message **status)
 {
+    if (command->length < 7) {
+        *status = &c_status_bad_cmd;
+        return;
+    }
+    if ((command->message[2] < 1) || (command->message[2] > 9)) { // only accept valid verb values
+        *status = &c_status_bad_cmd;
+        return;
+    }
+
     int slot = -1;
     for(int i=0; i<MAX_HTTP_HANDLES; i++) {
         if(!headers[i]) {
@@ -178,6 +187,11 @@ void HttpTarget::cmd_header_create(Message *command, Message **reply, Message **
 
 void HttpTarget::cmd_header_add(Message *command, Message **reply, Message **status)
 {
+    if (command->length < 7) {
+        *status = &c_status_bad_cmd;
+        return;
+    }
+
     uint8_t handle = command->message[2];
     if(handle >= MAX_HTTP_HANDLES || !headers[handle]) {
         *status = &c_status_bad_cmd;
@@ -185,7 +199,7 @@ void HttpTarget::cmd_header_add(Message *command, Message **reply, Message **sta
     }
     HttpHeaderSlot *hdr = headers[handle];
 
-    mstring line((const char *)command->message, 3, command->length); // copy
+    mstring line((const char *)command->message, 3, command->length-1); // copy
     const char *value = line.split(": ");
     if (!value) {
         *status = &c_status_bad_format;
@@ -200,6 +214,10 @@ void HttpTarget::cmd_header_add(Message *command, Message **reply, Message **sta
 void HttpTarget::cmd_header_query(Message *command, Message **reply, Message **status)
 {
     // Command format ``$06 $14 <HANDLE> <KEY>``
+    if (command->length < 4) {
+        *status = &c_status_bad_cmd;
+        return;
+    }
 
     uint8_t handle = command->message[2];
     if(handle >= MAX_HTTP_HANDLES || !headers[handle]) {
@@ -207,7 +225,7 @@ void HttpTarget::cmd_header_query(Message *command, Message **reply, Message **s
         return;
     }
     HttpHeaderSlot *hdr = headers[handle];
-    mstring key((const char *)command->message, 3, command->length);
+    mstring key((const char *)command->message, 3, command->length-1);
     JSON *j = hdr->get(key.c_str());
     if (!j) {
         *status = &c_status_key_missing;
@@ -221,15 +239,22 @@ void HttpTarget::cmd_header_query(Message *command, Message **reply, Message **s
     } else {
         rend = j->render();
     }
-    data_message.length = strlen(rend);
+    int len_out = strlen(rend);
+    if (len_out > CMD_MAX_REPLY_LEN)
+        len_out = CMD_MAX_REPLY_LEN;
+    data_message.length = len_out;
     data_message.last_part = true;
-    strncpy((char *)data_message.message, rend, CMD_MAX_REPLY_LEN);
+    memcpy(data_message.message, rend, len_out);
     *status = &c_status_http_ok;
 }
 
 void HttpTarget::cmd_header_list(Message *command, Message **reply, Message **status)
 {
     // Command format ``$06 $15 <HANDLE> <INDEX>``
+    if (command->length != 4) {
+        *status = &c_status_bad_cmd;
+        return;
+    }
 
     uint8_t handle = command->message[2];
     if(handle >= MAX_HTTP_HANDLES || !headers[handle]) {
@@ -243,7 +268,7 @@ void HttpTarget::cmd_header_list(Message *command, Message **reply, Message **st
     if (command->message[3]) {
         JSON *j = hdr->get(command->message[3], &key);
         if (!j) {
-            *status = &c_status_key_missing;
+            *status = &c_status_out_of_bounds;
             return;
         }
         s.format("%s: ", key);
@@ -281,6 +306,11 @@ void HttpTarget::cmd_header_list(Message *command, Message **reply, Message **st
 
 void HttpTarget::cmd_body_create(Message *command, Message **reply, Message **status)
 {
+    if (command->length != 3) {
+        *status = &c_status_bad_cmd;
+        return;
+    }
+
     if ((command->message[2] < 1) || (command->message[2] > 4)) {
         *status = &c_status_bad_format;
         return;
@@ -350,7 +380,7 @@ void HttpTarget::cmd_body_add_primitive(Message *command, Message **reply, Messa
             break;
         case HTTP_CMD_BODY_ADD_STRING:
             {
-                mstring s((const char *)command->message, pos_val + 1, pos_val + 1 + command->message[pos_val]);
+                mstring s((const char *)command->message, pos_val + 1, pos_val + 1 + command->message[pos_val] - 1);
                 body->add_str(key.c_str(), s.c_str());
             }
             break;
@@ -404,7 +434,7 @@ void HttpTarget::cmd_body_remove(Message *command, Message **reply, Message **st
 {
     uint8_t handle = command->message[2];
     if(handle >= MAX_HTTP_HANDLES || !bodies[handle]) {
-        *status = &c_status_bad_cmd;
+        *status = &c_status_bad_req;
         return;
     }
     HttpBodySlot *body = bodies[handle];
@@ -424,7 +454,7 @@ void HttpTarget::cmd_body_move(Message *command, Message **reply, Message **stat
 {
     uint8_t handle = command->message[2];
     if(handle >= MAX_HTTP_HANDLES || !bodies[handle]) {
-        *status = &c_status_bad_cmd;
+        *status = &c_status_bad_req;
         return;
     }
     HttpBodySlot *body = bodies[handle];
@@ -443,7 +473,7 @@ void HttpTarget::cmd_body_query(Message *command, Message **reply, Message **sta
 {
     uint8_t handle = command->message[2];
     if(handle >= MAX_HTTP_HANDLES || !bodies[handle]) {
-        *status = &c_status_bad_cmd;
+        *status = &c_status_bad_req;
         return;
     }
     HttpBodySlot *body = bodies[handle];
@@ -529,8 +559,7 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
         hdr = headers[hdr_handle];
     }
     if(body_handle >= MAX_HTTP_HANDLES || !bodies[body_handle]) {
-        //*status = &c_status_bad_cmd;
-        //return;
+        // bdy remains NULL, which means that there is no body to be sent
     } else {
         bdy = bodies[body_handle];
     }
@@ -548,6 +577,13 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
     exch = new HttpRequest();
     if (exch->connect_to_server(hdr->get_host(), hdr->get_port()) >= 0) {
         if (!exch->send_request(&req)) {
+            if (raw) {
+                HTTPReqHeader *hdr = exch->get_header();
+                if (hdr) {
+                    hdr->RawCopy = status_message.message;
+                    hdr->RawCopySize = CMD_MAX_STATUS_LEN;
+                }
+            }
             exch->recv_response();
         } else {
             printf("Failed to send request\n");
@@ -569,12 +605,26 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
     int slot = -1;
     if(raw) {
         // Return raw data in data channel [cite: 264]
-        get_more_data(reply, status);
+        *reply = &data_message;
+        data_message.length = exch->read_response_data(CMD_MAX_REPLY_LEN, data_message.message);
+        data_message.last_part = (data_message.length != CMD_MAX_REPLY_LEN);
+        // Copy at most CMD_MAX_STATUS_LEN bytes into the status. Note that parse header will insert
+        // zeros at string boundaries
+        HTTPReqHeader *hdr = exch->get_header();
+        *status = &status_message;
+        status_message.length = hdr->RawCopyLength;
+        // Clean up if this was the last message
+        if (data_message.last_part) {
+            delete exch;
+            exch = NULL;
+        }
     } else {
         JSON *json = exch->get_json();
         if(!json) {
             *reply = &c_message_empty;
             *status = &c_status_no_valid_json;
+            delete exch;
+            exch = NULL;
             return;
         }
         for(int i=0; i<MAX_HTTP_HANDLES; i++) {
@@ -587,6 +637,8 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
             *status = &c_status_no_data_slot;
             *reply = &c_message_empty;
             delete json;
+            delete exch;
+            exch = NULL;
             return;
         }
         body_handle = slot;
@@ -599,6 +651,17 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
                 break;
             }
         }
+        if (slot == -1) {
+            *status = &c_status_no_hdr_slot;
+            *reply = &c_message_empty;
+
+            delete bodies[body_handle]; // also deletes the json
+            bodies[body_handle] = NULL;
+            delete exch;
+            exch = NULL;
+            return;
+        }
+
         hdr_handle = slot;
         headers[hdr_handle] = new HttpHeaderSlot(hdr);
         headers[hdr_handle]->convert_from_response(exch->get_header());
@@ -607,13 +670,21 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
         data_message.message[0] = hdr_handle; // New Header Handle
         data_message.message[1] = body_handle; // New Body Handle
         data_message.length = 2;
+        *reply = &data_message;
+
+        // Status
+        HTTPReqHeader *hdr = exch->get_header();
+        if (hdr->Response) {
+            *status = &status_message;
+            status_message.length = snprintf((char *)status_message.message, CMD_MAX_STATUS_LEN, "%s", hdr->Response);
+            hdr->Response = NULL;
+        } else {
+            *status = &c_status_http_ok;
+        }
 
         // we should have taken all the data from the exchange
         delete exch;
         exch = NULL;
-
-        *reply = &data_message;
-        *status = &c_status_http_ok;
     }
 }
 
@@ -632,11 +703,11 @@ void HttpTarget::get_more_data(Message **reply, Message **status)
         *reply = &data_message;
         data_message.length = exch->read_response_data(CMD_MAX_REPLY_LEN, data_message.message);
         data_message.last_part = (data_message.length != CMD_MAX_REPLY_LEN);
-        *status = &c_status_http_ok; 
         if (data_message.last_part) {
             delete exch;
             exch = NULL;
         }
+        *status = &c_status_http_ok;
     } else {
         *reply = &c_message_empty;
         *status = &c_status_no_more;

@@ -16,7 +16,7 @@ typedef struct {
 
 // Callbacks
 void collect_in_buffer(HTTPReqMessage *req, HTTPRespMessage *resp);
-void write_to_temp(HTTPReqMessage *req, HTTPRespMessage *resp);
+//void write_to_temp(HTTPReqMessage *req, HTTPRespMessage *resp);
 
 int   read_socket(int socket_fd, HTTPReqMessage& response);
 void  get_response(int socket_fd, HTTPREQ_CALLBACK callback, HTTPReqMessage& response);
@@ -29,6 +29,7 @@ class HttpRequest
     int socket_fd;
 public:
     HttpRequest() {
+        InitReqMessage(&response);
         body = NULL;
         socket_fd = -1;
     }

@@ -56,6 +56,10 @@ class HttpHeaderSlot
 public:
     HttpHeaderSlot(uint8_t v, const char *u, int ulen) : verb(v), lines(true)
     {
+        // Force null-termination
+        mstring text(u, 0, ulen-1);
+        u = text.c_str();
+
         if(strncmp(u, "https://", 8) == 0) {
             port = 443;
             secure = true;
@@ -88,7 +92,6 @@ public:
         url = src->url.c_str();
         port = src->port;
         secure = src->secure;
-        set("Host", host.c_str());
     }
 
     ~HttpHeaderSlot()
@@ -152,7 +155,7 @@ public:
     void render(StreamRamFile *s)
     {
         static const char *verbs[] = { "GET", "PUT", "POST", "PATCH", "DELETE", "HEAD", "OPTIONS", "CONNECT", "TRACE" };
-        s->format("%s /%s HTTP/1.1\n", verbs[verb-1], url.c_str());
+        s->format("%s /%s HTTP/1.1\r\n", verbs[verb-1], url.c_str());
 
         IndexedList<const char *> *keys = lines.get_keys();
         IndexedList<JSON *> *values = lines.get_values();
@@ -414,6 +417,18 @@ public:
         current = j;
     }
 
+    static int read_decimals(const char *buf, int *val)
+    {
+        *val = 0;
+        int consumed = 0;
+        while((*buf >= '0') && (*buf <= '9')) {
+            *val *= 10;
+            *val += (*buf++)-'0';
+            consumed++;
+        }
+        return consumed;
+    }
+
     JSON *walk_path(mstring& path, char *error)
     {
         JSON *cur = root_object;
@@ -451,15 +466,14 @@ public:
                         return NULL;
                     }
                     if (!cur) {
-                        sprintf(error, "400 BAD FORMAT: ELEMENT %s NOT FOUND", start);
+                        sprintf(error, "400 BAD FORMAT: ENTRY %s NOT FOUND", start);
                         free(dup);
                         return NULL;
                     }
                 }
                 pnt++;
                 int idx = 0;
-                int skip = sscanf(pnt, "%d", &idx);
-                // int idx = strtol(pnt, NULL, 0);
+                int skip = read_decimals(pnt, &idx);
                 if (cur->type() != eList) {
                     sprintf(error, "400 BAD FORMAT: ELEMENT IS NOT INDEXABLE (%d)", idx);
                     free(dup);

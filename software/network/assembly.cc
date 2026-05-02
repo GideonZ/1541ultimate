@@ -13,6 +13,13 @@
 
 Assembly assembly;
 
+#include "attachment_writer.h"
+void write_to_temp_a64(HTTPReqMessage *req, HTTPRespMessage *resp)
+{
+    TempfileWriter *writer = new TempfileWriter(req, resp, NULL, NULL, NULL);
+    setup_multipart(req, &TempfileWriter::collect_wrapper, writer);
+    req->userContext = writer;
+}
 
 int Assembly :: connect_to_server(void)
 {
@@ -214,7 +221,7 @@ void Assembly :: request_binary(const char *path, const char *filename)
 
     if (connect_to_server() >= 0) { // resets userContext to NULL
         send(this->socket_fd, request.c_str(), request.length(), MSG_DONTWAIT);
-        get_response(this->socket_fd, write_to_temp, response);
+        get_response(this->socket_fd, write_to_temp_a64, response);
         close_connection();
     }
  }

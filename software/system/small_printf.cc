@@ -271,6 +271,19 @@ extern "C" int sprintf(char *str, const char *fmt, ...)
     return (ret);
 }
 
+extern "C" int snprintf(char *str, size_t size, const char *fmt, ...)
+{
+    va_list ap;
+    int ret;
+	char *pnt = str;
+	
+    va_start(ap, fmt);
+    ret = _my_vnprintf(_string_write_char, (void **)&pnt, size-1, fmt, ap);
+    _string_write_char(0, (void **)&pnt);
+    va_end(ap);
+    return (ret);
+}
+
 int _conv(const char *buf, int pos, int radix, int *result)
 {
 	*result = 0;

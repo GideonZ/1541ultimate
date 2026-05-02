@@ -51,6 +51,9 @@ public:
         renderspace += "\"";
         return renderspace.c_str();
     }
+    const char *render_compact() {
+        return str.c_str();
+    }
     void render(StreamRamFile *s) { s->format("\"%s\"", str.c_str()); }
 };
 
@@ -239,6 +242,7 @@ public:
             s->format("%s", keys[i]);
             s->charout('=');
             const char *val = values[i]->render_compact();
+            renderspace = "";
             url_encode(val, renderspace);
             s->format("%s", renderspace.c_str());
             if (i != keys.get_elements()-1) {
@@ -297,17 +301,17 @@ public:
     }
 
     JSON_List *add(const char *str) {
-        members.append(new JSON_String(str));
+        add(new JSON_String(str));
         return this;
     }
 
     JSON_List *add(int val) {
-        members.append(new JSON_Integer(val));
+        add(new JSON_Integer(val));
         return this;
     }
 
     JSON_List *add(const bool val) {
-        members.append(new JSON_Bool(val));
+        add(new JSON_Bool(val));
         return this;
     }
 
