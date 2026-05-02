@@ -104,6 +104,7 @@ SRCS_CC	 =  u2pl_init.cc \
 			task_menu.cc \
 			monitor_init.cc \
 			monitor_file_io.cc \
+			monitor_bookmarks.cc \
 			machine_monitor.cc \
 			disassembler_6502.cc \
 			assembler_6502.cc \

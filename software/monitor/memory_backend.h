@@ -34,6 +34,7 @@ public:
     virtual bool supports_cpu_banking(void) const { return true; }
     virtual bool supports_vic_bank(void) const { return true; }
     virtual bool supports_go(void) const { return true; }
+    virtual uint8_t monitor_poll_hz(void) const { return 50; }
 
     virtual void set_monitor_cpu_port(uint8_t value)
     {

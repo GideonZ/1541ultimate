@@ -5,8 +5,10 @@
 #include "editor.h"
 #include "userinterface.h"
 #include "monitor_file_io.h"
+#include "monitor_bookmarks.h"
 #include "screen.h"
 #include "keyboard.h"
+#include "itu.h"
 
 extern "C" {
 #include "dump_hex.h"
@@ -25,20 +27,25 @@ static const uint16_t monitor_cursor_blink_half_period_ms = 400;
 #endif
 
 static const char *const monitor_help_lines[] = {
+    "",
     "M Memory    I ASCII     V Screen",
     "A Assembly  B Binary    U Undoc Op",
     "J Jump      G Go",
     "",
     "E Edit      F Fill      T Transfer",
     "C Compare   H Hunt      N Number",
-    "W Width     R Range     Z Freeze",
-    "O CPU Bank  Sh+O VIC",
+    "W Width     R Range     P Poll",
+    "Z Freeze    O CPU Bank  Sh+O VIC",
     "L Load      S Save",
+    "",
+    "Bookmarks:",
+    "0-9 Recall  C=+0-9 Set  C=+B List",
     "",
     "Open monitor:  C=+O",
     "Close monitor: C=+O / ESC",
     "Leave edit:    C=+E",
     "Copy/Paste:    C=+C / C=+V",
+    "",
     NULL
 };
 
@@ -73,6 +80,36 @@ static inline uint8_t monitor_binary_byte_stride(uint8_t bytes_per_row)
     if (b < MONITOR_BINARY_MIN_BYTES_PER_ROW) b = MONITOR_BINARY_MIN_BYTES_PER_ROW;
     if (b > MONITOR_BINARY_MAX_BYTES_PER_ROW) b = MONITOR_BINARY_MAX_BYTES_PER_ROW;
     return b;
+}
+
+static int monitor_bookmark_restore_slot_for_key(int key)
+{
+    if (key >= '0' && key <= '9') {
+        return key - '0';
+    }
+    return -1;
+}
+
+static int monitor_bookmark_set_slot_for_key(int key)
+{
+    return key_ctrl_digit_value(key);
+}
+
+static bool monitor_key_is_bookmark_popup(int key)
+{
+    return key == KEY_CTRL_B;
+}
+
+static bool monitor_key_is_bookmark_action(int key)
+{
+    return monitor_key_is_bookmark_popup(key) ||
+           (monitor_bookmark_restore_slot_for_key(key) >= 0) ||
+           (monitor_bookmark_set_slot_for_key(key) >= 0);
+}
+
+static bool monitor_deadline_reached(uint16_t deadline, uint16_t now)
+{
+    return (int16_t)(now - deadline) >= 0;
 }
 
 static bool is_hex_char(char c);
@@ -1217,6 +1254,9 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     content_height = 0;
     pending_hex_nibble = -1;
     edit_mode = false;
+    poll_mode = false;
+    poll_deadline = 0;
+    poll_fraction = 0;
     edit_cursor_visible = true;
     help_visible = false;
     range_mode = false;
@@ -1255,6 +1295,13 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     current_vic_bank = 0;
     last_live_vic_bank = 0;
     vic_bank_override = false;
+    bookmarks = new MonitorBookmarks();
+    bookmark_popup_active = false;
+    bookmark_selected = 0;
+    bookmark_status_text[0] = 0;
+    bookmark_status_visible = false;
+    bookmark_status_emphasis = false;
+    bookmark_status_deadline = 0;
     binary_bit_index = 7;
 #ifdef RUNS_ON_PC
     edit_blink_polls = monitor_cursor_blink_idle_polls;
@@ -1297,6 +1344,24 @@ bool MachineMonitor :: number_shortcut_allowed(void) const
     }
     return state.view != MONITOR_VIEW_ASCII &&
            state.view != MONITOR_VIEW_SCREEN;
+}
+
+bool MachineMonitor :: bookmark_shortcut_allowed(void) const
+{
+    return !help_visible &&
+           !hunt_picker_active &&
+           !opcode_picker_active &&
+           !number_picker_active &&
+           !bookmark_popup_active;
+}
+
+bool MachineMonitor :: bookmark_set_shortcut_allowed(void) const
+{
+    return !help_visible &&
+           !hunt_picker_active &&
+           !opcode_picker_active &&
+           !number_picker_active &&
+           !bookmark_popup_active;
 }
 
 uint8_t MachineMonitor :: canonical_read(uint16_t address)
@@ -2006,6 +2071,227 @@ void MachineMonitor :: toggle_help()
     help_visible = !help_visible;
 }
 
+void MachineMonitor :: dismiss_bookmark_status(void)
+{
+    bookmark_status_visible = false;
+}
+
+bool MachineMonitor :: update_bookmark_status(void)
+{
+    if (!bookmark_status_visible) {
+        return false;
+    }
+    if (!monitor_deadline_reached(bookmark_status_deadline, getMsTimer())) {
+        return false;
+    }
+    bookmark_status_visible = false;
+    return true;
+}
+
+void MachineMonitor :: show_bookmark_status(uint8_t slot, const MonitorBookmarkSlot *bookmark, int kind)
+{
+    MonitorBookmarkStatusKind status = (MonitorBookmarkStatusKind)kind;
+
+    monitor_bookmark_format_status(bookmark_status_text, sizeof(bookmark_status_text),
+                                   slot, bookmark, status);
+    bookmark_status_visible = true;
+    bookmark_status_emphasis = monitor_bookmark_status_uses_emphasis(status, bookmark);
+    bookmark_status_deadline = (uint16_t)(getMsTimer() + 2000);
+}
+
+void MachineMonitor :: clear_bookmark_transient_state(void)
+{
+    pending_hex_nibble = -1;
+    help_visible = false;
+    range_mode = false;
+    bookmark_popup_active = false;
+    number_picker_active = false;
+    number_selected = 0;
+    number_word = false;
+    number_edit_length = 0;
+    number_edit_buffer[0] = 0;
+    number_target_locked = false;
+    opcode_picker_close();
+    hunt_picker_close();
+    asm_edit_part = 0;
+    asm_edit_pending = 0;
+    asm_edit_history_reset(state.current_addr);
+    binary_bit_index = 7;
+    edit_cursor_visible = true;
+    reset_edit_blink();
+}
+
+void MachineMonitor :: capture_bookmark(MonitorBookmarkSlot *bookmark) const
+{
+    Cursor cursor;
+
+    if (!bookmark) {
+        return;
+    }
+    cursor = active_cursor();
+    bookmark->address = cursor.address;
+    bookmark->view = (uint8_t)state.view;
+    bookmark->cpu_bank = (uint8_t)(state.cpu_port & 0x07);
+    bookmark->vic_bank = (uint8_t)(current_vic_bank & 0x03);
+    bookmark->binary_width = binary_byte_stride();
+    bookmark->edit_mode = edit_mode;
+    bookmark->is_default = false;
+    bookmark->is_valid = true;
+    bookmark->label[0] = 0;
+}
+
+bool MachineMonitor :: restore_bookmark(uint8_t slot)
+{
+    const MonitorBookmarkSlot *bookmark = bookmarks ? bookmarks->get(slot) : NULL;
+    uint8_t requested_vic_bank;
+
+    if (!bookmark || !monitor_bookmark_slot_is_valid(*bookmark)) {
+        show_bookmark_status(slot, NULL, MONITOR_BOOKMARK_STATUS_EMPTY);
+        return false;
+    }
+
+    if (backend && backend->supports_cpu_banking()) {
+        state.cpu_port = (uint8_t)(bookmark->cpu_bank & 0x07);
+        backend->set_monitor_cpu_port(state.cpu_port);
+    } else if ((state.cpu_port & 0x07) != (bookmark->cpu_bank & 0x07)) {
+        show_bookmark_status(slot, bookmark, MONITOR_BOOKMARK_STATUS_RESTORE_FAILED);
+        return false;
+    }
+
+    requested_vic_bank = (uint8_t)(bookmark->vic_bank & 0x03);
+    if (backend && backend->supports_vic_bank()) {
+        backend->set_live_vic_bank(requested_vic_bank);
+        last_live_vic_bank = backend->get_live_vic_bank();
+        current_vic_bank = requested_vic_bank;
+        vic_bank_override = (last_live_vic_bank != current_vic_bank);
+    } else if ((current_vic_bank & 0x03) != requested_vic_bank) {
+        show_bookmark_status(slot, bookmark, MONITOR_BOOKMARK_STATUS_RESTORE_FAILED);
+        return false;
+    }
+
+    clear_bookmark_transient_state();
+    // Apply binary width before viewport calculation (set_view() and
+    // apply_go_local() both read row_span()/binary_bytes_per_row).
+    if (bookmark->view == MONITOR_BOOKMARK_VIEW_BINARY) {
+        uint8_t w = bookmark->binary_width;
+        if (w < MONITOR_BOOKMARK_BINARY_WIDTH_MIN) w = MONITOR_BOOKMARK_BINARY_WIDTH_MIN;
+        if (w > MONITOR_BOOKMARK_BINARY_WIDTH_MAX) w = MONITOR_BOOKMARK_BINARY_WIDTH_MAX;
+        binary_bytes_per_row = w;
+    }
+    set_view((MachineMonitorView)bookmark->view);
+    apply_go_local(bookmark->address);
+    edit_mode = bookmark->edit_mode;
+    reset_edit_blink();
+    asm_edit_history_reset(state.current_addr);
+    show_bookmark_status(slot, bookmark, MONITOR_BOOKMARK_STATUS_RESTORED);
+    return true;
+}
+
+void MachineMonitor :: set_bookmark(uint8_t slot)
+{
+    MonitorBookmarkSlot bookmark;
+    bool saved;
+
+    capture_bookmark(&bookmark);
+    saved = bookmarks ? bookmarks->set_target_preserve_label(slot, bookmark) : false;
+    if (saved) {
+        const MonitorBookmarkSlot *stored = bookmarks ? bookmarks->get(slot) : NULL;
+        show_bookmark_status(slot, stored ? stored : &bookmark, MONITOR_BOOKMARK_STATUS_SET);
+    } else {
+        show_bookmark_status(slot, &bookmark, MONITOR_BOOKMARK_STATUS_SAVE_FAILED);
+    }
+}
+
+void MachineMonitor :: edit_bookmark_label(uint8_t slot)
+{
+    char buffer[MONITOR_BOOKMARK_LABEL_STORAGE];
+    const MonitorBookmarkSlot *current = bookmarks ? bookmarks->get(slot) : NULL;
+    bool confirmed;
+
+    memset(buffer, 0, sizeof(buffer));
+    if (current && current->is_valid && current->label[0]) {
+        size_t i = 0;
+        while (i < MONITOR_BOOKMARK_LABEL_MAX && current->label[i]) {
+            buffer[i] = current->label[i];
+            i++;
+        }
+        buffer[i] = 0;
+    }
+    char title[16];
+    sprintf(title, "Label BM%u", (unsigned)slot);
+    confirmed = prompt_command(title, buffer, (int)sizeof(buffer));
+    if (confirmed) {
+        bookmarks->set_label(slot, buffer);
+        const MonitorBookmarkSlot *updated = bookmarks->get(slot);
+        show_bookmark_status(slot, updated, MONITOR_BOOKMARK_STATUS_LABEL_SAVED);
+    } else {
+        show_bookmark_status(slot, current, MONITOR_BOOKMARK_STATUS_LABEL_CANCEL);
+    }
+    draw();
+}
+
+int MachineMonitor :: bookmark_popup_handle_key(int key)
+{
+    if (key == KEY_ESCAPE || key == KEY_BREAK || key == KEY_HELP || key == KEY_F3 ||
+        key == '?' || monitor_key_is_bookmark_popup(key)) {
+        bookmark_popup_active = false;
+        redraw_full();
+        return 0;
+    }
+    if (key == KEY_UP) {
+        bookmark_selected = (uint8_t)((bookmark_selected + MONITOR_BOOKMARK_SLOT_COUNT - 1) %
+                                      MONITOR_BOOKMARK_SLOT_COUNT);
+        refresh_popup_overlay();
+        return 0;
+    }
+    if (key == KEY_DOWN) {
+        bookmark_selected = (uint8_t)((bookmark_selected + 1) % MONITOR_BOOKMARK_SLOT_COUNT);
+        refresh_popup_overlay();
+        return 0;
+    }
+    if (key == KEY_RETURN) {
+        bookmark_popup_active = false;
+        restore_bookmark(bookmark_selected);
+        redraw_full();
+        return 0;
+    }
+    if (key == 's' || key == 'S') {
+        set_bookmark(bookmark_selected);
+        refresh_popup_overlay();
+        draw_status();
+        if (screen) {
+            screen->sync();
+        }
+        return 0;
+    }
+    if (key == 'l' || key == 'L') {
+        edit_bookmark_label(bookmark_selected);
+        return 0;
+    }
+    if (key == KEY_DELETE || key == KEY_BACK) {
+        if (bookmarks) {
+            bookmarks->reset_slot_to_default(bookmark_selected,
+                                             (uint8_t)(state.cpu_port & 0x07),
+                                             (uint8_t)(current_vic_bank & 0x03));
+            const MonitorBookmarkSlot *reset = bookmarks->get(bookmark_selected);
+            show_bookmark_status(bookmark_selected, reset, MONITOR_BOOKMARK_STATUS_LABEL_RESET);
+        }
+        refresh_popup_overlay();
+        draw_status();
+        if (screen) {
+            screen->sync();
+        }
+        return 0;
+    }
+    if (monitor_bookmark_restore_slot_for_key(key) >= 0) {
+        bookmark_popup_active = false;
+        restore_bookmark((uint8_t)monitor_bookmark_restore_slot_for_key(key));
+        redraw_full();
+        return 0;
+    }
+    return 0;
+}
+
 void MachineMonitor :: reset_edit_blink()
 {
     edit_cursor_visible = true;
@@ -2014,6 +2300,34 @@ void MachineMonitor :: reset_edit_blink()
 bool MachineMonitor :: update_edit_blink()
 {
     return false;
+}
+
+uint16_t MachineMonitor :: next_poll_interval_ms(void)
+{
+    uint8_t hz = backend ? backend->monitor_poll_hz() : 50;
+    uint16_t interval;
+    uint16_t remainder;
+
+    if (hz < 1) {
+        hz = 50;
+    }
+    interval = (uint16_t)(1000 / hz);
+    remainder = (uint16_t)(1000 % hz);
+    poll_fraction = (uint8_t)(poll_fraction + remainder);
+    if (poll_fraction >= hz) {
+        poll_fraction = (uint8_t)(poll_fraction - hz);
+        interval++;
+    }
+    if (interval < 1) {
+        interval = 1;
+    }
+    return interval;
+}
+
+void MachineMonitor :: reset_poll_deadline(void)
+{
+    poll_fraction = 0;
+    poll_deadline = (uint16_t)(getMsTimer() + next_poll_interval_ms());
 }
 
 uint8_t MachineMonitor :: disasm_length(uint16_t address) const
@@ -2220,7 +2534,7 @@ void MachineMonitor :: draw_header()
     }
 
     if (help_visible) {
-        strcpy(line, "Help (F3/? closes)");
+        strcpy(line, "HELP");
     } else if (hunt_picker_active) {
         sprintf(line, "%s  %d/%d", hunt_picker_label ? hunt_picker_label : "RESULTS",
                 hunt_count ? (hunt_selected + 1) : 0, hunt_count);
@@ -2263,15 +2577,18 @@ void MachineMonitor :: draw_header()
     } else if (!help_visible && !hunt_picker_active) {
         char fixed[64];
         int first_slot = width;
-        int flag_slot = width - 18;
-        int freeze_slot = width - 11;
+        int flag_slot = width - 19;
+        int freeze_slot = width - 13;
+        int poll_slot = width - 9;
         int edit_slot = width - 4;
         bool show_undoc = state.illegal_enabled && state.view == MONITOR_VIEW_ASM;
         if (flag_slot < 0) flag_slot = width;
         if (freeze_slot < 0) freeze_slot = width;
+        if (poll_slot < 0) poll_slot = width;
         if (edit_slot < 0) edit_slot = width;
         if ((range_mode || show_undoc) && flag_slot < first_slot) first_slot = flag_slot;
         if (backend && backend->supports_freeze() && backend->is_frozen() && freeze_slot < first_slot) first_slot = freeze_slot;
+        if (poll_mode && poll_slot < first_slot) first_slot = poll_slot;
         if (edit_mode && edit_slot < first_slot) first_slot = edit_slot;
 
         memset(fixed, ' ', width);
@@ -2284,13 +2601,16 @@ void MachineMonitor :: draw_header()
             left_len = 0;
         }
         memcpy(fixed, line, left_len);
-        if (show_undoc && flag_slot + 7 <= width) {
-            memcpy(fixed + flag_slot, "UndocOp", 7);
+        if (show_undoc && flag_slot + 5 <= width) {
+            memcpy(fixed + flag_slot, "Undoc", 5);
         } else if (range_mode && flag_slot + 5 <= width) {
             memcpy(fixed + flag_slot, "Range", 5);
         }
-        if (backend && backend->supports_freeze() && backend->is_frozen() && freeze_slot + 6 <= width) {
-            memcpy(fixed + freeze_slot, "Freeze", 6);
+        if (backend && backend->supports_freeze() && backend->is_frozen() && freeze_slot + 3 <= width) {
+            memcpy(fixed + freeze_slot, "Frz", 3);
+        }
+        if (poll_mode && poll_slot + 4 <= width) {
+            memcpy(fixed + poll_slot, "Poll", 4);
         }
         memcpy(line, fixed, width + 1);
     }
@@ -2310,6 +2630,20 @@ void MachineMonitor :: draw_header()
 void MachineMonitor :: draw_status()
 {
     char line[40];
+
+    if (help_visible) {
+        draw_padded(window, window->get_size_y() - 1, "", 0);
+        return;
+    }
+
+    if (bookmark_status_visible) {
+        window->set_color(bookmark_status_emphasis ? MONITOR_UI_ACCENT_COLOR : get_ui()->color_fg);
+        draw_padded(window, window->get_size_y() - 1, bookmark_status_text,
+                    (int)strlen(bookmark_status_text));
+        window->set_color(get_ui()->color_fg);
+        return;
+    }
+
     if (backend && !backend->supports_cpu_banking() && !backend->supports_vic_bank()) {
         strcpy(line, "CPU VIEW  CPU BANK N/A  VIC N/A");
     } else if (backend && !backend->supports_cpu_banking()) {
@@ -2334,6 +2668,83 @@ void MachineMonitor :: draw_help()
             break;
         }
         draw_padded(window, line_idx + 1, text, strlen(text));
+    }
+}
+
+void MachineMonitor :: draw_bookmark_popup()
+{
+    enum {
+        MONITOR_BOOKMARK_POPUP_INNER_WIDTH = 38,
+        MONITOR_BOOKMARK_POPUP_INNER_HEIGHT = 14,
+        MONITOR_BOOKMARK_POPUP_SLOT_FIRST_ROW = 2,
+        MONITOR_BOOKMARK_POPUP_HELP_ROW = 13,
+    };
+
+    char popup_lines[MONITOR_BOOKMARK_POPUP_INNER_HEIGHT][MONITOR_BOOKMARK_POPUP_INNER_WIDTH + 1];
+    int screen_x;
+    int screen_y;
+    int popup_x;
+    int popup_y;
+
+    if (!window || !screen) {
+        return;
+    }
+
+    memset(popup_lines, 0, sizeof(popup_lines));
+    strcpy(popup_lines[0], "BOOKMARKS");
+    for (int i = 0; i < MONITOR_BOOKMARK_SLOT_COUNT; i++) {
+        monitor_bookmark_format_popup_line(popup_lines[MONITOR_BOOKMARK_POPUP_SLOT_FIRST_ROW + i],
+                                           sizeof(popup_lines[MONITOR_BOOKMARK_POPUP_SLOT_FIRST_ROW + i]),
+                                           (uint8_t)i,
+                                           bookmarks ? bookmarks->get((uint8_t)i) : NULL);
+    }
+    strcpy(popup_lines[MONITOR_BOOKMARK_POPUP_HELP_ROW],
+           "0-9/RET Go  S Set  L Label  DEL Reset");
+
+    window->getOffsets(screen_x, screen_y);
+    popup_x = screen_x + ((window->get_size_x() - MONITOR_BOOKMARK_POPUP_INNER_WIDTH) / 2);
+    popup_y = screen_y + ((window->get_size_y() - MONITOR_BOOKMARK_POPUP_INNER_HEIGHT) / 2);
+    // A bordered 38-inner-width popup is 40 outer cols. The visible C64 screen
+    // is 40 cols wide so the popup must start at the screen's x=0 in that
+    // case, even when the underlying monitor window starts inside the border.
+    if (popup_x + (MONITOR_BOOKMARK_POPUP_INNER_WIDTH + 2) > 40) {
+        popup_x = 40 - (MONITOR_BOOKMARK_POPUP_INNER_WIDTH + 2);
+    }
+    if (popup_x < 0) {
+        popup_x = 0;
+    }
+    if (popup_y < screen_y) {
+        popup_y = screen_y;
+    }
+
+    Window popup(screen, popup_x, popup_y,
+                 MONITOR_BOOKMARK_POPUP_INNER_WIDTH + 2,
+                 MONITOR_BOOKMARK_POPUP_INNER_HEIGHT + 2);
+    popup.set_color(get_ui()->color_fg);
+    popup.draw_border();
+
+    for (int row = 0; row < MONITOR_BOOKMARK_POPUP_INNER_HEIGHT; row++) {
+        char line[MONITOR_BOOKMARK_POPUP_INNER_WIDTH + 1];
+        int len = (int)strlen(popup_lines[row]);
+        int slot_row = row - MONITOR_BOOKMARK_POPUP_SLOT_FIRST_ROW;
+        bool selected = (slot_row >= 0 && slot_row < MONITOR_BOOKMARK_SLOT_COUNT &&
+                         slot_row == (int)bookmark_selected);
+
+        if (len > MONITOR_BOOKMARK_POPUP_INNER_WIDTH) {
+            len = MONITOR_BOOKMARK_POPUP_INNER_WIDTH;
+        }
+        memset(line, ' ', MONITOR_BOOKMARK_POPUP_INNER_WIDTH);
+        if (len > 0) {
+            memcpy(line, popup_lines[row], (size_t)len);
+        }
+        line[MONITOR_BOOKMARK_POPUP_INNER_WIDTH] = 0;
+        if (selected) {
+            draw_with_highlight(&popup, row, line, MONITOR_BOOKMARK_POPUP_INNER_WIDTH,
+                                0, MONITOR_BOOKMARK_POPUP_INNER_WIDTH);
+        } else {
+            popup.move_cursor(0, row);
+            popup.output_length(line, MONITOR_BOOKMARK_POPUP_INNER_WIDTH);
+        }
     }
 }
 
@@ -2423,6 +2834,9 @@ void MachineMonitor :: refresh_popup_overlay()
         return;
     }
     if (!help_visible && !hunt_picker_active) {
+        if (bookmark_popup_active) {
+            draw_bookmark_popup();
+        }
         if (opcode_picker_active) {
             draw_opcode_picker();
         }
@@ -2951,6 +3365,9 @@ void MachineMonitor :: draw()
         if (number_picker_active) {
             draw_number_picker();
         }
+        if (bookmark_popup_active) {
+            draw_bookmark_popup();
+        }
     }
     draw_status();
     if (screen) {
@@ -3362,6 +3779,9 @@ void MachineMonitor :: init(Screen *scr, Keyboard *keyb)
         backend->set_monitor_cpu_port(state.cpu_port);
     }
     current_vic_bank = backend->supports_vic_bank() ? backend->get_live_vic_bank() : 0;
+    if (bookmarks) {
+        bookmarks->ensure_loaded((uint8_t)(state.cpu_port & 0x07), (uint8_t)(current_vic_bank & 0x03));
+    }
     last_live_vic_bank = current_vic_bank;
     vic_bank_override = false;
     apply_go_local(state.current_addr);
@@ -3399,6 +3819,10 @@ void MachineMonitor :: deinit(void)
         delete window;
         window = NULL;
     }
+    if (bookmarks) {
+        delete bookmarks;
+        bookmarks = NULL;
+    }
 }
 
 int MachineMonitor :: handle_key(int key)
@@ -3413,12 +3837,17 @@ int MachineMonitor :: handle_key(int key)
     if (hunt_picker_active) {
         return hunt_picker_handle_key(key);
     }
+    if (bookmark_popup_active) {
+        return bookmark_popup_handle_key(key);
+    }
     if (opcode_picker_active) {
         return opcode_picker_handle_key(key);
     }
     if (number_picker_active) {
         return number_picker_handle_key(key);
     }
+
+    dismiss_bookmark_status();
 
     if (key == KEY_HELP || key == KEY_F3) {
         toggle_help();
@@ -3430,10 +3859,31 @@ int MachineMonitor :: handle_key(int key)
         // execute as a normal monitor command (so e.g. pressing H from the
         // help screen actually launches Hunt instead of leaving help open).
         help_visible = false;
-        if (key == KEY_ESCAPE) {
+        if (key == KEY_ESCAPE || monitor_key_is_bookmark_action(key)) {
             draw();
             return 0;
         }
+    }
+
+    if (bookmark_shortcut_allowed() && !edit_mode) {
+        if (monitor_bookmark_restore_slot_for_key(key) >= 0) {
+            restore_bookmark((uint8_t)monitor_bookmark_restore_slot_for_key(key));
+            draw();
+            return 0;
+        }
+    }
+    // The bookmark popup is its own navigation mode and is therefore reachable
+    // from both VIEW and EDIT mode of the underlying monitor view.
+    if (bookmark_set_shortcut_allowed() && monitor_key_is_bookmark_popup(key)) {
+        bookmark_popup_active = true;
+        bookmark_selected = 0;
+        draw();
+        return 0;
+    }
+    if (bookmark_set_shortcut_allowed() && monitor_bookmark_set_slot_for_key(key) >= 0) {
+        set_bookmark((uint8_t)monitor_bookmark_set_slot_for_key(key));
+        draw();
+        return 0;
     }
 
     if (key == KEY_CTRL_C) {
@@ -3464,6 +3914,13 @@ int MachineMonitor :: handle_key(int key)
     if (key == 'r' || key == 'R') {
         help_visible = false;
         toggle_range_mode();
+        draw();
+        return 0;
+    }
+    if (!edit_mode && (key == 'p' || key == 'P')) {
+        help_visible = false;
+        poll_mode = !poll_mode;
+        reset_poll_deadline();
         draw();
         return 0;
     }
@@ -3933,15 +4390,27 @@ int MachineMonitor :: handle_key(int key)
 int MachineMonitor :: poll(int)
 {
     int key;
+    bool status_changed = false;
+
     if (!keyboard) {
         return MENU_CLOSE;
     }
     key = keyboard->getch();
     key = get_ui()->keymapper(key, e_keymap_monitor);
     if (key == -1) {
-        if (update_edit_blink()) {
-            draw();
+        if (bookmark_popup_active) {
             return 0;
+        }
+        uint16_t now = getMsTimer();
+        bool redraw = false;
+
+        status_changed = update_bookmark_status();
+        if (update_edit_blink()) {
+            redraw = true;
+        }
+        if (poll_mode && monitor_deadline_reached(poll_deadline, now)) {
+            poll_deadline = (uint16_t)(now + next_poll_interval_ms());
+            redraw = true;
         }
         if (backend->supports_vic_bank()) {
             uint8_t vic_bank = backend->get_live_vic_bank();
@@ -3951,7 +4420,15 @@ int MachineMonitor :: poll(int)
                     current_vic_bank = vic_bank;
                     vic_bank_override = false;
                 }
-                draw_status();
+                status_changed = true;
+            }
+        }
+        if (redraw) {
+            draw();
+        } else if (status_changed) {
+            draw_status();
+            if (screen) {
+                screen->sync();
             }
         }
         return 0;

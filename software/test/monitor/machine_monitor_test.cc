@@ -1,227 +1,15 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "machine_monitor.h"
 #include "disassembler_6502.h"
+#include "machine_monitor_test_support.h"
 #include "menu.h"
-#include "screen.h"
 #include "task_menu.h"
 #include "tasks_collection.h"
-#include "ui_elements.h"
-#include "userinterface.h"
 
 #define TEST_SORT_ORDER_DEVELOPER 999
 #define TEST_SUBSYSID_C64 1
 #define TEST_SUBSYSID_U64 9
-
-void outbyte(int b)
-{
-    char c = (char)b;
-    fwrite(&c, 1, 1, stdout);
-}
-
-ConfigManager :: ConfigManager() : stores(4, NULL), pages(4, NULL), flash(NULL), num_pages(0), safeMode(false)
-{
-}
-
-ConfigManager :: ~ConfigManager()
-{
-}
-
-ConfigStore *ConfigManager :: register_store(uint32_t, const char *, t_cfg_definition *, ConfigurableObject *)
-{
-    return NULL;
-}
-
-void ConfigManager :: remove_store(ConfigStore *)
-{
-}
-
-int ConfigStore :: unregister(ConfigurableObject *)
-{
-    return 0;
-}
-
-UserInterface :: UserInterface(const char *ui_title, bool use_logo) : title(ui_title)
-{
-    initialized = false;
-    doBreak = false;
-    available = true;
-    status_box = NULL;
-    for (int i = 0; i < MAX_UI_OBJECTS; i++) {
-        ui_objects[i] = NULL;
-    }
-    color_border = 0;
-    color_bg = 0;
-    color_fg = 15;
-    color_sel = 0;
-    color_sel_bg = 0;
-    reverse_sel = 0;
-    color_status = 0;
-    color_inactive = 0;
-    config_save = 0;
-    filename_overflow_squeeze = 0;
-    navmode = 0;
-    logo = use_logo;
-    host = NULL;
-    keyboard = NULL;
-    screen = NULL;
-    focus = -1;
-    menu_response_to_action = MENU_NOP;
-}
-
-UserInterface :: ~UserInterface()
-{
-}
-
-void UserInterface :: effectuate_settings(void)
-{
-}
-
-void UserInterface :: release_host()
-{
-}
-
-bool UserInterface :: is_available(void)
-{
-    return available;
-}
-
-void UserInterface :: run()
-{
-}
-
-void UserInterface :: run_once()
-{
-}
-
-void UserInterface :: run_remote()
-{
-}
-
-int UserInterface :: pollInactive()
-{
-    return 0;
-}
-
-int UserInterface :: keymapper(int c, keymap_options_t map)
-{
-    if ((navmode == 1) && (map != e_keymap_monitor)) {
-        if (c >= 'A' && c <= 'Z') {
-            c |= 0x20;
-        } else {
-            switch (c) {
-            case 'w': c = KEY_UP; break;
-            case 'a': c = KEY_LEFT; break;
-            case 's': c = KEY_DOWN; break;
-            case 'd': c = KEY_RIGHT; break;
-            }
-        }
-    }
-    switch (c) {
-    case KEY_F1: c = KEY_PAGEUP; break;
-    case KEY_F3: c = KEY_HELP; break;
-    case KEY_F5: c = KEY_TASKS; break;
-    case KEY_F7: c = KEY_PAGEDOWN; break;
-    case KEY_F2: c = KEY_CONFIG; break;
-    case KEY_F4: c = KEY_SYSINFO; break;
-    case KEY_F6: c = KEY_SEARCH; break;
-    }
-    return c;
-}
-
-int UserInterface :: popup(const char *, uint8_t)
-{
-    return 0;
-}
-
-int UserInterface :: popup(const char *, int, const char **, const char *)
-{
-    return 0;
-}
-
-int UserInterface :: choice(const char *, const char **, int)
-{
-    return 0;
-}
-
-int UserInterface :: string_box(const char *, char *, int)
-{
-    return 0;
-}
-
-int UserInterface :: string_box(const char *, char *, int, bool)
-{
-    return 0;
-}
-
-int UserInterface :: string_box(const char *, char *, int, bool, bool)
-{
-    return 0;
-}
-
-int UserInterface :: string_edit(char *, int, Window *, int, int)
-{
-    return 0;
-}
-
-void UserInterface :: show_progress(const char *, int)
-{
-}
-
-void UserInterface :: update_progress(const char *, int)
-{
-}
-
-void UserInterface :: hide_progress(void)
-{
-}
-
-void UserInterface :: init(GenericHost *h)
-{
-    host = h;
-}
-
-void UserInterface :: appear(void)
-{
-}
-
-void UserInterface :: set_screen(Screen *s)
-{
-    screen = s;
-}
-
-int g_set_screen_title_call_count = 0;
-
-void UserInterface :: set_screen_title(void)
-{
-    g_set_screen_title_call_count++;
-}
-
-int UserInterface :: activate_uiobject(UIObject *)
-{
-    return 0;
-}
-
-bool UserInterface :: has_focus(UIObject *)
-{
-    return true;
-}
-
-int UserInterface :: getPreferredType(void)
-{
-    return 0;
-}
-
-void UserInterface :: help()
-{
-}
-
-void UserInterface :: run_editor(const char *, int) { }
-
-void UserInterface :: run_hex_editor(const char *, int)
-{
-}
 
 namespace monitor_io {
 void jump_to(uint16_t address);
@@ -400,544 +188,6 @@ void jump_to(uint16_t address)
 }
 } // namespace monitor_io
 
-void UserInterface :: swapDisk(void)
-{
-}
-
-void UserInterface :: send_keystroke(int)
-{
-}
-
-bool UserInterface :: anyMenuActive(void)
-{
-    return true;
-}
-
-void UserInterface :: postMessage(const char *)
-{
-}
-
-mstring *UserInterface :: getMessage()
-{
-    return NULL;
-}
-
-struct FakeMemoryBackend : public MemoryBackend
-{
-    uint8_t memory[65536];
-    int session_begin_count;
-    int session_end_count;
-
-    FakeMemoryBackend()
-    {
-        memset(memory, 0, sizeof(memory));
-        session_begin_count = 0;
-        session_end_count = 0;
-    }
-
-    virtual uint8_t read(uint16_t address)
-    {
-        return memory[address];
-    }
-
-    virtual void write(uint16_t address, uint8_t value)
-    {
-        memory[address] = value;
-    }
-
-    virtual void read_block(uint16_t address, uint8_t *dst, uint16_t len)
-    {
-        uint16_t i;
-        for (i = 0; i < len; i++) {
-            dst[i] = memory[(uint16_t)(address + i)];
-        }
-    }
-
-    virtual void begin_session(void)
-    {
-        session_begin_count++;
-    }
-
-    virtual void end_session(void)
-    {
-        session_end_count++;
-    }
-};
-
-struct FakeBankedMemoryBackend : public MemoryBackend
-{
-    uint8_t ram[65536];
-    uint8_t basic[8192];
-    uint8_t kernal[8192];
-    uint8_t charrom[4096];
-    uint8_t io[4096];
-    uint8_t screen_backup[1024]; // Models the freezer's $0400-$07FF backup region.
-    uint8_t ram_backup[2048];    // Models the freezer's $0800-$0FFF backup region.
-    bool frozen;                 // When true, $0400-$0FFF reads/writes go to the backup buffers.
-    uint8_t live_cpu_port;
-    uint8_t live_cpu_ddr;
-    uint8_t live_dd00;
-    int session_begin_count;
-    int session_end_count;
-
-    FakeBankedMemoryBackend() : frozen(false), live_cpu_port(0x07), live_cpu_ddr(0x07), live_dd00(0x01)
-    {
-        memset(ram, 0, sizeof(ram));
-        memset(basic, 0, sizeof(basic));
-        memset(kernal, 0, sizeof(kernal));
-        memset(charrom, 0, sizeof(charrom));
-        memset(io, 0, sizeof(io));
-        memset(screen_backup, 0, sizeof(screen_backup));
-        memset(ram_backup, 0, sizeof(ram_backup));
-        session_begin_count = 0;
-        session_end_count = 0;
-        set_monitor_cpu_port(live_cpu_port);
-    }
-
-    virtual uint8_t read(uint16_t address)
-    {
-        uint8_t cpu_port = get_monitor_cpu_port();
-
-        if (address >= 0xA000 && address <= 0xBFFF) {
-            if ((cpu_port & 0x03) == 0x03) {
-                return basic[address - 0xA000];
-            }
-            return ram[address];
-        }
-        if (address >= 0xD000 && address <= 0xDFFF) {
-            if ((cpu_port & 0x03) == 0x00) {
-                return ram[address];
-            }
-            if (cpu_port & 0x04) {
-                if (address == 0xDD00) {
-                    return live_dd00;
-                }
-                return io[address - 0xD000];
-            }
-            return charrom[address - 0xD000];
-        }
-        if (address >= 0xE000) {
-            if (cpu_port & 0x02) {
-                return kernal[address - 0xE000];
-            }
-            return ram[address];
-        }
-        if (frozen && address >= 0x0400 && address < 0x0800) {
-            return screen_backup[address - 0x0400];
-        }
-        if (frozen && address >= 0x0800 && address < 0x1000) {
-            return ram_backup[address - 0x0800];
-        }
-        if (address == 0x0001) {
-            return (ram[address] & 0xF8) | live_cpu_port;
-        }
-        if (address == 0x0000) {
-            return (ram[address] & 0xF8) | live_cpu_ddr;
-        }
-        return ram[address];
-    }
-
-    virtual void write(uint16_t address, uint8_t value)
-    {
-        uint8_t cpu_port = get_monitor_cpu_port();
-
-        if (address >= 0xD000 && address <= 0xDFFF && (cpu_port & 0x03) != 0x00 && (cpu_port & 0x04)) {
-            io[address - 0xD000] = value;
-            if (address == 0xDD00) {
-                live_dd00 = value;
-            }
-            return;
-        }
-        if (frozen && address >= 0x0400 && address < 0x0800) {
-            screen_backup[address - 0x0400] = value;
-            return;
-        } else if (frozen && address >= 0x0800 && address < 0x1000) {
-            ram_backup[address - 0x0800] = value;
-            return;
-        }
-        ram[address] = value;
-        if (address == 0x0000) {
-            live_cpu_ddr = value & 0x07;
-        }
-        if (address == 0x0001) {
-            live_cpu_port = value & 0x07;
-        }
-    }
-
-    virtual uint8_t get_live_cpu_port(void)
-    {
-        return (uint8_t)(((live_cpu_port & live_cpu_ddr) | ((uint8_t)(~live_cpu_ddr) & 0x07)) & 0x07);
-    }
-
-    virtual uint8_t get_live_vic_bank(void)
-    {
-        return (uint8_t)(3 - (live_dd00 & 0x03));
-    }
-
-    virtual void begin_session(void)
-    {
-        session_begin_count++;
-    }
-
-    virtual void end_session(void)
-    {
-        session_end_count++;
-    }
-
-    virtual bool supports_freeze(void) const
-    {
-        return true;
-    }
-
-    virtual bool is_frozen(void) const
-    {
-        return frozen;
-    }
-
-    virtual void set_frozen(bool on)
-    {
-        frozen = on;
-    }
-};
-
-struct FakeFreezeControlBackend : public FakeMemoryBackend
-{
-    bool available;
-    bool frozen;
-    int set_frozen_calls;
-
-    FakeFreezeControlBackend(bool available_now, bool frozen_now = false)
-        : available(available_now), frozen(frozen_now), set_frozen_calls(0)
-    {
-    }
-
-    virtual bool supports_freeze(void) const
-    {
-        return true;
-    }
-
-    virtual bool freeze_available(void) const
-    {
-        return available;
-    }
-
-    virtual bool is_frozen(void) const
-    {
-        return frozen;
-    }
-
-    virtual void set_frozen(bool on)
-    {
-        set_frozen_calls++;
-        frozen = on;
-    }
-};
-
-struct FakeFrozenVicBackend : public FakeBankedMemoryBackend
-{
-    uint8_t reported_vic_bank;
-    uint8_t requested_vic_bank;
-    int set_live_vic_bank_calls;
-
-    FakeFrozenVicBackend() : reported_vic_bank(0), requested_vic_bank(0), set_live_vic_bank_calls(0)
-    {
-        frozen = true;
-    }
-
-    virtual uint8_t get_live_vic_bank(void)
-    {
-        return reported_vic_bank & 0x03;
-    }
-
-    virtual void set_live_vic_bank(uint8_t vic_bank)
-    {
-        requested_vic_bank = (uint8_t)(vic_bank & 0x03);
-        set_live_vic_bank_calls++;
-    }
-};
-
-struct FakeRestrictedMemoryBackend : public FakeMemoryBackend
-{
-    int set_monitor_cpu_port_calls;
-    int set_live_vic_bank_calls;
-
-    FakeRestrictedMemoryBackend() : set_monitor_cpu_port_calls(0), set_live_vic_bank_calls(0)
-    {
-    }
-
-    virtual void set_monitor_cpu_port(uint8_t)
-    {
-        set_monitor_cpu_port_calls++;
-    }
-
-    virtual bool supports_cpu_banking(void) const
-    {
-        return false;
-    }
-
-    virtual bool supports_vic_bank(void) const
-    {
-        return false;
-    }
-
-    virtual void set_live_vic_bank(uint8_t)
-    {
-        set_live_vic_bank_calls++;
-    }
-
-    virtual const char *source_name(uint16_t) const
-    {
-        return "CPU";
-    }
-};
-
-class FakeKeyboard : public Keyboard
-{
-    const int *keys;
-    int count;
-    int index;
-public:
-    FakeKeyboard(const int *k, int c) : keys(k), count(c), index(0) { }
-
-    int getch(void)
-    {
-        if (index >= count) {
-            return -1;
-        }
-        return keys[index++];
-    }
-};
-
-class CaptureScreen : public Screen
-{
-    int width;
-    int height;
-    int cursor_x;
-    int cursor_y;
-    int color;
-public:
-    char chars[25][40];
-    uint8_t colors[25][40];
-    bool reverse_chars[25][40];
-    int write_counts[25][40];
-    bool reverse_mode_on;
-    int clear_calls;
-
-    CaptureScreen() : width(40), height(25), cursor_x(0), cursor_y(0), color(0), reverse_mode_on(false), clear_calls(0)
-    {
-        clear();
-    }
-
-    void set_background(int) { }
-    void set_color(int c) { color = c; }
-    int get_color() { return color; }
-    void reverse_mode(int enabled) { reverse_mode_on = enabled != 0; }
-    int get_size_x(void) { return width; }
-    int get_size_y(void) { return height; }
-    void backup(void) { }
-    void restore(void) { }
-    void clear()
-    {
-        clear_calls++;
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                chars[y][x] = ' ';
-                colors[y][x] = 0;
-                reverse_chars[y][x] = false;
-                write_counts[y][x] = 0;
-            }
-        }
-        cursor_x = 0;
-        cursor_y = 0;
-        reverse_mode_on = false;
-    }
-
-    void move_cursor(int x, int y)
-    {
-        cursor_x = x;
-        cursor_y = y;
-        if (cursor_x < 0) cursor_x = 0;
-        if (cursor_y < 0) cursor_y = 0;
-        if (cursor_x >= width) cursor_x = width - 1;
-        if (cursor_y >= height) cursor_y = height - 1;
-    }
-
-    int output(char c)
-    {
-        if (c == '\n') {
-            cursor_x = 0;
-            if (cursor_y < height - 1) {
-                cursor_y++;
-            }
-            return 1;
-        }
-        if (cursor_x < width && cursor_y < height) {
-            chars[cursor_y][cursor_x] = c;
-            colors[cursor_y][cursor_x] = (uint8_t)color;
-            reverse_chars[cursor_y][cursor_x] = reverse_mode_on;
-            write_counts[cursor_y][cursor_x]++;
-        }
-        if (cursor_x < width - 1) {
-            cursor_x++;
-        }
-        return 1;
-    }
-
-    int output(const char *string)
-    {
-        int written = 0;
-        while (*string) {
-            written += output(*string++);
-        }
-        return written;
-    }
-
-    void repeat(char c, int rep)
-    {
-        for (int i = 0; i < rep; i++) {
-            output(c);
-        }
-    }
-
-    void output_fixed_length(const char *string, int, int width_to_write)
-    {
-        for (int i = 0; i < width_to_write; i++) {
-            if (string[i]) {
-                output(string[i]);
-            } else {
-                output(' ');
-            }
-        }
-    }
-
-    void get_slice(int x, int y, int len, char *out) const
-    {
-        for (int i = 0; i < len; i++) {
-            out[i] = chars[y][x + i];
-        }
-        out[len] = 0;
-    }
-
-    void reset_write_counts()
-    {
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                write_counts[y][x] = 0;
-            }
-        }
-    }
-
-    int count_writes_outside_rect(int left, int top, int right, int bottom) const
-    {
-        int writes = 0;
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                if (x >= left && x <= right && y >= top && y <= bottom) {
-                    continue;
-                }
-                writes += write_counts[y][x];
-            }
-        }
-        return writes;
-    }
-};
-
-class CaptureWindow : public Window
-{
-    int width;
-public:
-    int last_x;
-    int last_y;
-
-    CaptureWindow(Screen *screen, int width) : Window(screen, 0, 0, width, 1), width(width), last_x(-1), last_y(-1) { }
-
-    void move_cursor(int x, int y)
-    {
-        last_x = x;
-        last_y = y;
-    }
-
-    void output_length(const char *, int) { }
-    void repeat(char, int) { }
-    int get_size_x(void)
-    {
-        return width;
-    }
-};
-
-class TestUserInterface : public UserInterface
-{
-public:
-    int popup_count;
-    char last_popup[128];
-    char last_prompt_message[128];
-    int last_prompt_maxlen;
-    char prompt_texts[8][64];
-    int prompt_results[8];
-    int prompt_count;
-    int prompt_index;
-
-    TestUserInterface() : UserInterface("test", false), popup_count(0), prompt_count(0), prompt_index(0)
-    {
-        last_popup[0] = 0;
-        last_prompt_message[0] = 0;
-        last_prompt_maxlen = 0;
-    }
-
-    void set_prompt(const char *text, int result)
-    {
-        prompt_count = 0;
-        prompt_index = 0;
-        push_prompt(text, result);
-    }
-
-    void push_prompt(const char *text, int result)
-    {
-        if (prompt_count >= (int)(sizeof(prompt_texts) / sizeof(prompt_texts[0]))) {
-            return;
-        }
-        strncpy(prompt_texts[prompt_count], text ? text : "", sizeof(prompt_texts[prompt_count]) - 1);
-        prompt_texts[prompt_count][sizeof(prompt_texts[prompt_count]) - 1] = 0;
-        prompt_results[prompt_count] = result;
-        prompt_count++;
-    }
-
-    int popup(const char *msg, uint8_t)
-    {
-        popup_count++;
-        strncpy(last_popup, msg ? msg : "", sizeof(last_popup) - 1);
-        last_popup[sizeof(last_popup) - 1] = 0;
-        return BUTTON_OK;
-    }
-
-    int string_box(const char *msg, char *buffer, int maxlen)
-    {
-        strncpy(last_prompt_message, msg ? msg : "", sizeof(last_prompt_message) - 1);
-        last_prompt_message[sizeof(last_prompt_message) - 1] = 0;
-        last_prompt_maxlen = maxlen;
-        if (prompt_index >= prompt_count) {
-            return 0;
-        }
-        int result = prompt_results[prompt_index];
-        if (result > 0) {
-            strncpy(buffer, prompt_texts[prompt_index], maxlen);
-            buffer[maxlen - 1] = 0;
-        }
-        prompt_index++;
-        return result;
-    }
-
-    int string_box(const char *msg, char *buffer, int maxlen, bool)
-    {
-        return string_box(msg, buffer, maxlen);
-    }
-
-    int string_box(const char *msg, char *buffer, int maxlen, bool, bool)
-    {
-        return string_box(msg, buffer, maxlen);
-    }
-};
-
 class TaskActionProvider : public ObjectWithMenu
 {
 public:
@@ -962,138 +212,6 @@ public:
         last_writable = writablePath;
     }
 };
-
-static int fail(const char *message)
-{
-    puts(message);
-    return 1;
-}
-
-static int expect(int condition, const char *message)
-{
-    if (!condition) {
-        return fail(message);
-    }
-    return 0;
-}
-
-static int popup_longest_line(const char *msg)
-{
-    int longest = 0;
-    int current = 0;
-    while (msg && *msg) {
-        if (*msg == '\n') {
-            if (current > longest) longest = current;
-            current = 0;
-        } else if (*msg != '\r') {
-            current++;
-        }
-        msg++;
-    }
-    if (current > longest) longest = current;
-    return longest;
-}
-
-static int expect_screens_equal(const CaptureScreen &a, const CaptureScreen &b, const char *message)
-{
-    for (int y = 0; y < 25; y++) {
-        for (int x = 0; x < 40; x++) {
-            if (a.chars[y][x] != b.chars[y][x] ||
-                a.reverse_chars[y][x] != b.reverse_chars[y][x]) {
-                return fail(message);
-            }
-        }
-    }
-    return 0;
-}
-
-static bool find_popup_rect(const CaptureScreen &screen, int *left, int *top, int *right, int *bottom)
-{
-    for (int y = 0; y < 25; y++) {
-        for (int x = 0; x < 40; x++) {
-            if ((unsigned char)screen.chars[y][x] != BORD_LOWER_RIGHT_CORNER) {
-                continue;
-            }
-            for (int xr = x + 2; xr < 40; xr++) {
-                if ((unsigned char)screen.chars[y][xr] != BORD_LOWER_LEFT_CORNER) {
-                    continue;
-                }
-                for (int yb = y + 2; yb < 25; yb++) {
-                    int width = xr - x + 1;
-                    int height = yb - y + 1;
-                    if (width >= 38 || height >= 23) {
-                        continue;
-                    }
-                    if ((unsigned char)screen.chars[yb][x] == BORD_UPPER_RIGHT_CORNER &&
-                        (unsigned char)screen.chars[yb][xr] == BORD_UPPER_LEFT_CORNER) {
-                        if (left) *left = x;
-                        if (top) *top = y;
-                        if (right) *right = xr;
-                        if (bottom) *bottom = yb;
-                        return true;
-                    }
-                }
-            }
-        }
-    }
-    return false;
-}
-
-static int find_highlighted_cell(const CaptureScreen &screen, int *x, int *y)
-{
-    for (int row = 0; row < 25; row++) {
-        for (int col = 0; col < 40; col++) {
-            if (screen.reverse_chars[row][col]) {
-                if (x) *x = col;
-                if (y) *y = row;
-                return 1;
-            }
-        }
-    }
-    return 0;
-}
-
-static void get_popup_line(const CaptureScreen &screen, int row, char *out, int out_len)
-{
-    int left = 0;
-    int top = 0;
-    int right = 0;
-    int bottom = 0;
-    int width;
-
-    if (!find_popup_rect(screen, &left, &top, &right, &bottom)) {
-        if (out_len > 0) {
-            out[0] = 0;
-        }
-        return;
-    }
-
-    width = right - left - 1;
-    if (width < 0) {
-        width = 0;
-    }
-    if (width > out_len - 1) {
-        width = out_len - 1;
-    }
-    screen.get_slice(left + 1, top + 1 + row, width, out);
-}
-
-static int popup_corner_diagonal_distance(int popup_left, int popup_top, int popup_right, int popup_bottom,
-                                          int cursor_x, int cursor_y)
-{
-    int distances[4];
-    distances[0] = abs(popup_left - cursor_x) + abs(popup_top - cursor_y);
-    distances[1] = abs(popup_right - cursor_x) + abs(popup_top - cursor_y);
-    distances[2] = abs(popup_left - cursor_x) + abs(popup_bottom - cursor_y);
-    distances[3] = abs(popup_right - cursor_x) + abs(popup_bottom - cursor_y);
-    int best = distances[0];
-    for (int i = 1; i < 4; i++) {
-        if (distances[i] < best) {
-            best = distances[i];
-        }
-    }
-    return best;
-}
 
 static int test_disassembler(void)
 {
@@ -1822,6 +940,28 @@ static int test_monitor_interaction(void)
     FakeBankedMemoryBackend banked_backend;
     char line[MONITOR_DISASM_ROW_CHARS + 1];
     char status[39];
+    static const char *expected_help_lines[] = {
+        "",
+        "M Memory    I ASCII     V Screen",
+        "A Assembly  B Binary    U Undoc Op",
+        "J Jump      G Go",
+        "",
+        "E Edit      F Fill      T Transfer",
+        "C Compare   H Hunt      N Number",
+        "W Width     R Range     P Poll",
+        "Z Freeze    O CPU Bank  Sh+O VIC",
+        "L Load      S Save",
+        "",
+        "Bookmarks:",
+        "0-9 Recall  C=+0-9 Set  C=+B List",
+        "",
+        "Open monitor:  C=+O",
+        "Close monitor: C=+O / ESC",
+        "Leave edit:    C=+E",
+        "Copy/Paste:    C=+C / C=+V",
+        "",
+        NULL
+    };
     monitor_reset_saved_state();
 
     for (int i = 0; i < MONITOR_TEXT_BYTES_PER_ROW * 18; i++) {
@@ -1871,25 +1011,10 @@ static int test_monitor_interaction(void)
 
     if (expect(help_monitor.poll(0) == 0, "F3 help open failed.")) return 1;
     screen.get_slice(1, 3, 38, status);
-    if (expect(strstr(status, "Help (F3/? closes)") == status, "Help header should replace the normal view header.")) return 1;
+    if (expect(strstr(status, "HELP") == status, "Help header should replace the normal view header.")) return 1;
+    screen.get_slice(1, 22, 38, status);
+    if (expect(strspn(status, " ") == strlen(status), "Help view should blank the footer row instead of showing CPU/VIC status.")) return 1;
     {
-        static const char *expected_help_lines[] = {
-            "M Memory    I ASCII     V Screen",
-            "A Assembly  B Binary    U Undoc Op",
-            "J Jump      G Go",
-            "",
-            "E Edit      F Fill      T Transfer",
-            "C Compare   H Hunt      N Number",
-            "W Width     R Range     Z Freeze",
-            "O CPU Bank  Sh+O VIC",
-            "L Load      S Save",
-            "",
-            "Open monitor:  C=+O",
-            "Close monitor: C=+O / ESC",
-            "Leave edit:    C=+E",
-            "Copy/Paste:    C=+C / C=+V",
-            NULL
-        };
         for (int i = 0; expected_help_lines[i]; i++) {
             screen.get_slice(1, 4 + i, 38, line);
             if (expect(strncmp(line, expected_help_lines[i], strlen(expected_help_lines[i])) == 0,
@@ -1913,9 +1038,13 @@ static int test_monitor_interaction(void)
         MachineMonitor esc_help_monitor(&ui, &backend);
         esc_help_monitor.init(&screen, &esc_help_keyboard);
         if (expect(esc_help_monitor.poll(0) == 0, "F3 should open help before ESC handling is tested.")) return 1;
-        screen.get_slice(1, 4, 38, line);
-        if (expect(strncmp(line, "M Memory    I ASCII     V Screen", strlen("M Memory    I ASCII     V Screen")) == 0,
-                   "Help must be visible before ESC closes it.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strspn(status, " ") == strlen(status), "Help must clear the footer row before ESC closes it.")) return 1;
+        for (int i = 0; expected_help_lines[i]; i++) {
+            screen.get_slice(1, 4 + i, 38, line);
+            if (expect(strncmp(line, expected_help_lines[i], strlen(expected_help_lines[i])) == 0,
+                       "Help must be visible before ESC closes it.")) return 1;
+        }
         if (expect(esc_help_monitor.poll(0) == 0, "ESC should close help without exiting the monitor.")) return 1;
         screen.get_slice(1, 3, 38, line);
         if (expect(strstr(line, "MONITOR HEX $0000") == line, "ESC should restore the normal monitor header after closing help.")) return 1;
@@ -2116,9 +1245,11 @@ static int test_monitor_interaction(void)
         exit_monitor.init(&screen, &exit_keyboard);
         if (expect(exit_monitor.poll(0) == 0, "F3 edit-help setup via 'e' failed.")) return 1;
         if (expect(exit_monitor.poll(0) == 0, "F3 should toggle help while keeping edit mode.")) return 1;
-        screen.get_slice(1, 4, 38, line);
-        if (expect(strncmp(line, "M Memory    I ASCII     V Screen", strlen("M Memory    I ASCII     V Screen")) == 0,
-                   "F3 did not open help while editing.")) return 1;
+        for (int i = 0; expected_help_lines[i]; i++) {
+            screen.get_slice(1, 4 + i, 38, line);
+            if (expect(strncmp(line, expected_help_lines[i], strlen(expected_help_lines[i])) == 0,
+                       "F3 did not open help while editing.")) return 1;
+        }
         if (expect(exit_monitor.poll(0) == 0, "F3 should close help while keeping edit mode.")) return 1;
         if (expect(exit_monitor.poll(0) == 0, "F3-preserved edit mode first nibble failed.")) return 1;
         if (expect(exit_monitor.poll(0) == 0, "F3-preserved edit mode second nibble failed.")) return 1;
@@ -2203,7 +1334,7 @@ static int test_monitor_default_cpu_bank_and_vic_shortcuts(void)
     char status[39];
     const int keys[] = {
         'J',
-        'o', '1',
+        'o', '.',
         'o', 'o', 'o', 'o', 'o', 'o', 'o', 'o',
         'O', 'O', 'O', 'O',
         KEY_BREAK
@@ -2265,11 +1396,11 @@ static int test_monitor_default_cpu_bank_and_vic_shortcuts(void)
                "CPU0 must expose RAM at A000.")) return 1;
     if (expect(ui.popup_count == 0, "Plain O must not open a popup.")) return 1;
 
-    if (expect(monitor.poll(0) == 0, "Digit key should be ignored after plain O.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Unmapped key should be ignored after plain O.")) return 1;
     screen.get_slice(1, 22, 38, status);
     if (expect(strstr(status, "CPU0 $A:RAM $D:RAM $E:RAM VIC2 $8000") == status,
-               "Number keys must not be captured for CPU bank selection.")) return 1;
-    if (expect(ui.popup_count == 0, "Digit keys must not trigger CPU bank popups.")) return 1;
+               "Unmapped keys must not be captured for CPU bank selection.")) return 1;
+    if (expect(ui.popup_count == 0, "Unmapped keys must not trigger CPU bank popups.")) return 1;
 
     for (unsigned int i = 0; i < sizeof(cpu_cycle_status) / sizeof(cpu_cycle_status[0]); i++) {
         if (expect(monitor.poll(0) == 0, "Ascending CPU bank cycle failed.")) return 1;
@@ -4071,8 +3202,8 @@ static int test_illegal_mode_header_label(void)
                "Visible monitor UI must no longer show the old IllOp label.")) return 1;
     if (expect(mon.poll(0) == 0, "Illegal mode label test: U toggle failed.")) return 1;
     screen.get_slice(1, 3, 38, line);
-    if (expect(strstr(line, "UndocOp") != NULL,
-               "Enabled undocumented-opcode mode must show the UndocOp label in the header.")) return 1;
+    if (expect(strstr(line, "Undoc") != NULL,
+               "Enabled undocumented-opcode mode must show the compact Undoc label in the header.")) return 1;
     if (expect(strstr(line, "Illegal:ON") == NULL,
                "Illegal opcode mode must no longer show the old long header text.")) return 1;
     if (expect(mon.poll(0) == 1, "Illegal mode label test: exit failed.")) return 1;
@@ -4879,10 +4010,10 @@ static int test_header_invariants_and_parity(void)
         if (expect(screen.colors[3][35] == 1 && screen.colors[3][36] == 1 &&
                    screen.colors[3][37] == 1 && screen.colors[3][38] == 1,
                    "EDIT must use the shared UI accent colour used for the help/title text.")) return 1;
-        if (expect(strncmp(header + 20, "Range", 5) == 0,
+        if (expect(strncmp(header + 19, "Range", 5) == 0,
                    "Range indicator must use its fixed slot.")) return 1;
-        if (expect(strncmp(header + 27, "Freeze", 6) == 0,
-                   "Freeze indicator must use its fixed slot.")) return 1;
+        if (expect(strncmp(header + 25, "Frz", 3) == 0,
+                   "Freeze indicator must use its compact fixed slot.")) return 1;
         if (expect(strstr(header, "W=") == NULL,
                    "Header must not display binary width.")) return 1;
         if (expect(mon.poll(0) == 0, "Header test: RUN/STOP should leave edit mode first.")) return 1;
@@ -4935,6 +4066,100 @@ static int test_header_invariants_and_parity(void)
     return 0;
 }
 
+static int test_poll_mode_refreshes_visible_ram(void)
+{
+    struct FakeNtscMemoryBackend : public FakeMemoryBackend {
+        virtual uint8_t monitor_poll_hz(void) const { return 60; }
+    };
+
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char header[39];
+    char line[9];
+    const int keys[] = { 'P' };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+    set_fake_ms_timer(0);
+    backend.write(0x0000, 0x11);
+
+    MachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, "Poll mode test: P toggle failed.")) return 1;
+
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strncmp(header + 29, "Poll", 4) == 0,
+               "Poll indicator must appear in the top-right flag area.")) return 1;
+
+    screen.get_slice(1, 4, 8, line);
+    if (expect(strncmp(line, "0000 11", 7) == 0,
+               "Poll mode test setup must render the original byte.")) return 1;
+
+    backend.write(0x0000, 0x22);
+    set_fake_ms_timer(19);
+    if (expect(mon.poll(0) == 0, "Poll mode test: early idle poll failed.")) return 1;
+    screen.get_slice(1, 4, 8, line);
+    if (expect(strncmp(line, "0000 11", 7) == 0,
+               "Poll mode must not refresh before the PAL frame interval elapses.")) return 1;
+
+    advance_fake_ms_timer(1);
+    if (expect(mon.poll(0) == 0, "Poll mode test: timed idle poll failed.")) return 1;
+    screen.get_slice(1, 4, 8, line);
+    if (expect(strncmp(line, "0000 22", 7) == 0,
+               "Poll mode must refresh the displayed RAM at PAL frame rate.")) return 1;
+
+    mon.deinit();
+
+    {
+        TestUserInterface ntsc_ui;
+        CaptureScreen ntsc_screen;
+        FakeNtscMemoryBackend ntsc_backend;
+        const int ntsc_keys[] = { 'P' };
+        FakeKeyboard ntsc_kb(ntsc_keys, sizeof(ntsc_keys) / sizeof(ntsc_keys[0]));
+
+        ntsc_ui.screen = &ntsc_screen;
+        ntsc_ui.keyboard = &ntsc_kb;
+        monitor_reset_saved_state();
+        set_fake_ms_timer(0);
+        ntsc_backend.write(0x0000, 0x11);
+
+        MachineMonitor ntsc_mon(&ntsc_ui, &ntsc_backend);
+        ntsc_mon.init(&ntsc_screen, &ntsc_kb);
+        if (expect(ntsc_mon.poll(0) == 0, "NTSC poll mode test: P toggle failed.")) return 1;
+
+        ntsc_backend.write(0x0000, 0x22);
+        set_fake_ms_timer(15);
+        if (expect(ntsc_mon.poll(0) == 0, "NTSC poll mode test: early first poll failed.")) return 1;
+        ntsc_screen.get_slice(1, 4, 8, line);
+        if (expect(strncmp(line, "0000 11", 7) == 0,
+                   "NTSC poll mode must not refresh before the first 16 ms frame slice.")) return 1;
+
+        advance_fake_ms_timer(1);
+        if (expect(ntsc_mon.poll(0) == 0, "NTSC poll mode test: first frame poll failed.")) return 1;
+        ntsc_screen.get_slice(1, 4, 8, line);
+        if (expect(strncmp(line, "0000 22", 7) == 0,
+                   "NTSC poll mode must refresh on the first 16 ms frame slice.")) return 1;
+
+        ntsc_backend.write(0x0000, 0x33);
+        set_fake_ms_timer(32);
+        if (expect(ntsc_mon.poll(0) == 0, "NTSC poll mode test: early second poll failed.")) return 1;
+        ntsc_screen.get_slice(1, 4, 8, line);
+        if (expect(strncmp(line, "0000 22", 7) == 0,
+                   "NTSC poll mode must carry the 60 Hz fractional frame interval.")) return 1;
+
+        advance_fake_ms_timer(1);
+        if (expect(ntsc_mon.poll(0) == 0, "NTSC poll mode test: second frame poll failed.")) return 1;
+        ntsc_screen.get_slice(1, 4, 8, line);
+        if (expect(strncmp(line, "0000 33", 7) == 0,
+                   "NTSC poll mode must average to 60 Hz with 16/17 ms frame slices.")) return 1;
+        ntsc_mon.deinit();
+    }
+    return 0;
+}
+
 static int test_edit_indicator_layout_across_views(void)
 {
     static const int hex_keys[] = { 'E' };
@@ -4983,7 +4208,7 @@ static int test_edit_indicator_layout_across_views(void)
         CaptureScreen screen;
         FakeBankedMemoryBackend backend;
         char header[39];
-        const int keys[] = { 'A', 'U', 'Z', 'E' };
+        const int keys[] = { 'A', 'U', 'Z', 'P', 'E' };
         FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
 
         ui.screen = &screen;
@@ -4996,12 +4221,14 @@ static int test_edit_indicator_layout_across_views(void)
             if (expect(mon.poll(0) == 0, "Edit indicator layout test: ASM/freeze sequence failed.")) return 1;
         }
         screen.get_slice(1, 3, 38, header);
-        if (expect(strncmp(header + 20, "UndocOp", 7) == 0,
-                   "UndocOp must remain visible to the left of EDIT.")) return 1;
-        if (expect(strncmp(header + 27, "Freeze", 6) == 0,
-                   "Freeze must remain visible to the left of EDIT.")) return 1;
+        if (expect(strncmp(header + 19, "Undoc", 5) == 0,
+                   "Undoc must remain visible to the left of Poll and EDIT.")) return 1;
+        if (expect(strncmp(header + 25, "Frz", 3) == 0,
+                   "Frz must remain visible to the left of Poll and EDIT.")) return 1;
+        if (expect(strncmp(header + 29, "Poll", 4) == 0,
+                   "Poll must appear immediately to the left of EDIT.")) return 1;
         if (expect(strncmp(header + 34, "EDIT", 4) == 0,
-                   "EDIT must remain fixed at the far right when UndocOp and Freeze are active.")) return 1;
+                   "EDIT must remain fixed at the far right when Undoc, Freeze, and Poll are active.")) return 1;
         mon.deinit();
     }
 
@@ -5338,6 +4565,7 @@ int main()
     if (test_load_save_and_goto_command_flow()) return 1;
     if (test_hex_single_nibble_commits_on_navigation()) return 1;
     if (test_header_invariants_and_parity()) return 1;
+    if (test_poll_mode_refreshes_visible_ram()) return 1;
     if (test_edit_indicator_layout_across_views()) return 1;
     if (test_warning_popups_preserve_status_row()) return 1;
     if (test_restricted_backend_guards_platform_features()) return 1;

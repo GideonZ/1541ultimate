@@ -44,6 +44,12 @@ int Keyboard_VT100 :: getch()
 		} else if (charin == '[') {
 			escape_state = e_esc_bracket;
 			escape_value = 0;
+		} else if (charin >= '0' && charin <= '9') {
+			escape_state = e_esc_idle;
+			ret = key_ctrl_digit(charin - '0');
+		} else if (charin == 'b' || charin == 'B') {
+			escape_state = e_esc_idle;
+			ret = KEY_CTRL_B;
 		} else {
 			if (charin != '\e')
 				escape_state = e_esc_idle;

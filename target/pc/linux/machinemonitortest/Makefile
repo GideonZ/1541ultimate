@@ -21,9 +21,11 @@ SRCS_CC  = small_printf.cc \
 			mystring.cc \
 			screen.cc \
 			ui_elements.cc \
+			monitor_bookmarks.cc \
 			machine_monitor.cc \
 			disassembler_6502.cc \
 			assembler_6502.cc \
+			machine_monitor_test_support.cc \
 			machine_monitor_test.cc
 
 SRCS_ASM =

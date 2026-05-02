@@ -50,9 +50,13 @@ KEYS = {
     "F5": b"\x1b[15~",
     "F3": b"\x1b[13~",
     "RUNSTOP": b"\x11",
+    "CTRL_B": b"\x02",
     "CTRL_O": b"\x0f",
+    "CBM_B": b"\x1bb",
+    "CBM_1": b"\x1b1",
     "ESC": b"\x1b",
     "ENTER": b"\r",
+    "DEL": b"\x7f",
 }
 
 VIEW_KEYS = {
@@ -452,6 +456,16 @@ def assert_status_contains(snapshot: Snapshot, expected: str) -> None:
     assert_contains(snapshot, line_index, expected)
 
 
+def assert_line_contains_all(snapshot: Snapshot, values: Tuple[str, ...]) -> int:
+    for index, line in enumerate(snapshot.lines):
+        if all(value in line for value in values):
+            return index
+    raise Failure(
+        f"Snapshot mismatch after {snapshot.last_command}: expected one line to contain {values!r}\n"
+        f"actual:\n{snapshot.text()}"
+    )
+
+
 def assert_equal(label: str, expected: str, actual: str, command: str) -> None:
     if expected != actual:
         diff = "\n".join(
@@ -649,6 +663,47 @@ def run_go_visible_state_test(session: MonitorSession, rest_host: str) -> None:
     session.enter_monitor()
 
 
+def run_bookmark_test(session: MonitorSession) -> None:
+    screen = ensure_view(session, "HEX ")
+
+    screen = session.send_key("CTRL_B")
+    screen.find_line_containing("BOOKMARKS")
+    screen = session.send_key("DOWN")
+    screen = session.send_key("DEL")
+    assert_line_contains_all(screen, ("1 SCREEN", "$0400", "SCR"))
+    screen = session.send_key("CTRL_B")
+    screen.find_line_containing("MONITOR")
+
+    screen = session.goto("C123")
+    screen.find_line_containing("MONITOR HEX $C123")
+    screen = session.send_key("CBM_1")
+    assert_line_contains_all(screen, ("BM1 SCREEN $C123 HEX", "SET"))
+
+    screen = session.goto("E000")
+    screen.find_line_containing("MONITOR HEX $E000")
+    screen = session.send_char("1")
+    screen.find_line_containing("MONITOR HEX $C123")
+    screen.find_line_containing("BM1 SCREEN $C123 HEX")
+
+    screen = session.send_key("CTRL_B")
+    screen.find_line_containing("BOOKMARKS")
+    assert_line_contains_all(screen, ("1 SCREEN", "$C123", "HEX"))
+    screen.find_line_containing("0-9/RET Go  S Set  L Label  DEL Reset")
+
+    screen = session.send_key("DOWN")
+    screen = session.send_char("L")
+    screen = session.send_text("\b\b\b\b\b\bE2E\r", "bookmark label E2E")
+    assert_line_contains_all(screen, ("1 E2E", "$C123", "HEX"))
+
+    screen = session.send_key("CTRL_B")
+    screen.find_line_containing("MONITOR HEX $C123")
+    screen = session.goto("E000")
+    screen.find_line_containing("MONITOR HEX $E000")
+    screen = session.send_char("1")
+    screen.find_line_containing("MONITOR HEX $C123")
+    screen.find_line_containing("BM1 E2E $C123 HEX")
+
+
 def run_tests(session: MonitorSession, rest_host: str) -> None:
     snapshots = load_snapshots()
 
@@ -679,6 +734,7 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
             assert_contains(screen, int(row), expected)
 
     with check("KERNAL $E010 REST match"):
+        screen = ensure_view(session, "HEX ")
         screen = session.goto("E010")
         assert_rest_matches_row(screen, 4, 0xE010, rest_host)
 
@@ -767,6 +823,9 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
 
     with check("G handoff preserves stable VIC state"):
         run_go_visible_state_test(session, rest_host)
+
+    with check("bookmarks recall, set, list, and label edit"):
+        run_bookmark_test(session)
 
 
 def main() -> int:

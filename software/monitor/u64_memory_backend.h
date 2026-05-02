@@ -19,6 +19,7 @@ public:
     virtual void read_block(uint16_t address, uint8_t *dst, uint16_t len);
     virtual uint8_t get_live_cpu_port(void);
     virtual uint8_t get_live_vic_bank(void);
+    virtual uint8_t monitor_poll_hz(void) const;
     virtual void begin_session(void);
     virtual void end_session(void);
 

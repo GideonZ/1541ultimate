@@ -106,6 +106,8 @@ class UserInterface;
 class Screen;
 class Keyboard;
 class Window;
+class MonitorBookmarks;
+struct MonitorBookmarkSlot;
 
 class MachineMonitor : public UIObject
 {
@@ -132,6 +134,9 @@ class MachineMonitor : public UIObject
     int content_height;
     int pending_hex_nibble;
     bool edit_mode;
+    bool poll_mode;
+    uint16_t poll_deadline;
+    uint8_t poll_fraction;
     bool edit_cursor_visible;
     bool help_visible;
     bool range_mode;
@@ -181,6 +186,13 @@ class MachineMonitor : public UIObject
     uint8_t current_vic_bank;
     uint8_t last_live_vic_bank;
     bool vic_bank_override;
+    MonitorBookmarks *bookmarks;
+    bool bookmark_popup_active;
+    uint8_t bookmark_selected;
+    char bookmark_status_text[40];
+    bool bookmark_status_visible;
+    bool bookmark_status_emphasis;
+    uint16_t bookmark_status_deadline;
     // Cursor bit-position within the current byte in BINARY view.
     // 7 = MSB (leftmost rendered bit), 0 = LSB. Horizontal navigation and
     // typed 0/1 edits advance by one bit.
@@ -197,10 +209,13 @@ class MachineMonitor : public UIObject
     uint8_t binary_byte_stride(void) const;
     void apply_go_local(uint16_t address);
     bool number_shortcut_allowed(void) const;
+    bool bookmark_shortcut_allowed(void) const;
+    bool bookmark_set_shortcut_allowed(void) const;
     void draw();
     void draw_header();
     void draw_status();
     void draw_help();
+    void draw_bookmark_popup();
     void draw_number_picker();
     void refresh_popup_overlay();
     void draw_hex();
@@ -255,6 +270,15 @@ class MachineMonitor : public UIObject
     int number_picker_handle_key(int key);
     bool prompt_command(const char *title, char *buffer, int max_len, bool template_mode = false);
     void toggle_help();
+    void dismiss_bookmark_status(void);
+    bool update_bookmark_status(void);
+    void show_bookmark_status(uint8_t slot, const MonitorBookmarkSlot *bookmark, int kind);
+    void clear_bookmark_transient_state(void);
+    void capture_bookmark(MonitorBookmarkSlot *bookmark) const;
+    bool restore_bookmark(uint8_t slot);
+    void set_bookmark(uint8_t slot);
+    void edit_bookmark_label(uint8_t slot);
+    int bookmark_popup_handle_key(int key);
     int handle_key(int key);
     void handle_load_command();
     void handle_save_command();
@@ -282,6 +306,8 @@ class MachineMonitor : public UIObject
     void exit_edit_mode();
     void reset_edit_blink();
     bool update_edit_blink();
+    uint16_t next_poll_interval_ms(void);
+    void reset_poll_deadline(void);
     uint8_t disasm_length(uint16_t address) const;
     bool    asm_is_branch(uint16_t address);
     uint8_t asm_edit_part_count(uint16_t address);

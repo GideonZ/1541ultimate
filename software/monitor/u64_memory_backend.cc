@@ -222,3 +222,8 @@ uint8_t U64MemoryBackend :: get_live_vic_bank(void)
     uint8_t dd00 = ((U64Machine *)C64 :: getMachine())->peek_cpu(0xDD00, 0x07);
     return (uint8_t)(3 - (dd00 & 0x03));
 }
+
+uint8_t U64MemoryBackend :: monitor_poll_hz(void) const
+{
+    return (C64_VIDEOFORMAT & VIDEO_FMT_60_HZ) ? 60 : 50;
+}
