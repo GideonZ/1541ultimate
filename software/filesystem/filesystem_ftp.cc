@@ -11,6 +11,10 @@
 #include "node_directfs.h"
 #include "network_config.h"
 #include "init_function.h"
+#include "json.h"
+extern "C" {
+void url_decode(char *src, char *dest, int max);
+}
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -494,75 +498,108 @@ FRESULT FTPRootNode :: save_servers()
     File *fo;
     FileManager *fm = FileManager :: getFileManager();
     fm->create_dir(CFG_FILEPATH);
-    FRESULT fres = fm->fopen(CFG_FILEPATH, FTP_SERVERS, FA_WRITE | FA_OPEN_ALWAYS, &fo);
+    FRESULT fres = fm->fopen(CFG_FILEPATH, FTP_SERVERS, FA_WRITE | FA_CREATE_ALWAYS, &fo);
     if (fres != FR_OK) {
         return fres;
     }
 
-    char line[200];
+    JSON_Object *root = JSON::Obj();
+    JSON_List *servers = JSON::List();
+    root->add("version", 1);
+    root->add("servers", servers);
+
     for (int i=0; i < children.get_elements(); i++) {
         FTPServer *serv = (FTPServer *)children[i];
-        const char *user = serv->user.c_str();
-        const char *passw = serv->passw.c_str();
-        const char *folder = serv->folder.c_str();
-        if (!(*user)) user = "~~";
-        if (!(*passw)) passw = "~~";
-        if (!(*folder)) folder = "/";
+        mstring encoded_password;
+        url_encode(serv->passw.c_str(), encoded_password);
 
-        int len = snprintf(line, 200, "%s %s %d %s %s %s\n", serv->alias.c_str(),
-                    serv->host.c_str(), serv->port, user, passw, folder);
-        uint32_t _tr;
-        FRESULT fres = fo->write(line, len, &_tr);
-        if (fres != FR_OK) {
-            break;
-        }
+        servers->add(JSON::Obj()
+            ->add("alias", serv->alias.c_str())
+            ->add("host", serv->host.c_str())
+            ->add("port", (int)serv->port)
+            ->add("user", serv->user.c_str())
+            ->add("password", encoded_password.c_str())
+            ->add("folder", serv->folder.c_str()));
     }
+
+    const char *text = root->render();
+    int len = strlen(text);
+    uint32_t transferred = 0;
+    fres = fo->write(text, len, &transferred);
+    if ((fres == FR_OK) && (transferred != (uint32_t)len)) {
+        fres = FR_DISK_ERR;
+    }
+    delete root;
     fm->fclose(fo);
     return fres;
+}
+
+static const char *json_string_or(JSON_Object *obj, const char *key, const char *fallback)
+{
+    JSON *value = obj ? obj->get(key) : NULL;
+    if (value && (value->type() == eString)) {
+        return ((JSON_String *)value)->get_string();
+    }
+    return fallback;
+}
+
+static int json_int_or(JSON_Object *obj, const char *key, int fallback)
+{
+    JSON *value = obj ? obj->get(key) : NULL;
+    if (value && (value->type() == eInteger)) {
+        return ((JSON_Integer *)value)->get_value();
+    }
+    return fallback;
 }
 
 void FTPRootNode :: load_servers_impl(File *f)
 {
     uint32_t size = f->get_size();
-    if ((size > 12288) || (size < 8)) { // max 12K partition paths file
+    if ((size > 12288) || (size < 2)) { // max 12K FTP server config file
         return;
     }
     char *buffer = new char[size+1];
-    char *linebuf = new char[256];
-    char *name;
 
     uint32_t transferred;
     f->read(buffer, size, &transferred);
     buffer[transferred] = 0;
 
-    uint32_t index = 0;
-
-    const char *words[6];
-    while(index < size) {
-        index = read_line(buffer, index, linebuf, 256);
-        int len = strlen(linebuf);
-        bool trigger = false;
-        if (len > 0) {
-            words[0] = linebuf;
-            int w = 1;
-            for(int i=0; i<len; i++) {
-                if ((linebuf[i] == ' ') || (linebuf[i] == '\t')) {
-                    linebuf[i] = 0;
-                    trigger = true;
-                } else if(trigger) {
-                    trigger = false;
-                    if (w <= 5) {
-                        words[w++] = linebuf + i;
-                    }
+    JSON *root_json = NULL;
+    int tokens = convert_text_to_json_objects(buffer, transferred, 512, &root_json);
+    if ((tokens > 0) && root_json && (root_json->type() == eObject)) {
+        JSON *servers_json = ((JSON_Object *)root_json)->get("servers");
+        if (servers_json && (servers_json->type() == eList)) {
+            JSON_List *servers = (JSON_List *)servers_json;
+            for (int i=0; i < servers->get_num_elements(); i++) {
+                JSON *entry_json = (*servers)[i];
+                if (!entry_json || (entry_json->type() != eObject)) {
+                    continue;
                 }
+
+                JSON_Object *entry = (JSON_Object *)entry_json;
+                const char *alias = json_string_or(entry, "alias", "");
+                const char *host = json_string_or(entry, "host", "");
+                if (!alias[0] || !host[0]) {
+                    continue;
+                }
+
+                int port = json_int_or(entry, "port", 21);
+                char portstr[8];
+                sprintf(portstr, "%d", port);
+
+                const char *user = json_string_or(entry, "user", "anonymous");
+                const char *encoded_password = json_string_or(entry, "password", "");
+                const char *folder = json_string_or(entry, "folder", "/");
+                char *password = new char[1 + strlen(encoded_password)];
+                strcpy(password, encoded_password);
+                url_decode(password, password, 0);
+
+                children.append(new FTPServer(this, alias, host, portstr, user, password, folder));
+                delete[] password;
             }
-            for(int i=0;i<6;i++) {
-                if (strcmp(words[i], "~~") == 0) words[i] = "";
-            }
-            children.append(new FTPServer(this, words[0], words[1], words[2], words[3], words[4], words[5]));
         }
     }
-    delete[] linebuf;
+    delete root_json;
     delete[] buffer;
 }
 
