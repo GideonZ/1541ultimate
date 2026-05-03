@@ -28,6 +28,7 @@
 #define HTTP_CMD_BODY_QUERY       0x2A
 #define HTTP_CMD_BODY_MOVE        0x2B
 #define HTTP_CMD_BODY_ADD_BINARY  0x2C
+#define HTTP_CMD_BODY_ADD         0x2D
 #define HTTP_CMD_DO_EXCHANGE_OBJ  0x31
 #define HTTP_CMD_DO_EXCHANGE_RAW  0x32
 
@@ -210,6 +211,10 @@ class HttpBodySlot {
     JSON *root_object;
     JSON *current;
     StreamRamFile *binary_blob;
+
+    bool read_encoded_key(const uint8_t *data, int length, int *pos, mstring& key, char *error);
+    JSON *read_encoded_value(const uint8_t *data, int length, int *pos, char *error);
+    bool add_value_to_current(const char *key, JSON *value, char *error);
 public:
     HttpBodySlot(uint8_t fmt) : format(fmt)
     {
@@ -383,6 +388,8 @@ public:
     {
         binary_blob->write(data, length);
     }
+
+    bool add_encoded(const uint8_t *data, int length, char *error);
 
     void move_up(void)
     {
@@ -575,6 +582,7 @@ class HttpTarget : public CommandTarget {
     void cmd_header_list(Message *command, Message **reply, Message **status);
 
     void cmd_body_create(Message *command, Message **reply, Message **status);
+    void cmd_body_add(Message *command, Message **reply, Message **status);
     void cmd_body_add_primitive(Message *command, Message **reply, Message **status, uint8_t type);
     void cmd_body_add_binary(Message *command, Message **reply, Message **status);
     void cmd_body_up(Message *command, Message **reply, Message **status);

@@ -59,6 +59,248 @@ void HttpTarget::reset_responses()
     }
 }
 
+bool HttpBodySlot::read_encoded_key(const uint8_t *data, int length, int *pos, mstring& key, char *error)
+{
+    if (*pos >= length) {
+        sprintf(error, "400 BAD FORMAT: KEY LENGTH EXPECTED");
+        return false;
+    }
+
+    int key_len = data[(*pos)++];
+    if ((*pos + key_len) > length) {
+        sprintf(error, "400 BAD FORMAT: KEY OUT OF BOUNDS");
+        return false;
+    }
+
+    mstring parsed((const char *)data, *pos, *pos + key_len - 1);
+    key = parsed;
+    *pos += key_len;
+    return true;
+}
+
+JSON *HttpBodySlot::read_encoded_value(const uint8_t *data, int length, int *pos, char *error)
+{
+    if (*pos >= length) {
+        sprintf(error, "400 BAD FORMAT: VALUE EXPECTED");
+        return NULL;
+    }
+
+    uint8_t type = data[(*pos)++];
+    switch(type) {
+        case HTTP_DATA_INTEGER:
+            {
+                if ((*pos + 4) > length) {
+                    sprintf(error, "400 BAD FORMAT: INTEGER OUT OF BOUNDS");
+                    return NULL;
+                }
+                uint32_t value = 0;
+                value |= (uint32_t)data[(*pos)++];
+                value |= (uint32_t)data[(*pos)++] << 8;
+                value |= (uint32_t)data[(*pos)++] << 16;
+                value |= (uint32_t)data[(*pos)++] << 24;
+                return new JSON_Integer((int32_t)value);
+            }
+
+        case HTTP_DATA_BOOL:
+            if ((*pos + 1) > length) {
+                sprintf(error, "400 BAD FORMAT: BOOL OUT OF BOUNDS");
+                return NULL;
+            }
+            return new JSON_Bool(data[(*pos)++] != 0);
+
+        case HTTP_DATA_STRING:
+            {
+                if (*pos >= length) {
+                    sprintf(error, "400 BAD FORMAT: STRING LENGTH EXPECTED");
+                    return NULL;
+                }
+                int str_len = data[(*pos)++];
+                if ((*pos + str_len) > length) {
+                    sprintf(error, "400 BAD FORMAT: STRING OUT OF BOUNDS");
+                    return NULL;
+                }
+                mstring value((const char *)data, *pos, *pos + str_len - 1);
+                *pos += str_len;
+                return new JSON_String(value.c_str());
+            }
+
+        case HTTP_DATA_OBJECT:
+            {
+                if (*pos >= length) {
+                    sprintf(error, "400 BAD FORMAT: OBJECT COUNT EXPECTED");
+                    return NULL;
+                }
+                int entries = data[(*pos)++];
+                JSON_Object *obj = new JSON_Object(true);
+                for(int i=0; i<entries; i++) {
+                    mstring key;
+                    if (!read_encoded_key(data, length, pos, key, error)) {
+                        delete obj;
+                        return NULL;
+                    }
+                    JSON *value = read_encoded_value(data, length, pos, error);
+                    if (!value) {
+                        delete obj;
+                        return NULL;
+                    }
+                    JSON *old = obj->get(key.c_str());
+                    if (old) {
+                        obj->remove(old);
+                        delete old;
+                    }
+                    obj->add(key.c_str(), value);
+                }
+                return obj;
+            }
+
+        case HTTP_DATA_ARRAY:
+            {
+                if (*pos >= length) {
+                    sprintf(error, "400 BAD FORMAT: ARRAY COUNT EXPECTED");
+                    return NULL;
+                }
+                int entries = data[(*pos)++];
+                JSON_List *list = JSON::List();
+                for(int i=0; i<entries; i++) {
+                    JSON *value = read_encoded_value(data, length, pos, error);
+                    if (!value) {
+                        delete list;
+                        return NULL;
+                    }
+                    list->add(value);
+                }
+                return list;
+            }
+
+        default:
+            sprintf(error, "400 BAD FORMAT: UNKNOWN DATA TYPE");
+            return NULL;
+    }
+}
+
+bool HttpBodySlot::add_value_to_current(const char *key, JSON *value, char *error)
+{
+    if (!root_object) {
+        if (format == HTTP_TYPE_JSON_ARRAY) {
+            root_object = JSON::List();
+        } else {
+            root_object = new JSON_Object(true);
+        }
+    }
+    if (!current) {
+        current = root_object;
+    }
+
+    if (current->type() == eObject) {
+        if (!key) {
+            sprintf(error, "400 BAD FORMAT: KEY EXPECTED");
+            return false;
+        }
+        JSON_Object *obj = (JSON_Object *)current;
+        JSON *old = obj->get(key);
+        if (old) {
+            obj->remove(old);
+            delete old;
+        }
+        obj->add(key, value);
+        return true;
+    }
+
+    if (current->type() == eList) {
+        ((JSON_List *)current)->add(value);
+        return true;
+    }
+
+    sprintf(error, "400 BAD FORMAT: CURRENT ELEMENT CANNOT CONTAIN VALUES");
+    return false;
+}
+
+bool HttpBodySlot::add_encoded(const uint8_t *data, int length, char *error)
+{
+    if (format == HTTP_TYPE_BINARY) {
+        sprintf(error, "500 BAD FORMAT");
+        return false;
+    }
+    if (length <= 0) {
+        sprintf(error, "400 BAD FORMAT: VALUE EXPECTED");
+        return false;
+    }
+
+    if (!root_object) {
+        if (format == HTTP_TYPE_JSON_ARRAY) {
+            root_object = JSON::List();
+        } else {
+            root_object = new JSON_Object(true);
+        }
+    }
+    if (!current) {
+        current = root_object;
+    }
+
+    int pos = 0;
+    if (current->type() == eObject) {
+        JSON_Object *staging = new JSON_Object(true);
+        while(pos < length) {
+            mstring key;
+            if (!read_encoded_key(data, length, &pos, key, error)) {
+                delete staging;
+                return false;
+            }
+            JSON *value = read_encoded_value(data, length, &pos, error);
+            if (!value) {
+                delete staging;
+                return false;
+            }
+            JSON *old = staging->get(key.c_str());
+            if (old) {
+                staging->remove(old);
+                delete old;
+            }
+            staging->add(key.c_str(), value);
+        }
+
+        IndexedList<const char *> *keys = staging->get_keys();
+        IndexedList<JSON *> *values = staging->get_values();
+        while(keys->get_elements()) {
+            const char *key = (*keys)[0];
+            JSON *value = (*values)[0];
+            if (!add_value_to_current(key, value, error)) {
+                delete staging;
+                return false;
+            }
+            staging->remove(value);
+        }
+        delete staging;
+        return true;
+    }
+
+    if (current->type() == eList) {
+        JSON_List *staging = JSON::List();
+        while(pos < length) {
+            JSON *value = read_encoded_value(data, length, &pos, error);
+            if (!value) {
+                delete staging;
+                return false;
+            }
+            staging->add(value);
+        }
+
+        while(staging->get_num_elements()) {
+            JSON *value = (*staging)[0];
+            if (!add_value_to_current(NULL, value, error)) {
+                delete staging;
+                return false;
+            }
+            staging->remove(value);
+        }
+        delete staging;
+        return true;
+    }
+
+    sprintf(error, "400 BAD FORMAT: CURRENT ELEMENT CANNOT CONTAIN VALUES");
+    return false;
+}
+
 void HttpTarget::parse_command(Message *command, Message **reply, Message **status)
 {
     *reply = &c_message_empty;
@@ -108,6 +350,10 @@ void HttpTarget::parse_command(Message *command, Message **reply, Message **stat
                 }
             }
             *status = &c_status_http_ok;
+            break;
+
+        case HTTP_CMD_BODY_ADD:
+            cmd_body_add(command, reply, status);
             break;
 
         case HTTP_CMD_BODY_ADD_INT:
@@ -334,6 +580,28 @@ void HttpTarget::cmd_body_create(Message *command, Message **reply, Message **st
     data_message.length = 1;
     data_message.last_part = true;
     *reply = &data_message;
+    *status = &c_status_http_ok;
+}
+
+void HttpTarget::cmd_body_add(Message *command, Message **reply, Message **status)
+{
+    if (command->length < 4) {
+        *status = &c_status_bad_cmd;
+        return;
+    }
+
+    uint8_t handle = command->message[2];
+    if(handle >= MAX_HTTP_HANDLES || !bodies[handle]) {
+        *status = &c_status_bad_cmd;
+        return;
+    }
+
+    HttpBodySlot *body = bodies[handle];
+    if (!body->add_encoded(&command->message[3], command->length - 3, (char *)status_message.message)) {
+        *status = &status_message;
+        status_message.length = strlen((char *)status_message.message);
+        return;
+    }
     *status = &c_status_http_ok;
 }
 
