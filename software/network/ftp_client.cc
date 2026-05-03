@@ -7,6 +7,14 @@
 #include "lwip/sockets.h"
 #include "netdb.h"
 
+static void set_socket_recv_timeout(int fd, int seconds)
+{
+    struct timeval tv;
+    tv.tv_sec = seconds;
+    tv.tv_usec = 0;
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
+}
+
 FTPClient::FTPClient()
     : ctrl_fd(-1)
     , response_code(0)
@@ -67,8 +75,7 @@ int FTPClient::send_cmd(const char *cmd)
     if (len < 0 || len >= (int)sizeof(buf)) {
         return -1;
     }
-    int n = send(ctrl_fd, buf, len, 0);
-    if (n != len) {
+    if (send_all(ctrl_fd, buf, len) < 0) {
         printf("[FTP] send failed for '%s'\n", cmd);
         return -1;
     }
@@ -82,12 +89,26 @@ int FTPClient::send_cmd(const char *cmd, const char *arg)
     if (len < 0 || len >= (int)sizeof(buf)) {
         return -1;
     }
-    int n = send(ctrl_fd, buf, len, 0);
-    if (n != len) {
+    if (send_all(ctrl_fd, buf, len) < 0) {
         printf("[FTP] send failed for '%s %s'\n", cmd, arg);
         return -1;
     }
     return read_response();
+}
+
+int FTPClient::send_all(int fd, const void *buf, int len)
+{
+    const uint8_t *p = (const uint8_t *)buf;
+    int done = 0;
+
+    while (done < len) {
+        int n = send(fd, p + done, len - done, 0);
+        if (n <= 0) {
+            return -1;
+        }
+        done += n;
+    }
+    return 0;
 }
 
 int FTPClient::parse_pasv(uint32_t &ip, uint16_t &port)
@@ -159,6 +180,7 @@ int FTPClient::open(const char *host, uint16_t port)
         printf("[FTP] socket() failed\n");
         return -1;
     }
+    set_socket_recv_timeout(ctrl_fd, 10);
 
     struct sockaddr_in serv_addr;
     memset(&serv_addr, 0, sizeof(serv_addr));
@@ -265,6 +287,8 @@ int FTPClient::type_binary()
 int FTPClient::list(const char *path, char *buf, int bufsize, int *bytes_read)
 {
     *bytes_read = 0;
+    char old_dir[256];
+    bool restore_dir = (pwd(old_dir, sizeof(old_dir)) == 0);
 
     // CWD to target directory first.  Passing paths with spaces as a
     // LIST argument breaks on many FTP servers because they parse the
@@ -278,21 +302,24 @@ int FTPClient::list(const char *path, char *buf, int bufsize, int *bytes_read)
 
     int data_fd = open_data_connection();
     if (data_fd < 0) {
+        if (restore_dir) {
+            cwd(old_dir);
+        }
         return -1;
     }
 
     int code = send_cmd("LIST");
     if (code != 150 && code != 125) {
         lwip_close(data_fd);
+        if (restore_dir) {
+            cwd(old_dir);
+        }
         return -1;
     }
 
     // Set receive timeout so we don't block forever if the server is
     // slow to close the data connection after sending the listing.
-    struct timeval tv;
-    tv.tv_sec = 3;
-    tv.tv_usec = 0;
-    setsockopt(data_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(struct timeval));
+    set_socket_recv_timeout(data_fd, 3);
 
     // Read directory listing from data connection
     int total = 0;
@@ -323,6 +350,13 @@ int FTPClient::list(const char *path, char *buf, int bufsize, int *bytes_read)
     code = read_response();
     if (code != 226 && code != 250) {
         printf("[FTP] LIST transfer not completed cleanly: %d\n", code);
+        if (restore_dir) {
+            cwd(old_dir);
+        }
+        return -1;
+    }
+    if (restore_dir) {
+        cwd(old_dir);
     }
     return 0;
 }
@@ -343,16 +377,15 @@ int FTPClient::retr(const char *remote_path, File *file, int *bytes_read)
     }
 
     // Set receive timeout for data connection
-    struct timeval rtv;
-    rtv.tv_sec = 5;
-    rtv.tv_usec = 0;
-    setsockopt(data_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&rtv, sizeof(struct timeval));
+    set_socket_recv_timeout(data_fd, 5);
 
     int total = 0;
     int idle = 0;
+    int ret = 0;
 
     uint8_t *buf = new uint8_t[4096];
     if (!buf) {
+        lwip_close(data_fd);
         return -1;
     }
     uint32_t tr;
@@ -362,7 +395,8 @@ int FTPClient::retr(const char *remote_path, File *file, int *bytes_read)
         if (n > 0) {
             total += n;
             fres = file->write(buf, n, &tr);
-            if (fres != FR_OK) {
+            if (fres != FR_OK || tr != (uint32_t)n) {
+                ret = -1;
                 break;
             }
             idle = 0;
@@ -371,6 +405,7 @@ int FTPClient::retr(const char *remote_path, File *file, int *bytes_read)
         } else {
             idle++;
             if (idle >= 2) {
+                ret = -1;
                 break;
             }
         }
@@ -383,8 +418,9 @@ int FTPClient::retr(const char *remote_path, File *file, int *bytes_read)
     code = read_response();
     if (code != 226 && code != 250) {
         printf("[FTP] RETR transfer not completed cleanly: %d\n", code);
+        return -1;
     }
-    return 0;
+    return ret;
 }
 
 int FTPClient::stor(const char *remote_path, File *file)
@@ -408,6 +444,7 @@ int FTPClient::stor(const char *remote_path, File *file)
     int sent = 0;
     uint8_t *buf = new uint8_t[4096];
     if (!buf) {
+        lwip_close(data_fd);
         return -1;
     }
 
@@ -419,14 +456,13 @@ int FTPClient::stor(const char *remote_path, File *file)
         }
 
         if (tr) {
-            int n = send(data_fd, buf, tr, 0);
-            if (n <= 0) {
+            if (send_all(data_fd, buf, tr) < 0) {
                 printf("[FTP] STOR send error after %d bytes\n", sent);
                 delete[] buf;
                 lwip_close(data_fd);
                 return -1;
             }
-            sent += n;
+            sent += tr;
         } else {
             break;
         }

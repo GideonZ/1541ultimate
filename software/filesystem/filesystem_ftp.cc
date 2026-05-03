@@ -58,12 +58,6 @@ int FileSystemFTP::connect_if_needed()
 
     client->type_binary();
 
-    if (strcmp(server->folder.c_str(), "/") != 0) {
-        if (client->cwd(server->folder.c_str()) < 0) {
-            printf("[FTP-FS] CWD '%s' failed\n", server->folder.c_str());
-        }
-    }
-
     connected = true;
     printf("[FTP-FS] Connected OK\n");
     return 0;
@@ -176,7 +170,7 @@ FRESULT FileSystemFTP::file_open(const char *filename, uint8_t flags, File **fil
             int ret = client->retr(ftp_path.c_str(), tmp, &bytes_read);
             fm->fclose(tmp);
 
-            if (ret < 0 || bytes_read <= 0) {
+            if (ret < 0) {
                 printf("[FTP-FS] RETR '%s' failed\n", ftp_path.c_str());
                 return FR_DISK_ERR;
             }

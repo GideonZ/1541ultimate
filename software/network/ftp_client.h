@@ -15,6 +15,7 @@ class FTPClient
     int read_response();
     int send_cmd(const char *cmd);
     int send_cmd(const char *cmd, const char *arg);
+    int send_all(int fd, const void *buf, int len);
     int open_data_connection();
     int parse_pasv(uint32_t &ip, uint16_t &port);
 
