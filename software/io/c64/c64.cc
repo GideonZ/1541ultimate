@@ -64,8 +64,8 @@ static const char *timing1[] = { "20ns", "40ns", "60ns", "80ns", "100ns", "120ns
 static const char *timing2[] = { "16ns", "32ns", "48ns", "64ns",  "80ns",  "96ns", "112ns", "128ns", "144ns", "160ns", "176ns", "192ns", "208ns", "224ns", "240ns", "256ns" };
 static const char *timing3[] = { "15ns", "30ns", "45ns", "60ns", "75ns", "90ns", "105ns", "120ns" };
 static const char *cartmodes[] = { "Auto", "Internal", "External", "Manual" };
-static const char *bus_modes[] = { "Quiet", "Writes", "Dynamic", "Dyn. & Writes" };
-static const uint8_t bus_mode_values[] = { 0x00, 0x01, 0x02, 0x03, 0x04 };
+static const char *bus_modes[] = { "Quiet", "Writes", "Dynamic", "Dyn. & Writes", "Compatibility" };
+static const uint8_t bus_mode_values[] = { 0x00, 0x01, 0x02, 0x03, 0x05 }; // Compatibility has write also enabled
 static const char *bus_sharing[] = { "Internal", "External", "Both" };
 static const char *en_dis_geo[] = { "Disabled", "Enabled", "GeoRAM Mode" };
 
@@ -73,7 +73,7 @@ struct t_cfg_definition c64_config[] = {
     { CFG_C64_CART_CRT,    CFG_TYPE_STRFUNC,"Cartridge",                  "%s", (const char **)C64 :: list_crts,  0, 30, (int)"" },
 #if U64
     { CFG_C64_CART_PREF,   CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,  0,  3, 0 },
-    { CFG_BUS_MODE,        CFG_TYPE_ENUM, "Bus Operation Mode",           "%s", bus_modes,    0,  3, 0 },
+    { CFG_BUS_MODE,        CFG_TYPE_ENUM, "Bus Operation Mode",           "%s", bus_modes,    0,  4, 0 },
     { CFG_BUS_SHARING_ROM, CFG_TYPE_ENUM, "Bus Sharing - ROMs",           "%s", bus_sharing,  0,  2, 2 },
     { CFG_BUS_SHARING_IO1, CFG_TYPE_ENUM, "Bus Sharing - I/O1",           "%s", bus_sharing,  0,  2, 2 },
     { CFG_BUS_SHARING_IO2, CFG_TYPE_ENUM, "Bus Sharing - I/O2",           "%s", bus_sharing,  0,  2, 2 },
