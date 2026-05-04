@@ -16,6 +16,7 @@ ContextMenu :: ContextMenu(UserInterface *ui, TreeBrowserState *state, int initi
 		contextable = NULL;
 
 	selectedAction = NULL;
+    pickAction = NULL;
 	context_state = e_new;
     screen = NULL;
     keyb = NULL;
@@ -47,6 +48,11 @@ int ContextMenu :: get_items(void)
 {
     if(contextable) {
         contextable->fetch_context_items(actions);
+        if (state && state->browser && state->browser->pick_mode != TreeBrowser::PICK_NONE &&
+            state->browser->can_pick(contextable) && !contextable->pickAsCurrentPath()) {
+            pickAction = new Action("Select", (actionFunction_t)NULL, 0);
+            actions.prepend(pickAction);
+        }
     }
     return actions.get_elements();
 }
@@ -124,6 +130,9 @@ void ContextMenu :: help()
 int ContextMenu :: executeSelected(const char *p)
 {
     Action *act = getSelectedAction();
+    if (act && act == pickAction && state && state->browser) {
+        return state->browser->pick_current();
+    }
     if (act) {
         printf("Action set was: %s\n", act->getName());
         Browsable *b = getContextable();

@@ -8,8 +8,9 @@
 #define PATH_PICKER_H
 
 #include "ui_elements.h"
-#include "browsable.h"
-#include "filemanager.h"
+
+class TreeBrowser;
+class Browsable;
 
 class UIPathPicker : public UIObject
 {
@@ -21,27 +22,19 @@ class UIPathPicker : public UIObject
     Window   *window;
     Screen   *screen;
     Keyboard *keyboard;
-
-    // Tree browsing state
-    FileManager *fm;
-    Path *nav_path;
-    IndexedList<FileInfo *> *dir_list;
-    int  dir_count;
-    int  selected;
-    int  scroll_offset;
-    int  tree_rows;      // visible rows for the tree
+    TreeBrowser *browser;
+    Browsable   *root;
+    int  tree_rows;
     int  tree_width;
 
     // Mode
-    bool text_mode;      // false = tree, true = text edit
-    UIStringEdit edit;   // reuse existing string edit widget
+    bool text_mode;
+    UIStringEdit edit;
 
     // Internal helpers
-    void load_directory(void);
-    void draw_tree(void);
     void draw_path_line(void);
     void enter_text_mode(int first_key);
-    void update_result_from_nav(void);
+    void update_result_from_browser(void);
 
 public:
     UIPathPicker(UserInterface *ui, char *buf, int maxlen);

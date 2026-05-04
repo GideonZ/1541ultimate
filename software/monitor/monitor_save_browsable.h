@@ -6,17 +6,12 @@
 #include "filemanager.h"
 #include "small_printf.h"
 
-// Monitor save-mode browser entries. The synthetic <Create File>
-// entry is injected by the monitor-owned root and directory subclasses, so
-// generic browser code does not need to know about save semantics — it only
-// needs the pickAsCurrentPath() hook.
-
 class MonitorSaveSelectFolderEntry : public Browsable
 {
 public:
     MonitorSaveSelectFolderEntry() { selectable = true; }
 
-    const char *getName() { return "<Create File>"; }
+    const char *getName() { return "<< Create new file >>"; }
 
     void getDisplayString(char *buffer, int width)
     {
@@ -61,7 +56,8 @@ public:
     IndexedList<Browsable *> *getSubItems(int &error)
     {
         IndexedList<Browsable *> *list = BrowsableDirEntry::getSubItems(error);
-        // Inject the synthetic <Create File> on any successful listing — covers
+        // Inject the synthetic "<< Create new file >>" entry on any successful
+        // listing — covers
         // ordinary directories AND mountable disk images (D64/T64/G64/D81/...)
         // since FileManager surfaces their contents through get_directory().
         // Plain non-mountable files have error<0 here, so they're skipped.

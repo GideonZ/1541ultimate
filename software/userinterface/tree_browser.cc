@@ -369,17 +369,9 @@ int TreeBrowser :: handle_key(int c)
                     return 0;
                 }
                 if (state->under_cursor->pickAsCurrentPath()) {
-                    pick_result(getPath(), "", true);
-                    return MENU_CLOSE;
+                    return pick_current();
                 }
-                {
-                    FileInfo *info = state->under_cursor->getFileInfo();
-                    if (info && !(info->attrib & (AM_DIR | AM_VOL))) {
-                        pick_result(state->browser->getPath(), state->under_cursor->getName(), false);
-                        return MENU_CLOSE;
-                    }
-                }
-                state->into2();
+                context(0);
                 return 0;
             case KEY_RIGHT:
                 reset_quick_seek();
@@ -387,7 +379,7 @@ int TreeBrowser :: handle_key(int c)
                     return 0;
                 }
                 if (state->under_cursor->pickAsCurrentPath()) {
-                    return 0;
+                    return pick_current();
                 }
                 state->into2();
                 return 0;
@@ -695,6 +687,31 @@ void TreeBrowser :: pick_result(const char *path, const char *name, bool dir_onl
     picked = true;
     picked_path = path ? path : "";
     picked_name = name ? name : "";
+}
+
+bool TreeBrowser :: can_pick(Browsable *entry)
+{
+    if (!entry || pick_mode == PICK_NONE) {
+        return false;
+    }
+    if (entry->pickAsCurrentPath()) {
+        return true;
+    }
+    FileInfo *info = entry->getFileInfo();
+    return info && !(info->attrib & (AM_DIR | AM_VOL));
+}
+
+int TreeBrowser :: pick_current(void)
+{
+    if (!state || !state->under_cursor || !can_pick(state->under_cursor)) {
+        return 0;
+    }
+    if (state->under_cursor->pickAsCurrentPath()) {
+        pick_result(getPath(), "", true);
+        return MENU_CLOSE;
+    }
+    pick_result(getPath(), state->under_cursor->getName(), false);
+    return MENU_CLOSE;
 }
 
 // private

@@ -106,6 +106,8 @@ public:
     void delete_selected(void);
     void paste(void);
     void cd(const char *path);
+    bool can_pick(Browsable *entry);
+    int  pick_current(void);
     void pick_result(const char *path, const char *name, bool dir_only);
     
     void invalidate(const void *obj);
