@@ -3,6 +3,8 @@
 #include "u64.h"
 #include "filemanager.h"
 
+#include <string.h>
+
 extern uint8_t _basic_bin_start[8192];
 extern uint8_t _default_kernal_65_start[8192];
 extern uint8_t _default_chars_bin_start[4096];
@@ -110,7 +112,6 @@ static bool uses_live_mapping_for_address(uint16_t address, uint8_t live_cpu_por
 
 bool U64MemoryBackend :: freeze_available(void) const
 {
-    C64 *machine = C64 :: getMachine();
     return machine && !machine->is_accessible();
 }
 
@@ -137,36 +138,38 @@ void U64MemoryBackend :: begin_session(void)
     // brief pauses required to read/write memory. The user can opt in via
     // the monitor's Z (freeze) toggle, which calls set_frozen(true).
     stopped_machine_for_session = false;
-    load_monitor_rom_cache(C64 :: getMachine());
+    load_monitor_rom_cache(machine);
 }
 
 void U64MemoryBackend :: end_session(void)
 {
-    if (stopped_machine_for_session) {
-        ((U64Machine *)C64 :: getMachine())->end_monitor_session(stopped_machine_for_session);
+    if (machine && stopped_machine_for_session) {
+        machine->end_stopped_session(stopped_machine_for_session);
         stopped_machine_for_session = false;
     }
 }
 
 void U64MemoryBackend :: set_frozen(bool on)
 {
-    U64Machine *machine = (U64Machine *)C64 :: getMachine();
+    if (!machine) {
+        return;
+    }
 
     if (on && !stopped_machine_for_session) {
-        // begin_monitor_session() returns true only if it actually had to
-        // stop the machine. If something else (e.g. freezer overlay) has
-        // it stopped already, leave it that way and don't try to resume it.
-        stopped_machine_for_session = machine->begin_monitor_session();
+        stopped_machine_for_session = machine->begin_stopped_session();
         load_monitor_rom_cache(machine);
     } else if (!on && stopped_machine_for_session) {
-        machine->end_monitor_session(stopped_machine_for_session);
+        machine->end_stopped_session(stopped_machine_for_session);
         stopped_machine_for_session = false;
     }
 }
 
 uint8_t U64MemoryBackend :: read(uint16_t address)
 {
-    U64Machine *machine = (U64Machine *)C64 :: getMachine();
+    if (!machine) {
+        return 0;
+    }
+
     uint8_t cpu_port = get_monitor_cpu_port();
     uint8_t live_cpu_port = machine->get_cpu_port();
     uint8_t rom_value = 0;
@@ -187,7 +190,10 @@ uint8_t U64MemoryBackend :: read(uint16_t address)
 
 void U64MemoryBackend :: write(uint16_t address, uint8_t value)
 {
-    U64Machine *machine = (U64Machine *)C64 :: getMachine();
+    if (!machine) {
+        return;
+    }
+
     uint8_t cpu_port = get_monitor_cpu_port();
     uint8_t live_cpu_port = machine->get_cpu_port();
 
@@ -212,14 +218,16 @@ void U64MemoryBackend :: read_block(uint16_t address, uint8_t *dst, uint16_t len
 
 uint8_t U64MemoryBackend :: get_live_cpu_port(void)
 {
-    return ((U64Machine *)C64 :: getMachine())->get_cpu_port();
+    return machine ? machine->get_cpu_port() : 0;
 }
 
 uint8_t U64MemoryBackend :: get_live_vic_bank(void)
 {
-    // CIA2 uses inverted bank bits; translate them back to the monitor's
-    // user-facing VIC0..VIC3 order before rendering status text.
-    uint8_t dd00 = ((U64Machine *)C64 :: getMachine())->peek_cpu(0xDD00, 0x07);
+    if (!machine) {
+        return 0;
+    }
+
+    uint8_t dd00 = machine->peek_cpu(0xDD00, 0x07);
     return (uint8_t)(3 - (dd00 & 0x03));
 }
 

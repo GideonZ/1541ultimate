@@ -66,6 +66,7 @@ public:
     virtual bool isSelectable() { return selectable; }
     virtual void allowSelectable(bool b) { selectable = b; }
     virtual FileInfo *getFileInfo() { return NULL; }
+    virtual bool pickAsCurrentPath() { return false; }
     virtual int  getSortOrder(void) { return 0; }
 
     static int compare_alphabetically(IndexedList<Browsable *>*list, int a, int b)

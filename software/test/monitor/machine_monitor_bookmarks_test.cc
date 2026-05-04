@@ -611,7 +611,7 @@ static int test_monitor_bookmark_capture_restore_includes_binary_width(void)
     FakeKeyboard keyboard(keys, 2);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
-    MachineMonitor monitor(&ui, &backend);
+    BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
 
     if (expect(monitor.poll(0) == 0, "Bookmark restore for binary-width test failed.")) return 1;
@@ -639,7 +639,7 @@ static int test_monitor_bookmark_restore_applies_width_w3(void)
     FakeKeyboard keyboard(keys, 2);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
-    MachineMonitor monitor(&ui, &backend);
+    BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
 
     if (expect(monitor.poll(0) == 0, "Bookmark W3 restore failed.")) return 1;
@@ -665,7 +665,7 @@ static int test_monitor_bookmark_capture_no_memory_write(void)
     ui.keyboard = &keyboard;
     ui.push_prompt("C000", 1);
 
-    MachineMonitor monitor(&ui, &backend);
+    BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
 
     if (expect(monitor.poll(0) == 0, "Goto C000 failed for capture test.")) return 1;
@@ -697,7 +697,7 @@ static int test_monitor_bookmark_set_preserves_label(void)
     ui.screen = &screen;
     ui.keyboard = &keyboard;
     ui.push_prompt("9000", 1);
-    MachineMonitor monitor(&ui, &backend);
+    BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
 
     if (expect(monitor.poll(0) == 0, "Goto failed for set-preserves-label test.")) return 1;
@@ -734,7 +734,7 @@ static int test_monitor_bookmark_popup_render(void)
     reset_bookmark_test_state();
     ui.screen = &screen;
     ui.keyboard = &keyboard;
-    MachineMonitor monitor(&ui, &backend);
+    BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
 
     if (expect(monitor.poll(0) == 0, "Bookmark popup open failed.")) return 1;
@@ -787,7 +787,7 @@ static int test_monitor_bookmark_popup_opens_in_edit_mode(void)
     FakeKeyboard keyboard(keys, 4);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
-    MachineMonitor monitor(&ui, &backend);
+    BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
 
     if (expect(monitor.poll(0) == 0, "Edit-mode entry before popup open failed.")) return 1;
@@ -810,7 +810,7 @@ static int test_monitor_bookmark_popup_close_restores_full_width_border(void)
     reset_bookmark_test_state();
     ui.screen = &screen;
     ui.keyboard = &keyboard;
-    MachineMonitor monitor(&ui, &backend);
+    BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
 
     if (expect(monitor.poll(0) == 0, "Bookmark popup open failed (border cleanup test).")) return 1;
@@ -841,7 +841,7 @@ static int test_monitor_bookmark_popup_navigation_keys(void)
     reset_bookmark_test_state();
     ui.screen = &screen;
     ui.keyboard = &keyboard;
-    MachineMonitor monitor(&ui, &backend);
+    BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
 
     if (expect(monitor.poll(0) == 0, "Bookmark popup open failed (navigation test).")) return 1;
@@ -876,7 +876,7 @@ static int test_monitor_bookmark_popup_pauses_poll_mode(void)
     ui.keyboard = &keyboard;
     backend.write(0x0000, 0x11);
 
-    MachineMonitor monitor(&ui, &backend);
+    BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
 
     if (expect(monitor.poll(0) == 0, "Poll mode enable failed before popup test.")) return 1;
@@ -912,7 +912,7 @@ static int test_monitor_bookmark_popup_set_preserves_label(void)
     ui.screen = &screen;
     ui.keyboard = &keyboard;
     ui.push_prompt("9000", 1);
-    MachineMonitor monitor(&ui, &backend);
+    BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
 
     if (expect(monitor.poll(0) == 0, "Goto for popup set test failed.")) return 1;
@@ -945,7 +945,7 @@ static int test_monitor_bookmark_popup_del_resets_selected(void)
     FakeKeyboard keyboard(keys, 6);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
-    MachineMonitor monitor(&ui, &backend);
+    BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
 
     if (expect(monitor.poll(0) == 0, "Popup open failed (DEL test).")) return 1;
@@ -977,7 +977,7 @@ static int test_monitor_bookmark_label_edit(void)
     ui.screen = &screen;
     ui.keyboard = &keyboard;
     ui.push_prompt("hello", 1);
-    MachineMonitor monitor(&ui, &backend);
+    BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
 
     if (expect(monitor.poll(0) == 0, "Popup open failed (label edit test).")) return 1;
@@ -1010,7 +1010,7 @@ static int test_monitor_bookmark_shortcut_routing(void)
         ui.screen = &screen;
         ui.keyboard = &keyboard;
         monitor_reset_saved_state();
-        MachineMonitor monitor(&ui, &backend);
+        BackendMachineMonitor monitor(&ui, &backend);
         monitor.init(&screen, &keyboard);
 
         if (expect(monitor.poll(0) == 0, "Hex edit entry failed.")) return 1;
@@ -1031,7 +1031,7 @@ static int test_monitor_bookmark_shortcut_routing(void)
         ui.screen = &screen;
         ui.keyboard = &keyboard;
         monitor_reset_saved_state();
-        MachineMonitor monitor(&ui, &backend);
+        BackendMachineMonitor monitor(&ui, &backend);
         monitor.init(&screen, &keyboard);
 
         if (expect(monitor.poll(0) == 0, "Hex edit entry before bookmark jump failed.")) return 1;
@@ -1052,7 +1052,7 @@ static int test_monitor_bookmark_shortcut_routing(void)
         ui.screen = &screen;
         ui.keyboard = &keyboard;
         monitor_reset_saved_state();
-        MachineMonitor monitor(&ui, &backend);
+        BackendMachineMonitor monitor(&ui, &backend);
         monitor.init(&screen, &keyboard);
 
         if (expect(monitor.poll(0) == 0, "Number popup open failed.")) return 1;
@@ -1072,7 +1072,7 @@ static int test_monitor_bookmark_shortcut_routing(void)
         ui.screen = &screen;
         ui.keyboard = &keyboard;
         monitor_reset_saved_state();
-        MachineMonitor monitor(&ui, &backend);
+        BackendMachineMonitor monitor(&ui, &backend);
         monitor.init(&screen, &keyboard);
 
         if (expect(monitor.poll(0) == 0, "Bare digit in main view should remain a normal key.")) return 1;
@@ -1092,7 +1092,7 @@ static int test_monitor_bookmark_shortcut_routing(void)
         ui.screen = &screen;
         ui.keyboard = &keyboard;
         monitor_reset_saved_state();
-        MachineMonitor monitor(&ui, &backend);
+        BackendMachineMonitor monitor(&ui, &backend);
         monitor.init(&screen, &keyboard);
 
         if (expect(monitor.poll(0) == 0, "CBM+1 bookmark jump failed.")) return 1;
@@ -1124,7 +1124,7 @@ static int test_monitor_bookmark_status_dismissal(void)
     seed_bookmark_full(1, 0x0801, MONITOR_BOOKMARK_VIEW_ASM, 7, 2, false, 1, "BASIC");
     ui.screen = &screen;
     ui.keyboard = &keyboard;
-    MachineMonitor monitor(&ui, &backend);
+    BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
 
     if (expect(monitor.poll(0) == 0, "Bookmark restore for status dismissal test failed.")) return 1;

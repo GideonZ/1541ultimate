@@ -14,8 +14,8 @@ class U64Machine : public C64
 
     void get_all_memory(uint8_t *pb);
 public:
-    bool begin_monitor_session();
-    void end_monitor_session(bool stopped_it);
+    bool begin_stopped_session();
+    void end_stopped_session(bool stopped_it);
     void clear_ram();
     uint8_t get_cpu_port(void);
     uint8_t peek(uint16_t address);

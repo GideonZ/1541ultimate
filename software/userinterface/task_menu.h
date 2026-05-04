@@ -27,7 +27,6 @@ public:
     void init(Window *pwin, Keyboard *keyb);
     int select_item(void);
     static void ensure_task_actions_created(bool writablePath);
-    static Action *find_task_action(int subsysId, const char *actionName);
 };
 
 class TaskSubMenu : public ContextMenu
@@ -64,32 +63,6 @@ inline void TaskMenu :: ensure_task_actions_created(bool writablePath)
     for(int i=0;i<objects->get_elements();i++) {
         (*objects)[i]->update_task_items(writablePath);
     }
-}
-
-inline Action *TaskMenu :: find_task_action(int subsysId, const char *actionName)
-{
-    IndexedList<TaskCategory *> *categories = TasksCollection::getCategories();
-    Action *fallback = NULL;
-
-    for (int i = 0; i < categories->get_elements(); i++) {
-        TaskCategory *cat = (*categories)[i];
-        if (!cat) {
-            continue;
-        }
-        IndexedList<Action *> *actions = cat->getActions();
-        for (int j = 0; j < actions->get_elements(); j++) {
-            Action *action = (*actions)[j];
-            if (action && action->isShown() && action->isEnabled() && (strcmp(action->getName(), actionName) == 0)) {
-                if (action->subsys == subsysId) {
-                    return action;
-                }
-                if (!fallback && (action->func || action->direct_func)) {
-                    fallback = action;
-                }
-            }
-        }
-    }
-    return fallback;
 }
 
 #endif

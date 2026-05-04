@@ -83,6 +83,10 @@ class BrowsableDirEntry : public Browsable
 			path->cd(info->lfname);
 		}
 	}
+protected:
+	virtual Browsable *makeChildEntry(Path *parent_path, FileInfo *info, bool selectable) {
+		return new BrowsableDirEntry(parent_path, this, info, selectable);
+	}
 public:
 	BrowsableDirEntry(Path *pp, Browsable *parent, FileInfo *info, bool sel) {
 		this->info = info;
@@ -151,7 +155,7 @@ public:
 				if (inf->attrib & AM_DIR) {
 					selectable = true;
 				}
-				children.append(new BrowsableDirEntry(path, this, inf, selectable)); // pass ownership of the FileInfo to the browsable object
+				children.append(makeChildEntry(path, inf, selectable)); // pass ownership of the FileInfo to the browsable object
 			}
 			delete infos; // deletes the indexed list, but not the FileInfos
 		}
@@ -255,6 +259,12 @@ public:
 
 	// get parent function not implemented; there is no parent, see base class
 
+protected:
+	virtual Browsable *makeChildEntry(Path *parent_path, FileInfo *info, bool selectable) {
+		return new BrowsableDirEntry(parent_path, this, info, selectable);
+	}
+
+public:
 	virtual IndexedList<Browsable *> *getSubItems(int &error) {
 		if (children.get_elements() == 0) {
 			IndexedList<FileInfo *> *infos = new IndexedList<FileInfo *>(8, NULL);
@@ -262,7 +272,7 @@ public:
 			// printf("Root get sub items: get_directory of %s returned %d elements.\n", root->get_path(), infos->get_elements());
 			for(int i=0;i<infos->get_elements();i++) {
 				FileInfo *inf = (*infos)[i];
-				children.append(new BrowsableDirEntry(root, this, inf, true)); // pass ownership of the FileInfo to the browsable object
+				children.append(makeChildEntry(root, inf, true)); // pass ownership of the FileInfo to the browsable object
 			}
 			delete infos; // deletes the indexed list, but not the FileInfos
 

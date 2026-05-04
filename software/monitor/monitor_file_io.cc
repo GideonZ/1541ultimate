@@ -4,11 +4,11 @@
 
 #include "monitor_file_io.h"
 #include "machine_monitor.h"
-#include "path_picker.h"
 #include "userinterface.h"
 #include "tree_browser.h"
 #include "tree_browser_state.h"
 #include "browsable_root.h"
+#include "monitor_save_browsable.h"
 #include "user_file_interaction.h"
 #include "filemanager.h"
 #include "file.h"
@@ -47,41 +47,16 @@ bool monitor_io::pick_file(UserInterface *ui, const char *title,
     if (path_out && path_max > 0) path_out[0] = 0;
     if (name_out && name_max > 0) name_out[0] = 0;
 
-    if (save_mode) {
-        if (!ui || !path_out || path_max <= 1) {
-            return false;
-        }
-
-        strncpy(path_out, s_monitor_browse_path.c_str(), path_max - 1);
-        path_out[path_max - 1] = 0;
-
-        UIPathPicker picker(ui, path_out, path_max);
-        picker.init();
-
-        int ret = 0;
-        GenericHost *h = ui->host;
-        while (!ret && (!h || h->exists())) {
-            ret = picker.poll(0);
-        }
-
-        picker.deinit();
-        if (ret > 0) {
-            if (name_out && name_max > 0) {
-                name_out[0] = 0;
-            }
-            s_monitor_browse_path = path_out;
-            return true;
-        }
-
-        path_out[0] = 0;
+    if (!ui) {
         return false;
     }
 
-    Browsable *root = new BrowsableRoot();
+    Browsable *root = save_mode ? static_cast<Browsable *>(new MonitorSaveBrowsableRoot())
+                                : static_cast<Browsable *>(new BrowsableRoot());
     TreeBrowser *browser = new TreeBrowser(ui, root);
     browser->allow_exit = true;
     browser->use_ui_focus_stack = false;
-    browser->pick_mode = TreeBrowser::PICK_LOAD;
+    browser->pick_mode = save_mode ? TreeBrowser::PICK_SAVE : TreeBrowser::PICK_LOAD;
     browser->init();
     if (s_monitor_browse_path.length() > 1) {
         browser->cd(s_monitor_browse_path.c_str());
@@ -261,7 +236,7 @@ void monitor_io::jump_to(uint16_t address)
         return;
     }
 
-    bool stopped_it = machine->begin_monitor_session();
+    bool stopped_it = machine->begin_stopped_session();
 
     uint8_t old_nmi_lo = machine->peek_visible(c_monitor_nmi_vector + 0);
     uint8_t old_nmi_hi = machine->peek_visible(c_monitor_nmi_vector + 1);
@@ -282,7 +257,7 @@ void monitor_io::jump_to(uint16_t address)
     machine->poke_visible(c_monitor_nmi_vector + 1, (uint8_t)(c_monitor_jump_trampoline >> 8));
 
     C64_MODE = C64_MODE_NMI;
-    machine->end_monitor_session(stopped_it);
+    machine->end_stopped_session(stopped_it);
     C64_MODE = MODE_NORMAL;
 #else
     uint8_t jump_buffer[2] = {

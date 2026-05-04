@@ -176,7 +176,7 @@ void U64Machine :: after_memory_access(uint8_t *pb, bool freezerMenu, bool stopp
     }
 }
 
-bool U64Machine :: begin_monitor_session()
+bool U64Machine :: begin_stopped_session()
 {
     bool wasStopped = is_stopped();
     if (!wasStopped) {
@@ -185,7 +185,7 @@ bool U64Machine :: begin_monitor_session()
     return !wasStopped;
 }
 
-void U64Machine :: end_monitor_session(bool stopped_it)
+void U64Machine :: end_stopped_session(bool stopped_it)
 {
     if (stopped_it) {
         resume();

@@ -4,25 +4,22 @@
 
 uint8_t U2MemoryBackend :: read(uint16_t address)
 {
-    C64 *machine = C64 :: getMachine();
     if (!machine || !machine->exists()) {
         return 0;
     }
-    return machine->monitor_read_memory(address);
+    return machine->peek(address);
 }
 
 void U2MemoryBackend :: write(uint16_t address, uint8_t value)
 {
-    C64 *machine = C64 :: getMachine();
     if (!machine || !machine->exists()) {
         return;
     }
-    machine->monitor_write_memory(address, value);
+    machine->poke(address, value);
 }
 
 void U2MemoryBackend :: read_block(uint16_t address, uint8_t *dst, uint16_t len)
 {
-    C64 *machine = C64 :: getMachine();
     if (!machine || !machine->exists()) {
         while (len) {
             *dst++ = 0;
@@ -30,7 +27,10 @@ void U2MemoryBackend :: read_block(uint16_t address, uint8_t *dst, uint16_t len)
         }
         return;
     }
-    machine->monitor_read_memory_block(address, dst, len);
+    while (len) {
+        *dst++ = machine->peek(address++);
+        len--;
+    }
 }
 
 const char *U2MemoryBackend :: source_name(uint16_t) const

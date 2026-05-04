@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "disassembler_6502.h"
+#include "monitor_init.h"
 #include "machine_monitor_test_support.h"
 #include "menu.h"
 #include "task_menu.h"
@@ -76,6 +77,27 @@ struct FakeMonitorIOState {
 static SubsysResultCode_e test_monitor_action_callback(SubsysCommand *)
 {
     return SSRET_OK;
+}
+
+static Action *g_test_machine_monitor_actions[256];
+
+Action *register_machine_monitor_task(int subsys_id, actionFunction_t callback, int function_id)
+{
+    Action *monitor = new Action("Machine Code Monitor", callback, function_id);
+    TaskCategory *dev = TasksCollection::getCategory("Developer", TEST_SORT_ORDER_DEVELOPER);
+    dev->prepend(monitor);
+    if ((subsys_id >= 0) && (subsys_id < 256)) {
+        g_test_machine_monitor_actions[subsys_id] = monitor;
+    }
+    return monitor;
+}
+
+Action *get_machine_monitor_task(int subsys_id)
+{
+    if ((subsys_id < 0) || (subsys_id >= 256)) {
+        return NULL;
+    }
+    return g_test_machine_monitor_actions[subsys_id];
 }
 
 namespace monitor_io {
@@ -201,9 +223,8 @@ public:
 
     void create_task_items(void)
     {
-        TaskCategory *dev = TasksCollection::getCategory("Developer", TEST_SORT_ORDER_DEVELOPER);
-        monitor_action = new Action("Machine Code Monitor", test_monitor_action_callback, 12);
-        dev->append(monitor_action);
+        monitor_action = register_machine_monitor_task(TEST_SUBSYSID_U64, test_monitor_action_callback, 12);
+        g_test_machine_monitor_actions[TEST_SUBSYSID_C64] = monitor_action;
     }
 
     void update_task_items(bool writablePath)
@@ -259,6 +280,7 @@ static int test_disassembler(void)
 static int test_memory_helpers(void)
 {
     FakeMemoryBackend backend;
+    BackendMachineMonitor monitor(NULL, &backend);
     char output[512];
     uint16_t value;
     uint8_t needle[32];
@@ -649,7 +671,7 @@ static int test_kernal_disassembly_mapping(void)
     ui.keyboard = &keyboard;
     ui.set_prompt("E000", 1);
 
-    MachineMonitor monitor(&ui, &backend);
+    BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
 
     if (expect(monitor.poll(0) == 0, "Goto to E000 failed.")) return 1;
@@ -722,7 +744,7 @@ static int test_disassembly_instruction_stepping(void)
     ui.keyboard = &keyboard;
     ui.set_prompt("E000", 1);
 
-    MachineMonitor monitor(&ui, &backend);
+    BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
 
     if (expect(monitor.poll(0) == 0, "Goto to E000 failed for disassembly stepping test.")) return 1;
@@ -785,9 +807,9 @@ static int test_task_action_lookup(void)
     if (expect(provider.update_called && provider.last_writable, "Task action update hook was not called.")) return 1;
     if (expect(provider.monitor_action != NULL, "Task action provider did not create the monitor action.")) return 1;
     if (expect(provider.monitor_action->isPersistent(), "Task action should be made persistent.")) return 1;
-    if (expect(TaskMenu::find_task_action(TEST_SUBSYSID_U64, "Machine Code Monitor") == provider.monitor_action,
+    if (expect(get_machine_monitor_task(TEST_SUBSYSID_U64) == provider.monitor_action,
                "U64 task action lookup failed.")) return 1;
-    if (expect(TaskMenu::find_task_action(TEST_SUBSYSID_C64, "Machine Code Monitor") == provider.monitor_action,
+    if (expect(get_machine_monitor_task(TEST_SUBSYSID_C64) == provider.monitor_action,
                "C64 task action lookup failed.")) return 1;
     return 0;
 }
@@ -804,7 +826,7 @@ static int test_monitor_renders_window_border(void)
     ui.screen = &screen;
     ui.keyboard = &keyboard;
 
-    MachineMonitor monitor(&ui, &backend);
+    BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
     if (expect(backend.session_begin_count == 1, "Monitor must begin a backend session when it opens.")) return 1;
     if (expect((unsigned char)screen.chars[2][0] == BORD_LOWER_RIGHT_CORNER, "Monitor must draw the same shared upper-left border corner as the hex editor.")) return 1;
@@ -838,7 +860,7 @@ static int test_monitor_byte_to_address_invariant(void)
     ui.screen = &screen;
     ui.keyboard = &keyboard;
 
-    MachineMonitor monitor(&ui, &backend);
+    BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
 
     for (int step = 0; step < 3; step++) {
@@ -899,7 +921,7 @@ static int test_monitor_cursor_header_and_scroll(void)
     ui.screen = &screen;
     ui.keyboard = &keyboard;
 
-    MachineMonitor monitor(&ui, &backend);
+    BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
 
     screen.get_slice(1, 3, 38, header);
@@ -979,7 +1001,7 @@ static int test_monitor_interaction(void)
     ui.keyboard = &help_keyboard;
     ui.set_prompt("A000", 1);
 
-    MachineMonitor help_monitor(&ui, &banked_backend);
+    BackendMachineMonitor help_monitor(&ui, &banked_backend);
     help_monitor.init(&screen, &help_keyboard);
     screen.get_slice(1, 3, 38, line);
     if (expect(strstr(line, "MONITOR HEX $0000") == line && strstr(line, "CPU MAP") == NULL,
@@ -1035,7 +1057,7 @@ static int test_monitor_interaction(void)
         screen.clear();
         monitor_reset_saved_state();
 
-        MachineMonitor esc_help_monitor(&ui, &backend);
+        BackendMachineMonitor esc_help_monitor(&ui, &backend);
         esc_help_monitor.init(&screen, &esc_help_keyboard);
         if (expect(esc_help_monitor.poll(0) == 0, "F3 should open help before ESC handling is tested.")) return 1;
         screen.get_slice(1, 22, 38, status);
@@ -1059,7 +1081,7 @@ static int test_monitor_interaction(void)
     screen.clear();
     monitor_reset_saved_state();
 
-    MachineMonitor goto_disasm_monitor(&ui, &banked_backend);
+    BackendMachineMonitor goto_disasm_monitor(&ui, &banked_backend);
     goto_disasm_monitor.init(&screen, &goto_disasm_keyboard);
     if (expect(goto_disasm_monitor.poll(0) == 0, "Goto to E013 failed for disassembly anchoring test.")) return 1;
     if (expect(goto_disasm_monitor.poll(0) == 0, "Disassembly view switch failed for E013 anchoring test.")) return 1;
@@ -1080,7 +1102,7 @@ static int test_monitor_interaction(void)
         banked_backend.live_dd00 = 0x01;
         monitor_reset_saved_state();
 
-        MachineMonitor vic_monitor(&ui, &banked_backend);
+        BackendMachineMonitor vic_monitor(&ui, &banked_backend);
         vic_monitor.init(&screen, &idle_keyboard);
         screen.get_slice(1, 22, 38, status);
         if (expect(strstr(status, "CPU7 $A:BAS $D:I/O $E:KRN VIC2 $8000") == status,
@@ -1104,7 +1126,7 @@ static int test_monitor_interaction(void)
         banked_backend.live_dd00 = 0x01;
         monitor_reset_saved_state();
 
-        MachineMonitor live_bank_monitor(&ui, &banked_backend);
+        BackendMachineMonitor live_bank_monitor(&ui, &banked_backend);
         live_bank_monitor.init(&screen, &live_bank_keyboard);
         screen.get_slice(1, 22, 38, status);
         if (expect(strstr(status, "CPU7 $A:BAS $D:I/O $E:KRN VIC2 $8000") == status,
@@ -1122,7 +1144,7 @@ static int test_monitor_interaction(void)
     screen.clear();
     monitor_reset_saved_state();
 
-    MachineMonitor blink_monitor(&ui, &backend);
+    BackendMachineMonitor blink_monitor(&ui, &backend);
     blink_monitor.init(&screen, &blink_keyboard);
     if (expect(blink_monitor.poll(0) == 0, "ASCII view command failed for blink test.")) return 1;
     if (expect(blink_monitor.poll(0) == 0, "ASCII edit mode entry via 'e' failed.")) return 1;
@@ -1140,7 +1162,7 @@ static int test_monitor_interaction(void)
     screen.clear();
     monitor_reset_saved_state();
 
-    MachineMonitor view_monitor(&ui, &backend);
+    BackendMachineMonitor view_monitor(&ui, &backend);
     view_monitor.init(&screen, &view_keyboard);
 
     if (expect(view_monitor.poll(0) == 0, "ASCII view command failed.")) return 1;
@@ -1185,7 +1207,7 @@ static int test_monitor_interaction(void)
     backend.write(0x0000, 0x00);
     monitor_reset_saved_state();
 
-    MachineMonitor hex_monitor(&ui, &backend);
+    BackendMachineMonitor hex_monitor(&ui, &backend);
     hex_monitor.init(&screen, &hex_keyboard);
     if (expect(hex_monitor.poll(0) == 0, "Hex edit mode entry via 'e' failed.")) return 1;
     if (expect(screen.reverse_chars[4][6] && screen.reverse_chars[4][7], "Hex edit did not highlight both byte digits.")) return 1;
@@ -1220,7 +1242,7 @@ static int test_monitor_interaction(void)
         banked_backend.set_monitor_cpu_port(0x07);
         monitor_reset_saved_state();
 
-        MachineMonitor rom_write_monitor(&ui, &banked_backend);
+        BackendMachineMonitor rom_write_monitor(&ui, &banked_backend);
         rom_write_monitor.init(&screen, &rom_write_keyboard);
         if (expect(rom_write_monitor.poll(0) == 0, "Goto to A000 failed for ROM-visible write test.")) return 1;
         if (expect(rom_write_monitor.poll(0) == 0, "ROM-visible edit mode entry failed.")) return 1;
@@ -1241,7 +1263,7 @@ static int test_monitor_interaction(void)
         backend.write(0x0000, 0x00);
         monitor_reset_saved_state();
 
-        MachineMonitor exit_monitor(&ui, &backend);
+        BackendMachineMonitor exit_monitor(&ui, &backend);
         exit_monitor.init(&screen, &exit_keyboard);
         if (expect(exit_monitor.poll(0) == 0, "F3 edit-help setup via 'e' failed.")) return 1;
         if (expect(exit_monitor.poll(0) == 0, "F3 should toggle help while keeping edit mode.")) return 1;
@@ -1271,7 +1293,7 @@ static int test_monitor_interaction(void)
         screen.clear();
         monitor_reset_saved_state();
 
-        MachineMonitor nav_monitor(&ui, &backend);
+        BackendMachineMonitor nav_monitor(&ui, &backend);
         nav_monitor.init(&screen, &nav_keyboard);
         for (int i = 0; i < 12; i++) {
             if (expect(nav_monitor.poll(0) == 0, "Global navigation key exited the monitor.")) return 1;
@@ -1287,7 +1309,7 @@ static int test_monitor_interaction(void)
         screen.clear();
         monitor_reset_saved_state();
 
-        MachineMonitor toggle_monitor(&ui, &backend);
+        BackendMachineMonitor toggle_monitor(&ui, &backend);
         toggle_monitor.init(&screen, &toggle_keyboard);
         if (expect(toggle_monitor.poll(0) == 1, "CBM+O should close the monitor directly.")) return 1;
         toggle_monitor.deinit();
@@ -1301,7 +1323,7 @@ static int test_monitor_interaction(void)
     backend.write(0x0000, 0x00);
     monitor_reset_saved_state();
 
-    MachineMonitor ignored_monitor(&ui, &backend);
+    BackendMachineMonitor ignored_monitor(&ui, &backend);
     ignored_monitor.init(&screen, &ignored_keyboard);
     if (expect(ignored_monitor.poll(0) == 0, "Disassembly view command failed before ignored-key checks.")) return 1;
     screen.get_slice(1, 3, 38, line);
@@ -1373,7 +1395,7 @@ static int test_monitor_default_cpu_bank_and_vic_shortcuts(void)
     backend.basic[0] = 0xBA;
     backend.ram[0xA000] = 0xAA;
 
-    MachineMonitor monitor(&ui, &backend);
+    BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
 
     screen.get_slice(1, 22, 38, status);
@@ -1446,7 +1468,7 @@ static int test_monitor_freeze_mode_vic_shortcut_override(void)
     monitor_reset_saved_state();
     monitor_invalidate_saved_state();
 
-    MachineMonitor monitor(&ui, &backend);
+    BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
 
     screen.get_slice(1, 22, 38, status);
@@ -1493,7 +1515,7 @@ static int test_monitor_reopen_restores_state(void)
         ui.keyboard = &first_keyboard;
         ui.set_prompt("C123", 1);
 
-        MachineMonitor first_monitor(&ui, &backend);
+        BackendMachineMonitor first_monitor(&ui, &backend);
         first_monitor.init(&screen, &first_keyboard);
         if (expect(first_monitor.poll(0) == 0, "First monitor goto failed for reopen-state test.")) return 1;
         if (expect(first_monitor.poll(0) == 0, "First monitor view switch failed for reopen-state test.")) return 1;
@@ -1510,7 +1532,7 @@ static int test_monitor_reopen_restores_state(void)
         FakeKeyboard second_keyboard(second_keys, 1);
         ui.keyboard = &second_keyboard;
 
-        MachineMonitor second_monitor(&ui, &backend);
+        BackendMachineMonitor second_monitor(&ui, &backend);
         second_monitor.init(&screen, &second_keyboard);
         screen.get_slice(1, 3, 38, line);
         if (expect(strstr(line, "MONITOR ASM $C123") == line, "Reopened monitor did not restore the disassembly view and address.")) return 1;
@@ -1555,7 +1577,7 @@ static int test_monitor_kernal_bank_switch_and_ram_interaction(void)
     ui.keyboard = &keyboard;
     ui.set_prompt("E000", 1);
 
-    MachineMonitor monitor(&ui, &backend);
+    BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
 
     if (expect(monitor.poll(0) == 0, "Goto to E000 failed for KERNAL banking test.")) return 1;
@@ -1665,7 +1687,7 @@ static int test_logical_delete_per_view(void)
         ui.screen = &screen;
         ui.keyboard = &kb;
         ui.set_prompt("0400", 1);
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         for (int i = 0; i < (int)(sizeof(keys)/sizeof(keys[0])) - 1; i++) {
             (void)mon.poll(0);
@@ -1687,7 +1709,7 @@ static int test_logical_delete_per_view(void)
         ui.screen = &screen;
         ui.keyboard = &kb;
         ui.set_prompt("0400", 1);
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         for (int i = 0; i < (int)(sizeof(keys)/sizeof(keys[0])) - 1; i++) {
             (void)mon.poll(0);
@@ -1709,7 +1731,7 @@ static int test_logical_delete_per_view(void)
         ui.screen = &screen;
         ui.keyboard = &kb;
         ui.set_prompt("0400", 1);
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         for (int i = 0; i < (int)(sizeof(keys)/sizeof(keys[0])) - 1; i++) {
             (void)mon.poll(0);
@@ -1730,7 +1752,7 @@ static int test_logical_delete_per_view(void)
         ui.screen = &screen;
         ui.keyboard = &kb;
         ui.set_prompt("C000", 1);
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         for (int i = 0; i < (int)(sizeof(keys)/sizeof(keys[0])) - 1; i++) {
             (void)mon.poll(0);
@@ -1750,7 +1772,7 @@ static int test_logical_delete_per_view(void)
         ui.screen = &screen;
         ui.keyboard = &kb;
         ui.set_prompt("0400", 1);
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         for (int i = 0; i < (int)(sizeof(keys)/sizeof(keys[0])) - 1; i++) {
             (void)mon.poll(0);
@@ -1772,7 +1794,7 @@ static int test_scr_edit_writes_screen_code(void)
     ui.screen = &screen;
     ui.keyboard = &kb;
     ui.set_prompt("0400", 1);
-    MachineMonitor mon(&ui, &backend);
+    BackendMachineMonitor mon(&ui, &backend);
     mon.init(&screen, &kb);
     for (int i = 0; i < 5; i++) {
         (void)mon.poll(0);
@@ -1795,7 +1817,7 @@ static int test_number_shortcut_routing(void)
         ui.keyboard = &kb;
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "ASM N-routing test: ASM view switch failed.")) return 1;
         if (expect(mon.poll(0) == 0, "ASM N-routing test: edit mode entry failed.")) return 1;
@@ -1826,7 +1848,7 @@ static int test_number_shortcut_routing(void)
         ui.set_prompt("C000", 1);
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "ASM operand N test: goto failed.")) return 1;
         if (expect(mon.poll(0) == 0, "ASM operand N test: ASM view switch failed.")) return 1;
@@ -1855,7 +1877,7 @@ static int test_number_shortcut_routing(void)
         ui.set_prompt("C100", 1);
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "ASM popup N-routing test: goto failed.")) return 1;
         if (expect(mon.poll(0) == 0, "ASM popup N-routing test: ASM view switch failed.")) return 1;
@@ -1886,7 +1908,7 @@ static int test_number_shortcut_routing(void)
         ui.set_prompt("C200", 1);
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         for (int i = 0; i < 7; i++) {
             if (expect(mon.poll(0) == 0, "ASM post-opcode N test: mnemonic commit failed.")) return 1;
@@ -1912,7 +1934,7 @@ static int test_number_shortcut_routing(void)
         ui.keyboard = &kb;
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "ASCII N-routing test: ASCII view switch failed.")) return 1;
         if (expect(mon.poll(0) == 0, "ASCII N-routing test: edit mode entry failed.")) return 1;
@@ -1937,7 +1959,7 @@ static int test_number_shortcut_routing(void)
         ui.keyboard = &kb;
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Screen N-routing test: Screen view switch failed.")) return 1;
         if (expect(mon.poll(0) == 0, "Screen N-routing test: edit mode entry failed.")) return 1;
@@ -1962,7 +1984,7 @@ static int test_number_shortcut_routing(void)
         ui.keyboard = &kb;
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "ASM non-edit N test: ASM view switch failed.")) return 1;
         if (expect(mon.poll(0) == 0, "ASM non-edit N test: Number popup open failed.")) return 1;
@@ -1984,7 +2006,7 @@ static int test_number_shortcut_routing(void)
         ui.keyboard = &kb;
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "HEX edit N test: edit mode entry failed.")) return 1;
         if (expect(mon.poll(0) == 0, "HEX edit N test: Number popup open failed.")) return 1;
@@ -2018,7 +2040,7 @@ static int test_asm_number_popup_targets_operands(void)
         ui.set_prompt("9010", 1);
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "ASM word Number test: goto failed.")) return 1;
         if (expect(mon.poll(0) == 0, "ASM word Number test: ASM view switch failed.")) return 1;
@@ -2065,7 +2087,7 @@ static int test_asm_number_popup_targets_operands(void)
         ui.set_prompt("C000", 1);
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "ASM byte Number test: goto failed.")) return 1;
         if (expect(mon.poll(0) == 0, "ASM byte Number test: ASM view switch failed.")) return 1;
@@ -2106,7 +2128,7 @@ static int test_asm_number_popup_targets_operands(void)
         ui.set_prompt("C100", 1);
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "ASM no-operand Number test: goto failed.")) return 1;
         if (expect(mon.poll(0) == 0, "ASM no-operand Number test: ASM view switch failed.")) return 1;
@@ -2148,7 +2170,7 @@ static int test_asm_number_popup_illegal_and_invalid_rows(void)
         ui.set_prompt("C300", 1);
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "ASM invalid-row Number test: goto failed.")) return 1;
         if (expect(mon.poll(0) == 0, "ASM invalid-row Number test: ASM view switch failed.")) return 1;
@@ -2176,7 +2198,7 @@ static int test_asm_number_popup_illegal_and_invalid_rows(void)
         ui.set_prompt("C320", 1);
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "ASM undocumented Number test: goto failed.")) return 1;
         if (expect(mon.poll(0) == 0, "ASM undocumented Number test: ASM view switch failed.")) return 1;
@@ -2220,7 +2242,7 @@ static int test_asm_edit_assemble_at_cursor(void)
     ui.screen = &screen;
     ui.keyboard = &kb;
     ui.set_prompt("C000", 1);
-    MachineMonitor mon(&ui, &backend);
+    BackendMachineMonitor mon(&ui, &backend);
     mon.init(&screen, &kb);
     for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
         (void)mon.poll(0);
@@ -2248,7 +2270,7 @@ static int test_asm_edit_direct_typing(void)
     ui.screen = &screen;
     ui.keyboard = &kb;
     ui.set_prompt("C000", 1);
-    MachineMonitor mon(&ui, &backend);
+    BackendMachineMonitor mon(&ui, &backend);
     mon.init(&screen, &kb);
     for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
         (void)mon.poll(0);
@@ -2271,7 +2293,7 @@ static int test_asm_edit_direct_typing_immediate(void)
     ui.screen = &screen;
     ui.keyboard = &kb;
     ui.set_prompt("C000", 1);
-    MachineMonitor mon(&ui, &backend);
+    BackendMachineMonitor mon(&ui, &backend);
     mon.init(&screen, &kb);
     for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
         (void)mon.poll(0);
@@ -2310,7 +2332,7 @@ static int test_asm_edit_branch_two_parts(void)
     ui.screen = &screen;
     ui.keyboard = &kb;
     ui.set_prompt("C000", 1);
-    MachineMonitor mon(&ui, &backend);
+    BackendMachineMonitor mon(&ui, &backend);
     mon.init(&screen, &kb);
     for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
         (void)mon.poll(0);
@@ -2349,7 +2371,7 @@ static int test_asm_cpu_bank_cycle_preserves_screen_row(void)
     ui.set_prompt("A000", 1);
     monitor_reset_saved_state();
 
-    MachineMonitor mon(&ui, &backend);
+    BackendMachineMonitor mon(&ui, &backend);
     mon.init(&screen, &kb);
     if (expect(mon.poll(0) == 0, "ASM bank-anchor test: goto failed.")) return 1;
     if (expect(mon.poll(0) == 0, "ASM bank-anchor test: ASM view switch failed.")) return 1;
@@ -2414,7 +2436,7 @@ static int test_asm_page_up_keeps_screen_row(void)
     ui.set_prompt("C000", 1);
     monitor_reset_saved_state();
 
-    MachineMonitor mon(&ui, &backend);
+    BackendMachineMonitor mon(&ui, &backend);
     mon.init(&screen, &kb);
     if (expect(mon.poll(0) == 0, "ASM page-up test: goto failed.")) return 1;
     if (expect(mon.poll(0) == 0, "ASM page-up test: ASM view switch failed.")) return 1;
@@ -2447,7 +2469,7 @@ static int test_opcode_picker_refilters_live(void)
     ui.keyboard = &kb;
     monitor_reset_saved_state();
 
-    MachineMonitor mon(&ui, &backend);
+    BackendMachineMonitor mon(&ui, &backend);
     mon.init(&screen, &kb);
     if (expect(mon.poll(0) == 0, "Opcode picker refilter test: ASM view switch failed.")) return 1;
     if (expect(mon.poll(0) == 0, "Opcode picker refilter test: edit mode entry failed.")) return 1;
@@ -2492,7 +2514,7 @@ static int test_opcode_picker_filters_orders_and_commits_on_enter(void)
         ui.set_prompt("C000", 1);
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         for (int i = 0; i < 6; i++) {
             if (expect(mon.poll(0) == 0, "Opcode picker NOP test: command sequence failed before ENTER.")) return 1;
@@ -2525,7 +2547,7 @@ static int test_opcode_picker_filters_orders_and_commits_on_enter(void)
         ui.set_prompt("C100", 1);
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         for (int i = 0; i < 7; i++) {
             if (expect(mon.poll(0) == 0, "Opcode picker illegal NOP test: command sequence failed before ENTER.")) return 1;
@@ -2557,7 +2579,7 @@ static int test_opcode_picker_filters_orders_and_commits_on_enter(void)
         ui.set_prompt("C200", 1);
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         for (int i = 0; i < 6; i++) {
             if (expect(mon.poll(0) == 0, "Opcode picker LSR test: command sequence failed before ENTER.")) return 1;
@@ -2595,7 +2617,7 @@ static int test_opcode_picker_browsing_does_not_mutate_frozen_charset_backup(voi
     ui.set_prompt("0810", 1);
     monitor_reset_saved_state();
 
-    MachineMonitor mon(&ui, &backend);
+    BackendMachineMonitor mon(&ui, &backend);
     mon.init(&screen, &kb);
     for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])); i++) {
         if (expect(mon.poll(0) == 0 || i == (int)(sizeof(keys) / sizeof(keys[0])) - 1,
@@ -2634,7 +2656,7 @@ static int test_opcode_picker_near_bottom_refresh_stays_inside_content(void)
     ui.keyboard = &kb;
     monitor_reset_saved_state();
 
-    MachineMonitor mon(&ui, &backend);
+    BackendMachineMonitor mon(&ui, &backend);
     mon.init(&screen, &kb);
     if (expect(mon.poll(0) == 0, "Lower-border popup bounds test: ASM view switch failed.")) return 1;
     if (expect(mon.poll(0) == 0, "Lower-border popup bounds test: edit mode entry failed.")) return 1;
@@ -2687,7 +2709,7 @@ static int test_opcode_picker_selection_near_bottom_preserves_live_charset_page(
     ui.set_prompt("0801", 1);
     monitor_reset_saved_state();
 
-    MachineMonitor mon(&ui, &backend);
+    BackendMachineMonitor mon(&ui, &backend);
     mon.init(&screen, &kb);
     if (expect(mon.poll(0) == 0, "Lower-border freeze write test: goto failed.")) return 1;
     if (expect(mon.poll(0) == 0, "Lower-border freeze write test: ASM view switch failed.")) return 1;
@@ -2734,7 +2756,7 @@ static int test_opcode_picker_pauses_poll_mode(void)
     monitor_reset_saved_state();
     set_fake_ms_timer(0);
 
-    MachineMonitor mon(&ui, &backend);
+    BackendMachineMonitor mon(&ui, &backend);
     mon.init(&screen, &kb);
     if (expect(mon.poll(0) == 0, "Opcode picker poll test: ASM view switch failed.")) return 1;
     if (expect(mon.poll(0) == 0, "Opcode picker poll test: poll mode enable failed.")) return 1;
@@ -2774,7 +2796,7 @@ static int test_cross_view_sync(void)
     ui.screen = &screen;
     ui.keyboard = &kb;
     ui.set_prompt("0400", 1);
-    MachineMonitor mon(&ui, &backend);
+    BackendMachineMonitor mon(&ui, &backend);
     mon.init(&screen, &kb);
     for (int i = 0; i < 5; i++) (void)mon.poll(0);
     // Now switch to HEX and verify the same byte reads back.
@@ -2804,7 +2826,7 @@ static int test_binary_bit_navigation_and_width(void)
         backend.write(0x0401, 0x01);
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Binary bit test: goto failed.")) return 1;
         if (expect(mon.poll(0) == 0, "Binary bit test: view switch failed.")) return 1;
@@ -2853,7 +2875,7 @@ static int test_binary_bit_navigation_and_width(void)
         backend.write(0x0003, 0x00);
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Binary width test: view switch failed.")) return 1;
         // Just verify we can switch to binary view at default width 1
@@ -2909,7 +2931,7 @@ static int test_binary_row_formats(void)
         ui.screen = &screen;
         ui.keyboard = &kb;
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Binary row format test: binary view switch failed.")) return 1;
         if (cases[i].width_prompt) {
@@ -2945,7 +2967,7 @@ static int test_binary_delete_behavior(void)
         backend.write(0x0400, 0xAA);
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Binary DEL set-bit test: goto failed.")) return 1;
         if (expect(mon.poll(0) == 0, "Binary DEL set-bit test: view switch failed.")) return 1;
@@ -2978,7 +3000,7 @@ static int test_binary_delete_behavior(void)
         backend.write(0x0400, 0x2A);
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Binary DEL clear-bit test: goto failed.")) return 1;
         if (expect(mon.poll(0) == 0, "Binary DEL clear-bit test: view switch failed.")) return 1;
@@ -3012,7 +3034,7 @@ static int test_binary_delete_behavior(void)
         backend.write(0x0401, 0x80);
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Binary DEL boundary test: goto failed.")) return 1;
         if (expect(mon.poll(0) == 0, "Binary DEL boundary test: view switch failed.")) return 1;
@@ -3049,7 +3071,7 @@ static int test_binary_delete_behavior(void)
         backend.write(0x0000, 0x80);
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Binary DEL wrap test: goto failed.")) return 1;
         if (expect(mon.poll(0) == 0, "Binary DEL wrap test: view switch failed.")) return 1;
@@ -3099,7 +3121,7 @@ static int test_clipboard_number_and_range(void)
         backend.write(0x0000, 65);
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Number inspector did not open.")) return 1;
         if (expect(mon.poll(0) == 0, "Number inspector decimal navigation failed.")) return 1;
@@ -3136,7 +3158,7 @@ static int test_clipboard_number_and_range(void)
         }
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Range mode entry failed.")) return 1;
         screen.get_slice(1, 3, 38, header);
@@ -3190,7 +3212,7 @@ static int test_asm_range_copy_paste(void)
     ui.push_prompt("C100", 1);
     monitor_reset_saved_state();
 
-    MachineMonitor mon(&ui, &backend);
+    BackendMachineMonitor mon(&ui, &backend);
     mon.init(&screen, &kb);
     for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
         if (expect(mon.poll(0) == 0, "ASM range test command failed.")) return 1;
@@ -3245,7 +3267,7 @@ static int test_asm_paste_keeps_viewport_position(void)
     ui.push_prompt("C100", 1);
     monitor_reset_saved_state();
 
-    MachineMonitor mon(&ui, &backend);
+    BackendMachineMonitor mon(&ui, &backend);
     mon.init(&screen, &kb);
     if (expect(mon.poll(0) == 0, "ASM paste viewport test: goto source failed.")) return 1;
     if (expect(mon.poll(0) == 0, "ASM paste viewport test: ASM view switch failed.")) return 1;
@@ -3291,7 +3313,7 @@ static int test_illegal_mode_header_label(void)
     ui.keyboard = &kb;
     monitor_reset_saved_state();
 
-    MachineMonitor mon(&ui, &backend);
+    BackendMachineMonitor mon(&ui, &backend);
     mon.init(&screen, &kb);
     if (expect(mon.poll(0) == 0, "Illegal mode label test: ASM view switch failed.")) return 1;
     if (expect(mon.poll(0) == 0, "Illegal mode label test: '*' should now be ignored.")) return 1;
@@ -3329,7 +3351,7 @@ static int test_hunt_and_compare_picker_navigation(void)
         ui.set_prompt("C000-C013,DE", 1);
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Hunt picker test: hunt command failed.")) return 1;
         screen.get_slice(1, 4, 37, row);
@@ -3364,7 +3386,7 @@ static int test_hunt_and_compare_picker_navigation(void)
         ui.set_prompt("C100-C103,C200", 1);
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Compare picker test: compare command failed.")) return 1;
         screen.get_slice(1, 4, 37, row);
@@ -3394,7 +3416,7 @@ static int test_number_popup_edit_and_commit(void)
     ui.keyboard = &kb;
     monitor_reset_saved_state();
 
-    MachineMonitor mon(&ui, &backend);
+    BackendMachineMonitor mon(&ui, &backend);
     mon.init(&screen, &kb);
 
     if (expect(mon.poll(0) == 0, "Number popup test: open failed.")) return 1;
@@ -3481,7 +3503,7 @@ static int test_number_popup_word_commit_and_sticky_row(void)
         ui.keyboard = &kb;
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
 
         if (expect(mon.poll(0) == 0, "ASCII Number popup test: open failed.")) return 1;
@@ -3538,7 +3560,7 @@ static int test_number_popup_word_commit_and_sticky_row(void)
         ui.keyboard = &kb;
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
 
         if (expect(mon.poll(0) == 0, "Screen Number popup test: open failed.")) return 1;
@@ -3583,7 +3605,7 @@ static int test_number_popup_placement_and_overlay_redraw(void)
         ui.keyboard = &kb;
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
 
         if (expect(find_highlighted_cell(screen, &cursor_x, &cursor_y),
@@ -3639,7 +3661,7 @@ static int test_number_popup_placement_and_overlay_redraw(void)
         ui.keyboard = &kb;
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Top-right placement test: ASCII view switch failed.")) return 1;
         for (int i = 0; i < 22; i++) {
@@ -3679,7 +3701,7 @@ static int test_number_popup_placement_and_overlay_redraw(void)
         ui.keyboard = &kb;
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         for (int i = 0; i < 17; i++) {
             if (expect(mon.poll(0) == 0, "Bottom-left placement test: cursor movement failed.")) return 1;
@@ -3720,7 +3742,7 @@ static int test_number_popup_placement_and_overlay_redraw(void)
         ui.keyboard = &kb;
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Bottom-right placement test: ASCII view switch failed.")) return 1;
         for (int i = 0; i < 39; i++) {
@@ -3762,7 +3784,7 @@ static int test_number_popup_placement_and_overlay_redraw(void)
         ui.keyboard = &kb;
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Center placement test: ASCII view switch failed.")) return 1;
         for (int i = 0; i < 30; i++) {
@@ -3806,7 +3828,7 @@ static int test_disassembly_up_keeps_screen_row(void)
     ui.set_prompt("0001", 1);
     monitor_reset_saved_state();
 
-    MachineMonitor mon(&ui, &backend);
+    BackendMachineMonitor mon(&ui, &backend);
     mon.init(&screen, &kb);
 
     if (expect(mon.poll(0) == 0, "Disassembly row test: ASM view switch failed.")) return 1;
@@ -3852,7 +3874,7 @@ static int test_fixed_prompt_widths(void)
         ui.set_prompt("", 0);
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Fixed prompt width test: command key failed.")) return 1;
         if (expect(strcmp(ui.last_prompt_message, cases[i].message) == 0,
@@ -3879,7 +3901,7 @@ static int test_prompt_cancel_and_empty_clipboard(void)
         ui.set_prompt("", 0);
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Prompt cancel test: fill command should stay in the monitor.")) return 1;
         if (expect(backend.read(0x0000) == 0x00 && ui.popup_count == 0,
@@ -3898,7 +3920,7 @@ static int test_prompt_cancel_and_empty_clipboard(void)
         ui.keyboard = &kb;
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Empty clipboard test: paste should not exit.")) return 1;
         if (expect(ui.popup_count == 1 && strcmp(ui.last_popup, "?CLIP") == 0,
@@ -3933,7 +3955,7 @@ static int test_load_save_and_goto_command_flow(void)
         monitor_io::g_monitor_io.load_data[4] = 0xCC;
         monitor_io::g_monitor_io.load_size = 5;
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "LOAD command flow test failed.")) return 1;
         if (expect(monitor_io::g_monitor_io.load_called && monitor_io::g_monitor_io.pick_file_calls == 1 &&
@@ -3965,7 +3987,7 @@ static int test_load_save_and_goto_command_flow(void)
         strcpy(monitor_io::g_monitor_io.pick_path, "/tmp");
         strcpy(monitor_io::g_monitor_io.pick_name, "save.prg");
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "SAVE command flow test failed.")) return 1;
         if (expect(monitor_io::g_monitor_io.save_called && monitor_io::g_monitor_io.last_pick_save_mode,
@@ -3998,7 +4020,7 @@ static int test_load_save_and_goto_command_flow(void)
         strcpy(monitor_io::g_monitor_io.pick_path, "/tmp");
         strcpy(monitor_io::g_monitor_io.pick_name, "THIS-IS-A-VERY-LONG-FILENAME-FOR-CONFIRMATION-TESTING.PRG");
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Long confirmation filename test failed.")) return 1;
         if (expect(ui.popup_count == 1,
@@ -4025,6 +4047,7 @@ static int test_load_save_and_goto_command_flow(void)
         monitor_reset_saved_state();
         monitor_io::reset_fake_monitor_io();
 
+        BackendMachineMonitor monitor(&ui, &backend);
         ui.run_machine_monitor(&backend);
         if (expect(monitor_io::g_monitor_io.jump_called && monitor_io::g_monitor_io.jump_address == 0xC123,
                    "Go command must dispatch the requested jump address.")) return 1;
@@ -4046,7 +4069,7 @@ static int test_hex_single_nibble_commits_on_navigation(void)
         monitor_reset_saved_state();
         backend.write(0x0000, 0xFF);
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Hex nibble cursor-right test: enter edit mode failed.")) return 1;
         if (expect(mon.poll(0) == 0, "Hex nibble cursor-right test: typing nibble failed.")) return 1;
@@ -4069,7 +4092,7 @@ static int test_hex_single_nibble_commits_on_navigation(void)
         monitor_reset_saved_state();
         backend.write(0x0000, 0xFF);
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Hex nibble page-move test: enter edit mode failed.")) return 1;
         if (expect(mon.poll(0) == 0, "Hex nibble page-move test: typing nibble failed.")) return 1;
@@ -4097,7 +4120,7 @@ static int test_header_invariants_and_parity(void)
         ui.keyboard = &kb;
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Header test: edit mode entry failed.")) return 1;
         if (expect(mon.poll(0) == 0, "Header test: range mode entry failed.")) return 1;
@@ -4145,14 +4168,14 @@ static int test_header_invariants_and_parity(void)
         ui_b.screen = &screen_b;
         ui_b.keyboard = &kb_b;
         monitor_reset_saved_state();
-        MachineMonitor mon_a(&ui_a, &backend_a);
+        BackendMachineMonitor mon_a(&ui_a, &backend_a);
         mon_a.init(&screen_a, &kb_a);
         for (int i = 0; i < (int)(sizeof(keys_a) / sizeof(keys_a[0])); i++) {
             if (expect(mon_a.poll(0) == 0, "Parity render A command failed.")) return 1;
         }
 
         monitor_reset_saved_state();
-        MachineMonitor mon_b(&ui_b, &backend_b);
+        BackendMachineMonitor mon_b(&ui_b, &backend_b);
         mon_b.init(&screen_b, &kb_b);
         for (int i = 0; i < (int)(sizeof(keys_b) / sizeof(keys_b[0])); i++) {
             if (expect(mon_b.poll(0) == 0, "Parity render B command failed.")) return 1;
@@ -4186,7 +4209,7 @@ static int test_poll_mode_refreshes_visible_ram(void)
     set_fake_ms_timer(0);
     backend.write(0x0000, 0x11);
 
-    MachineMonitor mon(&ui, &backend);
+    BackendMachineMonitor mon(&ui, &backend);
     mon.init(&screen, &kb);
     if (expect(mon.poll(0) == 0, "Poll mode test: P toggle failed.")) return 1;
 
@@ -4226,7 +4249,7 @@ static int test_poll_mode_refreshes_visible_ram(void)
         set_fake_ms_timer(0);
         ntsc_backend.write(0x0000, 0x11);
 
-        MachineMonitor ntsc_mon(&ntsc_ui, &ntsc_backend);
+        BackendMachineMonitor ntsc_mon(&ntsc_ui, &ntsc_backend);
         ntsc_mon.init(&ntsc_screen, &ntsc_kb);
         if (expect(ntsc_mon.poll(0) == 0, "NTSC poll mode test: P toggle failed.")) return 1;
 
@@ -4289,7 +4312,7 @@ static int test_edit_indicator_layout_across_views(void)
         ui.keyboard = &kb;
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         for (int step = 0; step < cases[i].key_count; step++) {
             if (expect(mon.poll(0) == 0, "Edit indicator cross-view test: command sequence failed.")) return 1;
@@ -4315,7 +4338,7 @@ static int test_edit_indicator_layout_across_views(void)
         ui.keyboard = &kb;
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         for (int step = 0; step < (int)(sizeof(keys) / sizeof(keys[0])); step++) {
             if (expect(mon.poll(0) == 0, "Edit indicator layout test: ASM/freeze sequence failed.")) return 1;
@@ -4451,7 +4474,7 @@ static int test_warning_popups_preserve_status_row(void)
         ui.popup_count = 0;
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         g_set_screen_title_call_count = 0;
         if (expect(mon.poll(0) == 0, "W in hex view should not exit the monitor.")) return 1;
@@ -4474,7 +4497,7 @@ static int test_warning_popups_preserve_status_row(void)
         ui.popup_count = 0;
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         g_set_screen_title_call_count = 0;
         if (expect(mon.poll(0) == 0, "Z outside overlay mode should not exit.")) return 1;
@@ -4500,7 +4523,7 @@ static int test_warning_popups_preserve_status_row(void)
         ui.popup_count = 0;
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Z in overlay mode should not exit.")) return 1;
         if (expect(ui.popup_count == 0, "Z in overlay mode must not raise a warning popup.")) return 1;
@@ -4521,7 +4544,7 @@ static int test_warning_popups_preserve_status_row(void)
         ui.popup_count = 0;
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         g_set_screen_title_call_count = 0;
         if (expect(mon.poll(0) == 0, "U outside ASM view should not exit.")) return 1;
@@ -4546,7 +4569,7 @@ static int test_warning_popups_preserve_status_row(void)
         ui.popup_count = 0;
         monitor_reset_saved_state();
 
-        MachineMonitor mon(&ui, &backend);
+        BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "ASM view switch failed in U-in-ASM sanity test.")) return 1;
         if (expect(mon.poll(0) == 0, "U in ASM view should toggle silently.")) return 1;
@@ -4574,7 +4597,7 @@ static int test_restricted_backend_guards_platform_features(void)
     monitor_reset_saved_state();
     monitor_io::reset_fake_monitor_io();
 
-    MachineMonitor mon(&ui, &backend);
+    BackendMachineMonitor mon(&ui, &backend);
     mon.init(&screen, &kb);
 
     screen.get_slice(1, 22, 38, status);

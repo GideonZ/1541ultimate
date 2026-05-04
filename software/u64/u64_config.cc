@@ -40,7 +40,6 @@ extern "C" {
 #include "hdmi_scan.h"
 #include "usb_hid.h"
 #include "usb_hid_config.h"
-#include "u64_memory_backend.h"
 #include "monitor_init.h"
 
 const uint8_t default_colors[16][3] = {
@@ -1397,22 +1396,11 @@ int U64Config :: setSidEmuParams(ConfigItem *it)
 #define MENU_U64_UART_ECHO 10
 #define MENU_U64_MONITOR 12
 
-SubsysResultCode_e U64Config :: S_run_monitor(SubsysCommand *cmd)
-{
-    if (!cmd->user_interface) {
-        return SSRET_NO_USER_INTERFACE;
-    }
-
-    U64MemoryBackend monitor_backend;
-    cmd->user_interface->run_machine_monitor(&monitor_backend);
-    return SSRET_OK;
-}
-
 void U64Config :: create_task_items(void)
 {
     TaskCategory *dev = TasksCollection :: getCategory("Developer", SORT_ORDER_DEVELOPER);
     myActions.poke      = new Action("Poke", SUBSYSID_U64, MENU_U64_POKE);
-    myActions.monitor   = register_machine_monitor_task(U64Config::S_run_monitor, MENU_U64_MONITOR);
+    myActions.monitor   = register_u64_machine_monitor_task ? register_u64_machine_monitor_task(MENU_U64_MONITOR) : NULL;
     myActions.saveedid  = new Action("Save EDID to file", SUBSYSID_U64, MENU_U64_SAVEEDID);
     myActions.siddetect = new Action("Detect SIDs", SUBSYSID_U64, MENU_U64_DETECT_SIDS);
     myActions.esp32off  = new Action("Disable ESP32", SUBSYSID_U64, MENU_U64_WIFI_DISABLE);

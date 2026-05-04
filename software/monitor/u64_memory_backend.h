@@ -4,16 +4,18 @@
 #include "memory_backend.h"
 
 class C64;
+class U64Machine;
 
 class U64MemoryBackend : public MemoryBackend
 {
+    U64Machine *machine;
     bool stopped_machine_for_session;
 
     void load_monitor_char_rom_cache(C64 *machine);
     void load_monitor_rom_cache(C64 *machine);
     bool read_monitor_rom_byte(uint16_t address, uint8_t cpu_port, uint8_t *value) const;
 public:
-    U64MemoryBackend() : stopped_machine_for_session(false) { }
+    explicit U64MemoryBackend(U64Machine *machine) : machine(machine), stopped_machine_for_session(false) { }
     virtual uint8_t read(uint16_t address);
     virtual void write(uint16_t address, uint8_t value);
     virtual void read_block(uint16_t address, uint8_t *dst, uint16_t len);

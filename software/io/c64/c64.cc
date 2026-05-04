@@ -598,7 +598,7 @@ bool C64::is_in_reset(void)
     return (C64_MODE & C64_MODE_RESET);
 }
 
-uint8_t C64::monitor_read_memory(uint16_t address)
+uint8_t C64::peek(uint16_t address)
 {
     bool stopped_it = false;
     volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
@@ -637,7 +637,7 @@ uint8_t C64::monitor_read_memory(uint16_t address)
     return value;
 }
 
-void C64::monitor_write_memory(uint16_t address, uint8_t value)
+void C64::poke(uint16_t address, uint8_t value)
 {
     bool stopped_it = false;
     volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
@@ -671,14 +671,6 @@ void C64::monitor_write_memory(uint16_t address, uint8_t value)
 
     if (stopped_it) {
         resume();
-    }
-}
-
-void C64::monitor_read_memory_block(uint16_t address, uint8_t *dst, uint16_t len)
-{
-    while (len) {
-        *dst++ = monitor_read_memory(address++);
-        len--;
     }
 }
 

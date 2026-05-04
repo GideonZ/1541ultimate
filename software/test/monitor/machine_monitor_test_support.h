@@ -8,6 +8,8 @@
 #include "ui_elements.h"
 #include "userinterface.h"
 
+typedef MachineMonitor BackendMachineMonitor;
+
 void reset_fake_config_manager_state(void);
 void set_fake_ms_timer(uint16_t value);
 void advance_fake_ms_timer(uint16_t delta);

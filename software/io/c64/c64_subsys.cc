@@ -14,11 +14,7 @@
 #include "u64.h"
 #include "c1541.h"
 #include "endianness.h"
-#if !U64 && !defined(RECOVERYAPP)
 #include "monitor_init.h"
-#include "u2_memory_backend.h"
-#include "userinterface.h"
-#endif
 #if U64 == 2
 #include "wifi.h"
 #endif
@@ -93,21 +89,6 @@ C64_Subsys::~C64_Subsys() {
 
 }
 
-SubsysResultCode_e C64_Subsys :: S_run_monitor(SubsysCommand *cmd)
-{
-#if U64 || defined(RECOVERYAPP)
-    return SSRET_NOT_IMPLEMENTED;
-#else
-    if (!cmd->user_interface) {
-        return SSRET_NO_USER_INTERFACE;
-    }
-
-    U2MemoryBackend monitor_backend;
-    cmd->user_interface->run_machine_monitor(&monitor_backend);
-    return SSRET_OK;
-#endif
-}
-
 void C64_Subsys :: create_task_items(void)
 {
     myActions.reset    = new Action("Reset C64", SUBSYSID_C64, MENU_C64_RESET);
@@ -125,8 +106,8 @@ void C64_Subsys :: create_task_items(void)
     myActions.savemp3c = new Action("Save MP3 Drv C", SUBSYSID_C64, MENU_C64_SAVE_MP3_DRV_C);
     myActions.savemp3d = new Action("Save MP3 Drv D", SUBSYSID_C64, MENU_C64_SAVE_MP3_DRV_D);
     myActions.measure  = new Action("Measure Cart Bus", SUBSYSID_C64, MENU_MEASURE_TIMING);
-#if !U64 && !defined(RECOVERYAPP)
-    myActions.monitor  = register_machine_monitor_task(C64_Subsys::S_run_monitor, MENU_C64_MONITOR);
+#if !U64
+    myActions.monitor  = register_c64_machine_monitor_task ? register_c64_machine_monitor_task(MENU_C64_MONITOR) : NULL;
 #endif
 
     taskCategory->append(myActions.reset);

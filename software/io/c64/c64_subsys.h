@@ -43,8 +43,6 @@ class C64_Subsys : public SubSystem, ObjectWithMenu
     } myActions;
 
     static void poll(void *a);
-    static SubsysResultCode_e S_run_monitor(SubsysCommand *cmd);
-
     /* Subsystem */
 	const char *identify(void) { return "C64 Machine"; }
 	SubsysResultCode_e executeCommand(SubsysCommand *cmd);

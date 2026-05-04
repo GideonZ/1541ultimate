@@ -17,6 +17,7 @@
 #include "home_directory.h"
 #include "system_info.h"
 #include "assembly_search.h"
+#include "monitor_init.h"
 #include "subsys.h"
 
 #include "stream_textlog.h"
@@ -367,6 +368,10 @@ int TreeBrowser :: handle_key(int c)
                 if (!state || !state->under_cursor) {
                     return 0;
                 }
+                if (state->under_cursor->pickAsCurrentPath()) {
+                    pick_result(getPath(), "", true);
+                    return MENU_CLOSE;
+                }
                 {
                     FileInfo *info = state->under_cursor->getFileInfo();
                     if (info && !(info->attrib & (AM_DIR | AM_VOL))) {
@@ -381,8 +386,7 @@ int TreeBrowser :: handle_key(int c)
                 if (!state || !state->under_cursor) {
                     return 0;
                 }
-                if (state->under_cursor->getFileInfo() &&
-                    !(state->under_cursor->getFileInfo()->attrib & (AM_DIR | AM_VOL))) {
+                if (state->under_cursor->pickAsCurrentPath()) {
                     return 0;
                 }
                 state->into2();
@@ -448,11 +452,11 @@ int TreeBrowser :: handle_key(int c)
         case KEY_CTRL_O:
             reset_quick_seek();
             state->refresh = true;
-            TaskMenu::ensure_task_actions_created(path ? FileManager :: getFileManager()->is_path_writable(path) : false);
-            {
-                Action *monitorAction = TaskMenu::find_task_action(SUBSYSID_U64, "Machine Code Monitor");
+            if (get_machine_monitor_task) {
+                TaskMenu::ensure_task_actions_created(path ? FileManager :: getFileManager()->is_path_writable(path) : false);
+                Action *monitorAction = get_machine_monitor_task(SUBSYSID_U64);
                 if (!monitorAction) {
-                    monitorAction = TaskMenu::find_task_action(SUBSYSID_C64, "Machine Code Monitor");
+                    monitorAction = get_machine_monitor_task(SUBSYSID_C64);
                 }
                 if (monitorAction) {
                     const char *currentPath = path ? path->get_path() : "";

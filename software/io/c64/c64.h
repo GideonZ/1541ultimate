@@ -318,8 +318,6 @@ class C64 : public GenericHost, ConfigurableObject
     void measure_timing(uint8_t *buffer);
     virtual void get_all_memory(uint8_t *) { /* NOT YET IMPLEMENTED */ };
     virtual void clear_ram(void) { /* NOT YET IMPLEMENTED */ };
-    virtual uint8_t peek(uint16_t) { return 0; /* NOT YET IMPLEMENTED */ };
-    virtual void poke(uint16_t, uint8_t) { /* NOT YET IMPLEMENTED */ };
     static uint8_t get_exrom_game(void) {
         return (C64_CLOCK_DETECT & 0x0C) >> 2;
     }
@@ -398,9 +396,8 @@ public:
     void reset(void);
     void start(void);
     bool is_in_reset(void);
-    uint8_t monitor_read_memory(uint16_t address);
-    void monitor_write_memory(uint16_t address, uint8_t value);
-    void monitor_read_memory_block(uint16_t address, uint8_t *dst, uint16_t len);
+    virtual uint8_t peek(uint16_t address);
+    virtual void poke(uint16_t address, uint8_t value);
 
     static void clear_cart_definition(cart_def *def) {
         def->custom_addr = 0;
