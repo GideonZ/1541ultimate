@@ -6,7 +6,7 @@
 #include "filemanager.h"
 #include "small_printf.h"
 
-// Monitor save-mode browser entries. The synthetic <Save in this folder>
+// Monitor save-mode browser entries. The synthetic <Create File>
 // entry is injected by the monitor-owned root and directory subclasses, so
 // generic browser code does not need to know about save semantics — it only
 // needs the pickAsCurrentPath() hook.
