@@ -147,6 +147,7 @@ C64::C64()
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_MODE = MODE_NORMAL;
     isFrozen = false;
+    frozen_mode = MODE_NORMAL;
     backupIsValid = false;
     buttonPushSeen = false;
     client = 0;
@@ -601,6 +602,8 @@ uint8_t C64::monitor_read_memory(uint16_t address)
 {
     bool stopped_it = false;
     volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+    uint8_t saved_mode = 0;
+    bool restore_mode = false;
     uint8_t value;
 
     if (!is_stopped()) {
@@ -615,7 +618,17 @@ uint8_t C64::monitor_read_memory(uint16_t address)
     } else if (isFrozen && address >= 0xD800 && address < 0xDC00) {
         value = ((uint8_t *)color_backup)[address - 0xD800];
     } else {
+        if (isFrozen && address >= 0x8000 && (address < 0xD000 || address >= 0xE000)) {
+            saved_mode = C64_MODE;
+            if ((saved_mode & C64_MODE_ULTIMAX) && (saved_mode != frozen_mode)) {
+                C64_MODE = frozen_mode;
+                restore_mode = true;
+            }
+        }
         value = ram[address];
+        if (restore_mode) {
+            C64_MODE = saved_mode;
+        }
     }
 
     if (stopped_it) {
@@ -628,6 +641,8 @@ void C64::monitor_write_memory(uint16_t address, uint8_t value)
 {
     bool stopped_it = false;
     volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+    uint8_t saved_mode = 0;
+    bool restore_mode = false;
 
     if (!is_stopped()) {
         stop(false);
@@ -641,7 +656,17 @@ void C64::monitor_write_memory(uint16_t address, uint8_t value)
     } else if (isFrozen && address >= 0xD800 && address < 0xDC00) {
         ((uint8_t *)color_backup)[address - 0xD800] = value;
     } else {
+        if (isFrozen && address >= 0x8000 && (address < 0xD000 || address >= 0xE000)) {
+            saved_mode = C64_MODE;
+            if ((saved_mode & C64_MODE_ULTIMAX) && (saved_mode != frozen_mode)) {
+                C64_MODE = frozen_mode;
+                restore_mode = true;
+            }
+        }
         ram[address] = value;
+        if (restore_mode) {
+            C64_MODE = saved_mode;
+        }
     }
 
     if (stopped_it) {
@@ -779,6 +804,7 @@ void C64::freeze(void)
     if (!phi2_present())
         return;
 
+    frozen_mode = C64_MODE;
     stop(true);
     backup_io();
     init_io();

@@ -91,6 +91,7 @@ SRCS_CC	 =  u2p_init.cc \
 			size_str.cc \
 			userinterface.cc \
 			ui_elements.cc \
+			path_picker.cc \
 			user_file_interaction.cc \
 			editor.cc \
 			hex_editor.cc \

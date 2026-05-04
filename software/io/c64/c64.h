@@ -293,6 +293,7 @@ class C64 : public GenericHost, ConfigurableObject
     uint8_t vic_irq;
     uint8_t vic_d011;
     uint8_t vic_d012;
+    uint8_t frozen_mode;
     bool backupIsValid;
 
     volatile bool buttonPushSeen;

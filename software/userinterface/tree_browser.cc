@@ -54,7 +54,6 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root) : UIObject(ui)
     use_ui_focus_stack = true;
     pick_mode = PICK_NONE;
     picked = false;
-    picked_is_dir_only = false;
 
     if(!state) {
         state = new TreeBrowserState(root, this, 0);
@@ -107,8 +106,6 @@ void TreeBrowser :: context(int initial)
 {
 	if(!state->under_cursor)
 		return;
-    if (is_picker_synthetic_entry(state->under_cursor))
-        return;
 
     //printf("Creating context menu for %s\n", state->under_cursor->getName());
     contextMenu = new ContextMenu(user_interface, state, initial, state->selected_line);
@@ -180,18 +177,7 @@ int TreeBrowser :: poll(int sub_returned)
             // create a return value of a GUI object, and call execute
             // with that immediately.
             state->draw();
-            Action *selectedAction = contextMenu->getSelectedAction();
-            Browsable *selectedEntry = contextMenu->getContextable();
-            FileInfo *info = selectedEntry ? selectedEntry->getFileInfo() : NULL;
-            if (selectedAction && selectedEntry &&
-                (pick_mode != PICK_NONE) &&
-                info && !(info->attrib & (AM_DIR | AM_VOL)) &&
-                (strcmp(selectedAction->getName(), "Select File") == 0)) {
-                pick_result(state->browser->getPath(), selectedEntry->getName(), false);
-                ret = MENU_CLOSE;
-            } else {
-                ret = contextMenu->executeSelected(state->browser->getPath());
-            }
+            ret = contextMenu->executeSelected(state->browser->getPath());
             if (!use_ui_focus_stack) {
                 contextMenu->deinit();
             }
@@ -381,17 +367,31 @@ int TreeBrowser :: handle_key(int c)
                 if (!state || !state->under_cursor) {
                     return 0;
                 }
-                if ((pick_mode == PICK_SAVE) && is_picker_synthetic_entry(state->under_cursor)) {
-                    return pick_current_directory();
+                {
+                    FileInfo *info = state->under_cursor->getFileInfo();
+                    if (info && !(info->attrib & (AM_DIR | AM_VOL))) {
+                        pick_result(state->browser->getPath(), state->under_cursor->getName(), false);
+                        return MENU_CLOSE;
+                    }
                 }
-                context(0);
+                state->into2();
                 return 0;
             case KEY_RIGHT:
                 reset_quick_seek();
-                if (!state || !state->under_cursor || is_picker_synthetic_entry(state->under_cursor)) {
+                if (!state || !state->under_cursor) {
+                    return 0;
+                }
+                if (state->under_cursor->getFileInfo() &&
+                    !(state->under_cursor->getFileInfo()->attrib & (AM_DIR | AM_VOL))) {
                     return 0;
                 }
                 state->into2();
+                return 0;
+            case KEY_LEFT:
+                if (!state->previous && allow_exit) {
+                    return MENU_CLOSE;
+                }
+                state->level_up();
                 return 0;
             case KEY_BREAK:
             case KEY_F8:
@@ -569,7 +569,7 @@ bool TreeBrowser :: perform_quick_seek(void)
     int num_el = state->children->get_elements();
     for(int i=0;i<num_el;i++) {
     	Browsable *t = (*state->children)[i];
-		if(t && !t->isSyntheticPickerEntry() && pattern_match(quick_seek_string, t->getName(), false)) {
+        if(t && pattern_match(quick_seek_string, t->getName(), false)) {
 			state->move_to_index(i);
 			return true;
 		}
@@ -595,7 +595,7 @@ void TreeBrowser :: copy_selection(void)
 	}
 	if (clipboard.getNumberOfFiles() == 0) {
 	    Browsable *t = state->under_cursor;
-	    if (t && !t->isSyntheticPickerEntry()) {
+        if (t) {
 	        clipboard.addFile(t->getName());
 	    }
 	}
@@ -685,23 +685,12 @@ void TreeBrowser :: cd(const char *dst)
     observerQueue->putEvent(new FileManagerEvent(eChangeDirectory, dst));
 }
 
-bool TreeBrowser :: is_picker_synthetic_entry(Browsable *entry) const
-{
-    return entry && entry->isSyntheticPickerEntry();
-}
-
 void TreeBrowser :: pick_result(const char *path, const char *name, bool dir_only)
 {
+    (void)dir_only;
     picked = true;
-    picked_is_dir_only = dir_only;
     picked_path = path ? path : "";
     picked_name = name ? name : "";
-}
-
-int TreeBrowser :: pick_current_directory(void)
-{
-    pick_result(path ? path->get_path() : "", "", true);
-    return MENU_CLOSE;
 }
 
 // private

@@ -13,72 +13,6 @@
 
 IndexedList<Browsable *>emptyList(0, NULL);
 
-namespace {
-
-static const char c_picker_create_file_label[] = "<Create File>";
-
-class SyntheticPickerEntry : public Browsable
-{
-public:
-    const char *getName() { return c_picker_create_file_label; }
-    void getDisplayString(char *buffer, int width, int squeeze_option = 0)
-    {
-        (void)squeeze_option;
-        if (width <= 0) {
-            return;
-        }
-        strncpy(buffer, c_picker_create_file_label, width);
-        buffer[width - 1] = 0;
-    }
-    void getDisplayString(char *buffer, int width)
-    {
-        getDisplayString(buffer, width, 0);
-    }
-    IndexedList<Browsable *> *getSubItems(int &error)
-    {
-        error = -1;
-        return &children;
-    }
-    void setSelection(bool s)
-    {
-        (void)s;
-    }
-    bool getSelection()
-    {
-        return false;
-    }
-    bool isSyntheticPickerEntry()
-    {
-        return true;
-    }
-};
-
-void prepend_picker_entry(IndexedList<Browsable *> *children)
-{
-    if (!children) {
-        return;
-    }
-    children->append(new SyntheticPickerEntry());
-    for (int i = children->get_elements() - 1; i > 0; i--) {
-        children->swap(i, i - 1);
-    }
-}
-
-void maybe_prepend_picker_entry(TreeBrowser *browser, Browsable *node, IndexedList<Browsable *> *children, int error)
-{
-    (void)node;
-    if ((error < 0) || !browser || !children ||
-        (browser->pick_mode != TreeBrowser::PICK_SAVE) ||
-        !browser->path || (browser->path->getDepth() <= 0)) {
-        return;
-    }
-    if (browser->fm && browser->fm->is_path_writable(browser->path)) {
-        prepend_picker_entry(children);
-    }
-}
-
-}
-
 /*****************************/
 /* Tree Browser State Object */
 /*****************************/
@@ -302,7 +236,6 @@ void TreeBrowserState :: reload(void)
 	cleanup();
 	int error;
 	children = node->getSubItems(error);
-    maybe_prepend_picker_entry(browser, node, children, error);
 	printf("State %s reloaded. # of children = %d\n", node->getName(), children->get_elements());
 	needs_reload = false;
 	refresh = true;
@@ -322,7 +255,6 @@ void TreeBrowserState :: into(void)
     	return;
     }
 	browser->path->cd(under_cursor->getName());
-    maybe_prepend_picker_entry(browser, deeper->node, deeper->children, error);
     printf("%d children fetched from %s.\n", deeper->children->get_elements(), under_cursor->getName());
 
 	//user_interface->set_path(under_cursor);
@@ -347,7 +279,6 @@ bool TreeBrowserState :: into2(void)
     	return true;
     }
 	browser->path->cd(under_cursor->getName());
-    maybe_prepend_picker_entry(browser, deeper->node, deeper->children, error);
     printf("%d children fetched from %s.\n", deeper->children->get_elements(), under_cursor->getName());
 
     browser->state = deeper;
@@ -382,7 +313,6 @@ void TreeBrowserState :: into3(const char* name)
         return;
     }
     browser->path->cd(browsable->getName());
-    maybe_prepend_picker_entry(browser, deeper->node, deeper->children, error);
     printf("%d children fetched from %s.\n", deeper->children->get_elements(), browsable->getName());
     
     browser->state = deeper;

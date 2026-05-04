@@ -4,6 +4,7 @@
 
 #include "monitor_file_io.h"
 #include "machine_monitor.h"
+#include "path_picker.h"
 #include "userinterface.h"
 #include "tree_browser.h"
 #include "tree_browser_state.h"
@@ -41,16 +42,46 @@ bool monitor_io::pick_file(UserInterface *ui, const char *title,
                            char *name_out, int name_max,
                            bool save_mode)
 {
-    (void)title; // Browser draws its own header; title is reserved for future use.
+    (void)title;
 
     if (path_out && path_max > 0) path_out[0] = 0;
     if (name_out && name_max > 0) name_out[0] = 0;
+
+    if (save_mode) {
+        if (!ui || !path_out || path_max <= 1) {
+            return false;
+        }
+
+        strncpy(path_out, s_monitor_browse_path.c_str(), path_max - 1);
+        path_out[path_max - 1] = 0;
+
+        UIPathPicker picker(ui, path_out, path_max);
+        picker.init();
+
+        int ret = 0;
+        GenericHost *h = ui->host;
+        while (!ret && (!h || h->exists())) {
+            ret = picker.poll(0);
+        }
+
+        picker.deinit();
+        if (ret > 0) {
+            if (name_out && name_max > 0) {
+                name_out[0] = 0;
+            }
+            s_monitor_browse_path = path_out;
+            return true;
+        }
+
+        path_out[0] = 0;
+        return false;
+    }
 
     Browsable *root = new BrowsableRoot();
     TreeBrowser *browser = new TreeBrowser(ui, root);
     browser->allow_exit = true;
     browser->use_ui_focus_stack = false;
-    browser->pick_mode = save_mode ? TreeBrowser::PICK_SAVE : TreeBrowser::PICK_LOAD;
+    browser->pick_mode = TreeBrowser::PICK_LOAD;
     browser->init();
     if (s_monitor_browse_path.length() > 1) {
         browser->cd(s_monitor_browse_path.c_str());

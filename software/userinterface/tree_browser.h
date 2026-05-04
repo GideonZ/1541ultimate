@@ -63,7 +63,6 @@ public:
     bool use_ui_focus_stack;
     PickMode pick_mode;
     bool     picked;
-    bool     picked_is_dir_only;
     mstring  picked_path;
     mstring  picked_name;
     
@@ -107,8 +106,6 @@ public:
     void delete_selected(void);
     void paste(void);
     void cd(const char *path);
-    bool is_picker_synthetic_entry(Browsable *entry) const;
-    int pick_current_directory(void);
     void pick_result(const char *path, const char *name, bool dir_only);
     
     void invalidate(const void *obj);

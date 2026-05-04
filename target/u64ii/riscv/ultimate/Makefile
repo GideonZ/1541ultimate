@@ -104,6 +104,7 @@ SRCS_CC	 =  u64ii_init.cc \
 			userinterface.cc \
 			run_machine_monitor.cc \
 			ui_elements.cc \
+			path_picker.cc \
 			user_file_interaction.cc \
 			editor.cc \
 			hex_editor.cc \

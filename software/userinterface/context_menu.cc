@@ -45,13 +45,6 @@ ContextMenu :: ~ContextMenu(void)
 
 int ContextMenu :: get_items(void)
 {
-    FileInfo *info = contextable ? contextable->getFileInfo() : NULL;
-    if (state && state->browser && contextable &&
-        (state->browser->pick_mode != TreeBrowser::PICK_NONE) &&
-        info && !(info->attrib & (AM_DIR | AM_VOL)) &&
-        !contextable->isSyntheticPickerEntry()) {
-        actions.append(new Action("Select File", SUBSYSID_USER_STANDARD, 0));
-    }
     if(contextable) {
         contextable->fetch_context_items(actions);
     }
