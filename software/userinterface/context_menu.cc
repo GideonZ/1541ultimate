@@ -36,6 +36,10 @@ ContextMenu :: ContextMenu(UserInterface *ui, TreeBrowserState *state, int initi
 
 ContextMenu :: ~ContextMenu(void)
 {
+    if (window) {
+        delete window;
+        window = NULL;
+    }
     for(int i=0;i<actions.get_elements();i++) {
         Action *act = actions[i];
         if (!(act->isPersistent())) {
@@ -51,7 +55,10 @@ int ContextMenu :: get_items(void)
         if (state && state->browser && state->browser->pick_mode != TreeBrowser::PICK_NONE &&
             state->browser->can_pick(contextable) && !contextable->pickAsCurrentPath()) {
             pickAction = new Action("Select", (actionFunction_t)NULL, 0);
-            actions.prepend(pickAction);
+            actions.append(pickAction);
+            for (int i = actions.get_elements() - 1; i > 0; i--) {
+                actions.swap(i, i - 1);
+            }
         }
     }
     return actions.get_elements();
@@ -112,7 +119,8 @@ void ContextMenu :: init(Window *parwin, Keyboard *key)
 void ContextMenu :: deinit()
 {
     if (window) {
-        window->reset_border();
+        delete window;
+        window = NULL;
     }
 }
 
