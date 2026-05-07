@@ -152,7 +152,7 @@ begin
                 end if;
           
             when check_dma =>
-                if do_sample_addr = '1' and phi2_recovered = '1' and BA = '1' then
+                if do_sample_addr = '1' and phi2_recovered = '1' and vic_cycle = '0' then
                     state <= do_dma;
                 end if;
 
