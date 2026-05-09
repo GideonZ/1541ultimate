@@ -38,6 +38,7 @@ struct t_cfg_definition stream_cfg[] = {
 DataStreamer :: DataStreamer()
 {
     my_ip = 0;
+    udp_probe_socket = -1;
     memset(streams, 0, 4*sizeof(stream_config_t));
 
     cfg = ConfigManager :: getConfigManager()->register_store(0x44617461, "Data Streams", stream_cfg, NULL);
@@ -51,7 +52,10 @@ DataStreamer :: DataStreamer()
 // This should never be called
 DataStreamer :: ~DataStreamer()
 {
-
+    if (udp_probe_socket >= 0) {
+        lwip_close(udp_probe_socket);
+        udp_probe_socket = -1;
+    }
 }
 
 DataStreamer *dataStreamer;
@@ -280,14 +284,15 @@ void DataStreamer :: update_task_items(bool writablePath)
 
 void DataStreamer :: send_udp_packet(uint32_t ip, uint16_t port)
 {
-    int sockfd;
     static struct sockaddr_in server;
 
-    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sockfd < 0)
-    {
-        printf("Error opening socket to send UDP packet\n");
-        return;
+    if (udp_probe_socket < 0) {
+        udp_probe_socket = socket(AF_INET, SOCK_DGRAM, 0);
+        if (udp_probe_socket < 0)
+        {
+            printf("Error opening socket to send UDP packet. Errno = %d\n", errno);
+            return;
+        }
     }
 
     memset((char*)&server, 0, sizeof(server));
@@ -297,11 +302,11 @@ void DataStreamer :: send_udp_packet(uint32_t ip, uint16_t port)
 
     uint8_t buffer[2] = { 0, 0 };
     printf("Send UDP data...\n");
-    if (sendto(sockfd, buffer, 2, 0, (const struct sockaddr*)&server, sizeof(server)) < 0) {
-        printf("Error in sendto()\n");
+    if (sendto(udp_probe_socket, buffer, 2, 0, (const struct sockaddr*)&server, sizeof(server)) < 0) {
+        printf("Error in sendto(). Errno = %d\n", errno);
+        lwip_close(udp_probe_socket);
+        udp_probe_socket = -1;
     }
-    // close the socket again
-    lwip_close(sockfd);
 }
 
 

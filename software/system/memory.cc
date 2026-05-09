@@ -125,9 +125,9 @@ void * get_mem(size_t size)
 	ret = malloc(size);
 #endif
     if (!ret) {
-        printf("** PANIC **: Error allocating memory..\n");
-        while(1)
-            ;
+		printf("** PANIC **: Error allocating memory..\n");
+		while(1)
+			;
     }
     // printf("%p\n", ret);
     return ret;
