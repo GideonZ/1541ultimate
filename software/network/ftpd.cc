@@ -132,6 +132,15 @@ int dbg_printf(const char *fmt, ...);
 static const char *month_table[16] = { "Nul", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
         "M13", "M14", "M15" };
 
+static void ftp_set_socket_timeout(int socket_fd, long seconds, long usec)
+{
+    struct timeval tv;
+    tv.tv_sec = seconds;
+    tv.tv_usec = usec;
+    setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
+    setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv));
+}
+
 static FTPTransferResult send_all(int socket, const char *buffer, int length)
 {
     while (length > 0) {
@@ -223,11 +232,6 @@ int FTPDaemon::listen_task()
             vTaskDelay(100 / portTICK_PERIOD_MS);
             continue;  // Remote probably closed, just wait for another connection
         }
-
-        struct timeval tv;
-        tv.tv_sec = 0;
-        tv.tv_usec = 100000; // 100 ms
-        setsockopt(actual_socket, SOL_SOCKET, SO_RCVTIMEO, (char * )&tv, sizeof(struct timeval));
 
         FTPDaemonThread *thread = new FTPDaemonThread(actual_socket, cli_addr.sin_addr.s_addr, cli_addr.sin_port);
 
@@ -929,6 +933,7 @@ int FTPDataConnection::setup_connection()
         }
 
         actual_socket = s;
+        ftp_set_socket_timeout(actual_socket, 5, 0);
         connected = 1;
         return 0;
     }
@@ -964,6 +969,7 @@ int FTPDataConnection::connect_to(ip_addr_t ip, uint16_t port) // active mode
     }
     connected = 1;
     actual_socket = sockfd;
+    ftp_set_socket_timeout(actual_socket, 5, 0);
 
     // now do your thing
     return ERR_OK;

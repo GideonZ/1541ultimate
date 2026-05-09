@@ -57,6 +57,15 @@
 
 SocketDMA *socket_dma = NULL;
 
+static void socket_dma_set_timeouts(int socket_fd)
+{
+    struct timeval tv;
+    tv.tv_sec = 1;
+    tv.tv_usec = 0;
+    setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(struct timeval));
+    setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(struct timeval));
+}
+
 extern cart_def sid_cart;
 extern cart_def boot_cart;
 
@@ -420,8 +429,11 @@ void SocketDMA::dmaThread(void *load_buffer)
 		if (newsockfd < 0)
 		{
 			puts("dmaThread ERROR on accept");
-			return;
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+            continue;
 		}
+
+        socket_dma_set_timeouts(newsockfd);
 
 		uint32_t addr = cli_addr.sin_addr.s_addr;
 		your_ip[3] = addr >> 24;

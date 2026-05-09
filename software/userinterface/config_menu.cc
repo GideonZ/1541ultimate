@@ -1,25 +1,12 @@
 extern "C" {
     #include "small_printf.h"
 }
-#include <stdint.h>
-#include "FreeRTOS.h"
-#include "task.h"
 #include "userinterface.h"
 #include <stdlib.h>
 #include <string.h>
 #include "mystring.h" // my string class
 #include "config.h"
 #include "config_menu.h"
-
-static BrowsableConfigRoot config_roots[8];
-
-static BrowsableConfigRoot *select_config_root()
-{
-    uintptr_t task_tag = (uintptr_t)xTaskGetCurrentTaskHandle();
-    unsigned int index = (unsigned int)((task_tag >> 4) ^ (task_tag >> 9));
-    index %= (sizeof(config_roots) / sizeof(config_roots[0]));
-    return &config_roots[index];
-}
 
 /************************/
 /* ConfigBrowser Object */
@@ -40,8 +27,8 @@ ConfigBrowser :: ~ConfigBrowser()
 
 void ConfigBrowser :: start(UserInterface *ui)
 {
-    BrowsableConfigRoot *configRoot = select_config_root();
-    ConfigBrowser *configBrowser = new ConfigBrowser(ui, configRoot, 0);
+    static BrowsableConfigRoot configRoot; // = new BrowsableConfigRoot();
+    ConfigBrowser *configBrowser = new ConfigBrowser(ui, &configRoot, 0);
     configBrowser->init();
     ui->activate_uiobject(configBrowser);
     // from this moment on, we loose focus.. polls will go directly to config menu!
