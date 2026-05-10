@@ -15,8 +15,6 @@
 #include <sys/socket.h>
 #include <errno.h>
 #include <unistd.h>
-#include "FreeRTOS.h"
-#include "task.h"
 
 int SocketStream :: get_char()
 {
@@ -36,12 +34,8 @@ int SocketStream :: get_char()
 	    }
 	    return (int)buffer[0];
 	} else if (n < 0) {
-		if (errno == EAGAIN) {
-			if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED) {
-				vTaskDelay(1);
-			}
+		if (errno == EAGAIN)
 			return -1;
-		}
 		printf("ERROR reading from socket %d. Errno = %d", n, errno);
 		close();
 		return -2;
