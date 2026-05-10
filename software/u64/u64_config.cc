@@ -1751,14 +1751,16 @@ void U64Config :: SetMixerAutoSid(uint8_t *slots, int count)
     //                                      -  -  -  -|CNT -  -  - |L2 R2 -  - |CN L3 R3 - |L2 R2 L4 R4
 
     for (int i=0;i<count;i++) {
-        uint8_t volume = selectedVolumes[slots[i]];
-        if (!volume && master && !selectedSettings[slots[i]]) {
+        uint8_t slot = slots[i];
+        uint8_t mixerSlot = slot & 3;
+        uint8_t volume = selectedVolumes[mixerSlot];
+        if (!volume && master && !selectedSettings[mixerSlot]) {
             volume = 0x80;
         }
         int pan = channelPanning[4*count + i];
-        printf("Sid %d was mapped to slot %d, which has volume setting %02x. Setting pan to %s.\n", i, slots[i], volume, pannings[pan]);
-        mixer[0 + channelMap[slots[i]]] = (pan_ctrl[10-pan] * volume) >> 8;
-        mixer[1 + channelMap[slots[i]]] = (pan_ctrl[pan] * volume) >> 8;
+        printf("Sid %d was mapped to slot %d, which uses mixer channel %d with volume setting %02x. Setting pan to %s.\n", i, slot, mixerSlot, volume, pannings[pan]);
+        mixer[0 + channelMap[mixerSlot]] = (pan_ctrl[10-pan] * volume) >> 8;
+        mixer[1 + channelMap[mixerSlot]] = (pan_ctrl[pan] * volume) >> 8;
     }
 }
 
