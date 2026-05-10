@@ -408,7 +408,7 @@ struct t_cfg_definition u64_ultisid_cfg[] = {
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
 struct t_cfg_definition u64_mixer_cfg[] = {
-    { CFG_MIXER_MASTER_VOL,     CFG_TYPE_ENUM, "Vol Master",                  "%s", volumes,      0, 30, 24 },
+    { CFG_MIXER_MASTER_VOL,     CFG_TYPE_ENUM, "Vol Master",                   "%s", volumes,      0, 30, 24 },
     { CFG_MIXER0_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 1",                "%s", volumes,      0, 30, 24 },
     { CFG_MIXER1_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 2",                "%s", volumes,      0, 30, 24 },
     { CFG_MIXER2_VOL,           CFG_TYPE_ENUM, "Vol Socket 1",                 "%s", volumes,      0, 30, 24 },
@@ -1313,12 +1313,8 @@ int U64Config :: setSpeakerMixer(ConfigItem *it)
         }
         return 0;
     }
-    uint8_t master = 0x80;
-    if (u64_configurator && u64_configurator->mixercfg.cfg) {
-        master = volume_ctrl[u64_configurator->mixercfg.cfg->get_value(CFG_MIXER_MASTER_VOL)];
-    }
     for(int i=0; i<10; i++) {
-        uint8_t vol = combine_mixer_gain(volume_ctrl[cfg->get_value(CFG_MIXER0_VOL + i)], master);
+        uint8_t vol = volume_ctrl[cfg->get_value(CFG_MIXER0_VOL + i)];
         *(mixer++) = vol;
         *(mixer++) = vol;
     }
