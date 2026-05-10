@@ -6,7 +6,7 @@ use work.io_bus_pkg.all;
 use work.mem_bus_pkg.all;
 use work.sampler_pkg.all;
 
-entity sampler is
+entity sampler2 is
 generic (
     g_clock_freq    : natural := 50_000_000;
     g_support_16bit : boolean := true;
@@ -29,7 +29,7 @@ port (
 
 end entity;
 
-architecture gideon of sampler is
+architecture gideon of sampler2 is
     function iif(c : boolean; t : natural; f : natural) return natural is
     begin
         if c then return t; else return f; end if;
