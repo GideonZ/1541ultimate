@@ -43,7 +43,6 @@ class DataStreamer : public ObjectWithMenu
 
     uint8_t  my_mac[6];
     uint32_t my_ip;
-    int udp_probe_socket;
 
     stream_config_t streams[4];
     TimerHandle_t timers[4];
