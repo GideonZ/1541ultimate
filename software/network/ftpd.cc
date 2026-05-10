@@ -262,7 +262,10 @@ int FTPDaemon::listen_task()
     }
 }
 
-static uint16_t bind_port = 51000;
+static const uint16_t bind_port_first = 51000;
+static const uint16_t bind_port_last = 61000;
+static const int bind_port_count = bind_port_last - bind_port_first;
+static uint16_t bind_port = bind_port_first;
 
 FTPDaemonThread::FTPDaemonThread(int socket, uint32_t addr, uint16_t port) :
         data_connections(4, NULL)
@@ -329,10 +332,18 @@ void FTPDaemonThread::run(void *a)
 
 uint16_t FTPDaemonThread::getBindPort()
 {
-    if (bind_port == 61000) {
-        bind_port = 51000;
+    uint16_t port;
+
+    // Multiple FTP control threads can enter PASV concurrently.
+    // Keep passive-port allocation serialized so two threads do not race on the same port.
+    portENTER_CRITICAL();
+    if (bind_port >= bind_port_last) {
+        bind_port = bind_port_first;
     }
-    return bind_port++;
+    port = bind_port++;
+    portEXIT_CRITICAL();
+
+    return port;
 }
 
 int FTPDaemonThread::handle_connection()
@@ -1009,7 +1020,7 @@ int FTPDataConnection::do_bind(void)
     serv_addr.sin_len = sizeof(serv_addr.sin_addr);
 
     int result = -1;
-    int retry = 100;
+    int retry = bind_port_count;
     uint16_t port = 0;
 
     while (retry-- > 0) {
@@ -1017,6 +1028,9 @@ int FTPDataConnection::do_bind(void)
         serv_addr.sin_port = htons(port);
         result = bind(sockfd, (struct sockaddr * ) &serv_addr, sizeof(serv_addr));
         if (result == 0) {
+            break;
+        }
+        if (errno != EADDRINUSE) {
             break;
         }
     }
