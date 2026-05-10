@@ -343,17 +343,16 @@ bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
 int SocketDMA::readSocket(int socket, void *buffer, int max_remain)
 {
     int received = 0;
-    int n;
     uint8_t *buf = (uint8_t *)buffer;
-    do {
+    while (max_remain > 0) {
         int current = (max_remain > 8192) ? 8192 : max_remain;
-        n = recv(socket, buf, current, 0);
+        int n = recv(socket, buf, current, 0);
+        if (n <= 0) {
+            return (received > 0) ? received : n;
+        }
         buf += n;
         max_remain -= n;
         received += n;
-    } while((n > 0) && (max_remain > 0));
-    if (n < 0) {
-        return n;
     }
     return received;
 }
@@ -362,16 +361,15 @@ int SocketDMA::writeSocket(int socket, void *buffer, int length)
 {
     uint8_t *buf = (uint8_t *)buffer;
     int sent = 0;
-    int n;
-    do {
+    while (length > 0) {
         int current = (length > 2048) ? 2048 : length;
-        n = send(socket, buf, current, 0);
+        int n = send(socket, buf, current, 0);
+        if (n <= 0) {
+            return (sent > 0) ? sent : n;
+        }
         buf += n;
         length -= n;
         sent += n;
-    } while((n > 0) && (length > 0));
-    if (n < 0) {
-        return n;
     }
     return sent;
 }
@@ -425,6 +423,7 @@ void SocketDMA::dmaThread(void *load_buffer)
 
     while(1) {
 		/* Accept actual connection from the client */
+        clilen = sizeof(cli_addr);
 		newsockfd = accept(sockfd, (struct sockaddr *)&cli_addr, &clilen);
 		if (newsockfd < 0)
 		{
