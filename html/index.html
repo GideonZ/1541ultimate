@@ -40,6 +40,16 @@ $(document).ready(async function () {
                 $("#logoutmenuitem").hide();
             }
             $("#banner").html(product + " HTTP Server");
+
+            // show power button for supported boards only
+            const ProductsWithPwrCtrl = ["Ultimate 64-II", "C64 Ultimate"];
+            if (ProductsWithPwrCtrl.includes(product))
+                $("#menu-power").show();
+
+            // show firmware version in side panel
+            if (ultimateInfo.firmware_version)
+                $("#firmware-version").html("firmware v"+ultimateInfo.firmware_version);
+
             $("#left-nav").css("visibility", "visible");
             $(".page").hide();
             $("#welcome").show();
@@ -72,7 +82,19 @@ $(document).ready(async function () {
         let [status_code, content] = await make_put_request("http://" + serverIP + "/v1/machine:reset", params);
     };
 
-    $('#doreboot').click(function(event){
+    async function doPowerOff() {
+        let params = {};
+        if (confirm("Are you sure you want to power off your Ultimate?")) {
+            let [status_code, content] = await make_put_request("http://" + serverIP + "/v1/machine:poweroff", params);
+        }
+    };
+
+    $('#dopoweroff').click(function(event) {
+        event.preventDefault(); // Prevents the default action of the anchor tag
+        doPowerOff();
+    });
+
+    $('#doreboot').click(function(event) {
         event.preventDefault(); // Prevents the default action of the anchor tag
         doReboot();
     });
@@ -208,9 +230,10 @@ $(document).ready(async function () {
     }
 
     // PRG/CRT(/SID) loader
-    async function submitRunner() {
-        let body = $('#runnerfile')[0].files[0];
-        let extension = getFileExtension(body.name);
+    async function submitRunner(file, drive) {
+        if (drive === undefined) drive = "a";
+        if (file === undefined) file = $('#runnerfile')[0].files[0];
+        let extension = getFileExtension(file.name);
         let params = {};
         $("#runmsg").hide();
 
@@ -221,14 +244,28 @@ $(document).ready(async function () {
             route = "/v1/runners:run_crt";
         else if (extension === "SID")
             route = "/v1/runners:sidplay";
+        else if (extension === "D64") {
+            route = `/v1/drives/${drive}:mount`;
+            params = {"type":"d64"};
+        }
+        else if (extension === "D71") {
+            route = `/v1/drives/${drive}:mount`;
+            params = {"type":"d71"};
+        }
+        else if (extension === "D81") {
+            route = `/v1/drives/${drive}:mount`;
+            params = {"type":"d81"};
+        }
         else
             alert("Unsupported file extension: '."+ extension.toLowerCase()+"'");
 
         if (route !== null) {
-            let [status_code, content] = await make_post_request("http://" + serverIP + route, params, body);
+            let [status_code, content] = await make_post_request("http://" + serverIP + route, params, file);
             if(status_code !== 200)
                 $("#runmsg").show();
-	}
+            return status_code == 200;
+        }
+        return false;
     }
 
     // BASIC/tokenizer page event handlers
@@ -270,6 +307,8 @@ $(document).ready(async function () {
     $('#uppercaseBASIC').on('change', async function (event) {
         $("#basiceditor").toggleClass("uppercase", this.checked);  // change upper/lowercase display
     });
+    // browser may have cached the checkbox state on a page reload: synchronize the initially displayed state
+    $("#basiceditor").toggleClass("uppercase", $('#uppercaseBASIC').prop('checked'));
 
     // convenience: write memory - show error message when access fails
     async function writeMemory(param, errorMsg) {
@@ -845,6 +884,7 @@ $(document).ready(async function () {
 
     }, {
         checkArity: false,
+        processArguments: false,
         greetings: 'Ultimate 64 / II+ Remote Monitor\nhelp = list of commands\n'
     });
 
@@ -1380,6 +1420,14 @@ function disassembler(startInt, byteArray) {
     div#left-nav a:hover {
         background-color: #beffff;
     }
+    #firmware-version {
+        font-size: 12px;
+        color: darkgray;
+        text-align: center;
+    }
+    #menu-power {
+        display: none;
+    }
     #login {
         padding: 20px;
         width: 800px;
@@ -1390,12 +1438,7 @@ function disassembler(startInt, byteArray) {
         width: 800px;
         display: none;
     }
-    #livemon {
-        flex-grow: 1;
-        padding: 20px;
-        display:none;
-    }
-    #sidplay {
+    div#livemon, div#sidplay, div#runner, div#tokenizer {
         flex-grow: 1;
         padding: 20px;
         display:none;
@@ -1415,35 +1458,7 @@ function disassembler(startInt, byteArray) {
         color: #4caf50;
         background-color: #f6fff6;
     }
-    #runner {
-        flex-grow: 1;
-        padding: 20px;
-        display:none;
-    }
-    #tokenizer {
-        flex-grow: 1;
-        padding: 20px;
-        display:none;
-    }
-    #sidmsg {
-        flex-grow: 1;
-        margin-top: 20px;
-        padding: 20px;
-        display:none;
-        background-color: red;
-        color: white;
-        width: 400px;
-    }
-    #runmsg {
-        flex-grow: 1;
-        margin-top: 20px;
-        padding: 20px;
-        display:none;
-        background-color: red;
-        color: white;
-        width: 400px;
-    }
-    #basicmsg {
+    #sidmsg, #runmsg, #basicmsg {
         flex-grow: 1;
         margin-top: 20px;
         padding: 20px;
@@ -1469,7 +1484,7 @@ function disassembler(startInt, byteArray) {
 	margin: 5px 0;
     }
 
-    @font-face {
+        @font-face {
             font-family: 'C64';
             src: url('C64_Pro-STYLE.woff') format('woff'); /* Path to your C64 font file */
         }
@@ -1492,7 +1507,7 @@ function disassembler(startInt, byteArray) {
             line-height: 1.5;
             width: 900px;
             height: 400px;
-            resize: none;
+            resize: both;
         }
 
 .trinity-dialog {
@@ -1523,8 +1538,10 @@ function disassembler(startInt, byteArray) {
 }
 .trinity-dialog header .title {
     margin-top: -2px;
-    background: var(--color);
+    background: rgb(160, 182, 247);
     padding: 1px 10px;
+    top: -6px;
+    left: -2px;
 }
 .trinity-dialog header {
     background: var(--color);
@@ -1579,9 +1596,10 @@ function disassembler(startInt, byteArray) {
                 <li><a id="showtokenizer"  href="#">BASIC Editor</a></li>
             </ul>
             <ul>
-                <li><a id="doreset" href="#">Reset Machine</a></li>
-                <li><a id="doreboot" href="#">Reboot Machine</a></li>
-                <li><a id="domenubutton" href="#">Menu Button</a></li>
+                <li><a id="doreset" href="#" title="Reset the C64...">Reset Machine</a></li>
+                <li><a id="doreboot" href="#" title="Reboot the C64...">Reboot Machine</a></li>
+                <li id="menu-power"><a id="dopoweroff" href="#" title="Standby/Switch off the Ultimate...">Power Off Machine</a></li>
+                <li><a id="domenubutton" href="#" title="Show menu...">Menu Button</a></li>
             </ul>
             <ul>
                 <li><a href="https://1541u-documentation.readthedocs.io/en/latest/api/api_calls.html" target="_blank" rel="noopener">API Documentation</a></li>
@@ -1590,6 +1608,7 @@ function disassembler(startInt, byteArray) {
             <ul id="logoutmenuitem">
                 <li><a id="logout" href="#">Logout</a></li>
             </ul>
+            <div id="firmware-version"></div>
         </div>
 
         <div id="login" class="page">
@@ -1642,7 +1661,7 @@ function disassembler(startInt, byteArray) {
                 <br />
                 or press button to browse
                 <br /><br />
-                <input type="file" id="runnerfile" name="file" accept=".prg,.crt,.PRG,.CRT,.sid,.SID" title="Select PRG/CRT/SID file to be run">
+                <input type="file" id="runnerfile" name="file" accept=".prg,.crt,.sid,.d64,.d71,.d81,.PRG,.CRT,.SID,.D64,.D71,.D81" title="Select PRG/CRT/SID file to be run">
                 <br /><br />
                 <input type="button" id="runnersubmit" value="Run Again!" title="Upload and RUN the selected file again">
             </div>
@@ -1652,14 +1671,13 @@ function disassembler(startInt, byteArray) {
 
         <div id="livemon" class="page">
             <h1>Live Monitor</h1>
-            <p>Below is a simple 6510 monitor attached to your U64 or UII+.</p>
+            <p>Remotely inspect and debug the 6510 CPU of your U64 or UII+.</p>
             <div id="terminal" class="trinity-dialog">
                 <header>
                     <ul>
                         <li><a href="#"></a></li>
-                        <li><a href="#"></a></li>
+                        <span class="title">Ultimate 64 Monitor</span>
                     </ul>
-                    <span class="title">Ultimate 64</span>
                 </header>
                 <div class="body"></div>
             </div>
