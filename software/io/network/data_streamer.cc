@@ -282,7 +282,7 @@ void DataStreamer :: send_udp_packet(uint32_t ip, uint16_t port)
 {
     int sockfd;
     static struct sockaddr_in server;
-    
+
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0)
     {
