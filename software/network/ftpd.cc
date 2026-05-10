@@ -141,6 +141,19 @@ static void ftp_set_socket_timeout(int socket_fd, long seconds, long usec)
     setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv));
 }
 
+static void ftp_set_control_socket_timeouts(int socket_fd)
+{
+    struct timeval recv_tv;
+    recv_tv.tv_sec = 0;
+    recv_tv.tv_usec = 100000; // Keep the historical control-socket poll interval.
+    setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&recv_tv, sizeof(recv_tv));
+
+    struct timeval send_tv;
+    send_tv.tv_sec = 5;
+    send_tv.tv_usec = 0;
+    setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&send_tv, sizeof(send_tv));
+}
+
 static FTPTransferResult send_all(int socket, const char *buffer, int length)
 {
     while (length > 0) {
@@ -233,6 +246,8 @@ int FTPDaemon::listen_task()
             continue;  // Remote probably closed, just wait for another connection
         }
 
+        ftp_set_control_socket_timeouts(actual_socket);
+
         FTPDaemonThread *thread = new FTPDaemonThread(actual_socket, cli_addr.sin_addr.s_addr, cli_addr.sin_port);
 
         BaseType_t res = xTaskCreate(FTPDaemonThread::run, "FTP Task", configMINIMAL_STACK_SIZE, thread, PRIO_NETSERVICE, NULL);
@@ -304,7 +319,9 @@ void FTPDaemonThread::run(void *a)
 {
     FTPDaemonThread *thread = (FTPDaemonThread *) a;
     thread->handle_connection();
-    closesocket(thread->socket);
+    if (thread->socket >= 0) {
+        closesocket(thread->socket);
+    }
     delete thread;
     num_threads--;
     vTaskDelete(NULL);
@@ -337,7 +354,7 @@ int FTPDaemonThread::handle_connection()
     authenticated = 'n';
 
     int idx = 0;
-    while (1) {
+    while (socket >= 0) {
         int n = recv(socket, &command_buffer[idx], 1, 0);
         if (n > 0) {
             if ((command_buffer[idx] == '\n') || (command_buffer[idx] == '\r')) {
@@ -376,7 +393,12 @@ void FTPDaemonThread::send_msg(const char *msg, ...)
     va_end(arg);
     strcat(buffer, "\r\n");
     len = strlen(buffer);
-    send(socket, buffer, len, 0);
+    if ((socket >= 0) && (send_all(socket, buffer, len) != FTP_TRANSFER_OK)) {
+        dbg_printf("FTPD: ERROR writing to control socket\n");
+        shutdown(socket, 2);
+        closesocket(socket);
+        socket = -1;
+    }
     dbg_printf("FTPD response: %s", buffer);
 }
 
