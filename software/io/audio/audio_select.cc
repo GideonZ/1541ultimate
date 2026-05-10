@@ -42,6 +42,7 @@ AudioConfig audio_configurator;
 #define CFG_MIXER7_VOL        0x27
 #define CFG_MIXER8_VOL        0x28
 #define CFG_MIXER9_VOL        0x29
+#define CFG_MIXER_MASTER_VOL  0x2A
 
 #define CFG_MIXER0_PAN        0x30
 #define CFG_MIXER1_PAN        0x31
@@ -108,6 +109,18 @@ static const uint8_t volume_ctrl[] = { 0x00, 0xff, 0xe4, 0xcb, 0xb5, 0xa1, 0x90,
                                        0x28, 0x24, 0x20, 0x1d, 0x1a, 0x17, 0x14, 0x12,
                                        0x10, 0x08, 0x06, 0x04, 0x02, 0x01 };
 
+static uint8_t combine_mixer_gain(uint8_t source_raw, uint8_t master_raw)
+{
+    if (!source_raw || !master_raw) {
+        return 0;
+    }
+    uint16_t combined = ((uint16_t)source_raw * (uint16_t)master_raw + 0x40) >> 7;
+    if (combined > 0xFF) {
+        combined = 0xFF;
+    }
+    return (uint8_t)combined;
+}
+
 static const uint16_t pan_ctrl[] = { 0, 40, 79, 116, 150, 181, 207, 228, 243, 253, 256 };
 
 struct t_cfg_definition audio_cfg_plus[] = {
@@ -123,6 +136,7 @@ struct t_cfg_definition audio_cfg_plus[] = {
     { CFG_AUDIO_SID_FILT_RIGHT, CFG_TYPE_ENUM, "SID Right Filter Curve",       "%s", sidchip_sel, 0,  1, 0 },
     { CFG_AUDIO_SID_WAVE_RIGHT, CFG_TYPE_ENUM, "SID Right Combined Waveforms", "%s", sidchip_sel, 0,  1, 0 },
 //    { CFG_AUDIO_SAMPLER_IO,     CFG_TYPE_ENUM, "Map Sampler in $DF20-DFFF",    "%s", en_dis3,     0,  1, 0 },
+    { CFG_MIXER_MASTER_VOL,     CFG_TYPE_ENUM, "Vol Master",                   "%s", volumes,      0, 30, 7 },
     { CFG_MIXER0_VOL,           CFG_TYPE_ENUM, "Vol EmuSid1",                  "%s", volumes,      0, 30, 7 },
     { CFG_MIXER1_VOL,           CFG_TYPE_ENUM, "Vol EmuSid2",                  "%s", volumes,      0, 30, 7 },
     { CFG_MIXER2_VOL,           CFG_TYPE_ENUM, "Vol ExtIn Left",               "%s", volumes,      0, 30, 7 },
@@ -256,9 +270,10 @@ void AudioConfig :: effectuate_settings()
 
         // Now, configure the mixer
         volatile uint8_t *mixer = (volatile uint8_t *)U2P_AUDIO_MIXER;
+        uint8_t master = volume_ctrl[cfg->get_value(CFG_MIXER_MASTER_VOL)];
 
         for(int i=0; i<10; i++) {
-            uint8_t vol = volume_ctrl[cfg->get_value(CFG_MIXER0_VOL + i)];
+            uint8_t vol = combine_mixer_gain(volume_ctrl[cfg->get_value(CFG_MIXER0_VOL + i)], master);
             uint8_t pan = cfg->get_value(CFG_MIXER0_PAN + i);
             uint16_t panL = pan_ctrl[pan];
             uint16_t panR = pan_ctrl[10 - pan];

@@ -125,6 +125,7 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_MIXER7_VOL        0x27
 #define CFG_MIXER8_VOL        0x28
 #define CFG_MIXER9_VOL        0x29
+#define CFG_MIXER_MASTER_VOL  0x2A
 
 #define CFG_MIXER0_PAN        0x30
 #define CFG_MIXER1_PAN        0x31
@@ -282,6 +283,18 @@ static const uint8_t volume_ctrl[] = {
     0x33, 0x39, 0x40, 0x48, 0x51, 0x5b, 0x66, 0x72, 0x80, 0x90, 0xa1, 0xb5, 0xcb, 0xe4, 0xff
 };
 
+static uint8_t combine_mixer_gain(uint8_t source_raw, uint8_t master_raw)
+{
+    if (!source_raw || !master_raw) {
+        return 0;
+    }
+    uint16_t combined = ((uint16_t)source_raw * (uint16_t)master_raw + 0x40) >> 7;
+    if (combined > 0xFF) {
+        combined = 0xFF;
+    }
+    return (uint8_t)combined;
+}
+
 static const uint16_t pan_ctrl[] = { 0, 40, 79, 116, 150, 181, 207, 228, 243, 253, 256 };
 
 static const uint8_t stereo_bits[] = { 0x00, 0x02, 0x04, 0x08, 0x10, 0x20 };
@@ -395,6 +408,7 @@ struct t_cfg_definition u64_ultisid_cfg[] = {
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
 struct t_cfg_definition u64_mixer_cfg[] = {
+    { CFG_MIXER_MASTER_VOL,     CFG_TYPE_ENUM, "Vol Master",                  "%s", volumes,      0, 30, 24 },
     { CFG_MIXER0_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 1",                "%s", volumes,      0, 30, 24 },
     { CFG_MIXER1_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 2",                "%s", volumes,      0, 30, 24 },
     { CFG_MIXER2_VOL,           CFG_TYPE_ENUM, "Vol Socket 1",                 "%s", volumes,      0, 30, 24 },
@@ -442,6 +456,7 @@ U64Config :: U64Mixer :: U64Mixer()
     cfg->set_sort_order(SORT_ORDER_CFG_MIXER);
 
     // enable "hot" updates for mixer
+    cfg->set_change_hook(CFG_MIXER_MASTER_VOL, U64Config::setMixer);
     for (uint8_t b = CFG_MIXER0_VOL; b <= CFG_MIXER9_VOL; b++) {
         cfg->set_change_hook(b, U64Config::setMixer);
     }
@@ -1249,9 +1264,10 @@ int U64Config :: setMixer(ConfigItem *it)
     // Now, configure the mixer
     volatile uint8_t *mixer = (volatile uint8_t *)U64_AUDIO_MIXER;
     ConfigStore *cfg = it->store;
+    uint8_t master = volume_ctrl[cfg->get_value(CFG_MIXER_MASTER_VOL)];
 
     for(int i=0; i<10; i++) {
-        uint8_t vol = volume_ctrl[cfg->get_value(CFG_MIXER0_VOL + i)];
+        uint8_t vol = combine_mixer_gain(volume_ctrl[cfg->get_value(CFG_MIXER0_VOL + i)], master);
         uint8_t pan = cfg->get_value(CFG_MIXER0_PAN + i);
         uint16_t panL = pan_ctrl[pan];
         uint16_t panR = pan_ctrl[10 - pan];
@@ -1260,6 +1276,11 @@ int U64Config :: setMixer(ConfigItem *it)
         *(mixer++) = vol_right;
         *(mixer++) = vol_left;
     }
+#if U64 == 2
+    if (u64_configurator && u64_configurator->mixercfg.cfg == cfg && u64_configurator->speakercfg.cfg) {
+        setSpeakerMixer(u64_configurator->speakercfg.cfg->items[0]);
+    }
+#endif
     return 0;
 }
 
@@ -1292,8 +1313,12 @@ int U64Config :: setSpeakerMixer(ConfigItem *it)
         }
         return 0;
     }
+    uint8_t master = 0x80;
+    if (u64_configurator && u64_configurator->mixercfg.cfg) {
+        master = volume_ctrl[u64_configurator->mixercfg.cfg->get_value(CFG_MIXER_MASTER_VOL)];
+    }
     for(int i=0; i<10; i++) {
-        uint8_t vol = volume_ctrl[cfg->get_value(CFG_MIXER0_VOL + i)];
+        uint8_t vol = combine_mixer_gain(volume_ctrl[cfg->get_value(CFG_MIXER0_VOL + i)], master);
         *(mixer++) = vol;
         *(mixer++) = vol;
     }
@@ -1702,12 +1727,18 @@ void U64Config :: SetMixerAutoSid(uint8_t *slots, int count)
 {
     static const uint8_t channelMap[4] = { 4, 6, 0, 2 };
 
+    uint8_t selectedSettings[4];
     uint8_t selectedVolumes[4];
     ConfigStore *cs = this->mixercfg.cfg;
-    selectedVolumes[0] = volume_ctrl[cs->get_value(CFG_MIXER2_VOL)];
-    selectedVolumes[1] = volume_ctrl[cs->get_value(CFG_MIXER3_VOL)];
-    selectedVolumes[2] = volume_ctrl[cs->get_value(CFG_MIXER0_VOL)];
-    selectedVolumes[3] = volume_ctrl[cs->get_value(CFG_MIXER1_VOL)];
+    uint8_t master = volume_ctrl[cs->get_value(CFG_MIXER_MASTER_VOL)];
+    selectedSettings[0] = cs->get_value(CFG_MIXER2_VOL);
+    selectedSettings[1] = cs->get_value(CFG_MIXER3_VOL);
+    selectedSettings[2] = cs->get_value(CFG_MIXER0_VOL);
+    selectedSettings[3] = cs->get_value(CFG_MIXER1_VOL);
+    selectedVolumes[0] = combine_mixer_gain(volume_ctrl[selectedSettings[0]], master);
+    selectedVolumes[1] = combine_mixer_gain(volume_ctrl[selectedSettings[1]], master);
+    selectedVolumes[2] = combine_mixer_gain(volume_ctrl[selectedSettings[2]], master);
+    selectedVolumes[3] = combine_mixer_gain(volume_ctrl[selectedSettings[3]], master);
 
     // first mute the SIDs
     volatile uint8_t *mixer = (volatile uint8_t *)U64_AUDIO_MIXER;
@@ -1725,7 +1756,7 @@ void U64Config :: SetMixerAutoSid(uint8_t *slots, int count)
 
     for (int i=0;i<count;i++) {
         uint8_t volume = selectedVolumes[slots[i]];
-        if (!volume) { // setting was OFF => default to 0 dB
+        if (!volume && master && !selectedSettings[slots[i]]) {
             volume = 0x80;
         }
         int pan = channelPanning[4*count + i];
