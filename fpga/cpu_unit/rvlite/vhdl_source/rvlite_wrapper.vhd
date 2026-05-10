@@ -16,6 +16,7 @@ library work;
 
 entity rvlite_wrapper is
 generic (
+    g_mult          : boolean := true;
     g_gprf_ram      : string := "auto";
     g_start_addr    : std_logic_vector(31 downto 0) := X"80000000";
     g_bootrom       : boolean := true;
@@ -58,6 +59,7 @@ architecture arch of rvlite_wrapper is
 begin
     i_core: entity work.core
     generic map (
+        g_mult       => g_mult,
         g_gprf_ram   => g_gprf_ram,
         g_start_addr => g_start_addr )
     port map (
