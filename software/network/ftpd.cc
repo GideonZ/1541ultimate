@@ -9,6 +9,7 @@
 #include <ctype.h>
 #include <time.h>
 
+#include "small_printf.h"
 #include "vfs.h"
 #include "rtc.h"
 #include "network_config.h"
@@ -165,6 +166,13 @@ static FTPTransferResult send_all(int socket, const char *buffer, int length)
         length -= sent;
     }
     return FTP_TRANSFER_OK;
+}
+
+static void ftp_string_write_char(char c, void **param)
+{
+    char **dest = (char **)param;
+    **dest = c;
+    (*dest)++;
 }
 
 static const char *transfer_result_message(FTPTransferResult result)
@@ -397,13 +405,17 @@ void FTPDaemonThread::send_msg(const char *msg, ...)
 {
     va_list arg;
     char buffer[600];
-    int len;
+    char *write_ptr = buffer;
+    const size_t max_formatted_len = sizeof(buffer) - 3;
 
     va_start(arg, msg);
-    vsprintf(buffer, msg, arg);
+    _my_vnprintf(ftp_string_write_char, (void **)&write_ptr, max_formatted_len, msg, arg);
     va_end(arg);
-    strcat(buffer, "\r\n");
-    len = strlen(buffer);
+    *write_ptr++ = '\r';
+    *write_ptr++ = '\n';
+    *write_ptr = 0;
+
+    int len = write_ptr - buffer;
     if ((socket >= 0) && (send_all(socket, buffer, len) != FTP_TRANSFER_OK)) {
         dbg_printf("FTPD: ERROR writing to control socket\n");
         shutdown(socket, 2);
