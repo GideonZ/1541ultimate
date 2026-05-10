@@ -30,7 +30,10 @@ sock.sendto(b"Hey, open the port!", ("192.168.0.121", 11002))
 previous = None
 with open("debug.raw", "wb") as outfile:
     for frame in range(2737 * seconds):
-        data, address = sock.recvfrom(1536)
+        try:
+            data, address = sock.recvfrom(1536)
+        except TimeoutError as e:
+            continue
         (number, ) = struct.unpack("<H", data[0:2])
         if previous and (previous + 1) != number:
             print ('X', end = '')
