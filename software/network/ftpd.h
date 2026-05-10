@@ -177,8 +177,8 @@ public:
 	int do_bind(void);
 	void close_connection();
 
-	void directory(int listType, vfs_dir_t *dir);
+	FTPTransferResult directory(int listType, vfs_dir_t *dir);
 	FTPTransferResult sendfile(vfs_file_t *file);
-	FTPTransferResult receivefile(vfs_file_t *file);
+	FTPTransferResult receivefile(vfs_t *vfs, const char *path);
 };
 #endif				/* __FTPD_H__ */
