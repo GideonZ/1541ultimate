@@ -133,15 +133,72 @@ static char monitor_bookmark_normalize_char(char c)
     return '_';
 }
 
-static uint8_t monitor_bookmark_clamp_binary_width(uint8_t width)
+static uint8_t monitor_bookmark_normalize_binary_width(uint8_t width)
 {
-    // Map legacy width 4 to width 3 for compatibility
-    if (width == 4) return 3;
     // Preserve sprite mode marker
     if (width == MONITOR_BOOKMARK_BINARY_WIDTH_SPRITE) return MONITOR_BOOKMARK_BINARY_WIDTH_SPRITE;
     if (width < MONITOR_BOOKMARK_BINARY_WIDTH_MIN) return MONITOR_BOOKMARK_BINARY_WIDTH_MIN;
     if (width > MONITOR_BOOKMARK_BINARY_WIDTH_MAX) return MONITOR_BOOKMARK_BINARY_WIDTH_MAX;
     return width;
+}
+
+static bool monitor_bookmark_view_has_width(uint8_t view)
+{
+    return view != MONITOR_BOOKMARK_VIEW_ASM;
+}
+
+static void monitor_bookmark_format_width2(char *out, size_t out_size, uint8_t view, uint8_t width)
+{
+    uint8_t normalized;
+
+    if (!out || out_size == 0) {
+        return;
+    }
+    if (out_size < 3) {
+        out[0] = 0;
+        return;
+    }
+    if (!monitor_bookmark_view_has_width(view)) {
+        out[0] = ' ';
+        out[1] = ' ';
+        out[2] = 0;
+        return;
+    }
+
+    normalized = monitor_bookmark_normalize_width(view, width);
+    if (view == MONITOR_BOOKMARK_VIEW_BINARY && normalized == MONITOR_BOOKMARK_BINARY_WIDTH_SPRITE) {
+        out[0] = '3';
+        out[1] = 'S';
+        out[2] = 0;
+        return;
+    }
+    if (normalized >= 10) {
+        sprintf(out, "%u", (unsigned)normalized);
+    } else {
+        out[0] = ' ';
+        out[1] = (char)('0' + normalized);
+        out[2] = 0;
+    }
+}
+
+static void monitor_bookmark_format_status_width(char *out, size_t out_size, uint8_t view, uint8_t width)
+{
+    uint8_t normalized;
+
+    if (!out || out_size == 0) {
+        return;
+    }
+    out[0] = 0;
+    if (!monitor_bookmark_view_has_width(view)) {
+        return;
+    }
+
+    normalized = monitor_bookmark_normalize_width(view, width);
+    if (view == MONITOR_BOOKMARK_VIEW_BINARY && normalized == MONITOR_BOOKMARK_BINARY_WIDTH_SPRITE) {
+        monitor_bookmark_copy(out, out_size, "W3S");
+        return;
+    }
+    sprintf(out, "W%u", (unsigned)normalized);
 }
 
 static void monitor_bookmark_clear(MonitorBookmarkSlot *slot)
@@ -153,7 +210,7 @@ static void monitor_bookmark_clear(MonitorBookmarkSlot *slot)
     slot->view = MONITOR_BOOKMARK_VIEW_HEX;
     slot->cpu_bank = 0;
     slot->vic_bank = 0;
-    slot->binary_width = MONITOR_BOOKMARK_BINARY_WIDTH_MIN;
+    slot->view_width_mode = MONITOR_BOOKMARK_WIDTH_NONE;
     slot->edit_mode = false;
     slot->is_default = false;
     slot->is_valid = false;
@@ -225,7 +282,7 @@ static int monitor_bookmark_parse_slot(const char *text, MonitorBookmarkSlot *sl
     slot->vic_bank = (uint8_t)values[3];
     slot->edit_mode = false;
     slot->is_default = values[5] ? true : false;
-    slot->binary_width = monitor_bookmark_clamp_binary_width((uint8_t)values[6]);
+    slot->view_width_mode = monitor_bookmark_normalize_width(slot->view, (uint8_t)values[6]);
     monitor_bookmark_normalize_label(slot->label, sizeof(slot->label), label_field);
     slot->is_valid = true;
     return monitor_bookmark_slot_is_valid(*slot) ? 1 : 0;
@@ -251,7 +308,7 @@ static void monitor_bookmark_encode_slot(char *out, size_t out_len, const Monito
             (unsigned)slot.vic_bank,
             0U,
             slot.is_default ? 1U : 0U,
-            (unsigned)monitor_bookmark_clamp_binary_width(slot.binary_width),
+            (unsigned)monitor_bookmark_normalize_width(slot.view, slot.view_width_mode),
             label_buffer);
     monitor_bookmark_copy(out, out_len, buffer);
 }
@@ -264,7 +321,7 @@ static void monitor_bookmark_assign_default(MonitorBookmarkSlot *slot, uint8_t i
     slot->view = kMonitorBookmarkDefaults[index].view;
     slot->cpu_bank = (uint8_t)(default_cpu_bank & 0x07);
     slot->vic_bank = 0;
-    slot->binary_width = MONITOR_BOOKMARK_BINARY_WIDTH_MIN;
+    slot->view_width_mode = monitor_bookmark_normalize_width(slot->view, MONITOR_BOOKMARK_WIDTH_NONE);
     slot->edit_mode = false;
     slot->is_default = true;
     slot->is_valid = true;
@@ -273,6 +330,23 @@ static void monitor_bookmark_assign_default(MonitorBookmarkSlot *slot, uint8_t i
 }
 
 } // namespace
+
+uint8_t monitor_bookmark_normalize_width(uint8_t view, uint8_t width)
+{
+    switch (view) {
+        case MONITOR_BOOKMARK_VIEW_HEX:
+            return (width >= MONITOR_BOOKMARK_WIDTH_MEMORY_16) ?
+                MONITOR_BOOKMARK_WIDTH_MEMORY_16 : MONITOR_BOOKMARK_WIDTH_MEMORY_8;
+        case MONITOR_BOOKMARK_VIEW_ASCII:
+        case MONITOR_BOOKMARK_VIEW_SCREEN:
+            return MONITOR_BOOKMARK_WIDTH_TEXT;
+        case MONITOR_BOOKMARK_VIEW_BINARY:
+            return monitor_bookmark_normalize_binary_width(width);
+        case MONITOR_BOOKMARK_VIEW_ASM:
+        default:
+            return MONITOR_BOOKMARK_WIDTH_NONE;
+    }
+}
 
 const char *monitor_bookmark_default_label(uint8_t slot)
 {
@@ -373,8 +447,11 @@ void monitor_bookmark_format_label6(char *out, size_t out_size, const char *labe
     out[MONITOR_BOOKMARK_LABEL_MAX] = 0;
 }
 
-void monitor_bookmark_format_view6(char *out, size_t out_size, uint8_t view, uint8_t binary_width)
+void monitor_bookmark_format_view6(char *out, size_t out_size, uint8_t view, uint8_t view_width_mode)
 {
+    char buffer[MONITOR_BOOKMARK_VIEW_DISPLAY_MAX + 2];
+    char width2[3];
+
     if (!out || out_size == 0) {
         return;
     }
@@ -382,12 +459,9 @@ void monitor_bookmark_format_view6(char *out, size_t out_size, uint8_t view, uin
         out[0] = 0;
         return;
     }
-    if (view == MONITOR_BOOKMARK_VIEW_BINARY) {
-        uint8_t w = monitor_bookmark_clamp_binary_width(binary_width);
-        sprintf(out, "BIN W%u", (unsigned)w);
-    } else {
+    monitor_bookmark_format_width2(width2, sizeof(width2), view, view_width_mode);
+    if (!monitor_bookmark_view_has_width(view)) {
         const char *name = monitor_bookmark_view_name(view);
-        // Pad to 6 characters (e.g., "HEX   ")
         size_t i = 0;
         while (name[i] && i < 6) {
             out[i] = name[i];
@@ -397,7 +471,10 @@ void monitor_bookmark_format_view6(char *out, size_t out_size, uint8_t view, uin
             out[i++] = ' ';
         }
         out[6] = 0;
+        return;
     }
+    sprintf(buffer, "%s %s", monitor_bookmark_view_name(view), width2);
+    monitor_bookmark_copy(out, out_size, buffer);
 }
 
 void monitor_bookmark_format_status(char *out, size_t out_len, uint8_t slot,
@@ -406,14 +483,18 @@ void monitor_bookmark_format_status(char *out, size_t out_len, uint8_t slot,
 {
     char buffer[64];
     char label_buffer[MONITOR_BOOKMARK_LABEL_STORAGE];
+    char width_token[4];
 
     if (!out || !out_len) {
         return;
     }
     out[0] = 0;
     label_buffer[0] = 0;
+    width_token[0] = 0;
     if (bookmark) {
         monitor_bookmark_normalize_label(label_buffer, sizeof(label_buffer), bookmark->label);
+        monitor_bookmark_format_status_width(width_token, sizeof(width_token),
+                                            bookmark->view, bookmark->view_width_mode);
     }
 
     switch (kind) {
@@ -467,13 +548,13 @@ void monitor_bookmark_format_status(char *out, size_t out_len, uint8_t slot,
 
     {
         const char *suffix = (kind == MONITOR_BOOKMARK_STATUS_SET) ? " SET" : "";
-        if (bookmark->view == MONITOR_BOOKMARK_VIEW_BINARY) {
-            uint8_t w = monitor_bookmark_clamp_binary_width(bookmark->binary_width);
-            sprintf(buffer, "BM%u %s $%04X BIN W%u CPU%u VIC%u%s",
+        if (width_token[0]) {
+            sprintf(buffer, "BM%u %s $%04X %s %s CPU%u VIC%u%s",
                     (unsigned)slot,
                     label_buffer,
                     (unsigned)bookmark->address,
-                    (unsigned)w,
+                    monitor_bookmark_view_name(bookmark->view),
+                    width_token,
                     (unsigned)bookmark->cpu_bank,
                     (unsigned)bookmark->vic_bank,
                     suffix);
@@ -497,7 +578,7 @@ void monitor_bookmark_format_popup_line(char *out, size_t out_len, uint8_t slot,
     char buffer[64];
     char label_buffer[MONITOR_BOOKMARK_LABEL_STORAGE];
     char label6[MONITOR_BOOKMARK_LABEL_MAX + 1];
-    char view6[8];
+    char view6[MONITOR_BOOKMARK_VIEW_DISPLAY_MAX + 1];
 
     if (!out || !out_len) {
         return;
@@ -514,7 +595,7 @@ void monitor_bookmark_format_popup_line(char *out, size_t out_len, uint8_t slot,
 
     monitor_bookmark_normalize_label(label_buffer, sizeof(label_buffer), bookmark->label);
     monitor_bookmark_format_label6(label6, sizeof(label6), label_buffer);
-    monitor_bookmark_format_view6(view6, sizeof(view6), bookmark->view, bookmark->binary_width);
+    monitor_bookmark_format_view6(view6, sizeof(view6), bookmark->view, bookmark->view_width_mode);
 
     sprintf(buffer, "%u %s $%04X %s CPU%u VIC%u",
             (unsigned)slot,
@@ -624,7 +705,7 @@ bool MonitorBookmarks :: set(uint8_t slot, const MonitorBookmarkSlot &bookmark)
     slots[slot] = bookmark;
     slots[slot].is_valid = true;
     slots[slot].edit_mode = false;
-    slots[slot].binary_width = monitor_bookmark_clamp_binary_width(bookmark.binary_width);
+    slots[slot].view_width_mode = monitor_bookmark_normalize_width(bookmark.view, bookmark.view_width_mode);
     monitor_bookmark_normalize_label(slots[slot].label, sizeof(slots[slot].label), bookmark.label);
     loaded = true;
     return save_to_config();
@@ -647,7 +728,7 @@ bool MonitorBookmarks :: set_target_preserve_label(uint8_t slot, const MonitorBo
     slots[slot].is_valid = true;
     slots[slot].is_default = false;
     slots[slot].edit_mode = false;
-    slots[slot].binary_width = monitor_bookmark_clamp_binary_width(target.binary_width);
+    slots[slot].view_width_mode = monitor_bookmark_normalize_width(target.view, target.view_width_mode);
     monitor_bookmark_copy(slots[slot].label, sizeof(slots[slot].label), preserved);
     loaded = true;
     return save_to_config();

@@ -71,17 +71,35 @@ static bool     monitor_last_go_valid = false;
 static uint16_t monitor_last_go_addr = 0;
 
 // Persistent BINARY view configuration. Width is byte-based only; every byte
-// renders as 8 bits. Sprite mode (S) uses MONITOR_BINARY_SPRITE_MODE_MARKER (0xFE) and renders 3 bytes.
+// renders as 8 bits. Packed 3-byte sprite mode (3S) uses
+// MONITOR_BINARY_SPRITE_MODE_MARKER (0xFE) and renders 3 bytes.
+static uint8_t monitor_memory_bytes_per_row = MONITOR_HEX_BYTES_PER_ROW;
 static uint8_t monitor_binary_bytes_per_row = 1;
+
+static inline uint8_t monitor_memory_byte_stride(uint8_t bytes_per_row)
+{
+    return (bytes_per_row >= MONITOR_MEMORY_MAX_BYTES_PER_ROW) ?
+        MONITOR_MEMORY_MAX_BYTES_PER_ROW : MONITOR_MEMORY_MIN_BYTES_PER_ROW;
+}
 
 static inline uint8_t monitor_binary_byte_stride(uint8_t bytes_per_row)
 {
     uint8_t b = bytes_per_row;
-    // Sprite mode marker returns 3 bytes
+    // Sprite mode marker returns 3 bytes.
     if (b == MONITOR_BINARY_SPRITE_MODE_MARKER) return 3;
     if (b < MONITOR_BINARY_MIN_BYTES_PER_ROW) b = MONITOR_BINARY_MIN_BYTES_PER_ROW;
     if (b > MONITOR_BINARY_MAX_BYTES_PER_ROW) b = MONITOR_BINARY_MAX_BYTES_PER_ROW;
     return b;
+}
+
+static inline bool monitor_binary_packed_bits(uint8_t bytes_per_row)
+{
+    return bytes_per_row == MONITOR_BINARY_SPRITE_MODE_MARKER || bytes_per_row == 4;
+}
+
+static inline bool monitor_binary_shows_hex_preview(uint8_t bytes_per_row)
+{
+    return bytes_per_row != 4;
 }
 
 static int monitor_bookmark_main_slot_for_key(int key)
@@ -600,7 +618,9 @@ static bool inline_edit_view(MachineMonitorView view)
            (view == MONITOR_VIEW_BINARY);
 }
 
-static uint16_t row_span_for_view(MachineMonitorView view, uint8_t binary_bytes_per_row)
+static uint16_t row_span_for_view(MachineMonitorView view,
+                                  uint8_t memory_bytes_per_row,
+                                  uint8_t binary_bytes_per_row)
 {
     if (view == MONITOR_VIEW_ASCII || view == MONITOR_VIEW_SCREEN) {
         return MONITOR_TEXT_BYTES_PER_ROW;
@@ -609,7 +629,7 @@ static uint16_t row_span_for_view(MachineMonitorView view, uint8_t binary_bytes_
         // Width is dynamic and configured on the fly by the W shortcut.
         return monitor_binary_byte_stride(binary_bytes_per_row);
     }
-    return MONITOR_HEX_BYTES_PER_ROW;
+    return monitor_memory_byte_stride(memory_bytes_per_row);
 }
 
 }
@@ -656,6 +676,7 @@ void monitor_reset_saved_state(void)
     monitor_last_go_valid = false;
     monitor_last_go_addr = 0;
 
+    monitor_memory_bytes_per_row = MONITOR_HEX_BYTES_PER_ROW;
     monitor_binary_bytes_per_row = 1;
 }
 
@@ -666,7 +687,8 @@ void monitor_invalidate_saved_state(void)
 
 void monitor_apply_go(MachineMonitorState *state, uint16_t address)
 {
-    uint16_t span = row_span_for_view(state->view, monitor_binary_bytes_per_row);
+    uint16_t span = row_span_for_view(state->view, monitor_memory_bytes_per_row,
+                                      monitor_binary_bytes_per_row);
     state->current_addr = address;
     if (state->view == MONITOR_VIEW_BINARY) {
         // Width is not necessarily a power of two; align using modular
@@ -693,6 +715,19 @@ void monitor_format_hex_row(uint16_t address, const uint8_t *bytes, char *out)
         out[29 + i] = ascii_byte(bytes[i]);
     }
     out[MONITOR_HEX_ROW_CHARS] = 0;
+}
+
+static void monitor_format_hex16_row(uint16_t address, const uint8_t *bytes, char *out)
+{
+    memset(out, ' ', MONITOR_MEMORY_ROW_16_CHARS);
+    dump_hex_word(out, 0, address);
+    out[4] = ' ';
+    for (int i = 0; i < 8; i++) {
+        dump_hex_byte(out, 5 + (2 * i), bytes[i]);
+        dump_hex_byte(out, 22 + (2 * i), bytes[8 + i]);
+    }
+    out[21] = ' ';
+    out[MONITOR_MEMORY_ROW_16_CHARS] = 0;
 }
 
 void monitor_format_text_row(uint16_t address, const uint8_t *bytes, int count, bool screen_codes, char *out)
@@ -1246,6 +1281,7 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     last_go_addr = monitor_last_go_addr;
     go_pending = false;
     go_pending_addr = 0;
+    memory_bytes_per_row = monitor_memory_bytes_per_row;
     binary_bytes_per_row = monitor_binary_bytes_per_row;
     clipboard.data = NULL;
     clipboard.length = 0;
@@ -1311,9 +1347,28 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
 #endif
 }
 
+uint8_t MachineMonitor :: memory_byte_stride(void) const
+{
+    return monitor_memory_byte_stride(memory_bytes_per_row);
+}
+
 uint8_t MachineMonitor :: binary_byte_stride(void) const
 {
     return monitor_binary_byte_stride(binary_bytes_per_row);
+}
+
+int MachineMonitor :: memory_row_chars(void) const
+{
+    return (memory_byte_stride() == MONITOR_MEMORY_MAX_BYTES_PER_ROW) ?
+        MONITOR_MEMORY_ROW_16_CHARS : MONITOR_MEMORY_ROW_8_CHARS;
+}
+
+int MachineMonitor :: memory_hex_column(int byte_offset) const
+{
+    if (memory_byte_stride() == MONITOR_MEMORY_MAX_BYTES_PER_ROW) {
+        return 5 + (byte_offset * 2) + ((byte_offset >= 8) ? 1 : 0);
+    }
+    return 5 + (byte_offset * 3);
 }
 
 void MachineMonitor :: apply_go_local(uint16_t address)
@@ -1345,6 +1400,20 @@ bool MachineMonitor :: number_shortcut_allowed(void) const
     }
     return state.view != MONITOR_VIEW_ASCII &&
            state.view != MONITOR_VIEW_SCREEN;
+}
+
+bool MachineMonitor :: range_shortcut_allowed(void) const
+{
+    if (!edit_mode) {
+        return true;
+    }
+    if (state.view == MONITOR_VIEW_HEX || state.view == MONITOR_VIEW_BINARY) {
+        return true;
+    }
+    if (state.view == MONITOR_VIEW_ASM) {
+        return asm_edit_part > 0;
+    }
+    return false;
 }
 
 bool MachineMonitor :: bookmark_shortcut_allowed(void) const
@@ -1684,8 +1753,7 @@ void MachineMonitor :: number_picker_anchor(int *x, int *y) const
             uint8_t bit = (binary_bit_index <= 7) ? binary_bit_index : 7;
             int bit_pos = 7 - bit;
             
-            bool use_sprite_mode = (stride == 3) && (binary_bytes_per_row == MONITOR_BINARY_SPRITE_MODE_MARKER);
-            if (use_sprite_mode) {
+            if (monitor_binary_packed_bits(binary_bytes_per_row)) {
                 col = 5 + (byte_offset * 8) + bit_pos;
             } else if (stride == 1) {
                 col = 5 + bit_pos;
@@ -1720,9 +1788,12 @@ void MachineMonitor :: number_picker_anchor(int *x, int *y) const
 
         case MONITOR_VIEW_HEX:
         default:
-            row_addr = (uint16_t)(state.base_addr + (((uint16_t)(state.current_addr - state.base_addr)) / MONITOR_HEX_BYTES_PER_ROW) * MONITOR_HEX_BYTES_PER_ROW);
-            row = (uint16_t)(state.current_addr - state.base_addr) / MONITOR_HEX_BYTES_PER_ROW;
-            col = 5 + ((int)(state.current_addr - row_addr) * 3);
+            {
+                int stride = memory_byte_stride();
+                row_addr = (uint16_t)(state.base_addr + (((uint16_t)(state.current_addr - state.base_addr)) / stride) * stride);
+                row = (uint16_t)(state.current_addr - state.base_addr) / stride;
+                col = memory_hex_column((int)(state.current_addr - row_addr));
+            }
             break;
     }
 
@@ -1994,7 +2065,7 @@ bool MachineMonitor :: inline_edit_supported(void) const
 
 uint16_t MachineMonitor :: row_span(void) const
 {
-    return row_span_for_view(state.view, binary_bytes_per_row);
+    return row_span_for_view(state.view, memory_bytes_per_row, binary_bytes_per_row);
 }
 
 void MachineMonitor :: move_current(int delta)
@@ -2151,8 +2222,22 @@ void MachineMonitor :: capture_bookmark(MonitorBookmarkSlot *bookmark) const
     bookmark->view = (uint8_t)state.view;
     bookmark->cpu_bank = (uint8_t)(state.cpu_port & 0x07);
     bookmark->vic_bank = (uint8_t)(current_vic_bank & 0x03);
-    // Store the actual width value (which may be MONITOR_BINARY_SPRITE_MODE_MARKER for S mode)
-    bookmark->binary_width = binary_bytes_per_row;
+    switch (state.view) {
+        case MONITOR_VIEW_HEX:
+            bookmark->view_width_mode = memory_byte_stride();
+            break;
+        case MONITOR_VIEW_ASCII:
+        case MONITOR_VIEW_SCREEN:
+            bookmark->view_width_mode = MONITOR_BOOKMARK_WIDTH_TEXT;
+            break;
+        case MONITOR_VIEW_BINARY:
+            bookmark->view_width_mode = binary_bytes_per_row;
+            break;
+        case MONITOR_VIEW_ASM:
+        default:
+            bookmark->view_width_mode = MONITOR_BOOKMARK_WIDTH_NONE;
+            break;
+    }
     bookmark->edit_mode = false;
     bookmark->is_default = false;
     bookmark->is_valid = true;
@@ -2189,13 +2274,14 @@ bool MachineMonitor :: restore_bookmark(uint8_t slot)
     }
 
     clear_bookmark_transient_state();
-    // Apply binary width before viewport calculation (set_view() and
-    // apply_go_local() both read row_span()/binary_bytes_per_row).
-    if (bookmark->view == MONITOR_BOOKMARK_VIEW_BINARY) {
-        uint8_t w = bookmark->binary_width;
-        if (w < MONITOR_BOOKMARK_BINARY_WIDTH_MIN) w = MONITOR_BOOKMARK_BINARY_WIDTH_MIN;
-        if (w > MONITOR_BOOKMARK_BINARY_WIDTH_MAX) w = MONITOR_BOOKMARK_BINARY_WIDTH_MAX;
-        binary_bytes_per_row = w;
+    // Apply row widths before viewport calculation (set_view() and
+    // apply_go_local() both read row_span()).
+    if (bookmark->view == MONITOR_BOOKMARK_VIEW_HEX) {
+        memory_bytes_per_row = monitor_bookmark_normalize_width(bookmark->view,
+                                                                bookmark->view_width_mode);
+    } else if (bookmark->view == MONITOR_BOOKMARK_VIEW_BINARY) {
+        binary_bytes_per_row = monitor_bookmark_normalize_width(bookmark->view,
+                                                                bookmark->view_width_mode);
     }
     set_view((MachineMonitorView)bookmark->view);
     apply_go_local(bookmark->address);
@@ -2867,25 +2953,36 @@ void MachineMonitor :: refresh_popup_overlay()
 
 void MachineMonitor :: draw_hex_row(int y, uint16_t addr, const uint8_t *bytes)
 {
-    char line[MONITOR_HEX_ROW_CHARS + 1];
-    bool mask[MONITOR_HEX_ROW_CHARS];
+    char line[MONITOR_MEMORY_ROW_16_CHARS + 1];
+    bool mask[MONITOR_MEMORY_ROW_16_CHARS];
+    int stride = memory_byte_stride();
+    int line_len = memory_row_chars();
 
-    monitor_format_hex_row(addr, bytes, line);
+    if (stride == MONITOR_MEMORY_MAX_BYTES_PER_ROW) {
+        monitor_format_hex16_row(addr, bytes, line);
+    } else {
+        monitor_format_hex_row(addr, bytes, line);
+    }
     memset(mask, 0, sizeof(mask));
-    for (int i = 0; i < MONITOR_HEX_BYTES_PER_ROW; i++) {
+    for (int i = 0; i < stride; i++) {
         uint16_t cell = (uint16_t)(addr + i);
         if (range_contains(cell)) {
-            mask[5 + (3 * i)] = true;
-            mask[6 + (3 * i)] = true;
-            mask[29 + i] = true;
+            int col = memory_hex_column(i);
+            mask[col] = true;
+            mask[col + 1] = true;
+            if (stride == MONITOR_MEMORY_MIN_BYTES_PER_ROW) {
+                mask[29 + i] = true;
+            }
         }
     }
-    if ((!edit_mode || edit_cursor_visible) && state.view == MONITOR_VIEW_HEX && state.current_addr >= addr && state.current_addr < (uint16_t)(addr + MONITOR_HEX_BYTES_PER_ROW)) {
+    if ((!edit_mode || edit_cursor_visible) && state.view == MONITOR_VIEW_HEX &&
+        state.current_addr >= addr && state.current_addr < (uint16_t)(addr + stride)) {
         int index = state.current_addr - addr;
-        mask[5 + (3 * index)] = true;
-        mask[6 + (3 * index)] = true;
+        int col = memory_hex_column(index);
+        mask[col] = true;
+        mask[col + 1] = true;
     }
-    draw_with_mask(window, y, line, MONITOR_HEX_ROW_CHARS, mask);
+    draw_with_mask(window, y, line, line_len, mask);
 }
 
 void MachineMonitor :: draw_text_row(int y, uint16_t addr, const uint8_t *bytes, bool screen_codes)
@@ -2911,13 +3008,14 @@ void MachineMonitor :: draw_text_row(int y, uint16_t addr, const uint8_t *bytes,
 
 void MachineMonitor :: draw_hex()
 {
+    int stride = memory_byte_stride();
     int line_idx;
     for (line_idx = 0; line_idx < content_height; line_idx++) {
-        uint16_t addr = (uint16_t)(state.base_addr + line_idx * MONITOR_HEX_BYTES_PER_ROW);
-        uint8_t bytes[MONITOR_HEX_BYTES_PER_ROW];
+        uint16_t addr = (uint16_t)(state.base_addr + line_idx * stride);
+        uint8_t bytes[MONITOR_MEMORY_MAX_BYTES_PER_ROW];
 
-        read_row(addr, bytes, MONITOR_HEX_BYTES_PER_ROW);
-        if (edit_mode && pending_hex_nibble >= 0 && state.current_addr >= addr && state.current_addr < (uint16_t)(addr + MONITOR_HEX_BYTES_PER_ROW)) {
+        read_row(addr, bytes, stride);
+        if (edit_mode && pending_hex_nibble >= 0 && state.current_addr >= addr && state.current_addr < (uint16_t)(addr + stride)) {
             int index = state.current_addr - addr;
             bytes[index] = (uint8_t)((pending_hex_nibble << 4) | (bytes[index] & 0x0F));
         }
@@ -2952,10 +3050,11 @@ void MachineMonitor :: draw_screen_codes()
 void MachineMonitor :: draw_binary_row(int y, uint16_t addr, const uint8_t *bytes, int byte_count)
 {
     // Format depends on width:
-    // Width 1: "AAAA bbbbbbbb HH"                        (16 cols)
-    // Width 2: "AAAA bbbbbbbb bbbbbbbb HH HH"            (28 cols)
-    // Width 3: "AAAA bbbbbbbb bbbbbbbb bbbbbbbb HHHHHH"  (38 cols)
-    // Width S: "AAAA bbbbbbbbbbbbbbbbbbbbbbbb HH HH HH"  (38 cols)
+    // Width 1:  "AAAA bbbbbbbb HH"                       (16 cols)
+    // Width 2:  "AAAA bbbbbbbb bbbbbbbb HH HH"           (28 cols)
+    // Width 3:  "AAAA bbbbbbbb bbbbbbbb bbbbbbbb HHHHHH" (38 cols)
+    // Width 3S: "AAAA bbbbbbbbbbbbbbbbbbbbbbbb HH HH HH" (38 cols)
+    // Width 4:  "AAAA bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"  (37 cols)
     enum { BIN_LINE_MAX = 38 };
     char line[BIN_LINE_MAX + 1];
     bool mask[BIN_LINE_MAX];
@@ -2970,21 +3069,18 @@ void MachineMonitor :: draw_binary_row(int y, uint16_t addr, const uint8_t *byte
     int pos = 5;
     int hex_start = -1;
 
-    // Render binary bits with appropriate spacing
-    int stride = binary_byte_stride();
-    bool use_sprite_mode = (stride == 3) && (binary_bytes_per_row == MONITOR_BINARY_SPRITE_MODE_MARKER);
+    bool packed_bits = monitor_binary_packed_bits(binary_bytes_per_row);
+    bool show_hex_preview = monitor_binary_shows_hex_preview(binary_bytes_per_row);
+    bool use_sprite_mode = (byte_count == 3) && (binary_bytes_per_row == MONITOR_BINARY_SPRITE_MODE_MARKER);
     bool hex_bytes_spaced = use_sprite_mode || (byte_count == 2);
 
-    if (use_sprite_mode) {
-        // Sprite mode: packed binary bits (no spaces between bytes)
+    if (packed_bits) {
         for (int i = 0; i < bits; i++) {
             int byte_off = i / 8;
             int bit_in_byte = 7 - (i % 8);
             if (byte_off >= byte_count) break;
             line[pos++] = ((bytes[byte_off] >> bit_in_byte) & 1) ? '*' : '.';
         }
-        line[pos++] = ' ';
-        hex_start = pos;
     } else {
         for (int byte_idx = 0; byte_idx < byte_count; byte_idx++) {
             for (int bit = 7; bit >= 0; bit--) {
@@ -2992,12 +3088,11 @@ void MachineMonitor :: draw_binary_row(int y, uint16_t addr, const uint8_t *byte
             }
             if (byte_idx + 1 < byte_count) line[pos++] = ' ';
         }
-        line[pos++] = ' ';
-        hex_start = pos;
     }
 
-    // Render hex preview
-    if (hex_start >= 0) {
+    if (show_hex_preview) {
+        line[pos++] = ' ';
+        hex_start = pos;
         for (int i = 0; i < byte_count; i++) {
             dump_hex_byte(line, pos, bytes[i]);
             pos += 2;
@@ -3014,7 +3109,7 @@ void MachineMonitor :: draw_binary_row(int y, uint16_t addr, const uint8_t *byte
         if (range_contains((uint16_t)(addr + i))) {
             int first = 5;
             // Calculate start position for this byte in the line
-            if (use_sprite_mode) {
+            if (packed_bits) {
                 first = 5 + (i * 8);
             } else if (byte_count == 1) {
                 first = 5;
@@ -3040,7 +3135,7 @@ void MachineMonitor :: draw_binary_row(int y, uint16_t addr, const uint8_t *byte
         
         // Calculate column of the binary bit
         int col = -1;
-        if (use_sprite_mode) {
+        if (packed_bits) {
             col = 5 + (byte_offset * 8) + bit_pos_in_byte;
         } else if (byte_count == 1) {
             col = 5 + bit_pos_in_byte;
@@ -3902,6 +3997,7 @@ void MachineMonitor :: deinit(void)
     monitor_last_save_name[sizeof(monitor_last_save_name) - 1] = 0;
     monitor_last_go_valid = last_go_valid;
     monitor_last_go_addr = last_go_addr;
+    monitor_memory_bytes_per_row = memory_bytes_per_row;
     monitor_binary_bytes_per_row = binary_bytes_per_row;
     backend->end_session();
     if (clipboard.data) {
@@ -3999,7 +4095,7 @@ int MachineMonitor :: handle_key(int key)
         draw();
         return 0;
     }
-    if (key == 'r' || key == 'R') {
+    if ((key == 'r' || key == 'R') && range_shortcut_allowed()) {
         help_visible = false;
         toggle_range_mode();
         draw();
@@ -4007,6 +4103,11 @@ int MachineMonitor :: handle_key(int key)
     }
     if (!edit_mode && (key == 'p' || key == 'P')) {
         help_visible = false;
+        if (screen && screen->prefers_full_refresh()) {
+            get_ui()->popup("POLL MODE UNAVAILABLE OVER TELNET", BUTTON_OK);
+            redraw_full();
+            return 0;
+        }
         poll_mode = !poll_mode;
         reset_poll_deadline();
         draw();
@@ -4678,54 +4779,37 @@ void MachineMonitor::show_io_confirmation(const char *op, const char *name,
 
 void MachineMonitor::handle_width_command()
 {
+    if (state.view == MONITOR_VIEW_HEX) {
+        memory_bytes_per_row = (memory_byte_stride() == MONITOR_MEMORY_MIN_BYTES_PER_ROW) ?
+            MONITOR_MEMORY_MAX_BYTES_PER_ROW : MONITOR_MEMORY_MIN_BYTES_PER_ROW;
+        ensure_current_visible();
+        draw();
+        return;
+    }
     if (state.view != MONITOR_VIEW_BINARY) {
-        get_ui()->popup("WIDTH ONLY IN BINARY VIEW", BUTTON_OK);
+        get_ui()->popup("WIDTH ONLY IN MEMORY/BINARY VIEW", BUTTON_OK);
         redraw_full();
         return;
     }
-    char buf[8];
-    // Format the current width for display
-    if (binary_bytes_per_row == MONITOR_BINARY_SPRITE_MODE_MARKER) {
-        sprintf(buf, "S");
-    } else {
-        sprintf(buf, "%u", (unsigned)binary_bytes_per_row);
+
+    switch (binary_bytes_per_row) {
+        case 1:
+            binary_bytes_per_row = 2;
+            break;
+        case 2:
+            binary_bytes_per_row = 3;
+            break;
+        case 3:
+            binary_bytes_per_row = MONITOR_BINARY_SPRITE_MODE_MARKER;
+            break;
+        case MONITOR_BINARY_SPRITE_MODE_MARKER:
+            binary_bytes_per_row = 4;
+            break;
+        default:
+            binary_bytes_per_row = 1;
+            break;
     }
-    if (!prompt_command("Width 1,2,3,S bytes/row", buf, sizeof(buf) - 1, true)) {
-        return;
-    }
-    
-    // Process input: accept only 1, 2, 3, S, s
-    // Normalize to uppercase and validate
-    const char *p = buf;
-    while (*p == ' ') p++;
-    if (!*p) return;
-    
-    // Check for single character input
-    char c = *p;
-    if (c == 's') c = 'S';  // Normalize lowercase s to S
-    
-    p++;
-    while (*p == ' ') p++;
-    
-    if (*p) {
-        // More characters than expected - invalid
-        return;
-    }
-    
-    // Validate the character
-    if (c == '1') {
-        binary_bytes_per_row = 1;
-    } else if (c == '2') {
-        binary_bytes_per_row = 2;
-    } else if (c == '3') {
-        binary_bytes_per_row = 3;
-    } else if (c == 'S') {
-        binary_bytes_per_row = MONITOR_BINARY_SPRITE_MODE_MARKER;
-    } else {
-        // Invalid character - silently ignore, no change
-        return;
-    }
-    
+
     binary_bit_index = 7;
     ensure_current_visible();
     draw();

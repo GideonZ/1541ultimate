@@ -23,8 +23,10 @@ enum MachineMonitorView {
 };
 
 enum {
+    MONITOR_MEMORY_MIN_BYTES_PER_ROW = 8,
+    MONITOR_MEMORY_MAX_BYTES_PER_ROW = 16,
     MONITOR_BINARY_MIN_BYTES_PER_ROW = 1,
-    MONITOR_BINARY_MAX_BYTES_PER_ROW = 3,
+    MONITOR_BINARY_MAX_BYTES_PER_ROW = 4,
     MONITOR_BINARY_SPRITE_MODE_MARKER = 0xFE,
 };
 
@@ -34,6 +36,8 @@ enum {
 enum {
     MONITOR_HEX_BYTES_PER_ROW = 8,
     MONITOR_TEXT_BYTES_PER_ROW = 32,
+    MONITOR_MEMORY_ROW_8_CHARS = 37,
+    MONITOR_MEMORY_ROW_16_CHARS = 38,
     MONITOR_HEX_ROW_CHARS = 37,
     MONITOR_TEXT_ROW_CHARS = 4 + 1 + MONITOR_TEXT_BYTES_PER_ROW,
     MONITOR_DISASM_ROW_CHARS = 38,
@@ -126,6 +130,7 @@ class MachineMonitor : public UIObject
     uint16_t last_go_addr;
     bool go_pending;
     uint16_t go_pending_addr;
+    uint8_t memory_bytes_per_row;
     uint8_t binary_bytes_per_row;
     Clipboard clipboard;
 
@@ -207,9 +212,13 @@ class MachineMonitor : public UIObject
     uint8_t canonical_read(uint16_t address);
     void canonical_write(uint16_t address, uint8_t value);
     void read_row(uint16_t address, uint8_t *dst, uint16_t len) const;
+    uint8_t memory_byte_stride(void) const;
     uint8_t binary_byte_stride(void) const;
+    int memory_row_chars(void) const;
+    int memory_hex_column(int byte_offset) const;
     void apply_go_local(uint16_t address);
     bool number_shortcut_allowed(void) const;
+    bool range_shortcut_allowed(void) const;
     bool bookmark_shortcut_allowed(void) const;
     bool bookmark_set_shortcut_allowed(void) const;
     void draw();

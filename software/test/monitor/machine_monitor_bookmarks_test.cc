@@ -123,7 +123,7 @@ static int expect_monitor_border_restored(const CaptureScreen &screen)
 
 static void seed_bookmark_full(uint8_t slot, uint16_t address, uint8_t view,
                                uint8_t cpu_bank, uint8_t vic_bank, bool edit_mode,
-                               uint8_t binary_width, const char *label)
+                               uint8_t view_width_mode, const char *label)
 {
     MonitorBookmarks bookmarks;
     MonitorBookmarkSlot bookmark;
@@ -134,7 +134,7 @@ static void seed_bookmark_full(uint8_t slot, uint16_t address, uint8_t view,
     bookmark.view = view;
     bookmark.cpu_bank = cpu_bank;
     bookmark.vic_bank = vic_bank;
-    bookmark.binary_width = binary_width;
+    bookmark.view_width_mode = view_width_mode;
     bookmark.edit_mode = edit_mode;
     bookmark.is_default = false;
     bookmark.is_valid = true;
@@ -200,17 +200,29 @@ static int test_bookmark_addendum_default_table(void)
                    "Bookmark default label mismatch.")) return 1;
         if (expect(slot->cpu_bank == 7 && slot->vic_bank == 0, "Default CPU/VIC bank mismatch.")) return 1;
         if (expect(!slot->edit_mode && slot->is_default, "Default mode/flags mismatch.")) return 1;
-        if (expect(slot->binary_width == 1, "Default binary width must be W1.")) return 1;
+        if (slot->view == MONITOR_BOOKMARK_VIEW_HEX) {
+            if (expect(slot->view_width_mode == MONITOR_BOOKMARK_WIDTH_MEMORY_8,
+                       "Default memory bookmarks must store width 8.")) return 1;
+        } else if (slot->view == MONITOR_BOOKMARK_VIEW_ASCII ||
+                   slot->view == MONITOR_BOOKMARK_VIEW_SCREEN) {
+            if (expect(slot->view_width_mode == MONITOR_BOOKMARK_WIDTH_TEXT,
+                       "Default text/screen bookmarks must store width 32.")) return 1;
+        } else if (slot->view == MONITOR_BOOKMARK_VIEW_ASM) {
+            if (expect(slot->view_width_mode == MONITOR_BOOKMARK_WIDTH_NONE,
+                       "Default ASM bookmarks must omit width.")) return 1;
+        } else if (expect(slot->view_width_mode == 1, "Default binary width must be W1.")) return 1;
     }
 
     // Spot-check rationale items called out by the addendum.
     if (expect(strcmp(bookmarks.get(6)->label, "SID") == 0, "$D400 must be labelled SID.")) return 1;
     if (expect(strcmp(bookmarks.get(4)->label, "HIRAM") == 0, "$C000 must be labelled HIRAM.")) return 1;
+    if (expect(bookmarks.get(1)->view_width_mode == MONITOR_BOOKMARK_WIDTH_TEXT,
+               "$0400 screen bookmark must default to width 32.")) return 1;
     if (expect(bookmarks.get(7)->view == MONITOR_BOOKMARK_VIEW_BINARY &&
-               bookmarks.get(7)->binary_width == 1,
+               bookmarks.get(7)->view_width_mode == 1,
                "CIA1 must default to BIN W1.")) return 1;
     if (expect(bookmarks.get(8)->view == MONITOR_BOOKMARK_VIEW_BINARY &&
-               bookmarks.get(8)->binary_width == 1,
+               bookmarks.get(8)->view_width_mode == 1,
                "CIA2 must default to BIN W1.")) return 1;
     return 0;
 }
@@ -276,7 +288,7 @@ static int test_bookmark_old_six_field_falls_back(void)
         cfg = ConfigManager::getConfigManager()->find_store("Machine Monitor Bookmarks");
         if (expect(cfg != NULL, "Config store must exist for malformed-string test.")) return 1;
         cfg->set_value(TEST_BOOKMARK_CFG_SCHEMA, 1);
-        // Old pre-addendum encoding: six fields (no binary_width, no label).
+        // Old pre-addendum encoding: six fields (no width mode, no label).
         cfg->set_string(TEST_BOOKMARK_CFG_SLOT0, "2049,1,7,0,0,0");
         cfg->write();
     }
@@ -290,7 +302,7 @@ static int test_bookmark_old_six_field_falls_back(void)
     return 0;
 }
 
-static int test_bookmark_persists_label_and_binary_width(void)
+static int test_bookmark_persists_label_and_width_mode(void)
 {
     reset_bookmark_test_state();
 
@@ -302,7 +314,7 @@ static int test_bookmark_persists_label_and_binary_width(void)
     custom.view = MONITOR_BOOKMARK_VIEW_BINARY;
     custom.cpu_bank = 3;
     custom.vic_bank = 1;
-    custom.binary_width = 3;
+    custom.view_width_mode = 3;
     custom.edit_mode = true;
     custom.is_default = false;
     custom.is_valid = true;
@@ -315,8 +327,8 @@ static int test_bookmark_persists_label_and_binary_width(void)
 
     if (expect(slot7 && slot7->address == 0x2000 && slot7->view == MONITOR_BOOKMARK_VIEW_BINARY &&
                slot7->cpu_bank == 3 && slot7->vic_bank == 1 && !slot7->edit_mode &&
-               slot7->binary_width == 3 && strcmp(slot7->label, "SPRITE") == 0,
-               "Reopen should preserve label and binary width without persisting edit mode.")) return 1;
+               slot7->view_width_mode == 3 && strcmp(slot7->label, "SPRITE") == 0,
+               "Reopen should preserve label and width mode without persisting edit mode.")) return 1;
     return 0;
 }
 
@@ -332,7 +344,7 @@ static int test_bookmark_set_preserves_label(void)
     custom.view = MONITOR_BOOKMARK_VIEW_BINARY;
     custom.cpu_bank = 7;
     custom.vic_bank = 0;
-    custom.binary_width = 1;
+    custom.view_width_mode = 1;
     custom.is_valid = true;
     strcpy(custom.label, "MYLBL");
     bookmarks.set(7, custom);
@@ -343,7 +355,7 @@ static int test_bookmark_set_preserves_label(void)
     updated.view = MONITOR_BOOKMARK_VIEW_HEX;
     updated.cpu_bank = 5;
     updated.vic_bank = 2;
-    updated.binary_width = 2;
+    updated.view_width_mode = 2;
     updated.is_valid = true;
     // No label provided in the captured target.
     bookmarks.set_target_preserve_label(7, updated);
@@ -368,7 +380,7 @@ static int test_bookmark_label_edit_changes_only_label(void)
     custom.view = MONITOR_BOOKMARK_VIEW_ASM;
     custom.cpu_bank = 4;
     custom.vic_bank = 1;
-    custom.binary_width = 1;
+    custom.view_width_mode = 1;
     custom.is_valid = true;
     strcpy(custom.label, "OLD");
     bookmarks.set(2, custom);
@@ -397,7 +409,7 @@ static int test_bookmark_selected_reset_restores_default(void)
         redirect.view = MONITOR_BOOKMARK_VIEW_HEX;
         redirect.cpu_bank = 0;
         redirect.vic_bank = 3;
-        redirect.binary_width = 4;
+        redirect.view_width_mode = 4;
         redirect.is_valid = true;
         strcpy(redirect.label, "CUSTOM");
         bookmarks.set(7, redirect);
@@ -406,7 +418,7 @@ static int test_bookmark_selected_reset_restores_default(void)
     if (expect(bookmarks.reset_slot_to_default(7, 7, 0), "reset_slot_to_default should succeed.")) return 1;
     const MonitorBookmarkSlot *slot7 = bookmarks.get(7);
     if (expect(slot7 && slot7->address == 0xDC00 && slot7->view == MONITOR_BOOKMARK_VIEW_BINARY &&
-               slot7->cpu_bank == 7 && slot7->vic_bank == 0 && slot7->binary_width == 1 &&
+               slot7->cpu_bank == 7 && slot7->vic_bank == 0 && slot7->view_width_mode == 1 &&
                slot7->is_default && strcmp(slot7->label, "CIA1") == 0,
                "reset_slot_to_default should restore default target state and label.")) return 1;
 
@@ -422,13 +434,13 @@ static int test_bookmark_status_message_formatting(void)
     char line[40];
     MonitorBookmarkSlot bookmark;
 
-    // Non-binary apply (omit Wn, omit MODE, includes label).
+    // ASM apply omits width, includes label.
     memset(&bookmark, 0, sizeof(bookmark));
     bookmark.address = 0x0801;
     bookmark.view = MONITOR_BOOKMARK_VIEW_ASM;
     bookmark.cpu_bank = 7;
     bookmark.vic_bank = 0;
-    bookmark.binary_width = 1;
+    bookmark.view_width_mode = 1;
     bookmark.is_valid = true;
     strcpy(bookmark.label, "BASIC");
     monitor_bookmark_format_status(line, sizeof(line), 2, &bookmark, MONITOR_BOOKMARK_STATUS_RESTORED);
@@ -438,18 +450,39 @@ static int test_bookmark_status_message_formatting(void)
                "Apply messages must not include MODE.")) return 1;
     if (expect((int)strlen(line) <= 38, "Apply message must fit in 38 columns.")) return 1;
 
+    // Memory set includes W16.
+    bookmark.address = 0x2000;
+    bookmark.view = MONITOR_BOOKMARK_VIEW_HEX;
+    bookmark.view_width_mode = MONITOR_BOOKMARK_WIDTH_MEMORY_16;
+    strcpy(bookmark.label, "SPRITE");
+    monitor_bookmark_format_status(line, sizeof(line), 7, &bookmark, MONITOR_BOOKMARK_STATUS_SET);
+    if (expect(strcmp(line, "BM7 SPRITE $2000 HEX W16 CPU7 VIC0 SET") == 0,
+               "Memory set message must include the stored width.")) return 1;
+    if (expect((int)strlen(line) <= 38, "Memory set message must fit in 38 columns.")) return 1;
+
     // Binary apply with Wn.
     bookmark.address = 0xDC00;
     bookmark.view = MONITOR_BOOKMARK_VIEW_BINARY;
-    bookmark.binary_width = 1;
+    bookmark.view_width_mode = 1;
     strcpy(bookmark.label, "CIA1");
     monitor_bookmark_format_status(line, sizeof(line), 7, &bookmark, MONITOR_BOOKMARK_STATUS_RESTORED);
     if (expect(strcmp(line, "BM7 CIA1 $DC00 BIN W1 CPU7 VIC0") == 0,
                "Binary apply message must include Wn and label.")) return 1;
     if (expect((int)strlen(line) <= 38, "Binary apply message must fit in 38 columns.")) return 1;
 
+    bookmark.view_width_mode = MONITOR_BOOKMARK_BINARY_WIDTH_SPRITE;
+    monitor_bookmark_format_status(line, sizeof(line), 7, &bookmark, MONITOR_BOOKMARK_STATUS_RESTORED);
+    if (expect(strcmp(line, "BM7 CIA1 $DC00 BIN W3S CPU7 VIC0") == 0,
+               "Binary packed 3-byte mode must display as W3S.")) return 1;
+
+    bookmark.view_width_mode = 4;
+    monitor_bookmark_format_status(line, sizeof(line), 7, &bookmark, MONITOR_BOOKMARK_STATUS_RESTORED);
+    if (expect(strcmp(line, "BM7 CIA1 $DC00 BIN W4 CPU7 VIC0") == 0,
+               "Binary width 4 must display as W4.")) return 1;
+
     // Binary set with 6-char label and W1.
     bookmark.address = 0x2000;
+    bookmark.view_width_mode = 1;
     strcpy(bookmark.label, "SPRITE");
     monitor_bookmark_format_status(line, sizeof(line), 7, &bookmark, MONITOR_BOOKMARK_STATUS_SET);
     if (expect(strcmp(line, "BM7 SPRITE $2000 BIN W1 CPU7 VIC0 SET") == 0,
@@ -484,7 +517,7 @@ static int test_bookmark_popup_line_formatting(void)
     bookmark.view = MONITOR_BOOKMARK_VIEW_ASM;
     bookmark.cpu_bank = 7;
     bookmark.vic_bank = 0;
-    bookmark.binary_width = 1;
+    bookmark.view_width_mode = 1;
     strcpy(bookmark.label, "KERNAL");
     monitor_bookmark_format_popup_line(line, sizeof(line), 9, &bookmark);
     if (expect(strcmp(line, "9 KERNAL $E000 ASM    CPU7 VIC0") == 0,
@@ -493,17 +526,37 @@ static int test_bookmark_popup_line_formatting(void)
 
     bookmark.address = 0xDC00;
     bookmark.view = MONITOR_BOOKMARK_VIEW_BINARY;
-    bookmark.binary_width = 1;
+    bookmark.view_width_mode = 1;
     strcpy(bookmark.label, "CIA1");
     monitor_bookmark_format_popup_line(line, sizeof(line), 7, &bookmark);
-    if (expect(strcmp(line, "7 CIA1   $DC00 BIN W1 CPU7 VIC0") == 0,
-               "Binary popup row must use BIN Wn in VIEW6 without a mode column.")) return 1;
+    if (expect(strcmp(line, "7 CIA1   $DC00 BIN  1 CPU7 VIC0") == 0,
+               "Binary popup row must use the 2-character width column.")) return 1;
     if (expect((int)strlen(line) <= 38, "Binary popup row must fit in 38 columns.")) return 1;
 
     bookmark.edit_mode = true;
     monitor_bookmark_format_popup_line(line, sizeof(line), 7, &bookmark);
-    if (expect(strcmp(line, "7 CIA1   $DC00 BIN W1 CPU7 VIC0") == 0,
+    if (expect(strcmp(line, "7 CIA1   $DC00 BIN  1 CPU7 VIC0") == 0,
                "Popup row must ignore edit mode because bookmarks no longer store it.")) return 1;
+
+    bookmark.view_width_mode = MONITOR_BOOKMARK_BINARY_WIDTH_SPRITE;
+    monitor_bookmark_format_popup_line(line, sizeof(line), 7, &bookmark);
+    if (expect(strcmp(line, "7 CIA1   $DC00 BIN 3S CPU7 VIC0") == 0,
+               "Binary packed 3-byte popup row must display as 3S.")) return 1;
+
+    bookmark.view_width_mode = 4;
+    monitor_bookmark_format_popup_line(line, sizeof(line), 7, &bookmark);
+    if (expect(strcmp(line, "7 CIA1   $DC00 BIN  4 CPU7 VIC0") == 0,
+               "Binary width 4 popup row must display as 4.")) return 1;
+
+    bookmark.address = 0x0400;
+    bookmark.view = MONITOR_BOOKMARK_VIEW_SCREEN;
+    bookmark.cpu_bank = 7;
+    bookmark.vic_bank = 0;
+    bookmark.view_width_mode = MONITOR_BOOKMARK_WIDTH_TEXT;
+    strcpy(bookmark.label, "SCREEN");
+    monitor_bookmark_format_popup_line(line, sizeof(line), 1, &bookmark);
+    if (expect(strcmp(line, "1 SCREEN $0400 SCR 32 CPU7 VIC0") == 0,
+               "SCREEN popup row must fit the widened view column without corruption.")) return 1;
     return 0;
 }
 
@@ -551,7 +604,7 @@ static int test_bookmark_six_char_custom_label_fits(void)
     bookmark.is_valid = true;
     bookmark.address = 0x2000;
     bookmark.view = MONITOR_BOOKMARK_VIEW_BINARY;
-    bookmark.binary_width = 1;
+    bookmark.view_width_mode = 1;
     bookmark.cpu_bank = 7;
     bookmark.vic_bank = 0;
     strcpy(bookmark.label, "SPRITE");
@@ -561,10 +614,11 @@ static int test_bookmark_six_char_custom_label_fits(void)
     if (expect((int)strlen(line) <= 38, "Binary set with 6-char label must fit in 38 columns.")) return 1;
 
     bookmark.view = MONITOR_BOOKMARK_VIEW_HEX;
+    bookmark.view_width_mode = MONITOR_BOOKMARK_WIDTH_MEMORY_8;
     monitor_bookmark_format_status(line, sizeof(line), 7, &bookmark, MONITOR_BOOKMARK_STATUS_SET);
+    if (expect(strcmp(line, "BM7 SPRITE $2000 HEX W8 CPU7 VIC0 SET") == 0,
+               "Memory set with 6-char label must include the width.")) return 1;
     if (expect((int)strlen(line) <= 38, "Non-binary 6-char label set must fit in 38 columns.")) return 1;
-    if (expect(strstr(line, "Wn") == NULL && strstr(line, " W1") == NULL,
-               "Non-binary set must omit Wn.")) return 1;
     return 0;
 }
 
@@ -596,7 +650,7 @@ static int test_bookmark_overlong_persisted_label_truncates_for_display(void)
     return 0;
 }
 
-static int test_monitor_bookmark_capture_restore_includes_binary_width(void)
+static int test_monitor_bookmark_capture_restore_includes_width_mode(void)
 {
     TestUserInterface ui;
     CaptureScreen screen;
@@ -645,8 +699,69 @@ static int test_monitor_bookmark_restore_applies_width_w3(void)
     if (expect(monitor.poll(0) == 0, "Bookmark W3 restore failed.")) return 1;
     get_monitor_status(screen, status);
     if (expect(strstr(status, "BIN W3") != NULL,
-               "Restore must apply stored binary_width to the running view.")) return 1;
+               "Restore must apply the stored width mode to the running view.")) return 1;
     monitor.deinit();
+    return 0;
+}
+
+static int test_monitor_bookmark_capture_restore_includes_memory_width(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    BookmarkTestBackend backend;
+    char status[39];
+    char row[39];
+
+    reset_bookmark_test_state();
+    seed_bookmark_full(4, 0x2000, MONITOR_BOOKMARK_VIEW_HEX, 7, 2, false,
+                       MONITOR_BOOKMARK_WIDTH_MEMORY_16, "DATA");
+    for (int i = 0; i < 16; i++) {
+        backend.ram[0x2000 + i] = (uint8_t)i;
+    }
+
+    const int keys[] = { KEY_CTRL_4, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 2);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    if (expect(monitor.poll(0) == 0, "Bookmark restore for memory-width test failed.")) return 1;
+    get_monitor_status(screen, status);
+    if (expect(strstr(status, "BM4 DATA $2000 HEX W16 CPU7 VIC2") == status,
+               "Restore status must report HEX W16.")) return 1;
+    screen.get_slice(1, 4, 38, row);
+    if (expect(strcmp(row, "2000 0001020304050607 08090A0B0C0D0E0F") == 0,
+               "Restore must apply the stored memory width to rendering.")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_monitor_bookmark_set_captures_memory_width(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    BookmarkTestBackend backend;
+
+    reset_bookmark_test_state();
+    const int keys[] = { 'W', KEY_CTRL_B, 'S', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 5);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    if (expect(monitor.poll(0) == 0, "Memory-width capture test: width cycle failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Memory-width capture test: popup open failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Memory-width capture test: popup set failed.")) return 1;
+
+    monitor.deinit();
+    MonitorBookmarks reopened;
+    reopened.ensure_loaded(7, 2);
+    const MonitorBookmarkSlot *slot0 = reopened.get(0);
+    if (expect(slot0 && slot0->view == MONITOR_BOOKMARK_VIEW_HEX &&
+               slot0->view_width_mode == MONITOR_BOOKMARK_WIDTH_MEMORY_16,
+               "Bookmark capture must store the active memory width.")) return 1;
     return 0;
 }
 
@@ -752,13 +867,13 @@ static int test_monitor_bookmark_popup_render(void)
 
     // Verify a few specific row formats.
     get_popup_line(screen, 2, line, sizeof(line));
-    if (expect(strncmp(line, "0 ZP     $0000 HEX    CPU",
-                       strlen("0 ZP     $0000 HEX    CPU")) == 0,
-               "Default popup slot 0 must be ZP HEX (padded VIEW6).")) return 1;
+        if (expect(strncmp(line, "0 ZP     $0000 HEX  8 CPU",
+                   strlen("0 ZP     $0000 HEX  8 CPU")) == 0,
+               "Default popup slot 0 must be ZP HEX width 8.")) return 1;
     get_popup_line(screen, 9, line, sizeof(line));
-    if (expect(strncmp(line, "7 CIA1   $DC00 BIN W1 CPU",
-                       strlen("7 CIA1   $DC00 BIN W1 CPU")) == 0,
-               "Default popup slot 7 must be CIA1 BIN W1.")) return 1;
+        if (expect(strncmp(line, "7 CIA1   $DC00 BIN  1 CPU",
+                   strlen("7 CIA1   $DC00 BIN  1 CPU")) == 0,
+               "Default popup slot 7 must be CIA1 BIN width 1.")) return 1;
     get_popup_line(screen, 11, line, sizeof(line));
     if (expect(strncmp(line, "9 KERNAL $E000 ASM    CPU",
                        strlen("9 KERNAL $E000 ASM    CPU")) == 0,
@@ -1145,7 +1260,7 @@ int main()
     if (test_bookmark_label_normalize_helper()) return 1;
     if (test_bookmark_corrupt_config_falls_back_to_defaults()) return 1;
     if (test_bookmark_old_six_field_falls_back()) return 1;
-    if (test_bookmark_persists_label_and_binary_width()) return 1;
+    if (test_bookmark_persists_label_and_width_mode()) return 1;
     if (test_bookmark_set_preserves_label()) return 1;
     if (test_bookmark_label_edit_changes_only_label()) return 1;
     if (test_bookmark_selected_reset_restores_default()) return 1;
@@ -1155,8 +1270,10 @@ int main()
     if (test_bookmark_popup_instruction_line()) return 1;
     if (test_bookmark_six_char_custom_label_fits()) return 1;
     if (test_bookmark_overlong_persisted_label_truncates_for_display()) return 1;
-    if (test_monitor_bookmark_capture_restore_includes_binary_width()) return 1;
+    if (test_monitor_bookmark_capture_restore_includes_width_mode()) return 1;
     if (test_monitor_bookmark_restore_applies_width_w3()) return 1;
+    if (test_monitor_bookmark_capture_restore_includes_memory_width()) return 1;
+    if (test_monitor_bookmark_set_captures_memory_width()) return 1;
     if (test_monitor_bookmark_capture_no_memory_write()) return 1;
     if (test_monitor_bookmark_set_preserves_label()) return 1;
     if (test_monitor_bookmark_popup_render()) return 1;

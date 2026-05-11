@@ -34,5 +34,7 @@ Optional environment variables:
 - Combined CPU/VIC status line format
 - Repeated finite `G 0810` execution using `LDA #$NN / STA $2000 / BRK`
 - `G 0810` preserving visible VIC state while a finite `INC $D021 / BRK` program runs
+- Bookmark jumping restoring memory-view width `16`
+- Binary width cycling through `1 -> 2 -> 3 -> 3S -> 4` and bookmark restoration of width `4`
 
 The harness parses the VT100 telnet stream into a deterministic `40x25` screen buffer and compares the captured output against the expected snapshot fragments in `snapshots/expected_snapshots.json`.

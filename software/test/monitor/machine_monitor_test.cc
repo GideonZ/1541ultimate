@@ -2021,6 +2021,97 @@ static int test_number_shortcut_routing(void)
     return 0;
 }
 
+static int test_range_shortcut_routing(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'I', 'E', 'R', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASCII R-routing test: ASCII view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII R-routing test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII R-routing test: typing R failed.")) return 1;
+        if (expect(backend.read(0x0000) == 'R',
+                   "ASCII edit R must write the typed character instead of toggling Range.")) return 1;
+        screen.get_slice(1, 22, 38, header);
+        if (expect(strstr(header, "Range") == NULL,
+                   "ASCII edit R must not enable range mode.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII R-routing test: RUN/STOP should leave edit mode first.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASCII R-routing test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'V', 'E', 'R', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Screen R-routing test: Screen view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Screen R-routing test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Screen R-routing test: typing R failed.")) return 1;
+        if (expect(backend.read(0x0000) == monitor_screen_code_for_char('R'),
+                   "Screen edit R must write the typed screen code instead of toggling Range.")) return 1;
+        screen.get_slice(1, 22, 38, header);
+        if (expect(strstr(header, "Range") == NULL,
+                   "Screen edit R must not enable range mode.")) return 1;
+        if (expect(mon.poll(0) == 0, "Screen R-routing test: RUN/STOP should leave edit mode first.")) return 1;
+        if (expect(mon.poll(0) == 1, "Screen R-routing test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[19];
+        char header[39];
+        const int keys[] = { 'A', 'E', 'R', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASM R-routing test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM R-routing test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM R-routing test: typing R failed.")) return 1;
+        if (expect(!find_popup_rect(screen, NULL, NULL, NULL, NULL),
+                   "ASM edit R must not open a framed popup.")) return 1;
+        screen.get_slice(16, 4, 18, line);
+        if (expect(strstr(line, " R_") == line,
+                   "ASM edit R must be routed into mnemonic entry instead of Range.")) return 1;
+        screen.get_slice(1, 22, 38, header);
+        if (expect(strstr(header, "Range") == NULL,
+                   "ASM mnemonic edit R must not enable range mode.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM R-routing test: RUN/STOP should close the picker first.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM R-routing test: RUN/STOP should leave edit mode next.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASM R-routing test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
 static int test_asm_number_popup_targets_operands(void)
 {
     {
@@ -2864,25 +2955,29 @@ static int test_binary_bit_navigation_and_width(void)
         FakeMemoryBackend backend;
         char header[39];
         char row[40];
-        const int keys[] = { 'B', 'W', KEY_BREAK };
+         const int keys[] = { 'B', 'W', 'W', 'W', 'W', KEY_BREAK };
         FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
         ui.screen = &screen;
         ui.keyboard = &kb;
-        ui.set_prompt("3", 1);
         backend.write(0x0000, 0x80);
         backend.write(0x0001, 0x01);
         backend.write(0x0002, 0xFF);
-        backend.write(0x0003, 0x00);
+         backend.write(0x0003, 0x55);
         monitor_reset_saved_state();
 
         BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Binary width test: view switch failed.")) return 1;
-        // Just verify we can switch to binary view at default width 1
-        if (expect(mon.poll(0) == 0, "Binary width test: width command failed.")) return 1;
-        // Verify width 3 can be set
-        screen.get_slice(0, 4, 1, row);  // Just check that we can read the screen
-        if (expect(strlen(row) > 0, "Binary width=3: screen render test")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary width test: cycle to width 2 failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary width test: cycle to width 3 failed.")) return 1;
+         if (expect(mon.poll(0) == 0, "Binary width test: cycle to width 3S failed.")) return 1;
+         if (expect(mon.poll(0) == 0, "Binary width test: cycle to width 4 failed.")) return 1;
+         screen.get_slice(1, 4, 37, row);
+         if (expect(strcmp(row, "0000 *..............*********.*.*.*.*") == 0,
+             "Binary width cycling must reach width 4 without a hex preview.")) return 1;
+         if (expect(strstr(row, "80") == NULL && strstr(row, "01") == NULL &&
+                 strstr(row, "FF") == NULL && strstr(row, "55") == NULL,
+                 "Binary width 4 must omit the trailing hex bytes.")) return 1;
         screen.get_slice(1, 3, 38, header);
         if (expect(strstr(header, "W=") == NULL && strstr(header, "bits") == NULL,
                    "Binary width must not be displayed in the header.")) return 1;
@@ -2896,34 +2991,33 @@ static int test_binary_bit_navigation_and_width(void)
 static int test_binary_row_formats(void)
 {
     static const struct {
-        const char *width_prompt;
+        int width_presses;
         const char *expected_row;
         int expected_len;
     } cases[] = {
-        { NULL, "0000 ...*..*. 12", 16 },
-        { "2",  "0000 ...*..*. ..**.*.. 12 34", 28 },
-        { "3",  "0000 ...*..*. ..**.*.. .*.*.**. 123456", 38 },
-        { "S",  "0000 ...*..*...**.*...*.*.**. 12 34 56", 38 },
+        { 0, "0000 ...*..*. 12", 16 },
+        { 1, "0000 ...*..*. ..**.*.. 12 34", 28 },
+        { 2, "0000 ...*..*. ..**.*.. .*.*.**. 123456", 38 },
+        { 3, "0000 ...*..*...**.*...*.*.**. 12 34 56", 38 },
+        { 4, "0000 ...*..*...**.*...*.*.**..****...", 37 },
     };
 
     for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         TestUserInterface ui;
         CaptureScreen screen;
         FakeMemoryBackend backend;
-        char row[39];
-        int keys[3];
+        char row[40];
+        int keys[6];
         int key_count = 0;
 
-        if (cases[i].width_prompt) {
-            ui.set_prompt(cases[i].width_prompt, 1);
-        }
         backend.write(0x0000, 0x12);
         backend.write(0x0001, 0x34);
         backend.write(0x0002, 0x56);
+        backend.write(0x0003, 0x78);
         monitor_reset_saved_state();
 
         keys[key_count++] = 'B';
-        if (cases[i].width_prompt) {
+        for (int press = 0; press < cases[i].width_presses; press++) {
             keys[key_count++] = 'W';
         }
         keys[key_count++] = KEY_BREAK;
@@ -2934,8 +3028,8 @@ static int test_binary_row_formats(void)
         BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         if (expect(mon.poll(0) == 0, "Binary row format test: binary view switch failed.")) return 1;
-        if (cases[i].width_prompt) {
-            if (expect(mon.poll(0) == 0, "Binary row format test: width selection failed.")) return 1;
+        for (int press = 0; press < cases[i].width_presses; press++) {
+            if (expect(mon.poll(0) == 0, "Binary row format test: width cycling failed.")) return 1;
         }
         screen.get_slice(1, 4, cases[i].expected_len, row);
         if (expect(strcmp(row, cases[i].expected_row) == 0,
@@ -2948,6 +3042,51 @@ static int test_binary_row_formats(void)
         mon.deinit();
     }
 
+    return 0;
+}
+
+static int test_memory_row_width_cycle(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char row8[38];
+    char row16[39];
+    const int keys[] = { 'W', 'I', 'M', 'W', KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    for (int i = 0; i < 16; i++) {
+        backend.write((uint16_t)i, (uint8_t)i);
+    }
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+
+    screen.get_slice(1, 4, 37, row8);
+    if (expect(strcmp(row8, "0000 00 01 02 03 04 05 06 07 ........") == 0,
+               "Memory view must default to width 8 with ASCII on the right.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Memory width test: cycle to width 16 failed.")) return 1;
+    screen.get_slice(1, 4, 38, row16);
+    if (expect(strcmp(row16, "0000 0001020304050607 08090A0B0C0D0E0F") == 0,
+               "Memory width cycling must render the packed 16-byte row.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Memory width test: ASCII view switch failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Memory width test: return to memory view failed.")) return 1;
+    screen.get_slice(1, 4, 38, row16);
+    if (expect(strcmp(row16, "0000 0001020304050607 08090A0B0C0D0E0F") == 0,
+               "Memory view must remember the chosen width when re-entering the view.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Memory width test: cycle back to width 8 failed.")) return 1;
+    screen.get_slice(1, 4, 37, row8);
+    if (expect(strcmp(row8, "0000 00 01 02 03 04 05 06 07 ........") == 0,
+               "Memory width cycling must wrap back to width 8.")) return 1;
+
+    if (expect(mon.poll(0) == 1, "Memory width test: exit failed.")) return 1;
+    mon.deinit();
     return 0;
 }
 
@@ -4358,6 +4497,38 @@ static int test_edit_indicator_layout_across_views(void)
     return 0;
 }
 
+static int test_poll_mode_disabled_on_full_refresh_screen(void)
+{
+    struct FullRefreshCaptureScreen : public CaptureScreen {
+        virtual bool prefers_full_refresh(void) { return true; }
+    };
+
+    TestUserInterface ui;
+    FullRefreshCaptureScreen screen;
+    FakeMemoryBackend backend;
+    char header[39];
+    const int keys[] = { 'P', KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, "Telnet poll-mode guard: P command failed.")) return 1;
+    if (expect(ui.popup_count == 1,
+               "Poll mode on full-refresh screens must raise one warning popup.")) return 1;
+    if (expect(strstr(ui.last_popup, "TELNET") != NULL,
+               "Poll mode warning must mention the telnet restriction.")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strncmp(header + 29, "Poll", 4) != 0,
+               "Poll indicator must stay disabled on full-refresh screens.")) return 1;
+    if (expect(mon.poll(0) == 1, "Telnet poll-mode guard: exit failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
 
 static int test_load_save_param_parsers(void)
 {
@@ -4455,7 +4626,7 @@ static int test_load_save_param_parsers(void)
 
 extern int g_set_screen_title_call_count;
 
-// Regression: pressing 'W' in non-binary views, 'Z' when freeze is unavailable,
+// Regression: pressing 'W' in fixed-width views, 'Z' when freeze is unavailable,
 // and 'U' outside ASM view must show a bounded warning popup, but the
 // post-popup redraw must NOT call UserInterface::set_screen_title(). That
 // helper repaints the screen chrome (including a horizontal-line glyph row
@@ -4467,7 +4638,7 @@ static int test_warning_popups_preserve_status_row(void)
         TestUserInterface ui;
         CaptureScreen screen;
         FakeMemoryBackend backend;
-        const int keys[] = { 'W', KEY_BREAK };
+        const int keys[] = { 'I', 'W', KEY_BREAK };
         FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
         ui.screen = &screen;
         ui.keyboard = &kb;
@@ -4477,9 +4648,11 @@ static int test_warning_popups_preserve_status_row(void)
         BackendMachineMonitor mon(&ui, &backend);
         mon.init(&screen, &kb);
         g_set_screen_title_call_count = 0;
-        if (expect(mon.poll(0) == 0, "W in hex view should not exit the monitor.")) return 1;
-        if (expect(ui.popup_count == 1, "W outside Binary view must raise exactly one warning popup.")) return 1;
-        if (expect(strstr(ui.last_popup, "BINARY") != NULL, "W warning must mention the BINARY view requirement.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII view switch before W warning test failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "W in ASCII view should not exit the monitor.")) return 1;
+        if (expect(ui.popup_count == 1, "W outside Memory/Binary view must raise exactly one warning popup.")) return 1;
+        if (expect(strstr(ui.last_popup, "MEMORY") != NULL && strstr(ui.last_popup, "BINARY") != NULL,
+               "W warning must mention the MEMORY/BINARY view requirement.")) return 1;
         if (expect(g_set_screen_title_call_count == 0,
                    "W warning popup must not trigger set_screen_title (would erase the row below the monitor with horizontal lines).")) return 1;
         mon.poll(0);
@@ -4658,6 +4831,7 @@ int main()
     if (test_logical_delete_per_view()) return 1;
     if (test_scr_edit_writes_screen_code()) return 1;
     if (test_number_shortcut_routing()) return 1;
+    if (test_range_shortcut_routing()) return 1;
     if (test_asm_number_popup_targets_operands()) return 1;
     if (test_asm_number_popup_illegal_and_invalid_rows()) return 1;
     if (test_asm_edit_assemble_at_cursor()) return 1;
@@ -4675,6 +4849,7 @@ int main()
     if (test_cross_view_sync()) return 1;
     if (test_binary_row_formats()) return 1;
     if (test_binary_bit_navigation_and_width()) return 1;
+    if (test_memory_row_width_cycle()) return 1;
     if (test_binary_delete_behavior()) return 1;
     if (test_clipboard_number_and_range()) return 1;
     if (test_number_popup_edit_and_commit()) return 1;
@@ -4691,6 +4866,7 @@ int main()
     if (test_hex_single_nibble_commits_on_navigation()) return 1;
     if (test_header_invariants_and_parity()) return 1;
     if (test_poll_mode_refreshes_visible_ram()) return 1;
+    if (test_poll_mode_disabled_on_full_refresh_screen()) return 1;
     if (test_edit_indicator_layout_across_views()) return 1;
     if (test_warning_popups_preserve_status_row()) return 1;
     if (test_restricted_backend_guards_platform_features()) return 1;

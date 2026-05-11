@@ -16,8 +16,13 @@ enum {
     MONITOR_BOOKMARK_VIEW_MAX = MONITOR_BOOKMARK_VIEW_BINARY,
     MONITOR_BOOKMARK_LABEL_MAX = 6,
     MONITOR_BOOKMARK_LABEL_STORAGE = MONITOR_BOOKMARK_LABEL_MAX + 1,
+    MONITOR_BOOKMARK_VIEW_DISPLAY_MAX = 9,
+    MONITOR_BOOKMARK_WIDTH_NONE = 0,
+    MONITOR_BOOKMARK_WIDTH_MEMORY_8 = 8,
+    MONITOR_BOOKMARK_WIDTH_MEMORY_16 = 16,
+    MONITOR_BOOKMARK_WIDTH_TEXT = 32,
     MONITOR_BOOKMARK_BINARY_WIDTH_MIN = 1,
-    MONITOR_BOOKMARK_BINARY_WIDTH_MAX = 3,
+    MONITOR_BOOKMARK_BINARY_WIDTH_MAX = 4,
     MONITOR_BOOKMARK_BINARY_WIDTH_SPRITE = 0xFE,
 };
 
@@ -27,7 +32,8 @@ struct MonitorBookmarkSlot
     uint8_t view;
     uint8_t cpu_bank;
     uint8_t vic_bank;
-    uint8_t binary_width;
+    // Stores the bookmarked row-width mode for the active view.
+    uint8_t view_width_mode;
     bool edit_mode;
     bool is_default;
     bool is_valid;
@@ -49,11 +55,12 @@ enum MonitorBookmarkStatusKind {
 
 const char *monitor_bookmark_default_label(uint8_t slot);
 const char *monitor_bookmark_view_name(uint8_t view);
+uint8_t monitor_bookmark_normalize_width(uint8_t view, uint8_t width);
 bool monitor_bookmark_slot_is_valid(const MonitorBookmarkSlot &slot);
 bool monitor_bookmark_status_uses_emphasis(MonitorBookmarkStatusKind kind, const MonitorBookmarkSlot *slot);
 void monitor_bookmark_normalize_label(char *out, size_t out_size, const char *input);
 void monitor_bookmark_format_label6(char *out, size_t out_size, const char *label);
-void monitor_bookmark_format_view6(char *out, size_t out_size, uint8_t view, uint8_t binary_width);
+void monitor_bookmark_format_view6(char *out, size_t out_size, uint8_t view, uint8_t view_width_mode);
 void monitor_bookmark_format_status(char *out, size_t out_len, uint8_t slot,
                                     const MonitorBookmarkSlot *bookmark,
                                     MonitorBookmarkStatusKind kind);
