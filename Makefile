@@ -264,6 +264,19 @@ u64: esp32_raw_u64
 	@$(MAKE) -C target/u64/nios2/updater
 	@cp target/u64/nios2/updater/result/update.app ./update.u64
 
+u64_no_esp::
+	@touch software/nios_solo_bsp/Makefile
+	@touch software/nios_solo_bsp/public.mk
+	@touch software/nios_appl_bsp/Makefile
+	@touch software/nios_appl_bsp/public.mk
+	@$(MAKE) -C tools
+	@$(MAKE) -C software/nios_solo_bsp
+	@$(MAKE) -C software/nios_appl_bsp
+	@$(MAKE) -C target/libs/nios2/lwip
+	@$(MAKE) -C target/u64/nios2/ultimate
+	@$(MAKE) -C target/u64/nios2/updater
+	@cp target/u64/nios2/updater/result/update.app ./update.u64
+
 u64_clean:
 	@$(MAKE) -C target/u64/nios2/ultimate clean
 	@$(MAKE) -C target/u64/nios2/updater clean
@@ -282,7 +295,30 @@ u64ii: esp32_u64ctrl
 	@cp software/u64ctrl/build/u64ctrl.bin u64ii
 	@cp target/u64ii/riscv/update/result/update.app ./update.ue2
 
+u64ii_no_esp::
+	@mkdir -p u64ii
+	@$(MAKE) -C tools
+	@$(MAKE) -C target/libs/riscv/lwip
+	@$(MAKE) -C target/u64ii/riscv/ultimate
+	@$(MAKE) -C target/u64ii/riscv/factorytest
+	@$(MAKE) -C target/u64ii/riscv/update
+	@cp target/u64ii/riscv/ultimate/result/ultimate.app u64ii
+	@cp target/u64ii/riscv/factorytest/result/factorytest.bin u64ii
+	@cp software/u64ctrl/build/bootloader/bootloader.bin u64ii
+	@cp software/u64ctrl/build/partition_table/partition-table.bin u64ii
+	@cp software/u64ctrl/build/u64ctrl.bin u64ii
+	@cp target/u64ii/riscv/update/result/update.app ./update.ue2
+
 u2pl: esp32_raw_c3
+	@$(MAKE) -C tools
+	@$(MAKE) -C target/libs/riscv/lwip
+	@$(MAKE) -C target/u2plus_L/rvlite/bootloader
+	@$(MAKE) -C target/fpga/u2plus_ecp5
+	@$(MAKE) -C target/u2plus_L/riscv/ultimate
+	@$(MAKE) -C target/u2plus_L/riscv/updater
+	@cp target/u2plus_L/riscv/updater/result/update.app ./update.u2l
+
+u2pl_no_esp::
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u2plus_L/rvlite/bootloader
