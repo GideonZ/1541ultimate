@@ -9,6 +9,7 @@
 #include <ctype.h>
 #include <time.h>
 
+#include "small_printf.h"
 #include "vfs.h"
 #include "rtc.h"
 #include "network_config.h"
@@ -132,6 +133,28 @@ int dbg_printf(const char *fmt, ...);
 static const char *month_table[16] = { "Nul", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
         "M13", "M14", "M15" };
 
+static void ftp_set_socket_timeout(int socket_fd, long seconds, long usec)
+{
+    struct timeval tv;
+    tv.tv_sec = seconds;
+    tv.tv_usec = usec;
+    setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
+    setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv));
+}
+
+static void ftp_set_control_socket_timeouts(int socket_fd)
+{
+    struct timeval recv_tv;
+    recv_tv.tv_sec = 0;
+    recv_tv.tv_usec = 100000; // Keep the historical control-socket poll interval.
+    setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&recv_tv, sizeof(recv_tv));
+
+    struct timeval send_tv;
+    send_tv.tv_sec = 5;
+    send_tv.tv_usec = 0;
+    setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&send_tv, sizeof(send_tv));
+}
+
 static FTPTransferResult send_all(int socket, const char *buffer, int length)
 {
     while (length > 0) {
@@ -143,6 +166,13 @@ static FTPTransferResult send_all(int socket, const char *buffer, int length)
         length -= sent;
     }
     return FTP_TRANSFER_OK;
+}
+
+static void ftp_string_write_char(char c, void **param)
+{
+    char **dest = (char **)param;
+    **dest = c;
+    (*dest)++;
 }
 
 static const char *transfer_result_message(FTPTransferResult result)
@@ -224,10 +254,7 @@ int FTPDaemon::listen_task()
             continue;  // Remote probably closed, just wait for another connection
         }
 
-        struct timeval tv;
-        tv.tv_sec = 0;
-        tv.tv_usec = 100000; // 100 ms
-        setsockopt(actual_socket, SOL_SOCKET, SO_RCVTIMEO, (char * )&tv, sizeof(struct timeval));
+        ftp_set_control_socket_timeouts(actual_socket);
 
         FTPDaemonThread *thread = new FTPDaemonThread(actual_socket, cli_addr.sin_addr.s_addr, cli_addr.sin_port);
 
@@ -243,7 +270,10 @@ int FTPDaemon::listen_task()
     }
 }
 
-static uint16_t bind_port = 51000;
+static const uint16_t bind_port_first = 51000;
+static const uint16_t bind_port_last = 61000;
+static const int bind_port_count = bind_port_last - bind_port_first;
+static uint16_t bind_port = bind_port_first;
 
 FTPDaemonThread::FTPDaemonThread(int socket, uint32_t addr, uint16_t port) :
         data_connections(4, NULL)
@@ -300,7 +330,9 @@ void FTPDaemonThread::run(void *a)
 {
     FTPDaemonThread *thread = (FTPDaemonThread *) a;
     thread->handle_connection();
-    closesocket(thread->socket);
+    if (thread->socket >= 0) {
+        closesocket(thread->socket);
+    }
     delete thread;
     num_threads--;
     vTaskDelete(NULL);
@@ -308,10 +340,18 @@ void FTPDaemonThread::run(void *a)
 
 uint16_t FTPDaemonThread::getBindPort()
 {
-    if (bind_port == 61000) {
-        bind_port = 51000;
+    uint16_t port;
+
+    // Multiple FTP control threads can enter PASV concurrently.
+    // Keep passive-port allocation serialized so two threads do not race on the same port.
+    portENTER_CRITICAL();
+    if (bind_port >= bind_port_last) {
+        bind_port = bind_port_first;
     }
-    return bind_port++;
+    port = bind_port++;
+    portEXIT_CRITICAL();
+
+    return port;
 }
 
 int FTPDaemonThread::handle_connection()
@@ -333,7 +373,7 @@ int FTPDaemonThread::handle_connection()
     authenticated = 'n';
 
     int idx = 0;
-    while (1) {
+    while (socket >= 0) {
         int n = recv(socket, &command_buffer[idx], 1, 0);
         if (n > 0) {
             if ((command_buffer[idx] == '\n') || (command_buffer[idx] == '\r')) {
@@ -365,14 +405,23 @@ void FTPDaemonThread::send_msg(const char *msg, ...)
 {
     va_list arg;
     char buffer[600];
-    int len;
+    char *write_ptr = buffer;
+    const size_t max_formatted_len = sizeof(buffer) - 3;
 
     va_start(arg, msg);
-    vsprintf(buffer, msg, arg);
+    _my_vnprintf(ftp_string_write_char, (void **)&write_ptr, max_formatted_len, msg, arg);
     va_end(arg);
-    strcat(buffer, "\r\n");
-    len = strlen(buffer);
-    send(socket, buffer, len, 0);
+    *write_ptr++ = '\r';
+    *write_ptr++ = '\n';
+    *write_ptr = 0;
+
+    int len = write_ptr - buffer;
+    if ((socket >= 0) && (send_all(socket, buffer, len) != FTP_TRANSFER_OK)) {
+        dbg_printf("FTPD: ERROR writing to control socket\n");
+        shutdown(socket, 2);
+        closesocket(socket);
+        socket = -1;
+    }
     dbg_printf("FTPD response: %s", buffer);
 }
 
@@ -492,10 +541,10 @@ void FTPDaemonThread::cmd_list_common(const char *arg, int listType)
 
     send_msg(msg150);
 
-    connection->directory(listType, vfs_dir);
+    FTPTransferResult result = connection->directory(listType, vfs_dir);
     destroy_connection();
 
-    send_msg(msg226);
+    send_msg(transfer_result_message(result));
 }
 
 void FTPDaemonThread::cmd_mlst(const char *arg)
@@ -582,23 +631,14 @@ void FTPDaemonThread::cmd_retr(const char *arg)
 
 void FTPDaemonThread::cmd_stor(const char *arg)
 {
-    vfs_file_t *vfs_file;
-
-    vfs_file = vfs_open(vfs, arg, "wb");
-    if (!vfs_file) {
-        send_msg(msg550);
-        return;
-    }
-
     if (!connection) {
         send_msg(msg425);
-        vfs_close(vfs_file);
         return;
     }
 
     send_msg(msg150stor, arg);
 
-    FTPTransferResult result = connection->receivefile(vfs_file);
+    FTPTransferResult result = connection->receivefile(vfs, arg);
     destroy_connection();
 
     send_msg(transfer_result_message(result));
@@ -623,11 +663,19 @@ void FTPDaemonThread::cmd_pasv(const char *arg)
 {
     passive = 1;
     destroy_connection();
-    connection = new FTPDataConnection(this);
-    if (connection->do_bind() != ERR_OK) {
+
+    for (int attempt = 0; attempt < 3; attempt++) {
+        connection = new FTPDataConnection(this);
+        if (connection && (connection->do_bind() == ERR_OK)) {
+            return;
+        }
         destroy_connection();
-        send_msg(msg425);
+        if (attempt < 2) {
+            vTaskDelay(20 / portTICK_PERIOD_MS);
+        }
     }
+
+    send_msg(msg425);
 }
 
 void FTPDaemonThread::cmd_abrt(const char *arg)
@@ -929,6 +977,7 @@ int FTPDataConnection::setup_connection()
         }
 
         actual_socket = s;
+        ftp_set_socket_timeout(actual_socket, 5, 0);
         connected = 1;
         return 0;
     }
@@ -964,6 +1013,7 @@ int FTPDataConnection::connect_to(ip_addr_t ip, uint16_t port) // active mode
     }
     connected = 1;
     actual_socket = sockfd;
+    ftp_set_socket_timeout(actual_socket, 5, 0);
 
     // now do your thing
     return ERR_OK;
@@ -981,17 +1031,26 @@ int FTPDataConnection::do_bind(void)
     serv_addr.sin_addr.s_addr = INADDR_ANY;
     serv_addr.sin_len = sizeof(serv_addr.sin_addr);
 
-    int result = 0, retry = 100;
-    uint16_t port;
-    do {
-        if (retry <= 0) {
-            puts("FTPD: ERROR on binding");
-            return -ENOTCONN;
-        }
+    int result = -1;
+    int retry = bind_port_count;
+    uint16_t port = 0;
+
+    while (retry-- > 0) {
         port = parent->getBindPort();
         serv_addr.sin_port = htons(port);
         result = bind(sockfd, (struct sockaddr * ) &serv_addr, sizeof(serv_addr));
-    } while (result < 0);
+        if (result == 0) {
+            break;
+        }
+        if (errno != EADDRINUSE) {
+            break;
+        }
+    }
+
+    if (result < 0) {
+        puts("FTPD: ERROR on binding");
+        return -ENOTCONN;
+    }
 
     result = listen(sockfd, 2);
     if (result < 0) {
@@ -1002,44 +1061,54 @@ int FTPDataConnection::do_bind(void)
     return 0;
 }
 
-void FTPDataConnection::directory(int listType, vfs_dir_t *dir)
+FTPTransferResult FTPDataConnection::directory(int listType, vfs_dir_t *dir)
 {
-    if (setup_connection() == ERR_OK) {
-        int len;
-        vfs_stat_t st;
-        vfs_dirent = vfs_readdir(dir);
+    FTPTransferResult result = FTP_TRANSFER_OK;
 
-        while(vfs_dirent) {
-            vfs_stat_dirent(vfs_dirent, &st);
-
-            switch (listType) {
-            case 0:
-                if (st.year == parent->current_year)
-                    len = sprintf(buffer, "-rw-rw-rw-   1 user     ftp  %11d %s %02d %02d:%02d %s\r\n", st.st_size,
-                            month_table[st.month], st.day, st.hr, st.min, st.name);
-                else
-                    len = sprintf(buffer, "-rw-rw-rw-   1 user     ftp  %11d %s %02d %5d %s\r\n", st.st_size,
-                            month_table[st.month], st.day, st.year, st.name);
-                if (VFS_ISDIR(st.st_mode))
-                    buffer[0] = 'd';
-                break;
-            case 1:
-                len = sprintf(buffer, "%s\r\n", st.name);
-                break;
-            case 2:
-                len = sprintf(buffer, "type=%s;size=%d;modify=%04d%02d%02d%02d%02d%02d; %s\r\n", VFS_ISDIR(st.st_mode) ? "dir" : "file",
-                        st.st_size, st.year, st.month, st.day, st.hr, st.min, st.sec, st.name);
-                break;
-            default:
-                len = sprintf(buffer, "Internal Error\r\n");
-            }
-            buffer[len] = 0;
-            send(actual_socket, buffer, len, 0);
-
-            vfs_dirent = vfs_readdir(dir);
-        }
+    if (setup_connection() != ERR_OK) {
+        vfs_closedir(dir);
+        return FTP_TRANSFER_SETUP_FAILED;
     }
+
+    int len;
+    vfs_stat_t st;
+    vfs_dirent = vfs_readdir(dir);
+
+    while(vfs_dirent) {
+        vfs_stat_dirent(vfs_dirent, &st);
+
+        switch (listType) {
+        case 0:
+            if (st.year == parent->current_year)
+                len = sprintf(buffer, "-rw-rw-rw-   1 user     ftp  %11d %s %02d %02d:%02d %s\r\n", st.st_size,
+                        month_table[st.month], st.day, st.hr, st.min, st.name);
+            else
+                len = sprintf(buffer, "-rw-rw-rw-   1 user     ftp  %11d %s %02d %5d %s\r\n", st.st_size,
+                        month_table[st.month], st.day, st.year, st.name);
+            if (VFS_ISDIR(st.st_mode))
+                buffer[0] = 'd';
+            break;
+        case 1:
+            len = sprintf(buffer, "%s\r\n", st.name);
+            break;
+        case 2:
+            len = sprintf(buffer, "type=%s;size=%d;modify=%04d%02d%02d%02d%02d%02d; %s\r\n", VFS_ISDIR(st.st_mode) ? "dir" : "file",
+                    st.st_size, st.year, st.month, st.day, st.hr, st.min, st.sec, st.name);
+            break;
+        default:
+            len = sprintf(buffer, "Internal Error\r\n");
+        }
+        buffer[len] = 0;
+        result = send_all(actual_socket, buffer, len);
+        if (result != FTP_TRANSFER_OK) {
+            break;
+        }
+
+        vfs_dirent = vfs_readdir(dir);
+    }
+
     vfs_closedir(dir);
+    return result;
 }
 
 FTPTransferResult FTPDataConnection::sendfile(vfs_file_t *file)
@@ -1070,12 +1139,12 @@ FTPTransferResult FTPDataConnection::sendfile(vfs_file_t *file)
     return result;
 }
 
-FTPTransferResult FTPDataConnection::receivefile(vfs_file_t *file)
+FTPTransferResult FTPDataConnection::receivefile(vfs_t *vfs, const char *path)
 {
     FTPTransferResult result = FTP_TRANSFER_OK;
+    vfs_file_t *file = NULL;
 
     if (setup_connection() != ERR_OK) {
-        vfs_close(file);
         return FTP_TRANSFER_SETUP_FAILED;
     }
 
@@ -1083,6 +1152,13 @@ FTPTransferResult FTPDataConnection::receivefile(vfs_file_t *file)
     do {
         n = recv(actual_socket, buffer, FTPD_DATA_BUFFER_SIZE, 0);
         if (n > 0) {
+            if (!file) {
+                file = vfs_open(vfs, path, "wb");
+                if (!file) {
+                    result = FTP_TRANSFER_STORAGE_ERROR;
+                    break;
+                }
+            }
             uint32_t written = vfs_write(buffer, n, 1, file);
             if (written != (uint32_t)n) {
                 printf("Hmm.. written = %d. n = %d\n", written, n);
@@ -1095,7 +1171,9 @@ FTPTransferResult FTPDataConnection::receivefile(vfs_file_t *file)
         }
     } while (n > 0);
 
-    vfs_close(file);
+    if (file) {
+        vfs_close(file);
+    }
     return result;
 }
 

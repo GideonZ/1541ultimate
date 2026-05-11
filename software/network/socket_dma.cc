@@ -57,6 +57,15 @@
 
 SocketDMA *socket_dma = NULL;
 
+static void socket_dma_set_timeouts(int socket_fd)
+{
+    struct timeval tv;
+    tv.tv_sec = 1;
+    tv.tv_usec = 0;
+    setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(struct timeval));
+    setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(struct timeval));
+}
+
 extern cart_def sid_cart;
 extern cart_def boot_cart;
 
@@ -171,9 +180,13 @@ bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
     case SOCKET_CMD_RUN_IMG:
     {
         FileManager *fm = FileManager :: getFileManager();
-        FRESULT fres = fm->save_file(true, "/temp", "tcpimage.d64", buf, len, NULL);
+        mstring temp_path;
+        FRESULT fres = fm->save_temp_file("socket", "tcpimage.d64", buf, len, &temp_path);
         if (fres == FR_OK) {
-            sys_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, MENU_1541_MOUNT_D64, 1541, "/temp", "tcpimage.d64");
+            Path image_path(temp_path.c_str());
+            mstring temp_dir;
+            sys_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, MENU_1541_MOUNT_D64, 1541,
+                    image_path.getHead(temp_dir), image_path.getLastElement());
             sys_command->execute();
         }
         if (cmd == SOCKET_CMD_RUN_IMG) {
@@ -187,9 +200,13 @@ bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
     case SOCKET_CMD_RUN_CRT:
     {
         FileManager *fm = FileManager :: getFileManager();
-        FRESULT fres = fm->save_file(true, "/temp", "tcpimage.crt", buf, len, NULL);
+        mstring temp_path;
+        FRESULT fres = fm->save_temp_file("socket", "tcpimage.crt", buf, len, &temp_path);
         if (fres == FR_OK) {
-            sys_command = new SubsysCommand(NULL, SUBSYSID_C64, 0, 0, "/temp", "tcpimage.crt");
+            Path image_path(temp_path.c_str());
+            mstring temp_dir;
+            sys_command = new SubsysCommand(NULL, SUBSYSID_C64, 0, 0,
+                    image_path.getHead(temp_dir), image_path.getLastElement());
             FileTypeCRT::execute_st(sys_command);
             delete sys_command;
         }
@@ -326,17 +343,16 @@ bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
 int SocketDMA::readSocket(int socket, void *buffer, int max_remain)
 {
     int received = 0;
-    int n;
     uint8_t *buf = (uint8_t *)buffer;
-    do {
+    while (max_remain > 0) {
         int current = (max_remain > 8192) ? 8192 : max_remain;
-        n = recv(socket, buf, current, 0);
+        int n = recv(socket, buf, current, 0);
+        if (n <= 0) {
+            return (received > 0) ? received : n;
+        }
         buf += n;
         max_remain -= n;
         received += n;
-    } while((n > 0) && (max_remain > 0));
-    if (n < 0) {
-        return n;
     }
     return received;
 }
@@ -345,16 +361,15 @@ int SocketDMA::writeSocket(int socket, void *buffer, int length)
 {
     uint8_t *buf = (uint8_t *)buffer;
     int sent = 0;
-    int n;
-    do {
+    while (length > 0) {
         int current = (length > 2048) ? 2048 : length;
-        n = send(socket, buf, current, 0);
+        int n = send(socket, buf, current, 0);
+        if (n <= 0) {
+            return (sent > 0) ? sent : n;
+        }
         buf += n;
         length -= n;
         sent += n;
-    } while((n > 0) && (length > 0));
-    if (n < 0) {
-        return n;
     }
     return sent;
 }
@@ -408,12 +423,16 @@ void SocketDMA::dmaThread(void *load_buffer)
 
     while(1) {
 		/* Accept actual connection from the client */
+        clilen = sizeof(cli_addr);
 		newsockfd = accept(sockfd, (struct sockaddr *)&cli_addr, &clilen);
 		if (newsockfd < 0)
 		{
 			puts("dmaThread ERROR on accept");
-			return;
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+            continue;
 		}
+
+        socket_dma_set_timeouts(newsockfd);
 
 		uint32_t addr = cli_addr.sin_addr.s_addr;
 		your_ip[3] = addr >> 24;

@@ -282,7 +282,11 @@ begin
                         verify_error <= '0';
                         trans_done   <= '0';
                         command.execute <= '0';
-                        if g_extended then
+                        -- patch 2026-05-07:
+                        -- Even when g_extended is false; one cycle should be inserted. 
+                        -- start_delay is 1 when g_extended is false, so going to the delay
+                        -- state will insert one cycle of delay
+                        if g_extended or true then
                             state <= delay;
                         else
                             dispatch;
@@ -404,7 +408,7 @@ begin
                 reu_addr     <= (others => '0');
                 count        <= (others => '1');
                 rate_div     <= (others => '0');
-                start_delay  <= (others => '0');
+                start_delay  <= (0 => '1', others => '0'); -- 0x01
                 rate_div     <= (others => '0');
                 ext_count    <= (others => '0');
             end if;
