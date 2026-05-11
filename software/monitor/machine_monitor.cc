@@ -2309,6 +2309,7 @@ void MachineMonitor :: set_bookmark(uint8_t slot)
 void MachineMonitor :: edit_bookmark_label(uint8_t slot)
 {
     char buffer[MONITOR_BOOKMARK_LABEL_STORAGE];
+    char normalized[MONITOR_BOOKMARK_LABEL_STORAGE];
     const MonitorBookmarkSlot *current = bookmarks ? bookmarks->get(slot) : NULL;
     bool confirmed;
 
@@ -2323,9 +2324,10 @@ void MachineMonitor :: edit_bookmark_label(uint8_t slot)
     }
     char title[16];
     sprintf(title, "Label BM%u", (unsigned)slot);
-    confirmed = prompt_command(title, buffer, (int)sizeof(buffer));
+    confirmed = prompt_command(title, buffer, MONITOR_BOOKMARK_LABEL_MAX);
     if (confirmed) {
-        bookmarks->set_label(slot, buffer);
+        monitor_bookmark_normalize_label(normalized, sizeof(normalized), buffer);
+        bookmarks->set_label(slot, normalized);
         const MonitorBookmarkSlot *updated = bookmarks->get(slot);
         show_bookmark_status(slot, updated, MONITOR_BOOKMARK_STATUS_LABEL_SAVED);
     } else {

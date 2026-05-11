@@ -1,49 +1,7 @@
 #include "monitor_bookmarks.h"
+#include "config.h"
 
 extern "C" int sprintf(char *out, const char *fmt, ...);
-extern "C" char *strncpy(char *dest, const char *src, size_t count);
-extern "C" char *strchr(const char *text, int ch);
-extern "C" size_t strlen(const char *s);
-
-class ConfigurableObject;
-
-struct t_cfg_definition {
-    uint8_t id;
-    uint8_t type;
-    const char *item_text;
-    const char *item_format;
-    const char **items;
-    int min;
-    int max;
-    long int def;
-};
-
-enum {
-    CFG_TYPE_VALUE = 0x01,
-    CFG_TYPE_STRING = 0x03,
-    CFG_TYPE_END = 0xFF,
-};
-
-class ConfigStore
-{
-public:
-    int get_value(uint8_t id);
-    const char *get_string(uint8_t id);
-    void set_value(uint8_t id, int value);
-    void set_string(uint8_t id, const char *value);
-    void write(void);
-};
-
-class ConfigManager
-{
-public:
-    static ConfigManager *getConfigManager();
-    ConfigStore *register_store(uint32_t page_id, const char *name,
-                                t_cfg_definition *defs,
-                                ConfigurableObject *obj);
-    ConfigStore *find_store(const char *storename);
-    void remove_store(ConfigStore *store);
-};
 
 namespace {
 
@@ -620,6 +578,9 @@ MonitorBookmarks :: MonitorBookmarks()
                                           "Machine Monitor Bookmarks",
                                           (t_cfg_definition *)monitor_bookmark_cfg,
                                           (ConfigurableObject *)0);
+        }
+        if (cfg) {
+            cfg->hide();
         }
     }
     persistence_available = (cfg != NULL);

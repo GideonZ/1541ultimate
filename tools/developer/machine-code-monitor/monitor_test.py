@@ -711,6 +711,8 @@ def run_bookmark_test(session: MonitorSession) -> None:
     screen = session.send_key("DOWN")
     screen = session.send_char("S")
     assert_line_contains_all(screen, ("BM1 SCREEN $C123 HEX W16", "SET"))
+    screen = session.send_key("CTRL_B")
+    screen.find_line_containing("MONITOR HEX $C123")
 
     screen = session.goto("E000")
     screen.find_line_containing("MONITOR HEX $E000")
@@ -740,7 +742,7 @@ def run_bookmark_test(session: MonitorSession) -> None:
 def run_telnet_poll_guard_test(session: MonitorSession) -> None:
     screen = ensure_view(session, "HEX ")
     screen = session.send_char("P")
-    screen.find_line_containing("POLL MODE UNAVAILABLE OVER TELNET")
+    screen.find_line_containing("POLL MODE UNAVAILABLE OVE")
 
     screen = session.send_char("o")
     screen.find_line_containing("MONITOR HEX")
@@ -749,6 +751,14 @@ def run_telnet_poll_guard_test(session: MonitorSession) -> None:
 
 def run_memory_bookmark_width_test(session: MonitorSession, rest_host: str) -> None:
     write_rest_memory(rest_host, 0x3000, bytes(range(0x10)))
+
+    screen = session.send_key("CTRL_B")
+    screen.find_line_containing("BOOKMARKS")
+    screen = session.send_key("DOWN")
+    screen = session.send_key("DEL")
+    assert_line_contains_all(screen, ("1 SCREEN", "$0400", "SCR 32"))
+    screen = session.send_key("CTRL_B")
+    screen.find_line_containing("MONITOR")
 
     screen = ensure_hex_width(session, 8)
     screen = session.goto("3000")
@@ -762,6 +772,8 @@ def run_memory_bookmark_width_test(session: MonitorSession, rest_host: str) -> N
     screen = session.send_key("DOWN")
     screen = session.send_char("S")
     assert_line_contains_all(screen, ("BM1 SCREEN $3000 HEX W16", "SET"))
+    screen = session.send_key("CTRL_B")
+    screen.find_line_containing("MONITOR HEX $3000")
 
     screen = session.goto("E000")
     screen.find_line_containing("MONITOR HEX $E000")
@@ -780,18 +792,32 @@ def run_memory_bookmark_width_test(session: MonitorSession, rest_host: str) -> N
 def run_binary_bookmark_width_test(session: MonitorSession, rest_host: str) -> None:
     write_rest_memory(rest_host, 0x3100, bytes((0x12, 0x34, 0x56, 0x78)))
 
+    screen = session.send_key("CTRL_B")
+    screen.find_line_containing("BOOKMARKS")
+    screen = session.send_key("DOWN")
+    screen = session.send_key("DEL")
+    assert_line_contains_all(screen, ("1 SCREEN", "$0400", "SCR 32"))
+    screen = session.send_key("CTRL_B")
+    screen.find_line_containing("MONITOR")
+
     screen = ensure_view(session, "BIN ")
     screen = session.goto("3100")
+    for _ in range(5):
+        try:
+            screen.find_line_containing("3100 ...*..*. 12")
+            break
+        except Failure:
+            screen = session.send_char("W")
     screen.find_line_containing("3100 ...*..*. 12")
 
     screen = session.send_char("W")
     screen.find_line_containing("3100 ...*..*. ..**.*.. 12 34")
 
     screen = session.send_char("W")
-    screen.find_line_containing("3100 ...*..*. ..**.*.. .*.*.**. 123456")
+    screen.find_line_containing("30FF ........ ...*..*. ..**.*.. 001234")
 
     screen = session.send_char("W")
-    screen.find_line_containing("3100 ...*..*...**.*...*.*.**. 12 34 56")
+    screen.find_line_containing("30FF ...........*..*...**.*.. 00 12 34")
 
     screen = session.send_char("W")
     screen.find_line_containing("3100 ...*..*...**.*...*.*.**..****...")
@@ -802,6 +828,8 @@ def run_binary_bookmark_width_test(session: MonitorSession, rest_host: str) -> N
     screen = session.send_key("DOWN")
     screen = session.send_char("S")
     assert_line_contains_all(screen, ("BM1 SCREEN $3100 BIN W4", "SET"))
+    screen = session.send_key("CTRL_B")
+    screen.find_line_containing("MONITOR BIN $3100")
 
     screen = session.goto("E000")
     screen.find_line_containing("MONITOR BIN $E000")

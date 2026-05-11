@@ -1,19 +1,18 @@
 # Machine Monitor
 
-The machine monitor is a keyboard-driven memory and code inspector for live or frozen C64 state. It is designed for direct work on bytes, screen RAM, disassembly, and execution flow rather than for symbolic debugging.
+The machine monitor is a keyboard-driven memory and code inspector for live or frozen C64 state. It is intended for direct work on bytes, screen RAM, disassembly, and execution flow rather than symbolic debugging.
 
 ## Entry and Exit
 
-- Open: `C=+O`
-- Close: `C=+O` or `ESC`
-- Leave edit mode: `C=+E`
-- Built-in help: `F3`/Help
+- Open the monitor with `C=+O`.
+- Close the monitor with `C=+O` or `ESC`.
+- Open the built-in help with `F3`.
 
 The header shows the current view and cursor address. The footer shows the active CPU port mapping and VIC bank.
 
 ## Views
 
-The monitor has five views:
+The monitor provides five views:
 
 | Key | View | Purpose |
 | --- | --- | --- |
@@ -25,24 +24,24 @@ The monitor has five views:
 
 `U` toggles undocumented opcodes in assembly view.
 
-Further Notes:
+ASCII and Screen details:
 
-- ASCII view shows printable ASCII only; non-printable bytes are shown as `.`.
+- ASCII view shows printable ASCII only. Non-printable bytes are shown as `.` characters.
 - Screen view uses C64 screen-code rendering, not PETSCII text decoding.
 
 ### Width Modes
 
 `W` is view-dependent:
 
-- Memory view cycles `8 <-> 16` bytes per row.
-- Binary view cycles `1 -> 2 -> 3 -> 3S -> 4 -> 1`.
+- In Memory view, `W` cycles `8 <-> 16` bytes per row.
+- In Binary view, `W` cycles `1 -> 2 -> 3 -> 3S -> 4 -> 1`.
 - ASCII, Screen, and Assembly views are fixed-width.
 
 Binary width details:
 
-- `1`, `2`, `3`: one, two, or three bytes shown as bit fields with trailing hex preview.
-- `3S`: packed 24-bit rendering for three-byte sprite-style data, still with hex preview.
-- `4`: packed 32-bit rendering for four bytes, without trailing hex preview.
+- `1`, `2`, and `3` show one, two, or three bytes as bit fields with a trailing hex preview.
+- `3S` shows packed 24-bit rendering for three-byte sprite-style data, still with a hex preview.
+- `4` shows packed 32-bit rendering for four bytes without a trailing hex preview.
 
 `P` toggles poll mode on the local monitor. Over telnet, poll mode is unavailable.
 
@@ -58,36 +57,37 @@ Addresses in command prompts are hexadecimal. The generic number parser used by 
 
 ## Editing
 
-`E` enters edit mode in Memory, ASCII, Screen, Assembly, and Binary views.
+- `E`: enter edit mode in Memory, ASCII, Screen, Assembly, and Binary views.
+- `C=+E` or `ESC`: leave edit mode.
 
 Edit behavior is view-specific:
 
 - Memory: type two hex nibbles to write one byte.
 - ASCII: type printable ASCII bytes directly.
 - Screen: type screen characters directly.
-- Binary: type `0` or `1` to change the selected bit.
-- Assembly: edit instructions inline. The monitor provides mnemonic completion via the opcode picker and also accepts direct operand typing.
+- Binary: type `0` or `Space` to change the selected bit to `0`. Type `1` or `*` to change it to `1`.
+- Assembly: edit instructions inline. The monitor provides mnemonic completion through the opcode picker and also accepts direct operand typing.
 
 `DEL` is logical delete, not a raw backspace:
 
 - Memory: writes `$00` and advances.
-- ASCII/Screen: writes space.
+- ASCII/Screen: writes a space.
 - Binary: clears the selected bit.
 - Assembly: replaces the current instruction with `NOP` bytes. While typing an instruction, `DEL` first undoes the current line edit state.
 
 ## Clipboard, Range, and Number Tool
 
-- Copy current byte: `C=+C`
-- Paste clipboard at cursor: `C=+V`
-- Range mode: `R`
-- Number tool: `N`
+- Copy the current byte with `C=+C`.
+- Paste the clipboard at the cursor with `C=+V`.
+- Toggle range mode with `R`.
+- Open the number tool with `N`.
 
 Range mode anchors the current address. While range mode is active:
 
 - `C=+C` copies the selected span.
 - Pressing `R` again also copies the selected span and exits range mode.
 
-The number tool is a compact base-conversion and overwrite popup for the current target. It shows the same value as:
+The number tool is a compact base-conversion and overwrite popup for the current target. It shows the same value in the following forms:
 
 - Hex
 - Decimal
@@ -112,15 +112,15 @@ The monitor includes direct bulk memory commands:
 
 ## File I/O
 
-- `L`: load file into memory
-- `S`: save memory to file
+- `L`: load a file into memory.
+- `S`: save memory to a file.
 
 Load is a two-step flow: pick a file, then enter load parameters.
 
 - Load template: `PRG,0000,AUTO`
-- Field 1: `PRG` or a start address
-- Field 2: file offset
-- Field 3: `AUTO` or explicit length
+- Field 1: `PRG` or a start address.
+- Field 2: file offset.
+- Field 3: `AUTO` or an explicit length.
 
 Examples:
 
@@ -138,8 +138,8 @@ Save writes a normal PRG file with a two-byte load address header.
 
 The monitor has 10 persistent bookmark slots.
 
-- List bookmarks: `C=+B`
-- Jump directly to a slot: `C=+0` .. `C=+9`
+- List bookmarks with `C=+B`.
+- Jump directly to a slot with `C=+0` .. `C=+9`.
 
 Each bookmark stores:
 
@@ -151,12 +151,12 @@ Each bookmark stores:
 
 Bookmark popup controls:
 
-- `Up`/`Down`: select slot
-- `Return`: restore selected slot
-- `S`: store current location into selected slot
-- `L`: edit label
-- `DEL`: reset slot to its default
-- `0`..`9`: jump directly to that slot
+- `Up`/`Down`: select a slot.
+- `Return`: restore the selected slot.
+- `S`: store the current location into the selected slot.
+- `L`: edit the label.
+- `DEL`: reset the slot to its default.
+- `0`..`9`: jump directly to that slot.
 
 Default slots are aimed at common C64 locations:
 
@@ -172,3 +172,11 @@ Default slots are aimed at common C64 locations:
 | `7` | `CIA1` at `$DC00` in Binary view |
 | `8` | `CIA2` at `$DD00` in Binary view |
 | `9` | `KERNAL` at `$E000` in Assembly view |
+
+## Additional Notes
+
+Switching between UI Freeze and UI Overlay modes:
+
+- To switch modes, exit the monitor, press `C=+I`, then reopen the monitor.
+- Use UI Freeze mode when the monitor output must be captured in the video stream.
+- Use UI Overlay on HDMI mode when polling is needed to observe live changes.

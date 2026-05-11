@@ -1059,6 +1059,8 @@ int TestUserInterface :: popup(const char *msg, uint8_t)
 
 int TestUserInterface :: string_box(const char *msg, char *buffer, int maxlen)
 {
+    int copied = 0;
+
     strncpy(last_prompt_message, msg ? msg : "", sizeof(last_prompt_message) - 1);
     last_prompt_message[sizeof(last_prompt_message) - 1] = 0;
     last_prompt_maxlen = maxlen;
@@ -1067,8 +1069,11 @@ int TestUserInterface :: string_box(const char *msg, char *buffer, int maxlen)
     }
     int result = prompt_results[prompt_index];
     if (result > 0) {
-        strncpy(buffer, prompt_texts[prompt_index], maxlen);
-        buffer[maxlen - 1] = 0;
+        while (prompt_texts[prompt_index][copied] && copied < maxlen) {
+            buffer[copied] = prompt_texts[prompt_index][copied];
+            copied++;
+        }
+        buffer[copied] = 0;
     }
     prompt_index++;
     return result;

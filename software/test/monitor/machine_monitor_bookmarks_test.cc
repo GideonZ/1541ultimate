@@ -1091,20 +1091,22 @@ static int test_monitor_bookmark_label_edit(void)
     FakeKeyboard keyboard(keys, 4);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
-    ui.push_prompt("hello", 1);
+    ui.push_prompt("abc!@#123xyz", 1);
     BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
 
     if (expect(monitor.poll(0) == 0, "Popup open failed (label edit test).")) return 1;
     if (expect(monitor.poll(0) == 0, "L key for label edit failed.")) return 1;
+    if (expect(ui.last_prompt_maxlen == MONITOR_BOOKMARK_LABEL_MAX,
+               "Label edit prompt must allow at most 6 characters.")) return 1;
 
     monitor.deinit();
     MonitorBookmarks reopened;
     reopened.ensure_loaded(7, 2);
     const MonitorBookmarkSlot *slot0 = reopened.get(0);
-    if (expect(slot0 && strcmp(slot0->label, "HELLO") == 0 &&
+    if (expect(slot0 && strcmp(slot0->label, "ABC___") == 0 &&
                slot0->address == 0x0000 && slot0->view == MONITOR_BOOKMARK_VIEW_HEX,
-               "Label edit must update label and preserve target state.")) return 1;
+               "Label edit must clamp to 6 chars, normalize illegal chars, and preserve target state.")) return 1;
     return 0;
 }
 
