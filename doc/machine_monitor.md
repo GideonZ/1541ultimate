@@ -24,13 +24,13 @@ The monitor provides five views:
 
 In the built-in help, `U` is labeled `Undoc/Case`: in Assembly view it toggles undocumented opcodes, in Screen view it toggles the monitor-local Screen charset between `U/G` and `L/U`, and in other views it only shows a warning popup.
 
-ASCII and Screen details:
+### ASCII and Screen Views
 
-- ASCII view maps `$20-$7E` literally and shows all other bytes as `.`. ASCII edit writes the exact printable byte and preserves lowercase.
-- Screen view uses C64 screen codes, not PETSCII. The header shows `MONITOR SCR U/G $xxxx` or `MONITOR SCR L/U $xxxx`.
-- Screen `U/G`: display `$00` as `@`, display `$01-$1A` as `A-Z`, and type `A-Z` or `a-z` as `$01-$1A`.
-- Screen `L/U`: display `$01-$1A` as `a-z`, display `$41-$5A` as `A-Z`, type `a-z` as `$01-$1A`, and type `A-Z` as `$41-$5A`.
-- The menu uses the UI font, not the live C64 charset, so Screen view uses readable fallback glyphs for graphics bytes instead of exact C64 character shapes.
+- ASCII view maps `$20-$7E` literally and shows all other bytes as `.` characters. ASCII edit writes the exact printable byte and preserves lowercase.
+- Screen view uses C64 screen codes, not PETSCII. The header shows `MONITOR SCR U/G $xxxx` (**U**ppercase/**G**raphics) or `MONITOR SCR L/U $xxxx` (**L**owercase/**U**ppercase):
+  - Screen `U/G`: display `$00` as `@`, display `$01-$1A` as `A-Z`, and type `A-Z` or `a-z` as `$01-$1A`.
+  - Screen `L/U`: display `$01-$1A` as `a-z`, display `$41-$5A` as `A-Z`, type `a-z` as `$01-$1A`, and type `A-Z` as `$41-$5A`.
+  - The menu uses the UI font, not the live C64 charset, so Screen view uses readable fallback glyphs for graphics bytes instead of exact C64 character shapes.
 
 ### Width Modes
 
@@ -100,7 +100,7 @@ The number tool is a compact base-conversion and overwrite popup for the current
 
 In assembly view, the number tool targets the operand bytes of the current instruction when possible.
 
-The ASCII and Screen rows in the number tool use the same mappings as the ASCII and Screen views. Exact non-typeable screen-code bytes remain editable through Memory, Hex, and Number-tool entry paths even when they do not have a direct typed Screen alias.
+The ASCII and Screen rows in the number tool use the same mappings as the [ASCII and Screen Views](#ascii-and-screen-views).
 
 ## Memory Operations
 
