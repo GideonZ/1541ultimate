@@ -52,6 +52,37 @@ The monitor provides five primary views:
 | `I` | ASC**I**I    | ASC | Printable ASCII byte view           |
 | `V` | Screen       | SCR | C64 screen-code view                |
 
+### Memory View
+
+Memory view shows raw bytes in hexadecimal together with a compact ASCII preview.
+
+Example:
+
+```text
++--------------------------------------+
+|MONITOR HEX $E011                     |
+|DFF8 66 00 FF 66 00 FF 00 18 f..f.... |
+|E000 85 56 20 0F BC A5 61 C9 .V ...a. |
+|E008 88 90 03 20 D4 BA 20 CC .. . ..  |
+|E010 BC A5 07 18 69 81 F0 F3 .. .i..  |
+|E018 38 E9 01 48 A2 05 B5 69 8..H..i  |
+|E020 B4 61 95 61 94 69 CA 10 .a.a.i.  |
+|E028 F5 A5 56 85 70 20 53 B8 ..V.p S. |
+|E030 20 B4 BF A9 C4 A0 BF 20  ....... |
+|E038 59 E0 A9 00 85 6F 68 20 Y....oh  |
+|E040 B9 BA 60 85 71 84 72 20 ..`.q.r  |
+|E048 CA BB A9 57 20 28 BA 20 ...W (.  |
+|E050 5D E0 A9 57 A0 00 4C 28 ]..W..L( |
+|E058 B4 85 71 84 72 20 C7 BB ..q.r .. |
+|E060 B1 71 85 67 A4 71 C8 98 .q.g.q.  |
+|E068 D0 02 E6 72 85 71 A4 72 ...r.q.r |
+|E070 20 28 BA A5 71 A4 72 18  (..q.r. |
+|E078 69 05 90 01 C8 85 71 84 i.....q. |
+|E080 72 20 67 B8 A9 5C A0 00 r g..\.. |
+|CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000  |
++--------------------------------------+
+```
+
 ### Assembly View
 
 Assembly view shows decoded 6510 instructions together with the backing bytes and the active memory source.
@@ -83,33 +114,35 @@ Example:
 +--------------------------------------+
 ```
 
-### Memory View
+### Binary View
 
-Memory view shows raw bytes in hexadecimal together with a compact ASCII preview.
+Binary view displays bytes as bit fields, using `.` for 0 and `*` for 1. This is useful for registers, font glyphs, or sprites.
+
+Since sprites consist of 3 bytes per row, the binary view allows for various `W`(idth) modes.
 
 Example:
 
 ```text
 +--------------------------------------+
-|MONITOR HEX $E011                     |
-|DFF8 66 00 FF 66 00 FF 00 18 f..f.... |
-|E000 85 56 20 0F BC A5 61 C9 .V ...a. |
-|E008 88 90 03 20 D4 BA 20 CC .. . ..  |
-|E010 BC A5 07 18 69 81 F0 F3 .. .i..  |
-|E018 38 E9 01 48 A2 05 B5 69 8..H..i  |
-|E020 B4 61 95 61 94 69 CA 10 .a.a.i.  |
-|E028 F5 A5 56 85 70 20 53 B8 ..V.p S. |
-|E030 20 B4 BF A9 C4 A0 BF 20  ....... |
-|E038 59 E0 A9 00 85 6F 68 20 Y....oh  |
-|E040 B9 BA 60 85 71 84 72 20 ..`.q.r  |
-|E048 CA BB A9 57 20 28 BA 20 ...W (.  |
-|E050 5D E0 A9 57 A0 00 4C 28 ]..W..L( |
-|E058 B4 85 71 84 72 20 C7 BB ..q.r .. |
-|E060 B1 71 85 67 A4 71 C8 98 .q.g.q.  |
-|E068 D0 02 E6 72 85 71 A4 72 ...r.q.r |
-|E070 20 28 BA A5 71 A4 72 18  (..q.r. |
-|E078 69 05 90 01 C8 85 71 84 i.....q. |
-|E080 72 20 67 B8 A9 5C A0 00 r g..\.. |
+|MONITOR BIN $DC00/7                   |
+|DC00 ........ 00                      |
+|DC01 ******** FF                      |
+|DC02 ******** FF                      |
+|DC03 ........ 00                      |
+|DC04 *.*..*.* A5                      |
+|DC05 ...**.** 1B                      |
+|DC06 ******** FF                      |
+|DC07 ******** FF                      |
+|DC08 ........ 00                      |
+|DC09 ........ 00                      |
+|DC0A ........ 00                      |
+|DC0B *..*...* 91                      |
+|DC0C ........ 00                      |
+|DC0D *......* 81                      |
+|DC0E .......* 01                      |
+|DC0F ....*... 08                      |
+|DC10 ........ 00                      |
+|DC11 ******** FF                      |
 |CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000  |
 +--------------------------------------+
 ```
@@ -204,37 +237,6 @@ Example:
 ```
 
 The monitor menu uses the UI font, not the live C64 character set. For this reason, Screen view uses readable fallback glyphs for graphics bytes rather than exact C64 character shapes.
-
-### Binary View
-
-Binary view displays bytes as editable bit fields.
-
-Example:
-
-```text
-+--------------------------------------+
-|MONITOR BIN $DC00/7                   |
-|DC00 ........ 00                      |
-|DC01 ******** FF                      |
-|DC02 ******** FF                      |
-|DC03 ........ 00                      |
-|DC04 *.*..*.* A5                      |
-|DC05 ...**.** 1B                      |
-|DC06 ******** FF                      |
-|DC07 ******** FF                      |
-|DC08 ........ 00                      |
-|DC09 ........ 00                      |
-|DC0A ........ 00                      |
-|DC0B *..*...* 91                      |
-|DC0C ........ 00                      |
-|DC0D *......* 81                      |
-|DC0E .......* 01                      |
-|DC0F ....*... 08                      |
-|DC10 ........ 00                      |
-|DC11 ******** FF                      |
-|CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000  |
-+--------------------------------------+
-```
 
 ## View Modifiers
 
