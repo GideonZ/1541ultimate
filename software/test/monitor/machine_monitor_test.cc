@@ -795,6 +795,297 @@ static int test_disassembly_instruction_stepping(void)
     return 0;
 }
 
+static int test_disassembly_boundary_cutover(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char header[39];
+    char line[39];
+    int keys[32];
+    int key_count = 0;
+    int row_before_wrap = -1;
+    int row_after_wrap = -1;
+    int row_before_up = -1;
+    int row_after_up = -1;
+
+    keys[key_count++] = 'J';
+    keys[key_count++] = 'A';
+    for (int i = 0; i < 17; i++) {
+        keys[key_count++] = KEY_DOWN;
+    }
+    keys[key_count++] = KEY_DOWN;
+    keys[key_count++] = KEY_UP;
+    keys[key_count++] = KEY_BREAK;
+    FakeKeyboard keyboard(keys, key_count);
+
+    monitor_reset_saved_state();
+    memset(backend.memory, 0xEA, sizeof(backend.memory));
+    for (uint32_t address = 0xFFEE; address <= 0xFFFF; address++) {
+        backend.write((uint16_t)address, 0xEA);
+    }
+    backend.write(0xFFFE, 0x48);
+    backend.write(0xFFFF, 0x4C);
+    backend.write(0x0000, 0xEA);
+    backend.write(0x0001, 0xEA);
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("FFEE", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    if (expect(monitor.poll(0) == 0, "Disassembly boundary test: goto failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Disassembly boundary test: ASM view switch failed.")) return 1;
+
+    for (int i = 0; i < 17; i++) {
+        if (expect(monitor.poll(0) == 0, "Disassembly boundary test: step toward $FFFF failed.")) return 1;
+    }
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR ASM $FFFF") == header,
+               "Scrolling down near the boundary must land on $FFFF before cutover.")) return 1;
+    if (expect(find_highlighted_cell(screen, NULL, &row_before_wrap),
+               "Disassembly boundary test: highlighted row not found at $FFFF.")) return 1;
+    if (expect(row_before_wrap == 21,
+               "The $FFFF line must appear on the bottom visible row before cutover.")) return 1;
+    screen.get_slice(1, row_before_wrap, 38, line);
+    if (expect(strstr(line, "FFFF 4C") == line,
+               "The $FFFF row must render only the local tail byte before cutover.")) return 1;
+    if (expect(strstr(line, "???") != NULL,
+               "The $FFFF row must not decode across the $FFFF/$0000 boundary.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "Disassembly boundary test: forward cutover failed.")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR ASM $0000") == header,
+               "Stepping past $FFFF must cut over to $0000.")) return 1;
+    if (expect(find_highlighted_cell(screen, NULL, &row_after_wrap),
+               "Disassembly boundary test: highlighted row not found after forward cutover.")) return 1;
+    if (expect(row_after_wrap == 4,
+               "Forward cutover must redraw with $0000 on the first visible row.")) return 1;
+    screen.get_slice(1, 4, 38, line);
+    if (expect(strstr(line, "0000 EA") == line,
+               "The first visible row after forward cutover must start at $0000.")) return 1;
+
+    if (expect(find_highlighted_cell(screen, NULL, &row_before_up),
+               "Disassembly boundary test: highlighted row not found before reverse cutover.")) return 1;
+    if (expect(row_before_up == 4,
+               "Reverse cutover must start from the first visible row at $0000.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "Disassembly boundary test: reverse cutover failed.")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR ASM $FFFF") == header,
+               "Stepping up from $0000 must cut over to $FFFF.")) return 1;
+    if (expect(find_highlighted_cell(screen, NULL, &row_after_up),
+               "Disassembly boundary test: highlighted row not found after reverse cutover.")) return 1;
+    if (expect(row_after_up == 21,
+               "Reverse cutover must redraw with $FFFF on the bottom visible row.")) return 1;
+    screen.get_slice(1, row_after_up, 38, line);
+    if (expect(strstr(line, "FFFF 4C") == line,
+               "Reverse cutover must restore the $FFFF tail row at the bottom.")) return 1;
+
+    if (expect(monitor.poll(0) == 1, "RUN/STOP exit failed after disassembly boundary test.")) return 1;
+    monitor.deinit();
+
+    return 0;
+}
+
+static int test_disassembly_reverse_cutover_keeps_ffff_at_bottom(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char header[39];
+    char line[39];
+    int row = -1;
+    const int keys[] = { 'A', 'J', KEY_UP, KEY_BREAK };
+    FakeKeyboard keyboard(keys, sizeof(keys) / sizeof(keys[0]));
+
+    monitor_reset_saved_state();
+    memset(backend.memory, 0xEA, sizeof(backend.memory));
+    for (uint16_t address = 0xFFEE; address <= 0xFFFC; address = (uint16_t)(address + 3)) {
+        backend.write(address, 0x20);
+        backend.write((uint16_t)(address + 1), 0x00);
+        backend.write((uint16_t)(address + 2), 0x00);
+    }
+    backend.write(0xFFFD, 0xEA);
+    backend.write(0xFFFE, 0x48);
+    backend.write(0xFFFF, 0x4C);
+    backend.write(0x0000, 0xEA);
+    backend.write(0x0001, 0xEA);
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("0000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    if (expect(monitor.poll(0) == 0, "Disassembly reverse boundary test: ASM view switch failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Disassembly reverse boundary test: goto failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Disassembly reverse boundary test: step up failed.")) return 1;
+
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR ASM $FFFF") == header,
+               "Reverse cutover from $0000 must land on $FFFF in ASM view.")) return 1;
+    if (expect(find_highlighted_cell(screen, NULL, &row),
+               "Disassembly reverse boundary test: highlighted row not found after wrap.")) return 1;
+    if (expect(row == 21,
+               "ASM reverse cutover must keep $FFFF on the bottom visible row even when earlier rows are multi-byte instructions.")) return 1;
+
+    screen.get_slice(1, 19, 38, line);
+    if (expect(strstr(line, "FFFD EA") == line,
+               "ASM reverse cutover must keep the tail byte rows directly above $FFFF.")) return 1;
+    screen.get_slice(1, 20, 38, line);
+    if (expect(strstr(line, "FFFE 48") == line,
+               "ASM reverse cutover must show $FFFE immediately above $FFFF.")) return 1;
+    screen.get_slice(1, 21, 38, line);
+    if (expect(strstr(line, "FFFF 4C") == line,
+               "ASM reverse cutover must leave $FFFF on the bottom row without drawing wrapped rows below it.")) return 1;
+
+    if (expect(monitor.poll(0) == 1, "Disassembly reverse boundary test: exit failed.")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_hex_reverse_wrap_keeps_tail_row_at_bottom(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char header[39];
+    char line[39];
+    int row = -1;
+    const int keys[] = { 'J', KEY_LEFT, KEY_BREAK };
+    FakeKeyboard keyboard(keys, sizeof(keys) / sizeof(keys[0]));
+
+    monitor_reset_saved_state();
+    memset(backend.memory, 0xEA, sizeof(backend.memory));
+    backend.write(0xFFFF, 0x4C);
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("0000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    if (expect(monitor.poll(0) == 0, "HEX reverse wrap test: goto failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "HEX reverse wrap test: left wrap failed.")) return 1;
+
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR HEX $FFFF") == header,
+               "HEX reverse wrap must land on $FFFF.")) return 1;
+    if (expect(find_highlighted_cell(screen, NULL, &row),
+               "HEX reverse wrap test: highlighted cell not found after wrap.")) return 1;
+    if (expect(row == 21,
+               "HEX reverse wrap must keep the tail memory row on the bottom of the screen.")) return 1;
+    screen.get_slice(1, 21, MONITOR_HEX_ROW_CHARS, line);
+    if (expect(strstr(line, "FFF8") == line,
+               "HEX reverse wrap must show the final memory row at the bottom after wrapping to $FFFF.")) return 1;
+
+    if (expect(monitor.poll(0) == 1, "HEX reverse wrap test: exit failed.")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_last_address_row_highlight(void)
+{
+    struct ViewHighlightCase {
+        const char *name;
+        const char *expected_header;
+        const int *keys;
+        int key_count;
+    };
+
+    static const int hex_keys[] = { 'J', KEY_BREAK };
+    static const int ascii_keys[] = { 'I', 'J', KEY_BREAK };
+    static const int screen_keys[] = { 'V', 'J', KEY_BREAK };
+    static const int binary_keys[] = { 'B', 'J', KEY_BREAK };
+    static const int asm_keys[] = { 'A', 'J', KEY_BREAK };
+    static const ViewHighlightCase cases[] = {
+        { "HEX", "MONITOR HEX $FFFF", hex_keys, (int)(sizeof(hex_keys) / sizeof(hex_keys[0])) },
+        { "ASC", "MONITOR ASC $FFFF", ascii_keys, (int)(sizeof(ascii_keys) / sizeof(ascii_keys[0])) },
+        { "SCR", "MONITOR SCR U/G $FFFF", screen_keys, (int)(sizeof(screen_keys) / sizeof(screen_keys[0])) },
+        { "BIN", "MONITOR BIN $FFFF/7", binary_keys, (int)(sizeof(binary_keys) / sizeof(binary_keys[0])) },
+        { "ASM", "MONITOR ASM $FFFF", asm_keys, (int)(sizeof(asm_keys) / sizeof(asm_keys[0])) },
+    };
+
+    char message[128];
+    char header[39];
+
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        FakeKeyboard keyboard(cases[i].keys, cases[i].key_count);
+        int row = 0;
+
+        ui.screen = &screen;
+        ui.keyboard = &keyboard;
+        ui.set_prompt("FFFF", 1);
+
+        monitor_reset_saved_state();
+        backend.write(0xFFFF, 0x4C);
+        backend.write(0x0000, 0xEA);
+        backend.write(0x0001, 0xEA);
+
+        BackendMachineMonitor monitor(&ui, &backend);
+        monitor.init(&screen, &keyboard);
+
+        for (int step = 0; step < cases[i].key_count - 1; step++) {
+            sprintf(message, "%s $FFFF highlight test: command step %d failed.", cases[i].name, step + 1);
+            if (expect(monitor.poll(0) == 0, message)) return 1;
+        }
+
+        screen.get_slice(1, 3, 38, header);
+        sprintf(message, "%s $FFFF highlight test: header must stay on the active address.", cases[i].name);
+        if (expect(strstr(header, cases[i].expected_header) == header, message)) return 1;
+        sprintf(message, "%s $FFFF highlight test: highlighted cell not found.", cases[i].name);
+        if (expect(find_highlighted_cell(screen, NULL, &row), message)) return 1;
+        sprintf(message, "%s $FFFF highlight test: highlight must remain on the first visible row after goto.", cases[i].name);
+        if (expect(row == 4, message)) return 1;
+
+        sprintf(message, "%s $FFFF highlight test: exit failed.", cases[i].name);
+        if (expect(monitor.poll(0) == 1, message)) return 1;
+        monitor.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'J', 'e', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard keyboard(keys, sizeof(keys) / sizeof(keys[0]));
+        int row = 0;
+
+        ui.screen = &screen;
+        ui.keyboard = &keyboard;
+        ui.set_prompt("FFFF", 1);
+
+        monitor_reset_saved_state();
+        backend.write(0xFFFF, 0x4C);
+        backend.write(0x0000, 0xEA);
+        backend.write(0x0001, 0xEA);
+
+        BackendMachineMonitor monitor(&ui, &backend);
+        monitor.init(&screen, &keyboard);
+        if (expect(monitor.poll(0) == 0, "HEX edit $FFFF cursor test: goto failed.")) return 1;
+        if (expect(monitor.poll(0) == 0, "HEX edit $FFFF cursor test: edit mode entry failed.")) return 1;
+        if (expect(find_highlighted_cell(screen, NULL, &row),
+                   "HEX edit $FFFF cursor test: highlighted cell not found.")) return 1;
+        if (expect(row == 4,
+                   "HEX edit $FFFF cursor test: highlighted byte must remain visible on the first row.")) return 1;
+        if (expect(screen.reverse_chars[4][27] && screen.reverse_chars[4][28],
+                   "HEX edit $FFFF cursor test: both digits of the active byte must stay highlighted.")) return 1;
+        if (expect(monitor.poll(0) == 0, "HEX edit $FFFF cursor test: first RUN/STOP should leave edit mode.")) return 1;
+        if (expect(monitor.poll(0) == 1, "HEX edit $FFFF cursor test: second RUN/STOP should exit the monitor.")) return 1;
+        monitor.deinit();
+    }
+
+    return 0;
+}
+
 static int test_template_cursor(void)
 {
     char template_buffer[8] = "AAAA";
@@ -992,9 +1283,8 @@ static int test_monitor_interaction(void)
         "",
         "Open monitor:  C=+O",
         "Close monitor: C=+O / ESC",
-        "Leave edit:    C=+E",
+        "Leave edit:    C=+E / ESC",
         "Copy/Paste:    C=+C / C=+V",
-        "",
         NULL
     };
     monitor_reset_saved_state();
@@ -1048,7 +1338,8 @@ static int test_monitor_interaction(void)
     screen.get_slice(1, 3, 38, status);
     if (expect(strstr(status, "HELP") == status, "Help header should replace the normal view header.")) return 1;
     screen.get_slice(1, 22, 38, status);
-    if (expect(strspn(status, " ") == strlen(status), "Help view should blank the footer row instead of showing CPU/VIC status.")) return 1;
+    if (expect(strstr(status, "Paging:         F1/Sh+Sp  F7/Space") == status,
+               "Help view should show the paging shortcuts on the footer row.")) return 1;
     {
         for (int i = 0; expected_help_lines[i]; i++) {
             screen.get_slice(1, 4 + i, 38, line);
@@ -1074,7 +1365,8 @@ static int test_monitor_interaction(void)
         esc_help_monitor.init(&screen, &esc_help_keyboard);
         if (expect(esc_help_monitor.poll(0) == 0, "F3 should open help before ESC handling is tested.")) return 1;
         screen.get_slice(1, 22, 38, status);
-        if (expect(strspn(status, " ") == strlen(status), "Help must clear the footer row before ESC closes it.")) return 1;
+        if (expect(strstr(status, "Paging:         F1/Sh+Sp  F7/Space") == status,
+                   "Help must show the paging shortcuts before ESC closes it.")) return 1;
         for (int i = 0; expected_help_lines[i]; i++) {
             screen.get_slice(1, 4 + i, 38, line);
             if (expect(strncmp(line, expected_help_lines[i], strlen(expected_help_lines[i])) == 0,
@@ -2542,9 +2834,9 @@ static int test_asm_edit_direct_typing(void)
     //   J / "C000" / enter           -- jump to $C000
     //   A                            -- switch to ASM
     //   E                            -- enter edit mode
-    //   L D A 1 0 0 0  ENTER         -- type the whole instruction
+    //   L D A SPACE 1 0 0 0 ENTER    -- type the whole instruction
     const int keys[] = {
-        'J', 'A', 'E', 'L', 'D', 'A', '1', '0', '0', '0', KEY_RETURN, KEY_BREAK
+        'J', 'A', 'E', 'L', 'D', 'A', KEY_SPACE, '1', '0', '0', '0', KEY_RETURN, KEY_BREAK
     };
     FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
     ui.screen = &screen;
@@ -2557,6 +2849,159 @@ static int test_asm_edit_direct_typing(void)
     }
     if (expect(backend.read(0xC000) == 0xAD && backend.read(0xC001) == 0x00 && backend.read(0xC002) == 0x10,
                "ASM direct typing 'LDA 1000' must encode AD 00 10")) return 1;
+    return 0;
+}
+
+static int test_space_edit_behavior_preserved(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        CaptureScreen snapshot;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'E', KEY_SPACE };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        backend.write(0x0000, 0xAB);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "HEX edit Space test: edit-mode entry failed.")) return 1;
+        snapshot = screen;
+        if (expect(mon.poll(0) == 0, "HEX edit Space test: space handling failed.")) return 1;
+        if (expect_screens_equal(snapshot, screen,
+                                 "HEX edit Space must remain a non-paging no-op.")) return 1;
+        if (expect(backend.read(0x0000) == 0xAB,
+                   "HEX edit Space must not modify the current byte.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'I', 'E', KEY_SPACE };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        backend.write(0x0000, 'A');
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASCII edit Space test: view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII edit Space test: edit-mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII edit Space test: typing space failed.")) return 1;
+        if (expect(backend.read(0x0000) == ' ',
+                   "ASCII edit Space must keep writing a literal space.")) return 1;
+        if (expect(screen.reverse_chars[4][7],
+                   "ASCII edit Space must advance to the next character instead of paging.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'V', 'E', KEY_SPACE };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        backend.write(0x0000, 0x01);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Screen edit Space test: view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Screen edit Space test: edit-mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Screen edit Space test: typing space failed.")) return 1;
+        if (expect(backend.read(0x0000) == monitor_screen_code_for_char(' ', MONITOR_SCREEN_CHARSET_UPPER_GRAPHICS),
+                   "Screen edit Space must keep writing a screen-code space.")) return 1;
+        if (expect(screen.reverse_chars[4][7],
+                   "Screen edit Space must advance to the next character instead of paging.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'J', 'B', 'E', KEY_SPACE };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        backend.write(0x0400, 0xAA);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Binary edit Space test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary edit Space test: view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary edit Space test: edit-mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary edit Space test: typing space failed.")) return 1;
+        if (expect(backend.read(0x0400) == 0x2A,
+                   "Binary edit Space must keep clearing the selected bit.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR BIN $0400/6") == header,
+                   "Binary edit Space must advance exactly one bit instead of paging.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_shift_space_does_not_page_in_edit_mode(void)
+{
+    static const struct {
+        int view_key;
+        const char *message;
+    } cases[] = {
+        { 0,   "Shift+Space must not page up in Memory edit mode." },
+        { 'I', "Shift+Space must not page up in ASCII edit mode." },
+        { 'V', "Shift+Space must not page up in Screen edit mode." },
+        { 'B', "Shift+Space must not page up in Binary edit mode." },
+        { 'A', "Shift+Space must not page up in Assembly edit mode." },
+    };
+
+    for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        CaptureScreen snapshot;
+        FakeMemoryBackend backend;
+        int keys[4];
+        int key_count = 0;
+
+        for (uint32_t addr = 0; addr < 0x10000UL; addr++) {
+            backend.write((uint16_t)addr, (uint8_t)(addr & 0xFF));
+        }
+
+        keys[key_count++] = 'J';
+        if (cases[i].view_key) {
+            keys[key_count++] = cases[i].view_key;
+        }
+        keys[key_count++] = 'E';
+        keys[key_count++] = KEY_SHIFT_SP;
+        FakeKeyboard kb(keys, key_count);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("4000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int step = 0; step < key_count - 1; step++) {
+            if (expect(mon.poll(0) == 0, "Shift+Space edit test setup failed.")) return 1;
+        }
+        snapshot = screen;
+        if (expect(mon.poll(0) == 0, "Shift+Space edit test key handling failed.")) return 1;
+        if (expect_screens_equal(snapshot, screen, cases[i].message)) return 1;
+        mon.deinit();
+    }
+
     return 0;
 }
 
@@ -2733,6 +3178,87 @@ static int test_asm_page_up_keeps_screen_row(void)
                "ASM page-up must preserve the visible cursor row like page-down.")) return 1;
     if (expect(mon.poll(0) == 1, "ASM page-up test: exit failed.")) return 1;
     mon.deinit();
+    return 0;
+}
+
+static int test_space_shortcuts_match_existing_paging(void)
+{
+    static const struct {
+        int view_key;
+        const char *page_down_message;
+        const char *page_up_message;
+    } cases[] = {
+        { 0,   "Space must match F7 page-down behavior in Memory view.",
+               "Shift+Space must match F1 page-up behavior in Memory view." },
+        { 'I', "Space must match F7 page-down behavior in ASCII view.",
+               "Shift+Space must match F1 page-up behavior in ASCII view." },
+        { 'V', "Space must match F7 page-down behavior in Screen view.",
+               "Shift+Space must match F1 page-up behavior in Screen view." },
+        { 'B', "Space must match F7 page-down behavior in Binary view.",
+               "Shift+Space must match F1 page-up behavior in Binary view." },
+        { 'A', "Space must match F7 page-down behavior in Assembly view.",
+               "Shift+Space must match F1 page-up behavior in Assembly view." },
+    };
+
+    for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        for (int direction = 0; direction < 2; direction++) {
+            TestUserInterface ui_a;
+            TestUserInterface ui_b;
+            CaptureScreen screen_a;
+            CaptureScreen screen_b;
+            FakeMemoryBackend backend_a;
+            FakeMemoryBackend backend_b;
+            int keys_a[4];
+            int keys_b[4];
+            int key_count = 0;
+            const int page_key = direction ? KEY_F1 : KEY_F7;
+            const int shortcut_key = direction ? KEY_SHIFT_SP : KEY_SPACE;
+            const char *message = direction ? cases[i].page_up_message : cases[i].page_down_message;
+
+            for (uint32_t addr = 0; addr < 0x10000UL; addr++) {
+                uint8_t value = (uint8_t)((addr >> 8) ^ addr);
+                backend_a.write((uint16_t)addr, value);
+                backend_b.write((uint16_t)addr, value);
+            }
+
+            keys_a[key_count] = 'J';
+            keys_b[key_count++] = 'J';
+            if (cases[i].view_key) {
+                keys_a[key_count] = cases[i].view_key;
+                keys_b[key_count++] = cases[i].view_key;
+            }
+            keys_a[key_count] = page_key;
+            keys_b[key_count++] = shortcut_key;
+
+            FakeKeyboard kb_a(keys_a, key_count);
+            FakeKeyboard kb_b(keys_b, key_count);
+            ui_a.screen = &screen_a;
+            ui_a.keyboard = &kb_a;
+            ui_a.set_prompt("4000", 1);
+            ui_b.screen = &screen_b;
+            ui_b.keyboard = &kb_b;
+            ui_b.set_prompt("4000", 1);
+
+            monitor_reset_saved_state();
+            BackendMachineMonitor mon_a(&ui_a, &backend_a);
+            mon_a.init(&screen_a, &kb_a);
+            for (int step = 0; step < key_count; step++) {
+                if (expect(mon_a.poll(0) == 0, "Paging parity test setup A failed.")) return 1;
+            }
+
+            monitor_reset_saved_state();
+            BackendMachineMonitor mon_b(&ui_b, &backend_b);
+            mon_b.init(&screen_b, &kb_b);
+            for (int step = 0; step < key_count; step++) {
+                if (expect(mon_b.poll(0) == 0, "Paging parity test setup B failed.")) return 1;
+            }
+
+            if (expect_screens_equal(screen_a, screen_b, message)) return 1;
+            mon_a.deinit();
+            mon_b.deinit();
+        }
+    }
+
     return 0;
 }
 
@@ -5098,6 +5624,10 @@ int main()
     if (test_frozen_banked_backend()) return 1;
     if (test_kernal_disassembly_mapping()) return 1;
     if (test_disassembly_instruction_stepping()) return 1;
+    if (test_disassembly_boundary_cutover()) return 1;
+    if (test_disassembly_reverse_cutover_keeps_ffff_at_bottom()) return 1;
+    if (test_hex_reverse_wrap_keeps_tail_row_at_bottom()) return 1;
+    if (test_last_address_row_highlight()) return 1;
     if (test_template_cursor()) return 1;
     if (test_task_action_lookup()) return 1;
     if (test_monitor_renders_window_border()) return 1;
@@ -5124,6 +5654,7 @@ int main()
     if (test_asm_edit_branch_two_parts()) return 1;
     if (test_asm_cpu_bank_cycle_preserves_screen_row()) return 1;
     if (test_asm_page_up_keeps_screen_row()) return 1;
+    if (test_space_shortcuts_match_existing_paging()) return 1;
     if (test_opcode_picker_refilters_live()) return 1;
     if (test_opcode_picker_filters_orders_and_commits_on_enter()) return 1;
     if (test_opcode_picker_browsing_does_not_mutate_frozen_charset_backup()) return 1;
@@ -5131,6 +5662,8 @@ int main()
     if (test_opcode_picker_selection_near_bottom_preserves_live_charset_page()) return 1;
     if (test_opcode_picker_pauses_poll_mode()) return 1;
     if (test_cross_view_sync()) return 1;
+    if (test_space_edit_behavior_preserved()) return 1;
+    if (test_shift_space_does_not_page_in_edit_mode()) return 1;
     if (test_binary_row_formats()) return 1;
     if (test_binary_bit_navigation_and_width()) return 1;
     if (test_memory_row_width_cycle()) return 1;

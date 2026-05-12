@@ -43,11 +43,12 @@ static const char *const monitor_help_lines[] = {
     "",
     "Open monitor:  C=+O",
     "Close monitor: C=+O / ESC",
-    "Leave edit:    C=+E",
+    "Leave edit:    C=+E / ESC",
     "Copy/Paste:    C=+C / C=+V",
-    "",
     NULL
 };
+
+static const char monitor_help_paging_line[] = "Paging:        F1/Sh+Sp  F7/Space";
 
 static bool monitor_saved_state_valid = false;
 static MachineMonitorState monitor_saved_state = {
@@ -108,6 +109,43 @@ static inline bool monitor_binary_packed_bits(uint8_t bytes_per_row)
 static inline bool monitor_binary_shows_hex_preview(uint8_t bytes_per_row)
 {
     return bytes_per_row != 4;
+}
+
+static inline bool monitor_row_contains(uint16_t start, uint16_t length, uint16_t address)
+{
+    uint32_t end = (uint32_t)start + (uint32_t)(length ? length : 1);
+
+    return ((uint32_t)address >= (uint32_t)start) && ((uint32_t)address < end);
+}
+
+static inline uint8_t monitor_disasm_bytes_to_end(uint16_t address)
+{
+    uint32_t remaining = 0x10000UL - (uint32_t)address;
+
+    if (remaining > 3UL) {
+        remaining = 3UL;
+    }
+    return (uint8_t)remaining;
+}
+
+static inline void monitor_disasm_tail_cutover(uint16_t address, Disassembled6502 *decoded)
+{
+    if (decoded->length <= monitor_disasm_bytes_to_end(address)) {
+        return;
+    }
+
+    decoded->valid = false;
+    decoded->illegal = false;
+    decoded->operand_bytes = 0;
+    decoded->has_target = false;
+    decoded->target = 0;
+    decoded->length = 1;
+    strcpy(decoded->text, "???");
+}
+
+static inline bool monitor_disasm_row_contains(uint16_t start, uint8_t length, uint16_t address)
+{
+    return monitor_row_contains(start, length, address);
 }
 
 static int monitor_bookmark_main_slot_for_key(int key)
@@ -1755,6 +1793,7 @@ void MachineMonitor :: number_picker_resolve_target(void)
 
     read_row(state.current_addr, row_bytes, 3);
     disassemble_6502(state.current_addr, row_bytes, state.illegal_enabled, &decoded);
+    monitor_disasm_tail_cutover(state.current_addr, &decoded);
     if (!decoded.valid) {
         return;
     }
@@ -1907,7 +1946,7 @@ void MachineMonitor :: number_picker_anchor(int *x, int *y) const
                 if (len == 0) {
                     len = 1;
                 }
-                if (state.current_addr >= addr && state.current_addr < (uint16_t)(addr + len)) {
+                if (monitor_disasm_row_contains(addr, len, state.current_addr)) {
                     break;
                 }
                 addr = (uint16_t)(addr + len);
@@ -2775,11 +2814,15 @@ uint8_t MachineMonitor :: disasm_length(uint16_t address) const
 
     read_row(address, row_bytes, 3);
     disassemble_6502(address, row_bytes, state.illegal_enabled, &decoded);
+    monitor_disasm_tail_cutover(address, &decoded);
     return decoded.length ? decoded.length : 1;
 }
 
 uint16_t MachineMonitor :: disasm_next_addr(uint16_t address)
 {
+    if (address == 0xFFFF) {
+        return 0x0000;
+    }
     return (uint16_t)(address + disasm_length(address));
 }
 
@@ -2812,6 +2855,9 @@ uint8_t MachineMonitor :: asm_edit_part_count(uint16_t address)
 
 uint16_t MachineMonitor :: disasm_prev_addr(uint16_t address)
 {
+    if (address == 0x0000) {
+        return 0xFFFF;
+    }
     // Use a signed counter: a uint16_t loop variable would underflow from 0
     // back to 0xFFFF when the heuristic fails to find a matching instruction
     // length, hanging the monitor in an infinite read loop.
@@ -2856,7 +2902,7 @@ int MachineMonitor :: disasm_visible_row(uint16_t address) const
         if (len == 0) {
             len = 1;
         }
-        if (address >= addr && address < (uint16_t)(addr + len)) {
+        if (monitor_disasm_row_contains(addr, len, address)) {
             return row;
         }
         addr = (uint16_t)(addr + len);
@@ -2884,6 +2930,9 @@ uint16_t MachineMonitor :: disasm_rewind_rows(uint16_t address, int rows)
 
 void MachineMonitor :: restore_disasm_cursor_row(int row)
 {
+    uint16_t best_base;
+    int best_visible_row;
+
     if (row < 0) {
         ensure_disasm_visible();
         return;
@@ -2891,7 +2940,26 @@ void MachineMonitor :: restore_disasm_cursor_row(int row)
     if (content_height > 0 && row >= content_height) {
         row = content_height - 1;
     }
-    state.base_addr = disasm_rewind_rows(state.current_addr, row);
+
+    best_base = state.current_addr;
+    best_visible_row = 0;
+    for (int offset = 0; offset <= (row * 3 + 3); offset++) {
+        uint16_t candidate = (uint16_t)(state.current_addr - offset);
+        int visible_row;
+
+        state.base_addr = candidate;
+        visible_row = disasm_visible_row(state.current_addr);
+        if (visible_row == row) {
+            ensure_disasm_visible();
+            return;
+        }
+        if (visible_row >= 0 && visible_row < row && visible_row >= best_visible_row) {
+            best_visible_row = visible_row;
+            best_base = candidate;
+        }
+    }
+
+    state.base_addr = best_base;
     ensure_disasm_visible();
 }
 
@@ -2900,8 +2968,7 @@ void MachineMonitor :: ensure_disasm_visible()
     if (state.view != MONITOR_VIEW_ASM) {
         return;
     }
-    int diff = (int16_t)(state.current_addr - state.base_addr);
-    if (diff < 0) {
+    if (state.current_addr < state.base_addr) {
         state.base_addr = state.current_addr;
         return;
     }
@@ -2927,11 +2994,21 @@ void MachineMonitor :: ensure_disasm_visible()
 void MachineMonitor :: step_disassembly(int lines)
 {
     while (lines < 0) {
-        state.current_addr = disasm_prev_visible_addr(state.current_addr);
+        uint16_t current = state.current_addr;
+        uint16_t prev = disasm_prev_visible_addr(current);
+        state.current_addr = prev;
+        if (prev > current) {
+            restore_disasm_cursor_row((content_height > 0) ? (content_height - 1) : 0);
+        }
         lines++;
     }
     while (lines > 0) {
-        state.current_addr = disasm_next_addr(state.current_addr);
+        uint16_t current = state.current_addr;
+        uint16_t next = disasm_next_addr(current);
+        state.current_addr = next;
+        if (next < current) {
+            state.base_addr = state.current_addr;
+        }
         lines--;
     }
     ensure_disasm_visible();
@@ -3074,7 +3151,8 @@ void MachineMonitor :: draw_status()
     char line[40];
 
     if (help_visible) {
-        draw_padded(window, window->get_size_y() - 1, "", 0);
+        draw_padded(window, window->get_size_y() - 1, monitor_help_paging_line,
+                    (int)strlen(monitor_help_paging_line));
         return;
     }
 
@@ -3315,7 +3393,7 @@ void MachineMonitor :: draw_hex_row(int y, uint16_t addr, const uint8_t *bytes)
         }
     }
     if ((!edit_mode || edit_cursor_visible) && state.view == MONITOR_VIEW_HEX &&
-        state.current_addr >= addr && state.current_addr < (uint16_t)(addr + stride)) {
+        monitor_row_contains(addr, stride, state.current_addr)) {
         int index = state.current_addr - addr;
         int col = memory_hex_column(index);
         mask[col] = true;
@@ -3340,7 +3418,7 @@ void MachineMonitor :: draw_text_row(int y, uint16_t addr, const uint8_t *bytes,
     if ((!edit_mode || edit_cursor_visible) &&
         ((state.view == MONITOR_VIEW_ASCII && !screen_codes) ||
          (state.view == MONITOR_VIEW_SCREEN && screen_codes)) &&
-        state.current_addr >= addr && state.current_addr < (uint16_t)(addr + MONITOR_TEXT_BYTES_PER_ROW)) {
+        monitor_row_contains(addr, MONITOR_TEXT_BYTES_PER_ROW, state.current_addr)) {
         mask[5 + (state.current_addr - addr)] = true;
     }
     draw_with_mask(window, y, line, MONITOR_TEXT_ROW_CHARS, mask);
@@ -3355,7 +3433,7 @@ void MachineMonitor :: draw_hex()
         uint8_t bytes[MONITOR_MEMORY_MAX_BYTES_PER_ROW];
 
         read_row(addr, bytes, stride);
-        if (edit_mode && pending_hex_nibble >= 0 && state.current_addr >= addr && state.current_addr < (uint16_t)(addr + stride)) {
+        if (edit_mode && pending_hex_nibble >= 0 && monitor_row_contains(addr, stride, state.current_addr)) {
             int index = state.current_addr - addr;
             bytes[index] = (uint8_t)((pending_hex_nibble << 4) | (bytes[index] & 0x0F));
         }
@@ -3467,8 +3545,7 @@ void MachineMonitor :: draw_binary_row(int y, uint16_t addr, const uint8_t *byte
     // Apply cursor highlighting
     if ((!edit_mode || edit_cursor_visible) &&
         state.view == MONITOR_VIEW_BINARY &&
-        state.current_addr >= addr &&
-        state.current_addr < (uint16_t)(addr + byte_count)) {
+        monitor_row_contains(addr, byte_count, state.current_addr)) {
         int byte_offset = state.current_addr - addr;
         uint8_t bit = (binary_bit_index <= 7) ? binary_bit_index : 7;
         int bit_pos_in_byte = 7 - bit;  // bit position within byte (0-7)
@@ -3560,6 +3637,7 @@ void MachineMonitor :: draw_disassembly()
         memset(line, ' ', sizeof(line));
         line[MONITOR_DISASM_ROW_CHARS] = 0;
         disassemble_6502(addr, row_bytes, state.illegal_enabled, &decoded);
+        monitor_disasm_tail_cutover(addr, &decoded);
         dump_hex_word(line, 0, addr);
         line[4] = ' ';
         dump_hex_byte(line, 5, row_bytes[0]);
@@ -3589,7 +3667,7 @@ void MachineMonitor :: draw_disassembly()
         memcpy(line + source_pos + 1, source, source_len);
         line[source_pos + 1 + source_len] = ']';
 
-        if (state.current_addr >= addr && state.current_addr < (uint16_t)(addr + decoded.length)) {
+        if (monitor_disasm_row_contains(addr, decoded.length, state.current_addr)) {
             highlight = 0;
         }
         if (range_mode) {
@@ -3706,7 +3784,7 @@ void MachineMonitor :: draw_opcode_picker()
         for (int i = 0; i < content_height; i++) {
             uint8_t l = disasm_length(addr);
             if (l == 0) l = 1;
-            if (state.current_addr >= addr && state.current_addr < (uint16_t)(addr + l)) {
+            if (monitor_disasm_row_contains(addr, l, state.current_addr)) {
                 anchor_row = i + 1;
                 break;
             }
@@ -4658,6 +4736,14 @@ int MachineMonitor :: handle_key(int key)
                 draw();
                 return 0;
             }
+        }
+    }
+
+    if (!edit_mode) {
+        if (key == KEY_SPACE) {
+            key = KEY_F7;
+        } else if (key == KEY_SHIFT_SP) {
+            key = KEY_F1;
         }
     }
 

@@ -626,6 +626,16 @@ def ensure_status(session: MonitorSession, expected: str) -> Snapshot:
     )
 
 
+def cycle_cpu_bank_from_cpu7(session: MonitorSession, target_status: str, steps: int) -> Snapshot:
+    screen = ensure_status(session, "CPU7 $A:BAS $D:I/O $E:KRN VIC")
+
+    for _ in range(steps):
+        screen = session.send_char("o")
+
+    assert_status_contains(screen, target_status)
+    return screen
+
+
 def ensure_view(session: MonitorSession, expected: str) -> Snapshot:
     key = VIEW_KEYS.get(expected)
     if key is None:
@@ -1015,14 +1025,14 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
     with check("CPU6 RAM under BASIC write/read"):
         screen = ensure_view(session, "HEX ")
         session.goto("A000")
-        screen = ensure_status(session, snapshots["status_cpu30"]["contains"]["22"])
+        screen = cycle_cpu_bank_from_cpu7(session, snapshots["status_cpu30"]["contains"]["22"], 7)
         session.fill("A000-A000,AA")
         screen = session.goto("A000")
         assert_contains(screen, 4, snapshots["ram_a000"]["contains"]["4"])
 
     with check("CPU5 RAM under KERNAL status"):
         session.goto("E000")
-        screen = ensure_status(session, snapshots["status_cpu29"]["contains"]["22"])
+        screen = cycle_cpu_bank_from_cpu7(session, snapshots["status_cpu29"]["contains"]["22"], 6)
 
     with check("ASCII view width and scrolling"):
         session.goto("C000")

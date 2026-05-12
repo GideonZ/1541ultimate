@@ -52,6 +52,8 @@ Binary width details:
 
 - `J`: jump to an address.
 - `G`: leave the monitor and start execution at an address.
+- `F1` or `Shift+Space`: page up.
+- `F7` or `Space`: page down.
 - `O`: cycle CPU port banking (`CPU0`..`CPU7`).
 - `Shift+O`: cycle the VIC bank override.
 - `Z`: toggle freeze when the backend supports it.
@@ -70,6 +72,8 @@ Edit behavior is view-specific:
 - Screen: type screen characters directly using the active Screen charset mode.
 - Binary: type `0` or `Space` to change the selected bit to `0`. Type `1` or `*` to change it to `1`.
 - Assembly: edit instructions inline. The monitor provides mnemonic completion through the opcode picker and also accepts direct operand typing.
+
+In edit mode, `Space` remains view-specific data entry and does not page.
 
 `DEL` is logical delete, not a raw backspace:
 
@@ -111,7 +115,7 @@ The monitor includes direct bulk memory commands:
 | `F` | Fill | `start-end,value` | Fill an inclusive range with one byte |
 | `T` | Transfer | `start-end,dest` | Copy a range to a destination |
 | `C` | Compare | `start-end,dest` | Compare a range against another location and list differing addresses |
-| `H` | Hunt | `start-end,bytes` or `start-end,"text"` | Search for a byte sequence or quoted string |
+| `H` | Hunt | `start-end,bytes` or `start-end,"text"` | Search for a byte sequence or quoted ASCII string |
 
 `Hunt` opens a result picker. `ENTER` jumps to the selected match and `ESC` closes the picker.
 
