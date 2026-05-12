@@ -410,38 +410,3 @@ void monitor_assembler_reset_caches(void)
     reverse_built = false;
     reverse_mnemonic_count = 0;
 }
-
-uint8_t monitor_screen_code_for_char(char c)
-{
-    // Inverse of the printable subset of screen_code_char in machine_monitor.cc.
-    // Only ASCII printables we can unambiguously round-trip.
-    if (c >= 'A' && c <= 'Z') return (uint8_t)(c - 'A' + 1);
-    if (c >= 'a' && c <= 'z') return (uint8_t)(c - 'a' + 1);  // C64 unshifted = uppercase
-    if (c >= '0' && c <= '9') return (uint8_t)(c - '0' + 0x30);
-    if (c == '@') return 0x00;
-    if (c == ' ') return 0x20;
-    if (c == '!') return 0x21;
-    if (c == '"') return 0x22;
-    if (c == '#') return 0x23;
-    if (c == '$') return 0x24;
-    if (c == '%') return 0x25;
-    if (c == '&') return 0x26;
-    if (c == '\'') return 0x27;
-    if (c == '(') return 0x28;
-    if (c == ')') return 0x29;
-    if (c == '*') return 0x2A;
-    if (c == '+') return 0x2B;
-    if (c == ',') return 0x2C;
-    if (c == '-') return 0x2D;
-    if (c == '.') return 0x2E;
-    if (c == '/') return 0x2F;
-    if (c == ':') return 0x3A;
-    if (c == ';') return 0x3B;
-    if (c == '<') return 0x3C;
-    if (c == '=') return 0x3D;
-    if (c == '>') return 0x3E;
-    if (c == '?') return 0x3F;
-    if (c == '[') return 0x1B;
-    if (c == ']') return 0x1D;
-    return 0xFF;
-}

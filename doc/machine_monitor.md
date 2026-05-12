@@ -16,18 +16,21 @@ The monitor provides five views:
 
 | Key | View | Purpose |
 | --- | --- | --- |
-| `M` | Memory | Hex dump of memory at the current address |
-| `I` | ASCII | 32-byte text view using printable ASCII only |
-| `V` | Screen | 32-byte screen-code view rendered as C64 glyphs |
-| `A` | Assembly | 6502 disassembly and inline assembly editing |
-| `B` | Binary | Bit-level view and bit editing |
+| `M` | **M**emory | Hex view |
+| `A` | **A**ssembly | (Dis)assembly view |
+| `B` | **B**inary | Bit view |
+| `I` | ASC**I**I | ASCII view |
+| `V` | Screen | Screen code **v**iew |
 
-`U` toggles undocumented opcodes in assembly view.
+In the built-in help, `U` is labeled `Undoc/Case`: in Assembly view it toggles undocumented opcodes, in Screen view it toggles the monitor-local Screen charset between `U/G` and `L/U`, and in other views it only shows a warning popup.
 
 ASCII and Screen details:
 
-- ASCII view shows printable ASCII only. Non-printable bytes are shown as `.` characters.
-- Screen view uses C64 screen-code rendering, not PETSCII text decoding.
+- ASCII view maps `$20-$7E` literally and shows all other bytes as `.`. ASCII edit writes the exact printable byte and preserves lowercase.
+- Screen view uses C64 screen codes, not PETSCII. The header shows `MONITOR SCR U/G $xxxx` or `MONITOR SCR L/U $xxxx`.
+- Screen `U/G`: display `$00` as `@`, display `$01-$1A` as `A-Z`, and type `A-Z` or `a-z` as `$01-$1A`.
+- Screen `L/U`: display `$01-$1A` as `a-z`, display `$41-$5A` as `A-Z`, type `a-z` as `$01-$1A`, and type `A-Z` as `$41-$5A`.
+- The menu uses the UI font, not the live C64 charset, so Screen view uses readable fallback glyphs for graphics bytes instead of exact C64 character shapes.
 
 ### Width Modes
 
@@ -64,7 +67,7 @@ Edit behavior is view-specific:
 
 - Memory: type two hex nibbles to write one byte.
 - ASCII: type printable ASCII bytes directly.
-- Screen: type screen characters directly.
+- Screen: type screen characters directly using the active Screen charset mode.
 - Binary: type `0` or `Space` to change the selected bit to `0`. Type `1` or `*` to change it to `1`.
 - Assembly: edit instructions inline. The monitor provides mnemonic completion through the opcode picker and also accepts direct operand typing.
 
@@ -96,6 +99,8 @@ The number tool is a compact base-conversion and overwrite popup for the current
 - Screen code
 
 In assembly view, the number tool targets the operand bytes of the current instruction when possible.
+
+The ASCII and Screen rows in the number tool use the same mappings as the ASCII and Screen views. Exact non-typeable screen-code bytes remain editable through Memory, Hex, and Number-tool entry paths even when they do not have a direct typed Screen alias.
 
 ## Memory Operations
 

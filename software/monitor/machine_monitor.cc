@@ -29,7 +29,7 @@ static const uint16_t monitor_cursor_blink_half_period_ms = 400;
 static const char *const monitor_help_lines[] = {
     "",
     "M Memory    I ASCII     V Screen",
-    "A Assembly  B Binary    U Undoc Op",
+    "A Assembly  B Binary    U Undoc/Case",
     "J Jump      G Go",
     "",
     "E Edit      F Fill      T Transfer",
@@ -50,7 +50,15 @@ static const char *const monitor_help_lines[] = {
 };
 
 static bool monitor_saved_state_valid = false;
-static MachineMonitorState monitor_saved_state = { MONITOR_VIEW_HEX, 0x0801, 0x0801, 0, false, 0x07 };
+static MachineMonitorState monitor_saved_state = {
+    MONITOR_VIEW_HEX,
+    0x0801,
+    0x0801,
+    0,
+    false,
+    MONITOR_SCREEN_CHARSET_UPPER_GRAPHICS,
+    0x07
+};
 
 // Persistent LOAD/SAVE/GO state (across monitor invocations within a single
 // firmware run). Defaults match the spec: a "press L, RETURN, RETURN" sequence
@@ -133,7 +141,15 @@ static bool monitor_deadline_reached(uint16_t deadline, uint16_t now)
 
 static bool is_hex_char(char c);
 static char to_upper_char(char c);
-static char screen_code_char(uint8_t value);
+static uint8_t normalize_screen_charset(uint8_t screen_charset);
+static bool monitor_hunt_prompt_inside_quotes(const char *buffer, int cur);
+static int monitor_hunt_prompt_transform_key(const char *buffer, int cur, int key);
+static char monitor_ascii_display_byte(uint8_t value);
+static char monitor_screen_display_byte(uint8_t value, uint8_t screen_charset);
+static bool monitor_ascii_key_to_byte(int key, uint8_t *out);
+static bool monitor_screen_key_to_code(int key, uint8_t screen_charset, uint8_t *out);
+static void monitor_format_text_row_impl(uint16_t address, const uint8_t *bytes, int count,
+                                         bool screen_codes, uint8_t screen_charset, char *out);
 
 enum {
     MONITOR_NUMBER_ROW_HEX = 0,
@@ -181,7 +197,8 @@ static bool is_binary_char(char c)
 }
 
 static bool monitor_number_parse_buffer(int row, const char *buffer, int length,
-                                        uint16_t *value, bool *word)
+                                        uint16_t *value, bool *word,
+                                        uint8_t screen_charset)
 {
     uint32_t parsed = 0;
 
@@ -257,7 +274,7 @@ static bool monitor_number_parse_buffer(int row, const char *buffer, int length,
                 return false;
             }
             for (int i = 0; i < length; i++) {
-                uint8_t code = monitor_screen_code_for_char(buffer[i]);
+                uint8_t code = monitor_screen_code_for_char(buffer[i], screen_charset);
                 if (code == 0xFF) {
                     return false;
                 }
@@ -273,15 +290,9 @@ static bool monitor_number_parse_buffer(int row, const char *buffer, int length,
     return false;
 }
 
-static char monitor_number_screen_display_char(uint8_t value)
+static char monitor_number_screen_display_char(uint8_t value, uint8_t screen_charset)
 {
-    uint8_t base = (uint8_t)(value & 0x7F);
-    char mapped = screen_code_char(value);
-
-    if (mapped == ' ' && base != 0x20) {
-        return '.';
-    }
-    return mapped;
+    return monitor_screen_display_byte(value, screen_charset);
 }
 
 static bool is_space_char(char c)
@@ -300,6 +311,33 @@ static char to_upper_char(char c)
         return c - 32;
     }
     return c;
+}
+
+static uint8_t normalize_screen_charset(uint8_t screen_charset)
+{
+    return (screen_charset == MONITOR_SCREEN_CHARSET_LOWER_UPPER) ?
+        MONITOR_SCREEN_CHARSET_LOWER_UPPER :
+        MONITOR_SCREEN_CHARSET_UPPER_GRAPHICS;
+}
+
+static bool monitor_hunt_prompt_inside_quotes(const char *buffer, int cur)
+{
+    bool inside_quotes = false;
+
+    for (int i = 0; i < cur && buffer[i]; i++) {
+        if (buffer[i] == '"') {
+            inside_quotes = !inside_quotes;
+        }
+    }
+    return inside_quotes;
+}
+
+static int monitor_hunt_prompt_transform_key(const char *buffer, int cur, int key)
+{
+    if (key >= 'a' && key <= 'z' && !monitor_hunt_prompt_inside_quotes(buffer, cur)) {
+        return key - 'a' + 'A';
+    }
+    return key;
 }
 
 static void skip_spaces(const char *&cursor)
@@ -432,42 +470,121 @@ static MonitorError parse_number_core(const char *text, uint16_t *value)
     return parse_decimal(buffer, value) ? MONITOR_OK : MONITOR_SYNTAX;
 }
 
-static char ascii_byte(uint8_t value)
+static char monitor_ascii_display_byte(uint8_t value)
 {
-    if (value == 0 || value == 8 || value == 10 || value == 13 || (value >= 20 && value <= 31) || (value >= 144 && value <= 159)) {
-        return '.';
-    }
     if (value < 32 || value > 126) {
         return '.';
     }
     return (char)value;
 }
 
-static char screen_code_char(uint8_t value)
+static char monitor_screen_display_byte(uint8_t value, uint8_t screen_charset)
 {
-    static const char translation[128] = {
-        /* 00-07 */ '@', 'A', 'B', 'C', 'D', 'E', 'F', 'G',
-        /* 08-0F */ 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O',
-        /* 10-17 */ 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W',
-        /* 18-1F */ 'X', 'Y', 'Z', '[', '#', ']', '^', '<',
-        /* 20-27 */ ' ', '!', '"', '#', '$', '%', '&', '\'',
-        /* 28-2F */ '(', ')', '*', '+', ',', '-', '.', '/',
-        /* 30-37 */ '0', '1', '2', '3', '4', '5', '6', '7',
-        /* 38-3F */ '8', '9', ':', ';', '<', '=', '>', '?',
-        /* 40-47 */ CHR_HORIZONTAL_LINE, 'S', '|', CHR_HORIZONTAL_LINE,
-                    CHR_HORIZONTAL_LINE, CHR_HORIZONTAL_LINE, CHR_HORIZONTAL_LINE, '|',
-        /* 48-4F */ '|', CHR_ROUNDED_UPPER_RIGHT, CHR_ROUNDED_LOWER_LEFT, CHR_ROUNDED_LOWER_RIGHT,
-                    CHR_SOLID_BAR_LOWER_7, '\\', '/', CHR_SOLID_BAR_UPPER_7,
-        /* 50-57 */ CHR_SOLID_BAR_UPPER_7, '*', CHR_HORIZONTAL_LINE, 'H',
-                    '|', CHR_ROUNDED_UPPER_LEFT, 'X', 'O',
-        /* 58-5F */ 'C', '|', CHR_DIAMOND, '+', '#', CHR_VERTICAL_LINE, 'P', '^',
-        /* 60-67 */ ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
-        /* 68-6F */ ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
-        /* 70-77 */ ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
-        /* 78-7F */ ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '
-    };
+    uint8_t base = (uint8_t)(value & 0x7F);
 
-    return translation[value & 0x7F];
+    screen_charset = normalize_screen_charset(screen_charset);
+
+    if (base == 0x00) {
+        return '@';
+    }
+    if (base >= 0x01 && base <= 0x1A) {
+        return (char)((screen_charset == MONITOR_SCREEN_CHARSET_LOWER_UPPER ? 'a' : 'A') + (base - 1));
+    }
+    if (base == 0x1B) {
+        return '[';
+    }
+    if (base == 0x1C) {
+        return '#';
+    }
+    if (base == 0x1D) {
+        return ']';
+    }
+    if (base == 0x1E) {
+        return '^';
+    }
+    if (base == 0x1F) {
+        return '<';
+    }
+    if (base >= 0x20 && base <= 0x3F) {
+        return (char)base;
+    }
+    if (screen_charset == MONITOR_SCREEN_CHARSET_LOWER_UPPER && base >= 0x41 && base <= 0x5A) {
+        return (char)('A' + (base - 0x41));
+    }
+
+    switch (base) {
+        case 0x40: return CHR_HORIZONTAL_LINE;
+        case 0x41: return 'S';
+        case 0x42: return '|';
+        case 0x43: return CHR_HORIZONTAL_LINE;
+        case 0x44: return CHR_HORIZONTAL_LINE;
+        case 0x45: return CHR_HORIZONTAL_LINE;
+        case 0x46: return CHR_HORIZONTAL_LINE;
+        case 0x47: return '|';
+        case 0x48: return '|';
+        case 0x49: return CHR_ROUNDED_UPPER_RIGHT;
+        case 0x4A: return CHR_ROUNDED_LOWER_LEFT;
+        case 0x4B: return CHR_ROUNDED_LOWER_RIGHT;
+        case 0x4C: return CHR_SOLID_BAR_LOWER_7;
+        case 0x4D: return '\\';
+        case 0x4E: return '/';
+        case 0x4F: return CHR_SOLID_BAR_UPPER_7;
+        case 0x50: return CHR_SOLID_BAR_UPPER_7;
+        case 0x51: return '*';
+        case 0x52: return CHR_HORIZONTAL_LINE;
+        case 0x53: return 'H';
+        case 0x54: return '|';
+        case 0x55: return CHR_ROUNDED_UPPER_LEFT;
+        case 0x56: return 'X';
+        case 0x57: return 'O';
+        case 0x58: return 'C';
+        case 0x59: return '|';
+        case 0x5A: return CHR_DIAMOND;
+        case 0x5B: return '+';
+        case 0x5C: return '#';
+        case 0x5D: return CHR_VERTICAL_LINE;
+        case 0x5E: return 'P';
+        case 0x5F: return '^';
+        default:   return '.';
+    }
+}
+
+static bool monitor_ascii_key_to_byte(int key, uint8_t *out)
+{
+    if (!out || key < 32 || key >= 127) {
+        return false;
+    }
+    *out = (uint8_t)key;
+    return true;
+}
+
+static bool monitor_screen_key_to_code(int key, uint8_t screen_charset, uint8_t *out)
+{
+    uint8_t code;
+
+    if (!out || key < 32 || key >= 127) {
+        return false;
+    }
+    code = monitor_screen_code_for_char((char)key, screen_charset);
+    if (code == 0xFF) {
+        return false;
+    }
+    *out = code;
+    return true;
+}
+
+static void monitor_format_text_row_impl(uint16_t address, const uint8_t *bytes, int count,
+                                         bool screen_codes, uint8_t screen_charset, char *out)
+{
+    memset(out, ' ', MONITOR_TEXT_ROW_CHARS);
+    dump_hex_word(out, 0, address);
+    out[4] = ' ';
+    for (int i = 0; i < count; i++) {
+        out[5 + i] = screen_codes ?
+            monitor_screen_display_byte(bytes[i], screen_charset) :
+            monitor_ascii_display_byte(bytes[i]);
+    }
+    out[MONITOR_TEXT_ROW_CHARS] = 0;
 }
 
 static void draw_padded(Window *window, int y, const char *text, int len)
@@ -634,6 +751,26 @@ static uint16_t row_span_for_view(MachineMonitorView view,
 
 }
 
+uint8_t monitor_screen_code_for_char(char c, uint8_t screen_charset)
+{
+    screen_charset = (screen_charset == MONITOR_SCREEN_CHARSET_LOWER_UPPER) ?
+        MONITOR_SCREEN_CHARSET_LOWER_UPPER :
+        MONITOR_SCREEN_CHARSET_UPPER_GRAPHICS;
+
+    if (c == '@') return 0x00;
+    if (c == ' ') return 0x20;
+    if (c >= '0' && c <= '9') return (uint8_t)c;
+    if (c >= '!' && c <= '?') return (uint8_t)c;
+    if (c >= 'a' && c <= 'z') return (uint8_t)(c - 'a' + 1);
+    if (c >= 'A' && c <= 'Z') {
+        if (screen_charset == MONITOR_SCREEN_CHARSET_LOWER_UPPER) {
+            return (uint8_t)c;
+        }
+        return (uint8_t)(c - 'A' + 1);
+    }
+    return 0xFF;
+}
+
 void monitor_format_status_line(char *line, uint8_t port01, uint8_t vic_bank)
 {
     format_status_line_impl(line, port01, vic_bank);
@@ -661,6 +798,7 @@ void monitor_reset_saved_state(void)
     monitor_saved_state.base_addr = 0;
     monitor_saved_state.disasm_offset = 0;
     monitor_saved_state.illegal_enabled = false;
+    monitor_saved_state.screen_charset = MONITOR_SCREEN_CHARSET_UPPER_GRAPHICS;
     monitor_saved_state.cpu_port = 0x07;
 
     monitor_last_load_use_prg = true;
@@ -712,7 +850,7 @@ void monitor_format_hex_row(uint16_t address, const uint8_t *bytes, char *out)
     dump_hex_word(out, 0, address);
     for (i = 0; i < MONITOR_HEX_BYTES_PER_ROW; i++) {
         dump_hex_byte(out, 5 + (3 * i), bytes[i]);
-        out[29 + i] = ascii_byte(bytes[i]);
+        out[29 + i] = monitor_ascii_display_byte(bytes[i]);
     }
     out[MONITOR_HEX_ROW_CHARS] = 0;
 }
@@ -732,15 +870,8 @@ static void monitor_format_hex16_row(uint16_t address, const uint8_t *bytes, cha
 
 void monitor_format_text_row(uint16_t address, const uint8_t *bytes, int count, bool screen_codes, char *out)
 {
-    int i;
-
-    memset(out, ' ', MONITOR_TEXT_ROW_CHARS);
-    dump_hex_word(out, 0, address);
-    out[4] = ' ';
-    for (i = 0; i < count; i++) {
-        out[5 + i] = screen_codes ? screen_code_char(bytes[i]) : ascii_byte(bytes[i]);
-    }
-    out[MONITOR_TEXT_ROW_CHARS] = 0;
+    monitor_format_text_row_impl(address, bytes, count, screen_codes,
+                                 MONITOR_SCREEN_CHARSET_UPPER_GRAPHICS, out);
 }
 
 MonitorError monitor_parse_address(const char *text, uint16_t *address)
@@ -1266,8 +1397,10 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
         state.base_addr = 0x0801;
         state.disasm_offset = 0;
         state.illegal_enabled = false;
+        state.screen_charset = MONITOR_SCREEN_CHARSET_UPPER_GRAPHICS;
         state.cpu_port = 0x07;
     }
+    state.screen_charset = normalize_screen_charset(state.screen_charset);
     last_load_use_prg = monitor_last_load_use_prg;
     last_load_start = monitor_last_load_start;
     last_load_offset = monitor_last_load_offset;
@@ -1691,7 +1824,7 @@ void MachineMonitor :: number_picker_update_preview_from_buffer(void)
         return;
     }
     if (!monitor_number_parse_buffer(number_selected, number_edit_buffer, number_edit_length,
-                                     &value, &word)) {
+                                     &value, &word, state.screen_charset)) {
         return;
     }
     if (number_target_locked) {
@@ -1994,9 +2127,6 @@ int MachineMonitor :: number_picker_handle_key(int key)
     uint16_t value;
     bool word;
 
-    if (typed >= 'a' && typed <= 'z' && number_selected == MONITOR_NUMBER_ROW_SCREEN) {
-        typed = (char)(typed - 'a' + 'A');
-    }
     if (number_edit_length >= monitor_number_row_max_input[number_selected]) {
         return 0;
     }
@@ -2004,7 +2134,8 @@ int MachineMonitor :: number_picker_handle_key(int key)
     memcpy(candidate, number_edit_buffer, (size_t)number_edit_length);
     candidate[number_edit_length] = typed;
     candidate[number_edit_length + 1] = 0;
-    if (!monitor_number_parse_buffer(number_selected, candidate, number_edit_length + 1, &value, &word)) {
+    if (!monitor_number_parse_buffer(number_selected, candidate, number_edit_length + 1,
+                                     &value, &word, state.screen_charset)) {
         return 0;
     }
     if (number_target_locked && number_target_bytes == 1 && word) {
@@ -2141,9 +2272,210 @@ void MachineMonitor :: page_move(int lines)
     }
 }
 
-bool MachineMonitor :: prompt_command(const char *title, char *buffer, int max_len, bool template_mode)
+bool MachineMonitor :: prompt_command(const char *title, char *buffer, int max_len,
+                                      bool template_mode, bool uppercase)
 {
-    return get_ui()->string_box(title, buffer, max_len, template_mode, true) > 0;
+    return get_ui()->string_box(title, buffer, max_len, template_mode, uppercase) > 0;
+}
+
+bool MachineMonitor :: prompt_hunt_command(const char *title, char *buffer, int max_len)
+{
+    UserInterface *ui = get_ui();
+    Screen *screen = ui ? ui->get_screen() : NULL;
+    Keyboard *keyboard = ui ? ui->get_keyboard() : NULL;
+    Window *window = NULL;
+    int message_width = strlen(title);
+    int window_width = message_width;
+    int max_chars;
+    int x1;
+    int y1;
+    int x_m;
+    int len;
+    int cur;
+    int edit_offs = 0;
+    int key;
+    int i;
+    bool confirmed = false;
+    bool done = false;
+
+    if (!ui || !screen || !keyboard) {
+        return false;
+    }
+    if (max_len > message_width) {
+        window_width = max_len;
+    }
+    window_width += 3;
+    if (window_width >= screen->get_size_x()) {
+        window_width = screen->get_size_x();
+    }
+    max_chars = window_width - 2;
+    x1 = (screen->get_size_x() - window_width) / 2;
+    y1 = (screen->get_size_y() - 5) / 2;
+    x_m = (window_width - message_width) / 2;
+
+    cur = strlen(buffer);
+    if (cur > max_len) {
+        buffer[max_len] = 0;
+        cur = max_len;
+    }
+    len = cur;
+    if (len > (max_chars - 1)) {
+        edit_offs = 1 + len - max_chars;
+    }
+
+    screen->backup();
+    window = new Window(screen, x1, y1, window_width, 5);
+    window->clear();
+    window->draw_border();
+    window->move_cursor(x_m, 0);
+    window->output(title);
+    window->move_cursor(0, 2);
+    window->output_length(buffer + edit_offs, (len < max_chars) ? len : max_chars);
+    window->move_cursor(cur - edit_offs, 2);
+
+    keyboard->wait_free();
+    screen->cursor_visible(1);
+    while (!done && (!ui->host || ui->host->exists())) {
+        key = keyboard->getch();
+        if (key == -1) {
+            continue;
+        }
+        if (key == -2) {
+            done = true;
+            continue;
+        }
+
+        switch (key) {
+            case KEY_RETURN:
+                buffer[len] = 0;
+                confirmed = true;
+                done = true;
+                break;
+            case KEY_LEFT:
+                if (cur > 0) {
+                    cur--;
+                    if (cur - 5 < edit_offs) {
+                        edit_offs -= 5;
+                        if (edit_offs < 0) {
+                            edit_offs = 0;
+                        }
+                        window->move_cursor(0, 2);
+                        window->output_length(buffer + edit_offs, max_chars);
+                    }
+                    window->move_cursor(cur - edit_offs, 2);
+                }
+                break;
+            case KEY_RIGHT:
+                if (cur < len) {
+                    cur++;
+                    if ((cur - edit_offs) > (max_chars - 1)) {
+                        edit_offs++;
+                        window->move_cursor(0, 2);
+                        window->output_length(buffer + edit_offs, max_chars);
+                    }
+                    window->move_cursor(cur - edit_offs, 2);
+                }
+                break;
+            case KEY_BACK:
+                if (cur > 0) {
+                    cur--;
+                    len--;
+                    for (i = cur; i < len; i++) {
+                        buffer[i] = buffer[i + 1];
+                    }
+                    buffer[i] = 0;
+                    if (cur - 5 < edit_offs) {
+                        edit_offs -= 5;
+                        if (edit_offs < 0) {
+                            edit_offs = 0;
+                        }
+                        window->move_cursor(0, 2);
+                        window->output_length(buffer + edit_offs, max_chars);
+                        window->move_cursor(cur - edit_offs, 2);
+                    } else {
+                        window->move_cursor(cur - edit_offs, 2);
+                        window->output_length(buffer + cur, max_chars + edit_offs - cur);
+                        window->move_cursor(cur - edit_offs, 2);
+                    }
+                }
+                break;
+            case KEY_CLEAR:
+                buffer[0] = 0;
+                len = 0;
+                cur = 0;
+                edit_offs = 0;
+                window->move_cursor(0, 2);
+                window->output_length(buffer, max_chars);
+                window->move_cursor(0, 2);
+                break;
+            case KEY_DELETE:
+                if (cur < len) {
+                    len--;
+                    for (i = cur; i < len; i++) {
+                        buffer[i] = buffer[i + 1];
+                    }
+                    buffer[i] = 0;
+                    window->move_cursor(cur - edit_offs, 2);
+                    window->output_length(buffer + cur, max_chars + edit_offs - cur);
+                    window->move_cursor(cur - edit_offs, 2);
+                }
+                break;
+            case KEY_HOME:
+            case KEY_UP:
+                cur = 0;
+                if (edit_offs) {
+                    edit_offs = 0;
+                    window->move_cursor(0, 2);
+                    window->output_length(buffer, max_chars);
+                }
+                window->move_cursor(0, 2);
+                break;
+            case KEY_DOWN:
+            case KEY_END:
+                if (cur != len) {
+                    cur = len;
+                    if (cur >= (max_chars - 1)) {
+                        edit_offs = 1 + cur - max_chars;
+                        window->move_cursor(0, 2);
+                        window->output_length(buffer + edit_offs, max_chars);
+                    }
+                    window->move_cursor(cur - edit_offs, 2);
+                }
+                break;
+            case KEY_BREAK:
+            case KEY_ESCAPE:
+                done = true;
+                break;
+            default:
+                if ((key < 32) || (key >= 127)) {
+                    break;
+                }
+                key = monitor_hunt_prompt_transform_key(buffer, cur, key);
+                if (len < max_len) {
+                    for (i = len; i >= cur; i--) {
+                        buffer[i + 1] = buffer[i];
+                    }
+                    buffer[cur] = (char)key;
+                    cur++;
+                    len++;
+                    if (cur - edit_offs < max_chars) {
+                        window->output_length(buffer + cur - 1, max_chars + edit_offs - cur);
+                        window->move_cursor(cur - edit_offs, 2);
+                    } else {
+                        edit_offs++;
+                        window->move_cursor(0, 2);
+                        window->output_length(buffer + edit_offs, max_chars);
+                        window->move_cursor(cur - edit_offs, 2);
+                    }
+                }
+                break;
+        }
+    }
+
+    screen->cursor_visible(0);
+    window->getScreen()->restore();
+    delete window;
+    return confirmed;
 }
 
 void MachineMonitor :: commit_pending_hex_nibble(void)
@@ -2656,6 +2988,10 @@ void MachineMonitor :: draw_header()
         if (state.view == MONITOR_VIEW_BINARY) {
             Cursor cursor = active_cursor();
             sprintf(line, "MONITOR %s $%04X/%u", view_name, cursor.address, (unsigned)cursor.bit_index);
+        } else if (state.view == MONITOR_VIEW_SCREEN) {
+            sprintf(line, "MONITOR %s %s $%04X", view_name,
+                    (state.screen_charset == MONITOR_SCREEN_CHARSET_LOWER_UPPER) ? "L/U" : "U/G",
+                    state.current_addr);
         } else {
             sprintf(line, "MONITOR %s $%04X", view_name, state.current_addr);
         }
@@ -2885,11 +3221,12 @@ void MachineMonitor :: draw_number_picker()
     }
     bits[display_word ? 16 : 8] = 0;
 
-    ascii_text[0] = display_word ? ascii_byte(high) : ascii_byte(low);
-    ascii_text[1] = display_word ? ascii_byte(low) : 0;
+    ascii_text[0] = display_word ? monitor_ascii_display_byte(high) : monitor_ascii_display_byte(low);
+    ascii_text[1] = display_word ? monitor_ascii_display_byte(low) : 0;
     ascii_text[display_word ? 2 : 1] = 0;
-    screen_text[0] = display_word ? monitor_number_screen_display_char(high) : monitor_number_screen_display_char(low);
-    screen_text[1] = display_word ? monitor_number_screen_display_char(low) : 0;
+    screen_text[0] = display_word ? monitor_number_screen_display_char(high, state.screen_charset) :
+                                    monitor_number_screen_display_char(low, state.screen_charset);
+    screen_text[1] = display_word ? monitor_number_screen_display_char(low, state.screen_charset) : 0;
     screen_text[display_word ? 2 : 1] = 0;
 
     sprintf(popup_lines[0], "MONITOR NUM $%04X %s", target_addr, display_word ? "WORD" : "BYTE");
@@ -2992,7 +3329,8 @@ void MachineMonitor :: draw_text_row(int y, uint16_t addr, const uint8_t *bytes,
     char line[MONITOR_TEXT_ROW_CHARS + 1];
     bool mask[MONITOR_TEXT_ROW_CHARS];
 
-    monitor_format_text_row(addr, bytes, MONITOR_TEXT_BYTES_PER_ROW, screen_codes, line);
+    monitor_format_text_row_impl(addr, bytes, MONITOR_TEXT_BYTES_PER_ROW, screen_codes,
+                                 state.screen_charset, line);
     memset(mask, 0, sizeof(mask));
     for (int i = 0; i < MONITOR_TEXT_BYTES_PER_ROW; i++) {
         if (range_contains((uint16_t)(addr + i))) {
@@ -3587,11 +3925,7 @@ void MachineMonitor :: apply_ascii_char(char value)
 
 void MachineMonitor :: apply_screen_char(char value)
 {
-    uint8_t code = monitor_screen_code_for_char(value);
-    if (code == 0xFF) {
-        return;
-    }
-    canonical_write(state.current_addr, code);
+    canonical_write(state.current_addr, (uint8_t)value);
     move_current(1);
 }
 
@@ -3986,6 +4320,7 @@ void MachineMonitor :: deinit(void)
     monitor_saved_state.base_addr = state.base_addr;
     monitor_saved_state.disasm_offset = 0;
     monitor_saved_state.illegal_enabled = state.illegal_enabled;
+    monitor_saved_state.screen_charset = normalize_screen_charset(state.screen_charset);
     monitor_saved_state.cpu_port = state.cpu_port;
     monitor_saved_state_valid = true;
     monitor_last_load_use_prg = last_load_use_prg;
@@ -4177,19 +4512,19 @@ int MachineMonitor :: handle_key(int key)
             return 0;
         }
         if (state.view == MONITOR_VIEW_ASCII) {
-            if (key >= 32 && key < 127) {
-                char ch = (char)key;
-                if (ch >= 'a' && ch <= 'z') ch = (char)(ch - 'a' + 'A');
-                apply_ascii_char(ch);
+            uint8_t value;
+
+            if (monitor_ascii_key_to_byte(key, &value)) {
+                apply_ascii_char((char)value);
                 draw();
                 return 0;
             }
         }
         if (state.view == MONITOR_VIEW_SCREEN) {
-            if (key >= 32 && key < 127) {
-                char ch = (char)key;
-                if (ch >= 'a' && ch <= 'z') ch = (char)(ch - 'a' + 'A');
-                apply_screen_char(ch);
+            uint8_t value;
+
+            if (monitor_screen_key_to_code(key, state.screen_charset, &value)) {
+                apply_screen_char((char)value);
                 draw();
                 return 0;
             }
@@ -4469,8 +4804,12 @@ int MachineMonitor :: handle_key(int key)
         case 'u': case 'U':
             if (state.view == MONITOR_VIEW_ASM) {
                 state.illegal_enabled = !state.illegal_enabled;
+            } else if (state.view == MONITOR_VIEW_SCREEN) {
+                state.screen_charset = (state.screen_charset == MONITOR_SCREEN_CHARSET_LOWER_UPPER) ?
+                    MONITOR_SCREEN_CHARSET_UPPER_GRAPHICS :
+                    MONITOR_SCREEN_CHARSET_LOWER_UPPER;
             } else {
-                get_ui()->popup("UNDOC OP ONLY IN ASSEMBLY", BUTTON_OK);
+                get_ui()->popup("UNDOC IN ASM, CASE IN SCR", BUTTON_OK);
                 redraw_full();
             }
             break;
@@ -4551,7 +4890,7 @@ int MachineMonitor :: handle_key(int key)
         }
         case 'h': case 'H':
             strcpy(buffer, "0000-FFFF, ");
-            if (prompt_command("Hunt AAAA-BBBB,...", buffer, sizeof(buffer) - 1, false)) {
+            if (prompt_hunt_command("Hunt AAAA-BBBB,...", buffer, sizeof(buffer) - 1)) {
                 error = monitor_parse_hunt(buffer, &start, &end, needle, &needle_len);
                 if (error == MONITOR_OK) {
                     int found = monitor_hunt_collect(backend, start, end, needle, needle_len,

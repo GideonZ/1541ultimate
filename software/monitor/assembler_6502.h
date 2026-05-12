@@ -53,11 +53,6 @@ bool monitor_lookup_opcode(const char *mnemonic, AsmAddrMode mode,
 int monitor_collect_opcode_candidates(const char *prefix, bool illegal_enabled,
                                       uint8_t *opcode_out, int max_candidates);
 
-// Convert a printable host character (ASCII subset of PETSCII) to its C64
-// screen-code representation. Returns the screen code, or 0xFF for chars
-// that have no useful screen code mapping.
-uint8_t monitor_screen_code_for_char(char c);
-
 // For HEX-host testing: reset assembler caches (no-op outside tests).
 void monitor_assembler_reset_caches(void);
 

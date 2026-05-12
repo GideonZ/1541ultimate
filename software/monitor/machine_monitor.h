@@ -22,6 +22,11 @@ enum MachineMonitorView {
     MONITOR_VIEW_BINARY
 };
 
+enum MonitorScreenCharset {
+    MONITOR_SCREEN_CHARSET_UPPER_GRAPHICS = 0,
+    MONITOR_SCREEN_CHARSET_LOWER_UPPER = 1
+};
+
 enum {
     MONITOR_MEMORY_MIN_BYTES_PER_ROW = 8,
     MONITOR_MEMORY_MAX_BYTES_PER_ROW = 16,
@@ -53,6 +58,7 @@ struct MachineMonitorState
     uint16_t base_addr;
     uint8_t disasm_offset;
     bool illegal_enabled;
+    uint8_t screen_charset;
     uint8_t cpu_port;
 };
 
@@ -81,6 +87,11 @@ MonitorError monitor_parse_fill(const char *text, uint16_t *start, uint16_t *end
 MonitorError monitor_parse_transfer(const char *text, uint16_t *start, uint16_t *end, uint16_t *dest);
 MonitorError monitor_parse_compare(const char *text, uint16_t *start, uint16_t *end, uint16_t *dest);
 MonitorError monitor_parse_hunt(const char *text, uint16_t *start, uint16_t *end, uint8_t *needle, int *needle_len);
+
+// Convert a printable host character to its monitor screen-code representation.
+// Returns the screen code, or 0xFF for chars that have no useful mapping.
+uint8_t monitor_screen_code_for_char(char c,
+                                     uint8_t screen_charset = MONITOR_SCREEN_CHARSET_UPPER_GRAPHICS);
 
 void monitor_fill_memory(MemoryBackend *backend, uint16_t start, uint16_t end, uint8_t value);
 void monitor_transfer_memory(MemoryBackend *backend, uint16_t start, uint16_t end, uint16_t dest);
@@ -278,7 +289,9 @@ class MachineMonitor : public UIObject
     void number_picker_commit(void);
     bool number_picker_copy_preview(void);
     int number_picker_handle_key(int key);
-    bool prompt_command(const char *title, char *buffer, int max_len, bool template_mode = false);
+    bool prompt_command(const char *title, char *buffer, int max_len,
+                        bool template_mode = false, bool uppercase = true);
+    bool prompt_hunt_command(const char *title, char *buffer, int max_len);
     void toggle_help();
     void dismiss_bookmark_status(void);
     bool update_bookmark_status(void);

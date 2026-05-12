@@ -52,6 +52,7 @@ KEYS = {
     "F3": b"\x1b[13~",
     "RUNSTOP": b"\x11",
     "CTRL_B": b"\x02",
+    "CTRL_E": b"\x05",
     "CTRL_O": b"\x0f",
     "CBM_B": b"\x1bb",
     "CBM_1": b"\x1b1",
@@ -587,6 +588,29 @@ def parse_memory_row(snapshot: Snapshot, address: int, line_index: Optional[int]
     )
 
 
+def parse_text_row(snapshot: Snapshot, address: int, line_index: Optional[int] = None) -> str:
+    target = f"{address:04X} "
+    candidate_indexes = [line_index] if line_index is not None else range(len(snapshot.lines))
+
+    for index in candidate_indexes:
+        if index is None:
+            continue
+        actual = snapshot.line(index)
+        if actual.startswith("|"):
+            actual = actual[1:]
+        if actual.startswith(target):
+            if len(actual) < 37:
+                raise Failure(
+                    f"Text row at ${address:04X} after {snapshot.last_command!r} was too short:\n{snapshot.text()}"
+                )
+            return actual[5:37]
+
+    raise Failure(
+        f"Unable to parse monitor text row at ${address:04X} after {snapshot.last_command!r}:\n"
+        f"{snapshot.text()}"
+    )
+
+
 def ensure_status(session: MonitorSession, expected: str) -> Snapshot:
     screen = session.capture()
     for _ in range(8):
@@ -617,6 +641,24 @@ def ensure_view(session: MonitorSession, expected: str) -> Snapshot:
     raise Failure(f"Unable to reach expected monitor view {expected!r}; screen was\n{screen.text()}")
 
 
+def ensure_screen_charset(session: MonitorSession, expected: str) -> Snapshot:
+    if expected not in ("U/G", "L/U"):
+        raise Failure(f"Unsupported screen charset request {expected!r}")
+
+    screen = ensure_view(session, "SCR ")
+    header_row = screen.find_line_containing("MONITOR SCR")
+    if expected in screen.line(header_row):
+        return screen
+
+    screen = session.send_char("U")
+    header_row = screen.find_line_containing("MONITOR SCR")
+    if expected not in screen.line(header_row):
+        raise Failure(
+            f"Unable to switch Screen view to {expected}; header was {screen.line(header_row)!r}"
+        )
+    return screen
+
+
 def ensure_hex_width(session: MonitorSession, expected_width: int) -> Snapshot:
     if expected_width not in (8, 16):
         raise Failure(f"Unsupported hex width request {expected_width}")
@@ -634,6 +676,93 @@ def ensure_hex_width(session: MonitorSession, expected_width: int) -> Snapshot:
     if (expected_width == 16) != is_width_16:
         screen = session.send_char("W")
     return screen
+
+
+def run_character_mapping_test(session: MonitorSession, rest_host: str) -> None:
+    ascii_view_addr = 0x3200
+    ascii_edit_addr = 0x3220
+    screen_view_addr = 0x3240
+    screen_edit_ug_addr = 0x3260
+    screen_edit_lu_addr = 0x3280
+
+    write_rest_memory(rest_host, ascii_view_addr, bytes((0x41, 0x61, 0x20, 0x7E, 0x1F, 0x80) + (0x20,) * 26))
+    write_rest_memory(rest_host, ascii_edit_addr, b"    ")
+    write_rest_memory(rest_host, screen_view_addr, bytes((0x01, 0x1A, 0x20, 0x23, 0x41, 0x42, 0x80) + (0x20,) * 25))
+    write_rest_memory(rest_host, screen_edit_ug_addr, b"    ")
+    write_rest_memory(rest_host, screen_edit_lu_addr, b"    ")
+
+    screen = ensure_view(session, "ASC ")
+    screen = session.goto(f"{ascii_view_addr:04X}")
+    ascii_payload = parse_text_row(screen, ascii_view_addr)
+    if ascii_payload[:6] != "Aa ~..":
+        raise Failure(
+            f"ASCII view mapping mismatch at ${ascii_view_addr:04X}: expected 'Aa ~..', got {ascii_payload[:6]!r}"
+        )
+
+    screen = session.goto(f"{ascii_edit_addr:04X}")
+    screen = session.send_char("E")
+    for ch in "aA# ":
+        screen = session.send_char(ch)
+    screen = session.send_key("CTRL_E")
+    if read_rest_memory(rest_host, ascii_edit_addr, 4) != b"aA# ":
+        raise Failure(
+            f"ASCII edit mapping mismatch at ${ascii_edit_addr:04X}: "
+            f"got {read_rest_memory(rest_host, ascii_edit_addr, 4).hex().upper()}"
+        )
+
+    screen = ensure_screen_charset(session, "U/G")
+    screen = session.goto(f"{screen_view_addr:04X}")
+    header_row = screen.find_line_containing("MONITOR SCR")
+    if "U/G" not in screen.line(header_row):
+        raise Failure(f"Screen U/G header mismatch: {screen.line(header_row)!r}")
+    screen_payload = parse_text_row(screen, screen_view_addr)
+    if screen_payload[:7] != "AZ #S|@":
+        raise Failure(
+            f"Screen U/G view mapping mismatch at ${screen_view_addr:04X}: expected 'AZ #S|@', got {screen_payload[:7]!r}"
+        )
+
+    screen = ensure_screen_charset(session, "L/U")
+    screen = session.goto(f"{screen_view_addr:04X}")
+    header_row = screen.find_line_containing("MONITOR SCR")
+    if "L/U" not in screen.line(header_row):
+        raise Failure(f"Screen L/U header mismatch: {screen.line(header_row)!r}")
+    screen_payload = parse_text_row(screen, screen_view_addr)
+    if screen_payload[:7] != "az #AB@":
+        raise Failure(
+            f"Screen L/U view mapping mismatch at ${screen_view_addr:04X}: expected 'az #AB@', got {screen_payload[:7]!r}"
+        )
+
+    screen = ensure_view(session, "ASC ")
+    screen = session.goto(f"{ascii_view_addr:04X}")
+    ascii_payload = parse_text_row(screen, ascii_view_addr)
+    if ascii_payload[:6] != "Aa ~..":
+        raise Failure(
+            f"ASCII view must stay literal after Screen charset toggles; got {ascii_payload[:6]!r}"
+        )
+
+    screen = ensure_screen_charset(session, "U/G")
+    screen = session.goto(f"{screen_edit_ug_addr:04X}")
+    screen = session.send_char("E")
+    for ch in "aA# ":
+        screen = session.send_char(ch)
+    screen = session.send_key("CTRL_E")
+    if read_rest_memory(rest_host, screen_edit_ug_addr, 4) != bytes((0x01, 0x01, 0x23, 0x20)):
+        raise Failure(
+            f"Screen U/G edit mapping mismatch at ${screen_edit_ug_addr:04X}: "
+            f"got {read_rest_memory(rest_host, screen_edit_ug_addr, 4).hex().upper()}"
+        )
+
+    screen = ensure_screen_charset(session, "L/U")
+    screen = session.goto(f"{screen_edit_lu_addr:04X}")
+    screen = session.send_char("E")
+    for ch in "aA# ":
+        screen = session.send_char(ch)
+    screen = session.send_key("CTRL_E")
+    if read_rest_memory(rest_host, screen_edit_lu_addr, 4) != bytes((0x01, 0x41, 0x23, 0x20)):
+        raise Failure(
+            f"Screen L/U edit mapping mismatch at ${screen_edit_lu_addr:04X}: "
+            f"got {read_rest_memory(rest_host, screen_edit_lu_addr, 4).hex().upper()}"
+        )
 
 
 def run_go_repeat_test(session: MonitorSession, rest_host: str) -> None:
@@ -924,6 +1053,9 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
         screen = session.send_key("DOWN")
         assert_highlight(screen, [(6, last_content_row)], "DOWN past last row")
         assert_contains(screen, first_content_row, snapshots["ascii_scrolled_top_row"]["contains"]["4"])
+
+    with check("ASCII and Screen mapping semantics"):
+        run_character_mapping_test(session, rest_host)
 
     with check("HEX edit writes both nibbles"):
         session.goto("C000")

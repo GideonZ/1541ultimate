@@ -347,12 +347,16 @@ static int test_parsers_and_formatters(void)
     state.base_addr = 0;
     state.disasm_offset = 2;
     state.illegal_enabled = false;
+    state.screen_charset = MONITOR_SCREEN_CHARSET_UPPER_GRAPHICS;
     monitor_apply_go(&state, 0x1235);
     if (expect(state.current_addr == 0x1235 && state.base_addr == 0x1230 && state.disasm_offset == 0, "Goto state alignment failed.")) return 1;
 
     if (expect(monitor_parse_address("XYZ", &value) == MONITOR_ADDR, "Address validator failure.")) return 1;
     if (expect(monitor_parse_fill("C100-C000,00", &start, &end, &byte) == MONITOR_RANGE, "Range validator failure.")) return 1;
     if (expect(monitor_parse_hunt("C100-C200, ", &start, &end, needle, &needle_len) == MONITOR_SYNTAX, "Hunt validator failure.")) return 1;
+    if (expect(monitor_parse_hunt("C100-C200,\"Hello\"", &start, &end, needle, &needle_len) == MONITOR_OK &&
+               needle_len == 5 && memcmp(needle, "Hello", 5) == 0,
+               "Hunt quoted ASCII must preserve mixed-case bytes.")) return 1;
     if (expect(monitor_parse_transfer("C000-C010,C100", &start, &end, &dest) == MONITOR_OK, "Transfer parser failed.")) return 1;
     if (expect(start == 0xC000 && end == 0xC010 && dest == 0xC100, "Transfer parser values failed.")) return 1;
     if (expect(monitor_parse_transfer("C000-C000,C100", &start, &end, &dest) == MONITOR_RANGE,
@@ -377,6 +381,15 @@ static int test_parsers_and_formatters(void)
         if (expect(strcmp(text_row, "1000 ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEF") == 0, "ASCII row format mismatch.")) return 1;
         monitor_format_text_row(0x1000, ascii_bytes, MONITOR_TEXT_BYTES_PER_ROW, true, text_row);
         if (expect((int)strlen(text_row) == MONITOR_TEXT_ROW_CHARS, "Screen-code row width mismatch.")) return 1;
+    }
+
+    {
+        const uint8_t printable_ascii[MONITOR_TEXT_BYTES_PER_ROW] = {
+            0x41, 0x61, 0x20, 0x7E, 0x1F, 0x80
+        };
+        monitor_format_text_row(0x1100, printable_ascii, 6, false, text_row);
+        if (expect(strncmp(text_row, "1100 Aa ~..", 11) == 0,
+                   "ASCII row formatter must preserve case and dot non-printables.")) return 1;
     }
 
     {
@@ -408,8 +421,8 @@ static int test_parsers_and_formatters(void)
         if (expect((unsigned char)text_row[25] == CHR_DIAMOND, "Screen code $5A should map to the diamond glyph.")) return 1;
         if (expect(text_row[26] == '+' && (unsigned char)text_row[27] == CHR_VERTICAL_LINE,
                    "Screen-code cross/vertical-line mapping is incorrect.")) return 1;
-        if (expect(text_row[28] == ' ' && text_row[29] == ' ',
-                   "Blank screen-code range $60-$7F should render as spaces.")) return 1;
+        if (expect(text_row[28] == '.' && text_row[29] == '.',
+               "Non-space screen-code range $60-$7F should render as visible placeholders.")) return 1;
         if (expect(text_row[30] == '@' && text_row[31] == 'A' && text_row[32] == 'Z' && text_row[33] == '[',
                    "Reverse screen codes should map to the same visible glyph positions as their base codes.")) return 1;
         if (expect(text_row[34] == '#' && text_row[35] == ']' && text_row[36] == '^',
@@ -965,7 +978,7 @@ static int test_monitor_interaction(void)
     static const char *expected_help_lines[] = {
         "",
         "M Memory    I ASCII     V Screen",
-        "A Assembly  B Binary    U Undoc Op",
+        "A Assembly  B Binary    U Undoc/Case",
         "J Jump      G Go",
         "",
         "E Edit      F Fill      T Transfer",
@@ -1670,6 +1683,16 @@ static int test_screen_code_reverse(void)
     if (expect(monitor_screen_code_for_char(' ') == 0x20, "screen-code ' ' must be 0x20")) return 1;
     if (expect(monitor_screen_code_for_char('1') == 0x31, "screen-code '1' must be 0x31")) return 1;
     if (expect(monitor_screen_code_for_char('a') == 0x01, "lowercase 'a' must map to uppercase 'A' screen code")) return 1;
+    if (expect(monitor_screen_code_for_char('A', MONITOR_SCREEN_CHARSET_LOWER_UPPER) == 0x41,
+               "L/U screen-code 'A' must be 0x41")) return 1;
+    if (expect(monitor_screen_code_for_char('Z', MONITOR_SCREEN_CHARSET_LOWER_UPPER) == 0x5A,
+               "L/U screen-code 'Z' must be 0x5A")) return 1;
+    if (expect(monitor_screen_code_for_char('#', MONITOR_SCREEN_CHARSET_LOWER_UPPER) == 0x23,
+               "Screen-code '#' must remain literal in L/U mode")) return 1;
+    if (expect(monitor_screen_code_for_char('<', MONITOR_SCREEN_CHARSET_LOWER_UPPER) == 0x3C,
+               "Screen-code '<' must remain literal in L/U mode")) return 1;
+    if (expect(monitor_screen_code_for_char('[', MONITOR_SCREEN_CHARSET_UPPER_GRAPHICS) == 0xFF,
+               "Display aliases must not be accepted as screen-code input.")) return 1;
     return 0;
 }
 
@@ -1785,21 +1808,187 @@ static int test_logical_delete_per_view(void)
 
 static int test_scr_edit_writes_screen_code(void)
 {
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        monitor_reset_saved_state();
+        backend.write(0x0400, 0x00);
+        const int keys[] = { 'J', 'V', 'E', 'A', KEY_BREAK };
+        FakeKeyboard kb(keys, 5);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 5; i++) {
+            (void)mon.poll(0);
+        }
+        if (expect(backend.read(0x0400) == 0x01, "SCR edit: typing 'A' must write screen code 0x01 in U/G")) return 1;
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        monitor_reset_saved_state();
+        backend.write(0x0400, 0x00);
+        const int keys[] = { 'J', 'V', 'U', 'E', 'A', KEY_BREAK };
+        FakeKeyboard kb(keys, 6);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 6; i++) {
+            (void)mon.poll(0);
+        }
+        if (expect(backend.read(0x0400) == 0x41, "SCR edit: typing 'A' must write screen code 0x41 in L/U")) return 1;
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        monitor_reset_saved_state();
+        backend.write(0x0400, 0x00);
+        backend.write(0x0401, 0x00);
+        backend.write(0x0402, 0x00);
+        backend.write(0x0403, 0x00);
+        const int keys[] = { 'J', 'V', 'E', 'a', 'A', '#', '<', KEY_BREAK };
+        FakeKeyboard kb(keys, 8);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 8; i++) {
+            (void)mon.poll(0);
+        }
+        if (expect(backend.read(0x0400) == 0x01, "SCR edit: typing 'a' must write screen code 0x01")) return 1;
+        if (expect(backend.read(0x0401) == 0x01, "SCR edit: typing 'A' must write screen code 0x01 in U/G")) return 1;
+        if (expect(backend.read(0x0402) == 0x23, "SCR edit: typing '#' must write literal screen code 0x23")) return 1;
+        if (expect(backend.read(0x0403) == 0x3C, "SCR edit: typing '<' must write literal screen code 0x3C")) return 1;
+    }
+
+    return 0;
+}
+
+static int test_screen_charset_toggle_and_header(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'V', 'U', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Screen charset header test: Screen view switch failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR SCR U/G $0000") == header,
+                   "Screen view header must show U/G by default.")) return 1;
+        if (expect(mon.poll(0) == 0, "Screen charset header test: toggle failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR SCR L/U $0000") == header,
+                   "Screen view header must show L/U after toggle.")) return 1;
+        if (expect(mon.poll(0) == 1, "Screen charset header test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'A', 'U', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        backend.write(0x0000, 0x07);
+        backend.write(0x0001, 0x44);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASM U test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM U test: undocumented toggle failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "Undoc") != NULL,
+                   "ASM U must keep toggling undocumented opcodes.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASM U test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'M', 'U', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.popup_count = 0;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Memory U test: Memory view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Memory U test: popup branch failed.")) return 1;
+        if (expect(ui.popup_count == 1 && strcmp(ui.last_popup, "UNDOC IN ASM, CASE IN SCR") == 0,
+                   "U outside ASM/SCR must show the refined invalid-context popup.")) return 1;
+        if (expect(mon.poll(0) == 1, "Memory U test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_screen_charset_display_and_memory_ascii_pane(void)
+{
     TestUserInterface ui;
     CaptureScreen screen;
     FakeMemoryBackend backend;
-    backend.write(0x0400, 0x00);
-    const int keys[] = { 'J', 'V', 'E', 'A', KEY_BREAK };
-    FakeKeyboard kb(keys, 5);
+    char line[MONITOR_TEXT_ROW_CHARS + 1];
+    char row[MONITOR_HEX_ROW_CHARS + 1];
+    const int keys[] = { 'V', 'U', 'M', KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    backend.write(0x0000, 0x01);
+    backend.write(0x0001, 0x1A);
+    backend.write(0x0002, 0x41);
+    backend.write(0x0003, 0x5A);
+    backend.write(0x0004, 0x20);
+    backend.write(0x0005, 0x61);
+    backend.write(0x0006, 0x80);
+
     ui.screen = &screen;
     ui.keyboard = &kb;
-    ui.set_prompt("0400", 1);
+    monitor_reset_saved_state();
+
     BackendMachineMonitor mon(&ui, &backend);
     mon.init(&screen, &kb);
-    for (int i = 0; i < 5; i++) {
-        (void)mon.poll(0);
-    }
-    if (expect(backend.read(0x0400) == 0x01, "SCR edit: typing 'A' must write screen code 0x01")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Screen display test: Screen view switch failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Screen display test: charset toggle failed.")) return 1;
+    screen.get_slice(1, 4, MONITOR_TEXT_ROW_CHARS, line);
+    if (expect(strncmp(line, "0000 azAZ .@", 12) == 0,
+               "L/U Screen view must show lowercase for $01-$1A, uppercase for $41-$5A, visible placeholders for non-space unmapped codes, and base-glyph rendering for high-bit values.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Screen display test: Memory view switch failed.")) return 1;
+    screen.get_slice(1, 4, MONITOR_HEX_ROW_CHARS, row);
+    if (expect(strcmp(row, "0000 01 1A 41 5A 20 61 80 00 ..AZ a..") == 0,
+               "Memory view ASCII pane must stay literal ASCII and ignore Screen charset mode.")) return 1;
+    if (expect(mon.poll(0) == 1, "Screen display test: exit failed.")) return 1;
+    mon.deinit();
     return 0;
 }
 
@@ -3480,14 +3669,13 @@ static int test_hunt_and_compare_picker_navigation(void)
         FakeMemoryBackend backend;
         char header[39];
         char row[38];
-        const int keys[] = { 'H', KEY_PAGEDOWN, KEY_RETURN, KEY_BREAK };
+        const int keys[] = { 'H', 'D', 'E', KEY_RETURN, KEY_PAGEDOWN, KEY_RETURN, KEY_BREAK };
         FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
         for (uint16_t addr = 0xC000; addr <= 0xC013; addr++) {
             backend.write(addr, 0xDE);
         }
         ui.screen = &screen;
         ui.keyboard = &kb;
-        ui.set_prompt("C000-C013,DE", 1);
         monitor_reset_saved_state();
 
         BackendMachineMonitor mon(&ui, &backend);
@@ -3536,6 +3724,67 @@ static int test_hunt_and_compare_picker_navigation(void)
         if (expect(strstr(header, "MONITOR HEX $C102") == header,
                    "Compare picker RETURN must jump to the selected difference.")) return 1;
         if (expect(mon.poll(0) == 1, "Compare picker test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_hunt_prompt_typed_input(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'H', 'd', 'e', KEY_RETURN, KEY_RETURN, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        backend.write(0xC004, 0xDE);
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+
+        if (expect(mon.poll(0) == 0, "Typed Hunt test: lowercase hex prompt failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Typed Hunt test: lowercase hex RETURN failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR HEX $C004") == header,
+                   "Typed Hunt must accept lowercase hex input in the Hunt popup.")) return 1;
+        if (expect(mon.poll(0) == 1, "Typed Hunt test: lowercase hex exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'H', '"', 'H', 'e', 'l', 'l', 'o', '"', KEY_RETURN, KEY_RETURN, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        const char hello[] = "Hello";
+        const char upper_hello[] = "HELLO";
+
+        for (unsigned int i = 0; i < sizeof(hello) - 1; i++) {
+            backend.write((uint16_t)(0xC000 + i), (uint8_t)hello[i]);
+            backend.write((uint16_t)(0xC008 + i), (uint8_t)upper_hello[i]);
+        }
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+
+        if (expect(mon.poll(0) == 0, "Typed Hunt test: quoted ASCII prompt failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Typed Hunt test: quoted ASCII RETURN failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR HEX $C000") == header,
+                   "Typed Hunt must preserve quoted mixed-case ASCII bytes.")) return 1;
+        if (expect(mon.poll(0) == 1, "Typed Hunt test: quoted ASCII exit failed.")) return 1;
         mon.deinit();
     }
 
@@ -3719,6 +3968,39 @@ static int test_number_popup_word_commit_and_sticky_row(void)
 
         if (expect(mon.poll(0) == 0, "Screen Number popup test: popup close failed.")) return 1;
         if (expect(mon.poll(0) == 1, "Screen Number popup test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[32];
+        const int keys[] = { 'V', 'U', 'N', KEY_DOWN, KEY_DOWN, KEY_DOWN, KEY_DOWN, 'A', KEY_RETURN, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+
+        if (expect(mon.poll(0) == 0, "L/U Screen Number popup test: Screen view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "L/U Screen Number popup test: charset toggle failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "L/U Screen Number popup test: popup open failed.")) return 1;
+        for (int i = 0; i < 4; i++) {
+            if (expect(mon.poll(0) == 0, "L/U Screen Number popup test: row navigation failed.")) return 1;
+        }
+        if (expect(mon.poll(0) == 0, "L/U Screen Number popup test: character entry failed.")) return 1;
+        get_popup_line(screen, 5, line, sizeof(line));
+        if (expect(strstr(line, "Screen   A") == line,
+                   "Screen Number popup preview must use the active Screen charset display.")) return 1;
+        if (expect(mon.poll(0) == 0, "L/U Screen Number popup test: commit failed.")) return 1;
+        if (expect(backend.read(0x0000) == 0x41,
+                   "Screen Number popup input must use the active Screen charset input mapping.")) return 1;
+        if (expect(mon.poll(0) == 0, "L/U Screen Number popup test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "L/U Screen Number popup test: exit failed.")) return 1;
         mon.deinit();
     }
 
@@ -3998,7 +4280,6 @@ static int test_fixed_prompt_widths(void)
         { 'F', "Fill AAAA-BBBB,DD", 13 },
         { 'T', "Transfer AAAA-BBBB,CCCC", 15 },
         { 'C', "Compare AAAA-BBBB,CCCC", 15 },
-        { 'H', "Hunt AAAA-BBBB,...", 95 },
     };
 
     for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
@@ -4722,8 +5003,8 @@ static int test_warning_popups_preserve_status_row(void)
         g_set_screen_title_call_count = 0;
         if (expect(mon.poll(0) == 0, "U outside ASM view should not exit.")) return 1;
         if (expect(ui.popup_count == 1, "U outside ASM view must raise exactly one warning popup.")) return 1;
-        if (expect(strstr(ui.last_popup, "UNDOC") != NULL && strstr(ui.last_popup, "ASSEMBLY") != NULL,
-                   "U warning must explain that undocumented opcodes are only toggled in Assembly view.")) return 1;
+        if (expect(strcmp(ui.last_popup, "UNDOC IN ASM, CASE IN SCR") == 0,
+               "U warning must explain the Assembly undocumented-op toggle and the Screen case toggle.")) return 1;
         if (expect(g_set_screen_title_call_count == 0,
                    "U warning popup must not trigger set_screen_title.")) return 1;
         mon.poll(0);
@@ -4811,6 +5092,7 @@ int main()
     if (test_disassembler()) return 1;
     if (test_memory_helpers()) return 1;
     if (test_parsers_and_formatters()) return 1;
+    if (test_hunt_prompt_typed_input()) return 1;
     if (test_load_save_param_parsers()) return 1;
     if (test_banked_backend()) return 1;
     if (test_frozen_banked_backend()) return 1;
@@ -4828,6 +5110,8 @@ int main()
     if (test_monitor_kernal_bank_switch_and_ram_interaction()) return 1;
     if (test_assembler_encoding()) return 1;
     if (test_screen_code_reverse()) return 1;
+    if (test_screen_charset_toggle_and_header()) return 1;
+    if (test_screen_charset_display_and_memory_ascii_pane()) return 1;
     if (test_logical_delete_per_view()) return 1;
     if (test_scr_edit_writes_screen_code()) return 1;
     if (test_number_shortcut_routing()) return 1;
