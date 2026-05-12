@@ -1,29 +1,34 @@
-# Machine Monitor
+# Machine Code Monitor
 
-The machine monitor is a keyboard-driven tool for inspecting and editing live or frozen C64 memory. It supports memory inspection, ASCII and screen-code views, binary editing, disassembly, inline assembly editing, memory operations, and execution.
+The machine code monitor is a keyboard-driven tool for inspecting and editing live or frozen C64 memory. It supports memory inspection, ASCII and screen-code views, binary editing, disassembly, inline assembly editing, memory operations, and execution.
 
 ## Entry and Exit
 
-- Open the monitor with `C=+O`.
-- Close the monitor with `C=+O` or `ESC`.
-- Open the built-in help with `F3`.
+Open the monitor from the device menu in either of these ways:
+
+1. Press `C=+O`.
+2. Press `F5`, open `Developer`, then select `Machine Code Monitor`.
+
+Close the monitor with `C=+O` or `ESC`.
+
+Open the built-in help with `F3` or `?`.
 
 ## Screen Layout
 
-The monitor screen consists of three main parts:
+The monitor screen consists of three parts:
 
-- **Header**
-  - Shows the current view, cursor address, and active modes.
-  - Mode indicators may include `Undoc`, `Freeze`, `Poll`, or `Edit`.
+**Header**
+- Shows the current view, cursor address, and active modes.
+- Mode indicators may include `Undoc`, `Freeze`, `Poll`, or `Edit`.
 
-- **Body**
-  - Shows the memory region around the current cursor address.
-  - The active cursor position is highlighted in reverse.
-  - May show popups, for example search results, load/save prompts, completion pickers, or bookmarks.
+**Body**
+- Shows the memory region around the current cursor address.
+- The active cursor position is highlighted in reverse.
+- May show popups, for example search results, load/save prompts, completion pickers, or bookmarks.
 
-- **Footer**
-  - Shows the active CPU port mapping and VIC bank.
-  - When jumping to a bookmark, briefly shows bookmark information.
+**Footer**
+- Shows the active CPU port mapping and VIC bank.
+- When jumping to a bookmark, briefly shows bookmark information.
 
 Example layout:
 
