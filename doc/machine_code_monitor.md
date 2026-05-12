@@ -1,91 +1,103 @@
 # Machine Code Monitor
 
-The machine code monitor is a keyboard-driven tool for inspecting and editing live or frozen C64 memory. It supports memory inspection, ASCII and screen-code views, binary editing, disassembly, inline assembly editing, memory operations, and execution.
+The Machine Code Monitor is a keyboard-driven tool for inspecting and editing live or frozen C64 memory. 
+
+It supports hexadecimal, ASCII, screen-code, binary, and assembly views, plus inline editing, bulk memory operations, file load/save, and execution from a selected address.
 
 ## Entry and Exit
 
-Open the monitor from the device menu in either of these ways:
+`C=` denotes the Commodore key. For example, `C=+O` means: hold the Commodore key, then press `O`.
 
-1. Press `C=+O`.
-2. Press `F5`, open `Developer`, then select `Machine Code Monitor`.
+To open the monitor, use one of the following:
 
-Close the monitor with `C=+O` or `ESC`.
+- Press `C=+O`.
+- Press `F5`, open `Developer`, then select `Machine Code Monitor`.
 
 Open the built-in help with `F3` or `?`.
 
+To close the monitor:
+
+- Press `C=+O` again.
+- Press `ESC` when no edit operation or popup is active.
+
 ## Screen Layout
 
-The monitor screen consists of three parts:
+The monitor screen has three fixed regions:
 
-**Header**
+### Header
+
 - Shows the current view, cursor address, and active modes.
-- Mode indicators may include `Undoc`, `Freeze`, `Poll`, or `Edit`.
+- Mode indicators may include `Undoc`, `Frz`, `Poll`, or `EDIT`.
 
-**Body**
+### Body
+
 - Shows the memory region around the current cursor address.
 - The active cursor position is highlighted in reverse.
-- May show popups, for example search results, load/save prompts, completion pickers, or bookmarks.
+- May show popups, such as search results, load/save prompts, completion pickers, or bookmarks.
 
-**Footer**
-- Shows the active CPU port mapping and VIC bank.
-- When jumping to a bookmark, briefly shows bookmark information.
+### Footer
+
+- Shows the active CPU port mapping and VIC bank. For more details, see [CPU and VIC Bank Display](#cpu-and-vic-bank-display)
+- `CPU0`..`CPU7` identify the selected CPU memory configuration.
+- `VIC0`..`VIC3` identify the selected VIC bank and its base address.
+- When jumping to a bookmark, the footer briefly shows bookmark information.
 
 Example layout:
 
 ```text
 +--------------------------------------+
-|MONITOR ASM $E011                     |
+|MONITOR ASM $E011  Undoc Frz Poll EDIT|
 |...                                   |
 |CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000  |
 +--------------------------------------+
-````
+```
 
 ## Views
 
 The monitor provides five primary views:
 
-| Key | Name         | ID  | Purpose                             |
-| --- | ------------ | --- | ----------------------------------- |
-| `M` | **M**emory   | HEX | Hex byte view                       |
-| `A` | **A**ssembly | ASM | Disassembly and instruction editing |
-| `B` | **B**inary   | BIN | Bit-level byte view                 |
-| `I` | ASC**I**I    | ASC | Printable ASCII byte view           |
-| `V` | Screen       | SCR | C64 screen-code view                |
+| Key | View     | ID  | Purpose                         |
+| --- | -------- | --- | ------------------------------- |
+| `M` | Memory   | HEX | Hexadecimal byte view           |
+| `A` | Assembly | ASM | Disassembly and inline assembly |
+| `B` | Binary   | BIN | Bit-level byte view             |
+| `I` | ASCII    | ASC | ASCII byte view                 |
+| `V` | Screen   | SCR | Screen code view                |
 
-### Memory View
+### Memory / Hex View
 
-Memory view shows raw bytes in hexadecimal together with a compact ASCII preview.
+Memory view shows raw bytes in hexadecimal together with a compact printable-character preview.
 
 Example:
 
 ```text
 +--------------------------------------+
-|MONITOR HEX $E011                     |
-|DFF8 66 00 FF 66 00 FF 00 18 f..f.... |
-|E000 85 56 20 0F BC A5 61 C9 .V ...a. |
-|E008 88 90 03 20 D4 BA 20 CC .. . ..  |
-|E010 BC A5 07 18 69 81 F0 F3 .. .i..  |
-|E018 38 E9 01 48 A2 05 B5 69 8..H..i  |
-|E020 B4 61 95 61 94 69 CA 10 .a.a.i.  |
-|E028 F5 A5 56 85 70 20 53 B8 ..V.p S. |
-|E030 20 B4 BF A9 C4 A0 BF 20  ....... |
-|E038 59 E0 A9 00 85 6F 68 20 Y....oh  |
-|E040 B9 BA 60 85 71 84 72 20 ..`.q.r  |
-|E048 CA BB A9 57 20 28 BA 20 ...W (.  |
-|E050 5D E0 A9 57 A0 00 4C 28 ]..W..L( |
-|E058 B4 85 71 84 72 20 C7 BB ..q.r .. |
-|E060 B1 71 85 67 A4 71 C8 98 .q.g.q.  |
-|E068 D0 02 E6 72 85 71 A4 72 ...r.q.r |
-|E070 20 28 BA A5 71 A4 72 18  (..q.r. |
-|E078 69 05 90 01 C8 85 71 84 i.....q. |
-|E080 72 20 67 B8 A9 5C A0 00 r g..\.. |
-|CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000  |
+|MONITOR HEX $0168                     |
+|00E0 85 85 85 85 85 85 86 86 ........ |
+|00E8 86 86 86 86 86 87 87 87 ........ |
+|00F0 87 87 87 F0 DB 00 00 00 ........ |
+|00F8 00 00 00 00 00 00 00 20 .......  |
+|0100 33 38 39 31 31 00 30 30 38911.00 |
+|0108 30 30 00 00 10 10 35 02 00....5. |
+|0110 00 00 10 10 35 02 00 00 ....5... |
+|0118 1C 10 35 02 00 00 22 10 ..5...". |
+|0120 35 02 00 00 28 10 35 02 5...(.5. |
+|0128 00 10 35 02 00 00 32 10 ..5...2. |
+|0130 35 02 00 00 38 10 35 02 5...8.5. |
+|0138 00 00 3E 10 35 02 00 00 ..>.5... |
+|0140 44 10 35 02 00 00 44 10 D.5...D. |
+|0148 35 02 00 00 50 10 35 02 5...P.5. |
+|0150 00 00 56 10 35 02 00 00 ..V.5... |
+|0158 5C 10 35 02 00 00 62 10 \.5...b. |
+|0160 35 02 00 00 68 10 35 02 5...h.5. |
+|0168 00 00 6E 10 35 02 00 00 ..n.5... |
+|CPU1 $A:RAM $D:CHR $E:RAM VIC0 $0000  |
 +--------------------------------------+
 ```
 
 ### Assembly View
 
-Assembly view shows decoded 6510 instructions together with the backing bytes and the active memory source.
+Assembly view shows decoded 6510 instructions, their instruction bytes, and the memory source used for each row.
 
 Example:
 
@@ -116,9 +128,11 @@ Example:
 
 ### Binary View
 
-Binary view displays bytes as bit fields, using `.` for 0 and `*` for 1. This is useful for registers, font glyphs, or sprites.
+Binary view shows each byte as eight bits, using `.` for a cleared bit and `*` for a set bit. It is useful for inspecting registers, character glyphs, sprite data, and other bit-oriented memory.
 
-Since sprites consist of 3 bytes per row, the binary view allows for various `W`(idth) modes.
+Because C64 sprite data uses 3 bytes per row, binary view supports multiple `W`idth modes for viewing bytes in different groupings.
+
+The top status line shows the current byte address followed by the selected bit number, for example `$DC00/7`. Bit 7 is the most significant bit on the left, and bit 0 is the least significant bit on the right.
 
 Example:
 
@@ -153,10 +167,10 @@ Use ASCII view when the bytes are intended to be printable ASCII rather than C64
 
 Behavior:
 
-* Bytes `$20-$7E` are shown as their normal ASCII characters.
-* All other bytes are shown as `.`.
-* Editing writes the exact printable ASCII byte.
-* Lowercase ASCII is preserved.
+- Bytes `$20-$7E` are shown as their normal ASCII characters.
+- All other bytes are shown as `.`.
+- Typing a printable ASCII character writes that character's byte value.
+- Lowercase ASCII is preserved.
 
 Example:
 
@@ -187,27 +201,29 @@ Example:
 
 ### Screen View
 
-Use Screen view when the bytes represent VIC screen codes, e.g. when viewing the screen RAM which by default starts at `$0400`.
+Use Screen view when the bytes represent C64 screen codes, for example when viewing screen RAM, which by default starts at `$0400`.
+
+Screen view is for screen-code bytes, not PETSCII text.
 
 The header shows the active screen charset mode:
 
-* `MONITOR SCR U/G $xxxx` for **Uppercase/Graphics**
-* `MONITOR SCR L/U $xxxx` for **Lowercase/Uppercase**
+- `MONITOR SCR U/G $xxxx` for **Uppercase/Graphics**
+- `MONITOR SCR L/U $xxxx` for **Lowercase/Uppercase**
 
 The active mode is changed with `U`; see [View Modifiers](#view-modifiers).
 
 #### Screen `U/G`
 
-* Displays `$00` as `@`.
-* Displays `$01-$1A` as `A-Z`.
-* Typing `A-Z` or `a-z` writes `$01-$1A`.
+- Displays `$00` as `@`.
+- Displays `$01-$1A` as `A-Z`.
+- Typing `A-Z` or `a-z` writes `$01-$1A`.
 
 #### Screen `L/U`
 
-* Displays `$01-$1A` as `a-z`.
-* Displays `$41-$5A` as `A-Z`.
-* Typing `a-z` writes `$01-$1A`.
-* Typing `A-Z` writes `$41-$5A`.
+- Displays `$01-$1A` as `a-z`.
+- Displays `$41-$5A` as `A-Z`.
+- Typing `a-z` writes `$01-$1A`.
+- Typing `A-Z` writes `$41-$5A`.
 
 Example:
 
@@ -236,7 +252,7 @@ Example:
 +--------------------------------------+
 ```
 
-The monitor menu uses the UI font, not the live C64 character set. For this reason, Screen view uses readable fallback glyphs for graphics bytes rather than exact C64 character shapes.
+Because the monitor is rendered with the firmware UI font rather than the live C64 character set, graphics bytes are shown with readable fallback glyphs instead of exact C64 glyph shapes.
 
 ## View Modifiers
 
@@ -250,7 +266,7 @@ Some keys modify the current view instead of switching to another view.
 | ----------- | ---------------------------------------------------------------- |
 | Assembly    | Toggles undocumented opcodes                                     |
 | Screen      | Toggles the monitor-local screen charset between `U/G` and `L/U` |
-| Other views | No view-specific effect                                          |
+| Other views | Ignored                                                          |
 
 In Assembly view, enabling undocumented opcodes affects how bytes are decoded and how assembly completion behaves.
 
@@ -264,47 +280,79 @@ In Screen view, `U` changes only the monitor-local interpretation of screen code
 | -------- | ------------------------------------ |
 | Memory   | Cycles `8 <-> 16` bytes per row      |
 | Binary   | Cycles `1 -> 2 -> 3 -> 3S -> 4 -> 1` |
-| ASCII    | Fixed-width (32 bytes)               |
-| Screen   | Fixed-width (32 bytes)               |
-| Assembly | Variable-width (1 to 3 bytes)        |
+| ASCII    | Fixed-width, 32 bytes per row        |
+| Screen   | Fixed-width, 32 bytes per row        |
+| Assembly | Variable-width, 1 to 3 bytes         |
 
 Binary width details:
 
-* `1`, `2`, and `3` show one, two, or three bytes as bit fields with a trailing hex preview.
-* `3S` shows packed 24-bit rendering for three-byte sprite-style data, still with a hex preview.
-* `4` shows packed 32-bit rendering for four bytes without a trailing hex preview.
+- `1`, `2`, and `3` show one, two, or three bytes as bit fields with a trailing hex preview.
+- `3S` shows three bytes as one continuous 24-bit sprite-style row, with a hex preview.
+- `4` shows four bytes as one continuous 32-bit row without a trailing hex preview.
 
 ## Navigation and Context
 
-* `J`: jump to an address.
-* `G`: leave the monitor and start execution at an address.
-* `F1` or `Shift+Space`: page up.
-* `F7` or `Space`: page down.
-* `O`: cycle CPU port banking (`CPU0`..`CPU7`).
-* `Shift+O`: cycle the VIC bank override.
-* `Z`: toggle freeze when the backend supports it.
-* `P`: toggle poll mode in the local monitor. Poll mode is unavailable over telnet.
+- `J`: jump to an address.
+- `G`: exit the monitor and execute from an address.
+- `F1` or `Shift+Space`: page up.
+- `F7` or `Space`: page down.
+- `O`: cycle CPU port banking, `CPU0`..`CPU7`.
+- `Shift+O`: cycle the VIC bank override.
+- `Z`: toggle freeze when the backend supports it.
+- `P`: toggle poll mode in the local monitor. Poll mode is unavailable over telnet.
 
 Addresses in command prompts are hexadecimal.
 
-The generic number parser used by the number tool also accepts:
+The generic number parser used by the number tool accepts:
 
-* `$1234`
-* `0x1234`
-* Decimal
-* `%binary`
+- `$1234` for hexadecimal
+- `0x1234` for hexadecimal
+- `1234` for decimal
+- `%10101010` for binary
+
+### CPU and VIC Bank Display
+
+The footer summarizes the selected CPU-visible memory configuration and VIC bank, for example:
+
+```text
+CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000
+```
+
+`CPU0`..`CPU7` are shorthand for the three 6510 port memory-configuration bits at `$0001`: `LORAM`, `HIRAM`, and `CHAREN`.
+
+In the normal no-cartridge configuration, the footer fields have these possible values:
+
+| Field | Address range | Values              |
+| ----- | ------------- | ------------------- |
+| `$A`  | `$A000-$BFFF` | `BAS`, `RAM`        |
+| `$D`  | `$D000-$DFFF` | `I/O`, `CHR`, `RAM` |
+| `$E`  | `$E000-$FFFF` | `KRN`, `RAM`        |
+
+| Value | Meaning |
+| ----- | ------- |
+| `BAS` | BASIC ROM |
+| `I/O` | I/O registers and Color RAM |
+| `CHR` | Character generator ROM |
+| `KRN` | KERNAL ROM |
+| `RAM` | RAM |
+
+`VIC0`..`VIC3` show the selected VIC bank controlled through CIA 2 port A at `$DD00`, with base address `$0000`, `$4000`, `$8000`, or `$C000`.
+
+Cartridges can further affect the CPU-visible memory map through the expansion-port `GAME` and `EXROM` lines.
 
 ## Editing
 
-* `E`: enter edit mode in Memory, ASCII, Screen, Assembly, and Binary views.
-* `C=+E` or `ESC`: leave edit mode.
+All views support editing:
+
+- `E`: enter edit mode.
+- `C=+E` or `ESC`: leave edit mode.
 
 Edit behavior is view-specific:
 
 | View     | Edit behavior                                                               |
 | -------- | --------------------------------------------------------------------------- |
 | Memory   | Type two hex nibbles to write one byte                                      |
-| ASCII    | Type printable ASCII bytes directly                                         |
+| ASCII    | Type printable ASCII characters directly                                    |
 | Screen   | Type screen characters using the active Screen charset mode                 |
 | Binary   | Type `0` or `Space` to clear the selected bit; type `1` or `*` to set it    |
 | Assembly | Edit instructions inline with mnemonic completion and direct operand typing |
@@ -313,32 +361,36 @@ In edit mode, `Space` remains view-specific data entry and does not page.
 
 `DEL` is logical delete, not raw backspace:
 
-| View         | `DEL` behavior                                                                                             |
-| ------------ | ---------------------------------------------------------------------------------------------------------- |
-| Memory       | Writes `$00` and advances                                                                                  |
-| ASCII/Screen | Writes a space                                                                                             |
-| Binary       | Clears the selected bit                                                                                    |
-| Assembly     | Replaces the current instruction with `NOP` bytes; while typing, first cancels the current line edit state |
+| View         | `DEL` behavior                                  |
+| ------------ | ----------------------------------------------- |
+| Memory       | Writes `$00` and advances                       |
+| ASCII/Screen | Writes a space                                  |
+| Binary       | Clears the selected bit                         |
+| Assembly     | Replaces the current instruction with `NOP` bytes |
+
+In Assembly view, if an inline edit is already active, `DEL` first cancels the current line edit state.
 
 ## Clipboard, Range, and Number Tool
 
-* Copy the current byte with `C=+C`.
-* Paste the clipboard at the cursor with `C=+V`.
-* Toggle range mode with `R`.
-* Open the number tool with `N`.
+- Copy the current byte with `C=+C`.
+- Paste the clipboard at the cursor with `C=+V`.
+- Toggle range mode with `R`.
+- Open the number tool with `N`.
 
-Range mode anchors the current address. While range mode is active:
+Range mode anchors the current address. The selected span runs from the anchor address to the current cursor address, inclusive.
 
-* `C=+C` copies the selected span.
-* Pressing `R` again also copies the selected span and exits range mode.
+While range mode is active:
+
+- `C=+C` copies the selected span.
+- Pressing `R` again also copies the selected span and exits range mode.
 
 The number tool is a compact base-conversion and overwrite popup for the current target. It shows the same value in these forms:
 
-* Hex
-* Decimal
-* Binary
-* ASCII
-* Screen code
+- Hex
+- Decimal
+- Binary
+- ASCII
+- Screen code
 
 In Assembly view, the number tool targets the operand bytes of the current instruction when possible.
 
@@ -348,41 +400,55 @@ The ASCII and Screen rows in the number tool use the same mappings as the ASCII 
 
 The monitor includes direct bulk memory commands:
 
-| Key | Command  | Syntax                                  | Result                                                                |
-| --- | -------- | --------------------------------------- | --------------------------------------------------------------------- |
-| `F` | Fill     | `start-end,value`                       | Fill an inclusive range with one byte                                 |
-| `T` | Transfer | `start-end,dest`                        | Copy a range to a destination                                         |
-| `C` | Compare  | `start-end,dest`                        | Compare a range against another location and list differing addresses |
+| Key | Command  | Syntax                                   | Result                                                                |
+| --- | -------- | ---------------------------------------- | --------------------------------------------------------------------- |
+| `F` | Fill     | `start-end,value`                        | Fill an inclusive range with one byte                                 |
+| `T` | Transfer | `start-end,dest`                         | Copy a range to a destination                                         |
+| `C` | Compare  | `start-end,dest`                         | Compare a range against another location and list differing addresses |
 | `H` | Hunt     | `start-end,bytes` or `start-end,"text"` | Search for a byte sequence or quoted ASCII string                     |
 
 `Hunt` opens a result picker:
 
-* `ENTER`: jump to the selected match.
-* `ESC`: close the picker.
+- `Return`: jump to the selected match.
+- `ESC`: close the picker.
 
 ## File I/O
 
-* `L`: load a file into memory.
-* `S`: save memory to a file.
+- `L`: load a file into memory.
+- `S`: save memory to a file.
+
+Files may exist directly in the Ultimate filesystem or inside a disk image such as `.D64`.
+
+### Load
 
 Load is a two-step flow:
 
 1. Pick a file.
 2. Enter load parameters.
 
-Load template:
+In the file picker, select an existing file by pressing `ENTER` on it, then choosing `Select` from the context-sensitive menu.
+
+Load syntax:
+
+```text
+[PRG|AAAA],[Offset],[Len|AUTO]
+````
+
+Default:
 
 ```text
 PRG,0000,AUTO
 ```
 
+This loads the whole file to the start address stored in its first two bytes.
+
 Fields:
 
-| Field            | Meaning                                                         |
-| ---------------- | --------------------------------------------------------------- |
-| `PRG` or address | Use PRG load address, or load to an explicit start address      |
-| File offset      | Number of bytes to skip                                         |
-| `AUTO` or length | Load automatically determined length, or an explicit byte count |
+| Field           | Meaning                                                                         |
+| --------------- | ------------------------------------------------------------------------------- |
+| `PRG` or `AAAA` | Use the two-byte load address from the PRG file, or load to an explicit address |
+| `Offset`        | Number of bytes to skip after the PRG header                                    |
+| `Len` or `AUTO` | Load the automatically determined length, or load an explicit byte count        |
 
 Examples:
 
@@ -393,31 +459,41 @@ Examples:
 | `PRG,1000`       | Skip `$1000` bytes after the PRG header           |
 | `0801,0002,0010` | Load `$0010` bytes from offset `$0002` to `$0801` |
 
-Save writes a normal PRG file with a two-byte load address header.
+### Save
 
-Save template:
+Save is a two-step flow:
+
+1. Enter the byte range to save.
+2. Pick or create the destination file.
+
+Save syntax:
 
 ```text
 0800-9FFF
 ```
 
-The range is inclusive.
+The range is inclusive. Save writes a normal PRG file with a two-byte load address header.
+
+In the file picker, choose one of the following:
+
+- Select an existing file by pressing `ENTER` on it, then choosing `Select` from the context-sensitive menu.
+- Create a new file by selecting `<< Create new file >>`.
 
 ## Bookmarks
 
 The monitor has 10 persistent bookmark slots.
 
-* List bookmarks with `C=+B`.
-* Jump directly to a slot with `C=+0` .. `C=+9`.
+- List bookmarks with `C=+B`.
+- Jump directly to a slot with `C=+0` .. `C=+9`.
 
 Each bookmark stores:
 
-* Label
-* Address
-* View ID
-* View width in bytes where applicable
-* CPU bank
-* VIC bank
+- Label
+- Address
+- View ID
+- View width or width mode where applicable
+- CPU bank
+- VIC bank
 
 Bookmark popup controls:
 
@@ -453,13 +529,12 @@ Default slots are aimed at common C64 locations:
 
 ## Additional Notes
 
+Use **UI Freeze** mode when the monitor output must be captured in the video stream.
+
+Use **UI Overlay on HDMI** mode when polling is needed to observe live changes.
+
 To switch between UI Freeze and UI Overlay modes:
 
 1. Exit the monitor.
 2. Press `C=+I`.
 3. Reopen the monitor.
-
-Use **UI Freeze** mode when the monitor output must be captured in the video stream.
-
-Use **UI Overlay on HDMI** mode when polling is needed to observe live changes.
-
