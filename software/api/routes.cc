@@ -42,7 +42,6 @@ TempfileWriter *attachment_writer(HTTPReqMessage *req, HTTPRespMessage *resp, co
     }
     return NULL;
 }
-int TempfileWriter :: temp_count = 0;
 
 /* REU Writer */
 REUWriter *attachment_reu(HTTPReqMessage *req, HTTPRespMessage *resp, const ApiCall_t *func, ArgsURI *args)

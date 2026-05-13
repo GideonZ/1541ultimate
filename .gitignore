@@ -276,6 +276,7 @@ tools/makeappl
 tools/promgen
 tools/svf_dump
 tools/swap
+tools/c64/*.prg
 software/6502/sidcrt/target
 *.d
 tools/dump_bus_trace

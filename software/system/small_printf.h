@@ -6,10 +6,12 @@ extern "C" {
 #endif
 
 #include <stdarg.h>
+#include <stddef.h>
 
 int printf(const char *fmt, ...);
 int sprintf(char *, const char *fmt, ...);
-
+int snprintf(char *, size_t len, const char *fmt, ...);
+int _my_vnprintf(void (*putc)(char c, void **param), void **param, size_t maxlen, const char *fmt, va_list ap);
 int _my_vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, va_list ap);
 
 int sscanf(const char *, const char *fmt, ...);
