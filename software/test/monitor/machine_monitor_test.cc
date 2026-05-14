@@ -1275,16 +1275,16 @@ static int test_monitor_interaction(void)
         "E Edit      F Fill      T Transfer",
         "C Compare   H Hunt      N Number",
         "W Width     R Range     P Poll",
-        "Z Freeze    O CPU Bank  Sh+O VIC",
+        "Z Freeze    O CPU Bank  SH+O VIC",
         "L Load      S Save",
         "",
-        "Bookmarks:",
-        "C=+B List   C=+0-9 Jump",
+        "Bookmarks:  C=+B List   C=+0-9 Jump",
         "",
         "Open monitor:  C=+O",
-        "Close monitor: C=+O / ESC",
-        "Leave edit:    C=+E / ESC",
+        "Close monitor: C=+O/ESC",
+        "Leave edit:    C=+E/ESC",
         "Copy/Paste:    C=+C / C=+V",
+        "Follow/Return: RETURN",
         NULL
     };
     monitor_reset_saved_state();
@@ -1338,7 +1338,7 @@ static int test_monitor_interaction(void)
     screen.get_slice(1, 3, 38, status);
     if (expect(strstr(status, "HELP") == status, "Help header should replace the normal view header.")) return 1;
     screen.get_slice(1, 22, 38, status);
-    if (expect(strstr(status, "Paging:         F1/Sh+Sp  F7/Space") == status,
+    if (expect(strstr(status, "Page Up/Down:  F1/SH+SPACE / F7/SPACE") == status,
                "Help view should show the paging shortcuts on the footer row.")) return 1;
     {
         for (int i = 0; expected_help_lines[i]; i++) {
@@ -1365,8 +1365,8 @@ static int test_monitor_interaction(void)
         esc_help_monitor.init(&screen, &esc_help_keyboard);
         if (expect(esc_help_monitor.poll(0) == 0, "F3 should open help before ESC handling is tested.")) return 1;
         screen.get_slice(1, 22, 38, status);
-        if (expect(strstr(status, "Paging:         F1/Sh+Sp  F7/Space") == status,
-                   "Help must show the paging shortcuts before ESC closes it.")) return 1;
+        if (expect(strstr(status, "Page Up/Down:  F1/SH+SPACE / F7/SPACE") == status,
+                    "Help must show the paging shortcuts before ESC closes it.")) return 1;
         for (int i = 0; expected_help_lines[i]; i++) {
             screen.get_slice(1, 4 + i, 38, line);
             if (expect(strncmp(line, expected_help_lines[i], strlen(expected_help_lines[i])) == 0,
@@ -2624,11 +2624,8 @@ static int test_asm_number_popup_targets_operands(void)
         if (expect(strstr(line, "Hex      $FF99") == line,
                    "ASM Number popup must preload the operand word value.")) return 1;
         get_popup_line(screen, 6, line, sizeof(line));
-        if (expect(strstr(line, "Write    $9011/$9012 LE") == line,
-                   "ASM Number popup must show the operand write-back range.")) return 1;
-        get_popup_line(screen, 7, line, sizeof(line));
-        if (expect(strstr(line, "Bytes    99 FF") == line,
-                   "ASM Number popup must show the operand bytes in little-endian order.")) return 1;
+        if (expect(strncmp(line, "Calc with +-*/ $Hex Dec %Bin", 28) == 0,
+                   "ASM Number popup must show the compact calculator legend after removing redundant rows.")) return 1;
         for (int i = 0; i < 5; i++) {
             if (expect(mon.poll(0) == 0, "ASM word Number test: editing/commit failed.")) return 1;
         }
@@ -4356,15 +4353,15 @@ static int test_number_popup_edit_and_commit(void)
     if (expect(strstr(line, "Hex      $0FAE") == line,
                "Number popup must preserve leading zeroes when hex input grows to WORD width.")) return 1;
     get_popup_line(screen, 3, line, sizeof(line));
-    if (expect(strcmp(line, "Binary   0000111110101110") == 0,
-               "Number popup WORD binary preview must show all 16 bits without truncation.")) return 1;
+    if (expect(strstr(line, "Binary   %0000111110101110") == line,
+               "Number popup WORD binary preview must show all 16 bits with the percent prefix.")) return 1;
 
     if (expect(mon.poll(0) == 0, "Number popup test: typing fourth hex digit failed.")) return 1;
     get_popup_line(screen, 1, line, sizeof(line));
     if (expect(strstr(line, "Hex      $FAE1") == line,
                "Number popup must show the full four-digit hex WORD preview.")) return 1;
     get_popup_line(screen, 3, line, sizeof(line));
-    if (expect(strcmp(line, "Binary   1111101011100001") == 0,
+    if (expect(strstr(line, "Binary   %1111101011100001") == line,
                "Number popup must show the full 16-bit WORD binary preview for $FAE1.")) return 1;
 
     if (expect(mon.poll(0) == 0, "Number popup test: first delete failed.")) return 1;
@@ -4383,8 +4380,8 @@ static int test_number_popup_edit_and_commit(void)
     if (expect(strstr(line, "Hex      $FA") == line,
                "Deleting back to two hex digits must preserve the BYTE preview value.")) return 1;
     get_popup_line(screen, 3, line, sizeof(line));
-    if (expect(strstr(line, "Binary   11111010") == line && line[17] == ' ',
-               "Number popup BYTE binary preview must remain 8 bits wide.")) return 1;
+    if (expect(strstr(line, "Binary   %11111010") == line && line[18] == ' ',
+               "Number popup BYTE binary preview must remain 8 bits wide with the percent prefix.")) return 1;
 
     if (expect(mon.poll(0) == 0, "Number popup test: Enter commit failed.")) return 1;
     if (expect(backend.read(0x0000) == 0xFA && backend.read(0x0001) == 0x00,
@@ -4393,6 +4390,41 @@ static int test_number_popup_edit_and_commit(void)
     if (expect(mon.poll(0) == 0, "Number popup test: popup close failed.")) return 1;
     if (expect(mon.poll(0) == 1, "Number popup test: exit failed.")) return 1;
     mon.deinit();
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[32];
+        const int keys[] = { 'N', '+', 'a', 'f', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor expr_mon(&ui, &backend);
+        expr_mon.init(&screen, &kb);
+
+        int r = expr_mon.poll(0);
+        if (expect(r == 0, "Expression Number popup test: open failed.")) return 1;
+        r = expr_mon.poll(0);
+        if (expect(r == 0, "Expression Number popup test: open-expression failed.")) return 1;
+        r = expr_mon.poll(0);
+        if (expect(r == 0, "Expression Number popup test: first lowercase hex digit failed.")) return 1;
+        get_popup_line(screen, 6, line, sizeof(line));
+        if (expect(strstr(line, "Expr=$00+A") == line,
+                   "Expression Number popup must uppercase lowercase hex digits as they are typed.")) return 1;
+        r = expr_mon.poll(0);
+        if (expect(r == 0, "Expression Number popup test: second lowercase hex digit failed.")) return 1;
+        get_popup_line(screen, 6, line, sizeof(line));
+        if (expect(strstr(line, "Expr=$00+AF") == line,
+                   "Expression Number popup must keep uppercasing subsequent lowercase hex digits.")) return 1;
+        r = expr_mon.poll(0);
+        if (expect(r == 0, "Expression Number popup test: expression close failed.")) return 1;
+        expr_mon.deinit();
+    }
+
     return 0;
 }
 
@@ -4619,8 +4651,10 @@ static int test_number_popup_placement_and_overlay_redraw(void)
         if (expect(mon.poll(0) == 0, "Top-right placement test: open failed.")) return 1;
         if (expect(find_popup_rect(screen, &left, &top, &right, &bottom),
                    "Top-right placement test: framed popup not found.")) return 1;
-        if (expect(right == cursor_x - 1 && top == cursor_y + 1,
-                   "Top-right Number popup must be diagonally down-left from the invoking cursor when space allows.")) return 1;
+        if (expect(top == cursor_y + 1,
+                   "Top-right Number popup must stay below the invoking cursor when space allows.")) return 1;
+        if (expect(!(cursor_x >= left && cursor_x <= right && cursor_y >= top && cursor_y <= bottom),
+                   "Top-right Number popup must not cover the invoking cursor cell.")) return 1;
         if (expect(mon.poll(0) == 0, "Top-right placement test: popup close failed.")) return 1;
         if (expect(mon.poll(0) == 1, "Top-right placement test: exit failed.")) return 1;
         mon.deinit();
@@ -4700,8 +4734,10 @@ static int test_number_popup_placement_and_overlay_redraw(void)
         if (expect(mon.poll(0) == 0, "Bottom-right placement test: open failed.")) return 1;
         if (expect(find_popup_rect(screen, &left, &top, &right, &bottom),
                    "Bottom-right placement test: framed popup not found.")) return 1;
-        if (expect(right == cursor_x - 1 && bottom == cursor_y - 1,
-                   "Bottom-right Number popup must be diagonally up-left from the invoking cursor when space allows.")) return 1;
+        if (expect(bottom == cursor_y - 1,
+                   "Bottom-right Number popup must stay above the invoking cursor when space allows.")) return 1;
+        if (expect(!(cursor_x >= left && cursor_x <= right && cursor_y >= top && cursor_y <= bottom),
+                   "Bottom-right Number popup must not cover the invoking cursor cell.")) return 1;
         if (expect(mon.poll(0) == 0, "Bottom-right placement test: popup close failed.")) return 1;
         if (expect(mon.poll(0) == 1, "Bottom-right placement test: exit failed.")) return 1;
         mon.deinit();
@@ -5561,6 +5597,255 @@ static int test_warning_popups_preserve_status_row(void)
     return 0;
 }
 
+static int test_asm_follow_and_return_navigation(void)
+{
+    // Memory layout:
+    //   $C000: JMP $C100   4C 00 C1
+    //   $C100: JSR $C204   20 04 C2
+    //   $C200: BNE $C204   D0 02
+    //   $C202: NOP         EA
+    //   $C204: RTS         60
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char header[40];
+    char status[39];
+
+    backend.write(0xC000, 0x4C); backend.write(0xC001, 0x00); backend.write(0xC002, 0xC1);
+    backend.write(0xC100, 0x20); backend.write(0xC101, 0x04); backend.write(0xC102, 0xC2);
+    backend.write(0xC200, 0xD0); backend.write(0xC201, 0x02);
+    backend.write(0xC202, 0xEA);
+    backend.write(0xC204, 0x60);
+
+    // Test 1: RETURN follows JMP.
+    {
+        const int keys[] = { 'J', 'A', KEY_RETURN };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+        set_fake_ms_timer(0);
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Follow JMP: J goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Follow JMP: A view switch failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C000") == header,
+                   "Follow JMP: must start at $C000.")) return 1;
+        if (expect(mon.poll(0) == 0, "Follow JMP: RETURN follow failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C100") == header,
+                     "Follow JMP: RETURN must follow JMP to $C100.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "F0 JMP $C100") == status,
+                   "Follow JMP: first follow must show F0 with the target address.")) return 1;
+        if (expect(strchr(status, ':') == NULL,
+                   "Follow JMP: follow-stack status must not contain a colon.")) return 1;
+        set_fake_ms_timer(1999);
+        if (expect(mon.poll(0) == 0, "Follow JMP: status hold poll failed.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "F0 JMP $C100") == status,
+                   "Follow JMP: follow-stack status must stay visible before 2 seconds.")) return 1;
+        advance_fake_ms_timer(1);
+        if (expect(mon.poll(0) == 0, "Follow JMP: status expiry poll failed.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "CPU") == status,
+                   "Follow JMP: follow-stack status must clear after its timeout.")) return 1;
+        mon.deinit();
+    }
+
+    // Test 2: RETURN follows JSR; RETURN at the non-followable target returns.
+    {
+        const int keys[] = { 'J', 'A', KEY_RETURN, KEY_RETURN, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C100", 1);
+        monitor_reset_saved_state();
+        set_fake_ms_timer(0);
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Follow JSR: J goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Follow JSR: A view switch failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C100") == header,
+                    "Follow JSR: must start at $C100.")) return 1;
+        if (expect(mon.poll(0) == 0, "Follow JSR: RETURN follow failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C204") == header,
+                     "Follow JSR: RETURN must follow JSR to $C204.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "F0 JMP $C204") == status,
+                   "Follow JSR: follow status must show F0 and the jumped-to target.")) return 1;
+        if (expect(mon.poll(0) == 0, "Follow JSR: RETURN back failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C100") == header,
+                     "Follow JSR: RETURN at RTS must return to $C100.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "F0 RET $C100") == status,
+                   "Follow JSR: return status must show F0 and the restored address.")) return 1;
+        mon.deinit();
+    }
+
+    // Test 3: RETURN at a non-followable instruction (RTS) returns to origin.
+    {
+        const int keys[] = { 'J', 'A', KEY_RETURN, KEY_RETURN, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C200", 1);
+        monitor_reset_saved_state();
+        set_fake_ms_timer(0);
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Follow/Back: J goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Follow/Back: A view switch failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C200") == header,
+                    "Follow/Back: must start at $C200.")) return 1;
+        if (expect(mon.poll(0) == 0, "Follow/Back: RETURN follow BNE failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C204") == header,
+                     "Follow/Back: RETURN must follow BNE to $C204.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "F0 JMP $C204") == status,
+                   "Follow/Back: branch follow must use the follow-stack status format.")) return 1;
+        if (expect(mon.poll(0) == 0, "Follow/Back: RETURN back at RTS failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C200") == header,
+                     "Follow/Back: RETURN must return to $C200 from non-followable RTS.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "F0 RET $C200") == status,
+                   "Follow/Back: return status must use the restored address.")) return 1;
+        mon.deinit();
+    }
+
+    // Test 4: RETURN at stack bottom on a non-followable line is a no-op.
+    {
+        const int keys[] = { 'J', 'A', KEY_RETURN, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C204", 1);
+        monitor_reset_saved_state();
+        set_fake_ms_timer(0);
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Empty stack: J goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Empty stack: A view switch failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C204") == header,
+                    "Empty stack: must start at $C204.")) return 1;
+        if (expect(mon.poll(0) == 0, "Empty stack: RETURN at RTS failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C204") == header,
+                    "Empty stack: RETURN at RTS with an empty stack must be a no-op.")) return 1;
+        if (expect(mon.poll(0) == 1, "Empty stack: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    // Test 5: RETURN outside ASM view does not consume the follow stack.
+    {
+        const int keys[] = { 'J', 'A', KEY_RETURN, 'M', KEY_RETURN, 'A', KEY_RETURN, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C200", 1);
+        monitor_reset_saved_state();
+        set_fake_ms_timer(0);
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "HEX no-op: J goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "HEX no-op: A view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "HEX no-op: RETURN follow failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "HEX no-op: switch to HEX failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR HEX $C204") == header,
+                    "HEX no-op: must switch to HEX at the followed target.")) return 1;
+        if (expect(mon.poll(0) == 0, "HEX no-op: RETURN in HEX failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR HEX") == header,
+                    "HEX no-op: RETURN outside ASM must not change view.")) return 1;
+        if (expect(mon.poll(0) == 0, "HEX no-op: switch back to ASM failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C204") == header,
+                    "HEX no-op: switching back to ASM must keep the followed target selected.")) return 1;
+        if (expect(mon.poll(0) == 0, "HEX no-op: RETURN back in ASM failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C200") == header,
+                     "HEX no-op: RETURN in ASM must still return after the HEX no-op.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "F0 RET $C200") == status,
+                   "HEX no-op: returning back in ASM must still show follow-stack status.")) return 1;
+        mon.deinit();
+    }
+
+    // Test 6: the follow stack keeps only the newest 10 entries.
+    {
+        int keys[32];
+        int n = 0;
+
+        for (int i = 0; i < 11; i++) {
+            uint16_t src = (uint16_t)(0xD000 + i * 4);
+            uint16_t dst = (uint16_t)(src + 4);
+            backend.write(src, 0x4C);
+            backend.write((uint16_t)(src + 1), (uint8_t)(dst & 0xFF));
+            backend.write((uint16_t)(src + 2), (uint8_t)(dst >> 8));
+            backend.write((uint16_t)(src + 3), 0xEA);
+        }
+        backend.write(0xD02C, 0xEA);
+
+        keys[n++] = 'J';
+        keys[n++] = 'A';
+        for (int i = 0; i < 11; i++) {
+            keys[n++] = KEY_RETURN;
+        }
+        keys[n++] = KEY_RETURN;
+        for (int i = 0; i < 9; i++) {
+            keys[n++] = KEY_DOWN;
+            keys[n++] = KEY_RETURN;
+        }
+
+        FakeKeyboard kb(keys, n);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("D000", 1);
+        monitor_reset_saved_state();
+        set_fake_ms_timer(0);
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Follow stack limit: J goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Follow stack limit: A view switch failed.")) return 1;
+        for (int i = 0; i < 11; i++) {
+            if (expect(mon.poll(0) == 0, "Follow stack limit: RETURN follow failed.")) return 1;
+        }
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $D02C") == header,
+                   "Follow stack limit: the chained follows must reach the final target.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "F9 JMP $D02C") == status,
+                   "Follow stack limit: the eleventh follow must report slot F9 after discarding the oldest entry.")) return 1;
+        if (expect(mon.poll(0) == 0, "Follow stack limit: first RETURN failed.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "F9 RET $D028") == status,
+                   "Follow stack limit: the newest return entry must pop from slot F9.")) return 1;
+        for (int i = 0; i < 9; i++) {
+            if (expect(mon.poll(0) == 0, "Follow stack limit: move to non-jumpable row failed.")) return 1;
+            if (expect(mon.poll(0) == 0, "Follow stack limit: draining RETURN failed.")) return 1;
+        }
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $D004") == header,
+                   "Follow stack limit: after ten returns the oldest discarded origin must not reappear.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "F0 RET $D004") == status,
+                   "Follow stack limit: the oldest retained entry must return from slot F0.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
 static int test_restricted_backend_guards_platform_features(void)
 {
     TestUserInterface ui;
@@ -5686,6 +5971,7 @@ int main()
     if (test_poll_mode_disabled_on_full_refresh_screen()) return 1;
     if (test_edit_indicator_layout_across_views()) return 1;
     if (test_warning_popups_preserve_status_row()) return 1;
+    if (test_asm_follow_and_return_navigation()) return 1;
     if (test_restricted_backend_guards_platform_features()) return 1;
 
     puts("machine_monitor_test: OK");

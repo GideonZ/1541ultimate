@@ -35,20 +35,20 @@ static const char *const monitor_help_lines[] = {
     "E Edit      F Fill      T Transfer",
     "C Compare   H Hunt      N Number",
     "W Width     R Range     P Poll",
-    "Z Freeze    O CPU Bank  Sh+O VIC",
+    "Z Freeze    O CPU Bank  SH+O VIC",
     "L Load      S Save",
     "",
-    "Bookmarks:",
-    "C=+B List   C=+0-9 Jump",
+    "Bookmarks:  C=+B List   C=+0-9 Jump",
     "",
     "Open monitor:  C=+O",
-    "Close monitor: C=+O / ESC",
-    "Leave edit:    C=+E / ESC",
+    "Close monitor: C=+O/ESC",
+    "Leave edit:    C=+E/ESC",
     "Copy/Paste:    C=+C / C=+V",
+    "Follow/Return: RETURN",
     NULL
 };
 
-static const char monitor_help_paging_line[] = "Paging:        F1/Sh+Sp  F7/Space";
+static const char monitor_help_paging_line[] = "Page Up/Down:  F1/SH+SPACE / F7/SPACE";
 
 static bool monitor_saved_state_valid = false;
 static MachineMonitorState monitor_saved_state = {
@@ -197,13 +197,15 @@ enum {
     MONITOR_NUMBER_ROW_SCREEN,
     MONITOR_NUMBER_ROW_COUNT,
     MONITOR_NUMBER_EDIT_BUFFER_MAX = 16,
-    MONITOR_NUMBER_POPUP_INNER_WIDTH = 25,
-    MONITOR_NUMBER_POPUP_INNER_HEIGHT = 8,
+    MONITOR_NUMBER_EXPR_BUFFER_MAX = 24,
+    MONITOR_NUMBER_POPUP_INNER_WIDTH = 28,
+    MONITOR_NUMBER_POPUP_INNER_HEIGHT = 7,
     MONITOR_NUMBER_POPUP_WIDTH = MONITOR_NUMBER_POPUP_INNER_WIDTH + 2,
     MONITOR_NUMBER_POPUP_HEIGHT = MONITOR_NUMBER_POPUP_INNER_HEIGHT + 2,
     // Shared UI accent colour used by UserInterface::set_screen_title() and
     // bottom-row help text via the historical "\eA" escape sequence.
     MONITOR_UI_ACCENT_COLOR = 1,
+    MONITOR_RETURN_STACK_MAX = 10,
 };
 
 static const uint8_t monitor_number_row_max_input[MONITOR_NUMBER_ROW_COUNT] = {
@@ -506,6 +508,116 @@ static MonitorError parse_number_core(const char *text, uint16_t *value)
         return parse_binary(buffer + 1, value) ? MONITOR_OK : MONITOR_SYNTAX;
     }
     return parse_decimal(buffer, value) ? MONITOR_OK : MONITOR_SYNTAX;
+}
+
+static bool monitor_number_expr_operator(char c)
+{
+    return c == '+' || c == '-' || c == '*' || c == '/';
+}
+
+static bool monitor_number_expr_parse_value(const char *&cursor, uint32_t *value)
+{
+    char token[32];
+    int len = 0;
+    uint16_t parsed = 0;
+
+    skip_spaces(cursor);
+    while (*cursor && !is_space_char(*cursor) && !monitor_number_expr_operator(*cursor)) {
+        if (len >= (int)sizeof(token) - 1) {
+            return false;
+        }
+        token[len++] = *cursor++;
+    }
+    token[len] = 0;
+    if (len <= 0) {
+        return false;
+    }
+    if (parse_number_core(token, &parsed) != MONITOR_OK) {
+        return false;
+    }
+    *value = parsed;
+    return true;
+}
+
+static MonitorError monitor_number_expr_parse_term(const char *&cursor, uint32_t *value)
+{
+    uint32_t result;
+
+    if (!monitor_number_expr_parse_value(cursor, &result)) {
+        return MONITOR_SYNTAX;
+    }
+    while (true) {
+        uint32_t rhs;
+        char op;
+
+        skip_spaces(cursor);
+        op = *cursor;
+        if (op != '*' && op != '/') {
+            break;
+        }
+        cursor++;
+        if (!monitor_number_expr_parse_value(cursor, &rhs)) {
+            return MONITOR_SYNTAX;
+        }
+        if (op == '*') {
+            if (rhs != 0 && result > 0xFFFFFFFFUL / rhs) {
+                return MONITOR_RANGE;
+            }
+            result *= rhs;
+        } else {
+            if (rhs == 0) {
+                return MONITOR_VALUE;
+            }
+            result /= rhs;
+        }
+    }
+    *value = result;
+    return MONITOR_OK;
+}
+
+static MonitorError monitor_number_expr_evaluate(const char *text, uint16_t max_value, uint16_t *value)
+{
+    const char *cursor = text;
+    uint32_t result;
+    MonitorError error = monitor_number_expr_parse_term(cursor, &result);
+
+    if (error != MONITOR_OK) {
+        return error;
+    }
+    while (true) {
+        uint32_t rhs;
+        char op;
+
+        skip_spaces(cursor);
+        op = *cursor;
+        if (!op) {
+            break;
+        }
+        if (op != '+' && op != '-') {
+            return MONITOR_SYNTAX;
+        }
+        cursor++;
+        error = monitor_number_expr_parse_term(cursor, &rhs);
+        if (error != MONITOR_OK) {
+            return error;
+        }
+        if (op == '+') {
+            if (result > 0xFFFFFFFFUL - rhs) {
+                return MONITOR_RANGE;
+            }
+            result += rhs;
+        } else {
+            if (rhs > result) {
+                return MONITOR_RANGE;
+            }
+            result -= rhs;
+        }
+    }
+    if (result > max_value) {
+        return MONITOR_RANGE;
+    }
+    *value = (uint16_t)result;
+    return MONITOR_OK;
 }
 
 static char monitor_ascii_display_byte(uint8_t value)
@@ -1474,10 +1586,15 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     number_preview_value = 0;
     number_base_bytes[0] = 0;
     number_base_bytes[1] = 0;
-    number_word = false;
-    number_edit_length = 0;
-    number_edit_buffer[0] = 0;
-    number_popup_x = 0;
+	    number_word = false;
+	    number_edit_length = 0;
+	    number_edit_buffer[0] = 0;
+	    number_expr_active = false;
+	    number_expr_word = false;
+	    number_expr_length = 0;
+	    number_expr_buffer[0] = 0;
+	    number_expr_status[0] = 0;
+	    number_popup_x = 0;
     number_popup_y = 1;
     number_target_addr = 0;
     number_target_bytes = 1;
@@ -1507,10 +1624,11 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     bookmark_popup_active = false;
     bookmark_selected = 0;
     bookmark_status_text[0] = 0;
-    bookmark_status_visible = false;
-    bookmark_status_emphasis = false;
-    bookmark_status_deadline = 0;
-    binary_bit_index = 7;
+	    bookmark_status_visible = false;
+	    bookmark_status_emphasis = false;
+	    bookmark_status_deadline = 0;
+	    return_stack_count = 0;
+	    binary_bit_index = 7;
 #ifdef RUNS_ON_PC
     edit_blink_polls = monitor_cursor_blink_idle_polls;
 #else
@@ -1771,9 +1889,10 @@ void MachineMonitor :: open_number_picker(void)
     if (number_selected < 0 || number_selected >= MONITOR_NUMBER_ROW_COUNT) {
         number_selected = MONITOR_NUMBER_ROW_HEX;
     }
-    number_picker_resolve_target();
-    number_picker_reset_edit_buffer();
-    number_picker_refresh_preview_from_memory();
+	    number_picker_resolve_target();
+	    number_picker_reset_edit_buffer();
+	    number_picker_close_expression();
+	    number_picker_refresh_preview_from_memory();
     number_picker_place_popup();
     number_picker_active = true;
 }
@@ -2115,8 +2234,114 @@ bool MachineMonitor :: number_picker_copy_preview(void)
     return clipboard_copy_bytes(bytes, number_picker_current_bytes());
 }
 
+void MachineMonitor :: number_picker_open_expression(void)
+{
+    number_picker_open_expression(0);
+}
+
+void MachineMonitor :: number_picker_open_expression(char op)
+{
+    uint8_t bytes = number_picker_current_bytes();
+
+    number_expr_active = true;
+    number_expr_word = bytes == 2;
+    number_expr_status[0] = 0;
+    if (number_selected == MONITOR_NUMBER_ROW_DECIMAL) {
+        sprintf(number_expr_buffer, "%u", (unsigned)number_preview_value);
+    } else if (number_selected == MONITOR_NUMBER_ROW_BINARY) {
+        int bits = number_expr_word ? 16 : 8;
+        number_expr_buffer[0] = '%';
+        for (int i = 0; i < bits && i + 1 < MONITOR_NUMBER_EXPR_BUFFER_MAX; i++) {
+            int bit = bits - 1 - i;
+            number_expr_buffer[i + 1] = (number_preview_value & (uint16_t)(1u << bit)) ? '1' : '0';
+        }
+        number_expr_buffer[bits + 1] = 0;
+    } else if (number_expr_word) {
+        sprintf(number_expr_buffer, "$%04X", (unsigned)number_preview_value);
+    } else {
+        sprintf(number_expr_buffer, "$%02X", (unsigned)(number_preview_value & 0xFF));
+    }
+    number_expr_length = (int)strlen(number_expr_buffer);
+    if (op && number_expr_length < MONITOR_NUMBER_EXPR_BUFFER_MAX) {
+        number_expr_buffer[number_expr_length++] = op;
+        number_expr_buffer[number_expr_length] = 0;
+    }
+}
+
+void MachineMonitor :: number_picker_close_expression(void)
+{
+    number_expr_active = false;
+    number_expr_word = false;
+    number_expr_length = 0;
+    number_expr_buffer[0] = 0;
+    number_expr_status[0] = 0;
+}
+
+void MachineMonitor :: number_picker_expression_set_status(const char *status)
+{
+    strncpy(number_expr_status, status ? status : "", sizeof(number_expr_status) - 1);
+    number_expr_status[sizeof(number_expr_status) - 1] = 0;
+}
+
+MonitorError MachineMonitor :: number_picker_evaluate_expression(uint16_t *value) const
+{
+    uint16_t max_value = number_expr_word ? 0xFFFF : 0x00FF;
+
+    if (!value) {
+        return MONITOR_SYNTAX;
+    }
+    return monitor_number_expr_evaluate(number_expr_buffer, max_value, value);
+}
+
 int MachineMonitor :: number_picker_handle_key(int key)
 {
+    if (number_expr_active) {
+        if (key == KEY_ESCAPE || key == KEY_BREAK) {
+            number_picker_close_expression();
+            refresh_popup_overlay();
+            return 0;
+        }
+        if (key == KEY_RETURN || key == '=') {
+            uint16_t value;
+            MonitorError error = number_picker_evaluate_expression(&value);
+            if (error == MONITOR_OK) {
+                number_preview_value = value;
+                number_word = number_expr_word;
+                number_picker_close_expression();
+            } else {
+                number_picker_expression_set_status(error == MONITOR_VALUE ? "DIV/0" :
+                                                    error == MONITOR_RANGE ? "RANGE" : "SYNTAX");
+            }
+            refresh_popup_overlay();
+            return 0;
+        }
+        if (key == KEY_BACK || key == KEY_DELETE) {
+            if (number_expr_length > 0) {
+                number_expr_length--;
+                number_expr_buffer[number_expr_length] = 0;
+                number_expr_status[0] = 0;
+            }
+            refresh_popup_overlay();
+            return 0;
+        }
+        if (key >= 32 && key < 127 && number_expr_length < MONITOR_NUMBER_EXPR_BUFFER_MAX) {
+            char typed = (char)key;
+            if (typed >= 'a' && typed <= 'f') {
+                typed = (char)(typed - ('a' - 'A'));
+            }
+            if (is_decimal_char(typed) || is_hex_char(typed) || typed == '$' ||
+                typed == 'x' || typed == 'X' || typed == '%' ||
+                monitor_number_expr_operator(typed)) {
+                number_expr_buffer[number_expr_length++] = typed;
+                number_expr_buffer[number_expr_length] = 0;
+                number_expr_status[0] = 0;
+                refresh_popup_overlay();
+            }
+            return 0;
+        }
+        return 0;
+    }
+
     if (key == KEY_ESCAPE || key == KEY_BREAK) {
         number_picker_active = false;
         draw();
@@ -2149,6 +2374,11 @@ int MachineMonitor :: number_picker_handle_key(int key)
     if (key == KEY_RETURN) {
         number_picker_commit();
         draw();
+        return 0;
+    }
+    if (key == '+' || key == '-' || key == '*' || key == '/') {
+        number_picker_open_expression((char)key);
+        refresh_popup_overlay();
         return 0;
     }
     if (key == KEY_BACK || key == KEY_DELETE) {
@@ -2559,6 +2789,15 @@ void MachineMonitor :: show_bookmark_status(uint8_t slot, const MonitorBookmarkS
     bookmark_status_deadline = (uint16_t)(getMsTimer() + 2000);
 }
 
+void MachineMonitor :: show_navigation_status(uint8_t index, const char *kind, uint16_t address)
+{
+    sprintf(bookmark_status_text, "F%u %s $%04X",
+            (unsigned)index, kind ? kind : "", (unsigned)address);
+    bookmark_status_visible = true;
+    bookmark_status_emphasis = false;
+    bookmark_status_deadline = (uint16_t)(getMsTimer() + 2000);
+}
+
 void MachineMonitor :: clear_bookmark_transient_state(void)
 {
     pending_hex_nibble = -1;
@@ -2566,11 +2805,12 @@ void MachineMonitor :: clear_bookmark_transient_state(void)
     range_mode = false;
     bookmark_popup_active = false;
     number_picker_active = false;
-    number_selected = 0;
-    number_word = false;
-    number_edit_length = 0;
-    number_edit_buffer[0] = 0;
-    number_target_locked = false;
+	    number_selected = 0;
+	    number_word = false;
+	    number_edit_length = 0;
+	    number_edit_buffer[0] = 0;
+	    number_picker_close_expression();
+	    number_target_locked = false;
     opcode_picker_close();
     hunt_picker_close();
     asm_edit_part = 0;
@@ -2615,13 +2855,11 @@ void MachineMonitor :: capture_bookmark(MonitorBookmarkSlot *bookmark) const
     bookmark->label[0] = 0;
 }
 
-bool MachineMonitor :: restore_bookmark(uint8_t slot)
+bool MachineMonitor :: restore_location(const MonitorBookmarkSlot *bookmark)
 {
-    const MonitorBookmarkSlot *bookmark = bookmarks ? bookmarks->get(slot) : NULL;
     uint8_t requested_vic_bank;
 
     if (!bookmark || !monitor_bookmark_slot_is_valid(*bookmark)) {
-        show_bookmark_status(slot, NULL, MONITOR_BOOKMARK_STATUS_EMPTY);
         return false;
     }
 
@@ -2629,7 +2867,6 @@ bool MachineMonitor :: restore_bookmark(uint8_t slot)
         state.cpu_port = (uint8_t)(bookmark->cpu_bank & 0x07);
         backend->set_monitor_cpu_port(state.cpu_port);
     } else if ((state.cpu_port & 0x07) != (bookmark->cpu_bank & 0x07)) {
-        show_bookmark_status(slot, bookmark, MONITOR_BOOKMARK_STATUS_RESTORE_FAILED);
         return false;
     }
 
@@ -2640,7 +2877,6 @@ bool MachineMonitor :: restore_bookmark(uint8_t slot)
         current_vic_bank = requested_vic_bank;
         vic_bank_override = (last_live_vic_bank != current_vic_bank);
     } else if ((current_vic_bank & 0x03) != requested_vic_bank) {
-        show_bookmark_status(slot, bookmark, MONITOR_BOOKMARK_STATUS_RESTORE_FAILED);
         return false;
     }
 
@@ -2658,7 +2894,174 @@ bool MachineMonitor :: restore_bookmark(uint8_t slot)
     apply_go_local(bookmark->address);
     reset_edit_blink();
     asm_edit_history_reset(state.current_addr);
+    return true;
+}
+
+bool MachineMonitor :: restore_return_location(const ReturnStackEntry *entry)
+{
+    if (!entry || !restore_location(&entry->location)) {
+        return false;
+    }
+    state.base_addr = entry->base_addr;
+    state.disasm_offset = entry->disasm_offset;
+    if (state.view == MONITOR_VIEW_ASM) {
+        ensure_disasm_visible();
+    } else {
+        ensure_current_visible();
+    }
+    return true;
+}
+
+bool MachineMonitor :: restore_bookmark(uint8_t slot)
+{
+    const MonitorBookmarkSlot *bookmark = bookmarks ? bookmarks->get(slot) : NULL;
+
+    if (!bookmark || !monitor_bookmark_slot_is_valid(*bookmark)) {
+        show_bookmark_status(slot, NULL, MONITOR_BOOKMARK_STATUS_EMPTY);
+        return false;
+    }
+    if (!restore_location(bookmark)) {
+        show_bookmark_status(slot, bookmark, MONITOR_BOOKMARK_STATUS_RESTORE_FAILED);
+        return false;
+    }
     show_bookmark_status(slot, bookmark, MONITOR_BOOKMARK_STATUS_RESTORED);
+    return true;
+}
+
+uint8_t MachineMonitor :: return_stack_push_current(void)
+{
+    ReturnStackEntry entry;
+    uint8_t index;
+
+    capture_bookmark(&entry.location);
+    entry.base_addr = state.base_addr;
+    entry.disasm_offset = state.disasm_offset;
+    if (return_stack_count >= MONITOR_RETURN_STACK_MAX) {
+        for (int i = 1; i < MONITOR_RETURN_STACK_MAX; i++) {
+            return_stack[i - 1] = return_stack[i];
+        }
+        return_stack_count = MONITOR_RETURN_STACK_MAX - 1;
+    }
+    index = return_stack_count;
+    return_stack[return_stack_count++] = entry;
+    return index;
+}
+
+bool MachineMonitor :: return_stack_pop(ReturnStackEntry *entry, uint8_t *index)
+{
+    if (!entry || !index || return_stack_count == 0) {
+        return false;
+    }
+    return_stack_count--;
+    *index = return_stack_count;
+    *entry = return_stack[return_stack_count];
+    return true;
+}
+
+bool MachineMonitor :: target_visible(uint16_t target) const
+{
+    int row = disasm_visible_row(target);
+    return row >= 0 && row < content_height;
+}
+
+void MachineMonitor :: follow_to_target(uint16_t target)
+{
+    if (target_visible(target)) {
+        state.current_addr = target;
+        asm_edit_history_reset(state.current_addr);
+        return;
+    }
+    apply_go_local(target);
+}
+
+bool MachineMonitor :: follow_target(uint16_t *target)
+{
+    if (!target || state.view != MONITOR_VIEW_ASM) {
+        return false;
+    }
+    {
+        uint16_t addr = state.base_addr;
+        uint16_t insn_addr = state.current_addr;
+        uint8_t bytes[3];
+        Disassembled6502 decoded;
+        int max_scan = (content_height > 0 ? content_height : 1) + 64;
+
+        for (int row = 0; row < max_scan; row++) {
+            uint8_t len = disasm_length(addr);
+            if (len == 0) {
+                len = 1;
+            }
+            if (monitor_disasm_row_contains(addr, len, state.current_addr)) {
+                insn_addr = addr;
+                break;
+            }
+            addr = (uint16_t)(addr + len);
+        }
+
+        read_row(insn_addr, bytes, 3);
+        disassemble_6502(insn_addr, bytes, state.illegal_enabled, &decoded);
+        monitor_disasm_tail_cutover(insn_addr, &decoded);
+        if (!decoded.valid) {
+            return false;
+        }
+        switch (bytes[0]) {
+            case 0x20:
+            case 0x4C:
+                if (decoded.length < 3) {
+                    return false;
+                }
+                *target = (uint16_t)(bytes[1] | ((uint16_t)bytes[2] << 8));
+                return true;
+            case 0x6C:
+                if (decoded.length < 3) {
+                    return false;
+                } else {
+                    uint16_t vector = (uint16_t)(bytes[1] | ((uint16_t)bytes[2] << 8));
+                    uint8_t low = canonical_read(vector);
+                    uint8_t high = canonical_read((uint16_t)(vector + 1));
+                    *target = (uint16_t)(low | ((uint16_t)high << 8));
+                    return true;
+                }
+            case 0x10: case 0x30: case 0x50: case 0x70:
+            case 0x90: case 0xB0: case 0xD0: case 0xF0:
+                if (decoded.length < 2) {
+                    return false;
+                }
+                *target = (uint16_t)(insn_addr + 2 + (int8_t)bytes[1]);
+                return true;
+            default:
+                break;
+        }
+    }
+    return false;
+}
+
+bool MachineMonitor :: follow_current(void)
+{
+    uint16_t target;
+    uint8_t index;
+
+    if (!follow_target(&target)) {
+        return false;
+    }
+    index = return_stack_push_current();
+    follow_to_target(target);
+    show_navigation_status(index, "JMP", target);
+    return true;
+}
+
+bool MachineMonitor :: return_current(void)
+{
+    ReturnStackEntry entry;
+    uint8_t index;
+
+    if (!return_stack_pop(&entry, &index)) {
+        return false;
+    }
+    if (!restore_return_location(&entry)) {
+        return false;
+    }
+    show_navigation_status(index, "RET", entry.location.address);
     return true;
 }
 
@@ -3271,7 +3674,7 @@ void MachineMonitor :: draw_bookmark_popup()
 void MachineMonitor :: draw_number_picker()
 {
     char popup_lines[MONITOR_NUMBER_POPUP_INNER_HEIGHT][MONITOR_NUMBER_POPUP_INNER_WIDTH + 1];
-    char bits[17];
+    char bits[18];
     char ascii_text[3];
     char screen_text[3];
     char hex_digits[5];
@@ -3293,11 +3696,12 @@ void MachineMonitor :: draw_number_picker()
         dump_hex_byte(hex_digits, 0, low);
         hex_digits[2] = 0;
     }
+    bits[0] = '%';
     for (int i = 0; i < (display_word ? 16 : 8); i++) {
         int bit = display_word ? (15 - i) : (7 - i);
-        bits[i] = (number_preview_value & (uint16_t)(1u << bit)) ? '1' : '0';
+        bits[i + 1] = (number_preview_value & (uint16_t)(1u << bit)) ? '1' : '0';
     }
-    bits[display_word ? 16 : 8] = 0;
+    bits[display_word ? 17 : 9] = 0;
 
     ascii_text[0] = display_word ? monitor_ascii_display_byte(high) : monitor_ascii_display_byte(low);
     ascii_text[1] = display_word ? monitor_ascii_display_byte(low) : 0;
@@ -3313,13 +3717,19 @@ void MachineMonitor :: draw_number_picker()
     sprintf(popup_lines[3], "Binary   %s", bits);
     sprintf(popup_lines[4], "ASCII    %s", ascii_text);
     sprintf(popup_lines[5], "Screen   %s", screen_text);
-    if (display_word) {
-        sprintf(popup_lines[6], "Write    $%04X/$%04X LE", target_addr,
-                (uint16_t)(target_addr + 1));
-        sprintf(popup_lines[7], "Bytes    %02X %02X", (unsigned)low, (unsigned)high);
-    } else {
-        sprintf(popup_lines[6], "Write    $%04X", target_addr);
-        sprintf(popup_lines[7], "Bytes    %02X", (unsigned)low);
+    strcpy(popup_lines[6], "Calc with +-*/ $Hex Dec %Bin");
+    if (number_expr_active) {
+        const char *expr = number_expr_buffer;
+        int expr_len = (int)strlen(expr);
+        int expr_room = MONITOR_NUMBER_POPUP_INNER_WIDTH - 5;
+        if (number_expr_status[0]) {
+            sprintf(popup_lines[6], "Expr=%s", number_expr_status);
+        } else {
+            if (expr_len > expr_room) {
+                expr += expr_len - expr_room;
+            }
+            sprintf(popup_lines[6], "Expr=%s", expr);
+        }
     }
 
     window->getOffsets(screen_x, screen_y);
@@ -3340,7 +3750,8 @@ void MachineMonitor :: draw_number_picker()
         memcpy(line, popup_lines[row], (size_t)len);
         line[MONITOR_NUMBER_POPUP_INNER_WIDTH] = 0;
         draw_with_highlight(&popup, row, line, MONITOR_NUMBER_POPUP_INNER_WIDTH,
-                            (row >= 1 && row <= 5 && (row - 1) == number_selected) ? 0 : -1,
+                            (number_expr_active && row == MONITOR_NUMBER_POPUP_INNER_HEIGHT - 1) ? 0 :
+                            ((row >= 1 && row <= 5 && (row - 1) == number_selected) ? 0 : -1),
                             MONITOR_NUMBER_POPUP_INNER_WIDTH);
     }
 }
@@ -4531,6 +4942,12 @@ int MachineMonitor :: handle_key(int key)
     if ((key == 'n' || key == 'N') && number_shortcut_allowed()) {
         open_number_picker();
         draw();
+        return 0;
+    }
+    if (!edit_mode && state.view == MONITOR_VIEW_ASM && key == KEY_RETURN) {
+        if (follow_current() || return_current()) {
+            draw();
+        }
         return 0;
     }
 

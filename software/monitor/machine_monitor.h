@@ -5,6 +5,7 @@
 
 #include "ui_elements.h"
 #include "memory_backend.h"
+#include "monitor_bookmarks.h"
 
 enum MonitorError {
     MONITOR_OK = 0,
@@ -123,7 +124,6 @@ class Screen;
 class Keyboard;
 class Window;
 class MonitorBookmarks;
-struct MonitorBookmarkSlot;
 
 class MachineMonitor : public UIObject
 {
@@ -165,6 +165,11 @@ class MachineMonitor : public UIObject
     bool number_word;
     int number_edit_length;
     char number_edit_buffer[17];
+    bool number_expr_active;
+    bool number_expr_word;
+    int number_expr_length;
+    char number_expr_buffer[25];
+    char number_expr_status[8];
     int number_popup_x;
     int number_popup_y;
     uint16_t number_target_addr;
@@ -210,6 +215,13 @@ class MachineMonitor : public UIObject
     bool bookmark_status_visible;
     bool bookmark_status_emphasis;
     uint16_t bookmark_status_deadline;
+    struct ReturnStackEntry {
+        MonitorBookmarkSlot location;
+        uint16_t base_addr;
+        uint8_t disasm_offset;
+    };
+    ReturnStackEntry return_stack[10];
+    uint8_t return_stack_count;
     // Cursor bit-position within the current byte in BINARY view.
     // 7 = MSB (leftmost rendered bit), 0 = LSB. Horizontal navigation and
     // typed 0/1 edits advance by one bit.
@@ -288,6 +300,11 @@ class MachineMonitor : public UIObject
     uint8_t number_picker_current_bytes(void) const;
     void number_picker_commit(void);
     bool number_picker_copy_preview(void);
+    void number_picker_open_expression(void);
+    void number_picker_open_expression(char op);
+    void number_picker_close_expression(void);
+    void number_picker_expression_set_status(const char *status);
+    MonitorError number_picker_evaluate_expression(uint16_t *value) const;
     int number_picker_handle_key(int key);
     bool prompt_command(const char *title, char *buffer, int max_len,
                         bool template_mode = false, bool uppercase = true);
@@ -296,9 +313,19 @@ class MachineMonitor : public UIObject
     void dismiss_bookmark_status(void);
     bool update_bookmark_status(void);
     void show_bookmark_status(uint8_t slot, const MonitorBookmarkSlot *bookmark, int kind);
+    void show_navigation_status(uint8_t index, const char *kind, uint16_t address);
     void clear_bookmark_transient_state(void);
     void capture_bookmark(MonitorBookmarkSlot *bookmark) const;
+    bool restore_location(const MonitorBookmarkSlot *bookmark);
+    bool restore_return_location(const ReturnStackEntry *entry);
     bool restore_bookmark(uint8_t slot);
+    uint8_t return_stack_push_current(void);
+    bool return_stack_pop(ReturnStackEntry *entry, uint8_t *index);
+    bool target_visible(uint16_t target) const;
+    void follow_to_target(uint16_t target);
+    bool follow_target(uint16_t *target);
+    bool follow_current(void);
+    bool return_current(void);
     void set_bookmark(uint8_t slot);
     void edit_bookmark_label(uint8_t slot);
     int bookmark_popup_handle_key(int key);

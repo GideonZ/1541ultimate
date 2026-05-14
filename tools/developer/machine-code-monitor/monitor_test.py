@@ -56,7 +56,7 @@ KEYS = {
     "CTRL_O": b"\x0f",
     "CBM_B": b"\x1bb",
     "CBM_1": b"\x1b1",
-    "ESC": b"\x1b",
+    "ESC": b"\x1bx",
     "ENTER": b"\r",
     "DEL": b"\x7f",
 }
@@ -985,6 +985,78 @@ def run_binary_bookmark_width_test(session: MonitorSession, rest_host: str) -> N
     screen.find_line_containing("MONITOR BIN $3100")
 
 
+def run_follow_return_test(session: MonitorSession, rest_host: str) -> None:
+    # ASM view test data:
+    #   $3340: JSR $3360   20 60 33 / NOP EA
+    #   $3350: BNE $3354   D0 02 / NOP EA EA / RTS 60
+    #   $3360: RTS         60 / NOP EA EA
+    write_rest_memory(rest_host, 0x3340, bytes((0x20, 0x60, 0x33, 0xEA)))
+    write_rest_memory(rest_host, 0x3350, bytes((0xD0, 0x02, 0xEA, 0xEA, 0x60)))
+    write_rest_memory(rest_host, 0x3360, bytes((0x60, 0xEA, 0xEA)))
+    screen = ensure_view(session, "ASM ")
+    screen = session.goto("3340")
+    screen = ensure_view(session, "ASM ")
+    screen.find_line_containing("JSR $3360")
+    # ENTER follows JSR; ENTER at the non-followable target returns
+    screen = session.send_key("ENTER")
+    screen.find_line_containing("MONITOR ASM $3360")
+    screen.find_line_containing("F0 JMP $3360")
+    screen = session.send_key("ENTER")
+    screen.find_line_containing("MONITOR ASM $3340")
+    screen.find_line_containing("F0 RET $3340")
+
+    # BNE branch follow; ENTER in HEX must not trigger Back
+    screen = session.goto("3350")
+    screen = ensure_view(session, "ASM ")
+    screen.find_line_containing("BNE $3354")
+    screen = session.send_key("ENTER")
+    screen.find_line_containing("MONITOR ASM $3354")
+    screen.find_line_containing("F0 JMP $3354")
+    screen = ensure_view(session, "HEX ")
+    screen.find_line_containing("MONITOR HEX $3354")
+    screen = session.send_key("ENTER")
+    screen.find_line_containing("MONITOR HEX $3354")
+    screen = ensure_view(session, "ASM ")
+    screen.find_line_containing("MONITOR ASM $3354")
+    screen = session.send_key("ENTER")
+    screen.find_line_containing("MONITOR ASM $3350")
+    screen.find_line_containing("F0 RET $3350")
+
+    # RTS is not a static follow target
+    screen = session.goto("3360")
+    screen = ensure_view(session, "ASM ")
+    screen.find_line_containing("RTS")
+    screen = session.send_key("ENTER")
+    screen.find_line_containing("MONITOR ASM $3360")
+    assert_line_lacks(screen, "F0 JMP $")
+
+def run_number_arithmetic_test(session: MonitorSession, rest_host: str) -> None:
+    write_rest_memory(rest_host, 0x3370, bytes((0x20, 0x00, 0xC0, 0xEA)))
+
+    screen = ensure_view(session, "ASM ")
+    screen = session.goto("3370")
+    screen = ensure_view(session, "ASM ")
+    screen.find_line_containing("JSR $C000")
+    screen = session.send_char("N")
+    screen.find_line_containing("MONITOR NUM $3371 WOR")
+    screen.find_line_containing("Calc with +-*/")
+    screen = session.send_char("+")
+    screen.find_line_containing("Expr=$C000+")
+    screen = session.send_text("$28=", "number expr +$28")
+    screen.find_line_containing("Hex      $C028")
+    assert_line_lacks(screen, "Expr=")
+    screen.find_line_containing("Calc with +-*/")
+
+    screen = session.send_char("/")
+    screen = session.send_text("0\r", "number expr div0")
+    screen.find_line_containing("Hex      $C028")
+    screen.find_line_containing("DIV/0")
+    screen = session.send_key("ESC")
+    screen.find_line_containing("Calc with +-*/")
+    screen = session.send_key("ESC")
+    screen.find_line_containing("MONITOR ASM $3370")
+
+
 def run_tests(session: MonitorSession, rest_host: str) -> None:
     snapshots = load_snapshots()
 
@@ -1119,6 +1191,12 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
 
     with check("binary width cycling and bookmark jump restores width 4"):
         run_binary_bookmark_width_test(session, rest_host)
+
+    with check("follow and return navigation"):
+        run_follow_return_test(session, rest_host)
+
+    with check("number popup arithmetic"):
+        run_number_arithmetic_test(session, rest_host)
 
 
 def main() -> int:

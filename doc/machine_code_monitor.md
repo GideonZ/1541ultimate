@@ -296,6 +296,7 @@ Binary width details:
 - `G`: exit the monitor and execute from an address.
 - `F1` or `Shift+Space`: page up.
 - `F7` or `Space`: page down.
+- `Enter`: in Assembly view, follow the target of a jumpable instruction, or return to the most recent saved source location when the current instruction is not jumpable and the follow stack is non-empty.
 - `O`: cycle CPU port banking, `CPU0`..`CPU7`.
 - `Shift+O`: cycle the VIC bank override.
 - `Z`: toggle freeze when the backend supports it.
@@ -309,6 +310,15 @@ The generic number parser used by the number tool accepts:
 - `0x1234` for hexadecimal
 - `1234` for decimal
 - `%10101010` for binary
+
+### Follow/Return
+
+Follow code flow in the Assembly view:
+
+- `Enter` follows the resolved target when the cursor is on a jumpable instruction such as `JMP`, `JSR`, `BEQ`, `BNE`, `BCC`, `BCS`, `BMI`, `BPL`, `BVC`, or `BVS`.
+- `Enter` returns to the most recent saved source location when the current Assembly instruction is not jumpable and the follow stack is non-empty.
+- The follow stack holds up to 10 return locations. When it is full, the oldest entry is discarded and the newest 10 are kept.
+- After each successful follow or return, the bottom row shows a compact zero-based follow-stack status for about 2 seconds, for example `F1 JMP $E000` and `F0 RET $A000`.
 
 ### CPU and VIC Bank Display
 
@@ -395,6 +405,38 @@ The number tool is a compact base-conversion and overwrite popup for the current
 In Assembly view, the number tool targets the operand bytes of the current instruction when possible.
 
 The ASCII and Screen rows in the number tool use the same mappings as the ASCII and Screen views.
+
+### Calculator
+
+In the Number popup, press `+`, `-`, `*`, or `/` to open the calculator. The expression is initialized with the current value and the selected operator.
+
+Press `Return` or `=` to evaluate the expression. Press `ESC` to cancel. On success, the popup returns to the compact conversion layout and refreshes all rows with the result.
+
+Expressions may contain one or more values separated by `+`, `-`, `*`, or `/`.  * and / are evaluated before + and -. Division is unsigned integer division and truncates toward zero.
+
+Examples:
+
+```text
+42
+$1000+4
+0x2000/16
+%1010*3
+1+2/3
+2+3*4
+````
+
+Formal EBNF grammar:
+
+```ebnf
+expr     = term, { ("+" | "-"), term } ;
+term     = value, { ("*" | "/"), value } ;
+value    = hex | c_hex | decimal | binary ;
+
+hex      = "$", hex_digits ;
+c_hex    = "0x", hex_digits ;
+decimal  = decimal_digits ;
+binary   = "%", binary_digits ;
+```
 
 ## Memory Operations
 
