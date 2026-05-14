@@ -32,6 +32,7 @@ typedef enum {
     e_led_fixed,
     e_led_sid,
     e_led_rainbow,
+    e_led_programmatic,
 } led_mode_t;
 
 typedef struct { uint8_t r, g, b; } RGB;
