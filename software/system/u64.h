@@ -132,7 +132,7 @@
 #define C64_BUS_EXTERNAL  (*(volatile uint8_t *)(C64_IO_BASE + 0x2C))
 #define C64_SPEED_PREFER  (*(volatile uint8_t *)(C64_IO_BASE + 0x2D))
 #define C64_SPEED_UPDATE  (*(volatile uint8_t *)(C64_IO_BASE + 0x2E))
-
+#define C64_VIC_SPLIT     (*(volatile uint8_t *)(C64_IO_BASE + 0x2F))
 #define C64_JOY1_SWOUT    (*(volatile uint8_t *)(C64_IO_BASE + 0x30))
 #define C64_JOY2_SWOUT    (*(volatile uint8_t *)(C64_IO_BASE + 0x31))
 #define C64_PADDLE_1_X    (*(volatile uint8_t *)(C64_IO_BASE + 0x32))
