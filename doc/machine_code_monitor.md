@@ -304,13 +304,6 @@ Binary width details:
 
 Addresses in command prompts are hexadecimal.
 
-The generic number parser used by the number tool accepts:
-
-- `$1234` for hexadecimal
-- `0x1234` for hexadecimal
-- `1234` for decimal
-- `%10101010` for binary
-
 ### Follow/Return
 
 Follow code flow in the Assembly view:
@@ -380,12 +373,11 @@ In edit mode, `Space` remains view-specific data entry and does not page.
 
 In Assembly view, if an inline edit is already active, `DEL` first cancels the current line edit state.
 
-## Clipboard, Range, and Number Tool
+## Selection and Clipboard
 
 - Copy the current byte with `C=+C`.
 - Paste the clipboard at the cursor with `C=+V`.
 - Toggle range mode with `R`.
-- Open the number tool with `N`.
 
 Range mode anchors the current address. The selected span runs from the anchor address to the current cursor address, inclusive.
 
@@ -393,6 +385,10 @@ While range mode is active:
 
 - `C=+C` copies the selected span.
 - Pressing `R` again also copies the selected span and exits range mode.
+
+## Number Tool
+
+- Open the number tool with `N`.
 
 The number tool is a compact base-conversion and overwrite popup for the current target. It shows the same value in these forms:
 
@@ -419,7 +415,7 @@ Examples:
 ```text
 42
 $1000+4
-0x2000/16
+$2000/16
 %1010*3
 1+2/3
 2+3*4
@@ -430,10 +426,9 @@ Formal EBNF grammar:
 ```ebnf
 expr     = term, { ("+" | "-"), term } ;
 term     = value, { ("*" | "/"), value } ;
-value    = hex | c_hex | decimal | binary ;
+value    = hex | decimal | binary ;
 
 hex      = "$", hex_digits ;
-c_hex    = "0x", hex_digits ;
 decimal  = decimal_digits ;
 binary   = "%", binary_digits ;
 ```

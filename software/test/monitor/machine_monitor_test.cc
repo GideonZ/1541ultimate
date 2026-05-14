@@ -338,7 +338,7 @@ static int test_parsers_and_formatters(void)
     uint8_t ascii_bytes[MONITOR_TEXT_BYTES_PER_ROW];
 
     if (expect(monitor_parse_expression("$1234", &value) == MONITOR_OK && value == 0x1234, "Hex expression parse failed.")) return 1;
-    if (expect(monitor_parse_expression("0x1234", &value) == MONITOR_OK && value == 0x1234, "0x expression parse failed.")) return 1;
+    if (expect(monitor_parse_expression("0x1234", &value) == MONITOR_SYNTAX, "0x-prefixed expressions must be rejected.")) return 1;
     if (expect(monitor_parse_expression("4660", &value) == MONITOR_OK && value == 0x1234, "Decimal expression parse failed.")) return 1;
     if (expect(monitor_parse_expression("%0001001000110100", &value) == MONITOR_OK && value == 0x1234, "Binary expression parse failed.")) return 1;
 
@@ -4422,6 +4422,48 @@ static int test_number_popup_edit_and_commit(void)
                    "Expression Number popup must keep uppercasing subsequent lowercase hex digits.")) return 1;
         r = expr_mon.poll(0);
         if (expect(r == 0, "Expression Number popup test: expression close failed.")) return 1;
+        expr_mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[32];
+        static const int invalid_keys[] = { 'x', 'g', '!' };
+        const int keys[] = { 'N', '+', '0', 'x', 'g', '!', '1', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor expr_mon(&ui, &backend);
+        expr_mon.init(&screen, &kb);
+
+        int r = expr_mon.poll(0);
+        if (expect(r == 0, "Expression Number popup invalid-char test: open failed.")) return 1;
+        r = expr_mon.poll(0);
+        if (expect(r == 0, "Expression Number popup invalid-char test: open-expression failed.")) return 1;
+        r = expr_mon.poll(0);
+        if (expect(r == 0, "Expression Number popup invalid-char test: zero digit failed.")) return 1;
+        get_popup_line(screen, 6, line, sizeof(line));
+        if (expect(strstr(line, "Expr=$00+0") == line,
+                   "Expression Number popup must accept the leading zero digit.")) return 1;
+        for (unsigned int i = 0; i < sizeof(invalid_keys) / sizeof(invalid_keys[0]); i++) {
+            r = expr_mon.poll(0);
+            if (expect(r == 0, "Expression Number popup invalid-char test: invalid key handling failed.")) return 1;
+            get_popup_line(screen, 6, line, sizeof(line));
+            if (expect(strstr(line, "Expr=$00+0") == line,
+                       "Expression Number popup must ignore disallowed printable characters.")) return 1;
+        }
+        r = expr_mon.poll(0);
+        if (expect(r == 0, "Expression Number popup invalid-char test: trailing digit failed.")) return 1;
+        get_popup_line(screen, 6, line, sizeof(line));
+        if (expect(strstr(line, "Expr=$00+01") == line,
+                   "Expression Number popup must keep parsing with valid digits after rejecting disallowed characters.")) return 1;
+        r = expr_mon.poll(0);
+        if (expect(r == 0, "Expression Number popup invalid-char test: expression close failed.")) return 1;
         expr_mon.deinit();
     }
 

@@ -500,10 +500,6 @@ static MonitorError parse_number_core(const char *text, uint16_t *value)
         const char *hex = buffer;
         return parse_hex_digits(hex, 1, 4, 0xFFFF, value);
     }
-    if (buffer[0] == '0' && (buffer[1] == 'x' || buffer[1] == 'X')) {
-        const char *hex = buffer + 2;
-        return parse_hex_digits(hex, 1, 4, 0xFFFF, value);
-    }
     if (buffer[0] == '%') {
         return parse_binary(buffer + 1, value) ? MONITOR_OK : MONITOR_SYNTAX;
     }
@@ -2330,7 +2326,7 @@ int MachineMonitor :: number_picker_handle_key(int key)
                 typed = (char)(typed - ('a' - 'A'));
             }
             if (is_decimal_char(typed) || is_hex_char(typed) || typed == '$' ||
-                typed == 'x' || typed == 'X' || typed == '%' ||
+                typed == '%' ||
                 monitor_number_expr_operator(typed)) {
                 number_expr_buffer[number_expr_length++] = typed;
                 number_expr_buffer[number_expr_length] = 0;
