@@ -8,6 +8,8 @@ extern "C" {
 #include "config.h"
 #include "config_menu.h"
 
+int swap_interface_type(UserInterface *ui) __attribute__ ((weak));
+
 /************************/
 /* ConfigBrowser Object */
 /************************/
@@ -267,6 +269,9 @@ int ConfigBrowser :: handle_key(int c)
             reset_quick_seek();
             state->refresh = true;
             user_interface->run_editor(helptext_ult, strlen(helptext_ult));
+            break;
+        case KEY_CTRL_I:
+            ret = swap_interface_type(user_interface);
             break;
         case KEY_SPACE: // space = select
         case KEY_RETURN: // CR = select

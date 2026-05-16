@@ -53,11 +53,18 @@ class TreeBrowser : public UIObject
     void seek_char(int c);
     void cd_impl(const char *path);
 public:
+    enum PickMode { PICK_NONE = 0, PICK_LOAD = 1, PICK_SAVE = 2 };
+
     char quick_seek_string[MAX_SEARCH_LEN_TB];
     int  quick_seek_length;
     bool allow_exit;
     bool has_path;
     bool has_border;
+    bool use_ui_focus_stack;
+    PickMode pick_mode;
+    bool     picked;
+    mstring  picked_path;
+    mstring  picked_name;
     
     FileManager *fm;
     UserInterface *user_interface;
@@ -99,6 +106,9 @@ public:
     void delete_selected(void);
     void paste(void);
     void cd(const char *path);
+    bool can_pick(Browsable *entry);
+    int  pick_current(void);
+    void pick_result(const char *path, const char *name, bool dir_only);
     
     void invalidate(const void *obj);
     const char *getPath();

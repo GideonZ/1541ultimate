@@ -33,6 +33,7 @@
 #define MENU_MEASURE_TIMING_API 0x6413
 #define MENU_C64_POWERCYCLE     0x6414
 #define MENU_C64_CLEARMEM       0x6415
+#define MENU_C64_MONITOR        0x6416
 
 #define C64_DMA_LOAD		0x6464
 #define C64_DRIVE_LOAD	    0x6465
@@ -292,6 +293,7 @@ class C64 : public GenericHost, ConfigurableObject
     uint8_t vic_irq;
     uint8_t vic_d011;
     uint8_t vic_d012;
+    uint8_t frozen_mode;
     bool backupIsValid;
 
     volatile bool buttonPushSeen;
@@ -377,7 +379,13 @@ public:
        if (!cfg) return 0;
        return cfg->get_value(id);	
     }
-    
+
+    const char *get_cfg_string(uint8_t id)
+    {
+       if (!cfg) return "";
+       return cfg->get_string(id);
+    }
+
     /* C64 specifics */
     void resetConfigInFlash(int page);
     void unfreeze(void);
@@ -388,6 +396,8 @@ public:
     void reset(void);
     void start(void);
     bool is_in_reset(void);
+    virtual uint8_t peek(uint16_t address);
+    virtual void poke(uint16_t address, uint8_t value);
 
     static void clear_cart_definition(cart_def *def) {
         def->custom_addr = 0;

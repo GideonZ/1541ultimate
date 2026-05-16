@@ -14,6 +14,43 @@ TEST(KeyboardUsbQueueTest, PushHeadPrependsInjectedKey)
 	EXPECT_EQ(-1, keyboard.getch());
 }
 
+TEST(KeyboardUsbQueueTest, ControlBookmarkDigitsStayDistinctFromRecall)
+{
+	Keyboard_USB keyboard;
+	uint8_t recall_report[USB_DATA_SIZE] = { 0x00, 0x00, 0x1E, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	uint8_t set_slot_report[USB_DATA_SIZE] = { 0x01, 0x00, 0x1E, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	uint8_t release[USB_DATA_SIZE] = { 0x00 };
+	uint8_t list_report[USB_DATA_SIZE] = { 0x01, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	uint8_t edit_report[USB_DATA_SIZE] = { 0x01, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00 };
+
+	keyboard.process_data(recall_report);
+	EXPECT_EQ('1', keyboard.getch());
+	keyboard.process_data(release);
+
+	keyboard.process_data(set_slot_report);
+	EXPECT_EQ(KEY_CTRL_1, keyboard.getch());
+	keyboard.process_data(release);
+
+	keyboard.process_data(list_report);
+	EXPECT_EQ(KEY_CTRL_B, keyboard.getch());
+	keyboard.process_data(release);
+
+	keyboard.process_data(edit_report);
+	EXPECT_EQ(KEY_CTRL_E, keyboard.getch());
+}
+
+TEST(KeyboardUsbQueueTest, CbmDigitDecodeRejectsInvalidKeys)
+{
+	EXPECT_TRUE(key_is_ctrl_digit(KEY_CTRL_0));
+	EXPECT_TRUE(key_is_ctrl_digit(KEY_CTRL_9));
+	EXPECT_FALSE(key_is_ctrl_digit('0'));
+	EXPECT_FALSE(key_is_ctrl_digit(KEY_CTRL_B));
+	EXPECT_EQ(0, key_ctrl_digit_value(KEY_CTRL_0));
+	EXPECT_EQ(9, key_ctrl_digit_value(KEY_CTRL_9));
+	EXPECT_EQ(-1, key_ctrl_digit_value('0'));
+	EXPECT_EQ(-1, key_ctrl_digit_value(KEY_CTRL_B));
+}
+
 TEST(KeyboardUsbQueueTest, PushHeadRepeatIsBounded)
 {
 	Keyboard_USB keyboard;
