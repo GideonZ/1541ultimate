@@ -259,6 +259,7 @@ port (
     -- Buttons
     bling_irq       : in  std_logic := '0';
     hdmi_irq        : in  std_logic := '0';
+    unlock_irq      : in  std_logic := '0';
     emulated_freeze : in  std_logic := '0';
     emulated_menu   : in  std_logic := '0';
     emulated_reset  : in  std_logic := '0';
@@ -521,7 +522,7 @@ begin
         irq_high(3) => sys_irq_wifi,
         irq_high(4) => bling_irq,
         irq_high(5) => hdmi_irq,
-        irq_high(6) => '0',
+        irq_high(6) => unlock_irq,
         irq_high(7) => guru_irq,
         irq_in(7)   => c64_reset_in,
         irq_in(6)   => sys_irq_eth_tx,
