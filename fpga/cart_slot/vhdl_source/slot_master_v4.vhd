@@ -152,7 +152,39 @@ begin
                 end if;
           
             when check_dma =>
-                if do_sample_addr = '1' and phi2_recovered = '1' and BA = '1' then
+                -- DAMN, THIS TOOK ME LONG!! LOOK AT THE PLA EQUATIONS!!!!!!
+                -- FOR READS, THE IO RANGE IS NOT SELECTED WHENEVER BA IS INACTIVE!!!!
+                -- MEANING THAT IN THE FIRST 3 CYCLES AFTER BA GOES LOW, WHERE AEC STILL
+                -- PULSES HIGH (=VALID CYCLES FOR DMA!!), THE MEMORY MAP IS DIFFERENT
+                -- THAN FOR WRITES! IN PARTICULAR: I/O IS NOT SELECTED FOR READS!!
+                --
+                -- !I_O = (_HIRAM  & _CHAREN  & A15  & A14  & !A13  & 
+                --             A12  & BA  & !_AEC  & R__W  & _GAME            <-- BA!? FOR READS NO IO SELECT!
+                --             # _HIRAM  & _CHAREN  & A15  & A14  & !A13  & 
+                --             A12  & !_AEC  & !R__W  & _GAME                 <-  NO BA: WRITES = IO SELECT
+                --             # _LORAM  & _CHAREN  & A15  & A14  & !A13  & 
+                --             A12  & BA  & !_AEC  & R__W  & _GAME            <-- BA!? FOR READS NO IO SELECT!
+                --             # _LORAM  & _CHAREN  & A15  & A14  & !A13  & 
+                --             A12  & !_AEC  & !R__W  & _GAME                 <-  NO BA: WRITES = IO SELECT
+                --             # _HIRAM  & _CHAREN  & A15  & A14  & !A13  & 
+                --             A12  & BA  & !_AEC  & R__W  & !_EXROM  &       <-- BA!? FOR READS NO IO SELECT!
+                --             !_GAME 
+                --             # _HIRAM  & _CHAREN  & A15  & A14  & !A13  & 
+                --             A12  & !_AEC  & !R__W  & !_EXROM  & !_GAME     <-  NO BA: WRITES = IO SELECT
+                --             # _LORAM  & _CHAREN  & A15  & A14  & !A13  & 
+                --             A12  & BA  & !_AEC  & R__W  & !_EXROM  &       <-- BA!? FOR READS NO IO SELECT!
+                --             !_GAME                                   
+                --             # _LORAM  & _CHAREN  & A15  & A14  & !A13  & 
+                --             A12  & !_AEC  & !R__W  & !_EXROM  & !_GAME     <-  NO BA: WRITES = IO SELECT
+                --             # A15  & A14  & !A13  & A12  & BA  &           
+                --             !_AEC  & R__W  & _EXROM  & !_GAME              <-- BA!? FOR READS NO IO SELECT!
+                --             # A15  & A14  & !A13  & A12  & !_AEC  &          
+                --             !R__W  & _EXROM  & !_GAME );                   <-  NO BA: WRITES = IO SELECT
+
+                if do_sample_addr = '1' and phi2_recovered = '1' and
+                    -- for reads we'll only proceed if BA is active, for writes, we can proceed when it's not a vic cycle
+                    -- which is true for all CPU cycles *and* for the first three cycles after BA falls off.
+                    ((rwn_out_i = '1' and BA = '1') or (rwn_out_i = '0' and vic_cycle = '0')) then
                     state <= do_dma;
                 end if;
 

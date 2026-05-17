@@ -40,6 +40,7 @@ extern "C" {
 #include "hdmi_scan.h"
 #include "usb_hid.h"
 #include "usb_hid_config.h"
+#include "monitor_init.h"
 
 const uint8_t default_colors[16][3] = {
     { 0x00, 0x00, 0x00 },
@@ -1393,11 +1394,13 @@ int U64Config :: setSidEmuParams(ConfigItem *it)
 #define MENU_U64_POKE 8
 #define MENU_U64_WIFI_ECHO 9
 #define MENU_U64_UART_ECHO 10
+#define MENU_U64_MONITOR 12
 
 void U64Config :: create_task_items(void)
 {
     TaskCategory *dev = TasksCollection :: getCategory("Developer", SORT_ORDER_DEVELOPER);
     myActions.poke      = new Action("Poke", SUBSYSID_U64, MENU_U64_POKE);
+    myActions.monitor   = register_u64_machine_monitor_task ? register_u64_machine_monitor_task(MENU_U64_MONITOR) : NULL;
     myActions.saveedid  = new Action("Save EDID to file", SUBSYSID_U64, MENU_U64_SAVEEDID);
     myActions.siddetect = new Action("Detect SIDs", SUBSYSID_U64, MENU_U64_DETECT_SIDS);
     myActions.esp32off  = new Action("Disable ESP32", SUBSYSID_U64, MENU_U64_WIFI_DISABLE);
@@ -1405,6 +1408,7 @@ void U64Config :: create_task_items(void)
     myActions.esp32boot = new Action("Enable ESP32 Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT);
 
     dev->append(myActions.saveedid );
+
 #if DEVELOPER > 0
     dev->append(myActions.poke      );
     dev->append(myActions.siddetect );
@@ -1512,7 +1516,7 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
         break;
 
     default:
-    	printf("U64 does not know this command\n");
+       printf("U64 does not know this command\n");
         return SSRET_NOT_IMPLEMENTED;
     }
     return SSRET_OK;

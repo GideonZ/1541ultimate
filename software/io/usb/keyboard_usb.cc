@@ -65,19 +65,19 @@ const uint8_t keymap_shifted[] = {
     KEY_UP, KEY_PAGEUP, KEY_INSERT, KEY_DELETE, 0x00 };
 
 const uint8_t keymap_control[] = {
-    0x00, KEY_ERR, KEY_ERR, KEY_ERR, 0x01, 0x02, 0x03, 0x04,
+	0x00, KEY_ERR, KEY_ERR, KEY_ERR, 0x01, KEY_CTRL_B, 0x03, 0x04,
     0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C,
     0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14,
-    0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, '1', '2',
-    '3', '4', '5', '6', '7', '8', '9', '0',
+	0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, KEY_CTRL_1, KEY_CTRL_2,
+	KEY_CTRL_3, KEY_CTRL_4, KEY_CTRL_5, KEY_CTRL_6, KEY_CTRL_7, KEY_CTRL_8, KEY_CTRL_9, KEY_CTRL_0,
     KEY_RETURN, KEY_ESCAPE, KEY_BACK, KEY_TAB, ' ', '-', '=', '[',
     ']', '\\', 0x00, ';', '\'', '`', ',', '.',
     '/', KEY_CAPS, KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5, KEY_F6,
     KEY_F7, KEY_F8, KEY_F9, KEY_F10, KEY_F11, KEY_F12, KEY_PRSCR, KEY_SCRLOCK,
     KEY_BREAK, KEY_INSERT, KEY_CTRL_HOME, KEY_PAGEUP, KEY_DELETE, KEY_END, KEY_PAGEDOWN, KEY_RIGHT,
     KEY_LEFT, KEY_DOWN, KEY_UP, KEY_NUMLOCK, '/', '*', '-', '+',
-    KEY_RETURN, '1', '2', '3', '4', '5', '6', '7',
-    '8', '9', '0', '.', 0x00 };
+	KEY_RETURN, KEY_CTRL_1, KEY_CTRL_2, KEY_CTRL_3, KEY_CTRL_4, KEY_CTRL_5, KEY_CTRL_6, KEY_CTRL_7,
+	KEY_CTRL_8, KEY_CTRL_9, KEY_CTRL_0, '.', 0x00 };
 
 const uint8_t keymap_usb2matrix[] = {
     0x0F, 0xFF, 0xFF, 0xFF, 0x0A, 0x1C, 0x14, 0x12,

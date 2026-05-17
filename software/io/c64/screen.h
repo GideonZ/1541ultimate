@@ -59,6 +59,7 @@ public:
 
     // for character mapped screens. Does not work for VT100.
     virtual void backup(void) { }
+    virtual bool prefers_full_refresh(void) { return false; }
     virtual void restore(void) { }
 
     // Static

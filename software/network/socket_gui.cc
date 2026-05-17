@@ -33,6 +33,15 @@ static void socket_gui_listen_task(void *a)
 	vTaskDelete(NULL);
 }
 
+static void socket_gui_set_timeouts(int socket_fd)
+{
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 200000; // 200 ms
+    setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(struct timeval));
+    setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(struct timeval));
+}
+
 SocketGui :: SocketGui()
 {
     printf("Starting Telnet Server\n");
@@ -212,10 +221,7 @@ int SocketGui :: listenTask(void)
 			 continue;
 		}
 
-		struct timeval tv;
-		tv.tv_sec = 0;
-		tv.tv_usec = 200000; // 200 ms
-		setsockopt(actual_socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
+        socket_gui_set_timeouts(actual_socket);
 
 		SocketStream *stream = new SocketStream(actual_socket);
 		BaseType_t res = xTaskCreate( socket_gui_task, "Socket Gui Task", configMINIMAL_STACK_SIZE, stream, PRIO_USERIFACE, NULL );

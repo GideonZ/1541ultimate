@@ -134,14 +134,14 @@ extern uint32_t __warm_boot;
 int main()
 {
     puts("Hello world, U64-II!");
-    if (__warm_boot == 0) {
-        __warm_boot = 1;
-        puts("Reset PHY");
-        wait_ms(2);
-        // either one, we reset; only one will respond
-        mdio_write(0x00, 0x9100, 0);
-        mdio_write(0x00, 0x9100, 3);
-    }
+    // if (__warm_boot == 0) {
+    //     __warm_boot = 1;
+    //     puts("Reset PHY");
+    //     wait_ms(2);
+    //     // either one, we reset; only one will respond
+    //     mdio_write(0x00, 0x9100, 0);
+    //     mdio_write(0x00, 0x9100, 3);
+    // }
 
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
     SPI_FLASH_DATA = 0xFF;

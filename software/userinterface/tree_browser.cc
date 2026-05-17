@@ -17,12 +17,17 @@
 #include "home_directory.h"
 #include "system_info.h"
 #include "assembly_search.h"
+#include "monitor_init.h"
+#include "subsys.h"
 
 #include "stream_textlog.h"
 extern StreamTextLog textLog; // the global log
 ClipBoard clipboard; // only one, and it's global and static
 
 int swap_joystick() __attribute__ ((weak));
+int swap_interface_type(UserInterface *ui) __attribute__ ((weak));
+
+static const char c_help_footer_label[] = "F3=HELP";
 
 /***********************/
 /* Tree Browser Object */
@@ -47,6 +52,9 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root) : UIObject(ui)
     observerQueue = new ObserverQueue("TreeBrowser");
     fm->registerObserver(observerQueue);
     has_border = false;
+    use_ui_focus_stack = true;
+    pick_mode = PICK_NONE;
+    picked = false;
 
     if(!state) {
         state = new TreeBrowserState(root, this, 0);
@@ -70,7 +78,7 @@ void TreeBrowser :: init() // call on root!
 	this->screen = user_interface->get_screen();
     this->keyb   = user_interface->get_keyboard();
 
-    screen->move_cursor(screen->get_size_x()-8, screen->get_size_y()-1);
+    screen->move_cursor(screen->get_size_x() - (int)strlen(c_help_footer_label) - 1, screen->get_size_y() - 1);
     screen->output("\eAF3=HELP\eO");
 
 	window = new Window(screen, 0, 2, screen->get_size_x(), screen->get_size_y()-3);
@@ -103,8 +111,10 @@ void TreeBrowser :: context(int initial)
     //printf("Creating context menu for %s\n", state->under_cursor->getName());
     contextMenu = new ContextMenu(user_interface, state, initial, state->selected_line);
     contextMenu->init(window, keyb);
-    user_interface->activate_uiobject(contextMenu);
-    // from this moment on, we loose focus.. polls will go directly to context menu!
+    if (use_ui_focus_stack) {
+        user_interface->activate_uiobject(contextMenu);
+        // from this moment on, we loose focus.. polls will go directly to context menu!
+    }
 }
 
 void TreeBrowser :: task_menu(void)
@@ -114,8 +124,10 @@ void TreeBrowser :: task_menu(void)
     //printf("Creating task menu for %s\n", state->node->getName());
     contextMenu = new TaskMenu(user_interface, state, path);
     contextMenu->init(window, keyb);
-    user_interface->activate_uiobject(contextMenu);
-    // from this moment on, we loose focus.. polls will go directly to menu!
+    if (use_ui_focus_stack) {
+        user_interface->activate_uiobject(contextMenu);
+        // from this moment on, we loose focus.. polls will go directly to menu!
+    }
 }
 
 void TreeBrowser :: test_editor(void)
@@ -146,8 +158,17 @@ int TreeBrowser :: poll(int sub_returned)
     int ret = 0;
 
     if(contextMenu) {
+        if (!use_ui_focus_stack) {
+            sub_returned = contextMenu->poll(0);
+            if (!sub_returned) {
+                return 0;
+            }
+        }
         if(sub_returned < 0) {
-        	delete contextMenu;
+            if (!use_ui_focus_stack) {
+                contextMenu->deinit();
+            }
+            delete contextMenu;
             contextMenu = NULL;
             state->draw();
         } else if(sub_returned > 0) {
@@ -158,6 +179,9 @@ int TreeBrowser :: poll(int sub_returned)
             // with that immediately.
             state->draw();
             ret = contextMenu->executeSelected(state->browser->getPath());
+            if (!use_ui_focus_stack) {
+                contextMenu->deinit();
+            }
             delete contextMenu;
             contextMenu = NULL;
             if (user_interface->has_focus(this)) {
@@ -190,7 +214,7 @@ int TreeBrowser :: poll(int sub_returned)
     }
     if(c >= 0) {
     	ret = handle_key(c);
-    	if(ret < 0) {
+		if(ret < 0) {
             keyb->wait_free();
         }
     }
@@ -336,7 +360,48 @@ void TreeBrowser :: seek_char(int c)
 int TreeBrowser :: handle_key(int c)
 {           
     int ret = 0;
-    
+
+    if (pick_mode != PICK_NONE) {
+        switch (c) {
+            case KEY_RETURN:
+                reset_quick_seek();
+                if (!state || !state->under_cursor) {
+                    return 0;
+                }
+                if (state->under_cursor->pickAsCurrentPath()) {
+                    return pick_current();
+                }
+                context(0);
+                return 0;
+            case KEY_RIGHT:
+                reset_quick_seek();
+                if (!state || !state->under_cursor) {
+                    return 0;
+                }
+                if (state->under_cursor->pickAsCurrentPath()) {
+                    return pick_current();
+                }
+                state->into2();
+                return 0;
+            case KEY_LEFT:
+                if (!state->previous && allow_exit) {
+                    return MENU_CLOSE;
+                }
+                state->level_up();
+                return 0;
+            case KEY_BREAK:
+            case KEY_F8:
+            case KEY_ESCAPE:
+            case KEY_F10:
+            case KEY_SCRLOCK:
+            case KEY_MENU:
+                picked = false;
+                return MENU_CLOSE;
+            default:
+                break;
+        }
+    }
+
     switch(c) {
         case KEY_BREAK: // runstop
             ret = (allow_exit) ? MENU_CLOSE : MENU_HIDE;
@@ -371,6 +436,27 @@ int TreeBrowser :: handle_key(int c)
             reset_quick_seek();
             state->refresh = true;
             user_interface->help();
+            break;
+        case KEY_CTRL_I:
+            reset_quick_seek();
+            ret = swap_interface_type(user_interface);
+            break;
+        case KEY_CTRL_O:
+            reset_quick_seek();
+            state->refresh = true;
+            if (get_machine_monitor_task) {
+                TaskMenu::ensure_task_actions_created(path ? FileManager :: getFileManager()->is_path_writable(path) : false);
+                Action *monitorAction = get_machine_monitor_task(SUBSYSID_U64);
+                if (!monitorAction) {
+                    monitorAction = get_machine_monitor_task(SUBSYSID_C64);
+                }
+                if (monitorAction) {
+                    const char *currentPath = path ? path->get_path() : "";
+                    SubsysCommand *cmd = new SubsysCommand(user_interface, monitorAction, currentPath, "");
+                    cmd->execute();
+                    ret = (int)(user_interface->menu_response_to_action);
+                }
+            }
             break;
         case KEY_CONFIG: // F2 -> config
             config();
@@ -479,7 +565,7 @@ bool TreeBrowser :: perform_quick_seek(void)
     int num_el = state->children->get_elements();
     for(int i=0;i<num_el;i++) {
     	Browsable *t = (*state->children)[i];
-		if(pattern_match(quick_seek_string, t->getName(), false)) {
+        if(t && pattern_match(quick_seek_string, t->getName(), false)) {
 			state->move_to_index(i);
 			return true;
 		}
@@ -505,7 +591,7 @@ void TreeBrowser :: copy_selection(void)
 	}
 	if (clipboard.getNumberOfFiles() == 0) {
 	    Browsable *t = state->under_cursor;
-	    if (t) {
+        if (t) {
 	        clipboard.addFile(t->getName());
 	    }
 	}
@@ -593,6 +679,39 @@ void TreeBrowser::delete_selected(void)
 void TreeBrowser :: cd(const char *dst)
 {
     observerQueue->putEvent(new FileManagerEvent(eChangeDirectory, dst));
+}
+
+void TreeBrowser :: pick_result(const char *path, const char *name, bool dir_only)
+{
+    (void)dir_only;
+    picked = true;
+    picked_path = path ? path : "";
+    picked_name = name ? name : "";
+}
+
+bool TreeBrowser :: can_pick(Browsable *entry)
+{
+    if (!entry || pick_mode == PICK_NONE) {
+        return false;
+    }
+    if (entry->pickAsCurrentPath()) {
+        return true;
+    }
+    FileInfo *info = entry->getFileInfo();
+    return info && !(info->attrib & (AM_DIR | AM_VOL));
+}
+
+int TreeBrowser :: pick_current(void)
+{
+    if (!state || !state->under_cursor || !can_pick(state->under_cursor)) {
+        return 0;
+    }
+    if (state->under_cursor->pickAsCurrentPath()) {
+        pick_result(getPath(), "", true);
+        return MENU_CLOSE;
+    }
+    pick_result(getPath(), state->under_cursor->getName(), false);
+    return MENU_CLOSE;
 }
 
 // private

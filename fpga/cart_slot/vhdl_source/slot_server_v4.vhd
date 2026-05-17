@@ -981,7 +981,7 @@ begin
             req         => io_req_samp,
             resp        => io_resp_samp );
 
-        i_sampler: entity work.sampler
+        i_sampler: entity work.sampler2
         generic map (
             g_clock_freq    => g_clock_freq,
             g_support_16bit => g_sampler_16bit,

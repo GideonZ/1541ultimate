@@ -14,6 +14,7 @@
 #include "u64.h"
 #include "c1541.h"
 #include "endianness.h"
+#include "monitor_init.h"
 #if U64 == 2
 #include "wifi.h"
 #endif
@@ -105,6 +106,9 @@ void C64_Subsys :: create_task_items(void)
     myActions.savemp3c = new Action("Save MP3 Drv C", SUBSYSID_C64, MENU_C64_SAVE_MP3_DRV_C);
     myActions.savemp3d = new Action("Save MP3 Drv D", SUBSYSID_C64, MENU_C64_SAVE_MP3_DRV_D);
     myActions.measure  = new Action("Measure Cart Bus", SUBSYSID_C64, MENU_MEASURE_TIMING);
+#if !U64
+    myActions.monitor  = register_c64_machine_monitor_task ? register_c64_machine_monitor_task(MENU_C64_MONITOR) : NULL;
+#endif
 
     taskCategory->append(myActions.reset);
     taskCategory->append(myActions.reboot);
@@ -636,7 +640,9 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
             if (run_code & RUNCODE_JUMP_BIT) {
             	C64_POKE(C64_BOOTCRT_JUMPADDR, buffer[0]);
             	C64_POKE(C64_BOOTCRT_JUMPADDR+1, buffer[1]);
-            	load_buffer_dma(buffer+2, bufferSize-2, 0);
+                if (bufferSize > 2) {
+                    load_buffer_dma(buffer+2, bufferSize-2, 0);
+                }
             } else {
             	load_buffer_dma(buffer, bufferSize, 0);
             }
@@ -724,6 +730,9 @@ int C64_Subsys :: load_file_dma(File *f, uint16_t reloc)
 
 int C64_Subsys :: load_buffer_dma(const uint8_t *buffer, const int bufferSize, uint16_t reloc)
 {
+    if (!buffer || bufferSize < 2) {
+        return 0;
+    }
     uint16_t load_address = 0;
 
     load_address = (uint16_t)buffer[0] | ((uint16_t)buffer[1]) << 8;

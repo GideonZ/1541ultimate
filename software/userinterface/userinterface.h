@@ -47,6 +47,7 @@
 
 typedef enum {
     e_keymap_default,
+    e_keymap_monitor,
 } keymap_options_t;
 
 
@@ -55,6 +56,7 @@ typedef enum {
 
 class Editor;
 class HexEditor;
+class MemoryBackend;
 class UserInterface : public ConfigurableObject, public HostClient
 {
 private:
@@ -101,8 +103,9 @@ public:
     virtual int  popup(const char *msg, int count, const char **names, const char *keys); // blocking, custom
     virtual int  choice(const char *msg, const char **choices, int count);
     virtual int  string_box(const char *msg, char *buffer, int maxlen); // blocking
-    int  path_box(char *buffer, int maxlen); // blocking, visual path picker
     virtual int  string_edit(char *buffer, int maxlen, Window *w, int x, int y, int max_chars=0);
+    virtual int  string_box(const char *msg, char *buffer, int maxlen, bool template_mode); // blocking
+    virtual int  string_box(const char *msg, char *buffer, int maxlen, bool template_mode, bool uppercase); // blocking
     virtual void show_progress(const char *msg, int steps); // not blocking
     virtual void update_progress(const char *msg, int steps); // not blocking
     virtual void hide_progress(void); // not blocking (of course)
@@ -122,6 +125,7 @@ public:
     void help();
     void run_editor(const char *, int);
     void run_hex_editor(const char *, int);
+    void run_machine_monitor(MemoryBackend *backend);
     void swapDisk(void);
     void send_keystroke(int key);
     static bool anyMenuActive(void);
