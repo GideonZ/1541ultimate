@@ -16,6 +16,7 @@ ContextMenu :: ContextMenu(UserInterface *ui, TreeBrowserState *state, int initi
 		contextable = NULL;
 
 	selectedAction = NULL;
+    pickAction = NULL;
 	context_state = e_new;
     screen = NULL;
     keyb = NULL;
@@ -35,6 +36,10 @@ ContextMenu :: ContextMenu(UserInterface *ui, TreeBrowserState *state, int initi
 
 ContextMenu :: ~ContextMenu(void)
 {
+    if (window) {
+        delete window;
+        window = NULL;
+    }
     for(int i=0;i<actions.get_elements();i++) {
         Action *act = actions[i];
         if (!(act->isPersistent())) {
@@ -47,6 +52,14 @@ int ContextMenu :: get_items(void)
 {
     if(contextable) {
         contextable->fetch_context_items(actions);
+        if (state && state->browser && state->browser->pick_mode != TreeBrowser::PICK_NONE &&
+            state->browser->can_pick(contextable) && !contextable->pickAsCurrentPath()) {
+            pickAction = new Action("Select", (actionFunction_t)NULL, 0);
+            actions.append(pickAction);
+            for (int i = actions.get_elements() - 1; i > 0; i--) {
+                actions.swap(i, i - 1);
+            }
+        }
     }
     return actions.get_elements();
 }
@@ -106,7 +119,8 @@ void ContextMenu :: init(Window *parwin, Keyboard *key)
 void ContextMenu :: deinit()
 {
     if (window) {
-        window->reset_border();
+        delete window;
+        window = NULL;
     }
 }
 
@@ -124,6 +138,9 @@ void ContextMenu :: help()
 int ContextMenu :: executeSelected(const char *p)
 {
     Action *act = getSelectedAction();
+    if (act && act == pickAction && state && state->browser) {
+        return state->browser->pick_current();
+    }
     if (act) {
         printf("Action set was: %s\n", act->getName());
         Browsable *b = getContextable();
@@ -144,15 +161,28 @@ int ContextMenu :: poll(int sub)
 {
     int ret = 0;
     int c;
+    bool use_focus_stack = !(state && state->browser && !state->browser->use_ui_focus_stack);
         
     if (subContext) {
+        if (!use_focus_stack) {
+            sub = subContext->poll(0);
+            if (!sub) {
+                return 0;
+            }
+        }
         if (sub < 0) {
+            if (!use_focus_stack) {
+                subContext->deinit();
+            }
             delete subContext;
             subContext = NULL;
             draw();
             return 0;
         } else if (sub > 0) {
             selectedAction = subContext->getSelectedAction();
+            if (!use_focus_stack) {
+                subContext->deinit();
+            }
             delete subContext;
             subContext = NULL;
             draw();

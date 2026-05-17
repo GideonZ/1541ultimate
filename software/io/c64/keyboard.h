@@ -28,11 +28,27 @@ public:
 #define KEY_CTRL_HOME 0x14
 
 #define KEY_CTRL_A 0x01
+#define KEY_CTRL_B 0x02
 #define KEY_CTRL_C 0x03
-#define KEY_CTRL_N 0x0E
-#define KEY_CTRL_V 0x16
+#define KEY_CTRL_D 0x04
+#define KEY_CTRL_E 0x05
+#define KEY_CTRL_I 0x09
 #define KEY_CTRL_J 0x0A
 #define KEY_CTRL_L 0x0C
+#define KEY_CTRL_N 0x0E
+#define KEY_CTRL_O 0x0F
+#define KEY_CTRL_V 0x16
+
+#define KEY_CTRL_0  0xB0
+#define KEY_CTRL_1  0xB1
+#define KEY_CTRL_2  0xB2
+#define KEY_CTRL_3  0xB3
+#define KEY_CTRL_4  0xB4
+#define KEY_CTRL_5  0xB5
+#define KEY_CTRL_6  0xB6
+#define KEY_CTRL_7  0xB7
+#define KEY_CTRL_8  0xB8
+#define KEY_CTRL_9  0xB9
 
 #define KEY_A      0x61
 #define KEY_S      0x73
@@ -67,6 +83,21 @@ public:
 #define KEY_PRSCR    0xA2
 #define KEY_SCRLOCK  0xA3
 #define KEY_NUMLOCK  0xA4
+
+static inline bool key_is_ctrl_digit(int key)
+{
+    return key >= KEY_CTRL_0 && key <= KEY_CTRL_9;
+}
+
+static inline int key_ctrl_digit_value(int key)
+{
+    return key_is_ctrl_digit(key) ? (key - KEY_CTRL_0) : -1;
+}
+
+static inline int key_ctrl_digit(int digit)
+{
+    return (digit >= 0 && digit <= 9) ? (KEY_CTRL_0 + digit) : KEY_ERR;
+}
 
 // Specials
 #define KEY_MENU     0x1FE

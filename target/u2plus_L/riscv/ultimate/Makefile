@@ -92,7 +92,9 @@ SRCS_CC	 =  u2pl_init.cc \
 			filesystem_fat.cc \
 			size_str.cc \
 			userinterface.cc \
+			run_machine_monitor.cc \
 			ui_elements.cc \
+			path_picker.cc \
 			user_file_interaction.cc \
 			editor.cc \
 			hex_editor.cc \
@@ -101,6 +103,13 @@ SRCS_CC	 =  u2pl_init.cc \
 			config_menu.cc \
 			context_menu.cc \
 			task_menu.cc \
+			monitor_init.cc \
+			monitor_file_io.cc \
+			monitor_bookmarks.cc \
+			machine_monitor.cc \
+			disassembler_6502.cc \
+			assembler_6502.cc \
+			u2_memory_backend.cc \
 			audio_select.cc \
 			filetype_d64.cc \
 			filetype_g64.cc \

@@ -32,6 +32,7 @@ class ContextMenu : public UIObject
     UserInterface *user_interface;
     TreeBrowserState *state;
     Action *selectedAction;
+    Action *pickAction;
     Browsable *contextable;
     ContextMenu *subContext;
 

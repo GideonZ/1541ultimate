@@ -27,6 +27,7 @@ public:
     const char *getName(void) { return name.c_str(); }
     const int getOrder(void) { return sortOrder; }
     void append(Action *a) { actions.append(a); }
+    void prepend(Action *a) { actions.prepend(a); }
     IndexedList<Action *> *getActions(void) { return &actions; }
     int countActive(void)
     {
