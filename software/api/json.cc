@@ -61,7 +61,7 @@ static JSON *convert(char *text, jsmntok_t *tokens, size_t num_tokens)
             // printf("LIST\n");
             break;
         case JSMN_OBJECT:
-            objects[i] = JSON::Obj();
+            objects[i] = new JSON_Object(true); //JSON::Obj();
             // printf("OBJ\n");
             break;
         case JSMN_KEY:

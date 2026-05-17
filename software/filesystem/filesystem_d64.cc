@@ -604,26 +604,73 @@ FRESULT FileSystemCBM::file_delete(const char *path)
     FileInfo info(20);
     FRESULT res = find_file(filename, dd, &info);
 
-    // Deleting directories is not yet implemented, we should check here if the dir is empty.
-    if (info.attrib & AM_DIR) {
-        return FR_DENIED;
+    if (res != FR_OK) {
+        delete dd;
+        return res;
     }
-    if (res == FR_OK) {
-        DirEntryCBM *p = dd->get_pointer();
-        bool vlir = is_vlir_entry(p);
-        p->std_fileType = 0x00;
-        dirty = 1;
-        // Saving information, since moving the window makes *p invalid!
-        int file_track = p->data_track;
-        int file_sector = p->data_sector;
-        int side_track = p->aux_track;
-        int side_sector = p->aux_sector;
-        if (vlir) {
-        	deallocate_vlir_records(file_track, file_sector, dd->visited);
+
+    bool is_dir = info.attrib & AM_DIR;
+    if (is_dir) {
+        FileInfo subinfo(20);
+        DirInCBM subdir(this, info.cluster);
+
+        res = subdir.open();
+        if (res != FR_OK) {
+            delete dd;
+            return res;
         }
-        deallocate_chain(file_track, file_sector, dd->visited); // file chain
-        deallocate_chain(side_track, side_sector, dd->visited); // side sector chain
-        sync();
+
+        res = subdir.get_entry(subinfo); // directory header / volume entry
+        if (res != FR_OK) {
+            subdir.close();
+            delete dd;
+            return res;
+        }
+
+        res = subdir.get_entry(subinfo); // first actual directory entry, if any
+        subdir.close();
+
+        if (res == FR_OK) {
+            delete dd;
+            return FR_DIR_NOT_EMPTY;
+        }
+        if (res != FR_NO_FILE) {
+            delete dd;
+            return res;
+        }
+
+        // The child directory scan moved the shared sector window.
+        res = move_window(get_abs_sector(dd->curr_t, dd->curr_s));
+        if (res != FR_OK) {
+            delete dd;
+            return res;
+        }
+    }
+
+    DirEntryCBM *p = dd->get_pointer();
+    bool vlir = is_vlir_entry(p);
+    p->std_fileType = 0x00;
+    dirty = 1;
+    // Saving information, since moving the window makes *p invalid!
+    int file_track = p->data_track;
+    int file_sector = p->data_sector;
+    int side_track = p->aux_track;
+    int side_sector = p->aux_sector;
+    FRESULT delete_res = FR_OK;
+    if (vlir) {
+        delete_res = deallocate_vlir_records(file_track, file_sector, dd->visited);
+    }
+    res = deallocate_chain(file_track, file_sector, dd->visited); // file or directory chain
+    if (delete_res == FR_OK) {
+        delete_res = res;
+    }
+    res = deallocate_chain(side_track, side_sector, dd->visited); // side sector chain
+    if (delete_res == FR_OK) {
+        delete_res = res;
+    }
+    res = sync();
+    if (delete_res != FR_OK) {
+        res = delete_res;
     }
     delete dd;
     return res;
