@@ -96,9 +96,7 @@ SRCS_CC	 =  u2pl_init.cc \
 			run_machine_monitor.cc \
 			ui_elements.cc \
 			form.cc \
-			path_picker.cc \
 			user_file_interaction.cc \
-			path_picker.cc \
 			editor.cc \
 			hex_editor.cc \
 			tree_browser.cc \
