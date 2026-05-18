@@ -10,6 +10,10 @@
 #include "task.h"
 #include <stdio.h>
 
+#if U64 && !RECOVERYAPP
+#include "timers.h"
+#endif
+
 #ifndef portENTER_CRITICAL
 #define portENTER_CRITICAL()
 #define portEXIT_CRITICAL()
@@ -30,6 +34,10 @@ uint8_t usb_matrix_lookup(const uint8_t *map, size_t map_size, uint8_t key)
 {
 	return (key < map_size) ? map[key] : 0xFF;
 }
+
+#if U64 && !RECOVERYAPP
+static const uint32_t REST_INPUT_TIMER_TICKS = (pdMS_TO_TICKS(20) > 0) ? pdMS_TO_TICKS(20) : 1;
+#endif
 
 }
 
@@ -116,6 +124,20 @@ Keyboard_USB :: Keyboard_USB()
 	matrixEnabled = false;
 	memset(matrix_state, 0, sizeof(matrix_state));
 	memset(injected_matrix_state, 0, sizeof(injected_matrix_state));
+	memset(rest_matrix_state, 0, sizeof(rest_matrix_state));
+	memset(rest_matrix_overlay, 0, sizeof(rest_matrix_overlay));
+	memset(rest_overlay_hold, 0, sizeof(rest_overlay_hold));
+	usb_restore = 0;
+	usb_freeze = 0;
+	rest_restore = false;
+	rest_restore_overlay = 0;
+	rest_restore_hold = 0;
+#if U64 && !RECOVERYAPP
+	rest_timer = xTimerCreate("RestInput", REST_INPUT_TIMER_TICKS, pdTRUE, this, Keyboard_USB :: S_rest_timer);
+	if (rest_timer) {
+		xTimerStart(rest_timer, 0);
+	}
+#endif
 	key_head = 0;
 	key_tail = 0;
 	injected_head = 0;
@@ -134,7 +156,13 @@ Keyboard_USB :: Keyboard_USB()
 
 Keyboard_USB :: ~Keyboard_USB()
 {
-
+#if U64 && !RECOVERYAPP
+	if (rest_timer) {
+		xTimerStop(rest_timer, 0);
+		xTimerDelete(rest_timer, 0);
+		rest_timer = NULL;
+	}
+#endif
 }
 
 void Keyboard_USB :: putch(uint8_t ch)
@@ -156,8 +184,15 @@ void Keyboard_USB :: applyMatrixState(void)
 		return;
 	}
 	for (int i = 0; i < 8; i++) {
-		matrix[i] = matrixEnabled ? (matrix_state[i] | injected_matrix_state[i]) : 0;
+		matrix[i] = matrixEnabled ? (matrix_state[i] | injected_matrix_state[i] | rest_matrix_state[i] | rest_matrix_overlay[i]) : 0;
 	}
+	matrix[9] = matrixEnabled ? effectiveRestoreBit() : 0;
+	matrix[10] = matrixEnabled ? usb_freeze : 0;
+}
+
+uint8_t Keyboard_USB :: effectiveRestoreBit(void) const
+{
+	return usb_restore | (rest_restore ? 1 : 0) | (rest_restore_overlay ? 1 : 0);
 }
 
 void Keyboard_USB :: clearInjectedMatrixState(void)
@@ -269,8 +304,8 @@ void Keyboard_USB :: usb2matrix(uint8_t *kd)
 		}
 	}
 
-	matrix[9] = restore;
-	matrix[10] = freeze;
+	usb_restore = restore;
+	usb_freeze = freeze;
 
 	if (!something_else_pressed) {
 	    if (modi & 0x02) { // left shift
@@ -287,6 +322,16 @@ void Keyboard_USB :: usb2matrix(uint8_t *kd)
 	}
 	applyMatrixState();
 }
+
+#if U64 && !RECOVERYAPP
+void Keyboard_USB :: S_rest_timer(TimerHandle_t a)
+{
+	Keyboard_USB *keyboard = (Keyboard_USB *)pvTimerGetTimerID(a);
+	if (keyboard) {
+		keyboard->tickRestOverlays();
+	}
+}
+#endif
 
 // called from USB thread
 void Keyboard_USB :: process_data(uint8_t *kbdata)
@@ -495,6 +540,126 @@ void Keyboard_USB :: clear_buffer(void)
 	clearInjectedMatrixState();
 }
 
+void Keyboard_USB :: restPress(uint8_t row, uint8_t col_bit)
+{
+	if ((row >= 8) || (col_bit >= 8)) {
+		return;
+	}
+	portENTER_CRITICAL();
+	rest_matrix_state[row] |= (1 << col_bit);
+	applyMatrixState();
+	portEXIT_CRITICAL();
+}
+
+void Keyboard_USB :: restRelease(uint8_t row, uint8_t col_bit)
+{
+	if ((row >= 8) || (col_bit >= 8)) {
+		return;
+	}
+	portENTER_CRITICAL();
+	rest_matrix_state[row] &= ~(1 << col_bit);
+	applyMatrixState();
+	portEXIT_CRITICAL();
+}
+
+void Keyboard_USB :: restTap(uint8_t row, uint8_t col_bit, uint8_t hold_ticks)
+{
+	if ((row >= 8) || (col_bit >= 8) || (hold_ticks == 0)) {
+		return;
+	}
+	portENTER_CRITICAL();
+	rest_matrix_overlay[row] |= (1 << col_bit);
+	rest_overlay_hold[row][col_bit] = hold_ticks;
+	applyMatrixState();
+	portEXIT_CRITICAL();
+}
+
+void Keyboard_USB :: restPressRestore(void)
+{
+	portENTER_CRITICAL();
+	rest_restore = true;
+	applyMatrixState();
+	portEXIT_CRITICAL();
+}
+
+void Keyboard_USB :: restReleaseRestore(void)
+{
+	portENTER_CRITICAL();
+	rest_restore = false;
+	applyMatrixState();
+	portEXIT_CRITICAL();
+}
+
+void Keyboard_USB :: restTapRestore(uint8_t hold_ticks)
+{
+	if (hold_ticks == 0) {
+		return;
+	}
+	portENTER_CRITICAL();
+	rest_restore_overlay = 1;
+	rest_restore_hold = hold_ticks;
+	applyMatrixState();
+	portEXIT_CRITICAL();
+}
+
+void Keyboard_USB :: restReleaseAll(void)
+{
+	portENTER_CRITICAL();
+	memset(rest_matrix_state, 0, sizeof(rest_matrix_state));
+	memset(rest_matrix_overlay, 0, sizeof(rest_matrix_overlay));
+	memset(rest_overlay_hold, 0, sizeof(rest_overlay_hold));
+	rest_restore = false;
+	rest_restore_overlay = 0;
+	rest_restore_hold = 0;
+	applyMatrixState();
+	portEXIT_CRITICAL();
+}
+
+void Keyboard_USB :: restSnapshot(uint8_t out_matrix[8], bool &out_restore) const
+{
+	for (int i = 0; i < 8; i++) {
+		out_matrix[i] = rest_matrix_state[i] | rest_matrix_overlay[i];
+	}
+	out_restore = rest_restore || (rest_restore_overlay != 0);
+}
+
+void Keyboard_USB :: restPersistentSnapshot(uint8_t out_matrix[8], bool &out_restore) const
+{
+	for (int i = 0; i < 8; i++) {
+		out_matrix[i] = rest_matrix_state[i];
+	}
+	out_restore = rest_restore;
+}
+
+void Keyboard_USB :: tickRestOverlays(void)
+{
+	portENTER_CRITICAL();
+	bool changed = false;
+	for (int row = 0; row < 8; row++) {
+		for (int col = 0; col < 8; col++) {
+			if (rest_overlay_hold[row][col] == 0) {
+				continue;
+			}
+			rest_overlay_hold[row][col]--;
+			if (rest_overlay_hold[row][col] == 0) {
+				rest_matrix_overlay[row] &= ~(1 << col);
+				changed = true;
+			}
+		}
+	}
+	if (rest_restore_hold > 0) {
+		rest_restore_hold--;
+		if (rest_restore_hold == 0) {
+			rest_restore_overlay = 0;
+			changed = true;
+		}
+	}
+	if (changed) {
+		applyMatrixState();
+	}
+	portEXIT_CRITICAL();
+}
+
 void Keyboard_USB :: setMatrix(volatile uint8_t *matrix)
 {
 	if (this->matrix) {
@@ -513,6 +678,7 @@ void Keyboard_USB :: setMatrix(volatile uint8_t *matrix)
 			matrix[i] = 0x00;
 		}
 	}
+	applyMatrixState();
 }
 
 void Keyboard_USB :: enableMatrix(bool enable)

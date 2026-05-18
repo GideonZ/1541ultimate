@@ -36,6 +36,10 @@ void writer_complete(TempfileWriter *writer, const void *context1, void *context
 TempfileWriter *attachment_writer(HTTPReqMessage *req, HTTPRespMessage *resp, const ApiCall_t *func, ArgsURI *args)
 {
     if (req->bodyType != eNoBody) {
+        if ((req->bodyType == eTotalSize) && (req->bodySize == 0)) {
+            req->bodyType = eNoBody;
+            return NULL;
+        }
         TempfileWriter *writer = new TempfileWriter(req, resp, writer_complete, func, args);
         setup_multipart(req, &TempfileWriter::collect_wrapper, writer);
         return writer;
@@ -47,6 +51,10 @@ TempfileWriter *attachment_writer(HTTPReqMessage *req, HTTPRespMessage *resp, co
 REUWriter *attachment_reu(HTTPReqMessage *req, HTTPRespMessage *resp, const ApiCall_t *func, ArgsURI *args)
 {
     if (req->bodyType != eNoBody) {
+        if ((req->bodyType == eTotalSize) && (req->bodySize == 0)) {
+            req->bodyType = eNoBody;
+            return NULL;
+        }
         REUWriter *writer = new REUWriter();
         writer->create_callback(req, resp, args, (const ApiCall_t *)func);
         setup_multipart(req, &REUWriter::collect_wrapper, writer);

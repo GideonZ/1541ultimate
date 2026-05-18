@@ -22,12 +22,22 @@ static int parse_json(char *text, size_t text_size, jsmntok_t *tokens, size_t to
 
 static JSON *convert(char *text, jsmntok_t *tokens, size_t num_tokens)
 {
+    if (num_tokens == 0) {
+        return NULL;
+    }
     JSON **objects = (JSON **)malloc(sizeof(JSON *) * num_tokens);
+    if (!objects) {
+        return NULL;
+    }
     memset(objects, 0, num_tokens * sizeof(JSON *));
     bool invalidJson = false;
 
     for (unsigned int i = 0; i < num_tokens; i++) {
         jsmntok_t *current = &(tokens[i]);
+        if ((current->start < 0) || (current->end < current->start)) {
+            invalidJson = true;
+            break;
+        }
         text[current->end] = 0;
         jsmntok_t *parent = current->parent < 0 ? NULL : (&tokens[current->parent]);
 
@@ -36,7 +46,7 @@ static JSON *convert(char *text, jsmntok_t *tokens, size_t num_tokens)
             // printf("STR %.*s\n", current->end - current->start, raw_space + current->start);
             //  If the parent is an object, then the string is a key value. For key values
             //  we don't create a string object.
-            if (parent->type != JSMN_OBJECT) {
+            if (!parent || (parent->type != JSMN_OBJECT)) {
                 objects[i] = new JSON_String(text + current->start);
             } else {
                 current->type = JSMN_KEY;
@@ -94,7 +104,14 @@ static JSON *convert(char *text, jsmntok_t *tokens, size_t num_tokens)
                     }
                 }
             } else if (parent->type == JSMN_ARRAY) {
-                ((JSON_List *)objects[current->parent])->add(objects[i]);
+                JSON *o = objects[current->parent];
+                if (!o || o->type() != eList || !objects[i]) {
+                    invalidJson = true;
+                    delete objects[i];
+                    objects[i] = NULL;
+                } else {
+                    ((JSON_List *)o)->add(objects[i]);
+                }
             } else if (objects[i]) {
                 //printf("Current object %s cannot be attached.\n", objects[i]->render());
                 invalidJson = true;
@@ -114,7 +131,14 @@ static JSON *convert(char *text, jsmntok_t *tokens, size_t num_tokens)
 
 int convert_text_to_json_objects(char *text, size_t text_size, size_t max_tokens, JSON **out)
 {
+    *out = NULL;
+    if ((text_size == 0) || (max_tokens == 0)) {
+        return JSMN_ERROR_ILLEGAL;
+    }
     jsmntok_t *tokens = (jsmntok_t *)malloc(sizeof(jsmntok_t) * max_tokens);
+    if (!tokens) {
+        return JSMN_ERROR_NOMEM;
+    }
     // memset(tokens, 0, max_tokens * sizeof(jsmntok_t)); // not necessary?
     int tokens_used = parse_json(text, text_size, tokens, max_tokens);
 
@@ -130,7 +154,6 @@ int convert_text_to_json_objects(char *text, size_t text_size, size_t max_tokens
     } else {
         printf("Parsing JSON succeeded: %d tokens.\n", tokens_used);
     }
-    *out = NULL;
     *out = convert(text, tokens, tokens_used);
     free(tokens);
     if (!(*out)) {

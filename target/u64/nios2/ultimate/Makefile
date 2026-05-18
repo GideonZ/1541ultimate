@@ -66,6 +66,7 @@ SRCS_CC	 =  u2p_init.cc \
 			u64_config.cc \
 			rtc_i2c.cc \
 			c64.cc \
+			joystick_output.cc \
 			c64_crt.cc \
 			u64_machine.cc \
 			c64_subsys.cc \
@@ -177,6 +178,7 @@ SRCS_CC	 =  u2p_init.cc \
 			route_runners.cc \
 			route_configs.cc \
 			route_machine.cc \
+			route_input.cc \
 			route_streams.cc \
 			assembly_search.cc \
 			assembly.cc \

@@ -4,6 +4,10 @@
 #include "subsys.h"
 #include "c64.h"
 #include "c64_subsys.h"
+#if U64
+#include "keyboard_usb.h"
+#include "joystick_output.h"
+#endif
 
 #define MENU_C64_PAUSE      0x640B
 #define MENU_C64_RESUME     0x640C
@@ -31,6 +35,12 @@ API_CALL(PUT, machine, reset, NULL, ARRAY( {  }))
 {
     SubsysCommand *cmd = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_RESET, 0);
     SubsysResultCode_t retval = cmd->execute();
+    if (retval.status == SSRET_OK) {
+#if U64
+        system_usb_keyboard.restReleaseAll();
+        JoystickOutput::instance().releaseAllRest();
+#endif
+    }
     resp->error(SubsysCommand::error_string(retval.status));
     resp->json_response(SubsysCommand::http_response_map(retval.status));
 }
@@ -39,6 +49,12 @@ API_CALL(PUT, machine, reboot, NULL, ARRAY( {  }))
 {
     SubsysCommand *cmd = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_REBOOT, 0);
     SubsysResultCode_t retval = cmd->execute();
+    if (retval.status == SSRET_OK) {
+#if U64
+        system_usb_keyboard.restReleaseAll();
+        JoystickOutput::instance().releaseAllRest();
+#endif
+    }
     resp->error(SubsysCommand::error_string(retval.status));
     resp->json_response(SubsysCommand::http_response_map(retval.status));
 }

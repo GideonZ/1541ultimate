@@ -11,6 +11,10 @@
 #include "keyboard.h"
 #include "integer.h"
 
+#if U64 && !RECOVERYAPP
+typedef struct tmrTimerControl * TimerHandle_t;
+#endif
+
 static const int USB_KEY_BUFFER_SIZE = 64;
 #define USB_DATA_SIZE 8
 
@@ -22,9 +26,20 @@ class Keyboard_USB : public Keyboard
 	bool matrixEnabled;
 	uint8_t matrix_state[8];
 	uint8_t injected_matrix_state[8];
+	uint8_t rest_matrix_state[8];
+	uint8_t rest_matrix_overlay[8];
+	uint8_t rest_overlay_hold[8][8];
 	uint8_t key_buffer[USB_KEY_BUFFER_SIZE];
 	uint8_t injected_buffer[USB_KEY_BUFFER_SIZE];
     uint8_t last_data[USB_DATA_SIZE];
+    uint8_t usb_restore;
+    uint8_t usb_freeze;
+    bool rest_restore;
+    uint8_t rest_restore_overlay;
+    uint8_t rest_restore_hold;
+#if U64 && !RECOVERYAPP
+    TimerHandle_t rest_timer;
+#endif
     int  key_head;
     int  key_tail;
     int  injected_head;
@@ -41,6 +56,10 @@ class Keyboard_USB : public Keyboard
     void applyMatrixState(void);
     void clearInjectedMatrixState(void);
     void setInjectedMatrixKey(int key);
+    uint8_t effectiveRestoreBit(void) const;
+#if U64 && !RECOVERYAPP
+    static void S_rest_timer(TimerHandle_t a);
+#endif
 public:
     Keyboard_USB();
     ~Keyboard_USB();
@@ -57,6 +76,17 @@ public:
     void remove_injected_key(int c);
     void wait_free(void);
     void clear_buffer(void);
+
+    void restPress(uint8_t row, uint8_t col_bit);
+    void restRelease(uint8_t row, uint8_t col_bit);
+    void restTap(uint8_t row, uint8_t col_bit, uint8_t hold_ticks);
+    void restPressRestore(void);
+    void restReleaseRestore(void);
+    void restTapRestore(uint8_t hold_ticks);
+    void restReleaseAll(void);
+    void restSnapshot(uint8_t out_matrix[8], bool &out_restore) const;
+    void restPersistentSnapshot(uint8_t out_matrix[8], bool &out_restore) const;
+    void tickRestOverlays(void);
 
     // attach / detach matrix peripheral to send keystrokes to.
     void setMatrix(volatile uint8_t *matrix);
