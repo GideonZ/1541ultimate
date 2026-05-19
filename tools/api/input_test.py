@@ -310,11 +310,13 @@ def prepare_basic_entry_row(session: RestInputSession) -> int:
 
 
 def assert_joystick_ports(session: RestInputSession, port1: int, port2: int) -> None:
-    actual_port1, actual_port2 = read_joystick_cia(session)
-    if (actual_port1 & 0x1F) != port1 or (actual_port2 & 0x1F) != port2:
+    actual_port_a, actual_port_b = read_joystick_cia(session)
+    actual_port1 = actual_port_b & 0x1F
+    actual_port2 = actual_port_a & 0x1F
+    if actual_port1 != port1 or actual_port2 != port2:
         raise Failure(
             f"Expected joy1=${port1:02X} joy2=${port2:02X}, "
-            f"got joy1=${actual_port1 & 0x1F:02X} joy2=${actual_port2 & 0x1F:02X}"
+            f"got joy1=${actual_port1:02X} joy2=${actual_port2:02X}"
         )
 
 
@@ -371,6 +373,39 @@ def read_keyboard_row(session: RestInputSession, row: int) -> int:
         return regs[1]
     finally:
         session.resume()
+
+
+def read_joystick_pots(session: RestInputSession, port: int) -> Tuple[int, int]:
+    if port not in (1, 2):
+        raise Failure(f"Invalid joystick port for POT read: {port}")
+    # Mirror Anykey's VIC-II probe: select the joystick port on CIA1 first,
+    # leave the machine running briefly, then read SID POTX/POTY.
+    session.write_memory(0xDC02, b"\xC0")
+    session.write_memory(0xDC00, b"\x40" if port == 1 else b"\x80")
+    time.sleep(0.10)
+    regs = session.read_memory(0xD419, 2)
+    return regs[0], regs[1]
+
+
+def assert_joystick_pots(session: RestInputSession, port: int, potx: int, poty: int) -> None:
+    actual_potx, actual_poty = read_joystick_pots(session, port)
+    if (actual_potx, actual_poty) != (potx, poty):
+        raise Failure(
+            f"Joystick port {port} POT mismatch; expected ${potx:02X}/${poty:02X}, "
+            f"got ${actual_potx:02X}/${actual_poty:02X}"
+        )
+
+
+def assert_anykey_extra_buttons(session: RestInputSession, port: int, fire2: bool, fire3: bool) -> None:
+    potx, poty = read_joystick_pots(session, port)
+    actual_fire2 = (potx & 0x80) == 0
+    actual_fire3 = (poty & 0x80) == 0
+    if (actual_fire2, actual_fire3) != (fire2, fire3):
+        raise Failure(
+            f"Joystick port {port} Anykey extra-button mismatch; "
+            f"expected fire2/fire3={fire2}/{fire3}, got {actual_fire2}/{actual_fire3} "
+            f"from POTX/POTY=${potx:02X}/${poty:02X}"
+        )
 
 
 def assert_keyboard_matrix(session: RestInputSession, input_name: str, active: bool) -> None:
@@ -961,7 +996,23 @@ def run_keyboard_tests(session: RestInputSession) -> None:
 
 
 def run_joystick_tests(session: RestInputSession) -> None:
-    reset_to_basic(session)
+    session.post_events([{"kind": "release_all"}])
+
+    with check("joystick port 2 fire keeps Anykey buttons 2 and 3 released"):
+        session.post_events([{"kind": "release_all"}])
+        session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire"], "transition": "press"}])
+        assert_joystick_ports(session, 0x1F, 0x0F)
+        assert_anykey_extra_buttons(session, 2, fire2=False, fire3=False)
+
+    with check("joystick port 2 fire2 lights only Anykey button 2"):
+        session.post_events([{"kind": "release_all"}])
+        session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire2"], "transition": "press"}])
+        assert_anykey_extra_buttons(session, 2, fire2=True, fire3=False)
+
+    with check("joystick port 2 fire3 lights only Anykey button 3"):
+        session.post_events([{"kind": "release_all"}])
+        session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire3"], "transition": "press"}])
+        assert_anykey_extra_buttons(session, 2, fire2=False, fire3=True)
 
     with check("joystick port 1 up press is visible on CIA reads"):
         session.post_events([{"kind": "release_all"}])
@@ -1086,8 +1137,8 @@ def run_tests(session: RestInputSession, soak_duration_seconds: Optional[float] 
     if soak_duration_seconds is not None:
         return run_soak_tests(session, soak_duration_seconds)
     run_contract_tests(session)
-    run_keyboard_tests(session)
     run_joystick_tests(session)
+    run_keyboard_tests(session)
     return 0
 
 

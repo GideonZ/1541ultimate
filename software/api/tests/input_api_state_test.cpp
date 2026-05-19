@@ -1,7 +1,12 @@
 #include "../../io/usb/tests/host_test/host_test.h"
+#include "../../io/c64/keyboard_c64.h"
 #include "../../io/usb/keyboard_usb.h"
 #include "../../io/c64/joystick_output.h"
 #include "../input_api.h"
+
+extern "C" void wait_ms(int)
+{
+}
 
 namespace {
 
@@ -166,6 +171,13 @@ TEST(RestKeyboardStateTest, ReleaseAllClearsPersistentAndOverlayState)
     EXPECT_FALSE(restore);
 }
 
+TEST(KeyboardC64StateTest, SoftwareJoystickDoesNotBlockKeyboardScan)
+{
+    EXPECT_FALSE(Keyboard_C64::joystick_blocks_keyboard(0x0E, 0x0E));
+    EXPECT_TRUE(Keyboard_C64::joystick_blocks_keyboard(0x0E, 0x1F));
+    EXPECT_TRUE(Keyboard_C64::joystick_blocks_keyboard(0x0C, 0x0E));
+}
+
 TEST(RestJoystickStateTest, TapOverlayAutoReleasesWithoutClearingPersistentInput)
 {
     reset_joystick_output();
@@ -234,10 +246,10 @@ TEST(RestJoystickStateTest, Fire2MapsToPotXAndFire3MapsToPotY)
     EXPECT_EQ(0x1F, port1);
     EXPECT_EQ(0x1F, port2);
     EXPECT_EQ(0x00, pot2x);
-    EXPECT_EQ(0x7F, pot2y);
+    EXPECT_EQ(0x80, pot2y);
 
     JoystickOutput::instance().setRestPort2Persistent(0x3F);
     JoystickOutput::instance().outputSnapshot(port1, port2, pot1x, pot1y, pot2x, pot2y);
-    EXPECT_EQ(0x7F, pot2x);
+    EXPECT_EQ(0x80, pot2x);
     EXPECT_EQ(0x00, pot2y);
 }

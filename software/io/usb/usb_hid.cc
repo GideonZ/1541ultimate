@@ -307,6 +307,11 @@ void usb_hid_apply_mouse_output_enable()
 
 }
 
+extern "C" int usb_hid_get_active_mouse_interfaces(void)
+{
+    return usb_hid_active_mouse_interfaces;
+}
+
 void usb_hid_get_status_snapshot(t_usb_hid_status_snapshot& snapshot)
 {
     portENTER_CRITICAL();

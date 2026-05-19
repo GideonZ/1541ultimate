@@ -31,6 +31,7 @@ public:
     ~Keyboard_C64();
     
     static uint8_t scan_keyboard(volatile uint8_t *r, volatile uint8_t *c);
+    static bool joystick_blocks_keyboard(uint8_t observed_active_low, uint8_t injected_active_low);
 
     void scan(void);
     void set_delays(int, int);

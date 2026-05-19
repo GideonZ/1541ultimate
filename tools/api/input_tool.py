@@ -58,14 +58,10 @@ ARROW_KEYS = {
     "D": "left",
 }
 TERMINAL_SPECIAL_KEY_HELP_LINES = (
-    "terminal fallback: direct text, arrows, Tab=CTRL, F1-F8=F1-F8, Home=CLR/HOME",
-    "                   Backspace/Delete/Insert=INST/DEL, End/PgDn=RUN/STOP, PgUp/F12=RESTORE",
-    "                   Ctrl=C= requires the sudo /dev/input path; raw-terminal fallback does not synthesize it",
+    "fallback: text/arrows/F1-F8/Home/Ins/Del/PgUp/PgDn, Tab=CTRL, Esc=release_all",
 )
 LOW_LEVEL_SPECIAL_KEY_HELP_LINES = (
-    "low-level keyboard: Linux keys map directly to C64 keys, including real L-SHIFT/R-SHIFT",
-    "                    Tab=CTRL, Ctrl=C=, arrows=cursor, Home=CLR/HOME, Backspace/Delete/Insert=INST/DEL",
-    "                    End/PgDn=RUN/STOP, PgUp/F12=RESTORE, F1-F8=F1-F8, Esc=release_all, Ctrl+Esc=quit",
+    "keys: direct Linux mapping; Ctrl=C=, Tab=CTRL, Esc=release_all, Ctrl+Esc=quit",
 )
 DIRECT_KEY_SEQUENCE_MAP: Dict[str, List[str]] = {
     "\x1bOP": ["f1"],
@@ -708,11 +704,7 @@ class GamepadState:
         if event_type != EV_KEY:
             return []
 
-        if code in (BTN_SOUTH, BTN_TRIGGER):
-            self.a_pressed = value != 0
-            return self._recompute_logical_inputs()
-
-        if code in (BTN_NORTH, BTN_THUMB2):
+        if code in (BTN_SOUTH, BTN_NORTH, BTN_TRIGGER, BTN_THUMB2):
             self.a_pressed = value != 0
             return self._recompute_logical_inputs()
 

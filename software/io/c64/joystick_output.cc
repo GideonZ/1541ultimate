@@ -7,6 +7,7 @@
 #include "timers.h"
 #endif
 #include "u64.h"
+extern "C" int usb_hid_get_active_mouse_interfaces(void) __attribute__((weak));
 
 #ifndef portENTER_CRITICAL
 #define portENTER_CRITICAL()
@@ -22,7 +23,7 @@ static const uint8_t JOYSTICK_DIGITAL_MASK = 0x1F;
 static const uint8_t JOYSTICK_FIRE2_BIT = (1 << 5);
 static const uint8_t JOYSTICK_FIRE3_BIT = (1 << 6);
 static const uint8_t JOYSTICK_INPUT_MASK = JOYSTICK_DIGITAL_MASK | JOYSTICK_FIRE2_BIT | JOYSTICK_FIRE3_BIT;
-static const uint8_t JOYSTICK_POT_RELEASED = 0x7F;
+static const uint8_t JOYSTICK_POT_RELEASED = 0x80;
 static const uint8_t JOYSTICK_POT_PRESSED = 0x00;
 
 static uint8_t joystick_potx_value(uint8_t active_low_mask)
@@ -33,6 +34,11 @@ static uint8_t joystick_potx_value(uint8_t active_low_mask)
 static uint8_t joystick_poty_value(uint8_t active_low_mask)
 {
     return (active_low_mask & JOYSTICK_FIRE3_BIT) ? JOYSTICK_POT_RELEASED : JOYSTICK_POT_PRESSED;
+}
+
+static bool joystick_has_extra_button_press(uint8_t active_low_mask)
+{
+    return (active_low_mask & (JOYSTICK_FIRE2_BIT | JOYSTICK_FIRE3_BIT)) != (JOYSTICK_FIRE2_BIT | JOYSTICK_FIRE3_BIT);
 }
 
 #if U64 && !RECOVERYAPP
@@ -70,6 +76,7 @@ void JoystickOutput :: apply(void)
 {
 #if U64
     uint8_t port1, port2, pot1x, pot1y, pot2x, pot2y;
+    bool mouse_port1_enabled = false;
     outputSnapshot(port1, port2, pot1x, pot1y, pot2x, pot2y);
     C64_JOY1_SWOUT = port1 | 0xE0;
     C64_JOY2_SWOUT = port2 | 0xE0;
@@ -77,6 +84,11 @@ void JoystickOutput :: apply(void)
     C64_PADDLE_1_Y = pot1y;
     C64_PADDLE_2_X = pot2x;
     C64_PADDLE_2_Y = pot2y;
+    if (usb_hid_get_active_mouse_interfaces) {
+        mouse_port1_enabled = usb_hid_get_active_mouse_interfaces() > 0;
+    }
+    C64_MOUSE_EN_1 = (mouse_port1_enabled || joystick_has_extra_button_press(usb_p1 & rest_p1_persistent & rest_p1_overlay)) ? 1 : 0;
+    C64_MOUSE_EN_2 = joystick_has_extra_button_press(rest_p2_persistent & rest_p2_overlay) ? 1 : 0;
 #endif
 }
 
