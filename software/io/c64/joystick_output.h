@@ -34,7 +34,6 @@ public:
 
     void snapshot(uint8_t &port1_active_low, uint8_t &port2_active_low) const;
 
-    static bool port2Supported(void);
 };
 
 #endif /* JOYSTICK_OUTPUT_H */

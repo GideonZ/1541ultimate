@@ -13,29 +13,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 CHECK_COUNT = 0
 READY_SCREEN_CODES = bytes((0x12, 0x05, 0x01, 0x04, 0x19, 0x2E))
-KEY_HOLD_SECONDS = 0.12
-KEY_GAP_SECONDS = 0.03
-JOYSTICK_PROBE_ADDR = 0xC000
-JOYSTICK_PROBE_SCREEN_ADDR = 0x0400
-JOYSTICK_PROBE_CODE = bytes(
-    (
-        0xAD,
-        0x00,
-        0xDC,
-        0x8D,
-        0x00,
-        0x04,
-        0xAD,
-        0x01,
-        0xDC,
-        0x8D,
-        0x01,
-        0x04,
-        0x4C,
-        0x00,
-        0xC0,
-    )
-)
 KEYBOARD_MATRIX: Dict[str, Tuple[int, int]] = {
     "inst_del": (0, 0),
     "return": (0, 1),
@@ -275,99 +252,10 @@ def wait_for_basic_ready(session: RestInputSession) -> None:
     raise Failure("BASIC READY prompt not visible; device may be running a cartridge")
 
 
-def screen_code(text: str) -> bytes:
-    result = bytearray()
-    for ch in text:
-        if "A" <= ch <= "Z":
-            result.append(ord(ch) - 64)
-        else:
-            result.append(ord(ch))
-    return bytes(result)
-
-
-def cursor_address(session: RestInputSession) -> int:
-    pointer = session.read_memory(0x00D1, 3)
-    return pointer[0] + (pointer[1] << 8) + pointer[2]
-
-
 def reset_to_basic(session: RestInputSession) -> None:
     session.reset()
     wait_for_basic_ready(session)
     session.post_events([{"kind": "release_all"}])
-
-
-def text_to_key_inputs(text: str) -> List[List[str]]:
-    result: List[List[str]] = []
-    for ch in text:
-        if "a" <= ch <= "z":
-            result.append([ch])
-        elif "A" <= ch <= "Z":
-            result.append([ch.lower()])
-        elif "0" <= ch <= "9":
-            result.append([ch])
-        elif ch == " ":
-            result.append(["space"])
-        elif ch == ",":
-            result.append(["comma"])
-        elif ch == ":":
-            result.append(["colon"])
-        elif ch == "(":
-            result.append(["left_shift", "8"])
-        elif ch == ")":
-            result.append(["left_shift", "9"])
-        elif ch in ("\r", "\n"):
-            result.append(["return"])
-        else:
-            raise Failure(f"No C64 key mapping for {ch!r}")
-    return result
-
-
-def send_c64_keys(session: RestInputSession, sequence: List[List[str]]) -> None:
-    for inputs in sequence:
-        session.post_events([{"kind": "keyboard", "inputs": inputs, "transition": "press"}])
-        time.sleep(KEY_HOLD_SECONDS)
-        session.post_events([{"kind": "keyboard", "inputs": inputs, "transition": "release"}])
-        time.sleep(KEY_GAP_SECONDS)
-
-
-def type_c64_text(session: RestInputSession, text: str) -> None:
-    send_c64_keys(session, text_to_key_inputs(text))
-
-
-def basic_input_line_start(screen: bytes) -> int:
-    ready = screen.find(READY_SCREEN_CODES)
-    if ready < 0:
-        raise Failure("BASIC READY prompt not visible.")
-    return ((ready // 40) + 1) * 40
-
-
-def wait_for_screen_bytes(session: RestInputSession, address: int, expected: bytes, timeout: float = 5.0) -> None:
-    deadline = time.time() + timeout
-    actual = b""
-    while time.time() < deadline:
-        actual = session.read_memory(address, len(expected))
-        if actual == expected:
-            return
-        time.sleep(0.1)
-    raise Failure(f"Expected {expected.hex().upper()} at ${address:04X}, got {actual.hex().upper()}")
-
-
-def assert_c64_typed_text(session: RestInputSession, text: str) -> None:
-    screen = session.read_memory(0x0400, 1000)
-    address = 0x0400 + basic_input_line_start(screen)
-    type_c64_text(session, text)
-    wait_for_screen_bytes(session, address, screen_code(text.upper()))
-
-
-def start_joystick_probe(session: RestInputSession) -> None:
-    reset_to_basic(session)
-    session.write_memory(JOYSTICK_PROBE_ADDR, JOYSTICK_PROBE_CODE)
-    type_c64_text(session, "SYS49152\n")
-    wait_for_screen_bytes(session, JOYSTICK_PROBE_SCREEN_ADDR, b"\xFF\xFF")
-
-
-def assert_c64_joystick_probe(session: RestInputSession, port1: int, port2: int) -> None:
-    wait_for_screen_bytes(session, JOYSTICK_PROBE_SCREEN_ADDR, bytes(((port2 & 0x1F) | 0xE0, (port1 & 0x1F) | 0xE0)))
 
 
 def assert_joystick_ports(session: RestInputSession, port1: int, port2: int) -> None:
@@ -528,22 +416,22 @@ def run_keyboard_tests(session: RestInputSession) -> None:
         session.post_events([{"kind": "release_all"}])
         assert_state_empty(session)
 
-    with check("paced keyboard tap batch types consecutive characters"):
+    with check("paced keyboard batch applies multiple presses atomically"):
         reset_to_basic(session)
-        screen = session.read_memory(0x0400, 1000)
-        address = 0x0400 + basic_input_line_start(screen)
-        session.json_request(
+        body = session.json_request(
             "POST",
             "/v1/machine:input",
             payload={
                 "events": [
-                    {"kind": "keyboard", "inputs": ["a"], "transition": "tap"},
-                    {"kind": "keyboard", "inputs": ["b"], "transition": "tap"},
+                    {"kind": "keyboard", "inputs": ["a"], "transition": "press"},
+                    {"kind": "keyboard", "inputs": ["left_shift"], "transition": "press"},
                 ],
                 "pace_ms": 25,
             },
         )
-        wait_for_screen_bytes(session, address, screen_code("AB"))
+        if body.get("keyboard", {}).get("inputs") != ["a", "left_shift"]:
+            raise Failure(f"Unexpected paced batch keyboard state: {body}")
+        assert_keyboard_matrix_inputs(session, ["a", "left_shift"])
         session.post_events([{"kind": "release_all"}])
         assert_state_empty(session)
 

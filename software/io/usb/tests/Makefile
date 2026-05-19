@@ -1,5 +1,5 @@
 CXX ?= g++
-CXXFLAGS := -std=c++14 -g -I. -I../../../components -I../../../system
+CXXFLAGS := -std=c++14 -g -I. -I../../../components -I../../../system -I../../../io/stream
 KEYBOARD_TEST_FLAGS := $(CXXFLAGS) -I../../c64 -DNO_FILE_ACCESS
 
 all: mouse keyboard keyboard-queue selection

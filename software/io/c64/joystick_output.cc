@@ -47,11 +47,6 @@ JoystickOutput &JoystickOutput :: instance()
     return output;
 }
 
-bool JoystickOutput :: port2Supported(void)
-{
-    return true;
-}
-
 void JoystickOutput :: apply(void)
 {
 #if U64
