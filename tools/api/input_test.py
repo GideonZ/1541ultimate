@@ -515,11 +515,11 @@ def append_screen_tail(screen_tail: str, text: str, limit: int = 200) -> str:
     return (screen_tail + text.upper())[-limit:]
 
 
-def soak_keyboard_basic_case(session: RestInputSession, screen_tail: str, text: str, pace_ms: int) -> str:
+def soak_keyboard_basic_case(session: RestInputSession, screen_tail: str, text: str) -> str:
     session.json_request(
         "POST",
         "/v1/machine:input",
-        payload={"events": keyboard_tap_events_for_text(text), "pace_ms": pace_ms},
+        payload={"events": keyboard_tap_events_for_text(text)},
     )
     screen_tail = append_screen_tail(screen_tail, text)
     wait_for_screen_sequence(session, text_to_screen_codes(screen_tail), timeout=max(4.0, len(text) * 0.8))
@@ -600,7 +600,7 @@ def soak_interleaved_case(
     session.json_request(
         "POST",
         "/v1/machine:input",
-        payload={"events": keyboard_tap_events_for_text(text), "pace_ms": 140},
+        payload={"events": keyboard_tap_events_for_text(text)},
     )
     screen_tail = append_screen_tail(screen_tail, text)
     wait_for_screen_sequence(session, text_to_screen_codes(screen_tail), timeout=max(4.0, len(text) * 0.8))
@@ -693,7 +693,7 @@ def soak_rapid_mixed_case(session: RestInputSession, screen_tail: str, text_chun
         session.json_request(
             "POST",
             "/v1/machine:input",
-            payload={"events": keyboard_tap_events_for_text(chunk), "pace_ms": 140},
+            payload={"events": keyboard_tap_events_for_text(chunk)},
         )
     expected = "".join(text_chunks)
     screen_tail = append_screen_tail(screen_tail, expected)
@@ -716,11 +716,11 @@ def soak_rapid_mixed_case(session: RestInputSession, screen_tail: str, text_chun
 
 def run_soak_tests(session: RestInputSession, duration_seconds: float) -> int:
     keyboard_text_cases = [
-        ("aaaaaa", 140),
-        ("Abab09", 120),
-        ("C64Z", 150),
-        ("qwertY", 110),
-        ("az09ZA", 130),
+        "aaaaaa",
+        "Abab09",
+        "C64Z",
+        "qwertY",
+        "az09ZA",
     ]
     keyboard_hold_cases = [
         (["left_shift"], ["left_shift", "a"]),
@@ -759,8 +759,8 @@ def run_soak_tests(session: RestInputSession, duration_seconds: float) -> int:
         interleaved_case = interleaved_cases[cycles % len(interleaved_cases)]
         rapid_mix_case = rapid_mix_cases[cycles % len(rapid_mix_cases)]
 
-        print(f"[soak {cycles + 1:03d}] text={text_case[0]} joy{joystick_case[0]}={'+'.join(joystick_case[1])}", flush=True)
-        screen_tail = soak_keyboard_basic_case(session, screen_tail, text_case[0], text_case[1])
+        print(f"[soak {cycles + 1:03d}] text={text_case} joy{joystick_case[0]}={'+'.join(joystick_case[1])}", flush=True)
+        screen_tail = soak_keyboard_basic_case(session, screen_tail, text_case)
         screen_tail = soak_interleaved_case(session, screen_tail, interleaved_case[0], interleaved_case[1], interleaved_case[2])
         screen_tail = soak_rapid_mixed_case(session, screen_tail, rapid_mix_case[0], rapid_mix_case[1])
         soak_keyboard_hold_case(session, hold_case[0], hold_case[1])
@@ -847,7 +847,7 @@ def run_keyboard_tests(session: RestInputSession) -> None:
         session.post_events([{"kind": "release_all"}])
         assert_state_empty(session)
 
-    with check("paced keyboard batch applies multiple presses atomically"):
+    with check("keyboard batch applies multiple presses atomically"):
         reset_to_basic(session)
         body = session.json_request(
             "POST",
@@ -856,12 +856,11 @@ def run_keyboard_tests(session: RestInputSession) -> None:
                 "events": [
                     {"kind": "keyboard", "inputs": ["a"], "transition": "press"},
                     {"kind": "keyboard", "inputs": ["left_shift"], "transition": "press"},
-                ],
-                "pace_ms": 25,
+                ]
             },
         )
         if body.get("keyboard", {}).get("inputs") != ["a", "left_shift"]:
-            raise Failure(f"Unexpected paced batch keyboard state: {body}")
+            raise Failure(f"Unexpected batch keyboard state: {body}")
         assert_keyboard_matrix_inputs(session, ["a", "left_shift"])
         session.post_events([{"kind": "release_all"}])
         assert_state_empty(session)
@@ -943,12 +942,12 @@ def run_keyboard_tests(session: RestInputSession) -> None:
         assert_state_empty(session)
         session.post_events([{"kind": "release_all"}])
 
-    with check("keyboard paced single taps are consumed by BASIC in order"):
+    with check("keyboard single-tap batch is consumed by BASIC in order"):
         reset_to_basic_for_keyboard_input(session)
         session.json_request(
             "POST",
             "/v1/machine:input",
-            payload={"events": keyboard_tap_events_for_text("aaaaaa"), "pace_ms": 140},
+            payload={"events": keyboard_tap_events_for_text("aaaaaa")},
         )
         wait_for_basic_input_prefix(session, "AAAAAA", timeout=4.0)
         time.sleep(0.3)
@@ -966,7 +965,7 @@ def run_keyboard_tests(session: RestInputSession) -> None:
 
     with check("keyboard tap batch drains through the live matrix path"):
         reset_to_basic(session)
-        response = session.json_request("POST", "/v1/machine:input", payload={"events": keyboard_tap_events_for_text("ABCDEFGHIJ"), "pace_ms": 0})
+        response = session.json_request("POST", "/v1/machine:input", payload={"events": keyboard_tap_events_for_text("ABCDEFGHIJ")})
         if not response.get("keyboard", {}).get("inputs"):
             raise Failure(f"Expected a live tap snapshot while the batch was draining, got {response}")
         time.sleep(1.2)
@@ -976,7 +975,7 @@ def run_keyboard_tests(session: RestInputSession) -> None:
     with check("keyboard long repeated tap train drains fully without sticky state"):
         reset_to_basic(session)
         repeated = [{"kind": "keyboard", "inputs": ["a"], "transition": "tap"} for _ in range(60)]
-        response = session.json_request("POST", "/v1/machine:input", payload={"events": repeated, "pace_ms": 0})
+        response = session.json_request("POST", "/v1/machine:input", payload={"events": repeated})
         if response.get("keyboard", {}).get("inputs") != ["a"]:
             raise Failure(f"Expected repeated tap train to expose the live a snapshot, got {response}")
         time.sleep(6.0)

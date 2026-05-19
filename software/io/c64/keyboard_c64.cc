@@ -22,8 +22,8 @@ const uint8_t modifier_map[] = {
     0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
     0x00,0x00,0x00,0x00,0x01,0x00,0x00,0x00, // right shift
     0x00,0x00,0x04,0x00,0x00,0x02,0x00,0x00, // control, C=
-    0x00 }; 
-    
+    0x00 };
+
 const uint8_t keymap_normal[] = {
     KEY_BACK, KEY_RETURN, KEY_RIGHT, KEY_F7, KEY_F1, KEY_F3, KEY_F5, KEY_DOWN,
     '3', 'w', 'a', '4', 'z', 's', 'e', 0x00,
@@ -94,7 +94,7 @@ Keyboard_C64 :: Keyboard_C64(GenericHost *h, volatile uint8_t *row, volatile uin
     shift_prev = 0xFF;
     delay_count = first_delay;
 }
-    
+
 Keyboard_C64 :: ~Keyboard_C64()
 {
 }
@@ -133,7 +133,7 @@ uint8_t Keyboard_C64 :: scan_keyboard(volatile uint8_t *row_reg, volatile uint8_
             col = (col << 1) | 1;
         }
     }
-    
+
     map = keymaps[shift_flag & 0x07];
     return map[mtrx];
 }
@@ -161,7 +161,7 @@ void Keyboard_C64 :: scan(void)
     uint8_t joy_mtrx = 0x40;
     uint8_t injected_joy2 = 0x1F;
     uint8_t injected_joy1 = 0x1F;
-     
+
     if(!host) {
         return;
     }
@@ -200,7 +200,7 @@ void Keyboard_C64 :: scan(void)
             mtrx = joy_mtrx;
         }
     }
-     
+
     // Physical joystick activity shares matrix lines with the keyboard and must keep
     // the old precedence. REST-owned port 2 activity should not starve the local keyboard.
     if(!joy) {
@@ -243,7 +243,7 @@ void Keyboard_C64 :: scan(void)
         shift_flag = joy_shift_flag;
         mtrx = joy_mtrx;
     }
-     
+
 #if U64 == 2
     MATRIX_WASD_TO_JOY = wasd_to_joy;
     BLING_RX_FLAGS = 0x00; // reenable shift lock
@@ -258,7 +258,7 @@ void Keyboard_C64 :: scan(void)
         shift_prev = 0xFF;
         return;
     }
-            
+
     if((shift_flag == shift_prev) && (mtrx_prev == mtrx)) { // this key was pressed before
         if (delay_count == 0) {
             delay_count = repeat_speed;
@@ -274,7 +274,7 @@ void Keyboard_C64 :: scan(void)
     } else {  // first time this key was pressed
         delay_count = first_delay;
         mtrx_prev = mtrx;
-        shift_prev = shift_flag;        
+        shift_prev = shift_flag;
     }
 
 //    printf("%b ", key);

@@ -101,11 +101,9 @@ DIRECT_KEY_SEQUENCE_MAP: Dict[str, List[str]] = {
 ESCAPE_SEQUENCE_TIMEOUT = float(os.environ.get("U64_INPUT_ESCAPE_TIMEOUT", "0.10"))
 MAX_BATCH_EVENTS = 64
 KEYBOARD_TAP_BATCH_EVENTS = max(1, int(os.environ.get("U64_INPUT_KEYBOARD_TAP_BATCH_EVENTS", "10")))
-BATCH_PACE_MS = int(os.environ.get("U64_INPUT_PACE_MS", "10"))
 REPEAT_BATCH_EVENTS = max(1, int(os.environ.get("U64_INPUT_REPEAT_BATCH_EVENTS", "6")))
 REPEAT_BATCH_TARGET_HZ = float(os.environ.get("U64_INPUT_REPEAT_HZ", "50.0"))
 REPEAT_BATCH_INTERVAL = (float(REPEAT_BATCH_EVENTS) / REPEAT_BATCH_TARGET_HZ) if REPEAT_BATCH_TARGET_HZ > 0 else 0.06
-REPEATED_KEYBOARD_TAP_PACE_MS = max(0, int(os.environ.get("U64_INPUT_REPEAT_PACE_MS", "80")))
 KEY_REPEAT_STALE_SECONDS = float(os.environ.get("U64_INPUT_REPEAT_STALE", "0.25"))
 KEY_REPEAT_TRIGGER_SECONDS = float(os.environ.get("U64_INPUT_REPEAT_TRIGGER", "0.50"))
 KEY_REPEAT_CONFIRM_COUNT = max(2, int(os.environ.get("U64_INPUT_REPEAT_CONFIRM", "4")))
@@ -550,10 +548,8 @@ class RestCallLogger:
         if path == "/v1/machine:input" and isinstance(payload, dict):
             events = payload.get("events", [])
             if isinstance(events, list):
-                pace_ms = payload.get("pace_ms")
-                suffix = f" pace={pace_ms}" if pace_ms is not None else ""
                 max_items = len(events) if self.level >= 2 else 5
-                return f"{method} {path} events={len(events)}{suffix} [{summarize_events(events, max_items=max_items)}]"
+                return f"{method} {path} events={len(events)} [{summarize_events(events, max_items=max_items)}]"
         if isinstance(payload, dict):
             keys = ",".join(sorted(payload.keys()))
             return f"{method} {path} json={keys or '-'}"
@@ -814,13 +810,8 @@ class InteractiveRestClient:
             self._connection = http.client.HTTPConnection(self.host, timeout=self.timeout)
         return self._connection
 
-    def post_events(self, events: List[Dict[str, object]], pace_ms: Optional[int] = None) -> Dict[str, object]:
+    def post_events(self, events: List[Dict[str, object]]) -> Dict[str, object]:
         payload: Dict[str, object] = {"events": events}
-        effective_pace_ms = pace_ms
-        if effective_pace_ms is None and len(events) > 1 and BATCH_PACE_MS > 0:
-            effective_pace_ms = BATCH_PACE_MS
-        if effective_pace_ms is not None:
-            payload["pace_ms"] = effective_pace_ms
         body = json.dumps(payload).encode("utf-8")
         headers: Dict[str, str] = {"Content-Type": "application/json"}
         if self.password:
@@ -1075,27 +1066,12 @@ def drain_stdin_sequences(stdin_fd: int) -> List[str]:
     return sequences
 
 
-def keyboard_batch_pace_ms(events: List[Dict[str, object]]) -> int:
-    if not events:
-        return 0
-    if not all(event.get("kind") == "keyboard" and event.get("transition") == "tap" for event in events):
-        return 0
-    if len(events) <= 1:
-        return 0
-    first_signature = event_signature(events[0])
-    for event in events[1:]:
-        if event_signature(event) != first_signature:
-            return 0
-    return REPEATED_KEYBOARD_TAP_PACE_MS
-
-
 def flush_event_batch(client: InteractiveRestClient, events: List[Dict[str, object]]) -> None:
     while events:
         keyboard_taps_only = all(event.get("kind") == "keyboard" and event.get("transition") == "tap" for event in events)
         chunk_size = KEYBOARD_TAP_BATCH_EVENTS if keyboard_taps_only else MAX_BATCH_EVENTS
         chunk = events[:chunk_size]
-        pace_ms = keyboard_batch_pace_ms(chunk) if keyboard_taps_only else None
-        client.post_events(chunk, pace_ms=pace_ms)
+        client.post_events(chunk)
         del events[:chunk_size]
 
 
@@ -1482,15 +1458,8 @@ def print_mapping_overview(
     if keyboard:
         print("keyboard repeats: Linux low-level key-repeat events")
     else:
-        if REPEATED_KEYBOARD_TAP_PACE_MS > 0:
-            print(
-                f"interactive hold queue: repeated same-key taps are paced at {REPEATED_KEYBOARD_TAP_PACE_MS} ms/event "
-                f"in batches up to {REPEAT_BATCH_EVENTS} events"
-            )
-        else:
-            print(f"interactive hold queue: repeated same-key taps are sent in batches up to {REPEAT_BATCH_EVENTS} events")
-    print(f"rapid mixed-key batches: up to {KEYBOARD_TAP_BATCH_EVENTS} taps/request at pace_ms=0")
-    print(f"paced multi-key batches: {BATCH_PACE_MS} ms between batched events")
+        print(f"interactive hold queue: repeated same-key taps are sent in batches up to {REPEAT_BATCH_EVENTS} events")
+    print(f"rapid keyboard batches: up to {KEYBOARD_TAP_BATCH_EVENTS} taps/request")
     print(f"joystick port: {joystick_port}")
     if verbosity >= 2:
         verbose_text = "full"

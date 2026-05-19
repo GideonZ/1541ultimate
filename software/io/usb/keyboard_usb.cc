@@ -13,6 +13,9 @@
 #if U64 && !RECOVERYAPP
 #include "timers.h"
 #endif
+#if U64 == 2
+#include "u64.h"
+#endif
 
 #ifndef portENTER_CRITICAL
 #define portENTER_CRITICAL()
@@ -36,11 +39,15 @@ uint8_t usb_matrix_lookup(const uint8_t *map, size_t map_size, uint8_t key)
 }
 
 #if U64 && !RECOVERYAPP
-static const uint32_t REST_INPUT_TIMER_TICKS = (pdMS_TO_TICKS(10) > 0) ? pdMS_TO_TICKS(10) : 1;
+static const uint32_t REST_INPUT_TIMER_TICKS = (pdMS_TO_TICKS(20) > 0) ? pdMS_TO_TICKS(20) : 1;
 #endif
 static const uint8_t REST_TAP_GAP_TICKS = 2;
 
 }
+
+#if U64 == 2
+extern uint8_t wasd_to_joy __attribute__((weak));
+#endif
 
 const uint8_t keymap_normal[] = {
     0x00, KEY_ERR, KEY_ERR, KEY_ERR, 'a', 'b', 'c', 'd',
@@ -185,6 +192,7 @@ void Keyboard_USB :: putch(uint8_t ch)
 
 void Keyboard_USB :: applyMatrixState(void)
 {
+	applyRestWasdGuard();
 	if (!matrix) {
 		return;
 	}
@@ -198,6 +206,26 @@ void Keyboard_USB :: applyMatrixState(void)
 uint8_t Keyboard_USB :: effectiveRestoreBit(void) const
 {
 	return usb_restore | (rest_restore ? 1 : 0) | (rest_restore_overlay ? 1 : 0);
+}
+
+bool Keyboard_USB :: restMatrixActive(void) const
+{
+	if (rest_restore || rest_restore_overlay) {
+		return true;
+	}
+	for (int i = 0; i < 8; i++) {
+		if (rest_matrix_state[i] || rest_matrix_overlay[i]) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void Keyboard_USB :: applyRestWasdGuard(void) const
+{
+#if U64 == 2
+	MATRIX_WASD_TO_JOY = restMatrixActive() ? 0 : (&wasd_to_joy ? wasd_to_joy : 0);
+#endif
 }
 
 void Keyboard_USB :: clearInjectedMatrixState(void)

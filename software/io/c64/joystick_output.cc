@@ -80,6 +80,15 @@ void JoystickOutput :: apply(void)
     outputSnapshot(port1, port2, pot1x, pot1y, pot2x, pot2y);
     C64_JOY1_SWOUT = port1 | 0xE0;
     C64_JOY2_SWOUT = port2 | 0xE0;
+    // U64 exposes the C64-visible POT pair through the first paddle output registers.
+    // Keep the port 2 registers updated, but mirror asserted lows so Anykey-style
+    // button reads observe REST fire2/fire3 on either joystick port.
+    if (pot2x == JOYSTICK_POT_PRESSED) {
+        pot1x = JOYSTICK_POT_PRESSED;
+    }
+    if (pot2y == JOYSTICK_POT_PRESSED) {
+        pot1y = JOYSTICK_POT_PRESSED;
+    }
     C64_PADDLE_1_X = pot1x;
     C64_PADDLE_1_Y = pot1y;
     C64_PADDLE_2_X = pot2x;
@@ -87,8 +96,10 @@ void JoystickOutput :: apply(void)
     if (usb_hid_get_active_mouse_interfaces) {
         mouse_port1_enabled = usb_hid_get_active_mouse_interfaces() > 0;
     }
-    C64_MOUSE_EN_1 = (mouse_port1_enabled || joystick_has_extra_button_press(usb_p1 & rest_p1_persistent & rest_p1_overlay)) ? 1 : 0;
-    C64_MOUSE_EN_2 = joystick_has_extra_button_press(rest_p2_persistent & rest_p2_overlay) ? 1 : 0;
+    bool rest_port1_extra = joystick_has_extra_button_press(usb_p1 & rest_p1_persistent & rest_p1_overlay);
+    bool rest_port2_extra = joystick_has_extra_button_press(rest_p2_persistent & rest_p2_overlay);
+    C64_MOUSE_EN_1 = (mouse_port1_enabled || rest_port1_extra || rest_port2_extra) ? 1 : 0;
+    C64_MOUSE_EN_2 = rest_port2_extra ? 1 : 0;
 #endif
 }
 

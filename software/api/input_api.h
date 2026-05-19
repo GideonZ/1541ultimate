@@ -443,7 +443,7 @@ static inline bool input_api_parse_event(JSON *json, InputParsedEvent &out, char
 }
 
 static inline bool input_api_validate_batch(JSON *root, InputParsedEvent events[INPUT_API_MAX_EVENTS], int &event_count,
-    int &pace_ms, int &error_index, char *err, size_t err_size)
+    int &error_index, char *err, size_t err_size)
 {
     error_index = -1;
     if (!root || (root->type() != eObject)) {
@@ -451,22 +451,9 @@ static inline bool input_api_validate_batch(JSON *root, InputParsedEvent events[
         return false;
     }
     JSON_Object *obj = (JSON_Object *)root;
-    static const char *const allowed[] = { "events", "pace_ms" };
+    static const char *const allowed[] = { "events" };
     if (!input_api_reject_unknown_keys(obj, allowed, sizeof(allowed) / sizeof(allowed[0]), err, err_size)) {
         return false;
-    }
-    pace_ms = 0;
-    JSON *pace = obj->get("pace_ms");
-    if (pace) {
-        if (pace->type() != eInteger) {
-            input_api_set_error(err, err_size, "`pace_ms` must be an integer.");
-            return false;
-        }
-        pace_ms = ((JSON_Integer *)pace)->get_value();
-        if ((pace_ms < 0) || (pace_ms > 1000)) {
-            input_api_set_error(err, err_size, "`pace_ms` must be between 0 and 1000.");
-            return false;
-        }
     }
     JSON *events_json = obj->get("events");
     if (!events_json) {

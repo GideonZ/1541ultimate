@@ -152,6 +152,7 @@ SRCS_CC	 =	small_printf.cc \
 			route_runners.cc \
 			route_configs.cc \
 			route_machine.cc \
+			route_input.cc \
 			assembly_search.cc \
 			assembly.cc \
 			filesystem_a64.cc \

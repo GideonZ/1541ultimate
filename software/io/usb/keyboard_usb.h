@@ -64,10 +64,12 @@ class Keyboard_USB : public Keyboard
     int  first_delay;
     int  delay_count;
     int  injected_matrix_hold;
-    void applyMatrixState(void);
+	void applyMatrixState(void);
 	void clearInjectedMatrixState(void);
 	void setInjectedMatrixKey(int key);
 	uint8_t effectiveRestoreBit(void) const;
+	bool restMatrixActive(void) const;
+	void applyRestWasdGuard(void) const;
 	bool restTapQueueEmpty(void) const;
 	bool restTapOverlayActive(void) const;
 	void startRestTap(const RestTapEntry& entry);

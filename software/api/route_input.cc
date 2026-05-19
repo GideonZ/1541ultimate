@@ -7,7 +7,6 @@
 
 #include "FreeRTOS.h"
 #include "semphr.h"
-#include "task.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -137,10 +136,7 @@ void *input_json_writer(HTTPReqMessage *req, HTTPRespMessage *resp, const ApiCal
 
 #if U64
 
-// The REST tap timer ticks every 10 ms in Keyboard_USB. Hold taps for 60 ms so
-// BASIC's asynchronous keyboard scan sees them reliably without regressing into
-// the old long 200 ms experimental hold.
-static const uint8_t REST_TAP_HOLD_TICKS = 6;
+static const uint8_t REST_TAP_HOLD_TICKS = 1;
 static SemaphoreHandle_t rest_input_mutex = NULL;
 
 static SemaphoreHandle_t input_mutex(void)
@@ -233,15 +229,8 @@ static void apply_keyboard_event(const InputParsedEvent &event)
     }
 }
 
-static void apply_batch(const InputParsedEvent *events, int event_count, int pace_ms)
+static void apply_batch(const InputParsedEvent *events, int event_count)
 {
-    TickType_t delay_ticks = 0;
-    if (pace_ms > 0) {
-        delay_ticks = pdMS_TO_TICKS(pace_ms);
-        if (delay_ticks == 0) {
-            delay_ticks = 1;
-        }
-    }
     for (int i = 0; i < event_count; i++) {
         switch (events[i].kind) {
         case INPUT_PARSED_KEYBOARD:
@@ -254,9 +243,6 @@ static void apply_batch(const InputParsedEvent *events, int event_count, int pac
             system_usb_keyboard.restReleaseAll();
             JoystickOutput::instance().releaseAllRest();
             break;
-        }
-        if (delay_ticks && ((i + 1) < event_count)) {
-            vTaskDelay(delay_ticks);
         }
     }
 }
@@ -399,12 +385,11 @@ API_CALL(POST, machine, input, &input_json_writer, ARRAY( { }))
 
     static InputParsedEvent events[INPUT_API_MAX_EVENTS];
     int event_count = 0;
-    int pace_ms = 0;
     int error_index = -1;
     char err[INPUT_API_ERROR_SIZE];
     SemaphoreHandle_t mutex = input_mutex();
     xSemaphoreTake(mutex, portMAX_DELAY);
-    if (!input_api_validate_batch(obj, events, event_count, pace_ms, error_index, err, sizeof(err))) {
+    if (!input_api_validate_batch(obj, events, event_count, error_index, err, sizeof(err))) {
         xSemaphoreGive(mutex);
         delete obj;
         if (error_index >= 0) {
@@ -415,7 +400,7 @@ API_CALL(POST, machine, input, &input_json_writer, ARRAY( { }))
         resp->json_response(HTTP_BAD_REQUEST);
         return;
     }
-    apply_batch(events, event_count, pace_ms);
+    apply_batch(events, event_count);
     emit_state_snapshot(resp);
     xSemaphoreGive(mutex);
     resp->json_response(HTTP_OK);
