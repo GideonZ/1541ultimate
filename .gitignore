@@ -54,6 +54,8 @@ fpga/sid_old
 /old_flash_images
 /releases
 roms/JiffyDOS_1541_6.00_(rebadged_5.0).bin
+software/api/tests/inputApiValidationTest
+software/api/tests/inputApiStateTest
 software/Debug
 software/Lean
 software/PathTest
@@ -287,4 +289,3 @@ tools/64tass/*.o
 python/grab*
 fpga/cpu_unit/rvlite/vhdl_source/bootrom_pkg_u2.vhd
 fpga/cpu_unit/rvlite/vhdl_source/bootrom_pkg_u2_loader.vhd
-

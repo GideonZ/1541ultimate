@@ -16,12 +16,19 @@ typedef struct tmrTimerControl * TimerHandle_t;
 #endif
 
 static const int USB_KEY_BUFFER_SIZE = 64;
+static const int REST_TAP_QUEUE_SIZE = 128;
 #define USB_DATA_SIZE 8
 
 class GenericHost;
 
 class Keyboard_USB : public Keyboard
 {
+	struct RestTapEntry {
+		uint8_t matrix[8];
+		uint8_t hold_ticks;
+		bool restore;
+	};
+
 	volatile uint8_t *matrix;
 	bool matrixEnabled;
 	uint8_t matrix_state[8];
@@ -29,6 +36,10 @@ class Keyboard_USB : public Keyboard
 	uint8_t rest_matrix_state[8];
 	uint8_t rest_matrix_overlay[8];
 	uint8_t rest_overlay_hold[8][8];
+	RestTapEntry rest_tap_queue[REST_TAP_QUEUE_SIZE];
+	uint8_t rest_tap_head;
+	uint8_t rest_tap_tail;
+	uint8_t rest_tap_gap_ticks;
 	uint8_t key_buffer[USB_KEY_BUFFER_SIZE];
 	uint8_t injected_buffer[USB_KEY_BUFFER_SIZE];
     uint8_t last_data[USB_DATA_SIZE];
@@ -54,11 +65,14 @@ class Keyboard_USB : public Keyboard
     int  delay_count;
     int  injected_matrix_hold;
     void applyMatrixState(void);
-    void clearInjectedMatrixState(void);
-    void setInjectedMatrixKey(int key);
-    uint8_t effectiveRestoreBit(void) const;
+	void clearInjectedMatrixState(void);
+	void setInjectedMatrixKey(int key);
+	uint8_t effectiveRestoreBit(void) const;
+	bool restTapQueueEmpty(void) const;
+	bool restTapOverlayActive(void) const;
+	void startRestTap(const RestTapEntry& entry);
 #if U64 && !RECOVERYAPP
-    static void S_rest_timer(TimerHandle_t a);
+	static void S_rest_timer(TimerHandle_t a);
 #endif
 public:
     Keyboard_USB();
@@ -77,11 +91,12 @@ public:
     void wait_free(void);
     void clear_buffer(void);
 
-    void restPress(uint8_t row, uint8_t col_bit);
-    void restRelease(uint8_t row, uint8_t col_bit);
-    void restTap(uint8_t row, uint8_t col_bit, uint8_t hold_ticks);
-    void restPressRestore(void);
-    void restReleaseRestore(void);
+	void restPress(uint8_t row, uint8_t col_bit);
+	void restRelease(uint8_t row, uint8_t col_bit);
+	void restTap(uint8_t row, uint8_t col_bit, uint8_t hold_ticks);
+	bool restQueueTap(const uint8_t matrix[8], bool restore, uint8_t hold_ticks);
+	void restPressRestore(void);
+	void restReleaseRestore(void);
     void restTapRestore(uint8_t hold_ticks);
     void restReleaseAll(void);
     void restSnapshot(uint8_t out_matrix[8], bool &out_restore) const;

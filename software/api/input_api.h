@@ -9,7 +9,7 @@
 
 static const int INPUT_API_MAX_EVENTS = 64;
 static const int INPUT_API_MAX_KEYBOARD_INPUTS = 8;
-static const int INPUT_API_MAX_JOYSTICK_INPUTS = 5;
+static const int INPUT_API_MAX_JOYSTICK_INPUTS = 7;
 static const int INPUT_API_ERROR_SIZE = 160;
 
 enum InputParsedKind {
@@ -119,6 +119,8 @@ static const InputJoystickMapEntry INPUT_API_JOYSTICK_MAP[] = {
     { "left", 2 },
     { "right", 3 },
     { "fire", 4 },
+    { "fire2", 5 },
+    { "fire3", 6 },
 };
 
 static const int INPUT_API_KEYBOARD_MAP_COUNT = sizeof(INPUT_API_KEYBOARD_MAP) / sizeof(INPUT_API_KEYBOARD_MAP[0]);
@@ -366,7 +368,7 @@ static inline bool input_api_parse_joystick_event(JSON_Object *obj, InputParsedE
     JSON_List *list = (JSON_List *)inputs;
     int count = list->get_num_elements();
     if ((count < 1) || (count > INPUT_API_MAX_JOYSTICK_INPUTS)) {
-        input_api_set_error(err, err_size, "`inputs` must contain 1..5 entries.");
+        input_api_set_error(err, err_size, "`inputs` must contain 1..7 entries.");
         return false;
     }
 

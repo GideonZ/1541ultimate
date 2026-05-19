@@ -83,7 +83,7 @@ TEST(InputApiValidationTest, ParsesValidBatchAndPreservesEventDetails)
     JSON *root = make_root(
         JSON::List()
             ->add(make_keyboard_event("press", { "a", "left_shift" }))
-            ->add(make_joystick_event(2, "tap", { "up", "fire" }))
+            ->add(make_joystick_event(2, "tap", { "up", "fire", "fire2", "fire3" }))
             ->add(make_release_all_event()),
         25, true);
 
@@ -99,7 +99,7 @@ TEST(InputApiValidationTest, ParsesValidBatchAndPreservesEventDetails)
     EXPECT_EQ(INPUT_PARSED_JOYSTICK, events[1].kind);
     EXPECT_EQ(2, events[1].port);
     EXPECT_EQ(INPUT_PARSED_TAP, events[1].transition);
-    EXPECT_EQ((1 << 0) | (1 << 4), events[1].joystick_mask);
+    EXPECT_EQ((1 << 0) | (1 << 4) | (1 << 5) | (1 << 6), events[1].joystick_mask);
     EXPECT_EQ(INPUT_PARSED_RELEASE_ALL, events[2].kind);
 
     delete root;
@@ -246,6 +246,24 @@ TEST(InputApiValidationTest, RejectsJoystickDuplicateAndUnknownInputs)
     EXPECT_FALSE(validate(unknown, events, event_count, pace_ms, error_index, err));
     EXPECT_EQ(std::string("`jump` is not a valid joystick input."), err);
     delete unknown;
+}
+
+TEST(InputApiValidationTest, AcceptsAllSevenJoystickInputsInOneEvent)
+{
+    InputParsedEvent events[INPUT_API_MAX_EVENTS];
+    int event_count = 0;
+    int pace_ms = 0;
+    int error_index = -1;
+    std::string err;
+
+    JSON *root = make_root(JSON::List()->add(
+        make_joystick_event(2, "press", { "up", "down", "left", "right", "fire", "fire2", "fire3" })));
+
+    ASSERT_TRUE(validate(root, events, event_count, pace_ms, error_index, err));
+    ASSERT_EQ(1, event_count);
+    EXPECT_EQ(0x7F, events[0].joystick_mask);
+
+    delete root;
 }
 
 TEST(InputApiValidationTest, RejectsReleaseAllExtraFields)

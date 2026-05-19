@@ -16,7 +16,26 @@
 
 #if U64 && !RECOVERYAPP
 static const uint32_t JOYSTICK_REST_TIMER_TICKS = (pdMS_TO_TICKS(20) > 0) ? pdMS_TO_TICKS(20) : 1;
+#endif
 
+static const uint8_t JOYSTICK_DIGITAL_MASK = 0x1F;
+static const uint8_t JOYSTICK_FIRE2_BIT = (1 << 5);
+static const uint8_t JOYSTICK_FIRE3_BIT = (1 << 6);
+static const uint8_t JOYSTICK_INPUT_MASK = JOYSTICK_DIGITAL_MASK | JOYSTICK_FIRE2_BIT | JOYSTICK_FIRE3_BIT;
+static const uint8_t JOYSTICK_POT_RELEASED = 0x7F;
+static const uint8_t JOYSTICK_POT_PRESSED = 0x00;
+
+static uint8_t joystick_potx_value(uint8_t active_low_mask)
+{
+    return (active_low_mask & JOYSTICK_FIRE2_BIT) ? JOYSTICK_POT_RELEASED : JOYSTICK_POT_PRESSED;
+}
+
+static uint8_t joystick_poty_value(uint8_t active_low_mask)
+{
+    return (active_low_mask & JOYSTICK_FIRE3_BIT) ? JOYSTICK_POT_RELEASED : JOYSTICK_POT_PRESSED;
+}
+
+#if U64 && !RECOVERYAPP
 static void joystick_overlay_timer(TimerHandle_t timer)
 {
     (void)timer;
@@ -26,11 +45,11 @@ static void joystick_overlay_timer(TimerHandle_t timer)
 
 JoystickOutput :: JoystickOutput()
 {
-    usb_p1 = 0x1F;
-    rest_p1_persistent = 0x1F;
-    rest_p2_persistent = 0x1F;
-    rest_p1_overlay = 0x1F;
-    rest_p2_overlay = 0x1F;
+    usb_p1 = JOYSTICK_INPUT_MASK;
+    rest_p1_persistent = JOYSTICK_INPUT_MASK;
+    rest_p2_persistent = JOYSTICK_INPUT_MASK;
+    rest_p1_overlay = JOYSTICK_INPUT_MASK;
+    rest_p2_overlay = JOYSTICK_INPUT_MASK;
     memset(rest_p1_hold, 0, sizeof(rest_p1_hold));
     memset(rest_p2_hold, 0, sizeof(rest_p2_hold));
 #if U64 && !RECOVERYAPP
@@ -50,8 +69,14 @@ JoystickOutput &JoystickOutput :: instance()
 void JoystickOutput :: apply(void)
 {
 #if U64
-    C64_JOY1_SWOUT = ((usb_p1 & rest_p1_persistent & rest_p1_overlay) & 0x1F) | 0xE0;
-    C64_JOY2_SWOUT = ((0x1F & rest_p2_persistent & rest_p2_overlay) & 0x1F) | 0xE0;
+    uint8_t port1, port2, pot1x, pot1y, pot2x, pot2y;
+    outputSnapshot(port1, port2, pot1x, pot1y, pot2x, pot2y);
+    C64_JOY1_SWOUT = port1 | 0xE0;
+    C64_JOY2_SWOUT = port2 | 0xE0;
+    C64_PADDLE_1_X = pot1x;
+    C64_PADDLE_1_Y = pot1y;
+    C64_PADDLE_2_X = pot2x;
+    C64_PADDLE_2_Y = pot2y;
 #endif
 }
 
@@ -60,7 +85,7 @@ void JoystickOutput :: setUsbPort1(uint8_t active_low_mask)
 #if U64
     portENTER_CRITICAL();
 #endif
-    usb_p1 = active_low_mask & 0x1F;
+    usb_p1 = (active_low_mask & JOYSTICK_DIGITAL_MASK) | (JOYSTICK_INPUT_MASK & ~JOYSTICK_DIGITAL_MASK);
     apply();
 #if U64
     portEXIT_CRITICAL();
@@ -72,7 +97,7 @@ void JoystickOutput :: setRestPort1Persistent(uint8_t active_low_mask)
 #if U64
     portENTER_CRITICAL();
 #endif
-    rest_p1_persistent = active_low_mask & 0x1F;
+    rest_p1_persistent = active_low_mask & JOYSTICK_INPUT_MASK;
     apply();
 #if U64
     portEXIT_CRITICAL();
@@ -84,7 +109,7 @@ void JoystickOutput :: setRestPort2Persistent(uint8_t active_low_mask)
 #if U64
     portENTER_CRITICAL();
 #endif
-    rest_p2_persistent = active_low_mask & 0x1F;
+    rest_p2_persistent = active_low_mask & JOYSTICK_INPUT_MASK;
     apply();
 #if U64
     portEXIT_CRITICAL();
@@ -93,14 +118,14 @@ void JoystickOutput :: setRestPort2Persistent(uint8_t active_low_mask)
 
 void JoystickOutput :: restPersistentSnapshot(uint8_t &port1_active_low, uint8_t &port2_active_low) const
 {
-    port1_active_low = rest_p1_persistent & 0x1F;
-    port2_active_low = rest_p2_persistent & 0x1F;
+    port1_active_low = rest_p1_persistent & JOYSTICK_INPUT_MASK;
+    port2_active_low = rest_p2_persistent & JOYSTICK_INPUT_MASK;
 }
 
-static void arm_overlay_bits(uint8_t &overlay, uint8_t hold_state[5], uint8_t active_low_mask, const uint8_t hold[5])
+static void arm_overlay_bits(uint8_t &overlay, uint8_t hold_state[7], uint8_t active_low_mask, const uint8_t hold[7])
 {
-    active_low_mask &= 0x1F;
-    for (int i = 0; i < 5; i++) {
+    active_low_mask &= JOYSTICK_INPUT_MASK;
+    for (int i = 0; i < 7; i++) {
         uint8_t bit = (1 << i);
         if (hold[i] != 0) {
             hold_state[i] = hold[i];
@@ -113,7 +138,7 @@ static void arm_overlay_bits(uint8_t &overlay, uint8_t hold_state[5], uint8_t ac
     }
 }
 
-void JoystickOutput :: armRestPort1Overlay(uint8_t active_low_mask, const uint8_t hold[5])
+void JoystickOutput :: armRestPort1Overlay(uint8_t active_low_mask, const uint8_t hold[7])
 {
 #if U64
     portENTER_CRITICAL();
@@ -125,7 +150,7 @@ void JoystickOutput :: armRestPort1Overlay(uint8_t active_low_mask, const uint8_
 #endif
 }
 
-void JoystickOutput :: armRestPort2Overlay(uint8_t active_low_mask, const uint8_t hold[5])
+void JoystickOutput :: armRestPort2Overlay(uint8_t active_low_mask, const uint8_t hold[7])
 {
 #if U64
     portENTER_CRITICAL();
@@ -137,10 +162,10 @@ void JoystickOutput :: armRestPort2Overlay(uint8_t active_low_mask, const uint8_
 #endif
 }
 
-static bool tick_overlay_bits(uint8_t &overlay, uint8_t hold_state[5])
+static bool tick_overlay_bits(uint8_t &overlay, uint8_t hold_state[7])
 {
     bool changed = false;
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 7; i++) {
         if (hold_state[i] == 0) {
             continue;
         }
@@ -173,10 +198,10 @@ void JoystickOutput :: releaseAllRest(void)
 #if U64
     portENTER_CRITICAL();
 #endif
-    rest_p1_persistent = 0x1F;
-    rest_p2_persistent = 0x1F;
-    rest_p1_overlay = 0x1F;
-    rest_p2_overlay = 0x1F;
+    rest_p1_persistent = JOYSTICK_INPUT_MASK;
+    rest_p2_persistent = JOYSTICK_INPUT_MASK;
+    rest_p1_overlay = JOYSTICK_INPUT_MASK;
+    rest_p2_overlay = JOYSTICK_INPUT_MASK;
     memset(rest_p1_hold, 0, sizeof(rest_p1_hold));
     memset(rest_p2_hold, 0, sizeof(rest_p2_hold));
     apply();
@@ -187,6 +212,19 @@ void JoystickOutput :: releaseAllRest(void)
 
 void JoystickOutput :: snapshot(uint8_t &port1_active_low, uint8_t &port2_active_low) const
 {
-    port1_active_low = (rest_p1_persistent & rest_p1_overlay) & 0x1F;
-    port2_active_low = (rest_p2_persistent & rest_p2_overlay) & 0x1F;
+    port1_active_low = (rest_p1_persistent & rest_p1_overlay) & JOYSTICK_INPUT_MASK;
+    port2_active_low = (rest_p2_persistent & rest_p2_overlay) & JOYSTICK_INPUT_MASK;
+}
+
+void JoystickOutput :: outputSnapshot(uint8_t &port1_active_low, uint8_t &port2_active_low,
+    uint8_t &port1_potx, uint8_t &port1_poty, uint8_t &port2_potx, uint8_t &port2_poty) const
+{
+    uint8_t port1 = usb_p1 & rest_p1_persistent & rest_p1_overlay;
+    uint8_t port2 = rest_p2_persistent & rest_p2_overlay;
+    port1_active_low = port1 & JOYSTICK_DIGITAL_MASK;
+    port2_active_low = port2 & JOYSTICK_DIGITAL_MASK;
+    port1_potx = joystick_potx_value(port1);
+    port1_poty = joystick_poty_value(port1);
+    port2_potx = joystick_potx_value(port2);
+    port2_poty = joystick_poty_value(port2);
 }

@@ -36,8 +36,9 @@ uint8_t usb_matrix_lookup(const uint8_t *map, size_t map_size, uint8_t key)
 }
 
 #if U64 && !RECOVERYAPP
-static const uint32_t REST_INPUT_TIMER_TICKS = (pdMS_TO_TICKS(20) > 0) ? pdMS_TO_TICKS(20) : 1;
+static const uint32_t REST_INPUT_TIMER_TICKS = (pdMS_TO_TICKS(10) > 0) ? pdMS_TO_TICKS(10) : 1;
 #endif
+static const uint8_t REST_TAP_GAP_TICKS = 2;
 
 }
 
@@ -127,6 +128,10 @@ Keyboard_USB :: Keyboard_USB()
 	memset(rest_matrix_state, 0, sizeof(rest_matrix_state));
 	memset(rest_matrix_overlay, 0, sizeof(rest_matrix_overlay));
 	memset(rest_overlay_hold, 0, sizeof(rest_overlay_hold));
+	memset(rest_tap_queue, 0, sizeof(rest_tap_queue));
+	rest_tap_head = 0;
+	rest_tap_tail = 0;
+	rest_tap_gap_ticks = 0;
 	usb_restore = 0;
 	usb_freeze = 0;
 	rest_restore = false;
@@ -203,6 +208,46 @@ void Keyboard_USB :: clearInjectedMatrixState(void)
 	injected_matrix_hold = 0;
 	memset(injected_matrix_state, 0, sizeof(injected_matrix_state));
 	applyMatrixState();
+}
+
+bool Keyboard_USB :: restTapQueueEmpty(void) const
+{
+	return rest_tap_head == rest_tap_tail;
+}
+
+bool Keyboard_USB :: restTapOverlayActive(void) const
+{
+	if (rest_restore_hold != 0) {
+		return true;
+	}
+	for (int row = 0; row < 8; row++) {
+		for (int col = 0; col < 8; col++) {
+			if (rest_overlay_hold[row][col] != 0) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+void Keyboard_USB :: startRestTap(const RestTapEntry& entry)
+{
+	for (int row = 0; row < 8; row++) {
+		for (int col = 0; col < 8; col++) {
+			uint8_t bit = (1 << col);
+			if (entry.matrix[row] & bit) {
+				if ((rest_matrix_state[row] & bit) == 0) {
+					rest_matrix_overlay[row] |= bit;
+				}
+				rest_matrix_state[row] |= bit;
+				rest_overlay_hold[row][col] = entry.hold_ticks;
+			}
+		}
+	}
+	if (entry.restore) {
+		rest_restore_overlay = 1;
+		rest_restore_hold = entry.hold_ticks;
+	}
 }
 
 void Keyboard_USB :: setInjectedMatrixKey(int key)
@@ -547,6 +592,8 @@ void Keyboard_USB :: restPress(uint8_t row, uint8_t col_bit)
 	}
 	portENTER_CRITICAL();
 	rest_matrix_state[row] |= (1 << col_bit);
+	rest_matrix_overlay[row] &= ~(1 << col_bit);
+	rest_overlay_hold[row][col_bit] = 0;
 	applyMatrixState();
 	portEXIT_CRITICAL();
 }
@@ -568,10 +615,60 @@ void Keyboard_USB :: restTap(uint8_t row, uint8_t col_bit, uint8_t hold_ticks)
 		return;
 	}
 	portENTER_CRITICAL();
-	rest_matrix_overlay[row] |= (1 << col_bit);
+	if ((rest_matrix_state[row] & (1 << col_bit)) == 0) {
+		rest_matrix_overlay[row] |= (1 << col_bit);
+	}
+	rest_matrix_state[row] |= (1 << col_bit);
 	rest_overlay_hold[row][col_bit] = hold_ticks;
 	applyMatrixState();
 	portEXIT_CRITICAL();
+}
+
+bool Keyboard_USB :: restQueueTap(const uint8_t matrix[8], bool restore, uint8_t hold_ticks)
+{
+	if (hold_ticks == 0) {
+		return true;
+	}
+	portENTER_CRITICAL();
+
+	bool has_any_key = restore;
+	for (int row = 0; row < 8; row++) {
+		if (matrix[row] != 0) {
+			has_any_key = true;
+			break;
+		}
+	}
+	if (!has_any_key) {
+		portEXIT_CRITICAL();
+		return true;
+	}
+
+	if (!restTapOverlayActive() && (rest_tap_gap_ticks == 0) && restTapQueueEmpty()) {
+		RestTapEntry entry;
+		memcpy(entry.matrix, matrix, sizeof(entry.matrix));
+		entry.hold_ticks = hold_ticks;
+		entry.restore = restore;
+		startRestTap(entry);
+		applyMatrixState();
+		portEXIT_CRITICAL();
+		return true;
+	}
+
+	uint8_t next_head = rest_tap_head + 1;
+	if (next_head >= REST_TAP_QUEUE_SIZE) {
+		next_head = 0;
+	}
+	if (next_head == rest_tap_tail) {
+		portEXIT_CRITICAL();
+		return false;
+	}
+
+	memcpy(rest_tap_queue[rest_tap_head].matrix, matrix, sizeof(rest_tap_queue[rest_tap_head].matrix));
+	rest_tap_queue[rest_tap_head].hold_ticks = hold_ticks;
+	rest_tap_queue[rest_tap_head].restore = restore;
+	rest_tap_head = next_head;
+	portEXIT_CRITICAL();
+	return true;
 }
 
 void Keyboard_USB :: restPressRestore(void)
@@ -608,6 +705,9 @@ void Keyboard_USB :: restReleaseAll(void)
 	memset(rest_matrix_state, 0, sizeof(rest_matrix_state));
 	memset(rest_matrix_overlay, 0, sizeof(rest_matrix_overlay));
 	memset(rest_overlay_hold, 0, sizeof(rest_overlay_hold));
+	rest_tap_head = 0;
+	rest_tap_tail = 0;
+	rest_tap_gap_ticks = 0;
 	rest_restore = false;
 	rest_restore_overlay = 0;
 	rest_restore_hold = 0;
@@ -626,7 +726,7 @@ void Keyboard_USB :: restSnapshot(uint8_t out_matrix[8], bool &out_restore) cons
 void Keyboard_USB :: restPersistentSnapshot(uint8_t out_matrix[8], bool &out_restore) const
 {
 	for (int i = 0; i < 8; i++) {
-		out_matrix[i] = rest_matrix_state[i];
+		out_matrix[i] = rest_matrix_state[i] & ~rest_matrix_overlay[i];
 	}
 	out_restore = rest_restore;
 }
@@ -642,7 +742,12 @@ void Keyboard_USB :: tickRestOverlays(void)
 			}
 			rest_overlay_hold[row][col]--;
 			if (rest_overlay_hold[row][col] == 0) {
-				rest_matrix_overlay[row] &= ~(1 << col);
+				uint8_t bit = (1 << col);
+				if (rest_matrix_overlay[row] & bit) {
+					rest_matrix_state[row] &= ~bit;
+					rest_matrix_overlay[row] &= ~bit;
+				}
+				rest_tap_gap_ticks = REST_TAP_GAP_TICKS;
 				changed = true;
 			}
 		}
@@ -651,6 +756,19 @@ void Keyboard_USB :: tickRestOverlays(void)
 		rest_restore_hold--;
 		if (rest_restore_hold == 0) {
 			rest_restore_overlay = 0;
+			rest_tap_gap_ticks = REST_TAP_GAP_TICKS;
+			changed = true;
+		}
+	}
+	if (!restTapOverlayActive()) {
+		if (rest_tap_gap_ticks > 0) {
+			rest_tap_gap_ticks--;
+		} else if (!restTapQueueEmpty()) {
+			startRestTap(rest_tap_queue[rest_tap_tail]);
+			rest_tap_tail++;
+			if (rest_tap_tail >= REST_TAP_QUEUE_SIZE) {
+				rest_tap_tail = 0;
+			}
 			changed = true;
 		}
 	}

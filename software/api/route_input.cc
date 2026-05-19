@@ -7,6 +7,7 @@
 
 #include "FreeRTOS.h"
 #include "semphr.h"
+#include "task.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -14,9 +15,132 @@
 
 static const char *INPUT_CAPABILITY_ERROR = "Keyboard and joystick injection require Ultimate 64-class hardware.";
 
+namespace {
+
+static const size_t INPUT_JSON_BODY_MAX_SIZE = 4096;
+
+class InputJsonWriter
+{
+    HTTPReqMessage *req;
+    HTTPRespMessage *resp;
+    const ApiCall_t *func;
+    ArgsURI *args;
+    char *buffer;
+    size_t size;
+    size_t capacity;
+    int status;
+
+    bool reserve(size_t required)
+    {
+        if (required > INPUT_JSON_BODY_MAX_SIZE) {
+            status = -2;
+            return false;
+        }
+        if (required <= capacity) {
+            return true;
+        }
+        char *grown = (char *)realloc(buffer, required + 1);
+        if (!grown) {
+            status = -3;
+            return false;
+        }
+        buffer = grown;
+        capacity = required;
+        return true;
+    }
+
+public:
+    InputJsonWriter(HTTPReqMessage *req, HTTPRespMessage *resp, const ApiCall_t *func, ArgsURI *args)
+        : req(req), resp(resp), func(func), args(args), buffer(NULL), size(0), capacity(0), status(0)
+    {
+        if ((req->bodyType == eTotalSize) && (req->bodySize > 0)) {
+            reserve(req->bodySize);
+        }
+    }
+
+    ~InputJsonWriter()
+    {
+        free(buffer);
+    }
+
+    static void collect_wrapper(BodyDataBlock_t *block)
+    {
+        InputJsonWriter *writer = (InputJsonWriter *)block->context;
+        writer->collect(block);
+    }
+
+    void collect(BodyDataBlock_t *block)
+    {
+        switch (block->type) {
+        case eStart:
+            size = 0;
+            break;
+        case eDataBlock:
+            if (status != 0) {
+                break;
+            }
+            if (!reserve(size + block->length)) {
+                break;
+            }
+            memcpy(buffer + size, block->data, block->length);
+            size += block->length;
+            buffer[size] = 0;
+            break;
+        case eTerminate:
+        {
+            ResponseWrapper respw(resp);
+            if (args->Validate(*func, &respw) != 0) {
+                respw.json_response(HTTP_BAD_REQUEST);
+            } else {
+                func->proc(*args, req, &respw, this);
+            }
+            delete args;
+            delete this;
+            break;
+        }
+        default:
+            break;
+        }
+    }
+
+    int error(void) const
+    {
+        return status;
+    }
+
+    char *data(void)
+    {
+        return buffer;
+    }
+
+    size_t length(void) const
+    {
+        return size;
+    }
+};
+
+void *input_json_writer(HTTPReqMessage *req, HTTPRespMessage *resp, const ApiCall_t *func, ArgsURI *args)
+{
+    if (req->bodyType != eNoBody) {
+        if ((req->bodyType == eTotalSize) && (req->bodySize == 0)) {
+            req->bodyType = eNoBody;
+            return NULL;
+        }
+        InputJsonWriter *writer = new InputJsonWriter(req, resp, func, args);
+        setup_multipart(req, &InputJsonWriter::collect_wrapper, writer);
+        return writer;
+    }
+    return NULL;
+}
+
+}
+
 #if U64
 
-static const uint8_t REST_TAP_HOLD_TICKS = 1;
+// The REST tap timer ticks every 10 ms in Keyboard_USB. Hold taps for 60 ms so
+// BASIC's asynchronous keyboard scan sees them reliably without regressing into
+// the old long 200 ms experimental hold.
+static const uint8_t REST_TAP_HOLD_TICKS = 6;
 static SemaphoreHandle_t rest_input_mutex = NULL;
 
 static SemaphoreHandle_t input_mutex(void)
@@ -31,7 +155,7 @@ static void apply_joystick_event(const InputParsedEvent &event)
 {
     uint8_t p1, p2;
     uint8_t active_low;
-    uint8_t hold[INPUT_API_MAX_JOYSTICK_INPUTS] = { 0, 0, 0, 0, 0 };
+    uint8_t hold[INPUT_API_MAX_JOYSTICK_INPUTS] = { 0, 0, 0, 0, 0, 0, 0 };
 
     JoystickOutput::instance().restPersistentSnapshot(p1, p2);
     active_low = (event.port == 1) ? p1 : p2;
@@ -59,7 +183,7 @@ static void apply_joystick_event(const InputParsedEvent &event)
                 hold[i] = REST_TAP_HOLD_TICKS;
             }
         }
-        active_low = 0x1F & ~event.joystick_mask;
+        active_low = ((1 << INPUT_API_MAX_JOYSTICK_INPUTS) - 1) & ~event.joystick_mask;
         if (event.port == 1) {
             JoystickOutput::instance().armRestPort1Overlay(active_low, hold);
         } else {
@@ -72,6 +196,23 @@ static void apply_joystick_event(const InputParsedEvent &event)
 static void apply_keyboard_event(const InputParsedEvent &event)
 {
     const InputKeyboardMapEntry *keyboard_map = input_api_keyboard_map();
+    uint8_t tap_matrix[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+    bool tap_restore = false;
+
+    if (event.transition == INPUT_PARSED_TAP) {
+        for (int i = 0; i < event.keyboard_count; i++) {
+            const InputKeyboardMapEntry &entry = keyboard_map[event.keyboard_index[i]];
+            if (entry.restore) {
+                tap_restore = true;
+            } else {
+                tap_matrix[entry.row] |= (1 << entry.col);
+            }
+        }
+        while (!system_usb_keyboard.restQueueTap(tap_matrix, tap_restore, REST_TAP_HOLD_TICKS)) {
+            vTaskDelay(1);
+        }
+        return;
+    }
 
     for (int i = 0; i < event.keyboard_count; i++) {
         const InputKeyboardMapEntry &entry = keyboard_map[event.keyboard_index[i]];
@@ -87,7 +228,6 @@ static void apply_keyboard_event(const InputParsedEvent &event)
             system_usb_keyboard.restRelease(entry.row, entry.col);
             break;
         case INPUT_PARSED_TAP:
-            system_usb_keyboard.restTap(entry.row, entry.col, REST_TAP_HOLD_TICKS);
             break;
         }
     }
@@ -206,7 +346,7 @@ API_CALL(GET, machine, input, NULL, ARRAY( { }))
 #endif
 }
 
-API_CALL(POST, machine, input, &attachment_writer, ARRAY( { }))
+API_CALL(POST, machine, input, &input_json_writer, ARRAY( { }))
 {
 #if U64
     if (!ensure_input_capability(resp)) {
@@ -222,39 +362,37 @@ API_CALL(POST, machine, input, &attachment_writer, ARRAY( { }))
         resp->json_response(HTTP_BAD_REQUEST);
         return;
     }
-    TempfileWriter *handler = (TempfileWriter *)body;
+    InputJsonWriter *handler = (InputJsonWriter *)body;
     if (!handler) {
         resp->error("Request body is required.");
         resp->json_response(HTTP_BAD_REQUEST);
         return;
     }
-    int buffered = handler->buffer_file(0, 4096);
-    if (buffered != 0) {
-        if (buffered == -1) {
-            resp->error("Request body is required.");
-        } else if (buffered == -2) {
+    if (handler->error() != 0) {
+        if (handler->error() == -2) {
             resp->error("JSON body is too large.");
+        } else if (handler->error() == -3) {
+            resp->error("Could not allocate JSON buffer.");
+            resp->json_response(HTTP_INTERNAL_SERVER_ERROR);
+            return;
         } else {
-            resp->error("Could not buffer attachment.");
+            resp->error("Request body is required.");
         }
         resp->json_response(HTTP_BAD_REQUEST);
         return;
     }
     JSON *obj = NULL;
-    size_t text_size = handler->get_filesize(0);
-    char *text = (char *)malloc(text_size + 1);
-    if (!text) {
-        resp->error("Could not allocate JSON buffer.");
-        resp->json_response(HTTP_INTERNAL_SERVER_ERROR);
+    size_t text_size = handler->length();
+    char *text = handler->data();
+    if (!text || (text_size == 0)) {
+        resp->error("Request body is required.");
+        resp->json_response(HTTP_BAD_REQUEST);
         return;
     }
-    memcpy(text, handler->get_buffer(0), text_size);
-    text[text_size] = 0;
 
     int tokens = convert_text_to_json_objects(text, text_size, 1024, &obj);
     if (tokens < 0) {
         resp->error("JSON could not be parsed. Error: %d", tokens);
-        free(text);
         resp->json_response(HTTP_BAD_REQUEST);
         return;
     }
@@ -269,7 +407,6 @@ API_CALL(POST, machine, input, &attachment_writer, ARRAY( { }))
     if (!input_api_validate_batch(obj, events, event_count, pace_ms, error_index, err, sizeof(err))) {
         xSemaphoreGive(mutex);
         delete obj;
-        free(text);
         if (error_index >= 0) {
             resp->error("events[%d]: %s", error_index, err);
         } else {
@@ -283,7 +420,6 @@ API_CALL(POST, machine, input, &attachment_writer, ARRAY( { }))
     xSemaphoreGive(mutex);
     resp->json_response(HTTP_OK);
     delete obj;
-    free(text);
 #else
     resp->error(INPUT_CAPABILITY_ERROR);
     resp->json_response(HTTP_NOT_IMPLEMENTED);
