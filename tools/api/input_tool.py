@@ -34,16 +34,21 @@ KEY_MAP: Dict[str, str] = {
     "\r": "return",
     "\n": "return",
     "\t": "ctrl",
-    "\x7f": "inst_del",
-    "\b": "inst_del",
+    "\x7f": "pound",
+    "\b": "pound",
+    "`": "arrow_left",
     ":": "colon",
-    ";": "semicolon",
+    ";": "colon",
+    "'": "semicolon",
     ",": "comma",
     ".": "period",
     "/": "slash",
     "+": "plus",
-    "-": "minus",
-    "=": "equals",
+    "-": "plus",
+    "=": "minus",
+    "[": "at",
+    "]": "star",
+    "\\": "arrow_up",
     "@": "at",
     "*": "star",
     "^": "arrow_up",
@@ -58,10 +63,10 @@ ARROW_KEYS = {
     "D": "left",
 }
 TERMINAL_SPECIAL_KEY_HELP_LINES = (
-    "fallback: text/arrows/F1-F8/Home/Ins/Del/PgUp/PgDn, Tab=CTRL, Esc=release_all",
+    "fallback: text/arrows/F1-F8/Home/Ins/Del/PgUp/PgDn, Tab=CTRL, F12=joy 1/2, Esc=release_all",
 )
 LOW_LEVEL_SPECIAL_KEY_HELP_LINES = (
-    "keys: direct Linux mapping; Ctrl=C=, Tab=CTRL, Esc=release_all, Ctrl+Esc=quit",
+    "keys: direct Linux mapping; Ctrl=C=, Tab=CTRL, F12=joy 1/2, Esc=release_all, Ctrl+Esc=quit",
 )
 DIRECT_KEY_SEQUENCE_MAP: Dict[str, List[str]] = {
     "\x1bOP": ["f1"],
@@ -80,19 +85,18 @@ DIRECT_KEY_SEQUENCE_MAP: Dict[str, List[str]] = {
     "\x1b[17~": ["left_shift", "f5"],
     "\x1b[18~": ["f7"],
     "\x1b[19~": ["left_shift", "f7"],
-    "\x1b[H": ["clr_home"],
-    "\x1bOH": ["clr_home"],
-    "\x1b[1~": ["clr_home"],
-    "\x1b[7~": ["clr_home"],
-    "\x1b[2~": ["inst_del"],
-    "\x1b[3~": ["inst_del"],
+    "\x1b[H": ["inst_del"],
+    "\x1bOH": ["inst_del"],
+    "\x1b[1~": ["inst_del"],
+    "\x1b[7~": ["inst_del"],
+    "\x1b[2~": ["clr_home"],
+    "\x1b[3~": ["restore"],
     "\x1b[F": ["run_stop"],
     "\x1bOF": ["run_stop"],
     "\x1b[4~": ["run_stop"],
     "\x1b[6~": ["run_stop"],
     "\x1b[8~": ["run_stop"],
-    "\x1b[5~": ["restore"],
-    "\x1b[24~": ["restore"],
+    "\x1b[5~": ["equals"],
 }
 ESCAPE_SEQUENCE_TIMEOUT = float(os.environ.get("U64_INPUT_ESCAPE_TIMEOUT", "0.10"))
 MAX_BATCH_EVENTS = 64
@@ -189,6 +193,7 @@ KEY_SLASH = 53
 KEY_RIGHTSHIFT = 54
 KEY_LEFTALT = 56
 KEY_SPACE = 57
+KEY_CAPSLOCK = 58
 KEY_F1 = 59
 KEY_F2 = 60
 KEY_F3 = 61
@@ -250,12 +255,22 @@ KEYCODE_CHAR_MAP: Dict[int, Tuple[str, str]] = {
 KEYCODE_BASE_INPUT_MAP: Dict[int, str] = {
     **LETTER_KEYCODES,
     **DIGIT_KEYCODES,
-    KEY_MINUS: "minus",
-    KEY_EQUAL: "equals",
-    KEY_SEMICOLON: "semicolon",
+    KEY_GRAVE: "arrow_left",
+    KEY_MINUS: "plus",
+    KEY_EQUAL: "minus",
+    KEY_LEFTBRACE: "at",
+    KEY_RIGHTBRACE: "star",
+    KEY_BACKSLASH: "arrow_up",
+    KEY_SEMICOLON: "colon",
+    KEY_APOSTROPHE: "semicolon",
     KEY_COMMA: "comma",
     KEY_DOT: "period",
     KEY_SLASH: "slash",
+    KEY_BACKSPACE: "pound",
+    KEY_INSERT: "clr_home",
+    KEY_HOME: "inst_del",
+    KEY_PAGEUP: "equals",
+    KEY_CAPSLOCK: "run_stop",
 }
 ARROW_KEYCODE_DIRECTION = {
     KEY_UP: "up",
@@ -266,27 +281,35 @@ ARROW_KEYCODE_DIRECTION = {
 LOW_LEVEL_DIRECT_KEY_INPUTS: Dict[int, str] = {
     **LETTER_KEYCODES,
     **DIGIT_KEYCODES,
-    KEY_MINUS: "minus",
-    KEY_EQUAL: "equals",
-    KEY_SEMICOLON: "semicolon",
+    KEY_GRAVE: "arrow_left",
+    KEY_MINUS: "plus",
+    KEY_EQUAL: "minus",
+    KEY_LEFTBRACE: "at",
+    KEY_RIGHTBRACE: "star",
+    KEY_BACKSLASH: "arrow_up",
+    KEY_SEMICOLON: "colon",
+    KEY_APOSTROPHE: "semicolon",
     KEY_COMMA: "comma",
     KEY_DOT: "period",
     KEY_SLASH: "slash",
     KEY_SPACE: "space",
     KEY_ENTER: "return",
-    KEY_BACKSPACE: "inst_del",
-    KEY_DELETE: "inst_del",
-    KEY_INSERT: "inst_del",
-    KEY_HOME: "clr_home",
+    KEY_BACKSPACE: "pound",
+    KEY_INSERT: "clr_home",
+    KEY_HOME: "inst_del",
+    KEY_CAPSLOCK: "run_stop",
     KEY_END: "run_stop",
     KEY_PAGEDOWN: "run_stop",
-    KEY_PAGEUP: "restore",
+    KEY_PAGEUP: "equals",
     KEY_RIGHT: "cursor_left_right",
     KEY_DOWN: "cursor_up_down",
     KEY_F1: "f1",
     KEY_F3: "f3",
     KEY_F5: "f5",
     KEY_F7: "f7",
+}
+LOW_LEVEL_TAP_KEY_INPUTS: Dict[int, str] = {
+    KEY_DELETE: "restore",
     KEY_F12: "restore",
 }
 LOW_LEVEL_SHIFTED_KEY_INPUTS: Dict[int, str] = {
@@ -444,6 +467,8 @@ class SequenceDecoder:
             return "prefix", None, None
         if seq in QUIT_SEQUENCES:
             return "quit", None, None
+        if seq == "\x1b[24~":
+            return "toggle_joystick_port", None, None
         event = translate_sequence(seq, joystick_port)
         if not event:
             return "ignore", None, None
@@ -723,6 +748,18 @@ class GamepadState:
 
     def repeat_timeout(self, now: float) -> Optional[float]:
         return None
+
+    def toggle_port(self) -> List[Dict[str, object]]:
+        if self.logical_inputs:
+            held_inputs = self._ordered(self.logical_inputs)
+            old_port = self.port
+            self.port = 1 if self.port == 2 else 2
+            return [
+                {"kind": "joystick", "port": old_port, "inputs": held_inputs, "transition": "release"},
+                {"kind": "joystick", "port": self.port, "inputs": held_inputs, "transition": "press"},
+            ]
+        self.port = 1 if self.port == 2 else 2
+        return []
 
 
 class GamepadDevice:
@@ -1209,6 +1246,10 @@ class LowLevelKeyboardState:
         return None
 
     def _press_mapped_key(self, code: int) -> List[Dict[str, object]]:
+        tap_input = LOW_LEVEL_TAP_KEY_INPUTS.get(code)
+        if tap_input is not None:
+            return [keyboard_event([tap_input])]
+
         direct_input = LOW_LEVEL_DIRECT_KEY_INPUTS.get(code)
         if direct_input is not None:
             return [keyboard_state_event([direct_input], "press")]
@@ -1225,6 +1266,10 @@ class LowLevelKeyboardState:
         return []
 
     def _release_mapped_key(self, code: int) -> List[Dict[str, object]]:
+        tap_input = LOW_LEVEL_TAP_KEY_INPUTS.get(code)
+        if tap_input is not None:
+            return []
+
         direct_input = LOW_LEVEL_DIRECT_KEY_INPUTS.get(code)
         if direct_input is not None:
             return [keyboard_state_event([direct_input], "release")]
@@ -1251,6 +1296,9 @@ class LowLevelKeyboardState:
             return None, [modifier_event]
         if code in (KEY_LEFTSHIFT, KEY_RIGHTSHIFT, KEY_LEFTCTRL, KEY_RIGHTCTRL, KEY_LEFTALT, KEY_RIGHTALT, KEY_TAB):
             return None, []
+
+        if code == KEY_F12:
+            return "toggle_joystick_port", []
 
         if code == KEY_ESC and value == 1:
             if self.commodore.active():
@@ -1427,9 +1475,9 @@ def print_mapping_overview(
 ) -> None:
     print(f"REST input tool -> {host}")
     if keyboard:
-        print("keys: low-level Linux mapping; Ctrl=C=, Tab=CTRL, arrows/F1-F8/Home/etc map directly; Esc=release_all; Ctrl+Esc=quit")
+        print("keys: low-level Linux mapping; Ctrl=C=, Tab=CTRL, F12 swaps joy 1/2, arrows/F1-F8/Home/etc map directly; Esc=release_all; Ctrl+Esc=quit")
     else:
-        print("keys: terminal fallback; direct text/arrows/F1-F8/Home/Tab only; Esc=release_all")
+        print("keys: terminal fallback; direct text/arrows/F1-F8/Home/Tab only; F12 swaps joy 1/2; Esc=release_all")
     print_special_key_help(low_level_keyboard=keyboard is not None)
     if keyboard:
         print("keyboard repeats: Linux low-level key-repeat events")
@@ -1473,6 +1521,10 @@ def handle_interactive_sequence(
         return None, repeat_state.poll(now)
     if action == "help":
         return "help", repeat_state.poll(now)
+    if action == "toggle_joystick_port":
+        repeat_state.stop()
+        decoder.clear()
+        return "toggle_joystick_port", []
     if action == "quit":
         repeat_state.stop()
         decoder.clear()
@@ -1487,6 +1539,13 @@ def handle_interactive_sequence(
     if suppress_original:
         return None, extra_events
     return None, extra_events + [event]
+
+
+def toggle_gamepad_port(gamepad: Optional[GamepadDevice]) -> Tuple[Optional[int], List[Dict[str, object]]]:
+    if gamepad is None:
+        return None, []
+    events = gamepad.state.toggle_port()
+    return gamepad.state.port, events
 
 
 def run_interactive_loop(
@@ -1519,6 +1578,10 @@ def run_interactive_loop(
                             pending_events = []
                     elif control == "help":
                         print_special_key_help()
+                    elif control == "toggle_joystick_port":
+                        new_port, toggle_events = toggle_gamepad_port(None)
+                        if toggle_events:
+                            pending_events.extend(toggle_events)
                     elif control == "quit":
                         if pending_events:
                             flush_event_batch(client, pending_events)
@@ -1575,6 +1638,12 @@ def run_interactive_with_gamepad(
                                 pending_events = []
                         elif control == "help":
                             print_special_key_help()
+                        elif control == "toggle_joystick_port":
+                            new_port, toggle_events = toggle_gamepad_port(gamepad)
+                            if toggle_events:
+                                pending_events.extend(toggle_events)
+                            if new_port is not None:
+                                print(f"joystick port: {new_port}")
                         elif control == "quit":
                             if pending_events:
                                 flush_event_batch(client, pending_events)
@@ -1621,6 +1690,12 @@ def run_interactive_low_level(
                             if pending_events:
                                 flush_event_batch(client, pending_events)
                                 pending_events = []
+                        elif control == "toggle_joystick_port":
+                            new_port, toggle_events = toggle_gamepad_port(gamepad)
+                            if toggle_events:
+                                pending_events.extend(toggle_events)
+                            if new_port is not None:
+                                print(f"joystick port: {new_port}")
                         elif control == "quit":
                             if pending_events:
                                 flush_event_batch(client, pending_events)
@@ -1708,6 +1783,9 @@ def collect_low_level_keyboard_events(key_events: List[Tuple[int, int]], joystic
 
 def run_local_input_tool_regressions(joystick_port: int) -> None:
     decoder = SequenceDecoder()
+    if any(input_name in ("shift_lock", "shl") for input_name in LOW_LEVEL_DIRECT_KEY_INPUTS.values()):
+        raise Failure("Low-level positional map must not expose shift_lock/shl")
+
     for seq, expected in (
         ("\x1b[A", ["left_shift", "cursor_up_down"]),
         ("\x1b[B", ["cursor_up_down"]),
@@ -1786,6 +1864,86 @@ def run_local_input_tool_regressions(joystick_port: int) -> None:
     ]:
         raise Failure(f"Low-level ctrl mapping mismatch: {ctrl_events}")
 
+    direct_home_row_events = collect_low_level_keyboard_events(
+        [
+            (KEY_A, 1), (KEY_A, 0),
+            (KEY_S, 1), (KEY_S, 0),
+            (KEY_D, 1), (KEY_D, 0),
+            (KEY_F, 1), (KEY_F, 0),
+            (KEY_G, 1), (KEY_G, 0),
+            (KEY_H, 1), (KEY_H, 0),
+            (KEY_J, 1), (KEY_J, 0),
+            (KEY_K, 1), (KEY_K, 0),
+            (KEY_L, 1), (KEY_L, 0),
+        ],
+        joystick_port,
+    )
+    if [events for _, events in direct_home_row_events if events] != [
+        [keyboard_state_event(["a"], "press")],
+        [keyboard_state_event(["a"], "release")],
+        [keyboard_state_event(["s"], "press")],
+        [keyboard_state_event(["s"], "release")],
+        [keyboard_state_event(["d"], "press")],
+        [keyboard_state_event(["d"], "release")],
+        [keyboard_state_event(["f"], "press")],
+        [keyboard_state_event(["f"], "release")],
+        [keyboard_state_event(["g"], "press")],
+        [keyboard_state_event(["g"], "release")],
+        [keyboard_state_event(["h"], "press")],
+        [keyboard_state_event(["h"], "release")],
+        [keyboard_state_event(["j"], "press")],
+        [keyboard_state_event(["j"], "release")],
+        [keyboard_state_event(["k"], "press")],
+        [keyboard_state_event(["k"], "release")],
+        [keyboard_state_event(["l"], "press")],
+        [keyboard_state_event(["l"], "release")],
+    ]:
+        raise Failure(f"Low-level home-row mapping mismatch: {direct_home_row_events}")
+
+    positional_special_events = {
+        KEY_CAPSLOCK: "run_stop",
+        KEY_ENTER: "return",
+        KEY_BACKSPACE: "pound",
+        KEY_INSERT: "clr_home",
+        KEY_HOME: "inst_del",
+        KEY_PAGEUP: "equals",
+        KEY_GRAVE: "arrow_left",
+        KEY_MINUS: "plus",
+        KEY_EQUAL: "minus",
+        KEY_LEFTBRACE: "at",
+        KEY_RIGHTBRACE: "star",
+        KEY_BACKSLASH: "arrow_up",
+        KEY_SEMICOLON: "colon",
+        KEY_APOSTROPHE: "semicolon",
+    }
+    for keycode, input_name in positional_special_events.items():
+        events = collect_low_level_keyboard_events([(keycode, 1), (keycode, 0)], joystick_port)
+        expected = [
+            (None, [keyboard_state_event([input_name], "press")]),
+            (None, [keyboard_state_event([input_name], "release")]),
+        ]
+        if events != expected:
+            raise Failure(f"Low-level positional mapping mismatch for {keycode}: {events}")
+
+    restore_tap_events = {
+        KEY_DELETE: "restore",
+    }
+    for keycode, input_name in restore_tap_events.items():
+        events = collect_low_level_keyboard_events([(keycode, 1), (keycode, 0)], joystick_port)
+        expected = [
+            (None, [keyboard_event([input_name])]),
+            (None, []),
+        ]
+        if events != expected:
+            raise Failure(f"Low-level restore tap mismatch for {keycode}: {events}")
+
+    low_level_toggle_events = collect_low_level_keyboard_events([(KEY_F12, 1), (KEY_F12, 0)], joystick_port)
+    if low_level_toggle_events != [
+        ("toggle_joystick_port", []),
+        (None, []),
+    ]:
+        raise Failure(f"Low-level F12 toggle mismatch: {low_level_toggle_events}")
+
     quit_events = collect_low_level_keyboard_events([(KEY_LEFTCTRL, 1), (KEY_ESC, 1)], joystick_port)
     if quit_events != [
         (None, [keyboard_state_event(["commodore"], "press")]),
@@ -1863,6 +2021,36 @@ def run_local_input_tool_regressions(joystick_port: int) -> None:
     ]:
         raise Failure(f"Low-level left-arrow mapping mismatch: {left_arrow_events}")
 
+    down_arrow_events = collect_low_level_keyboard_events(
+        [(KEY_DOWN, 1), (KEY_DOWN, 0)],
+        joystick_port,
+    )
+    if down_arrow_events != [
+        (None, [keyboard_state_event(["cursor_up_down"], "press")]),
+        (None, [keyboard_state_event(["cursor_up_down"], "release")]),
+    ]:
+        raise Failure(f"Low-level down-arrow mapping mismatch: {down_arrow_events}")
+
+    right_arrow_events = collect_low_level_keyboard_events(
+        [(KEY_RIGHT, 1), (KEY_RIGHT, 0)],
+        joystick_port,
+    )
+    if right_arrow_events != [
+        (None, [keyboard_state_event(["cursor_left_right"], "press")]),
+        (None, [keyboard_state_event(["cursor_left_right"], "release")]),
+    ]:
+        raise Failure(f"Low-level right-arrow mapping mismatch: {right_arrow_events}")
+
+    up_arrow_events = collect_low_level_keyboard_events(
+        [(KEY_UP, 1), (KEY_UP, 0)],
+        joystick_port,
+    )
+    if up_arrow_events != [
+        (None, [keyboard_state_event(["left_shift"], "press"), keyboard_state_event(["cursor_up_down"], "press")]),
+        (None, [keyboard_state_event(["cursor_up_down"], "release"), keyboard_state_event(["left_shift"], "release")]),
+    ]:
+        raise Failure(f"Low-level up-arrow mapping mismatch: {up_arrow_events}")
+
     gamepad = GamepadState(joystick_port)
     fire23_events = [
         gamepad.apply_input_event(EV_KEY, BTN_SOUTH, 1, 0.0),
@@ -1908,6 +2096,17 @@ def run_local_input_tool_regressions(joystick_port: int) -> None:
     ]:
         raise Failure(f"Generic gamepad button mapping mismatch: {generic_button_events}")
 
+    toggled_gamepad = GamepadState(2)
+    toggled_gamepad.apply_input_event(EV_KEY, BTN_SOUTH, 1, 0.0)
+    toggle_events = toggled_gamepad.toggle_port()
+    if toggle_events != [
+        {"kind": "joystick", "port": 2, "inputs": ["fire"], "transition": "release"},
+        {"kind": "joystick", "port": 1, "inputs": ["fire"], "transition": "press"},
+    ]:
+        raise Failure(f"Gamepad port toggle mismatch: {toggle_events}")
+    if toggled_gamepad.port != 1:
+        raise Failure(f"Gamepad port toggle did not switch to port 1: {toggled_gamepad.port}")
+
     for seq, expected in (
         ("\t", ["ctrl"]),
         ("\x1bOP", ["f1"]),
@@ -1918,17 +2117,32 @@ def run_local_input_tool_regressions(joystick_port: int) -> None:
         ("\x1b[17~", ["left_shift", "f5"]),
         ("\x1b[18~", ["f7"]),
         ("\x1b[19~", ["left_shift", "f7"]),
-        ("\x1b[H", ["clr_home"]),
-        ("\x1b[3~", ["inst_del"]),
-        ("\b", ["inst_del"]),
+        ("\x1b[H", ["inst_del"]),
+        ("\x1b[2~", ["clr_home"]),
+        ("\x1b[3~", ["restore"]),
+        ("\b", ["pound"]),
+        ("\x7f", ["pound"]),
         ("\x1b[F", ["run_stop"]),
-        ("\x1b[5~", ["restore"]),
+        ("\x1b[5~", ["equals"]),
         ("\n", ["return"]),
+        ("`", ["arrow_left"]),
+        ("-", ["plus"]),
+        ("=", ["minus"]),
+        ("[", ["at"]),
+        ("]", ["star"]),
+        ("\\", ["arrow_up"]),
+        (";", ["colon"]),
+        ("'", ["semicolon"]),
     ):
         decoder.clear()
         action, event, repeat_sequence = decoder.translate(seq, joystick_port, 0.0)
         if action != "event" or event != keyboard_event(expected) or repeat_sequence != seq:
             raise Failure(f"Special mapping mismatch for {seq!r}: {event}")
+
+    decoder.clear()
+    action, event, repeat_sequence = decoder.translate("\x1b[24~", joystick_port, 0.0)
+    if action != "toggle_joystick_port" or event is not None or repeat_sequence is not None:
+        raise Failure(f"F12 terminal toggle mismatch: {(action, event, repeat_sequence)}")
 
     for seq in ("\x1b[20~", "\x1b[Z", "\x1b[21~", "\x1b[23~", "\x1ba", "\x1bA", "\x1bo", "\x01", "\x18", "\x1b[1;5A", "\x1b[13;5u"):
         decoder.clear()
