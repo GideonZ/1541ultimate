@@ -745,18 +745,22 @@ void Keyboard_USB :: restReleaseAll(void)
 
 void Keyboard_USB :: restSnapshot(uint8_t out_matrix[8], bool &out_restore) const
 {
+	portENTER_CRITICAL();
 	for (int i = 0; i < 8; i++) {
 		out_matrix[i] = rest_matrix_state[i] | rest_matrix_overlay[i];
 	}
 	out_restore = rest_restore || (rest_restore_overlay != 0);
+	portEXIT_CRITICAL();
 }
 
 void Keyboard_USB :: restPersistentSnapshot(uint8_t out_matrix[8], bool &out_restore) const
 {
+	portENTER_CRITICAL();
 	for (int i = 0; i < 8; i++) {
 		out_matrix[i] = rest_matrix_state[i] & ~rest_matrix_overlay[i];
 	}
 	out_restore = rest_restore;
+	portEXIT_CRITICAL();
 }
 
 void Keyboard_USB :: tickRestOverlays(void)

@@ -142,7 +142,11 @@ static SemaphoreHandle_t rest_input_mutex = NULL;
 static SemaphoreHandle_t input_mutex(void)
 {
     if (!rest_input_mutex) {
-        rest_input_mutex = xSemaphoreCreateMutex();
+        taskENTER_CRITICAL();
+        if (!rest_input_mutex) {
+            rest_input_mutex = xSemaphoreCreateMutex();
+        }
+        taskEXIT_CRITICAL();
     }
     return rest_input_mutex;
 }

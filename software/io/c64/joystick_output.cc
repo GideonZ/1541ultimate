@@ -235,8 +235,14 @@ void JoystickOutput :: releaseAllRest(void)
 
 void JoystickOutput :: snapshot(uint8_t &port1_active_low, uint8_t &port2_active_low) const
 {
+#if U64
+    portENTER_CRITICAL();
+#endif
     port1_active_low = (rest_p1_persistent & rest_p1_overlay) & JOYSTICK_INPUT_MASK;
     port2_active_low = (rest_p2_persistent & rest_p2_overlay) & JOYSTICK_INPUT_MASK;
+#if U64
+    portEXIT_CRITICAL();
+#endif
 }
 
 void JoystickOutput :: outputSnapshot(uint8_t &port1_active_low, uint8_t &port2_active_low,
