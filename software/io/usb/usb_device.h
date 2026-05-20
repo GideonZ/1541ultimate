@@ -263,7 +263,7 @@ public:
     //struct t_device_configuration   device_config;
     struct t_device_descriptor      device_descr;
     int num_interfaces;
-    UsbInterface *interfaces[4]; // we support composite devices with up to 4 interfaces
+    UsbInterface *interfaces[6]; // we support composite devices with up to 6 interfaces
 
     uint16_t vendorID;
     uint16_t productID;
