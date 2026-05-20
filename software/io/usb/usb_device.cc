@@ -68,7 +68,7 @@ UsbDevice :: UsbDevice(UsbBase *u, int speed)
 
     device_descr.length = 0;
 
-    for(int i=0;i<6;i++) {
+    for(int i=0;i<USB_NUM_INTERFACES;i++) {
     	interfaces[i] = NULL;
     }
     num_interfaces = 0;
@@ -274,7 +274,7 @@ bool UsbDevice :: get_configuration(uint8_t index)
         		if(len == 9) {
         			printf("Interface descriptor #%b:%b, with %d endpoints. Class = %d:%d:%d\n", pnt[2], pnt[3], pnt[4], pnt[5], pnt[6], pnt[7]);
         			int number = (int)pnt[2];
-        			if (number < 6) { // Up to 6 interfaces
+        			if (number < USB_NUM_INTERFACES) { // Up to 6 interfaces
 						interface = new UsbInterface(this, number, (struct t_interface_descriptor *)pnt);
 						if (interfaces[number]) {
 							interfaces[number]->addAlternative(interface);
