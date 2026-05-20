@@ -51,8 +51,8 @@ uint8_t c_get_configuration[]         = { 0x80, 0x06, 0x00, 0x02, 0x00, 0x00, 0x
 uint8_t c_set_address[]               = { 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 uint8_t c_set_configuration[]         = { 0x00, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 uint8_t c_set_interface[]             = { 0x01, 0x0B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_get_interface[]             = { 0x81, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 };
 
-uint8_t c_get_interface[]			   = { 0x21, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 };
 uint8_t c_get_hid_report_descriptor[]  = { 0x81, 0x06, 0x00, 0x22, 0x00, 0x00, 0x00, 0x00 };
 uint8_t c_unstall_pipe[]			   = { 0x02, 0x01, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00 };
 
@@ -68,7 +68,7 @@ UsbDevice :: UsbDevice(UsbBase *u, int speed)
 
     device_descr.length = 0;
 
-    for(int i=0;i<4;i++) {
+    for(int i=0;i<USB_NUM_INTERFACES;i++) {
     	interfaces[i] = NULL;
     }
     num_interfaces = 0;
@@ -274,7 +274,7 @@ bool UsbDevice :: get_configuration(uint8_t index)
         		if(len == 9) {
         			printf("Interface descriptor #%b:%b, with %d endpoints. Class = %d:%d:%d\n", pnt[2], pnt[3], pnt[4], pnt[5], pnt[6], pnt[7]);
         			int number = (int)pnt[2];
-        			if (number <= 3) {
+        			if (number < USB_NUM_INTERFACES) { // Up to 6 interfaces
 						interface = new UsbInterface(this, number, (struct t_interface_descriptor *)pnt);
 						if (interfaces[number]) {
 							interfaces[number]->addAlternative(interface);
@@ -437,18 +437,25 @@ uint8_t *UsbInterface :: getHidReportDescriptor(int *len) {
 	uint8_t buf[2];
 	hid_report_descriptor = new uint8_t[hid_len];
 
-	if (hid_report_descriptor) {
-		c_get_interface[4] = interface_number;
-		parentDevice->host->control_exchange(&parentDevice->control_pipe, c_get_interface, 8, buf, 1);
+    if (hid_report_descriptor) {
+        // No need to get interface number
+        // c_get_interface[4] = interface_number;
+        // parentDevice->host->control_exchange(&parentDevice->control_pipe, c_get_interface, 8, buf, 1);
 
-		c_get_hid_report_descriptor[4] = interface_number;
-		c_get_hid_report_descriptor[6] = pnt[7];
-		c_get_hid_report_descriptor[7] = pnt[8];
-		hid_len = parentDevice->host->control_exchange(&parentDevice->control_pipe, c_get_hid_report_descriptor, 8, hid_report_descriptor, hid_len);
-		// dump_hex(hid_report_descriptor, hid_len);
-		return hid_report_descriptor;
-	}
-	return NULL; // insufficient mem.. FATAL
+        c_get_hid_report_descriptor[4] = interface_number;
+        c_get_hid_report_descriptor[6] = pnt[7];
+        c_get_hid_report_descriptor[7] = pnt[8];
+        hid_len = parentDevice->host->control_exchange(&parentDevice->control_pipe, c_get_hid_report_descriptor, 8,
+                                                       hid_report_descriptor, hid_len);
+
+        if (hid_len == 0) {
+            delete[] hid_report_descriptor;
+            *len = 0;
+            hid_report_descriptor = NULL;
+        }
+        return hid_report_descriptor;
+    }
+    return NULL; // insufficient mem.. FATAL
 }
 
 
