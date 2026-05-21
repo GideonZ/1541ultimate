@@ -906,6 +906,8 @@ void UsbHidDriver :: install(UsbInterface *intf)
             if (report_items.locateKeyboardFields(keyboard_fields)) {
                 descriptor_keyboard = true;
             }
+        } else {
+            printf("Failed to decode HID Report.\n");
         }
     }
 
