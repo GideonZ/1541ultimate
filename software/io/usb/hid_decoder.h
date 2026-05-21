@@ -1051,6 +1051,7 @@ class HidItemList
         }
     }
 
+  public:
     void dump(void)
     {
         char buffer[64];

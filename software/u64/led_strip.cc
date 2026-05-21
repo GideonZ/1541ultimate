@@ -50,7 +50,7 @@ static void init(void *_a, void *_b)
 InitFunction ledstrip_init_func("LED Strip", init, NULL, NULL, 61);
 
 
-static const char *modes[] = {"Off", "Fixed Color", "SID Music", "Rainbow" };
+static const char *modes[] = {"Off", "Fixed Color", "SID Music", "Rainbow", "Programmatic" };
 static const char *patterns[] = { "SingleColor", "Left to Right", "Right to Left" };
 static const char *sidsel[] = { "UltiSID1-A", "UltiSID1-B", "UltiSID1-C", "UltiSID1-D",
                                 "UltiSID2-A", "UltiSID2-B", "UltiSID2-C", "UltiSID2-D" };
@@ -59,7 +59,7 @@ static const char *sidsel[] = { "UltiSID1-A", "UltiSID1-B", "UltiSID1-C", "UltiS
 static struct t_cfg_definition cfg_definition[] = {
     { CFG_LED_TYPE,             CFG_TYPE_ENUM,  "LedStrip Type",                "%s", types,        0,  1,  1  },
     { CFG_LED_LENGTH,           CFG_TYPE_VALUE, "LedStrip Length",              "%d", NULL,         1, 40,  24 },
-    { CFG_LED_MODE,             CFG_TYPE_ENUM,  "LedStrip Mode",                "%s", modes,        0,  3,  1  },
+    { CFG_LED_MODE,             CFG_TYPE_ENUM,  "LedStrip Mode",                "%s", modes,        0,  4,  1  },
     { CFG_LED_PATTERN,          CFG_TYPE_ENUM,  "LedStrip Pattern",             "%s", patterns,     0,  2,  0  },
     { CFG_LED_SIDSELECT,        CFG_TYPE_ENUM,  "LedStrip SID Select",          "%s", sidsel,       0,  7,  0  },
     { CFG_LED_INTENSITY,        CFG_TYPE_VALUE, "Strip Intensity",              "%d", NULL,         0, 31,  8  },
@@ -336,6 +336,10 @@ void LedStrip :: run(void)
             vTaskDelay(200);
             U64_LEDSTRIP_EN = 0;
             break;
+        case e_led_programmatic:
+            U64_LEDSTRIP_EN = 1;
+            vTaskDelay(200); // do nothing, but keep the loop on
+            break;
         case e_led_fixed: // Fixed Color
             offset = 0;
             U64_LEDSTRIP_EN = 1;
@@ -406,11 +410,16 @@ void LedStrip :: effectuate_settings(void)
     sidsel    = cfg->get_value(CFG_LED_SIDSELECT);
     pattern   = cfg->get_value(CFG_LED_PATTERN);
 
+    C64_VIC_SPLIT = 0; // by default we can't write to the LEDs from the C64
     switch(mode)
     {
         case e_led_off:
         case e_led_fixed:
             MapSingleColor();
+            break;
+        case e_led_programmatic:
+            MapDirect();
+            C64_VIC_SPLIT = 1; // allow range D200-D2FF to control the LEDs
             break;
         default:
             switch(pattern) {
@@ -446,6 +455,7 @@ void LedStrip :: update_menu()
 {
     switch(cfg->get_value(CFG_LED_MODE)) {
     case e_led_off:
+    case e_led_programmatic:
         cfg->find_item(CFG_LED_PATTERN)->setEnabled(false);
         cfg->find_item(CFG_LED_INTENSITY)->setEnabled(false);
         cfg->find_item(CFG_LED_FIXED_COLOR)->setEnabled(false);
