@@ -6,6 +6,7 @@
 #include "filemanager.h"
 #include "small_printf.h"
 
+/*
 class MonitorSaveSelectFolderEntry : public Browsable
 {
 public:
@@ -34,10 +35,7 @@ public:
 
 static inline void monitor_save_prepend_synthetic(IndexedList<Browsable *> &children)
 {
-    children.append(new MonitorSaveSelectFolderEntry());
-    for (int i = children.get_elements() - 1; i > 0; i--) {
-        children.swap(i, i - 1);
-    }
+    children.prepend(new MonitorSaveSelectFolderEntry());
 }
 
 class MonitorSaveDirEntry : public BrowsableDirEntry
@@ -86,5 +84,5 @@ protected:
         return new MonitorSaveDirEntry(parent_path, this, info, selectable);
     }
 };
-
+*/
 #endif // MONITOR_SAVE_BROWSABLE_H
