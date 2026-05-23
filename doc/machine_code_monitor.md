@@ -29,7 +29,15 @@ The monitor screen has three fixed regions:
 ### Header
 
 - Shows the current view, cursor address, and active modes.
-- Mode indicators may include `Undc`, `Frz`, `Pl`, `Dbg`, or `Edit`.
+- Mode indicators include `Undc`, `Frz`, `Pl`, `Dbg`, or `Edit`.
+
+| Mode Indicator | Meaning |
+| --- | --- |
+| `Undc` | Undocumented opcodes are active |
+| `Frz` | Freeze is active |
+| `Pl` | Polling is active |
+| `Dbg` | Debug mode is active |
+| `Edit` | Edit mode is active |
 
 ### Body
 
@@ -48,7 +56,7 @@ Example layout:
 
 ```text
 +--------------------------------------+
-|MONITOR ASM $E011  Undc Frz Pl Dbg Edit|
+|MONITOR ASM $E011 Undc Frz Pl Dbg Edit|
 |...                                   |
 |CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000  |
 +--------------------------------------+
@@ -568,7 +576,9 @@ Default slots are aimed at common C64 locations:
 
 ## Debug Mode
 
-Debug is a modal state layered on the Assembly view. Entering Debug does not execute CPU instructions by itself; execution only happens when an explicit Debug command (`D` for Over, `T` for Trace, `O` for Out, `G` for Go) is pressed while Debug is active.
+Debug is a modal state layered on the Assembly view. 
+
+Entering Debug does not execute CPU instructions by itself; execution only happens when an explicit Debug command (`D` for Over, `T` for Trace, `O` for Out, `G` for Go) is pressed while Debug is active.
 
 | Key | Outside Debug | Inside Debug |
 | --- | --- | --- |
@@ -583,21 +593,13 @@ Debug is a modal state layered on the Assembly view. Entering Debug does not exe
 | `C=+X` | Reset / break the machine | Reset / break the machine |
 | `RETURN` | Assembly follow / return | Assembly follow / return |
 
-`RETURN` is non-executing subroutine navigation. `O` is executing step-out: do not confuse it with `RETURN`.
+Notes:
 
-In Debug + Edit, `RUN/STOP` / `ESC` unwind one mode at a time: the first press leaves `Edit` and keeps `Dbg`, the second leaves `Dbg`.
-
-`B` keeps Binary view and `C=+B` keeps the bookmark overview. Neither is repurposed for breakpoints.
-
-### Status flag
-
-Debug shows a compact `Dbg` indicator in the same flag area as `Undc`, `Frz`, `Pl`, and `Edit`:
-
-```text
-Undc Frz Pl Dbg Edit
-```
-
-Both `Dbg` and `Edit` are shown when Debug + Edit are active. The flag area uses the fixed 20-character layout `Undc Frz Pl Dbg Edit`.
+- Important distinction between `RETURN` vs. `T`/`O`:
+  - `RETURN` is non-executing subroutine navigation. This is to explore the code without executing it.
+  - `T` (step into) and `O` (step out) is executing subroutine navigation. This is to follow the CPU's call stack.
+- In Debug + Edit, `RUN/STOP` / `ESC` unwind one mode at a time: the first press leaves `Edit` and keeps `Dbg`, the second leaves `Dbg`.
+- `B` keeps Binary view and `C=+B` keeps the bookmark overview. Neither is repurposed for breakpoints.
 
 ### CPU footer
 
@@ -621,7 +623,13 @@ Unknown values render as blank spaces in their reserved fixed-width columns; the
 
 ### Breakpoints
 
-There are 10 non-persistent breakpoint slots. `R` toggles a breakpoint at the current Assembly address; opcode rows with a breakpoint show `[BRKx]` immediately before the memory source marker, for example `[BRK0][BAS]`. On U64, breakpoints in BASIC, KERNAL, and character ROM use temporary patches in the volatile U64 ROM image, so ROM code remains step-capable without copying ROMs into C64 RAM or writing flash. `C=+R` opens the breakpoint list. The popup controls are:
+There are 10 non-persistent breakpoint slots:
+
+- `R` toggles a breakpoint at the current Assembly address.
+- Opcode rows with a breakpoint show `[BRKx]` immediately before the memory source marker, for example `[BRK0][BAS]`.
+- On U64, breakpoints in BASIC, KERNAL, and character ROM use temporary patches in the volatile U64 ROM image, so ROM code remains step-capable without copying ROMs into C64 RAM or writing flash.
+
+`C=+R` opens the breakpoint list which offers these shortcuts:
 
 | Key | Action |
 | --- | --- |
@@ -635,11 +643,17 @@ There are 10 non-persistent breakpoint slots. `R` toggles a breakpoint at the cu
 
 ### Help screen
 
-`F3` or `?` shows the Debug help screen while Debug is active. It keeps the normal help layout, replaces the keys Debug owns with Debug actions, and highlights those Debug shortcuts with the same accent color used for the `Dbg` and `Edit` header flags. `RETURN` remains non-executing follow / return navigation; `O` is executing step-out. `C=+X Reset` is the emergency reset / break shortcut.
+`F3` or `?` shows the Debug help screen while Debug is active. 
+
+It keeps the normal help layout, replaces the keys Debug owns with Debug actions, and highlights those Debug shortcuts with the same accent color used for the `Dbg` and `Edit` header flags.
+
+`RETURN` remains non-executing follow / return navigation; `O` is executing step-out. `C=+X Reset` is the emergency reset / break shortcut.
 
 ### Patch safety
 
-Every BRK patch, including temporary U64 ROM-image patches, plus every vector hook and trampoline is saved and restored on normal completion, breakpoint clear, timeout, cancel, debug-off, and monitor close. U64 ROM-image patches are volatile only; rebooting or reloading ROMs restores the configured BASIC/KERNAL image even if a debug session is interrupted before cleanup. Unsafe targets are refused rather than corrupting memory or fabricating CPU state.
+Every BRK patch, including temporary U64 ROM-image patches, plus every vector hook and trampoline is saved and restored on normal completion, breakpoint clear, timeout, cancel, debug-off, and monitor close. 
+
+U64 ROM-image patches are volatile only; rebooting or reloading ROMs restores the configured BASIC/KERNAL image even if a debug session is interrupted before cleanup. Unsafe targets are refused rather than corrupting memory or fabricating CPU state.
 
 ### Hardware support
 
@@ -655,7 +669,9 @@ Every BRK patch, including temporary U64 ROM-image patches, plus every vector ho
 | Freeze toggle (`Z`)                      | Yes         | Not available |
 | REST `/v1/machine` memory API            | Yes         | Yes (`route_machine.cc` is linked into all target builds) |
 
-The Debug stepping engine itself is shared between U64 and U2: both back-ends sit on the same BRK trampoline plus IRQ/NMI vector hook (`software/monitor/monitor_debug_brk_session.cc`). Only the platform-specific hooks (stopped-session bracketing, ROM-image patching, NMI pulse, reset) differ.
+The Debug stepping engine itself is shared between U64 and U2: both back-ends sit on the same BRK trampoline plus IRQ/NMI vector hook (`software/monitor/monitor_debug_brk_session.cc`).
+
+Only the platform-specific hooks (stopped-session bracketing, ROM-image patching, NMI pulse, reset) differ.
 
 ## Additional Notes
 
